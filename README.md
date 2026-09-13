@@ -220,6 +220,8 @@ npm run market-close:check
 
 Pipeline 自身提供 `/api/v1/companies/:ticker/filings`、`analysis`、`fundamentals` 等读取资源，接口约定见 [Pipeline 说明](workers/pipeline/README.md)。`/health` 检查存活，`/ready` 检查配置和绑定是否存在，不代表模型请求或全部历史任务都成功。
 
+个股「财务指标」及公开 `fundamentals` 接口读取 SEC 文件的 XBRL 数据（`source: sec_xbrl`）。SEC 披露索引刷新时尝试更新 Company Facts 快照，即使索引未变化也会重试，以补齐延迟到达的数据；抓取失败或缺少季度营收时保留上次成功快照。已有 `sec_facts` 可在首次刷新前提供数据，不使用 Yahoo 补齐缺失指标。累计金额按同概念、同币种推导单季，第四季度使用全年减前九个月；EPS 不做累计相减。每个数值保留文件 accession、披露日期及推导公式，页面可见时每分钟重新读取。
+
 ## 在新对话中继续维护
 
 1. 选择本地文件夹 `/Users/max/Investment/investment-record`。

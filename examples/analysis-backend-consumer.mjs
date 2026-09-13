@@ -118,7 +118,7 @@ if (fundamentals.status === 404) {
   assertShape(schemas.Fundamentals, fundamentals.body, "Fundamentals");
   report.fundamentals = {
     available: true,
-    // Real provenance: these are Yahoo Finance figures, not SEC-derived ones.
+    // Real provenance: public fundamentals are sourced from SEC XBRL filings.
     source: fundamentals.body.source,
     status: fundamentals.body.status,
     stale: fundamentals.body.stale,

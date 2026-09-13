@@ -58,6 +58,9 @@ export function normalizeCompanyFacts(ticker: string, payload: unknown): SecHist
   }
   const deduped = chooseCanonicalConcept(observations);
   const reported = deduped.filter((item) => item.cumulativeDays === undefined).map(withoutCumulativeMarker);
+  // Year-end balance sheet instants are also the fourth quarter's closing balance.
+  reported.push(...reported.filter((item) => item.periodScope === "annual" && !item.startDate)
+    .map((item) => ({ ...item, periodScope: "quarter" as const, observationId: `${item.observationId}:quarter` })));
   const fromCumulative = deriveQuartersFromCumulative(ticker, deduped);
   const base = [...reported, ...fromCumulative];
   const derived = deriveObservations(ticker, base);
@@ -100,6 +103,7 @@ function normalizeObservation(
   const sourceFiledAt = isoDate(raw.filed);
   if (!endDate || value === null || !sourceAccession || !sourceFiledAt) return null;
   const durationDays = startDate ? daysBetween(startDate, endDate) : null;
+  if (durationDays !== null && (durationDays < 60 || durationDays > 380)) return null;
   const annualForm = /^(10-K|20-F)/.test(String(raw.form ?? ""));
   const annual = durationDays !== null ? durationDays >= 250 && annualForm : annualForm;
   // Cash flow statements in a 10-Q are reported year-to-date, so the quarter has to be recovered
@@ -161,8 +165,8 @@ function deriveQuartersFromCumulative(ticker: string, observations: CumulativeOb
     .map((item) => `${item.seriesId}:${item.endDate}:${item.unit}`));
   const groups = new Map<string, CumulativeObservation[]>();
   for (const observation of observations) {
-    if (observation.periodScope !== "quarter" || !observation.startDate) continue;
-    const key = `${observation.seriesId}:${observation.unit}:${observation.startDate}`;
+    if (!observation.startDate || observation.seriesId === "diluted_eps" || observation.seriesId === "shares") continue;
+    const key = `${observation.seriesId}:${observation.unit}:${observation.currency ?? ""}:${observation.xbrlConcept}:${observation.startDate}`;
     groups.set(key, [...(groups.get(key) ?? []), observation]);
   }
   const derived: HistoricalObservation[] = [];
@@ -170,11 +174,12 @@ function deriveQuartersFromCumulative(ticker: string, observations: CumulativeOb
     const ordered = [...group].sort((left, right) => left.endDate.localeCompare(right.endDate));
     for (const [index, current] of ordered.entries()) {
       const previous = ordered[index - 1];
-      if (current.cumulativeDays === undefined || !previous) continue;
+      if ((current.cumulativeDays === undefined && current.periodScope !== "annual") || !previous) continue;
       if (reportedQuarters.has(`${current.seriesId}:${current.endDate}:${current.unit}`)) continue;
       // Only a one-quarter gap yields a quarter. If an intermediate cumulative fact is missing the
       // difference spans several quarters, which must not be published as a single-quarter value.
-      if (daysBetween(previous.endDate, current.endDate) > 130) continue;
+      const gap = daysBetween(previous.endDate, current.endDate);
+      if (gap < 60 || gap > 130) continue;
       const value = numericDifference(current.value, previous.value);
       if (value === null) continue;
       const formula = `${current.seriesId}[${current.startDate}..${current.endDate}] - ${current.seriesId}[${previous.startDate}..${previous.endDate}]`;

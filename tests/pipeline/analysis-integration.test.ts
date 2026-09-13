@@ -216,7 +216,7 @@ test("an independent HTTP consumer reads a report with only the API and a read c
     assert.equal(report.companyAnalysis.publishedResult, "ready");
     assert.deepEqual(report.companyAnalysis.highlights[0]?.evidenceRefs, ["evidence-1"]);
     assert.equal(report.fundamentals.available, true);
-    assert.equal(report.fundamentals.source, "yahoo_finance");
+    assert.equal(report.fundamentals.source, "sec_xbrl");
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
     database.close();

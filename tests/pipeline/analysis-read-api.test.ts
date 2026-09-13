@@ -179,14 +179,14 @@ test("company analysis returns the published result and validates", async () => 
   database.close();
 });
 
-test("fundamentals report Yahoo as their source, not SEC", async () => {
+test("fundamentals report SEC provenance and never fall back to Yahoo", async () => {
   const database = await backend();
   const response = await get(database, `/api/v1/companies/${FIXTURE_TICKER}/fundamentals?periodCount=2`);
   assert.equal(response.status, 200);
   const payload = await response.json() as PublicFundamentalsResponse;
   assert.deepEqual(validateJsonSchema(ANALYSIS_API_SCHEMAS.Fundamentals, payload), []);
-  assert.equal(payload.source, "yahoo_finance");
-  assert.equal(payload.status, "ready");
+  assert.equal(payload.source, "sec_xbrl");
+  assert.equal(payload.status, "pending", "Yahoo snapshots cannot fill missing SEC quarters");
   assert.equal(payload.refresh.scheduled, false);
   assert.equal(payload.refresh.mode, "backend_scheduled");
   database.close();

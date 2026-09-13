@@ -22,6 +22,7 @@ import type { SecAnalysisArtifact } from "./sec/types.ts";
 import { cleanSecAccession, cleanSecTicker, type SecFiling, type SecFilingFeed, type SecFilingSummary, type SecNodePlan, type SecNodeResult, type SecNodeSpec } from "./sec/sec.ts";
 import { SEC_ANALYSIS_SCHEMA_VERSION, type FilingBlock, type ManagerReview, type SecHistorySnapshot } from "./sec/analysis.ts";
 import { normalizeCompanyFacts } from "./sec/history.ts";
+import { secFundamentalsKey } from "./fundamentals/sec-fundamentals.ts";
 import { assertTrackedTicker, requireDb, type SecCronEnv } from "./core.ts";
 import type { AnalysisReadEnv } from "./read-api/router.ts";
 import type { SecModelExecution } from "./retry-policy.ts";
@@ -109,6 +110,19 @@ export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof
       const store = repository();
       await store.setCache(`sec:filings:${ticker}`, normalizedFeed, typedFeed.fetchedAt ?? new Date().toISOString());
       await Promise.all(normalizedFeed.filings.map((filing) => store.upsertFilingIndex(filing)));
+      // Retry on every discovery sweep: Company Facts can arrive after the filing index.
+      // Publish one complete snapshot atomically; failures leave the last good snapshot intact.
+      const cik = normalizedFeed.company?.cik ?? normalizedFeed.filings[0]?.cik;
+      if (cik) {
+        try {
+          const history = await fetchCompanyHistory(cik, ticker, env.SEC_USER_AGENT, fetcher);
+          if (history.series.some((series) => series.seriesId === "revenue" && series.quarters.length)) {
+            await store.setCache(secFundamentalsKey(ticker), history, new Date().toISOString());
+          }
+        } catch (error) {
+          console.warn("SEC fundamentals refresh failed", { ticker, error: error instanceof Error ? error.message : String(error) });
+        }
+      }
     },
     shouldAnalyze: async (filing, requestedBy) => {
       if (requestedBy === "manual") return true;

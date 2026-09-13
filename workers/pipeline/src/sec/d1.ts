@@ -657,7 +657,7 @@ export class D1SecRepository implements SecRepository {
 
 }
 
-function historyFromRows(rows: Array<{
+export function historyFromRows(rows: Array<{
   observationId: string; seriesId: HistoricalObservation["seriesId"]; metricKey: string; value: string; unit: string; currency: string;
   basis: "gaap" | "derived"; startDate: string | null; endDate: string; sourceAccession: string; sourceFiledAt: string; sourceVersion: string;
   xbrlConcept: string; derivationFormula: string; dimensions: string;

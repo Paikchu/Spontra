@@ -1,9 +1,8 @@
 import { proxyAnalysisRead } from "@/lib/earning-report/web/analysis-proxy.ts";
 
 /**
- * Reading fundamentals no longer schedules anything. The staleness refresh this route used to
- * trigger on every read now runs on the backend's Cron sweep, so a page load cannot start an
- * outbound Yahoo fetch and a database write any more.
+ * Reads the backend's SEC XBRL snapshot. SEC discovery refreshes it independently;
+ * loading this page never starts provider requests or database writes.
  */
 export const dynamic = "force-dynamic";
 

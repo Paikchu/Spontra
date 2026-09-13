@@ -150,7 +150,7 @@ export function buildAnalysisOpenApiDocument(serverUrl = "https://<analysis-back
       "/api/v1/companies/{ticker}/fundamentals": {
         get: {
           summary: "Quarterly fundamentals series",
-          description: "Sourced from Yahoo Finance (`source: \"yahoo_finance\"`), not from SEC filings.",
+          description: "Sourced from SEC XBRL filings (`source: \"sec_xbrl\"`); refreshed by SEC discovery.",
           security: [{ readCredential: ["fundamentals:read"] }],
           parameters: [
             tickerParameter,

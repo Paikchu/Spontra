@@ -30,6 +30,9 @@ export type PublicFundamentalPoint = {
   periodEnd: string;
   valueDecimal: string | null;
   revision: number | null;
+  sourceAccession?: string;
+  sourceFiledAt?: string;
+  derivationFormula?: string;
 };
 
 export type PublicFundamentalSeries = {
@@ -52,8 +55,8 @@ export type PublicFundamentalsResponse = {
   apiSchemaVersion: typeof ANALYSIS_API_SCHEMA_VERSION;
   schemaVersion: typeof FUNDAMENTALS_API_SCHEMA_VERSION;
   catalogVersion: "fundamental-metrics.v2";
-  /** Real provenance. These numbers are Yahoo Finance's, not SEC filings'. */
-  source: "yahoo_finance";
+  /** Actual provider; SEC-derived ratios and cash flow retain SEC provenance. */
+  source: "yahoo_finance" | "sec_xbrl";
   ticker: string;
   status: "ready" | "pending";
   dataVersion: string | null;

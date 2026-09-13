@@ -1,7 +1,7 @@
 import { getPublicCompanyAnalysis } from "../company-analysis/api.ts";
 import { D1CompanyAnalysisRepository } from "../company-analysis/repository.ts";
-import { getPublicFundamentals, parseFundamentalApiQuery } from "../fundamentals/fundamentals-api.ts";
-import { D1FundamentalsRepository } from "../fundamentals/fundamentals-d1.ts";
+import { parseFundamentalApiQuery } from "../fundamentals/fundamentals-api.ts";
+import { getSecFundamentals } from "../fundamentals/sec-fundamentals.ts";
 import { getPublicFiling, getPublicFilingPage } from "../sec/public-api.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import { findSecurity } from "../catalog/security-directory.ts";
@@ -141,7 +141,7 @@ async function handleRoute(request: Request, database: D1Database, route: Exclud
     }
     case "fundamentals": {
       const query = parseFundamentalApiQuery(route.ticker, url.searchParams);
-      const payload = await getPublicFundamentals(new D1FundamentalsRepository(database), query);
+      const payload = await getSecFundamentals(database, query);
       // Preserved from the pre-backend behaviour: a ticker the directory does not know as a stock
       // has no fundamentals to collect, and says so, rather than reporting an empty pending set.
       if (payload.status === "pending" && findSecurity(query.ticker)?.type !== "stock") {

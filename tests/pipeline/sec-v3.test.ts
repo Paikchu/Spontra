@@ -143,7 +143,7 @@ test("recovers a quarterly cash flow from year-to-date 10-Q facts", () => {
   ] } };
   const series = normalizeCompanyFacts(issuer, payload).series;
   const quarter = (id: string, endDate: string) => series.find((item) => item.seriesId === id)?.quarters.find((item) => item.endDate === endDate);
-  assert.equal(quarter("capex", "2026-09-30")?.value, "60", "Q3 capex comes from the productive-assets concept");
+  assert.equal(quarter("capex", "2026-09-30"), undefined, "A broader productive-assets concept cannot be subtracted from property-only capex");
 
   const operating = quarter("operating_cash_flow", "2026-06-30");
   assert.equal(operating?.value, "160", "Q2 operating cash flow is H1 minus Q1");
