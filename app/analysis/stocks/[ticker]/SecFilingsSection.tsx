@@ -10,6 +10,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { SecEventCategory } from "@/shared/analysis-contract/report.ts";
 import { formatSecMetricLabel, formatSecMetricValue } from "@/lib/earning-report/web/sec-metric-format.ts";
+import { formatFilingPeriodLabel } from "@/lib/earning-report/web/filing-period-label.ts";
 import type { PublicSecFiling } from "@/shared/analysis-contract/filings.ts";
 
 
@@ -139,7 +140,7 @@ function SecFilingCard({ filing, isLatestPeriodic }: { filing: PublicSecFiling; 
       <AccordionTrigger>
         <span className="analysis-filing-heading">
           <span className="analysis-filing-meta">
-            <Badge variant={isLatestPeriodic ? "default" : "secondary"}>{group ? "财报" : filing.form}</Badge>
+            <Badge variant={isLatestPeriodic ? "default" : "secondary"}>{formatFilingPeriodLabel(filing)}</Badge>
             <span>{formatYear(group?.earningsDate ?? filing.filingDate)}年{formatMonthDay(group?.earningsDate ?? filing.filingDate)}</span>
             <span>{group ? `业绩发布 · 截至 ${group.periodEnd}` : formDescription(filing.form)}</span>
           </span>
@@ -148,9 +149,6 @@ function SecFilingCard({ filing, isLatestPeriodic }: { filing: PublicSecFiling; 
       </AccordionTrigger>
       <AccordionContent>
         {group && <div className="mb-3 text-sm text-muted-foreground">
-          <p>{group.sources.some((source) => isPeriodicFiling(source.form))
-            ? filing.summary?.earningsGroup?.inputKey === group.inputKey ? "本期材料已合并分析" : "本期新增材料待合并分析，以下保留已有报告"
-            : "业绩初报 · 后续定期报告发布后将补充到本报告"}</p>
           <ul aria-label="本期来源文件" className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
             {group.sources.map((source) => <li key={source.accessionNumber}><a href={source.indexUrl} target="_blank" rel="noopener noreferrer" className="underline underline-offset-4">{source.form} · {source.filingDate} ↗</a></li>)}
           </ul>
@@ -220,13 +218,7 @@ function StructuredAnalysis({ filing }: { filing: PublicSecFiling }) {
         </dl>
       )}
       {!report.discovery && changes.length > 0 && <ul className="sec-analysis-changes">{changes.map((change, index) => <li key={`${change.label}-${change.topicKey}-${index}`}><i aria-hidden="true" /><span><strong>{change.label} · {change.topicKey}</strong>{change.currentStatement ?? change.priorStatement ?? ""}</span></li>)}</ul>}
-      {report.dataQuality.warnings.length > 0 && (
-        <Accordion type="single" collapsible><AccordionItem value="quality">
-          <AccordionTrigger>数据口径与修正说明（{report.dataQuality.warnings.length}）</AccordionTrigger><AccordionContent>
-          {report.dataQuality.warnings.map((warning) => <p className="sec-analysis-warning" key={warning}>{warning}</p>)}
-        </AccordionContent></AccordionItem></Accordion>
-      )}
-      <small className="sec-ai-note">结构化财报解读 · {formatDateTime(filing.summary?.generatedAt ?? new Date().toISOString())}</small>
+
     </div>
   );
 }
