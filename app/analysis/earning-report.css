@@ -3152,6 +3152,7 @@
 .stock-detail-price strong { font-size: 28px; font-weight: 600; letter-spacing: -.025em; }
 .stock-detail-price > span { font-size: 16px; }
 .stock-detail-tabs { min-width: 0; gap: 22px; }
+.stock-detail-tabs > [data-slot="tabs-content"] { width: 100%; min-width: 0; }
 .stock-detail-tab-bar { position: sticky; top: var(--stock-search-height, 56px); z-index: 10; background: var(--background); border-bottom: 1px solid var(--border); overflow-x: auto; padding-bottom: 5px; }
 .stock-detail-tab-bar [data-slot="tabs-list"] { height: 44px; justify-content: flex-start; }
 .stock-detail-tab-bar [data-slot="tabs-trigger"] { flex: none; padding: 10px 14px; }
@@ -3192,8 +3193,16 @@
 .unified-stock .instrument-section { margin-top: 24px; }
 .unified-stock .instrument-table { min-width: 1040px; }
 .unified-stock .position-summary { margin-top: 0; }
-.unified-stock .plan-editor { max-width: 900px; margin-inline: auto; margin-top: 0; padding-top: 0; border-top: 0; }
-.unified-stock .stock-detail-timeline { max-width: 920px; margin-inline: auto; }
+.unified-stock .plan-editor { max-width: none; margin-inline: 0; margin-top: 0; padding-top: 0; border-top: 0; }
+.unified-stock .stock-detail-timeline { width: 100%; max-width: none; margin-inline: 0; }
+/* A full-width tab uses document scrolling rather than the legacy sidebar rail. */
+.earning-report.unified-stock .stock-detail-timeline .sec-filing-scroll {
+  max-height: none;
+  overflow: visible;
+  overscroll-behavior: auto;
+  scrollbar-gutter: auto;
+  padding-inline-end: 0;
+}
 .stock-detail-charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; margin-bottom: 32px; }
 .stock-detail-financials td, .stock-detail-trades td { white-space: nowrap; font-variant-numeric: tabular-nums; }
 @media (max-width: 900px) {
