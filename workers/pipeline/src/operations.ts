@@ -67,7 +67,7 @@ export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof
     try {
       return await call(stage, system, selectedModel);
     } catch (error) {
-      const primaryModel = env.SEC_ANALYSIS_MODEL || "glm-5.3-flash";
+      const primaryModel = env.SEC_ANALYSIS_MODEL || "qwen3.8-flash";
       // A shared fallback-provider rate limit must not trap every remaining attempt on that model.
       if (error instanceof SecModelHttpError && error.status === 429 && selectedModel && selectedModel !== primaryModel) {
         return call(`${stage}:rate-limit-recovery`, system, primaryModel);
@@ -471,7 +471,7 @@ export async function callWorkerSecModel(
     method: "POST",
     headers: { "content-type": "application/json", accept: "text/event-stream", authorization: `Bearer ${apiKey}` },
     body: JSON.stringify({
-      model: modelOverride || env.SEC_ANALYSIS_MODEL || "glm-5.3-flash",
+      model: modelOverride || env.SEC_ANALYSIS_MODEL || "qwen3.8-flash",
       messages: [
         { role: "system", content: system },
         { role: "user", content: JSON.stringify(payload) },
