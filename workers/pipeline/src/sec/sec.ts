@@ -96,6 +96,7 @@ export type SecFiling = {
 };
 
 export type SecFilingSummary = {
+  discovery?: import("../../../../shared/analysis-contract/report.ts").SecDiscovery;
   earningsGroup?: import("../../../../shared/analysis-contract/report.ts").SecEarningsGroup;
   ticker: string;
   form: string;

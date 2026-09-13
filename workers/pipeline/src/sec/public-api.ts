@@ -114,7 +114,7 @@ async function toPublicFiling(repository: D1SecRepository, filing: SecFilingWith
    * reported there rather than by quietly redefining this field.
    */
   const analysisStatus: PublicAnalysisStatus = report
-    ? report.dataQuality.verificationStatus === "verified" ? "complete" : "partial"
+    ? report.dataQuality.verificationStatus === "verified" && report.dataQuality.analysisStatus !== "partial" ? "complete" : "partial"
     : job?.status === "queued" || job?.status === "running" ? "processing" : "not_collected";
   const { analysisSchemaVersion, contentRevision } = splitReportVersion(report?.reportVersion ?? null);
   return {

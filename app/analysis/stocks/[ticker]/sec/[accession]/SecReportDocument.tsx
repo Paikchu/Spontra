@@ -144,9 +144,9 @@ export function SecReportDocument({ companyName, filing }: { companyName: string
           : "新增材料待合并分析，当前保留已有报告。"}</p>
         <ul>{group.sources.map((source) => <li key={source.accessionNumber}><a href={source.indexUrl} target="_blank" rel="noopener noreferrer">{source.form} · {source.filingDate} · {source.accessionNumber} ↗</a></li>)}</ul>
       </section>}
-      {report?.publication && <ReportShare ticker={filing.ticker} accession={filing.accessionNumber}
-        reportDate={filing.reportDate || filing.filingDate} reportVersion={report.reportVersion}
-        generatedAt={report.publication.summary.generatedAt} />}
+      {reportReady && (summary || report?.publication) && <ReportShare ticker={filing.ticker} accession={report?.publication?.filing.accessionNumber ?? filing.accessionNumber}
+        reportDate={report?.publication ? report.publication.filing.reportDate || report.publication.filing.filingDate : filing.reportDate || filing.filingDate} reportVersion={report?.publication ? report.reportVersion : undefined}
+        generatedAt={report?.publication?.summary.generatedAt ?? summary!.generatedAt} />}
       {!reportReady ? (
         <section className="sec-report-pending" aria-labelledby="sec-report-pending-title">
           <h2 id="sec-report-pending-title">完整报告生成中</h2>
@@ -239,7 +239,11 @@ function DataQuality({ report }: { report: PublishedSecReport | null | undefined
   return (
     <div className="sec-report-quality">
       <dl>
-        <div><dt>证据覆盖率</dt><dd>{Math.round(quality.coverage * 100)}%</dd></div>
+        {report.discovery && <>
+          <div><dt>已采集文本扫描</dt><dd>{report.discovery.totalCharacters ? Math.round(report.discovery.scannedCharacters/report.discovery.totalCharacters*100) : 0}%</dd></div>
+          <div><dt>原文发现候选</dt><dd>{report.discovery.disclosures.length} 项（不代表全部已分析）</dd></div>
+        </>}
+        <div><dt>财务指标覆盖率</dt><dd>{Math.round(quality.coverage * 100)}%</dd></div>
         <div><dt>验证状态</dt><dd>{verificationStatus(quality.verificationStatus)}</dd></div>
         <div><dt>分析完整性</dt><dd>{analysisStatus(quality.analysisStatus, quality.stopReason)}</dd></div>
         {typeof quality.managerCoverageScore === "number"

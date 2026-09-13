@@ -1,3 +1,4 @@
+import type { DiscoveryChunk } from "./sec/discovery.ts";
 import {
   MAX_REPAIR_NODES_PER_ROUND,
   MAX_REPAIR_ROUNDS,
@@ -99,6 +100,7 @@ function byMateriality(left: ManagerRepairTask, right: ManagerRepairTask): numbe
 }
 
 export type PreparedFilingReference = {
+  discoveryChunks?: number;
   key: string;
   filing: SecFiling;
 };
@@ -120,6 +122,9 @@ export type WorkflowJobUpdate = {
 };
 
 export type SecPipelineOperations = {
+  scanDisclosures?(filing: SecFiling, reference: PreparedFilingReference, index: number, execution?: SecModelExecution): Promise<DiscoveryChunk>;
+  finishDiscovery?(filing: SecFiling, reference: PreparedFilingReference, chunks: DiscoveryChunk[]): Promise<{ groundedDisclosures: number }>;
+  auditDisclosures?(filing: SecFiling, reference: PreparedFilingReference, plan: SecNodePlan, nodes: SecNodeResult[], execution?: SecModelExecution): Promise<SecNodeSpec[]>;
   classifyEarnings?(filing: SecFiling, execution?: SecModelExecution): Promise<string | null>;
   groupEarnings?(filings: SecFiling[], periods: Map<string, string | null>): Promise<SecFiling[]>;
   discover(ticker: string): Promise<{ feed: unknown; filings: SecFiling[] }>;
@@ -189,8 +194,15 @@ export async function executeSecAnalysisWorkflow(
       const eventFiling = /^(8-K|6-K)(\/A)?$/.test(filing.form);
       stage = "prepare";
       await step.do(`job:${accession}:start`, () => operations.updateJob({ ...baseJob, status: "running", currentStage: "prepare", updatedAt: new Date().toISOString() }));
+      const prepared = await step.do(`prepare:${accession}`, () => operations.prepare(filing));
+      let discoveryResult: { groundedDisclosures: number } | undefined;
+      if (operations.scanDisclosures && operations.finishDiscovery && prepared.discoveryChunks) {
+        stage = "discovery";
+        const chunks = await mapWithConcurrency(Array.from({length:prepared.discoveryChunks}, (_,index) => index), SEC_NODE_CONCURRENCY,
+          (index) => step.do(`discovery:${accession}:${index}`, (stepContext) => operations.scanDisclosures!(filing, prepared, index, executionFor(stepContext))));
+        discoveryResult = await step.do(`discovery-finish:${accession}`, () => operations.finishDiscovery!(filing, prepared, chunks));
+      }
       if (eventFiling) {
-        const prepared = await step.do(`prepare:${accession}`, () => operations.prepare(filing));
         stage = "event-summary";
         const summary = await step.do(`event-summary:${accession}`, (context) => operations.summarizeEvent(filing, prepared, executionFor(context)));
         stage = "publish";
@@ -199,14 +211,13 @@ export async function executeSecAnalysisWorkflow(
         analyzed.push(accession);
         continue;
       }
-      const prepared = await step.do(`prepare:${accession}`, () => operations.prepare(filing));
       stage = "context";
       const context = await step.do(`context:${accession}`, () => operations.getContext(filing, prepared));
       stage = "brief";
       const brief = await step.do(`brief:${accession}`, async () => operations.buildBrief
         ? operations.buildBrief(filing, prepared, context)
         : buildFallbackBrief(filing, context));
-      assertBriefCanProceed(brief);
+      assertBriefCanProceed(brief, Boolean(discoveryResult?.groundedDisclosures));
       stage = "manager";
       const plan = await step.do(`manager:${accession}`, async (stepContext) => {
         const planned = await operations.plan(filing, prepared, brief, executionFor(stepContext));
@@ -218,6 +229,17 @@ export async function executeSecAnalysisWorkflow(
         `node:${accession}:round:0:${index}:${spec.id}`,
         (stepContext) => operations.analyzeNode(spec, filing, prepared, brief, 0, executionFor(stepContext)),
       ));
+      if (operations.auditDisclosures) {
+        stage = "discovery-audit";
+        const tasks = await step.do(`discovery-audit:${accession}`, (stepContext) => operations.auditDisclosures!(filing, prepared, plan, nodes, executionFor(stepContext)));
+        for (const task of tasks) {
+          const plannedIndex = plan.nodes.findIndex((node) => node.id === task.id);
+          if (plannedIndex < 0) plan.nodes.push(task); else plan.nodes[plannedIndex] = task;
+          const result = await step.do(`discovery-repair:${accession}:${task.id}`, (stepContext) => operations.analyzeNode(task, filing, prepared, brief, 2, executionFor(stepContext)));
+          const resultIndex = nodes.findIndex((node) => node.id === result.id);
+          if (resultIndex < 0) nodes.push(result); else nodes[resultIndex] = result;
+        }
+      }
       stage = "manager-review";
       const loop = await runManagerRepairLoop(accession, step, plan, nodes, {
         review: (round, currentNodes, execution) => operations.review
@@ -228,6 +250,15 @@ export async function executeSecAnalysisWorkflow(
       const managerReview: ManagerReview = loop.review;
       stage = "synthesis";
       const result = await step.do(`synthesis:${accession}`, (stepContext) => operations.summarize(filing, prepared, context, plan, loop.nodes, brief, managerReview, executionFor(stepContext)));
+      const discoveryWarnings = [
+        ...(result.artifact.report.discovery?.warnings ?? []),
+        ...(plan.warnings ?? []).filter((warning) => warning.includes("仍有发现未展开")),
+      ];
+      if (discoveryWarnings.length) {
+        managerReview.status = "partial";
+        managerReview.stopReason = "analysis_incomplete";
+        managerReview.unresolvedQuestions = [...new Set([...managerReview.unresolvedQuestions, ...discoveryWarnings])];
+      }
       result.artifact.report.dataQuality = {
         ...result.artifact.report.dataQuality,
         analysisStatus: managerReview.status === "complete" ? "complete" : "partial",
@@ -325,8 +356,8 @@ function buildFallbackBrief(filing: SecFiling, context: SecAnalysisContext): Sec
   });
 }
 
-function assertBriefCanProceed(brief: SecAnalysisBrief): void {
-  if (!brief.history.series.length) throw new Error("No core facts passed factual verification");
+function assertBriefCanProceed(brief: SecAnalysisBrief, groundedDisclosures = false): void {
+  if (!brief.history.series.length && !groundedDisclosures) throw new Error("No core facts passed factual verification");
   const identities = new Map<string, string>();
   for (const series of brief.history.series) {
     for (const observation of [...series.quarters, ...series.annual]) {

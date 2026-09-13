@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Empty, EmptyHeader, EmptyDescription } from "@/components/ui/empty";
-import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { SecEventCategory } from "@/shared/analysis-contract/report.ts";
@@ -130,8 +129,10 @@ function SecFilingCard({ filing, isLatestPeriodic }: { filing: PublicSecFiling; 
   // the link disappear for the whole regeneration window after a version bump,
   // while the report it points at was still on file and still readable.
   const group = filing.earningsGroup;
+  const published = filing.analysis?.publication;
   const fullReportHref = filing.summary?.report
-    ? `/analysis/stocks/${encodeURIComponent(filing.ticker)}/sec/${encodeURIComponent(group?.canonicalAccession ?? filing.accessionNumber)}`
+    ? `/analysis/stocks/${encodeURIComponent(filing.ticker)}/sec/${encodeURIComponent(published?.filing.accessionNumber ?? group?.canonicalAccession ?? filing.accessionNumber)}`
+      + (published ? `?${new URLSearchParams({ reportDate: published.filing.reportDate || published.filing.filingDate, reportVersion: filing.analysis!.reportVersion })}` : "")
     : null;
   return (
     <AccordionItem value={group?.id ?? filing.accessionNumber} className="analysis-filing-item">
@@ -156,7 +157,7 @@ function SecFilingCard({ filing, isLatestPeriodic }: { filing: PublicSecFiling; 
         </div>}
         <FilingSummary filing={filing} />
         <div className="flex flex-wrap items-center gap-2 pt-4">
-          {fullReportHref && <Button asChild size="sm"><Link href={fullReportHref}>阅读完整报告 →</Link></Button>}
+          {fullReportHref && <Button asChild size="sm"><a data-app-local-anchor href={fullReportHref}>阅读完整报告 →</a></Button>}
           <Button asChild variant="outline" size="sm"><a href={filing.edgarUrl} rel="noopener noreferrer" target="_blank">SEC EDGAR 原文 ↗</a></Button>
         </div>
       </AccordionContent>
@@ -182,6 +183,7 @@ function FilingSummary({ filing }: { filing: PublicSecFiling }) {
       )}
       {summary.report && <details className="sec-event-report"><summary className="cursor-pointer text-sm text-muted-foreground">补充分析</summary><p className="whitespace-pre-line">{summary.report}</p></details>}
       {summary.analystView && <p className="sec-analyst-view"><span>投资含义</span>{summary.analystView}</p>}
+      {summary.discovery?.warnings.map((warning) => <p className="sec-analysis-warning" key={warning}>{warning}</p>)}
       <small className="sec-ai-note">AI 基于 filing 原文生成 · {formatDateTime(summary.generatedAt)}</small>
     </div>
   );
@@ -201,6 +203,9 @@ function StructuredAnalysis({ filing }: { filing: PublicSecFiling }) {
   const changes = [...report.changes.qoq.map((change) => ({ ...change, label: "环比" })), ...report.changes.yoy.map((change) => ({ ...change, label: "同比" }))].filter((change) => change.changeType !== "not_mentioned").slice(0, 8);
   return (
     <div className="sec-summary sec-analysis">
+      {report.discovery && filing.summary?.bullets.length ? <ul aria-label="本期关键发现">{filing.summary.bullets.map((bullet,index) =>
+        <li data-importance={bullet.importance} key={`${bullet.label}-${index}`}><i aria-hidden="true"/><span><strong>{bullet.label}</strong>{bullet.detail}</span></li>)}</ul> : null}
+      {report.discovery && filing.summary?.analystView && <p className="sec-analyst-view"><span>投资含义与验证</span>{filing.summary.analystView}</p>}
       {report.keyMetrics.length > 0 && (
         <dl className="sec-analysis-metrics" aria-label="关键财务数据">
           {report.keyMetrics.slice(0, 6).map((metric) => (
@@ -214,7 +219,7 @@ function StructuredAnalysis({ filing }: { filing: PublicSecFiling }) {
           ))}
         </dl>
       )}
-      {changes.length > 0 && <ul className="sec-analysis-changes">{changes.map((change, index) => <li key={`${change.label}-${change.topicKey}-${index}`}><i aria-hidden="true" /><span><strong>{change.label} · {change.topicKey}</strong>{change.currentStatement ?? change.priorStatement ?? ""}</span></li>)}</ul>}
+      {!report.discovery && changes.length > 0 && <ul className="sec-analysis-changes">{changes.map((change, index) => <li key={`${change.label}-${change.topicKey}-${index}`}><i aria-hidden="true" /><span><strong>{change.label} · {change.topicKey}</strong>{change.currentStatement ?? change.priorStatement ?? ""}</span></li>)}</ul>}
       {report.dataQuality.warnings.length > 0 && (
         <Accordion type="single" collapsible><AccordionItem value="quality">
           <AccordionTrigger>数据口径与修正说明（{report.dataQuality.warnings.length}）</AccordionTrigger><AccordionContent>

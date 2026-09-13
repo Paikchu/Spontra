@@ -1,3 +1,4 @@
+import { attachDiscovery, auditDisclosureCoverage, discoveryChunkCount, scanDisclosureChunk, type DiscoveryChunk } from "./sec/discovery.ts";
 import { buildEarningsGroups, classificationKey, combineEarningsDocuments, earningsKey, identifyEarningsPeriod, isPeriodic } from "./sec/earnings.ts";
 import type { SecEarningsGroup } from "../../../shared/analysis-contract/report.ts";
 import { buildSecOutline } from "./sec/report.ts";
@@ -47,7 +48,7 @@ export type SecPipelineEnv = SecCronEnv & AnalysisReadEnv & {
 const PUBLISH_BLOCK_CHUNK_SIZE = 40;
 
 /** Planning, review and synthesis carry the judgement; node extraction is mechanical. */
-const REASONING_STAGE = /^(manager|synthesis)/;
+const REASONING_STAGE = /^(manager|synthesis|discovery-audit)/;
 
 export function modelForStage(env: SecPipelineEnv, stage: string, override?: string): string | undefined {
   if (override) return override;
@@ -137,6 +138,10 @@ export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof
         }
       }
       const status = await repository().getAnalysisJobStatus(ticker, filing.accessionNumber, jobAnalysisVersionFor(filing.form));
+      if (status === "complete") {
+        const summary = await repository().getSummary(ticker, filing.accessionNumber);
+        return summary?.discovery?.version !== "sec-discovery.v1";
+      }
       return status === null || status === "failed";
     },
     getContext: async (filing, reference) => {
@@ -168,7 +173,43 @@ export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof
         putJson(env.SEC_FILINGS, `${key}/text.json`, { document, blocks }),
         putJson(env.SEC_FILINGS, `${key}/history.json`, history),
       ]);
-      return { key, filing };
+      return { key, filing, discoveryChunks: discoveryChunkCount(document.text.length) };
+    },
+    scanDisclosures: async (_filing, reference, index, execution) => {
+      const prepared = await readPrepared(env.SEC_FILINGS, reference);
+      let chunk: DiscoveryChunk;
+      try { chunk = await scanDisclosureChunk(prepared, index, modelFor(execution)); }
+      catch (error) {
+        if (!execution?.finalAttempt) throw error;
+        chunk = {index,start:0,end:0,status:"failed",disclosures:[],rejected:0};
+      }
+      await putArtifact(env.SEC_FILINGS, reference, `discovery/chunk-${index}`, chunk);
+      return chunk;
+    },
+    finishDiscovery: async (_filing, reference, chunks) => {
+      const prepared = await readPrepared(env.SEC_FILINGS, reference);
+      const { document, blocks, ...meta } = prepared;
+      void blocks;
+      const enriched = attachDiscovery(meta, document.text.length, chunks);
+      await putJson(env.SEC_FILINGS, `${reference.key}/meta.json`, enriched);
+      await putArtifact(env.SEC_FILINGS, reference, "discovery/final", enriched.discovery);
+      return {groundedDisclosures:enriched.discovery?.disclosures.length ?? 0};
+    },
+    auditDisclosures: async (_filing, reference, plan, nodes, execution) => {
+      const meta = await readMeta(env.SEC_FILINGS, reference);
+      try {
+        const tasks = await auditDisclosureCoverage(meta, plan, nodes, modelFor(execution));
+        await putArtifact(env.SEC_FILINGS, reference, "discovery/audit", tasks);
+        await putJson(env.SEC_FILINGS, `${reference.key}/meta.json`, meta);
+        return tasks;
+      } catch (error) {
+        if (!execution?.finalAttempt) throw error;
+        const warning = "披露遗漏审校未完成，不能确认重要事项已完整覆盖。";
+        if (meta.discovery) meta.discovery.warnings.push(warning);
+        meta.materialWarnings = [...(meta.materialWarnings ?? []), warning];
+        await putJson(env.SEC_FILINGS, `${reference.key}/meta.json`, meta);
+        return [];
+      }
     },
     buildBrief: async (_filing, reference, context) => {
       const meta = await readMeta(env.SEC_FILINGS, reference);

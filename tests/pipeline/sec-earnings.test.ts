@@ -93,7 +93,7 @@ test('new source invalidates a completed report once; matching input does not re
   await repo.upsertAnalysisJob({jobId:'done',ticker:'ORCL',accessionNumber:quarterly.accessionNumber,analysisVersion:'sec-analysis.v3',status:'complete',currentStage:'published',attempt:1,requestedBy:'cron',workflowInstanceId:'old',updatedAt:'2026-09-11T22:00:00Z'});
   const ops=createSecPipelineOperations({DB:db,SEC_TRACKED_TICKERS:'ORCL'} as never);
   assert.equal(await ops.shouldAnalyze(source,'cron'),true);
-  await repo.setSummary(quarterly,{ticker:'ORCL',form:'10-Q',filingDate:quarterly.filingDate,accessionNumber:quarterly.accessionNumber,headline:'Merged',bullets:[],analystView:'',source:'deepseek',generatedAt:'2026-09-11T22:00:00Z',earningsGroup:source.earningsGroup});
+  await repo.setSummary(quarterly,{ticker:'ORCL',form:'10-Q',filingDate:quarterly.filingDate,accessionNumber:quarterly.accessionNumber,headline:'Merged',bullets:[],analystView:'',source:'deepseek',generatedAt:'2026-09-11T22:00:00Z',discovery:{version:'sec-discovery.v1',totalCharacters:0,scannedCharacters:0,failedChunks:[],disclosures:[],warnings:[]},earningsGroup:source.earningsGroup});
   assert.equal(await ops.shouldAnalyze(source,'cron'),false);
   assert.equal(await ops.shouldAnalyze(source,'manual'),true);
   db.raw.close();

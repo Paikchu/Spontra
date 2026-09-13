@@ -506,3 +506,20 @@ test("earnings release and periodic filing execute once while same-day managemen
   assert.equal(prepared[0].earningsGroup?.sources.length,2);
   assert.deepEqual(events,[executive.accessionNumber]);
 });
+
+test("disclosure discovery runs before planning and audit may add an omitted theme before review", async () => {
+  const stages:string[]=[];
+  const extra=nodeSpec({id:'insider-plan',title:'交易计划',question:'计划状态是什么？',sectionIds:['plan']});
+  let reviewed:string[]=[];
+  const result=await executeSecAnalysisWorkflow({ticker:filing.ticker,requestedBy:'manual'},'discovery',stepRecorder(stages),operations({
+    async prepare(){return {key:'test',filing,discoveryChunks:2};},
+    async scanDisclosures(_filing,_reference,index){return {index,start:index*20,end:index*20+20,status:'complete',disclosures:[],rejected:0};},
+    async finishDiscovery(){return {groundedDisclosures:1};},
+    async getContext(){return {currentPeriodId:'TESTCO:2026-06-30:annual',qoqPeriodId:null,yoyPeriodId:null,history:{registryVersion:'sec-canonical-series.v1',series:[]}};},
+    async auditDisclosures(){return [extra];},
+    async review(_filing,_ref,_brief,plan,nodes){reviewed=plan.nodes.map(n=>n.id);assert.ok(nodes.some(n=>n.id==='insider-plan'));return {status:'complete',questions:[],repairTasks:[],unresolvedQuestions:[],coverageScore:1,stopReason:'complete'};},
+  }));
+  assert.deepEqual(result.failed,[]);assert.ok(reviewed.includes('insider-plan'));
+  assert.ok(stages.indexOf(`discovery-finish:${filing.accessionNumber}`)<stages.indexOf(`manager:${filing.accessionNumber}`));
+  assert.ok(stages.indexOf(`discovery-repair:${filing.accessionNumber}:insider-plan`)<stages.indexOf(`manager-review:${filing.accessionNumber}:round:0`));
+});

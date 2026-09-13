@@ -53,7 +53,18 @@ export type ComparisonResult = {
   }>;
 };
 
+export type SecDisclosure = {
+  id: string; title: string; quote: string; start: number; end: number; evidenceIds: string[];
+  whyItMatters: string; question: string; materiality: "high" | "medium" | "low";
+  polarity: "positive" | "negative" | "mixed" | "neutral";
+};
+export type SecDiscovery = {
+  version: "sec-discovery.v1"; totalCharacters: number; scannedCharacters: number;
+  failedChunks: number[]; disclosures: SecDisclosure[]; warnings: string[];
+};
+
 export type PublishedSecReport = {
+  discovery?: SecDiscovery;
   publication?: { filing: SecFiling; summary: SecFilingSummary };
   presentation?: SecPresentation;
   sourceMaterials?: SecSourceMaterial[];
@@ -144,6 +155,7 @@ export type SecFiling = {
 };
 
 export type SecFilingSummary = {
+  discovery?: SecDiscovery;
   earningsGroup?: SecEarningsGroup;
   ticker: string;
   form: string;

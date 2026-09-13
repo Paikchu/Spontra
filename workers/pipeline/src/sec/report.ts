@@ -116,8 +116,10 @@ export function buildSecNodeInput(spec: SecNodeSpec, outline: SecOutlineSection[
   const resolved = spec.sectionIds.flatMap((id) => {
     const section = outline.find((candidate) => candidate.id === id);
     if (!section) return [];
-    const body = sectionText(text, section);
-    return body ? [{ section, body }] : [];
+    const raw = text.slice(section.start, section.end);
+    const body = raw.trim();
+    const start = section.start + raw.length - raw.trimStart().length;
+    return body ? [{ section: { ...section, start, end: start + body.length }, body }] : [];
   });
   const totalCharacters = resolved.reduce((sum, item) => sum + item.body.length, 0);
   const budgets = allocateSectionBudgets(resolved.map((item) => item.body.length), totalCharacters);

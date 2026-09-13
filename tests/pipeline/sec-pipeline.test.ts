@@ -205,8 +205,8 @@ test("lets the manager plan a variable node graph from headings without seeing f
   assert.equal(plan.nodes.length, prepared.outline.length);
   assert.ok(plan.nodes.length >= 3);
   assert.doesNotMatch(JSON.stringify(managerPayload), /\$120 million|Operating cash flow was/);
-  assert.match(managerSystem, /6 至 12 个/);
-  assert.match(managerSystem, /Not applicable/);
+  assert.match(managerSystem, /通常4至8个/);
+  assert.match(managerSystem, /不能仅凭标题排除/);
 });
 
 test("isolates a failed dynamic node while preserving completed node analysis", async () => {
@@ -535,7 +535,7 @@ test("rejects an incomplete synthesis before it can replace the last successful 
     analysisContext(prepared.periodId, xbrlHistory("120")),
     async () => ({
       headline: "收入增长",
-      bullets: [{ label: "收入", detail: "收入增长。", importance: "high" }],
+      bullets: [],
       analystView: "需求仍需观察。",
       report: "正文过短。",
       keyMetrics: [], changes: { qoq: [], yoy: [], guidance: [], risks: [] }, dataQuality: { coverage: 1, warnings: [] },
@@ -543,7 +543,7 @@ test("rejects an incomplete synthesis before it can replace the last successful 
     new Date("2026-08-05T00:00:00.000Z"),
     normalizePlan(prepared.outline[0].id),
     [{ id: "revenue-growth", title: "收入增长", status: "complete", findings: [], narrative: "收入增长。", evidence: [] }],
-  ), /3–5 core conclusions/);
+  ), /1–5 core conclusions/);
 });
 
 test("accepts complete synthesis reports outside the former length range", async () => {
