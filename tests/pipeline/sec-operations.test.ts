@@ -74,8 +74,9 @@ test("streams the completion so the provider proxy cannot time the request out",
     return sse(delta('{"head'), delta('line":"ok"}', "stop"), "[DONE]");
   };
 
-  const result = await callWorkerSecModel(modelEnv, fetcher, "node:test", "Return JSON", {});
+  const result = await callWorkerSecModel(modelEnv, fetcher, "earnings-period", "Identify the fiscal period.", {});
 
+  assert.match(JSON.stringify(requestBody.messages), /JSON/, "JSON mode requires an explicit JSON instruction even for classification prompts");
   assert.equal(requestBody.stream, true, "stream must be requested");
   assert.deepEqual(requestBody.response_format, { type: "json_object" });
   assert.equal(acceptHeader, "text/event-stream");

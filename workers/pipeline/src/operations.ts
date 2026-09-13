@@ -473,7 +473,7 @@ export async function callWorkerSecModel(
     body: JSON.stringify({
       model: modelOverride || env.SEC_ANALYSIS_MODEL || "qwen3.8-flash",
       messages: [
-        { role: "system", content: system },
+        { role: "system", content: `${system}\nReturn one valid JSON object only.` },
         { role: "user", content: JSON.stringify(payload) },
       ],
       response_format: { type: "json_object" },
