@@ -2294,3 +2294,17 @@ a[data-navigation-loading="true"]::after { content: ""; position: absolute; righ
   .navigation-skeleton { animation: navigation-pulse 1.8s ease-in-out infinite; }
 }
 @keyframes navigation-pulse { 50% { opacity: .55; } }
+
+/* Shared fluid content rail: desktop uses the body's 10% side gutters.
+   Stock/search workspaces and articles must not add a fixed-width cap or inner gutter. */
+:root { --content-rail-width: calc(100% - 40px); }
+@media (min-width: 1025px) { :root { --content-rail-width: 100%; } }
+@media (max-width: 820px) { :root { --content-rail-width: calc(100% - 32px); } }
+@media (max-width: 620px) { :root { --content-rail-width: calc(100% - 24px); } }
+html body :is(.page-shell, .earning-report.unified-stock, .earning-report .sec-report-shell, .earning-report .sec-app-shell) {
+  box-sizing: border-box;
+  width: var(--content-rail-width);
+  max-width: none;
+  margin-inline: auto;
+  padding-inline: 0;
+}

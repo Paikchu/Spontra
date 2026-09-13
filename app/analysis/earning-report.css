@@ -3302,18 +3302,3 @@
   .earning-report .sec-trend-date { font-size: 16px; }
   .earning-report .sec-trend-label[data-mobile-hidden="true"] { display: none; }
 }
-
-/* One geometry for stock pages and articles, independent of route CSS load order.
-   Cached pages remain mounted during AppNavigation, so neither route may resize the other. */
-.earning-report.unified-stock,
-.earning-report .sec-report-shell {
-  box-sizing: border-box;
-  width: min(1180px, 100%);
-  max-width: none;
-  margin-inline: auto;
-  padding-inline: 24px;
-}
-@media (max-width: 620px) {
-  .earning-report.unified-stock,
-  .earning-report .sec-report-shell { padding-inline: 4px; }
-}
