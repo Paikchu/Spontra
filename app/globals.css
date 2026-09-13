@@ -2308,3 +2308,13 @@ html body :is(.page-shell, .earning-report.unified-stock, .earning-report .sec-r
   margin-inline: auto;
   padding-inline: 0;
 }
+/* Legacy document rules must not leave a narrow text column inside the fluid article. */
+.earning-report .sec-report-shell .sec-report-body {
+  width: 100%;
+  max-width: none;
+  margin-inline: 0;
+}
+.earning-report .sec-report-shell .sec-report-header > div > p,
+.earning-report .sec-report-shell .sec-report-evidence blockquote {
+  max-width: none;
+}
