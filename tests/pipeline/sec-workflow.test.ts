@@ -488,3 +488,21 @@ test('repairs missing presentation in its own durable step before publication', 
   assert.ok(steps.indexOf(`synthesis:${filing.accessionNumber}`) < steps.indexOf(`presentation:${filing.accessionNumber}`));
   assert.ok(steps.indexOf(`presentation:${filing.accessionNumber}`) < steps.indexOf(`publish:${filing.accessionNumber}`));
 });
+
+test("earnings release and periodic filing execute once while same-day management event executes separately", async () => {
+  const { buildEarningsGroups } = await import('../../workers/pipeline/src/sec/earnings.ts');
+  const release = { ...filing, form: '8-K', accessionNumber: '0000000001-26-000002', filingDate: '2026-07-29', reportDate: '2026-07-29' };
+  const executive = { ...release, accessionNumber: '0000000001-26-000003', filingDate: '2026-07-30' };
+  const prepared: SecFiling[] = [];
+  const events: string[] = [];
+  const result = await executeSecAnalysisWorkflow({ ticker: filing.ticker, requestedBy: 'manual' }, 'grouped-test', stepRecorder([]), operations({
+    async discover() { return {feed: {}, filings: [filing,executive,release]}; },
+    async classifyEarnings(source) {return source.accessionNumber === executive.accessionNumber ? null : '2026-06-30';},
+    async groupEarnings(sources,periods) {return buildEarningsGroups(sources,periods);},
+    async prepare(source) {prepared.push(source);return {key: source.accessionNumber,filing:source};},
+    async publishEvent(summary) {events.push(summary.accessionNumber);},
+  }));
+  assert.deepEqual(result.analyzed,[filing.accessionNumber,executive.accessionNumber]);
+  assert.equal(prepared[0].earningsGroup?.sources.length,2);
+  assert.deepEqual(events,[executive.accessionNumber]);
+});

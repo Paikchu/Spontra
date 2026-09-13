@@ -120,6 +120,8 @@ export type WorkflowJobUpdate = {
 };
 
 export type SecPipelineOperations = {
+  classifyEarnings?(filing: SecFiling, execution?: SecModelExecution): Promise<string | null>;
+  groupEarnings?(filings: SecFiling[], periods: Map<string, string | null>): Promise<SecFiling[]>;
   discover(ticker: string): Promise<{ feed: unknown; filings: SecFiling[] }>;
   publishFeed(feed: unknown): Promise<void>;
   shouldAnalyze(filing: SecFiling, requestedBy: SecWorkflowParams["requestedBy"]): Promise<boolean>;
@@ -145,14 +147,26 @@ export async function executeSecAnalysisWorkflow(
   operations: SecPipelineOperations,
 ) {
   const discovery = await step.do("discover", () => operations.discover(params.ticker));
+  if (operations.classifyEarnings && operations.groupEarnings) {
+    const periods = new Map<string, string | null>();
+    for (const filing of discovery.filings) {
+      const period = await step.do(`classify-earnings:${filing.accessionNumber}`, (context) => operations.classifyEarnings!(filing, executionFor(context))).catch(() => null);
+      periods.set(filing.accessionNumber, period);
+    }
+    discovery.filings = await step.do("group-earnings", () => operations.groupEarnings!(discovery.filings, periods));
+    discovery.feed = { ...(discovery.feed as Record<string, unknown>), filings: discovery.filings };
+  }
   await step.do("publish-feed", () => operations.publishFeed(discovery.feed));
   const analyzed: string[] = [];
   const skipped: string[] = [];
   const failed: string[] = [];
 
-  const filings = params.backfill
+  const candidates = params.backfill
     ? discovery.filings.filter((filing) => /^(10-K|10-Q|20-F|8-K|6-K)(\/A)?$/.test(filing.form))
     : selectLatestWorkflowFilings(discovery.filings);
+  const filings = candidates.map((filing) => filing.earningsGroup
+    ? discovery.filings.find((candidate) => candidate.accessionNumber === filing.earningsGroup!.canonicalAccession) ?? filing
+    : filing).filter((filing, index, all) => all.findIndex((candidate) => candidate.accessionNumber === filing.accessionNumber) === index);
   for (const filing of filings) {
     const accession = filing.accessionNumber;
     const jobId = `${filing.ticker}:${accession}:${jobAnalysisVersionFor(filing.form)}:${workflowInstanceId}`;

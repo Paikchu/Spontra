@@ -26,6 +26,7 @@ export default async function StockSecReportPage({ params, searchParams }: { par
   const security = findSecurity(ticker);
   const filing = result.filing;
   return <SecReportDocument companyName={security?.name ?? result.company?.name ?? ticker} filing={{
+    earningsGroup: filing.earningsGroup,
     ticker,
     cik: result.company?.cik ?? "",
     cikNumber: Number(result.company?.cik ?? 0),

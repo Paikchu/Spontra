@@ -1,7 +1,7 @@
-import { cleanSecAccession, type SecFiling, type SecFilingWithSummary } from "./sec.ts";
-import { decodePageCursor, encodePageCursor, normalizeTrackedTicker } from "./config.ts";
+import { cleanSecAccession, type SecFilingWithSummary } from "./sec.ts";
+import { decodePageCursor, normalizeTrackedTicker } from "./config.ts";
 import { D1SecRepository } from "./d1.ts";
-import { hydrateCachedFilings, readCachedSecFeed } from "./feed.ts";
+import { readCachedSecFeed } from "./feed.ts";
 import { findSecurity } from "../catalog/security-directory.ts";
 import { AnalysisRequestError } from "../read-api/contract-support/errors.ts";
 import {
@@ -42,24 +42,10 @@ export async function getPublicFilingPage(
   const limit = parseFilingLimit(rawLimit);
   const cursor = decodePageCursor(rawCursor);
   const cachedFeed = typeof repository.getCache === "function" ? await readCachedSecFeed(repository, ticker) : null;
-  // The cache only holds the newest window. A cursor older than its last filing selects nothing here,
-  // so a deep page never pays to hydrate a window it cannot use.
-  const cachedFilings = cachedFeed?.filings.filter((filing) => isBeforeCursor(filing, cursor)) ?? [];
-  const cachedPage = cachedFilings.slice(0, limit);
+  // Membership and the canonical report can change after discovery. Page the durable grouping,
+  // never an older per-file feed window; otherwise releases reappear or cross page boundaries.
   const total = cursor ? null : await repository.countPublicFilings(ticker);
-  const last = cachedPage.at(-1);
-  // The cache answers a page only when it can also say what follows it: either it still holds older
-  // filings, or the count says there are none. Otherwise D1 — which keeps the whole history — does,
-  // so the cursor chain runs past the window instead of ending at it.
-  const cacheAnswersPage = cachedFilings.length > limit || (total !== null && total <= cachedPage.length);
-  const page = last && cacheAnswersPage
-    ? {
-      filings: await hydrateCachedFilings(repository, ticker, cachedPage),
-      nextCursor: cachedFilings.length > limit
-        ? encodePageCursor({ filingDate: last.filingDate, accessionNumber: last.accessionNumber })
-        : null,
-    }
-    : await repository.listPublicFilings(ticker, rawCursor, limit);
+  const page = await repository.listPublicFilings(ticker, rawCursor, limit);
   const company = cachedFeed?.company ?? (page.filings[0] ? companyFromFiling(page.filings[0]) : companyFromDirectory(ticker));
   const filings = await Promise.all(page.filings.map(async (filing) => toPublicFiling(repository, filing, company?.name ?? ticker)));
   return {
@@ -101,10 +87,7 @@ export async function getPublicFiling(
       filing: await toPublicFiling(repository, filing, company?.name ?? ticker) };
   }
   const cachedFeed = typeof repository.getCache === "function" ? await readCachedSecFeed(repository, ticker) : null;
-  const cached = cachedFeed?.filings.find((candidate) => candidate.accessionNumber === accession);
-  const filing = cached
-    ? (await hydrateCachedFilings(repository, ticker, [cached]))[0]!
-    : await repository.getPublicFiling(ticker, accession);
+  const filing = await repository.getPublicFiling(ticker, accession);
   if (!filing) return null;
   const company = cachedFeed?.company ?? companyFromFiling(filing) ?? companyFromDirectory(ticker);
   return {
@@ -116,10 +99,12 @@ export async function getPublicFiling(
 }
 
 async function toPublicFiling(repository: D1SecRepository, filing: SecFilingWithSummary, companyName: string): Promise<PublicSecFiling> {
+  const jobAccession = filing.earningsGroup?.canonicalAccession ?? filing.accessionNumber;
   if (filing.analysis?.publication) {
-    filing = { ...filing.analysis.publication.filing, summary: filing.analysis.publication.summary, analysis: filing.analysis };
+    filing = { ...filing.analysis.publication.filing, summary: filing.analysis.publication.summary, analysis: filing.analysis,
+      ...(filing.earningsGroup ? { earningsGroup: filing.earningsGroup } : {}) };
   }
-  const job = await readJobSummary(repository, filing.ticker, filing.accessionNumber);
+  const job = await readJobSummary(repository, filing.ticker, jobAccession);
   const report = filing.analysis;
   /**
    * Unchanged mapping — existing readers branch on these four values. It describes the *published
@@ -133,6 +118,7 @@ async function toPublicFiling(repository: D1SecRepository, filing: SecFilingWith
     : job?.status === "queued" || job?.status === "running" ? "processing" : "not_collected";
   const { analysisSchemaVersion, contentRevision } = splitReportVersion(report?.reportVersion ?? null);
   return {
+    ...(filing.earningsGroup ? { earningsGroup: filing.earningsGroup } : {}),
     accessionNumber: filing.accessionNumber,
     ticker: filing.ticker,
     companyName,
@@ -176,12 +162,6 @@ function toRunSummary(job: JobSummary | null): AnalysisRunSummary {
   if (!job.status) return { state: "none", updatedAt: null, errorCode: null };
   const state = job.status === "complete" ? "succeeded" : job.status === "failed" ? "failed" : job.status;
   return { state, updatedAt: job.updatedAt, errorCode: job.errorCode };
-}
-
-function isBeforeCursor(filing: SecFiling, cursor: { filingDate: string; accessionNumber: string } | null): boolean {
-  if (!cursor) return true;
-  return filing.filingDate < cursor.filingDate
-    || (filing.filingDate === cursor.filingDate && filing.accessionNumber < cursor.accessionNumber);
 }
 
 function companyFromFiling(filing: SecFilingWithSummary): PublicFilingCompany | null {

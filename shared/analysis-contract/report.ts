@@ -117,7 +117,17 @@ export type SecNodeResult = {
   error?: string;
 };
 
+export type SecEarningsGroup = {
+  id: string;
+  periodEnd: string;
+  earningsDate: string;
+  canonicalAccession: string;
+  inputKey: string;
+  sources: Omit<SecFiling, "earningsGroup">[];
+};
+
 export type SecFiling = {
+  earningsGroup?: SecEarningsGroup;
   ticker: string;
   cik: string;
   cikNumber: number;
@@ -134,6 +144,7 @@ export type SecFiling = {
 };
 
 export type SecFilingSummary = {
+  earningsGroup?: SecEarningsGroup;
   ticker: string;
   form: string;
   filingDate: string;

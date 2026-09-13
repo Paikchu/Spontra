@@ -79,6 +79,7 @@ export type SecNodeResult = {
 };
 
 export type SecFiling = {
+  earningsGroup?: import("../../../../shared/analysis-contract/report.ts").SecEarningsGroup;
   ticker: string;
   cik: string;
   cikNumber: number;
@@ -95,6 +96,7 @@ export type SecFiling = {
 };
 
 export type SecFilingSummary = {
+  earningsGroup?: import("../../../../shared/analysis-contract/report.ts").SecEarningsGroup;
   ticker: string;
   form: string;
   filingDate: string;

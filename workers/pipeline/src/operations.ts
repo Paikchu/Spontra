@@ -1,3 +1,6 @@
+import { buildEarningsGroups, classificationKey, combineEarningsDocuments, earningsKey, identifyEarningsPeriod, isPeriodic } from "./sec/earnings.ts";
+import type { SecEarningsGroup } from "../../../shared/analysis-contract/report.ts";
+import { buildSecOutline } from "./sec/report.ts";
 import {
   analyzePreparedSecNode,
   buildPreparedSecBrief,
@@ -72,6 +75,30 @@ export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof
     }
   };
   return {
+    classifyEarnings: async (filing, execution) => {
+      if (isPeriodic(filing.form)) return filing.reportDate || null;
+      const cached = await repository().getCache<{ periodEnd: string | null }>(classificationKey(filing));
+      if (cached) return cached.payload.periodEnd;
+      const prepared = await prepareSecFiling(filing, { userAgent: env.SEC_USER_AGENT, fetcher });
+      const periodEnd = await identifyEarningsPeriod(prepared, modelFor(execution));
+      await repository().setCache(classificationKey(filing), { periodEnd }, new Date().toISOString());
+      return periodEnd;
+    },
+    groupEarnings: async (filings, periods) => {
+      const known = new Map(filings.map((filing) => [filing.accessionNumber, filing]));
+      // Keep confirmed older releases when the SEC discovery window rolls forward.
+      for (const filing of filings) {
+        const prior = await repository().getCache<SecEarningsGroup>(earningsKey(filing.ticker, filing.accessionNumber));
+        if (!prior || prior.payload.periodEnd !== periods.get(filing.accessionNumber)) continue;
+        for (const source of prior.payload.sources) {
+          if (!known.has(source.accessionNumber)) known.set(source.accessionNumber, source);
+          periods.set(source.accessionNumber, prior.payload.periodEnd);
+        }
+      }
+      const grouped = buildEarningsGroups([...known.values()], periods);
+      await repository().saveEarningsGroups(grouped);
+      return grouped;
+    },
     discover: (ticker) => discoverSecTicker(ticker, { userAgent: env.SEC_USER_AGENT, fetcher }),
     publishFeed: async (feed) => {
       const typedFeed = feed as SecFilingFeed;
@@ -88,6 +115,13 @@ export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof
       const ticker = cleanSecTicker(filing.ticker);
       if (!ticker) throw new Error("SEC 任务查询无效。");
       assertTrackedTicker(env, ticker);
+      if (filing.earningsGroup) {
+        const summary = await repository().getSummary(ticker, filing.accessionNumber);
+        if (summary?.earningsGroup?.inputKey !== filing.earningsGroup.inputKey) {
+          const active = await repository().getAnalysisJobStatus(ticker, filing.accessionNumber, jobAnalysisVersionFor(filing.form));
+          return active !== "running" && active !== "queued";
+        }
+      }
       const status = await repository().getAnalysisJobStatus(ticker, filing.accessionNumber, jobAnalysisVersionFor(filing.form));
       return status === null || status === "failed";
     },
@@ -103,7 +137,15 @@ export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof
       return { ...context, history: context.history ?? history };
     },
     prepare: async (filing) => {
-      const prepared = await prepareSecFiling(filing, { userAgent: env.SEC_USER_AGENT, fetcher });
+      let prepared = await prepareSecFiling(filing, { userAgent: env.SEC_USER_AGENT, fetcher });
+      if (filing.earningsGroup) {
+        const supplements: PreparedSecFiling[] = [];
+        for (const source of filing.earningsGroup.sources) {
+          if (source.accessionNumber !== filing.accessionNumber) supplements.push(await prepareSecFiling(source, { userAgent: env.SEC_USER_AGENT, fetcher }));
+        }
+        prepared = combineEarningsDocuments(prepared, supplements);
+        prepared.outline = buildSecOutline(prepared.document);
+      }
       const history = await fetchCompanyHistory(filing.cik, filing.ticker, env.SEC_USER_AGENT, fetcher).catch(() => EMPTY_HISTORY);
       const key = preparedKey(filing.ticker, filing.accessionNumber);
       const { blocks, document, ...meta } = prepared;
@@ -145,11 +187,15 @@ export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof
       await putArtifact(env.SEC_FILINGS, reference, `manager-review/round-${round}`, result);
       return result;
     },
-    summarizeEvent: async (_filing, reference, execution) => summarizePreparedSecEvent(await readPrepared(env.SEC_FILINGS, reference), modelFor(execution), new Date(), await readHistory(env.SEC_FILINGS, reference)),
+    summarizeEvent: async (filing, reference, execution) => ({
+      ...await summarizePreparedSecEvent(await readPrepared(env.SEC_FILINGS, reference), modelFor(execution), new Date(), await readHistory(env.SEC_FILINGS, reference)),
+      ...(filing.earningsGroup ? { earningsGroup: filing.earningsGroup } : {}),
+    }),
     summarize: async (_filing, reference, context, plan, nodes, brief, review, execution) => {
       await putArtifact(env.SEC_FILINGS, reference, "nodes/final", nodes);
       if (review) await putArtifact(env.SEC_FILINGS, reference, "manager-review/final", review);
       const result = await summarizePreparedSecFiling(await readMeta(env.SEC_FILINGS, reference), context, modelFor(execution), new Date(), plan, nodes, brief, review);
+      if (result.summary && _filing.earningsGroup) result.summary.earningsGroup = _filing.earningsGroup;
       const synthesisKey = await putArtifact(env.SEC_FILINGS, reference, "synthesis", result);
       return { ...result, artifact: { ...result.artifact, blocks: [], artifactKeys: collectArtifactKeys(reference, synthesisKey) } };
     },
@@ -188,6 +234,10 @@ export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof
       if (!accessionNumber || !ticker) throw new Error("SEC 分析结果无效。");
       assertTrackedTicker(env, ticker);
       const store = repository();
+      if (artifact.filing.earningsGroup) {
+        const latest = await store.getCache<SecEarningsGroup>(earningsKey(ticker, accessionNumber));
+        if (latest?.payload.inputKey !== artifact.filing.earningsGroup.inputKey) throw new Error("Earnings sources changed during analysis; retry with the current group");
+      }
       const normalizedFiling = { ...artifact.filing, ticker, accessionNumber };
       for (const blocks of chunks(citedBlocks, PUBLISH_BLOCK_CHUNK_SIZE)) {
         await store.saveFilingBlocks(normalizedFiling, blocks);
@@ -233,6 +283,7 @@ const EMPTY_HISTORY: SecHistorySnapshot = { registryVersion: "sec-canonical-seri
 
 function toStoredFiling(filing: SecFilingFeed["filings"][number]): SecFiling {
   return {
+    ...(filing.earningsGroup ? { earningsGroup: filing.earningsGroup } : {}),
     ticker: filing.ticker,
     cik: filing.cik,
     cikNumber: filing.cikNumber,

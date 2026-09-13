@@ -25,7 +25,7 @@ import { FinancialMetrics } from "./FinancialMetrics";
 
 const sections = [
   ["outlook", "业务前瞻"], ["financials", "财务指标"], ["technical", "技术面指标"],
-  ["holdings", "持仓构成"], ["plan", "持仓计划"], ["sec-filings", "披露时间线"],
+  ["holdings", "持仓构成"], ["plan", "持仓计划"], ["sec-filings", "财报与事件"],
 ] as const;
 
 function tabFromHash(path: string) {
@@ -181,7 +181,7 @@ export function StockDetail({ ticker, companyName, exchange, position, trades, p
           {visited.has("plan") && (planStatus === "loading" ? <Skeleton className="h-36 w-full" aria-label="正在读取计划" /> : <PlanEditor key={ticker} ticker={ticker} initialPlan={plan} unavailable={planStatus === "unavailable"} />)}
         </TabsContent>
         <TabsContent value="sec-filings" forceMount hidden={activeTab !== "sec-filings"}>
-          {visited.has("sec-filings") && <div className="stock-analysis-filings stock-detail-timeline"><SecFilingsSection ticker={ticker} title="披露时间线" /></div>}
+          {visited.has("sec-filings") && <div className="stock-analysis-filings stock-detail-timeline"><SecFilingsSection ticker={ticker} title="财报与独立事件" /></div>}
         </TabsContent>
       </Tabs>
     </main>
@@ -200,7 +200,7 @@ function RecentDisclosures({ ticker, onViewAll }: { ticker: string; onViewAll: (
     return () => controller.abort();
   }, [ticker]);
   return <section aria-labelledby="recent-disclosures-heading"><h2 id="recent-disclosures-heading">最近披露</h2>
-    {failed ? <p className="text-muted-foreground">披露暂时无法读取</p> : filings === null ? <Skeleton className="h-16 w-full" /> : filings.length ? <ul className="stock-detail-recent">{filings.map((filing) => <li key={filing.accessionNumber}><Badge variant={/10-K|10-Q|20-F/.test(filing.form) ? "default" : "secondary"}>{filing.form}</Badge><span>{filing.filingDate} · {/10-K|20-F/.test(filing.form) ? "年度报告" : /10-Q/.test(filing.form) ? "季度报告" : "重大事项报告"}</span></li>)}</ul> : <p className="text-muted-foreground">暂无披露</p>}
+    {failed ? <p className="text-muted-foreground">披露暂时无法读取</p> : filings === null ? <Skeleton className="h-16 w-full" /> : filings.length ? <ul className="stock-detail-recent">{filings.map((filing) => <li key={filing.accessionNumber}><Badge variant={/10-K|10-Q|20-F/.test(filing.form) ? "default" : "secondary"}>{filing.earningsGroup ? "财报" : filing.form}</Badge><span>{filing.earningsGroup?.earningsDate ?? filing.filingDate} · {filing.earningsGroup ? `报告期 ${filing.earningsGroup.periodEnd}` : /10-K|20-F/.test(filing.form) ? "年度报告" : /10-Q/.test(filing.form) ? "季度报告" : "重大事项报告"}</span></li>)}</ul> : <p className="text-muted-foreground">暂无披露</p>}
     <Button variant="outline" className="w-full" onClick={onViewAll}>全部披露</Button>
   </section>;
 }

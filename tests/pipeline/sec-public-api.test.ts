@@ -41,7 +41,7 @@ test("rejects malformed public ticker paths instead of rewriting them", async ()
   );
 });
 
-test("pages past the cache window without hydrating filings it cannot serve", async () => {
+test("always pages durable grouping rather than a stale per-file cache window", async () => {
   const cached = Array.from({ length: 40 }, (_, index) => ({
     ticker: "MSFT", cik: "0000789019", cikNumber: 789019, companyName: "Microsoft", form: "8-K",
     filingDate: `2026-${String(12 - Math.floor(index / 4)).padStart(2, "0")}-${String(28 - (index % 4)).padStart(2, "0")}`,
@@ -55,16 +55,17 @@ test("pages past the cache window without hydrating filings it cannot serve", as
     async getCache() { return { payload: { ticker: "MSFT", company: null, filings: cached, fetchedAt: "2026-12-28T00:00:00Z", status: "ready" }, fetchedAt: "2026-12-28T00:00:00Z" }; },
     async getSummary(_ticker: string, accessionNumber: string) { summaryReads.push(accessionNumber); return null; },
     async countPublicFilings() { return 137; },
-    async listPublicFilings(_ticker: string, cursor: string | null) { listed.push(cursor); return { filings: [], nextCursor: null }; },
+    async listPublicFilings(_ticker: string, cursor: string | null) { listed.push(cursor); return { filings: [], nextCursor: cursor ? null : encodePageCursor({ filingDate: "2026-08-28", accessionNumber: "0001-26-000980" }) }; },
     async getLatestAnalysisJobStatus() { return null; },
   };
 
   const first = await getPublicFilingPage(fakeRepository as never, "msft", null, "20");
-  assert.equal(first.filings.length, 20);
+  assert.equal(first.filings.length, 0);
   assert.equal(first.total, 137);
-  // The cache window holds 40 filings; only the 20 this page returns are hydrated.
-  assert.equal(summaryReads.length, 20);
-  assert.equal(listed.length, 0);
+  // Cached individual filings must not bypass durable grouping, even on the first page.
+  assert.equal(summaryReads.length, 0);
+  assert.deepEqual(listed, [null]);
+  listed.length = 0;
 
   // The window ends exactly at this page, so D1 answers it and the cursor chain carries on past 40.
   summaryReads.length = 0;

@@ -23,7 +23,7 @@ const TIMELINE_EMPTY_PAGE_LIMIT = 6;
 
 type Page = { filings: PublicSecFiling[]; nextCursor: string | null; checkedAt: string | null; total?: number | null };
 
-export function SecFilingsSection({ ticker, title = "SEC 文件与 AI 解读" }: { ticker: string; title?: string }) {
+export function SecFilingsSection({ ticker, title = "财报与独立事件" }: { ticker: string; title?: string }) {
   const [filings, setFilings] = useState<PublicSecFiling[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [total, setTotal] = useState(0);
@@ -96,7 +96,7 @@ export function SecFilingsSection({ ticker, title = "SEC 文件与 AI 解读" }:
       <div className="detail-section-heading">
         <h2 id="sec-filings-title">{title}</h2>
       </div>
-      {status === "loading" && <div role="status" className="flex flex-col gap-3 py-5"><span className="sr-only">正在读取 SEC 文件…</span><Skeleton className="h-8 w-2/3" /><Skeleton className="h-40 w-full" /></div>}
+      {status === "loading" && <div role="status" className="flex flex-col gap-3 py-5"><span className="sr-only">正在读取财报与事件…</span><Skeleton className="h-8 w-2/3" /><Skeleton className="h-40 w-full" /></div>}
       {status === "error" && <Alert variant="destructive"><AlertDescription>SEC 数据读取失败。<Button variant="outline" size="sm" onClick={() => void load(null, false)}>重新读取</Button></AlertDescription></Alert>}
       {status === "ready" && filings.length === 0 && <Empty><EmptyHeader><EmptyDescription>暂未收录该股票的 SEC 报告。</EmptyDescription></EmptyHeader></Empty>}
       {status === "ready" && filings.length > 0 && (
@@ -106,16 +106,16 @@ export function SecFilingsSection({ ticker, title = "SEC 文件与 AI 解读" }:
               <SecFilingCard
                 filing={filing}
                 isLatestPeriodic={isPeriodicFiling(filing.form) && !filings.slice(0, index).some((candidate) => isPeriodicFiling(candidate.form))}
-                key={filing.accessionNumber}
+                key={filing.earningsGroup?.id ?? filing.accessionNumber}
               />
             ))}
           </Accordion>
           <p className="sec-filing-rail-status" ref={railEndRef} role="status">
             {loadingMore
-              ? "正在载入更早申报…"
+              ? "正在载入更早报告…"
               : total > filings.length
                 ? `已显示 ${filings.length} / ${total} 份`
-                : `已显示全部 ${filings.length} 份申报`}
+                : `已显示全部 ${filings.length} 份报告与事件`}
           </p>
         </div>
       )}
@@ -129,22 +129,31 @@ function SecFilingCard({ filing, isLatestPeriodic }: { filing: PublicSecFiling; 
   // asks the same question it does. Requiring the current summary version made
   // the link disappear for the whole regeneration window after a version bump,
   // while the report it points at was still on file and still readable.
-  const fullReportHref = isLatestPeriodic && filing.summary?.report
-    ? `/analysis/stocks/${encodeURIComponent(filing.ticker)}/sec/${encodeURIComponent(filing.accessionNumber)}`
+  const group = filing.earningsGroup;
+  const fullReportHref = filing.summary?.report
+    ? `/analysis/stocks/${encodeURIComponent(filing.ticker)}/sec/${encodeURIComponent(group?.canonicalAccession ?? filing.accessionNumber)}`
     : null;
   return (
-    <AccordionItem value={filing.accessionNumber} className="analysis-filing-item">
+    <AccordionItem value={group?.id ?? filing.accessionNumber} className="analysis-filing-item">
       <AccordionTrigger>
         <span className="analysis-filing-heading">
           <span className="analysis-filing-meta">
-            <Badge variant={isLatestPeriodic ? "default" : "secondary"}>{filing.form}</Badge>
-            <span>{formatYear(filing.filingDate)}年{formatMonthDay(filing.filingDate)}</span>
-            <span>{formDescription(filing.form)}{filing.reportDate ? ` · 报告期 ${formatMonthDay(filing.reportDate)}` : ""}</span>
+            <Badge variant={isLatestPeriodic ? "default" : "secondary"}>{group ? "财报" : filing.form}</Badge>
+            <span>{formatYear(group?.earningsDate ?? filing.filingDate)}年{formatMonthDay(group?.earningsDate ?? filing.filingDate)}</span>
+            <span>{group ? `业绩发布 · 截至 ${group.periodEnd}` : formDescription(filing.form)}</span>
           </span>
           <span className="analysis-filing-headline">{headline || "AI 解读生成中"}</span>
         </span>
       </AccordionTrigger>
       <AccordionContent>
+        {group && <div className="mb-3 text-sm text-muted-foreground">
+          <p>{group.sources.some((source) => isPeriodicFiling(source.form))
+            ? filing.summary?.earningsGroup?.inputKey === group.inputKey ? "本期材料已合并分析" : "本期新增材料待合并分析，以下保留已有报告"
+            : "业绩初报 · 后续定期报告发布后将补充到本报告"}</p>
+          <ul aria-label="本期来源文件" className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+            {group.sources.map((source) => <li key={source.accessionNumber}><a href={source.indexUrl} target="_blank" rel="noopener noreferrer" className="underline underline-offset-4">{source.form} · {source.filingDate} ↗</a></li>)}
+          </ul>
+        </div>}
         <FilingSummary filing={filing} />
         <div className="flex flex-wrap items-center gap-2 pt-4">
           {fullReportHref && <Button asChild size="sm"><Link href={fullReportHref}>阅读完整报告 →</Link></Button>}
@@ -222,7 +231,7 @@ function formDescription(form: string): string { return form.startsWith("10-K") 
 /** Only the two most recent filings start expanded; the rest of the rail stays collapsed. */
 const TIMELINE_DEFAULT_OPEN = 2;
 function defaultOpenAccessions(filings: PublicSecFiling[]): string[] {
-  return filings.slice(0, TIMELINE_DEFAULT_OPEN).map((filing) => filing.accessionNumber);
+  return filings.slice(0, TIMELINE_DEFAULT_OPEN).map((filing) => filing.earningsGroup?.id ?? filing.accessionNumber);
 }
 function formatMonthDay(value: string): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);

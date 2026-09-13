@@ -14,6 +14,7 @@ type ReportSectionDefinition = ReportSectionLink & {
 
 export function SecReportDocument({ companyName, filing }: { companyName: string; filing: SecFilingWithSummary }) {
   const summary = filing.summary;
+  const group = filing.earningsGroup;
   const report = filing.analysis;
   const reportReady = Boolean(summary?.report);
   const composed = report?.presentation?.version === "sec-presentation.v1" && report.presentation.sections.length > 0;
@@ -121,21 +122,28 @@ export function SecReportDocument({ companyName, filing }: { companyName: string
 
   return (
     <main className="sec-report-shell">
-      <Link className="back-link" href={`/positions/${encodeURIComponent(filing.ticker)}#sec-filings`}>← 返回 {filing.ticker} SEC 文件</Link>
+      <Link className="back-link" href={`/positions/${encodeURIComponent(filing.ticker)}#sec-filings`}>← 返回 {filing.ticker} 财报与事件</Link>
       <header className="sec-report-header">
         <div>
-          <span className="sec-report-kicker">{filing.form} · SEC 完整分析报告</span>
+          <span className="sec-report-kicker">{group ? "财报期合并报告" : `${filing.form} · SEC 分析报告`}</span>
           <h1>{companyName}</h1>
           <p>{summary?.headline || report?.headline || filing.description || "财报分析正在生成"}</p>
         </div>
         <dl className="sec-report-meta">
           <div><dt>股票</dt><dd>{filing.ticker}</dd></div>
-          <div><dt>报告期</dt><dd>{formatDate(filing.reportDate)}</dd></div>
-          <div><dt>申报日</dt><dd>{formatDate(filing.filingDate)}</dd></div>
+          <div><dt>报告期</dt><dd>{formatDate(group?.periodEnd ?? filing.reportDate)}</dd></div>
+          <div><dt>{group ? "业绩发布日" : "申报日"}</dt><dd>{formatDate(group?.earningsDate ?? filing.filingDate)}</dd></div>
           <div><dt>Accession</dt><dd>{filing.accessionNumber}</dd></div>
         </dl>
       </header>
 
+      {group && <section className="sec-report-pending" aria-label="本期材料">
+        <h2>本期材料</h2>
+        <p>{summary?.earningsGroup?.inputKey === group.inputKey
+          ? group.sources.some((source) => /^(10-K|10-Q|20-F)/.test(source.form)) ? "以下报告基于本期材料合并分析。" : "业绩初报；后续定期报告将补充到本报告。"
+          : "新增材料待合并分析，当前保留已有报告。"}</p>
+        <ul>{group.sources.map((source) => <li key={source.accessionNumber}><a href={source.indexUrl} target="_blank" rel="noopener noreferrer">{source.form} · {source.filingDate} · {source.accessionNumber} ↗</a></li>)}</ul>
+      </section>}
       {report?.publication && <ReportShare ticker={filing.ticker} accession={filing.accessionNumber}
         reportDate={filing.reportDate || filing.filingDate} reportVersion={report.reportVersion}
         generatedAt={report.publication.summary.generatedAt} />}

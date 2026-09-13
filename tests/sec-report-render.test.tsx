@@ -97,3 +97,21 @@ test('chart displays ratios as percentages and preserves gaps between observatio
   assert.ok(points[1] > 160 && points[1] < 170, 'a three-month gap must occupy less space than the following nine-month gap');
   assert.equal(points[2], 535);
 });
+
+test("earnings report shows period, release date, both original sources and pending merge honestly", () => {
+  const source = {
+    ticker: "ORCL", cik: "0001341439", cikNumber: 1341439, companyName: "Oracle", form: "10-Q", filingDate: "2026-09-11", reportDate: "2026-08-31", accessionNumber: "quarterly",
+    primaryDocument: "orcl.htm", description: "Quarterly report", items: "", documentUrl: "https://sec.test/q", indexUrl: "https://sec.test/q-index",
+  };
+  const filing: SecFilingWithSummary = { ...source, summary: {ticker:"ORCL",form:"8-K",filingDate:"2026-09-10",accessionNumber:"release",headline:"业绩初报",bullets:[],analystView:"",report:"已有初报正文",source:"deepseek",generatedAt:"2026-09-10T22:00:00Z"},
+    earningsGroup: {id:"ORCL:2026-08-31",periodEnd:"2026-08-31",earningsDate:"2026-09-10",canonicalAccession:"quarterly",inputKey:"quarterly+release",
+      sources:[source,{...source,form:"8-K",filingDate:"2026-09-10",accessionNumber:"release",indexUrl:"https://sec.test/release-index"}]},
+  };
+  const html=renderToStaticMarkup(<SecReportDocument companyName="Oracle" filing={filing}/>);
+  assert.match(html,/财报期合并报告/);
+  assert.match(html,/业绩发布日/);
+  assert.match(html,/新增材料待合并分析，当前保留已有报告/);
+  assert.match(html,/已有初报正文/);
+  assert.match(html,/href="https:\/\/sec.test\/release-index"/);
+  assert.match(html,/href="https:\/\/sec.test\/q-index"/);
+});

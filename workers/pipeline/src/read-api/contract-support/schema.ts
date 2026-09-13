@@ -184,6 +184,17 @@ const publishedReport: JsonSchema = {
   },
 };
 
+const earningsGroup: JsonSchema = {
+  type: "object", additionalProperties: false,
+  required: ["id", "periodEnd", "earningsDate", "canonicalAccession", "inputKey", "sources"],
+  properties: {
+    id: { type: "string" }, periodEnd: { type: "string", pattern: DATE_PATTERN },
+    earningsDate: { type: "string", pattern: DATE_PATTERN }, canonicalAccession: { type: "string" }, inputKey: { type: "string" },
+    sources: { type: "array", minItems: 1, items: { type: "object", required: ["ticker", "accessionNumber", "form", "filingDate", "reportDate", "documentUrl", "indexUrl"],
+      properties: { ticker: { type: "string" }, accessionNumber: { type: "string" }, form: { type: "string" }, filingDate: { type: "string" }, reportDate: { type: "string" }, documentUrl: { type: "string" }, indexUrl: { type: "string" } } } },
+  },
+};
+
 const filingSummary: JsonSchema = {
   title: "SecFilingSummary",
   description:
@@ -192,6 +203,7 @@ const filingSummary: JsonSchema = {
   type: ["object", "null"],
   required: ["ticker", "form", "filingDate", "accessionNumber", "headline", "bullets", "analystView", "source", "generatedAt"],
   properties: {
+    earningsGroup,
     ticker: { type: "string" },
     form: { type: "string" },
     filingDate: { type: "string" },
@@ -222,6 +234,7 @@ const publicSecFiling: JsonSchema = {
     "provenance", "periodId", "analysisSchemaVersion", "contentRevision", "analysisRun",
   ],
   properties: {
+    earningsGroup,
     accessionNumber: { type: "string" },
     ticker: { type: "string", pattern: TICKER_PATTERN },
     companyName: { type: "string" },

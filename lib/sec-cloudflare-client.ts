@@ -22,6 +22,7 @@ export async function getCloudflareSecFeed(ticker: string) {
 function mapFiling(filing: PublicFiling, company: PublicCompany): SecFilingWithSummary {
   const cik = company?.cik ?? "";
   return {
+    earningsGroup: filing.earningsGroup,
     ticker: filing.ticker,
     cik,
     cikNumber: Number(cik.replace(/\D/g, "")) || 0,
