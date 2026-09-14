@@ -12,6 +12,7 @@ import { assertTrackedTicker, requireDb, type CompanyAnalysisWorkflowParams } fr
 import { runCompanyAnalysisAgent } from "./company-analysis-agent.ts";
 import { syncFundamentals } from "./fundamentals.ts";
 import type { SecPipelineEnv } from "./operations.ts";
+import { SEC_WORKFLOW_STEP_TIMEOUT } from "./retry-policy.ts";
 
 const READINESS_DELAYS = [0, 15 * 60_000, 2 * 60 * 60_000, 8 * 60 * 60_000, 24 * 60 * 60_000, 48 * 60 * 60_000] as const;
 
@@ -37,7 +38,7 @@ export const COMPANY_AGENT_MODEL_STEP_CONFIG = {
     delay: "1 minute",
     backoff: "exponential",
   },
-  timeout: "5 minutes",
+  timeout: SEC_WORKFLOW_STEP_TIMEOUT,
 } as const satisfies CompanyWorkflowStepConfig;
 
 export async function executeCompanyAnalysisWorkflow(

@@ -6,7 +6,7 @@ import type { SecAnalysisArtifact } from "../../workers/pipeline/src/sec/types.t
 import type { SecFiling, SecNodeSpec } from "../../workers/pipeline/src/sec/sec.ts";
 import { callWorkerSecModel, createSecPipelineOperations, modelForStage, type SecPipelineEnv } from "../../workers/pipeline/src/operations.ts";
 import { executeSecMemoryWorkflow } from "../../workers/pipeline/src/memory-workflow.ts";
-import { modelExecutionForAttempt, retryDelayForAttempt } from "../../workers/pipeline/src/retry-policy.ts";
+import { modelExecutionForAttempt, retryDelayForAttempt, SEC_MEMORY_MODEL_LEASE_MS, SEC_MODEL_EXECUTION_BUDGET_MS } from "../../workers/pipeline/src/retry-policy.ts";
 
 const filing: SecFiling = {
   ticker: "MSFT", cik: "0000789019", cikNumber: 789019, companyName: "Microsoft Corp", form: "10-K",
@@ -534,18 +534,22 @@ test("memory extraction still receives this filing's claims and prior memory ids
 
   const originalClaim = D1SecRepository.prototype.claimMemoryJob;
   const originalCommit = D1SecRepository.prototype.commitMemoryJob;
-  D1SecRepository.prototype.claimMemoryJob = async () => claim;
+  const leaseBudgets: Array<number | undefined> = [];
+  D1SecRepository.prototype.claimMemoryJob = async (_job, _owner, _now, lease) => { leaseBudgets.push(lease); return claim; };
   D1SecRepository.prototype.commitMemoryJob = async (_claim: unknown, extraction: SecMemoryExtractionPayload) => {
     capturedExtractions.push(extraction);
     return { noOp: false, itemCount: 2, memoryVersion: 3 };
   };
   let result: Awaited<ReturnType<typeof executeSecMemoryWorkflow>>;
   try {
-    result = await executeSecMemoryWorkflow({ jobId: "job-1", ticker: "MSFT" }, "instance-1", { do: (_name, callback) => callback() }, env, fetcher);
+    result = await executeSecMemoryWorkflow({ jobId: "job-1", ticker: "MSFT" }, "instance-1", { do: (name, callback) => callback(name.startsWith("memory-extract:") ? { attempt: 2 } : undefined) }, env, fetcher);
   } finally {
     D1SecRepository.prototype.claimMemoryJob = originalClaim;
     D1SecRepository.prototype.commitMemoryJob = originalCommit;
   }
+
+  assert.deepEqual(leaseBudgets, [SEC_MEMORY_MODEL_LEASE_MS, SEC_MEMORY_MODEL_LEASE_MS]);
+  assert.ok(SEC_MEMORY_MODEL_LEASE_MS > SEC_MODEL_EXECUTION_BUDGET_MS + retryDelayForAttempt(3, () => 1));
 
   const payload = JSON.parse(modelPayload) as Record<string, unknown>;
   assert.equal(result.status, "committed");

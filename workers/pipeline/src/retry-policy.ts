@@ -6,6 +6,8 @@ export const SEC_WORKFLOW_STEP_TIMEOUT = "30 minutes";
 export const SEC_MODEL_FIRST_RESPONSE_MS = 90_000;
 export const SEC_MODEL_STALL_MS = 60_000;
 export const SEC_MODEL_MAX_RESPONSE_BYTES = 2_000_000;
+// Covers one model attempt, maximum retry backoff, and commit overhead.
+export const SEC_MEMORY_MODEL_LEASE_MS = SEC_MODEL_EXECUTION_BUDGET_MS + 6 * 60_000;
 
 export type SecModelExecution = {
   attempt: number;

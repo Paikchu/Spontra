@@ -3,7 +3,7 @@ import { hashString } from "./sec/analysis.ts";
 import { normalizeMemoryExtraction } from "./sec/memory.ts";
 import { assertTrackedTicker, requireDb, trackedTickersFor, type SecMemoryWorkflowParams } from "./core.ts";
 import { callWorkerSecModel, type SecPipelineEnv } from "./operations.ts";
-import { modelExecutionForAttempt } from "./retry-policy.ts";
+import { modelExecutionForAttempt, SEC_MEMORY_MODEL_LEASE_MS } from "./retry-policy.ts";
 import type { WorkflowStepLike } from "./workflow-core.ts";
 
 export async function executeSecMemoryWorkflow(
@@ -15,7 +15,7 @@ export async function executeSecMemoryWorkflow(
 ) {
   const ownerToken = params.ownerToken || `${workflowInstanceId}:${crypto.randomUUID()}`;
   const repository = new D1SecRepository(requireDb(env));
-  const claim = await step.do(`memory-claim:${params.jobId}`, () => repository.claimMemoryJob(params.jobId, ownerToken, new Date(), undefined, trackedTickersFor(env)));
+  const claim = await step.do(`memory-claim:${params.jobId}`, () => repository.claimMemoryJob(params.jobId, ownerToken, new Date(), SEC_MEMORY_MODEL_LEASE_MS, trackedTickersFor(env)));
   if (!claim) return { status: "no-op", jobId: params.jobId };
   const source = await step.do(`memory-source:${params.jobId}`, async () => {
     const object = await env.SEC_FILINGS.get(claim.sourceR2Key);
@@ -26,6 +26,11 @@ export async function executeSecMemoryWorkflow(
   const priorMemoryIds = collectPriorMemoryIds(source);
   const extraction = await step.do(`memory-extract:${params.jobId}`, async (context) => {
     const execution = modelExecutionForAttempt(context?.attempt ?? 1);
+    // Durable retries can outlive the original lease. Renew ownership before
+    // another long model call so the sweeper cannot launch a competing writer.
+    if (execution.attempt > 1 && !await repository.claimMemoryJob(params.jobId, ownerToken, new Date(), SEC_MEMORY_MODEL_LEASE_MS, trackedTickersFor(env))) {
+      throw new Error("Memory lease ownership changed before model retry");
+    }
     const value = await callWorkerSecModel(env, fetcher, "memory-extract", memoryExtractionSystemPrompt(), compactMemorySource(source), execution.model);
     return normalizeMemoryExtraction(value, validEvidenceIds, priorMemoryIds);
   });

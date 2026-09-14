@@ -261,7 +261,7 @@ test("bounds each company Agent model turn independently", () => {
       delay: "1 minute",
       backoff: "exponential",
     },
-    timeout: "5 minutes",
+    timeout: "30 minutes",
   });
 });
 
