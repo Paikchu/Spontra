@@ -223,6 +223,7 @@ export type ComparisonResult = {
 };
 
 export type PublishedSecReport = {
+  fiscalPeriod?: import("../../../../shared/analysis-contract/report.ts").SecFiscalPeriod | null;
   discovery?: import("../../../../shared/analysis-contract/report.ts").SecDiscovery;
   publication?: { filing: import("./sec.ts").SecFiling; summary: import("./sec.ts").SecFilingSummary };
   presentation?: SecPresentation;

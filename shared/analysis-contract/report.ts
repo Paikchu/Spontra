@@ -64,6 +64,7 @@ export type SecDiscovery = {
 };
 
 export type PublishedSecReport = {
+  fiscalPeriod?: import("./report.ts").SecFiscalPeriod | null;
   discovery?: SecDiscovery;
   publication?: { filing: SecFiling; summary: SecFilingSummary };
   presentation?: SecPresentation;
@@ -185,7 +186,9 @@ export type SecFiscalPeriod = {
   fiscalYear: number;
   fiscalPeriod: "FY" | "Q1" | "Q2" | "Q3" | "Q4" | "H1" | "H2" | "M9";
   periodEnd: string;
-  source: "sec_dei";
+  source: "sec_dei" | "ai_source_review";
+  evidenceQuote?: string;
+  conflictExplanation?: string;
   sourceAccession: string;
   sourceUrl: string;
 };

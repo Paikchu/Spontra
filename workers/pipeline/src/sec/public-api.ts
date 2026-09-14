@@ -120,7 +120,7 @@ async function toPublicFiling(repository: D1SecRepository, filing: SecFilingWith
   const { analysisSchemaVersion, contentRevision } = splitReportVersion(report?.reportVersion ?? null);
   return {
     ...(filing.earningsGroup ? { earningsGroup: filing.earningsGroup } : {}),
-    fiscalPeriod: typeof repository.getCache === "function" ? await readFiscalPeriod(repository, filing) : null,
+    fiscalPeriod: report?.fiscalPeriod !== undefined ? report.fiscalPeriod : typeof repository.getCache === "function" ? await readFiscalPeriod(repository, filing) : null,
     accessionNumber: filing.accessionNumber,
     ticker: filing.ticker,
     companyName,

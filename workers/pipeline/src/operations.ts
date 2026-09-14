@@ -1,4 +1,5 @@
-import { refreshFiscalPeriods } from "./sec/fiscal-period.ts";
+import { fiscalPeriodInput } from "./sec/fiscal-period-ai.ts";
+import { refreshFiscalPeriods, readFiscalPeriod } from "./sec/fiscal-period.ts";
 import { attachDiscovery, auditDisclosureCoverage, discoveryChunkCount, scanDisclosureChunk, type DiscoveryChunk } from "./sec/discovery.ts";
 import { buildEarningsGroups, classificationKey, combineEarningsDocuments, earningsKey, identifyEarningsPeriod, isPeriodic } from "./sec/earnings.ts";
 import type { SecEarningsGroup } from "../../../shared/analysis-contract/report.ts";
@@ -167,6 +168,8 @@ export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof
         prepared = combineEarningsDocuments(prepared, supplements);
         prepared.outline = buildSecOutline(prepared.document);
       }
+      prepared.fiscalSourceExcerpts = fiscalPeriodInput(prepared.document.text);
+      prepared.reportedFiscalPeriod = env.DB ? await readFiscalPeriod(repository(), filing).catch(() => null) : null;
       const history = await fetchCompanyHistory(filing.cik, filing.ticker, env.SEC_USER_AGENT, fetcher).catch(() => EMPTY_HISTORY);
       const key = preparedKey(filing.ticker, filing.accessionNumber);
       const { blocks, document, ...meta } = prepared;

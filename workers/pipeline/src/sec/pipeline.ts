@@ -1,3 +1,4 @@
+import { validateAiFiscalPeriod, FISCAL_PERIOD_INSTRUCTION } from "./fiscal-period-ai.ts";
 import { enforceDiscoveryCoverage } from "./discovery.ts";
 import { SEC_PRESENTATION_SCHEMA, type SecSourceMaterial } from "../../../../shared/analysis-contract/sec-presentation.ts";
 import { buildSecTrends, composeSecPresentation } from "./presentation.ts";
@@ -59,6 +60,8 @@ export type SecPreparationRuntime = {
 
 /** Everything the planning, review and synthesis stages need — no filing text. */
 export type PreparedSecFilingMeta = {
+  fiscalSourceExcerpts?: string[];
+  reportedFiscalPeriod?: import("../../../../shared/analysis-contract/report.ts").SecFiscalPeriod | null;
   discovery?: import("../../../../shared/analysis-contract/report.ts").SecDiscovery;
   filing: SecFiling;
   periodId: string;
@@ -460,7 +463,9 @@ export async function summarizePreparedSecFiling(
     ...usableNodes.flatMap((node) => node.evidenceIds ?? []),
     ...finalBrief.currentFacts.flatMap((fact) => fact.evidenceIds),
   ].filter((id) => validEvidenceIds.includes(id)));
+  const fiscalInput = prepared.fiscalSourceExcerpts ?? [];
   const summaryPayload = {
+    fiscalPeriodInput: { filing: prepared.filing, reportedDEI: prepared.reportedFiscalPeriod ?? null, sourceExcerpts: fiscalInput },
     brief: briefForAnalysis(finalBrief),
     nodeAnalyses: usableNodes.map(({ id, title, findings, narrative, facts, evidenceIds }) => ({ id, title, analysis: narrative || findings.map((finding) => `${finding.label}: ${finding.detail}`).join("\n"), facts: facts ?? [], evidenceIds: evidenceIds ?? [] })),
     managerReview: finalReview,
@@ -479,10 +484,11 @@ export async function summarizePreparedSecFiling(
       changes: "{qoq, yoy, guidance, risks}",
       dataQuality: "{coverage, verificationStatus, warnings}",
       presentation: SEC_PRESENTATION_SCHEMA,
+      fiscalPeriod: "null | {fiscalYear:integer, fiscalPeriod:Q1|Q2|Q3|Q4|FY|H1|H2|M9, periodEnd:YYYY-MM-DD, evidenceQuote:string, conflictExplanation:string}",
       reviews: "[{accessionNumber,priorJudgment,status:supported|contradicted|not_verifiable|superseded,evidenceIds,explanation,nextTest}]",
     },
   };
-  const summaryValue = await model("synthesis", synthesisSystemPrompt() + "\n最终报告限1800个中文字，聚焦跨主题判断、反证和未解决问题；专题正文由程序保留，不要复写各专题。保留数字单位、人物职务及计划状态。", summaryPayload);
+  const summaryValue = await model("synthesis", synthesisSystemPrompt() + FISCAL_PERIOD_INSTRUCTION + "\n最终报告限1800个中文字，聚焦跨主题判断、反证和未解决问题；专题正文由程序保留，不要复写各专题。保留数字单位、人物职务及计划状态。", summaryPayload);
   if (finalBrief.reportContinuity) {
     const continuityNode = continuityReviewNode(finalBrief.reportContinuity, summaryValue, reviewEvidenceIds);
     nodes = [...nodes, continuityNode];
@@ -493,6 +499,7 @@ export async function summarizePreparedSecFiling(
     periodId: prepared.periodId,
     reportVersion: `${SEC_ANALYSIS_SCHEMA_VERSION}:${prepared.filing.reportDate || prepared.filing.filingDate}-${crypto.randomUUID()}`,
   }, new Set(validEvidenceIds));
+  report.fiscalPeriod = validateAiFiscalPeriod(summaryValue.fiscalPeriod, prepared.filing, fiscalInput);
   const groundedDisclosure = prepared.discovery?.disclosures.some((item) => usableNodes.some((node) =>
     plan.nodes.find((spec) => spec.id === node.id)?.sectionIds.includes(item.id) && node.evidenceIds?.some((id) => item.evidenceIds.includes(id)))) ?? false;
   report = enforceDeterministicReportQuality(report, finalBrief, nodeFacts, groundedDisclosure);
