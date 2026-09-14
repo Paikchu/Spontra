@@ -1,3 +1,4 @@
+import { readFiscalPeriod } from "./fiscal-period.ts";
 import { cleanSecAccession, type SecFilingWithSummary } from "./sec.ts";
 import { decodePageCursor, normalizeTrackedTicker } from "./config.ts";
 import { D1SecRepository } from "./d1.ts";
@@ -119,6 +120,7 @@ async function toPublicFiling(repository: D1SecRepository, filing: SecFilingWith
   const { analysisSchemaVersion, contentRevision } = splitReportVersion(report?.reportVersion ?? null);
   return {
     ...(filing.earningsGroup ? { earningsGroup: filing.earningsGroup } : {}),
+    fiscalPeriod: typeof repository.getCache === "function" ? await readFiscalPeriod(repository, filing) : null,
     accessionNumber: filing.accessionNumber,
     ticker: filing.ticker,
     companyName,

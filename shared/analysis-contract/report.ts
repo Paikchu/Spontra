@@ -179,3 +179,13 @@ export type SecFilingWithSummary = SecFiling & {
   summary: SecFilingSummary | null;
   analysis?: PublishedSecReport | null;
 };
+
+/** Fiscal focus explicitly reported in SEC DEI, independent of analysis text. */
+export type SecFiscalPeriod = {
+  fiscalYear: number;
+  fiscalPeriod: "FY" | "Q1" | "Q2" | "Q3" | "Q4" | "H1" | "H2" | "M9";
+  periodEnd: string;
+  source: "sec_dei";
+  sourceAccession: string;
+  sourceUrl: string;
+};

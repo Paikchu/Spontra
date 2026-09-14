@@ -1,3 +1,4 @@
+import { refreshFiscalPeriods } from "./sec/fiscal-period.ts";
 import { attachDiscovery, auditDisclosureCoverage, discoveryChunkCount, scanDisclosureChunk, type DiscoveryChunk } from "./sec/discovery.ts";
 import { buildEarningsGroups, classificationKey, combineEarningsDocuments, earningsKey, identifyEarningsPeriod, isPeriodic } from "./sec/earnings.ts";
 import type { SecEarningsGroup } from "../../../shared/analysis-contract/report.ts";
@@ -111,6 +112,7 @@ export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof
       const store = repository();
       await store.setCache(`sec:filings:${ticker}`, normalizedFeed, typedFeed.fetchedAt ?? new Date().toISOString());
       await Promise.all(normalizedFeed.filings.map((filing) => store.upsertFilingIndex(filing)));
+      await refreshFiscalPeriods(store, normalizedFeed.filings, env.SEC_USER_AGENT, fetcher);
       // Retry on every discovery sweep: Company Facts can arrive after the filing index.
       // Publish one complete snapshot atomically; failures leave the last good snapshot intact.
       const cik = normalizedFeed.company?.cik ?? normalizedFeed.filings[0]?.cik;

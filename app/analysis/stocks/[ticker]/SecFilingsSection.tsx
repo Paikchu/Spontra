@@ -105,6 +105,7 @@ export function SecFilingsSection({ ticker, title = "财报与独立事件" }: {
             {filings.map((filing) => (
               <SecFilingCard
                 filing={filing}
+                periodLabel={formatFilingPeriodLabel(filing)}
                 key={filing.earningsGroup?.id ?? filing.accessionNumber}
               />
             ))}
@@ -122,7 +123,7 @@ export function SecFilingsSection({ ticker, title = "财报与独立事件" }: {
   );
 }
 
-function SecFilingCard({ filing }: { filing: PublicSecFiling }) {
+function SecFilingCard({ filing, periodLabel }: { filing: PublicSecFiling; periodLabel: string }) {
   const headline = filing.summary?.headline || filing.analysis?.headline || "";
   // The report page renders whatever narrative is stored, so the entry point
   // asks the same question it does. Requiring the current summary version made
@@ -139,7 +140,7 @@ function SecFilingCard({ filing }: { filing: PublicSecFiling }) {
       <AccordionTrigger>
         <span className="analysis-filing-heading">
           <span className="analysis-filing-meta">
-            <Badge variant={group || isPeriodicFiling(filing.form) ? "default" : "secondary"}>{formatFilingPeriodLabel(filing)}</Badge>
+            <Badge variant={group || isPeriodicFiling(filing.form) ? "default" : "secondary"}>{periodLabel}</Badge>
             <span>{formatYear(group?.earningsDate ?? filing.filingDate)}年{formatMonthDay(group?.earningsDate ?? filing.filingDate)}</span>
             <span>{group ? `业绩发布 · 截至 ${group.periodEnd}` : formDescription(filing.form)}</span>
           </span>

@@ -35,6 +35,7 @@ export type AnalysisRunSummary = {
 };
 
 export type PublicSecFiling = {
+  fiscalPeriod?: import("./report.ts").SecFiscalPeriod | null;
   earningsGroup?: import("./report.ts").SecEarningsGroup;
   accessionNumber: string;
   ticker: string;
