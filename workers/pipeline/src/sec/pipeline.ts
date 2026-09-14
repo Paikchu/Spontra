@@ -462,7 +462,7 @@ export async function summarizePreparedSecFiling(
   ].filter((id) => validEvidenceIds.includes(id)));
   const summaryPayload = {
     brief: briefForAnalysis(finalBrief),
-    nodeAnalyses: usableNodes.map(({ id, title, findings, narrative, facts, evidenceIds }) => ({ id, title, findings, narrative, facts: facts ?? [], evidenceIds: evidenceIds ?? [] })),
+    nodeAnalyses: usableNodes.map(({ id, title, findings, narrative, facts, evidenceIds }) => ({ id, title, analysis: narrative || findings.map((finding) => `${finding.label}: ${finding.detail}`).join("\n"), facts: facts ?? [], evidenceIds: evidenceIds ?? [] })),
     managerReview: finalReview,
     disclosures: prepared.discovery?.disclosures ?? [],
     discoveryCoverage: prepared.discovery ? {scannedCharacters:prepared.discovery.scannedCharacters,totalCharacters:prepared.discovery.totalCharacters,warnings:prepared.discovery.warnings} : null,
@@ -482,7 +482,7 @@ export async function summarizePreparedSecFiling(
       reviews: "[{accessionNumber,priorJudgment,status:supported|contradicted|not_verifiable|superseded,evidenceIds,explanation,nextTest}]",
     },
   };
-  const summaryValue = await model("synthesis", synthesisSystemPrompt(), summaryPayload);
+  const summaryValue = await model("synthesis", synthesisSystemPrompt() + "\n最终报告限1800个中文字，聚焦跨主题判断、反证和未解决问题；专题正文由程序保留，不要复写各专题。保留数字单位、人物职务及计划状态。", summaryPayload);
   if (finalBrief.reportContinuity) {
     const continuityNode = continuityReviewNode(finalBrief.reportContinuity, summaryValue, reviewEvidenceIds);
     nodes = [...nodes, continuityNode];

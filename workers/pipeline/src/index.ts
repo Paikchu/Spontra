@@ -1,3 +1,5 @@
+import { NonRetryableError } from "cloudflare:workflows";
+import { SecModelHttpError } from "./operations.ts";
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
 
 import { runCompanyAnalysisSweep, runSecRefresh, type CompanyAnalysisBackfillParams, type CompanyAnalysisWorkflowParams, type SecMemoryWorkflowParams, type SecWorkflowParams } from "./core.ts";
@@ -15,7 +17,7 @@ const WORKFLOW_RETRY = {
     backoff: "constant" as const,
     delay: ({ ctx }: { ctx: WorkflowStepContextLike }) => retryDelayForAttempt(ctx.attempt),
   },
-  timeout: "5 minutes",
+  timeout: "10 minutes",
 };
 
 function durableSteps(step: WorkflowStep): WorkflowStepLike {
@@ -24,7 +26,15 @@ function durableSteps(step: WorkflowStep): WorkflowStepLike {
   };
   return {
     do<T>(name: string, callback: (context?: WorkflowStepContextLike) => Promise<T>): Promise<T> {
-      return dynamicStep.do(name, WORKFLOW_RETRY, callback);
+      return dynamicStep.do(name, WORKFLOW_RETRY, async (context) => {
+        try { return await callback(context); }
+        catch (error) {
+          if (error instanceof SecModelHttpError && error.status >= 400 && error.status < 500 && error.status !== 429 && error.status !== 408) {
+            throw new NonRetryableError(`Model rejected request: HTTP ${error.status}`);
+          }
+          throw error;
+        }
+      });
     },
   };
 }

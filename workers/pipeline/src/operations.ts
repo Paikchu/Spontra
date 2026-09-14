@@ -58,9 +58,9 @@ export function modelForStage(env: SecPipelineEnv, stage: string, override?: str
 export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof fetch = fetch): SecPipelineOperations {
   const repository = () => new D1SecRepository(requireDb(env));
   const modelFor = (execution?: SecModelExecution): SecModelCall => async (stage, system, payload) => {
-    // Keep an in-step recovery below the Workflow's five-minute deadline.
-    const deadline = Date.now() + 240_000;
-    const requestBudget = REASONING_STAGE.test(stage) ? 240_000 : 180_000;
+    // Keep recovery within nine minutes, below the Workflow ten-minute deadline.
+    const deadline = Date.now() + 540_000;
+    const requestBudget = REASONING_STAGE.test(stage) ? 480_000 : 180_000;
     const call = (nextStage: string, nextSystem: string, model?: string) =>
       callWorkerSecModel(env, fetcher, nextStage, nextSystem, payload, model, Math.max(1, Math.min(requestBudget, deadline - Date.now())));
     const selectedModel = modelForStage(env, stage, execution?.model);
@@ -452,7 +452,7 @@ function collectArtifactKeys(reference: PreparedFilingReference, synthesisKey: s
   };
 }
 
-class SecModelHttpError extends Error {
+export class SecModelHttpError extends Error {
   readonly status: number;
   constructor(status: number, message: string) { super(message); this.status = status; }
 }
@@ -467,6 +467,13 @@ export async function callWorkerSecModel(
   timeoutMs = 180_000,
 ): Promise<Record<string, unknown>> {
   const apiKey = await resolveWorkerModelKey(env, fetcher);
+  const started = Date.now();
+  const controller = new AbortController();
+  let timeoutKind = "total";
+  const totalTimer = setTimeout(() => { timeoutKind = "total"; controller.abort(); }, timeoutMs);
+  const firstTimer = setTimeout(() => { timeoutKind = "first-response"; controller.abort(); }, Math.min(90_000, timeoutMs));
+  const metrics: Record<string, unknown> = { stage, model: modelOverride || env.SEC_ANALYSIS_MODEL || "qwen3.8-flash", inputCharacters: JSON.stringify(payload).length };
+  try {
   const response = await fetcher("https://api.b.ai/v1/chat/completions", {
     method: "POST",
     headers: { "content-type": "application/json", accept: "text/event-stream", authorization: `Bearer ${apiKey}` },
@@ -478,16 +485,31 @@ export async function callWorkerSecModel(
       ],
       response_format: { type: "json_object" },
       temperature: 0,
+      ...(stage.startsWith("synthesis") ? { max_tokens: 8192 } : {}),
       // Streaming keeps bytes flowing so the provider's proxy cannot time the request out at ~100s.
       stream: true,
     }),
-    signal: AbortSignal.timeout(timeoutMs),
+    signal: controller.signal,
   });
+  clearTimeout(firstTimer);
+  metrics.headersMs = Date.now() - started;
   if (!response.ok) {
     const detail = await response.text();
     throw new SecModelHttpError(response.status, `DeepSeek ${stage} HTTP ${response.status}: ${detail.slice(0, 300)}`);
   }
-  return parseModelJson(await readModelContent(response, stage));
+  return parseModelJson(await readModelContent(response, stage, () => {
+    metrics.firstTokenMs ??= Date.now() - started;
+    metrics.lastTokenMs = Date.now() - started;
+  }, metrics));
+  } catch (error) {
+    metrics.error = controller.signal.aborted ? `model-timeout:${timeoutKind}` : error instanceof SecModelHttpError ? `http:${error.status}` : error instanceof Error ? error.name : "unknown";
+    if (controller.signal.aborted) throw new Error(`model-timeout:${timeoutKind} stage=${stage} elapsedMs=${Date.now() - started}`);
+    throw error;
+  } finally {
+    clearTimeout(firstTimer);
+    clearTimeout(totalTimer);
+    console.log(JSON.stringify({ event: "sec-model-request", ...metrics, elapsedMs: Date.now() - started }));
+  }
 }
 
 /**
@@ -495,16 +517,13 @@ export async function callWorkerSecModel(
  * gateways that ignore `stream: true`. Throws before parsing when the stream ends early, because a
  * truncated JSON body can still parse into a plausible but wrong object.
  */
-export async function readModelContent(response: Response, stage: string): Promise<string> {
-  const raw = await response.text();
-  const lines = raw.split(/\r?\n/);
-  const dataLines = lines.filter((line) => line.startsWith("data:"));
-  if (!dataLines.length) return nonStreamedContent(raw, stage);
+export async function readModelContent(response: Response, stage: string, progress: () => void = () => {}, metrics: Record<string, unknown> = {}, idleMs = 60_000): Promise<string> {
 
   let content = "";
   let finishReason: string | null = null;
   let done = false;
-  for (const line of dataLines) {
+  for await (const line of modelLines(response, idleMs)) {
+    if (!line.startsWith("data:")) continue;
     const data = line.slice(5).trim();
     if (!data) continue;
     if (data === "[DONE]") {
@@ -515,14 +534,20 @@ export async function readModelContent(response: Response, stage: string): Promi
     try {
       chunk = JSON.parse(data) as Record<string, unknown>;
     } catch {
-      continue;
+      throw new Error(`Model ${stage} returned malformed SSE JSON`);
     }
+    if (chunk.usage) metrics.usage = chunk.usage;
     const error = chunk.error;
     if (error) throw new Error(`DeepSeek ${stage} stream error: ${JSON.stringify(error).slice(0, 300)}`);
     const choice = (chunk.choices as Array<Record<string, unknown>> | undefined)?.[0];
     if (!choice) continue;
     const delta = choice.delta as { content?: unknown } | undefined;
-    if (typeof delta?.content === "string") content += delta.content;
+    if (typeof delta?.content === "string" && delta.content) {
+      content += delta.content;
+      progress();
+      metrics.outputCharacters = content.length;
+    }
+    if (typeof (choice.delta as Record<string, unknown> | undefined)?.reasoning_content === "string") progress();
     if (typeof choice.finish_reason === "string") finishReason = choice.finish_reason;
   }
 
@@ -534,6 +559,58 @@ export async function readModelContent(response: Response, stage: string): Promi
   }
   if (!content) throw new Error(`DeepSeek ${stage} returned empty content`);
   return content;
+}
+
+async function* modelLines(response: Response, idleMs: number): AsyncGenerator<string> {
+  if (!response.body) throw new Error("Model returned no response body");
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let bytes = 0;
+  let meaningfulAt = Date.now();
+  let streaming = response.headers.get("content-type")?.includes("text/event-stream") ?? false;
+  try {
+    while (true) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const part = await Promise.race([
+        reader.read(),
+        new Promise<never>((_, reject) => { timer = setTimeout(() => {
+          reject(new Error("model-timeout:stream-stall"));
+          void reader.cancel().catch(() => {});
+        }, Math.max(1, idleMs - (Date.now() - meaningfulAt))); }),
+      ]).finally(() => clearTimeout(timer));
+      if (part.done) break;
+      bytes += part.value.byteLength;
+      if (bytes > 2_000_000) throw new Error("Model response exceeds 2 MB limit");
+      buffer += decoder.decode(part.value, { stream: true });
+      streaming ||= buffer.trimStart().startsWith("data:") || buffer.trimStart().startsWith(":");
+      if (streaming) {
+        let newline: number;
+        while ((newline = buffer.indexOf("\n")) >= 0) {
+          const line = buffer.slice(0, newline).trimEnd();
+          buffer = buffer.slice(newline + 1);
+          if (line.startsWith("data:")) {
+            try {
+              const delta = JSON.parse(line.slice(5)).choices?.[0]?.delta;
+              if (delta?.content || delta?.reasoning_content) meaningfulAt = Date.now();
+            } catch { /* DONE and heartbeats do not reset meaningful progress. */ }
+          }
+          yield line;
+        }
+      }
+    }
+    buffer += decoder.decode();
+    if (streaming) { if (buffer.trim()) yield buffer.trim(); }
+    else {
+      const content = nonStreamedContent(buffer, "completion");
+      const parsed = JSON.parse(buffer);
+      if (parsed.choices?.[0]?.finish_reason === "length") throw new Error("Model hit output token limit");
+      yield `data: ${JSON.stringify({ choices: [{ delta: { content }, finish_reason: "stop" }] })}`;
+    }
+  } finally {
+    await reader.cancel().catch(() => {});
+    reader.releaseLock();
+  }
 }
 
 function nonStreamedContent(raw: string, stage: string): string {
