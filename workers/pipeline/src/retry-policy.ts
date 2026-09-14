@@ -1,4 +1,11 @@
 export const SEC_FALLBACK_MODEL = "hy3";
+// Network generation is governed by progress. These are only runaway safeguards;
+// leave one minute for validation and persistence before the enclosing step expires.
+export const SEC_MODEL_EXECUTION_BUDGET_MS = 29 * 60_000;
+export const SEC_WORKFLOW_STEP_TIMEOUT = "30 minutes";
+export const SEC_MODEL_FIRST_RESPONSE_MS = 90_000;
+export const SEC_MODEL_STALL_MS = 60_000;
+export const SEC_MODEL_MAX_RESPONSE_BYTES = 2_000_000;
 
 export type SecModelExecution = {
   attempt: number;

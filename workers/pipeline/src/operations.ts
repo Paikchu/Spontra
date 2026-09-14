@@ -30,7 +30,7 @@ import { normalizeCompanyFacts } from "./sec/history.ts";
 import { secFundamentalsKey } from "./fundamentals/sec-fundamentals.ts";
 import { assertTrackedTicker, requireDb, type SecCronEnv } from "./core.ts";
 import type { AnalysisReadEnv } from "./read-api/router.ts";
-import type { SecModelExecution } from "./retry-policy.ts";
+import { SEC_MODEL_EXECUTION_BUDGET_MS, SEC_MODEL_FIRST_RESPONSE_MS, SEC_MODEL_STALL_MS, SEC_MODEL_MAX_RESPONSE_BYTES, type SecModelExecution } from "./retry-policy.ts";
 import type { PreparedFilingReference, SecPipelineOperations, WorkflowJobUpdate } from "./workflow-core.ts";
 import { jobAnalysisVersionFor } from "./workflow-core.ts";
 
@@ -62,11 +62,14 @@ export function modelForStage(env: SecPipelineEnv, stage: string, override?: str
 export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof fetch = fetch): SecPipelineOperations {
   const repository = () => new D1SecRepository(requireDb(env));
   const modelFor = (execution?: SecModelExecution): SecModelCall => async (stage, system, payload) => {
-    // Keep recovery within nine minutes, below the Workflow ten-minute deadline.
-    const deadline = Date.now() + 540_000;
-    const requestBudget = REASONING_STAGE.test(stage) ? 480_000 : 180_000;
+    // Share one generous safety budget across calls within this durable attempt.
+    // Sustained generation must not be discarded at the old 3/8-minute limits.
+    const deadline = Date.now() + SEC_MODEL_EXECUTION_BUDGET_MS;
+    // Some providers stall or abort while enforcing JSON mode. A durable retry
+    // changes that transport constraint; parseModelJson and all domain gates still apply.
+    const jsonMode = (execution?.attempt ?? 1) === 1;
     const call = (nextStage: string, nextSystem: string, model?: string) =>
-      callWorkerSecModel(env, fetcher, nextStage, nextSystem, payload, model, Math.max(1, Math.min(requestBudget, deadline - Date.now())));
+      callWorkerSecModel(env, fetcher, nextStage, nextSystem, payload, model, Math.max(1, deadline - Date.now()), jsonMode);
     const selectedModel = modelForStage(env, stage, execution?.model);
     try {
       return await call(stage, system, selectedModel);
@@ -496,14 +499,15 @@ export async function callWorkerSecModel(
   system: string,
   payload: unknown,
   modelOverride?: string,
-  timeoutMs = 180_000,
+  executionBudgetMs = SEC_MODEL_EXECUTION_BUDGET_MS,
+  jsonMode = true,
 ): Promise<Record<string, unknown>> {
   const apiKey = await resolveWorkerModelKey(env, fetcher);
   const started = Date.now();
   const controller = new AbortController();
-  let timeoutKind = "total";
-  const totalTimer = setTimeout(() => { timeoutKind = "total"; controller.abort(); }, timeoutMs);
-  const firstTimer = setTimeout(() => { timeoutKind = "first-response"; controller.abort(); }, Math.min(90_000, timeoutMs));
+  let timeoutKind = "execution-budget";
+  const budgetTimer = setTimeout(() => { timeoutKind = "execution-budget"; controller.abort(); }, executionBudgetMs);
+  const firstTimer = setTimeout(() => { timeoutKind = "first-response"; controller.abort(); }, SEC_MODEL_FIRST_RESPONSE_MS);
   const metrics: Record<string, unknown> = { stage, model: modelOverride || env.SEC_ANALYSIS_MODEL || "qwen3.8-flash", inputCharacters: JSON.stringify(payload).length };
   try {
   const response = await fetcher("https://api.b.ai/v1/chat/completions", {
@@ -515,7 +519,7 @@ export async function callWorkerSecModel(
         { role: "system", content: `${system}\nReturn one valid JSON object only.` },
         { role: "user", content: JSON.stringify(payload) },
       ],
-      response_format: { type: "json_object" },
+      ...(jsonMode ? { response_format: { type: "json_object" } } : {}),
       temperature: 0,
       ...(stage.startsWith("synthesis") ? { max_tokens: 14000 } : {}),
       // Streaming keeps bytes flowing so the provider's proxy cannot time the request out at ~100s.
@@ -539,7 +543,7 @@ export async function callWorkerSecModel(
     throw error;
   } finally {
     clearTimeout(firstTimer);
-    clearTimeout(totalTimer);
+    clearTimeout(budgetTimer);
     console.log(JSON.stringify({ event: "sec-model-request", ...metrics, elapsedMs: Date.now() - started }));
   }
 }
@@ -549,7 +553,7 @@ export async function callWorkerSecModel(
  * gateways that ignore `stream: true`. Throws before parsing when the stream ends early, because a
  * truncated JSON body can still parse into a plausible but wrong object.
  */
-export async function readModelContent(response: Response, stage: string, progress: () => void = () => {}, metrics: Record<string, unknown> = {}, idleMs = 60_000): Promise<string> {
+export async function readModelContent(response: Response, stage: string, progress: () => void = () => {}, metrics: Record<string, unknown> = {}, idleMs = SEC_MODEL_STALL_MS): Promise<string> {
 
   let content = "";
   let finishReason: string | null = null;
@@ -576,10 +580,11 @@ export async function readModelContent(response: Response, stage: string, progre
     const delta = choice.delta as { content?: unknown } | undefined;
     if (typeof delta?.content === "string" && delta.content) {
       content += delta.content;
-      progress();
+      if (meaningfulText(delta.content)) progress();
       metrics.outputCharacters = content.length;
     }
-    if (typeof (choice.delta as Record<string, unknown> | undefined)?.reasoning_content === "string") progress();
+    const reasoning = (choice.delta as Record<string, unknown> | undefined)?.reasoning_content;
+    if (meaningfulText(reasoning)) progress();
     if (typeof choice.finish_reason === "string") finishReason = choice.finish_reason;
   }
 
@@ -613,7 +618,7 @@ async function* modelLines(response: Response, idleMs: number): AsyncGenerator<s
       ]).finally(() => clearTimeout(timer));
       if (part.done) break;
       bytes += part.value.byteLength;
-      if (bytes > 2_000_000) throw new Error("Model response exceeds 2 MB limit");
+      if (bytes > SEC_MODEL_MAX_RESPONSE_BYTES) throw new Error("Model response exceeds 2 MB limit");
       buffer += decoder.decode(part.value, { stream: true });
       streaming ||= buffer.trimStart().startsWith("data:") || buffer.trimStart().startsWith(":");
       if (streaming) {
@@ -624,7 +629,7 @@ async function* modelLines(response: Response, idleMs: number): AsyncGenerator<s
           if (line.startsWith("data:")) {
             try {
               const delta = JSON.parse(line.slice(5)).choices?.[0]?.delta;
-              if (delta?.content || delta?.reasoning_content) meaningfulAt = Date.now();
+              if (meaningfulText(delta?.content) || meaningfulText(delta?.reasoning_content)) meaningfulAt = Date.now();
             } catch { /* DONE and heartbeats do not reset meaningful progress. */ }
           }
           yield line;
@@ -643,6 +648,10 @@ async function* modelLines(response: Response, idleMs: number): AsyncGenerator<s
     await reader.cancel().catch(() => {});
     reader.releaseLock();
   }
+}
+
+function meaningfulText(value: unknown): boolean {
+  return typeof value === "string" && value.trim().length > 0;
 }
 
 function nonStreamedContent(raw: string, stage: string): string {

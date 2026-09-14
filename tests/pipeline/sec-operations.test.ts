@@ -89,6 +89,34 @@ test("still reads gateways that ignore the stream flag", async () => {
   assert.deepEqual(await callWorkerSecModel(modelEnv, fetcher, "node:test", "Return JSON", {}), { headline: "ok" });
 });
 
+test("durable recovery avoids provider JSON mode even after fallback rate limiting", async () => {
+  const requests: Array<Record<string, unknown>> = [];
+  const env = { ...modelEnv, SEC_FILINGS: {
+    async get(key: string) {
+      const value = key.endsWith("meta.json") ? { filing }
+        : { document: { text: "Current filing disclosure text." }, blocks: [] };
+      return { async text() { return JSON.stringify(value); } };
+    },
+    async put() { return {}; },
+  } } as unknown as SecPipelineEnv;
+  const fetcher: typeof fetch = async (_input, init) => {
+    requests.push(JSON.parse(String(init?.body)));
+    if (requests.length === 1) return new Response("rate limited", { status: 429 });
+    return sse(delta('{"disclosures":[]}', "stop"), "[DONE]");
+  };
+  const result = await createSecPipelineOperations(env, fetcher).scanDisclosures!(filing, { key: "filings/MSFT/annual", filing }, 0, modelExecutionForAttempt(2));
+  assert.equal(result.status, "complete");
+  assert.deepEqual(requests.map((r) => r.model), ["hy3", "primary-model"]);
+  assert.ok(requests.every((r) => !r.response_format));
+  assert.ok(requests.every((r) => /Return one valid JSON object only/.test(JSON.stringify(r.messages))));
+});
+
+test("plain transport recovery still rejects invalid JSON and incomplete streams", async () => {
+  for (const response of [sse(delta("not JSON", "stop"), "[DONE]"), sse(delta('{"disclosures":[]}'))]) {
+    await assert.rejects(callWorkerSecModel(modelEnv, async () => response, "discovery:0", "Return JSON", {}, undefined, 1000, false));
+  }
+});
+
 test("rejects a truncated stream instead of parsing a plausible fragment", async () => {
   // Without [DONE] or a finish_reason the body is incomplete; parseModelJson would happily read
   // the inner object and return the wrong answer.

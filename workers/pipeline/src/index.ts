@@ -6,7 +6,7 @@ import { runCompanyAnalysisSweep, runSecRefresh, type CompanyAnalysisBackfillPar
 import { executeCompanyAnalysisWorkflow, type CompanyWorkflowStep } from "./company-analysis-workflow.ts";
 import { executeSecMemoryWorkflow } from "./memory-workflow.ts";
 import { createSecPipelineOperations, type SecPipelineEnv } from "./operations.ts";
-import { retryDelayForAttempt } from "./retry-policy.ts";
+import { retryDelayForAttempt, SEC_WORKFLOW_STEP_TIMEOUT } from "./retry-policy.ts";
 import worker from "./worker.ts";
 import { executeSecAnalysisWorkflow, type WorkflowStepContextLike, type WorkflowStepLike } from "./workflow-core.ts";
 
@@ -17,7 +17,7 @@ const WORKFLOW_RETRY = {
     backoff: "constant" as const,
     delay: ({ ctx }: { ctx: WorkflowStepContextLike }) => retryDelayForAttempt(ctx.attempt),
   },
-  timeout: "10 minutes",
+  timeout: SEC_WORKFLOW_STEP_TIMEOUT,
 };
 
 function durableSteps(step: WorkflowStep): WorkflowStepLike {
