@@ -280,3 +280,11 @@ export const secPublishedReports = sqliteTable("sec_published_reports", {
   verificationStatus: text("verification_status").notNull(),
   generatedAt: text("generated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [primaryKey({ columns: [table.ticker, table.periodId, table.reportVersion] })]);
+
+/** Shared research evidence cache; bodies live under web-search/v1 in R2. */
+export const webSearchCache = sqliteTable("web_search_cache", {
+  cacheKey: text("cache_key").primaryKey().notNull(),
+  objectKey: text("object_key"),
+  leaseOwner: text("lease_owner"),
+  leaseUntil: integer("lease_until").notNull().default(0),
+});

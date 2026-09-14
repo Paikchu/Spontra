@@ -78,6 +78,13 @@
       "when": 1788630802804,
       "tag": "0010_company_analysis_recovery",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1789353432356,
+      "tag": "0011_web_search_cache",
+      "breakpoints": true
     }
   ]
 }
