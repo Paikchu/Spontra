@@ -53,8 +53,10 @@ test("renders the complete report and dynamic evidence using the shared renderer
   assert.match(html, /data-report-description="先看经营结果、主要驱动和对投资判断的直接含义。"/);
   assert.equal((html.match(/data-report-section="true"/g) ?? []).length, 5);
   assert.deepEqual([...html.matchAll(/data-report-index="(\d{2})"/g)].map((match) => match[1]), ["01", "02", "03", "04", "05"]);
-  assert.match(html, /data-report-rail-density="compact"/);
-  assert.match(html, /class="fixed left-0 top-1\/2/);
+  assert.match(html, /data-report-toc="right"/);
+  assert.match(html, /aria-label="本页目录"/);
+  assert.doesNotMatch(html, /data-report-bar-state/);
+  assert.match(html, /class="fixed right-/);
   assert.equal((html.match(/data-report-nav-depth="section"/g) ?? []).length, 5);
   assert.equal((html.match(/data-report-nav-depth="subsection"/g) ?? []).length, 2);
   filing.analysis!.presentation = {
@@ -87,7 +89,7 @@ test("cached report navigators keep distinct accessible menu targets", () => {
   assert.equal(new Set(controls).size, 2);
 });
 
-test("reader report puts both cash definitions and debt limits before the complete article, with machine details collapsed", () => {
+test("reader report preserves cash definitions and collapsed details without the boundary banner", () => {
   const html = renderToStaticMarkup(<SecReportDocument companyName="示例公司" filing={readerFilingFixture()} />);
   assert.match(html, /−|\-3\.00 亿美元/);
   assert.match(html, /2\.00 亿美元/);
@@ -96,7 +98,7 @@ test("reader report puts both cash definitions and debt limits before the comple
   assert.match(html, /以前/);
   assert.match(html, /什么会改变这个判断/);
   assert.match(html, /120\.00 美元/);
-  assert.ok(html.indexOf("杠杆全貌不可见") < html.indexOf('id="sec-report-conclusions"'));
+  assert.doesNotMatch(html, /这份报告仍有判断边界|查看范围与缺口/);
   assert.ok(html.indexOf("同一笔现金") < html.indexOf('id="sec-reader-1"'));
   assert.doesNotMatch(html, /动态分段分析|主编覆盖度|相关性|data-report-title="完整正文"/);
   assert.match(html, /<details class="sec-reader-workpapers"><summary>/);
@@ -117,7 +119,7 @@ test('chart displays ratios as percentages and preserves gaps between observatio
   assert.equal(points[2], 535);
 });
 
-test("earnings report shows period, release date, both original sources and pending merge honestly", () => {
+test("earnings report preserves dates and article without the materials and version panels", () => {
   const source = {
     ticker: "ORCL", cik: "0001341439", cikNumber: 1341439, companyName: "Oracle", form: "10-Q", filingDate: "2026-09-11", reportDate: "2026-08-31", accessionNumber: "quarterly",
     primaryDocument: "orcl.htm", description: "Quarterly report", items: "", documentUrl: "https://sec.test/q", indexUrl: "https://sec.test/q-index",
@@ -129,8 +131,8 @@ test("earnings report shows period, release date, both original sources and pend
   const html=renderToStaticMarkup(<SecReportDocument companyName="Oracle" filing={filing}/>);
   assert.match(html,/财报期合并报告/);
   assert.match(html,/业绩发布日/);
-  assert.match(html,/新增材料待合并分析，当前保留已有报告/);
+  assert.doesNotMatch(html,/本期材料|新增材料待合并分析|报告链接与版本|本报告固定链接/);
   assert.match(html,/已有初报正文/);
-  assert.match(html,/href="https:\/\/sec.test\/release-index"/);
+  assert.doesNotMatch(html,/href="https:\/\/sec.test\/release-index"/);
   assert.match(html,/href="https:\/\/sec.test\/q-index"/);
 });

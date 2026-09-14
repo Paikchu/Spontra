@@ -1,7 +1,8 @@
 "use client";
 
+import { cn } from "@/lib/utils";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 export type ReportSectionLink = {
   id: string;
@@ -17,7 +18,6 @@ const easeOutExpo = [0.16, 1, 0.3, 1] as const;
 export function SecReportNavigator({ initialSections }: { initialSections: ReportSectionLink[] }) {
   const [sections, setSections] = useState(initialSections);
   const [activeId, setActiveId] = useState(initialSections[0]?.id ?? "");
-  const [previewId, setPreviewId] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const reduceMotion = useReducedMotion();
   const mobileMenuId = useId();
@@ -122,13 +122,10 @@ export function SecReportNavigator({ initialSections }: { initialSections: Repor
   }, [menuOpen]);
 
   const activeSection = sections.find((section) => section.id === activeId) ?? sections[0];
-  const activeIndex = sections.findIndex((section) => section.id === activeId);
-  const previewSection = useMemo(() => sections.find((section) => section.id === previewId) ?? null, [previewId, sections]);
   if (!sections.length) return null;
 
   const navigate = (id: string) => {
     setActiveId(id);
-    setPreviewId(null);
     setMenuOpen(false);
     const target = mobileRef.current?.closest(".sec-report-shell")?.querySelector<HTMLElement>(`#${CSS.escape(id)}`);
     if (target instanceof HTMLDetailsElement) target.open = true;
@@ -150,7 +147,7 @@ export function SecReportNavigator({ initialSections }: { initialSections: Repor
       <nav
         ref={mobileRef}
         aria-label="报告目录"
-        className="relative z-30 mb-1 mt-5 [@media(hover:hover)_and_(min-width:1360px)]:hidden"
+        className="relative z-30 mb-1 mt-5 min-[1360px]:hidden"
       >
         <motion.button
           ref={menuButtonRef}
@@ -210,82 +207,34 @@ export function SecReportNavigator({ initialSections }: { initialSections: Repor
       </nav>
 
       <nav
-        aria-label="报告目录"
-        data-report-rail-density="compact"
-        onPointerLeave={() => setPreviewId(null)}
-        onBlur={(event) => {
-          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setPreviewId(null);
-        }}
-        className="fixed left-0 top-1/2 z-40 hidden -translate-y-1/2 [@media(hover:hover)_and_(min-width:1360px)]:block"
+        aria-label="本页目录"
+        data-report-toc="right"
+        className="fixed right-[max(24px,5vw)] top-24 hidden w-[200px] min-[1360px]:block"
       >
-        <ul ref={railRef} className="m-0 flex max-h-[64dvh] w-16 list-none flex-col items-start overflow-y-auto p-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {sections.map((section, index) => {
-            const active = section.id === activeId;
-            const previewed = section.id === previewId;
-            const nested = section.depth === 1;
-            const segmentState = index < activeIndex ? "passed" : index === activeIndex ? "active" : "upcoming";
-            const barState = previewed ? "expanded" : segmentState;
-            const barScale = previewed || segmentState === "active" ? 1 : segmentState === "passed" ? 0.6 : 0.35;
-            const barOpacity = previewed ? 0.9 : segmentState === "active" ? 1 : segmentState === "passed" ? 0.65 : 0.4;
-            const barColor = previewed || segmentState === "active"
-              ? "bg-primary"
-              : segmentState === "passed" ? "bg-[var(--ink-soft)]" : "bg-[var(--ink-muted)]";
-            return (
-              <li
-                key={section.id}
-                data-report-nav-depth={nested ? "subsection" : "section"}
-                className={`relative m-0 w-16 p-0 ${nested ? "h-4" : "h-5"}`}
+        <h2 className="mb-4 text-sm font-medium text-muted-foreground">本页目录</h2>
+        <ul ref={railRef} className="relative m-0 flex max-h-[calc(100dvh-160px)] list-none flex-col gap-1 overflow-y-auto overscroll-contain p-0">
+          {sections.map((section) => (
+            <li key={section.id} data-report-nav-depth={section.depth === 1 ? "subsection" : "section"}>
+              <a
+                ref={(link) => {
+                  if (link) railLinks.current.set(section.id, link);
+                  else railLinks.current.delete(section.id);
+                }}
+                href={`#${section.id}`}
+                data-app-local-anchor
+                aria-current={section.id === activeId ? "location" : undefined}
+                onClick={(event) => { event.preventDefault(); navigate(section.id); }}
+                className={cn(
+                  "block py-1 text-sm leading-6 text-muted-foreground no-underline transition-colors hover:text-foreground focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2",
+                  section.depth === 1 && "pl-4",
+                  section.id === activeId && "font-medium text-foreground",
+                )}
               >
-                <a
-                  ref={(link) => {
-                    if (link) railLinks.current.set(section.id, link);
-                    else railLinks.current.delete(section.id);
-                  }}
-                  href={`#${section.id}`}
-                  data-app-local-anchor
-                  aria-current={active ? "location" : undefined}
-                  aria-label={`${displayIndex(section, index)} ${section.title}：${section.description}`}
-                  onPointerEnter={() => setPreviewId(section.id)}
-                  onFocus={() => setPreviewId(section.id)}
-                  onClick={(event) => { event.preventDefault(); navigate(section.id); }}
-                  className={`group relative flex w-16 items-center text-[var(--ink)] no-underline ${nested ? "h-4" : "h-5"}`}
-                >
-                  <motion.span
-                    aria-hidden="true"
-                    data-report-bar-state={barState}
-                    initial={false}
-                    animate={{ scaleX: barScale, opacity: barOpacity }}
-                    transition={{ duration: reduceMotion ? 0 : 0.22, ease: easeOutExpo }}
-                    className={`h-[2px] origin-left ${nested ? "w-10" : "w-12"} ${barColor}`}
-                  />
-                  <span className="sr-only">{displayIndex(section, index)} {section.title}</span>
-                </a>
-              </li>
-            );
-          })}
+                {section.title}
+              </a>
+            </li>
+          ))}
         </ul>
-
-        <div className="pointer-events-none absolute left-16 top-1/2 -translate-y-1/2">
-          <AnimatePresence initial={false} mode="wait">
-            {previewSection && (
-              <motion.aside
-                key={previewSection.id}
-                aria-hidden="true"
-                initial={reduceMotion ? { opacity: 0 } : { opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={reduceMotion ? { opacity: 0 } : { opacity: 0, x: -6 }}
-                transition={{ duration: reduceMotion ? 0.01 : 0.22, ease: easeOutExpo }}
-                className="w-[320px] border border-[var(--paper-deep)] bg-[var(--paper)] px-6 py-5 text-[var(--ink)] shadow-[0_18px_48px_rgb(23_40_59/0.16)]"
-              >
-                <span className="text-[10px] font-bold tracking-[.1em] text-primary">
-                  {previewSection.parentTitle ? `${previewSection.parentTitle} · ` : ""}{displayIndex(previewSection, sections.findIndex((section) => section.id === previewSection.id))}
-                </span>
-                <strong className="mt-2 block font-[family-name:var(--serif)] text-xl font-semibold leading-tight">{previewSection.title}</strong>
-                <p className="mb-0 mt-3 font-[family-name:var(--serif)] text-sm font-medium leading-6 text-[var(--ink-soft)]">{previewSection.description}</p>
-              </motion.aside>
-            )}
-          </AnimatePresence>
-        </div>
       </nav>
     </>
   );

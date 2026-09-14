@@ -2318,3 +2318,10 @@ html body :is(.page-shell, .earning-report.unified-stock, .earning-report .sec-r
 .earning-report .sec-report-shell .sec-report-evidence blockquote {
   max-width: none;
 }
+
+/* Reserve reading space for the report's desktop table of contents. */
+@media (min-width: 1360px) {
+  html body .earning-report .sec-report-shell {
+    padding-right: 256px;
+  }
+}

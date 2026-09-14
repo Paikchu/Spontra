@@ -1,4 +1,3 @@
-import { ReportShare } from "./ReportShare.tsx";
 import { SecComposedSection } from "@/components/earning-report/report-blocks/SecComposedSection.tsx";
 import type { PublishedSecReport } from "@/shared/analysis-contract/report.ts";
 import type { SecFilingWithSummary } from "@/shared/analysis-contract/report.ts";
@@ -6,7 +5,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { RichText } from "@/components/earning-report/rich-text/RichText.tsx";
 import { SecReportNavigator, type ReportSectionLink } from "@/app/analysis/stocks/[ticker]/sec/[accession]/SecReportNavigator.tsx";
-import { ReportBoundary, FinancialBridge, QuarterChanges, ReaderSection, WatchConditions } from "@/components/earning-report/report-blocks/SecReaderContent.tsx";
+import { FinancialBridge, QuarterChanges, ReaderSection, WatchConditions } from "@/components/earning-report/report-blocks/SecReaderContent.tsx";
 import { formatSecMetricLabel, formatSecMetricValue } from "@/lib/earning-report/web/sec-metric-format.ts";
 
 type ReportSectionDefinition = ReportSectionLink & {
@@ -152,18 +151,6 @@ export function SecReportDocument({ companyName, filing }: { companyName: string
           <div><dt>生成日期</dt><dd>{summary?.generatedAt.slice(0, 10) ?? "—"}</dd></div>
         </dl>
       </header>
-      {reportReady && <ReportBoundary report={report} />}
-
-      {group && <section className="sec-report-pending" aria-label="本期材料">
-        <h2>本期材料</h2>
-        <p>{summary?.earningsGroup?.inputKey === group.inputKey
-          ? group.sources.some((source) => /^(10-K|10-Q|20-F)/.test(source.form)) ? "以下报告基于本期材料合并分析。" : "业绩初报；后续定期报告将补充到本报告。"
-          : "新增材料待合并分析，当前保留已有报告。"}</p>
-        <details><summary>核对本期材料 · {group.sources.length} 份</summary><ul>{group.sources.map((source) => <li key={source.accessionNumber}><a href={source.indexUrl} target="_blank" rel="noopener noreferrer">{source.form} · {source.filingDate} · {source.accessionNumber} ↗</a></li>)}</ul></details>
-      </section>}
-      {reportReady && (summary || report?.publication) && <ReportShare ticker={filing.ticker} accession={report?.publication?.filing.accessionNumber ?? filing.accessionNumber}
-        reportDate={report?.publication ? report.publication.filing.reportDate || report.publication.filing.filingDate : filing.reportDate || filing.filingDate} reportVersion={report?.publication ? report.reportVersion : undefined}
-        generatedAt={report?.publication?.summary.generatedAt ?? summary!.generatedAt} />}
       {!reportReady ? (
         <section className="sec-report-pending" aria-labelledby="sec-report-pending-title">
           <h2 id="sec-report-pending-title">完整报告生成中</h2>
