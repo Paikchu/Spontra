@@ -21,7 +21,7 @@ export function SecReportDocument({ companyName, filing }: { companyName: string
   const reportReady = Boolean(summary?.report);
   const composed = report?.presentation?.version === "sec-presentation.v1" && report.presentation.sections.length > 0;
   const nodeSectionIndex = composed ? String(report!.presentation!.sections.length + 1).padStart(2, "0") : "04";
-  const nodeSectionTitle = composed || reader ? "核对原文与分析依据" : "专题解读";
+  const nodeSectionTitle = "核对原文与分析依据";
   const nodeLinks: ReportSectionLink[] = (summary?.nodes ?? []).map((node, index) => ({
     id: `sec-report-node-${index + 1}`,
     index: `${nodeSectionIndex}.${String(index + 1).padStart(2, "0")}`,
@@ -81,20 +81,7 @@ export function SecReportDocument({ companyName, filing }: { companyName: string
             >
               <summary><span>{node.title}</span></summary>
               <div>
-                {node.findings.length > 0 && <ConclusionList bullets={node.findings} />}
-                {node.narrative && <RichText text={node.narrative} />}
-                {node.error && <p className="sec-report-error">该主题尚未形成可用分析。</p>}
-                {node.evidence.length > 0 && (
-                  <details className="sec-report-evidence">
-                    <summary>核对原文 · {node.evidence.length} 段</summary>
-                    {node.evidence.map((evidence, index) => (
-                      <blockquote key={`${evidence.start}-${index}`}>
-                        <p>{evidence.excerpt}</p>
-                        <footer>字符位置 {evidence.start.toLocaleString("zh-CN")}–{evidence.end.toLocaleString("zh-CN")}</footer>
-                      </blockquote>
-                    ))}
-                  </details>
-                )}
+                <NodeContent node={node} />
               </div>
             </details>
           ))}
@@ -108,6 +95,15 @@ export function SecReportDocument({ companyName, filing }: { companyName: string
       content: <DataQuality report={report} />,
     },
   ] : [];
+  if (reportReady && !composed && !reader) {
+    const nodeSectionPosition = reportSections.findIndex((section) => section.id === "sec-report-nodes");
+    reportSections.splice(nodeSectionPosition, 1, ...(summary?.nodes ?? []).map((node, index) => ({
+      id: nodeLinks[index].id,
+      title: node.title,
+      description: nodeLinks[index].description,
+      content: <NodeContent node={node} />,
+    })));
+  }
   if (reportReady && report?.presentation?.version === "sec-presentation.v1" && report.presentation.sections.length) {
     const evidenceSection = reportSections.find((section) => section.id === "sec-report-nodes")!;
     const qualitySection = reportSections.find((section) => section.id === "sec-report-quality")!;
@@ -201,6 +197,25 @@ export function SecReportDocument({ companyName, filing }: { companyName: string
 
 function SectionHeading({ id, index, title }: { id: string; index: string; title: string }) {
   return <div className="sec-report-section-heading"><span>{index}</span><h2 id={id}>{title}</h2></div>;
+}
+
+function NodeContent({ node }: { node: NonNullable<NonNullable<SecFilingWithSummary["summary"]>["nodes"]>[number] }) {
+  return <>
+    {node.findings.length > 0 && <ConclusionList bullets={node.findings} />}
+    {node.narrative && <RichText text={node.narrative} />}
+    {node.error && <p className="sec-report-error">该主题尚未形成可用分析。</p>}
+    {node.evidence.length > 0 && (
+      <details className="sec-report-evidence">
+        <summary>核对原文 · {node.evidence.length} 段</summary>
+        {node.evidence.map((evidence, index) => (
+          <blockquote key={`${evidence.start}-${index}`}>
+            <p>{evidence.excerpt}</p>
+            <footer>字符位置 {evidence.start.toLocaleString("zh-CN")}–{evidence.end.toLocaleString("zh-CN")}</footer>
+          </blockquote>
+        ))}
+      </details>
+    )}
+  </>;
 }
 
 function ConclusionList({ bullets }: { bullets: NonNullable<SecFilingWithSummary["summary"]>["bullets"] }) {

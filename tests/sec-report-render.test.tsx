@@ -38,7 +38,7 @@ test("renders the complete report and dynamic evidence using the shared renderer
   assert.match(html, /核心结论/);
   assert.match(html, /关键数据/);
   assert.match(html, /报告概览/);
-  assert.match(html, /专题解读/);
+  assert.doesNotMatch(html, /专题解读|href="#sec-report-nodes"/);
   assert.doesNotMatch(html, /动态分段分析|相关性|主编覆盖度/);
   assert.match(html, /数据质量/);
   assert.match(html, /Revenue increased 18%/);
@@ -47,18 +47,20 @@ test("renders the complete report and dynamic evidence using the shared renderer
   assert.match(html, /href="#sec-report-conclusions"/);
   assert.match(html, /href="#sec-report-node-1"/);
   assert.match(html, /data-report-title="业务与战略概览"/);
-  assert.match(html, /data-report-depth="1"/);
+  assert.doesNotMatch(html, /data-report-depth="1"/);
+  assert.match(html, /<h2 id="sec-report-node-1-title">业务与战略概览<\/h2>/);
+  assert.match(html, /<h2 id="sec-report-node-2-title">云业务增长<\/h2>/);
   assert.match(html, /梳理业务结构、竞争定位与战略投入。/);
   assert.match(html, /data-report-title="核心结论"/);
   assert.match(html, /data-report-description="先看经营结果、主要驱动和对投资判断的直接含义。"/);
-  assert.equal((html.match(/data-report-section="true"/g) ?? []).length, 5);
-  assert.deepEqual([...html.matchAll(/data-report-index="(\d{2})"/g)].map((match) => match[1]), ["01", "02", "03", "04", "05"]);
+  assert.equal((html.match(/data-report-section="true"/g) ?? []).length, 6);
+  assert.deepEqual([...html.matchAll(/data-report-index="(\d{2})"/g)].map((match) => match[1]), ["01", "02", "03", "04", "05", "06"]);
   assert.match(html, /data-report-toc="right"/);
   assert.match(html, /aria-label="本页目录"/);
   assert.doesNotMatch(html, /data-report-bar-state/);
   assert.match(html, /class="fixed right-/);
-  assert.equal((html.match(/data-report-nav-depth="section"/g) ?? []).length, 5);
-  assert.equal((html.match(/data-report-nav-depth="subsection"/g) ?? []).length, 2);
+  assert.equal((html.match(/data-report-nav-depth="section"/g) ?? []).length, 6);
+  assert.equal((html.match(/data-report-nav-depth="subsection"/g) ?? []).length, 0);
   filing.analysis!.presentation = {
     version: "sec-presentation.v1", density: "compact", sections: [{
       id: "sec-composed-1", title: "增长引擎与投入回报", layout: "grid", blocks: [
