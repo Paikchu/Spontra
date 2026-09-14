@@ -1,6 +1,6 @@
 import type { SecPresentation, SecSourceMaterial } from "../../../../shared/analysis-contract/sec-presentation.ts";
 export const SEC_ANALYSIS_SCHEMA_VERSION = "sec-analysis.v3";
-export const SEC_ANALYSIS_PROMPT_VERSION = "sec-analysis-prompt.v5-disclosures";
+export const SEC_ANALYSIS_PROMPT_VERSION = "sec-analysis-prompt.v6-reader";
 // One round, matching what the Manager Review prompt tells the model it gets. Raising this without
 // also rewriting that prompt makes the Manager hoard every repairTask into the first round.
 export const MAX_REPAIR_ROUNDS = 1;
@@ -76,6 +76,7 @@ export type CompanyMemoryItem = {
 };
 
 export type SecAnalysisBrief = {
+  marketSnapshot?: import("../../../../shared/analysis-contract/sec-reader.ts").SecMarketSnapshot;
   reportContinuity?: import("./continuity.ts").ReportContinuity;
   version: "sec-analysis-brief.v2";
   ticker: string;
@@ -165,6 +166,8 @@ export type FilingBlock = {
 };
 
 export type AnalysisFact = {
+  definition?: string;
+  periodEnd?: string;
   factId?: string;
   metricKey: string;
   value: string;
@@ -223,6 +226,11 @@ export type ComparisonResult = {
 };
 
 export type PublishedSecReport = {
+  trends?: import("../../../../shared/analysis-contract/sec-presentation.ts").SecTrend[];
+  reader?: import("../../../../shared/analysis-contract/sec-reader.ts").SecReaderReport;
+  financialLens?: import("../../../../shared/analysis-contract/sec-reader.ts").SecFinancialLens;
+  marketSnapshot?: import("../../../../shared/analysis-contract/sec-reader.ts").SecMarketSnapshot;
+  editorialReview?: { status: "passed"; reviewedAt: string };
   fiscalPeriod?: import("../../../../shared/analysis-contract/report.ts").SecFiscalPeriod | null;
   discovery?: import("../../../../shared/analysis-contract/report.ts").SecDiscovery;
   publication?: { filing: import("./sec.ts").SecFiling; summary: import("./sec.ts").SecFilingSummary };
@@ -235,6 +243,9 @@ export type PublishedSecReport = {
   keyMetrics: Array<{
     metricKey: string;
     currentValue: string;
+    unit?: string;
+    currency?: string;
+    definition?: string;
     qoq?: string;
     yoy?: string;
     status: "verified" | "derived" | "not_comparable" | "not_disclosed";
@@ -272,15 +283,11 @@ export function buildSecAnalysisBrief(args: {
 }): SecAnalysisBrief {
   const currentFacts: AnalysisFact[] = [];
   const comparisons: SecAnalysisBrief["comparisons"] = [];
-  const missingSeriesIds: SecCanonicalSeriesId[] = [];
   for (const series of args.history.series) {
     const observations = args.periodScope === "annual" ? series.annual : series.quarters;
     const current = observations.find((item) =>
       item.endDate <= args.reportDate && dateDistanceDays(item.endDate, args.reportDate) <= SEC_CURRENT_PERIOD_TOLERANCE_DAYS);
-    if (!current) {
-      missingSeriesIds.push(series.seriesId);
-      continue;
-    }
+    if (!current) continue;
     currentFacts.push(factFromObservation(current));
     // Basis is deliberately not part of comparability: a quarter recovered by differencing
     // year-to-date facts measures the same thing as one the issuer reported directly, and
@@ -331,7 +338,7 @@ export function buildSecAnalysisBrief(args: {
     companyMemorySummary: args.memorySummary.slice(0, 2_500),
     memoryItems: args.memoryItems.filter((item) => item.status === "active" || item.status === "provisional" || (item.status === "stale" && item.duePeriod)).slice(0, 20),
     allowedMetricKeys: [...SEC_CANONICAL_SERIES_IDS],
-    missingSeriesIds: [...new Set(missingSeriesIds)].sort(),
+    missingSeriesIds: SEC_CANONICAL_SERIES_IDS.filter((id) => !currentFacts.some((fact) => fact.metricKey === id)),
   };
 }
 
@@ -343,6 +350,8 @@ function factFromObservation(observation: HistoricalObservation): AnalysisFact {
     unit: observation.unit,
     currency: observation.currency,
     periodScope: observation.periodScope,
+    periodEnd: observation.endDate,
+    definition: observation.xbrlConcept ?? observation.derivationFormula,
     basis: observation.basis === "derived" ? "derived" : "gaap",
     evidenceIds: [observation.observationId],
     confidence: "high",
@@ -516,6 +525,8 @@ export function normalizeAnalysisFacts(value: unknown, validEvidenceIds: Set<str
       confidence: confidence(fact?.confidence),
       sourceLabel,
       definitionHash: definition ? hashString(definition) : undefined,
+      definition: String(fact?.definition ?? "").trim().slice(0, 600) || undefined,
+      periodEnd: /^\d{4}-\d{2}-\d{2}$/.test(String(fact?.periodEnd ?? "")) ? String(fact?.periodEnd) : undefined,
     }];
   }).slice(0, 24);
 }
@@ -528,8 +539,8 @@ const METRIC_KEY_TRAILING_FILLER = new Set([
 /**
  * Turns a KPI definition into a readable key. Truncating mid-word produced labels like
  * `compute_networking_reportable_segment_operating_income_as_defined_in_the_segment`, so this cuts
- * on a word boundary and drops a dangling preposition. The full definition still lives in
- * definitionHash, which is what actually distinguishes two KPIs.
+ * on a word boundary and drops a dangling preposition. `definition` preserves the source meaning;
+ * definitionHash distinguishes two KPI definitions for comparison.
  */
 export function metricKeyFromDefinition(definition: string): string {
   const words = definition.replace(/[^a-z0-9]+/g, " ").trim().split(" ").filter(Boolean);

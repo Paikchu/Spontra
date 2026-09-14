@@ -142,6 +142,13 @@ const publishedReport: JsonSchema = {
     periodId: { type: "string" },
     reportVersion: { type: "string" },
     headline: { type: "string" },
+    reader: { type: "object", required: ["version", "changes", "sections", "watch", "limitations"], properties: {
+      version: { const: "sec-reader.v1" }, changes: { type: "array", minItems: 1 }, sections: { type: "array", minItems: 3, maxItems: 8 },
+      watch: { type: "array", minItems: 1 }, limitations: { type: "array" },
+    } },
+    financialLens: { type: "object", required: ["missingMetrics", "limitations"] },
+    marketSnapshot: { type: "object", required: ["status", "asOf", "source", "sourceUrl", "limitations"], properties: { status: { enum: ["available", "unavailable"] } } },
+    editorialReview: { type: "object", required: ["status", "reviewedAt"], properties: { status: { const: "passed" }, reviewedAt: { type: "string" } } },
     keyMetrics: {
       type: "array",
       items: {
@@ -177,7 +184,7 @@ const publishedReport: JsonSchema = {
         analysisStatus: { enum: ["complete", "partial"] },
         unresolvedQuestions: { type: "array", items: { type: "string" } },
         failedNodeIds: { type: "array", items: { type: "string" } },
-        stopReason: { type: "string" },
+        stopReason: { type: ["string", "null"] },
         managerCoverageScore: { type: "number" },
       },
     },
@@ -234,6 +241,10 @@ const publicSecFiling: JsonSchema = {
     "provenance", "periodId", "analysisSchemaVersion", "contentRevision", "analysisRun",
   ],
   properties: {
+    fiscalPeriod: { type: ["object", "null"], required: ["fiscalYear", "fiscalPeriod", "periodEnd", "source", "sourceAccession", "sourceUrl"], properties: {
+      fiscalYear: { type: "integer" }, fiscalPeriod: { enum: ["FY", "Q1", "Q2", "Q3", "Q4", "H1", "H2", "M9"] },
+      periodEnd: { type: "string", pattern: DATE_PATTERN }, source: { enum: ["sec_dei", "ai_source_review"] }, sourceAccession: { type: "string" }, sourceUrl: { type: "string" },
+    } },
     earningsGroup,
     accessionNumber: { type: "string" },
     ticker: { type: "string", pattern: TICKER_PATTERN },

@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { SecReportDocument } from "../app/analysis/stocks/[ticker]/sec/[accession]/SecReportDocument";
 import { SecReportNavigator } from "../app/analysis/stocks/[ticker]/sec/[accession]/SecReportNavigator";
 import type { SecFilingWithSummary } from "../shared/analysis-contract/report";
+import { readerFilingFixture } from "./fixtures/sec-reader-fixture.ts";
 
 test("renders the complete report and dynamic evidence using the shared renderer", () => {
   const filing: SecFilingWithSummary = {
@@ -35,9 +36,10 @@ test("renders the complete report and dynamic evidence using the shared renderer
   const html = renderToStaticMarkup(<SecReportDocument companyName="Microsoft Corp" filing={filing} />);
 
   assert.match(html, /核心结论/);
-  assert.match(html, /验证指标/);
-  assert.match(html, /完整正文/);
-  assert.match(html, /动态分段分析/);
+  assert.match(html, /关键数据/);
+  assert.match(html, /报告概览/);
+  assert.match(html, /专题解读/);
+  assert.doesNotMatch(html, /动态分段分析|相关性|主编覆盖度/);
   assert.match(html, /数据质量/);
   assert.match(html, /Revenue increased 18%/);
   assert.match(html, /<details/);
@@ -71,7 +73,7 @@ test("renders the complete report and dynamic evidence using the shared renderer
   assert.match(composed, /role="img"/);
   assert.match(composed, /查看数据与来源/);
   assert.match(composed, /数据质量/);
-  assert.match(composed, /分析底稿与证据/);
+  assert.match(composed, /核对原文与分析依据/);
   assert.match(composed, /未解析/);
   assert.doesNotMatch(composed, /data-report-title="完整正文"/);
 
@@ -83,6 +85,23 @@ test("cached report navigators keep distinct accessible menu targets", () => {
   const controls = [...html.matchAll(/aria-controls="([^"]+)"/g)].map((match) => match[1]);
   assert.equal(controls.length, 2);
   assert.equal(new Set(controls).size, 2);
+});
+
+test("reader report puts both cash definitions and debt limits before the complete article, with machine details collapsed", () => {
+  const html = renderToStaticMarkup(<SecReportDocument companyName="示例公司" filing={readerFilingFixture()} />);
+  assert.match(html, /−|\-3\.00 亿美元/);
+  assert.match(html, /2\.00 亿美元/);
+  assert.match(html, /不是|不能视为明年新增折旧/);
+  assert.match(html, /本期与以前/);
+  assert.match(html, /以前/);
+  assert.match(html, /什么会改变这个判断/);
+  assert.match(html, /120\.00 美元/);
+  assert.ok(html.indexOf("杠杆全貌不可见") < html.indexOf('id="sec-report-conclusions"'));
+  assert.ok(html.indexOf("同一笔现金") < html.indexOf('id="sec-reader-1"'));
+  assert.doesNotMatch(html, /动态分段分析|主编覆盖度|相关性|data-report-title="完整正文"/);
+  assert.match(html, /<details class="sec-reader-workpapers"><summary>/);
+  assert.match(html, /<details><summary>核对数据覆盖与处理记录/);
+  assert.doesNotMatch(html, /href="#sec-report-node-1"/);
 });
 
 test('chart displays ratios as percentages and preserves gaps between observation dates', async () => {

@@ -26,6 +26,7 @@ export type SecRepository = {
 };
 
 export type SecAnalysisContext = {
+  marketSnapshot?: import("../../../../shared/analysis-contract/sec-reader.ts").SecMarketSnapshot;
   reportContinuity?: ReportContinuity;
   currentPeriodId: string;
   qoqPeriodId: string | null;

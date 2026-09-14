@@ -51,7 +51,7 @@ export function selectReportContinuity(filing: SecFiling, rows: ReportRow[]): Re
         || summary.accessionNumber !== row.accessionNumber || !summary.generatedAt
         || !Number.isFinite(Date.parse(summary.generatedAt)) || summary.generatedAt.slice(0, 10) > filing.filingDate) return [];
       const text = [summary.headline, ...(summary.bullets ?? []).map((b) => `${b.label}：${b.detail}`), summary.analystView, summary.report,
-        ...(summary.nodes ?? []).filter((node) => node.status === "complete" && node.id !== "historical-judgment-review")
+        ...(summary.readerVersion ? [] : summary.nodes ?? []).filter((node) => node.status === "complete" && node.id !== "historical-judgment-review")
           .map((node) => [node.title, ...node.findings.map((b) => `${b.label}：${b.detail}`), node.narrative].join("\n")),
       ].filter(Boolean).join("\n\n");
       if (!text.trim()) return [];
@@ -93,6 +93,7 @@ export const CONTINUITY_PROMPT = [
   "输出 reviews: [{accessionNumber,priorJudgment,status,evidenceIds,explanation,nextTest}]。",
   "status 只能 supported、contradicted、not_verifiable、superseded。有方向结论 supported/contradicted/superseded 必须有本期 evidenceIds 和解释。",
   "未提及不等于恶化或证伪，缺证据返回 not_verifiable。单季改善不能证明长期可持续；解释一次性因素、可比性限制和下期验证条件。",
+  "检验旧判断的因果机制和当时的预测条件，不能因结果重复就宣布因果得到支持。superseded必须说明哪条旧前提被何种新证据替代；旧的一次性因素消失、换成另一种一次性因素不代表正常化。",
 ].join("\n");
 
 /** Validate identity/quote/provenance; semantic correctness still requires evaluation. */

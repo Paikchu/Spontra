@@ -1,4 +1,6 @@
 import { fiscalPeriodInput } from "./sec/fiscal-period-ai.ts";
+import { fetchSecMarketSnapshot } from "./sec/market.ts";
+import { editorialIssues, EDITORIAL_REVIEW_PROMPT } from "./sec/reader.ts";
 import { refreshFiscalPeriods, readFiscalPeriod } from "./sec/fiscal-period.ts";
 import { attachDiscovery, auditDisclosureCoverage, discoveryChunkCount, scanDisclosureChunk, type DiscoveryChunk } from "./sec/discovery.ts";
 import { buildEarningsGroups, classificationKey, combineEarningsDocuments, earningsKey, identifyEarningsPeriod, isPeriodic } from "./sec/earnings.ts";
@@ -50,7 +52,7 @@ export type SecPipelineEnv = SecCronEnv & AnalysisReadEnv & {
 const PUBLISH_BLOCK_CHUNK_SIZE = 40;
 
 /** Planning, review and synthesis carry the judgement; node extraction is mechanical. */
-const REASONING_STAGE = /^(manager|synthesis|discovery-audit)/;
+const REASONING_STAGE = /^(manager|synthesis|discovery-audit|editorial-review)/;
 
 export function modelForStage(env: SecPipelineEnv, stage: string, override?: string): string | undefined {
   if (override) return override;
@@ -156,7 +158,9 @@ export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof
       const store = repository();
       await store.saveHistory(normalizedFiling, history);
       const context = await store.getAnalysisContext(normalizedFiling);
-      return { ...context, history: context.history ?? history };
+      const finalHistory = context.history ?? history;
+      const marketSnapshot = await fetchSecMarketSnapshot(normalizedFiling, finalHistory, fetcher);
+      return { ...context, history: finalHistory, marketSnapshot };
     },
     prepare: async (filing) => {
       let prepared = await prepareSecFiling(filing, { userAgent: env.SEC_USER_AGENT, fetcher });
@@ -255,9 +259,30 @@ export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof
       await putArtifact(env.SEC_FILINGS, reference, "nodes/final", nodes);
       if (review) await putArtifact(env.SEC_FILINGS, reference, "manager-review/final", review);
       const result = await summarizePreparedSecFiling(await readMeta(env.SEC_FILINGS, reference), context, modelFor(execution), new Date(), plan, nodes, brief, review);
+      if (!result.artifact.report.reader) throw new Error("Synthesis did not produce the required reader report");
       if (result.summary && _filing.earningsGroup) result.summary.earningsGroup = _filing.earningsGroup;
       const synthesisKey = await putArtifact(env.SEC_FILINGS, reference, "synthesis", result);
       return { ...result, artifact: { ...result.artifact, blocks: [], artifactKeys: collectArtifactKeys(reference, synthesisKey) } };
+    },
+    auditReport: async (reference, nodes, brief, result, round, execution) => {
+      if (!result.artifact.report.reader || !result.summary) throw new Error("Publication requires a complete reader report");
+      const audit = await modelFor(execution)(`editorial-review:${round}`, EDITORIAL_REVIEW_PROMPT, {
+          headline: result.summary.headline, bullets: result.summary.bullets, analystView: result.summary.analystView,
+          reader: result.artifact.report.reader, financialLens: result.artifact.report.financialLens, marketSnapshot: result.artifact.report.marketSnapshot,
+          facts: brief.currentFacts, comparisons: brief.comparisons, history: brief.history, historicalReports: brief.reportContinuity,
+          nodes: nodes.map(({ id, title, facts, evidence, narrative, findings }) => ({ id, title, facts, evidence, narrative, findings })),
+          limitations: result.artifact.report.dataQuality,
+      });
+      await putArtifact(env.SEC_FILINGS, reference, `editorial-review/${round}`, audit);
+      return { issues: editorialIssues(audit), reviewedAt: new Date().toISOString() };
+    },
+    reviseReport: async (filing, reference, context, plan, nodes, brief, review, issues, execution) => {
+      const result = await summarizePreparedSecFiling(await readMeta(env.SEC_FILINGS, reference), context, modelFor(execution), new Date(), plan, nodes, brief, review, issues);
+      if (!result.artifact.report.reader) throw new Error("Editorial revision did not produce a reader report");
+      if (filing.earningsGroup) result.summary.earningsGroup = filing.earningsGroup;
+      const key = await putArtifact(env.SEC_FILINGS, reference, "synthesis", result);
+      result.artifact.artifactKeys = collectArtifactKeys(reference, key);
+      return result;
     },
     composePresentation: async (filing, reference, report, nodes, brief, execution) => {
       const trends = buildSecTrends(brief, filing.filingDate, filing.reportDate);
@@ -285,7 +310,9 @@ export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof
       }
     },
     publish: async (artifact, summary) => {
+      if (artifact.report.reader && artifact.report.editorialReview?.status !== "passed") throw new Error("Reader report has not passed editorial review");
       const reference = { key: preparedKey(artifact.filing.ticker, artifact.filing.accessionNumber), filing: artifact.filing };
+      if (artifact.report.reader) await putArtifact(env.SEC_FILINGS, reference, "synthesis", { artifact, summary });
       const prepared = await readPrepared(env.SEC_FILINGS, reference);
       const citedBlockIds = collectReferencedBlockIds(artifact);
       const citedBlocks = prepared.blocks.filter((block) => citedBlockIds.has(block.blockId));
@@ -490,7 +517,7 @@ export async function callWorkerSecModel(
       ],
       response_format: { type: "json_object" },
       temperature: 0,
-      ...(stage.startsWith("synthesis") ? { max_tokens: 8192 } : {}),
+      ...(stage.startsWith("synthesis") ? { max_tokens: 14000 } : {}),
       // Streaming keeps bytes flowing so the provider's proxy cannot time the request out at ~100s.
       stream: true,
     }),

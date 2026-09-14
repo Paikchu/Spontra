@@ -196,7 +196,8 @@ test("builds a Manager brief from XBRL facts, history, memory, and deterministic
   assert.equal(brief.memoryItems[0].memoryId, "memory-1");
   assert.equal(brief.comparisons.find((item) => item.comparisonType === "qoq")?.percentageDelta, "0.2");
   assert.equal(brief.comparisons.find((item) => item.comparisonType === "yoy")?.percentageDelta, "0.25");
-  assert.deepEqual(brief.missingSeriesIds, []);
+  assert.ok(brief.missingSeriesIds.includes("debt"), "a series absent from the response is also missing");
+  assert.equal(brief.missingSeriesIds.includes("revenue"), false);
 });
 
 test("passes historical series into the Manager plan and holds Company Memory back", async () => {

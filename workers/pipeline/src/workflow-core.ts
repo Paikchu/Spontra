@@ -137,6 +137,10 @@ export type SecPipelineOperations = {
   analyzeNode(spec: SecNodeSpec, filing: SecFiling, prepared: PreparedFilingReference, brief?: SecAnalysisBrief, round?: number, execution?: SecModelExecution): Promise<SecNodeResult>;
   review?(filing: SecFiling, prepared: PreparedFilingReference, brief: SecAnalysisBrief, plan: SecNodePlan, nodes: SecNodeResult[], round: number, execution?: SecModelExecution): Promise<ManagerReview>;
   composePresentation?(filing: SecFiling, prepared: PreparedFilingReference, report: SecAnalysisArtifact['report'], nodes: SecNodeResult[], brief: SecAnalysisBrief, execution?: SecModelExecution): Promise<SecAnalysisArtifact['report']>;
+  auditReport?(prepared: PreparedFilingReference, nodes: SecNodeResult[], brief: SecAnalysisBrief,
+    draft: { artifact: SecAnalysisArtifact; summary: SecFilingSummary | null }, round: number, execution?: SecModelExecution): Promise<{ issues: string[]; reviewedAt: string }>;
+  reviseReport?(filing: SecFiling, prepared: PreparedFilingReference, context: SecAnalysisContext, plan: SecNodePlan, nodes: SecNodeResult[], brief: SecAnalysisBrief, review: ManagerReview,
+    issues: string[], execution?: SecModelExecution): Promise<{ artifact: SecAnalysisArtifact; summary: SecFilingSummary | null }>;
   summarizeEvent(filing: SecFiling, prepared: PreparedFilingReference, execution?: SecModelExecution): Promise<SecFilingSummary>;
   summarize(filing: SecFiling, prepared: PreparedFilingReference, context: SecAnalysisContext, plan: SecNodePlan, nodes: SecNodeResult[], brief?: SecAnalysisBrief, review?: ManagerReview, execution?: SecModelExecution): Promise<{ artifact: SecAnalysisArtifact; summary: SecFilingSummary | null }>;
   publish(artifact: SecAnalysisArtifact, summary: SecFilingSummary | null): Promise<void | { memoryJobId?: string }>;
@@ -249,7 +253,7 @@ export async function executeSecAnalysisWorkflow(
       });
       const managerReview: ManagerReview = loop.review;
       stage = "synthesis";
-      const result = await step.do(`synthesis:${accession}`, (stepContext) => operations.summarize(filing, prepared, context, plan, loop.nodes, brief, managerReview, executionFor(stepContext)));
+      let result = await step.do(`synthesis:${accession}`, (stepContext) => operations.summarize(filing, prepared, context, plan, loop.nodes, brief, managerReview, executionFor(stepContext)));
       const discoveryWarnings = [
         ...(result.artifact.report.discovery?.warnings ?? []),
         ...(plan.warnings ?? []).filter((warning) => warning.includes("仍有发现未展开")),
@@ -280,7 +284,21 @@ export async function executeSecAnalysisWorkflow(
         failed.push(accession);
         continue;
       }
-      if (!result.artifact.report.presentation && operations.composePresentation) {
+      if (operations.auditReport) {
+        for (let round = 0; round <= 1; round += 1) {
+          stage = "editorial-review";
+          const draft = result;
+          const audit = await step.do(`editorial-review:${accession}:${round}`, (stepContext) => operations.auditReport!(prepared, loop.nodes, brief, draft, round, executionFor(stepContext)));
+          if (!audit.issues.length) {
+            result.artifact.report.editorialReview = { status: "passed", reviewedAt: audit.reviewedAt };
+            break;
+          }
+          if (round === 1 || !operations.reviseReport) throw new Error(`Reader report failed editorial review: ${audit.issues.join("; ").slice(0, 1000)}`);
+          stage = "editorial-revision";
+          result = await step.do(`editorial-revision:${accession}`, (stepContext) => operations.reviseReport!(filing, prepared, context, plan, loop.nodes, brief, managerReview, audit.issues, executionFor(stepContext)));
+        }
+      }
+      if (!result.artifact.report.reader && !result.artifact.report.presentation && operations.composePresentation) {
         stage = "presentation";
         result.artifact.report = await step.do(`presentation:${accession}`, (stepContext) => operations.composePresentation!(filing, prepared, result.artifact.report, loop.nodes, brief, executionFor(stepContext)));
       }

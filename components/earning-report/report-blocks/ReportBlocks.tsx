@@ -110,7 +110,7 @@ function Block({ block, context }: { block: ReportBlock; context: ReportBlockRen
             {metrics.map((metric) => (
               <article key={metric.metricKey}>
                 <span>{formatSecMetricLabel(metric.metricKey)}</span>
-                <strong>{formatSecMetricValue(metric.metricKey, metric.currentValue)}</strong>
+                    <strong>{formatSecMetricValue(metric.metricKey, metric.currentValue, metric.unit, metric.currency)}</strong>
                 <small>{metric.qoq ? `环比 ${metric.qoq}` : "环比不可比"} · {metric.yoy ? `同比 ${metric.yoy}` : "同比不可比"}</small>
               </article>
             ))}

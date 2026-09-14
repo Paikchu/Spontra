@@ -243,7 +243,7 @@ test("bounds node analysis to two concurrent model calls per workflow", async ()
   assert.equal(maximumActive, 2);
 });
 
-test("publishes full reports directly after synthesis without claim checks", async () => {
+test("legacy operations without a reader finalizer remain compatible", async () => {
   const steps: string[] = [];
   let published = 0;
   const ops = operations({
@@ -263,6 +263,36 @@ test("publishes full reports directly after synthesis without claim checks", asy
   assert.equal(published, 1);
   assert.equal(steps.some((step) => step.includes("claim-check")), false);
   assert.equal(steps.some((step) => step.includes("synthesis-repair")), false);
+});
+
+test("editorial rejection preserves the previous report and never reaches publish", async () => {
+  let published = 0;
+  const steps: string[] = [];
+  const ops = operations({
+    async auditReport() { return { issues: ["operating margin wrongly attributed to taxes"], reviewedAt: new Date().toISOString() }; },
+    async publish() { published += 1; },
+  });
+  const result = await executeSecAnalysisWorkflow({ ticker: "TESTCO", requestedBy: "manual" }, "reader-audit-failure", stepRecorder(steps), ops);
+  assert.deepEqual(result.failed, [filing.accessionNumber]);
+  assert.equal(published, 0);
+  assert.ok(steps.includes(`editorial-review:${filing.accessionNumber}:0`));
+});
+
+test("published output is the independently reviewed result, not the original draft", async () => {
+  let publishedHeadline = "";
+  let reviews = 0;
+  const base = operations();
+  const ops = operations({
+    async auditReport() { return { issues: reviews++ ? [] : ["修订会计归因"], reviewedAt: new Date().toISOString() }; },
+    async reviseReport(filing, prepared, context, plan, nodes, brief, review) {
+      const draft = await base.summarize(filing, prepared, context, plan, nodes, brief, review);
+      return { ...draft, artifact: { ...draft.artifact, report: { ...draft.artifact.report, headline: "审稿后的判断" } } };
+    },
+    async publish(artifact) { publishedHeadline = artifact.report.headline; },
+  });
+  await executeSecAnalysisWorkflow({ ticker: "TESTCO", requestedBy: "manual" }, "reader-audit-pass", stepRecorder([]), ops);
+  assert.equal(publishedHeadline, "审稿后的判断");
+  assert.equal(reviews, 2);
 });
 
 test("keeps event filings on the compact path without running full-report stages", async () => {

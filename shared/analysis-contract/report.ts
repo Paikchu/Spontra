@@ -2,6 +2,8 @@ import type { SecPresentation, SecSourceMaterial } from "./sec-presentation.ts";
 export type SecComparisonType = "qoq" | "yoy" | "guidance_revision" | "disclosure_change";
 
 export type AnalysisFact = {
+  definition?: string;
+  periodEnd?: string;
   factId?: string;
   metricKey: string;
   value: string;
@@ -64,6 +66,11 @@ export type SecDiscovery = {
 };
 
 export type PublishedSecReport = {
+  trends?: import("./sec-presentation.ts").SecTrend[];
+  reader?: import("./sec-reader.ts").SecReaderReport;
+  financialLens?: import("./sec-reader.ts").SecFinancialLens;
+  marketSnapshot?: import("./sec-reader.ts").SecMarketSnapshot;
+  editorialReview?: { status: "passed"; reviewedAt: string };
   fiscalPeriod?: import("./report.ts").SecFiscalPeriod | null;
   discovery?: SecDiscovery;
   publication?: { filing: SecFiling; summary: SecFilingSummary };
@@ -76,6 +83,9 @@ export type PublishedSecReport = {
   keyMetrics: Array<{
     metricKey: string;
     currentValue: string;
+    unit?: string;
+    currency?: string;
+    definition?: string;
     qoq?: string;
     yoy?: string;
     status: "verified" | "derived" | "not_comparable" | "not_disclosed";
@@ -156,6 +166,7 @@ export type SecFiling = {
 };
 
 export type SecFilingSummary = {
+  readerVersion?: "sec-reader.v1";
   discovery?: SecDiscovery;
   earningsGroup?: SecEarningsGroup;
   ticker: string;

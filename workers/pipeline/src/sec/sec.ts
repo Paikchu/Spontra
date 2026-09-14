@@ -96,6 +96,7 @@ export type SecFiling = {
 };
 
 export type SecFilingSummary = {
+  readerVersion?: "sec-reader.v1";
   discovery?: import("../../../../shared/analysis-contract/report.ts").SecDiscovery;
   earningsGroup?: import("../../../../shared/analysis-contract/report.ts").SecEarningsGroup;
   ticker: string;
@@ -343,7 +344,7 @@ export function normalizeSecSummary(
   now = new Date(),
 ): SecFilingSummary {
   const input = asRecord(value) ?? {};
-  const blocked = [/did not contain readable text/i, /未找到/i, /未定位到/i, /无法读取/i, /需要.*复核/i, /需.*复核/i, /等待.*复核/i];
+  const blocked = [/^.*did not contain readable text[.!]?$/i, /^(未找到|未定位到|无法读取)(原文|正文|文件)[。！]?$/, /^(需要|需|等待)(后续|人工)?复核[。！]?$/];
   const clean = (item: unknown, max: number) => String(item ?? "").replace(/\s+/g, " ").trim().slice(0, max);
   const useful = (item: string) => Boolean(item) && !blocked.some((pattern) => pattern.test(item));
   const rawBullets = Array.isArray(input.bullets) ? input.bullets : [];
