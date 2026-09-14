@@ -12,6 +12,8 @@ export function normalizeReaderReport(value: unknown, args: {
   nodes: SecNodeResult[]; plan: SecNodePlan; currentEvidence: Set<string>; priorEvidence: Set<string>; chartKeys: Set<string>; requireVisual?: boolean;
 }): SecReaderReport {
   const root = object(value);
+  const presentationWarnings: string[] = [];
+  const usedCharts = new Set<string>();
   const nodeIds = new Set(args.nodes.filter((n) => n.status === "complete").map((n) => n.id));
   const sections = list(root.sections).map((raw, index): SecReaderReport["sections"][number] => {
     const row = object(raw);
@@ -19,32 +21,38 @@ export function normalizeReaderReport(value: unknown, args: {
     const paragraphs = list(row.paragraphs).map((v) => typeof v === "string" ? v.trim() : "").filter(Boolean);
     const evidenceIds = refs(row.evidenceIds, args.currentEvidence);
     const sources = refs(row.nodeIds, nodeIds);
-    if (!string(row.title) || paragraphs.length < 2 || paragraphs.length > 4 || paragraphs.some((p) => p.length > 1800) || !string(row.takeaway)
+    if (!string(row.title) || paragraphs.length < 2 || paragraphs.length > 8 || paragraphs.some((p) => p.length > 1800) || !string(row.takeaway)
       || !["business", "earnings_cash", "valuation", "bear_case", "outlook"].includes(role)
       || !evidenceIds.length || !sources.length) throw new Error(`Reader section ${index + 1} lacks complete grounded analysis`);
-    if (args.requireVisual && row.visual === undefined) throw new Error(`Reader section ${index + 1} needs visual planning`);
-    let visual: SecReaderVisual | undefined;
-    if (row.visual !== undefined) {
-      const v = object(row.visual), chart = object(v.chart);
-      const layout = string(v.layout) as SecReaderVisual["layout"];
-      const labels = list(v.paragraphLabels).map((v) => string(v, 100));
-      if (!["essay", "spotlight", "comparison", "chart_focus"].includes(layout) || !string(v.rationale)
-        || (layout === "comparison" && (paragraphs.length % 2 !== 0 || labels.length !== paragraphs.length || labels.some((l) => !l)))) {
-        throw new Error(`Reader visual ${index + 1} has invalid layout or comparison labels`);
-      }
-      if (v.chart !== undefined && (!args.chartKeys.has(string(chart.metricKey)) || !["line", "bar"].includes(String(chart.mark)) || !string(chart.title) || !string(chart.caption))) {
-        throw new Error(`Reader visual ${index + 1} has an invalid chart reference or explanation`);
-      }
-      if (v.chart === undefined && (layout === "chart_focus" || !string(v.noChartReason))) throw new Error(`Reader visual ${index + 1} needs a chart or a reason to omit it`);
-      visual = { layout, rationale: string(v.rationale, 400),
-        ...(layout === "comparison" ? { paragraphLabels: labels } : {}),
-        ...(v.chart !== undefined ? { chart: { metricKey: string(chart.metricKey), mark: chart.mark as "line" | "bar", title: string(chart.title, 120), caption: string(chart.caption, 500) } } : { noChartReason: string(v.noChartReason, 400) }) };
+    const v = object(row.visual), chart = object(v.chart);
+    let layout = string(v.layout) as SecReaderVisual["layout"];
+    const labels = list(v.paragraphLabels).map((v) => string(v, 100));
+    const warn = (reason: string) => presentationWarnings.push(`第${index + 1}节展示配置已回退：${reason}；正文与证据保留。`);
+    if (!["essay", "spotlight", "comparison", "chart_focus"].includes(layout)) {
+      layout = "essay";
+      if (args.requireVisual || row.visual !== undefined) warn("缺少有效版式");
     }
+    if (layout === "comparison" && (paragraphs.length % 2 !== 0 || labels.length !== paragraphs.length || labels.some((label) => !label))) {
+      layout = "essay"; warn("对照段落标签不完整");
+    }
+    const metricKey = string(chart.metricKey);
+    const validChart = v.chart !== undefined && args.chartKeys.has(metricKey) && !usedCharts.has(metricKey)
+      && ["line", "bar"].includes(String(chart.mark)) && string(chart.title) && string(chart.caption);
+    if (v.chart !== undefined && !validChart) warn("图表引用、说明不完整或重复");
+    if (validChart) usedCharts.add(metricKey);
+    if (layout === "chart_focus" && !validChart) { layout = "essay"; warn("图文版式缺少可验证图表"); }
+    if (!validChart && !string(v.noChartReason) && (args.requireVisual || row.visual !== undefined)) warn("未提供无图说明");
+    const visual: SecReaderVisual | undefined = row.visual !== undefined || args.requireVisual ? {
+      layout, rationale: string(v.rationale, 400) || "保留连续正文及其证据。",
+      ...(layout === "comparison" ? { paragraphLabels: labels } : {}),
+      ...(validChart ? { chart: { metricKey, mark: chart.mark as "line" | "bar", title: string(chart.title, 120), caption: string(chart.caption, 500) } }
+        : { noChartReason: string(v.noChartReason, 400) || "本节未配置可验证图表，文字分析保留。" }),
+    } : undefined;
     return { id: `sec-reader-${index + 1}`, title: string(row.title, 100), role, paragraphs,
       takeaway: string(row.takeaway, 400), nodeIds: sources, evidenceIds, ...(visual ? { visual } : {}),
       ...(args.chartKeys.has(string(row.chartMetricKey)) ? { chartMetricKey: string(row.chartMetricKey) } : {}) };
   });
-  if (sections.length < 3 || sections.length > 8 || !sections.some((s) => s.role === "bear_case") || !sections.some((s) => s.role === "valuation")) {
+  if (sections.length < 3 || sections.length > 16 || !sections.some((s) => s.role === "bear_case") || !sections.some((s) => s.role === "valuation")) {
     throw new Error("Reader report requires a complete article, independent bear case and valuation boundary");
   }
   const chartKeys = sections.flatMap((s) => s.visual?.chart ? [s.visual.chart.metricKey] : []);
@@ -70,10 +78,10 @@ export function normalizeReaderReport(value: unknown, args: {
     return { condition: string(row.condition, 500), deadline: string(row.deadline, 150), consequence: string(row.consequence, 500), evidenceIds: refs(row.evidenceIds, args.currentEvidence) };
   });
   if (!watch.length || watch.some((w) => !w.condition || !w.deadline || !w.consequence || !w.evidenceIds.length)) throw new Error("Reader report needs falsifiable conditions and a review date");
-  const reader: SecReaderReport = { version: "sec-reader.v1", sections, changes, watch, limitations: list(root.limitations).slice(0, 8).map((raw) => {
+  const reader: SecReaderReport = { version: "sec-reader.v1", sections, changes, watch, ...(presentationWarnings.length ? { presentationWarnings } : {}), limitations: list(root.limitations).slice(0, 8).map((raw) => {
     const row = object(raw); return { issue: string(row.issue, 300), impact: string(row.impact, 500) };
   }).filter((l) => l.issue && l.impact) };
-  if (readerArticleText(reader).length > 14000) throw new Error("Reader article exceeds the complete-report budget; rewrite, do not truncate");
+  if (readerArticleText(reader).length > 96000) throw new Error("Reader article exceeds the complete-report budget; rewrite, do not truncate");
   return reader;
 }
 

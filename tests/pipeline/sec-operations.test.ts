@@ -577,7 +577,7 @@ test("memory extraction still receives this filing's claims and prior memory ids
   });
 });
 
-test("recovers once on the primary model when the fallback is rate limited", async () => {
+test("recovers on the primary model when the fallback is rate limited or unavailable", async () => {
   for (const status of [429, 503]) {
     const objects = new Map<string, string>();
     const models: string[] = [];
@@ -596,14 +596,9 @@ test("recovers once on the primary model when the fallback is rate limited", asy
     const operations = createSecPipelineOperations(env, fetcher);
     const reference = await operations.prepare(filing);
     const run = operations.plan(filing, reference, undefined, modelExecutionForAttempt(2));
-    if (status === 429) {
-      const plan = await run;
-      assert.equal(plan.nodes.length, 1);
-      assert.deepEqual(models, ['hy3', 'primary-model']);
-    } else {
-      await assert.rejects(run, /HTTP 503/);
-      assert.deepEqual(models, ['hy3']);
-    }
+    const plan = await run;
+    assert.equal(plan.nodes.length, 1);
+    assert.deepEqual(models, ['hy3', 'primary-model']);
   }
 });
 

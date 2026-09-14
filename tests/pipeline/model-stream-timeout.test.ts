@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { setImmediate } from "node:timers/promises";
 import { readModelContent, callWorkerSecModel } from "../../workers/pipeline/src/operations.ts";
-import { SEC_MODEL_EXECUTION_BUDGET_MS, SEC_WORKFLOW_STEP_TIMEOUT, SEC_MODEL_MAX_RESPONSE_BYTES } from "../../workers/pipeline/src/retry-policy.ts";
+import { SEC_MODEL_EXECUTION_BUDGET_MS, SEC_WORKFLOW_STEP_TIMEOUT } from "../../workers/pipeline/src/retry-policy.ts";
+import { MODEL_STREAM_LIMITS } from "../../workers/pipeline/src/model-stream.ts";
 
 const enc = new TextEncoder();
 function stream(parts: string[]) {
@@ -55,8 +56,8 @@ test("active reasoning and content survive the old 3-minute and 10-minute cutoff
   controller.close();
   assert.deepEqual(await pending, { ok: true });
   await checked;
-  assert.equal(SEC_WORKFLOW_STEP_TIMEOUT, "30 minutes");
-  assert.ok(SEC_MODEL_EXECUTION_BUDGET_MS > 12 * 60_000 && SEC_MODEL_EXECUTION_BUDGET_MS < 30 * 60_000);
+  assert.equal(SEC_WORKFLOW_STEP_TIMEOUT, "60 minutes");
+  assert.ok(SEC_MODEL_EXECUTION_BUDGET_MS > 30 * 60_000 && SEC_MODEL_EXECUTION_BUDGET_MS < 60 * 60_000);
 });
 
 test("first response still times out at 90 seconds", async (t) => {
@@ -89,7 +90,7 @@ test("repeated heartbeats and empty reasoning cannot refresh the stall clock", a
 
 test("oversized streams are cancelled without publishing a truncated answer", async () => {
   let cancelled = false;
-  const response = new Response(new ReadableStream({ start(c) { c.enqueue(enc.encode(' '.repeat(SEC_MODEL_MAX_RESPONSE_BYTES + 1))); }, cancel() { cancelled = true; } }));
-  await assert.rejects(readModelContent(response, "test"), /2 MB limit/);
+  const response = new Response(new ReadableStream({ start(c) { c.enqueue(enc.encode(' '.repeat(1025))); }, cancel() { cancelled = true; } }));
+  await assert.rejects(readModelContent(response, "test", undefined, {}, undefined, { limits: { ...MODEL_STREAM_LIMITS, wire: 1024 } }), /wire budget/);
   assert.equal(cancelled, true);
 });

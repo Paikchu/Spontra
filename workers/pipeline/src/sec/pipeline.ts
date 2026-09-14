@@ -526,7 +526,7 @@ export async function summarizePreparedSecFiling(
     ...report,
     dataQuality: {
       ...report.dataQuality,
-      warnings: [...new Set([...(prepared.discovery?.warnings ?? []), ...(prepared.materialWarnings ?? []), ...(!reader && summaryValue.presentation && !presentation ? ["模型报告编排未通过校验，已保留完整标准报告。"] : []), ...report.dataQuality.warnings, ...(plan.warnings ?? [])])].slice(0, 20),
+      warnings: [...new Set([...(reader?.presentationWarnings ?? []), ...(prepared.discovery?.warnings ?? []), ...(prepared.materialWarnings ?? []), ...(!reader && summaryValue.presentation && !presentation ? ["模型报告编排未通过校验，已保留完整标准报告。"] : []), ...report.dataQuality.warnings, ...(plan.warnings ?? [])])].slice(0, 20),
       analysisStatus: finalReview.status === "complete" ? "complete" : "partial",
       unresolvedQuestions: finalReview.unresolvedQuestions,
       failedNodeIds: nodes.filter((node) => node.status !== "complete").map((node) => node.id),

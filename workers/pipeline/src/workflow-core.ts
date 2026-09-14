@@ -20,6 +20,8 @@ import { SEC_SUMMARY_VERSION } from "./sec/sec.ts";
 import type { SecAnalysisArtifact, SecAnalysisContext } from "./sec/types.ts";
 import type { SecWorkflowParams } from "./core.ts";
 import { modelExecutionForAttempt, type SecModelExecution } from "./retry-policy.ts";
+import { SecModelOutputError } from "./model-stream.ts";
+import { SecModelHttpError } from "./model-recovery.ts";
 
 const SEC_NODE_CONCURRENCY = 2;
 
@@ -198,6 +200,7 @@ export async function executeSecAnalysisWorkflow(
       const eventFiling = /^(8-K|6-K)(\/A)?$/.test(filing.form);
       stage = "prepare";
       await step.do(`job:${accession}:start`, () => operations.updateJob({ ...baseJob, status: "running", currentStage: "prepare", updatedAt: new Date().toISOString() }));
+      console.log(JSON.stringify({ event: "sec-report-generation", policy: "reliability.v1", jobId, workflowInstanceId, ticker: filing.ticker, accession, status: "started" }));
       const prepared = await step.do(`prepare:${accession}`, () => operations.prepare(filing));
       let discoveryResult: { groundedDisclosures: number } | undefined;
       if (operations.scanDisclosures && operations.finishDiscovery && prepared.discoveryChunks) {
@@ -312,6 +315,7 @@ export async function executeSecAnalysisWorkflow(
       stage = "publish";
       const publication = await step.do(`publish:${accession}`, () => operations.publish(result.artifact, summary));
       await step.do(`job:${accession}:complete`, () => operations.updateJob({ ...baseJob, status: "complete", currentStage: "published", updatedAt: new Date().toISOString(), completedAt: new Date().toISOString() }));
+      console.log(JSON.stringify({ event: "sec-report-generation", policy: "reliability.v1", jobId, workflowInstanceId, ticker: filing.ticker, accession, status: "published", reportVersion: result.artifact.report.reportVersion }));
       if (publication && publication.memoryJobId && operations.enqueueMemory) {
         await step.do(`memory-enqueue:${accession}`, async () => {
           try {
@@ -329,11 +333,13 @@ export async function executeSecAnalysisWorkflow(
         ...baseJob,
         status: "failed",
         currentStage: stage,
-        errorCode: hardFailure ? "hard_failure" : "pipeline_error",
+        errorCode: error instanceof SecModelOutputError ? error.code : error instanceof SecModelHttpError ? `provider_http_${error.status}` : hardFailure ? "hard_failure" : "pipeline_error",
         errorDetail: detail,
         updatedAt: new Date().toISOString(),
         completedAt: new Date().toISOString(),
       }));
+      console.log(JSON.stringify({ event: "sec-report-generation", policy: "reliability.v1", jobId, workflowInstanceId, ticker: filing.ticker, accession, status: "failed", stage,
+        failureCode: error instanceof SecModelOutputError ? error.code : error instanceof SecModelHttpError ? `provider_http_${error.status}` : "pipeline_error" }));
       failed.push(accession);
     }
   }

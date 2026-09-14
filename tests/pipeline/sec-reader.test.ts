@@ -153,17 +153,21 @@ test("production audit sees reader output and primary evidence; an unaudited rea
 });
 
 
-test("visual plans preserve marks and reject invented charts, empty omissions and malformed comparisons", () => {
+test("visual defects fall back locally without changing prose or inventing chart data", () => {
   const input = readerFixture();
   input.sections[0].visual = { layout: "chart_focus", rationale: "验证规模", chart: { metricKey: "revenue", mark: "bar", title: "收入是否持续增长", caption: "规模变化不能证明回款改善。" } };
   const options = { ...args, chartKeys: new Set(["revenue"]), requireVisual: true };
   assert.equal(normalizeReaderReport(input, options).sections[0].visual?.chart?.mark, "bar");
-  assert.throws(() => normalizeReaderReport(input, args), /invalid chart/);
+  const fallback = normalizeReaderReport(input, args);
+  assert.equal(fallback.sections[0].visual?.chart, undefined);
+  assert.equal(fallback.sections[0].visual?.layout, "essay");
+  assert.deepEqual(fallback.sections[0].paragraphs, input.sections[0].paragraphs);
+  assert.ok(fallback.presentationWarnings?.length);
   input.sections[0].visual = { layout: "essay", rationale: "解释" };
-  assert.throws(() => normalizeReaderReport(input, options), /reason to omit/);
+  assert.ok(normalizeReaderReport(input, options).sections[0].visual?.noChartReason);
   delete input.sections[0].visual;
-  assert.throws(() => normalizeReaderReport(input, options), /visual planning/);
+  assert.equal(normalizeReaderReport(input, options).sections[0].visual?.layout, "essay");
   assert.equal(normalizeReaderReport(input, args).sections[0].visual, undefined);
   input.sections[2].visual!.paragraphLabels = ["只有一列"];
-  assert.throws(() => normalizeReaderReport(input, args), /comparison labels/);
+  assert.equal(normalizeReaderReport(input, args).sections[2].visual?.layout, "essay");
 });

@@ -1,3 +1,7 @@
+import { readModelContent, parseModelJson, SecModelOutputError } from "./model-stream.ts";
+import { recoverModelJson, SecModelHttpError, type ModelRequestOptions, type ModelCheckpoint, type ModelCheckpointStore } from "./model-recovery.ts";
+export { readModelContent } from "./model-stream.ts";
+export { SecModelHttpError } from "./model-recovery.ts";
 import { fiscalPeriodInput } from "./sec/fiscal-period-ai.ts";
 import { fetchSecMarketSnapshot } from "./sec/market.ts";
 import { editorialIssues, EDITORIAL_REVIEW_PROMPT } from "./sec/reader.ts";
@@ -30,7 +34,7 @@ import { normalizeCompanyFacts } from "./sec/history.ts";
 import { secFundamentalsKey } from "./fundamentals/sec-fundamentals.ts";
 import { assertTrackedTicker, requireDb, type SecCronEnv } from "./core.ts";
 import type { AnalysisReadEnv } from "./read-api/router.ts";
-import { SEC_MODEL_EXECUTION_BUDGET_MS, SEC_MODEL_FIRST_RESPONSE_MS, SEC_MODEL_STALL_MS, SEC_MODEL_MAX_RESPONSE_BYTES, type SecModelExecution } from "./retry-policy.ts";
+import { SEC_MODEL_EXECUTION_BUDGET_MS, SEC_MODEL_FIRST_RESPONSE_MS, SEC_MODEL_OUTPUT_TOKENS, type SecModelExecution } from "./retry-policy.ts";
 import type { PreparedFilingReference, SecPipelineOperations, WorkflowJobUpdate } from "./workflow-core.ts";
 import { jobAnalysisVersionFor } from "./workflow-core.ts";
 
@@ -59,29 +63,38 @@ export function modelForStage(env: SecPipelineEnv, stage: string, override?: str
   return REASONING_STAGE.test(stage) ? env.SEC_REASONING_MODEL || undefined : undefined;
 }
 
-export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof fetch = fetch): SecPipelineOperations {
+export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof fetch = fetch, workflowInstanceId = "standalone"): SecPipelineOperations {
   const repository = () => new D1SecRepository(requireDb(env));
   const modelFor = (execution?: SecModelExecution): SecModelCall => async (stage, system, payload) => {
-    // Share one generous safety budget across calls within this durable attempt.
-    // Sustained generation must not be discarded at the old 3/8-minute limits.
     const deadline = Date.now() + SEC_MODEL_EXECUTION_BUDGET_MS;
-    // Some providers stall or abort while enforcing JSON mode. A durable retry
-    // changes that transport constraint; parseModelJson and all domain gates still apply.
-    const jsonMode = (execution?.attempt ?? 1) === 1;
-    const call = (nextStage: string, nextSystem: string, model?: string) =>
-      callWorkerSecModel(env, fetcher, nextStage, nextSystem, payload, model, Math.max(1, deadline - Date.now()), jsonMode);
-    const selectedModel = modelForStage(env, stage, execution?.model);
-    try {
-      return await call(stage, system, selectedModel);
-    } catch (error) {
-      const primaryModel = env.SEC_ANALYSIS_MODEL || "qwen3.8-flash";
-      // A shared fallback-provider rate limit must not trap every remaining attempt on that model.
-      if (error instanceof SecModelHttpError && error.status === 429 && selectedModel && selectedModel !== primaryModel) {
-        return call(`${stage}:rate-limit-recovery`, system, primaryModel);
-      }
-      if (!(error instanceof SyntaxError) && !String(error).includes("JSON object")) throw error;
-      return call(`${stage}:schema-retry`, `${system}\nYour previous response violated the JSON schema. Return one valid JSON object only.`, selectedModel);
-    }
+    const selectedModel = modelForStage(env, stage, execution?.model) || env.SEC_ANALYSIS_MODEL || "qwen3.8-flash";
+    const fallbackModel = selectedModel === "hy3" ? env.SEC_ANALYSIS_MODEL || "qwen3.8-flash" : "hy3";
+    const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify({ stage, system, payload }))));
+    const fingerprint = Array.from(digest, (b) => b.toString(16).padStart(2, "0")).join("");
+    const key = `model-recovery/v1/${encodeURIComponent(workflowInstanceId)}/${fingerprint}.json`;
+    const checkpoint: ModelCheckpointStore = {
+      async load() {
+        try {
+          const saved = await env.SEC_FILINGS.get(key);
+          if (!saved) return null;
+          const value = JSON.parse(await saved.text()) as ModelCheckpoint | null;
+          return value?.version === "model-recovery.v1" && typeof value.content === "string" && ["continue", "repair"].includes(value.mode) ? value : null;
+        } catch { console.warn(JSON.stringify({ event: "sec-model-checkpoint", action: "load", outcome: "unavailable", stage })); return null; }
+      },
+      async save(value) {
+        try { await env.SEC_FILINGS.put(key, JSON.stringify(value), { httpMetadata: { contentType: "application/json" } }); }
+        catch { console.warn(JSON.stringify({ event: "sec-model-checkpoint", action: "save", outcome: "unavailable", stage })); }
+      },
+    };
+    return recoverModelJson({ stage, model: selectedModel, fallbackModel, jsonMode: (execution?.attempt ?? 1) === 1, checkpoint,
+      heartbeat: async () => {
+        if (workflowInstanceId !== "standalone" && env.DB) await env.DB.prepare("UPDATE sec_analysis_jobs SET updated_at = ? WHERE workflow_instance_id = ? AND status = 'running'")
+          .bind(new Date().toISOString(), workflowInstanceId).run();
+      },
+      log: (event) => console.log(JSON.stringify({ ...event, workflowInstanceId })),
+      request: (options) => requestWorkerSecModelContent(env, fetcher, stage, system, payload, options.model,
+        Math.max(1, deadline - Date.now()), options.jsonMode, { ...options, workflowInstanceId }),
+    });
   };
   return {
     classifyEarnings: async (filing, execution) => {
@@ -487,12 +500,14 @@ function collectArtifactKeys(reference: PreparedFilingReference, synthesisKey: s
   };
 }
 
-export class SecModelHttpError extends Error {
-  readonly status: number;
-  constructor(status: number, message: string) { super(message); this.status = status; }
+export async function callWorkerSecModel(
+  env: SecPipelineEnv, fetcher: typeof fetch, stage: string, system: string, payload: unknown,
+  modelOverride?: string, executionBudgetMs = SEC_MODEL_EXECUTION_BUDGET_MS, jsonMode = true,
+): Promise<Record<string, unknown>> {
+  return parseModelJson(await requestWorkerSecModelContent(env, fetcher, stage, system, payload, modelOverride, executionBudgetMs, jsonMode));
 }
 
-export async function callWorkerSecModel(
+async function requestWorkerSecModelContent(
   env: SecPipelineEnv,
   fetcher: typeof fetch,
   stage: string,
@@ -501,7 +516,8 @@ export async function callWorkerSecModel(
   modelOverride?: string,
   executionBudgetMs = SEC_MODEL_EXECUTION_BUDGET_MS,
   jsonMode = true,
-): Promise<Record<string, unknown>> {
+  options?: ModelRequestOptions,
+): Promise<string> {
   const apiKey = await resolveWorkerModelKey(env, fetcher);
   const started = Date.now();
   const controller = new AbortController();
@@ -509,19 +525,32 @@ export async function callWorkerSecModel(
   const budgetTimer = setTimeout(() => { timeoutKind = "execution-budget"; controller.abort(); }, executionBudgetMs);
   const firstTimer = setTimeout(() => { timeoutKind = "first-response"; controller.abort(); }, SEC_MODEL_FIRST_RESPONSE_MS);
   const metrics: Record<string, unknown> = { stage, model: modelOverride || env.SEC_ANALYSIS_MODEL || "qwen3.8-flash", inputCharacters: JSON.stringify(payload).length };
+  if (options?.workflowInstanceId) metrics.workflowInstanceId = options.workflowInstanceId;
   try {
+  const messages: Array<{ role: string; content: string }> = [
+    { role: "system", content: `${system}\nReturn one valid JSON object only.` },
+    { role: "user", content: JSON.stringify(payload) },
+  ];
+  if (options?.continuation) messages.push(
+    { role: "assistant", content: options.continuation },
+    { role: "user", content: "The response was interrupted. Continue this exact JSON at the next character, including inside an unfinished string. Output only the missing suffix: no prefix repetition, no markdown. Preserve all completed content and evidence references. Finish the entire required object." },
+  );
+  if (options?.repair) messages.push(
+    { role: "assistant", content: options.repair },
+    { role: "user", content: "Repair the previous response into one complete JSON object matching the original schema. Preserve its substantive analysis and evidence; fix syntax and complete missing fields from the original inputs. Do not replace the report with a summary. Output the complete repaired object only." },
+  );
+  metrics.maxTokens = options?.maxTokens ?? SEC_MODEL_OUTPUT_TOKENS;
+  metrics.mode = options?.continuation ? "continuation" : options?.repair ? "repair" : "initial";
   const response = await fetcher("https://api.b.ai/v1/chat/completions", {
     method: "POST",
     headers: { "content-type": "application/json", accept: "text/event-stream", authorization: `Bearer ${apiKey}` },
     body: JSON.stringify({
       model: modelOverride || env.SEC_ANALYSIS_MODEL || "qwen3.8-flash",
-      messages: [
-        { role: "system", content: `${system}\nReturn one valid JSON object only.` },
-        { role: "user", content: JSON.stringify(payload) },
-      ],
+      messages,
       ...(jsonMode ? { response_format: { type: "json_object" } } : {}),
       temperature: 0,
-      ...(stage.startsWith("synthesis") ? { max_tokens: 14000 } : {}),
+      max_tokens: options?.maxTokens ?? SEC_MODEL_OUTPUT_TOKENS,
+      stream_options: { include_usage: true },
       // Streaming keeps bytes flowing so the provider's proxy cannot time the request out at ~100s.
       stream: true,
     }),
@@ -530,15 +559,23 @@ export async function callWorkerSecModel(
   clearTimeout(firstTimer);
   metrics.headersMs = Date.now() - started;
   if (!response.ok) {
-    const detail = await response.text();
-    throw new SecModelHttpError(response.status, `DeepSeek ${stage} HTTP ${response.status}: ${detail.slice(0, 300)}`);
+    const errorReader = response.body?.getReader();
+    let detail = "";
+    if (errorReader) {
+      const first = await errorReader.read();
+      detail = first.value ? new TextDecoder().decode(first.value.slice(0, 4096)) : "";
+      await errorReader.cancel().catch(() => {});
+    }
+    const retryAfter = response.headers.get("retry-after");
+    const retryAfterMs = retryAfter ? (/^\d+$/.test(retryAfter) ? Number(retryAfter) * 1000 : Math.max(0, Date.parse(retryAfter) - Date.now())) : 0;
+    throw new SecModelHttpError(response.status, `Model ${metrics.model} ${stage} HTTP ${response.status}: ${detail.slice(0, 1000)}`, retryAfterMs);
   }
-  return parseModelJson(await readModelContent(response, stage, () => {
+  return await readModelContent(response, stage, () => {
     metrics.firstTokenMs ??= Date.now() - started;
     metrics.lastTokenMs = Date.now() - started;
-  }, metrics));
+  }, metrics, undefined, { signal: controller.signal, checkpoint: options?.checkpoint, heartbeat: options?.heartbeat });
   } catch (error) {
-    metrics.error = controller.signal.aborted ? `model-timeout:${timeoutKind}` : error instanceof SecModelHttpError ? `http:${error.status}` : error instanceof Error ? error.name : "unknown";
+    metrics.error = controller.signal.aborted ? `model-timeout:${timeoutKind}` : error instanceof SecModelHttpError ? `http:${error.status}` : error instanceof SecModelOutputError ? error.code : error instanceof Error ? error.name : "unknown";
     if (controller.signal.aborted) throw new Error(`model-timeout:${timeoutKind} stage=${stage} elapsedMs=${Date.now() - started}`);
     throw error;
   } finally {
@@ -548,135 +585,8 @@ export async function callWorkerSecModel(
   }
 }
 
-/**
- * Assembles the assistant message from an SSE stream, falling back to a whole-body completion for
- * gateways that ignore `stream: true`. Throws before parsing when the stream ends early, because a
- * truncated JSON body can still parse into a plausible but wrong object.
- */
-export async function readModelContent(response: Response, stage: string, progress: () => void = () => {}, metrics: Record<string, unknown> = {}, idleMs = SEC_MODEL_STALL_MS): Promise<string> {
-
-  let content = "";
-  let finishReason: string | null = null;
-  let done = false;
-  for await (const line of modelLines(response, idleMs)) {
-    if (!line.startsWith("data:")) continue;
-    const data = line.slice(5).trim();
-    if (!data) continue;
-    if (data === "[DONE]") {
-      done = true;
-      continue;
-    }
-    let chunk: Record<string, unknown>;
-    try {
-      chunk = JSON.parse(data) as Record<string, unknown>;
-    } catch {
-      throw new Error(`Model ${stage} returned malformed SSE JSON`);
-    }
-    if (chunk.usage) metrics.usage = chunk.usage;
-    const error = chunk.error;
-    if (error) throw new Error(`DeepSeek ${stage} stream error: ${JSON.stringify(error).slice(0, 300)}`);
-    const choice = (chunk.choices as Array<Record<string, unknown>> | undefined)?.[0];
-    if (!choice) continue;
-    const delta = choice.delta as { content?: unknown } | undefined;
-    if (typeof delta?.content === "string" && delta.content) {
-      content += delta.content;
-      if (meaningfulText(delta.content)) progress();
-      metrics.outputCharacters = content.length;
-    }
-    const reasoning = (choice.delta as Record<string, unknown> | undefined)?.reasoning_content;
-    if (meaningfulText(reasoning)) progress();
-    if (typeof choice.finish_reason === "string") finishReason = choice.finish_reason;
-  }
-
-  if (!done && !finishReason) {
-    throw new Error(`DeepSeek ${stage} stream ended before completion after ${content.length} characters`);
-  }
-  if (finishReason === "length") {
-    throw new Error(`DeepSeek ${stage} stream hit the output token limit after ${content.length} characters`);
-  }
-  if (!content) throw new Error(`DeepSeek ${stage} returned empty content`);
-  return content;
-}
-
-async function* modelLines(response: Response, idleMs: number): AsyncGenerator<string> {
-  if (!response.body) throw new Error("Model returned no response body");
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let bytes = 0;
-  let meaningfulAt = Date.now();
-  let streaming = response.headers.get("content-type")?.includes("text/event-stream") ?? false;
-  try {
-    while (true) {
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      const part = await Promise.race([
-        reader.read(),
-        new Promise<never>((_, reject) => { timer = setTimeout(() => {
-          reject(new Error("model-timeout:stream-stall"));
-          void reader.cancel().catch(() => {});
-        }, Math.max(1, idleMs - (Date.now() - meaningfulAt))); }),
-      ]).finally(() => clearTimeout(timer));
-      if (part.done) break;
-      bytes += part.value.byteLength;
-      if (bytes > SEC_MODEL_MAX_RESPONSE_BYTES) throw new Error("Model response exceeds 2 MB limit");
-      buffer += decoder.decode(part.value, { stream: true });
-      streaming ||= buffer.trimStart().startsWith("data:") || buffer.trimStart().startsWith(":");
-      if (streaming) {
-        let newline: number;
-        while ((newline = buffer.indexOf("\n")) >= 0) {
-          const line = buffer.slice(0, newline).trimEnd();
-          buffer = buffer.slice(newline + 1);
-          if (line.startsWith("data:")) {
-            try {
-              const delta = JSON.parse(line.slice(5)).choices?.[0]?.delta;
-              if (meaningfulText(delta?.content) || meaningfulText(delta?.reasoning_content)) meaningfulAt = Date.now();
-            } catch { /* DONE and heartbeats do not reset meaningful progress. */ }
-          }
-          yield line;
-        }
-      }
-    }
-    buffer += decoder.decode();
-    if (streaming) { if (buffer.trim()) yield buffer.trim(); }
-    else {
-      const content = nonStreamedContent(buffer, "completion");
-      const parsed = JSON.parse(buffer);
-      if (parsed.choices?.[0]?.finish_reason === "length") throw new Error("Model hit output token limit");
-      yield `data: ${JSON.stringify({ choices: [{ delta: { content }, finish_reason: "stop" }] })}`;
-    }
-  } finally {
-    await reader.cancel().catch(() => {});
-    reader.releaseLock();
-  }
-}
-
-function meaningfulText(value: unknown): boolean {
-  return typeof value === "string" && value.trim().length > 0;
-}
-
-function nonStreamedContent(raw: string, stage: string): string {
-  let data: { choices?: Array<{ message?: { content?: unknown } }> };
-  try {
-    data = JSON.parse(raw) as typeof data;
-  } catch {
-    throw new Error(`DeepSeek ${stage} returned neither an event stream nor JSON: ${raw.slice(0, 200)}`);
-  }
-  const content = data.choices?.[0]?.message?.content;
-  if (typeof content !== "string" || !content) throw new Error(`DeepSeek ${stage} returned empty content`);
-  return content;
-}
-
 export async function resolveWorkerModelKey(env: SecPipelineEnv, fetcher: typeof fetch = fetch): Promise<string> {
   void fetcher;
   if (!env.AI_API_KEY) throw new Error("SEC pipeline AI_API_KEY is not configured");
   return env.AI_API_KEY;
-}
-
-function parseModelJson(content: string): Record<string, unknown> {
-  const fenced = content.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  const candidate = fenced?.[1] ?? content;
-  const start = candidate.indexOf("{");
-  const end = candidate.lastIndexOf("}");
-  if (start < 0 || end <= start) throw new Error("DeepSeek did not return a JSON object");
-  return JSON.parse(candidate.slice(start, end + 1)) as Record<string, unknown>;
 }

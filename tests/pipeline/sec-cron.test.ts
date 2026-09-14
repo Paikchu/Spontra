@@ -46,6 +46,18 @@ test("reads its own whitelist and starts one independent workflow per ticker", a
   assert.deepEqual(started, ["MSFT", "NOK"]);
 });
 
+test("scheduled sweeps coalesce active analyses instead of filling the queue", async () => {
+  const started: string[] = [];
+  const DB = { prepare(sql: string) {
+    assert.match(sql, /sec_analysis_jobs.*status IN \('running', 'queued'\)/);
+    return { bind(ticker: string) { return { first: async () => ticker === "MSFT" ? { job_id: "active" } : null }; } };
+  } } as unknown as D1Database;
+  const result = await runSecRefresh({ ...env, DB, SEC_ANALYSIS_WORKFLOW: workflowBinding(started) });
+  assert.deepEqual(result, { started: ["NOK"], failed: [], skipped: ["MSFT"] });
+  assert.deepEqual(started, ["NOK"]);
+  assert.deepEqual(await runSecRefresh({ ...env, DB, SEC_TRACKED_TICKERS: "MSFT" }), { started: [], failed: [], skipped: ["MSFT"] });
+});
+
 test("starts one idempotent company analysis workflow for each backfill candidate", async () => {
   const started: Array<{ id: string; ticker: string; triggerRef: string }> = [];
   const result = await runCompanyAnalysisSweep({

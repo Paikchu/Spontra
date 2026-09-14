@@ -151,11 +151,12 @@ test("reads the latest status for an analysis version", async () => {
     },
   };
 
-  const status = await new D1SecRepository(asDatabase(database)).getAnalysisJobStatus("MSFT", "acc-1", "sec-analysis.v2");
+  const status = await new D1SecRepository(asDatabase(database)).getAnalysisJobStatus("MSFT", "acc-1", "sec-analysis.v2", Date.parse("2026-09-15T02:00:00Z"));
 
   assert.equal(status, "complete");
   assert.match(selectedSql, /FROM sec_analysis_jobs/);
-  assert.deepEqual(selectedValues, ["MSFT", "acc-1", "sec-analysis.v2"]);
+  assert.match(selectedSql, /CASE WHEN status IN \('running', 'queued'\)/);
+  assert.deepEqual(selectedValues, ["MSFT", "acc-1", "sec-analysis.v2", "2026-09-15T00:00:00.000Z"]);
 });
 
 test("hands a filing back once a non-terminal job outlives its lease", async () => {

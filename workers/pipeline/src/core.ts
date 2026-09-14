@@ -131,8 +131,16 @@ export async function runSecRefresh(env: SecCronEnv, now = Date.now()) {
   const tickers = [...new Set(trackedTickersFor(env))];
   const started: string[] = [];
   const failed: string[] = [];
+  const skipped: string[] = [];
   for (const ticker of tickers) {
     try {
+      // A complex report can outlive many Cron ticks. Progress renews these jobs; avoid
+      // filling the Workflow queue with identical sweeps while a ticker is being analyzed.
+      if (env.DB) {
+        const active = await env.DB.prepare("SELECT job_id FROM sec_analysis_jobs WHERE ticker = ? AND status IN ('running', 'queued') AND updated_at >= ? LIMIT 1")
+          .bind(ticker, new Date(now - 2 * 60 * 60_000).toISOString()).first();
+        if (active) { skipped.push(ticker); continue; }
+      }
       await startWorkflow(env.SEC_ANALYSIS_WORKFLOW, ticker, "scheduled", now, false);
       started.push(ticker);
     } catch {
@@ -145,8 +153,8 @@ export async function runSecRefresh(env: SecCronEnv, now = Date.now()) {
    * there is — could not tell it apart from "there was nothing to do". An empty watchlist stays a
    * no-op, because turning generation off entirely is a supported configuration.
    */
-  if (tickers.length && !started.length) throw new Error(`SEC refresh started no workflows (watchlist: ${tickers.length}, failed: ${failed.length})`);
-  return { started, failed };
+  if (tickers.length && !started.length && !skipped.length) throw new Error(`SEC refresh started no workflows (watchlist: ${tickers.length}, failed: ${failed.length})`);
+  return { started, failed, ...(skipped.length ? { skipped } : {}) };
 }
 
 export async function runSecMemorySweep(env: SecCronEnv): Promise<{ started: string[] }> {

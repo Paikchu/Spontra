@@ -9,6 +9,7 @@ import { createSecPipelineOperations, type SecPipelineEnv } from "./operations.t
 import { retryDelayForAttempt, SEC_WORKFLOW_STEP_TIMEOUT } from "./retry-policy.ts";
 import worker from "./worker.ts";
 import { executeSecAnalysisWorkflow, type WorkflowStepContextLike, type WorkflowStepLike } from "./workflow-core.ts";
+import { storeWorkflowResult, loadWorkflowResult } from "./workflow-results.ts";
 
 const WORKFLOW_RETRY = {
   retries: {
@@ -20,14 +21,14 @@ const WORKFLOW_RETRY = {
   timeout: SEC_WORKFLOW_STEP_TIMEOUT,
 };
 
-function durableSteps(step: WorkflowStep): WorkflowStepLike {
+function durableSteps(step: WorkflowStep, env: SecPipelineEnv, instanceId: string): WorkflowStepLike {
   const dynamicStep = step as unknown as {
     do<T>(name: string, config: typeof WORKFLOW_RETRY, callback: (context?: WorkflowStepContextLike) => Promise<T>): Promise<T>;
   };
   return {
-    do<T>(name: string, callback: (context?: WorkflowStepContextLike) => Promise<T>): Promise<T> {
-      return dynamicStep.do(name, WORKFLOW_RETRY, async (context) => {
-        try { return await callback(context); }
+    async do<T>(name: string, callback: (context?: WorkflowStepContextLike) => Promise<T>): Promise<T> {
+      const stored = await dynamicStep.do(name, WORKFLOW_RETRY, async (context) => {
+        try { return await storeWorkflowResult(env.SEC_FILINGS, instanceId, name, await callback(context)); }
         catch (error) {
           if (error instanceof SecModelHttpError && error.status >= 400 && error.status < 500 && error.status !== 429 && error.status !== 408) {
             throw new NonRetryableError(`Model rejected request: HTTP ${error.status}`);
@@ -35,19 +36,26 @@ function durableSteps(step: WorkflowStep): WorkflowStepLike {
           throw error;
         }
       });
+      for (let attempt = 0; ; attempt++) {
+        try { return await loadWorkflowResult<T>(env.SEC_FILINGS, stored); }
+        catch (error) {
+          if (attempt >= 2 || /integrity|Invalid stored|missing/.test(String(error))) throw error;
+          await new Promise<void>((resolve) => setTimeout(resolve, 1000 * 3 ** attempt));
+        }
+      }
     },
   };
 }
 
 export class SecAnalysisWorkflow extends WorkflowEntrypoint<SecPipelineEnv, SecWorkflowParams> {
   async run(event: WorkflowEvent<SecWorkflowParams>, step: WorkflowStep) {
-    return executeSecAnalysisWorkflow(event.payload, event.instanceId, durableSteps(step), createSecPipelineOperations(this.env));
+    return executeSecAnalysisWorkflow(event.payload, event.instanceId, durableSteps(step, this.env, event.instanceId), createSecPipelineOperations(this.env, fetch, event.instanceId));
   }
 }
 
 export class SecMemoryWorkflow extends WorkflowEntrypoint<SecPipelineEnv, SecMemoryWorkflowParams> {
   async run(event: WorkflowEvent<SecMemoryWorkflowParams>, step: WorkflowStep) {
-    return executeSecMemoryWorkflow(event.payload, event.instanceId, durableSteps(step), this.env);
+    return executeSecMemoryWorkflow(event.payload, event.instanceId, durableSteps(step, this.env, event.instanceId), this.env);
   }
 }
 
@@ -65,7 +73,7 @@ export class CompanyAnalysisWorkflow extends WorkflowEntrypoint<SecPipelineEnv, 
 
 export class CompanyAnalysisBackfillWorkflow extends WorkflowEntrypoint<SecPipelineEnv, CompanyAnalysisBackfillParams> {
   async run(event: WorkflowEvent<CompanyAnalysisBackfillParams>, step: WorkflowStep) {
-    const durable = durableSteps(step);
+    const durable = durableSteps(step, this.env, event.instanceId);
     // Recovery reuses the latest completed Memory and Yahoo snapshot. Starting every SEC workflow
     // again would add unrelated model traffic precisely while recovering rate-limited Agent runs.
     const sec = event.payload.forceIncomplete === true

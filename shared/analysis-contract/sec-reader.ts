@@ -23,6 +23,8 @@ export const SEC_READER_VISUAL_CATALOG = {
 /** Reader-facing research, separate from the analyst work papers. Optional on historical reports. */
 export type SecReaderReport = {
   version: "sec-reader.v1";
+  /** Diagnostic only; presentation repairs never replace substantive analysis. */
+  presentationWarnings?: string[];
   changes: Array<{
     topic: string;
     kind: "new" | "changed" | "continuing" | "not_comparable";

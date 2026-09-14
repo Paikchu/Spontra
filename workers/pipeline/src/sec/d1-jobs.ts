@@ -21,14 +21,13 @@ export type SecAnalysisJobStatus = SecAnalysisJobUpdate["status"];
 /**
  * How long a job may sit in a non-terminal state before another run is allowed to take it over.
  *
- * A job row is only rewritten when the filing starts and when it reaches a terminal state, so a
+ * Model progress renews the row at least every 30 seconds; a
  * workflow that dies in between — the model provider rate-limiting a whole batch does exactly this
  * — leaves `running` as the newest row for that filing forever. `shouldAnalyze` only proceeds on a
  * missing or `failed` status, so without a lease that filing is skipped by every later scheduled
  * run and silently stops being re-analysed.
  *
- * Set well above the slowest single-filing analysis observed in production (~50 minutes, a large
- * 10-K whose steps each retried) so a run is never taken over from itself.
+ * This covers a full 60-minute step plus backoff. It is not a total report-duration limit.
  */
 export const SEC_ANALYSIS_JOB_LEASE_MS = 2 * 60 * 60 * 1_000;
 
@@ -92,9 +91,9 @@ export class SecAnalysisJobRepository {
       SELECT status, updated_at AS updatedAt
       FROM sec_analysis_jobs
       WHERE ticker = ? AND accession_number = ? AND analysis_version = ?
-      ORDER BY updated_at DESC
+      ORDER BY CASE WHEN status IN ('running', 'queued') AND updated_at >= ? THEN 0 ELSE 1 END, updated_at DESC
       LIMIT 1
-    `).bind(ticker, accessionNumber, analysisVersion).first<{ status: SecAnalysisJobStatus; updatedAt: string }>();
+    `).bind(ticker, accessionNumber, analysisVersion, new Date(now - SEC_ANALYSIS_JOB_LEASE_MS).toISOString()).first<{ status: SecAnalysisJobStatus; updatedAt: string }>();
     if (!row) return null;
     // Reported as failed rather than dropped to null so the caller keeps treating it as a job that
     // ran and did not finish, which is what an expired lease means.
