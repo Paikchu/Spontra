@@ -102,10 +102,9 @@ export function SecFilingsSection({ ticker, title = "财报与独立事件" }: {
       {status === "ready" && filings.length > 0 && (
         <div className="sec-filing-scroll">
           <Accordion type="multiple" value={[...openAccessions]} onValueChange={(values) => setOpenAccessions(new Set(values))} className="analysis-filing-list">
-            {filings.map((filing, index) => (
+            {filings.map((filing) => (
               <SecFilingCard
                 filing={filing}
-                isLatestPeriodic={isPeriodicFiling(filing.form) && !filings.slice(0, index).some((candidate) => isPeriodicFiling(candidate.form))}
                 key={filing.earningsGroup?.id ?? filing.accessionNumber}
               />
             ))}
@@ -123,7 +122,7 @@ export function SecFilingsSection({ ticker, title = "财报与独立事件" }: {
   );
 }
 
-function SecFilingCard({ filing, isLatestPeriodic }: { filing: PublicSecFiling; isLatestPeriodic: boolean }) {
+function SecFilingCard({ filing }: { filing: PublicSecFiling }) {
   const headline = filing.summary?.headline || filing.analysis?.headline || "";
   // The report page renders whatever narrative is stored, so the entry point
   // asks the same question it does. Requiring the current summary version made
@@ -140,7 +139,7 @@ function SecFilingCard({ filing, isLatestPeriodic }: { filing: PublicSecFiling; 
       <AccordionTrigger>
         <span className="analysis-filing-heading">
           <span className="analysis-filing-meta">
-            <Badge variant={isLatestPeriodic ? "default" : "secondary"}>{formatFilingPeriodLabel(filing)}</Badge>
+            <Badge variant={group || isPeriodicFiling(filing.form) ? "default" : "secondary"}>{formatFilingPeriodLabel(filing)}</Badge>
             <span>{formatYear(group?.earningsDate ?? filing.filingDate)}年{formatMonthDay(group?.earningsDate ?? filing.filingDate)}</span>
             <span>{group ? `业绩发布 · 截至 ${group.periodEnd}` : formDescription(filing.form)}</span>
           </span>
