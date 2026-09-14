@@ -3357,3 +3357,20 @@
   .earning-report .sec-trend-date { font-size: 16px; }
   .earning-report .sec-trend-label[data-mobile-hidden="true"] { display: none; }
 }
+
+/* Reader editorial templates: model chooses composition, site owns responsive styling. */
+.earning-report .sec-reader-layout { min-width: 0; }
+.earning-report .sec-reader-paragraph { min-width: 0; }
+.earning-report .sec-reader-paragraph h3 { margin: 0 0 16px; font-size: 17px; color: var(--primary); }
+.earning-report .sec-reader-chart-caption { max-width: 76ch; margin: 12px 0 28px; font-size: 13px; line-height: 1.8; color: var(--muted-foreground); }
+.earning-report .sec-reader-article[data-layout="comparison"] .sec-report-body { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 36px; max-width: none; }
+.earning-report .sec-reader-article[data-layout="comparison"] .sec-reader-paragraph { border-top: 2px solid var(--border); padding-top: 20px; }
+.earning-report .sec-reader-article[data-layout="spotlight"] .sec-reader-layout { display: grid; grid-template-columns: minmax(0, 3fr) minmax(200px, 1fr); gap: 40px; align-items: start; }
+.earning-report .sec-reader-article[data-layout="spotlight"] .sec-reader-takeaway { display: block; margin: 0; padding: 24px; background: var(--muted); font-size: 18px; }
+.earning-report .sec-reader-article[data-layout="spotlight"] .sec-reader-takeaway > span { display: block; margin-bottom: 12px; }
+.earning-report .sec-reader-article[data-layout="chart_focus"] .sec-report-body { max-width: none; }
+.earning-report .sec-reader-article[data-layout="chart_focus"] .sec-trend-chart { margin-top: 28px; border-top: 2px solid var(--border); padding-top: 24px; }
+@media (max-width: 760px) {
+  .earning-report .sec-reader-article[data-layout="comparison"] .sec-report-body,
+  .earning-report .sec-reader-article[data-layout="spotlight"] .sec-reader-layout { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+}

@@ -151,3 +151,19 @@ test("production audit sees reader output and primary evidence; an unaudited rea
   assert.equal(audit.issues.length, 1); assert.ok(saved.some((key) => key.includes("editorial-review/0")));
   await assert.rejects(ops.publish(artifact, filing.summary), /has not passed editorial review/);
 });
+
+
+test("visual plans preserve marks and reject invented charts, empty omissions and malformed comparisons", () => {
+  const input = readerFixture();
+  input.sections[0].visual = { layout: "chart_focus", rationale: "验证规模", chart: { metricKey: "revenue", mark: "bar", title: "收入是否持续增长", caption: "规模变化不能证明回款改善。" } };
+  const options = { ...args, chartKeys: new Set(["revenue"]), requireVisual: true };
+  assert.equal(normalizeReaderReport(input, options).sections[0].visual?.chart?.mark, "bar");
+  assert.throws(() => normalizeReaderReport(input, args), /invalid chart/);
+  input.sections[0].visual = { layout: "essay", rationale: "解释" };
+  assert.throws(() => normalizeReaderReport(input, options), /reason to omit/);
+  delete input.sections[0].visual;
+  assert.throws(() => normalizeReaderReport(input, options), /visual planning/);
+  assert.equal(normalizeReaderReport(input, args).sections[0].visual, undefined);
+  input.sections[2].visual!.paragraphLabels = ["只有一列"];
+  assert.throws(() => normalizeReaderReport(input, args), /comparison labels/);
+});

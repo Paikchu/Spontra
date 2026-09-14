@@ -271,7 +271,7 @@ export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof
       if (!result.artifact.report.reader || !result.summary) throw new Error("Publication requires a complete reader report");
       const audit = await modelFor(execution)(`editorial-review:${round}`, EDITORIAL_REVIEW_PROMPT, {
           headline: result.summary.headline, bullets: result.summary.bullets, analystView: result.summary.analystView,
-          reader: result.artifact.report.reader, financialLens: result.artifact.report.financialLens, marketSnapshot: result.artifact.report.marketSnapshot,
+          reader: result.artifact.report.reader, availableCharts: result.artifact.report.trends ?? [], financialLens: result.artifact.report.financialLens, marketSnapshot: result.artifact.report.marketSnapshot,
           facts: brief.currentFacts, comparisons: brief.comparisons, history: brief.history, historicalReports: brief.reportContinuity,
           nodes: nodes.map(({ id, title, facts, evidence, narrative, findings }) => ({ id, title, facts, evidence, narrative, findings })),
           limitations: result.artifact.report.dataQuality,

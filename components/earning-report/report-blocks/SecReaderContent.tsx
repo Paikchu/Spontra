@@ -64,12 +64,17 @@ export function QuarterChanges({ reader }: { reader: SecReaderReport }) {
 export function ReaderSection({ section, report, nodes }: { section: SecReaderReport["sections"][number]; report: PublishedSecReport; nodes: SecNodeResult[] }) {
   const selected = nodes.filter((n) => section.nodeIds.includes(n.id));
   const evidence = selected.flatMap((n) => n.evidence).filter((e, i, all) => all.findIndex((other) => other.excerpt === e.excerpt) === i).slice(0, 8);
-  const trend = report.trends?.find((t) => t.metricKey === section.chartMetricKey);
-  return <div className="sec-reader-article" data-role={section.role}>
+  const visual = section.visual;
+  const trend = report.trends?.find((t) => t.metricKey === (visual?.chart?.metricKey ?? section.chartMetricKey));
+  const layout = visual?.layout === "chart_focus" && !trend ? "essay" : visual?.layout ?? "essay";
+  return <div className="sec-reader-article" data-role={section.role} data-layout={layout}>
     {section.role === "valuation" && <MarketContext report={report} />}
-    <div className="sec-report-body">{section.paragraphs.map((p, i) => <RichText key={i} text={p} />)}</div>
+    <div className="sec-reader-layout">
+    <div className="sec-report-body">{section.paragraphs.map((p, i) => <div className="sec-reader-paragraph" key={i}>{layout === "comparison" && visual?.paragraphLabels?.[i] && <h3>{visual.paragraphLabels[i]}</h3>}<RichText text={p} /></div>)}</div>
     <p className="sec-reader-takeaway"><span>这意味着</span>{section.takeaway}</p>
-    {trend && <SecComposedSection report={report} section={{ id: `${section.id}-chart`, title: section.title, layout: "flow", blocks: [{ type: "sec_chart", id: `${section.id}-trend`, title: `${formatSecMetricLabel(trend.metricKey)}的变化`, mark: "line", trend }] }} />}
+    </div>
+    {trend && <SecComposedSection report={report} section={{ id: `${section.id}-chart`, title: section.title, layout: "flow", blocks: [{ type: "sec_chart", id: `${section.id}-trend`, title: visual?.chart?.title || `${formatSecMetricLabel(trend.metricKey)}的变化`, mark: visual?.chart?.mark ?? "line", trend }] }} />}
+    {trend && visual?.chart?.caption && <p className="sec-reader-chart-caption">{visual.chart.caption}</p>}
     {evidence.length > 0 && <details className="sec-report-evidence"><summary>核对原文 · {evidence.length} 段</summary>{evidence.map((e, i) => <blockquote key={i}><p>{e.excerpt}</p><footer>字符位置 {e.start}–{e.end}</footer></blockquote>)}</details>}
   </div>;
 }

@@ -1,3 +1,25 @@
+/** Model selects editorial templates; all styling and chart values remain system-owned. */
+export type SecReaderVisual = {
+  layout: "essay" | "spotlight" | "comparison" | "chart_focus";
+  rationale: string;
+  paragraphLabels?: string[];
+  chart?: { metricKey: string; mark: "line" | "bar"; title: string; caption: string };
+  noChartReason?: string;
+};
+
+export const SEC_READER_VISUAL_CATALOG = {
+  essay: "连续叙事：适合解释复杂机制，正文后给出结论。",
+  spotlight: "重点侧栏：正文与一句核心判断并列，适合投资含义或关键风险。",
+  comparison: "双栏对照：2或4段按相邻两段配对，分别给paragraphLabels，适合支持/反证或两种业务机制。不得把无关段落凑成对照。",
+  chart_focus: "图文分析：先提出问题和解释，再展示宽幅图表及局限，适合规模与跨期变化；必须提供chart。",
+  rules: [
+    "每节必须输出visual，先按业务问题选择layout并写rationale，不按章节序号轮换模板。适合时使用至少两种版式。",
+    "每节审视availableCharts：有直接相关的可比数据时主动选择chart；否则填写具体noChartReason。不要无理由省略全部图表。",
+    "chart只能引用availableCharts.metricKey，趋势用line、跨期规模比较用bar；title表达观察问题，caption解释图能说明什么及不能证明什么。禁止生成数据点或HTML/CSS。",
+    "comparison的paragraphLabels与paragraphs一一对应；其他模板不需要。图表可搭配任何模板，每节最多一张，不重复展示同一指标。",
+  ],
+} as const;
+
 /** Reader-facing research, separate from the analyst work papers. Optional on historical reports. */
 export type SecReaderReport = {
   version: "sec-reader.v1";
@@ -19,6 +41,7 @@ export type SecReaderReport = {
     nodeIds: string[];
     evidenceIds: string[];
     chartMetricKey?: string;
+    visual?: SecReaderVisual;
   }>;
   watch: Array<{ condition: string; deadline: string; consequence: string; evidenceIds: string[] }>;
   limitations: Array<{ issue: string; impact: string }>;
@@ -66,8 +89,9 @@ export type SecFinancialLens = {
 };
 
 export const SEC_READER_SCHEMA = {
+  visualCatalog: SEC_READER_VISUAL_CATALOG,
   changes: "[{topic,kind:new|changed|continuing|not_comparable,prior,current,implication,evidenceIds,priorEvidenceIds}]",
-  sections: "[{title,role:business|earnings_cash|valuation|bear_case|outlook,paragraphs:[string],takeaway,nodeIds:[string],evidenceIds:[string],chartMetricKey?:string}]",
+  sections: "[{title,role:business|earnings_cash|valuation|bear_case|outlook,paragraphs:[string],takeaway,nodeIds:[string],evidenceIds:[string],visual:{layout:essay|spotlight|comparison|chart_focus,rationale,paragraphLabels?:[string],chart?:{metricKey,mark:line|bar,title,caption},noChartReason?:string}}]",
   watch: "[{condition,deadline,consequence,evidenceIds}]",
   limitations: "[{issue,impact}]",
   rules: [

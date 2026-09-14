@@ -501,7 +501,7 @@ export async function summarizePreparedSecFiling(
   };
   const summaryValue = await model("synthesis", synthesisSystemPrompt() + FISCAL_PERIOD_INSTRUCTION, summaryPayload);
   const reader = summaryValue.readerReport ? normalizeReaderReport(summaryValue.readerReport, {
-    nodes, plan, currentEvidence: reviewEvidenceIds, priorEvidence: new Set(priorEvidenceIds), chartKeys: new Set(trends.map((t) => t.metricKey)),
+    nodes, plan, currentEvidence: reviewEvidenceIds, priorEvidence: new Set(priorEvidenceIds), chartKeys: new Set(trends.map((t) => t.metricKey)), requireVisual: true,
   }) : undefined;
   if (reader) summaryValue.report = readerArticleText(reader);
   if (finalBrief.reportContinuity) {
