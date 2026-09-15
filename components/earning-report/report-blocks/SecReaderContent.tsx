@@ -35,11 +35,12 @@ export function FinancialBridge({ report }: { report: PublishedSecReport }) {
   const cash = lens.cashBridge, dep = lens.depreciation;
   return <div className="sec-reader-financial-lens">
     {cash && <div className="sec-reader-cash">
-      <h3>{cash.adjustedFCF !== undefined ? "同一笔现金，两种观察口径" : "现金流与资本开支"}</h3><p className="sec-reader-caption">{cash.period} · 自由现金流为非 GAAP 流动性指标</p>
+      <h3>{cash.adjustedFCF !== undefined ? "现金流：两种计算口径" : "现金流与资本开支"}</h3><p className="sec-reader-caption">{cash.period} · 自由现金流为非 GAAP 流动性指标</p>
       <div className="sec-reader-cash-values">
         <div><span>经营现金流 − 总资本开支</span><strong data-direction={cash.standardFCF < 0 ? "negative" : "positive"}>{amount(cash.standardFCF, cash.currency)}</strong><small>{amount(cash.operatingCashFlow, cash.currency)} − {amount(cash.grossCapex, cash.currency)}</small></div>
         {cash.adjustedFCF !== undefined && <div><span>按管理层净资本开支测算</span><strong data-direction={cash.adjustedFCF < 0 ? "negative" : "positive"}>{amount(cash.adjustedFCF, cash.currency)}</strong><small>{amount(cash.operatingCashFlow, cash.currency)} − {amount(cash.managementNetCapex!, cash.currency)}</small></div>}
       </div>
+      {cash.reconciliationStatus === "unverified" && <p className="sec-reader-caption">管理层口径为算术测算，调整项与经营现金流是否重叠尚待核对；不能直接视为可自由支配现金。</p>}
       {cash.adjustment !== undefined && <p>差额 {amount(cash.adjustment, cash.currency)} 来自资本开支的调整。调整口径为正，也不能单独证明无需融资。</p>}
     </div>}
     {dep && <div className="sec-reader-depreciation"><h3>投入怎样传到未来利润</h3>

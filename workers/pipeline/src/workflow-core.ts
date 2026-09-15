@@ -1,3 +1,4 @@
+import type { EditorialIssue } from "./sec/editorial.ts";
 import type { DiscoveryChunk } from "./sec/discovery.ts";
 import {
   MAX_REPAIR_NODES_PER_ROUND,
@@ -140,9 +141,9 @@ export type SecPipelineOperations = {
   review?(filing: SecFiling, prepared: PreparedFilingReference, brief: SecAnalysisBrief, plan: SecNodePlan, nodes: SecNodeResult[], round: number, execution?: SecModelExecution): Promise<ManagerReview>;
   composePresentation?(filing: SecFiling, prepared: PreparedFilingReference, report: SecAnalysisArtifact['report'], nodes: SecNodeResult[], brief: SecAnalysisBrief, execution?: SecModelExecution): Promise<SecAnalysisArtifact['report']>;
   auditReport?(prepared: PreparedFilingReference, nodes: SecNodeResult[], brief: SecAnalysisBrief,
-    draft: { artifact: SecAnalysisArtifact; summary: SecFilingSummary | null }, round: number, execution?: SecModelExecution): Promise<{ issues: string[]; reviewedAt: string }>;
+    draft: { artifact: SecAnalysisArtifact; summary: SecFilingSummary | null }, round: number, execution?: SecModelExecution, context?: { plan: SecNodePlan; previousIssues: EditorialIssue[] }): Promise<{ issues: string[]; reviewedAt: string; findings?: EditorialIssue[] }>;
   reviseReport?(filing: SecFiling, prepared: PreparedFilingReference, context: SecAnalysisContext, plan: SecNodePlan, nodes: SecNodeResult[], brief: SecAnalysisBrief, review: ManagerReview,
-    issues: string[], execution?: SecModelExecution): Promise<{ artifact: SecAnalysisArtifact; summary: SecFilingSummary | null }>;
+    issues: string[], execution?: SecModelExecution, revision?: { draft: { artifact: SecAnalysisArtifact; summary: SecFilingSummary | null }; round: number; findings?: EditorialIssue[] }): Promise<{ artifact: SecAnalysisArtifact; summary: SecFilingSummary | null }>;
   summarizeEvent(filing: SecFiling, prepared: PreparedFilingReference, execution?: SecModelExecution): Promise<SecFilingSummary>;
   summarize(filing: SecFiling, prepared: PreparedFilingReference, context: SecAnalysisContext, plan: SecNodePlan, nodes: SecNodeResult[], brief?: SecAnalysisBrief, review?: ManagerReview, execution?: SecModelExecution): Promise<{ artifact: SecAnalysisArtifact; summary: SecFilingSummary | null }>;
   publish(artifact: SecAnalysisArtifact, summary: SecFilingSummary | null): Promise<void | { memoryJobId?: string }>;
@@ -288,17 +289,21 @@ export async function executeSecAnalysisWorkflow(
         continue;
       }
       if (operations.auditReport) {
-        for (let round = 0; round <= 1; round += 1) {
+        let previousIssues: EditorialIssue[] = [];
+        for (let round = 0; round <= 4; round += 1) {
           stage = "editorial-review";
           const draft = result;
-          const audit = await step.do(`editorial-review:${accession}:${round}`, (stepContext) => operations.auditReport!(prepared, loop.nodes, brief, draft, round, executionFor(stepContext)));
+          const audit = await step.do(`editorial-review:${accession}:${round}`, (stepContext) => operations.auditReport!(prepared, loop.nodes, brief, draft, round, executionFor(stepContext), { plan, previousIssues }));
           if (!audit.issues.length) {
             result.artifact.report.editorialReview = { status: "passed", reviewedAt: audit.reviewedAt };
             break;
           }
-          if (round === 1 || !operations.reviseReport) throw new Error(`Reader report failed editorial review: ${audit.issues.join("; ").slice(0, 1000)}`);
+          if (round === 4 || !operations.reviseReport) throw new Error(`Reader report failed editorial review: ${audit.issues.join("; ").slice(0, 1000)}`);
           stage = "editorial-revision";
-          result = await step.do(`editorial-revision:${accession}`, (stepContext) => operations.reviseReport!(filing, prepared, context, plan, loop.nodes, brief, managerReview, audit.issues, executionFor(stepContext)));
+          const revisionRound = round + 1;
+          result = await step.do(`editorial-revision:${accession}:${revisionRound}`, (stepContext) => operations.reviseReport!(filing, prepared, context, plan, loop.nodes, brief, managerReview, audit.issues,
+            revisionRound >= 2 ? { ...executionFor(stepContext), model: "hy3" } : executionFor(stepContext), { draft, round: revisionRound, findings: audit.findings }));
+          previousIssues = audit.findings ?? [];
         }
       }
       if (!result.artifact.report.reader && !result.artifact.report.presentation && operations.composePresentation) {
@@ -329,17 +334,19 @@ export async function executeSecAnalysisWorkflow(
     } catch (error) {
       const detail = error instanceof Error ? error.message.slice(0, 500) : "Unknown pipeline error";
       const hardFailure = /No core facts|illegal evidence|Conflicting (fact|history) units|Manager[- ](Review|planned)|Synthesis|final publish|R2 memory source/i.test(detail);
+      const failureCode = error instanceof SecModelOutputError ? error.code : error instanceof SecModelHttpError ? `provider_http_${error.status}`
+        : /failed editorial review/i.test(detail) ? "editorial_quality_failed" : /Reader report|Reader section|Editorial patch/i.test(detail) ? "reader_structure_failed" : hardFailure ? "hard_failure" : "pipeline_error";
       await step.do(`job:${accession}:error`, () => operations.updateJob({
         ...baseJob,
         status: "failed",
         currentStage: stage,
-        errorCode: error instanceof SecModelOutputError ? error.code : error instanceof SecModelHttpError ? `provider_http_${error.status}` : hardFailure ? "hard_failure" : "pipeline_error",
+        errorCode: failureCode,
         errorDetail: detail,
         updatedAt: new Date().toISOString(),
         completedAt: new Date().toISOString(),
       }));
       console.log(JSON.stringify({ event: "sec-report-generation", policy: "reliability.v1", jobId, workflowInstanceId, ticker: filing.ticker, accession, status: "failed", stage,
-        failureCode: error instanceof SecModelOutputError ? error.code : error instanceof SecModelHttpError ? `provider_http_${error.status}` : "pipeline_error" }));
+        failureCode }));
       failed.push(accession);
     }
   }

@@ -3,6 +3,7 @@ import { enforceDiscoveryCoverage } from "./discovery.ts";
 import type { SecSourceMaterial } from "../../../../shared/analysis-contract/sec-presentation.ts";
 import { buildSecTrends, composeSecPresentation } from "./presentation.ts";
 import { CONTINUITY_PROMPT, continuityReviewNode } from "./continuity.ts";
+import { applyEditorialPatch, editorialRequirements, EDITORIAL_PATCH_PROMPT } from "./editorial.ts";
 import { SEC_READER_SCHEMA } from "../../../../shared/analysis-contract/sec-reader.ts";
 import { buildFinancialLens, normalizeReaderReport, readerArticleText, RESEARCH_RULES } from "./reader.ts";
 import {
@@ -446,6 +447,13 @@ export async function summarizePreparedSecFiling(
   brief?: SecAnalysisBrief,
   review?: ManagerReview,
   editorialFeedback?: string[],
+  editorialState?: {
+    candidate?: Record<string, unknown>;
+    patch?: boolean;
+    primaryEvidence?: Array<{ evidenceId: string; text: string; truncated?: boolean }>;
+    issues?: unknown[];
+    saveCandidate?: (candidate: Record<string, unknown>) => Promise<void>;
+  },
 ): Promise<{ artifact: SecAnalysisArtifact; summary: SecFilingSummary }> {
   let usableNodes = nodes.filter((node) => node.status === "complete" && (node.narrative || node.findings.length));
   if (!plan?.nodes.length || !usableNodes.length) throw new Error("Manager produced no usable analysis nodes");
@@ -468,7 +476,7 @@ export async function summarizePreparedSecFiling(
     ...finalBrief.currentFacts.flatMap((fact) => fact.evidenceIds),
   ].filter((id) => validEvidenceIds.includes(id)));
   const fiscalInput = prepared.fiscalSourceExcerpts ?? [];
-  const financialLens = buildFinancialLens(finalBrief, nodes, prepared.filing.reportDate);
+  const financialLens = buildFinancialLens(finalBrief, nodes, prepared.filing.reportDate, editorialState?.primaryEvidence);
   const priorEvidenceIds = finalBrief.history.series.flatMap((s) => [...s.quarters, ...s.annual])
     .filter((p) => p.endDate < prepared.filing.reportDate && p.sourceFiledAt.slice(0, 10) <= prepared.filing.filingDate).map((p) => p.observationId);
   const summaryPayload = {
@@ -476,6 +484,8 @@ export async function summarizePreparedSecFiling(
     marketSnapshot: finalBrief.marketSnapshot ?? { status: "unavailable", limitations: ["未提供行情，不能评价价格是否有吸引力。"] },
     priorEvidenceIds,
     editorialFeedback: editorialFeedback ?? [],
+    requiredTopics: editorialRequirements(plan, nodes, finalReview),
+    primaryEvidence: editorialState?.primaryEvidence ?? nodes.map((node) => ({ nodeId: node.id, evidenceIds: node.evidenceIds, excerpts: node.evidence })),
     fiscalPeriodInput: { filing: prepared.filing, reportedDEI: prepared.reportedFiscalPeriod ?? null, sourceExcerpts: fiscalInput },
     brief: briefForAnalysis(finalBrief),
     nodeAnalyses: usableNodes.map(({ id, title, findings, narrative, facts, evidenceIds }) => ({ id, title, analysis: narrative || findings.map((finding) => `${finding.label}: ${finding.detail}`).join("\n"), facts: facts ?? [], evidenceIds: evidenceIds ?? [] })),
@@ -499,10 +509,31 @@ export async function summarizePreparedSecFiling(
       reviews: "[{accessionNumber,priorJudgment,status:supported|contradicted|not_verifiable|superseded,evidenceIds,explanation,nextTest}]",
     },
   };
-  const summaryValue = await model("synthesis", synthesisSystemPrompt() + FISCAL_PERIOD_INSTRUCTION, summaryPayload);
-  const reader = summaryValue.readerReport ? normalizeReaderReport(summaryValue.readerReport, {
-    nodes, plan, currentEvidence: reviewEvidenceIds, priorEvidence: new Set(priorEvidenceIds), chartKeys: new Set(trends.map((t) => t.metricKey)), requireVisual: true,
-  }) : undefined;
+  let summaryValue = editorialState?.candidate ?? await model("synthesis", synthesisSystemPrompt() + FISCAL_PERIOD_INSTRUCTION, summaryPayload);
+  if (!editorialState?.patch) await editorialState?.saveCandidate?.(summaryValue);
+  const repair = async (problems: unknown[], round: number) => {
+    const patch = await model(`editorial-revision:${round}`, EDITORIAL_PATCH_PROMPT + "\n" + RESEARCH_RULES, {
+      originalDraft: summaryValue, issues: problems, requiredTopics: summaryPayload.requiredTopics,
+      primaryEvidence: summaryPayload.primaryEvidence, facts: finalBrief.currentFacts,
+      nodeAnalyses: summaryPayload.nodeAnalyses, financialLens, marketSnapshot: summaryPayload.marketSnapshot,
+      readerSchema: SEC_READER_SCHEMA, allowedEvidenceIds: [...reviewEvidenceIds], priorEvidenceIds, availableCharts: trends,
+    });
+    summaryValue = applyEditorialPatch(summaryValue, patch);
+    await editorialState?.saveCandidate?.(summaryValue);
+  };
+  if (editorialState?.patch) await repair(editorialState.issues ?? editorialFeedback ?? [], 0);
+  let reader: ReturnType<typeof normalizeReaderReport> | undefined;
+  for (let round = 0; round <= 3; round += 1) {
+    try {
+      reader = summaryValue.readerReport ? normalizeReaderReport(summaryValue.readerReport, {
+        nodes, plan, currentEvidence: reviewEvidenceIds, priorEvidence: new Set(priorEvidenceIds), chartKeys: new Set(trends.map((t) => t.metricKey)), requireVisual: true,
+      }) : undefined;
+      break;
+    } catch (error) {
+      if (round === 3) throw error;
+      await repair([{ category: "coverage", detail: error instanceof Error ? error.message : String(error) }], round + 1);
+    }
+  }
   if (reader) summaryValue.report = readerArticleText(reader);
   if (finalBrief.reportContinuity) {
     const continuityNode = continuityReviewNode(finalBrief.reportContinuity, summaryValue, reviewEvidenceIds);
@@ -644,6 +675,7 @@ function nodeSystemPrompt() {
     "facts 只收录 xbrlFacts 之外、正文明确披露的结构化数值：分部收入与利润率、管理层 KPI、指引数字、一次性项目。",
     "metricKey 优先使用 allowedMetricKeys 中的值；属于管理层自定义 KPI 时使用 business_kpi 并在 definition 写出该 KPI 的原文定义。",
     "每条 fact 必须给出 unit、basis 和至少一个来自 evidence 清单的 evidenceId；无法引用证据的数值直接省略。",
+    "现金流相关fact（预付款、融资、资本开支调整）额外填写cashFlow:{classification:operating|investing|financing|non_cash|unknown,includedInOperatingCashFlow:yes|no|unknown,obligation,sourceQuote}；sourceQuote必须逐字来自相同evidenceId原文，分类未知就unknown，不从通常处理方式推断。",
     "facts同时保留definition原文定义、periodEnd日期和periodScope（quarter/annual/ytd/instant/policy，严格区别单季与累计）。金额换为原币基础单位，USD金额用unit=USD/currency=USD。",
     "可计算的通用补充指标使用明确metricKey：management_net_capex（管理层净资本支出）、depreciation（折旧，不将折旧摊销合计替代）、depreciable_life_years（单一资产类披露的寿命，unit=years，definition必须写资产类别；多个寿命不强合并，periodScope写本报告quarter或annual）、debt（有息债务总额，不能将某笔发行/长期部分当总额）。仅材料足够时提取，不猜数字。",
     "输出 JSON：{\"findings\":[{\"label\":\"\",\"detail\":\"\",\"importance\":\"high|medium|low\"}],\"narrative\":\"\",\"facts\":[{\"metricKey\":\"\",\"definition\":\"\",\"value\":\"\",\"unit\":\"\",\"currency\":\"\",\"periodScope\":\"quarter|annual|ytd|instant\",\"periodEnd\":\"YYYY-MM-DD\",\"basis\":\"gaap|non_gaap|management_kpi|derived\",\"sourceLabel\":\"fact_source_reported|management_adjusted|derived_calculation\",\"confidence\":\"high|medium|low\",\"evidenceIds\":[\"\"]}]}",
@@ -672,13 +704,13 @@ function eventSummarySystemPrompt() {
 function synthesisSystemPrompt() {
   return [
     RESEARCH_RULES,
-    "你是美股基本面研究团队的总编。输入只有最终 SecAnalysisBrief、完成节点和 Manager Review，不含 filing 原文。",
+    "你是美股基本面研究团队的总编。输入包括 SecAnalysisBrief、完成节点、原始证据摘录和 Manager Review。审核意见不是证据。",
     CONTINUITY_PROMPT.replaceAll("historicalReports", "brief.reportContinuity.reports").replaceAll("currentNodes", "nodeAnalyses").replaceAll("currentFacts", "brief.currentFacts"),
     "正文必须覆盖历史判断复核，明确支持、反驳、尚不能验证或替代，以及下期验证条件。无历史时明确说明，不能编造延续性。",
     "brief.currentFacts 与 brief.comparisons 来自 SEC XBRL，是本期数字和同比环比的唯一权威来源；节点的 facts 用于补充分部、KPI 与指引。",
     "keyMetrics 的 metricKey 必须来自 allowedMetricKeys，超出列表的指标会被丢弃。",
     "完整研报以本期值得关注的重要披露为主线，先写最可能改变投资判断的细节及其证据，再解释机制、反向证据和下一次验证条件。正面与负面同等重视。常规财务指标集中为简短背景，不占据headline与主要章节。不得把有披露等同首次披露或市场未定价；章节来自nodeAnalyses。",
-    "输出readerReport作为唯一完整正文：围绕变化→业务机制→利润与现金→估值所需条件→最强空头论点→下期证伪条件递进，章节按公司业务自拟。重写为连贯文章，不复制分析节点，不展示编排流程。整合高重要性主题，次要底稿供核查，无需每个节点都变成正文。",
+    "输出readerReport作为唯一完整正文：围绕变化→业务机制→利润与现金→估值所需条件→最强空头论点→下期证伪条件递进，章节按公司业务自拟。重写为连贯文章，不复制分析节点，不展示编排流程。整合requiredTopics中的每个问题并在对应章节填写nodeId；写作前将每项分配到章节，缺证据须说明已查范围和限制。次要底稿供核查，无需每个节点都变成正文。",
     "数字、同比、环比和证据只能使用结构化输入中已有的值；不得编造或把 qoq 与 yoy 混写。",
     "毛利率、营业利润率等比率指标的变化一律写「个百分点」，取 brief.comparisons 的 percentagePointDelta；只有金额和股数才用相对百分比。",
     "readerReport正文通常1800至3200中文字，以解释完整为准。report只留空字符串，由系统从完整章节生成；不要再写一份摘要代替正文。无足够证据写限制，不制造内容。",

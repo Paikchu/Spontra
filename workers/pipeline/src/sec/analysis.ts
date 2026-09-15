@@ -166,6 +166,12 @@ export type FilingBlock = {
 };
 
 export type AnalysisFact = {
+  cashFlow?: {
+    classification: "operating" | "investing" | "financing" | "non_cash" | "unknown";
+    includedInOperatingCashFlow: "yes" | "no" | "unknown";
+    obligation: string;
+    sourceQuote: string;
+  };
   definition?: string;
   periodEnd?: string;
   factId?: string;
@@ -514,7 +520,13 @@ export function normalizeAnalysisFacts(value: unknown, validEvidenceIds: Set<str
     const sourceLabel = fact?.sourceLabel === "fact_source_reported" || fact?.sourceLabel === "management_adjusted" || fact?.sourceLabel === "derived_calculation" ? fact.sourceLabel : "unknown";
     const unit = String(fact?.unit ?? "").slice(0, 30);
     const currency = /^(?:%|percent|percentage|ratio)$/i.test(unit.trim()) ? "" : String(fact?.currency ?? "").slice(0, 8);
+    const flow = asRecord(fact?.cashFlow);
     return [{
+      ...(flow ? { cashFlow: {
+        classification: (["operating", "investing", "financing", "non_cash"].includes(String(flow.classification)) ? flow.classification : "unknown") as NonNullable<AnalysisFact["cashFlow"]>["classification"],
+        includedInOperatingCashFlow: (["yes", "no"].includes(String(flow.includedInOperatingCashFlow)) ? flow.includedInOperatingCashFlow : "unknown") as NonNullable<AnalysisFact["cashFlow"]>["includedInOperatingCashFlow"],
+        obligation: String(flow.obligation ?? "未知").slice(0, 600), sourceQuote: String(flow.sourceQuote ?? "").slice(0, 2000),
+      } } : {}),
       metricKey,
       value: valueText.slice(0, 80),
       unit,

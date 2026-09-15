@@ -65,6 +65,13 @@ export type SecMarketSnapshot = {
 };
 
 export type SecFinancialLens = {
+  cashFlowItems?: Array<{
+    metricKey: string; value: string; unit: string; periodEnd?: string; periodScope?: string; definition?: string;
+    classification: "operating" | "investing" | "financing" | "non_cash" | "unknown";
+    includedInOperatingCashFlow: "yes" | "no" | "unknown";
+    obligation: string; sourceQuote?: string; evidenceIds: string[];
+    evidenceStatus: "quoted" | "unverified";
+  }>;
   missingMetrics: string[];
   limitations: string[];
   cashBridge?: {
@@ -76,6 +83,7 @@ export type SecFinancialLens = {
     managementNetCapex?: number;
     adjustedFCF?: number;
     adjustment?: number;
+    reconciliationStatus?: "unverified";
     evidenceIds: string[];
   };
   depreciation?: {

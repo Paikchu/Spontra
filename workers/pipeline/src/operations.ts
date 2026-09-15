@@ -4,7 +4,8 @@ export { readModelContent } from "./model-stream.ts";
 export { SecModelHttpError } from "./model-recovery.ts";
 import { fiscalPeriodInput } from "./sec/fiscal-period-ai.ts";
 import { fetchSecMarketSnapshot } from "./sec/market.ts";
-import { editorialIssues, EDITORIAL_REVIEW_PROMPT } from "./sec/reader.ts";
+import { normalizeEditorialIssues, editorialRequirements } from "./sec/editorial.ts";
+import { EDITORIAL_REVIEW_PROMPT } from "./sec/reader.ts";
 import { refreshFiscalPeriods, readFiscalPeriod } from "./sec/fiscal-period.ts";
 import { attachDiscovery, auditDisclosureCoverage, discoveryChunkCount, scanDisclosureChunk, type DiscoveryChunk } from "./sec/discovery.ts";
 import { buildEarningsGroups, classificationKey, combineEarningsDocuments, earningsKey, identifyEarningsPeriod, isPeriodic } from "./sec/earnings.ts";
@@ -56,7 +57,7 @@ export type SecPipelineEnv = SecCronEnv & AnalysisReadEnv & {
 const PUBLISH_BLOCK_CHUNK_SIZE = 40;
 
 /** Planning, review and synthesis carry the judgement; node extraction is mechanical. */
-const REASONING_STAGE = /^(manager|synthesis|discovery-audit|editorial-review)/;
+const REASONING_STAGE = /^(manager|synthesis|discovery-audit|editorial-review|editorial-revision)/;
 
 export function modelForStage(env: SecPipelineEnv, stage: string, override?: string): string | undefined {
   if (override) return override;
@@ -65,35 +66,59 @@ export function modelForStage(env: SecPipelineEnv, stage: string, override?: str
 
 export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof fetch = fetch, workflowInstanceId = "standalone"): SecPipelineOperations {
   const repository = () => new D1SecRepository(requireDb(env));
-  const modelFor = (execution?: SecModelExecution): SecModelCall => async (stage, system, payload) => {
+  const modelFor = (execution?: SecModelExecution): SecModelCall => {
     const deadline = Date.now() + SEC_MODEL_EXECUTION_BUDGET_MS;
-    const selectedModel = modelForStage(env, stage, execution?.model) || env.SEC_ANALYSIS_MODEL || "qwen3.8-flash";
-    const fallbackModel = selectedModel === "hy3" ? env.SEC_ANALYSIS_MODEL || "qwen3.8-flash" : "hy3";
-    const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify({ stage, system, payload }))));
-    const fingerprint = Array.from(digest, (b) => b.toString(16).padStart(2, "0")).join("");
-    const key = `model-recovery/v1/${encodeURIComponent(workflowInstanceId)}/${fingerprint}.json`;
-    const checkpoint: ModelCheckpointStore = {
-      async load() {
-        try {
-          const saved = await env.SEC_FILINGS.get(key);
-          if (!saved) return null;
-          const value = JSON.parse(await saved.text()) as ModelCheckpoint | null;
-          return value?.version === "model-recovery.v1" && typeof value.content === "string" && ["continue", "repair"].includes(value.mode) ? value : null;
-        } catch { console.warn(JSON.stringify({ event: "sec-model-checkpoint", action: "load", outcome: "unavailable", stage })); return null; }
-      },
-      async save(value) {
-        try { await env.SEC_FILINGS.put(key, JSON.stringify(value), { httpMetadata: { contentType: "application/json" } }); }
-        catch { console.warn(JSON.stringify({ event: "sec-model-checkpoint", action: "save", outcome: "unavailable", stage })); }
-      },
+    return async (stage, system, payload) => {
+      if (Date.now() >= deadline) throw new Error("Editorial step execution budget exhausted; resume from saved draft");
+      const selectedModel = modelForStage(env, stage, execution?.model) || env.SEC_ANALYSIS_MODEL || "qwen3.8-flash";
+      const fallbackModel = selectedModel === "hy3" ? env.SEC_ANALYSIS_MODEL || "qwen3.8-flash" : "hy3";
+      const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify({ stage, system, payload }))));
+      const fingerprint = Array.from(digest, (b) => b.toString(16).padStart(2, "0")).join("");
+      const key = `model-recovery/v1/${encodeURIComponent(workflowInstanceId)}/${fingerprint}.json`;
+      const checkpoint: ModelCheckpointStore = {
+        async load() {
+          try {
+            const saved = await env.SEC_FILINGS.get(key);
+            if (!saved) return null;
+            const value = JSON.parse(await saved.text()) as ModelCheckpoint | null;
+            return value?.version === "model-recovery.v1" && typeof value.content === "string" && ["continue", "repair"].includes(value.mode) ? value : null;
+          } catch { console.warn(JSON.stringify({ event: "sec-model-checkpoint", action: "load", outcome: "unavailable", stage })); return null; }
+        },
+        async save(value) {
+          try { await env.SEC_FILINGS.put(key, JSON.stringify(value), { httpMetadata: { contentType: "application/json" } }); }
+          catch { console.warn(JSON.stringify({ event: "sec-model-checkpoint", action: "save", outcome: "unavailable", stage })); }
+        },
+      };
+      return recoverModelJson({ stage, model: selectedModel, fallbackModel, jsonMode: (execution?.attempt ?? 1) === 1, checkpoint,
+        heartbeat: async () => {
+          if (workflowInstanceId !== "standalone" && env.DB) await env.DB.prepare("UPDATE sec_analysis_jobs SET updated_at = ? WHERE workflow_instance_id = ? AND status = 'running'")
+            .bind(new Date().toISOString(), workflowInstanceId).run();
+        },
+        log: (event) => console.log(JSON.stringify({ ...event, workflowInstanceId })),
+        request: (options) => requestWorkerSecModelContent(env, fetcher, stage, system, payload, options.model,
+          Math.max(1, deadline - Date.now()), options.jsonMode, { ...options, workflowInstanceId }),
+      });
     };
-    return recoverModelJson({ stage, model: selectedModel, fallbackModel, jsonMode: (execution?.attempt ?? 1) === 1, checkpoint,
-      heartbeat: async () => {
-        if (workflowInstanceId !== "standalone" && env.DB) await env.DB.prepare("UPDATE sec_analysis_jobs SET updated_at = ? WHERE workflow_instance_id = ? AND status = 'running'")
-          .bind(new Date().toISOString(), workflowInstanceId).run();
+  };
+  const draftCheckpoint = (reference: PreparedFilingReference, round: number) => {
+    const name = `editorial/${encodeURIComponent(workflowInstanceId)}/round-${round}/candidate`;
+    const key = `${reference.key.replace(/^filings\//, "analysis/")}/${SEC_ANALYSIS_SCHEMA_VERSION}/${name}.json`;
+    return {
+      async load(): Promise<Record<string, unknown> | undefined> {
+        const saved = await env.SEC_FILINGS.get(key);
+        return saved ? JSON.parse(await saved.text()) as Record<string, unknown> : undefined;
       },
-      log: (event) => console.log(JSON.stringify({ ...event, workflowInstanceId })),
-      request: (options) => requestWorkerSecModelContent(env, fetcher, stage, system, payload, options.model,
-        Math.max(1, deadline - Date.now()), options.jsonMode, { ...options, workflowInstanceId }),
+      async saveCandidate(candidate: Record<string, unknown>) { await putArtifact(env.SEC_FILINGS, reference, name, candidate); },
+    };
+  };
+  const primaryEvidence = async (reference: PreparedFilingReference, nodes: SecNodeResult[]) => {
+    const prepared = await readPrepared(env.SEC_FILINGS, reference);
+    const ids = new Set(nodes.flatMap((n) => [...(n.evidenceIds ?? []), ...(n.facts ?? []).flatMap((f) => f.evidenceIds)]));
+    let remaining = 160_000;
+    return prepared.blocks.filter((b) => ids.has(`ev:${b.blockId}`) || ids.has(b.blockId)).map((b) => {
+      const text = b.body.slice(0, Math.max(0, Math.min(remaining, 12_000)));
+      remaining -= text.length;
+      return { evidenceId: `ev:${b.blockId}`, heading: b.heading, text, truncated: text.length < b.body.length };
     });
   };
   return {
@@ -274,13 +299,15 @@ export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof
     summarize: async (_filing, reference, context, plan, nodes, brief, review, execution) => {
       await putArtifact(env.SEC_FILINGS, reference, "nodes/final", nodes);
       if (review) await putArtifact(env.SEC_FILINGS, reference, "manager-review/final", review);
-      const result = await summarizePreparedSecFiling(await readMeta(env.SEC_FILINGS, reference), context, modelFor(execution), new Date(), plan, nodes, brief, review);
+      const checkpoint = draftCheckpoint(reference, 0);
+      const result = await summarizePreparedSecFiling(await readMeta(env.SEC_FILINGS, reference), context, modelFor(execution), new Date(), plan, nodes, brief, review, undefined,
+        { candidate: await checkpoint.load(), saveCandidate: checkpoint.saveCandidate, primaryEvidence: await primaryEvidence(reference, nodes) });
       if (!result.artifact.report.reader) throw new Error("Synthesis did not produce the required reader report");
       if (result.summary && _filing.earningsGroup) result.summary.earningsGroup = _filing.earningsGroup;
       const synthesisKey = await putArtifact(env.SEC_FILINGS, reference, "synthesis", result);
       return { ...result, artifact: { ...result.artifact, blocks: [], artifactKeys: collectArtifactKeys(reference, synthesisKey) } };
     },
-    auditReport: async (reference, nodes, brief, result, round, execution) => {
+    auditReport: async (reference, nodes, brief, result, round, execution, context) => {
       if (!result.artifact.report.reader || !result.summary) throw new Error("Publication requires a complete reader report");
       const audit = await modelFor(execution)(`editorial-review:${round}`, EDITORIAL_REVIEW_PROMPT, {
           headline: result.summary.headline, bullets: result.summary.bullets, analystView: result.summary.analystView,
@@ -288,15 +315,27 @@ export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof
           facts: brief.currentFacts, comparisons: brief.comparisons, history: brief.history, historicalReports: brief.reportContinuity,
           nodes: nodes.map(({ id, title, facts, evidence, narrative, findings }) => ({ id, title, facts, evidence, narrative, findings })),
           limitations: result.artifact.report.dataQuality,
+          requiredTopics: context ? editorialRequirements(context.plan, nodes, result.artifact.managerReview) : [],
+          previousIssues: context?.previousIssues ?? [],
+          primaryEvidence: context ? await primaryEvidence(reference, nodes) : [],
+          renderedComponents: { cashBridge: result.artifact.report.financialLens?.cashBridge, placement: "头部并列展示两种可计算FCF及算式、调整限制；正文与这些组件共同构成报告" },
       });
       await putArtifact(env.SEC_FILINGS, reference, `editorial-review/${round}`, audit);
-      return { issues: editorialIssues(audit), reviewedAt: new Date().toISOString() };
+      const allowed = new Set([...brief.currentFacts.flatMap((f) => f.evidenceIds), ...nodes.flatMap((n) => n.evidenceIds ?? [])]);
+      const findings = normalizeEditorialIssues(audit, allowed);
+      return { findings, issues: findings.filter((i) => i.severity !== "minor" && i.category !== "presentation").map((i) => `${i.id}: ${i.detail} 通过条件：${i.acceptance}`), reviewedAt: new Date().toISOString() };
     },
-    reviseReport: async (filing, reference, context, plan, nodes, brief, review, issues, execution) => {
-      const result = await summarizePreparedSecFiling(await readMeta(env.SEC_FILINGS, reference), context, modelFor(execution), new Date(), plan, nodes, brief, review, issues);
+    reviseReport: async (filing, reference, context, plan, nodes, brief, review, issues, execution, revision) => {
+      if (!revision?.draft.summary || !revision.draft.artifact.report.reader) throw new Error("Editorial revision requires the reviewed draft");
+      const checkpoint = draftCheckpoint(reference, revision.round);
+      const saved = await checkpoint.load();
+      const original = { ...revision.draft.summary, ...revision.draft.artifact.report, readerReport: revision.draft.artifact.report.reader, report: "" };
+      const result = await summarizePreparedSecFiling(await readMeta(env.SEC_FILINGS, reference), context, modelFor(execution), new Date(), plan, nodes, brief, review, issues,
+        { candidate: saved ?? original, patch: !saved, issues: revision.findings ?? issues, saveCandidate: checkpoint.saveCandidate, primaryEvidence: await primaryEvidence(reference, nodes) });
       if (!result.artifact.report.reader) throw new Error("Editorial revision did not produce a reader report");
+      delete result.artifact.report.editorialReview;
       if (filing.earningsGroup) result.summary.earningsGroup = filing.earningsGroup;
-      const key = await putArtifact(env.SEC_FILINGS, reference, "synthesis", result);
+      const key = await putArtifact(env.SEC_FILINGS, reference, `editorial/${encodeURIComponent(workflowInstanceId)}/round-${revision.round}/result`, result);
       result.artifact.artifactKeys = collectArtifactKeys(reference, key);
       return result;
     },

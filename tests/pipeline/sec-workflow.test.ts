@@ -553,3 +553,28 @@ test("disclosure discovery runs before planning and audit may add an omitted the
   assert.ok(stages.indexOf(`discovery-finish:${filing.accessionNumber}`)<stages.indexOf(`manager:${filing.accessionNumber}`));
   assert.ok(stages.indexOf(`discovery-repair:${filing.accessionNumber}:insider-plan`)<stages.indexOf(`manager-review:${filing.accessionNumber}:round:0`));
 });
+
+
+test("multiple editorial repairs receive the latest draft, use distinct durable steps and escalate", async () => {
+  const steps: string[] = [];
+  let count = 0, published = "";
+  const ops = operations({
+    async auditReport() { return { issues: count < 3 ? ["仍需核对现金分类"] : [], reviewedAt: new Date().toISOString() }; },
+    async reviseReport(_f, _p, _c, _plan, _nodes, _b, _review, _issues, execution, revision) {
+      assert.ok(revision);
+      if (count) assert.equal(revision.draft.artifact.report.headline, `fixed-${count}`);
+      count++;
+      assert.equal(revision.round, count);
+      if (count >= 2) assert.equal(execution?.model, "hy3");
+      const draft = structuredClone(revision.draft);
+      draft.artifact.report.headline = `fixed-${count}`;
+      return draft;
+    },
+    async publish(artifact) { published = artifact.report.headline; },
+  });
+  const result = await executeSecAnalysisWorkflow({ ticker: "TESTCO", requestedBy: "manual" }, "editorial-local-repair", stepRecorder(steps), ops);
+  assert.deepEqual(result.failed, []);
+  assert.equal(published, "fixed-3");
+  assert.equal(steps.filter((s) => s.startsWith("editorial-revision:")).length, 3);
+  assert.equal(new Set(steps).size, steps.length);
+});
