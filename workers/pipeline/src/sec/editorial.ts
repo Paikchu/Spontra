@@ -58,7 +58,7 @@ export const EDITORIAL_PATCH_PROMPT = [
 ].join("\n");
 
 /** Deterministic merge: no deletion, arbitrary paths, evidence rewriting or whole-article replacement. */
-export function applyEditorialPatch(draft: Record<string, unknown>, value: unknown): Record<string, unknown> {
+export function applyEditorialPatch(draft: Record<string, unknown>, value: unknown, allowedSectionIds?: Set<string>): Record<string, unknown> {
   const patch = object(value);
   const allowed = new Set(["replaceSections", "appendSections", "headline", "bullets", "analystView", "changes", "watch", "limitations"]);
   if (!Object.keys(patch).length || Object.keys(patch).some((k) => !allowed.has(k))) throw new Error("Editorial patch contains unsupported fields");
@@ -67,6 +67,7 @@ export function applyEditorialPatch(draft: Record<string, unknown>, value: unkno
   const replaced = new Set<number>();
   for (const raw of rows(patch.replaceSections)) {
     const r = object(raw);
+    if (allowedSectionIds && !allowedSectionIds.has(String(r.sectionId))) throw new Error("Editorial patch changes an unaffected section");
     const index = sections.findIndex((s, i) => (object(s).id || `sec-reader-${i + 1}`) === r.sectionId);
     if (index < 0 || replaced.has(index) || !Object.keys(object(r.section)).length) throw new Error("Editorial patch references an invalid or duplicate section");
     replaced.add(index);

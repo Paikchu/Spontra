@@ -18,6 +18,7 @@ test("a targeted edit preserves every unaffected section and rejects destructive
   const fixed = applyEditorialPatch(original, { replaceSections: [{ sectionId: section.id, section }] });
   assert.deepEqual((fixed.readerReport as typeof original.readerReport).sections.slice(1), original.readerReport.sections.slice(1));
   assert.notDeepEqual(fixed.readerReport, original.readerReport);
+  assert.throws(() => applyEditorialPatch(original, { replaceSections: [{ sectionId: section.id, section }] }, new Set(["sec-reader-2"])), /unaffected/);
   assert.throws(() => applyEditorialPatch(original, { readerReport: readerFixture() }), /unsupported/);
   assert.throws(() => applyEditorialPatch(original, { replaceSections: [{ sectionId: "invented", section }] }), /invalid/);
   assert.throws(() => applyEditorialPatch(original, { replaceSections: [{ sectionId: section.id, section: { ...section, nodeIds: [] } }] }), /covered topics/);

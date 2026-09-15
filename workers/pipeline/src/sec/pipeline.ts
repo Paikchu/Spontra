@@ -518,13 +518,16 @@ export async function summarizePreparedSecFiling(
       nodeAnalyses: summaryPayload.nodeAnalyses, financialLens, marketSnapshot: summaryPayload.marketSnapshot,
       readerSchema: SEC_READER_SCHEMA, allowedEvidenceIds: [...reviewEvidenceIds], priorEvidenceIds, availableCharts: trends,
     });
-    summaryValue = applyEditorialPatch(summaryValue, patch);
+    const localized = problems.map((p) => p && typeof p === "object" && "sectionIds" in p && Array.isArray(p.sectionIds) ? p.sectionIds.filter((id): id is string => typeof id === "string") : []);
+    const allowedSections = localized.length && localized.every((ids) => ids.length) ? new Set(localized.flat()) : undefined;
+    summaryValue = applyEditorialPatch(summaryValue, patch, allowedSections);
     await editorialState?.saveCandidate?.(summaryValue);
   };
   if (editorialState?.patch) await repair(editorialState.issues ?? editorialFeedback ?? [], 0);
   let reader: ReturnType<typeof normalizeReaderReport> | undefined;
   for (let round = 0; round <= 3; round += 1) {
     try {
+      if (editorialState && !summaryValue.readerReport) throw new Error("Reader report is missing; add grounded sections, changes and watch conditions using the patch schema");
       reader = summaryValue.readerReport ? normalizeReaderReport(summaryValue.readerReport, {
         nodes, plan, currentEvidence: reviewEvidenceIds, priorEvidence: new Set(priorEvidenceIds), chartKeys: new Set(trends.map((t) => t.metricKey)), requireVisual: true,
       }) : undefined;
