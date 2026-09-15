@@ -1,3 +1,4 @@
+import { boundedModelIO } from "./model-io.ts";
 import { readModelContent, parseModelJson, SecModelOutputError } from "./model-stream.ts";
 import { recoverModelJson, SecModelHttpError, type ModelRequestOptions, type ModelCheckpoint, type ModelCheckpointStore } from "./model-recovery.ts";
 export { readModelContent } from "./model-stream.ts";
@@ -39,10 +40,10 @@ import { SEC_MODEL_EXECUTION_BUDGET_MS, SEC_MODEL_FIRST_RESPONSE_MS, SEC_MODEL_O
 import type { PreparedFilingReference, SecPipelineOperations, WorkflowJobUpdate } from "./workflow-core.ts";
 import { jobAnalysisVersionFor } from "./workflow-core.ts";
 
-type R2ObjectLike = { text(): Promise<string> };
+type R2ObjectLike = { etag?: string; text(): Promise<string> };
 type R2BucketLike = {
   get(key: string): Promise<R2ObjectLike | null>;
-  put(key: string, value: string, options?: { httpMetadata?: { contentType?: string } }): Promise<unknown>;
+  put(key: string, value: string, options?: { httpMetadata?: { contentType?: string }; onlyIf?: { etagMatches?: string; etagDoesNotMatch?: string } }): Promise<unknown>;
 };
 
 export type SecPipelineEnv = SecCronEnv & AnalysisReadEnv & {
@@ -75,24 +76,37 @@ export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof
       const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify({ stage, system, payload }))));
       const fingerprint = Array.from(digest, (b) => b.toString(16).padStart(2, "0")).join("");
       const key = `model-recovery/v1/${encodeURIComponent(workflowInstanceId)}/${fingerprint}.json`;
+      let checkpointEtag: string | undefined;
+      let checkpointDisabled = false;
       const checkpoint: ModelCheckpointStore = {
         async load() {
           try {
-            const saved = await env.SEC_FILINGS.get(key);
+            const saved = await boundedModelIO(env.SEC_FILINGS.get(key), "checkpoint-load");
+            checkpointEtag = saved?.etag;
             if (!saved) return null;
-            const value = JSON.parse(await saved.text()) as ModelCheckpoint | null;
+            const value = JSON.parse(await boundedModelIO(saved.text(), "checkpoint-body")) as ModelCheckpoint | null;
             return value?.version === "model-recovery.v1" && typeof value.content === "string" && ["continue", "repair"].includes(value.mode) ? value : null;
           } catch { console.warn(JSON.stringify({ event: "sec-model-checkpoint", action: "load", outcome: "unavailable", stage })); return null; }
         },
         async save(value) {
-          try { await env.SEC_FILINGS.put(key, JSON.stringify(value), { httpMetadata: { contentType: "application/json" } }); }
-          catch { console.warn(JSON.stringify({ event: "sec-model-checkpoint", action: "save", outcome: "unavailable", stage })); }
+          if (checkpointDisabled) return;
+          try {
+            const saved = await boundedModelIO(env.SEC_FILINGS.put(key, JSON.stringify(value), {
+              httpMetadata: { contentType: "application/json" }, onlyIf: checkpointEtag ? { etagMatches: checkpointEtag } : { etagDoesNotMatch: "*" },
+            }), "checkpoint-save");
+            if (saved === null) throw new Error("Checkpoint version changed");
+            if (saved && typeof saved === "object" && "etag" in saved && typeof saved.etag === "string") checkpointEtag = saved.etag;
+          }
+          catch { checkpointDisabled = true; console.warn(JSON.stringify({ event: "sec-model-checkpoint", action: "save", outcome: "unavailable", stage })); }
         },
       };
       return recoverModelJson({ stage, model: selectedModel, fallbackModel, jsonMode: (execution?.attempt ?? 1) === 1, checkpoint,
         heartbeat: async () => {
-          if (workflowInstanceId !== "standalone" && env.DB) await env.DB.prepare("UPDATE sec_analysis_jobs SET updated_at = ? WHERE workflow_instance_id = ? AND status = 'running'")
-            .bind(new Date().toISOString(), workflowInstanceId).run();
+          if (workflowInstanceId !== "standalone" && env.DB) {
+            try { await boundedModelIO(env.DB.prepare("UPDATE sec_analysis_jobs SET updated_at = ? WHERE workflow_instance_id = ? AND status = 'running'")
+              .bind(new Date().toISOString(), workflowInstanceId).run(), "job-heartbeat", 5000); }
+            catch { console.warn(JSON.stringify({ event: "sec-model-heartbeat", workflowInstanceId, stage, outcome: "unavailable" })); }
+          }
         },
         log: (event) => console.log(JSON.stringify({ ...event, workflowInstanceId })),
         request: (options) => requestWorkerSecModelContent(env, fetcher, stage, system, payload, options.model,
@@ -601,9 +615,12 @@ async function requestWorkerSecModelContent(
     const errorReader = response.body?.getReader();
     let detail = "";
     if (errorReader) {
-      const first = await errorReader.read();
-      detail = first.value ? new TextDecoder().decode(first.value.slice(0, 4096)) : "";
-      await errorReader.cancel().catch(() => {});
+      try {
+        const first = await boundedModelIO(errorReader.read(), "http-error-body", 5000);
+        detail = first.value ? new TextDecoder().decode(first.value.slice(0, 4096)) : "";
+      } catch { detail = "Error response body unavailable"; }
+      void errorReader.cancel().catch(() => {});
+      errorReader.releaseLock();
     }
     const retryAfter = response.headers.get("retry-after");
     const retryAfterMs = retryAfter ? (/^\d+$/.test(retryAfter) ? Number(retryAfter) * 1000 : Math.max(0, Date.parse(retryAfter) - Date.now())) : 0;

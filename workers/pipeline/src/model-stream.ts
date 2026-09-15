@@ -1,3 +1,4 @@
+import { boundedModelIO } from "./model-io.ts";
 import { SEC_MODEL_MAX_RESPONSE_BYTES, SEC_MODEL_MAX_CONTENT_BYTES, SEC_MODEL_MAX_REASONING_BYTES, SEC_MODEL_MAX_FRAME_BYTES, SEC_MODEL_STALL_MS } from "./retry-policy.ts";
 
 export type ModelFailureCode = "output_token_limit" | "stream_incomplete" | "stream_stall" | "invalid_json" | "invalid_stream" | "wire_limit" | "content_limit" | "reasoning_limit" | "frame_limit";
@@ -18,6 +19,7 @@ export type StreamOptions = {
   signal?: AbortSignal;
   checkpoint?: (content: string) => Promise<void>;
   heartbeat?: () => Promise<void>;
+  storageTimeoutMs?: number;
 };
 const meaningful = (value: unknown): value is string => typeof value === "string" && value.trim().length > 0;
 const encoder = new TextEncoder();
@@ -31,11 +33,14 @@ export async function readModelContent(response: Response, stage: string, progre
   let heartbeatAt = Date.now();
   const checkpoint = async (force = false) => {
     if (options.heartbeat && Date.now() - heartbeatAt >= 30_000) {
-      await options.heartbeat(); heartbeatAt = Date.now();
+      heartbeatAt = Date.now();
+      try { await boundedModelIO(options.heartbeat(), "heartbeat", options.storageTimeoutMs ?? 5000); }
+      catch { metrics.heartbeatFailures = Number(metrics.heartbeatFailures ?? 0) + 1; }
     }
     if (!options.checkpoint || content.length === lastCheckpointLength) return;
     if (!force && content.length - lastCheckpointLength < 32_768 && Date.now() - lastCheckpointAt < 30_000) return;
-    await options.checkpoint(content);
+    try { await boundedModelIO(options.checkpoint(content), "checkpoint", options.storageTimeoutMs); }
+    catch { metrics.checkpointFailures = Number(metrics.checkpointFailures ?? 0) + 1; }
     lastCheckpointAt = Date.now(); lastCheckpointLength = content.length;
   };
   try {
@@ -137,7 +142,12 @@ async function* modelEvents(response: Response, idleMs: number, limits: StreamLi
       if (choices?.[0] && !choices[0].finish_reason) choices[0].finish_reason = "stop";
       yield JSON.stringify(parsed);
     }
-  } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
+  } finally {
+    // Cancellation can itself hang in an upstream transport. Do not await it: doing so
+    // turns a detected 60-second stall into an unbounded wait in generator cleanup.
+    void reader.cancel().catch(() => {});
+    reader.releaseLock();
+  }
 }
 
 export function parseModelJson(content: string): Record<string, unknown> {
