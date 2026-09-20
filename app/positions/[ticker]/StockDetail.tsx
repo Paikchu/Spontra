@@ -161,7 +161,7 @@ export function StockDetail({ ticker, companyName, exchange, position, trades, p
           {visited.has("financials") && <FinancialMetrics ticker={ticker} />}
         </TabsContent>
         <TabsContent value="technical" forceMount hidden={activeTab !== "technical"}>
-          <section className="stock-detail-technical"><div className="stock-detail-section-title"><h2>技术面指标</h2>{quote && <span>日线 · {new Date(quote.marketTime).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" })}</span>}</div>
+          <section className="stock-detail-technical" aria-label="技术面指标">{quote && <div className="stock-detail-section-title"><span>日线 · {new Date(quote.marketTime).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" })}</span></div>}
             {rsi != null ? <div className="stock-detail-rsi"><div><span>RSI 14</span><span><strong>{number(rsi, 1, 1)}</strong> {rsiLabel}</span></div>
               <div className="stock-detail-rsi-track" role="meter" aria-label="RSI 14" aria-valuenow={rsi} aria-valuemin={0} aria-valuemax={100}><i style={{ left: `${Math.max(0, Math.min(100, rsi))}%` }} /></div>
               <div className="stock-detail-rsi-scale"><span>0 超卖</span><span>30</span><span>70</span><span>100 超买</span></div>
@@ -181,7 +181,7 @@ export function StockDetail({ ticker, companyName, exchange, position, trades, p
           {visited.has("plan") && (planStatus === "loading" ? <Skeleton className="h-36 w-full" aria-label="正在读取计划" /> : <PlanEditor key={ticker} ticker={ticker} initialPlan={plan} unavailable={planStatus === "unavailable"} />)}
         </TabsContent>
         <TabsContent value="sec-filings" forceMount hidden={activeTab !== "sec-filings"}>
-          {visited.has("sec-filings") && <div className="stock-analysis-filings stock-detail-timeline"><SecFilingsSection ticker={ticker} title="财报与独立事件" /></div>}
+          {visited.has("sec-filings") && <div className="stock-analysis-filings stock-detail-timeline"><SecFilingsSection ticker={ticker} /></div>}
         </TabsContent>
       </Tabs>
     </main>

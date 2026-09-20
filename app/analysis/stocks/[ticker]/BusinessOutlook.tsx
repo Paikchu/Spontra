@@ -5,7 +5,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useEffect, useState } from "react";
 
-import { COMPANY_ANALYSIS_OVERVIEW_LABEL } from "@/shared/analysis-contract/company-analysis.ts";
 import type { PublicCompanyAnalysisResponse } from "@/shared/analysis-contract/company-analysis.ts";
 import type { PublicFundamentalsResponse } from "@/shared/analysis-contract/fundamentals.ts";
 import { companyAnalysisNotice, shouldPollCompanyAnalysis } from "@/lib/earning-report/web/company-analysis-display-state.ts";
@@ -57,7 +56,7 @@ function BusinessOutlookContent({ ticker }: { ticker: string }) {
   if (status !== "ready" || !analysis?.overview) {
     return (
       <section className="stock-outlook stock-outlook--state" aria-labelledby="stock-outlook-heading">
-        <span className="stock-outlook__eyebrow" id="stock-outlook-heading">{COMPANY_ANALYSIS_OVERVIEW_LABEL}</span>
+        <span className="stock-outlook__eyebrow" id="stock-outlook-heading">AI 综述</span>
         {status === "loading" && <div role="status" className="flex flex-col gap-3 py-4"><span className="sr-only">正在读取最新业务判断…</span><Skeleton className="h-16 w-full" /><Skeleton className="h-24 w-full" /></div>}
         {status === "empty" && (
           <div className="stock-outlook__state-row" role="status">
@@ -79,7 +78,7 @@ function BusinessOutlookContent({ ticker }: { ticker: string }) {
   return (
     <section className="stock-outlook" aria-labelledby="stock-outlook-heading" data-analysis-status={analysis.status}>
       <div className="stock-outlook__meta">
-        <span className="stock-outlook__eyebrow" id="stock-outlook-heading">{overview.label}</span>
+        <span className="stock-outlook__eyebrow" id="stock-outlook-heading">AI 综述</span>
         <span>{analysis.period?.label}</span>
       </div>
       <h2 className="stock-outlook__headline" data-length={headlineLength(overview.headline)}>{overview.headline}</h2>

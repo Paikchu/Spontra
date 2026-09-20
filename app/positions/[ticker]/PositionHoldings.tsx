@@ -20,8 +20,7 @@ export function PositionHoldings({ ticker, position }: { ticker: string; positio
             <article><span>{t("年内净盈亏")}</span><strong className={position.netPnl < 0 ? "loss" : "gain"}>{money(position.netPnl)}</strong></article>
           </section>
 
-          <section className="instrument-section" id="position-structure" aria-labelledby="instrument-title">
-            <div className="detail-section-heading"><h2 id="instrument-title">{t("持仓构成")}</h2></div>
+          <section className="instrument-section" id="position-structure" aria-label={t("持仓构成")}>
             <div className="table-wrap">
               <Table className="instrument-table" aria-label={`${ticker} 正股与期权明细`}>
                 <TableHeader><TableRow><TableHead>{t("类型")}</TableHead><TableHead>{t("资产 / 合约")}</TableHead><TableHead>{t("数量")}</TableHead><TableHead>{t("现价")}</TableHead><TableHead>{t("平均成本")}</TableHead><TableHead>{t("实际成本")}</TableHead><TableHead>{t("持仓成本")}</TableHead><TableHead>{t("市值")}</TableHead><TableHead>{t("权重")}</TableHead><TableHead>{t("未实现盈亏")}</TableHead></TableRow></TableHeader>

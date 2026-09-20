@@ -175,10 +175,8 @@ export function PlanEditor({
   }, []);
 
   return (
-    <section className="plan-editor" id="plan-editor" aria-labelledby="plan-title">
-      <div className="detail-section-heading"><h2 id="plan-title">{t("持仓计划")}</h2>
-        {message && status !== "error" && !unavailable && <p className="text-sm text-muted-foreground" role="status">{t(message)}</p>}
-      </div>
+    <section className="plan-editor" id="plan-editor" aria-label={t("持仓计划")}>
+      {message && status !== "error" && !unavailable && <p className="text-sm text-muted-foreground" role="status">{t(message)}</p>}
       {(status === "error" || unavailable) && <Alert variant="destructive" className="mt-4"><AlertDescription>{t(message)}</AlertDescription></Alert>}
       <p className="mt-2 text-sm text-muted-foreground">共享计划保存在服务器，所有访问者均可编辑，以最后一次保存为准。</p>
       <FieldGroup className="mt-5">

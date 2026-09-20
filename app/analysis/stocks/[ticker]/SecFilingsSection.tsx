@@ -23,7 +23,7 @@ const TIMELINE_EMPTY_PAGE_LIMIT = 6;
 
 type Page = { filings: PublicSecFiling[]; nextCursor: string | null; checkedAt: string | null; total?: number | null };
 
-export function SecFilingsSection({ ticker, title = "财报与独立事件" }: { ticker: string; title?: string }) {
+export function SecFilingsSection({ ticker }: { ticker: string }) {
   const [filings, setFilings] = useState<PublicSecFiling[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [total, setTotal] = useState(0);
@@ -92,10 +92,7 @@ export function SecFilingsSection({ ticker, title = "财报与独立事件" }: {
   }, [filings, load, loadingMore, nextCursor, status]);
 
   return (
-    <section className="sec-filings-section" id="sec-filings" aria-labelledby="sec-filings-title">
-      <div className="detail-section-heading">
-        <h2 id="sec-filings-title">{title}</h2>
-      </div>
+    <section className="sec-filings-section" id="sec-filings" aria-label="财报与事件">
       {status === "loading" && <div role="status" className="flex flex-col gap-3 py-5"><span className="sr-only">正在读取财报与事件…</span><Skeleton className="h-8 w-2/3" /><Skeleton className="h-40 w-full" /></div>}
       {status === "error" && <Alert variant="destructive"><AlertDescription>SEC 数据读取失败。<Button variant="outline" size="sm" onClick={() => void load(null, false)}>重新读取</Button></AlertDescription></Alert>}
       {status === "ready" && filings.length === 0 && <Empty><EmptyHeader><EmptyDescription>暂未收录该股票的 SEC 报告。</EmptyDescription></EmptyHeader></Empty>}
