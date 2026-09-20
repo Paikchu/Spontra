@@ -31,7 +31,8 @@ function durableSteps(step: WorkflowStep, env: SecPipelineEnv, instanceId: strin
         try { return await storeWorkflowResult(env.SEC_FILINGS, instanceId, name, await callback(context)); }
         catch (error) {
           if (error instanceof SecModelHttpError && error.status >= 400 && error.status < 500 && error.status !== 429 && error.status !== 408) {
-            throw new NonRetryableError(`Model rejected request: HTTP ${error.status}`);
+            // The request layer redacts the credential before constructing this message.
+            throw new NonRetryableError(`${error.providerCode ? `[${error.providerCode}] ` : ""}${error.message.slice(0, 1000)}`);
           }
           throw error;
         }

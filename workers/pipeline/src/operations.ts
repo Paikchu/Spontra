@@ -644,7 +644,14 @@ async function requestWorkerSecModelContent(
     }
     const retryAfter = response.headers.get("retry-after");
     const retryAfterMs = retryAfter ? (/^\d+$/.test(retryAfter) ? Number(retryAfter) * 1000 : Math.max(0, Date.parse(retryAfter) - Date.now())) : 0;
-    throw new SecModelHttpError(response.status, `Model ${metrics.model} ${stage} HTTP ${response.status}: ${detail.slice(0, 1000)}`, retryAfterMs);
+    let providerCode: string | undefined;
+    try {
+      const error = JSON.parse(detail)?.error;
+      const code = error?.code || error?.type;
+      if (typeof code === "string" && /^[a-zA-Z0-9_.-]{1,100}$/.test(code)) providerCode = code;
+    } catch { /* A non-JSON provider response still retains its HTTP status. */ }
+    metrics.providerCode = providerCode;
+    throw new SecModelHttpError(response.status, `Model ${metrics.model} ${stage} HTTP ${response.status}: ${detail.replaceAll(apiKey, "[redacted]").slice(0, 1000)}`, retryAfterMs, providerCode);
   }
   return await readModelContent(response, stage, () => {
     metrics.firstTokenMs ??= Date.now() - started;

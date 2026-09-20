@@ -644,3 +644,12 @@ test("report-only reuse rejects changed source content, missing source IDs and i
   currentIds = ["ev:body:hash-one"];
   assert.equal(await restore({ ...filing, ticker: "OTHER" }, { key: "filings/MSFT/annual", filing }), null);
 });
+
+test("provider rejection preserves a bounded machine code without exposing the credential", async () => {
+  await assert.rejects(callWorkerSecModel(modelEnv, async () => Response.json({ error: { code: "insufficient_user_quota", message: "worker-model-secret" } }, { status: 400 }), "test", "JSON", {}), error => {
+    const value = error as Error & { providerCode?: string };
+    assert.equal(value.providerCode, "insufficient_user_quota");
+    assert.ok(!value.message.includes("worker-model-secret"));
+    return true;
+  });
+});
