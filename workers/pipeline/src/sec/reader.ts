@@ -1,6 +1,7 @@
 import type { SecFinancialLens, SecReaderReport, SecReaderVisual } from "../../../../shared/analysis-contract/sec-reader.ts";
 import type { AnalysisFact, SecAnalysisBrief } from "./analysis.ts";
 import type { SecNodePlan, SecNodeResult } from "./sec.ts";
+import { reconcileCapitalOutlay } from "./cash-reconciliation.ts";
 
 const object = (value: unknown): Record<string, unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const string = (value: unknown, max = 1800) => typeof value === "string" ? value.trim().slice(0, max) : "";
@@ -135,6 +136,13 @@ export function buildFinancialLens(brief: SecAnalysisBrief, nodes: SecNodeResult
     lens.cashBridge = { currency: ocf.currency, period: `${reportDate} · ${brief.periodScope === "quarter" ? "单季" : "全年"}`,
       operatingCashFlow: ocf.value, grossCapex: capex.value, standardFCF: ocf.value - capex.value,
       evidenceIds: [...new Set([...(ocfFact?.evidenceIds ?? []), ...(capexFact?.evidenceIds ?? [])])] };
+    const table = reconcileCapitalOutlay(primaryEvidence, capex.value, capex.currency);
+    if (table) {
+      Object.assign(lens.cashBridge, { managementNetCapex: table.netCapex, adjustedFCF: ocf.value - table.netCapex,
+        adjustment: capex.value - table.netCapex, reconciliationStatus: "unverified", adjustments: table.adjustments,
+        arithmeticVerified: true, evidenceIds: [...lens.cashBridge.evidenceIds, table.evidenceId] });
+      lens.limitations.push("净资本开支调节表已按原表正负号完成算术核对；OCF减净资本开支仅为算术测算，不是新增现金或公司披露的FCF。若客户预付款已计入OCF，再以其调减资本开支会重复计入现金支持，不能据此认定现金生成能力改善。正负号不能仅由行标题Less判断。");
+    } else
     if (net && net.currency === ocf.currency && net.value >= 0 && netFact?.definition) {
       Object.assign(lens.cashBridge, { reconciliationStatus: "unverified", managementNetCapex: net.value, adjustedFCF: ocf.value - net.value, adjustment: capex.value - net.value,
         evidenceIds: [...new Set([...lens.cashBridge.evidenceIds, ...netFact.evidenceIds])] });

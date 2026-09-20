@@ -83,6 +83,8 @@ export type SecFinancialLens = {
     managementNetCapex?: number;
     adjustedFCF?: number;
     adjustment?: number;
+    adjustments?: Array<{ label: string; value: number }>;
+    arithmeticVerified?: boolean;
     reconciliationStatus?: "unverified";
     evidenceIds: string[];
   };

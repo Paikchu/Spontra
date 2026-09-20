@@ -125,6 +125,7 @@ export type WorkflowJobUpdate = {
 };
 
 export type SecPipelineOperations = {
+  restoreAnalysis?(filing: SecFiling, reference: PreparedFilingReference): Promise<{ plan: SecNodePlan; nodes: SecNodeResult[]; review: ManagerReview; rounds: number } | null>;
   scanDisclosures?(filing: SecFiling, reference: PreparedFilingReference, index: number, execution?: SecModelExecution): Promise<DiscoveryChunk>;
   finishDiscovery?(filing: SecFiling, reference: PreparedFilingReference, chunks: DiscoveryChunk[]): Promise<{ groundedDisclosures: number }>;
   auditDisclosures?(filing: SecFiling, reference: PreparedFilingReference, plan: SecNodePlan, nodes: SecNodeResult[], execution?: SecModelExecution): Promise<SecNodeSpec[]>;
@@ -158,6 +159,7 @@ export async function executeSecAnalysisWorkflow(
   step: WorkflowStepLike,
   operations: SecPipelineOperations,
 ) {
+  if (params.regenerateReport && (params.requestedBy !== "manual" || !params.accessionNumber)) throw new Error("Report regeneration requires a manual request and an explicit accession");
   const discovery = await step.do("discover", () => operations.discover(params.ticker));
   if (operations.classifyEarnings && operations.groupEarnings) {
     const periods = new Map<string, string | null>();
@@ -173,9 +175,10 @@ export async function executeSecAnalysisWorkflow(
   const skipped: string[] = [];
   const failed: string[] = [];
 
-  const candidates = params.backfill
+  const candidates = params.accessionNumber ? discovery.filings.filter(f => f.accessionNumber === params.accessionNumber) : params.backfill
     ? discovery.filings.filter((filing) => /^(10-K|10-Q|20-F|8-K|6-K)(\/A)?$/.test(filing.form))
     : selectLatestWorkflowFilings(discovery.filings);
+  if (params.accessionNumber && !candidates.length) throw new Error("Requested accession is not in the issuer filing feed");
   const filings = candidates.map((filing) => filing.earningsGroup
     ? discovery.filings.find((candidate) => candidate.accessionNumber === filing.earningsGroup!.canonicalAccession) ?? filing
     : filing).filter((filing, index, all) => all.findIndex((candidate) => candidate.accessionNumber === filing.accessionNumber) === index);
@@ -203,8 +206,10 @@ export async function executeSecAnalysisWorkflow(
       await step.do(`job:${accession}:start`, () => operations.updateJob({ ...baseJob, status: "running", currentStage: "prepare", updatedAt: new Date().toISOString() }));
       console.log(JSON.stringify({ event: "sec-report-generation", policy: "reliability.v1", jobId, workflowInstanceId, ticker: filing.ticker, accession, status: "started" }));
       const prepared = await step.do(`prepare:${accession}`, () => operations.prepare(filing));
+      const restored = params.regenerateReport && !eventFiling && operations.restoreAnalysis
+        ? await step.do(`restore-analysis:${accession}`, () => operations.restoreAnalysis!(filing, prepared)) : null;
       let discoveryResult: { groundedDisclosures: number } | undefined;
-      if (operations.scanDisclosures && operations.finishDiscovery && prepared.discoveryChunks) {
+      if (!restored && operations.scanDisclosures && operations.finishDiscovery && prepared.discoveryChunks) {
         stage = "discovery";
         const chunks = await mapWithConcurrency(Array.from({length:prepared.discoveryChunks}, (_,index) => index), SEC_NODE_CONCURRENCY,
           (index) => step.do(`discovery:${accession}:${index}`, (stepContext) => operations.scanDisclosures!(filing, prepared, index, executionFor(stepContext))));
@@ -225,19 +230,19 @@ export async function executeSecAnalysisWorkflow(
       const brief = await step.do(`brief:${accession}`, async () => operations.buildBrief
         ? operations.buildBrief(filing, prepared, context)
         : buildFallbackBrief(filing, context));
-      assertBriefCanProceed(brief, Boolean(discoveryResult?.groundedDisclosures));
+      assertBriefCanProceed(brief, Boolean(restored || discoveryResult?.groundedDisclosures));
       stage = "manager";
-      const plan = await step.do(`manager:${accession}`, async (stepContext) => {
+      const plan = restored?.plan ?? await step.do(`manager:${accession}`, async (stepContext) => {
         const planned = await operations.plan(filing, prepared, brief, executionFor(stepContext));
         if (!planned.nodes.length) throw new Error("Manager planned no analysis nodes");
         return planned;
       });
       stage = "nodes-round-0";
-      const nodes = await mapWithConcurrency(plan.nodes, SEC_NODE_CONCURRENCY, (spec, index) => step.do(
+      const nodes = restored?.nodes ?? await mapWithConcurrency(plan.nodes, SEC_NODE_CONCURRENCY, (spec, index) => step.do(
         `node:${accession}:round:0:${index}:${spec.id}`,
         (stepContext) => operations.analyzeNode(spec, filing, prepared, brief, 0, executionFor(stepContext)),
       ));
-      if (operations.auditDisclosures) {
+      if (!restored && operations.auditDisclosures) {
         stage = "discovery-audit";
         const tasks = await step.do(`discovery-audit:${accession}`, (stepContext) => operations.auditDisclosures!(filing, prepared, plan, nodes, executionFor(stepContext)));
         for (const task of tasks) {
@@ -249,7 +254,7 @@ export async function executeSecAnalysisWorkflow(
         }
       }
       stage = "manager-review";
-      const loop = await runManagerRepairLoop(accession, step, plan, nodes, {
+      const loop = restored ?? await runManagerRepairLoop(accession, step, plan, nodes, {
         review: (round, currentNodes, execution) => operations.review
           ? operations.review(filing, prepared, brief, plan, currentNodes, round, execution)
           : Promise.resolve(fallbackManagerReview(plan, currentNodes)),

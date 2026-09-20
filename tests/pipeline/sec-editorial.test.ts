@@ -79,3 +79,23 @@ test("required topics expose question, acceptance and source status before writi
   assert.deepEqual(requirements[0].acceptanceCriteria, ["核对回款"]);
   assert.equal(editorialRequirements(plan, [])[0].status, "unanswered");
 });
+
+test("a rejected out-of-scope patch is corrected locally without applying it or broadening scope", async () => {
+  const original = draft(), b = brief();
+  let calls = 0;
+  const result = await summarizePreparedSecFiling({ filing: readerFilingFixture(), periodId: b.periodId, periodScope: "quarter", blockIds: ["ev:demand"], outline: [] },
+    { currentPeriodId: b.periodId, qoqPeriodId: null, yoyPeriodId: null }, async (_stage, _system, payload) => {
+      const p = payload as Record<string, unknown>;
+      assert.deepEqual(p.originalDraft, original);
+      assert.deepEqual(p.allowedSectionIds, ["sec-reader-1"]);
+      calls++;
+      if (calls === 1) return { replaceSections: [{ sectionId: "sec-reader-2", section: original.readerReport.sections[1] }] };
+      assert.match(String(p.patchError), /unaffected section/);
+      const section = structuredClone(original.readerReport.sections[0]);
+      section.paragraphs[0] = "当期现金增长仍需与未来交付义务一起判断，不能据此认定无需融资。";
+      return { replaceSections: [{ sectionId: "sec-reader-1", section }] };
+    }, new Date(), plan, readerNodes, b, undefined, undefined,
+    { candidate: original, patch: true, issues: [{ sectionIds: ["sec-reader-1"], detail: "收窄现金判断" }] });
+  assert.equal(calls, 2);
+  assert.deepEqual(result.artifact.report.reader!.sections[1].paragraphs, original.readerReport.sections[1].paragraphs);
+});

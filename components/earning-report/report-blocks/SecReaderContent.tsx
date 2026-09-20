@@ -40,6 +40,7 @@ export function FinancialBridge({ report }: { report: PublishedSecReport }) {
         <div><span>经营现金流 − 总资本开支</span><strong data-direction={cash.standardFCF < 0 ? "negative" : "positive"}>{amount(cash.standardFCF, cash.currency)}</strong><small>{amount(cash.operatingCashFlow, cash.currency)} − {amount(cash.grossCapex, cash.currency)}</small></div>
         {cash.adjustedFCF !== undefined && <div><span>按管理层净资本开支测算</span><strong data-direction={cash.adjustedFCF < 0 ? "negative" : "positive"}>{amount(cash.adjustedFCF, cash.currency)}</strong><small>{amount(cash.operatingCashFlow, cash.currency)} − {amount(cash.managementNetCapex!, cash.currency)}</small></div>}
       </div>
+      {cash.adjustments && <details><summary>核对净资本开支调节表</summary><p>{amount(cash.grossCapex, cash.currency)}{cash.adjustments.map((a) => ` ${a.value < 0 ? "−" : "+"} ${amount(Math.abs(a.value), cash.currency)}`).join("")} = {amount(cash.managementNetCapex!, cash.currency)}</p><ul>{cash.adjustments.map((a, i) => <li key={i}>{a.label}：{a.value < 0 ? "扣减" : "加回"} {amount(Math.abs(a.value), cash.currency)}</li>)}</ul><p>按原表数值正负号核对；算术一致不代表调整项与经营现金流互不重叠。</p></details>}
       {cash.reconciliationStatus === "unverified" && <p className="sec-reader-caption">管理层口径为算术测算，调整项与经营现金流是否重叠尚待核对；不能直接视为可自由支配现金。</p>}
       {cash.adjustment !== undefined && <p>差额 {amount(cash.adjustment, cash.currency)} 来自资本开支的调整。调整口径为正，也不能单独证明无需融资。</p>}
     </div>}

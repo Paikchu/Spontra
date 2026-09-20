@@ -3,7 +3,7 @@ import { enforceDiscoveryCoverage } from "./discovery.ts";
 import type { SecSourceMaterial } from "../../../../shared/analysis-contract/sec-presentation.ts";
 import { buildSecTrends, composeSecPresentation } from "./presentation.ts";
 import { CONTINUITY_PROMPT, continuityReviewNode } from "./continuity.ts";
-import { applyEditorialPatch, editorialRequirements, EDITORIAL_PATCH_PROMPT } from "./editorial.ts";
+import { applyEditorialPatch, assertReaderIntegrity, editorialRequirements, EDITORIAL_PATCH_PROMPT } from "./editorial.ts";
 import { SEC_READER_SCHEMA } from "../../../../shared/analysis-contract/sec-reader.ts";
 import { buildFinancialLens, normalizeReaderReport, readerArticleText, RESEARCH_RULES } from "./reader.ts";
 import {
@@ -512,16 +512,26 @@ export async function summarizePreparedSecFiling(
   let summaryValue = editorialState?.candidate ?? await model("synthesis", synthesisSystemPrompt() + FISCAL_PERIOD_INSTRUCTION, summaryPayload);
   if (!editorialState?.patch) await editorialState?.saveCandidate?.(summaryValue);
   const repair = async (problems: unknown[], round: number) => {
-    const patch = await model(`editorial-revision:${round}`, EDITORIAL_PATCH_PROMPT + "\n" + RESEARCH_RULES, {
-      originalDraft: summaryValue, issues: problems, requiredTopics: summaryPayload.requiredTopics,
-      primaryEvidence: summaryPayload.primaryEvidence, facts: finalBrief.currentFacts,
-      nodeAnalyses: summaryPayload.nodeAnalyses, financialLens, marketSnapshot: summaryPayload.marketSnapshot,
-      readerSchema: SEC_READER_SCHEMA, allowedEvidenceIds: [...reviewEvidenceIds], priorEvidenceIds, availableCharts: trends,
-    });
     const localized = problems.map((p) => p && typeof p === "object" && "sectionIds" in p && Array.isArray(p.sectionIds) ? p.sectionIds.filter((id): id is string => typeof id === "string") : []);
     const allowedSections = localized.length && localized.every((ids) => ids.length) ? new Set(localized.flat()) : undefined;
-    summaryValue = applyEditorialPatch(summaryValue, patch, allowedSections);
-    await editorialState?.saveCandidate?.(summaryValue);
+    let rejectedPatch: unknown, patchError: string | undefined;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const patch = await model(`editorial-revision:${round}:${attempt}`, EDITORIAL_PATCH_PROMPT + "\n" + RESEARCH_RULES, {
+        originalDraft: summaryValue, issues: problems, requiredTopics: summaryPayload.requiredTopics,
+        primaryEvidence: summaryPayload.primaryEvidence, facts: finalBrief.currentFacts,
+        nodeAnalyses: summaryPayload.nodeAnalyses, financialLens, marketSnapshot: summaryPayload.marketSnapshot,
+        readerSchema: SEC_READER_SCHEMA, allowedEvidenceIds: [...reviewEvidenceIds], priorEvidenceIds, availableCharts: trends,
+        allowedSectionIds: allowedSections ? [...allowedSections] : null, rejectedPatch, patchError,
+      });
+      try { summaryValue = applyEditorialPatch(summaryValue, patch, allowedSections); }
+      catch (error) {
+        if (attempt === 2) throw error;
+        rejectedPatch = patch; patchError = error instanceof Error ? error.message : String(error);
+        continue;
+      }
+      await editorialState?.saveCandidate?.(summaryValue);
+      return;
+    }
   };
   if (editorialState?.patch) await repair(editorialState.issues ?? editorialFeedback ?? [], 0);
   let reader: ReturnType<typeof normalizeReaderReport> | undefined;
@@ -531,6 +541,11 @@ export async function summarizePreparedSecFiling(
       reader = summaryValue.readerReport ? normalizeReaderReport(summaryValue.readerReport, {
         nodes, plan, currentEvidence: reviewEvidenceIds, priorEvidence: new Set(priorEvidenceIds), chartKeys: new Set(trends.map((t) => t.metricKey)), requireVisual: true,
       }) : undefined;
+      if (reader) {
+        if (typeof summaryValue.analystView !== "string" || !summaryValue.analystView.trim() || summaryValue.analystView.length > 4000) throw new Error("投资含义必须为完整段落，长度不超过4000字符；不要依赖截断");
+        assertReaderIntegrity(reader, financialLens, [String(summaryValue.headline ?? ""), summaryValue.analystView,
+          ...((Array.isArray(summaryValue.bullets) ? summaryValue.bullets : []) as Array<{ detail?: string }>).map(b => String(b.detail ?? ""))]);
+      }
       break;
     } catch (error) {
       if (round === 3) throw error;
@@ -588,7 +603,7 @@ export async function summarizePreparedSecFiling(
   }
   const summary = {
     ...normalizedSummary,
-    ...(reader ? { readerVersion: "sec-reader.v1" as const } : {}),
+    ...(reader ? { readerVersion: "sec-reader.v1" as const, analystView: String(summaryValue.analystView).trim() } : {}),
     report: reader ? readerArticleText(reader) : appendAnalysisLimitations(normalizedSummary.report, finalReview, nodes),
     discovery: prepared.discovery,
     nodes,

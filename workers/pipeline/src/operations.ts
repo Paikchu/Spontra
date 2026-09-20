@@ -136,6 +136,23 @@ export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof
     });
   };
   return {
+    restoreAnalysis: async (filing, reference) => {
+      const key = `${reference.key.replace(/^filings\//, "analysis/")}/${SEC_ANALYSIS_SCHEMA_VERSION}/synthesis.json`;
+      const object = await env.SEC_FILINGS.get(key);
+      if (!object) return null;
+      const cached = JSON.parse(await object.text()) as { artifact: SecAnalysisArtifact; summary?: SecFilingSummary };
+      const { artifact, summary } = cached;
+      const meta = await readMeta(env.SEC_FILINGS, reference);
+      const sourceIds = (ids: string[]) => ids.filter(id => id.startsWith("ev:")).sort();
+      // Block IDs include content hashes. A changed source set/content invalidates reuse.
+      if (!artifact || !summary?.plan?.nodes.length || !summary.nodes?.length || !artifact.managerReview
+        || artifact.filing.ticker !== filing.ticker || artifact.filing.accessionNumber !== filing.accessionNumber
+        || artifact.filing.reportDate !== filing.reportDate || !sourceIds(artifact.validEvidenceIds ?? []).length
+        || artifact.filing.earningsGroup?.inputKey !== filing.earningsGroup?.inputKey
+        || JSON.stringify(sourceIds(artifact.validEvidenceIds ?? [])) !== JSON.stringify(sourceIds(meta.blockIds))) return null;
+      if (summary.discovery) await putJson(env.SEC_FILINGS, `${reference.key}/meta.json`, { ...meta, discovery: summary.discovery });
+      return { plan: summary.plan, nodes: summary.nodes.filter(n => n.id !== "historical-judgment-review"), review: artifact.managerReview, rounds: summary.repairRounds ?? 0 };
+    },
     classifyEarnings: async (filing, execution) => {
       if (isPeriodic(filing.form)) return filing.reportDate || null;
       const cached = await repository().getCache<{ periodEnd: string | null }>(classificationKey(filing));
@@ -332,7 +349,10 @@ export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof
           requiredTopics: context ? editorialRequirements(context.plan, nodes, result.artifact.managerReview) : [],
           previousIssues: context?.previousIssues ?? [],
           primaryEvidence: context ? await primaryEvidence(reference, nodes) : [],
-          renderedComponents: { cashBridge: result.artifact.report.financialLens?.cashBridge, placement: "头部并列展示两种可计算FCF及算式、调整限制；正文与这些组件共同构成报告" },
+          renderedComponents: { cashBridge: result.artifact.report.financialLens?.cashBridge,
+            standardFCFVisible: Boolean(result.artifact.report.financialLens?.cashBridge),
+            adjustedFCFVisible: result.artifact.report.financialLens?.cashBridge?.adjustedFCF !== undefined,
+            placement: "只展示实际存在的字段；adjustedFCFVisible=false时页面没有第二种FCF，禁止声称已并列展示" },
       });
       await putArtifact(env.SEC_FILINGS, reference, `editorial-review/${round}`, audit);
       const allowed = new Set([...brief.currentFacts.flatMap((f) => f.evidenceIds), ...nodes.flatMap((n) => n.evidenceIds ?? [])]);

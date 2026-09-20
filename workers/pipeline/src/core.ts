@@ -15,6 +15,8 @@ export type SecWorkflowParams = {
   ticker: string;
   requestedBy: "scheduled" | "manual";
   backfill?: boolean;
+  accessionNumber?: string;
+  regenerateReport?: boolean;
 };
 
 export type SecMemoryWorkflowParams = {

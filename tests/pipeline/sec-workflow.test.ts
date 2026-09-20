@@ -578,3 +578,23 @@ test("multiple editorial repairs receive the latest draft, use distinct durable 
   assert.equal(steps.filter((s) => s.startsWith("editorial-revision:")).length, 3);
   assert.equal(new Set(steps).size, steps.length);
 });
+
+test("explicit report regeneration reuses verified research but still writes and audits a new report", async () => {
+  const steps: string[] = [], base = operations();
+  const plan = await base.plan(filing, { key: "test", filing });
+  const nodes = await Promise.all(plan.nodes.map(spec => base.analyzeNode(spec, filing, { key: "test", filing })));
+  let audited = false, published = false;
+  const ops = operations({
+    async restoreAnalysis() { return { plan, nodes, rounds: 0, review: { status: "complete", questions: [], repairTasks: [], unresolvedQuestions: [], coverageScore: 1, stopReason: "complete" } }; },
+    async plan() { throw new Error("must not replan"); },
+    async analyzeNode() { throw new Error("must not rescan"); },
+    async auditReport() { audited = true; return { issues: [], reviewedAt: new Date().toISOString() }; },
+    async publish() { published = true; },
+  });
+  const result = await executeSecAnalysisWorkflow({ ticker: filing.ticker, requestedBy: "manual", accessionNumber: filing.accessionNumber, regenerateReport: true }, "regenerate", stepRecorder(steps), ops);
+  assert.deepEqual(result.failed, []);
+  assert.ok(audited && published);
+  assert.ok(steps.some(s => s.startsWith("synthesis:")));
+  assert.ok(!steps.some(s => s.startsWith("node:")));
+  await assert.rejects(executeSecAnalysisWorkflow({ ticker: filing.ticker, requestedBy: "scheduled", regenerateReport: true }, "invalid", stepRecorder([]), ops), /manual request/);
+});

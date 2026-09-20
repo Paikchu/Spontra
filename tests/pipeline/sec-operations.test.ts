@@ -627,3 +627,20 @@ test('rebuilds presentation from allowed references and preserves facts on exhau
   assert.deepEqual(fallback.keyMetrics, report.keyMetrics);
   assert.ok(fallback.dataQuality.warnings.some((warning) => warning.includes('重试未完成')));
 });
+
+test("report-only reuse rejects changed source content, missing source IDs and issuer identity", async () => {
+  const saved = { artifact: { filing, validEvidenceIds: ["ev:body:hash-one"], managerReview: { status: "partial" } }, summary: { plan: { nodes: [{ id: "cash" }] }, nodes: [{ id: "cash" }] } };
+  let currentIds = ["ev:body:hash-one"];
+  const env = { ...modelEnv, SEC_FILINGS: {
+    async get(key: string) { return { async text() { return JSON.stringify(key.endsWith("synthesis.json") ? saved : { blockIds: currentIds }); } }; },
+    async put() { return {}; },
+  } } as unknown as SecPipelineEnv;
+  const restore = createSecPipelineOperations(env).restoreAnalysis!;
+  assert.ok(await restore(filing, { key: "filings/MSFT/annual", filing }));
+  currentIds = ["ev:body:hash-two"];
+  assert.equal(await restore(filing, { key: "filings/MSFT/annual", filing }), null);
+  currentIds = ["ev:body:hash-one", "ev:extra:hash"];
+  assert.equal(await restore(filing, { key: "filings/MSFT/annual", filing }), null);
+  currentIds = ["ev:body:hash-one"];
+  assert.equal(await restore({ ...filing, ticker: "OTHER" }, { key: "filings/MSFT/annual", filing }), null);
+});
