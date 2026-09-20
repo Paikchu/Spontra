@@ -310,7 +310,7 @@ test("checkpoints one Agent's turns and retries invalid decisions inside the mod
   };
   const stages: string[] = [];
   const result = await runCompanyAnalysisAgent({
-    env: { AI_API_KEY: "test-key" } as SecPipelineEnv,
+    env: { DEEPSEEK_API_KEY: "test-key" } as SecPipelineEnv,
     fetcher, currentPacket: packet, crossPeriodPacket: packet,
     analysisId: "company:AMZN:test", generatedAt,
     runStage: async (stage, callback) => {
@@ -514,7 +514,7 @@ test("an axis claiming a direction must carry mechanism, horizon and evidence; a
   let attempts = 0;
   const fetcher: typeof fetch = async () => Response.json({ choices: [{ message: { content: JSON.stringify(responses.shift()) } }] });
   const result = await runCompanyAnalysisAgent({
-    env: { AI_API_KEY: "test-key" } as SecPipelineEnv,
+    env: { DEEPSEEK_API_KEY: "test-key" } as SecPipelineEnv,
     fetcher, currentPacket: packet, crossPeriodPacket: packet,
     analysisId: "company:AMZN:axes", generatedAt,
     runStage: async (stage, callback) => {
@@ -592,7 +592,7 @@ test("a decision that observed nothing is refused rather than published as inven
   const fetcher: typeof fetch = async () => Response.json({ choices: [{ message: { content: JSON.stringify(responses.shift() ?? blind) } }] });
   await assert.rejects(
     () => runCompanyAnalysisAgent({
-      env: { AI_API_KEY: "test-key" } as SecPipelineEnv,
+      env: { DEEPSEEK_API_KEY: "test-key" } as SecPipelineEnv,
       fetcher, currentPacket: packet, crossPeriodPacket: packet,
       analysisId: "company:AMZN:blind", generatedAt,
       runStage: async (_stage, callback) => callback(),

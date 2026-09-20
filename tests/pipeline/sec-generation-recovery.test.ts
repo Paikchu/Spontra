@@ -20,7 +20,7 @@ const checkpointStore = () => {
   let saved: ModelCheckpoint | null = null;
   return { load: async () => saved, save: async (value: ModelCheckpoint | null) => { saved = value; } };
 };
-const recovery = { stage: "synthesis", model: "qwen3.8-flash", fallbackModel: "hy3", jsonMode: true, sleep: async () => {} };
+const recovery = { stage: "synthesis", model: "deepseek-flash", fallbackModel: "deepseek-flash", jsonMode: true, sleep: async () => {} };
 
 test("SSE envelope overhead above the old 2 MB cap does not discard useful content", async () => {
   let index = 0;
@@ -89,7 +89,7 @@ test("HTTP recovery changes the relevant constraint and authentication fails wit
       models.push(o.model); if (models.length === 1) throw new SecModelHttpError(status, "temporary", 2000);
       return '{"ok":true}';
     } }), { ok: true });
-    assert.deepEqual(models, ["qwen3.8-flash", "hy3"]); assert.equal(waits[0], 2000);
+    assert.deepEqual(models, ["deepseek-flash", "deepseek-flash"]); assert.equal(waits[0], 2000);
   }
   let calls = 0;
   await assert.rejects(recoverModelJson({ ...recovery, request: async () => { calls++; throw new SecModelHttpError(401, "bad auth"); } }), /bad auth/);

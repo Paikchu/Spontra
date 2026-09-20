@@ -29,9 +29,9 @@ export type RecoveryOptions = {
   maxCalls?: number;
 };
 
-// Published B.AI capabilities; unknown configured models negotiate a smaller cap on HTTP 400.
+// Official DeepSeek Flash output limit; unknown models negotiate a smaller cap on HTTP 400.
 export function modelOutputCeiling(model: string): number {
-  return model === "hy3" ? 128_000 : /^qwen3\.8-/.test(model) ? 131_072 : SEC_MODEL_OUTPUT_TOKENS;
+  return model === "deepseek-flash" ? 393_216 : SEC_MODEL_OUTPUT_TOKENS;
 }
 
 /** Repair format, continue truncated output, or switch a failing model. Never accept incomplete JSON. */

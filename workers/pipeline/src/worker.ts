@@ -37,7 +37,7 @@ function readyResponse(env: SecPipelineEnv): Response {
     watchlist: Boolean(env.SEC_TRACKED_TICKERS?.trim()),
     analysisWorkflow: Boolean(env.SEC_ANALYSIS_WORKFLOW),
     // Generation needs a model; reads never do, which is why this is not part of `ready`.
-    modelConfigured: Boolean(env.AI_API_KEY),
+    modelConfigured: Boolean(env.DEEPSEEK_API_KEY),
   };
   // Reads are the contract this service publishes, so readiness is about the read path. A missing
   // model key leaves published data perfectly readable and must not fail the probe.

@@ -8,9 +8,9 @@
 | --- | --- | --- |
 | SSE 累计超过旧 2 MB 限制 | 分开统计传输、正文、推理；边读边丢弃包装及推理文本 | 独立资源上限、有效进展停滞检测 |
 | provider 返回 `finish_reason=length`，连接中断或停滞 | 将正文前缀保存到 R2；关闭 JSON 模式续写缺失后缀；提高 token 预算 | 完整终止标志、整个 JSON 解析、后续证据与编辑审核 |
-| JSON 格式错误 | 带上已生成草稿修复；重复错误切换模型 | 不从坏 JSON 中截取一个看似可用的内部对象 |
+| JSON 格式错误 | 带上已生成草稿修复；重复错误继续局部修复 | 不从坏 JSON 中截取一个看似可用的内部对象 |
 | 图表遗漏、无图说明遗漏、标签不匹配、无效或重复图表 | 只回退对应展示配置，保留全文、证据和有效图表；记录诊断 | 不编造数据点或把缺配置说成公司未披露 |
-| HTTP 408/429/5xx | 退避并切换配置中的主模型/Hy3；尊重 Retry-After，最长等待五分钟 | 401/403/404 不盲目重试；具体失败单独记录 |
+| HTTP 408/429/5xx | 退避后重试 DeepSeek Flash；尊重 Retry-After，最长等待五分钟 | 401/403/404 不盲目重试；具体失败单独记录 |
 | provider 不接受输出预算或 JSON 模式 | 根据拒绝信息协商预算，或去掉 JSON 模式再走本地严格解析 | 不放松业务校验 |
 | Workflow 结果超过 1 MiB | 大于 512 KiB 的结果存 R2，步骤只保存带 SHA-256 的引用 | 恢复时验证完整性；读取短暂失败可重试 |
 | 长任务被定时重复启动 | 有效生成期间每 30 秒续期任务；Cron 合并已有运行；查询优先返回仍有效的运行任务 | 过期任务仍可恢复，不让失败任务永久锁住公司 |
@@ -24,7 +24,7 @@
 | 首次响应 | 90 秒 |
 | 连续无有效正文/推理 | 60 秒；心跳与空白不算进展 |
 | 单个 Workflow 模型步骤 | 60 分钟，内部执行预算 59 分钟 |
-| 每次请求输出预算 | 默认 65,536 tokens，截断后逐步提高至模型允许的上限；Hy3 128,000、Qwen3.8 131,072 |
+| 每次请求输出预算 | 默认 65,536 tokens，截断后逐步提高至模型允许的上限；DeepSeek Flash 393,216 |
 | 一次步骤中的恢复调用 | 最多 6 次，共享执行预算；外层保留持久化重试 |
 | 原始传输累计 | 256 MiB；不整体缓存 |
 | 保留的正文 | 8 MiB |
@@ -32,7 +32,7 @@
 | SSE 单帧/待完成帧 | 1 MiB；不接受无限增长的无换行帧 |
 | 读者文章硬上限 | 16 节、每节最多 8 段、全文 96,000 字符；常规报告仍按阅读需求控制篇幅 |
 
-能力参考：[B.AI Qwen3.8-Flash](https://docs.b.ai/llmservice/models/qwen3-8-flash/)、[B.AI Hy3](https://docs.b.ai/llmservice/models/hy3/)、[Chat Completions 参数](https://docs.b.ai/llmservice/api/)、[Cloudflare Workflows 限制](https://developers.cloudflare.com/workflows/reference/limits/)。文档上限不是实际请求必然可用的额度，HTTP 拒绝会触发协商。
+能力参考：[DeepSeek Chat Completions 参数](https://api-docs.deepseek.com/api/create-chat-completion/)、[DeepSeek 思考模式](https://api-docs.deepseek.com/guides/thinking_mode/)、[Cloudflare Workflows 限制](https://developers.cloudflare.com/workflows/reference/limits/)。文档上限不是实际请求必然可用的额度，HTTP 拒绝会触发协商。
 
 ## 测试与线上验收分开
 
@@ -54,7 +54,7 @@ node --experimental-strip-types scripts/sec-report-reliability.ts --input /tmp/s
 
 写作前提供 `requiredTopics`，其中含高重要性问题、验收条件、证据和 Manager 的回答状态。写作与最终覆盖检查共享同一计划；主题未知时说明检索范围、缺口及其影响，不用虚构事实满足清单。
 
-初稿保存在按 Workflow ID 和修订轮次隔离的 R2 路径中。结构检查报出具体遗漏 ID 和问题，携原稿请求局部补丁。补丁只允许替换指定章节、追加章节及同步读者结论；拒绝删除原有主题、无效章节 ID 和整篇替换。未涉及章节由程序保留。结构纠错最多三次，正文审核后最多四轮修订；第二轮起使用备用模型。每次修订单独持久化，再作全文审核。保存失败会阻止该步骤完成，不能伪称具备可恢复的草稿。
+初稿保存在按 Workflow ID 和修订轮次隔离的 R2 路径中。结构检查报出具体遗漏 ID 和问题，携原稿请求局部补丁。补丁只允许替换指定章节、追加章节及同步读者结论；拒绝删除原有主题、无效章节 ID 和整篇替换。未涉及章节由程序保留。结构纠错最多三次，正文审核后最多四轮修订；所有修订轮次使用 DeepSeek Flash。每次修订单独持久化，再作全文审核。保存失败会阻止该步骤完成，不能伪称具备可恢复的草稿。
 
 审核返回稳定问题编号、类别、严重性、具体原句、章节、证据和通过条件。审核提出的事实不是新的证据：未引用有效来源的事实纠正改作证据问题，修订时回查同一 filing 中的原文。只涉及版式的建议不阻塞发布；数字、因果、证据与重要覆盖问题仍然阻塞。审核同时看到前端确定性生成的 FCF 计算框，不能要求正文机械重复，也不能将标准 FCF 趋势当成两种口径对比。
 
@@ -73,3 +73,7 @@ node --experimental-strip-types scripts/sec-report-reliability.ts --input /tmp/s
 越界或无效补丁将收到明确的允许章节、被拒补丁和错误说明，最多重新生成三次；原稿在补丁合法前不变，不能靠扩大允许范围通过。
 
 手动指定 `accessionNumber` 且 `regenerateReport=true` 可重新生成正文。仅当发行人、财报期、附件集合及完整原文块内容哈希集合完全一致时，复用保存的分析计划和节点；不满足则正常重做研究。重新获取当期基础数据和行情、重新写作、重新计算并审核，旧报告的通过标记不能继承。该路径不用于自动定时请求。
+
+## 官方模型连接
+
+生成、复核、局部修订及恢复请求统一访问 `https://api.deepseek.com/chat/completions`，使用 `deepseek-flash` 和 `reasoning_effort=high`。这是同一 provider 的重试冗余，不是跨 provider 容灾。只读取独立的 `DEEPSEEK_API_KEY` secret，不回退旧 `AI_API_KEY`。密钥不入库；生产代码仍经 `origin/main` 自动构建发布。配置声明必需 secret，避免无密钥版本上线；`/ready` 的 `modelConfigured` 只表示密钥存在，实际可用性须由模型调用验证。

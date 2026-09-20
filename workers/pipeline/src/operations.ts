@@ -49,7 +49,7 @@ type R2BucketLike = {
 export type SecPipelineEnv = SecCronEnv & AnalysisReadEnv & {
   SEC_FILINGS: R2BucketLike;
   SEC_USER_AGENT: string;
-  AI_API_KEY?: string;
+  DEEPSEEK_API_KEY?: string;
   SEC_ANALYSIS_MODEL?: string;
   /** Optional stronger model for planning, review and synthesis. Unset means one model everywhere. */
   SEC_REASONING_MODEL?: string;
@@ -71,8 +71,8 @@ export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof
     const deadline = Date.now() + SEC_MODEL_EXECUTION_BUDGET_MS;
     return async (stage, system, payload) => {
       if (Date.now() >= deadline) throw new Error("Editorial step execution budget exhausted; resume from saved draft");
-      const selectedModel = modelForStage(env, stage, execution?.model) || env.SEC_ANALYSIS_MODEL || "qwen3.8-flash";
-      const fallbackModel = selectedModel === "hy3" ? env.SEC_ANALYSIS_MODEL || "qwen3.8-flash" : "hy3";
+      const selectedModel = modelForStage(env, stage, execution?.model) || env.SEC_ANALYSIS_MODEL || "deepseek-flash";
+      const fallbackModel = "deepseek-flash";
       const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify({ stage, system, payload }))));
       const fingerprint = Array.from(digest, (b) => b.toString(16).padStart(2, "0")).join("");
       const key = `model-recovery/v1/${encodeURIComponent(workflowInstanceId)}/${fingerprint}.json`;
@@ -597,7 +597,7 @@ async function requestWorkerSecModelContent(
   let timeoutKind = "execution-budget";
   const budgetTimer = setTimeout(() => { timeoutKind = "execution-budget"; controller.abort(); }, executionBudgetMs);
   const firstTimer = setTimeout(() => { timeoutKind = "first-response"; controller.abort(); }, SEC_MODEL_FIRST_RESPONSE_MS);
-  const metrics: Record<string, unknown> = { stage, model: modelOverride || env.SEC_ANALYSIS_MODEL || "qwen3.8-flash", inputCharacters: JSON.stringify(payload).length };
+  const metrics: Record<string, unknown> = { stage, model: modelOverride || env.SEC_ANALYSIS_MODEL || "deepseek-flash", inputCharacters: JSON.stringify(payload).length };
   if (options?.workflowInstanceId) metrics.workflowInstanceId = options.workflowInstanceId;
   try {
   const messages: Array<{ role: string; content: string }> = [
@@ -614,14 +614,14 @@ async function requestWorkerSecModelContent(
   );
   metrics.maxTokens = options?.maxTokens ?? SEC_MODEL_OUTPUT_TOKENS;
   metrics.mode = options?.continuation ? "continuation" : options?.repair ? "repair" : "initial";
-  const response = await fetcher("https://api.b.ai/v1/chat/completions", {
+  const response = await fetcher("https://api.deepseek.com/chat/completions", {
     method: "POST",
     headers: { "content-type": "application/json", accept: "text/event-stream", authorization: `Bearer ${apiKey}` },
     body: JSON.stringify({
-      model: modelOverride || env.SEC_ANALYSIS_MODEL || "qwen3.8-flash",
+      model: modelOverride || env.SEC_ANALYSIS_MODEL || "deepseek-flash",
       messages,
       ...(jsonMode ? { response_format: { type: "json_object" } } : {}),
-      temperature: 0,
+      reasoning_effort: "high",
       max_tokens: options?.maxTokens ?? SEC_MODEL_OUTPUT_TOKENS,
       stream_options: { include_usage: true },
       // Streaming keeps bytes flowing so the provider's proxy cannot time the request out at ~100s.
@@ -670,6 +670,6 @@ async function requestWorkerSecModelContent(
 
 export async function resolveWorkerModelKey(env: SecPipelineEnv, fetcher: typeof fetch = fetch): Promise<string> {
   void fetcher;
-  if (!env.AI_API_KEY) throw new Error("SEC pipeline AI_API_KEY is not configured");
-  return env.AI_API_KEY;
+  if (!env.DEEPSEEK_API_KEY) throw new Error("SEC pipeline DEEPSEEK_API_KEY is not configured");
+  return env.DEEPSEEK_API_KEY;
 }

@@ -5,9 +5,11 @@
   "compatibility_date": "2026-08-26",
   "compatibility_flags": ["nodejs_compat"],
   "limits": { "cpu_ms": 300000 },
+  "secrets": { "required": ["DEEPSEEK_API_KEY"] },
   "vars": {
     "SEC_USER_AGENT": "earning-report-analysis/1.0 max.zhangyuchen@gmail.com",
-    "SEC_ANALYSIS_MODEL": "qwen3.8-flash"
+    "SEC_ANALYSIS_MODEL": "deepseek-flash",
+    "SEC_REASONING_MODEL": "deepseek-flash"
   },
   "workflows": [
     {
@@ -87,7 +89,8 @@
       "name": "earning-report-analysis-sec-pipeline-staging",
       "vars": {
         "SEC_USER_AGENT": "earning-report-analysis/1.0 max.zhangyuchen@gmail.com",
-        "SEC_ANALYSIS_MODEL": "qwen3.8-flash"
+        "SEC_ANALYSIS_MODEL": "deepseek-flash",
+        "SEC_REASONING_MODEL": "deepseek-flash"
       },
       "workflows": [
         {

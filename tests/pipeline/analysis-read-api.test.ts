@@ -283,7 +283,7 @@ test("reads work with no model credential, no workflow binding and no network", 
     for (const path of ["filings", "analysis", "fundamentals"]) {
       const response = await handleAnalysisReadRequest(
         readRequest(`/api/v1/companies/${FIXTURE_TICKER}/${path}`),
-        // No AI_API_KEY, no SEC_ANALYSIS_WORKFLOW, no SEC_TRACKED_TICKERS.
+        // No DEEPSEEK_API_KEY, no SEC_ANALYSIS_WORKFLOW, no SEC_TRACKED_TICKERS.
         { DB: database as unknown as D1Database, ANALYSIS_READ_KEYS: readEnv({}).ANALYSIS_READ_KEYS },
       );
       assert.equal(response.status, 200, path);
@@ -411,6 +411,6 @@ test("no response body carries a credential, a prompt or an internal trace", asy
     bodies.push(await (await get(database, path)).text());
   }
   const combined = bodies.join("\n");
-  assert.doesNotMatch(combined, /test-read-secret|ANALYSIS_READ_KEYS|SEC_REFRESH_KEY|AI_API_KEY|Bearer /);
+  assert.doesNotMatch(combined, /test-read-secret|ANALYSIS_READ_KEYS|SEC_REFRESH_KEY|DEEPSEEK_API_KEY|Bearer /);
   database.close();
 });

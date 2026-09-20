@@ -30,7 +30,7 @@ test("safety budget still aborts a runaway request", async () => {
   const fetcher: typeof fetch = async (_url, init) => new Promise((_, reject) => {
     init?.signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
   });
-  await assert.rejects(callWorkerSecModel({ AI_API_KEY: "test" }, fetcher, "synthesis", "test", {}, undefined, 10), /model-timeout:execution-budget/);
+  await assert.rejects(callWorkerSecModel({ DEEPSEEK_API_KEY: "test" }, fetcher, "synthesis", "test", {}, undefined, 10), /model-timeout:execution-budget/);
 });
 
 test("active reasoning and content survive the old 3-minute and 10-minute cutoffs", async (t) => {
@@ -41,7 +41,7 @@ test("active reasoning and content survive the old 3-minute and 10-minute cutoff
     init?.signal?.addEventListener("abort", () => { aborted = true; controller.error(new Error("aborted")); }, { once: true });
     return new Response(new ReadableStream({ start(c) { controller = c; } }), { headers: { "content-type": "text/event-stream" } });
   };
-  const pending = callWorkerSecModel({ AI_API_KEY: "test" }, fetcher, "discovery:0", "Return JSON", {});
+  const pending = callWorkerSecModel({ DEEPSEEK_API_KEY: "test" }, fetcher, "discovery:0", "Return JSON", {});
   const checked = assert.doesNotReject(pending);
   await setImmediate();
   for (let i = 0; i < 16; i++) {
@@ -65,7 +65,7 @@ test("first response still times out at 90 seconds", async (t) => {
   const fetcher: typeof fetch = async (_url, init) => new Promise((_, reject) => {
     init?.signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
   });
-  const checked = assert.rejects(callWorkerSecModel({ AI_API_KEY: "test" }, fetcher, "node", "JSON", {}), /model-timeout:first-response/);
+  const checked = assert.rejects(callWorkerSecModel({ DEEPSEEK_API_KEY: "test" }, fetcher, "node", "JSON", {}), /model-timeout:first-response/);
   await setImmediate();
   t.mock.timers.tick(90_000);
   await checked;

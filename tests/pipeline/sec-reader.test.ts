@@ -138,7 +138,7 @@ test("TTM valuation requires four contiguous comparable EPS quarters; a fiscal y
 test("production audit sees reader output and primary evidence; an unaudited reader cannot enter storage", async () => {
   const filing = readerFilingFixture(); const b = brief();
   const saved: string[] = [];
-  const env = { AI_API_KEY: "synthetic-test-key", SEC_FILINGS: { async get() { return null; }, async put(key: string) { saved.push(key); } } } as unknown as SecPipelineEnv;
+  const env = { DEEPSEEK_API_KEY: "synthetic-test-key", SEC_FILINGS: { async get() { return null; }, async put(key: string) { saved.push(key); } } } as unknown as SecPipelineEnv;
   const ops = createSecPipelineOperations(env, async (_url, init) => {
     const request = JSON.parse(String(init?.body));
     const payload = JSON.parse(request.messages[1].content);

@@ -14,10 +14,10 @@ const filing: SecFiling = {
   description: "Annual report", items: "", documentUrl: "https://sec.test/msft.htm", indexUrl: "https://sec.test/index.htm",
 };
 
-test("uses hy3 only after the primary model attempt fails", () => {
+test("uses DeepSeek Flash for workflow retries", () => {
   assert.deepEqual(modelExecutionForAttempt(1), { attempt: 1, finalAttempt: false });
-  assert.deepEqual(modelExecutionForAttempt(2), { attempt: 2, model: "hy3", finalAttempt: false });
-  assert.deepEqual(modelExecutionForAttempt(4), { attempt: 4, model: "hy3", finalAttempt: true });
+  assert.deepEqual(modelExecutionForAttempt(2), { attempt: 2, model: "deepseek-flash", finalAttempt: false });
+  assert.deepEqual(modelExecutionForAttempt(4), { attempt: 4, model: "deepseek-flash", finalAttempt: true });
 });
 
 test("adds bounded jitter around 30, 90, and 180 second retry delays", () => {
@@ -28,12 +28,12 @@ test("adds bounded jitter around 30, 90, and 180 second retry delays", () => {
   assert.equal(retryDelayForAttempt(3, () => 1), 216_000);
 });
 
-test("sends an explicit fallback model override to B.ai", async () => {
+test("sends an explicit fallback model override to DeepSeek", async () => {
   let requestedModel = "";
   const env = {
     SEC_REFRESH_KEY: "refresh-key",
     SEC_USER_AGENT: "test@example.com",
-    AI_API_KEY: "worker-model-secret",
+    DEEPSEEK_API_KEY: "worker-model-secret",
     SEC_ANALYSIS_MODEL: "primary-model",
     SEC_FILINGS: { async get() { return null; }, async put() { return {}; } },
   } as unknown as SecPipelineEnv;
@@ -42,15 +42,15 @@ test("sends an explicit fallback model override to B.ai", async () => {
     return Response.json({ choices: [{ message: { content: "{}" } }] });
   };
 
-  await callWorkerSecModel(env, fetcher, "test", "Return JSON", {}, "hy3");
+  await callWorkerSecModel(env, fetcher, "test", "Return JSON", {}, "deepseek-flash");
 
-  assert.equal(requestedModel, "hy3");
+  assert.equal(requestedModel, "deepseek-flash");
 });
 
 const modelEnv = {
   SEC_REFRESH_KEY: "refresh-key",
   SEC_USER_AGENT: "test@example.com",
-  AI_API_KEY: "worker-model-secret",
+  DEEPSEEK_API_KEY: "worker-model-secret",
   SEC_ANALYSIS_MODEL: "primary-model",
   SEC_FILINGS: { async get() { return null; }, async put() { return {}; } },
 } as unknown as SecPipelineEnv;
@@ -106,7 +106,7 @@ test("durable recovery avoids provider JSON mode even after fallback rate limiti
   };
   const result = await createSecPipelineOperations(env, fetcher).scanDisclosures!(filing, { key: "filings/MSFT/annual", filing }, 0, modelExecutionForAttempt(2));
   assert.equal(result.status, "complete");
-  assert.deepEqual(requests.map((r) => r.model), ["hy3", "primary-model"]);
+  assert.deepEqual(requests.map((r) => r.model), ["deepseek-flash", "deepseek-flash"]);
   assert.ok(requests.every((r) => !r.response_format));
   assert.ok(requests.every((r) => /Return one valid JSON object only/.test(JSON.stringify(r.messages))));
 });
@@ -169,7 +169,7 @@ test("calls B.ai from the workflow worker when its shared AI secret is configure
   const env = {
     SEC_REFRESH_KEY: "refresh-key",
     SEC_USER_AGENT: "test@example.com",
-    AI_API_KEY: "worker-model-secret",
+    DEEPSEEK_API_KEY: "worker-model-secret",
     SEC_ANALYSIS_MODEL: "glm-5.3-flash",
     SEC_FILINGS: {
       async get(key: string) {
@@ -186,7 +186,7 @@ test("calls B.ai from the workflow worker when its shared AI secret is configure
     const url = String(input);
     requests.push(url);
     if (url === filing.documentUrl) return new Response("<h1>Item 7. Management Discussion</h1><p>Revenue was 120 USDm.</p>");
-    if (url === "https://api.b.ai/v1/chat/completions") {
+    if (url === "https://api.deepseek.com/chat/completions") {
       const prepared = JSON.parse(objects.get("filings/MSFT/annual/meta.json") ?? "{}") as { outline?: Array<{ id: string }> };
       return Response.json({ choices: [{ message: { content: JSON.stringify({ nodes: [{ id: "growth", title: "增长质量", question: "增长由什么驱动？", sectionIds: [prepared.outline?.[0]?.id] }] }) } }] });
     }
@@ -197,7 +197,7 @@ test("calls B.ai from the workflow worker when its shared AI secret is configure
 
   await operations.plan(filing, reference);
 
-  assert.ok(requests.includes("https://api.b.ai/v1/chat/completions"));
+  assert.ok(requests.includes("https://api.deepseek.com/chat/completions"));
   assert.equal(requests.some((url) => url.includes("/api/internal/sec/model")), false);
 });
 
@@ -206,7 +206,7 @@ test("plans and runs dynamic nodes from the prepared R2 filing", async () => {
   const env = {
     SEC_REFRESH_KEY: "refresh-key",
     SEC_USER_AGENT: "test@example.com",
-    AI_API_KEY: "worker-model-secret",
+    DEEPSEEK_API_KEY: "worker-model-secret",
     SEC_FILINGS: {
       async get(key: string) {
         const value = objects.get(key);
@@ -247,7 +247,7 @@ test("fetches XBRL during prepare and resolves context through one D1 round trip
     SEC_REFRESH_KEY: "refresh-key",
     SEC_TRACKED_TICKERS: "MSFT",
     SEC_USER_AGENT: "test@example.com",
-    AI_API_KEY: "worker-model-secret",
+    DEEPSEEK_API_KEY: "worker-model-secret",
     SEC_FILINGS: {
       async get(key: string) {
         const value = objects.get(key);
@@ -467,7 +467,7 @@ test("routes planning, review, and synthesis to the reasoning model and leaves n
   assert.equal(modelForStage(tiered, "synthesis:schema-retry"), "glm-5.3");
   assert.equal(modelForStage(tiered, "node:revenue-growth"), undefined);
   assert.equal(modelForStage(tiered, "event-summary"), undefined);
-  assert.equal(modelForStage(tiered, "manager", "hy3"), "hy3");
+  assert.equal(modelForStage(tiered, "manager", "deepseek-flash"), "deepseek-flash");
   assert.equal(modelForStage(single, "manager"), undefined);
 });
 
@@ -502,7 +502,7 @@ test("memory extraction still receives this filing's claims and prior memory ids
   const env = {
     SEC_REFRESH_KEY: "refresh-key",
     SEC_TRACKED_TICKERS: "MSFT",
-    AI_API_KEY: "worker-model-secret",
+    DEEPSEEK_API_KEY: "worker-model-secret",
     // claimMemoryJob and commitMemoryJob are stubbed on the prototype below — their own SQL and
     // the optimistic-locking semantics are D1SecRepository's job and are covered where that class
     // is tested directly. This test is about the workflow's own data shaping around them.
@@ -522,7 +522,7 @@ test("memory extraction still receives this filing's claims and prior memory ids
   } as unknown as SecPipelineEnv;
   const fetcher: typeof fetch = async (input, init) => {
     const url = String(input);
-    if (url === "https://api.b.ai/v1/chat/completions") {
+    if (url === "https://api.deepseek.com/chat/completions") {
       modelPayload = JSON.parse(String(init?.body ?? "{}")).messages[1].content;
       return Response.json({ choices: [{ message: { content: JSON.stringify({ candidates: [
         { candidateId: "c-1", memoryId: "memory:guidance", kind: "fact", topicKey: "margin", statement: "Margin recovered.", evidenceIds: ["ev:block-1"], materialityScore: 80, confidence: "high", disposition: "active" },
@@ -587,7 +587,7 @@ test("recovers on the primary model when the fallback is rate limited or unavail
     } } as unknown as SecPipelineEnv;
     const fetcher: typeof fetch = async (input, init) => {
       if (String(input) === filing.documentUrl) return new Response('<h1>Item 7. Management Discussion</h1><p>Revenue grew.</p>');
-      if (String(input) !== 'https://api.b.ai/v1/chat/completions') throw new Error('Unavailable test source');
+      if (String(input) !== 'https://api.deepseek.com/chat/completions') throw new Error('Unavailable test source');
       const body = JSON.parse(String(init?.body)); models.push(body.model);
       if (models.length === 1) return new Response('provider unavailable', { status });
       const section = body.messages[1] && JSON.parse(body.messages[1].content).sections[0];
@@ -598,7 +598,7 @@ test("recovers on the primary model when the fallback is rate limited or unavail
     const run = operations.plan(filing, reference, undefined, modelExecutionForAttempt(2));
     const plan = await run;
     assert.equal(plan.nodes.length, 1);
-    assert.deepEqual(models, ['hy3', 'primary-model']);
+    assert.deepEqual(models, ['deepseek-flash', 'deepseek-flash']);
   }
 });
 
@@ -652,4 +652,24 @@ test("provider rejection preserves a bounded machine code without exposing the c
     assert.ok(!value.message.includes("worker-model-secret"));
     return true;
   });
+});
+
+test("official DeepSeek transport uses only its dedicated credential and Flash default", async () => {
+  const env = { ...modelEnv, SEC_ANALYSIS_MODEL: undefined, AI_API_KEY: "legacy-do-not-send" };
+  let calls = 0;
+  const fetcher: typeof fetch = async (url, init) => {
+    calls++;
+    assert.equal(String(url), "https://api.deepseek.com/chat/completions");
+    assert.equal(new Headers(init?.headers).get("authorization"), "Bearer worker-model-secret");
+    const body = JSON.parse(String(init?.body));
+    assert.equal(body.model, "deepseek-flash");
+    assert.equal(body.reasoning_effort, "high");
+    assert.equal(body.max_tokens, 65_536);
+    assert.equal(body.stream, true);
+    assert.deepEqual(body.stream_options, { include_usage: true });
+    return sse(delta('{"ok":true}', "stop"), "[DONE]");
+  };
+  assert.deepEqual(await callWorkerSecModel(env, fetcher, "synthesis", "JSON", {}), { ok: true });
+  await assert.rejects(callWorkerSecModel({ ...env, DEEPSEEK_API_KEY: undefined }, fetcher, "synthesis", "JSON", {}), /DEEPSEEK_API_KEY is not configured/);
+  assert.equal(calls, 1, "legacy credential must never be sent to the new provider");
 });

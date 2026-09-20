@@ -432,7 +432,7 @@ test("still rejects two units for the same XBRL series and period", async () => 
   assert.deepEqual(result.analyzed, []);
 });
 
-test("passes the hy3 fallback model to a retried analysis step", async () => {
+test("passes the DeepSeek Flash retry model to a retried analysis step", async () => {
   const base = operations();
   let retriedModel = "";
   const step: WorkflowStepLike = {
@@ -450,7 +450,7 @@ test("passes the hy3 fallback model to a retried analysis step", async () => {
   const result = await executeSecAnalysisWorkflow({ ticker: "TESTCO", requestedBy: "manual" }, "workflow-model-fallback", step, ops);
 
   assert.deepEqual(result.failed, []);
-  assert.equal(retriedModel, "hy3");
+  assert.equal(retriedModel, "deepseek-flash");
 });
 
 test("classifies an exhausted Manager Review as a hard failure", async () => {
@@ -500,7 +500,7 @@ test("retries an empty manager plan inside the durable step before publishing", 
     },
   });
   const result = await executeSecAnalysisWorkflow({ ticker: 'TESTCO', requestedBy: 'manual' }, 'empty-plan-retry', step, ops);
-  assert.deepEqual(models, [undefined, 'hy3']);
+  assert.deepEqual(models, [undefined, 'deepseek-flash']);
   assert.deepEqual(result.failed, []);
   assert.deepEqual(result.analyzed, [filing.accessionNumber]);
 });
@@ -565,7 +565,7 @@ test("multiple editorial repairs receive the latest draft, use distinct durable 
       if (count) assert.equal(revision.draft.artifact.report.headline, `fixed-${count}`);
       count++;
       assert.equal(revision.round, count);
-      if (count >= 2) assert.equal(execution?.model, "hy3");
+      if (count >= 2) assert.equal(execution?.model, "deepseek-flash");
       const draft = structuredClone(revision.draft);
       draft.artifact.report.headline = `fixed-${count}`;
       return draft;

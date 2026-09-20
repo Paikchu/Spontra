@@ -50,7 +50,7 @@ export async function executeCompanyAnalysisWorkflow(
   fetcher: typeof fetch = fetch,
 ) {
   const analysisId = params.analysisId || `company:${params.ticker}:${hashString(`${params.triggerRef}:${workflowInstanceId}`)}`;
-  const modelVersion = env.SEC_REASONING_MODEL || env.SEC_ANALYSIS_MODEL || "qwen3.8-flash";
+  const modelVersion = env.SEC_REASONING_MODEL || env.SEC_ANALYSIS_MODEL || "deepseek-flash";
   const statusBase = {
     analysisId,
     ticker: params.ticker,

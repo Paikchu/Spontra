@@ -1,4 +1,4 @@
-export const SEC_FALLBACK_MODEL = "hy3";
+export const SEC_FALLBACK_MODEL = "deepseek-flash";
 // Network generation is governed by progress. These are only runaway safeguards;
 // leave one minute for validation and persistence before the enclosing step expires.
 export const SEC_MODEL_EXECUTION_BUDGET_MS = 59 * 60_000;
