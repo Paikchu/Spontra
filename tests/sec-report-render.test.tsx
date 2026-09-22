@@ -77,7 +77,7 @@ test("renders the complete report and dynamic evidence using the shared renderer
   assert.match(composed, /role="img"/);
   assert.match(composed, /查看数据与来源/);
   assert.match(composed, /数据质量/);
-  assert.match(composed, /核对原文与分析依据/);
+  assert.match(composed, /原文与分析依据/);
   assert.match(composed, /未解析/);
   assert.doesNotMatch(composed, /data-report-title="完整正文"/);
 
@@ -96,9 +96,9 @@ test("reader report preserves cash definitions and collapsed details without the
   assert.match(html, /−|\-3\.00 亿美元/);
   assert.match(html, /2\.00 亿美元/);
   assert.match(html, /不是|不能视为明年新增折旧/);
-  assert.match(html, /本期与以前/);
-  assert.match(html, /以前/);
-  assert.match(html, /什么会改变这个判断/);
+  assert.match(html, /本期变化/);
+  assert.match(html, /前期/);
+  assert.match(html, /后续验证条件/);
   assert.match(html, /120\.00 美元/);
   assert.doesNotMatch(html, /这份报告仍有判断边界|查看范围与缺口/);
   assert.ok(html.indexOf("同一笔现金") < html.indexOf('id="sec-reader-1"'));

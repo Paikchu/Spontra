@@ -100,6 +100,12 @@ export type SecFinancialLens = {
   };
 };
 
+/** Shared editorial style for report synthesis, review and revision. */
+export const SEC_REPORT_STYLE_RULES = `使用简洁、客观、易懂的中文研究报告语言。标题直接说明分析对象或有证据支持的结论，具体到业务与财务问题，不强制统一成空泛栏目名。
+标题避免设问、对话式引导、悬念和口号，不写「这一季，判断变在哪里」「钱去了哪里」「接下来要盯什么」。可用「经营现金流与利润差异」；只有证据充分时才写「应收账款增长拖累现金回收」等结论式标题。
+正文直接陈述事实、解释机制和说明判断，删除重复的旁白式过渡与空泛评价；不机械添加「这意味着」「值得注意的是」，不为自然感加入第一人称、情绪或题外话。保留必要的因果、转折和术语解释。
+文风调整不得改变事实、数字、财季、单位、会计口径、引用和判断的方向或强度；保留「可能」「管理层预计」「尚不能确认」等限定，不增加未经证据支持的因果。原文引文保持逐字一致。`;
+
 export const SEC_READER_SCHEMA = {
   visualCatalog: SEC_READER_VISUAL_CATALOG,
   changes: "[{topic,kind:new|changed|continuing|not_comparable,prior,current,implication,evidenceIds,priorEvidenceIds}]",
@@ -107,10 +113,11 @@ export const SEC_READER_SCHEMA = {
   watch: "[{condition,deadline,consequence,evidenceIds}]",
   limitations: "[{issue,impact}]",
   rules: [
+    SEC_REPORT_STYLE_RULES,
     "写一篇可独立阅读、逻辑递进的完整文章；3–8节，每节2–4段，标题围绕本公司真正的问题自拟。不是节点拼接或摘要。",
     "sections必须包含独立bear_case和valuation；其余章节按重要性选择。高重要性节点必须在相关章节被整合，低重要性节点留在核查材料。",
-    "每节takeaway用一句普通人能读懂的话解释这意味着什么；术语首次出现时翻译，不以审阅流程或证据ID充当正文。",
-    "changes挑选1–5个重要变化，明确以前、本期和判断变化。priorEvidenceIds只能使用给定的历史原始财务证据；无可比证据时填not_comparable，不把本次发现等同首次发生。",
+    "每节takeaway用一句简洁、客观的话说明该节的分析结论及投资含义；术语首次出现时翻译，不以审阅流程或证据ID充当正文。",
+    "changes挑选1–5个重要变化，明确前期、本期和判断变化。priorEvidenceIds只能使用给定的历史原始财务证据；无可比证据时填not_comparable，不把本次发现等同首次发生。",
     "watch给出1–4条可观察条件、检查时点和触发后需要推翻或修改的判断；数字阈值无来源时标为分析假设，不伪装成管理层指引。",
     "evidenceIds只能引用本期提供的证据；nodeIds只能引用已完成节点。chartMetricKey只能选availableCharts且必须直接服务于本节问题。",
     "财务数字从facts及financialLens取，行情和估值只能从marketSnapshot取；无数据时明确限制。保留币种、期间、口径及约数标记。",

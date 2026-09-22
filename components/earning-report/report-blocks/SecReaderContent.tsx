@@ -58,7 +58,7 @@ const changeLabel = { new: "本期新增", changed: "发生变化", continuing: 
 export function QuarterChanges({ reader }: { reader: SecReaderReport }) {
   return <div className="sec-reader-changes">{reader.changes.map((c, i) => <article key={`${c.topic}-${i}`} data-change={c.kind}>
     <div><span className="sec-reader-change-kind">{changeLabel[c.kind]}</span><h3>{c.topic}</h3></div>
-    <dl><div><dt>以前</dt><dd>{c.prior}</dd></div><div><dt>本期</dt><dd>{c.current}</dd></div></dl>
+    <dl><div><dt>前期</dt><dd>{c.prior}</dd></div><div><dt>本期</dt><dd>{c.current}</dd></div></dl>
     <p>{c.implication}</p>
   </article>)}</div>;
 }
@@ -73,7 +73,7 @@ export function ReaderSection({ section, report, nodes }: { section: SecReaderRe
     {section.role === "valuation" && <MarketContext report={report} />}
     <div className="sec-reader-layout">
     <div className="sec-report-body">{section.paragraphs.map((p, i) => <div className="sec-reader-paragraph" key={i}>{layout === "comparison" && visual?.paragraphLabels?.[i] && <h3>{visual.paragraphLabels[i]}</h3>}<RichText text={p} /></div>)}</div>
-    <p className="sec-reader-takeaway"><span>这意味着</span>{section.takeaway}</p>
+    <p className="sec-reader-takeaway"><span>分析结论</span>{section.takeaway}</p>
     </div>
     {trend && <SecComposedSection report={report} section={{ id: `${section.id}-chart`, title: section.title, layout: "flow", blocks: [{ type: "sec_chart", id: `${section.id}-trend`, title: visual?.chart?.title || `${formatSecMetricLabel(trend.metricKey)}的变化`, mark: visual?.chart?.mark ?? "line", trend }] }} />}
     {trend && visual?.chart?.caption && <p className="sec-reader-chart-caption">{visual.chart.caption}</p>}

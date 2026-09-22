@@ -4,7 +4,7 @@ import type { SecSourceMaterial } from "../../../../shared/analysis-contract/sec
 import { buildSecTrends, composeSecPresentation } from "./presentation.ts";
 import { CONTINUITY_PROMPT, continuityReviewNode } from "./continuity.ts";
 import { applyEditorialPatch, assertReaderIntegrity, editorialRequirements, EDITORIAL_PATCH_PROMPT } from "./editorial.ts";
-import { SEC_READER_SCHEMA } from "../../../../shared/analysis-contract/sec-reader.ts";
+import { SEC_READER_SCHEMA, SEC_REPORT_STYLE_RULES } from "../../../../shared/analysis-contract/sec-reader.ts";
 import { buildFinancialLens, normalizeReaderReport, readerArticleText, RESEARCH_RULES } from "./reader.ts";
 import {
   buildFilingBlocks,
@@ -722,6 +722,7 @@ function eventSummarySystemPrompt() {
 function synthesisSystemPrompt() {
   return [
     RESEARCH_RULES,
+    SEC_REPORT_STYLE_RULES,
     "你是美股基本面研究团队的总编。输入包括 SecAnalysisBrief、完成节点、原始证据摘录和 Manager Review。审核意见不是证据。",
     CONTINUITY_PROMPT.replaceAll("historicalReports", "brief.reportContinuity.reports").replaceAll("currentNodes", "nodeAnalyses").replaceAll("currentFacts", "brief.currentFacts"),
     "正文必须覆盖历史判断复核，明确支持、反驳、尚不能验证或替代，以及下期验证条件。无历史时明确说明，不能编造延续性。",

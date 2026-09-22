@@ -21,7 +21,7 @@ export function SecReportDocument({ companyName, filing }: { companyName: string
   const reportReady = Boolean(summary?.report);
   const composed = report?.presentation?.version === "sec-presentation.v1" && report.presentation.sections.length > 0;
   const nodeSectionIndex = composed ? String(report!.presentation!.sections.length + 1).padStart(2, "0") : "04";
-  const nodeSectionTitle = "核对原文与分析依据";
+  const nodeSectionTitle = "原文与分析依据";
   const nodeLinks: ReportSectionLink[] = (summary?.nodes ?? []).map((node, index) => ({
     id: `sec-report-node-${index + 1}`,
     index: `${nodeSectionIndex}.${String(index + 1).padStart(2, "0")}`,
@@ -109,7 +109,7 @@ export function SecReportDocument({ companyName, filing }: { companyName: string
     const qualitySection = reportSections.find((section) => section.id === "sec-report-quality")!;
     reportSections.splice(0, reportSections.length,
       ...report.presentation.sections.map((section) => ({ id: section.id, title: section.title, description: "围绕公司业务展开分析与证据。", content: <SecComposedSection section={section} report={report} /> })),
-      { ...evidenceSection, title: "核对原文与分析依据", description: "按需展开研究依据和原文摘录。" },
+      { ...evidenceSection, title: "原文与分析依据", description: "按需展开研究依据和原文摘录。" },
       qualitySection,
     );
   }
@@ -117,11 +117,11 @@ export function SecReportDocument({ companyName, filing }: { companyName: string
     const qualitySection = reportSections.find((s) => s.id === "sec-report-quality")!;
     const evidenceSection = reportSections.find((s) => s.id === "sec-report-nodes")!;
     reportSections.splice(0, reportSections.length,
-      { id: "sec-report-conclusions", title: "这一季，判断变在哪里", description: "核心结论与影响投资判断的变化。", content: <><ConclusionList bullets={summary?.bullets ?? []} />{summary?.analystView && <p className="sec-report-investment-view"><span>投资含义</span>{summary.analystView}</p>}<FinancialBridge report={report} /></> },
-      { id: "sec-report-changes", title: "本期与以前", description: "区分新增、变化、延续与尚缺基线的事项。", content: <QuarterChanges reader={reader} /> },
+      { id: "sec-report-conclusions", title: "核心结论", description: "核心结论与影响投资判断的变化。", content: <><ConclusionList bullets={summary?.bullets ?? []} />{summary?.analystView && <p className="sec-report-investment-view"><span>投资含义</span>{summary.analystView}</p>}<FinancialBridge report={report} /></> },
+      { id: "sec-report-changes", title: "本期变化", description: "区分新增、变化、延续与尚缺基线的事项。", content: <QuarterChanges reader={reader} /> },
       { id: "sec-report-metrics", title: "关键数据", description: "同口径的本期数值及同比、环比。", content: <VerifiedMetrics report={report} /> },
       ...reader.sections.map((section) => ({ id: section.id, title: section.title, description: section.takeaway, className: `sec-reader-section sec-reader-role-${section.role}`, content: <ReaderSection section={section} report={report} nodes={summary?.nodes ?? []} /> })),
-      { id: "sec-report-watch", title: "什么会改变这个判断", description: "下一次检查的条件、时点与需要修订的判断。", content: <WatchConditions reader={reader} /> },
+      { id: "sec-report-watch", title: "后续验证条件", description: "下一次检查的条件、时点与需要修订的判断。", content: <WatchConditions reader={reader} /> },
       { ...evidenceSection, content: <details className="sec-reader-workpapers"><summary>展开研究依据与原文</summary>{evidenceSection.content}</details> },
       qualitySection,
     );
