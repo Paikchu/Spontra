@@ -2,7 +2,7 @@ import { SecComposedSection } from "@/components/earning-report/report-blocks/Se
 import type { PublishedSecReport } from "@/shared/analysis-contract/report.ts";
 import type { SecFilingWithSummary } from "@/shared/analysis-contract/report.ts";
 import type { ReactNode } from "react";
-import Link from "next/link";
+import { ReportBackLink } from "./ReportBackLink";
 import { RichText } from "@/components/earning-report/rich-text/RichText.tsx";
 import { SecReportNavigator, type ReportSectionLink } from "@/app/analysis/stocks/[ticker]/sec/[accession]/SecReportNavigator.tsx";
 import { FinancialBridge, QuarterChanges, ReaderSection, WatchConditions } from "@/components/earning-report/report-blocks/SecReaderContent.tsx";
@@ -133,7 +133,7 @@ export function SecReportDocument({ companyName, filing }: { companyName: string
 
   return (
     <main className="sec-report-shell">
-      <Link className="back-link" href={`/positions/${encodeURIComponent(filing.ticker)}#sec-filings`}>← 返回 {filing.ticker} 财报与事件</Link>
+      <ReportBackLink ticker={filing.ticker} />
       <header className="sec-report-header">
         <div>
           <span className="sec-report-kicker">{group ? "财报期合并报告" : `${filing.form} · SEC 分析报告`}</span>

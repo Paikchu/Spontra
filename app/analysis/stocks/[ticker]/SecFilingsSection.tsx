@@ -152,7 +152,7 @@ function SecFilingCard({ filing, periodLabel }: { filing: PublicSecFiling; perio
         </div>}
         <FilingSummary filing={filing} />
         <div className="flex flex-wrap items-center gap-2 pt-4">
-          {fullReportHref && <Button asChild size="sm"><a data-app-local-anchor href={fullReportHref}>阅读完整报告 →</a></Button>}
+          {fullReportHref && <Button asChild size="sm"><a href={fullReportHref}>阅读完整报告 →</a></Button>}
           <Button asChild variant="outline" size="sm"><a href={filing.edgarUrl} rel="noopener noreferrer" target="_blank">SEC EDGAR 原文 ↗</a></Button>
         </div>
       </AccordionContent>

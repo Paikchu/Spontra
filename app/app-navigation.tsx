@@ -6,12 +6,16 @@ import { revealContent } from "./content-motion";
 import { NavigationPlaceholder } from "./navigation-placeholder";
 import { loadAppPage } from "./load-app-page";
 
-const NavigationContext = createContext<{ path: string; pendingPath: string | null; navigate: (href: string, source?: HTMLElement) => void } | null>(null);
+const NavigationContext = createContext<{ path: string; pendingPath: string | null; reportReturnPath: string | null; navigate: (href: string, source?: HTMLElement) => void } | null>(null);
 
 export function useAppNavigation() {
   const context = useContext(NavigationContext);
   if (!context) throw new Error("App navigation provider is missing");
   return context;
+}
+
+export function useReportReturnPath() {
+  return useContext(NavigationContext)?.reportReturnPath ?? null;
 }
 
 function normalize(href: string, current: string) {
@@ -23,9 +27,8 @@ function normalize(href: string, current: string) {
   path = path.replace(/^\/analysis\/stocks\/([^/]+)$/, "/positions/$1");
   path = path.replace(/^\/positions\/([^/]+)\/sec\/([^/]+)$/, "/analysis/stocks/$1/sec/$2");
   if (!/^\/$|^\/(analysis|macro|settings)$|^\/positions\/[^/]+(?:\/sec\/[^/]+)?$|^\/analysis\/stocks\/[^/]+\/sec\/[^/]+$/.test(path)) return null;
-  // Versioned reports must use a document navigation so their query reaches the server.
-  if (path.includes("/sec/") && (url.searchParams.has("reportVersion") || url.searchParams.has("reportDate"))) return null;
-  return path + url.hash;
+  // Keep the snapshot identity in both the request and the page cache key.
+  return path + (path.includes("/sec/") ? url.search : "") + url.hash;
 }
 
 class PageBoundary extends Component<{ children: ReactNode; onError: () => void; onRetry: () => void }, { failed: boolean }> {
@@ -60,6 +63,8 @@ export function AppNavigation({ children, dock }: { children: ReactNode; dock: R
   const active = useRef(initialPath);
   const sequence = useRef(0);
   const scroll = useRef(new Map<string, number>());
+  const [reportReturnPath, setReportReturnPath] = useState<string | null>(null);
+  const reportOrigins = useRef(new Map<string, string>());
   const visited = useRef(new Set([initialPath]));
 
   const fetchPage = useCallback((key: string) => {
@@ -86,6 +91,10 @@ export function AppNavigation({ children, dock }: { children: ReactNode; dock: R
     const id = ++sequence.current;
     const previousKey = active.current.split("#")[0];
     const returning = visited.current.has(key);
+    if (key.includes("/sec/") && !previousKey.includes("/sec/")) {
+      reportOrigins.current.set(key, active.current);
+    }
+    setReportReturnPath(reportOrigins.current.get(key) ?? null);
     if (previousKey !== key) scroll.current.set(previousKey, window.scrollY);
     // Selecting a destination is synchronous; its server content arrives separately.
     active.current = next;
@@ -149,7 +158,7 @@ export function AppNavigation({ children, dock }: { children: ReactNode; dock: R
     return () => animation?.cancel();
   }, [transition]);
 
-  return <NavigationContext.Provider value={{ path, navigate, pendingPath }}>
+  return <NavigationContext.Provider value={{ path, navigate, pendingPath, reportReturnPath }}>
     {dock}
     <span role="status" className="sr-only">{pendingPath ? "正在加载页面" : ""}</span>
     {!(path.split("#")[0] in pages) && <NavigationPlaceholder path={path} error={error} onRetry={() => { void navigate(path); }} />}
