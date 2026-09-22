@@ -5,7 +5,7 @@ import { buildSecTrends, composeSecPresentation } from "./presentation.ts";
 import { CONTINUITY_PROMPT, continuityReviewNode } from "./continuity.ts";
 import { applyEditorialPatch, assertReaderIntegrity, editorialRequirements, EDITORIAL_PATCH_PROMPT } from "./editorial.ts";
 import { SEC_READER_SCHEMA, SEC_REPORT_STYLE_RULES } from "../../../../shared/analysis-contract/sec-reader.ts";
-import { buildFinancialLens, normalizeReaderReport, readerArticleText, RESEARCH_RULES } from "./reader.ts";
+import { buildFinancialLens, normalizeReaderReport, normalizeReaderSummaryText, readerArticleText, RESEARCH_RULES } from "./reader.ts";
 import {
   buildFilingBlocks,
   buildPeriodIdentity,
@@ -493,6 +493,7 @@ export async function summarizePreparedSecFiling(
     disclosures: prepared.discovery?.disclosures ?? [],
     discoveryCoverage: prepared.discovery ? {scannedCharacters:prepared.discovery.scannedCharacters,totalCharacters:prepared.discovery.totalCharacters,warnings:prepared.discovery.warnings} : null,
     availableCharts: trends,
+    availableAssets: [],
     sourceMaterials: prepared.sourceMaterials ?? [],
     allowedEvidenceIds: [...reviewEvidenceIds],
     allowedMetricKeys: [...new Set([...finalBrief.allowedMetricKeys, ...nodeFacts.map((fact) => fact.metricKey)])],
@@ -520,7 +521,7 @@ export async function summarizePreparedSecFiling(
         originalDraft: summaryValue, issues: problems, requiredTopics: summaryPayload.requiredTopics,
         primaryEvidence: summaryPayload.primaryEvidence, facts: finalBrief.currentFacts,
         nodeAnalyses: summaryPayload.nodeAnalyses, financialLens, marketSnapshot: summaryPayload.marketSnapshot,
-        readerSchema: SEC_READER_SCHEMA, allowedEvidenceIds: [...reviewEvidenceIds], priorEvidenceIds, availableCharts: trends,
+        readerSchema: SEC_READER_SCHEMA, availableAssets: [], allowedEvidenceIds: [...reviewEvidenceIds], priorEvidenceIds, availableCharts: trends,
         allowedSectionIds: allowedSections ? [...allowedSections] : null, rejectedPatch, patchError,
       });
       try { summaryValue = applyEditorialPatch(summaryValue, patch, allowedSections); }
@@ -535,16 +536,17 @@ export async function summarizePreparedSecFiling(
   };
   if (editorialState?.patch) await repair(editorialState.issues ?? editorialFeedback ?? [], 0);
   let reader: ReturnType<typeof normalizeReaderReport> | undefined;
+  let readerSummary: ReturnType<typeof normalizeReaderSummaryText> | undefined;
   for (let round = 0; round <= 3; round += 1) {
     try {
       if (editorialState && !summaryValue.readerReport) throw new Error("Reader report is missing; add grounded sections, changes and watch conditions using the patch schema");
       reader = summaryValue.readerReport ? normalizeReaderReport(summaryValue.readerReport, {
         nodes, plan, currentEvidence: reviewEvidenceIds, priorEvidence: new Set(priorEvidenceIds), chartKeys: new Set(trends.map((t) => t.metricKey)), requireVisual: true,
       }) : undefined;
-      if (reader) {
-        if (typeof summaryValue.analystView !== "string" || !summaryValue.analystView.trim() || summaryValue.analystView.length > 4000) throw new Error("投资含义必须为完整段落，长度不超过4000字符；不要依赖截断");
-        assertReaderIntegrity(reader, financialLens, [String(summaryValue.headline ?? ""), summaryValue.analystView,
-          ...((Array.isArray(summaryValue.bullets) ? summaryValue.bullets : []) as Array<{ detail?: string }>).map(b => String(b.detail ?? ""))]);
+      readerSummary = reader ? normalizeReaderSummaryText(summaryValue) : undefined;
+      if (reader && readerSummary) {
+        assertReaderIntegrity(reader, financialLens, [readerSummary.headline, readerSummary.analystView,
+          ...readerSummary.bullets.flatMap((bullet) => [bullet.label, bullet.detail])]);
       }
       break;
     } catch (error) {
@@ -563,6 +565,7 @@ export async function summarizePreparedSecFiling(
     periodId: prepared.periodId,
     reportVersion: `${SEC_ANALYSIS_SCHEMA_VERSION}:${prepared.filing.reportDate || prepared.filing.filingDate}-${crypto.randomUUID()}`,
   }, new Set(validEvidenceIds));
+  if (readerSummary) report.headline = readerSummary.headline;
   report.fiscalPeriod = validateAiFiscalPeriod(summaryValue.fiscalPeriod, prepared.filing, fiscalInput);
   const groundedDisclosure = prepared.discovery?.disclosures.some((item) => usableNodes.some((node) =>
     plan.nodes.find((spec) => spec.id === node.id)?.sectionIds.includes(item.id) && node.evidenceIds?.some((id) => item.evidenceIds.includes(id)))) ?? false;
@@ -594,7 +597,10 @@ export async function summarizePreparedSecFiling(
     managerReview: finalReview,
     validEvidenceIds,
   };
-  const normalizedSummary = normalizeSecSummary({ ...summaryValue, source: "deepseek", version: SEC_SUMMARY_VERSION }, prepared.filing, now);
+  const normalizedSummary = {
+    ...normalizeSecSummary({ ...summaryValue, source: "deepseek", version: SEC_SUMMARY_VERSION }, prepared.filing, now),
+    ...(readerSummary ?? {}),
+  };
   if (!normalizedSummary.report) {
     throw new Error("Synthesis must contain a report");
   }
@@ -603,7 +609,7 @@ export async function summarizePreparedSecFiling(
   }
   const summary = {
     ...normalizedSummary,
-    ...(reader ? { readerVersion: "sec-reader.v1" as const, analystView: String(summaryValue.analystView).trim() } : {}),
+    ...(reader ? { readerVersion: reader.version } : {}),
     report: reader ? readerArticleText(reader) : appendAnalysisLimitations(normalizedSummary.report, finalReview, nodes),
     discovery: prepared.discovery,
     nodes,
@@ -732,10 +738,10 @@ function synthesisSystemPrompt() {
     "输出readerReport作为唯一完整正文：围绕变化→业务机制→利润与现金→估值所需条件→最强空头论点→下期证伪条件递进，章节按公司业务自拟。重写为连贯文章，不复制分析节点，不展示编排流程。整合requiredTopics中的每个问题并在对应章节填写nodeId；写作前将每项分配到章节，缺证据须说明已查范围和限制。次要底稿供核查，无需每个节点都变成正文。",
     "数字、同比、环比和证据只能使用结构化输入中已有的值；不得编造或把 qoq 与 yoy 混写。",
     "毛利率、营业利润率等比率指标的变化一律写「个百分点」，取 brief.comparisons 的 percentagePointDelta；只有金额和股数才用相对百分比。",
-    "readerReport正文通常1800至3200中文字，以解释完整为准。report只留空字符串，由系统从完整章节生成；不要再写一份摘要代替正文。无足够证据写限制，不制造内容。",
+    "readerReport使用sec-reader.v2，正文写在有序content块中；section.id和blockId在局部修订中保持不变。availableAssets为空时不生成image块。正文通常1800至3200中文字，以解释完整为准。report只留空字符串，由系统从完整章节生成；不要再写一份摘要代替正文。无足够证据写限制，不制造内容。",
     "核心结论必须与financialLens一致，出现两种FCF时并列说明；关键数据缺口不得埋在尾部。depreciation仅为假设量级测算。marketSnapshot有价格时给日期、币种和可用估值锚点，再说支持该价格需要何种经营结果；缺价则明确无法形成价格判断，禁止虚构市值、倍数或市场反应。",
     "changes必须写本期新的/变化的/延续的判断，priorEvidenceIds来自历史原始数据。新事件若缺少历史原始证据，填not_comparable并明确本期披露不等于首次；历史报告可以复核旧判断，不能代替变化的事实基线。",
-    "headline给出有证据的结论；bullets输出1至5条有原文依据的关键发现；analystView说明投资含义但不给买卖建议。",
+    "headline用一句简洁、有证据的结论，通常60至120字并尽量短；bullets输出1至5条关键发现，每条按需要写100至250字的完整说明，label简短，复杂现金口径留在正文展开；analystView说明投资含义但不给买卖建议。所有句子必须完整，过长时完整改写，不依赖系统截断。",
     "Manager Review为partial或discoveryCoverage存在警告时，report必须说明未解决的问题；扫描覆盖只是已采集文本范围，不能推断电话会/IR材料已采集，更不能把输入缺失写成公司未披露。",
     "以 JSON 对象输出 headline、bullets、analystView、report、keyMetrics、changes、dataQuality、readerReport和reviews，字段严格遵循outputSchema。editorialFeedback如非空必须逐项修复，并同步更新所有读者可见结论。",
   ].join("\n");

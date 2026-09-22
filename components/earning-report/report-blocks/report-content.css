@@ -1,0 +1,91 @@
+/* Shared by article, preview and message containers. No page-specific ancestor is required. */
+.report-content {
+  container: report-content / inline-size;
+  min-width: 0;
+  color: var(--foreground, #24242b);
+  font: 400 15px/1.85 var(--sans, system-ui, sans-serif);
+  overflow-wrap: anywhere;
+}
+.report-content > * + * { margin-top: 20px; }
+.report-content :is(p, ul, ol) { margin-top: 0; margin-bottom: 1.35em; }
+.report-content :is(h3, h4) { margin: 1.5em 0 .7em; font-size: 1.05em; line-height: 1.5; font-weight: 600; }
+.report-content :is(a, summary):focus-visible { outline: 2px solid var(--ring, #6366f1); outline-offset: 3px; }
+.report-content a { color: var(--primary, #4f46e5); text-decoration: underline; text-underline-offset: .2em; }
+.report-content :is(ul, ol) { padding-inline-start: 1.5em; }
+.report-content :is(ul, ol) :is(ul, ol) { margin-block: .4em; }
+.report-content li + li { margin-top: .35em; }
+.report-content-markdown { min-width: 0; }
+.report-content-markdown > :first-child { margin-top: 0; }
+.report-content-markdown > :last-child { margin-bottom: 0; }
+.report-content-markdown :not(pre) > code { padding: .1em .35em; border-radius: 3px; background: var(--muted, #f4f4f5); font-size: .88em; }
+.report-content-markdown pre { max-width: 100%; overflow-x: auto; padding: 14px; border: 1px solid var(--border, #e4e4e7); border-radius: 6px; background: var(--muted, #f4f4f5); line-height: 1.6; }
+.report-content-markdown blockquote { margin-inline: 0; padding-inline-start: 16px; border-inline-start: 2px solid var(--border, #d4d4d8); color: var(--muted-foreground, #71717a); }
+.report-content-plain { white-space: pre-wrap; }
+.report-content-figure { container: report-figure / inline-size; margin: 0; min-width: 0; width: 100%; max-width: 580px; padding: 18px 0; border-block: 1px solid var(--border, #e4e4e7); }
+.report-content-figure[data-chart-kind="comparison"], .report-content-figure[data-chart-kind="single"] { max-width: 380px; }
+.report-content-figure figcaption { display: grid; gap: 5px; margin-bottom: 20px; font-size: 14px; line-height: 1.5; }
+.report-content-figure figcaption strong { font-weight: 600; }
+.report-content-figure figcaption small { font-size: 11px; color: var(--muted-foreground, #71717a); }
+.report-content-comparison { display: grid; gap: 15px; }
+.report-content-comparison-row > div { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 5px; }
+.report-content-comparison-row span { color: var(--muted-foreground, #71717a); font-size: 12px; }
+.report-content-comparison-row strong { font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.report-content-comparison-row svg { display: block; width: 100%; height: 18px; overflow: visible; }
+.report-content-chart-bar { fill: var(--muted-foreground, #a1a1aa); opacity: .48; }
+[data-current="true"] > .report-content-chart-bar, [data-current="true"] .report-content-chart-bar { fill: var(--primary, #4f46e5); opacity: 1; }
+.report-content-chart-line { stroke: var(--primary, #4f46e5); }
+.report-content-chart-point { fill: var(--primary, #4f46e5); }
+.report-content-chart-zero { stroke: var(--border, #d4d4d8); stroke-width: 1; }
+.report-content-single { display: grid; gap: 4px; font-variant-numeric: tabular-nums; }
+.report-content-single strong { font-size: 26px; line-height: 1.4; }
+.report-content-single span { font-size: 12px; color: var(--muted-foreground, #71717a); }
+.report-content-timeline { position: relative; height: 220px; min-width: 0; }
+.report-content-timeline > svg { display: block; width: 100%; height: 220px; overflow: visible; }
+.report-content-chart-label { position: absolute; transform: translateX(-50%); font-size: 11px; line-height: 1.2; font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--muted-foreground, #71717a); }
+.report-content-chart-label[data-sparse-hidden="true"] { display: none; }
+.report-content-chart-dates { position: absolute; bottom: 0; inset-inline: 0; display: flex; justify-content: space-between; font-size: 11px; color: var(--muted-foreground, #71717a); }
+.report-content .report-content-caption { margin: 14px 0 0; font-size: 12px; line-height: 1.75; color: var(--muted-foreground, #71717a); }
+.report-content-group { min-width: 0; }
+.report-content-group-lead { margin-bottom: 20px; }
+.report-content-group-lead > [data-report-block] + [data-report-block],
+.report-content-group-prose > [data-report-block] + [data-report-block] { margin-top: 20px; }
+.report-content-group-body { display: flow-root; min-width: 0; }
+.report-content-group-media { margin-block: 4px 22px; }
+.report-content-group-prose { min-width: 0; }
+.report-content-group-sources { clear: both; padding-top: 8px; }
+.report-content-source { min-width: 0; font-size: 12px; }
+.report-content-source > summary { width: fit-content; padding-block: 8px; cursor: pointer; color: var(--muted-foreground, #71717a); }
+.report-content-table-scroll { width: 100%; max-width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; margin-block: 12px; }
+.report-content-table-scroll table { width: 100%; border-collapse: collapse; text-align: start; font-size: 12px; font-variant-numeric: tabular-nums; }
+.report-content-table-scroll :is(th, td) { padding: 9px 12px; border-bottom: 1px solid var(--border, #e4e4e7); text-align: start; white-space: nowrap; }
+.report-content-table-scroll th { font-weight: 500; color: var(--muted-foreground, #71717a); }
+.report-content-table-scroll td { color: var(--foreground, #24242b); }
+.report-content-table-scroll td::before { display: none; }
+.report-content-fallback { padding: 12px 14px; border: 1px solid var(--border, #e4e4e7); border-radius: 4px; color: var(--muted-foreground, #71717a); font-size: 13px; }
+.report-content-fallback code { display: block; margin-top: 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.report-content-inline-fallback { color: var(--muted-foreground, #71717a); }
+.report-content-callout { border-inline-start: 3px solid var(--primary, #4f46e5); padding: 14px 18px; background: var(--muted, #f4f4f5); }
+.report-content-callout > strong { display: block; margin-bottom: 8px; }
+.report-content-callout[data-tone="negative"], .report-content-callout[data-tone="caution"] { border-color: var(--destructive, #b45309); }
+.report-content-evidence blockquote { margin: 12px 0; padding-inline-start: 14px; border-inline-start: 2px solid var(--border, #d4d4d8); }
+.report-content-evidence footer { color: var(--muted-foreground, #71717a); font-size: 11px; }
+.report-content-formula { margin: 0; min-width: 0; }
+.report-content-math-scroll, .report-content-markdown .katex-display { max-width: 100%; overflow-x: auto; overflow-y: hidden; padding-block: 4px; }
+.report-content-formula figcaption { font-size: 13px; line-height: 1.75; }
+.report-content-image { margin: 0; min-width: 0; }
+.report-content-image-frame { position: relative; width: 100%; overflow: hidden; background: var(--muted, #f4f4f5); }
+.report-content-image-frame img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.report-content-image-fallback { position: absolute; inset: 0; display: grid; place-content: center; padding: 20px; color: var(--muted-foreground, #71717a); font-size: 13px; }
+.report-content-image figcaption { margin-top: 10px; font-size: 12px; line-height: 1.7; color: var(--muted-foreground, #71717a); }
+@container report-content (min-width: 720px) {
+  .report-content-group[data-media-layout="wrap"] .report-content-group-media { float: inline-end; width: min(42%, 360px); margin: 3px 0 16px 28px; }
+  .report-content-group[data-media-layout="aside"] .report-content-group-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 360px); gap: 28px; align-items: start; }
+  .report-content-group[data-media-layout="aside"] .report-content-group-media { grid-column: 2; grid-row: 1; margin: 0; }
+  .report-content-group[data-media-layout="aside"] .report-content-group-prose { grid-column: 1; grid-row: 1; }
+}
+@container report-content (max-width: 440px) {
+  .report-content-table-scroll :is(th, td) { padding-inline: 8px; }
+}
+@container report-figure (max-width: 440px) {
+  .report-content-chart-label[data-compact-hidden="true"] { display: none; }
+}

@@ -5,25 +5,38 @@ import ts from "typescript";
 
 export function checkSourceBoundary(file: string, source: string): string[] {
   const contract = file.startsWith("shared/analysis-contract/");
+  const runtime = file.startsWith("shared/analysis-runtime/");
   const pipeline = file.startsWith("workers/pipeline/");
   const web = /^(app|components|lib|worker)\//.test(file);
-  if (!contract && !pipeline && !web) return [];
+  if (!contract && !runtime && !pipeline && !web) return [];
   const errors: string[] = [];
   const ast = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
-  function dependency(specifier: string) {
+  function dependency(specifier: string, typeOnly = false) {
     const target = specifier.startsWith("@/") ? specifier.slice(2)
       : specifier.startsWith(".") ? posix.normalize(posix.join(dirname(file), specifier)) : null;
-    if (contract && (!target || !target.startsWith("shared/analysis-contract/"))) errors.push(`${file}: contract imports ${specifier}`);
-    if (pipeline && target && !target.startsWith("workers/pipeline/") && !target.startsWith("shared/analysis-contract/")) errors.push(`${file}: Pipeline imports ${specifier}`);
+    const contractTarget = target?.startsWith("shared/analysis-contract/");
+    const runtimeTarget = target?.startsWith("shared/analysis-runtime/");
+    // Contracts can infer types from the pure runtime without importing its implementation.
+    if (contract && !contractTarget && !(typeOnly && runtimeTarget)) errors.push(`${file}: contract imports ${specifier}`);
+    if (runtime && !contractTarget && !runtimeTarget && specifier !== "zod") errors.push(`${file}: shared runtime imports ${specifier}`);
+    if (pipeline && target && !target.startsWith("workers/pipeline/") && !target.startsWith("shared/analysis-contract/") && !target.startsWith("shared/analysis-runtime/")) errors.push(`${file}: Pipeline imports ${specifier}`);
     if (web && target?.startsWith("workers/pipeline/")) errors.push(`${file}: Web imports Pipeline ${specifier}`);
   }
   function visit(node: ts.Node) {
-    if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) dependency(node.moduleSpecifier.text);
-    if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument) && ts.isStringLiteral(node.argument.literal)) dependency(node.argument.literal.text);
+    if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) {
+      const typeOnly = ts.isImportDeclaration(node)
+        ? Boolean(node.importClause?.isTypeOnly || (!node.importClause?.name && node.importClause?.namedBindings && ts.isNamedImports(node.importClause.namedBindings) && node.importClause.namedBindings.elements.length > 0 && node.importClause.namedBindings.elements.every((element) => element.isTypeOnly)))
+        : Boolean(node.isTypeOnly || node.exportClause && ts.isNamedExports(node.exportClause) && node.exportClause.elements.length > 0 && node.exportClause.elements.every((element) => element.isTypeOnly));
+      dependency(node.moduleSpecifier.text, typeOnly);
+    }
+    if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument) && ts.isStringLiteral(node.argument.literal)) dependency(node.argument.literal.text, true);
     if (ts.isCallExpression(node) && (node.expression.kind === ts.SyntaxKind.ImportKeyword || (ts.isIdentifier(node.expression) && node.expression.text === "require"))) {
       const argument = node.arguments[0];
       if (argument && ts.isStringLiteral(argument)) dependency(argument.text);
       else errors.push(`${file}: nonliteral module loading bypasses ownership checks`);
+    }
+    if (runtime && ts.isIdentifier(node) && /^(?:globalThis|window|document|navigator|localStorage|sessionStorage|indexedDB|fetch|XMLHttpRequest|WebSocket|Worker|D1Database|D1PreparedStatement|Workflow|R2Bucket|process|Deno|Bun|Buffer|crypto|setTimeout|setInterval|requestAnimationFrame)$/.test(node.text)) {
+      errors.push(`${file}: shared runtime uses platform API ${node.text}`);
     }
     if (contract && (ts.isFunctionDeclaration(node) || ts.isClassDeclaration(node) || ts.isCallExpression(node) || ts.isNewExpression(node) || ts.isArrowFunction(node))) errors.push(`${file}: contract contains implementation code`);
     ts.forEachChild(node, visit);
@@ -51,5 +64,5 @@ export async function checkArchitecture(): Promise<string[]> {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const errors = await checkArchitecture();
   if (errors.length) { console.error(errors.join("\n")); process.exitCode = 1; }
-  else console.log("Architecture boundaries passed: Pipeline depends only on its own code and shared contracts; no Web callbacks or imports.");
+  else console.log("Architecture boundaries passed: Pipeline depends only on its own code, declarative shared contracts and pure shared runtime; no Web callbacks or imports.");
 }

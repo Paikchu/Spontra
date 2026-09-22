@@ -7,6 +7,7 @@ import { RichText } from "@/components/earning-report/rich-text/RichText.tsx";
 import { SecReportNavigator, type ReportSectionLink } from "@/app/analysis/stocks/[ticker]/sec/[accession]/SecReportNavigator.tsx";
 import { FinancialBridge, QuarterChanges, ReaderSection, WatchConditions } from "@/components/earning-report/report-blocks/SecReaderContent.tsx";
 import { formatSecMetricLabel, formatSecMetricValue } from "@/lib/earning-report/web/sec-metric-format.ts";
+import { parseSecReaderReport } from "@/shared/analysis-runtime/sec-reader-schema.ts";
 
 type ReportSectionDefinition = ReportSectionLink & {
   className?: string;
@@ -16,7 +17,11 @@ type ReportSectionDefinition = ReportSectionLink & {
 export function SecReportDocument({ companyName, filing }: { companyName: string; filing: SecFilingWithSummary }) {
   const summary = filing.summary;
   const group = filing.earningsGroup;
-  const report = filing.analysis;
+  // The page can receive snapshots from an older backend as well as current D1 reads.
+  const parsed = filing.analysis?.reader ? parseSecReaderReport(filing.analysis.reader) : undefined;
+  const renderWarnings = [...new Set([...(parsed?.reader?.presentationWarnings ?? []), ...(parsed?.warnings ?? [])])];
+  const report = filing.analysis ? { ...filing.analysis, reader: parsed?.reader,
+    dataQuality: { ...filing.analysis.dataQuality, warnings: [...new Set([...filing.analysis.dataQuality.warnings, ...renderWarnings])] } } : undefined;
   const reader = report?.reader;
   const reportReady = Boolean(summary?.report);
   const composed = report?.presentation?.version === "sec-presentation.v1" && report.presentation.sections.length > 0;
@@ -147,6 +152,7 @@ export function SecReportDocument({ companyName, filing }: { companyName: string
           <div><dt>生成日期</dt><dd>{summary?.generatedAt.slice(0, 10) ?? "—"}</dd></div>
         </dl>
       </header>
+      {renderWarnings.length > 0 && <p role="status" className="sec-report-empty">部分图文无法完整显示，已保留可用正文。详情见数据质量。</p>}
       {!reportReady ? (
         <section className="sec-report-pending" aria-labelledby="sec-report-pending-title">
           <h2 id="sec-report-pending-title">完整报告生成中</h2>

@@ -21,6 +21,7 @@ test("reader visual plan reaches HTML with a bar chart, caption, comparison labe
   for (const section of report.reader!.sections) delete section.visual;
   report.reader!.sections[0].chartMetricKey = "revenue";
   const legacy = renderToStaticMarkup(<SecReportDocument companyName="示例" filing={filing} />);
-  assert.match(legacy, /<polyline /);
+  assert.match(legacy, /data-chart-kind="comparison"/);
+  assert.doesNotMatch(legacy, /<polyline /); // Two observations do not imply an intervening trend.
   assert.match(legacy, /data-layout="essay"/);
 });

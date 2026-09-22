@@ -1,3 +1,4 @@
+import { parseSecReaderReport } from "../../../../shared/analysis-runtime/sec-reader-schema.ts";
 import { earningsKey } from "./earnings.ts";
 import type { SecEarningsGroup } from "../../../../shared/analysis-contract/report.ts";
 import { SecAnalysisJobRepository } from "./d1-jobs.ts";
@@ -179,7 +180,7 @@ export class D1SecRepository implements SecRepository {
       ORDER BY generated_at DESC, rowid DESC
       LIMIT 1
     `).bind(ticker, periodId).first<{ payload: string }>();
-    return row ? parseJson<PublishedSecReport>(row.payload) : null;
+    return row ? normalizeStoredReader(parseJson<PublishedSecReport>(row.payload)) : null;
   }
 
   async getReportSnapshot(ticker: string, accession: string, reportDate: string, reportVersion: string): Promise<SecFilingWithSummary | null> {
@@ -189,7 +190,7 @@ export class D1SecRepository implements SecRepository {
         AND verification_status IN ('verified', 'partial')
       LIMIT 1
     `).bind(ticker, reportVersion).first<{ payload: string }>();
-    const report = row ? parseJson<PublishedSecReport>(row.payload) : null;
+    const report = row ? normalizeStoredReader(parseJson<PublishedSecReport>(row.payload)) : null;
     const snapshot = report?.publication;
     if (!report || !snapshot || snapshot.filing.ticker !== ticker
       || snapshot.filing.accessionNumber !== accession
@@ -693,4 +694,13 @@ export function historyFromRows(rows: Array<{
       annual: observations.filter((item) => item.seriesId === seriesId && item.periodScope === "annual").slice(0, 5),
     })),
   };
+}
+
+/** Invalid media is isolated; a damaged/unknown document falls back to its saved prose. */
+function normalizeStoredReader(report: PublishedSecReport | null): PublishedSecReport | null {
+  if (!report?.reader) return report;
+  const parsed = parseSecReaderReport(report.reader);
+  const next = { ...report, reader: parsed.reader };
+  if (parsed.warnings.length) next.dataQuality = { ...report.dataQuality, warnings: [...new Set([...(report.dataQuality?.warnings ?? []), ...parsed.warnings])] };
+  return next;
 }

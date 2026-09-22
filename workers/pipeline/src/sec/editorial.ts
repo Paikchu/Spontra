@@ -1,3 +1,4 @@
+import { readerContentText } from "../../../../shared/analysis-runtime/sec-reader-schema.ts";
 import { SEC_REPORT_STYLE_RULES } from "../../../../shared/analysis-contract/sec-reader.ts";
 import type { SecNodePlan, SecNodeResult } from "./sec.ts";
 import type { ManagerReview } from "./analysis.ts";
@@ -7,7 +8,7 @@ import type { SecFinancialLens, SecReaderReport } from "../../../../shared/analy
 export function assertReaderIntegrity(reader: SecReaderReport, lens: SecFinancialLens, coreText: string[] = []) {
   const otherText = [...coreText, ...reader.changes.flatMap(c => [c.topic, c.prior, c.current, c.implication]), ...reader.watch.flatMap(w => [w.condition, w.consequence])];
   for (const section of [...reader.sections, { id: "核心结论与变化表", title: "", paragraphs: otherText, takeaway: "" }]) {
-    const text = [section.title, ...section.paragraphs, section.takeaway].join("\n");
+    const text = [section.title, ...("content" in section && section.content ? readerContentText(section.content) : section.paragraphs), section.takeaway].join("\n");
     if (/\b(?:requiredTopics|nodeId|block:\d|xbrl:|derived:)/.test(text)) throw new Error(`${section.id}: 正文暴露内部字段或证据编号，请改成普通读者语言并保留结构化evidenceIds`);
     if (lens.cashBridge?.adjustedFCF === undefined && /(?:页面|头部).{0,25}(?:已|固定).{0,15}(?:并列|两种)/.test(text)) throw new Error(`${section.id}: 页面没有第二种FCF，不能声称已并列展示`);
     for (const adjustment of lens.cashBridge?.adjustments ?? []) {
@@ -71,8 +72,9 @@ export const EDITORIAL_PATCH_PROMPT = [
   "只替换问题涉及的章节，或补写确实遗漏的章节。保留其他章节原文，不删除已有主题、不只补nodeId。修改时保留该节已经正确覆盖的主题和证据。同步修正受影响的标题、核心结论、变化表和证伪条件。",
   "只有financialLens.cashBridge.adjustedFCF存在时页面才并列展示两种计算值；缺失时禁止声称已并列展示。算式以financialLens的有符号adjustments为准，正值是加回而非扣除，不能只依据Less行标题判断。正文解释口径、重复计入可能性与义务，不再复述调节表算式。",
   "allowedSectionIds非null时只可替换这些章节；拒绝的补丁不是已应用内容，按patchError修正后再次给补丁，不能扩大编辑范围。正文不得出现block编号、requiredTopics、nodeId或编排说明。",
+  "v2修订在content块中完成；必须保持原section.id和每个现有块blockId，不因改写或移动而重建ID。paragraphs为系统兼容投影，不用单独编辑。",
   "必须遵守readerSchema及requiredTopics；缺证据的客户集中度/合同条款明确作为限制回答，不能编造身份、占比或条款。新增段落仍须有支持已知事实的evidenceIds。",
-  "只输出JSON补丁，不输出整篇，不生成财务数据或HTML。replaceSections使用原稿sec-reader-N的sectionId；section为完整修订后的该节。未改变的字段省略。",
+  "只输出JSON补丁，不输出整篇，不生成财务数据或HTML。replaceSections.sectionId必须逐字使用原稿章节的id（可能是语义ID），禁止改成sec-reader-N或按序号重新编号；section为完整修订后的该节。未改变的字段省略。",
   'schema: {"replaceSections":[{"sectionId":"sec-reader-1","section":{...完整该节...}}],"appendSections":[{...完整新增节...}],"headline"?:string,"bullets"?:array,"analystView"?:string,"changes"?:array,"watch"?:array,"limitations"?:array}。changes/watch/limitations替换readerReport对应列表；必须保留未受影响的条目。',
 ].join("\n");
 
@@ -93,9 +95,9 @@ export function applyEditorialPatch(draft: Record<string, unknown>, value: unkno
     const beforeNodes = rows(object(sections[index]).nodeIds);
     const afterNodes = rows(object(r.section).nodeIds);
     if (beforeNodes.some((id) => !afterNodes.includes(id))) throw new Error("Editorial patch removes previously covered topics");
-    sections[index] = { ...object(r.section), id: `sec-reader-${index + 1}` };
+    sections[index] = { ...object(r.section), id: object(sections[index]).id || `sec-reader-${index + 1}` };
   }
-  for (const section of rows(patch.appendSections)) sections.push({ ...object(section), id: `sec-reader-${sections.length + 1}` });
+  for (const section of rows(patch.appendSections)) sections.push({ ...object(section), id: object(section).id || `sec-reader-${sections.length + 1}` });
   reader.sections = sections;
   for (const field of ["changes", "watch", "limitations"]) if (field in patch) {
     if (!Array.isArray(patch[field])) throw new Error(`Editorial patch ${field} must be an array`);

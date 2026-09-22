@@ -1,3 +1,4 @@
+import { SEC_READER_JSON_SCHEMA } from "../../../../../shared/analysis-runtime/sec-reader-schema.ts";
 import { FUNDAMENTAL_METRIC_CATALOG, FUNDAMENTAL_METRIC_CATALOG_VERSION } from "../../fundamentals/fundamental-metrics.ts";
 import { COMPANY_ANALYSIS_SCHEMA_VERSION } from "../../company-analysis/contracts.ts";
 import { FUNDAMENTALS_API_SCHEMA_VERSION } from "../../../../../shared/analysis-contract/fundamentals.ts";
@@ -142,10 +143,7 @@ const publishedReport: JsonSchema = {
     periodId: { type: "string" },
     reportVersion: { type: "string" },
     headline: { type: "string" },
-    reader: { type: "object", required: ["version", "changes", "sections", "watch", "limitations"], properties: {
-      version: { const: "sec-reader.v1" }, changes: { type: "array", minItems: 1 }, sections: { type: "array", minItems: 3, maxItems: 8 },
-      watch: { type: "array", minItems: 1 }, limitations: { type: "array" },
-    } },
+    reader: SEC_READER_JSON_SCHEMA as JsonSchema,
     financialLens: { type: "object", required: ["missingMetrics", "limitations"] },
     marketSnapshot: { type: "object", required: ["status", "asOf", "source", "sourceUrl", "limitations"], properties: { status: { enum: ["available", "unavailable"] } } },
     editorialReview: { type: "object", required: ["status", "reviewedAt"], properties: { status: { const: "passed" }, reviewedAt: { type: "string" } } },

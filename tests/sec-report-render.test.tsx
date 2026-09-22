@@ -112,7 +112,7 @@ test('chart displays ratios as percentages and preserves gaps between observatio
   const { SecComposedSection } = await import('../components/earning-report/report-blocks/SecComposedSection');
   const report = { keyMetrics: [] } as unknown as import('../shared/analysis-contract/report').PublishedSecReport;
   const html = renderToStaticMarkup(<SecComposedSection report={report} section={{ id: 'chart', title: '毛利率', layout: 'flow', blocks: [{ id: 'margin', type: 'sec_chart', title: '毛利率', mark: 'line', trend: { metricKey: 'gross_margin', unit: 'ratio', basis: 'gaap', periodScope: 'quarter', points: [{ date: '2025-01-01', value: 0.25, accession: 'a' }, { date: '2025-04-01', value: 0.5, accession: 'b' }, { date: '2026-01-01', value: 0.6, accession: 'c' }] } }] }} />);
-  assert.match(html, />25%<\/text>/);
+  assert.match(html, /report-content-chart-label[^>]*>25%<\/span>/);
   assert.match(html, /data-chart-value="0.25">25%/);
   const points = html.match(/<polyline points="([^"]+)"/)?.[1].split(' ').map((point) => Number(point.split(',')[0]));
   assert.ok(points);

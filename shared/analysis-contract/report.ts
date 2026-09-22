@@ -166,7 +166,7 @@ export type SecFiling = {
 };
 
 export type SecFilingSummary = {
-  readerVersion?: "sec-reader.v1";
+  readerVersion?: "sec-reader.v1" | "sec-reader.v2";
   discovery?: SecDiscovery;
   earningsGroup?: SecEarningsGroup;
   ticker: string;

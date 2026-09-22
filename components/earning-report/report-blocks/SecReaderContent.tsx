@@ -2,7 +2,9 @@ import type { PublishedSecReport, SecNodeResult } from "@/shared/analysis-contra
 import type { SecReaderReport } from "@/shared/analysis-contract/sec-reader.ts";
 import { formatSecMetricValue, formatSecMetricLabel } from "@/lib/earning-report/web/sec-metric-format.ts";
 import { RichText } from "../rich-text/RichText.tsx";
-import { SecComposedSection } from "./SecComposedSection.tsx";
+import { ReportContentRenderer } from "./ReportContentRenderer.tsx";
+import { ReportMediaGroup } from "./ReportMediaGroup.tsx";
+import { readableTrend, SecTrendFigure, SecTrendSource } from "./SecTrendFigure.tsx";
 
 const amount = (v: number, currency: string) => formatSecMetricValue("amount", String(v), currency, currency);
 
@@ -67,16 +69,25 @@ export function ReaderSection({ section, report, nodes }: { section: SecReaderRe
   const selected = nodes.filter((n) => section.nodeIds.includes(n.id));
   const evidence = selected.flatMap((n) => n.evidence).filter((e, i, all) => all.findIndex((other) => other.excerpt === e.excerpt) === i).slice(0, 8);
   const visual = section.visual;
-  const trend = report.trends?.find((t) => t.metricKey === (visual?.chart?.metricKey ?? section.chartMetricKey));
+  const trend = readableTrend(report.trends?.find((t) => t.metricKey === (visual?.chart?.metricKey ?? section.chartMetricKey)));
   const layout = visual?.layout === "chart_focus" && !trend ? "essay" : visual?.layout ?? "essay";
+  const paragraph = (p: string, i: number) => <div className="sec-reader-paragraph" key={i}>{layout === "comparison" && visual?.paragraphLabels?.[i] && <h3>{visual.paragraphLabels[i]}</h3>}<RichText text={p} /></div>;
+  const chartTitle = trend ? visual?.chart?.title || `${formatSecMetricLabel(trend.metricKey)}的变化` : "";
+  const paragraphLabels = layout === "comparison" && section.content && visual?.paragraphLabels
+    ? Object.fromEntries(section.content.filter((block) => block.type === "markdown").map((block, i) => [block.blockId, visual.paragraphLabels?.[i] ?? ""])) : undefined;
   return <div className="sec-reader-article" data-role={section.role} data-layout={layout}>
     {section.role === "valuation" && <MarketContext report={report} />}
-    <div className="sec-reader-layout">
-    <div className="sec-report-body">{section.paragraphs.map((p, i) => <div className="sec-reader-paragraph" key={i}>{layout === "comparison" && visual?.paragraphLabels?.[i] && <h3>{visual.paragraphLabels[i]}</h3>}<RichText text={p} /></div>)}</div>
+    <div className={trend || section.content?.length ? "sec-reader-content-layout" : "sec-reader-layout"}>
+    {section.content?.length ? <ReportContentRenderer content={section.content} context={{ report, nodes, paragraphLabels }} />
+      : trend ? <div className="report-content" data-report-surface="article" data-report-phase="final">
+        <ReportMediaGroup lead={<div className="sec-reader-flow-prose">{paragraph(section.paragraphs[0], 0)}</div>}
+          media={<SecTrendFigure id={`${section.id}-trend`} title={chartTitle} trend={trend} mark={visual?.chart?.mark ?? "line"} caption={visual?.chart?.caption} />}
+          sources={<SecTrendSource title={chartTitle} trend={trend} />}>
+          <div className="sec-reader-flow-prose">{section.paragraphs.slice(1).map((p, i) => paragraph(p, i + 1))}</div>
+        </ReportMediaGroup>
+      </div> : <div className="sec-report-body">{section.paragraphs.map(paragraph)}</div>}
     <p className="sec-reader-takeaway"><span>分析结论</span>{section.takeaway}</p>
     </div>
-    {trend && <SecComposedSection report={report} section={{ id: `${section.id}-chart`, title: section.title, layout: "flow", blocks: [{ type: "sec_chart", id: `${section.id}-trend`, title: visual?.chart?.title || `${formatSecMetricLabel(trend.metricKey)}的变化`, mark: visual?.chart?.mark ?? "line", trend }] }} />}
-    {trend && visual?.chart?.caption && <p className="sec-reader-chart-caption">{visual.chart.caption}</p>}
     {evidence.length > 0 && <details className="sec-report-evidence"><summary>核对原文 · {evidence.length} 段</summary>{evidence.map((e, i) => <blockquote key={i}><p>{e.excerpt}</p><footer>字符位置 {e.start}–{e.end}</footer></blockquote>)}</details>}
   </div>;
 }

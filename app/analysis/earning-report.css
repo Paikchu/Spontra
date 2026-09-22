@@ -3261,6 +3261,8 @@
 .earning-report .sec-report-shell .sec-report-metrics article { padding: 16px; min-height: 112px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); color: var(--card-foreground); }
 .earning-report .sec-report-shell .report-block-callout,
 .earning-report .sec-report-shell .sec-report-investment-view { border: 1px solid var(--border); border-radius: var(--radius); background: var(--muted); color: var(--foreground); }
+/* The unlayered legacy global rule offsets this full-width block by 46px. */
+.earning-report .sec-report-shell .sec-report-investment-view { margin-inline: 0; }
 .earning-report .sec-report-shell .report-block-callout { border-inline-start: 3px solid var(--primary); }
 .earning-report .sec-report-shell .report-block-callout[data-tone="positive"] { border-inline-start-color: var(--color-profit); }
 .earning-report .sec-report-shell .report-block-callout[data-tone="negative"] { border-inline-start-color: var(--destructive); }
