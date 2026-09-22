@@ -28,6 +28,8 @@
 
 原报告中存在已保存的标题/要点句尾截断。本次修复防止新报告再次被截断，正式验收需重新生成并检查新版本。
 
+补充的合成媒体组件用例在 1440/390/320 px 通过：图片延迟加载前后尺寸和位置不变、桌面环绕后文字恢复全宽、窄屏单列、长公式仅在自身容器滚动、图片失败保留替代文字与图注。这些用例明确标为 Synthetic，未修改原 ORCL 正文或数值，也不代表模型图片生成链路验收。
+
 ## 自动化验证
 
 前端与边界共 31 项：
@@ -36,10 +38,10 @@
 npx tsx --tsconfig tsconfig.test.json --test tests/earning-report-rich-text.test.ts tests/sec-report-render.test.tsx tests/sec-reader-visual.test.tsx tests/sec-content-renderer.test.tsx tests/pipeline-boundary.test.ts
 ```
 
-后端共 69 项：
+后端共 74 项：
 
 ```sh
-node --experimental-strip-types --test tests/pipeline/sec-reader-v2.test.ts tests/pipeline/sec-reader.test.ts tests/pipeline/sec-editorial.test.ts tests/pipeline/analysis-contract.test.ts tests/pipeline/analysis-read-api.test.ts tests/pipeline/sec-d1.test.ts
+node --experimental-strip-types --test tests/pipeline/sec-reader-v2.test.ts tests/pipeline/sec-reader.test.ts tests/pipeline/sec-editorial.test.ts tests/pipeline/analysis-contract.test.ts tests/pipeline/analysis-read-api.test.ts tests/pipeline/sec-d1.test.ts tests/pipeline/sec-reader-market.test.ts
 ```
 
 类型、边界、构建与 Pipeline dry-run 已通过：`npm run typecheck`、`npm run typecheck:pipeline`、`npm run check:pipeline:boundary`、`npm run build`、`npm run worker:pipeline:check`。
@@ -49,3 +51,11 @@ node --experimental-strip-types --test tests/pipeline/sec-reader-v2.test.ts test
 用户已授权通过 `origin/main` 自动部署后在线重新生成。须分别确认主应用和 Pipeline 对应同一提交的自动构建成功，然后启动指定 accession、`requestedBy=manual`、`regenerateReport=true` 的工作流。
 
 验收必须核对新 run、新 `reportVersion`、`generatedAt`、`reader.version=sec-reader.v2`、独立审稿结果及真实文章页；不能把旧报告回放或自动部署成功作为新生成验收通过。对话流暂不测试。
+
+## 线上生成回归发现
+
+首轮线上运行使用 `68616ec`，结构与引用校验拦截了字符串内容块、无合法来源的行情段落及不完整章节，未覆盖旧发布报告。
+
+其中行情引用存在确定性协议缺口：模型输入包含冻结行情，但内容块允许引用集合只有 SEC 证据。现为有效行情快照生成系统来源 ID，写入同一发布快照，并在综合写作、局部修订和独立审稿中使用；其他快照或模型自造的来源 ID 不被接受。该来源仅支持行情字段，不作为 SEC 经营财务证据。内容块补充真实对象示例，字符串块仍须修复后通过严格校验，不能自动包装并编造引用。
+
+这一轮失败是修复依据，不是新版生成验收成功。后续必须重新核对修复提交的自动部署及新实例的实际发布结果。

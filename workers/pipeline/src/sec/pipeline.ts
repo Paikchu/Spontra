@@ -5,7 +5,7 @@ import { buildSecTrends, composeSecPresentation } from "./presentation.ts";
 import { CONTINUITY_PROMPT, continuityReviewNode } from "./continuity.ts";
 import { applyEditorialPatch, assertReaderIntegrity, editorialRequirements, EDITORIAL_PATCH_PROMPT } from "./editorial.ts";
 import { SEC_READER_SCHEMA, SEC_REPORT_STYLE_RULES } from "../../../../shared/analysis-contract/sec-reader.ts";
-import { buildFinancialLens, normalizeReaderReport, normalizeReaderSummaryText, readerArticleText, RESEARCH_RULES } from "./reader.ts";
+import { buildFinancialLens, normalizeReaderReport, normalizeReaderSummaryText, identifyReaderMarketSnapshot, readerArticleText, RESEARCH_RULES } from "./reader.ts";
 import {
   buildFilingBlocks,
   buildPeriodIdentity,
@@ -475,13 +475,15 @@ export async function summarizePreparedSecFiling(
     ...usableNodes.flatMap((node) => node.evidenceIds ?? []),
     ...finalBrief.currentFacts.flatMap((fact) => fact.evidenceIds),
   ].filter((id) => validEvidenceIds.includes(id)));
+  const marketSnapshot = await identifyReaderMarketSnapshot(prepared.filing.ticker, finalBrief.marketSnapshot);
+  const readerEvidenceIds = new Set([...reviewEvidenceIds, ...(marketSnapshot?.evidenceId ? [marketSnapshot.evidenceId] : [])]);
   const fiscalInput = prepared.fiscalSourceExcerpts ?? [];
   const financialLens = buildFinancialLens(finalBrief, nodes, prepared.filing.reportDate, editorialState?.primaryEvidence);
   const priorEvidenceIds = finalBrief.history.series.flatMap((s) => [...s.quarters, ...s.annual])
     .filter((p) => p.endDate < prepared.filing.reportDate && p.sourceFiledAt.slice(0, 10) <= prepared.filing.filingDate).map((p) => p.observationId);
   const summaryPayload = {
     financialLens,
-    marketSnapshot: finalBrief.marketSnapshot ?? { status: "unavailable", limitations: ["未提供行情，不能评价价格是否有吸引力。"] },
+    marketSnapshot: marketSnapshot ?? { status: "unavailable", limitations: ["未提供行情，不能评价价格是否有吸引力。"] },
     priorEvidenceIds,
     editorialFeedback: editorialFeedback ?? [],
     requiredTopics: editorialRequirements(plan, nodes, finalReview),
@@ -495,7 +497,7 @@ export async function summarizePreparedSecFiling(
     availableCharts: trends,
     availableAssets: [],
     sourceMaterials: prepared.sourceMaterials ?? [],
-    allowedEvidenceIds: [...reviewEvidenceIds],
+    allowedEvidenceIds: [...readerEvidenceIds],
     allowedMetricKeys: [...new Set([...finalBrief.allowedMetricKeys, ...nodeFacts.map((fact) => fact.metricKey)])],
     outputSchema: {
       headline: "string",
@@ -521,7 +523,7 @@ export async function summarizePreparedSecFiling(
         originalDraft: summaryValue, issues: problems, requiredTopics: summaryPayload.requiredTopics,
         primaryEvidence: summaryPayload.primaryEvidence, facts: finalBrief.currentFacts,
         nodeAnalyses: summaryPayload.nodeAnalyses, financialLens, marketSnapshot: summaryPayload.marketSnapshot,
-        readerSchema: SEC_READER_SCHEMA, availableAssets: [], allowedEvidenceIds: [...reviewEvidenceIds], priorEvidenceIds, availableCharts: trends,
+        readerSchema: SEC_READER_SCHEMA, availableAssets: [], allowedEvidenceIds: [...readerEvidenceIds], priorEvidenceIds, availableCharts: trends,
         allowedSectionIds: allowedSections ? [...allowedSections] : null, rejectedPatch, patchError,
       });
       try { summaryValue = applyEditorialPatch(summaryValue, patch, allowedSections); }
@@ -541,7 +543,7 @@ export async function summarizePreparedSecFiling(
     try {
       if (editorialState && !summaryValue.readerReport) throw new Error("Reader report is missing; add grounded sections, changes and watch conditions using the patch schema");
       reader = summaryValue.readerReport ? normalizeReaderReport(summaryValue.readerReport, {
-        nodes, plan, currentEvidence: reviewEvidenceIds, priorEvidence: new Set(priorEvidenceIds), chartKeys: new Set(trends.map((t) => t.metricKey)), requireVisual: true,
+        nodes, plan, currentEvidence: readerEvidenceIds, priorEvidence: new Set(priorEvidenceIds), chartKeys: new Set(trends.map((t) => t.metricKey)), requireVisual: true,
       }) : undefined;
       readerSummary = reader ? normalizeReaderSummaryText(summaryValue) : undefined;
       if (reader && readerSummary) {
@@ -573,7 +575,7 @@ export async function summarizePreparedSecFiling(
   report = addDeterministicDeltas(report, qoq, yoy);
   const presentation = reader ? undefined : composeSecPresentation(summaryValue.presentation, usableNodes, report.keyMetrics, trends);
   report = { ...report, ...(presentation ? { presentation } : {}), ...(reader ? { reader } : {}), financialLens,
-    marketSnapshot: finalBrief.marketSnapshot, trends, sourceMaterials: prepared.sourceMaterials };
+    marketSnapshot, trends, sourceMaterials: prepared.sourceMaterials };
   report = {
     ...report,
     dataQuality: {

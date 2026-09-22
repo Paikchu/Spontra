@@ -14,6 +14,8 @@ export const SEC_READER_VISUAL_CATALOG = {
 } as const;
 
 export type SecMarketSnapshot = {
+  /** System-derived identity of this frozen market snapshot, never an SEC evidence ID. */
+  evidenceId?: string;
   status: "available" | "unavailable";
   asOf: string;
   source: string;
@@ -82,6 +84,10 @@ export const SEC_READER_SCHEMA = {
     callout: "{...common,type:callout,tone:neutral|positive|negative|caution,title?:string,text}",
     evidence: "{...common,type:evidence,title?:string}",
   },
+  contentExample: [
+    { blockId: "cash-definition", type: "markdown", markdown: "此处填写完整正文", evidenceIds: ["替换为allowedEvidenceIds中的真实ID"], groupId: "cash-discussion" },
+    { blockId: "cash-explanation", type: "markdown", markdown: "此处填写下一段解释", evidenceIds: ["替换为allowedEvidenceIds中的真实ID"], groupId: "cash-discussion" },
+  ],
   visualCatalog: SEC_READER_VISUAL_CATALOG,
   changes: "[{topic,kind:new|changed|continuing|not_comparable,prior,current,implication,evidenceIds,priorEvidenceIds}]",
   sections: "[{id:稳定英文主题ID,title,role:business|earnings_cash|valuation|bear_case|outlook,content:[contentBlocks中定义的有序块],takeaway,nodeIds:[string],evidenceIds:[string],visual:{layout:essay|spotlight|comparison|chart_focus,rationale,paragraphLabels?:[string],noChartReason?:string}}]",
@@ -90,14 +96,14 @@ export const SEC_READER_SCHEMA = {
   rules: [
     SEC_REPORT_STYLE_RULES,
     "输出version=sec-reader.v2，写一篇可独立阅读、逻辑递进的完整文章；通常3–8节、最多16节，每节2–4个markdown正文块（最多8个），标题围绕本公司真正的问题自拟。不是节点拼接或摘要。",
-    "content为唯一正文，按读者阅读顺序穿插正文与媒体。paragraphs由系统投影，不要再写第二份正文。相关图文用相同groupId且连续排列，例如首段markdown→chart(layout=wrap)→解释markdown，三块共用groupId。小型比较图可选wrap，复杂图选wide；布局不改变内容顺序。",
+    "content每个元素必须是JSON对象，不能是字符串或字符串化JSON；markdown正文写在对象的markdown字段，必须同时提供blockId/type/evidenceIds。contentExample只是对象结构示例，不能复制示例文字或占位引用。content为唯一正文，按读者阅读顺序穿插正文与媒体。paragraphs由系统投影，不要再写第二份正文。相关图文用相同groupId且连续排列，例如首段markdown→chart(layout=wrap)→解释markdown，三块共用groupId。小型比较图可选wrap，复杂图选wide；布局不改变内容顺序。",
     "每块必须有稳定且全篇唯一的blockId，例如cash-definition或capex-comparison；修订文字、移动块时保持原blockId。禁止按段落内容hash生成ID。图表只能引用availableCharts，不得自造points；图片只能引用availableAssets（为空时禁止image），不得输出URL、base64、HTML或内联SVG。",
     "图注、公式、表格、提示中的所有事实和数字同正文一样必须由evidenceIds支持；公式给出解释，假设单列assumption；表格列数一致，不能填入推测财务数值。美元金额不写单美元数学标记。",
     "sections必须包含独立bear_case和valuation；其余章节按重要性选择。高重要性节点必须在相关章节被整合，低重要性节点留在核查材料。",
     "每节takeaway用一句简洁、客观的话说明该节的分析结论及投资含义；术语首次出现时翻译，不以审阅流程或证据ID充当正文。",
     "changes挑选1–5个重要变化，明确前期、本期和判断变化。priorEvidenceIds只能使用给定的历史原始财务证据；无可比证据时填not_comparable，不把本次发现等同首次发生。",
     "watch给出1–4条可观察条件、检查时点和触发后需要推翻或修改的判断；数字阈值无来源时标为分析假设，不伪装成管理层指引。",
-    "evidenceIds只能引用本期提供的证据；nodeIds只能引用已完成节点。chartMetricKey只能选availableCharts且必须直接服务于本节问题。",
+    "evidenceIds只能引用allowedEvidenceIds。行情块用marketSnapshot.evidenceId（如存在），该ID仅支持同一冻结快照中的价格、日期、估值字段和市场反应；它不是SEC原文，不能支持经营财务事实。缺少合法行情ID时不虚构当前股价或估值；nodeIds只能引用已完成节点。chartMetricKey只能选availableCharts且必须直接服务于本节问题。",
     "财务数字从facts及financialLens取，行情和估值只能从marketSnapshot取；无数据时明确限制。保留币种、期间、口径及约数标记。",
   ],
 } as const;

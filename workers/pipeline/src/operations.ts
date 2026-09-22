@@ -6,7 +6,7 @@ export { SecModelHttpError } from "./model-recovery.ts";
 import { fiscalPeriodInput } from "./sec/fiscal-period-ai.ts";
 import { fetchSecMarketSnapshot } from "./sec/market.ts";
 import { normalizeEditorialIssues, editorialRequirements } from "./sec/editorial.ts";
-import { EDITORIAL_REVIEW_PROMPT } from "./sec/reader.ts";
+import { EDITORIAL_REVIEW_PROMPT, identifyReaderMarketSnapshot } from "./sec/reader.ts";
 import { refreshFiscalPeriods, readFiscalPeriod } from "./sec/fiscal-period.ts";
 import { attachDiscovery, auditDisclosureCoverage, discoveryChunkCount, scanDisclosureChunk, type DiscoveryChunk } from "./sec/discovery.ts";
 import { buildEarningsGroups, classificationKey, combineEarningsDocuments, earningsKey, identifyEarningsPeriod, isPeriodic } from "./sec/earnings.ts";
@@ -340,9 +340,10 @@ export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof
     },
     auditReport: async (reference, nodes, brief, result, round, execution, context) => {
       if (!result.artifact.report.reader || !result.summary) throw new Error("Publication requires a complete reader report");
+      const marketSnapshot = await identifyReaderMarketSnapshot(result.artifact.filing.ticker, result.artifact.report.marketSnapshot);
       const audit = await modelFor(execution)(`editorial-review:${round}`, EDITORIAL_REVIEW_PROMPT, {
           headline: result.summary.headline, bullets: result.summary.bullets, analystView: result.summary.analystView,
-          reader: result.artifact.report.reader, availableCharts: result.artifact.report.trends ?? [], financialLens: result.artifact.report.financialLens, marketSnapshot: result.artifact.report.marketSnapshot,
+          reader: result.artifact.report.reader, availableCharts: result.artifact.report.trends ?? [], financialLens: result.artifact.report.financialLens, marketSnapshot,
           facts: brief.currentFacts, comparisons: brief.comparisons, history: brief.history, historicalReports: brief.reportContinuity,
           nodes: nodes.map(({ id, title, facts, evidence, narrative, findings }) => ({ id, title, facts, evidence, narrative, findings })),
           limitations: result.artifact.report.dataQuality,
@@ -355,7 +356,7 @@ export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof
             placement: "只展示实际存在的字段；adjustedFCFVisible=false时页面没有第二种FCF，禁止声称已并列展示" },
       });
       await putArtifact(env.SEC_FILINGS, reference, `editorial-review/${round}`, audit);
-      const allowed = new Set([...brief.currentFacts.flatMap((f) => f.evidenceIds), ...nodes.flatMap((n) => n.evidenceIds ?? [])]);
+      const allowed = new Set([...brief.currentFacts.flatMap((f) => f.evidenceIds), ...nodes.flatMap((n) => n.evidenceIds ?? []), ...(marketSnapshot?.evidenceId ? [marketSnapshot.evidenceId] : [])]);
       const findings = normalizeEditorialIssues(audit, allowed);
       return { findings, issues: findings.filter((i) => i.severity !== "minor" && i.category !== "presentation").map((i) => `${i.id}: ${i.detail} 通过条件：${i.acceptance}`), reviewedAt: new Date().toISOString() };
     },

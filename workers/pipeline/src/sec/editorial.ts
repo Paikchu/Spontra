@@ -72,6 +72,7 @@ export const EDITORIAL_PATCH_PROMPT = [
   "只替换问题涉及的章节，或补写确实遗漏的章节。保留其他章节原文，不删除已有主题、不只补nodeId。修改时保留该节已经正确覆盖的主题和证据。同步修正受影响的标题、核心结论、变化表和证伪条件。",
   "只有financialLens.cashBridge.adjustedFCF存在时页面才并列展示两种计算值；缺失时禁止声称已并列展示。算式以financialLens的有符号adjustments为准，正值是加回而非扣除，不能只依据Less行标题判断。正文解释口径、重复计入可能性与义务，不再复述调节表算式。",
   "allowedSectionIds非null时只可替换这些章节；拒绝的补丁不是已应用内容，按patchError修正后再次给补丁，不能扩大编辑范围。正文不得出现block编号、requiredTopics、nodeId或编排说明。",
+  "content必须为对象数组，不能含字符串；若原稿有字符串块，依据同节论述与提供的原文证据修成完整markdown对象，补足合法blockId/type/markdown/evidenceIds，不能凭空补事实或随意借用无关引用。块内evidenceIds可纠正，但只能从allowedEvidenceIds选取。行情引用只能使用marketSnapshot.evidenceId支持同一冻结快照。",
   "v2修订在content块中完成；必须保持原section.id和每个现有块blockId，不因改写或移动而重建ID。paragraphs为系统兼容投影，不用单独编辑。",
   "必须遵守readerSchema及requiredTopics；缺证据的客户集中度/合同条款明确作为限制回答，不能编造身份、占比或条款。新增段落仍须有支持已知事实的evidenceIds。",
   "只输出JSON补丁，不输出整篇，不生成财务数据或HTML。replaceSections.sectionId必须逐字使用原稿章节的id（可能是语义ID），禁止改成sec-reader-N或按序号重新编号；section为完整修订后的该节。未改变的字段省略。",

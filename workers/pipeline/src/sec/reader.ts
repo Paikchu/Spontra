@@ -1,7 +1,7 @@
 import { SEC_READER_CONTENT_BLOCK_SCHEMA, SEC_READER_ASSET_SCHEMA, SEC_READER_REPORT_SCHEMA, SEC_READER_MAX_SECTIONS, readerContentText } from "../../../../shared/analysis-runtime/sec-reader-schema.ts";
 import type { SecReaderAsset, SecReaderContentBlock } from "../../../../shared/analysis-runtime/sec-reader-schema.ts";
 import { SEC_REPORT_STYLE_RULES } from "../../../../shared/analysis-contract/sec-reader.ts";
-import type { SecFinancialLens, SecReaderReport, SecReaderVisual } from "../../../../shared/analysis-contract/sec-reader.ts";
+import type { SecFinancialLens, SecMarketSnapshot, SecReaderReport, SecReaderVisual } from "../../../../shared/analysis-contract/sec-reader.ts";
 import type { AnalysisFact, SecAnalysisBrief } from "./analysis.ts";
 import type { SecFilingSummary, SecNodePlan, SecNodeResult } from "./sec.ts";
 import { reconcileCapitalOutlay } from "./cash-reconciliation.ts";
@@ -10,6 +10,41 @@ const object = (value: unknown): Record<string, unknown> => value && typeof valu
 const string = (value: unknown, max = 1800) => typeof value === "string" ? value.trim().slice(0, max) : "";
 const list = (value: unknown): unknown[] => Array.isArray(value) ? value : [];
 const refs = (value: unknown, allowed: Set<string>) => [...new Set(list(value).map((v) => string(v, 180)).filter((v) => allowed.has(v)))];
+
+/** Bind citations to the complete frozen quote, so another run's market ID cannot be reused. */
+export async function identifyReaderMarketSnapshot(ticker: string, input: SecMarketSnapshot | undefined): Promise<SecMarketSnapshot | undefined> {
+  if (!input) return;
+  const snapshot = { ...input };
+  delete snapshot.evidenceId;
+  const validDate = (value: unknown): value is string => typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)
+    && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
+  const positive = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && value > 0;
+  if (!/^[A-Z][A-Z0-9.-]{0,9}$/.test(ticker) || snapshot.status !== "available" || !positive(snapshot.price)
+    || !validDate(snapshot.priceDate) || !/^[A-Z]{3}$/.test(snapshot.currency ?? "")
+    || typeof snapshot.asOf !== "string" || !Number.isFinite(Date.parse(snapshot.asOf))
+    || snapshot.priceDate > new Date(snapshot.asOf).toISOString().slice(0, 10)
+    || !snapshot.source?.trim() || !Array.isArray(snapshot.limitations) || snapshot.limitations.some((item) => typeof item !== "string")
+    || snapshot.trailingPE !== undefined && !positive(snapshot.trailingPE)
+    || snapshot.trailingEPS !== undefined && !positive(snapshot.trailingEPS)
+    || snapshot.earningsPeriodEnd !== undefined && !validDate(snapshot.earningsPeriodEnd)) return snapshot;
+  try {
+    const url = new URL(snapshot.sourceUrl);
+    if (url.protocol !== "https:" || url.username || url.password || /[\s\\]/.test(snapshot.sourceUrl)) return snapshot;
+  } catch { return snapshot; }
+  const reaction = snapshot.reaction;
+  if (reaction && (!validDate(reaction.from) || !validDate(reaction.to) || reaction.from >= reaction.to
+    || reaction.to > snapshot.priceDate || !Number.isInteger(reaction.sessions) || reaction.sessions < 1 || reaction.sessions > 3
+    || !Number.isFinite(reaction.changePercent))) return snapshot;
+  // Fixed field order makes identity independent of transport/object-property order.
+  const canonical = { ticker, status: snapshot.status, source: snapshot.source, sourceUrl: snapshot.sourceUrl,
+    asOf: snapshot.asOf, currency: snapshot.currency, price: snapshot.price, priceDate: snapshot.priceDate,
+    trailingPE: snapshot.trailingPE, trailingEPS: snapshot.trailingEPS, earningsPeriodEnd: snapshot.earningsPeriodEnd,
+    reaction: reaction ? { from: reaction.from, to: reaction.to, sessions: reaction.sessions, changePercent: reaction.changePercent } : undefined,
+    limitations: snapshot.limitations };
+  const bytes = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(canonical))));
+  const digest = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return { ...snapshot, evidenceId: `market:${ticker}:${digest}` };
+}
 
 /** Full reports are reviewed as complete prose; event-summary clipping must not rewrite them. */
 export function normalizeReaderSummaryText(value: unknown): Pick<SecFilingSummary, "headline" | "bullets" | "analystView"> {
@@ -72,9 +107,16 @@ export function normalizeReaderReport(value: unknown, args: {
     const paragraphs = content ? content.filter((b) => b.type === "markdown").map((b) => b.markdown) : list(row.paragraphs).map((v) => typeof v === "string" ? v.trim() : "").filter(Boolean);
     const evidenceIds = refs(row.evidenceIds, args.currentEvidence);
     const sources = refs(row.nodeIds, nodeIds);
-    if (!string(row.title) || paragraphs.length < 2 || paragraphs.length > 8 || paragraphs.some((p) => p.length > 1800) || !string(row.takeaway)
-      || !["business", "earnings_cash", "valuation", "bear_case", "outlook"].includes(role)
-      || !evidenceIds.length || !sources.length) throw new Error(`Reader section ${index + 1} lacks complete grounded analysis`);
+    const sectionProblems = [
+      ...(!string(row.title) ? ["title缺失或为空"] : []),
+      ...(paragraphs.length < 2 || paragraphs.length > 8 ? [`markdown正文块数为${paragraphs.length}，必须为2至8个`] : []),
+      ...(paragraphs.some((p) => p.length > 1800) ? ["markdown正文块超过1800字符，应完整拆分或改写"] : []),
+      ...(!string(row.takeaway) ? ["takeaway缺失或为空"] : []),
+      ...(!["business", "earnings_cash", "valuation", "bear_case", "outlook"].includes(role) ? ["role无效，必须为business/earnings_cash/valuation/bear_case/outlook"] : []),
+      ...(!evidenceIds.length ? ["section.evidenceIds没有allowedEvidenceIds中的有效引用；块内引用不能替代章节引用"] : []),
+      ...(!sources.length ? ["section.nodeIds没有已完成分析节点的有效ID"] : []),
+    ];
+    if (sectionProblems.length) throw new Error(`Reader section ${sectionId} (#${index + 1}) lacks complete grounded analysis: ${sectionProblems.join("; ")}`);
     const v = object(row.visual), chart = object(v.chart);
     const contentChart = content?.find((b) => b.type === "chart");
     let layout = string(v.layout) as SecReaderVisual["layout"];
@@ -240,7 +282,7 @@ export const EDITORIAL_REVIEW_PROMPT = [
   "financialLens.cashBridge会在页面固定并列展示standardFCF和adjustedFCF（若有），不要求在正文再次复制表格；审核整份呈现而不是只检查段落。标准FCF序列不能用来表示两种口径。",
   "任何事实纠正都须引用具体原文evidenceIds和原稿quote，列出acceptance通过条件；审稿者提出的解释同样需要证据，不能基于通常会计处理或猜测客户身份要求改写。证据不足时要求补查或收窄断言，不强行填入缺失信息。信息缺口被清楚标注且结论相应受限时可以通过。",
   "sectionIds必须逐字使用输入reader.sections[].id，不能按章节序号重新生成sec-reader-N。requiredTopics必须实质覆盖；nodeId只是定位，不能替代正文。保留此前已解决的问题，新问题仍需给出证据。",
-  "逐条核对输入facts、当前证据摘录与计算框。有证据ID不等于该证据支持因果；数字不得错配期间或口径。用financialLens核对两种FCF方向、债务缺口和折旧假设。行情只能引用marketSnapshot，缺价不可声称便宜/昂贵或虚构目标价。",
+  "逐条核对输入facts、当前证据摘录与计算框。有证据ID不等于该证据支持因果；数字不得错配期间或口径。用financialLens核对两种FCF方向、债务缺口和折旧假设。行情只能引用marketSnapshot，marketSnapshot.evidenceId只支持该冻结快照中的市场字段，不能当作SEC经营财务证据；引用不同快照的ID无效。缺价不可声称便宜/昂贵或虚构目标价。",
   "核对changes的前期基线和正文首次/新增措辞；没有可比前期原始证据时只能说本期披露/无法比较。检查独立空头论点及具体证伪条件、客户集中度等是否按重要性被覆盖。",
   "审查普通读者能否据此解释判断变化，是否有重复、未解释的术语或机器日志；任何重大错误或缺口返回revise。无法核实重大因果也须revise。",
   '只输出JSON：{"verdict":"pass|revise","issues":[{"id":"稳定规则编号","category":"fact|consistency|coverage|evidence|presentation","severity":"critical|major|minor","sectionIds":["sec-reader-1"],"quote":"原稿中的具体原句","evidenceIds":["原文ID"],"detail":"具体问题","acceptance":"可验证的通过条件"}]}。pass不能同时含critical/major问题。',
