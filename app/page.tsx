@@ -6,7 +6,9 @@ import { emptyCalendar } from "@/lib/earnings-live";
 import { buildHeatmapHoldings } from "@/lib/portfolio-heatmap";
 import { buildPortfolioViewModel } from "@/lib/portfolio-view-model";
 import { currentPortfolioSnapshot } from "@/lib/site-data";
+import { DailyReportsHome } from "./daily-reports-home";
 import { PortfolioDashboard } from "./portfolio-dashboard";
+import "./daily-reports-home.css";
 
 
 export const dynamic = "force-dynamic";
@@ -26,6 +28,7 @@ export default async function Home() {
     <>
       <a className="skip-link" href="#main-content"><LocalizedText>跳到主要内容</LocalizedText></a>
       <main className="page-shell" id="main-content">
+        <DailyReportsHome />
         <PortfolioDashboard
           heatmapHoldings={heatmapHoldings}
           positionGroups={portfolio.positionGroups}

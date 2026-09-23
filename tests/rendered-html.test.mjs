@@ -40,12 +40,16 @@ test("server-renders the investment record", async () => {
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Your site is taking shape/i);
 });
 
-test("starts directly with the portfolio without a header or retired sections", async () => {
+test("opens on four sample reports and retains the portfolio below", async () => {
   const html = await (await render()).text();
   assert.doesNotMatch(html, /class="site-header"|class="site-primary-nav"|class="profile-menu"/);
   assert.doesNotMatch(html, /每日复盘|每日投资复盘|今日宏观经济|昨日收盘总结|id="review-panel"/);
+  assert.match(html, /id="daily-reports-title">群聊<\/h1>/);
+  assert.match(html, /示例/);
+  assert.equal((html.match(/class="daily-reports-tile"/g) ?? []).length, 4);
   assert.match(html, /id="portfolio-panel"[^>]*role="region"/);
   assert.match(html, /<h1 class="summary-nav-label" id="portfolio-title">当前净值<\/h1>/);
+  assert.ok(html.indexOf('id="daily-reports-title"') < html.indexOf('id="portfolio-title"'));
 });
 
 test("shows backend net deposits without manual settings", async () => {
