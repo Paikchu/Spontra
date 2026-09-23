@@ -29,10 +29,10 @@ export async function generateMetadata(): Promise<Metadata> {
 
   return {
     title: "MAX · 投资记录",
-    description: "个人投资组合与持仓记录。",
+    description: "个人投资研究与 Agent 汇报：跟进买入理由，核验变化，积累有据可查的研究记录。",
     openGraph: {
       title: "MAX · 投资记录",
-      description: "个人投资组合与持仓记录。",
+      description: "个人投资研究与 Agent 汇报：跟进买入理由，核验变化，积累有据可查的研究记录。",
       type: "website",
       locale: "zh_CN",
       images: [{ url: imageUrl, width: 1200, height: 630, alt: "投资组合当前净值" }],
@@ -40,7 +40,7 @@ export async function generateMetadata(): Promise<Metadata> {
     twitter: {
       card: "summary_large_image",
       title: "MAX · 投资记录",
-      description: "个人投资组合与持仓记录。",
+      description: "个人投资研究与 Agent 汇报：跟进买入理由，核验变化，积累有据可查的研究记录。",
       images: [imageUrl],
     },
   };
