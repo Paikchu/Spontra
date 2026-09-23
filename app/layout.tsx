@@ -4,14 +4,16 @@ import "./globals.css";
 import "./analysis/earning-report.css";
 import "@/components/earning-report/report-blocks/report-content.css";
 import "katex/dist/katex.min.css";
+import "./spontra-ui.css";
 import { AppNavigation } from "./app-navigation";
 import { LanguageProvider } from "./language-provider";
 import { ThemeProvider } from "./theme-control";
 import { themeScript } from "@/lib/theme-script";
 import { NavigationDock } from "@/components/navigation-dock";
+import { SpontraEffects } from "@/components/spontra/effects";
 
 export const viewport: Viewport = {
-  themeColor: "#fafafa",
+  themeColor: "#0d1718",
   colorScheme: "light dark",
   viewportFit: "cover",
 };
@@ -30,6 +32,10 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: "Spontra",
     description: "个人投资研究与 Agent 汇报：跟进买入理由，核验变化，积累有据可查的研究记录。",
+    icons: {
+      icon: [{ url: "/spontra-icon.svg", type: "image/svg+xml" }, { url: "/favicon-32.png", sizes: "32x32", type: "image/png" }],
+      apple: [{ url: "/apple-touch-icon.png", sizes: "180x180" }],
+    },
     openGraph: {
       title: "Spontra",
       description: "个人投资研究与 Agent 汇报：跟进买入理由，核验变化，积累有据可查的研究记录。",
@@ -53,8 +59,8 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-CN" suppressHydrationWarning>
-      <head><script dangerouslySetInnerHTML={{ __html: themeScript }} /></head>
-      <body><ThemeProvider><LanguageProvider><AppNavigation dock={<NavigationDock />}>{children}</AppNavigation></LanguageProvider></ThemeProvider></body>
+      <head><link rel="preload" href="/fonts/Geist-Variable.woff2" as="font" type="font/woff2" crossOrigin="anonymous" /><script dangerouslySetInnerHTML={{ __html: themeScript }} /></head>
+      <body><ThemeProvider><LanguageProvider><AppNavigation dock={<NavigationDock />}>{children}</AppNavigation></LanguageProvider></ThemeProvider><SpontraEffects /></body>
     </html>
   );
 }

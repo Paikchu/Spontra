@@ -40,24 +40,32 @@ test("server-renders the investment record", async () => {
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Your site is taking shape/i);
 });
 
-test("opens the group conversation as its own Dock page and keeps the ledger on home", async () => {
-  const [home, chatResponse] = await Promise.all([render(), render("/chat")]);
+test("opens Today at home, the ledger at /ledger, and the group conversation as its own Dock page", async () => {
+  const [home, ledger, chatResponse] = await Promise.all([render(), render("/ledger"), render("/chat")]);
+  assert.equal(home.status, 200);
+  assert.equal(ledger.status, 200);
   assert.equal(chatResponse.status, 200);
-  const [homeHtml, chatHtml] = await Promise.all([home.text(), chatResponse.text()]);
+  const [homeHtml, ledgerHtml, chatHtml] = await Promise.all([home.text(), ledger.text(), chatResponse.text()]);
   assert.doesNotMatch(homeHtml, /class="site-header"|class="site-primary-nav"|class="profile-menu"/);
   assert.doesNotMatch(homeHtml, /每日复盘|每日投资复盘|今日宏观经济|昨日收盘总结|id="review-panel"|id="daily-reports-title"/);
-  assert.match(homeHtml, /id="portfolio-panel"[^>]*role="region"/);
-  assert.match(homeHtml, /<h1 class="summary-nav-label" id="portfolio-title">当前净值<\/h1>/);
+  assert.match(homeHtml, /<h1 id="today-title">今日<\/h1>/);
+  assert.match(homeHtml, /href="\/ledger"/);
+  assert.match(homeHtml, /示例/);
+  assert.doesNotMatch(homeHtml, /id="portfolio-panel"|id="ledger-title"/);
+  assert.match(homeHtml, /href="\/"[^>]*aria-current="page"/);
+  assert.match(ledgerHtml, /id="portfolio-panel"[^>]*role="region"/);
+  assert.match(ledgerHtml, /<h1 class="summary-nav-label" id="portfolio-title">当前净值<\/h1>/);
+  assert.match(ledgerHtml, /href="\/ledger"[^>]*aria-current="page"/);
   assert.match(chatHtml, /id="daily-reports-title">群聊<\/h1>/);
   assert.match(chatHtml, /示例/);
   assert.equal((chatHtml.match(/class="daily-reports-tile"/g) ?? []).length, 4);
-  assert.match(chatHtml, /href="\/"[^>]*>投资账本<\/a>/);
+  assert.match(chatHtml, /href="\/ledger"[^>]*>投资账本<\/a>/);
   assert.doesNotMatch(chatHtml, /id="portfolio-panel"/);
   assert.match(chatHtml, /href="\/chat"[^>]*aria-current="page"/);
 });
 
 test("shows backend net deposits without manual settings", async () => {
-  const response = await render();
+  const response = await render("/ledger");
   const html = await response.text();
   const dashboard = await readDashboardSource();
   assert.match(html, /净入金/);
@@ -67,7 +75,7 @@ test("shows backend net deposits without manual settings", async () => {
 });
 
 test("renders the portfolio and investment ledger together", async () => {
-  const html = await (await render()).text();
+  const html = await (await render("/ledger")).text();
   assert.match(html, /class="portfolio-overview"/);
   assert.match(html, /class="heatmap-plot"/);
   assert.match(html, /<h2 id="ledger-title">投资账本<\/h2>/);
@@ -78,8 +86,9 @@ test("renders the portfolio and investment ledger together", async () => {
   assert.ok(html.indexOf('id="portfolio-title"') < html.indexOf('id="ledger-title"'));
 });
 
-test("redirects old ledger and retired report URLs to the combined page", async () => {
-  for (const [path, target] of [["/ledger", "/#ledger-title"], ["/market-close", "/"], ["/market-close?date=2026-09-01", "/"]]) {
+test("serves the ledger at /ledger and redirects retired report URLs home", async () => {
+  assert.equal((await render("/ledger")).status, 200);
+  for (const [path, target] of [["/market-close", "/"], ["/market-close?date=2026-09-01", "/"]]) {
     const response = await render(path);
     assert.equal(response.status, 307, path);
     assert.equal(new URL(response.headers.get("location"), "http://localhost").href, new URL(target, "http://localhost").href, path);
@@ -115,7 +124,7 @@ test("allows anonymous company browsing and reports unavailable plan storage", a
 
 test("removes the disposable starter preview", async () => {
   const [page, dashboard, layout, packageJson, viewModel] = await Promise.all([
-    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/ledger/page.tsx", import.meta.url), "utf8"),
     readDashboardSource(),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../package.json", import.meta.url), "utf8"),
@@ -154,7 +163,7 @@ test("removes the disposable starter preview", async () => {
 
 test("uses the approved ledger-dominant hierarchy without horizontal scrolling", async () => {
   const [page, css] = await Promise.all([
-    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/ledger/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   ]);
 
@@ -205,7 +214,7 @@ test("uses an uncolored generic reminder slot beside the ticker", async () => {
 
 test("removes the portfolio history chart while keeping supporting metrics", async () => {
   const [response, dashboard, snapshot] = await Promise.all([
-    render(),
+    render("/ledger"),
     readDashboardSource(),
     readFile(new URL("../data/portfolio-snapshot.json", import.meta.url), "utf8").then(JSON.parse),
   ]);
@@ -229,7 +238,7 @@ test("removes the portfolio history chart while keeping supporting metrics", asy
 
 test("renders the current portfolio leverage in the portfolio overview", async () => {
   const [response, snapshot] = await Promise.all([
-    render(),
+    render("/ledger"),
     readFile(new URL("../data/portfolio-snapshot.json", import.meta.url), "utf8").then(JSON.parse),
   ]);
   const html = await response.text();
@@ -242,7 +251,7 @@ test("renders the current portfolio leverage in the portfolio overview", async (
 
 test("renders the stock-only investment theme heatmap", async () => {
   const [response, snapshot] = await Promise.all([
-    render(),
+    render("/ledger"),
     readFile(new URL("../data/portfolio-snapshot.json", import.meta.url), "utf8").then(JSON.parse),
   ]);
   const html = await response.text();
@@ -264,7 +273,7 @@ test("renders the stock-only investment theme heatmap", async () => {
 
 test("renders holding and sector allocation charts together", async () => {
   const [response, dashboard, css] = await Promise.all([
-    render(),
+    render("/ledger"),
     readDashboardSource(),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   ]);
@@ -334,7 +343,7 @@ test("keeps the heatmap responsive and keyboard reachable", async () => {
 
 test("groups stock and option positions by ticker", async () => {
   const snapshot = JSON.parse(await readFile(new URL("../data/portfolio-snapshot.json", import.meta.url), "utf8"));
-  const response = await render();
+  const response = await render("/ledger");
   const html = await response.text();
   const symbols = [...new Set(snapshot.positions.map((position) => position.symbol))];
   const expectedTickerCount = symbols.length;
@@ -394,9 +403,12 @@ test("uses investment theme colors for heatmap headers and holding marks", async
 test("keeps small text high-contrast and visibly weighted", async () => {
   const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
-  assert.match(css, /--ink-soft:\s*#3f3f46/);
-  assert.match(css, /--color-loss:\s*#b91c1c/);
-  assert.match(css, /--color-profit:\s*#166534/);
+  // Paper (light) values; the ink (dark) theme overrides them in .dark.
+  assert.match(css, /--ink-soft:\s*#34423f/);
+  assert.match(css, /--loss:\s*#b91c1c/);
+  assert.match(css, /--gain:\s*#166534/);
+  assert.match(css, /--color-loss:\s*var\(--loss\)/);
+  assert.match(css, /--color-profit:\s*var\(--gain\)/);
   assert.match(css, /body\s*\{[^}]*font-weight:\s*500/s);
   assert.match(css, /-webkit-font-smoothing:\s*auto/);
 });
@@ -408,9 +420,10 @@ test("keeps ledger labels and values above the minimum readable sizes", async ()
   ]);
 
   assert.match(dashboard, /className="daily-change-value/);
-  assert.match(css, /--daily-gain:\s*#315b3d/);
-  assert.match(css, /--daily-loss:\s*#8f2f25/);
-  assert.match(css, /--muted-foreground:\s*#52525b/);
+  assert.match(css, /--daily-gain:\s*var\(--gain\)/);
+  assert.match(css, /--daily-loss:\s*var\(--loss\)/);
+  assert.match(css, /--muted-foreground:\s*var\(--sp-ink-muted\)/);
+  assert.match(css, /--sp-ink-muted:\s*#5a6864/);
   assert.match(css, /\.position-row\s*\{[^}]*font-size:\s*14px;/s);
   assert.match(css, /\.position-identity\s*\{[^}]*align-items:\s*center;/s);
   assert.match(css, /\.position-reminder\s*\{[^}]*align-content:\s*center;/s);
@@ -421,7 +434,7 @@ test("keeps ledger labels and values above the minimum readable sizes", async ()
 });
 
 test("renders a single-line shadcn ledger with sorting in every header", async () => {
-  const html = await (await render()).text();
+  const html = await (await render("/ledger")).text();
   const table = html.match(/<table[^]*?<\/table>/)?.[0] ?? "";
   assert.equal((table.match(/scope="col"/g) ?? []).length, 10);
   assert.equal((table.match(/aria-sort=/g) ?? []).length, 10);
@@ -502,7 +515,7 @@ test("renders each option contract as an aligned child row of its ticker", async
     readDashboardSource(),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   ]);
-  const response = await render();
+  const response = await render("/ledger");
   const html = await response.text();
   const money = (value, sign = false) =>
     `${value < 0 ? "\u2212" : sign && value > 0 ? "+" : ""}$${new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Math.abs(value))}`;
@@ -574,7 +587,7 @@ test("uses independent position routes and removes the workspace dialog", async 
 
 test("renders price and daily change surfaces without source or snapshot labels", async () => {
   const [response, detail] = await Promise.all([
-    render(),
+    render("/ledger"),
     readFile(new URL("../app/positions/[ticker]/StockDetail.tsx", import.meta.url), "utf8"),
   ]);
   const html = await response.text();
@@ -590,16 +603,16 @@ test("renders price and daily change surfaces without source or snapshot labels"
   assert.doesNotMatch(detail, /position\.value\s*=\s*quote|position\.unrealized\s*=\s*quote/);
 });
 
-test("retired review bookmarks render the combined portfolio without review content", async () => {
+test("retired review bookmarks render Today without review content", async () => {
   const html = await (await render("/?view=review")).text();
-  assert.match(html, /id="portfolio-title"/);
-  assert.match(html, /id="ledger-title"/);
+  assert.match(html, /id="today-title"/);
+  assert.match(html, /当前净值/);
   assert.doesNotMatch(html, /每日投资复盘|关键驱动|观察清单|review-panel|daily-review/);
 });
 
 test("renders the holding summary in the portfolio overview without the market pulse", async () => {
   const [response, dashboard] = await Promise.all([
-    render(),
+    render("/ledger"),
     readDashboardSource(),
   ]);
   const html = await response.text();

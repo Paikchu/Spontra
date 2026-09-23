@@ -1,6 +1,7 @@
 "use server";
 
-import Home from "./page";
+import Today from "./page";
+import Ledger from "./ledger/page";
 import Analysis from "./analysis/page";
 import Settings from "./settings/page";
 import Macro from "./macro/page";
@@ -11,7 +12,8 @@ import AnalysisReport from "./analysis/stocks/[ticker]/sec/[accession]/page";
 
 export async function loadAppPage(href: string) {
   const { pathname: path, searchParams } = new URL(href, "http://app.local");
-  if (path === "/") return Home();
+  if (path === "/") return Today();
+  if (path === "/ledger") return Ledger();
   if (path === "/analysis") return <div className="earning-report"><Analysis /></div>;
   if (path === "/chat") return <Chat />;
   if (path === "/settings") return <Settings />;

@@ -17,10 +17,10 @@ export default function SettingsPage() {
       <CardContent><FieldGroup>
         <Field>
           <FieldLabel id="theme-label">{t("主题")}</FieldLabel>
-          <ToggleGroup type="single" variant="outline" value={mode} onValueChange={choose} aria-labelledby="theme-label" className="flex-wrap">
-            <ToggleGroupItem value="light"><Sun />{t("日间模式")}</ToggleGroupItem>
-            <ToggleGroupItem value="dark"><Moon />{t("夜间模式")}</ToggleGroupItem>
-            <ToggleGroupItem value="system"><Monitor />{t("跟随系统")}</ToggleGroupItem>
+          <ToggleGroup type="single" variant="outline" value={mode} onValueChange={choose} aria-labelledby="theme-label" className="theme-options">
+            <ToggleGroupItem value="light" className="theme-option"><span className="theme-thumb" data-thumb="paper" aria-hidden="true"><i /><b /></span><span className="theme-option-label"><Sun />{t("日间模式")}</span></ToggleGroupItem>
+            <ToggleGroupItem value="dark" className="theme-option"><span className="theme-thumb" data-thumb="ink" aria-hidden="true"><i /><b /></span><span className="theme-option-label"><Moon />{t("夜间模式")}</span></ToggleGroupItem>
+            <ToggleGroupItem value="system" className="theme-option"><span className="theme-thumb" data-thumb="system" aria-hidden="true"><i /><b /></span><span className="theme-option-label"><Monitor />{t("跟随系统")}</span></ToggleGroupItem>
           </ToggleGroup>
         </Field>
         <FieldSeparator />

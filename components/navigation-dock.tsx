@@ -5,13 +5,14 @@ import { useLanguage } from "@/app/language-provider";
 import Link from "next/link";
 import { useAppNavigation } from "@/app/app-navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { BookOpen, ChartNoAxesCombined, MessagesSquare, Settings2 } from "lucide-react";
+import { BookOpen, ChartNoAxesCombined, House, MessagesSquare, Settings2 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 const items = [
-  { href: "/", label: "投资记录", icon: ChartNoAxesCombined },
-  { href: "/analysis", label: "公司业务分析", icon: BookOpen },
+  { href: "/", label: "今日", icon: House },
+  { href: "/ledger", label: "投资账本", icon: ChartNoAxesCombined },
   { href: "/chat", label: "群聊", icon: MessagesSquare },
+  { href: "/analysis", label: "公司业务分析", icon: BookOpen },
   { href: "/settings", label: "设置", icon: Settings2 },
 ];
 
@@ -46,7 +47,7 @@ export function NavigationDock() {
     };
   }, []);
   const activeIndex = items.findIndex(({ href }) => href === "/"
-    ? pathname === "/" || pathname === "/ledger"
+    ? pathname === "/"
     : pathname === href || pathname.startsWith(`${href}/`) || (href === "/analysis" && pathname.startsWith("/positions/")));
   const droplet = useRef<HTMLSpanElement>(null);
   const destination = useRef(activeIndex);

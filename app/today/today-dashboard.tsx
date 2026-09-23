@@ -1,0 +1,197 @@
+"use client";
+
+import Link from "next/link";
+import { useMemo, type CSSProperties, type ReactNode } from "react";
+import { CalendarDays } from "lucide-react";
+import { useLanguage } from "@/app/language-provider";
+import { useMarketQuotes } from "@/app/use-market-quotes";
+import { CompanyLogo } from "@/app/company-logo";
+import { CountUp } from "@/components/spontra/effects";
+import { Delta, EvidenceTag, NodeArrow } from "@/components/spontra/primitives";
+import { buildEarningsReminder } from "@/lib/earnings-calendar";
+import { withinReminderWindow, type CalendarEvent, type CalendarState } from "@/lib/earnings-live";
+import { money, number, percent } from "@/lib/portfolio-format";
+import { sampleReports } from "@/lib/sample-reports";
+
+export type TodayHolding = { symbol: string; name: string; weight: number };
+
+const reveal = (index: number) => ({ "--i": index }) as CSSProperties;
+
+function OpenLink({ href, label, inverse = false }: { href: string; label: string; inverse?: boolean }) {
+  return (
+    <Link href={href} aria-label={label} className={`sp-btn sp-btn-sm is-circle ${inverse ? "sp-btn-inverse" : "sp-btn-secondary"}`}>
+      <span className="sp-btn-trail"><NodeArrow dir="diag" /></span>
+    </Link>
+  );
+}
+
+function CardHead({ kicker, title, action }: { kicker: string; title?: ReactNode; action?: ReactNode }) {
+  return (
+    <header className="sp-card-head">
+      <div className="sp-card-heading">
+        <p className="sp-kicker">{kicker}</p>
+        {title && <h2 className="sp-card-title">{title}</h2>}
+      </div>
+      {action}
+    </header>
+  );
+}
+
+function dateLine(now: string, language: string) {
+  const date = new Date(now);
+  const hour = Number(new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Shanghai", hour: "numeric", hourCycle: "h23" }).format(date));
+  if (language === "en") {
+    const day = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Shanghai", weekday: "long", month: "long", day: "numeric" }).format(date);
+    return `${day} · ${hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"}`;
+  }
+  const day = `${new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", month: "long", day: "numeric" }).format(date)} ${new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", weekday: "short" }).format(date)}`;
+  return `${day} · ${hour < 12 ? "早上好" : hour < 18 ? "下午好" : "晚上好"}`;
+}
+
+export function TodayDashboard({
+  now,
+  netLiquidation,
+  netDeposits,
+  cashBalance,
+  netPositionsValue,
+  portfolioLeverage,
+  holdings,
+  earningsCalendar,
+}: {
+  now: string;
+  netLiquidation: number;
+  netDeposits: number;
+  cashBalance: number;
+  netPositionsValue: number;
+  portfolioLeverage: number;
+  holdings: TodayHolding[];
+  earningsCalendar: CalendarState;
+}) {
+  const { t, language } = useLanguage();
+  const totalPnl = netLiquidation - netDeposits;
+  const totalPnlRate = netDeposits === 0 ? 0 : totalPnl / netDeposits * 100;
+
+  const heldSymbols = useMemo(() => new Set(holdings.map((holding) => holding.symbol)), [holdings]);
+  const upcoming = useMemo(() => {
+    const seen = new Set<string>();
+    return earningsCalendar.events.filter((event) => {
+      if (!heldSymbols.has(event.symbol) || seen.has(event.symbol) || !withinReminderWindow(event, new Date(now))) return false;
+      seen.add(event.symbol);
+      return true;
+    }).slice(0, 4);
+  }, [earningsCalendar.events, heldSymbols, now]);
+
+  const quoteSymbols = useMemo(() => holdings.map((holding) => holding.symbol).join(","), [holdings]);
+  const { quotes, status } = useMarketQuotes(quoteSymbols);
+  const movers = useMemo(() => holdings
+    .flatMap((holding) => {
+      const quote = quotes[holding.symbol];
+      return quote && Number.isFinite(quote.changePercent) ? [{ ...holding, change: quote.changePercent }] : [];
+    })
+    .sort((left, right) => Math.abs(right.change) - Math.abs(left.change))
+    .slice(0, 5), [holdings, quotes]);
+
+  const reports = sampleReports;
+
+  return (
+    <div className="today">
+      <div className="today-ambient" aria-hidden="true" />
+      <header className="today-heading">
+        <p suppressHydrationWarning>{dateLine(now, language)}</p>
+        <h1 id="today-title">{t("今日")}</h1>
+      </header>
+
+      <div className="today-grid">
+        <section className="sp-card sp-card-accent sp-lit is-glow sp-reveal today-hero" style={reveal(0)} aria-labelledby="today-nav-label">
+          <CardHead kicker={t("当前净值")} action={<OpenLink href="/ledger" label={t("打开投资账本")} inverse />} />
+          <h2 className="sr-only" id="today-nav-label">{t("当前净值")}</h2>
+          <div className="today-hero-body">
+            <div className="sp-stat sp-stat-hero">
+              <strong className="sp-stat-value"><span className="sr-only">{money(netLiquidation)}</span><span aria-hidden="true"><CountUp value={money(netLiquidation)} /></span></strong>
+              <span className="sp-stat-delta">
+                <span className="sp-stat-dlabel">{t("累计盈亏")}</span>
+                <Delta value={totalPnl} />
+                <Delta value={totalPnlRate} kind="percent" />
+              </span>
+            </div>
+            <dl className="sp-stat-row is-compact today-hero-stats">
+              <div className="sp-stat"><dt className="sp-stat-label">{t("持仓净市值")}</dt><dd className="sp-stat-value">{money(netPositionsValue)}</dd></div>
+              <div className="sp-stat"><dt className="sp-stat-label">{t("现金")}</dt><dd className="sp-stat-value">{money(cashBalance)}</dd></div>
+              <div className="sp-stat"><dt className="sp-stat-label">{t("杠杆率")}</dt><dd className="sp-stat-value">{number(portfolioLeverage, 2, 2)}x</dd></div>
+            </dl>
+          </div>
+          <div className="today-actions">
+            <Link href="/ledger" className="sp-btn sp-btn-inverse sp-btn-sm">{t("查看投资账本")}</Link>
+            <Link href="/chat" className="sp-btn sp-btn-sm today-ghost-on-accent">{t("打开群聊")}</Link>
+          </div>
+        </section>
+
+        <section className="sp-card sp-card-brand sp-lit is-glow sp-reveal today-earnings" style={reveal(1)} aria-labelledby="today-earnings-title">
+          <CardHead kicker={t("本月财报")} title={<span id="today-earnings-title">{upcoming.length ? t("持仓公司即将发布财报") : earningsCalendar.status === "unavailable" ? t("财报日历暂不可用") : t("本月没有持仓财报")}</span>} />
+          {upcoming.length > 0 ? (
+            <ul className="today-earnings-list">
+              {upcoming.map((event) => {
+                const reminder = buildEarningsReminder(event, now);
+                return (
+                  <li key={event.symbol}>
+                    <Link href={`/positions/${encodeURIComponent(event.symbol)}`}>
+                      <span className="sp-ticker-sym">{event.symbol}</span>
+                      <span>{(event as CalendarEvent).confidence === "confirmed" ? "" : `${t("预计")} `}{reminder.releaseDateLabel} · {t(reminder.sessionLabel)}</span>
+                      <strong>{language === "en" ? reminder.countdownLabel.replace(/^(\d+)天后$/, "in $1 days").replace(/^今天$/, "Today").replace(/^明天$/, "Tomorrow").replace(/^已发布$/, "Released") : reminder.countdownLabel}</strong>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="today-card-note">{earningsCalendar.status === "unavailable" ? t("暂时读不到财报日历，稍后刷新再看。") : t("财报日历会在持仓公司确认日期后出现在这里。")}</p>
+          )}
+          <p className="today-card-foot"><CalendarDays aria-hidden="true" />{t("上海时间")}</p>
+        </section>
+
+        <section className="sp-card sp-lit sp-reveal today-reports" style={reveal(2)} aria-labelledby="today-reports-title">
+          <CardHead
+            kicker={`${t("示例")} · ${t("今日汇报")}`}
+            title={<span id="today-reports-title">{t("需要你确认")}</span>}
+            action={<OpenLink href="/chat" label={t("打开群聊")} />}
+          />
+          <ul className="today-report-list">
+            {reports.map((report) => (
+              <li key={report.id}>
+                <EvidenceTag kind={report.evidence}>{t(report.evidence === "support" ? "支持" : report.evidence === "counter" ? "反证" : "待确认")}</EvidenceTag>
+                <div>
+                  <p>{report.fact}</p>
+                  <small>{report.agent} · {report.time} · {report.subject}</small>
+                </div>
+                <Link href="/chat" className="sp-btn sp-btn-secondary sp-btn-sm">{t("查看")}</Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        <section className="sp-card sp-lit sp-reveal today-movers" style={reveal(3)} aria-labelledby="today-movers-title">
+          <CardHead kicker={t("今日涨跌")} title={<span id="today-movers-title">{t("波动最大的持仓")}</span>} />
+          {movers.length > 0 ? (
+            <ul className="today-movers-list">
+              {movers.map((mover) => (
+                <li key={mover.symbol}>
+                  <Link href={`/positions/${encodeURIComponent(mover.symbol)}`}>
+                    <CompanyLogo symbol={mover.symbol} />
+                    <span className="today-mover-name"><span className="sp-ticker-sym">{mover.symbol}</span><small>{t("权重")} {percent(mover.weight)}</small></span>
+                    <Delta value={mover.change} kind="percent" pill />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ) : status === "unavailable" ? (
+            <p className="today-card-note" role="status">{t("行情暂不可用")}</p>
+          ) : (
+            <div className="today-movers-loading" role="status" aria-label={t("行情读取中")}>
+              {[0, 1, 2, 3].map((index) => <span key={index} />)}
+            </div>
+          )}
+        </section>
+      </div>
+    </div>
+  );
+}

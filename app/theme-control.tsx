@@ -11,12 +11,12 @@ function apply(mode: Mode) {
   const dark = mode === "dark" || (mode === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
   document.documentElement.classList.toggle("dark", dark);
   document.documentElement.style.colorScheme = dark ? "dark" : "light";
-  document.querySelectorAll('meta[name="theme-color"]').forEach((node) => node.setAttribute("content", dark ? "#18181b" : "#fafafa"));
+  document.querySelectorAll('meta[name="theme-color"]').forEach((node) => node.setAttribute("content", dark ? "#0d1718" : "#f6f7f4"));
   window.dispatchEvent(new Event("max-theme-change"));
 }
 
 export function useResolvedTheme() {
-  const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [theme, setTheme] = useState<"light" | "dark">("dark");
   useEffect(() => {
     const sync = () => setTheme(document.documentElement.classList.contains("dark") ? "dark" : "light");
     sync();
@@ -29,7 +29,7 @@ export function useResolvedTheme() {
 const ThemeContext = createContext<{ mode: Mode; choose: (value: string) => void } | null>(null);
 
 function savedMode(): Mode {
-  try { const saved = localStorage.getItem(key); return valid(saved) ? saved : "system"; } catch { return "system"; }
+  try { const saved = localStorage.getItem(key); return valid(saved) ? saved : "dark"; } catch { return "dark"; }
 }
 function subscribeMode(notify: () => void) {
   const onStorage = (event: StorageEvent) => { if (event.key === key || event.key === null) { selectedMode = null; notify(); } };
@@ -41,7 +41,7 @@ let selectedMode: Mode | null = null;
 function currentMode() { return selectedMode ?? savedMode(); }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const mode = useSyncExternalStore(subscribeMode, currentMode, () => "system" as Mode);
+  const mode = useSyncExternalStore(subscribeMode, currentMode, () => "dark" as Mode);
   useEffect(() => {
     apply(mode);
     const media = matchMedia("(prefers-color-scheme: dark)");

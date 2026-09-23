@@ -5,6 +5,7 @@ import { useLanguage } from "@/app/language-provider";
 import { CalendarDays } from "lucide-react";
 import { buildEarningsReminder, type EarningsEvent } from "@/lib/earnings-calendar";
 import { money, number, percent } from "@/lib/portfolio-format";
+import { CountUp } from "@/components/spontra/effects";
 
 export function PortfolioOverview({
   netLiquidation,
@@ -39,7 +40,7 @@ export function PortfolioOverview({
       <div className="hero">
         <div className="portfolio-heading">
           <div className="flex items-center gap-2"><h1 className="summary-nav-label" id="portfolio-title">{t("当前净值")}</h1></div>
-          <strong className="summary-nav-value">{money(netLiquidation)}</strong>
+          <strong className="summary-nav-value"><span className="sr-only">{money(netLiquidation)}</span><span aria-hidden="true"><CountUp value={money(netLiquidation)} /></span></strong>
           <div className="summary-return">
             <span className="summary-pnl-label">{t("累计盈亏")}</span>
             <strong className={`summary-pnl ${totalPnl < 0 ? "loss" : totalPnl > 0 ? "gain" : "muted"}`}>
