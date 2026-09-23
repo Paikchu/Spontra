@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useLanguage } from "./language-provider";
 import { sampleReports as reports } from "@/lib/sample-reports";
@@ -12,12 +12,14 @@ export function DailyReportsHome() {
   const [readIds, setReadIds] = useState<string[]>([reports[0].id]);
   const [replies, setReplies] = useState<Record<string, string[]>>({});
   const [draft, setDraft] = useState("");
+  const threadRef = useRef<HTMLDivElement>(null);
   const selected = reports.find((report) => report.id === selectedId) ?? reports[0];
   const unreadCount = reports.length - readIds.length;
 
   function openReport(id: string) {
     setSelectedId(id);
     setReadIds((current) => current.includes(id) ? current : [...current, id]);
+    threadRef.current?.scrollTo({ top: 0 });
   }
 
   function sendReply(event: FormEvent<HTMLFormElement>) {
@@ -29,6 +31,7 @@ export function DailyReportsHome() {
       [selected.id]: [...(current[selected.id] ?? []), text],
     }));
     setDraft("");
+    requestAnimationFrame(() => threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight, behavior: "smooth" }));
   }
 
   return (
@@ -43,7 +46,7 @@ export function DailyReportsHome() {
             <Link href="/ledger" className="sp-btn sp-btn-secondary sp-btn-sm">{t("投资账本")}</Link>
           </header>
 
-          <div className="daily-reports-thread" aria-label={t("汇报对话")}>
+          <div ref={threadRef} className="daily-reports-thread" aria-label={t("汇报对话")}>
             <div className="daily-reports-byline"><strong>{selected.agent}</strong><time>{selected.time}</time></div>
             <article className="daily-report-document sp-lit" aria-labelledby="daily-report-title">
               <p className="daily-report-kicker">{t("示例")} · {t("每日报告")} · {selected.subject}</p>

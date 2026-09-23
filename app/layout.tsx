@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
 import "./globals.css";
+import "./daily-reports-home.css";
 import "./analysis/earning-report.css";
 import "@/components/earning-report/report-blocks/report-content.css";
 import "katex/dist/katex.min.css";

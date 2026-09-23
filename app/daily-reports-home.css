@@ -1,7 +1,7 @@
 /* 群聊汇报 — Ink & Highlighter: report card, agent notes, glass composer, report tiles. */
 .daily-reports {
-  margin: 0 0 clamp(72px, 8vw, 120px);
-  padding: 40px 0 0;
+  margin: 0;
+  padding: 32px 0 0;
   color: var(--foreground);
 }
 
@@ -275,4 +275,31 @@
   .daily-report-document { padding: 16px; }
   .daily-report-document dl > div { grid-template-columns: 48px minmax(0, 1fr); gap: 8px; }
   .daily-reports-conversation { min-height: 0; }
+}
+
+@media (min-width: 821px) {
+  .page-shell-chat {
+    height: calc(100dvh - env(safe-area-inset-top, 0px) - max(var(--page-edge), env(safe-area-inset-bottom, 0px)));
+    min-height: 0;
+  }
+
+  .daily-reports, .daily-reports-layout { height: 100%; }
+  .daily-reports-conversation, .daily-reports-queue { min-height: 0; }
+  .daily-reports-thread { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+  .daily-reports-queue { display: flex; flex-direction: column; }
+  .daily-reports-tiles { flex: 1; min-height: 0; max-height: 590px; grid-template-rows: repeat(4, minmax(0, 1fr)); }
+  .daily-reports-tile { min-height: 0; }
+}
+
+@media (min-width: 821px) and (max-height: 800px) {
+  .daily-reports { padding-top: 20px; }
+  .daily-reports-heading { min-height: 64px; }
+  .daily-reports-heading p { margin-bottom: 10px; }
+  .daily-reports-thread { padding: 16px 0 10px; }
+  .daily-report-document { margin-bottom: 14px; padding: 16px; }
+  .daily-report-document h2:not([data-slot]) { margin-bottom: 10px; }
+  .daily-report-document dl > div { padding: 8px 0; }
+  .daily-report-sources { padding-top: 8px; }
+  .daily-reports-message { margin-bottom: 12px; }
+  .daily-reports-compose { padding-block: 8px; }
 }
