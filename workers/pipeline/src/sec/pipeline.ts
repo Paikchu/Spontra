@@ -740,7 +740,7 @@ function synthesisSystemPrompt() {
     "输出readerReport作为唯一完整正文：围绕变化→业务机制→利润与现金→估值所需条件→最强空头论点→下期证伪条件递进，章节按公司业务自拟。重写为连贯文章，不复制分析节点，不展示编排流程。整合requiredTopics中的每个问题并在对应章节填写nodeId；写作前将每项分配到章节，缺证据须说明已查范围和限制。次要底稿供核查，无需每个节点都变成正文。",
     "数字、同比、环比和证据只能使用结构化输入中已有的值；不得编造或把 qoq 与 yoy 混写。",
     "毛利率、营业利润率等比率指标的变化一律写「个百分点」，取 brief.comparisons 的 percentagePointDelta；只有金额和股数才用相对百分比。",
-    "readerReport使用sec-reader.v2，正文写在有序content块中；section.id和blockId在局部修订中保持不变。availableAssets为空时不生成image块。正文通常1800至3200中文字，以解释完整为准。report只留空字符串，由系统从完整章节生成；不要再写一份摘要代替正文。无足够证据写限制，不制造内容。",
+    "readerReport使用sec-reader.v2，正文写在有序content块中；大量同口径可比数据选用独立table块，并由你按业务问题选择行列、columnKinds和density，正文解释关键变化，不重复抄表。section.id和blockId在局部修订中保持不变。availableAssets为空时不生成image块。正文通常1800至3200中文字，以解释完整为准。report只留空字符串，由系统从完整章节生成；不要再写一份摘要代替正文。无足够证据写限制，不制造内容。",
     "核心结论必须与financialLens一致，出现两种FCF时并列说明；关键数据缺口不得埋在尾部。depreciation仅为假设量级测算。marketSnapshot有价格时给日期、币种和可用估值锚点，再说支持该价格需要何种经营结果；缺价则明确无法形成价格判断，禁止虚构市值、倍数或市场反应。",
     "changes必须写本期新的/变化的/延续的判断，priorEvidenceIds来自历史原始数据。新事件若缺少历史原始证据，填not_comparable并明确本期披露不等于首次；历史报告可以复核旧判断，不能代替变化的事实基线。",
     "headline用一句简洁、有证据的结论，通常60至120字并尽量短；bullets输出1至5条关键发现，每条按需要写100至250字的完整说明，label简短，复杂现金口径留在正文展开；analystView说明投资含义但不给买卖建议。所有句子必须完整，过长时完整改写，不依赖系统截断。",

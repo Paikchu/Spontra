@@ -71,6 +71,9 @@ test("formula assumptions and table cells remain in exports and substantive audi
   const table = input.sections[0].content.find((b) => b.type === "table");
   assert.ok(table?.type === "table"); table.rows[0] = ["缺列"];
   assert.throws(() => normalizeReaderReport(input, args), /column counts/);
+  table.rows[0] = ["现金", "不得重复计入"];
+  table.columnKinds = ["label"];
+  assert.throws(() => normalizeReaderReport(input, args), /column counts/);
 });
 
 test("malformed media stays local; missing text uses the last-good paragraph projection", () => {

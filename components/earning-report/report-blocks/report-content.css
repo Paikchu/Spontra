@@ -56,10 +56,18 @@
 .report-content-source { min-width: 0; font-size: 12px; }
 .report-content-source > summary { width: fit-content; padding-block: 8px; cursor: pointer; color: var(--muted-foreground, #71717a); }
 .report-content-table-scroll { width: 100%; max-width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; margin-block: 12px; }
-.report-content-table-scroll table { width: 100%; border-collapse: collapse; text-align: start; font-size: 12px; font-variant-numeric: tabular-nums; }
-.report-content-table-scroll :is(th, td) { padding: 9px 12px; border-bottom: 1px solid var(--border, #e4e4e7); text-align: start; white-space: nowrap; }
+.report-content-table-scroll table { width: 100%; min-width: max-content; border-collapse: collapse; text-align: start; font-size: 12px; font-variant-numeric: tabular-nums; }
+.report-content-table-scroll :is(th, td) { padding: 9px 12px; border-bottom: 1px solid var(--border, #e4e4e7); text-align: start; vertical-align: top; }
 .report-content-table-scroll th { font-weight: 500; color: var(--muted-foreground, #71717a); }
 .report-content-table-scroll td { color: var(--foreground, #24242b); }
+.report-content-data-table { min-width: 0; max-width: 100%; margin-inline: 0; }
+.report-content-data-table figcaption { font-size: 13px; line-height: 1.65; font-weight: 600; }
+.report-content-data-table .report-content-table-scroll table { min-width: 100%; width: max-content; max-width: none; }
+.report-content-data-table [data-column-kind="number"] { text-align: end; white-space: nowrap; }
+.report-content-data-table [data-column-kind="label"] { min-width: 7em; max-width: 16em; font-weight: 600; }
+.report-content-data-table [data-column-kind="text"] { min-width: 12em; max-width: 26em; white-space: normal; overflow-wrap: anywhere; }
+.report-content-data-table[data-density="compact"] :is(th, td) { padding-block: 6px; }
+.report-content-markdown .report-content-table-scroll :is(th, td) { min-width: 8em; max-width: 24em; overflow-wrap: anywhere; }
 .report-content-table-scroll td::before { display: none; }
 .report-content-fallback { padding: 12px 14px; border: 1px solid var(--border, #e4e4e7); border-radius: 4px; color: var(--muted-foreground, #71717a); font-size: 13px; }
 .report-content-fallback code { display: block; margin-top: 8px; white-space: pre-wrap; overflow-wrap: anywhere; }

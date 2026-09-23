@@ -21,6 +21,20 @@ test("standard prose supports nested lists, complete links and GFM tables withou
   assert.match(html, /href="https:\/\/example.com\/a_\(b\)"/);
 });
 
+test("model-composed financial tables keep numeric columns and long notes distinct", () => {
+  const report = readerFilingFixture().analysis!;
+  const block: SecReaderContentBlock = { type: "table", blockId: "financial-history", evidenceIds: ["ev:demand"],
+    caption: "FY2024–FY2026，十亿美元；订阅数据为公司披露口径。", density: "compact",
+    headers: ["财年", "收入", "关键订阅指标"], columnKinds: ["label", "number", "text"],
+    rows: [["FY2026", "$7.206", "经常性收入占比约 97%；其余指标另见披露。"]] };
+  const html = renderToStaticMarkup(<ReportContentRenderer content={[block]} context={{ report }} />);
+  assert.match(html, /data-density="compact"/);
+  assert.match(html, /<th scope="row" data-column-kind="label">FY2026<\/th>/);
+  assert.match(html, /<td data-column-kind="number">\$7\.206<\/td>/);
+  assert.match(html, /<td data-column-kind="text">经常性收入占比/);
+  assert.match(html, /aria-label="FY2024–FY2026，十亿美元；订阅数据为公司披露口径。"/);
+});
+
 test("untrusted HTML, image URLs and unsafe links cannot create executable or fetching elements", () => {
   const html = renderToStaticMarkup(<ReportMarkdown markdown={'<script>alert(1)</script>\n\n![示意](https://outside.test/image.png)\n\n[危险](javascript:alert(1))'} />);
   assert.doesNotMatch(html, /<script|<img|javascript:/);

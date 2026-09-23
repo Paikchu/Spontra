@@ -100,7 +100,7 @@ export function normalizeReaderReport(value: unknown, args: {
         usedCharts.add(block.metricKey);
       }
       if (block.type === "image" && !assetIds.has(block.assetId)) throw new Error(`Reader image ${block.blockId} requires a persisted asset from availableAssets`);
-      if (block.type === "table" && block.rows.some((r) => r.length !== block.headers.length)) throw new Error(`Reader table ${block.blockId} has inconsistent column counts`);
+      if (block.type === "table" && (block.rows.some((r) => r.length !== block.headers.length) || block.columnKinds && block.columnKinds.length !== block.headers.length)) throw new Error(`Reader table ${block.blockId} has inconsistent column counts`);
       return block;
     }) : undefined;
     if (content && content.filter((b) => b.type === "chart").length > 1) throw new Error("Reader section permits at most one chart");

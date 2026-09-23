@@ -18,7 +18,7 @@ export const SEC_READER_CONTENT_BLOCK_SCHEMA = z.discriminatedUnion("type", [
   z.strictObject({ ...common, type: z.literal("chart"), metricKey: text(120), mark: z.enum(["line", "bar"]), title: text(120), caption: text(500) }),
   z.strictObject({ ...common, type: z.literal("image"), assetId: id, alt: text(300), caption: text(500) }),
   z.strictObject({ ...common, type: z.literal("math"), latex: text(4000), displayMode: z.boolean(), explanation: text(1000), assumption: text(500).optional() }),
-  z.strictObject({ ...common, type: z.literal("table"), headers: z.array(text(160)).min(1).max(12), rows: z.array(z.array(z.string().max(1000)).min(1).max(12)).min(1).max(40), caption: text(500) }),
+  z.strictObject({ ...common, type: z.literal("table"), headers: z.array(text(160)).min(1).max(12), rows: z.array(z.array(z.string().max(1000)).min(1).max(12)).min(1).max(40), caption: text(500), density: z.enum(["compact", "comfortable"]).optional(), columnKinds: z.array(z.enum(["label", "number", "text"])).min(1).max(12).optional() }),
   z.strictObject({ ...common, type: z.literal("callout"), tone: z.enum(["neutral", "positive", "negative", "caution"]), title: text(120).optional(), text: text(1800) }),
   z.strictObject({ ...common, type: z.literal("evidence"), title: text(120).optional() }),
 ]);
@@ -122,7 +122,7 @@ export function parseSecReaderReport(value: unknown): { reader?: SecReaderReport
           warnings.push(`第${index + 1}节部分内容格式无效，已跳过该内容块。`); return [];
         }
         const block = result.data;
-        if (block.type === "table" && block.rows.some((r) => r.length !== block.headers.length)) { warnings.push(`第${index + 1}节表格列数不一致，已跳过表格。`); return []; }
+        if (block.type === "table" && (block.rows.some((r) => r.length !== block.headers.length) || block.columnKinds && block.columnKinds.length !== block.headers.length)) { warnings.push(`第${index + 1}节表格列数不一致，已跳过表格。`); return []; }
         blockIds.add(block.blockId);
         // Preserve the image block/description. The renderer provides a missing-asset fallback.
         if (block.type === "image" && !assetIds.has(block.assetId)) warnings.push(`第${index + 1}节图片暂不可用，已保留图注。`);

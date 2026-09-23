@@ -65,9 +65,9 @@ function ContentBlock({ block, domId, context, active }: { block: SecReaderConte
       </figure>;
     }
     case "math": return <ReportFormula latex={block.latex} displayMode={block.displayMode} explanation={block.explanation} assumption={block.assumption} />;
-    case "table": return block.rows.some((row) => row.length !== block.headers.length)
+    case "table": return block.rows.some((row) => row.length !== block.headers.length) || block.columnKinds && block.columnKinds.length !== block.headers.length
       ? <p className="report-content-fallback">表格列数不一致，暂无法显示。</p>
-      : <figure className="report-content-data-table"><figcaption>{block.caption}</figcaption><div className="report-content-table-scroll" tabIndex={0} role="region" aria-label={block.caption}><table><thead><tr>{block.headers.map((header, i) => <th scope="col" key={i}>{header}</th>)}</tr></thead><tbody>{block.rows.map((row, i) => <tr key={i}>{row.map((cell, j) => <td key={j}>{cell}</td>)}</tr>)}</tbody></table></div></figure>;
+      : <figure className="report-content-data-table" data-density={block.density ?? "comfortable"}><figcaption>{block.caption}</figcaption><div className="report-content-table-scroll" tabIndex={0} role="region" aria-label={block.caption}><table><thead><tr>{block.headers.map((header, i) => <th scope="col" data-column-kind={block.columnKinds?.[i] ?? (i === 0 ? "label" : "text")} key={i}>{header}</th>)}</tr></thead><tbody>{block.rows.map((row, i) => <tr key={i}>{row.map((cell, j) => j === 0 && (block.columnKinds?.[j] ?? "label") === "label" ? <th scope="row" data-column-kind="label" key={j}>{cell}</th> : <td data-column-kind={block.columnKinds?.[j] ?? "text"} key={j}>{cell}</td>)}</tr>)}</tbody></table></div></figure>;
     case "callout": return <aside className="report-content-callout" data-tone={block.tone}>{block.title && <strong>{block.title}</strong>}<ReportMarkdown markdown={block.text} /></aside>;
     case "evidence": {
       const nodes = context.nodes ?? context.report.publication?.summary.nodes ?? [];
