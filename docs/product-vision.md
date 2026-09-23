@@ -1,6 +1,6 @@
-# 产品理念与交互说明
+# Spontra 产品理念与交互说明
 
-更新日期：2026-09-23。本文依据 [Investment Record 产品站点](https://investment-record-intelligence.max-zhangyuchen.chatgpt.site/)及本轮确认的汇报交互整理。站点提供产品愿景；本文区分已实现能力与后续设计方向。技术运行方式见 [README](../README.md)。
+更新日期：2026-09-23。本文依据 [原 Investment Record 产品站点](https://investment-record-intelligence.max-zhangyuchen.chatgpt.site/)及本轮确认的汇报交互整理。站点提供产品愿景；本文区分已实现能力与后续设计方向。技术运行方式见 [README](../README.md)。
 
 ## 产品定位
 

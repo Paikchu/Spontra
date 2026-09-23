@@ -1,12 +1,12 @@
-# MAX · 投资记录
+# Spontra
 
 **全天候 AI 伴投 Agent，让买入理由有人持续跟进。**
 
-Investment Record 围绕个人的买入理由、投资期限与风险边界组织研究。产品的核心方向是：用户离线时，Agent 继续跟踪新信息、核验支持与反证，再主动汇报与用户有关的变化。每次判断都能回到证据，每次复盘都能接着过去的研究往前走。
+Spontra 围绕个人的买入理由、投资期限与风险边界组织研究。产品的核心方向是：用户离线时，Agent 继续跟踪新信息、核验支持与反证，再主动汇报与用户有关的变化。每次判断都能回到证据，每次复盘都能接着过去的研究往前走。
 
 > 逆向而行，不必独行。每一次确信，都有证据可查。
 
-设计理念来自 [Investment Record 产品站点](https://investment-record-intelligence.max-zhangyuchen.chatgpt.site/)。完整产品原则、汇报交互与建设边界见 [产品理念与交互说明](docs/product-vision.md)。
+设计理念来自 [原 Investment Record 产品站点](https://investment-record-intelligence.max-zhangyuchen.chatgpt.site/)。完整产品原则、汇报交互与建设边界见 [产品理念与交互说明](docs/product-vision.md)。
 
 ## 产品方向
 
@@ -35,7 +35,7 @@ Investment Record 围绕个人的买入理由、投资期限与风险边界组�
 ## 项目入口
 
 - GitHub：[Paikchu/investment-record](https://github.com/Paikchu/investment-record)，主分支 `main`。
-- 生产网站：[MAX · 投资记录](https://investment-record.max-zhangyuchen.workers.dev/)。
+- 生产网站：[Spontra](https://spontra.max-zhangyuchen.workers.dev/)。
 - 当前本地目录：`/Users/max/Investment/investment-record`。
 - 唯一 Git remote：`origin` 指向 `https://github.com/Paikchu/investment-record.git`，发布统一使用 `git push origin main`。
 
@@ -45,7 +45,7 @@ GitHub 是唯一维护与自动部署的主仓库。`earning-report-analysis` �
 
 | Worker | 当前职责 | 配置 | 自动发布 |
 | --- | --- | --- | --- |
-| `investment-record` | 页面、投资账本 API、财报分析读取代理 | [`wrangler.jsonc`](wrangler.jsonc) | 前端 Git 构建 |
+| `spontra` | 页面、投资账本 API、财报分析读取代理 | [`wrangler.jsonc`](wrangler.jsonc) | 前端 Git 构建 |
 | `max-investment-record-sec-cron` | IBKR 定时同步、财报日历刷新 | [`workers/sec-cron/wrangler.jsonc`](workers/sec-cron/wrangler.jsonc) | 前端部署命令的最后一步 |
 | `earning-report-analysis-sec-pipeline` | SEC 发现与分析、Memory、公司分析、基本面及分析读取 API | [`workers/pipeline/wrangler.jsonc`](workers/pipeline/wrangler.jsonc) | 独立 Pipeline Git 构建 |
 
@@ -58,7 +58,7 @@ GitHub 是唯一维护与自动部署的主仓库。`earning-report-analysis` �
 - **财报分析 R2**：`earning-report-analysis-sec-filings`，保存 Pipeline 的原文与分析产物。
 - **历史 SEC R2**：`max-investment-record-sec-filings` 数据保留，已解除 `sec-cron` 绑定；本次清理不删除历史资源。
 - 主应用通过 `EARNING_REPORT_PIPELINE → earning-report-analysis-sec-pipeline` Service Binding 读取分析结果；本地或其他消费者可使用服务端 HTTPS。
-- 定时任务通过指向 `investment-record` 的 Service Binding 更新账本和财报日历。`PORTFOLIO_SERVICE` 是本地清理后的目标名称；重命名代码尚未提交，当前发布配置以 `workers/sec-cron/wrangler.jsonc` 为准。
+- 定时任务通过指向 `spontra` 的 Service Binding 更新账本和财报日历。绑定名为 `PORTFOLIO_SERVICE`，配置见 `workers/sec-cron/wrangler.jsonc`。
 - Pipeline 拥有四个分析 Workflows；`sec-cron` 不再注册或启动历史 SEC Workflows。
 
 分析读取凭据只在服务端使用。读取已发布报告不启动 SEC/Yahoo 抓取、AI 分析或数据库写入。投资账本与分析数据库的迁移命令必须分别执行。
@@ -169,7 +169,7 @@ git push origin main
 
 `sec-cron:deploy` 在子进程中移除 Builds 注入的主应用名称覆盖，并显式指定后台 Worker 名称。Pipeline 所有部署命令都显式指定自己的 Wrangler 配置，避免被前端生成的 `.wrangler/deploy/config.json` 引导到错误 Worker。
 
-不要把根目录 `wrangler.jsonc` 的 `name` 改成 Pipeline 名称；根配置属于 `investment-record`。Cloudflare 连接向导对 monorepo 的自动修复建议需要核对实际部署命令。
+不要把根目录 `wrangler.jsonc` 的 `name` 改成 Pipeline 名称；根配置属于 `spontra`。Cloudflare 连接向导对 monorepo 的自动修复建议需要核对实际部署命令。
 
 发布完成应确认两条构建结果、实际线上版本及相关业务读取/任务执行，不能仅凭 Git push 或 dry-run 判断上线成功。
 

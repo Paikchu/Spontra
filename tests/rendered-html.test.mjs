@@ -30,7 +30,7 @@ test("server-renders the investment record", async () => {
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
-  assert.match(html, /<title>MAX · 投资记录<\/title>/i);
+  assert.match(html, /<title>Spontra<\/title>/i);
   assert.match(html, /当前净值/);
   assert.match(html, new RegExp(`\\$${snapshot.account.netLiquidation.toLocaleString("en-US", { minimumFractionDigits: 2 })}`.replace(".", "\\.")));
   assert.doesNotMatch(html, /IBKR 数据更新|数据源：IBKR|实际持仓成本\s*=|AI 生成|AI 分析|由 AI/i);

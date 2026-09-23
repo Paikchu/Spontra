@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "investment-record",
+  "name": "spontra",
   "main": "./worker/index.ts",
   "compatibility_date": "2026-09-08",
   "compatibility_flags": [

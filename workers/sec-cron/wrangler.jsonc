@@ -12,7 +12,7 @@
   "services": [
     {
       "binding": "PORTFOLIO_SERVICE",
-      "service": "investment-record"
+      "service": "spontra"
     }
   ],
   "triggers": {

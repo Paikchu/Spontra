@@ -1,5 +1,5 @@
 {
-  "name": "investment-record",
+  "name": "spontra",
   "description": "个人投资研究与 Agent 主动汇报，持续跟进买入理由、核验新证据并积累研究记录。",
   "version": "0.1.0",
   "private": true,
