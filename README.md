@@ -34,10 +34,10 @@ Spontra 围绕个人的买入理由、投资期限与风险边界组织研究。
 
 ## 项目入口
 
-- GitHub：[Paikchu/investment-record](https://github.com/Paikchu/investment-record)，主分支 `main`。
+- GitHub：[Paikchu/spontra](https://github.com/Paikchu/spontra)，主分支 `main`。
 - 生产网站：[Spontra](https://spontra.max-zhangyuchen.workers.dev/)。
 - 当前本地目录：`/Users/max/Investment/investment-record`。
-- 唯一 Git remote：`origin` 指向 `https://github.com/Paikchu/investment-record.git`，发布统一使用 `git push origin main`。
+- 唯一 Git remote：`origin` 指向 `https://github.com/Paikchu/spontra.git`，发布统一使用 `git push origin main`。
 
 GitHub 是唯一维护与自动部署的主仓库。`earning-report-analysis` 原仓库保留历史代码与旧 Web 入口，财报 Pipeline 的后续维护在本仓库进行。
 
