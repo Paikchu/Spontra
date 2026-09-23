@@ -40,16 +40,20 @@ test("server-renders the investment record", async () => {
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Your site is taking shape/i);
 });
 
-test("opens on four sample reports and retains the portfolio below", async () => {
-  const html = await (await render()).text();
-  assert.doesNotMatch(html, /class="site-header"|class="site-primary-nav"|class="profile-menu"/);
-  assert.doesNotMatch(html, /每日复盘|每日投资复盘|今日宏观经济|昨日收盘总结|id="review-panel"/);
-  assert.match(html, /id="daily-reports-title">群聊<\/h1>/);
-  assert.match(html, /示例/);
-  assert.equal((html.match(/class="daily-reports-tile"/g) ?? []).length, 4);
-  assert.match(html, /id="portfolio-panel"[^>]*role="region"/);
-  assert.match(html, /<h1 class="summary-nav-label" id="portfolio-title">当前净值<\/h1>/);
-  assert.ok(html.indexOf('id="daily-reports-title"') < html.indexOf('id="portfolio-title"'));
+test("opens the group conversation as its own Dock page and keeps the ledger on home", async () => {
+  const [home, chatResponse] = await Promise.all([render(), render("/chat")]);
+  assert.equal(chatResponse.status, 200);
+  const [homeHtml, chatHtml] = await Promise.all([home.text(), chatResponse.text()]);
+  assert.doesNotMatch(homeHtml, /class="site-header"|class="site-primary-nav"|class="profile-menu"/);
+  assert.doesNotMatch(homeHtml, /每日复盘|每日投资复盘|今日宏观经济|昨日收盘总结|id="review-panel"|id="daily-reports-title"/);
+  assert.match(homeHtml, /id="portfolio-panel"[^>]*role="region"/);
+  assert.match(homeHtml, /<h1 class="summary-nav-label" id="portfolio-title">当前净值<\/h1>/);
+  assert.match(chatHtml, /id="daily-reports-title">群聊<\/h1>/);
+  assert.match(chatHtml, /示例/);
+  assert.equal((chatHtml.match(/class="daily-reports-tile"/g) ?? []).length, 4);
+  assert.match(chatHtml, /href="\/"[^>]*>投资账本<\/a>/);
+  assert.doesNotMatch(chatHtml, /id="portfolio-panel"/);
+  assert.match(chatHtml, /href="\/chat"[^>]*aria-current="page"/);
 });
 
 test("shows backend net deposits without manual settings", async () => {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import Link from "next/link";
 import { useLanguage } from "./language-provider";
 
 type DailyReport = {
@@ -115,7 +116,7 @@ export function DailyReportsHome() {
               <h1 id="daily-reports-title">{t("群聊")}</h1>
               <p>{t("研究")} · {t("核验")} · {t("风险")}</p>
             </div>
-            <a href="#ledger-title" data-app-local-anchor>{t("投资账本")}</a>
+            <Link href="/">{t("投资账本")}</Link>
           </header>
 
           <div className="daily-reports-thread" aria-label={t("汇报对话")}>

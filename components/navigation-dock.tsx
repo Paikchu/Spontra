@@ -5,12 +5,13 @@ import { useLanguage } from "@/app/language-provider";
 import Link from "next/link";
 import { useAppNavigation } from "@/app/app-navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { BookOpen, ChartNoAxesCombined, Settings2 } from "lucide-react";
+import { BookOpen, ChartNoAxesCombined, MessagesSquare, Settings2 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 const items = [
   { href: "/", label: "投资记录", icon: ChartNoAxesCombined },
   { href: "/analysis", label: "公司业务分析", icon: BookOpen },
+  { href: "/chat", label: "群聊", icon: MessagesSquare },
   { href: "/settings", label: "设置", icon: Settings2 },
 ];
 

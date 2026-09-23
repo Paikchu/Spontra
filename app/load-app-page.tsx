@@ -4,6 +4,7 @@ import Home from "./page";
 import Analysis from "./analysis/page";
 import Settings from "./settings/page";
 import Macro from "./macro/page";
+import Chat from "./chat/page";
 import { StockWorkspace } from "./positions/stock-workspace";
 import { loadStock } from "./analysis/load-stock";
 import AnalysisReport from "./analysis/stocks/[ticker]/sec/[accession]/page";
@@ -12,6 +13,7 @@ export async function loadAppPage(href: string) {
   const { pathname: path, searchParams } = new URL(href, "http://app.local");
   if (path === "/") return Home();
   if (path === "/analysis") return <div className="earning-report"><Analysis /></div>;
+  if (path === "/chat") return <Chat />;
   if (path === "/settings") return <Settings />;
   if (path === "/macro") return <Macro />;
   const position = /^\/positions\/([^/]+)$/.exec(path);
