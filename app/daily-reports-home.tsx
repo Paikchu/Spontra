@@ -24,7 +24,11 @@ export function DailyReportsHome() {
       if (!response.ok) throw new Error("研究服务暂时无法连接，已保留已加载的报告。");
       const payload = await response.json() as ResearchFeed;
       if (!Array.isArray(payload.reports) || !payload.monitor) throw new Error("研究服务返回的数据暂无法读取。");
-      const incoming = payload.reports.map(report => RESEARCH_REPORT_SCHEMA.parse(report));
+      const incoming = payload.reports.map(report => {
+        const parsed = RESEARCH_REPORT_SCHEMA.safeParse(report);
+        if (!parsed.success) throw new Error("一份报告暂无法读取，已保留此前汇报。");
+        return parsed.data;
+      });
       if (!mounted.current) return;
       const atBottom = !thread.current || thread.current.scrollHeight - thread.current.scrollTop - thread.current.clientHeight < 100;
       setReports(current => [...new Map([...current, ...incoming].map(report => [report.id, report])).values()]

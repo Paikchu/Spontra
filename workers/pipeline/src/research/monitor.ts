@@ -68,11 +68,15 @@ async function scan(env: SecPipelineEnv, clock: Date) {
       else try {
         const raw = await readProviderJson(`https://data.sec.gov/submissions/CIK${company.cik}.json`, fetch, { "user-agent": env.SEC_USER_AGENT });
         const filings = parseSecSubmissions(raw, company, 20);
+        const recent = record(record(record(raw).filings).recent);
         const known = await repo.state<string[]>(`sec:${ticker}`);
         // On first observation only recent filings are research triggers; old history establishes a baseline.
         for (const filing of filings) if ((!known || !known.includes(filing.accessionNumber)) && Date.parse(filing.filingDate) >= clock.getTime() - 3 * 86400_000) {
+          const index = Array.isArray(recent.accessionNumber) ? recent.accessionNumber.indexOf(filing.accessionNumber) : -1;
+          const accepted = Array.isArray(recent.acceptanceDateTime) ? recent.acceptanceDateTime[index] : null;
+          const sourceAt = typeof accepted === "string" && Number.isFinite(Date.parse(accepted)) ? new Date(accepted).toISOString() : null;
           await repo.enqueue({ id: await researchId([ticker, "filing", filing.accessionNumber]), ticker, kind: "filing", observedAt: now,
-            sourceAt: new Date(filing.filingDate).toISOString(), payload: { accessionNumber: filing.accessionNumber, form: filing.form, sourceUrl: filing.documentUrl } });
+            sourceAt, payload: { accessionNumber: filing.accessionNumber, form: filing.form, filingDate: filing.filingDate, sourceUrl: filing.documentUrl } });
         }
         await repo.setState(`sec:${ticker}`, filings.map(filing => filing.accessionNumber), now);
         await repo.setState(`sec-at:${ticker}`, now, now);
