@@ -10,6 +10,7 @@ import { retryDelayForAttempt, SEC_WORKFLOW_STEP_TIMEOUT } from "./retry-policy.
 import worker from "./worker.ts";
 import { executeSecAnalysisWorkflow, type WorkflowStepContextLike, type WorkflowStepLike } from "./workflow-core.ts";
 import { storeWorkflowResult, loadWorkflowResult } from "./workflow-results.ts";
+import { executeResearchWorkflow } from "./research/runtime.ts";
 
 const WORKFLOW_RETRY = {
   retries: {
@@ -51,6 +52,12 @@ function durableSteps(step: WorkflowStep, env: SecPipelineEnv, instanceId: strin
 export class SecAnalysisWorkflow extends WorkflowEntrypoint<SecPipelineEnv, SecWorkflowParams> {
   async run(event: WorkflowEvent<SecWorkflowParams>, step: WorkflowStep) {
     return executeSecAnalysisWorkflow(event.payload, event.instanceId, durableSteps(step, this.env, event.instanceId), createSecPipelineOperations(this.env, fetch, event.instanceId));
+  }
+}
+
+export class ResearchWorkflow extends WorkflowEntrypoint<SecPipelineEnv, { caseId: string }> {
+  async run(event: WorkflowEvent<{ caseId: string }>, step: WorkflowStep) {
+    return executeResearchWorkflow(event.payload.caseId, durableSteps(step, this.env, event.instanceId), this.env);
   }
 }
 

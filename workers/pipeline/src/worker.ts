@@ -3,6 +3,8 @@ import { handleFundamentalsRefreshRequest } from "./fundamentals.ts";
 import { runFundamentalsStalenessSweep } from "./fundamentals-sweep.ts";
 import type { SecPipelineEnv } from "./operations.ts";
 import { handleAnalysisReadRequest, isAnalysisReadPath } from "./read-api/router.ts";
+import { handleResearchRequest } from "./research/api.ts";
+import { runResearchMonitor } from "./research/monitor.ts";
 
 /**
  * `JSON.stringify` renders an Error as `{}`, so a rejection reason has to be read off it before it
@@ -59,12 +61,17 @@ const worker = {
      * thing standing between a read path and a workflow trigger if a route is ever mistyped.
      */
     if (isAnalysisReadPath(path)) return handleAnalysisReadRequest(request, env);
+    if (path.startsWith("/research/")) return handleResearchRequest(request, env);
     if (path.startsWith("/fundamentals/refresh/")) return handleFundamentalsRefreshRequest(request, env);
     if (path.startsWith("/company-analysis/")) return handleCompanyAnalysisRequest(request, env);
     return handleSecAnalysisRequest(request, env);
   },
 
   async scheduled(_controller: ScheduledController, env: SecPipelineEnv) {
+    if (_controller.cron === "* * * * *") {
+      console.log(JSON.stringify({ event: "research-monitor", ...await runResearchMonitor(env) }));
+      return;
+    }
     const results = await Promise.allSettled([
       runSecRefresh(env),
       runSecMemorySweep(env),

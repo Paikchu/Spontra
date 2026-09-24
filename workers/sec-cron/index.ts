@@ -12,6 +12,15 @@ const worker = {
   },
 
   async scheduled(controller: ScheduledController, env: IbkrSyncEnv, context: ExecutionContext) {
+    if (controller.cron === "*/5 * * * *") {
+      if (!env.PORTFOLIO_SERVICE || !env.PORTFOLIO_SYNC_KEY) throw new Error("Research holdings sync not configured");
+      const response = await env.PORTFOLIO_SERVICE.fetch("https://investment-record.internal/api/internal/research/sync", {
+        method: "POST", headers: { "x-portfolio-sync-key": env.PORTFOLIO_SYNC_KEY },
+      });
+      await response.body?.cancel();
+      if (!response.ok) throw new Error(`Research holdings sync HTTP ${response.status}`);
+      return;
+    }
     if (controller.cron === "15 * * * *") {
       context.waitUntil((async () => {
         if (!env.PORTFOLIO_SERVICE || !env.PORTFOLIO_SYNC_KEY) throw new Error("Earnings refresh binding or credential missing");

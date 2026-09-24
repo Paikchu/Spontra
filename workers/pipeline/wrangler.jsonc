@@ -13,6 +13,12 @@
   },
   "workflows": [
     {
+      "name": "spontra-research",
+      "binding": "RESEARCH_WORKFLOW",
+      "class_name": "ResearchWorkflow",
+      "concurrency": { "limit": 2 }
+    },
+    {
       "name": "earning-report-analysis-sec-analysis",
       "binding": "SEC_ANALYSIS_WORKFLOW",
       "class_name": "SecAnalysisWorkflow",
@@ -81,6 +87,7 @@
   //   "0 0-3 * * 2-6"
   "triggers": {
     "crons": [
+      "* * * * *",
       "*/10 * * * *"
     ]
   },

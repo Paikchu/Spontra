@@ -57,8 +57,8 @@ test("opens Today at home, the ledger at /ledger, and the group conversation as 
   assert.match(ledgerHtml, /<h1 class="summary-nav-label" id="portfolio-title">当前净值<\/h1>/);
   assert.match(ledgerHtml, /href="\/ledger"[^>]*aria-current="page"/);
   assert.match(chatHtml, /id="daily-reports-title">群聊<\/h1>/);
-  assert.match(chatHtml, /示例/);
-  assert.equal((chatHtml.match(/class="daily-reports-tile"/g) ?? []).length, 4);
+  assert.match(chatHtml, /正在读取研究汇报/);
+  assert.equal((chatHtml.match(/class="daily-reports-tile"/g) ?? []).length, 0);
   assert.match(chatHtml, /href="\/ledger"[^>]*>投资账本<\/a>/);
   assert.doesNotMatch(chatHtml, /id="portfolio-panel"/);
   assert.match(chatHtml, /href="\/chat"[^>]*aria-current="page"/);

@@ -288,3 +288,64 @@ export const webSearchCache = sqliteTable("web_search_cache", {
   leaseOwner: text("lease_owner"),
   leaseUntil: integer("lease_until").notNull().default(0),
 });
+
+/** Single-user research universe, synchronized from the portfolio service. */
+export const researchState = sqliteTable("research_state", {
+  key: text("key").primaryKey().notNull(),
+  payload: text("payload").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const researchEvents = sqliteTable("research_events", {
+  id: text("id").primaryKey().notNull(),
+  ticker: text("ticker").notNull(),
+  kind: text("kind").notNull(),
+  payload: text("payload").notNull(),
+  observedAt: text("observed_at").notNull(),
+  sourceAt: text("source_at"),
+});
+
+/** A durable dispatch outbox: inserting an event never depends on Workflow availability. */
+export const researchCases = sqliteTable("research_cases", {
+  id: text("id").primaryKey().notNull(),
+  eventId: text("event_id").notNull(),
+  ticker: text("ticker").notNull(),
+  status: text("status").notNull().default("pending"),
+  workflowId: text("workflow_id").notNull(),
+  attempts: integer("attempts").notNull().default(0),
+  nextAttemptAt: text("next_attempt_at").notNull(),
+  leaseOwner: text("lease_owner"),
+  leaseUntil: text("lease_until"),
+  errorCode: text("error_code"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, table => [
+  uniqueIndex("research_cases_event_idx").on(table.eventId),
+  index("research_cases_dispatch_idx").on(table.status, table.nextAttemptAt),
+]);
+
+export const researchReports = sqliteTable("research_reports", {
+  sequence: integer("sequence").primaryKey({ autoIncrement: true }),
+  id: text("id").notNull(),
+  caseId: text("case_id").notNull(),
+  payload: text("payload").notNull(),
+  generatedAt: text("generated_at").notNull(),
+}, table => [
+  uniqueIndex("research_reports_id_idx").on(table.id),
+  uniqueIndex("research_reports_case_idx").on(table.caseId),
+]);
+
+export const researchFollowups = sqliteTable("research_followups", {
+  id: text("id").primaryKey().notNull(),
+  caseId: text("case_id").notNull(),
+  ticker: text("ticker").notNull(),
+  question: text("question").notNull(),
+  query: text("query").notNull(),
+  dueAt: text("due_at").notNull(),
+  status: text("status").notNull().default("pending"),
+}, table => [index("research_followups_due_idx").on(table.status, table.dueAt)]);
+
+export const researchBudget = sqliteTable("research_budget", {
+  day: text("day").primaryKey().notNull(),
+  investigations: integer("investigations").notNull().default(0),
+});

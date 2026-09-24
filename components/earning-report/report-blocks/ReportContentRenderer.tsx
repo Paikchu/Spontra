@@ -6,8 +6,9 @@ import { ReportMarkdown, ReportFormula, safeReportUrl } from "./ReportMarkdown.t
 import { ReportAssetImage } from "./ReportAssetImage.tsx";
 import { ReportMediaGroup } from "./ReportMediaGroup.tsx";
 import { readableTrend, SecTrendFigure, SecTrendSource } from "./SecTrendFigure.tsx";
+import type { ResearchSource } from "@/shared/analysis-contract/research.ts";
 
-export type ReportContentContext = { report: PublishedSecReport; nodes?: SecNodeResult[]; assets?: SecReaderAsset[]; paragraphLabels?: Record<string, string> };
+export type ReportContentContext = { report?: PublishedSecReport; sources?: ResearchSource[]; nodes?: SecNodeResult[]; assets?: SecReaderAsset[]; paragraphLabels?: Record<string, string> };
 type RenderProps = { content: readonly SecReaderContentBlock[]; context: ReportContentContext; surface?: "article" | "chat"; phase?: "draft" | "final"; activeBlockId?: string };
 
 /** A shared, closed registry. Unknown or damaged blocks cannot execute code or break their siblings. */
@@ -51,11 +52,11 @@ function ContentBlock({ block, domId, context, active }: { block: SecReaderConte
   switch (block.type) {
     case "markdown": return <>{context.paragraphLabels?.[block.blockId] && <h3 className="report-content-paragraph-label">{context.paragraphLabels[block.blockId]}</h3>}{active ? <StreamingReportText text={block.markdown} /> : <ReportMarkdown markdown={block.markdown} />}</>;
     case "chart": {
-      const trend = readableTrend(context.report.trends?.find((t) => t.metricKey === block.metricKey));
+      const trend = readableTrend(context.report?.trends?.find((t) => t.metricKey === block.metricKey));
       return trend ? <SecTrendFigure id={`${domId}-figure`} title={block.title} trend={trend} mark={block.mark} caption={block.caption} /> : <div className="report-content-fallback"><strong>{block.title}</strong><p>暂无可绘制的可比数据。</p><p>{block.caption}</p></div>;
     }
     case "image": {
-      const candidate = (context.assets ?? context.report.reader?.assets)?.find((asset) => asset.assetId === block.assetId);
+      const candidate = (context.assets ?? context.report?.reader?.assets)?.find((asset) => asset.assetId === block.assetId);
       const parsed = SEC_READER_ASSET_SCHEMA.safeParse(candidate);
       const asset = parsed.success ? parsed.data : undefined;
       const src = asset && safeReportUrl(asset.src);
@@ -70,7 +71,8 @@ function ContentBlock({ block, domId, context, active }: { block: SecReaderConte
       : <figure className="report-content-data-table" data-density={block.density ?? "comfortable"}><figcaption>{block.caption}</figcaption><div className="report-content-table-scroll" tabIndex={0} role="region" aria-label={block.caption}><table><thead><tr>{block.headers.map((header, i) => <th scope="col" data-column-kind={block.columnKinds?.[i] ?? (i === 0 ? "label" : "text")} key={i}>{header}</th>)}</tr></thead><tbody>{block.rows.map((row, i) => <tr key={i}>{row.map((cell, j) => j === 0 && (block.columnKinds?.[j] ?? "label") === "label" ? <th scope="row" data-column-kind="label" key={j}>{cell}</th> : <td data-column-kind={block.columnKinds?.[j] ?? "text"} key={j}>{cell}</td>)}</tr>)}</tbody></table></div></figure>;
     case "callout": return <aside className="report-content-callout" data-tone={block.tone}>{block.title && <strong>{block.title}</strong>}<ReportMarkdown markdown={block.text} /></aside>;
     case "evidence": {
-      const nodes = context.nodes ?? context.report.publication?.summary.nodes ?? [];
+      if (context.sources) return <ResearchSources ids={block.evidenceIds} sources={context.sources} title={block.title} />;
+      const nodes = context.nodes ?? context.report?.publication?.summary.nodes ?? [];
       const evidence = nodes.filter((node) => node.evidenceIds?.some((id) => block.evidenceIds.includes(id))).flatMap((node) => node.evidence)
         .filter((item, index, all) => all.findIndex((other) => other.excerpt === item.excerpt) === index);
       return <details className="report-content-source report-content-evidence"><summary>{block.title ?? "相关研究摘录"} · {evidence.length} 段</summary>{evidence.length ? <><p className="report-content-caption">以下摘录来自包含所引证据的研究主题，尚未逐条对应本段论述。</p>{evidence.map((item, i) => <blockquote key={i}><p>{item.excerpt}</p><footer>字符位置 {item.start}–{item.end}</footer></blockquote>)}</> : <p>该内容块暂无可展开的原文摘录。</p>}</details>;
@@ -79,7 +81,17 @@ function ContentBlock({ block, domId, context, active }: { block: SecReaderConte
 }
 
 function BlockSource({ block, context }: { block: SecReaderContentBlock; context: ReportContentContext }) {
+  if (context.sources && block.type !== "evidence" && block.evidenceIds.length) return <ResearchSources ids={block.evidenceIds} sources={context.sources} />;
   if (block.type !== "chart") return null;
-  const trend = readableTrend(context.report.trends?.find((t) => t.metricKey === block.metricKey));
+  const trend = readableTrend(context.report?.trends?.find((t) => t.metricKey === block.metricKey));
   return trend ? <Fragment><SecTrendSource title={block.title} trend={trend} /></Fragment> : null;
+}
+
+function ResearchSources({ ids, sources, title = "查看依据" }: { ids: string[]; sources: ResearchSource[]; title?: string }) {
+  const selected = sources.filter(source => ids.includes(source.id));
+  return <details className="report-content-source report-content-evidence"><summary>{title} · {selected.length}</summary>
+    {selected.map(source => <blockquote key={source.id}><a href={safeReportUrl(source.url)} target="_blank" rel="noopener noreferrer">{source.title}</a>
+      <p>{source.excerpt.slice(0, 600)}{source.excerpt.length > 600 ? "…" : ""}</p>
+      <footer>发布时间：{source.publishedAt ?? "未提供"} · 检索时间：{source.retrievedAt}</footer></blockquote>)}
+  </details>;
 }
