@@ -31,6 +31,7 @@ export async function fetchMarketObservation(ticker: string, now: string, fetche
   const body = record(await readProviderJson(sourceUrl, fetcher, { "user-agent": "Spontra research monitor" }));
   const results = record(body.chart).result;
   const meta = record(record(Array.isArray(results) ? results[0] : null).meta);
+  if (typeof meta.symbol !== "string" || meta.symbol.toUpperCase().replaceAll(".", "-") !== ticker.replaceAll(".", "-")) throw new Error("market_symbol_mismatch");
   const price = meta.regularMarketPrice, previousClose = meta.chartPreviousClose, timestamp = meta.regularMarketTime;
   if (typeof price !== "number" || !Number.isFinite(price) || price <= 0 || typeof previousClose !== "number" || !Number.isFinite(previousClose) || previousClose <= 0 || typeof timestamp !== "number" || !Number.isFinite(timestamp)) throw new Error("invalid_market_observation");
   const regular = record(record(meta.currentTradingPeriod).regular);
