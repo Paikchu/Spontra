@@ -6,7 +6,9 @@ import { revealContent } from "./content-motion";
 import { NavigationPlaceholder } from "./navigation-placeholder";
 import { loadAppPage } from "./load-app-page";
 
-const NavigationContext = createContext<{ path: string; pendingPath: string | null; reportReturnPath: string | null; navigate: (href: string, source?: HTMLElement) => void } | null>(null);
+type NavigationOptions = { scroll?: boolean };
+
+const NavigationContext = createContext<{ path: string; pendingPath: string | null; reportReturnPath: string | null; navigate: (href: string, options?: NavigationOptions) => void } | null>(null);
 
 export function useAppNavigation() {
   const context = useContext(NavigationContext);
@@ -82,7 +84,7 @@ export function AppNavigation({ children, dock }: { children: ReactNode; dock: R
     return task;
   }, []);
 
-  const navigate = useCallback(async (href: string) => {
+  const navigate = useCallback(async (href: string, options?: NavigationOptions) => {
     const next = normalize(href, active.current);
     if (!next) return;
     window.history.replaceState(window.history.state, "", "/");
@@ -106,7 +108,9 @@ export function AppNavigation({ children, dock }: { children: ReactNode; dock: R
       setTransition({ key, kind: returning ? "return" : key.includes("/sec/") ? "report" : "page" });
     }
     const restoreScroll = () => requestAnimationFrame(() => {
-      if (id !== sequence.current) return;
+      // In-page controls can own their scroll position while still updating
+      // navigation state (for example, stock tabs and report return paths).
+      if (id !== sequence.current || options?.scroll === false) return;
       const hash = next.split("#")[1];
       if (hash) document.querySelector(`[data-app-page="${CSS.escape(key)}"] #${CSS.escape(decodeURIComponent(hash))}`)?.scrollIntoView({ behavior: "instant" });
       else window.scrollTo({ top: scroll.current.get(key) ?? 0, behavior: "instant" });

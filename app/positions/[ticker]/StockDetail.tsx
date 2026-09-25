@@ -119,7 +119,7 @@ export function StockDetail({ ticker, companyName, exchange, position, trades, p
     }
     setActiveTab(value);
     setVisited((current) => new Set([...current, value]));
-    if (!embedded) navigate(`#${value}`);
+    if (!embedded) navigate(`#${value}`, { scroll: false });
   }
 
   return (
