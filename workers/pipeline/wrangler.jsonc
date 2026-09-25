@@ -87,7 +87,7 @@
   //   "0 0-3 * * 2-6"
   "triggers": {
     "crons": [
-      "* * * * *",
+      // Autonomous research paused at user request. Restore minute cron to resume.
       "*/10 * * * *"
     ]
   },

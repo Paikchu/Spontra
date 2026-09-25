@@ -61,7 +61,7 @@ export function DailyReportsHome() {
     <div className="daily-reports-layout">
       <div className="daily-reports-conversation">
         <header className="daily-reports-heading"><div><h1 id="daily-reports-title">群聊</h1>
-          <p>{monitor?.enabled ? `正在观察 ${monitor.tickers.length} 个持仓标的` : "等待后台监测接入"} · 有实质变化时汇报</p></div>
+          <p>{monitor?.enabled ? `正在观察 ${monitor.tickers.length} 个持仓标的` : monitor?.holdingsAsOf ? "自动研究与汇报已暂停" : "等待后台监测接入"}{monitor?.enabled ? " · 有实质变化时汇报" : ""}</p></div>
           <Link href="/ledger" className="sp-btn sp-btn-secondary sp-btn-sm">投资账本</Link></header>
         <div className="daily-reports-monitor" role="status">
           {monitor?.lastScanAt && <span>最近检查 {formatTime(monitor.lastScanAt)}{Date.now() - Date.parse(monitor.lastScanAt) > 10 * 60_000 ? " · 检查状态已过期" : ""}</span>}
