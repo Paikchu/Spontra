@@ -5,7 +5,7 @@ import {
   COMPANY_ANALYSIS_MIN_HIGHLIGHTS,
   COMPANY_ANALYSIS_OVERVIEW_LABEL,
 } from "../../../../shared/analysis-contract/company-analysis.ts";
-import type { CompanyAnalysisBlock, CompanyAnalysisCoverageStatus, CompanyAnalysisOverview, PublicCompanyAnalysisResponse } from "../../../../shared/analysis-contract/company-analysis.ts";
+import type { BusinessDeepDive, CompanyAnalysisBlock, CompanyAnalysisCoverageStatus, CompanyAnalysisOverview, PublicCompanyAnalysisResponse } from "../../../../shared/analysis-contract/company-analysis.ts";
 import type { ReportBlockImportance, ReportBlockTone } from "../../../../shared/analysis-contract/report-blocks.ts";
 import { FUNDAMENTAL_METRIC_CATALOG, isFundamentalMetricKey, type FundamentalMetricKey } from "../fundamentals/fundamental-metrics.ts";
 import {
@@ -24,7 +24,7 @@ export const COMPANY_ANALYSIS_SCHEMA_VERSION = "company-analysis.v1";
  * run's input hash, so a company already analysed under the previous label would otherwise be
  * deduplicated against that publication and never see the new prompt's output at all.
  */
-export const COMPANY_ANALYSIS_PROMPT_VERSION = "company-analysis-skill.v7";
+export const COMPANY_ANALYSIS_PROMPT_VERSION = "business-deep-dive-react.v1";
 
 export type CompanyAnalysisRunStatus =
   | "waiting_fundamentals"
@@ -199,7 +199,66 @@ export function normalizeCompanyAnalysisOverview(
     || highlights.some((highlight) => !highlight.title || !highlight.body || !highlight.evidenceRefs.length)) {
     throw new CompanyAnalysisValidationError(`Company analysis overview must contain one headline, one introduction, and at least ${COMPANY_ANALYSIS_MIN_HIGHLIGHTS} evidence-backed highlights.`);
   }
-  return { label, headline, introduction, highlights };
+  const deepDive = item?.deepDive === undefined ? undefined : normalizeBusinessDeepDive(item.deepDive);
+  return { label: deepDive ? "公司业务拆解" : label, headline, introduction, highlights, ...(deepDive ? { deepDive } : {}) };
+}
+
+const BUSINESS_SECTION_KEYS = new Set<BusinessDeepDive["sections"][number]["key"]>([
+  "business", "mechanics", "customers", "revenue", "economics", "financials", "industry", "moat", "risks", "investment",
+]);
+const REQUIRED_BUSINESS_KEYS = ["business", "mechanics", "revenue", "financials", "industry", "moat", "risks", "investment"] as const;
+
+export function normalizeBusinessDeepDive(value: unknown): BusinessDeepDive {
+  const item = record(value);
+  const headline = prose(item?.headline, 180);
+  const introduction = prose(item?.introduction, 1_200);
+  const sources = (Array.isArray(item?.sources) ? item.sources : []).slice(0, 32).map((raw) => {
+    const source = record(raw);
+    const url = bounded(source?.url, 2_000);
+    let validUrl = false;
+    try {
+      const parsed = new URL(url);
+      validUrl = parsed.protocol === "https:" && !parsed.username && !parsed.password;
+    } catch { /* Invalid source. */ }
+    return {
+      id: bounded(source?.id, 80), title: prose(source?.title, 240), url, validUrl,
+      kind: source?.kind === "sec" ? "sec" as const : "web" as const,
+      publishedAt: typeof source?.publishedAt === "string" && timestamp(source.publishedAt) ? source.publishedAt : null,
+      retrievedAt: timestamp(source?.retrievedAt),
+    };
+  });
+  const sourceIds = new Set(sources.map((source) => source.id));
+  if (!headline || !introduction || !sources.length || sources.some((source) => !source.id || !source.title || !source.validUrl || !source.retrievedAt)
+    || sourceIds.size !== sources.length) throw new CompanyAnalysisValidationError("Business analysis sources are invalid.");
+
+  const sections = (Array.isArray(item?.sections) ? item.sections : []).slice(0, 12).map((raw) => {
+    const section = record(raw);
+    const key = text(section?.key);
+    const paragraphs = (Array.isArray(section?.paragraphs) ? section.paragraphs : []).slice(0, 5).map((rawParagraph) => {
+      const paragraph = record(rawParagraph);
+      const rawIds = paragraph?.sourceIds;
+      if (!Array.isArray(rawIds) || rawIds.length < 1 || rawIds.length > 8
+        || rawIds.some((id) => typeof id !== "string" || !id.trim() || id.length > 80 || !sourceIds.has(id.trim()))) {
+        throw new CompanyAnalysisValidationError("Business analysis contains a fabricated citation.");
+      }
+      return { text: prose(paragraph?.text, 1_500), sourceIds: rawIds.map((id: string) => id.trim()) };
+    });
+    if (!BUSINESS_SECTION_KEYS.has(key as BusinessDeepDive["sections"][number]["key"]) || !prose(section?.title, 120)
+      || !paragraphs.length || paragraphs.some((paragraph) => !paragraph.text || !paragraph.sourceIds.length
+        || paragraph.sourceIds.some((id) => !sourceIds.has(id)))) {
+      throw new CompanyAnalysisValidationError("Business analysis contains an unsupported or unsourced section.");
+    }
+    return { key: key as BusinessDeepDive["sections"][number]["key"], title: prose(section?.title, 120), paragraphs };
+  });
+  const keys = new Set(sections.map((section) => section.key));
+  if (keys.size !== sections.length || REQUIRED_BUSINESS_KEYS.some((key) => !keys.has(key))) {
+    throw new CompanyAnalysisValidationError("Business analysis is missing a core business-model section.");
+  }
+  return {
+    headline, introduction, sections,
+    sources: sources.map(({ validUrl: _validUrl, ...source }) => source),
+    limitations: strings(item?.limitations, 12, 400),
+  };
 }
 
 /**

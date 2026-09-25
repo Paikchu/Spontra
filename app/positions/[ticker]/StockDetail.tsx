@@ -24,7 +24,7 @@ import { PlanEditor } from "./PlanEditor";
 import { FinancialMetrics } from "./FinancialMetrics";
 
 const sections = [
-  ["outlook", "业务前瞻"], ["financials", "财务指标"], ["technical", "技术面指标"],
+  ["outlook", "业务拆解"], ["financials", "财务指标"], ["technical", "技术面指标"],
   ["holdings", "持仓构成"], ["plan", "持仓计划"], ["sec-filings", "财报与事件"],
 ] as const;
 

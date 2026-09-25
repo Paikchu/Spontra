@@ -3167,6 +3167,20 @@
 .unified-stock .stock-outlook__clue-index { grid-column: 1; grid-row: 1; color: var(--muted-foreground); font-family: var(--font-mono); font-weight: 400; }
 .unified-stock .stock-outlook__clue-title { grid-column: 1; grid-row: 2; margin: 0; font-size: 16px; line-height: 1.5; text-wrap: pretty; }
 .unified-stock .stock-outlook__clue-content { grid-column: 1; grid-row: 3; }
+.unified-stock .stock-outlook__deep-intro { margin: 18px 0 32px; color: var(--muted-foreground); font-size: 16px; line-height: 1.8; max-width: 72ch; }
+.unified-stock .stock-outlook__deep-sections { display: grid; gap: 34px; }
+.unified-stock .stock-outlook__deep-section { max-width: 78ch; }
+.unified-stock .stock-outlook__deep-heading { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; }
+.unified-stock .stock-outlook__deep-heading > span { color: var(--muted-foreground); font: 12px var(--font-mono); }
+.unified-stock .stock-outlook__deep-heading h3 { margin: 0; font-size: 20px; line-height: 1.45; font-weight: 650; }
+.unified-stock .stock-outlook__deep-section p { margin: 0 0 13px; color: var(--foreground); font-size: 15px; line-height: 1.85; overflow-wrap: break-word; }
+.unified-stock .stock-outlook__citation { margin-left: 3px; color: var(--primary); font-size: 12px; text-decoration: none; white-space: nowrap; }
+.unified-stock .stock-outlook__citation:hover, .unified-stock .stock-outlook__sources a:hover { text-decoration: underline; }
+.unified-stock .stock-outlook__limitations, .unified-stock .stock-outlook__sources { margin-top: 38px; padding-top: 18px; border-top: 1px solid var(--border); color: var(--muted-foreground); font-size: 13px; line-height: 1.7; }
+.unified-stock .stock-outlook__limitations h3, .unified-stock .stock-outlook__sources h3 { margin: 0 0 9px; color: var(--foreground); font-size: 14px; }
+.unified-stock .stock-outlook__limitations ul, .unified-stock .stock-outlook__sources ol { margin: 0; padding-left: 22px; }
+.unified-stock .stock-outlook__sources li { padding: 3px 0; overflow-wrap: anywhere; }
+.unified-stock .stock-outlook__sources a { color: var(--foreground); text-decoration: none; }
 .stock-detail-aside { display: flex; flex-direction: column; gap: 36px; position: sticky; top: calc(var(--stock-search-height, 56px) + 76px); padding-top: 4px; }
 .stock-detail-aside h2 { margin: 0 0 16px; color: var(--muted-foreground); font-size: 12px; font-weight: 600; }
 .stock-detail-aside dl { display: flex; flex-direction: column; gap: 12px; margin: 0 0 18px; }

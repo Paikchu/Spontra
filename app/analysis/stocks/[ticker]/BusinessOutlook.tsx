@@ -56,8 +56,8 @@ function BusinessOutlookContent({ ticker }: { ticker: string }) {
   if (status !== "ready" || !analysis?.overview) {
     return (
       <section className="stock-outlook stock-outlook--state" aria-labelledby="stock-outlook-heading">
-        <span className="stock-outlook__eyebrow" id="stock-outlook-heading">AI 综述</span>
-        {status === "loading" && <div role="status" className="flex flex-col gap-3 py-4"><span className="sr-only">正在读取最新业务判断…</span><Skeleton className="h-16 w-full" /><Skeleton className="h-24 w-full" /></div>}
+        <span className="stock-outlook__eyebrow" id="stock-outlook-heading">公司业务拆解</span>
+        {status === "loading" && <div role="status" className="flex flex-col gap-3 py-4"><span className="sr-only">正在读取业务拆解…</span><Skeleton className="h-16 w-full" /><Skeleton className="h-24 w-full" /></div>}
         {status === "empty" && (
           <div className="stock-outlook__state-row" role="status">
             <p className="stock-outlook__state">{companyAnalysisNotice(analysis?.latestRun)}</p>
@@ -66,7 +66,7 @@ function BusinessOutlookContent({ ticker }: { ticker: string }) {
         )}
         {status === "error" && (
           <Alert variant="destructive"><AlertDescription>
-            <p className="stock-outlook__state">AI 业务综述暂时不可用。</p>
+            <p className="stock-outlook__state">公司业务拆解暂时不可用。</p>
             <Button variant="outline" size="sm" type="button" onClick={() => setRefresh((value) => value + 1)}>重新读取</Button>
           </AlertDescription></Alert>
         )}
@@ -75,10 +75,41 @@ function BusinessOutlookContent({ ticker }: { ticker: string }) {
   }
 
   const { overview } = analysis;
+  if (overview.deepDive) {
+    const report = overview.deepDive;
+    const sourceNumber = new Map(report.sources.map((source, index) => [source.id, index + 1]));
+    return (
+      <article className="stock-outlook stock-outlook__deep" aria-labelledby="stock-outlook-heading" data-analysis-status={analysis.status}>
+        <div className="stock-outlook__meta">
+          <span className="stock-outlook__eyebrow" id="stock-outlook-heading">公司业务拆解</span>
+          <span>{analysis.period?.label}</span>
+        </div>
+        <h2 className="stock-outlook__headline" data-length={headlineLength(report.headline)}>{report.headline}</h2>
+        <p className="stock-outlook__deep-intro">{report.introduction}</p>
+        {companyAnalysisNotice(analysis.latestRun, true) && <p className="stock-outlook__updating" role="status">{companyAnalysisNotice(analysis.latestRun, true)}</p>}
+        <div className="stock-outlook__deep-sections">
+          {report.sections.map((section, index) => (
+            <section key={section.key} className="stock-outlook__deep-section" aria-labelledby={`business-${section.key}`}>
+              <div className="stock-outlook__deep-heading"><span aria-hidden="true">{String(index + 1).padStart(2, "0")}</span><h3 id={`business-${section.key}`}>{section.title}</h3></div>
+              {section.paragraphs.map((paragraph, paragraphIndex) => (
+                <p key={`${section.key}-${paragraphIndex}`}>{paragraph.text}{paragraph.sourceIds.map((id) => {
+                  const number = sourceNumber.get(id);
+                  const source = report.sources.find((item) => item.id === id);
+                  return number && source ? <a className="stock-outlook__citation" key={id} href={source.url} rel="noopener noreferrer" target="_blank" aria-label={`来源 ${number}：${source.title}`}>[{number}]</a> : null;
+                })}</p>
+              ))}
+            </section>
+          ))}
+        </div>
+        {report.limitations.length > 0 && <aside className="stock-outlook__limitations"><h3>尚待核实</h3><ul>{report.limitations.map((item, index) => <li key={index}>{item}</li>)}</ul></aside>}
+        <footer className="stock-outlook__sources"><h3>资料来源</h3><ol>{report.sources.map((source) => <li key={source.id}><a href={source.url} target="_blank" rel="noopener noreferrer">{source.title}</a>{source.publishedAt && <time dateTime={source.publishedAt}> · {source.publishedAt.slice(0, 10)}</time>}</li>)}</ol></footer>
+      </article>
+    );
+  }
   return (
     <section className="stock-outlook" aria-labelledby="stock-outlook-heading" data-analysis-status={analysis.status}>
       <div className="stock-outlook__meta">
-        <span className="stock-outlook__eyebrow" id="stock-outlook-heading">AI 综述</span>
+        <span className="stock-outlook__eyebrow" id="stock-outlook-heading">业务前瞻 · 历史版本</span>
         <span>{analysis.period?.label}</span>
       </div>
       <h2 className="stock-outlook__headline" data-length={headlineLength(overview.headline)}>{overview.headline}</h2>

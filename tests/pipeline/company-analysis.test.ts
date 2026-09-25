@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   COMPANY_ANALYSIS_SCHEMA_VERSION,
+  COMPANY_ANALYSIS_PROMPT_VERSION,
   normalizeCompanyAnalysisOverview,
   normalizeCompanyAnalysisPublication,
   toPublicCompanyAnalysis,
@@ -210,7 +211,11 @@ test("backfill selects only the latest completed Memory version without an analy
       promptVersion: publication().promptVersion,
       updatedAt: generatedAt,
     });
-    assert.deepEqual(await repository.listBackfillCandidates(["AMZN"], 100, true), []);
+    assert.deepEqual(await repository.listBackfillCandidates(["AMZN"], 100, true), [{
+      ticker: "AMZN", memoryJobId: "memory-latest", memoryVersion: 7,
+      periodId: "AMZN:2026-03-31:quarter", reportDate: "2026-03-31",
+      triggerRef: `memory-latest:7:${COMPANY_ANALYSIS_PROMPT_VERSION}`,
+    }], "a completed old overview is revised to the new business report once");
   } finally {
     database.close();
   }

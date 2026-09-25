@@ -122,6 +122,34 @@ const analysisRunSummary: JsonSchema = {
   },
 };
 
+const businessDeepDive: JsonSchema = {
+  title: "BusinessDeepDive",
+  description: "Source-backed explanation of products, operating mechanics, revenue, financial history and industry dynamics.",
+  type: "object", additionalProperties: false,
+  required: ["headline", "introduction", "sections", "sources", "limitations"],
+  properties: {
+    headline: { type: "string" }, introduction: { type: "string" },
+    sections: { type: "array", minItems: 8, maxItems: 12, items: {
+      type: "object", additionalProperties: false, required: ["key", "title", "paragraphs"],
+      properties: {
+        key: { enum: ["business", "mechanics", "customers", "revenue", "economics", "financials", "industry", "moat", "risks", "investment"] },
+        title: { type: "string" },
+        paragraphs: { type: "array", minItems: 1, maxItems: 5, items: {
+          type: "object", additionalProperties: false, required: ["text", "sourceIds"],
+          properties: { text: { type: "string" }, sourceIds: { type: "array", minItems: 1, items: { type: "string" } } },
+        } },
+      },
+    } },
+    sources: { type: "array", minItems: 1, maxItems: 32, items: {
+      type: "object", additionalProperties: false,
+      required: ["id", "title", "url", "kind", "publishedAt", "retrievedAt"],
+      properties: { id: { type: "string" }, title: { type: "string" }, url: { type: "string", pattern: "^https://" },
+        kind: { enum: ["sec", "web"] }, publishedAt: nullableString, retrievedAt: { type: "string" } },
+    } },
+    limitations: { type: "array", items: { type: "string" } },
+  },
+};
+
 const filingCompany: JsonSchema = {
   title: "FilingCompany",
   type: ["object", "null"],
@@ -346,6 +374,7 @@ export const COMPANY_ANALYSIS_SCHEMA: JsonSchema = {
         label: { type: "string" },
         headline: { type: "string" },
         introduction: { type: "string" },
+        deepDive: { $ref: "#/$defs/BusinessDeepDive" },
         highlights: {
           type: "array",
           minItems: COMPANY_ANALYSIS_MIN_HIGHLIGHTS,
@@ -384,7 +413,7 @@ export const COMPANY_ANALYSIS_SCHEMA: JsonSchema = {
       },
     },
   },
-  $defs: { AnalysisRunSummary: analysisRunSummary, CompanyAnalysisBlock: companyAnalysisBlock },
+  $defs: { AnalysisRunSummary: analysisRunSummary, CompanyAnalysisBlock: companyAnalysisBlock, BusinessDeepDive: businessDeepDive },
 };
 
 export const FUNDAMENTALS_SCHEMA: JsonSchema = {
