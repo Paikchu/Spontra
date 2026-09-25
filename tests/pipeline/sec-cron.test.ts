@@ -84,6 +84,22 @@ test("starts one idempotent company analysis workflow for each backfill candidat
   assert.match(started[0]?.id ?? "", /^company-/);
 });
 
+test("paces historical business-report upgrades to two companies per Cron tick", async () => {
+  const started: string[] = [];
+  const tickers = ["MSFT", "NOK", "AMZN"];
+  const candidates = tickers.map((ticker) => ({
+    ticker, memoryJobId: `memory-${ticker}`, memoryVersion: 1,
+    periodId: `${ticker}:2026-06-30:quarter`, reportDate: "2026-06-30",
+    triggerRef: `memory-${ticker}:1`,
+  }));
+  const result = await runCompanyAnalysisSweep({
+    ...env, SEC_TRACKED_TICKERS: tickers.join(","), DB: companyAnalysisDb(candidates),
+    COMPANY_ANALYSIS_WORKFLOW: workflowBinding(started),
+  });
+  assert.deepEqual(result.started, ["MSFT", "NOK"]);
+  assert.equal(result.candidates, 2);
+});
+
 test("repeated force backfills share the recovery id until that attempt actually ends", async () => {
   const ids: string[] = [];
   const triggerRefs: string[] = [];
@@ -209,8 +225,8 @@ test("starts one company analysis on demand, with the trigger the sweep would ha
     status: "queued", analysisJobId: started[0]!.id, ticker: "MSFT",
     periodId: memoryRow.periodId, memoryVersion: memoryRow.memoryVersion,
   });
-  // The same trigger shape the sweep passes, so the workflow cannot tell a manual run apart.
-  assert.equal(started[0]!.params.triggerRef, "memory-job-9:4");
+  // A manual revision must have a fresh trigger_ref; the prior published row is immutable.
+  assert.match(String(started[0]!.params.triggerRef), /^memory-job-9:4:manual:/);
   assert.equal(started[0]!.params.ticker, "MSFT");
   // A manual run is a fresh attempt, never a retry, so it must not spend the recovery budget.
   assert.equal("recoveryAttempt" in started[0]!.params, false);

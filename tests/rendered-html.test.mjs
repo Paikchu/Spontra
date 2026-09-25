@@ -580,7 +580,7 @@ test("uses independent position routes and removes the workspace dialog", async 
   assert.match(dashboard, /className="sr-only">\{t\("，查看持仓详情"\)\}/);
   assert.match(addPlanDialog, /navigate\(`\/positions\/\$\{encodeURIComponent\(result\.symbol\)\}`\)/);
   assert.match(detail, /<Tabs value=\{activeTab\}/);
-  for (const label of ["业务前瞻", "财务指标", "持仓构成", "持仓计划", "披露时间线"]) assert.ok(detail.includes(label));
+  for (const label of ["业务拆解", "财务指标", "持仓构成", "持仓计划", "财报与事件"]) assert.ok(detail.includes(label));
   await assert.rejects(access(new URL("app/PositionDetailDialog.tsx", projectRoot)));
 });
 

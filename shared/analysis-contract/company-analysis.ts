@@ -12,6 +12,19 @@ export type CompanyAnalysisCoverageStatus = "complete" | "partial";
  */
 export const COMPANY_ANALYSIS_OVERVIEW_LABEL = "业务前瞻 · AI 综述";
 
+/** A sourced, long-form explanation of how the company actually operates. */
+export type BusinessDeepDive = {
+  headline: string;
+  introduction: string;
+  sections: Array<{
+    key: "business" | "mechanics" | "customers" | "revenue" | "economics" | "financials" | "industry" | "moat" | "risks" | "investment";
+    title: string;
+    paragraphs: Array<{ text: string; sourceIds: string[] }>;
+  }>;
+  sources: Array<{ id: string; title: string; url: string; kind: "sec" | "web"; publishedAt: string | null; retrievedAt: string }>;
+  limitations: string[];
+};
+
 /**
  * How many judgments an overview may carry. The count used to be fixed at four, which made every
  * filing look equally eventful: a quarter with two things worth saying padded to four, and one with
@@ -56,6 +69,8 @@ export type CompanyAnalysisOverview = {
   headline: string;
   introduction: string;
   highlights: CompanyAnalysisHighlight[];
+  /** Additive to v1: older publications retain their original overview. */
+  deepDive?: BusinessDeepDive;
 };
 
 export type PublicCompanyAnalysisResponse = {

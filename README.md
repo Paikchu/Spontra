@@ -24,7 +24,7 @@ Spontra 围绕个人的买入理由、投资期限与风险边界组织研究。
 | 群聊式主动汇报入口 | `/chat` 已有交互示例：右侧四个汇报模块，点击在左侧展示预设每日报告与 Agent 补充意见 |
 | 未读与回复 | 页面内状态；回复仅在当前页面展示，刷新后不保留，不会触发真实 Agent |
 | 投资账本 | 已有 IBKR 持仓、成交、净入金、持仓计划与财报日历；`/` 保留账本入口 |
-| 研究数据与分析 | 已有 SEC 财报、公司业务前瞻、基本面指标及后台分析流程，具体运行边界见下文 |
+| 研究数据与分析 | 已有 SEC 财报、公司业务拆解、基本面指标及后台分析流程，具体运行边界见下文 |
 | 持续跟踪 → 核验 → 主动汇报闭环 | 产品建设方向；现有后台流程尚未接入群聊汇报，Agent 分工与调度方案待设计 |
 | 多券商整合、个人研究版本与授权共享 | 产品规划；不能将现有分析 Memory 等同于完整的个人研究记忆或共享系统 |
 
@@ -70,7 +70,7 @@ app/                         页面、API 与交互组件
   chat/                      群聊式汇报入口（当前为 mock）
   daily-reports-home.tsx      汇报模块、报告对话与预设数据
   portfolio/                 组合概览、分布图与持仓账本组件
-  positions/[ticker]/        个股详情、业务前瞻、财务指标和持仓计划
+  positions/[ticker]/        个股详情、业务拆解、财务指标和持仓计划
   analysis/                  财报搜索、报告页面和分析组件
   api/analysis/v1/           面向浏览器的分析读取代理
 worker/                      主应用 Cloudflare 入口
@@ -111,7 +111,7 @@ npx wrangler dev --config workers/pipeline/wrangler.jsonc
 | --- | --- |
 | 主应用 | `PORTFOLIO_SYNC_KEY`、`EARNING_REPORT_READ_TOKEN`；使用 HTTPS 时配置 `EARNING_REPORT_PIPELINE_ORIGIN` |
 | `sec-cron` | `IBKR_FLEX_QUERY_ID`、`IBKR_FLEX_TOKEN`、`PORTFOLIO_SYNC_KEY` |
-| Pipeline | `SEC_USER_AGENT`、`SEC_TRACKED_TICKERS`、`SEC_ANALYSIS_MODEL`、`AI_API_KEY`、`SEC_REFRESH_KEY`、`ANALYSIS_READ_KEYS`、可选 `ANALYSIS_ADDITIONAL_READ_KEYS` |
+| Pipeline | `SEC_USER_AGENT`、`SEC_TRACKED_TICKERS`、`SEC_ANALYSIS_MODEL`、`AI_API_KEY`、`TAVILY_API_KEY`、`SEC_REFRESH_KEY`、`ANALYSIS_READ_KEYS`、可选 `ANALYSIS_ADDITIONAL_READ_KEYS` |
 
 主应用与 `sec-cron` 的 `PORTFOLIO_SYNC_KEY` 必须一致。前端的读取凭据必须匹配 Pipeline 配置的消费者凭据。生产值保留在对应 Worker 的 Runtime variables / Secrets 中，本地文件不会随部署自动上传。
 
@@ -227,7 +227,7 @@ npm run market-close:check
 | --- | --- |
 | `/` | 组合概览与投资账本；主界面支持在页面内切换内容 |
 | `/chat` | Agent 群聊与四个汇报模块；当前为预设报告、页面内未读与回复 |
-| `/positions/[ticker]` | 业务前瞻、财务指标、技术面、持仓构成、持仓计划及披露时间线 |
+| `/positions/[ticker]` | 业务拆解、财务指标、技术面、持仓构成、持仓计划及披露时间线 |
 | `/analysis` | 财报搜索入口 |
 | `/analysis/stocks/[ticker]` | 兼容旧链接，重定向到个股详情 |
 | `/analysis/stocks/[ticker]/sec/[accession]` | 完整财报分析 |

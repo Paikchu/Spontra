@@ -2,8 +2,6 @@ import { D1CompanyAnalysisRepository } from "./company-analysis/repository.ts";
 import { D1SecRepository } from "./sec/d1.ts";
 import { isTrackedTicker, normalizeTrackedTicker, parseTrackedTickers } from "./sec/config.ts";
 import { hashString } from "./sec/analysis.ts";
-import { D1FundamentalsRepository } from "./fundamentals/fundamentals-d1.ts";
-import { resolveTargetPeriodEnd } from "./company-analysis/packet.ts";
 import { sha256 } from "./company-analysis/api.ts";
 
 export type SecWorkflowBinding<T = SecWorkflowParams> = {
@@ -95,17 +93,15 @@ export async function runCompanyAnalysisSweep(
       }
     }
   }
-  const candidates = await repository.listBackfillCandidates(tickers, 100, options.forceIncomplete === true);
+  // Deep research fetches several sources per company; pace older-version backfills over Cron ticks.
+  const candidates = await repository.listBackfillCandidates(tickers, 2, options.forceIncomplete === true);
   const started: string[] = [];
   const failed: string[] = [];
   for (const candidate of candidates) {
     const ticker = normalizeTrackedTicker(candidate.ticker);
     if (!ticker || !candidate.triggerRef) continue;
     try {
-      if (candidate.waitingForData) {
-        const snapshot = await new D1FundamentalsRepository(requireDb(env)).getLastGoodSnapshot(ticker);
-        if (!snapshot?.payloadHash || !resolveTargetPeriodEnd(snapshot.observations, candidate.reportDate)) continue;
-      }
+      // The business-model Agent can use published SEC reports even when Yahoo has no matching quarter.
       await env.COMPANY_ANALYSIS_WORKFLOW.create({
         // A terminal run version has exactly one recovery id, even across concurrent Cron ticks
         // or an ambiguous create response. The id changes only after that attempt actually ends.
@@ -245,9 +241,11 @@ export async function handleCompanyAnalysisRequest(request: Request, env: SecCro
   try {
     // A unique id per request, unlike the sweep's `company-<hash of triggerRef>`: that id already
     // exists for a ticker that has been analysed, which is exactly the case this route serves.
+    const requestId = crypto.randomUUID();
     const instance = await env.COMPANY_ANALYSIS_WORKFLOW.create({
-      id: `company-manual-${ticker}-${now}-${crypto.randomUUID()}`,
-      params: trigger,
+      id: `company-manual-${ticker}-${now}-${requestId}`,
+      // trigger_ref is unique in D1: a manual regeneration must not collide with an old ready run.
+      params: { ...trigger, triggerRef: `${trigger.triggerRef.slice(0, 170)}:manual:${now}:${requestId}` },
     });
     return Response.json({
       status: "queued", analysisJobId: instance.id, ticker,

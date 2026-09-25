@@ -1,5 +1,6 @@
 import type { AnalysisRunSummary } from "../../../../shared/analysis-contract/filings.ts";
 import {
+  COMPANY_ANALYSIS_PROMPT_VERSION,
   normalizeCompanyAnalysisPublication,
   type CompanyAnalysisPublication,
   type CompanyAnalysisRunStatus,
@@ -147,7 +148,7 @@ export class D1CompanyAnalysisRepository {
       )
       SELECT m.ticker, m.memoryJobId, t.version AS memoryVersion,
         m.periodId, m.reportDate, r.analysis_id AS analysisId,
-        r.trigger_ref AS recoveryTriggerRef, r.status AS runStatus,
+        r.trigger_ref AS recoveryTriggerRef, r.status AS runStatus, r.prompt_version AS runPromptVersion,
         r.recovery_count AS recoveryCount, r.updated_at AS expectedUpdatedAt
       FROM ranked_memory m
       JOIN sec_company_memory_threads t ON t.ticker = m.ticker
@@ -157,37 +158,42 @@ export class D1CompanyAnalysisRepository {
         ORDER BY prior.updated_at DESC, prior.analysis_id DESC LIMIT 1
       )
       WHERE m.memoryRank = 1
-        AND (r.analysis_id IS NULL OR r.status IN ('failed', 'insufficient_data'))
+        AND (r.analysis_id IS NULL OR r.status IN ('failed', 'insufficient_data')
+          OR (r.status = 'ready' AND r.prompt_version <> ?))
         AND NOT EXISTS (
           SELECT 1 FROM company_analysis_runs done
           WHERE done.ticker = m.ticker AND done.period_id = m.periodId
-            AND done.memory_version = t.version AND done.status = 'ready'
+            AND done.memory_version = t.version AND done.status = 'ready' AND done.prompt_version = ?
         )
       ORDER BY COALESCE(r.updated_at, ''), m.ticker
-    `).bind(...allowed).all<Omit<CompanyAnalysisBackfillCandidate, "triggerRef" | "expectedUpdatedAt"> & {
+    `).bind(...allowed, COMPANY_ANALYSIS_PROMPT_VERSION, COMPANY_ANALYSIS_PROMPT_VERSION).all<Omit<CompanyAnalysisBackfillCandidate, "triggerRef" | "expectedUpdatedAt"> & {
       analysisId: string | null;
       recoveryTriggerRef: string | null;
       runStatus: CompanyAnalysisRunStatus | null;
+      runPromptVersion: string | null;
       recoveryCount: number | null;
       expectedUpdatedAt: string | null;
     }>();
     return rows.results.filter((row) => {
-      if (!row.analysisId || includeIncomplete || row.runStatus === "insufficient_data") return true;
+      if (!row.analysisId || includeIncomplete || row.runStatus === "insufficient_data" || row.runStatus === "ready") return true;
       const count = row.recoveryCount ?? 0;
       return count < COMPANY_ANALYSIS_MAX_RECOVERIES
         && now - Date.parse(row.expectedUpdatedAt ?? "") >= RECOVERY_BACKOFF_MS[count]!;
     }).slice(0, boundedLimit).map((row) => {
-      const { recoveryTriggerRef, analysisId, runStatus, recoveryCount, expectedUpdatedAt, ...candidate } = row;
+      const { recoveryTriggerRef, analysisId, runStatus, runPromptVersion, recoveryCount, expectedUpdatedAt, ...candidate } = row;
+      const revision = runStatus === "ready" && runPromptVersion !== COMPANY_ANALYSIS_PROMPT_VERSION;
       return {
         ...candidate,
-        ...(analysisId ? {
+        ...(analysisId && !revision ? {
           analysisId,
           // Waiting for data is not a failed model attempt and does not consume the retry budget.
           recoveryAttempt: (recoveryCount ?? 0) + (runStatus === "failed" ? 1 : 0),
           expectedUpdatedAt: expectedUpdatedAt!,
           waitingForData: runStatus === "insufficient_data",
         } : {}),
-        triggerRef: recoveryTriggerRef || `${row.memoryJobId}:${row.memoryVersion}`,
+        triggerRef: revision
+          ? `${row.memoryJobId}:${row.memoryVersion}:${COMPANY_ANALYSIS_PROMPT_VERSION}`
+          : recoveryTriggerRef || `${row.memoryJobId}:${row.memoryVersion}`,
       };
     });
   }
@@ -196,11 +202,8 @@ export class D1CompanyAnalysisRepository {
    * The trigger one ticker needs to be analysed again, without the exclusion `listBackfillCandidates`
    * applies.
    *
-   * The sweep deliberately skips a company that already has a `ready` run for the latest memory
-   * version — that is what stops it re-analysing the whole watchlist every tick. But the run's input
-   * hash covers the prompt and model versions, so after either changes there is no way to see the
-   * new output until a filing happens to advance memory. This is the operational lever for that: it
-   * answers "what would the sweep pass to the workflow for this ticker, if it were going to".
+   * The sweep upgrades older reports at a bounded rate. This endpoint lets an operator request
+   * one company's current version immediately and ask for a fresh read of changing web evidence.
    *
    * Recovery fields are absent on purpose. A manual run is a fresh attempt, not a retry of a failed
    * one, and must not consume that ticker's recovery budget.
