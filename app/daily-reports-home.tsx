@@ -30,14 +30,13 @@ export function DailyReportsHome() {
         return parsed.data;
       });
       if (!mounted.current) return;
-      const atBottom = !thread.current || thread.current.scrollHeight - thread.current.scrollTop - thread.current.clientHeight < 100;
       setReports(current => [...new Map([...current, ...incoming].map(report => [report.id, report])).values()]
         .sort((a, b) => a.generatedAt.localeCompare(b.generatedAt) || a.id.localeCompare(b.id)));
+      setSelected(current => current ?? [...incoming].sort((a, b) => b.generatedAt.localeCompare(a.generatedAt) || b.id.localeCompare(a.id))[0]?.id ?? null);
       setMonitor(payload.monitor);
       if (before || !initialized.current) setCursor(payload.nextCursor);
       initialized.current = true;
       setError("");
-      if (!before && atBottom) requestAnimationFrame(() => thread.current?.scrollTo({ top: thread.current.scrollHeight }));
     } catch (failure) {
       if (mounted.current && !signal?.aborted) setError(failure instanceof Error ? failure.message : "报告更新失败。");
     } finally { if (mounted.current) { setLoading(false); setLoadingOlder(false); } }
@@ -53,8 +52,10 @@ export function DailyReportsHome() {
 
   function openReport(id: string) {
     setSelected(id);
-    document.getElementById(`research-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
+
+  useEffect(() => { thread.current?.scrollTo({ top: 0 }); }, [selected]);
+  const activeReport = reports.find(report => report.id === selected);
 
   return <section className="daily-reports" aria-labelledby="daily-reports-title">
     <div className="daily-reports-layout">
@@ -68,11 +69,10 @@ export function DailyReportsHome() {
           {error && <p>{error} <button type="button" onClick={() => void refresh()}>重试</button></p>}
           {!!monitor?.issues.length && <details><summary>{monitor.issues.length} 项数据覆盖缺口</summary><ul>{monitor.issues.map((issue, index) => <li key={`${issue.ticker}-${issue.source}-${index}`}>{issue.ticker} · {issue.message}</li>)}</ul></details>}
         </div>
-        <div ref={thread} className="daily-reports-thread" aria-label="汇报对话">
-          {cursor && <button className="sp-btn sp-btn-secondary sp-btn-sm" type="button" disabled={loadingOlder} onClick={() => { setLoadingOlder(true); void refresh(cursor); }}>{loadingOlder ? "加载中…" : "加载更早的汇报"}</button>}
+        <div ref={thread} className="daily-reports-thread" aria-label={activeReport ? `研究对话：${activeReport.title}` : "汇报对话"}>
           {loading && <p role="status">正在读取研究汇报…</p>}
           {!loading && !reports.length && !error && <p>尚无已发布的研究汇报。后台完成调查后，报告会自动出现在这里。</p>}
-          {reports.map(report => <article id={`research-${report.id}`} key={report.id} className="daily-report-document sp-lit" aria-labelledby={`title-${report.id}`}>
+          {(activeReport ? [activeReport] : []).map(report => <article id={`research-${report.id}`} key={report.id} className="daily-report-document sp-lit" aria-labelledby={`title-${report.id}`}>
             <div className="daily-reports-byline"><strong>Spontra 研究</strong><time dateTime={report.generatedAt}>{formatTime(report.generatedAt)}</time></div>
             <p className="daily-report-kicker">{report.tickers.join(" · ")} · {triggerName(report.trigger)}</p>
             <h2 id={`title-${report.id}`}>{report.title}</h2><p>{report.summary}</p>
@@ -86,6 +86,7 @@ export function DailyReportsHome() {
       <aside className="daily-reports-queue" aria-labelledby="daily-reports-queue-title">
         <div className="daily-reports-queue-heading"><h2 id="daily-reports-queue-title">研究汇报</h2><span>{reports.length} 份已加载</span></div>
         <div className="daily-reports-tiles">{[...reports].reverse().map(report => <button className="daily-reports-tile" type="button" key={report.id} aria-pressed={selected === report.id} onClick={() => openReport(report.id)}><span className="daily-reports-tile-title">{report.title}</span><span className="daily-reports-tile-agent">{formatTime(report.generatedAt)}</span><span className="daily-reports-tile-subject">{report.tickers.join(" · ")}</span></button>)}</div>
+        {cursor && <button className="sp-btn sp-btn-secondary sp-btn-sm" type="button" disabled={loadingOlder} onClick={() => { setLoadingOlder(true); void refresh(cursor); }}>{loadingOlder ? "加载中…" : "加载更早的汇报"}</button>}
       </aside>
     </div>
   </section>;
