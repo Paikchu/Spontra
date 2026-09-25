@@ -15,19 +15,19 @@ export class TavilyProvider implements SearchProvider {
   private readonly fetcher: typeof fetch;
   constructor(apiKey: string, fetcher: typeof fetch = fetch) {
     this.apiKey = apiKey;
-    this.fetcher = fetcher;
+    this.fetcher = (...args) => fetcher(...args);
   }
   private async post(operation: "search" | "extract", body: unknown): Promise<Record<string, unknown>> {
     if (!this.apiKey?.trim()) throw new WebSearchError("not_configured");
     try {
       const response = await this.fetcher(`https://api.tavily.com/${operation}`, {
-        method: "POST", redirect: "error", signal: AbortSignal.timeout(30_000),
+        method: "POST", redirect: "manual", signal: AbortSignal.timeout(30_000),
         headers: { Authorization: `Bearer ${this.apiKey}`, "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
       if (!response.ok) {
         await response.body?.cancel();
-        throw new WebSearchError("provider_error", response.status === 429 || response.status >= 500);
+        throw new WebSearchError("provider_error", response.status === 429 || response.status >= 500, response.status);
       }
       if (!response.body) throw new WebSearchError("invalid_response");
       const reader = response.body.getReader();

@@ -6,7 +6,9 @@ export type MarketObservation = {
 
 /** Fixed-host providers only. Timeouts cover both headers and response bodies. */
 export async function readProviderJson(url: string, fetcher: typeof fetch, headers: Record<string, string> = {}): Promise<unknown> {
-  const response = await fetcher(url, { headers, signal: AbortSignal.timeout(15_000), redirect: "error" });
+  // Workers on this compatibility date accept follow/manual only. A manual 3xx is
+  // rejected below, retaining the fixed-host boundary without an unsupported mode.
+  const response = await fetcher(url, { headers, signal: AbortSignal.timeout(15_000), redirect: "manual" });
   if (!response.ok) { await response.body?.cancel(); throw new Error(`provider_http_${response.status}`); }
   if (!response.body) throw new Error("provider_empty");
   const reader = response.body.getReader();
@@ -28,7 +30,7 @@ const record = (value: unknown): Record<string, unknown> => value && typeof valu
 export async function fetchMarketObservation(ticker: string, now: string, fetcher: typeof fetch = fetch): Promise<MarketObservation> {
   if (!/^[A-Z0-9.^=-]{1,20}$/.test(ticker)) throw new Error("invalid_ticker");
   const sourceUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1m&range=1d`;
-  const body = record(await readProviderJson(sourceUrl, fetcher, { "user-agent": "Spontra research monitor" }));
+  const body = record(await readProviderJson(sourceUrl, fetcher, { "user-agent": "Mozilla/5.0 (compatible; Spontra-Research/1.0)" }));
   const results = record(body.chart).result;
   const meta = record(record(Array.isArray(results) ? results[0] : null).meta);
   if (typeof meta.symbol !== "string" || meta.symbol.toUpperCase().replaceAll(".", "-") !== ticker.replaceAll(".", "-")) throw new Error("market_symbol_mismatch");

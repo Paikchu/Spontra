@@ -51,10 +51,12 @@ export interface CachePolicy {
 export class WebSearchError extends Error {
   readonly code: "invalid_request" | "not_configured" | "provider_error" | "invalid_response" | "busy" | "lease_lost";
   readonly retryable: boolean;
-  constructor(code: WebSearchError["code"], retryable = false) {
-    super(`Web search: ${code}`);
+  readonly httpStatus?: number;
+  constructor(code: WebSearchError["code"], retryable = false, httpStatus?: number) {
+    super(`Web search: ${code}${httpStatus === undefined ? "" : ` (HTTP ${httpStatus})`}`);
     this.name = "WebSearchError";
     this.code = code;
     this.retryable = retryable;
+    this.httpStatus = httpStatus;
   }
 }
