@@ -6,20 +6,7 @@
 .research-heading h2 { margin: 0; font: 650 22px/1.25 var(--sans); letter-spacing: -.01em; }
 .research-count { color: var(--ink-muted); font-size: 12px; font-weight: 500; font-variant-numeric: tabular-nums; }
 
-.research-monitor { display: grid; justify-items: end; gap: 6px; min-width: 0; text-align: right; }
-.research-monitor-status { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--ink); font-size: 13px; font-weight: 550; }
-.research-monitor-status > span { width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--brand); }
-.research-monitor-status[data-paused] { color: var(--caution); }
-.research-monitor-status[data-paused] > span { background: var(--caution); }
-.research-monitor-meta { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 4px 12px; color: var(--ink-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 
-.research-issues { position: relative; }
-.research-issues > summary { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border-radius: var(--sp-radius-pill); background: var(--caution-soft); color: var(--caution); font-weight: 550; list-style: none; cursor: pointer; }
-.research-issues > summary::-webkit-details-marker { display: none; }
-.research-issues > summary svg { width: 13px; height: 13px; }
-.research-issues > ul { position: absolute; z-index: 5; top: calc(100% + 8px); right: 0; width: min(360px, 80vw); margin: 0; padding: 12px 16px; list-style: none; border: 1px solid var(--line); border-radius: var(--sp-radius-sm); background: var(--surface-raised); box-shadow: var(--shadow-overlay); color: var(--ink-soft); font-size: 13px; line-height: 1.55; text-align: left; }
-.research-issues li + li { margin-top: 8px; }
-.research-issues strong { margin-right: 6px; color: var(--ink); font-family: var(--mono); font-weight: 600; }
 
 .research-error { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; padding: 12px 16px; border-radius: var(--sp-radius-sm); background: var(--danger-soft); }
 .research-error p { margin: 0; color: var(--ink); font-size: 14px; }
@@ -112,9 +99,6 @@
 
 @media (max-width: 720px) {
   .research-head { align-items: flex-start; flex-direction: column; }
-  .research-monitor { justify-items: start; text-align: left; }
-  .research-monitor-meta { justify-content: flex-start; }
-  .research-issues > ul { right: auto; left: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {

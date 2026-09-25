@@ -37,17 +37,6 @@ function CardHead({ kicker, title, action }: { kicker: string; title?: ReactNode
   );
 }
 
-function dateLine(now: string, language: string) {
-  const date = new Date(now);
-  const hour = Number(new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Shanghai", hour: "numeric", hourCycle: "h23" }).format(date));
-  if (language === "en") {
-    const day = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Shanghai", weekday: "long", month: "long", day: "numeric" }).format(date);
-    return `${day} · ${hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"}`;
-  }
-  const day = `${new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", month: "long", day: "numeric" }).format(date)} ${new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", weekday: "short" }).format(date)}`;
-  return `${day} · ${hour < 12 ? "早上好" : hour < 18 ? "下午好" : "晚上好"}`;
-}
-
 export function TodayDashboard({
   now,
   netLiquidation,
@@ -94,10 +83,7 @@ export function TodayDashboard({
   return (
     <div className="today">
       <div className="today-ambient" aria-hidden="true" />
-      <header className="today-heading">
-        <p suppressHydrationWarning>{dateLine(now, language)}</p>
-        <h1 id="today-title">{t("今日")}</h1>
-      </header>
+      <h1 className="sr-only" id="today-title">{t("今日")}</h1>
 
       <div className="today-grid">
         <section className="sp-card sp-card-accent sp-lit is-glow sp-reveal today-hero" style={reveal(0)} aria-labelledby="today-nav-label">

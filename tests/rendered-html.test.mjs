@@ -49,7 +49,7 @@ test("opens Today with the research feed at home, the ledger at /ledger, and fol
   const [homeHtml, ledgerHtml] = await Promise.all([home.text(), ledger.text()]);
   assert.doesNotMatch(homeHtml, /class="site-header"|class="site-primary-nav"|class="profile-menu"/);
   assert.doesNotMatch(homeHtml, /每日复盘|每日投资复盘|今日宏观经济|昨日收盘总结|id="review-panel"|id="daily-reports-title"/);
-  assert.match(homeHtml, /<h1 id="today-title">今日<\/h1>/);
+  assert.match(homeHtml, /<h1[^>]*id="today-title"[^>]*>今日<\/h1>/);
   assert.match(homeHtml, /href="\/ledger"/);
   assert.match(homeHtml, /id="research-title">研究汇报<\/h2>/);
   assert.match(homeHtml, /正在读取研究汇报/);

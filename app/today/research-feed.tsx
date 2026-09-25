@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ArrowUpRight, ChevronDown, TriangleAlert } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, ChevronDown } from "lucide-react";
 import { ReportContentRenderer } from "@/components/earning-report/report-blocks/ReportContentRenderer";
 import { CompanyLogo } from "@/app/company-logo";
 import { useLanguage } from "@/app/language-provider";
@@ -13,7 +13,6 @@ import { RESEARCH_REPORT_SCHEMA } from "@/shared/analysis-runtime/research-schem
 const READ_KEY = "spontra:research:read";
 const READ_LIMIT = 500;
 const TIME_ZONE = "Asia/Shanghai";
-const STALE_SCAN_MS = 10 * 60_000;
 const DESKTOP_QUERY = "(min-width: 1024px)";
 
 type Filter = "all" | "unread";
@@ -55,7 +54,6 @@ const newestFirst = (a: ResearchReport, b: ResearchReport) => b.generatedAt.loca
 export function ResearchFeed() {
   const { t, language } = useLanguage();
   const [reports, setReports] = useState<ResearchReport[]>([]);
-  const [monitor, setMonitor] = useState<Feed["monitor"] | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -96,7 +94,6 @@ export function ResearchFeed() {
         storeIds(next);
         setReadIds(next);
       }
-      setMonitor(payload.monitor);
       if (before || !initialized.current) setCursor(payload.nextCursor);
       initialized.current = true;
       setNow(new Date());
@@ -153,10 +150,6 @@ export function ResearchFeed() {
   }, [filter, reports, isUnread, now, language]);
 
   const active = reports.find(report => report.id === selected) ?? null;
-  const scanStale = monitor?.lastScanAt ? now.getTime() - Date.parse(monitor.lastScanAt) > STALE_SCAN_MS : false;
-  const status = monitor?.enabled
-    ? `${t("研究 Agent 正在观察")} ${monitor.tickers.length} ${t("个持仓标的")} · ${t("有实质变化时汇报")}`
-    : monitor?.holdingsAsOf ? t("自动研究与汇报已暂停") : monitor ? t("等待后台监测接入") : "";
 
   return (
     <section ref={section} className="research" data-view={view} aria-labelledby="research-title">
@@ -164,19 +157,6 @@ export function ResearchFeed() {
         <div className="research-heading">
           <h2 id="research-title">{t("研究汇报")}</h2>
           {reports.length > 0 && <span className="research-count">{reports.length} {t("份")}{unreadCount ? ` · ${unreadCount} ${t("份未读")}` : ""}</span>}
-        </div>
-        <div className="research-monitor" role="status">
-          {status && <p className="research-monitor-status" data-paused={!monitor?.enabled || undefined}><span aria-hidden="true" />{status}</p>}
-          <div className="research-monitor-meta">
-            {monitor?.lastScanAt && <span>{t("最近检查")} {clock(monitor.lastScanAt)}{scanStale ? ` · ${t("检查状态已过期")}` : ""}</span>}
-            {monitor?.holdingsAsOf && <span>{t("持仓快照")} {stamp(monitor.holdingsAsOf)}</span>}
-            {!!monitor?.issues.length && (
-              <details className="research-issues">
-                <summary><TriangleAlert aria-hidden="true" />{monitor.issues.length} {t("项数据覆盖缺口")}</summary>
-                <ul>{monitor.issues.map((issue, index) => <li key={`${issue.ticker}-${issue.source}-${index}`}><strong>{issue.ticker}</strong> {issue.message}</li>)}</ul>
-              </details>
-            )}
-          </div>
         </div>
       </div>
 
