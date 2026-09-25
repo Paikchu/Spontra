@@ -34,10 +34,10 @@ Spontra 围绕个人的买入理由、投资期限与风险边界组织研究。
 
 ## 项目入口
 
-- GitHub：[Paikchu/spontra](https://github.com/Paikchu/spontra)，主分支 `main`。
+- GitHub：[Paikchu/Spontra](https://github.com/Paikchu/Spontra)，主分支 `main`。
 - 生产网站：[Spontra](https://spontra.max-zhangyuchen.workers.dev/)。
-- 当前本地目录：`/Users/max/Investment/investment-record`。
-- 唯一 Git remote：`origin` 指向 `https://github.com/Paikchu/spontra.git`，发布统一使用 `git push origin main`。
+- 当前本地目录：`/Users/max/Developer/Spontra`。
+- 唯一 Git remote：`origin` 指向 `https://github.com/Paikchu/Spontra.git`，发布统一使用 `git push origin main`。
 
 GitHub 是唯一维护与自动部署的主仓库。`earning-report-analysis` 原仓库保留历史代码与旧 Web 入口，财报 Pipeline 的后续维护在本仓库进行。
 
@@ -92,7 +92,7 @@ docs/                        功能、迁移与运维说明
 需要 Node.js **22.13 或更高版本**，依赖版本以 `package-lock.json` 为准。
 
 ```bash
-cd /Users/max/Investment/investment-record
+cd /Users/max/Developer/Spontra
 npm ci
 npm run dev
 ```
@@ -245,7 +245,7 @@ Pipeline 自身提供 `/api/v1/companies/:ticker/filings`、`analysis`、`fundam
 
 ## 在新对话中继续维护
 
-1. 选择本地文件夹 `/Users/max/Investment/investment-record`。
+1. 选择本地文件夹 `/Users/max/Developer/Spontra`。
 2. 先检查 `git status`、当前分支及 `origin/main`，保留已有未提交修改。
 3. 根据职责进入 `app/`、`workers/sec-cron/` 或 `workers/pipeline/`，当前项目统一从本仓库的 `origin/main` 自动发布。
 4. 修改后台时核对对应 Wrangler 配置、Secrets 和数据库归属；读取凭据不要进入客户端。

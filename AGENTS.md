@@ -4,7 +4,7 @@
 
 # Git 与上线规则
 
-- 本仓库唯一远程为 `origin`，fetch 和 push 均指向 `https://github.com/Paikchu/spontra.git`。所有分支与 worktree 共用此远程，不添加其他发布远程。
+- 本仓库唯一远程为 `origin`，fetch 和 push 均指向 `https://github.com/Paikchu/Spontra.git`。所有分支与 worktree 共用此远程，不添加其他发布远程。
 - 唯一生产发布入口是 GitHub 的 `main` 分支。用户要求“上线”或“部署”时，将已验证的本次修改提交并合并到本地 `main`，执行 `git push origin main`，由 Cloudflare 自动部署。
 - 禁止本地手动部署，包括 `wrangler deploy`、`wrangler versions upload/deploy`、`wrangler pages deploy`、直接调用部署 API，以及本地运行 `deploy:cloudflare`、`sec-cron:deploy`、`worker:pipeline:deploy` 等发布脚本。这些部署脚本仅供自动构建执行。自动部署失败时，修复后再次推送，不绕过自动部署。
 - 用户只要求提交或合并时，不自动推送。用户要求上线时，推送已获授权，不重复请求确认。
