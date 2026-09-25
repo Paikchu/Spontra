@@ -1,3 +1,4 @@
+import { isResearchEligible } from "./scope.ts";
 import { z } from "zod";
 import type { SecPipelineEnv } from "../operations.ts";
 import type { ResearchMonitorState } from "../../../../shared/analysis-contract/research.ts";
@@ -21,7 +22,7 @@ export async function handleResearchRequest(request: Request, env: SecPipelineEn
     if (Date.parse(parsed.data.asOf) > Date.now() + 60_000) return json({ error: "Future holdings timestamp" }, 400);
     const previous = await repo.state<ResearchUniverse>("universe");
     if (previous && parsed.data.asOf < previous.asOf) return json({ status: "older_snapshot_ignored" });
-    const tickers = [...new Set(parsed.data.tickers)].sort();
+    const tickers = [...new Set(parsed.data.tickers)].filter(isResearchEligible).sort();
     await repo.setState("universe", { tickers, asOf: parsed.data.asOf, receivedAt: now } satisfies ResearchUniverse, now);
     return json({ status: "synchronized", count: tickers.length });
   }

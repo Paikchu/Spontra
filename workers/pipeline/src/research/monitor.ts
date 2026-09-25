@@ -1,3 +1,4 @@
+import { isResearchEligible } from "./scope.ts";
 import type { ResearchMonitorState } from "../../../../shared/analysis-contract/research.ts";
 import type { SecPipelineEnv } from "../operations.ts";
 import { parseSecSubmissions, type SecCompany } from "../sec/sec.ts";
@@ -41,6 +42,7 @@ async function scan(env: SecPipelineEnv, clock: Date) {
   const repo = new ResearchRepository(env.DB), now = clock.toISOString();
   const universe = await repo.state<ResearchUniverse>("universe");
   if (!universe) return { status: "awaiting_holdings" };
+  universe.tickers = universe.tickers.filter(isResearchEligible);
   const issues: ResearchMonitorState["issues"] = [];
   const issue = (ticker: string, source: string, message: string) => issues.push({ ticker, source, message, observedAt: now });
   const previousStatus = await repo.state<ResearchMonitorState>("monitor");
@@ -95,11 +97,13 @@ async function scan(env: SecPipelineEnv, clock: Date) {
     }
   }
   for (const followup of await repo.due(now)) {
+    if (!isResearchEligible(followup.ticker)) continue;
     await repo.enqueue({ id: await researchId(["followup", followup.id]), ticker: followup.ticker, kind: "followup", observedAt: now, sourceAt: null,
       payload: { question: followup.question, query: followup.query } });
     await repo.followupQueued(followup.id);
   }
   for (const candidate of await repo.recoverable(now)) {
+    if (!isResearchEligible(candidate.ticker)) continue;
     if (candidate.status === "budget_exhausted") {
       if (candidate.updated_at.slice(0, 10) < now.slice(0, 10)) await repo.retry(candidate, now);
       continue;
@@ -110,6 +114,7 @@ async function scan(env: SecPipelineEnv, clock: Date) {
     if (status && ["errored", "terminated", "complete"].includes(status.status)) await repo.retry(candidate, now);
   }
   for (const pending of await repo.pending(now)) {
+    if (!isResearchEligible(pending.ticker)) continue;
     const owner = crypto.randomUUID();
     if (!await repo.claim(pending.id, owner, now, new Date(clock.getTime() + 120_000).toISOString())) continue;
     try {
@@ -119,7 +124,7 @@ async function scan(env: SecPipelineEnv, clock: Date) {
       await repo.dispatched(pending.id, owner, now);
     } catch { await repo.dispatchFailed(pending.id, owner, now); issue(pending.ticker, "research", "调查任务启动失败，已保留待重试"); }
   }
-  const preserved = previousStatus?.issues.filter(item => item.ticker !== "*" && !batch.includes(item.ticker)) ?? [];
+  const preserved = previousStatus?.issues.filter(item => item.ticker !== "*" && isResearchEligible(item.ticker) && !batch.includes(item.ticker)) ?? [];
   const state: ResearchMonitorState = { enabled: true, tickers: universe.tickers, holdingsAsOf: universe.asOf, lastScanAt: now, issues: [...preserved, ...issues].slice(-100) };
   await repo.setState("monitor", state, now);
   return { status: "scanned", scanned: batch.length, issues: issues.length };

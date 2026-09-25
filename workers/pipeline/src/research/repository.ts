@@ -75,7 +75,7 @@ export class ResearchRepository {
     return !!row;
   }
 
-  async finishWithoutReport(id: string, status: "quiet" | "failed" | "budget_exhausted", now: string): Promise<void> {
+  async finishWithoutReport(id: string, status: "quiet" | "failed" | "budget_exhausted" | "excluded", now: string): Promise<void> {
     await this.db.prepare(`UPDATE research_cases SET status=?,updated_at=?,lease_owner=NULL,lease_until=NULL
       WHERE id=? AND status!='published'`).bind(status, now, id).run();
   }

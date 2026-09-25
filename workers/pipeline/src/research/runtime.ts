@@ -1,3 +1,4 @@
+import { isResearchEligible } from "./scope.ts";
 import type { SecPipelineEnv } from "../operations.ts";
 import { callWorkerSecModel } from "../operations.ts";
 import type { WorkflowStepLike } from "../workflow-core.ts";
@@ -21,6 +22,11 @@ export async function executeResearchWorkflow(caseId: string, step: WorkflowStep
   const repo = new ResearchRepository(env.DB);
   const now = await step.do("freeze-research-time", async () => new Date().toISOString());
   try {
+    const event = await repo.event(caseId);
+    if (event && !isResearchEligible(event.ticker)) {
+      await repo.finishWithoutReport(caseId, "excluded", now);
+      return { status: "excluded" };
+    }
     const reserved = await step.do("reserve-research-budget", () => repo.reserveBudget(now.slice(0, 10), 24));
     if (!reserved) {
       await step.do("record-budget-exhausted", () => repo.finishWithoutReport(caseId, "budget_exhausted", now));
