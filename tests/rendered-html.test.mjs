@@ -40,28 +40,27 @@ test("server-renders the investment record", async () => {
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Your site is taking shape/i);
 });
 
-test("opens Today at home, the ledger at /ledger, and the group conversation as its own Dock page", async () => {
+test("opens Today with the research feed at home, the ledger at /ledger, and folds the old conversation page into Today", async () => {
   const [home, ledger, chatResponse] = await Promise.all([render(), render("/ledger"), render("/chat")]);
   assert.equal(home.status, 200);
   assert.equal(ledger.status, 200);
-  assert.equal(chatResponse.status, 200);
-  const [homeHtml, ledgerHtml, chatHtml] = await Promise.all([home.text(), ledger.text(), chatResponse.text()]);
+  assert.equal(chatResponse.status, 307);
+  assert.equal(new URL(chatResponse.headers.get("location"), "http://localhost").href, "http://localhost/");
+  const [homeHtml, ledgerHtml] = await Promise.all([home.text(), ledger.text()]);
   assert.doesNotMatch(homeHtml, /class="site-header"|class="site-primary-nav"|class="profile-menu"/);
   assert.doesNotMatch(homeHtml, /每日复盘|每日投资复盘|今日宏观经济|昨日收盘总结|id="review-panel"|id="daily-reports-title"/);
   assert.match(homeHtml, /<h1 id="today-title">今日<\/h1>/);
   assert.match(homeHtml, /href="\/ledger"/);
-  assert.match(homeHtml, /示例/);
+  assert.match(homeHtml, /id="research-title">研究汇报<\/h2>/);
+  assert.match(homeHtml, /正在读取研究汇报/);
+  assert.equal((homeHtml.match(/class="research-tile"/g) ?? []).length, 0);
+  assert.doesNotMatch(homeHtml, /示例|需要你确认|href="\/chat"/);
   assert.doesNotMatch(homeHtml, /id="portfolio-panel"|id="ledger-title"/);
   assert.match(homeHtml, /href="\/"[^>]*aria-current="page"/);
   assert.match(ledgerHtml, /id="portfolio-panel"[^>]*role="region"/);
   assert.match(ledgerHtml, /<h1 class="summary-nav-label" id="portfolio-title">当前净值<\/h1>/);
   assert.match(ledgerHtml, /href="\/ledger"[^>]*aria-current="page"/);
-  assert.match(chatHtml, /id="daily-reports-title">群聊<\/h1>/);
-  assert.match(chatHtml, /正在读取研究汇报/);
-  assert.equal((chatHtml.match(/class="daily-reports-tile"/g) ?? []).length, 0);
-  assert.match(chatHtml, /href="\/ledger"[^>]*>投资账本<\/a>/);
-  assert.doesNotMatch(chatHtml, /id="portfolio-panel"/);
-  assert.match(chatHtml, /href="\/chat"[^>]*aria-current="page"/);
+  assert.doesNotMatch(ledgerHtml, /href="\/chat"/);
 });
 
 test("shows backend net deposits without manual settings", async () => {

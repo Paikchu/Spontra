@@ -471,15 +471,11 @@ h2:not([data-slot]) { font-weight: 650; letter-spacing: -.01em; }
 .today-heading { position: relative; z-index: 1; margin-bottom: clamp(18px, 2.4vw, 28px); }
 .today-heading p { margin: 0 0 6px; color: var(--ink-muted); font-size: 13px; font-weight: 550; }
 .today-heading h1 { font-size: clamp(34px, 3.4vw, 44px); }
-.today-grid { position: relative; z-index: 1; display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: stretch; }
-.today-hero, .today-reports { grid-column: span 2; }
+.today-grid { position: relative; z-index: 1; display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: stretch; }
 .today-hero-body { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 20px 32px; }
 .today-hero .sp-stat-hero .sp-stat-value { font-size: clamp(44px, 5.2vw, 64px); }
 .today-hero-stats { margin: 0; }
 .today-hero-stats dd { margin: 0; }
-.today-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 24px; }
-.today-ghost-on-accent { color: var(--sp-on-accent); box-shadow: inset 0 0 0 1px var(--sp-on-accent-soft); }
-.today-ghost-on-accent:hover { background: color-mix(in srgb, var(--sp-on-accent) 10%, transparent); }
 .today-earnings { display: flex; flex-direction: column; }
 .today-earnings-list { display: grid; margin: 0; padding: 0; list-style: none; }
 .today-earnings-list a { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--on-brand-soft); color: inherit; text-decoration: none; font-size: 13px; font-variant-numeric: tabular-nums; }
@@ -490,12 +486,6 @@ h2:not([data-slot]) { font-weight: 650; letter-spacing: -.01em; }
 .today-card-note { margin: 0; color: var(--ink-muted); font-size: 13px; line-height: 1.55; }
 .today-card-foot { display: flex; align-items: center; gap: 6px; margin: auto 0 0; padding-top: 16px; color: var(--ink-muted); font-size: 12px; }
 .today-card-foot svg { width: 14px; height: 14px; }
-.today-report-list { display: grid; margin: 0; padding: 0; list-style: none; }
-.today-report-list li { display: grid; grid-template-columns: 92px minmax(0, 1fr) auto; align-items: center; gap: 14px; padding: 14px 0; border-top: 1px solid var(--line); }
-.today-report-list li:first-child { padding-top: 0; border-top: 0; }
-.today-report-list p { margin: 0; color: var(--ink); font-size: 14px; line-height: 1.5; }
-.today-report-list small { display: block; margin-top: 3px; color: var(--ink-muted); font-size: 12px; }
-.today-report-list .sp-ev { justify-self: start; }
 .today-movers-list { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
 .today-movers-list a { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; margin: 0 -8px; padding: 7px 8px; border-radius: var(--sp-radius-sm); color: inherit; text-decoration: none; transition: background-color 160ms ease; }
 .today-movers-list a:hover { background: var(--fill); }
@@ -506,17 +496,15 @@ h2:not([data-slot]) { font-weight: 650; letter-spacing: -.01em; }
 @media (prefers-reduced-motion: no-preference) { .today-movers-loading span { animation: navigation-pulse 1.8s ease-in-out infinite; } }
 @media (max-width: 1100px) {
   .today-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-  .today-hero, .today-reports { grid-column: 1 / -1; }
+  .today-hero { grid-column: 1 / -1; }
 }
 @media (max-width: 720px) {
   .today-grid { grid-template-columns: minmax(0, 1fr); }
-  .today-hero, .today-reports { grid-column: auto; }
+  .today-hero { grid-column: auto; }
   .today-hero-body { display: grid; }
   .today-hero-stats.sp-stat-row.is-compact { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
   .today-hero-stats.sp-stat-row.is-compact > .sp-stat + .sp-stat { padding-left: 12px; }
   .today-hero-stats.sp-stat-row.is-compact .sp-stat-value { font-size: 17px; }
-  .today-report-list li { grid-template-columns: minmax(0, 1fr) auto; }
-  .today-report-list .sp-ev { grid-column: 1 / -1; }
   .sp-card-accent, .sp-card-brand { padding: 20px; border-radius: 24px; }
 }
 

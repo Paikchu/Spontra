@@ -22,10 +22,10 @@ function normalize(href: string, current: string) {
   const url = new URL(href, `${window.location.origin}${current}`);
   if (url.origin !== window.location.origin) return null;
   let path = url.pathname.replace(/\/$/, "") || "/";
-  if (path === "/market-close") return "/";
+  if (path === "/market-close" || path === "/chat") return "/";
   path = path.replace(/^\/analysis\/stocks\/([^/]+)$/, "/positions/$1");
   path = path.replace(/^\/positions\/([^/]+)\/sec\/([^/]+)$/, "/analysis/stocks/$1/sec/$2");
-  if (!/^\/$|^\/(ledger|analysis|chat|macro|settings)$|^\/positions\/[^/]+(?:\/sec\/[^/]+)?$|^\/analysis\/stocks\/[^/]+\/sec\/[^/]+$/.test(path)) return null;
+  if (!/^\/$|^\/(ledger|analysis|macro|settings)$|^\/positions\/[^/]+(?:\/sec\/[^/]+)?$|^\/analysis\/stocks\/[^/]+\/sec\/[^/]+$/.test(path)) return null;
   // Keep the snapshot identity in both the request and the page cache key.
   return path + (path.includes("/sec/") ? url.search : "") + url.hash;
 }

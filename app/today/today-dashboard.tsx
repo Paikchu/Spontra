@@ -7,11 +7,11 @@ import { useLanguage } from "@/app/language-provider";
 import { useMarketQuotes } from "@/app/use-market-quotes";
 import { CompanyLogo } from "@/app/company-logo";
 import { CountUp } from "@/components/spontra/effects";
-import { Delta, EvidenceTag, NodeArrow } from "@/components/spontra/primitives";
+import { Delta, NodeArrow } from "@/components/spontra/primitives";
 import { buildEarningsReminder } from "@/lib/earnings-calendar";
 import { withinReminderWindow, type CalendarEvent, type CalendarState } from "@/lib/earnings-live";
 import { money, number, percent } from "@/lib/portfolio-format";
-import { sampleReports } from "@/lib/sample-reports";
+import { ResearchFeed } from "./research-feed";
 
 export type TodayHolding = { symbol: string; name: string; weight: number };
 
@@ -78,7 +78,7 @@ export function TodayDashboard({
       if (!heldSymbols.has(event.symbol) || seen.has(event.symbol) || !withinReminderWindow(event, new Date(now))) return false;
       seen.add(event.symbol);
       return true;
-    }).slice(0, 4);
+    }).slice(0, 3);
   }, [earningsCalendar.events, heldSymbols, now]);
 
   const quoteSymbols = useMemo(() => holdings.map((holding) => holding.symbol).join(","), [holdings]);
@@ -89,9 +89,7 @@ export function TodayDashboard({
       return quote && Number.isFinite(quote.changePercent) ? [{ ...holding, change: quote.changePercent }] : [];
     })
     .sort((left, right) => Math.abs(right.change) - Math.abs(left.change))
-    .slice(0, 5), [holdings, quotes]);
-
-  const reports = sampleReports;
+    .slice(0, 3), [holdings, quotes]);
 
   return (
     <div className="today">
@@ -120,13 +118,32 @@ export function TodayDashboard({
               <div className="sp-stat"><dt className="sp-stat-label">{t("杠杆率")}</dt><dd className="sp-stat-value">{number(portfolioLeverage, 2, 2)}x</dd></div>
             </dl>
           </div>
-          <div className="today-actions">
-            <Link href="/ledger" className="sp-btn sp-btn-inverse sp-btn-sm">{t("查看投资账本")}</Link>
-            <Link href="/chat" className="sp-btn sp-btn-sm today-ghost-on-accent">{t("打开群聊")}</Link>
-          </div>
         </section>
 
-        <section className="sp-card sp-card-brand sp-lit is-glow sp-reveal today-earnings" style={reveal(1)} aria-labelledby="today-earnings-title">
+        <section className="sp-card sp-lit sp-reveal today-movers" style={reveal(1)} aria-labelledby="today-movers-title">
+          <CardHead kicker={t("今日涨跌")} title={<span id="today-movers-title">{t("波动最大的持仓")}</span>} />
+          {movers.length > 0 ? (
+            <ul className="today-movers-list">
+              {movers.map((mover) => (
+                <li key={mover.symbol}>
+                  <Link href={`/positions/${encodeURIComponent(mover.symbol)}`}>
+                    <CompanyLogo symbol={mover.symbol} />
+                    <span className="today-mover-name"><span className="sp-ticker-sym">{mover.symbol}</span><small>{t("权重")} {percent(mover.weight)}</small></span>
+                    <Delta value={mover.change} kind="percent" pill />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ) : status === "unavailable" ? (
+            <p className="today-card-note" role="status">{t("行情暂不可用")}</p>
+          ) : (
+            <div className="today-movers-loading" role="status" aria-label={t("行情读取中")}>
+              {[0, 1, 2].map((index) => <span key={index} />)}
+            </div>
+          )}
+        </section>
+
+        <section className="sp-card sp-card-brand sp-lit is-glow sp-reveal today-earnings" style={reveal(2)} aria-labelledby="today-earnings-title">
           <CardHead kicker={t("本月财报")} title={<span id="today-earnings-title">{upcoming.length ? t("持仓公司即将发布财报") : earningsCalendar.status === "unavailable" ? t("财报日历暂不可用") : t("本月没有持仓财报")}</span>} />
           {upcoming.length > 0 ? (
             <ul className="today-earnings-list">
@@ -148,50 +165,9 @@ export function TodayDashboard({
           )}
           <p className="today-card-foot"><CalendarDays aria-hidden="true" />{t("上海时间")}</p>
         </section>
-
-        <section className="sp-card sp-lit sp-reveal today-reports" style={reveal(2)} aria-labelledby="today-reports-title">
-          <CardHead
-            kicker={`${t("示例")} · ${t("今日汇报")}`}
-            title={<span id="today-reports-title">{t("需要你确认")}</span>}
-            action={<OpenLink href="/chat" label={t("打开群聊")} />}
-          />
-          <ul className="today-report-list">
-            {reports.map((report) => (
-              <li key={report.id}>
-                <EvidenceTag kind={report.evidence}>{t(report.evidence === "support" ? "支持" : report.evidence === "counter" ? "反证" : "待确认")}</EvidenceTag>
-                <div>
-                  <p>{report.fact}</p>
-                  <small>{report.agent} · {report.time} · {report.subject}</small>
-                </div>
-                <Link href="/chat" className="sp-btn sp-btn-secondary sp-btn-sm">{t("查看")}</Link>
-              </li>
-            ))}
-          </ul>
-        </section>
-
-        <section className="sp-card sp-lit sp-reveal today-movers" style={reveal(3)} aria-labelledby="today-movers-title">
-          <CardHead kicker={t("今日涨跌")} title={<span id="today-movers-title">{t("波动最大的持仓")}</span>} />
-          {movers.length > 0 ? (
-            <ul className="today-movers-list">
-              {movers.map((mover) => (
-                <li key={mover.symbol}>
-                  <Link href={`/positions/${encodeURIComponent(mover.symbol)}`}>
-                    <CompanyLogo symbol={mover.symbol} />
-                    <span className="today-mover-name"><span className="sp-ticker-sym">{mover.symbol}</span><small>{t("权重")} {percent(mover.weight)}</small></span>
-                    <Delta value={mover.change} kind="percent" pill />
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          ) : status === "unavailable" ? (
-            <p className="today-card-note" role="status">{t("行情暂不可用")}</p>
-          ) : (
-            <div className="today-movers-loading" role="status" aria-label={t("行情读取中")}>
-              {[0, 1, 2, 3].map((index) => <span key={index} />)}
-            </div>
-          )}
-        </section>
       </div>
+
+      <ResearchFeed />
     </div>
   );
 }

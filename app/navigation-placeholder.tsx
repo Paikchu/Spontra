@@ -5,7 +5,7 @@ import { useLanguage } from "./language-provider";
 export function NavigationPlaceholder({ path, error, onRetry }: { path: string; error: string; onRetry: () => void }) {
   const { t } = useLanguage();
   const key = path.split("#")[0];
-  const title = key === "/" ? "今日" : key === "/ledger" ? "投资账本" : key === "/chat" ? "群聊" : key === "/settings" ? "设置" : key === "/macro" ? "宏观分析" : key.includes("/sec/") ? "财报分析" : key.startsWith("/positions/") ? "公司详情" : "公司业务分析";
+  const title = key === "/" ? "今日" : key === "/ledger" ? "投资账本" : key === "/settings" ? "设置" : key === "/macro" ? "宏观分析" : key.includes("/sec/") ? "财报分析" : key.startsWith("/positions/") ? "公司详情" : "公司业务分析";
   return <main className="page-shell navigation-placeholder" data-navigation-placeholder={key} aria-busy={!error}>
     <h1 className="text-2xl font-semibold tracking-tight">{t(title)}</h1>
     {error ? <div role="alert" className="mt-8 text-sm text-muted-foreground">
