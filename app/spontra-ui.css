@@ -465,43 +465,17 @@ h2:not([data-slot]) { font-weight: 650; letter-spacing: -.01em; }
 /* ==========================================================================
    Today (/)
    ========================================================================== */
-.today { position: relative; padding: clamp(24px, 4vw, 48px) 0 64px; }
+.today { --today-edge: clamp(20px, 2.4vw, 32px); position: relative; padding: var(--today-edge) 0; }
 .today-ambient { position: absolute; z-index: 0; top: -120px; right: -8%; width: min(620px, 80vw); height: 480px; pointer-events: none;
   background: radial-gradient(closest-side, var(--sp-accent-soft), transparent); opacity: .5; filter: blur(12px); }
-.today-grid { position: relative; z-index: 1; display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: stretch; }
-.today-hero-body { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 20px 32px; }
-.today-hero .sp-stat-hero .sp-stat-value { font-size: clamp(44px, 5.2vw, 64px); }
+.today-hero-body { display: grid; gap: 20px; }
+.today-hero .sp-stat-hero .sp-stat-value { font-size: clamp(40px, 3.6vw, 52px); }
+.today-hero-stats.sp-stat-row.is-compact { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.today-hero-stats.sp-stat-row.is-compact > .sp-stat + .sp-stat { padding-left: 12px; }
+.today-hero-stats.sp-stat-row.is-compact .sp-stat-value { font-size: 18px; }
 .today-hero-stats { margin: 0; }
 .today-hero-stats dd { margin: 0; }
-.today-earnings { display: flex; flex-direction: column; }
-.today-earnings-list { display: grid; margin: 0; padding: 0; list-style: none; }
-.today-earnings-list a { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--on-brand-soft); color: inherit; text-decoration: none; font-size: 13px; font-variant-numeric: tabular-nums; }
-.today-earnings-list li:first-child a { border-top: 0; padding-top: 2px; }
-.today-earnings-list .sp-ticker-sym { color: inherit; }
-.today-earnings-list strong { font-weight: 700; }
-.today-earnings-list a:hover strong { text-decoration: underline; text-underline-offset: 3px; }
-.today-card-note { margin: 0; color: var(--ink-muted); font-size: 13px; line-height: 1.55; }
-.today-card-foot { display: flex; align-items: center; gap: 6px; margin: auto 0 0; padding-top: 16px; color: var(--ink-muted); font-size: 12px; }
-.today-card-foot svg { width: 14px; height: 14px; }
-.today-movers-list { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
-.today-movers-list a { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; margin: 0 -8px; padding: 7px 8px; border-radius: var(--sp-radius-sm); color: inherit; text-decoration: none; transition: background-color 160ms ease; }
-.today-movers-list a:hover { background: var(--fill); }
-.today-mover-name { display: grid; gap: 2px; min-width: 0; }
-.today-mover-name small { color: var(--ink-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
-.today-movers-loading { display: grid; gap: 10px; }
-.today-movers-loading span { height: 34px; border-radius: var(--sp-radius-sm); background: var(--fill); }
-@media (prefers-reduced-motion: no-preference) { .today-movers-loading span { animation: navigation-pulse 1.8s ease-in-out infinite; } }
-@media (max-width: 1100px) {
-  .today-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-  .today-hero { grid-column: 1 / -1; }
-}
 @media (max-width: 720px) {
-  .today-grid { grid-template-columns: minmax(0, 1fr); }
-  .today-hero { grid-column: auto; }
-  .today-hero-body { display: grid; }
-  .today-hero-stats.sp-stat-row.is-compact { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-  .today-hero-stats.sp-stat-row.is-compact > .sp-stat + .sp-stat { padding-left: 12px; }
-  .today-hero-stats.sp-stat-row.is-compact .sp-stat-value { font-size: 17px; }
   .sp-card-accent, .sp-card-brand { padding: 20px; border-radius: 24px; }
 }
 

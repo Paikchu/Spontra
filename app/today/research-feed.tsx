@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ArrowLeft, ArrowUpRight, ChevronDown } from "lucide-react";
 import { ReportContentRenderer } from "@/components/earning-report/report-blocks/ReportContentRenderer";
 import { CompanyLogo } from "@/app/company-logo";
@@ -51,7 +51,7 @@ function storeIds(ids: Set<string>) {
 
 const newestFirst = (a: ResearchReport, b: ResearchReport) => b.generatedAt.localeCompare(a.generatedAt) || b.id.localeCompare(a.id);
 
-export function ResearchFeed() {
+export function ResearchFeed({ summary }: { summary?: ReactNode }) {
   const { t, language } = useLanguage();
   const [reports, setReports] = useState<ResearchReport[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -63,7 +63,7 @@ export function ResearchFeed() {
   const [view, setView] = useState<"list" | "reader">("list");
   const [readIds, setReadIds] = useState<Set<string> | null>(null);
   const [now, setNow] = useState(() => new Date());
-  const section = useRef<HTMLElement>(null);
+  const section = useRef<HTMLDivElement>(null);
   const readerScroll = useRef<HTMLDivElement>(null);
   const initialized = useRef(false);
   const mounted = useRef(true);
@@ -152,49 +152,50 @@ export function ResearchFeed() {
   const active = reports.find(report => report.id === selected) ?? null;
 
   return (
-    <section ref={section} className="research" data-view={view} aria-labelledby="research-title">
-      <div className="research-head">
-        <div className="research-heading">
-          <h2 id="research-title">{t("研究汇报")}</h2>
-          {reports.length > 0 && <span className="research-count">{reports.length} {t("份")}{unreadCount ? ` · ${unreadCount} ${t("份未读")}` : ""}</span>}
-        </div>
-      </div>
-
-      {error && <div className="research-error" role="alert"><p>{t(error)}</p><button type="button" className="sp-btn sp-btn-secondary sp-btn-sm" onClick={() => void refresh()}>{t("重试")}</button></div>}
-
+    <div ref={section} className="research" data-view={view}>
       <div className="research-layout">
-        <div className="research-list">
-          <div className="sp-seg" role="group" aria-label={t("筛选汇报")}>
-            {(["all", "unread"] as const).map(key => (
-              <button key={key} type="button" className={`sp-seg-item${filter === key ? " is-on" : ""}`} aria-pressed={filter === key} onClick={() => setFilter(key)}>
-                {t(key === "all" ? "全部" : "未读")}<span className="sp-seg-count">{key === "all" ? reports.length : unreadCount}</span>
-              </button>
-            ))}
-          </div>
-          <div className="research-tiles">
-            {loading && <p className="research-note" role="status">{t("正在读取研究汇报…")}</p>}
-            {!loading && !reports.length && !error && <div className="research-empty"><strong>{t("尚无已发布的研究汇报")}</strong><p>{t("研究 Agent 完成调查后，汇报会出现在这里。持仓有实质变化时才会汇报。")}</p></div>}
-            {!loading && reports.length > 0 && !groups.length && <div className="research-empty"><p>{t("没有未读的汇报。")}</p></div>}
-            {groups.map(group => (
-              <div className="research-group" key={group.key}>
-                <p className="research-day">{group.label}</p>
-                {group.items.map(report => (
-                  <button key={report.id} id={`research-tile-${report.id}`} type="button" className="research-tile" aria-pressed={selected === report.id} onClick={() => open(report.id)}>
-                    <span className="research-tile-meta">
-                      <CompanyLogo symbol={report.tickers[0]} />
-                      <span className="research-tile-tickers">{report.tickers.join(" · ")}</span>
-                      <span className="research-tile-trigger">· {t(TRIGGER_LABEL[report.trigger])}</span>
-                      <time dateTime={report.generatedAt}>{clock(report.generatedAt)}</time>
-                      {isUnread(report) && <span className="research-unread" role="img" aria-label={t("未读")} />}
-                    </span>
-                    <span className="research-tile-title">{report.title}</span>
-                    <span className="research-tile-summary">{report.summary}</span>
+        <div className="research-side">
+          {summary}
+          <section className="research-list" aria-labelledby="research-title">
+            <div className="research-head">
+              <div className="research-heading">
+                <h2 id="research-title">{t("研究汇报")}</h2>
+                {reports.length > 0 && <span className="research-count">{reports.length} {t("份")}{unreadCount ? ` · ${unreadCount} ${t("份未读")}` : ""}</span>}
+              </div>
+              <div className="sp-seg" role="group" aria-label={t("筛选汇报")}>
+                {(["all", "unread"] as const).map(key => (
+                  <button key={key} type="button" className={`sp-seg-item${filter === key ? " is-on" : ""}`} aria-pressed={filter === key} onClick={() => setFilter(key)}>
+                    {t(key === "all" ? "全部" : "未读")}<span className="sp-seg-count">{key === "all" ? reports.length : unreadCount}</span>
                   </button>
                 ))}
               </div>
-            ))}
-            {cursor && <div className="research-more"><button className="sp-btn sp-btn-secondary sp-btn-sm" type="button" disabled={loadingOlder} onClick={() => { setLoadingOlder(true); void refresh(cursor); }}>{t(loadingOlder ? "加载中…" : "加载更早的汇报")}</button></div>}
-          </div>
+            </div>
+            {error && <div className="research-error" role="alert"><p>{t(error)}</p><button type="button" className="sp-btn sp-btn-secondary sp-btn-sm" onClick={() => void refresh()}>{t("重试")}</button></div>}
+            <div className="research-tiles">
+              {loading && <p className="research-note" role="status">{t("正在读取研究汇报…")}</p>}
+              {!loading && !reports.length && !error && <div className="research-empty"><strong>{t("尚无已发布的研究汇报")}</strong><p>{t("研究 Agent 完成调查后，汇报会出现在这里。持仓有实质变化时才会汇报。")}</p></div>}
+              {!loading && reports.length > 0 && !groups.length && <div className="research-empty"><p>{t("没有未读的汇报。")}</p></div>}
+              {groups.map(group => (
+                <div className="research-group" key={group.key}>
+                  <p className="research-day">{group.label}</p>
+                  {group.items.map(report => (
+                    <button key={report.id} id={`research-tile-${report.id}`} type="button" className="research-tile" aria-pressed={selected === report.id} onClick={() => open(report.id)}>
+                      <span className="research-tile-meta">
+                        <CompanyLogo symbol={report.tickers[0]} />
+                        <span className="research-tile-tickers">{report.tickers.join(" · ")}</span>
+                        <span className="research-tile-trigger">· {t(TRIGGER_LABEL[report.trigger])}</span>
+                        <time dateTime={report.generatedAt}>{clock(report.generatedAt)}</time>
+                        {isUnread(report) && <span className="research-unread" role="img" aria-label={t("未读")} />}
+                      </span>
+                      <span className="research-tile-title">{report.title}</span>
+                      <span className="research-tile-summary">{report.summary}</span>
+                    </button>
+                  ))}
+                </div>
+              ))}
+              {cursor && <div className="research-more"><button className="sp-btn sp-btn-secondary sp-btn-sm" type="button" disabled={loadingOlder} onClick={() => { setLoadingOlder(true); void refresh(cursor); }}>{t(loadingOlder ? "加载中…" : "加载更早的汇报")}</button></div>}
+            </div>
+          </section>
         </div>
 
         <article className="sp-card research-reader" aria-labelledby={active ? `research-title-${active.id}` : undefined} aria-label={active ? undefined : t("汇报正文")}>
@@ -258,6 +259,6 @@ export function ResearchFeed() {
           )}
         </article>
       </div>
-    </section>
+    </div>
   );
 }
