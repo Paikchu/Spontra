@@ -178,7 +178,7 @@ pub async fn connect(token: String) -> Result<(), String> {
         .map_err(|_| "CREDENTIAL_SAVE_FAILED".into())
 }
 #[tauri::command]
-pub fn connection_status() -> Result<bool, String> {
+pub async fn connection_status() -> Result<bool, String> {
     match credential() {
         Ok(_) => Ok(true),
         Err(e) if e == "AUTH_REQUIRED" => Ok(false),
@@ -186,7 +186,7 @@ pub fn connection_status() -> Result<bool, String> {
     }
 }
 #[tauri::command]
-pub fn disconnect(state: State<'_, Requests>) -> Result<(), String> {
+pub async fn disconnect(state: State<'_, Requests>) -> Result<(), String> {
     if let Ok(requests) = state.0.lock() {
         for request in requests.values() {
             request.cancel();
