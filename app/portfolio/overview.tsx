@@ -41,15 +41,23 @@ export function PortfolioOverview({
         <div className="portfolio-heading">
           <div className="flex items-center gap-2"><h1 className="summary-nav-label" id="portfolio-title">{t("当前净值")}</h1></div>
           <strong className="summary-nav-value"><span className="sr-only">{money(netLiquidation)}</span><span aria-hidden="true"><CountUp value={money(netLiquidation)} /></span></strong>
-          <div className="summary-return">
-            <span className="summary-pnl-label">{t("累计盈亏")}</span>
-            <strong className={`summary-pnl ${totalPnl < 0 ? "loss" : totalPnl > 0 ? "gain" : "muted"}`}>
-              {money(totalPnl, true)} <i>{percent(totalPnlRate, true)}</i>
-            </strong>
+          <div className="summary-footer">
+            <div className="summary-return">
+              <span className="summary-pnl-label">{t("累计盈亏")}</span>
+              <strong className={`summary-pnl ${totalPnl < 0 ? "loss" : totalPnl > 0 ? "gain" : "muted"}`}>
+                {money(totalPnl, true)} <i>{percent(totalPnlRate, true)}</i>
+              </strong>
+            </div>
+            <div className="summary-ex-option-pnl">
+              <span>{t("剔除期权浮盈亏")}</span>
+              <strong>{money(netLiquidationWithoutOptionPnl)}</strong>
+            </div>
           </div>
         </div>
         <div className="summary-support" aria-label={t("组合摘要")}>
           <article><span>{t("持仓净市值")}</span><strong>{money(netPositionsValue)}</strong></article>
+          <article><span>{t("正股")}</span><strong>{money(stockMarketValue)}</strong></article>
+          <article><span>{t("期权")}</span><strong>{money(optionMarketValue)}</strong></article>
           <article><span>{t("现金")}</span><strong>{money(cashBalance)}</strong></article>
           <article><span>{t("杠杆率")}</span><strong>{number(portfolioLeverage, 2, 2)}x</strong></article>
           <article>
@@ -61,17 +69,12 @@ export function PortfolioOverview({
           </article>
         </div>
       </div>
-      <section className="header-position-summary" aria-label={t("持仓摘要")}>
-        <article><span>{t("正股")}</span><strong>{money(stockMarketValue)}</strong></article>
-        <article><span>{t("期权")}</span><strong>{money(optionMarketValue)}</strong></article>
-        <article><span>{t("剔除期权浮盈亏")}</span><strong>{money(netLiquidationWithoutOptionPnl)}</strong></article>
-        {nextEarnings && nextEarningsReminder && (
-          <article className="header-next-earnings">
-            <span title={t("即将到来的事件")}><CalendarDays className="size-4" aria-hidden="true" /><span className="sr-only">{t("即将到来的事件")}</span></span>
-            <strong>{(nextEarnings as CalendarEvent).confidence === "confirmed" ? "" : "预计 "}{nextEarnings.symbol} {nextEarningsReminder.releaseDateLabel} · {nextEarningsReminder.sessionLabel}</strong>
-          </article>
-        )}
-      </section>
+      {nextEarnings && nextEarningsReminder && (
+        <div className="header-next-earnings" aria-label={t("即将到来的事件")}>
+          <CalendarDays className="size-4" aria-hidden="true" />
+          <strong>{(nextEarnings as CalendarEvent).confidence === "confirmed" ? "" : "预计 "}{nextEarnings.symbol} {nextEarningsReminder.releaseDateLabel} · {nextEarningsReminder.sessionLabel}</strong>
+        </div>
+      )}
     </section>
   );
 }

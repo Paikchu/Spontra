@@ -485,34 +485,34 @@ h2:not([data-slot]) { font-weight: 650; letter-spacing: -.01em; }
    itself sits in one ink card with pill tabs.
    ========================================================================== */
 .ledger-shell { padding-top: clamp(20px, 3vw, 40px); }
-.portfolio-overview { display: grid; gap: 16px; }
+.portfolio-overview { display: grid; gap: 12px; }
 .portfolio-overview .hero { padding: 0; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 16px; align-items: stretch; }
 .portfolio-overview .portfolio-heading {
-  position: relative; isolation: isolate; align-content: space-between; gap: 12px; padding: 24px 28px 26px; border-radius: var(--sp-radius-lg);
+  position: relative; isolation: isolate; align-content: space-between; gap: 8px; padding: 20px 24px; border-radius: var(--sp-radius-lg);
   background: var(--sp-accent); color: var(--sp-on-accent); box-shadow: var(--glow-accent);
   --ink: var(--sp-on-accent); --foreground: var(--sp-on-accent); --ink-muted: var(--sp-on-accent-soft); --ink-soft: var(--sp-on-accent);
   --sage: var(--sp-on-accent); --vermilion: var(--sp-on-accent); --gain: var(--sp-on-accent); --loss: var(--sp-on-accent); --focus-ring: var(--sp-on-accent);
 }
 .portfolio-overview .portfolio-heading .summary-nav-label { color: var(--sp-on-accent-soft); font: 600 11px/1.2 var(--sans); letter-spacing: .14em; text-transform: uppercase; }
 html[lang="zh-CN"] .portfolio-overview .portfolio-heading .summary-nav-label { font-size: 13px; letter-spacing: .06em; }
-.portfolio-overview .summary-nav-value { font-family: var(--sans); font-size: clamp(44px, 5vw, 64px); font-weight: 700; letter-spacing: -.045em; }
+.portfolio-overview .summary-nav-value { font-family: var(--sans); font-size: clamp(40px, 4.4vw, 58px); font-weight: 700; letter-spacing: -.045em; }
 .portfolio-overview .summary-pnl-label { color: var(--sp-on-accent-soft); font-size: 12px; }
 .portfolio-overview .summary-pnl, .portfolio-overview .summary-pnl i { font-family: var(--sans); font-weight: 650; }
+.portfolio-overview .summary-footer { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 24px; }
+.portfolio-overview .summary-ex-option-pnl { display: inline-flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; font-size: 12px; }
+.portfolio-overview .summary-ex-option-pnl span { color: var(--sp-on-accent-soft); }
+.portfolio-overview .summary-ex-option-pnl strong { font-size: 14px; font-weight: 650; font-variant-numeric: tabular-nums lining-nums; }
 .portfolio-overview .summary-support {
-  grid-template-columns: repeat(2, minmax(0, 1fr)); align-content: stretch; padding: 8px; border: 1px solid var(--line); border-radius: var(--sp-radius-md);
+  grid-template-columns: repeat(3, minmax(0, 1fr)); align-content: stretch; padding: 8px; border: 1px solid var(--line); border-radius: var(--sp-radius-md);
   background: var(--surface); box-shadow: inset 0 1px 0 var(--sheen); gap: 0;
 }
-.portfolio-overview .summary-support article { padding: 14px 16px; grid-template-rows: auto auto; align-content: center; gap: 8px; border-left: 0; border-radius: var(--sp-radius-sm); transition: background-color 160ms ease; }
-.portfolio-overview .summary-support article:first-child { padding-left: 16px; }
+.portfolio-overview .summary-support article { padding: 10px 12px; grid-template-rows: auto auto; align-content: center; gap: 5px; border-left: 0; border-radius: var(--sp-radius-sm); transition: background-color 160ms ease; }
+.portfolio-overview .summary-support article:first-child { padding-left: 12px; }
 .portfolio-overview .summary-support article:hover { background: var(--fill); }
 .portfolio-overview .summary-support article > span, .portfolio-overview .summary-metric-label > span { font-size: 12px; font-weight: 500; }
-.portfolio-overview .summary-support strong { font: 650 clamp(20px, 1.8vw, 26px)/1.1 var(--sans); letter-spacing: -.02em; }
-.portfolio-overview .header-position-summary { min-height: 0; padding: 4px 8px; border: 1px solid var(--line); border-top: 1px solid var(--line); border-radius: var(--sp-radius-md); background: var(--surface); box-shadow: inset 0 1px 0 var(--sheen); }
-.portfolio-overview .header-position-summary article { padding: 14px 16px; }
-.portfolio-overview .header-position-summary article:first-child { padding-left: 16px; }
-.portfolio-overview .header-position-summary strong { font-family: var(--sans); font-weight: 650; }
-.portfolio-overview .header-position-summary .header-next-earnings { border-left-color: var(--line); }
-.portfolio-overview .header-next-earnings strong { display: inline-flex; width: fit-content; padding: 4px 10px; border-radius: var(--sp-radius-pill); background: var(--brand-soft); color: var(--brand); font-size: 13px; }
+.portfolio-overview .summary-support strong { font: 650 clamp(17px, 1.35vw, 22px)/1.1 var(--sans); letter-spacing: -.02em; white-space: nowrap; }
+.portfolio-overview > .header-next-earnings { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--ink-muted); font-size: 12px; }
+.portfolio-overview > .header-next-earnings strong { font-weight: 600; }
 
 .lower-grid { padding-top: 16px; border-top: 0; }
 .ledger-page { padding: 20px 0 0; border: 1px solid var(--line); border-radius: var(--sp-radius-md); background: var(--surface); box-shadow: inset 0 1px 0 var(--sheen); }
@@ -555,10 +555,9 @@ html[lang="zh-CN"] .portfolio-overview .portfolio-heading .summary-nav-label { f
 }
 @media (max-width: 620px) {
   .portfolio-overview .portfolio-heading { padding: 20px; border-radius: 24px; }
-  .portfolio-overview .summary-support { padding: 4px; }
+  .portfolio-overview .summary-support { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 4px; }
   .portfolio-overview .summary-support article, .portfolio-overview .summary-support article:first-child { padding: 12px; }
-  .portfolio-overview .header-position-summary { padding: 4px; }
-  .portfolio-overview .header-position-summary article, .portfolio-overview .header-position-summary article:first-child { padding: 12px; border: 0; }
+  .portfolio-overview .summary-support strong { font-size: clamp(16px, 4.6vw, 20px); }
   .ledger-page { padding-top: 16px; }
   .ledger-page .ledger-heading { padding: 0 12px; }
   .ledger-page .ledger-content { padding: 4px 0 8px; }
