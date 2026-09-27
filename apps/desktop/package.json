@@ -4,12 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tauri dev",
+    "dev": "node scripts/tauri.mjs dev",
     "dev:web": "vite --host 127.0.0.1",
     "build": "vite build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "package": "tauri build",
-    "tauri": "tauri"
+    "package": "node scripts/tauri.mjs build",
+    "tauri": "node scripts/tauri.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.8.0",
