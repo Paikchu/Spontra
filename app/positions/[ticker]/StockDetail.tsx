@@ -38,7 +38,8 @@ function tabFromHash(path: string) {
   return sections.some(([key]) => key === hash) ? hash : "outlook";
 }
 
-export function StockDetail({ ticker, companyName, exchange, position, trades, plan, planStatus, embedded = false }: {
+export function StockDetail({ source, asOf, ticker, companyName, exchange, position, trades, plan, planStatus, embedded = false }: {
+  source?: "live" | "fallback"; asOf?: string;
   ticker: string; companyName: string; exchange: string; position?: PositionGroupView; embedded?: boolean;
   trades: PortfolioTrade[]; plan: HoldingPlanRecord | null; planStatus: PositionPlanStatus;
 }) {
@@ -127,6 +128,7 @@ export function StockDetail({ ticker, companyName, exchange, position, trades, p
 
   return (
     <main ref={main} className="earning-report unified-stock">
+      {source === "fallback" && <p role="status" className="text-sm text-muted-foreground">暂时无法读取最新持仓，显示截至 {asOf} 的历史快照。</p>}
       {!embedded && <div className="stock-detail-search"><SiteHeader compact /></div>}
       <header className="stock-detail-identity">
         <div className="stock-detail-company">

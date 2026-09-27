@@ -1,8 +1,9 @@
 "use client";
 
+import { useDataRevision } from "@/packages/client/src/refresh";
 import { apiFetch } from "@/packages/client/src/platform";
 
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { revealContent } from "@/app/content-motion";
 import { useDelayedBusy } from "@/app/use-delayed-busy";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -22,6 +23,8 @@ export function AnalysisWorkspace({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const request = useRef(0);
+  const selectedTicker = useRef<string | null>(null);
+  const revision = useDataRevision();
   const activeRequest = useRef<AbortController | null>(null);
   useEffect(() => () => activeRequest.current?.abort(), []);
 
@@ -33,7 +36,8 @@ export function AnalysisWorkspace({ children }: { children: ReactNode }) {
     return () => animation?.cancel();
   }, [stock]);
 
-  async function select(ticker: string) {
+  const select = useCallback(async (ticker: string) => {
+    selectedTicker.current = ticker;
     activeRequest.current?.abort();
     const controller = new AbortController();
     activeRequest.current = controller;
@@ -52,7 +56,14 @@ export function AnalysisWorkspace({ children }: { children: ReactNode }) {
     } finally {
       if (id === request.current) setLoading(false);
     }
-  }
+  }, []);
+
+  useEffect(() => {
+    const ticker = selectedTicker.current;
+    if (!ticker) return;
+    const timer = setTimeout(() => { void select(ticker); }, 0);
+    return () => clearTimeout(timer);
+  }, [revision, select]);
 
   return <div className="sec-app-shell analysis-workspace">
     <SiteHeader onSelect={select} loading={loading} />

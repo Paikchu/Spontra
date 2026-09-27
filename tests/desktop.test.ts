@@ -49,3 +49,12 @@ test("portfolio presentation preserves stock/option values and zero-NAV leverage
   assert.equal(result.portfolioLeverage, 0.6);
   assert.equal(buildPortfolioPresentation({ ...snapshot, account: { ...snapshot.account, netLiquidation: 0 } }, emptyCalendar()).portfolioLeverage, 0);
 });
+
+
+test("missing stored portfolio is explicitly marked as fallback", async () => {
+  const { readPortfolioSnapshotWithSource } = await import("../lib/portfolio-store");
+  const database = { prepare: () => ({ bind() { return this; }, async first<T>() { return null as T | null; } }) };
+  const result = await readPortfolioSnapshotWithSource(database);
+  assert.equal(result.source, "fallback");
+  assert.ok(result.snapshot.generatedAt);
+});

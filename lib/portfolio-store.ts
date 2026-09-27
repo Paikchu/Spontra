@@ -53,6 +53,12 @@ async function readStoredPayload(database: Pick<PortfolioDatabase, "prepare">): 
   return row?.payload ?? null;
 }
 
+/** Distinguish an absent live record from the bundled fallback. */
+export async function readPortfolioSnapshotWithSource(database: Pick<PortfolioDatabase, "prepare">) {
+  const payload = await readStoredPayload(database);
+  return { snapshot: decodeSnapshot(payload), source: payload ? "live" as const : "fallback" as const };
+}
+
 export async function readPortfolioSnapshot(database: Pick<PortfolioDatabase, "prepare">): Promise<PortfolioSnapshotV1> {
   return decodeSnapshot(await readStoredPayload(database));
 }

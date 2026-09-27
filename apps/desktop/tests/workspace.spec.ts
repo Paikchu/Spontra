@@ -13,13 +13,14 @@ const report = { version: "research.v1", id: "r1", caseId: "case1", title: "测�
 const raw = readerFilingFixture();
 const filing = { ...raw, accessionNumber: "0000000001-26-000001", edgarUrl: raw.indexUrl, reportVersion: "sec-analysis.v3:demo", provenance: "sec_edgar", analysisStatus: "complete", periodId: "DEMO:2026-06-30:quarter", analysisSchemaVersion: "sec-analysis.v3", contentRevision: "demo", analysisRun: { state: "succeeded", updatedAt: null, errorCode: null } };
 async function mockDesktop(page: Page, saved = true) {
-  let offline = false; let unauthorized = false; let writes = 0;
+  let offline = false; let unauthorized = false; let writes = 0; let canceled = 0;
   const paths: string[] = []; const opened: string[] = []; const copies: string[] = [];
   let plan: unknown = null;
   await page.exposeFunction("__nativeTest", async (cmd: string, args: Record<string, string>) => {
     if (cmd === "connection_status") return saved;
     if (cmd === "connect") { if (args.token !== token) throw new Error("INVALID_TOKEN"); unauthorized = false; return null; }
-    if (cmd === "disconnect" || cmd === "cancel_request") return null;
+    if (cmd === "cancel_request") { canceled++; return null; }
+    if (cmd === "disconnect") return null;
     if (cmd === "plugin:event|listen") return 1;
     if (cmd === "plugin:event|unlisten") return null;
     if (cmd === "open_external") { opened.push(args.url); return null; }
@@ -38,7 +39,11 @@ async function mockDesktop(page: Page, saved = true) {
     else if (path.startsWith("/plans/")) {
       if (args.method === "PUT") { writes++; plan = { ...JSON.parse(args.body), ticker: "DEMO", name: "示例公司", id: "plan1", updatedAt: new Date().toISOString() }; }
       body = { plan };
-    } else if (path.startsWith("/stocks/")) body = { ticker: "DEMO", companyName: "示例公司", exchange: "TEST", trades: [], position: presentation.positionGroups[0] };
+    } else if (path.startsWith("/stocks/")) {
+      const ticker = path.split("/").at(-1);
+      if (ticker === "SLOW") await new Promise(resolve => setTimeout(resolve, 400));
+      body = { ticker, companyName: "示例公司", exchange: "TEST", trades: [], position: presentation.positionGroups[0] };
+    }
     else if (path.endsWith("/search") || path === "/symbols") body = { results: [{ symbol: "DEMO", name: "示例公司", exchange: "TEST", type: "stock" }] };
     else if (path.endsWith("/filings")) body = { filings: [filing], total: 1, nextCursor: null, checkedAt: null };
     else if (path.includes("/filings/")) body = { company: { ticker: "DEMO", cik: "0000000001", name: "示例公司" }, filing };
@@ -53,7 +58,7 @@ async function mockDesktop(page: Page, saved = true) {
       transformCallback: () => 1, unregisterCallback: () => {},
     }});
   });
-  return { paths, opened, copies, writes: () => writes, offline: (value: boolean) => { offline = value; }, unauthorized: () => { unauthorized = true; } };
+  return { paths, opened, copies, canceled: () => canceled, writes: () => writes, offline: (value: boolean) => { offline = value; }, unauthorized: () => { unauthorized = true; } };
 }
 const shortcut = (key: string) => `${process.platform === "darwin" ? "Meta" : "Control"}+${key}`;
 
@@ -97,7 +102,9 @@ test("stock tabs, plan writes, pinned reports, copy and external sources", async
   await page.getByRole("tab", { name: "持仓计划", exact: true }).click();
   await expect(page).toHaveURL(/positions\/DEMO#plan/);
   await page.getByLabel("持仓原因", { exact: true }).fill("桌面计划测试：现金流持续改善。");
-  await page.getByRole("button", { name: "立即保存" }).click();
+  await page.keyboard.press(shortcut("r"));
+  await expect(page.getByLabel("持仓原因", { exact: true })).toHaveValue("桌面计划测试：现金流持续改善。");
+  await page.getByRole("button", { name: "立即保存" }).evaluate(button => { (button as HTMLButtonElement).click(); (button as HTMLButtonElement).click(); });
   await expect(page.getByRole("status").filter({ hasText: "计划已保存" })).toBeVisible();
   expect(native.writes()).toBe(1);
   await page.goto("/#/analysis/stocks/DEMO/sec/0000000001-26-000001?reportDate=2026-06-30&reportVersion=sec-analysis.v3%3Ademo");
@@ -121,4 +128,22 @@ for (const width of [1024, 1280, 1600]) test(`desktop composition at ${width}px`
   const overflow = await page.evaluate(() => [...document.querySelectorAll("body *")].filter(el => el.getBoundingClientRect().right > innerWidth + 1).slice(0, 8).map(el => ({ tag: el.tagName, class: el.className, right: el.getBoundingClientRect().right })));
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), JSON.stringify(overflow)).toBeTruthy();
   await page.screenshot({ path: `/tmp/spontra-desktop-${width}.png` });
+});
+
+
+test("search cancels a superseded company and refreshes the current context", async ({ page }) => {
+  const native = await mockDesktop(page);
+  await page.goto("/#/analysis");
+  const search = page.getByRole("textbox", { name: "搜索股票代码或公司名称" });
+  await search.fill("SLOW");
+  await search.press("Enter");
+  await expect.poll(() => native.paths.includes("/stocks/SLOW")).toBeTruthy();
+  await search.fill("DEMO");
+  await search.press("Enter");
+  await expect(page.getByRole("heading", { name: "DEMO", exact: true })).toBeVisible();
+  await expect.poll(native.canceled).toBeGreaterThan(0);
+  const previousReads = native.paths.filter(path => path === "/stocks/DEMO").length;
+  await page.keyboard.press(shortcut("r"));
+  await expect.poll(() => native.paths.filter(path => path === "/stocks/DEMO").length).toBeGreaterThan(previousReads);
+  await expect(page.getByRole("heading", { name: "DEMO", exact: true })).toBeVisible();
 });
