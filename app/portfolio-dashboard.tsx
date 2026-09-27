@@ -1,4 +1,7 @@
 "use client";
+import { useDataRevision } from "@/packages/client/src/refresh";
+
+import { apiFetch } from "@/packages/client/src/platform";
 
 import { emptyCalendar, withinReminderWindow, type CalendarEvent, type CalendarState } from "@/lib/earnings-live";
 import { useLanguage } from "@/app/language-provider";
@@ -44,6 +47,7 @@ export function PortfolioDashboard({
   netDeposits: number;
   cashBalance: number;
 }) {
+  const revision = useDataRevision();
   const { t } = useLanguage();
   const [activeSymbol, setActiveSymbol] = useState<string | null>(null);
   const [earningsAsOf, setEarningsAsOf] = useState(() => new Date().toISOString());
@@ -54,7 +58,7 @@ export function PortfolioDashboard({
     const update = async () => {
       setEarningsAsOf(new Date().toISOString());
       try {
-        const response = await fetch('/api/earnings', {signal: controller.signal, cache: 'no-store'});
+        const response = await apiFetch('/api/earnings', {signal: controller.signal, cache: 'no-store'});
         if (!response.ok) throw new Error('Calendar unavailable');
         const fresh = await response.json() as CalendarState;
         if (!controller.signal.aborted) setCalendar(fresh);
@@ -63,7 +67,7 @@ export function PortfolioDashboard({
     void update();
     const timer = window.setInterval(update, 5 * 60_000);
     return () => {controller.abort(); window.clearInterval(timer);};
-  }, []);
+  }, [revision]);
   const positionSymbols = useMemo(() => new Set(positionGroups.map((group) => group.symbol)), [positionGroups]);
   const quoteSymbols = useMemo(() => positionGroups.map((group) => group.symbol).join(","), [positionGroups]);
   const quoteState = useMarketQuotes(quoteSymbols);

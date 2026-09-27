@@ -87,6 +87,10 @@ data/                        本地数据快照与证券目录
 docs/                        功能、迁移与运维说明
 ```
 
+## 桌面应用
+
+macOS / Windows 桌面版使用 Tauri 2 + React。开发、安装包、访问令牌及验证边界见 [桌面说明](docs/desktop.md)。
+
 ## 本地开发
 
 需要 Node.js **22.13 或更高版本**，依赖版本以 `package-lock.json` 为准。

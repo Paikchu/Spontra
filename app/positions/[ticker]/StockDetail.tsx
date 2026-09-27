@@ -1,7 +1,10 @@
 "use client";
+import { useDataRevision } from "@/packages/client/src/refresh";
+
+import { apiFetch } from "@/packages/client/src/platform";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { useAppNavigation } from "@/app/app-navigation";
+import { useAppNavigation } from "@/packages/ui/src/navigation";
 import { CompanyLogo } from "@/app/company-logo";
 import { useMarketQuotes } from "@/app/use-market-quotes";
 import { SiteHeader } from "@/app/analysis/site-header";
@@ -191,14 +194,15 @@ export function StockDetail({ ticker, companyName, exchange, position, trades, p
 function RecentDisclosures({ ticker, onViewAll }: { ticker: string; onViewAll: () => void }) {
   const [filings, setFilings] = useState<PublicSecFiling[] | null>(null);
   const [failed, setFailed] = useState(false);
+  const revision = useDataRevision();
   useEffect(() => {
     const controller = new AbortController();
-    fetch(`/api/analysis/v1/companies/${encodeURIComponent(ticker)}/filings?limit=2`, { signal: controller.signal })
+    apiFetch(`/api/analysis/v1/companies/${encodeURIComponent(ticker)}/filings?limit=2`, { signal: controller.signal })
       .then(async (response) => { if (!response.ok) throw new Error("unavailable"); return response.json() as Promise<{ filings: PublicSecFiling[] }>; })
       .then((page: { filings: PublicSecFiling[] }) => { if (!controller.signal.aborted) setFilings(page.filings); })
       .catch(() => { if (!controller.signal.aborted) setFailed(true); });
     return () => controller.abort();
-  }, [ticker]);
+  }, [ticker, revision]);
   return <section aria-labelledby="recent-disclosures-heading"><h2 id="recent-disclosures-heading">最近披露</h2>
     {failed ? <p className="text-muted-foreground">披露暂时无法读取</p> : filings === null ? <Skeleton className="h-16 w-full" /> : filings.length ? <ul className="stock-detail-recent">{filings.map((filing) => <li key={filing.accessionNumber}><Badge variant={/10-K|10-Q|20-F/.test(filing.form) ? "default" : "secondary"}>{filing.earningsGroup ? "财报" : filing.form}</Badge><span>{filing.earningsGroup?.earningsDate ?? filing.filingDate} · {filing.earningsGroup ? `报告期 ${filing.earningsGroup.periodEnd}` : /10-K|20-F/.test(filing.form) ? "年度报告" : /10-Q/.test(filing.form) ? "季度报告" : "重大事项报告"}</span></li>)}</ul> : <p className="text-muted-foreground">暂无披露</p>}
     <Button variant="outline" className="w-full" onClick={onViewAll}>全部披露</Button>

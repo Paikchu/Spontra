@@ -1,4 +1,7 @@
 "use client";
+import { useDataRevision } from "@/packages/client/src/refresh";
+
+import { apiFetch } from "@/packages/client/src/platform";
 
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -18,6 +21,7 @@ export function BusinessOutlook({ ticker }: { ticker: string }) {
 }
 
 function BusinessOutlookContent({ ticker }: { ticker: string }) {
+  const revision = useDataRevision();
   const [status, setStatus] = useState<RequestStatus>("loading");
   const [analysis, setAnalysis] = useState<PublicCompanyAnalysisResponse | null>(null);
   // Fetched beside the analysis rather than with it: a chart block names series, and the points are
@@ -51,7 +55,7 @@ function BusinessOutlookContent({ ticker }: { ticker: string }) {
       .then((value) => { if (!controller.signal.aborted) setFundamentals(value); })
       .catch(() => undefined);
     return () => { controller.abort(); clearTimeout(timer); };
-  }, [ticker, refresh]);
+  }, [ticker, refresh, revision]);
 
   if (status !== "ready" || !analysis?.overview) {
     return (
@@ -158,13 +162,13 @@ function headlineLength(headline: string): "short" | "medium" | "long" {
 }
 
 async function requestOverview(ticker: string, signal?: AbortSignal): Promise<PublicCompanyAnalysisResponse> {
-  const response = await fetch(`/api/analysis/v1/companies/${encodeURIComponent(ticker)}/analysis`, { signal });
+  const response = await apiFetch(`/api/analysis/v1/companies/${encodeURIComponent(ticker)}/analysis`, { signal });
   if (!response.ok) throw new Error("公司分析读取失败。");
   return response.json() as Promise<PublicCompanyAnalysisResponse>;
 }
 
 async function requestFundamentals(ticker: string, signal?: AbortSignal): Promise<PublicFundamentalsResponse> {
-  const response = await fetch(`/api/analysis/v1/companies/${encodeURIComponent(ticker)}/fundamentals`, { signal });
+  const response = await apiFetch(`/api/analysis/v1/companies/${encodeURIComponent(ticker)}/fundamentals`, { signal });
   if (!response.ok) throw new Error("基本面数据读取失败。");
   return response.json() as Promise<PublicFundamentalsResponse>;
 }

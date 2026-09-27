@@ -45,3 +45,9 @@ next-env.d.ts
 /work/
 
 !workers/pipeline/.dev.vars.example
+
+# desktop workspace build output
+/apps/desktop/dist/
+/apps/desktop/src-tauri/target/
+/apps/desktop/src-tauri/gen/
+**/node_modules/

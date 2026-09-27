@@ -1,3 +1,4 @@
+import { filingPresentation } from "@/packages/client/src/report";
 import { notFound } from "next/navigation";
 import { getAnalysisBackendRuntime } from "@/lib/earning-report/web/analysis-backend-runtime.ts";
 import { isAnalysisErrorBody } from "@/lib/earning-report/web/analysis-client.ts";
@@ -24,25 +25,7 @@ export default async function StockSecReportPage({ params, searchParams }: { par
   if (result === "unavailable") throw new Error("The analysis backend is unavailable.");
   if (!result) notFound();
   const security = findSecurity(ticker);
-  const filing = result.filing;
-  return <SecReportDocument companyName={security?.name ?? result.company?.name ?? ticker} filing={{
-    earningsGroup: filing.earningsGroup,
-    ticker,
-    cik: result.company?.cik ?? "",
-    cikNumber: Number(result.company?.cik ?? 0),
-    companyName: security?.name ?? result.company?.name ?? ticker,
-    form: filing.form,
-    filingDate: filing.filingDate,
-    reportDate: filing.reportDate,
-    accessionNumber: filing.accessionNumber,
-    primaryDocument: "",
-    description: filing.description,
-    items: "",
-    documentUrl: filing.documentUrl,
-    indexUrl: filing.edgarUrl,
-    summary: filing.summary,
-    analysis: filing.analysis,
-  }} />;
+  return <SecReportDocument {...filingPresentation(result, ticker, security?.name)} />;
 }
 
 /**

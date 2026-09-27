@@ -1,9 +1,11 @@
 "use client";
 
+import { apiFetch } from "@/packages/client/src/platform";
+
 import { useLanguage } from "@/app/language-provider";
 
 import { useEffect, useState } from "react";
-import { useAppNavigation } from "@/app/app-navigation";
+import { useAppNavigation } from "@/packages/ui/src/navigation";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from "@/components/ui/dialog";
@@ -34,7 +36,7 @@ export function AddPlanDialog() {
       setMessage("");
       setDirectoryUpdatedAt("");
       try {
-        const response = await fetch(`/api/symbols?q=${encodeURIComponent(text)}`, { signal: controller.signal });
+        const response = await apiFetch(`/api/symbols?q=${encodeURIComponent(text)}`, { signal: controller.signal });
         if (!response.ok) throw new Error();
         const body = await response.json() as { results: SearchResult[]; directoryUpdatedAt: string };
         setResults(body.results);

@@ -1,12 +1,16 @@
 "use client";
+import { useDataRevision } from "@/packages/client/src/refresh";
 
 import { useEffect, useState } from "react";
+
+import { apiFetch, persistQuotes } from "@/packages/client/src/platform";
 
 import type { MarketQuoteMap } from "@/lib/yahoo-quotes";
 
 export type QuoteLoadStatus = "loading" | "ready" | "unavailable";
 
 export function useMarketQuotes(symbols: string, enabled = true) {
+  const revision = useDataRevision();
   const [quotes, setQuotes] = useState<MarketQuoteMap>({});
   const [status, setStatus] = useState<QuoteLoadStatus>("loading");
 
@@ -16,7 +20,7 @@ export function useMarketQuotes(symbols: string, enabled = true) {
     const cacheKey = "market-quotes-v1";
     let retained: MarketQuoteMap = {};
     try {
-      const saved = JSON.parse(localStorage.getItem(cacheKey) || "{}") as MarketQuoteMap;
+      const saved = JSON.parse(persistQuotes() ? localStorage.getItem(cacheKey) || "{}" : "{}") as MarketQuoteMap;
       retained = Object.fromEntries(symbols.split(",").flatMap((symbol) => {
         const quote = saved[symbol];
         return quote && Number.isFinite(quote.price) && Number.isFinite(quote.changePercent)
@@ -29,17 +33,18 @@ export function useMarketQuotes(symbols: string, enabled = true) {
 
     void (async () => {
       try {
-        const response = await fetch(`/api/quotes?symbols=${encodeURIComponent(symbols)}`, {
+        const response = await apiFetch(`/api/quotes?symbols=${encodeURIComponent(symbols)}`, {
           cache: "no-store",
           signal: controller.signal,
         });
         if (!response.ok) throw new Error();
         const body = await response.json() as { quotes: MarketQuoteMap };
+        if (controller.signal.aborted) return;
         const merged = { ...retained, ...body.quotes };
         setQuotes(merged);
         try {
-          const saved = JSON.parse(localStorage.getItem(cacheKey) || "{}") as MarketQuoteMap;
-          localStorage.setItem(cacheKey, JSON.stringify({ ...saved, ...merged }));
+          const saved = JSON.parse(persistQuotes() ? localStorage.getItem(cacheKey) || "{}" : "{}") as MarketQuoteMap;
+          if (persistQuotes()) localStorage.setItem(cacheKey, JSON.stringify({ ...saved, ...merged }));
         } catch { /* Storage is optional. */ }
         setStatus("ready");
       } catch (error) {
@@ -48,7 +53,7 @@ export function useMarketQuotes(symbols: string, enabled = true) {
     })();
 
     return () => controller.abort();
-  }, [enabled, symbols]);
+  }, [enabled, symbols, revision]);
 
   return { quotes, status };
 }

@@ -1,4 +1,7 @@
 "use client";
+import { useDataRevision } from "@/packages/client/src/refresh";
+
+import { apiFetch } from "@/packages/client/src/platform";
 
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +27,7 @@ const TIMELINE_EMPTY_PAGE_LIMIT = 6;
 type Page = { filings: PublicSecFiling[]; nextCursor: string | null; checkedAt: string | null; total?: number | null };
 
 export function SecFilingsSection({ ticker }: { ticker: string }) {
+  const revision = useDataRevision();
   const [filings, setFilings] = useState<PublicSecFiling[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [total, setTotal] = useState(0);
@@ -34,17 +38,21 @@ export function SecFilingsSection({ ticker }: { ticker: string }) {
   const railEndRef = useRef<HTMLParagraphElement | null>(null);
   const emptyPages = useRef(0);
   const requestPending = useRef(false);
+  const activeRequest = useRef<AbortController | null>(null);
 
   const load = useCallback(async (cursor: string | null, append: boolean) => {
     if (requestPending.current) return;
+    const controller = new AbortController();
+    activeRequest.current = controller;
     requestPending.current = true;
     if (append) setLoadingMore(true);
     else setStatus("loading");
     try {
       const query = cursor ? `?cursor=${encodeURIComponent(cursor)}&limit=${TIMELINE_PAGE_SIZE}` : `?limit=${TIMELINE_PAGE_SIZE}`;
-      const response = await fetch(`/api/analysis/v1/companies/${encodeURIComponent(ticker)}/filings${query}`, { cache: "no-store" });
+      const response = await apiFetch(`/api/analysis/v1/companies/${encodeURIComponent(ticker)}/filings${query}`, { cache: "no-store", signal: controller.signal });
       if (!response.ok) throw new Error("SEC 数据读取失败。");
       const page = await response.json() as Page;
+      if (controller.signal.aborted) return;
       const merged = append ? [...filingsRef.current, ...page.filings] : page.filings;
       filingsRef.current = merged;
       setFilings(merged);
@@ -52,20 +60,19 @@ export function SecFilingsSection({ ticker }: { ticker: string }) {
       // Only the first page carries a count, so an appended page keeps the total it already knows.
       setTotal((current) => Math.max(append ? current : 0, page.total ?? 0, merged.length));
       emptyPages.current = page.filings.length > 0 ? 0 : emptyPages.current + 1;
-      if (!append) setOpenAccessions(new Set(defaultOpenAccessions(merged)));
+      if (!append) setOpenAccessions(current => current.size ? current : new Set(defaultOpenAccessions(merged)));
       setStatus("ready");
     } catch {
-      setStatus("error");
+      if (!controller.signal.aborted) setStatus("error");
     } finally {
-      requestPending.current = false;
-      setLoadingMore(false);
+      if (activeRequest.current === controller) { requestPending.current = false; setLoadingMore(false); }
     }
   }, [ticker]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => { void load(null, false); }, 0);
-    return () => window.clearTimeout(timer);
-  }, [load]);
+    return () => { window.clearTimeout(timer); activeRequest.current?.abort(); requestPending.current = false; };
+  }, [load, revision]);
 
   useEffect(() => {
     const restoreDefaultSummary = () => {
@@ -96,7 +103,7 @@ export function SecFilingsSection({ ticker }: { ticker: string }) {
       {status === "loading" && <div role="status" className="flex flex-col gap-3 py-5"><span className="sr-only">正在读取财报与事件…</span><Skeleton className="h-8 w-2/3" /><Skeleton className="h-40 w-full" /></div>}
       {status === "error" && <Alert variant="destructive"><AlertDescription>SEC 数据读取失败。<Button variant="outline" size="sm" onClick={() => void load(null, false)}>重新读取</Button></AlertDescription></Alert>}
       {status === "ready" && filings.length === 0 && <Empty><EmptyHeader><EmptyDescription>暂未收录该股票的 SEC 报告。</EmptyDescription></EmptyHeader></Empty>}
-      {status === "ready" && filings.length > 0 && (
+      {filings.length > 0 && (
         <div className="sec-filing-scroll">
           <Accordion type="multiple" value={[...openAccessions]} onValueChange={(values) => setOpenAccessions(new Set(values))} className="analysis-filing-list">
             {filings.map((filing) => (

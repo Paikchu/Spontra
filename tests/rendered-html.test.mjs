@@ -137,7 +137,7 @@ test("removes the disposable starter preview", async () => {
   assert.doesNotMatch(dashboard, /MAX \/ PORTFOLIO 01|header-identity/);
   assert.doesNotMatch(page, /LedgerTab|TradeFilter|recentTrades|filteredTrades|switchLedger|updateUrl/);
   assert.doesNotMatch(page, /trade-disclosure|trade-toolbar|交易明细|role="tablist"/);
-  assert.match(page, /buildPortfolioViewModel/);
+  assert.match(page, /buildPortfolioPresentation/);
   assert.doesNotMatch(page, /portfolio-history\.json/);
   assert.match(page, /PortfolioDashboard/);
   assert.match(dashboard, /activeSymbol/);
@@ -574,7 +574,7 @@ test("uses independent position routes and removes the workspace dialog", async 
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   ]);
 
-  assert.match(dashboard, /import Link from "next\/link"/);
+  assert.match(dashboard, /import Link from "@\/packages\/ui\/src\/navigation"/);
   assert.doesNotMatch(dashboard, /PositionDetailDialog|selectedPosition/);
   assert.doesNotMatch(dashboard, /aria-label=\{`查看 \$\{group\.symbol\} 持仓详情`\}/);
   assert.match(dashboard, /className="sr-only">\{t\("，查看持仓详情"\)\}/);

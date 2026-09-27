@@ -1,4 +1,7 @@
 "use client";
+import { useDataRevision } from "@/packages/client/src/refresh";
+
+import { apiFetch } from "@/packages/client/src/platform";
 
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -12,19 +15,20 @@ import type { PublicFundamentalsResponse } from "@/shared/analysis-contract/fund
 import { formatStockFundamentalValue as formatValue } from "@/lib/stock-detail-format";
 
 export function FinancialMetrics({ ticker }: { ticker: string }) {
+  const revision = useDataRevision();
   const [data, setData] = useState<PublicFundamentalsResponse | null>(null);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     const controller = new AbortController();
-    const refresh = () => fetch(`/api/analysis/v1/companies/${encodeURIComponent(ticker)}/fundamentals?periodCount=5`, { signal: controller.signal })
+    const refresh = () => apiFetch(`/api/analysis/v1/companies/${encodeURIComponent(ticker)}/fundamentals?periodCount=5`, { signal: controller.signal })
       .then(async (response) => { if (!response.ok) throw new Error("unavailable"); return response.json() as Promise<PublicFundamentalsResponse>; })
       .then((value: PublicFundamentalsResponse) => { if (!controller.signal.aborted) { if (value.source !== "sec_xbrl") throw new Error("SEC data unavailable"); setData((previous) => value.status === "pending" && previous?.ticker === ticker && previous.status === "ready" ? previous : value); setFailed(false); } })
       .catch(() => { if (!controller.signal.aborted) setFailed(true); });
     void refresh();
     const timer = setInterval(() => { if (document.visibilityState === "visible") void refresh(); }, 60_000);
     return () => { controller.abort(); clearInterval(timer); };
-  }, [ticker, attempt]);
+  }, [ticker, attempt, revision]);
   if (failed && (!data || data.ticker !== ticker)) return <Alert variant="destructive"><AlertDescription>财务指标暂时无法读取。<Button variant="outline" onClick={() => setAttempt((value) => value + 1)}>重新读取</Button></AlertDescription></Alert>;
   if (!data || data.ticker !== ticker) return <div role="status" className="flex flex-col gap-4"><span className="sr-only">正在读取财务指标…</span><Skeleton className="h-60 w-full" /></div>;
   if (data.status !== "ready" || !data.series.some((series) => series.available)) return <Empty><EmptyHeader><EmptyTitle>财务指标尚未就绪</EmptyTitle><EmptyDescription>SEC 文件中的季度数据尚未就绪，后续披露更新后会自动尝试补齐。</EmptyDescription></EmptyHeader></Empty>;

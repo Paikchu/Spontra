@@ -1,12 +1,14 @@
 "use client";
 
+import { apiFetch } from "@/packages/client/src/platform";
+
 import { useEffect, useState } from "react";
 import { Search, ArrowRight, LoaderCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { InputGroup, InputGroupInput, InputGroupAddon, InputGroupButton } from "@/components/ui/input-group";
 import { useDelayedBusy } from "@/app/use-delayed-busy";
-import { useAppNavigation } from "@/app/app-navigation";
+import { useAppNavigation } from "@/packages/ui/src/navigation";
 
 import type { SecurityType } from "@/lib/earning-report/web/symbol-directory.ts";
 
@@ -25,7 +27,7 @@ export function SiteHeader({ initialQuery = "", compact = true, loading = false,
     const controller = new AbortController();
     const timer = window.setTimeout(async () => {
       try {
-        const response = await fetch(`/api/analysis/v1/search?q=${encodeURIComponent(value)}`, { signal: controller.signal });
+        const response = await apiFetch(`/api/analysis/v1/search?q=${encodeURIComponent(value)}`, { signal: controller.signal });
         if (response.ok) setResults((await response.json() as { results?: SearchResult[] }).results ?? []);
       } catch { if (!controller.signal.aborted) setResults([]); }
     }, 120);

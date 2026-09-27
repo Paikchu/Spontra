@@ -1,0 +1,27 @@
+[package]
+name = "spontra-desktop"
+version = "0.1.0"
+description = "Spontra desktop investment workspace"
+edition = "2021"
+rust-version = "1.85"
+
+[lib]
+name = "spontra_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-window-state = "2"
+tauri-plugin-clipboard-manager = "2"
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-native-roots"] }
+keyring = { version = "3.6", features = ["apple-native", "windows-native"] }
+url = "2"
+regex = "1"
+tokio = { version = "1", features = ["sync", "macros", "time"] }
+tokio-util = "0.7"

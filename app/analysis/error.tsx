@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/packages/ui/src/navigation";
 
 export default function AnalysisError({ reset }: { reset: () => void }) {
   return <main className="sec-home" role="alert">

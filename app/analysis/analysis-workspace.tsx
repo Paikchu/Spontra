@@ -1,15 +1,18 @@
 "use client";
 
-import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { apiFetch } from "@/packages/client/src/platform";
+
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { revealContent } from "@/app/content-motion";
 import { useDelayedBusy } from "@/app/use-delayed-busy";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SiteHeader } from "./site-header";
 import { StockDetail } from "@/app/positions/[ticker]/StockDetail";
 import type { HoldingPlanRecord } from "@/lib/holding-plan-store";
-import { loadStock } from "./load-stock";
+import { apiJson } from "@/packages/client/src/platform";
+import type { StockContext } from "@/packages/client/src/contracts";
 
-type Stock = Awaited<ReturnType<typeof loadStock>> & {
+type Stock = StockContext & {
   plan: HoldingPlanRecord | null;
   planStatus: "ready" | "unavailable";
 };
@@ -19,6 +22,8 @@ export function AnalysisWorkspace({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const request = useRef(0);
+  const activeRequest = useRef<AbortController | null>(null);
+  useEffect(() => () => activeRequest.current?.abort(), []);
 
   const content = useRef<HTMLDivElement>(null);
   const showSkeleton = useDelayedBusy(loading) && !stock;
@@ -29,13 +34,16 @@ export function AnalysisWorkspace({ children }: { children: ReactNode }) {
   }, [stock]);
 
   async function select(ticker: string) {
+    activeRequest.current?.abort();
+    const controller = new AbortController();
+    activeRequest.current = controller;
     const id = ++request.current;
     setLoading(true);
     setError("");
     try {
       const [detail, planResponse] = await Promise.all([
-        loadStock(ticker),
-        fetch(`/api/plans/${encodeURIComponent(ticker)}`, { cache: "no-store" }).catch(() => null),
+        apiJson<StockContext>(`/api/stocks/${encodeURIComponent(ticker)}`, { signal: controller.signal }),
+        apiFetch(`/api/plans/${encodeURIComponent(ticker)}`, { cache: "no-store", signal: controller.signal }).catch(() => null),
       ]);
       const plan = planResponse?.ok ? (await planResponse.json() as { plan: HoldingPlanRecord | null }).plan : null;
       if (id === request.current) setStock({ ...detail, plan, planStatus: planResponse?.ok ? "ready" : "unavailable" });

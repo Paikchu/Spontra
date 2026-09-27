@@ -1,4 +1,5 @@
 "use client";
+import { platformKind } from "@/packages/client/src/platform";
 
 import { Sun, Moon, Monitor } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
@@ -33,7 +34,7 @@ export default function SettingsPage() {
           <FieldDescription>{t("研究正文与自行填写的内容保留原文。")}</FieldDescription>
         </Field>
       </FieldGroup></CardContent>
-      <CardFooter><p className="text-muted-foreground" role="status">{t("更改即时生效，并保存在此浏览器。")}</p></CardFooter>
+      <CardFooter><p className="text-muted-foreground" role="status">{platformKind() === "desktop" ? (language === "en" ? "Changes apply immediately and are saved on this device." : "更改即时生效，并保存在此设备。") : t("更改即时生效，并保存在此浏览器。")}</p></CardFooter>
     </Card>
   </main>;
 }

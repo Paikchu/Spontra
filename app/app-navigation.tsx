@@ -1,24 +1,13 @@
 "use client";
 
-import { Component, createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { Component, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { revealContent } from "./content-motion";
 import { NavigationPlaceholder } from "./navigation-placeholder";
 import { loadAppPage } from "./load-app-page";
 
-type NavigationOptions = { scroll?: boolean };
-
-const NavigationContext = createContext<{ path: string; pendingPath: string | null; reportReturnPath: string | null; navigate: (href: string, options?: NavigationOptions) => void } | null>(null);
-
-export function useAppNavigation() {
-  const context = useContext(NavigationContext);
-  if (!context) throw new Error("App navigation provider is missing");
-  return context;
-}
-
-export function useReportReturnPath() {
-  return useContext(NavigationContext)?.reportReturnPath ?? null;
-}
+import { NavigationContext, type NavigationOptions } from "@/packages/ui/src/navigation";
+export { useAppNavigation, useReportReturnPath } from "@/packages/ui/src/navigation";
 
 function normalize(href: string, current: string) {
   const url = new URL(href, `${window.location.origin}${current}`);

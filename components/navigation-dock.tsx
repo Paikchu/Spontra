@@ -2,8 +2,8 @@
 
 import { useLanguage } from "@/app/language-provider";
 
-import Link from "next/link";
-import { useAppNavigation } from "@/app/app-navigation";
+import Link from "@/packages/ui/src/navigation";
+import { useAppNavigation } from "@/packages/ui/src/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { BookOpen, ChartNoAxesCombined, House, Settings2 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";

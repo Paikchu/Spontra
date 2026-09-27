@@ -1,5 +1,7 @@
 "use client";
 
+import { apiFetch } from "@/packages/client/src/platform";
+
 import { useLanguage } from "@/app/language-provider";
 
 import { useEffect, useRef, useState } from "react";
@@ -126,7 +128,7 @@ export function PlanEditor({
         })),
       };
       try {
-        const response = await fetch(`/api/plans/${encodeURIComponent(ticker)}`, {
+        const response = await apiFetch(`/api/plans/${encodeURIComponent(ticker)}`, {
           method: "PUT",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(payload),
