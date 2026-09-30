@@ -1,3 +1,4 @@
+import type { PublicBusinessFlow } from "./business-flow.ts";
 import type { AnalysisRunSummary } from "./filings.ts";
 import type { ReportBlock } from "./report-blocks.ts";
 export type CompanyAnalysisCoverageStatus = "complete" | "partial";
@@ -74,6 +75,8 @@ export type CompanyAnalysisOverview = {
 };
 
 export type PublicCompanyAnalysisResponse = {
+  /** Optional verified quarterly business flow. Older publications omit this resource. */
+  businessFlow?: PublicBusinessFlow;
   /** The HTTP contract's version. Distinct from `schemaVersion`, which versions this payload. */
   apiSchemaVersion: "analysis-api.v1";
   schemaVersion: "company-analysis.v1";

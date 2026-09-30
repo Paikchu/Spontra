@@ -1,7 +1,5 @@
 "use client";
-import { useDataRevision } from "@/packages/client/src/refresh";
 
-import { apiFetch } from "@/packages/client/src/platform";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useAppNavigation } from "@/packages/ui/src/navigation";
@@ -11,8 +9,6 @@ import { SiteHeader } from "@/app/analysis/site-header";
 import { BusinessOutlook } from "@/app/analysis/stocks/[ticker]/BusinessOutlook";
 import { SecFilingsSection } from "@/app/analysis/stocks/[ticker]/SecFilingsSection";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
@@ -20,14 +16,13 @@ import { money, number, percent } from "@/lib/portfolio-format";
 import type { HoldingPlanRecord } from "@/lib/holding-plan-store";
 import type { PositionGroupView } from "@/lib/portfolio-view-model";
 import type { PortfolioTrade } from "@/lib/portfolio-snapshot";
-import type { PublicSecFiling } from "@/shared/analysis-contract/filings";
 import { PositionHoldings } from "./PositionHoldings";
 import type { PositionPlanStatus } from "./PlanEditor";
 import { PlanEditor } from "./PlanEditor";
 import { FinancialMetrics } from "./FinancialMetrics";
 
 const sections = [
-  ["outlook", "业务拆解"], ["financials", "财务指标"], ["technical", "技术面指标"],
+  ["outlook", "业务前瞻"], ["financials", "财务指标"], ["technical", "技术面指标"],
   ["holdings", "持仓构成"], ["plan", "持仓计划"], ["sec-filings", "财报与事件"],
 ] as const;
 
@@ -52,7 +47,6 @@ export function StockDetail({ source, asOf, ticker, companyName, exchange, posit
   const [visited, setVisited] = useState(() => new Set(["outlook"]));
   const { quotes, status } = useMarketQuotes(ticker);
   const quote = quotes[ticker];
-  const stock = position?.stock;
   const rsi = quote?.rsi14;
   const rsiLabel = rsi == null ? "" : rsi >= 70 ? "超买" : rsi <= 30 ? "超卖" : rsi >= 60 ? "偏强" : "中性";
 
@@ -147,19 +141,6 @@ export function StockDetail({ source, asOf, ticker, companyName, exchange, posit
         <TabsContent value="outlook" forceMount hidden={activeTab !== "outlook"}>
           <div className="stock-detail-overview">
             <BusinessOutlook ticker={ticker} />
-            <aside className="stock-detail-aside">
-              <section aria-labelledby="holding-summary-heading">
-                <h2 id="holding-summary-heading">我的持仓摘要</h2>
-                {stock ? <dl>
-                  <div><dt>数量</dt><dd>{number(stock.quantity, 0, 4)}</dd></div>
-                  <div><dt>平均成本</dt><dd>{money(stock.averageCost)}</dd></div>
-                  <div><dt>实际成本</dt><dd>{money(stock.actualCost)}</dd></div>
-                  <div><dt>浮盈比例</dt><dd className={stock.unrealized < 0 ? "loss" : "gain"}>{stock.cost !== 0 ? percent(stock.unrealized / Math.abs(stock.cost) * 100, true) : "—"}</dd></div>
-                </dl> : <p className="text-muted-foreground">{position ? "当前仅持有期权" : "当前未持有该股票"}</p>}
-                <Button variant="outline" className="w-full" onClick={() => selectTab("holdings")}>查看持仓构成</Button>
-              </section>
-              <RecentDisclosures ticker={ticker} onViewAll={() => selectTab("sec-filings")} />
-            </aside>
           </div>
         </TabsContent>
         <TabsContent value="financials" forceMount hidden={activeTab !== "financials"}>
@@ -191,22 +172,4 @@ export function StockDetail({ source, asOf, ticker, companyName, exchange, posit
       </Tabs>
     </main>
   );
-}
-
-function RecentDisclosures({ ticker, onViewAll }: { ticker: string; onViewAll: () => void }) {
-  const [filings, setFilings] = useState<PublicSecFiling[] | null>(null);
-  const [failed, setFailed] = useState(false);
-  const revision = useDataRevision();
-  useEffect(() => {
-    const controller = new AbortController();
-    apiFetch(`/api/analysis/v1/companies/${encodeURIComponent(ticker)}/filings?limit=2`, { signal: controller.signal })
-      .then(async (response) => { if (!response.ok) throw new Error("unavailable"); return response.json() as Promise<{ filings: PublicSecFiling[] }>; })
-      .then((page: { filings: PublicSecFiling[] }) => { if (!controller.signal.aborted) setFilings(page.filings); })
-      .catch(() => { if (!controller.signal.aborted) setFailed(true); });
-    return () => controller.abort();
-  }, [ticker, revision]);
-  return <section aria-labelledby="recent-disclosures-heading"><h2 id="recent-disclosures-heading">最近披露</h2>
-    {failed ? <p className="text-muted-foreground">披露暂时无法读取</p> : filings === null ? <Skeleton className="h-16 w-full" /> : filings.length ? <ul className="stock-detail-recent">{filings.map((filing) => <li key={filing.accessionNumber}><Badge variant={/10-K|10-Q|20-F/.test(filing.form) ? "default" : "secondary"}>{filing.earningsGroup ? "财报" : filing.form}</Badge><span>{filing.earningsGroup?.earningsDate ?? filing.filingDate} · {filing.earningsGroup ? `报告期 ${filing.earningsGroup.periodEnd}` : /10-K|20-F/.test(filing.form) ? "年度报告" : /10-Q/.test(filing.form) ? "季度报告" : "重大事项报告"}</span></li>)}</ul> : <p className="text-muted-foreground">暂无披露</p>}
-    <Button variant="outline" className="w-full" onClick={onViewAll}>全部披露</Button>
-  </section>;
 }

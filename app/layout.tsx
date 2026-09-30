@@ -6,6 +6,7 @@ import "./analysis/earning-report.css";
 import "@/components/earning-report/report-blocks/report-content.css";
 import "katex/dist/katex.min.css";
 import "./spontra-ui.css";
+import "./analysis/stocks/[ticker]/business-flow.css";
 import { AppNavigation } from "./app-navigation";
 import { LanguageProvider } from "./language-provider";
 import { ThemeProvider } from "./theme-control";
