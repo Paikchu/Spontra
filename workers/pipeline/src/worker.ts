@@ -1,4 +1,5 @@
 import { handleCompanyAnalysisRequest, handleSecAnalysisRequest, runCompanyAnalysisSweep, runSecMemorySweep, runSecRefresh } from "./core.ts";
+import { handleBusinessFlowRefresh, runBusinessFlowBootstrap } from "./sec/business-flow-refresh.ts";
 import { handleFundamentalsRefreshRequest } from "./fundamentals.ts";
 import { runFundamentalsStalenessSweep } from "./fundamentals-sweep.ts";
 import type { SecPipelineEnv } from "./operations.ts";
@@ -62,6 +63,7 @@ const worker = {
      */
     if (isAnalysisReadPath(path)) return handleAnalysisReadRequest(request, env);
     if (path.startsWith("/research/")) return handleResearchRequest(request, env);
+    if (path.startsWith("/sec-financials/refresh/")) return handleBusinessFlowRefresh(request, env);
     if (path.startsWith("/fundamentals/refresh/")) return handleFundamentalsRefreshRequest(request, env);
     if (path.startsWith("/company-analysis/")) return handleCompanyAnalysisRequest(request, env);
     return handleSecAnalysisRequest(request, env);
@@ -79,9 +81,10 @@ const worker = {
       // Took over from the refresh a public read used to trigger. Bounded per tick; the Cron
       // schedule above it is unchanged.
       runFundamentalsStalenessSweep(env),
+      runBusinessFlowBootstrap(env),
     ]);
-    const [analysis, memory, companyAnalysis, fundamentals] = results.map(describeSettled);
-    const payload = JSON.stringify({ event: "sec-workflows", analysis, memory, companyAnalysis, fundamentals });
+    const [analysis, memory, companyAnalysis, fundamentals, businessFlow] = results.map(describeSettled);
+    const payload = JSON.stringify({ event: "sec-workflows", analysis, memory, companyAnalysis, fundamentals, businessFlow });
     const rejected = results.filter((result): result is PromiseRejectedResult => result.status === "rejected");
     if (!rejected.length) {
       console.log(payload);

@@ -9,6 +9,8 @@ export type FlowAmount = {
   comparabilityKey: string | null;
   sourceIds: string[];
   formula?: string;
+  lineage?: Array<{ accession: string; url: string; concept: string; contextId: string; periodStart: string; periodEnd: string; dimensions: Record<string, string>; parserVersion: string }>;
+
 };
 export type BusinessSegment = {
   id: string;
@@ -20,11 +22,12 @@ export type BusinessSegment = {
   monetization: string | null;
   disclosure: string;
   sourceIds: string[];
+  children?: Array<{ id: string; name: string; revenue: FlowAmount }>;
 };
 export type BusinessFlowQuarter = {
   id: string;
   /** Provider-declared income statement model; never inferred from ticker. */
-  incomeModel?: "standard" | "financial" | "insurance" | "unknown";
+  incomeModel?: "standard" | "direct_operating" | "financial" | "insurance" | "unknown";
   label: string;
   periodStart: string | null;
   periodEnd: string;
@@ -37,6 +40,9 @@ export type BusinessFlowQuarter = {
   figures: Partial<Record<FlowMetric, FlowAmount>>;
   segments: BusinessSegment[];
   segmentsComplete: boolean;
+  expenseComponents?: Array<{ id: string; name: string; group: "direct" | "research" | "sales" | "administration" | "other"; amount: FlowAmount }>;
+  otherComponents?: Array<{ id: string; name: string; amount: FlowAmount }>;
+
   sources: FlowSource[];
 };
 /** Optional published company-analysis resource; no personal portfolio information. */

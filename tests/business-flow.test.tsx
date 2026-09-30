@@ -118,3 +118,18 @@ test("published sourced analysis takes priority over curated historical disclosu
  assert.equal(result.groups[0].description, "已发布真实公司业务");
  assert.equal(result.groups[0].revenue, null);
 });
+
+test('actual SEC direct-operating schema renders complete conserved flow without inventing gross profit',async()=>{
+ const {readFileSync}=await import('node:fs');
+ const {parseSecBusinessFlow}=await import('../workers/pipeline/src/sec/business-flow-parser');
+ const {parseSecEarningsRelease}=await import('../workers/pipeline/src/sec/business-flow-release');
+ const {buildPublishedBusinessQuarter}=await import('../workers/pipeline/src/sec/business-flow-refresh');
+ const a=parseSecBusinessFlow(readFileSync('tests/pipeline/fixtures/orcl-2026-q1-sec-xbrl.html','utf8'),{sourceUrl:'https://www.sec.gov/Archives/edgar/data/1341439/000119312526389274/orcl-20260831.htm',accession:'0001193125-26-389274',periodEnd:'2026-08-31'})[0];
+ const b=parseSecEarningsRelease(readFileSync('tests/pipeline/fixtures/orcl-2026-q4-sec-exhibit-tables.html','utf8'),{sourceUrl:'https://www.sec.gov/Archives/edgar/data/1341439/000119312526265848/orcl-ex99_1.htm',accession:'0001193125-26-265848'})[0];
+ const current=buildPublishedBusinessQuarter(a,'2026-09-11')!,prior=buildPublishedBusinessQuarter(b,'2026-06-10')!;
+ assert.ok(reconcileQuarter(current).every(c=>c.status==='balanced'));assert.equal(compareAmount(current,prior,'net').label,'+10.6%');assert.equal(compareAmount(current,prior,'revenue','CloudInfrastructure').label,'+27.7%');
+ for(const compact of [false,true]){const graph=financialGraph(current,compact);assert.equal(validateGraph(graph.nodes,graph.links),true);assert.ok(graph.nodes.some(n=>n.name==='net'));assert.ok(!graph.nodes.some(n=>n.name==='gross'));assert.ok(graph.links.some(l=>l.source==='other:nonoperating'&&l.target==='pretax'));assert.ok(graph.links.some(l=>l.source==='operating'&&l.target==='other:interest'));}
+ const flow={schemaVersion:'business-flow.v1' as const,ticker:'ORCL',fetchedAt:'2026-09-30',quarters:[current,prior]};assert.equal(selectFlow(flow,null,'ORCL').quarters.length,2);assert.equal(selectFlow(flow,null,'NVDA').quarters.length,0);
+ const html=renderToStaticMarkup(<BusinessFlow flow={flow}/>);assert.match(html,/19,345/);assert.match(html,/4,760/);assert.match(html,/云服务/);assert.match(html,/无形资产摊销/);
+ const bad=structuredClone(current);bad.expenseComponents![0].amount.value='NaN';assert.equal(financialGraph(bad).links.length,0);
+});

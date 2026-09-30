@@ -6,7 +6,7 @@ import { TooltipComponent, AriaComponent } from "echarts/components";
 import { LabelLayout } from "echarts/features";
 import { SVGRenderer } from "echarts/renderers";
 import type { BusinessFlowQuarter } from "@/shared/analysis-contract/business-flow";
-import { compareAmount, formatFlowValue, numeric } from "@/lib/earning-report/web/business-flow-model";
+import { compareAmount, compareFlowAmounts, formatFlowValue, numeric } from "@/lib/earning-report/web/business-flow-model";
 import { financialGraph } from "@/lib/earning-report/web/business-flow-sankey";
 registerCharts([SankeyChart,TooltipComponent,AriaComponent,SVGRenderer,LabelLayout]);
 
@@ -30,14 +30,15 @@ export function FinancialSankey({quarter,previous,onSegment}:{quarter:BusinessFl
      const token=(name:string,fallback:string)=>css.getPropertyValue(name).trim()||fallback;
      chart=init(element,undefined,{renderer:"svg"});
      chart.setOption({animation:false,aria:{enabled:true},tooltip:{trigger:"item",confine:true,renderMode:"richText",formatter:(params:{name?:string;value?:unknown})=>{const node=activeGraph.nodes.find(n=>n.name===params.name);return node?node.label+" · "+formatFlowValue(node.metric?numeric(quarter.figures[node.metric]):node.value,quarter)+" "+quarter.currency+" 百万":"已披露流量 · "+formatFlowValue(typeof params.value==="number"?params.value:null,quarter)+" "+quarter.currency+" 百万";}},series:[{
-      type:"sankey",orient:vertical?"vertical":"horizontal",left:vertical?12:90,right:vertical?135:60,top:76,bottom:96,nodeWidth:10,nodeGap:54,nodeAlign:"left",layoutIterations:0,draggable:false,
+      type:"sankey",orient:vertical?"vertical":"horizontal",left:vertical?12:90,right:vertical?135:60,top:76,bottom:96,nodeWidth:10,nodeGap:quarter.incomeModel==="direct_operating"?44:54,nodeAlign:"left",layoutIterations:0,draggable:false,
       emphasis:{focus:"adjacency"},labelLayout:vertical?undefined:{hideOverlap:true},
       label:{color:token("--foreground","#e5eee9"),fontFamily:token("--sans","sans-serif"),fontSize:13,lineHeight:19,position:"top",distance:9},
       lineStyle:{color:"source",opacity:.32,curveness:.5},
       data:activeGraph.nodes.map(n=>{
-       const value=n.metric?formatFlowValue(Number(quarter.figures[n.metric]?.value),quarter):formatFlowValue(n.value,quarter);
-       const comparison=n.metric?compareAmount(quarter,previous,n.metric):compareAmount(quarter,previous,"revenue",n.segmentId);
-       return {name:n.name,value:n.value,depth:n.depth,itemStyle:{color:token(n.expense?"--chart-3":n.name==="net"?"--sp-accent":n.segmentId?"--chart-1":"--chart-2","#a3bd75")},label:{show:!vertical||n.name!=="other",position:vertical?(n.expense||n.name==="other"?"bottom":"right"):(n.expense||n.name==="other")?"bottom":"top",distance:vertical&&(n.expense||n.name==="other")?24:9,width:vertical?105:150,overflow:"truncate",formatter:n.label+"\n"+value+" · "+comparison.label}};
+       const value=n.amount?formatFlowValue(numeric(n.amount),quarter):n.metric?formatFlowValue(Number(quarter.figures[n.metric]?.value),quarter):formatFlowValue(n.value,quarter);
+       const previousNode=previous?financialGraph(previous,vertical).nodes.find(p=>p.name===n.name):undefined;
+       const comparison=n.amount?compareFlowAmounts(quarter,previous,n.name,n.amount,previousNode?.amount):n.metric?compareAmount(quarter,previous,n.metric):compareAmount(quarter,previous,"revenue",n.segmentId);
+       return {name:n.name,value:n.value,depth:n.depth,itemStyle:{color:token(n.expense?"--chart-3":n.name==="net"?"--sp-accent":n.segmentId?"--chart-1":"--chart-2","#a3bd75")},label:{show:!vertical||n.name!=="other",position:vertical?(n.expense||n.name==="other"?"bottom":"right"):n.name.startsWith("other:")?(n.expense?"top":"bottom"):(n.expense||n.name==="other")?"bottom":"top",distance:vertical&&(n.expense||n.name==="other")?24:9,align:vertical&&n.expense?"left":undefined,width:vertical?105:150,overflow:"truncate",formatter:n.label+"\n"+value+" · "+comparison.label}};
       }),links:activeGraph.links,
      }]});
      setError(null);

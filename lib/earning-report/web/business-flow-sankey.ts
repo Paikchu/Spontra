@@ -1,8 +1,8 @@
-import type { BusinessFlowQuarter, FlowMetric } from "@/shared/analysis-contract/business-flow";
+import type { BusinessFlowQuarter, FlowMetric, FlowAmount } from "@/shared/analysis-contract/business-flow";
 import { numeric, reconcileQuarter } from "./business-flow-model";
 
 export const metricLabels: Record<FlowMetric, string> = { revenue:"收入", cost:"营业成本", gross:"毛利", research:"研发", sales:"销售营销", administration:"行政", operatingExpenses:"运营费用", operating:"营业利润", other:"其他损益", pretax:"税前利润", tax:"所得税", net:"净利润" };
-export type SankeyNode = { name:string; label:string; metric?:FlowMetric; segmentId?:string; depth:number; expense:boolean; value:number };
+export type SankeyNode = { name:string; label:string; metric?:FlowMetric; segmentId?:string; depth:number; expense:boolean; value:number; amount?:FlowAmount };
 export type SankeyLink = { source:string; target:string; value:number };
 export type FinancialGraph = { nodes:SankeyNode[]; links:SankeyLink[]; notice:string | null };
 
@@ -39,6 +39,31 @@ export function financialGraph(q:BusinessFlowQuarter, compact=false):FinancialGr
   if(ordered.length>5){const value=ordered.slice(4).reduce((total,s)=>total+numeric(s.revenue)!,0);nodes.push({name:"segments:remaining",label:"其余 "+(ordered.length-4)+" 个已披露分部",depth:0,expense:false,value});links.push({source:"segments:remaining",target:"revenue",value});}
  }
  let stage=0;
+ if(q.incomeModel==="direct_operating"){
+  if(compact&&hasSegments){const originals=nodes.filter(n=>n.segmentId||n.name==="segments:remaining");for(const n of originals)nodes.splice(nodes.indexOf(n),1);for(let i=links.length-1;i>=0;i--)if(originals.some(n=>n.name===links[i].source))links.splice(i,1);nodes.push({name:"business:segments",label:"已披露业务收入",metric:"revenue",depth:0,expense:false,value:v("revenue")!});links.push({source:"business:segments",target:"revenue",value:v("revenue")!});}
+
+  if(!balanced(1)||!balanced(2)||!balanced(3)||!balanced(4)||!balanced(5)||["operating","pretax","net","tax"].some(k=>(v(k as FlowMetric)??-1)<0))return {nodes:[],links:[],notice:"直接营业费用口径存在缺项或有符号亏损；原披露金额保留在明细，不转换为正向流量。"};
+  link("revenue","operating",v("operating"),1);
+  const components=q.expenseComponents??[];
+  const grouped=new Map<string,typeof components>();
+  for(const c of components){const group=compact?"all":c.group==="other"||c.group==="administration"?"administration-other":c.group;grouped.set(group,[...(grouped.get(group)??[]),c]);}
+  const labels:Record<string,string>={all:"已披露运营费用",direct:"产品与服务费用",research:"研发",sales:"销售营销","administration-other":"行政、摊销与重组"};
+  for(const [group,items] of grouped){
+   const value=items.reduce((sum,c)=>sum+(numeric(c.amount)??0),0);if(value<0)return {nodes:[],links:[],notice:"费用包含有符号冲回，保留原披露明细。"};if(!value)continue;
+   const names=items.map(c=>c.id).sort().join("+");const amount:FlowAmount={value:String(value),basis:"derived",definition:"expense-group:"+names,comparabilityKey:"expense-group:"+names,sourceIds:[...new Set(items.flatMap(c=>c.amount.sourceIds))],formula:items.map(c=>c.name).join(" + "),lineage:items.flatMap(c=>c.amount.lineage??[])};
+   const name="expense:"+group;nodes.push({name,label:labels[group]??group,depth:1+offset,expense:true,value,amount});links.push({source:"revenue",target:name,value});
+  }
+  let negative=0;
+  for(const c of q.otherComponents??[]){const signed=numeric(c.amount);if(signed==null)return {nodes:[],links:[],notice:"其他损益尚未完整披露。"};if(!signed)continue;
+   const name="other:"+c.id;nodes.push({name,label:c.name,depth:(signed<0?2:1)+offset,expense:signed<0,value:Math.abs(signed),amount:c.amount});
+   if(signed<0){negative-=signed;links.push({source:"operating",target:name,value:-signed});}else links.push({source:name,target:"pretax",value:signed});
+  }
+  link("operating","pretax",v("operating")!-negative,2);
+  link("pretax","net",v("net"),3);link("pretax","tax",v("tax"),3,true);
+  const connected=nodes.filter(n=>links.some(l=>l.source===n.name||l.target===n.name));
+  return validateGraph(connected,links)?{nodes:connected,links,notice:"直接营业费用口径 · 未披露 GAAP 毛利，不推定毛利节点；费用分组明细可展开。"}:{nodes:[],links:[],notice:"流量校验失败，保留原披露明细。"};
+ }
+
  if(balanced(1) && (v("gross")??-1)>=0 && (v("cost")??-1)>=0){link("revenue","gross",v("gross"),1);link("revenue","cost",v("cost"),1,true);stage=1;}
  if(stage===1 && balanced(2) && (v("operating")??-1)>=0 && (v("operatingExpenses")??-1)>=0){
    link("gross","operating",v("operating"),2);

@@ -398,6 +398,7 @@ export const COMPANY_ANALYSIS_SCHEMA: JsonSchema = {
         },
       },
     },
+    businessFlow: { type:"object", additionalProperties:false, required:["schemaVersion","ticker","fetchedAt","quarters"], properties:{schemaVersion:{const:"business-flow.v1"},ticker:{type:"string",pattern:TICKER_PATTERN},fetchedAt:nullableString,quarters:{type:"array",maxItems:8,items:{type:"object",additionalProperties:true,required:["id","periodEnd","periodType","currency","figures","segments","sources"],properties:{id:{type:"string"},periodEnd:{type:"string",pattern:DATE_PATTERN},periodType:{const:"3M"},currency:{type:"string"},figures:{type:"object"},segments:{type:"array",maxItems:40},sources:{type:"array",maxItems:100}}}}} },
     latestRun: { $ref: "#/$defs/AnalysisRunSummary" },
     versions: {
       description: "API schema, content revision and internal pipeline versions, kept apart.",

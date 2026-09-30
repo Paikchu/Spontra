@@ -151,7 +151,7 @@ test("the scheduled handler still drives every existing sweep, and the new one",
   }
   assert.ok(started.includes("sec"), "the SEC refresh sweep must still run on the schedule");
   const payload = JSON.parse(logs.at(-1)!) as Record<string, unknown>;
-  assert.deepEqual(Object.keys(payload), ["event", "analysis", "memory", "companyAnalysis", "fundamentals"]);
+  assert.deepEqual(Object.keys(payload), ["event", "analysis", "memory", "companyAnalysis", "fundamentals", "businessFlow"]);
   database.close();
 });
 

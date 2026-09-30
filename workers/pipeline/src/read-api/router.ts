@@ -1,3 +1,5 @@
+import { businessFlowCacheKey } from "../sec/business-flow-cache.ts";
+import type { PublicBusinessFlow } from "../../../../shared/analysis-contract/business-flow.ts";
 import { getPublicCompanyAnalysis } from "../company-analysis/api.ts";
 import { D1CompanyAnalysisRepository } from "../company-analysis/repository.ts";
 import { parseFundamentalApiQuery } from "../fundamentals/fundamentals-api.ts";
@@ -135,6 +137,8 @@ async function handleRoute(request: Request, database: D1Database, route: Exclud
     }
     case "analysis": {
       const payload = await getPublicCompanyAnalysis(new D1CompanyAnalysisRepository(database), route.ticker);
+      const business = await new D1SecRepository(database).getCache<PublicBusinessFlow>(businessFlowCacheKey(route.ticker));
+      if (business?.payload.schemaVersion === "business-flow.v1" && business.payload.ticker === route.ticker) payload.businessFlow = business.payload;
       // A published result is a durable artefact and may be reused briefly. Everything else here
       // is execution state, which must not be cached as though it were report content.
       return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");

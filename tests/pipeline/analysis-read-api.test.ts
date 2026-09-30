@@ -414,3 +414,12 @@ test("no response body carries a credential, a prompt or an internal trace", asy
   assert.doesNotMatch(combined, /test-read-secret|ANALYSIS_READ_KEYS|SEC_REFRESH_KEY|DEEPSEEK_API_KEY|Bearer /);
   database.close();
 });
+
+test('published deterministic financial flow is attached by the read-only API without replacing AI report state',async()=>{
+ const database=await backend();const {D1SecRepository}=await import('../../workers/pipeline/src/sec/d1.ts');
+ const {businessFlowCacheKey}=await import('../../workers/pipeline/src/sec/business-flow-cache.ts');
+ const flow={schemaVersion:'business-flow.v1',ticker:FIXTURE_TICKER,fetchedAt:'2026-09-30T00:00:00Z',quarters:[]};
+ await new D1SecRepository(database).setCache(businessFlowCacheKey(FIXTURE_TICKER),flow,flow.fetchedAt);
+ const response=await get(new ReadOnlyGuardDatabase(database),`/api/v1/companies/${FIXTURE_TICKER}/analysis`);assert.equal(response.status,200);
+ const payload=await response.json() as PublicCompanyAnalysisResponse;assert.deepEqual(payload.businessFlow,flow);assert.deepEqual(validateJsonSchema(ANALYSIS_API_SCHEMAS.CompanyAnalysis,payload),[]);assert.equal(payload.status,'ready');database.close();
+});
