@@ -35,8 +35,8 @@
 .business-flow__segment { border-left: 4px solid var(--flow-segment-0); background: var(--surface); border-radius: 2px 12px 12px 2px; }
 .business-flow__segment[data-tone="segment-1"] { border-color: var(--flow-segment-1); }
 .business-flow__segment[data-tone="segment-2"] { border-color: var(--flow-segment-2); }
-.business-flow__segment button { display: flex; flex-direction: column; gap: 7px; width: 100%; padding: 14px 12px; border: 0; color: var(--foreground); background: transparent; text-align: left; cursor: pointer; }
-.business-flow__segment button > span { font-size: 14px; line-height: 1.5; font-weight: 600; }
+.business-flow__segment > button { display: flex; flex-direction: column; gap: 7px; width: 100%; padding: 14px 12px; border: 0; color: var(--foreground); background: transparent; text-align: left; cursor: pointer; }
+.business-flow__segment > button > span { font-size: 14px; line-height: 1.5; font-weight: 600; }
 .business-flow__segment strong { font-size: 21px; line-height: 1.2; font-variant-numeric: tabular-nums; }
 .business-flow__segment small { font-size: 12px; line-height: 1.6; color: var(--muted-foreground); }
 .business-flow__undisclosed { grid-column:1/-1; padding-right: 12px; font-size: 14px; line-height: 1.7; }
@@ -91,3 +91,8 @@
 .business-flow__business-basis{font-size:12px;line-height:1.7;color:var(--muted-foreground);margin:0;}
 .business-flow__segment .business-flow__business-panel{border-radius:0 0 12px 12px;padding:12px;box-shadow:none;max-height:430px;}
 @media(max-width:760px){.business-flow__canvas{grid-template-columns:1fr;gap:8px;}.business-flow__canvas .business-flow__businesses{margin:16px 0;}}
+
+.business-flow__available-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin:20px 0;padding:16px 0;border-block:1px solid var(--border);}
+.business-flow__available-metrics>div{display:flex;flex-direction:column;gap:6px;font-size:14px;}
+.business-flow__available-metrics strong{font-size:24px;font-variant-numeric:tabular-nums;}
+.business-flow__available-metrics small{color:var(--muted-foreground);font-size:12px;}
