@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { extractDisclosedQuarters } from "../workers/pipeline/src/financial-data/parser";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -132,4 +134,12 @@ test('actual SEC direct-operating schema renders complete conserved flow without
  const flow={schemaVersion:'business-flow.v1' as const,ticker:'ORCL',fetchedAt:'2026-09-30',quarters:[current,prior]};assert.equal(selectFlow(flow,null,'ORCL').quarters.length,2);assert.equal(selectFlow(flow,null,'NVDA').quarters.length,0);
  const html=renderToStaticMarkup(<BusinessFlow flow={flow}/>);assert.match(html,/19,345/);assert.match(html,/4,760/);assert.match(html,/云服务/);assert.match(html,/无形资产摊销/);
  const bad=structuredClone(current);bad.expenseComponents![0].amount.value='NaN';assert.equal(financialGraph(bad).links.length,0);
+});
+
+test("actual JPM bank bridge renders pretax, tax, net and disclosed expense categories in separate cells",()=>{
+ const htmlSource=readFileSync(new URL("./pipeline/fixtures/jpm-2026-06-30-sec-income.html",import.meta.url),"utf8");
+ const parsed=extractDisclosedQuarters(htmlSource,{cik:"0000019617",industry:"financial",accession:"0001628280-26-054343",url:"https://www.sec.gov/Archives/edgar/data/19617/000162828026054343/jpm-20260630.htm",filedAt:"2026-08-06"});
+ const quarter=parsed.quarters.find(q=>q.periodEnd==="2026-06-30")!;assert.ok(quarter);
+ const rendered=renderToStaticMarkup(<BusinessFlow flow={{schemaVersion:"business-flow.v1",ticker:"JPM",fetchedAt:"2026-10-01",quarters:[quarter]}}/>);
+ assert.match(rendered,/完整银行财务桥图/);assert.match(rendered,/税前利润/);assert.match(rendered,/所得税/);assert.match(rendered,/27,516/);assert.match(rendered,/6,361/);assert.match(rendered,/21,155/);assert.match(rendered,/非利息费用/);assert.match(rendered,/信用损失准备/);assert.match(rendered,/宽度不表示金额比例/);
 });

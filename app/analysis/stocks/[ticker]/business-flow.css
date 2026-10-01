@@ -110,3 +110,5 @@
 .business-flow__signed-explanation{font-size:12px;line-height:1.7;color:var(--muted-foreground);margin:12px 0;}
 .business-flow__signed-equation--insurance{grid-template-columns:minmax(0,1fr) 12px minmax(0,1fr) 12px minmax(0,1fr) 12px minmax(0,1fr);}
 @media(max-width:620px){.business-flow__signed-equation--insurance{display:flex;flex-wrap:wrap;}.business-flow__signed-equation--insurance .business-flow__signed-amount{flex:1 0 40%;}}
+
+.business-flow__signed-expenses{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:16px 0;}
