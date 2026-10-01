@@ -151,7 +151,7 @@ input:focus-visible,
 }
 .map-content {
   position: absolute;
-  width: 1440px;
+  width: 1600px;
   transform-origin: 0 0;
   user-select: none;
 }
@@ -175,8 +175,16 @@ input:focus-visible,
   grid-template-columns: 300px minmax(0, 1fr);
   gap: 24px;
 }
-.map-content .business-flow__chart {
-  height: 650px;
+/* The canvas zooms as a whole, so the diagram fits its column instead of scrolling. */
+.map-content .business-flow__chart-scroll {
+  overflow: visible;
+}
+.map-content .business-flow__scroll-hint {
+  display: none;
+}
+.map-content .flow-infographic {
+  width: 100%;
+  min-width: 0 !important;
 }
 .map-content .business-flow__businesses {
   margin: 0;

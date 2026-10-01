@@ -8,7 +8,7 @@ export type PlacedLink = { source: string; target: string; value: number; tone: 
 export type InfographicLayout = { width: number; height: number; nodeWidth: number; nodes: PlacedNode[]; links: PlacedLink[] };
 
 /** Geometry for the editorial layout: profit rises, costs sink, labels sit outside the bars. */
-export const INFOGRAPHIC = { nodeWidth: 22, revenueHeight: 300, labelHeight: 84, sideLabelHeight: 80, gap: 18, lift: 64, drop: 56, step: 210, sideMargin: 210, centerMargin: 96, margin: 32 } as const;
+export const INFOGRAPHIC = { nodeWidth: 22, revenueHeight: 300, labelHeight: 84, sideLabelHeight: 80, gap: 18, lift: 64, drop: 56, step: 176, sideMargin: 190, centerMargin: 96, margin: 32 } as const;
 
 const groupRank = (n: PlacedNode, hasInput: boolean) => n.tone === "expense" ? 2 : hasInput ? 0 : 1;
 
