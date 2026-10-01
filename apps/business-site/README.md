@@ -7,7 +7,7 @@ Independent Vite/React frontend and Cloudflare Worker; existing Spontra routes r
 - Only API: `GET /api/business/v1/companies/:ticker`. Fixed public upstream origin; no user-supplied URL or query, no cookie/auth forwarding. The SEC flow is schema-validated and unknown fields are stripped at every level. No company analysis envelope, private research, run state, portfolio, IBKR or generation routes are returned.
 - Curated public company descriptions and flow segment explanations provide business reading. AI report paragraphs are deliberately not exposed by this first public endpoint.
 - SEC fundamentals can supply partial same-company flow when a published full flow is absent. Unknown values stay missing. Financial/insurance, losses, negative expense reversals and incomplete statements use the existing disclosed-detail fallback.
-- No database, Service Binding, credential or scheduled task. Rate-limit binding: 60 requests/minute per IP. Missing limiter fails closed. Successful public output is cached for 60 seconds. SEC refresh remains in the existing backend, not page visits.
+- Uses `global_fetch_strictly_public` so the fixed public upstream follows Cloudflare public routing instead of bypassing the other Worker. No database, Service Binding, credential or scheduled task. Rate-limit binding: 60 requests/minute per IP. Missing limiter fails closed. Successful public output is cached for 60 seconds. SEC refresh remains in the existing backend, not page visits.
 - Two small shared dependencies required by this public migration: safe fallback SEC accession lookup (CIK cannot be inferred from accession), and reject negative individual expense reversals before Sankey grouping. Other pending project-audit changes are excluded.
 
 ## Validation
