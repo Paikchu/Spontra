@@ -75,7 +75,9 @@ export function financialGraph(q:BusinessFlowQuarter, compact=false):FinancialGr
  if(balanced(1) && (v("gross")??-1)>=0 && (v("cost")??-1)>=0){link("revenue","gross",v("gross"),1);link("revenue","cost",v("cost"),1,true);stage=1;}
  if(stage===1 && balanced(2) && (v("operating")??-1)>=0 && (v("operatingExpenses")??-1)>=0){
    link("gross","operating",v("operating"),2);
-   if(balanced(5) && ["research","sales","administration"].every(k=>(v(k as FlowMetric)??-1)>=0)){
+   if(balanced(5) && !compact && q.expenseComponents?.length){
+    for(const component of q.expenseComponents){const value=numeric(component.amount);if(value==null||value<0)return {nodes:[],links:[],notice:"费用分类包含未知或负值，保留原披露明细。"};if(!value)continue;const name="expense:"+component.id;nodes.push({name,label:component.name,depth:2+offset,expense:true,value,amount:component.amount});links.push({source:"gross",target:name,value});}
+   }else if(balanced(5) && ["research","sales","administration"].every(k=>(v(k as FlowMetric)??-1)>=0)){
     for(const k of ["research","sales","administration"] as const)link("gross",k,v(k),2,true);
    }else link("gross","operatingExpenses",v("operatingExpenses"),2,true);
    stage=2;

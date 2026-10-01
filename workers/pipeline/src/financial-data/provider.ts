@@ -33,7 +33,7 @@ export async function readSecDocumentBatch(job:Job,reader:SecReader,maxDocuments
   const folder=document.url.slice(0,document.url.lastIndexOf('/')+1);
   const exhibits=[...new Set([...html.matchAll(/href\s*=\s*["']([^"']+)["']/gi)].map(m=>{try{return new URL(m[1],document.url);}catch{return null;}}).filter((url):url is URL=>!!url&&url.href.startsWith(folder)&&/^[A-Za-z0-9_.-]*ex[-_]?99[A-Za-z0-9_.-]*\.html?$/i.test(url.pathname.split('/').at(-1)!)).map(url=>url.href))].slice(0,2);
   for(const url of exhibits){const exhibit=await reader.read(url);if(Number(exhibit.headers.get('content-length'))>12000000)throw new Error('Document too large');const body=await readBoundedReport(exhibit);if(documents.reduce((n,d)=>n+d.html.length,0)+body.length>16000000)throw new Error('SEC_DOCUMENT_UNAVAILABLE');documents.push({url,html:body});}
-  for(const content of documents){const parsed=extractDisclosedQuarters(content.html,{...document,url:content.url,cik,industry:cursor.industry??'unknown'});quarters.push(...parsed.quarters);if(parsed.issues.includes('RESTATEMENT_REVIEW_REQUIRED'))throw new Error('Restatement needs deterministic mapping');}
+  for(const content of documents){const parsed=extractDisclosedQuarters(content.html,{...document,url:content.url,cik,industry:cursor.industry??'unknown'});quarters.push(...parsed.quarters);if(parsed.issues.includes('RESTATEMENT_REVIEW_REQUIRED'))throw new Error('RESTATEMENT_REVIEW_REQUIRED');}
  }
 
  cursor.index=index+selected.length;return {quarters,nextCursor:JSON.stringify(cursor),finished:cursor.index>=cursor.documents.length,expectedPeriodEnd:cursor.expectedPeriodEnd};

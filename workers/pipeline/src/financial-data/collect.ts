@@ -21,5 +21,5 @@ export async function collectComplete(job:Job,policy:FinancialPolicy,store:Compl
   if(batch.expectedPeriodEnd&&flow.quarters[0]?.periodEnd!==batch.expectedPeriodEnd){await store.defer(job,['LATEST_PERIOD_NOT_COLLECTED'],batch.nextCursor);return {published:false,reasons:['LATEST_PERIOD_NOT_COLLECTED']};}
   if(!check.complete){await store.defer(job,check.reasons,batch.nextCursor);return {published:false,reasons:check.reasons};}
   return {published:await store.publish(job,flow),reasons:[]};
- }catch{await store.defer(job,['SOURCE_TEMPORARILY_UNAVAILABLE'],job.cursor);return {published:false,reasons:['SOURCE_TEMPORARILY_UNAVAILABLE']};}
+ }catch(error){const restatement=error instanceof Error&&error.message==='RESTATEMENT_REVIEW_REQUIRED';const reasons=[restatement?'RESTATEMENT_REVIEW_REQUIRED':'SOURCE_TEMPORARILY_UNAVAILABLE'];await store.defer(restatement?{...job,attempt:3}:job,reasons,job.cursor);return {published:false,reasons};}
 }

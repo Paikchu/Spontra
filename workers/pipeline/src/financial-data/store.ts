@@ -12,7 +12,7 @@ export class D1CompleteStore implements CompleteStore{
   const results=await this.db.batch([
    this.db.prepare(`INSERT INTO financial_complete_versions(version_id,cik,ticker,generation,payload_json,published_at) SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM financial_collection_jobs WHERE job_id=? AND lease_token=? AND status='running' AND lease_until>?) ON CONFLICT(version_id) DO NOTHING`).bind(version,job.cik,job.ticker,job.generation,JSON.stringify(flow),now,job.id,job.lease,now),
    this.db.prepare(`INSERT INTO financial_complete_current(cik,version_id,generation) SELECT cik,version_id,generation FROM financial_complete_versions WHERE version_id=? AND EXISTS(SELECT 1 FROM financial_collection_jobs WHERE job_id=? AND lease_token=? AND status='running' AND lease_until>?) ON CONFLICT(cik) DO UPDATE SET version_id=excluded.version_id,generation=excluded.generation WHERE excluded.generation>financial_complete_current.generation`).bind(version,job.id,job.lease,now),
-   this.db.prepare(`UPDATE financial_collection_jobs SET status='succeeded',updated_at=?,lease_token=NULL,lease_until=NULL WHERE job_id=? AND lease_token=? AND EXISTS(SELECT 1 FROM financial_complete_current WHERE cik=? AND version_id=?)`).bind(now,job.id,job.lease,job.cik,version)
+   this.db.prepare(`UPDATE financial_collection_jobs SET status='succeeded',reasons_json='[]',updated_at=?,lease_token=NULL,lease_until=NULL WHERE job_id=? AND lease_token=? AND EXISTS(SELECT 1 FROM financial_complete_current WHERE cik=? AND version_id=?)`).bind(now,job.id,job.lease,job.cik,version)
   ]);return (results[2].meta.changes??0)>0;
  }
  async defer(job:Job,reasons:string[],cursor:string){
