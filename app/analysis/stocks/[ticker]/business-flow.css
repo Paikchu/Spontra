@@ -96,3 +96,13 @@
 .business-flow__available-metrics>div{display:flex;flex-direction:column;gap:6px;font-size:14px;}
 .business-flow__available-metrics strong{font-size:24px;font-variant-numeric:tabular-nums;}
 .business-flow__available-metrics small{color:var(--muted-foreground);font-size:12px;}
+
+.business-flow__signed-bridge{padding:12px 0;}
+.business-flow__signed-equation{display:grid;grid-template-columns:minmax(0,1fr) 24px minmax(0,1fr) 24px minmax(0,1fr);gap:8px;align-items:center;margin:18px 0;}
+.business-flow__signed-amount{display:flex;flex-direction:column;gap:8px;padding:18px 12px;background:var(--card);border:1px solid var(--border);border-radius:8px;min-width:0;font-variant-numeric:tabular-nums;}
+.business-flow__signed-amount span{font-size:12px;color:var(--muted-foreground);}
+.business-flow__signed-amount strong{font-size:20px;color:var(--sp-accent);}
+.business-flow__signed-amount[data-loss] strong{color:var(--loss);}
+.business-flow__signed-amount small{font-size:11px;color:var(--muted-foreground);}
+.business-flow__signed-operator{text-align:center;color:var(--muted-foreground);font-size:20px;}
+@media(max-width:620px){.business-flow__signed-equation{grid-template-columns:minmax(0,1fr) 14px minmax(0,1fr) 14px minmax(0,1fr);gap:4px;}.business-flow__signed-amount{padding:12px 6px;}.business-flow__signed-amount strong{font-size:16px;}.business-flow__signed-amount small{font-size:10px;}}

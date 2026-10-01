@@ -43,3 +43,10 @@ test('AI global off skips company and memory workflows before database access',a
  assert.deepEqual(await runSecRefresh(env as never),{started:[],failed:[],skipped:[]});
  assertDataTicker(env,'NVDA');assert.throws(()=>assertTrackedTicker(env,'ORCL'));
 });
+
+test('balanced signed losses publish without changing amounts; broken signed bridges still fail',()=>{
+ const signed=structuredClone(flow);
+ for(const q of signed.quarters){const operating=Number(q.figures.operating!.value);q.figures.other!.value=String(-operating-100);q.otherComponents=[{id:'signed-other',name:'有符号其他损益',amount:q.figures.other!}];q.figures.pretax!.value='-100';q.figures.net!.value=String(-100-Number(q.figures.tax!.value));}
+ assert.deepEqual(checkCompleteFlow(signed),{complete:true,reasons:[]});
+ signed.quarters[0].figures.net!.value='-1';assert.ok(checkCompleteFlow(signed).reasons.includes('UNBALANCED_STATEMENT'));
+});

@@ -40,7 +40,9 @@ function validateCompleteFlow(flow:PublicBusinessFlow):CompleteFlowCheck{
   others.forEach(c=>validAmount(c.amount));if(!financial&&others.length)check(others.reduce((sum,c)=>sum+(number(c.amount)??NaN),0),v('other'));
   if(new Set(expenses.map(c=>c.id)).size!==expenses.length||new Set(others.map(c=>c.id)).size!==others.length)reasons.add('INVALID_PAYLOAD');
   if(!keys.every(key=>number(q.figures[key])!=null))reasons.add('MISSING_DISCLOSURE');
-  if(keys.filter(key=>key!=='other').some(key=>(v(key)??0)<0)||leaves.some(n=>(n??0)<=0)||expenses.some(c=>(number(c.amount)??0)<0))reasons.add('SIGNED_LAYOUT_UNSUPPORTED');
+  // Signed profit, tax benefit and expense reversals use the complete accounting bridge.
+  // Revenue proportions still require strictly positive disclosed business amounts.
+  if((v('revenue')??0)<=0||leaves.some(n=>(n??0)<=0))reasons.add('SIGNED_LAYOUT_UNSUPPORTED');
  }
  if(JSON.stringify(current.segments.map(s=>s.id).sort())!==JSON.stringify(previous.segments.map(s=>s.id).sort()))reasons.add('INCOMPARABLE_QUARTERS');
  return {complete:reasons.size===0,reasons:[...reasons]};

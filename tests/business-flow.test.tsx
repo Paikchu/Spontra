@@ -43,7 +43,7 @@ test("signed other loss and negative net income stay signed rather than positive
   loss.figures.other!.value = "-50000"; loss.figures.pretax!.value = "-9397"; loss.figures.net!.value = "-17678";
   assert.ok(reconcileQuarter(loss).every(r => r.status === "balanced"));
   const html = renderToStaticMarkup(<BusinessFlow flow={{ ...businessFlowFixture, quarters: [loss] }} />);
-  assert.match(html, /-17,678/); assert.match(html, /data-tone="negative"/); assert.match(html, /财务金额明细/);
+  assert.match(html, /-17,678/); assert.match(html, /data-tone="negative"/); assert.match(html, /财务金额明细/); assert.match(html, /完整有符号财务桥图/); assert.match(html, /宽度不表示金额比例/);
 });
 test("real fundamentals adapter preserves source, missing details and conservative comparability", () => {
   const data = { ticker: "OTHER", source: "sec_xbrl", catalogVersion: "fundamental-metrics.v2", fetchedAt: null, periods: [{ periodEnd: "2026-06-30", periodType: "3M", currency: "USD" }], series: ["total_revenue", "gross_profit", "operating_income", "net_income"].map((key, i) => ({ metricKey: key, unitFamily: "currency", currency: "USD", unit: "USD", basis: "reported", points: [{ periodEnd: "2026-06-30", valueDecimal: String([100, 70, 40, 25][i]), revision: null, sourceAccession: "0000789019-26-000001" }] })) } as PublicFundamentalsResponse;
