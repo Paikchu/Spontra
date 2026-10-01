@@ -22,9 +22,15 @@ export async function runDataOnlySweep(env:DataOnlyEnv,fetcher:typeof fetch=fetc
   // At most one issuer enqueue per tick, and at most one refresh per issuer per day.
   const recent=await env.DB.prepare('SELECT ticker,MAX(updated_at) updated_at FROM financial_collection_jobs GROUP BY ticker').bind().all<{ticker:string;updated_at:string}>();
   const updated=new Map(recent.results.map(r=>[r.ticker,Date.parse(r.updated_at)]));
-  const ticker=[...policy.dataTickers].find(t=>!updated.has(t)||Date.now()-updated.get(t)!>=86400000);
+  const failures=await env.DB.prepare("SELECT cache_key,fetched_at FROM sec_cache WHERE cache_key LIKE 'sec:financial-discovery-failure:v1:%'").bind().all<{cache_key:string;fetched_at:string}>();
+  const failedAt=new Map(failures.results.map(r=>[r.cache_key.slice('sec:financial-discovery-failure:v1:'.length),Date.parse(r.fetched_at)]));
+  const ticker=[...policy.dataTickers].find(t=>(!updated.has(t)||Date.now()-updated.get(t)!>=86400000)&&(!failedAt.has(t)||Date.now()-failedAt.get(t)!>=3600000));
   if(!ticker)return {enabled:true,published:false,reasons:[],modelCalls:0};
-  try{const issuer=await discoverDataIssuer(ticker,reader);await enqueueIssuer(env.DB,issuer,policy,Date.now());job=await claimJob(env.DB);}catch{return {enabled:true,published:false,reasons:['SOURCE_TEMPORARILY_UNAVAILABLE'],ticker,modelCalls:0};}
+  try{const issuer=await discoverDataIssuer(ticker,reader);await enqueueIssuer(env.DB,issuer,policy,Date.now());job=await claimJob(env.DB);}catch{
+   // Back off directory failures so one invalid or unavailable issuer cannot starve the list.
+   await env.DB.prepare('INSERT INTO sec_cache(cache_key,payload,fetched_at) VALUES(?,?,?) ON CONFLICT(cache_key) DO UPDATE SET payload=excluded.payload,fetched_at=excluded.fetched_at').bind(`sec:financial-discovery-failure:v1:${ticker}`,JSON.stringify({reason:'SOURCE_TEMPORARILY_UNAVAILABLE'}),new Date().toISOString()).run();
+   return {enabled:true,published:false,reasons:['SOURCE_TEMPORARILY_UNAVAILABLE'],ticker,modelCalls:0};
+  }
  }
  if(!job)return {enabled:true,published:false,reasons:[],modelCalls:0};
  const result=await collectComplete(job,policy,new D1CompleteStore(env.DB),job=>readSecDocumentBatch(job,reader));return {enabled:true,...result,ticker:job.ticker,modelCalls:0};

@@ -44,6 +44,7 @@ export async function discoverDataIssuer(ticker:string,reader:SecReader):Promise
  if(!Array.isArray(raw.fields)||!Array.isArray(raw.data))throw new Error('Invalid SEC issuer directory');
  const symbol=raw.fields.indexOf('ticker'),cik=raw.fields.indexOf('cik'),name=raw.fields.indexOf('name');
  if(symbol<0||cik<0||name<0)throw new Error('Invalid SEC issuer directory');
- const row=raw.data.find(row=>row[symbol]===ticker);if(!row)throw new Error('SEC_ISSUER_NOT_FOUND');const identifier=String(row[cik]).padStart(10,'0');if(!/^\d{10}$/.test(identifier))throw new Error('Invalid issuer identity');
+ const canonical=ticker.toUpperCase().replaceAll("-", ".");
+ const row=raw.data.find(row=>String(row[symbol]).toUpperCase().replaceAll("-", ".")===canonical);if(!row)throw new Error('SEC_ISSUER_NOT_FOUND');const identifier=String(row[cik]).padStart(10,'0');if(!/^\d{10}$/.test(identifier))throw new Error('Invalid issuer identity');
  return {cik:identifier,tickers:[ticker],name:String(row[name]),industry:'unknown'};
 }
