@@ -1,0 +1,67 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { enrichDisclosedRevenue } from "../lib/earning-report/web/company-revenue-disclosures";
+import { financialGraph } from "../lib/earning-report/web/business-flow-sankey";
+import { compactFlowValue, INFOGRAPHIC, layoutInfographic, type InfographicLayout, type PlacedNode } from "../lib/earning-report/web/business-flow-layout";
+import { businessFlowFixture } from "./fixtures/business-flow-fixture";
+
+const latest = [...businessFlowFixture.quarters].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd))[0];
+function nvdaLayout() {
+  const base = { ...structuredClone(latest), periodStart: null, periodEnd: "2026-07-26", segments: [], segmentsComplete: false, figures: { revenue: { ...latest.figures.revenue!, value: "96221000000" } }, sources: [], scale: 1 };
+  return layoutInfographic(financialGraph(enrichDisclosedRevenue("NVDA", base)))!;
+}
+const node = (layout: InfographicLayout, name: string) => layout.nodes.find(n => n.name === name)!;
+const extent = (n: PlacedNode): [number, number] => n.side === "top" ? [n.y - INFOGRAPHIC.labelHeight, n.y + n.h] : n.side === "bottom" ? [n.y, n.y + n.h + INFOGRAPHIC.labelHeight] : [n.y, n.y + Math.max(n.h, INFOGRAPHIC.sideLabelHeight)];
+
+for (const [name, build] of [["fixture", () => layoutInfographic(financialGraph(latest))!], ["NVDA", nvdaLayout]] as const) {
+  test(`${name}: profit rises, costs sink and labels never overlap`, () => {
+    const layout = build();
+    const revenue = node(layout, "revenue"), gross = node(layout, "gross"), cost = node(layout, "cost"), net = node(layout, "net");
+    assert.ok(gross.y < revenue.y, "gross profit starts above revenue");
+    assert.ok(cost.y > gross.y + gross.h, "cost of revenue sits below gross profit");
+    assert.ok(net.y < node(layout, "tax").y, "net profit sits above tax");
+    assert.equal(net.side, "right");
+    for (const n of layout.nodes) assert.equal(n.tone === "expense", n.expense, n.name);
+    for (const n of layout.nodes) {
+      const [top, bottom] = extent(n);
+      assert.ok(top >= 0 && bottom <= layout.height, `${n.name} inside canvas`);
+      assert.ok(n.x >= 0 && n.x + layout.nodeWidth <= layout.width, `${n.name} inside width`);
+    }
+    const columns = new Map<number, PlacedNode[]>();
+    for (const n of layout.nodes) columns.set(n.column, [...(columns.get(n.column) ?? []), n]);
+    for (const column of columns.values()) {
+      const sorted = column.slice().sort((a, b) => a.y - b.y);
+      for (let i = 1; i < sorted.length; i++) assert.ok(extent(sorted[i - 1])[1] <= extent(sorted[i])[0] + 1e-6, `${sorted[i - 1].name} / ${sorted[i].name} labels overlap`);
+    }
+  });
+
+  test(`${name}: bands keep amounts proportional and fill every bar exactly`, () => {
+    const layout = build();
+    const scale = node(layout, "revenue").h / node(layout, "revenue").value;
+    for (const l of layout.links) assert.ok(Math.abs(l.h - l.value * scale) < 1e-6);
+    for (const n of layout.nodes) {
+      const into = layout.links.filter(l => l.target === n.name), out = layout.links.filter(l => l.source === n.name);
+      for (const group of [into, out]) {
+        if (!group.length) continue;
+        const starts = group.map(l => l === into[0] || into.includes(l) ? l.ty : l.sy).sort((a, b) => a - b);
+        assert.ok(Math.abs(starts[0] - n.y) < 1e-6, `${n.name} bands start at the bar top`);
+        assert.ok(group.reduce((s, l) => s + l.h, 0) <= n.h + 1e-6);
+      }
+    }
+  });
+}
+
+test("NVDA business tree flows from the left with labels on the outside", () => {
+  const layout = nvdaLayout();
+  const hyperscale = layout.nodes.find(n => n.label === "超大规模云客户")!;
+  assert.equal(hyperscale.side, "left");
+  assert.equal(hyperscale.tone, "source");
+  assert.ok(hyperscale.x < node(layout, "revenue").x);
+});
+
+test("compact amounts keep currency, sign and magnitude", () => {
+  assert.equal(compactFlowValue(96221, latest), "$96.2B");
+  assert.equal(compactFlowValue(-8.4, { ...latest, scale: 1_000_000 }), "−$8.4M");
+  assert.equal(compactFlowValue(1500, { ...latest, currency: "SEK", scale: 1_000_000 }), "1.5B SEK");
+  assert.equal(compactFlowValue(null, latest), "未披露");
+});

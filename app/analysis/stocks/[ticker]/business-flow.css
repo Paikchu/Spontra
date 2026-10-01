@@ -120,3 +120,31 @@
 .business-flow__chart-scroll:focus-visible{outline:2px solid var(--focus-ring);outline-offset:2px;}
 .business-flow__scroll-hint{display:none;font-size:12px;color:var(--muted-foreground);}
 @media(max-width:1000px){.business-flow__scroll-hint{display:block;}}
+
+/* Editorial Sankey: profit rises, costs sink, labels sit outside the bars. */
+.flow-infographic{display:block;max-width:100%;height:auto;margin:8px auto 0;font-family:var(--sans);overflow:visible;--flow-source:var(--foreground);--flow-profit:var(--chart-2);--flow-expense:var(--chart-3);}
+.flow-infographic__band{fill-opacity:.26;transition:d 520ms cubic-bezier(.25,1,.5,1),fill-opacity 160ms;}
+.flow-infographic__band[data-tone="source"]{fill:var(--flow-source);fill-opacity:.12;}
+.flow-infographic__band[data-tone="profit"]{fill:var(--flow-profit);}
+.flow-infographic__band[data-tone="expense"]{fill:var(--flow-expense);fill-opacity:.24;}
+.flow-infographic[data-active] .flow-infographic__band{fill-opacity:.07;}
+.flow-infographic[data-active] .flow-infographic__band[data-on]{fill-opacity:.42;}
+.flow-infographic__bar{transition:d 520ms cubic-bezier(.25,1,.5,1);}
+.flow-infographic__node[data-tone="source"] .flow-infographic__bar{fill:var(--flow-source);}
+.flow-infographic__node[data-tone="profit"] .flow-infographic__bar{fill:var(--flow-profit);}
+.flow-infographic__node[data-tone="expense"] .flow-infographic__bar{fill:var(--flow-expense);}
+.flow-infographic__node{transition:opacity 160ms;}
+.flow-infographic[data-active] .flow-infographic__node:not([data-on]){opacity:.45;}
+.flow-infographic__node[data-segment]{cursor:pointer;}
+.flow-infographic__node[data-segment]:focus{outline:none;}
+.flow-infographic__node[data-segment]:focus-visible .flow-infographic__bar{stroke:var(--focus-ring);stroke-width:3px;}
+.flow-infographic__label{transition:transform 520ms cubic-bezier(.25,1,.5,1);font-variant-numeric:tabular-nums lining-nums;}
+.flow-infographic__name{font-size:15px;font-weight:700;fill:var(--foreground);}
+.flow-infographic__value{font-size:22px;font-weight:700;letter-spacing:-.02em;fill:var(--foreground);}
+.flow-infographic__detail{font-size:12px;font-weight:500;fill:var(--muted-foreground);}
+.flow-infographic__node[data-tone="profit"] .flow-infographic__name,.flow-infographic__node[data-tone="profit"] .flow-infographic__value{fill:var(--flow-profit);}
+.flow-infographic__node[data-tone="expense"] .flow-infographic__name,.flow-infographic__node[data-tone="expense"] .flow-infographic__value{fill:var(--flow-expense);}
+.flow-infographic__node[data-net] .flow-infographic__value{font-size:28px;}
+.flow-infographic__node[data-segment]:hover .flow-infographic__name{text-decoration:underline;}
+.flow-infographic__caption{margin:4px 0 12px;font-size:12px;color:var(--muted-foreground);text-align:right;}
+@media (prefers-reduced-motion: reduce){.flow-infographic__band,.flow-infographic__bar,.flow-infographic__label{transition:none;}}
