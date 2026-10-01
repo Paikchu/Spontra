@@ -7,11 +7,15 @@ if (!process.env.CI) throw new Error('Deployment is restricted to the Git main C
 const credential = process.env.DESKTOP_ACCESS_TOKEN;
 if (credential && !/^[!-~]{32,512}$/.test(credential)) throw new Error('Invalid desktop access credential configuration.');
 const directory = mkdtempSync(join(tmpdir(), 'spontra-deploy-'));
-function run(command, args) {
-  const result = spawnSync(command, args, { stdio: 'inherit', env: process.env });
+function run(command, args, env = process.env) {
+  const result = spawnSync(command, args, { stdio: 'inherit', env });
   if (result.error || result.status !== 0) throw new Error(`CI deployment step failed: ${command}`);
 }
 try {
+  // Validate the independent app before any production release steps.
+  run('npm', ['run', 'business-site:typecheck']);
+  run('npm', ['run', 'business-site:test']);
+  run('npm', ['run', 'business-site:build']);
   run('npm', ['run', 'db:migrate:remote']);
   const args = ['node_modules/wrangler/bin/wrangler.js', 'deploy', '--config', 'dist/server/wrangler.json', '--keep-vars'];
   if (credential) {
@@ -21,4 +25,9 @@ try {
   }
   run(process.execPath, args);
   run('npm', ['run', 'sec-cron:deploy']);
+  // Independent public business map: shares public reads, not ledger bindings or secrets.
+  const siteEnv = { ...process.env };
+  delete siteEnv.WRANGLER_CI_OVERRIDE_NAME;
+  delete siteEnv.WRANGLER_CI_MATCH_TAG;
+  run(process.execPath, ['node_modules/wrangler/bin/wrangler.js', 'deploy', '--config', 'apps/business-site/wrangler.jsonc', '--keep-vars'], siteEnv);
 } finally { rmSync(directory, { recursive: true, force: true }); }

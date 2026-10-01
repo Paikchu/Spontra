@@ -45,6 +45,7 @@ export function financialGraph(q:BusinessFlowQuarter, compact=false):FinancialGr
   if(!balanced(1)||!balanced(2)||!balanced(3)||!balanced(4)||!balanced(5)||["operating","pretax","net","tax"].some(k=>(v(k as FlowMetric)??-1)<0))return {nodes:[],links:[],notice:"直接营业费用口径存在缺项或有符号亏损；原披露金额保留在明细，不转换为正向流量。"};
   link("revenue","operating",v("operating"),1);
   const components=q.expenseComponents??[];
+  if(components.some(c=>numeric(c.amount)==null||numeric(c.amount)!<0))return {nodes:[],links:[],notice:"费用包含缺项或有符号冲回，保留原披露明细，不转换为正向流量。"};
   const grouped=new Map<string,typeof components>();
   for(const c of components){const group=compact?"all":c.group==="other"||c.group==="administration"?"administration-other":c.group;grouped.set(group,[...(grouped.get(group)??[]),c]);}
   const labels:Record<string,string>={all:"已披露运营费用",direct:"产品与服务费用",research:"研发",sales:"销售营销","administration-other":"行政、摊销与重组"};

@@ -5,6 +5,7 @@ import nextTs from "eslint-config-next/typescript";
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
+  { files: ["apps/business-site/src/**/*.tsx"], rules: { "@next/next/no-html-link-for-pages": "off" } },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:
@@ -13,6 +14,8 @@ const eslintConfig = defineConfig([
     "build/**",
     "next-env.d.ts",
     "apps/desktop/dist/**",
+    "apps/business-site/dist/**",
+    "apps/business-site/.wrangler/**",
     "apps/desktop/src-tauri/**",
   ]),
 ]);

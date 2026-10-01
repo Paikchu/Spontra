@@ -24,7 +24,7 @@ export function adaptFundamentals(data: PublicFundamentalsResponse | null, ticke
       const series = data.series.find(s => s && Array.isArray(s.points) && s.metricKey === key && s.unitFamily === "currency" && s.currency === period.currency && s.unit === period.currency);
       const point = series?.points.find(p => p && p.periodEnd === period.periodEnd);
       if (!series || !point) continue;
-      if (point.sourceAccession && !sources.some(s => s.id === point.sourceAccession)) sources.push({ id: point.sourceAccession, title: `SEC 文件 ${point.sourceAccession}`, url: `https://www.sec.gov/Archives/edgar/data/${Number(point.sourceAccession.slice(0, 10))}/${point.sourceAccession.replaceAll("-", "")}/${point.sourceAccession}-index.html`, publishedAt: point.sourceFiledAt });
+      if (point.sourceAccession && !sources.some(s => s.id === point.sourceAccession)) sources.push({ id: point.sourceAccession, title: `SEC 文件 ${point.sourceAccession}`, url: `https://www.sec.gov/edgar/search/#/q=${encodeURIComponent(point.sourceAccession)}`, publishedAt: point.sourceFiledAt });
       figures[target as FlowMetric] = { value: point.valueDecimal, basis: series.basis, definition: `${data.catalogVersion}:${key}`, comparabilityKey: point.revision != null ? `${data.source}:${key}:revision-${point.revision}` : null, sourceIds: point.sourceAccession ? [point.sourceAccession] : [], formula: point.derivationFormula };
     }
     // Differences are only formed from figures in the same filing/revision. No YTD subtraction.

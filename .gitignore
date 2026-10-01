@@ -51,3 +51,6 @@ next-env.d.ts
 /apps/desktop/src-tauri/target/
 /apps/desktop/src-tauri/gen/
 **/node_modules/
+
+/apps/business-site/dist/
+/apps/business-site/.wrangler/

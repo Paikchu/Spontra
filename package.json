@@ -45,7 +45,11 @@
     "desktop:check": "npm run typecheck --workspace @spontra/desktop",
     "desktop:package": "npm run package --workspace @spontra/desktop --",
     "desktop:boundary": "node scripts/check-desktop-boundary.mjs",
-    "desktop:test": "playwright test -c apps/desktop/playwright.config.ts"
+    "desktop:test": "playwright test -c apps/desktop/playwright.config.ts",
+    "business-site:build": "npm run build --workspace @spontra/business-site",
+    "business-site:typecheck": "npm run typecheck --workspace @spontra/business-site",
+    "business-site:check": "wrangler deploy --config apps/business-site/wrangler.jsonc --dry-run",
+    "business-site:test": "tsx --tsconfig tsconfig.test.json --test tests/business-site.test.ts tests/business-flow.test.tsx"
   },
   "dependencies": {
     "@streamdown/cjk": "^1.0.3",
@@ -97,6 +101,7 @@
   "type": "module",
   "workspaces": [
     "apps/desktop",
-    "packages/*"
+    "packages/*",
+    "apps/business-site"
   ]
 }
