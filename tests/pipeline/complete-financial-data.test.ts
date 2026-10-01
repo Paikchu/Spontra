@@ -50,3 +50,17 @@ test('balanced signed losses publish without changing amounts; broken signed bri
  assert.deepEqual(checkCompleteFlow(signed),{complete:true,reasons:[]});
  signed.quarters[0].figures.net!.value='-1';assert.ok(checkCompleteFlow(signed).reasons.includes('UNBALANCED_STATEMENT'));
 });
+
+test('department reorganization publishes balanced quarters without requiring matching department IDs',async()=>{
+ const revised=structuredClone(flow);
+ revised.quarters[0].segments[0].id='new-current-department';
+ revised.quarters[0].segments[0].revenue!.comparabilityKey='new-current-definition';
+ assert.deepEqual(checkCompleteFlow(revised),{complete:true,reasons:[]});
+ let published=false;const staged:BusinessFlowQuarter[]=[];
+ const store:CompleteStore={stage:async(_job,q)=>{staged.push(q);},staged:async()=>staged,publish:async(_job,next)=>{assert.equal(next.quarters[0].segments[0].id,'new-current-department');published=true;return true;},defer:async()=>{}};
+ const job:Job={id:'changed-departments',cik:'0001341439',ticker:'ORCL',generation:1,lease:'lease',cursor:'{}',attempt:1};
+ const result=await collectComplete(job,financialPolicy({SEC_DATA_TICKERS:'ORCL',SEC_AI_ENABLED:'false'}),store,async()=>({quarters:revised.quarters,nextCursor:'done',finished:true}));
+ assert.equal(result.published,true);assert.equal(published,true);
+ revised.quarters[0].segments[0].revenue!.value='1';
+ assert.ok(checkCompleteFlow(revised).reasons.includes('UNBALANCED_STATEMENT'));
+});

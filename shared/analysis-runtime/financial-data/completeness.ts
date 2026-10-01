@@ -44,7 +44,8 @@ function validateCompleteFlow(flow:PublicBusinessFlow):CompleteFlowCheck{
   // Revenue proportions still require strictly positive disclosed business amounts.
   if((v('revenue')??0)<=0||leaves.some(n=>(n??0)<=0))reasons.add('SIGNED_LAYOUT_UNSUPPORTED');
  }
- if(JSON.stringify(current.segments.map(s=>s.id).sort())!==JSON.stringify(previous.segments.map(s=>s.id).sort()))reasons.add('INCOMPARABLE_QUARTERS');
+ // Department reorganizations affect per-department comparisons, not publication.
+ // Each quarter still requires sourced departments that reconcile to its own revenue.
  return {complete:reasons.size===0,reasons:[...reasons]};
 }
 export function newestPair(flow:PublicBusinessFlow):PublicBusinessFlow{return {...flow,quarters:[...flow.quarters].sort((a,b)=>b.periodEnd.localeCompare(a.periodEnd)).slice(0,2)};}

@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { BusinessFlow } from "../app/analysis/stocks/[ticker]/BusinessFlow";
-import { adaptFundamentals, compareAmount, marginChange, numeric, previousQuarter, reconcileQuarter, selectFlow } from "../lib/earning-report/web/business-flow-model";
+import { adaptFundamentals, segmentChangeLabel, compareAmount, marginChange, numeric, previousQuarter, reconcileQuarter, selectFlow } from "../lib/earning-report/web/business-flow-model";
 import { businessFlowFixture } from "./fixtures/business-flow-fixture";
 import { financialGraph, validateGraph } from "../lib/earning-report/web/business-flow-sankey";
 import type { PublicFundamentalsResponse } from "../shared/analysis-contract/fundamentals";
@@ -142,4 +142,20 @@ test("actual JPM bank bridge renders pretax, tax, net and disclosed expense cate
  const quarter=parsed.quarters.find(q=>q.periodEnd==="2026-06-30")!;assert.ok(quarter);
  const rendered=renderToStaticMarkup(<BusinessFlow flow={{schemaVersion:"business-flow.v1",ticker:"JPM",fetchedAt:"2026-10-01",quarters:[quarter]}}/>);
  assert.match(rendered,/完整银行财务桥图/);assert.match(rendered,/税前利润/);assert.match(rendered,/所得税/);assert.match(rendered,/27,516/);assert.match(rendered,/6,361/);assert.match(rendered,/21,155/);assert.match(rendered,/非利息费用/);assert.match(rendered,/信用损失准备/);assert.match(rendered,/宽度不表示金额比例/);
+});
+
+test('latest disclosed departments retain amounts while unavailable or redefined historical changes are omitted',()=>{
+ const current=structuredClone(q4),prior=structuredClone(q3);
+ current.segments[0].id='new-department';current.segments[0].name='本季新披露部门';
+ prior.segments[0].name='仅历史部门';
+ assert.equal(segmentChangeLabel(current,prior,'new-department'),'');
+ const html=renderToStaticMarkup(<BusinessFlow flow={{...businessFlowFixture,quarters:[prior,current]}}/>);
+ assert.match(html,/本季新披露部门/);assert.ok(!html.includes('仅历史部门'));
+ const button=html.match(/<button[^>]*id="[^"]*-segment-new-department"[^>]*>[\s\S]*?<\/button>/)?.[0];
+ assert.ok(button);assert.match(button,/<strong>/);assert.ok(!button.includes('环比'));assert.ok(!button.includes('不可比'));
+ current.segments[0].id=prior.segments[0].id;
+ current.segments[0].revenue!.comparabilityKey='changed-definition';
+ assert.equal(segmentChangeLabel(current,prior,current.segments[0].id),'');
+ current.segments[0].revenue!.comparabilityKey=prior.segments[0].revenue!.comparabilityKey;
+ assert.match(segmentChangeLabel(current,prior,current.segments[0].id),/^环比 /);
 });

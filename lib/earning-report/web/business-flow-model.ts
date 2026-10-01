@@ -58,6 +58,12 @@ export function compareAmount(current: BusinessFlowQuarter, previous: BusinessFl
   return compareFlowAmounts(current, previous, key, a, b);
 }
 
+/** Only annotate departments with an actual comparable prior disclosure. */
+export function segmentChangeLabel(current: BusinessFlowQuarter, previous: BusinessFlowQuarter | null, segmentId: string): string {
+  const comparison = compareAmount(current, previous, "revenue", segmentId);
+  return comparison.delta == null ? "" : `环比 ${comparison.label}`;
+}
+
 export function compareFlowAmounts(current: BusinessFlowQuarter, previous: BusinessFlowQuarter | null, key: string, a: FlowAmount | null | undefined, b: FlowAmount | null | undefined) {
   const av = numeric(a), bv = numeric(b);
   if (previous && (current.currency !== previous.currency || current.scale !== previous.scale)) return { label: "不可比", delta: null, previous: null, percent: null };

@@ -6,7 +6,7 @@ import { TooltipComponent, AriaComponent } from "echarts/components";
 import { LabelLayout } from "echarts/features";
 import { SVGRenderer } from "echarts/renderers";
 import type { BusinessFlowQuarter, FlowMetric } from "@/shared/analysis-contract/business-flow";
-import { compareAmount, compareFlowAmounts, formatFlowValue, numeric } from "@/lib/earning-report/web/business-flow-model";
+import { compareAmount, compareFlowAmounts, segmentChangeLabel, formatFlowValue, numeric } from "@/lib/earning-report/web/business-flow-model";
 import { financialGraph, metricLabels } from "@/lib/earning-report/web/business-flow-sankey";
 registerCharts([SankeyChart,TooltipComponent,AriaComponent,SVGRenderer,LabelLayout]);
 
@@ -38,7 +38,7 @@ export function FinancialSankey({quarter,previous,onSegment}:{quarter:BusinessFl
        const value=n.amount?formatFlowValue(numeric(n.amount),quarter):n.metric?formatFlowValue(Number(quarter.figures[n.metric]?.value),quarter):formatFlowValue(n.value,quarter);
        const previousNode=previous?financialGraph(previous,vertical).nodes.find(p=>p.name===n.name):undefined;
        const comparison=n.amount?compareFlowAmounts(quarter,previous,n.name,n.amount,previousNode?.amount):n.metric?compareAmount(quarter,previous,n.metric):compareAmount(quarter,previous,"revenue",n.segmentId);
-       return {name:n.name,value:n.value,depth:n.depth,itemStyle:{color:token(n.expense?"--chart-3":n.name==="net"?"--sp-accent":n.segmentId?"--chart-1":"--chart-2","#a3bd75")},label:{show:!vertical||n.name!=="other",position:vertical?(n.expense||n.name==="other"?"bottom":"right"):n.name.startsWith("other:")?(n.expense?"top":"bottom"):(n.expense||n.name==="other")?"bottom":"top",distance:vertical&&(n.expense||n.name==="other")?24:9,align:vertical&&n.expense?"left":undefined,width:vertical?105:150,overflow:"truncate",formatter:n.label+"\n"+value+" · "+comparison.label}};
+       return {name:n.name,value:n.value,depth:n.depth,itemStyle:{color:token(n.expense?"--chart-3":n.name==="net"?"--sp-accent":n.segmentId?"--chart-1":"--chart-2","#a3bd75")},label:{show:!vertical||n.name!=="other",position:vertical?(n.expense||n.name==="other"?"bottom":"right"):n.name.startsWith("other:")?(n.expense?"top":"bottom"):(n.expense||n.name==="other")?"bottom":"top",distance:vertical&&(n.expense||n.name==="other")?24:9,align:vertical&&n.expense?"left":undefined,width:vertical?105:150,overflow:"truncate",formatter:n.label+"\n"+value+(n.segmentId ? (segmentChangeLabel(quarter,previous,n.segmentId) ? " · "+segmentChangeLabel(quarter,previous,n.segmentId) : "") : n.name==="segments:remaining" ? "" : " · "+comparison.label)}};
       }),links:activeGraph.links,
      }]});
      setError(null);
