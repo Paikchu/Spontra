@@ -1,5 +1,5 @@
 import type { BusinessFlowQuarter, FlowMetric, FlowAmount } from "@/shared/analysis-contract/business-flow";
-import { numeric, reconcileQuarter } from "./business-flow-model";
+import { numeric, reconcileQuarter, disclosedSegmentLabel } from "./business-flow-model";
 
 export const metricLabels: Record<FlowMetric, string> = { revenue:"收入", cost:"营业成本", gross:"毛利", research:"研发", sales:"销售营销", administration:"行政", operatingExpenses:"运营费用", operating:"营业利润", other:"其他损益", pretax:"税前利润", tax:"所得税", net:"净利润" };
 export type SankeyNode = { name:string; label:string; metric?:FlowMetric; segmentId?:string; depth:number; expense:boolean; value:number; amount?:FlowAmount };
@@ -42,7 +42,7 @@ export function financialGraph(q:BusinessFlowQuarter, compact=false):FinancialGr
  if(hasSegments){
   const ordered=[...q.segments].sort((a,b)=>numeric(b.revenue)!-numeric(a.revenue)!);
   const shown=ordered.length>5?ordered.slice(0,4):ordered;
-  for(const s of shown){const name="segment:"+s.id;nodes.push({name,label:s.name,segmentId:s.id,depth:0,expense:false,value:numeric(s.revenue)!});links.push({source:name,target:"revenue",value:numeric(s.revenue)!});}
+  for(const s of shown){const name="segment:"+s.id;nodes.push({name,label:disclosedSegmentLabel(s.name),segmentId:s.id,depth:0,expense:false,value:numeric(s.revenue)!});links.push({source:name,target:"revenue",value:numeric(s.revenue)!});}
   if(ordered.length>5){const value=ordered.slice(4).reduce((total,s)=>total+numeric(s.revenue)!,0);nodes.push({name:"segments:remaining",label:"其余 "+(ordered.length-4)+" 个已披露分部",depth:0,expense:false,value});links.push({source:"segments:remaining",target:"revenue",value});}
  }
  let stage=0;

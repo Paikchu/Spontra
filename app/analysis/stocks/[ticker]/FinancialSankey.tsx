@@ -31,7 +31,7 @@ export function FinancialSankey({quarter,previous,onSegment}:{quarter:BusinessFl
      chart=init(element,undefined,{renderer:"svg"});
      chart.setOption({animation:false,aria:{enabled:true},tooltip:{trigger:"item",confine:true,renderMode:"richText",formatter:(params:{name?:string;value?:unknown})=>{const node=activeGraph.nodes.find(n=>n.name===params.name);return node?node.label+" · "+formatFlowValue(node.metric?numeric(quarter.figures[node.metric]):node.value,quarter)+" "+quarter.currency+" 百万":"已披露流量 · "+formatFlowValue(typeof params.value==="number"?params.value:null,quarter)+" "+quarter.currency+" 百万";}},series:[{
       type:"sankey",orient:vertical?"vertical":"horizontal",left:vertical?12:90,right:vertical?135:60,top:76,bottom:96,nodeWidth:10,nodeGap:quarter.incomeModel==="direct_operating"?44:54,nodeAlign:"left",layoutIterations:0,draggable:false,
-      emphasis:{focus:"adjacency"},labelLayout:vertical?undefined:{hideOverlap:true},
+      emphasis:{focus:"adjacency"},labelLayout:vertical?undefined:{hideOverlap:false},
       label:{color:token("--foreground","#e5eee9"),fontFamily:token("--sans","sans-serif"),fontSize:13,lineHeight:19,position:"top",distance:9},
       lineStyle:{color:"source",opacity:.32,curveness:.5},
       data:activeGraph.nodes.map(n=>{
@@ -53,7 +53,7 @@ export function FinancialSankey({quarter,previous,onSegment}:{quarter:BusinessFl
  // The node event is rebuilt on quarter changes; React owns disclosure panels.
  },[quarter,previous,onSegment,graph]);
  const signed = Object.entries(quarter.figures).some(([key,amount])=>key!=="other" && (numeric(amount)??0)<0) || (quarter.expenseComponents??[]).some(c=>(numeric(c.amount)??0)<0);
- if(signed)return <SignedFinancialBridge quarter={quarter} previous={previous}/>;
+ if(signed||quarter.incomeModel==="insurance")return <SignedFinancialBridge quarter={quarter} previous={previous}/>;
  return <>{!graph.nodes.some(n=>n.name==="net")&&<div className="business-flow__independent-net" data-loss={(numeric(quarter.figures.net)??0)<0||undefined}><span>净利润 · 独立披露，完整流向待补齐</span><strong>{formatFlowValue(numeric(quarter.figures.net),quarter)}</strong><span>环比 {compareAmount(quarter,previous,"net").label}</span></div>}{graph.notice&&<p className="business-flow__notice">{graph.notice}</p>}{graph.links.length?<div ref={container} className="business-flow__chart" role="img" aria-label="收入到净利润桑基图；下方提供金额明细及业务展开按钮" />:<div><p className="business-flow__notice">当前披露缺少已对平的中间阶段，暂不绘制比例流带。金融与保险采用不同利润表口径，不强行推定成本与毛利。</p><div className="business-flow__available-metrics">{([["revenue", "收入"], ["operating", "营业利润"]] as const).map(([metric,label]) => <div key={metric}><span>{label}</span><strong>{formatFlowValue(numeric(quarter.figures[metric]),quarter)}</strong><small>{quarter.currency} 百万 · 环比 {compareAmount(quarter,previous,metric).label}</small></div>)}</div></div>}<p className="business-flow__mobile-other">其他损益（有符号）：{(numeric(quarter.figures.other)??0)>0?"+":""}{formatFlowValue(numeric(quarter.figures.other),quarter)} · 环比 {compareAmount(quarter,previous,"other").label}。正值额外流入，负值分流；费用分项见财务明细。</p>{error&&<p role="status">{error}</p>}</>;
 }
 
@@ -67,7 +67,8 @@ function SignedFinancialBridge({quarter,previous}:{quarter:BusinessFlowQuarter;p
   :[["revenue","−","cost","gross"],["gross","−","operatingExpenses","operating"],["operating","+","other","pretax"],["pretax","−","tax","net"]];
  const metric=(key:FlowMetric)=><div className="business-flow__signed-amount" data-loss={(numeric(quarter.figures[key])??0)<0||undefined}><span>{metricLabels[key]}</span><strong>{formatFlowValue(numeric(quarter.figures[key]),quarter)}</strong><small>环比 {compareAmount(quarter,previous,key).label}</small></div>;
  return <div className="business-flow__signed-bridge" role="figure" aria-label="完整有符号财务桥图，金额保持财报正负号">
-  <p className="business-flow__notice">财务桥图 · {quarter.currency} 百万。框和箭头表示对账关系，宽度不表示金额比例；亏损、税收收益及费用冲回保留原披露正负号。</p>
-  {equations.map(([left,operator,right,result])=><div className="business-flow__signed-equation" key={result}>{metric(left)}<span className="business-flow__signed-operator">{operator}</span>{metric(right)}<span className="business-flow__signed-operator" aria-label="等于">→</span>{metric(result)}</div>)}
+  <p className="business-flow__signed-explanation">财务桥图 · {quarter.currency} 百万。{quarter.incomeModel==="insurance"?"净利润含少数股东权益；投资与权益法损益单列。":""}框和箭头表示对账关系，宽度不表示金额比例；亏损、税收收益及费用冲回保留原披露正负号。</p>
+  {quarter.incomeModel==="insurance"&&<div className="business-flow__signed-equation business-flow__signed-equation--insurance">{metric("revenue")}<span>−</span>{metric("operatingExpenses")}<span>+</span>{metric("other")}<span>→</span>{metric("pretax")}</div>}
+  {equations.filter((_,i)=>quarter.incomeModel!=="insurance"||i>0).map(([left,operator,right,result])=><div className="business-flow__signed-equation" key={result}>{metric(left)}<span className="business-flow__signed-operator">{operator}</span>{metric(right)}<span className="business-flow__signed-operator" aria-label="等于">→</span>{metric(result)}</div>)}
  </div>;
 }

@@ -5,7 +5,7 @@ import type { CompanyBusinessContent } from "@/lib/earning-report/web/company-bu
 import { FinancialSankey } from "./FinancialSankey";
 import type { BusinessFlowQuarter, BusinessSegment, FlowMetric, FlowSource, PublicBusinessFlow } from "@/shared/analysis-contract/business-flow";
 import type { CompanyAnalysisOverview } from "@/shared/analysis-contract/company-analysis";
-import { compareAmount, compareFlowAmounts, formatFlowValue, marginChange, numeric, previousQuarter, reconcileQuarter } from "@/lib/earning-report/web/business-flow-model";
+import { disclosedSegmentLabel, compareAmount, compareFlowAmounts, formatFlowValue, marginChange, numeric, previousQuarter, reconcileQuarter } from "@/lib/earning-report/web/business-flow-model";
 
 const nodes: Array<{ key: FlowMetric; label: string; tone: string }> = [
   { key: "revenue", label: "收入", tone: "revenue" },
@@ -44,8 +44,8 @@ function MetricNode({ node, quarter, previous, details }: { node: typeof nodes[n
 }
 
 function BusinessPanel({ segment, sources, close, quarter, previous }: { segment: BusinessSegment; sources: FlowSource[]; close: () => void; quarter?:BusinessFlowQuarter; previous?:BusinessFlowQuarter|null }) {
-  return <section className="business-flow__business-panel" aria-label={`${segment.name} 业务详情`}>
-    <div className="business-flow__panel-heading"><h3>{segment.name}</h3><button type="button" onClick={close} aria-label="收起业务详情">收起 ×</button></div>
+  return <section className="business-flow__business-panel" aria-label={`${disclosedSegmentLabel(segment.name)} 业务详情`}>
+    <div className="business-flow__panel-heading"><h3>{disclosedSegmentLabel(segment.name)}</h3><button type="button" onClick={close} aria-label="收起业务详情">收起 ×</button></div>
     <p>{segment.description || "业务说明未披露"}</p>
     {quarter && segment.children?.length ? <><h4>已披露收入分类</h4><ul>{segment.children.map(c=><li key={c.id}>{c.name} · {formatFlowValue(numeric(c.revenue),quarter)} {quarter.currency} 百万 · 环比 {compareAmount(quarter,previous??null,"revenue",c.id).label}</li>)}</ul></>:null}
     <h4>产品归属</h4><ul>{segment.products.length ? segment.products.map(p => <li key={p}>{p}</li>) : <li>产品映射未披露</li>}</ul>
@@ -73,7 +73,7 @@ export function BusinessFlow({ flow, overview, notice, business, publicationLabe
   const segments = quarter?.segments.length ? quarter.segments : business?.groups ?? [];
   const businessSources = quarter?.segments.length ? quarter.sources : business?.sources ?? [];
   const rail = <div className="business-flow__businesses" onKeyDown={event => { if (event.key === "Escape" && expandedSegment) { event.preventDefault(); closeBusiness(); } }}><h3>业务分部 / 产品归属 → 公司收入</h3>{!quarter?.segments.length && business && <p className="business-flow__business-basis">{business.basisLabel}</p>}{segments.length ? segments.map((segment, index) => <div className="business-flow__segment" key={segment.id} data-tone={`segment-${index % 3}`}>
-    <button id={`${id}-segment-${segment.id}`} type="button" onClick={() => toggleSegment(segment.id)} aria-expanded={expandedSegment === segment.id} aria-controls={`${id}-business-${segment.id}`}><span>{segment.name}</span>{quarter && segment.revenue ? <strong>{formatFlowValue(numeric(segment.revenue), quarter)}</strong> : <small>{segment.products.slice(0, 3).join(" · ").slice(0, 100) || segment.description.slice(0, 90)}</small>}<small>{quarter && segment.revenue ? `环比 ${compareAmount(quarter, previousQuarter(quarter, quarters), "revenue", segment.id).label} · ` : "定性归属 · 比例未披露 · "}{expandedSegment === segment.id ? "收起业务" : "展开业务 ↗"}</small></button>
+    <button id={`${id}-segment-${segment.id}`} type="button" onClick={() => toggleSegment(segment.id)} aria-expanded={expandedSegment === segment.id} aria-controls={`${id}-business-${segment.id}`}><span>{disclosedSegmentLabel(segment.name)}</span>{quarter && segment.revenue ? <strong>{formatFlowValue(numeric(segment.revenue), quarter)}</strong> : <small>{segment.products.slice(0, 3).join(" · ").slice(0, 100) || segment.description.slice(0, 90)}</small>}<small>{quarter && segment.revenue ? `环比 ${compareAmount(quarter, previousQuarter(quarter, quarters), "revenue", segment.id).label} · ` : "定性归属 · 比例未披露 · "}{expandedSegment === segment.id ? "收起业务" : "展开业务 ↗"}</small></button>
     {expandedSegment === segment.id && <div id={`${id}-business-${segment.id}`}><BusinessPanel segment={segment} sources={businessSources} close={closeBusiness} quarter={quarter} previous={quarter?previousQuarter(quarter,quarters):null} /></div>}
   </div>) : <div className="business-flow__undisclosed"><strong>业务描述尚未发布</strong><p>当前公司没有可溯源的已发布业务资料；不会用其他公司的产品替代。</p></div>}</div>;
   if (!quarter) return <section className="business-flow business-flow--empty" aria-label="公司业务前瞻"><h2>业务前瞻</h2>{notice && <p role="status">{notice}</p>}<div className="business-flow__canvas">{rail}<div className="business-flow__undisclosed"><h3>季度财务未披露</h3><p>需要同币种、同口径的三个月数据才能绘制财务流向。业务资料保留独立披露期间，不会用示例数据替代真实财务。</p></div></div>{overview && <AnalysisReading overview={overview} publicationLabel={publicationLabel} />}</section>;

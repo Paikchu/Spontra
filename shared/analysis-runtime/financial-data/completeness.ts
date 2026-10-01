@@ -18,10 +18,10 @@ function validateCompleteFlow(flow:PublicBusinessFlow):CompleteFlowCheck{
   if(q.periodType!=='3M'||!Number.isFinite(days)||days<70||days>110||!Number.isFinite(q.scale)||q.scale<=0)reasons.add('INVALID_PAYLOAD');
   if(!['standard','direct_operating','financial','insurance'].includes(q.incomeModel??'')){reasons.add('UNSUPPORTED_INDUSTRY');continue;}
   const financial=q.incomeModel==='financial'||q.incomeModel==='insurance';
-  const keys:FlowMetric[]=financial?['revenue','operatingExpenses','pretax','tax','net']:q.incomeModel==='standard'?['revenue','cost','gross','operatingExpenses','operating','other','pretax','tax','net']:['revenue','operatingExpenses','operating','other','pretax','tax','net'];
+  const keys:FlowMetric[]=financial?(q.incomeModel==='insurance'?['revenue','operatingExpenses','other','pretax','tax','net']:['revenue','operatingExpenses','pretax','tax','net']):q.incomeModel==='standard'?['revenue','cost','gross','operatingExpenses','operating','other','pretax','tax','net']:['revenue','operatingExpenses','operating','other','pretax','tax','net'];
   const validAmount=(amount:FlowAmount|undefined|null)=>{
    if(number(amount)==null){reasons.add('MISSING_DISCLOSURE');return;}
-   if(!amount!.sourceIds.length||!amount!.sourceIds.every(id=>q.sources.some(s=>s.id===id&&sourceUrl(s.url)))||!amount!.lineage?.length||!amount!.lineage.every(l=>sourceUrl(l.url)&&l.accession&&l.concept&&l.contextId&&l.periodStart===q.periodStart&&l.periodEnd===q.periodEnd))reasons.add('INVALID_SOURCE');
+   if(!amount!.sourceIds.length||!amount!.sourceIds.every(id=>q.sources.some(s=>s.id===id&&sourceUrl(s.url)))||!amount!.lineage?.length||!amount!.lineage.every(l=>sourceUrl(l.url)&&l.accession&&l.concept&&l.contextId&&amount!.sourceIds.includes(l.accession)&&((l.periodStart===q.periodStart&&l.periodEnd===q.periodEnd)||(amount!.basis==='derived'&&l.periodStart<q.periodStart!&&(l.periodEnd===q.periodEnd||Date.parse(l.periodEnd)+86400000===Date.parse(q.periodStart!))))))reasons.add('INVALID_SOURCE');
    if(amount!.basis==='derived'&&!amount!.formula)reasons.add('INVALID_SOURCE');
   };
   keys.forEach(key=>{validAmount(q.figures[key]);if(!q.figures[key]?.comparabilityKey||q.figures[key]?.comparabilityKey!==previous.figures[key]?.comparabilityKey)reasons.add('INCOMPARABLE_QUARTERS');});
@@ -29,7 +29,7 @@ function validateCompleteFlow(flow:PublicBusinessFlow):CompleteFlowCheck{
   const check=(left: number|null,right:number|null)=>{if(left==null||right==null)return;if(!balanced(left,right))reasons.add('UNBALANCED_STATEMENT');};
   const sub=(a:number|null,b:number|null)=>a==null||b==null?null:a-b;
   if(q.incomeModel==='standard'){check(sub(v('revenue'),v('cost')),v('gross'));check(sub(v('gross'),v('operatingExpenses')),v('operating'));}
-  else check(sub(v('revenue'),v('operatingExpenses')),v(financial?'pretax':'operating'));
+  else if(q.incomeModel==='insurance'){const subtotal=sub(v('revenue'),v('operatingExpenses'));check(subtotal==null||v('other')==null?null:subtotal+v('other')!,v('pretax'));}else check(sub(v('revenue'),v('operatingExpenses')),v(financial?'pretax':'operating'));
   if(!financial)check(v('operating')==null||v('other')==null?null:v('operating')!+v('other')!,v('pretax'));check(sub(v('pretax'),v('tax')),v('net'));
   if(!q.segmentsComplete||!q.segments.length||new Set(q.segments.map(s=>s.id)).size!==q.segments.length)reasons.add('MISSING_DISCLOSURE');
   q.segments.forEach(s=>validAmount(s.revenue));const leaves=q.segments.map(s=>number(s.revenue));if(leaves.every(n=>n!=null))check(leaves.reduce((sum,n)=>sum+n!,0),v('revenue'));
@@ -37,7 +37,7 @@ function validateCompleteFlow(flow:PublicBusinessFlow):CompleteFlowCheck{
   expenses.forEach(c=>validAmount(c.amount));if(expenses.length)check(expenses.reduce((sum,c)=>sum+(number(c.amount)??NaN),0),v('operatingExpenses'));
   const others=q.otherComponents??[];
   if(!financial&&q.incomeModel==='direct_operating'&&!others.length)reasons.add('MISSING_DISCLOSURE');
-  others.forEach(c=>validAmount(c.amount));if(!financial&&others.length)check(others.reduce((sum,c)=>sum+(number(c.amount)??NaN),0),v('other'));
+  others.forEach(c=>validAmount(c.amount));if((!financial||q.incomeModel==='insurance')&&others.length)check(others.reduce((sum,c)=>sum+(number(c.amount)??NaN),0),v('other'));
   if(new Set(expenses.map(c=>c.id)).size!==expenses.length||new Set(others.map(c=>c.id)).size!==others.length)reasons.add('INVALID_PAYLOAD');
   if(!keys.every(key=>number(q.figures[key])!=null))reasons.add('MISSING_DISCLOSURE');
   // Signed profit, tax benefit and expense reversals use the complete accounting bridge.

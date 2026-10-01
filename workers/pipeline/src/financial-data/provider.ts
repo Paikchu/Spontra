@@ -1,6 +1,7 @@
 import type {Job} from './store.ts';
 import type {DocumentBatch} from './collect.ts';
-import {extractDisclosedQuarters, SEC_FLOW_PARSER_VERSION, type DocumentSource} from './parser.ts';
+import {extractDisclosedQuarters, readReportedFacts, SEC_FLOW_PARSER_VERSION, type Fact, type DocumentSource} from './parser.ts';
+import {priorPresentationOnly,reviewedCurrentPair} from './period-review.ts';
 export interface SecReader {read(url:string):Promise<Response>;}
 /** One reader is shared by the bounded consumer. It is not a promise of account-wide rate limiting. */
 export function throttledSecReader(userAgent:string,fetcher:typeof fetch=fetch,delayMs=500):SecReader{
@@ -14,8 +15,8 @@ async function readBoundedReport(response:Response):Promise<string>{
  const html=parts.join('');if(!html.trim())throw new Error('SEC_DOCUMENT_UNAVAILABLE');return html;
 }
 export async function readSecDocumentBatch(job:Job,reader:SecReader,maxDocuments=2):Promise<DocumentBatch>{
- const cik=job.cik;if(!/^\d{10}$/.test(cik))throw new Error('Invalid CIK');const cursor=JSON.parse(job.cursor||'{}') as {documents?:Array<{url:string;accession:string;filedAt:string;periodEnd:string}>;index?:number;industry?:DocumentSource['industry'];expectedPeriodEnd?:string;parserVersion?:string};
- if(cursor.parserVersion!==SEC_FLOW_PARSER_VERSION){cursor.index=0;cursor.parserVersion=SEC_FLOW_PARSER_VERSION;}
+ const cik=job.cik;if(!/^\d{10}$/.test(cik))throw new Error('Invalid CIK');const cursor=JSON.parse(job.cursor||'{}') as {documents?:Array<{url:string;accession:string;filedAt:string;periodEnd:string}>;index?:number;industry?:DocumentSource['industry'];expectedPeriodEnd?:string;parserVersion?:string;reportedFacts?:Fact[];reviewDocuments?:Array<{source:DocumentSource;eligible:boolean}>;reviewRequired?:boolean};
+ if(cursor.parserVersion!==SEC_FLOW_PARSER_VERSION){cursor.index=0;cursor.parserVersion=SEC_FLOW_PARSER_VERSION;delete cursor.reportedFacts;delete cursor.reviewDocuments;delete cursor.reviewRequired;}
  if(!cursor.documents){
   const response=await reader.read(`https://data.sec.gov/submissions/CIK${cik}.json`);const data=await response.json() as {cik:string|number;sic?:string;filings?:{recent?:{form:string[];accessionNumber:string[];primaryDocument:string[];filingDate:string[];reportDate:string[];items?:string[]}}};if(String(data.cik).padStart(10,'0')!==cik)throw new Error('Issuer identity mismatch');const recent=data.filings?.recent;if(!recent)throw new Error('Missing submissions');cursor.expectedPeriodEnd=recent.form.map((form,i)=>/^10-[QK](\/A)?$/.test(form)?recent.reportDate[i]:'').filter(v=>/^\d{4}-\d{2}-\d{2}$/.test(v)).sort().at(-1);const sic=Number(data.sic);cursor.industry=sic>=6300&&sic<6500?'insurance':sic>=6000&&sic<6300?'financial':'standard';cursor.documents=[];
   for(let i=0;i<recent.form.length&&cursor.documents.length<10;i++){
@@ -34,10 +35,20 @@ export async function readSecDocumentBatch(job:Job,reader:SecReader,maxDocuments
   const folder=document.url.slice(0,document.url.lastIndexOf('/')+1);
   const exhibits=[...new Set([...html.matchAll(/href\s*=\s*["']([^"']+)["']/gi)].map(m=>{try{return new URL(m[1],document.url);}catch{return null;}}).filter((url):url is URL=>!!url&&url.href.startsWith(folder)&&/^[A-Za-z0-9_.-]*ex[-_]?99[A-Za-z0-9_.-]*\.html?$/i.test(url.pathname.split('/').at(-1)!)).map(url=>url.href))].slice(0,2);
   for(const url of exhibits){const exhibit=await reader.read(url);if(Number(exhibit.headers.get('content-length'))>12000000)throw new Error('Document too large');const body=await readBoundedReport(exhibit);if(documents.reduce((n,d)=>n+d.html.length,0)+body.length>16000000)throw new Error('SEC_DOCUMENT_UNAVAILABLE');documents.push({url,html:body});}
-  for(const content of documents){const parsed=extractDisclosedQuarters(content.html,{...document,url:content.url,cik,industry:cursor.industry??'unknown'});quarters.push(...parsed.quarters);if(parsed.issues.includes('RESTATEMENT_REVIEW_REQUIRED'))throw new Error('RESTATEMENT_REVIEW_REQUIRED');}
+  for(const content of documents){
+   const source={...document,url:content.url,cik,industry:cursor.industry??'unknown'};
+   const parsed=extractDisclosedQuarters(content.html,source),reported=readReportedFacts(content.html,source);
+   if(reported.issues.length)throw new Error('SEC_FACT_FORMAT_UNSUPPORTED');
+   const expected=cursor.expectedPeriodEnd;
+   const relevant=reported.facts.filter(f=>!expected||(f.end<=expected&&Date.parse(f.start)>=Date.parse(expected)-380*86400000));
+   if(relevant.length){cursor.reportedFacts=[...(cursor.reportedFacts??[]),...relevant];cursor.reviewDocuments=[...(cursor.reviewDocuments??[]),{source,eligible:priorPresentationOnly(content.html)}];}
+   if(parsed.issues.includes('RESTATEMENT_REVIEW_REQUIRED')&&relevant.length){cursor.reviewRequired=true;if(!priorPresentationOnly(content.html))throw new Error('RESTATEMENT_REVIEW_REQUIRED');}
+   else quarters.push(...parsed.quarters);
+   if(expected&&cursor.reportedFacts?.length){const review=reviewedCurrentPair(cursor.reportedFacts,expected,cursor.reviewDocuments??[]);if(review.reviewed){cursor.index=index+selected.length;return {quarters:review.quarters,nextCursor:JSON.stringify(cursor),finished:true,expectedPeriodEnd:expected};}}
+  }
  }
 
- cursor.index=index+selected.length;return {quarters,nextCursor:JSON.stringify(cursor),finished:cursor.index>=cursor.documents.length,expectedPeriodEnd:cursor.expectedPeriodEnd};
+ cursor.index=index+selected.length;if(cursor.reviewRequired&&cursor.index>=cursor.documents.length)throw new Error('RESTATEMENT_REVIEW_REQUIRED');return {quarters,nextCursor:JSON.stringify(cursor),finished:cursor.index>=cursor.documents.length,expectedPeriodEnd:cursor.expectedPeriodEnd};
 }
 
 export async function discoverDataIssuer(ticker:string,reader:SecReader):Promise<{cik:string;tickers:string[];name:string;industry:'unknown'}>{

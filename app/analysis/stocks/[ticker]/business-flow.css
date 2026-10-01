@@ -106,3 +106,7 @@
 .business-flow__signed-amount small{font-size:11px;color:var(--muted-foreground);}
 .business-flow__signed-operator{text-align:center;color:var(--muted-foreground);font-size:20px;}
 @media(max-width:620px){.business-flow__signed-equation{grid-template-columns:minmax(0,1fr) 14px minmax(0,1fr) 14px minmax(0,1fr);gap:4px;}.business-flow__signed-amount{padding:12px 6px;}.business-flow__signed-amount strong{font-size:16px;}.business-flow__signed-amount small{font-size:10px;}}
+
+.business-flow__signed-explanation{font-size:12px;line-height:1.7;color:var(--muted-foreground);margin:12px 0;}
+.business-flow__signed-equation--insurance{grid-template-columns:minmax(0,1fr) 12px minmax(0,1fr) 12px minmax(0,1fr) 12px minmax(0,1fr);}
+@media(max-width:620px){.business-flow__signed-equation--insurance{display:flex;flex-wrap:wrap;}.business-flow__signed-equation--insurance .business-flow__signed-amount{flex:1 0 40%;}}

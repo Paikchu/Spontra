@@ -88,7 +88,7 @@ export function reconcileQuarter(q: BusinessFlowQuarter): Reconciliation[] {
   };
   if (q.incomeModel === "financial" || q.incomeModel === "insurance") return [
     check("业务收入合计 = 收入", q.segmentsComplete ? [...q.segments.map(s => numeric(s.revenue)), numeric(q.figures.revenue) == null ? null : -numeric(q.figures.revenue)!] : [null]),
-    check("收入 − 已披露费用 = 税前利润", [numeric(q.figures.revenue), numeric(q.figures.operatingExpenses) == null ? null : -numeric(q.figures.operatingExpenses)!, numeric(q.figures.pretax) == null ? null : -numeric(q.figures.pretax)!]),
+    check(q.incomeModel==="insurance"?"收入 − 已披露费用 + 投资及权益法损益 = 税前利润":"收入 − 已披露费用 = 税前利润", [q.incomeModel==="insurance"?(numeric(q.figures.revenue)==null||numeric(q.figures.other)==null?null:numeric(q.figures.revenue)!+numeric(q.figures.other)!):numeric(q.figures.revenue), numeric(q.figures.operatingExpenses) == null ? null : -numeric(q.figures.operatingExpenses)!, numeric(q.figures.pretax) == null ? null : -numeric(q.figures.pretax)!]),
     check("费用分类合计 = 已披露费用", q.expenseComponents?.length ? [...q.expenseComponents.map(c => numeric(c.amount)), numeric(q.figures.operatingExpenses) == null ? null : -numeric(q.figures.operatingExpenses)!] : [null]),
     check("税前利润 − 所得税 = 净利润", [numeric(q.figures.pretax), numeric(q.figures.tax) == null ? null : -numeric(q.figures.tax)!, numeric(q.figures.net) == null ? null : -numeric(q.figures.net)!]),
   ];
@@ -119,3 +119,9 @@ export function marginChange(current: BusinessFlowQuarter, previous: BusinessFlo
 }
 
 export function hasFinancialValues(quarter: BusinessFlowQuarter) { return FLOW_METRICS.some(key => numeric(quarter.figures[key]) != null); }
+
+/** Readable labels for explicitly disclosed taxonomy members; identifiers and amounts are unchanged. */
+export function disclosedSegmentLabel(name:string):string{
+ const labels:Record<string,string>={ComputeAndNetworkingSegment:'计算与网络',GraphicsSegment:'图形',ReportableSegment:'公司整体（单一报告部门）',ProductivityAndBusinessProcesses:'生产力与业务流程',IntelligentCloud:'智能云',MorePersonalComputing:'更多个人计算',AmericasSegment:'美洲',EuropeSegment:'欧洲',GreaterChinaSegment:'大中华区',JapanSegment:'日本',RestOfAsiaPacificSegment:'亚太其他地区',ArchitectureEngineeringConstructionAndOperations:'建筑、工程、施工与运营',AutoCADandAutoCADLTFamily:'AutoCAD 与 AutoCAD LT 产品族',Manufacturing:'制造',MediaAndEntertainment:'媒体与娱乐',Other:'其他',BurlingtonNorthernSantaFeCorporation:'BNSF 铁路',BerkshireHathawayEnergyCompany:'伯克希尔能源',ManufacturingBusinesses:'制造业务',ServiceAndRetailingBusinesses:'服务与零售',PilotTravelCentersLLC:'Pilot 旅行中心',McLaneCompany:'McLane',InsuranceCorporateAndOther:'保险、总部及其他'};
+ return labels[name]??name;
+}
