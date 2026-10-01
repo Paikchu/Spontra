@@ -71,6 +71,11 @@ const worker = {
   },
 
   async scheduled(_controller: ScheduledController, env: SecPipelineEnv) {
+    if (_controller.cron === "*/2 * * * *") {
+      const result = env.DB ? await runDataOnlySweep({DB:env.DB,SEC_USER_AGENT:env.SEC_USER_AGENT,SEC_DATA_TICKERS:env.SEC_DATA_TICKERS,SEC_TRACKED_TICKERS:env.SEC_TRACKED_TICKERS,SEC_DATA_COLLECTION_ENABLED:env.SEC_DATA_COLLECTION_ENABLED}) : {enabled:false,published:false,reasons:[],modelCalls:0};
+      console.log(JSON.stringify({event:"financial-data",...result}));
+      return;
+    }
     if (_controller.cron === "* * * * *") {
       console.log(JSON.stringify({ event: "research-monitor", ...await runResearchMonitor(env) }));
       return;
@@ -83,10 +88,9 @@ const worker = {
       // schedule above it is unchanged.
       runFundamentalsStalenessSweep(env),
       runBusinessFlowBootstrap(env),
-      env.DB ? runDataOnlySweep({DB:env.DB,SEC_USER_AGENT:env.SEC_USER_AGENT,SEC_DATA_TICKERS:env.SEC_DATA_TICKERS,SEC_TRACKED_TICKERS:env.SEC_TRACKED_TICKERS,SEC_DATA_COLLECTION_ENABLED:env.SEC_DATA_COLLECTION_ENABLED}).then(result=>{console.log(JSON.stringify({event:"financial-data",...result}));return result;}) : Promise.resolve({enabled:false,published:false,reasons:[],modelCalls:0}),
     ]);
-    const [analysis, memory, companyAnalysis, fundamentals, businessFlow, financialData] = results.map(describeSettled);
-    const payload = JSON.stringify({ event: "sec-workflows", analysis, memory, companyAnalysis, fundamentals, businessFlow, financialData });
+    const [analysis, memory, companyAnalysis, fundamentals, businessFlow] = results.map(describeSettled);
+    const payload = JSON.stringify({ event: "sec-workflows", analysis, memory, companyAnalysis, fundamentals, businessFlow });
     const rejected = results.filter((result): result is PromiseRejectedResult => result.status === "rejected");
     if (!rejected.length) {
       console.log(payload);
