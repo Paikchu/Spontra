@@ -38,5 +38,25 @@
     "accession": "0001628280-26-029344",
     "filedAt": "2026-05-01",
     "sha256": "3cd8bb9289738ba27d378e3b2254e78933af9067448303169c09268f12da5617"
+  },
+  {
+    "ticker": "NVDA",
+    "cik": "0001045810",
+    "industry": "standard",
+    "file": "nvda-20260726-sec-income.html",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000075/nvda-20260726.htm",
+    "accession": "0001045810-26-000075",
+    "filedAt": "2026-08-26",
+    "sha256": "4c4641962eaba02450bb0a7163bb42facc5dbdc6401eb6a338315e141f846978"
+  },
+  {
+    "ticker": "NVDA",
+    "cik": "0001045810",
+    "industry": "standard",
+    "file": "nvda-20260426-sec-income.html",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000052/nvda-20260426.htm",
+    "accession": "0001045810-26-000052",
+    "filedAt": "2026-05-20",
+    "sha256": "d7542f6f8826162b4128e373c40893377b56fd69aebc0cacf1614e0fdc79655b"
   }
 ]
