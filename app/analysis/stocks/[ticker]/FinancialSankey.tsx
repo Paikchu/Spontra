@@ -6,39 +6,38 @@ import { TooltipComponent, AriaComponent } from "echarts/components";
 import { LabelLayout } from "echarts/features";
 import { SVGRenderer } from "echarts/renderers";
 import type { BusinessFlowQuarter, FlowMetric } from "@/shared/analysis-contract/business-flow";
-import { compareAmount, compareFlowAmounts, segmentChangeLabel, formatFlowValue, numeric } from "@/lib/earning-report/web/business-flow-model";
+import { compareAmount, compareFlowAmounts, formatFlowValue, numeric } from "@/lib/earning-report/web/business-flow-model";
 import { financialGraph, metricLabels } from "@/lib/earning-report/web/business-flow-sankey";
+import { compareRevenueNode } from "@/lib/earning-report/web/revenue-tree";
 registerCharts([SankeyChart,TooltipComponent,AriaComponent,SVGRenderer,LabelLayout]);
 
 export function FinancialSankey({quarter,previous,onSegment}:{quarter:BusinessFlowQuarter;previous:BusinessFlowQuarter|null;onSegment:(id:string)=>void}){
  const container=useRef<HTMLDivElement>(null);
  const [error,setError]=useState<string|null>(null);
  const graph=useMemo(()=>financialGraph(quarter),[quarter]);
+ const columns=Math.max(0,...graph.nodes.map(n=>n.depth))+1;
+ const businessCount=graph.nodes.filter(n=>n.segmentId).length;
  useEffect(()=>{
   const element=container.current;if(!element || !graph.links.length)return;
   let chart:ReturnType<typeof init>|undefined;
-  let vertical=false;
   const render=()=>{
    if(element.clientWidth===0 || element.clientHeight===0)return;
    try{
-    const nextVertical=element.clientWidth<620;
-    if(chart && vertical!==nextVertical){chart.dispose();chart=undefined;}
-    vertical=nextVertical;
     if(!chart){
-     const activeGraph=vertical?financialGraph(quarter,true):graph;
+     const activeGraph=graph;
      const css=getComputedStyle(element);
      const token=(name:string,fallback:string)=>css.getPropertyValue(name).trim()||fallback;
      chart=init(element,undefined,{renderer:"svg"});
      chart.setOption({animation:false,aria:{enabled:true},tooltip:{trigger:"item",confine:true,renderMode:"richText",formatter:(params:{name?:string;value?:unknown})=>{const node=activeGraph.nodes.find(n=>n.name===params.name);return node?node.label+" · "+formatFlowValue(node.metric?numeric(quarter.figures[node.metric]):node.value,quarter)+" "+quarter.currency+" 百万":"已披露流量 · "+formatFlowValue(typeof params.value==="number"?params.value:null,quarter)+" "+quarter.currency+" 百万";}},series:[{
-      type:"sankey",orient:vertical?"vertical":"horizontal",left:vertical?12:90,right:vertical?135:60,top:76,bottom:96,nodeWidth:10,nodeGap:quarter.incomeModel==="direct_operating"?44:54,nodeAlign:"left",layoutIterations:0,draggable:false,
-      emphasis:{focus:"adjacency"},labelLayout:vertical?undefined:{hideOverlap:false},
+      type:"sankey",orient:"horizontal",left:90,right:60,top:76,bottom:96,nodeWidth:10,nodeGap:quarter.incomeModel==="direct_operating"?44:54,nodeAlign:"left",layoutIterations:0,draggable:false,
+      emphasis:{focus:"adjacency"},labelLayout:{hideOverlap:false},
       label:{color:token("--foreground","#e5eee9"),fontFamily:token("--sans","sans-serif"),fontSize:13,lineHeight:19,position:"top",distance:9},
       lineStyle:{color:"source",opacity:.32,curveness:.5},
       data:activeGraph.nodes.map(n=>{
        const value=n.amount?formatFlowValue(numeric(n.amount),quarter):n.metric?formatFlowValue(Number(quarter.figures[n.metric]?.value),quarter):formatFlowValue(n.value,quarter);
-       const previousNode=previous?financialGraph(previous,vertical).nodes.find(p=>p.name===n.name):undefined;
-       const comparison=n.amount?compareFlowAmounts(quarter,previous,n.name,n.amount,previousNode?.amount):n.metric?compareAmount(quarter,previous,n.metric):compareAmount(quarter,previous,"revenue",n.segmentId);
-       return {name:n.name,value:n.value,depth:n.depth,itemStyle:{color:token(n.expense?"--chart-3":n.name==="net"?"--sp-accent":n.segmentId?"--chart-1":"--chart-2","#a3bd75")},label:{show:!vertical||n.name!=="other",position:vertical?(n.expense||n.name==="other"?"bottom":"right"):n.name.startsWith("other:")?(n.expense?"top":"bottom"):(n.expense||n.name==="other")?"bottom":"top",distance:vertical&&(n.expense||n.name==="other")?24:9,align:vertical&&n.expense?"left":undefined,width:vertical?105:150,overflow:"truncate",formatter:n.label+"\n"+value+(n.segmentId ? (segmentChangeLabel(quarter,previous,n.segmentId) ? " · "+segmentChangeLabel(quarter,previous,n.segmentId) : "") : n.name==="segments:remaining" ? "" : " · "+comparison.label)}};
+       const previousNode=previous?financialGraph(previous).nodes.find(p=>p.name===n.name):undefined;
+       const comparison=n.amount?compareFlowAmounts(quarter,previous,n.name,n.amount,previousNode?.amount):n.metric?compareAmount(quarter,previous,n.metric):n.segmentId?compareRevenueNode(quarter,previous,n.segmentId):{label:"不可比"};
+       return {name:n.name,value:n.value,depth:n.depth,itemStyle:{color:token(n.expense?"--chart-3":n.name==="net"?"--sp-accent":n.segmentId?"--chart-1":"--chart-2","#a3bd75")},label:{show:true,position:n.name.startsWith("other:")?(n.expense?"top":"bottom"):(n.expense||n.name==="other")?"bottom":"top",distance:9,width:Math.max(65,Math.min(150,(element.clientWidth-150)/columns-12)),overflow:"truncate",formatter:n.label+"\n"+value+(n.segmentId ? ((comparison.label === "不可比" ? "" : `环比 ${comparison.label}`) ? " · "+(comparison.label === "不可比" ? "" : `环比 ${comparison.label}`) : "") : n.name==="segments:remaining" ? "" : " · "+comparison.label)}};
       }),links:activeGraph.links,
      }]});
      setError(null);
@@ -51,10 +50,10 @@ export function FinancialSankey({quarter,previous,onSegment}:{quarter:BusinessFl
   render();
   return ()=>{observer.disconnect();theme.disconnect();chart?.dispose();};
  // The node event is rebuilt on quarter changes; React owns disclosure panels.
- },[quarter,previous,onSegment,graph]);
+ },[quarter,previous,onSegment,graph,columns]);
  const signed = Object.entries(quarter.figures).some(([key,amount])=>key!=="other" && (numeric(amount)??0)<0) || (quarter.expenseComponents??[]).some(c=>(numeric(c.amount)??0)<0);
  if(signed||quarter.incomeModel==="insurance"||quarter.incomeModel==="financial")return <SignedFinancialBridge quarter={quarter} previous={previous}/>;
- return <>{!graph.nodes.some(n=>n.name==="net")&&<div className="business-flow__independent-net" data-loss={(numeric(quarter.figures.net)??0)<0||undefined}><span>净利润 · 独立披露，完整流向待补齐</span><strong>{formatFlowValue(numeric(quarter.figures.net),quarter)}</strong><span>环比 {compareAmount(quarter,previous,"net").label}</span></div>}{graph.notice&&<p className="business-flow__notice">{graph.notice}</p>}{graph.links.length?<div ref={container} className="business-flow__chart" role="img" aria-label="收入到净利润桑基图；下方提供金额明细及业务展开按钮" />:<div><p className="business-flow__notice">当前披露缺少已对平的中间阶段，暂不绘制比例流带。金融与保险采用不同利润表口径，不强行推定成本与毛利。</p><div className="business-flow__available-metrics">{([["revenue", "收入"], ["operating", "营业利润"]] as const).map(([metric,label]) => <div key={metric}><span>{label}</span><strong>{formatFlowValue(numeric(quarter.figures[metric]),quarter)}</strong><small>{quarter.currency} 百万 · 环比 {compareAmount(quarter,previous,metric).label}</small></div>)}</div></div>}<p className="business-flow__mobile-other">其他损益（有符号）：{(numeric(quarter.figures.other)??0)>0?"+":""}{formatFlowValue(numeric(quarter.figures.other),quarter)} · 环比 {compareAmount(quarter,previous,"other").label}。正值额外流入，负值分流；费用分项见财务明细。</p>{error&&<p role="status">{error}</p>}</>;
+ return <>{!graph.nodes.some(n=>n.name==="net")&&<div className="business-flow__independent-net" data-loss={(numeric(quarter.figures.net)??0)<0||undefined}><span>净利润 · 独立披露，完整流向待补齐</span><strong>{formatFlowValue(numeric(quarter.figures.net),quarter)}</strong><span>环比 {compareAmount(quarter,previous,"net").label}</span></div>}{graph.notice&&<p className="business-flow__notice">{graph.notice}</p>}{graph.links.length?<><p className="business-flow__scroll-hint">左右滑动查看完整流向</p><div className="business-flow__chart-scroll" tabIndex={0} role="region" aria-label="完整收入与利润流向，可横向滚动"><div ref={container} style={{ minWidth: columns * 120 + 150, minHeight: Math.max(490, businessCount * 80) }} className="business-flow__chart" role="img" aria-label="收入到净利润桑基图；下方提供金额明细及业务展开按钮" /></div></>:<div><p className="business-flow__notice">当前披露缺少已对平的中间阶段，暂不绘制比例流带。金融与保险采用不同利润表口径，不强行推定成本与毛利。</p><div className="business-flow__available-metrics">{([["revenue", "收入"], ["operating", "营业利润"]] as const).map(([metric,label]) => <div key={metric}><span>{label}</span><strong>{formatFlowValue(numeric(quarter.figures[metric]),quarter)}</strong><small>{quarter.currency} 百万 · 环比 {compareAmount(quarter,previous,metric).label}</small></div>)}</div></div>}<p className="business-flow__mobile-other">其他损益（有符号）：{(numeric(quarter.figures.other)??0)>0?"+":""}{formatFlowValue(numeric(quarter.figures.other),quarter)} · 环比 {compareAmount(quarter,previous,"other").label}。正值额外流入，负值分流；费用分项见财务明细。</p>{error&&<p role="status">{error}</p>}</>;
 }
 
 /** Constant geometry displays accounting relationships; negative amounts retain their signs. */

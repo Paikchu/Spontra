@@ -1,3 +1,6 @@
+import { selectRevenueTree, compareRevenueNode, revenueNodeKey } from "../lib/earning-report/web/revenue-tree";
+import { enrichDisclosedRevenue } from "../lib/earning-report/web/company-revenue-disclosures";
+import type { RevenueBreakdown } from "../shared/analysis-contract/business-flow";
 import { readFileSync } from "node:fs";
 import { extractDisclosedQuarters } from "../workers/pipeline/src/financial-data/parser";
 import assert from "node:assert/strict";
@@ -94,8 +97,8 @@ test("published malformed payloads and duplicate periods fall back without crash
  const duplicate=structuredClone(businessFlowFixture);duplicate.quarters.push(duplicate.quarters[0]);assert.equal(selectFlow(duplicate,null,"MSFT").quarters.length,0);
 });
 
-test("compact mobile chart aggregates only disclosed totals and retains conservation",()=>{
- const graph=financialGraph(q4,true);assert.equal(validateGraph(graph.nodes,graph.links),true);assert.ok(graph.nodes.some(n=>n.name==="operatingExpenses"));assert.ok(graph.nodes.some(n=>n.name==="net"));assert.equal(graph.nodes.filter(n=>n.segmentId).length,0);assert.equal(graph.links.find(l=>l.source==="business:segments")?.value,90007);
+test("mobile keeps revenue detail while grouping only expense totals",()=>{
+ const graph=financialGraph(q4,true);assert.equal(validateGraph(graph.nodes,graph.links),true);assert.ok(graph.nodes.some(n=>n.name==="operatingExpenses"));assert.ok(graph.nodes.some(n=>n.name==="net"));assert.equal(graph.nodes.filter(n=>n.segmentId).length,3);assert.deepEqual(graph.nodes.filter(n=>n.segmentId),financialGraph(q4).nodes.filter(n=>n.segmentId));
 });
 
 
@@ -158,4 +161,127 @@ test('latest disclosed departments retain amounts while unavailable or redefined
  assert.equal(segmentChangeLabel(current,prior,current.segments[0].id),'');
  current.segments[0].revenue!.comparabilityKey=prior.segments[0].revenue!.comparabilityKey;
  assert.match(segmentChangeLabel(current,prior,current.segments[0].id),/^环比 /);
+});
+
+function detailedQuarter() {
+ const quarter = structuredClone(q4);
+ const row = (id: string, value: number, parentId: string | null, childrenComplete = false) => ({ ...quarter.segments[0], id, name: id, parentId, childrenComplete, revenue: { ...quarter.segments[0].revenue!, value: String(value), definition: id } });
+ const business: RevenueBreakdown = { id: "business", label: "产品与服务", kind: "product_service", definitionKey: "original", periodStart: quarter.periodStart!, periodEnd: quarter.periodEnd, currency: quarter.currency, scale: quarter.scale, complete: true,
+ nodes: [row("cloud",60000,null,true),row("infrastructure",45000,"cloud"),row("applications",15000,"cloud"),row("other-services",30007,null)] };
+ quarter.revenueBreakdowns=[business];
+ return quarter;
+}
+
+test("automatically builds one revenue tree and never connects alternative dimensions", () => {
+ const quarter=detailedQuarter();
+ const geography={...structuredClone(quarter.revenueBreakdowns![0]),id:"regions",kind:"geography" as const};
+ quarter.revenueBreakdowns!.unshift(geography);
+ const tree=selectRevenueTree(quarter)!;
+ assert.equal(tree.dimension.id,"business");
+ const graph=financialGraph(quarter);
+ assert.ok(validateGraph(graph.nodes,graph.links));
+ assert.ok(graph.links.some(l=>l.source.includes("infrastructure") && l.target.includes("cloud")));
+ assert.equal(graph.links.filter(l=>l.target==="revenue").reduce((sum,l)=>sum+l.value,0),90007);
+ assert.ok(!graph.nodes.some(n=>n.name.includes("regions")||n.name.includes("segment-0")));
+ const html=renderToStaticMarkup(<BusinessFlow flow={{...businessFlowFixture,quarters:[quarter]}} />);
+ assert.match(html,/收入构成 · 产品与服务/);
+ assert.match(html,/infrastructure/);
+ assert.match(html,/财务分部收入/);
+ assert.equal((html.match(/<select/g)??[]).length,1); // Only quarter selection, no dimension switch.
+ const mobile=financialGraph(quarter,true);
+ assert.deepEqual(mobile.nodes.filter(n=>n.segmentId),graph.nodes.filter(n=>n.segmentId));
+});
+
+test("partial children stop at the parent; explicit residuals and zero amounts stay conservative", () => {
+ const quarter=detailedQuarter();
+ quarter.revenueBreakdowns![0].nodes[2].revenue!.value="14000";
+ const tree=selectRevenueTree(quarter)!;
+ assert.deepEqual(tree.nodes.map(n=>n.id),["cloud","other-services"]);
+ assert.ok(validateGraph(financialGraph(quarter).nodes,financialGraph(quarter).links));
+ quarter.revenueBreakdowns![0].nodes.push({...quarter.revenueBreakdowns![0].nodes[2],id:"explicit-residual",revenue:{...quarter.revenueBreakdowns![0].nodes[2].revenue!,value:"1000"}});
+ assert.equal(selectRevenueTree(quarter)!.nodes.length,5);
+ quarter.revenueBreakdowns![0].nodes.push({...quarter.revenueBreakdowns![0].nodes[2],id:"zero",revenue:{...quarter.revenueBreakdowns![0].nodes[2].revenue!,value:"0"}});
+ assert.ok(!selectRevenueTree(quarter)!.nodes.some(n=>n.id==="zero"));
+});
+
+test("invalid quarters, units, sources, duplicate IDs and cycles fall back to financial segments", () => {
+ for (const change of [
+  (d: RevenueBreakdown)=>{d.periodEnd="2026-03-31";},
+  (d: RevenueBreakdown)=>{d.periodStart="2026-01-01";},
+  (d: RevenueBreakdown)=>{d.currency="EUR";},
+  (d: RevenueBreakdown)=>{d.scale=1;},
+  (d: RevenueBreakdown)=>{d.complete=false;},
+  (d: RevenueBreakdown)=>{d.nodes[0].revenue!.value="-1";},
+  (d: RevenueBreakdown)=>{d.nodes[0].revenue!.sourceIds=["unverified"];},
+  (d: RevenueBreakdown)=>{d.nodes.push(d.nodes[0]);},
+  (d: RevenueBreakdown)=>{d.nodes[0].parentId="infrastructure";},
+  (d: RevenueBreakdown)=>{d.nodes[0].parentId="missing-parent";},
+ ]) {
+  const quarter=detailedQuarter();change(quarter.revenueBreakdowns![0]);
+  assert.equal(selectRevenueTree(quarter)?.legacy,true);
+  assert.ok(validateGraph(financialGraph(quarter).nodes,financialGraph(quarter).links));
+ }
+ const totalOnly={...q4,segments:[],segmentsComplete:false};
+ assert.equal(selectRevenueTree(totalOnly),null);
+ assert.ok(financialGraph(totalOnly).nodes.some(n=>n.name==="revenue"));
+});
+
+test("selection is deterministic and revenue comparison rejects reclassification", () => {
+ const current=detailedQuarter(), previous=detailedQuarter();
+ previous.periodStart="2026-01-01";previous.periodEnd="2026-03-31";
+ previous.revenueBreakdowns![0].periodStart=previous.periodStart;previous.revenueBreakdowns![0].periodEnd=previous.periodEnd;
+ const id=revenueNodeKey(selectRevenueTree(current)!,"infrastructure");
+ assert.equal(compareRevenueNode(current,previous,id).label,"0.0%");
+ previous.revenueBreakdowns![0].definitionKey="recast";
+ assert.equal(compareRevenueNode(current,previous,id).label,"不可比");
+ const alternative={...structuredClone(current.revenueBreakdowns![0]),id:"a"};
+ current.revenueBreakdowns!.push(alternative);
+ const expected=selectRevenueTree(current)!.dimension.id;
+ current.revenueBreakdowns!.reverse();assert.equal(selectRevenueTree(current)!.dimension.id,expected);
+});
+
+function nvdaQuarter() {
+ return { ...structuredClone(q4),periodStart:null,periodEnd:"2026-07-26",segments:[],segmentsComplete:false,
+ figures:{revenue:{...q4.figures.revenue!,value:"96221000000"}},sources:[],scale:1 };
+}
+test("NVDA filing adds the correct income hierarchy only to the matching verified quarter", () => {
+ const base=nvdaQuarter(),quarter=enrichDisclosedRevenue("NVDA",base);
+ assert.equal(selectRevenueTree(quarter)?.dimension.label,"市场平台");
+ assert.equal(numeric(quarter.figures.operating),63734000000);
+ assert.equal(quarter.figures.sales,undefined);assert.equal(quarter.figures.administration,undefined);
+ const graph=financialGraph(quarter);assert.ok(validateGraph(graph.nodes,graph.links));
+ assert.ok(graph.links.some(l=>l.source.includes("hyperscale")&&l.target.includes("data-center")&&l.value===48710000000));
+ assert.ok(!graph.nodes.some(n=>n.label==="计算与网络"));
+ const html=renderToStaticMarkup(<BusinessFlow flow={{schemaVersion:"business-flow.v1",ticker:"NVDA",fetchedAt:null,quarters:[quarter]}}/>);
+ assert.match(html,/超大规模云客户/);assert.match(html,/88,299/);assert.match(html,/96,221/);
+ assert.equal(enrichDisclosedRevenue("MSFT",base),base);
+ for (const other of [{...base,periodEnd:"2026-04-26"},{...base,currency:"EUR"},{...base,figures:{...base.figures,revenue:{...base.figures.revenue,value:"66595000000"}}},{...base,figures:{...base.figures,operating:{...base.figures.revenue,value:"66595000000"}}}]) assert.equal(enrichDisclosedRevenue("NVDA",other),other);
+ assert.deepEqual(enrichDisclosedRevenue("NVDA",quarter),quarter);
+ const selected=selectFlow({schemaVersion:"business-flow.v1",ticker:"NVDA",fetchedAt:null,quarters:[base]},null,"NVDA");
+ assert.equal(selectRevenueTree(selected.quarters[0])?.nodes.length,4);
+});
+
+test("optional bad hierarchy data cannot discard otherwise valid quarterly financials", () => {
+ const flow=structuredClone(businessFlowFixture) as unknown as {quarters:Array<{revenueBreakdowns:unknown}>};
+ flow.quarters[0].revenueBreakdowns=[{id:"broken"}];
+ const result=selectFlow(flow as typeof businessFlowFixture,null,"MSFT");
+ assert.equal(result.quarters.length,2);assert.ok(selectRevenueTree(result.quarters[0])?.legacy);
+});
+
+
+test("duplicate classification IDs cannot make automatic selection depend on payload order", () => {
+ const quarter=detailedQuarter();
+ quarter.revenueBreakdowns!.push({...structuredClone(quarter.revenueBreakdowns![0]),definitionKey:"conflicting-version"});
+ assert.ok(selectRevenueTree(quarter)?.legacy);
+ quarter.revenueBreakdowns!.reverse();assert.ok(selectRevenueTree(quarter)?.legacy);
+});
+
+test("existing disclosed segment children expand only when they reconcile to their parent", () => {
+ const quarter=structuredClone(q4), segment=quarter.segments[0];
+ const value=Number(segment.revenue!.value);
+ segment.children=[{id:"child-a",name:"产品 A",revenue:{...segment.revenue!,value:String(value*0.6)}},{id:"child-b",name:"产品 B",revenue:{...segment.revenue!,value:String(value*0.4)}}];
+ assert.ok(selectRevenueTree(quarter)!.nodes.some(n=>n.parentId===segment.id));
+ assert.ok(validateGraph(financialGraph(quarter).nodes,financialGraph(quarter).links));
+ segment.children[0].revenue.value="1";
+ assert.ok(!selectRevenueTree(quarter)!.nodes.some(n=>n.parentId===segment.id));
 });

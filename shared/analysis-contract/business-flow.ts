@@ -24,6 +24,25 @@ export type BusinessSegment = {
   sourceIds: string[];
   children?: Array<{ id: string; name: string; revenue: FlowAmount }>;
 };
+/** Each dimension is an independent partition of revenue, never a cross-dimension hierarchy. */
+export type RevenueBreakdown = {
+  id: string;
+  label: string;
+  kind: "business" | "product_service" | "end_market" | "segment" | "customer" | "geography";
+  /** Identifies the disclosure definition/recast version, not the filing date. */
+  definitionKey: string;
+  periodStart: string;
+  periodEnd: string;
+  currency: string;
+  scale: number;
+  complete: boolean;
+  nodes: RevenueBreakdownNode[];
+};
+export type RevenueBreakdownNode = BusinessSegment & {
+  parentId: string | null;
+  /** Only expand when the explicitly disclosed children exhaust this node's revenue. */
+  childrenComplete: boolean;
+};
 export type BusinessFlowQuarter = {
   id: string;
   /** Provider-declared income statement model; never inferred from ticker. */
@@ -40,6 +59,7 @@ export type BusinessFlowQuarter = {
   figures: Partial<Record<FlowMetric, FlowAmount>>;
   segments: BusinessSegment[];
   segmentsComplete: boolean;
+  revenueBreakdowns?: RevenueBreakdown[];
   expenseComponents?: Array<{ id: string; name: string; group: "direct" | "research" | "sales" | "administration" | "other"; amount: FlowAmount }>;
   otherComponents?: Array<{ id: string; name: string; amount: FlowAmount }>;
 

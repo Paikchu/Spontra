@@ -1,6 +1,8 @@
 import type { BusinessFlowQuarter, FlowMetric, FlowAmount } from "@/shared/analysis-contract/business-flow";
 import { numeric, reconcileQuarter, disclosedSegmentLabel } from "./business-flow-model";
 
+import { revenueNodeKey, selectRevenueTree } from "./revenue-tree";
+
 export const metricLabels: Record<FlowMetric, string> = { revenue:"收入", cost:"营业成本", gross:"毛利", research:"研发", sales:"销售营销", administration:"行政", operatingExpenses:"运营费用", operating:"营业利润", other:"其他损益", pretax:"税前利润", tax:"所得税", net:"净利润" };
 export type SankeyNode = { name:string; label:string; metric?:FlowMetric; segmentId?:string; depth:number; expense:boolean; value:number; amount?:FlowAmount };
 export type SankeyLink = { source:string; target:string; value:number };
@@ -33,21 +35,26 @@ export function financialGraph(q:BusinessFlowQuarter, compact=false):FinancialGr
  const balanced=(i:number)=>checks[i]?.status==="balanced";
  const segmentIds=q.segments.map(s=>s.id);
  if(segmentIds.length>40 || new Set(segmentIds).size!==segmentIds.length) return {nodes,links,notice:"分部标识重复或超过图表上限；请核对披露明细。"};
- const hasSegments=balanced(0) && q.segments.every(s=>(numeric(s.revenue)??-1)>0);
- const offset=hasSegments?1:0;
+ const tree=selectRevenueTree(q);
+ const hasSegments=tree!==null;
+ const offset=tree?.depth??0;
  function node(key:FlowMetric,depth:number,expense=false){ if(!nodes.some(n=>n.name===key))nodes.push({name:key,label:metricLabels[key],metric:key,depth:depth+offset,expense,value:v(key)??0}); }
  function link(source:FlowMetric,target:FlowMetric,value:number|null,depth:number,expense=false){if(value==null||value<=0)return;node(source,depth-1);node(target,depth,expense);links.push({source,target,value});}
  if((v("revenue")??0)<=0) return {nodes,links,notice:"收入为零、负值或未披露；保留原披露金额，不绘制比例流量。"};
  node("revenue",0);
- if(hasSegments){
-  const ordered=[...q.segments].sort((a,b)=>numeric(b.revenue)!-numeric(a.revenue)!);
-  const shown=ordered.length>5?ordered.slice(0,4):ordered;
-  for(const s of shown){const name="segment:"+s.id;nodes.push({name,label:disclosedSegmentLabel(s.name),segmentId:s.id,depth:0,expense:false,value:numeric(s.revenue)!});links.push({source:name,target:"revenue",value:numeric(s.revenue)!});}
-  if(ordered.length>5){const value=ordered.slice(4).reduce((total,s)=>total+numeric(s.revenue)!,0);nodes.push({name:"segments:remaining",label:"其余 "+(ordered.length-4)+" 个已披露分部",depth:0,expense:false,value});links.push({source:"segments:remaining",target:"revenue",value});}
+ if(tree){
+  const nameOf=(id:string)=>"segment:"+revenueNodeKey(tree,id);
+  for(const entry of tree.nodes){
+   let level=1, parent=entry.parentId;
+   while(parent!==null){level++;parent=tree.nodes.find(n=>n.id===parent)!.parentId;}
+   const name=nameOf(entry.id);
+   nodes.push({name,label:disclosedSegmentLabel(entry.name),segmentId:revenueNodeKey(tree,entry.id),depth:offset-level,expense:false,value:numeric(entry.revenue)!});
+   links.push({source:name,target:entry.parentId===null?"revenue":nameOf(entry.parentId),value:numeric(entry.revenue)!});
+  }
  }
  let stage=0;
  if(q.incomeModel==="direct_operating"){
-  if(compact&&hasSegments){const originals=nodes.filter(n=>n.segmentId||n.name==="segments:remaining");for(const n of originals)nodes.splice(nodes.indexOf(n),1);for(let i=links.length-1;i>=0;i--)if(originals.some(n=>n.name===links[i].source))links.splice(i,1);nodes.push({name:"business:segments",label:"已披露业务收入",metric:"revenue",depth:0,expense:false,value:v("revenue")!});links.push({source:"business:segments",target:"revenue",value:v("revenue")!});}
+
 
   if(!balanced(1)||!balanced(2)||!balanced(3)||!balanced(4)||!balanced(5)||["operating","pretax","net","tax"].some(k=>(v(k as FlowMetric)??-1)<0))return {nodes:[],links:[],notice:"直接营业费用口径存在缺项或有符号亏损；原披露金额保留在明细，不转换为正向流量。"};
   link("revenue","operating",v("operating"),1);
@@ -89,13 +96,7 @@ export function financialGraph(q:BusinessFlowQuarter, compact=false):FinancialGr
    stage=3;
  }
  if(stage===3 && balanced(4) && (v("tax")??-1)>=0 && (v("net")??-1)>=0){link("pretax","net",v("net"),4);link("pretax","tax",v("tax"),4,true);stage=4;}
- if(compact && hasSegments){
-  const segments=nodes.filter(n=>n.name.startsWith("segment:")||n.name==="segments:remaining");
-  const value=segments.reduce((sum,n)=>sum+n.value,0);
-  for(const n of segments){nodes.splice(nodes.indexOf(n),1);}
-  for(let i=links.length-1;i>=0;i--)if(segments.some(n=>n.name===links[i].source))links.splice(i,1);
-  nodes.push({name:"business:segments",label:"已披露业务分部",metric:"revenue",depth:0,expense:false,value});links.push({source:"business:segments",target:"revenue",value});
- }
+
  if(compact && nodes.some(n=>n.name==="research"||n.name==="sales"||n.name==="administration")){
   const small=nodes.filter(n=>n.name==="research"||n.name==="sales"||n.name==="administration");const value=small.reduce((sum,n)=>sum+n.value,0);
   for(const n of small)nodes.splice(nodes.indexOf(n),1);
@@ -104,5 +105,5 @@ export function financialGraph(q:BusinessFlowQuarter, compact=false):FinancialGr
  }
  const connected=nodes.filter(n=>links.some(l=>l.source===n.name||l.target===n.name));
  if(!links.length || !validateGraph(connected,links))return {nodes:[],links:[],notice:"当前披露不足以构建已对平的非负流量；金额和业务解读保留在下方。"};
- return {nodes:connected,links,notice:stage<4?"只绘制已披露、已对平的非负部分；亏损或缺失项保留原值，不转换为正向流量。":!hasSegments?"财务路径已对平；分部营收未完整披露，不分配业务比例。":null};
+ return {nodes:connected,links,notice:stage<4?"只绘制已披露、已对平的非负部分；亏损或缺失项保留原值，不转换为正向流量。":!hasSegments?"财务路径已对平；收入构成未完整披露，不分配业务比例。":null};
 }

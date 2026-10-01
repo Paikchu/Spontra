@@ -1,3 +1,4 @@
+import { enrichDisclosedRevenue } from "./company-revenue-disclosures";
 import {publicFlowSchema} from "@/shared/analysis-runtime/financial-data/schema";
 import { FLOW_METRICS, type BusinessFlowQuarter, type FlowAmount, type FlowMetric, type PublicBusinessFlow } from "@/shared/analysis-contract/business-flow";
 import type { PublicFundamentalsResponse, FundamentalMetricKey } from "@/shared/analysis-contract/fundamentals";
@@ -40,7 +41,8 @@ export function adaptFundamentals(data: PublicFundamentalsResponse | null, ticke
 
 export function selectFlow(published: PublicBusinessFlow | undefined, fundamentals: PublicFundamentalsResponse | null, ticker: string): PublicBusinessFlow {
   const parsed=publicFlowSchema.safeParse(published);
-  return parsed.success && parsed.data.ticker===ticker && parsed.data.quarters.length ? parsed.data : adaptFundamentals(fundamentals,ticker);
+  const flow = parsed.success && parsed.data.ticker===ticker && parsed.data.quarters.length ? parsed.data : adaptFundamentals(fundamentals,ticker);
+  return { ...flow, quarters: flow.quarters.map(q => enrichDisclosedRevenue(ticker, q)) };
 }
 
 export function previousQuarter(current: BusinessFlowQuarter, quarters: BusinessFlowQuarter[]): BusinessFlowQuarter | null {

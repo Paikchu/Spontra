@@ -3,9 +3,15 @@
 import { useCallback, useId, useState } from "react";
 import type { CompanyBusinessContent } from "@/lib/earning-report/web/company-business-content";
 import { FinancialSankey } from "./FinancialSankey";
+import { availableRevenueTrees, compareRevenueNode, revenueNodeKey } from "@/lib/earning-report/web/revenue-tree";
 import type { BusinessFlowQuarter, BusinessSegment, FlowMetric, FlowSource, PublicBusinessFlow } from "@/shared/analysis-contract/business-flow";
 import type { CompanyAnalysisOverview } from "@/shared/analysis-contract/company-analysis";
 import { disclosedSegmentLabel, segmentChangeLabel, compareAmount, compareFlowAmounts, formatFlowValue, marginChange, numeric, previousQuarter, reconcileQuarter } from "@/lib/earning-report/web/business-flow-model";
+
+const revenueChangeLabel = (q: BusinessFlowQuarter, previous: BusinessFlowQuarter | null, id: string) => {
+ const comparison=compareRevenueNode(q,previous,id);
+ return comparison.label === "不可比" ? "" : `环比 ${comparison.label}`;
+};
 
 const nodes: Array<{ key: FlowMetric; label: string; tone: string }> = [
   { key: "revenue", label: "收入", tone: "revenue" },
@@ -70,10 +76,17 @@ export function BusinessFlow({ flow, overview, notice, business, publicationLabe
     setExpandedSegment(null);
     trigger?.focus();
   }
-  const segments = quarter?.segments.length ? quarter.segments : business?.groups ?? [];
-  const businessSources = quarter?.segments.length ? quarter.sources : business?.sources ?? [];
-  const rail = <div className="business-flow__businesses" onKeyDown={event => { if (event.key === "Escape" && expandedSegment) { event.preventDefault(); closeBusiness(); } }}><h3>业务分部 / 产品归属 → 公司收入</h3>{!quarter?.segments.length && business && <p className="business-flow__business-basis">{business.basisLabel}</p>}{segments.length ? segments.map((segment, index) => <div className="business-flow__segment" key={segment.id} data-tone={`segment-${index % 3}`}>
-    <button id={`${id}-segment-${segment.id}`} type="button" onClick={() => toggleSegment(segment.id)} aria-expanded={expandedSegment === segment.id} aria-controls={`${id}-business-${segment.id}`}><span>{disclosedSegmentLabel(segment.name)}</span>{quarter && segment.revenue ? <strong>{formatFlowValue(numeric(segment.revenue), quarter)}</strong> : <small>{segment.products.slice(0, 3).join(" · ").slice(0, 100) || segment.description.slice(0, 90)}</small>}<small>{quarter && segment.revenue ? (segmentChangeLabel(quarter, previousQuarter(quarter, quarters), segment.id) ? `${segmentChangeLabel(quarter, previousQuarter(quarter, quarters), segment.id)} · ` : "") : "定性归属 · 比例未披露 · "}{expandedSegment === segment.id ? "收起业务" : "展开业务 ↗"}</small></button>
+  const revenueTrees = quarter ? availableRevenueTrees(quarter) : [];
+  const revenueTree = revenueTrees[0];
+  const segments = revenueTree ? revenueTree.nodes.map(node => ({ ...node, id: revenueNodeKey(revenueTree, node.id) })) : quarter?.segments.length ? quarter.segments : business?.groups ?? [];
+  const businessSources = revenueTree || quarter?.segments.length ? quarter.sources : business?.sources ?? [];
+  const incomeDepth = (id: string) => {
+    let node = revenueTree?.nodes.find(n => revenueNodeKey(revenueTree, n.id) === id), depth = 0;
+    while (node?.parentId) { depth++; node = revenueTree?.nodes.find(n => n.id === node!.parentId); }
+    return depth;
+  };
+  const rail = <div className="business-flow__businesses" onKeyDown={event => { if (event.key === "Escape" && expandedSegment) { event.preventDefault(); closeBusiness(); } }}><h3>{revenueTree ? `收入构成 · ${revenueTree.dimension.label}` : "业务与产品"}</h3>{!quarter?.segments.length && business && <p className="business-flow__business-basis">{business.basisLabel}</p>}{segments.length ? segments.map((segment, index) => <div className="business-flow__segment" key={segment.id} style={{ marginInlineStart: incomeDepth(segment.id) * 12 }} data-tone={`segment-${index % 3}`}>
+    <button id={`${id}-segment-${segment.id}`} type="button" onClick={() => toggleSegment(segment.id)} aria-expanded={expandedSegment === segment.id} aria-controls={`${id}-business-${segment.id}`}><span>{disclosedSegmentLabel(segment.name)}</span>{quarter && segment.revenue ? <strong>{formatFlowValue(numeric(segment.revenue), quarter)}</strong> : <small>{segment.products.slice(0, 3).join(" · ").slice(0, 100) || segment.description.slice(0, 90)}</small>}<small>{quarter && segment.revenue ? (revenueChangeLabel(quarter, previousQuarter(quarter, quarters), segment.id) ? `${revenueChangeLabel(quarter, previousQuarter(quarter, quarters), segment.id)} · ` : "") : "定性归属 · 比例未披露 · "}{expandedSegment === segment.id ? "收起业务" : "展开业务 ↗"}</small></button>
     {expandedSegment === segment.id && <div id={`${id}-business-${segment.id}`}><BusinessPanel segment={segment} sources={businessSources} close={closeBusiness} quarter={quarter} previous={quarter?previousQuarter(quarter,quarters):null} /></div>}
   </div>) : <div className="business-flow__undisclosed"><strong>业务描述尚未发布</strong><p>当前公司没有可溯源的已发布业务资料；不会用其他公司的产品替代。</p></div>}</div>;
   if (!quarter) return <section className="business-flow business-flow--empty" aria-label="公司业务前瞻"><h2>业务前瞻</h2>{notice && <p role="status">{notice}</p>}<div className="business-flow__canvas">{rail}<div className="business-flow__undisclosed"><h3>季度财务未披露</h3><p>需要同币种、同口径的三个月数据才能绘制财务流向。业务资料保留独立披露期间，不会用示例数据替代真实财务。</p></div></div>{overview && <AnalysisReading overview={overview} publicationLabel={publicationLabel} />}</section>;
@@ -83,7 +96,7 @@ export function BusinessFlow({ flow, overview, notice, business, publicationLabe
   const complete = reconciliation.every(r => r.status === "balanced");
   const signedLoss = (["gross", "operating", "pretax", "net", "cost", "operatingExpenses", "tax"] as const).some(key => (numeric(quarter.figures[key]) ?? 0) < 0);
   return <section className="business-flow" aria-labelledby={`${id}-heading`}>
-    <header className="business-flow__toolbar"><div><h2 id={`${id}-heading`}>业务前瞻</h2><p>业务归属 → 收入 → 成本与费用 → 净利润</p></div><div className="business-flow__controls"><label htmlFor={`${id}-quarter`}>季度<select id={`${id}-quarter`} value={quarter.id} onChange={e => { setSelectedPeriod(e.target.value); setExpandedSegment(null); }}>
+    <header className="business-flow__toolbar"><div><h2 id={`${id}-heading`}>业务前瞻</h2><p>收入构成 → 公司收入 → 成本与费用 → 净利润</p></div><div className="business-flow__controls"><label htmlFor={`${id}-quarter`}>季度<select id={`${id}-quarter`} value={quarter.id} onChange={e => { setSelectedPeriod(e.target.value); setExpandedSegment(null); }}>
       {quarters.map(q => <option key={q.id} value={q.id}>{q.label}</option>)}
     </select></label><button type="button" aria-pressed={details} aria-controls={`${id}-plot`} onClick={() => setDetails(!details)}>{details ? "收起比较" : "展开比较"}</button></div></header>
     <div className="business-flow__metadata"><span>{quarter.periodStart ? `${quarter.periodStart}—` : "截至 "}{quarter.periodEnd} · 三个月</span><span>{quarter.currency || "币种未披露"} 百万 · {quarter.basisLabel}</span><span>{flow.fetchedAt ? `数据时间 ${flow.fetchedAt.slice(0, 10)}` : "数据时间未提供"}</span></div>
@@ -93,8 +106,9 @@ export function BusinessFlow({ flow, overview, notice, business, publicationLabe
       <div className="business-flow__canvas">{rail}<div className="business-flow__financial"><FinancialSankey quarter={quarter} previous={previous} onSegment={toggleSegment} /></div></div>
       <details className="business-flow__ledger" open={details}><summary>财务金额明细 · 未披露及有符号损益</summary><div className="business-flow__ledger-grid">{nodes.filter(node=>quarter.incomeModel!=="direct_operating"||!["cost","gross"].includes(node.key)).map(node => <MetricNode key={node.key} node={node} quarter={quarter} previous={previous} details={details} />)}</div>{quarter.incomeModel==="direct_operating"&&<div className="business-flow__ledger-grid">{[...(quarter.expenseComponents??[]),...(quarter.otherComponents??[])].map(c=>{const prior=[...(previous?.expenseComponents??[]),...(previous?.otherComponents??[])].find(p=>p.id===c.id);const cmp=compareFlowAmounts(quarter,previous,c.id,c.amount,prior?.amount);return <div className="business-flow__metric" key={c.id}><span>{c.name}</span><strong>{formatFlowValue(numeric(c.amount),quarter)}</strong><span>环比 {cmp.label}</span>{details&&<><small>上季 {formatFlowValue(cmp.previous,quarter)} · 增减 {formatFlowValue(cmp.delta,quarter)}</small><SourceLinks sources={quarter.sources} ids={c.amount.sourceIds} compact /></>}</div>;})}</div>}</details>
     </div>
+    {revenueTrees.length > 1 && <div className="business-flow__other-revenue" aria-label="其他收入分类">{revenueTrees.slice(1).map(tree => <p key={tree.dimension.id}><span>{tree.dimension.label}收入：</span>{tree.nodes.filter(n => n.parentId === null).map(n => <span key={n.id}>{n.name} {formatFlowValue(numeric(n.revenue), quarter)}； </span>)}<SourceLinks sources={quarter.sources} ids={[...new Set(tree.nodes.flatMap(n => n.revenue?.sourceIds ?? []))]} compact /></p>)}<small>同一收入的其他分类，金额不重复计入主图。单位：{quarter.currency} 百万。</small></div>}
     <div className="business-flow__margins">{(["gross", "operating", "net"] as const).filter(key=>quarter.incomeModel!=="direct_operating"||key!=="gross").map(key => <span key={key}>{({gross:"毛利",operating:"营业",net:"净利"}[key])} · {marginChange(quarter, previous, key)}</span>)}</div>
-    <details className="business-flow__audit"><summary>会计核对与披露来源{mismatch ? " · 存在差异" : ""}</summary><ul>{reconciliation.map(r => <li key={r.label}><span>{r.label}</span><b>{r.status === "balanced" ? "已对平" : r.status === "missing" ? "未披露，待核对" : `差额 ${formatFlowValue(r.difference, quarter)}`}</b></li>)}</ul><p>{quarter.basisLabel} · 披露日期 {quarter.reportedAt ?? "未提供"}。只使用已披露三个月值；此页面不自行从累计报表拆出季度。分部归属变化或重列口径未知时不显示增长率。</p><SourceLinks sources={quarter.sources} />{!quarter.sources.length && <p>原文链接尚未提供。</p>}</details>
+    <details className="business-flow__audit"><summary>会计核对与披露来源{mismatch ? " · 存在差异" : ""}</summary><ul>{revenueTree && <li><span>{revenueTree.dimension.label}合计 = 收入 · 展开层级逐层核对</span><b>已对平</b></li>}{reconciliation.map(r => <li key={r.label}><span>{r.label}</span><b>{r.status === "balanced" ? "已对平" : r.status === "missing" ? "未披露，待核对" : `差额 ${formatFlowValue(r.difference, quarter)}`}</b></li>)}</ul><p>{quarter.basisLabel} · 披露日期 {quarter.reportedAt ?? "未提供"}。只使用已披露三个月值；此页面不自行从累计报表拆出季度。收入分类发生变化或重列口径未知时不显示增长率。</p><SourceLinks sources={quarter.sources} />{!quarter.sources.length && <p>原文链接尚未提供。</p>}</details>
     {overview && <AnalysisReading overview={overview} publicationLabel={publicationLabel} />}
   </section>;
 }
