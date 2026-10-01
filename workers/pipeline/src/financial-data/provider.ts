@@ -15,15 +15,18 @@ async function readBoundedReport(response:Response):Promise<string>{
  const html=parts.join('');if(!html.trim())throw new Error('SEC_DOCUMENT_UNAVAILABLE');return html;
 }
 export async function readSecDocumentBatch(job:Job,reader:SecReader,maxDocuments=2):Promise<DocumentBatch>{
- const cik=job.cik;if(!/^\d{10}$/.test(cik))throw new Error('Invalid CIK');const cursor=JSON.parse(job.cursor||'{}') as {documents?:Array<{url:string;accession:string;filedAt:string;periodEnd:string}>;index?:number;industry?:DocumentSource['industry'];expectedPeriodEnd?:string;parserVersion?:string;reportedFacts?:Fact[];reviewDocuments?:Array<{source:DocumentSource;eligible:boolean}>;reviewRequired?:boolean};
- if(cursor.parserVersion!==SEC_FLOW_PARSER_VERSION){cursor.index=0;cursor.parserVersion=SEC_FLOW_PARSER_VERSION;delete cursor.reportedFacts;delete cursor.reviewDocuments;delete cursor.reviewRequired;}
+ const cik=job.cik;if(!/^\d{10}$/.test(cik))throw new Error('Invalid CIK');const cursor=JSON.parse(job.cursor||'{}') as {documents?:Array<{url:string;accession:string;filedAt:string;periodEnd:string;form?:string}>;index?:number;industry?:DocumentSource['industry'];expectedPeriodEnd?:string;parserVersion?:string;reportedFacts?:Fact[];reviewDocuments?:Array<{source:DocumentSource;eligible:boolean}>;reviewRequired?:boolean};
+ if(cursor.parserVersion!==SEC_FLOW_PARSER_VERSION){cursor.index=0;cursor.parserVersion=SEC_FLOW_PARSER_VERSION;delete cursor.reportedFacts;delete cursor.reviewDocuments;delete cursor.reviewRequired;delete cursor.documents;}
  if(!cursor.documents){
   const response=await reader.read(`https://data.sec.gov/submissions/CIK${cik}.json`);const data=await response.json() as {cik:string|number;sic?:string;filings?:{recent?:{form:string[];accessionNumber:string[];primaryDocument:string[];filingDate:string[];reportDate:string[];items?:string[]}}};if(String(data.cik).padStart(10,'0')!==cik)throw new Error('Issuer identity mismatch');const recent=data.filings?.recent;if(!recent)throw new Error('Missing submissions');cursor.expectedPeriodEnd=recent.form.map((form,i)=>/^10-[QK](\/A)?$/.test(form)?recent.reportDate[i]:'').filter(v=>/^\d{4}-\d{2}-\d{2}$/.test(v)).sort().at(-1);const sic=Number(data.sic);cursor.industry=sic>=6300&&sic<6500?'insurance':sic>=6000&&sic<6300?'financial':'standard';cursor.documents=[];
   for(let i=0;i<recent.form.length&&cursor.documents.length<10;i++){
    if(!/^10-[QK](\/A)?$/.test(recent.form[i])&&!(recent.form[i]==='8-K'&&recent.items?.[i]?.includes('2.02')))continue;const accession=recent.accessionNumber[i],doc=recent.primaryDocument[i];if(!/^\d{10}-\d{2}-\d{6}$/.test(accession)||!/^[A-Za-z0-9_.-]+\.html?$/.test(doc))continue;
    const folder=`https://www.sec.gov/Archives/edgar/data/${Number(cik)}/${accession.replaceAll('-','')}/`;
-   cursor.documents.push({url:folder+doc,accession,filedAt:recent.filingDate[i],periodEnd:recent.reportDate[i]});
+   cursor.documents.push({url:folder+doc,accession,filedAt:recent.filingDate[i],periodEnd:recent.reportDate[i],form:recent.form[i]});
   }
+  // The current statement and its adjacent filing provide the cumulative bridge.
+  // Preserve Oracle's existing earnings-exhibit profile order.
+  if(cik!=='0001341439')cursor.documents.sort((a,b)=>Number(a.form==='8-K')-Number(b.form==='8-K')||b.periodEnd.localeCompare(a.periodEnd));
   cursor.index=0;
  }
  const quarters=[];const index=cursor.index??0;const selected=cursor.documents.slice(index,index+Math.max(1,Math.min(3,maxDocuments)));

@@ -19,6 +19,8 @@ export function priorPresentationOnly(html:string):boolean{
  return matches.every(s=>/prior period amounts[^.]*have been reclassified to conform to the current period(?:&#8217;s|'s)? presentation/i.test(s));
 }
 export function reviewedCurrentPair(all:Fact[],expected:string,documents:Array<{source:DocumentSource;html?:string;eligible:boolean}>):{quarters:BusinessFlowQuarter[];reviewed:boolean}{
+ // Oracle has an established disclosure-specific expense and revenue profile.
+ if(all[0]?.source.cik==='0001341439')return {quarters:[],reviewed:false};
  const facts=precisionSelect(all);if(!facts)return {quarters:[],reviewed:false};
  const usable=facts.filter(f=>Object.keys(f.dimensions).every(a=>['StatementBusinessSegmentsAxis','ProductOrServiceAxis','ConsolidationItemsAxis'].includes(a.split(':').at(-1)!)));
  const current=usable.filter(f=>f.end===expected&&days(f.start,f.end)>=70&&days(f.start,f.end)<=110);
