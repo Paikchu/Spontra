@@ -1,0 +1,8 @@
+import test from 'node:test';import assert from 'node:assert/strict';import{readFileSync}from'node:fs';
+import{extractDisclosedQuarters,type DocumentSource}from'../workers/pipeline/src/financial-data/parser.ts';
+import{financialGraph,validateGraph}from'../lib/earning-report/web/business-flow-sankey';
+import{reconcileQuarter}from'../lib/earning-report/web/business-flow-model';
+import{checkCompleteFlow,newestPair}from'../shared/analysis-runtime/financial-data/completeness.ts';
+const sources=JSON.parse(readFileSync(new URL('./pipeline/fixtures/multi-company-income-sources.json',import.meta.url),'utf8')) as Array<{ticker:string;file:string;sourceUrl:string;accession:string;filedAt:string;cik:string;industry:DocumentSource['industry']}>;
+for(const ticker of ['MSFT','JPM'])test(`actual sourced ${ticker} two-quarter extraction reconciles`,()=>{
+ const quarters=sources.filter(s=>s.ticker===ticker).flatMap(s=>{const parsed=extractDisclosedQuarters(readFileSync(new URL('./pipeline/fixtures/'+s.file,import.meta.url),'utf8'),{...s,url:s.sourceUrl});assert.deepEqual(parsed.issues,[]);return parsed.quarters;});const flow=newestPair({schemaVersion:'business-flow.v1',ticker,fetchedAt:'2026-10-01',quarters});assert.deepEqual(checkCompleteFlow(flow),{complete:true,reasons:[]});for(const q of flow.quarters){assert.ok(reconcileQuarter(q).every(row=>row.status==='balanced'));const graph=financialGraph(q);assert.ok(graph.links.length>0);assert.equal(validateGraph(graph.nodes,graph.links),true);if(ticker==='JPM'){assert.equal(q.incomeModel,'financial');assert.equal(q.figures.gross,undefined);assert.equal(q.figures.cost,undefined);assert.equal(q.expenseComponents!.length,2);}}});

@@ -20,7 +20,14 @@ export function validateGraph(nodes:SankeyNode[], links:SankeyLink[]): boolean {
 /** Only verified nonnegative subflows are drawn. Unknown/loss figures stay in the readable ledger. */
 export function financialGraph(q:BusinessFlowQuarter, compact=false):FinancialGraph {
  const nodes:SankeyNode[]=[],links:SankeyLink[]=[];
- if(q.incomeModel==="financial"||q.incomeModel==="insurance") return {nodes,links,notice:"金融与保险披露采用不同利润表口径；当前标准成本/毛利桑基不适用，保留已披露指标与业务解读。"};
+ if(q.incomeModel==="financial"||q.incomeModel==="insurance"){
+  const v=(key:FlowMetric)=>numeric(q.figures[key]);const r=v("revenue"),e=v("operatingExpenses"),p=v("pretax"),t=v("tax"),n=v("net");
+  if([r,e,p,t,n].some(value=>value==null||value<0)||r!<=0||Math.abs(r!-e!-p!)>Math.max(1,r!*1e-9)||Math.abs(p!-t!-n!)>Math.max(1,p!*1e-9))return {nodes,links,notice:"金融与保险财报需完整收入、已披露费用、税前、税费及净利桥；缺项或亏损不转换成正流量。"};
+  const defs=[['revenue',"财报收入（按原披露口径）",0,r,false],['operatingExpenses',"财报费用合计",1,e,true],['pretax',"税前利润",1,p,false],['tax',"所得税",2,t,true],['net',"净利润",2,n,false]] as const;
+  for(const[key,label,depth,value,expense]of defs)nodes.push({name:key,label,metric:key,depth,expense,value:value!});
+  for(const[source,target,value]of [['revenue','operatingExpenses',e],['revenue','pretax',p],['pretax','tax',t],['pretax','net',n]] as const)if(value!>0)links.push({source,target,value:value!});
+  const connected=nodes.filter(node=>links.some(link=>link.source===node.name||link.target===node.name));return validateGraph(connected,links)?{nodes:connected,links,notice:"金融/保险按财报净收入与实际费用口径展示，不推定营业成本或毛利。"}:{nodes:[],links:[],notice:"金融口径流量未对平。"};
+ }
  const v=(key:FlowMetric)=>numeric(q.figures[key]);
  const checks=reconcileQuarter(q);
  const balanced=(i:number)=>checks[i]?.status==="balanced";

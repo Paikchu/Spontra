@@ -8,6 +8,10 @@
   "secrets": { "required": ["DEEPSEEK_API_KEY"] },
   "vars": {
     "SEC_BUSINESS_FLOW_BOOTSTRAP_TICKERS": "ORCL",
+    "SEC_DATA_TICKERS": "ORCL,NVDA,MSFT,AAPL,JPM,BRK.B,ADSK,NET",
+    "SEC_AI_TICKERS": "ORCL,ADSK,NET",
+    "SEC_AI_ENABLED": "true",
+    "SEC_DATA_COLLECTION_ENABLED": "true",
     "SEC_USER_AGENT": "earning-report-analysis/1.0 max.zhangyuchen@gmail.com",
     "SEC_ANALYSIS_MODEL": "deepseek-flash",
     "SEC_REASONING_MODEL": "deepseek-flash"

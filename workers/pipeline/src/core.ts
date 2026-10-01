@@ -1,3 +1,4 @@
+import { financialPolicy, allowData, aiIsEnabled } from "../../../shared/analysis-runtime/financial-data/policy.ts";
 import { D1CompanyAnalysisRepository } from "./company-analysis/repository.ts";
 import { D1SecRepository } from "./sec/d1.ts";
 import { isTrackedTicker, normalizeTrackedTicker, parseTrackedTickers } from "./sec/config.ts";
@@ -43,6 +44,10 @@ export type CompanyAnalysisBackfillParams = {
 export type SecCronEnv = {
   /** This Worker's own copy of the whitelist — nothing here asks another Worker for it. */
   SEC_TRACKED_TICKERS?: string;
+  SEC_DATA_TICKERS?: string;
+  SEC_DATA_COLLECTION_ENABLED?: string;
+  SEC_AI_TICKERS?: string;
+  SEC_AI_ENABLED?: string;
   SEC_REFRESH_KEY: string;
   /** The same D1 database the Web Worker binds. Optional only so tests can build a partial env. */
   DB?: D1Database;
@@ -58,13 +63,17 @@ export type SecCronEnv = {
  * whitelist now has exactly one home, this one, and this Worker is also the one deciding whether to
  * start a run — so the two can no longer drift apart.
  */
-export function trackedTickersFor(env: Pick<SecCronEnv, "SEC_TRACKED_TICKERS">): string[] {
-  return parseTrackedTickers(env.SEC_TRACKED_TICKERS);
+export function trackedTickersFor(env: Pick<SecCronEnv, "SEC_TRACKED_TICKERS" | "SEC_DATA_TICKERS" | "SEC_AI_TICKERS" | "SEC_AI_ENABLED">): string[] {
+  if(!aiIsEnabled(env))return [];
+  return parseTrackedTickers(env.SEC_AI_TICKERS??env.SEC_TRACKED_TICKERS);
 }
 
-export function assertTrackedTicker(env: Pick<SecCronEnv, "SEC_TRACKED_TICKERS">, ticker: string): void {
+export function assertTrackedTicker(env: Pick<SecCronEnv, "SEC_TRACKED_TICKERS" | "SEC_DATA_TICKERS" | "SEC_AI_TICKERS" | "SEC_AI_ENABLED">, ticker: string): void {
   if (!isTrackedTicker(ticker, trackedTickersFor(env))) throw new Error("Ticker is not tracked");
 }
+
+export function dataTickersFor(env:Pick<SecCronEnv,"SEC_TRACKED_TICKERS"|"SEC_DATA_TICKERS"|"SEC_AI_TICKERS"|"SEC_AI_ENABLED">):string[]{return [...financialPolicy({SEC_DATA_TICKERS:env.SEC_DATA_TICKERS,SEC_TRACKED_TICKERS:env.SEC_TRACKED_TICKERS,SEC_AI_ENABLED:"false"}).dataTickers].sort();}
+export function assertDataTicker(env:Pick<SecCronEnv,"SEC_TRACKED_TICKERS"|"SEC_DATA_TICKERS"|"SEC_AI_TICKERS"|"SEC_AI_ENABLED">,ticker:string):void{if(!allowData(financialPolicy({SEC_DATA_TICKERS:env.SEC_DATA_TICKERS,SEC_TRACKED_TICKERS:env.SEC_TRACKED_TICKERS,SEC_AI_ENABLED:"false"}),ticker))throw new Error("Ticker is not data-enabled");}
 
 export function requireDb(env: Pick<SecCronEnv, "DB">): D1Database {
   if (!env.DB) throw new Error("SEC pipeline D1 binding is not configured");
@@ -76,8 +85,9 @@ export async function runCompanyAnalysisSweep(
   options: { forceIncomplete?: boolean } = {},
 ): Promise<{ candidates: number; started: string[]; failed: string[] }> {
   if (!env.COMPANY_ANALYSIS_WORKFLOW) return { candidates: 0, started: [], failed: [] };
-  const repository = new D1CompanyAnalysisRepository(requireDb(env));
   const tickers = trackedTickersFor(env);
+  if (!tickers.length) return { candidates: 0, started: [], failed: [] };
+  const repository = new D1CompanyAnalysisRepository(requireDb(env));
   if (env.COMPANY_ANALYSIS_WORKFLOW.get) {
     const executions = await repository.listActiveExecutions(tickers, new Date(Date.now() - 60 * 60_000).toISOString());
     for (const execution of executions) {
@@ -123,6 +133,7 @@ export async function runCompanyAnalysisSweep(
 }
 
 export async function runSecRefresh(env: SecCronEnv, now = Date.now()) {
+  if (!trackedTickersFor(env).length) return { started: [], failed: [], skipped: [] };
   if (!env.SEC_REFRESH_KEY || !env.SEC_ANALYSIS_WORKFLOW) {
     throw new Error("SEC cron environment is incomplete");
   }
@@ -156,7 +167,7 @@ export async function runSecRefresh(env: SecCronEnv, now = Date.now()) {
 }
 
 export async function runSecMemorySweep(env: SecCronEnv): Promise<{ started: string[] }> {
-  if (!env.SEC_MEMORY_WORKFLOW) return { started: [] };
+  if (!env.SEC_MEMORY_WORKFLOW || !trackedTickersFor(env).length) return { started: [] };
   const ownerToken = `sweeper:${crypto.randomUUID()}`;
   const claim = await new D1SecRepository(requireDb(env)).claimMemoryJob(null, ownerToken, new Date(), undefined, trackedTickersFor(env));
   if (!claim) return { started: [] };

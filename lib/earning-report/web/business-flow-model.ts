@@ -1,11 +1,7 @@
-import { z } from "zod";
+import {publicFlowSchema} from "@/shared/analysis-runtime/financial-data/schema";
 import { FLOW_METRICS, type BusinessFlowQuarter, type FlowAmount, type FlowMetric, type PublicBusinessFlow } from "@/shared/analysis-contract/business-flow";
 import type { PublicFundamentalsResponse, FundamentalMetricKey } from "@/shared/analysis-contract/fundamentals";
 
-const amountSchema = z.object({ value:z.string().nullable().refine(v=>v===null || (v.trim()!=="" && Number.isFinite(Number(v)))), basis:z.enum(["reported","derived"]), definition:z.string(), comparabilityKey:z.string().nullable(), sourceIds:z.array(z.string()).max(100), formula:z.string().optional(),lineage:z.array(z.object({accession:z.string(),url:z.string(),concept:z.string(),contextId:z.string(),periodStart:z.string(),periodEnd:z.string(),dimensions:z.record(z.string(),z.string()),parserVersion:z.string()})).max(50).optional() });
-const sourceSchema=z.object({id:z.string(),title:z.string(),url:z.string(),publishedAt:z.string().nullable().optional()});
-const quarterSchema=z.object({id:z.string().min(1),incomeModel:z.enum(["standard","direct_operating","financial","insurance","unknown"]).optional(),label:z.string(),periodStart:z.string().nullable(),periodEnd:z.string().refine(v=>Number.isFinite(Date.parse(v))),periodType:z.literal("3M"),currency:z.string().min(1),scale:z.number().finite().positive(),basisLabel:z.string(),reportedAt:z.string().nullable(),figures:z.partialRecord(z.enum(FLOW_METRICS),amountSchema),segments:z.array(z.object({id:z.string().min(1),name:z.string(),revenue:amountSchema.nullable(),description:z.string(),products:z.array(z.string()).max(100),customers:z.string().nullable(),monetization:z.string().nullable(),disclosure:z.string(),sourceIds:z.array(z.string()),children:z.array(z.object({id:z.string(),name:z.string(),revenue:amountSchema})).max(40).optional()})).max(40),segmentsComplete:z.boolean(),expenseComponents:z.array(z.object({id:z.string(),name:z.string(),group:z.enum(["direct","research","sales","administration","other"]),amount:amountSchema})).max(40).optional(),otherComponents:z.array(z.object({id:z.string(),name:z.string(),amount:amountSchema})).max(20).optional(),sources:z.array(sourceSchema).max(100)});
-const publicFlowSchema=z.object({schemaVersion:z.literal("business-flow.v1"),ticker:z.string(),fetchedAt:z.string().nullable(),quarters:z.array(quarterSchema).max(40)}).refine(f=>new Set(f.quarters.map(q=>q.id)).size===f.quarters.length && f.quarters.every(q=>new Set(q.segments.map(s=>s.id)).size===q.segments.length));
 
 export function numeric(amount: FlowAmount | null | undefined): number | null {
   if (typeof amount?.value !== "string" || amount.value.trim() === "") return null;
@@ -90,6 +86,12 @@ export function reconcileQuarter(q: BusinessFlowQuarter): Reconciliation[] {
     const difference = (values as number[]).reduce((a, b) => a + b, 0);
     return { label, status: Math.abs(difference) <= tolerance ? "balanced" : "mismatch", difference };
   };
+  if (q.incomeModel === "financial" || q.incomeModel === "insurance") return [
+    check("业务收入合计 = 收入", q.segmentsComplete ? [...q.segments.map(s => numeric(s.revenue)), numeric(q.figures.revenue) == null ? null : -numeric(q.figures.revenue)!] : [null]),
+    check("收入 − 已披露费用 = 税前利润", [numeric(q.figures.revenue), numeric(q.figures.operatingExpenses) == null ? null : -numeric(q.figures.operatingExpenses)!, numeric(q.figures.pretax) == null ? null : -numeric(q.figures.pretax)!]),
+    check("费用分类合计 = 已披露费用", q.expenseComponents?.length ? [...q.expenseComponents.map(c => numeric(c.amount)), numeric(q.figures.operatingExpenses) == null ? null : -numeric(q.figures.operatingExpenses)!] : [null]),
+    check("税前利润 − 所得税 = 净利润", [numeric(q.figures.pretax), numeric(q.figures.tax) == null ? null : -numeric(q.figures.tax)!, numeric(q.figures.net) == null ? null : -numeric(q.figures.net)!]),
+  ];
   if (q.incomeModel === "direct_operating") return [
     check("业务收入合计 = 收入", q.segmentsComplete ? [...q.segments.map(s => numeric(s.revenue)), numeric(q.figures.revenue) == null ? null : -numeric(q.figures.revenue)!] : [null]),
     check("收入 − 已披露营业费用 = 营业利润", [numeric(q.figures.revenue), numeric(q.figures.operatingExpenses) == null ? null : -numeric(q.figures.operatingExpenses)!, numeric(q.figures.operating) == null ? null : -numeric(q.figures.operating)!]),

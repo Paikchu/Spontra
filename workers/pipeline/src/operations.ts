@@ -206,6 +206,7 @@ export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof
       }
     },
     shouldAnalyze: async (filing, requestedBy) => {
+      try { assertTrackedTicker(env, filing.ticker); } catch { return false; }
       if (requestedBy === "manual") return true;
       const ticker = cleanSecTicker(filing.ticker);
       if (!ticker) throw new Error("SEC 任务查询无效。");

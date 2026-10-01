@@ -1,3 +1,4 @@
+import type {CompleteFlowPublication} from '../../../shared/analysis-contract/complete-business-flow.ts';
 import type { PublicCompanyAnalysisResponse } from "../../../shared/analysis-contract/company-analysis.ts";
 import { AnalysisRequestError, type AnalysisErrorBody, type AnalysisErrorCode } from "./analysis-errors.ts";
 import type { PublicFilingDetail, PublicFilingPage } from "../../../shared/analysis-contract/filings.ts";
@@ -58,6 +59,8 @@ export class AnalysisBackendClient {
   getFiling(ticker: string, accession: string, snapshot?: { reportDate: string; reportVersion: string }) {
     return this.request<PublicFilingDetail>(`/api/v1/companies/${encode(ticker)}/filings/${encode(accession)}`, snapshot ? new URLSearchParams(snapshot) : undefined);
   }
+
+  getCompleteBusinessFlow(ticker:string){return this.request<CompleteFlowPublication>(`/api/v1/companies/${encode(ticker)}/business-flow`);}
 
   getCompanyAnalysis(ticker: string) {
     return this.request<PublicCompanyAnalysisResponse>(`/api/v1/companies/${encode(ticker)}/analysis`);

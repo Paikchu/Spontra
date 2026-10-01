@@ -1,7 +1,7 @@
 import { FundamentalSyncService } from "./fundamentals/fundamental-sync.ts";
 import { D1FundamentalsRepository, FundamentalSyncInProgressError, type FundamentalsD1Database } from "./fundamentals/fundamentals-d1.ts";
 import { normalizeTrackedTicker } from "./sec/config.ts";
-import { assertTrackedTicker, requireDb, type SecCronEnv } from "./core.ts";
+import { assertDataTicker, requireDb, type SecCronEnv } from "./core.ts";
 
 export type FundamentalsSyncOutcome = {
   ticker: string;
@@ -60,7 +60,7 @@ export async function handleFundamentalsRefreshRequest(request: Request, env: Se
   const ticker = normalizeTrackedTicker(rawTicker);
   if (!ticker) return Response.json({ error: "Invalid ticker" }, { status: 400 });
   try {
-    assertTrackedTicker(env, ticker);
+    assertDataTicker(env, ticker);
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Ticker is not tracked" }, { status: 403 });
   }

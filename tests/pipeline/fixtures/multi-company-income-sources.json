@@ -1,0 +1,42 @@
+[
+  {
+    "ticker": "MSFT",
+    "cik": "0000789019",
+    "industry": "standard",
+    "file": "msft-2026-03-31-sec-income.html",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/789019/000119312526191507/msft-20260331.htm",
+    "accession": "0001193125-26-191507",
+    "filedAt": "2026-04-29",
+    "sha256": "a615ae0de8fe27dd8d1032978b1c810305d3cf7a864b386807cd25a73fc70d59"
+  },
+  {
+    "ticker": "MSFT",
+    "cik": "0000789019",
+    "industry": "standard",
+    "file": "msft-2025-12-31-sec-income.html",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/789019/000119312526027207/msft-20251231.htm",
+    "accession": "0001193125-26-027207",
+    "filedAt": "2026-01-28",
+    "sha256": "0d6fa5f384d7fac0efc95bc4115a3021a0f0ad71d5fcfd4de4b6790654f6c6d3"
+  },
+  {
+    "ticker": "JPM",
+    "cik": "0000019617",
+    "industry": "financial",
+    "file": "jpm-2026-06-30-sec-income.html",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/19617/000162828026054343/jpm-20260630.htm",
+    "accession": "0001628280-26-054343",
+    "filedAt": "2026-08-06",
+    "sha256": "54023b950fb04a9539416b4302d2bea557350eee015ac31bce3e599e3d000933"
+  },
+  {
+    "ticker": "JPM",
+    "cik": "0000019617",
+    "industry": "financial",
+    "file": "jpm-2026-03-31-sec-income.html",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/19617/000162828026029344/jpm-20260331.htm",
+    "accession": "0001628280-26-029344",
+    "filedAt": "2026-05-01",
+    "sha256": "3cd8bb9289738ba27d378e3b2254e78933af9067448303169c09268f12da5617"
+  }
+]

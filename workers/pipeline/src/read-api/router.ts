@@ -1,3 +1,4 @@
+import {readCompletePublicationForTicker} from '../financial-data/publication.ts';
 import { businessFlowCacheKey } from "../sec/business-flow-cache.ts";
 import type { PublicBusinessFlow } from "../../../../shared/analysis-contract/business-flow.ts";
 import { getPublicCompanyAnalysis } from "../company-analysis/api.ts";
@@ -52,6 +53,7 @@ type RouteMatch =
   | { kind: "filings"; ticker: string }
   | { kind: "filing"; ticker: string; accession: string }
   | { kind: "analysis"; ticker: string }
+  | { kind: "business-flow"; ticker: string }
   | { kind: "fundamentals"; ticker: string }
   | { kind: "openapi" };
 
@@ -59,6 +61,7 @@ const SCOPE_BY_ROUTE: Record<Exclude<RouteMatch["kind"], "openapi">, AnalysisRea
   filings: "filings:read",
   filing: "filings:read",
   analysis: "analysis:read",
+  "business-flow": "analysis:read",
   fundamentals: "fundamentals:read",
 };
 
@@ -135,6 +138,10 @@ async function handleRoute(request: Request, database: D1Database, route: Exclud
       if (!detail) return errorResponse("FILING_NOT_FOUND", "SEC filing not found.");
       return dataResponse(request, detail);
     }
+    case "business-flow": {
+      const payload=await readCompletePublicationForTicker(database,route.ticker);
+      return dataResponse(request,payload,payload.status==="ready"?"cacheable":"no-store");
+    }
     case "analysis": {
       const payload = await getPublicCompanyAnalysis(new D1CompanyAnalysisRepository(database), route.ticker);
       const business = await new D1SecRepository(database).getCache<PublicBusinessFlow>(businessFlowCacheKey(route.ticker));
@@ -174,7 +181,7 @@ async function withinRateLimit(env: AnalysisReadEnv, identity: AnalysisReadIdent
 
 function matchRoute(pathname: string): RouteMatch | null {
   if (pathname === "/api/v1/openapi.json") return { kind: "openapi" };
-  const company = /^\/api\/v1\/companies\/([^/]+)\/(filings|analysis|fundamentals)(?:\/([^/]+))?\/?$/.exec(pathname);
+  const company = /^\/api\/v1\/companies\/([^/]+)\/(filings|analysis|fundamentals|business-flow)(?:\/([^/]+))?\/?$/.exec(pathname);
   if (!company) return null;
   const ticker = safeDecode(company[1]!);
   const resource = company[2]!;
@@ -186,6 +193,7 @@ function matchRoute(pathname: string): RouteMatch | null {
     return accession === null ? null : { kind: "filing", ticker, accession };
   }
   if (tail !== undefined) return null;
+  if(resource === "business-flow") return {kind:"business-flow",ticker};
   return resource === "analysis" ? { kind: "analysis", ticker } : { kind: "fundamentals", ticker };
 }
 

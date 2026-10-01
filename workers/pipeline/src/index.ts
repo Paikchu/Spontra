@@ -2,7 +2,7 @@ import { NonRetryableError } from "cloudflare:workflows";
 import { SecModelHttpError } from "./operations.ts";
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
 
-import { runCompanyAnalysisSweep, runSecRefresh, type CompanyAnalysisBackfillParams, type CompanyAnalysisWorkflowParams, type SecMemoryWorkflowParams, type SecWorkflowParams } from "./core.ts";
+import { assertTrackedTicker, runCompanyAnalysisSweep, runSecRefresh, type CompanyAnalysisBackfillParams, type CompanyAnalysisWorkflowParams, type SecMemoryWorkflowParams, type SecWorkflowParams } from "./core.ts";
 import { executeCompanyAnalysisWorkflow, type CompanyWorkflowStep } from "./company-analysis-workflow.ts";
 import { executeSecMemoryWorkflow } from "./memory-workflow.ts";
 import { createSecPipelineOperations, type SecPipelineEnv } from "./operations.ts";
@@ -51,6 +51,7 @@ function durableSteps(step: WorkflowStep, env: SecPipelineEnv, instanceId: strin
 
 export class SecAnalysisWorkflow extends WorkflowEntrypoint<SecPipelineEnv, SecWorkflowParams> {
   async run(event: WorkflowEvent<SecWorkflowParams>, step: WorkflowStep) {
+    assertTrackedTicker(this.env,event.payload.ticker);
     return executeSecAnalysisWorkflow(event.payload, event.instanceId, durableSteps(step, this.env, event.instanceId), createSecPipelineOperations(this.env, fetch, event.instanceId));
   }
 }
@@ -63,12 +64,14 @@ export class ResearchWorkflow extends WorkflowEntrypoint<SecPipelineEnv, { caseI
 
 export class SecMemoryWorkflow extends WorkflowEntrypoint<SecPipelineEnv, SecMemoryWorkflowParams> {
   async run(event: WorkflowEvent<SecMemoryWorkflowParams>, step: WorkflowStep) {
+    assertTrackedTicker(this.env,event.payload.ticker);
     return executeSecMemoryWorkflow(event.payload, event.instanceId, durableSteps(step, this.env, event.instanceId), this.env);
   }
 }
 
 export class CompanyAnalysisWorkflow extends WorkflowEntrypoint<SecPipelineEnv, CompanyAnalysisWorkflowParams> {
   async run(event: WorkflowEvent<CompanyAnalysisWorkflowParams>, step: WorkflowStep) {
+    assertTrackedTicker(this.env,event.payload.ticker);
     return executeCompanyAnalysisWorkflow(
       event.payload,
       event.instanceId,

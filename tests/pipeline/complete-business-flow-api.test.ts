@@ -1,0 +1,8 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {createAnalysisDatabase,readEnv,readRequest,ReadOnlyGuardDatabase,FILINGS_ONLY_TOKEN} from './helpers/analysis-backend.ts';
+import{handleAnalysisReadRequest}from'../../workers/pipeline/src/read-api/router.ts';
+import{D1SecRepository}from'../../workers/pipeline/src/sec/d1.ts';
+import{businessFlowCacheKey}from'../../workers/pipeline/src/sec/business-flow-cache.ts';
+import{completeOrclFixture}from'../fixtures/complete-orcl-flow.ts';
+test('complete snapshot API is read-only, scoped, independent of AI and strips unknown legacy fields',async()=>{
+ const db=await createAnalysisDatabase();try{const flow=structuredClone(completeOrclFixture);Object.assign(flow,{account:'PRIVATE_ACCOUNT'});Object.assign(flow.quarters[0].figures.net!,{position:'PRIVATE_POSITION'});await new D1SecRepository(db).setCache(businessFlowCacheKey('ORCL'),flow,'2026-10-01');const guard=new ReadOnlyGuardDatabase(db);const response=await handleAnalysisReadRequest(readRequest('/api/v1/companies/ORCL/business-flow'),readEnv(guard));assert.equal(response.status,200);const text=await response.text();assert.ok(!text.includes('PRIVATE_'));const data=JSON.parse(text);assert.equal(data.status,'ready');assert.equal(data.flow.quarters.length,2);assert.deepEqual(guard.attemptedWrites,[]);const denied=await handleAnalysisReadRequest(readRequest('/api/v1/companies/ORCL/business-flow',{token:FILINGS_ONLY_TOKEN}),readEnv(guard));assert.equal(denied.status,403);const pending=await handleAnalysisReadRequest(readRequest('/api/v1/companies/NVDA/business-flow'),readEnv(guard));assert.equal((await pending.json() as {flow:null}).flow,null);}finally{db.close();}});

@@ -129,6 +129,14 @@ export function buildAnalysisOpenApiDocument(serverUrl = "https://<analysis-back
           },
         },
       },
+      "/api/v1/companies/{ticker}/business-flow": {
+        get: {
+          summary: "Complete deterministic two-quarter income flow, independent of AI analysis",
+          description: "Only verified complete snapshots are readable. Preparing/unavailable responses contain no partial flow. Failed updates retain an outdated complete snapshot. No collection or model call is started by reading.",
+          security: [{readCredential:["analysis:read"]}], parameters:[tickerParameter],
+          responses:{"200":{description:"complete-business-flow.v1: status, flow, reasons, outdated and lastAttemptAt",content:{"application/json":{schema:{type:"object",required:["schemaVersion","status","flow","reasons","outdated","lastAttemptAt"],properties:{schemaVersion:{const:"complete-business-flow.v1"},status:{enum:["ready","preparing","unavailable"]},flow:{type:["object","null"]},reasons:{type:"array",items:{type:"string"}},outdated:{type:"boolean"},lastAttemptAt:{type:["string","null"]}}}}}},...commonResponses},
+        },
+      },
       "/api/v1/companies/{ticker}/analysis": {
         get: {
           summary: "The company's latest published cross-period analysis",
