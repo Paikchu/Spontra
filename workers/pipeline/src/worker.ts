@@ -7,6 +7,7 @@ import type { SecPipelineEnv } from "./operations.ts";
 import { handleAnalysisReadRequest, isAnalysisReadPath } from "./read-api/router.ts";
 import { handleResearchRequest } from "./research/api.ts";
 import { runResearchMonitor } from "./research/monitor.ts";
+import { handleReportAdminRequest } from "./admin/reports.ts";
 
 /**
  * `JSON.stringify` renders an Error as `{}`, so a rejection reason has to be read off it before it
@@ -57,6 +58,7 @@ const worker = {
     const path = new URL(request.url).pathname;
     if (path === "/health") return healthResponse();
     if (path === "/ready") return readyResponse(env);
+    if (path === "/admin" || path.startsWith("/admin/")) return handleReportAdminRequest(request, env);
     /**
      * The read API claims the whole `/api/v1` prefix and rejects every method but GET/HEAD itself,
      * so no request under it can fall through to the control handlers below — which is the only

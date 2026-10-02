@@ -21,7 +21,7 @@ test("retired SEC writes stay disabled and the investment cron has no analysis e
     assert.doesNotMatch(route, /getD1|saveAnalysis/);
   }
   const config = JSON.parse(await source("workers/sec-cron/wrangler.jsonc"));
-  assert.deepEqual(config.triggers.crons, ["0 6 * * 2-6", "15 * * * *"]);
+  assert.deepEqual(config.triggers.crons, ["*/5 * * * *", "0 6 * * 2-6", "15 * * * *"]);
   assert.equal(config.workflows, undefined);
   assert.equal(config.r2_buckets, undefined);
   const worker = await source("workers/sec-cron/index.ts");

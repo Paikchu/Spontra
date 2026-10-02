@@ -1,0 +1,45 @@
+# 财报管理后台
+
+入口：`/admin/reports`，也可从设置页进入。
+
+报告列表、版本、生成任务、检查标记均来自 `EARNING_REPORT_PIPELINE` 的分析数据库。Web 不直接读取分析 D1，也不会把只读接口改为触发生成的接口。看板不会使用示例数据兜底；数据服务异常时显示错误。
+
+## 登录
+
+使用 **财报 Pipeline Worker** 已配置的 `SEC_REFRESH_KEY` 登录。不要使用投资账本 Worker 或旧 sec-cron 的同名密钥。密钥在登录时经同源 Web 代理交给 Pipeline 核验，浏览器只获得 8 小时有效的签名会话 Cookie（HttpOnly、SameSite=Strict，线上启用 Secure）。密钥不写入 localStorage、sessionStorage 或前端构建。
+
+会话由 Pipeline 自己的密钥签名并验证，无需给 Web 新增管理密钥。轮换 `SEC_REFRESH_KEY` 会同时使现有会话失效。Pipeline 的 `REPORT_ADMIN_RATE_LIMIT` 限制登录尝试。
+
+## 报告管理
+
+- 搜索公司名称或代码，按待检查、已检查、生成中、生成失败和待生成筛选；列表每页 40 条，可继续加载。
+- 正文复用线上报告阅读组件，包含分析、图表、研究依据、原文链接及数据质量说明。
+- 已检查状态绑定财报及具体版本。新版本不会继承旧版本的检查状态；历史版本可以单独查看和检查。
+- 生成记录展示任务阶段、尝试次数、时间和安全的错误代码，不转发模型提供商错误正文或凭证。
+- 手动重新生成要求该公司仍在 Pipeline 的 AI 范围内，且选择具体 accession；不会自动重新生成该公司的所有报告。
+- 重新生成读取已保存的财报，即使旧财报已离开最新 SEC discovery 窗口仍可执行。已核验研究材料可被复用，但报告重写、审校与发布仍运行。
+- 使用操作标识、数据库短锁和已持久化的运行中任务抑制重复提交。失败任务保留记录；原报告不会被删除。
+- 结构化财报沿用 `sec_published_reports` 的版本存储。简析历史存入 `sec_cache`；部署前已丢失的简析版本无法恢复。
+
+## 接口与发布
+
+Web：`/api/admin/session`（POST 登录、DELETE 退出）、`/api/admin/reports`（GET）、`/api/admin/reports/:ticker/:accession`（GET）、末尾 `/review` 和 `/regenerate`（POST）。写操作要求同源 Origin；全部响应为 `private, no-store`。
+
+Pipeline 对应路径为 `/admin/*`，管理接口需要签名会话。现有公开只读凭证不能访问管理接口。所有查询和状态记录使用已有表，不新增数据库迁移。
+
+推送 `origin/main` 后，需要主应用与 Pipeline 两个自动构建均成功。Web 与 Pipeline 都发布后，登录后台核验真实报告内容和历史记录。仅推送成功不能证明线上部署成功。
+
+## 本地验证
+
+`npm run typecheck`、`npm run typecheck:pipeline`、`npm run check:pipeline:boundary`、`npm run test:pipeline`、`npm run test:unit`、`npm run build`、`npm run worker:pipeline:check`。
+
+`tests/pipeline/report-admin.test.ts` 使用真实 SQLite 和项目迁移验证鉴权、版本检查、精确生成、并发去重和代理 Cookie。浏览器验证记录位于根目录 `design-qa.md`；本地数据不等于生产数据验证。
+
+## 本次验证记录
+
+- 214 项主应用单元测试、436 项 Pipeline 测试全部通过，管理后台浏览器主流程通过。
+- 主应用与 Pipeline 类型检查、边界检查、定向 ESLint、生产构建和 Pipeline dry-run 打包通过。
+- 既有 rendered-html 套件为 39/42 通过。3 个旧断言（旧产品描述、旧账本比例、旧期权移动端缩进）在未修改的 `4926be7` 基线源码中复现同样失败；本次没有修改这些页面或其样式。
+- 当前环境对生产域名返回网络策略 403，未进行线上密钥登录或实际生成任务测试。
+- 本地开发所附 workerd 旧于项目 compatibility date；验证通过环境提供的 `/workspace/.cloud-tools/node_modules/.bin/workerd` 运行，无需更改项目生产兼容日期。
+- 启动开发服务后，可用 `node --experimental-strip-types tests/report-admin.browser.mts` 重跑隔离数据库的浏览器流程。

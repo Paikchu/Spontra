@@ -120,7 +120,7 @@ export function AppNavigation({ children, dock }: { children: ReactNode; dock: R
 
   useEffect(() => {
     if (window.location.hash) { active.current = initialPath + window.location.hash; setPath(active.current); }
-    if (!initialPath.includes("?")) window.history.replaceState(window.history.state, "", "/");
+    if (!initialPath.includes("?") && !initialPath.startsWith("/admin/")) window.history.replaceState(window.history.state, "", "/");
     function link(event: MouseEvent) {
       if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
       const anchor = (event.target as Element).closest?.("a[href]") as HTMLAnchorElement | null;

@@ -598,3 +598,15 @@ test("explicit report regeneration reuses verified research but still writes and
   assert.ok(!steps.some(s => s.startsWith("node:")));
   await assert.rejects(executeSecAnalysisWorkflow({ ticker: filing.ticker, requestedBy: "scheduled", regenerateReport: true }, "invalid", stepRecorder([]), ops), /manual request/);
 });
+
+test("selected historical filing regeneration does not depend on the latest SEC discovery window", async () => {
+  let published = false;
+  const ops = operations({
+    async loadFiling(ticker, accession) { assert.equal(ticker, filing.ticker); assert.equal(accession, filing.accessionNumber); return filing; },
+    async discover() { throw new Error("must not fetch or replace the latest feed"); },
+    async publishFeed() { throw new Error("must not replace the feed with one historical filing"); },
+    async publish() { published = true; },
+  });
+  const result = await executeSecAnalysisWorkflow({ ticker: filing.ticker, requestedBy: "manual", accessionNumber: filing.accessionNumber, regenerateReport: true }, "historical-regeneration", stepRecorder([]), ops);
+  assert.deepEqual(result.failed, []); assert.equal(published, true);
+});

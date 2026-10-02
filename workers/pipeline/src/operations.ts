@@ -140,6 +140,16 @@ export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof
     });
   };
   return {
+    loadFiling: async (ticker, accession) => {
+      assertTrackedTicker(env, ticker);
+      const saved = await repository().getPublicFiling(ticker, accession);
+      if (!saved) return null;
+      // Publication snapshots must carry source identity, never nest the old analysis recursively.
+      return { ticker: saved.ticker, cik: saved.cik, cikNumber: saved.cikNumber, companyName: saved.companyName,
+        form: saved.form, filingDate: saved.filingDate, reportDate: saved.reportDate, accessionNumber: saved.accessionNumber,
+        primaryDocument: saved.primaryDocument, description: saved.description, items: saved.items,
+        documentUrl: saved.documentUrl, indexUrl: saved.indexUrl, ...(saved.earningsGroup ? { earningsGroup: saved.earningsGroup } : {}) };
+    },
     restoreAnalysis: async (filing, reference) => {
       const key = `${reference.key.replace(/^filings\//, "analysis/")}/${SEC_ANALYSIS_SCHEMA_VERSION}/synthesis.json`;
       const object = await env.SEC_FILINGS.get(key);
@@ -447,6 +457,10 @@ export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof
         && summary.accessionNumber === eventAccession;
       if (!validEvent) throw new Error("SEC 事件简析无效。");
       assertTrackedTicker(env, eventTicker);
+      // Compact event reports also retain versions when their current summary is replaced.
+      const previous = await repository().getSummary(eventTicker, eventAccession);
+      if (previous?.generatedAt) await repository().setCache(`admin:summary:${eventTicker}:${eventAccession}:${previous.generatedAt}`, previous, previous.generatedAt);
+      await repository().setCache(`admin:summary:${eventTicker}:${eventAccession}:${summary.generatedAt}`, summary, summary.generatedAt);
       await repository().setSummary(
         { ticker: eventTicker, accessionNumber: eventAccession, form: identity.form },
         { ...summary, ticker: eventTicker, accessionNumber: eventAccession },

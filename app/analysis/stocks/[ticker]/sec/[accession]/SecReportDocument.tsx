@@ -14,7 +14,7 @@ type ReportSectionDefinition = ReportSectionLink & {
   content: ReactNode;
 };
 
-export function SecReportDocument({ companyName, filing }: { companyName: string; filing: SecFilingWithSummary }) {
+export function SecReportDocument({ companyName, filing, embedded = false }: { companyName: string; filing: SecFilingWithSummary; embedded?: boolean }) {
   const summary = filing.summary;
   const group = filing.earningsGroup;
   // The page can receive snapshots from an older backend as well as current D1 reads.
@@ -23,7 +23,7 @@ export function SecReportDocument({ companyName, filing }: { companyName: string
   const report = filing.analysis ? { ...filing.analysis, reader: parsed?.reader,
     dataQuality: { ...filing.analysis.dataQuality, warnings: [...new Set([...filing.analysis.dataQuality.warnings, ...renderWarnings])] } } : undefined;
   const reader = report?.reader;
-  const reportReady = Boolean(summary?.report);
+  const reportReady = Boolean(summary?.report || (embedded && (report?.reader || report?.presentation)));
   const composed = report?.presentation?.version === "sec-presentation.v1" && report.presentation.sections.length > 0;
   const nodeSectionIndex = composed ? String(report!.presentation!.sections.length + 1).padStart(2, "0") : "04";
   const nodeSectionTitle = "原文与分析依据";
@@ -136,10 +136,11 @@ export function SecReportDocument({ companyName, filing }: { companyName: string
     return section.id === "sec-report-nodes" && !reader ? [sectionLink, ...nodeLinks] : [sectionLink];
   });
 
+  const Container = embedded ? "article" : "main";
   return (
-    <main className="sec-report-shell">
-      <ReportBackLink ticker={filing.ticker} />
-      <header className="sec-report-header">
+    <Container className="sec-report-shell">
+      {!embedded && <ReportBackLink ticker={filing.ticker} />}
+      {!embedded && <header className="sec-report-header">
         <div>
           <span className="sec-report-kicker">{group ? "财报期合并报告" : `${filing.form} · SEC 分析报告`}</span>
           <h1>{companyName}</h1>
@@ -151,17 +152,18 @@ export function SecReportDocument({ companyName, filing }: { companyName: string
           <div><dt>{group ? "业绩发布日" : "申报日"}</dt><dd>{formatDate(group?.earningsDate ?? filing.filingDate)}</dd></div>
           <div><dt>生成日期</dt><dd>{summary?.generatedAt.slice(0, 10) ?? "—"}</dd></div>
         </dl>
-      </header>
+      </header>}
       {renderWarnings.length > 0 && <p role="status" className="sec-report-empty">部分图文无法完整显示，已保留可用正文。详情见数据质量。</p>}
       {!reportReady ? (
         <section className="sec-report-pending" aria-labelledby="sec-report-pending-title">
-          <h2 id="sec-report-pending-title">完整报告生成中</h2>
-          <p>当前保留上一份可用简析。完整研报通过验证后会在此替换。</p>
+          <h2 id="sec-report-pending-title">{embedded ? summary ? "核心结论" : "暂无可用报告" : "完整报告生成中"}</h2>
+          <p>{embedded ? summary ? summary.headline : "可在生成记录中查看任务进度与失败原因。" : "当前保留上一份可用简析。完整研报通过验证后会在此替换。"}</p>
           {summary?.bullets.length ? <ConclusionList bullets={summary.bullets} /> : null}
+          {embedded && summary?.analystView && <p>{summary.analystView}</p>}
         </section>
       ) : (
         <>
-          <SecReportNavigator initialSections={navigationSections} />
+          {!embedded && <SecReportNavigator initialSections={navigationSections} />}
           <div data-report-sections>
             {reportSections.map((section, index) => (
               <section
@@ -197,7 +199,7 @@ export function SecReportDocument({ companyName, filing }: { companyName: string
         <a href={filing.indexUrl} rel="noopener noreferrer" target="_blank">在 EDGAR 阅读原始申报 ↗</a>
         <p>报告用于研究记录，不构成投资建议。数字与判断应回到原始申报核对。</p>
       </footer>
-    </main>
+    </Container>
   );
 }
 

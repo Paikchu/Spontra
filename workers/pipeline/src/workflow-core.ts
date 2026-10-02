@@ -125,6 +125,7 @@ export type WorkflowJobUpdate = {
 };
 
 export type SecPipelineOperations = {
+  loadFiling?(ticker: string, accessionNumber: string): Promise<SecFiling | null>;
   restoreAnalysis?(filing: SecFiling, reference: PreparedFilingReference): Promise<{ plan: SecNodePlan; nodes: SecNodeResult[]; review: ManagerReview; rounds: number } | null>;
   scanDisclosures?(filing: SecFiling, reference: PreparedFilingReference, index: number, execution?: SecModelExecution): Promise<DiscoveryChunk>;
   finishDiscovery?(filing: SecFiling, reference: PreparedFilingReference, chunks: DiscoveryChunk[]): Promise<{ groundedDisclosures: number }>;
@@ -160,8 +161,11 @@ export async function executeSecAnalysisWorkflow(
   operations: SecPipelineOperations,
 ) {
   if (params.regenerateReport && (params.requestedBy !== "manual" || !params.accessionNumber)) throw new Error("Report regeneration requires a manual request and an explicit accession");
-  const discovery = await step.do("discover", () => operations.discover(params.ticker));
-  if (operations.classifyEarnings && operations.groupEarnings) {
+  const targeted = params.regenerateReport && operations.loadFiling
+    ? await step.do("load-selected-filing", () => operations.loadFiling!(params.ticker, params.accessionNumber!)) : null;
+  if (params.regenerateReport && operations.loadFiling && !targeted) throw new Error("Requested filing is no longer available");
+  const discovery = targeted ? { feed: null, filings: [targeted] } : await step.do("discover", () => operations.discover(params.ticker));
+  if (!targeted && operations.classifyEarnings && operations.groupEarnings) {
     const periods = new Map<string, string | null>();
     for (const filing of discovery.filings) {
       const period = await step.do(`classify-earnings:${filing.accessionNumber}`, (context) => operations.classifyEarnings!(filing, executionFor(context))).catch(() => null);
@@ -170,7 +174,7 @@ export async function executeSecAnalysisWorkflow(
     discovery.filings = await step.do("group-earnings", () => operations.groupEarnings!(discovery.filings, periods));
     discovery.feed = { ...(discovery.feed as Record<string, unknown>), filings: discovery.filings };
   }
-  await step.do("publish-feed", () => operations.publishFeed(discovery.feed));
+  if (!targeted) await step.do("publish-feed", () => operations.publishFeed(discovery.feed));
   const analyzed: string[] = [];
   const skipped: string[] = [];
   const failed: string[] = [];

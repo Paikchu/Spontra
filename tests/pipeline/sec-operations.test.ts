@@ -424,7 +424,7 @@ test("publishes event summaries without creating a structured filing artifact", 
     SEC_FILINGS: { async get() { return null; }, async put() { return {}; } },
     DB: {
       prepare(sql: string) {
-        return { bind(...values: unknown[]) { return { async run() { stored.push({ sql, values }); return {}; } }; } };
+        return { bind(...values: unknown[]) { return { async first() { return null; }, async run() { stored.push({ sql, values }); return {}; } }; } };
       },
     },
   } as unknown as SecPipelineEnv;
@@ -436,9 +436,11 @@ test("publishes event summaries without creating a structured filing artifact", 
 
   await createSecPipelineOperations(env).publishEvent(summary);
 
-  assert.equal(stored.length, 1);
-  assert.match(stored[0]!.sql, /sec_filing_summaries/);
-  assert.deepEqual(stored[0]!.values, ["MSFT", "event", "2026-08-10T00:00:00.000Z", JSON.stringify(summary)]);
+  assert.equal(stored.length, 2);
+  assert.match(stored[0]!.sql, /sec_cache/);
+  assert.equal(stored[0]!.values[0], "admin:summary:MSFT:event:2026-08-10T00:00:00.000Z");
+  assert.match(stored[1]!.sql, /sec_filing_summaries/);
+  assert.deepEqual(stored[1]!.values, ["MSFT", "event", "2026-08-10T00:00:00.000Z", JSON.stringify(summary)]);
 });
 
 test("rejects an event summary whose form does not match the filing it targets", async () => {
