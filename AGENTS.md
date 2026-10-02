@@ -21,7 +21,7 @@
 
 推送 `origin/main` 触发两个独立构建，根目录均为 `/`：
 
-- 主应用及 `sec-cron`：构建 `npm run build`，CI 执行 `npm run deploy:cloudflare`。
+- 主应用、`sec-cron`、业务地图及官网 `spontra-marketing`：构建 `npm run build`，CI 执行 `npm run deploy:cloudflare`。该入口同时构建并发布独立官网 Workers Static Assets（`apps/marketing`）。
 - 财报 Pipeline：构建 `npm run check:pipeline:boundary && npm run typecheck:pipeline && npm run worker:pipeline:check`，CI 执行 `npm run worker:pipeline:deploy`。
 
 涉及两个目标的修改须分别核验结果。主应用自动发布包含投资账本迁移；Pipeline 自动发布只核对分析数据库迁移，不自动应用迁移。若修改依赖新迁移，应完善自动发布流程后再上线。

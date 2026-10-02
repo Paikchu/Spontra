@@ -16,6 +16,7 @@ try {
   run('npm', ['run', 'business-site:typecheck']);
   run('npm', ['run', 'business-site:test']);
   run('npm', ['run', 'business-site:build']);
+  run('npm', ['run', 'marketing:build']);
   run('npm', ['run', 'db:migrate:remote']);
   const args = ['node_modules/wrangler/bin/wrangler.js', 'deploy', '--config', 'dist/server/wrangler.json', '--keep-vars'];
   if (credential) {
@@ -30,4 +31,6 @@ try {
   delete siteEnv.WRANGLER_CI_OVERRIDE_NAME;
   delete siteEnv.WRANGLER_CI_MATCH_TAG;
   run(process.execPath, ['node_modules/wrangler/bin/wrangler.js', 'deploy', '--config', 'apps/business-site/wrangler.jsonc', '--keep-vars'], siteEnv);
+  // Public marketing website: static assets only, published by the same main build.
+  run('npm', ['run', 'marketing:deploy:ci']);
 } finally { rmSync(directory, { recursive: true, force: true }); }

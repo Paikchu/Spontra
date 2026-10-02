@@ -54,3 +54,7 @@ next-env.d.ts
 
 /apps/business-site/dist/
 /apps/business-site/.wrangler/
+
+# Marketing website generated assets and local Wrangler state
+/apps/marketing/dist/
+/apps/marketing/.wrangler/
