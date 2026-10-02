@@ -56,6 +56,9 @@ test("unresolvable citations and unbacked chart blocks cannot publish", async t 
   assert.equal((await repo.reports()).reports.length, 0);
   const chart = report(); chart.content = [{ blockId: "made-up", type: "chart", metricKey: "revenue", mark: "line", title: "Revenue", caption: "Unsupported", evidenceIds: ["source1"] }];
   assert.equal(RESEARCH_REPORT_SCHEMA.safeParse(chart).success, false);
+  const figure = report(); figure.content = [{ blockId: "made-up", type: "figure", figureKey: "growth:2026-06-30", title: "Revenue", caption: "Unsupported", evidenceIds: ["source1"] }];
+  assert.equal(RESEARCH_REPORT_SCHEMA.safeParse(figure).success, false);
+  assert.equal(RESEARCH_REPORT_SCHEMA.safeParse(report()).success, true);
 });
 
 test("concurrent budget claims stay capped; a new UTC day gets a fresh budget", async t => {

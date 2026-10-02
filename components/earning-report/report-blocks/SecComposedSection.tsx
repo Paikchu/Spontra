@@ -1,7 +1,7 @@
 import type { PublishedSecReport } from '@/shared/analysis-contract/report.ts';
 import type { SecPresentation } from '@/shared/analysis-contract/sec-presentation.ts';
 import { ReportBlockList } from './ReportBlocks.tsx';
-import { SecTrendFigure, SecTrendSource } from './SecTrendFigure.tsx';
+import { SecTrendFigure, SecTrendSource } from '../figures/index.ts';
 
 export function SecComposedSection({ section, report }: { section: SecPresentation['sections'][number]; report: PublishedSecReport }) {
   return <div className="sec-composed-content" data-layout={section.layout} data-density={report.presentation?.density}>

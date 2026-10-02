@@ -40,7 +40,7 @@ export const RESEARCH_REPORT_SCHEMA = z.strictObject({
     if (blocks.has(block.blockId)) ctx.addIssue({ code: "custom", path: ["content", index], message: "Duplicate block ID" });
     blocks.add(block.blockId);
     // Research has no financial chart/asset manifest. Never invent a financial series.
-    if (block.type === "chart" || block.type === "image") ctx.addIssue({ code: "custom", path: ["content", index], message: "Missing chart or asset manifest" });
+    if (block.type === "chart" || block.type === "figure" || block.type === "image") ctx.addIssue({ code: "custom", path: ["content", index], message: "Missing chart or asset manifest" });
     for (const id of block.evidenceIds) if (!sources.has(id)) ctx.addIssue({ code: "custom", path: ["content", index], message: `Unknown source ${id}` });
   });
   for (const hypothesis of report.hypotheses) for (const id of hypothesis.evidenceIds) {

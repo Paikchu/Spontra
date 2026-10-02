@@ -1,24 +1,30 @@
 import type { SecPresentation, SecPresentationBlock, SecTrend } from '../../../../shared/analysis-contract/sec-presentation.ts';
-import type { PublishedSecReport, SecAnalysisBrief } from './analysis.ts';
+import type { PublishedSecReport, SecAnalysisBrief, SecHistorySeries } from './analysis.ts';
 import type { SecNodeResult } from './sec.ts';
 
 /** Freeze only comparable, validated observations available as of this filing. */
 export function buildSecTrends(brief: SecAnalysisBrief, filingDate: string, reportDate: string): SecTrend[] {
   return brief.history.series.flatMap((series): SecTrend[] => {
-    const candidates = (brief.periodScope === 'annual' ? series.annual : series.quarters)
-      .filter((p) => p.qualityStatus === 'validated_xbrl' && p.periodScope === brief.periodScope
-        && p.endDate <= reportDate && p.sourceFiledAt <= filingDate && p.value.trim() !== '' && Number.isFinite(Number(p.value)))
-      .sort((a, b) => b.endDate.localeCompare(a.endDate) || b.sourceFiledAt.localeCompare(a.sourceFiledAt));
-    const newest = candidates[0];
-    if (!newest) return [];
-    const seen = new Set<string>();
-    const points = candidates.filter((p) => {
-      if (p.unit !== newest.unit || p.currency !== newest.currency || p.basis !== newest.basis || seen.has(p.endDate)) return false;
-      seen.add(p.endDate);
-      return true;
-    }).slice(0, 8).reverse().map((p) => ({ date: p.endDate, value: Number(p.value), accession: p.sourceAccession }));
-    return points.length < 2 ? [] : [{ metricKey: series.seriesId, unit: newest.currency || newest.unit, basis: newest.basis, periodScope: brief.periodScope, points }];
+    const trend = verifiedTrend(series, brief.periodScope, filingDate, reportDate);
+    return trend ? [trend] : [];
   });
+}
+
+/** One comparable unit/currency/basis, newest observation per period, as filed by this filing date. */
+export function verifiedTrend(series: SecHistorySeries, periodScope: SecAnalysisBrief['periodScope'], filingDate: string, reportDate: string): SecTrend | undefined {
+  const candidates = (periodScope === 'annual' ? series.annual : series.quarters)
+    .filter((p) => p.qualityStatus === 'validated_xbrl' && p.periodScope === periodScope
+      && p.endDate <= reportDate && p.sourceFiledAt <= filingDate && p.value.trim() !== '' && Number.isFinite(Number(p.value)))
+    .sort((a, b) => b.endDate.localeCompare(a.endDate) || b.sourceFiledAt.localeCompare(a.sourceFiledAt));
+  const newest = candidates[0];
+  if (!newest) return undefined;
+  const seen = new Set<string>();
+  const points = candidates.filter((p) => {
+    if (p.unit !== newest.unit || p.currency !== newest.currency || p.basis !== newest.basis || seen.has(p.endDate)) return false;
+    seen.add(p.endDate);
+    return true;
+  }).slice(0, 8).reverse().map((p) => ({ date: p.endDate, value: Number(p.value), accession: p.sourceAccession }));
+  return points.length < 2 ? undefined : { metricKey: series.seriesId, unit: newest.currency || newest.unit, basis: newest.basis, periodScope, points };
 }
 
 const record = (v: unknown): Record<string, unknown> | null => v !== null && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : null;

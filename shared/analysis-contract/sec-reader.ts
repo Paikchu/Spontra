@@ -7,9 +7,10 @@ export const SEC_READER_VISUAL_CATALOG = {
   chart_focus: "图文分析：先提出问题和解释，再在content中展示chart及局限；两期比较用紧凑侧图，多期趋势可用宽图。",
   rules: [
     "每节必须输出visual，先按业务问题选择layout并写rationale，不按章节序号轮换模板。适合时使用至少两种版式。",
-    "每节审视availableCharts：有直接相关的可比数据时主动选择chart；否则填写具体noChartReason。不要无理由省略全部图表。",
+    "每节审视availableCharts和availableFigures：有直接相关的可比数据时主动选择chart或figure；否则填写具体noChartReason。不要无理由省略全部图表。",
     "chart只能引用availableCharts.metricKey，趋势用line、跨期规模比较用bar；title表达观察问题，caption解释图能说明什么及不能证明什么。禁止生成数据点或HTML/CSS。",
-    "comparison的paragraphLabels与markdown正文块一一对应；其他模板不需要。图表可搭配任何模板，每节最多一张，不重复展示同一指标；v2将图表放在content的相关论述之后，不再在visual重复配置chart。",
+    "comparison的paragraphLabels与markdown正文块一一对应；其他模板不需要。图表可搭配任何模板，每节chart最多一张、chart与figure合计最多两张，不重复展示同一指标；v2将图表放在content的相关论述之后，不再在visual重复配置chart。",
+    "availableFigures是系统用已核验XBRL预先算好的图形组件（关键数字条、收入与增速、三道利润率、收入到净利润的流向、每100元收入的去向、利润到自由现金流、现金与债务、股数变化）。按每项answers判断它能否直接回答本节问题，能则用figure放在解释它的论述之后；figure与chart不要重复表达同一指标。每个figureKey全篇最多用一次，不适合时不用。",
   ],
 } as const;
 
@@ -78,6 +79,7 @@ export const SEC_READER_SCHEMA = {
     common: "{blockId:稳定且全篇唯一的英文标识,type,evidenceIds:[本期证据ID],groupId?:相关图文分组ID,layout?:inline|aside|wrap|wide}",
     markdown: "{...common,type:markdown,markdown:一段完整正文}",
     chart: "{...common,type:chart,metricKey:availableCharts中的指标,mark:line|bar,title,caption}",
+    figure: "{...common,type:figure,figureKey:availableFigures中的figureKey,title,caption}：图形与数值由系统绘制，只选择组件并写标题和图注。",
     image: "{...common,type:image,assetId:availableAssets中的ID,alt,caption}",
     math: "{...common,type:math,latex,displayMode:true|false,explanation,assumption?:分析假设}",
     table: "{...common,type:table,headers:[string],rows:[[string]],caption,density?:compact|comfortable,columnKinds?:[label|number|text]}：列类型顺序与headers一致；label为行名，number为可比较的短数值，text为可换行的说明。",
@@ -97,7 +99,8 @@ export const SEC_READER_SCHEMA = {
     SEC_REPORT_STYLE_RULES,
     "输出version=sec-reader.v2，写一篇可独立阅读、逻辑递进的完整文章；通常3–8节、最多16节，每节2–4个markdown正文块（最多8个），标题围绕本公司真正的问题自拟。不是节点拼接或摘要。",
     "content每个元素必须是JSON对象，不能是字符串或字符串化JSON；markdown正文写在对象的markdown字段，必须同时提供blockId/type/evidenceIds。contentExample只是对象结构示例，不能复制示例文字或占位引用。content为唯一正文，按读者阅读顺序穿插正文与媒体。paragraphs由系统投影，不要再写第二份正文。相关图文用相同groupId且连续排列，例如首段markdown→chart(layout=wrap)→解释markdown，三块共用groupId。小型比较图可选wrap，复杂图选wide；布局不改变内容顺序。",
-    "每块必须有稳定且全篇唯一的blockId，例如cash-definition或capex-comparison；修订文字、移动块时保持原blockId。禁止按段落内容hash生成ID。图表只能引用availableCharts，不得自造points；图片只能引用availableAssets（为空时禁止image），不得输出URL、base64、HTML或内联SVG。",
+    "每块必须有稳定且全篇唯一的blockId，例如cash-definition或capex-comparison；修订文字、移动块时保持原blockId。禁止按段落内容hash生成ID。图表只能引用availableCharts，图形组件只能引用availableFigures，不得自造points或数据；图片只能引用availableAssets（为空时禁止image），不得输出URL、base64、HTML或内联SVG。",
+    "figure的title写观察对象或有证据的结论，caption说明该图能说明什么、不能证明什么（参照limits）；caption中的数字必须与availableFigures.data一致。",
     "图注、公式、表格、提示中的所有事实和数字同正文一样必须由evidenceIds支持；公式给出解释，假设单列assumption；表格列数一致，不能填入推测财务数值。美元金额不写单美元数学标记。",
     "当同口径的多个期间、业务或情景有较多可比较数值时，优先在相关论述旁使用独立table块；少量关键数字和因果解释仍写正文。由你按分析问题决定行列、标题、列类型及compact/comfortable密度，不输出HTML/CSS。通常控制在2–6列；宽表应按共同口径拆成多个有意义的小表，不把订阅KPI、长篇解释和财务数字硬塞进同一张表。caption写明单位、期间、口径和必要的来源差异；缺值写明未披露，不填零。number列只放短数值，长说明放text列并保持可读；每个单元格及跨期可比性均须有证据，无法核实则不要制表。",
     "sections必须包含独立bear_case和valuation；其余章节按重要性选择。高重要性节点必须在相关章节被整合，低重要性节点留在核查材料。",

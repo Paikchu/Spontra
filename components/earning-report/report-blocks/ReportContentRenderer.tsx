@@ -5,7 +5,7 @@ import { StreamingReportText } from "../rich-text/StreamingReportText.tsx";
 import { ReportMarkdown, ReportFormula, safeReportUrl } from "./ReportMarkdown.tsx";
 import { ReportAssetImage } from "./ReportAssetImage.tsx";
 import { ReportMediaGroup } from "./ReportMediaGroup.tsx";
-import { readableTrend, SecTrendFigure, SecTrendSource } from "./SecTrendFigure.tsx";
+import { findSecFigure, readableTrend, SecFigureSource, SecFigureView, SecTrendFigure, SecTrendSource } from "../figures/index.ts";
 import type { ResearchSource } from "@/shared/analysis-contract/research.ts";
 
 export type ReportContentContext = { report?: PublishedSecReport; sources?: ResearchSource[]; nodes?: SecNodeResult[]; assets?: SecReaderAsset[]; paragraphLabels?: Record<string, string> };
@@ -55,6 +55,10 @@ function ContentBlock({ block, domId, context, active }: { block: SecReaderConte
       const trend = readableTrend(context.report?.trends?.find((t) => t.metricKey === block.metricKey));
       return trend ? <SecTrendFigure id={`${domId}-figure`} title={block.title} trend={trend} mark={block.mark} caption={block.caption} /> : <div className="report-content-fallback"><strong>{block.title}</strong><p>暂无可绘制的可比数据。</p><p>{block.caption}</p></div>;
     }
+    case "figure": {
+      const figure = findSecFigure(context.report?.figures, block.figureKey);
+      return figure ? <SecFigureView id={`${domId}-figure`} figure={figure} title={block.title} caption={block.caption} /> : <div className="report-content-fallback"><strong>{block.title}</strong><p>该图所需的已核验数据暂不可用。</p><p>{block.caption}</p></div>;
+    }
     case "image": {
       const candidate = (context.assets ?? context.report?.reader?.assets)?.find((asset) => asset.assetId === block.assetId);
       const parsed = SEC_READER_ASSET_SCHEMA.safeParse(candidate);
@@ -82,6 +86,10 @@ function ContentBlock({ block, domId, context, active }: { block: SecReaderConte
 
 function BlockSource({ block, context }: { block: SecReaderContentBlock; context: ReportContentContext }) {
   if (context.sources && block.type !== "evidence" && block.evidenceIds.length) return <ResearchSources ids={block.evidenceIds} sources={context.sources} />;
+  if (block.type === "figure") {
+    const figure = findSecFigure(context.report?.figures, block.figureKey);
+    return figure ? <SecFigureSource figure={figure} title={block.title} /> : null;
+  }
   if (block.type !== "chart") return null;
   const trend = readableTrend(context.report?.trends?.find((t) => t.metricKey === block.metricKey));
   return trend ? <Fragment><SecTrendSource title={block.title} trend={trend} /></Fragment> : null;

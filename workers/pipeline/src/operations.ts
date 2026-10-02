@@ -28,6 +28,7 @@ import {
 } from "./sec/pipeline.ts";
 import { SEC_PRESENTATION_SCHEMA } from "../../../shared/analysis-contract/sec-presentation.ts";
 import { buildSecTrends, composeSecPresentation } from "./sec/presentation.ts";
+import { figureCatalog } from "./sec/figures.ts";
 import { D1SecRepository } from "./sec/d1.ts";
 import type { SecAnalysisArtifact } from "./sec/types.ts";
 import { cleanSecAccession, cleanSecTicker, type SecFiling, type SecFilingFeed, type SecFilingSummary, type SecNodePlan, type SecNodeResult, type SecNodeSpec } from "./sec/sec.ts";
@@ -347,7 +348,7 @@ export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof
       const marketSnapshot = await identifyReaderMarketSnapshot(result.artifact.filing.ticker, result.artifact.report.marketSnapshot);
       const audit = await modelFor(execution)(`editorial-review:${round}`, EDITORIAL_REVIEW_PROMPT, {
           headline: result.summary.headline, bullets: result.summary.bullets, analystView: result.summary.analystView,
-          reader: result.artifact.report.reader, availableCharts: result.artifact.report.trends ?? [], financialLens: result.artifact.report.financialLens, marketSnapshot,
+          reader: result.artifact.report.reader, availableCharts: result.artifact.report.trends ?? [], availableFigures: figureCatalog(result.artifact.report.figures ?? []), financialLens: result.artifact.report.financialLens, marketSnapshot,
           facts: brief.currentFacts, comparisons: brief.comparisons, history: brief.history, historicalReports: brief.reportContinuity,
           nodes: nodes.map(({ id, title, facts, evidence, narrative, findings }) => ({ id, title, facts, evidence, narrative, findings })),
           limitations: result.artifact.report.dataQuality,

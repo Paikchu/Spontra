@@ -12,10 +12,11 @@ const httpsUrl = /^https:\/\/(?:[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?|\[[0-9
 const assetUrl = /^(?:https:\/\/(?:[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?|\[[0-9A-Fa-f:]+\])(?::[0-9]{1,5})?(?:[/?#][^\s\\\u0000-\u001f\u007f]*)?|\/(?![\/\\])[^\s\\\u0000-\u001f\u007f]*)$/;
 const common = { blockId: id, evidenceIds: references.max(80), groupId: id.optional(), layout: layout.optional() };
 
-/** Values and asset URLs are resolved by the application, never supplied by chart/image blocks. */
+/** Values and asset URLs are resolved by the application, never supplied by chart/figure/image blocks. */
 export const SEC_READER_CONTENT_BLOCK_SCHEMA = z.discriminatedUnion("type", [
   z.strictObject({ ...common, type: z.literal("markdown"), markdown: text(1800) }),
   z.strictObject({ ...common, type: z.literal("chart"), metricKey: text(120), mark: z.enum(["line", "bar"]), title: text(120), caption: text(500) }),
+  z.strictObject({ ...common, type: z.literal("figure"), figureKey: id, title: text(120), caption: text(500) }),
   z.strictObject({ ...common, type: z.literal("image"), assetId: id, alt: text(300), caption: text(500) }),
   z.strictObject({ ...common, type: z.literal("math"), latex: text(4000), displayMode: z.boolean(), explanation: text(1000), assumption: text(500).optional() }),
   z.strictObject({ ...common, type: z.literal("table"), headers: z.array(text(160)).min(1).max(12), rows: z.array(z.array(z.string().max(1000)).min(1).max(12)).min(1).max(40), caption: text(500), density: z.enum(["compact", "comfortable"]).optional(), columnKinds: z.array(z.enum(["label", "number", "text"])).min(1).max(12).optional() }),
@@ -68,7 +69,7 @@ export function readerContentText(content: SecReaderContentBlock[]): string[] {
   return content.map((block) => {
     switch (block.type) {
       case "markdown": return block.markdown;
-      case "chart": return `${block.title}\n${block.caption}`;
+      case "chart": case "figure": return `${block.title}\n${block.caption}`;
       case "image": return `${block.alt}\n${block.caption}`;
       case "math": return [block.latex, block.explanation, block.assumption].filter(Boolean).join("\n");
       case "table": return [block.caption, block.headers.join(" | "), ...block.rows.map((r) => r.join(" | "))].join("\n");

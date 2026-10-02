@@ -2,6 +2,7 @@ import { validateAiFiscalPeriod, FISCAL_PERIOD_INSTRUCTION } from "./fiscal-peri
 import { enforceDiscoveryCoverage } from "./discovery.ts";
 import type { SecSourceMaterial } from "../../../../shared/analysis-contract/sec-presentation.ts";
 import { buildSecTrends, composeSecPresentation } from "./presentation.ts";
+import { buildSecFigures, figureCatalog } from "./figures.ts";
 import { CONTINUITY_PROMPT, continuityReviewNode } from "./continuity.ts";
 import { applyEditorialPatch, assertReaderIntegrity, editorialRequirements, EDITORIAL_PATCH_PROMPT } from "./editorial.ts";
 import { SEC_READER_SCHEMA, SEC_REPORT_STYLE_RULES } from "../../../../shared/analysis-contract/sec-reader.ts";
@@ -471,6 +472,8 @@ export async function summarizePreparedSecFiling(
     ...finalBrief.currentFacts.flatMap((fact) => fact.evidenceIds),
   ])].sort();
   const trends = buildSecTrends(finalBrief, prepared.filing.filingDate, prepared.filing.reportDate);
+  const figures = buildSecFigures(finalBrief, prepared.filing.filingDate, prepared.filing.reportDate);
+  const availableFigures = figureCatalog(figures);
   const reviewEvidenceIds = new Set([
     ...usableNodes.flatMap((node) => node.evidenceIds ?? []),
     ...finalBrief.currentFacts.flatMap((fact) => fact.evidenceIds),
@@ -495,6 +498,7 @@ export async function summarizePreparedSecFiling(
     disclosures: prepared.discovery?.disclosures ?? [],
     discoveryCoverage: prepared.discovery ? {scannedCharacters:prepared.discovery.scannedCharacters,totalCharacters:prepared.discovery.totalCharacters,warnings:prepared.discovery.warnings} : null,
     availableCharts: trends,
+    availableFigures,
     availableAssets: [],
     sourceMaterials: prepared.sourceMaterials ?? [],
     allowedEvidenceIds: [...readerEvidenceIds],
@@ -523,7 +527,7 @@ export async function summarizePreparedSecFiling(
         originalDraft: summaryValue, issues: problems, requiredTopics: summaryPayload.requiredTopics,
         primaryEvidence: summaryPayload.primaryEvidence, facts: finalBrief.currentFacts,
         nodeAnalyses: summaryPayload.nodeAnalyses, financialLens, marketSnapshot: summaryPayload.marketSnapshot,
-        readerSchema: SEC_READER_SCHEMA, availableAssets: [], allowedEvidenceIds: [...readerEvidenceIds], priorEvidenceIds, availableCharts: trends,
+        readerSchema: SEC_READER_SCHEMA, availableAssets: [], allowedEvidenceIds: [...readerEvidenceIds], priorEvidenceIds, availableCharts: trends, availableFigures,
         allowedSectionIds: allowedSections ? [...allowedSections] : null, rejectedPatch, patchError,
       });
       try { summaryValue = applyEditorialPatch(summaryValue, patch, allowedSections); }
@@ -543,7 +547,7 @@ export async function summarizePreparedSecFiling(
     try {
       if (editorialState && !summaryValue.readerReport) throw new Error("Reader report is missing; add grounded sections, changes and watch conditions using the patch schema");
       reader = summaryValue.readerReport ? normalizeReaderReport(summaryValue.readerReport, {
-        nodes, plan, currentEvidence: readerEvidenceIds, priorEvidence: new Set(priorEvidenceIds), chartKeys: new Set(trends.map((t) => t.metricKey)), requireVisual: true,
+        nodes, plan, currentEvidence: readerEvidenceIds, priorEvidence: new Set(priorEvidenceIds), chartKeys: new Set(trends.map((t) => t.metricKey)), figureKeys: new Set(figures.map((f) => f.figureKey)), requireVisual: true,
       }) : undefined;
       readerSummary = reader ? normalizeReaderSummaryText(summaryValue) : undefined;
       if (reader && readerSummary) {
@@ -575,7 +579,7 @@ export async function summarizePreparedSecFiling(
   report = addDeterministicDeltas(report, qoq, yoy);
   const presentation = reader ? undefined : composeSecPresentation(summaryValue.presentation, usableNodes, report.keyMetrics, trends);
   report = { ...report, ...(presentation ? { presentation } : {}), ...(reader ? { reader } : {}), financialLens,
-    marketSnapshot, trends, sourceMaterials: prepared.sourceMaterials };
+    marketSnapshot, trends, figures, sourceMaterials: prepared.sourceMaterials };
   report = {
     ...report,
     dataQuality: {

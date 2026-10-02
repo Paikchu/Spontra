@@ -4,6 +4,7 @@ import "./globals.css";
 import "./research-feed.css";
 import "./analysis/earning-report.css";
 import "@/components/earning-report/report-blocks/report-content.css";
+import "@/components/earning-report/figures/figures.css";
 import "katex/dist/katex.min.css";
 import "./spontra-ui.css";
 import "./analysis/stocks/[ticker]/business-flow.css";

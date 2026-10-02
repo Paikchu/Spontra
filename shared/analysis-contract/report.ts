@@ -67,6 +67,8 @@ export type SecDiscovery = {
 
 export type PublishedSecReport = {
   trends?: import("./sec-presentation.ts").SecTrend[];
+  /** Application-built figures the reader places by `figureKey`. */
+  figures?: import("../analysis-runtime/sec-figures.ts").SecFigure[];
   reader?: import("./sec-reader.ts").SecReaderReport;
   financialLens?: import("./sec-reader.ts").SecFinancialLens;
   marketSnapshot?: import("./sec-reader.ts").SecMarketSnapshot;

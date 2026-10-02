@@ -4,7 +4,7 @@ import { formatSecMetricValue, formatSecMetricLabel } from "@/lib/earning-report
 import { RichText } from "../rich-text/RichText.tsx";
 import { ReportContentRenderer } from "./ReportContentRenderer.tsx";
 import { ReportMediaGroup } from "./ReportMediaGroup.tsx";
-import { readableTrend, SecTrendFigure, SecTrendSource } from "./SecTrendFigure.tsx";
+import { readableTrend, SecTrendFigure, SecTrendSource } from "../figures/index.ts";
 
 const amount = (v: number, currency: string) => formatSecMetricValue("amount", String(v), currency, currency);
 

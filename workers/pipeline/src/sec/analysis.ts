@@ -1,6 +1,6 @@
 import type { SecPresentation, SecSourceMaterial } from "../../../../shared/analysis-contract/sec-presentation.ts";
 export const SEC_ANALYSIS_SCHEMA_VERSION = "sec-analysis.v3";
-export const SEC_ANALYSIS_PROMPT_VERSION = "sec-analysis-prompt.v7-reader-content";
+export const SEC_ANALYSIS_PROMPT_VERSION = "sec-analysis-prompt.v8-reader-figures";
 // One round, matching what the Manager Review prompt tells the model it gets. Raising this without
 // also rewriting that prompt makes the Manager hoard every repairTask into the first round.
 export const MAX_REPAIR_ROUNDS = 1;
@@ -233,6 +233,8 @@ export type ComparisonResult = {
 
 export type PublishedSecReport = {
   trends?: import("../../../../shared/analysis-contract/sec-presentation.ts").SecTrend[];
+  /** Application-built figures the reader places by `figureKey`. */
+  figures?: import("../../../../shared/analysis-runtime/sec-figures.ts").SecFigure[];
   reader?: import("../../../../shared/analysis-contract/sec-reader.ts").SecReaderReport;
   financialLens?: import("../../../../shared/analysis-contract/sec-reader.ts").SecFinancialLens;
   marketSnapshot?: import("../../../../shared/analysis-contract/sec-reader.ts").SecMarketSnapshot;

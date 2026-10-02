@@ -3,7 +3,7 @@ import test from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ReportContentRenderer } from "../components/earning-report/report-blocks/ReportContentRenderer.tsx";
 import { ReportMarkdown, ReportFormula, safeReportUrl } from "../components/earning-report/report-blocks/ReportMarkdown.tsx";
-import { SecTrendFigure, SecTrendSource } from "../components/earning-report/report-blocks/SecTrendFigure.tsx";
+import { SecTrendFigure, SecTrendSource } from "../components/earning-report/figures/index.ts";
 import { readerFilingFixture } from "./fixtures/sec-reader-fixture.ts";
 import type { SecReaderContentBlock } from "../shared/analysis-runtime/sec-reader-schema.ts";
 import type { SecTrend } from "../shared/analysis-contract/sec-presentation.ts";
@@ -120,4 +120,31 @@ test("content IDs cannot collide with section navigation or another rendering of
   const ids = [...html.matchAll(/\sid="([^"]+)"/g)].map((match) => match[1]);
   assert.equal(ids.length, new Set(ids).size);
   assert.equal((html.match(/data-block-id="sec-reader-1"/g) ?? []).length, 2);
+});
+
+test("every application-built figure renders from stored data, with its source table and a local fallback", async () => {
+  const { buildSecFigures } = await import("../workers/pipeline/src/sec/figures.ts");
+  const { buildSecAnalysisBrief } = await import("../workers/pipeline/src/sec/analysis.ts");
+  const { figureHistory, FIGURE_FILING_DATE, FIGURE_REPORT_DATE } = await import("./fixtures/sec-figure-fixture.ts");
+  const brief = buildSecAnalysisBrief({ ticker: "TEST", filingId: "new", periodId: `TEST:${FIGURE_REPORT_DATE}:quarter`, periodScope: "quarter", reportDate: FIGURE_REPORT_DATE, history: figureHistory(), memorySummary: "", memoryItems: [] });
+  const figures = buildSecFigures(brief, FIGURE_FILING_DATE, FIGURE_REPORT_DATE);
+  const report = { ...readerFilingFixture().analysis!, figures };
+  const block = (figureKey: string): SecReaderContentBlock => ({ type: "figure", blockId: figureKey.replace(":", "-"), figureKey, title: "图题", caption: "图注说明局限。", evidenceIds: ["ev:demand"] });
+  for (const figure of figures) {
+    const html = renderToStaticMarkup(<ReportContentRenderer content={[block(figure.figureKey)]} context={{ report }} />);
+    assert.match(html, new RegExp(`data-figure-kind="${figure.kind}"`), figure.kind);
+    assert.match(html, /图注说明局限。/);
+    assert.match(html, /查看数据与来源/);
+    assert.match(html, /acc-2026-06-30/);
+    assert.doesNotMatch(html, /NaN|Infinity|undefined/, figure.kind);
+  }
+  const flow = renderToStaticMarkup(<ReportContentRenderer content={[block(`profit_flow:${FIGURE_REPORT_DATE}`)]} context={{ report }} />);
+  assert.match(flow, /营收 12.4 亿美元|营收 1,240美元/);
+  const hundred = renderToStaticMarkup(<ReportContentRenderer content={[block(`per_hundred:${FIGURE_REPORT_DATE}`)]} context={{ report }} />);
+  assert.match(hundred, /净利润 22/);
+  assert.match(hundred, /17 → 22/);
+  const missing = renderToStaticMarkup(<ReportContentRenderer content={[block("growth:2099-01-01")]} context={{ report }} />);
+  assert.match(missing, /该图所需的已核验数据暂不可用/);
+  const damaged = { ...report, figures: [{ ...figures[0], series: [] }] };
+  assert.match(renderToStaticMarkup(<ReportContentRenderer content={[block(figures[0].figureKey)]} context={{ report: damaged }} />), /该图所需的已核验数据暂不可用/);
 });
