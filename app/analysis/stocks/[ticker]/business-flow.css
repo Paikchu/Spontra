@@ -142,7 +142,7 @@
 .flow-infographic__label{transition:transform 520ms cubic-bezier(.25,1,.5,1);font-variant-numeric:tabular-nums lining-nums;}
 .flow-infographic__name{font-size:15px;font-weight:700;fill:var(--foreground);}
 .flow-infographic__value{font-size:22px;font-weight:700;letter-spacing:-.02em;fill:var(--foreground);}
-.flow-infographic__detail{font-size:12px;font-weight:500;fill:var(--muted-foreground);}
+.flow-infographic__detail{font-size:13px;font-weight:500;fill:var(--muted-foreground);}
 .flow-infographic__node[data-tone="profit"] .flow-infographic__name,.flow-infographic__node[data-tone="profit"] .flow-infographic__value{fill:var(--flow-profit);}
 .flow-infographic__node[data-tone="expense"] .flow-infographic__name,.flow-infographic__node[data-tone="expense"] .flow-infographic__value{fill:var(--flow-expense);}
 .flow-infographic__node[data-net] .flow-infographic__value{font-size:28px;}

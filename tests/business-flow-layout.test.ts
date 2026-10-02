@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { enrichDisclosedRevenue } from "../lib/earning-report/web/company-revenue-disclosures";
 import { financialGraph } from "../lib/earning-report/web/business-flow-sankey";
-import { compactFlowValue, INFOGRAPHIC, layoutInfographic, type InfographicLayout, type PlacedNode } from "../lib/earning-report/web/business-flow-layout";
+import { compactFlowValue, estimateTextWidth, INFOGRAPHIC, layoutInfographic, type InfographicLayout, type PlacedNode } from "../lib/earning-report/web/business-flow-layout";
 import { businessFlowFixture } from "./fixtures/business-flow-fixture";
 
 const latest = [...businessFlowFixture.quarters].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd))[0];
@@ -64,4 +64,20 @@ test("compact amounts keep currency, sign and magnitude", () => {
   assert.equal(compactFlowValue(-8.4, { ...latest, scale: 1_000_000 }), "−$8.4M");
   assert.equal(compactFlowValue(1500, { ...latest, currency: "SEK", scale: 1_000_000 }), "1.5B SEK");
   assert.equal(compactFlowValue(null, latest), "未披露");
+});
+
+test("columns are spaced so labels never collide with another column's label or bar", () => {
+  for (const layout of [nvdaLayout(), layoutInfographic(financialGraph(latest))!]) {
+    const width = (n: PlacedNode) => Math.max(estimateTextWidth(n.label, 15, true) + 8 + estimateTextWidth("$000.0B", 22, true), estimateTextWidth("占收入 00.0% · 环比 +00.0%", 13));
+    const box = (n: PlacedNode) => {
+      const w = width(n), [top, bottom] = extent(n);
+      const [l, r] = n.side === "left" ? [n.x - INFOGRAPHIC.labelOffset - w, n.x] : n.side === "right" ? [n.x, n.x + layout.nodeWidth + INFOGRAPHIC.labelOffset + w] : [n.x + layout.nodeWidth / 2 - w / 2, n.x + layout.nodeWidth / 2 + w / 2];
+      return { n, l, r, top: n.side === "top" ? top : n.side === "bottom" ? n.y + n.h : n.y, bottom: n.side === "top" ? n.y : bottom };
+    };
+    const boxes = layout.nodes.map(box);
+    for (const a of boxes) {
+      assert.ok(a.l >= 0 && a.r <= layout.width, `${a.n.name} label inside width`);
+      for (const b of boxes) if (b.n.column !== a.n.column && a.top < b.bottom && b.top < a.bottom) assert.ok(a.r <= b.l || b.r <= a.l, `${a.n.name} / ${b.n.name} labels collide`);
+    }
+  }
 });

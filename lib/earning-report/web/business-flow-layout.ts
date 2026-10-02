@@ -8,7 +8,7 @@ export type PlacedLink = { source: string; target: string; value: number; tone: 
 export type InfographicLayout = { width: number; height: number; nodeWidth: number; nodes: PlacedNode[]; links: PlacedLink[] };
 
 /** Geometry for the editorial layout: profit rises, costs sink, labels sit outside the bars. */
-export const INFOGRAPHIC = { nodeWidth: 22, revenueHeight: 300, labelHeight: 84, sideLabelHeight: 80, gap: 18, lift: 64, drop: 56, step: 176, sideMargin: 190, centerMargin: 96, margin: 32 } as const;
+export const INFOGRAPHIC = { nodeWidth: 22, revenueHeight: 300, labelHeight: 54, sideLabelHeight: 50, gap: 18, lift: 56, drop: 48, minStep: 132, labelGap: 18, labelOffset: 12, margin: 32 } as const;
 
 const groupRank = (n: PlacedNode, hasInput: boolean) => n.tone === "expense" ? 2 : hasInput ? 0 : 1;
 
@@ -37,7 +37,23 @@ function band(x0: number, sy: number, x1: number, ty: number, h: number) {
   return `M${r(x0)},${r(sy)}C${r(xm)},${r(sy)} ${r(xm)},${r(ty)} ${r(x1)},${r(ty)}L${r(x1)},${r(ty + h)}C${r(xm)},${r(ty + h)} ${r(xm)},${r(sy + h)} ${r(x0)},${r(sy + h)}Z`;
 }
 
-export function layoutInfographic(graph: FinancialGraph): InfographicLayout | null {
+/** Approximate rendered width: CJK glyphs are one em, Latin digits and punctuation about 0.6 em. */
+export function estimateTextWidth(text: string, size: number, bold = false): number {
+  let em = 0;
+  for (const char of text) em += /[\u2e80-\u9fff\uf900-\ufaff\uff00-\uffef]/.test(char) ? 1 : char === " " ? 0.3 : 0.6;
+  return em * size * (bold ? 1.06 : 1);
+}
+
+/** Width of the default two-line label when the caller does not measure its own text. */
+const defaultLabelWidth = (n: PlacedNode) => Math.max(estimateTextWidth(n.label, 15, true) + 8 + estimateTextWidth("$000.0B", 22, true), estimateTextWidth("占收入 00.0% · 环比 +00.0%", 13));
+
+/** Horizontal span of a node's label relative to its column's x. */
+function labelSpan(n: PlacedNode, width: number): [number, number] {
+  const { nodeWidth, labelOffset } = INFOGRAPHIC;
+  return n.side === "left" ? [-labelOffset - width, 0] : n.side === "right" ? [0, nodeWidth + labelOffset + width] : [nodeWidth / 2 - width / 2, nodeWidth / 2 + width / 2];
+}
+
+export function layoutInfographic(graph: FinancialGraph, labelWidth: (n: PlacedNode) => number = defaultLabelWidth): InfographicLayout | null {
   if (!graph.links.length || !graph.nodes.length) return null;
   const depths = [...new Set(graph.nodes.map(n => n.depth))].sort((a, b) => a - b);
   const columnOf = new Map(depths.map((d, i) => [d, i]));
@@ -103,10 +119,24 @@ export function layoutInfographic(graph: FinancialGraph): InfographicLayout | nu
   for (const n of nodes) n.y += shift;
   const height = Math.max(...nodes.map(n => extent(n)[1])) + INFOGRAPHIC.margin;
 
-  const left = columns[0].some(n => n.side === "left") ? INFOGRAPHIC.sideMargin : INFOGRAPHIC.centerMargin;
-  const right = columns[last].some(n => n.side === "right") ? INFOGRAPHIC.sideMargin : INFOGRAPHIC.centerMargin;
-  for (const n of nodes) n.x = left + n.column * INFOGRAPHIC.step;
-  const width = left + last * INFOGRAPHIC.step + INFOGRAPHIC.nodeWidth + right;
+  // Column spacing is the smallest step at which no label touches a label or bar in another column.
+  const widths = new Map(nodes.map(n => [n.name, labelWidth(n)]));
+  const boxes = nodes.flatMap(n => {
+    const [top, bottom] = extent(n), [l, r] = labelSpan(n, widths.get(n.name)!);
+    const labelTop = n.side === "top" ? top : n.side === "bottom" ? n.y + n.h : n.y;
+    const labelBottom = n.side === "top" ? n.y : bottom;
+    return [{ column: n.column, l, r, top: labelTop, bottom: labelBottom }, { column: n.column, l: 0, r: INFOGRAPHIC.nodeWidth, top: n.y, bottom: n.y + n.h }];
+  });
+  let step: number = INFOGRAPHIC.minStep;
+  for (const a of boxes) for (const b of boxes) {
+    if (b.column <= a.column || a.bottom <= b.top || b.bottom <= a.top) continue;
+    step = Math.max(step, (a.r - b.l + INFOGRAPHIC.labelGap) / (b.column - a.column));
+  }
+  step = Math.ceil(step);
+  const left = Math.max(INFOGRAPHIC.margin, ...boxes.filter(b => b.column === 0).map(b => INFOGRAPHIC.margin - b.l));
+  const right = Math.max(INFOGRAPHIC.margin + INFOGRAPHIC.nodeWidth, ...boxes.filter(b => b.column === last).map(b => b.r + INFOGRAPHIC.margin));
+  for (const n of nodes) n.x = left + n.column * step;
+  const width = Math.ceil(left + last * step + right);
 
   // Bands leave and enter in the vertical order of their partners so they never cross at a bar.
   const out = new Map<string, number>(), into = new Map<string, number>();

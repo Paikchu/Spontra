@@ -3,7 +3,7 @@ import { useMemo, useState, type KeyboardEvent } from "react";
 import type { BusinessFlowQuarter, FlowMetric } from "@/shared/analysis-contract/business-flow";
 import { compareAmount, compareFlowAmounts, formatFlowValue, numeric } from "@/lib/earning-report/web/business-flow-model";
 import { financialGraph, metricLabels, type FinancialGraph } from "@/lib/earning-report/web/business-flow-sankey";
-import { compactFlowValue, layoutInfographic, type PlacedNode } from "@/lib/earning-report/web/business-flow-layout";
+import { compactFlowValue, estimateTextWidth, layoutInfographic, type PlacedNode } from "@/lib/earning-report/web/business-flow-layout";
 import { compareRevenueNode } from "@/lib/earning-report/web/revenue-tree";
 
 const ratioNames: Partial<Record<FlowMetric, string>> = { gross: "毛利率", operating: "营业利润率", pretax: "税前利润率", net: "净利率" };
@@ -29,25 +29,29 @@ function nodeText(n: PlacedNode, quarter: BusinessFlowQuarter, previous: Busines
   return { name: full.length > 12 ? full.slice(0, 11) + "…" : full, full, value: compactFlowValue(amount, quarter), detail, change };
 }
 
+const secondLine = (text: NodeText) => [text.detail, text.change].filter(Boolean).join(" · ");
+const valueSize = (n: PlacedNode) => n.name === "net" ? 28 : 22;
+/** Width of the two-line label, used by the layout to space columns. */
+const labelWidth = (n: PlacedNode, text: NodeText) => Math.max(estimateTextWidth(text.name, 15, true) + 8 + estimateTextWidth(text.value, valueSize(n), true), estimateTextWidth(secondLine(text), 13));
+
 function NodeLabel({ n, text, nodeWidth }: { n: PlacedNode; text: NodeText; nodeWidth: number }) {
-  const blockHeight = 76;
-  const [x, y, anchor]: [number, number, "start" | "middle" | "end"] = n.side === "top" ? [n.x + nodeWidth / 2, n.y - 8 - blockHeight, "middle"]
+  const first = valueSize(n) + 2, height = first + 20;
+  const [x, y, anchor]: [number, number, "start" | "middle" | "end"] = n.side === "top" ? [n.x + nodeWidth / 2, n.y - 8 - height, "middle"]
     : n.side === "bottom" ? [n.x + nodeWidth / 2, n.y + n.h + 8, "middle"]
-    : n.side === "left" ? [n.x - 14, n.y, "end"]
-    : [n.x + nodeWidth + 14, n.y, "start"];
+    : n.side === "left" ? [n.x - 12, n.y, "end"]
+    : [n.x + nodeWidth + 12, n.y, "start"];
+  const second = secondLine(text);
   return <g className="flow-infographic__label" style={{ transform: `translate(${x}px, ${y}px)` }} textAnchor={anchor}>
     <title>{text.full}</title>
-    <text className="flow-infographic__name" y={15}>{text.name}</text>
-    <text className="flow-infographic__value" y={40}>{text.value}</text>
-    {text.detail && <text className="flow-infographic__detail" y={58}>{text.detail}</text>}
-    {text.change && <text className="flow-infographic__detail" y={text.detail ? 75 : 58}>{text.change}</text>}
+    <text y={first}><tspan className="flow-infographic__name">{text.name}</tspan><tspan className="flow-infographic__value" dx={8}>{text.value}</tspan></text>
+    {second && <text className="flow-infographic__detail" y={first + 18}>{second}</text>}
   </g>;
 }
 
 export function FinancialSankey({quarter,previous,onSegment}:{quarter:BusinessFlowQuarter;previous:BusinessFlowQuarter|null;onSegment:(id:string)=>void}){
  const graph=useMemo(()=>financialGraph(quarter),[quarter]);
  const previousGraph=useMemo(()=>previous?financialGraph(previous):null,[previous]);
- const layout=useMemo(()=>layoutInfographic(graph),[graph]);
+ const layout=useMemo(()=>{const revenue=graph.nodes.find(n=>n.name==="revenue")?.value??null;return layoutInfographic(graph,n=>labelWidth(n,nodeText(n,quarter,previous,previousGraph,revenue)));},[graph,quarter,previous,previousGraph]);
  const [active,setActive]=useState<string|null>(null);
  const signed = Object.entries(quarter.figures).some(([key,amount])=>key!=="other" && (numeric(amount)??0)<0) || (quarter.expenseComponents??[]).some(c=>(numeric(c.amount)??0)<0);
  if(signed||quarter.incomeModel==="insurance"||quarter.incomeModel==="financial")return <SignedFinancialBridge quarter={quarter} previous={previous}/>;
