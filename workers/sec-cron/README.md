@@ -1,6 +1,6 @@
 # 投资记录定时任务 Worker
 
-Cloudflare 名称：`max-investment-record-sec-cron`。这是 investment-record 项目的一部分，
+Cloudflare 名称：`spontra-max-data-sync`。这是 investment-record 项目的一部分，
 源码已由 `Paikchu/investment-record` 仓库维护，不需要从 earning-report-analysis 再迁入。
 名称中的 `sec` 来自历史用途；当前两条 Cron 的主要职责是组合数据和财报日历。
 

@@ -3,7 +3,7 @@ import { selectFlow } from "@/lib/earning-report/web/business-flow-model";
 import { checkCompleteFlow, newestPair } from "@/shared/analysis-runtime/financial-data/completeness";
 import type { CompleteFlowPublication } from "@/shared/analysis-contract/complete-business-flow";
 import {withLegacyInterestFormula} from "@/shared/analysis-runtime/financial-data/disclosed-quarter";
-const PUBLIC_ORIGIN="https://spontra.max-zhangyuchen.workers.dev";
+const PUBLIC_ORIGIN="https://spontra-app.max-zhangyuchen.workers.dev";
 export type SiteEnv={ASSETS:{fetch(request:Request):Promise<Response>};PUBLIC_READ_LIMIT:{limit(options:{key:string}):Promise<{success:boolean}>}};
 export type SiteContext={waitUntil(promise:Promise<unknown>):void};
 const security={"x-content-type-options":"nosniff","referrer-policy":"strict-origin-when-cross-origin","content-security-policy":"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"};

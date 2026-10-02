@@ -27,7 +27,7 @@ test("limiter rejects excess requests and fails closed without a binding",async(
 });
 test("only fixed public reads occur, with no cookie or authentication forwarded",async()=>{
  const seen:Request[]=[];await loadPublicFlow("MSFT",async(input,init)=>{const req=new Request(input,init);seen.push(req);return success(input,init);});
- assert.equal(seen.length,1);assert.equal(seen[0].url,"https://spontra.max-zhangyuchen.workers.dev/api/analysis/v1/companies/MSFT/business-flow");assert.equal(seen[0].headers.get("authorization"),null);assert.equal(seen[0].headers.get("cookie"),null);
+ assert.equal(seen.length,1);assert.equal(seen[0].url,"https://spontra-app.max-zhangyuchen.workers.dev/api/analysis/v1/companies/MSFT/business-flow");assert.equal(seen[0].headers.get("authorization"),null);assert.equal(seen[0].headers.get("cookie"),null);
 });
 test("missing quarters remain empty, upstream errors expose no detail, mismatched tickers never leak",async()=>{
  const empty=await handle(request("/api/business/v1/companies/NVDA"),env,context,success);assert.equal((await empty.json() as {flow:null}).flow,null);

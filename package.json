@@ -22,7 +22,7 @@
     "market-close:check": "node --experimental-strip-types scripts/validate-market-close-briefs.ts",
     "db:generate": "drizzle-kit generate",
     "sec-cron:check": "wrangler deploy --config workers/sec-cron/wrangler.jsonc --dry-run",
-    "sec-cron:deploy": "env -u WRANGLER_CI_OVERRIDE_NAME -u WRANGLER_CI_MATCH_TAG wrangler deploy --config workers/sec-cron/wrangler.jsonc --name max-investment-record-sec-cron --keep-vars",
+    "sec-cron:deploy": "env -u WRANGLER_CI_OVERRIDE_NAME -u WRANGLER_CI_MATCH_TAG wrangler deploy --config workers/sec-cron/wrangler.jsonc --name spontra-max-data-sync --keep-vars",
     "db:migrate:remote": "wrangler d1 migrations apply DB --remote --config wrangler.jsonc",
     "deploy:cloudflare": "node scripts/deploy-cloudflare-ci.mjs",
     "test:earning-report": "node --experimental-strip-types --test tests/earning-report-integration.test.ts tests/earning-report-rich-text.test.ts",

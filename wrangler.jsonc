@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "spontra",
+  "name": "spontra-app",
   "main": "./worker/index.ts",
   "compatibility_date": "2026-09-08",
   "compatibility_flags": [
@@ -24,7 +24,7 @@
   "services": [
     {
       "binding": "EARNING_REPORT_PIPELINE",
-      "service": "earning-report-analysis-sec-pipeline"
+      "service": "spontra-analysis"
     }
   ]
 }
