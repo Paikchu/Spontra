@@ -7,6 +7,7 @@ import { CountUp } from "@/components/spontra/effects";
 import { Delta, NodeArrow } from "@/components/spontra/primitives";
 import { money, number } from "@/lib/portfolio-format";
 import { ResearchFeed } from "./research-feed";
+import { InstructionLauncher } from "./instruction-launcher";
 
 /** Today: the account summary sits above the report list; the open report fills the rest of the page. */
 export function TodayDashboard({
@@ -60,6 +61,7 @@ export function TodayDashboard({
       <div className="today-ambient" aria-hidden="true" />
       <h1 className="sr-only" id="today-title">{t("今日")}</h1>
       <ResearchFeed summary={summary} />
+      <InstructionLauncher />
     </div>
   );
 }
