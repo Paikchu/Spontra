@@ -186,6 +186,9 @@ input:focus-visible,
   width: 100%;
   min-width: 0 !important;
 }
+.map-content .business-flow__canvas .business-flow__businesses {
+  grid-template-columns: 1fr;
+}
 .map-content .business-flow__businesses {
   margin: 0;
   gap: 16px;

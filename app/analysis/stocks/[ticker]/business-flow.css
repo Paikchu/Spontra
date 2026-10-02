@@ -85,12 +85,13 @@
 .business-flow__mobile-other{display:none;}
 @media(max-width:620px){.business-flow__mobile-other{display:block;font-size:12px;line-height:1.7;color:var(--muted-foreground);}}
 
-.business-flow__canvas{display:grid;grid-template-columns:minmax(220px,25%) minmax(0,1fr);gap:24px;align-items:start;}
+/* Business cards sit above the diagram so the editorial Sankey gets the full width. */
+.business-flow__canvas{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;align-items:start;}
 .business-flow__financial{min-width:0;}
-.business-flow__canvas .business-flow__businesses{grid-template-columns:1fr;margin:20px 0;gap:12px;}
+.business-flow__canvas .business-flow__businesses{grid-template-columns:repeat(auto-fill,minmax(200px,1fr));margin:16px 0 4px;gap:12px;align-items:start;}
 .business-flow__business-basis{font-size:12px;line-height:1.7;color:var(--muted-foreground);margin:0;}
 .business-flow__segment .business-flow__business-panel{border-radius:0 0 12px 12px;padding:12px;box-shadow:none;max-height:430px;}
-@media(max-width:760px){.business-flow__canvas{grid-template-columns:1fr;gap:8px;}.business-flow__canvas .business-flow__businesses{margin:16px 0;}}
+@media(max-width:760px){.business-flow__canvas .business-flow__businesses{grid-template-columns:1fr;margin:16px 0;}}
 
 .business-flow__available-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin:20px 0;padding:16px 0;border-block:1px solid var(--border);}
 .business-flow__available-metrics>div{display:flex;flex-direction:column;gap:6px;font-size:14px;}
