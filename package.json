@@ -58,7 +58,7 @@
     "admin:build": "npm run build --workspace @spontra/admin",
     "admin:typecheck": "npm run typecheck --workspace @spontra/admin",
     "admin:check": "wrangler deploy --config apps/admin/wrangler.jsonc --dry-run",
-    "admin:test": "tsx --tsconfig tsconfig.test.json --test tests/admin-worker.test.ts"
+    "admin:test": "tsx --tsconfig tsconfig.test.json --test tests/admin-worker.test.ts tests/admin-runtime.test.ts"
   },
   "dependencies": {
     "@streamdown/cjk": "^1.0.3",

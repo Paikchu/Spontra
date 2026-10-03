@@ -48,7 +48,7 @@ export async function handleReportAdminProxy(request: Request, path: string[], e
     }
     const target = new URL(`/admin/${path.map(encodeURIComponent).join("/")}`, origin);
     target.search = new URL(request.url).search;
-    const result = await serviceFetcher(binding)(target, { method: request.method, headers, body, redirect: "error", signal: AbortSignal.timeout(30_000) });
+    const result = await serviceFetcher(binding)(target, { method: request.method, headers, body, redirect: "manual", signal: AbortSignal.timeout(30_000) });
     if (login && result.status === 200) {
       const payload = await result.json() as { token?: string };
       if (!payload.token || !/^report-admin\.v1\.[a-f0-9.-]+$/.test(payload.token)) return json({ error: "登录服务暂时不可用。" }, 503);
