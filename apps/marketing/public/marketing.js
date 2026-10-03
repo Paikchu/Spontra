@@ -40,36 +40,6 @@
   reduced.addEventListener('change', () => { paused = reduced.matches; updateMotion(); });
   updateMotion();
 
-  document.querySelectorAll('[data-tabs]').forEach(group => {
-    const buttons = [...group.querySelectorAll('[role="tab"]')];
-    const panels = [...group.querySelectorAll('[role="tabpanel"]')];
-    function select(button, focus = false) {
-      buttons.forEach(item => {
-        const active = item === button;
-        item.setAttribute('aria-selected', String(active));
-        item.tabIndex = active ? 0 : -1;
-      });
-      panels.forEach(panel => {
-        const active = panel.dataset.panel === button.dataset.tab;
-        panel.hidden = !active;
-        panel.classList.remove('panel-enter');
-        if (active && !paused) panel.classList.add('panel-enter');
-      });
-      if (focus) button.focus();
-    }
-    buttons.forEach((button, index) => {
-      button.addEventListener('click', () => select(button));
-      button.addEventListener('keydown', event => {
-        let next;
-        if (event.key === 'ArrowRight') next = (index + 1) % buttons.length;
-        if (event.key === 'ArrowLeft') next = (index + buttons.length - 1) % buttons.length;
-        if (event.key === 'Home') next = 0;
-        if (event.key === 'End') next = buttons.length - 1;
-        if (next !== undefined) { event.preventDefault(); select(buttons[next], true); }
-      });
-    });
-  });
-
   function revealAnchor() {
     const id = decodeURIComponent(window.location.hash.slice(1));
     const target = id && document.getElementById(id);

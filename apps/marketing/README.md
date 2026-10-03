@@ -20,8 +20,8 @@ npm run marketing:dev
 修改源码后重启此命令重新生成页面；这是实际 Workers 静态资源本地预览。
 
 - `scripts/render-marketing.mjs`：中英文文案、HTML 结构和素材插入位置。
-- `public/marketing.css`：样式、响应式布局和渐变动画。
-- `public/marketing.js`：视图切换、动画暂停与语言切换。
+- `public/marketing.css`：样式、响应式布局与动效，颜色、字体和缓动取自 `public/design-system/tokens/tokens.css`（Ink & Highlighter 设计系统）。
+- `public/marketing.js`：滚动浮现、动画暂停与语言切换。
 - `public/brand/`、`public/design-system/`：品牌资源与字体。
 - `public/product/`、`product-assets.json`：真实产品素材及其映射。
 - `site.config.json`：默认 canonical 域名。
@@ -55,7 +55,7 @@ npm run marketing:dev
 
 ## 产品内容
 
-见 [PRODUCT-CONTENT.md](./PRODUCT-CONTENT.md)。图片、视频放入 `public/product/`，填写 `product-assets.json` 后重新构建。
-构建会检查已配置素材是否存在；素材未准备好时继续显示明确的预留位。
+见 [PRODUCT-CONTENT.md](./PRODUCT-CONTENT.md)。首屏截图放在 `public/product/`，在 `product-assets.json` 登记后重新构建。
+构建会检查首屏截图是否存在；替换截图前按其中的隐私要求隐去真实账户数字。
 
 参考：[Static Assets](https://developers.cloudflare.com/workers/static-assets/)、[HTML 路由](https://developers.cloudflare.com/workers/static-assets/routing/advanced/html-handling/)。
