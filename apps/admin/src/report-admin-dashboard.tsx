@@ -25,7 +25,7 @@ async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 const identity = (item: Pick<ReportAdminItem, "ticker" | "accessionNumber">) => `${item.ticker}/${item.accessionNumber}`;
 
-export function ReportAdminDashboard() {
+export function ReportAdminDashboard({ mainAppOrigin = "" }: { mainAppOrigin?: string }) {
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
   const [key, setKey] = useState("");
   const [loginBusy, setLoginBusy] = useState(false);
@@ -165,7 +165,7 @@ export function ReportAdminDashboard() {
         <button aria-current={section === "tasks" ? "page" : undefined} onClick={() => navigate("tasks")}><Clock3 size={19} />生成任务</button>
         <button aria-current={section === "history" ? "page" : undefined} onClick={() => navigate("history")}><History size={19} />生成记录</button>
       </nav>
-      <div className="ra-sidebar-bottom"><Link href="/" data-app-local-anchor><ArrowLeft size={17} />返回 Spontra</Link><div><ShieldCheck size={23} /><span>管理员</span>{authenticated && <button onClick={() => void logout()} aria-label="退出登录" title="退出登录"><LogOut size={17} /></button>}</div></div>
+      <div className="ra-sidebar-bottom"><Link href={`${mainAppOrigin}/`}><ArrowLeft size={17} />返回 Spontra</Link><div><ShieldCheck size={23} /><span>管理员</span>{authenticated && <button onClick={() => void logout()} aria-label="退出登录" title="退出登录"><LogOut size={17} /></button>}</div></div>
     </aside>
     <main className="ra-main">
       <header className="ra-page-header"><div><p>工作台 <ChevronRight size={13} /> {title}</p><h1>{title}</h1><span>{section === "tasks" ? "查看生成进度，跟踪报告发布" : "检查分析内容，管理报告生成"}</span></div><div className="ra-header-actions"><div className="ra-live"><span />线上数据</div>{authenticated && <button className="ra-mobile-logout" onClick={() => void logout()} aria-label="退出登录"><LogOut size={17} /></button>}</div></header>

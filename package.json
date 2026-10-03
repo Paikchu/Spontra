@@ -1,6 +1,6 @@
 {
   "name": "spontra",
-  "description": "个人投资研究与 Agent 主动汇报，持续跟进买入理由、核验新证据并积累研究记录。",
+  "description": "\u4e2a\u4eba\u6295\u8d44\u7814\u7a76\u4e0e Agent \u4e3b\u52a8\u6c47\u62a5\uff0c\u6301\u7eed\u8ddf\u8fdb\u4e70\u5165\u7406\u7531\u3001\u6838\u9a8c\u65b0\u8bc1\u636e\u5e76\u79ef\u7d2f\u7814\u7a76\u8bb0\u5f55\u3002",
   "version": "0.1.0",
   "private": true,
   "engines": {
@@ -53,7 +53,12 @@
     "marketing:build": "node apps/marketing/scripts/build.mjs",
     "marketing:dev": "npm run marketing:build && wrangler dev --config apps/marketing/wrangler.jsonc --port 8788",
     "marketing:check": "npm run marketing:build && wrangler deploy --config apps/marketing/wrangler.jsonc --dry-run",
-    "marketing:deploy:ci": "node apps/marketing/scripts/deploy-ci.mjs"
+    "marketing:deploy:ci": "node apps/marketing/scripts/deploy-ci.mjs",
+    "admin:dev": "npm run dev --workspace @spontra/admin",
+    "admin:build": "npm run build --workspace @spontra/admin",
+    "admin:typecheck": "npm run typecheck --workspace @spontra/admin",
+    "admin:check": "wrangler deploy --config apps/admin/wrangler.jsonc --dry-run",
+    "admin:test": "tsx --tsconfig tsconfig.test.json --test tests/admin-worker.test.ts"
   },
   "dependencies": {
     "@streamdown/cjk": "^1.0.3",
@@ -105,6 +110,7 @@
   "workspaces": [
     "apps/desktop",
     "packages/*",
-    "apps/business-site"
+    "apps/business-site",
+    "apps/admin"
   ]
 }

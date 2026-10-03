@@ -8,7 +8,7 @@ import { chromium } from '@playwright/test';
 import { createAnalysisDatabase } from './pipeline/helpers/analysis-backend.ts';
 import { seedAnalysisFixtures, FIXTURE_TICKER, VERIFIED_ACCESSION } from './pipeline/helpers/analysis-fixtures.ts';
 import { handleReportAdminRequest } from '../workers/pipeline/src/admin/reports.ts';
-import { handleReportAdminProxy } from '../lib/report-admin-proxy.ts';
+import { handleAdminRequest } from '../apps/admin/worker/index.ts';
 import type { SecCronEnv, SecWorkflowParams } from '../workers/pipeline/src/core.ts';
 
 const database = await createAnalysisDatabase(); await seedAnalysisFixtures(database);
@@ -30,8 +30,8 @@ const browser=await chromium.launch({executablePath:'/usr/bin/chromium',headless
 const page=await browser.newPage({viewport:{width:1440,height:1024}});
 const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
 await page.route('https://images.financialmodelingprep.com/**',route=>route.abort());
-await page.route('**/api/admin/**',async route=>{const r=route.request();const parts=new URL(r.url()).pathname.slice('/api/admin/'.length).split('/').map(decodeURIComponent);const init:RequestInit={method:r.method(),headers:r.headers()};if(r.method()!=='GET')init.body=r.postData()??undefined;const response=await handleReportAdminProxy(new Request(r.url(),init),parts,transport);await route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:await response.text()});});
-await page.goto('http://localhost:4173/admin/reports');
+await page.route('**/api/admin/**',async route=>{const r=route.request();const init:RequestInit={method:r.method(),headers:r.headers()};if(r.method()!=='GET')init.body=r.postData()??undefined;const response=await handleAdminRequest(new Request(r.url(),init),{...transport,ASSETS:{fetch:async()=>new Response("unexpected asset request",{status:500})}});await route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:await response.text()});});
+await page.goto(`${process.env.ADMIN_TEST_ORIGIN ?? 'http://localhost:4190'}/admin/reports`);
 await page.getByLabel('管理密钥',{exact:true}).waitFor();
 await page.screenshot({path:'outputs/report-admin/login.png'});
 await page.getByLabel('管理密钥',{exact:true}).fill(secret);

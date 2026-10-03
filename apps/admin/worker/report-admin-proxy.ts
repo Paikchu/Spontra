@@ -1,18 +1,14 @@
-import { asServiceBinding, serviceFetcher } from "./earning-report/web/service-binding.ts";
+import { asServiceBinding, serviceFetcher } from "../../../lib/earning-report/web/service-binding.ts";
 
 const COOKIE = "spontra_report_admin";
 const MAX_BODY = 8192;
 type ProxyEnv = Record<string, unknown>;
 const json = (body: unknown, status: number) => Response.json(body, { status, headers: { "cache-control": "private, no-store" } });
 
-async function runtime(): Promise<ProxyEnv> {
-  const { env } = await import("cloudflare:workers");
-  return env as unknown as ProxyEnv;
-}
 function cookie(value: string, request: Request, clear = false): string {
   return `${COOKIE}=${value}; Path=/api/admin; HttpOnly; SameSite=Strict; Max-Age=${clear ? 0 : 8 * 3600}${new URL(request.url).protocol === "https:" ? "; Secure" : ""}`;
 }
-export async function handleReportAdminProxy(request: Request, path: string[], values?: ProxyEnv): Promise<Response> {
+export async function handleReportAdminProxy(request: Request, path: string[], env: ProxyEnv): Promise<Response> {
   if (!path.length || !/^(session|reports)$/.test(path[0]!) || path.length > 4) return json({ error: "Not found" }, 404);
   if (request.method !== "GET") {
     // Browsers must prove same-origin even before login; no public write proxy.
@@ -28,10 +24,9 @@ export async function handleReportAdminProxy(request: Request, path: string[], v
   if (!login && !token) return json({ error: "请登录财报管理后台。" }, 401);
   if (request.url.length > 2048 || Number(request.headers.get("content-length") ?? 0) > MAX_BODY) return json({ error: "请求过大。" }, 413);
   try {
-    const env = values ?? await runtime();
     const binding = asServiceBinding(env.EARNING_REPORT_PIPELINE);
-    const origin = binding ? "https://earning-report-pipeline.internal" : env.EARNING_REPORT_PIPELINE_ORIGIN;
-    if (typeof origin !== "string" || !origin) return json({ error: "财报服务尚未连接。" }, 503);
+    const origin = "https://earning-report-pipeline.internal";
+    if (!binding) return json({ error: "财报服务尚未连接。" }, 503);
     const headers = new Headers({ accept: "application/json" });
     const ip = request.headers.get("cf-connecting-ip");
     if (ip) headers.set("cf-connecting-ip", ip);

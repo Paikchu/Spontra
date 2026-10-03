@@ -1,3 +1,15 @@
+# 独立 Admin Worker 迁移验证
+
+沿用已批准设计，未重新设计。页面及管理代理已移动到 `apps/admin/`；报告阅读组件、CSS、文案和数据契约复用原实现。按前端技能的验证流程检查迁移后的实现。
+
+- Browser/IAB 工具不可用，使用 Playwright Chromium；开发和生产预览均验证登录、真实隔离 SQLite 的正文、检查标记、确认/取消重新生成、重复提交防护、历史、搜索及移动端。
+- 浏览器请求经独立 Worker 的 `handleAdminRequest` 和 HTTP Service Binding，再调用实际 Pipeline handlers；不在生产环境生成报告。
+- 已通过 view_image 检查批准参考 `/workspace/generated_images/exec-fc5acb5d-8418-40e0-a29b-6de1aaf8cb59.png` 与迁移后截图 `outputs/report-admin/desktop-before.png`。
+- 核对侧栏宽度与结构、列表/正文布局、Geist 字体层级、白/海军蓝/靛蓝配色、工具栏操作、行间距与分隔线；保持原设计。参考 1487×1058，截图 1440×1024（与上次一致）；移动端 390×844 无横向溢出。
+- 首屏文案未新增、删除或重排；唯一导航变化是“返回 Spontra”指向独立主站域名。
+- 数据及公司名称差异沿用此前明确的真实报告适配；本地远程 logo 被阻断时保留 ticker fallback。未新增视觉偏差。
+- 218 项主站单元测试、11 项定向 Pipeline 管理测试、admin/main 类型检查和生产构建、边界检查、ESLint、admin dry-run 打包通过。
+
 # 财报管理看板 — Design QA
 
 - Source visual truth: `/workspace/generated_images/exec-fc5acb5d-8418-40e0-a29b-6de1aaf8cb59.png`.

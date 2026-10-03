@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { authenticateAdmin, createAdminSession } from "../../workers/pipeline/src/admin/auth.ts";
 import { getAdminReport, handleReportAdminRequest, listAdminReports } from "../../workers/pipeline/src/admin/reports.ts";
-import { handleReportAdminProxy } from "../../lib/report-admin-proxy.ts";
+import { handleReportAdminProxy } from "../../apps/admin/worker/report-admin-proxy.ts";
 import type { SecCronEnv, SecWorkflowParams } from "../../workers/pipeline/src/core.ts";
 import { createAnalysisDatabase } from "./helpers/analysis-backend.ts";
 import { FIXTURE_TICKER, VERIFIED_ACCESSION, VERIFIED_PERIOD_ID, VERIFIED_REPORT_VERSION, seedAnalysisFixtures, EVENT_ACCESSION } from "./helpers/analysis-fixtures.ts";

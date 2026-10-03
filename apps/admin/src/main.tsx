@@ -1,0 +1,11 @@
+import { createRoot } from "react-dom/client";
+import { ReportAdminDashboard } from "./report-admin-dashboard";
+import { MAIN_APP_ORIGIN } from "@/shared/admin-site";
+import "@/app/globals.css";
+import "@/app/analysis/earning-report.css";
+import "@/components/earning-report/report-blocks/report-content.css";
+import "@/components/earning-report/figures/figures.css";
+import "katex/dist/katex.min.css";
+import "@/app/spontra-ui.css";
+import "./report-admin.css";
+createRoot(document.getElementById("root")!).render(<ReportAdminDashboard mainAppOrigin={MAIN_APP_ORIGIN} />);

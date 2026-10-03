@@ -17,6 +17,9 @@ try {
   run('npm', ['run', 'business-site:test']);
   run('npm', ['run', 'business-site:build']);
   run('npm', ['run', 'marketing:build']);
+  run('npm', ['run', 'admin:typecheck']);
+  run('npm', ['run', 'admin:test']);
+  run('npm', ['run', 'admin:build']);
   run('npm', ['run', 'db:migrate:remote']);
   const args = ['node_modules/wrangler/bin/wrangler.js', 'deploy', '--config', 'dist/server/wrangler.json', '--keep-vars'];
   if (credential) {
@@ -24,6 +27,11 @@ try {
     writeFileSync(path, JSON.stringify({ DESKTOP_ACCESS_TOKEN: credential }), { mode: 0o600 });
     args.push('--secrets-file', path);
   }
+  // Publish the new destination before the main app starts redirecting to it.
+  const adminEnv = { ...process.env };
+  delete adminEnv.WRANGLER_CI_OVERRIDE_NAME;
+  delete adminEnv.WRANGLER_CI_MATCH_TAG;
+  run(process.execPath, ['node_modules/wrangler/bin/wrangler.js', 'deploy', '--config', 'apps/admin/wrangler.jsonc', '--name', 'spontra-admin', '--keep-vars'], adminEnv);
   run(process.execPath, args);
   run('npm', ['run', 'sec-cron:deploy']);
   // Independent public business map: shares public reads, not ledger bindings or secrets.
