@@ -19,7 +19,7 @@ async function fixture() {
       const result = await statement.run() as { changes: number }; return { success: true, meta: { changes: Number(result.changes) } };
     } };
   } }; } };
-  const env: SecCronEnv = { DB: d1 as unknown as D1Database, SEC_REFRESH_KEY: secret, SEC_TRACKED_TICKERS: FIXTURE_TICKER,
+  const env: SecCronEnv = { DB: d1 as unknown as D1Database, SEC_REFRESH_KEY: "internal-refresh-secret", REPORT_ADMIN_PASSWORD: secret, SEC_TRACKED_TICKERS: FIXTURE_TICKER,
     SEC_ANALYSIS_WORKFLOW: { async create(options) { workflows.push(options); return { id: options.id }; } } };
   const token = await createAdminSession(secret, now);
   const request = (path: string, options: RequestInit = {}) => new Request(`https://pipeline.test/admin/${path}`, { ...options,
@@ -115,7 +115,7 @@ test("proxy login hides the credential and session token, requires same origin a
 });
 
 test("login rejects bad keys and respects the distributed login limiter", async () => {
-  const f = await fixture(); const request = (key: string) => new Request("https://pipeline.test/admin/session", { method: "POST", headers: { "x-sec-refresh-key": key } });
+  const f = await fixture(); const request = (key: string) => new Request("https://pipeline.test/admin/session", { method: "POST", headers: { "x-report-admin-password": key } });
   assert.equal((await handleReportAdminRequest(request("wrong"), f.env, now)).status, 401);
   assert.equal((await handleReportAdminRequest(request(secret), { ...f.env, REPORT_ADMIN_RATE_LIMIT: { async limit() { return { success: false }; } } }, now)).status, 429);
   f.database.close();
@@ -158,4 +158,16 @@ test("loading a historical source strips its old report from the next publicatio
   const source = await ops.loadFiling!(FIXTURE_TICKER, VERIFIED_ACCESSION);
   assert.ok(source); assert.equal(source.accessionNumber, VERIFIED_ACCESSION);
   assert.equal("analysis" in source, false); assert.equal("summary" in source, false); f.database.close();
+});
+
+test("dashboard password is independent of refresh credentials and fails closed when missing", async () => {
+  const f = await fixture();
+  try {
+    const login = (password: string) => new Request("https://pipeline.test/admin/session", { method: "POST", headers: { "x-report-admin-password": password } });
+    assert.equal((await handleReportAdminRequest(login(f.env.SEC_REFRESH_KEY), f.env, now)).status, 401);
+    assert.equal((await handleReportAdminRequest(login(secret), { ...f.env, REPORT_ADMIN_PASSWORD: undefined }, now)).status, 503);
+    const internalSession = await createAdminSession(f.env.SEC_REFRESH_KEY, now);
+    assert.equal((await handleReportAdminRequest(new Request("https://pipeline.test/admin/reports", { headers: { authorization: `Bearer ${internalSession}` } }), f.env, now)).status, 401);
+    assert.equal((await handleReportAdminRequest(login(secret), { ...f.env, SEC_REFRESH_KEY: "rotated-internal-secret" }, now)).status, 200);
+  } finally { f.database.close(); }
 });

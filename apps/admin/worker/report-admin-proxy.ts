@@ -41,9 +41,9 @@ export async function handleReportAdminProxy(request: Request, path: string[], e
     }
     if (login) {
       let key: unknown;
-      try { key = (JSON.parse(body ?? "{}") as { key?: unknown }).key; } catch { return json({ error: "请输入管理密钥。" }, 400); }
-      if (typeof key !== "string" || !key || key.length > 4096) return json({ error: "请输入管理密钥。" }, 400);
-      headers.set("x-sec-refresh-key", key);
+      try { key = (JSON.parse(body ?? "{}") as { key?: unknown }).key; } catch { return json({ error: "请输入管理密码。" }, 400); }
+      if (typeof key !== "string" || !key || key.length > 4096) return json({ error: "请输入管理密码。" }, 400);
+      headers.set("x-report-admin-password", key);
       body = undefined;
     }
     const target = new URL(`/admin/${path.map(encodeURIComponent).join("/")}`, origin);

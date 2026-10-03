@@ -33,7 +33,7 @@ test("login uses the HTTP binding, hides credentials and rejects cross-origin wr
     calls++;
     const request = new Request(input, init);
     assert.equal(new URL(request.url).pathname, "/admin/session");
-    assert.equal(request.headers.get("x-sec-refresh-key"), "test-secret");
+    assert.equal(request.headers.get("x-report-admin-password"), "test-secret");
     return Response.json({ token: "report-admin.v1.123.abc.def" });
   } } };
   const login = (requestOrigin: string) => new Request(origin + "/api/admin/session", {

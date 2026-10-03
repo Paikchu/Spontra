@@ -49,6 +49,8 @@ export type SecCronEnv = {
   SEC_AI_TICKERS?: string;
   SEC_AI_ENABLED?: string;
   SEC_REFRESH_KEY: string;
+  /** Dedicated dashboard login and session-signing secret. */
+  REPORT_ADMIN_PASSWORD?: string;
   /** The same D1 database the Web Worker binds. Optional only so tests can build a partial env. */
   DB?: D1Database;
   SEC_ANALYSIS_WORKFLOW: SecWorkflowBinding;

@@ -127,12 +127,12 @@ export async function handleReportAdminRequest(request: Request, env: AdminEnv, 
   const url = new URL(request.url);
   if (url.pathname === "/admin/session") {
     if (request.method !== "POST") return json({ error: "Method not allowed" }, 405);
-    if (!env.SEC_REFRESH_KEY) return json({ error: "管理员登录尚未配置。" }, 503);
+    if (!env.REPORT_ADMIN_PASSWORD) return json({ error: "管理员登录尚未配置。" }, 503);
     if (env.REPORT_ADMIN_RATE_LIMIT && !(await env.REPORT_ADMIN_RATE_LIMIT.limit({ key: request.headers.get("cf-connecting-ip") ?? "admin-login" })).success) return json({ error: "尝试过于频繁，请稍后重试。" }, 429);
-    if (!await matchesAdminKey(request.headers.get("x-sec-refresh-key") ?? "", env.SEC_REFRESH_KEY)) return json({ error: "管理密钥不正确。" }, 401);
-    return json({ token: await createAdminSession(env.SEC_REFRESH_KEY, now) });
+    if (!await matchesAdminKey(request.headers.get("x-report-admin-password") ?? "", env.REPORT_ADMIN_PASSWORD)) return json({ error: "管理密码不正确。" }, 401);
+    return json({ token: await createAdminSession(env.REPORT_ADMIN_PASSWORD, now) });
   }
-  if (!await authenticateAdmin(request, env.SEC_REFRESH_KEY, now)) return json({ error: "请登录财报管理后台。" }, 401);
+  if (!await authenticateAdmin(request, env.REPORT_ADMIN_PASSWORD, now)) return json({ error: "请登录财报管理后台。" }, 401);
   if (!env.DB) return json({ error: "财报数据服务暂时不可用。" }, 503);
   if (url.pathname === "/admin/reports" && request.method === "GET") {
     try { return json(await listAdminReports(env, url, now)); }
