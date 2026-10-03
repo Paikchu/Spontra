@@ -32,7 +32,7 @@ const worker = {
       })());
       return;
     }
-    if (controller.cron === "0 6 * * 2-6") {
+    if (controller.cron === "0 6 * * TUE-SAT") {
       context.waitUntil(runIbkrFlexSync(env).then((result) => {
         console.log(JSON.stringify({ event: "ibkr-flex-sync", ...result }));
       }));

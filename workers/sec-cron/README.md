@@ -6,7 +6,7 @@ Cloudflare 名称：`spontra-max-data-sync`。这是 investment-record 项目的
 
 | 计划（UTC） | 北京时间 | 当前职责 |
 | --- | --- | --- |
-| `0 6 * * 2-6` | 周二至周六 14:00 | 读取 IBKR Flex，校验后同步投资账本 |
+| `0 6 * * TUE-SAT` | 周二至周六 14:00 | 读取 IBKR Flex，校验后同步投资账本 |
 | `15 * * * *` | 每小时第 15 分钟 | 调用投资看板内部接口刷新财报日历 |
 
 `index.ts` 只分派这两条计划，未知 Cron 记录日志后退出。

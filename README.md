@@ -203,7 +203,7 @@ npx wrangler d1 migrations apply earning-report-analysis-sec-web --remote --conf
 
 | Worker | Cron（UTC） | 北京时间 / 用途 |
 | --- | --- | --- |
-| `sec-cron` | `0 6 * * 2-6` | 周二至周六 14:00，IBKR Flex 同步 |
+| `sec-cron` | `0 6 * * TUE-SAT` | 周二至周六 14:00，IBKR Flex 同步 |
 | `sec-cron` | `15 * * * *` | 每小时第 15 分钟，财报日历刷新 |
 | Pipeline | `*/10 * * * *` | 全天每 10 分钟检查 SEC、Memory、公司分析及基本面 |
 
