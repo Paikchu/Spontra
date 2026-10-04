@@ -144,7 +144,6 @@ function Skeleton({ ticker, tools }: { ticker: string; tools: ReactNode }) {
         </div>
       </Rail>
       <section className="stage">
-        <header className="stage-head"><div className="stage-title"><span className="eyebrow">正在读取公开财报…</span><h1>收入如何变成利润</h1></div></header>
         <div className="chart"><div className="ghost-chart" /></div>
       </section>
     </div>

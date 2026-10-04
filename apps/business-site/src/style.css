@@ -228,8 +228,6 @@ button { cursor: pointer; }
 .stage-head--summary { align-items: flex-start; }
 .stage-head--summary .periods { max-width: 100%; overflow-x: auto; }
 .stage-head--summary .periods button { flex: none; }
-.eyebrow { display: block; font-size: 12px; color: var(--muted-foreground); font-variant-numeric: tabular-nums; letter-spacing: .01em; }
-.stage-title h1 { display: flex; align-items: center; gap: 12px; margin: 6px 0 0; font-size: clamp(22px, 2vw, 28px); font-weight: 620; letter-spacing: -.03em; line-height: 1.2; animation: rise .4s var(--ease) both; }
 .periods { display: inline-flex; margin-left: auto; padding: 3px; gap: 2px; border-radius: 999px; background: var(--surface); border: 1px solid var(--hairline); }
 .periods button { border: 0; background: transparent; padding: 6px 13px; border-radius: 999px; font-size: 12.5px; font-variant-numeric: tabular-nums; color: var(--muted-foreground); transition: background .2s, color .2s; }
 .periods button:hover { color: var(--foreground); }
@@ -468,6 +466,7 @@ button { cursor: pointer; }
 .state-reasons { font-size: 12px !important; color: var(--faint) !important; }
 .state button { margin-top: 14px; padding: 9px 18px; border-radius: 10px; background: var(--surface); border: 1px solid var(--border); }
 .row--ghost { height: 48px; background: linear-gradient(90deg, var(--hairline), color-mix(in srgb, var(--foreground) 7%, transparent), var(--hairline)) 0 0 / 200% 100%; animation: shimmer 1.6s ease-in-out infinite both; }
+.map--loading .stage { grid-template-rows: minmax(240px, 1fr); }
 .ghost-chart { position: absolute; inset: 24px 0; border-radius: 16px; background: linear-gradient(90deg, transparent, var(--hairline), transparent) 0 0 / 200% 100%; animation: shimmer 1.8s ease-in-out infinite; }
 
 @keyframes flow { to { stroke-dashoffset: -84; } }
@@ -523,7 +522,6 @@ button { cursor: pointer; }
 }
 @media (min-width: 961px) and (max-height: 820px) {
   .stage { padding-top: 8px; }
-  .stage-title h1 { font-size: 22px; }
   .stat-value { font-size: 22px; }
   .trend { height: 178px; }
 }
