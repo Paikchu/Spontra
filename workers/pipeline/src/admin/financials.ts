@@ -24,6 +24,7 @@ export async function listFinancialCompanies(env: SecPipelineEnv): Promise<Finan
 }
 async function financialCompanyRows(env: SecPipelineEnv, selectedTicker?: string): Promise<FinancialMaintenanceCompany[]> {
   const dataEnabled = dataTickersFor(env), tracked = trackedTickersFor(env);
+  // D1 allows at most five SELECT terms per compound; keep each UNION group bounded.
   const rows = await env.DB!.prepare(`WITH statement_sources AS (
     SELECT cache_key,CASE WHEN json_valid(payload) THEN payload END payload FROM sec_cache
       WHERE cache_key LIKE 'sec:disclosure-audit:v1:%'
@@ -40,10 +41,11 @@ async function financialCompanyRows(env: SecPipelineEnv, selectedTicker?: string
       AND json_extract(payload,'$.source.reportDate') GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
       AND date(json_extract(payload,'$.source.reportDate')) IS NOT NULL
     GROUP BY json_extract(payload,'$.ticker')
-  ), tickers AS (
+  ), stored_tickers AS (
     SELECT ticker FROM sec_filings UNION SELECT ticker FROM financial_collection_jobs
     UNION SELECT ticker FROM financial_maintenance_tasks UNION SELECT ticker FROM financial_complete_versions
-    UNION SELECT ticker FROM statement_data
+  ), tickers AS (
+    SELECT ticker FROM stored_tickers UNION SELECT ticker FROM statement_data
     UNION SELECT CASE WHEN json_valid(payload) THEN json_extract(payload,'$.ticker') END FROM sec_cache
       WHERE cache_key LIKE 'sec:business-flow:v2:%' OR cache_key LIKE 'sec:revenue-history:v1:%'
     UNION SELECT value ticker FROM json_each(?)
