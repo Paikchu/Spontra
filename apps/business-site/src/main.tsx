@@ -75,7 +75,10 @@ function Company({ ticker, tools, onSeen }: { ticker: string; tools: ReactNode; 
         if (!controller.signal.aborted) {
           onSeen(ticker);
           setPublication(data);
-          setFlow(data.status === "ready" && data.flow ? selectFlow(data.flow, null, ticker) : null);
+          const quarters = data.flow
+            ? [...new Map([...(data.reports?.quarters ?? []), ...data.flow.quarters].map(q => [q.periodEnd, q])).values()]
+            : [];
+          setFlow(data.status === "ready" && data.flow ? selectFlow({...data.flow, quarters}, null, ticker) : null);
         }
       })
       .catch(() => {

@@ -1,3 +1,4 @@
+import {readArchivedReportHistory, type ReportArchive} from '../financial-data/report-history.ts';
 import {readCompletePublicationForTicker} from '../financial-data/publication.ts';
 import { readBusinessExplainerResponse } from "../business-explainer/workflow.ts";
 import { readGuidanceResponse } from "../guidance/workflow.ts";
@@ -34,6 +35,7 @@ export type RateLimiterLike = { limit(options: { key: string }): Promise<{ succe
 export type AnalysisReadEnv = {
   /** The analysis database. Absent in a partially configured environment, which answers 503. */
   DB?: D1Database;
+  SEC_FILINGS?: ReportArchive;
   /** Read credentials. Absent means no reader is authorised — the surface fails closed. */
   ANALYSIS_READ_KEYS?: string;
   /** Independent read credentials; existing encrypted keys need not be replaced to add a consumer. */
@@ -119,13 +121,13 @@ export async function handleAnalysisReadRequest(request: Request, env: AnalysisR
   }
 
   try {
-    return await handleRoute(request, env.DB, route);
+    return await handleRoute(request, env.DB, route, env.SEC_FILINGS);
   } catch (error) {
     return errorResponse(...describeFailure(error));
   }
 }
 
-async function handleRoute(request: Request, database: D1Database, route: Exclude<RouteMatch, { kind: "openapi" }>): Promise<Response> {
+async function handleRoute(request: Request, database: D1Database, route: Exclude<RouteMatch, { kind: "openapi" }>, archive?: ReportArchive): Promise<Response> {
   const url = new URL(request.url);
   switch (route.kind) {
     case "filings": {
@@ -146,6 +148,7 @@ async function handleRoute(request: Request, database: D1Database, route: Exclud
     }
     case "business-flow": {
       const payload=await readCompletePublicationForTicker(database,route.ticker);
+      if(payload.flow&&archive)payload.reports=await readArchivedReportHistory(database,archive,payload.flow).catch(()=>payload.flow!);
       return dataResponse(request,payload,payload.status==="ready"?"cacheable":"no-store");
     }
     case "business-explainer": {

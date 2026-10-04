@@ -4,6 +4,8 @@ export type CompleteFlowReason = 'MISSING_TWO_QUARTERS'|'INCOMPARABLE_QUARTERS'|
 export type CompleteFlowCheck={complete:boolean;reasons:CompleteFlowReason[]};
 export type CompleteFlowPublication={schemaVersion:'complete-business-flow.v1';status:'ready'|'preparing'|'unavailable';flow:PublicBusinessFlow|null;reasons:(CompleteFlowReason|'PREPARING'|'SOURCE_TEMPORARILY_UNAVAILABLE'|'DATA_POLICY_DENIED')[];outdated:boolean;lastAttemptAt:string|null;
  /** Supplementary quarterly revenue by business; absent or null when not yet collected. */
- history?:RevenueHistory|null};
+ history?:RevenueHistory|null;
+ /** Independently audited quarterly statements from the last two years; latest pair remains the publication gate. */
+ reports?:PublicBusinessFlow|null};
 export type FinancialIssuer={cik:string;tickers:string[];name:string;industry:'standard'|'financial'|'insurance'|'unknown'};
 export type FinancialUniverse={schemaVersion:'financial-universe.v1';id:string;asOf:string;sourceUrl:string;issuers:FinancialIssuer[]};

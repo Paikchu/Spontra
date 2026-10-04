@@ -117,3 +117,18 @@ test("quarterly revenue guidance lands on its quarter and the next one; longer h
  assert.equal(guidanceLabel(guidanceItem({metric:"eps",measure:"per_share",unit:"USD_per_share",basis:"non_gaap",low:1.46,high:1.5}),money),"FY2027 Q2 EPS $1.46–$1.50（非 GAAP）");
  assert.equal(guidanceLabel(guidanceItem({form:"qualitative",metric:"segment_revenue",segment:"OCI",direction:"up",low:null,high:null,unit:null,horizon:"long_term",fiscalYear:null}),money),"长期 OCI 收入预计上行");
 });
+
+test('report list preserves validated historical statements and strips private or wrong-company payloads',async()=>{
+ const reports=structuredClone(completeOrclFixture);
+ const old=structuredClone(reports.quarters[0]);
+ const text=JSON.stringify(old).replaceAll('2026-06-01','2025-06-01').replaceAll('2026-08-31','2025-08-31');
+ reports.quarters.push(JSON.parse(text));
+ Object.assign(reports.quarters[2],{privateNote:'PRIVATE_REPORT'});
+ const load=(value:unknown)=>loadPublicFlow('ORCL',async()=>Response.json({...publication(completeOrclFixture),reports:value}));
+ const ok=await load(reports);
+ assert.equal(ok.flow!.quarters.length,2);assert.equal(ok.reports!.quarters.length,3);
+ assert.equal(ok.reports!.quarters[2].periodEnd,'2025-08-31');assert.ok(!JSON.stringify(ok).includes('PRIVATE_REPORT'));
+ assert.equal((await load({...reports,ticker:'MSFT'})).reports,null);
+ reports.quarters[2].figures.net!.value='1';
+ assert.equal((await load(reports)).reports!.quarters.length,2);
+});

@@ -6,13 +6,18 @@ const balanced=(a:number,b:number)=>Math.abs(a-b)<=Math.max(1e-6,Math.max(Math.a
 const sourceUrl=(text:string)=>{try{const u=new URL(text);return u.protocol==='https:'&&(u.hostname==='www.sec.gov'||u.hostname==='sec.gov'||u.hostname==='data.sec.gov');}catch{return false;}};
 /** The gate is independent of AI, browser code and storage. Unknown never means zero. */
 export function checkCompleteFlow(flow:PublicBusinessFlow):CompleteFlowCheck{try{const parsed=publicFlowSchema.safeParse(flow);return parsed.success?validateCompleteFlow(parsed.data):{complete:false,reasons:['INVALID_PAYLOAD']};}catch{return {complete:false,reasons:["INVALID_PAYLOAD"]};}}
-function validateCompleteFlow(flow:PublicBusinessFlow):CompleteFlowCheck{
+/** Historical reports are audited independently; lack of an adjacent comparable quarter does not hide a valid report. */
+export function checkCompleteQuarter(quarter:BusinessFlowQuarter):CompleteFlowCheck{
+ const parsed=publicFlowSchema.safeParse({schemaVersion:'business-flow.v1',ticker:'REPORT',fetchedAt:null,quarters:[quarter]});
+ return parsed.success?validateCompleteFlow(parsed.data,false):{complete:false,reasons:['INVALID_PAYLOAD']};
+}
+function validateCompleteFlow(flow:PublicBusinessFlow,requirePair=true):CompleteFlowCheck{
  const reasons=new Set<CompleteFlowReason>();
  if(flow.schemaVersion!=='business-flow.v1'||!flow.ticker||!Array.isArray(flow.quarters)){return {complete:false,reasons:['INVALID_PAYLOAD']};}
  const quarters=[...flow.quarters].sort((a,b)=>b.periodEnd.localeCompare(a.periodEnd));
- if(quarters.length!==2||new Set(quarters.map(q=>q.id)).size!==2)return {complete:false,reasons:['MISSING_TWO_QUARTERS']};
- const [current,previous]=quarters;const gap=(Date.parse(current.periodEnd)-Date.parse(previous.periodEnd))/86400000;
- if(!Number.isFinite(gap)||gap<70||gap>110||current.currency!==previous.currency||current.scale!==previous.scale||current.incomeModel!==previous.incomeModel)reasons.add('INCOMPARABLE_QUARTERS');
+ if(quarters.length!==(requirePair?2:1)||new Set(quarters.map(q=>q.id)).size!==quarters.length)return {complete:false,reasons:['MISSING_TWO_QUARTERS']};
+ const current=quarters[0],previous=quarters[1]??current;const gap=(Date.parse(current.periodEnd)-Date.parse(previous.periodEnd))/86400000;
+ if(requirePair&&(!Number.isFinite(gap)||gap<70||gap>110||current.currency!==previous.currency||current.scale!==previous.scale||current.incomeModel!==previous.incomeModel))reasons.add('INCOMPARABLE_QUARTERS');
  for(const q of quarters){
   const days=q.periodStart?(Date.parse(q.periodEnd)-Date.parse(q.periodStart))/86400000:NaN;
   if(q.periodType!=='3M'||!Number.isFinite(days)||days<70||days>110||!Number.isFinite(q.scale)||q.scale<=0)reasons.add('INVALID_PAYLOAD');
@@ -24,7 +29,7 @@ function validateCompleteFlow(flow:PublicBusinessFlow):CompleteFlowCheck{
    if(!amount!.sourceIds.length||!amount!.sourceIds.every(id=>q.sources.some(s=>s.id===id&&sourceUrl(s.url)))||!amount!.lineage?.length||!amount!.lineage.every(l=>sourceUrl(l.url)&&l.accession&&l.concept&&l.contextId&&amount!.sourceIds.includes(l.accession)&&((l.periodStart===q.periodStart&&l.periodEnd===q.periodEnd)||(amount!.basis==='derived'&&l.periodStart<q.periodStart!&&(l.periodEnd===q.periodEnd||Date.parse(l.periodEnd)+86400000===Date.parse(q.periodStart!))))))reasons.add('INVALID_SOURCE');
    if(amount!.basis==='derived'&&!amount!.formula)reasons.add('INVALID_SOURCE');
   };
-  keys.forEach(key=>{validAmount(q.figures[key]);if(!q.figures[key]?.comparabilityKey||q.figures[key]?.comparabilityKey!==previous.figures[key]?.comparabilityKey)reasons.add('INCOMPARABLE_QUARTERS');});
+  keys.forEach(key=>{validAmount(q.figures[key]);if(requirePair&&(!q.figures[key]?.comparabilityKey||q.figures[key]?.comparabilityKey!==previous.figures[key]?.comparabilityKey))reasons.add('INCOMPARABLE_QUARTERS');});
   const v=(key:FlowMetric)=>number(q.figures[key]);
   const check=(left: number|null,right:number|null)=>{if(left==null||right==null)return;if(!balanced(left,right))reasons.add('UNBALANCED_STATEMENT');};
   const sub=(a:number|null,b:number|null)=>a==null||b==null?null:a-b;

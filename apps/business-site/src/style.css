@@ -226,8 +226,9 @@ button { cursor: pointer; }
 .stage--state { display: block; overflow-y: auto; }
 .stage-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px 24px; flex-wrap: wrap; }
 .stage-head--summary { align-items: flex-start; }
-.stage-head--summary .periods { max-width: 100%; overflow-x: auto; }
-.stage-head--summary .periods button { flex: none; }
+.report-select { display: flex; align-items: center; gap: 10px; max-width: 100%; margin-left: auto; color: var(--muted-foreground); font-size: 12px; }
+.report-select select { min-width: 132px; max-width: 100%; padding: 9px 32px 9px 14px; border: 1px solid var(--hairline); border-radius: 12px; background: var(--surface); color: var(--foreground); font: inherit; font-weight: 600; cursor: pointer; }
+.report-select select:focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; }
 .periods { display: inline-flex; margin-left: auto; padding: 3px; gap: 2px; border-radius: 999px; background: var(--surface); border: 1px solid var(--hairline); }
 .periods button { border: 0; background: transparent; padding: 6px 13px; border-radius: 999px; font-size: 12.5px; font-variant-numeric: tabular-nums; color: var(--muted-foreground); transition: background .2s, color .2s; }
 .periods button:hover { color: var(--foreground); }

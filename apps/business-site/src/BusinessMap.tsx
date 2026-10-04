@@ -90,6 +90,8 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
   const quarters = useMemo(() => [...flow.quarters].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd)), [flow]);
   const [period, setPeriod] = useState<string | null>(null);
   const quarter = quarters.find(q => q.id === period) ?? quarters[0];
+  const reportPeriods = useMemo(() => [...new Set([...quarters.map(q => q.periodEnd), ...(revenueHistory?.quarters ?? []).map(q => q.periodEnd)])]
+    .sort((a, b) => b.localeCompare(a)).slice(0, 8), [quarters, revenueHistory]);
   const previous = quarter ? previousQuarter(quarter, quarters) : null;
   const slots = useMemo(() => hueSlots(quarters), [quarters]);
   const { items, quantified } = useMemo(() => businessItems(quarter, business, slots), [quarter, business, slots]);
@@ -215,9 +217,17 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
             <Stat label="净利润" value={figure("net")} format={money} note={margin("net")} />
           </>}
         </div>}
-        {quarters.length > 1 && <div className="periods" role="radiogroup" aria-label="季度">
-          {quarters.slice(0, 6).map(q => <button type="button" role="radio" key={q.id} aria-checked={q.id === quarter.id} title={q.label} onClick={() => setPeriod(q.id)}>{shortPeriod(q.periodEnd)}</button>)}
-        </div>}
+        {quarter && <label className="report-select">
+          <span>财报季度</span>
+          <select value={quarter.id} onChange={event => setPeriod(event.target.value)}>
+            <optgroup label="近两年 · 季度报告">
+              {reportPeriods.map(end => {
+                const report = quarters.find(q => q.periodEnd === end);
+                return <option key={end} value={report?.id ?? end} disabled={!report}>{shortPeriod(end)}{report ? "" : " · 完整报告暂不可用"}</option>;
+              })}
+            </optgroup>
+          </select>
+        </label>}
       </header>
 
       <div className="chart">
