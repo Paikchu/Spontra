@@ -11,6 +11,7 @@ import worker from "./worker.ts";
 import { executeSecAnalysisWorkflow, type WorkflowStepContextLike, type WorkflowStepLike } from "./workflow-core.ts";
 import { storeWorkflowResult, loadWorkflowResult } from "./workflow-results.ts";
 import { executeResearchWorkflow } from "./research/runtime.ts";
+import { executeBusinessExplainerWorkflow, type BusinessExplainerParams } from "./business-explainer/workflow.ts";
 import { maintenanceAnalysisEnvironment } from "./admin/financial-maintenance-runner.ts";
 
 const WORKFLOW_RETRY = {
@@ -64,6 +65,12 @@ export class SecAnalysisWorkflow extends WorkflowEntrypoint<SecPipelineEnv, SecW
 export class ResearchWorkflow extends WorkflowEntrypoint<SecPipelineEnv, { caseId: string }> {
   async run(event: WorkflowEvent<{ caseId: string }>, step: WorkflowStep) {
     return executeResearchWorkflow(event.payload.caseId, durableSteps(step, this.env, event.instanceId), this.env);
+  }
+}
+
+export class BusinessExplainerWorkflow extends WorkflowEntrypoint<SecPipelineEnv, BusinessExplainerParams> {
+  async run(event: WorkflowEvent<BusinessExplainerParams>, step: WorkflowStep) {
+    return executeBusinessExplainerWorkflow(event.payload, durableSteps(step, this.env, event.instanceId), this.env);
   }
 }
 

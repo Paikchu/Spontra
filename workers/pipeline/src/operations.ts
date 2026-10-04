@@ -51,6 +51,7 @@ export type SecPipelineEnv = SecCronEnv & AnalysisReadEnv & {
   TAVILY_API_KEY?: string;
   RESEARCH_SYNC_KEY?: string;
   RESEARCH_WORKFLOW?: { create(options: { id: string; params: { caseId: string } }): Promise<unknown>; get(id: string): Promise<{ status(): Promise<{ status: string }> }> };
+  BUSINESS_EXPLAINER_WORKFLOW?: { create(options: { id: string; params: { ticker: string; fingerprint: string } }): Promise<unknown> };
   SEC_FILINGS: R2BucketLike;
   SEC_USER_AGENT: string;
   DEEPSEEK_API_KEY?: string;

@@ -13,7 +13,7 @@ test("new site's public projection strips analysis and nested unrecognized field
  const polluted=structuredClone(completeOrclFixture) as typeof completeOrclFixture & {account:string};polluted.account="PRIVATE_ACCOUNT";
  Object.assign(polluted.quarters[0],{privateNote:"PRIVATE_QUARTER"});Object.assign(polluted.quarters[0].figures.net!,{privateNote:"PRIVATE_AMOUNT"});
  const response=await handle(request(endpoint),env,context,async()=>Response.json({...publication(polluted),overview:{privateNote:"PRIVATE_REPORT"}}));
- const text=await response.text();assert.equal(response.status,200);assert.ok(!text.includes("PRIVATE_"));assert.equal(JSON.parse(text).flow.quarters[0].figures.net.value,"4760000000");assert.deepEqual(Object.keys(JSON.parse(text)),["schemaVersion","status","flow","reasons","outdated","lastAttemptAt","history"]);
+ const text=await response.text();assert.equal(response.status,200);assert.ok(!text.includes("PRIVATE_"));assert.equal(JSON.parse(text).flow.quarters[0].figures.net.value,"4760000000");assert.deepEqual(Object.keys(JSON.parse(text)),["schemaVersion","status","flow","reasons","outdated","lastAttemptAt","history","explainer"]);
 });
 test("private paths, generation, query injection and writes are unavailable",async()=>{
  let calls=0;const never:typeof fetch=async()=>{calls++;throw new Error("must not run");};
@@ -69,4 +69,15 @@ test("history passes through only when valid and for the same ticker",async()=>{
  assert.equal((await loadPublicFlow("ORCL",withHistory({schemaVersion:"revenue-history.v1",ticker:"MSFT",updatedAt:"x",quarters:[quarter]}))).history,null);
  assert.equal((await loadPublicFlow("ORCL",withHistory({schemaVersion:"revenue-history.v1",ticker:"ORCL",updatedAt:"x",quarters:[{...quarter,revenue:"90"}]}))).history,null);
  assert.equal((await loadPublicFlow("ORCL",withHistory(undefined))).history,null);
+});
+const explainer={schemaVersion:"business-explainer.v1",ticker:"ORCL",companyName:"Oracle",generatedAt:"2026-10-04T00:00:00.000Z",model:"deepseek-flash",fingerprint:"fp",
+ businesses:[{nodeId:"SoftwareLicense",name:"软件许可",summary:{text:"出售数据库等软件的使用权。",sourceIds:["s1"]},howItWorks:null,products:["Oracle Database"],customers:{text:"企业",sourceIds:["s404"]},monetization:null,relation:null,privateNote:"PRIVATE_FIELD"}],
+ sources:[{id:"s1",title:"Oracle 10-K",url:"https://www.sec.gov/Archives/edgar/data/1341439/x.htm",kind:"sec",publishedAt:null}]};
+const routed=(explained:unknown):typeof fetch=>async(input)=>String(input).endsWith("/business-explainer")?(explained instanceof Error?Promise.reject(explained):Response.json(explained)):success(input);
+test("business explanations are validated, stripped and never block the flow",async()=>{
+ const ok=await (await handle(request(endpoint),env,context,routed({schemaVersion:"business-explainer-response.v1",status:"ready",explainer}))).json() as {flow:unknown;explainer:{businesses:Array<{customers:unknown}>}};
+ assert.ok(ok.flow);assert.equal(ok.explainer.businesses[0].customers,null,"a claim citing an unlisted source is dropped");assert.ok(!JSON.stringify(ok).includes("PRIVATE_"));
+ for(const bad of [new Error("down"),{schemaVersion:"business-explainer-response.v1",status:"ready",explainer:{...explainer,ticker:"MSFT"}},{schemaVersion:"business-explainer-response.v1",status:"ready",explainer:{...explainer,sources:[{...explainer.sources[0],url:"javascript:alert(1)"}]}}]){
+  const response=await handle(request(endpoint),env,context,routed(bad));assert.equal(response.status,200);const body=await response.json() as {flow:unknown;explainer:unknown};assert.ok(body.flow);assert.equal(body.explainer,null);
+ }
 });

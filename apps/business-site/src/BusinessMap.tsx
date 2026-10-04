@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 import type { BusinessFlowQuarter, BusinessSegment, FlowMetric, FlowSource, PublicBusinessFlow } from "@/shared/analysis-contract/business-flow";
 import type { CompanyBusinessContent } from "@/lib/earning-report/web/company-business-content";
 import { financialGraph } from "@/lib/earning-report/web/business-flow-sankey";
@@ -8,6 +8,7 @@ import { compareAmount, compareFlowAmounts, disclosedSegmentLabel, numeric, prev
 import { FinancialSankey } from "@/app/analysis/stocks/[ticker]/FinancialSankey";
 import { FlowChart, layoutFor, type NodeCopy, type Tip } from "./FlowChart";
 import type { RevenueHistory } from "@/shared/analysis-contract/revenue-history";
+import type { BusinessExplainer, ExplainerClaim } from "@/shared/analysis-contract/business-explainer";
 import { TrendPanel } from "./TrendPanel";
 import { Rail } from "./Sidebar";
 
@@ -84,7 +85,7 @@ function Sources({ sources, ids }: { sources: FlowSource[]; ids?: string[] }) {
   return <ul className="sources">{list.map(s => <li key={s.id}><a href={s.url} target="_blank" rel="noopener noreferrer">{s.title}<span aria-hidden="true"> ↗</span></a></li>)}</ul>;
 }
 
-export function BusinessMap({ ticker, tools, flow, business, notice, revenueHistory }: { ticker: string; tools: ReactNode; flow: PublicBusinessFlow; business: CompanyBusinessContent | null; notice: string | null; revenueHistory: RevenueHistory | null }) {
+export function BusinessMap({ ticker, tools, flow, business, notice, revenueHistory, explainer = null }: { ticker: string; tools: ReactNode; flow: PublicBusinessFlow; business: CompanyBusinessContent | null; notice: string | null; revenueHistory: RevenueHistory | null; explainer?: BusinessExplainer | null }) {
   const quarters = useMemo(() => [...flow.quarters].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd)), [flow]);
   const [period, setPeriod] = useState<string | null>(null);
   const quarter = quarters.find(q => q.id === period) ?? quarters[0];
@@ -194,7 +195,7 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
           </button>;
         })}
       </div>
-      <Dossier item={current} parent={parent ?? null} sources={quarter?.sources.length ? quarter.sources : business?.sources ?? []} />
+      <Dossier item={current} parent={parent ?? null} sources={quarter?.sources.length ? quarter.sources : business?.sources ?? []} explainer={explainer} />
     </Rail>
 
     <section className="stage" data-trend={revenueHistory && revenueHistory.quarters.length >= 2 ? "" : undefined} aria-label={`${ticker} 收入到利润流向`}>
@@ -268,8 +269,10 @@ function revealInList(element: HTMLElement, mode: ScrollBehavior) {
   }
 }
 
-function Dossier({ item, parent, sources }: { item: Item | null; parent: Item | null; sources: FlowSource[] }) {
+function Dossier({ item, parent, sources, explainer }: { item: Item | null; parent: Item | null; sources: FlowSource[]; explainer: BusinessExplainer | null }) {
   if (!item) return null;
+  const explained = explainer?.businesses.find(b => b.nodeId === item.id);
+  if (explainer && explained) return <ExplainedDossier key={item.key} item={item} parent={parent} explainer={explainer} explained={explained} />;
   const segment = item.segment;
   const [description, basis] = (segment.description || "业务说明未披露").split("\n");
   return <section className="dossier" key={item.key} aria-label={`${item.name} 业务档案`}>
@@ -282,5 +285,24 @@ function Dossier({ item, parent, sources }: { item: Item | null; parent: Item | 
     </dl>
     {basis && <p className="fine">{basis}</p>}
     <Sources sources={sources} ids={segment.sourceIds} />
+  </section>;
+}
+
+/** A model-written explanation: every statement carries numbered links to the pages it was written from. */
+function ExplainedDossier({ item, parent, explainer, explained }: { item: Item; parent: Item | null; explainer: BusinessExplainer; explained: BusinessExplainer["businesses"][number] }) {
+  const claims = [explained.summary, explained.howItWorks, explained.customers, explained.monetization, explained.relation];
+  const cited = [...new Set(claims.flatMap(c => c?.sourceIds ?? []))].map(id => explainer.sources.find(s => s.id === id)).filter(s => s != null);
+  const cite = (claim: ExplainerClaim) => <span className="cites">{claim.sourceIds.map(id => {
+    const index = cited.findIndex(s => s.id === id);
+    return index < 0 ? null : <a key={id} href={cited[index].url} target="_blank" rel="noopener noreferrer" title={cited[index].title}>{index + 1}</a>;
+  })}</span>;
+  const rows: Array<[string, ExplainerClaim | null]> = [["怎么运作", explained.howItWorks], ["客户", explained.customers], ["收费方式", explained.monetization], ["关联业务", explained.relation]];
+  return <section className="dossier" aria-label={`${item.name} 业务档案`}>
+    <h3>{parent ? `${parent.name} / ` : ""}{item.name}</h3>
+    <p className="dossier-lede">{explained.summary.text}{cite(explained.summary)}</p>
+    {explained.products.length > 0 && <ul className="tags" aria-label="代表产品">{explained.products.map(p => <li key={p}>{p}</li>)}</ul>}
+    <dl>{rows.filter(([, claim]) => claim).map(([label, claim]) => <Fragment key={label}><dt>{label}</dt><dd>{claim!.text}{cite(claim!)}</dd></Fragment>)}</dl>
+    <p className="fine">AI 依据公开资料整理并逐条核对来源 · {explainer.generatedAt.slice(0, 10)}；不含金额，季度收入以 SEC 财报为准</p>
+    <ol className="sources sources--numbered">{cited.map(s => <li key={s.id}><a href={s.url} target="_blank" rel="noopener noreferrer">{s.title}<span aria-hidden="true"> ↗</span></a></li>)}</ol>
   </section>;
 }

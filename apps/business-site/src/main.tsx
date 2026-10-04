@@ -4,6 +4,7 @@ import { selectFlow } from "@/lib/earning-report/web/business-flow-model";
 import { resolveCompanyBusiness } from "@/lib/earning-report/web/company-business-content";
 import type { CompleteFlowPublication } from "@/shared/analysis-contract/complete-business-flow";
 import type { PublicBusinessFlow } from "@/shared/analysis-contract/business-flow";
+import type { BusinessExplainer } from "@/shared/analysis-contract/business-explainer";
 import "@/app/analysis/stocks/[ticker]/business-flow.css";
 import "./style.css";
 import { withBusinessDescriptions } from "./business-description";
@@ -59,7 +60,7 @@ function StateShell({ ticker, tools, role, children }: { ticker: string; tools: 
 }
 function Company({ ticker, tools, onSeen }: { ticker: string; tools: ReactNode; onSeen: (ticker: string) => void }) {
   const [flow, setFlow] = useState<PublicBusinessFlow | null>(null),
-    [publication, setPublication] = useState<CompleteFlowPublication | null>(null),
+    [publication, setPublication] = useState<(CompleteFlowPublication & { explainer?: BusinessExplainer | null }) | null>(null),
     [failed, setFailed] = useState(false),
     [retry, setRetry] = useState(0);
   useEffect(() => {
@@ -69,7 +70,7 @@ function Company({ ticker, tools, onSeen }: { ticker: string; tools: ReactNode; 
     })
       .then(async (response) => {
         if (!response.ok) throw new Error("unavailable");
-        const data = (await response.json()) as CompleteFlowPublication;
+        const data = (await response.json()) as CompleteFlowPublication & { explainer?: BusinessExplainer | null };
         if (!controller.signal.aborted) {
           onSeen(ticker);
           setPublication(data);
@@ -91,6 +92,7 @@ function Company({ ticker, tools, onSeen }: { ticker: string; tools: ReactNode; 
           flow={withBusinessDescriptions(flow, business)}
           business={business}
           revenueHistory={publication?.history ?? null}
+          explainer={publication?.explainer ?? null}
           notice={
             publication?.outdated
               ? publication.reasons.includes("SIGNED_LAYOUT_UNSUPPORTED")
