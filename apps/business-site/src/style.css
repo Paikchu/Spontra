@@ -220,11 +220,14 @@ button { cursor: pointer; }
 
 /* ---------- Stage ---------- */
 .stage {
-  display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto auto; min-width: 0; min-height: 0;
+  display: grid; grid-template-rows: auto minmax(0, 1fr) auto auto; min-width: 0; min-height: 0;
   padding: 14px max(clamp(20px, 3vw, 44px), env(safe-area-inset-right)) 4px clamp(24px, 3vw, 44px);
 }
 .stage--state { display: block; overflow-y: auto; }
 .stage-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px 24px; flex-wrap: wrap; }
+.stage-head--summary { align-items: flex-start; }
+.stage-head--summary .periods { max-width: 100%; overflow-x: auto; }
+.stage-head--summary .periods button { flex: none; }
 .eyebrow { display: block; font-size: 12px; color: var(--muted-foreground); font-variant-numeric: tabular-nums; letter-spacing: .01em; }
 .stage-title h1 { display: flex; align-items: center; gap: 12px; margin: 6px 0 0; font-size: clamp(22px, 2vw, 28px); font-weight: 620; letter-spacing: -.03em; line-height: 1.2; animation: rise .4s var(--ease) both; }
 .periods { display: inline-flex; margin-left: auto; padding: 3px; gap: 2px; border-radius: 999px; background: var(--surface); border: 1px solid var(--hairline); }
@@ -232,7 +235,7 @@ button { cursor: pointer; }
 .periods button:hover { color: var(--foreground); }
 .periods button[aria-checked="true"] { background: var(--foreground); color: var(--background); font-weight: 600; }
 
-.stats { display: flex; flex-wrap: wrap; gap: 14px clamp(28px, 4vw, 56px); margin-top: 22px; }
+.stats { display: flex; flex-wrap: wrap; gap: 14px clamp(28px, 4vw, 56px); }
 .stat { display: flex; flex-direction: column; gap: 4px; min-width: 0; animation: rise .45s var(--ease) both; }
 .stat:nth-child(2) { animation-delay: 50ms; } .stat:nth-child(3) { animation-delay: 100ms; } .stat:nth-child(4) { animation-delay: 150ms; }
 .stat-label { font-size: 12px; color: var(--muted-foreground); }
@@ -521,7 +524,6 @@ button { cursor: pointer; }
 @media (min-width: 961px) and (max-height: 820px) {
   .stage { padding-top: 8px; }
   .stage-title h1 { font-size: 22px; }
-  .stats { margin-top: 14px; }
   .stat-value { font-size: 22px; }
   .trend { height: 178px; }
 }

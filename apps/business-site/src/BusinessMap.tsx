@@ -200,26 +200,25 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
     </Rail>
 
     <section className="stage" data-trend={revenueHistory && revenueHistory.quarters.length >= 2 ? "" : undefined} aria-label={`${ticker} 收入到利润流向`}>
-      <header className="stage-head">
+      <header className="stage-head stage-head--summary">
+        {quarter && <div className="stats" aria-live="polite">
+          {current && current.value != null ? <>
+            <Stat label="本季收入" value={current.value} format={money} note={`环比 ${itemChange}`} tone={trend(itemChange)} />
+            <Stat label="占总收入" value={revenue ? current.value / revenue * 100 : null} format={percent} note={parent?.value ? `占${parent.name} ${percent(current.value / parent.value * 100)}` : "一级业务"} />
+            <Stat label="公司总收入" value={revenue} format={money} note="成本与利润不按业务分摊" />
+          </> : <>
+            <Stat label="总收入" value={revenue} format={money} note={`环比 ${change("revenue")}`} tone={trend(change("revenue"))} />
+            {quarter.incomeModel !== "direct_operating" && figure("gross") != null && <Stat label="毛利" value={figure("gross")} format={money} note={margin("gross")} />}
+            {figure("operating") != null || figure("pretax") == null
+              ? <Stat label="营业利润" value={figure("operating")} format={money} note={margin("operating")} />
+              : <Stat label="税前利润" value={figure("pretax")} format={money} note={margin("pretax")} />}
+            <Stat label="净利润" value={figure("net")} format={money} note={margin("net")} />
+          </>}
+        </div>}
         {quarters.length > 1 && <div className="periods" role="radiogroup" aria-label="季度">
           {quarters.slice(0, 6).map(q => <button type="button" role="radio" key={q.id} aria-checked={q.id === quarter.id} title={q.label} onClick={() => setPeriod(q.id)}>{shortPeriod(q.periodEnd)}</button>)}
         </div>}
       </header>
-
-      {quarter && <div className="stats" aria-live="polite">
-        {current && current.value != null ? <>
-          <Stat label="本季收入" value={current.value} format={money} note={`环比 ${itemChange}`} tone={trend(itemChange)} />
-          <Stat label="占总收入" value={revenue ? current.value / revenue * 100 : null} format={percent} note={parent?.value ? `占${parent.name} ${percent(current.value / parent.value * 100)}` : "一级业务"} />
-          <Stat label="公司总收入" value={revenue} format={money} note="成本与利润不按业务分摊" />
-        </> : <>
-          <Stat label="总收入" value={revenue} format={money} note={`环比 ${change("revenue")}`} tone={trend(change("revenue"))} />
-          {quarter.incomeModel !== "direct_operating" && figure("gross") != null && <Stat label="毛利" value={figure("gross")} format={money} note={margin("gross")} />}
-          {figure("operating") != null || figure("pretax") == null
-            ? <Stat label="营业利润" value={figure("operating")} format={money} note={margin("operating")} />
-            : <Stat label="税前利润" value={figure("pretax")} format={money} note={margin("pretax")} />}
-          <Stat label="净利润" value={figure("net")} format={money} note={margin("net")} />
-        </>}
-      </div>}
 
       <div className="chart">
         {!quarter ? <div className="empty"><h2>季度财务未披露</h2><p>需要同币种、同口径的三个月数据才能绘制流向；不会用示例数据替代。</p></div>
