@@ -77,3 +77,38 @@ export function niceTicks(max: number): number[] {
 export function growth(current: number | null, before: number | null): number | null {
   return current != null && before != null && before > 0 ? (current / before - 1) * 100 : null;
 }
+
+/** One business's step in the bridge from the base period to the current one. */
+export type BridgeStep = Layer & { base: number; delta: number; before: number; after: number };
+export type Bridge = { base: Column; current: Column; lag: 1 | 4; change: number; percent: number | null; steps: BridgeStep[]; reason: "split" | "single" | "basis" };
+
+/** Column of the quarter shown in the flow chart; the newest when it is not in the history. */
+export function columnIndex(columns: Column[], periodEnd: string | null): number {
+  const index = periodEnd ? columns.findIndex(c => c.slot.periodEnd === periodEnd) : -1;
+  return index >= 0 ? index : columns.length - 1;
+}
+
+/**
+ * Splits the change between two quarters by business. Only two columns stacked from the same businesses
+ * are attributed; a renamed or regrouped presentation keeps the total change and says why there is no split.
+ */
+export function buildBridge(columns: Column[], index: number, lag: 1 | 4): Bridge | null {
+  const current = columns[index], base = columns[index - lag];
+  if (!current || !base || current.total == null || base.total == null) return null;
+  const change = current.total - base.total;
+  const percent = base.total > 0 ? change / base.total * 100 : null;
+  const keys = (c: Column) => c.layers.map(l => l.key).sort().join("\n");
+  // Without a common split the whole change is one step: the business itself, or neutral company revenue.
+  const whole = (layer: Layer, reason: Bridge["reason"]): Bridge =>
+    ({ base, current, lag, change, percent, reason, steps: [{ ...layer, value: current.total!, base: base.total!, delta: change, before: base.total!, after: current.total! }] });
+  const total: Layer = { key: "__total", value: 0, tone: "total", slot: 0, shade: 0, name: "收入变化" };
+  if (current.state !== "ok" || base.state !== "ok") return whole(total, "basis");
+  if (current.layers.length < 2) return whole(current.layers[0] ?? total, "single");
+  if (keys(current) !== keys(base)) return whole(total, "basis");
+  let level = base.total;
+  const steps = current.layers
+    .map(layer => { const prior = base.layers.find(l => l.key === layer.key)!.value; return { ...layer, base: prior, delta: layer.value - prior }; })
+    .sort((a, b) => b.delta - a.delta)
+    .map(step => { const before = level; level += step.delta; return { ...step, before, after: level }; });
+  return { base, current, lag, change, percent, steps, reason: "split" };
+}

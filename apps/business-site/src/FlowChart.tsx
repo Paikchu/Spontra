@@ -2,13 +2,14 @@ import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type R
 import type { FinancialGraph } from "@/lib/earning-report/web/business-flow-sankey";
 import { estimateTextWidth, layoutInfographic, type InfographicLayout, type PlacedLink, type PlacedNode } from "@/lib/earning-report/web/business-flow-layout";
 
-export type NodeCopy = { name: string; value: string };
+/** `change` is the comparable change against the prior quarter; absent when the two quarters cannot be compared. */
+export type NodeCopy = { name: string; value: string; change?: { label: string; trend?: "up" | "down" } };
 export type Tip = { title: string; color: string; rows: Array<[string, string]> };
 
 type Band = { x0: number; x1: number; sy: number; ty: number; h: number; color: string; key: string; owner: string };
 
 /** Type scale in layout units at k = 1; k is solved per pane so labels keep a constant on-screen size. */
-const typeFor = (k: number) => ({ name: 14 * k, value: 21 * k, net: 26 * k, gap: 7 * k, offset: 9 * k, pill: 13 * k });
+const typeFor = (k: number) => ({ name: 14 * k, value: 21 * k, net: 26 * k, change: 13 * k, gap: 7 * k, offset: 9 * k, pill: 13 * k });
 /** One-line labels need far less vertical room than the editorial two-line default, so the statement fits a wide pane. */
 const geometryFor = (k: number) => ({ labelHeight: 34 * k, sideLabelHeight: 30 * k, gap: 14, lift: 46, drop: 40, labelGap: 22 * k, labelOffset: 12 * k, margin: 32 * k });
 const SCREEN_VALUE_PX = 16;
@@ -31,7 +32,8 @@ export function layoutFor(graph: FinancialGraph, copy: (n: PlacedNode) => NodeCo
   const type = typeFor(k);
   return layoutInfographic(graph, n => {
     const text = copy(n);
-    return estimateTextWidth(text.name, type.name) + type.gap + estimateTextWidth(text.value, valueSize(n, k), true) + 4 * k;
+    return estimateTextWidth(text.name, type.name) + type.gap + estimateTextWidth(text.value, valueSize(n, k), true) + 4 * k
+      + (text.change ? type.gap * 0.8 + estimateTextWidth(text.change.label, type.change, true) : 0);
   }, geometryFor(k));
 }
 
@@ -169,6 +171,8 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
       <g clipPath={`url(#${uid}reveal)`}>
         <g className="fc-bands">
           {bands.map((b, i) => <path key={b.key} className="fc-band" d={bandPath(b)} fill={`url(#${uid}g${i})`} data-owner={b.owner}
+            // A business's own band picks it like its node; keyboard users reach the same pick on the node.
+            {...(byName.get(b.owner)?.segmentId ? { "data-pick": "", onClick: () => onPick(byName.get(b.owner)!) } : {})}
             data-lit={focus ? (focus.links.has(b.key) ? (focus.segment && focus.trace.some(t => t.key === "trace:" + b.key) ? "context" : "on") : undefined) : undefined}
             onMouseMove={e => { const l = layout.links[i]; point(e, { title: `${copy(byName.get(l.source)!).name} → ${copy(byName.get(l.target)!).name}`, color: b.color, rows: [["流量", money(l.value)]] }); }}
             onMouseLeave={() => setTip(null)} />)}
@@ -196,11 +200,11 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
           return <g key={n.name} className="fc-node" data-tone={n.tone} data-net={n.name === "net" || undefined} data-lit={lit} data-active={n.name === active || undefined}
             style={{ "--c": colorOf(n.name), "--d": `${n.column * 90 + 300}ms` } as CSSProperties}
             data-owner={n.name} onMouseMove={e => point(e, tipFor(n))} onMouseLeave={() => setTip(null)}
-            {...(interactive ? { role: "button", tabIndex: 0, "aria-label": `${text.name} ${text.value}${n.segmentId ? "，在列表中选中" : "，显示全部业务"}`, onClick: () => onPick(n), onKeyDown: (e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPick(n); } }, onFocus: () => onHover(n.name), onBlur: () => onHover(null) } : {})}>
+            {...(interactive ? { role: "button", tabIndex: 0, "aria-label": `${text.name} ${text.value}${text.change ? ` 环比 ${text.change.label}` : ""}${n.segmentId ? "，在列表中选中" : "，显示全部业务"}`, onClick: () => onPick(n), onKeyDown: (e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPick(n); } }, onFocus: () => onHover(n.name), onBlur: () => onHover(null) } : {})}>
             <rect className="fc-hit" x={n.x - 6} y={n.y - 4} width={w + 12} height={n.h + 8} />
             <rect className="fc-bar" x={n.x} y={n.y} width={w} height={n.h} rx={Math.min(3, n.h / 2)} />
             <text className="fc-label" x={r(x)} y={r(y)} textAnchor={anchor}>
-              <tspan className="fc-name" style={{ fontSize: type.name }}>{text.name}</tspan><tspan className="fc-value" dx={type.gap} style={{ fontSize: vs }}>{text.value}</tspan>
+              <tspan className="fc-name" style={{ fontSize: type.name }}>{text.name}</tspan><tspan className="fc-value" dx={type.gap} style={{ fontSize: vs }}>{text.value}</tspan>{text.change && <tspan className="fc-change" dx={type.gap * 0.8} data-trend={text.change.trend} style={{ fontSize: type.change }}>{text.change.label}</tspan>}
             </text>
           </g>;
         })}

@@ -18,7 +18,8 @@ const HUES = 4;
 const hue = (slot: number) => `var(--biz-${slot >= 1 && slot <= HUES ? slot : 0})`;
 const reducedMotion = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 const percent = (v: number | null) => v == null || !Number.isFinite(v) ? "—" : `${v.toFixed(1)}%`;
-const trend = (label: string) => label.startsWith("+") ? "up" : label.startsWith("-") || label.startsWith("−") ? "down" : undefined;
+const trend = (label: string) => label.startsWith("+") || /转盈|收窄|由负转正|金额增加/.test(label) ? "up" as const
+  : label.startsWith("-") || label.startsWith("−") || /转亏|扩大|由正转负|金额减少/.test(label) ? "down" as const : undefined;
 const shortName = (name: string) => name.length > 9 ? name.slice(0, 8) + "…" : name;
 const shortPeriod = (end: string) => end.slice(0, 7).replace("-", ".");
 
@@ -93,6 +94,7 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
   const [selected, setSelected] = useState<string | null>(() => new URLSearchParams(location.search).get("business"));
   const [preview, setPreview] = useState<string | null>(null);
   const [hoverNode, setHoverNode] = useState<string | null>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const current = items.find(item => item.id === selected) ?? null;
   const revenue = quarter ? numeric(quarter.figures.revenue) : null;
   const money = useCallback((v: number | null) => quarter ? compactFlowValue(v, quarter) : "—", [quarter]);
@@ -102,6 +104,11 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
     if (current) url.searchParams.set("business", current.id); else url.searchParams.delete("business");
     if (url.href !== location.href) history.replaceState(history.state, "", url);
   }, [current]);
+  // A business picked in the chart is brought into view in the list, scrolling only the list (a column or, on narrow screens, a chip row).
+  useEffect(() => {
+    const option = listRef.current?.querySelector<HTMLElement>('[role=option][aria-selected="true"]');
+    if (option) revealInList(option, behavior());
+  }, [current?.key]);
   useEffect(() => {
     const escape = (e: globalThis.KeyboardEvent) => { if (e.key === "Escape" && !(e.target as HTMLElement).closest("input,select")) setSelected(null); };
     addEventListener("keydown", escape);
@@ -111,7 +118,15 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
   const graph = useMemo(() => quarter ? financialGraph(quarter) : null, [quarter]);
   const previousGraph = useMemo(() => previous ? financialGraph(previous) : null, [previous]);
   const amountOf = useCallback((n: PlacedNode) => n.amount ? numeric(n.amount) : n.metric && quarter ? numeric(quarter.figures[n.metric]) : n.value, [quarter]);
-  const copy = useCallback((n: PlacedNode): NodeCopy => ({ name: shortName(n.label), value: money(amountOf(n)) }), [money, amountOf]);
+  /** Same comparison as the list and tooltip: only an equal-definition prior quarter yields a change. */
+  const changeOf = useCallback((n: PlacedNode) => !quarter ? "不可比"
+    : n.amount ? compareFlowAmounts(quarter, previous, n.name, n.amount, previousGraph?.nodes.find(p => p.name === n.name)?.amount).label
+    : n.metric ? compareAmount(quarter, previous, n.metric).label
+    : n.segmentId ? compareRevenueNode(quarter, previous, n.segmentId).label : "不可比", [quarter, previous, previousGraph]);
+  const copy = useCallback((n: PlacedNode): NodeCopy => {
+    const label = changeOf(n);
+    return { name: shortName(n.label), value: money(amountOf(n)), ...(label !== "不可比" ? { change: { label, trend: trend(label) } } : {}) };
+  }, [money, amountOf, changeOf]);
   const layout = useMemo(() => graph ? layoutFor(graph, copy) : null, [graph, copy]);
   const signed = quarter ? Object.entries(quarter.figures).some(([key, amount]) => key !== "other" && (numeric(amount) ?? 0) < 0) || (quarter.expenseComponents ?? []).some(c => (numeric(c.amount) ?? 0) < 0) : false;
   const proportional = Boolean(quarter && layout && !signed && quarter.incomeModel !== "financial" && quarter.incomeModel !== "insurance");
@@ -127,20 +142,16 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
 
   const tipFor = useCallback((n: PlacedNode): Tip => {
     if (!quarter) return { title: n.label, color: colorOf(n.name), rows: [] };
-    const comparison = n.amount ? compareFlowAmounts(quarter, previous, n.name, n.amount, previousGraph?.nodes.find(p => p.name === n.name)?.amount)
-      : n.metric ? compareAmount(quarter, previous, n.metric)
-      : n.segmentId ? compareRevenueNode(quarter, previous, n.segmentId) : { label: "不可比" };
     const rows: Array<[string, string]> = [["本季", money(amountOf(n))]];
     if (revenue && n.name !== "revenue") rows.push([n.tone === "profit" && !n.segmentId ? "利润率" : "占收入", percent(n.value / revenue * 100)]);
-    rows.push(["环比", comparison.label]);
+    rows.push(["环比", changeOf(n)]);
     return { title: n.label, color: colorOf(n.name), rows };
-  }, [quarter, previous, previousGraph, revenue, money, amountOf, colorOf]);
+  }, [quarter, revenue, money, amountOf, colorOf, changeOf]);
 
   const previewItem = items.find(item => item.key === preview);
   const active = previewItem ? "segment:" + previewItem.key : hoverNode ?? (current ? "segment:" + current.key : null);
   const hovered = hoverNode ? itemByNode.get(hoverNode)?.key : undefined;
 
-  const listRef = useRef<HTMLDivElement>(null);
   function onListKey(e: KeyboardEvent<HTMLDivElement>) {
     if (e.key !== "ArrowDown" && e.key !== "ArrowUp" && e.key !== "Home" && e.key !== "End") return;
     e.preventDefault();
@@ -230,7 +241,7 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
           <span><i className="legend-biz" />业务收入</span>
           <span><i style={{ background: "var(--flow-profit)" }} />利润</span>
           <span><i style={{ background: "var(--flow-expense)" }} />成本与费用</span>
-          <span className="legend-note">线宽 = 本季金额</span>
+          <span className="legend-note">线宽 = 本季金额{previous ? " · 百分比 = 较上季变化" : ""}</span>
         </div> : <span className="legend-note">框图表示会计关系，宽度不代表金额</span>}
         <p className="provenance">
           {notice && <span>{notice}</span>}
@@ -241,6 +252,20 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
       </footer>
     </section>
   </div>;
+}
+
+const behavior = (): ScrollBehavior => reducedMotion() ? "auto" : "smooth";
+
+/** Scrolls each scrollable ancestor just enough to show the element; unlike scrollIntoView it never moves the page. */
+function revealInList(element: HTMLElement, mode: ScrollBehavior) {
+  for (let box = element.parentElement; box && box !== document.body; box = box.parentElement) {
+    const style = getComputedStyle(box), outer = box.getBoundingClientRect(), inner = element.getBoundingClientRect(), pad = 8;
+    const top = /auto|scroll/.test(style.overflowY) && box.scrollHeight > box.clientHeight
+      ? inner.top < outer.top + pad ? inner.top - outer.top - pad : inner.bottom > outer.bottom - pad ? inner.bottom - outer.bottom + pad : 0 : 0;
+    const left = /auto|scroll/.test(style.overflowX) && box.scrollWidth > box.clientWidth
+      ? inner.left < outer.left + pad ? inner.left - outer.left - pad : inner.right > outer.right - pad ? inner.right - outer.right + pad : 0 : 0;
+    if (top || left) box.scrollBy({ top, left, behavior: mode });
+  }
 }
 
 function Dossier({ item, parent, sources }: { item: Item | null; parent: Item | null; sources: FlowSource[] }) {

@@ -253,6 +253,7 @@ button { cursor: pointer; }
 .fc-band { fill-opacity: .3; transition: fill-opacity .4s var(--ease); }
 .light .fc-band { fill-opacity: .26; }
 .fc-band:hover { fill-opacity: .42; }
+.fc-band[data-pick] { cursor: pointer; }
 .fc-svg[data-focus] .fc-band { fill-opacity: .06; }
 .fc-svg[data-focus] .fc-band[data-lit="context"] { fill-opacity: .13; }
 .fc-svg[data-focus] .fc-band[data-lit="on"] { fill-opacity: .5; }
@@ -283,6 +284,10 @@ button { cursor: pointer; }
 .fc-name { font-size: 14px; font-weight: 520; fill: var(--muted-foreground); }
 .fc-value { font-size: 21px; font-weight: 640; letter-spacing: -.02em; fill: var(--foreground); }
 .fc-node[data-net] .fc-value { font-size: 26px; }
+.fc-change { font-weight: 600; fill: var(--muted-foreground); }
+/* Direction is colored only where up is unambiguous; a cost that grows with revenue stays neutral. */
+.fc-node:not([data-tone="expense"]) .fc-change[data-trend="up"] { fill: var(--up); }
+.fc-node:not([data-tone="expense"]) .fc-change[data-trend="down"] { fill: var(--loss); }
 .fc-node[data-net] .fc-name { fill: var(--foreground); font-weight: 600; }
 .fc-node[data-segment] .fc-name { fill: var(--foreground); }
 .fc-node[role="button"]:hover .fc-name { fill: var(--foreground); }
@@ -353,6 +358,38 @@ button { cursor: pointer; }
 .trend-tip-total { margin-top: 3px; padding-top: 5px; border-top: 1px solid var(--hairline); }
 .trend-tip p { margin: 6px 0 0; color: var(--muted-foreground); line-height: 1.55; }
 .trend-tip .trend-tip-source { color: var(--faint); font-size: 11px; }
+
+/* View switch inside the trend title; the same pill control as the period picker, smaller. */
+.trend-heading { display: flex; align-items: center; gap: 10px; }
+.trend-views { display: inline-flex; gap: 2px; padding: 2px; border-radius: 999px; background: var(--surface); border: 1px solid var(--hairline); }
+.trend-views button, .periods--small button { border: 0; background: transparent; padding: 3px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 500; color: var(--muted-foreground); transition: background .2s, color .2s; }
+.trend-views button:hover { color: var(--foreground); }
+.trend-views button[aria-checked="true"] { background: var(--foreground); color: var(--background); font-weight: 600; }
+.trend-kpis { align-items: flex-start; }
+.trend-kpis dl { margin: 0; }
+.trend-kpis dd small { margin-left: 8px; font-size: 12px; font-weight: 560; }
+.trend-tip-title i { display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 2px; }
+
+/* ---------- Growth bridge ---------- */
+.bridge-plot { position: relative; display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); gap: clamp(8px, 1.6vw, 26px); min-height: 0; padding: 22px 0 24px; }
+.bridge-plot--empty { display: grid; place-items: center; padding-left: 0; color: var(--faint); font-size: 12px; }
+.bridge-col { position: relative; min-width: 0; outline: none; animation: fade-in .5s ease both; animation-delay: calc(var(--i) * 80ms); }
+.bridge-col:focus-visible { box-shadow: 0 0 0 2px var(--foreground); border-radius: 6px; }
+.bridge-level { position: absolute; left: 0; right: 0; width: min(100%, 56px); margin: 0 auto; height: 3px; transform: translateY(50%); border-radius: 2px; background: var(--foreground); }
+.bridge-col--end:first-child .bridge-level { background: var(--muted-foreground); }
+.bridge-link { position: absolute; left: calc(-1 * clamp(8px, 1.6vw, 26px) - 28px); right: 50%; border-top: 1px dashed var(--border); transform: translateY(50%); }
+.bridge-col--end:last-child .bridge-link { display: none; }
+.bridge-step { position: absolute; left: 0; right: 0; width: min(100%, 56px); margin: 0 auto; border-radius: 3px; transform-origin: bottom; animation: grow .7s var(--ease) both; animation-delay: calc(var(--i) * 80ms + 120ms); transition: filter .2s; }
+.bridge-col:hover .bridge-step, .bridge-col:focus-visible .bridge-step { filter: brightness(1.15); }
+.bridge-value { position: absolute; left: -8px; right: -8px; padding-bottom: 6px; text-align: center; font-size: 11.5px; font-weight: 600; color: var(--muted-foreground); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bridge-col--end .bridge-value { font-size: 12.5px; color: var(--foreground); }
+.bridge-name { position: absolute; top: calc(100% + 7px); left: -8px; right: -8px; display: flex; justify-content: center; align-items: center; gap: 5px; overflow: hidden; font-size: 11px; color: var(--muted-foreground); white-space: nowrap; text-overflow: ellipsis; }
+.bridge-name b { padding: 0 5px; border-radius: 4px; font-size: 10px; font-weight: 600; color: var(--background); background: var(--muted-foreground); }
+.bridge-col--end:last-child .bridge-name b { background: var(--foreground); }
+@media (max-width: 600px) { .bridge-period { display: none; } }
+.bridge-col .trend-tip { bottom: auto; top: 0; transform: translate(-50%, calc(-100% - 8px)); }
+.bridge-col[data-align="start"] .trend-tip { left: 0; transform: translateY(calc(-100% - 8px)); }
+.bridge-col[data-align="end"] .trend-tip { left: auto; right: 0; transform: translateY(calc(-100% - 8px)); }
 
 /* ---------- Company search ---------- */
 /* Native modal: top layer, focus trap and Escape come from the browser. */

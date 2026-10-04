@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { mergeHistory, readHistory, validHistoryQuarter } from "../shared/analysis-runtime/financial-data/history";
 import type { RevenueHistory, RevenueHistoryQuarter } from "../shared/analysis-contract/revenue-history";
-import { buildColumns, buildSlots, layerOrder, niceTicks, type TrendItem } from "../apps/business-site/src/trend-model";
+import { buildBridge, buildColumns, buildSlots, columnIndex, layerOrder, niceTicks, type TrendItem } from "../apps/business-site/src/trend-model";
 
 const quarter = (periodEnd: string, segments: Array<[string, string, number]>, extra: Partial<RevenueHistoryQuarter> = {}): RevenueHistoryQuarter => {
   const start = new Date(Date.parse(periodEnd) - 91 * 86400000).toISOString().slice(0, 10);
@@ -70,4 +70,30 @@ test("columns stack by business, fall back to company revenue for other presenta
   assert.deepEqual(buildColumns(slots, items, items[2])[7].layers.map(l => l.value), [7]);
   assert.deepEqual(layerOrder(items), ["cloud", "apps", "infra", "hw", "__total"]);
   assert.deepEqual(niceTicks(11), [0, 5, 10, 15]);
+});
+
+test("growth bridge splits a change only between quarters stacked from the same businesses", () => {
+  const slots = buildSlots(history);
+  const all = buildColumns(slots, items, null);
+  const latest = columnIndex(all, "2026-08-31");
+  assert.equal(latest, 7);
+  assert.equal(columnIndex(all, "2020-01-31"), 7);
+  // Quarter over quarter: cloud 8 → 11, hardware 1 → 1; steps are sorted by change and chain from the base level.
+  const qoq = buildBridge(all, latest, 1)!;
+  assert.equal(qoq.reason, "split");
+  assert.equal(qoq.change, 3);
+  assert.equal(qoq.percent, 3 / 9 * 100);
+  assert.deepEqual(qoq.steps.map(s => [s.key, s.base, s.value, s.delta, s.before, s.after]), [["cloud", 8, 11, 3, 9, 12], ["hw", 1, 1, 0, 12, 12]]);
+  // Year over year lands on an uncollected quarter: no bridge rather than a zero base.
+  assert.equal(buildBridge(all, latest, 4), null);
+  // A quarter presented under other businesses keeps the total change as one neutral step.
+  const presented = buildBridge(all.map((c, i) => i === 6 ? all[4] : c), latest, 1)!;
+  assert.equal(presented.reason, "basis");
+  assert.deepEqual(presented.steps.map(s => [s.key, s.delta, s.before, s.after]), [["__total", 2, 10, 12]]);
+  // Inside a business the split follows its children; a leaf business is one step of its own colour.
+  const cloud = buildBridge(buildColumns(slots, items, items[0]), latest, 1)!;
+  assert.deepEqual(cloud.steps.map(s => [s.key, s.delta]), [["infra", 2], ["apps", 1]]);
+  const infra = buildBridge(buildColumns(slots, items, items[2]), latest, 1)!;
+  assert.equal(infra.reason, "single");
+  assert.deepEqual(infra.steps.map(s => [s.key, s.delta, s.tone]), [["infra", 2, "child"]]);
 });
