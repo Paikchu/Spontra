@@ -55,15 +55,17 @@ export async function readCompletePublication(db:D1Database,cik:string):Promise<
 /** Data-only public projection: no AI payload, no staged partial quarters, no read-side refresh. */
 export async function readCompletePublicationForTicker(db:D1Database,ticker:string):Promise<CompleteFlowPublication>{
  ticker=ticker.trim().toUpperCase();if(!/^[A-Z][A-Z0-9.-]{0,11}$/.test(ticker))throw new AnalysisRequestError('INVALID_TICKER','Invalid company ticker.');
- const identity=await db.prepare(`SELECT cik FROM (
-  SELECT cik,0 priority,generation FROM financial_collection_jobs WHERE ticker=?
-  UNION ALL SELECT v.cik,1 priority,v.generation FROM financial_complete_current c JOIN financial_complete_versions v ON v.version_id=c.version_id WHERE v.ticker=?
-  UNION ALL SELECT substr(cache_key,length('sec:revenue-history:v1:')+1),2 priority,0 generation FROM sec_cache
-    WHERE cache_key LIKE 'sec:revenue-history:v1:%' AND CASE WHEN json_valid(payload) THEN json_extract(payload,'$.ticker') END=?
-  UNION ALL SELECT CASE WHEN json_valid(payload) THEN json_extract(payload,'$.cik') END,3 priority,0 generation FROM sec_cache WHERE cache_key='admin:financial-issuer:'||?
-  UNION ALL SELECT CASE WHEN json_valid(payload) THEN json_extract(payload,'$.company.cik') END,4 priority,0 generation FROM sec_cache WHERE cache_key='sec:filings:'||?
-  UNION ALL SELECT cik,5 priority,0 generation FROM sec_filings WHERE ticker=?
- ) WHERE cik IS NOT NULL ORDER BY priority,generation DESC LIMIT 1`).bind(ticker,ticker,ticker,ticker,ticker,ticker).first<{cik:string}>();
+ // Scalar fallbacks preserve source priority without exceeding D1's compound SELECT limit.
+ const resolved=await db.prepare(`SELECT COALESCE(
+  (SELECT cik FROM financial_collection_jobs WHERE ticker=? ORDER BY generation DESC LIMIT 1),
+  (SELECT v.cik FROM financial_complete_current c JOIN financial_complete_versions v ON v.version_id=c.version_id WHERE v.ticker=? ORDER BY v.generation DESC LIMIT 1),
+  (SELECT substr(cache_key,length('sec:revenue-history:v1:')+1) FROM sec_cache
+    WHERE cache_key LIKE 'sec:revenue-history:v1:%' AND CASE WHEN json_valid(payload) THEN json_extract(payload,'$.ticker') END=? LIMIT 1),
+  (SELECT CASE WHEN json_valid(payload) THEN json_extract(payload,'$.cik') END FROM sec_cache WHERE cache_key='admin:financial-issuer:'||?),
+  (SELECT CASE WHEN json_valid(payload) THEN json_extract(payload,'$.company.cik') END FROM sec_cache WHERE cache_key='sec:filings:'||?),
+  (SELECT cik FROM sec_filings WHERE ticker=? AND cik IS NOT NULL LIMIT 1)
+ ) cik`).bind(ticker,ticker,ticker,ticker,ticker,ticker).first<{cik:string|null}>();
+ const identity=resolved?.cik!=null?{cik:resolved.cik}:null;
  const publication=await readFlowPublication(db,ticker,identity);
  // Revenue history is supplementary: a missing or invalid record never affects the snapshot.
  const stored=identity?await readRevenueHistory(db,identity.cik,ticker).catch(()=>null):null;
