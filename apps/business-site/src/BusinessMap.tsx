@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 import type { BusinessFlowQuarter, BusinessSegment, FlowMetric, FlowSource, PublicBusinessFlow } from "@/shared/analysis-contract/business-flow";
 import type { CompanyBusinessContent } from "@/lib/earning-report/web/company-business-content";
 import { financialGraph } from "@/lib/earning-report/web/business-flow-sankey";
@@ -9,7 +9,7 @@ import { FinancialSankey } from "@/app/analysis/stocks/[ticker]/FinancialSankey"
 import { FlowChart, layoutFor, type NodeCopy, type Tip } from "./FlowChart";
 import type { RevenueHistory } from "@/shared/analysis-contract/revenue-history";
 import { TrendPanel } from "./TrendPanel";
-import { CompanyMark } from "./CompanyMark";
+import { Rail } from "./Sidebar";
 
 type Item = { key: string; id: string; parent: string | null; depth: number; name: string; value: number | null; slot: number; segment: BusinessSegment };
 
@@ -37,7 +37,7 @@ function businessItems(quarter: BusinessFlowQuarter | undefined, business: Compa
   const tree = quarter ? availableRevenueTrees(quarter)[0] : undefined;
   if (!tree) {
     const segments = quarter?.segments.length ? quarter.segments : business?.groups ?? [];
-    return { label: business && !quarter?.segments.length ? business.basisLabel : "业务构成", quantified: false, items: segments.map((segment, i): Item => ({ key: segment.id, id: segment.id, parent: null, depth: 0, name: disclosedSegmentLabel(segment.name), value: null, slot: slots.get(segment.id) ?? i + 1, segment })) };
+    return { quantified: false, items: segments.map((segment, i): Item => ({ key: segment.id, id: segment.id, parent: null, depth: 0, name: disclosedSegmentLabel(segment.name), value: null, slot: slots.get(segment.id) ?? i + 1, segment })) };
   }
   const items: Item[] = [];
   const visit = (id: string | null, depth: number, slot: number) => tree.nodes.filter(n => n.parentId === id).forEach(node => {
@@ -46,7 +46,7 @@ function businessItems(quarter: BusinessFlowQuarter | undefined, business: Compa
     visit(node.id, depth + 1, own);
   });
   visit(null, 0, 0);
-  return { label: tree.dimension.label, quantified: true, items };
+  return { quantified: true, items };
 }
 
 function useTween(target: number | null, ms = 650) {
@@ -83,13 +83,13 @@ function Sources({ sources, ids }: { sources: FlowSource[]; ids?: string[] }) {
   return <ul className="sources">{list.map(s => <li key={s.id}><a href={s.url} target="_blank" rel="noopener noreferrer">{s.title}<span aria-hidden="true"> ↗</span></a></li>)}</ul>;
 }
 
-export function BusinessMap({ ticker, flow, business, notice, revenueHistory }: { ticker: string; flow: PublicBusinessFlow; business: CompanyBusinessContent | null; notice: string | null; revenueHistory: RevenueHistory | null }) {
+export function BusinessMap({ ticker, tools, flow, business, notice, revenueHistory }: { ticker: string; tools: ReactNode; flow: PublicBusinessFlow; business: CompanyBusinessContent | null; notice: string | null; revenueHistory: RevenueHistory | null }) {
   const quarters = useMemo(() => [...flow.quarters].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd)), [flow]);
   const [period, setPeriod] = useState<string | null>(null);
   const quarter = quarters.find(q => q.id === period) ?? quarters[0];
   const previous = quarter ? previousQuarter(quarter, quarters) : null;
   const slots = useMemo(() => hueSlots(quarters), [quarters]);
-  const { items, label: dimension, quantified } = useMemo(() => businessItems(quarter, business, slots), [quarter, business, slots]);
+  const { items, quantified } = useMemo(() => businessItems(quarter, business, slots), [quarter, business, slots]);
   const [selected, setSelected] = useState<string | null>(() => new URLSearchParams(location.search).get("business"));
   const [preview, setPreview] = useState<string | null>(null);
   const [hoverNode, setHoverNode] = useState<string | null>(null);
@@ -161,12 +161,7 @@ export function BusinessMap({ ticker, flow, business, notice, revenueHistory }: 
   const parent = current?.parent ? items.find(item => item.key === current.parent) : null;
 
   return <div className="map">
-    <aside className="rail" aria-label="公司业务">
-      <CompanyMark ticker={ticker} detail={quarter?.label ?? null} />
-      <div className="rail-head">
-        <h2>业务</h2>
-        <span>{quantified ? `${dimension} · ${items.length} 项` : dimension}</span>
-      </div>
+    <Rail ticker={ticker} actions={tools} label="公司业务">
       <div className="rail-list" role="listbox" aria-label="选择业务以在图中高亮" ref={listRef} onKeyDown={onListKey} onMouseLeave={() => setPreview(null)}>
         <button type="button" role="option" aria-selected={!current} tabIndex={!current ? 0 : -1} className="row row--all" onClick={() => setSelected(null)} onMouseEnter={() => setPreview(null)}>
           <i className="row-chip row-chip--all" aria-hidden="true" />
@@ -188,8 +183,8 @@ export function BusinessMap({ ticker, flow, business, notice, revenueHistory }: 
           </button>;
         })}
       </div>
-      <Dossier item={current} parent={parent ?? null} sources={quarter?.sources.length ? quarter.sources : business?.sources ?? []} business={business} balanced={balanced} />
-    </aside>
+      <Dossier item={current} parent={parent ?? null} sources={quarter?.sources.length ? quarter.sources : business?.sources ?? []} />
+    </Rail>
 
     <section className="stage" data-trend={revenueHistory && revenueHistory.quarters.length >= 2 ? "" : undefined} aria-label={`${ticker} 收入到利润流向`}>
       <header className="stage-head">
@@ -248,16 +243,8 @@ export function BusinessMap({ ticker, flow, business, notice, revenueHistory }: 
   </div>;
 }
 
-function Dossier({ item, parent, sources, business, balanced }: { item: Item | null; parent: Item | null; sources: FlowSource[]; business: CompanyBusinessContent | null; balanced: boolean }) {
-  if (!item) return <section className="dossier" aria-label="阅读方式">
-    <h3>阅读方式</h3>
-    <ol className="howto">
-      <li><span><b>左侧</b>业务收入汇入公司总收入</span></li>
-      <li><span><b>向上</b>流出的是利润，<b>向下</b>流出的是成本与费用</span></li>
-      <li><span>选择一项业务，追踪它在总收入中的位置</span></li>
-    </ol>
-    <p className="fine">{balanced ? "金额来自公开财报，会计等式逐项核对。" : "未披露的金额不视为零，只绘制已对平路径。"}{business ? ` ${business.basisLabel}` : ""}</p>
-  </section>;
+function Dossier({ item, parent, sources }: { item: Item | null; parent: Item | null; sources: FlowSource[] }) {
+  if (!item) return null;
   const segment = item.segment;
   const [description, basis] = (segment.description || "业务说明未披露").split("\n");
   return <section className="dossier" key={item.key} aria-label={`${item.name} 业务档案`}>
