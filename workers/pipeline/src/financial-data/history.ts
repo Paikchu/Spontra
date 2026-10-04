@@ -1,5 +1,5 @@
 import type {RevenueHistory, RevenueHistoryQuarter} from '../../../../shared/analysis-contract/revenue-history.ts';
-import {historyQuarterFrom, mergeHistory, readHistory, revenueHistorySchema} from '../../../../shared/analysis-runtime/financial-data/history.ts';
+import {historyQuarterFrom, mergeHistory, readHistory, revenueHistorySchema, validHistoryQuarter} from '../../../../shared/analysis-runtime/financial-data/history.ts';
 import {allowData, type FinancialPolicy} from '../../../../shared/analysis-runtime/financial-data/policy.ts';
 import {D1SecRepository} from '../sec/d1.ts';
 import {extractVerifiedCurrentQuarters, readReportedFacts, type DocumentSource, type Fact} from './parser.ts';
@@ -30,7 +30,7 @@ const validCik = (cik: string) => /^\d{10}$/.test(cik) && Number(cik) > 0;
 /** Callers supply a resolved issuer CIK. Only this issuer-scoped cache may project an alias;
  * the general readHistory validator remains strict about ticker identity. Check all provenance,
  * including operands/children, so a wrong-company or mixed-company cache is never relabelled. */
-function historyForIssuer(raw: unknown, cik: string, ticker: string): RevenueHistory | null {
+export function historyForIssuer(raw: unknown, cik: string, ticker: string): RevenueHistory | null {
   if (!validCik(cik) || !/^[A-Z][A-Z0-9.-]{0,11}$/.test(ticker)) return null;
   const parsed = revenueHistorySchema.safeParse(raw);
   if (!parsed.success) return null;
@@ -140,8 +140,10 @@ export async function runHistoryStep(db: D1Database, reader: SecReader, target: 
   const finished = cursor.index >= cursor.documents.length;
   if (finished && !cursor.finishedAt) { incoming.push(...deriveFourthQuarters(cursor.facts, target.cik)); cursor.finishedAt = now.toISOString(); cursor.facts = []; }
   const existing = historyForIssuer((await repository.getCache<unknown>(historyKey(target.cik)))?.payload, target.cik, target.ticker);
-  const history = mergeHistory(target.ticker, existing?.quarters ?? [], incoming, now.toISOString());
-  if (history.quarters.length) await repository.setCache(historyKey(target.cik), history, now.toISOString());
+  const obtainedData = incoming.some(validHistoryQuarter);
+  const history = mergeHistory(target.ticker, existing?.quarters ?? [], incoming, obtainedData ? now.toISOString() : existing?.updatedAt ?? now.toISOString());
+  // Retry progress belongs to the cursor. A failed/empty step must not date old data as new.
+  if (obtainedData && history.quarters.length) await repository.setCache(historyKey(target.cik), history, now.toISOString());
   await repository.setCache(cursorKey(target.cik), cursor, now.toISOString());
   return {ticker: target.ticker, documents: attempted, finished, quarters: history.quarters.length, issues: cursor.issues.slice(-5), partial: cursor.partial ?? false, ...(retry ? {retry} : {}), ...(resolvedIssues.length ? {resolvedIssues} : {})};
 }

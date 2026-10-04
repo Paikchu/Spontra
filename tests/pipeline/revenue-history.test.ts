@@ -199,7 +199,8 @@ test('same-CIK aliases retain last good quarters through retries and both read t
   assert.equal(first.finished,false);assert.equal(first.quarters,1);
   for(const ticker of ['GOOG','GOOGL']){const projected=await readRevenueHistory(db,cik,ticker);assert.equal(projected?.ticker,ticker);assert.deepEqual(projected?.quarters,original.quarters);}
   const interim=(await repository.getCache(historyKey(cik)))!.payload;
-  assert.equal(readHistory(interim,'GOOG'),null); // The global reader still rejects a mismatched ticker.
+  assert.deepEqual(interim,original); // A failed refresh preserves the last successful payload and time.
+  assert.equal(readHistory(interim,'GOOGL'),null); // The global reader still rejects a mismatched ticker.
   unavailable=false;
   const finished=await runHistoryStep(db,reader,{ticker:'GOOGL',cik},new Date('2026-10-04'));
   assert.equal(finished.finished,true);assert.equal(finished.quarters,2);

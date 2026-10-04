@@ -7,9 +7,43 @@ import {withLegacyInterestFormula} from '../../../../shared/analysis-runtime/fin
 import type {CompleteFlowPublication} from '../../../../shared/analysis-contract/complete-business-flow.ts';
 import type {PublicBusinessFlow,FlowAmount,BusinessSegment} from '../../../../shared/analysis-contract/business-flow.ts';
 import {checkCompleteFlow} from '../../../../shared/analysis-runtime/financial-data/completeness.ts';
-import {readRevenueHistory} from './history.ts';
+import {historyForIssuer,readRevenueHistory} from './history.ts';
 import {historyFromSnapshot,mergeHistory,readHistory} from '../../../../shared/analysis-runtime/financial-data/history.ts';
 import type {RevenueHistoryQuarter} from '../../../../shared/analysis-contract/revenue-history.ts';
+
+/** Admin list metadata comes from the same verified publications as the detail view, never an
+ * in-progress/failed attempt or a newly discovered filing that has not yielded usable data. */
+export function financialPublicationMetadata(ticker: string, source: {
+ cik: string | null; currentPayload: string | null; publishedAt: string | null;
+ legacyPayload: string | null; historyPayload: string | null;
+}): { latestPeriodEnd: string | null; lastUpdatedAt: string | null } {
+ let flow: PublicBusinessFlow | null = null;
+ try {
+  if (source.currentPayload) {
+   const current = publicFlowSchema.parse(JSON.parse(source.currentPayload));
+   if (!checkCompleteFlow(current).complete) throw new Error('Published snapshot failed validation');
+   flow = current.ticker === ticker ? current : source.cik ? flowForIssuer(current, source.cik, ticker) : null;
+  } else if (source.legacyPayload) {
+   const legacy = publicFlowSchema.parse(JSON.parse(source.legacyPayload));
+   if (legacy.ticker === ticker) {
+    const candidate = newestPair(withLegacyInterestFormula(legacy));
+    if (checkCompleteFlow(candidate).complete) flow = candidate;
+   }
+  }
+ } catch { /* A corrupt publication must not hide other companies in the admin list. */ }
+ let history = null;
+ if (source.cik && source.historyPayload) {
+  try {
+   const candidate = historyForIssuer(JSON.parse(source.historyPayload), source.cik, ticker);
+   history = candidate ? readHistory(candidate, ticker) : null;
+  } catch { /* Supplementary history never invalidates a complete snapshot. */ }
+ }
+ const periods = [...(flow?.quarters ?? []), ...(history?.quarters ?? [])].map(quarter => quarter.periodEnd).sort();
+ const updates = [flow ? (source.currentPayload ? source.publishedAt ?? flow.fetchedAt : flow.fetchedAt) : null, history?.updatedAt]
+  .filter((value): value is string => typeof value === 'string' && Number.isFinite(Date.parse(value)))
+  .sort((a, b) => Date.parse(a) - Date.parse(b));
+ return { latestPeriodEnd: periods.at(-1) ?? null, lastUpdatedAt: updates.at(-1) ?? null };
+}
 /** Reads only the pointer to complete immutable versions, never staged quarters. */
 export async function readCompletePublication(db:D1Database,cik:string):Promise<CompleteFlowPublication>{
  const row=await db.prepare(`SELECT v.payload_json FROM financial_complete_current c JOIN financial_complete_versions v ON v.version_id=c.version_id WHERE c.cik=?`).bind(cik).first<{payload_json:string}>();
@@ -21,7 +55,15 @@ export async function readCompletePublication(db:D1Database,cik:string):Promise<
 /** Data-only public projection: no AI payload, no staged partial quarters, no read-side refresh. */
 export async function readCompletePublicationForTicker(db:D1Database,ticker:string):Promise<CompleteFlowPublication>{
  ticker=ticker.trim().toUpperCase();if(!/^[A-Z][A-Z0-9.-]{0,11}$/.test(ticker))throw new AnalysisRequestError('INVALID_TICKER','Invalid company ticker.');
- const identity=await db.prepare('SELECT cik FROM financial_collection_jobs WHERE ticker=? ORDER BY generation DESC LIMIT 1').bind(ticker).first<{cik:string}>();
+ const identity=await db.prepare(`SELECT cik FROM (
+  SELECT cik,0 priority,generation FROM financial_collection_jobs WHERE ticker=?
+  UNION ALL SELECT v.cik,1 priority,v.generation FROM financial_complete_current c JOIN financial_complete_versions v ON v.version_id=c.version_id WHERE v.ticker=?
+  UNION ALL SELECT substr(cache_key,length('sec:revenue-history:v1:')+1),2 priority,0 generation FROM sec_cache
+    WHERE cache_key LIKE 'sec:revenue-history:v1:%' AND CASE WHEN json_valid(payload) THEN json_extract(payload,'$.ticker') END=?
+  UNION ALL SELECT CASE WHEN json_valid(payload) THEN json_extract(payload,'$.cik') END,3 priority,0 generation FROM sec_cache WHERE cache_key='admin:financial-issuer:'||?
+  UNION ALL SELECT CASE WHEN json_valid(payload) THEN json_extract(payload,'$.company.cik') END,4 priority,0 generation FROM sec_cache WHERE cache_key='sec:filings:'||?
+  UNION ALL SELECT cik,5 priority,0 generation FROM sec_filings WHERE ticker=?
+ ) WHERE cik IS NOT NULL ORDER BY priority,generation DESC LIMIT 1`).bind(ticker,ticker,ticker,ticker,ticker,ticker).first<{cik:string}>();
  const publication=await readFlowPublication(db,ticker,identity);
  // Revenue history is supplementary: a missing or invalid record never affects the snapshot.
  const stored=identity?await readRevenueHistory(db,identity.cik,ticker).catch(()=>null):null;
