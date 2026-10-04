@@ -1,0 +1,46 @@
+.fqs-summary { min-width: 0; padding: 20px 0 4px; color: #24354d; }
+.fqs-heading h3 { margin: 0; font-size: 17px; letter-spacing: -.2px; }
+.fqs-heading p { margin: 6px 0 18px; color: #677b96; font-size: 12px; line-height: 1.6; }
+.fqs-controls { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; }
+.fqs-controls > label { display: flex; flex-direction: column; gap: 6px; flex: 1 1 200px; min-width: 0; max-width: 340px; }
+.fqs-controls label > span { font-size: 11px; color: #61728c; }
+.fqs-controls select { width: 100%; min-width: 0; height: 38px; padding: 0 30px 0 10px; border: 1px solid #dce4ef; border-radius: 6px; background: #fff; color: #253d60; font: inherit; font-size: 12px; text-overflow: ellipsis; }
+.fqs-controls .fqs-unit-control { flex: 0 1 148px; margin-left: auto; }
+.fqs-filters { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; margin-top: 20px; padding-bottom: 14px; }
+.fqs-groups { display: flex; gap: 4px; padding: 3px; border-radius: 7px; background: #f1f4f9; }
+.fqs-groups button { border: 0; border-radius: 5px; background: transparent; color: #63738a; padding: 8px 12px; font-size: 12px; cursor: pointer; }
+.fqs-groups button[aria-pressed="true"] { background: #fff; color: #344ef0; box-shadow: 0 1px 4px #18315312; font-weight: 600; }
+.fqs-search { display: flex; align-items: center; gap: 8px; height: 36px; width: 220px; max-width: 100%; padding: 0 10px; border: 1px solid #dce4ef; border-radius: 6px; color: #70829c; background: #fff; }
+.fqs-search input { width: 100%; min-width: 0; padding: 0; border: 0; background: transparent; outline: none; color: #24354d; font-size: 12px; }
+.fqs-summary select:focus-visible, .fqs-summary button:focus-visible, .fqs-table-scroll:focus-visible, .fqs-search:focus-within { outline: 2px solid #5368f5; outline-offset: 2px; }
+.fqs-search input:focus-visible { outline: none; }
+.fqs-table-meta { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 9px; color: #71829a; font-size: 11px; }
+.fqs-table-meta > span:first-child { color: #435a78; font-weight: 550; }
+.fqs-table-scroll { width: 100%; max-height: 550px; overflow: auto; border: 1px solid #e1e7f0; border-radius: 7px; }
+.fqs-table-scroll table { width: 100%; min-width: 500px; border-spacing: 0; border-collapse: separate; text-align: right; font-size: 12px; }
+.fqs-table-scroll th, .fqs-table-scroll td { padding: 11px 14px; border-bottom: 1px solid #e9edf4; vertical-align: middle; }
+.fqs-table-scroll thead th { position: sticky; top: 0; z-index: 2; background: #f5f7fb; color: #304566; font-size: 11px; font-weight: 500; border-bottom-color: #dce4ef; }
+.fqs-table-scroll thead strong { display: block; font-weight: 600; }
+.fqs-table-scroll thead span { display: block; color: #72839b; font-size: 10px; font-weight: 400; margin-top: 5px; white-space: nowrap; }
+.fqs-table-scroll tr > th:first-child { position: sticky; left: 0; z-index: 1; width: 36%; min-width: 165px; max-width: 340px; text-align: left; box-shadow: 1px 0 #e9edf4; }
+.fqs-table-scroll thead tr > th:first-child { z-index: 3; }
+.fqs-table-scroll tbody th { background: #fff; color: #3e536f; font-weight: 450; overflow-wrap: anywhere; }
+.fqs-table-scroll td { color: #405879; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fqs-table-scroll td small { display: block; color: #77869b; font-size: 10px; font-weight: 400; margin-top: 4px; }
+.fqs-table-scroll tbody tr[data-total="true"] > * { background: #f9faff; color: #213a60; font-weight: 650; }
+.fqs-table-scroll tbody tr:hover > * { background: #f0f4fc; }
+.fqs-table-scroll td[data-missing="true"] { color: #8b9aaf; font-weight: 400; }
+.fqs-table-scroll tbody tr:last-child > * { border-bottom: 0; }
+.fqs-empty { margin: 0; padding: 26px 16px; color: #73839a; font-size: 12px; text-align: center; line-height: 1.8; }
+.fqs-footnote { margin: 11px 0 0; color: #74849a; font-size: 11px; line-height: 1.6; }
+@media (max-width: 760px) {
+  .fqs-summary { padding-top: 16px; }
+  .fqs-controls { gap: 10px; }
+  .fqs-controls > label { flex: 1 1 140px; max-width: none; }
+  .fqs-controls .fqs-unit-control { flex: 1 1 100%; margin-left: 0; }
+  .fqs-controls .fqs-unit-control select { max-width: 170px; }
+  .fqs-filters { margin-top: 16px; }
+  .fqs-search { width: 100%; }
+  .fqs-table-scroll th, .fqs-table-scroll td { padding: 11px 12px; }
+  .fqs-table-scroll tr > th:first-child { min-width: 138px; }
+}
