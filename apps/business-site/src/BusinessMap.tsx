@@ -7,6 +7,8 @@ import { availableRevenueTrees, compareRevenueNode, revenueNodeKey } from "@/lib
 import { compareAmount, compareFlowAmounts, disclosedSegmentLabel, numeric, previousQuarter, reconcileQuarter } from "@/lib/earning-report/web/business-flow-model";
 import { FinancialSankey } from "@/app/analysis/stocks/[ticker]/FinancialSankey";
 import { FlowChart, layoutFor, type NodeCopy, type Tip } from "./FlowChart";
+import type { RevenueHistory } from "@/shared/analysis-contract/revenue-history";
+import { TrendPanel } from "./TrendPanel";
 
 type Item = { key: string; id: string; parent: string | null; depth: number; name: string; value: number | null; slot: number; segment: BusinessSegment };
 
@@ -80,7 +82,7 @@ function Sources({ sources, ids }: { sources: FlowSource[]; ids?: string[] }) {
   return <ul className="sources">{list.map(s => <li key={s.id}><a href={s.url} target="_blank" rel="noopener noreferrer">{s.title}<span aria-hidden="true"> ↗</span></a></li>)}</ul>;
 }
 
-export function BusinessMap({ ticker, flow, business, notice }: { ticker: string; flow: PublicBusinessFlow; business: CompanyBusinessContent | null; notice: string | null }) {
+export function BusinessMap({ ticker, flow, business, notice, revenueHistory }: { ticker: string; flow: PublicBusinessFlow; business: CompanyBusinessContent | null; notice: string | null; revenueHistory: RevenueHistory | null }) {
   const quarters = useMemo(() => [...flow.quarters].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd)), [flow]);
   const [period, setPeriod] = useState<string | null>(null);
   const quarter = quarters.find(q => q.id === period) ?? quarters[0];
@@ -187,7 +189,7 @@ export function BusinessMap({ ticker, flow, business, notice }: { ticker: string
       <Dossier item={current} parent={parent ?? null} sources={quarter?.sources.length ? quarter.sources : business?.sources ?? []} business={business} balanced={balanced} />
     </aside>
 
-    <section className="stage" aria-label={`${ticker} 收入到利润流向`}>
+    <section className="stage" data-trend={revenueHistory && revenueHistory.quarters.length >= 2 ? "" : undefined} aria-label={`${ticker} 收入到利润流向`}>
       <header className="stage-head">
         <div className="stage-title">
           <span className="eyebrow">{quarter ? `${quarter.periodStart ? `${quarter.periodStart} — ` : "截至 "}${quarter.periodEnd} · 三个月 · ${quarter.currency || "币种未披露"}` : "季度财务未披露"}</span>
@@ -222,6 +224,9 @@ export function BusinessMap({ ticker, flow, business, notice }: { ticker: string
               label={`${ticker} ${quarter.label} 收入到净利润桑基图，金额单位 ${quarter.currency}`} />
           : <div className="business-flow chart-fallback"><FinancialSankey quarter={quarter} previous={previous} onSegment={key => setSelected(items.find(item => item.key === key)?.id ?? null)} /></div>}
       </div>
+
+      {revenueHistory && revenueHistory.quarters.length >= 2 && <TrendPanel history={revenueHistory} items={items} selected={current} currentPeriod={quarter?.periodEnd ?? null}
+        periods={new Set(quarters.map(q => q.periodEnd))} onPickPeriod={end => setPeriod(quarters.find(q => q.periodEnd === end)?.id ?? null)} hue={hue} />}
 
       <footer className="stage-foot">
         {proportional ? <div className="legend" aria-label="图例">

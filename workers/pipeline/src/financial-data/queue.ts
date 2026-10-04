@@ -3,6 +3,7 @@ import type {FinancialIssuer} from '../../../../shared/analysis-contract/complet
 import {D1CompleteStore,type Job} from './store.ts';
 import {collectComplete} from './collect.ts';
 import {readSecDocumentBatch,throttledSecReader,discoverDataIssuer} from './provider.ts';
+import {runHistoryTick} from './history.ts';
 /** Explicit opt-in. No cron registration, model key or Workflow binding belongs to this subsystem. */
 export interface DataOnlyEnv {DB:D1Database;SEC_USER_AGENT:string;SEC_DATA_TICKERS?:string;SEC_TRACKED_TICKERS?:string;SEC_DATA_COLLECTION_ENABLED?:string;}
 export async function enqueueIssuer(db:D1Database,issuer:FinancialIssuer,policy:FinancialPolicy,generation:number):Promise<string|null>{
@@ -14,7 +15,8 @@ export async function claimJob(db:D1Database,now=new Date()):Promise<Job|null>{
  const lease=crypto.randomUUID(),until=new Date(now.getTime()+300000).toISOString();const row=await db.prepare(`UPDATE financial_collection_jobs SET status='running',lease_token=?,lease_until=?,attempt=attempt+1,updated_at=? WHERE job_id=(SELECT job_id FROM financial_collection_jobs WHERE ((status IN ('queued','retry') AND next_attempt_at<=?) OR (status='running' AND lease_until<=?)) AND attempt<4 ORDER BY next_attempt_at,job_id LIMIT 1) RETURNING job_id,cik,ticker,generation,cursor_json,attempt`).bind(lease,until,now.toISOString(),now.toISOString(),now.toISOString()).first<{job_id:string;cik:string;ticker:string;generation:number;cursor_json:string;attempt:number}>();
  return row?{id:row.job_id,cik:row.cik,ticker:row.ticker,generation:row.generation,cursor:row.cursor_json,lease,attempt:row.attempt}:null;
 }
-export async function runDataOnlySweep(env:DataOnlyEnv,fetcher:typeof fetch=fetch):Promise<{enabled:boolean;published:boolean;reasons:string[];ticker?:string;modelCalls:0}>{
+type HistorySummary=Awaited<ReturnType<typeof runHistoryTick>>;
+export async function runDataOnlySweep(env:DataOnlyEnv,fetcher:typeof fetch=fetch):Promise<{enabled:boolean;published:boolean;reasons:string[];ticker?:string;modelCalls:0;history?:HistorySummary|{error:string}}>{
  if(env.SEC_DATA_COLLECTION_ENABLED!=='true')return {enabled:false,published:false,reasons:[],modelCalls:0};
  const policy=financialPolicy({SEC_DATA_TICKERS:env.SEC_DATA_TICKERS,SEC_TRACKED_TICKERS:env.SEC_TRACKED_TICKERS,SEC_AI_ENABLED:'false'});
  const reader=throttledSecReader(env.SEC_USER_AGENT,fetcher,1000);let job=await claimJob(env.DB);
@@ -25,7 +27,11 @@ export async function runDataOnlySweep(env:DataOnlyEnv,fetcher:typeof fetch=fetc
   const failures=await env.DB.prepare("SELECT cache_key,fetched_at FROM sec_cache WHERE cache_key LIKE 'sec:financial-discovery-failure:v1:%'").bind().all<{cache_key:string;fetched_at:string}>();
   const failedAt=new Map(failures.results.map(r=>[r.cache_key.slice('sec:financial-discovery-failure:v1:'.length),Date.parse(r.fetched_at)]));
   const ticker=[...policy.dataTickers].find(t=>(!updated.has(t)||Date.now()-updated.get(t)!>=86400000)&&(!failedAt.has(t)||Date.now()-failedAt.get(t)!>=3600000));
-  if(!ticker)return {enabled:true,published:false,reasons:[],modelCalls:0};
+  if(!ticker){
+   // Idle tick: the complete snapshot has nothing due, so quarterly revenue history may advance one bounded step.
+   try{const history=await runHistoryTick(env.DB,reader,policy);return {enabled:true,published:false,reasons:[],modelCalls:0,...(history?{history}:{})};}
+   catch{return {enabled:true,published:false,reasons:[],modelCalls:0,history:{error:'SOURCE_TEMPORARILY_UNAVAILABLE'}};}
+  }
   try{const issuer=await discoverDataIssuer(ticker,reader);await enqueueIssuer(env.DB,issuer,policy,Date.now());job=await claimJob(env.DB);}catch{
    // Back off directory failures so one invalid or unavailable issuer cannot starve the list.
    await env.DB.prepare('INSERT INTO sec_cache(cache_key,payload,fetched_at) VALUES(?,?,?) ON CONFLICT(cache_key) DO UPDATE SET payload=excluded.payload,fetched_at=excluded.fetched_at').bind(`sec:financial-discovery-failure:v1:${ticker}`,JSON.stringify({reason:'SOURCE_TEMPORARILY_UNAVAILABLE'}),new Date().toISOString()).run();

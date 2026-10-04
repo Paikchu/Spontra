@@ -14,6 +14,17 @@ async function readBoundedReport(response:Response):Promise<string>{
  try{while(true){const part=await reader.read();if(part.done)break;bytes+=part.value.byteLength;if(bytes>12000000){await reader.cancel();throw new Error('SEC_DOCUMENT_UNAVAILABLE');}parts.push(decoder.decode(part.value,{stream:true}));}parts.push(decoder.decode());}finally{reader.releaseLock();}
  const html=parts.join('');if(!html.trim())throw new Error('SEC_DOCUMENT_UNAVAILABLE');return html;
 }
+/** A filing's primary document plus at most two same-filing Exhibit 99 documents, each size-bounded. */
+export async function readFilingDocuments(primaryUrl:string,reader:SecReader):Promise<Array<{url:string;html:string}>>{
+ const response=await reader.read(primaryUrl);if(Number(response.headers.get('content-length'))>12000000)throw new Error('Document too large');
+ const html=await readBoundedReport(response);const documents=[{url:primaryUrl,html}];
+ // Earnings 8-K primary documents often link their actual GAAP statements in Exhibit 99.
+ // Follow at most two same-filing named exhibits, never an arbitrary outbound URL.
+ const folder=primaryUrl.slice(0,primaryUrl.lastIndexOf('/')+1);
+ const exhibits=[...new Set([...html.matchAll(/href\s*=\s*["']([^"']+)["']/gi)].map(m=>{try{return new URL(m[1],primaryUrl);}catch{return null;}}).filter((url):url is URL=>!!url&&url.href.startsWith(folder)&&/^[A-Za-z0-9_.-]*ex[-_]?99[A-Za-z0-9_.-]*\.html?$/i.test(url.pathname.split('/').at(-1)!)).map(url=>url.href))].slice(0,2);
+ for(const url of exhibits){const exhibit=await reader.read(url);if(Number(exhibit.headers.get('content-length'))>12000000)throw new Error('Document too large');const body=await readBoundedReport(exhibit);if(documents.reduce((n,d)=>n+d.html.length,0)+body.length>16000000)throw new Error('SEC_DOCUMENT_UNAVAILABLE');documents.push({url,html:body});}
+ return documents;
+}
 export async function readSecDocumentBatch(job:Job,reader:SecReader,maxDocuments=2):Promise<DocumentBatch>{
  const cik=job.cik;if(!/^\d{10}$/.test(cik))throw new Error('Invalid CIK');const cursor=JSON.parse(job.cursor||'{}') as {documents?:Array<{url:string;accession:string;filedAt:string;periodEnd:string;form?:string}>;index?:number;industry?:DocumentSource['industry'];expectedPeriodEnd?:string;parserVersion?:string;reportedFacts?:Fact[];reviewDocuments?:Array<{source:DocumentSource;eligible:boolean}>;reviewRequired?:boolean};
  if(cursor.parserVersion!==SEC_FLOW_PARSER_VERSION){cursor.index=0;cursor.parserVersion=SEC_FLOW_PARSER_VERSION;delete cursor.reportedFacts;delete cursor.reviewDocuments;delete cursor.reviewRequired;delete cursor.documents;}
@@ -31,13 +42,7 @@ export async function readSecDocumentBatch(job:Job,reader:SecReader,maxDocuments
  }
  const quarters=[];const index=cursor.index??0;const selected=cursor.documents.slice(index,index+Math.max(1,Math.min(3,maxDocuments)));
  for(const document of selected){
-  const response=await reader.read(document.url);if(Number(response.headers.get('content-length'))>12000000)throw new Error('Document too large');
-  const html=await readBoundedReport(response);const documents=[{url:document.url,html}];
-  // Earnings 8-K primary documents often link their actual GAAP statements in Exhibit 99.
-  // Follow at most two same-filing named exhibits, never an arbitrary outbound URL.
-  const folder=document.url.slice(0,document.url.lastIndexOf('/')+1);
-  const exhibits=[...new Set([...html.matchAll(/href\s*=\s*["']([^"']+)["']/gi)].map(m=>{try{return new URL(m[1],document.url);}catch{return null;}}).filter((url):url is URL=>!!url&&url.href.startsWith(folder)&&/^[A-Za-z0-9_.-]*ex[-_]?99[A-Za-z0-9_.-]*\.html?$/i.test(url.pathname.split('/').at(-1)!)).map(url=>url.href))].slice(0,2);
-  for(const url of exhibits){const exhibit=await reader.read(url);if(Number(exhibit.headers.get('content-length'))>12000000)throw new Error('Document too large');const body=await readBoundedReport(exhibit);if(documents.reduce((n,d)=>n+d.html.length,0)+body.length>16000000)throw new Error('SEC_DOCUMENT_UNAVAILABLE');documents.push({url,html:body});}
+  const documents=await readFilingDocuments(document.url,reader);
   for(const content of documents){
    const source={...document,url:content.url,cik,industry:cursor.industry??'unknown'};
    const parsed=extractDisclosedQuarters(content.html,source),reported=readReportedFacts(content.html,source);

@@ -65,6 +65,7 @@ function Company({ ticker }: { ticker: string }) {
           ticker={ticker}
           flow={withBusinessDescriptions(flow, business)}
           business={business}
+          revenueHistory={publication?.history ?? null}
           notice={
             publication?.outdated
               ? publication.reasons.includes("SIGNED_LAYOUT_UNSUPPORTED")

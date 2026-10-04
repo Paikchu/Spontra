@@ -169,7 +169,7 @@ button { cursor: pointer; }
 
 /* ---------- Stage ---------- */
 .stage {
-  display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; min-width: 0; min-height: 0;
+  display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto auto; min-width: 0; min-height: 0;
   padding: 26px clamp(20px, 3vw, 44px) 16px;
   background:
     radial-gradient(1200px 520px at 58% -10%, color-mix(in srgb, var(--brand) 5%, transparent), transparent 70%),
@@ -258,6 +258,58 @@ button { cursor: pointer; }
 .fc-tip-row { display: flex; justify-content: space-between; gap: 18px; padding: 2px 0; color: var(--muted-foreground); }
 .fc-tip-row b { font-weight: 600; color: var(--foreground); font-variant-numeric: tabular-nums; }
 
+/* ---------- Quarterly trend ---------- */
+.trend { display: grid; grid-template-rows: auto minmax(0, 1fr); height: clamp(196px, 26vh, 260px); margin-top: 6px; padding-top: 14px; border-top: 1px solid var(--hairline); animation: rise .6s var(--ease) .15s both; }
+.trend-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px 24px; flex-wrap: wrap; }
+.trend-title h2 { margin: 0; font-size: 14px; font-weight: 620; letter-spacing: -.01em; animation: rise .4s var(--ease) both; }
+.trend-title h2 span { color: var(--muted-foreground); font-weight: 500; }
+.trend-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 6px; font-size: 11.5px; color: var(--muted-foreground); animation: fade-in .5s ease both; }
+.trend-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.trend-legend i { width: 8px; height: 8px; border-radius: 2px; }
+.trend-basis { color: var(--faint); }
+.trend-kpis { display: flex; gap: 24px; margin: 0; }
+.trend-kpis dt { font-size: 11px; color: var(--muted-foreground); }
+.trend-kpis dd { margin: 2px 0 0; font-size: 17px; font-weight: 620; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+
+.trend-plot { --axis: 52px; position: relative; display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: clamp(8px, 1.6vw, 26px); min-height: 0; padding: 22px 0 24px var(--axis); }
+.trend-grid { position: absolute; inset: 22px 0 24px var(--axis); pointer-events: none; animation: fade-in .5s ease both; }
+.trend-grid div { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--hairline); transition: bottom .7s var(--ease); }
+.trend-grid div:first-child { border-top-style: solid; border-color: var(--border); }
+.trend-grid span { position: absolute; right: calc(100% + 10px); top: -7px; font-size: 10.5px; color: var(--faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.trend-sweep { position: absolute; inset: 22px 0 24px var(--axis); pointer-events: none; z-index: 1; background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--foreground) 9%, transparent) 50%, transparent) no-repeat; background-size: 22% 100%; animation: sweep 1.15s var(--ease) both; }
+
+.trend-col { position: relative; min-width: 0; }
+.trend-hit { position: absolute; inset: -22px 0 -24px; z-index: 2; padding: 0; border: 0; border-radius: 8px; background: transparent; }
+.trend-hit:not(:disabled) { cursor: pointer; }
+.trend-hit:disabled { cursor: default; }
+.trend-hit:focus-visible { outline-offset: 2px; }
+.trend-stack { position: absolute; inset: 0; width: min(100%, 56px); margin: 0 auto; display: flex; flex-direction: column-reverse; transform-origin: bottom; animation: grow .9s var(--ease) both; animation-delay: calc(var(--i) * 70ms + 200ms); transition: opacity .35s ease, filter .35s ease; }
+.trend-col:not([data-current]) .trend-stack { opacity: .5; filter: saturate(.8); }
+.trend-col:hover .trend-stack { opacity: .92; filter: none; }
+.trend-stack i { display: block; flex: none; width: 100%; border-radius: 3px; transition: height .75s var(--ease) calc(var(--i) * 45ms), background-color .5s ease, margin .3s; }
+.trend-stack i[data-on] ~ i[data-on] { margin-bottom: 2px; }
+.trend-stack i[data-tone="total"] { background-color: color-mix(in srgb, var(--biz-0) 55%, var(--background)) !important; background-image: repeating-linear-gradient(135deg, transparent 0 5px, color-mix(in srgb, var(--background) 45%, transparent) 5px 7px); }
+.trend-ghost { position: absolute; bottom: 0; left: 0; right: 0; width: min(100%, 56px); margin: 0 auto; height: 22%; border: 1px dashed var(--border); border-radius: 4px; background: repeating-linear-gradient(135deg, transparent 0 5px, var(--hairline) 5px 6px); animation: fade-in .4s ease both; }
+.trend-value { position: absolute; left: -8px; right: -8px; padding-bottom: 5px; text-align: center; font-size: 11px; color: var(--muted-foreground); font-variant-numeric: tabular-nums; white-space: nowrap; transition: bottom .75s var(--ease) calc(var(--i) * 45ms); animation: fade-in .6s ease both; animation-delay: calc(var(--i) * 70ms + 600ms); }
+.trend-col[data-current] .trend-value { color: var(--foreground); font-size: 12.5px; font-weight: 620; }
+.trend-col[data-state="missing"] .trend-value { bottom: 22% !important; color: var(--faint); }
+.trend-period { position: absolute; top: calc(100% + 7px); left: -8px; right: -8px; display: flex; justify-content: center; align-items: center; gap: 5px; font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.trend-col[data-current] .trend-period { color: var(--foreground); }
+.trend-period b { padding: 0 5px; border-radius: 4px; font-size: 10px; font-weight: 600; color: var(--background); background: var(--foreground); }
+
+.trend-tip { position: absolute; bottom: calc(100% + 26px); left: 50%; z-index: 6; min-width: 210px; padding: 10px 12px; transform: translateX(-50%); pointer-events: none; border-radius: 10px; font-size: 12px;
+  background: color-mix(in srgb, var(--surface-raised) 94%, transparent); backdrop-filter: blur(10px); border: 1px solid var(--border); box-shadow: var(--shadow-overlay); animation: fade-in .15s ease both; }
+.trend-col[data-align="start"] .trend-tip { left: 0; transform: none; }
+.trend-col[data-align="end"] .trend-tip { left: auto; right: 0; transform: none; }
+.trend-tip-title { margin-bottom: 6px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.trend-tip-row { display: flex; justify-content: space-between; gap: 16px; padding: 2px 0; color: var(--muted-foreground); }
+.trend-tip-row span { display: inline-flex; align-items: center; gap: 6px; }
+.trend-tip-row i { width: 8px; height: 8px; border-radius: 2px; }
+.trend-tip-row b { color: var(--foreground); font-weight: 600; font-variant-numeric: tabular-nums; }
+.trend-tip-total { margin-top: 3px; padding-top: 5px; border-top: 1px solid var(--hairline); }
+.trend-tip p { margin: 6px 0 0; color: var(--muted-foreground); line-height: 1.55; }
+.trend-tip .trend-tip-source { color: var(--faint); font-size: 11px; }
+
 /* ---------- States ---------- */
 .state, .empty { max-width: 520px; margin: 12vh auto 0; padding: 0 24px; text-align: center; line-height: 1.7; }
 .empty { margin-top: 18%; }
@@ -273,6 +325,8 @@ button { cursor: pointer; }
 @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
 @keyframes trace { from { fill-opacity: 0; } }
 @keyframes pulse { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
+@keyframes grow { from { transform: scaleY(0); } }
+@keyframes sweep { from { background-position: -30% 0; } to { background-position: 130% 0; } }
 @keyframes shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 
 /* ---------- Narrow screens: stack, keep the diagram legible with horizontal scroll ---------- */
@@ -300,6 +354,8 @@ button { cursor: pointer; }
   .chart { margin-top: 16px; overflow-x: auto; overscroll-behavior-x: contain; }
   .fc { position: relative; inset: auto; width: max(100%, 780px); aspect-ratio: var(--ratio); }
   .stage-foot { flex-direction: column; align-items: flex-start; }
+  .trend { height: 240px; }
+  .trend-plot { --axis: 40px; gap: 6px; }
   .provenance { justify-content: flex-start; }
 }
 @media (max-width: 620px) {
@@ -316,4 +372,5 @@ button { cursor: pointer; }
   .stage-title h1 { font-size: 22px; }
   .stats { margin-top: 14px; }
   .stat-value { font-size: 22px; }
+  .trend { height: 178px; }
 }

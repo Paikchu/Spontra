@@ -7,6 +7,9 @@ import {withLegacyInterestFormula} from '../../../../shared/analysis-runtime/fin
 import type {CompleteFlowPublication} from '../../../../shared/analysis-contract/complete-business-flow.ts';
 import type {PublicBusinessFlow} from '../../../../shared/analysis-contract/business-flow.ts';
 import {checkCompleteFlow} from '../../../../shared/analysis-runtime/financial-data/completeness.ts';
+import {readRevenueHistory} from './history.ts';
+import {historyFromSnapshot,mergeHistory,readHistory} from '../../../../shared/analysis-runtime/financial-data/history.ts';
+import type {RevenueHistoryQuarter} from '../../../../shared/analysis-contract/revenue-history.ts';
 /** Reads only the pointer to complete immutable versions, never staged quarters. */
 export async function readCompletePublication(db:D1Database,cik:string):Promise<CompleteFlowPublication>{
  const row=await db.prepare(`SELECT v.payload_json FROM financial_complete_current c JOIN financial_complete_versions v ON v.version_id=c.version_id WHERE c.cik=?`).bind(cik).first<{payload_json:string}>();
@@ -19,6 +22,14 @@ export async function readCompletePublication(db:D1Database,cik:string):Promise<
 export async function readCompletePublicationForTicker(db:D1Database,ticker:string):Promise<CompleteFlowPublication>{
  ticker=ticker.trim().toUpperCase();if(!/^[A-Z][A-Z0-9.-]{0,11}$/.test(ticker))throw new AnalysisRequestError('INVALID_TICKER','Invalid company ticker.');
  const identity=await db.prepare('SELECT cik FROM financial_collection_jobs WHERE ticker=? ORDER BY generation DESC LIMIT 1').bind(ticker).first<{cik:string}>();
+ const publication=await readFlowPublication(db,ticker,identity);
+ // Revenue history is supplementary: a missing or invalid record never affects the snapshot.
+ const stored=identity?await readRevenueHistory(db,identity.cik,ticker).catch(()=>null):null;
+ const anchors=(publication.flow?.quarters??[]).map(historyFromSnapshot).filter((q):q is RevenueHistoryQuarter=>q!==null);
+ const history=stored||anchors.length?readHistory(mergeHistory(ticker,stored?.quarters??[],anchors,stored?.updatedAt??publication.flow?.fetchedAt??new Date().toISOString()),ticker):null;
+ return {...publication,history};
+}
+async function readFlowPublication(db:D1Database,ticker:string,identity:{cik:string}|null):Promise<CompleteFlowPublication>{
  const current=identity?await readCompletePublication(db,identity.cik):null;
  if(current?.flow)return current;
  // Preserve an already verified legacy complete snapshot during the migration.

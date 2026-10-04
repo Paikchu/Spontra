@@ -13,7 +13,7 @@ test("new site's public projection strips analysis and nested unrecognized field
  const polluted=structuredClone(completeOrclFixture) as typeof completeOrclFixture & {account:string};polluted.account="PRIVATE_ACCOUNT";
  Object.assign(polluted.quarters[0],{privateNote:"PRIVATE_QUARTER"});Object.assign(polluted.quarters[0].figures.net!,{privateNote:"PRIVATE_AMOUNT"});
  const response=await handle(request(endpoint),env,context,async()=>Response.json({...publication(polluted),overview:{privateNote:"PRIVATE_REPORT"}}));
- const text=await response.text();assert.equal(response.status,200);assert.ok(!text.includes("PRIVATE_"));assert.equal(JSON.parse(text).flow.quarters[0].figures.net.value,"4760000000");assert.deepEqual(Object.keys(JSON.parse(text)),["schemaVersion","status","flow","reasons","outdated","lastAttemptAt"]);
+ const text=await response.text();assert.equal(response.status,200);assert.ok(!text.includes("PRIVATE_"));assert.equal(JSON.parse(text).flow.quarters[0].figures.net.value,"4760000000");assert.deepEqual(Object.keys(JSON.parse(text)),["schemaVersion","status","flow","reasons","outdated","lastAttemptAt","history"]);
 });
 test("private paths, generation, query injection and writes are unavailable",async()=>{
  let calls=0;const never:typeof fetch=async()=>{calls++;throw new Error("must not run");};
@@ -59,4 +59,14 @@ test('legacy v2 signed-interest snapshots gain only the known sign formula and r
  const legacy=structuredClone(completeOrclFixture);for(const q of legacy.quarters)for(const c of q.otherComponents??[])if(c.id==='interest')delete c.amount.formula;
  const result=await loadPublicFlow('ORCL',async()=>Response.json(publication(legacy)));assert.equal(result.status,'ready');assert.equal(result.flow!.quarters[0].figures.net!.value,legacy.quarters[0].figures.net!.value);
  const unknown=structuredClone(legacy);unknown.quarters[0].otherComponents![0].amount.lineage![0].concept='custom:UnknownExpense';assert.equal((await loadPublicFlow('ORCL',async()=>Response.json(publication(unknown)))).flow,null);
+});
+
+test("history passes through only when valid and for the same ticker",async()=>{
+ const quarter={periodStart:"2026-06-01",periodEnd:"2026-08-31",currency:"USD",scale:1,revenue:"100",basis:"reported",segments:[{id:"cloud",name:"Cloud",value:"100",privateNote:"PRIVATE_SEGMENT"}],source:{accession:"0001193125-26-389274",url:"https://www.sec.gov/Archives/edgar/data/1341439/a.htm",filedAt:"2026-09-11",form:"10-Q"}};
+ const withHistory=(history:unknown)=>(async()=>Response.json({...publication(completeOrclFixture),history})) as typeof fetch;
+ const ok=await loadPublicFlow("ORCL",withHistory({schemaVersion:"revenue-history.v1",ticker:"ORCL",updatedAt:"2026-10-01",quarters:[quarter]}));
+ assert.equal(ok.history!.quarters[0].revenue,"100");assert.ok(!JSON.stringify(ok).includes("PRIVATE_"));
+ assert.equal((await loadPublicFlow("ORCL",withHistory({schemaVersion:"revenue-history.v1",ticker:"MSFT",updatedAt:"x",quarters:[quarter]}))).history,null);
+ assert.equal((await loadPublicFlow("ORCL",withHistory({schemaVersion:"revenue-history.v1",ticker:"ORCL",updatedAt:"x",quarters:[{...quarter,revenue:"90"}]}))).history,null);
+ assert.equal((await loadPublicFlow("ORCL",withHistory(undefined))).history,null);
 });

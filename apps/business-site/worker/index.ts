@@ -3,6 +3,7 @@ import { selectFlow } from "@/lib/earning-report/web/business-flow-model";
 import { checkCompleteFlow, newestPair } from "@/shared/analysis-runtime/financial-data/completeness";
 import type { CompleteFlowPublication } from "@/shared/analysis-contract/complete-business-flow";
 import {withLegacyInterestFormula} from "@/shared/analysis-runtime/financial-data/disclosed-quarter";
+import {readHistory} from "@/shared/analysis-runtime/financial-data/history";
 const PUBLIC_ORIGIN="https://spontra-app.max-zhangyuchen.workers.dev";
 export type SiteEnv={ASSETS:{fetch(request:Request):Promise<Response>};PUBLIC_READ_LIMIT:{limit(options:{key:string}):Promise<{success:boolean}>}};
 export type SiteContext={waitUntil(promise:Promise<unknown>):void};
@@ -17,7 +18,8 @@ export async function loadPublicFlow(ticker:string,fetcher:typeof fetch=fetch):P
  if(publication.schemaVersion!=="complete-business-flow.v1"||!['ready','preparing','unavailable'].includes(publication.status))throw new Error('Invalid publication');
  if(publication.status!=='ready')return {schemaVersion:publication.schemaVersion,status:publication.status,flow:null,reasons:publication.reasons,outdated:false,lastAttemptAt:publication.lastAttemptAt};
  const flow=newestPair(withLegacyInterestFormula(selectFlow(publication.flow??undefined,null,ticker)));const check=checkCompleteFlow(flow);
- return {schemaVersion:"complete-business-flow.v1",status:check.complete?"ready":"preparing",flow:check.complete?flow:null,reasons:check.complete&&publication.outdated?publication.reasons:check.reasons,outdated:check.complete&&publication.outdated===true,lastAttemptAt:publication.lastAttemptAt??null};
+ // History is re-validated here and stripped to its schema; an invalid record is dropped, never repaired.
+ return {schemaVersion:"complete-business-flow.v1",status:check.complete?"ready":"preparing",flow:check.complete?flow:null,reasons:check.complete&&publication.outdated?publication.reasons:check.reasons,outdated:check.complete&&publication.outdated===true,lastAttemptAt:publication.lastAttemptAt??null,history:check.complete?readHistory(publication.history,ticker):null};
  }catch{
   // Rollout compatibility: only a verified complete legacy SEC projection may survive a new API outage.
   const legacy=await fetcher(PUBLIC_ORIGIN+`/api/analysis/v1/companies/${ticker}/analysis`,{signal:AbortSignal.timeout(12000),headers:{accept:"application/json"}});
