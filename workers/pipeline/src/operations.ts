@@ -52,6 +52,14 @@ export type SecPipelineEnv = SecCronEnv & AnalysisReadEnv & {
   RESEARCH_SYNC_KEY?: string;
   RESEARCH_WORKFLOW?: { create(options: { id: string; params: { caseId: string } }): Promise<unknown>; get(id: string): Promise<{ status(): Promise<{ status: string }> }> };
   BUSINESS_EXPLAINER_WORKFLOW?: { create(options: { id: string; params: { ticker: string; fingerprint: string } }): Promise<unknown> };
+  GUIDANCE_WORKFLOW?: { create(options: { id: string; params: { ticker: string; accession: string; eventDate: string } }): Promise<unknown> };
+  /** "true" starts guidance extraction for AI-enabled companies; anything else leaves it off. */
+  GUIDANCE_ENABLED?: string;
+  /** "false" turns off the IR-site deck search fallback. */
+  GUIDANCE_DECK_SEARCH?: string;
+  GUIDANCE_DAILY_MODEL_CALLS?: string;
+  /** Financial Modeling Prep key for earnings-call transcripts; optional. */
+  FMP_API_KEY?: string;
   SEC_FILINGS: R2BucketLike;
   SEC_USER_AGENT: string;
   DEEPSEEK_API_KEY?: string;
@@ -597,9 +605,13 @@ function collectArtifactKeys(reference: PreparedFilingReference, synthesisKey: s
 export async function callWorkerSecModel(
   env: SecPipelineEnv, fetcher: typeof fetch, stage: string, system: string, payload: unknown,
   modelOverride?: string, executionBudgetMs = SEC_MODEL_EXECUTION_BUDGET_MS, jsonMode = true,
+  tuning?: ModelCallTuning,
 ): Promise<Record<string, unknown>> {
-  return parseModelJson(await requestWorkerSecModelContent(env, fetcher, stage, system, payload, modelOverride, executionBudgetMs, jsonMode));
+  return parseModelJson(await requestWorkerSecModelContent(env, fetcher, stage, system, payload, modelOverride, executionBudgetMs, jsonMode, tuning));
 }
+
+/** Per-call limits for narrow extraction stages, and the provider-reported usage when the call ends. */
+export type ModelCallTuning = { maxTokens?: number; onMetrics?: (metrics: Readonly<Record<string, unknown>>) => void };
 
 async function requestWorkerSecModelContent(
   env: SecPipelineEnv,
@@ -610,7 +622,7 @@ async function requestWorkerSecModelContent(
   modelOverride?: string,
   executionBudgetMs = SEC_MODEL_EXECUTION_BUDGET_MS,
   jsonMode = true,
-  options?: ModelRequestOptions,
+  options?: Partial<ModelRequestOptions> & Pick<ModelCallTuning, "onMetrics">,
 ): Promise<string> {
   const apiKey = await resolveWorkerModelKey(env, fetcher);
   const started = Date.now();
@@ -686,6 +698,7 @@ async function requestWorkerSecModelContent(
     clearTimeout(firstTimer);
     clearTimeout(budgetTimer);
     console.log(JSON.stringify({ event: "sec-model-request", ...metrics, elapsedMs: Date.now() - started }));
+    try { options?.onMetrics?.(metrics); } catch { /* Usage accounting never fails a model call. */ }
   }
 }
 

@@ -14,9 +14,19 @@
     "SEC_DATA_COLLECTION_ENABLED": "true",
     "SEC_USER_AGENT": "earning-report-analysis/1.0 max.zhangyuchen@gmail.com",
     "SEC_ANALYSIS_MODEL": "deepseek-flash",
-    "SEC_REASONING_MODEL": "deepseek-flash"
+    "SEC_REASONING_MODEL": "deepseek-flash",
+    // Off until verified against a hand-labelled sample. FMP_API_KEY (transcripts) is an optional secret.
+    "GUIDANCE_ENABLED": "false",
+    "GUIDANCE_DECK_SEARCH": "true",
+    "GUIDANCE_DAILY_MODEL_CALLS": "40"
   },
   "workflows": [
+    {
+      "name": "spontra-guidance",
+      "binding": "GUIDANCE_WORKFLOW",
+      "class_name": "GuidanceWorkflow",
+      "concurrency": { "limit": 2 }
+    },
     {
       "name": "spontra-research",
       "binding": "RESEARCH_WORKFLOW",

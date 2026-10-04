@@ -145,6 +145,14 @@ export function buildAnalysisOpenApiDocument(serverUrl = "https://<analysis-back
           responses: { "200": { description: "business-explainer-response.v1", content: { "application/json": { schema: { type: "object", required: ["schemaVersion", "status", "explainer"], properties: { schemaVersion: { const: "business-explainer-response.v1" }, status: { enum: ["ready", "preparing"] }, explainer: { type: ["object", "null"], description: "business-explainer.v1: businesses (nodeId, summary, howItWorks, products, customers, monetization, relation) and their sources" } } } } } }, ...commonResponses },
         },
       },
+      "/api/v1/companies/{ticker}/guidance": {
+        get: {
+          summary: "Forward guidance from earnings releases, decks and call transcripts",
+          description: "Model-extracted and deterministically verified: each quote is verbatim from its source and every number appears in its quote. Revisions, growth-derived amounts and actuals are computed. `preparing` until a run has published. No model call is started by reading.",
+          security: [{ readCredential: ["analysis:read"] }], parameters: [tickerParameter],
+          responses: { "200": { description: "guidance-response.v1", content: { "application/json": { schema: { type: "object", required: ["schemaVersion", "status", "guidance"], properties: { schemaVersion: { const: "guidance-response.v1" }, status: { enum: ["ready", "preparing"] }, guidance: { type: ["object", "null"], description: "guidance.v1: items (metric, basis, horizon, fiscal period, low/high or direction, action against the previous event, derived amount, actual, quote), sources and per-event material coverage" } } } } } }, ...commonResponses },
+        },
+      },
       "/api/v1/companies/{ticker}/analysis": {
         get: {
           summary: "The company's latest published cross-period analysis",

@@ -3,7 +3,8 @@ import type { RevenueHistory } from "@/shared/analysis-contract/revenue-history"
 import type { BusinessFlowQuarter } from "@/shared/analysis-contract/business-flow";
 import { compactFlowValue } from "@/lib/earning-report/web/business-flow-layout";
 import { disclosedSegmentLabel } from "@/lib/earning-report/web/business-flow-model";
-import { buildBridge, buildColumns, buildSlots, columnIndex, growth, growthSeries, layerOrder, niceTicks, rateTicks, type Bridge, type Column, type Layer, type TrendItem } from "./trend-model";
+import type { GuidancePublication } from "@/shared/analysis-contract/guidance";
+import { ACTION_NAMES, buildBridge, buildColumns, buildSlots, columnIndex, growth, growthSeries, guidanceLabel, guidanceOverlay, layerOrder, niceTicks, rateTicks, type Bridge, type Column, type GuideMark, type Layer, type TrendItem } from "./trend-model";
 
 const SHADES = [100, 66, 44, 30];
 const shortPeriod = (end: string) => end.slice(0, 7).replace("-", ".");
@@ -19,8 +20,10 @@ function layerColor(layer: Layer, hue: (slot: number) => string) {
  * Eight quarterly bars that morph rather than remount: every column always renders every layer, and a
  * focus change only moves heights, so "all businesses" collapses into the selected business continuously.
  */
-export function TrendPanel({ history, items, selected, currentPeriod, periods, onPickPeriod, hue }: {
+export function TrendPanel({ history, items, selected, currentPeriod, periods, onPickPeriod, hue, guidance = null }: {
   history: RevenueHistory;
+  /** Management guidance; quarterly revenue ranges are drawn on the bars, longer horizons listed below. */
+  guidance?: GuidancePublication | null;
   items: TrendItem[];
   selected: TrendItem | null;
   currentPeriod: string | null;
@@ -36,7 +39,9 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
   const slots = useMemo(() => buildSlots(history), [history]);
   const columns = useMemo(() => buildColumns(slots, items, selected), [slots, items, selected]);
   const order = useMemo(() => layerOrder(items, columns), [items, columns]);
-  const ticks = niceTicks(Math.max(0, ...columns.map(c => c.total ?? 0)));
+  const overlay = useMemo(() => guidanceOverlay(slots, guidance, selected), [slots, guidance, selected]);
+  const guided = [...overlay.bySlot, overlay.next].filter((m): m is GuideMark => m != null);
+  const ticks = niceTicks(Math.max(0, ...columns.map(c => c.total ?? 0), ...guided.map(m => m.high)));
   const scale = ticks.at(-1)!;
   const unit = history.quarters.at(-1)!;
   const money = (v: number | null) => compactFlowValue(v, { currency: unit.currency, scale: unit.scale } as BusinessFlowQuarter);
@@ -63,7 +68,7 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
   const subject = selected?.name ?? "全部业务";
   const lineColor = selected ? hue(selected.slot) : "var(--foreground)";
 
-  return <section className="trend" data-view={view} aria-label={`${selected?.name ?? "全部业务"} 近 ${slots.length} 季收入`} onMouseLeave={() => { setHover(null); setSeries(null); }}>
+  return <section className="trend" data-view={view} data-outlook={view === "trend" && overlay.outlook.length ? "" : undefined} aria-label={`${selected?.name ?? "全部业务"} 近 ${slots.length} 季收入`} onMouseLeave={() => { setHover(null); setSeries(null); }}>
     <header className="trend-head">
       <div className="trend-title">
         <div className="trend-heading">
@@ -76,6 +81,7 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
         <div className="trend-legend" key={"legend" + mode + view}>
           {view === "trend" && legend.length > 1 && legend.map(layer => <span key={layer.key}><i style={{ background: layerColor(layer, hue) }} />{layer.name}</span>)}
           {view === "trend" && rateAxis && <span className="trend-legend-line" style={{ "--line": lineColor } as CSSProperties}><i />{rateName} · 右轴</span>}
+          {view === "trend" && guided.length > 0 && <span className="trend-legend-guide"><i />管理层指引区间</span>}
           <span className="trend-basis">{view === "trend" ? `${rateAxis ? "柱：收入 · 左轴 · " : ""}按每期财报原披露口径` : bridgeNote(bridge, lag, columns[index - lag])}</span>
         </div>
       </div>
@@ -91,7 +97,7 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
       </div>}
     </header>
     {view === "bridge" ? <BridgePlot key={mode + lag} bridge={bridge} empty={bridgeNote(bridge, lag, columns[index - lag])} subject={subject} hue={hue} money={money} /> : <>
-    <div className="trend-plot" role="list" data-series={series ?? undefined} data-rates={rateAxis ? "" : undefined} style={{ "--line": lineColor } as CSSProperties}
+    <div className="trend-plot" role="list" data-series={series ?? undefined} data-rates={rateAxis ? "" : undefined} style={{ "--line": lineColor, "--cols": columns.length + (overlay.next ? 1 : 0) } as CSSProperties}
       onMouseMove={e => setSeries((e.target as Element).closest("[data-series-line]") ? "line" : (e.target as Element).closest(".trend-col") ? "bar" : null)}>
       <div className="trend-grid" key={scale} aria-hidden="true">
         {ticks.map((t, k) => <div key={t} style={{ bottom: `${t / scale * 100}%` }}><span>{t ? money(t) : ""}</span>{rateAxis && <em>{axisPercent(rateAxis[k])}</em>}</div>)}
@@ -100,8 +106,14 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
       {columns.map((column, i) => <Bar key={column.slot.periodEnd} column={column} index={i} order={order} scale={scale} hue={hue} money={money}
         current={column.slot.periodEnd === currentPeriod} pickable={periods.has(column.slot.periodEnd)} hovered={hover === i}
         onHover={() => setHover(i)} onPick={() => onPickPeriod(column.slot.periodEnd)} selected={selected} rate={rates[i]} lag={lineLag} onLine={series === "line"}
-        line={rateAxis ? { y: rateY(rates[i] ?? 0), next: rates[i + 1] != null ? rateY(rates[i + 1]!) : null, labelled: i === index || (hover === i && series === "line") } : null} />)}
+        line={rateAxis ? { y: rateY(rates[i] ?? 0), next: rates[i + 1] != null ? rateY(rates[i + 1]!) : null, labelled: i === index || (hover === i && series === "line") } : null}
+        guide={overlay.bySlot[i]} />)}
+      {overlay.next && <GuideColumn mark={overlay.next} index={columns.length} scale={scale} money={money} hovered={hover === columns.length} onHover={() => setHover(columns.length)} />}
     </div>
+    {overlay.outlook.length > 0 && <p className="trend-outlook" aria-label="管理层年度与长期指引">
+      <span>管理层指引 · {overlay.outlook[0].issuedAt}</span>
+      {overlay.outlook.map(item => <span key={item.id} title={item.text}><b>{guidanceLabel(item, money)}</b>{item.action && item.previous && <em data-action={item.action}>{ACTION_NAMES[item.action]}</em>}</span>)}
+    </p>}
     </>}
   </section>;
 }
@@ -166,20 +178,22 @@ function BridgePlot({ bridge, empty, subject, hue, money }: { bridge: Bridge | n
   </div>;
 }
 
-function Bar({ column, index, order, scale, hue, money, current, pickable, hovered, onHover, onPick, selected, rate, lag, line, onLine }: {
+function Bar({ column, index, order, scale, hue, money, current, pickable, hovered, onHover, onPick, selected, rate, lag, line, onLine, guide }: {
   column: Column; index: number; order: string[]; scale: number; hue: (slot: number) => string; money: (v: number | null) => string;
   current: boolean; pickable: boolean; hovered: boolean; onHover: () => void; onPick: () => void; selected: TrendItem | null; rate: number | null; lag: 1 | 4;
   /** Growth point on the right axis (percent of plot height) and the segment to the next quarter; null without a right axis. */
   line: { y: number; next: number | null; labelled: boolean } | null;
   /** The pointer is on the growth line: the tooltip leads with the rate and drops the business split. */
   onLine: boolean;
+  /** The last range management guided for this quarter. */
+  guide: GuideMark | null;
 }) {
   const q = column.slot.quarter;
   const label = column.state === "missing" ? "该季度未取得可核验披露" : column.state === "basis" ? (selected ? "该期财报未按此业务口径披露" : column.layers.length > 1 ? "该期按原披露分类展示，未推定当前业务拆分" : "该期仅取得可核验的公司总收入") : "";
   const height = (column.total ?? 0) / scale * 100;
   return <div className="trend-col" role="listitem" data-state={column.state} data-current={current || undefined} data-align={index < 2 ? "start" : index > 5 ? "end" : undefined} style={{ "--i": index } as CSSProperties} onMouseEnter={onHover}>
     <button type="button" className="trend-hit" disabled={!pickable} onClick={onPick} onFocus={onHover}
-      aria-label={`${shortPeriod(column.slot.periodEnd)} ${column.total != null ? money(column.total) : ""}${label ? `，${label}` : ""}${pickable ? "，在流向图中查看该季度" : ""}`} />
+      aria-label={`${shortPeriod(column.slot.periodEnd)} ${column.total != null ? money(column.total) : ""}${label ? `，${label}` : ""}${guide ? `，指引 ${money(guide.low)}–${money(guide.high)}` : ""}${pickable ? "，在流向图中查看该季度" : ""}`} />
     {/* With the growth line drawn, the axes carry the scale and only the current or hovered bar keeps its value label. */}
     <span className="trend-value" data-quiet={line && !current && !(hovered && !onLine) ? "" : undefined} style={{ bottom: `${height}%` }}>{column.total != null ? money(column.total) : "—"}</span>
     <span className="trend-stack" aria-hidden="true">
@@ -189,6 +203,8 @@ function Bar({ column, index, order, scale, hue, money, current, pickable, hover
       })}
       {!column.layers.length && <i className="trend-ghost" />}
     </span>
+    {guide && <span className="trend-guide" data-derived={guide.derived || undefined} aria-hidden="true"
+      style={{ bottom: `${guide.low / scale * 100}%`, height: `${(guide.high - guide.low) / scale * 100}%` }} />}
     {line && rate != null && line.next != null && <svg className="trend-line" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
       <line x1="0" y1={100 - line.y} x2="100" y2={100 - line.next} vectorEffect="non-scaling-stroke" />
       <line className="trend-line-hit" data-series-line="" x1="0" y1={100 - line.y} x2="100" y2={100 - line.next} vectorEffect="non-scaling-stroke" />
@@ -202,8 +218,31 @@ function Bar({ column, index, order, scale, hue, money, current, pickable, hover
       {!onLine && column.layers.length > 1 && column.layers.map(layer => <div className="trend-tip-row" key={layer.key}><span><i style={{ background: layerColor(layer, hue) }} />{layer.name}</span><b>{money(layer.value)}</b></div>)}
       {column.total != null && <div className="trend-tip-row trend-tip-total"><span>{selected ? "业务收入" : "总收入"}</span><b>{money(column.total)}</b></div>}
       {!onLine && rate != null && <div className="trend-tip-row"><span>{lag === 4 ? "同比" : "环比"}</span><b data-trend={trend(rate)}>{percent(rate)}</b></div>}
+      {!onLine && guide && <div className="trend-tip-row"><span>{guide.derived ? "指引（按增速换算）" : "指引"}</span><b>{money(guide.low)}–{money(guide.high)}</b></div>}
+      {!onLine && guide && column.total != null && <p>{column.total > guide.high ? "高于指引上限" : column.total < guide.low ? "低于指引下限" : "落在指引区间内"} · 指引发布于 {guide.item.issuedAt}</p>}
       {label && <p>{label}{column.state === "basis" && q && !selected ? `：${q.segments.map(s => disclosedSegmentLabel(s.name)).join("、")}` : ""}</p>}
       {q && <p className="trend-tip-source">{q.basis === "derived" ? "第四季度 = 全年 − 前三季度累计 · " : ""}SEC {q.source.form} · {q.source.filedAt}</p>}
+    </div>}
+  </div>;
+}
+
+/** The next quarter, which has guidance but no result yet: a dashed range rather than a bar. */
+function GuideColumn({ mark, index, scale, money, hovered, onHover }: { mark: GuideMark; index: number; scale: number; money: (v: number | null) => string; hovered: boolean; onHover: () => void }) {
+  const { item } = mark;
+  return <div className="trend-col trend-col--guide" role="listitem" tabIndex={0} data-align="end" style={{ "--i": index } as CSSProperties} onMouseEnter={onHover} onFocus={onHover}
+    aria-label={`${shortPeriod(mark.periodEnd)} 管理层收入指引 ${money(mark.low)}–${money(mark.high)}${mark.derived ? "，按增速换算" : ""}`}>
+    {/* An outline up to the low end reads as the expected bar; the solid band is the guided range itself. */}
+    <span className="trend-guide-ghost" aria-hidden="true" style={{ height: `${mark.low / scale * 100}%` }} />
+    <span className="trend-guide-band" aria-hidden="true" style={{ bottom: `${mark.low / scale * 100}%`, height: `max(3px, ${(mark.high - mark.low) / scale * 100}%)` }} />
+    <span className="trend-value" style={{ bottom: `${mark.high / scale * 100}%` }}>指引</span>
+    <span className="trend-period">{shortPeriod(mark.periodEnd)}<b className="trend-period-guide">指引</b></span>
+    {hovered && <div className="trend-tip" role="presentation">
+      <div className="trend-tip-title">{shortPeriod(mark.periodEnd)} 管理层指引</div>
+      <div className="trend-tip-row trend-tip-lead"><span>收入</span><b>{money(mark.low)}–{money(mark.high)}</b></div>
+      {item.derived && <p>按同比 {Number(item.low!.toFixed(2))}%–{Number(item.high!.toFixed(2))}% 与去年同季 {money(item.derived.base)} 换算</p>}
+      {item.action && item.previous && <div className="trend-tip-row"><span>较上次</span><b>{ACTION_NAMES[item.action]}</b></div>}
+      <p>“{item.quote}”</p>
+      <p className="trend-tip-source">{mark.source ? `${mark.source.title} · ` : ""}{item.issuedAt}</p>
     </div>}
   </div>;
 }

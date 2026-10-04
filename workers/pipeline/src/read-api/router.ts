@@ -1,5 +1,6 @@
 import {readCompletePublicationForTicker} from '../financial-data/publication.ts';
 import { readBusinessExplainerResponse } from "../business-explainer/workflow.ts";
+import { readGuidanceResponse } from "../guidance/workflow.ts";
 import { businessFlowCacheKey } from "../sec/business-flow-cache.ts";
 import type { PublicBusinessFlow } from "../../../../shared/analysis-contract/business-flow.ts";
 import { getPublicCompanyAnalysis } from "../company-analysis/api.ts";
@@ -56,6 +57,7 @@ type RouteMatch =
   | { kind: "analysis"; ticker: string }
   | { kind: "business-flow"; ticker: string }
   | { kind: "business-explainer"; ticker: string }
+  | { kind: "guidance"; ticker: string }
   | { kind: "fundamentals"; ticker: string }
   | { kind: "openapi" };
 
@@ -65,6 +67,7 @@ const SCOPE_BY_ROUTE: Record<Exclude<RouteMatch["kind"], "openapi">, AnalysisRea
   analysis: "analysis:read",
   "business-flow": "analysis:read",
   "business-explainer": "analysis:read",
+  guidance: "analysis:read",
   fundamentals: "fundamentals:read",
 };
 
@@ -149,6 +152,10 @@ async function handleRoute(request: Request, database: D1Database, route: Exclud
       const payload = await readBusinessExplainerResponse(database, route.ticker);
       return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
     }
+    case "guidance": {
+      const payload = await readGuidanceResponse(database, route.ticker);
+      return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
+    }
     case "analysis": {
       const payload = await getPublicCompanyAnalysis(new D1CompanyAnalysisRepository(database), route.ticker);
       const business = await new D1SecRepository(database).getCache<PublicBusinessFlow>(businessFlowCacheKey(route.ticker));
@@ -188,7 +195,7 @@ async function withinRateLimit(env: AnalysisReadEnv, identity: AnalysisReadIdent
 
 function matchRoute(pathname: string): RouteMatch | null {
   if (pathname === "/api/v1/openapi.json") return { kind: "openapi" };
-  const company = /^\/api\/v1\/companies\/([^/]+)\/(filings|analysis|fundamentals|business-flow|business-explainer)(?:\/([^/]+))?\/?$/.exec(pathname);
+  const company = /^\/api\/v1\/companies\/([^/]+)\/(filings|analysis|fundamentals|business-flow|business-explainer|guidance)(?:\/([^/]+))?\/?$/.exec(pathname);
   if (!company) return null;
   const ticker = safeDecode(company[1]!);
   const resource = company[2]!;
@@ -202,6 +209,7 @@ function matchRoute(pathname: string): RouteMatch | null {
   if (tail !== undefined) return null;
   if(resource === "business-flow") return {kind:"business-flow",ticker};
   if (resource === "business-explainer") return { kind: "business-explainer", ticker };
+  if (resource === "guidance") return { kind: "guidance", ticker };
   return resource === "analysis" ? { kind: "analysis", ticker } : { kind: "fundamentals", ticker };
 }
 

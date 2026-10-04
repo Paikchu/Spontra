@@ -1,4 +1,5 @@
 import type { RevenueHistory, RevenueHistoryNode, RevenueHistoryQuarter } from "@/shared/analysis-contract/revenue-history";
+import type { GuidanceItem, GuidancePublication, GuidanceSource } from "@/shared/analysis-contract/guidance";
 import { disclosedSegmentLabel } from "@/lib/earning-report/web/business-flow-model";
 
 export type TrendItem = { key: string; id: string; parent: string | null; name: string; slot: number };
@@ -142,4 +143,71 @@ export function rateTicks(rates: Array<number | null>): number[] | null {
     if (below + above <= 3) return [0, 1, 2, 3].map(k => Number(((k - below) * step).toPrecision(12)) || 0);
   }
   return null;
+}
+
+/** A guided revenue range placed on a quarter: stated as an amount, or derived from stated growth. */
+export type GuideMark = { periodEnd: string; low: number; high: number; derived: boolean; item: GuidanceItem; source: GuidanceSource | null };
+export type GuideOverlay = { bySlot: Array<GuideMark | null>; next: GuideMark | null; outlook: GuidanceItem[] };
+
+const DAY = 86_400_000;
+const near = (a: string, b: string) => Math.abs(Date.parse(a) - Date.parse(b)) <= 20 * DAY;
+const plain = (value: string) => value.toLowerCase().replace(/revenues?$|net$/g, "").replace(/[^a-z0-9]/g, "");
+
+/** Segment guidance names the business in the filing's words; match it to the member id, never to a translated label. */
+function forSubject(item: GuidanceItem, selected: TrendItem | null) {
+  if (!selected) return item.metric === "revenue" && !item.segment;
+  if (item.metric !== "segment_revenue" || !item.segment) return false;
+  const name = plain(item.segment);
+  return name.length >= 3 && (name === plain(selected.id) || name === plain(selected.id.replace(/Revenues?$/, "")));
+}
+
+function mark(item: GuidanceItem, sources: GuidanceSource[]): GuideMark | null {
+  const range = item.unit === "USD" && item.low != null && item.high != null ? { low: item.low, high: item.high, derived: false }
+    : item.derived ? { low: item.derived.low, high: item.derived.high, derived: true } : null;
+  return range && item.periodEnd ? { periodEnd: item.periodEnd, ...range, item, source: sources.find(s => s.id === item.sourceIds[0]) ?? null } : null;
+}
+
+/**
+ * Places quarterly revenue guidance on the trend: each reported quarter gets the last range guided for it,
+ * and the next quarter gets its own column. Annual and long-term targets do not fit a quarterly axis and
+ * are returned separately, from the latest event only.
+ */
+export function guidanceOverlay(slots: Slot[], guidance: GuidancePublication | null, selected: TrendItem | null): GuideOverlay {
+  const empty = { bySlot: slots.map(() => null), next: null, outlook: [] };
+  if (!guidance || !slots.length) return empty;
+  const latestFirst = [...guidance.items].sort((a, b) => b.issuedAt.localeCompare(a.issuedAt));
+  const quarterly = latestFirst.filter(i => i.horizon === "quarter" && forSubject(i, selected));
+  const pick = (test: (end: string) => boolean) => {
+    for (const item of quarterly) { const m = item.periodEnd && test(item.periodEnd) ? mark(item, guidance.sources) : null; if (m) return m; }
+    return null;
+  };
+  const last = slots.at(-1)!.periodEnd;
+  const longer = latestFirst.filter(i => i.horizon !== "quarter" && (selected ? forSubject(i, selected) : !i.segment));
+  const newest = longer[0]?.issuedAt;
+  const order = ["revenue", "segment_revenue", "operating_margin", "eps", "free_cash_flow", "capex"];
+  const rank = (i: GuidanceItem) => { const r = order.indexOf(i.metric); return r < 0 ? order.length : r; };
+  return {
+    bySlot: slots.map(slot => pick(end => near(end, slot.periodEnd))),
+    next: pick(end => Date.parse(end) - Date.parse(last) > 20 * DAY && Date.parse(end) - Date.parse(last) < 120 * DAY),
+    outlook: longer.filter(i => i.issuedAt === newest).sort((a, b) => rank(a) - rank(b) || (a.horizon === "annual" ? -1 : 1)).slice(0, 4),
+  };
+}
+
+const METRIC_NAMES: Record<GuidanceItem["metric"], string> = {
+  revenue: "收入", segment_revenue: "收入", gross_margin: "毛利率", operating_margin: "营业利润率", operating_income: "营业利润", eps: "EPS",
+  free_cash_flow: "自由现金流", operating_cash_flow: "经营现金流", capex: "资本开支", rpo: "RPO", billings: "Billings", other: "",
+};
+export const ACTION_NAMES: Record<NonNullable<GuidanceItem["action"]>, string> = {
+  initiated: "首次给出", raised: "上调", lowered: "下调", reaffirmed: "维持", narrowed: "收窄", widened: "放宽", updated: "更新",
+};
+
+/** "FY2027 收入增长 16%–17%（非 GAAP）" from an item; the money formatter is the panel's own. */
+export function guidanceLabel(item: GuidanceItem, money: (v: number | null) => string): string {
+  const period = item.horizon === "long_term" ? `长期${item.fiscalYear ? ` FY${item.fiscalYear}` : ""}` : item.horizon === "annual" ? `FY${item.fiscalYear}` : `FY${item.fiscalYear} Q${item.fiscalQuarter}`;
+  const name = item.metric === "other" ? item.label : `${item.segment ? `${item.segment} ` : ""}${METRIC_NAMES[item.metric]}`;
+  const basis = item.basis === "non_gaap" ? "（非 GAAP）" : item.basis === "constant_currency" ? "（固定汇率）" : "";
+  if (item.form === "qualitative") return `${period} ${name}${item.direction === "up" ? "预计上行" : item.direction === "down" ? "预计下行" : "预计持平"}${basis}`;
+  const one = (v: number | null) => v == null ? "" : item.unit === "USD" ? money(v) : item.unit === "USD_per_share" ? `$${v.toFixed(2)}` : `${Number(v.toFixed(2))}%`;
+  const range = item.form === "floor" ? `≥ ${one(item.low)}` : item.form === "ceiling" ? `≤ ${one(item.high)}` : item.low === item.high ? one(item.low) : `${one(item.low)}–${one(item.high)}`;
+  return `${period} ${name}${item.measure === "growth" ? "增长 " : " "}${range}${basis}`;
 }

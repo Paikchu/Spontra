@@ -13,6 +13,7 @@ import { storeWorkflowResult, loadWorkflowResult } from "./workflow-results.ts";
 import { executeResearchWorkflow } from "./research/runtime.ts";
 import { executeBusinessExplainerWorkflow, type BusinessExplainerParams } from "./business-explainer/workflow.ts";
 import { maintenanceAnalysisEnvironment } from "./admin/financial-maintenance-runner.ts";
+import { executeGuidanceWorkflow, type GuidanceWorkflowParams } from "./guidance/workflow.ts";
 
 const WORKFLOW_RETRY = {
   retries: {
@@ -71,6 +72,14 @@ export class ResearchWorkflow extends WorkflowEntrypoint<SecPipelineEnv, { caseI
 export class BusinessExplainerWorkflow extends WorkflowEntrypoint<SecPipelineEnv, BusinessExplainerParams> {
   async run(event: WorkflowEvent<BusinessExplainerParams>, step: WorkflowStep) {
     return executeBusinessExplainerWorkflow(event.payload, durableSteps(step, this.env, event.instanceId), this.env);
+  }
+}
+
+export class GuidanceWorkflow extends WorkflowEntrypoint<SecPipelineEnv, GuidanceWorkflowParams> {
+  async run(event: WorkflowEvent<GuidanceWorkflowParams>, step: WorkflowStep) {
+    const durable = durableSteps(step, this.env, event.instanceId);
+    // Waiting for a transcript sleeps the instance; a sleeping Workflow uses no CPU.
+    return executeGuidanceWorkflow(event.payload, { do: durable.do, sleep: (name, ms) => step.sleep(name, Math.max(1000, Math.round(ms))) }, this.env);
   }
 }
 

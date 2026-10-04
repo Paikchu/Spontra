@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { handle, loadPublicFlow, type SiteEnv } from "../apps/business-site/worker/index";
+import { handle, loadGuidance, loadPublicFlow, type SiteEnv } from "../apps/business-site/worker/index";
+import { guidanceLabel, guidanceOverlay, type Slot } from "../apps/business-site/src/trend-model";
+import type { GuidanceItem, GuidancePublication } from "../shared/analysis-contract/guidance";
 import {completeOrclFixture} from "./fixtures/complete-orcl-flow";
 import { businessFlowFixture } from "./fixtures/business-flow-fixture";
 const context={waitUntil:(promise:Promise<unknown>)=>{void promise;}};
@@ -13,7 +15,7 @@ test("new site's public projection strips analysis and nested unrecognized field
  const polluted=structuredClone(completeOrclFixture) as typeof completeOrclFixture & {account:string};polluted.account="PRIVATE_ACCOUNT";
  Object.assign(polluted.quarters[0],{privateNote:"PRIVATE_QUARTER"});Object.assign(polluted.quarters[0].figures.net!,{privateNote:"PRIVATE_AMOUNT"});
  const response=await handle(request(endpoint),env,context,async()=>Response.json({...publication(polluted),overview:{privateNote:"PRIVATE_REPORT"}}));
- const text=await response.text();assert.equal(response.status,200);assert.ok(!text.includes("PRIVATE_"));assert.equal(JSON.parse(text).flow.quarters[0].figures.net.value,"4760000000");assert.deepEqual(Object.keys(JSON.parse(text)),["schemaVersion","status","flow","reasons","outdated","lastAttemptAt","history","explainer"]);
+ const text=await response.text();assert.equal(response.status,200);assert.ok(!text.includes("PRIVATE_"));assert.equal(JSON.parse(text).flow.quarters[0].figures.net.value,"4760000000");assert.deepEqual(Object.keys(JSON.parse(text)),["schemaVersion","status","flow","reasons","outdated","lastAttemptAt","history","explainer","guidance"]);
 });
 test("private paths, generation, query injection and writes are unavailable",async()=>{
  let calls=0;const never:typeof fetch=async()=>{calls++;throw new Error("must not run");};
@@ -80,4 +82,38 @@ test("business explanations are validated, stripped and never block the flow",as
  for(const bad of [new Error("down"),{schemaVersion:"business-explainer-response.v1",status:"ready",explainer:{...explainer,ticker:"MSFT"}},{schemaVersion:"business-explainer-response.v1",status:"ready",explainer:{...explainer,sources:[{...explainer.sources[0],url:"javascript:alert(1)"}]}}]){
   const response=await handle(request(endpoint),env,context,routed(bad));assert.equal(response.status,200);const body=await response.json() as {flow:unknown;explainer:unknown};assert.ok(body.flow);assert.equal(body.explainer,null);
  }
+});
+
+const guidanceItem=(over:Partial<GuidanceItem>):GuidanceItem=>({id:"i",metric:"revenue",measure:"amount",segment:null,label:"Total revenues",basis:"gaap",horizon:"quarter",form:"range",fiscalYear:2027,fiscalQuarter:2,periodEnd:"2026-11-30",unit:"USD",low:16.2e9,high:16.4e9,direction:null,derived:null,actual:null,text:"指引",quote:"we expect revenue of $16.2 billion to $16.4 billion",sourceIds:["m-1"],issuedAt:"2026-09-09",action:"initiated",previous:null,...over});
+const guidancePublication=(items:GuidanceItem[]):GuidancePublication=>({schemaVersion:"guidance.v1",ticker:"ORCL",updatedAt:"2026-10-04",items,coverage:[],sources:[{id:"m-1",kind:"press_release",sourceKind:"sec",title:"Release",url:"https://www.sec.gov/x.htm",publishedAt:"2026-09-09"}]});
+test("guidance is supplementary: a valid publication is served, anything else reads as null",async()=>{
+ const valid=guidancePublication([guidanceItem({})]);
+ assert.equal((await loadGuidance("ORCL",async()=>Response.json({schemaVersion:"guidance-response.v1",status:"ready",guidance:valid})))?.items.length,1);
+ assert.equal(await loadGuidance("ORCL",async()=>Response.json({schemaVersion:"guidance-response.v1",status:"preparing",guidance:null})),null);
+ assert.equal(await loadGuidance("ORCL",async()=>Response.json({schemaVersion:"guidance-response.v1",status:"ready",guidance:{...valid,ticker:"NET"}})),null);
+ assert.equal(await loadGuidance("ORCL",async()=>{throw new Error("down");}),null);
+});
+test("quarterly revenue guidance lands on its quarter and the next one; longer horizons come from the latest event",()=>{
+ const slots:Slot[]=["2026-02-28","2026-05-31","2026-08-31"].map(periodEnd=>({periodEnd,quarter:null}));
+ const items=[
+  guidanceItem({id:"old",periodEnd:"2026-08-31",low:14e9,high:14.2e9,issuedAt:"2026-03-10"}),
+  guidanceItem({id:"later",periodEnd:"2026-08-31",low:14.1e9,high:14.3e9,issuedAt:"2026-06-11"}),
+  guidanceItem({id:"growth",periodEnd:"2026-05-31",measure:"growth",unit:"percent",low:10,high:12,derived:{low:15e9,high:15.3e9,basePeriodEnd:"2025-05-31",base:13.6e9},issuedAt:"2026-03-10"}),
+  guidanceItem({id:"next"}),
+  guidanceItem({id:"fy",horizon:"annual",fiscalQuarter:null,periodEnd:"2027-05-31",measure:"growth",unit:"percent",low:16,high:17,action:"raised",previous:{low:15,high:16,issuedAt:"2026-06-11"}}),
+  guidanceItem({id:"fy-old",horizon:"annual",fiscalQuarter:null,periodEnd:"2027-05-31",measure:"growth",unit:"percent",low:15,high:16,issuedAt:"2026-06-11"}),
+  guidanceItem({id:"seg",metric:"segment_revenue",segment:"Cloud Infrastructure",periodEnd:"2026-11-30"}),
+ ];
+ const overlay=guidanceOverlay(slots,guidancePublication(items),null);
+ assert.deepEqual(overlay.bySlot.map(m=>m?.item.id??null),[null,"growth","later"]);
+ assert.equal(overlay.bySlot[1]!.derived,true);
+ assert.equal(overlay.next?.item.id,"next");
+ assert.deepEqual(overlay.outlook.map(i=>i.id),["fy"]);
+ const segment=guidanceOverlay(slots,guidancePublication(items),{key:"k",id:"CloudInfrastructureRevenues",parent:null,name:"云基础设施",slot:1});
+ assert.equal(segment.next?.item.id,"seg");
+ assert.equal(guidanceOverlay(slots,null,null).next,null);
+ const money=(v:number|null)=>`$${(v!/1e9).toFixed(1)}B`;
+ assert.equal(guidanceLabel(items[4]!,money),"FY2027 收入增长 16%–17%");
+ assert.equal(guidanceLabel(guidanceItem({metric:"eps",measure:"per_share",unit:"USD_per_share",basis:"non_gaap",low:1.46,high:1.5}),money),"FY2027 Q2 EPS $1.46–$1.50（非 GAAP）");
+ assert.equal(guidanceLabel(guidanceItem({form:"qualitative",metric:"segment_revenue",segment:"OCI",direction:"up",low:null,high:null,unit:null,horizon:"long_term",fiscalYear:null}),money),"长期 OCI 收入预计上行");
 });

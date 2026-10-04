@@ -77,6 +77,7 @@ test("the OpenAPI document describes the resources it actually serves, and embed
     "/api/v1/companies/{ticker}/filings",
     "/api/v1/companies/{ticker}/filings/{accession}",
     "/api/v1/companies/{ticker}/fundamentals",
+    "/api/v1/companies/{ticker}/guidance",
     "/api/v1/openapi.json",
   ]);
   // Embedded by reference, not copied — so the document cannot describe a shape the tests do not check.
@@ -92,7 +93,7 @@ test("the OpenAPI document describes the resources it actually serves, and embed
 
 test("the document serialises — a consumer reads JSON, not a live object graph", () => {
   const serialised = JSON.parse(JSON.stringify(buildAnalysisOpenApiDocument())) as { paths: Record<string, unknown> };
-  assert.equal(Object.keys(serialised.paths).length, 7);
+  assert.equal(Object.keys(serialised.paths).length, 8);
 });
 
 /**
