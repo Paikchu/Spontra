@@ -4,6 +4,8 @@ import { checkCompleteFlow, newestPair } from "@/shared/analysis-runtime/financi
 import type { CompleteFlowPublication } from "@/shared/analysis-contract/complete-business-flow";
 import {withLegacyInterestFormula} from "@/shared/analysis-runtime/financial-data/disclosed-quarter";
 import {readHistory} from "@/shared/analysis-runtime/financial-data/history";
+import {readBusinessExplainer} from "@/shared/analysis-runtime/business-explainer";
+import type {BusinessExplainer} from "@/shared/analysis-contract/business-explainer";
 const PUBLIC_ORIGIN="https://spontra-app.max-zhangyuchen.workers.dev";
 export type SiteEnv={ASSETS:{fetch(request:Request):Promise<Response>};PUBLIC_READ_LIMIT:{limit(options:{key:string}):Promise<{success:boolean}>}};
 export type SiteContext={waitUntil(promise:Promise<unknown>):void};
@@ -30,6 +32,16 @@ export async function loadPublicFlow(ticker:string,fetcher:typeof fetch=fetch):P
  }
 }
 
+/** Supplementary: an unavailable or invalid explanation reads as null and never fails the flow. */
+export async function loadExplainer(ticker:string,fetcher:typeof fetch=fetch):Promise<BusinessExplainer|null>{
+ try{
+  const response=await fetcher(PUBLIC_ORIGIN+`/api/analysis/v1/companies/${ticker}/business-explainer`,{signal:AbortSignal.timeout(8000),headers:{accept:"application/json"}});
+  if(!response.ok)return null;
+  const body=await response.json() as {schemaVersion?:string;status?:string;explainer?:unknown};
+  return body.schemaVersion==="business-explainer-response.v1"&&body.status==="ready"?readBusinessExplainer(body.explainer,ticker):null;
+ }catch{return null;}
+}
+
 export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,fetcher:typeof fetch=fetch,cache?:Cache):Promise<Response>{
  const url=new URL(request.url);
  if(url.pathname.startsWith("/api/")){
@@ -38,7 +50,7 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,fetcher
   if(request.method!=="GET")return json({error:"Method not allowed"},405);
   try{if(!env.PUBLIC_READ_LIMIT||!(await env.PUBLIC_READ_LIMIT.limit({key:request.headers.get("cf-connecting-ip")??"anonymous"})).success)return json({error:"Too many requests"},429);}catch{return json({error:"Read service unavailable"},503);}
   const key=new Request(url.href,{method:"GET"});const cached=await cache?.match(key);if(cached)return cached;
-  try{const response=json(await loadPublicFlow(match[1],fetcher));if(cache)ctx.waitUntil(cache.put(key,response.clone()));return response;}catch{return json({error:"Public company data temporarily unavailable"},503);}
+  try{const [flow,explainer]=await Promise.all([loadPublicFlow(match[1],fetcher),loadExplainer(match[1],fetcher)]);const response=json({...flow,explainer});if(cache)ctx.waitUntil(cache.put(key,response.clone()));return response;}catch{return json({error:"Public company data temporarily unavailable"},503);}
  }
  if(request.method!=="GET"&&request.method!=="HEAD")return json({error:"Method not allowed"},405);
  const response=await env.ASSETS.fetch(request);const headers=new Headers(response.headers);for(const [name,value]of Object.entries(security))headers.set(name,value);return new Response(response.body,{status:response.status,headers});

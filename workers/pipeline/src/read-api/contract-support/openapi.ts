@@ -137,6 +137,14 @@ export function buildAnalysisOpenApiDocument(serverUrl = "https://<analysis-back
           responses:{"200":{description:"complete-business-flow.v1: status, flow, reasons, outdated, lastAttemptAt and optional history",content:{"application/json":{schema:{type:"object",required:["schemaVersion","status","flow","reasons","outdated","lastAttemptAt"],properties:{schemaVersion:{const:"complete-business-flow.v1"},status:{enum:["ready","preparing","unavailable"]},flow:{type:["object","null"]},reasons:{type:"array",items:{type:"string"}},outdated:{type:"boolean"},lastAttemptAt:{type:["string","null"]},history:{type:["object","null"],description:"revenue-history.v1: up to 8 recent quarters of revenue by business as each SEC filing presented it; supplementary and independent of the snapshot"}}}}}},...commonResponses},
         },
       },
+      "/api/v1/companies/{ticker}/business-explainer": {
+        get: {
+          summary: "Plain-language explanation of each disclosed business, written from cited public sources",
+          description: "Model-written and independently reviewed; every statement cites sources fetched in the same run. Carries no amounts. `preparing` until a run has published. No research or model call is started by reading.",
+          security: [{ readCredential: ["analysis:read"] }], parameters: [tickerParameter],
+          responses: { "200": { description: "business-explainer-response.v1", content: { "application/json": { schema: { type: "object", required: ["schemaVersion", "status", "explainer"], properties: { schemaVersion: { const: "business-explainer-response.v1" }, status: { enum: ["ready", "preparing"] }, explainer: { type: ["object", "null"], description: "business-explainer.v1: businesses (nodeId, summary, howItWorks, products, customers, monetization, relation) and their sources" } } } } } }, ...commonResponses },
+        },
+      },
       "/api/v1/companies/{ticker}/analysis": {
         get: {
           summary: "The company's latest published cross-period analysis",

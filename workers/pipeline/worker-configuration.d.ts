@@ -13,6 +13,7 @@ interface __BaseEnv_Env {
 	DB?: D1Database;
 	DEEPSEEK_API_KEY?: string;
 	RESEARCH_WORKFLOW?: Workflow<Parameters<import("./src/index").ResearchWorkflow['run']>[0]['payload']>;
+	BUSINESS_EXPLAINER_WORKFLOW?: Workflow<Parameters<import("./src/index").BusinessExplainerWorkflow['run']>[0]['payload']>;
 }
 declare namespace Cloudflare {
 	interface GlobalProps {

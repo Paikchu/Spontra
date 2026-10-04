@@ -1,4 +1,5 @@
 import type {CompleteFlowPublication} from '../../../shared/analysis-contract/complete-business-flow.ts';
+import type { BusinessExplainerResponse } from "../../../shared/analysis-contract/business-explainer.ts";
 import type { PublicCompanyAnalysisResponse } from "../../../shared/analysis-contract/company-analysis.ts";
 import { AnalysisRequestError, type AnalysisErrorBody, type AnalysisErrorCode } from "./analysis-errors.ts";
 import type { PublicFilingDetail, PublicFilingPage } from "../../../shared/analysis-contract/filings.ts";
@@ -61,6 +62,7 @@ export class AnalysisBackendClient {
   }
 
   getCompleteBusinessFlow(ticker:string){return this.request<CompleteFlowPublication>(`/api/v1/companies/${encode(ticker)}/business-flow`);}
+  getBusinessExplainer(ticker: string) { return this.request<BusinessExplainerResponse>(`/api/v1/companies/${encode(ticker)}/business-explainer`); }
 
   getCompanyAnalysis(ticker: string) {
     return this.request<PublicCompanyAnalysisResponse>(`/api/v1/companies/${encode(ticker)}/analysis`);

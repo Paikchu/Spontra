@@ -24,6 +24,12 @@
       "concurrency": { "limit": 2 }
     },
     {
+      "name": "spontra-business-explainer",
+      "binding": "BUSINESS_EXPLAINER_WORKFLOW",
+      "class_name": "BusinessExplainerWorkflow",
+      "concurrency": { "limit": 1 }
+    },
+    {
       "name": "earning-report-analysis-sec-analysis",
       "binding": "SEC_ANALYSIS_WORKFLOW",
       "class_name": "SecAnalysisWorkflow",
