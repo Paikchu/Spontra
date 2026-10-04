@@ -2,7 +2,8 @@ import { z } from "zod";
 import type { BusinessFlowQuarter } from "../../analysis-contract/business-flow.ts";
 import type { RevenueHistory, RevenueHistoryQuarter } from "../../analysis-contract/revenue-history.ts";
 
-export const HISTORY_QUARTERS = 8;
+/** Eight displayed quarters plus four prior-year comparison quarters. */
+export const HISTORY_QUARTERS = 12;
 const amount = z.string().refine(v => v.trim() !== "" && Number.isFinite(Number(v)));
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const secUrl = z.string().refine(v => { try { const u = new URL(v); return u.protocol === "https:" && /(^|\.)sec\.gov$/.test(u.hostname); } catch { return false; } });
@@ -67,7 +68,7 @@ export function mergeHistory(ticker: string, existing: RevenueHistoryQuarter[], 
     }
     if (a[0] > b[0] || (a[0] === b[0] && a[1] >= b[1])) byPeriod.set(q.periodEnd, q);
   }
-  const quarters = [...byPeriod.values()].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd)).slice(0, 12).reverse();
+  const quarters = [...byPeriod.values()].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd)).slice(0, HISTORY_QUARTERS).reverse();
   return { schemaVersion: "revenue-history.v1", ticker, updatedAt, quarters };
 }
 

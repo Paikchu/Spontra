@@ -11,10 +11,10 @@ import {extractRevenueHistory, REVENUE_PARSER_VERSION} from './revenue-parser.ts
  * Reads direct periods and all explicitly dated supplemental quarterly columns, including comparatives.
  * Runs only on otherwise idle data ticks and never touches the complete-snapshot pointer.
  */
-export const HISTORY_VERSION = 'revenue-history.v3:' + REVENUE_PARSER_VERSION;
+export const HISTORY_VERSION = 'revenue-history.v4:' + REVENUE_PARSER_VERSION;
 export const historyKey = (cik: string) => `sec:revenue-history:v1:${cik}`;
 const cursorKey = (cik: string) => `sec:revenue-history-cursor:v1:${cik}`;
-const REFRESH_MS = 86400000, LOOKBACK_DAYS = 820, MAX_DOCUMENTS = 14, MAX_DOCUMENT_ATTEMPTS = 3;
+const REFRESH_MS = 86400000, LOOKBACK_DAYS = 1185, MAX_DOCUMENTS = 32, MAX_DOCUMENT_ATTEMPTS = 3;
 
 type HistoryDocument = {url: string; accession: string; filedAt: string; periodEnd: string; form: string};
 type HistoryCursor = {version: string; ticker: string; industry: DocumentSource['industry']; documents: HistoryDocument[]; index: number; facts: Fact[]; issues: string[]; attempts?: Record<string, number>; partial?: boolean; startedAt: string; finishedAt?: string};

@@ -22,12 +22,12 @@ test("history keeps only reconciling three-month quarters; reported beats derive
   assert.equal(mergeHistory("X", [a], [newer], "now").quarters[0].segments[0].id, "a2");
 });
 
-test("public history projection strips unknown fields, rejects other tickers and keeps the newest eight in time order", () => {
-  const quarters = Array.from({ length: 10 }, (_, i) => quarter(new Date(Date.UTC(2024, 3 * i + 3, 0)).toISOString().slice(0, 10), [["a", "A", 10 + i]]));
+test("public history projection strips unknown fields, rejects other tickers and keeps twelve quarters including the prior-year baselines", () => {
+  const quarters = Array.from({ length: 14 }, (_, i) => quarter(new Date(Date.UTC(2024, 3 * i + 3, 0)).toISOString().slice(0, 10), [["a", "A", 10 + i]]));
   const raw = { schemaVersion: "revenue-history.v1", ticker: "X", updatedAt: "now", quarters: [...quarters].reverse().map(q => ({ ...q, privateNote: "PRIVATE" })), secret: "PRIVATE" };
   const history = readHistory(raw, "X")!;
-  assert.equal(history.quarters.length, 8);
-  assert.deepEqual(history.quarters.map(q => q.periodEnd), quarters.slice(-8).map(q => q.periodEnd));
+  assert.equal(history.quarters.length, 12);
+  assert.deepEqual(history.quarters.map(q => q.periodEnd), quarters.slice(-12).map(q => q.periodEnd));
   assert.ok(!JSON.stringify(history).includes("PRIVATE"));
   assert.equal(readHistory(raw, "Y"), null);
   assert.equal(readHistory({ ...raw, quarters: [{ ...quarters[0], source: { ...quarters[0].source, url: "https://evil.example/a" } }] }, "X"), null);
@@ -116,4 +116,29 @@ test("growth axis puts 0% on one of the four shared gridlines and covers every r
   assert.ok(mixed.includes(0) && mixed[0] <= -12 && mixed[3] >= 18);
   assert.deepEqual(rateTicks([-30, -5]), [-30, -20, -10, 0]);
   assert.deepEqual(rateTicks([0.4]), [0, 0.2, 0.4, 0.6]);
+});
+
+test("twelve-quarter history supplies all eight visible YoY and QoQ points, including the first bridge", () => {
+  const quarters = Array.from({ length: 12 }, (_, i) => withChildren(new Date(Date.UTC(2023, 11 + i * 3, 0)).toISOString().slice(0, 10), 20 + i, 30 + 2 * i, 10));
+  const full = { ...history, quarters };
+  const columns = buildColumns(buildSlots(full, 12), items, null);
+  const visible = columns.slice(-8);
+  assert.deepEqual(visible.map(c => c.slot.periodEnd), buildSlots(full).map(s => s.periodEnd));
+  for (const lag of [1, 4] as const) {
+    const rates = growthSeries(columns, lag).slice(-8);
+    assert.equal(rates.filter(v => v != null).length, 8);
+    assert.equal(rates[0], (Number(quarters[4].revenue) / Number(quarters[4 - lag].revenue) - 1) * 100);
+    const bridge = buildBridge(columns, 4, lag)!;
+    assert.equal(bridge.base.slot.periodEnd, quarters[4 - lag].periodEnd);
+    assert.equal(bridge.change, Number(quarters[4].revenue) - Number(quarters[4 - lag].revenue));
+  }
+  const cloud = buildColumns(buildSlots(full, 12), items, items[0]);
+  assert.equal(growthSeries(cloud, 4).slice(-8)[0], (62 / 50 - 1) * 100);
+  // A missing comparison must leave its corresponding point empty, not shift older data forward.
+  const missing = buildColumns(buildSlots({ ...full, quarters: quarters.filter((_, i) => i !== 1) }, 12), items, null);
+  const rates = growthSeries(missing, 4).slice(-8);
+  assert.equal(rates[1], null);
+  assert.equal(rates.filter(v => v != null).length, 7);
+  const zero = buildColumns(buildSlots({ ...full, quarters: quarters.map((q, i) => i === 0 ? withChildren(q.periodEnd, 0, 0, 10) : q) }, 12), items, items[0]);
+  assert.equal(growthSeries(zero, 4).slice(-8)[0], null);
 });

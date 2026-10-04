@@ -1,10 +1,10 @@
-import { useMemo, useState, type CSSProperties } from "react";
+import React, { useMemo, useState, type CSSProperties } from "react";
 import type { RevenueHistory } from "@/shared/analysis-contract/revenue-history";
 import type { BusinessFlowQuarter } from "@/shared/analysis-contract/business-flow";
 import { compactFlowValue } from "@/lib/earning-report/web/business-flow-layout";
 import { disclosedSegmentLabel } from "@/lib/earning-report/web/business-flow-model";
 import type { GuidancePublication } from "@/shared/analysis-contract/guidance";
-import { ACTION_NAMES, buildBridge, buildColumns, buildSlots, columnIndex, growth, growthSeries, guidanceLabel, guidanceOverlay, layerOrder, niceTicks, rateTicks, type Bridge, type Column, type GuideMark, type Layer, type TrendItem } from "./trend-model";
+import { SLOTS, ACTION_NAMES, buildBridge, buildColumns, buildSlots, columnIndex, growth, growthSeries, guidanceLabel, guidanceOverlay, layerOrder, niceTicks, rateTicks, type Bridge, type Column, type GuideMark, type Layer, type TrendItem } from "./trend-model";
 
 const SHADES = [100, 66, 44, 30];
 const shortPeriod = (end: string) => end.slice(0, 7).replace("-", ".");
@@ -36,8 +36,11 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
   const [series, setSeries] = useState<"bar" | "line" | null>(null);
   const [view, setView] = useState<"trend" | "bridge">("trend");
   const [chosenLag, setLag] = useState<1 | 4 | null>(null);
-  const slots = useMemo(() => buildSlots(history), [history]);
-  const columns = useMemo(() => buildColumns(slots, items, selected), [slots, items, selected]);
+  // Retain a full prior year for comparisons, while bars, guidance and interval KPIs show only eight quarters.
+  const historySlots = useMemo(() => buildSlots(history, SLOTS + 4), [history]);
+  const historyColumns = useMemo(() => buildColumns(historySlots, items, selected), [historySlots, items, selected]);
+  const slots = useMemo(() => historySlots.slice(-SLOTS), [historySlots]);
+  const columns = useMemo(() => historyColumns.slice(-SLOTS), [historyColumns]);
   const order = useMemo(() => layerOrder(items, columns), [items, columns]);
   const overlay = useMemo(() => guidanceOverlay(slots, guidance, selected), [slots, guidance, selected]);
   const guided = [...overlay.bySlot, overlay.next].filter((m): m is GuideMark => m != null);
@@ -52,12 +55,13 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
   const legend = selected ? (columns.find(c => c.layers.length > 1)?.layers ?? [])
     : [...new Map([...columns].reverse().flatMap(column => column.layers.filter(layer => layer.tone !== "total")).map(layer => [layer.key, layer])).values()];
   const index = columnIndex(columns, currentPeriod);
+  const historyIndex = index + historyColumns.length - columns.length;
   // Year over year unless that quarter is missing, until the reader picks a base.
-  const lag = chosenLag ?? (buildBridge(columns, index, 4) ? 4 : 1);
-  const bridge = useMemo(() => buildBridge(columns, index, lag), [columns, index, lag]);
+  const lag = chosenLag ?? (buildBridge(historyColumns, historyIndex, 4) ? 4 : 1);
+  const bridge = useMemo(() => buildBridge(historyColumns, historyIndex, lag), [historyColumns, historyIndex, lag]);
   // The growth line has its own default: year over year needs four earlier quarters, so a short history reads quarter over quarter.
-  const lineLag = chosenLag ?? (growthSeries(columns, 4).filter(v => v != null).length >= 2 ? 4 : 1);
-  const rates = useMemo(() => growthSeries(columns, lineLag), [columns, lineLag]);
+  const lineLag = chosenLag ?? (growthSeries(historyColumns, 4).slice(-SLOTS).filter(v => v != null).length >= 2 ? 4 : 1);
+  const rates = useMemo(() => growthSeries(historyColumns, lineLag).slice(-SLOTS), [historyColumns, lineLag]);
   const rateAxis = useMemo(() => rateTicks(rates), [rates]);
   const rateY = (v: number) => rateAxis ? (v - rateAxis[0]) / (rateAxis[3] - rateAxis[0]) * 100 : 0;
   const rateName = lineLag === 4 ? "同比增速" : "环比增速";
@@ -82,7 +86,7 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
           {view === "trend" && legend.length > 1 && legend.map(layer => <span key={layer.key}><i style={{ background: layerColor(layer, hue) }} />{layer.name}</span>)}
           {view === "trend" && rateAxis && <span className="trend-legend-line" style={{ "--line": lineColor } as CSSProperties}><i />{rateName} · 右轴</span>}
           {view === "trend" && guided.length > 0 && <span className="trend-legend-guide"><i />管理层指引区间</span>}
-          <span className="trend-basis">{view === "trend" ? `${rateAxis ? "柱：收入 · 左轴 · " : ""}按每期财报原披露口径` : bridgeNote(bridge, lag, columns[index - lag])}</span>
+          <span className="trend-basis">{view === "trend" ? `${rateAxis ? "柱：收入 · 左轴 · " : ""}按每期财报原披露口径` : bridgeNote(bridge, lag, historyColumns[historyIndex - lag])}</span>
         </div>
       </div>
       {view === "trend" ? <div className="trend-kpis">
@@ -96,7 +100,7 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
         {lagSwitch(lag)}
       </div>}
     </header>
-    {view === "bridge" ? <BridgePlot key={mode + lag} bridge={bridge} empty={bridgeNote(bridge, lag, columns[index - lag])} subject={subject} hue={hue} money={money} /> : <>
+    {view === "bridge" ? <BridgePlot key={mode + lag} bridge={bridge} empty={bridgeNote(bridge, lag, historyColumns[historyIndex - lag])} subject={subject} hue={hue} money={money} /> : <>
     <div className="trend-plot" role="list" data-series={series ?? undefined} data-rates={rateAxis ? "" : undefined} style={{ "--line": lineColor, "--cols": columns.length + (overlay.next ? 1 : 0) } as CSSProperties}
       onMouseMove={e => setSeries((e.target as Element).closest("[data-series-line]") ? "line" : (e.target as Element).closest(".trend-col") ? "bar" : null)}>
       <div className="trend-grid" key={scale} aria-hidden="true">

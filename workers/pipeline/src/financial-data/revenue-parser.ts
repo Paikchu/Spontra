@@ -4,7 +4,7 @@ import {parseSecBusinessFlow, type BusinessFact, type ParsedBusinessQuarter} fro
 import {parseSecEarningsRelease} from '../../../../shared/analysis-runtime/financial-data/business-flow-release.ts';
 import {extractDisclosedQuarters, extractVerifiedCurrentQuarters, readReportedFacts, type DocumentSource} from './parser.ts';
 
-export const REVENUE_PARSER_VERSION = 'sec-revenue-history.v2';
+export const REVENUE_PARSER_VERSION = 'sec-revenue-history.v3';
 type HistorySource = RevenueHistoryQuarter['source'];
 const near = (a: number, b: number) => Math.abs(a - b) <= Math.max(1, Math.max(Math.abs(a), Math.abs(b)) * 1e-9);
 const clean = (html: string) => html.replace(/<[^>]*>/g, ' ').replace(/&#(?:x([\da-f]+)|(\d+));/gi, (_, hex, dec) => String.fromCodePoint(parseInt(hex ?? dec, hex ? 16 : 10))).replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/\s+/g, ' ').trim();
@@ -70,7 +70,7 @@ export function parseOracleOfferingsHistory(html: string, source: HistorySource)
     if (!years.length || new Set(years).size !== years.length || columns.join('|') !== years.map(() => 'Q1|Q2|Q3|Q4|TOTAL').join('|') || years.some(year => !annualEnds.has(year))) continue;
     let section = '', invalid = false;
     const amounts = new Map<string, TableRow>();
-    const accepted = new Set(['cloud', 'software', 'software license', 'software support', 'hardware', 'services', 'total revenues', 'cloud applications', 'cloud infrastructure', 'total cloud revenues']);
+    const accepted = new Set(['cloud', 'software', 'software license', 'software support', 'hardware', 'services', 'total revenues', 'cloud applications', 'cloud infrastructure', 'total cloud revenues', 'cloud services', 'license support', 'cloud services and license support', 'cloud license and on-premise license']);
     for (const row of rows.slice(titleIndex)) {
       if (/^(?:CLOUD )?REVENUES BY OFFERINGS$/i.test(row.label)) {section = row.label.toLowerCase(); continue;}
       if (/GROWTH RATES|GEOGRAPHIC REVENUES/i.test(row.label)) {section = ''; continue;}
@@ -79,7 +79,9 @@ export function parseOracleOfferingsHistory(html: string, source: HistorySource)
       if (row.values.length !== columns.length || amounts.has(key)) {invalid = true; break;}
       amounts.set(key, row);
     }
-    if (invalid || ['cloud', 'software', 'hardware', 'services', 'total revenues'].some(key => !amounts.has(key))) continue;
+    const legacy = !amounts.has('cloud') && !amounts.has('software');
+    const businessKeys = legacy ? ['cloud services and license support', 'cloud license and on-premise license'] : ['cloud', 'software'];
+    if (invalid || [...businessKeys, 'hardware', 'services', 'total revenues'].some(key => !amounts.has(key))) continue;
     for (const [group, year] of years.entries()) for (let quarter = 1; quarter <= 4; quarter++) {
       const column = group * 5 + quarter - 1, {month} = annualEnds.get(year)!;
       const endDate = new Date(Date.UTC(Number(year), month - (4 - quarter) * 3, 0));
@@ -90,7 +92,9 @@ export function parseOracleOfferingsHistory(html: string, source: HistorySource)
         if (!row || !amount || !Number.isFinite(amount.value) || amount.value < 0) return null;
         return {id, name, value: String(amount.value * 1e6), lineage: [{accession: source.accession, url: source.url, concept: `table:${row.label}`, contextId: `table-${tableIndex}:row-${row.index}:cell-${amount.cell}:FY${year}:Q${quarter}`, periodStart: start, periodEnd: end, dimensions: {}, parserVersion: REVENUE_PARSER_VERSION}]};
       };
-      const cloud = leaf('cloud', 'cloud', '云服务'), software = leaf('software', 'software', '软件'), hardware = leaf('hardware', 'HardwareRevenues', '硬件'), services = leaf('services', 'SalesRevenueServicesNet', '服务'), total = leaf('total revenues', 'total', '总收入');
+      const cloud = legacy ? leaf(businessKeys[0], 'CloudServicesAndLicenseSupportRevenues', '云服务与许可支持') : leaf('cloud', 'cloud', '云服务');
+      const software = legacy ? leaf(businessKeys[1], 'CloudLicenseAndOnPremiseLicenseRevenues', '云许可与本地部署许可') : leaf('software', 'software', '软件');
+      const hardware = leaf('hardware', 'HardwareRevenues', '硬件'), services = leaf('services', 'SalesRevenueServicesNet', '服务'), total = leaf('total revenues', 'total', '总收入');
       if (!cloud || !software || !hardware || !services || !total) continue;
       const children = (keys: Array<[string, string, string]>, parent: RevenueHistoryLeaf) => {
         const leaves = keys.map(([key, id, name]) => leaf(key, id, name));
@@ -98,7 +102,7 @@ export function parseOracleOfferingsHistory(html: string, source: HistorySource)
       };
       const q: RevenueHistoryQuarter = {periodStart: start, periodEnd: end, currency: 'USD', scale: 1, revenue: total.value, basis: 'reported', source, lineage: total.lineage,
         presentation: `该附件 GAAP 收入补充表直接披露 FY${year} Q${quarter}；按附件展示口径，非累计相减`,
-        segments: [{...cloud, ...children([['cloud applications', 'CloudApplications', '云应用'], ['cloud infrastructure', 'CloudInfrastructure', '云基础设施']], cloud)}, {...software, ...children([['software license', 'SoftwareLicense', '软件许可'], ['software support', 'SoftwareSupport', '软件支持']], software)}, hardware, services]};
+        segments: [{...cloud, ...children(legacy ? [['cloud services', 'cloud', '云服务'], ['license support', 'SoftwareSupport', '软件支持']] : [['cloud applications', 'CloudApplications', '云应用'], ['cloud infrastructure', 'CloudInfrastructure', '云基础设施']], cloud)}, {...software, ...children([['software license', 'SoftwareLicense', '软件许可'], ['software support', 'SoftwareSupport', '软件支持']], software)}, hardware, services]};
       if (validHistoryQuarter(q)) output.push(q);
     }
   }
