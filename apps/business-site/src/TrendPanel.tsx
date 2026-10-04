@@ -3,7 +3,7 @@ import type { RevenueHistory } from "@/shared/analysis-contract/revenue-history"
 import type { BusinessFlowQuarter } from "@/shared/analysis-contract/business-flow";
 import { compactFlowValue } from "@/lib/earning-report/web/business-flow-layout";
 import { disclosedSegmentLabel } from "@/lib/earning-report/web/business-flow-model";
-import { buildBridge, buildColumns, buildSlots, columnIndex, growth, growthSeries, layerOrder, niceTicks, type Bridge, type Column, type Layer, type TrendItem } from "./trend-model";
+import { buildBridge, buildColumns, buildSlots, columnIndex, growth, growthSeries, layerOrder, niceTicks, rateTicks, type Bridge, type Column, type Layer, type TrendItem } from "./trend-model";
 
 const SHADES = [100, 66, 44, 30];
 const shortPeriod = (end: string) => end.slice(0, 7).replace("-", ".");
@@ -29,6 +29,8 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
   hue: (slot: number) => string;
 }) {
   const [hover, setHover] = useState<number | null>(null);
+  /** Which series the pointer is on; it and its axis stay lit while the other recedes. */
+  const [series, setSeries] = useState<"bar" | "line" | null>(null);
   const [view, setView] = useState<"trend" | "bridge">("trend");
   const [chosenLag, setLag] = useState<1 | 4 | null>(null);
   const slots = useMemo(() => buildSlots(history), [history]);
@@ -51,13 +53,17 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
   // The growth line has its own default: year over year needs four earlier quarters, so a short history reads quarter over quarter.
   const lineLag = chosenLag ?? (growthSeries(columns, 4).filter(v => v != null).length >= 2 ? 4 : 1);
   const rates = useMemo(() => growthSeries(columns, lineLag), [columns, lineLag]);
+  const rateAxis = useMemo(() => rateTicks(rates), [rates]);
+  const rateY = (v: number) => rateAxis ? (v - rateAxis[0]) / (rateAxis[3] - rateAxis[0]) * 100 : 0;
+  const rateName = lineLag === 4 ? "同比增速" : "环比增速";
   const lagSwitch = (value: 1 | 4) => <span className="periods periods--small" role="radiogroup" aria-label="比较基期">
     <button type="button" role="radio" aria-checked={value === 4} onClick={() => setLag(4)}>同比</button>
     <button type="button" role="radio" aria-checked={value === 1} onClick={() => setLag(1)}>环比</button>
   </span>;
   const subject = selected?.name ?? "全部业务";
+  const lineColor = selected ? hue(selected.slot) : "var(--foreground)";
 
-  return <section className="trend" data-view={view} aria-label={`${selected?.name ?? "全部业务"} 近 ${slots.length} 季收入`} onMouseLeave={() => setHover(null)}>
+  return <section className="trend" data-view={view} aria-label={`${selected?.name ?? "全部业务"} 近 ${slots.length} 季收入`} onMouseLeave={() => { setHover(null); setSeries(null); }}>
     <header className="trend-head">
       <div className="trend-title">
         <div className="trend-heading">
@@ -69,7 +75,8 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
         </div>
         <div className="trend-legend" key={"legend" + mode + view}>
           {view === "trend" && legend.length > 1 && legend.map(layer => <span key={layer.key}><i style={{ background: layerColor(layer, hue) }} />{layer.name}</span>)}
-          <span className="trend-basis">{view === "trend" ? "按每期财报原披露口径" : bridgeNote(bridge, lag, columns[index - lag])}</span>
+          {view === "trend" && rateAxis && <span className="trend-legend-line" style={{ "--line": lineColor } as CSSProperties}><i />{rateName} · 右轴</span>}
+          <span className="trend-basis">{view === "trend" ? `${rateAxis ? "柱：收入 · 左轴 · " : ""}按每期财报原披露口径` : bridgeNote(bridge, lag, columns[index - lag])}</span>
         </div>
       </div>
       {view === "trend" ? <div className="trend-kpis">
@@ -84,21 +91,23 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
       </div>}
     </header>
     {view === "bridge" ? <BridgePlot key={mode + lag} bridge={bridge} empty={bridgeNote(bridge, lag, columns[index - lag])} subject={subject} hue={hue} money={money} /> : <>
-    <GrowthStrip key={mode + lineLag} rates={rates} lag={lineLag} current={index} hover={hover} color={selected ? hue(selected.slot) : "var(--foreground)"} />
-    <div className="trend-plot" role="list">
+    <div className="trend-plot" role="list" data-series={series ?? undefined} data-rates={rateAxis ? "" : undefined} style={{ "--line": lineColor } as CSSProperties}
+      onMouseMove={e => setSeries((e.target as Element).closest("[data-series-line]") ? "line" : (e.target as Element).closest(".trend-col") ? "bar" : null)}>
       <div className="trend-grid" key={scale} aria-hidden="true">
-        {ticks.map(t => <div key={t} style={{ bottom: `${t / scale * 100}%` }}><span>{t ? money(t) : ""}</span></div>)}
+        {ticks.map((t, k) => <div key={t} style={{ bottom: `${t / scale * 100}%` }}><span>{t ? money(t) : ""}</span>{rateAxis && <em>{axisPercent(rateAxis[k])}</em>}</div>)}
       </div>
       <i className="trend-sweep" key={"sweep" + mode} aria-hidden="true" />
       {columns.map((column, i) => <Bar key={column.slot.periodEnd} column={column} index={i} order={order} scale={scale} hue={hue} money={money}
         current={column.slot.periodEnd === currentPeriod} pickable={periods.has(column.slot.periodEnd)} hovered={hover === i}
-        onHover={() => setHover(i)} onPick={() => onPickPeriod(column.slot.periodEnd)} selected={selected} rate={rates[i]} lag={lineLag} />)}
+        onHover={() => setHover(i)} onPick={() => onPickPeriod(column.slot.periodEnd)} selected={selected} rate={rates[i]} lag={lineLag} onLine={series === "line"}
+        line={rateAxis ? { y: rateY(rates[i] ?? 0), next: rates[i + 1] != null ? rateY(rates[i + 1]!) : null, labelled: i === index || (hover === i && series === "line") } : null} />)}
     </div>
     </>}
   </section>;
 }
 
 const signed = (v: number, money: (v: number | null) => string) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${money(Math.abs(v))}`;
+const axisPercent = (v: number) => `${v < 0 ? "−" : ""}${Number(Math.abs(v).toFixed(1))}%`;
 const points = (v: number) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(1)} 个百分点`;
 
 function bridgeNote(bridge: Bridge | null, lag: 1 | 4, base: Column | undefined) {
@@ -157,9 +166,13 @@ function BridgePlot({ bridge, empty, subject, hue, money }: { bridge: Bridge | n
   </div>;
 }
 
-function Bar({ column, index, order, scale, hue, money, current, pickable, hovered, onHover, onPick, selected, rate, lag }: {
+function Bar({ column, index, order, scale, hue, money, current, pickable, hovered, onHover, onPick, selected, rate, lag, line, onLine }: {
   column: Column; index: number; order: string[]; scale: number; hue: (slot: number) => string; money: (v: number | null) => string;
   current: boolean; pickable: boolean; hovered: boolean; onHover: () => void; onPick: () => void; selected: TrendItem | null; rate: number | null; lag: 1 | 4;
+  /** Growth point on the right axis (percent of plot height) and the segment to the next quarter; null without a right axis. */
+  line: { y: number; next: number | null; labelled: boolean } | null;
+  /** The pointer is on the growth line: the tooltip leads with the rate and drops the business split. */
+  onLine: boolean;
 }) {
   const q = column.slot.quarter;
   const label = column.state === "missing" ? "该季度未取得可核验披露" : column.state === "basis" ? (selected ? "该期财报未按此业务口径披露" : column.layers.length > 1 ? "该期按原披露分类展示，未推定当前业务拆分" : "该期仅取得可核验的公司总收入") : "";
@@ -167,7 +180,8 @@ function Bar({ column, index, order, scale, hue, money, current, pickable, hover
   return <div className="trend-col" role="listitem" data-state={column.state} data-current={current || undefined} data-align={index < 2 ? "start" : index > 5 ? "end" : undefined} style={{ "--i": index } as CSSProperties} onMouseEnter={onHover}>
     <button type="button" className="trend-hit" disabled={!pickable} onClick={onPick} onFocus={onHover}
       aria-label={`${shortPeriod(column.slot.periodEnd)} ${column.total != null ? money(column.total) : ""}${label ? `，${label}` : ""}${pickable ? "，在流向图中查看该季度" : ""}`} />
-    <span className="trend-value" style={{ bottom: `${height}%` }}>{column.total != null ? money(column.total) : "—"}</span>
+    {/* With the growth line drawn, the axes carry the scale and only the current or hovered bar keeps its value label. */}
+    <span className="trend-value" data-quiet={line && !current && !(hovered && !onLine) ? "" : undefined} style={{ bottom: `${height}%` }}>{column.total != null ? money(column.total) : "—"}</span>
     <span className="trend-stack" aria-hidden="true">
       {order.map(key => {
         const layer = column.layers.find(l => l.key === key);
@@ -175,42 +189,21 @@ function Bar({ column, index, order, scale, hue, money, current, pickable, hover
       })}
       {!column.layers.length && <i className="trend-ghost" />}
     </span>
+    {line && rate != null && line.next != null && <svg className="trend-line" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+      <line x1="0" y1={100 - line.y} x2="100" y2={100 - line.next} vectorEffect="non-scaling-stroke" />
+      <line className="trend-line-hit" data-series-line="" x1="0" y1={100 - line.y} x2="100" y2={100 - line.next} vectorEffect="non-scaling-stroke" />
+    </svg>}
+    {line && rate != null && <i className="trend-dot" data-series-line="" data-hover={hovered || undefined} aria-hidden="true" style={{ bottom: `${line.y}%` }} onClick={pickable ? onPick : undefined} />}
+    {line?.labelled && rate != null && <span className="trend-rate" data-trend={trend(rate)} data-below={rate < 0 || undefined} aria-hidden="true" style={{ bottom: `${line.y}%` }}>{percent(rate)}</span>}
     <span className="trend-period">{shortPeriod(column.slot.periodEnd)}{current && <b>本季</b>}</span>
     {hovered && <div className="trend-tip" role="presentation">
       <div className="trend-tip-title">{q ? `${q.periodStart} — ${q.periodEnd}` : shortPeriod(column.slot.periodEnd)}</div>
-      {column.layers.length > 1 && column.layers.map(layer => <div className="trend-tip-row" key={layer.key}><span><i style={{ background: layerColor(layer, hue) }} />{layer.name}</span><b>{money(layer.value)}</b></div>)}
+      {onLine && rate != null && <div className="trend-tip-row trend-tip-lead"><span>{lag === 4 ? "同比增速" : "环比增速"}</span><b data-trend={trend(rate)}>{percent(rate)}</b></div>}
+      {!onLine && column.layers.length > 1 && column.layers.map(layer => <div className="trend-tip-row" key={layer.key}><span><i style={{ background: layerColor(layer, hue) }} />{layer.name}</span><b>{money(layer.value)}</b></div>)}
       {column.total != null && <div className="trend-tip-row trend-tip-total"><span>{selected ? "业务收入" : "总收入"}</span><b>{money(column.total)}</b></div>}
-      {rate != null && <div className="trend-tip-row"><span>{lag === 4 ? "同比" : "环比"}</span><b data-trend={trend(rate)}>{percent(rate)}</b></div>}
+      {!onLine && rate != null && <div className="trend-tip-row"><span>{lag === 4 ? "同比" : "环比"}</span><b data-trend={trend(rate)}>{percent(rate)}</b></div>}
       {label && <p>{label}{column.state === "basis" && q && !selected ? `：${q.segments.map(s => disclosedSegmentLabel(s.name)).join("、")}` : ""}</p>}
       {q && <p className="trend-tip-source">{q.basis === "derived" ? "第四季度 = 全年 − 前三季度累计 · " : ""}SEC {q.source.form} · {q.source.filedAt}</p>}
     </div>}
-  </div>;
-}
-
-/**
- * Growth rate per quarter on its own percent scale, in a strip above the revenue bars and aligned to their columns.
- * It is a separate small chart rather than a second axis on the bars. Only the current and hovered quarters carry a label.
- */
-function GrowthStrip({ rates, lag, current, hover, color }: { rates: Array<number | null>; lag: 1 | 4; current: number; hover: number | null; color: string }) {
-  const known = rates.filter((v): v is number => v != null);
-  const name = lag === 4 ? "同比" : "环比";
-  if (!known.length) return <div className="growth growth--empty"><span className="growth-axis">{name}增速</span><p>{lag === 4 ? "需要去年同季披露才能计算同比增速" : "需要相邻季度披露才能计算环比增速"}</p></div>;
-  const lo = Math.min(0, ...known), hi = Math.max(0, ...known), pad = Math.max((hi - lo) * 0.18, 1);
-  const y = (v: number) => (v - (lo - pad)) / (hi - lo + 2 * pad) * 100;
-  return <div className="growth" style={{ "--line": color } as CSSProperties} role="img"
-    aria-label={`${name}增速：${rates.map((v, i) => v == null ? null : `第 ${i + 1} 季 ${percent(v)}`).filter(Boolean).join("，")}`}>
-    <span className="growth-axis" aria-hidden="true" style={y(0) > 70 ? { top: "auto", bottom: -2 } : undefined}>{name}增速</span>
-    <i className="growth-zero" style={{ bottom: `${y(0)}%` }} aria-hidden="true" />
-    {rates.map((v, i) => {
-      const next = rates[i + 1];
-      const labelled = v != null && (i === current || i === hover);
-      return <div key={i} className="growth-cell" aria-hidden="true" style={{ "--i": i } as CSSProperties}>
-        {v != null && next != null && <svg className="growth-link" viewBox="0 0 100 100" preserveAspectRatio="none">
-          <line x1="0" y1={100 - y(v)} x2="100" y2={100 - y(next)} vectorEffect="non-scaling-stroke" />
-        </svg>}
-        {v != null && <i className="growth-dot" data-current={i === current || undefined} data-hover={i === hover || undefined} style={{ bottom: `${y(v)}%` }} />}
-        {labelled && <span className="growth-value" data-trend={trend(v)} data-below={v < 0 || undefined} style={{ bottom: `${y(v)}%` }}>{percent(v)}</span>}
-      </div>;
-    })}
   </div>;
 }

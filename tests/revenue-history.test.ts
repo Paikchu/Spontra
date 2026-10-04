@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { mergeHistory, readHistory, validHistoryQuarter } from "../shared/analysis-runtime/financial-data/history";
 import type { RevenueHistory, RevenueHistoryQuarter } from "../shared/analysis-contract/revenue-history";
-import { buildBridge, buildColumns, buildSlots, columnIndex, growthSeries, layerOrder, niceTicks, type TrendItem } from "../apps/business-site/src/trend-model";
+import { buildBridge, buildColumns, buildSlots, columnIndex, growthSeries, layerOrder, rateTicks, niceTicks, type TrendItem } from "../apps/business-site/src/trend-model";
 
 const quarter = (periodEnd: string, segments: Array<[string, string, number]>, extra: Partial<RevenueHistoryQuarter> = {}): RevenueHistoryQuarter => {
   const start = new Date(Date.parse(periodEnd) - 91 * 86400000).toISOString().slice(0, 10);
@@ -107,4 +107,13 @@ test("growth series compares each quarter with the one a lag earlier and leaves 
   assert.deepEqual(growthSeries(all, 4), Array(8).fill(null));
   const cloud = buildColumns(buildSlots(history), items, items[0]);
   assert.deepEqual(growthSeries(cloud, 1).slice(-1), [(11 / 8 - 1) * 100]);
+});
+
+test("growth axis puts 0% on one of the four shared gridlines and covers every rate", () => {
+  assert.equal(rateTicks([null, null]), null);
+  assert.deepEqual(rateTicks([null, 14.2, 21.7, 20.1, 29.6]), [0, 10, 20, 30]);
+  const mixed = rateTicks([-12, 5, 18])!;
+  assert.ok(mixed.includes(0) && mixed[0] <= -12 && mixed[3] >= 18);
+  assert.deepEqual(rateTicks([-30, -5]), [-30, -20, -10, 0]);
+  assert.deepEqual(rateTicks([0.4]), [0, 0.2, 0.4, 0.6]);
 });

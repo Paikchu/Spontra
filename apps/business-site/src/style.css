@@ -320,12 +320,13 @@ button { cursor: pointer; }
 .trend-kpis dt { font-size: 11px; color: var(--muted-foreground); }
 .trend-kpis dd { margin: 2px 0 0; font-size: 17px; font-weight: 620; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
 
-.trend-plot { position: relative; display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: var(--gap); min-height: 0; padding: 22px 0 24px var(--axis); }
-.trend-grid { position: absolute; inset: 22px 0 24px var(--axis); pointer-events: none; animation: fade-in .5s ease both; }
+.trend-plot { --axis-r: 0px; position: relative; display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: var(--gap); min-height: 0; padding: 22px var(--axis-r) 24px var(--axis); }
+.trend-plot[data-rates] { --axis-r: 48px; }
+.trend-grid { position: absolute; inset: 22px var(--axis-r) 24px var(--axis); pointer-events: none; animation: fade-in .5s ease both; }
 .trend-grid div { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--hairline); transition: bottom .7s var(--ease); }
 .trend-grid div:first-child { border-top-style: solid; border-color: var(--border); }
 .trend-grid span { position: absolute; right: calc(100% + 10px); top: -7px; font-size: 10.5px; color: var(--faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.trend-sweep { position: absolute; inset: 22px 0 24px var(--axis); pointer-events: none; z-index: 1; background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--foreground) 9%, transparent) 50%, transparent) no-repeat; background-size: 22% 100%; animation: sweep 1.15s var(--ease) both; }
+.trend-sweep { position: absolute; inset: 22px var(--axis-r) 24px var(--axis); pointer-events: none; z-index: 1; background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--foreground) 9%, transparent) 50%, transparent) no-repeat; background-size: 22% 100%; animation: sweep 1.15s var(--ease) both; }
 
 .trend-col { position: relative; min-width: 0; }
 .trend-hit { position: absolute; inset: -22px 0 -24px; z-index: 2; padding: 0; border: 0; border-radius: 8px; background: transparent; }
@@ -370,25 +371,37 @@ button { cursor: pointer; }
 .trend-kpis dd small { margin-left: 8px; font-size: 12px; font-weight: 560; }
 .trend-tip-title i { display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 2px; }
 
-/* ---------- Growth rate strip ---------- */
-/* The bar view gains a row: header, growth strip, bars. The strip shares the bar grid (axis gutter, eight columns, gap) so points sit over their quarters. */
-.trend[data-view="trend"] { grid-template-rows: auto 58px minmax(0, 1fr); height: clamp(250px, 32vh, 320px); }
-.growth { position: relative; display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: var(--gap); margin: 12px 0 0 var(--axis); animation: fade-in .5s ease .2s both; }
-.growth--empty { display: flex; align-items: center; color: var(--faint); font-size: 11.5px; }
-.growth--empty p { margin: 0; }
-.growth-axis { position: absolute; right: calc(100% + 10px); top: -2px; font-size: 10.5px; color: var(--faint); white-space: nowrap; }
-.growth--empty .growth-axis { position: absolute; }
-.growth-zero { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--border); }
-.growth-zero::after { content: "0%"; position: absolute; right: calc(100% + 10px); top: -7px; font-size: 10px; color: var(--faint); font-style: normal; }
-.growth-cell { position: relative; min-width: 0; }
-.growth-link { position: absolute; top: 0; bottom: 0; left: 50%; width: calc(100% + var(--gap)); height: 100%; overflow: visible; pointer-events: none; }
-.growth-link line { stroke: var(--line); stroke-width: 2; stroke-linecap: round; opacity: .75; }
-.growth-dot { position: absolute; left: 50%; width: 8px; height: 8px; margin-left: -4px; transform: translateY(50%); border-radius: 50%; background: var(--line); box-shadow: 0 0 0 2px var(--background); transition: transform .2s var(--ease); }
-.growth-dot[data-hover] { transform: translateY(50%) scale(1.35); }
-.growth-value { position: absolute; left: -12px; right: -12px; padding-bottom: 8px; text-align: center; font-size: 11.5px; font-weight: 620; font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--foreground); }
-.growth-value[data-below] { padding: 0; transform: translateY(calc(100% + 8px)); }
 .trend-tip-row b[data-trend="up"] { color: var(--up); }
+.trend-tip-lead b { font-size: 15px; }
 .trend-tip-row b[data-trend="down"] { color: var(--loss); }
+
+/* ---------- Growth line on the bars (right axis) ---------- */
+/* Both axes share the four gridlines; the right labels belong to the line and wear its colour. */
+.trend-grid em { position: absolute; left: calc(100% + 10px); top: -7px; font-size: 10.5px; font-style: normal; font-weight: 560; color: color-mix(in srgb, var(--line) 70%, var(--faint)); font-variant-numeric: tabular-nums; white-space: nowrap; transition: color .2s, opacity .2s; }
+.trend-grid span { transition: color .2s, opacity .2s; }
+/* Revenue labels sit above the line with a halo so a crossing segment never strikes through a value. */
+.trend-value[data-quiet] { opacity: 0 !important; }
+.trend-plot[data-rates] .trend-value { z-index: 4; text-shadow: 0 0 4px var(--background), 0 0 2px var(--background); pointer-events: none; transition: bottom .75s var(--ease) calc(var(--i) * 45ms), opacity .2s ease; }
+.trend-legend-line i { width: 14px !important; height: 2px !important; border-radius: 1px; background: var(--line); }
+.trend-line { position: absolute; top: 0; bottom: 0; left: 50%; z-index: 3; width: calc(100% + var(--gap)); height: 100%; overflow: visible; pointer-events: none; transition: opacity .25s ease; animation: fade-in .6s ease both; animation-delay: calc(var(--i) * 70ms + 500ms); }
+.trend-line line { stroke: var(--line); stroke-width: 2; stroke-linecap: round; }
+.trend-line .trend-line-hit { stroke: transparent; stroke-width: 14; pointer-events: stroke; cursor: default; }
+.trend-dot { position: absolute; left: 50%; z-index: 5; width: 8px; height: 8px; margin-left: -4px; transform: translateY(50%); border-radius: 50%; background: var(--line); box-shadow: 0 0 0 2px var(--background); transition: transform .2s var(--ease), opacity .25s ease; animation: fade-in .5s ease both; animation-delay: calc(var(--i) * 70ms + 500ms); }
+/* A larger invisible target than the mark itself. */
+.trend-dot::before { content: ""; position: absolute; inset: -8px; border-radius: 50%; }
+.trend-plot[data-series="line"] .trend-dot[data-hover] { transform: translateY(50%) scale(1.4); }
+.trend-rate { position: absolute; left: -12px; right: -12px; z-index: 6; padding-bottom: 9px; text-align: center; font-size: 11.5px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--foreground); pointer-events: none; text-shadow: 0 0 4px var(--background), 0 0 2px var(--background); }
+.trend-rate[data-below] { padding: 0; transform: translateY(calc(100% + 9px)); }
+
+/* Pointer on the line: line and right axis lead, bars and revenue axis recede. */
+.trend-plot[data-series="line"] .trend-stack { opacity: .2 !important; filter: saturate(.4) !important; }
+.trend-plot[data-series="line"] .trend-value, .trend-plot[data-series="line"] .trend-grid span { opacity: .3; }
+.trend-plot[data-series="line"] .trend-grid em { color: var(--line); font-weight: 650; }
+.trend-plot[data-series="line"] .trend-line line:not(.trend-line-hit) { stroke-width: 2.5; }
+/* Pointer on a bar: bars and revenue axis lead, the line recedes. */
+.trend-plot[data-series="bar"] .trend-line, .trend-plot[data-series="bar"] .trend-dot { opacity: .18; }
+.trend-plot[data-series="bar"] .trend-rate, .trend-plot[data-series="bar"] .trend-grid em { opacity: .25; }
+.trend-plot[data-series="bar"] .trend-grid span { color: var(--foreground); }
 
 /* ---------- Growth bridge ---------- */
 .bridge-plot { position: relative; display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); gap: clamp(8px, 1.6vw, 26px); min-height: 0; padding: 22px 0 24px; }
@@ -490,7 +503,8 @@ button { cursor: pointer; }
   .stage-foot { flex-direction: column; align-items: flex-start; }
   .trend { --axis: 40px; --gap: 6px; height: 240px; }
   /* The header wraps on narrow screens, so the bar view sizes to its content with a fixed plot height. */
-  .trend[data-view="trend"] { height: auto; grid-template-rows: auto 58px 190px; }
+  .trend[data-view="trend"] { height: auto; grid-template-rows: auto 220px; }
+  .trend-plot[data-rates] { --axis-r: 40px; }
   .provenance { justify-content: flex-start; }
 }
 @media (max-width: 620px) {
@@ -506,5 +520,4 @@ button { cursor: pointer; }
   .stats { margin-top: 14px; }
   .stat-value { font-size: 22px; }
   .trend { height: 178px; }
-  .trend[data-view="trend"] { grid-template-rows: auto 44px minmax(0, 1fr); height: 230px; }
 }

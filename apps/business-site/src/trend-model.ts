@@ -127,3 +127,19 @@ export function buildBridge(columns: Column[], index: number, lag: 1 | 4): Bridg
 export function growthSeries(columns: Column[], lag: 1 | 4): Array<number | null> {
   return columns.map((column, i) => i >= lag ? growth(column.total, columns[i - lag].total) : null);
 }
+
+/**
+ * Right-axis ticks for the growth line, on the same four gridlines as the revenue axis: 0% always falls on a gridline,
+ * and the step is the smallest round number whose four ticks cover every rate. Null when there is no rate to plot.
+ */
+export function rateTicks(rates: Array<number | null>): number[] | null {
+  const known = rates.filter((v): v is number => v != null && Number.isFinite(v));
+  if (!known.length) return null;
+  const lo = Math.min(0, ...known), hi = Math.max(0, ...known);
+  let power = 10 ** Math.floor(Math.log10(Math.max((hi - lo) / 3, 0.5)));
+  for (let tries = 0; tries < 8; tries++, power *= 10) for (const m of [1, 2, 2.5, 5]) {
+    const step = m * power, below = Math.max(0, Math.ceil(-lo / step - 1e-9)), above = Math.max(0, Math.ceil(hi / step - 1e-9));
+    if (below + above <= 3) return [0, 1, 2, 3].map(k => Number(((k - below) * step).toPrecision(12)) || 0);
+  }
+  return null;
+}
