@@ -8,6 +8,7 @@ import "@/app/analysis/stocks/[ticker]/business-flow.css";
 import "./style.css";
 import { withBusinessDescriptions } from "./business-description";
 import { BusinessMap } from "./BusinessMap";
+import { CompanyMark } from "./CompanyMark";
 
 function tickerFromUrl() {
   const match = location.pathname.match(
@@ -102,12 +103,13 @@ function Company({ ticker }: { ticker: string }) {
         <p className="state-reasons">{publication.reasons.join(" · ")}</p>
       </div>
     );
-  return <Skeleton />;
+  return <Skeleton ticker={ticker} />;
 }
-function Skeleton() {
+function Skeleton({ ticker }: { ticker: string }) {
   return (
     <div className="map map--loading" role="status" aria-label="正在读取公开财报">
       <aside className="rail">
+        <CompanyMark ticker={ticker} />
         <div className="rail-head"><h2>业务</h2></div>
         <div className="rail-list">
           {[0, 1, 2, 3, 4, 5].map((i) => (
@@ -163,68 +165,70 @@ function App() {
   return (
     <>
       <header className="site-header">
-        <a className="brand" href={`/companies/${ticker}`} aria-label={`${ticker} 业务地图`}>
+        <a className="brand" href={`/companies/${ticker}`}>
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M3 5h3c5 0 5 7 10 7h5" />
             <path d="M3 12h3c5 0 5 7 10 7h5" opacity=".55" />
             <path d="M3 19h3" opacity=".3" />
           </svg>
-          <span className="ticker">{ticker}</span>
-          <span className="brand-sub">业务地图</span>
+          <span className="brand-name">业务地图</span>
         </a>
-        <form
-          className="company-picker"
-          role="search"
-          onSubmit={(event) => {
-            event.preventDefault();
-            const value = input.trim().toUpperCase();
-            if (!/^[A-Z][A-Z0-9.-]{0,11}$/.test(value)) {
-              setInvalid(true);
-              return;
-            }
-            navigate(value);
-          }}
-        >
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <circle cx="10.5" cy="10.5" r="6.5" />
-            <path d="m16 16 4 4" />
-          </svg>
-          <input
-            aria-label="搜索公司股票代码"
-            aria-invalid={invalid}
-            value={input}
-            onChange={(e) => {
-              setInput(e.target.value);
-              setInvalid(false);
+        <div className="header-tools">
+          <form
+            className="company-picker"
+            role="search"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const value = input.trim().toUpperCase();
+              if (!/^[A-Z][A-Z0-9.-]{0,11}$/.test(value)) {
+                setInvalid(true);
+                return;
+              }
+              navigate(value);
             }}
-            placeholder="搜索公司代码"
-            maxLength={12}
-            autoCapitalize="characters"
-            autoComplete="off"
-          />
-          {invalid && (
-            <span className="search-error" role="alert">
-              请输入有效的股票代码
-            </span>
-          )}
-        </form>
-        <button
-          className="theme-toggle"
-          aria-label={light ? "切换深色主题" : "切换浅色主题"}
-          aria-pressed={light}
-          onClick={() => setLight((v) => !v)}
-        >
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            {light ? (
-              <path d="M20 15a8 8 0 0 1-11-11A8.5 8.5 0 1 0 20 15Z" />
-            ) : (
-              <>
-                <circle cx="12" cy="12" r="4" />
-                <path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5" />
-              </>
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="10.5" cy="10.5" r="6.5" />
+              <path d="m16 16 4 4" />
+            </svg>
+            <input
+              aria-label="搜索公司股票代码"
+              aria-invalid={invalid}
+              value={input}
+              onChange={(e) => {
+                setInput(e.target.value);
+                setInvalid(false);
+              }}
+              placeholder="搜索公司代码"
+              maxLength={12}
+              autoCapitalize="characters"
+              autoComplete="off"
+            />
+            {invalid && (
+              <span className="search-error" role="alert">
+                请输入有效的股票代码
+              </span>
             )}
-          </svg>
-        </button>
+          </form>
+          <button
+            type="button"
+            className="theme-toggle"
+            aria-label={light ? "切换深色主题" : "切换浅色主题"}
+            aria-pressed={light}
+            onClick={() => setLight((v) => !v)}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              {light ? (
+                <path d="M20 15a8 8 0 0 1-11-11A8.5 8.5 0 1 0 20 15Z" />
+              ) : (
+                <>
+                  <circle cx="12" cy="12" r="4" />
+                  <path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5" />
+                </>
+              )}
+            </svg>
+          </button>
+        </div>
       </header>
       <main>
         <Company key={ticker} ticker={ticker} />

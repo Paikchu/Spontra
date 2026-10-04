@@ -9,6 +9,7 @@ import { FinancialSankey } from "@/app/analysis/stocks/[ticker]/FinancialSankey"
 import { FlowChart, layoutFor, type NodeCopy, type Tip } from "./FlowChart";
 import type { RevenueHistory } from "@/shared/analysis-contract/revenue-history";
 import { TrendPanel } from "./TrendPanel";
+import { CompanyMark } from "./CompanyMark";
 
 type Item = { key: string; id: string; parent: string | null; depth: number; name: string; value: number | null; slot: number; segment: BusinessSegment };
 
@@ -161,6 +162,7 @@ export function BusinessMap({ ticker, flow, business, notice, revenueHistory }: 
 
   return <div className="map">
     <aside className="rail" aria-label="公司业务">
+      <CompanyMark ticker={ticker} detail={quarter?.label ?? null} />
       <div className="rail-head">
         <h2>业务</h2>
         <span>{quantified ? `${dimension} · ${items.length} 项` : dimension}</span>
