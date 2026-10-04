@@ -36,7 +36,10 @@ export async function getSecFundamentals(database: D1Like, query: FundamentalApi
 
 export async function buildSecFundamentals(history: SecHistorySnapshot, query: FundamentalApiQuery, fetchedAt: string | null, now = new Date()): Promise<PublicFundamentalsResponse> {
   const revenue = history.series.find((series) => series.seriesId === "revenue")?.quarters ?? [];
-  const dates = [...new Set(revenue.map((point) => point.endDate))].sort().slice(-query.periodCount);
+  // Revenue may be absent even when a quarter's other statements were disclosed. Keep the
+  // period visible with null revenue instead of hiding every metric from that period.
+  const dates = [...new Set(history.series.filter((series) => SERIES[series.seriesId]).flatMap((series) => series.quarters)
+    .filter((point) => point.qualityStatus === "validated_xbrl").map((point) => point.endDate))].sort().slice(-query.periodCount);
   const keys = query.metricKeys ?? Object.values(SERIES);
   const series = keys.map((metricKey) => {
     const definition = FUNDAMENTAL_METRIC_CATALOG[metricKey];
@@ -72,7 +75,8 @@ export async function buildSecFundamentals(history: SecHistorySnapshot, query: F
     dataVersion: dates.length ? [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("") : null,
     partial: issueCount > 0 || dates.length < query.periodCount, qualityStatus: dates.length ? issueCount || dates.length < query.periodCount ? "partial" : "complete" : null,
     issueCount, requestedPeriodCount: query.periodCount,
-    periods: dates.map((periodEnd) => ({ periodType: "3M", periodEnd, currency: revenue.find((point) => point.endDate === periodEnd)?.currency ?? "" })),
+    periods: dates.map((periodEnd) => ({ periodType: "3M", periodEnd, currency: revenue.find((point) => point.endDate === periodEnd)?.currency
+      ?? history.series.flatMap((item) => item.quarters).find((point) => point.endDate === periodEnd && point.currency)?.currency ?? "" })),
     series, refresh: { recommended: stale, scheduled: false, mode: "backend_scheduled" },
   };
 }

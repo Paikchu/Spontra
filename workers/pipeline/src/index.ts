@@ -11,6 +11,7 @@ import worker from "./worker.ts";
 import { executeSecAnalysisWorkflow, type WorkflowStepContextLike, type WorkflowStepLike } from "./workflow-core.ts";
 import { storeWorkflowResult, loadWorkflowResult } from "./workflow-results.ts";
 import { executeResearchWorkflow } from "./research/runtime.ts";
+import { maintenanceAnalysisEnvironment } from "./admin/financial-maintenance-runner.ts";
 
 const WORKFLOW_RETRY = {
   retries: {
@@ -51,8 +52,12 @@ function durableSteps(step: WorkflowStep, env: SecPipelineEnv, instanceId: strin
 
 export class SecAnalysisWorkflow extends WorkflowEntrypoint<SecPipelineEnv, SecWorkflowParams> {
   async run(event: WorkflowEvent<SecWorkflowParams>, step: WorkflowStep) {
-    assertTrackedTicker(this.env,event.payload.ticker);
-    return executeSecAnalysisWorkflow(event.payload, event.instanceId, durableSteps(step, this.env, event.instanceId), createSecPipelineOperations(this.env, fetch, event.instanceId));
+    const env = await maintenanceAnalysisEnvironment(this.env, event.payload, event.instanceId);
+    assertTrackedTicker(env,event.payload.ticker);
+    const operations = createSecPipelineOperations(env, fetch, event.instanceId);
+    // One-off reports do not enroll a company in recurring memory/company analysis.
+    if (event.payload.maintenanceTaskId) operations.enqueueMemory = undefined;
+    return executeSecAnalysisWorkflow(event.payload, event.instanceId, durableSteps(step, env, event.instanceId), operations);
   }
 }
 

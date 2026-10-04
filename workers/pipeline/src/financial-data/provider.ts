@@ -2,7 +2,11 @@ import type {Job} from './store.ts';
 import type {DocumentBatch} from './collect.ts';
 import {extractDisclosedQuarters, readReportedFacts, SEC_FLOW_PARSER_VERSION, type Fact, type DocumentSource} from './parser.ts';
 import {priorPresentationOnly,reviewedCurrentPair} from './period-review.ts';
-export interface SecReader {read(url:string):Promise<Response>;}
+export interface SecReader {
+ read(url:string):Promise<Response>;
+ /** Persist exact bytes and all encountered facts independently of the chart projection. */
+ archive?(source:DocumentSource,html:string,metadata?:{form?:string;reportDate?:string}):Promise<void>;
+}
 /** One reader is shared by the bounded consumer. It is not a promise of account-wide rate limiting. */
 export function throttledSecReader(userAgent:string,fetcher:typeof fetch=fetch,delayMs=500):SecReader{
  if(!userAgent.trim())throw new Error('SEC contact user-agent is required');let next=0;
@@ -45,6 +49,7 @@ export async function readSecDocumentBatch(job:Job,reader:SecReader,maxDocuments
   const documents=await readFilingDocuments(document.url,reader);
   for(const content of documents){
    const source={...document,url:content.url,cik,industry:cursor.industry??'unknown'};
+   await reader.archive?.(source,content.html,{form:document.form,reportDate:document.periodEnd});
    const parsed=extractDisclosedQuarters(content.html,source),reported=readReportedFacts(content.html,source);
    if(reported.issues.length)throw new Error('SEC_FACT_FORMAT_UNSUPPORTED');
    const expected=cursor.expectedPeriodEnd;

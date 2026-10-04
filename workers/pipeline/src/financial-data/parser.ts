@@ -4,7 +4,7 @@ import {buildPublishedBusinessQuarter} from '../../../../shared/analysis-runtime
 import type { BusinessFlowQuarter, FlowAmount, FlowMetric, BusinessSegment } from '../../../../shared/analysis-contract/business-flow.ts';
 import { disclosedWholeCompany } from '../../../../shared/analysis-runtime/financial-data/completeness.ts';
 export interface DocumentSource {url:string;accession:string;filedAt:string;cik:string;industry:'standard'|'financial'|'insurance'|'unknown';fiscalYear?:string;}
-export const SEC_FLOW_PARSER_VERSION='deterministic-sec.v3';
+export const SEC_FLOW_PARSER_VERSION='deterministic-sec.v4';
 export interface Fact {source:DocumentSource;operands?:Fact[];formula?:string;precision:number;tag:string;value:number;currency:string;start:string;end:string;context:string;dimensions:Record<string,string>;}
 const text=(s:string)=>s.replace(/<[^>]*>/g,' ').replace(/&nbsp;|&#160;/g,' ').replace(/&amp;/g,'&').trim();
 const attrs=(s:string)=>Object.fromEntries([...s.matchAll(/([\w:-]+)\s*=\s*["']([^"']*)["']/g)].map(m=>[m[1].toLowerCase(),m[2]]));

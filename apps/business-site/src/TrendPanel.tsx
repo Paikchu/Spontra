@@ -33,7 +33,7 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
   const [chosenLag, setLag] = useState<1 | 4 | null>(null);
   const slots = useMemo(() => buildSlots(history), [history]);
   const columns = useMemo(() => buildColumns(slots, items, selected), [slots, items, selected]);
-  const order = useMemo(() => layerOrder(items), [items]);
+  const order = useMemo(() => layerOrder(items, columns), [items, columns]);
   const ticks = niceTicks(Math.max(0, ...columns.map(c => c.total ?? 0)));
   const scale = ticks.at(-1)!;
   const unit = history.quarters.at(-1)!;
@@ -42,7 +42,8 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
   const last = columns.at(-1)?.total ?? null, yearAgo = columns.at(-5)?.total ?? null;
   const yoy = growth(last, yearAgo), span = known.length > 1 ? growth(known.at(-1)!.total, known[0].total) : null;
   const mode = selected?.key ?? "all";
-  const legend = selected ? (columns.find(c => c.layers.length > 1)?.layers ?? []) : columns.findLast(c => c.state === "ok")?.layers ?? [];
+  const legend = selected ? (columns.find(c => c.layers.length > 1)?.layers ?? [])
+    : [...new Map([...columns].reverse().flatMap(column => column.layers.filter(layer => layer.tone !== "total")).map(layer => [layer.key, layer])).values()];
   const index = columnIndex(columns, currentPeriod);
   // Year over year unless that quarter is missing, until the reader picks a base.
   const lag = chosenLag ?? (buildBridge(columns, index, 4) ? 4 : 1);
@@ -161,11 +162,11 @@ function Bar({ column, index, order, scale, hue, money, current, pickable, hover
   current: boolean; pickable: boolean; hovered: boolean; onHover: () => void; onPick: () => void; selected: TrendItem | null; rate: number | null; lag: 1 | 4;
 }) {
   const q = column.slot.quarter;
-  const label = column.state === "missing" ? "该季度未取得可核验披露" : column.state === "basis" ? (selected ? "该期财报未按此业务口径披露" : "该期财报采用不同业务口径，显示公司总收入") : "";
+  const label = column.state === "missing" ? "该季度未取得可核验披露" : column.state === "basis" ? (selected ? "该期财报未按此业务口径披露" : column.layers.length > 1 ? "该期按原披露分类展示，未推定当前业务拆分" : "该期仅取得可核验的公司总收入") : "";
   const height = (column.total ?? 0) / scale * 100;
   return <div className="trend-col" role="listitem" data-state={column.state} data-current={current || undefined} data-align={index < 2 ? "start" : index > 5 ? "end" : undefined} style={{ "--i": index } as CSSProperties} onMouseEnter={onHover}>
     <button type="button" className="trend-hit" disabled={!pickable} onClick={onPick} onFocus={onHover}
-      aria-label={`${shortPeriod(column.slot.periodEnd)} ${column.total != null ? money(column.total) : label}${pickable ? "，在流向图中查看该季度" : ""}`} />
+      aria-label={`${shortPeriod(column.slot.periodEnd)} ${column.total != null ? money(column.total) : ""}${label ? `，${label}` : ""}${pickable ? "，在流向图中查看该季度" : ""}`} />
     <span className="trend-value" style={{ bottom: `${height}%` }}>{column.total != null ? money(column.total) : "—"}</span>
     <span className="trend-stack" aria-hidden="true">
       {order.map(key => {

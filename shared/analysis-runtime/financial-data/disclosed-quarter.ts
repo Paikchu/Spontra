@@ -2,7 +2,7 @@ import type {BusinessFlowQuarter,BusinessSegment,FlowAmount,FlowMetric} from '..
 import type {BusinessFact,ParsedBusinessQuarter} from './business-flow-parser.ts';
 const BUSINESS_FLOW_PARSER_VERSION='sec-business-flow.v2';
 const sum = (facts: BusinessFact[]) => facts.reduce((v,f)=>v+f.value,0);
-const groupFor = (id: string) => id === 'ResearchAndDevelopmentExpense' ? 'research' : id === 'SellingAndMarketingExpense' ? 'sales' : id === 'GeneralAndAdministrativeExpense' ? 'administration' : ['CloudAndSoftwareExpenses','HardwareExpenses','ServicesExpense'].includes(id) ? 'direct' : 'other';
+const groupFor = (id: string) => id === 'ResearchAndDevelopmentExpense' ? 'research' : id === 'SellingAndMarketingExpense' ? 'sales' : id === 'GeneralAndAdministrativeExpense' ? 'administration' : ['CloudAndSoftwareExpenses','CloudServicesAndLicenseSupportExpense','HardwareExpenses','ServicesExpense'].includes(id) ? 'direct' : 'other';
 const canonicalRevenue = (id: string) => id === 'SalesRevenueServicesNet1' ? 'SalesRevenueServicesNet' : id;
 export function buildPublishedBusinessQuarter(parsed: ParsedBusinessQuarter, filedAt: string): BusinessFlowQuarter | null {
  if(parsed.profile !== 'direct_operating' || Object.values(parsed.coverage).some(v=>!v) || parsed.issues.length) return null;

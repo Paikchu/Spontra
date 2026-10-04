@@ -9,7 +9,13 @@ function cookie(value: string, request: Request, clear = false): string {
   return `${COOKIE}=${value}; Path=/api/admin; HttpOnly; SameSite=Strict; Max-Age=${clear ? 0 : 8 * 3600}${new URL(request.url).protocol === "https:" ? "; Secure" : ""}`;
 }
 export async function handleReportAdminProxy(request: Request, path: string[], env: ProxyEnv): Promise<Response> {
-  if (!path.length || !/^(session|reports)$/.test(path[0]!) || path.length > 4) return json({ error: "Not found" }, 404);
+  if (!path.length || !/^(session|reports|financials)$/.test(path[0]!) || path.length > (path[0] === "financials" ? 6 : 4)) return json({ error: "Not found" }, 404);
+  if (path[0] === "financials") {
+    const route = path.slice(1).join("/");
+    const read = request.method === "GET" && /^(companies(?:\/[A-Z][A-Z0-9.-]{0,9}(?:\/documents\/[a-f0-9]{64}(?:\/statements)?)?)?|tasks\/[A-Za-z0-9_-]{1,160})$/.test(route);
+    const write = request.method === "POST" && /^(companies\/[A-Z][A-Z0-9.-]{0,9}\/actions|tasks\/[A-Za-z0-9_-]{1,160}\/cancel)$/.test(route);
+    if (!read && !write) return json({ error: "Not found" }, 404);
+  }
   if (request.method !== "GET") {
     // Browsers must prove same-origin even before login; no public write proxy.
     if (request.headers.get("origin") !== new URL(request.url).origin) return json({ error: "请求来源无效。" }, 403);

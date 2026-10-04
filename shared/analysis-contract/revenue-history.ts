@@ -1,5 +1,7 @@
 /** Quarterly revenue by business, as each filing presented it. Unknown periods are absent, never zero. */
-export type RevenueHistoryNode = { id: string; name: string; value: string; children?: Array<{ id: string; name: string; value: string }> };
+export type RevenueHistoryLineage = { accession: string; url: string; concept: string; contextId: string; periodStart: string; periodEnd: string; parserVersion: string; dimensions: Record<string, string> };
+export type RevenueHistoryLeaf = { id: string; name: string; value: string; lineage?: RevenueHistoryLineage[] };
+export type RevenueHistoryNode = RevenueHistoryLeaf & { children?: RevenueHistoryLeaf[] };
 export type RevenueHistoryQuarter = {
   periodStart: string;
   periodEnd: string;
@@ -9,6 +11,9 @@ export type RevenueHistoryQuarter = {
   /** derived = same-concept full year minus nine-month cumulative (fourth quarter only). */
   basis: "reported" | "derived";
   formula?: string;
+  /** Original filing presentation; never implies verification against other filings. */
+  presentation?: string;
+  lineage?: RevenueHistoryLineage[];
   segments: RevenueHistoryNode[];
   source: { accession: string; url: string; filedAt: string; form: string };
 };

@@ -91,3 +91,49 @@ test("missing nine-month cash flow and incompatible currencies remain missing, n
   assert.equal(result.partial, true);
   assert.equal(result.stale, true);
 });
+
+test("quarters with missing revenue remain visible with their disclosed statement values", async () => {
+  const raw = payload();
+  raw.facts["us-gaap"].Revenues.units.USD = raw.facts["us-gaap"].Revenues.units.USD.slice(0, 1);
+  const result = await buildSecFundamentals(normalizeCompanyFacts("MSFT", raw), query, null);
+  assert.deepEqual(result.periods.map((point) => point.periodEnd), ["2025-03-31", "2025-06-30", "2025-09-30", "2025-12-31"]);
+  assert.equal(result.series.find((series) => series.metricKey === "total_revenue")?.points.at(-1)?.valueDecimal, null);
+  assert.equal(result.series.find((series) => series.metricKey === "operating_cash_flow")?.points.at(-1)?.valueDecimal, "90");
+  assert.equal(result.partial, true);
+});
+
+test("nine-month facts repeated in an annual filing stay cumulative and recover a genuine Q4", async () => {
+  const raw = payload();
+  for (const concept of Object.values(raw.facts["us-gaap"])) {
+    for (const values of Object.values(concept.units)) {
+      for (const value of values) value.form = "10-K";
+    }
+  }
+  const history = normalizeCompanyFacts("MSFT", raw);
+  const operating = history.series.find((series) => series.seriesId === "operating_cash_flow")!;
+  assert.equal(operating.annual.length, 1);
+  assert.equal(operating.annual[0].endDate, "2025-12-31");
+  assert.equal(operating.quarters.find((point) => point.endDate === "2025-09-30")?.value, "60");
+  assert.equal(operating.quarters.find((point) => point.endDate === "2025-12-31")?.value, "90");
+  assert.equal((await buildSecFundamentals(history, query, null)).series.find((series) => series.metricKey === "diluted_eps")?.points.at(-1)?.valueDecimal, null);
+});
+
+test("a directly tagged quarter can combine with the same period recovered from cumulative facts", async () => {
+  const raw = payload();
+  raw.facts["us-gaap"].PaymentsToAcquirePropertyPlantAndEquipment.units.USD[1] = {
+    ...raw.facts["us-gaap"].PaymentsToAcquirePropertyPlantAndEquipment.units.USD[1], start: "2025-04-01", val: 20,
+  };
+  const history = normalizeCompanyFacts("MSFT", raw);
+  const fcf = history.series.find((series) => series.seriesId === "free_cash_flow")?.quarters.find((point) => point.endDate === "2025-06-30");
+  assert.equal(fcf?.value, "30");
+  assert.equal(fcf?.basis, "derived");
+});
+
+test("blank amounts and impossible dates never normalize to reported zeroes or periods", () => {
+  const raw = { facts: { "us-gaap": { Revenues: { units: { USD: [
+    {start: "2025-01-01", end: "2025-03-31", val: "  ", form: "10-Q", accn: "blank", filed: "2025-05-01"},
+    {start: "2025-01-01", end: "2025-02-30", val: 123, form: "10-Q", accn: "bad-date", filed: "2025-05-01"},
+    {start: "2025-02-30", end: "2025-05-31", val: 123, form: "10-Q", accn: "bad-start", filed: "2025-07-01"},
+  ] } } } } };
+  assert.equal(normalizeCompanyFacts("MSFT", raw).series.length, 0);
+});

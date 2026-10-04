@@ -40,8 +40,9 @@ export function matchItem(q: RevenueHistoryQuarter, item: TrendItem, items: Tren
 }
 
 /** All layer keys in stable stacking order: each root followed by its children, then the whole-company fallback. */
-export function layerOrder(items: TrendItem[]) {
-  return [...items.filter(i => !i.parent).flatMap(root => [root.key, ...items.filter(i => i.parent === root.key).map(c => c.key)]), "__total"];
+export function layerOrder(items: TrendItem[], columns: Column[] = []) {
+  return [...new Set([...items.filter(i => !i.parent).flatMap(root => [root.key, ...items.filter(i => i.parent === root.key).map(c => c.key)]),
+    ...columns.flatMap(column => column.layers.map(layer => layer.key)).filter(key => key !== "__total"), "__total"])];
 }
 
 export function buildColumns(slots: Slot[], items: TrendItem[], selected: TrendItem | null): Column[] {
@@ -52,9 +53,18 @@ export function buildColumns(slots: Slot[], items: TrendItem[], selected: TrendI
     const revenue = Number(q.revenue);
     if (!selected) {
       const values = roots.map(root => matchItem(q, root, items));
-      // Only a full, reconciling match is stacked by business; any other presentation shows company revenue alone.
+      // Matching the current presentation enables the current legend, never a fabricated historical split.
       if (roots.length && values.every(v => v != null) && Math.abs(values.reduce((s, v) => s + v!, 0) - revenue) <= Math.max(1, revenue * 1e-6))
         return { slot, total: revenue, state: "ok", layers: roots.map((root, i) => ({ key: root.key, value: values[i]!, tone: "root", slot: root.slot, shade: 0, name: root.name })) };
+      const original = q.segments;
+      if (original.length > 1 && original.every(node => Number.isFinite(Number(node.value)) && Number(node.value) >= 0)
+        && Math.abs(original.reduce((sum, node) => sum + Number(node.value), 0) - revenue) <= Math.max(1, revenue * 1e-6)) {
+        return { slot, total: revenue, state: "basis", layers: original.map((node, index) => {
+          const matched = roots.find(root => root.id === node.id || norm(root.name) === norm(node.name));
+          return { key: matched?.key ?? `disclosed:${node.id}`, value: Number(node.value), tone: "root", slot: matched?.slot ?? roots.length + index + 1,
+            shade: 0, name: disclosedSegmentLabel(node.name) };
+        }) };
+      }
       return { slot, total: revenue, state: "basis", layers: [{ key: "__total", value: revenue, tone: "total", slot: 0, shade: 0, name: "公司总收入" }] };
     }
     const value = matchItem(q, selected, items);
