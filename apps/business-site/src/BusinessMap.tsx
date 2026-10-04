@@ -201,10 +201,6 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
 
     <section className="stage" data-trend={revenueHistory && revenueHistory.quarters.length >= 2 ? "" : undefined} aria-label={`${ticker} 收入到利润流向`}>
       <header className="stage-head">
-        <div className="stage-title">
-          <span className="eyebrow">{quarter ? `${quarter.periodStart ? `${quarter.periodStart} — ` : "截至 "}${quarter.periodEnd} · 三个月 · ${quarter.currency || "币种未披露"}` : "季度财务未披露"}</span>
-          <h1 key={current?.key ?? "all"}>{current ? <><i style={{ background: hue(current.slot) }} aria-hidden="true" />{parent && <span className="crumb">{parent.name} / </span>}{current.name}</> : <>收入如何变成利润</>}</h1>
-        </div>
         {quarters.length > 1 && <div className="periods" role="radiogroup" aria-label="季度">
           {quarters.slice(0, 6).map(q => <button type="button" role="radio" key={q.id} aria-checked={q.id === quarter.id} title={q.label} onClick={() => setPeriod(q.id)}>{shortPeriod(q.periodEnd)}</button>)}
         </div>}
