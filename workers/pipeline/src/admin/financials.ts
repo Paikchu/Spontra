@@ -3,10 +3,9 @@ import { FLOW_METRICS, type BusinessFlowQuarter } from "../../../../shared/analy
 import { aiIsEnabled } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 import { dataTickersFor, trackedTickersFor } from "../core.ts";
 import type { SecPipelineEnv } from "../operations.ts";
-import { D1SecRepository } from "../sec/d1.ts";
 import { normalizeTrackedTicker } from "../sec/config.ts";
 import { cleanSecAccession } from "../sec/sec.ts";
-import { readCompletePublicationForTicker } from "../financial-data/publication.ts";
+import { financialPublicationMetadata, readCompletePublicationForTicker } from "../financial-data/publication.ts";
 import { getFinancialStatements, getFilingDisclosureAuditPage, listFilingDisclosureAudits } from "../financial-data/disclosure-audit.ts";
 import { authenticateAdmin } from "./auth.ts";
 import { FinancialMaintenanceStore, taskView } from "./financial-maintenance-store.ts";
@@ -20,30 +19,62 @@ const coverage = {
 const labels: Record<string, string> = { revenue: "收入", cost: "营业成本", gross: "毛利润", research: "研发费用", sales: "销售费用", administration: "管理费用", operatingExpenses: "营业费用", operating: "营业利润", other: "其他收益/费用", pretax: "税前利润", tax: "所得税", net: "净利润" };
 
 export async function listFinancialCompanies(env: SecPipelineEnv): Promise<FinancialMaintenanceCompanyList> {
-  const dataEnabled = dataTickersFor(env), tracked = trackedTickersFor(env);
-  const rows = await env.DB!.prepare(`WITH tickers AS (
-    SELECT ticker FROM sec_filings UNION SELECT ticker FROM financial_collection_jobs
-    UNION SELECT ticker FROM financial_maintenance_tasks UNION SELECT value ticker FROM json_each(?)
-  ) SELECT t.ticker,
-    COALESCE(json_extract(i.payload,'$.name'),json_extract(f.payload,'$.company.name'),t.ticker) name,
-    COALESCE((SELECT cik FROM financial_collection_jobs WHERE ticker=t.ticker ORDER BY generation DESC LIMIT 1),
-      json_extract(i.payload,'$.cik'),json_extract(f.payload,'$.company.cik'),(SELECT cik FROM sec_filings WHERE ticker=t.ticker LIMIT 1)) cik,
-    (SELECT MAX(report_date) FROM sec_filings WHERE ticker=t.ticker) latestPeriodEnd,
-    COALESCE((SELECT MAX(updated_at) FROM financial_collection_jobs WHERE ticker=t.ticker),f.fetched_at) lastUpdatedAt
-    FROM tickers t LEFT JOIN sec_cache i ON i.cache_key='admin:financial-issuer:'||t.ticker
-    LEFT JOIN sec_cache f ON f.cache_key='sec:filings:'||t.ticker ORDER BY t.ticker LIMIT 1000`)
-    .bind(JSON.stringify([...new Set([...dataEnabled,...tracked])])).all<Omit<FinancialMaintenanceCompany,"tracked"|"dataEnabled">>();
-  const companies = rows.results.map(row=>({...row,tracked:tracked.includes(row.ticker),dataEnabled:dataEnabled.includes(row.ticker)}));
+  const companies = await financialCompanyRows(env);
   return { companies, environment: { aiEnabled: aiIsEnabled(env), dataCollectionEnabled: env.SEC_DATA_COLLECTION_ENABLED === "true", workflowAvailable: Boolean(env.SEC_ANALYSIS_WORKFLOW) } };
 }
-async function companyIdentity(env: SecPipelineEnv, ticker: string, tracked = trackedTickersFor(env), dataEnabled = dataTickersFor(env)): Promise<FinancialMaintenanceCompany> {
-  const row = await env.DB!.prepare(`SELECT cik,updated_at FROM financial_collection_jobs WHERE ticker=? ORDER BY generation DESC LIMIT 1`).bind(ticker).first<{ cik: string; updated_at: string }>();
-  const feed = await new D1SecRepository(env.DB!).getCache<{ company?: { name?: string; cik?: string } }>(`sec:filings:${ticker}`);
-  const filing = await env.DB!.prepare("SELECT cik,MAX(report_date) periodEnd FROM sec_filings WHERE ticker=?").bind(ticker).first<{ cik: string | null; periodEnd: string | null }>();
-  const identity = await new D1SecRepository(env.DB!).getCache<{ name: string; cik: string }>(`admin:financial-issuer:${ticker}`);
-  return { ticker, name: identity?.payload.name ?? feed?.payload.company?.name ?? ticker,
-    cik: row?.cik ?? identity?.payload.cik ?? feed?.payload.company?.cik ?? filing?.cik ?? null,
-    tracked: tracked.includes(ticker), dataEnabled: dataEnabled.includes(ticker), latestPeriodEnd: filing?.periodEnd ?? null, lastUpdatedAt: row?.updated_at ?? feed?.fetchedAt ?? null };
+async function financialCompanyRows(env: SecPipelineEnv, selectedTicker?: string): Promise<FinancialMaintenanceCompany[]> {
+  const dataEnabled = dataTickersFor(env), tracked = trackedTickersFor(env);
+  const rows = await env.DB!.prepare(`WITH statement_sources AS (
+    SELECT cache_key,CASE WHEN json_valid(payload) THEN payload END payload FROM sec_cache
+      WHERE cache_key LIKE 'sec:disclosure-audit:v1:%'
+  ), statement_data AS (
+    SELECT json_extract(payload,'$.ticker') ticker,
+      MAX(json_extract(payload,'$.source.reportDate')) statementPeriodEnd,
+      MAX(strftime('%Y-%m-%dT%H:%M:%fZ',json_extract(payload,'$.archivedAt'))) statementUpdatedAt
+    FROM statement_sources
+    WHERE json_extract(payload,'$.statements.status')='extracted'
+      AND json_type(payload,'$.statements.tables')='integer' AND json_extract(payload,'$.statements.tables')>0
+      AND json_extract(payload,'$.source.ticker')=json_extract(payload,'$.ticker')
+      AND cache_key='sec:disclosure-audit:v1:'||json_extract(payload,'$.ticker')||':'||json_extract(payload,'$.documentId')
+      AND json_extract(payload,'$.source.form') IN ('10-Q','10-K','10-Q/A','10-K/A')
+      AND json_extract(payload,'$.source.reportDate') GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
+      AND date(json_extract(payload,'$.source.reportDate')) IS NOT NULL
+    GROUP BY json_extract(payload,'$.ticker')
+  ), tickers AS (
+    SELECT ticker FROM sec_filings UNION SELECT ticker FROM financial_collection_jobs
+    UNION SELECT ticker FROM financial_maintenance_tasks UNION SELECT ticker FROM financial_complete_versions
+    UNION SELECT ticker FROM statement_data
+    UNION SELECT CASE WHEN json_valid(payload) THEN json_extract(payload,'$.ticker') END FROM sec_cache
+      WHERE cache_key LIKE 'sec:business-flow:v2:%' OR cache_key LIKE 'sec:revenue-history:v1:%'
+    UNION SELECT value ticker FROM json_each(?)
+  ), identities AS (SELECT t.ticker,
+    COALESCE(CASE WHEN json_valid(i.payload) THEN json_extract(i.payload,'$.name') END,
+      CASE WHEN json_valid(f.payload) THEN json_extract(f.payload,'$.company.name') END,t.ticker) name,
+    COALESCE((SELECT cik FROM financial_collection_jobs WHERE ticker=t.ticker ORDER BY generation DESC LIMIT 1),
+      (SELECT v.cik FROM financial_complete_current c JOIN financial_complete_versions v ON v.version_id=c.version_id WHERE v.ticker=t.ticker ORDER BY v.generation DESC LIMIT 1),
+      (SELECT substr(cache_key,length('sec:revenue-history:v1:')+1) FROM sec_cache WHERE cache_key LIKE 'sec:revenue-history:v1:%' AND CASE WHEN json_valid(payload) THEN json_extract(payload,'$.ticker') END=t.ticker LIMIT 1),
+      CASE WHEN json_valid(i.payload) THEN json_extract(i.payload,'$.cik') END,
+      CASE WHEN json_valid(f.payload) THEN json_extract(f.payload,'$.company.cik') END,(SELECT cik FROM sec_filings WHERE ticker=t.ticker LIMIT 1)) cik
+    FROM tickers t LEFT JOIN sec_cache i ON i.cache_key='admin:financial-issuer:'||t.ticker
+    LEFT JOIN sec_cache f ON f.cache_key='sec:filings:'||t.ticker
+    WHERE t.ticker IS NOT NULL AND (? IS NULL OR t.ticker=?) ORDER BY t.ticker LIMIT 1000)
+  SELECT i.*,v.payload_json currentPayload,v.published_at publishedAt,l.payload legacyPayload,h.payload historyPayload,
+    s.statementPeriodEnd,s.statementUpdatedAt
+    FROM identities i LEFT JOIN financial_complete_current c ON c.cik=i.cik
+    LEFT JOIN financial_complete_versions v ON v.version_id=c.version_id
+    LEFT JOIN sec_cache l ON l.cache_key='sec:business-flow:v2:'||i.ticker
+    LEFT JOIN sec_cache h ON h.cache_key='sec:revenue-history:v1:'||i.cik
+    LEFT JOIN statement_data s ON s.ticker=i.ticker ORDER BY i.ticker`)
+    .bind(JSON.stringify([...new Set([...dataEnabled,...tracked,...(selectedTicker?[selectedTicker]:[])])]),selectedTicker??null,selectedTicker??null)
+    .all<{ticker:string;name:string;cik:string|null;currentPayload:string|null;publishedAt:string|null;legacyPayload:string|null;historyPayload:string|null;statementPeriodEnd:string|null;statementUpdatedAt:string|null}>();
+  return rows.results.map(row => {
+    const publication = financialPublicationMetadata(row.ticker, row);
+    const periods = [publication.latestPeriodEnd, row.statementPeriodEnd].filter((value): value is string => value !== null).sort();
+    const updates = [publication.lastUpdatedAt, row.statementUpdatedAt].filter((value): value is string => value !== null)
+      .sort((a, b) => Date.parse(a) - Date.parse(b));
+    return { ticker: row.ticker, name: row.name, cik: row.cik, latestPeriodEnd: periods.at(-1) ?? null,
+      lastUpdatedAt: updates.at(-1) ?? null, tracked: tracked.includes(row.ticker), dataEnabled: dataEnabled.includes(row.ticker) };
+  });
 }
 function periodFromQuarter(q: BusinessFlowQuarter): FinancialMaintenancePeriod {
   const metrics: FinancialMaintenanceMetric[] = FLOW_METRICS.map(id => {
@@ -59,7 +90,7 @@ function periodFromQuarter(q: BusinessFlowQuarter): FinancialMaintenancePeriod {
     status: metrics.some(m => m.value === null) ? "partial" : "complete", metrics, issues: [] };
 }
 export async function getFinancialCompany(env: SecPipelineEnv, ticker: string): Promise<FinancialMaintenanceCompanyDetail> {
-  const company = await companyIdentity(env, ticker), publication = await readCompletePublicationForTicker(env.DB!, ticker);
+  const company = (await financialCompanyRows(env, ticker))[0]!, publication = await readCompletePublicationForTicker(env.DB!, ticker);
   const periods = new Map<string, FinancialMaintenancePeriod>((publication.flow?.quarters ?? []).map(q => [q.periodEnd, periodFromQuarter(q)]));
   for (const q of publication.history?.quarters ?? []) {
     if (periods.has(q.periodEnd)) continue;
@@ -71,7 +102,6 @@ export async function getFinancialCompany(env: SecPipelineEnv, ticker: string): 
   for (const filing of filings.results) if (filing.report_date && !periods.has(filing.report_date)) periods.set(filing.report_date, {
     periodEnd: filing.report_date, status: "missing", metrics: [], issues: ["已发现原始报告，该期展示数据尚未提取。10-K 年度数值不会直接当作单季。"] });
   const ordered = [...periods.values()].sort((a,b)=>b.periodEnd.localeCompare(a.periodEnd));
-  company.latestPeriodEnd = ordered[0]?.periodEnd ?? company.latestPeriodEnd;
   return { company, periods: ordered, coverage, documents: await listFilingDisclosureAudits(env.DB!, ticker), tasks: (await new FinancialMaintenanceStore(env.DB!).list(ticker)).map(taskView) };
 }
 

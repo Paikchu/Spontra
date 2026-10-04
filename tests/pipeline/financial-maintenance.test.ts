@@ -7,6 +7,10 @@ import { FinancialMaintenanceStore, MAINTENANCE_LEASE_MS } from "../../workers/p
 import { maintenanceAnalysisEnvironment, runFinancialMaintenanceTick, type MaintenanceDependencies } from "../../workers/pipeline/src/admin/financial-maintenance-runner.ts";
 import { claimJob } from "../../workers/pipeline/src/financial-data/queue.ts";
 import type { SecPipelineEnv } from "../../workers/pipeline/src/operations.ts";
+import type { FinancialMaintenanceCompanyDetail, FinancialMaintenanceCompanyList } from "../../shared/analysis-contract/financial-maintenance.ts";
+import { completeOrclFixture } from "../fixtures/complete-orcl-flow.ts";
+import { historyFromSnapshot } from "../../shared/analysis-runtime/financial-data/history.ts";
+import { HISTORY_VERSION, runHistoryStep } from "../../workers/pipeline/src/financial-data/history.ts";
 
 async function fixture() {
   const database = await createAnalysisDatabase(), secret = "maintenance-test-secret", objects = new Map<string,string>();
@@ -110,6 +114,122 @@ test("company/task GETs are read-only and disclose explicit missing status rathe
     for(const path of ["companies","companies/ORCL",`tasks/${id}`])assert.equal((await handleFinancialAdminRequest(f.request(path),env)).status,200);
     const detail=await (await handleFinancialAdminRequest(f.request("companies/ORCL"),env)).json() as {periods:Array<{status:string;metrics:unknown[]}>};
     assert.equal(detail.periods[0].status,"missing");assert.deepEqual(detail.periods[0].metrics,[]);assert.deepEqual(guard.attemptedWrites,[]);
+  } finally { f.database.close(); }
+});
+
+test("company metadata shows the same successful data for tracked and manually added companies despite newer failures or missing filings", async()=>{
+  const f=await fixture();
+  try {
+    const publishedAt="2026-09-12T00:00:00.000Z", failedAt="2026-12-01T00:00:00.000Z";
+    const flow={...completeOrclFixture,fetchedAt:publishedAt};
+    f.database.raw.prepare("INSERT INTO financial_complete_versions VALUES(?,?,?,?,?,?)").run("published","0001341439","ORCL",1,JSON.stringify(flow),publishedAt);
+    f.database.raw.prepare("INSERT INTO financial_complete_current VALUES(?,?,?)").run("0001341439","published",1);
+    f.database.raw.prepare("INSERT INTO financial_collection_jobs(job_id,cik,ticker,generation,status,next_attempt_at,updated_at) VALUES(?,?,?,?,?,?,?)")
+      .run("failed-alias","0001341439","ORCL.A",2,"unavailable",failedAt,failedAt);
+    const cache=f.database.raw.prepare("INSERT INTO sec_cache(cache_key,payload,fetched_at) VALUES(?,?,?)");
+    cache.run("sec:filings:ORCL","invalid-json",failedAt);
+    cache.run("admin:financial-issuer:ORCL.A","invalid-json",failedAt);
+    f.database.raw.prepare(`INSERT INTO sec_filings(filing_id,ticker,accession_number,cik,form,filing_date,report_date,document_url,index_url,parser_version,ingest_status)
+      VALUES('new-filing','ORCL.A','new-filing','0001341439','10-Q','2026-12-01','2026-11-30','https://www.sec.gov/a','https://www.sec.gov/i','v1','indexed')`).run();
+    const guard=new ReadOnlyGuardDatabase(f.database),env={...f.env,SEC_AI_ENABLED:"true",SEC_AI_TICKERS:"ORCL",DB:guard as unknown as D1Database};
+    const list=await (await handleFinancialAdminRequest(f.request("companies"),env)).json() as FinancialMaintenanceCompanyList;
+    assert.equal(list.companies.find(company=>company.ticker==="ORCL")!.tracked,true);
+    assert.equal(list.companies.find(company=>company.ticker==="ORCL.A")!.tracked,false);
+    for(const ticker of ["ORCL","ORCL.A"]){
+      const company=list.companies.find(company=>company.ticker===ticker)!;
+      assert.equal(company.latestPeriodEnd,"2026-08-31");assert.equal(company.lastUpdatedAt,publishedAt);
+      const detail=await (await handleFinancialAdminRequest(f.request(`companies/${ticker}`),env)).json() as FinancialMaintenanceCompanyDetail;
+      assert.deepEqual(detail.company,company);
+      assert.ok(detail.periods.find(period=>period.periodEnd==="2026-08-31")!.metrics.some(metric=>metric.value!==null));
+      if(ticker==="ORCL.A")assert.equal(detail.periods[0].status,"missing");
+    }
+    assert.deepEqual(guard.attemptedWrites,[]);assert.equal(env.SEC_AI_TICKERS,"ORCL");assert.equal(env.SEC_DATA_TICKERS,"ORCL");
+  } finally { f.database.close(); }
+});
+
+test("history-only and legacy-only companies appear with obtained periods and invalid supplementary history cannot hide them",async()=>{
+  const f=await fixture();
+  try {
+    const history={schemaVersion:"revenue-history.v1",ticker:"HIST",updatedAt:"2026-09-15T00:00:00.000Z",quarters:[historyFromSnapshot(completeOrclFixture.quarters[0])!]};
+    const cache=f.database.raw.prepare("INSERT INTO sec_cache(cache_key,payload,fetched_at) VALUES(?,?,?)");
+    cache.run("sec:revenue-history:v1:0001341439",JSON.stringify(history),history.updatedAt);
+    cache.run("sec:business-flow:v2:LEGACY",JSON.stringify({...completeOrclFixture,ticker:"LEGACY"}),completeOrclFixture.fetchedAt);
+    cache.run("sec:revenue-history:v1:0000000001","invalid-json","2026-12-01");
+    cache.run("sec:business-flow:v2:BROKEN",JSON.stringify({ticker:"BROKEN"}),"2026-12-01");
+    const list=await (await handleFinancialAdminRequest(f.request("companies"),f.env)).json() as FinancialMaintenanceCompanyList;
+    for(const ticker of ["HIST","LEGACY"]){
+      const company=list.companies.find(company=>company.ticker===ticker)!;assert.ok(company);
+      assert.equal(company.latestPeriodEnd,"2026-08-31");
+      const detail=await (await handleFinancialAdminRequest(f.request(`companies/${ticker}`),f.env)).json() as FinancialMaintenanceCompanyDetail;
+      assert.deepEqual(detail.company,company);assert.equal(detail.periods[0].periodEnd,"2026-08-31");
+    }
+    assert.equal(list.companies.find(company=>company.ticker==="HIST")!.lastUpdatedAt,history.updatedAt);
+    assert.equal(list.companies.find(company=>company.ticker==="BROKEN")!.lastUpdatedAt,null);
+  } finally { f.database.close(); }
+});
+
+test("companies with only successfully archived original statements appear without claiming quarterly summary data", async()=>{
+  const f=await fixture();
+  try {
+    const cache=f.database.raw.prepare("INSERT INTO sec_cache(cache_key,payload,fetched_at) VALUES(?,?,?)");
+    const archive=(id:string,ticker:string,reportDate:string,archivedAt:string,statements:object|undefined)=>{
+      const documentId=id.repeat(64),source={ticker,form:"10-Q",reportDate,filedAt:archivedAt.slice(0,10),accessionNumber:"0001193125-26-389274",documentUrl:"https://www.sec.gov/Archives/edgar/data/1341439/report.htm"};
+      cache.run(`sec:disclosure-audit:v1:${ticker}:${documentId}`,JSON.stringify({documentId,ticker,source,archivedAt,statements}),archivedAt);
+    };
+    archive("a","TABLES","2026-05-31","2026-06-12T00:00:00.000Z",{status:"extracted",tables:3});
+    archive("b","TABLES","2026-08-31","2026-09-12T00:00:00.000Z",{status:"extracted",tables:5});
+    archive("c","TABLES","2026-11-30","2026-12-12T00:00:00.000Z",{status:"not_located",tables:0});
+    archive("d","TABLES","2027-02-28","2027-03-12T00:00:00.000Z",undefined);
+    archive("e","EMPTY","2026-11-30","2026-12-12T00:00:00.000Z",{status:"extracted",tables:0});
+    cache.run("sec:disclosure-audit:v1:BROKEN:bad","invalid-json","2027-03-12T00:00:00.000Z");
+    const guard=new ReadOnlyGuardDatabase(f.database);let queries=0;
+    const env={...f.env,DB:{prepare(sql:string){queries++;return guard.prepare(sql);}} as unknown as D1Database};
+    const response=await handleFinancialAdminRequest(f.request("companies"),env);assert.equal(response.status,200);assert.equal(queries,1);
+    const list=await response.json() as FinancialMaintenanceCompanyList,company=list.companies.find(item=>item.ticker==="TABLES")!;
+    assert.ok(company);assert.equal(company.latestPeriodEnd,"2026-08-31");assert.equal(company.lastUpdatedAt,"2026-09-12T00:00:00.000Z");
+    assert.equal(list.companies.some(item=>item.ticker==="EMPTY"||item.ticker==="BROKEN"),false);
+    const detail=await (await handleFinancialAdminRequest(f.request("companies/TABLES"),env)).json() as FinancialMaintenanceCompanyDetail;
+    assert.deepEqual(detail.company,company);assert.deepEqual(detail.periods,[]);assert.equal(detail.documents.length,4);
+    assert.deepEqual(guard.attemptedWrites,[]);
+  } finally { f.database.close(); }
+});
+
+test("original statement metadata and successful snapshot or history metadata retain the newest available period and time", async()=>{
+  const f=await fixture();
+  try {
+    const publishedAt="2026-10-01T00:00:00.000Z",historyAt="2026-11-01T00:00:00.000Z";
+    f.database.raw.prepare("INSERT INTO financial_complete_versions VALUES(?,?,?,?,?,?)").run("published","0001341439","ORCL",1,JSON.stringify({...completeOrclFixture,fetchedAt:publishedAt}),publishedAt);
+    f.database.raw.prepare("INSERT INTO financial_complete_current VALUES(?,?,?)").run("0001341439","published",1);
+    const cache=f.database.raw.prepare("INSERT INTO sec_cache(cache_key,payload,fetched_at) VALUES(?,?,?)");
+    cache.run("sec:revenue-history:v1:0001341439",JSON.stringify({schemaVersion:"revenue-history.v1",ticker:"ORCL",updatedAt:historyAt,
+      quarters:[historyFromSnapshot(completeOrclFixture.quarters[0])!]}),historyAt);
+    const archive=(id:string,reportDate:string,archivedAt:string)=>cache.run(`sec:disclosure-audit:v1:ORCL:${id.repeat(64)}`,JSON.stringify({
+      ticker:"ORCL",documentId:id.repeat(64),source:{ticker:"ORCL",form:"10-Q",reportDate},archivedAt,statements:{status:"extracted",tables:2},
+    }),archivedAt);
+    archive("a","2026-05-31","2026-09-12T00:00:00.000Z");
+    const read=async()=>((await (await handleFinancialAdminRequest(f.request("companies"),f.env)).json()) as FinancialMaintenanceCompanyList).companies.find(item=>item.ticker==="ORCL")!;
+    const prior=await read();assert.equal(prior.latestPeriodEnd,"2026-08-31");assert.equal(prior.lastUpdatedAt,historyAt);
+    archive("b","2026-11-30","2026-12-12T00:00:00.000Z");
+    const latest=await read();assert.equal(latest.latestPeriodEnd,"2026-11-30");assert.equal(latest.lastUpdatedAt,"2026-12-12T00:00:00.000Z");
+  } finally { f.database.close(); }
+});
+
+test("a failed history refresh preserves the timestamp of successfully obtained data",async()=>{
+  const f=await fixture();
+  try {
+    const previous="2026-09-15T00:00:00.000Z",now=new Date("2026-10-01T00:00:00.000Z"),cik="0001341439";
+    const history={schemaVersion:"revenue-history.v1",ticker:"ORCL",updatedAt:previous,quarters:[historyFromSnapshot(completeOrclFixture.quarters[0])!]};
+    const cache=f.database.raw.prepare("INSERT INTO sec_cache(cache_key,payload,fetched_at) VALUES(?,?,?)");
+    cache.run(`sec:revenue-history:v1:${cik}`,JSON.stringify(history),previous);
+    cache.run(`sec:revenue-history-cursor:v1:${cik}`,JSON.stringify({version:HISTORY_VERSION,ticker:"ORCL",industry:"standard",documents:[{
+      url:"https://www.sec.gov/Archives/edgar/data/1341439/000119312526389274/orcl.htm",accession:"0001193125-26-389274",filedAt:"2026-09-11",periodEnd:"2026-08-31",form:"10-Q",
+    }],index:0,facts:[],issues:[],startedAt:now.toISOString()}),now.toISOString());
+    const result=await runHistoryStep(f.env.DB!,{async read(){throw new Error("source temporarily unavailable");}},{ticker:"ORCL",cik},now,1);
+    assert.equal(result.retry?.attempts,1);
+    const stored=f.database.raw.prepare("SELECT payload,fetched_at FROM sec_cache WHERE cache_key=?").get(`sec:revenue-history:v1:${cik}`)!;
+    assert.equal(JSON.parse(stored.payload as string).updatedAt,previous);assert.equal(stored.fetched_at,previous);
+    const detail=await (await handleFinancialAdminRequest(f.request("companies/ORCL"),f.env)).json() as FinancialMaintenanceCompanyDetail;
+    assert.equal(detail.company.lastUpdatedAt,previous);assert.equal(detail.company.latestPeriodEnd,"2026-08-31");
   } finally { f.database.close(); }
 });
 
