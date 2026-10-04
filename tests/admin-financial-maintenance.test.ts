@@ -16,7 +16,7 @@ test("financial routes keep existing admin session permission and origin boundar
   assert.equal((await handleAdminRequest(request("companies"), env)).status, 401);
   assert.equal(calls.length, 0);
   const docId = "a".repeat(64);
-  for (const path of ["companies", "companies/ORCL", `companies/ORCL/documents/${docId}?offset=50&limit=50&concept=Revenue`, "tasks/test-task"]) {
+  for (const path of ["companies", "companies/ORCL", `companies/ORCL/documents/${docId}?offset=50&limit=50&concept=Revenue`, `companies/ORCL/documents/${docId}/statements`, "tasks/test-task"]) {
     const response = await handleAdminRequest(request(path, { headers: { cookie: `spontra_report_admin=${token}` } }), env);
     assert.equal(response.status, 200);
     assert.equal(calls.at(-1)!.headers.get("authorization"), `Bearer ${token}`);

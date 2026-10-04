@@ -129,7 +129,7 @@ const TRANSFORM_NAMESPACES = new Set([
 ]);
 const VOID_TAGS = new Set(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"]);
 const BLOCK_TAGS = new Set(["br", "p", "div", "table", "tr", "td", "th", "li", "h1", "h2", "h3", "h4", "h5", "h6", "hr"]);
-interface Element {
+export interface Element {
   name: string; local: string; namespaceUri: string | null;
   attributes: Record<string, string>; rawAttributes: Record<string, string>;
   namespaces: Record<string, string>; children: (Element | string)[];
@@ -155,7 +155,7 @@ function decodeEntities(value: string): string {
 }
 
 /** Quote-aware markup tokenization, no browser DOM or external entities. */
-function parseMarkup(html: string): { nodes: Element[]; root: Element; issues: DisclosureIssue[] } {
+export function parseMarkup(html: string): { nodes: Element[]; root: Element; issues: DisclosureIssue[] } {
   const root: Element = { name: "", local: "", namespaceUri: null, attributes: {}, rawAttributes: {}, namespaces: {}, children: [], parent: null, start: 0, openingEnd: 0, end: html.length, closed: true };
   const stack = [root];
   const nodes: Element[] = [];
@@ -220,7 +220,7 @@ function parseMarkup(html: string): { nodes: Element[]; root: Element; issues: D
   return { nodes, root, issues };
 }
 
-function descendants(node: Element): Element[] {
+export function descendants(node: Element): Element[] {
   const result: Element[] = [];
   const pending = [...node.children].reverse();
   while (pending.length) {
@@ -231,7 +231,7 @@ function descendants(node: Element): Element[] {
   }
   return result;
 }
-function nodeText(node: Element, options: { blocks?: boolean; documentTextMode?: boolean } = {}): string {
+export function nodeText(node: Element, options: { blocks?: boolean; documentTextMode?: boolean } = {}): string {
   const pending: (Element | string)[] = [node];
   const output: string[] = [];
   while (pending.length) {
@@ -243,7 +243,7 @@ function nodeText(node: Element, options: { blocks?: boolean; documentTextMode?:
   }
   return output.join("");
 }
-const normalizedText = (node: Element) => nodeText(node, { blocks: true }).replace(/\s+/g, " ").trim();
+export const normalizedText = (node: Element) => nodeText(node, { blocks: true }).replace(/\s+/g, " ").trim();
 function qname(name: string, node: Element): DisclosureQName {
   const prefix = name.includes(":") ? name.split(":")[0] : "";
   return { name, namespaceUri: node.namespaces[prefix] ?? null };

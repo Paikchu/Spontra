@@ -2,6 +2,7 @@ import type { DisclosureFact, DisclosureSource, FilingDisclosures } from "../ana
 
 /** An inventory of encountered source facts; semantic taxonomy coverage is listed separately. */
 export interface DisclosureAuditSummary {
+  statements?: { version: string; status: "extracted" | "not_located"; tables: number; rows: number; cells: number };
   documentId: string;
   ticker: string;
   source: DisclosureSource;

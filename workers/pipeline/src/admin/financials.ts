@@ -7,14 +7,14 @@ import { D1SecRepository } from "../sec/d1.ts";
 import { normalizeTrackedTicker } from "../sec/config.ts";
 import { cleanSecAccession } from "../sec/sec.ts";
 import { readCompletePublicationForTicker } from "../financial-data/publication.ts";
-import { getFilingDisclosureAuditPage, listFilingDisclosureAudits } from "../financial-data/disclosure-audit.ts";
+import { getFinancialStatements, getFilingDisclosureAuditPage, listFilingDisclosureAudits } from "../financial-data/disclosure-audit.ts";
 import { authenticateAdmin } from "./auth.ts";
 import { FinancialMaintenanceStore, taskView } from "./financial-maintenance-store.ts";
 
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "cache-control": "private, no-store" } });
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const coverage = {
-  scope: ["已验证的季度利润表和收入分部", "季度收入历史（含可核对的第四季度差额推导）", "原始 Inline XBRL 事实、期间、单位、维度和出处的审计档案"],
+  scope: ["已定位的 Financial Statements 整章原文与全部原始表格（含比较期间、附注和来源定位）", "已验证的季度利润表和收入分部", "季度收入历史（含可核对的第四季度差额推导）", "原始 Inline XBRL 事实、期间、单位、维度和出处的审计档案"],
   limitations: ["此处核心指标是有限的展示清单，不代表财报全部内容。", "未披露或尚未提取的数据保持缺失，不补成零。", "附注和非 XBRL 内容保留原文出处；未结构化不表示已提取语义。", "年累计和全年数据不直接标成单季，推导值需保留公式及来源。"],
 };
 const labels: Record<string, string> = { revenue: "收入", cost: "营业成本", gross: "毛利润", research: "研发费用", sales: "销售费用", administration: "管理费用", operatingExpenses: "营业费用", operating: "营业利润", other: "其他收益/费用", pretax: "税前利润", tax: "所得税", net: "净利润" };
@@ -89,6 +89,13 @@ export async function handleFinancialAdminRequest(request: Request, env: SecPipe
       if (!row) return json({ error: "任务不存在。" }, 404);
       if (taskMatch[2] && ["analysis_dispatch","analysis_wait"].includes(row.stage) && ["running","queued"].includes(row.status)) return json({ error: "分析工作流正在提交或已提交，当前只能停止等待，不能取消已提交的分析。", task: taskView(row) }, 409);
       return json({ task: taskView(taskMatch[2] ? (await store.cancel(row.task_id, new Date(now)))! : row) });
+    }
+    const statementsMatch = /^\/admin\/financials\/companies\/([^/]+)\/documents\/([a-f0-9]{64})\/statements$/.exec(path);
+    if(statementsMatch){
+      if(request.method!=="GET")return json({error:"Method not allowed"},405);
+      const ticker=normalizeTrackedTicker(statementsMatch[1]!);if(!ticker)return json({error:"公司代码无效。"},400);
+      const result=await getFinancialStatements({DB:env.DB,SEC_FILINGS:env.SEC_FILINGS},ticker,statementsMatch[2]!);
+      return result?json(result):json({error:"原始披露档案不存在。"},404);
     }
     const documentMatch = /^\/admin\/financials\/companies\/([^/]+)\/documents\/([a-f0-9]{64})$/.exec(path);
     if (documentMatch) {
