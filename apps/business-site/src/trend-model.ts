@@ -14,14 +14,14 @@ const norm = (name: string) => disclosedSegmentLabel(name).replace(/[\s（）()]
 const monthIndex = (date: string) => Number(date.slice(0, 4)) * 12 + Number(date.slice(5, 7)) - 1;
 const monthEnd = (index: number) => new Date(Date.UTC(Math.floor(index / 12), index % 12 + 1, 0)).toISOString().slice(0, 10);
 
-/** Eight consecutive quarterly slots ending at the newest period, stepped by calendar quarter; 52/53-week periods match within a month. */
-export function buildSlots(history: RevenueHistory): Slot[] {
+/** Consecutive quarterly slots ending at the newest period; extra slots supply growth baselines without adding visible bars. */
+export function buildSlots(history: RevenueHistory, count = SLOTS): Slot[] {
   const quarters = [...history.quarters].sort((a, b) => a.periodEnd.localeCompare(b.periodEnd));
   const latest = quarters.at(-1);
   if (!latest) return [];
   const top = monthIndex(latest.periodEnd);
-  return Array.from({ length: SLOTS }, (_, i) => {
-    const target = top - 3 * (SLOTS - 1 - i);
+  return Array.from({ length: count }, (_, i) => {
+    const target = top - 3 * (count - 1 - i);
     const match = quarters.find(q => Math.abs(monthIndex(q.periodEnd) - target) <= 1) ?? null;
     return { periodEnd: match?.periodEnd ?? monthEnd(target), quarter: match };
   });

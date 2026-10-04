@@ -26,7 +26,7 @@ test('idle data ticks collect quarterly revenue history from the same filings wi
   assert.deepEqual(raw.raw.prepare('SELECT version_id FROM financial_complete_current').get(),pointer);
   const publication=await readCompletePublicationForTicker(db,'ORCL');
   const history=publication.history!;assert.equal(history.schemaVersion,'revenue-history.v1');
-  assert.deepEqual(history.quarters.map(q=>q.periodEnd),['2024-11-30','2025-02-28','2025-05-31','2025-08-31','2025-11-30','2026-02-28','2026-05-31','2026-08-31']);
+  assert.deepEqual(history.quarters.map(q=>q.periodEnd),['2024-08-31','2024-11-30','2025-02-28','2025-05-31','2025-08-31','2025-11-30','2026-02-28','2026-05-31','2026-08-31']);
   const stored=JSON.parse((raw.raw.prepare("SELECT payload FROM sec_cache WHERE cache_key='sec:revenue-history:v1:0001341439'").get() as {payload:string}).payload);
   assert.deepEqual(stored.quarters.map((q:{periodEnd:string})=>q.periodEnd),['2024-08-31','2024-11-30','2025-02-28','2025-05-31','2025-08-31','2025-11-30','2026-02-28','2026-05-31','2026-08-31']);
   const latest=history.quarters.at(-1)!;assert.equal(latest.revenue,'19345000000');assert.equal(latest.basis,'reported');
@@ -225,5 +225,42 @@ test('issuer-scoped history refuses wrong-CIK sources, mixed provenance and unve
   await assert.rejects(runHistoryStep(db,mismatch,{ticker:'GOOG',cik},new Date('2026-10-04')),/Issuer identity mismatch/);
   assert.equal((await repository.getCache<{ticker:string}>(historyKey(cik)))?.payload.ticker,'GOOG');
   assert.equal(await readRevenueHistory(db,'1652044','GOOG'),null);
+ }finally{raw.close();}
+});
+
+test('legacy Oracle offerings supply the missing third-year quarter without recasting its businesses',()=>{
+ const html=readFileSync(new URL('./fixtures/orcl-2025-q4-offerings.html',import.meta.url),'utf8');
+ const source={accession:'0000950170-25-084831',url:'https://www.sec.gov/Archives/edgar/data/1341439/000095017025084831/orcl-ex99_1.htm',filedAt:'2025-06-11',form:'8-K'};
+ const quarters=parseOracleOfferingsHistory(html,source);
+ assert.deepEqual(quarters.map(q=>q.periodEnd),['2023-08-31','2023-11-30','2024-02-29','2024-05-31','2024-08-31','2024-11-30','2025-02-28','2025-05-31']);
+ const q=quarters[1];assert.equal(q.revenue,'12941000000');assert.equal(q.basis,'reported');
+ assert.deepEqual(q.segments.map(s=>[s.id,s.value]),[['CloudServicesAndLicenseSupportRevenues','9639000000'],['CloudLicenseAndOnPremiseLicenseRevenues','1178000000'],['HardwareRevenues','756000000'],['SalesRevenueServicesNet','1368000000']]);
+ assert.deepEqual(q.segments[0].children?.map(s=>s.value),['4775000000','4864000000']);
+ assert.ok(q.lineage?.every(l=>l.periodEnd==='2023-11-30'&&l.contextId.includes('FY2024:Q2')));
+ assert.ok(!q.segments.some(s=>s.id==='cloud'||s.id==='software'));
+ const latest=parseOracleOfferingsHistory(q4,releaseSource);
+ const merged=mergeHistory('ORCL',latest,quarters,'now');
+ assert.equal(merged.quarters.find(q=>q.periodEnd==='2024-11-30')?.segments[0].id,'cloud');
+ assert.equal(parseOracleOfferingsHistory(html.replace('>9,639<','>9,640<'),source).some(q=>q.periodEnd==='2023-11-30'),false);
+});
+
+test('history rescans an old completed cursor and reaches a full three years beyond fourteen filings',async()=>{
+ const {createAnalysisDatabase}=await import('./helpers/analysis-backend.ts');
+ const raw=await createAnalysisDatabase(),db=raw as unknown as D1Database,repository=new D1SecRepository(db);
+ const cik='0000000001',ticker='X',now=new Date('2026-10-04');
+ const periods=Array.from({length:13},(_,i)=>({start:new Date(Date.UTC(2026,5-i*3,1)).toISOString().slice(0,10),end:new Date(Date.UTC(2026,8-i*3,0)).toISOString().slice(0,10),filed:new Date(Date.UTC(2026,8-i*3,11)).toISOString().slice(0,10)}));
+ const docs=periods.flatMap((p,i)=>['10-Q','8-K'].map((form,j)=>({...p,form,accession:`0000000001-${p.filed.slice(2,4)}-${String(i*2+j).padStart(6,'0')}`,file:`doc-${i*2+j}.htm`})));
+ let reads=0;
+ const reader={async read(url:string){
+  if(url.includes('/submissions/'))return Response.json({cik:1,filings:{recent:{form:docs.map(d=>d.form),accessionNumber:docs.map(d=>d.accession),primaryDocument:docs.map(d=>d.file),filingDate:docs.map(d=>d.filed),reportDate:docs.map(d=>d.end),items:docs.map(d=>d.form==='8-K'?'2.02':'')}}});
+  const d=docs.find(d=>url.endsWith('/'+d.file))!;assert.ok(d);reads++;
+  return new Response(`<xbrli:context id="q"><xbrli:entity><xbrli:identifier>1</xbrli:identifier></xbrli:entity><xbrli:period><xbrli:startDate>${d.start}</xbrli:startDate><xbrli:endDate>${d.end}</xbrli:endDate></xbrli:period></xbrli:context><xbrli:unit id="USD"><xbrli:measure>iso4217:USD</xbrli:measure></xbrli:unit><ix:nonFraction name="us-gaap:Revenues" contextRef="q" unitRef="USD" decimals="0">100</ix:nonFraction>`);
+ }};
+ try{
+  await repository.setCache(`sec:revenue-history-cursor:v1:${cik}`,{version:'revenue-history.v3:sec-revenue-history.v2',ticker,industry:'standard',documents:[],index:0,facts:[],issues:[],startedAt:now.toISOString(),finishedAt:now.toISOString()},now.toISOString());
+  let result;for(let step=0;step<12;step++){result=await runHistoryStep(db,reader,{ticker,cik},now);assert.ok(result.documents<=3);if(result.finished)break;}
+  assert.equal(result?.finished,true);assert.equal(reads,26);
+  const stored=await readRevenueHistory(db,cik,ticker);assert.equal(stored?.quarters.length,12);
+  assert.equal(stored?.quarters[0].periodEnd,'2023-11-30');assert.equal(stored?.quarters.at(-1)?.periodEnd,'2026-08-31');
  }finally{raw.close();}
 });
