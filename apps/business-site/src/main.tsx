@@ -1,4 +1,4 @@
-import { StrictMode, useEffect, useState, Component, type ReactNode } from "react";
+import { StrictMode, useCallback, useEffect, useState, Component, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { selectFlow } from "@/lib/earning-report/web/business-flow-model";
 import { resolveCompanyBusiness } from "@/lib/earning-report/web/company-business-content";
@@ -8,7 +8,18 @@ import "@/app/analysis/stocks/[ticker]/business-flow.css";
 import "./style.css";
 import { withBusinessDescriptions } from "./business-description";
 import { BusinessMap } from "./BusinessMap";
-import { CompanyMark } from "./CompanyMark";
+import { Rail, RailActions } from "./Sidebar";
+import { SearchDialog } from "./SearchDialog";
+
+const RECENT_KEY = "business-map-recent";
+function readRecent(): string[] {
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]");
+    return Array.isArray(value) ? value.filter((t): t is string => typeof t === "string" && /^[A-Z][A-Z0-9.-]{0,11}$/.test(t)).slice(0, 6) : [];
+  } catch {
+    return [];
+  }
+}
 
 function tickerFromUrl() {
   const match = location.pathname.match(
@@ -17,7 +28,7 @@ function tickerFromUrl() {
   return match ? match[1].toUpperCase() : null;
 }
 class ChartBoundary extends Component<
-  { children: ReactNode },
+  { ticker: string; tools: ReactNode; children: ReactNode },
   { failed: boolean }
 > {
   state = { failed: false };
@@ -26,16 +37,27 @@ class ChartBoundary extends Component<
   }
   render() {
     return this.state.failed ? (
-      <div className="state" role="alert">
+      <StateShell ticker={this.props.ticker} tools={this.props.tools} role="alert">
         <h2>图表暂时无法显示</h2>
         <p>请重新加载；不会以示例数据替代真实披露。</p>
-      </div>
+      </StateShell>
     ) : (
       this.props.children
     );
   }
 }
-function Company({ ticker }: { ticker: string }) {
+/** Non-chart states keep the floating rail so search and theme stay reachable. */
+function StateShell({ ticker, tools, role, children }: { ticker: string; tools: ReactNode; role: "alert" | "status"; children: ReactNode }) {
+  return (
+    <div className="map">
+      <Rail ticker={ticker} actions={tools} label="公司业务" />
+      <section className="stage stage--state">
+        <div className="state" role={role}>{children}</div>
+      </section>
+    </div>
+  );
+}
+function Company({ ticker, tools, onSeen }: { ticker: string; tools: ReactNode; onSeen: (ticker: string) => void }) {
   const [flow, setFlow] = useState<PublicBusinessFlow | null>(null),
     [publication, setPublication] = useState<CompleteFlowPublication | null>(null),
     [failed, setFailed] = useState(false),
@@ -49,6 +71,7 @@ function Company({ ticker }: { ticker: string }) {
         if (!response.ok) throw new Error("unavailable");
         const data = (await response.json()) as CompleteFlowPublication;
         if (!controller.signal.aborted) {
+          onSeen(ticker);
           setPublication(data);
           setFlow(data.status === "ready" && data.flow ? selectFlow(data.flow, null, ticker) : null);
         }
@@ -57,13 +80,14 @@ function Company({ ticker }: { ticker: string }) {
         if (!controller.signal.aborted) setFailed(true);
       });
     return () => controller.abort();
-  }, [ticker, retry]);
+  }, [ticker, retry, onSeen]);
   const business = resolveCompanyBusiness(ticker);
   if (flow)
     return (
-      <ChartBoundary>
+      <ChartBoundary ticker={ticker} tools={tools}>
         <BusinessMap
           ticker={ticker}
+          tools={tools}
           flow={withBusinessDescriptions(flow, business)}
           business={business}
           revenueHistory={publication?.history ?? null}
@@ -81,7 +105,7 @@ function Company({ ticker }: { ticker: string }) {
     );
   if (failed)
     return (
-      <div className="state" role="alert">
+      <StateShell ticker={ticker} tools={tools} role="alert">
         <h2>数据暂时无法读取</h2>
         <p>请稍后重试。未披露数据不会视为零。</p>
         <button
@@ -93,30 +117,28 @@ function Company({ ticker }: { ticker: string }) {
         >
           重试
         </button>
-      </div>
+      </StateShell>
     );
   if (publication)
     return (
-      <div className="state" role="status">
+      <StateShell ticker={ticker} tools={tools} role="status">
         <h2>{publication.status === "unavailable" ? "当前披露无法完整绘图" : "完整财务图准备中"}</h2>
         <p>不会以缺失值或半图替代完整披露。</p>
         <p className="state-reasons">{publication.reasons.join(" · ")}</p>
-      </div>
+      </StateShell>
     );
-  return <Skeleton ticker={ticker} />;
+  return <Skeleton ticker={ticker} tools={tools} />;
 }
-function Skeleton({ ticker }: { ticker: string }) {
+function Skeleton({ ticker, tools }: { ticker: string; tools: ReactNode }) {
   return (
     <div className="map map--loading" role="status" aria-label="正在读取公开财报">
-      <aside className="rail">
-        <CompanyMark ticker={ticker} />
-        <div className="rail-head"><h2>业务</h2></div>
+      <Rail ticker={ticker} actions={tools}>
         <div className="rail-list">
           {[0, 1, 2, 3, 4, 5].map((i) => (
             <div key={i} className="row row--ghost" style={{ animationDelay: `${i * 90}ms` }} />
           ))}
         </div>
-      </aside>
+      </Rail>
       <section className="stage">
         <header className="stage-head"><div className="stage-title"><span className="eyebrow">正在读取公开财报…</span><h1>收入如何变成利润</h1></div></header>
         <div className="chart"><div className="ghost-chart" /></div>
@@ -126,8 +148,15 @@ function Skeleton({ ticker }: { ticker: string }) {
 }
 function App() {
   const [ticker, setTicker] = useState(() => tickerFromUrl() ?? "ORCL"),
-    [input, setInput] = useState(""),
-    [invalid, setInvalid] = useState(false),
+    [searching, setSearching] = useState(false),
+    [recent, setRecent] = useState(readRecent),
+    [collapsed, setCollapsed] = useState(() => {
+      try {
+        return localStorage.getItem("business-map-rail") === "collapsed";
+      } catch {
+        return false;
+      }
+    }),
     [light, setLight] = useState(() => {
       try {
         return localStorage.getItem("business-map-theme") === "light";
@@ -145,94 +174,62 @@ function App() {
     }
   }, [light]);
   useEffect(() => {
-    const changed = () => {
-      setTicker(tickerFromUrl() ?? "ORCL");
-      setInput("");
-      setInvalid(false);
-    };
+    try {
+      localStorage.setItem("business-map-rail", collapsed ? "collapsed" : "open");
+    } catch {
+      /* Storage may be disabled. */
+    }
+  }, [collapsed]);
+  useEffect(() => {
+    const changed = () => setTicker(tickerFromUrl() ?? "ORCL");
     window.addEventListener("popstate", changed);
     return () => window.removeEventListener("popstate", changed);
   }, []);
   useEffect(() => {
+    const shortcut = (e: KeyboardEvent) => {
+      const typing = (e.target as HTMLElement).closest("input, textarea, select, [contenteditable]");
+      if (((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") || (e.key === "/" && !typing)) {
+        e.preventDefault();
+        setSearching(true);
+      }
+    };
+    window.addEventListener("keydown", shortcut);
+    return () => window.removeEventListener("keydown", shortcut);
+  }, []);
+  useEffect(() => {
     document.title = `${ticker} · 业务地图`;
   }, [ticker]);
+  /** Only companies the API answered for are remembered, so typos never become suggestions. */
+  const remember = useCallback((seen: string) => {
+    setRecent((list) => {
+      const next = [seen, ...list.filter((t) => t !== seen)].slice(0, 6);
+      try {
+        localStorage.setItem(RECENT_KEY, JSON.stringify(next));
+      } catch {
+        /* Storage may be disabled. */
+      }
+      return next;
+    });
+  }, []);
   function navigate(next: string) {
     if (next !== ticker) history.pushState(null, "", `/companies/${next}`);
     setTicker(next);
-    setInput("");
-    setInvalid(false);
   }
+  const actions = (
+    <RailActions
+      light={light}
+      onToggleTheme={() => setLight((v) => !v)}
+      onSearch={() => setSearching(true)}
+      collapsed={collapsed}
+      onToggleRail={() => setCollapsed((v) => !v)}
+    />
+  );
   return (
     <>
-      <header className="site-header">
-        <a className="brand" href={`/companies/${ticker}`}>
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M3 5h3c5 0 5 7 10 7h5" />
-            <path d="M3 12h3c5 0 5 7 10 7h5" opacity=".55" />
-            <path d="M3 19h3" opacity=".3" />
-          </svg>
-          <span className="brand-name">业务地图</span>
-        </a>
-        <div className="header-tools">
-          <form
-            className="company-picker"
-            role="search"
-            onSubmit={(event) => {
-              event.preventDefault();
-              const value = input.trim().toUpperCase();
-              if (!/^[A-Z][A-Z0-9.-]{0,11}$/.test(value)) {
-                setInvalid(true);
-                return;
-              }
-              navigate(value);
-            }}
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <circle cx="10.5" cy="10.5" r="6.5" />
-              <path d="m16 16 4 4" />
-            </svg>
-            <input
-              aria-label="搜索公司股票代码"
-              aria-invalid={invalid}
-              value={input}
-              onChange={(e) => {
-                setInput(e.target.value);
-                setInvalid(false);
-              }}
-              placeholder="搜索公司代码"
-              maxLength={12}
-              autoCapitalize="characters"
-              autoComplete="off"
-            />
-            {invalid && (
-              <span className="search-error" role="alert">
-                请输入有效的股票代码
-              </span>
-            )}
-          </form>
-          <button
-            type="button"
-            className="theme-toggle"
-            aria-label={light ? "切换深色主题" : "切换浅色主题"}
-            aria-pressed={light}
-            onClick={() => setLight((v) => !v)}
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              {light ? (
-                <path d="M20 15a8 8 0 0 1-11-11A8.5 8.5 0 1 0 20 15Z" />
-              ) : (
-                <>
-                  <circle cx="12" cy="12" r="4" />
-                  <path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5" />
-                </>
-              )}
-            </svg>
-          </button>
-        </div>
-      </header>
-      <main>
-        <Company key={ticker} ticker={ticker} />
+      <main data-rail={collapsed ? "collapsed" : undefined}>
+        <Company key={ticker} ticker={ticker} tools={actions} onSeen={remember} />
       </main>
+      <SearchDialog open={searching} current={ticker} recent={recent} onClose={() => setSearching(false)} onPick={navigate} />
     </>
   );
 }
