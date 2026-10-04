@@ -3,7 +3,8 @@
 Independent Vite/React frontend and Cloudflare Worker; existing Spontra routes remain intact.
 
 - Public entry: `/companies/ORCL`; `/` is company selection. No portfolio or other tabs.
-- Reuses `BusinessFlow`, `FinancialSankey`, their stylesheet, model, graph validation and versioned public flow contract directly from this repository. No duplicate diagram implementation.
+- Two-pane layout, no pan/zoom canvas: the business list (revenue tree, share, QoQ, sourced business notes) on the left; the full revenue → profit Sankey fitted to the right pane. Selecting a business traces its own slice through each parent band into total revenue, with a flowing animation and its share of revenue. Costs and profit are never allocated to a business. Selection is kept in `?business=`.
+- `FlowChart` renders from the shared graph (`financialGraph`) and layout (`layoutInfographic`, with one-line label geometry and a type scale solved per pane so labels stay legible). Signed, financial and insurance statements fall back to the shared `FinancialSankey` bridge. Business hues are a validated four-slot palette assigned per business, stable across quarters; further top-level businesses use a neutral tone.
 - Only API: `GET /api/business/v1/companies/:ticker`. Fixed public upstream origin; no user-supplied URL or query, no cookie/auth forwarding. The SEC flow is schema-validated and unknown fields are stripped at every level. No company analysis envelope, private research, run state, portfolio, IBKR or generation routes are returned.
 - Curated public company descriptions and flow segment explanations provide business reading. AI report paragraphs are deliberately not exposed by this first public endpoint.
 - SEC fundamentals can supply partial same-company flow when a published full flow is absent. Unknown values stay missing. Financial/insurance, losses, negative expense reversals and incomplete statements use the existing disclosed-detail fallback.
