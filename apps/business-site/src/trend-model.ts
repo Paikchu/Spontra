@@ -112,3 +112,8 @@ export function buildBridge(columns: Column[], index: number, lag: 1 | 4): Bridg
     .map(step => { const before = level; level += step.delta; return { ...step, before, after: level }; });
   return { base, current, lag, change, percent, steps, reason: "split" };
 }
+
+/** Growth of each column against the column `lag` slots earlier; a gap on either side leaves the point empty. */
+export function growthSeries(columns: Column[], lag: 1 | 4): Array<number | null> {
+  return columns.map((column, i) => i >= lag ? growth(column.total, columns[i - lag].total) : null);
+}

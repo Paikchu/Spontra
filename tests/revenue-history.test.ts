@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { mergeHistory, readHistory, validHistoryQuarter } from "../shared/analysis-runtime/financial-data/history";
 import type { RevenueHistory, RevenueHistoryQuarter } from "../shared/analysis-contract/revenue-history";
-import { buildBridge, buildColumns, buildSlots, columnIndex, layerOrder, niceTicks, type TrendItem } from "../apps/business-site/src/trend-model";
+import { buildBridge, buildColumns, buildSlots, columnIndex, growthSeries, layerOrder, niceTicks, type TrendItem } from "../apps/business-site/src/trend-model";
 
 const quarter = (periodEnd: string, segments: Array<[string, string, number]>, extra: Partial<RevenueHistoryQuarter> = {}): RevenueHistoryQuarter => {
   const start = new Date(Date.parse(periodEnd) - 91 * 86400000).toISOString().slice(0, 10);
@@ -96,4 +96,13 @@ test("growth bridge splits a change only between quarters stacked from the same 
   const infra = buildBridge(buildColumns(slots, items, items[2]), latest, 1)!;
   assert.equal(infra.reason, "single");
   assert.deepEqual(infra.steps.map(s => [s.key, s.delta, s.tone]), [["infra", 2, "child"]]);
+});
+
+test("growth series compares each quarter with the one a lag earlier and leaves gaps where either is missing", () => {
+  const all = buildColumns(buildSlots(history), items, null);
+  // Totals: slot 4 = 10, slot 6 = 9, slot 7 = 12; every other slot is uncollected.
+  assert.deepEqual(growthSeries(all, 1), [null, null, null, null, null, null, null, (12 / 9 - 1) * 100]);
+  assert.deepEqual(growthSeries(all, 4), Array(8).fill(null));
+  const cloud = buildColumns(buildSlots(history), items, items[0]);
+  assert.deepEqual(growthSeries(cloud, 1).slice(-1), [(11 / 8 - 1) * 100]);
 });

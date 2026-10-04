@@ -3,7 +3,7 @@ import type { RevenueHistory } from "@/shared/analysis-contract/revenue-history"
 import type { BusinessFlowQuarter } from "@/shared/analysis-contract/business-flow";
 import { compactFlowValue } from "@/lib/earning-report/web/business-flow-layout";
 import { disclosedSegmentLabel } from "@/lib/earning-report/web/business-flow-model";
-import { buildBridge, buildColumns, buildSlots, columnIndex, growth, layerOrder, niceTicks, type Bridge, type Column, type Layer, type TrendItem } from "./trend-model";
+import { buildBridge, buildColumns, buildSlots, columnIndex, growth, growthSeries, layerOrder, niceTicks, type Bridge, type Column, type Layer, type TrendItem } from "./trend-model";
 
 const SHADES = [100, 66, 44, 30];
 const shortPeriod = (end: string) => end.slice(0, 7).replace("-", ".");
@@ -47,9 +47,16 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
   // Year over year unless that quarter is missing, until the reader picks a base.
   const lag = chosenLag ?? (buildBridge(columns, index, 4) ? 4 : 1);
   const bridge = useMemo(() => buildBridge(columns, index, lag), [columns, index, lag]);
+  // The growth line has its own default: year over year needs four earlier quarters, so a short history reads quarter over quarter.
+  const lineLag = chosenLag ?? (growthSeries(columns, 4).filter(v => v != null).length >= 2 ? 4 : 1);
+  const rates = useMemo(() => growthSeries(columns, lineLag), [columns, lineLag]);
+  const lagSwitch = (value: 1 | 4) => <span className="periods periods--small" role="radiogroup" aria-label="比较基期">
+    <button type="button" role="radio" aria-checked={value === 4} onClick={() => setLag(4)}>同比</button>
+    <button type="button" role="radio" aria-checked={value === 1} onClick={() => setLag(1)}>环比</button>
+  </span>;
   const subject = selected?.name ?? "全部业务";
 
-  return <section className="trend" aria-label={`${selected?.name ?? "全部业务"} 近 ${slots.length} 季收入`} onMouseLeave={() => setHover(null)}>
+  return <section className="trend" data-view={view} aria-label={`${selected?.name ?? "全部业务"} 近 ${slots.length} 季收入`} onMouseLeave={() => setHover(null)}>
     <header className="trend-head">
       <div className="trend-title">
         <div className="trend-heading">
@@ -64,26 +71,29 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
           <span className="trend-basis">{view === "trend" ? "按每期财报原披露口径" : bridgeNote(bridge, lag, columns[index - lag])}</span>
         </div>
       </div>
-      {view === "trend" ? <dl className="trend-kpis">
-        <div><dt>同比</dt><dd data-trend={trend(yoy)}>{percent(yoy)}</dd></div>
-        <div><dt>{known.length > 1 ? `${shortPeriod(known[0].slot.periodEnd)} 以来` : "区间"}</dt><dd data-trend={trend(span)}>{percent(span)}</dd></div>
-      </dl> : <div className="trend-kpis">
+      {view === "trend" ? <div className="trend-kpis">
+        <dl>
+          <div><dt>同比</dt><dd data-trend={trend(yoy)}>{percent(yoy)}</dd></div>
+          <div><dt>{known.length > 1 ? `${shortPeriod(known[0].slot.periodEnd)} 以来` : "区间"}</dt><dd data-trend={trend(span)}>{percent(span)}</dd></div>
+        </dl>
+        {lagSwitch(lineLag)}
+      </div> : <div className="trend-kpis">
         {bridge && <dl><div><dt>{lag === 4 ? "同比" : "环比"}变化</dt><dd data-trend={trend(bridge.change)}>{signed(bridge.change, money)}<small>{percent(bridge.percent)}</small></dd></div></dl>}
-        <span className="periods periods--small" role="radiogroup" aria-label="比较基期">
-          <button type="button" role="radio" aria-checked={lag === 4} onClick={() => setLag(4)}>同比</button>
-          <button type="button" role="radio" aria-checked={lag === 1} onClick={() => setLag(1)}>环比</button>
-        </span>
+        {lagSwitch(lag)}
       </div>}
     </header>
-    {view === "bridge" ? <BridgePlot key={mode + lag} bridge={bridge} empty={bridgeNote(bridge, lag, columns[index - lag])} subject={subject} hue={hue} money={money} /> : <div className="trend-plot" role="list">
+    {view === "bridge" ? <BridgePlot key={mode + lag} bridge={bridge} empty={bridgeNote(bridge, lag, columns[index - lag])} subject={subject} hue={hue} money={money} /> : <>
+    <GrowthStrip key={mode + lineLag} rates={rates} lag={lineLag} current={index} hover={hover} color={selected ? hue(selected.slot) : "var(--foreground)"} />
+    <div className="trend-plot" role="list">
       <div className="trend-grid" key={scale} aria-hidden="true">
         {ticks.map(t => <div key={t} style={{ bottom: `${t / scale * 100}%` }}><span>{t ? money(t) : ""}</span></div>)}
       </div>
       <i className="trend-sweep" key={"sweep" + mode} aria-hidden="true" />
       {columns.map((column, i) => <Bar key={column.slot.periodEnd} column={column} index={i} order={order} scale={scale} hue={hue} money={money}
         current={column.slot.periodEnd === currentPeriod} pickable={periods.has(column.slot.periodEnd)} hovered={hover === i}
-        onHover={() => setHover(i)} onPick={() => onPickPeriod(column.slot.periodEnd)} selected={selected} />)}
-    </div>}
+        onHover={() => setHover(i)} onPick={() => onPickPeriod(column.slot.periodEnd)} selected={selected} rate={rates[i]} lag={lineLag} />)}
+    </div>
+    </>}
   </section>;
 }
 
@@ -146,9 +156,9 @@ function BridgePlot({ bridge, empty, subject, hue, money }: { bridge: Bridge | n
   </div>;
 }
 
-function Bar({ column, index, order, scale, hue, money, current, pickable, hovered, onHover, onPick, selected }: {
+function Bar({ column, index, order, scale, hue, money, current, pickable, hovered, onHover, onPick, selected, rate, lag }: {
   column: Column; index: number; order: string[]; scale: number; hue: (slot: number) => string; money: (v: number | null) => string;
-  current: boolean; pickable: boolean; hovered: boolean; onHover: () => void; onPick: () => void; selected: TrendItem | null;
+  current: boolean; pickable: boolean; hovered: boolean; onHover: () => void; onPick: () => void; selected: TrendItem | null; rate: number | null; lag: 1 | 4;
 }) {
   const q = column.slot.quarter;
   const label = column.state === "missing" ? "该季度未取得可核验披露" : column.state === "basis" ? (selected ? "该期财报未按此业务口径披露" : "该期财报采用不同业务口径，显示公司总收入") : "";
@@ -169,8 +179,37 @@ function Bar({ column, index, order, scale, hue, money, current, pickable, hover
       <div className="trend-tip-title">{q ? `${q.periodStart} — ${q.periodEnd}` : shortPeriod(column.slot.periodEnd)}</div>
       {column.layers.length > 1 && column.layers.map(layer => <div className="trend-tip-row" key={layer.key}><span><i style={{ background: layerColor(layer, hue) }} />{layer.name}</span><b>{money(layer.value)}</b></div>)}
       {column.total != null && <div className="trend-tip-row trend-tip-total"><span>{selected ? "业务收入" : "总收入"}</span><b>{money(column.total)}</b></div>}
+      {rate != null && <div className="trend-tip-row"><span>{lag === 4 ? "同比" : "环比"}</span><b data-trend={trend(rate)}>{percent(rate)}</b></div>}
       {label && <p>{label}{column.state === "basis" && q && !selected ? `：${q.segments.map(s => disclosedSegmentLabel(s.name)).join("、")}` : ""}</p>}
       {q && <p className="trend-tip-source">{q.basis === "derived" ? "第四季度 = 全年 − 前三季度累计 · " : ""}SEC {q.source.form} · {q.source.filedAt}</p>}
     </div>}
+  </div>;
+}
+
+/**
+ * Growth rate per quarter on its own percent scale, in a strip above the revenue bars and aligned to their columns.
+ * It is a separate small chart rather than a second axis on the bars. Only the current and hovered quarters carry a label.
+ */
+function GrowthStrip({ rates, lag, current, hover, color }: { rates: Array<number | null>; lag: 1 | 4; current: number; hover: number | null; color: string }) {
+  const known = rates.filter((v): v is number => v != null);
+  const name = lag === 4 ? "同比" : "环比";
+  if (!known.length) return <div className="growth growth--empty"><span className="growth-axis">{name}增速</span><p>{lag === 4 ? "需要去年同季披露才能计算同比增速" : "需要相邻季度披露才能计算环比增速"}</p></div>;
+  const lo = Math.min(0, ...known), hi = Math.max(0, ...known), pad = Math.max((hi - lo) * 0.18, 1);
+  const y = (v: number) => (v - (lo - pad)) / (hi - lo + 2 * pad) * 100;
+  return <div className="growth" style={{ "--line": color } as CSSProperties} role="img"
+    aria-label={`${name}增速：${rates.map((v, i) => v == null ? null : `第 ${i + 1} 季 ${percent(v)}`).filter(Boolean).join("，")}`}>
+    <span className="growth-axis" aria-hidden="true" style={y(0) > 70 ? { top: "auto", bottom: -2 } : undefined}>{name}增速</span>
+    <i className="growth-zero" style={{ bottom: `${y(0)}%` }} aria-hidden="true" />
+    {rates.map((v, i) => {
+      const next = rates[i + 1];
+      const labelled = v != null && (i === current || i === hover);
+      return <div key={i} className="growth-cell" aria-hidden="true" style={{ "--i": i } as CSSProperties}>
+        {v != null && next != null && <svg className="growth-link" viewBox="0 0 100 100" preserveAspectRatio="none">
+          <line x1="0" y1={100 - y(v)} x2="100" y2={100 - y(next)} vectorEffect="non-scaling-stroke" />
+        </svg>}
+        {v != null && <i className="growth-dot" data-current={i === current || undefined} data-hover={i === hover || undefined} style={{ bottom: `${y(v)}%` }} />}
+        {labelled && <span className="growth-value" data-trend={trend(v)} data-below={v < 0 || undefined} style={{ bottom: `${y(v)}%` }}>{percent(v)}</span>}
+      </div>;
+    })}
   </div>;
 }

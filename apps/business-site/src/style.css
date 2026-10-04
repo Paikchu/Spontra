@@ -308,7 +308,7 @@ button { cursor: pointer; }
 .fc-tip-row b { font-weight: 600; color: var(--foreground); font-variant-numeric: tabular-nums; }
 
 /* ---------- Quarterly trend ---------- */
-.trend { display: grid; grid-template-rows: auto minmax(0, 1fr); height: clamp(196px, 26vh, 260px); margin-top: 6px; padding-top: 14px; border-top: 1px solid var(--hairline); animation: rise .6s var(--ease) .15s both; }
+.trend { --gap: clamp(8px, 1.6vw, 26px); --axis: 52px; display: grid; grid-template-rows: auto minmax(0, 1fr); height: clamp(196px, 26vh, 260px); margin-top: 6px; padding-top: 14px; border-top: 1px solid var(--hairline); animation: rise .6s var(--ease) .15s both; }
 .trend-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px 24px; flex-wrap: wrap; }
 .trend-title h2 { margin: 0; font-size: 14px; font-weight: 620; letter-spacing: -.01em; animation: rise .4s var(--ease) both; }
 .trend-title h2 span { color: var(--muted-foreground); font-weight: 500; }
@@ -320,7 +320,7 @@ button { cursor: pointer; }
 .trend-kpis dt { font-size: 11px; color: var(--muted-foreground); }
 .trend-kpis dd { margin: 2px 0 0; font-size: 17px; font-weight: 620; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
 
-.trend-plot { --axis: 52px; position: relative; display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: clamp(8px, 1.6vw, 26px); min-height: 0; padding: 22px 0 24px var(--axis); }
+.trend-plot { position: relative; display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: var(--gap); min-height: 0; padding: 22px 0 24px var(--axis); }
 .trend-grid { position: absolute; inset: 22px 0 24px var(--axis); pointer-events: none; animation: fade-in .5s ease both; }
 .trend-grid div { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--hairline); transition: bottom .7s var(--ease); }
 .trend-grid div:first-child { border-top-style: solid; border-color: var(--border); }
@@ -366,9 +366,29 @@ button { cursor: pointer; }
 .trend-views button:hover { color: var(--foreground); }
 .trend-views button[aria-checked="true"] { background: var(--foreground); color: var(--background); font-weight: 600; }
 .trend-kpis { align-items: flex-start; }
-.trend-kpis dl { margin: 0; }
+.trend-kpis dl { display: flex; gap: 24px; margin: 0; }
 .trend-kpis dd small { margin-left: 8px; font-size: 12px; font-weight: 560; }
 .trend-tip-title i { display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 2px; }
+
+/* ---------- Growth rate strip ---------- */
+/* The bar view gains a row: header, growth strip, bars. The strip shares the bar grid (axis gutter, eight columns, gap) so points sit over their quarters. */
+.trend[data-view="trend"] { grid-template-rows: auto 58px minmax(0, 1fr); height: clamp(250px, 32vh, 320px); }
+.growth { position: relative; display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: var(--gap); margin: 12px 0 0 var(--axis); animation: fade-in .5s ease .2s both; }
+.growth--empty { display: flex; align-items: center; color: var(--faint); font-size: 11.5px; }
+.growth--empty p { margin: 0; }
+.growth-axis { position: absolute; right: calc(100% + 10px); top: -2px; font-size: 10.5px; color: var(--faint); white-space: nowrap; }
+.growth--empty .growth-axis { position: absolute; }
+.growth-zero { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--border); }
+.growth-zero::after { content: "0%"; position: absolute; right: calc(100% + 10px); top: -7px; font-size: 10px; color: var(--faint); font-style: normal; }
+.growth-cell { position: relative; min-width: 0; }
+.growth-link { position: absolute; top: 0; bottom: 0; left: 50%; width: calc(100% + var(--gap)); height: 100%; overflow: visible; pointer-events: none; }
+.growth-link line { stroke: var(--line); stroke-width: 2; stroke-linecap: round; opacity: .75; }
+.growth-dot { position: absolute; left: 50%; width: 8px; height: 8px; margin-left: -4px; transform: translateY(50%); border-radius: 50%; background: var(--line); box-shadow: 0 0 0 2px var(--background); transition: transform .2s var(--ease); }
+.growth-dot[data-hover] { transform: translateY(50%) scale(1.35); }
+.growth-value { position: absolute; left: -12px; right: -12px; padding-bottom: 8px; text-align: center; font-size: 11.5px; font-weight: 620; font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--foreground); }
+.growth-value[data-below] { padding: 0; transform: translateY(calc(100% + 8px)); }
+.trend-tip-row b[data-trend="up"] { color: var(--up); }
+.trend-tip-row b[data-trend="down"] { color: var(--loss); }
 
 /* ---------- Growth bridge ---------- */
 .bridge-plot { position: relative; display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); gap: clamp(8px, 1.6vw, 26px); min-height: 0; padding: 22px 0 24px; }
@@ -468,8 +488,9 @@ button { cursor: pointer; }
   .chart { margin-top: 16px; overflow-x: auto; overscroll-behavior-x: contain; }
   .fc { position: relative; inset: auto; width: max(100%, 780px); aspect-ratio: var(--ratio); }
   .stage-foot { flex-direction: column; align-items: flex-start; }
-  .trend { height: 240px; }
-  .trend-plot { --axis: 40px; gap: 6px; }
+  .trend { --axis: 40px; --gap: 6px; height: 240px; }
+  /* The header wraps on narrow screens, so the bar view sizes to its content with a fixed plot height. */
+  .trend[data-view="trend"] { height: auto; grid-template-rows: auto 58px 190px; }
   .provenance { justify-content: flex-start; }
 }
 @media (max-width: 620px) {
@@ -485,4 +506,5 @@ button { cursor: pointer; }
   .stats { margin-top: 14px; }
   .stat-value { font-size: 22px; }
   .trend { height: 178px; }
+  .trend[data-view="trend"] { grid-template-rows: auto 44px minmax(0, 1fr); height: 230px; }
 }
