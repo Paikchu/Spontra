@@ -243,6 +243,7 @@ button { cursor: pointer; }
 .fc-node[data-net] .fc-name { fill: var(--foreground); font-weight: 600; }
 .fc-node[data-segment] .fc-name { fill: var(--foreground); }
 .fc-node[role="button"]:hover .fc-name { fill: var(--foreground); }
+.fc-slot { pointer-events: none; }
 .fc-slot-glow { animation: pulse 2.4s ease-in-out infinite; }
 .fc-slot-pill { fill: var(--surface-raised); stroke-width: 1.2; animation: fade-in .4s ease both; }
 .fc-slot-text { font-size: 13px; font-weight: 600; fill: var(--foreground); font-variant-numeric: tabular-nums; animation: fade-in .4s ease both; }

@@ -51,6 +51,24 @@ for (const [name, build] of [["fixture", () => layoutInfographic(financialGraph(
   });
 }
 
+test("other income sits above operating profit so its band never crosses the column's outflows", () => {
+  // ORCL shape: revenue → operating, other income feeds pretax while interest expense leaves operating.
+  const quarter = structuredClone(latest), at = (value: number) => ({ ...quarter.figures.other!, value: String(value) });
+  quarter.incomeModel = "direct_operating";
+  quarter.figures = { revenue: at(19300), operatingExpenses: at(12600), operating: at(6700), other: at(-1093), pretax: at(5607), tax: at(847), net: at(4760) };
+  quarter.expenseComponents = [{ id: "direct", name: "产品与服务费用", group: "direct", amount: at(7700) }, { id: "sales", name: "销售营销", group: "sales", amount: at(2500) }, { id: "research", name: "研发", group: "research", amount: at(2400) }];
+  quarter.otherComponents = [{ id: "income", name: "其他非营业损益", amount: at(307) }, { id: "interest", name: "利息费用", amount: at(-1400) }];
+  const layout = layoutInfographic(financialGraph(quarter))!;
+  const income = node(layout, "other:income"), operating = node(layout, "operating");
+  assert.equal(income.column, operating.column);
+  assert.ok(income.y + income.h < operating.y, "inputless gain is stacked above operating profit");
+  const columnOf = (name: string) => node(layout, name).column;
+  for (const a of layout.links) for (const b of layout.links) {
+    if (a === b || columnOf(a.source) !== columnOf(b.source) || columnOf(a.target) !== columnOf(b.target)) continue;
+    assert.equal(a.sy < b.sy, a.ty < b.ty, `${a.source}>${a.target} crosses ${b.source}>${b.target}`);
+  }
+});
+
 test("NVDA business tree flows from the left with labels on the outside", () => {
   const layout = nvdaLayout();
   const hyperscale = layout.nodes.find(n => n.label === "超大规模云客户")!;

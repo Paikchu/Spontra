@@ -12,7 +12,7 @@ export const INFOGRAPHIC = { nodeWidth: 22, revenueHeight: 300, labelHeight: 54,
 /** Callers with a different label design (e.g. one-line labels) override the label metrics; the defaults draw the editorial layout. */
 export type InfographicGeometry = { [K in keyof typeof INFOGRAPHIC]: number };
 
-const groupRank = (n: PlacedNode, hasInput: boolean) => n.tone === "expense" ? 2 : hasInput ? 0 : 1;
+const groupRank = (n: PlacedNode) => n.tone === "expense" ? 1 : 0;
 
 function gapBetween(a: PlacedNode, b: PlacedNode, g: InfographicGeometry) {
   if (a.side === "left" || a.side === "right") return Math.max(g.gap, g.sideLabelHeight - a.h);
@@ -111,8 +111,17 @@ export function layoutInfographic(graph: FinancialGraph, labelWidth: (n: PlacedN
       const slot = slots.length ? Math.min(...slots) : -Infinity;
       ideal.set(n.name, slot + (n.tone === "expense" ? g.drop : -g.lift));
     }
-    columns[c].sort((a, b) => groupRank(a, incoming(a.name).length > 0) - groupRank(b, incoming(b.name).length > 0) || (ideal.get(a.name) ?? 0) - (ideal.get(b.name) ?? 0));
-    resolve(columns[c], ideal, false, g);
+    // Inputless gains (other income) only feed the next profit node, which takes its parent's top band; stacking them
+    // above the column lets their bands rise into that node instead of crossing the column's own cost outflows.
+    const floating = columns[c].filter(n => n.tone !== "expense" && !incoming(n.name).length);
+    const anchored = columns[c].filter(n => !floating.includes(n));
+    anchored.sort((a, b) => groupRank(a) - groupRank(b) || (ideal.get(a.name) ?? 0) - (ideal.get(b.name) ?? 0));
+    resolve(anchored, ideal, false, g);
+    let below = anchored[0];
+    for (const n of floating.reverse()) {
+      n.y = below ? below.y - gapBetween(n, below, g) - n.h : 0;
+      below = n;
+    }
   }
 
   // Vertical bounds include the label blocks, then everything is shifted onto the canvas.

@@ -5,7 +5,7 @@ import { estimateTextWidth, layoutInfographic, type InfographicLayout, type Plac
 export type NodeCopy = { name: string; value: string };
 export type Tip = { title: string; color: string; rows: Array<[string, string]> };
 
-type Band = { x0: number; x1: number; sy: number; ty: number; h: number; color: string; key: string };
+type Band = { x0: number; x1: number; sy: number; ty: number; h: number; color: string; key: string; owner: string };
 
 /** Type scale in layout units at k = 1; k is solved per pane so labels keep a constant on-screen size. */
 const typeFor = (k: number) => ({ name: 14 * k, value: 21 * k, net: 26 * k, gap: 7 * k, offset: 9 * k, pill: 13 * k });
@@ -98,7 +98,9 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
 
   const bands: Band[] = useMemo(() => layout.links.map(l => {
     const s = byName.get(l.source)!, t = byName.get(l.target)!;
-    return { x0: s.x + w, x1: t.x, sy: l.sy, ty: l.ty, h: l.h, key: linkKey(l), color: colorOf(l.target === "revenue" || t.segmentId ? l.source : l.target) };
+    // A band belongs to the business feeding revenue, or to the profit/cost it produces after revenue.
+    const owner = l.target === "revenue" || t.segmentId ? l.source : l.target;
+    return { x0: s.x + w, x1: t.x, sy: l.sy, ty: l.ty, h: l.h, key: linkKey(l), owner, color: colorOf(owner) };
   }), [layout, byName, w, colorOf]);
 
   const focus = useMemo(() => {
@@ -125,7 +127,7 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
       const h = link?.h ?? 0;
       while (link) {
         const s = byName.get(link.source)!, t = byName.get(link.target)!;
-        trace.push({ x0: s.x + w, x1: t.x, sy: link.sy + offset, ty: link.ty + offset, h, key: "trace:" + linkKey(link), color: colorOf(active) });
+        trace.push({ x0: s.x + w, x1: t.x, sy: link.sy + offset, ty: link.ty + offset, h, key: "trace:" + linkKey(link), owner: active, color: colorOf(active) });
         if (link.target === "revenue") { slot = { y: link.ty + offset, h }; break; }
         offset = link.ty + offset - t.y;
         link = layout.links.find(l => l.source === t.name);
@@ -140,9 +142,15 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
     if (rect) setTip({ x: event.clientX - rect.left, y: event.clientY - rect.top, width: rect.width, tip: value });
   };
   const slotLabel = focus?.slot && active ? focusSlot(byName.get(active)!) : null;
+  // One delegated handler: focus follows whatever band or node is under the pointer, and clears over empty canvas.
+  const hoverOver = (event: React.MouseEvent<SVGSVGElement>) => {
+    const owner = (event.target as Element).closest<SVGElement>("[data-owner]")?.dataset.owner ?? null;
+    onHover(owner);
+    if (!owner) setTip(null);
+  };
 
   return <div className="fc" ref={box} style={{ "--ratio": `${layout.width} / ${layout.height}` } as CSSProperties} onMouseLeave={() => { setTip(null); onHover(null); }}>
-    <svg key={revealKey} className="fc-svg" viewBox={`0 0 ${layout.width} ${layout.height}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label={label} data-focus={focus ? (focus.segment ? "segment" : "path") : undefined}>
+    <svg key={revealKey} className="fc-svg" viewBox={`0 0 ${layout.width} ${layout.height}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label={label} onMouseOver={hoverOver} data-focus={focus ? (focus.segment ? "segment" : "path") : undefined}>
       <defs>
         {bands.map((b, i) => {
           const from = colorOf(b.key.split(">")[0]);
@@ -160,7 +168,7 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
       </defs>
       <g clipPath={`url(#${uid}reveal)`}>
         <g className="fc-bands">
-          {bands.map((b, i) => <path key={b.key} className="fc-band" d={bandPath(b)} fill={`url(#${uid}g${i})`}
+          {bands.map((b, i) => <path key={b.key} className="fc-band" d={bandPath(b)} fill={`url(#${uid}g${i})`} data-owner={b.owner}
             data-lit={focus ? (focus.links.has(b.key) ? (focus.segment && focus.trace.some(t => t.key === "trace:" + b.key) ? "context" : "on") : undefined) : undefined}
             onMouseMove={e => { const l = layout.links[i]; point(e, { title: `${copy(byName.get(l.source)!).name} → ${copy(byName.get(l.target)!).name}`, color: b.color, rows: [["流量", money(l.value)]] }); }}
             onMouseLeave={() => setTip(null)} />)}
@@ -187,7 +195,7 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
           const interactive = Boolean(n.segmentId) || n.name === "revenue";
           return <g key={n.name} className="fc-node" data-tone={n.tone} data-net={n.name === "net" || undefined} data-lit={lit} data-active={n.name === active || undefined}
             style={{ "--c": colorOf(n.name), "--d": `${n.column * 90 + 300}ms` } as CSSProperties}
-            onMouseEnter={() => onHover(n.name)} onMouseMove={e => point(e, tipFor(n))}
+            data-owner={n.name} onMouseMove={e => point(e, tipFor(n))} onMouseLeave={() => setTip(null)}
             {...(interactive ? { role: "button", tabIndex: 0, "aria-label": `${text.name} ${text.value}${n.segmentId ? "，在列表中选中" : "，显示全部业务"}`, onClick: () => onPick(n), onKeyDown: (e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPick(n); } }, onFocus: () => onHover(n.name), onBlur: () => onHover(null) } : {})}>
             <rect className="fc-hit" x={n.x - 6} y={n.y - 4} width={w + 12} height={n.h + 8} />
             <rect className="fc-bar" x={n.x} y={n.y} width={w} height={n.h} rx={Math.min(3, n.h / 2)} />
