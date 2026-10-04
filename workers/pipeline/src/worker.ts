@@ -8,6 +8,8 @@ import { handleAnalysisReadRequest, isAnalysisReadPath } from "./read-api/router
 import { handleResearchRequest } from "./research/api.ts";
 import { runResearchMonitor } from "./research/monitor.ts";
 import { handleReportAdminRequest } from "./admin/reports.ts";
+import { handleFinancialAdminRequest } from "./admin/financials.ts";
+import { runFinancialMaintenanceTick } from "./admin/financial-maintenance-runner.ts";
 
 /**
  * `JSON.stringify` renders an Error as `{}`, so a rejection reason has to be read off it before it
@@ -58,6 +60,7 @@ const worker = {
     const path = new URL(request.url).pathname;
     if (path === "/health") return healthResponse();
     if (path === "/ready") return readyResponse(env);
+    if (path === "/admin/financials" || path.startsWith("/admin/financials/")) return handleFinancialAdminRequest(request, env);
     if (path === "/admin" || path.startsWith("/admin/")) return handleReportAdminRequest(request, env);
     /**
      * The read API claims the whole `/api/v1` prefix and rejects every method but GET/HEAD itself,
@@ -74,7 +77,14 @@ const worker = {
 
   async scheduled(_controller: ScheduledController, env: SecPipelineEnv) {
     if (_controller.cron === "*/2 * * * *") {
-      const result = env.DB ? await runDataOnlySweep({DB:env.DB,SEC_USER_AGENT:env.SEC_USER_AGENT,SEC_DATA_TICKERS:env.SEC_DATA_TICKERS,SEC_TRACKED_TICKERS:env.SEC_TRACKED_TICKERS,SEC_DATA_COLLECTION_ENABLED:env.SEC_DATA_COLLECTION_ENABLED}) : {enabled:false,published:false,reasons:[],modelCalls:0};
+      const maintenance = await runFinancialMaintenanceTick(env);
+      if (maintenance.processed) {
+        console.log(JSON.stringify({event:"financial-maintenance",...maintenance}));
+        // Waiting for a model Workflow never mutates the data-only history cursor. Keep that
+        // request's issuer/idempotency lock without starving ordinary deterministic collection.
+        if (maintenance.blocksDataSweep !== false) return;
+      }
+      const result = env.DB ? await runDataOnlySweep({DB:env.DB,SEC_FILINGS:env.SEC_FILINGS,SEC_USER_AGENT:env.SEC_USER_AGENT,SEC_DATA_TICKERS:env.SEC_DATA_TICKERS,SEC_TRACKED_TICKERS:env.SEC_TRACKED_TICKERS,SEC_DATA_COLLECTION_ENABLED:env.SEC_DATA_COLLECTION_ENABLED}) : {enabled:false,published:false,reasons:[],modelCalls:0};
       console.log(JSON.stringify({event:"financial-data",...result}));
       return;
     }

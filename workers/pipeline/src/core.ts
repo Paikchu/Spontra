@@ -16,6 +16,8 @@ export type SecWorkflowParams = {
   backfill?: boolean;
   accessionNumber?: string;
   regenerateReport?: boolean;
+  /** Resolves a persisted authenticated one-off request; not a general policy override. */
+  maintenanceTaskId?: string;
 };
 
 export type SecMemoryWorkflowParams = {

@@ -27,7 +27,7 @@
 
 Admin Worker：`/api/admin/session`（POST 登录、DELETE 退出）、`/api/admin/reports`（GET）、`/api/admin/reports/:ticker/:accession`（GET）、末尾 `/review` 和 `/regenerate`（POST）。写操作要求同源 Origin；全部响应为 `private, no-store`。
 
-Pipeline 对应路径为 `/admin/*`，管理接口需要签名会话。现有公开只读凭证不能访问管理接口。所有查询和状态记录使用已有表，不新增数据库迁移。
+Pipeline 对应路径为 `/admin/*`，管理接口需要签名会话。现有公开只读凭证不能访问管理接口。报告管理本身使用已有表；财报数据维护任务使用下述新增迁移。
 
 后台代码位于 `apps/admin/`，部署为 `spontra-admin`，仅绑定 `ASSETS` 和 `EARNING_REPORT_PIPELINE`（`spontra-analysis`）。继续使用 HTTP Service Binding，生产配置缺少绑定时返回 503，不回退到公网 fetch。页面、样式和报告阅读组件保持原有设计，返回主站链接指向 `spontra-app`。
 
@@ -35,13 +35,28 @@ Pipeline 对应路径为 `/admin/*`，管理接口需要签名会话。现有公
 
 本次保留原有密钥登录，尚未启用 Cloudflare Access；之后可以在整个 admin Worker 上配置 Access，保持主站公开。仅推送成功不能证明线上部署成功。
 
+## 财报数据维护
+
+后台导航的「财报数据」打开 `/admin/financials`，复用上述登录，不接受内部维护密钥作为浏览器会话。页面 URL 中仅保留选中的股票代码；刷新后会重新读取服务端任务。
+
+- 公司列表区分持续跟踪和单次维护。季度页面显示核心指标、单位与缩放倍数、原始披露或计算口径、推导公式、来源 accession 与原文链接；缺失保留原因，不以 0 替代。
+- 「清单已覆盖」只表示当前展示指标清单，不表示整份财报所有语义已结构化。原始披露档案另列遇到、保留、解析、nil、不支持和公司自定义标签数量，并分别说明三大报表、分部和附注的覆盖边界。
+- 原始事实可按文档、标签和期末筛选，每页 50 项。详情显示原始值、规范值、单位、期间、维度、精度和原文字符位置；原始 HTML 只按文本展示，不执行其中的脚本或标记。
+- 「补全数据」提交确定性提取任务；「分析公司」还要求现有 AI 开关和 Workflow 可用。定时收集关闭不禁止经授权的手动补全。新增公司可选择补全或分析，只授权本次任务，不修改持续跟踪名单或全局开关。
+- 提交、重试、取消均要求同源请求与有效管理会话。浏览器只在 sessionStorage 保留待确认操作的 UUID；网络中断后重试复用它，不保存密码或财报正文。服务端还会抑制同公司并发重跑。
+- 任务进度、部分完成、错误码和重试条件由服务端返回。关闭或刷新页面不取消任务；「暂停刷新」只停止页面轮询。取消请求在步骤边界执行，已保存数据保留；已提交的分析 Workflow 不支持在此取消。
+
+新增代理资源：`/api/admin/financials/companies`、`/companies/:ticker`、`/companies/:ticker/documents/:documentId`、`/companies/:ticker/actions`、`/tasks/:taskId` 和 `/tasks/:taskId/cancel`。公司、文档、任务查询只读，操作与取消使用 POST。代理白名单与原有签名会话限制保持独立。
+
+发布前需应用 Pipeline 迁移 `0014_financial_maintenance.sql`，并同时发布 Pipeline 与独立 admin 构建。任务在写入前保留可恢复的数据备份；实际修复与备份范围见当次任务记录。仅前端页面构建成功不代表后台迁移或生产任务已验证。
+
 ## 本地验证
 
 `npm run admin:typecheck`、`npm run admin:test`、`npm run admin:build`、`npm run admin:check`、`npm run typecheck`、`npm run typecheck:pipeline`、`npm run check:pipeline:boundary`、`npm run test:pipeline`、`npm run test:unit`、`npm run build`、`npm run worker:pipeline:check`。
 
 `tests/admin-worker.test.ts` 验证独立 Worker 路由、HTTP Binding、Cookie、同源限制、缺失绑定和旧接口停用。`tests/pipeline/report-admin.test.ts` 使用真实 SQLite 和项目迁移验证鉴权、版本检查、精确生成、并发去重和代理 Cookie。浏览器验证记录位于根目录 `design-qa.md`；本地数据不等于生产数据验证。
 
-## 本次验证记录
+## 首次拆分后台时的验证记录（历史）
 
 - 214 项主应用单元测试、436 项 Pipeline 测试全部通过，管理后台浏览器主流程通过。
 - 主应用与 Pipeline 类型检查、边界检查、定向 ESLint、生产构建和 Pipeline dry-run 打包通过。

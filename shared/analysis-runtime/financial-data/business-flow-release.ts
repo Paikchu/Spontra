@@ -20,11 +20,19 @@ function rows(table: string): Row[] {
 }
 const expenseLabels: Record<string,[string,string]> = {
  'cloud and software':['CloudAndSoftwareExpenses','云与软件费用'],hardware:['HardwareExpenses','硬件费用'],services:['ServicesExpense','服务费用'],
+ 'cloud services and license support':['CloudServicesAndLicenseSupportExpense','云服务与许可支持费用'],
  'sales and marketing':['SellingAndMarketingExpense','销售与营销'],'research and development':['ResearchAndDevelopmentExpense','研发'],
  'general and administrative':['GeneralAndAdministrativeExpense','一般及行政'],'amortization of intangible assets':['AmortizationOfIntangibleAssets','无形资产摊销'],
  'restructuring and other':['RestructuringAndOtherExpenses','重组及其他'],
+ 'acquisition related and other':['AcquisitionRelatedAndOtherExpense','收购相关及其他费用'],
+ restructuring:['RestructuringExpense','重组费用'],
 };
-const financialLabels:Record<string,string>={'total revenues':'revenue','total operating expenses':'totalOperatingExpenses','operating income':'operatingIncome','interest expense':'interestExpense','non-operating income, net':'otherIncome','non-operating expense, net':'otherIncome','income before income taxes':'pretaxIncome','provision for income taxes':'taxExpense','benefit for income taxes':'taxExpense','net income':'netIncome','net loss':'netIncome'};
+const financialLabels:Record<string,string>={'total revenues':'revenue','total operating expenses':'totalOperatingExpenses','operating income':'operatingIncome','interest expense':'interestExpense','non-operating income, net':'otherIncome','non-operating expense, net':'otherIncome','non-operating income (expenses), net':'otherIncome','non-operating income (expense), net':'otherIncome','income before income taxes':'pretaxIncome','provision for income taxes':'taxExpense','benefit for income taxes':'taxExpense','net income':'netIncome','net loss':'netIncome'};
+const revenueLabels:Record<string,[string,string]>={
+ cloud:['cloud','Cloud'],software:['software','Software'],hardware:['hardware','Hardware'],services:['services','Services'],
+ 'cloud services and license support':['CloudServicesAndLicenseSupportRevenues','云服务与许可支持'],
+ 'cloud license and on-premise license':['CloudLicenseAndOnPremiseLicenseRevenues','云许可与本地部署许可'],
+};
 /** Extract only a clearly identified direct-three-month GAAP operations table.
  * Amounts are dynamic disclosed cells; no company/ticker or fixture amounts are used.
  */
@@ -57,7 +65,8 @@ export function parseSecEarningsRelease(html:string,source:ParserSource):ParsedB
    }
    const expense=expenseLabels[key];
    if(expenseSection&&expense)expenses.push({id:expense[0],label:expense[1],fact:fact(row.values[0],row,ti,0)});
-   if(!expenseSection&&['cloud','software','hardware','services'].includes(key)) revenueFallback.push({id:key,label:row.label,fact:fact(row.values[0],row,ti,0)});
+   const revenue=revenueLabels[key];
+   if(!expenseSection&&revenue) revenueFallback.push({id:revenue[0],label:revenue[1],fact:fact(row.values[0],row,ti,0)});
   }
   if(!financials.revenue||!financials.operatingIncome||!financials.netIncome)continue;
   let revenues=revenueFallback;

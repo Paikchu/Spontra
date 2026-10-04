@@ -57,11 +57,13 @@ test("trend slots step by calendar quarter and keep uncollected periods as expli
   assert.deepEqual(slots.map(s => s.quarter ? 1 : 0), [0, 0, 0, 0, 1, 0, 1, 1]);
 });
 
-test("columns stack by business, fall back to company revenue for other presentations, and morph into the selected business", () => {
+test("columns retain original disclosed businesses across presentations without inventing a current business split", () => {
   const slots = buildSlots(history);
   const all = buildColumns(slots, items, null);
   assert.equal(all[4].state, "basis");
-  assert.deepEqual(all[4].layers.map(l => l.key), ["__total"]);
+  assert.deepEqual(all[4].layers.map(l => l.key), ["disclosed:old", "hw"]);
+  assert.deepEqual(all[4].layers.map(l => l.value), [9, 1]);
+  assert.ok(layerOrder(items, all).includes("disclosed:old"));
   // A renamed member with the same disclosed business name still lines up.
   assert.deepEqual(all[6].layers.map(l => [l.key, l.value]), [["cloud", 8], ["hw", 1]]);
   const cloud = buildColumns(slots, items, items[0]);

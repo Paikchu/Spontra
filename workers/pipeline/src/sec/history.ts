@@ -1,6 +1,6 @@
 import { hashString, type HistoricalObservation, type SecCanonicalSeriesId, type SecHistorySnapshot } from "./analysis.ts";
 
-export const COMPANY_FACTS_REGISTRY_VERSION = "sec-canonical-series.v1";
+export const COMPANY_FACTS_REGISTRY_VERSION = "sec-canonical-series.v2";
 
 type RegistryEntry = {
   seriesId: SecCanonicalSeriesId;
@@ -101,11 +101,13 @@ function normalizeObservation(
   const value = numericText(raw.val);
   const sourceAccession = String(raw.accn ?? "").trim();
   const sourceFiledAt = isoDate(raw.filed);
-  if (!endDate || value === null || !sourceAccession || !sourceFiledAt) return null;
+  if (!endDate || (raw.start !== undefined && !startDate) || value === null || !sourceAccession || !sourceFiledAt) return null;
   const durationDays = startDate ? daysBetween(startDate, endDate) : null;
   if (durationDays !== null && (durationDays < 60 || durationDays > 380)) return null;
   const annualForm = /^(10-K|20-F)/.test(String(raw.form ?? ""));
-  const annual = durationDays !== null ? durationDays >= 250 && annualForm : annualForm;
+  // The filing form describes the source document, not the duration of each fact in it.
+  // Annual reports can repeat nine-month comparatives; these remain cumulative facts.
+  const annual = durationDays !== null ? durationDays >= 330 : annualForm;
   // Cash flow statements in a 10-Q are reported year-to-date, so the quarter has to be recovered
   // by differencing successive cumulative facts rather than read off directly.
   const cumulativeDays = durationDays !== null && durationDays > 130 && !annual ? durationDays : undefined;
@@ -261,7 +263,9 @@ function compatiblePair(
 ): [HistoricalObservation | undefined, HistoricalObservation | undefined] {
   const left = observations.find((item) => item.seriesId === leftId && item.periodScope === scope && item.endDate === endDate);
   const right = observations.find((item) => item.seriesId === rightId && item.periodScope === scope && item.endDate === endDate && item.startDate === left?.startDate);
-  if (!left || !right || left.unit !== right.unit || (left.currency ?? "") !== (right.currency ?? "") || left.basis !== right.basis) return [undefined, undefined];
+  // A recovered GAAP quarter is compatible with a directly tagged GAAP quarter. `derived`
+  // records arithmetic provenance here, and does not imply non-GAAP accounting.
+  if (!left || !right || left.unit !== right.unit || (left.currency ?? "") !== (right.currency ?? "")) return [undefined, undefined];
   return [left, right];
 }
 
@@ -300,13 +304,16 @@ function revisionKey(raw: RawObservation): string {
 
 function numericText(value: unknown): string | null {
   if (typeof value !== "number" && typeof value !== "string") return null;
+  if (typeof value === "string" && !value.trim()) return null;
   const number = Number(value);
   return Number.isFinite(number) ? String(value) : null;
 }
 
 function isoDate(value: unknown): string | null {
   const text = String(value ?? "");
-  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return null;
+  const timestamp = Date.parse(`${text}T00:00:00Z`);
+  return Number.isFinite(timestamp) && new Date(timestamp).toISOString().slice(0, 10) === text ? text : null;
 }
 
 function daysBetween(start: string, end: string): number {

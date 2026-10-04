@@ -5,7 +5,7 @@ import {businessFlowCacheKey} from '../sec/business-flow-cache.ts';
 import {newestPair} from '../../../../shared/analysis-runtime/financial-data/completeness.ts';
 import {withLegacyInterestFormula} from '../../../../shared/analysis-runtime/financial-data/disclosed-quarter.ts';
 import type {CompleteFlowPublication} from '../../../../shared/analysis-contract/complete-business-flow.ts';
-import type {PublicBusinessFlow} from '../../../../shared/analysis-contract/business-flow.ts';
+import type {PublicBusinessFlow,FlowAmount,BusinessSegment} from '../../../../shared/analysis-contract/business-flow.ts';
 import {checkCompleteFlow} from '../../../../shared/analysis-runtime/financial-data/completeness.ts';
 import {readRevenueHistory} from './history.ts';
 import {historyFromSnapshot,mergeHistory,readHistory} from '../../../../shared/analysis-runtime/financial-data/history.ts';
@@ -31,9 +31,40 @@ export async function readCompletePublicationForTicker(db:D1Database,ticker:stri
 }
 async function readFlowPublication(db:D1Database,ticker:string,identity:{cik:string}|null):Promise<CompleteFlowPublication>{
  const current=identity?await readCompletePublication(db,identity.cik):null;
- if(current?.flow)return current;
+ if(current?.flow){
+  if(current.flow.ticker===ticker)return current;
+  const flow=flowForIssuer(current.flow,identity!.cik,ticker);
+  return flow?{...current,flow}:{...current,status:'preparing',flow:null,reasons:['INVALID_SOURCE'],outdated:false};
+ }
  // Preserve an already verified legacy complete snapshot during the migration.
  const legacy=await new D1SecRepository(db).getCache<PublicBusinessFlow>(businessFlowCacheKey(ticker));
  if(legacy?.payload.ticker===ticker){const flow=newestPair(withLegacyInterestFormula(publicFlowSchema.parse(legacy.payload)));if(checkCompleteFlow(flow).complete)return {schemaVersion:'complete-business-flow.v1',status:'ready',flow,reasons:current?.reasons??[],outdated:!!identity,lastAttemptAt:current?.lastAttemptAt??null};}
  return current??{schemaVersion:'complete-business-flow.v1',status:'preparing',flow:null,reasons:['MISSING_TWO_QUARTERS'],outdated:false,lastAttemptAt:null};
+}
+
+/** Share classes use one issuer snapshot. Relabel only this CIK-keyed, validated publication,
+ * after checking every source and all amount provenance; the general flow validator stays strict. */
+function flowForIssuer(flow:PublicBusinessFlow,cik:string,ticker:string):PublicBusinessFlow|null{
+ if(!/^\d{10}$/.test(cik)||Number(cik)<=0)return null;
+ const sameIssuer=(value:string)=>{try{
+  const url=new URL(value),sourceCik=url.pathname.match(/^\/Archives\/edgar\/data\/(\d{1,10})\//)?.[1];
+  return url.protocol==='https:'&&['sec.gov','www.sec.gov'].includes(url.hostname)&&!url.username&&!url.password&&!url.port&&!!sourceCik&&Number(sourceCik)===Number(cik);
+ }catch{return false;}};
+ for(const quarter of flow.quarters){
+  if(!quarter.sources.length||!quarter.sources.every(source=>sameIssuer(source.url)))return null;
+  const sourceIds=new Set(quarter.sources.map(source=>source.id));
+  const amounts:Array<FlowAmount|null|undefined>=Object.values(quarter.figures);
+  const segments:BusinessSegment[]=[...quarter.segments,...(quarter.revenueBreakdowns??[]).flatMap(breakdown=>breakdown.nodes)];
+  for(const segment of segments){
+   if(!segment.sourceIds.every(id=>sourceIds.has(id)))return null;
+   amounts.push(segment.revenue,...(segment.children??[]).map(child=>child.revenue));
+  }
+  amounts.push(...(quarter.expenseComponents??[]).map(component=>component.amount),...(quarter.otherComponents??[]).map(component=>component.amount));
+  for(const amount of amounts){
+   if(!amount)continue;
+   if(amount.value!==null&&(!amount.sourceIds.length||!amount.lineage?.length))return null;
+   if(!amount.sourceIds.every(id=>sourceIds.has(id))||!(amount.lineage??[]).every(lineage=>sameIssuer(lineage.url)))return null;
+  }
+ }
+ return {...flow,ticker};
 }
