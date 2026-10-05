@@ -66,9 +66,8 @@ function Streams({ band, strength }: { band: Band; strength: "ambient" | "lit" }
   </g>;
 }
 
-export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHover, onPick, tipFor, label, revealKey, products = [], productNames = [], productBusiness = null, onCloseProducts }: {
-  products?: ProductOffering[];
-  productNames?: string[];
+export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHover, onPick, tipFor, label, revealKey, businessDetails, productBusiness = null, onCloseProducts }: {
+  businessDetails?: ReactNode;
   productBusiness?: string | null;
   onCloseProducts?: () => void;
   graph: FinancialGraph;
@@ -104,7 +103,6 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
   const byName = useMemo(() => new Map(layout.nodes.map(n => [n.name, n])), [layout]);
   const w = layout.nodeWidth;
   const productTarget = productBusiness ? byName.get(productBusiness) : null;
-  const offerings = products.length ? products : productNames.slice(0, 8).map((name, i) => ({ id: `legacy-${i}`, name, line: null, description: { text: "产品介绍待核实", sourceIds: [] }, charging: null, sourceIds: [] }));
   const expanded = Boolean(productTarget);
   const [left, setLeft] = useState(0);
   const leftPosition = useRef(0);
@@ -122,7 +120,7 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
     frame = requestAnimationFrame(step);
     return () => cancelAnimationFrame(frame);
   }, [expanded]);
-  const canvasHeight = expanded ? Math.max(85 + Math.max(1, offerings.length) * 94, (productTarget?.y ?? 0) + (productTarget?.h ?? 0) + 70) : layout.height;
+  const canvasHeight = expanded ? Math.max(size && size.w < 600 ? 900 : 640, layout.height) : layout.height;
   const [focusX, setFocusX] = useState(0);
   const focusPosition = useRef(0);
   useEffect(() => {
@@ -144,7 +142,7 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
   const drag = useRef<{ x: number; y: number; cx: number; cy: number; pointerId: number } | null>(null);
   useEffect(() => { drag.current = null; setCamera({ x: 0, y: 0, zoom: 1 }); setFitAll(false); }, [productBusiness, revealKey]);
   const progress = left / 700;
-  const viewportWidth = (fitAll ? layout.width + left : layout.width + (Math.max(1000, size?.w ?? 1000) - layout.width) * progress) / camera.zoom;
+  const viewportWidth = (fitAll ? layout.width + left : layout.width + ((size && size.w < 600 ? size.w : Math.max(1000, size?.w ?? 1000)) - layout.width) * progress) / camera.zoom;
   const viewportX = fitAll ? -left : (focusX - 700) * progress;
   const viewportHeight = (fitAll ? Math.max(canvasHeight, layout.height) : canvasHeight) / camera.zoom;
 
@@ -203,9 +201,9 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
   };
 
   return <div className="fc" data-products={expanded || undefined} ref={box} style={{ "--ratio": `${layout.width} / ${layout.height}` } as CSSProperties} onMouseLeave={() => { setTip(null); onHover(null); }}>
-    <div className="fc-controls"><Button variant="outline" size="sm" aria-label="缩小画布" onClick={() => setCamera(c => ({ ...c, zoom: Math.max(.6, c.zoom / 1.2) }))}>−</Button><Button variant="outline" size="sm" onClick={() => { setFitAll(true); setCamera({ x: 0, y: 0, zoom: 1 }); }}>适应画布</Button><Button variant="outline" size="sm" aria-label="放大画布" onClick={() => setCamera(c => ({ ...c, zoom: Math.min(3, c.zoom * 1.2) }))}>+</Button>{expanded && <Button variant="outline" size="sm" onClick={onCloseProducts}>收起产品</Button>}</div>
+    <div className="fc-controls"><Button variant="outline" size="sm" aria-label="缩小画布" onClick={() => setCamera(c => ({ ...c, zoom: Math.max(.6, c.zoom / 1.2) }))}>−</Button><Button variant="outline" size="sm" onClick={() => { setFitAll(true); setCamera({ x: 0, y: 0, zoom: 1 }); }}>适应画布</Button><Button variant="outline" size="sm" aria-label="放大画布" onClick={() => setCamera(c => ({ ...c, zoom: Math.min(3, c.zoom * 1.2) }))}>+</Button>{expanded && <Button variant="outline" size="sm" onClick={onCloseProducts}>收起说明</Button>}</div>
     <svg key={revealKey} onPointerDown={e => {
-        if ((e.target as Element).closest("[data-owner],a,button")) return;
+        if ((e.target as Element).closest("[data-owner],a,button,.fc-business-details")) return;
         if (e.button !== 0 || drag.current) return;
         drag.current = { x: e.clientX, y: e.clientY, cx: camera.x, cy: camera.y, pointerId: e.pointerId };
         e.currentTarget.setPointerCapture(e.pointerId);
@@ -220,8 +218,10 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
         // Capture coordinates now: React may run this updater after pointerup clears the ref.
         setCamera(c => ({ ...c, x, y }));
       }}
-      onPointerUp={e => { if (drag.current?.pointerId === e.pointerId) drag.current = null; }} onPointerCancel={e => { if (drag.current?.pointerId === e.pointerId) drag.current = null; }} onLostPointerCapture={e => { if (drag.current?.pointerId === e.pointerId) drag.current = null; }} className="fc-svg" viewBox={`${viewportX + camera.x} ${camera.y} ${viewportWidth} ${viewportHeight}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label={label} onMouseOver={hoverOver} data-focus={focus ? (focus.segment ? "segment" : "path") : undefined}>
-      {expanded && productTarget && <ProductBranches target={productTarget} offerings={offerings} />}
+      onPointerUp={e => { if (drag.current?.pointerId === e.pointerId) drag.current = null; }} onPointerCancel={e => { if (drag.current?.pointerId === e.pointerId) drag.current = null; }} onLostPointerCapture={e => { if (drag.current?.pointerId === e.pointerId) drag.current = null; }} className="fc-svg" viewBox={`${viewportX + camera.x} ${camera.y} ${viewportWidth} ${viewportHeight}`} preserveAspectRatio="xMidYMid meet" role="group" aria-label={label} onMouseOver={hoverOver} data-focus={focus ? (focus.segment ? "segment" : "path") : undefined}>
+      {expanded && productTarget && <foreignObject x={productTarget.x - 670} y={48} width={Math.min(450, (size?.w ?? 1000) - 48)} height={canvasHeight - 72}>
+        <div key={productBusiness} className="fc-business-details" tabIndex={0} role="region" aria-label={`${productTarget.label} 业务说明`}>{businessDetails}</div>
+      </foreignObject>}
       <defs>
         {bands.map((b, i) => {
           const from = colorOf(b.key.split(">")[0]);

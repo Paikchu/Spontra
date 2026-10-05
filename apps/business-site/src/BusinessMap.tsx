@@ -8,7 +8,6 @@ import { compactFlowValue, type PlacedNode } from "@/lib/earning-report/web/busi
 import { availableRevenueTrees, compareRevenueNode, revenueNodeKey } from "@/lib/earning-report/web/revenue-tree";
 import { compareAmount, compareFlowAmounts, disclosedSegmentLabel, numeric, previousQuarter, reconcileQuarter } from "@/lib/earning-report/web/business-flow-model";
 import { FinancialSankey } from "@/app/analysis/stocks/[ticker]/FinancialSankey";
-import { ProductRelationships } from "./ProductRelationships";
 import { FlowChart, layoutFor, type NodeCopy, type Tip } from "./FlowChart";
 import type { RevenueHistory } from "@/shared/analysis-contract/revenue-history";
 import type { BusinessExplainer, ExplainerClaim } from "@/shared/analysis-contract/business-explainer";
@@ -201,7 +200,6 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
           </Button>;
         })}
       </div>
-      <Dossier item={current} parent={parent ?? null} sources={quarter?.sources.length ? quarter.sources : business?.sources ?? []} explainer={explainer} />
     </Rail>
 
     <section className="stage" data-trend={revenueHistory && revenueHistory.quarters.length >= 2 ? "" : undefined} aria-label={`${ticker} 收入到利润流向`}>
@@ -235,12 +233,12 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
 
       <div className="chart">
         {!quarter ? <div className="empty"><h2>季度财务未披露</h2><p>需要同币种、同口径的三个月数据才能绘制流向；不会用示例数据替代。</p></div>
-          : proportional && layout ? <FlowChart graph={graph!} copy={copy} money={v => money(v)} colorOf={colorOf} active={active} revealKey={quarter.id} productBusiness={current ? "segment:" + current.key : null} products={explainer?.businesses.find(b => b.nodeId === current?.id)?.offerings ?? []} productNames={explainer?.businesses.find(b => b.nodeId === current?.id)?.offerings !== undefined ? [] : explainer?.businesses.find(b => b.nodeId === current?.id)?.products ?? current?.segment.products ?? []} onCloseProducts={() => setSelected(null)}
+          : proportional && layout ? <FlowChart graph={graph!} copy={copy} money={v => money(v)} colorOf={colorOf} active={active} revealKey={quarter.id} productBusiness={current ? "segment:" + current.key : null} businessDetails={<Dossier item={current} parent={parent ?? null} sources={quarter?.sources.length ? quarter.sources : business?.sources ?? []} explainer={explainer} />} onCloseProducts={() => setSelected(null)}
               focusSlot={n => revenue ? `占收入 ${percent(n.value / revenue * 100)}` : null}
               onHover={name => setHoverNode(name)} tipFor={tipFor}
               onPick={n => { const item = itemByNode.get(n.name); setSelected(item && current?.key !== item.key ? item.id : null); }}
               label={`${ticker} ${quarter.label} 收入到净利润桑基图，金额单位 ${quarter.currency}`} />
-          : <div className="business-flow chart-fallback">{current && <ProductRelationships name={current.name} amount={current.value != null ? money(current.value) : null} products={explainer?.businesses.find(b => b.nodeId === current.id)?.offerings ?? []} names={explainer?.businesses.find(b => b.nodeId === current.id)?.offerings !== undefined ? [] : explainer?.businesses.find(b => b.nodeId === current.id)?.products ?? current.segment.products} onClose={() => setSelected(null)} resetKey={`${quarter.id}:${current.id}`} />}<FinancialSankey quarter={quarter} previous={previous} onSegment={key => setSelected(items.find(item => item.key === key)?.id ?? null)} /></div>}
+          : <div className="business-flow chart-fallback">{current && <Dossier item={current} parent={parent ?? null} sources={quarter.sources.length ? quarter.sources : business?.sources ?? []} explainer={explainer} />}<FinancialSankey quarter={quarter} previous={previous} onSegment={key => setSelected(items.find(item => item.key === key)?.id ?? null)} /></div>}
       </div>
 
       {revenueHistory && revenueHistory.quarters.length >= 2 && <TrendPanel history={revenueHistory} items={items} selected={current} currentPeriod={quarter?.periodEnd ?? null}
@@ -251,7 +249,6 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
           <span><i className="legend-biz" />业务收入</span>
           <span><i style={{ background: "var(--flow-profit)" }} />利润</span>
           <span><i style={{ background: "var(--flow-expense)" }} />成本与费用</span>
-          {current && <span className="legend-note">虚线：产品归属关系</span>}
           <span className="legend-note">线宽 = 本季金额{previous ? " · 百分比 = 较上季变化" : ""}</span>
         </div> : <span className="legend-note">框图表示会计关系，宽度不代表金额</span>}
         <p className="provenance">
