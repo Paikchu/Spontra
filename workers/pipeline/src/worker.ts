@@ -1,3 +1,4 @@
+import {handleBusinessMapAdminRequest} from './admin/business-map.ts';
 import {runDataOnlySweep} from './financial-data/queue.ts';
 import { handleCompanyAnalysisRequest, handleSecAnalysisRequest, runCompanyAnalysisSweep, runSecMemorySweep, runSecRefresh } from "./core.ts";
 import { handleBusinessFlowRefresh, runBusinessFlowBootstrap } from "./sec/business-flow-refresh.ts";
@@ -62,6 +63,7 @@ const worker = {
     const path = new URL(request.url).pathname;
     if (path === "/health") return healthResponse();
     if (path === "/ready") return readyResponse(env);
+    if (path.startsWith("/admin/business-map/")) return handleBusinessMapAdminRequest(request, env);
     if (path === "/admin/financials" || path.startsWith("/admin/financials/")) return handleFinancialAdminRequest(request, env);
     if (path === "/admin" || path.startsWith("/admin/")) return handleReportAdminRequest(request, env);
     /**

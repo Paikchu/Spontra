@@ -88,7 +88,7 @@ async function readFlowPublication(db:D1Database,ticker:string,identity:{cik:str
 
 /** Share classes use one issuer snapshot. Relabel only this CIK-keyed, validated publication,
  * after checking every source and all amount provenance; the general flow validator stays strict. */
-function flowForIssuer(flow:PublicBusinessFlow,cik:string,ticker:string):PublicBusinessFlow|null{
+export function flowForIssuer(flow:PublicBusinessFlow,cik:string,ticker:string):PublicBusinessFlow|null{
  if(!/^\d{10}$/.test(cik)||Number(cik)<=0)return null;
  const sameIssuer=(value:string)=>{try{
   const url=new URL(value),sourceCik=url.pathname.match(/^\/Archives\/edgar\/data\/(\d{1,10})\//)?.[1];
@@ -103,7 +103,7 @@ function flowForIssuer(flow:PublicBusinessFlow,cik:string,ticker:string):PublicB
    if(!segment.sourceIds.every(id=>sourceIds.has(id)))return null;
    amounts.push(segment.revenue,...(segment.children??[]).map(child=>child.revenue));
   }
-  amounts.push(...(quarter.expenseComponents??[]).map(component=>component.amount),...(quarter.otherComponents??[]).map(component=>component.amount));
+  amounts.push(...(quarter.revenueAdjustments??[]).map(component=>component.amount),...(quarter.expenseComponents??[]).map(component=>component.amount),...(quarter.otherComponents??[]).map(component=>component.amount));
   for(const amount of amounts){
    if(!amount)continue;
    if(amount.value!==null&&(!amount.sourceIds.length||!amount.lineage?.length))return null;

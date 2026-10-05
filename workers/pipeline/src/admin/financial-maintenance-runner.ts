@@ -4,6 +4,7 @@ import { D1SecRepository } from "../sec/d1.ts";
 import { aiIsEnabled, financialPolicy } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 import { throttledSecReader, discoverDataIssuer, readSecDocumentBatch, type SecReader } from "../financial-data/provider.ts";
 import { collectComplete } from "../financial-data/collect.ts";
+import { readCompletePublicationForTicker } from "../financial-data/publication.ts";
 import { D1CompleteStore, type Job } from "../financial-data/store.ts";
 import { runHistoryStep } from "../financial-data/history.ts";
 import { archiveFilingDisclosures, listFilingDisclosureAudits } from "../financial-data/disclosure-audit.ts";
@@ -47,7 +48,9 @@ export async function runFinancialMaintenanceTick(env: SecPipelineEnv, deps = de
     if (row.stage === "identify" || row.stage === "waiting_issuer") {
       const issuer = await deps.discover(row.ticker, reader);
       if (!issuer.tickers.includes(row.ticker) || !/^\d{10}$/.test(issuer.cik)) throw new Error("ISSUER_IDENTITY_MISMATCH");
-      if (!await store.claimIssuer(row, issuer.cik, new Date())) {
+      const collecting = await env.DB.prepare("SELECT job_id FROM financial_collection_jobs WHERE cik=? AND status='running' AND lease_until>? LIMIT 1")
+        .bind(issuer.cik,new Date().toISOString()).first();
+      if (collecting || !await store.claimIssuer(row, issuer.cik, new Date())) {
         // The queued waiter owns no issuer cursor and performs no data mutation. Persist that
         // distinction so a share class waiting on a long-lived model run cannot pause all data.
         state.waitingCik = issuer.cik;
@@ -65,7 +68,7 @@ export async function runFinancialMaintenanceTick(env: SecPipelineEnv, deps = de
       await env.DB.prepare("DELETE FROM sec_cache WHERE cache_key=?").bind(`sec:revenue-history-cursor:v1:${state.cik}`).run();
       await finish("collect", { completedSteps: 1 });
     } else if (row.stage === "collect") {
-      await collectStep(env, deps, row, state, reader, issues);
+      await collectStep(env, deps, row, state, reader);
       const result = await env.DB.prepare("SELECT status,reasons_json FROM financial_collection_jobs WHERE job_id=?").bind(state.collectionJobId).first<{ status: string; reasons_json: string }>();
       if (result?.status === "succeeded") await finish("history", { completedSteps: 2 });
       else if (result?.status === "unavailable") {
@@ -78,6 +81,8 @@ export async function runFinancialMaintenanceTick(env: SecPipelineEnv, deps = de
       issues.splice(0, issues.length, ...issues.filter(issue => !resolved.has(issue)), ...result.issues);
       await finish(result.finished ? "audit" : "history", { completedSteps: result.finished ? 3 : 2, issues: [...new Set(issues)].slice(-100) });
     } else if (row.stage === "audit") {
+      const publication = await readCompletePublicationForTicker(env.DB, row.ticker);
+      if(publication.flow?.quarters.some(q=>q.segmentDisclosure!=='single_reportable_segment'&&q.segments.some(s=>s.id==='reported-company-total')))issues.push('REVENUE_BREAKDOWN_NOT_VERIFIED');
       const audits = await listFilingDisclosureAudits(env.DB, row.ticker);
       if (!audits.length) issues.push("NO_ARCHIVED_DISCLOSURES");
       const unsupported = audits.reduce((count, audit) => count + audit.coverage.unsupported, 0);
@@ -120,7 +125,7 @@ export async function runFinancialMaintenanceTick(env: SecPipelineEnv, deps = de
   return outcome();
 }
 
-async function collectStep(env: SecPipelineEnv, deps: MaintenanceDependencies, row: MaintenanceRow, state: MaintenanceState, reader: SecReader, _issues: string[]) {
+async function collectStep(env: SecPipelineEnv, deps: MaintenanceDependencies, row: MaintenanceRow, state: MaintenanceState, reader: SecReader) {
   const now = new Date(), token = row.lease_token!;
   await env.DB!.prepare(`INSERT INTO financial_collection_jobs(job_id,cik,ticker,generation,status,next_attempt_at,updated_at)
     VALUES(?,?,?,?,'queued',?,?) ON CONFLICT(job_id) DO NOTHING`).bind(state.collectionJobId,state.cik,row.ticker,state.generation,now.toISOString(),now.toISOString()).run();

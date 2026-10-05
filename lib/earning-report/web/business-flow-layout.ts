@@ -1,7 +1,7 @@
 import type { BusinessFlowQuarter } from "@/shared/analysis-contract/business-flow";
 import type { FinancialGraph, SankeyNode } from "./business-flow-sankey";
 
-export type FlowTone = "source" | "profit" | "expense";
+export type FlowTone = "source" | "profit" | "expense" | "loss";
 export type LabelSide = "top" | "bottom" | "left" | "right";
 export type PlacedNode = SankeyNode & { x: number; y: number; h: number; column: number; tone: FlowTone; side: LabelSide };
 export type PlacedLink = { source: string; target: string; value: number; tone: FlowTone; h: number; sy: number; ty: number; d: string };
@@ -62,12 +62,12 @@ export function layoutInfographic(graph: FinancialGraph, labelWidth: (n: PlacedN
   const columnOf = new Map(depths.map((d, i) => [d, i]));
   const last = depths.length - 1;
   const revenue = graph.nodes.find(n => n.name === "revenue");
-  const revenueColumn = revenue ? columnOf.get(revenue.depth)! : 0;
+  const revenueColumn = graph.signed ? -1 : revenue ? columnOf.get(revenue.depth)! : 0;
   const scale = g.revenueHeight / Math.max(revenue?.value ?? 0, ...graph.nodes.map(n => n.value), 1e-9);
 
   const nodes: PlacedNode[] = graph.nodes.map(n => {
     const column = columnOf.get(n.depth)!;
-    const tone: FlowTone = n.expense ? "expense" : n.segmentId || n.name === "revenue" || column < revenueColumn ? "source" : "profit";
+    const tone: FlowTone = n.loss ? "loss" : n.credit ? "source" : n.expense ? "expense" : n.segmentId || n.name === "revenue" || column < revenueColumn ? "source" : "profit";
     const side: LabelSide = column === 0 && column < revenueColumn ? "left" : column === last && column > revenueColumn ? "right" : tone === "expense" ? "bottom" : "top";
     return { ...n, column, tone, side, x: 0, y: 0, h: Math.max(2, n.value * scale) };
   });
@@ -92,6 +92,8 @@ export function layoutInfographic(graph: FinancialGraph, labelWidth: (n: PlacedN
     resolve(columns[c], ideal, true, g);
   }
 
+  const outStart = (n: PlacedNode) => n.offset ? n.h - outgoing(n.name).reduce((sum, l) => sum + linkHeight(l.value), 0) : 0;
+
   // Everything after revenue: profit is lifted above its parent's slot, costs drop below theirs.
   const outOrder = (name: string) => outgoing(name).slice().sort((a, b) => {
     const ta = byName.get(a.target)!, tb = byName.get(b.target)!;
@@ -106,7 +108,7 @@ export function layoutInfographic(graph: FinancialGraph, labelWidth: (n: PlacedN
         const source = byName.get(l.source)!;
         if (source.column >= c) return Infinity;
         const order = outOrder(source.name);
-        return source.y + order.slice(0, order.indexOf(l)).reduce((sum, o) => sum + linkHeight(o.value), 0);
+        return source.y + outStart(source) + order.slice(0, order.indexOf(l)).reduce((sum, o) => sum + linkHeight(o.value), 0);
       }).filter(Number.isFinite);
       const slot = slots.length ? Math.min(...slots) : -Infinity;
       ideal.set(n.name, slot + (n.tone === "expense" ? g.drop : -g.lift));
@@ -154,14 +156,14 @@ export function layoutInfographic(graph: FinancialGraph, labelWidth: (n: PlacedN
   const out = new Map<string, number>(), into = new Map<string, number>();
   const sourceOrder = graph.links.slice().sort((a, b) => byName.get(a.target)!.y - byName.get(b.target)!.y);
   const sy = new Map<typeof graph.links[number], number>();
-  for (const l of sourceOrder) { const s = byName.get(l.source)!, used = out.get(l.source) ?? 0; sy.set(l, s.y + used); out.set(l.source, used + linkHeight(l.value)); }
+  for (const l of sourceOrder) { const s = byName.get(l.source)!, used = out.get(l.source) ?? 0; sy.set(l, s.y + outStart(s) + used); out.set(l.source, used + linkHeight(l.value)); }
   const targetOrder = graph.links.slice().sort((a, b) => byName.get(a.source)!.y - byName.get(b.source)!.y);
   const links: PlacedLink[] = [];
   for (const l of targetOrder) {
     const s = byName.get(l.source)!, t = byName.get(l.target)!, used = into.get(l.target) ?? 0, h = linkHeight(l.value);
     const ty = t.y + used;
     into.set(l.target, used + h);
-    const tone: FlowTone = t.tone === "expense" ? "expense" : t.tone === "profit" ? "profit" : "source";
+    const tone: FlowTone = s.tone === "loss" || t.tone === "loss" ? "loss" : t.tone === "expense" ? "expense" : t.tone === "profit" ? "profit" : "source";
     links.push({ source: l.source, target: l.target, value: l.value, tone, h, sy: sy.get(l)!, ty, d: band(s.x + g.nodeWidth, sy.get(l)!, t.x, ty, h) });
   }
   return { width, height: Math.ceil(height), nodeWidth: g.nodeWidth, nodes, links };

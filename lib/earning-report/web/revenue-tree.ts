@@ -36,7 +36,7 @@ function usableTree(q: BusinessFlowQuarter, dimension: RevenueBreakdown, legacy 
     }
   }
   const roots = dimension.nodes.filter(n => n.parentId === null);
-  if (!balanced(roots, revenue)) return null;
+  if (!balanced(roots, revenue - (legacy ? (q.revenueAdjustments ?? []).reduce((sum, a) => sum + (numeric(a.amount) ?? NaN), 0) : 0))) return null;
   const visible: RevenueBreakdownNode[] = [];
   let depth = 1;
   function visit(node: RevenueBreakdownNode, level: number) {

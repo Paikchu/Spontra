@@ -95,19 +95,19 @@ export function reconcileQuarter(q: BusinessFlowQuarter): Reconciliation[] {
     return { label, status: Math.abs(difference) <= tolerance ? "balanced" : "mismatch", difference };
   };
   if (q.incomeModel === "financial" || q.incomeModel === "insurance") return [
-    check("业务收入合计 = 收入", q.segmentsComplete ? [...q.segments.map(s => numeric(s.revenue)), numeric(q.figures.revenue) == null ? null : -numeric(q.figures.revenue)!] : [null]),
+    check("业务收入合计 + 合并抵销 = 收入", q.segmentsComplete ? [...q.segments.map(s => numeric(s.revenue)), ...(q.revenueAdjustments ?? []).map(a => numeric(a.amount)), numeric(q.figures.revenue) == null ? null : -numeric(q.figures.revenue)!] : [null]),
     check(q.incomeModel==="insurance"?"收入 − 已披露费用 + 投资及权益法损益 = 税前利润":"收入 − 已披露费用 = 税前利润", [q.incomeModel==="insurance"?(numeric(q.figures.revenue)==null||numeric(q.figures.other)==null?null:numeric(q.figures.revenue)!+numeric(q.figures.other)!):numeric(q.figures.revenue), numeric(q.figures.operatingExpenses) == null ? null : -numeric(q.figures.operatingExpenses)!, numeric(q.figures.pretax) == null ? null : -numeric(q.figures.pretax)!]),
     check("费用分类合计 = 已披露费用", q.expenseComponents?.length ? [...q.expenseComponents.map(c => numeric(c.amount)), numeric(q.figures.operatingExpenses) == null ? null : -numeric(q.figures.operatingExpenses)!] : [null]),
     check("税前利润 − 所得税 = 净利润", [numeric(q.figures.pretax), numeric(q.figures.tax) == null ? null : -numeric(q.figures.tax)!, numeric(q.figures.net) == null ? null : -numeric(q.figures.net)!]),
   ];
   if (q.incomeModel === "direct_operating") return [
-    check("业务收入合计 = 收入", q.segmentsComplete ? [...q.segments.map(s => numeric(s.revenue)), numeric(q.figures.revenue) == null ? null : -numeric(q.figures.revenue)!] : [null]),
+    check("业务收入合计 + 合并抵销 = 收入", q.segmentsComplete ? [...q.segments.map(s => numeric(s.revenue)), ...(q.revenueAdjustments ?? []).map(a => numeric(a.amount)), numeric(q.figures.revenue) == null ? null : -numeric(q.figures.revenue)!] : [null]),
     check("收入 − 已披露营业费用 = 营业利润", [numeric(q.figures.revenue), numeric(q.figures.operatingExpenses) == null ? null : -numeric(q.figures.operatingExpenses)!, numeric(q.figures.operating) == null ? null : -numeric(q.figures.operating)!]),
     check("营业费用分类合计 = 已披露营业费用", q.expenseComponents?.length ? [...q.expenseComponents.map(c => numeric(c.amount)), numeric(q.figures.operatingExpenses) == null ? null : -numeric(q.figures.operatingExpenses)!] : [null]),
     ...equations.slice(2, 4).map(([label, terms]) => check(label, terms.map(([key, sign]) => { const value = numeric(q.figures[key]); return value == null ? null : value * sign; }))),
     check("有符号利息及其他损益合计 = 其他损益净额", q.otherComponents?.length ? [...q.otherComponents.map(c => numeric(c.amount)), numeric(q.figures.other) == null ? null : -numeric(q.figures.other)!] : [null]),
   ];
-  return [check("分部合计 = 收入", q.segmentsComplete && q.segments.length ? [...q.segments.map(s => numeric(s.revenue)), numeric(q.figures.revenue) == null ? null : -numeric(q.figures.revenue)!] : [null]), ...equations.slice(0, 4).map(([label, terms]) => check(label, terms.map(([key, sign]) => { const value = numeric(q.figures[key]); return value == null ? null : value * sign; }))), q.expenseComponents?.length ? check("费用分类合计 = 已披露运营费用", [...q.expenseComponents.map(c=>numeric(c.amount)), numeric(q.figures.operatingExpenses) == null ? null : -numeric(q.figures.operatingExpenses)!]) : check(equations[4][0], equations[4][1].map(([key, sign])=>{const value=numeric(q.figures[key]);return value==null?null:value*sign;}))];
+  return [check("分部合计 + 合并抵销 = 收入", q.segmentsComplete && q.segments.length ? [...q.segments.map(s => numeric(s.revenue)), ...(q.revenueAdjustments ?? []).map(a => numeric(a.amount)), numeric(q.figures.revenue) == null ? null : -numeric(q.figures.revenue)!] : [null]), ...equations.slice(0, 4).map(([label, terms]) => check(label, terms.map(([key, sign]) => { const value = numeric(q.figures[key]); return value == null ? null : value * sign; }))), q.expenseComponents?.length ? check("费用分类合计 = 已披露运营费用", [...q.expenseComponents.map(c=>numeric(c.amount)), numeric(q.figures.operatingExpenses) == null ? null : -numeric(q.figures.operatingExpenses)!]) : check(equations[4][0], equations[4][1].map(([key, sign])=>{const value=numeric(q.figures[key]);return value==null?null:value*sign;}))];
 }
 
 export function formatFlowValue(value: number | null, quarter: BusinessFlowQuarter): string {

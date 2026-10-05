@@ -2,7 +2,7 @@
 import { useMemo, useState, type KeyboardEvent } from "react";
 import type { BusinessFlowQuarter, FlowMetric } from "@/shared/analysis-contract/business-flow";
 import { compareAmount, compareFlowAmounts, formatFlowValue, numeric } from "@/lib/earning-report/web/business-flow-model";
-import { financialGraph, metricLabels, type FinancialGraph } from "@/lib/earning-report/web/business-flow-sankey";
+import { financialGraph, hasSignedFigures, metricLabels, type FinancialGraph } from "@/lib/earning-report/web/business-flow-sankey";
 import { compactFlowValue, estimateTextWidth, layoutInfographic, type PlacedNode } from "@/lib/earning-report/web/business-flow-layout";
 import { compareRevenueNode } from "@/lib/earning-report/web/revenue-tree";
 
@@ -17,11 +17,12 @@ function nodeText(n: PlacedNode, quarter: BusinessFlowQuarter, previous: Busines
     : n.segmentId ? compareRevenueNode(quarter, previous, n.segmentId) : { label: "不可比" };
   let detail = "";
   if (revenue && n.name !== "revenue") {
-    const ratioName = n.tone === "profit" && n.metric ? ratioNames[n.metric] : undefined;
-    detail = `${ratioName ?? "占收入"} ${(n.value / revenue * 100).toFixed(1)}%`;
+    if(n.segmentId&&quarter.revenueAdjustments?.length)revenue=quarter.segments.reduce((sum,s)=>sum+(numeric(s.revenue)??0),0);
+    const ratioName = (n.tone === "profit" || n.tone === "loss") && n.metric ? ratioNames[n.metric] : undefined;
+    detail = `${ratioName ?? (n.segmentId&&quarter.revenueAdjustments?.length?"占抵销前收入":"占收入")} ${((amount ?? n.value) / revenue * 100).toFixed(1)}%`;
     if (ratioName && previous && n.metric && compareAmount(quarter, previous, n.metric).delta != null && compareAmount(quarter, previous, "revenue").delta != null) {
       const before = numeric(previous.figures[n.metric]), base = numeric(previous.figures.revenue);
-      if (before != null && base) { const pp = n.value / revenue * 100 - before / base * 100; detail += ` · ${pp >= 0 ? "+" : "−"}${Math.abs(pp).toFixed(1)}pp`; }
+      if (before != null && base) { const pp = (amount ?? n.value) / revenue * 100 - before / base * 100; detail += ` · ${pp >= 0 ? "+" : "−"}${Math.abs(pp).toFixed(1)}pp`; }
     }
   }
   const change = comparison.label === "不可比" ? (n.segmentId || !previous ? "" : "环比不可比") : `环比 ${comparison.label}`;
@@ -53,8 +54,7 @@ export function FinancialSankey({quarter,previous,onSegment}:{quarter:BusinessFl
  const previousGraph=useMemo(()=>previous?financialGraph(previous):null,[previous]);
  const layout=useMemo(()=>{const revenue=graph.nodes.find(n=>n.name==="revenue")?.value??null;return layoutInfographic(graph,n=>labelWidth(n,nodeText(n,quarter,previous,previousGraph,revenue)));},[graph,quarter,previous,previousGraph]);
  const [active,setActive]=useState<string|null>(null);
- const signed = Object.entries(quarter.figures).some(([key,amount])=>key!=="other" && (numeric(amount)??0)<0) || (quarter.expenseComponents??[]).some(c=>(numeric(c.amount)??0)<0);
- if(signed||quarter.incomeModel==="insurance"||quarter.incomeModel==="financial")return <SignedFinancialBridge quarter={quarter} previous={previous}/>;
+ if((hasSignedFigures(quarter) && !layout)||quarter.incomeModel==="insurance"||quarter.incomeModel==="financial")return <SignedFinancialBridge quarter={quarter} previous={previous}/>;
  const revenue=graph.nodes.find(n=>n.name==="revenue")?.value??null;
  const adjacent=new Set(active?[active,...graph.links.filter(l=>l.source===active||l.target===active).flatMap(l=>[l.source,l.target])]:[]);
  const activate=(n:PlacedNode)=>n.segmentId?{role:"button",tabIndex:0,"aria-label":`${n.label}，展开业务介绍`,onClick:()=>onSegment(n.segmentId!),onKeyDown:(e:KeyboardEvent)=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();onSegment(n.segmentId!);}},onFocus:()=>setActive(n.name),onBlur:()=>setActive(null)}:{};
@@ -65,7 +65,7 @@ export function FinancialSankey({quarter,previous,onSegment}:{quarter:BusinessFl
     <path className="flow-infographic__bar" d={`M${n.x},${n.y}h${layout.nodeWidth}v${n.h}h${-layout.nodeWidth}Z`}/>
     <NodeLabel n={n} nodeWidth={layout.nodeWidth} text={nodeText(n,quarter,previous,previousGraph,revenue)}/>
    </g>)}</g>
-  </svg></div><p className="flow-infographic__caption">利润向上流、成本向下流 · 宽度表示本季金额 · 精确数值（{quarter.currency} 百万）见下方明细</p></>:<div><p className="business-flow__notice">当前披露缺少已对平的中间阶段，暂不绘制比例流带。金融与保险采用不同利润表口径，不强行推定成本与毛利。</p><div className="business-flow__available-metrics">{([["revenue", "收入"], ["operating", "营业利润"]] as const).map(([metric,label]) => <div key={metric}><span>{label}</span><strong>{formatFlowValue(numeric(quarter.figures[metric]),quarter)}</strong><small>{quarter.currency} 百万 · 环比 {compareAmount(quarter,previous,metric).label}</small></div>)}</div></div>}<p className="business-flow__mobile-other">其他损益（有符号）：{(numeric(quarter.figures.other)??0)>0?"+":""}{formatFlowValue(numeric(quarter.figures.other),quarter)} · 环比 {compareAmount(quarter,previous,"other").label}。正值额外流入，负值分流；费用分项见财务明细。</p></>;
+  </svg></div><p className="flow-infographic__caption">{graph.signed ? "利润或亏损向右结转 · 宽度表示金额绝对值" : "利润向上流、成本向下流 · 宽度表示本季金额"} · 精确数值（{quarter.currency} 百万）见下方明细</p></>:<div><p className="business-flow__notice">当前披露缺少已对平的中间阶段，暂不绘制比例流带。金融与保险采用不同利润表口径，不强行推定成本与毛利。</p><div className="business-flow__available-metrics">{([["revenue", "收入"], ["operating", "营业利润"]] as const).map(([metric,label]) => <div key={metric}><span>{label}</span><strong>{formatFlowValue(numeric(quarter.figures[metric]),quarter)}</strong><small>{quarter.currency} 百万 · 环比 {compareAmount(quarter,previous,metric).label}</small></div>)}</div></div>}<p className="business-flow__mobile-other">其他损益（有符号）：{(numeric(quarter.figures.other)??0)>0?"+":""}{formatFlowValue(numeric(quarter.figures.other),quarter)} · 环比 {compareAmount(quarter,previous,"other").label}。正值额外流入，负值分流；费用分项见财务明细。</p></>;
 }
 
 /** Constant geometry displays accounting relationships; negative amounts retain their signs. */

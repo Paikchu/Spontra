@@ -150,7 +150,7 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
   const bands: Band[] = useMemo(() => layout.links.map(l => {
     const s = byName.get(l.source)!, t = byName.get(l.target)!;
     // A band belongs to the business feeding revenue, or to the profit/cost it produces after revenue.
-    const owner = l.target === "revenue" || t.segmentId ? l.source : l.target;
+    const owner = (l.target === "revenue" || l.target === "segment-total") || t.segmentId ? l.source : l.target;
     return { x0: s.x + w, x1: t.x, sy: l.sy, ty: l.ty, h: l.h, key: linkKey(l), owner, color: colorOf(owner) };
   }), [layout, byName, w, colorOf]);
 
@@ -158,7 +158,7 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
     if (!active || active === "revenue" || !byName.has(active)) return null;
     const nodes = new Set([active]), links = new Set<string>();
     const walk = (name: string, up: boolean) => {
-      if (name === "revenue" && name !== active) return;
+      if ((name === "revenue" || name === "segment-total") && name !== active) return;
       for (const l of layout.links) {
         if ((up ? l.target : l.source) !== name) continue;
         links.add(linkKey(l));
@@ -179,7 +179,7 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
       while (link) {
         const s = byName.get(link.source)!, t = byName.get(link.target)!;
         trace.push({ x0: s.x + w, x1: t.x, sy: link.sy + offset, ty: link.ty + offset, h, key: "trace:" + linkKey(link), owner: active, color: colorOf(active) });
-        if (link.target === "revenue") { slot = { y: link.ty + offset, h }; break; }
+        if (link.target === "revenue" || link.target === "segment-total") { slot = { y: link.ty + offset, h }; break; }
         offset = link.ty + offset - t.y;
         link = layout.links.find(l => l.source === t.name);
       }
@@ -187,7 +187,7 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
     return { nodes, links, trace, slot, segment: Boolean(node.segmentId) };
   }, [active, byName, layout, w, colorOf]);
 
-  const revenue = byName.get("revenue");
+  const revenue = byName.get("segment-total") ?? byName.get("revenue");
   const point = (event: { clientX: number; clientY: number }, value: Tip) => {
     const rect = box.current?.getBoundingClientRect();
     if (rect) setTip({ x: event.clientX - rect.left, y: event.clientY - rect.top, width: rect.width, tip: value });
@@ -200,10 +200,13 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
     if (!owner) setTip(null);
   };
 
-  return <div className="fc" data-products={expanded || undefined} ref={box} style={{ "--ratio": `${layout.width} / ${layout.height}` } as CSSProperties} onMouseLeave={() => { setTip(null); onHover(null); }}>
+  return <div className="fc" data-products={expanded || undefined} ref={box} style={{ "--ratio": `${layout.width} / ${layout.height}`, "--mobile-width": `${Math.ceil(layout.width * SCREEN_VALUE_PX / (21 * k))}px` } as CSSProperties} onMouseLeave={() => { setTip(null); onHover(null); }}>
     <div className="fc-controls"><Button variant="outline" size="sm" aria-label="缩小画布" onClick={() => setCamera(c => ({ ...c, zoom: Math.max(.6, c.zoom / 1.2) }))}>−</Button><Button variant="outline" size="sm" onClick={() => { setFitAll(true); setCamera({ x: 0, y: 0, zoom: 1 }); }}>适应画布</Button><Button variant="outline" size="sm" aria-label="放大画布" onClick={() => setCamera(c => ({ ...c, zoom: Math.min(3, c.zoom * 1.2) }))}>+</Button>{expanded && <Button variant="outline" size="sm" onClick={onCloseProducts}>收起说明</Button>}</div>
     <svg key={revealKey} onPointerDown={e => {
         if ((e.target as Element).closest("[data-owner],a,button,.fc-business-details")) return;
+        // Narrow layouts use native horizontal scrolling instead of capturing touch gestures.
+        const scroller = box.current?.parentElement;
+        if (scroller && scroller.scrollWidth > scroller.clientWidth) return;
         if (e.button !== 0 || drag.current) return;
         drag.current = { x: e.clientX, y: e.clientY, cx: camera.x, cy: camera.y, pointerId: e.pointerId };
         e.currentTarget.setPointerCapture(e.pointerId);

@@ -1,3 +1,4 @@
+import {companyPolicyEnvironment} from './company-policy.ts';
 import {financialPolicy,allowData, type FinancialPolicy} from '../../../../shared/analysis-runtime/financial-data/policy.ts';
 import type {FinancialIssuer} from '../../../../shared/analysis-contract/complete-business-flow.ts';
 import {D1CompleteStore,type Job} from './store.ts';
@@ -21,6 +22,7 @@ export async function claimJob(db:D1Database,now=new Date()):Promise<Job|null>{
 }
 type HistorySummary=Awaited<ReturnType<typeof runHistoryTick>>;
 export async function runDataOnlySweep(env:DataOnlyEnv,fetcher:typeof fetch=fetch):Promise<{enabled:boolean;published:boolean;reasons:string[];ticker?:string;modelCalls:0;history?:HistorySummary|{error:string}}>{
+ env=await companyPolicyEnvironment(env);
  if(env.SEC_DATA_COLLECTION_ENABLED!=='true')return {enabled:false,published:false,reasons:[],modelCalls:0};
  const policy=financialPolicy({SEC_DATA_TICKERS:env.SEC_DATA_TICKERS,SEC_TRACKED_TICKERS:env.SEC_TRACKED_TICKERS,SEC_AI_ENABLED:'false'});
  const reader=throttledSecReader(env.SEC_USER_AGENT,fetcher,1000);let job=await claimJob(env.DB);

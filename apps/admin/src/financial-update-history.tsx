@@ -44,6 +44,7 @@ export function FinancialUpdateHistory({ open, onClose, tasks, ticker, busy, has
           {active && task.progress.total > 0 && <progress max={task.progress.total} value={task.progress.completed} aria-label="财报更新进度" />}
           {task.status === "partial" && <p>已保存可获取的数据，部分内容暂时缺失。你可以稍后重试。</p>}
           {task.status === "failed" && <p>这次未能完成更新，已有数据保留。请稍后重试。</p>}
+          {(task.errorCode || task.issues.length > 0) && <details><summary>查看采集问题</summary><ul>{[...new Set([...(task.errorCode ? [task.errorCode] : []), ...task.issues])].map(issue => <li key={issue}>{issue}</li>)}</ul></details>}
           {task.status === "cancelled" && <p>更新已停止，之前保存的数据仍然可用。</p>}
           {(task.canRetry || task.canCancel) && <div className="fm-history-actions">{task.canRetry && <button className="fm-button" disabled={busy || hasActiveTask} onClick={() => onRetry(task)}><RefreshCw size={14} />重新尝试</button>}{task.canCancel && <button className="fm-button" disabled={busy} onClick={() => onCancel(task)}>停止更新</button>}</div>}
         </div>

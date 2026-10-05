@@ -20,6 +20,6 @@ export async function collectComplete(job:Job,policy:FinancialPolicy,store:Compl
   if(!batch.finished&&!(batch.expectedPeriodEnd&&flow.quarters[0]?.periodEnd===batch.expectedPeriodEnd&&check.complete)){await store.defer(job,['PREPARING'],batch.nextCursor);return {published:false,reasons:['PREPARING']};}
   if(batch.expectedPeriodEnd&&flow.quarters[0]?.periodEnd!==batch.expectedPeriodEnd){await store.defer(job,['LATEST_PERIOD_NOT_COLLECTED'],batch.nextCursor);return {published:false,reasons:['LATEST_PERIOD_NOT_COLLECTED']};}
   if(!check.complete){await store.defer(job,check.reasons,batch.nextCursor);return {published:false,reasons:check.reasons};}
-  return {published:await store.publish(job,flow),reasons:[]};
- }catch(error){const restatement=error instanceof Error&&error.message==='RESTATEMENT_REVIEW_REQUIRED';const reasons=[restatement?'RESTATEMENT_REVIEW_REQUIRED':'SOURCE_TEMPORARILY_UNAVAILABLE'];await store.defer(restatement?{...job,attempt:3}:job,reasons,job.cursor);return {published:false,reasons};}
+  return {published:await store.publish({...job,cursor:batch.nextCursor},flow),reasons:[]};
+ }catch(error){const code=error instanceof Error?error.message:'';const terminal=['RESTATEMENT_REVIEW_REQUIRED','SEC_FACT_FORMAT_UNSUPPORTED','NO_SUPPORTED_FILINGS'].includes(code);const reasons=[terminal||code==='SEC_ACCESS_PAUSED'?code:'SOURCE_TEMPORARILY_UNAVAILABLE'];await store.defer(terminal?{...job,attempt:3}:job,reasons,job.cursor);return {published:false,reasons};}
 }

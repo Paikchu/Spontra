@@ -15,6 +15,7 @@ export type RevenueHistoryQuarter = {
   presentation?: string;
   lineage?: RevenueHistoryLineage[];
   segments: RevenueHistoryNode[];
+  revenueAdjustments?: RevenueHistoryLeaf[];
   source: { accession: string; url: string; filedAt: string; form: string };
 };
 export type RevenueHistory = { schemaVersion: "revenue-history.v1"; ticker: string; updatedAt: string; quarters: RevenueHistoryQuarter[] };

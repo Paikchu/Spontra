@@ -1,3 +1,4 @@
+import {companyPolicyEnvironment} from './company-policy.ts';
 import {financialPolicy, allowData} from '../../../../shared/analysis-runtime/financial-data/policy.ts';
 import {discoverDataIssuer, throttledSecReader} from './provider.ts';
 import type {DataOnlyEnv} from './queue.ts';
@@ -8,6 +9,7 @@ const active = (row:CollectionRow) => ['queued','retry','running'].includes(row.
 
 /** Compatibility producers only enqueue. The two-minute consumer owns parsing, archives and publication. */
 export async function requestFinancialCollection(env:DataOnlyEnv,ticker:string,options:{maxAgeMs?:number;now?:Date;fetcher?:typeof fetch}={}):Promise<CollectionRequest>{
+ env=await companyPolicyEnvironment(env);
  const policy=financialPolicy({SEC_DATA_TICKERS:env.SEC_DATA_TICKERS,SEC_TRACKED_TICKERS:env.SEC_TRACKED_TICKERS,SEC_AI_ENABLED:'false'});
  if(!allowData(policy,ticker))throw new Error('DATA_POLICY_DENIED');
  const now=options.now??new Date(),cutoff=new Date(now.getTime()-(options.maxAgeMs??0)).toISOString();

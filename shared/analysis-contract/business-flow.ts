@@ -59,6 +59,9 @@ export type BusinessFlowQuarter = {
   figures: Partial<Record<FlowMetric, FlowAmount>>;
   segments: BusinessSegment[];
   segmentsComplete: boolean;
+  segmentDisclosure?: "single_reportable_segment";
+  /** Signed consolidation adjustments; never allocated to individual businesses. */
+  revenueAdjustments?: Array<{ id: string; name: string; amount: FlowAmount }>;
   revenueBreakdowns?: RevenueBreakdown[];
   expenseComponents?: Array<{ id: string; name: string; group: "direct" | "research" | "sales" | "administration" | "other"; amount: FlowAmount }>;
   otherComponents?: Array<{ id: string; name: string; amount: FlowAmount }>;

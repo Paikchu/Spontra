@@ -43,12 +43,17 @@ test("comparison rejects zero denominators, unknown revision bases, currency cha
   assert.equal(previousQuarter(q4, [{ ...q3, periodEnd: "2025-12-31" }]), null);
   assert.equal(numeric({ ...q4.figures.net!, value: "NaN" }), null);
 });
-test("signed other loss and negative net income stay signed rather than positive sankey volume", () => {
+test("loss Sankey preserves signed labels and distinguishes deficits from revenue", () => {
   const loss = structuredClone(q4);
   loss.figures.other!.value = "-50000"; loss.figures.pretax!.value = "-9397"; loss.figures.net!.value = "-17678";
   assert.ok(reconcileQuarter(loss).every(r => r.status === "balanced"));
   const html = renderToStaticMarkup(<BusinessFlow flow={{ ...businessFlowFixture, quarters: [loss] }} />);
-  assert.match(html, /-17,678/); assert.match(html, /data-tone="negative"/); assert.match(html, /财务金额明细/); assert.match(html, /完整有符号财务桥图/); assert.match(html, /宽度不表示金额比例/);
+  assert.match(html, /-17,678/); assert.match(html, /data-tone="negative"/); assert.match(html, /财务金额明细/); assert.match(html, /收入到净利润桑基图/); assert.match(html, /净亏损/); assert.match(html, /利润或亏损向右结转/);
+  const graph = financialGraph(loss); assert.ok(validateGraph(graph.nodes, graph.links));
+  assert.equal(graph.nodes.find(n => n.name === "net")?.value, 17678);
+  const stages = ["revenue", "gross", "operating", "pretax", "net"].map(name => graph.nodes.find(n => n.name === name)!);
+  assert.ok(stages.every((node, i) => i === 0 || node.depth > stages[i - 1].depth));
+  assert.equal(graph.links.filter(l => l.target === "net").reduce((sum, l) => sum + l.value, 0), 17678);
 });
 test("real fundamentals adapter preserves source, missing details and conservative comparability", () => {
   const data = { ticker: "OTHER", source: "sec_xbrl", catalogVersion: "fundamental-metrics.v2", fetchedAt: null, periods: [{ periodEnd: "2026-06-30", periodType: "3M", currency: "USD" }], series: ["total_revenue", "gross_profit", "operating_income", "net_income"].map((key, i) => ({ metricKey: key, unitFamily: "currency", currency: "USD", unit: "USD", basis: "reported", points: [{ periodEnd: "2026-06-30", valueDecimal: String([100, 70, 40, 25][i]), revision: null, sourceAccession: "0000789019-26-000001" }] })) } as PublicFundamentalsResponse;
@@ -89,7 +94,7 @@ test("multiple companies, variable segment counts, no COGS industries and incomp
  for(const incomeModel of ["financial","insurance"] as const){const quarter={...q4,incomeModel};const graph=financialGraph(quarter);assert.equal(graph.links.length,0);assert.match(graph.notice!,/金融与保险/);}
  const partial=structuredClone(q4);delete partial.figures.tax;assert.ok(financialGraph(partial).nodes.some(n=>n.name==="pretax"));assert.ok(!financialGraph(partial).nodes.some(n=>n.name==="net"));
  const zero=structuredClone(q4);zero.figures.revenue!.value="0";assert.equal(financialGraph(zero).links.length,0);
- const loss=structuredClone(q4);loss.figures.other!.value="-50000";loss.figures.pretax!.value="-9397";loss.figures.net!.value="-17678";assert.ok(financialGraph(loss).links.every(l=>l.value>0));assert.ok(!financialGraph(loss).nodes.some(n=>n.name==="net"));
+ const loss=structuredClone(q4);loss.figures.other!.value="-50000";loss.figures.pretax!.value="-9397";loss.figures.net!.value="-17678";assert.ok(financialGraph(loss).links.every(l=>l.value>0));assert.ok(financialGraph(loss).nodes.some(n=>n.name==="net" && n.loss));
  const negativeOther=structuredClone(q4);negativeOther.figures.other!.value="-100";negativeOther.figures.pretax!.value="40503";negativeOther.figures.net!.value="32222";const negativeGraph=financialGraph(negativeOther);assert.equal(validateGraph(negativeGraph.nodes,negativeGraph.links),true);assert.ok(negativeGraph.links.some(l=>l.source==="operating"&&l.target==="other"&&l.value===100));
 });
 test("published malformed payloads and duplicate periods fall back without crashing",()=>{

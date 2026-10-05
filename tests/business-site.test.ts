@@ -40,14 +40,14 @@ test("public responses carry security headers and the independent asset shell",a
  const shell=await handle(request("/companies/ORCL"),env,context,success);assert.equal(await shell.text(),"site shell");assert.match(shell.headers.get("content-security-policy")!,/frame-ancestors 'none'/);
 });
 
-test("standalone shares safe signed-expense fallback and does not guess issuer CIK",async()=>{
+test("standalone represents expense reversals as sources and does not guess issuer CIK",async()=>{
  const {financialGraph}=await import("../lib/earning-report/web/business-flow-sankey");
  const base=structuredClone(businessFlowFixture.quarters[0]);base.incomeModel="direct_operating";base.figures.operatingExpenses={...base.figures.research!,value:"49404"};
  base.expenseComponents=[{id:"refund",name:"Expense reversal",group:"direct",amount:{...base.figures.research!,value:"-100"}},{id:"costs",name:"Other actual costs",group:"direct",amount:{...base.figures.research!,value:"49504"}}];
  base.otherComponents=[{id:"netOther",name:"Signed other income",amount:{...base.figures.other!}}];
  const {reconcileQuarter}=await import("../lib/earning-report/web/business-flow-model");assert.ok(reconcileQuarter(base).every(row=>row.status==="balanced"));
  const positive=structuredClone(base);positive.expenseComponents![0].amount.value="100";positive.expenseComponents![1].amount.value="49304";assert.ok(financialGraph(positive).links.length>0);
- const graph=financialGraph(base);assert.equal(graph.links.length,0);assert.match(graph.notice!,/冲回/);
+ const graph=financialGraph(base);assert.ok(graph.links.length>0);assert.equal(graph.nodes.find(n=>n.name==="expense:refund")?.amount?.value,"-100");assert.equal(graph.links.filter(l=>l.source==="expense:refund").reduce((sum,l)=>sum+l.value,0),100);
  const fs=await import("node:fs/promises");const model=await fs.readFile(new URL("../lib/earning-report/web/business-flow-model.ts",import.meta.url),"utf8");assert.ok(!model.includes("sourceAccession.slice(0, 10)"));assert.match(model,/sec\.gov\/edgar\/search/);
 });
 

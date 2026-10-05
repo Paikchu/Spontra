@@ -25,24 +25,30 @@ export async function readFilingDocuments(primaryUrl:string,reader:SecReader):Pr
  // Earnings 8-K primary documents often link their actual GAAP statements in Exhibit 99.
  // Follow at most two same-filing named exhibits, never an arbitrary outbound URL.
  const folder=primaryUrl.slice(0,primaryUrl.lastIndexOf('/')+1);
- const exhibits=[...new Set([...html.matchAll(/href\s*=\s*["']([^"']+)["']/gi)].map(m=>{try{return new URL(m[1],primaryUrl);}catch{return null;}}).filter((url):url is URL=>!!url&&url.href.startsWith(folder)&&/^[A-Za-z0-9_.-]*ex[-_]?99[A-Za-z0-9_.-]*\.html?$/i.test(url.pathname.split('/').at(-1)!)).map(url=>url.href))].slice(0,2);
+ const candidates = [...html.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)]
+  .filter(row => /\b99(?:\.\d+)?\b/.test(row[1].replace(/<[^>]*>/g,' ')))
+  .flatMap(row => [...row[1].matchAll(/href\s*=\s*["']([^"']+)["']/gi)].map(link=>link[1]));
+ candidates.push(...[...html.matchAll(/href\s*=\s*["']([^"']+)["']/gi)].map(m=>m[1]).filter(path=>/ex[-_]?99/i.test(path)));
+ const exhibits=[...new Set(candidates.map(path=>{try{return new URL(path,primaryUrl);}catch{return null;}})
+  .filter((url):url is URL=>!!url&&url.href.startsWith(folder)&&url.href!==primaryUrl&&!url.search&&!url.hash&&/^[A-Za-z0-9_.-]+\.html?$/i.test(url.pathname.split('/').at(-1)!)).map(url=>url.href))].slice(0,2);
  for(const url of exhibits){const exhibit=await reader.read(url);if(Number(exhibit.headers.get('content-length'))>12000000)throw new Error('Document too large');const body=await readBoundedReport(exhibit);if(documents.reduce((n,d)=>n+d.html.length,0)+body.length>16000000)throw new Error('SEC_DOCUMENT_UNAVAILABLE');documents.push({url,html:body});}
  return documents;
 }
 export async function readSecDocumentBatch(job:Job,reader:SecReader,maxDocuments=2):Promise<DocumentBatch>{
- const cik=job.cik;if(!/^\d{10}$/.test(cik))throw new Error('Invalid CIK');const cursor=JSON.parse(job.cursor||'{}') as {documents?:Array<{url:string;accession:string;filedAt:string;periodEnd:string;form?:string}>;index?:number;industry?:DocumentSource['industry'];expectedPeriodEnd?:string;parserVersion?:string;reportedFacts?:Fact[];reviewDocuments?:Array<{source:DocumentSource;eligible:boolean}>;reviewRequired?:boolean};
+ const cik=job.cik;if(!/^\d{10}$/.test(cik))throw new Error('Invalid CIK');const cursor=JSON.parse(job.cursor||'{}') as {documents?:Array<{url:string;accession:string;filedAt:string;periodEnd:string;form?:string}>;index?:number;industry?:DocumentSource['industry'];expectedPeriodEnd?:string;parserVersion?:string;reportedFacts?:Fact[];reviewDocuments?:Array<{source:DocumentSource;eligible:boolean}>;reviewRequired?:boolean;foreign?:boolean};
  if(cursor.parserVersion!==SEC_FLOW_PARSER_VERSION){cursor.index=0;cursor.parserVersion=SEC_FLOW_PARSER_VERSION;delete cursor.reportedFacts;delete cursor.reviewDocuments;delete cursor.reviewRequired;delete cursor.documents;}
  if(!cursor.documents){
-  const response=await reader.read(`https://data.sec.gov/submissions/CIK${cik}.json`);const data=await response.json() as {cik:string|number;sic?:string;filings?:{recent?:{form:string[];accessionNumber:string[];primaryDocument:string[];filingDate:string[];reportDate:string[];items?:string[]}}};if(String(data.cik).padStart(10,'0')!==cik)throw new Error('Issuer identity mismatch');const recent=data.filings?.recent;if(!recent)throw new Error('Missing submissions');cursor.expectedPeriodEnd=recent.form.map((form,i)=>/^10-[QK](\/A)?$/.test(form)?recent.reportDate[i]:'').filter(v=>/^\d{4}-\d{2}-\d{2}$/.test(v)).sort().at(-1);const sic=Number(data.sic);cursor.industry=sic>=6300&&sic<6500?'insurance':sic>=6000&&sic<6300?'financial':'standard';cursor.documents=[];
-  for(let i=0;i<recent.form.length&&cursor.documents.length<10;i++){
-   if(!/^10-[QK](\/A)?$/.test(recent.form[i])&&!(recent.form[i]==='8-K'&&recent.items?.[i]?.includes('2.02')))continue;const accession=recent.accessionNumber[i],doc=recent.primaryDocument[i];if(!/^\d{10}-\d{2}-\d{6}$/.test(accession)||!/^[A-Za-z0-9_.-]+\.html?$/.test(doc))continue;
+  const response=await reader.read(`https://data.sec.gov/submissions/CIK${cik}.json`);const data=await response.json() as {cik:string|number;sic?:string;filings?:{recent?:{form:string[];accessionNumber:string[];primaryDocument:string[];filingDate:string[];reportDate:string[];items?:string[]}}};if(String(data.cik).padStart(10,'0')!==cik)throw new Error('Issuer identity mismatch');const recent=data.filings?.recent;if(!recent)throw new Error('Missing submissions');cursor.foreign=recent.form.some(form=>/^20-F/.test(form))&&!recent.form.some(form=>/^10-[QK]/.test(form));cursor.expectedPeriodEnd=cursor.foreign?undefined:recent.form.map((form,i)=>/^10-[QK](\/A)?$/.test(form)?recent.reportDate[i]:'').filter(v=>/^\d{4}-\d{2}-\d{2}$/.test(v)).sort().at(-1);const sic=Number(data.sic);cursor.industry=sic>=6300&&sic<6500?'insurance':sic>=6000&&sic<6300?'financial':'standard';cursor.documents=[];
+  for(let i=0;i<recent.form.length&&cursor.documents.length<(cursor.foreign?32:10);i++){
+   if(!/^(?:10-[QK]|20-F)(\/A)?$/.test(recent.form[i])&&!(cursor.foreign&&recent.form[i]==='6-K')&&!(recent.form[i]==='8-K'&&recent.items?.[i]?.includes('2.02')))continue;const accession=recent.accessionNumber[i],doc=recent.primaryDocument[i];if(!/^\d{10}-\d{2}-\d{6}$/.test(accession)||!/^[A-Za-z0-9_.-]+\.html?$/.test(doc))continue;
    const folder=`https://www.sec.gov/Archives/edgar/data/${Number(cik)}/${accession.replaceAll('-','')}/`;
    cursor.documents.push({url:folder+doc,accession,filedAt:recent.filingDate[i],periodEnd:recent.reportDate[i],form:recent.form[i]});
   }
   // The current statement and its adjacent filing provide the cumulative bridge.
   // Preserve Oracle's existing earnings-exhibit profile order.
-  if(cik!=='0001341439')cursor.documents.sort((a,b)=>Number(a.form==='8-K')-Number(b.form==='8-K')||b.periodEnd.localeCompare(a.periodEnd));
+  if(!cursor.foreign&&cik!=='0001341439')cursor.documents.sort((a,b)=>Number(a.form==='8-K')-Number(b.form==='8-K')||b.periodEnd.localeCompare(a.periodEnd));
   cursor.index=0;
+  if(!cursor.documents.length)throw new Error('NO_SUPPORTED_FILINGS');
  }
  const quarters=[];const index=cursor.index??0;const selected=cursor.documents.slice(index,index+Math.max(1,Math.min(3,maxDocuments)));
  for(const document of selected){
@@ -52,6 +58,7 @@ export async function readSecDocumentBatch(job:Job,reader:SecReader,maxDocuments
    await reader.archive?.(source,content.html,{form:document.form,reportDate:document.periodEnd});
    const parsed=extractDisclosedQuarters(content.html,source),reported=readReportedFacts(content.html,source);
    if(reported.issues.length)throw new Error('SEC_FACT_FORMAT_UNSUPPORTED');
+   if(cursor.foreign&&parsed.quarters.length){const latest=parsed.quarters.map(q=>q.periodEnd).sort().at(-1)!;if(!cursor.expectedPeriodEnd||latest>cursor.expectedPeriodEnd)cursor.expectedPeriodEnd=latest;}
    const expected=cursor.expectedPeriodEnd;
    const relevant=reported.facts.filter(f=>!expected||(f.end<=expected&&Date.parse(f.start)>=Date.parse(expected)-380*86400000));
    if(relevant.length){cursor.reportedFacts=[...(cursor.reportedFacts??[]),...relevant];cursor.reviewDocuments=[...(cursor.reviewDocuments??[]),{source,eligible:priorPresentationOnly(content.html)}];}

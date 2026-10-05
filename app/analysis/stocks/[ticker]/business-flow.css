@@ -149,3 +149,7 @@
 .flow-infographic__node[data-segment]:hover .flow-infographic__name{text-decoration:underline;}
 .flow-infographic__caption{margin:4px 0 12px;font-size:12px;color:var(--muted-foreground);text-align:right;}
 @media (prefers-reduced-motion: reduce){.flow-infographic__band,.flow-infographic__bar,.flow-infographic__label{transition:none;}}
+
+.flow-infographic__band[data-tone="loss"]{fill:var(--loss);fill-opacity:.24;}
+.flow-infographic__node[data-tone="loss"] .flow-infographic__bar{fill:var(--loss);}
+.flow-infographic__node[data-tone="loss"] .flow-infographic__name,.flow-infographic__node[data-tone="loss"] .flow-infographic__value{fill:var(--loss);}

@@ -46,6 +46,7 @@ async function financialCompanyRows(env: SecPipelineEnv, selectedTicker?: string
     UNION SELECT ticker FROM financial_maintenance_tasks UNION SELECT ticker FROM financial_complete_versions
   ), tickers AS (
     SELECT ticker FROM stored_tickers UNION SELECT ticker FROM statement_data
+    UNION SELECT ticker FROM financial_company_settings
     UNION SELECT CASE WHEN json_valid(payload) THEN json_extract(payload,'$.ticker') END FROM sec_cache
       WHERE cache_key LIKE 'sec:business-flow:v2:%' OR cache_key LIKE 'sec:revenue-history:v1:%'
     UNION SELECT value ticker FROM json_each(?)
@@ -60,7 +61,7 @@ async function financialCompanyRows(env: SecPipelineEnv, selectedTicker?: string
     FROM tickers t LEFT JOIN sec_cache i ON i.cache_key='admin:financial-issuer:'||t.ticker
     LEFT JOIN sec_cache f ON f.cache_key='sec:filings:'||t.ticker
     WHERE t.ticker IS NOT NULL AND (? IS NULL OR t.ticker=?) ORDER BY t.ticker LIMIT 1000)
-  SELECT i.*,v.payload_json currentPayload,v.published_at publishedAt,l.payload legacyPayload,h.payload historyPayload,
+  SELECT i.*,(SELECT enabled FROM financial_company_settings WHERE ticker=i.ticker) settingEnabled,v.payload_json currentPayload,v.published_at publishedAt,l.payload legacyPayload,h.payload historyPayload,
     s.statementPeriodEnd,s.statementUpdatedAt
     FROM identities i LEFT JOIN financial_complete_current c ON c.cik=i.cik
     LEFT JOIN financial_complete_versions v ON v.version_id=c.version_id
@@ -68,14 +69,14 @@ async function financialCompanyRows(env: SecPipelineEnv, selectedTicker?: string
     LEFT JOIN sec_cache h ON h.cache_key='sec:revenue-history:v1:'||i.cik
     LEFT JOIN statement_data s ON s.ticker=i.ticker ORDER BY i.ticker`)
     .bind(JSON.stringify([...new Set([...dataEnabled,...tracked,...(selectedTicker?[selectedTicker]:[])])]),selectedTicker??null,selectedTicker??null)
-    .all<{ticker:string;name:string;cik:string|null;currentPayload:string|null;publishedAt:string|null;legacyPayload:string|null;historyPayload:string|null;statementPeriodEnd:string|null;statementUpdatedAt:string|null}>();
+    .all<{ticker:string;name:string;cik:string|null;currentPayload:string|null;publishedAt:string|null;legacyPayload:string|null;historyPayload:string|null;statementPeriodEnd:string|null;statementUpdatedAt:string|null;settingEnabled:number|null}>();
   return rows.results.map(row => {
     const publication = financialPublicationMetadata(row.ticker, row);
     const periods = [publication.latestPeriodEnd, row.statementPeriodEnd].filter((value): value is string => value !== null).sort();
     const updates = [publication.lastUpdatedAt, row.statementUpdatedAt].filter((value): value is string => value !== null)
       .sort((a, b) => Date.parse(a) - Date.parse(b));
     return { ticker: row.ticker, name: row.name, cik: row.cik, latestPeriodEnd: periods.at(-1) ?? null,
-      lastUpdatedAt: updates.at(-1) ?? null, tracked: tracked.includes(row.ticker), dataEnabled: dataEnabled.includes(row.ticker) };
+      lastUpdatedAt: updates.at(-1) ?? null, tracked: tracked.includes(row.ticker), dataEnabled: row.settingEnabled === null ? dataEnabled.includes(row.ticker) : row.settingEnabled === 1 };
   });
 }
 function periodFromQuarter(q: BusinessFlowQuarter): FinancialMaintenancePeriod {

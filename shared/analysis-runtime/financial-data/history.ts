@@ -14,6 +14,7 @@ const quarterSchema = z.object({
   basis: z.enum(["reported", "derived"]), formula: z.string().max(500).optional(),
   presentation: z.string().max(500).optional(), lineage: lineage.optional(),
   segments: z.array(leaf.extend({ children: z.array(leaf).max(40).optional() })).min(1).max(40),
+  revenueAdjustments: z.array(leaf).max(20).optional(),
   source: z.object({ accession: z.string().regex(/^\d{10}-\d{2}-\d{6}$/), url: secUrl, filedAt: date, form: z.string().max(12) }),
 });
 export const revenueHistorySchema = z.object({ schemaVersion: z.literal("revenue-history.v1"), ticker: z.string().regex(/^[A-Z][A-Z0-9.-]{0,11}$/), updatedAt: z.string(), quarters: z.array(quarterSchema).max(16) });
@@ -26,7 +27,7 @@ export function validHistoryQuarter(q: RevenueHistoryQuarter): boolean {
   if (!quarterSchema.safeParse(q).success) return false;
   const span = days(q.periodStart, q.periodEnd), revenue = Number(q.revenue);
   if (!(span >= 70 && span <= 110) || !(revenue > 0) || new Set(q.segments.map(s => s.id)).size !== q.segments.length) return false;
-  if (q.segments.some(s => !(Number(s.value) >= 0)) || !near(q.segments.reduce((sum, s) => sum + Number(s.value), 0), revenue)) return false;
+  if (q.segments.some(s => !(Number(s.value) >= 0)) || !near(q.segments.reduce((sum, s) => sum + Number(s.value), 0)+(q.revenueAdjustments??[]).reduce((sum,a)=>sum+Number(a.value),0), revenue)) return false;
   return q.segments.every(s => !s.children || (s.children.length > 0 && new Set(s.children.map(c => c.id)).size === s.children.length && s.children.every(c => Number(c.value) >= 0) && near(s.children.reduce((sum, c) => sum + Number(c.value), 0), Number(s.value))));
 }
 
@@ -44,6 +45,7 @@ export function historyQuarterFrom(q: BusinessFlowQuarter, source: RevenueHistor
       const balanced = children?.length && near(children.reduce((sum, c) => sum + Number(c.value), 0), Number(s.revenue!.value));
       return { id: s.id, name: s.name, value: s.revenue!.value!, ...(s.revenue!.lineage ? {lineage: s.revenue!.lineage} : {}), ...(balanced ? { children } : {}) };
     }),
+    ...(q.revenueAdjustments?.length?{revenueAdjustments:q.revenueAdjustments.map(a=>({id:a.id,name:a.name,value:a.amount.value!,lineage:a.amount.lineage}))}:{}),
     source,
   };
   return validHistoryQuarter(candidate) ? candidate : null;

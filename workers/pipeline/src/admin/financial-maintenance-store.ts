@@ -65,6 +65,10 @@ export class FinancialMaintenanceStore {
     await this.db.prepare(`UPDATE financial_maintenance_tasks SET status='failed',error_code='LEASE_EXPIRED',completed_at=?,updated_at=?,lease_token=NULL,lease_until=NULL
       WHERE status='running' AND lease_until<=? AND attempt>=3 AND stage NOT IN ('analysis_dispatch','analysis_wait')`)
       .bind(now.toISOString(),now.toISOString(),now.toISOString()).run();
+    await this.db.prepare(`UPDATE financial_collection_jobs SET status='unavailable',reasons_json='["MAINTENANCE_STOPPED"]',lease_token=NULL,lease_until=NULL,updated_at=?
+      WHERE status IN ('queued','retry','running') AND (lease_until IS NULL OR lease_until<=?)
+      AND job_id IN (SELECT 'admin:'||task_id FROM financial_maintenance_tasks WHERE status IN ('cancelled','failed'))`)
+      .bind(now.toISOString(),now.toISOString()).run();
     return this.db.prepare(`UPDATE financial_maintenance_tasks SET status='running',lease_token=?,lease_until=?,attempt=attempt+1,updated_at=?
       WHERE task_id=(SELECT task_id FROM financial_maintenance_tasks WHERE status IN ('queued','running')
         AND next_attempt_at<=? AND (lease_until IS NULL OR lease_until<=?) ORDER BY next_attempt_at,created_at LIMIT 1) RETURNING *`)

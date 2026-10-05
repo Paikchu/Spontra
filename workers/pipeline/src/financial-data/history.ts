@@ -11,7 +11,7 @@ import {extractRevenueHistory, REVENUE_PARSER_VERSION} from './revenue-parser.ts
  * Reads direct periods and all explicitly dated supplemental quarterly columns, including comparatives.
  * Runs only on otherwise idle data ticks and never touches the complete-snapshot pointer.
  */
-export const HISTORY_VERSION = 'revenue-history.v4:' + REVENUE_PARSER_VERSION;
+export const HISTORY_VERSION = 'revenue-history.v6:' + REVENUE_PARSER_VERSION;
 export const historyKey = (cik: string) => `sec:revenue-history:v1:${cik}`;
 const cursorKey = (cik: string) => `sec:revenue-history-cursor:v1:${cik}`;
 const REFRESH_MS = 86400000, LOOKBACK_DAYS = 1185, MAX_DOCUMENTS = 32, MAX_DOCUMENT_ATTEMPTS = 3;
@@ -40,7 +40,7 @@ export function historyForIssuer(raw: unknown, cik: string, ticker: string): Rev
       return url.protocol === 'https:' && ['www.sec.gov', 'sec.gov'].includes(url.hostname) && !url.username && !url.password && !url.port && !!sourceCik && Number(sourceCik) === Number(cik);
     } catch { return false; }
   };
-  if (!parsed.data.quarters.every(q => sameIssuer(q.source.url) && [...(q.lineage ?? []), ...q.segments.flatMap(s => [...(s.lineage ?? []), ...(s.children ?? []).flatMap(c => c.lineage ?? [])])].every(lineage => sameIssuer(lineage.url)))) return null;
+  if (!parsed.data.quarters.every(q => sameIssuer(q.source.url) && [...(q.lineage ?? []), ...(q.revenueAdjustments??[]).flatMap(a=>a.lineage??[]), ...q.segments.flatMap(s => [...(s.lineage ?? []), ...(s.children ?? []).flatMap(c => c.lineage ?? [])])].every(lineage => sameIssuer(lineage.url)))) return null;
   return {...parsed.data, ticker};
 }
 
@@ -53,7 +53,7 @@ async function listDocuments(cik: string, reader: SecReader, now: Date): Promise
   const cutoff = now.getTime() - LOOKBACK_DAYS * 86400000, documents: HistoryDocument[] = [];
   for (let i = 0; i < recent.form.length && documents.length < MAX_DOCUMENTS; i++) {
     const form = recent.form[i];
-    if (!/^10-[QK](?:\/A)?$/.test(form) && !(form === '8-K' && recent.items?.[i]?.includes('2.02'))) continue;
+    if (!/^(?:10-[QK]|20-F|6-K)(?:\/A)?$/.test(form) && !(form === '8-K' && recent.items?.[i]?.includes('2.02'))) continue;
     if (Date.parse(recent.filingDate[i]) < cutoff) break;
     const accession = recent.accessionNumber[i], primary = recent.primaryDocument[i];
     if (!/^\d{10}-\d{2}-\d{6}$/.test(accession) || !/^[A-Za-z0-9_.-]+\.html?$/.test(primary)) continue;
@@ -95,6 +95,7 @@ export async function runHistoryStep(db: D1Database, reader: SecReader, target: 
     const listing = await listDocuments(target.cik, reader, now);
     cursor = {version: HISTORY_VERSION, ticker: target.ticker, industry: listing.industry, documents: listing.documents, index: 0, facts: [], issues: [], startedAt: now.toISOString()};
   }
+  if(!cursor.documents.length&&!cursor.issues.includes('NO_SUPPORTED_FILINGS'))cursor.issues.push('NO_SUPPORTED_FILINGS');
   const incoming: RevenueHistoryQuarter[] = [], selected = cursor.documents.slice(cursor.index, cursor.index + maxDocuments);
   const resolvedIssues: string[] = [];
   let attempted = 0, retry: HistoryStepResult['retry'];
@@ -120,7 +121,7 @@ export async function runHistoryStep(db: D1Database, reader: SecReader, target: 
       incoming.push(...documentQuarters);
       cursor.facts.push(...documentFacts);
       if (cursor.issues.includes(temporaryIssue)) resolvedIssues.push(temporaryIssue);
-      cursor.issues = [...new Set([...cursor.issues.filter(issue => issue !== temporaryIssue), ...documentIssues])].slice(-40);
+      cursor.issues = [...new Set([...cursor.issues.filter(issue => issue !== temporaryIssue), ...(documentQuarters.length ? [] : documentIssues)])].slice(-40);
       delete cursor.attempts[document.accession];
       cursor.index++;
     } catch {
