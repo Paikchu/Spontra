@@ -4,6 +4,18 @@ import type { BusinessExplainer } from "../analysis-contract/business-explainer.
 const https = z.string().max(2000).refine(v => { try { const u = new URL(v); return u.protocol === "https:" && !u.username && !u.password; } catch { return false; } });
 const text = (max: number) => z.string().trim().min(1).max(max);
 const claim = z.object({ text: text(600), sourceIds: z.array(z.string().max(40)).min(1).max(6) });
+/** Latin source names must be complete words, not a clipped prefix of a different name. */
+export function completeProductName(name: string, passage: string): boolean {
+  const needle = name.normalize("NFKC").toLowerCase().replace(/\s+/g, " ");
+  const source = passage.normalize("NFKC").toLowerCase().replace(/\s+/g, " ");
+  let index = source.indexOf(needle);
+  while (index >= 0) {
+    const before = source[index - 1] ?? "", after = source[index + needle.length] ?? "";
+    if (!(/[a-z0-9]/.test(needle[0] ?? "") && /[a-z0-9]/.test(before)) && !(/[a-z0-9]/.test(needle.at(-1) ?? "") && /[a-z0-9]/.test(after))) return true;
+    index = source.indexOf(needle, index + 1);
+  }
+  return false;
+}
 const explanation = z.object({
   nodeId: text(200), name: text(200), summary: claim,
   howItWorks: claim.nullable(), products: z.array(text(80)).max(10),
@@ -29,7 +41,7 @@ export function readBusinessExplainer(value: unknown, ticker: string): BusinessE
   const ids = new Set(parsed.data.sources.map(s => s.id));
   const valid = (c: { text: string; sourceIds: string[] } | null) => c && c.sourceIds.every(id => ids.has(id)) ? c : null;
   const businesses = parsed.data.businesses.flatMap(b => valid(b.summary) ? [{
-    ...b, offerings: b.offerings?.filter(p => valid(p.description) && valid(p.membership ?? null) && p.sourceIds.every(id => ids.has(id))).map(p => ({ ...p, charging: valid(p.charging) })), howItWorks: valid(b.howItWorks), customers: valid(b.customers), monetization: valid(b.monetization), relation: valid(b.relation),
+    ...b, offerings: b.offerings?.filter(p => valid(p.description) && valid(p.membership ?? null) && completeProductName(p.name, p.membership!.text) && p.sourceIds.every(id => ids.has(id))).map(p => ({ ...p, line: p.line?.toLowerCase() === p.name.toLowerCase() ? null : p.line, charging: valid(p.charging) })), howItWorks: valid(b.howItWorks), customers: valid(b.customers), monetization: valid(b.monetization), relation: valid(b.relation),
   }] : []);
   return businesses.length ? { ...parsed.data, businesses } : null;
 }

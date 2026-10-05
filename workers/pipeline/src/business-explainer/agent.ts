@@ -1,4 +1,5 @@
 import type { BusinessExplainer, BusinessExplanation, ExplainerClaim, ExplainerSource } from "../../../../shared/analysis-contract/business-explainer.ts";
+import { completeProductName } from "../../../../shared/analysis-runtime/business-explainer.ts";
 import type { WebSearchService } from "../web-search/service.ts";
 import type { SearchHit } from "../web-search/types.ts";
 
@@ -184,9 +185,9 @@ function normalizeDraft(draft: Record<string, unknown>, targets: Array<{ nodeId:
       const p = raw as Record<string, unknown>;
       const description = claimOf(p.description, allowed);
       let membership = claimOf(p.membership, allowed, 500);
-      const name = typeof p.name === "string" ? p.name.trim().slice(0, 80) : "";
+      const name = typeof p.name === "string" && p.name.trim().length <= 80 ? p.name.trim() : "";
       const rawLine = typeof p.line === "string" ? p.line.trim().slice(0, 80) : null;
-      const line = rawLine && corpus.includes(rawLine.toLowerCase()) ? rawLine : null;
+      const line = rawLine && rawLine.toLowerCase() !== name.toLowerCase() && corpus.includes(rawLine.toLowerCase()) ? rawLine : null;
       const ids = Array.isArray(p.sourceIds) ? p.sourceIds.filter((id): id is string => typeof id === "string" && allowed.has(id)) : [];
       if (!description || !name || !corpus.includes(name.toLowerCase()) || !ids.length) return [];
       membership ??= ownershipPassage(name, target, materials, ids);
@@ -195,7 +196,7 @@ function normalizeDraft(draft: Record<string, unknown>, targets: Array<{ nodeId:
       // containing both entities, then let the independent reviewer assess its relationship.
       const compact = (text: string) => text.normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
       const quote = compact(membership.text);
-      if (!quote.includes(compact(name)) || ![target.name, target.englishName].some(n => quote.includes(compact(n)))) return [];
+      if (!completeProductName(name, membership.text) || ![target.name, target.englishName].some(n => quote.includes(compact(n)))) return [];
       if (!membership.sourceIds.some(id => materials.some(m => m.sourceId === id && compact(`${m.snippet}\n${m.excerpt ?? ""}`).includes(quote)))) return [];
       return [{ id: `product-${index}`, name, line, description, membership, charging: claimOf(p.charging, allowed, 120), sourceIds: [...new Set(ids)].slice(0, 6) }];
     }).slice(0, 8);

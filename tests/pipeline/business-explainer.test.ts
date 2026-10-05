@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { excerpt, nodeHint, runBusinessExplainer, type ExplainerModel, type ExplainerNode, type ExplainerSearch } from "../../workers/pipeline/src/business-explainer/agent.ts";
 import { businessExplainerCacheKey, explainerFingerprint, explainerNodes, readBusinessExplainerResponse, runBusinessExplainerSweep } from "../../workers/pipeline/src/business-explainer/workflow.ts";
-import { readBusinessExplainer } from "../../shared/analysis-runtime/business-explainer.ts";
+import { completeProductName, readBusinessExplainer } from "../../shared/analysis-runtime/business-explainer.ts";
 import { handleAnalysisReadRequest } from "../../workers/pipeline/src/read-api/router.ts";
 import { D1SecRepository } from "../../workers/pipeline/src/sec/d1.ts";
 import { businessFlowCacheKey } from "../../workers/pipeline/src/sec/business-flow-cache.ts";
@@ -217,4 +217,17 @@ test("SP-21 recovers a model-omitted ownership quote only from cited material, b
   assert.equal(reviewed, true);
   assert.equal(result.businesses[0]!.offerings!.length, 1);
   assert.ok(readBusinessExplainer(result, "ORCL")!.businesses[0]!.offerings![0]!.membership);
+});
+
+test("SP-21 rejects source-name prefixes and avoids repeating a product as its own product line", async () => {
+  assert.equal(completeProductName("related softwar", "related software"), false);
+  assert.equal(completeProductName("Oracle Database", "Oracle Database offerings"), true);
+  const result = await runBusinessExplainer({ ticker: "ORCL", companyName: "Oracle", nodes: [nodes[0]!], search: search(),
+    model: async stage => stage.includes("review") ? {issues:[]} : {businesses:[{nodeId:"software",summary:{text:"软件业务",sourceIds:["s1"]},products:[],offerings:[{
+      name:"Oracle Database",line:"Oracle Database",description:{text:"管理企业数据。",sourceIds:["s1"]},charging:null,sourceIds:["s1"],
+    }]}]},modelVersion:"fixture",fingerprint:"test",now });
+  assert.equal(result.businesses[0]!.offerings![0]!.line, null);
+  const polluted = structuredClone(result);
+  polluted.businesses[0]!.offerings![0]!.name = "Oracle Databas";
+  assert.deepEqual(readBusinessExplainer(polluted,"ORCL")!.businesses[0]!.offerings, []);
 });
