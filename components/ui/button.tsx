@@ -8,6 +8,7 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
+        unstyled: "",
         default: "bg-primary text-primary-foreground hover:bg-primary/80",
         outline:
           "border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
@@ -57,7 +58,7 @@ function Button({
       data-slot="button"
       data-variant={variant}
       data-size={size}
-      className={cn(buttonVariants({ variant, size, className }))}
+      className={variant === "unstyled" ? className : cn(buttonVariants({ variant, size, className }))}
       {...props}
     />
   )

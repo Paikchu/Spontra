@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState } from "react";
 
 /** Same public logo host as the main app; CSP allows only this image origin. The ticker monogram stays when it fails. */
 const logoUrl = (ticker: string) => `https://images.financialmodelingprep.com/symbol/${encodeURIComponent(ticker)}.png`;

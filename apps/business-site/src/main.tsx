@@ -1,3 +1,4 @@
+import { SidebarProvider } from "@/components/ui/sidebar";
 import { StrictMode, useCallback, useEffect, useState, Component, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { selectFlow } from "@/lib/earning-report/web/business-flow-model";
@@ -227,14 +228,15 @@ function App() {
       onToggleTheme={() => setLight((v) => !v)}
       onSearch={() => setSearching(true)}
       collapsed={collapsed}
-      onToggleRail={() => setCollapsed((v) => !v)}
     />
   );
   return (
     <>
-      <main data-rail={collapsed ? "collapsed" : undefined}>
-        <Company key={ticker} ticker={ticker} tools={actions} onSeen={remember} />
-      </main>
+      <SidebarProvider asChild open={!collapsed} onOpenChange={open => setCollapsed(!open)} keyboardShortcut={null} persistState={false}>
+        <main data-rail={collapsed ? "collapsed" : undefined}>
+          <Company key={ticker} ticker={ticker} tools={actions} onSeen={remember} />
+        </main>
+      </SidebarProvider>
       <SearchDialog open={searching} current={ticker} recent={recent} onClose={() => setSearching(false)} onPick={navigate} />
     </>
   );

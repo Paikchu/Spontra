@@ -1,3 +1,5 @@
+import { Button } from "@/components/ui/button";
+import { NativeSelect, NativeSelectOptGroup, NativeSelectOption } from "@/components/ui/native-select";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 import type { BusinessFlowQuarter, BusinessSegment, FlowMetric, FlowSource, PublicBusinessFlow } from "@/shared/analysis-contract/business-flow";
 import type { CompanyBusinessContent } from "@/lib/earning-report/web/company-business-content";
@@ -178,16 +180,16 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
   return <div className="map">
     <Rail ticker={ticker} actions={tools} label="公司业务">
       <div className="rail-list" role="listbox" aria-label="选择业务以在图中高亮" ref={listRef} onKeyDown={onListKey} onMouseLeave={() => setPreview(null)}>
-        <button type="button" role="option" aria-selected={!current} tabIndex={!current ? 0 : -1} className="row row--all" onClick={() => setSelected(null)} onMouseEnter={() => setPreview(null)}>
+        <Button variant="unstyled" type="button" role="option" aria-selected={!current} tabIndex={!current ? 0 : -1} className="row row--all" onClick={() => setSelected(null)} onMouseEnter={() => setPreview(null)}>
           <i className="row-chip row-chip--all" aria-hidden="true" />
           <span className="row-name">全部业务</span>
           <span className="row-value">{revenue != null ? money(revenue) : ""}</span>
           {quarter && <span className="row-meta">总收入 · 环比 {change("revenue")}</span>}
-        </button>
+        </Button>
         {items.map(item => {
           const share = item.value != null && revenue ? item.value / revenue * 100 : null;
           const delta = quarter && quantified ? compareRevenueNode(quarter, previous, item.key).label : "不可比";
-          return <button type="button" role="option" key={item.key} aria-selected={current?.key === item.key} tabIndex={current?.key === item.key ? 0 : -1}
+          return <Button variant="unstyled" type="button" role="option" key={item.key} aria-selected={current?.key === item.key} tabIndex={current?.key === item.key ? 0 : -1}
             className="row" data-depth={item.depth} data-hover={hovered === item.key || undefined} style={{ "--c": hue(item.slot) } as CSSProperties}
             onClick={() => setSelected(current?.key === item.key ? null : item.id)} onMouseEnter={() => setPreview(item.key)}>
             <i className="row-chip" aria-hidden="true" />
@@ -195,7 +197,7 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
             <span className="row-value">{item.value != null ? money(item.value) : ""}</span>
             {share != null && <span className="row-bar" aria-hidden="true"><b style={{ width: `${Math.max(0.6, share)}%` }} /></span>}
             <span className="row-meta">{share != null ? <>{percent(share)}{delta !== "不可比" && <> · <em data-trend={trend(delta)}>环比 {delta}</em></>}</> : "定性归属 · 比例未披露"}</span>
-          </button>;
+          </Button>;
         })}
       </div>
       <Dossier item={current} parent={parent ?? null} sources={quarter?.sources.length ? quarter.sources : business?.sources ?? []} explainer={explainer} />
@@ -219,14 +221,14 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
         </div>}
         {quarter && <label className="report-select">
           <span>财报季度</span>
-          <select value={quarter.id} onChange={event => setPeriod(event.target.value)}>
-            <optgroup label="近两年 · 季度报告">
+          <NativeSelect appearance="native" value={quarter.id} onChange={event => setPeriod(event.target.value)}>
+            <NativeSelectOptGroup label="近两年 · 季度报告">
               {reportPeriods.map(end => {
                 const report = quarters.find(q => q.periodEnd === end);
-                return <option key={end} value={report?.id ?? end} disabled={!report}>{shortPeriod(end)}{report ? "" : " · 完整报告暂不可用"}</option>;
+                return <NativeSelectOption key={end} value={report?.id ?? end} disabled={!report}>{shortPeriod(end)}{report ? "" : " · 完整报告暂不可用"}</NativeSelectOption>;
               })}
-            </optgroup>
-          </select>
+            </NativeSelectOptGroup>
+          </NativeSelect>
         </label>}
       </header>
 

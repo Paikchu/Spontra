@@ -10,6 +10,7 @@ const toggleVariants = cva(
   {
     variants: {
       variant: {
+        unstyled: "",
         default: "bg-transparent",
         outline: "border border-input bg-transparent hover:bg-muted",
       },
@@ -37,7 +38,7 @@ function Toggle({
   return (
     <TogglePrimitive.Root
       data-slot="toggle"
-      className={cn(toggleVariants({ variant, size, className }))}
+      className={variant === "unstyled" ? className : cn(toggleVariants({ variant, size, className }))}
       {...props}
     />
   )
