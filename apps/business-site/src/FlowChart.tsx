@@ -141,8 +141,8 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
   }, [productTarget?.x]);
   const [camera, setCamera] = useState({ x: 0, y: 0, zoom: 1 });
   const [fitAll, setFitAll] = useState(false);
-  const drag = useRef<{ x: number; y: number; cx: number; cy: number } | null>(null);
-  useEffect(() => { setCamera({ x: 0, y: 0, zoom: 1 }); setFitAll(false); }, [productBusiness, revealKey]);
+  const drag = useRef<{ x: number; y: number; cx: number; cy: number; pointerId: number } | null>(null);
+  useEffect(() => { drag.current = null; setCamera({ x: 0, y: 0, zoom: 1 }); setFitAll(false); }, [productBusiness, revealKey]);
   const progress = left / 700;
   const viewportWidth = (fitAll ? layout.width + left : layout.width + (Math.max(1000, size?.w ?? 1000) - layout.width) * progress) / camera.zoom;
   const viewportX = fitAll ? -left : (focusX - 700) * progress;
@@ -204,7 +204,23 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
 
   return <div className="fc" data-products={expanded || undefined} ref={box} style={{ "--ratio": `${layout.width} / ${layout.height}` } as CSSProperties} onMouseLeave={() => { setTip(null); onHover(null); }}>
     <div className="fc-controls"><Button variant="outline" size="sm" aria-label="缩小画布" onClick={() => setCamera(c => ({ ...c, zoom: Math.max(.6, c.zoom / 1.2) }))}>−</Button><Button variant="outline" size="sm" onClick={() => { setFitAll(true); setCamera({ x: 0, y: 0, zoom: 1 }); }}>适应画布</Button><Button variant="outline" size="sm" aria-label="放大画布" onClick={() => setCamera(c => ({ ...c, zoom: Math.min(3, c.zoom * 1.2) }))}>+</Button>{expanded && <Button variant="outline" size="sm" onClick={onCloseProducts}>收起产品</Button>}</div>
-    <svg key={revealKey} onPointerDown={e => { if ((e.target as Element).closest("[data-owner],a,button")) return; drag.current = { x: e.clientX, y: e.clientY, cx: camera.x, cy: camera.y }; e.currentTarget.setPointerCapture(e.pointerId); }} onPointerMove={e => { if (!drag.current) return; const rect = e.currentTarget.getBoundingClientRect(); setCamera(c => ({ ...c, x: drag.current!.cx - (e.clientX - drag.current!.x) * viewportWidth / rect.width, y: drag.current!.cy - (e.clientY - drag.current!.y) * viewportHeight / rect.height })); }} onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }} className="fc-svg" viewBox={`${viewportX + camera.x} ${camera.y} ${viewportWidth} ${viewportHeight}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label={label} onMouseOver={hoverOver} data-focus={focus ? (focus.segment ? "segment" : "path") : undefined}>
+    <svg key={revealKey} onPointerDown={e => {
+        if ((e.target as Element).closest("[data-owner],a,button")) return;
+        if (e.button !== 0 || drag.current) return;
+        drag.current = { x: e.clientX, y: e.clientY, cx: camera.x, cy: camera.y, pointerId: e.pointerId };
+        e.currentTarget.setPointerCapture(e.pointerId);
+      }}
+      onPointerMove={e => {
+        const start = drag.current;
+        if (!start || start.pointerId !== e.pointerId) return;
+        const rect = e.currentTarget.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return;
+        const x = start.cx - (e.clientX - start.x) * viewportWidth / rect.width;
+        const y = start.cy - (e.clientY - start.y) * viewportHeight / rect.height;
+        // Capture coordinates now: React may run this updater after pointerup clears the ref.
+        setCamera(c => ({ ...c, x, y }));
+      }}
+      onPointerUp={e => { if (drag.current?.pointerId === e.pointerId) drag.current = null; }} onPointerCancel={e => { if (drag.current?.pointerId === e.pointerId) drag.current = null; }} onLostPointerCapture={e => { if (drag.current?.pointerId === e.pointerId) drag.current = null; }} className="fc-svg" viewBox={`${viewportX + camera.x} ${camera.y} ${viewportWidth} ${viewportHeight}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label={label} onMouseOver={hoverOver} data-focus={focus ? (focus.segment ? "segment" : "path") : undefined}>
       {expanded && productTarget && <ProductBranches target={productTarget} offerings={offerings} />}
       <defs>
         {bands.map((b, i) => {
