@@ -33,11 +33,16 @@ function findNode<T extends { id: string; name: string }>(nodes: T[] | undefined
 }
 
 export function matchItem(q: RevenueHistoryQuarter, item: TrendItem, items: TrendItem[]): number | null {
-  if (!item.parent) { const node = findNode(q.segments, item); return node ? Number(node.value) : null; }
   const parent = items.find(i => i.key === item.parent);
-  const node = parent ? findNode<RevenueHistoryNode>(q.segments, parent) : undefined;
-  const child = findNode(node?.children, item);
-  return child ? Number(child.value) : null;
+  const parentNode = parent ? findNode<RevenueHistoryNode>(q.segments, parent) : undefined;
+  const node = item.parent
+    ? findNode(parentNode?.children, item)
+    : findNode(q.segments, item);
+  if (node) return Number(node.value);
+  // A disclosed concept may move between parent categories across presentations.
+  // Recover only a unique exact id, never infer a new total from differently named businesses.
+  const matches = q.segments.flatMap(segment => [segment, ...(segment.children ?? [])]).filter(node => node.id === item.id);
+  return matches.length === 1 ? Number(matches[0].value) : null;
 }
 
 /** All layer keys in stable stacking order: each root followed by its children, then the whole-company fallback. */
