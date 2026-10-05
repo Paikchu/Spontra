@@ -8,6 +8,7 @@ import { compactFlowValue, type PlacedNode } from "@/lib/earning-report/web/busi
 import { availableRevenueTrees, compareRevenueNode, revenueNodeKey } from "@/lib/earning-report/web/revenue-tree";
 import { compareAmount, compareFlowAmounts, disclosedSegmentLabel, numeric, previousQuarter, reconcileQuarter } from "@/lib/earning-report/web/business-flow-model";
 import { FinancialSankey } from "@/app/analysis/stocks/[ticker]/FinancialSankey";
+import { ProductRelationships } from "./ProductRelationships";
 import { FlowChart, layoutFor, type NodeCopy, type Tip } from "./FlowChart";
 import type { RevenueHistory } from "@/shared/analysis-contract/revenue-history";
 import type { BusinessExplainer, ExplainerClaim } from "@/shared/analysis-contract/business-explainer";
@@ -234,12 +235,12 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
 
       <div className="chart">
         {!quarter ? <div className="empty"><h2>季度财务未披露</h2><p>需要同币种、同口径的三个月数据才能绘制流向；不会用示例数据替代。</p></div>
-          : proportional && layout ? <FlowChart graph={graph!} copy={copy} money={v => money(v)} colorOf={colorOf} active={active} revealKey={quarter.id}
+          : proportional && layout ? <FlowChart graph={graph!} copy={copy} money={v => money(v)} colorOf={colorOf} active={active} revealKey={quarter.id} productBusiness={current ? "segment:" + current.key : null} products={explainer?.businesses.find(b => b.nodeId === current?.id)?.offerings ?? []} productNames={explainer?.businesses.find(b => b.nodeId === current?.id)?.products ?? current?.segment.products ?? []} onCloseProducts={() => setSelected(null)}
               focusSlot={n => revenue ? `占收入 ${percent(n.value / revenue * 100)}` : null}
               onHover={name => setHoverNode(name)} tipFor={tipFor}
               onPick={n => { const item = itemByNode.get(n.name); setSelected(item && current?.key !== item.key ? item.id : null); }}
               label={`${ticker} ${quarter.label} 收入到净利润桑基图，金额单位 ${quarter.currency}`} />
-          : <div className="business-flow chart-fallback"><FinancialSankey quarter={quarter} previous={previous} onSegment={key => setSelected(items.find(item => item.key === key)?.id ?? null)} /></div>}
+          : <div className="business-flow chart-fallback">{current && <ProductRelationships name={current.name} amount={current.value != null ? money(current.value) : null} products={explainer?.businesses.find(b => b.nodeId === current.id)?.offerings ?? []} names={explainer?.businesses.find(b => b.nodeId === current.id)?.products ?? current.segment.products} onClose={() => setSelected(null)} resetKey={`${quarter.id}:${current.id}`} />}<FinancialSankey quarter={quarter} previous={previous} onSegment={key => setSelected(items.find(item => item.key === key)?.id ?? null)} /></div>}
       </div>
 
       {revenueHistory && revenueHistory.quarters.length >= 2 && <TrendPanel history={revenueHistory} items={items} selected={current} currentPeriod={quarter?.periodEnd ?? null}
@@ -250,6 +251,7 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
           <span><i className="legend-biz" />业务收入</span>
           <span><i style={{ background: "var(--flow-profit)" }} />利润</span>
           <span><i style={{ background: "var(--flow-expense)" }} />成本与费用</span>
+          {current && <span className="legend-note">虚线：产品归属关系</span>}
           <span className="legend-note">线宽 = 本季金额{previous ? " · 百分比 = 较上季变化" : ""}</span>
         </div> : <span className="legend-note">框图表示会计关系，宽度不代表金额</span>}
         <p className="provenance">
@@ -286,7 +288,7 @@ function Dossier({ item, parent, sources, explainer }: { item: Item | null; pare
   return <section className="dossier" key={item.key} aria-label={`${item.name} 业务档案`}>
     <h3>{parent ? `${parent.name} / ` : ""}{item.name}</h3>
     <p>{description}</p>
-    {segment.products.length > 0 && <ul className="tags" aria-label="产品">{segment.products.map(p => <li key={p}>{p}</li>)}</ul>}
+
     <dl>
       <dt>客户</dt><dd>{segment.customers ?? "未披露"}</dd>
       <dt>收费方式</dt><dd>{segment.monetization ?? "未披露"}</dd>
@@ -298,19 +300,20 @@ function Dossier({ item, parent, sources, explainer }: { item: Item | null; pare
 
 /** A model-written explanation: every statement carries numbered links to the pages it was written from. */
 function ExplainedDossier({ item, parent, explainer, explained }: { item: Item; parent: Item | null; explainer: BusinessExplainer; explained: BusinessExplainer["businesses"][number] }) {
-  const claims = [explained.summary, explained.howItWorks, explained.customers, explained.monetization, explained.relation];
+  const claims = [...(explained.offerings ?? []).flatMap(p => [p.description, p.charging]), explained.summary, explained.howItWorks, explained.customers, explained.monetization, explained.relation];
   const cited = [...new Set(claims.flatMap(c => c?.sourceIds ?? []))].map(id => explainer.sources.find(s => s.id === id)).filter(s => s != null);
   const cite = (claim: ExplainerClaim) => <span className="cites">{claim.sourceIds.map(id => {
     const index = cited.findIndex(s => s.id === id);
     return index < 0 ? null : <a key={id} href={cited[index].url} target="_blank" rel="noopener noreferrer" title={cited[index].title}>{index + 1}</a>;
   })}</span>;
-  const rows: Array<[string, ExplainerClaim | null]> = [["怎么运作", explained.howItWorks], ["客户", explained.customers], ["收费方式", explained.monetization], ["关联业务", explained.relation]];
+  const rows: Array<[string, ExplainerClaim | null]> = [["产品介绍", explained.offerings?.length ? null : explained.howItWorks], ["客户", explained.customers], ["收费方式", explained.monetization], ["关联业务", explained.relation]];
   return <section className="dossier" aria-label={`${item.name} 业务档案`}>
     <h3>{parent ? `${parent.name} / ` : ""}{item.name}</h3>
     <p className="dossier-lede">{explained.summary.text}{cite(explained.summary)}</p>
-    {explained.products.length > 0 && <ul className="tags" aria-label="代表产品">{explained.products.map(p => <li key={p}>{p}</li>)}</ul>}
+
+    {explained.offerings?.length ? <><h4>产品介绍</h4><dl>{explained.offerings.map(p => <Fragment key={p.id}><dt>{p.name}</dt><dd>{p.description.text}{cite(p.description)}</dd></Fragment>)}</dl></> : null}
     <dl>{rows.filter(([, claim]) => claim).map(([label, claim]) => <Fragment key={label}><dt>{label}</dt><dd>{claim!.text}{cite(claim!)}</dd></Fragment>)}</dl>
-    <p className="fine">AI 依据公开资料整理并逐条核对来源 · {explainer.generatedAt.slice(0, 10)}；不含金额，季度收入以 SEC 财报为准</p>
+
     <ol className="sources sources--numbered">{cited.map(s => <li key={s.id}><a href={s.url} target="_blank" rel="noopener noreferrer">{s.title}<span aria-hidden="true"> ↗</span></a></li>)}</ol>
   </section>;
 }

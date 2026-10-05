@@ -1,3 +1,5 @@
+import type { ProductOffering } from "@/shared/analysis-contract/business-explainer";
+import { Button } from "@/components/ui/button";
 import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { FinancialGraph } from "@/lib/earning-report/web/business-flow-sankey";
 import { estimateTextWidth, layoutInfographic, type InfographicLayout, type PlacedLink, type PlacedNode } from "@/lib/earning-report/web/business-flow-layout";
@@ -64,7 +66,11 @@ function Streams({ band, strength }: { band: Band; strength: "ambient" | "lit" }
   </g>;
 }
 
-export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHover, onPick, tipFor, label, revealKey }: {
+export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHover, onPick, tipFor, label, revealKey, products = [], productNames = [], productBusiness = null, onCloseProducts }: {
+  products?: ProductOffering[];
+  productNames?: string[];
+  productBusiness?: string | null;
+  onCloseProducts?: () => void;
   graph: FinancialGraph;
   copy: (n: PlacedNode) => NodeCopy;
   money: (value: number) => string;
@@ -97,6 +103,51 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
   const layout = fitted?.layout ?? EMPTY, k = fitted?.k ?? 1, type = typeFor(k);
   const byName = useMemo(() => new Map(layout.nodes.map(n => [n.name, n])), [layout]);
   const w = layout.nodeWidth;
+  const productTarget = productBusiness ? byName.get(productBusiness) : null;
+  const offerings = products.length ? products : productNames.slice(0, 8).map((name, i) => ({ id: `legacy-${i}`, name, line: null, description: { text: "产品介绍待核实", sourceIds: [] }, charging: null, sourceIds: [] }));
+  const expanded = Boolean(productTarget);
+  const [left, setLeft] = useState(0);
+  const leftPosition = useRef(0);
+  useEffect(() => {
+    const target = expanded ? 700 : 0;
+    if (reducedMotion()) { leftPosition.current = target; setLeft(target); return; }
+    const origin = leftPosition.current, start = performance.now();
+    let frame = 0;
+    const step = (now: number) => {
+      const p = Math.min(1, (now - start) / 350);
+      leftPosition.current = origin + (target - origin) * (1 - Math.pow(1 - p, 3));
+      setLeft(leftPosition.current);
+      if (p < 1) frame = requestAnimationFrame(step);
+    };
+    frame = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(frame);
+  }, [expanded]);
+  const canvasHeight = expanded ? Math.max(85 + Math.max(1, offerings.length) * 94, (productTarget?.y ?? 0) + (productTarget?.h ?? 0) + 70) : layout.height;
+  const [focusX, setFocusX] = useState(0);
+  const focusPosition = useRef(0);
+  useEffect(() => {
+    const target = productTarget?.x ?? 0;
+    if (reducedMotion()) { focusPosition.current = target; setFocusX(target); return; }
+    const origin = focusPosition.current, start = performance.now();
+    let frame = 0;
+    const step = (now: number) => {
+      const p = Math.min(1, (now - start) / 350);
+      focusPosition.current = origin + (target - origin) * (1 - Math.pow(1 - p, 3));
+      setFocusX(focusPosition.current);
+      if (p < 1) frame = requestAnimationFrame(step);
+    };
+    frame = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(frame);
+  }, [productTarget?.x]);
+  const [camera, setCamera] = useState({ x: 0, y: 0, zoom: 1 });
+  const [fitAll, setFitAll] = useState(false);
+  const drag = useRef<{ x: number; y: number; cx: number; cy: number } | null>(null);
+  useEffect(() => { setCamera({ x: 0, y: 0, zoom: 1 }); setFitAll(false); }, [productBusiness, revealKey]);
+  const progress = left / 700;
+  const viewportWidth = (fitAll ? layout.width + left : layout.width + (Math.max(1000, size?.w ?? 1000) - layout.width) * progress) / camera.zoom;
+  const viewportX = fitAll ? -left : (focusX - 700) * progress;
+  const viewportHeight = (fitAll ? Math.max(canvasHeight, layout.height) : canvasHeight) / camera.zoom;
+
 
   const bands: Band[] = useMemo(() => layout.links.map(l => {
     const s = byName.get(l.source)!, t = byName.get(l.target)!;
@@ -151,8 +202,10 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
     if (!owner) setTip(null);
   };
 
-  return <div className="fc" ref={box} style={{ "--ratio": `${layout.width} / ${layout.height}` } as CSSProperties} onMouseLeave={() => { setTip(null); onHover(null); }}>
-    <svg key={revealKey} className="fc-svg" viewBox={`0 0 ${layout.width} ${layout.height}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label={label} onMouseOver={hoverOver} data-focus={focus ? (focus.segment ? "segment" : "path") : undefined}>
+  return <div className="fc" data-products={expanded || undefined} ref={box} style={{ "--ratio": `${layout.width} / ${layout.height}` } as CSSProperties} onMouseLeave={() => { setTip(null); onHover(null); }}>
+    <div className="fc-controls"><Button variant="outline" size="sm" aria-label="缩小画布" onClick={() => setCamera(c => ({ ...c, zoom: Math.max(.6, c.zoom / 1.2) }))}>−</Button><Button variant="outline" size="sm" onClick={() => { setFitAll(true); setCamera({ x: 0, y: 0, zoom: 1 }); }}>适应画布</Button><Button variant="outline" size="sm" aria-label="放大画布" onClick={() => setCamera(c => ({ ...c, zoom: Math.min(3, c.zoom * 1.2) }))}>+</Button>{expanded && <Button variant="outline" size="sm" onClick={onCloseProducts}>收起产品</Button>}</div>
+    <svg key={revealKey} onPointerDown={e => { if ((e.target as Element).closest("[data-owner],a,button")) return; drag.current = { x: e.clientX, y: e.clientY, cx: camera.x, cy: camera.y }; e.currentTarget.setPointerCapture(e.pointerId); }} onPointerMove={e => { if (!drag.current) return; const rect = e.currentTarget.getBoundingClientRect(); setCamera(c => ({ ...c, x: drag.current!.cx - (e.clientX - drag.current!.x) * viewportWidth / rect.width, y: drag.current!.cy - (e.clientY - drag.current!.y) * viewportHeight / rect.height })); }} onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }} className="fc-svg" viewBox={`${viewportX + camera.x} ${camera.y} ${viewportWidth} ${viewportHeight}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label={label} onMouseOver={hoverOver} data-focus={focus ? (focus.segment ? "segment" : "path") : undefined}>
+      {expanded && productTarget && <ProductBranches target={productTarget} offerings={offerings} />}
       <defs>
         {bands.map((b, i) => {
           const from = colorOf(b.key.split(">")[0]);
@@ -230,4 +283,30 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
 function Tooltip({ x, y, width, children }: { x: number; y: number; width: number; children: ReactNode }) {
   const flip = x > width - 240;
   return <div className="fc-tip" role="presentation" style={{ transform: `translate(${flip ? x - 16 : x + 16}px, ${y + 16}px) translateX(${flip ? "-100%" : "0"})` }}>{children}</div>;
+}
+
+/** Shared qualitative product relationships, including financial/insurance fallback views. */
+export function ProductBranches({ target, offerings }: { target: { x: number; y: number; h: number; label: string }; offerings: ProductOffering[] }) {
+  return <g className="fc-products" transform={`translate(${target.x},0)`} aria-label="产品到业务的归属关系">
+        <text x={-670} y={28}>产品</text><text x={-410} y={28}>收入模式</text><text x={-205} y={28}>产品线</text>
+        {offerings.length ? <>
+          {offerings.map((p, i) => {
+            const y = 56 + i * 94;
+            const siblings = offerings.map((entry, index) => ({ entry, index })).filter(({ entry }) => entry.line === p.line);
+            const lineY = 81 + siblings.reduce((sum, { index }) => sum + index * 94, 0) / siblings.length;
+            return <g key={p.id}>
+              <path className="fc-product-link" d={linePath(-420, y + 25, -210, lineY)} />
+              <foreignObject x={-670} y={y} width={250} height={88}><div className="fc-product-card" title={p.description.text}><strong>{p.name}</strong><span>{p.description.text}</span></div></foreignObject>
+              <foreignObject x={-410} y={y + 6} width={190} height={76}><div className="fc-charging" title={p.charging?.text ?? "收费模式未核实"}>{p.charging?.text ?? "收费模式未核实"}</div></foreignObject>
+              <title>{p.name} → {p.line ?? "产品线未核实"} → {target.label}；{p.charging?.text ?? "收费模式未核实"}</title>
+            </g>;
+          })}
+          {[...new Set(offerings.map(p => p.line))].map(line => {
+            const indices = offerings.flatMap((p, i) => p.line === line ? [i] : []);
+            const y = 81 + indices.reduce((sum, i) => sum + i * 94, 0) / indices.length;
+            return <g key={line ?? "unknown"}><path className="fc-product-link" d={linePath(-30, y, 0, target.y + target.h / 2)} /><foreignObject x={-210} y={y - 25} width={180} height={76}><div className="fc-product-line"><strong>{line ?? "产品线未核实"}</strong></div></foreignObject></g>;
+          })}
+        </> : <foreignObject x={-670} y={65} width={420} height={100}><div className="fc-product-card">该业务暂无可溯源的产品映射</div></foreignObject>}
+  </g>;
+
 }

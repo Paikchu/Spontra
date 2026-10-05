@@ -132,3 +132,38 @@ test("sweep starts one run for a changed business list, and the read API serves 
     assert.equal((await readBusinessExplainerResponse(db as unknown as D1Database, "NET")).status, "preparing");
   } finally { db.close(); }
 });
+
+test("SP-21 product hierarchy preserves evidence, unknown pricing and review boundaries across companies", async () => {
+  for (const [ticker, company, product, line] of [["ORCL", "Oracle", "Oracle Database", "Oracle Database"], ["AAPL", "Apple", "iPhone", "iPhone"]]) {
+    const fake = search();
+    const provider: ExplainerSearch = { ...fake, async fetchContent(request, policy) {
+      const result = await fake.fetchContent(request, policy);
+      return { ...result, data: { ...result.data, text: `Software business: ${product} belongs to ${line}. Customers use this product to store information and run applications. The material does not establish its charging model.` } };
+    } };
+    const result = await runBusinessExplainer({ ticker, companyName: company, nodes: [nodes[0]!], search: provider,
+      model: async stage => stage.includes("review") ? { issues: [] } : { businesses: [{ nodeId: "software", summary: { text: "产品业务", sourceIds: ["s1"] }, products: [product], offerings: [
+        { name: product, line, description: { text: "帮助客户处理日常信息。", sourceIds: ["s1"] }, charging: { text: "订阅", sourceIds: ["invented"] }, sourceIds: ["s1"] },
+        { name: "Invented Product", line, description: { text: "假产品", sourceIds: ["s1"] }, sourceIds: ["s1"] },
+      ] }] }, modelVersion: "fixture", fingerprint: "test", now });
+    const offerings = result.businesses[0]!.offerings!;
+    assert.equal(offerings.length, 1);
+    assert.equal(offerings[0]!.name, product);
+    assert.equal(offerings[0]!.charging, null, "unsupported charging must stay unknown");
+    const parsed = readBusinessExplainer(result, ticker)!;
+    assert.equal(parsed.businesses[0]!.offerings!.length, 1, "public parser retains hierarchy");
+    const polluted = structuredClone(result);
+    polluted.businesses[0]!.offerings![0]!.description.sourceIds = ["foreign"];
+    assert.equal(readBusinessExplainer(polluted, ticker)!.businesses[0]!.offerings!.length, 0);
+  }
+});
+
+test("SP-21 independent review removes unsupported product mappings without losing the business", async () => {
+  const fake = search();
+  const result = await runBusinessExplainer({ ticker: "ORCL", companyName: "Oracle", nodes: [nodes[0]!], search: fake,
+    model: async stage => stage.includes("review") ? { issues: [{ nodeId: "software", field: "offerings", problem: "product charging is unsupported" }] } : { businesses: [{
+      nodeId: "software", summary: { text: "软件业务", sourceIds: ["s1"] }, products: [],
+      offerings: [{ name: "Oracle Database", line: null, description: { text: "保存和查询信息。", sourceIds: ["s1"] }, charging: null, sourceIds: ["s1"] }],
+    }] }, modelVersion: "fixture", fingerprint: "test", now });
+  assert.equal(result.businesses.length, 1);
+  assert.deepEqual(result.businesses[0]!.offerings, []);
+});

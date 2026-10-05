@@ -557,3 +557,31 @@ button { cursor: pointer; }
   .trend-col--guide .trend-period { font-size: 0; }
   .trend-col--guide .trend-period b { font-size: 10px; }
 }
+
+/* Product relationships are qualitative: constant strokes carry no financial amount. */
+.fc-controls { position: absolute; right: 8px; top: 8px; display: flex; gap: 4px; z-index: 2; }
+.fc-svg { touch-action: none; cursor: grab; }
+.fc-products { animation: product-enter 350ms ease both; fill: var(--foreground, currentColor); }
+.fc-product-link { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-dasharray: 4 4; opacity: .45; }
+.fc-product-card, .fc-product-line { display: flex; flex-direction: column; gap: 6px; font-size: 13px; line-height: 1.4; padding: 8px; border: 1px solid color-mix(in srgb, currentColor 20%, transparent); border-radius: 8px; }
+.fc-product-card strong, .fc-product-line strong { font-size: 14px; }
+.fc-product-card span, .fc-product-line span { opacity: .75; }
+@keyframes product-enter { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .fc-products { animation: none; } }
+
+.fc-charging { font-size: 13px; padding: 6px; line-height: 1.4; background: var(--background); border-radius: 4px; }
+.stage:has(.fc[data-products]) { overflow-y: auto; grid-template-rows: auto minmax(580px, 1fr) auto auto; }
+
+.fc-product-card, .fc-product-line, .fc-charging { font-size: 16px; }
+.fc-product-card strong, .fc-product-line strong { font-size: 18px; }
+.fc-product-card span { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+
+.fc-svg { overflow: hidden; }
+.fc-controls button { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--foreground); padding: 5px 9px; font: inherit; font-size: 12px; cursor: pointer; }
+.fc-controls button:hover { background: var(--surface-raised); }
+.fc-controls button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+
+.product-map { position: relative; height: 520px; min-width: 700px; margin-bottom: 24px; }
+.product-map .fc-svg { padding-top: 32px; }
+.fc-product-card, .fc-product-line { overflow-wrap: anywhere; }
+.fc-product-card strong, .fc-product-line strong { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }

@@ -26,6 +26,7 @@ const SYSTEM = `你是给个人投资者解释公司业务的研究员。搜索�
 - summary：这是什么业务——卖的到底是什么、替客户解决什么问题。1–2 句，不超过 120 字，直接说内容，不要以"该业务"之类空话开头。
 - howItWorks：产品或服务如何交付和运作（部署在哪里、客户怎么用）。
 - products：材料中出现的代表性产品或服务名称，保留材料原文写法，最多 6 个；材料没写就给空数组。
+- offerings：区分产品线和具体产品，最多 8 项 {id,name,line,description:{text,sourceIds},charging:{text,sourceIds}|null,sourceIds}。line 是材料支持的产品线，name 是具体产品原名；description 用外行能懂的话解释它做什么，不超过 80 字，避免未解释的缩写。charging 只写该产品的已证实收费模式（订阅、按量、一次性采购等），不超过 30 字，未知给 null；同一产品可以有多种模式。禁止将业务整体收费方式猜成每个产品的收费方式；找不到产品线则 line 给 null，不把具体产品冒充产品线。
 - customers：谁在买、为什么买。
 - monetization：怎么收费、收入如何确认（一次性、订阅、按用量、按年续约等）。
 - relation：与上级业务或同组其他业务的关系（例如先购买许可、再按年支付支持费）；没有可写内容给 null。
@@ -76,18 +77,18 @@ export async function runBusinessExplainer(input: {
     const allowed = new Set(materials.map(m => m.sourceId));
     const corpus = documents.map(doc => `${doc.title}\n${doc.snippet}\n${doc.excerpt ?? ""}`).join("\n").toLowerCase();
     const targets = [group.root, ...group.children].map(n => ({ nodeId: n.nodeId, name: n.name, englishName: n.hint, parent: n.parentId ? group.root.name : null }));
-    const draft = await stage(`write-${index}`, () => input.model(`business-explainer-write-${index}`, `${SYSTEM}\n返回 JSON {businesses:[{nodeId,summary:{text,sourceIds},howItWorks:{text,sourceIds}|null,products:[string],customers:{text,sourceIds}|null,monetization:{text,sourceIds}|null,relation:{text,sourceIds}|null}]}，每个给定业务各一项。`, {
+    const draft = await stage(`write-${index}`, () => input.model(`business-explainer-write-${index}`, `${SYSTEM}\n返回 JSON {businesses:[{nodeId,summary:{text,sourceIds},howItWorks:{text,sourceIds}|null,products:[string],offerings:[{id,name,line,description:{text,sourceIds},charging:{text,sourceIds}|null,sourceIds}],customers:{text,sourceIds}|null,monetization:{text,sourceIds}|null,relation:{text,sourceIds}|null}]}，每个给定业务各一项。`, {
       company: input.companyName, ticker: input.ticker, businesses: targets, materials,
     }));
     const written = normalizeDraft(draft, targets, allowed, corpus);
     if (!written.length) continue;
-    const review = await stage(`review-${index}`, () => input.model(`business-explainer-review-${index}`, `${REVIEW}\n返回 JSON {issues:[{nodeId,field,problem}]}，field 取 summary、howItWorks、products、customers、monetization 或 relation；没有问题返回 {issues:[]}。`, {
+    const review = await stage(`review-${index}`, () => input.model(`business-explainer-review-${index}`, `${REVIEW}\n返回 JSON {issues:[{nodeId,field,problem}]}，field 取 summary、howItWorks、products、customers、monetization、offerings 或 relation；没有问题返回 {issues:[]}。`, {
       company: input.companyName, explanations: written, materials,
     }));
     businesses.push(...applyReview(written, review));
   }
   if (!businesses.length) throw new Error("Business explainer produced no supported explanation.");
-  const cited = new Set(businesses.flatMap(b => FIELDS.flatMap(f => b[f]?.sourceIds ?? [])));
+  const cited = new Set(businesses.flatMap(b => [...FIELDS.flatMap(f => b[f]?.sourceIds ?? []), ...(b.offerings ?? []).flatMap(p => [...p.sourceIds, ...p.description.sourceIds, ...(p.charging?.sourceIds ?? [])])]));
   return {
     schemaVersion: "business-explainer.v1", ticker: input.ticker, companyName: input.companyName, generatedAt: input.now,
     model: input.modelVersion, fingerprint: input.fingerprint, businesses, sources: [...sources.values()].filter(s => cited.has(s.id)),
@@ -178,8 +179,19 @@ function normalizeDraft(draft: Record<string, unknown>, targets: Array<{ nodeId:
     // A product name is kept only when it literally appears in the fetched material.
     const products = (Array.isArray(item.products) ? item.products : []).filter((p): p is string => typeof p === "string")
       .map(p => p.trim()).filter(p => p.length >= 2 && p.length <= 80 && corpus.includes(p.toLowerCase())).slice(0, 6);
+    const offerings = (Array.isArray(item.offerings) ? item.offerings : []).flatMap((raw, index) => {
+      if (!raw || typeof raw !== "object") return [];
+      const p = raw as Record<string, unknown>;
+      const description = claimOf(p.description, allowed);
+      const name = typeof p.name === "string" ? p.name.trim().slice(0, 80) : "";
+      const rawLine = typeof p.line === "string" ? p.line.trim().slice(0, 80) : null;
+      const line = rawLine && corpus.includes(rawLine.toLowerCase()) ? rawLine : null;
+      const ids = Array.isArray(p.sourceIds) ? p.sourceIds.filter((id): id is string => typeof id === "string" && allowed.has(id)) : [];
+      if (!description || !name || !corpus.includes(name.toLowerCase()) || !ids.length) return [];
+      return [{ id: `product-${index}`, name, line, description, charging: claimOf(p.charging, allowed, 120), sourceIds: [...new Set(ids)].slice(0, 6) }];
+    }).slice(0, 8);
     return [{
-      nodeId: target.nodeId, name: target.name, summary, products: [...new Set(products)],
+      nodeId: target.nodeId, name: target.name, summary, offerings, products: [...new Set(products)],
       howItWorks: claimOf(item.howItWorks, allowed), customers: claimOf(item.customers, allowed),
       monetization: claimOf(item.monetization, allowed), relation: claimOf(item.relation, allowed),
     }];
@@ -199,7 +211,7 @@ function applyReview(written: BusinessExplanation[], review: Record<string, unkn
   if (!Array.isArray(review.issues)) throw new Error("Business explainer review returned no issue list.");
   const flagged = new Set((review.issues as Array<Record<string, unknown>>).filter(i => i && typeof i.nodeId === "string" && typeof i.field === "string").map(i => `${i.nodeId}\u0000${i.field}`));
   return written.flatMap(b => flagged.has(`${b.nodeId}\u0000summary`) ? [] : [{
-    ...b, products: flagged.has(`${b.nodeId}\u0000products`) ? [] : b.products,
+    ...b, offerings: flagged.has(`${b.nodeId}\u0000offerings`) ? [] : b.offerings, products: flagged.has(`${b.nodeId}\u0000products`) ? [] : b.products,
     ...Object.fromEntries(FIELDS.filter(f => f !== "summary").map(f => [f, flagged.has(`${b.nodeId}\u0000${f}`) ? null : b[f]])),
   } as BusinessExplanation]);
 }

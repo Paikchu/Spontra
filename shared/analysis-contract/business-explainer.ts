@@ -5,6 +5,13 @@
 export type ExplainerSource = { id: string; title: string; url: string; kind: "sec" | "web"; publishedAt: string | null };
 /** One statement and the fetched sources that support it. */
 export type ExplainerClaim = { text: string; sourceIds: string[] };
+export type ProductOffering = {
+  id: string; name: string; line: string | null;
+  description: ExplainerClaim;
+  /** Null means the evidence does not establish the charging model. */
+  charging: ExplainerClaim | null;
+  sourceIds: string[];
+};
 export type BusinessExplanation = {
   /** Same id as the flow's segment or revenue node, e.g. `SoftwareLicense`. */
   nodeId: string;
@@ -15,6 +22,7 @@ export type BusinessExplanation = {
   howItWorks: ExplainerClaim | null;
   /** Product names as written in the cited material. */
   products: string[];
+  offerings?: ProductOffering[];
   customers: ExplainerClaim | null;
   monetization: ExplainerClaim | null;
   /** How it relates to its parent or sibling businesses. */
