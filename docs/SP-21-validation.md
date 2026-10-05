@@ -1,6 +1,6 @@
 # SP-21 implementation and validation
 
-Implemented on `codex/SP-21` in `/Users/max/Developer/Spontra/.worktrees/SP-21`, based on deployed `origin/main` commit `a59457320a420d3f6cfb0d4eeeb0297d04033cff`. The original checkout and its pending user changes were preserved. No commit to main, push or deployment was performed.
+Implemented on `codex/SP-21` in `/Users/max/Developer/Spontra/.worktrees/SP-21`, based on deployed `origin/main` commit `a59457320a420d3f6cfb0d4eeeb0297d04033cff`. The original checkout and its pending user changes were preserved. Initial implementation was released after explicit user authorization as `1c776d1993b8389888b65b248b9d40a86a6dbc89`; both Cloudflare automatic builds succeeded, and public HTML served the matching bundle. Local browser validation below predates that release.
 
 ## Implementation
 
@@ -50,7 +50,7 @@ Passed:
 - `npm run business-site:typecheck`
 - `npm run typecheck:pipeline`
 - `npm run check:pipeline:boundary`
-- `node --experimental-strip-types --test tests/pipeline/business-explainer.test.ts` — 8 tests
+- `node --experimental-strip-types --test tests/pipeline/business-explainer.test.ts` — 9 tests including ownership evidence regression
 - `npx tsx --tsconfig tsconfig.test.json --test tests/business-site.test.ts tests/business-flow.test.tsx` — 37 tests
 - `npm run business-site:build`
 - `npm run build`
@@ -60,6 +60,17 @@ Passed:
 
 Automatic approval review rejected a combined command that would read `.env.local` and `workers/pipeline/.dev.vars` to inspect configured credential field names, because those files can contain API keys and reading them is not necessary for browser validation. The command did not run. No alternate path was used to obtain those secrets.
 
-Safe follow-up: in an already authorized staging/runtime environment with credentials supplied by that environment, run the existing background BusinessExplainer workflow against this branch for Oracle and Apple. Verify actual offerings, each product/line assignment and charging citation against the fetched sources, review the generated text from a novice perspective, then render the resulting public response. This does not require copying or printing keys into the chat or local files. A production release still requires the parent conversation's explicit approval and the repository's GitHub-main-only deployment process.
+Safe follow-up: in an already authorized staging/runtime environment with credentials supplied by that environment, run the existing background BusinessExplainer workflow against this branch for Oracle and Apple. Verify actual offerings, each product/line assignment and charging citation against the fetched sources, review the generated text from a novice perspective, then render the resulting public response. This does not require copying or printing keys into the chat or local files. Production publication was explicitly authorized subsequently and follows the GitHub-main-only deployment process.
 
 The proportional Sankey path was covered with Oracle and Apple, and the shared qualitative fallback product canvas was covered with a synthetic negative-net variation. Actual financial/insurance issuer data and newly generated AI outputs remain additional acceptance items; no fixture establishes real issuer product membership or pricing.
+
+
+## Production data acceptance correction
+
+Actual Autodesk v2 generation completed, but failed content acceptance: it placed Flow Production Tracking under Manufacturing using a company-wide cloud product list. Its official product page describes film, animation and game production management (https://www.autodesk.com/products/flow-production-tracking/overview). No model completion is treated as factual validation.
+
+The v3 correction requires each generated offering to carry a short verbatim `membership` passage citing the specific business and product together. Normalization verifies the passage exists in its cited fetched material and mentions both entities; independent review must assess actual ownership rather than co-occurrence. The passage and source IDs remain in the public data layer. Unsupported mappings are dropped; no product-name blacklist or issuer-specific override exists. Previously generated structured offerings lacking membership evidence are withheld by the public reader, and an empty reviewed list no longer falls back to a company-wide product list. Original explanations without the offerings field retain legacy compatibility.
+
+Regression verifies a real business/product passage passes, a company-wide product list fails, a fabricated mapping quote fails, evidence survives the public parser, and legacy structured offerings without evidence are withheld. Related 37 frontend/accounting tests, 9 explainer tests, all type checks, boundary check, application/site builds and Pipeline dry-run passed again. One incorrectly configured test command omitted `tsconfig.test.json` and failed with React undefined; the correctly configured runner passed all 37 tests.
+
+Native computer use currently resolves Chrome to the unrelated Xiaohongshu window. No actions were taken there. The requested independent business-map window must be foregrounded before native animation verification; this acceptance remains pending.

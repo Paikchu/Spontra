@@ -142,7 +142,7 @@ test("SP-21 product hierarchy preserves evidence, unknown pricing and review bou
     } };
     const result = await runBusinessExplainer({ ticker, companyName: company, nodes: [nodes[0]!], search: provider,
       model: async stage => stage.includes("review") ? { issues: [] } : { businesses: [{ nodeId: "software", summary: { text: "产品业务", sourceIds: ["s1"] }, products: [product], offerings: [
-        { name: product, line, description: { text: "帮助客户处理日常信息。", sourceIds: ["s1"] }, charging: { text: "订阅", sourceIds: ["invented"] }, sourceIds: ["s1"] },
+        { name: product, line, membership: {text: `Software business: ${product} belongs to ${line}.`, sourceIds: ["s1"]}, description: { text: "帮助客户处理日常信息。", sourceIds: ["s1"] }, charging: { text: "订阅", sourceIds: ["invented"] }, sourceIds: ["s1"] },
         { name: "Invented Product", line, description: { text: "假产品", sourceIds: ["s1"] }, sourceIds: ["s1"] },
       ] }] }, modelVersion: "fixture", fingerprint: "test", now });
     const offerings = result.businesses[0]!.offerings!;
@@ -162,8 +162,28 @@ test("SP-21 independent review removes unsupported product mappings without losi
   const result = await runBusinessExplainer({ ticker: "ORCL", companyName: "Oracle", nodes: [nodes[0]!], search: fake,
     model: async stage => stage.includes("review") ? { issues: [{ nodeId: "software", field: "offerings", problem: "product charging is unsupported" }] } : { businesses: [{
       nodeId: "software", summary: { text: "软件业务", sourceIds: ["s1"] }, products: [],
-      offerings: [{ name: "Oracle Database", line: null, description: { text: "保存和查询信息。", sourceIds: ["s1"] }, charging: null, sourceIds: ["s1"] }],
+      offerings: [{ name: "Oracle Database", line: null, membership: { text: "Our software license revenues come from perpetual licenses to Oracle Database and Java, recognised upfront.", sourceIds: ["s1"] }, description: { text: "保存和查询信息。", sourceIds: ["s1"] }, charging: null, sourceIds: ["s1"] }],
     }] }, modelVersion: "fixture", fingerprint: "test", now });
   assert.equal(result.businesses.length, 1);
   assert.deepEqual(result.businesses[0]!.offerings, []);
+});
+
+test("SP-21 requires a real cited passage for the specific business, not a company product list", async () => {
+  const fake = search();
+  const text = "Manufacturing includes Widget CAD for mechanical product design. Our cloud products include Studio Tracker for film and game production.";
+  const provider: ExplainerSearch = { ...fake, async fetchContent(request, policy) {
+    const result = await fake.fetchContent(request, policy);
+    return { ...result, data: { ...result.data, text } };
+  } };
+  const result = await runBusinessExplainer({ ticker: "TEST", companyName: "Example", nodes: [{ nodeId: "Manufacturing", name: "制造", parentId: null, hint: "Manufacturing" }], search: provider,
+    model: async stage => stage.includes("review") ? { issues: [] } : { businesses: [{ nodeId: "Manufacturing", summary: { text: "制造软件", sourceIds: ["s1"] }, products: [], offerings: [
+      { name: "Widget CAD", line: null, description: { text: "画机械零件并设计产品。", sourceIds: ["s1"] }, membership: { text: "Manufacturing includes Widget CAD for mechanical product design.", sourceIds: ["s1"] }, charging: null, sourceIds: ["s1"] },
+      { name: "Studio Tracker", line: null, description: { text: "跟踪影片和游戏制作。", sourceIds: ["s1"] }, membership: { text: "Our cloud products include Studio Tracker for film and game production.", sourceIds: ["s1"] }, charging: null, sourceIds: ["s1"] },
+      { name: "Studio Tracker", line: null, description: { text: "制造产品。", sourceIds: ["s1"] }, membership: { text: "Manufacturing includes Studio Tracker.", sourceIds: ["s1"] }, charging: null, sourceIds: ["s1"] },
+    ] }] }, modelVersion: "fixture", fingerprint: "test", now });
+  assert.deepEqual(result.businesses[0]!.offerings!.map(p => p.name), ["Widget CAD"], "company-level existence and fabricated mapping quotes must both be rejected");
+  const parsed = readBusinessExplainer(result, "TEST")!;
+  assert.equal(parsed.businesses[0]!.offerings![0]!.membership?.text, "Manufacturing includes Widget CAD for mechanical product design.");
+  delete result.businesses[0]!.offerings![0]!.membership;
+  assert.deepEqual(readBusinessExplainer(result, "TEST")!.businesses[0]!.offerings, [], "previous offerings without ownership evidence are withheld");
 });

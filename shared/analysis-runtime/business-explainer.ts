@@ -7,7 +7,7 @@ const claim = z.object({ text: text(600), sourceIds: z.array(z.string().max(40))
 const explanation = z.object({
   nodeId: text(200), name: text(200), summary: claim,
   howItWorks: claim.nullable(), products: z.array(text(80)).max(10),
-  offerings: z.array(z.object({ id: text(80), name: text(80), line: text(80).nullable(), description: claim, charging: claim.nullable(), sourceIds: z.array(text(40)).min(1).max(6) })).max(8).optional(),
+  offerings: z.array(z.object({ id: text(80), name: text(80), line: text(80).nullable(), description: claim, membership: claim.optional(), charging: claim.nullable(), sourceIds: z.array(text(40)).min(1).max(6) })).max(8).optional(),
   customers: claim.nullable(), monetization: claim.nullable(), relation: claim.nullable(),
 });
 export const businessExplainerSchema = z.object({
@@ -29,7 +29,7 @@ export function readBusinessExplainer(value: unknown, ticker: string): BusinessE
   const ids = new Set(parsed.data.sources.map(s => s.id));
   const valid = (c: { text: string; sourceIds: string[] } | null) => c && c.sourceIds.every(id => ids.has(id)) ? c : null;
   const businesses = parsed.data.businesses.flatMap(b => valid(b.summary) ? [{
-    ...b, offerings: b.offerings?.filter(p => valid(p.description) && p.sourceIds.every(id => ids.has(id))).map(p => ({ ...p, charging: valid(p.charging) })), howItWorks: valid(b.howItWorks), customers: valid(b.customers), monetization: valid(b.monetization), relation: valid(b.relation),
+    ...b, offerings: b.offerings?.filter(p => valid(p.description) && valid(p.membership ?? null) && p.sourceIds.every(id => ids.has(id))).map(p => ({ ...p, charging: valid(p.charging) })), howItWorks: valid(b.howItWorks), customers: valid(b.customers), monetization: valid(b.monetization), relation: valid(b.relation),
   }] : []);
   return businesses.length ? { ...parsed.data, businesses } : null;
 }

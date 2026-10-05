@@ -8,6 +8,8 @@ export type ExplainerClaim = { text: string; sourceIds: string[] };
 export type ProductOffering = {
   id: string; name: string; line: string | null;
   description: ExplainerClaim;
+  /** Short verbatim source passage linking this product to this disclosed business. */
+  membership?: ExplainerClaim;
   /** Null means the evidence does not establish the charging model. */
   charging: ExplainerClaim | null;
   sourceIds: string[];
