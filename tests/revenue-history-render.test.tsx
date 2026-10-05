@@ -30,3 +30,10 @@ test("a missing baseline leaves just its point and adjoining line segments absen
   assert.equal((html.match(/class="trend-dot"/g) ?? []).length, 7);
   assert.equal((html.match(/class="trend-line"/g) ?? []).length, 5);
 });
+
+test("partial growth coverage is explained without drawing missing comparisons", () => {
+  const html = render({ ...history, quarters: history.quarters.filter((_, i) => i !== 1) });
+  assert.match(html, /7\/8 季可比/);
+  assert.match(html, /部分季度缺少本期或比较期的同口径收入，增速留空/);
+  assert.ok(!render(history).includes("季可比"));
+});

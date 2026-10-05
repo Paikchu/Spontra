@@ -65,6 +65,7 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
   // The growth line has its own default: year over year needs four earlier quarters, so a short history reads quarter over quarter.
   const lineLag = chosenLag ?? (growthSeries(historyColumns, 4).slice(-SLOTS).filter(v => v != null).length >= 2 ? 4 : 1);
   const rates = useMemo(() => growthSeries(historyColumns, lineLag).slice(-SLOTS), [historyColumns, lineLag]);
+  const rateCount = rates.filter(rate => rate != null).length;
   const rateAxis = useMemo(() => rateTicks(rates), [rates]);
   const rateY = (v: number) => rateAxis ? (v - rateAxis[0]) / (rateAxis[3] - rateAxis[0]) * 100 : 0;
   const rateName = lineLag === 4 ? "同比增速" : "环比增速";
@@ -96,9 +97,10 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
         </div>
         <ChartLegendContent asChild key={"legend" + mode + view}><div className="trend-legend">
           {view === "trend" && legend.length > 1 && legend.map(layer => <span key={layer.key}><i style={{ background: chartConfig[layer.key]?.color ?? layerColor(layer, hue) }} />{layer.name}</span>)}
-          {view === "trend" && rateAxis && <span className="trend-legend-line" style={{ "--line": lineColor } as CSSProperties}><i />{rateName} · 右轴</span>}
+          {view === "trend" && rateAxis && <span className="trend-legend-line" style={{ "--line": lineColor } as CSSProperties}><i />{rateName} · 右轴{rateCount < slots.length ? ` · ${rateCount}/${slots.length} 季可比` : ""}</span>}
           {view === "trend" && guided.length > 0 && <span className="trend-legend-guide"><i />管理层指引区间</span>}
           <span className="trend-basis">{view === "trend" ? `${rateAxis ? "柱：收入 · 左轴 · " : ""}按每期财报原披露口径` : bridgeNote(bridge, lag, historyColumns[historyIndex - lag])}</span>
+          {view === "trend" && rateCount < slots.length && <span className="trend-basis">部分季度缺少本期或比较期的同口径收入，增速留空</span>}
         </div></ChartLegendContent>
       </div>
       {view === "trend" ? <div className="trend-kpis">

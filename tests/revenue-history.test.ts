@@ -142,3 +142,18 @@ test("twelve-quarter history supplies all eight visible YoY and QoQ points, incl
   const zero = buildColumns(buildSlots({ ...full, quarters: quarters.map((q, i) => i === 0 ? withChildren(q.periodEnd, 0, 0, 10) : q) }, 12), items, items[0]);
   assert.equal(growthSeries(zero, 4).slice(-8)[0], null);
 });
+
+test("a uniquely disclosed concept remains comparable when its parent category changes", () => {
+  const old = quarter("2024-11-30", [["combined", "云服务与许可支持", 90], ["license", "许可", 10]]);
+  old.segments[0].children = [{ id: "cloud", name: "云服务", value: "40" }, { id: "support", name: "软件支持", value: "50" }];
+  const selected = [items[0], { key: "software", id: "software", name: "软件", parent: null, slot: 2 },
+    { key: "support", id: "support", name: "软件支持", parent: "software", slot: 2 }];
+  const slots = [{ periodEnd: old.periodEnd, quarter: old }];
+  assert.equal(buildColumns(slots, selected, selected[0])[0].total, 40);
+  assert.equal(buildColumns(slots, selected, selected[2])[0].total, 50);
+  // No manufactured software total or missing cloud-applications split.
+  assert.equal(buildColumns(slots, selected, selected[1])[0].total, null);
+  assert.equal(buildColumns(slots, items, items[1])[0].total, null);
+  old.segments[1].children = [{ id: "cloud", name: "云服务", value: "10" }];
+  assert.equal(buildColumns(slots, selected, selected[0])[0].total, null);
+});
