@@ -26,7 +26,7 @@ const SYSTEM = `你是给个人投资者解释公司业务的研究员。搜索�
 - summary：这是什么业务——卖的到底是什么、替客户解决什么问题。1–2 句，不超过 120 字，直接说内容，不要以"该业务"之类空话开头。
 - howItWorks：产品或服务如何交付和运作（部署在哪里、客户怎么用）。
 - products：材料中出现的代表性产品或服务名称，保留材料原文写法，最多 6 个；材料没写就给空数组。
-- offerings：区分产品线和具体产品，最多 8 项 {id,name,line,description:{text,sourceIds},charging:{text,sourceIds}|null,sourceIds}。line 是材料支持的产品线，name 是具体产品原名；description 用外行能懂的话解释它做什么，不超过 80 字，避免未解释的缩写。charging 只写该产品的已证实收费模式（订阅、按量、一次性采购等），不超过 30 字，未知给 null；同一产品可以有多种模式。membership:{text,sourceIds} 必须逐字引用一段不超过 500 字符的原文，同一段明确提到产品名与此业务名（或 englishName）并说明归属；公司整体产品列表不证明产品属于当前业务，没有直接证据就不列此项。description 必须具体解释客户实际完成什么工作，不用“提供工具”“加强协作”等泛称。禁止将业务整体收费方式猜成每个产品的收费方式；找不到产品线则 line 给 null，不把具体产品冒充产品线。
+- offerings：区分产品线和具体产品，最多 8 项 {id,name,line,description:{text,sourceIds},charging:{text,sourceIds}|null,membership:{text,sourceIds},sourceIds}。line 是材料支持的产品线，name 是具体产品原名；description 用外行能懂的话解释它做什么，不超过 80 字，避免未解释的缩写。charging 只写该产品的已证实收费模式（订阅、按量、一次性采购等），不超过 30 字，未知给 null；同一产品可以有多种模式。membership:{text,sourceIds} 必须逐字引用一段不超过 500 字符的原文，同一段明确提到产品名与此业务名（或 englishName）并说明归属；公司整体产品列表不证明产品属于当前业务，没有直接证据就不列此项。description 必须具体解释客户实际完成什么工作，不用“提供工具”“加强协作”等泛称。禁止将业务整体收费方式猜成每个产品的收费方式；找不到产品线则 line 给 null，不把具体产品冒充产品线。
 - customers：谁在买、为什么买。
 - monetization：怎么收费、收入如何确认（一次性、订阅、按用量、按年续约等）。
 - relation：与上级业务或同组其他业务的关系（例如先购买许可、再按年支付支持费）；没有可写内容给 null。
@@ -183,12 +183,14 @@ function normalizeDraft(draft: Record<string, unknown>, targets: Array<{ nodeId:
       if (!raw || typeof raw !== "object") return [];
       const p = raw as Record<string, unknown>;
       const description = claimOf(p.description, allowed);
-      const membership = claimOf(p.membership, allowed, 500);
+      let membership = claimOf(p.membership, allowed, 500);
       const name = typeof p.name === "string" ? p.name.trim().slice(0, 80) : "";
       const rawLine = typeof p.line === "string" ? p.line.trim().slice(0, 80) : null;
       const line = rawLine && corpus.includes(rawLine.toLowerCase()) ? rawLine : null;
       const ids = Array.isArray(p.sourceIds) ? p.sourceIds.filter((id): id is string => typeof id === "string" && allowed.has(id)) : [];
-      if (!description || !name || !corpus.includes(name.toLowerCase()) || !ids.length || !membership) return [];
+      if (!description || !name || !corpus.includes(name.toLowerCase()) || !ids.length) return [];
+      membership ??= ownershipPassage(name, target, materials, ids);
+      if (!membership) return [];
       // A whole-company list proves existence, not ownership. Require a short, real passage
       // containing both entities, then let the independent reviewer assess its relationship.
       const compact = (text: string) => text.normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
@@ -203,6 +205,26 @@ function normalizeDraft(draft: Record<string, unknown>, targets: Array<{ nodeId:
       monetization: claimOf(item.monetization, allowed), relation: claimOf(item.relation, allowed),
     }];
   });
+}
+
+/** Missing model evidence can only be recovered from actual cited passages, never generated text.
+ * Co-occurrence is a candidate, not approval: the independent reviewer still judges ownership.
+ */
+function ownershipPassage(name: string, target: { name: string; englishName: string }, materials: Array<{ sourceId: string; snippet: string; excerpt: string | null }>, ids: string[]): ExplainerClaim | null {
+  const compact = (text: string) => text.normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+  const product = compact(name), business = [target.name, target.englishName].map(compact);
+  for (const material of materials.filter(m => ids.includes(m.sourceId))) {
+    for (const paragraph of [material.snippet, material.excerpt ?? ""].join("\n\n").split(/\n{2,}/)) {
+      const sentences = paragraph.split(/(?<=[.!?])\s+(?=[A-Z])/u);
+      for (let i = 0; i < sentences.length; i++) {
+        for (const text of [sentences[i]!, sentences.slice(i, i + 2).join(" ")]) {
+          const quote = compact(text);
+          if (text.length <= 500 && quote.includes(product) && business.some(b => quote.includes(b))) return { text: text.trim(), sourceIds: [material.sourceId] };
+        }
+      }
+    }
+  }
+  return null;
 }
 
 function claimOf(value: unknown, allowed: Set<string>, max = 600): ExplainerClaim | null {

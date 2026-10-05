@@ -199,3 +199,22 @@ test("SP-21 review removes one flawed product while retaining another verified p
     }] }, modelVersion: "fixture", fingerprint: "test", now });
   assert.deepEqual(result.businesses[0]!.offerings!.map(p => p.name), ["Oracle Database"]);
 });
+
+
+test("SP-21 recovers a model-omitted ownership quote only from cited material, before independent review", async () => {
+  const fake = search();
+  let reviewed = false;
+  const result = await runBusinessExplainer({ ticker: "ORCL", companyName: "Oracle", nodes: [nodes[0]!], search: fake,
+    model: async (stage, _system, payload) => {
+      if (stage.includes("review")) {
+        const { explanations } = payload as { explanations: Array<{offerings: Array<{membership?: {text: string}}>}> };
+        assert.match(explanations[0]!.offerings[0]!.membership!.text, /software license revenues.*Oracle Database/);
+        reviewed = true;
+        return {issues: []};
+      }
+      return { businesses: [{nodeId: "software", summary: {text: "软件业务", sourceIds: ["s1"]}, products: [], offerings: [{name: "Oracle Database", line: null, description: {text: "保存信息。", sourceIds: ["s1"]}, charging: null, sourceIds: ["s1"]}]}] };
+    }, modelVersion: "fixture", fingerprint: "test", now });
+  assert.equal(reviewed, true);
+  assert.equal(result.businesses[0]!.offerings!.length, 1);
+  assert.ok(readBusinessExplainer(result, "ORCL")!.businesses[0]!.offerings![0]!.membership);
+});
