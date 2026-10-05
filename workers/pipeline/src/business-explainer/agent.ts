@@ -82,7 +82,7 @@ export async function runBusinessExplainer(input: {
     }));
     const written = normalizeDraft(draft, targets, allowed, corpus, materials);
     if (!written.length) continue;
-    const review = await stage(`review-${index}`, () => input.model(`business-explainer-review-${index}`, `${REVIEW}\n返回 JSON {issues:[{nodeId,field,problem}]}，field 取 summary、howItWorks、products、customers、monetization、offerings 或 relation；没有问题返回 {issues:[]}。`, {
+    const review = await stage(`review-${index}`, () => input.model(`business-explainer-review-${index}`, `${REVIEW}\n返回 JSON {issues:[{nodeId,field,productId?,problem}]}，offerings 问题必须用 productId 指明当前 explanations 内该具体产品的 id；只删除有问题的产品，不牵连其他已有证据的产品。field 取 summary、howItWorks、products、customers、monetization、offerings 或 relation；没有问题返回 {issues:[]}。`, {
       company: input.companyName, explanations: written, materials,
     }));
     businesses.push(...applyReview(written, review));
@@ -216,9 +216,12 @@ function claimOf(value: unknown, allowed: Set<string>, max = 600): ExplainerClai
 /** A flagged field is removed; a flagged summary removes the whole business. */
 function applyReview(written: BusinessExplanation[], review: Record<string, unknown>): BusinessExplanation[] {
   if (!Array.isArray(review.issues)) throw new Error("Business explainer review returned no issue list.");
-  const flagged = new Set((review.issues as Array<Record<string, unknown>>).filter(i => i && typeof i.nodeId === "string" && typeof i.field === "string").map(i => `${i.nodeId}\u0000${i.field}`));
+  const issues = (review.issues as Array<Record<string, unknown>>).filter(i => i && typeof i.nodeId === "string" && typeof i.field === "string");
+  const knownProduct = (i: Record<string, unknown>) => typeof i.productId === "string" && written.some(b => b.nodeId === i.nodeId && b.offerings?.some(p => p.id === i.productId));
+  const flagged = new Set(issues.filter(i => i.field !== "offerings" || !knownProduct(i)).map(i => `${i.nodeId}\u0000${i.field}`));
+  const products = new Set(issues.filter(i => i.field === "offerings" && typeof i.productId === "string").map(i => `${i.nodeId}\u0000${i.productId}`));
   return written.flatMap(b => flagged.has(`${b.nodeId}\u0000summary`) ? [] : [{
-    ...b, offerings: flagged.has(`${b.nodeId}\u0000offerings`) ? [] : b.offerings, products: flagged.has(`${b.nodeId}\u0000products`) ? [] : b.products,
+    ...b, offerings: flagged.has(`${b.nodeId}\u0000offerings`) ? [] : b.offerings?.filter(p => !products.has(`${b.nodeId}\u0000${p.id}`)), products: flagged.has(`${b.nodeId}\u0000products`) ? [] : b.products,
     ...Object.fromEntries(FIELDS.filter(f => f !== "summary").map(f => [f, flagged.has(`${b.nodeId}\u0000${f}`) ? null : b[f]])),
   } as BusinessExplanation]);
 }

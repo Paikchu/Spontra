@@ -13,7 +13,7 @@ import type { WorkflowStepLike } from "../workflow-core.ts";
 import { nodeHint, runBusinessExplainer, type ExplainerNode } from "./agent.ts";
 
 /** Changing the prompt or output contract regenerates every company once. */
-export const BUSINESS_EXPLAINER_VERSION = "business-explainer.products.v3";
+export const BUSINESS_EXPLAINER_VERSION = "business-explainer.products.v4";
 export const businessExplainerCacheKey = (ticker: string) => `business-explainer:v1:${ticker}`;
 export type BusinessExplainerParams = { ticker: string; fingerprint: string };
 

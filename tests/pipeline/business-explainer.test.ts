@@ -187,3 +187,15 @@ test("SP-21 requires a real cited passage for the specific business, not a compa
   delete result.businesses[0]!.offerings![0]!.membership;
   assert.deepEqual(readBusinessExplainer(result, "TEST")!.businesses[0]!.offerings, [], "previous offerings without ownership evidence are withheld");
 });
+
+test("SP-21 review removes one flawed product while retaining another verified product", async () => {
+  const fake = search();
+  const result = await runBusinessExplainer({ ticker: "ORCL", companyName: "Oracle", nodes: [nodes[0]!], search: fake,
+    model: async stage => stage.includes("review") ? { issues: [{ nodeId: "software", field: "offerings", productId: "product-1", problem: "unsupported description" }] } : { businesses: [{
+      nodeId: "software", summary: { text: "软件业务", sourceIds: ["s1"] }, products: [], offerings: ["Oracle Database", "Java"].map(name => ({
+        name, line: null, description: { text: "保存信息。", sourceIds: ["s1"] }, charging: null, sourceIds: ["s1"],
+        membership: { text: "Our software license revenues come from perpetual licenses to Oracle Database and Java, recognised upfront.", sourceIds: ["s1"] },
+      })),
+    }] }, modelVersion: "fixture", fingerprint: "test", now });
+  assert.deepEqual(result.businesses[0]!.offerings!.map(p => p.name), ["Oracle Database"]);
+});
