@@ -49,61 +49,78 @@ export type TranscriptRef = { fiscalYear: number; quarter: 1 | 2 | 3 | 4; date: 
 
 export class TranscriptAccessError extends Error {}
 
-/**
- * Financial Modeling Prep earnings-call transcripts. The dates list is the cheap probe used while
- * waiting for a call to be published; the transcript itself is requested only once it is listed.
- * The API key never appears in a stored URL or an error message.
- */
-export class FmpTranscriptProvider {
+export class TranscriptQuotaError extends Error {}
+
+/** Resolve only a release headline; forward guidance in the body is not the reported quarter. */
+export function reportedTranscriptRef(materials: FoundMaterial[], date: string): TranscriptRef | null {
+  const refs: TranscriptRef[] = [];
+  const quarter = "(first|second|third|fourth|[1-4](?:st|nd|rd|th))\\s+quarter";
+  const year = "(?:fiscal\\s+(?:year\\s+)?|FY\\s*)?(20\\d{2})";
+  const patterns = [
+    new RegExp(`${quarter}\\s+(?:of\\s+)?${year}`, "i"),
+    new RegExp(`${year}\\s+${quarter}`, "i"),
+    /\bQ([1-4])\s+(?:FY\s*|fiscal\s+(?:year\s+)?)?(20\d{2})\b/i,
+    /\b(?:FY\s*)?(20\d{2})\s+Q([1-4])\b/i,
+  ];
+  for (const material of materials.filter(m => m.kind === "press_release")) {
+    const headline = "text" in material ? material.text.split("\n").map(l => l.trim()).find(l => /(?:announces|reports).*results/i.test(l) && l.length <= 300) : null;
+    for (const title of [material.title, ...(headline ? [headline] : [])]) {
+      for (const [index, pattern] of patterns.entries()) {
+        const match = pattern.exec(title);
+        if (!match) continue;
+        const fiscalYear = Number(match[index % 2 ? 1 : 2]);
+        const label = match[index % 2 ? 2 : 1].toLowerCase();
+        const q = ["first", "second", "third", "fourth"].indexOf(label) + 1 || Number(label[0]);
+        refs.push({ fiscalYear, quarter: q as TranscriptRef["quarter"], date });
+      }
+    }
+  }
+  return refs.length && refs.every(r => r.fiscalYear === refs[0].fiscalYear && r.quarter === refs[0].quarter) ? refs[0] : null;
+}
+
+/** One request per fiscal quarter. The API supplies ordered speaker turns, but no call date. */
+export class AlphaVantageTranscriptProvider {
   private readonly apiKey: string;
   private readonly fetcher: typeof fetch;
   constructor(apiKey: string, fetcher: typeof fetch = fetch) { this.apiKey = apiKey; this.fetcher = fetcher; }
 
-  private async get(path: string, params: Record<string, string>): Promise<unknown> {
-    const url = new URL(`https://financialmodelingprep.com/stable/${path}`);
-    for (const [name, value] of Object.entries(params)) url.searchParams.set(name, value);
-    url.searchParams.set("apikey", this.apiKey);
-    const response = await this.fetcher(url, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(30_000) });
-    if ([401, 402, 403].includes(response.status)) throw new TranscriptAccessError(`FMP ${path} HTTP ${response.status}`);
-    if (!response.ok) throw new Error(`FMP ${path} HTTP ${response.status}`);
-    if (Number(response.headers.get("content-length")) > 4 * 1024 * 1024) throw new Error(`FMP ${path} response too large`);
-    const body = await response.text();
-    if (body.length > 4 * 1024 * 1024) throw new Error(`FMP ${path} response too large`);
-    const data = JSON.parse(body) as unknown;
-    // FMP reports plan and quota problems as a 200 with an error message.
-    if (data && typeof data === "object" && !Array.isArray(data) && "Error Message" in data) throw new TranscriptAccessError(`FMP ${path} refused the request`);
-    return data;
-  }
-
-  static symbol(ticker: string) { return ticker.replace(/\./g, "-"); }
-
-  /** The call held around the earnings release date, if FMP lists it yet. */
-  async find(ticker: string, eventDate: string): Promise<TranscriptRef | null> {
-    const rows = await this.get("earning-call-transcript-dates", { symbol: FmpTranscriptProvider.symbol(ticker) });
-    if (!Array.isArray(rows)) return null;
-    const event = Date.parse(eventDate);
-    const candidates = rows.flatMap(row => {
-      const r = row as { quarter?: unknown; fiscalYear?: unknown; date?: unknown };
-      const quarter = Number(r.quarter), fiscalYear = Number(r.fiscalYear), date = String(r.date ?? "").slice(0, 10);
-      const gap = (Date.parse(date) - event) / 86_400_000;
-      return [1, 2, 3, 4].includes(quarter) && Number.isInteger(fiscalYear) && gap >= -1 && gap <= 3 ? [{ fiscalYear, quarter: quarter as 1 | 2 | 3 | 4, date, gap: Math.abs(gap) }] : [];
-    }).sort((a, b) => a.gap - b.gap);
-    return candidates[0] ? { fiscalYear: candidates[0].fiscalYear, quarter: candidates[0].quarter, date: candidates[0].date } : null;
-  }
-
   async fetch(ticker: string, ref: TranscriptRef): Promise<FoundMaterial | null> {
-    const symbol = FmpTranscriptProvider.symbol(ticker);
-    const rows = await this.get("earning-call-transcript", { symbol, year: String(ref.fiscalYear), quarter: String(ref.quarter) });
-    const row = Array.isArray(rows) ? rows[0] as { content?: unknown; date?: unknown } | undefined : undefined;
-    const text = typeof row?.content === "string" ? row.content.trim() : "";
-    if (text.length < 2000) return null;
-    return {
-      kind: "transcript", sourceKind: "transcript_api", text,
-      title: `${ticker} Q${ref.quarter} FY${ref.fiscalYear} earnings call transcript`,
-      // A citation, not a fetchable link: the endpoint needs a key that is never stored.
-      url: `https://financialmodelingprep.com/stable/earning-call-transcript?symbol=${encodeURIComponent(symbol)}&year=${ref.fiscalYear}&quarter=${ref.quarter}`,
-      publishedAt: String(row?.date ?? ref.date).slice(0, 10),
+    const quarter = `${ref.fiscalYear}Q${ref.quarter}`;
+    const citation = new URL("https://www.alphavantage.co/query");
+    citation.search = new URLSearchParams({ function: "EARNINGS_CALL_TRANSCRIPT", symbol: ticker, quarter }).toString();
+    const url = new URL(citation);
+    url.searchParams.set("apikey", this.apiKey);
+    let response: Response;
+    try {
+      response = await this.fetcher(url, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(30_000) });
+    } catch {
+      // Fetch errors can include the credential-bearing request URL.
+      throw new Error("Alpha Vantage transcript request failed");
+    }
+    if ([401, 402, 403].includes(response.status)) throw new TranscriptAccessError(`Alpha Vantage HTTP ${response.status}`);
+    if (response.status === 429) throw new TranscriptQuotaError("Alpha Vantage rate limit reached");
+    if (!response.ok) throw new Error(`Alpha Vantage HTTP ${response.status}`);
+    const data = await response.json() as {
+      symbol?: string; quarter?: string; Information?: string; Note?: string; "Error Message"?: string;
+      transcript?: Array<{ speaker?: string; title?: string; content?: string }>;
     };
+    const message = data.Information ?? data.Note ?? data["Error Message"];
+    if (message) {
+      if (/rate|limit|frequency|requests? per/i.test(message)) throw new TranscriptQuotaError("Alpha Vantage rate limit reached");
+      if (/api.?key|premium|subscription|entitlement/i.test(message)) throw new TranscriptAccessError("Alpha Vantage transcript access denied");
+      throw new Error("Alpha Vantage transcript response error");
+    }
+    if (data.symbol !== ticker || data.quarter !== quarter) throw new Error("Alpha Vantage transcript company or fiscal quarter mismatch");
+    if (!data.transcript?.length) return null;
+    const text = data.transcript.map(turn => {
+      if (typeof turn.content !== "string" || !turn.content.trim()) throw new Error("Alpha Vantage transcript contains an empty turn");
+      const speaker = [turn.speaker, turn.title].filter(Boolean).join(" — ");
+      return `${speaker ? `${speaker}: ` : ""}${turn.content.trim()}`;
+    }).join("\n\n");
+    if (text.length < 2000) return null;
+    return { kind: "transcript", sourceKind: "transcript_api", text,
+      title: `${ticker} Q${ref.quarter} FY${ref.fiscalYear} earnings call transcript`,
+      url: citation.toString(), publishedAt: ref.date };
   }
 }
 

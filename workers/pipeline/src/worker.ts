@@ -1,3 +1,5 @@
+import {handleTranscriptAdminRequest} from './admin/transcripts.ts';
+import {syncTranscript} from './transcripts/library.ts';
 import {handleBusinessMapAdminRequest} from './admin/business-map.ts';
 import {runDataOnlySweep} from './financial-data/queue.ts';
 import { handleCompanyAnalysisRequest, handleSecAnalysisRequest, runCompanyAnalysisSweep, runSecMemorySweep, runSecRefresh } from "./core.ts";
@@ -65,6 +67,7 @@ const worker = {
     if (path === "/ready") return readyResponse(env);
     if (path.startsWith("/admin/business-map/")) return handleBusinessMapAdminRequest(request, env);
     if (path === "/admin/financials" || path.startsWith("/admin/financials/")) return handleFinancialAdminRequest(request, env);
+    if (path === "/admin/transcripts" || path.startsWith("/admin/transcripts/")) return handleTranscriptAdminRequest(request, env);
     if (path === "/admin" || path.startsWith("/admin/")) return handleReportAdminRequest(request, env);
     /**
      * The read API claims the whole `/api/v1` prefix and rejects every method but GET/HEAD itself,
@@ -93,6 +96,7 @@ const worker = {
       return;
     }
     if (_controller.cron === "* * * * *") {
+      console.log(JSON.stringify({ event: "transcript-library", ...await syncTranscript(env) }));
       console.log(JSON.stringify({ event: "research-monitor", ...await runResearchMonitor(env) }));
       return;
     }

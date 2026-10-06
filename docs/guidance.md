@@ -7,7 +7,7 @@
 每个 8-K Item 2.02 业绩发布对应一个 `GuidanceWorkflow` 实例（`workers/pipeline/src/guidance/`）：
 
 1. **事件**：`*/10` Cron 的 `runGuidanceSweep` 只读取已缓存的 SEC filings feed（不发 SEC 请求），登记 400 天内的业绩 8-K 到 `earnings_events`，每次最多启动 2 个实例（新的优先）。实例 id 含 accession 与提取器版本，同一事件同一版本只处理一次。
-2. **材料**：读取同 accession 的 EX-99.x（`<TYPE>` 为准）；二进制附件（uuencode PDF/PPT）记为 `unsupported`，不当文本解析。FMP 转录先查日期列表（发布日 −1～+3 天），列出后再取全文。SEC 无 deck 且已知季度时，Tavily 搜一次公司自有域名的 deck，正文必须写明同一财季，否则丢弃；命中的域名记入 `guidance-ir-hosts:v1:{ticker}`，以后限定在这些域名内搜索。
+2. **材料**：读取同 accession 的 EX-99.x（`<TYPE>` 为准）；二进制附件（uuencode PDF/PPT）记为 `unsupported`，不当文本解析。Alpha Vantage 转录按公司财年财季请求：优先使用该业绩分组关联的 SEC DEI 财期，否则从财报新闻稿标题确定已报告季度；不根据发布日期猜自然季度，也不从前瞻指引取季度。未知财季时跳过转录请求。接口返回的全部发言按顺序保存，包含分析师问答；不截断。接口不提供会议日期，材料日期沿用 SEC 业绩事件日期。SEC 无 deck 且已知季度时，Tavily 搜一次公司自有域名的 deck，正文必须写明同一财季，否则丢弃；命中的域名记入 `guidance-ir-hosts:v1:{ticker}`，以后限定在这些域名内搜索。
 3. **预筛**（`locate.ts`）：只保留前瞻词 + 数字/方向词的段落；Outlook/Guidance 标题下的表格整段保留；safe harbor 等样板剔除；电话会与 deck 带前后各一段上下文。6,000 字符以内的短文档整篇发送。
 4. **提取**（`extract.ts`）：每份文档一次 DeepSeek 调用（JSON、`max_tokens` 8192），system prompt 字节固定以命中前缀缓存。
 5. **核验**（`shared/analysis-runtime/guidance.ts`）：quote 必须逐字出现在原文（忽略大小写、空白、引号与破折号差异）；每个数值必须出现在 quote 中（支持区间共用量级词、basis points）；单位须与 measure 一致；季度/年度必须有财年。失败项只发一次 repair 调用，仍失败则丢弃。
@@ -27,19 +27,22 @@
 | `ai_usage_log` | 按日/功能/模型累计调用次数与 token（含缓存命中 token） |
 | `feature_budget` | 每日硬上限（`guidance-model`、`guidance-search`） |
 
-转录全文只存私有 R2；公开 API 只返回 ≤200 字符的 quote 与来源。FMP 引用链接不含 key。
+本工作流的转录材料存私有 R2；公开 API 只返回 ≤200 字符的 quote 与来源。独立的 [Transcript 全文库](transcripts.md) 将正文写入 D1，并通过 Admin 登录后阅读。Alpha Vantage 引用链接不含 key。
 
 ## 用量控制
 
-- 来源按成本排序：SEC（免费）→ FMP（订阅、零搜索）→ Tavily 仅作 deck 兜底，每日 ≤6 次，搜索与正文均走 `web_search_cache`。
+- 来源按成本排序：SEC（免费）→ Alpha Vantage（免费额度内、零搜索）→ Tavily 仅作 deck 兜底，每日 ≤6 次，搜索与正文均走 `web_search_cache`。
 - 内容哈希去重 + 提取缓存：重跑、重试、重复发现都不会再次调用模型。
 - 预筛压缩输入；一文档一调用；确定性核验替代模型复核；repair 最多一次且只带失败条目。
 - 每日模型调用上限 `GUIDANCE_DAILY_MODEL_CALLS`（默认 40），用尽后实例休眠到次日 UTC 继续。
+- 转录请求通过 D1 共享预算 `guidance-transcript` 控制，`GUIDANCE_DAILY_TRANSCRIPT_CALLS` 默认 25。每次请求（含失败）占一次额度；额度用尽或供应商限流时，先发布 SEC 材料，重查延迟至次日 UTC，仍最多重查四次。该预算只覆盖本 Pipeline，其他程序共用密钥的请求也会消耗供应商额度。
 - 只处理 `SEC_AI_TICKERS`。
 
 ## 启用
 
-1. 在 Cloudflare 为 Pipeline Worker（`spontra-analysis`）设置 Secret `FMP_API_KEY`（可选；未设置时只处理 SEC 材料，覆盖信息标记转录不可用）。
+1. 在 Cloudflare 为 Pipeline Worker（`spontra-analysis`）设置 Secret `ALPHA_VANTAGE_API_KEY`（可选；未设置时只处理 SEC 材料，覆盖信息标记转录不可用）。
+本地开发将 `ALPHA_VANTAGE_API_KEY` 放入 `workers/pipeline/.dev.vars`（Git 忽略），不要写入 wrangler vars 或提交到仓库。
+
 2. 推送 main 由 CI 应用迁移 0015 并发布。
 3. 用 ORCL/ADSK/NET 近几个季度人工核对提取结果后，将 `GUIDANCE_ENABLED` 改为 `"true"`。默认 `"false"`，不产生任何调用。
 4. `GUIDANCE_DECK_SEARCH="false"` 可关闭 deck 搜索兜底。
@@ -64,4 +67,6 @@ npm run typecheck:pipeline && npm run check:pipeline:boundary && npm run worker:
 npm run business-site:test
 ```
 
-测试使用真实 SQLite 迁移、内存 R2、伪造的 SEC/FMP/Tavily 响应与模型，不消耗配额。
+测试使用真实 SQLite 迁移、内存 R2、伪造的 SEC/Alpha Vantage/Tavily 响应与模型，不消耗配额。
+
+接口参考：[Alpha Vantage Earnings Call Transcript](https://www.alphavantage.co/documentation/#earnings-call-transcript)。

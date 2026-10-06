@@ -9,7 +9,8 @@ function cookie(value: string, request: Request, clear = false): string {
   return `${COOKIE}=${value}; Path=/api/admin; HttpOnly; SameSite=Strict; Max-Age=${clear ? 0 : 8 * 3600}${new URL(request.url).protocol === "https:" ? "; Secure" : ""}`;
 }
 export async function handleReportAdminProxy(request: Request, path: string[], env: ProxyEnv): Promise<Response> {
-  if (!path.length || !/^(session|reports|financials|business-map)$/.test(path[0]!) || path.length > (path[0] === "financials" ? 6 : 4)) return json({ error: "Not found" }, 404);
+  if (!path.length || !/^(session|reports|financials|business-map|transcripts)$/.test(path[0]!) || path.length > (path[0] === "financials" ? 6 : 4)) return json({ error: "Not found" }, 404);
+  if (path[0] === "transcripts" && !(request.method === "GET" && path.length <= 2)) return json({ error: "Not found" }, 404);
   if (path[0] === "business-map") {
     const route = path.slice(1).join("/");
     if (!(request.method === "GET" && route === "companies") && !(request.method === "POST" && /^companies\/[A-Z][A-Z0-9.-]{0,9}$/.test(route))) return json({ error: "Not found" }, 404);

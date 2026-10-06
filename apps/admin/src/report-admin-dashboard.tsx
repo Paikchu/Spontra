@@ -1,5 +1,6 @@
 "use client";
 
+import { Transcripts } from "./transcripts";
 import { BusinessMapCompanies } from './business-map-companies';
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
@@ -29,7 +30,7 @@ export function ReportAdminDashboard({ mainAppOrigin = "" }: { mainAppOrigin?: s
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("");
-  const [section, setSection] = useState(() => typeof window === "undefined" ? "reports" : window.location.pathname === "/admin/business-map" ? "business-map" : window.location.pathname === "/admin/financials" ? "financials" : "reports");
+  const [section, setSection] = useState(() => typeof window === "undefined" ? "reports" : window.location.pathname === "/admin/transcripts" ? "transcripts" : window.location.pathname === "/admin/business-map" ? "business-map" : window.location.pathname === "/admin/financials" ? "financials" : "reports");
   const [reports, setReports] = useState<ReportAdminItem[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -60,7 +61,7 @@ export function ReportAdminDashboard({ mainAppOrigin = "" }: { mainAppOrigin?: s
 
   useEffect(() => { const timer = setTimeout(() => setQuery(search.trim()), 250); return () => clearTimeout(timer); }, [search]);
   useEffect(() => {
-    if (authenticated === false || ["financials", "business-map"].includes(section)) return;
+    if (authenticated === false || ["financials", "business-map", "transcripts"].includes(section)) return;
     const sequence = ++listRequest.current;
     const controller = new AbortController();
     const filter = JSON.stringify([query, status]);
@@ -84,7 +85,7 @@ export function ReportAdminDashboard({ mainAppOrigin = "" }: { mainAppOrigin?: s
   }, [authenticated, query, status, refresh, section]);
 
   useEffect(() => {
-    if (!authenticated || !selected || ["financials", "business-map"].includes(section)) return;
+    if (!authenticated || !selected || ["financials", "business-map", "transcripts"].includes(section)) return;
     const controller = new AbortController();
     const requestIdentity = `${selected}?${version}`;
     const changed = requestIdentity !== detailRequestIdentity.current;
@@ -102,7 +103,7 @@ export function ReportAdminDashboard({ mainAppOrigin = "" }: { mainAppOrigin?: s
     return () => controller.abort();
   }, [authenticated, selected, version, refresh, section]);
   useEffect(() => {
-    if (!authenticated || ["financials", "business-map"].includes(section)) return;
+    if (!authenticated || ["financials", "business-map", "transcripts"].includes(section)) return;
     const interval = setInterval(() => { if (!document.hidden && !mutation && !confirming) setRefresh(value => value + 1); }, 15_000);
     return () => clearInterval(interval);
   }, [authenticated, mutation, confirming, section]);
@@ -151,12 +152,12 @@ export function ReportAdminDashboard({ mainAppOrigin = "" }: { mainAppOrigin?: s
   function navigate(section: string) {
     setSection(section); setStatus(section === "tasks" ? "processing" : ""); setTab(section === "history" ? "history" : "content"); setVersion("");
     setError(""); setNotice("");
-    window.history.replaceState(null, "", section === "business-map" ? "/admin/business-map" : section === "financials" ? "/admin/financials" : "/admin/reports");
+    window.history.replaceState(null, "", section === "transcripts" ? "/admin/transcripts" : section === "business-map" ? "/admin/business-map" : section === "financials" ? "/admin/financials" : "/admin/reports");
   }
   const selectedItem = reports.find(item => identity(item) === selected);
   const hasActiveJob = Boolean(selectedItem?.status === "processing" || optimisticJob?.selected === selected);
   const currentVersion = detail?.filing.reportVersion ?? detail?.filing.summary?.generatedAt;
-  const title = section === "business-map" ? "业务地图" : section === "financials" ? "财报数据" : section === "tasks" ? "生成任务" : section === "history" ? "生成记录" : "报告管理";
+  const title = section === "transcripts" ? "Transcript" : section === "business-map" ? "业务地图" : section === "financials" ? "财报数据" : section === "tasks" ? "生成任务" : section === "history" ? "生成记录" : "报告管理";
   const preview = typeof window !== "undefined" && ["localhost", "127.0.0.1"].includes(window.location.hostname);
 
   return <div className="report-admin">
@@ -165,6 +166,7 @@ export function ReportAdminDashboard({ mainAppOrigin = "" }: { mainAppOrigin?: s
       <nav aria-label="财报后台导航">
         <button aria-current={section === "reports" ? "page" : undefined} onClick={() => navigate("reports")}><FileText size={19} />报告管理</button>
         <button aria-current={section === "business-map" ? "page" : undefined} onClick={() => navigate("business-map")}><Database size={19} />业务地图</button>
+        <button aria-current={section === "transcripts" ? "page" : undefined} onClick={() => navigate("transcripts")}><FileText size={19} />Transcript</button>
         <button aria-current={section === "financials" ? "page" : undefined} onClick={() => navigate("financials")}><Database size={19} />财报数据</button>
         <button aria-current={section === "tasks" ? "page" : undefined} onClick={() => navigate("tasks")}><Clock3 size={19} />生成任务</button>
         <button aria-current={section === "history" ? "page" : undefined} onClick={() => navigate("history")}><History size={19} />生成记录</button>
@@ -172,11 +174,11 @@ export function ReportAdminDashboard({ mainAppOrigin = "" }: { mainAppOrigin?: s
       <div className="ra-sidebar-bottom"><Link href={`${mainAppOrigin}/`}><ArrowLeft size={17} />返回 Spontra</Link><div><ShieldCheck size={23} /><span>管理员</span>{authenticated && <button onClick={() => void logout()} aria-label="退出登录" title="退出登录"><LogOut size={17} /></button>}</div></div>
     </aside>
     <main className="ra-main">
-      <header className={`ra-page-header${section === "business-map" ? " ra-business-map-header" : ""}${section === "financials" && authenticated !== false ? " ra-financial-header" : ""}`}><div><p>工作台 <ChevronRight size={13} /> {title}</p><h1>{title}</h1><span>{section === "business-map" ? "管理公司白名单，跟踪数据准备与采集问题" : section === "financials" ? "清晰阅读报表，比较不同期间的数据" : section === "tasks" ? "查看生成进度，跟踪报告发布" : "检查分析内容，管理报告生成"}</span></div><div className="ra-header-actions"><div className="ra-live"><span />{preview ? "本地预览" : "管理工作台"}</div>{authenticated && <button className="ra-mobile-logout" onClick={() => void logout()} aria-label="退出登录"><LogOut size={17} /></button>}</div></header>
+      <header className={`ra-page-header${section === "business-map" ? " ra-business-map-header" : ""}${section === "financials" && authenticated !== false ? " ra-financial-header" : ""}`}><div><p>工作台 <ChevronRight size={13} /> {title}</p><h1>{title}</h1><span>{section === "transcripts" ? "按公司和财季阅读电话会全文，查看后台获取状态" : section === "business-map" ? "管理公司白名单，跟踪数据准备与采集问题" : section === "financials" ? "清晰阅读报表，比较不同期间的数据" : section === "tasks" ? "查看生成进度，跟踪报告发布" : "检查分析内容，管理报告生成"}</span></div><div className="ra-header-actions"><div className="ra-live"><span />{preview ? "本地预览" : "管理工作台"}</div>{authenticated && <button className="ra-mobile-logout" onClick={() => void logout()} aria-label="退出登录"><LogOut size={17} /></button>}</div></header>
       {authenticated === false ? <div className="ra-login"><ShieldCheck size={34} /><h2>登录财报管理后台</h2><p>使用专用管理密码登录。</p><form onSubmit={event => void login(event)}><label htmlFor="admin-key">管理密码</label><input id="admin-key" type="password" autoComplete="current-password" value={key} onChange={event => setKey(event.target.value)} required placeholder="输入管理密码" /><button className="ra-primary" disabled={loginBusy || !key}>{loginBusy && <LoaderCircle className="ra-spin" size={16} />}{loginBusy ? "正在登录" : "登录后台"}</button></form>{error && <p role="alert" className="ra-error">{error}</p>}<small>登录有效期 8 小时，密码不会保存在浏览器本地存储。</small></div> : <>
         {notice && <div className="ra-notice" role="status"><Check size={16} />{notice}<button aria-label="关闭通知" onClick={() => setNotice("")}><X size={16} /></button></div>}
         {error && <div className="ra-error ra-error-banner" role="alert">{error}<button onClick={() => setRefresh(value => value + 1)}>重试</button></div>}
-        {section === "business-map" ? <BusinessMapCompanies onUnauthorized={() => setAuthenticated(false)} onAuthenticated={() => setAuthenticated(true)} /> : section === "financials" ? <FinancialMaintenance onUnauthorized={() => setAuthenticated(false)} onAuthenticated={() => setAuthenticated(true)} onLogout={() => void logout()} /> : <div className="ra-workspace">
+        {section === "transcripts" ? <Transcripts onUnauthorized={() => setAuthenticated(false)} onAuthenticated={() => setAuthenticated(true)} /> : section === "business-map" ? <BusinessMapCompanies onUnauthorized={() => setAuthenticated(false)} onAuthenticated={() => setAuthenticated(true)} /> : section === "financials" ? <FinancialMaintenance onUnauthorized={() => setAuthenticated(false)} onAuthenticated={() => setAuthenticated(true)} onLogout={() => void logout()} /> : <div className="ra-workspace">
           <section className="ra-list" aria-label="财报报告列表">
             <div className="ra-filters"><label className="ra-search"><Search size={17} /><input aria-label="搜索公司或报告" placeholder="搜索公司或报告" value={search} onChange={event => setSearch(event.target.value)} /></label><select aria-label="报告状态" value={status} onChange={event => { setStatus(event.target.value); setSection("reports"); }}><option value="">全部状态</option>{Object.entries(labels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></div>
             <div className="ra-list-caption"><span>{loading ? "正在同步报告…" : `已加载 ${reports.length} 份报告`}</span><button onClick={() => setRefresh(value => value + 1)} aria-label="刷新报告列表" disabled={loading}><RefreshCw size={14} className={loading ? "ra-spin" : ""} /></button></div>

@@ -3,7 +3,7 @@ import test from "node:test";
 
 import type { GuidanceResponse } from "../../shared/analysis-contract/guidance.ts";
 import { GUIDANCE_SYSTEM_PROMPT } from "../../workers/pipeline/src/guidance/extract.ts";
-import type { FoundMaterial, TranscriptRef } from "../../workers/pipeline/src/guidance/sources.ts";
+import type { FoundMaterial } from "../../workers/pipeline/src/guidance/sources.ts";
 import { GuidanceStore } from "../../workers/pipeline/src/guidance/store.ts";
 import { earningsEvents, executeGuidanceWorkflow, guidanceCacheKey, runGuidanceSweep, type GuidanceDeps, type GuidanceStep } from "../../workers/pipeline/src/guidance/workflow.ts";
 import type { SecPipelineEnv } from "../../workers/pipeline/src/operations.ts";
@@ -88,14 +88,11 @@ function harness(options: { transcriptAfter?: number } = {}) {
   const step: GuidanceStep = { do: (_name, callback) => callback({ attempt: 1 }), async sleep(name, ms) { sleeps.push({ name, ms }); } };
   let probes = 0;
   const transcripts = {
-    async find(_ticker: string, eventDate: string): Promise<TranscriptRef | null> {
+    async fetch(_ticker: string, ref: { date: string }): Promise<FoundMaterial | null> {
       probes++;
-      if (eventDate !== "2026-09-09" && probes <= (options.transcriptAfter ?? Infinity)) return null;
-      return { fiscalYear: 2027, quarter: 1, date: eventDate };
-    },
-    async fetch(): Promise<FoundMaterial> {
+      if (ref.date !== "2026-09-09" && probes <= (options.transcriptAfter ?? Infinity)) return null;
       return { kind: "transcript", sourceKind: "transcript_api", title: "ORCL Q1 FY2027 call", text: septemberCall, publishedAt: "2026-09-09",
-        url: "https://financialmodelingprep.com/stable/earning-call-transcript?symbol=ORCL&year=2027&quarter=1" };
+        url: "https://www.alphavantage.co/query?function=EARNINGS_CALL_TRANSCRIPT&symbol=ORCL&quarter=2027Q1" };
     },
   };
   const exhibits: string[] = [];
@@ -204,7 +201,7 @@ test("a fresh event publishes the release first and waits a bounded number of ti
 
     const never = harness({ transcriptAfter: Infinity });
     const again = await executeGuidanceWorkflow({ ticker: "ORCL", accession: "0001341439-26-000040", eventDate: today }, never.step, env,
-      { model: fake.model, transcripts: { ...never.transcripts, async find() { return null; } }, secExhibits: never.secExhibits, deckSearch: null });
+      { model: fake.model, transcripts: { ...never.transcripts, async fetch() { return null; } }, secExhibits: never.secExhibits, deckSearch: null });
     assert.equal(again.transcript, "unavailable");
     assert.equal(never.sleeps.length, 4, "four re-checks, then it stops");
   } finally { db.close(); }
@@ -222,5 +219,31 @@ test("the daily model budget is a hard cap and usage accumulates per day", async
     await store.recordUsage("2026-10-04", "guidance", "deepseek-flash", { prompt_tokens: 500, prompt_cache_hit_tokens: 0, completion_tokens: 10 });
     assert.deepEqual({ ...await db.prepare(`SELECT calls,input_tokens,cached_tokens,output_tokens FROM ai_usage_log`).bind().first() },
       { calls: 2, input_tokens: 1500, cached_tokens: 800, output_tokens: 60 });
+  } finally { db.close(); }
+});
+
+test("Alpha Vantage is the default source and the daily budget is shared across earnings events", async () => {
+  const { db, env } = await setup();
+  try {
+    env.ALPHA_VANTAGE_API_KEY = "test-alpha-secret";
+    env.GUIDANCE_DAILY_TRANSCRIPT_CALLS = "1";
+    const h = harness();
+    const requests: URL[] = [];
+    const fetcher = (async (input: URL | string) => {
+      requests.push(new URL(String(input)));
+      return Response.json({ symbol: "ORCL", quarter: "2027Q1", transcript: [{ speaker: "CEO", title: "", content: septemberCall }] });
+    }) as typeof fetch;
+    const deps: GuidanceDeps = { fetcher, model: fakeModel().model, secExhibits: h.secExhibits, deckSearch: null };
+    const first = await executeGuidanceWorkflow({ ticker: "ORCL", accession: "0001341439-26-000020", eventDate: "2026-09-09" }, h.step, env, deps);
+    assert.equal(first.transcript, "extracted");
+    assert.equal(requests[0].hostname, "www.alphavantage.co");
+    assert.equal(requests[0].searchParams.get("quarter"), "2027Q1");
+    const second = await executeGuidanceWorkflow({ ticker: "ORCL", accession: "0001341439-26-000010", eventDate: "2026-06-11" }, h.step, env, deps);
+    assert.equal(second.transcript, "unavailable", "the test clock does not advance when sleeping");
+    assert.equal(requests.length, 1, "a second event cannot exceed the shared daily cap");
+    assert.equal(h.sleeps.length, 4);
+    assert.ok(h.sleeps.every(s => s.ms > 0 && s.ms <= 86_400_000 + 600_000));
+    const publication = await new D1SecRepository(db).getCache(guidanceCacheKey("ORCL"));
+    assert.ok(!JSON.stringify(publication).includes(env.ALPHA_VANTAGE_API_KEY));
   } finally { db.close(); }
 });
