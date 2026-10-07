@@ -8,6 +8,8 @@
 
 公网及 Service Binding 请求都要求 `Authorization: Bearer <PORTFOLIO_READ_TOKEN>`。令牌保存在服务端 Secret，不能用于手动同步；浏览器和桌面 UI 继续访问主应用现有接口，不携带此令牌。不开放跨域读取。
 
+「投资记录」Sites 使用独立的 `PORTFOLIO_SITE_READ_TOKEN`，只允许读取同一接口。该值配置在主应用 Git Build Secret，由 CI 仅注入同步 Worker；Sites 后端将同一值存为 `PORTFOLIO_READ_TOKEN`，通过公网 HTTPS 调用。站点不持有手动同步密钥，不读取或复制组合数据库。两个读取凭据可以分别轮换，互不影响。
+
 响应结构由 `shared/portfolio-contract.ts` 的 `PortfolioApiResponseV1` 定义：
 
 ```json

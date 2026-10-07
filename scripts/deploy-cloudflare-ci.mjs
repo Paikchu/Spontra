@@ -7,7 +7,9 @@ import { migrateLegacyPortfolio, migrationDatabase, readMigration, markPortfolio
 if (!process.env.CI) throw new Error('Deployment is restricted to the Git main CI build.');
 const credential = process.env.DESKTOP_ACCESS_TOKEN;
 const portfolioToken = process.env.PORTFOLIO_READ_TOKEN;
+const portfolioSiteToken = process.env.PORTFOLIO_SITE_READ_TOKEN;
 if (!portfolioToken || !/^[!-~]{32,512}$/.test(portfolioToken)) throw new Error('Set PORTFOLIO_READ_TOKEN in the main Git build secrets before releasing.');
+if (portfolioSiteToken && !/^[!-~]{32,512}$/.test(portfolioSiteToken)) throw new Error('Invalid portfolio Site read credential configuration.');
 if (!process.env.CLOUDFLARE_API_TOKEN) throw new Error('Cloudflare CI API credential is required for portfolio migration.');
 const appConfig = JSON.parse(readFileSync('wrangler.jsonc', 'utf8'));
 const syncConfig = JSON.parse(readFileSync('workers/sec-cron/wrangler.jsonc', 'utf8'));
@@ -49,7 +51,7 @@ try {
   writeFileSync(path, JSON.stringify({ PORTFOLIO_READ_TOKEN: portfolioToken, ...(credential ? { DESKTOP_ACCESS_TOKEN: credential } : {}) }), { mode: 0o600 });
   args.push('--secrets-file', path);
   const syncSecrets = join(directory, 'sync-secrets.json');
-  writeFileSync(syncSecrets, JSON.stringify({ PORTFOLIO_READ_TOKEN: portfolioToken }), { mode: 0o600 });
+  writeFileSync(syncSecrets, JSON.stringify({ PORTFOLIO_READ_TOKEN: portfolioToken, ...(portfolioSiteToken ? { PORTFOLIO_SITE_READ_TOKEN: portfolioSiteToken } : {}) }), { mode: 0o600 });
   // Publish the new destination before the main app starts redirecting to it.
   const adminEnv = { ...process.env };
   delete adminEnv.WRANGLER_CI_OVERRIDE_NAME;

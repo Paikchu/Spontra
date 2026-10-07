@@ -12,6 +12,8 @@ Cloudflare 名称：`spontra-max-data-sync`。源码目录 `sec-cron` 保留历�
 
 运行时绑定 `DB → spontra-max-data-sync-db`，不再绑定或调用主应用。Secrets：`IBKR_FLEX_TOKEN`、`PORTFOLIO_SYNC_KEY`、`PORTFOLIO_READ_TOKEN`；读取令牌与手动同步密钥独立。模板见 [`.dev.vars.example`](.dev.vars.example)。
 
+可选 `PORTFOLIO_SITE_READ_TOKEN` 为「投资记录」Sites 提供独立只读凭据，通过主应用 Git Build Secret 配置并由 CI 注入本服务。它与主应用的读取令牌均不能触发同步。
+
 `POST /internal/portfolio/sync` 保留受保护的手动同步。`/health` 返回配置是否齐备，不暴露凭据。旧 SEC 请求返回 410。
 
 读取 API 始终与 IBKR 同步分离：已有快照时，上游失败仍返回 200 和 `syncStatus: delayed`；首次无数据返回 `uninitialized`，不加载示例持仓。

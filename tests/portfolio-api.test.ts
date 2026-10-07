@@ -23,7 +23,7 @@ function request(token = "read-only-key", method = "GET") {
 test("read API authenticates separately, handles initialization, and never includes private storage fields", async () => {
   const { database, sqlite } = createPortfolioDatabase();
   try {
-    const config = env(database);
+    const config = { ...env(database), PORTFOLIO_SITE_READ_TOKEN: "site-read-key" };
     assert.equal((await handlePortfolioRead(request("wrong"), config)).status, 401);
     assert.equal((await handlePortfolioRead(request("sync-only-key"), config)).status, 401);
     assert.equal((await handlePortfolioRead(request("read-only-key", "POST"), config)).status, 405);
@@ -33,6 +33,11 @@ test("read API authenticates separately, handles initialization, and never inclu
     assert.equal((await handleIbkrSyncRequest(new Request("https://portfolio.test/internal/portfolio/sync", {
       method: "POST", headers: { "x-portfolio-sync-key": "read-only-key" },
     }), { ...config, PORTFOLIO_SYNC_KEY: config.PORTFOLIO_READ_TOKEN })).status, 401);
+    assert.equal((await handlePortfolioRead(request("site-read-key"), config)).status, 200);
+    assert.equal((await handlePortfolioRead(request("site-read-key", "POST"), config)).status, 405);
+    assert.equal((await handleIbkrSyncRequest(new Request("https://portfolio.test/internal/portfolio/sync", {
+      method: "POST", headers: { "x-portfolio-sync-key": "site-read-key" },
+    }), { ...config, PORTFOLIO_SYNC_KEY: config.PORTFOLIO_SITE_READ_TOKEN })).status, 401);
     const empty = await handlePortfolioRead(request(), config);
     assert.equal(empty.status, 200);
     assert.equal((await empty.json() as { syncStatus: string }).syncStatus, "uninitialized");

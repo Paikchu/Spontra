@@ -2,13 +2,14 @@ import { extractCapitalFlows, fetchFlexStatement, normalizeFlexStatement } from 
 import { selectTradeQueryPeriod } from "../../lib/portfolio-snapshot.ts";
 
 import { publishFlexSnapshot, readPortfolioSnapshot, recordSyncFailure, type PortfolioDatabase } from "./portfolio-store.ts";
-import { matchesSecret } from "./auth.ts";
+import { matchesSecret, matchesPortfolioReadToken } from "./auth.ts";
 
 export type IbkrSyncEnv = Pick<PortfolioSyncBindings, "IBKR_FLEX_QUERY_ID"> & {
   DB: PortfolioDatabase;
   IBKR_FLEX_TOKEN: string;
   PORTFOLIO_SYNC_KEY: string;
   PORTFOLIO_READ_TOKEN: string;
+  PORTFOLIO_SITE_READ_TOKEN?: string;
 };
 
 export async function runIbkrFlexSync(env: IbkrSyncEnv, fetcher: typeof fetch = fetch, clock: () => Date = () => new Date()) {
@@ -41,7 +42,7 @@ export async function handleIbkrSyncRequest(
     return Response.json({ error: "Method not allowed" }, { status: 405, headers: { ...headers, allow: "POST" } });
   }
   const suppliedKey = request.headers.get("x-portfolio-sync-key");
-  if (!matchesSecret(suppliedKey, env.PORTFOLIO_SYNC_KEY) || matchesSecret(suppliedKey, env.PORTFOLIO_READ_TOKEN)) {
+  if (!matchesSecret(suppliedKey, env.PORTFOLIO_SYNC_KEY) || matchesPortfolioReadToken(suppliedKey, env)) {
     return Response.json({ error: "Unauthorized" }, { status: 401, headers });
   }
   try {
