@@ -137,7 +137,7 @@ test("stock tabs, plan writes, pinned reports, copy and external sources", async
   await page.getByText("报告链接与版本", { exact: true }).click();
   await page.getByRole("button", { name: "复制链接" }).click();
   await expect(page.getByText("已复制", { exact: true })).toBeVisible();
-  expect(native.copies[0]).toContain("https://spontra.max-zhangyuchen.workers.dev/analysis/stocks/DEMO/sec/");
+  expect(native.copies[0]).toContain("https://spontra-app.max-zhangyuchen.workers.dev/analysis/stocks/DEMO/sec/");
   expect(native.copies[0]).toContain("reportVersion=sec-analysis.v3%3Ademo");
   await page.getByRole("link", { name: "本报告固定链接" }).click();
   expect(native.opened[0]).toBe(native.copies[0]);

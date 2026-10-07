@@ -40,7 +40,7 @@ Spontra 的两个核心产品目标是：理解用户的交易逻辑，主动发
 ## 项目入口
 
 - GitHub：[Paikchu/Spontra](https://github.com/Paikchu/Spontra)，主分支 `main`。
-- 生产网站：[Spontra](https://spontra.max-zhangyuchen.workers.dev/)。
+- 生产网站：[Spontra](https://spontra-app.max-zhangyuchen.workers.dev/)。
 - 当前本地目录：`/Users/max/Developer/Spontra`。
 - 唯一 Git remote：`origin` 指向 `https://github.com/Paikchu/Spontra.git`，发布统一使用 `git push origin main`。
 

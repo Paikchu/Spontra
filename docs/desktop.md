@@ -23,7 +23,7 @@ Installers are under `apps/desktop/src-tauri/target/release/bundle`. GitHub Acti
 
 ## Desktop connection
 
-The release app has one fixed API origin: `https://spontra.max-zhangyuchen.workers.dev`. It only permits an explicit set of relative API routes and GET/PUT methods. Redirects are refused. Timeout is 25 seconds, request bodies are limited to 64 KiB and responses to 16 MiB. Aborted frontend reads are canceled through native IPC.
+The release app has one fixed API origin: `https://spontra-app.max-zhangyuchen.workers.dev`. It only permits an explicit set of relative API routes and GET/PUT methods. Redirects are refused. Timeout is 25 seconds, request bodies are limited to 64 KiB and responses to 16 MiB. Aborted frontend reads are canceled through native IPC.
 
 Configure an independently generated 32–512 character ASCII `DESKTOP_ACCESS_TOKEN` as an **encrypted build variable on the main application's Cloudflare build trigger**. It is not a Pipeline or IBKR credential. The Git-only CI deployment entry point writes a temporary mode-0600 secret file and passes it to the existing Wrangler deployment, then removes it. Existing migration and sec-cron deployment steps are preserved. No local deployment commands are part of this workflow. Missing credentials keep the desktop API disabled (503); invalid credentials return 401.
 

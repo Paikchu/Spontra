@@ -9,7 +9,7 @@ use std::{
 use tauri::State;
 use tokio_util::sync::CancellationToken;
 
-pub const ORIGIN: &str = "https://spontra.max-zhangyuchen.workers.dev";
+pub const ORIGIN: &str = "https://spontra-app.max-zhangyuchen.workers.dev";
 #[cfg(not(debug_assertions))]
 const SERVICE: &str = "com.paikchu.spontra.desktop";
 #[cfg(debug_assertions)]
