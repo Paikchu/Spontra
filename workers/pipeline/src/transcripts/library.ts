@@ -66,6 +66,9 @@ export async function syncTranscript(env: SecPipelineEnv, now = new Date(), fetc
       .bind(material.title,material.url,material.text,material.text.length,stamp,stamp,row.id,lease).run();
     return {status:'ready',ticker:row.ticker,period:row.periodEnd,characters:material.text.length};
   } catch(error) {
+    const message = (error instanceof Error ? error.message : 'Unknown failure')
+      .replaceAll(env.ALPHA_VANTAGE_API_KEY, '[redacted]').replace(/https?:\/\/\S+/g, '[url]').slice(0,200);
+    console.error(JSON.stringify({event:'transcript-library-error',ticker:row.ticker,period:row.periodEnd,message}));
     if(error instanceof TranscriptQuotaError) {
       // Stop the whole library for today, including when another client used this API key.
       await env.DB.prepare("INSERT INTO feature_budget(day,feature,units) VALUES(?,'guidance-transcript',?) ON CONFLICT(day,feature) DO UPDATE SET units=MAX(units,excluded.units)").bind(stamp.slice(0,10),cap).run();
