@@ -92,7 +92,8 @@ export class AlphaVantageTranscriptProvider {
     url.searchParams.set("apikey", this.apiKey);
     let response: Response;
     try {
-      response = await this.fetcher(url, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(30_000) });
+      const fetcher = this.fetcher; // Workers' global fetch requires an unbound call.
+      response = await fetcher(url, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(30_000) });
     } catch {
       // Fetch errors can include the credential-bearing request URL.
       throw new Error("Alpha Vantage transcript request failed");
