@@ -1,6 +1,6 @@
 import {parseMarkup, normalizedText, nodeText, descendants, type Element, type FilingDisclosures, type DisclosureLocator} from './disclosure-extraction.ts';
 
-export const STATEMENTS_VERSION='sec-financial-statements.v1';
+export const STATEMENTS_VERSION='sec-financial-statements.v2';
 export interface StatementCell {
  column:number; rowSpan:number; colSpan:number; header:boolean; text:string; locator:DisclosureLocator;
  facts:{id:string;concept:string;value:string|null;status:string;period:FilingDisclosures['contexts'][number]['period']|null;unit:string|null;scale:string|null;dimensions:{axis:string;value:string}[]}[];
@@ -22,7 +22,13 @@ export function extractFinancialStatements(html:string,inventory:FilingDisclosur
  const {nodes}=parseMarkup(html),anchors=new Map<string,Element>();
  for(const n of nodes){const id=n.attributes.id??n.attributes.name;if(id&&!anchors.has(id))anchors.set(id,n);}
  const links=nodes.filter(n=>n.local==='a'&&n.attributes.href?.startsWith('#')).map(n=>({node:n,title:normalizedText(n),target:anchors.get(n.attributes.href.slice(1))})).filter(x=>x.target&&x.target.start>x.node.end);
- const root=links.find(x=>/^(?:item\s*\d+[.\s]*)?(?:consolidated\s+)?financial statements\b/i.test(x.title)&&!/^notes\b/i.test(x.title));
+ const chapter=links.find(x=>/^(?:item\s*\d+[.\s]*)?(?:(?:unaudited|condensed|consolidated)\s+)*financial statements\b/i.test(x.title)&&!/^notes\b/i.test(x.title));
+ // Foreign issuers may file a standalone statement exhibit with a table of contents
+ // for the individual statements, rather than a parent Financial Statements item.
+ const statementLinks=links.filter(x=>/^(?:(?:unaudited|condensed|consolidated)\s+)*(?:balance sheets?|statements? of (?:financial position|operations|income|loss|cash flows))\b/i.test(x.title));
+ const statementSet=['balance sheets?|financial position','operations|income|loss','cash flows'].every(pattern=>statementLinks.some(x=>new RegExp(pattern,'i').test(x.title)));
+ const firstStatement=statementSet?statementLinks.reduce((a,b)=>a.target!.start<b.target!.start?a:b):undefined;
+ const root=chapter??(/^(?:20-F|6-K)(?:\/A)?$/.test(inventory.source.form)&&firstStatement?{...firstStatement,title:'Financial Statements'}:undefined);
  const empty:FinancialStatements={version:STATEMENTS_VERSION,status:'not_located',title:'Financial Statements',locator:null,source:inventory.source,text:'',tables:[],headings:[],coverage:{tables:0,rows:0,cells:0,facts:0,linkedFacts:0,textCharacters:0,issues:['FINANCIAL_STATEMENTS_SECTION_NOT_LOCATED']}};
  if(!root?.target)return empty;
  let sectionRoot=root.target;
@@ -42,7 +48,7 @@ export function extractFinancialStatements(html:string,inventory:FilingDisclosur
   if(target){sectionRoot=target;start=target.start;ends=boundary(start,referenced);end=ends.length?Math.min(...ends):html.length;}
   else issues.push('REFERENCED_FINANCIAL_STATEMENTS_NOT_LOCATED');
  }
- if(!ends.length)issues.push('NEXT_SEC_ITEM_NOT_LOCATED_SECTION_EXTENDS_TO_DOCUMENT_END');
+ if(!ends.length&&chapter)issues.push('NEXT_SEC_ITEM_NOT_LOCATED_SECTION_EXTENDS_TO_DOCUMENT_END');
  const inside=nodes.filter(n=>n.start>=start&&n.end<=end);
  const headings=links.filter(x=>x.target!.start>=start&&x.target!.start<end).map(x=>({title:x.title,locator:loc(x.target!)}));
  for(const n of inside){if(!['p','div','h1','h2','h3','h4'].includes(n.local)||ancestor(n,'table'))continue;const title=normalizedText(n);if(title.length<220&&/^(?:note\s+)?\d{1,2}[.\s]+[A-Z]/.test(title)&&/font-weight\s*:\s*(?:bold|[6-9]00)|<b[ >]|<strong[ >]/i.test(html.slice(n.start,n.end)))headings.push({title,locator:loc(n)});}

@@ -25,3 +25,10 @@ test('all nested tables are retained without assigning inner rows to outer table
  const s=extract('<a href="#item_1">Financial Statements</a><a href="#item_2">Discussion</a><h2 id="item_1">Statements</h2><table><tr><td>Outer<table><tr><td>Inner &amp; value</td></tr></table></td></tr></table><script>secret()</script><img src="chart.png"><h2 id="item_2">Discussion</h2>');
  assert.equal(s.tables.length,2);assert.equal(s.tables[0].rows.length,1);assert.equal(s.tables[1].rows[0].cells[0].text,'Inner & value');assert.doesNotMatch(s.text,/secret/);assert.ok(s.coverage.issues.includes('IMAGE_CONTENT_REQUIRES_REVIEW:1'));
 });
+test('foreign issuer standalone statement exhibit retains the linked statements and notes without a parent chapter',()=>{
+ const html='<a href="#balance">Unaudited Condensed Consolidated Balance Sheets</a><a href="#income">Unaudited Condensed Consolidated Statements of Operations</a><a href="#cash">Unaudited Condensed Consolidated Statements of Cash Flows</a><a href="#notes">Notes to the Financial Statements</a><h2 id="balance">Balance Sheets</h2><table><tr><td>Assets</td><td>100</td></tr></table><h2 id="income">Statements of Operations</h2><table><tr><td>Revenue</td><td>20</td></tr></table><h2 id="cash">Statements of Cash Flows</h2><table><tr><td>Operating cash</td><td>3</td></tr></table><h2 id="notes">Notes</h2><p>Accounting policies.</p>';
+ const s=extractFinancialStatements(html,extractFilingDisclosures(html,{...source,form:'6-K'}));
+ assert.equal(s.status,'extracted');assert.equal(s.tables.length,3);assert.match(s.tables[0].section,/Balance Sheets/);assert.match(s.tables[1].section,/Operations/);assert.match(s.tables[2].section,/Cash Flows/);assert.match(s.text,/Accounting policies/);
+ const announcement=html.replace('href="#cash"','href="#absent"');
+ assert.equal(extractFinancialStatements(announcement,extractFilingDisclosures(announcement,{...source,form:'6-K'})).status,'not_located');
+});

@@ -14,7 +14,7 @@ const categoryDescriptions: Record<StatementCategory, string> = {
   other: "综合收益、股东权益变化及其他财务报表",
   notes: "主要财务项目的补充说明与明细",
 };
-const formLabel = (form: string) => `${form.startsWith("10-K") ? "年报" : "季报"}${form.endsWith("/A") ? "（修订）" : ""}`;
+const formLabel = (form: string) => `${/^(?:10-K|20-F)/.test(form) ? "年报" : form.startsWith("6-K") ? "中期报表（6-K 申报日）" : "季报"}${form.endsWith("/A") ? "（修订）" : ""}`;
 const cellKey = (row: number, cell: StatementCell) => `${row}:${cell.column}`;
 const hasNumericFact = (cell: StatementCell) => cell.facts.some(fact => fact.status === "parsed" && fact.value !== null && fact.value.trim() !== "" && Number.isFinite(Number(fact.value)));
 
@@ -43,7 +43,8 @@ function headingRowCount(table: StatementTable) {
 export function FinancialStatementsInspector({ ticker, documents, onUnauthorized, onRequestUpdate }: {
   ticker: string; documents: DisclosureAuditSummary[]; onUnauthorized: () => void; onRequestUpdate?: () => void;
 }) {
-  const filings = useMemo(() => documents.filter(document => /^10-[QK](?:\/A)?$/.test(document.source.form))
+  const filings = useMemo(() => documents.filter(document => /^(?:10-[QK]|20-F)(?:\/A)?$/.test(document.source.form)
+    || (/^6-K(?:\/A)?$/.test(document.source.form) && document.statements?.status === "extracted" && document.statements.tables > 0))
     .sort((a, b) => b.source.reportDate.localeCompare(a.source.reportDate) || b.source.filedAt.localeCompare(a.source.filedAt)), [documents]);
   const [selected, setSelected] = useState("");
   const [resource, setResource] = useState<{ key: string; data: FinancialStatements } | null>(null);

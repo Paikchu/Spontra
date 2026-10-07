@@ -37,7 +37,7 @@ async function financialCompanyRows(env: SecPipelineEnv, selectedTicker?: string
       AND json_type(payload,'$.statements.tables')='integer' AND json_extract(payload,'$.statements.tables')>0
       AND json_extract(payload,'$.source.ticker')=json_extract(payload,'$.ticker')
       AND cache_key='sec:disclosure-audit:v1:'||json_extract(payload,'$.ticker')||':'||json_extract(payload,'$.documentId')
-      AND json_extract(payload,'$.source.form') IN ('10-Q','10-K','10-Q/A','10-K/A')
+      AND json_extract(payload,'$.source.form') IN ('10-Q','10-K','10-Q/A','10-K/A','20-F','20-F/A')
       AND json_extract(payload,'$.source.reportDate') GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
       AND date(json_extract(payload,'$.source.reportDate')) IS NOT NULL
     GROUP BY json_extract(payload,'$.ticker')
