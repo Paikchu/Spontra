@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { NativeSelect, NativeSelectOptGroup, NativeSelectOption } from "@/components/ui/native-select";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 import type { BusinessFlowQuarter, BusinessSegment, FlowMetric, FlowSource, PublicBusinessFlow } from "@/shared/analysis-contract/business-flow";
 import type { CompanyBusinessContent } from "@/lib/earning-report/web/company-business-content";
 import { financialGraph } from "@/lib/earning-report/web/business-flow-sankey";
@@ -241,7 +241,7 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
 
       <div className="chart">
         {!quarter ? <div className="empty"><h2>季度财务未披露</h2><p>需要同币种、同口径的三个月数据才能绘制流向；不会用示例数据替代。</p></div>
-          : proportional && layout ? <FlowChart graph={graph!} copy={copy} money={v => money(v)} colorOf={colorOf} active={active} revealKey={quarter.id} productBusiness={current ? "segment:" + current.key : null} businessDetails={<Dossier item={current} parent={parent ?? null} sources={quarter?.sources.length ? quarter.sources : business?.sources ?? []} explainer={explainer} />} onCloseProducts={() => setSelected(null)}
+          : proportional && layout ? <FlowChart graph={graph!} copy={copy} money={v => money(v)} colorOf={colorOf} active={active} revealKey={quarter.id} productBusiness={current ? "segment:" + current.key : null} businessDetails={<Dossier item={current} parent={parent ?? null} sources={quarter?.sources.length ? quarter.sources : business?.sources ?? []} explainer={explainer} />}
               focusSlot={n => segmentRevenue ? `占${shareBasis} ${percent(n.value / segmentRevenue * 100)}` : null}
               onHover={name => setHoverNode(name)} tipFor={tipFor}
               onPick={n => { const item = itemByNode.get(n.name); setSelected(item && current?.key !== item.key ? item.id : null); }}
@@ -295,13 +295,42 @@ function Dossier({ item, parent, sources, explainer }: { item: Item | null; pare
     <h3>{parent ? `${parent.name} / ` : ""}{item.name}</h3>
     <p>{description}</p>
 
-    <dl>
-      <dt>客户</dt><dd>{segment.customers ?? "未披露"}</dd>
-      <dt>收费方式</dt><dd>{segment.monetization ?? "未披露"}</dd>
-    </dl>
+    <DossierTabs label={item.name} sections={[["客户", segment.customers ?? "未披露"], ["收费方式", segment.monetization ?? "未披露"]]} />
     {basis && <p className="fine">{basis}</p>}
     <Sources sources={sources} ids={segment.sourceIds} />
   </section>;
+}
+
+/** One section of a business at a time: products, customers, charging, related businesses. Arrow keys move between tabs. */
+function DossierTabs({ label, sections }: { label: string; sections: Array<[string, ReactNode]> }) {
+  const [chosen, setChosen] = useState(0);
+  const tabs = useRef<HTMLDivElement>(null);
+  const id = useId();
+  if (!sections.length) return null;
+  const active = Math.min(chosen, sections.length - 1);
+  const choose = (index: number, focus = false) => {
+    setChosen(index);
+    const list = tabs.current, scroller = list?.closest<HTMLElement>(".fc-business-scroll");
+    // Switching from further down the card starts the new section at its top, under the sticky tabs.
+    if (list && scroller) {
+      const top = list.parentElement!.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop - parseFloat(getComputedStyle(scroller).paddingTop);
+      if (scroller.scrollTop > top) scroller.scrollTop = top;
+    }
+    if (focus) list?.querySelectorAll<HTMLButtonElement>("[role=tab]")[index]?.focus();
+  };
+  const onKey = (event: KeyboardEvent<HTMLDivElement>) => {
+    const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+    const index = event.key === "Home" ? 0 : event.key === "End" ? sections.length - 1 : step ? (active + step + sections.length) % sections.length : -1;
+    if (index < 0) return;
+    event.preventDefault();
+    choose(index, true);
+  };
+  return <div className="dossier-tabs">
+    <div ref={tabs} className="dossier-tablist" role="tablist" aria-label={`${label} 业务说明`} onKeyDown={onKey}>
+      {sections.map(([name], i) => <button key={name} type="button" role="tab" id={`${id}-tab-${i}`} aria-selected={i === active} aria-controls={`${id}-panel`} tabIndex={i === active ? 0 : -1} onClick={() => choose(i)}>{name}</button>)}
+    </div>
+    <div className="dossier-panel" role="tabpanel" id={`${id}-panel`} aria-labelledby={`${id}-tab-${active}`} key={active}>{sections[active][1]}</div>
+  </div>;
 }
 
 /** A model-written explanation: every statement carries numbered links to the pages it was written from. */
@@ -317,8 +346,11 @@ function ExplainedDossier({ item, parent, explainer, explained }: { item: Item; 
     <h3>{parent ? `${parent.name} / ` : ""}{item.name}</h3>
     <p className="dossier-lede">{explained.summary.text}{cite(explained.summary)}</p>
 
-    {explained.offerings?.length ? <><h4>产品介绍</h4><dl>{explained.offerings.map(p => <Fragment key={p.id}><dt>{p.name}</dt><dd>{p.description.text}{cite(p.description)}</dd></Fragment>)}</dl></> : null}
-    <dl>{rows.filter(([, claim]) => claim).map(([label, claim]) => <Fragment key={label}><dt>{label}</dt><dd>{claim!.text}{cite(claim!)}</dd></Fragment>)}</dl>
+    {/* Products are one section beside customers and charging, each product a named entry within it. */}
+    <DossierTabs label={item.name} sections={[
+      ...(explained.offerings?.length ? [["产品介绍", <ul className="dossier-products">{explained.offerings.map(p => <li key={p.id}><b>{p.name}</b>{p.description.text}{cite(p.description)}</li>)}</ul>] as [string, ReactNode]] : []),
+      ...rows.filter(([, claim]) => claim).map(([label, claim]): [string, ReactNode] => [label, <>{claim!.text}{cite(claim!)}</>]),
+    ]} />
 
     <ol className="sources sources--numbered">{cited.map(s => <li key={s.id}><a href={s.url} target="_blank" rel="noopener noreferrer">{s.title}<span aria-hidden="true"> ↗</span></a></li>)}</ol>
   </section>;

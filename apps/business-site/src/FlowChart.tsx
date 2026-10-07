@@ -30,13 +30,64 @@ function linePath(x0: number, sy: number, x1: number, ty: number) {
   return `M${r(x0)},${r(sy)}C${r(xm)},${r(sy)} ${r(xm)},${r(ty)} ${r(x1)},${r(ty)}`;
 }
 
-export function layoutFor(graph: FinancialGraph, copy: (n: PlacedNode) => NodeCopy, k = 1): InfographicLayout | null {
+function labelWidth(n: PlacedNode, text: NodeCopy, k: number) {
   const type = typeFor(k);
-  return layoutInfographic(graph, n => {
-    const text = copy(n);
-    return estimateTextWidth(text.name, type.name) + type.gap + estimateTextWidth(text.value, valueSize(n, k), true) + 4 * k
-      + (text.change ? type.gap * 0.8 + estimateTextWidth(text.change.label, type.change, true) : 0);
-  }, geometryFor(k));
+  return estimateTextWidth(text.name, type.name) + type.gap + estimateTextWidth(text.value, valueSize(n, k), true) + 4 * k
+    + (text.change ? type.gap * 0.8 + estimateTextWidth(text.change.label, type.change, true) : 0);
+}
+
+export function layoutFor(graph: FinancialGraph, copy: (n: PlacedNode) => NodeCopy, k = 1): InfographicLayout | null {
+  return layoutInfographic(graph, n => labelWidth(n, copy(n), k), geometryFor(k));
+}
+
+type Box = { x0: number; y0: number; x1: number; y1: number };
+type Camera = { x: number; y: number; zoom: number };
+const HOME: Camera = { x: 0, y: 0, zoom: 1 };
+const FOCUS_ZOOM = 1.3;
+
+/**
+ * The part of the statement a picked business is about: the business, the businesses it is made of, its path into revenue,
+ * their labels and the share pill beside revenue. Costs and profit are never allocated to a business, so they stay out of it.
+ */
+function focusBounds(layout: InfographicLayout, name: string, copy: (n: PlacedNode) => NodeCopy, k: number): Box | null {
+  const byName = new Map(layout.nodes.map(n => [n.name, n]));
+  if (!byName.has(name)) return null;
+  const names = new Set([name]);
+  const up = (target: string) => { for (const l of layout.links) if (l.target === target && !names.has(l.source)) { names.add(l.source); up(l.source); } };
+  up(name);
+  for (let next: string | undefined = name; next && next !== "revenue" && next !== "segment-total";) {
+    next = layout.links.find(l => l.source === next)?.target;
+    if (next) names.add(next);
+  }
+  const type = typeFor(k), { labelOffset, sideLabelHeight } = geometryFor(k), w = layout.nodeWidth;
+  const box: Box = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
+  const add = (x0: number, y0: number, x1: number, y1: number) => { box.x0 = Math.min(box.x0, x0); box.y0 = Math.min(box.y0, y0); box.x1 = Math.max(box.x1, x1); box.y1 = Math.max(box.y1, y1); };
+  for (const key of names) {
+    const n = byName.get(key)!, text = copy(n), lw = labelWidth(n, text, k), vs = valueSize(n, k);
+    add(n.x, n.y, n.x + w, n.y + n.h);
+    if (n.side === "top") add(n.x + w / 2 - lw / 2, n.y - type.offset - vs * 1.2, n.x + w / 2 + lw / 2, n.y);
+    else if (n.side === "bottom") add(n.x + w / 2 - lw / 2, n.y + n.h, n.x + w / 2 + lw / 2, n.y + n.h + type.offset + vs * 1.2);
+    else {
+      const mid = n.y + Math.max(n.h, sideLabelHeight) / 2;
+      if (n.side === "left") add(n.x - labelOffset - lw, mid - vs, n.x, mid + vs);
+      else add(n.x + w, mid - vs, n.x + w + labelOffset + lw, mid + vs);
+    }
+    if (key === "revenue" || key === "segment-total") add(n.x, n.y, n.x + w + 150 * k, n.y + n.h);
+  }
+  const pad = 28 * k;
+  return { x0: box.x0 - pad, y0: box.y0 - pad, x1: box.x1 + pad, y1: box.y1 + pad };
+}
+
+/** The camera that fits `box` in a pane of `size`, given that the viewBox keeps the layout's aspect and is centred (xMidYMid meet). */
+function cameraFor(box: Box, layout: InfographicLayout, size: { w: number; h: number } | null): Camera {
+  const aspect = size ? size.w / size.h : layout.width / layout.height;
+  const visibleW = Math.max(layout.width, layout.height * aspect), visibleH = Math.max(layout.height, layout.width / aspect);
+  // A gentle push-in: enough to set the business apart, never so close that the rest of the statement leaves the frame.
+  const zoom = Math.max(1, Math.min(FOCUS_ZOOM, visibleW / (box.x1 - box.x0), visibleH / (box.y1 - box.y0)));
+  if (zoom < 1.05) return HOME;
+  const vw = layout.width / zoom, vh = layout.height / zoom;
+  const clamp = (v: number, max: number) => Math.max(0, Math.min(max, v));
+  return { x: clamp((box.x0 + box.x1) / 2 - vw / 2, layout.width - vw), y: clamp((box.y0 + box.y1) / 2 - vh / 2, layout.height - vh), zoom };
 }
 
 /** A few fixed-point steps: larger type widens the layout, which shrinks the fit scale, so k converges quickly. */
@@ -66,10 +117,9 @@ function Streams({ band, strength }: { band: Band; strength: "ambient" | "lit" }
   </g>;
 }
 
-export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHover, onPick, tipFor, label, revealKey, businessDetails, productBusiness = null, onCloseProducts }: {
+export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHover, onPick, tipFor, label, revealKey, businessDetails, productBusiness = null }: {
   businessDetails?: ReactNode;
   productBusiness?: string | null;
-  onCloseProducts?: () => void;
   graph: FinancialGraph;
   copy: (n: PlacedNode) => NodeCopy;
   money: (value: number) => string;
@@ -104,47 +154,48 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
   const w = layout.nodeWidth;
   const productTarget = productBusiness ? byName.get(productBusiness) : null;
   const expanded = Boolean(productTarget);
-  const [left, setLeft] = useState(0);
-  const leftPosition = useRef(0);
-  useEffect(() => {
-    const target = expanded ? 700 : 0;
-    if (reducedMotion()) { leftPosition.current = target; setLeft(target); return; }
-    const origin = leftPosition.current, start = performance.now();
-    let frame = 0;
+  // The explanation's scrollbar stays hidden until the reader scrolls it, and fades shortly after.
+  const [scrolling, setScrolling] = useState(false);
+  const scrollIdle = useRef(0);
+  const revealScrollbar = () => { setScrolling(true); clearTimeout(scrollIdle.current); scrollIdle.current = window.setTimeout(() => setScrolling(false), 900); };
+  useEffect(() => () => clearTimeout(scrollIdle.current), []);
+  const [camera, setCamera] = useState<Camera>(HOME);
+  const cameraRef = useRef(camera);
+  cameraRef.current = camera;
+  const flight = useRef(0);
+  /** Glide the camera, interpolating the visible box so the zoom feels linear. */
+  const flyTo = (target: Camera) => {
+    cancelAnimationFrame(flight.current);
+    const from = cameraRef.current;
+    if (reducedMotion()) { setCamera(target); return; }
+    const start = performance.now();
     const step = (now: number) => {
-      const p = Math.min(1, (now - start) / 350);
-      leftPosition.current = origin + (target - origin) * (1 - Math.pow(1 - p, 3));
-      setLeft(leftPosition.current);
-      if (p < 1) frame = requestAnimationFrame(step);
+      const p = Math.min(1, (now - start) / 520), e = 1 - Math.pow(1 - p, 3);
+      const span = 1 / (1 / from.zoom + (1 / target.zoom - 1 / from.zoom) * e);
+      setCamera({ x: from.x + (target.x - from.x) * e, y: from.y + (target.y - from.y) * e, zoom: span });
+      if (p < 1) flight.current = requestAnimationFrame(step);
     };
-    frame = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(frame);
-  }, [expanded]);
-  const canvasHeight = expanded ? Math.max(size && size.w < 600 ? 900 : 640, layout.height) : layout.height;
-  const [focusX, setFocusX] = useState(0);
-  const focusPosition = useRef(0);
-  useEffect(() => {
-    const target = productTarget?.x ?? 0;
-    if (reducedMotion()) { focusPosition.current = target; setFocusX(target); return; }
-    const origin = focusPosition.current, start = performance.now();
-    let frame = 0;
-    const step = (now: number) => {
-      const p = Math.min(1, (now - start) / 350);
-      focusPosition.current = origin + (target - origin) * (1 - Math.pow(1 - p, 3));
-      setFocusX(focusPosition.current);
-      if (p < 1) frame = requestAnimationFrame(step);
-    };
-    frame = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(frame);
-  }, [productTarget?.x]);
-  const [camera, setCamera] = useState({ x: 0, y: 0, zoom: 1 });
-  const [fitAll, setFitAll] = useState(false);
+    flight.current = requestAnimationFrame(step);
+  };
+  useEffect(() => () => cancelAnimationFrame(flight.current), []);
+  const zoomBy = (factor: number) => {
+    cancelAnimationFrame(flight.current);
+    setCamera(c => {
+      const zoom = Math.max(.6, Math.min(3, c.zoom * factor));
+      const cx = c.x + layout.width / c.zoom / 2, cy = c.y + layout.height / c.zoom / 2;
+      return { x: cx - layout.width / zoom / 2, y: cy - layout.height / zoom / 2, zoom };
+    });
+  };
   const drag = useRef<{ x: number; y: number; cx: number; cy: number; pointerId: number } | null>(null);
-  useEffect(() => { drag.current = null; setCamera({ x: 0, y: 0, zoom: 1 }); setFitAll(false); }, [productBusiness, revealKey]);
-  const progress = left / 700;
-  const viewportWidth = (fitAll ? layout.width + left : layout.width + ((size && size.w < 600 ? size.w : Math.max(1000, size?.w ?? 1000)) - layout.width) * progress) / camera.zoom;
-  const viewportX = fitAll ? -left : (focusX - 700) * progress;
-  const viewportHeight = (fitAll ? Math.max(canvasHeight, layout.height) : canvasHeight) / camera.zoom;
+  // A picked business brings its own part of the statement into view; the pane refits when the explanation opens, so follow the layout.
+  const focusCamera = useMemo(() => {
+    // Narrow layouts scroll the full-size statement sideways instead of zooming it.
+    const narrow = typeof matchMedia === "function" && matchMedia("(max-width: 960px)").matches;
+    const box = productBusiness && fitted && !narrow ? focusBounds(fitted.layout, productBusiness, copy, fitted.k) : null;
+    return box ? cameraFor(box, fitted!.layout, size) : HOME;
+  }, [productBusiness, fitted, copy, size]);
+  useEffect(() => { drag.current = null; flyTo(focusCamera); }, [focusCamera, revealKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const viewportWidth = layout.width / camera.zoom, viewportHeight = layout.height / camera.zoom;
 
 
   const bands: Band[] = useMemo(() => layout.links.map(l => {
@@ -200,14 +251,20 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
     if (!owner) setTip(null);
   };
 
-  return <div className="fc" data-products={expanded || undefined} ref={box} style={{ "--ratio": `${layout.width} / ${layout.height}`, "--mobile-width": `${Math.ceil(layout.width * SCREEN_VALUE_PX / (21 * k))}px` } as CSSProperties} onMouseLeave={() => { setTip(null); onHover(null); }}>
-    <div className="fc-controls"><Button variant="outline" size="sm" aria-label="缩小画布" onClick={() => setCamera(c => ({ ...c, zoom: Math.max(.6, c.zoom / 1.2) }))}>−</Button><Button variant="outline" size="sm" onClick={() => { setFitAll(true); setCamera({ x: 0, y: 0, zoom: 1 }); }}>适应画布</Button><Button variant="outline" size="sm" aria-label="放大画布" onClick={() => setCamera(c => ({ ...c, zoom: Math.min(3, c.zoom * 1.2) }))}>+</Button>{expanded && <Button variant="outline" size="sm" onClick={onCloseProducts}>收起说明</Button>}</div>
+  // The explanation is page text beside the canvas, not part of the scaled drawing: opening it narrows the pane and the Sankey refits.
+  return <div className="fc" data-products={expanded || undefined} style={{ "--ratio": `${layout.width} / ${layout.height}`, "--mobile-width": `${Math.ceil(layout.width * SCREEN_VALUE_PX / (21 * k))}px` } as CSSProperties} onMouseLeave={() => { setTip(null); onHover(null); }}>
+    <div className="fc-controls"><Button variant="outline" size="sm" aria-label="缩小画布" onClick={() => zoomBy(1 / 1.2)}>−</Button><Button variant="outline" size="sm" onClick={() => flyTo(HOME)}>适应画布</Button>{productBusiness && <Button variant="outline" size="sm" onClick={() => flyTo(focusCamera)}>聚焦业务</Button>}<Button variant="outline" size="sm" aria-label="放大画布" onClick={() => zoomBy(1.2)}>+</Button></div>
+    {expanded && productTarget && <aside key={productBusiness} className="fc-business-details" aria-label={`${productTarget.label} 业务说明`}>
+      <div className="fc-business-scroll" tabIndex={0} data-scrolling={scrolling || undefined} onScroll={revealScrollbar}>{businessDetails}</div>
+    </aside>}
+    <div className="fc-canvas" ref={box}>
     <svg key={revealKey} onPointerDown={e => {
-        if ((e.target as Element).closest("[data-owner],a,button,.fc-business-details")) return;
+        if ((e.target as Element).closest("[data-owner],a,button")) return;
         // Narrow layouts use native horizontal scrolling instead of capturing touch gestures.
-        const scroller = box.current?.parentElement;
+        const scroller = box.current?.closest(".chart");
         if (scroller && scroller.scrollWidth > scroller.clientWidth) return;
         if (e.button !== 0 || drag.current) return;
+        cancelAnimationFrame(flight.current);
         drag.current = { x: e.clientX, y: e.clientY, cx: camera.x, cy: camera.y, pointerId: e.pointerId };
         e.currentTarget.setPointerCapture(e.pointerId);
       }}
@@ -221,10 +278,7 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
         // Capture coordinates now: React may run this updater after pointerup clears the ref.
         setCamera(c => ({ ...c, x, y }));
       }}
-      onPointerUp={e => { if (drag.current?.pointerId === e.pointerId) drag.current = null; }} onPointerCancel={e => { if (drag.current?.pointerId === e.pointerId) drag.current = null; }} onLostPointerCapture={e => { if (drag.current?.pointerId === e.pointerId) drag.current = null; }} className="fc-svg" viewBox={`${viewportX + camera.x} ${camera.y} ${viewportWidth} ${viewportHeight}`} preserveAspectRatio="xMidYMid meet" role="group" aria-label={label} onMouseOver={hoverOver} data-focus={focus ? (focus.segment ? "segment" : "path") : undefined}>
-      {expanded && productTarget && <foreignObject x={productTarget.x - 670} y={48} width={Math.min(450, (size?.w ?? 1000) - 48)} height={canvasHeight - 72}>
-        <div key={productBusiness} className="fc-business-details" tabIndex={0} role="region" aria-label={`${productTarget.label} 业务说明`}>{businessDetails}</div>
-      </foreignObject>}
+      onPointerUp={e => { if (drag.current?.pointerId === e.pointerId) drag.current = null; }} onPointerCancel={e => { if (drag.current?.pointerId === e.pointerId) drag.current = null; }} onLostPointerCapture={e => { if (drag.current?.pointerId === e.pointerId) drag.current = null; }} className="fc-svg" viewBox={`${camera.x} ${camera.y} ${viewportWidth} ${viewportHeight}`} preserveAspectRatio="xMidYMid meet" role="group" aria-label={label} onMouseOver={hoverOver} data-focus={focus ? (focus.segment ? "segment" : "path") : undefined}>
       <defs>
         {bands.map((b, i) => {
           const from = colorOf(b.key.split(">")[0]);
@@ -296,6 +350,7 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
       <div className="fc-tip-title"><i style={{ background: tip.tip.color }} />{tip.tip.title}</div>
       {tip.tip.rows.map(([k, v]) => <div className="fc-tip-row" key={k}><span>{k}</span><b>{v}</b></div>)}
     </Tooltip>}
+    </div>
   </div>;
 }
 

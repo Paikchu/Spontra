@@ -254,7 +254,8 @@ button { cursor: pointer; }
 .provenance span + span::before { content: "·"; margin: 0 8px; }
 
 /* ---------- Chart ---------- */
-.fc { position: absolute; inset: 0; }
+.fc { position: absolute; inset: 0; display: grid; grid-template-columns: minmax(0, 1fr); }
+.fc-canvas { position: relative; min-width: 0; min-height: 0; }
 .fc-svg { display: block; width: 100%; height: 100%; overflow: visible; font-family: var(--sans); }
 .fc-band { fill-opacity: .3; transition: fill-opacity .4s var(--ease); }
 .light .fc-band { fill-opacity: .26; }
@@ -415,8 +416,10 @@ button { cursor: pointer; }
 .bridge-plot--empty { display: grid; place-items: center; padding-left: 0; color: var(--faint); font-size: 12px; }
 .bridge-col { position: relative; min-width: 0; outline: none; animation: fade-in .5s ease both; animation-delay: calc(var(--i) * 80ms); }
 .bridge-col:focus-visible { box-shadow: 0 0 0 2px var(--foreground); border-radius: 6px; }
-.bridge-level { position: absolute; left: 0; right: 0; width: min(100%, 56px); margin: 0 auto; height: 3px; transform: translateY(50%); border-radius: 2px; background: var(--foreground); }
-.bridge-col--end:first-child .bridge-level { background: var(--muted-foreground); }
+.bridge-total { position: absolute; bottom: 0; left: 0; right: 0; width: min(100%, 56px); margin: 0 auto; border-radius: 3px 3px 0 0; background: var(--foreground); transform-origin: bottom; animation: grow .7s var(--ease) both; animation-delay: calc(var(--i) * 80ms + 120ms); }
+.bridge-col--end:first-child .bridge-total { background: color-mix(in srgb, var(--muted-foreground) 55%, var(--background)); }
+/* Axis break: the bars stand on a floor above zero. */
+.bridge-total[data-cut]::after { content: ""; position: absolute; left: -3px; right: -3px; bottom: 10px; height: 3px; background: var(--background); transform: skewY(-8deg); }
 .bridge-link { position: absolute; left: calc(-1 * clamp(8px, 1.6vw, 26px) - 28px); right: 50%; border-top: 1px dashed var(--border); transform: translateY(50%); }
 .bridge-col--end:last-child .bridge-link { display: none; }
 .bridge-step { position: absolute; left: 0; right: 0; width: min(100%, 56px); margin: 0 auto; border-radius: 3px; transform-origin: bottom; animation: grow .7s var(--ease) both; animation-delay: calc(var(--i) * 80ms + 120ms); transition: filter .2s; }
@@ -575,7 +578,6 @@ button { cursor: pointer; }
 @media (prefers-reduced-motion: reduce) { .fc-products { animation: none; } }
 
 .fc-charging { font-size: 13px; padding: 6px; line-height: 1.4; background: var(--background); border-radius: 4px; }
-.stage:has(.fc[data-products]) { overflow-y: auto; grid-template-rows: auto minmax(580px, 1fr) auto auto; }
 
 .fc-product-card, .fc-product-line, .fc-charging { font-size: 16px; }
 .fc-product-card strong, .fc-product-line strong { font-size: 18px; }
@@ -591,21 +593,35 @@ button { cursor: pointer; }
 .fc-product-card, .fc-product-line { overflow-wrap: anywhere; }
 .fc-product-card strong, .fc-product-line strong { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
-/* Business copy lives in the canvas; scroll long explanations without dragging the graph. */
-.fc-business-details { height: 100%; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; cursor: auto; border: 1px solid var(--hairline); border-radius: 12px; background: var(--surface); padding: 22px 26px; scrollbar-width: thin; overflow-wrap: anywhere; }
-.fc-business-details:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -3px; }
-.fc-business-details .dossier { margin: 0; padding: 0; border: 0; animation: none; font-size: 16px; line-height: 1.7; }
-.fc-business-details .dossier h3 { font-size: 22px; margin-bottom: 14px; }
-.fc-business-details .dossier p, .fc-business-details .dossier .dossier-lede, .fc-business-details .dossier dd { font-size: 16px; }
-.fc-business-details .dossier dl { grid-template-columns: 84px minmax(0, 1fr); gap: 14px 18px; }
-.fc-business-details .dossier dt { font-size: 15px; }
-.fc-business-details .sources { font-size: 14px; }
-.fc[data-products] { min-height: 580px; }
+/* Business copy sits beside the canvas at page scale; the Sankey refits to the remaining width and the stage keeps its height. */
+.fc[data-products] { grid-template-columns: clamp(300px, 31%, 390px) minmax(0, 1fr); gap: clamp(12px, 1.4vw, 20px); }
+/* The card stays still; its body scrolls with a slim bar inset from the card edge. */
+.fc-business-details { position: relative; display: flex; flex-direction: column; min-height: 0; padding: 6px 6px 6px 0; border: 1px solid var(--hairline); border-radius: 12px; background: var(--surface); overflow: hidden; animation: rise .35s var(--ease) both; }
+.fc-business-scroll { --thumb: transparent; flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 14px 12px 14px 22px; overflow-wrap: anywhere; scrollbar-width: thin; scrollbar-color: var(--thumb) transparent; }
+.fc-business-scroll[data-scrolling], .fc-business-scroll:focus-visible { --thumb: color-mix(in srgb, var(--muted-foreground) 45%, transparent); }
+.fc-business-scroll::-webkit-scrollbar { width: 6px; }
+.fc-business-scroll::-webkit-scrollbar-track { background: transparent; }
+.fc-business-scroll::-webkit-scrollbar-thumb { border-radius: 999px; background: var(--thumb); }
+.fc-business-scroll:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; border-radius: 8px; }
+/* Summary first, then one section at a time behind tabs that stay in view while the section scrolls. */
+.fc-business-details .dossier { margin: 0; padding: 0; border: 0; animation: none; font-size: 13.5px; line-height: 1.7; }
+.fc-business-details .dossier h3 { margin-bottom: 8px; font-size: 17px; }
+.fc-business-details .dossier .dossier-lede { margin: 0; font-size: 13.5px; }
+.fc-business-details .dossier-tabs { margin-top: 2px; }
+.fc-business-scroll .dossier-tablist { position: sticky; top: -14px; z-index: 1; margin: 0 -4px; padding: 14px 4px 10px; background: var(--surface); }
+.dossier-tablist { display: flex; flex-wrap: wrap; gap: 4px; margin: 14px 0 10px; }
+.dossier-tablist button { border: 1px solid var(--hairline); background: transparent; padding: 4px 11px; border-radius: 999px; font: inherit; font-size: 12px; line-height: 1.4; color: var(--muted-foreground); cursor: pointer; transition: background .2s, color .2s, border-color .2s; }
+.dossier-tablist button:hover { color: var(--foreground); }
+.dossier-tablist button[aria-selected="true"] { border-color: var(--foreground); background: var(--foreground); color: var(--background); font-weight: 600; }
+.dossier-tablist button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.dossier-panel { animation: fade-in .25s ease both; }
+.dossier-products { display: grid; gap: 10px; margin: 2px 0 0; padding: 0; list-style: none; }
+.dossier-products b { display: block; font-weight: 600; color: var(--foreground); }
+.fc-business-details .sources { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--hairline); }
 @media (max-width: 960px) {
-  .fc[data-products] { width: 100%; height: 900px; aspect-ratio: auto; }
-  .fc-business-details { padding: 18px; }
-  .fc-business-details .dossier dl { grid-template-columns: minmax(0, 1fr); gap: 4px; }
-  .fc-business-details .dossier dd { margin-bottom: 12px; }
+  .fc[data-products] { display: flex; flex-direction: column; gap: 12px; aspect-ratio: auto; }
+  .fc[data-products] .fc-canvas { aspect-ratio: var(--ratio); }
+  .fc-business-details { position: sticky; left: 0; width: min(100%, calc(100vw - 32px)); max-height: 360px; margin-top: 40px; }
 }
 
 @media (max-width: 960px) {

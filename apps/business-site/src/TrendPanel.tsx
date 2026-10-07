@@ -147,12 +147,13 @@ function bridgeNote(bridge: Bridge | null, lag: 1 | 4, base: Column | undefined)
   if (!bridge) return base?.state === "basis" ? `${when}未按此业务口径披露` : `缺少${when}的可核验披露`;
   if (bridge.reason === "basis") return "两期业务口径不同，只比较总额";
   if (bridge.reason === "single") return "该业务未披露下级拆分，只比较总额";
-  return "柱长 = 各业务收入变化 · 纵轴不从零开始";
+  return "两端为收入总额 · 中间为各业务的增减 · 纵轴截断";
 }
 
 /**
- * Revenue bridge: the base quarter's level, one floating step per business sorted by its change, then the current level.
- * The ends are level marks rather than bars, because the axis is cut to the range of the change and a bar would misstate the level.
+ * Revenue bridge: the base quarter's total as a bar, one floating step per business sorted by its change, then the current total.
+ * The axis starts above zero so small changes stay visible; the end bars carry a break mark there, and the floor sits well
+ * below the lower total so the two ends still read as two large, comparable amounts rather than a short and a tall one.
  */
 function BridgePlot({ bridge, empty, subject, hue, money }: { bridge: Bridge | null; empty: string; subject: string; hue: (slot: number) => string; money: (v: number | null) => string }) {
   const [hover, setHover] = useState<number | null>(null);
@@ -160,15 +161,17 @@ function BridgePlot({ bridge, empty, subject, hue, money }: { bridge: Bridge | n
   if (!bridge) return <div className="bridge-plot bridge-plot--empty"><p>{empty}</p></div>;
   const base = bridge.base.total!, current = bridge.current.total!;
   const levels = [base, current, ...bridge.steps.flatMap(s => [s.before, s.after])];
-  const lo = Math.min(...levels), hi = Math.max(...levels), pad = Math.max((hi - lo) * 0.28, Math.abs(hi) * 0.01);
-  const y = (v: number) => (v - (lo - pad)) / (hi - lo + 2 * pad) * 100;
+  const lo = Math.min(...levels), hi = Math.max(...levels), span = Math.max(hi - lo, Math.abs(hi) * 0.02);
+  const floor = lo > 0 ? Math.max(0, lo - span * 1.4) : lo - span * 0.25, ceil = hi + span * 0.18;
+  const cut = floor > 0;
+  const y = (v: number) => (v - floor) / (ceil - floor) * 100;
   const ends = [
     { key: "base", label: shortPeriod(bridge.base.slot.periodEnd), note: bridge.lag === 4 ? "去年同季" : "上一季", value: base },
     { key: "current", label: shortPeriod(bridge.current.slot.periodEnd), note: "本季", value: current },
   ];
   const end = (end: typeof ends[number], i: number) => <div key={end.key} className="bridge-col bridge-col--end" role="listitem" style={{ "--i": i } as CSSProperties}
     aria-label={`${end.note} ${end.label} ${subject}收入 ${money(end.value)}`}>
-    <span className="bridge-level" style={{ bottom: `${y(end.value)}%` }} aria-hidden="true" />
+    <span className="bridge-total" data-cut={cut || undefined} style={{ height: `${y(end.value)}%` }} aria-hidden="true" />
     <span className="bridge-value" style={{ bottom: `${y(end.value)}%` }}>{money(end.value)}</span>
     <span className="bridge-name"><span className="bridge-period">{end.label}</span><b>{end.note}</b></span>
   </div>;
