@@ -108,7 +108,10 @@ export class AlphaVantageTranscriptProvider {
     const message = data.Information ?? data.Note ?? data["Error Message"];
     if (message) {
       if (/rate|limit|frequency|requests? per/i.test(message)) throw new TranscriptQuotaError("Alpha Vantage rate limit reached");
-      if (/api.?key|premium|subscription|entitlement/i.test(message)) throw new TranscriptAccessError("Alpha Vantage transcript access denied");
+      if (/api.?key|premium|subscription|entitlement/i.test(message)) {
+        const reason = message.replaceAll(this.apiKey, '[redacted]').replace(/https?:\/\/\S+/g, '[url]').slice(0,180);
+        throw new TranscriptAccessError(`Alpha Vantage transcript access denied: ${reason}`);
+      }
       throw new Error("Alpha Vantage transcript response error");
     }
     if (data.symbol !== ticker || data.quarter !== quarter) throw new Error("Alpha Vantage transcript company or fiscal quarter mismatch");
