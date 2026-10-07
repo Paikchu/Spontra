@@ -35,6 +35,8 @@ test("Alpha Vantage requests the fiscal quarter and preserves all speaker turns 
 test("Alpha Vantage distinguishes quota exhaustion, access refusal, outages and unavailable transcripts", async () => {
   const quota = alpha(() => Response.json({ Information: `API key ${KEY} has reached the 25 requests per day limit.` }));
   await assert.rejects(quota.provider.fetch("ORCL", ref), (e: Error) => e instanceof TranscriptQuotaError && !e.message.includes(KEY));
+  const volume = alpha(() => Response.json({ Information: 'Thank you for using Alpha Vantage! Please contact premium@alphavantage.co if you are targeting a higher API call volume.' }));
+  await assert.rejects(volume.provider.fetch("ORCL", ref), TranscriptQuotaError);
   const denied = alpha(() => Response.json({ Information: `Invalid API key ${KEY}` }));
   await assert.rejects(denied.provider.fetch("ORCL", ref), (e: Error) => e instanceof TranscriptAccessError && !e.message.includes(KEY));
   const down = alpha(() => new Response("busy", { status: 503 }));

@@ -107,7 +107,7 @@ export class AlphaVantageTranscriptProvider {
     };
     const message = data.Information ?? data.Note ?? data["Error Message"];
     if (message) {
-      if (/rate|limit|frequency|requests? per/i.test(message)) throw new TranscriptQuotaError("Alpha Vantage rate limit reached");
+      if (/rate|limit|frequency|requests? per|(?:api )?call volume/i.test(message)) throw new TranscriptQuotaError("Alpha Vantage rate limit reached");
       if (/api.?key|premium|subscription|entitlement/i.test(message)) {
         const reason = message.replaceAll(this.apiKey, '[redacted]').replace(/https?:\/\/\S+/g, '[url]').slice(0,180);
         throw new TranscriptAccessError(`Alpha Vantage transcript access denied: ${reason}`);
