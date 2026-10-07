@@ -88,7 +88,7 @@ test("IR deck fallback reads only a company-hosted deck that names the same quar
       { title: "Autodesk Q3 FY26 slides (mirror)", url: "https://www.slideshare.net/adsk.pdf", snippet: "", publishedAt: null, score: 1 },
       { title: "Q3 FY26 Earnings Presentation", url: "https://investors.autodesk.com/static-files/q3fy26.pdf", snippet: "", publishedAt: null, score: 0.9 },
     ] }); },
-    async fetchContent(request: { url: string }) { reads.push(request.url); return wrap({ kind: "content" as const, url: request.url, text: deckText, format: "markdown" as const, completeness: "unverified" as const }); },
+    async fetchContent(request: { url: string }, policy: { maxAgeMs?: number }) { assert.ok(policy.maxAgeMs! <= 30 * 86_400_000); reads.push(request.url); return wrap({ kind: "content" as const, url: request.url, text: deckText, format: "markdown" as const, completeness: "unverified" as const }); },
   });
   const input = { ticker: "ADSK", companyName: "Autodesk, Inc.", ref: { fiscalYear: 2026, quarter: 3 as const, date: "2025-11-25" }, hosts: [] };
   const deck = await findIrDeck(search(`Q3 FY26 Earnings Presentation\n${"Outlook Q4 FY26 revenue $1.90B-$1.92B ".repeat(20)}`), input);
