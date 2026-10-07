@@ -1,6 +1,6 @@
 import {parseMarkup, normalizedText, nodeText, descendants, type Element, type FilingDisclosures, type DisclosureLocator} from './disclosure-extraction.ts';
 
-export const STATEMENTS_VERSION='sec-financial-statements.v2';
+export const STATEMENTS_VERSION='sec-financial-statements.v3';
 export interface StatementCell {
  column:number; rowSpan:number; colSpan:number; header:boolean; text:string; locator:DisclosureLocator;
  facts:{id:string;concept:string;value:string|null;status:string;period:FilingDisclosures['contexts'][number]['period']|null;unit:string|null;scale:string|null;dimensions:{axis:string;value:string}[]}[];
@@ -50,7 +50,7 @@ export function extractFinancialStatements(html:string,inventory:FilingDisclosur
  }
  if(!ends.length&&chapter)issues.push('NEXT_SEC_ITEM_NOT_LOCATED_SECTION_EXTENDS_TO_DOCUMENT_END');
  const inside=nodes.filter(n=>n.start>=start&&n.end<=end);
- const headings=links.filter(x=>x.target!.start>=start&&x.target!.start<end).map(x=>({title:x.title,locator:loc(x.target!)}));
+ const headings=links.filter(x=>x.target!.start>=start&&x.target!.start<end&&!/^\d+$/.test(x.title)).map(x=>({title:x.title,locator:loc(x.target!)}));
  for(const n of inside){if(!['p','div','h1','h2','h3','h4'].includes(n.local)||ancestor(n,'table'))continue;const title=normalizedText(n);if(title.length<220&&/^(?:note\s+)?\d{1,2}[.\s]+[A-Z]/.test(title)&&/font-weight\s*:\s*(?:bold|[6-9]00)|<b[ >]|<strong[ >]/i.test(html.slice(n.start,n.end)))headings.push({title,locator:loc(n)});}
  headings.sort((a,b)=>a.locator.start-b.locator.start);
  const sectionFacts=inventory.facts.filter(f=>!f.hidden&&f.source.locator.start>=start&&f.source.locator.end<=end),linked=new Set<string>();

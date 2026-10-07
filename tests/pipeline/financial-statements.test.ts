@@ -32,3 +32,8 @@ test('foreign issuer standalone statement exhibit retains the linked statements 
  const announcement=html.replace('href="#cash"','href="#absent"');
  assert.equal(extractFinancialStatements(announcement,extractFilingDisclosures(announcement,{...source,form:'6-K'})).status,'not_located');
 });
+
+test('duplicate TOC page-number links do not replace statement headings',()=>{
+ const s=extract('<a href="#item_1">Financial Statements</a><a href="#balance">Condensed Consolidated Balance Sheets</a><a href="#balance">6</a><a href="#cash">Condensed Consolidated Statements of Cash Flows</a><a href="#cash">11</a><a href="#item_2">Management Discussion</a><h2 id="item_1">Statements</h2><h3 id="balance">Balance Sheets</h3><table><tr><td>Assets</td><td>100</td></tr></table><h3 id="cash">Cash Flows</h3><table><tr><td>Operating cash</td><td>3</td></tr></table><h2 id="item_2">Discussion</h2>');
+ assert.equal(s.tables.length,2);assert.match(s.tables[0].section,/Balance Sheets/);assert.match(s.tables[1].section,/Cash Flows/);
+});
