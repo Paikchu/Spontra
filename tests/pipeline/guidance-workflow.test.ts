@@ -132,7 +132,7 @@ test("sweep records events from the cached feed and starts each event once, newe
     const first = await runGuidanceSweep(env);
     assert.equal(first.recorded, 3);
     assert.deepEqual(created.map(c => c.params.accession), ["0001341439-26-000040", "0001341439-26-000020"]);
-    assert.match(created[0]!.id, /^guidance-ORCL-0001341439-26-000040-guidanceextractorv1$/);
+    assert.match(created[0]!.id, /^guidance-ORCL-0001341439-26-000040-guidanceextractorv2$/);
     await runGuidanceSweep(env);
     await runGuidanceSweep(env);
     assert.deepEqual(created.map(c => c.params.accession), ["0001341439-26-000040", "0001341439-26-000020", "0001341439-26-000010"]);

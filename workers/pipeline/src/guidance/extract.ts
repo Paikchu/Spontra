@@ -3,7 +3,7 @@ import { normalizeForMatch, readExtractedGuidance, verifyGuidance, type Verified
 import { locateGuidance } from "./locate.ts";
 
 /** Changing the prompt, the pre-filter or verification re-extracts every stored material once. */
-export const GUIDANCE_EXTRACTOR_VERSION = "guidance-extractor.v1";
+export const GUIDANCE_EXTRACTOR_VERSION = "guidance-extractor.v2";
 export const GUIDANCE_MAX_OUTPUT_TOKENS = 8_192;
 
 export type GuidanceModelCall = (stage: string, system: string, payload: unknown) => Promise<Record<string, unknown>>;
@@ -20,6 +20,7 @@ export const GUIDANCE_SYSTEM_PROMPT = [
   "metric: revenue (company total), segment_revenue (a segment, product line or cloud business; put its name in segment), gross_margin, operating_margin, operating_income, eps, free_cash_flow, operating_cash_flow, capex, rpo, billings, other (put the source wording in label).",
   "measure: amount (currency amount, unit=USD in whole dollars: $15.2 billion -> 15200000000), growth (year-over-year percent change, unit=percent: 14% -> 14), margin (percent of revenue, unit=percent), per_share (unit=USD_per_share: $1.47 -> 1.47). Basis points convert to percent (50 basis points -> 0.5). A decline is negative growth.",
   "basis: gaap, non_gaap (also adjusted), constant_currency, or unspecified when the text does not say.",
+  "When the source gives both constant-currency and reported USD guidance, emit separate items for both bases, even when their numbers are identical. Use gaap for reported revenue in USD and non_gaap for adjusted EPS in USD; constant_currency applies only to the constant-currency item. Never drop the USD item.",
   "horizon: quarter (set fiscalYear and fiscalQuarter), annual (fiscalYear, fiscalQuarter=null), long_term (multi-year target; fiscalYear of the target year if stated, else null). Use the company's own fiscal year numbering. Resolve phrases like \"next quarter\" or \"this fiscal year\" from documentContext.",
   "quote: copy the supporting sentence exactly from the excerpt, verbatim, at most 300 characters, containing every number you report. Do not paraphrase, translate, or join text from separate places. [...] marks omitted text and must not appear in a quote.",
   "text: one sentence in Simplified Chinese stating the guidance and its period.",

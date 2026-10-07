@@ -15,8 +15,8 @@
     "SEC_USER_AGENT": "earning-report-analysis/1.0 max.zhangyuchen@gmail.com",
     "SEC_ANALYSIS_MODEL": "deepseek-flash",
     "SEC_REASONING_MODEL": "deepseek-flash",
-    // Off until verified against a hand-labelled sample. ALPHA_VANTAGE_API_KEY (transcripts) is an optional secret.
-    "GUIDANCE_ENABLED": "false",
+    // Management guidance is enabled; ALPHA_VANTAGE_API_KEY (transcripts) is an optional secret.
+    "GUIDANCE_ENABLED": "true",
     "GUIDANCE_DECK_SEARCH": "true",
     "GUIDANCE_DAILY_MODEL_CALLS": "40",
     "GUIDANCE_DAILY_TRANSCRIPT_CALLS": "25",

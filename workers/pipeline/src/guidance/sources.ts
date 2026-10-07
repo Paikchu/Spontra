@@ -159,7 +159,7 @@ export async function findIrDeck(search: DeckSearch, input: { ticker: string; co
   const host = (url: string) => { try { return new URL(url).hostname.toLowerCase(); } catch { return ""; } };
   const pick = data.results.find(hit => host(hit.url).includes(brand) && (/\.pdf($|\?)/i.test(hit.url) || /presentation|slides|deck/i.test(`${hit.url} ${hit.title}`)));
   if (!pick) return null;
-  const content = await search.fetchContent({ url: pick.url, depth: "basic" }, { ...policy, maxAgeMs: 365 * 86_400_000 });
+  const content = await search.fetchContent({ url: pick.url, depth: "basic" }, policy);
   const text = content.data.text.trim();
   if (text.length < MIN_TEXT || !namesFiscalQuarter(text, input.ref)) return null;
   return {

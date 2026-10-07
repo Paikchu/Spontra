@@ -130,7 +130,7 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
         guide={overlay.bySlot[i]} />)}
       {overlay.next && <GuideColumn mark={overlay.next} index={columns.length} scale={scale} money={money} hovered={hover === columns.length} onHover={() => setHover(columns.length)} />}
     </div>
-    {overlay.outlook.length > 0 && <p className="trend-outlook" aria-label="管理层年度与长期指引">
+    {overlay.outlook.length > 0 && <p className="trend-outlook" aria-label="管理层前瞻指引">
       <span>管理层指引 · {overlay.outlook[0].issuedAt}</span>
       {overlay.outlook.map(item => <span key={item.id} title={item.text}><b>{guidanceLabel(item, guidanceMoney)}</b>{item.action && item.previous && <em data-action={item.action}>{ACTION_NAMES[item.action]}</em>}</span>)}
     </p>}

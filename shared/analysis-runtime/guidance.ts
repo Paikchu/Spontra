@@ -144,7 +144,9 @@ export type FiscalAnchor = { fiscalYear: number; fiscalPeriod: string; periodEnd
 export function resolvePeriodEnd(fiscalYear: number | null, fiscalQuarter: number | null, horizon: GuidanceHorizon, anchors: FiscalAnchor[]): string | null {
   if (!fiscalYear) return null;
   const quarter = horizon === "quarter" ? fiscalQuarter : 4;
-  const anchor = anchors.find(a => /^(Q[1-4]|FY)$/.test(a.fiscalPeriod) && /^\d{4}-\d{2}-\d{2}$/.test(a.periodEnd));
+  // Annual filings establish the fiscal-year boundary; quarterly DEI years can lag that boundary.
+  const valid = anchors.filter(a => /^(Q[1-4]|FY)$/.test(a.fiscalPeriod) && /^\d{4}-\d{2}-\d{2}$/.test(a.periodEnd));
+  const anchor = valid.find(a => a.fiscalPeriod === "FY") ?? valid[0];
   if (!quarter || !anchor) return null;
   const anchorQuarter = anchor.fiscalPeriod === "FY" ? 4 : Number(anchor.fiscalPeriod.slice(1));
   // An anchor on the 1st-7th belongs to the previous month (52/53-week years end on a weekday near month end).
@@ -246,10 +248,10 @@ export function attachRevenueContext(items: GuidanceItem[], quarters: RevenueAct
       const found = quarterAt(item.periodEnd);
       if (found) actual = { value: found.value, periodEnd: found.periodEnd };
       const base = quarterAt(yearBefore(item.periodEnd));
-      if (item.measure === "growth" && base && item.low !== null && item.high !== null) {
+      if (item.basis !== "constant_currency" && item.measure === "growth" && base && item.low !== null && item.high !== null) {
         derived = { low: Math.round(base.value * (1 + item.low / 100)), high: Math.round(base.value * (1 + item.high / 100)), basePeriodEnd: base.periodEnd, base: base.value };
       }
-    } else if (item.horizon === "annual" && item.measure === "growth" && item.low !== null && item.high !== null) {
+    } else if (item.basis !== "constant_currency" && item.horizon === "annual" && item.measure === "growth" && item.low !== null && item.high !== null) {
       const priorEnd = yearBefore(item.periodEnd);
       const year = [0, 1, 2, 3].map(i => quarterAt(new Date(Date.parse(priorEnd) - i * 91 * 86_400_000).toISOString().slice(0, 10)));
       if (year.every(Boolean) && new Set(year.map(q => q!.periodEnd)).size === 4) {
