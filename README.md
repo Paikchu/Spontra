@@ -50,20 +50,21 @@ GitHub 是唯一维护与自动部署的主仓库。`earning-report-analysis` �
 
 | Worker | 当前职责 | 配置 | 自动发布 |
 | --- | --- | --- | --- |
-| `spontra` | 页面、投资账本 API、财报分析读取代理 | [`wrangler.jsonc`](wrangler.jsonc) | 前端 Git 构建 |
-| `max-investment-record-sec-cron` | IBKR 定时同步、财报日历刷新 | [`workers/sec-cron/wrangler.jsonc`](workers/sec-cron/wrangler.jsonc) | 前端部署命令的最后一步 |
+| `spontra-app` | 页面、组合 API 代理、研究持仓及财报日历定时更新 | [`wrangler.jsonc`](wrangler.jsonc) | 前端 Git 构建 |
+| `spontra-max-data-sync` | IBKR 定时同步、专属存储与组合读取 API | [`workers/sec-cron/wrangler.jsonc`](workers/sec-cron/wrangler.jsonc) | 主应用发布前迁移数据并发布 |
 | `earning-report-analysis-sec-pipeline` | SEC 发现与分析、Memory、公司分析、基本面及分析读取 API | [`workers/pipeline/wrangler.jsonc`](workers/pipeline/wrangler.jsonc) | 独立 Pipeline Git 构建 |
 
 `sec-cron` 的代码已经在本仓库。它不需要单独连接 GitHub，Cloudflare Builds 页面显示未独立连接是预期状态。名称中的 `sec` 来自历史用途，历史 SEC 分析执行代码已退役，仅运行投资数据任务。
 
 ### 数据与调用边界
 
-- **投资账本 D1**：`investment-record-db`，由主应用的 `DB` 绑定访问；迁移文件在 `drizzle/`。
+- **主应用 D1**：`investment-record-db`，保存持仓计划、财报日历等业务数据；迁移文件在 `drizzle/`。旧组合表在切换后只作迁移档案，运行时不再读写。
+- **组合 D1**：`spontra-max-data-sync-db`，仅同步 Worker 可访问；迁移文件在 `workers/sec-cron/migrations/`。
 - **财报分析 D1**：`earning-report-analysis-sec-web`，由 Pipeline 的 `DB` 绑定访问；迁移文件在 `workers/pipeline/migrations/`。数据库沿用历史名称，所有权属于 Pipeline。
 - **财报分析 R2**：`earning-report-analysis-sec-filings`，保存 Pipeline 的原文与分析产物。
 - **历史 SEC R2**：`max-investment-record-sec-filings` 数据保留，已解除 `sec-cron` 绑定；本次清理不删除历史资源。
 - 主应用通过 `EARNING_REPORT_PIPELINE → earning-report-analysis-sec-pipeline` Service Binding 读取分析结果；本地或其他消费者可使用服务端 HTTPS。
-- 定时任务通过指向 `spontra` 的 Service Binding 更新账本和财报日历。绑定名为 `PORTFOLIO_SERVICE`，配置见 `workers/sec-cron/wrangler.jsonc`。
+- 主应用通过 `PORTFOLIO_DATA_SERVICE → spontra-max-data-sync` 调用 `GET /api/v1/portfolio`；读取不触发 IBKR。同步 Worker 不再反向调用主应用。接口与切换流程见 [组合数据 API](docs/portfolio-data-api.md)。
 - Pipeline 拥有四个分析 Workflows；`sec-cron` 不再注册或启动历史 SEC Workflows。
 
 分析读取凭据只在服务端使用。读取已发布报告不启动 SEC/Yahoo 抓取、AI 分析或数据库写入。投资账本与分析数据库的迁移命令必须分别执行。
@@ -118,11 +119,11 @@ npx wrangler dev --config workers/pipeline/wrangler.jsonc
 
 | Worker | 关键变量与 Secrets |
 | --- | --- |
-| 主应用 | `PORTFOLIO_SYNC_KEY`、`EARNING_REPORT_READ_TOKEN`；使用 HTTPS 时配置 `EARNING_REPORT_PIPELINE_ORIGIN` |
-| `sec-cron` | `IBKR_FLEX_QUERY_ID`、`IBKR_FLEX_TOKEN`、`PORTFOLIO_SYNC_KEY` |
+| 主应用 | `PORTFOLIO_READ_TOKEN`、`RESEARCH_SYNC_KEY`、`EARNING_REPORT_READ_TOKEN`；使用 HTTPS 时配置 `EARNING_REPORT_PIPELINE_ORIGIN` |
+| `sec-cron` | `IBKR_FLEX_QUERY_ID`、`IBKR_FLEX_TOKEN`、`PORTFOLIO_SYNC_KEY`、`PORTFOLIO_READ_TOKEN` |
 | Pipeline | `SEC_USER_AGENT`、`SEC_TRACKED_TICKERS`、`SEC_ANALYSIS_MODEL`、`AI_API_KEY`、`TAVILY_API_KEY`、`SEC_REFRESH_KEY`、`ANALYSIS_READ_KEYS`、可选 `ANALYSIS_ADDITIONAL_READ_KEYS` |
 
-主应用与 `sec-cron` 的 `PORTFOLIO_SYNC_KEY` 必须一致。前端的读取凭据必须匹配 Pipeline 配置的消费者凭据。生产值保留在对应 Worker 的 Runtime variables / Secrets 中，本地文件不会随部署自动上传。
+主应用与 `sec-cron` 的 `PORTFOLIO_READ_TOKEN` 必须一致，与手动触发的 `PORTFOLIO_SYNC_KEY` 独立。Git 主应用构建需设置 `PORTFOLIO_READ_TOKEN` Secret，发布时注入两个 Worker。前端的读取凭据必须匹配 Pipeline 配置的消费者凭据。生产值保留在对应 Worker 的 Runtime variables / Secrets 中，本地文件不会随部署自动上传。
 
 当前持仓计划按 ticker 共享，所有访问者均可编辑，最后一次保存生效；保留同源检查和输入校验。历史记录保留，读取最近更新的记录。内部同步接口仍要求同步密钥。
 
@@ -204,12 +205,13 @@ npx wrangler d1 migrations apply earning-report-analysis-sec-web --remote --conf
 | Worker | Cron（UTC） | 北京时间 / 用途 |
 | --- | --- | --- |
 | `sec-cron` | `0 6 * * TUE-SAT` | 周二至周六 14:00，IBKR Flex 同步 |
-| `sec-cron` | `15 * * * *` | 每小时第 15 分钟，财报日历刷新 |
+| `spontra-app` | `15 * * * *` | 每小时第 15 分钟，财报日历刷新 |
+| `spontra-app` | `*/5 * * * *` | 每 5 分钟，研究持仓更新 |
 | Pipeline | `*/10 * * * *` | 全天每 10 分钟检查 SEC、Memory、公司分析及基本面 |
 
 Pipeline 的高频计划在源码中标记为临时诊断调度，迁移时原样保留；恢复交易时段计划属于后续独立调整。基本面刷新每轮最多处理两只股票，复用抓取记录安排优先级；最近 30 分钟内已尝试的股票暂缓重试，让后续股票继续得到处理。
 
-IBKR 同步使用只读 Flex 数据，校验后写入投资账本。相同内容返回 `unchanged`，同日更正可重新发布；并发写入会校验快照版本，冲突后重新读取并合并成交历史。持仓成本保留 Flex 的实际合约乘数和成本金额；空持仓只有在持仓报表章节存在且现金与净值对账通过时才接受。无效数据不会覆盖上一次有效快照。累计净入金必须覆盖首次入金，不能用最近一年的净入金代替累计本金。
+IBKR 同步使用只读 Flex 数据，校验后写入同步服务专属数据库。读取 API 始终返回最近成功快照；同步失败只标记 `delayed`。相同内容返回 `unchanged` 并更新成功同步时间，同日更正可重新发布；并发写入会校验快照版本，冲突后重新读取并合并成交历史。持仓成本保留 Flex 的实际合约乘数和成本金额；空持仓只有在持仓报表章节存在且现金与净值对账通过时才接受。无效数据不会覆盖上一次有效快照。累计净入金必须覆盖首次入金，不能用最近一年的净入金代替累计本金。
 
 财报日历保留来源与更新时间，区分确认日期和估计日期；刷新失败保留已有数据。实现说明见 [财报日历](docs/earnings-calendar-live.md)。
 
@@ -245,8 +247,10 @@ npm run market-close:check
 | `/settings` | 主题与语言设置 |
 | `/positions/[ticker]/sec/[accession]` | 旧报告链接，重定向统一报告页面 |
 | `/api/analysis/v1/*` | 主应用的分析读取代理，服务端附加读凭据 |
-| `/api/internal/portfolio/sync` | 受同步密钥保护的账本同步接口 |
-| `/api/internal/earnings/refresh` | 受同步密钥保护的财报日历刷新接口 |
+| 同步 Worker 的 `/api/v1/portfolio` | 独立读取令牌保护的最近成功组合快照 |
+| 同步 Worker 的 `/internal/portfolio/sync` | 原同步密钥保护的手动 IBKR 同步 |
+
+主应用旧 `/api/internal/portfolio/sync`、`/api/internal/earnings/refresh` 和 `/api/internal/research/sync` 已退役；后台业务由主应用 `scheduled` 直接调用。
 
 Pipeline 自身提供 `/api/v1/companies/:ticker/filings`、`analysis`、`fundamentals` 等读取资源，接口约定见 [Pipeline 说明](workers/pipeline/README.md)。`/health` 检查存活，`/ready` 检查配置和绑定是否存在，不代表模型请求或全部历史任务都成功。
 

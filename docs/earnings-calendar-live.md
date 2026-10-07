@@ -1,9 +1,10 @@
 # Live earnings calendar
 
-The existing `max-investment-record-sec-cron` Worker runs `15 * * * *` (UTC).
-It calls the website's authenticated POST `/api/internal/earnings/refresh` through
-the service binding to `investment-record`, using the existing server-only `PORTFOLIO_SYNC_KEY`. The IBKR
-schedule remains separate and unchanged. No earnings request writes portfolio data.
+The main `spontra-app` Worker runs `15 * * * *` (UTC) in its `scheduled` entry point.
+It calls `refreshPortfolioEarnings` in `worker/portfolio-jobs.ts` directly. Holdings
+come from the portfolio read API through `PORTFOLIO_DATA_SERVICE` and the independent
+`PORTFOLIO_READ_TOKEN`. The IBKR schedule remains in `spontra-max-data-sync` and is
+unchanged. No earnings request writes portfolio data.
 
 The website reads live held symbols and stores the calendar in D1
 `earnings_calendar_state`. The first successful sweep each Beijing day covers one
@@ -25,7 +26,8 @@ observations older than 48 hours. Announcement dates can change; confirmation is
 source provenance, not a guarantee against subsequent rescheduling.
 
 Apply `drizzle/0007_earnings_calendar.sql` through the normal deployment migration
-step. After deployment, an authorized POST to the refresh endpoint can bootstrap
-state without waiting for Cron propagation. The endpoint has a five-minute cooldown.
+step. After deployment, the next main-Worker hourly trigger initializes the calendar.
+The business function retains the five-minute cooldown.
 
-The planned binding name is `PORTFOLIO_SERVICE`. The rename is not included in this documentation-only release; use `workers/sec-cron/wrangler.jsonc` as the authority for the deployed binding name.
+The former `/api/internal/earnings/refresh` route and reverse `PORTFOLIO_SERVICE`
+binding are retired. See [portfolio ownership and migration](portfolio-data-api.md).

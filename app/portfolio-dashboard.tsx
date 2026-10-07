@@ -1,5 +1,7 @@
 "use client";
 import { useDataRevision } from "@/packages/client/src/refresh";
+import { PortfolioSyncNote } from "@/components/portfolio-sync-note";
+import type { PortfolioSyncMetadata } from "@/shared/portfolio-contract";
 
 import { apiFetch } from "@/packages/client/src/platform";
 
@@ -19,6 +21,7 @@ import { AllocationPanel } from "./portfolio/allocation";
 import { PositionLedger, HistoricalPositionLedger } from "./portfolio/ledger";
 
 export function PortfolioDashboard({
+  portfolioSync,
   heatmapHoldings,
   positionGroups,
   historicalPositionGroups,
@@ -33,6 +36,7 @@ export function PortfolioDashboard({
   netDeposits,
   cashBalance,
 }: {
+  portfolioSync?: PortfolioSyncMetadata;
   heatmapHoldings: HeatmapHolding[];
   positionGroups: PositionGroupView[];
   historicalPositionGroups: HistoricalPositionGroupView[];
@@ -103,6 +107,7 @@ export function PortfolioDashboard({
   return (
     <>
       <div id="portfolio-panel" role="region" aria-labelledby="portfolio-title">
+        <PortfolioSyncNote sync={portfolioSync} />
         <PortfolioOverview
           netLiquidation={netLiquidation}
           totalPnl={configuredTotalPnl}

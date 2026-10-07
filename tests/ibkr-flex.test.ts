@@ -4,27 +4,10 @@ import { createPortfolioDatabase } from "./helpers/portfolio-database.ts";
 import { normalizeIbkrPosition } from "../lib/portfolio-snapshot.ts";
 
 import { extractCapitalFlows, fetchFlexStatement, normalizeFlexStatement, parseCsv, parseFlexDateTime } from "../lib/ibkr-flex.ts";
-import { publishFlexSnapshot, readPortfolioSnapshot, type PortfolioDatabase } from "../lib/portfolio-store.ts";
+import { publishFlexSnapshot, readPortfolioSnapshot, type PortfolioDatabase } from "../workers/sec-cron/portfolio-store.ts";
 import { handleIbkrSyncRequest, runIbkrFlexSync, type IbkrSyncEnv } from "../workers/sec-cron/ibkr-sync.ts";
 
-const fixture = [
-  '"HEADER","ACCT","ClientAccountID","CurrencyPrimary","DateFunded"',
-  '"DATA","ACCT","ACCOUNT","USD","20260101"',
-  '"HEADER","CTRN","ClientAccountID","CurrencyPrimary","FXRateToBase","Type","Amount","TransactionID","ReportDate","LevelOfDetail"',
-  '"DATA","CTRN","ACCOUNT","USD","1","Deposits/Withdrawals","1000","deposit1","20261201","DETAIL"',
-  '"HEADER","TRFR","ClientAccountID","ReportDate","LevelOfDetail","TransactionID","FXRateToBase","CashTransfer","PositionAmountInBase"',
-  '"HEADER","EQUT","ClientAccountID","ReportDate","Total"',
-  '"DATA","EQUT","ACCOUNT","20261231","70000.50"',
-  '"HEADER","CRTT","ClientAccountID","CurrencyPrimary","LevelOfDetail","ToDate","EndingCash","FromDate","Deposit/Withdrawals","AccountTransfers","InternalTransfers","PaxosTransfers"',
-  '"DATA","CRTT","ACCOUNT","USD","BaseCurrency","20261231","12000.25","20260101","1000","0","0","0"',
-  '"HEADER","POST","ClientAccountID","CurrencyPrimary","AssetClass","Symbol","Description","Conid","UnderlyingSymbol","Multiplier","ReportDate","Quantity","MarkPrice","PositionValue","CostBasisPrice","CostBasisMoney","FifoPnlUnrealized","LevelOfDetail"',
-  '"DATA","POST","ACCOUNT","USD","STK","ACME","ACME, INC","123","","1","20261231","10","20","200","15","150","50","SUMMARY"',
-  '"DATA","POST","ACCOUNT","USD","STK","ACME","ACME, INC","123","","1","20261231","6","20","120","14","84","36","LOT"',
-  '"DATA","POST","ACCOUNT","USD","STK","ACME","ACME, INC","123","","1","20261231","4","20","80","16.5","66","14","LOT"',
-  '"HEADER","TRNT","ClientAccountID","CurrencyPrimary","AssetClass","Symbol","Description","UnderlyingSymbol","TradeID","DateTime","TradeDate","Exchange","Quantity","TradePrice","IBCommission","NetCash","FifoPnlRealized","Buy/Sell","IBOrderID","LevelOfDetail"',
-  '"DATA","TRNT","ACCOUNT","USD","STK","ACME","ACME, INC","","trade-summary","","20261231","","10","20","0","0","0","","","SYMBOL_SUMMARY"',
-  '"DATA","TRNT","ACCOUNT","USD","STK","ACME","ACME, INC","","trade-1","20261231;233000 EST","20261231","NYSE","2","20","-0.35","-40.35","5.25","SELL","88","EXECUTION"',
-].join("\n");
+import { flexFixture as fixture } from "./helpers/ibkr-fixture.ts";
 
 test("parses quoted commas without shifting Flex columns", () => {
   const rows = parseCsv('"DATA","POST","ACME, INC","10"\n');
@@ -139,44 +122,20 @@ test("publishes a validated Flex snapshot and history in one D1 batch", async ()
   assert.equal(result.snapshot.positions[0].symbol, "ACME");
   assert.equal(result.snapshot.trades.some((trade) => trade.tradeId === "trade-1"), true);
   assert.equal(batches.length, 1);
-  assert.equal(batches[0].length, 2);
-  assert.equal((await readPortfolioSnapshot(database)).schemaVersion, 1);
+  assert.equal(batches[0].length, 3);
+  assert.equal(await readPortfolioSnapshot(database), null);
 });
 
-test("repairs symbols in the already-published legacy Flex snapshot", async () => {
-  const stored = {
-    ...(await readPortfolioSnapshot({
-      prepare() {
-        return { bind() { return this; }, async first<T>() { return null as T | null; } };
-      },
-    })),
-    source: { provider: "IBKR", method: "FLEX", reportDate: "2026-09-04", queryId: "1628251" },
-    positions: [{
-      positionKey: "STK:272093",
-      symbol: "MICROSOFT",
-      contractDescription: "MICROSOFT CORP",
-      assetClass: "STK",
-      quantity: 1,
-      averagePrice: 400,
-      marketPrice: 500,
-      marketValue: 500,
-      costBasis: 400,
-      unrealizedPnl: 100,
-    }],
-  };
-  const database = {
-    prepare() {
-      return {
-        bind() { return this; },
-        async first<T>() { return { payload: JSON.stringify(stored) } as T; },
-      };
-    },
-  };
-
-  const repaired = await readPortfolioSnapshot(database);
-
-  assert.equal(repaired.positions[0].symbol, "MSFT");
-  assert.equal(repaired.positions[0].contractDescription, "MICROSOFT CORP");
+test("repairs symbols in a migrated legacy Flex snapshot without using demo account data", async () => {
+  const { database, sqlite } = createPortfolioDatabase();
+  try {
+    const raw = normalizeFlexStatement(fixture, { generatedAt: "2027-01-01T00:00:00Z", queryPeriod: "DAYS_7", queryId: "1" });
+    const { snapshot } = await publishFlexSnapshot(database, raw);
+    snapshot.positions[0] = { ...snapshot.positions[0], positionKey: "STK:272093", symbol: "MICROSOFT", contractDescription: "MICROSOFT CORP" };
+    sqlite.prepare("UPDATE portfolio_state SET payload = ?").run(JSON.stringify(snapshot));
+    const repaired = await readPortfolioSnapshot(database);
+    assert.equal(repaired?.positions[0].symbol, "MSFT");
+  } finally { sqlite.close(); }
 });
 
 test("extracts and reconciles capital flows, rejecting incomplete cash data", () => {
@@ -186,47 +145,23 @@ test("extracts and reconciles capital flows, rejecting incomplete cash data", ()
   assert.throws(() => extractCapitalFlows(fixture.replace('"1000","deposit1"', '"900","deposit1"')), /reconcile/);
 });
 
-test("Flex sync uses the authenticated service binding and disables redirects", async () => {
+test("Flex sync owns persistence and only contacts IBKR", async () => {
+  const { database, sqlite } = createPortfolioDatabase();
   const calls: Request[] = [];
-  const responses = [
-    Response.json({ lastSuccessfulTradeAt: "2026-12-30T20:00:00.000Z" }),
-    new Response('<FlexStatementResponse><Status>Success</Status><ReferenceCode>123456</ReferenceCode></FlexStatementResponse>'),
-    new Response(fixture),
-    Response.json({ status: "published", reportDate: "2026-12-31", positions: 1, trades: 1 }),
-  ];
-  const env = {
-    PORTFOLIO_SERVICE: {
-      fetch: (async (input, init) => {
-        calls.push(new Request(input, init));
-        return responses.shift()!;
-      }) as typeof fetch,
-    },
-    IBKR_FLEX_TOKEN: "1234567890",
-    IBKR_FLEX_QUERY_ID: "1628251",
-    PORTFOLIO_SYNC_KEY: "portfolio-key",
-  } satisfies IbkrSyncEnv;
-  const result = await runIbkrFlexSync(env, (async (input, init) => {
-    assert.ok(new Request(input, init).url.startsWith("https://ndcdyn.interactivebrokers.com/"));
-    calls.push(new Request(input, init));
-    return responses.shift()!;
-  }) as typeof fetch, new Date("2027-01-01T14:00:00.000Z"));
-  assert.equal(result.status, "published");
-  assert.equal(calls.filter((request) => request.url.includes("SendRequest")).length, 1);
-  assert.equal(calls.at(-1)?.method, "POST");
-  for (const request of [calls[0], calls.at(-1)!]) {
-    assert.equal(request.url, "https://investment-record.internal/api/internal/portfolio/sync");
-    assert.deepEqual([...request.headers.keys()].sort(), ["content-type", "x-portfolio-sync-key"]);
-    assert.equal(request.headers.get("x-portfolio-sync-key"), "portfolio-key");
-    assert.equal(request.redirect, "manual");
-  }
-});
-
-test("Cloudflare sync fails closed when the service binding is missing", async () => {
-  const env = {
-    IBKR_FLEX_TOKEN: "1234567890", IBKR_FLEX_QUERY_ID: "1628251",
-    PORTFOLIO_SYNC_KEY: "key",
-  } as IbkrSyncEnv;
-  await assert.rejects(runIbkrFlexSync(env), /service binding is missing/);
+  try {
+    const responses = [new Response('<FlexStatementResponse><Status>Success</Status><ReferenceCode>123456</ReferenceCode></FlexStatementResponse>'), new Response(fixture)];
+    const env = { DB: database, IBKR_FLEX_TOKEN: "1234567890", IBKR_FLEX_QUERY_ID: "1628251", PORTFOLIO_SYNC_KEY: "write", PORTFOLIO_READ_TOKEN: "read" } satisfies IbkrSyncEnv;
+    const result = await runIbkrFlexSync(env, async (input, init) => {
+      const request = new Request(input, init);
+      assert.equal(new URL(request.url).hostname, "ndcdyn.interactivebrokers.com");
+      calls.push(request);
+      return responses.shift()!;
+    }, () => new Date("2027-01-01T06:05:00.000Z"));
+    assert.equal(result.status, "published");
+    assert.equal(calls.length, 2);
+    assert.equal((await readPortfolioSnapshot(database))?.trades.length, 1);
+    assert.equal((await readPortfolioSnapshot(database))?.account.netDeposits, 1000);
+  } finally { sqlite.close(); }
 });
 
 test("manual portfolio trigger requires POST and a matching secret before fetching IBKR", async () => {
@@ -251,23 +186,20 @@ test("manual portfolio trigger requires POST and a matching secret before fetchi
   assert.doesNotMatch(await failure.text(), /private-provider-detail/);
 });
 
-test("backfills same-date net deposits atomically, then skips an identical report", async () => {
-  const raw = normalizeFlexStatement(fixture, { generatedAt: "2027-01-01T14:00:00.000Z", queryPeriod: "DAYS_7", queryId: "1628251" });
-  const initialDb: PortfolioDatabase = { prepare() { return { bind() { return this; }, async first<T>() { return null as T | null; } }; }, async batch() { return [{ meta: { changes: 1 } }]; } };
-  let stored = (await publishFlexSnapshot(initialDb, raw)).snapshot;
-  let writes = 0;
-  const database: PortfolioDatabase = {
-    prepare() { return { bind() { return this; }, async first<T>() { return { payload: JSON.stringify(stored) } as T; } }; },
-    async batch(statements) { assert.equal(statements.length, 2); writes++; return [{ meta: { changes: 1 } }]; },
-  };
-  raw.capitalFlows = extractCapitalFlows(fixture);
-  const result = await publishFlexSnapshot(database, raw);
-  assert.equal(result.status, "published");
-  assert.equal(result.snapshot.account.netDeposits, 1000);
-  assert.equal(result.snapshot.account.netDepositsSource, "FLEX");
-  stored = result.snapshot;
-  assert.equal((await publishFlexSnapshot(database, raw)).status, "unchanged");
-  assert.equal(writes, 1);
+test("backfills same-date net deposits atomically, then refreshes time for identical reports", async () => {
+  const { database, sqlite } = createPortfolioDatabase();
+  try {
+    const raw = normalizeFlexStatement(fixture, { generatedAt: "2027-01-01T06:00:00.000Z", queryPeriod: "DAYS_7", queryId: "1628251" });
+    await publishFlexSnapshot(database, raw);
+    raw.capitalFlows = extractCapitalFlows(fixture);
+    const result = await publishFlexSnapshot(database, raw);
+    assert.equal(result.status, "published");
+    assert.equal(result.snapshot.account.netDeposits, 1000);
+    const later = { ...raw, generatedAt: "2027-01-01T07:00:00.000Z" };
+    assert.equal((await publishFlexSnapshot(database, later)).status, "unchanged");
+    assert.equal(sqlite.prepare("SELECT synced_at FROM portfolio_state").get()?.synced_at, later.generatedAt);
+    assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM portfolio_history").get()?.n, 1);
+  } finally { sqlite.close(); }
 });
 
 test("retains actual option multipliers and reported cost through normalization", () => {
@@ -297,7 +229,7 @@ test("publishes a reconciled cash-only account but rejects missing or inconsiste
     assert.equal(result.snapshot.positions.length, 0);
     assert.equal(result.snapshot.account.netLiquidation, 12000.25);
     assert.ok(result.snapshot.trades.some(trade => trade.tradeId === "trade-1"));
-    assert.equal((await readPortfolioSnapshot(database)).positions.length, 0);
+    assert.equal((await readPortfolioSnapshot(database))!.positions.length, 0);
   } finally { sqlite.close(); }
 });
 
@@ -314,7 +246,7 @@ test("same-date corrections publish while identical later fetches and older corr
     assert.equal((await publishFlexSnapshot(database, correction)).status, "published");
     assert.equal((await publishFlexSnapshot(database, { ...correction, generatedAt: "2027-01-02T01:00:00Z" })).status, "unchanged");
     assert.equal((await publishFlexSnapshot(database, raw)).status, "unchanged");
-    assert.equal((await readPortfolioSnapshot(database)).account.netLiquidation, 71000);
+    assert.equal((await readPortfolioSnapshot(database))!.account.netLiquidation, 71000);
     assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM portfolio_history").get()?.n, 1);
     assert.equal(sqlite.prepare("SELECT net_liquidation AS nav FROM portfolio_history").get()?.nav, "71000");
   } finally { sqlite.close(); }
@@ -337,7 +269,7 @@ test("a concurrent older report cannot overwrite the latest snapshot or its hist
       },
     };
     assert.equal((await publishFlexSnapshot(racing, older)).status, "unchanged");
-    assert.equal((await readPortfolioSnapshot(database)).source?.reportDate, "2027-01-01");
+    assert.equal((await readPortfolioSnapshot(database))!.source?.reportDate, "2027-01-01");
     assert.deepEqual(sqlite.prepare("SELECT date, net_liquidation FROM portfolio_history").all().map(row => ({ ...row })), [
       { date: "2027-01-02", net_liquidation: "72000" },
     ]);
@@ -360,7 +292,7 @@ test("a losing newer writer rereads and retains the concurrent writer's trade hi
       },
     };
     assert.equal((await publishFlexSnapshot(racing, newer)).status, "published");
-    const snapshot = await readPortfolioSnapshot(database);
+    const snapshot = (await readPortfolioSnapshot(database))!;
     assert.ok(snapshot.trades.some(trade => trade.tradeId === "trade-1"));
     assert.ok(snapshot.trades.some(trade => trade.tradeId === "trade-newer"));
   } finally { sqlite.close(); }

@@ -51,10 +51,8 @@ test("portfolio presentation preserves stock/option values and zero-NAV leverage
 });
 
 
-test("missing stored portfolio is explicitly marked as fallback", async () => {
-  const { readPortfolioSnapshotWithSource } = await import("../lib/portfolio-store");
+test("missing portfolio is uninitialized instead of a bundled snapshot", async () => {
+  const { readPortfolioResponse } = await import("../workers/sec-cron/portfolio-store");
   const database = { prepare: () => ({ bind() { return this; }, async first<T>() { return null as T | null; } }) };
-  const result = await readPortfolioSnapshotWithSource(database);
-  assert.equal(result.source, "fallback");
-  assert.ok(result.snapshot.generatedAt);
+  assert.deepEqual(await readPortfolioResponse(database), { portfolio: null, reportDate: null, syncedAt: null, syncStatus: "uninitialized" });
 });
