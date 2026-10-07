@@ -43,3 +43,7 @@ test("zero account balance and deposits have finite summary metrics",()=>{
   assert.equal(result.account.portfolioLeverage,0);
   assert.equal(result.account.totalPnlRate,0);
 });
+test("API report date keeps year-end realized gains after a January sync", () => {
+  const result = buildMobilePortfolio({ ...snapshot, source: undefined, generatedAt: "2027-01-01T06:00:00Z" }, "live", "2026-12-31");
+  assert.equal(result.positionGroups[0].realized, 39);
+});

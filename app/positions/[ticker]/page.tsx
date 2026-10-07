@@ -21,7 +21,7 @@ export default async function PositionPage({ params }: { params: Promise<{ ticke
     return <PortfolioUnavailable reason={error.reason} />;
   }
   const { snapshot } = data;
-  const portfolioViewModel = buildPortfolioViewModel(snapshot);
+  const portfolioViewModel = buildPortfolioViewModel(snapshot, data.sync.reportDate);
   const security = findSecurity(ticker, portfolioViewModel);
   if (!security) notFound();
   const position = portfolioViewModel.positionGroups.find((group) => group.symbol === ticker);

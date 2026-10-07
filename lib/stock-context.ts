@@ -8,7 +8,7 @@ import { normalizeTicker } from "@/lib/symbol-directory";
 export async function loadStock(rawTicker: string) {
   const ticker = normalizeTicker(rawTicker);
   const { snapshot, sync } = await loadPortfolio();
-  const view = buildPortfolioViewModel(snapshot);
+  const view = buildPortfolioViewModel(snapshot, sync.reportDate);
   const security = findSecurity(ticker, view);
   if (!security) throw new Error("未找到对应的美股或 ETF。");
   return {

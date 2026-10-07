@@ -16,7 +16,7 @@ export default async function Today() {
     return <PortfolioUnavailable reason={error.reason} />;
   }
   const { snapshot, sync } = data;
-  const portfolio = buildPortfolioViewModel(snapshot);
+  const portfolio = buildPortfolioViewModel(snapshot, sync.reportDate);
   const grossPositionsValue = snapshot.positions.reduce((sum, position) => sum + Math.abs(position.marketValue), 0);
   const { netLiquidation, netDeposits, cashBalance } = snapshot.account;
   return (

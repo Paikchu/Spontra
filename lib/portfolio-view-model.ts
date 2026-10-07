@@ -54,8 +54,8 @@ function portfolioTradeDate(trade: PortfolioSnapshotV1["trades"][number]): strin
   return trade.tradeDate ?? trade.tradeTime.slice(0, 10);
 }
 
-export function buildPortfolioViewModel(snapshot: PortfolioSnapshotV1) {
-  const snapshotYear = Number(snapshot.source?.reportDate?.slice(0, 4) ?? new Date(snapshot.generatedAt).getUTCFullYear());
+export function buildPortfolioViewModel(snapshot: PortfolioSnapshotV1, reportDate?: string | null) {
+  const snapshotYear = Number((reportDate ?? snapshot.source?.reportDate)?.slice(0, 4) ?? new Date(snapshot.generatedAt).getUTCFullYear());
   const realizedBySymbolAndType = snapshot.trades.reduce<Record<string, { stock: number; options: number }>>((totals, trade) => {
     if (Number(portfolioTradeDate(trade).slice(0, 4)) !== snapshotYear) return totals;
     if (trade.securityType !== "STK" && trade.securityType !== "OPT") return totals;
