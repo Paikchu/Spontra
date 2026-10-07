@@ -108,6 +108,10 @@ test("quarterly revenue guidance lands on its quarter and the next one; longer h
  assert.deepEqual(overlay.bySlot.map(m=>m?.item.id??null),[null,"growth","later"]);
  assert.equal(overlay.bySlot[1]!.derived,true);
  assert.equal(overlay.next?.item.id,"next");
+ const cc = guidanceItem({id:"cc",basis:"constant_currency",measure:"growth",unit:"percent",low:30,high:34});
+ const ccOverlay = guidanceOverlay(slots,guidancePublication([cc]),null);
+ assert.equal(ccOverlay.next,null);
+ assert.deepEqual(ccOverlay.outlook.map(i=>i.id),["cc"]);
  assert.deepEqual(overlay.outlook.map(i=>i.id),["fy"]);
  const segment=guidanceOverlay(slots,guidancePublication(items),{key:"k",id:"CloudInfrastructureRevenues",parent:null,name:"云基础设施",slot:1});
  assert.equal(segment.next?.item.id,"seg");

@@ -59,6 +59,7 @@ test("fiscal periods resolve from any reported anchor, across fiscal year-ends",
   assert.equal(resolvePeriodEnd(2027, 2, "quarter", orcl), "2026-11-30");
   assert.equal(resolvePeriodEnd(2027, null, "annual", orcl), "2027-05-31");
   assert.equal(resolvePeriodEnd(2026, 4, "quarter", orcl), "2026-05-31");
+  assert.equal(resolvePeriodEnd(2027, 2, "quarter", [{ fiscalYear: 2026, fiscalPeriod: "Q1", periodEnd: "2026-08-31" }, { fiscalYear: 2026, fiscalPeriod: "FY", periodEnd: "2026-05-31" }]), "2026-11-30");
   const adsk = [{ fiscalYear: 2026, fiscalPeriod: "FY", periodEnd: "2026-01-31" }];
   assert.equal(resolvePeriodEnd(2027, 1, "quarter", adsk), "2026-04-30");
   // A 52/53-week year ending in the first days of a month belongs to the previous month.
@@ -118,6 +119,7 @@ test("growth guidance becomes an amount from the prior-year actual, and the guid
   const [q, a] = attachRevenueContext([quarter!, annual!], quarters);
   assert.deepEqual(q!.derived, { low: 110, high: 120, basePeriodEnd: "2025-11-30", base: 100 });
   assert.deepEqual(q!.actual, { value: 117, periodEnd: "2026-11-30" });
+  assert.equal(attachRevenueContext([{ ...quarter!, basis: "constant_currency" }], quarters)[0]!.derived, null);
   assert.equal(Math.round(a!.derived!.low), 462, "four prior-year quarters, +10%");
 });
 

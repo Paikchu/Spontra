@@ -85,7 +85,7 @@ async function fiscalAnchors(repository: D1SecRepository, feed: SecFilingFeed | 
     if (!/^(10-Q|10-K)(\/A)?$/.test(filing.form)) continue;
     const period = (await repository.getCache<SecFiscalPeriod | null>(fiscalPeriodKey(filing)))?.payload;
     if (period) anchors.push({ fiscalYear: period.fiscalYear, fiscalPeriod: period.fiscalPeriod, periodEnd: period.periodEnd });
-    if (anchors.length >= 2) break;
+    if (anchors.length >= 8 || period?.fiscalPeriod === "FY") break;
   }
   return anchors;
 }

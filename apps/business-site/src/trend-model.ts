@@ -179,6 +179,7 @@ function forSubject(item: GuidanceItem, selected: TrendItem | null) {
 }
 
 function mark(item: GuidanceItem, sources: GuidanceSource[]): GuideMark | null {
+  if (item.basis === "constant_currency") return null;
   const range = item.unit === "USD" && item.low != null && item.high != null ? { low: item.low, high: item.high, derived: false }
     : item.derived ? { low: item.derived.low, high: item.derived.high, derived: true } : null;
   return range && item.periodEnd ? { periodEnd: item.periodEnd, ...range, item, source: sources.find(s => s.id === item.sourceIds[0]) ?? null } : null;
@@ -187,7 +188,7 @@ function mark(item: GuidanceItem, sources: GuidanceSource[]): GuideMark | null {
 /**
  * Places quarterly revenue guidance on the trend: each reported quarter gets the last range guided for it,
  * and the next quarter gets its own column. Annual and long-term targets do not fit a quarterly axis and
- * are returned separately, from the latest event only.
+ * are returned separately, from the latest event only. Unplottable future quarterly guidance stays visible as text.
  */
 export function guidanceOverlay(slots: Slot[], guidance: GuidancePublication | null, selected: TrendItem | null): GuideOverlay {
   const empty = { bySlot: slots.map(() => null), next: null, outlook: [] };
@@ -200,7 +201,8 @@ export function guidanceOverlay(slots: Slot[], guidance: GuidancePublication | n
   };
   const last = slots.at(-1)!.periodEnd;
   const canPlot = slots.at(-1)!.quarter?.currency === "USD";
-  const longer = latestFirst.filter(i => i.horizon !== "quarter" && (selected ? forSubject(i, selected) : !i.segment));
+  const longer = latestFirst.filter(i => (selected ? forSubject(i, selected) : !i.segment)
+    && (i.horizon !== "quarter" || ((!i.periodEnd || Date.parse(i.periodEnd) > Date.parse(last)) && (!canPlot || !mark(i, guidance.sources)))));
   const newest = longer[0]?.issuedAt;
   const order = ["revenue", "segment_revenue", "operating_margin", "eps", "free_cash_flow", "capex"];
   const rank = (i: GuidanceItem) => { const r = order.indexOf(i.metric); return r < 0 ? order.length : r; };
