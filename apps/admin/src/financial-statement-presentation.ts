@@ -10,7 +10,6 @@ export function classifyStatementCategory(section: string): StatementCategory {
   const heading = section.trim().replace(/\s+/g, " ");
   if (/^(?:notes?\b|\d{1,2}[.\s:–—-]+\D)/i.test(heading)) return "notes";
   if (/\bbalance sheets?\b|\bstatements? of financial (?:position|condition)\b/i.test(heading)) return "balance";
-  if (/\b(?:comprehensive (?:income|loss)|(?:stockholders|shareholders|owners)[’']? equity|changes in equity)\b/i.test(heading)) return "other";
   if (/\bcash flows?\b/i.test(heading)) return "cashflow";
   if (/\bstatements? of (?:income|operations|earnings|profit or loss)\b|\b(?:income|operations|earnings) statements?\b/i.test(heading)) return "income";
   return "other";

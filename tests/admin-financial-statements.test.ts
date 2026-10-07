@@ -15,6 +15,7 @@ const table = (rows: StatementCell[][], options: Partial<StatementTable> = {}): 
 });
 
 test("statement navigation follows explicit headings and never turns note or comprehensive income into an income statement", () => {
+  assert.equal(classifyStatementCategory("Condensed Consolidated Statements of Operations and Comprehensive Loss"), "income");
   assert.equal(classifyStatementCategory("Condensed Consolidated Balance Sheets"), "balance");
   assert.equal(classifyStatementCategory("Consolidated Statements of Financial Position"), "balance");
   assert.equal(classifyStatementCategory("CONSOLIDATED STATEMENTS OF OPERATIONS"), "income");
