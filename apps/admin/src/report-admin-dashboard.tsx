@@ -54,6 +54,7 @@ export function ReportAdminDashboard({ mainAppOrigin = "" }: { mainAppOrigin?: s
   const listFilter = useRef("");
 
   function chooseReport(next: string | null) {
+    if (next === selectedRef.current && !version) return;
     selectedRef.current = next; setSelected(next); setVersion(""); setDetail(null);
     setDetailError(""); setConfirming(false); setLoadingDetail(!!next);
   }
@@ -193,6 +194,6 @@ export function ReportAdminDashboard({ mainAppOrigin = "" }: { mainAppOrigin?: s
         </div>}
       </>}
     </main>
-    <dialog ref={dialog} className="ra-dialog" onCancel={() => { if (!mutation) setConfirming(false); }} onClose={() => setConfirming(false)} aria-labelledby="ra-confirm-title"><div><RefreshCw size={27} /><h2 id="ra-confirm-title">重新生成这份财报分析？</h2><p>{detail?.filing.companyName} · {detail ? period(detail.filing) : ""}</p><p>将根据这份财报的原始材料重新生成分析，可能需要数分钟。当前报告和历史版本会保留。</p><div className="ra-dialog-actions"><button disabled={!!mutation} onClick={() => setConfirming(false)}>取消</button><button className="ra-primary" disabled={!!mutation} onClick={() => void regenerate()}>{mutation === "regenerate" && <LoaderCircle className="ra-spin" size={15} />}{mutation === "regenerate" ? "正在提交…" : "确认重新生成"}</button></div></div></dialog>
+    <dialog ref={dialog} className="ra-dialog" onCancel={event => { if (mutation) event.preventDefault(); else setConfirming(false); }} onClose={() => setConfirming(false)} aria-labelledby="ra-confirm-title"><div><RefreshCw size={27} /><h2 id="ra-confirm-title">重新生成这份财报分析？</h2><p>{detail?.filing.companyName} · {detail ? period(detail.filing) : ""}</p><p>将根据这份财报的原始材料重新生成分析，可能需要数分钟。当前报告和历史版本会保留。</p><div className="ra-dialog-actions"><button disabled={!!mutation} onClick={() => setConfirming(false)}>取消</button><button className="ra-primary" disabled={!!mutation} onClick={() => void regenerate()}>{mutation === "regenerate" && <LoaderCircle className="ra-spin" size={15} />}{mutation === "regenerate" ? "正在提交…" : "确认重新生成"}</button></div></div></dialog>
   </div>;
 }

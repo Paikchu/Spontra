@@ -94,7 +94,7 @@ test("guidance is supplementary: a valid publication is served, anything else re
  assert.equal(await loadGuidance("ORCL",async()=>{throw new Error("down");}),null);
 });
 test("quarterly revenue guidance lands on its quarter and the next one; longer horizons come from the latest event",()=>{
- const slots:Slot[]=["2026-02-28","2026-05-31","2026-08-31"].map(periodEnd=>({periodEnd,quarter:null}));
+ const slots:Slot[]=["2026-02-28","2026-05-31","2026-08-31"].map(periodEnd=>({periodEnd,quarter:{periodStart:periodEnd,periodEnd,currency:"USD",scale:1,revenue:"100",basis:"reported",segments:[],source:{accession:"0001193125-26-389274",url:"https://www.sec.gov/Archives/edgar/data/1341439/a.htm",filedAt:periodEnd,form:"10-Q"}}}));
  const items=[
   guidanceItem({id:"old",periodEnd:"2026-08-31",low:14e9,high:14.2e9,issuedAt:"2026-03-10"}),
   guidanceItem({id:"later",periodEnd:"2026-08-31",low:14.1e9,high:14.3e9,issuedAt:"2026-06-11"}),

@@ -352,6 +352,7 @@ button { cursor: pointer; }
 .trend-period { position: absolute; top: calc(100% + 7px); left: -8px; right: -8px; display: flex; justify-content: center; align-items: center; gap: 5px; font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .trend-col[data-current] .trend-period { color: var(--foreground); }
 .trend-period b { padding: 0 5px; border-radius: 4px; font-size: 10px; font-weight: 600; color: var(--background); background: var(--foreground); }
+.trend-period-month::before { content: "."; }
 
 .trend-tip { position: absolute; bottom: calc(100% + 26px); left: 50%; z-index: 6; min-width: 210px; padding: 10px 12px; transform: translateX(-50%); pointer-events: none; border-radius: 10px; font-size: 12px;
   background: color-mix(in srgb, var(--surface-raised) 94%, transparent); backdrop-filter: blur(10px); border: 1px solid var(--border); box-shadow: var(--shadow-overlay); animation: fade-in .15s ease both; }
@@ -552,10 +553,14 @@ button { cursor: pointer; }
 .trend-outlook em { margin-left: 6px; font-style: normal; font-weight: 600; color: var(--muted-foreground); }
 .trend-outlook em[data-action="raised"] { color: var(--up); }
 .trend-outlook em[data-action="lowered"] { color: var(--loss); }
-/* Narrow screens already crowd the period labels; the guidance column keeps only its badge. */
+/* Stack dates and badges so all eight quarters (and the next guidance) stay readable. */
 @media (max-width: 620px) {
-  .trend-col--guide .trend-period { font-size: 0; }
-  .trend-col--guide .trend-period b { font-size: 10px; }
+  .trend[data-view="trend"] { grid-template-rows: auto 256px; }
+  .trend-plot { padding-bottom: 60px; }
+  .trend-grid, .trend-sweep { bottom: 60px; }
+  .trend-period { flex-direction: column; gap: 3px; font-size: 9.5px; line-height: 1.2; }
+  .trend-period time span { display: block; text-align: center; }
+  .trend-period-month::before { content: none; }
 }
 
 /* Product relationships are qualitative: constant strokes carry no financial amount. */

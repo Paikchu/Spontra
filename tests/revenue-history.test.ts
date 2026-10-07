@@ -57,6 +57,29 @@ test("trend slots step by calendar quarter and keep uncollected periods as expli
   assert.deepEqual(slots.map(s => s.quarter ? 1 : 0), [0, 0, 0, 0, 1, 0, 1, 1]);
 });
 
+test("trends normalize mixed disclosure scales for totals, children and growth without changing source data", () => {
+  const prior = { ...withChildren("2026-05-31", 3000, 5000, 1000), scale: 1000 };
+  const current = { ...withChildren("2026-08-31", 4, 7, 1), scale: 1_000_000 };
+  const mixed = { ...history, quarters: [current, prior] };
+  const original = structuredClone(mixed);
+  const slots = buildSlots(mixed);
+  const columns = buildColumns(slots, items, null);
+  assert.deepEqual(columns.slice(-2).map(c => c.total), [9e6, 12e6]);
+  assert.deepEqual(buildColumns(slots, items, items[1]).slice(-2).map(c => c.total), [3e6, 4e6]);
+  assert.equal(buildBridge(columns, 7, 1)!.change, 3e6);
+  assert.equal(growthSeries(columns, 1).at(-1), (12 / 9 - 1) * 100);
+  assert.deepEqual(mixed, original);
+});
+
+test("different reporting currencies leave a labelled gap instead of a false growth comparison", () => {
+  const slots = buildSlots({ ...history, quarters: [{ ...withChildren("2026-05-31", 3, 5, 1), currency: "EUR" }, withChildren("2026-08-31", 4, 7, 1)] });
+  assert.equal(slots.at(-2)!.missingReason, "currency");
+  const columns = buildColumns(slots, items, null);
+  assert.equal(columns.at(-2)!.total, null);
+  assert.equal(growthSeries(columns, 1).at(-1), null);
+  assert.equal(buildBridge(columns, 7, 1), null);
+});
+
 test("columns retain original disclosed businesses across presentations without inventing a current business split", () => {
   const slots = buildSlots(history);
   const all = buildColumns(slots, items, null);

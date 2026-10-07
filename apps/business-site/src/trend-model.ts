@@ -3,7 +3,7 @@ import type { GuidanceItem, GuidancePublication, GuidanceSource } from "@/shared
 import { disclosedSegmentLabel } from "@/lib/earning-report/web/business-flow-model";
 
 export type TrendItem = { key: string; id: string; parent: string | null; name: string; slot: number };
-export type Slot = { periodEnd: string; quarter: RevenueHistoryQuarter | null };
+export type Slot = { periodEnd: string; quarter: RevenueHistoryQuarter | null; missingReason?: "currency" };
 /** A stacked piece of one column. Every column renders every layer key, so switching focus morphs heights instead of remounting. */
 export type Layer = { key: string; value: number; tone: "root" | "child" | "total"; slot: number; shade: number; name: string };
 export type Column = { slot: Slot; layers: Layer[]; total: number | null; state: "ok" | "missing" | "basis" };
@@ -14,6 +14,16 @@ const norm = (name: string) => disclosedSegmentLabel(name).replace(/[\s（）()]
 const monthIndex = (date: string) => Number(date.slice(0, 4)) * 12 + Number(date.slice(5, 7)) - 1;
 const monthEnd = (index: number) => new Date(Date.UTC(Math.floor(index / 12), index % 12 + 1, 0)).toISOString().slice(0, 10);
 
+/** Use base currency units for both actuals and guidance; never compare different currencies without an exchange-rate basis. */
+function unscaledQuarter(quarter: RevenueHistoryQuarter): RevenueHistoryQuarter {
+  const amount = <T extends { value: string }>(item: T): T => ({ ...item, value: String(Number(item.value) * quarter.scale) });
+  return {
+    ...quarter, scale: 1, revenue: String(Number(quarter.revenue) * quarter.scale),
+    segments: quarter.segments.map(segment => ({ ...amount(segment), ...(segment.children ? { children: segment.children.map(amount) } : {}) })),
+    ...(quarter.revenueAdjustments ? { revenueAdjustments: quarter.revenueAdjustments.map(amount) } : {}),
+  };
+}
+
 /** Consecutive quarterly slots ending at the newest period; extra slots supply growth baselines without adding visible bars. */
 export function buildSlots(history: RevenueHistory, count = SLOTS): Slot[] {
   const quarters = [...history.quarters].sort((a, b) => a.periodEnd.localeCompare(b.periodEnd));
@@ -23,7 +33,9 @@ export function buildSlots(history: RevenueHistory, count = SLOTS): Slot[] {
   return Array.from({ length: count }, (_, i) => {
     const target = top - 3 * (count - 1 - i);
     const match = quarters.find(q => Math.abs(monthIndex(q.periodEnd) - target) <= 1) ?? null;
-    return { periodEnd: match?.periodEnd ?? monthEnd(target), quarter: match };
+    const differentCurrency = match && match.currency !== latest.currency;
+    return { periodEnd: match?.periodEnd ?? monthEnd(target), quarter: match && !differentCurrency ? unscaledQuarter(match) : null,
+      ...(differentCurrency ? { missingReason: "currency" as const } : {}) };
   });
 }
 
@@ -187,13 +199,14 @@ export function guidanceOverlay(slots: Slot[], guidance: GuidancePublication | n
     return null;
   };
   const last = slots.at(-1)!.periodEnd;
+  const canPlot = slots.at(-1)!.quarter?.currency === "USD";
   const longer = latestFirst.filter(i => i.horizon !== "quarter" && (selected ? forSubject(i, selected) : !i.segment));
   const newest = longer[0]?.issuedAt;
   const order = ["revenue", "segment_revenue", "operating_margin", "eps", "free_cash_flow", "capex"];
   const rank = (i: GuidanceItem) => { const r = order.indexOf(i.metric); return r < 0 ? order.length : r; };
   return {
-    bySlot: slots.map(slot => pick(end => near(end, slot.periodEnd))),
-    next: pick(end => Date.parse(end) - Date.parse(last) > 20 * DAY && Date.parse(end) - Date.parse(last) < 120 * DAY),
+    bySlot: slots.map(slot => canPlot && slot.missingReason !== "currency" ? pick(end => near(end, slot.periodEnd)) : null),
+    next: canPlot ? pick(end => Date.parse(end) - Date.parse(last) > 20 * DAY && Date.parse(end) - Date.parse(last) < 120 * DAY) : null,
     outlook: longer.filter(i => i.issuedAt === newest).sort((a, b) => rank(a) - rank(b) || (a.horizon === "annual" ? -1 : 1)).slice(0, 4),
   };
 }

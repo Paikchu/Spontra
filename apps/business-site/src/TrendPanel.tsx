@@ -11,6 +11,7 @@ import { SLOTS, ACTION_NAMES, buildBridge, buildColumns, buildSlots, columnIndex
 
 const SHADES = [100, 66, 44, 30];
 const shortPeriod = (end: string) => end.slice(0, 7).replace("-", ".");
+const periodLabel = (end: string) => <time dateTime={end}><span>{end.slice(0, 4)}</span><span className="trend-period-month">{end.slice(5, 7)}</span></time>;
 const percent = (v: number | null) => v == null ? "—" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(1)}%`;
 const trend = (v: number | null) => v == null || v === 0 ? undefined : v > 0 ? "up" : "down";
 
@@ -49,8 +50,9 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
   const guided = [...overlay.bySlot, overlay.next].filter((m): m is GuideMark => m != null);
   const ticks = niceTicks(Math.max(0, ...columns.map(c => c.total ?? 0), ...guided.map(m => m.high)));
   const scale = ticks.at(-1)!;
-  const unit = history.quarters.at(-1)!;
+  const unit = historySlots.at(-1)!.quarter!;
   const money = (v: number | null) => compactFlowValue(v, { currency: unit.currency, scale: unit.scale } as BusinessFlowQuarter);
+  const guidanceMoney = (v: number | null) => compactFlowValue(v, { currency: "USD", scale: 1 } as BusinessFlowQuarter);
   const known = columns.filter(c => c.total != null);
   const last = columns.at(-1)?.total ?? null, yearAgo = columns.at(-5)?.total ?? null;
   const yoy = growth(last, yearAgo), span = known.length > 1 ? growth(known.at(-1)!.total, known[0].total) : null;
@@ -130,7 +132,7 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
     </div>
     {overlay.outlook.length > 0 && <p className="trend-outlook" aria-label="管理层年度与长期指引">
       <span>管理层指引 · {overlay.outlook[0].issuedAt}</span>
-      {overlay.outlook.map(item => <span key={item.id} title={item.text}><b>{guidanceLabel(item, money)}</b>{item.action && item.previous && <em data-action={item.action}>{ACTION_NAMES[item.action]}</em>}</span>)}
+      {overlay.outlook.map(item => <span key={item.id} title={item.text}><b>{guidanceLabel(item, guidanceMoney)}</b>{item.action && item.previous && <em data-action={item.action}>{ACTION_NAMES[item.action]}</em>}</span>)}
     </p>}
     </>}
   </section></ChartContainer>;
@@ -209,8 +211,9 @@ function Bar({ column, index, order, scale, hue, money, current, pickable, hover
 }) {
   const { config } = useChart();
   const q = column.slot.quarter;
-  const label = column.state === "missing" ? "该季度未取得可核验披露" : column.state === "basis" ? (selected ? "该期财报未按此业务口径披露" : q?.revenueAdjustments?.length ? "分部含内部交易，此柱展示抵销后的合并收入；选择业务可查看分部收入" : column.layers.length > 1 ? "该期按原披露分类展示，未推定当前业务拆分" : "该期仅取得可核验的公司总收入") : "";
+  const label = column.state === "missing" ? (column.slot.missingReason === "currency" ? "该季度披露币种不同，未作汇率换算，金额与增速留空" : "该季度未取得可核验披露") : column.state === "basis" ? (selected ? "该期财报未按此业务口径披露" : q?.revenueAdjustments?.length ? "分部含内部交易，此柱展示抵销后的合并收入；选择业务可查看分部收入" : column.layers.length > 1 ? "该期按原披露分类展示，未推定当前业务拆分" : "该期仅取得可核验的公司总收入") : "";
   const height = (column.total ?? 0) / scale * 100;
+  const nearBarLabel = line != null && Math.abs(line.y - height) < 16;
   return <div className="trend-col" role="listitem" data-state={column.state} data-current={current || undefined} data-align={index < 2 ? "start" : index > 5 ? "end" : undefined} style={{ "--i": index } as CSSProperties} onMouseEnter={onHover}>
     <Button variant="unstyled" type="button" className="trend-hit" disabled={!pickable} onClick={onPick} onFocus={onHover}
       aria-label={`${shortPeriod(column.slot.periodEnd)} ${column.total != null ? money(column.total) : ""}${label ? `，${label}` : ""}${guide ? `，指引 ${money(guide.low)}–${money(guide.high)}` : ""}${pickable ? "，在流向图中查看该季度" : ""}`} />
@@ -230,8 +233,8 @@ function Bar({ column, index, order, scale, hue, money, current, pickable, hover
       <line className="trend-line-hit" data-series-line="" x1="0" y1={100 - line.y} x2="100" y2={100 - line.next} vectorEffect="non-scaling-stroke" />
     </svg>}
     {line && rate != null && <i className="trend-dot" data-series-line="" data-hover={hovered || undefined} aria-hidden="true" style={{ bottom: `${line.y}%` }} onClick={pickable ? onPick : undefined} />}
-    {line?.labelled && rate != null && <span className="trend-rate" data-trend={trend(rate)} data-below={rate < 0 || undefined} aria-hidden="true" style={{ bottom: `${line.y}%` }}>{percent(rate)}</span>}
-    <span className="trend-period">{shortPeriod(column.slot.periodEnd)}{current && <b>本季</b>}</span>
+    {line?.labelled && rate != null && <span className="trend-rate" data-trend={trend(rate)} data-below={rate < 0 || nearBarLabel || undefined} aria-hidden="true" style={{ bottom: `${nearBarLabel ? Math.min(line.y, height) : line.y}%` }}>{percent(rate)}</span>}
+    <span className="trend-period">{periodLabel(column.slot.periodEnd)}{current && <b>本季</b>}</span>
     {hovered && <ChartTooltipContent asChild><div className="trend-tip" role="presentation">
       <div className="trend-tip-title">{q ? `${q.periodStart} — ${q.periodEnd}` : shortPeriod(column.slot.periodEnd)}</div>
       {onLine && rate != null && <div className="trend-tip-row trend-tip-lead"><span>{lag === 4 ? "同比增速" : "环比增速"}</span><b data-trend={trend(rate)}>{percent(rate)}</b></div>}
@@ -255,7 +258,7 @@ function GuideColumn({ mark, index, scale, money, hovered, onHover }: { mark: Gu
     <span className="trend-guide-ghost" aria-hidden="true" style={{ height: `${mark.low / scale * 100}%` }} />
     <span className="trend-guide-band" aria-hidden="true" style={{ bottom: `${mark.low / scale * 100}%`, height: `max(3px, ${(mark.high - mark.low) / scale * 100}%)` }} />
     <span className="trend-value" style={{ bottom: `${mark.high / scale * 100}%` }}>指引</span>
-    <span className="trend-period">{shortPeriod(mark.periodEnd)}<b className="trend-period-guide">指引</b></span>
+    <span className="trend-period">{periodLabel(mark.periodEnd)}<b className="trend-period-guide">指引</b></span>
     {hovered && <ChartTooltipContent asChild><div className="trend-tip" role="presentation">
       <div className="trend-tip-title">{shortPeriod(mark.periodEnd)} 管理层指引</div>
       <div className="trend-tip-row trend-tip-lead"><span>收入</span><b>{money(mark.low)}–{money(mark.high)}</b></div>
