@@ -84,6 +84,7 @@ const worker = {
 
   async scheduled(_controller: ScheduledController, env: SecPipelineEnv) {
     if (_controller.cron === "*/2 * * * *") {
+      console.log(JSON.stringify({ event: "transcript-library", ...await syncTranscript(env) }));
       const maintenance = await runFinancialMaintenanceTick(env);
       if (maintenance.processed) {
         console.log(JSON.stringify({event:"financial-maintenance",...maintenance}));
@@ -96,7 +97,6 @@ const worker = {
       return;
     }
     if (_controller.cron === "* * * * *") {
-      console.log(JSON.stringify({ event: "transcript-library", ...await syncTranscript(env) }));
       console.log(JSON.stringify({ event: "research-monitor", ...await runResearchMonitor(env) }));
       return;
     }
