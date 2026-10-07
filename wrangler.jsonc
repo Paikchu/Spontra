@@ -8,7 +8,10 @@
   ],
   "keep_vars": true,
   "triggers": {
-    "crons": []
+    "crons": [
+      "*/5 * * * *",
+      "15 * * * *"
+    ]
   },
   "d1_databases": [
     {
@@ -25,6 +28,11 @@
     {
       "binding": "EARNING_REPORT_PIPELINE",
       "service": "spontra-analysis"
+    },
+    {
+      "binding": "PORTFOLIO_DATA_SERVICE",
+      "service": "spontra-max-data-sync"
     }
-  ]
+  ],
+  "account_id": "32ed059d49b57175de6d22f810cb70f9"
 }

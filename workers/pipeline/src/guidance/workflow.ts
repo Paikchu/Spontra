@@ -11,11 +11,11 @@ import { callWorkerSecModel, SecModelHttpError, type SecPipelineEnv } from "../o
 import { AnalysisRequestError } from "../read-api/contract-support/errors.ts";
 import { researchSearch } from "../research/runtime.ts";
 import { D1SecRepository } from "../sec/d1.ts";
-import { fiscalPeriodKey } from "../sec/fiscal-period.ts";
+import { fiscalPeriodKey, readFiscalPeriod } from "../sec/fiscal-period.ts";
 import type { SecFilingFeed } from "../sec/sec.ts";
 import type { WorkflowStepContextLike, WorkflowStepLike } from "../workflow-core.ts";
 import { extractGuidance, GUIDANCE_EXTRACTOR_VERSION, GUIDANCE_MAX_OUTPUT_TOKENS, type GuidanceModelCall } from "./extract.ts";
-import { findIrDeck, FmpTranscriptProvider, readSecExhibits, TranscriptAccessError, type FoundMaterial, type TranscriptRef } from "./sources.ts";
+import { findIrDeck, AlphaVantageTranscriptProvider, readSecExhibits, reportedTranscriptRef, TranscriptAccessError, TranscriptQuotaError, type FoundMaterial, type TranscriptRef } from "./sources.ts";
 import { GuidanceStore, type StoredMaterial } from "./store.ts";
 
 export const guidanceCacheKey = (ticker: string) => `guidance:v1:${ticker}`;
@@ -30,7 +30,7 @@ const DEFAULT_DAILY_MODEL_CALLS = 40;
 const DAILY_DECK_SEARCHES = 6;
 const MODEL_BUDGET_MS = 3 * 60_000;
 
-type TranscriptSource = { find(ticker: string, eventDate: string): Promise<TranscriptRef | null>; fetch(ticker: string, ref: TranscriptRef): Promise<FoundMaterial | null> };
+type TranscriptSource = { fetch(ticker: string, ref: TranscriptRef): Promise<FoundMaterial | null> };
 export type GuidanceDeps = {
   fetcher?: typeof fetch;
   model?: GuidanceModelCall;
@@ -179,7 +179,11 @@ export async function executeGuidanceWorkflow(params: GuidanceWorkflowParams, st
     if (!filing) throw new Error("Earnings filing is not in the cached SEC feed");
     // Started outside the sweep (a manual run): the event row still has to exist for coverage and status.
     await store().recordEvents(params.ticker, [{ accession: params.accession, eventDate: params.eventDate }], new Date().toISOString());
-    return { cikNumber: filing.cikNumber, companyName: findSecurity(params.ticker)?.name ?? feed?.company?.name ?? params.ticker };
+    const period = await readFiscalPeriod(new D1SecRepository(requireDb(env)), filing);
+    const quarter = period?.fiscalPeriod === "FY" ? 4 : Number(period?.fiscalPeriod.slice(1));
+    const ref: TranscriptRef | null = period && [1, 2, 3, 4].includes(quarter)
+      ? { fiscalYear: period.fiscalYear, quarter: quarter as TranscriptRef["quarter"], date: params.eventDate } : null;
+    return { cikNumber: filing.cikNumber, companyName: findSecurity(params.ticker)?.name ?? feed?.company?.name ?? params.ticker, ref };
   });
 
   const saveAll = async (found: FoundMaterial[]) => {
@@ -188,22 +192,31 @@ export async function executeGuidanceWorkflow(params: GuidanceWorkflowParams, st
     for (const material of found) saved.push(await store().saveMaterial(params.ticker, params.accession, material, now));
     return saved;
   };
-  const sec = await step.do("guidance-sec", async () => saveAll(await (deps.secExhibits ?? readSecExhibits)(
-    { cikNumber: context.cikNumber, accessionNumber: params.accession, filingDate: params.eventDate }, fetcher, env.SEC_USER_AGENT)));
+  const { materials: sec, ref } = await step.do("guidance-sec", async () => {
+    const found = await (deps.secExhibits ?? readSecExhibits)(
+      { cikNumber: context.cikNumber, accessionNumber: params.accession, filingDate: params.eventDate }, fetcher, env.SEC_USER_AGENT);
+    return { materials: await saveAll(found), ref: context.ref ?? reportedTranscriptRef(found, params.eventDate) };
+  });
 
-  const transcripts = deps.transcripts !== undefined ? deps.transcripts : env.FMP_API_KEY ? new FmpTranscriptProvider(env.FMP_API_KEY, fetcher) : null;
-  type Probe = { ref: TranscriptRef | null; material: StoredMaterial | null; denied: boolean };
+  const transcripts = deps.transcripts !== undefined ? deps.transcripts
+    : env.ALPHA_VANTAGE_API_KEY ? new AlphaVantageTranscriptProvider(env.ALPHA_VANTAGE_API_KEY, fetcher) : null;
+  const dailyLimit = Number(env.GUIDANCE_DAILY_TRANSCRIPT_CALLS) > 0 ? Number(env.GUIDANCE_DAILY_TRANSCRIPT_CALLS) : 25;
+  type Probe = { ref: TranscriptRef | null; material: StoredMaterial | null; denied: boolean; quota: boolean };
   const probe = (attempt: number) => step.do(`guidance-transcript-${attempt}`, async (): Promise<Probe> => {
+    if (!ref) return { ref, material: null, denied: true, quota: false };
+    if (!await store().reserve("guidance-transcript", new Date().toISOString().slice(0, 10), dailyLimit)) {
+      return { ref, material: null, denied: false, quota: true };
+    }
     try {
-      const ref = await transcripts!.find(params.ticker, params.eventDate);
-      const found = ref ? await transcripts!.fetch(params.ticker, ref) : null;
-      return { ref, material: found ? (await saveAll([found]))[0] : null, denied: false };
+      const found = await transcripts!.fetch(params.ticker, ref);
+      return { ref, material: found ? (await saveAll([found]))[0] : null, denied: false, quota: false };
     } catch (error) {
-      if (error instanceof TranscriptAccessError) return { ref: null, material: null, denied: true };
+      if (error instanceof TranscriptAccessError) return { ref, material: null, denied: true, quota: false };
+      if (error instanceof TranscriptQuotaError) return { ref, material: null, denied: false, quota: true };
       throw error;
     }
   });
-  let transcript: Probe = transcripts ? await probe(0) : { ref: null, material: null, denied: false };
+  let transcript: Probe = transcripts ? await probe(0) : { ref, material: null, denied: false, quota: false };
 
   const materials = [...sec, ...(transcript.material ? [transcript.material] : [])];
   const deckSearch = deps.deckSearch !== undefined ? deps.deckSearch : env.GUIDANCE_DECK_SEARCH !== "false" && env.TAVILY_API_KEY ? researchSearch(env) : null;
@@ -248,7 +261,10 @@ export async function executeGuidanceWorkflow(params: GuidanceWorkflowParams, st
   if (transcripts && !transcript.material && !transcript.denied) {
     const callTime = Date.parse(`${params.eventDate}T21:00:00Z`);
     for (let attempt = 1; attempt < TRANSCRIPT_WAIT_HOURS.length && !transcript.material && !transcript.denied; attempt++) {
-      const wait = callTime + TRANSCRIPT_WAIT_HOURS[attempt] * 3_600_000 - Date.parse(await time(`transcript-${attempt}`));
+      const now = Date.parse(await time(`transcript-${attempt}`));
+      // A shared daily quota is different from a missing transcript: wait for the next UTC day.
+      const nextDay = new Date(now); nextDay.setUTCHours(24, 10, 0, 0);
+      const wait = transcript.quota ? nextDay.getTime() - now : callTime + TRANSCRIPT_WAIT_HOURS[attempt] * 3_600_000 - now;
       if (wait > 0) await step.sleep(`guidance-transcript-wait-${attempt}`, wait);
       transcript = await probe(attempt);
     }

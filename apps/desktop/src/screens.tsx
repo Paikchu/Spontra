@@ -13,7 +13,6 @@ export function PortfolioPage({ today = false }: { today?: boolean }) {
   const { data, error } = useResource<PortfolioData>("/api/portfolio");
   return <main className={`page-shell ${today ? "today-shell" : "ledger-shell"}`}>
     <DataState error={error} ready={!!data}>{data && <>
-      {data.source === "fallback" && <p role="status" className="desktop-status">暂时无法读取最新持仓，显示截至 {data.asOf} 的历史快照。</p>}
       {today ? <TodayDashboard {...data.presentation} /> : <PortfolioDashboard {...data.presentation} />}
     </>}</DataState></main>;
 }

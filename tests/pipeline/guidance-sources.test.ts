@@ -1,48 +1,60 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { findIrDeck, FmpTranscriptProvider, readSecExhibits, TranscriptAccessError } from "../../workers/pipeline/src/guidance/sources.ts";
+import { findIrDeck, AlphaVantageTranscriptProvider, readSecExhibits, reportedTranscriptRef, TranscriptAccessError, TranscriptQuotaError } from "../../workers/pipeline/src/guidance/sources.ts";
 
-const KEY = "test-fmp-key-should-never-leak";
-
-function fmp(routes: Record<string, () => Response>) {
+const KEY = "test-alpha-key-should-never-leak";
+const ref = { fiscalYear: 2027, quarter: 1 as const, date: "2026-09-09" };
+const transcript = [
+  { speaker: "Operator", title: "", content: "Welcome to Oracle first quarter fiscal 2027 earnings call." },
+  { speaker: "CEO", title: "Chief Executive Officer", content: "We expect total revenues to grow 12% to 14%. ".repeat(60) },
+  { speaker: "Analyst", title: "", content: "What is driving demand?" },
+  { speaker: "CEO", title: "", content: "Cloud demand remains strong." },
+];
+function alpha(response: () => Response) {
   const urls: string[] = [];
-  const fetcher = (async (input: URL | string) => {
-    const url = new URL(String(input));
-    urls.push(url.toString());
-    const route = routes[url.pathname.split("/").at(-1)!];
-    return route ? route() : new Response("not found", { status: 404 });
-  }) as typeof fetch;
-  return { urls, provider: new FmpTranscriptProvider(KEY, fetcher) };
+  const fetcher = (async (input: URL | string) => { urls.push(String(input)); return response(); }) as typeof fetch;
+  return { urls, provider: new AlphaVantageTranscriptProvider(KEY, fetcher) };
 }
 
-test("FMP: the call nearest the release is matched by date, and the stored citation carries no key", async () => {
-  const content = `Operator: Welcome.\n${"Safra Catz: We expect total revenues to grow 12% to 14%. ".repeat(60)}`;
-  const { urls, provider } = fmp({
-    "earning-call-transcript-dates": () => Response.json([
-      { quarter: 4, fiscalYear: 2026, date: "2026-06-11" },
-      { quarter: 1, fiscalYear: 2027, date: "2026-09-09" },
-    ]),
-    "earning-call-transcript": () => Response.json([{ symbol: "ORCL", period: "Q1", year: 2027, date: "2026-09-09", content }]),
-  });
-  const ref = await provider.find("ORCL", "2026-09-09");
-  assert.deepEqual(ref, { fiscalYear: 2027, quarter: 1, date: "2026-09-09" });
-  assert.equal(await provider.find("ORCL", "2026-12-15"), null, "a call not listed yet is not guessed");
-  const material = await provider.fetch("ORCL", ref!);
-  assert.equal(material?.kind, "transcript");
-  assert.ok(material && "text" in material && material.text.length > 2000);
-  assert.ok(!material!.url.includes(KEY) && !material!.url.includes("apikey"));
-  assert.ok(urls.every(u => new URL(u).searchParams.get("apikey") === KEY), "the key is sent to FMP only");
-  assert.equal(FmpTranscriptProvider.symbol("BRK.B"), "BRK-B");
+test("Alpha Vantage requests the fiscal quarter and preserves all speaker turns without exposing the key", async () => {
+  const { urls, provider } = alpha(() => Response.json({ symbol: "ORCL", quarter: "2027Q1", transcript }));
+  const material = await provider.fetch("ORCL", ref);
+  assert.ok(material && "text" in material);
+  assert.ok(material.text.startsWith("Operator: Welcome"));
+  assert.ok(material.text.includes("CEO — Chief Executive Officer:"));
+  assert.ok(material.text.endsWith("CEO: Cloud demand remains strong."));
+  const request = new URL(urls[0]);
+  assert.equal(request.searchParams.get("quarter"), "2027Q1", "Oracle fiscal year differs from the release calendar year");
+  assert.equal(request.searchParams.get("function"), "EARNINGS_CALL_TRANSCRIPT");
+  assert.equal(request.searchParams.get("apikey"), KEY);
+  assert.equal(request.hostname, "www.alphavantage.co");
+  assert.ok(!JSON.stringify(material).includes(KEY) && !material.url.includes("apikey"));
 });
 
-test("FMP: plan or key problems are access errors without the key in the message", async () => {
-  const denied = fmp({ "earning-call-transcript-dates": () => new Response("{}", { status: 402 }) });
-  await assert.rejects(denied.provider.find("ORCL", "2026-09-09"), (error: Error) => error instanceof TranscriptAccessError && !error.message.includes(KEY));
-  const refused = fmp({ "earning-call-transcript-dates": () => Response.json({ "Error Message": "Exclusive Endpoint" }) });
-  await assert.rejects(refused.provider.find("ORCL", "2026-09-09"), TranscriptAccessError);
-  const down = fmp({ "earning-call-transcript-dates": () => new Response("busy", { status: 503 }) });
-  await assert.rejects(down.provider.find("ORCL", "2026-09-09"), (error: Error) => !(error instanceof TranscriptAccessError), "outages stay retryable");
+test("Alpha Vantage distinguishes quota exhaustion, access refusal, outages and unavailable transcripts", async () => {
+  const quota = alpha(() => Response.json({ Information: `API key ${KEY} has reached the 25 requests per day limit.` }));
+  await assert.rejects(quota.provider.fetch("ORCL", ref), (e: Error) => e instanceof TranscriptQuotaError && !e.message.includes(KEY));
+  const denied = alpha(() => Response.json({ Information: `Invalid API key ${KEY}` }));
+  await assert.rejects(denied.provider.fetch("ORCL", ref), (e: Error) => e instanceof TranscriptAccessError && !e.message.includes(KEY));
+  const down = alpha(() => new Response("busy", { status: 503 }));
+  await assert.rejects(down.provider.fetch("ORCL", ref), (e: Error) => !(e instanceof TranscriptAccessError));
+  const empty = alpha(() => Response.json({ symbol: "ORCL", quarter: "2027Q1", transcript: [] }));
+  assert.equal(await empty.provider.fetch("ORCL", ref), null);
+  const mismatch = alpha(() => Response.json({ symbol: "ORCL", quarter: "2026Q1", transcript }));
+  await assert.rejects(mismatch.provider.fetch("ORCL", ref), /mismatch/);
+  const network = new AlphaVantageTranscriptProvider(KEY, (async () => { throw new Error(`Failed URL ?apikey=${KEY}`); }) as typeof fetch);
+  await assert.rejects(network.fetch("ORCL", ref), (e: Error) => !e.message.includes(KEY));
+});
+
+test("reported quarter comes from actual results headlines, never the forward outlook", () => {
+  const release = (title: string) => [{ kind: "press_release" as const, sourceKind: "sec" as const, title, url: "https://www.sec.gov/release", publishedAt: ref.date,
+    text: `${title}\nOutlook: For the second quarter of fiscal 2027, we expect growth.` }];
+  for (const title of ["Oracle Announces Fiscal 2027 First Quarter Financial Results", "First Quarter Fiscal Year 2027 Results", "Q1 FY2027 Results", "FY2027 Q1 Results"]) {
+    assert.deepEqual(reportedTranscriptRef(release(title), ref.date), ref);
+  }
+  assert.equal(reportedTranscriptRef(release("Oracle Financial Results"), ref.date), null);
+  assert.deepEqual(reportedTranscriptRef(release("Oracle Announces Fiscal 2026 Fourth Quarter and Fiscal Full Year Financial Results"), ref.date), { ...ref, fiscalYear: 2026, quarter: 4 });
 });
 
 test("SEC: Exhibit 99 text documents are read and classified; binary exhibits are reported, not parsed", async () => {

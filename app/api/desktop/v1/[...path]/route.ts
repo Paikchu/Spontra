@@ -1,7 +1,6 @@
 import { handleDesktopRequest } from "@/lib/desktop-auth";
 import { getD1 } from "@/db";
-import { readPortfolioSnapshotWithSource } from "@/lib/portfolio-store";
-import { portfolioSnapshot } from "@/lib/site-data";
+import { loadPortfolio } from "@/lib/portfolio-client";
 import { readCalendar } from "@/lib/earnings-store";
 import { emptyCalendar } from "@/lib/earnings-live";
 import { buildPortfolioPresentation } from "@/packages/client/src/portfolio";
@@ -28,10 +27,9 @@ async function dispatch(request: Request, path: string[]): Promise<Response> {
   }
   if (route === "connection") return Response.json({ connected: true, version: 1 });
   if (route === "portfolio") {
-    const db = await getD1();
-    const { snapshot, source } = await readPortfolioSnapshotWithSource(db).catch(() => ({ snapshot: portfolioSnapshot, source: "fallback" as const }));
-    const calendar = await readCalendar(db).catch(() => emptyCalendar());
-    return Response.json({ source, asOf: snapshot.generatedAt, presentation: buildPortfolioPresentation(snapshot, calendar) });
+    const { snapshot, sync } = await loadPortfolio();
+    const calendar = await getD1().then(readCalendar).catch(() => emptyCalendar());
+    return Response.json({ source: "live", asOf: snapshot.generatedAt, ...sync, presentation: buildPortfolioPresentation(snapshot, calendar, sync) });
   }
   if (route === "plans") return plans();
   if (route === "quotes") return quotes(request);

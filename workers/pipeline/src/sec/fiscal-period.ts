@@ -5,7 +5,7 @@ export const fiscalPeriodKey = (filing: Pick<SecFiling, 'ticker' | 'accessionNum
 const periodic = (form: string) => /^(10-Q|10-K|20-F)(\/A)?$/.test(form);
 
 /** Read document-focus DEI facts, never comparative metric contexts or generated prose. */
-export function parseFiscalPeriod(html: string, filing: SecFiling): SecFiscalPeriod | null {
+export function parseFiscalPeriod(html: string, filing: Pick<SecFiling, "form" | "reportDate" | "accessionNumber" | "documentUrl">): SecFiscalPeriod | null {
   if (!periodic(filing.form)) return null; // An 8-K document end is an event date.
   const contexts = new Map<string, Map<string, Set<string>>>();
   const attr = (tag: string, name: string) => new RegExp(`\\b${name}\\s*=\\s*["']([^"']*)["']`, 'i').exec(tag)?.[1];

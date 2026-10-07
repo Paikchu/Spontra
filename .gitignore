@@ -41,10 +41,12 @@ next-env.d.ts
 *.tsbuildinfo
 /dist/
 /.wrangler/
+/workers/sec-cron/.wrangler/
 /outputs/
 /work/
 
 !workers/pipeline/.dev.vars.example
+!workers/sec-cron/.dev.vars.example
 
 # desktop workspace build output
 /apps/desktop/dist/

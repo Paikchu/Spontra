@@ -13,7 +13,7 @@ const report = { version: "research.v1", id: "r1", caseId: "case1", title: "测�
 const raw = readerFilingFixture();
 const filing = { ...raw, accessionNumber: "0000000001-26-000001", edgarUrl: raw.indexUrl, reportVersion: "sec-analysis.v3:demo", provenance: "sec_edgar", analysisStatus: "complete", periodId: "DEMO:2026-06-30:quarter", analysisSchemaVersion: "sec-analysis.v3", contentRevision: "demo", analysisRun: { state: "succeeded", updatedAt: null, errorCode: null } };
 async function mockDesktop(page: Page, saved = true) {
-  let offline = false; let unauthorized = false; let writes = 0; let canceled = 0;
+  let offline = false; let unauthorized = false; let writes = 0; let canceled = 0; let delayed = false;
   const paths: string[] = []; const opened: string[] = []; const copies: string[] = [];
   let plan: unknown = null;
   await page.exposeFunction("__nativeTest", async (cmd: string, args: Record<string, string>) => {
@@ -31,7 +31,10 @@ async function mockDesktop(page: Page, saved = true) {
     if (unauthorized) return { status: 401, body: JSON.stringify({ error: "unauthorized" }) };
     const url = new URL(args.path, "https://example.test"); const path = url.pathname;
     let body: unknown = {};
-    if (path === "/portfolio") body = { source: "live", asOf: snapshot.generatedAt, presentation };
+    if (path === "/portfolio") {
+      const sync = { reportDate: "2026-09-25", syncedAt: snapshot.generatedAt, syncStatus: delayed ? "delayed" as const : "current" as const };
+      body = { source: "live", asOf: snapshot.generatedAt, ...sync, presentation: buildPortfolioPresentation(snapshot, emptyCalendar(), sync) };
+    }
     else if (path === "/research/feed") body = { reports: [report], nextCursor: null, monitor: { enabled: true, tickers: ["DEMO"], issues: [], holdingsAsOf: null, lastScanAt: null } };
     else if (path === "/earnings") body = emptyCalendar();
     else if (path === "/quotes") body = { quotes: {} };
@@ -58,9 +61,31 @@ async function mockDesktop(page: Page, saved = true) {
       transformCallback: () => 1, unregisterCallback: () => {},
     }});
   });
-  return { paths, opened, copies, canceled: () => canceled, writes: () => writes, offline: (value: boolean) => { offline = value; }, unauthorized: () => { unauthorized = true; } };
+  return { paths, opened, copies, canceled: () => canceled, writes: () => writes, offline: (value: boolean) => { offline = value; }, unauthorized: () => { unauthorized = true; }, delayed: (value: boolean) => { delayed = value; } };
 }
 const shortcut = (key: string) => `${process.platform === "darwin" ? "Meta" : "Control"}+${key}`;
+
+test("delayed portfolio remains visible on Today and ledger, and recovery clears the note", async ({ page }) => {
+  const errors: string[] = []; page.on("pageerror", error => errors.push(error.message));
+  const native = await mockDesktop(page);
+  native.delayed(true);
+  await page.goto("/");
+  const note = page.getByRole("status").filter({ hasText: "同步延迟" });
+  await expect(note).toContainText("当前展示报告日期 2026-09-25");
+  await expect(note).toContainText("上次成功同步");
+  await expect(page.getByText("$10,000.00", { exact: true }).last()).toBeVisible();
+  await page.screenshot({ path: "/tmp/spontra-desktop-today-delayed.png" });
+  await page.keyboard.press(shortcut("2"));
+  await expect(page.getByRole("heading", { name: "投资账本", exact: true })).toBeVisible();
+  await expect(note).toBeVisible();
+  await page.getByRole("tab", { name: "历史持仓" }).click();
+  await page.screenshot({ path: "/tmp/spontra-desktop-ledger-delayed.png" });
+  native.delayed(false);
+  await page.keyboard.press(shortcut("r"));
+  await expect(note).toHaveCount(0);
+  await expect(page.getByText("$10,000.00", { exact: true }).last()).toBeVisible();
+  expect(errors).toEqual([]);
+});
 
 test("connects, navigates all main surfaces, preserves state and handles loss of connection", async ({ page }) => {
   const errors: string[] = []; page.on("pageerror", error => errors.push(error.message));
@@ -112,7 +137,7 @@ test("stock tabs, plan writes, pinned reports, copy and external sources", async
   await page.getByText("报告链接与版本", { exact: true }).click();
   await page.getByRole("button", { name: "复制链接" }).click();
   await expect(page.getByText("已复制", { exact: true })).toBeVisible();
-  expect(native.copies[0]).toContain("https://spontra.max-zhangyuchen.workers.dev/analysis/stocks/DEMO/sec/");
+  expect(native.copies[0]).toContain("https://spontra-app.max-zhangyuchen.workers.dev/analysis/stocks/DEMO/sec/");
   expect(native.copies[0]).toContain("reportVersion=sec-analysis.v3%3Ademo");
   await page.getByRole("link", { name: "本报告固定链接" }).click();
   expect(native.opened[0]).toBe(native.copies[0]);

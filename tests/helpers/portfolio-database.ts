@@ -1,10 +1,10 @@
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { readFileSync } from "node:fs";
-import type { PortfolioDatabase } from "../../lib/portfolio-store.ts";
+import type { PortfolioDatabase } from "../../workers/sec-cron/portfolio-store.ts";
 
 export function createPortfolioDatabase() {
   const sqlite = new DatabaseSync(":memory:");
-  sqlite.exec(readFileSync(new URL("../../drizzle/0006_gigantic_pepper_potts.sql", import.meta.url), "utf8"));
+  sqlite.exec(readFileSync(new URL("../../workers/sec-cron/migrations/0001_portfolio.sql", import.meta.url), "utf8"));
   const queries = new WeakMap<object, { sql: string; values: unknown[] }>();
   const database: PortfolioDatabase = {
     prepare(sql) {

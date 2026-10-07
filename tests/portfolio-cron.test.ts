@@ -3,47 +3,90 @@ import test from "node:test";
 import { readFile } from "node:fs/promises";
 import worker from "../workers/sec-cron/index.ts";
 import type { IbkrSyncEnv } from "../workers/sec-cron/ibkr-sync.ts";
+import { createPortfolioDatabase } from "./helpers/portfolio-database.ts";
+import { runPortfolioJob, type PortfolioJobsEnv } from "../worker/portfolio-jobs.ts";
+import { emptyCalendar, type CalendarState } from "../lib/earnings-live.ts";
 
-test("the configured Tuesday–Saturday cron dispatches the IBKR sync", async () => {
+test("sync worker only owns the existing IBKR schedule and records failed attempts", async () => {
   const config = JSON.parse(await readFile(new URL("../workers/sec-cron/wrangler.jsonc", import.meta.url), "utf8"));
-  const cron = config.triggers.crons.find((value: string) => value.startsWith("0 6 "));
-  // Cloudflare numbers weekdays from Sunday=1; names avoid a one-day shift.
-  assert.equal(cron, "0 6 * * TUE-SAT");
-  const requests: Request[] = [];
-  const tasks: Promise<unknown>[] = [];
-  const env = {
-    IBKR_FLEX_TOKEN: "123", IBKR_FLEX_QUERY_ID: "1628251", PORTFOLIO_SYNC_KEY: "test-only",
-    PORTFOLIO_SERVICE: { async fetch(input: RequestInfo | URL, init?: RequestInit) {
-      requests.push(new Request(input, init));
-      return new Response(null, { status: 503 });
-    } },
-  } as IbkrSyncEnv;
-  await worker.scheduled({ cron } as ScheduledController, env, { waitUntil(promise) { tasks.push(promise); } } as ExecutionContext);
-  assert.equal(tasks.length, 1);
-  await assert.rejects(tasks[0], /Portfolio state HTTP 503/);
-  assert.equal(requests.length, 1);
-  assert.equal(new URL(requests[0].url).pathname, "/api/internal/portfolio/sync");
-  assert.equal(requests[0].method, "GET");
-  assert.equal(requests[0].headers.get("x-portfolio-sync-key"), "test-only");
+  assert.deepEqual(config.triggers.crons, ["0 6 * * TUE-SAT"]);
+  assert.equal(config.services, undefined);
+  const { database, sqlite } = createPortfolioDatabase();
+  try {
+    const env = { DB: database } as IbkrSyncEnv;
+    const tasks: Promise<unknown>[] = [];
+    const context = { waitUntil(promise: Promise<unknown>) { tasks.push(promise); } } as ExecutionContext;
+    await worker.scheduled({ cron: config.triggers.crons[0] } as ScheduledController, env, context);
+    await assert.rejects(tasks[0], /previous data retained/);
+    assert.equal(sqlite.prepare("SELECT status FROM portfolio_sync_attempt").get()?.status, "failed");
+    await worker.scheduled({ cron: "15 * * * *" } as ScheduledController, env, context);
+    await worker.scheduled({ cron: "*/5 * * * *" } as ScheduledController, env, context);
+    assert.equal(tasks.length, 1);
+  } finally { sqlite.close(); }
 });
 
-test("calendar cron calls the protected portfolio binding once", async () => {
-  const requests: Request[] = [];
-  const tasks: Promise<unknown>[] = [];
+test("app research cron obtains holdings via the read API and sends the universe directly to the analysis service", async () => {
+  const config = JSON.parse(await readFile(new URL("../wrangler.jsonc", import.meta.url), "utf8"));
+  assert.deepEqual(config.triggers.crons, ["*/5 * * * *", "15 * * * *"]);
+  const calls: string[] = [];
   const env = {
-    PORTFOLIO_SYNC_KEY: "test-only", PORTFOLIO_SERVICE: { async fetch(input: RequestInfo | URL, init?: RequestInit) {
-      requests.push(new Request(input, init)); return Response.json({ status: "unchanged" });
+    PORTFOLIO_READ_TOKEN: "read", RESEARCH_SYNC_KEY: "research",
+    PORTFOLIO_DATA_SERVICE: { fetch: async (input: RequestInfo | URL) => {
+      calls.push(String(input));
+      return Response.json({ portfolio: { positions: [{ symbol: "AAPL" }, { symbol: "AAPL" }, { symbol: "MSFT" }], generatedAt: "2026-10-06T06:00:00Z" } });
     } },
-  } as IbkrSyncEnv;
-  await worker.scheduled({ cron: "15 * * * *" } as ScheduledController, env, { waitUntil(promise) { tasks.push(promise); } } as ExecutionContext);
-  await Promise.all(tasks);
-  assert.equal(requests.length, 1);
-  assert.equal(new URL(requests[0].url).pathname, "/api/internal/earnings/refresh");
-  assert.equal(requests[0].method, "POST");
-  assert.equal(requests[0].headers.get("x-portfolio-sync-key"), "test-only");
+    EARNING_REPORT_PIPELINE: { fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push(String(input));
+      assert.deepEqual(JSON.parse(String(init?.body)), { tickers: ["AAPL", "MSFT"], asOf: "2026-10-06T06:00:00Z" });
+      assert.equal(new Headers(init?.headers).get("authorization"), "Bearer research");
+      return Response.json({ status: "ok" });
+    } },
+  } as PortfolioJobsEnv;
+  await runPortfolioJob("*/5 * * * *", env);
+  assert.deepEqual(calls.map(url => new URL(url).pathname), ["/api/v1/portfolio", "/research/universe"]);
 });
 
-test("retired job endpoints never execute work and manual sync requires its key", async () => {
+test("app calendar cron reads its own calendar while uninitialized portfolio never replaces research holdings", async () => {
+  let queries = 0;
+  const env = {
+    DB: { prepare(sql: string) { assert.match(sql, /earnings_calendar_state/); queries++; return { first: async () => ({ payload: JSON.stringify({ lastAttemptAt: new Date().toISOString() }) }) }; } },
+    PORTFOLIO_READ_TOKEN: "read",
+    PORTFOLIO_DATA_SERVICE: { fetch: async () => Response.json({ portfolio: null, syncStatus: "uninitialized" }) },
+    EARNING_REPORT_PIPELINE: { fetch: async () => { throw new Error("Should not clear the research universe"); } },
+  } as unknown as PortfolioJobsEnv;
+  assert.deepEqual(await runPortfolioJob("15 * * * *", env), { status: "recently_checked" });
+  assert.equal(queries, 1);
+  assert.deepEqual(await runPortfolioJob("*/5 * * * *", env), { status: "uninitialized" });
+});
+
+test("hourly calendar refresh filters by API holdings and persists only app calendar data", async (t) => {
+  let apiReads = 0;
+  let written: CalendarState | undefined;
+  t.mock.method(globalThis, "fetch", async (url: string) => {
+    assert.equal(new URL(url).hostname, "api.nasdaq.com");
+    return Response.json({ data: { rows: [{ symbol: "AAPL", name: "Apple" }, { symbol: "MSFT", name: "Microsoft" }] } });
+  });
+  const env = {
+    DB: { prepare(sql: string) {
+      assert.match(sql, /earnings_calendar_state/);
+      return {
+        first: async () => ({ payload: JSON.stringify(emptyCalendar()) }),
+        bind(payload: string) { return { run: async () => { written = JSON.parse(payload); } }; },
+      };
+    } },
+    PORTFOLIO_READ_TOKEN: "read",
+    PORTFOLIO_DATA_SERVICE: { fetch: async () => {
+      apiReads++;
+      return Response.json({ portfolio: { positions: [{ symbol: "AAPL" }] } });
+    } },
+  } as unknown as PortfolioJobsEnv;
+  assert.equal((await runPortfolioJob("15 * * * *", env)).status, "ready");
+  assert.equal(apiReads, 1);
+  assert.ok(written?.events.length);
+  assert.ok(written.events.every(event => event.symbol === "AAPL"));
+});
+
+test("retired endpoints never execute work and manual sync requires its own key", async () => {
   const env = {} as IbkrSyncEnv;
   assert.equal((await worker.fetch(new Request("https://cron.test/jobs/MSFT", { method: "POST" }), env)).status, 410);
   assert.equal((await worker.fetch(new Request("https://cron.test/internal/portfolio/sync", { method: "POST" }), env)).status, 401);

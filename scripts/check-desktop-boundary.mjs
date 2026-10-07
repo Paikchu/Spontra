@@ -8,7 +8,7 @@ async function scan(dir) {
     assert.ok(!/portfolio-snapshot|\.env|\.map$/.test(entry.name), `Private/build-only file: ${entry.name}`);
     if (!/\.(js|json|html|css)$/.test(entry.name)) continue;
     const text = await readFile(url, 'utf8');
-    assert.doesNotMatch(text, /cloudflare:workers|EARNING_REPORT_READ_TOKEN|IBKR_FLEX_TOKEN|PORTFOLIO_SYNC_KEY|DESKTOP_ACCESS_TOKEN|investment-record-db/);
+    assert.doesNotMatch(text, /cloudflare:workers|EARNING_REPORT_READ_TOKEN|IBKR_FLEX_TOKEN|PORTFOLIO_SYNC_KEY|PORTFOLIO_READ_TOKEN|PORTFOLIO_DATA_SERVICE|spontra-max-data-sync-db|DESKTOP_ACCESS_TOKEN|investment-record-db/);
   }
 }
 await scan(root);

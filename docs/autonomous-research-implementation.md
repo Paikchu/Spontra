@@ -2,7 +2,7 @@
 
 ## 执行链路
 
-1. Portfolio Cron 每 5 分钟通过已有服务绑定和持仓同步凭证调用 `/api/internal/research/sync`，仅使用真实存储的持仓快照；不回退到仓库示例持仓。
+1. 主应用 `scheduled` 每 5 分钟直接执行 `syncResearchHoldings`，通过 `PORTFOLIO_DATA_SERVICE` 和独立读取令牌获取成功持仓；首次无数据跳过更新，不回退到仓库示例持仓。
 2. Web 通过现有 Pipeline 服务绑定、独立 `RESEARCH_SYNC_KEY` 同步标的。只传标的和快照时间，不传账户金额。
 3. Pipeline 每分钟尝试扫描一批最多 6 个标的，数据库租约避免扫描重叠。完整轮询时间随标的数量、外部接口延迟变化。
 4. 行情按来源时间判断新鲜度；正常交易时段，日变动达到 3% 或十分钟内观测变动达到 1.5% 创建事件。3% 分档、交易日和观察时段用于去重。公开 Yahoo 数据是尽力服务，不保证交易所级实时性。
@@ -17,7 +17,7 @@
 - `workers/pipeline/src/research/`：监测、状态机、研究、校验与接口。
 - `shared/analysis-runtime/research-schema.ts`：报告合同与来源引用校验。
 - `workers/pipeline/migrations/0012_autonomous_research.sql`：持仓范围、事件、调查、报告、跟进与预算。
-- `app/api/internal/research/sync/route.ts`：受保护的真实持仓导出。
+- `worker/portfolio-jobs.ts`：主应用定时读取组合 API 并同步研究范围；旧 `/api/internal/research/sync` 路由已退役。
 - `app/api/research/feed/route.ts`：群聊读取代理；不触发模型或研究任务。
 - 研究数据接口使用独立凭证，现有第三方财报读取凭证不能访问研究范围。
 - 仍沿用当前站点的访问边界；本版不提供多用户隔离，也不新增开放注册。

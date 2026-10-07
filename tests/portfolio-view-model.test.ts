@@ -74,4 +74,9 @@ test("uses the Flex report year and trade date around New Year", () => {
   });
 
   assert.equal(model.positionGroups[0].realized, 25);
+  const apiModel = buildPortfolioViewModel({
+    ...snapshot, source: undefined, generatedAt: "2027-01-01T06:00:00.000Z",
+    trades: [{ ...snapshot.trades[0], tradeDate: "2026-12-31", tradeTime: "2027-01-01T04:30:00.000Z" }],
+  }, "2026-12-31");
+  assert.equal(apiModel.positionGroups[0].realized, 25);
 });

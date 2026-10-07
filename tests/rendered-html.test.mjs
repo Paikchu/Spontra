@@ -1,6 +1,16 @@
 import assert from "node:assert/strict";
 import { access, readFile } from "node:fs/promises";
 import test from "node:test";
+import { register } from "node:module";
+import { bindings } from "./helpers/rendered-bindings.mjs";
+
+const bindingsUrl = new URL("./helpers/rendered-bindings.mjs", import.meta.url).href;
+register(`data:text/javascript,${encodeURIComponent(`export function resolve(specifier, context, next) {
+  return specifier === "cloudflare:workers" ? { url: ${JSON.stringify(bindingsUrl)}, shortCircuit: true } : next(specifier, context);
+}`)}`, import.meta.url);
+const storedFixture = JSON.parse(await readFile(new URL("../data/portfolio-snapshot.json", import.meta.url), "utf8"));
+const { capitalFlows: _flows, source: _source, ...portfolioFixture } = storedFixture;
+const portfolioResponse = { portfolio: portfolioFixture, reportDate: "2026-09-25", syncedAt: portfolioFixture.generatedAt, syncStatus: "current" };
 
 const projectRoot = new URL("../", import.meta.url);
 
@@ -16,12 +26,87 @@ async function render(path = "/", options = {}) {
   workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
   const { default: worker } = await import(workerUrl.href);
 
-  return worker.fetch(
-    new Request(`http://localhost${path}`, { headers: { accept: "text/html", ...(options.headers ?? {}) } }),
-    { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) }, ...(options.env ?? {}) },
+  const env = {
+    ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) },
+    PORTFOLIO_READ_TOKEN: "rendered-test-read-token",
+    PORTFOLIO_DATA_SERVICE: { fetch: async () => Response.json(portfolioResponse) },
+    ...(options.env ?? {}),
+  };
+  return bindings.run(env, () => worker.fetch(
+    new Request(`http://localhost${path}`, { method: options.method ?? "GET", body: options.body, headers: { accept: "text/html", ...(options.headers ?? {}) } }),
+    env,
     { waitUntil() {}, passThroughOnException() {} },
-  );
+  ));
 }
+
+test("portfolio pages display delayed data, empty initialization, and network read errors", async () => {
+  for (const path of ["/", "/ledger"]) {
+    const delayed = await render(path, { env: { PORTFOLIO_DATA_SERVICE: { fetch: async () => Response.json({ ...portfolioResponse, syncStatus: "delayed" }) } } });
+    const html = await delayed.text();
+    assert.equal(delayed.status, 200);
+    assert.match(html, /同步延迟/);
+    assert.match(html, /当前展示报告日期/);
+    assert.match(html, /上次成功同步/);
+    assert.match(html, /当前净值/);
+    const empty = await render(path, { env: { PORTFOLIO_DATA_SERVICE: { fetch: async () => Response.json({ portfolio: null, reportDate: null, syncedAt: null, syncStatus: "uninitialized" }) } } });
+    assert.match(await empty.text(), /持仓数据尚未完成首次同步/);
+    const offline = await render(path, { env: { PORTFOLIO_DATA_SERVICE: { fetch: async () => { throw new TypeError("network offline"); } } } });
+    const offlineHtml = await offline.text();
+    assert.match(offlineHtml, /持仓数据暂时无法读取/);
+    assert.match(offlineHtml, /重新加载/);
+    assert.doesNotMatch(offlineHtml, /id="(?:portfolio|today)-title"/);
+  }
+});
+
+test("desktop and mobile portfolio endpoints preserve their fields and append API sync metadata", async () => {
+  const token = "rendered-desktop-test-token-0000000000";
+  for (const path of ["/api/mobile/v1/portfolio", "/api/desktop/v1/portfolio"]) {
+    const options = { headers: { authorization: `Bearer ${token}` }, env: { DESKTOP_ACCESS_TOKEN: token } };
+    const response = await render(path, options);
+    assert.equal(response.status, 200, path);
+    assert.equal(response.headers.get("cache-control"), "private, no-store");
+    const body = await response.json();
+    assert.equal(body.reportDate, portfolioResponse.reportDate);
+    assert.equal(body.syncedAt, portfolioResponse.syncedAt);
+    assert.equal(body.syncStatus, "current");
+    if (path.includes("/desktop/")) assert.equal(body.presentation.netLiquidation, portfolioFixture.account.netLiquidation);
+    else assert.equal(body.account.netLiquidation, portfolioFixture.account.netLiquidation);
+    options.env.PORTFOLIO_DATA_SERVICE = { fetch: async () => { throw new TypeError("network offline"); } };
+    assert.equal((await render(path, options)).status, 503);
+  }
+});
+
+test("broker-only holdings resolve through the API for security search, stock context and plan reads/writes", async () => {
+  const token = "rendered-desktop-test-token-0000000000";
+  let reads = 0;
+  let writes = 0;
+  const env = {
+    DESKTOP_ACCESS_TOKEN: token,
+    PORTFOLIO_DATA_SERVICE: { fetch: async () => {
+      reads++;
+      return Response.json({ ...portfolioResponse, portfolio: { ...portfolioFixture, positions: [{ ...portfolioFixture.positions[0], symbol: "QAHELD", contractDescription: "QA Holdings" }], trades: [] } });
+    } },
+    DB: { prepare(sql) {
+      assert.doesNotMatch(sql, /portfolio_state|portfolio_history/);
+      return { bind: () => ({ first: async () => null }) };
+    }, batch: async () => { writes++; } },
+  };
+  for (const path of ["/api/symbols?q=QAHELD", "/api/stocks/QAHELD", "/api/plans/QAHELD"]) {
+    const response = await render(path, { env });
+    assert.equal(response.status, 200, path);
+    const data = await response.json();
+    if (path.includes("/symbols")) assert.equal(data.results[0].symbol, "QAHELD");
+    if (path.includes("/stocks")) assert.equal(data.position.symbol, "QAHELD");
+  }
+  const saved = await render("/api/desktop/v1/plans/QAHELD", {
+    env, method: "PUT", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body: JSON.stringify({ holdingReason: "Synthetic plan", levels: [] }),
+  });
+  assert.equal(saved.status, 200);
+  assert.equal((await saved.json()).plan.ticker, "QAHELD");
+  assert.equal(writes, 1);
+  assert.equal(reads, 4);
+});
 
 test("server-renders the investment record", async () => {
   const snapshot = JSON.parse(await readFile(new URL("../data/portfolio-snapshot.json", import.meta.url), "utf8"));
@@ -146,7 +231,7 @@ test("removes the disposable starter preview", async () => {
   assert.doesNotMatch(page, /PageTab|activePage|switchPage|持仓分析|className="tabs"/);
   assert.match(viewModel, /actualCost/);
   assert.match(viewModel, /\(position\.costBasis - realized\) \/ position\.quantity/);
-  assert.match(page, /currentPortfolioSnapshot/);
+  assert.match(page, /loadPortfolio/);
   assert.doesNotMatch(page, /const holdings = \[/);
   assert.doesNotMatch(page, /const optionContracts = \[/);
   assert.doesNotMatch(page, /const recentTrades = \[/);

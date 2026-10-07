@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { configureClientPlatform, type ApiFetch } from "@/packages/client/src/platform";
-export const API_ORIGIN = "https://spontra.max-zhangyuchen.workers.dev";
+export const API_ORIGIN = "https://spontra-app.max-zhangyuchen.workers.dev";
 export const AUTH_EVENT = "spontra:unauthorized";
 type NativeResponse = { status: number; body: string };
 export const desktopFetch: ApiFetch = async (path, init = {}) => {

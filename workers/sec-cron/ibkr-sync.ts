@@ -1,60 +1,34 @@
 import { extractCapitalFlows, fetchFlexStatement, normalizeFlexStatement } from "../../lib/ibkr-flex.ts";
 import { selectTradeQueryPeriod } from "../../lib/portfolio-snapshot.ts";
 
-export type IbkrSyncEnv = {
-  PORTFOLIO_SERVICE?: { fetch: typeof fetch };
+import { publishFlexSnapshot, readPortfolioSnapshot, recordSyncFailure, type PortfolioDatabase } from "./portfolio-store.ts";
+import { matchesSecret, matchesPortfolioReadToken } from "./auth.ts";
+
+export type IbkrSyncEnv = Pick<PortfolioSyncBindings, "IBKR_FLEX_QUERY_ID"> & {
+  DB: PortfolioDatabase;
   IBKR_FLEX_TOKEN: string;
-  IBKR_FLEX_QUERY_ID: string;
   PORTFOLIO_SYNC_KEY: string;
+  PORTFOLIO_READ_TOKEN: string;
+  PORTFOLIO_SITE_READ_TOKEN?: string;
 };
 
-type PortfolioState = {
-  lastSuccessfulTradeAt: string | null;
-};
-
-export async function runIbkrFlexSync(env: IbkrSyncEnv, fetcher: typeof fetch = fetch, now = new Date()) {
-  if (!env.IBKR_FLEX_TOKEN || !env.PORTFOLIO_SYNC_KEY || !/^\d+$/.test(env.IBKR_FLEX_QUERY_ID)) {
-    throw new Error("IBKR Flex worker environment is incomplete");
+export async function runIbkrFlexSync(env: IbkrSyncEnv, fetcher: typeof fetch = fetch, clock: () => Date = () => new Date()) {
+  const startedAt = clock().toISOString();
+  try {
+    if (!env.IBKR_FLEX_TOKEN || !/^\d+$/.test(env.IBKR_FLEX_QUERY_ID)) {
+      throw new Error("IBKR Flex worker environment is incomplete");
+    }
+    const previous = await readPortfolioSnapshot(env.DB);
+    const queryPeriod = selectTradeQueryPeriod(previous?.tradeSync.lastSuccessfulTradeAt ?? null, startedAt);
+    const csv = await fetchFlexStatement({ token: env.IBKR_FLEX_TOKEN, queryId: env.IBKR_FLEX_QUERY_ID, periodDays: 365, fetcher });
+    const input = normalizeFlexStatement(csv, { generatedAt: startedAt, queryPeriod, queryId: env.IBKR_FLEX_QUERY_ID });
+    input.capitalFlows = extractCapitalFlows(csv);
+    const { status, snapshot } = await publishFlexSnapshot(env.DB, input, clock().toISOString());
+    return { status, reportDate: snapshot.source?.reportDate ?? null, positions: snapshot.positions.length, trades: snapshot.trades.length };
+  } catch (error) {
+    await recordSyncFailure(env.DB, startedAt);
+    throw error;
   }
-  const origin = "https://investment-record.internal";
-  if (!env.PORTFOLIO_SERVICE) {
-    throw new Error("Cloudflare portfolio service binding is missing");
-  }
-  const portfolioFetch = env.PORTFOLIO_SERVICE.fetch.bind(env.PORTFOLIO_SERVICE);
-  const headers = {
-    "content-type": "application/json",
-    "x-portfolio-sync-key": env.PORTFOLIO_SYNC_KEY,
-  };
-  const stateResponse = await portfolioFetch(`${origin}/api/internal/portfolio/sync`, {
-    redirect: "manual",
-    headers,
-    signal: AbortSignal.timeout(30_000),
-  });
-  if (!stateResponse.ok) throw new Error(`Portfolio state HTTP ${stateResponse.status}`);
-  const state = await stateResponse.json() as PortfolioState;
-  const queryPeriod = selectTradeQueryPeriod(state.lastSuccessfulTradeAt, now.toISOString());
-  const csv = await fetchFlexStatement({
-    token: env.IBKR_FLEX_TOKEN,
-    queryId: env.IBKR_FLEX_QUERY_ID,
-    periodDays: 365,
-    fetcher,
-  });
-  const input = normalizeFlexStatement(csv, {
-    generatedAt: now.toISOString(),
-    queryPeriod,
-    queryId: env.IBKR_FLEX_QUERY_ID,
-  });
-  input.capitalFlows = extractCapitalFlows(csv);
-  const publishResponse = await portfolioFetch(`${origin}/api/internal/portfolio/sync`, {
-    redirect: "manual",
-    method: "POST",
-    headers,
-    body: JSON.stringify(input),
-    signal: AbortSignal.timeout(30_000),
-  });
-  if (!publishResponse.ok) throw new Error(`Portfolio publish HTTP ${publishResponse.status}`);
-  const result = await publishResponse.json() as { status: "published" | "unchanged"; reportDate: string; positions: number; trades: number };
-  return result;
 }
 
 // A protected manual trigger uses exactly the same pipeline as the Cron.
@@ -67,7 +41,8 @@ export async function handleIbkrSyncRequest(
   if (request.method !== "POST") {
     return Response.json({ error: "Method not allowed" }, { status: 405, headers: { ...headers, allow: "POST" } });
   }
-  if (!env.PORTFOLIO_SYNC_KEY || request.headers.get("x-portfolio-sync-key") !== env.PORTFOLIO_SYNC_KEY) {
+  const suppliedKey = request.headers.get("x-portfolio-sync-key");
+  if (!matchesSecret(suppliedKey, env.PORTFOLIO_SYNC_KEY) || matchesPortfolioReadToken(suppliedKey, env)) {
     return Response.json({ error: "Unauthorized" }, { status: 401, headers });
   }
   try {

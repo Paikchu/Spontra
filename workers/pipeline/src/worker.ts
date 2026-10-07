@@ -1,3 +1,5 @@
+import {handleTranscriptAdminRequest} from './admin/transcripts.ts';
+import {syncTranscript} from './transcripts/library.ts';
 import {handleBusinessMapAdminRequest} from './admin/business-map.ts';
 import {runDataOnlySweep} from './financial-data/queue.ts';
 import { handleCompanyAnalysisRequest, handleSecAnalysisRequest, runCompanyAnalysisSweep, runSecMemorySweep, runSecRefresh } from "./core.ts";
@@ -65,6 +67,7 @@ const worker = {
     if (path === "/ready") return readyResponse(env);
     if (path.startsWith("/admin/business-map/")) return handleBusinessMapAdminRequest(request, env);
     if (path === "/admin/financials" || path.startsWith("/admin/financials/")) return handleFinancialAdminRequest(request, env);
+    if (path === "/admin/transcripts" || path.startsWith("/admin/transcripts/")) return handleTranscriptAdminRequest(request, env);
     if (path === "/admin" || path.startsWith("/admin/")) return handleReportAdminRequest(request, env);
     /**
      * The read API claims the whole `/api/v1` prefix and rejects every method but GET/HEAD itself,
@@ -81,6 +84,7 @@ const worker = {
 
   async scheduled(_controller: ScheduledController, env: SecPipelineEnv) {
     if (_controller.cron === "*/2 * * * *") {
+      console.log(JSON.stringify({ event: "transcript-library", ...await syncTranscript(env) }));
       const maintenance = await runFinancialMaintenanceTick(env);
       if (maintenance.processed) {
         console.log(JSON.stringify({event:"financial-maintenance",...maintenance}));

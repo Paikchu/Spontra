@@ -9,17 +9,9 @@
   "vars": {
     "IBKR_FLEX_QUERY_ID": "1628251"
   },
-  "services": [
-    {
-      "binding": "PORTFOLIO_SERVICE",
-      "service": "spontra-app"
-    }
-  ],
   "triggers": {
     "crons": [
-      "*/5 * * * *",
-      "0 6 * * TUE-SAT",
-      "15 * * * *"
+      "0 6 * * TUE-SAT"
     ]
   },
   "observability": {
@@ -31,5 +23,14 @@
       "enabled": true,
       "head_sampling_rate": 0.05
     }
-  }
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "spontra-max-data-sync-db",
+      "database_id": "d93272dc-12ba-4767-a348-afcf44856597",
+      "migrations_dir": "./migrations"
+    }
+  ],
+  "account_id": "32ed059d49b57175de6d22f810cb70f9"
 }

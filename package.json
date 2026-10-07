@@ -24,7 +24,7 @@
     "sec-cron:check": "wrangler deploy --config workers/sec-cron/wrangler.jsonc --dry-run",
     "sec-cron:deploy": "env -u WRANGLER_CI_OVERRIDE_NAME -u WRANGLER_CI_MATCH_TAG wrangler deploy --config workers/sec-cron/wrangler.jsonc --name spontra-max-data-sync --keep-vars",
     "db:migrate:remote": "wrangler d1 migrations apply DB --remote --config wrangler.jsonc",
-    "deploy:cloudflare": "node scripts/deploy-cloudflare-ci.mjs",
+    "deploy:cloudflare": "node --experimental-strip-types scripts/deploy-cloudflare-ci.mjs",
     "test:earning-report": "node --experimental-strip-types --test tests/earning-report-integration.test.ts tests/earning-report-rich-text.test.ts",
     "worker:pipeline:check:migrations": "node --experimental-strip-types workers/pipeline/scripts/check-migrations.ts",
     "worker:pipeline:check": "wrangler deploy --config workers/pipeline/wrangler.jsonc --env=\"\" --dry-run",
@@ -58,7 +58,9 @@
     "admin:build": "npm run build --workspace @spontra/admin",
     "admin:typecheck": "npm run typecheck --workspace @spontra/admin",
     "admin:check": "wrangler deploy --config apps/admin/wrangler.jsonc --dry-run",
-    "admin:test": "tsx --tsconfig tsconfig.test.json --test tests/admin-worker.test.ts tests/admin-runtime.test.ts"
+    "admin:test": "tsx --tsconfig tsconfig.test.json --test tests/admin-worker.test.ts tests/admin-runtime.test.ts",
+    "sec-cron:migrate:ci": "wrangler d1 migrations apply DB --remote --config workers/sec-cron/wrangler.jsonc",
+    "check:portfolio:boundary": "node scripts/check-portfolio-boundary.mjs"
   },
   "dependencies": {
     "@streamdown/cjk": "^1.0.3",

@@ -4,8 +4,8 @@ import { buildPortfolioViewModel } from "./portfolio-view-model.ts";
 import { canonicalUnderlying, type PortfolioSnapshotV1 } from "./portfolio-snapshot.ts";
 
 /** The same accounting projection used by the Web homepage; no broker credentials or IDs. */
-export function buildMobilePortfolio(snapshot: PortfolioSnapshotV1, dataSource: "live" | "fallback") {
-  const view = buildPortfolioViewModel(snapshot);
+export function buildMobilePortfolio(snapshot: PortfolioSnapshotV1, dataSource: "live" | "fallback", reportDate?: string | null) {
+  const view = buildPortfolioViewModel(snapshot, reportDate);
   const optionPnl = snapshot.positions.filter(p => p.assetClass === "OPT").reduce((sum, p) => sum + p.unrealizedPnl, 0);
   const gross = snapshot.positions.reduce((sum, p) => sum + Math.abs(p.marketValue), 0);
   return {

@@ -1,0 +1,5 @@
+IBKR_FLEX_TOKEN=
+PORTFOLIO_SYNC_KEY=
+PORTFOLIO_READ_TOKEN=
+# Optional independent read credential for the investment-record Site.
+PORTFOLIO_SITE_READ_TOKEN=

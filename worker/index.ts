@@ -1,8 +1,9 @@
 /** Cloudflare Worker entry point for the vinext-starter template. */
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
+import { runPortfolioJob, type PortfolioJobsEnv } from "./portfolio-jobs";
 
-interface Env {
+interface Env extends PortfolioJobsEnv {
   ASSETS: Fetcher;
   DB: D1Database;
   IMAGES: {
@@ -26,6 +27,14 @@ interface ExecutionContext {
 // const imageConfig: ImageConfig = { dangerouslyAllowSVG: true };
 
 const worker = {
+  async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext) {
+    ctx.waitUntil(runPortfolioJob(controller.cron, env).then(result => {
+      console.log(JSON.stringify({ event: "portfolio-app-job", cron: controller.cron, ...result }));
+    }).catch(() => {
+      console.error(JSON.stringify({ event: "portfolio-app-job-failed", cron: controller.cron }));
+      throw new Error("Portfolio background job failed");
+    }));
+  },
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 

@@ -8,15 +8,19 @@ import { Delta, NodeArrow } from "@/components/spontra/primitives";
 import { money, number } from "@/lib/portfolio-format";
 import { ResearchFeed } from "./research-feed";
 import { InstructionLauncher } from "./instruction-launcher";
+import { PortfolioSyncNote } from "@/components/portfolio-sync-note";
+import type { PortfolioSyncMetadata } from "@/shared/portfolio-contract";
 
 /** Today: the account summary sits above the report list; the open report fills the rest of the page. */
 export function TodayDashboard({
+  portfolioSync,
   netLiquidation,
   netDeposits,
   cashBalance,
   netPositionsValue,
   portfolioLeverage,
 }: {
+  portfolioSync?: PortfolioSyncMetadata;
   netLiquidation: number;
   netDeposits: number;
   cashBalance: number;
@@ -39,6 +43,7 @@ export function TodayDashboard({
         </Link>
       </header>
       <div className="today-hero-body">
+        <PortfolioSyncNote sync={portfolioSync} />
         <div className="sp-stat sp-stat-hero">
           <strong className="sp-stat-value"><span className="sr-only">{money(netLiquidation)}</span><span aria-hidden="true"><CountUp value={money(netLiquidation)} /></span></strong>
           <span className="sp-stat-delta">

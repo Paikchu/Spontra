@@ -58,8 +58,11 @@ export type SecPipelineEnv = SecCronEnv & AnalysisReadEnv & {
   /** "false" turns off the IR-site deck search fallback. */
   GUIDANCE_DECK_SEARCH?: string;
   GUIDANCE_DAILY_MODEL_CALLS?: string;
-  /** Financial Modeling Prep key for earnings-call transcripts; optional. */
-  FMP_API_KEY?: string;
+  /** Alpha Vantage key for earnings-call transcripts; optional. */
+  ALPHA_VANTAGE_API_KEY?: string;
+  TRANSCRIPTS_ENABLED?: string;
+  /** Shared daily transcript request budget; defaults to the free tier's 25 requests. */
+  GUIDANCE_DAILY_TRANSCRIPT_CALLS?: string;
   SEC_FILINGS: R2BucketLike;
   SEC_USER_AGENT: string;
   DEEPSEEK_API_KEY?: string;
