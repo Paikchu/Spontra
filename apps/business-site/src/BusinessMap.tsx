@@ -127,7 +127,9 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
   const verified = useMemo(() => verifiedFindings(findings, data), [findings, data]);
   const [focusId, setFocusId] = useState<string | null>(() => new URLSearchParams(location.search).get("finding"));
   const [story, setStory] = useState(false);
+  const [split, setSplit] = useState(false);
   const focused = verified.find(f => f.id === focusId) ?? null;
+  const pair = focused ? verified.find(f => f.id === focused.pairWith) ?? null : null;
   const focusIndex = focused ? verified.indexOf(focused) : -1;
   const [preview, setPreview] = useState<string | null>(null);
   const [hoverNode, setHoverNode] = useState<string | null>(null);
@@ -221,7 +223,7 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
   const badgeFindings = useMemo(() => focused || view !== "profit" ? new Map() : badgesByNode(verified, quarter, items), [focused, view, verified, quarter, items]);
   const badges = useMemo(() => new Map([...badgeFindings].map(([name, f]) => [name, { kind: f.kind, severity: f.severity, title: f.title }])), [badgeFindings]);
   const nodeColor = useCallback((id: string) => { const item = items.find(i => i.id === id); return item ? hue(item.slot) : "var(--biz-0)"; }, [items]);
-  const focusFinding = (id: string | null) => { setFocusId(id); if (!id) setStory(false); };
+  const focusFinding = (id: string | null) => { setFocusId(id); if (!id) { setStory(false); setSplit(false); } };
   const previewItem = items.find(item => item.key === preview);
   const active = previewItem ? "segment:" + previewItem.key : hoverNode ?? (current ? "segment:" + current.key : null);
   const hovered = hoverNode ? itemByNode.get(hoverNode)?.key : undefined;
@@ -323,9 +325,13 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
           : <div className="business-flow chart-fallback">{current && <Dossier item={current} parent={parent ?? null} sources={quarter.sources.length ? quarter.sources : business?.sources ?? []} explainer={explainer} />}<FinancialSankey quarter={quarter} previous={previous} onSegment={key => setSelected(items.find(item => item.key === key)?.id ?? null)} /></div>}
       </div>
 
-      {focused && findings ? <LensPanel finding={focused} data={data} sources={findings.sources} nodeColor={nodeColor} pair={verified.find(f => f.id === focused.pairWith) ?? null}
-        story={story} index={focusIndex} count={verified.length} onPair={() => focused.pairWith && focusFinding(focused.pairWith)}
-        onStep={delta => { const next = verified[focusIndex + delta]; if (next) focusFinding(next.id); }} onClose={() => focusFinding(null)} />
+      {focused && findings ? <div className="lens-stage" data-split={split && pair ? "" : undefined}>
+        <LensPanel finding={focused} data={data} sources={findings.sources} nodeColor={nodeColor} pair={pair} split={split && !!pair}
+          story={story} index={focusIndex} count={verified.length} onPair={() => setSplit(v => !v)}
+          onStep={delta => { const next = verified[focusIndex + delta]; if (next) focusFinding(next.id); }} onClose={() => focusFinding(null)} />
+        {split && pair && <LensPanel finding={pair} data={data} sources={findings.sources} nodeColor={nodeColor} pair={null} compact
+          story={false} index={-1} count={verified.length} onPair={() => {}} onStep={() => {}} onClose={() => setSplit(false)} onFocusThis={() => setFocusId(pair.id)} />}
+      </div>
       : revenueHistory && revenueHistory.quarters.length >= 2 && <TrendPanel history={revenueHistory} items={items} selected={current} currentPeriod={quarter?.periodEnd ?? null}
         periods={new Set(quarters.map(q => q.periodEnd))} onPickPeriod={end => setPeriod(quarters.find(q => q.periodEnd === end)?.id ?? null)} hue={hue} guidance={guidance} />}
 

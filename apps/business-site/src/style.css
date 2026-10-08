@@ -722,7 +722,27 @@ button { cursor: pointer; }
 .lens-row dd em[data-verdict="above"], .lens-row dd em[data-verdict="below"] { color: var(--loss); font-weight: 600; }
 .lens-row dd em[data-verdict="within"] { color: var(--up); font-weight: 600; }
 .lens-watch { margin: 0 0 10px; font-size: 12.5px; color: var(--muted-foreground); }
+.lens-watch p { margin: 0 0 4px; }
 .lens-watch b { display: inline-block; margin-right: 8px; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; color: var(--foreground); background: var(--surface); border: 1px solid var(--hairline); }
+/* The outcome, once the watched period is published: the figure, its comparison, and whether it landed inside guidance. */
+.lens-outcome { padding: 6px 10px; border-radius: 10px; background: color-mix(in srgb, var(--kind) 8%, var(--surface)); border: 1px solid color-mix(in srgb, var(--kind) 22%, transparent); }
+.lens-outcome--pending { color: var(--faint); background: transparent; border-style: dashed; border-color: var(--hairline); }
+.lens-outcome-body { display: inline-flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.lens-outcome-body b { font-weight: 620; color: var(--foreground); font-variant-numeric: tabular-nums; }
+.lens-outcome-body em { font-size: 11.5px; font-style: normal; color: var(--faint); font-variant-numeric: tabular-nums; }
+.lens-outcome-body em[data-verdict="within"] { color: var(--up); font-weight: 600; }
+.lens-outcome-body em[data-verdict="above"], .lens-outcome-body em[data-verdict="below"] { color: var(--loss); font-weight: 600; }
+.finding-settled { display: inline-grid; place-items: center; width: 16px; height: 16px; margin-left: -2px; border-radius: 50%; font-size: 10px; font-style: normal; color: var(--kind); background: color-mix(in srgb, var(--kind) 14%, transparent); }
+
+/* Side by side: the finding and its counterpart share the trend's row, each with its own chart and figures. */
+.lens-stage { display: grid; grid-template-columns: minmax(0, 1fr); min-height: 0; }
+.lens-stage[data-split] { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 clamp(16px, 2.5vw, 36px); }
+.lens-stage[data-split] .lens { height: clamp(260px, 38vh, 380px); }
+.lens-stage[data-split] .lens + .lens { padding-left: clamp(16px, 2.5vw, 36px); border-left: 1px solid var(--hairline); }
+.lens-stage[data-split] .lens-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 11fr) minmax(0, 9fr); gap: 8px 0; }
+.lens-stage[data-split] .lens-title h2 { font-size: 14px; }
+.lens[data-compact] .lens-basis { display: none; }
+@media (max-width: 1100px) { .lens-stage[data-split] { grid-template-columns: minmax(0, 1fr); } .lens-stage[data-split] .lens + .lens { padding-left: 0; border-left: 0; } }
 .lens-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 11.5px; color: var(--muted-foreground); }
 .lens-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .lens-legend i { width: 8px; height: 8px; border-radius: 2px; }
@@ -743,7 +763,8 @@ button { cursor: pointer; }
 .lens-col:not([data-current]) .lens-bar { opacity: .55; }
 .lens-col:hover .lens-bar { opacity: 1; }
 .lens-value { position: absolute; left: 50%; bottom: calc(100% + 4px); transform: translateX(-50%); font-size: 11px; font-weight: 600; color: var(--foreground); white-space: nowrap; font-variant-numeric: tabular-nums; text-shadow: 0 0 4px var(--background), 0 0 2px var(--background); animation: fade-in .3s ease both; }
-.lens-value[data-below] { bottom: auto; top: calc(100% + 4px); }
+/* A negative bar hangs from the zero line, so its label sits above that line, clear of the period labels. */
+.lens-bar[data-negative] .lens-value { bottom: calc(100% + 4px); }
 .lens-period { position: absolute; top: calc(100% + 6px); left: -10px; right: -10px; display: flex; flex-direction: column; align-items: center; gap: 1px; font-size: 11px; color: var(--faint); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .lens-col[data-current] .lens-period { color: var(--foreground); }
 .lens-period b { font-size: 10.5px; font-weight: 600; }

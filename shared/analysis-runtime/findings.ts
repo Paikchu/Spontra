@@ -2,7 +2,7 @@ import { z } from "zod";
 import { FLOW_METRICS, type BusinessFlowQuarter, type FlowMetric } from "../analysis-contract/business-flow.ts";
 import { FUNDAMENTAL_METRIC_CATALOG } from "../analysis-contract/fundamental-metric-catalog.ts";
 import type { FundamentalMetricKey, PublicFundamentalPoint, PublicFundamentalSeries } from "../analysis-contract/fundamentals.ts";
-import type { AnalysisFinding, CapitalMetric, FindingCompare, FindingEvidence, FindingRef, FindingSpan, FindingsPublication } from "../analysis-contract/findings.ts";
+import type { AnalysisFinding, CapitalMetric, FindingBaseRef, FindingEvidence, FindingRef, FindingSpan, FindingWatch, FindingsPublication } from "../analysis-contract/findings.ts";
 import type { CashFlowStatement, PublicCapitalStructure } from "../analysis-contract/capital-structure.ts";
 import type { GuidanceItem, GuidancePublication } from "../analysis-contract/guidance.ts";
 import type { RevenueHistory, RevenueHistoryNode } from "../analysis-contract/revenue-history.ts";
@@ -16,13 +16,14 @@ const text = (max: number) => z.string().trim().min(1).max(max);
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const https = z.string().max(2000).refine(v => { try { const u = new URL(v); return u.protocol === "https:" && !u.username && !u.password; } catch { return false; } });
 const claim = z.object({ text: text(600), sourceIds: z.array(z.string().max(40)).min(1).max(6) });
-const ref = z.union([
+const baseRef = z.union([
   z.object({ metric: z.enum(FLOW_METRICS) }),
   z.object({ capital: z.enum(CAPITAL_METRICS) }),
   z.object({ fundamental: z.enum(FUNDAMENTAL_KEYS) }),
   z.object({ nodeId: text(200) }),
   z.object({ guidanceId: text(200) }),
 ]);
+const ref = z.union([baseRef, z.object({ ratio: z.object({ numerator: baseRef, denominator: baseRef }) })]);
 const span = z.enum(["quarter", "fiscal_year"]);
 const compare = z.union([z.literal("yoy"), z.literal("qoq"), z.object({ guidanceId: text(200) })]);
 const evidence = z.object({ ref, periodEnd: date, span, compare: compare.optional(), label: text(60).optional() });
@@ -33,10 +34,10 @@ const lens = z.discriminatedUnion("type", [
 ]);
 const finding = z.object({
   id: text(80), kind: z.enum(["risk", "strength", "shift", "watch"]), severity: z.union([z.literal(1), z.literal(2), z.literal(3)]),
-  title: text(24), judgment: claim, evidence: z.array(evidence).min(1).max(6),
+  title: text(24), judgment: claim, evidence: z.array(evidence).min(1).max(8),
   anchors: z.object({ view: z.enum(["profit", "cash", "balance"]), nodeIds: z.array(text(200)).max(12), metrics: z.array(z.enum(FLOW_METRICS)).max(6), capital: z.array(z.enum(CAPITAL_METRICS)).max(6).optional() }),
   lens, pairWith: text(80).optional(),
-  watch: z.object({ ref, condition: text(200), horizon: z.enum(["next_quarter", "fiscal_year"]) }).optional(),
+  watch: z.object({ ref, condition: text(200), horizon: z.enum(["next_quarter", "fiscal_year"]), compare: compare.optional() }).optional(),
 });
 export const findingsPublicationSchema = z.object({
   schemaVersion: z.literal("findings.v1"),
@@ -233,6 +234,12 @@ function guidanceValue(item: GuidanceItem, span: FindingSpan): ResolvedValue | n
 
 /** The figure a reference names at a period, or null when the page's data cannot answer it. */
 export function resolveRef(data: FindingData, ref: FindingRef, periodEnd: string, span: FindingSpan): ResolvedValue | null {
+  if ("ratio" in ref) {
+    // Both sides at the same period and span; a guided range has no single value to divide.
+    const n = resolveRef(data, ref.ratio.numerator, periodEnd, span), d = resolveRef(data, ref.ratio.denominator, periodEnd, span);
+    if (!n || !d || n.range || d.range || d.value === 0) return null;
+    return { value: n.value / d.value, unit: "ratio", currency: null, periodStart: n.periodStart ?? d.periodStart, periodEnd: n.periodEnd, span, accessions: [...new Set([...n.accessions, ...d.accessions])] };
+  }
   const amount = (p: Point | null, unit: ValueUnit = "USD"): ResolvedValue | null => p && { ...p, unit, span };
   if ("metric" in ref) return amount(overSpan(span, periodEnd, end => metricAt(data, ref.metric, end)));
   if ("nodeId" in ref) return amount(overSpan(span, periodEnd, end => nodeAt(data, ref.nodeId, end)));
@@ -248,6 +255,7 @@ const CAPITAL_LABEL: Record<CapitalMetric, string> = { operatingCashFlow: "ç»è
 
 /** Human label of a reference; a business node reads by its disclosed name when the data has it. */
 export function refLabel(data: FindingData, ref: FindingRef): string {
+  if ("ratio" in ref) return `${refLabel(data, ref.ratio.numerator)} / ${refLabel(data, ref.ratio.denominator)}`;
   if ("metric" in ref) return METRIC_LABEL[ref.metric];
   if ("capital" in ref) return CAPITAL_LABEL[ref.capital];
   if ("fundamental" in ref) return data.fundamentals?.series.find(s => s.metricKey === ref.fundamental)?.label ?? FUNDAMENTAL_METRIC_CATALOG[ref.fundamental as keyof typeof FUNDAMENTAL_METRIC_CATALOG]?.label ?? ref.fundamental;
@@ -297,6 +305,7 @@ export function evidenceCandidates(r: ResolvedEvidence): number[] {
   const out: number[] = [];
   const amount = (v: ResolvedValue) => {
     if (v.unit === "USD") out.push(v.value / 1e8, v.value / 1e12, v.value / 1e9, v.value / 1e6);
+    else if (v.unit === "ratio") out.push(v.value, v.value * 100);
     else out.push(v.value);
     if (v.range) for (const x of [v.range.low, v.range.high]) out.push(v.unit === "USD" ? x / 1e8 : x);
   };
@@ -330,7 +339,19 @@ export function numberSupported(written: number, candidates: number[]): boolean 
   return candidates.some(c => Math.abs(written - c) <= Math.max(rounding + 1e-9, Math.abs(c) * 0.02));
 }
 
-export type VerifiedFinding = AnalysisFinding & { resolved: ResolvedEvidence[]; periodEnd: string };
+/** The watched figure once the period it points at has been published. */
+export type WatchOutcome = { periodEnd: string; resolved: ResolvedEvidence };
+export type VerifiedFinding = AnalysisFinding & { resolved: ResolvedEvidence[]; periodEnd: string; watchOutcome: WatchOutcome | null };
+
+/** The period a watch points at, counted from the report the findings were written from. */
+export const watchPeriod = (publicationPeriodEnd: string, watch: FindingWatch) => shiftPeriod(publicationPeriodEnd, watch.horizon === "next_quarter" ? 3 : 12);
+
+/** Resolves the watch at its own period; null until that period's data exists. */
+export function resolveWatch(data: FindingData, watch: FindingWatch, publicationPeriodEnd: string): WatchOutcome | null {
+  const periodEnd = watchPeriod(publicationPeriodEnd, watch);
+  const resolved = resolveEvidence(data, { ref: watch.ref, periodEnd, span: watch.horizon === "next_quarter" ? "quarter" : "fiscal_year", ...(watch.compare ? { compare: watch.compare } : {}) });
+  return resolved ? { periodEnd, resolved } : null;
+}
 export type WithheldFinding = { id: string; reasons: string[] };
 
 /**
@@ -358,7 +379,7 @@ export function verifyFindings(publication: FindingsPublication, data: FindingDa
     const candidates = resolved.flatMap(r => r ? evidenceCandidates(r) : []);
     for (const n of proseNumbers(`${f.title} ${f.judgment.text}`)) if (!numberSupported(n, candidates)) reasons.push(`number ${n} unsupported`);
     if (reasons.length) withheld.push({ id: f.id, reasons });
-    else verified.push({ ...f, resolved: resolved as ResolvedEvidence[], periodEnd });
+    else verified.push({ ...f, resolved: resolved as ResolvedEvidence[], periodEnd, watchOutcome: f.watch ? resolveWatch(data, f.watch, periodEnd) : null });
   }
   verified.sort((a, b) => b.severity - a.severity || order[a.kind] - order[b.kind]);
   return { verified, withheld };

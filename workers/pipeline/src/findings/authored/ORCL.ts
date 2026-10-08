@@ -31,7 +31,7 @@ export const ORCL_FINDINGS: FindingsPublication = {
       severity: 3,
       title: "资本开支 557 亿，自由现金流转负",
       judgment: {
-        text: "FY2026 资本开支 557 亿美元，超出管理层此前 500 亿美元的指引，是 FY2025 的 2.6 倍。经营现金流创纪录地达到 320 亿美元、同比增长 54%，但自由现金流仍为 -237 亿美元。缺口由外部资金填补：全年新增借款 461 亿美元，总资产一年内从 1684 亿美元增至 2618 亿美元，增幅 55%，主要是数据中心资产与租赁。这是用资产负债表换云收入增速：若 AI 云需求的兑现节奏或融资环境变化，高额资本开支会变成财务负担。",
+        text: "FY2026 资本开支 557 亿美元，超出管理层此前 500 亿美元的指引，是 FY2025 的 2.6 倍。经营现金流创纪录地达到 320 亿美元、同比增长 54%，但自由现金流仍为 -237 亿美元。缺口由外部资金填补：全年新增借款 461 亿美元，总资产一年内从 1684 亿美元增至 2618 亿美元，增幅 55%，主要是数据中心资产与租赁。每美元资本开支对应的云收入从上一年的 1.16 美元降到 0.61 美元。这是用资产负债表换云收入增速：若 AI 云需求的兑现节奏或融资环境变化，高额资本开支会变成财务负担。",
         sourceIds: ["10k-fy26", "8k-q3-fy26"],
       },
       evidence: [
@@ -41,11 +41,12 @@ export const ORCL_FINDINGS: FindingsPublication = {
         amount({ capital: "freeCashFlow" }),
         amount({ capital: "debtIssued" }),
         ev({ capital: "totalAssets" }, FY26, "quarter", "yoy", "总资产"),
+        ev({ ratio: { numerator: { nodeId: "cloud" }, denominator: { capital: "capex" } } }, FY26, "fiscal_year", "yoy", "每美元资本开支对应的云收入"),
       ],
       anchors: { view: "cash", nodeIds: [], metrics: [], capital: ["capex", "operatingCashFlow", "freeCashFlow", "debtIssued"] },
       lens: { type: "compare_bars", refs: [{ capital: "operatingCashFlow" }, { capital: "capex" }, { capital: "freeCashFlow" }], span: "fiscal_year" },
       pairWith: "cloud-engine",
-      watch: { ref: { capital: "capex" }, condition: "FY2027 资本开支与管理层计划的约 400 亿美元债务和股权融资是否按计划推进；每 1 美元资本开支对应的增量云收入是否改善", horizon: "fiscal_year" },
+      watch: { ref: { ratio: { numerator: { nodeId: "cloud" }, denominator: { capital: "capex" } } }, condition: "FY2027 每美元资本开支对应的云收入是否止跌；管理层计划的约 400 亿美元债务和股权融资是否按计划推进", horizon: "fiscal_year", compare: "yoy" },
     },
     {
       id: "cloud-engine",
@@ -66,7 +67,7 @@ export const ORCL_FINDINGS: FindingsPublication = {
       anchors: { view: "profit", nodeIds: ["cloud", "CloudInfrastructure", "CloudApplications"], metrics: [] },
       lens: { type: "share_area", nodeIds: ["cloud", "software", "HardwareRevenues", "SalesRevenueServicesNet"] },
       pairWith: "capex-fcf",
-      watch: { ref: { nodeId: "cloud" }, condition: "云收入同比增速是否继续加速；管理层指引 FY2027 Q1 云业务总收入增长 58% 至 64%", horizon: "next_quarter" },
+      watch: { ref: { nodeId: "cloud" }, condition: "云收入同比增速是否继续加速，并落在管理层给出的 FY2027 Q1 云业务总收入增长 58% 至 64% 的指引内", horizon: "next_quarter", compare: { guidanceId: "segment_revenue|growth|total-cloud-revenue|quarter|2027|1||gaap|0001193125-26-265848" } },
     },
     {
       id: "growth-acceleration",
@@ -120,7 +121,7 @@ export const ORCL_FINDINGS: FindingsPublication = {
       ],
       anchors: { view: "profit", nodeIds: [], metrics: ["revenue"] },
       lens: { type: "trend", refs: [{ metric: "revenue" }], span: "fiscal_year", rate: "yoy" },
-      watch: { ref: { metric: "revenue" }, condition: "FY2027 各季度收入是否落在管理层指引区间内", horizon: "fiscal_year" },
+      watch: { ref: { metric: "revenue" }, condition: "FY2027 Q1 收入是否落在管理层指引的同比增长 27% 至 29% 内", horizon: "next_quarter", compare: { guidanceId: "revenue|growth||quarter|2027|1||gaap|0001193125-26-265848" } },
     },
   ],
 };

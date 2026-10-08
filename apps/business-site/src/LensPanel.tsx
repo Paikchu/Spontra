@@ -4,7 +4,7 @@ import type { BusinessFlowQuarter } from "@/shared/analysis-contract/business-fl
 import type { ExplainerSource } from "@/shared/analysis-contract/business-explainer";
 import type { FindingRef } from "@/shared/analysis-contract/findings";
 import { compactFlowValue } from "@/lib/earning-report/web/business-flow-layout";
-import { spanLabel, type FindingData, type ResolvedEvidence, type ResolvedValue } from "@/shared/analysis-runtime/findings";
+import { spanLabel, watchPeriod, type FindingData, type ResolvedEvidence, type ResolvedValue } from "@/shared/analysis-runtime/findings";
 import { KIND_LABEL, VIEW_LABEL, lensColumns, lensShares, type LensColumns, type LensShares, type VerifiedFinding } from "./findings-model";
 
 const shortPeriod = (end: string) => end.slice(0, 7).replace("-", ".");
@@ -19,6 +19,7 @@ export function formatValue(v: ResolvedValue): string {
   if (v.unit === "USD") return (v.value < 0 ? "−" : "") + money(Math.abs(v.value), v.currency ?? "USD");
   if (v.unit === "percent") return `${Number(v.value.toFixed(1))}%`;
   if (v.unit === "per_share") return `$${v.value.toFixed(2)}`;
+  if (v.unit === "ratio") return v.value.toFixed(2);
   return String(Number(v.value.toFixed(2)));
 }
 
@@ -34,7 +35,7 @@ function refColor(ref: FindingRef, nodeColor: (id: string) => string, index: num
  * The finding in focus: its chart on the left, bound to the same figures the stage shows, and its
  * judgment, evidence and what to watch next on the right. Replaces the revenue trend while open.
  */
-export function LensPanel({ finding, data, sources, nodeColor, pair, story, index, count, onPair, onStep, onClose }: {
+export function LensPanel({ finding, data, sources, nodeColor, pair, story, index, count, onPair, onStep, onClose, split = false, compact = false, onFocusThis }: {
   finding: VerifiedFinding;
   data: FindingData;
   sources: ExplainerSource[];
@@ -43,14 +44,20 @@ export function LensPanel({ finding, data, sources, nodeColor, pair, story, inde
   story: boolean;
   index: number;
   count: number;
+  /** Opens or closes the side-by-side view with the paired finding. */
   onPair: () => void;
   onStep: (delta: 1 | -1) => void;
   onClose: () => void;
+  split?: boolean;
+  /** The second panel of a pair: chart and figures, with the judgment folded. */
+  compact?: boolean;
+  onFocusThis?: () => void;
 }) {
   const cited = finding.judgment.sourceIds.map(id => sources.find(s => s.id === id)).filter(s => s != null);
   const columns = useMemo(() => finding.lens.type === "share_area" ? null : lensColumns(finding.lens, finding.periodEnd, data), [finding, data]);
   const shares = useMemo(() => finding.lens.type === "share_area" ? lensShares(finding.lens, finding.periodEnd, data) : null, [finding, data]);
-  return <section className="lens" data-kind={finding.kind} aria-label={`要点：${finding.title}`} key={finding.id}>
+  const watch = finding.watch, outcome = finding.watchOutcome;
+  return <section className="lens" data-kind={finding.kind} data-compact={compact || undefined} aria-label={`要点：${finding.title}`} key={finding.id}>
     <header className="lens-head">
       <div className="lens-title">
         <b className="lens-kind" data-kind={finding.kind}>{KIND_LABEL[finding.kind]}<i aria-label={`重要程度 ${finding.severity}`}>{"●".repeat(finding.severity)}</i></b>
@@ -58,9 +65,11 @@ export function LensPanel({ finding, data, sources, nodeColor, pair, story, inde
         <span className="lens-basis">基于 {shortPeriod(finding.periodEnd)} 财报 · 图中显示{VIEW_LABEL[finding.anchors.view]}视图</span>
       </div>
       <div className="lens-nav">
-        {pair && <Button variant="unstyled" type="button" className="lens-pair" onClick={onPair} title={pair.title}>对照 · {KIND_LABEL[pair.kind]}</Button>}
-        {story && <span className="lens-steps"><Button variant="unstyled" type="button" aria-label="上一条" disabled={index <= 0} onClick={() => onStep(-1)}>‹</Button><span>{index + 1} / {count}</span><Button variant="unstyled" type="button" aria-label="下一条" disabled={index >= count - 1} onClick={() => onStep(1)}>›</Button></span>}
-        <Button variant="unstyled" type="button" className="lens-close" aria-label="关闭要点" onClick={onClose}>✕</Button>
+        {compact ? <Button variant="unstyled" type="button" className="lens-pair" onClick={onFocusThis}>聚焦此项</Button> : <>
+          {pair && <Button variant="unstyled" type="button" className="lens-pair" aria-pressed={split} onClick={onPair} title={pair.title}>{split ? "退出对照" : `对照 · ${KIND_LABEL[pair.kind]}`}</Button>}
+          {story && <span className="lens-steps"><Button variant="unstyled" type="button" aria-label="上一条" disabled={index <= 0} onClick={() => onStep(-1)}>‹</Button><span>{index + 1} / {count}</span><Button variant="unstyled" type="button" aria-label="下一条" disabled={index >= count - 1} onClick={() => onStep(1)}>›</Button></span>}
+          <Button variant="unstyled" type="button" className="lens-close" aria-label="关闭要点" onClick={onClose}>✕</Button>
+        </>}
       </div>
     </header>
     <div className="lens-body">
@@ -69,15 +78,30 @@ export function LensPanel({ finding, data, sources, nodeColor, pair, story, inde
         {shares && <Shares shares={shares} nodeColor={nodeColor} />}
       </div>
       <div className="lens-text">
-        <p className="lens-judgment">{finding.judgment.text}<span className="cites">{finding.judgment.sourceIds.map(id => { const i = cited.findIndex(s => s.id === id); return i < 0 ? null : <a key={id} href={cited[i].url} target="_blank" rel="noopener noreferrer" title={cited[i].title}>{i + 1}</a>; })}</span></p>
+        <p className="lens-judgment">{compact ? finding.judgment.text.split(/(?<=。)/)[0] : finding.judgment.text}<span className="cites">{finding.judgment.sourceIds.map(id => { const i = cited.findIndex(s => s.id === id); return i < 0 ? null : <a key={id} href={cited[i].url} target="_blank" rel="noopener noreferrer" title={cited[i].title}>{i + 1}</a>; })}</span></p>
         <dl className="lens-evidence">
           {finding.resolved.map((r, i) => <Evidence key={i} r={r} />)}
         </dl>
-        {finding.watch && <p className="lens-watch"><b>{finding.watch.horizon === "next_quarter" ? "下季跟踪" : "全年跟踪"}</b>{finding.watch.condition}</p>}
+        {watch && <div className="lens-watch" data-settled={outcome ? "" : undefined}>
+          <p><b>{watch.horizon === "next_quarter" ? "下季跟踪" : "全年跟踪"}</b>{watch.condition}</p>
+          {outcome ? <p className="lens-outcome"><b>{shortPeriod(outcome.periodEnd)} 已披露</b><Outcome r={outcome.resolved} /></p>
+            : <p className="lens-outcome lens-outcome--pending">等待 {shortPeriod(watchPeriodOf(finding))} 财报</p>}
+        </div>}
         {cited.length > 0 && <ol className="sources sources--numbered">{cited.map(s => <li key={s.id}><a href={s.url} target="_blank" rel="noopener noreferrer">{s.title}<span aria-hidden="true"> ↗</span></a></li>)}</ol>}
       </div>
     </div>
   </section>;
+}
+
+const watchPeriodOf = (f: VerifiedFinding) => watchPeriod(f.periodEnd, f.watch!);
+
+/** The watched figure as it came in: value, comparison and, against guidance, whether it landed inside. */
+function Outcome({ r }: { r: ResolvedEvidence }) {
+  return <span className="lens-outcome-body">
+    <span>{r.label} <b data-trend={r.current.value < 0 && r.current.unit === "USD" ? "down" : undefined}>{formatValue(r.current)}</b></span>
+    {r.guidance ? <em data-verdict={r.guidance.verdict}>{r.guidance.unit === "percent" && r.current.unit !== "percent" ? `同比 ${percent(r.guidance.measured)} · ` : ""}{VERDICT[r.guidance.verdict]}{r.compare ? ` ${formatValue(r.compare)}` : ""}</em>
+      : r.compare ? <em data-trend={trend(r.delta)}>{r.compareLabel} {formatValue(r.compare)} · {r.current.unit === "percent" ? `${percent(r.delta)} 点` : percent(r.delta)}</em> : null}
+  </span>;
 }
 
 function Evidence({ r }: { r: ResolvedEvidence }) {
@@ -98,7 +122,7 @@ function Bars({ columns, nodeColor }: { columns: LensColumns; nodeColor: (id: st
   const zero = y(0);
   const colors = columns.series.map((s, i) => refColor(s.ref, nodeColor, i));
   const unit = columns.series[0]?.unit ?? "USD", currency = columns.series[0]?.values.find(v => v)?.currency ?? "USD";
-  const fmt = (v: number) => unit === "USD" ? (v < 0 ? "−" : "") + money(Math.abs(v), currency) : unit === "percent" ? `${Number(v.toFixed(1))}%` : String(Number(v.toFixed(2)));
+  const fmt = (v: number) => unit === "USD" ? (v < 0 ? "−" : "") + money(Math.abs(v), currency) : unit === "percent" ? `${Number(v.toFixed(1))}%` : unit === "ratio" ? v.toFixed(2) : String(Number(v.toFixed(2)));
   const label = columns.span === "fiscal_year" ? (end: string) => `FY 至 ${shortPeriod(end)}` : shortPeriod;
   return <div className="lens-bars" role="list" style={{ "--cols": columns.periods.length } as CSSProperties} onMouseLeave={() => setHover(null)}>
     <div className="lens-legend">{columns.series.map((s, i) => <span key={i}><i style={{ background: colors[i] }} />{s.label}</span>)}{columns.rateLabel && <span className="lens-legend-rate">{columns.rateLabel}</span>}</div>
@@ -114,7 +138,7 @@ function Bars({ columns, nodeColor }: { columns: LensColumns; nodeColor: (id: st
               const lo = v == null ? zero : Math.min(y(v), zero), hi = v == null ? zero : Math.max(y(v), zero);
               return <span key={i} className="lens-slot"><i className="lens-bar" data-missing={v == null || undefined} data-negative={v != null && v < 0 || undefined}
                 style={{ bottom: `${lo}%`, height: v == null ? "2px" : `max(2px, ${hi - lo}%)`, background: v != null && v < 0 ? "var(--loss)" : colors[i], "--i": c } as CSSProperties}>
-                {shown && v != null && <span className="lens-value" data-below={v < 0 || undefined}>{fmt(v)}</span>}
+                {shown && v != null && <span className="lens-value">{fmt(v)}</span>}
               </i></span>;
             })}
           </div>

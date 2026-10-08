@@ -83,8 +83,11 @@ export function lensColumns(lens: Extract<FindingLens, { type: "trend" | "compar
     const values = periods.map(end => resolveRef(data, ref, end, lens.span));
     return { ref, label: refLabel(data, ref), unit: values.find(v => v)?.unit ?? "USD", values };
   });
-  const rate = lens.type === "trend" ? lens.rate ?? null : null;
+  // Leading periods no series can answer are left out, so a short history does not open with empty slots.
   const first = series[0];
+  const lead = periods.findIndex((_, i) => series.some(s => s.values[i]));
+  if (lead > 0) { periods.splice(0, lead); for (const s of series) s.values.splice(0, lead); }
+  const rate = lens.type === "trend" ? lens.rate ?? null : null;
   // Growth of the first series: against a year earlier, or the previous period; the base is resolved outside the drawn window.
   const rates = periods.map((end, i) => {
     if (!rate || !first.values[i]) return null;

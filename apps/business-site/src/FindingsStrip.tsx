@@ -23,6 +23,7 @@ export function FindingsStrip({ findings, focus, story, periodEnd, onFocus, onSt
         onClick={() => onFocus(focus === f.id ? null : f.id)} title={`${KIND_LABEL[f.kind]} · ${f.judgment.text.slice(0, 60)}…`}>
         <i className="finding-mark" aria-hidden="true">{f.severity}</i>
         <span>{f.title}</span>
+        {f.watchOutcome && <i className="finding-settled" title="跟踪项已有新披露" aria-label="跟踪项已有新披露">↻</i>}
       </Button>)}
     </div>
     <div className="findings-tools">

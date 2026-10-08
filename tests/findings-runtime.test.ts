@@ -8,11 +8,11 @@ import type { PublicCapitalStructure } from "../shared/analysis-contract/capital
 import type { GuidancePublication } from "../shared/analysis-contract/guidance";
 
 /* A compact two-year Oracle: quarterly revenue by business, FY2026 and FY2025 cash flow, and the capex guidance. */
-const ends = ["2024-08-31", "2024-11-30", "2025-02-28", "2025-05-31", "2025-08-31", "2025-11-30", "2026-02-28", "2026-05-31"];
-const revenue = [13307, 14059, 14130, 15903, 14926, 16058, 17190, 19184];
-const cloud = [5623, 5937, 6210, 6737, 7186, 7977, 8914, 9913];
-const software = [5766, 6064, 5926, 6968, 5721, 5877, 6119, 6824];
-const net = [2927, 3151, 2936, 3427, 2927, 6135, 3721, 4304];
+const ends = ["2024-08-31", "2024-11-30", "2025-02-28", "2025-05-31", "2025-08-31", "2025-11-30", "2026-02-28", "2026-05-31", "2026-08-31"];
+const revenue = [13307, 14059, 14130, 15903, 14926, 16058, 17190, 19184, 19345];
+const cloud = [5623, 5937, 6210, 6737, 7186, 7977, 8914, 9913, 11607];
+const software = [5766, 6064, 5926, 6968, 5721, 5877, 6119, 6824, 5550];
+const net = [2927, 3151, 2936, 3427, 2927, 6135, 3721, 4304, 4760];
 const amount = (value: number, basis: "reported" | "derived" = "reported") => ({ value: String(value * 1e6), basis, definition: "x", comparabilityKey: "x", sourceIds: ["s"] });
 const quarter = (i: number): BusinessFlowQuarter => ({
   id: ends[i], label: ends[i], periodStart: shiftPeriod(ends[i], -3), periodEnd: ends[i], periodType: "3M", currency: "USD", scale: 1, basisLabel: "GAAP", reportedAt: ends[i], incomeModel: "direct_operating",
@@ -20,8 +20,8 @@ const quarter = (i: number): BusinessFlowQuarter => ({
   segments: [
     { id: "cloud", name: "云服务", revenue: amount(cloud[i]), description: "", products: [], customers: null, monetization: null, disclosure: "reported", sourceIds: ["s"], ...(i >= 6 ? { children: [{ id: "CloudInfrastructure", name: "云基础设施", revenue: amount(5787) }, { id: "CloudApplications", name: "云应用", revenue: amount(cloud[i] - 5787) }] } : {}) },
     { id: "software", name: "软件", revenue: amount(software[i]), description: "", products: [], customers: null, monetization: null, disclosure: "reported", sourceIds: ["s"] },
-    { id: "HardwareRevenues", name: "硬件", revenue: amount(i < 4 ? [655, 728, 703, 850][i] : [670, 776, 714, 924][i - 4]), description: "", products: [], customers: null, monetization: null, disclosure: "reported", sourceIds: ["s"] },
-    { id: "SalesRevenueServicesNet", name: "服务", revenue: amount(i < 4 ? [1263, 1330, 1291, 1348][i] : [1349, 1428, 1443, 1523][i - 4]), description: "", products: [], customers: null, monetization: null, disclosure: "reported", sourceIds: ["s"] },
+    { id: "HardwareRevenues", name: "硬件", revenue: amount([655, 728, 703, 850, 670, 776, 714, 924, 774][i]), description: "", products: [], customers: null, monetization: null, disclosure: "reported", sourceIds: ["s"] },
+    { id: "SalesRevenueServicesNet", name: "服务", revenue: amount([1263, 1330, 1291, 1348, 1349, 1428, 1443, 1523, 1414][i]), description: "", products: [], customers: null, monetization: null, disclosure: "reported", sourceIds: ["s"] },
   ],
   segmentsComplete: true, sources: [{ id: "s", title: "10-K", url: "https://www.sec.gov/x" }],
 } as unknown as BusinessFlowQuarter);
@@ -51,6 +51,8 @@ const guidance: GuidancePublication = { schemaVersion: "guidance.v1", ticker: "O
   guidanceItem("segment_revenue|growth|oracle-cloud-infrastructure|annual|2026|||unspecified|0001193125-25-199175", "segment_revenue", 77, 77, "percent", "Oracle Cloud Infrastructure", "growth"),
   { ...guidanceItem("revenue|amount||annual|2027|||gaap|0001193125-26-265848", "revenue", 90e9, 90e9, "USD"), fiscalYear: 2027, periodEnd: "2027-05-31" },
   { ...guidanceItem("other|amount||annual|2027||debt-and-equity-financing|unspecified|0001193125-26-265848", "other", 40e9, 40e9, "USD"), fiscalYear: 2027, periodEnd: "2027-05-31" },
+  { ...guidanceItem("segment_revenue|growth|total-cloud-revenue|quarter|2027|1||gaap|0001193125-26-265848", "segment_revenue", 58, 64, "percent", "Total Cloud revenue", "growth"), horizon: "quarter" as const, fiscalYear: 2027, fiscalQuarter: 1 as const, periodEnd: "2026-08-31" },
+  { ...guidanceItem("revenue|growth||quarter|2027|1||gaap|0001193125-26-265848", "revenue", 27, 29, "percent", null, "growth"), horizon: "quarter" as const, fiscalYear: 2027, fiscalQuarter: 1 as const, periodEnd: "2026-08-31" },
 ] };
 const data: FindingData = { quarters, history, capital, fundamentals: null, guidance };
 
@@ -79,6 +81,26 @@ test("the authored Oracle findings verify against the statements, with every wri
   assert.equal(Math.round(verified[0].resolved[1].ratio! * 10) / 10, 2.6);
   assert.equal(Math.round(verified[0].resolved[5].delta!), 55);
   assert.equal(verified.find(f => f.id === "cloud-engine")!.resolved[1].delta!.toFixed(2), "-0.74");
+  // Cloud revenue per dollar of capex: one figure over another at the same span, compared a year earlier.
+  const perDollar = verified[0].resolved[6];
+  assert.equal(perDollar.current.unit, "ratio");
+  assert.equal(perDollar.current.value.toFixed(2), "0.61");
+  assert.equal(perDollar.compare!.value.toFixed(2), "1.16");
+});
+
+test("a watch resolves once its period is published, against guidance when it names one, and waits otherwise", () => {
+  const { verified } = verifyFindings(readFindingsPublication(ORCL_FINDINGS, "ORCL")!, data);
+  const cloud = verified.find(f => f.id === "cloud-engine")!.watchOutcome!;
+  assert.equal(cloud.periodEnd, "2026-08-31");
+  assert.equal(cloud.resolved.current.value, 11607e6);
+  assert.equal(cloud.resolved.guidance?.verdict, "within");
+  assert.equal(Math.round(cloud.resolved.guidance!.measured * 10) / 10, 61.5);
+  // Q1 FY2027 revenue grew 29.6%, past the 27%–29% guided: the outcome says so rather than rounding it in.
+  const revenue = verified.find(f => f.id === "fy27-outlook")!.watchOutcome!;
+  assert.equal(revenue.resolved.guidance?.verdict, "above");
+  // FY2027 is not over: the capex watch has no outcome yet.
+  assert.equal(verified[0].watchOutcome, null);
+  assert.equal(verifyFindings(readFindingsPublication(ORCL_FINDINGS, "ORCL")!, { ...data, quarters: quarters.slice(0, 8), history: { ...history, quarters: history.quarters.slice(0, 8) } }).verified.find(f => f.id === "cloud-engine")!.watchOutcome, null);
 });
 
 test("a finding whose numbers, businesses or metrics the data does not support is withheld, never shown", () => {

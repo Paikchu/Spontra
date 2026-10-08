@@ -16,12 +16,14 @@ export type CapitalMetric =
   | "totalAssets" | "debt" | "cash" | "equity";
 
 /** Where a figure comes from. A node is a disclosed business (segment or revenue breakdown node) by its flow id. */
-export type FindingRef =
+export type FindingBaseRef =
   | { metric: FlowMetric }
   | { capital: CapitalMetric }
   | { fundamental: FundamentalMetricKey }
   | { nodeId: string }
   | { guidanceId: string };
+/** A base figure, or one figure over another at the same period and span (cloud revenue per dollar of capex). */
+export type FindingRef = FindingBaseRef | { ratio: { numerator: FindingBaseRef; denominator: FindingBaseRef } };
 
 /** A quarter, or the four quarters ending at the evidence's period (a fiscal year when the period is a fiscal year end). */
 export type FindingSpan = "quarter" | "fiscal_year";
@@ -47,7 +49,12 @@ export type FindingLens =
   | { type: "compare_bars"; refs: FindingRef[]; span: FindingSpan }
   | { type: "share_area"; nodeIds: string[] };
 
-export type FindingWatch = { ref: FindingRef; condition: string; horizon: "next_quarter" | "fiscal_year" };
+/**
+ * What to look at when the next report lands: the figure, in words what would settle it, and how
+ * far ahead. Once that period is published the page resolves the figure (and its comparison) and
+ * shows the outcome beside the condition.
+ */
+export type FindingWatch = { ref: FindingRef; condition: string; horizon: "next_quarter" | "fiscal_year"; compare?: FindingCompare };
 
 export type AnalysisFinding = {
   id: string;
