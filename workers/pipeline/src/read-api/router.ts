@@ -1,5 +1,6 @@
 import {readArchivedReportHistory, type ReportArchive} from '../financial-data/report-history.ts';
 import {readArchivedCapital} from '../financial-data/capital-history.ts';
+import type { CapitalResponse } from '../../../../shared/analysis-contract/capital-structure.ts';
 import {readCompletePublicationForTicker} from '../financial-data/publication.ts';
 import { readBusinessExplainerResponse } from "../business-explainer/workflow.ts";
 import { readGuidanceResponse } from "../guidance/workflow.ts";
@@ -59,6 +60,7 @@ type RouteMatch =
   | { kind: "filing"; ticker: string; accession: string }
   | { kind: "analysis"; ticker: string }
   | { kind: "business-flow"; ticker: string }
+  | { kind: "capital"; ticker: string }
   | { kind: "business-explainer"; ticker: string }
   | { kind: "guidance"; ticker: string }
   | { kind: "fundamentals"; ticker: string }
@@ -69,6 +71,7 @@ const SCOPE_BY_ROUTE: Record<Exclude<RouteMatch["kind"], "openapi">, AnalysisRea
   filing: "filings:read",
   analysis: "analysis:read",
   "business-flow": "analysis:read",
+  capital: "analysis:read",
   "business-explainer": "analysis:read",
   guidance: "analysis:read",
   fundamentals: "fundamentals:read",
@@ -150,8 +153,14 @@ async function handleRoute(request: Request, database: D1Database, route: Exclud
     case "business-flow": {
       const payload=await readCompletePublicationForTicker(database,route.ticker);
       if(payload.flow&&archive)payload.reports=await readArchivedReportHistory(database,archive,payload.flow).catch(()=>payload.flow!);
-      if(payload.flow&&archive)payload.capital=await readArchivedCapital(database,archive,payload.flow).catch(()=>null);
       return dataResponse(request,payload,payload.status==="ready"?"cacheable":"no-store");
+    }
+    case "capital": {
+      // Supplementary to the business flow and read on its own, so statement projection never delays the map.
+      const publication = await readCompletePublicationForTicker(database, route.ticker);
+      const capital = publication.flow && archive ? await readArchivedCapital(database, archive, publication.flow).catch(() => null) : null;
+      const payload: CapitalResponse = { schemaVersion: "capital-response.v1", status: capital ? "ready" : "unavailable", capital };
+      return dataResponse(request, payload, capital ? "cacheable" : "no-store");
     }
     case "business-explainer": {
       const payload = await readBusinessExplainerResponse(database, route.ticker);
@@ -200,7 +209,7 @@ async function withinRateLimit(env: AnalysisReadEnv, identity: AnalysisReadIdent
 
 function matchRoute(pathname: string): RouteMatch | null {
   if (pathname === "/api/v1/openapi.json") return { kind: "openapi" };
-  const company = /^\/api\/v1\/companies\/([^/]+)\/(filings|analysis|fundamentals|business-flow|business-explainer|guidance)(?:\/([^/]+))?\/?$/.exec(pathname);
+  const company = /^\/api\/v1\/companies\/([^/]+)\/(filings|analysis|fundamentals|business-flow|capital|business-explainer|guidance)(?:\/([^/]+))?\/?$/.exec(pathname);
   if (!company) return null;
   const ticker = safeDecode(company[1]!);
   const resource = company[2]!;
@@ -213,6 +222,7 @@ function matchRoute(pathname: string): RouteMatch | null {
   }
   if (tail !== undefined) return null;
   if(resource === "business-flow") return {kind:"business-flow",ticker};
+  if (resource === "capital") return { kind: "capital", ticker };
   if (resource === "business-explainer") return { kind: "business-explainer", ticker };
   if (resource === "guidance") return { kind: "guidance", ticker };
   return resource === "analysis" ? { kind: "analysis", ticker } : { kind: "fundamentals", ticker };

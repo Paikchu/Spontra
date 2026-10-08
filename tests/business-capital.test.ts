@@ -5,8 +5,7 @@ import type { BalanceSheet, CashFlowStatement, PublicCapitalStructure } from "..
 import { deficitFinancialGraph, validateGraph } from "../lib/earning-report/web/business-flow-sankey";
 import { layoutInfographic } from "../lib/earning-report/web/business-flow-layout";
 import { balancePool, balanceVerdict, cashPool, fundingVerdict } from "../apps/business-site/src/capital-model";
-import { loadPublicFlow } from "../apps/business-site/worker/index";
-import { completeOrclFixture } from "./fixtures/complete-orcl-flow";
+import { handle, loadCapital, type SiteEnv } from "../apps/business-site/worker/index";
 
 const amount = (value: number) => ({ value: String(value), basis: "reported" as const, definition: "test", comparabilityKey: null, sourceIds: [] });
 function quarter(figures: Partial<Record<FlowMetric, number>>, extra: Partial<BusinessFlowQuarter> = {}): BusinessFlowQuarter {
@@ -102,16 +101,39 @@ test("cash pool balances and the verdict names how the gap was funded", () => {
   assert.equal(fundingVerdict({ ...cash, operating: { total: String(9000e6), lines: null }, netChange: String(11905e6) }, balance, money).kind, "self");
 });
 
-test("the site passes capital only after re-validating it, and drops a tampered record", async () => {
+test("the site serves capital on its own route, only after re-validating it, and never caches a non-ready answer", async () => {
   const capital: PublicCapitalStructure = { schemaVersion: "capital-structure.v1", ticker: "ORCL", quarters: [{ periodEnd: "2026-06-30", balanceSheet: balance, cashFlow: cash, yearToDate: null }] };
-  const load = (value: unknown) => loadPublicFlow("ORCL", async () => Response.json({ schemaVersion: "complete-business-flow.v1", status: "ready", flow: completeOrclFixture, reasons: [], outdated: false, lastAttemptAt: null, capital: value }));
-  assert.deepEqual((await load(capital)).capital, capital);
+  const upstream = (value: unknown, status = "ready") => async (url: string | URL | Request) => {
+    assert.match(String(url), /\/api\/analysis\/v1\/companies\/ORCL\/capital$/);
+    return Response.json({ schemaVersion: "capital-response.v1", status, capital: value });
+  };
+  assert.deepEqual(await loadCapital("ORCL", upstream(capital) as typeof fetch), capital);
   const tampered = structuredClone(capital);
   tampered.quarters[0].balanceSheet!.assets[0].value = "1";
   Object.assign(tampered.quarters[0], { privateNote: "PRIVATE" });
-  const read = (await load(tampered)).capital!;
+  const read = (await loadCapital("ORCL", upstream(tampered) as typeof fetch))!;
   assert.equal(read.quarters[0].balanceSheet, null);
   assert.ok(read.quarters[0].cashFlow);
   assert.ok(!JSON.stringify(read).includes("PRIVATE"));
-  assert.equal((await load({ ...capital, ticker: "MSFT" })).capital, null);
+  assert.equal(await loadCapital("ORCL", upstream({ ...capital, ticker: "MSFT" }) as typeof fetch), null);
+  assert.equal(await loadCapital("ORCL", upstream(null, "unavailable") as typeof fetch), null);
+
+  const stored: Request[] = [];
+  const cache = { match: async () => undefined, put: async (request: Request) => { stored.push(request); } } as unknown as Cache;
+  const pending: Promise<unknown>[] = [];
+  const ctx = { waitUntil: (promise: Promise<unknown>) => { pending.push(promise); } };
+  const env: SiteEnv = { ASSETS: { fetch: async () => new Response("") }, PUBLIC_READ_LIMIT: { limit: async () => ({ success: true }) } };
+  const site = (path: string, fetcher: typeof fetch) => handle(new Request("https://site.test" + path), env, ctx, fetcher, cache);
+  const ok = await site("/api/business/v1/companies/ORCL/capital", upstream(capital) as typeof fetch);
+  assert.deepEqual((await ok.json()).capital, capital);
+  const missing = await site("/api/business/v1/companies/ORCL/capital", upstream(null, "unavailable") as typeof fetch);
+  assert.equal(missing.headers.get("cache-control"), "no-store");
+  // A flow request whose upstream fails falls back to "preparing"; that answer must not be cached.
+  const failing = (async (url: string | URL | Request) => String(url).endsWith("/business-flow") ? new Response("", { status: 503 }) : Response.json({})) as typeof fetch;
+  const preparing = await site("/api/business/v1/companies/ORCL", failing);
+  assert.equal((await preparing.json()).status, "preparing");
+  assert.equal(preparing.headers.get("cache-control"), "no-store");
+  await Promise.all(pending);
+  assert.deepEqual(stored.map(r => new URL(r.url).pathname), ["/api/business/v1/companies/ORCL/capital"]);
+  assert.equal(await site("/api/business/v1/companies/ORCL/capitals", upstream(capital) as typeof fetch).then(r => r.status), 404);
 });

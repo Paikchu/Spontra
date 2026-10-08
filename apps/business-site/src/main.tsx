@@ -7,6 +7,7 @@ import type { CompleteFlowPublication } from "@/shared/analysis-contract/complet
 import type { PublicBusinessFlow } from "@/shared/analysis-contract/business-flow";
 import type { BusinessExplainer } from "@/shared/analysis-contract/business-explainer";
 import type { GuidancePublication } from "@/shared/analysis-contract/guidance";
+import type { CapitalResponse, PublicCapitalStructure } from "@/shared/analysis-contract/capital-structure";
 import "@/app/analysis/stocks/[ticker]/business-flow.css";
 import "./style.css";
 import { withBusinessDescriptions } from "./business-description";
@@ -64,6 +65,7 @@ function Company({ ticker, tools, onSeen }: { ticker: string; tools: ReactNode; 
   const [flow, setFlow] = useState<PublicBusinessFlow | null>(null),
     [publication, setPublication] = useState<(CompleteFlowPublication & { explainer?: BusinessExplainer | null; guidance?: GuidancePublication | null }) | null>(null),
     [failed, setFailed] = useState(false),
+    [capital, setCapital] = useState<PublicCapitalStructure | null>(null),
     [retry, setRetry] = useState(0);
   useEffect(() => {
     const controller = new AbortController();
@@ -87,6 +89,15 @@ function Company({ ticker, tools, onSeen }: { ticker: string; tools: ReactNode; 
       });
     return () => controller.abort();
   }, [ticker, retry, onSeen]);
+  // Balance sheet and cash flow load on their own; the map is drawn without waiting for them.
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(`/api/business/v1/companies/${encodeURIComponent(ticker)}/capital`, { signal: controller.signal })
+      .then(response => response.ok ? response.json() as Promise<CapitalResponse> : null)
+      .then(body => { if (!controller.signal.aborted && body?.status === "ready") setCapital(body.capital); })
+      .catch(() => { /* Supplementary: the profit view stands on its own. */ });
+    return () => controller.abort();
+  }, [ticker, retry]);
   const business = resolveCompanyBusiness(ticker);
   if (flow)
     return (
@@ -99,7 +110,7 @@ function Company({ ticker, tools, onSeen }: { ticker: string; tools: ReactNode; 
           revenueHistory={publication?.history ?? null}
           explainer={publication?.explainer ?? null}
           guidance={publication?.guidance ?? null}
-          capital={publication?.capital ?? null}
+          capital={capital}
           notice={
             publication?.outdated
               ? publication.reasons.includes("SIGNED_LAYOUT_UNSUPPORTED")

@@ -203,3 +203,92 @@ test("archives from before the projection are projected on read without writing 
     assert.ok(!("capital" in JSON.parse((f.database.raw.prepare("SELECT payload FROM sec_cache").get() as { payload: string }).payload)));
   } finally { f.database.close(); }
 });
+
+// A foreign issuer's 6-K exhibit without XBRL: periods come from the printed header, and note references are not amounts.
+const untagged = `<a href="#bs">Unaudited Condensed Consolidated Balance Sheets</a><a href="#ops">Unaudited Condensed Consolidated Statements of Operations</a><a href="#cf">Unaudited Condensed Consolidated Statements of Cash Flows</a><a href="#notes">Notes to the Financial Statements</a>
+<h2 id="bs">Unaudited Condensed Consolidated Balance Sheets</h2><p>(In millions of U.S. dollars (“$”), except share data)</p><table>
+<tr><td>\u200b</td><td></td><td colspan="3">As of</td></tr>
+<tr><td></td><td></td><td>December 31,</td><td></td><td>June 30,</td></tr>
+<tr><td></td><td>Notes</td><td>2025</td><td></td><td>2026</td></tr>
+<tr><td>ASSETS</td></tr>
+<tr><td>Cash and cash equivalents</td><td>4</td><td>3,678.1</td><td></td><td>8,042.1</td></tr>
+<tr><td>Property and equipment, net</td><td>7</td><td>5,553.3</td><td></td><td>13,045.2</td></tr>
+<tr><td>Goodwill</td><td>3, 9</td><td>—</td><td></td><td>605.6</td></tr>
+<tr><td>TOTAL ASSETS</td><td></td><td>9,231.4</td><td></td><td>21,692.9</td></tr>
+<tr><td>Debt, non-current</td><td>12</td><td>4,103.2</td><td></td><td>8,499.0</td></tr>
+<tr><td>Total liabilities</td><td></td><td>4,103.2</td><td></td><td>8,499.0</td></tr>
+<tr><td>Shareholders’ equity:</td></tr>
+<tr><td>Treasury shares at cost</td><td></td><td>(1,075.7)</td><td></td><td>(782.1)</td></tr>
+<tr><td>Additional paid-in capital</td><td></td><td>2,903.4</td><td></td><td>10,244.7</td></tr>
+<tr><td>Retained earnings</td><td></td><td>3,300.5</td><td></td><td>3,731.3</td></tr>
+<tr><td>Total shareholders' equity</td><td></td><td>5,128.2</td><td></td><td>13,193.9</td></tr>
+<tr><td>TOTAL LIABILITIES AND SHAREHOLDERS’ EQUITY</td><td></td><td>9,231.4</td><td></td><td>21,692.9</td></tr></table>
+<h2 id="ops">Statements of Operations</h2><table><tr><td>Revenues</td><td>582.3</td></tr></table>
+<h2 id="cf">Unaudited Condensed Consolidated Statements of Cash Flows</h2><p>(In millions of U.S. dollars (“$”))</p><table>
+<tr><td></td><td></td><td colspan="3">Six months ended June 30,</td></tr>
+<tr><td></td><td>Notes</td><td>2025</td><td></td><td>2026</td></tr>
+<tr><td>CASH FLOWS PROVIDED BY OPERATING ACTIVITIES:</td></tr>
+<tr><td>Net income from continuing operations</td><td></td><td>398.2</td><td></td><td>430.8</td></tr>
+<tr><td>Changes in operating assets and liabilities:</td></tr>
+<tr><td>Deferred revenue</td><td></td><td>3.0</td><td></td><td>4,073.3</td></tr>
+<tr><td>Net cash provided by operating activities from continuing operations</td><td></td><td>401.2</td><td></td><td>4,504.1</td></tr>
+<tr><td>Net cash used in operating activities from discontinued operations</td><td></td><td>(17.1)</td><td></td><td>—</td></tr>
+<tr><td>Net cash provided by operating activities</td><td></td><td>384.1</td><td></td><td>4,504.1</td></tr>
+<tr><td>CASH FLOWS USED IN INVESTING ACTIVITIES:</td></tr>
+<tr><td>Purchases of property and equipment</td><td></td><td>(1,054.5)</td><td></td><td>(8,130.3)</td></tr>
+<tr><td>Net cash used in investing activities</td><td></td><td>(1,054.5)</td><td></td><td>(8,130.3)</td></tr>
+<tr><td>CASH FLOWS PROVIDED BY FINANCING ACTIVITIES:</td></tr>
+<tr><td>Proceeds from issuance of convertible notes</td><td>12</td><td>1,000.0</td><td></td><td>4,337.5</td></tr>
+<tr><td>Proceeds from sale of treasury shares</td><td></td><td>—</td><td></td><td>2,846.7</td></tr>
+<tr><td>Net cash provided by financing activities</td><td></td><td>1,000.0</td><td></td><td>7,184.2</td></tr>
+<tr><td>Net change in cash and cash equivalents</td><td></td><td>329.6</td><td></td><td>3,558.0</td></tr>
+<tr><td>Cash and cash equivalents, beginning of period</td><td></td><td>2,450.3</td><td></td><td>3,721.6</td></tr></table>
+<h2 id="notes">Notes</h2><p>Policies.</p>`;
+const nbis = { accession: "0001104659-26-094844", url: "https://www.sec.gov/Archives/edgar/data/1513845/000110465926094844/nbis-20260812xex99d2.htm", filedAt: "2026-08-12", form: "6-K" };
+
+test("statements filed without XBRL are read from the dated header columns and reconciled the same way", () => {
+  const filing = extractCapitalFiling(extractFinancialStatements(untagged, extractFilingDisclosures(untagged, { ticker: "NBIS", accessionNumber: nbis.accession, documentUrl: nbis.url, form: "6-K", reportDate: "2026-08-12", filedAt: nbis.filedAt })), nbis);
+  assert.deepEqual(filing.issues, []);
+  const b = filing.balanceSheet!;
+  assert.equal(b.asOf, "2026-06-30");
+  assert.deepEqual(values(b.assets), [["cash", 8042.1], ["productive", 13045.2], ["intangibles", 605.6]]);
+  assert.deepEqual(values(b.equity), [["paidIn", -782.1], ["paidIn", 10244.7], ["retained", 3731.3]]);
+  assert.equal(b.assets[0].concept, "");
+  const c = filing.cashFlow!;
+  assert.deepEqual([c.periodStart, c.periodEnd, Number(c.operating.total)], ["2026-01-01", "2026-06-30", 4504.1e6]);
+  assert.deepEqual(values(c.operating.lines!), [["netIncome", 430.8], ["workingCapital", 4073.3]]);
+  assert.deepEqual(values(c.financing.lines!), [["debtIssued", 4337.5], ["equityIssued", 2846.7]]);
+  assert.deepEqual(c.supplemental, [], "opening cash is a balance, not a supplemental flow");
+  // Without a stated unit nothing is read.
+  const unstated = untagged.replace(/\(In millions of U\.S\. dollars[^)]*\)/g, "");
+  const blank = extractCapitalFiling(extractFinancialStatements(unstated, extractFilingDisclosures(unstated, { ticker: "NBIS", accessionNumber: nbis.accession, documentUrl: nbis.url, form: "6-K", reportDate: "", filedAt: nbis.filedAt })), nbis);
+  assert.equal(blank.balanceSheet, null);
+  assert.ok(blank.issues.includes("BALANCE_SHEET_UNTAGGED_UNIT_NOT_STATED"));
+});
+
+test("a member-tagged segment subtotal printed on the face statement is a subtotal, not the total", () => {
+  const segmented = balance("now").replace(row("Total current assets", n("AssetsCurrent", "now", 700)), row("", n("Assets", "now", 700).replace('contextRef="now"', 'contextRef="segment"')));
+  const html = filing(segmented, cashH1).replace("</ix:header>", '<xbrli:context id="segment"><xbrli:entity><xbrli:identifier scheme="http://www.sec.gov/CIK">0001769628</xbrli:identifier><xbrli:segment><xbrldi:explicitMember xmlns:xbrldi="http://xbrl.org/2006/xbrldi" dimension="us-gaap:StatementBusinessSegmentsAxis">crwv:CloudMember</xbrldi:explicitMember></xbrli:segment></xbrli:entity><xbrli:period><xbrli:instant>2026-06-30</xbrli:instant></xbrli:period></xbrli:context></ix:header>');
+  const b = project(html, q2Source, "2026-06-30").balanceSheet!;
+  assert.equal(b.totals.assets, "4000000000");
+  assert.equal(b.totals.currentAssets, null);
+});
+
+test("the read path includes a foreign issuer's 6-K statement exhibit, dated by its statements rather than its filing date", async () => {
+  const f = archiveFixture();
+  try {
+    await archiveFilingDisclosures(f.env, "NBIS", { url: nbis.url, accession: nbis.accession, cik: "0001513845", filedAt: nbis.filedAt, industry: "standard" }, untagged, { form: "6-K", reportDate: "2026-08-12" });
+    const nbisFlow = { ...flow, ticker: "NBIS", quarters: [{ ...flow.quarters[0], sources: [{ id: nbis.accession, title: "", url: nbis.url }] }] };
+    const capital = await readArchivedCapital(f.env.DB, f.env.SEC_FILINGS, nbisFlow);
+    assert.deepEqual(capital?.quarters.map(q => [q.periodEnd, Boolean(q.balanceSheet), q.yearToDate?.periodStart]), [["2026-06-30", true, "2026-01-01"]]);
+  } finally { f.database.close(); }
+});
+
+test("a share-class caption hundreds of characters long is shortened, so the statement still passes the public reader", () => {
+  const caption = "Ordinary shares: par value (Class A €0.01, Class B €0.10); shares authorized " + "and issued as of each date, ".repeat(20);
+  const long = untagged.replace("Additional paid-in capital", caption);
+  const filing = extractCapitalFiling(extractFinancialStatements(long, extractFilingDisclosures(long, { ticker: "NBIS", accessionNumber: nbis.accession, documentUrl: nbis.url, form: "6-K", reportDate: "", filedAt: nbis.filedAt })), nbis);
+  assert.equal(filing.balanceSheet!.equity[1].label, "Ordinary shares");
+  const read = readCapitalStructure({ schemaVersion: "capital-structure.v1", ticker: "NBIS", quarters: buildCapitalQuarters([filing]) }, "NBIS");
+  assert.ok(read?.quarters[0].balanceSheet);
+});

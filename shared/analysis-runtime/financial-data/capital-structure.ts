@@ -11,10 +11,11 @@ import type {
  * those cells, signed as the statement shows them. A statement is published only when its lines add up
  * to the totals the issuer reports; anything else is dropped, never estimated.
  */
-export const CAPITAL_VERSION = "sec-capital-structure.v1";
+export const CAPITAL_VERSION = "sec-capital-structure.v2";
 
 type Fact = StatementCell["facts"][number];
-type Row = { label: string; concept: string; value: number | null };
+/** `dimensional`: the amount is a member-tagged fact, as a segment subtotal printed on the face statement is. */
+type Row = { label: string; concept: string; value: number | null; dimensional?: boolean };
 type Line<G extends string> = Row & { value: number; group: G };
 type Kind = "balance" | "cashflow";
 
@@ -27,6 +28,8 @@ const currencyOf = (fact: Fact) => fact.unit?.match(/^iso4217:([A-Z]{3})$/)?.[1]
 const amountFact = (fact: Fact) => fact.status === "parsed" && fact.value !== null && /^-?\d+(?:\.\d+)?$/.test(fact.value) && currencyOf(fact) !== null;
 const monetary = (fact: Fact) => amountFact(fact) && !fact.dimensions.length;
 const decoration = /^(?:[$€£¥()%]|US\$|\)|—|–|-)?$/;
+/** Statement cells often pad with zero-width and no-break spaces; they are not text. */
+const clean = (text: string) => text.replace(/[\u200b-\u200d\ufeff\u00a0]/g, " ").replace(/\s+/g, " ").trim();
 
 function statementKind(table: StatementTable): Kind | null {
   const kind = (text: string): Kind | null => /parenthetical/i.test(text) ? null
@@ -51,15 +54,15 @@ function statementTables(statements: FinancialStatements, kind: Kind): Statement
   return run;
 }
 
-const labelCell = (row: StatementTable["rows"][number]) => row.cells.find(c => c.text.trim() && !decoration.test(c.text.trim()) && !/^\(?[\d,.\s]+\)?$/.test(c.text.trim()));
-const cleanLabel = (text: string) => text.replace(/\s*\((?:\d{1,2}|[a-z])\)\s*$/i, "").replace(/[:：]\s*$/, "").trim();
+const labelCell = (row: StatementTable["rows"][number]) => row.cells.find(c => clean(c.text) && !decoration.test(clean(c.text)) && !/^\(?[\d,.\s]+\)?$/.test(clean(c.text)));
+const cleanLabel = (text: string) => clean(text).replace(/\*+$/, "").replace(/\s*\((?:\d{1,2}|[a-z])\)\s*$/i, "").replace(/[:：]\s*$/, "").trim();
 
 /** Amounts carry the statement's sign: a payment tagged as a positive fact but printed in parentheses is an outflow. */
 function rows(tables: StatementTable[], period: (fact: Fact) => boolean): { rows: Row[]; currencies: Set<string> } {
   const result: Row[] = [], currencies = new Set<string>();
   for (const table of tables) for (const row of table.rows) {
     const caption = labelCell(row), label = cleanLabel(caption?.text ?? "");
-    let value: number | null = null, concept = "";
+    let value: number | null = null, concept = "", dimensional = false;
     // Amounts quoted inside the caption (an allowance, a par value) describe the row; they are not its amount.
     for (const cell of row.cells) {
       if (cell === caption) continue;
@@ -71,12 +74,67 @@ function rows(tables: StatementTable[], period: (fact: Fact) => boolean): { rows
       const magnitude = Math.abs(Number(fact.value));
       value = negative ? -magnitude : magnitude;
       concept = fact.concept;
+      dimensional = fact.dimensions.length > 0;
       currencies.add(currencyOf(fact)!);
       break;
     }
-    if (label || value !== null) result.push({ label, concept, value });
+    if (label || value !== null) result.push({ label, concept, value, dimensional });
   }
   return { rows: result, currencies };
+}
+
+const MONTHS: Record<string, number> = { january: 1, february: 2, march: 3, april: 4, may: 5, june: 6, july: 7, august: 8, september: 9, october: 10, november: 11, december: 12 };
+const DURATION: Record<string, number> = { three: 3, six: 6, nine: 9, twelve: 12 };
+type Column = { start: number; end: number; date: string; months: number | null };
+const isAmount = (text: string) => /^\(?[-−]?\$?\s*[\d,]+(?:\.\d+)?\)?$|^[—–-]$/.test(clean(text).replace(/^\$\s*/, ""));
+
+/**
+ * Statements filed without XBRL (foreign issuers' 6-K exhibits): the period of each amount column comes from
+ * the header dates above it, as printed. A column is used only when its date and, for flows, its duration are
+ * both stated; note-reference columns carry no date and are never read as amounts.
+ */
+/** The first data row has a caption and an amount; a row of bare years is still the header. */
+const firstDataRow = (table: StatementTable) => Math.max(0, table.rows.findIndex(row => cleanLabel(labelCell(row)?.text ?? "") && row.cells.some(c => c !== labelCell(row) && isAmount(c.text) && /\d/.test(c.text) && !/^(?:19|20)\d{2}$/.test(clean(c.text)))));
+
+function headerColumns(table: StatementTable): Column[] {
+  const first = firstDataRow(table);
+  const header = table.rows.slice(0, first).flatMap((row, r) => row.cells.map(cell => ({ r, cell, text: clean(cell.text) }))).filter(h => h.text);
+  const overlaps = (a: { column: number; colSpan: number }, b: { column: number; colSpan: number }) => a.column < b.column + b.colSpan && b.column < a.column + a.colSpan;
+  const columns: Column[] = [];
+  for (const h of header) {
+    const full = h.text.match(/([a-z]+)\s+(\d{1,2}),?\s+((?:19|20)\d{2})/i), year = h.text.match(/^((?:19|20)\d{2})$/)?.[1];
+    if (!full && !year) continue;
+    const above = header.filter(x => x.r < h.r && overlaps(x.cell, h.cell)).map(x => x.text).join(" ");
+    const context = `${above} ${h.text}`, dated = full ?? context.match(/([a-z]+)\s+(\d{1,2}),?/i);
+    const month = dated && MONTHS[dated[1].toLowerCase()], day = dated && Number(dated[2]), y = full ? Number(full[3]) : Number(year);
+    if (!month || !day || new Date(Date.UTC(y, month, 0)).getUTCDate() < day) continue;
+    const length = context.match(/\b(three|six|nine|twelve)\s+months\s+ended/i)?.[1], annual = /\byears?\s+ended/i.test(context);
+    columns.push({ start: h.cell.column, end: h.cell.column + h.cell.colSpan, date: `${y}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`, months: length ? DURATION[length.toLowerCase()] : annual ? 12 : null });
+  }
+  return columns;
+}
+
+function untaggedRows(tables: StatementTable[], pick: (columns: Column[]) => Column | undefined, issues: string[], name: string): { rows: Row[]; column: Column; currency: string } | null {
+  const unit = tables[0].precedingText.slice(-400).match(/in (thousands|millions|billions) of (U\.?S\.? dollars|US dollars|USD)/i)
+    ?? tables[0].precedingText.slice(-400).match(/(?:US\$|\$) in (thousands|millions|billions)/i);
+  if (!unit) { issues.push(`${name}_UNTAGGED_UNIT_NOT_STATED`); return null; }
+  const scale = { thousands: 1e3, millions: 1e6, billions: 1e9 }[unit[1].toLowerCase() as "thousands"]!;
+  const column = pick(headerColumns(tables[0]));
+  if (!column) { issues.push(`${name}_UNTAGGED_PERIOD_NOT_STATED`); return null; }
+  const result: Row[] = [];
+  for (const table of tables) for (const [index, row] of table.rows.entries()) {
+    // Header rows keep their text (section headings) but never contribute amounts such as printed years.
+    const caption = labelCell(row), label = cleanLabel(caption?.text ?? ""), header = index < firstDataRow(table);
+    const cell = !header && row.cells.find(c => c !== caption && c.column < column.end && column.start < c.column + c.colSpan && isAmount(c.text));
+    let value: number | null = null;
+    if (cell) {
+      const text = clean(cell.text).replace(/[$\s]/g, ""), next = row.cells.find(c => c.column === cell.column + cell.colSpan);
+      const magnitude = /^[—–-]$/.test(text) ? 0 : Math.round(Number(text.replace(/[(),−-]/g, "")) * scale);
+      value = text.startsWith("(") || /^[-−]/.test(text) || /^\)/.test(clean(next?.text ?? "")) ? -magnitude : magnitude;
+    }
+    if (label || value !== null) result.push({ label, concept: "", value });
+  }
+  return { rows: result, column, currency: "USD" };
 }
 
 /**
@@ -113,7 +171,7 @@ const ASSET_RULES: Array<[AssetGroup, RegExp]> = [
   ["investments", /Investment/i],
 ];
 const LIABILITY_RULES: Array<[LiabilityGroup, RegExp]> = [
-  ["leases", /(?:Operating|Finance)LeaseLiabilit|CapitalLeaseObligation|lease liabilit|lease obligation/i],
+  ["leases", /(?:Operating|Finance)LeaseLiabilit|^(?!.*Debt).*CapitalLeaseObligation|lease liabilit|lease obligation/i],
   ["customerAdvances", /ContractWithCustomerLiabilit|DeferredRevenue|CustomerDeposit|CustomerAdvance|deferred revenue|unearned revenue|customer (?:deposits|advances|prepayments)|contract liabilit/i],
   ["deferredTax", /DeferredIncomeTax|DeferredTax|deferred (?:income )?tax/i],
   ["debt", /Debt|Borrowing|NotesPayable|LoansPayable|CommercialPaper|LineOfCredit|ConvertibleNotes|SeniorNotes|\bdebt\b|borrowings|notes payable|credit facilit|term loan|convertible (?:senior )?notes|senior notes/i],
@@ -128,12 +186,12 @@ const EQUITY_RULES: Array<[EquityGroup, RegExp]> = [
 ];
 const INVESTING_RULES: Array<[InvestingGroup, RegExp]> = [
   ["capex", /PaymentsToAcquire(?:PropertyPlantAndEquipment|ProductiveAssets|OtherPropertyPlantAndEquipment)|PaymentsForCapitalImprovements|capital expenditure|purchases? of property|purchases? of (?:property|equipment)|additions to property/i],
-  ["acquisitions", /AcquireBusinesses|business combination|acquisitions?,? net of cash/i],
-  ["investments", /Securities|Investment|JointVenture|NotesReceivable|marketable|investments?|maturities/i],
+  ["acquisitions", /AcquireBusinesses|business combination|acquisitions? of (?:businesses|subsidiaries|companies)|acquisitions?,? net of cash/i],
+  ["investments", /Securities|Investment|JointVenture|NotesReceivable|marketable|investments?|maturities|term deposits/i],
 ];
 const FINANCING_RULES: Array<[FinancingGroup, RegExp]> = [
   ["leasePrincipal", /FinanceLeasePrincipal|CapitalLeaseObligations|finance lease/i],
-  ["equityIssued", /ProceedsFromIssuanceOf\w*(?:CommonStock|PrivatePlacement|InitialPublicOffering|PreferredStock|Warrants)|ProceedsFromStockOptionsExercised|ProceedsFromStockPlans|ProceedsFromIssuanceOfSharesUnder|EmployeeStockPurchase|issuances? of [^,;]*?(?:common|preferred|ordinary) (?:stock|shares)|initial public offering|private placement|exercises? of (?:stock )?options|at-the-market|employee stock purchase/i],
+  ["equityIssued", /sale of treasury (?:stock|shares)|proceeds from (?:the )?issuance of [^,;]*warrants|ProceedsFromIssuanceOf\w*(?:CommonStock|PrivatePlacement|InitialPublicOffering|PreferredStock|Warrants)|ProceedsFromStockOptionsExercised|ProceedsFromStockPlans|ProceedsFromIssuanceOfSharesUnder|EmployeeStockPurchase|issuances? of [^,;]*?(?:common|preferred|ordinary) (?:stock|shares)|initial public offering|private placement|exercises? of (?:stock |share )?options|at-the-market|employee stock purchase/i],
   ["debtRepaid", /^Repayments|RepaymentsOf|repayments? of|principal payments on|redemptions? of (?:notes|debt|convertible)|extinguishment/i],
   ["debtIssued", /^ProceedsFrom.*(?:Debt|Notes|Borrowing|LinesOfCredit|Loan|CommercialPaper)|proceeds from (?:the )?(?:issuance of )?(?:debt|notes|borrowings|term loans?|credit facilit|convertible|senior)|borrowings under/i],
   ["buybacks", /PaymentsForRepurchaseOf(?:Common|Equity)|repurchases? of (?:common |class [a-z] )?(?:stock|shares)|share repurchase|treasury stock/i],
@@ -153,17 +211,36 @@ const sideTotals: Record<string, "assets" | "currentAssets" | "liabilities" | "c
   LiabilitiesNoncurrent: "subtotal", LiabilitiesAndStockholdersEquity: "balancing", StockholdersEquity: "parentEquity",
   StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest: "equity", TemporaryEquityCarryingAmountIncludingPortionAttributableToNoncontrollingInterests: "subtotal",
 };
+/** Totals printed without a tagged concept are recognised by their label. */
+function labelTotal(label: string): (typeof sideTotals)[string] | undefined {
+  if (/^total assets$/i.test(label)) return "assets";
+  if (/^total current assets$/i.test(label)) return "currentAssets";
+  if (/^total liabilities,? .*(?:and|&) .*(?:equity|deficit)$/i.test(label)) return "balancing";
+  if (/^total liabilities$/i.test(label)) return "liabilities";
+  if (/^total current liabilities$/i.test(label)) return "currentLiabilities";
+  if (/^total .*equity attributable to/i.test(label)) return "parentEquity";
+  if (/^total (?:(?:stockholders|shareholders)['’]? )?(?:equity|deficit)$/i.test(label)) return "equity";
+  if (/^total (?:non-?current|long-term) (?:assets|liabilities)$/i.test(label)) return "subtotal";
+  return undefined;
+}
 const equityStarts = (row: Row) => /^(?:TemporaryEquity|CommonStock|PreferredStockValue|AdditionalPaidInCapital|RetainedEarnings|TreasuryStock|AccumulatedOtherComprehensive|StockholdersEquity|MinorityInterest|RedeemableNoncontrolling)/.test(local(row.concept))
   || /^(?:commitments and contingencies|(?:total )?(?:stockholders|shareholders|members|partners)['’]? (?:equity|deficit)|equity\b|redeemable )/i.test(row.label);
+
+/** Captions that describe share classes and par values run to hundreds of characters; the line keeps their head. */
+function shortLabel(label: string) {
+  if (label.length <= 120) return label;
+  const head = label.split(/[:;,(]/)[0].trim();
+  return head.length >= 4 ? head : label.slice(0, 117) + "…";
+}
 
 /** Reconciled rows become published lines; rows printed as a dash or zero carry no amount and are left out. */
 function ids<G extends string>(lines: Array<Line<G>>): CapitalLine<G>[] {
   const seen = new Map<string, number>();
   return lines.filter(line => line.value !== 0).map(line => {
-    const base = local(line.concept) || line.label.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    const base = local(line.concept) || shortLabel(line.label).toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 120);
     const count = (seen.get(base) ?? 0) + 1;
     seen.set(base, count);
-    return { id: count > 1 ? `${base}~${count}` : base, label: line.label, concept: line.concept, group: line.group, value: String(line.value) };
+    return { id: count > 1 ? `${base}~${count}` : base, label: shortLabel(line.label), concept: line.concept, group: line.group, value: String(line.value) };
   });
 }
 
@@ -171,16 +248,24 @@ export function extractBalanceSheet(statements: FinancialStatements, source: Cap
   const tables = statementTables(statements, "balance");
   if (!tables.length) { issues.push("BALANCE_SHEET_NOT_LOCATED"); return null; }
   const instants = tables.flatMap(t => t.rows.flatMap(r => r.cells.flatMap(c => c.facts))).filter(f => monetary(f) && f.period?.kind === "instant" && f.period.end);
-  const asOf = instants.map(f => f.period!.end!).sort().at(-1);
-  if (!asOf) { issues.push("BALANCE_SHEET_UNTAGGED"); return null; }
-  const read = rows(tables, f => f.period?.kind === "instant" && f.period.end === asOf);
+  let asOf = instants.map(f => f.period!.end!).sort().at(-1);
+  let read: { rows: Row[]; currencies: Set<string> };
+  if (asOf) read = rows(tables, f => f.period?.kind === "instant" && f.period.end === asOf);
+  else {
+    const untagged = untaggedRows(tables, columns => columns.filter(c => c.months === null).sort((a, b) => b.date.localeCompare(a.date))[0], issues, "BALANCE_SHEET");
+    if (!untagged) return null;
+    asOf = untagged.column.date;
+    read = { rows: untagged.rows, currencies: new Set([untagged.currency]) };
+  }
   if (read.currencies.size !== 1) { issues.push("BALANCE_SHEET_CURRENCY_MIXED"); return null; }
   const totals: Partial<Record<(typeof sideTotals)[string], number>> = {};
   const leaves = { asset: [] as Row[], liability: [] as Row[], equity: [] as Row[] };
   let side: "asset" | "liability" | "equity" | "done" = "asset";
   for (const row of read.rows) {
     if (side === "done") break;
-    const total = sideTotals[local(row.concept)];
+    // A member-tagged total (one segment's assets) and an unlabelled amount are subtotals of the lines above them.
+    const known = sideTotals[local(row.concept)] ?? labelTotal(row.label);
+    const total = row.value !== null && (row.dimensional || !row.label) ? known ? "subtotal" : row.label ? undefined : "subtotal" : known;
     if (total === "assets") { totals.assets = row.value!; side = "liability"; continue; }
     if (total === "balancing") { totals.balancing = row.value!; side = "done"; continue; }
     if (total === "liabilities" && side === "liability") { totals.liabilities = row.value!; side = "equity"; continue; }
@@ -230,8 +315,17 @@ export function extractCashFlow(statements: FinancialStatements, source: Capital
   const end = durations.map(f => f.period!.end!).sort().at(-1);
   // The cumulative column: the longest period ending on the statement date, up to a fiscal year.
   const start = durations.filter(f => f.period!.end === end && days(f.period!.start!, end!) >= 70 && days(f.period!.start!, end!) <= 380).map(f => f.period!.start!).sort()[0];
-  if (!end || !start) { issues.push("CASH_FLOW_UNTAGGED"); return null; }
-  const read = rows(tables, f => f.period?.kind === "duration" && f.period.start === start && f.period.end === end);
+  let read: { rows: Row[]; currencies: Set<string> }, periodStart = start, periodEnd = end;
+  if (end && start) read = rows(tables, f => f.period?.kind === "duration" && f.period.start === start && f.period.end === end);
+  else {
+    const untagged = untaggedRows(tables, columns => columns.filter(c => c.months !== null).sort((a, b) => b.date.localeCompare(a.date) || b.months! - a.months!)[0], issues, "CASH_FLOW");
+    if (!untagged) return null;
+    const startDate = new Date(Date.parse(untagged.column.date) + 86400000);
+    startDate.setUTCMonth(startDate.getUTCMonth() - untagged.column.months!);
+    periodEnd = untagged.column.date;
+    periodStart = startDate.toISOString().slice(0, 10);
+    read = { rows: untagged.rows, currencies: new Set([untagged.currency]) };
+  }
   if (read.currencies.size !== 1) { issues.push("CASH_FLOW_CURRENCY_MIXED"); return null; }
   let section: (typeof SECTION_ORDER)[number] | "tail" | "supplemental" = "pre", workingCapital = false;
   const leaves: Record<CashSection, Row[]> = { operating: [], investing: [], financing: [] }, workingRows = new Set<Row>();
@@ -245,11 +339,11 @@ export function extractCashFlow(statements: FinancialStatements, source: Capital
     const totalOf = concept.match(/^NetCashProvidedByUsedIn(Operating|Investing|Financing)Activities$/)?.[1]?.toLowerCase() as CashSection | undefined
       ?? (/^net cash\b/i.test(text) && !/continuing|discontinued/i.test(text) ? (["operating", "investing", "financing"] as const).find(s => text.toLowerCase().includes(s)) : undefined);
     if (totalOf) { totals[totalOf] = row.value; if (totalOf === "financing") section = "tail"; continue; }
-    if (/ContinuingOperations$/.test(concept) && /^NetCashProvidedByUsedIn/.test(concept)) continue;
+    if ((/ContinuingOperations$/.test(concept) && /^NetCashProvidedByUsedIn/.test(concept)) || (/^net cash\b/i.test(text) && /\bcontinuing operations/i.test(text)) || !text) continue;
     if (section === "tail" || section === "supplemental") {
       if (/^EffectOfExchangeRateOn/.test(concept) || /effect of (?:foreign )?(?:currency )?exchange rate/i.test(text)) { totals.fx = row.value; continue; }
       if (/PeriodIncreaseDecrease/.test(concept) || /^net (?:increase|decrease|change)/i.test(text)) { totals.net = row.value; section = "supplemental"; continue; }
-      if (section === "supplemental" && !/^total\b/i.test(text)) supplemental.push(row);
+      if (section === "supplemental" && !/^total\b/i.test(text) && !/\b(?:beginning|end) of (?:the )?(?:period|year)\b/i.test(text)) supplemental.push(row);
       continue;
     }
     if (section === "pre" || /^total\b/i.test(text)) continue;
@@ -268,7 +362,7 @@ export function extractCashFlow(statements: FinancialStatements, source: Capital
     return { total: String(totals[name]), lines: lines && ids(lines) };
   };
   return {
-    periodStart: start, periodEnd: end, currency: [...read.currencies][0], basis: "reported",
+    periodStart: periodStart!, periodEnd: periodEnd!, currency: [...read.currencies][0], basis: "reported",
     operating: sectionOf("operating", operatingGroup),
     investing: sectionOf("investing", r => classify(r, INVESTING_RULES, "other")),
     financing: sectionOf("financing", r => debtBySign(classify(r, FINANCING_RULES, "other"), r.value!)),

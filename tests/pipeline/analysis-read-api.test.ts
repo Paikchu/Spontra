@@ -258,10 +258,12 @@ test("no read path writes anything, on any of the four resources", async () => {
     `/api/v1/companies/${FIXTURE_TICKER}/filings/${VERIFIED_ACCESSION}`,
     `/api/v1/companies/${FIXTURE_TICKER}/analysis`,
     `/api/v1/companies/${FIXTURE_TICKER}/fundamentals`,
+    `/api/v1/companies/${FIXTURE_TICKER}/capital`,
     // Missing and stale data are the cases that used to trigger work.
     `/api/v1/companies/${EMPTY_TICKER}/filings`,
     `/api/v1/companies/${EMPTY_TICKER}/analysis`,
     `/api/v1/companies/${EMPTY_TICKER}/fundamentals`,
+    `/api/v1/companies/${EMPTY_TICKER}/capital`,
   ];
   for (const path of paths) {
     const response = await handleAnalysisReadRequest(readRequest(path), readEnv(guard));

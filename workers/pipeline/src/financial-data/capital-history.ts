@@ -44,10 +44,13 @@ export async function readArchivedCapital(db: D1Database, archive: ReportArchive
     try {
       const r = JSON.parse(row.payload) as StoredAudit, url = new URL(r.source.documentUrl);
       const cik = url.pathname.match(/^\/Archives\/edgar\/data\/(\d+)\//)?.[1];
-      // Statements come from the periodic report itself, never an earnings exhibit.
-      if (r.ticker === flow.ticker && r.source.ticker === flow.ticker && /^10-[QK](?:\/A)?$/.test(r.source.form) && !/ex[-_]?99/i.test(r.source.documentUrl)
+      // Domestic statements come from the periodic report itself, never an earnings exhibit; a foreign issuer
+      // furnishes its interim statements as a 6-K exhibit. A 6-K's report date is its filing date, so the
+      // window is set by filing date and each statement's own period end is checked after it is read.
+      const domestic = /^10-[QK](?:\/A)?$/.test(r.source.form), foreign = /^(?:20-F|40-F|6-K)(?:\/A)?$/.test(r.source.form);
+      if (r.ticker === flow.ticker && r.source.ticker === flow.ticker && (foreign || (domestic && !/ex[-_]?99/i.test(r.source.documentUrl)))
         && url.protocol === 'https:' && url.hostname === 'www.sec.gov' && cik && Number(cik) === Number(issuer)
-        && r.source.reportDate <= latest.periodEnd && Date.parse(r.source.reportDate) > cutoff.getTime() && r.rawKey?.startsWith('financial-disclosures/')) records.push(r);
+        && Date.parse(r.source.filedAt) > cutoff.getTime() && r.rawKey?.startsWith('financial-disclosures/')) records.push(r);
     } catch { /* A malformed optional archive cannot hide the others. */ }
   }
   records.sort((a, b) => b.source.filedAt.localeCompare(a.source.filedAt));
@@ -58,16 +61,20 @@ export async function readArchivedCapital(db: D1Database, archive: ReportArchive
   let projected = 0;
   for (const record of records) {
     // One quarter beyond the eighth supplies the cumulative bridge for the oldest quarterly cash flow.
-    if (covered.size > QUARTERS) break;
+    if (new Set(filings.map(f => f.cashFlow?.periodEnd ?? f.balanceSheet?.asOf)).size > QUARTERS) break;
     if (covered.has(record.source.reportDate)) continue;
     let filing = record.capital?.version === CAPITAL_VERSION ? record.capital : null;
-    if (!filing && projected < MAX_PROJECTED) {
+    // Documents archived without any statement section (press releases, cover letters) are not worth projecting;
+    // a domestic report the previous extractor missed is retried, since the locator has since improved.
+    const located = record.statements?.status !== 'not_located' || (record.statements.version !== STATEMENTS_VERSION && /^10-[QK]/.test(record.source.form));
+    if (!filing && located && projected < MAX_PROJECTED) {
       projected++;
       filing = await projectArchived(record, archive, flow.ticker).catch(() => null);
     }
-    if (!filing || (!filing.balanceSheet && !filing.cashFlow)) continue;
+    const end = filing?.cashFlow?.periodEnd ?? filing?.balanceSheet?.asOf;
+    if (!filing || !end || end > latest.periodEnd || covered.has(end)) continue;
     filings.push(filing);
-    covered.add(record.source.reportDate);
+    covered.add(record.source.reportDate).add(end);
   }
   const quarters = buildCapitalQuarters(filings, QUARTERS);
   const capital: PublicCapitalStructure | null = quarters.length ? { schemaVersion: 'capital-structure.v1', ticker: flow.ticker, quarters } : null;

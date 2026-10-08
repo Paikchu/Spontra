@@ -6,6 +6,7 @@ import {withLegacyInterestFormula} from "@/shared/analysis-runtime/financial-dat
 import {readReportHistory} from "@/shared/analysis-runtime/financial-data/report-history";
 import {readHistory} from "@/shared/analysis-runtime/financial-data/history";
 import {readCapitalStructure} from "@/shared/analysis-runtime/financial-data/capital-structure";
+import type {PublicCapitalStructure} from "@/shared/analysis-contract/capital-structure";
 import {readBusinessExplainer} from "@/shared/analysis-runtime/business-explainer";
 import type {BusinessExplainer} from "@/shared/analysis-contract/business-explainer";
 import {readGuidancePublication} from "@/shared/analysis-runtime/guidance";
@@ -25,7 +26,7 @@ export async function loadPublicFlow(ticker:string,fetcher:typeof fetch=fetch):P
  if(publication.status!=='ready')return {schemaVersion:publication.schemaVersion,status:publication.status,flow:null,reasons:publication.reasons,outdated:false,lastAttemptAt:publication.lastAttemptAt};
  const flow=newestPair(withLegacyInterestFormula(selectFlow(publication.flow??undefined,null,ticker)));const check=checkCompleteFlow(flow);
  // History is re-validated here and stripped to its schema; an invalid record is dropped, never repaired.
- return {schemaVersion:"complete-business-flow.v1",status:check.complete?"ready":"preparing",flow:check.complete?flow:null,reasons:check.complete&&publication.outdated?publication.reasons:check.reasons,outdated:check.complete&&publication.outdated===true,lastAttemptAt:publication.lastAttemptAt??null,history:check.complete?readHistory(publication.history,ticker):null,...(check.complete&&publication.reports?{reports:readReportHistory(publication.reports,ticker)}:{}),...(check.complete&&publication.capital?{capital:readCapitalStructure(publication.capital,ticker)}:{})};
+ return {schemaVersion:"complete-business-flow.v1",status:check.complete?"ready":"preparing",flow:check.complete?flow:null,reasons:check.complete&&publication.outdated?publication.reasons:check.reasons,outdated:check.complete&&publication.outdated===true,lastAttemptAt:publication.lastAttemptAt??null,history:check.complete?readHistory(publication.history,ticker):null,...(check.complete&&publication.reports?{reports:readReportHistory(publication.reports,ticker)}:{})};
  }catch{
   // Rollout compatibility: only a verified complete legacy SEC projection may survive a new API outage.
   const legacy=await fetcher(PUBLIC_ORIGIN+`/api/analysis/v1/companies/${ticker}/analysis`,{signal:AbortSignal.timeout(12000),headers:{accept:"application/json"}});
@@ -46,6 +47,16 @@ export async function loadExplainer(ticker:string,fetcher:typeof fetch=fetch):Pr
  }catch{return null;}
 }
 
+/** Supplementary and loaded on its own, so the map never waits for it; anything that fails re-validation reads as null. */
+export async function loadCapital(ticker:string,fetcher:typeof fetch=fetch):Promise<PublicCapitalStructure|null>{
+ try{
+  const response=await fetcher(PUBLIC_ORIGIN+`/api/analysis/v1/companies/${ticker}/capital`,{signal:AbortSignal.timeout(25000),headers:{accept:"application/json"}});
+  if(!response.ok)return null;
+  const body=await response.json() as {schemaVersion?:string;status?:string;capital?:unknown};
+  return body.schemaVersion==="capital-response.v1"&&body.status==="ready"?readCapitalStructure(body.capital,ticker):null;
+ }catch{return null;}
+}
+
 /** Supplementary, like the explainer: unavailable or invalid guidance reads as null. */
 export async function loadGuidance(ticker:string,fetcher:typeof fetch=fetch):Promise<GuidancePublication|null>{
  try{
@@ -59,12 +70,16 @@ export async function loadGuidance(ticker:string,fetcher:typeof fetch=fetch):Pro
 export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,fetcher:typeof fetch=fetch,cache?:Cache):Promise<Response>{
  const url=new URL(request.url);
  if(url.pathname.startsWith("/api/")){
-  const match=url.pathname.match(/^\/api\/business\/v1\/companies\/([A-Z][A-Z0-9.-]{0,11})$/);
+  const match=url.pathname.match(/^\/api\/business\/v1\/companies\/([A-Z][A-Z0-9.-]{0,11})(\/capital)?$/);
   if(!match||url.search)return json({error:"Not found"},404);
   if(request.method!=="GET")return json({error:"Method not allowed"},405);
   try{if(!env.PUBLIC_READ_LIMIT||!(await env.PUBLIC_READ_LIMIT.limit({key:request.headers.get("cf-connecting-ip")??"anonymous"})).success)return json({error:"Too many requests"},429);}catch{return json({error:"Read service unavailable"},503);}
   const key=new Request(url.href,{method:"GET"});const cached=await cache?.match(key);if(cached)return cached;
-  try{const [flow,explainer,guidance]=await Promise.all([loadPublicFlow(match[1],fetcher),loadExplainer(match[1],fetcher),loadGuidance(match[1],fetcher)]);const response=json({...flow,explainer,guidance});if(cache)ctx.waitUntil(cache.put(key,response.clone()));return response;}catch{return json({error:"Public company data temporarily unavailable"},503);}
+  if(match[2]){const capital=await loadCapital(match[1],fetcher);const response=json({schemaVersion:"capital-response.v1",status:capital?"ready":"unavailable",capital});if(!capital)response.headers.set("cache-control","no-store");if(cache&&capital)ctx.waitUntil(cache.put(key,response.clone()));return response;}
+  try{const [flow,explainer,guidance]=await Promise.all([loadPublicFlow(match[1],fetcher),loadExplainer(match[1],fetcher),loadGuidance(match[1],fetcher)]);const response=json({...flow,explainer,guidance});
+   // A fallback or incomplete answer is never cached, so one slow upstream read cannot pin "preparing" for a minute.
+   if(flow.status!=="ready")response.headers.set("cache-control","no-store");
+   if(cache&&flow.status==="ready")ctx.waitUntil(cache.put(key,response.clone()));return response;}catch{return json({error:"Public company data temporarily unavailable"},503);}
  }
  if(request.method!=="GET"&&request.method!=="HEAD")return json({error:"Method not allowed"},405);
  const response=await env.ASSETS.fetch(request);const headers=new Headers(response.headers);for(const [name,value]of Object.entries(security))headers.set(name,value);return new Response(response.body,{status:response.status,headers});

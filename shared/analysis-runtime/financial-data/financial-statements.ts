@@ -1,6 +1,6 @@
 import {parseMarkup, normalizedText, nodeText, descendants, type Element, type FilingDisclosures, type DisclosureLocator} from './disclosure-extraction.ts';
 
-export const STATEMENTS_VERSION='sec-financial-statements.v3';
+export const STATEMENTS_VERSION='sec-financial-statements.v4';
 export interface StatementCell {
  column:number; rowSpan:number; colSpan:number; header:boolean; text:string; locator:DisclosureLocator;
  facts:{id:string;concept:string;value:string|null;status:string;period:FilingDisclosures['contexts'][number]['period']|null;unit:string|null;scale:string|null;dimensions:{axis:string;value:string}[]}[];
@@ -21,7 +21,10 @@ const itemNumber=(s:string)=>s.match(/\bitem[\s_.-]*(\d+[a-z]?)/i)?.[1]?.toLower
 export function extractFinancialStatements(html:string,inventory:FilingDisclosures):FinancialStatements {
  const {nodes}=parseMarkup(html),anchors=new Map<string,Element>();
  for(const n of nodes){const id=n.attributes.id??n.attributes.name;if(id&&!anchors.has(id))anchors.set(id,n);}
- const links=nodes.filter(n=>n.local==='a'&&n.attributes.href?.startsWith('#')).map(n=>({node:n,title:normalizedText(n),target:anchors.get(n.attributes.href.slice(1))})).filter(x=>x.target&&x.target.start>x.node.end);
+ // Some tables of contents link only "Item 1." or a page number; the row it sits in carries the title.
+ const generic=(t:string)=>/^(?:item\s*\d+[a-z]?\.?|\d{1,3})$/i.test(t);
+ const rowTitle=(n:Element)=>{const row=ancestor(n,'tr');if(!row)return null;const t=normalizedText(row).replace(/\s+\d{1,3}$/,'').replace(/^[a-z]\)\s+/i,'').trim();return t&&!generic(t)?t:null;};
+ const links=nodes.filter(n=>n.local==='a'&&n.attributes.href?.startsWith('#')).map(n=>{const text=normalizedText(n);return {node:n,title:generic(text)?rowTitle(n)??text:text,target:anchors.get(n.attributes.href.slice(1))};}).filter(x=>x.target&&x.target.start>x.node.end);
  const chapter=links.find(x=>/^(?:item\s*\d+[.\s]*)?(?:(?:unaudited|condensed|consolidated)\s+)*financial statements\b/i.test(x.title)&&!/^notes\b/i.test(x.title));
  // Foreign issuers may file a standalone statement exhibit with a table of contents
  // for the individual statements, rather than a parent Financial Statements item.

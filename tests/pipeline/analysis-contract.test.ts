@@ -74,6 +74,7 @@ test("the OpenAPI document describes the resources it actually serves, and embed
     "/api/v1/companies/{ticker}/analysis",
     "/api/v1/companies/{ticker}/business-explainer",
     "/api/v1/companies/{ticker}/business-flow",
+    "/api/v1/companies/{ticker}/capital",
     "/api/v1/companies/{ticker}/filings",
     "/api/v1/companies/{ticker}/filings/{accession}",
     "/api/v1/companies/{ticker}/fundamentals",
@@ -93,7 +94,7 @@ test("the OpenAPI document describes the resources it actually serves, and embed
 
 test("the document serialises — a consumer reads JSON, not a live object graph", () => {
   const serialised = JSON.parse(JSON.stringify(buildAnalysisOpenApiDocument())) as { paths: Record<string, unknown> };
-  assert.equal(Object.keys(serialised.paths).length, 8);
+  assert.equal(Object.keys(serialised.paths).length, 9);
 });
 
 /**

@@ -60,6 +60,9 @@ export type CapitalQuarter = {
 /** Supplementary to the business flow: quarters without a reconciled statement are omitted, never estimated. */
 export type PublicCapitalStructure = { schemaVersion: "capital-structure.v1"; ticker: string; quarters: CapitalQuarter[] };
 
+/** Served on its own route so the business flow never waits for statement projection. */
+export type CapitalResponse = { schemaVersion: "capital-response.v1"; status: "ready" | "unavailable"; capital: PublicCapitalStructure | null };
+
 /** Per-filing projection, stored beside the archived statements. */
 export type CapitalFiling = {
   version: string;
