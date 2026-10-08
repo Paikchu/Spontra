@@ -18,6 +18,11 @@ import type { CapitalQuarter, PublicCapitalStructure } from "@/shared/analysis-c
 import { balanceMetrics, balancePool, balanceVerdict, cashMetrics, cashPool, fundingVerdict, type Pool } from "./capital-model";
 import { PoolChart, TONE_LABEL, toneColor } from "./PoolChart";
 import { Rail } from "./Sidebar";
+import type { FindingsPublication } from "@/shared/analysis-contract/findings";
+import type { FindingFundamentals } from "@/shared/analysis-runtime/findings";
+import { anchorNodeNames, anchorPoolKeys, badgesByNode, findingData, verifiedFindings } from "./findings-model";
+import { FindingsStrip } from "./FindingsStrip";
+import { LensPanel } from "./LensPanel";
 
 type Item = { key: string; id: string; parent: string | null; depth: number; name: string; value: number | null; slot: number; segment: BusinessSegment };
 
@@ -107,7 +112,7 @@ function Sources({ sources, ids }: { sources: FlowSource[]; ids?: string[] }) {
   return <ul className="sources">{list.map(s => <li key={s.id}><a href={s.url} target="_blank" rel="noopener noreferrer">{s.title}<span aria-hidden="true"> ↗</span></a></li>)}</ul>;
 }
 
-export function BusinessMap({ ticker, tools, flow, business, notice, revenueHistory, explainer = null, guidance = null, capital = null }: { ticker: string; tools: ReactNode; flow: PublicBusinessFlow; business: CompanyBusinessContent | null; notice: string | null; revenueHistory: RevenueHistory | null; explainer?: BusinessExplainer | null; guidance?: GuidancePublication | null; capital?: PublicCapitalStructure | null }) {
+export function BusinessMap({ ticker, tools, flow, business, notice, revenueHistory, explainer = null, guidance = null, capital = null, findings = null, fundamentals = null }: { ticker: string; tools: ReactNode; flow: PublicBusinessFlow; business: CompanyBusinessContent | null; notice: string | null; revenueHistory: RevenueHistory | null; explainer?: BusinessExplainer | null; guidance?: GuidancePublication | null; capital?: PublicCapitalStructure | null; findings?: FindingsPublication | null; fundamentals?: FindingFundamentals | null }) {
   const quarters = useMemo(() => [...flow.quarters].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd)), [flow]);
   const [period, setPeriod] = useState<string | null>(null);
   const quarter = quarters.find(q => q.id === period) ?? quarters[0];
@@ -117,6 +122,13 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
   const slots = useMemo(() => hueSlots(quarters), [quarters]);
   const { items, quantified } = useMemo(() => businessItems(quarter, business, slots), [quarter, business, slots]);
   const [selected, setSelected] = useState<string | null>(() => new URLSearchParams(location.search).get("business"));
+  // Findings are verified against the same data the stage draws; a finding in focus reshapes the stage around its figures.
+  const data = useMemo(() => findingData(flow, revenueHistory, capital, fundamentals, guidance), [flow, revenueHistory, capital, fundamentals, guidance]);
+  const verified = useMemo(() => verifiedFindings(findings, data), [findings, data]);
+  const [focusId, setFocusId] = useState<string | null>(() => new URLSearchParams(location.search).get("finding"));
+  const [story, setStory] = useState(false);
+  const focused = verified.find(f => f.id === focusId) ?? null;
+  const focusIndex = focused ? verified.indexOf(focused) : -1;
   const [preview, setPreview] = useState<string | null>(null);
   const [hoverNode, setHoverNode] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -129,18 +141,30 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
   useEffect(() => {
     const url = new URL(location.href);
     if (current) url.searchParams.set("business", current.id); else url.searchParams.delete("business");
+    if (focused) url.searchParams.set("finding", focused.id); else url.searchParams.delete("finding");
     if (url.href !== location.href) history.replaceState(history.state, "", url);
-  }, [current]);
+  }, [current, focused]);
   // A business picked in the chart is brought into view in the list, scrolling only the list (a column or, on narrow screens, a chip row).
   useEffect(() => {
     const option = listRef.current?.querySelector<HTMLElement>('[role=option][aria-selected="true"]');
     if (option) revealInList(option, behavior());
   }, [current?.key]);
   useEffect(() => {
-    const escape = (e: globalThis.KeyboardEvent) => { if (e.key === "Escape" && !(e.target as HTMLElement).closest("input,select")) setSelected(null); };
+    const escape = (e: globalThis.KeyboardEvent) => { if (e.key === "Escape" && !(e.target as HTMLElement).closest("input,select")) { setSelected(null); setFocusId(null); setStory(false); } };
     addEventListener("keydown", escape);
     return () => removeEventListener("keydown", escape);
   }, []);
+  // Walking the findings: arrow keys step through them in order while 逐条看 is on.
+  useEffect(() => {
+    if (!story) return;
+    const step = (e: globalThis.KeyboardEvent) => {
+      if ((e.target as HTMLElement).closest("input,select,textarea") || (e.key !== "ArrowLeft" && e.key !== "ArrowRight")) return;
+      e.preventDefault();
+      setFocusId(id => { const i = Math.max(0, verified.findIndex(f => f.id === id)); return verified[Math.max(0, Math.min(verified.length - 1, i + (e.key === "ArrowRight" ? 1 : -1)))]?.id ?? id; });
+    };
+    addEventListener("keydown", step);
+    return () => removeEventListener("keydown", step);
+  }, [story, verified]);
 
   const graph = useMemo(() => quarter ? statementGraph(quarter) : null, [quarter]);
   const previousGraph = useMemo(() => previous ? statementGraph(previous) : null, [previous]);
@@ -148,6 +172,13 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
   const [chosenView, setView] = useState<View>("profit");
   const cash = funding?.cashFlow ?? funding?.yearToDate ?? null;
   const view: View = chosenView === "cash" && cash ? "cash" : chosenView === "balance" && funding?.balanceSheet ? "balance" : "profit";
+  // A finding in focus brings the stage to its report and statement view, and clears any business pick so the whole statement reads.
+  useEffect(() => {
+    if (!focused) return;
+    setSelected(null);
+    setPeriod(quarters.find(q => q.periodEnd === focused.periodEnd)?.id ?? null);
+    setView(focused.anchors.view);
+  }, [focused?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const amountOf = useCallback((n: PlacedNode) => n.amount ? numeric(n.amount) : n.metric && quarter ? numeric(quarter.figures[n.metric]) : n.value, [quarter]);
   /** Same comparison as the list and tooltip: only an equal-definition prior quarter yields a change. */
   const changeOf = useCallback((n: PlacedNode) => !quarter ? "不可比"
@@ -185,6 +216,12 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
     return { title: n.label, color: colorOf(n.name), rows };
   }, [quarter, revenue, money, amountOf, colorOf, changeOf, graph, segmentRevenue]);
 
+  const spotlight = useMemo(() => focused && view === "profit" ? anchorNodeNames(focused, quarter, items) : null, [focused, view, quarter, items]);
+  const poolSpotlight = useMemo(() => focused && view !== "profit" ? anchorPoolKeys(focused) : null, [focused, view]);
+  const badgeFindings = useMemo(() => focused || view !== "profit" ? new Map() : badgesByNode(verified, quarter, items), [focused, view, verified, quarter, items]);
+  const badges = useMemo(() => new Map([...badgeFindings].map(([name, f]) => [name, { kind: f.kind, severity: f.severity, title: f.title }])), [badgeFindings]);
+  const nodeColor = useCallback((id: string) => { const item = items.find(i => i.id === id); return item ? hue(item.slot) : "var(--biz-0)"; }, [items]);
+  const focusFinding = (id: string | null) => { setFocusId(id); if (!id) setStory(false); };
   const previewItem = items.find(item => item.key === preview);
   const active = previewItem ? "segment:" + previewItem.key : hoverNode ?? (current ? "segment:" + current.key : null);
   const hovered = hoverNode ? itemByNode.get(hoverNode)?.key : undefined;
@@ -234,7 +271,9 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
       {!!quarter?.revenueAdjustments?.length&&<p className="revenue-reconciliation">收入对账 · {quarter.currency} 百万<br/>分部收入（抵销前） {formatFlowValue(segmentRevenue,quarter)}<br/>{quarter.revenueAdjustments.map(a=><span key={a.id}>{a.name} {formatFlowValue(numeric(a.amount),quarter)}<br/></span>)}合并收入 {formatFlowValue(revenue,quarter)}</p>}
     </Rail>
 
-    <section className="stage" data-trend={revenueHistory && revenueHistory.quarters.length >= 2 ? "" : undefined} aria-label={`${ticker} 收入到利润流向`}>
+    <section className="stage" data-trend={revenueHistory && revenueHistory.quarters.length >= 2 ? "" : undefined} data-finding={focused?.kind} aria-label={`${ticker} 收入到利润流向`}>
+      {findings && verified.length > 0 && <FindingsStrip findings={verified} focus={focused?.id ?? null} story={story} periodEnd={findings.periodEnd}
+        onFocus={focusFinding} onStory={() => { if (story) { setStory(false); setFocusId(null); } else { setStory(true); setFocusId(focused?.id ?? verified[0].id); } }} />}
       <header className="stage-head stage-head--summary">
         {quarter && view !== "profit" && funding ? <CapitalStats view={view} funding={funding} /> : quarter && <div className="stats" aria-live="polite">
           {current && current.value != null ? <>
@@ -274,17 +313,20 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
       </header>
 
       <div className="chart">
-        {view !== "profit" && funding ? <CapitalChart view={view} funding={funding} ticker={ticker} />
+        {view !== "profit" && funding ? <CapitalChart view={view} funding={funding} ticker={ticker} spotlight={poolSpotlight} />
           : !quarter ? <div className="empty"><h2>季度财务未披露</h2><p>需要同币种、同口径的三个月数据才能绘制流向；不会用示例数据替代。</p></div>
           : proportional && layout ? <FlowChart graph={graph!} copy={copy} money={v => money(v)} colorOf={colorOf} active={active} revealKey={quarter.id} productBusiness={current ? "segment:" + current.key : null} businessDetails={<Dossier item={current} parent={parent ?? null} sources={quarter?.sources.length ? quarter.sources : business?.sources ?? []} explainer={explainer} />}
               focusSlot={n => segmentRevenue ? `占${shareBasis} ${percent(n.value / segmentRevenue * 100)}` : null}
-              onHover={name => setHoverNode(name)} tipFor={tipFor}
+              onHover={name => setHoverNode(name)} tipFor={tipFor} spotlight={spotlight} badges={badges} onBadge={name => { const f = badgeFindings.get(name); if (f) focusFinding(f.id); }}
               onPick={n => { const item = itemByNode.get(n.name); setSelected(item && current?.key !== item.key ? item.id : null); }}
               label={`${ticker} ${quarter.label} 收入到净利润桑基图，金额单位 ${quarter.currency}`} />
           : <div className="business-flow chart-fallback">{current && <Dossier item={current} parent={parent ?? null} sources={quarter.sources.length ? quarter.sources : business?.sources ?? []} explainer={explainer} />}<FinancialSankey quarter={quarter} previous={previous} onSegment={key => setSelected(items.find(item => item.key === key)?.id ?? null)} /></div>}
       </div>
 
-      {revenueHistory && revenueHistory.quarters.length >= 2 && <TrendPanel history={revenueHistory} items={items} selected={current} currentPeriod={quarter?.periodEnd ?? null}
+      {focused && findings ? <LensPanel finding={focused} data={data} sources={findings.sources} nodeColor={nodeColor} pair={verified.find(f => f.id === focused.pairWith) ?? null}
+        story={story} index={focusIndex} count={verified.length} onPair={() => focused.pairWith && focusFinding(focused.pairWith)}
+        onStep={delta => { const next = verified[focusIndex + delta]; if (next) focusFinding(next.id); }} onClose={() => focusFinding(null)} />
+      : revenueHistory && revenueHistory.quarters.length >= 2 && <TrendPanel history={revenueHistory} items={items} selected={current} currentPeriod={quarter?.periodEnd ?? null}
         periods={new Set(quarters.map(q => q.periodEnd))} onPickPeriod={end => setPeriod(quarters.find(q => q.periodEnd === end)?.id ?? null)} hue={hue} guidance={guidance} />}
 
       <footer className="stage-foot">
@@ -354,10 +396,10 @@ function poolOf(view: View, funding: CapitalQuarter): Pool {
   return view === "balance" ? balancePool(funding.balanceSheet!) : cashPool(cashOf(funding));
 }
 
-function CapitalChart({ view, funding, ticker }: { view: View; funding: CapitalQuarter; ticker: string }) {
+function CapitalChart({ view, funding, ticker, spotlight = null }: { view: View; funding: CapitalQuarter; ticker: string; spotlight?: Set<string> | null }) {
   const pool = useMemo(() => poolOf(view, funding), [view, funding]);
   const money = useMemo(() => { const format = capitalMoney(funding); return (v: number) => format(v); }, [funding]);
-  return <PoolChart key={view + funding.periodEnd} pool={pool} money={money}
+  return <PoolChart key={view + funding.periodEnd} pool={pool} money={money} spotlight={spotlight}
     label={view === "balance" ? `${ticker} 截至 ${funding.periodEnd} 的资金来源到资产` : `${ticker} ${cashPeriod(funding)}现金来源到去向`} />;
 }
 

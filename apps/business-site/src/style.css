@@ -653,3 +653,115 @@ button { cursor: pointer; }
 }
 
 .revenue-reconciliation { margin: 12px 16px; color: var(--muted-foreground); font-size: 12px; line-height: 1.8; }
+
+/* ---------- Findings: what deserves attention, bound to the figures on the stage ---------- */
+/* Kind colours: a risk reads as a loss, a strength as growth, a shift as the first business hue, a watch item stays quiet. */
+.stage { --kind-risk: var(--loss); --kind-strength: var(--up); --kind-shift: var(--biz-1); --kind-watch: var(--muted-foreground); }
+[data-kind="risk"] { --kind: var(--kind-risk); } [data-kind="strength"] { --kind: var(--kind-strength); } [data-kind="shift"] { --kind: var(--kind-shift); } [data-kind="watch"] { --kind: var(--kind-watch); }
+.stage:has(.findings) { grid-template-rows: auto auto minmax(0, 1fr) auto auto; }
+/* A grid, not a flex row: the chips column is capped at the space left, so a long set scrolls inside it instead of widening the stage. */
+.findings { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px 14px; min-width: 0; margin: -4px 0 10px; padding-bottom: 10px; border-bottom: 1px solid var(--hairline); animation: rise .45s var(--ease) both; }
+.findings-title { display: inline-flex; align-items: baseline; gap: 6px; font-size: 12.5px; font-weight: 620; letter-spacing: .02em; white-space: nowrap; }
+.findings-title small { font-size: 11px; font-weight: 500; color: var(--faint); font-variant-numeric: tabular-nums; }
+.findings-chips { display: flex; min-width: 0; gap: 6px; overflow-x: auto; scrollbar-width: none; padding: 2px 0; }
+.findings-chips::-webkit-scrollbar { display: none; }
+.finding-chip {
+  display: inline-flex; align-items: center; gap: 7px; flex: 0 1 auto; min-width: 76px; padding: 5px 11px 5px 6px; border-radius: 999px; font-size: 12.5px; font-weight: 520;
+  color: var(--muted-foreground); background: var(--surface); border: 1px solid var(--hairline); white-space: nowrap; transition: color .2s, border-color .2s, background .2s, opacity .25s;
+}
+.finding-chip span { overflow: hidden; text-overflow: ellipsis; }
+.finding-chip:hover { color: var(--foreground); border-color: color-mix(in srgb, var(--kind) 45%, transparent); }
+.finding-chip[aria-checked="true"] { flex-shrink: 0; color: var(--foreground); background: color-mix(in srgb, var(--kind) 14%, var(--surface)); border-color: color-mix(in srgb, var(--kind) 55%, transparent); font-weight: 600; }
+.findings[data-focus] .finding-chip:not([aria-checked="true"]) { opacity: .62; }
+.findings[data-focus] .finding-chip:not([aria-checked="true"]):hover { opacity: 1; }
+.finding-mark { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; font-size: 10.5px; font-style: normal; font-weight: 700; color: var(--background); background: var(--kind); font-variant-numeric: tabular-nums; }
+.findings-tools { display: inline-flex; align-items: center; gap: 10px; font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
+.findings-story { padding: 5px 11px; border-radius: 999px; font-size: 12px; font-weight: 560; color: var(--muted-foreground); background: transparent; border: 1px solid var(--hairline); transition: color .2s, background .2s; }
+.findings-story:hover { color: var(--foreground); }
+.findings-story[aria-pressed="true"] { color: var(--background); background: var(--foreground); border-color: var(--foreground); }
+
+/* Overview marks: a numbered dot at the corner of each node a finding names; the spotlight recedes everything else. */
+.fc-badge { cursor: pointer; animation: pop .35s var(--ease) both; animation-delay: var(--d); }
+.fc-badge circle { fill: var(--kind); stroke: var(--background); stroke-width: 2; }
+.fc-badge text { fill: var(--background); font-weight: 700; font-variant-numeric: tabular-nums; pointer-events: none; }
+.fc-badge:hover circle, .fc-badge:focus-visible circle { filter: drop-shadow(0 0 6px var(--kind)); }
+.fc-badge:focus { outline: none; }
+.fc-svg[data-focus="spotlight"] .fc-node:not([data-lit]) { opacity: .28; }
+.fc-svg[data-focus="spotlight"] .fc-band[data-lit="on"] { fill-opacity: .46; }
+.fc-svg[data-focus="spotlight"] .fc-node[data-lit] .fc-bar { filter: drop-shadow(0 0 7px color-mix(in srgb, var(--c) 70%, transparent)); }
+.stage[data-finding] .fc-svg[data-focus="spotlight"] .fc-node[data-lit] .fc-name { fill: var(--foreground); }
+
+/* The lens: the finding's chart on the left, its judgment and evidence on the right, in the trend's place. */
+.lens { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 10px; height: clamp(236px, 34vh, 340px); margin-top: 6px; padding-top: 12px; border-top: 1px solid var(--hairline); animation: rise .5s var(--ease) both; }
+.lens-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px 20px; flex-wrap: wrap; }
+.lens-title { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; min-width: 0; }
+.lens-title h2 { margin: 0; font-size: 15px; font-weight: 620; letter-spacing: -.01em; }
+.lens-kind { display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600; color: var(--kind); background: color-mix(in srgb, var(--kind) 12%, transparent); border: 1px solid color-mix(in srgb, var(--kind) 35%, transparent); }
+.lens-kind i { font-size: 7px; font-style: normal; letter-spacing: 2px; }
+.lens-basis { font-size: 11.5px; color: var(--faint); }
+.lens-nav { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; font-size: 12px; color: var(--muted-foreground); }
+.lens-nav button { padding: 4px 10px; border-radius: 999px; background: var(--surface); border: 1px solid var(--hairline); color: var(--muted-foreground); font-size: 12px; transition: color .2s, border-color .2s; }
+.lens-nav button:hover:not(:disabled) { color: var(--foreground); }
+.lens-nav button:disabled { opacity: .4; cursor: default; }
+.lens-pair { border-color: color-mix(in srgb, var(--kind) 40%, transparent) !important; }
+.lens-steps { display: inline-flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
+.lens-steps button { width: 28px; padding: 4px 0 !important; }
+.lens-close { width: 28px; padding: 4px 0 !important; }
+.lens-body { display: grid; grid-template-columns: minmax(0, 11fr) minmax(280px, 9fr); gap: 0 clamp(18px, 3vw, 40px); min-height: 0; }
+.lens-chart { position: relative; min-width: 0; min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr); }
+.lens-chart > * { min-height: 0; }
+.lens-text { min-width: 0; min-height: 0; overflow-y: auto; padding-right: 4px; font-size: 13px; line-height: 1.65; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.lens-judgment { margin: 0 0 10px; color: var(--foreground); }
+.lens-evidence { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 14px; margin: 0 0 10px; padding: 8px 0; border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline); }
+.lens-row { display: contents; }
+.lens-row dt { display: flex; flex-direction: column; font-size: 12px; color: var(--muted-foreground); }
+.lens-row dt small { font-size: 10.5px; color: var(--faint); }
+.lens-row dd { display: flex; flex-direction: column; align-items: flex-end; margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.lens-row dd b { font-size: 14px; font-weight: 620; }
+.lens-row dd em { font-size: 11px; font-style: normal; color: var(--faint); white-space: nowrap; }
+.lens-row dd em[data-verdict="above"], .lens-row dd em[data-verdict="below"] { color: var(--loss); font-weight: 600; }
+.lens-row dd em[data-verdict="within"] { color: var(--up); font-weight: 600; }
+.lens-watch { margin: 0 0 10px; font-size: 12.5px; color: var(--muted-foreground); }
+.lens-watch b { display: inline-block; margin-right: 8px; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; color: var(--foreground); background: var(--surface); border: 1px solid var(--hairline); }
+.lens-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 11.5px; color: var(--muted-foreground); }
+.lens-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.lens-legend i { width: 8px; height: 8px; border-radius: 2px; }
+.lens-legend b { font-weight: 620; color: var(--foreground); font-variant-numeric: tabular-nums; }
+.lens-legend-rate { color: var(--faint); }
+.lens-empty { display: grid; place-items: center; height: 100%; color: var(--faint); font-size: 12px; }
+
+/* Grouped bars standing on a shared zero line; a negative figure hangs below it in the loss colour. */
+.lens-bars { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 6px; min-height: 0; }
+.lens-plot { position: relative; display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); gap: clamp(6px, 1.2vw, 18px); min-height: 0; padding: 20px 0 24px; }
+.lens-zero { position: absolute; left: 0; right: 0; border-top: 1px solid var(--border); margin-bottom: 24px; pointer-events: none; }
+.lens-col { position: relative; min-width: 0; }
+.lens-group { position: absolute; inset: 0; display: flex; justify-content: center; gap: 3px; }
+.lens-slot { position: relative; flex: 0 1 34px; min-width: 6px; height: 100%; }
+.lens-bar { position: absolute; left: 0; right: 0; border-radius: 3px 3px 0 0; transform-origin: bottom; animation: grow .7s var(--ease) both; animation-delay: calc(var(--i) * 60ms); transition: height .6s var(--ease), bottom .6s var(--ease), opacity .25s; }
+.lens-bar[data-negative] { transform-origin: top; border-radius: 0 0 3px 3px; }
+.lens-bar[data-missing] { background: var(--hairline); }
+.lens-col:not([data-current]) .lens-bar { opacity: .55; }
+.lens-col:hover .lens-bar { opacity: 1; }
+.lens-value { position: absolute; left: 50%; bottom: calc(100% + 4px); transform: translateX(-50%); font-size: 11px; font-weight: 600; color: var(--foreground); white-space: nowrap; font-variant-numeric: tabular-nums; text-shadow: 0 0 4px var(--background), 0 0 2px var(--background); animation: fade-in .3s ease both; }
+.lens-value[data-below] { bottom: auto; top: calc(100% + 4px); }
+.lens-period { position: absolute; top: calc(100% + 6px); left: -10px; right: -10px; display: flex; flex-direction: column; align-items: center; gap: 1px; font-size: 11px; color: var(--faint); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.lens-col[data-current] .lens-period { color: var(--foreground); }
+.lens-period b { font-size: 10.5px; font-weight: 600; }
+
+/* Stacked shares: one area per business, the newest column's shares in the legend. */
+.lens-shares { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 6px; min-height: 0; }
+.lens-shares svg { width: 100%; height: 100%; min-height: 0; overflow: visible; }
+.lens-shares path { fill-opacity: .78; stroke: var(--background); stroke-width: 1; vector-effect: non-scaling-stroke; animation: fade-in .6s ease both; animation-delay: calc(var(--i) * 90ms); transition: fill-opacity .2s; }
+.lens-shares path:hover { fill-opacity: 1; }
+.lens-shares line { stroke: var(--background); stroke-opacity: .35; stroke-dasharray: 3 4; }
+.lens-axis { position: relative; height: 14px; font-size: 10.5px; color: var(--faint); font-variant-numeric: tabular-nums; }
+.lens-axis span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+.lens-axis span[data-edge="start"] { transform: none; } .lens-axis span[data-edge="end"] { transform: translateX(-100%); }
+.lens-axis span:not([data-edge]):nth-child(even) { display: none; }
+
+@media (max-width: 960px) {
+  .lens { height: auto; }
+  .lens-body { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .lens-chart { height: 200px; }
+  .lens-text { max-height: 260px; }
+}

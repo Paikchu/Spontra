@@ -117,9 +117,16 @@ function Streams({ band, strength }: { band: Band; strength: "ambient" | "lit" }
   </g>;
 }
 
-export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHover, onPick, tipFor, label, revealKey, businessDetails, productBusiness = null }: {
+export type Badge = { kind: "risk" | "strength" | "shift" | "watch"; severity: number; title: string };
+
+export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHover, onPick, tipFor, label, revealKey, businessDetails, productBusiness = null, spotlight = null, badges, onBadge }: {
   businessDetails?: ReactNode;
   productBusiness?: string | null;
+  /** Nodes a finding is about: they and their bands stay lit while the rest of the statement recedes. */
+  spotlight?: Set<string> | null;
+  /** A mark beside each node a finding names, for the overview. */
+  badges?: Map<string, Badge>;
+  onBadge?: (name: string) => void;
   graph: FinancialGraph;
   copy: (n: PlacedNode) => NodeCopy;
   money: (value: number) => string;
@@ -238,6 +245,9 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
     return { nodes, links, trace, slot, segment: Boolean(node.segmentId) };
   }, [active, byName, layout, w, colorOf]);
 
+  // A hover or a picked business takes over; otherwise the finding's nodes and every band touching them stay lit.
+  const lit = focus ? focus.nodes : spotlight && spotlight.size ? spotlight : null;
+  const litLinks = focus ? focus.links : lit ? new Set(layout.links.filter(l => lit.has(l.source) || lit.has(l.target)).map(linkKey)) : null;
   const revenue = byName.get("segment-total") ?? byName.get("revenue");
   const point = (event: { clientX: number; clientY: number }, value: Tip) => {
     const rect = box.current?.getBoundingClientRect();
@@ -278,7 +288,7 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
         // Capture coordinates now: React may run this updater after pointerup clears the ref.
         setCamera(c => ({ ...c, x, y }));
       }}
-      onPointerUp={e => { if (drag.current?.pointerId === e.pointerId) drag.current = null; }} onPointerCancel={e => { if (drag.current?.pointerId === e.pointerId) drag.current = null; }} onLostPointerCapture={e => { if (drag.current?.pointerId === e.pointerId) drag.current = null; }} className="fc-svg" viewBox={`${camera.x} ${camera.y} ${viewportWidth} ${viewportHeight}`} preserveAspectRatio="xMidYMid meet" role="group" aria-label={label} onMouseOver={hoverOver} data-focus={focus ? (focus.segment ? "segment" : "path") : undefined}>
+      onPointerUp={e => { if (drag.current?.pointerId === e.pointerId) drag.current = null; }} onPointerCancel={e => { if (drag.current?.pointerId === e.pointerId) drag.current = null; }} onLostPointerCapture={e => { if (drag.current?.pointerId === e.pointerId) drag.current = null; }} className="fc-svg" viewBox={`${camera.x} ${camera.y} ${viewportWidth} ${viewportHeight}`} preserveAspectRatio="xMidYMid meet" role="group" aria-label={label} onMouseOver={hoverOver} data-focus={focus ? (focus.segment ? "segment" : "path") : lit ? "spotlight" : undefined}>
       <defs>
         {bands.map((b, i) => {
           const from = colorOf(b.key.split(">")[0]);
@@ -299,7 +309,7 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
           {bands.map((b, i) => <path key={b.key} className="fc-band" d={bandPath(b)} fill={`url(#${uid}g${i})`} data-owner={b.owner}
             // A business's own band picks it like its node; keyboard users reach the same pick on the node.
             {...(byName.get(b.owner)?.segmentId ? { "data-pick": "", onClick: () => onPick(byName.get(b.owner)!) } : {})}
-            data-lit={focus ? (focus.links.has(b.key) ? (focus.segment && focus.trace.some(t => t.key === "trace:" + b.key) ? "context" : "on") : undefined) : undefined}
+            data-lit={litLinks ? (litLinks.has(b.key) ? (focus?.segment && focus.trace.some(t => t.key === "trace:" + b.key) ? "context" : "on") : undefined) : undefined}
             onMouseMove={e => { const l = layout.links[i]; point(e, { title: `${copy(byName.get(l.source)!).name} → ${copy(byName.get(l.target)!).name}`, color: b.color, rows: [["流量", money(l.value)]] }); }}
             onMouseLeave={() => setTip(null)} />)}
         </g>
@@ -321,9 +331,10 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
           const [x, y, anchor]: [number, number, "start" | "middle" | "end"] = n.side === "top" ? [n.x + w / 2, n.y - type.offset - 2, "middle"]
             : n.side === "bottom" ? [n.x + w / 2, n.y + n.h + type.offset + vs * 0.78, "middle"]
             : [n.side === "left" ? n.x - gap : n.x + w + gap, n.y + side / 2 + vs * 0.36, n.side === "left" ? "end" : "start"];
-          const lit = focus ? focus.nodes.has(n.name) || undefined : undefined;
+          const isLit = lit ? lit.has(n.name) || undefined : undefined;
+          const badge = badges?.get(n.name);
           const interactive = Boolean(n.segmentId) || n.name === "revenue";
-          return <g key={n.name} className="fc-node" data-tone={n.tone} data-net={n.name === "net" || undefined} data-lit={lit} data-active={n.name === active || undefined}
+          return <g key={n.name} className="fc-node" data-tone={n.tone} data-net={n.name === "net" || undefined} data-lit={isLit} data-active={n.name === active || undefined}
             style={{ "--c": colorOf(n.name), "--d": `${n.column * 90 + 300}ms` } as CSSProperties}
             data-owner={n.name} onMouseMove={e => point(e, tipFor(n))} onMouseLeave={() => setTip(null)}
             {...(interactive ? { role: "button", tabIndex: 0, "aria-label": `${text.name} ${text.value}${text.change ? ` 环比 ${text.change.label}` : ""}${n.segmentId ? "，在列表中选中" : "，显示全部业务"}`, onClick: () => onPick(n), onKeyDown: (e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPick(n); } }, onFocus: () => onHover(n.name), onBlur: () => onHover(null) } : {})}>
@@ -332,6 +343,10 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
             <text className="fc-label" x={r(x)} y={r(y)} textAnchor={anchor}>
               <tspan className="fc-name" style={{ fontSize: type.name }}>{text.name}</tspan><tspan className="fc-value" dx={type.gap} style={{ fontSize: vs }}>{text.value}</tspan>{text.change && <tspan className="fc-change" dx={type.gap * 0.8} data-trend={text.change.trend} style={{ fontSize: type.change }}>{text.change.label}</tspan>}
             </text>
+            {badge && !lit && <g className="fc-badge" data-kind={badge.kind} transform={`translate(${r(n.x + w + 2)},${r(n.y - 2)})`} role="button" tabIndex={0} aria-label={`要点：${badge.title}`}
+              onClick={e => { e.stopPropagation(); onBadge?.(n.name); }} onKeyDown={(e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); onBadge?.(n.name); } }}>
+              <circle r={9 * k} /><text y={3.4 * k} textAnchor="middle" style={{ fontSize: 10 * k }}>{badge.severity}</text>
+            </g>}
           </g>;
         })}
       </g>

@@ -161,6 +161,14 @@ export function buildAnalysisOpenApiDocument(serverUrl = "https://<analysis-back
           responses: { "200": { description: "guidance-response.v1", content: { "application/json": { schema: { type: "object", required: ["schemaVersion", "status", "guidance"], properties: { schemaVersion: { const: "guidance-response.v1" }, status: { enum: ["ready", "preparing"] }, guidance: { type: ["object", "null"], description: "guidance.v1: items (metric, basis, horizon, fiscal period, low/high or direction, action against the previous event, derived amount, actual, quote), sources and per-event material coverage" } } } } } }, ...commonResponses },
         },
       },
+      "/api/v1/companies/{ticker}/findings": {
+        get: {
+          summary: "What deserves attention in the latest statements, bound to the figures that show it",
+          description: "Each finding names the businesses, metrics and statement view it is about, the evidence references it rests on and the chart that shows it; it carries no amounts. Readers resolve every reference against the published flow, capital, fundamentals and guidance and withhold a finding whose numbers the data do not support. `preparing` when nothing is published. No model call is started by reading.",
+          security: [{ readCredential: ["analysis:read"] }], parameters: [tickerParameter],
+          responses: { "200": { description: "findings-response.v1", content: { "application/json": { schema: { type: "object", required: ["schemaVersion", "status", "findings"], properties: { schemaVersion: { const: "findings-response.v1" }, status: { enum: ["ready", "preparing"] }, findings: { type: ["object", "null"], description: "findings.v1: findings (kind, severity, title, cited judgment, evidence references, anchors, lens, pairing, watch) and sources" } } } } } }, ...commonResponses },
+        },
+      },
       "/api/v1/companies/{ticker}/analysis": {
         get: {
           summary: "The company's latest published cross-period analysis",

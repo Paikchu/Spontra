@@ -2,6 +2,7 @@ import type {CompleteFlowPublication} from '../../../shared/analysis-contract/co
 import type {CapitalResponse} from '../../../shared/analysis-contract/capital-structure.ts';
 import type { BusinessExplainerResponse } from "../../../shared/analysis-contract/business-explainer.ts";
 import type { GuidanceResponse } from "../../../shared/analysis-contract/guidance.ts";
+import type { FindingsResponse } from "../../../shared/analysis-contract/findings.ts";
 import type { PublicCompanyAnalysisResponse } from "../../../shared/analysis-contract/company-analysis.ts";
 import { AnalysisRequestError, type AnalysisErrorBody, type AnalysisErrorCode } from "./analysis-errors.ts";
 import type { PublicFilingDetail, PublicFilingPage } from "../../../shared/analysis-contract/filings.ts";
@@ -67,6 +68,7 @@ export class AnalysisBackendClient {
   getCapital(ticker: string) { return this.request<CapitalResponse>(`/api/v1/companies/${encode(ticker)}/capital`); }
   getBusinessExplainer(ticker: string) { return this.request<BusinessExplainerResponse>(`/api/v1/companies/${encode(ticker)}/business-explainer`); }
   getGuidance(ticker: string) { return this.request<GuidanceResponse>(`/api/v1/companies/${encode(ticker)}/guidance`); }
+  getFindings(ticker: string) { return this.request<FindingsResponse>(`/api/v1/companies/${encode(ticker)}/findings`); }
 
   getCompanyAnalysis(ticker: string) {
     return this.request<PublicCompanyAnalysisResponse>(`/api/v1/companies/${encode(ticker)}/analysis`);

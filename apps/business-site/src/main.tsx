@@ -8,6 +8,8 @@ import type { PublicBusinessFlow } from "@/shared/analysis-contract/business-flo
 import type { BusinessExplainer } from "@/shared/analysis-contract/business-explainer";
 import type { GuidancePublication } from "@/shared/analysis-contract/guidance";
 import type { CapitalResponse, PublicCapitalStructure } from "@/shared/analysis-contract/capital-structure";
+import type { FindingsPublication } from "@/shared/analysis-contract/findings";
+import type { FindingFundamentals } from "@/shared/analysis-runtime/findings";
 import "@/app/analysis/stocks/[ticker]/business-flow.css";
 import "./style.css";
 import { withBusinessDescriptions } from "./business-description";
@@ -76,6 +78,8 @@ function Company({ ticker, tools, onSeen }: { ticker: string; tools: ReactNode; 
     [publication, setPublication] = useState<(CompleteFlowPublication & { explainer?: BusinessExplainer | null; guidance?: GuidancePublication | null }) | null>(null),
     [failed, setFailed] = useState(false),
     [capital, setCapital] = useState<PublicCapitalStructure | null>(null),
+    [findings, setFindings] = useState<FindingsPublication | null>(null),
+    [fundamentals, setFundamentals] = useState<FindingFundamentals | null>(null),
     [retry, setRetry] = useState(0);
   useEffect(() => {
     const controller = new AbortController();
@@ -108,6 +112,17 @@ function Company({ ticker, tools, onSeen }: { ticker: string; tools: ReactNode; 
       .catch(() => { /* Supplementary: the profit view stands on its own. */ });
     return () => controller.abort();
   }, [ticker, retry]);
+  // Findings and the SEC series they resolve against arrive the same way; the stage shows them once both are here.
+  useEffect(() => {
+    const controller = new AbortController();
+    const load = <T,>(resource: string, key: string, set: (value: T | null) => void) => fetch(`/api/business/v1/companies/${encodeURIComponent(ticker)}/${resource}`, { signal: controller.signal })
+      .then(response => response.ok ? response.json() as Promise<{ status: string } & Record<string, unknown>> : null)
+      .then(body => { if (!controller.signal.aborted && body?.status === "ready") set(body[key] as T); })
+      .catch(() => { /* Supplementary: the map stands without findings. */ });
+    void load<FindingsPublication>("findings", "findings", setFindings);
+    void load<FindingFundamentals>("fundamentals", "fundamentals", setFundamentals);
+    return () => controller.abort();
+  }, [ticker, retry]);
   const business = resolveCompanyBusiness(ticker);
   if (flow)
     return (
@@ -121,6 +136,8 @@ function Company({ ticker, tools, onSeen }: { ticker: string; tools: ReactNode; 
           explainer={publication?.explainer ?? null}
           guidance={publication?.guidance ?? null}
           capital={capital}
+          findings={findings}
+          fundamentals={fundamentals}
           notice={
             publication?.outdated
               ? publication.reasons.includes("SIGNED_LAYOUT_UNSUPPORTED")

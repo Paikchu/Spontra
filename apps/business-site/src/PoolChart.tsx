@@ -67,7 +67,9 @@ function band(x0: number, y0: number, x1: number, y1: number, h0: number, h1: nu
  * Sources on the left fill one pool; uses on the right drain it. Both sides add up to the same total,
  * so every band is a disclosed amount, and a loss or a cash draw-down appears as a source or use, never a gap.
  */
-export function PoolChart({ pool, money, label }: { pool: Pool; money: (v: number) => string; label: string }) {
+export function PoolChart({ pool, money, label, spotlight = null }: { pool: Pool; money: (v: number) => string; label: string;
+  /** Item keys a finding is about; they stay lit while the pointer is elsewhere. */
+  spotlight?: Set<string> | null }) {
   const box = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState<{ w: number; h: number }>({ w: 960, h: 520 });
   useEffect(() => {
@@ -82,6 +84,8 @@ export function PoolChart({ pool, money, label }: { pool: Pool; money: (v: numbe
   }, []);
   const layout = useMemo(() => layoutPool(pool, size.w, size.h, money), [pool, size, money]);
   const [active, setActive] = useState<string | null>(null);
+  const lit = (key: string) => active ? active === key : Boolean(spotlight?.has(key));
+  const focused = active || (spotlight && layout.nodes.some(n => spotlight.has(n.key)));
   const [tip, setTip] = useState<{ x: number; y: number; item: Placed } | null>(null);
   const share = (v: number) => pool.total ? `${Math.round(v / pool.total * 100)}%` : "";
   const point = (event: React.MouseEvent, item: Placed) => {
@@ -90,13 +94,13 @@ export function PoolChart({ pool, money, label }: { pool: Pool; money: (v: numbe
   };
   return <div className="pool">
     <div className="pool-canvas" ref={box}>
-      <svg className="fc-svg pool-svg" viewBox={`0 0 ${size.w} ${size.h}`} role="img" aria-label={label} data-focus={active ? "" : undefined}>
+      <svg className="fc-svg pool-svg" viewBox={`0 0 ${size.w} ${size.h}`} role="img" aria-label={label} data-focus={focused ? "" : undefined}>
         <g>
           {layout.nodes.map(n => {
             const d = n.side === "source"
               ? band(n.x + BAR, n.y, layout.center, n.poolY, n.h, n.value * layout.scale)
               : band(layout.center + BAR, n.poolY, n.x, n.y, n.value * layout.scale, n.h);
-            return <path key={n.key} className="fc-band" d={d} style={{ fill: TONE[n.tone] }} data-lit={active === n.key ? "on" : undefined}
+            return <path key={n.key} className="fc-band" d={d} style={{ fill: TONE[n.tone] }} data-lit={lit(n.key) ? "on" : undefined}
               onMouseMove={e => { setActive(n.key); point(e, n); }} onMouseLeave={() => { setActive(null); setTip(null); }} />;
           })}
         </g>
@@ -108,7 +112,7 @@ export function PoolChart({ pool, money, label }: { pool: Pool; money: (v: numbe
         </g>
         {layout.nodes.map(n => {
           const mid = n.y + n.h / 2, x = n.side === "source" ? n.x - 10 : n.x + BAR + 10, anchor = n.side === "source" ? "end" : "start";
-          return <g key={n.key} className="fc-node" data-tone={n.tone} data-lit={active === n.key ? "" : undefined} style={{ "--c": TONE[n.tone] } as CSSProperties}
+          return <g key={n.key} className="fc-node" data-tone={n.tone} data-lit={lit(n.key) ? "" : undefined} style={{ "--c": TONE[n.tone] } as CSSProperties}
             onMouseMove={e => { setActive(n.key); point(e, n); }} onMouseLeave={() => { setActive(null); setTip(null); }}>
             <title>{`${n.label} ${money(n.value)}，占${pool.title} ${share(n.value)}`}</title>
             <rect className="fc-hit" x={n.x - 6} y={Math.min(n.y, mid - SLOT / 2)} width={BAR + 12} height={Math.max(n.h, SLOT)} />

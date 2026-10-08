@@ -136,3 +136,23 @@ test('report list preserves validated historical statements and strips private o
  reports.quarters[2].figures.net!.value='1';
  assert.equal((await load(reports)).reports!.quarters.length,2);
 });
+
+test("findings and fundamentals are supplementary routes: re-validated, stripped, and never cached when absent",async()=>{
+ const {loadFindings,loadFundamentals}=await import("../apps/business-site/worker/index");
+ const {ORCL_FINDINGS}=await import("../workers/pipeline/src/findings/authored/ORCL");
+ const seen:string[]=[];
+ const upstream:typeof fetch=async(input,init)=>{const url=new Request(input,init).url;seen.push(url);
+  if(url.endsWith("/findings"))return Response.json({schemaVersion:"findings-response.v1",status:"ready",findings:{...ORCL_FINDINGS,secret:"PRIVATE_FINDING"}});
+  if(url.includes("/fundamentals"))return Response.json({ticker:"ORCL",source:"sec_xbrl",status:"ready",refresh:{secret:"PRIVATE_REFRESH"},series:[{metricKey:"net_income",label:"净利润",category:"income_statement",unitFamily:"currency",currency:"USD",available:true,unit:"USD",points:[{periodEnd:"2026-05-31",valueDecimal:"4304000000",revision:1}]}]});
+  return success(input,init);};
+ const findings=await handle(request(endpoint+"/findings"),env,context,upstream);const body=await findings.text();
+ assert.equal(findings.status,200);assert.ok(!body.includes("PRIVATE_"));assert.equal(JSON.parse(body).findings.findings.length,5);assert.equal(findings.headers.get("cache-control"),"public, max-age=60");
+ const fundamentals=await handle(request(endpoint+"/fundamentals"),env,context,upstream);const text=await fundamentals.text();
+ assert.ok(!text.includes("PRIVATE_"));assert.deepEqual(Object.keys(JSON.parse(text).fundamentals),["series"]);assert.equal(JSON.parse(text).fundamentals.series[0].points[0].revision,undefined);
+ assert.ok(seen.some(u=>u==="https://spontra-app.max-zhangyuchen.workers.dev/api/analysis/v1/companies/ORCL/fundamentals?periodCount=12"));
+ assert.equal(await loadFindings("MSFT",async()=>Response.json({schemaVersion:"findings-response.v1",status:"ready",findings:ORCL_FINDINGS})),null);
+ assert.equal(await loadFundamentals("ORCL",async()=>Response.json({ticker:"ORCL",source:"yahoo_finance",status:"ready",series:[]})),null);
+ const missing=await handle(request(endpoint+"/findings"),env,context,async()=>Response.json({schemaVersion:"findings-response.v1",status:"preparing",findings:null}));
+ assert.equal((await missing.json() as {status:string}).status,"unavailable");assert.equal(missing.headers.get("cache-control"),"no-store");
+ assert.equal((await handle(request(endpoint+"/findings?x=1"),env,context,upstream)).status,404);
+});
