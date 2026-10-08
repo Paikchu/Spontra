@@ -5,6 +5,7 @@ import { SidebarProvider } from "../components/ui/sidebar";
 import { ChartContainer, ChartTooltipContent } from "../components/ui/chart";
 import { NativeSelect, NativeSelectOptGroup, NativeSelectOption } from "../components/ui/native-select";
 import { Rail, RailActions } from "../apps/business-site/src/Sidebar";
+import { Home } from "../apps/business-site/src/Home";
 
 // These composition paths must keep the existing DOM skin, rather than introduce
 // wrappers, default labels or platform-menu replacements into the business map.
@@ -23,8 +24,9 @@ test("the composed sidebar retains its semantic shell, scroll target and Chinese
   assert.match(html, /id="rail-body"/);
   assert.match(html, /aria-controls="rail-body"/);
   assert.equal((html.match(/<button\b/g) ?? []).length, 3);
-  assert.equal((html.match(/<svg\b/g) ?? []).length, 3);
-  for (const name of ["搜索公司", "切换浅色主题", "展开侧边栏"]) assert.ok(html.includes(`aria-label="${name}"`));
+  assert.equal((html.match(/<svg\b/g) ?? []).length, 4);
+  assert.match(html, /<a href="\/" data-nav="true" class="icon-button" aria-label="首页"/);
+  for (const name of ["首页", "搜索公司", "切换浅色主题", "展开侧边栏"]) assert.ok(html.includes(`aria-label="${name}"`));
   assert.ok(!html.includes("Toggle Sidebar"));
   assert.ok(!html.includes('data-slot="sidebar-gap"'));
   assert.ok(!html.includes('data-slot="sheet"'));
@@ -72,4 +74,14 @@ test("custom chart composition preserves rich disclosed tooltip content without 
   assert.equal((html.match(/class="trend-tip"/g) ?? []).length, 1);
   assert.ok(!html.includes("recharts-responsive-container"));
   assert.ok(!html.includes("aspect-video"));
+});
+
+test("home leads with the inline ticker search and keeps its list closed until the user types", () => {
+  const html = renderToStaticMarkup(<Home light onToggleTheme={() => {}} recent={["NVDA"]} onPick={() => {}} />);
+  assert.match(html, /<main class="home"/);
+  assert.match(html, /class="search-panel" data-inline="true"/);
+  assert.match(html, /role="combobox"[^>]*aria-expanded="false"/);
+  assert.match(html, /<div class="search-drop" hidden="">/);
+  assert.match(html, /<a href="\/companies\/NVDA" data-nav="true">/);
+  assert.match(html, /<section class="home-findings"[^>]*aria-busy="true"/);
 });

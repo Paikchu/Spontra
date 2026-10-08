@@ -3,25 +3,34 @@ import { Button } from "@/components/ui/button";
 import { Sidebar, SidebarHeader, SidebarContent, SidebarTrigger } from "@/components/ui/sidebar";
 import { CompanyMark } from "./CompanyMark";
 
-/** Search, theme switch and rail toggle, beside the ticker at the top of the rail. */
+export function ThemeToggle({ light, onToggle }: { light: boolean; onToggle: () => void }) {
+  return <Button variant="unstyled" type="button" className="icon-button" aria-label={light ? "切换深色主题" : "切换浅色主题"} aria-pressed={light} onClick={onToggle}>
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      {light ? <path d="M20 15a8 8 0 0 1-11-11A8.5 8.5 0 1 0 20 15Z" /> : <>
+        <circle cx="12" cy="12" r="4" />
+        <path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5" />
+      </>}
+    </svg>
+  </Button>;
+}
+
+/** Home, search, theme switch and rail toggle, beside the ticker at the top of the rail. */
 export function RailActions({ light, onToggleTheme, onSearch, collapsed }: {
   light: boolean; onToggleTheme: () => void; onSearch: () => void; collapsed: boolean;
 }) {
   return <div className="rail-actions">
+    <a href="/" data-nav className="icon-button" aria-label="首页" title="首页">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 10.5 12 4l8 6.5V19a1 1 0 0 1-1 1h-4.5v-5.5h-5V20H5a1 1 0 0 1-1-1Z" />
+      </svg>
+    </a>
     <Button variant="unstyled" type="button" className="icon-button" aria-label="搜索公司" aria-haspopup="dialog" aria-keyshortcuts="Meta+K Control+K /" title="搜索公司 (⌘K)" onClick={onSearch}>
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <circle cx="11" cy="11" r="6.5" />
         <path d="m16 16 4 4" />
       </svg>
     </Button>
-    <Button variant="unstyled" type="button" className="icon-button" aria-label={light ? "切换深色主题" : "切换浅色主题"} aria-pressed={light} onClick={onToggleTheme}>
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        {light ? <path d="M20 15a8 8 0 0 1-11-11A8.5 8.5 0 1 0 20 15Z" /> : <>
-          <circle cx="12" cy="12" r="4" />
-          <path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5" />
-        </>}
-      </svg>
-    </Button>
+    <ThemeToggle light={light} onToggle={onToggleTheme} />
     <SidebarTrigger variant="unstyled" type="button" className="icon-button rail-toggle" aria-label={collapsed ? "展开侧边栏" : "收起侧边栏"} aria-expanded={!collapsed} aria-controls="rail-body"
       title={collapsed ? "展开侧边栏" : "收起侧边栏"}>
       <svg viewBox="0 0 24 24" aria-hidden="true">

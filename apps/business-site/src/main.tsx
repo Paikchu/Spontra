@@ -1,13 +1,9 @@
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { StrictMode, useCallback, useEffect, useState, Component, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
-import { selectFlow } from "@/lib/earning-report/web/business-flow-model";
 import { resolveCompanyBusiness } from "@/lib/earning-report/web/company-business-content";
-import type { CompleteFlowPublication } from "@/shared/analysis-contract/complete-business-flow";
 import type { PublicBusinessFlow } from "@/shared/analysis-contract/business-flow";
-import type { BusinessExplainer } from "@/shared/analysis-contract/business-explainer";
-import type { GuidancePublication } from "@/shared/analysis-contract/guidance";
-import type { CapitalResponse, PublicCapitalStructure } from "@/shared/analysis-contract/capital-structure";
+import type { PublicCapitalStructure } from "@/shared/analysis-contract/capital-structure";
 import type { FindingsPublication } from "@/shared/analysis-contract/findings";
 import type { FindingFundamentals } from "@/shared/analysis-runtime/findings";
 import "@/app/analysis/stocks/[ticker]/business-flow.css";
@@ -16,6 +12,8 @@ import { withBusinessDescriptions } from "./business-description";
 import { BusinessMap } from "./BusinessMap";
 import { Rail, RailActions } from "./Sidebar";
 import { SearchDialog } from "./SearchDialog";
+import { fetchCompany, fetchSupplement, publicationFlow, type CompanyPublication } from "./company-data";
+import { Home } from "./Home";
 
 const RECENT_KEY = "business-map-recent";
 function readRecent(): string[] {
@@ -75,7 +73,7 @@ function StateShell({ ticker, tools, role, children }: { ticker: string; tools: 
 }
 function Company({ ticker, tools, onSeen }: { ticker: string; tools: ReactNode; onSeen: (ticker: string) => void }) {
   const [flow, setFlow] = useState<PublicBusinessFlow | null>(null),
-    [publication, setPublication] = useState<(CompleteFlowPublication & { explainer?: BusinessExplainer | null; guidance?: GuidancePublication | null }) | null>(null),
+    [publication, setPublication] = useState<CompanyPublication | null>(null),
     [failed, setFailed] = useState(false),
     [capital, setCapital] = useState<PublicCapitalStructure | null>(null),
     [findings, setFindings] = useState<FindingsPublication | null>(null),
@@ -83,44 +81,28 @@ function Company({ ticker, tools, onSeen }: { ticker: string; tools: ReactNode; 
     [retry, setRetry] = useState(0);
   useEffect(() => {
     const controller = new AbortController();
-    fetch(`/api/business/v1/companies/${encodeURIComponent(ticker)}`, {
-      signal: controller.signal,
-    })
-      .then(async (response) => {
-        if (!response.ok) throw new Error("unavailable");
-        const data = (await response.json()) as CompleteFlowPublication & { explainer?: BusinessExplainer | null; guidance?: GuidancePublication | null };
-        if (!controller.signal.aborted) {
-          onSeen(ticker);
-          setPublication(data);
-          const quarters = data.flow
-            ? [...new Map([...(data.reports?.quarters ?? []), ...data.flow.quarters].map(q => [q.periodEnd, q])).values()]
-            : [];
-          setFlow(data.status === "ready" && data.flow ? selectFlow({...data.flow, quarters}, null, ticker) : null);
-        }
+    fetchCompany(ticker, controller.signal)
+      .then((data) => {
+        if (controller.signal.aborted) return;
+        onSeen(ticker);
+        setPublication(data);
+        setFlow(publicationFlow(data, ticker));
       })
       .catch(() => {
         if (!controller.signal.aborted) setFailed(true);
       });
     return () => controller.abort();
   }, [ticker, retry, onSeen]);
-  // Balance sheet and cash flow load on their own; the map is drawn without waiting for them.
+  // Balance sheet, cash flow, findings and the SEC series they resolve against load on their own; the map is drawn without waiting for them.
   useEffect(() => {
     const controller = new AbortController();
-    fetch(`/api/business/v1/companies/${encodeURIComponent(ticker)}/capital`, { signal: controller.signal })
-      .then(response => response.ok ? response.json() as Promise<CapitalResponse> : null)
-      .then(body => { if (!controller.signal.aborted && body?.status === "ready") setCapital(body.capital); })
-      .catch(() => { /* Supplementary: the profit view stands on its own. */ });
-    return () => controller.abort();
-  }, [ticker, retry]);
-  // Findings and the SEC series they resolve against arrive the same way; the stage shows them once both are here.
-  useEffect(() => {
-    const controller = new AbortController();
-    const load = <T,>(resource: string, key: string, set: (value: T | null) => void) => fetch(`/api/business/v1/companies/${encodeURIComponent(ticker)}/${resource}`, { signal: controller.signal })
-      .then(response => response.ok ? response.json() as Promise<{ status: string } & Record<string, unknown>> : null)
-      .then(body => { if (!controller.signal.aborted && body?.status === "ready") set(body[key] as T); })
-      .catch(() => { /* Supplementary: the map stands without findings. */ });
-    void load<FindingsPublication>("findings", "findings", setFindings);
-    void load<FindingFundamentals>("fundamentals", "fundamentals", setFundamentals);
+    const load = <T,>(resource: "capital" | "findings" | "fundamentals", set: (value: T | null) => void) =>
+      fetchSupplement<T>(ticker, resource, controller.signal)
+        .then(value => { if (!controller.signal.aborted && value) set(value); })
+        .catch(() => { /* Supplementary: the map stands on its own. */ });
+    void load<PublicCapitalStructure>("capital", setCapital);
+    void load<FindingsPublication>("findings", setFindings);
+    void load<FindingFundamentals>("fundamentals", setFundamentals);
     return () => controller.abort();
   }, [ticker, retry]);
   const business = resolveCompanyBusiness(ticker);
@@ -193,7 +175,7 @@ function Skeleton({ ticker, tools }: { ticker: string; tools: ReactNode }) {
   );
 }
 function App() {
-  const [ticker, setTicker] = useState(() => tickerFromUrl() ?? "ORCL"),
+  const [ticker, setTicker] = useState(tickerFromUrl),
     [searching, setSearching] = useState(false),
     [recent, setRecent] = useState(readRecent),
     [collapsed, setCollapsed] = useState(() => {
@@ -238,7 +220,7 @@ function App() {
     return () => query.removeEventListener("change", changed);
   }, []);
   useEffect(() => {
-    const changed = () => setTicker(tickerFromUrl() ?? "ORCL");
+    const changed = () => setTicker(tickerFromUrl());
     window.addEventListener("popstate", changed);
     return () => window.removeEventListener("popstate", changed);
   }, []);
@@ -247,14 +229,17 @@ function App() {
       const typing = (e.target as HTMLElement).closest("input, textarea, select, [contenteditable]");
       if (((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") || (e.key === "/" && !typing)) {
         e.preventDefault();
-        setSearching(true);
+        // Home keeps its own field in view; elsewhere the dialog opens.
+        const field = document.querySelector<HTMLInputElement>(".home .search-field input");
+        if (field) field.focus();
+        else setSearching(true);
       }
     };
     window.addEventListener("keydown", shortcut);
     return () => window.removeEventListener("keydown", shortcut);
   }, []);
   useEffect(() => {
-    document.title = `${ticker} · 业务地图`;
+    document.title = ticker ? `${ticker} · 业务地图` : "Business View";
   }, [ticker]);
   /** Only companies the API answered for are remembered, so typos never become suggestions. */
   const remember = useCallback((seen: string) => {
@@ -268,20 +253,35 @@ function App() {
       return next;
     });
   }, []);
-  function navigate(next: string) {
-    if (next !== ticker) history.pushState(null, "", `/companies/${next}`);
-    setTicker(next);
-  }
+  /** In-app links: a company, optionally opened at a finding, or home. */
+  const navigate = useCallback((href: string) => {
+    if (href !== location.pathname + location.search) history.pushState(null, "", href);
+    setTicker(tickerFromUrl());
+  }, []);
+  const openCompany = (next: string) => navigate(`/companies/${next}`);
+  useEffect(() => {
+    const follow = (e: MouseEvent) => {
+      const link = (e.target as HTMLElement).closest<HTMLAnchorElement>("a[data-nav]");
+      if (!link || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      e.preventDefault();
+      navigate(link.getAttribute("href")!);
+    };
+    document.addEventListener("click", follow);
+    return () => document.removeEventListener("click", follow);
+  }, [navigate]);
   // A narrow window collapses the rail without overwriting the preference saved for wide windows.
   const railCollapsed = yields ? !openedWhileNarrow : collapsed;
   function setRailOpen(open: boolean) {
     if (yields) setOpenedWhileNarrow(open);
     else setCollapsed(!open);
   }
+  const toggleTheme = () => setLight((v) => !v);
+  if (!ticker)
+    return <Home light={light} onToggleTheme={toggleTheme} recent={recent} onPick={openCompany} />;
   const actions = (
     <RailActions
       light={light}
-      onToggleTheme={() => setLight((v) => !v)}
+      onToggleTheme={toggleTheme}
       onSearch={() => setSearching(true)}
       collapsed={railCollapsed}
     />
@@ -293,7 +293,7 @@ function App() {
           <Company key={ticker} ticker={ticker} tools={actions} onSeen={remember} />
         </main>
       </SidebarProvider>
-      <SearchDialog open={searching} current={ticker} recent={recent} onClose={() => setSearching(false)} onPick={navigate} />
+      <SearchDialog open={searching} current={ticker} recent={recent} onClose={() => setSearching(false)} onPick={openCompany} />
     </>
   );
 }

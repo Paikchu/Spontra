@@ -656,7 +656,7 @@ button { cursor: pointer; }
 
 /* ---------- Findings: what deserves attention, bound to the figures on the stage ---------- */
 /* Kind colours: a risk reads as a loss, a strength as growth, a shift as the first business hue, a watch item stays quiet. */
-.stage { --kind-risk: var(--loss); --kind-strength: var(--up); --kind-shift: var(--biz-1); --kind-watch: var(--muted-foreground); }
+.stage, .home { --kind-risk: var(--loss); --kind-strength: var(--up); --kind-shift: var(--biz-1); --kind-watch: var(--muted-foreground); }
 [data-kind="risk"] { --kind: var(--kind-risk); } [data-kind="strength"] { --kind: var(--kind-strength); } [data-kind="shift"] { --kind: var(--kind-shift); } [data-kind="watch"] { --kind: var(--kind-watch); }
 .stage:has(.findings) { grid-template-rows: auto auto minmax(0, 1fr) auto auto; }
 /* A grid, not a flex row: the chips column is capped at the space left, so a long set scrolls inside it instead of widening the stage. */
@@ -799,4 +799,81 @@ button { cursor: pointer; }
   .lens-body { grid-template-columns: minmax(0, 1fr); gap: 12px; }
   .lens-chart { height: 200px; }
   .lens-text { max-height: 260px; }
+}
+
+/* ---------- Home: search in the middle, the latest findings drifting beneath ---------- */
+/* Same canvas as the map: dotted grid under a faint brand glow. The search sits in the centre of the free space. */
+.home {
+  display: grid; grid-template-rows: auto minmax(0, 1fr); height: 100%; min-height: 560px; overflow-y: auto; overscroll-behavior: contain;
+  padding: max(16px, env(safe-area-inset-top)) 0 max(28px, env(safe-area-inset-bottom));
+  background:
+    radial-gradient(1100px 520px at 50% 30%, color-mix(in srgb, var(--brand) 6%, transparent), transparent 70%),
+    radial-gradient(circle at 1px 1px, var(--hairline) 1px, transparent 1.5px) 0 0 / 22px 22px;
+}
+.home-top { display: flex; justify-content: flex-end; padding: 0 max(24px, env(safe-area-inset-right)) 0 max(24px, env(safe-area-inset-left)); }
+/* Search, recent companies and findings form one block centred in the free space. */
+.home-center { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 44px; min-width: 0; padding-bottom: 6vh; }
+.home-hero {
+  position: relative; z-index: 2; display: flex; flex-direction: column; align-items: center; width: min(720px, 100% - 48px);
+  text-align: center; animation: rise .5s var(--ease) both;
+}
+.home-hero h1 { margin: 0; font-size: clamp(32px, 5vw, 48px); font-weight: 650; letter-spacing: -.03em; line-height: 1.1; }
+.home-hero > p { margin: 12px 0 32px; font-size: 15px; color: var(--muted-foreground); }
+
+/* The inline search is the dialog's panel resting on the page; its list floats beneath the field. */
+.search-panel[data-inline] { position: relative; z-index: 5; width: 100%; overflow: visible; text-align: left; border-radius: 22px; box-shadow: var(--rail-shadow); transition: border-color .2s, box-shadow .2s; }
+.search-panel[data-inline]:focus-within { border-color: color-mix(in srgb, var(--focus-ring) 45%, var(--border)); box-shadow: var(--shadow-overlay), 0 0 0 4px color-mix(in srgb, var(--focus-ring) 12%, transparent); }
+.search-panel[data-inline] .search-field { border-bottom: 0; }
+.search-panel[data-inline] .search-drop {
+  position: absolute; left: -1px; right: -1px; top: calc(100% + 8px); overflow: hidden;
+  border-radius: 20px; background: var(--surface-raised); border: 1px solid var(--border); box-shadow: var(--shadow-overlay); animation: pop .2s var(--ease) both;
+}
+.search-panel[data-inline] kbd, .search-drop kbd { display: inline-grid; place-items: center; min-width: 22px; height: 22px; padding: 0 6px; border: 1px solid var(--border); border-radius: 6px; font-family: inherit; font-size: 11px; font-weight: 600; color: var(--faint); }
+.search-drop .search-foot kbd { min-width: 18px; height: 18px; padding: 0 4px; font-size: 10.5px; }
+.search-drop[hidden] { display: none; }
+
+.home-recent { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; margin-top: 18px; font-size: 12px; color: var(--faint); }
+.home-recent > span { margin-right: 2px; }
+.home-recent a { display: inline-flex; align-items: center; gap: 8px; padding: 4px 12px 4px 4px; border-radius: 999px; font-size: 12.5px; font-weight: 600; letter-spacing: .02em; color: var(--muted-foreground); text-decoration: none; background: var(--surface); border: 1px solid var(--hairline); transition: color .2s, border-color .2s; }
+.home-recent a:hover { color: var(--foreground); border-color: var(--border); }
+
+/* Round company logos at chip size, for recent companies and findings alike. */
+.home .company-logo--sm { width: 22px; height: 22px; border-radius: 999px; }
+.home .company-logo--sm img { inset: 4px; width: calc(100% - 8px); height: calc(100% - 8px); }
+.home .company-logo--sm .company-logo-fallback { font-size: 9px; }
+
+/* ---------- Findings marquee ---------- */
+.home-findings { display: grid; gap: 12px; width: min(1120px, 100%); min-width: 0; animation: fade-in .6s ease both; }
+.home-findings-title { display: flex; justify-content: center; align-items: baseline; gap: 6px; margin: 0; font-size: 12.5px; font-weight: 620; letter-spacing: .02em; }
+.home-findings-title small { font-size: 11px; font-weight: 500; color: var(--faint); }
+.marquee { display: grid; gap: 10px; min-width: 0; overflow: hidden; mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent); -webkit-mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent); }
+.marquee-row { min-width: 0; overflow: hidden; }
+.marquee-track { display: flex; gap: 8px; width: max-content; margin: 0; padding: 2px 0; list-style: none; animation: marquee var(--duration, 40s) linear infinite; }
+/* Brick layout: the second row starts half a chip in and a beat later, so its chips sit between the first row's. */
+.marquee-row[data-offset] .marquee-track { margin-left: 110px; animation-delay: calc(var(--duration) / -9); }
+/* Pointing at or tabbing into a row holds it still so a chip can be read and chosen. */
+.marquee-row:hover .marquee-track, .marquee-row:focus-within .marquee-track { animation-play-state: paused; }
+.marquee-track li { display: flex; }
+/* One gap of the track belongs to each half, so sliding by exactly half lands on an identical frame. */
+@keyframes marquee { to { transform: translateX(calc(-50% - 4px)); } }
+.marquee-chip { flex: none; min-width: 0; max-width: 340px; padding: 4px 13px 4px 4px; font-size: 13px; text-decoration: none; }
+.marquee-chip:hover { color: var(--foreground); background: color-mix(in srgb, var(--kind) 10%, var(--surface)); }
+.marquee-ghost { width: 220px; height: 32px; padding: 0; animation: pulse 1.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  /* Without motion each row becomes a plain horizontal scroller holding one copy. */
+  .marquee-row { overflow-x: auto; scrollbar-width: none; }
+  .marquee-track li[aria-hidden] { display: none; }
+}
+
+/* Narrow screens let the document scroll (#root and main size to content), so the home claims the viewport itself. */
+@media (max-width: 960px) {
+  .home { height: auto; min-height: 100dvh; }
+}
+@media (max-width: 620px) {
+  .home-hero { width: calc(100% - 32px); }
+  .home-hero > p { margin-bottom: 24px; }
+  .search-panel[data-inline] .search-field { height: 58px; padding: 0 18px; }
+  .search-panel[data-inline] .search-field input { font-size: 17px; }
+  .search-panel[data-inline] .search-foot { display: none; }
+  .marquee-chip { max-width: 260px; }
 }
