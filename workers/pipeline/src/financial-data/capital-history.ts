@@ -9,7 +9,7 @@ import type { ReportArchive } from './report-history.ts';
 const QUARTERS = 8;
 /** Archives made before the current capital projection are projected on read, a few per request, until collection re-archives them.
  * Stored statement tables are cheap to project; re-parsing a source document (megabytes of HTML) is not, so it is rarer still. */
-const MAX_PROJECTED = 6, MAX_REPARSED_BYTES = 8_000_000;
+const MAX_PROJECTED = QUARTERS + 1, MAX_REPARSED_BYTES = 8_000_000;
 const projections = new Map<string, { expires: number; capital: PublicCapitalStructure | null }>();
 
 /** Stored tables from any extractor version that located the statements are reused; only a document whose statements were

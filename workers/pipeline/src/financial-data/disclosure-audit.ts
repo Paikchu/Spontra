@@ -52,6 +52,33 @@ export async function archiveFilingDisclosures(env: DisclosureArchiveEnv, ticker
   return summary(record);
 }
 
+/**
+ * Re-archives a few filings whose stored projection predates the current capital version, from the source
+ * already in the archive: no SEC fetch. Newest first, so the quarters findings rest on are refreshed before
+ * older history; the read API projects whatever is still stale on demand until this catches up.
+ */
+export async function refreshStaleProjections(env: DisclosureArchiveEnv, limit = 3): Promise<Array<{ ticker: string; accession: string }>> {
+  const rows = await env.DB.prepare("SELECT payload FROM sec_cache WHERE cache_key LIKE 'sec:disclosure-audit:v1:%' ORDER BY fetched_at DESC LIMIT 400").bind().all<{ payload: string }>();
+  const stale: StoredAudit[] = [];
+  for (const row of rows.results) {
+    try {
+      const record = JSON.parse(row.payload) as StoredAudit;
+      const periodic = /^(?:10-[QK]|20-F|40-F|6-K)(?:\/A)?$/.test(record.source.form);
+      if (periodic && record.capital?.version !== CAPITAL_VERSION && record.rawKey?.startsWith("financial-disclosures/")) stale.push(record);
+    } catch { /* A malformed record is not this step's to repair. */ }
+  }
+  stale.sort((a, b) => b.source.filedAt.localeCompare(a.source.filedAt));
+  const done: Array<{ ticker: string; accession: string }> = [];
+  for (const record of stale.slice(0, limit)) {
+    const raw = await env.SEC_FILINGS.get(record.rawKey);
+    if (!raw) continue;
+    const s = record.source, cik = s.documentUrl.match(/\/Archives\/edgar\/data\/(\d+)\//)?.[1]?.padStart(10, "0") ?? "";
+    await archiveFilingDisclosures(env, record.ticker, { url: s.documentUrl, accession: s.accessionNumber, cik, filedAt: s.filedAt, industry: "standard" }, await raw.text(), { form: s.form, reportDate: s.reportDate });
+    done.push({ ticker: record.ticker, accession: s.accessionNumber });
+  }
+  return done;
+}
+
 export async function listFilingDisclosureAudits(db: D1Database, ticker: string): Promise<DisclosureAuditSummary[]> {
   const rows = await db.prepare("SELECT payload FROM sec_cache WHERE cache_key LIKE ? ORDER BY fetched_at DESC LIMIT 200")
     .bind(disclosureAuditPrefix(ticker) + "%").all<{payload: string}>();

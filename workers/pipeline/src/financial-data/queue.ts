@@ -5,7 +5,7 @@ import {D1CompleteStore,type Job} from './store.ts';
 import {collectComplete} from './collect.ts';
 import {readSecDocumentBatch,throttledSecReader,discoverDataIssuer} from './provider.ts';
 import {runHistoryTick} from './history.ts';
-import {archiveFilingDisclosures, type DisclosureArchiveEnv} from './disclosure-audit.ts';
+import {archiveFilingDisclosures, refreshStaleProjections, type DisclosureArchiveEnv} from './disclosure-audit.ts';
 /** Explicit opt-in. No cron registration, model key or Workflow binding belongs to this subsystem. */
 export interface DataOnlyEnv {DB:D1Database;SEC_USER_AGENT:string;SEC_DATA_TICKERS?:string;SEC_TRACKED_TICKERS?:string;SEC_DATA_COLLECTION_ENABLED?:string;SEC_FILINGS?:DisclosureArchiveEnv['SEC_FILINGS'];}
 export async function enqueueIssuer(db:D1Database,issuer:FinancialIssuer,policy:FinancialPolicy,generation:number):Promise<string|null>{
@@ -34,7 +34,9 @@ export async function runDataOnlySweep(env:DataOnlyEnv,fetcher:typeof fetch=fetc
   const failedAt=new Map(failures.results.map(r=>[r.cache_key.slice('sec:financial-discovery-failure:v1:'.length),Date.parse(r.fetched_at)]));
   const ticker=[...policy.dataTickers].find(t=>(!updated.has(t)||Date.now()-updated.get(t)!>=86400000)&&(!failedAt.has(t)||Date.now()-failedAt.get(t)!>=3600000));
   if(!ticker){
-   // Idle tick: the complete snapshot has nothing due, so quarterly revenue history may advance one bounded step.
+   // Idle tick: stored projections behind the current capital version are redone from the archive, a few per tick, before
+   // quarterly revenue history may advance one bounded step.
+   if(env.SEC_FILINGS)await refreshStaleProjections({DB:env.DB,SEC_FILINGS:env.SEC_FILINGS}).catch(()=>[]);
    try{const history=await runHistoryTick(env.DB,reader,policy,new Date(),env.SEC_FILINGS ? (ticker,source,html,metadata)=>archiveFilingDisclosures({DB:env.DB,SEC_FILINGS:env.SEC_FILINGS!},ticker,source,html,metadata).then(()=>{}) : undefined);return {enabled:true,published:false,reasons:[],modelCalls:0,...(history?{history}:{})};}
    catch{return {enabled:true,published:false,reasons:[],modelCalls:0,history:{error:'SOURCE_TEMPORARILY_UNAVAILABLE'}};}
   }

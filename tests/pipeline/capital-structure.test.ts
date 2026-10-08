@@ -4,7 +4,7 @@ import { SqliteD1Database } from "./helpers/sqlite-d1.ts";
 import { extractFilingDisclosures } from "../../shared/analysis-runtime/financial-data/disclosure-extraction.ts";
 import { extractFinancialStatements } from "../../shared/analysis-runtime/financial-data/financial-statements.ts";
 import { buildCapitalQuarters, CAPITAL_VERSION, extractCapitalFiling, extractRpo, readCapitalStructure, timingMonths } from "../../shared/analysis-runtime/financial-data/capital-structure.ts";
-import { archiveFilingDisclosures, listFilingDisclosureAudits } from "../../workers/pipeline/src/financial-data/disclosure-audit.ts";
+import { archiveFilingDisclosures, listFilingDisclosureAudits, refreshStaleProjections } from "../../workers/pipeline/src/financial-data/disclosure-audit.ts";
 import { readArchivedCapital } from "../../workers/pipeline/src/financial-data/capital-history.ts";
 import type { PublicBusinessFlow } from "../../shared/analysis-contract/business-flow.ts";
 
@@ -217,6 +217,25 @@ test("the projection budget goes first to archives that have no projection at al
     const capital = await readArchivedCapital(f.env.DB, f.env.SEC_FILINGS, flow, { maxProjected: 1 });
     assert.deepEqual(capital?.quarters.map(q => [q.periodEnd, q.balanceSheet?.totals.assets ?? null]), [["2026-06-30", "4000000000"], ["2026-03-31", capital?.quarters[1].balanceSheet?.totals.assets ?? null]]);
     assert.ok(capital?.quarters[1].balanceSheet, "the bare archive was projected within the budget of one");
+  } finally { f.database.close(); }
+});
+
+test("stale projections are redone from the archive on idle ticks, newest first, without any fetch", async () => {
+  const f = archiveFixture();
+  try {
+    await archiveFilingDisclosures(f.env, "CRWV", dataSource(q1Source), q1Html, { form: "10-Q", reportDate: "2026-03-31" });
+    await archiveFilingDisclosures(f.env, "CRWV", dataSource(q2Source), q2Html, { form: "10-Q", reportDate: "2026-06-30" });
+    for (const row of f.database.raw.prepare("SELECT cache_key,payload FROM sec_cache").all() as Array<{ cache_key: string; payload: string }>) {
+      const old = JSON.parse(row.payload);
+      old.capital = { ...old.capital, version: "sec-capital-structure.v2" };
+      f.database.raw.prepare("UPDATE sec_cache SET payload=? WHERE cache_key=?").run(JSON.stringify(old), row.cache_key);
+    }
+    assert.deepEqual(await refreshStaleProjections(f.env, 1), [{ ticker: "CRWV", accession: q2Source.accession }]);
+    const versions = () => (f.database.raw.prepare("SELECT payload FROM sec_cache").all() as Array<{ payload: string }>).map(r => JSON.parse(r.payload)).map(r => [r.source.reportDate, r.capital.version]).sort();
+    assert.deepEqual(versions(), [["2026-03-31", "sec-capital-structure.v2"], ["2026-06-30", CAPITAL_VERSION]]);
+    assert.deepEqual(await refreshStaleProjections(f.env, 5), [{ ticker: "CRWV", accession: q1Source.accession }]);
+    assert.deepEqual(await refreshStaleProjections(f.env, 5), []);
+    assert.ok(versions().every(([, v]) => v === CAPITAL_VERSION));
   } finally { f.database.close(); }
 });
 
