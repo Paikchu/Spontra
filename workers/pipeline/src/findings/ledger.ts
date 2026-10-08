@@ -26,23 +26,24 @@ const QUARTERS = 8;
  * profit), capital intensity, working-capital and leverage proxies. Each is one figure over another at
  * the same period, so the verifier can re-derive it and the model cannot invent it.
  */
-const RATIOS: Array<[string, FindingBaseRef, FindingBaseRef]> = [
-  ["毛利率", { metric: "gross" }, { metric: "revenue" }],
-  ["营业利润率", { metric: "operating" }, { metric: "revenue" }],
-  ["净利率", { metric: "net" }, { metric: "revenue" }],
-  ["研发费用率", { metric: "research" }, { metric: "revenue" }],
-  ["销售费用率", { metric: "sales" }, { metric: "revenue" }],
-  ["管理费用率", { metric: "administration" }, { metric: "revenue" }],
-  ["有效税率", { metric: "tax" }, { metric: "pretax" }],
-  ["经营现金流 / 净利润", { capital: "operatingCashFlow" }, { metric: "net" }],
-  ["资本开支 / 收入", { capital: "capex" }, { metric: "revenue" }],
-  ["资本开支 / 折旧摊销", { capital: "capex" }, { fundamental: "depreciation_and_amortization" }],
-  ["股权激励 / 收入", { fundamental: "stock_based_compensation" }, { metric: "revenue" }],
-  ["应收账款 / 收入", { fundamental: "accounts_receivable" }, { metric: "revenue" }],
-  ["存货 / 收入", { fundamental: "inventory" }, { metric: "revenue" }],
-  ["有息债务 / 股东权益", { capital: "debt" }, { capital: "equity" }],
-  ["现金 / 有息债务", { capital: "cash" }, { capital: "debt" }],
-  ["RPO / 收入", { capital: "rpo" }, { metric: "revenue" }],
+type RatioForm = "percent" | "multiple";
+const RATIOS: Array<[RatioForm, FindingBaseRef, FindingBaseRef]> = [
+  ["percent", { metric: "gross" }, { metric: "revenue" }],
+  ["percent", { metric: "operating" }, { metric: "revenue" }],
+  ["percent", { metric: "net" }, { metric: "revenue" }],
+  ["percent", { metric: "research" }, { metric: "revenue" }],
+  ["percent", { metric: "sales" }, { metric: "revenue" }],
+  ["percent", { metric: "administration" }, { metric: "revenue" }],
+  ["percent", { metric: "tax" }, { metric: "pretax" }],
+  ["multiple", { capital: "operatingCashFlow" }, { metric: "net" }],
+  ["percent", { capital: "capex" }, { metric: "revenue" }],
+  ["multiple", { capital: "capex" }, { fundamental: "depreciation_and_amortization" }],
+  ["percent", { fundamental: "stock_based_compensation" }, { metric: "revenue" }],
+  ["percent", { fundamental: "accounts_receivable" }, { metric: "revenue" }],
+  ["percent", { fundamental: "inventory" }, { metric: "revenue" }],
+  ["multiple", { capital: "debt" }, { capital: "equity" }],
+  ["multiple", { capital: "cash" }, { capital: "debt" }],
+  ["multiple", { capital: "rpo" }, { metric: "revenue" }],
 ];
 
 function money(value: number, currency: string | null): string {
@@ -52,13 +53,13 @@ function money(value: number, currency: string | null): string {
   if (abs >= 1e8) return `${sign}${(abs / 1e8).toFixed(1)} 亿${unit}`;
   return `${sign}${(abs / 1e6).toFixed(1)} 百万${unit}`;
 }
-function formatValue(r: ResolvedEvidence["current"]): string {
+function formatValue(r: ResolvedEvidence["current"], form: RatioForm = "multiple"): string {
   if (r.range && r.range.low !== r.range.high) return r.unit === "USD" ? `${money(r.range.low, r.currency)} 至 ${money(r.range.high, r.currency)}` : `${r.range.low}% 至 ${r.range.high}%`;
   if (r.unit === "USD") return money(r.value, r.currency);
   if (r.unit === "percent") return `${Number(r.value.toFixed(1))}%`;
   if (r.unit === "per_share") return `$${r.value.toFixed(2)}`;
-  // A ratio is shown both ways so margins read as percentages and multiples as multiples.
-  return `${Number(r.value.toFixed(2))}（${(r.value * 100).toFixed(1)}%）`;
+  // A margin or an intensity reads as a percentage; a coverage or turnover ratio reads as a multiple.
+  return form === "percent" ? `${(r.value * 100).toFixed(1)}%` : `${Number(r.value.toFixed(2))} 倍`;
 }
 const change = (r: ResolvedEvidence | null) => !r || r.delta == null ? null : r.current.unit === "percent" || r.current.unit === "ratio" ? `${r.delta > 0 ? "+" : ""}${r.delta.toFixed(1)} 点` : `${r.delta > 0 ? "+" : ""}${r.delta.toFixed(1)}%`;
 
@@ -81,22 +82,22 @@ export function buildLedger(data: FindingData, periodEnd: string, sources: Expla
   const rows: LedgerRow[] = [];
   const quarterEnds = Array.from({ length: QUARTERS }, (_, i) => shiftPeriod(periodEnd, -3 * i));
   const yearEnds = [periodEnd, shiftPeriod(periodEnd, -12)];
-  const push = (ref: FindingRef, end: string, span: FindingSpan) => {
+  const push = (ref: FindingRef, end: string, span: FindingSpan, form: RatioForm = "multiple") => {
     const yoy = resolveEvidence(data, { ref, periodEnd: end, span, compare: "yoy" });
     const qoq = span === "quarter" ? resolveEvidence(data, { ref, periodEnd: end, span, compare: "qoq" }) : null;
     const plain = yoy ?? qoq ?? resolveEvidence(data, { ref, periodEnd: end, span });
     if (!plain) return;
-    rows.push({ ref, periodEnd: plain.current.periodEnd, span, label: plain.label, value: formatValue(plain.current), yoy: change(yoy), qoq: change(qoq) });
+    rows.push({ ref, periodEnd: plain.current.periodEnd, span, label: plain.label, value: formatValue(plain.current, form), yoy: change(yoy), qoq: change(qoq) });
   };
-  const series = (ref: FindingRef, spans: FindingSpan[] = ["quarter", "fiscal_year"]) => {
-    if (spans.includes("quarter")) for (const end of quarterEnds) push(ref, end, "quarter");
-    if (spans.includes("fiscal_year")) for (const end of yearEnds) push(ref, end, "fiscal_year");
+  const series = (ref: FindingRef, spans: FindingSpan[] = ["quarter", "fiscal_year"], form: RatioForm = "multiple") => {
+    if (spans.includes("quarter")) for (const end of quarterEnds) push(ref, end, "quarter", form);
+    if (spans.includes("fiscal_year")) for (const end of yearEnds) push(ref, end, "fiscal_year", form);
   };
   const newest = data.quarters.find(q => q.periodEnd === periodEnd) ?? [...data.quarters].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd))[0];
   for (const metric of FLOW) series({ metric });
   const nodes = ledgerNodes(newest);
   for (const node of nodes.slice(0, 12)) series({ nodeId: node.nodeId });
-  for (const [, numerator, denominator] of RATIOS) series({ ratio: { numerator, denominator } });
+  for (const [form, numerator, denominator] of RATIOS) series({ ratio: { numerator, denominator } }, ["quarter", "fiscal_year"], form);
   for (const capital of CAPITAL_METRICS as readonly CapitalMetric[]) {
     const instant = ["totalAssets", "debt", "cash", "equity", "rpo", "rpoNext12MonthsShare"].includes(capital);
     // Instants have no span; flows are shown as the quarter and the fiscal year.

@@ -309,7 +309,8 @@ function compareOf(data: FindingData, e: FindingEvidence, current: ResolvedValue
   const compare = resolveRef(data, e.ref, shiftPeriod(e.periodEnd, months), e.span);
   if (!compare) return none;
   // Rates move in points: a margin, or a ratio of two figures, is compared by its difference ×100, never by its growth.
-  const delta = current.unit === "percent" ? current.value - compare.value : current.unit === "ratio" ? (current.value - compare.value) * 100 : compare.value !== 0 ? (current.value - compare.value) / Math.abs(compare.value) * 100 : null;
+  // A growth rate needs a positive base and a positive result; a sign change or a zero base has no meaningful rate.
+  const delta = current.unit === "percent" ? current.value - compare.value : current.unit === "ratio" ? (current.value - compare.value) * 100 : compare.value > 0 && current.value > 0 ? (current.value - compare.value) / compare.value * 100 : null;
   return { compare, compareLabel: e.compare === "yoy" ? "去年同期" : "上一季", delta, ratio: compare.value > 0 && current.value > 0 ? current.value / compare.value : null, guidance: null };
 }
 

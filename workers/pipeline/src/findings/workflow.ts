@@ -19,11 +19,12 @@ import { findingsCacheKey } from "./read.ts";
 import { writeFindings, type FindingsModel } from "./writer.ts";
 
 /** Changing the prompt or the ledger regenerates every company once. */
-export const FINDINGS_VERSION = "findings.writer.v2";
+export const FINDINGS_VERSION = "findings.writer.v3";
 export type FindingsWorkflowParams = { ticker: string; fingerprint: string };
 export type FindingsDeps = { model?: FindingsModel; fetcher?: typeof fetch };
 
-const MODEL_BUDGET_MS = 5 * 60_000, MAX_OUTPUT_TOKENS = 16_384, CONTEXT_CHARS = 12_000;
+/** The model reasons at length before it writes, and the provider counts that against the output limit; the default limit leaves room. */
+const MODEL_BUDGET_MS = 8 * 60_000, CONTEXT_CHARS = 12_000;
 
 type Input = { data: FindingData; ledger: Ledger; context: string | null; fingerprint: string } | null;
 
@@ -87,7 +88,7 @@ export async function executeFindingsWorkflow(params: FindingsWorkflowParams, st
   const input = await step.do("findings-input", () => readInput(env, params.ticker));
   // The report, guidance or narrative moved on after scheduling; the next sweep starts a run for the new state.
   if (!input || input.fingerprint !== params.fingerprint) return { status: "superseded" as const };
-  const model: FindingsModel = deps.model ?? ((stage, system, payload) => callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, MODEL_BUDGET_MS, true, { maxTokens: MAX_OUTPUT_TOKENS }));
+  const model: FindingsModel = deps.model ?? ((stage, system, payload) => callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, MODEL_BUDGET_MS, true));
   const outcome = await writeFindings({
     ticker: params.ticker, companyName: findSecurity(params.ticker)?.name ?? params.ticker, ledger: input.ledger, context: input.context, data: input.data,
     model, modelVersion, fingerprint: params.fingerprint, now, stage: (name, callback) => step.do(`findings-${name}`, callback),

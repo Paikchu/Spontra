@@ -80,7 +80,9 @@ export function lensPeriods(periodEnd: string, span: FindingSpan, count = span =
 
 export function lensColumns(lens: Extract<FindingLens, { type: "trend" | "compare_bars" }>, periodEnd: string, data: FindingData): LensColumns {
   const periods = lensPeriods(periodEnd, lens.span);
-  const series = lens.refs.map(ref => {
+  // A writer may name the same reference for each comparison it makes; the chart draws it once.
+  const refs = [...new Map(lens.refs.map(ref => [JSON.stringify(ref), ref])).values()];
+  const series = refs.map(ref => {
     const values = periods.map(end => resolveRef(data, ref, end, lens.span));
     return { ref, label: refLabel(data, ref), unit: values.find(v => v)?.unit ?? "USD", values };
   });
