@@ -4,9 +4,14 @@ import {parseSecEarningsRelease} from '../../../../shared/analysis-runtime/finan
 import {buildPublishedBusinessQuarter} from '../../../../shared/analysis-runtime/financial-data/disclosed-quarter.ts';
 import type { BusinessFlowQuarter, FlowAmount, FlowMetric, BusinessSegment } from '../../../../shared/analysis-contract/business-flow.ts';
 import { disclosedWholeCompany } from '../../../../shared/analysis-runtime/financial-data/completeness.ts';
+import {extractFilingDisclosures} from '../../../../shared/analysis-runtime/financial-data/disclosure-extraction.ts';
+import {extractFinancialStatements} from '../../../../shared/analysis-runtime/financial-data/financial-statements.ts';
+import {readIncomeStatementCells} from '../../../../shared/analysis-runtime/financial-data/income-statement.ts';
 export interface DocumentSource {url:string;accession:string;filedAt:string;cik:string;industry:'standard'|'financial'|'insurance'|'unknown';fiscalYear?:string;singleSegment?:boolean;}
-export const SEC_FLOW_PARSER_VERSION='deterministic-sec.v6';
-export interface Fact {source:DocumentSource;operands?:Fact[];formula?:string;precision:number;tag:string;value:number;currency:string;start:string;end:string;context:string;dimensions:Record<string,string>;}
+export const SEC_FLOW_PARSER_VERSION='deterministic-sec.v7';
+export interface Fact {source:DocumentSource;operands?:Fact[];formula?:string;precision:number;tag:string;value:number;currency:string;start:string;end:string;context:string;dimensions:Record<string,string>;
+ /** The issuer's income statement row printing this fact; flip means the statement shows it with the opposite sign. */
+ statementRow?:{order:number;label:string;flip:boolean};}
 const text=(s:string)=>s.replace(/<[^>]*>/g,' ').replace(/&nbsp;|&#160;/g,' ').replace(/&amp;/g,'&').trim();
 const attrs=(s:string)=>Object.fromEntries([...s.matchAll(/([\w:-]+)\s*=\s*["']([^"']*)["']/g)].map(m=>[m[1].toLowerCase(),m[2]]));
 const local=(tag:string)=>tag.split(':').at(-1)!;
@@ -27,8 +32,30 @@ export function readReportedFacts(html:string,source:DocumentSource):{facts:Fact
  const buckets=new Map<string,Fact[]>();for(const m of html.matchAll(/<ix:nonFraction\b([^>]*)>([\s\S]*?)<\/ix:nonFraction\s*>/gi)){
   const a=attrs(m[1]);if(!flowConcepts.has(local(a.name??'')))continue;const context=contexts.get(a.contextref),currency=units.get(a.unitref);if(!context||!currency||a['xsi:nil']==='true')continue;let raw=text(m[2]).replace(/[,\s]/g,'');if(local(a.format??'')==='fixed-zero')raw='0';if(/^[–—-]$/.test(raw)&&/(?:zero-?dash|num-?dash)$/i.test(local(a.format??'')))raw='0';if(a.format&&!/^(?:num-?dot-?decimal|zero-?dash|num-?dash|fixed-zero)$/i.test(local(a.format))){issues.push('UNSUPPORTED_NUMBER_FORMAT');continue;}if(!/^\(?[+-]?\d+(\.\d+)?\)?$/.test(raw))continue;const scale=Number(a.scale??0);if(!Number.isInteger(scale)||Math.abs(scale)>18)continue;const value=Math.abs(Number(raw.replace(/[()]/g,'')))*10**scale*(a.sign==='-'||raw.startsWith('(')||raw.startsWith('-')?-1:1);if(!Number.isFinite(value))continue;const precision=a.decimals==='INF'?Number.MAX_SAFE_INTEGER:/^-?\d+$/.test(a.decimals??'')?Number(a.decimals):Number.MIN_SAFE_INTEGER;const fact={precision,tag:a.name,value,currency,...context,context:a.contextref,source};const key=[context.start,context.end,currency].join('|');buckets.set(key,[...(buckets.get(key)??[]),fact]);
  }
- return {facts:[...buckets.values()].flat(),issues};
+ const facts=[...buckets.values()].flat();
+ // Income statement rows keep the issuer's own lines, including custom concepts the flow tags do not name.
+ const inventory=extractFilingDisclosures(html,{ticker:'',accessionNumber:source.accession,documentUrl:source.url,form:'',reportDate:'',filedAt:source.filedAt}),byId=new Map(inventory.facts.map(f=>[f.id,f]));
+ for(const cell of readIncomeStatementCells(extractFinancialStatements(html,inventory))){
+  const fact=byId.get(cell.factId),contextRef=fact?.contextRef;if(!fact||!contextRef)continue;
+  const statementRow={order:cell.order,label:cell.label,flip:cell.flip},same=facts.filter(f=>f.tag===cell.concept&&f.context===contextRef);
+  if(same.length){for(const f of same)f.statementRow=statementRow;continue;}
+  const context=contexts.get(contextRef),currency=units.get(fact.unitRef??''),value=Number(fact.numericValue);
+  if(!context||!currency||fact.numericValue===null||!Number.isFinite(value))continue;
+  facts.push({precision:fact.decimals==='INF'?Number.MAX_SAFE_INTEGER:/^-?\d+$/.test(fact.decimals??'')?Number(fact.decimals):Number.MIN_SAFE_INTEGER,tag:cell.concept,value,currency,...context,context:contextRef,source,statementRow});
+ }
+ return {facts,issues};
 }
+/** A row equal to the sum of the rows directly above it is an unlabelled subtotal; it is dropped only when that makes the lines reconcile. */
+function reconcile<T extends {value:number}>(items:T[],total:number):T[]|null{
+ const sum=(rows:T[])=>rows.reduce((n,r)=>n+r.value,0);if(near(sum(items),total))return items;
+ const kept:T[]=[];let runStart=0;
+ for(const item of items){let subtotal=false;for(let j=runStart;j<=kept.length-2&&!subtotal;j++)subtotal=near(sum(kept.slice(j)),item.value);if(subtotal)runStart=kept.length;else kept.push(item);}
+ return near(sum(kept),total)?kept:null;
+}
+const expenseGroup=(f:Fact):'research'|'sales'|'administration'|'other'=>{const name=local(f.tag),label=f.statementRow?.label??'';
+ return /^ResearchAndDevelopmentExpense/.test(name)||/^research and development$/i.test(label)?'research'
+  :/^(?:SellingAndMarketingExpense|SellingExpense|MarketingExpense)$/.test(name)||/^(?:(?:sales|selling) and marketing|selling|marketing)$/i.test(label)?'sales'
+  :name==='GeneralAndAdministrativeExpense'||/^general and administrative$/i.test(label)?'administration':'other';};
 function extractGenericQuarters(html:string,source:DocumentSource,supplemental:Fact[]=[],reviewVerified=false):{quarters:BusinessFlowQuarter[];issues:string[]}{
  const issues:string[]=[];if(html.length>12000000)return {quarters:[],issues:['DOCUMENT_TOO_LARGE']};
  if(!reviewVerified&&needsRestatementReview(html))issues.push('RESTATEMENT_REVIEW_REQUIRED');
@@ -57,7 +84,23 @@ function extractGenericQuarters(html:string,source:DocumentSource,supplemental:F
   let matching=[...axes.entries()].filter(([,group])=>figures.revenue&&near([...group.values()].reduce((sum,f)=>sum+f.value,0)+(elimination?.value??0),value('revenue')!)).map(([axis,group])=>({axis,group}));const detailed=matching.filter(m=>m.group.size>1);if(detailed.length)matching=detailed;const business=matching.filter(m=>local(m.axis.split('|')[0])==='StatementBusinessSegmentsAxis');if(business.length)matching=business;let segments:BusinessSegment[]=[];
   if(matching.length>1)issues.push('AMBIGUOUS_REVENUE_AXIS');else if(matching.length===1)segments=[...matching[0].group].map(([member,f])=>({id:member,name:local(member).replace(/Member$/,''),revenue:{...amount(f,'segment:'+member),comparabilityKey:f.tag.startsWith('table:')?'table-segment:'+source.accession+':'+member+':'+f.tag:/^\d{4}$/.test(fiscalFocus)?'deterministic-sec-segment:'+fiscalFocus+':'+member+':'+f.tag:null},description:'财报实际披露的部门或产品服务类别；标签名称保留原披露，不自动推定产品或客户。',products:[],customers:null,monetization:null,disclosure:revenueAdjustments.length?'分部收入含内部交易；抵销单独列示，不分摊到部门，也不把合并费用分摊到部门。':'收入来自财报部门维度，不把合并费用分摊到部门。',sourceIds:[source.accession]}));// Non-reconciling department/management revenue is not substituted for GAAP consolidated revenue.
 
-  const expenses=financialExpenses;const combinedSalesAdministration=select(['SellingGeneralAndAdministrativeExpense','GainLossOnInvestments','IncomeLossFromEquityMethodInvestments']);const disclosedOperating=['research','sales','administration'].map(k=>({id:k,name:k==='research'?'研发':k==='sales'?'销售与营销':'行政',group:k as 'research'|'sales'|'administration',amount:figures[k as FlowMetric]})).filter((c):c is typeof c & {amount:FlowAmount}=>!!c.amount);if(!expenses.length&&figures.research&&combinedSalesAdministration&&figures.operatingExpenses&&near(Number(figures.research.value)+combinedSalesAdministration.value,Number(figures.operatingExpenses.value))){expenses.push({id:'research',name:'研发',group:'research',amount:figures.research},{id:'sales-general-administration',name:'销售与行政（合并披露）',group:'other',amount:amount(combinedSalesAdministration,'sales-general-administration')});}if(!expenses.length&&disclosedOperating.length===3&&figures.operatingExpenses&&near(disclosedOperating.reduce((sum,c)=>sum+Number(c.amount.value),0),Number(figures.operatingExpenses.value)))expenses.push(...disclosedOperating);if(!expenses.length&&figures.operatingExpenses)expenses.push({id:'reported-expense-total',name:'财报成本费用合计',group:'other' as const,amount:figures.operatingExpenses});
+  const expenses=financialExpenses;
+  // Operating expense lines printed between cost of revenue (or gross profit) and operating income, used only when they add up to the operating expense total.
+  const statementExpenses=():typeof expenses=>{
+   if(model!=='standard'||!figures.operatingExpenses)return [];
+   const operatingRow=facts.find(f=>f.statementRow&&local(f.tag)==='OperatingIncomeLoss'&&!Object.keys(f.dimensions).length);if(!operatingRow)return [];
+   const byOrder=new Map<number,Fact>();
+   for(const f of facts){if(!f.statementRow||f.source.url!==operatingRow.source.url)continue;const old=byOrder.get(f.statementRow.order);if(old&&(old.tag!==f.tag||old.value!==f.value))return [];if(!old||f.precision>old.precision)byOrder.set(f.statementRow.order,f);}
+   const rows=[...byOrder].sort((a,b)=>a[0]-b[0]).map(([,f])=>f),end=rows.findIndex(f=>local(f.tag)==='OperatingIncomeLoss');
+   const start=rows.slice(0,end).findLastIndex(f=>[...tags.cost!,...tags.gross!].includes(local(f.tag))&&!Object.keys(f.dimensions).length);if(start<0)return [];
+   const lines=rows.slice(start+1,end).filter(f=>!['OperatingExpenses','CostsAndExpenses'].includes(local(f.tag))&&!/^total\b/i.test(f.statementRow!.label)).map(fact=>({fact,value:fact.statementRow!.flip?-fact.value:fact.value}));
+   // Statements that print expenses as deductions reconcile with the opposite orientation.
+   const kept=[1,-1].map(sign=>reconcile(lines.map(l=>({...l,value:l.value*sign})),Number(figures.operatingExpenses!.value))).find(k=>k?.length);if(!kept)return [];
+   const seen=new Map<string,number>();
+   return kept.filter(l=>l.value!==0).map(({fact,value})=>{const base=local(fact.tag),count=(seen.get(base)??0)+1;seen.set(base,count);const id=count>1?`${base}~${count}`:base;return {id,name:fact.statementRow!.label||base,group:expenseGroup(fact),amount:{...amount(fact,'expense:'+id),value:String(value)}};});
+  };
+  if(!expenses.length){const lines=statementExpenses();if(lines.length){expenses.push(...lines);for(const key of ['research','sales','administration'] as const){const matches=lines.filter(c=>c.group===key);if(matches.length===1)figures[key]=matches[0].amount;else delete figures[key];}}}
+  const combinedSalesAdministration=select(['SellingGeneralAndAdministrativeExpense','GainLossOnInvestments','IncomeLossFromEquityMethodInvestments']);const disclosedOperating=['research','sales','administration'].map(k=>({id:k,name:k==='research'?'研发':k==='sales'?'销售与营销':'行政',group:k as 'research'|'sales'|'administration',amount:figures[k as FlowMetric]})).filter((c):c is typeof c & {amount:FlowAmount}=>!!c.amount);if(!expenses.length&&figures.research&&combinedSalesAdministration&&figures.operatingExpenses&&near(Number(figures.research.value)+combinedSalesAdministration.value,Number(figures.operatingExpenses.value))){expenses.push({id:'research',name:'研发',group:'research',amount:figures.research},{id:'sales-general-administration',name:'销售与行政（合并披露）',group:'other',amount:amount(combinedSalesAdministration,'sales-general-administration')});}if(!expenses.length&&disclosedOperating.length===3&&figures.operatingExpenses&&near(disclosedOperating.reduce((sum,c)=>sum+Number(c.amount.value),0),Number(figures.operatingExpenses.value)))expenses.push(...disclosedOperating);if(!expenses.length&&figures.operatingExpenses)expenses.push({id:'reported-expense-total',name:'财报成本费用合计',group:'other' as const,amount:figures.operatingExpenses});
   let q:BusinessFlowQuarter={id:end,label:`截至 ${end} 的三个月`,periodStart:start,periodEnd:end,periodType:'3M',currency,scale:1,basisLabel:source.industry==='insurance'?'SEC 保险及综合业务披露 · 投资与权益法损益单列 · 净利润含少数股东权益':'SEC 财报各期原披露口径 · 确定性提取 · 跨财年部门比较未核验',reportedAt:source.filedAt,figures,segments,segmentsComplete:segments.length>0,...(facts.some(f=>f.source.singleSegment)?{segmentDisclosure:'single_reportable_segment' as const}:{}),...(segments.length&&revenueAdjustments.length?{revenueAdjustments}:{}),expenseComponents:expenses,otherComponents:figures.other?[{id:'reported-net-other',name:'非营业净损益（合计）',amount:figures.other}]:[],incomeModel:model,sources:[...new Map(facts.flatMap(f=>f.operands??[f]).map(f=>[f.source.accession,{id:f.source.accession,title:'SEC 财报 '+f.source.accession,url:f.source.url,publishedAt:f.source.filedAt}])).values()]};
   if(figures.net?.lineage?.every(l=>local(l.concept)==='IncomeLossFromContinuingOperations'))q.basisLabel+=' · 利润为持续经营口径（不含终止经营）';
   if(!figures.revenue)continue;

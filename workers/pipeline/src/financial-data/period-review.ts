@@ -22,7 +22,8 @@ export function reviewedCurrentPair(all:Fact[],expected:string,documents:Array<{
  // Oracle has an established disclosure-specific expense and revenue profile.
  if(all[0]?.source.cik==='0001341439')return {quarters:[],reviewed:false};
  const facts=precisionSelect(all);if(!facts)return {quarters:[],reviewed:false};
- const usable=facts.filter(f=>Object.keys(f.dimensions).every(a=>['StatementBusinessSegmentsAxis','ProductOrServiceAxis','ConsolidationItemsAxis'].includes(a.split(':').at(-1)!)));
+ // A face-statement line may be tagged with a member; its printed row still belongs to the statement.
+ const usable=facts.filter(f=>f.statementRow||Object.keys(f.dimensions).every(a=>['StatementBusinessSegmentsAxis','ProductOrServiceAxis','ConsolidationItemsAxis'].includes(a.split(':').at(-1)!)));
  const current=usable.filter(f=>f.end===expected&&days(f.start,f.end)>=70&&days(f.start,f.end)<=110);
  let quarterFacts=current;
  // Q4 is FY minus nine months, using the exact same monetary concept, currency and dimensions.
