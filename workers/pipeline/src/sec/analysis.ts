@@ -20,6 +20,7 @@ export const SEC_CANONICAL_SERIES_IDS = [
   "cash",
   "debt",
   "shares",
+  "rpo",
 ] as const;
 
 export type SecCanonicalSeriesId = typeof SEC_CANONICAL_SERIES_IDS[number];

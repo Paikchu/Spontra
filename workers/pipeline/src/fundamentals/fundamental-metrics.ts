@@ -23,7 +23,8 @@ export type FundamentalDisplaySign = "as_reported" | "outflow_magnitude";
 
 type ReportedMetricDefinition = {
   basis: "reported";
-  yahooField: string;
+  /** Null for a metric only SEC XBRL reports; Yahoo has no field for it. */
+  yahooField: string | null;
   label: string;
   shortLabel: string;
   category: Exclude<FundamentalMetricCategory, "ratio">;
@@ -66,6 +67,7 @@ const reportedMetrics = {
   depreciation_and_amortization: { ...sharedCatalog.depreciation_and_amortization, yahooField: "quarterlyDepreciationAndAmortization" },
   research_and_development: { ...sharedCatalog.research_and_development, yahooField: "quarterlyResearchAndDevelopment" },
   cash_and_cash_equivalents: { ...sharedCatalog.cash_and_cash_equivalents, yahooField: "quarterlyCashAndCashEquivalents" },
+  remaining_performance_obligation: { ...sharedCatalog.remaining_performance_obligation, yahooField: null },
   long_term_debt: { ...sharedCatalog.long_term_debt, yahooField: "quarterlyLongTermDebt" },
   total_assets: { ...sharedCatalog.total_assets, yahooField: "quarterlyTotalAssets" },
   total_liabilities: { ...sharedCatalog.total_liabilities, yahooField: "quarterlyTotalLiabilitiesNetMinorityInterest" },
@@ -95,7 +97,7 @@ export const FUNDAMENTAL_METRIC_CATALOG = Object.freeze({
 });
 
 export type FundamentalMetricKey = keyof typeof FUNDAMENTAL_METRIC_CATALOG;
-export type YahooQuarterlyFundamentalField = (typeof reportedMetrics)[keyof typeof reportedMetrics]["yahooField"];
+export type YahooQuarterlyFundamentalField = Exclude<(typeof reportedMetrics)[keyof typeof reportedMetrics]["yahooField"], null>;
 export type FundamentalMetricDefinition = (typeof FUNDAMENTAL_METRIC_CATALOG)[FundamentalMetricKey];
 
 const metricKeys = new Set<string>(Object.keys(FUNDAMENTAL_METRIC_CATALOG));
@@ -114,6 +116,7 @@ for (const [metricKey, definition] of Object.entries(FUNDAMENTAL_METRIC_CATALOG)
     }
     continue;
   }
+  if (definition.yahooField === null) continue;
   if (yahooFieldToMetric.has(definition.yahooField)) {
     throw new Error(`Duplicate Yahoo fundamental field: ${definition.yahooField}`);
   }

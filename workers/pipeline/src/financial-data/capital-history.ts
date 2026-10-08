@@ -19,17 +19,19 @@ const storedTables = (record: StoredAudit) => Boolean(record.statementsKey) && r
 async function projectArchived(record: StoredAudit, archive: ReportArchive, ticker: string): Promise<CapitalFiling | null> {
   const json = async <T>(key: string | undefined) => { const object = key ? await archive.get(key) : null; return object ? JSON.parse(await object.text()) as T : null; };
   let statements = storedTables(record) ? await json<FinancialStatements>(record.statementsKey) : null;
+  // The revenue note (RPO) is read from the archived fact inventory, which the statement tables do not carry.
+  let disclosures = record.parserVersion === DISCLOSURE_EXTRACTION_VERSION ? await json<FilingDisclosures>(record.inventoryKey) : null;
   if (!statements) {
     const raw = await archive.get(record.rawKey);
     if (!raw) return null;
     const html = await raw.text();
     if (new TextEncoder().encode(html).byteLength !== record.sourceBytes) return null;
-    const stored = record.parserVersion === DISCLOSURE_EXTRACTION_VERSION ? await json<FilingDisclosures>(record.inventoryKey) : null;
-    statements = extractFinancialStatements(html, stored ?? extractFilingDisclosures(html, record.source));
+    disclosures ??= extractFilingDisclosures(html, record.source);
+    statements = extractFinancialStatements(html, disclosures);
   }
   if (statements.source.ticker !== ticker || statements.source.documentUrl !== record.source.documentUrl) return null;
   const s = record.source;
-  return extractCapitalFiling(statements, { accession: s.accessionNumber, url: s.documentUrl, filedAt: s.filedAt, form: s.form });
+  return extractCapitalFiling(statements, { accession: s.accessionNumber, url: s.documentUrl, filedAt: s.filedAt, form: s.form }, disclosures);
 }
 
 /**
@@ -77,7 +79,7 @@ export async function readArchivedCapital(db: D1Database, archive: ReportArchive
       if (!storedTables(record)) reparsed += record.sourceBytes;
       filing = await projectArchived(record, archive, flow.ticker).catch(() => null);
     }
-    const end = filing?.cashFlow?.periodEnd ?? filing?.balanceSheet?.asOf;
+    const end = filing?.cashFlow?.periodEnd ?? filing?.balanceSheet?.asOf ?? filing?.rpo?.asOf;
     if (!filing || !end || end > latest.periodEnd || covered.has(end)) continue;
     filings.push(filing);
     covered.add(record.source.reportDate).add(end);

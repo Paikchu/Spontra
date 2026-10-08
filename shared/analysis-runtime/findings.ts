@@ -3,13 +3,13 @@ import { FLOW_METRICS, type BusinessFlowQuarter, type FlowMetric } from "../anal
 import { FUNDAMENTAL_METRIC_CATALOG } from "../analysis-contract/fundamental-metric-catalog.ts";
 import type { FundamentalMetricKey, PublicFundamentalPoint, PublicFundamentalSeries } from "../analysis-contract/fundamentals.ts";
 import type { AnalysisFinding, CapitalMetric, FindingBaseRef, FindingEvidence, FindingRef, FindingSpan, FindingWatch, FindingsPublication } from "../analysis-contract/findings.ts";
-import type { CashFlowStatement, PublicCapitalStructure } from "../analysis-contract/capital-structure.ts";
+import type { CashFlowStatement, PublicCapitalStructure, RpoDisclosure } from "../analysis-contract/capital-structure.ts";
 import type { GuidanceItem, GuidancePublication } from "../analysis-contract/guidance.ts";
 import type { RevenueHistory, RevenueHistoryNode } from "../analysis-contract/revenue-history.ts";
 
 /* ---------- Schema ---------- */
 
-export const CAPITAL_METRICS = ["operatingCashFlow", "capex", "freeCashFlow", "financing", "debtIssued", "debtRepaid", "equityIssued", "buybacks", "dividends", "totalAssets", "debt", "cash", "equity"] as const satisfies readonly CapitalMetric[];
+export const CAPITAL_METRICS = ["operatingCashFlow", "capex", "freeCashFlow", "financing", "debtIssued", "debtRepaid", "equityIssued", "buybacks", "dividends", "totalAssets", "debt", "cash", "equity", "rpo", "rpoNext12MonthsShare"] as const satisfies readonly CapitalMetric[];
 const FUNDAMENTAL_KEYS = Object.keys(FUNDAMENTAL_METRIC_CATALOG) as [FundamentalMetricKey, ...FundamentalMetricKey[]];
 
 const text = (max: number) => z.string().trim().min(1).max(max);
@@ -31,6 +31,7 @@ const lens = z.discriminatedUnion("type", [
   z.object({ type: z.literal("trend"), refs: z.array(ref).min(1).max(4), span, rate: z.enum(["yoy", "qoq"]).optional() }),
   z.object({ type: z.literal("compare_bars"), refs: z.array(ref).min(1).max(4), span }),
   z.object({ type: z.literal("share_area"), nodeIds: z.array(text(200)).min(1).max(6) }),
+  z.object({ type: z.literal("ladder") }),
 ]);
 const finding = z.object({
   id: text(80), kind: z.enum(["risk", "strength", "shift", "watch"]), severity: z.union([z.literal(1), z.literal(2), z.literal(3)]),
@@ -178,6 +179,13 @@ function nodeAt(data: FindingData, id: string, periodEnd: string): Point | null 
 }
 
 const BALANCE: CapitalMetric[] = ["totalAssets", "debt", "cash", "equity"];
+
+/** The bucket covering the first twelve months after the period end, by its tagged length or its start date. */
+export function rpoNextYearShare(rpo: RpoDisclosure): number | null {
+  const soon = (b: { start: string | null }) => !b.start || monthIndex(b.start) - monthIndex(rpo.asOf) <= 1;
+  const bucket = rpo.buckets.find(b => b.months === 12 && soon(b)) ?? rpo.buckets.find(b => b.months == null && b.start != null && soon(b));
+  return bucket?.share != null ? Number(bucket.share) * 100 : null;
+}
 function cashMetric(c: CashFlowStatement, metric: CapitalMetric): number | null {
   const lines = (section: "investing" | "financing", group: string) => { const l = c[section].lines; return l ? sum(l.filter(line => line.group === group)) : null; };
   const operating = Number(c.operating.total), capex = lines("investing", "capex");
@@ -196,6 +204,12 @@ function cashMetric(c: CashFlowStatement, metric: CapitalMetric): number | null 
 }
 function capitalAt(data: FindingData, metric: CapitalMetric, periodEnd: string, span: FindingSpan): Point | null {
   const quarters = data.capital?.quarters ?? [];
+  if (metric === "rpo" || metric === "rpoNext12MonthsShare") {
+    const rpo = quarters.find(q => near(q.periodEnd, periodEnd))?.rpo;
+    if (!rpo) return null;
+    const value = metric === "rpo" ? Number(rpo.total) : rpoNextYearShare(rpo);
+    return value == null ? null : { value, periodStart: null, periodEnd: rpo.asOf, currency: metric === "rpo" ? rpo.currency : null, accessions: [rpo.source.accession] };
+  }
   if (BALANCE.includes(metric)) {
     const b = quarters.find(q => near(q.periodEnd, periodEnd))?.balanceSheet;
     if (!b) return null;
@@ -243,7 +257,7 @@ export function resolveRef(data: FindingData, ref: FindingRef, periodEnd: string
   const amount = (p: Point | null, unit: ValueUnit = "USD"): ResolvedValue | null => p && { ...p, unit, span };
   if ("metric" in ref) return amount(overSpan(span, periodEnd, end => metricAt(data, ref.metric, end)));
   if ("nodeId" in ref) return amount(overSpan(span, periodEnd, end => nodeAt(data, ref.nodeId, end)));
-  if ("capital" in ref) return amount(capitalAt(data, ref.capital, periodEnd, span));
+  if ("capital" in ref) return amount(capitalAt(data, ref.capital, periodEnd, span), ref.capital === "rpoNext12MonthsShare" ? "percent" : "USD");
   if ("fundamental" in ref) { const r = fundamentalAt(data, ref.fundamental, periodEnd, span); return r && amount(r.point, r.unit); }
   const item = data.guidance?.items.find(i => i.id === ref.guidanceId);
   return item ? guidanceValue(item, span) : null;
@@ -251,7 +265,7 @@ export function resolveRef(data: FindingData, ref: FindingRef, periodEnd: string
 
 const METRIC_LABEL: Record<FlowMetric, string> = { revenue: "总收入", cost: "营业成本", gross: "毛利", research: "研发费用", sales: "销售费用", administration: "管理费用", operatingExpenses: "营业费用", operating: "营业利润", other: "非营业损益", pretax: "税前利润", tax: "所得税", net: "净利润" };
 const GUIDANCE_LABEL: Record<GuidanceItem["metric"], string> = { revenue: "收入", segment_revenue: "收入", gross_margin: "毛利率", operating_margin: "营业利润率", operating_income: "营业利润", eps: "EPS", free_cash_flow: "自由现金流", operating_cash_flow: "经营现金流", capex: "资本开支", rpo: "RPO", billings: "Billings", other: "" };
-const CAPITAL_LABEL: Record<CapitalMetric, string> = { operatingCashFlow: "经营现金流", capex: "资本开支", freeCashFlow: "自由现金流", financing: "融资活动净额", debtIssued: "新增借款", debtRepaid: "偿还借款", equityIssued: "发行股票", buybacks: "股票回购", dividends: "分红", totalAssets: "总资产", debt: "有息债务", cash: "现金与短期投资", equity: "股东权益" };
+const CAPITAL_LABEL: Record<CapitalMetric, string> = { operatingCashFlow: "经营现金流", capex: "资本开支", freeCashFlow: "自由现金流", financing: "融资活动净额", debtIssued: "新增借款", debtRepaid: "偿还借款", equityIssued: "发行股票", buybacks: "股票回购", dividends: "分红", totalAssets: "总资产", debt: "有息债务", cash: "现金与短期投资", equity: "股东权益", rpo: "剩余履约义务 (RPO)", rpoNext12MonthsShare: "RPO 未来 12 个月确认比例" };
 
 /** Human label of a reference; a business node reads by its disclosed name when the data has it. */
 export function refLabel(data: FindingData, ref: FindingRef): string {
@@ -376,6 +390,7 @@ export function verifyFindings(publication: FindingsPublication, data: FindingDa
     }
     for (const m of f.anchors.metrics) if (!quarter || finite(quarter.figures[m]?.value) == null) reasons.push(`anchor metric ${m} absent`);
     if (data.capital) for (const c of f.anchors.capital ?? []) if (!capitalAt(data, c, periodEnd, "quarter") && !capitalAt(data, c, periodEnd, "fiscal_year")) reasons.push(`anchor capital ${c} absent`);
+    if (f.lens.type === "ladder" && !data.capital?.quarters.some(q => q.rpo)) reasons.push("ladder lens without RPO");
     const candidates = resolved.flatMap(r => r ? evidenceCandidates(r) : []);
     for (const n of proseNumbers(`${f.title} ${f.judgment.text}`)) if (!numberSupported(n, candidates)) reasons.push(`number ${n} unsupported`);
     if (reasons.length) withheld.push({ id: f.id, reasons });

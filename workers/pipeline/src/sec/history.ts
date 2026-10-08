@@ -1,6 +1,6 @@
 import { hashString, type HistoricalObservation, type SecCanonicalSeriesId, type SecHistorySnapshot } from "./analysis.ts";
 
-export const COMPANY_FACTS_REGISTRY_VERSION = "sec-canonical-series.v2";
+export const COMPANY_FACTS_REGISTRY_VERSION = "sec-canonical-series.v3";
 
 type RegistryEntry = {
   seriesId: SecCanonicalSeriesId;
@@ -20,6 +20,8 @@ export const SEC_CANONICAL_SERIES_REGISTRY: RegistryEntry[] = [
   { seriesId: "cash", concepts: ["CashAndCashEquivalentsAtCarryingValue", "CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents"] },
   { seriesId: "debt", concepts: ["LongTermDebtAndFinanceLeaseObligations", "LongTermDebt", "DebtAndFinanceLeaseObligations"] },
   { seriesId: "shares", concepts: ["CommonStockSharesOutstanding", "WeightedAverageNumberOfDilutedSharesOutstanding"] },
+  // Remaining performance obligations: contracted revenue not yet recognised, an instant disclosed in the revenue note.
+  { seriesId: "rpo", concepts: ["RevenueRemainingPerformanceObligation"] },
 ];
 
 /** A duration fact that covers more than one quarter, kept only long enough to be differenced. */

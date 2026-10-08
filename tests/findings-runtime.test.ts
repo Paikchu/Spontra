@@ -38,9 +38,11 @@ const statement = (start: string, end: string, operating: number, capex: number,
   fxEffect: null, netChange: "0", supplemental: [], sources: [{ accession: "0001", url: "https://www.sec.gov/x", filedAt: end, form: "10-K" }],
 });
 const balance = (asOf: string, assets: number) => ({ asOf, currency: "USD", assets: [], liabilities: [], equity: [], totals: { assets: String(assets * 1e6), liabilities: "0", equity: "0", currentAssets: null, currentLiabilities: null }, source: { accession: "0001", url: "https://www.sec.gov/x", filedAt: asOf, form: "10-K" } });
+const rpo = (asOf: string, total: number, buckets: Array<[string, number | null, string]>) => ({ asOf, currency: "USD", total: String(total * 1e6), buckets: buckets.map(([start, months, share]) => ({ start, months, share, amount: null })), source: { accession: "0001", url: "https://www.sec.gov/x", filedAt: asOf, form: "10-K" } });
 const capital: PublicCapitalStructure = { schemaVersion: "capital-structure.v1", ticker: "ORCL", quarters: [
-  { periodEnd: "2026-05-31", balanceSheet: balance("2026-05-31", 261759), cashFlow: null, yearToDate: statement("2025-06-01", "2026-05-31", 31977, 55663, 46093) },
-  { periodEnd: "2025-05-31", balanceSheet: balance("2025-05-31", 168361), cashFlow: null, yearToDate: statement("2024-06-01", "2025-05-31", 20821, 21215, 21437) },
+  { periodEnd: "2026-08-31", rpo: rpo("2026-08-31", 664000, [["2026-09-01", 12, "0.13"]]), balanceSheet: null, cashFlow: null, yearToDate: null },
+  { periodEnd: "2026-05-31", rpo: rpo("2026-05-31", 638000, [["2026-06-01", 12, "0.12"], ["2027-06-01", 24, "0.34"], ["2029-06-01", 24, "0.34"]]), balanceSheet: balance("2026-05-31", 261759), cashFlow: null, yearToDate: statement("2025-06-01", "2026-05-31", 31977, 55663, 46093) },
+  { periodEnd: "2025-05-31", rpo: rpo("2025-05-31", 137800, []), balanceSheet: balance("2025-05-31", 168361), cashFlow: null, yearToDate: statement("2024-06-01", "2025-05-31", 20821, 21215, 21437) },
 ] };
 const guidanceItem = (id: string, metric: GuidancePublication["items"][number]["metric"], low: number, high: number, unit: "USD" | "percent", segment: string | null = null, measure: "amount" | "growth" = "amount") => ({
   id, metric, measure, segment, label: metric, basis: "gaap" as const, horizon: "annual" as const, form: "point" as const, fiscalYear: 2026, fiscalQuarter: null, periodEnd: "2026-05-31", unit, low, high, direction: null, derived: null, actual: null, text: "", quote: "", sourceIds: ["m"], issuedAt: "2026-03-10", action: null, previous: null,
@@ -75,7 +77,12 @@ test("the authored Oracle findings verify against the statements, with every wri
   assert.ok(publication);
   const { verified, withheld } = verifyFindings(publication, data);
   assert.deepEqual(withheld, []);
-  assert.deepEqual(verified.map(f => f.id), ["capex-fcf", "cloud-engine", "growth-acceleration", "fy27-outlook", "legacy-shrink"]);
+  assert.deepEqual(verified.map(f => f.id), ["capex-fcf", "cloud-engine", "growth-acceleration", "rpo-backlog", "fy27-outlook", "legacy-shrink"]);
+  // RPO: the total compared a year earlier, and the share tagged for the first twelve months.
+  const backlog = verified.find(f => f.id === "rpo-backlog")!;
+  assert.equal(Math.round(backlog.resolved[0].delta!), 363);
+  assert.deepEqual([backlog.resolved[1].current.value, backlog.resolved[1].current.unit], [12, "percent"]);
+  assert.equal(backlog.watchOutcome?.resolved.current.value, 664000e6);
   const capex = verified[0].resolved[0];
   assert.equal(capex.guidance?.verdict, "above");
   assert.equal(Math.round(verified[0].resolved[1].ratio! * 10) / 10, 2.6);
@@ -115,6 +122,9 @@ test("a finding whose numbers, businesses or metrics the data does not support i
   assert.ok(noGuidance.withheld.some(w => w.id === "capex-fcf" && w.reasons.some(r => /unresolved/.test(r))));
   // Without capital the cash-flow finding cannot be shown; the revenue findings still can.
   assert.deepEqual(verifyFindings(publication, { ...data, capital: null }).verified.map(f => f.id), ["cloud-engine", "growth-acceleration", "fy27-outlook", "legacy-shrink"]);
+  // Capital archived before RPO was read carries no rpo field: the backlog finding waits rather than guessing.
+  const noRpo = { ...data, capital: { ...capital, quarters: capital.quarters.map(({ rpo: _, ...q }) => { void _; return q; }) } };
+  assert.ok(verifyFindings(publication, noRpo).withheld.some(w => w.id === "rpo-backlog"));
 });
 
 test("the reader strips unknown fields, drops uncited findings and dangling pairs, and rejects other tickers", () => {
@@ -124,7 +134,7 @@ test("the reader strips unknown fields, drops uncited findings and dangling pair
   polluted.findings[1].judgment.sourceIds = ["nowhere"];
   const read = readFindingsPublication(polluted, "ORCL")!;
   assert.ok(!JSON.stringify(read).includes("PRIVATE"));
-  assert.deepEqual(read.findings.map(f => f.id), ["capex-fcf", "growth-acceleration", "legacy-shrink", "fy27-outlook"]);
+  assert.deepEqual(read.findings.map(f => f.id), ["capex-fcf", "rpo-backlog", "growth-acceleration", "legacy-shrink", "fy27-outlook"]);
   assert.equal(read.findings[0].pairWith, undefined);
   assert.equal(readFindingsPublication(ORCL_FINDINGS, "MSFT"), null);
   assert.equal(readFindingsPublication({ ...ORCL_FINDINGS, findings: [] }, "ORCL"), null);

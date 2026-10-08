@@ -3,7 +3,8 @@ import type { CapitalMetric, FindingLens, FindingRef, FindingSpan, FindingsPubli
 import type { PublicCapitalStructure } from "@/shared/analysis-contract/capital-structure";
 import type { GuidancePublication } from "@/shared/analysis-contract/guidance";
 import type { RevenueHistory } from "@/shared/analysis-contract/revenue-history";
-import { refLabel, resolveRef, shiftPeriod, verifyFindings, type FindingData, type FindingFundamentals, type ResolvedValue, type VerifiedFinding } from "@/shared/analysis-runtime/findings";
+import { refLabel, resolveRef, rpoNextYearShare, shiftPeriod, verifyFindings, type FindingData, type FindingFundamentals, type ResolvedValue, type VerifiedFinding } from "@/shared/analysis-runtime/findings";
+import type { RpoDisclosure } from "@/shared/analysis-contract/capital-structure";
 
 export type { VerifiedFinding };
 
@@ -107,3 +108,25 @@ export function lensShares(lens: Extract<FindingLens, { type: "share_area" }>, p
 }
 
 export const metricLabel = (metric: FlowMetric, data: FindingData) => refLabel(data, { metric });
+
+/** One rung of the conversion ladder: the share (and amount, when tagged) expected within a span of months after the period end. */
+export type LadderStep = { from: number; to: number | null; share: number | null; amount: number | null };
+export type LensLadder = { columns: LensColumns; latest: { asOf: string; total: number; currency: string; nextYear: number | null; steps: LadderStep[]; remainder: number | null } | null };
+
+const monthsBetween = (a: string, b: string) => (Number(b.slice(0, 4)) - Number(a.slice(0, 4))) * 12 + Number(b.slice(5, 7)) - Number(a.slice(5, 7));
+
+/** RPO over the recent quarters, and for the finding's report how it is expected to convert over time, as the issuer tagged it. */
+export function lensLadder(periodEnd: string, data: FindingData): LensLadder {
+  const columns = lensColumns({ type: "trend", refs: [{ capital: "rpo" }], span: "quarter", rate: "yoy" }, periodEnd, data);
+  const rpo: RpoDisclosure | null | undefined = data.capital?.quarters.find(q => Math.abs(Date.parse(q.periodEnd) - Date.parse(periodEnd)) <= 20 * 86_400_000)?.rpo;
+  if (!rpo) return { columns, latest: null };
+  const total = Number(rpo.total);
+  const steps = rpo.buckets.map((b): LadderStep => {
+    // A bucket starts the month after the period end unless its start says otherwise; its end is its tagged length later.
+    const from = b.start ? Math.max(0, monthsBetween(rpo.asOf, b.start) - 1) : 0;
+    const share = b.share != null ? Number(b.share) * 100 : b.amount != null && total ? Number(b.amount) / total * 100 : null;
+    return { from, to: b.months == null ? null : from + b.months, share, amount: b.amount != null ? Number(b.amount) : share != null ? total * share / 100 : null };
+  }).sort((a, b) => a.from - b.from);
+  const covered = steps.every(s => s.share != null) ? steps.reduce((sum, s) => sum + s.share!, 0) : null;
+  return { columns, latest: { asOf: rpo.asOf, total, currency: rpo.currency, nextYear: rpoNextYearShare(rpo), steps, remainder: covered != null && covered < 99.5 ? 100 - covered : null } };
+}

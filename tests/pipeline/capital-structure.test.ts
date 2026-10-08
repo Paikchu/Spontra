@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { SqliteD1Database } from "./helpers/sqlite-d1.ts";
 import { extractFilingDisclosures } from "../../shared/analysis-runtime/financial-data/disclosure-extraction.ts";
 import { extractFinancialStatements } from "../../shared/analysis-runtime/financial-data/financial-statements.ts";
-import { buildCapitalQuarters, CAPITAL_VERSION, extractCapitalFiling, readCapitalStructure } from "../../shared/analysis-runtime/financial-data/capital-structure.ts";
+import { buildCapitalQuarters, CAPITAL_VERSION, extractCapitalFiling, extractRpo, readCapitalStructure, timingMonths } from "../../shared/analysis-runtime/financial-data/capital-structure.ts";
 import { archiveFilingDisclosures, listFilingDisclosureAudits } from "../../workers/pipeline/src/financial-data/disclosure-audit.ts";
 import { readArchivedCapital } from "../../workers/pipeline/src/financial-data/capital-history.ts";
 import type { PublicBusinessFlow } from "../../shared/analysis-contract/business-flow.ts";
@@ -291,4 +291,42 @@ test("a share-class caption hundreds of characters long is shortened, so the sta
   assert.equal(filing.balanceSheet!.equity[1].label, "Ordinary shares");
   const read = readCapitalStructure({ schemaVersion: "capital-structure.v1", ticker: "NBIS", quarters: buildCapitalQuarters([filing]) }, "NBIS");
   assert.ok(read?.quarters[0].balanceSheet);
+});
+
+test("remaining performance obligations: the undimensioned instant is the total, typed start-date contexts are the rungs", () => {
+  const axis = "us-gaap:RevenueRemainingPerformanceObligationExpectedTimingOfSatisfactionStartDateAxis";
+  const typed = (id: string, start: string, instant: string) => `<xbrli:context id="${id}"><xbrli:entity><xbrli:identifier scheme="http://www.sec.gov/CIK">0001769628</xbrli:identifier><xbrli:segment><xbrldi:typedMember dimension="${axis}"><${axis}.domain>${start}</${axis}.domain></xbrldi:typedMember></xbrli:segment></xbrli:entity><xbrli:period><xbrli:instant>${instant}</xbrli:instant></xbrli:period></xbrli:context>`;
+  const html = `<html xmlns:ix="http://www.xbrl.org/2013/inlineXBRL" xmlns:xbrli="http://www.xbrl.org/2003/instance" xmlns:xbrldi="http://xbrl.org/2006/xbrldi" xmlns:us-gaap="http://fasb.org/us-gaap/2026" xmlns:iso4217="http://www.xbrl.org/2003/iso4217" xmlns:ixt="http://www.xbrl.org/inlineXBRL/transformation/2022-02-16" xmlns:ixt-sec="http://www.sec.gov/inlineXBRL/transformation/2015-08-31"><ix:header>
+    <xbrli:context id="now"><xbrli:entity><xbrli:identifier scheme="http://www.sec.gov/CIK">0001769628</xbrli:identifier></xbrli:entity><xbrli:period><xbrli:instant>2026-06-30</xbrli:instant></xbrli:period></xbrli:context>
+    <xbrli:context id="prior"><xbrli:entity><xbrli:identifier scheme="http://www.sec.gov/CIK">0001769628</xbrli:identifier></xbrli:entity><xbrli:period><xbrli:instant>2025-06-30</xbrli:instant></xbrli:period></xbrli:context>
+    ${typed("y1", "2026-07-01", "2026-06-30")}${typed("y2", "2027-07-01", "2026-06-30")}${typed("old", "2025-07-01", "2025-06-30")}
+    <xbrli:unit id="usd"><xbrli:measure>iso4217:USD</xbrli:measure></xbrli:unit><xbrli:unit id="pure"><xbrli:measure>xbrli:pure</xbrli:measure></xbrli:unit></ix:header>
+    <p>Remaining performance obligations were $<ix:nonFraction name="us-gaap:RevenueRemainingPerformanceObligation" contextRef="now" unitRef="usd" scale="9" decimals="-8" format="ixt:num-dot-decimal">2.6</ix:nonFraction> billion
+    (prior year $<ix:nonFraction name="us-gaap:RevenueRemainingPerformanceObligation" contextRef="prior" unitRef="usd" scale="9" decimals="-8" format="ixt:num-dot-decimal">1.1</ix:nonFraction> billion), of which
+    <ix:nonFraction name="us-gaap:RevenueRemainingPerformanceObligationPercentage" contextRef="y1" unitRef="pure" scale="-2" decimals="2" format="ixt:num-dot-decimal">40</ix:nonFraction>% within
+    <ix:nonNumeric name="us-gaap:RevenueRemainingPerformanceObligationExpectedTimingOfSatisfactionPeriod1" contextRef="y1" format="ixt-sec:durwordsen">twelve months</ix:nonNumeric> and
+    <ix:nonFraction name="us-gaap:RevenueRemainingPerformanceObligationPercentage" contextRef="y2" unitRef="pure" scale="-2" decimals="2" format="ixt:num-dot-decimal">35</ix:nonFraction>% in the following
+    <ix:nonNumeric name="us-gaap:RevenueRemainingPerformanceObligationExpectedTimingOfSatisfactionPeriod1" contextRef="y2">P2Y</ix:nonNumeric>;
+    <ix:nonFraction name="us-gaap:RevenueRemainingPerformanceObligationPercentage" contextRef="old" unitRef="pure" scale="-2" decimals="2" format="ixt:num-dot-decimal">50</ix:nonFraction>% a year ago.</p></html>`;
+  const source = { accession: "0000000000-26-000001", url: "https://www.sec.gov/Archives/edgar/data/1769628/000000000026000001/crwv-20260630.htm", filedAt: "2026-08-01", form: "10-Q" };
+  const disclosures = extractFilingDisclosures(html, { ticker: "CRWV", accessionNumber: source.accession, documentUrl: source.url, form: "10-Q", reportDate: "2026-06-30", filedAt: source.filedAt });
+  const rpo = extractRpo(disclosures, source)!;
+  assert.equal(rpo.asOf, "2026-06-30");
+  assert.equal(rpo.total, "2600000000");
+  assert.equal(rpo.currency, "USD");
+  // Only the latest instant's rungs; the words and the ISO duration both read as months; nothing is derived.
+  assert.deepEqual(rpo.buckets, [
+    { start: "2026-07-01", months: 12, share: "0.4", amount: null },
+    { start: "2027-07-01", months: 24, share: "0.35", amount: null },
+  ]);
+  assert.deepEqual([timingMonths("P12M"), timingMonths("P1Y"), timingMonths("Thirty-six months"), timingMonths("3 years"), timingMonths("soon")], [12, 12, 36, 36, null]);
+  const filing = extractCapitalFiling(extractFinancialStatements(html, disclosures), source, disclosures);
+  assert.equal(filing.rpo?.total, "2600000000");
+  const quarters = buildCapitalQuarters([filing]);
+  assert.equal(quarters[0].periodEnd, "2026-06-30");
+  assert.equal(quarters[0].rpo?.buckets.length, 2);
+  // The public reader keeps a well-formed disclosure at its own period end and drops one that is not.
+  const capital = { schemaVersion: "capital-structure.v1", ticker: "CRWV", quarters: [{ ...quarters[0], balanceSheet: null, cashFlow: null, yearToDate: null }, { periodEnd: "2026-03-31", rpo: { ...filing.rpo, asOf: "2026-06-30" }, balanceSheet: null, cashFlow: null, yearToDate: null }] };
+  const read = readCapitalStructure(JSON.parse(JSON.stringify(capital)), "CRWV")!;
+  assert.deepEqual(read.quarters.map(q => [q.periodEnd, q.rpo?.total ?? null]), [["2026-06-30", "2600000000"]]);
 });

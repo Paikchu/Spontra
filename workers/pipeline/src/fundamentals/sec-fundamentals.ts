@@ -13,7 +13,7 @@ const SERIES: Partial<Record<HistoricalObservation["seriesId"], FundamentalMetri
   revenue: "total_revenue", gross_profit: "gross_profit", operating_income: "operating_income",
   net_income: "net_income", diluted_eps: "diluted_eps", operating_cash_flow: "operating_cash_flow",
   capex: "capital_expenditure", free_cash_flow: "free_cash_flow", cash: "cash_and_cash_equivalents",
-  gross_margin: "gross_margin", operating_margin: "operating_margin",
+  gross_margin: "gross_margin", operating_margin: "operating_margin", rpo: "remaining_performance_obligation",
 };
 
 export async function getSecFundamentals(database: D1Like, query: FundamentalApiQuery): Promise<PublicFundamentalsResponse> {

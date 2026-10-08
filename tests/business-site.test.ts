@@ -146,7 +146,7 @@ test("findings and fundamentals are supplementary routes: re-validated, stripped
   if(url.includes("/fundamentals"))return Response.json({ticker:"ORCL",source:"sec_xbrl",status:"ready",refresh:{secret:"PRIVATE_REFRESH"},series:[{metricKey:"net_income",label:"净利润",category:"income_statement",unitFamily:"currency",currency:"USD",available:true,unit:"USD",points:[{periodEnd:"2026-05-31",valueDecimal:"4304000000",revision:1}]}]});
   return success(input,init);};
  const findings=await handle(request(endpoint+"/findings"),env,context,upstream);const body=await findings.text();
- assert.equal(findings.status,200);assert.ok(!body.includes("PRIVATE_"));assert.equal(JSON.parse(body).findings.findings.length,5);assert.equal(findings.headers.get("cache-control"),"public, max-age=60");
+ assert.equal(findings.status,200);assert.ok(!body.includes("PRIVATE_"));assert.equal(JSON.parse(body).findings.findings.length,6);assert.equal(findings.headers.get("cache-control"),"public, max-age=60");
  const fundamentals=await handle(request(endpoint+"/fundamentals"),env,context,upstream);const text=await fundamentals.text();
  assert.ok(!text.includes("PRIVATE_"));assert.deepEqual(Object.keys(JSON.parse(text).fundamentals),["series"]);assert.equal(JSON.parse(text).fundamentals.series[0].points[0].revision,undefined);
  assert.ok(seen.some(u=>u==="https://spontra-app.max-zhangyuchen.workers.dev/api/analysis/v1/companies/ORCL/fundamentals?periodCount=12"));

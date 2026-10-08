@@ -769,6 +769,20 @@ button { cursor: pointer; }
 .lens-col[data-current] .lens-period { color: var(--foreground); }
 .lens-period b { font-size: 10.5px; font-weight: 600; }
 
+/* RPO ladder: the balance over quarters above, and the rungs of its expected conversion below. */
+.lens-ladder { display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: 8px; min-height: 0; }
+.lens-ladder .lens-bars { min-height: 0; }
+.lens-rungs { display: grid; gap: 5px; font-size: 11.5px; color: var(--muted-foreground); }
+.lens-rungs-title { font-weight: 600; color: var(--foreground); }
+.lens-rungs-bar { display: flex; height: 10px; gap: 2px; border-radius: 5px; overflow: hidden; }
+.lens-rungs-bar i { display: block; flex-basis: 0; background: color-mix(in srgb, var(--flow-profit) calc(100% - var(--i) * 22%), var(--background)); animation: grow-x .6s var(--ease) both; animation-delay: calc(var(--i) * 80ms); }
+.lens-rungs-bar i.lens-rung--rest, .lens-rungs-legend i.lens-rung--rest { background: repeating-linear-gradient(135deg, var(--hairline) 0 3px, transparent 3px 6px); border: 1px solid var(--hairline); }
+.lens-rungs-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-variant-numeric: tabular-nums; }
+.lens-rungs-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.lens-rungs-legend i { width: 8px; height: 8px; border-radius: 2px; background: color-mix(in srgb, var(--flow-profit) calc(100% - var(--i) * 22%), var(--background)); }
+.lens-rungs-legend b { font-weight: 600; color: var(--foreground); }
+@keyframes grow-x { from { flex-grow: 0.001; } }
+
 /* Stacked shares: one area per business, the newest column's shares in the legend. */
 .lens-shares { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 6px; min-height: 0; }
 .lens-shares svg { width: 100%; height: 100%; min-height: 0; overflow: visible; }

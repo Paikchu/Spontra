@@ -70,6 +70,23 @@ export const ORCL_FINDINGS: FindingsPublication = {
       watch: { ref: { nodeId: "cloud" }, condition: "云收入同比增速是否继续加速，并落在管理层给出的 FY2027 Q1 云业务总收入增长 58% 至 64% 的指引内", horizon: "next_quarter", compare: { guidanceId: "segment_revenue|growth|total-cloud-revenue|quarter|2027|1||gaap|0001193125-26-265848" } },
     },
     {
+      id: "rpo-backlog",
+      kind: "shift",
+      severity: 2,
+      title: "RPO 6380 亿，远期能见度极强",
+      judgment: {
+        text: "剩余履约义务从一年前的 1378 亿美元增至 6380 亿美元，同比增长 363%，主要来自大型 AI 客户的多年合同。其中 12% 预计在未来 12 个月内确认为收入，其余要在一年之后陆续兑现。远期收入能见度极强，但高度依赖少数大客户：若其需求节奏变化，RPO 的质量会受到考验。",
+        sourceIds: ["10k-fy26"],
+      },
+      evidence: [
+        ev({ capital: "rpo" }, FY26, "quarter", "yoy"),
+        ev({ capital: "rpoNext12MonthsShare" }, FY26, "quarter"),
+      ],
+      anchors: { view: "profit", nodeIds: [], metrics: ["revenue"], capital: ["rpo"] },
+      lens: { type: "ladder" },
+      watch: { ref: { capital: "rpo" }, condition: "RPO 是否继续增长，12 个月内确认的比例是否提高", horizon: "next_quarter", compare: "qoq" },
+    },
+    {
       id: "growth-acceleration",
       kind: "strength",
       severity: 2,

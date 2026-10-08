@@ -40,7 +40,7 @@ export async function archiveFilingDisclosures(env: DisclosureArchiveEnv, ticker
   const statements = extractFinancialStatements(html, inventory);
   const statementsKey = base + "/" + STATEMENTS_VERSION + ".json";
   await env.SEC_FILINGS.put(statementsKey, JSON.stringify(statements), { httpMetadata: { contentType: "application/json" } });
-  const capital = extractCapitalFiling(statements, { accession: source.accession, url: source.url, filedAt: source.filedAt, form: inventory.source.form });
+  const capital = extractCapitalFiling(statements, { accession: source.accession, url: source.url, filedAt: source.filedAt, form: inventory.source.form }, inventory);
   const archivedAt = new Date().toISOString();
   const record: StoredAudit = { documentId, ticker, source: inventory.source, contentSha256, parserVersion: inventory.version,
     archivedAt, sourceBytes, factCount: inventory.facts.length,

@@ -165,6 +165,21 @@ export const FUNDAMENTAL_METRIC_CATALOG = {
     ],
     "colorRole": "research-development"
   },
+  "remaining_performance_obligation": {
+    "basis": "reported",
+    "label": "剩余履约义务",
+    "shortLabel": "RPO",
+    "category": "balance_sheet",
+    "unitFamily": "currency",
+    "defaultMark": "bar",
+    "displaySign": "as_reported",
+    "allowedTransforms": [
+      "value",
+      "qoq_growth",
+      "yoy_growth"
+    ],
+    "colorRole": "backlog"
+  },
   "cash_and_cash_equivalents": {
     "basis": "reported",
     "label": "现金及现金等价物",

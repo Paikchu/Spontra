@@ -13,7 +13,8 @@ import type { FundamentalMetricKey } from "./fundamentals.ts";
 /** Cash-flow and balance-sheet figures the capital projection can answer. */
 export type CapitalMetric =
   | "operatingCashFlow" | "capex" | "freeCashFlow" | "financing" | "debtIssued" | "debtRepaid" | "equityIssued" | "buybacks" | "dividends"
-  | "totalAssets" | "debt" | "cash" | "equity";
+  | "totalAssets" | "debt" | "cash" | "equity"
+  | "rpo" | "rpoNext12MonthsShare";
 
 /** Where a figure comes from. A node is a disclosed business (segment or revenue breakdown node) by its flow id. */
 export type FindingBaseRef =
@@ -47,7 +48,9 @@ export type FindingView = "profit" | "cash" | "balance";
 export type FindingLens =
   | { type: "trend"; refs: FindingRef[]; span: FindingSpan; rate?: "yoy" | "qoq" }
   | { type: "compare_bars"; refs: FindingRef[]; span: FindingSpan }
-  | { type: "share_area"; nodeIds: string[] };
+  | { type: "share_area"; nodeIds: string[] }
+  /** Remaining performance obligations over the quarters and, for the finding's report, how they convert over time. */
+  | { type: "ladder" };
 
 /**
  * What to look at when the next report lands: the figure, in words what would settle it, and how

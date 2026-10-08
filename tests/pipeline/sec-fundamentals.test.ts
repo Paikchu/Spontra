@@ -27,6 +27,7 @@ function payload(annualRevenue = 1000) {
     PaymentsToAcquirePropertyPlantAndEquipment: { units: { USD: duration([10, 30, 60, 100]) } },
     EarningsPerShareDiluted: { units: { "USD/shares": duration([1, 3, 6, 10]) } },
     CashAndCashEquivalentsAtCarryingValue: { units: { USD: [{ end: "2025-12-31", val: 55, form: "10-K", accn: filing.accessionNumber, filed: "2026-02-01" }] } },
+    RevenueRemainingPerformanceObligation: { units: { USD: [{ end: "2025-12-31", val: 900, form: "10-K", accn: filing.accessionNumber, filed: "2026-02-01" }] } },
   } } };
 }
 
@@ -40,6 +41,8 @@ test("SEC quarters derive Q4 and FCF, scale margins, retain provenance, and neve
   assert.equal(point("free_cash_flow")?.valueDecimal, "50");
   assert.equal(point("gross_margin")?.valueDecimal, "40");
   assert.equal(point("cash_and_cash_equivalents")?.valueDecimal, "55");
+  // Remaining performance obligations are an instant like cash; SEC is their only source.
+  assert.equal(point("remaining_performance_obligation")?.valueDecimal, "900");
   assert.equal(point("diluted_eps")?.valueDecimal, null);
   assert.equal(point("total_revenue")?.sourceAccession, filing.accessionNumber);
   assert.match(point("total_revenue")?.derivationFormula ?? "", /2025-09-30/);

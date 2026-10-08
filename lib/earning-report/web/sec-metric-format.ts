@@ -33,6 +33,7 @@ const METRIC_LABELS: Record<string, string> = {
   capital_expenditure: "资本开支",
   research_and_development: "研发费用",
   cash_and_cash_equivalents: "现金及等价物",
+  remaining_performance_obligation: "剩余履约义务",
   inventory: "存货",
   accounts_receivable: "应收账款",
   long_term_debt: "长期有息债务",

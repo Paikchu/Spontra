@@ -1,8 +1,9 @@
 import { z } from "zod";
 import type { FinancialStatements, StatementCell, StatementTable } from "./financial-statements.ts";
+import type { DisclosureFact, FilingDisclosures } from "./disclosure-extraction.ts";
 import type {
   AssetGroup, BalanceSheet, CapitalFiling, CapitalLine, CapitalQuarter, CapitalSource, CashFlowSection, CashFlowStatement,
-  EquityGroup, FinancingGroup, InvestingGroup, LiabilityGroup, OperatingGroup, PublicCapitalStructure, SupplementalGroup,
+  EquityGroup, FinancingGroup, InvestingGroup, LiabilityGroup, OperatingGroup, PublicCapitalStructure, RpoBucket, RpoDisclosure, SupplementalGroup,
 } from "../../analysis-contract/capital-structure.ts";
 
 /**
@@ -11,7 +12,7 @@ import type {
  * those cells, signed as the statement shows them. A statement is published only when its lines add up
  * to the totals the issuer reports; anything else is dropped, never estimated.
  */
-export const CAPITAL_VERSION = "sec-capital-structure.v2";
+export const CAPITAL_VERSION = "sec-capital-structure.v3";
 
 type Fact = StatementCell["facts"][number];
 /** `dimensional`: the amount is a member-tagged fact, as a segment subtotal printed on the face statement is. */
@@ -372,11 +373,61 @@ export function extractCashFlow(statements: FinancialStatements, source: Capital
   };
 }
 
-export function extractCapitalFiling(statements: FinancialStatements, source: CapitalSource): CapitalFiling {
+/* ---------- Remaining performance obligations ---------- */
+
+const RPO = "RevenueRemainingPerformanceObligation", RPO_SHARE = RPO + "Percentage", RPO_PERIOD = RPO + "ExpectedTimingOfSatisfactionPeriod1";
+const RPO_AXIS = RPO + "ExpectedTimingOfSatisfactionStartDateAxis";
+const WORDS: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, eighteen: 18, "twenty-four": 24, "thirty-six": 36, "forty-eight": 48, sixty: 60 };
+
+/** "P2Y", "P12M", "twelve months", "2 years" → months; anything else is unknown rather than guessed. */
+export function timingMonths(text: string | null): number | null {
+  if (!text) return null;
+  const value = text.trim().toLowerCase();
+  const iso = value.match(/^p(?:(\d+)y)?(?:(\d+)m)?$/);
+  if (iso && (iso[1] || iso[2])) return Number(iso[1] ?? 0) * 12 + Number(iso[2] ?? 0);
+  const words = value.match(/^([a-z-]+|\d+)\s+(year|month)s?$/);
+  if (!words) return null;
+  const count = /^\d+$/.test(words[1]) ? Number(words[1]) : WORDS[words[1]];
+  return count == null ? null : words[2] === "year" ? count * 12 : count;
+}
+
+const usGaap = (f: DisclosureFact, name: string) => f.concept.name.replace(/^.*:/, "") === name && (f.taxonomy === "standard" || /fasb\.org\/us-gaap/.test(f.concept.namespaceUri ?? ""));
+const factCurrency = (f: DisclosureFact) => f.unit?.numerator[0]?.name.replace(/^.*:/, "").toUpperCase() ?? null;
+
+/**
+ * The RPO total and its expected-timing buckets from the revenue note. The total is the undimensioned
+ * instant at the latest period end the filing reports; buckets are the facts on typed start-date
+ * contexts at that same instant, with the bucket length read from the timing text tagged beside them.
+ * Nothing is derived: a filing that states only shares has no amounts, and vice versa.
+ */
+export function extractRpo(disclosures: FilingDisclosures, source: CapitalSource): RpoDisclosure | null {
+  // The timing words carry an SEC transform the extractor does not implement; their source text is still exact.
+  const facts = disclosures.facts.filter(f => (f.status === "parsed" || (usGaap(f, RPO_PERIOD) && f.rawValue)) && f.context?.period.kind === "instant" && f.context.period.end);
+  const totals = facts.filter(f => f.kind === "numeric" && f.numericValue != null && usGaap(f, RPO) && !f.context!.dimensions.length && /^[A-Z]{3}$/.test(factCurrency(f) ?? ""));
+  const asOf = totals.map(f => f.context!.period.end!).sort().at(-1);
+  if (!asOf) return null;
+  const total = totals.find(f => f.context!.period.end === asOf)!;
+  const typed = facts.filter(f => f.context!.period.end === asOf && f.context!.dimensions.some(d => d.kind === "typed" && d.axis.name.replace(/^.*:/, "") === RPO_AXIS));
+  const byContext = new Map<string, RpoBucket>();
+  for (const f of typed) {
+    const key = f.contextRef ?? f.context!.id ?? "";
+    const bucket = byContext.get(key) ?? { start: f.context!.dimensions.find(d => d.kind === "typed")?.value.trim() || null, months: null, share: null, amount: null };
+    if (usGaap(f, RPO_SHARE) && f.kind === "numeric" && f.numericValue != null) bucket.share = f.numericValue;
+    else if (usGaap(f, RPO) && f.kind === "numeric" && f.numericValue != null) bucket.amount = f.numericValue;
+    else if (usGaap(f, RPO_PERIOD)) bucket.months = timingMonths(f.normalizedValue ?? f.rawValue);
+    byContext.set(key, bucket);
+  }
+  const buckets = [...byContext.values()].filter(b => b.share != null || b.amount != null)
+    .sort((a, b) => (a.start ?? "").localeCompare(b.start ?? "") || (a.months ?? 0) - (b.months ?? 0));
+  return { asOf, currency: factCurrency(total)!, total: total.numericValue!, buckets, source };
+}
+
+export function extractCapitalFiling(statements: FinancialStatements, source: CapitalSource, disclosures: FilingDisclosures | null = null): CapitalFiling {
   const issues: string[] = [];
-  if (statements.status !== "extracted") return { version: CAPITAL_VERSION, source, balanceSheet: null, cashFlow: null, issues: ["FINANCIAL_STATEMENTS_NOT_LOCATED"] };
+  const rpo = disclosures ? extractRpo(disclosures, source) : null;
+  if (statements.status !== "extracted") return { version: CAPITAL_VERSION, source, rpo, balanceSheet: null, cashFlow: null, issues: ["FINANCIAL_STATEMENTS_NOT_LOCATED"] };
   const balanceSheet = extractBalanceSheet(statements, source, issues), cashFlow = extractCashFlow(statements, source, issues);
-  return { version: CAPITAL_VERSION, source, balanceSheet, cashFlow, issues };
+  return { version: CAPITAL_VERSION, source, rpo, balanceSheet, cashFlow, issues };
 }
 
 /**
@@ -418,7 +469,7 @@ export function quarterCashFlow(current: CashFlowStatement, prior: CashFlowState
   };
 }
 
-const periodEndOf = (filing: CapitalFiling) => filing.cashFlow?.periodEnd ?? filing.balanceSheet?.asOf ?? null;
+const periodEndOf = (filing: CapitalFiling) => filing.cashFlow?.periodEnd ?? filing.balanceSheet?.asOf ?? filing.rpo?.asOf ?? null;
 
 /** Newest quarters first. Per period, the latest filing with a reconciled statement wins (amendments supersede). */
 export function buildCapitalQuarters(filings: CapitalFiling[], limit = 8): CapitalQuarter[] {
@@ -431,7 +482,7 @@ export function buildCapitalQuarters(filings: CapitalFiling[], limit = 8): Capit
   return [...byEnd.keys()].sort().reverse().slice(0, limit).map(periodEnd => {
     const filing = byEnd.get(periodEnd)!, yearToDate = filing.cashFlow;
     const prior = yearToDate && cumulative.find(c => c.periodStart === yearToDate.periodStart && c.periodEnd < yearToDate.periodEnd && days(c.periodEnd, yearToDate.periodEnd) >= 70 && days(c.periodEnd, yearToDate.periodEnd) <= 110);
-    return { periodEnd, balanceSheet: filing.balanceSheet, cashFlow: yearToDate && quarterCashFlow(yearToDate, prior ?? null), yearToDate };
+    return { periodEnd, rpo: filing.rpo?.asOf === periodEnd ? filing.rpo : null, balanceSheet: filing.balanceSheet, cashFlow: yearToDate && quarterCashFlow(yearToDate, prior ?? null), yearToDate };
   });
 }
 
@@ -479,18 +530,26 @@ function validCashFlow(raw: unknown): CashFlowStatement | null {
   return ok ? c : null;
 }
 
+const decimal = z.string().regex(/^-?\d+(?:\.\d+)?$/);
+const rpoSchema = z.object({
+  asOf: date, currency: z.string().regex(/^[A-Z]{3}$/), total: decimal,
+  buckets: z.array(z.object({ start: date.nullable(), months: z.number().int().min(1).max(600).nullable(), share: decimal.nullable(), amount: decimal.nullable() })).max(12),
+  source: z.object({ accession: z.string().max(40), url: z.string().url(), filedAt: z.string().max(40), form: z.string().max(20) }),
+});
+
 export function readCapitalStructure(raw: unknown, ticker: string): PublicCapitalStructure | null {
   const parsed = z.object({ schemaVersion: z.literal("capital-structure.v1"), ticker: z.literal(ticker), quarters: z.array(z.unknown()).max(12) }).safeParse(raw);
   if (!parsed.success) return null;
   const seen = new Set<string>(), quarters: CapitalQuarter[] = [];
   for (const item of parsed.data.quarters) {
-    const q = z.object({ periodEnd: date, balanceSheet: z.unknown(), cashFlow: z.unknown(), yearToDate: z.unknown() }).safeParse(item);
+    const q = z.object({ periodEnd: date, rpo: z.unknown().optional(), balanceSheet: z.unknown(), cashFlow: z.unknown(), yearToDate: z.unknown() }).safeParse(item);
     if (!q.success || seen.has(q.data.periodEnd)) continue;
-    const quarter = { periodEnd: q.data.periodEnd, balanceSheet: validBalance(q.data.balanceSheet), cashFlow: validCashFlow(q.data.cashFlow), yearToDate: validCashFlow(q.data.yearToDate) };
+    const rpo = rpoSchema.safeParse(q.data.rpo);
+    const quarter: CapitalQuarter = { periodEnd: q.data.periodEnd, rpo: rpo.success && rpo.data.asOf === q.data.periodEnd ? rpo.data : null, balanceSheet: validBalance(q.data.balanceSheet), cashFlow: validCashFlow(q.data.cashFlow), yearToDate: validCashFlow(q.data.yearToDate) };
     if (quarter.balanceSheet && quarter.balanceSheet.asOf !== quarter.periodEnd) quarter.balanceSheet = null;
     if (quarter.cashFlow && (quarter.cashFlow.periodEnd !== quarter.periodEnd || days(quarter.cashFlow.periodStart, quarter.cashFlow.periodEnd) > 110)) quarter.cashFlow = null;
     if (quarter.yearToDate?.periodEnd !== quarter.periodEnd) quarter.yearToDate = null;
-    if (!quarter.balanceSheet && !quarter.cashFlow && !quarter.yearToDate) continue;
+    if (!quarter.balanceSheet && !quarter.cashFlow && !quarter.yearToDate && !quarter.rpo) continue;
     seen.add(quarter.periodEnd);
     quarters.push(quarter);
   }

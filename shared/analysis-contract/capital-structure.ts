@@ -48,8 +48,20 @@ export type CashFlowStatement = {
   sources: CapitalSource[];
 };
 
+/**
+ * One expected-timing bucket of remaining performance obligations, as the revenue note tags it: contracts
+ * starting at `start`, to be recognised within `months` of it. `share` is the fraction of the total the
+ * issuer states (exact decimal, e.g. "0.12"); `amount` only when the issuer tags the amount itself.
+ */
+export type RpoBucket = { start: string | null; months: number | null; share: string | null; amount: string | null };
+
+/** Remaining performance obligations at a period end: contracted revenue not yet recognised, and when it is expected. */
+export type RpoDisclosure = { asOf: string; currency: string; total: string; buckets: RpoBucket[]; source: CapitalSource };
+
 export type CapitalQuarter = {
   periodEnd: string;
+  /** Absent for quarters archived before RPO was read; null when the filing tags no total. */
+  rpo?: RpoDisclosure | null;
   balanceSheet: BalanceSheet | null;
   /** Exactly three months: reported directly, or derived from adjacent cumulative statements. */
   cashFlow: CashFlowStatement | null;
@@ -67,6 +79,7 @@ export type CapitalResponse = { schemaVersion: "capital-response.v1"; status: "r
 export type CapitalFiling = {
   version: string;
   source: CapitalSource;
+  rpo?: RpoDisclosure | null;
   balanceSheet: BalanceSheet | null;
   cashFlow: CashFlowStatement | null;
   issues: string[];

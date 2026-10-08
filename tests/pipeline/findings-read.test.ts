@@ -16,7 +16,7 @@ test("findings answer from the authored set until a run publishes, and are prepa
   const body = await authored.json() as FindingsResponse;
   assert.equal(body.status, "ready");
   assert.equal(body.findings?.model, "authored");
-  assert.equal(body.findings?.findings.length, 5);
+  assert.equal(body.findings?.findings.length, 6);
   const none = await get(database, "MSFT");
   assert.deepEqual(await none.json(), { schemaVersion: "findings-response.v1", status: "preparing", findings: null });
   assert.equal(none.headers.get("cache-control"), "no-store");

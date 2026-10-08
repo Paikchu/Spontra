@@ -5,7 +5,7 @@ import type { ExplainerSource } from "@/shared/analysis-contract/business-explai
 import type { FindingRef } from "@/shared/analysis-contract/findings";
 import { compactFlowValue } from "@/lib/earning-report/web/business-flow-layout";
 import { spanLabel, watchPeriod, type FindingData, type ResolvedEvidence, type ResolvedValue } from "@/shared/analysis-runtime/findings";
-import { KIND_LABEL, VIEW_LABEL, lensColumns, lensShares, type LensColumns, type LensShares, type VerifiedFinding } from "./findings-model";
+import { KIND_LABEL, VIEW_LABEL, lensColumns, lensLadder, lensShares, type LensColumns, type LensLadder, type LensShares, type VerifiedFinding } from "./findings-model";
 
 const shortPeriod = (end: string) => end.slice(0, 7).replace("-", ".");
 const percent = (v: number | null, digits = 1) => v == null || !Number.isFinite(v) ? "—" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(digits)}%`;
@@ -54,8 +54,9 @@ export function LensPanel({ finding, data, sources, nodeColor, pair, story, inde
   onFocusThis?: () => void;
 }) {
   const cited = finding.judgment.sourceIds.map(id => sources.find(s => s.id === id)).filter(s => s != null);
-  const columns = useMemo(() => finding.lens.type === "share_area" ? null : lensColumns(finding.lens, finding.periodEnd, data), [finding, data]);
+  const columns = useMemo(() => finding.lens.type === "share_area" || finding.lens.type === "ladder" ? null : lensColumns(finding.lens, finding.periodEnd, data), [finding, data]);
   const shares = useMemo(() => finding.lens.type === "share_area" ? lensShares(finding.lens, finding.periodEnd, data) : null, [finding, data]);
+  const ladder = useMemo(() => finding.lens.type === "ladder" ? lensLadder(finding.periodEnd, data) : null, [finding, data]);
   const watch = finding.watch, outcome = finding.watchOutcome;
   return <section className="lens" data-kind={finding.kind} data-compact={compact || undefined} aria-label={`要点：${finding.title}`} key={finding.id}>
     <header className="lens-head">
@@ -76,6 +77,7 @@ export function LensPanel({ finding, data, sources, nodeColor, pair, story, inde
       <div className="lens-chart">
         {columns && <Bars columns={columns} nodeColor={nodeColor} />}
         {shares && <Shares shares={shares} nodeColor={nodeColor} />}
+        {ladder && <Ladder ladder={ladder} nodeColor={nodeColor} />}
       </div>
       <div className="lens-text">
         <p className="lens-judgment">{compact ? finding.judgment.text.split(/(?<=。)/)[0] : finding.judgment.text}<span className="cites">{finding.judgment.sourceIds.map(id => { const i = cited.findIndex(s => s.id === id); return i < 0 ? null : <a key={id} href={cited[i].url} target="_blank" rel="noopener noreferrer" title={cited[i].title}>{i + 1}</a>; })}</span></p>
@@ -146,6 +148,26 @@ function Bars({ columns, nodeColor }: { columns: LensColumns; nodeColor: (id: st
         </div>;
       })}
     </div>
+  </div>;
+}
+
+/** Contracted revenue not yet recognised: its quarterly path on top, and below it when the latest balance is expected to convert. */
+function Ladder({ ladder, nodeColor }: { ladder: LensLadder; nodeColor: (id: string) => string }) {
+  const latest = ladder.latest;
+  const span = (s: { from: number; to: number | null }) => s.from === 0 && s.to != null ? `${s.to} 个月内` : s.to == null ? `${s.from + 1} 个月以后` : `${s.from + 1}–${s.to} 个月`;
+  return <div className="lens-ladder">
+    <Bars columns={ladder.columns} nodeColor={nodeColor} />
+    {latest ? <div className="lens-rungs" role="list" aria-label={`截至 ${shortPeriod(latest.asOf)} 的 RPO ${money(latest.total, latest.currency)} 的确认节奏`}>
+      <span className="lens-rungs-title">确认节奏 · {shortPeriod(latest.asOf)}</span>
+      <div className="lens-rungs-bar" aria-hidden="true">
+        {latest.steps.map((s, i) => s.share != null && <i key={i} style={{ flexGrow: s.share, "--i": i } as CSSProperties} />)}
+        {latest.remainder != null && <i className="lens-rung--rest" style={{ flexGrow: latest.remainder } as CSSProperties} />}
+      </div>
+      <div className="lens-rungs-legend">
+        {latest.steps.map((s, i) => <span key={i} role="listitem"><i style={{ "--i": i } as CSSProperties} /><b>{span(s)}</b>{s.share != null ? `${Number(s.share.toFixed(1))}%` : ""}{s.amount != null ? ` · ${money(s.amount, latest.currency)}` : ""}</span>)}
+        {latest.remainder != null && <span role="listitem"><i className="lens-rung--rest" /><b>之后</b>{Number(latest.remainder.toFixed(1))}% · {money(latest.total * latest.remainder / 100, latest.currency)}</span>}
+      </div>
+    </div> : <p className="lens-empty">该期财报未标注 RPO 的确认节奏</p>}
   </div>;
 }
 
