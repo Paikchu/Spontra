@@ -39,7 +39,8 @@ async function projectArchived(record: StoredAudit, archive: ReportArchive, tick
  * statements. Read only: no SEC fetch, collection, model, database or R2 write. A filing without a
  * reconciled statement leaves its quarter out; nothing is estimated.
  */
-export async function readArchivedCapital(db: D1Database, archive: ReportArchive, flow: PublicBusinessFlow): Promise<PublicCapitalStructure | null> {
+export async function readArchivedCapital(db: D1Database, archive: ReportArchive, flow: PublicBusinessFlow, options: { maxProjected?: number } = {}): Promise<PublicCapitalStructure | null> {
+  const maxProjected = options.maxProjected ?? MAX_PROJECTED;
   const latest = flow.quarters.slice().sort((a, b) => b.periodEnd.localeCompare(a.periodEnd))[0];
   const issuer = latest?.sources.map(s => s.url.match(/\/Archives\/edgar\/data\/(\d+)\//)?.[1]).find(Boolean);
   if (!latest || !issuer) return null;
@@ -66,6 +67,10 @@ export async function readArchivedCapital(db: D1Database, archive: ReportArchive
   if (cached && cached.expires > Date.now()) return cached.capital;
   const filings: CapitalFiling[] = [], covered = new Set<string>();
   let projected = 0, reparsed = 0;
+  // An archive with no projection at all has nothing to fall back on, so the budget is kept for those first;
+  // one with an older projection only lacks what the new version adds.
+  const located = (record: StoredAudit) => record.statements?.status !== 'not_located' || (record.statements.version !== STATEMENTS_VERSION && /^10-[QK]/.test(record.source.form));
+  let bareAhead = records.filter(r => !r.capital && located(r)).length;
   for (const record of records) {
     // One quarter beyond the eighth supplies the cumulative bridge for the oldest quarterly cash flow.
     if (new Set(filings.map(f => f.cashFlow?.periodEnd ?? f.balanceSheet?.asOf)).size > QUARTERS) break;
@@ -73,8 +78,10 @@ export async function readArchivedCapital(db: D1Database, archive: ReportArchive
     let filing = record.capital?.version === CAPITAL_VERSION ? record.capital : null;
     // Documents archived without any statement section (press releases, cover letters) are not worth projecting;
     // a domestic report the previous extractor missed is retried, since the locator has since improved.
-    const located = record.statements?.status !== 'not_located' || (record.statements.version !== STATEMENTS_VERSION && /^10-[QK]/.test(record.source.form));
-    if (!filing && located && projected < MAX_PROJECTED && (storedTables(record) || reparsed + record.sourceBytes <= MAX_REPARSED_BYTES)) {
+    const bare = !record.capital && located(record);
+    if (bare) bareAhead--;
+    const room = projected < (bare ? maxProjected : maxProjected - bareAhead);
+    if (!filing && located(record) && room && (storedTables(record) || reparsed + record.sourceBytes <= MAX_REPARSED_BYTES)) {
       projected++;
       if (!storedTables(record)) reparsed += record.sourceBytes;
       filing = await projectArchived(record, archive, flow.ticker).catch(() => null);

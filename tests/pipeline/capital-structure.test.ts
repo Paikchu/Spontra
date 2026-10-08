@@ -203,6 +203,23 @@ test("an older projection that cannot be redone this request still serves its st
   } finally { f.database.close(); }
 });
 
+test("the projection budget goes first to archives that have no projection at all", async () => {
+  const f = archiveFixture();
+  try {
+    await archiveFilingDisclosures(f.env, "CRWV", dataSource(q1Source), q1Html, { form: "10-Q", reportDate: "2026-03-31" });
+    await archiveFilingDisclosures(f.env, "CRWV", dataSource(q2Source), q2Html, { form: "10-Q", reportDate: "2026-06-30" });
+    for (const row of f.database.raw.prepare("SELECT cache_key,payload FROM sec_cache").all() as Array<{ cache_key: string; payload: string }>) {
+      const old = JSON.parse(row.payload);
+      // The newer filing keeps an older projection; the older filing has none.
+      if (old.source.reportDate === "2026-06-30") old.capital = { ...old.capital, version: "sec-capital-structure.v2" }; else delete old.capital;
+      f.database.raw.prepare("UPDATE sec_cache SET payload=? WHERE cache_key=?").run(JSON.stringify(old), row.cache_key);
+    }
+    const capital = await readArchivedCapital(f.env.DB, f.env.SEC_FILINGS, flow, { maxProjected: 1 });
+    assert.deepEqual(capital?.quarters.map(q => [q.periodEnd, q.balanceSheet?.totals.assets ?? null]), [["2026-06-30", "4000000000"], ["2026-03-31", capital?.quarters[1].balanceSheet?.totals.assets ?? null]]);
+    assert.ok(capital?.quarters[1].balanceSheet, "the bare archive was projected within the budget of one");
+  } finally { f.database.close(); }
+});
+
 test("archives from before the projection are projected on read without writing back", async () => {
   const f = archiveFixture();
   try {
