@@ -127,7 +127,7 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
       {columns.map((column, i) => <Bar key={column.slot.periodEnd} column={column} index={i} order={order} scale={scale} hue={hue} money={money}
         current={column.slot.periodEnd === currentPeriod} pickable={periods.has(column.slot.periodEnd)} hovered={hover === i}
         onHover={() => setHover(i)} onPick={() => onPickPeriod(column.slot.periodEnd)} selected={selected} rate={rates[i]} lag={lineLag} onLine={series === "line"}
-        line={rateAxis ? { y: rateY(rates[i] ?? 0), next: rates[i + 1] != null ? rateY(rates[i + 1]!) : null, labelled: i === index || (hover === i && series === "line") } : null}
+        line={rateAxis ? { y: rateY(rates[i] ?? 0), next: rates[i + 1] != null ? rateY(rates[i + 1]!) : null, labelled: i === index || series === "line" } : null}
         guide={overlay.bySlot[i]} />)}
       {overlay.next && <GuideColumn mark={overlay.next} index={columns.length} scale={scale} money={money} hovered={hover === columns.length} onHover={() => setHover(columns.length)} />}
     </div>
