@@ -14,6 +14,7 @@ import { executeResearchWorkflow } from "./research/runtime.ts";
 import { executeBusinessExplainerWorkflow, type BusinessExplainerParams } from "./business-explainer/workflow.ts";
 import { maintenanceAnalysisEnvironment } from "./admin/financial-maintenance-runner.ts";
 import { executeGuidanceWorkflow, type GuidanceWorkflowParams } from "./guidance/workflow.ts";
+import { executeFindingsWorkflow, type FindingsWorkflowParams } from "./findings/workflow.ts";
 
 const WORKFLOW_RETRY = {
   retries: {
@@ -72,6 +73,12 @@ export class ResearchWorkflow extends WorkflowEntrypoint<SecPipelineEnv, { caseI
 export class BusinessExplainerWorkflow extends WorkflowEntrypoint<SecPipelineEnv, BusinessExplainerParams> {
   async run(event: WorkflowEvent<BusinessExplainerParams>, step: WorkflowStep) {
     return executeBusinessExplainerWorkflow(event.payload, durableSteps(step, this.env, event.instanceId), this.env);
+  }
+}
+
+export class FindingsWorkflow extends WorkflowEntrypoint<SecPipelineEnv, FindingsWorkflowParams> {
+  async run(event: WorkflowEvent<FindingsWorkflowParams>, step: WorkflowStep) {
+    return executeFindingsWorkflow(event.payload, durableSteps(step, this.env, event.instanceId), this.env);
   }
 }
 

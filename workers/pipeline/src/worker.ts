@@ -12,6 +12,7 @@ import { handleResearchRequest } from "./research/api.ts";
 import { runResearchMonitor } from "./research/monitor.ts";
 import { runBusinessExplainerSweep } from "./business-explainer/workflow.ts";
 import { runGuidanceSweep } from "./guidance/workflow.ts";
+import { runFindingsSweep } from "./findings/workflow.ts";
 import { handleReportAdminRequest } from "./admin/reports.ts";
 import { handleFinancialAdminRequest } from "./admin/financials.ts";
 import { runFinancialMaintenanceTick } from "./admin/financial-maintenance-runner.ts";
@@ -110,9 +111,10 @@ const worker = {
       runBusinessFlowBootstrap(env),
       runBusinessExplainerSweep(env),
       runGuidanceSweep(env),
+      runFindingsSweep(env),
     ]);
-    const [analysis, memory, companyAnalysis, fundamentals, businessFlow, businessExplainer, guidance] = results.map(describeSettled);
-    const payload = JSON.stringify({ event: "sec-workflows", analysis, memory, companyAnalysis, fundamentals, businessFlow, businessExplainer, guidance });
+    const [analysis, memory, companyAnalysis, fundamentals, businessFlow, businessExplainer, guidance, findings] = results.map(describeSettled);
+    const payload = JSON.stringify({ event: "sec-workflows", analysis, memory, companyAnalysis, fundamentals, businessFlow, businessExplainer, guidance, findings });
     const rejected = results.filter((result): result is PromiseRejectedResult => result.status === "rejected");
     if (!rejected.length) {
       console.log(payload);

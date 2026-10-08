@@ -17,6 +17,7 @@
     "SEC_REASONING_MODEL": "deepseek-flash",
     // Management guidance is enabled; ALPHA_VANTAGE_API_KEY (transcripts) is an optional secret.
     "GUIDANCE_ENABLED": "true",
+    "FINDINGS_ENABLED": "true",
     "GUIDANCE_DECK_SEARCH": "true",
     "GUIDANCE_DAILY_MODEL_CALLS": "40",
     "GUIDANCE_DAILY_TRANSCRIPT_CALLS": "25",
@@ -39,6 +40,12 @@
       "name": "spontra-business-explainer",
       "binding": "BUSINESS_EXPLAINER_WORKFLOW",
       "class_name": "BusinessExplainerWorkflow",
+      "concurrency": { "limit": 1 }
+    },
+    {
+      "name": "spontra-findings",
+      "binding": "FINDINGS_WORKFLOW",
+      "class_name": "FindingsWorkflow",
       "concurrency": { "limit": 1 }
     },
     {

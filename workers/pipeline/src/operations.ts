@@ -53,6 +53,9 @@ export type SecPipelineEnv = SecCronEnv & AnalysisReadEnv & {
   RESEARCH_WORKFLOW?: { create(options: { id: string; params: { caseId: string } }): Promise<unknown>; get(id: string): Promise<{ status(): Promise<{ status: string }> }> };
   BUSINESS_EXPLAINER_WORKFLOW?: { create(options: { id: string; params: { ticker: string; fingerprint: string } }): Promise<unknown> };
   GUIDANCE_WORKFLOW?: { create(options: { id: string; params: { ticker: string; accession: string; eventDate: string } }): Promise<unknown> };
+  FINDINGS_WORKFLOW?: { create(options: { id: string; params: { ticker: string; fingerprint: string } }): Promise<unknown> };
+  /** "true" lets the sweep start findings runs for AI-enabled companies; anything else leaves it off. */
+  FINDINGS_ENABLED?: string;
   /** "true" starts guidance extraction for AI-enabled companies; anything else leaves it off. */
   GUIDANCE_ENABLED?: string;
   /** "false" turns off the IR-site deck search fallback. */

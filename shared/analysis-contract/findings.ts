@@ -83,6 +83,8 @@ export type FindingsPublication = {
   generatedAt: string;
   /** Model name, or "authored" for a human-written set. */
   model: string;
+  /** Hash of the report, guidance and narrative the set was written from; the sweep regenerates when it changes. */
+  fingerprint?: string;
   findings: AnalysisFinding[];
   sources: ExplainerSource[];
 };

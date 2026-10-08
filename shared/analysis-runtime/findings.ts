@@ -43,7 +43,7 @@ const finding = z.object({
 export const findingsPublicationSchema = z.object({
   schemaVersion: z.literal("findings.v1"),
   ticker: z.string().regex(/^[A-Z][A-Z0-9.-]{0,11}$/),
-  periodEnd: date, generatedAt: z.string().max(40), model: text(80),
+  periodEnd: date, generatedAt: z.string().max(40), model: text(80), fingerprint: text(128).optional(),
   findings: z.array(finding).min(1).max(8),
   sources: z.array(z.object({ id: text(40), title: text(300), url: https, kind: z.enum(["sec", "web"]), publishedAt: z.string().max(40).nullable() })).min(1).max(40),
 });
