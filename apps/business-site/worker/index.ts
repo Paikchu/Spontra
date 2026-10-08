@@ -18,6 +18,9 @@ export type SiteEnv={ASSETS:{fetch(request:Request):Promise<Response>};PUBLIC_RE
 export type SiteContext={waitUntil(promise:Promise<unknown>):void};
 const security={"x-content-type-options":"nosniff","referrer-policy":"strict-origin-when-cross-origin","content-security-policy":"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://images.financialmodelingprep.com; connect-src 'self'; font-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"};
 function json(body:unknown,status=200){return Response.json(body,{status,headers:{...security,"cache-control":status===200?"public, max-age=60":"no-store"}});}
+/** Answers built from the legacy fallback: shown while the business-flow read fails, never cached, so the next request tries the full read again. */
+const fallbacks=new WeakSet<CompleteFlowPublication>();
+export const isFallback=(publication:CompleteFlowPublication)=>fallbacks.has(publication);
 /** The only public output is schema-stripped SEC business flow, never the analysis envelope. */
 export async function loadPublicFlow(ticker:string,fetcher:typeof fetch=fetch):Promise<CompleteFlowPublication>{
  try{
@@ -35,7 +38,8 @@ export async function loadPublicFlow(ticker:string,fetcher:typeof fetch=fetch):P
   if(!legacy.ok)throw new Error("Public source unavailable");
   const raw=await legacy.json() as {businessFlow?:PublicBusinessFlow};
   const flow=newestPair(withLegacyInterestFormula(selectFlow(raw.businessFlow,null,ticker)));const check=checkCompleteFlow(flow);
-  return {schemaVersion:"complete-business-flow.v1",status:check.complete?"ready":"preparing",flow:check.complete?flow:null,reasons:check.complete?["PREPARING"]:check.reasons,outdated:check.complete,lastAttemptAt:null};
+  const fallback:CompleteFlowPublication={schemaVersion:"complete-business-flow.v1",status:check.complete?"ready":"preparing",flow:check.complete?flow:null,reasons:check.complete?["PREPARING"]:check.reasons,outdated:check.complete,lastAttemptAt:null};
+  fallbacks.add(fallback);return fallback;
  }
 }
 
@@ -104,9 +108,10 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,fetcher
    return supplementary("fundamentals","fundamentals-response.v1",()=>loadFundamentals(match[1],fetcher));
   }
   try{const [flow,explainer,guidance]=await Promise.all([loadPublicFlow(match[1],fetcher),loadExplainer(match[1],fetcher),loadGuidance(match[1],fetcher)]);const response=json({...flow,explainer,guidance});
-   // A fallback or incomplete answer is never cached, so one slow upstream read cannot pin "preparing" for a minute.
-   if(flow.status!=="ready")response.headers.set("cache-control","no-store");
-   if(cache&&flow.status==="ready")ctx.waitUntil(cache.put(key,response.clone()));return response;}catch{return json({error:"Public company data temporarily unavailable"},503);}
+   // A fallback or incomplete answer is never cached, so one slow upstream read cannot pin "preparing" or a history-less snapshot for a minute.
+   const cacheable=flow.status==="ready"&&!isFallback(flow);
+   if(!cacheable)response.headers.set("cache-control","no-store");
+   if(cache&&cacheable)ctx.waitUntil(cache.put(key,response.clone()));return response;}catch{return json({error:"Public company data temporarily unavailable"},503);}
  }
  if(request.method!=="GET"&&request.method!=="HEAD")return json({error:"Method not allowed"},405);
  const response=await env.ASSETS.fetch(request);const headers=new Headers(response.headers);for(const [name,value]of Object.entries(security))headers.set(name,value);return new Response(response.body,{status:response.status,headers});

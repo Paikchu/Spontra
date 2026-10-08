@@ -77,8 +77,8 @@ const explainer={schemaVersion:"business-explainer.v1",ticker:"ORCL",companyName
  sources:[{id:"s1",title:"Oracle 10-K",url:"https://www.sec.gov/Archives/edgar/data/1341439/x.htm",kind:"sec",publishedAt:null}]};
 const routed=(explained:unknown):typeof fetch=>async(input)=>String(input).endsWith("/business-explainer")?(explained instanceof Error?Promise.reject(explained):Response.json(explained)):success(input);
 test("business explanations are validated, stripped and never block the flow",async()=>{
- const ok=await (await handle(request(endpoint),env,context,routed({schemaVersion:"business-explainer-response.v1",status:"ready",explainer}))).json() as {flow:unknown;explainer:{businesses:Array<{customers:unknown}>}};
- assert.ok(ok.flow);assert.equal(ok.explainer.businesses[0].customers,null,"a claim citing an unlisted source is dropped");assert.ok(!JSON.stringify(ok).includes("PRIVATE_"));
+ const ok=await (await handle(request(endpoint),env,context,routed({schemaVersion:"business-explainer-response.v1",status:"ready",explainer}))).json() as {flow:unknown;explainer:{businesses:Array<{sections:unknown[]}>}};
+ assert.ok(ok.flow);assert.deepEqual(ok.explainer.businesses[0].sections,[],"a claim citing an unlisted source is dropped");assert.ok(!JSON.stringify(ok).includes("PRIVATE_"));
  for(const bad of [new Error("down"),{schemaVersion:"business-explainer-response.v1",status:"ready",explainer:{...explainer,ticker:"MSFT"}},{schemaVersion:"business-explainer-response.v1",status:"ready",explainer:{...explainer,sources:[{...explainer.sources[0],url:"javascript:alert(1)"}]}}]){
   const response=await handle(request(endpoint),env,context,routed(bad));assert.equal(response.status,200);const body=await response.json() as {flow:unknown;explainer:unknown};assert.ok(body.flow);assert.equal(body.explainer,null);
  }
@@ -155,4 +155,16 @@ test("findings and fundamentals are supplementary routes: re-validated, stripped
  const missing=await handle(request(endpoint+"/findings"),env,context,async()=>Response.json({schemaVersion:"findings-response.v1",status:"preparing",findings:null}));
  assert.equal((await missing.json() as {status:string}).status,"unavailable");assert.equal(missing.headers.get("cache-control"),"no-store");
  assert.equal((await handle(request(endpoint+"/findings?x=1"),env,context,upstream)).status,404);
+});
+
+test("a legacy fallback answer is served but never cached, so the next request retries the full read",async()=>{
+ const put:string[]=[];const cache={match:async()=>undefined,put:async(key:Request)=>{put.push(key.url);}} as unknown as Cache;
+ const waits:Promise<unknown>[]=[];const ctx={waitUntil:(p:Promise<unknown>)=>{waits.push(p);}};
+ const fallback:typeof fetch=async(input)=>{const url=String(input);if(url.endsWith("/business-flow"))throw new Error("timeout");if(url.endsWith("/analysis"))return Response.json({businessFlow:completeOrclFixture});return new Response(null,{status:404});};
+ const served=await handle(request(endpoint),env,ctx,fallback,cache);await Promise.all(waits);
+ const body=await served.json() as {status:string;outdated:boolean;reasons:string[]};
+ assert.equal(served.status,200);assert.equal(body.status,"ready");assert.equal(body.outdated,true);assert.deepEqual(body.reasons,["PREPARING"]);
+ assert.equal(served.headers.get("cache-control"),"no-store");assert.deepEqual(put,[]);
+ const fresh=await handle(request(endpoint),env,ctx,success,cache);await Promise.all(waits);
+ assert.equal(fresh.headers.get("cache-control"),"public, max-age=60");assert.deepEqual(put,["https://site.test"+endpoint]);
 });
