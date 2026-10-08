@@ -8,7 +8,8 @@ export type Slot = { periodEnd: string; quarter: RevenueHistoryQuarter | null; m
 export type Layer = { key: string; value: number; tone: "root" | "child" | "total"; slot: number; shade: number; name: string };
 export type Column = { slot: Slot; layers: Layer[]; total: number | null; state: "ok" | "missing" | "basis" };
 
-export const SLOTS = 8;
+/** Most quarters shown as bars; companies with a shorter disclosure history show fewer. */
+export const SLOTS = 5;
 const norm = (name: string) => disclosedSegmentLabel(name).replace(/[\s（）()]/g, "").toLowerCase();
 
 const monthIndex = (date: string) => Number(date.slice(0, 4)) * 12 + Number(date.slice(5, 7)) - 1;
@@ -37,6 +38,12 @@ export function buildSlots(history: RevenueHistory, count = SLOTS): Slot[] {
     return { periodEnd: match?.periodEnd ?? monthEnd(target), quarter: match && !differentCurrency ? unscaledQuarter(match) : null,
       ...(differentCurrency ? { missingReason: "currency" as const } : {}) };
   });
+}
+
+/** Visible bar count: from the first disclosed quarter to the latest, at most `max`, so a recent listing gets no leading empty bars. */
+export function visibleSlotCount(slots: Slot[], max = SLOTS) {
+  const first = slots.findIndex(slot => slot.quarter != null || slot.missingReason != null);
+  return first < 0 ? 0 : Math.min(max, slots.length - first);
 }
 
 /** Same disclosure id first; otherwise the same disclosed business name (filings rename members across presentations). */

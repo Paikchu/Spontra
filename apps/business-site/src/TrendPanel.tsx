@@ -7,7 +7,7 @@ import type { BusinessFlowQuarter } from "@/shared/analysis-contract/business-fl
 import { compactFlowValue } from "@/lib/earning-report/web/business-flow-layout";
 import { disclosedSegmentLabel } from "@/lib/earning-report/web/business-flow-model";
 import type { GuidancePublication } from "@/shared/analysis-contract/guidance";
-import { SLOTS, ACTION_NAMES, buildBridge, buildColumns, buildSlots, columnIndex, growth, growthSeries, guidanceLabel, guidanceOverlay, layerOrder, niceTicks, rateTicks, type Bridge, type Column, type GuideMark, type Layer, type TrendItem } from "./trend-model";
+import { SLOTS, ACTION_NAMES, buildBridge, buildColumns, buildSlots, columnIndex, visibleSlotCount, growth, growthSeries, guidanceLabel, guidanceOverlay, layerOrder, niceTicks, rateTicks, type Bridge, type Column, type GuideMark, type Layer, type TrendItem } from "./trend-model";
 
 const SHADES = [100, 66, 44, 30];
 const shortPeriod = (end: string) => end.slice(0, 7).replace("-", ".");
@@ -21,7 +21,7 @@ function layerColor(layer: Layer, hue: (slot: number) => string) {
 }
 
 /**
- * Eight quarterly bars that morph rather than remount: every column always renders every layer, and a
+ * Up to five quarterly bars (fewer for a short disclosure history) that morph rather than remount: every column always renders every layer, and a
  * focus change only moves heights, so "all businesses" collapses into the selected business continuously.
  */
 export function TrendPanel({ history, items, selected, currentPeriod, periods, onPickPeriod, hue, guidance = null }: {
@@ -40,11 +40,12 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
   const [series, setSeries] = useState<"bar" | "line" | null>(null);
   const [view, setView] = useState<"trend" | "bridge">("trend");
   const [chosenLag, setLag] = useState<1 | 4 | null>(null);
-  // Retain a full prior year for comparisons, while bars, guidance and interval KPIs show only eight quarters.
+  // Retain a full prior year for comparisons, while bars, guidance and interval KPIs show only the visible quarters.
   const historySlots = useMemo(() => buildSlots(history, SLOTS + 4), [history]);
   const historyColumns = useMemo(() => buildColumns(historySlots, items, selected), [historySlots, items, selected]);
-  const slots = useMemo(() => historySlots.slice(-SLOTS), [historySlots]);
-  const columns = useMemo(() => historyColumns.slice(-SLOTS), [historyColumns]);
+  const visible = visibleSlotCount(historySlots);
+  const slots = useMemo(() => historySlots.slice(historySlots.length - visible), [historySlots, visible]);
+  const columns = useMemo(() => historyColumns.slice(historyColumns.length - visible), [historyColumns, visible]);
   const order = useMemo(() => layerOrder(items, columns), [items, columns]);
   const overlay = useMemo(() => guidanceOverlay(slots, guidance, selected), [slots, guidance, selected]);
   const guided = [...overlay.bySlot, overlay.next].filter((m): m is GuideMark => m != null);
@@ -54,7 +55,7 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
   const money = (v: number | null) => compactFlowValue(v, { currency: unit.currency, scale: unit.scale } as BusinessFlowQuarter);
   const guidanceMoney = (v: number | null) => compactFlowValue(v, { currency: "USD", scale: 1 } as BusinessFlowQuarter);
   const known = columns.filter(c => c.total != null);
-  const last = columns.at(-1)?.total ?? null, yearAgo = columns.at(-5)?.total ?? null;
+  const last = historyColumns.at(-1)?.total ?? null, yearAgo = historyColumns.at(-5)?.total ?? null;
   const yoy = growth(last, yearAgo), span = known.length > 1 ? growth(known.at(-1)!.total, known[0].total) : null;
   const mode = selected?.key ?? "all";
   const legend = useMemo(() => selected ? (columns.find(c => c.layers.length > 1)?.layers ?? [])
@@ -65,8 +66,8 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
   const lag = chosenLag ?? (buildBridge(historyColumns, historyIndex, 4) ? 4 : 1);
   const bridge = useMemo(() => buildBridge(historyColumns, historyIndex, lag), [historyColumns, historyIndex, lag]);
   // The growth line has its own default: year over year needs four earlier quarters, so a short history reads quarter over quarter.
-  const lineLag = chosenLag ?? (growthSeries(historyColumns, 4).slice(-SLOTS).filter(v => v != null).length >= 2 ? 4 : 1);
-  const rates = useMemo(() => growthSeries(historyColumns, lineLag).slice(-SLOTS), [historyColumns, lineLag]);
+  const lineLag = chosenLag ?? (growthSeries(historyColumns, 4).slice(-visible).filter(v => v != null).length >= 2 ? 4 : 1);
+  const rates = useMemo(() => growthSeries(historyColumns, lineLag).slice(-visible), [historyColumns, lineLag, visible]);
   const rateCount = rates.filter(rate => rate != null).length;
   const rateAxis = useMemo(() => rateTicks(rates), [rates]);
   const rateY = (v: number) => rateAxis ? (v - rateAxis[0]) / (rateAxis[3] - rateAxis[0]) * 100 : 0;

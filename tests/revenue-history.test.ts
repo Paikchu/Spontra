@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { mergeHistory, readHistory, validHistoryQuarter } from "../shared/analysis-runtime/financial-data/history";
 import type { RevenueHistory, RevenueHistoryQuarter } from "../shared/analysis-contract/revenue-history";
-import { buildBridge, buildColumns, buildSlots, columnIndex, growthSeries, layerOrder, rateTicks, niceTicks, type TrendItem } from "../apps/business-site/src/trend-model";
+import { buildBridge, buildColumns, buildSlots, visibleSlotCount, columnIndex, growthSeries, layerOrder, rateTicks, niceTicks, type TrendItem } from "../apps/business-site/src/trend-model";
 
 const quarter = (periodEnd: string, segments: Array<[string, string, number]>, extra: Partial<RevenueHistoryQuarter> = {}): RevenueHistoryQuarter => {
   const start = new Date(Date.parse(periodEnd) - 91 * 86400000).toISOString().slice(0, 10);
@@ -51,10 +51,20 @@ const history: RevenueHistory = { schemaVersion: "revenue-history.v1", ticker: "
 ] };
 
 test("trend slots step by calendar quarter and keep uncollected periods as explicit gaps", () => {
-  const slots = buildSlots(history);
+  const slots = buildSlots(history, 8);
   assert.equal(slots.length, 8);
   assert.deepEqual(slots.map(s => s.periodEnd.slice(0, 7)), ["2024-11", "2025-02", "2025-05", "2025-08", "2025-11", "2026-02", "2026-05", "2026-08"]);
   assert.deepEqual(slots.map(s => s.quarter ? 1 : 0), [0, 0, 0, 0, 1, 0, 1, 1]);
+});
+
+test("visible bars start at the first disclosed quarter and never exceed five", () => {
+  assert.equal(visibleSlotCount(buildSlots(history, 9)), 4); // 2025-11 through 2026-08, with 2026-02 kept as a gap.
+  assert.equal(visibleSlotCount(buildSlots({ ...history, quarters: history.quarters.slice(-1) }, 9)), 1);
+  const long = { ...history, quarters: Array.from({ length: 9 }, (_, i) => quarter(new Date(Date.UTC(2024, 2 + i * 3, 0)).toISOString().slice(0, 10), [["a", "A", 1]])) };
+  assert.equal(visibleSlotCount(buildSlots(long, 9)), 5);
+  // A quarter reported in another currency still counts as disclosed: it is shown as an explained gap, not trimmed.
+  const fx = { ...history, quarters: [{ ...history.quarters[0], currency: "EUR" }, ...history.quarters.slice(1)] };
+  assert.equal(visibleSlotCount(buildSlots(fx, 9)), 4);
 });
 
 test("trends normalize mixed disclosure scales for totals, children and growth without changing source data", () => {
@@ -62,7 +72,7 @@ test("trends normalize mixed disclosure scales for totals, children and growth w
   const current = { ...withChildren("2026-08-31", 4, 7, 1), scale: 1_000_000 };
   const mixed = { ...history, quarters: [current, prior] };
   const original = structuredClone(mixed);
-  const slots = buildSlots(mixed);
+  const slots = buildSlots(mixed, 8);
   const columns = buildColumns(slots, items, null);
   assert.deepEqual(columns.slice(-2).map(c => c.total), [9e6, 12e6]);
   assert.deepEqual(buildColumns(slots, items, items[1]).slice(-2).map(c => c.total), [3e6, 4e6]);
@@ -72,7 +82,7 @@ test("trends normalize mixed disclosure scales for totals, children and growth w
 });
 
 test("different reporting currencies leave a labelled gap instead of a false growth comparison", () => {
-  const slots = buildSlots({ ...history, quarters: [{ ...withChildren("2026-05-31", 3, 5, 1), currency: "EUR" }, withChildren("2026-08-31", 4, 7, 1)] });
+  const slots = buildSlots({ ...history, quarters: [{ ...withChildren("2026-05-31", 3, 5, 1), currency: "EUR" }, withChildren("2026-08-31", 4, 7, 1)] }, 8);
   assert.equal(slots.at(-2)!.missingReason, "currency");
   const columns = buildColumns(slots, items, null);
   assert.equal(columns.at(-2)!.total, null);
@@ -81,7 +91,7 @@ test("different reporting currencies leave a labelled gap instead of a false gro
 });
 
 test("columns retain original disclosed businesses across presentations without inventing a current business split", () => {
-  const slots = buildSlots(history);
+  const slots = buildSlots(history, 8);
   const all = buildColumns(slots, items, null);
   assert.equal(all[4].state, "basis");
   assert.deepEqual(all[4].layers.map(l => l.key), ["disclosed:old", "hw"]);
@@ -98,7 +108,7 @@ test("columns retain original disclosed businesses across presentations without 
 });
 
 test("growth bridge splits a change only between quarters stacked from the same businesses", () => {
-  const slots = buildSlots(history);
+  const slots = buildSlots(history, 8);
   const all = buildColumns(slots, items, null);
   const latest = columnIndex(all, "2026-08-31");
   assert.equal(latest, 7);
@@ -124,11 +134,11 @@ test("growth bridge splits a change only between quarters stacked from the same 
 });
 
 test("growth series compares each quarter with the one a lag earlier and leaves gaps where either is missing", () => {
-  const all = buildColumns(buildSlots(history), items, null);
+  const all = buildColumns(buildSlots(history, 8), items, null);
   // Totals: slot 4 = 10, slot 6 = 9, slot 7 = 12; every other slot is uncollected.
   assert.deepEqual(growthSeries(all, 1), [null, null, null, null, null, null, null, (12 / 9 - 1) * 100]);
   assert.deepEqual(growthSeries(all, 4), Array(8).fill(null));
-  const cloud = buildColumns(buildSlots(history), items, items[0]);
+  const cloud = buildColumns(buildSlots(history, 8), items, items[0]);
   assert.deepEqual(growthSeries(cloud, 1).slice(-1), [(11 / 8 - 1) * 100]);
 });
 
@@ -146,7 +156,7 @@ test("twelve-quarter history supplies all eight visible YoY and QoQ points, incl
   const full = { ...history, quarters };
   const columns = buildColumns(buildSlots(full, 12), items, null);
   const visible = columns.slice(-8);
-  assert.deepEqual(visible.map(c => c.slot.periodEnd), buildSlots(full).map(s => s.periodEnd));
+  assert.deepEqual(visible.map(c => c.slot.periodEnd), buildSlots(full, 8).map(s => s.periodEnd));
   for (const lag of [1, 4] as const) {
     const rates = growthSeries(columns, lag).slice(-8);
     assert.equal(rates.filter(v => v != null).length, 8);

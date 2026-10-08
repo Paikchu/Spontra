@@ -14,27 +14,36 @@ const history: RevenueHistory = { schemaVersion: "revenue-history.v1", ticker: "
 })) };
 const render = (value: RevenueHistory) => renderToStaticMarkup(<TrendPanel history={value} items={[]} selected={null} currentPeriod="2024-11-30" periods={new Set()} onPickPeriod={() => {}} hue={() => "#408aff"} />);
 
-test("rendered trend keeps eight bars but draws eight YoY points with the hidden comparison year", () => {
+test("rendered trend keeps five bars but draws five YoY points with the hidden comparison year", () => {
   const html = render(history);
-  assert.equal((html.match(/class="trend-col"/g) ?? []).length, 8);
-  assert.equal((html.match(/class="trend-dot"/g) ?? []).length, 8);
-  assert.equal((html.match(/class="trend-line"/g) ?? []).length, 7);
+  assert.equal((html.match(/class="trend-col"/g) ?? []).length, 5);
+  assert.equal((html.match(/class="trend-dot"/g) ?? []).length, 5);
+  assert.equal((html.match(/class="trend-line"/g) ?? []).length, 4);
+  assert.match(html, /近 5 季收入/);
   assert.match(html, /同比增速/);
-  assert.match(html, /\+40\.0%/); // First visible quarter: 140 versus the hidden 100 baseline.
-  assert.match(html, /2024\.11 以来/);
-  assert.ok(!html.includes("2023.11"));
+  assert.match(html, /\+23\.5%/); // Latest quarter 210 versus 170, the first visible bar.
+  assert.match(html, /2025\.08 以来/);
+  assert.ok(!html.includes("2025.05"));
+});
+
+test("a recently listed company shows only the quarters it has disclosed", () => {
+  const html = render({ ...history, quarters: history.quarters.slice(-3) });
+  assert.equal((html.match(/class="trend-col"/g) ?? []).length, 3);
+  assert.match(html, /近 3 季收入/);
+  assert.match(html, /环比增速/); // No year-ago baseline, so the line reads quarter over quarter.
+  assert.ok(!html.includes("trend-ghost"));
 });
 
 test("a missing baseline leaves just its point and adjoining line segments absent", () => {
-  const html = render({ ...history, quarters: history.quarters.filter((_, i) => i !== 1) });
-  assert.equal((html.match(/class="trend-col"/g) ?? []).length, 8);
-  assert.equal((html.match(/class="trend-dot"/g) ?? []).length, 7);
-  assert.equal((html.match(/class="trend-line"/g) ?? []).length, 5);
+  const html = render({ ...history, quarters: history.quarters.filter((_, i) => i !== 4) });
+  assert.equal((html.match(/class="trend-col"/g) ?? []).length, 5);
+  assert.equal((html.match(/class="trend-dot"/g) ?? []).length, 4);
+  assert.equal((html.match(/class="trend-line"/g) ?? []).length, 2);
 });
 
 test("partial growth coverage is explained without drawing missing comparisons", () => {
-  const html = render({ ...history, quarters: history.quarters.filter((_, i) => i !== 1) });
-  assert.match(html, /7\/8 季可比/);
+  const html = render({ ...history, quarters: history.quarters.filter((_, i) => i !== 4) });
+  assert.match(html, /4\/5 季可比/);
   assert.match(html, /部分季度缺少本期或比较期的同口径收入，增速留空/);
   assert.ok(!render(history).includes("季可比"));
 });
