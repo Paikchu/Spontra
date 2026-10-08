@@ -5,7 +5,7 @@ import { D1SecRepository } from "../../workers/pipeline/src/sec/d1.ts";
 import { businessFlowCacheKey } from "../../workers/pipeline/src/sec/business-flow-cache.ts";
 import { executeFindingsWorkflow, runFindingsSweep } from "../../workers/pipeline/src/findings/workflow.ts";
 import { findingsCacheKey } from "../../workers/pipeline/src/findings/read.ts";
-import { FINDINGS_SYSTEM, type FindingsModel } from "../../workers/pipeline/src/findings/writer.ts";
+import { FINDINGS_SYSTEM, pairByEvidence, type FindingsModel } from "../../workers/pipeline/src/findings/writer.ts";
 import type { LedgerRow } from "../../workers/pipeline/src/findings/ledger.ts";
 import { handleAnalysisReadRequest } from "../../workers/pipeline/src/read-api/router.ts";
 import type { SecPipelineEnv } from "../../workers/pipeline/src/operations.ts";
@@ -70,6 +70,17 @@ test("the sweep starts one run per unseen report; the run writes from the ledger
     assert.deepEqual(second.started, [], "the same report is not written twice");
     assert.deepEqual(await executeFindingsWorkflow({ ticker: "ORCL", fingerprint: "stale" }, step, env, { model: model([]) }), { status: "superseded" });
   } finally { db.close(); }
+});
+
+test("a strength and a risk resting on the same figure are paired; findings with nothing in common stay apart", () => {
+  const base = { severity: 2 as const, title: "t", judgment: { text: "x", sourceIds: ["s"] }, anchors: { view: "profit" as const, nodeIds: [], metrics: [] }, lens: { type: "ladder" as const } };
+  const ev = (ref: object) => ({ ref: ref as never, periodEnd: "2026-05-31", span: "quarter" as const });
+  const paired = pairByEvidence([
+    { ...base, id: "cloud", kind: "strength", evidence: [ev({ nodeId: "cloud" }), ev({ capital: "capex" })] },
+    { ...base, id: "margin", kind: "risk", evidence: [ev({ metric: "operating" })] },
+    { ...base, id: "capex", kind: "risk", evidence: [ev({ capital: "capex" }), ev({ capital: "freeCashFlow" })] },
+  ]);
+  assert.deepEqual(paired.map(f => [f.id, f.pairWith ?? null]), [["cloud", "capex"], ["margin", null], ["capex", "cloud"]]);
 });
 
 test("a run whose findings all fail verification publishes nothing and leaves the stored set alone", async () => {

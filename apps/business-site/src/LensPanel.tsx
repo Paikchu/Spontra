@@ -15,7 +15,8 @@ const VERDICT = { above: "高于指引", within: "落在指引内", below: "低�
 
 /** One figure in the unit it was resolved in; signed amounts keep their sign. */
 /** A ratio's change: points for a rate-like ratio (below 1.5), turns for a multiple. */
-const ratioChange = (r: ResolvedEvidence) => r.delta == null ? "—" : Math.abs(r.compare?.value ?? 0) < 1.5 && Math.abs(r.current.value) < 1.5 ? `${percent(r.delta * 100)} 点` : `${r.delta > 0 ? "+" : r.delta < 0 ? "−" : ""}${Math.abs(r.delta).toFixed(2)} 倍`;
+const signed = (v: number, digits: number) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(digits)}`;
+const ratioChange = (r: ResolvedEvidence) => r.delta == null ? "—" : Math.abs(r.compare?.value ?? 0) < 1.5 && Math.abs(r.current.value) < 1.5 ? `${signed(r.delta * 100, 1)} 点` : `${signed(r.delta, 2)} 倍`;
 
 export function formatValue(v: ResolvedValue): string {
   if (v.range && v.range.low !== v.range.high) return v.unit === "USD" ? `${money(v.range.low, v.currency ?? "USD")}–${money(v.range.high, v.currency ?? "USD")}` : `${v.range.low}–${v.range.high}%`;

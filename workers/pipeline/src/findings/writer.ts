@@ -74,6 +74,21 @@ function accept(input: WriterInput, raw: unknown): { verified: AnalysisFinding[]
   return { verified: publication.findings.filter(f => ids.has(f.id)), withheld: [...withheld, ...malformed.map((m, i) => ({ id: typeof (m as { id?: unknown })?.id === "string" ? (m as { id: string }).id : `malformed-${i}`, reasons: ["does not match the findings contract"] }))], rejectedShape: false };
 }
 
+/** A strength and a risk that rest on the same figure are two sides of one trade; each unpaired strength takes the first such risk. */
+export function pairByEvidence(findings: AnalysisFinding[]): AnalysisFinding[] {
+  const refs = (f: AnalysisFinding) => new Set(f.evidence.map(e => JSON.stringify(e.ref)));
+  const paired = new Set(findings.flatMap(f => f.pairWith ? [f.id, f.pairWith] : []));
+  const out = findings.map(f => ({ ...f }));
+  for (const strength of out.filter(f => f.kind === "strength" && !paired.has(f.id))) {
+    const mine = refs(strength);
+    const risk = out.find(f => f.kind === "risk" && !paired.has(f.id) && [...refs(f)].some(ref => mine.has(ref)));
+    if (!risk) continue;
+    strength.pairWith = risk.id; risk.pairWith = strength.id;
+    paired.add(strength.id).add(risk.id);
+  }
+  return out;
+}
+
 /**
  * One writing call, deterministic verification, and one repair call for what was withheld. Nothing
  * the data cannot support is published; an empty result publishes nothing rather than a weak set.
@@ -92,9 +107,9 @@ export async function writeFindings(input: WriterInput): Promise<WriterOutcome> 
     verified = [...verified, ...second.verified.filter(f => !kept.has(f.id))];
     withheld = second.withheld;
   }
-  // Pairs must point at findings that survived.
+  // Pairs must point at findings that survived; where the writer left growth and its cost unpaired, pair them by shared evidence.
   const ids = new Set(verified.map(f => f.id));
-  const findings = verified.map(f => f.pairWith && !ids.has(f.pairWith) ? (({ pairWith: _, ...rest }) => { void _; return rest; })(f) : f);
+  const findings = pairByEvidence(verified.map(f => f.pairWith && !ids.has(f.pairWith) ? (({ pairWith: _, ...rest }) => { void _; return rest; })(f) : f));
   const publication = findings.length ? readFindingsPublication(shell(input, findings), input.ticker) : null;
   return { publication, withheld, stages };
 }
