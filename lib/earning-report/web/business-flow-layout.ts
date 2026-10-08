@@ -68,7 +68,9 @@ export function layoutInfographic(graph: FinancialGraph, labelWidth: (n: PlacedN
   const nodes: PlacedNode[] = graph.nodes.map(n => {
     const column = columnOf.get(n.depth)!;
     const tone: FlowTone = n.loss ? "loss" : n.credit ? "source" : n.expense ? "expense" : n.segmentId || n.name === "revenue" || column < revenueColumn ? "source" : "profit";
-    const side: LabelSide = column === 0 && column < revenueColumn ? "left" : column === last && column > revenueColumn ? "right" : tone === "expense" ? "bottom" : "top";
+    // A deficit source enters from below, so its label sits under it like a cost's.
+    const deficitSource = tone === "loss" && !graph.links.some(l => l.target === n.name);
+    const side: LabelSide = column === 0 && column < revenueColumn ? "left" : column === last && column > revenueColumn ? "right" : tone === "expense" || deficitSource ? "bottom" : "top";
     return { ...n, column, tone, side, x: 0, y: 0, h: Math.max(2, n.value * scale) };
   });
   const byName = new Map(nodes.map(n => [n.name, n]));
@@ -79,6 +81,11 @@ export function layoutInfographic(graph: FinancialGraph, labelWidth: (n: PlacedN
 
   // Revenue and the business tree to its left: each child sits beside its slot in the parent.
   if (revenue) byName.get("revenue")!.y = 0;
+  // A deficit that pays costs revenue cannot reach at all starts beside revenue, below it.
+  if (revenue && revenueColumn >= 0) {
+    let below = byName.get("revenue")!;
+    for (const n of columns[revenueColumn].filter(n => n.name !== "revenue")) { n.y = below.y + below.h + gapBetween(below, n, g); below = n; }
+  }
   for (let c = revenueColumn - 1; c >= 0; c--) {
     const ideal = new Map<string, number>();
     for (const n of columns[c]) {
@@ -115,14 +122,21 @@ export function layoutInfographic(graph: FinancialGraph, labelWidth: (n: PlacedN
     }
     // Inputless gains (other income) only feed the next profit node, which takes its parent's top band; stacking them
     // above the column lets their bands rise into that node instead of crossing the column's own cost outflows.
-    const floating = columns[c].filter(n => n.tone !== "expense" && !incoming(n.name).length);
-    const anchored = columns[c].filter(n => !floating.includes(n));
+    const floating = columns[c].filter(n => n.tone !== "expense" && n.tone !== "loss" && !incoming(n.name).length);
+    // A deficit source funds costs, which sink; it enters from below the column so its bands rise into them.
+    const deficits = columns[c].filter(n => n.tone === "loss" && !incoming(n.name).length);
+    const anchored = columns[c].filter(n => !floating.includes(n) && !deficits.includes(n));
     anchored.sort((a, b) => groupRank(a) - groupRank(b) || (ideal.get(a.name) ?? 0) - (ideal.get(b.name) ?? 0));
     resolve(anchored, ideal, false, g);
     let below = anchored[0];
     for (const n of floating.reverse()) {
       n.y = below ? below.y - gapBetween(n, below, g) - n.h : 0;
       below = n;
+    }
+    let above = anchored.at(-1);
+    for (const n of deficits) {
+      n.y = above ? above.y + above.h + gapBetween(above, n, g) : 0;
+      above = n;
     }
   }
 

@@ -484,6 +484,26 @@ button { cursor: pointer; }
 @keyframes sweep { from { background-position: -30% 0; } to { background-position: 130% 0; } }
 @keyframes shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 
+/* ---------- Funding views: profit, cash flow and balance sheet share one stage ---------- */
+.stage-controls { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 10px 12px; margin-left: auto; }
+.stage-views { padding: 3px; }
+.stage-views button { padding: 5px 13px; font-size: 12.5px; }
+.stage-controls .report-select { margin-left: 0; }
+.stage-verdict { flex-basis: 100%; margin: -4px 0 0; font-size: 13px; line-height: 1.6; color: var(--muted-foreground); animation: rise .45s var(--ease) both; }
+.stage-verdict b { display: inline-block; margin-right: 10px; padding: 1px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600; color: var(--foreground); background: var(--surface); border: 1px solid var(--hairline); }
+.stage-verdict[data-kind="survival"] b { color: var(--loss); border-color: color-mix(in srgb, var(--loss) 35%, transparent); }
+.stage-verdict[data-kind="expansion"] b { color: var(--flow-expense); border-color: color-mix(in srgb, var(--flow-expense) 35%, transparent); }
+.stage-verdict[data-kind="self"] b { color: var(--up); border-color: color-mix(in srgb, var(--up) 35%, transparent); }
+.pool { position: absolute; inset: 0; display: grid; }
+.pool-canvas { position: relative; min-width: 0; min-height: 0; }
+.pool-svg .fc-band[data-lit="on"] { fill-opacity: .55; }
+.pool-svg[data-focus] .fc-node:not([data-lit]):not(.pool-total) { opacity: .45; }
+.pool-share { fill: var(--faint); font-weight: 500; }
+.pool-tip-line span { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.provenance a { color: var(--faint); text-decoration: underline; text-decoration-color: var(--hairline); text-underline-offset: 3px; }
+.provenance a:hover { color: var(--foreground); }
+.provenance span + a::before, .provenance a + a::before { content: "·"; margin: 0 8px; color: var(--faint); display: inline-block; }
+
 /* ---------- Narrow screens: stack, keep the diagram legible with horizontal scroll ---------- */
 @media (max-width: 960px) {
   body { overflow: auto; }
@@ -511,6 +531,8 @@ button { cursor: pointer; }
   .dossier { order: 3; margin: 0 16px 32px; }
   .chart { margin-top: 16px; overflow-x: auto; overscroll-behavior-x: contain; }
   .fc { position: relative; inset: auto; width: max(100%, 780px, var(--mobile-width, 780px)); aspect-ratio: var(--ratio); }
+  .pool { position: relative; inset: auto; width: max(100%, 640px); height: 460px; }
+  .stage-controls { margin-left: 0; justify-content: flex-start; }
   .stage-foot { flex-direction: column; align-items: flex-start; }
   .trend { --axis: 40px; --gap: 6px; height: 240px; }
   /* The header wraps on narrow screens, so the bar view sizes to its content with a fixed plot height. */

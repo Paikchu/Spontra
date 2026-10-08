@@ -1,6 +1,8 @@
 import {extractFinancialStatements, STATEMENTS_VERSION, type FinancialStatements} from "../../../../shared/analysis-runtime/financial-data/financial-statements.ts";
 import { DISCLOSURE_EXTRACTION_VERSION, extractFilingDisclosures, type FilingDisclosures } from "../../../../shared/analysis-runtime/financial-data/disclosure-extraction.ts";
 import type { DisclosureAuditSummary, DisclosureAuditPage } from "../../../../shared/analysis-contract/disclosure-audit.ts";
+import type { CapitalFiling } from "../../../../shared/analysis-contract/capital-structure.ts";
+import { CAPITAL_VERSION, extractCapitalFiling } from "../../../../shared/analysis-runtime/financial-data/capital-structure.ts";
 import type { DocumentSource } from "./parser.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 
@@ -9,10 +11,11 @@ type ArchiveBucket = {
   put(key: string, value: string, options?: { httpMetadata?: { contentType?: string } }): Promise<unknown>;
 };
 export interface DisclosureArchiveEnv { DB: D1Database; SEC_FILINGS: ArchiveBucket }
-type StoredAudit = DisclosureAuditSummary & { rawKey: string; inventoryKey: string; statementsKey?: string };
+/** `capital` is the reconciled balance sheet and cash flow projection of the archived statements. */
+export type StoredAudit = DisclosureAuditSummary & { rawKey: string; inventoryKey: string; statementsKey?: string; capital?: CapitalFiling };
 export const disclosureAuditPrefix = (ticker: string) => `sec:disclosure-audit:v1:${ticker}:`;
 const digest = async (text: string) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)))].map(n => n.toString(16).padStart(2, "0")).join("");
-const summary = ({rawKey: _raw, inventoryKey: _inventory, statementsKey: _statements, ...value}: StoredAudit): DisclosureAuditSummary => value;
+const summary = ({rawKey: _raw, inventoryKey: _inventory, statementsKey: _statements, capital: _capital, ...value}: StoredAudit): DisclosureAuditSummary => value;
 
 /** Source-addressed archives survive reruns; the D1 pointer advances only after all source, inventory and statement objects exist. */
 export async function archiveFilingDisclosures(env: DisclosureArchiveEnv, ticker: string, source: DocumentSource, html: string,
@@ -26,7 +29,8 @@ export async function archiveFilingDisclosures(env: DisclosureArchiveEnv, ticker
   const repository = new D1SecRepository(env.DB);
   const cacheKey = disclosureAuditPrefix(ticker) + documentId;
   const existing = await repository.getCache<StoredAudit>(cacheKey);
-  if (existing?.payload.contentSha256 === contentSha256 && existing.payload.parserVersion === DISCLOSURE_EXTRACTION_VERSION && existing.payload.statements?.version === STATEMENTS_VERSION) return summary(existing.payload);
+  if (existing?.payload.contentSha256 === contentSha256 && existing.payload.parserVersion === DISCLOSURE_EXTRACTION_VERSION && existing.payload.statements?.version === STATEMENTS_VERSION
+    && existing.payload.capital?.version === CAPITAL_VERSION) return summary(existing.payload);
   const inventory = extractFilingDisclosures(html, { ticker, accessionNumber: source.accession, documentUrl: source.url,
     form: metadata.form ?? "SEC", reportDate: metadata.reportDate ?? "", filedAt: source.filedAt });
   const base = `financial-disclosures/${DISCLOSURE_EXTRACTION_VERSION}/${ticker}/${source.accession}/${documentId}/${contentSha256}`;
@@ -36,12 +40,13 @@ export async function archiveFilingDisclosures(env: DisclosureArchiveEnv, ticker
   const statements = extractFinancialStatements(html, inventory);
   const statementsKey = base + "/" + STATEMENTS_VERSION + ".json";
   await env.SEC_FILINGS.put(statementsKey, JSON.stringify(statements), { httpMetadata: { contentType: "application/json" } });
+  const capital = extractCapitalFiling(statements, { accession: source.accession, url: source.url, filedAt: source.filedAt, form: inventory.source.form });
   const archivedAt = new Date().toISOString();
   const record: StoredAudit = { documentId, ticker, source: inventory.source, contentSha256, parserVersion: inventory.version,
     archivedAt, sourceBytes, factCount: inventory.facts.length,
     periodEnds: [...new Set(inventory.facts.map(f => f.context?.period.end).filter((end): end is string => Boolean(end)))].sort(),
     coverage: { ...inventory.coverage, issues: inventory.coverage.issues.slice(0, 100) },
-    issueDetailsTruncated: inventory.coverage.issues.length > 100, rawKey, inventoryKey, statementsKey,
+    issueDetailsTruncated: inventory.coverage.issues.length > 100, rawKey, inventoryKey, statementsKey, capital,
     statements: {version: STATEMENTS_VERSION, status: statements.status, tables: statements.coverage.tables, rows: statements.coverage.rows, cells: statements.coverage.cells} };
   await repository.setCache(cacheKey, record, archivedAt);
   return summary(record);

@@ -6,7 +6,8 @@ import { revenueNodeKey, selectRevenueTree } from "./revenue-tree";
 export const metricLabels: Record<FlowMetric, string> = { revenue:"收入", cost:"营业成本", gross:"毛利", research:"研发", sales:"销售营销", administration:"行政", operatingExpenses:"运营费用", operating:"营业利润", other:"其他损益", pretax:"税前利润", tax:"所得税", net:"净利润" };
 export type SankeyNode = { name:string; label:string; metric?:FlowMetric; segmentId?:string; depth:number; expense:boolean; loss?:boolean; credit?:boolean; offset?:boolean; value:number; amount?:FlowAmount };
 export type SankeyLink = { source:string; target:string; value:number };
-export type FinancialGraph = { nodes:SankeyNode[]; links:SankeyLink[]; notice:string | null; signed?:boolean };
+/** `deficit` graphs draw a loss as funding: every link is a positive flow, and the net loss is a source. */
+export type FinancialGraph = { nodes:SankeyNode[]; links:SankeyLink[]; notice:string | null; signed?:boolean; deficit?:boolean };
 
 export function validateGraph(nodes:SankeyNode[], links:SankeyLink[]): boolean {
   if (!nodes.length || nodes.length > 64 || links.length > 128) return false;
@@ -191,6 +192,101 @@ function signedFinancialGraph(q: BusinessFlowQuarter): FinancialGraph {
   if (indegree.get(target.name) === 0) queue.push(target);
  }
  return { nodes: connected, links, signed: true, notice: "收入与成本费用逐步抵减，利润或亏损向右结转；跨过盈亏零点的项目分别显示已抵减与剩余金额。线宽表示金额绝对值。" };
+}
+
+/**
+ * A loss quarter drawn as funding: revenue and the net loss together pay every cost. Each cost is paid from
+ * what is left of revenue (through gross, operating and pretax profit while they are positive); the company's
+ * own credits (other income, tax benefits) then cover what revenue could not; the net loss covers the rest,
+ * entering at the costs revenue could not reach. Profit nodes carry the reported figures; nothing is estimated.
+ */
+export function deficitFinancialGraph(q: BusinessFlowQuarter): FinancialGraph | null {
+ const figure = (key: FlowMetric) => numeric(q.figures[key]);
+ const revenue = figure("revenue"), net = figure("net"), direct = q.incomeModel === "direct_operating";
+ if (revenue == null || revenue <= 0 || net == null || net >= 0 || q.incomeModel === "financial" || q.incomeModel === "insurance") return null;
+ const checks = reconcileQuarter(q);
+ if (!(direct ? [1, 3, 4] : [1, 2, 3, 4]).every(i => checks[i]?.status === "balanced")) return null;
+ const tolerance = Math.max(1e-6, revenue * 1e-9);
+ type Term = { node: SankeyNode; use: number };
+ const metricTerm = (key: FlowMetric, use: number, label: string): Term => ({ use, node: { name: key, label, metric: key, depth: 0, expense: use > 0, credit: use < 0, value: Math.abs(use) } });
+ const parts = (kind: "expense" | "other", total: FlowMetric, sign: 1 | -1, fallback: string): Term[] | null => {
+  const items = kind === "expense" ? q.expenseComponents : q.otherComponents, value = figure(total);
+  if (value == null) return null;
+  // A single component that is the whole total adds no detail; the stage name reads better than "(total)".
+  if (!items?.length || (items.length === 1 && Math.abs((numeric(items[0].amount) ?? NaN) - value) <= tolerance)) return value ? [metricTerm(total, sign * value, fallback)] : [];
+  const values = items.map(c => numeric(c.amount));
+  if (values.some(v => v == null) || Math.abs(values.reduce<number>((a, v) => a + v!, 0) - value) > tolerance) return null;
+  return items.flatMap((c, i) => values[i] ? [{ use: sign * values[i]!, node: { name: `${kind}:${c.id}`, label: c.name, amount: c.amount, depth: 0, expense: sign * values[i]! > 0, credit: sign * values[i]! < 0, value: Math.abs(values[i]!) } }] : []);
+ };
+ const other = figure("other"), tax = figure("tax"), cost = figure("cost");
+ const expenses = parts("expense", "operatingExpenses", 1, metricLabels.operatingExpenses);
+ const others = parts("other", "other", -1, (other ?? 0) < 0 ? "非营业净支出" : "非营业净收益");
+ if (!expenses || !others || tax == null || (!direct && cost == null)) return null;
+ const stages: Array<{ terms: Term[]; after: FlowMetric | null }> = [
+  ...(direct ? [] : [{ terms: cost ? [metricTerm("cost", cost, metricLabels.cost)] : [], after: "gross" as const }]),
+  { terms: expenses, after: "operating" },
+  { terms: others, after: "pretax" },
+  { terms: tax ? [metricTerm("tax", tax, tax > 0 ? metricLabels.tax : "所得税收益")] : [], after: null },
+ ];
+ const nodes = new Map<string, SankeyNode>(), links: SankeyLink[] = [];
+ const flow = (source: string, target: string, value: number) => { if (value > tolerance) links.push({ source, target, value }); };
+ nodes.set("revenue", { name: "revenue", label: metricLabels.revenue, metric: "revenue", depth: 0, expense: false, value: revenue });
+ let carrier: { name: string; balance: number } | null = { name: "revenue", balance: revenue };
+ const carriers = ["revenue"], gaps: Array<{ target: string; amount: number }> = [];
+ let credits: Array<{ name: string; amount: number }> = [];
+ for (const stage of stages) {
+  // The company's own credits first cover what revenue could not reach in earlier stages.
+  for (const term of stage.terms.filter(t => t.use < 0)) {
+   nodes.set(term.node.name, term.node);
+   let amount = -term.use;
+   for (const gap of gaps) { const x = Math.min(gap.amount, amount); flow(term.node.name, gap.target, x); gap.amount -= x; amount -= x; }
+   credits.push({ name: term.node.name, amount });
+  }
+  for (const term of stage.terms.filter(t => t.use > 0)) {
+   nodes.set(term.node.name, term.node);
+   let rest = term.use;
+   const paid: number = Math.min(carrier?.balance ?? 0, rest);
+   if (carrier && paid > 0) { flow(carrier.name, term.node.name, paid); carrier.balance -= paid; rest -= paid; }
+   for (const credit of credits) { const x = Math.min(credit.amount, rest); flow(credit.name, term.node.name, x); credit.amount -= x; rest -= x; }
+   if (rest > tolerance) gaps.push({ target: term.node.name, amount: rest });
+  }
+  const balance: number = (carrier?.balance ?? 0) + credits.reduce((a, c) => a + c.amount, 0);
+  if (stage.after && balance > tolerance) {
+   const reported = figure(stage.after);
+   if (reported == null || Math.abs(reported - balance) > tolerance) return null;
+   nodes.set(stage.after, { name: stage.after, label: metricLabels[stage.after], metric: stage.after, depth: 0, expense: false, value: balance });
+   if (carrier) flow(carrier.name, stage.after, carrier.balance);
+   for (const credit of credits) flow(credit.name, stage.after, credit.amount);
+   carrier = { name: stage.after, balance };
+   carriers.push(stage.after);
+   credits = [];
+  } else if (stage.after) carrier = null;
+ }
+ const deficit = gaps.reduce((a, g) => a + g.amount, 0);
+ if ((carrier?.balance ?? 0) > tolerance || credits.some(c => c.amount > tolerance) || Math.abs(deficit + net) > tolerance) return null;
+ nodes.set("net", { name: "net", label: "净亏损", metric: "net", depth: 0, expense: false, loss: true, value: -net });
+ for (const gap of gaps) flow("net", gap.target, gap.amount);
+ // Depth: profit follows revenue; a cost only the deficit pays sits next to the last profit; sources sit just left of what they fund.
+ const list = [...nodes.values()], into = (name: string) => links.filter(l => l.target === name), out = (name: string) => links.filter(l => l.source === name);
+ const placed = new Map<string, number>([["revenue", 0]]);
+ for (let changed = true; changed;) {
+  changed = false;
+  for (const l of links) if (placed.has(l.source) && carriers.includes(l.source) && (placed.get(l.target) ?? -1) < placed.get(l.source)! + 1) { placed.set(l.target, placed.get(l.source)! + 1); changed = true; }
+ }
+ const lastCarrier = Math.max(...carriers.map(c => placed.get(c) ?? 0));
+ for (const n of list) if (!placed.has(n.name) && into(n.name).length) placed.set(n.name, lastCarrier + 1);
+ // Anything a carrier or credit feeds lies to the right of it.
+ for (let changed = true; changed;) {
+  changed = false;
+  for (const l of links) if (into(l.source).length && placed.get(l.target)! <= placed.get(l.source)!) { placed.set(l.target, placed.get(l.source)! + 1); changed = true; }
+ }
+ for (const n of list) if (!into(n.name).length && n.name !== "revenue") placed.set(n.name, Math.min(...out(n.name).map(l => placed.get(l.target)!)) - 1);
+ for (const n of list) n.depth = placed.get(n.name)!;
+ const tree = selectRevenueTree(q);
+ if (tree) { const branches: SankeyNode[] = []; appendRevenueTree(q, tree, branches, links, 0); for (const node of branches) list.push(node); }
+ const connected = list.filter(n => links.some(l => l.source === n.name || l.target === n.name));
+ if (!validateGraph(connected, links)) return null;
+ return { nodes: connected, links, deficit: true, notice: "收入与净亏损共同支付成本费用：净亏损是收入未能覆盖的部分，在收入用尽的环节流入，由现金储备、借款或发股补足。线宽表示金额。" };
 }
 
 /** Gross segment revenue is reconciled through explicit signed consolidation items.

@@ -5,6 +5,7 @@ import type { CompleteFlowPublication } from "@/shared/analysis-contract/complet
 import {withLegacyInterestFormula} from "@/shared/analysis-runtime/financial-data/disclosed-quarter";
 import {readReportHistory} from "@/shared/analysis-runtime/financial-data/report-history";
 import {readHistory} from "@/shared/analysis-runtime/financial-data/history";
+import {readCapitalStructure} from "@/shared/analysis-runtime/financial-data/capital-structure";
 import {readBusinessExplainer} from "@/shared/analysis-runtime/business-explainer";
 import type {BusinessExplainer} from "@/shared/analysis-contract/business-explainer";
 import {readGuidancePublication} from "@/shared/analysis-runtime/guidance";
@@ -24,7 +25,7 @@ export async function loadPublicFlow(ticker:string,fetcher:typeof fetch=fetch):P
  if(publication.status!=='ready')return {schemaVersion:publication.schemaVersion,status:publication.status,flow:null,reasons:publication.reasons,outdated:false,lastAttemptAt:publication.lastAttemptAt};
  const flow=newestPair(withLegacyInterestFormula(selectFlow(publication.flow??undefined,null,ticker)));const check=checkCompleteFlow(flow);
  // History is re-validated here and stripped to its schema; an invalid record is dropped, never repaired.
- return {schemaVersion:"complete-business-flow.v1",status:check.complete?"ready":"preparing",flow:check.complete?flow:null,reasons:check.complete&&publication.outdated?publication.reasons:check.reasons,outdated:check.complete&&publication.outdated===true,lastAttemptAt:publication.lastAttemptAt??null,history:check.complete?readHistory(publication.history,ticker):null,...(check.complete&&publication.reports?{reports:readReportHistory(publication.reports,ticker)}:{})};
+ return {schemaVersion:"complete-business-flow.v1",status:check.complete?"ready":"preparing",flow:check.complete?flow:null,reasons:check.complete&&publication.outdated?publication.reasons:check.reasons,outdated:check.complete&&publication.outdated===true,lastAttemptAt:publication.lastAttemptAt??null,history:check.complete?readHistory(publication.history,ticker):null,...(check.complete&&publication.reports?{reports:readReportHistory(publication.reports,ticker)}:{}),...(check.complete&&publication.capital?{capital:readCapitalStructure(publication.capital,ticker)}:{})};
  }catch{
   // Rollout compatibility: only a verified complete legacy SEC projection may survive a new API outage.
   const legacy=await fetcher(PUBLIC_ORIGIN+`/api/analysis/v1/companies/${ticker}/analysis`,{signal:AbortSignal.timeout(12000),headers:{accept:"application/json"}});

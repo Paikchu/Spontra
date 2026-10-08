@@ -1,4 +1,5 @@
 import {readArchivedReportHistory, type ReportArchive} from '../financial-data/report-history.ts';
+import {readArchivedCapital} from '../financial-data/capital-history.ts';
 import {readCompletePublicationForTicker} from '../financial-data/publication.ts';
 import { readBusinessExplainerResponse } from "../business-explainer/workflow.ts";
 import { readGuidanceResponse } from "../guidance/workflow.ts";
@@ -149,6 +150,7 @@ async function handleRoute(request: Request, database: D1Database, route: Exclud
     case "business-flow": {
       const payload=await readCompletePublicationForTicker(database,route.ticker);
       if(payload.flow&&archive)payload.reports=await readArchivedReportHistory(database,archive,payload.flow).catch(()=>payload.flow!);
+      if(payload.flow&&archive)payload.capital=await readArchivedCapital(database,archive,payload.flow).catch(()=>null);
       return dataResponse(request,payload,payload.status==="ready"?"cacheable":"no-store");
     }
     case "business-explainer": {
