@@ -25,6 +25,16 @@ function readRecent(): string[] {
   }
 }
 
+/** Between the stacked layout and a comfortable two-pane width, the rail yields first so the chart keeps its room. */
+const RAIL_YIELDS = "(min-width: 961px) and (max-width: 1279px)";
+function railYields() {
+  try {
+    return matchMedia(RAIL_YIELDS).matches;
+  } catch {
+    return false;
+  }
+}
+
 function tickerFromUrl() {
   const match = location.pathname.match(
     /^\/companies\/([A-Za-z0-9.-]{1,12})\/?$/,
@@ -176,6 +186,8 @@ function App() {
         return false;
       }
     }),
+    [yields, setYields] = useState(railYields),
+    [openedWhileNarrow, setOpenedWhileNarrow] = useState(false),
     [light, setLight] = useState(() => {
       try {
         return localStorage.getItem("business-map-theme") === "light";
@@ -199,6 +211,15 @@ function App() {
       /* Storage may be disabled. */
     }
   }, [collapsed]);
+  useEffect(() => {
+    const query = matchMedia(RAIL_YIELDS);
+    const changed = () => {
+      setYields(query.matches);
+      setOpenedWhileNarrow(false);
+    };
+    query.addEventListener("change", changed);
+    return () => query.removeEventListener("change", changed);
+  }, []);
   useEffect(() => {
     const changed = () => setTicker(tickerFromUrl() ?? "ORCL");
     window.addEventListener("popstate", changed);
@@ -234,18 +255,24 @@ function App() {
     if (next !== ticker) history.pushState(null, "", `/companies/${next}`);
     setTicker(next);
   }
+  // A narrow window collapses the rail without overwriting the preference saved for wide windows.
+  const railCollapsed = yields ? !openedWhileNarrow : collapsed;
+  function setRailOpen(open: boolean) {
+    if (yields) setOpenedWhileNarrow(open);
+    else setCollapsed(!open);
+  }
   const actions = (
     <RailActions
       light={light}
       onToggleTheme={() => setLight((v) => !v)}
       onSearch={() => setSearching(true)}
-      collapsed={collapsed}
+      collapsed={railCollapsed}
     />
   );
   return (
     <>
-      <SidebarProvider asChild open={!collapsed} onOpenChange={open => setCollapsed(!open)} keyboardShortcut={null} persistState={false}>
-        <main data-rail={collapsed ? "collapsed" : undefined}>
+      <SidebarProvider asChild open={!railCollapsed} onOpenChange={setRailOpen} keyboardShortcut={null} persistState={false}>
+        <main data-rail={railCollapsed ? "collapsed" : undefined}>
           <Company key={ticker} ticker={ticker} tools={actions} onSeen={remember} />
         </main>
       </SidebarProvider>
