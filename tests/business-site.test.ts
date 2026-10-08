@@ -156,3 +156,15 @@ test("findings and fundamentals are supplementary routes: re-validated, stripped
  assert.equal((await missing.json() as {status:string}).status,"unavailable");assert.equal(missing.headers.get("cache-control"),"no-store");
  assert.equal((await handle(request(endpoint+"/findings?x=1"),env,context,upstream)).status,404);
 });
+
+test("a legacy fallback answer is served but never cached, so the next request retries the full read",async()=>{
+ const put:string[]=[];const cache={match:async()=>undefined,put:async(key:Request)=>{put.push(key.url);}} as unknown as Cache;
+ const waits:Promise<unknown>[]=[];const ctx={waitUntil:(p:Promise<unknown>)=>{waits.push(p);}};
+ const fallback:typeof fetch=async(input)=>{const url=String(input);if(url.endsWith("/business-flow"))throw new Error("timeout");if(url.endsWith("/analysis"))return Response.json({businessFlow:completeOrclFixture});return new Response(null,{status:404});};
+ const served=await handle(request(endpoint),env,ctx,fallback,cache);await Promise.all(waits);
+ const body=await served.json() as {status:string;outdated:boolean;reasons:string[]};
+ assert.equal(served.status,200);assert.equal(body.status,"ready");assert.equal(body.outdated,true);assert.deepEqual(body.reasons,["PREPARING"]);
+ assert.equal(served.headers.get("cache-control"),"no-store");assert.deepEqual(put,[]);
+ const fresh=await handle(request(endpoint),env,ctx,success,cache);await Promise.all(waits);
+ assert.equal(fresh.headers.get("cache-control"),"public, max-age=60");assert.deepEqual(put,["https://site.test"+endpoint]);
+});
