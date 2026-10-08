@@ -79,6 +79,8 @@ export async function readArchivedCapital(db: D1Database, archive: ReportArchive
       if (!storedTables(record)) reparsed += record.sourceBytes;
       filing = await projectArchived(record, archive, flow.ticker).catch(() => null);
     }
+    // Past the projection budget, an older projection still carries its statements; only what the new version adds is missing.
+    filing ??= record.capital ?? null;
     const end = filing?.cashFlow?.periodEnd ?? filing?.balanceSheet?.asOf ?? filing?.rpo?.asOf;
     if (!filing || !end || end > latest.periodEnd || covered.has(end)) continue;
     filings.push(filing);

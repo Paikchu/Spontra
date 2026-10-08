@@ -187,6 +187,22 @@ test("archiving stores the capital projection; the read API serves reconciled qu
   } finally { f.database.close(); }
 });
 
+test("an older projection that cannot be redone this request still serves its statements", async () => {
+  const f = archiveFixture();
+  try {
+    await archiveFilingDisclosures(f.env, "CRWV", dataSource(q2Source), q2Html, { form: "10-Q", reportDate: "2026-06-30" });
+    const record = f.database.raw.prepare("SELECT cache_key,payload FROM sec_cache").get() as { cache_key: string; payload: string };
+    const old = JSON.parse(record.payload);
+    // A previous version's projection whose source the reader will not re-read (statements not located under the current locator).
+    old.capital = { ...old.capital, version: "sec-capital-structure.v2", rpo: undefined };
+    old.statements = { ...old.statements, status: "not_located" };
+    f.database.raw.prepare("UPDATE sec_cache SET payload=? WHERE cache_key=?").run(JSON.stringify(old), record.cache_key);
+    const capital = await readArchivedCapital(f.env.DB, f.env.SEC_FILINGS, flow);
+    assert.equal(capital?.quarters[0].balanceSheet?.totals.assets, "4000000000");
+    assert.equal(capital?.quarters[0].rpo, null);
+  } finally { f.database.close(); }
+});
+
 test("archives from before the projection are projected on read without writing back", async () => {
   const f = archiveFixture();
   try {
