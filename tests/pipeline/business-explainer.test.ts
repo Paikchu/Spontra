@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { excerpt, nodeHint, runBusinessExplainer, type ExplainerModel, type ExplainerNode, type ExplainerSearch } from "../../workers/pipeline/src/business-explainer/agent.ts";
 import { businessExplainerCacheKey, explainerFingerprint, explainerNodes, readBusinessExplainerResponse, runBusinessExplainerSweep } from "../../workers/pipeline/src/business-explainer/workflow.ts";
-import { completeProductName, readBusinessExplainer } from "../../shared/analysis-runtime/business-explainer.ts";
+import { completeProductName, harnessSections, readBusinessExplainer } from "../../shared/analysis-runtime/business-explainer.ts";
 import { handleAnalysisReadRequest } from "../../workers/pipeline/src/read-api/router.ts";
 import { D1SecRepository } from "../../workers/pipeline/src/sec/d1.ts";
 import { businessFlowCacheKey } from "../../workers/pipeline/src/sec/business-flow-cache.ts";
@@ -47,12 +47,16 @@ function model(review: Array<{ nodeId: string; field: string }> = []): Explainer
   const fn = async (stage: string, _system: string, payload: unknown) => {
     stages.push(stage);
     if (stage.includes("review")) return { issues: review.map(r => ({ ...r, problem: "unsupported" })) };
+    if (stage.includes("plan")) return { queries: [] };
     const { businesses, materials } = payload as { businesses: Array<{ nodeId: string }>; materials: Array<{ sourceId: string }> };
     const id = materials[0]!.sourceId;
     return { businesses: businesses.map(b => ({
       nodeId: b.nodeId, summary: { text: `${b.nodeId} 是什么`, sourceIds: [id, "s99"] },
-      howItWorks: { text: "交付方式", sourceIds: ["invented"] }, products: ["Oracle Database", "Made Up Suite"],
-      customers: { text: "企业客户", sourceIds: [id] }, monetization: { text: "一次性许可费加年度支持费", sourceIds: [id] }, relation: null,
+      products: ["Oracle Database", "Made Up Suite"], sections: [
+        { kind: "delivery", title: "交付方式", layout: "prose", items: [{ label: null, text: "交付方式", sourceIds: ["invented"] }] },
+        { kind: "customers", title: "客户", layout: "prose", items: [{ label: null, text: "企业客户", sourceIds: [id] }] },
+        { kind: "monetization", title: "先许可后续费", layout: "steps", items: [{ label: "买许可", text: "一次性许可费", sourceIds: [id] }, { label: "续支持", text: "按年支付支持费", sourceIds: [id] }] },
+      ],
     })) };
   };
   return Object.assign(fn, { stages });
@@ -74,14 +78,15 @@ test("published ORCL flow yields every business and its children", () => {
 });
 
 test("explanations keep only cited, material-backed statements and reviewed fields", async () => {
-  const fake = search(), writer = model([{ nodeId: "SoftwareSupport", field: "summary" }, { nodeId: "SoftwareLicense", field: "customers" }]);
+  const fake = search(), writer = model([{ nodeId: "SoftwareSupport", field: "summary" }, { nodeId: "SoftwareLicense", field: "sections", sectionId: "section-1" } as { nodeId: string; field: string }]);
   const result = await runBusinessExplainer({ ticker: "ORCL", companyName: "Oracle Corporation", nodes, search: fake, model: writer, modelVersion: "deepseek-flash", fingerprint: "fp", now });
   const ids = result.businesses.map(b => b.nodeId);
   assert.deepEqual(ids, ["software", "SoftwareLicense", "HardwareRevenues"], "a flagged summary removes the business");
   const license = result.businesses.find(b => b.nodeId === "SoftwareLicense")!;
   assert.deepEqual(license.summary.sourceIds, ["s1"], "unknown source ids are stripped");
-  assert.equal(license.howItWorks, null, "a claim with no valid source is dropped");
-  assert.equal(license.customers, null, "a field flagged by review is removed");
+  assert.ok(!license.sections.some(s => s.kind === "delivery"), "a claim with no valid source is dropped");
+  assert.ok(!license.sections.some(s => s.kind === "customers"), "a section flagged by review is removed");
+  assert.deepEqual(license.sections.map(s => [s.title, s.layout, s.items.map(i => i.label)]), [["先许可后续费", "steps", ["买许可", "续支持"]]]);
   assert.deepEqual(license.products, ["Oracle Database"], "products absent from the material are dropped");
   assert.deepEqual(result.sources.map(s => [s.id, s.kind, s.url]), [["s1", "sec", filing]]);
   assert.ok(fake.reads.includes(filing) && fake.reads.includes(vendor));
@@ -230,4 +235,72 @@ test("SP-21 rejects source-name prefixes and avoids repeating a product as its o
   const polluted = structuredClone(result);
   polluted.businesses[0]!.offerings![0]!.name = "Oracle Databas";
   assert.deepEqual(readBusinessExplainer(polluted,"ORCL")!.businesses[0]!.offerings, []);
+});
+
+test("the harness keeps model-chosen sections within kind, title, layout, figure and size rules", () => {
+  const c = (text: string) => ({ text, sourceIds: ["s1"] });
+  const sections = harnessSections([
+    { kind: "monetization", title: "按用量计费。", layout: "steps", items: [{ label: "开通", claim: c("客户开通账户后按实际使用付费") }] },
+    { kind: "monetization", title: "又一个收费", layout: "prose", items: [{ label: null, claim: c("重复的收费角度") }] },
+    { kind: "lifecycle", title: "这是一个远远超过十个字的标题文字", layout: "list", items: [{ label: "签约", claim: c("签订多年合同") }, { label: "续约", claim: c("到期后续约") }] },
+    { kind: "invented", title: "合作伙伴", layout: "list", items: [{ label: null, claim: c("通过合作伙伴转售") }, { label: "渠道", claim: c("收入增长 25% 来自渠道") }] },
+    { kind: "customers", title: "客户", layout: "prose", items: [{ label: null, claim: c("客户开通账户后按实际使用付费") }, { label: null, claim: null }] },
+    ...Array.from({ length: 8 }, (_, i) => ({ kind: "other", title: `要点${i}`, layout: "prose", items: [{ label: null, claim: c(`第 ${i} 条机制`) }] })),
+  ]);
+  assert.deepEqual(sections.map(s => [s.id, s.kind, s.title, s.layout]), [
+    ["section-1", "monetization", "按用量计费", "prose"], ["section-2", "lifecycle", "客户周期", "list"], ["section-3", "other", "合作伙伴", "prose"],
+    ["section-4", "other", "要点0", "prose"], ["section-5", "other", "要点1", "prose"], ["section-6", "other", "要点2", "prose"],
+  ], "duplicate kinds, long titles, one-step chains, unnamed lists, figures, repeats and empty sections are all corrected or removed");
+  assert.deepEqual(sections[2]!.items.map(i => i.claim.text), ["通过合作伙伴转售"]);
+});
+
+test("the model plans follow-up research and the harness bounds and anchors its queries", async () => {
+  const fake = search();
+  const asked: string[] = [];
+  const result = await runBusinessExplainer({ ticker: "ORCL", companyName: "Oracle", nodes: [nodes[0]!], search: fake, modelVersion: "fixture", fingerprint: "test", now,
+    model: async (stage, _system, payload) => {
+      asked.push(stage);
+      if (stage.includes("plan")) return { queries: [{ query: "software support renewal process" }, { query: "Oracle license audit" }, { query: "x" }, { query: "q4" }, { query: "Oracle license audit" }, { query: "Oracle partner channel resale" }, { query: "Oracle cost of support" }] };
+      if (stage.includes("review")) return { issues: [] };
+      const { materials } = payload as { materials: Array<{ sourceId: string }> };
+      return { businesses: [{ nodeId: "software", summary: { text: "软件业务", sourceIds: [materials.at(-1)!.sourceId] }, products: [], sections: [] }] };
+    } });
+  assert.deepEqual(asked, ["business-explainer-plan-0", "business-explainer-write-0", "business-explainer-review-0"]);
+  const followUps = fake.queries.slice(-3);
+  assert.deepEqual(followUps, ["Oracle software support renewal process", "Oracle license audit", "Oracle partner channel resale"]);
+  assert.equal(result.businesses.length, 1);
+});
+
+test("a failed plan never blocks the explanation", async () => {
+  const result = await runBusinessExplainer({ ticker: "ORCL", companyName: "Oracle", nodes: [nodes[0]!], search: search(), modelVersion: "fixture", fingerprint: "test", now,
+    model: async stage => {
+      if (stage.includes("plan")) throw new Error("model down");
+      return stage.includes("review") ? { issues: [] } : { businesses: [{ nodeId: "software", summary: { text: "软件业务", sourceIds: ["s1"] }, products: [], sections: [] }] };
+    } });
+  assert.equal(result.businesses.length, 1);
+});
+
+test("review removes one section item and re-checks the chain it leaves", async () => {
+  const result = await runBusinessExplainer({ ticker: "ORCL", companyName: "Oracle", nodes: [nodes[0]!], search: search(), modelVersion: "fixture", fingerprint: "test", now,
+    model: async stage => {
+      if (stage.includes("plan")) return { queries: [] };
+      if (stage.includes("review")) return { issues: [{ nodeId: "software", field: "sections", sectionId: "section-1", item: 1, problem: "order unsupported" }] };
+      return { businesses: [{ nodeId: "software", summary: { text: "软件业务", sourceIds: ["s1"] }, products: [], sections: [
+        { kind: "lifecycle", title: "先许可后续费", layout: "steps", items: [{ label: "买许可", text: "客户一次性买下永久许可", sourceIds: ["s1"] }, { label: "续支持", text: "每年续费获得更新", sourceIds: ["s1"] }] },
+        { kind: "customers", title: "客户", layout: "prose", items: [{ label: null, text: "大型企业", sourceIds: ["s1"] }] },
+      ] }] };
+    } });
+  const [chain, customers] = result.businesses[0]!.sections;
+  assert.deepEqual([chain!.id, chain!.layout, chain!.items.map(i => i.label)], ["section-1", "prose", ["买许可"]]);
+  assert.equal(customers!.title, "客户");
+});
+
+test("documents written with the four fixed fields are read as sections", () => {
+  const legacy = { schemaVersion: "business-explainer.v1", ticker: "ORCL", companyName: "Oracle", generatedAt: now, model: "m", fingerprint: "fp",
+    sources: [{ id: "s1", title: "10-K", url: filing, kind: "sec", publishedAt: null }],
+    businesses: [{ nodeId: "software", name: "软件", summary: { text: "软件业务", sourceIds: ["s1"] }, products: [],
+      howItWorks: { text: "部署在客户自己的数据中心", sourceIds: ["s1"] }, customers: null, monetization: { text: "一次性许可费", sourceIds: ["s1"] }, relation: { text: "带动支持续费", sourceIds: ["gone"] } }] };
+  const parsed = readBusinessExplainer(legacy, "ORCL")!;
+  assert.deepEqual(parsed.businesses[0]!.sections.map(s => [s.kind, s.title]), [["delivery", "产品介绍"], ["monetization", "收费方式"]]);
+  assert.ok(!("howItWorks" in parsed.businesses[0]!));
 });

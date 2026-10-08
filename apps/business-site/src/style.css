@@ -639,6 +639,14 @@ button { cursor: pointer; }
 .dossier-panel { animation: fade-in .25s ease both; }
 .dossier-products { display: grid; gap: 10px; margin: 2px 0 0; padding: 0; list-style: none; }
 .dossier-products b { display: block; font-weight: 600; color: var(--foreground); }
+.dossier .dossier-prose { margin: 0 0 8px; }
+.dossier .dossier-prose b { font-weight: 600; color: var(--foreground); }
+/* A chain of steps: numbered markers joined by a rule, read top to bottom. */
+.dossier-steps { margin: 2px 0 0; padding: 0; list-style: none; counter-reset: step; }
+.dossier-steps li { position: relative; padding: 0 0 12px 30px; counter-increment: step; }
+.dossier-steps li::before { content: counter(step); position: absolute; left: 0; top: 2px; width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--foreground); display: grid; place-items: center; font-size: 11px; font-weight: 600; line-height: 1; color: var(--foreground); background: var(--surface); }
+.dossier-steps li:not(:last-child)::after { content: ""; position: absolute; left: 10px; top: 24px; bottom: 0; width: 1px; background: var(--hairline); }
+.dossier-steps b { display: block; font-weight: 600; color: var(--foreground); }
 .fc-business-details .sources { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--hairline); }
 @media (max-width: 960px) {
   .fc[data-products] { display: flex; flex-direction: column; gap: 12px; aspect-ratio: auto; }

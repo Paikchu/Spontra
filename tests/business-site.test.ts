@@ -77,8 +77,8 @@ const explainer={schemaVersion:"business-explainer.v1",ticker:"ORCL",companyName
  sources:[{id:"s1",title:"Oracle 10-K",url:"https://www.sec.gov/Archives/edgar/data/1341439/x.htm",kind:"sec",publishedAt:null}]};
 const routed=(explained:unknown):typeof fetch=>async(input)=>String(input).endsWith("/business-explainer")?(explained instanceof Error?Promise.reject(explained):Response.json(explained)):success(input);
 test("business explanations are validated, stripped and never block the flow",async()=>{
- const ok=await (await handle(request(endpoint),env,context,routed({schemaVersion:"business-explainer-response.v1",status:"ready",explainer}))).json() as {flow:unknown;explainer:{businesses:Array<{customers:unknown}>}};
- assert.ok(ok.flow);assert.equal(ok.explainer.businesses[0].customers,null,"a claim citing an unlisted source is dropped");assert.ok(!JSON.stringify(ok).includes("PRIVATE_"));
+ const ok=await (await handle(request(endpoint),env,context,routed({schemaVersion:"business-explainer-response.v1",status:"ready",explainer}))).json() as {flow:unknown;explainer:{businesses:Array<{sections:unknown[]}>}};
+ assert.ok(ok.flow);assert.deepEqual(ok.explainer.businesses[0].sections,[],"a claim citing an unlisted source is dropped");assert.ok(!JSON.stringify(ok).includes("PRIVATE_"));
  for(const bad of [new Error("down"),{schemaVersion:"business-explainer-response.v1",status:"ready",explainer:{...explainer,ticker:"MSFT"}},{schemaVersion:"business-explainer-response.v1",status:"ready",explainer:{...explainer,sources:[{...explainer.sources[0],url:"javascript:alert(1)"}]}}]){
   const response=await handle(request(endpoint),env,context,routed(bad));assert.equal(response.status,200);const body=await response.json() as {flow:unknown;explainer:unknown};assert.ok(body.flow);assert.equal(body.explainer,null);
  }

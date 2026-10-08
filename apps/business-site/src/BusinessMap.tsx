@@ -10,7 +10,7 @@ import { formatFlowValue, compareAmount, compareFlowAmounts, disclosedSegmentLab
 import { FinancialSankey } from "@/app/analysis/stocks/[ticker]/FinancialSankey";
 import { FlowChart, layoutFor, type NodeCopy, type Tip } from "./FlowChart";
 import type { RevenueHistory } from "@/shared/analysis-contract/revenue-history";
-import type { BusinessExplainer, ExplainerClaim } from "@/shared/analysis-contract/business-explainer";
+import type { BusinessExplainer, ExplainerClaim, ExplainerSection } from "@/shared/analysis-contract/business-explainer";
 import type { GuidancePublication } from "@/shared/analysis-contract/guidance";
 import { TrendPanel } from "./TrendPanel";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -460,7 +460,7 @@ function Dossier({ item, parent, sources, explainer }: { item: Item | null; pare
   </section>;
 }
 
-/** One section of a business at a time: products, customers, charging, related businesses. Arrow keys move between tabs. */
+/** One section of a business at a time; which sections exist depends on the business. Arrow keys move between tabs. */
 function DossierTabs({ label, sections }: { label: string; sections: Array<[string, ReactNode]> }) {
   const [chosen, setChosen] = useState(0);
   const tabs = useRef<HTMLDivElement>(null);
@@ -486,7 +486,7 @@ function DossierTabs({ label, sections }: { label: string; sections: Array<[stri
   };
   return <div className="dossier-tabs">
     <div ref={tabs} className="dossier-tablist" role="tablist" aria-label={`${label} 业务说明`} onKeyDown={onKey}>
-      {sections.map(([name], i) => <button key={name} type="button" role="tab" id={`${id}-tab-${i}`} aria-selected={i === active} aria-controls={`${id}-panel`} tabIndex={i === active ? 0 : -1} onClick={() => choose(i)}>{name}</button>)}
+      {sections.map(([name], i) => <button key={i} type="button" role="tab" id={`${id}-tab-${i}`} aria-selected={i === active} aria-controls={`${id}-panel`} tabIndex={i === active ? 0 : -1} onClick={() => choose(i)}>{name}</button>)}
     </div>
     <div className="dossier-panel" role="tabpanel" id={`${id}-panel`} aria-labelledby={`${id}-tab-${active}`} key={active}>{sections[active][1]}</div>
   </div>;
@@ -494,23 +494,29 @@ function DossierTabs({ label, sections }: { label: string; sections: Array<[stri
 
 /** A model-written explanation: every statement carries numbered links to the pages it was written from. */
 function ExplainedDossier({ item, parent, explainer, explained }: { item: Item; parent: Item | null; explainer: BusinessExplainer; explained: BusinessExplainer["businesses"][number] }) {
-  const claims = [...(explained.offerings ?? []).flatMap(p => [p.description, p.charging]), explained.summary, explained.howItWorks, explained.customers, explained.monetization, explained.relation];
+  const claims = [explained.summary, ...(explained.offerings ?? []).flatMap(p => [p.description, p.charging]), ...explained.sections.flatMap(s => s.items.map(i => i.claim))];
   const cited = [...new Set(claims.flatMap(c => c?.sourceIds ?? []))].map(id => explainer.sources.find(s => s.id === id)).filter(s => s != null);
   const cite = (claim: ExplainerClaim) => <span className="cites">{claim.sourceIds.map(id => {
     const index = cited.findIndex(s => s.id === id);
     return index < 0 ? null : <a key={id} href={cited[index].url} target="_blank" rel="noopener noreferrer" title={cited[index].title}>{index + 1}</a>;
   })}</span>;
-  const rows: Array<[string, ExplainerClaim | null]> = [["产品介绍", explained.offerings?.length ? null : explained.howItWorks], ["客户", explained.customers], ["收费方式", explained.monetization], ["关联业务", explained.relation]];
   return <section className="dossier" aria-label={`${item.name} 业务档案`}>
     <h3>{parent ? `${parent.name} / ` : ""}{item.name}</h3>
     <p className="dossier-lede">{explained.summary.text}{cite(explained.summary)}</p>
 
-    {/* Products are one section beside customers and charging, each product a named entry within it. */}
+    {/* Products come first when verified; the other tabs are the angles the model chose for this business. */}
     <DossierTabs label={item.name} sections={[
       ...(explained.offerings?.length ? [["产品介绍", <ul className="dossier-products">{explained.offerings.map(p => <li key={p.id}><b>{p.name}</b>{p.description.text}{cite(p.description)}</li>)}</ul>] as [string, ReactNode]] : []),
-      ...rows.filter(([, claim]) => claim).map(([label, claim]): [string, ReactNode] => [label, <>{claim!.text}{cite(claim!)}</>]),
+      ...explained.sections.map((section): [string, ReactNode] => [section.title, <DossierSection section={section} cite={cite} />]),
     ]} />
 
     <ol className="sources sources--numbered">{cited.map(s => <li key={s.id}><a href={s.url} target="_blank" rel="noopener noreferrer">{s.title}<span aria-hidden="true"> ↗</span></a></li>)}</ol>
   </section>;
+}
+
+/** Steps read as a numbered chain, a list as named entries, prose as plain statements. */
+function DossierSection({ section, cite }: { section: ExplainerSection; cite: (claim: ExplainerClaim) => ReactNode }) {
+  if (section.layout === "steps") return <ol className="dossier-steps">{section.items.map((i, n) => <li key={n}>{i.label && <b>{i.label}</b>}{i.claim.text}{cite(i.claim)}</li>)}</ol>;
+  if (section.layout === "list") return <ul className="dossier-products">{section.items.map((i, n) => <li key={n}><b>{i.label}</b>{i.claim.text}{cite(i.claim)}</li>)}</ul>;
+  return <>{section.items.map((i, n) => <p key={n} className="dossier-prose">{i.label && <b>{i.label}：</b>}{i.claim.text}{cite(i.claim)}</p>)}</>;
 }
