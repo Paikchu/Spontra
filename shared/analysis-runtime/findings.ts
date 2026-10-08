@@ -112,7 +112,7 @@ export type ResolvedEvidence = {
   current: ResolvedValue;
   compare: ResolvedValue | null;
   compareLabel: string | null;
-  /** Percent change for amounts; percentage-point change for rates and ratios (×100). */
+  /** Percent change for amounts; percentage-point change for rates; plain difference for ratios (×100 gives points). */
   delta: number | null;
   /** Current over compare, for "x 倍" statements. */
   ratio: number | null;
@@ -310,7 +310,7 @@ function compareOf(data: FindingData, e: FindingEvidence, current: ResolvedValue
   if (!compare) return none;
   // Rates move in points: a margin, or a ratio of two figures, is compared by its difference ×100, never by its growth.
   // A growth rate needs a positive base and a positive result; a sign change or a zero base has no meaningful rate.
-  const delta = current.unit === "percent" ? current.value - compare.value : current.unit === "ratio" ? (current.value - compare.value) * 100 : compare.value > 0 && current.value > 0 ? (current.value - compare.value) / compare.value * 100 : null;
+  const delta = current.unit === "percent" ? current.value - compare.value : current.unit === "ratio" ? current.value - compare.value : compare.value > 0 && current.value > 0 ? (current.value - compare.value) / compare.value * 100 : null;
   return { compare, compareLabel: e.compare === "yoy" ? "去年同期" : "上一季", delta, ratio: compare.value > 0 && current.value > 0 ? current.value / compare.value : null, guidance: null };
 }
 
@@ -332,7 +332,7 @@ export function evidenceCandidates(r: ResolvedEvidence): number[] {
   };
   amount(r.current);
   if (r.compare) amount(r.compare);
-  if (r.delta != null) out.push(r.delta);
+  if (r.delta != null) out.push(r.delta, ...(r.current.unit === "ratio" ? [r.delta * 100] : []));
   if (r.ratio != null) out.push(r.ratio);
   if (r.guidance) out.push(r.guidance.measured);
   // "下降 1%" and "亏损 237 亿" write the magnitude; the sign is in the words.

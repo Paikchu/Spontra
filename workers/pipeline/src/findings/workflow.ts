@@ -19,7 +19,7 @@ import { findingsCacheKey } from "./read.ts";
 import { writeFindings, type FindingsModel } from "./writer.ts";
 
 /** Changing the prompt or the ledger regenerates every company once. */
-export const FINDINGS_VERSION = "findings.writer.v3";
+export const FINDINGS_VERSION = "findings.writer.v4";
 export type FindingsWorkflowParams = { ticker: string; fingerprint: string };
 export type FindingsDeps = { model?: FindingsModel; fetcher?: typeof fetch };
 

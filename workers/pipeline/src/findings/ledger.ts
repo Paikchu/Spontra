@@ -61,7 +61,11 @@ function formatValue(r: ResolvedEvidence["current"], form: RatioForm = "multiple
   // A margin or an intensity reads as a percentage; a coverage or turnover ratio reads as a multiple.
   return form === "percent" ? `${(r.value * 100).toFixed(1)}%` : `${Number(r.value.toFixed(2))} 倍`;
 }
-const change = (r: ResolvedEvidence | null) => !r || r.delta == null ? null : r.current.unit === "percent" || r.current.unit === "ratio" ? `${r.delta > 0 ? "+" : ""}${r.delta.toFixed(1)} 点` : `${r.delta > 0 ? "+" : ""}${r.delta.toFixed(1)}%`;
+/** A margin moves in points, a multiple in turns, an amount in percent. */
+const change = (r: ResolvedEvidence | null, form: RatioForm = "multiple") => !r || r.delta == null ? null
+  : r.current.unit === "percent" ? `${r.delta > 0 ? "+" : ""}${r.delta.toFixed(1)} 点`
+  : r.current.unit === "ratio" ? (form === "percent" ? `${r.delta > 0 ? "+" : ""}${(r.delta * 100).toFixed(1)} 点` : `${r.delta > 0 ? "+" : ""}${r.delta.toFixed(2)} 倍`)
+  : `${r.delta > 0 ? "+" : ""}${r.delta.toFixed(1)}%`;
 
 /** Every business the report discloses, in any non-geographic, non-customer partition. */
 export function ledgerNodes(quarter: BusinessFlowQuarter | undefined): Ledger["nodes"] {
@@ -87,7 +91,7 @@ export function buildLedger(data: FindingData, periodEnd: string, sources: Expla
     const qoq = span === "quarter" ? resolveEvidence(data, { ref, periodEnd: end, span, compare: "qoq" }) : null;
     const plain = yoy ?? qoq ?? resolveEvidence(data, { ref, periodEnd: end, span });
     if (!plain) return;
-    rows.push({ ref, periodEnd: plain.current.periodEnd, span, label: plain.label, value: formatValue(plain.current, form), yoy: change(yoy), qoq: change(qoq) });
+    rows.push({ ref, periodEnd: plain.current.periodEnd, span, label: plain.label, value: formatValue(plain.current, form), yoy: change(yoy, form), qoq: change(qoq, form) });
   };
   const series = (ref: FindingRef, spans: FindingSpan[] = ["quarter", "fiscal_year"], form: RatioForm = "multiple") => {
     if (spans.includes("quarter")) for (const end of quarterEnds) push(ref, end, "quarter", form);

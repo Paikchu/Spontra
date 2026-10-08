@@ -14,6 +14,9 @@ const money = (v: number, currency = "USD") => compactFlowValue(v, { currency, s
 const VERDICT = { above: "高于指引", within: "落在指引内", below: "低于指引" } as const;
 
 /** One figure in the unit it was resolved in; signed amounts keep their sign. */
+/** A ratio's change: points for a rate-like ratio (below 1.5), turns for a multiple. */
+const ratioChange = (r: ResolvedEvidence) => r.delta == null ? "—" : Math.abs(r.compare?.value ?? 0) < 1.5 && Math.abs(r.current.value) < 1.5 ? `${percent(r.delta * 100)} 点` : `${r.delta > 0 ? "+" : r.delta < 0 ? "−" : ""}${Math.abs(r.delta).toFixed(2)} 倍`;
+
 export function formatValue(v: ResolvedValue): string {
   if (v.range && v.range.low !== v.range.high) return v.unit === "USD" ? `${money(v.range.low, v.currency ?? "USD")}–${money(v.range.high, v.currency ?? "USD")}` : `${v.range.low}–${v.range.high}%`;
   if (v.unit === "USD") return (v.value < 0 ? "−" : "") + money(Math.abs(v.value), v.currency ?? "USD");
@@ -102,13 +105,13 @@ function Outcome({ r }: { r: ResolvedEvidence }) {
   return <span className="lens-outcome-body">
     <span>{r.label} <b data-trend={r.current.value < 0 && r.current.unit === "USD" ? "down" : undefined}>{formatValue(r.current)}</b></span>
     {r.guidance ? <em data-verdict={r.guidance.verdict}>{r.guidance.unit === "percent" && r.current.unit !== "percent" ? `同比 ${percent(r.guidance.measured)} · ` : ""}{VERDICT[r.guidance.verdict]}{r.compare ? ` ${formatValue(r.compare)}` : ""}</em>
-      : r.compare ? <em data-trend={trend(r.delta)}>{r.compareLabel} {formatValue(r.compare)} · {r.current.unit === "percent" || r.current.unit === "ratio" ? `${percent(r.delta)} 点` : percent(r.delta)}</em> : null}
+      : r.compare ? <em data-trend={trend(r.delta)}>{r.compareLabel} {formatValue(r.compare)} · {r.current.unit === "percent" ? `${percent(r.delta)} 点` : r.current.unit === "ratio" ? ratioChange(r) : percent(r.delta)}</em> : null}
   </span>;
 }
 
 function Evidence({ r }: { r: ResolvedEvidence }) {
   const note = r.guidance ? <em data-verdict={r.guidance.verdict}>{VERDICT[r.guidance.verdict]}{r.compare ? ` ${formatValue(r.compare)}` : ""}</em>
-    : r.compare ? <em data-trend={trend(r.delta)}>{r.compareLabel} {formatValue(r.compare)} · {r.current.unit === "percent" || r.current.unit === "ratio" ? `${percent(r.delta)} 点` : percent(r.delta)}</em> : null;
+    : r.compare ? <em data-trend={trend(r.delta)}>{r.compareLabel} {formatValue(r.compare)} · {r.current.unit === "percent" ? `${percent(r.delta)} 点` : r.current.unit === "ratio" ? ratioChange(r) : percent(r.delta)}</em> : null;
   return <div className="lens-row">
     <dt>{r.label}<small>{spanLabel(r.current)}</small></dt>
     <dd><b data-trend={r.current.value < 0 && r.current.unit === "USD" ? "down" : undefined}>{formatValue(r.current)}</b>{note}</dd>
