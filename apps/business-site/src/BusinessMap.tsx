@@ -502,7 +502,9 @@ function ExplainedDossier({ item, parent, explainer, explained }: { item: Item; 
   })}</span>;
   return <section className="dossier" aria-label={`${item.name} 业务档案`}>
     <h3>{parent ? `${parent.name} / ` : ""}{item.name}</h3>
-    <p className="dossier-lede">{explained.summary.text}{cite(explained.summary)}</p>
+    {/* Without a verified summary, the filing's own one-line description still says what the business is. */}
+    {explained.summary ? <p className="dossier-lede">{explained.summary.text}{cite(explained.summary)}</p>
+      : item.segment.description && <p>{item.segment.description.split("\n")[0]}</p>}
 
     {/* Products come first when verified; the other tabs are the angles the model chose for this business. */}
     <DossierTabs label={item.name} sections={[
