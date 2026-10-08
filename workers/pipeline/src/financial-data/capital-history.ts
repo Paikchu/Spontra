@@ -7,13 +7,18 @@ import { disclosureAuditPrefix, type StoredAudit } from './disclosure-audit.ts';
 import type { ReportArchive } from './report-history.ts';
 
 const QUARTERS = 8;
-/** Archives made before the capital projection existed are projected on read, a few per request, until collection re-archives them. */
-const MAX_PROJECTED = 5;
+/** Archives made before the current capital projection are projected on read, a few per request, until collection re-archives them.
+ * Stored statement tables are cheap to project; re-parsing a source document (megabytes of HTML) is not, so it is rarer still. */
+const MAX_PROJECTED = 6, MAX_REPARSED_BYTES = 8_000_000;
 const projections = new Map<string, { expires: number; capital: PublicCapitalStructure | null }>();
+
+/** Stored tables from any extractor version that located the statements are reused; only a document whose statements were
+ * not located (by an older locator) is parsed again from source. */
+const storedTables = (record: StoredAudit) => Boolean(record.statementsKey) && record.statements?.status === 'extracted';
 
 async function projectArchived(record: StoredAudit, archive: ReportArchive, ticker: string): Promise<CapitalFiling | null> {
   const json = async <T>(key: string | undefined) => { const object = key ? await archive.get(key) : null; return object ? JSON.parse(await object.text()) as T : null; };
-  let statements = record.statements?.version === STATEMENTS_VERSION ? await json<FinancialStatements>(record.statementsKey) : null;
+  let statements = storedTables(record) ? await json<FinancialStatements>(record.statementsKey) : null;
   if (!statements) {
     const raw = await archive.get(record.rawKey);
     if (!raw) return null;
@@ -58,7 +63,7 @@ export async function readArchivedCapital(db: D1Database, archive: ReportArchive
   const cached = projections.get(key);
   if (cached && cached.expires > Date.now()) return cached.capital;
   const filings: CapitalFiling[] = [], covered = new Set<string>();
-  let projected = 0;
+  let projected = 0, reparsed = 0;
   for (const record of records) {
     // One quarter beyond the eighth supplies the cumulative bridge for the oldest quarterly cash flow.
     if (new Set(filings.map(f => f.cashFlow?.periodEnd ?? f.balanceSheet?.asOf)).size > QUARTERS) break;
@@ -67,8 +72,9 @@ export async function readArchivedCapital(db: D1Database, archive: ReportArchive
     // Documents archived without any statement section (press releases, cover letters) are not worth projecting;
     // a domestic report the previous extractor missed is retried, since the locator has since improved.
     const located = record.statements?.status !== 'not_located' || (record.statements.version !== STATEMENTS_VERSION && /^10-[QK]/.test(record.source.form));
-    if (!filing && located && projected < MAX_PROJECTED) {
+    if (!filing && located && projected < MAX_PROJECTED && (storedTables(record) || reparsed + record.sourceBytes <= MAX_REPARSED_BYTES)) {
       projected++;
+      if (!storedTables(record)) reparsed += record.sourceBytes;
       filing = await projectArchived(record, archive, flow.ticker).catch(() => null);
     }
     const end = filing?.cashFlow?.periodEnd ?? filing?.balanceSheet?.asOf;
