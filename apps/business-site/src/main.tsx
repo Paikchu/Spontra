@@ -99,6 +99,7 @@ function Company({ ticker, tools, onSeen }: { ticker: string; tools: ReactNode; 
           revenueHistory={publication?.history ?? null}
           explainer={publication?.explainer ?? null}
           guidance={publication?.guidance ?? null}
+          capital={publication?.capital ?? null}
           notice={
             publication?.outdated
               ? publication.reasons.includes("SIGNED_LAYOUT_UNSUPPORTED")
