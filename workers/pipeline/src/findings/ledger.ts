@@ -1,5 +1,5 @@
 import type { BusinessFlowQuarter, FlowMetric } from "../../../../shared/analysis-contract/business-flow.ts";
-import type { CapitalMetric, FindingRef, FindingSpan } from "../../../../shared/analysis-contract/findings.ts";
+import type { CapitalMetric, FindingBaseRef, FindingRef, FindingSpan } from "../../../../shared/analysis-contract/findings.ts";
 import type { ExplainerSource } from "../../../../shared/analysis-contract/business-explainer.ts";
 import { CAPITAL_METRICS, refLabel, resolveEvidence, shiftPeriod, type FindingData, type ResolvedEvidence } from "../../../../shared/analysis-runtime/findings.ts";
 
@@ -18,8 +18,32 @@ export type Ledger = {
   sources: ExplainerSource[];
 };
 
-const FLOW: FlowMetric[] = ["revenue", "cost", "gross", "operating", "net", "operatingExpenses", "research", "sales", "administration"];
-const QUARTERS = 4;
+const FLOW: FlowMetric[] = ["revenue", "cost", "gross", "operating", "other", "pretax", "tax", "net", "operatingExpenses", "research", "sales", "administration"];
+/** Two years of quarters: enough to see seasonality, a turn, and whether the year-ago comparison flatters or hides. */
+const QUARTERS = 8;
+/**
+ * The ratios an analytical review runs: margins, expense intensity, accrual quality (cash against
+ * profit), capital intensity, working-capital and leverage proxies. Each is one figure over another at
+ * the same period, so the verifier can re-derive it and the model cannot invent it.
+ */
+const RATIOS: Array<[string, FindingBaseRef, FindingBaseRef]> = [
+  ["毛利率", { metric: "gross" }, { metric: "revenue" }],
+  ["营业利润率", { metric: "operating" }, { metric: "revenue" }],
+  ["净利率", { metric: "net" }, { metric: "revenue" }],
+  ["研发费用率", { metric: "research" }, { metric: "revenue" }],
+  ["销售费用率", { metric: "sales" }, { metric: "revenue" }],
+  ["管理费用率", { metric: "administration" }, { metric: "revenue" }],
+  ["有效税率", { metric: "tax" }, { metric: "pretax" }],
+  ["经营现金流 / 净利润", { capital: "operatingCashFlow" }, { metric: "net" }],
+  ["资本开支 / 收入", { capital: "capex" }, { metric: "revenue" }],
+  ["资本开支 / 折旧摊销", { capital: "capex" }, { fundamental: "depreciation_and_amortization" }],
+  ["股权激励 / 收入", { fundamental: "stock_based_compensation" }, { metric: "revenue" }],
+  ["应收账款 / 收入", { fundamental: "accounts_receivable" }, { metric: "revenue" }],
+  ["存货 / 收入", { fundamental: "inventory" }, { metric: "revenue" }],
+  ["有息债务 / 股东权益", { capital: "debt" }, { capital: "equity" }],
+  ["现金 / 有息债务", { capital: "cash" }, { capital: "debt" }],
+  ["RPO / 收入", { capital: "rpo" }, { metric: "revenue" }],
+];
 
 function money(value: number, currency: string | null): string {
   const abs = Math.abs(value), sign = value < 0 ? "-" : "";
@@ -33,9 +57,10 @@ function formatValue(r: ResolvedEvidence["current"]): string {
   if (r.unit === "USD") return money(r.value, r.currency);
   if (r.unit === "percent") return `${Number(r.value.toFixed(1))}%`;
   if (r.unit === "per_share") return `$${r.value.toFixed(2)}`;
-  return String(Number(r.value.toFixed(2)));
+  // A ratio is shown both ways so margins read as percentages and multiples as multiples.
+  return `${Number(r.value.toFixed(2))}（${(r.value * 100).toFixed(1)}%）`;
 }
-const change = (r: ResolvedEvidence | null) => !r || r.delta == null ? null : r.current.unit === "percent" ? `${r.delta > 0 ? "+" : ""}${r.delta.toFixed(1)} 点` : `${r.delta > 0 ? "+" : ""}${r.delta.toFixed(1)}%`;
+const change = (r: ResolvedEvidence | null) => !r || r.delta == null ? null : r.current.unit === "percent" || r.current.unit === "ratio" ? `${r.delta > 0 ? "+" : ""}${r.delta.toFixed(1)} 点` : `${r.delta > 0 ? "+" : ""}${r.delta.toFixed(1)}%`;
 
 /** Every business the report discloses, in any non-geographic, non-customer partition. */
 export function ledgerNodes(quarter: BusinessFlowQuarter | undefined): Ledger["nodes"] {
@@ -70,7 +95,8 @@ export function buildLedger(data: FindingData, periodEnd: string, sources: Expla
   const newest = data.quarters.find(q => q.periodEnd === periodEnd) ?? [...data.quarters].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd))[0];
   for (const metric of FLOW) series({ metric });
   const nodes = ledgerNodes(newest);
-  for (const node of nodes) series({ nodeId: node.nodeId });
+  for (const node of nodes.slice(0, 12)) series({ nodeId: node.nodeId });
+  for (const [, numerator, denominator] of RATIOS) series({ ratio: { numerator, denominator } });
   for (const capital of CAPITAL_METRICS as readonly CapitalMetric[]) {
     const instant = ["totalAssets", "debt", "cash", "equity", "rpo", "rpoNext12MonthsShare"].includes(capital);
     // Instants have no span; flows are shown as the quarter and the fiscal year.
@@ -83,7 +109,7 @@ export function buildLedger(data: FindingData, periodEnd: string, sources: Expla
   }
   const guidance = (data.guidance?.items ?? []).filter(i => !i.periodEnd || i.periodEnd >= shiftPeriod(periodEnd, -12)).slice(0, 40)
     .map(i => ({ guidanceId: i.id, text: i.text, periodEnd: i.periodEnd, horizon: i.horizon }));
-  return { periodEnd, rows: rows.slice(0, 400), nodes, guidance, sources };
+  return { periodEnd, rows: rows.slice(0, 640), nodes, guidance, sources };
 }
 
 export const ledgerRefLabel = (data: FindingData, ref: FindingRef) => refLabel(data, ref);

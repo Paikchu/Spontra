@@ -112,7 +112,7 @@ export type ResolvedEvidence = {
   current: ResolvedValue;
   compare: ResolvedValue | null;
   compareLabel: string | null;
-  /** Percent change for amounts; percentage-point change for rates. */
+  /** Percent change for amounts; percentage-point change for rates and ratios (×100). */
   delta: number | null;
   /** Current over compare, for "x 倍" statements. */
   ratio: number | null;
@@ -269,7 +269,12 @@ const CAPITAL_LABEL: Record<CapitalMetric, string> = { operatingCashFlow: "经�
 
 /** Human label of a reference; a business node reads by its disclosed name when the data has it. */
 export function refLabel(data: FindingData, ref: FindingRef): string {
-  if ("ratio" in ref) return `${refLabel(data, ref.ratio.numerator)} / ${refLabel(data, ref.ratio.denominator)}`;
+  if ("ratio" in ref) {
+    const n = refLabel(data, ref.ratio.numerator), d = refLabel(data, ref.ratio.denominator);
+    const margin: Partial<Record<FlowMetric, string>> = { gross: "毛利率", operating: "营业利润率", net: "净利率", research: "研发费用率", sales: "销售费用率", administration: "管理费用率" };
+    if ("metric" in ref.ratio.denominator && ref.ratio.denominator.metric === "revenue" && "metric" in ref.ratio.numerator && margin[ref.ratio.numerator.metric]) return margin[ref.ratio.numerator.metric]!;
+    return `${n} / ${d}`;
+  }
   if ("metric" in ref) return METRIC_LABEL[ref.metric];
   if ("capital" in ref) return CAPITAL_LABEL[ref.capital];
   if ("fundamental" in ref) return data.fundamentals?.series.find(s => s.metricKey === ref.fundamental)?.label ?? FUNDAMENTAL_METRIC_CATALOG[ref.fundamental as keyof typeof FUNDAMENTAL_METRIC_CATALOG]?.label ?? ref.fundamental;
@@ -303,7 +308,8 @@ function compareOf(data: FindingData, e: FindingEvidence, current: ResolvedValue
   const months = e.compare === "yoy" ? -12 : -3;
   const compare = resolveRef(data, e.ref, shiftPeriod(e.periodEnd, months), e.span);
   if (!compare) return none;
-  const delta = current.unit === "percent" ? current.value - compare.value : compare.value !== 0 ? (current.value - compare.value) / Math.abs(compare.value) * 100 : null;
+  // Rates move in points: a margin, or a ratio of two figures, is compared by its difference ×100, never by its growth.
+  const delta = current.unit === "percent" ? current.value - compare.value : current.unit === "ratio" ? (current.value - compare.value) * 100 : compare.value !== 0 ? (current.value - compare.value) / Math.abs(compare.value) * 100 : null;
   return { compare, compareLabel: e.compare === "yoy" ? "去年同期" : "上一季", delta, ratio: compare.value > 0 && current.value > 0 ? current.value / compare.value : null, guidance: null };
 }
 

@@ -102,13 +102,13 @@ function Outcome({ r }: { r: ResolvedEvidence }) {
   return <span className="lens-outcome-body">
     <span>{r.label} <b data-trend={r.current.value < 0 && r.current.unit === "USD" ? "down" : undefined}>{formatValue(r.current)}</b></span>
     {r.guidance ? <em data-verdict={r.guidance.verdict}>{r.guidance.unit === "percent" && r.current.unit !== "percent" ? `同比 ${percent(r.guidance.measured)} · ` : ""}{VERDICT[r.guidance.verdict]}{r.compare ? ` ${formatValue(r.compare)}` : ""}</em>
-      : r.compare ? <em data-trend={trend(r.delta)}>{r.compareLabel} {formatValue(r.compare)} · {r.current.unit === "percent" ? `${percent(r.delta)} 点` : percent(r.delta)}</em> : null}
+      : r.compare ? <em data-trend={trend(r.delta)}>{r.compareLabel} {formatValue(r.compare)} · {r.current.unit === "percent" || r.current.unit === "ratio" ? `${percent(r.delta)} 点` : percent(r.delta)}</em> : null}
   </span>;
 }
 
 function Evidence({ r }: { r: ResolvedEvidence }) {
   const note = r.guidance ? <em data-verdict={r.guidance.verdict}>{VERDICT[r.guidance.verdict]}{r.compare ? ` ${formatValue(r.compare)}` : ""}</em>
-    : r.compare ? <em data-trend={trend(r.delta)}>{r.compareLabel} {formatValue(r.compare)} · {r.current.unit === "percent" ? `${percent(r.delta)} 点` : percent(r.delta)}</em> : null;
+    : r.compare ? <em data-trend={trend(r.delta)}>{r.compareLabel} {formatValue(r.compare)} · {r.current.unit === "percent" || r.current.unit === "ratio" ? `${percent(r.delta)} 点` : percent(r.delta)}</em> : null;
   return <div className="lens-row">
     <dt>{r.label}<small>{spanLabel(r.current)}</small></dt>
     <dd><b data-trend={r.current.value < 0 && r.current.unit === "USD" ? "down" : undefined}>{formatValue(r.current)}</b>{note}</dd>
