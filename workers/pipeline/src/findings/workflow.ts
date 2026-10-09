@@ -14,6 +14,7 @@ import { readGuidanceResponse } from "../guidance/workflow.ts";
 import { callWorkerSecModel, type SecPipelineEnv } from "../operations.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import type { WorkflowStepLike } from "../workflow-core.ts";
+import { AiRunStore, quietly } from "../ai-runs/store.ts";
 import { buildLedger, type Ledger } from "./ledger.ts";
 import { findingsCacheKey } from "./read.ts";
 import { writeFindings, type FindingsModel } from "./writer.ts";
@@ -53,6 +54,11 @@ async function readInput(env: SecPipelineEnv, ticker: string): Promise<Input> {
   return { data, ledger, context, fingerprint };
 }
 
+/** The state a run would write for now; null when the company has no complete report yet. */
+export async function findingsFingerprint(env: SecPipelineEnv, ticker: string): Promise<string | null> {
+  return (await readInput(env, ticker))?.fingerprint ?? null;
+}
+
 /**
  * Starts at most one run per tick, only for AI-enabled companies whose newest report (or the guidance
  * and narrative around it) has no model-written findings yet. The instance id carries the week, so a
@@ -70,7 +76,9 @@ export async function runFindingsSweep(env: SecPipelineEnv, now = Date.now()): P
       const stored = await repository.getCache<FindingsPublication>(findingsCacheKey(ticker));
       if (stored?.payload?.fingerprint === input.fingerprint) continue;
       const week = Math.floor(now / (7 * 24 * 60 * 60_000));
-      await env.FINDINGS_WORKFLOW.create({ id: `findings-${ticker.replace(/[^A-Za-z0-9]/g, "-")}-${input.fingerprint.slice(0, 16)}-${week}`, params: { ticker, fingerprint: input.fingerprint } });
+      const id = `findings-${ticker.replace(/[^A-Za-z0-9]/g, "-")}-${input.fingerprint.slice(0, 16)}-${week}`;
+      await env.FINDINGS_WORKFLOW.create({ id, params: { ticker, fingerprint: input.fingerprint } });
+      await quietly(() => new AiRunStore(env.DB!).start({ kind: "findings", ticker, runId: id, trigger: "schedule" }, new Date(now).toISOString()));
       result.started.push(ticker);
       return result;
     } catch (error) {
@@ -96,6 +104,9 @@ export async function executeFindingsWorkflow(params: FindingsWorkflowParams, st
   // Nothing verifiable is not a publication: whatever is stored (an authored set, an older run) keeps serving.
   if (!outcome.publication) return { status: "empty" as const, withheld: outcome.withheld };
   const publication = outcome.publication;
-  await step.do("findings-publish", () => new D1SecRepository(requireDb(env)).setCache(findingsCacheKey(params.ticker), publication, now));
+  await step.do("findings-publish", async () => {
+    await new D1SecRepository(requireDb(env)).setCache(findingsCacheKey(params.ticker), publication, now);
+    await new AiRunStore(requireDb(env)).saveVersion("findings", params.ticker, publication, now);
+  });
   return { status: "ready" as const, findings: publication.findings.length, withheld: outcome.withheld };
 }

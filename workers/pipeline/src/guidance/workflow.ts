@@ -17,10 +17,15 @@ import type { WorkflowStepContextLike, WorkflowStepLike } from "../workflow-core
 import { extractGuidance, GUIDANCE_EXTRACTOR_VERSION, GUIDANCE_MAX_OUTPUT_TOKENS, type GuidanceModelCall } from "./extract.ts";
 import { findIrDeck, AlphaVantageTranscriptProvider, readSecExhibits, reportedTranscriptRef, TranscriptAccessError, TranscriptQuotaError, type FoundMaterial, type TranscriptRef } from "./sources.ts";
 import { GuidanceStore, type StoredMaterial } from "./store.ts";
+import { AiRunStore, quietly } from "../ai-runs/store.ts";
 
 export const guidanceCacheKey = (ticker: string) => `guidance:v1:${ticker}`;
 const irHostsKey = (ticker: string) => `guidance-ir-hosts:v1:${ticker}`;
-export type GuidanceWorkflowParams = { ticker: string; accession: string; eventDate: string };
+/**
+ * `manual` is an operator's re-run: it extracts every material again under the current extractor
+ * version and reads the transcript once instead of waiting days for it.
+ */
+export type GuidanceWorkflowParams = { ticker: string; accession: string; eventDate: string; manual?: boolean };
 export type GuidanceStep = WorkflowStepLike & { sleep(name: string, durationMs: number): Promise<void> };
 
 /** Transcripts usually appear hours to a day after the call; four bounded re-checks, then give up. */
@@ -70,6 +75,7 @@ export async function runGuidanceSweep(env: SecPipelineEnv, now = Date.now()): P
     const id = `guidance-${event.ticker.replace(/[^A-Za-z0-9]/g, "-")}-${event.accession}-${GUIDANCE_EXTRACTOR_VERSION.replace(/[^A-Za-z0-9]/g, "")}`;
     try {
       await env.GUIDANCE_WORKFLOW.create({ id, params: { ticker: event.ticker, accession: event.accession, eventDate: event.event_date } });
+      await quietly(() => new AiRunStore(env.DB!).start({ kind: "guidance", ticker: event.ticker, runId: id, trigger: "schedule", accession: event.accession }, stamp));
       result.started.push(id);
     } catch (error) {
       if (!/already exists|duplicate/i.test(String(error))) { result.failed.push(event.accession); continue; }
@@ -107,9 +113,9 @@ function modelCall(env: SecPipelineEnv, store: GuidanceStore, fetcher: typeof fe
 
 type ExtractOutcome = { status: "cached" | "extracted" | "deferred" | "failed" | "skipped" };
 
-async function extractStored(env: SecPipelineEnv, deps: GuidanceDeps, materialId: string, input: { ticker: string; companyName: string; eventDate: string; reportedQuarter: string | null }, context?: WorkflowStepContextLike): Promise<ExtractOutcome> {
+async function extractStored(env: SecPipelineEnv, deps: GuidanceDeps, materialId: string, input: { ticker: string; companyName: string; eventDate: string; reportedQuarter: string | null; force?: boolean }, context?: WorkflowStepContextLike): Promise<ExtractOutcome> {
   const store = new GuidanceStore(requireDb(env), env.SEC_FILINGS);
-  if (await store.hasExtraction(materialId, GUIDANCE_EXTRACTOR_VERSION)) return { status: "cached" };
+  if (!input.force && await store.hasExtraction(materialId, GUIDANCE_EXTRACTOR_VERSION)) return { status: "cached" };
   const row = await store.material(materialId);
   if (!row || row.status === "unsupported") return { status: "skipped" };
   const text = await store.materialText(row);
@@ -164,6 +170,7 @@ export async function publishGuidance(env: SecPipelineEnv, ticker: string, now: 
   const publication: GuidancePublication = { schemaVersion: "guidance.v1", ticker, updatedAt: now, items, sources, coverage };
   if (!readGuidancePublication(publication, ticker)) throw new Error("Guidance publication failed its public contract.");
   await repository.setCache(guidanceCacheKey(ticker), publication, now);
+  await new AiRunStore(db).saveVersion("guidance", ticker, publication, now);
   return { items: items.length };
 }
 
@@ -241,7 +248,7 @@ export async function executeGuidanceWorkflow(params: GuidanceWorkflowParams, st
       const deferred: StoredMaterial[] = [];
       for (const material of pending) {
         const outcome = await step.do(`guidance-extract-${material.id.slice(0, 16)}${round ? `-r${round}` : ""}`, (ctx) => extractStored(env, deps, material.id,
-          { ticker: params.ticker, companyName: context.companyName, eventDate: params.eventDate, reportedQuarter: reportedQuarter() }, ctx));
+          { ticker: params.ticker, companyName: context.companyName, eventDate: params.eventDate, reportedQuarter: reportedQuarter(), force: params.manual }, ctx));
         if (outcome.status === "deferred") deferred.push(material);
       }
       pending = deferred;
@@ -258,7 +265,7 @@ export async function executeGuidanceWorkflow(params: GuidanceWorkflowParams, st
   await publish("initial");
   await step.do("guidance-event-extracted", async () => store().updateEvent(params.ticker, params.accession, { status: "extracted" }, new Date().toISOString()));
 
-  if (transcripts && !transcript.material && !transcript.denied) {
+  if (transcripts && !transcript.material && !transcript.denied && !params.manual) {
     const callTime = Date.parse(`${params.eventDate}T21:00:00Z`);
     for (let attempt = 1; attempt < TRANSCRIPT_WAIT_HOURS.length && !transcript.material && !transcript.denied; attempt++) {
       const now = Date.parse(await time(`transcript-${attempt}`));

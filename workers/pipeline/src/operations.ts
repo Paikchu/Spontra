@@ -47,13 +47,19 @@ type R2BucketLike = {
   put(key: string, value: string, options?: { httpMetadata?: { contentType?: string }; onlyIf?: { etagMatches?: string; etagDoesNotMatch?: string } }): Promise<unknown>;
 };
 
+/** `get` reads an instance's engine status; the admin view uses it to settle runs that ended without a record. */
+export type AiWorkflowBinding<P> = {
+  create(options: { id: string; params: P }): Promise<unknown>;
+  get?(id: string): Promise<{ status(): Promise<{ status: string; error?: unknown }> }>;
+};
+
 export type SecPipelineEnv = SecCronEnv & AnalysisReadEnv & {
   TAVILY_API_KEY?: string;
   RESEARCH_SYNC_KEY?: string;
   RESEARCH_WORKFLOW?: { create(options: { id: string; params: { caseId: string } }): Promise<unknown>; get(id: string): Promise<{ status(): Promise<{ status: string }> }> };
-  BUSINESS_EXPLAINER_WORKFLOW?: { create(options: { id: string; params: { ticker: string; fingerprint: string } }): Promise<unknown> };
-  GUIDANCE_WORKFLOW?: { create(options: { id: string; params: { ticker: string; accession: string; eventDate: string } }): Promise<unknown> };
-  FINDINGS_WORKFLOW?: { create(options: { id: string; params: { ticker: string; fingerprint: string } }): Promise<unknown> };
+  BUSINESS_EXPLAINER_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
+  GUIDANCE_WORKFLOW?: AiWorkflowBinding<{ ticker: string; accession: string; eventDate: string; manual?: boolean }>;
+  FINDINGS_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
   /** "true" lets the sweep start findings runs for AI-enabled companies; anything else leaves it off. */
   FINDINGS_ENABLED?: string;
   /** "true" starts guidance extraction for AI-enabled companies; anything else leaves it off. */

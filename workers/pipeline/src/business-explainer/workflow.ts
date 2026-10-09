@@ -10,6 +10,7 @@ import { AnalysisRequestError } from "../read-api/contract-support/errors.ts";
 import { researchSearch } from "../research/runtime.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import type { WorkflowStepLike } from "../workflow-core.ts";
+import { AiRunStore, quietly } from "../ai-runs/store.ts";
 import { nodeHint, runBusinessExplainer, type ExplainerNode } from "./agent.ts";
 
 /** Changing the prompt or output contract regenerates every company once. */
@@ -49,6 +50,11 @@ async function readInput(env: SecPipelineEnv, ticker: string) {
   return { nodes, filings, fingerprint: nodes.length ? await explainerFingerprint(ticker, nodes) : null };
 }
 
+/** The business list a run would explain now; null when the company has no complete report yet. */
+export async function businessExplainerFingerprint(env: SecPipelineEnv, ticker: string): Promise<string | null> {
+  return (await readInput(env, ticker)).fingerprint;
+}
+
 /**
  * Starts at most one run per tick, only for AI-enabled companies whose published business list has
  * no explanation yet. The instance id includes the week, so a failed run is retried weekly rather
@@ -66,7 +72,9 @@ export async function runBusinessExplainerSweep(env: SecPipelineEnv, now = Date.
       const stored = await repository.getCache<BusinessExplainer>(businessExplainerCacheKey(ticker));
       if (stored?.payload?.fingerprint === fingerprint) continue;
       const week = Math.floor(now / (7 * 24 * 60 * 60_000));
-      await env.BUSINESS_EXPLAINER_WORKFLOW.create({ id: `business-explainer-${ticker.replace(/[^A-Za-z0-9]/g, "-")}-${fingerprint.slice(0, 16)}-${week}`, params: { ticker, fingerprint } });
+      const id = `business-explainer-${ticker.replace(/[^A-Za-z0-9]/g, "-")}-${fingerprint.slice(0, 16)}-${week}`;
+      await env.BUSINESS_EXPLAINER_WORKFLOW.create({ id, params: { ticker, fingerprint } });
+      await quietly(() => new AiRunStore(env.DB!).start({ kind: "explainer", ticker, runId: id, trigger: "schedule" }, new Date(now).toISOString()));
       result.started.push(ticker);
       return result;
     } catch (error) {
@@ -90,7 +98,10 @@ export async function executeBusinessExplainerWorkflow(params: BusinessExplainer
     stage: (name, callback) => step.do(`explainer-${name}`, callback),
   });
   if (!readBusinessExplainer(explainer, params.ticker)) throw new Error("Business explainer failed its public contract.");
-  await step.do("explainer-publish", () => new D1SecRepository(requireDb(env)).setCache(businessExplainerCacheKey(params.ticker), explainer, now));
+  await step.do("explainer-publish", async () => {
+    await new D1SecRepository(requireDb(env)).setCache(businessExplainerCacheKey(params.ticker), explainer, now);
+    await new AiRunStore(requireDb(env)).saveVersion("explainer", params.ticker, explainer, now);
+  });
   return { status: "ready", businesses: explainer.businesses.length, sources: explainer.sources.length };
 }
 
