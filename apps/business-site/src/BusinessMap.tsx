@@ -21,7 +21,7 @@ import { Rail } from "./Sidebar";
 import type { FindingsPublication } from "@/shared/analysis-contract/findings";
 import type { FindingFundamentals } from "@/shared/analysis-runtime/findings";
 import { anchorNodeNames, anchorPoolKeys, badgesByNode, findingData, verifiedFindings } from "./findings-model";
-import { FindingsStrip } from "./FindingsStrip";
+import { FindingsList } from "./FindingsList";
 import { LensPanel } from "./LensPanel";
 
 type Item = { key: string; id: string; parent: string | null; depth: number; name: string; value: number | null; slot: number; segment: BusinessSegment };
@@ -224,6 +224,9 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
   const badges = useMemo(() => new Map([...badgeFindings].map(([name, f]) => [name, { kind: f.kind, severity: f.severity, title: f.title }])), [badgeFindings]);
   const nodeColor = useCallback((id: string) => { const item = items.find(i => i.id === id); return item ? hue(item.slot) : "var(--biz-0)"; }, [items]);
   const focusFinding = (id: string | null) => { setFocusId(id); if (!id) { setStory(false); setSplit(false); } };
+  // The business list is a drawer under 全部业务: closed by default once findings share the rail, open while a business is picked.
+  const [drawerOpen, setDrawerOpen] = useState<boolean | null>(null);
+  const drawer = drawerOpen ?? (current != null || !(findings && verified.length));
   const previewItem = items.find(item => item.key === preview);
   const active = previewItem ? "segment:" + previewItem.key : hoverNode ?? (current ? "segment:" + current.key : null);
   const hovered = hoverNode ? itemByNode.get(hoverNode)?.key : undefined;
@@ -249,14 +252,19 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
 
   return <div className="map">
     <Rail ticker={ticker} actions={tools} label="公司业务">
-      <div className="rail-list" role="listbox" aria-label="选择业务以在图中高亮" ref={listRef} onKeyDown={onListKey} onMouseLeave={() => setPreview(null)}>
-        <Button variant="unstyled" type="button" role="option" aria-selected={!current} tabIndex={!current ? 0 : -1} className="row row--all" onClick={() => setSelected(null)} onMouseEnter={() => setPreview(null)}>
-          <i className="row-chip row-chip--all" aria-hidden="true" />
-          <span className="row-name">全部业务</span>
-          <span className="row-value">{revenue != null ? money(revenue) : ""}</span>
-          {quarter && <span className="row-meta">总收入 · 环比 {change("revenue")}</span>}
-        </Button>
-        {items.map(item => {
+      <div className="rail-list" role="listbox" aria-label="选择业务以在图中高亮" ref={listRef} onKeyDown={onListKey} onMouseLeave={() => setPreview(null)} data-drawer={drawer ? "open" : "closed"}>
+        <div className="row-head">
+          <Button variant="unstyled" type="button" role="option" aria-selected={!current} tabIndex={!current ? 0 : -1} className="row row--all" onClick={() => setSelected(null)} onMouseEnter={() => setPreview(null)}>
+            <i className="row-chip row-chip--all" aria-hidden="true" />
+            <span className="row-name">全部业务</span>
+            <span className="row-value">{revenue != null ? money(revenue) : ""}</span>
+            {quarter && <span className="row-meta">总收入 · 环比 {change("revenue")}{quantified ? ` · ${items.filter(i => !i.parent).length} 项业务` : ""}</span>}
+          </Button>
+          <Button variant="unstyled" type="button" className="row-drawer" aria-expanded={drawer} aria-controls="rail-businesses" aria-label={drawer ? "收起业务列表" : "展开业务列表"} onClick={() => setDrawerOpen(!drawer)}>
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4" /></svg>
+          </Button>
+        </div>
+        {drawer && <div className="rail-drawer" id="rail-businesses">{items.map(item => {
           const share = item.value != null && segmentRevenue ? item.value / segmentRevenue * 100 : null;
           const delta = quarter && quantified ? compareRevenueNode(quarter, previous, item.key).label : "不可比";
           return <Button variant="unstyled" type="button" role="option" key={item.key} aria-selected={current?.key === item.key} tabIndex={current?.key === item.key ? 0 : -1}
@@ -268,14 +276,14 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
             {share != null && <span className="row-bar" aria-hidden="true"><b style={{ width: `${Math.max(0.6, share)}%` }} /></span>}
             <span className="row-meta">{share != null ? <>{percent(share)}{quarter.revenueAdjustments?.length?" · 抵销前":""}{delta !== "不可比" && <> · <em data-trend={trend(delta)}>环比 {delta}</em></>}</> : "定性归属 · 比例未披露"}</span>
           </Button>;
-        })}
+        })}</div>}
       </div>
+      {findings && verified.length > 0 && <FindingsList findings={verified} focus={focused?.id ?? null} story={story} periodEnd={findings.periodEnd}
+        onFocus={focusFinding} onStory={() => { if (story) { setStory(false); setFocusId(null); } else { setStory(true); setFocusId(focused?.id ?? verified[0].id); } }} />}
       {!!quarter?.revenueAdjustments?.length&&<p className="revenue-reconciliation">收入对账 · {quarter.currency} 百万<br/>分部收入（抵销前） {formatFlowValue(segmentRevenue,quarter)}<br/>{quarter.revenueAdjustments.map(a=><span key={a.id}>{a.name} {formatFlowValue(numeric(a.amount),quarter)}<br/></span>)}合并收入 {formatFlowValue(revenue,quarter)}</p>}
     </Rail>
 
     <section className="stage" data-trend={revenueHistory && revenueHistory.quarters.length >= 2 ? "" : undefined} data-finding={focused?.kind} aria-label={`${ticker} 收入到利润流向`}>
-      {findings && verified.length > 0 && <FindingsStrip findings={verified} focus={focused?.id ?? null} story={story} periodEnd={findings.periodEnd}
-        onFocus={focusFinding} onStory={() => { if (story) { setStory(false); setFocusId(null); } else { setStory(true); setFocusId(focused?.id ?? verified[0].id); } }} />}
       <header className="stage-head stage-head--summary">
         {quarter && view !== "profit" && funding ? <CapitalStats view={view} funding={funding} /> : quarter && <div className="stats" aria-live="polite">
           {current && current.value != null ? <>

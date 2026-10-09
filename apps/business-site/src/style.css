@@ -527,6 +527,16 @@ button { cursor: pointer; }
   .row-name, .row-value, .row[data-depth="1"] .row-name, .row[data-depth="1"] .row-value { font-size: 13px; }
   .row-value { color: var(--muted-foreground); font-weight: 500; }
   .row--all { margin: 0; }
+  .row-head { display: contents; }
+  .row-drawer { display: none; }
+  .rail-drawer { display: contents; }
+  .findings { order: 2; margin: 0; padding: 8px 16px; border-top: 0; }
+  .findings-head { padding: 0 0 6px; }
+  .findings-rows { flex-direction: row; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+  .findings-rows::-webkit-scrollbar { display: none; }
+  .finding-row { display: inline-flex; flex: none; width: auto; align-items: center; gap: 7px; padding: 5px 11px 5px 6px; border-radius: 999px; border: 1px solid var(--hairline); white-space: nowrap; }
+  .finding-row::after, .finding-kind { display: none; }
+  .finding-title { font-size: 12.5px; }
   .stage { order: 2; padding: 20px 16px 16px; }
   .dossier { order: 3; margin: 0 16px 32px; }
   .chart { margin-top: 16px; overflow-x: auto; overscroll-behavior-x: contain; }
@@ -664,29 +674,47 @@ button { cursor: pointer; }
 
 /* ---------- Findings: what deserves attention, bound to the figures on the stage ---------- */
 /* Kind colours: a risk reads as a loss, a strength as growth, a shift as the first business hue, a watch item stays quiet. */
-.stage, .home { --kind-risk: var(--loss); --kind-strength: var(--up); --kind-shift: var(--biz-1); --kind-watch: var(--muted-foreground); }
+.map, .home { --kind-risk: var(--loss); --kind-strength: var(--up); --kind-shift: var(--biz-1); --kind-watch: var(--muted-foreground); }
 [data-kind="risk"] { --kind: var(--kind-risk); } [data-kind="strength"] { --kind: var(--kind-strength); } [data-kind="shift"] { --kind: var(--kind-shift); } [data-kind="watch"] { --kind: var(--kind-watch); }
 .stage:has(.findings) { grid-template-rows: auto auto minmax(0, 1fr) auto auto; }
 /* A grid, not a flex row: the chips column is capped at the space left, so a long set scrolls inside it instead of widening the stage. */
-.findings { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px 14px; min-width: 0; margin: -4px 0 10px; padding-bottom: 10px; border-bottom: 1px solid var(--hairline); animation: rise .45s var(--ease) both; }
+/* Findings live in the rail under the business drawer: one row per finding, most severe first. */
+.findings { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--hairline); animation: rise .45s var(--ease) both; }
+.findings-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 10px 8px; }
 .findings-title { display: inline-flex; align-items: baseline; gap: 6px; font-size: 12.5px; font-weight: 620; letter-spacing: .02em; white-space: nowrap; }
 .findings-title small { font-size: 11px; font-weight: 500; color: var(--faint); font-variant-numeric: tabular-nums; }
-.findings-chips { display: flex; min-width: 0; gap: 6px; overflow-x: auto; scrollbar-width: none; padding: 2px 0; }
-.findings-chips::-webkit-scrollbar { display: none; }
-.finding-chip {
-  display: inline-flex; align-items: center; gap: 7px; flex: 0 1 auto; min-width: 76px; padding: 5px 11px 5px 6px; border-radius: 999px; font-size: 12.5px; font-weight: 520;
-  color: var(--muted-foreground); background: var(--surface); border: 1px solid var(--hairline); white-space: nowrap; transition: color .2s, border-color .2s, background .2s, opacity .25s;
-}
-.finding-chip span { overflow: hidden; text-overflow: ellipsis; }
-.finding-chip:hover { color: var(--foreground); border-color: color-mix(in srgb, var(--kind) 45%, transparent); }
-.finding-chip[aria-checked="true"] { flex-shrink: 0; color: var(--foreground); background: color-mix(in srgb, var(--kind) 14%, var(--surface)); border-color: color-mix(in srgb, var(--kind) 55%, transparent); font-weight: 600; }
-.findings[data-focus] .finding-chip:not([aria-checked="true"]) { opacity: .62; }
-.findings[data-focus] .finding-chip:not([aria-checked="true"]):hover { opacity: 1; }
-.finding-mark { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; font-size: 10.5px; font-style: normal; font-weight: 700; color: var(--background); background: var(--kind); font-variant-numeric: tabular-nums; }
-.findings-tools { display: inline-flex; align-items: center; gap: 10px; font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
-.findings-story { padding: 5px 11px; border-radius: 999px; font-size: 12px; font-weight: 560; color: var(--muted-foreground); background: transparent; border: 1px solid var(--hairline); transition: color .2s, background .2s; }
+.findings-story { padding: 4px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 560; color: var(--muted-foreground); background: transparent; border: 1px solid var(--hairline); transition: color .2s, background .2s; }
 .findings-story:hover { color: var(--foreground); }
 .findings-story[aria-pressed="true"] { color: var(--background); background: var(--foreground); border-color: var(--foreground); }
+.findings-rows { display: flex; flex-direction: column; gap: 1px; }
+.finding-row {
+  position: relative; display: grid; grid-template-columns: 18px minmax(0, 1fr); align-items: start; column-gap: 10px; row-gap: 2px;
+  width: 100%; padding: 7px 10px; border: 0; border-radius: 10px; background: transparent; text-align: left;
+  transition: background .3s var(--ease), opacity .25s;
+}
+.finding-row::after { content: ""; position: absolute; left: -11px; top: 6px; bottom: 6px; width: 3px; border-radius: 2px; background: var(--kind); transform: scaleY(0); transition: transform .3s var(--ease); }
+.finding-row:hover { background: color-mix(in srgb, var(--kind) 6%, transparent); }
+.finding-row[aria-checked="true"] { background: color-mix(in srgb, var(--kind) 12%, transparent); }
+.finding-row[aria-checked="true"]::after { transform: none; }
+.finding-row:focus-visible { outline-offset: -2px; }
+.findings[data-focus] .finding-row:not([aria-checked="true"]) { opacity: .62; }
+.findings[data-focus] .finding-row:not([aria-checked="true"]):hover { opacity: 1; }
+.finding-mark { display: inline-grid; place-items: center; width: 18px; height: 18px; margin-top: 1px; border-radius: 50%; font-size: 10.5px; font-style: normal; font-weight: 700; color: var(--background); background: var(--kind); font-variant-numeric: tabular-nums; }
+.finding-title { font-size: 13.5px; font-weight: 560; line-height: 1.35; color: color-mix(in srgb, var(--foreground) 88%, transparent); }
+.finding-row[aria-checked="true"] .finding-title, .finding-row:hover .finding-title { color: var(--foreground); }
+.finding-row[aria-checked="true"] .finding-title { font-weight: 640; }
+.finding-kind { grid-column: 2; display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 560; color: var(--kind); }
+.finding-settled { display: inline-grid; place-items: center; width: 15px; height: 15px; border-radius: 50%; font-size: 10px; font-style: normal; color: var(--kind); background: color-mix(in srgb, var(--kind) 14%, transparent); }
+
+/* The business drawer: 全部业务 is the header; its chevron opens the rows beneath. */
+.row-head { position: relative; }
+.row-head .row--all { margin-bottom: 0; padding-right: 36px; }
+.row-head .row--all::before { display: none; }
+.row-drawer { position: absolute; right: 6px; top: 50%; display: grid; place-items: center; width: 26px; height: 26px; margin-top: -13px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--muted-foreground); transition: background .2s, color .2s, transform .3s var(--ease); }
+.row-drawer svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; transition: transform .3s var(--ease); }
+.row-drawer:hover { background: color-mix(in srgb, var(--foreground) 6%, transparent); color: var(--foreground); }
+.row-drawer[aria-expanded="true"] svg { transform: rotate(180deg); }
+.rail-drawer { display: flex; flex-direction: column; gap: 1px; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--hairline); animation: rise .35s var(--ease) both; }
 
 /* Overview marks: a numbered dot at the corner of each node a finding names; the spotlight recedes everything else. */
 .fc-badge { cursor: pointer; animation: pop .35s var(--ease) both; animation-delay: var(--d); }
