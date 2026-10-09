@@ -1,3 +1,4 @@
+import type { BusinessFlowQuarter } from "@/shared/analysis-contract/business-flow";
 import type { CompanyEvent, EventsPublication } from "@/shared/analysis-contract/events";
 import type { PublicFilingDigest, PublicFilingDigestPage } from "@/shared/analysis-contract/filings";
 import { DAY_MS } from "@/shared/analysis-runtime/events";
@@ -57,12 +58,18 @@ export function railItems(filings: PublicFilingDigestPage | null, events: Events
 }
 
 /** Everything on the time axis: reports from the filings, events from the publication, merged current reports once. Oldest first. */
-export function timelineFromFilings(filings: PublicFilingDigestPage | null, events: EventsPublication | null, months = 24, now = new Date()): TimelinePoint[] {
+export function timelineFromFilings(filings: PublicFilingDigestPage | null, events: EventsPublication | null, months = 24, now = new Date(), quarters: BusinessFlowQuarter[] = []): TimelinePoint[] {
   const floor = new Date(now.getTime() - months * 30.4 * DAY_MS).toISOString().slice(0, 10);
   const reports = (filings?.filings ?? []).filter(isReport);
   const merged = mergedAccessions(reports);
   const points: TimelinePoint[] = reports.filter(r => r.date >= floor)
     .map(r => ({ id: r.accessionNumber, date: r.date, kind: "report" as const, periodEnd: r.periodEnd!, title: `${r.periodLabel ?? r.form} · ${r.headline || r.form}`, weight: 3 as const }));
+  // The axis is the only quarter control, so a flow quarter the filing list does not cover still gets a tick that switches the stage.
+  const covered = new Set(points.map(p => p.periodEnd));
+  for (const q of quarters) {
+    const date = q.reportedAt ?? q.periodEnd;
+    if (!covered.has(q.periodEnd) && date >= floor) { covered.add(q.periodEnd); points.push({ id: "report:" + q.id, date, kind: "report", periodEnd: q.periodEnd, title: `${q.periodEnd.slice(0, 7).replace("-", ".")} 财报`, weight: 3 }); }
+  }
   for (const e of events?.events ?? []) {
     if (e.filedAt < floor || merged.has(e.id)) continue;
     points.push({ id: e.id, date: e.filedAt, kind: "event", cls: e.class, title: eventTitle(e), weight: e.class === "insider" ? (isQuietInsider(e) ? 0 : 1) : 2 });

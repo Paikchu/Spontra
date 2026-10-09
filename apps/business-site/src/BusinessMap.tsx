@@ -1,5 +1,4 @@
 import { Button } from "@/components/ui/button";
-import { NativeSelect, NativeSelectOptGroup, NativeSelectOption } from "@/components/ui/native-select";
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 import type { BusinessFlowQuarter, BusinessSegment, FlowMetric, FlowSource, PublicBusinessFlow } from "@/shared/analysis-contract/business-flow";
 import type { CompanyBusinessContent } from "@/lib/earning-report/web/company-business-content";
@@ -129,8 +128,6 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
   const quarters = useMemo(() => [...flow.quarters].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd)), [flow]);
   const [period, setPeriod] = useState<string | null>(null);
   const quarter = quarters.find(q => q.id === period) ?? quarters[0];
-  const reportPeriods = useMemo(() => [...new Set([...quarters.map(q => q.periodEnd), ...(revenueHistory?.quarters ?? []).map(q => q.periodEnd)])]
-    .sort((a, b) => b.localeCompare(a)).slice(0, 8), [quarters, revenueHistory]);
   const previous = quarter ? previousQuarter(quarter, quarters) : null;
   const slots = useMemo(() => hueSlots(quarters), [quarters]);
   const { items, quantified } = useMemo(() => businessItems(quarter, business, slots), [quarter, business, slots]);
@@ -153,7 +150,7 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
   const focusedReport = focusId ? null : filings?.filings.find(f => f.accessionNumber === reportId) ?? null;
   const railIndex = railList.findIndex(i => i.id === (focusedReport?.accessionNumber ?? focusedEvent?.id));
   // Reports come from the filings when they have loaded; until then the flow quarters stand in for them on the axis.
-  const points = useMemo(() => filings ? timelineFromFilings(filings, events, 24, now) : timelinePoints(quarters, events, 24, now), [filings, quarters, events, now]);
+  const points = useMemo(() => filings ? timelineFromFilings(filings, events, 24, now, quarters) : timelinePoints(quarters, events, 24, now), [filings, quarters, events, now]);
   // The trend below the flow shows revenue by business, or one company-level SEC series picked from the fundamentals.
   const metricGroups = useMemo(() => metricOptions(fundamentals), [fundamentals]);
   const hasRevenueTrend = !!revenueHistory && revenueHistory.quarters.length >= 2;
@@ -364,17 +361,8 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
             {funding.balanceSheet && <ToggleGroupItem value="balance" role="radio" aria-checked={view === "balance"}>资产负债</ToggleGroupItem>}
           </span>
         </ToggleGroup>}
-        {quarter && <label className="report-select">
-          <span>财报季度</span>
-          <NativeSelect appearance="native" value={quarter.id} onChange={event => setPeriod(event.target.value)}>
-            <NativeSelectOptGroup label="近两年 · 季度报告">
-              {reportPeriods.map(end => {
-                const report = quarters.find(q => q.periodEnd === end);
-                return <NativeSelectOption key={end} value={report?.id ?? end} disabled={!report}>{shortPeriod(end)}{report ? "" : " · 完整报告暂不可用"}</NativeSelectOption>;
-              })}
-            </NativeSelectOptGroup>
-          </NativeSelect>
-        </label>}
+        {/* The quarter is picked on the time axis under the chart; the header only names the one on stage. */}
+        {quarter && <span className="report-current" aria-live="polite"><span>财报季度</span><b>{shortPeriod(quarter.periodEnd)}</b></span>}
         </div>
         {quarter && <Verdict view={view} funding={funding} deficit={deficit?.text ?? null} />}
       </header>
