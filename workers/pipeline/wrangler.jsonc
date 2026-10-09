@@ -91,22 +91,13 @@
       "migrations_dir": "migrations"
     }
   ],
-  // Per-credential limit for the read API, enforced by Cloudflare across isolates and colos rather
-  // than by a counter in one isolate that would only ever be a local approximation. The
-  // namespace_id is an account-scoped integer, not a secret.
+  // Admin login attempts, limited by Cloudflare across isolates. The namespace_id is an
+  // account-scoped integer, not a secret.
   "ratelimits": [
     {
       "name": "REPORT_ADMIN_RATE_LIMIT",
       "namespace_id": "1004",
       "simple": { "limit": 10, "period": 60 }
-    },
-    {
-      "name": "ANALYSIS_READ_RATE_LIMIT",
-      "namespace_id": "1001",
-      "simple": {
-        "limit": 600,
-        "period": 60
-      }
     }
   ],
   // TEMPORARY, while the dead scheduled refresh is being diagnosed: every 10 minutes around the
@@ -120,67 +111,6 @@
       // Bounded deterministic financial-data collection only; does not dispatch AI.
       "*/2 * * * *"
     ]
-  },
-  "env": {
-    "staging": {
-      "name": "earning-report-analysis-sec-pipeline-staging",
-      "vars": {
-        "SEC_USER_AGENT": "earning-report-analysis/1.0 max.zhangyuchen@gmail.com",
-        "SEC_ANALYSIS_MODEL": "deepseek-flash",
-        "SEC_REASONING_MODEL": "deepseek-flash"
-      },
-      "workflows": [
-        {
-          "name": "earning-report-analysis-sec-analysis-staging",
-          "binding": "SEC_ANALYSIS_WORKFLOW",
-          "class_name": "SecAnalysisWorkflow",
-          "concurrency": {
-            "limit": 4
-          }
-        },
-        {
-          "name": "earning-report-analysis-sec-memory-staging",
-          "binding": "SEC_MEMORY_WORKFLOW",
-          "class_name": "SecMemoryWorkflow"
-        },
-        {
-          "name": "earning-report-analysis-company-analysis-staging",
-          "binding": "COMPANY_ANALYSIS_WORKFLOW",
-          "class_name": "CompanyAnalysisWorkflow",
-          "concurrency": {
-            "limit": 2
-          }
-        },
-        {
-          "name": "earning-report-analysis-company-analysis-backfill-staging",
-          "binding": "COMPANY_ANALYSIS_BACKFILL_WORKFLOW",
-          "class_name": "CompanyAnalysisBackfillWorkflow"
-        }
-      ],
-      "r2_buckets": [
-        {
-          "binding": "SEC_FILINGS",
-          "bucket_name": "earning-report-analysis-sec-filings-staging"
-        }
-      ],
-      // No D1 binding: staging must never touch the production database, and it has no database of
-      // its own yet. Its Cron list is empty, so nothing reaches the fundamentals sync on its own; a
-      // canary that does gets the explicit "no D1 binding" error instead of a silent wrong write,
-      // and the read API answers 503 STORAGE_UNAVAILABLE rather than an empty success. To give
-      // staging real read capability, create a staging D1 and add the binding here — never point
-      // this environment at the production database id above.
-      "ratelimits": [
-        {
-          "name": "ANALYSIS_READ_RATE_LIMIT",
-          "namespace_id": "1003",
-          "simple": {
-            "limit": 600,
-            "period": 60
-          }
-        }
-      ],
-      "triggers": { "crons": [] }
-    }
   },
   "observability": {
     "enabled": true,

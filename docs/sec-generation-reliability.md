@@ -34,9 +34,7 @@
 
 能力参考：[DeepSeek Chat Completions 参数](https://api-docs.deepseek.com/api/create-chat-completion/)、[DeepSeek 思考模式](https://api-docs.deepseek.com/guides/thinking_mode/)、[Cloudflare Workflows 限制](https://developers.cloudflare.com/workflows/reference/limits/)。文档上限不是实际请求必然可用的额度，HTTP 拒绝会触发协商。
 
-## 测试与线上验收分开
-
-`tests/pipeline/sec-generation-recovery.test.ts` 覆盖 500 组确定性故障注入案例：变化的截断位置、UTF-8 切分、响应截断、服务错误、展示缺项，并逐项比较恢复前后的段落和证据。另有资源边界、身份认证错误、JSON 修复、断点跨调用恢复、Workflow 大结果/损坏校验与不允许伪造证据的反例。这是工程回归，不代表 provider 的实际失败分布。
+## 线上验收
 
 线上使用 `sec_analysis_jobs` 中新发布之后创建的请求统计。`complete + published` 才计成功；最终 `failed` 或超过 24 小时仍未完成计失败；尚未到期限的运行请求单列，不以排队/重试状态掩盖失败。按 job ID 去重，不按尝试次数计算。
 

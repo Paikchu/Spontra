@@ -49,7 +49,7 @@
 
 ## 读取
 
-`GET /api/v1/companies/{ticker}/guidance`（scope `analysis:read`）→ 主应用代理 `/api/analysis/v1/companies/{ticker}/guidance` → 业务地图 Worker 二次校验后并入 `/api/business/v1/companies/{ticker}` 的 `guidance` 字段（失败为 null，不影响流向图）。读取从不触发提取。
+Pipeline `MapReads` 入口的 `/api/v1/companies/{ticker}/guidance` → 业务地图 Worker 二次校验后并入 `/api/business/v1/companies/{ticker}` 的 `guidance` 字段（失败为 null，不影响流向图）。读取从不触发提取。
 
 业务地图趋势图：已报告季度显示该季最后一次收入指引的区间（I 形标记，虚线表示由增速换算）；下一季度新增虚线指引列；选中分部时按成员 id 匹配分部指引；年度与长期指引列在图下一行（只取最近一次发布）。
 
@@ -62,9 +62,8 @@
 ## 验证
 
 ```sh
-node --experimental-strip-types --test tests/pipeline/guidance-runtime.test.ts tests/pipeline/guidance-sources.test.ts tests/pipeline/guidance-workflow.test.ts
 npm run typecheck:pipeline && npm run check:pipeline:boundary && npm run worker:pipeline:check
-npm run business-site:test
+npm run business-site:typecheck
 ```
 
 测试使用真实 SQLite 迁移、内存 R2、伪造的 SEC/Alpha Vantage/Tavily 响应与模型，不消耗配额。

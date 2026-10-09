@@ -1,11 +1,10 @@
 # 财报分析 Pipeline
 
-代码来源：`Paikchu/earning-report-analysis` 的 `7dba791f18bf9740924bbbba6efbf4c3a202f382`。
-迁入 `Paikchu/investment-record` 后仍独立部署为 `earning-report-analysis-sec-pipeline`。
+独立部署为 `spontra-analysis`，代码最初迁自 `Paikchu/earning-report-analysis`。
 
 ## 责任边界
 
-- `src/`：SEC 发现、AI 分析、公司分析、Memory、Yahoo 基本面、只读 API 和 Cron。
+- `src/`：SEC 发现、AI 分析、公司分析、Memory、Yahoo 基本面、地图读取接口和 Cron。
 - `migrations/`：分析数据库的完整历史；文件名和内容与来源保持一致。
 - `shared/analysis-contract/`（仓库根目录）：供分析后端使用的共享类型。
 - 业务地图通过 `EARNING_REPORT_PIPELINE` Service Binding 的 `MapReads` 命名入口读取结果；admin 绑定默认入口。
@@ -31,5 +30,4 @@ npm run worker:pipeline:deploy
 保留生产 Worker 名、四个 Workflow 名、D1 ID、R2 bucket、Cron 和 Secrets。
 不要用无 `--config` 的 Wrangler 命令部署 Pipeline，前端构建会生成自己的部署配置。
 
-Cloudflare Builds 的切换配置、验证和回滚见 [迁移说明](../../docs/pipeline-migration.md)。
 原 API 契约和设计背景见 [来源文档](https://github.com/Paikchu/earning-report-analysis/blob/7dba791f18bf9740924bbbba6efbf4c3a202f382/docs/analysis-backend.md)。

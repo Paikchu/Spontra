@@ -22,4 +22,4 @@
 
 无 schema 迁移，无批量重算、原报告删除或写回。通过 origin/main 自动部署。新生成报告生效；旧报告继续保留，不自动伪造新复核内容。
 
-定向测试：`tests/pipeline/sec-continuity.test.ts`、`sec-pipeline.test.ts`、`sec-workflow.test.ts`。覆盖真实迁移 SQL、时点过滤、预算、去重、引用降级、提示传递和发布不覆盖复核节点。模型效果提升需用真实跨期样本评测，不能由合成测试推断。
+模型效果提升需用真实跨期样本评测。

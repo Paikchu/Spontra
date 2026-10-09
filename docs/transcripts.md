@@ -14,4 +14,4 @@ Admin `/admin/transcripts` 提供公司筛选、财报期间列表、采集状�
 
 上线通过 `origin/main` 自动构建。现有 `worker:pipeline:deploy` 在 CI 中先应用 D1 迁移再检查迁移并发布。`0017_company_transcripts.sql` 是新增表，不修改已有财报。Admin 与 Pipeline 两个自动构建均须成功。
 
-核验：`tests/pipeline/transcripts.test.ts` 使用真实 SQLite 验证归档发现、白名单、跨日预算、财期映射、完整正文持久化和 Admin 认证；生产需另外确认队列、实际全文及自动部署结果。
+核验：生产需确认队列、实际全文及自动部署结果。

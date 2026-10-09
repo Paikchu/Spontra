@@ -58,7 +58,6 @@ export const SEC_READER_REPORT_SCHEMA = z.discriminatedUnion("version", [
   z.object({ ...report, version: z.literal("sec-reader.v1"), sections: z.array(SEC_READER_SECTION_SCHEMA).min(3).max(SEC_READER_MAX_SECTIONS) }),
   z.object({ ...report, version: z.literal("sec-reader.v2"), sections: z.array(SEC_READER_SECTION_SCHEMA.extend({ content: z.array(SEC_READER_CONTENT_BLOCK_SCHEMA).min(2).max(32) })).min(3).max(SEC_READER_MAX_SECTIONS) }),
 ]);
-export const SEC_READER_JSON_SCHEMA = z.toJSONSchema(SEC_READER_REPORT_SCHEMA, { target: "draft-2020-12", reused: "inline" });
 export type SecReaderContentBlock = z.infer<typeof SEC_READER_CONTENT_BLOCK_SCHEMA>;
 export type SecReaderAsset = z.infer<typeof SEC_READER_ASSET_SCHEMA>;
 export type SecReaderReport = z.infer<typeof SEC_READER_REPORT_SCHEMA>;

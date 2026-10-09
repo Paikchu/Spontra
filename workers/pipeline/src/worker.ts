@@ -8,7 +8,6 @@ import { handleBusinessFlowRefresh, runBusinessFlowBootstrap } from "./sec/busin
 import { handleFundamentalsRefreshRequest } from "./fundamentals.ts";
 import { runFundamentalsStalenessSweep } from "./fundamentals-sweep.ts";
 import type { SecPipelineEnv } from "./operations.ts";
-import { handleAnalysisReadRequest, isAnalysisReadPath } from "./read-api/router.ts";
 import { runBusinessExplainerSweep } from "./business-explainer/workflow.ts";
 import { runGuidanceSweep } from "./guidance/workflow.ts";
 import { runFindingsSweep } from "./findings/workflow.ts";
@@ -45,16 +44,14 @@ function healthResponse(): Response {
 function readyResponse(env: SecPipelineEnv): Response {
   const checks = {
     analysisStore: Boolean(env.DB),
-    readCredentials: Boolean(env.ANALYSIS_READ_KEYS?.trim() || env.ANALYSIS_ADDITIONAL_READ_KEYS?.trim()),
-    readRateLimiter: Boolean(env.ANALYSIS_READ_RATE_LIMIT),
     watchlist: Boolean(env.SEC_TRACKED_TICKERS?.trim()),
     analysisWorkflow: Boolean(env.SEC_ANALYSIS_WORKFLOW),
     // Generation needs a model; reads never do, which is why this is not part of `ready`.
     modelConfigured: Boolean(env.DEEPSEEK_API_KEY),
   };
-  // Reads are the contract this service publishes, so readiness is about the read path. A missing
-  // model key leaves published data perfectly readable and must not fail the probe.
-  const ready = checks.analysisStore && checks.readCredentials;
+  // Readiness is about the map's read path. A missing model key leaves published data readable
+  // and must not fail the probe.
+  const ready = checks.analysisStore;
   return Response.json({ status: ready ? "ready" : "degraded", checks }, {
     status: ready ? 200 : 503,
     headers: { "cache-control": "no-store" },
@@ -71,12 +68,9 @@ const worker = {
     if (path === "/admin/financials" || path.startsWith("/admin/financials/")) return handleFinancialAdminRequest(request, env);
     if (path === "/admin/transcripts" || path.startsWith("/admin/transcripts/")) return handleTranscriptAdminRequest(request, env);
     if (path === "/admin" || path.startsWith("/admin/")) return handleReportAdminRequest(request, env);
-    /**
-     * The read API claims the whole `/api/v1` prefix and rejects every method but GET/HEAD itself,
-     * so no request under it can fall through to the control handlers below — which is the only
-     * thing standing between a read path and a workflow trigger if a route is ever mistyped.
-     */
-    if (isAnalysisReadPath(path)) return handleAnalysisReadRequest(request, env);
+    // Reads are served only over the MapReads binding; the retired public read prefix must never
+    // fall through to the control handlers below.
+    if (path === "/api/v1" || path.startsWith("/api/v1/")) return new Response("Not found", { status: 404 });
     if (path.startsWith("/sec-financials/refresh/")) return handleBusinessFlowRefresh(request, env);
     if (path.startsWith("/fundamentals/refresh/")) return handleFundamentalsRefreshRequest(request, env);
     if (path.startsWith("/company-analysis/")) return handleCompanyAnalysisRequest(request, env);

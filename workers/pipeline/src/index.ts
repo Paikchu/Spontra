@@ -1,7 +1,7 @@
 import { NonRetryableError } from "cloudflare:workflows";
 import { SecModelHttpError } from "./operations.ts";
 import { WorkerEntrypoint, WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
-import { BOUND_MAP_READER, handleBoundReadRequest } from "./read-api/router.ts";
+import { handleMapRead } from "./read-api/router.ts";
 
 import { assertTrackedTicker, runCompanyAnalysisSweep, runSecRefresh, type CompanyAnalysisBackfillParams, type CompanyAnalysisWorkflowParams, type SecMemoryWorkflowParams, type SecWorkflowParams } from "./core.ts";
 import { executeCompanyAnalysisWorkflow, type CompanyWorkflowStep } from "./company-analysis-workflow.ts";
@@ -73,7 +73,7 @@ export class SecAnalysisWorkflow extends WorkflowEntrypoint<SecPipelineEnv, SecW
  */
 export class MapReads extends WorkerEntrypoint<SecPipelineEnv> {
   fetch(request: Request) {
-    return handleBoundReadRequest(request, this.env, BOUND_MAP_READER);
+    return handleMapRead(request, this.env);
   }
 }
 

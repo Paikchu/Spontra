@@ -2,13 +2,3 @@ DEEPSEEK_API_KEY=
 TAVILY_API_KEY=
 SEC_REFRESH_KEY=
 SEC_TRACKED_TICKERS=AAA,BBB
-
-# Read credentials for the analysis backend's read API.
-# Format: <keyId>:<secret>:<scope>|<scope>   (scopes: filings:read, analysis:read,
-# fundamentals:read, or * for all). Secrets must be at least 24 characters.
-# Leave this unset and the read API refuses every request (503) rather than opening up.
-ANALYSIS_READ_KEYS="local-web:replace-with-a-local-secret-at-least-24-chars:*"
-
-# Optional independent consumer keys; same format as ANALYSIS_READ_KEYS.
-# Keep existing keys intact when adding or rotating an additional consumer.
-ANALYSIS_ADDITIONAL_READ_KEYS=

@@ -76,7 +76,6 @@ Pipeline 的自动发布脚本现已按“应用分析数据库迁移 → 核对
 本地验证：
 
 ```sh
-node --experimental-strip-types --test tests/pipeline/web-search.test.ts
 npm run typecheck:pipeline
 npm run check:pipeline:boundary
 ```

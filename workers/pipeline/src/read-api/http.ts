@@ -35,9 +35,8 @@ export function errorResponse(code: AnalysisErrorCode, message: string, extraHea
  * ETag that ignored it would let a client hold "a newer run is queued" long after the run
  * finished.
  *
- * Every response is `private`. The data is not caller-specific, but it is credentialled, and a
- * shared cache storing it would be one indexing step away from serving it to somebody who never
- * presented a credential.
+ * Every response is `private`: the business map decides what it caches and for how long, so no
+ * shared cache between the two Workers may hold a copy.
  */
 export async function dataResponse(
   request: Request,
