@@ -1,7 +1,6 @@
 /* The admin workspace owns a full-width light surface, independently of reader themes. */
 html:has(.report-admin), body:has(.report-admin) { background: #fff; }
 html body:has(.report-admin) { padding: 0; }
-body:has(.report-admin) .navigation-dock { display: none; }
 .report-admin { --ink: #152238; --canvas: #fff; --muted-foreground: #64748b; --foreground: #152238; --background: #fff; --border: #e7edf4; --brand: #3549ee; --focus-ring: #3549ee; --sp-accent: #3549ee; --sp-on-accent: #fff; --sp-muted: #64748b; --sp-paper: #fff; color-scheme: light; min-height: 100svh; display: grid; grid-template-columns: 206px minmax(0, 1fr); background: #fff; color: #152238; font-family: "Geist", "PingFang SC", "Microsoft YaHei", sans-serif; font-size: 14px; line-height: 1.5; }
 .report-admin button, .report-admin select, .report-admin input { font: inherit; }
 .report-admin button { cursor: pointer; }
@@ -91,10 +90,9 @@ body:has(.report-admin) .navigation-dock { display: none; }
 .ra-document .sec-report-metrics article > i { color: #1c775b; font-size: 10px; }
 .ra-document .sec-report-node { border: 1px solid #e7edf4; border-radius: 5px; margin: 12px 0; padding: 14px; }
 .ra-document .sec-report-node > summary { color: #344157; font-size: 13px; }
-.ra-document .sec-report-quality p, .ra-document .sec-report-quality li, .ra-document .sec-report-footer p { color: #65748d; }
+.ra-document .sec-report-quality p, .ra-document .sec-report-quality li { color: #65748d; }
 .ra-document .sec-report-section p, .ra-document .sec-report-section li { font-size: 14px; line-height: 1.85; }
-.ra-document .sec-report-footer { border-color: #e7edf4; color: #75869e; font-size: 12px; }
-.ra-document .sec-report-meta, .ra-document .sec-report-section-description { display: none; }
+.ra-document .sec-report-meta { display: none; }
 .ra-document table { font-size: 12px; }
 .ra-footnote { color: #8b99ac; font-size: 11px; margin-top: 24px; }
 .ra-progress { display: flex; align-items: center; gap: 8px; background: #f3f5ff; color: #5365b7; border-radius: 5px; padding: 10px; font-size: 12px; }
