@@ -1,4 +1,4 @@
-import React, { Fragment, useEffect, useId, useRef, useState, type RefObject } from "react";
+import { Fragment, useEffect, useId, useRef, useState, type RefObject } from "react";
 import { CompanyLogo } from "./CompanyMark";
 
 const TICKER = /^[A-Z][A-Z0-9.-]{0,11}$/;

@@ -8,29 +8,6 @@ import { readableTrend, SecTrendFigure, SecTrendSource } from "../figures/index.
 
 const amount = (v: number, currency: string) => formatSecMetricValue("amount", String(v), currency, currency);
 
-export function ReportBoundary({ report }: { report?: PublishedSecReport | null }) {
-  if (!report) return null;
-  const critical = report.financialLens?.limitations.filter((l) => /缺少本期|缺少可核验的公司/.test(l)) ?? [];
-  critical.push(...(report.reader?.limitations ?? []).slice(0, 3).map((l) => `${l.issue}：${l.impact}`));
-  const unread = report.sourceMaterials?.filter((m) => m.status !== "read").length ?? 0;
-  if (unread) critical.push(`有 ${unread} 份附件尚未解析，相关业务和财务信息可能缺失。`);
-  // Historical reports only carry machine warnings; translate those without claiming no balance sheet was read.
-  if (!report.financialLens) {
-    const missing = report.dataQuality.warnings.find((w) => w.startsWith("XBRL has no current-period value for:")) ?? "";
-    if (/\bdebt\b/.test(missing)) critical.push("本报告缺少本期可核验的债务总额，杠杆全貌不可见。");
-    if (/\bgross_margin\b/.test(missing)) critical.push("缺少可核验的整体毛利率，分部利润率不能替代。");
-  }
-  const partial = report.dataQuality.analysisStatus !== "complete" || report.dataQuality.verificationStatus !== "verified"
-    || Boolean(report.dataQuality.failedNodeIds?.length || report.dataQuality.unresolvedQuestions?.length)
-    || report.dataQuality.warnings.some((w) => /编排.*未|审校未完成/.test(w));
-  if (!partial && !critical.length) return null;
-  return <aside className="sec-reader-boundary" aria-label="阅读前需要知道">
-    <strong>{partial ? "这份报告仍有判断边界" : "影响判断的数据缺口"}</strong>
-    {critical.map((text) => <p key={text}>{text}</p>)}
-    {partial && <p>部分证据或分析尚不完整；已核验数字不代表整份投资判断已获证实。<a href="#sec-report-quality">查看范围与缺口</a></p>}
-  </aside>;
-}
-
 export function FinancialBridge({ report }: { report: PublishedSecReport }) {
   const lens = report.financialLens;
   if (!lens?.cashBridge && !lens?.depreciation) return null;

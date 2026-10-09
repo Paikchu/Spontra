@@ -108,10 +108,6 @@ export function normalizeSecNodePlan(value: unknown, outline: SecOutlineSection[
   };
 }
 
-export function sectionText(text: string, section: SecOutlineSection): string {
-  return text.slice(section.start, section.end).trim();
-}
-
 export function buildSecNodeInput(spec: SecNodeSpec, outline: SecOutlineSection[], text: string): SecNodeInput {
   const resolved = spec.sectionIds.flatMap((id) => {
     const section = outline.find((candidate) => candidate.id === id);

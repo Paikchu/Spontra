@@ -1,4 +1,4 @@
-import { cleanSecTicker, sortSecFilings, type SecFiling, type SecFilingFeed, type SecFilingWithSummary } from "./sec.ts";
+import { cleanSecTicker, sortSecFilings, type SecFiling, type SecFilingFeed } from "./sec.ts";
 import { buildPeriodIdentity } from "./analysis.ts";
 import type { SecRepository } from "./types.ts";
 
@@ -37,20 +37,4 @@ export async function readCachedSecFeed(repository: SecRepository, rawTicker: st
     return { ...filing, structuredPeriodId };
   });
   return { ...cached.payload, filings };
-}
-
-export async function hydrateCachedFilings(
-  repository: SecRepository,
-  ticker: string,
-  filings: CachedSecFiling[],
-): Promise<SecFilingWithSummary[]> {
-  return Promise.all(filings.map(async ({ structuredPeriodId, ...filing }) => ({
-    ...filing,
-    summary: await repository.getSummary(ticker, filing.accessionNumber),
-    // A rejection here is a storage failure, not "no report". Swallowing it made an outage
-    // indistinguishable from an unanalysed filing, so it propagates and the caller answers 503.
-    analysis: structuredPeriodId && repository.getPublishedReport
-      ? await repository.getPublishedReport(ticker, structuredPeriodId)
-      : null,
-  })));
 }

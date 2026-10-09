@@ -1,6 +1,6 @@
 import { enrichDisclosedRevenue } from "./company-revenue-disclosures";
 import {publicFlowSchema} from "@/shared/analysis-runtime/financial-data/schema";
-import { FLOW_METRICS, type BusinessFlowQuarter, type FlowAmount, type FlowMetric, type PublicBusinessFlow } from "@/shared/analysis-contract/business-flow";
+import { type BusinessFlowQuarter, type FlowAmount, type FlowMetric, type PublicBusinessFlow } from "@/shared/analysis-contract/business-flow";
 import type { PublicFundamentalsResponse, FundamentalMetricKey } from "@/shared/analysis-contract/fundamentals";
 
 
@@ -60,12 +60,6 @@ export function compareAmount(current: BusinessFlowQuarter, previous: BusinessFl
   return compareFlowAmounts(current, previous, key, a, b);
 }
 
-/** Only annotate departments with an actual comparable prior disclosure. */
-export function segmentChangeLabel(current: BusinessFlowQuarter, previous: BusinessFlowQuarter | null, segmentId: string): string {
-  const comparison = compareAmount(current, previous, "revenue", segmentId);
-  return comparison.delta == null ? "" : `环比 ${comparison.label}`;
-}
-
 export function compareFlowAmounts(current: BusinessFlowQuarter, previous: BusinessFlowQuarter | null, key: string, a: FlowAmount | null | undefined, b: FlowAmount | null | undefined) {
   const av = numeric(a), bv = numeric(b);
   if (previous && (current.currency !== previous.currency || current.scale !== previous.scale)) return { label: "不可比", delta: null, previous: null, percent: null };
@@ -115,18 +109,6 @@ export function formatFlowValue(value: number | null, quarter: BusinessFlowQuart
   const display = value * quarter.scale / 1_000_000;
   return new Intl.NumberFormat("zh-CN", { maximumFractionDigits: Math.abs(display) < 1 ? 3 : 1 }).format(display);
 }
-
-export function marginChange(current: BusinessFlowQuarter, previous: BusinessFlowQuarter | null, metric: "gross" | "operating" | "net"): string {
-  const revenue = numeric(current.figures.revenue), value = numeric(current.figures[metric]);
-  if (revenue == null || revenue <= 0 || value == null) return "利润率未披露";
-  const margin = value / revenue * 100;
-  const oldRevenue = numeric(previous?.figures.revenue), oldValue = numeric(previous?.figures[metric]);
-  if (compareAmount(current, previous, metric).delta == null || compareAmount(current, previous, "revenue").delta == null || oldRevenue == null || oldRevenue <= 0 || oldValue == null) return `利润率 ${margin.toFixed(1)}% · 变化不可比`;
-  const delta = margin - oldValue / oldRevenue * 100;
-  return `利润率 ${margin.toFixed(1)}% · ${delta > 0 ? "+" : ""}${delta.toFixed(1)} 个百分点`;
-}
-
-export function hasFinancialValues(quarter: BusinessFlowQuarter) { return FLOW_METRICS.some(key => numeric(quarter.figures[key]) != null); }
 
 /** Readable labels for explicitly disclosed taxonomy members; identifiers and amounts are unchanged. */
 export function disclosedSegmentLabel(name:string):string{

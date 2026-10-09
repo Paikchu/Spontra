@@ -1,4 +1,4 @@
-import type { BusinessFlowQuarter, FlowMetric, PublicBusinessFlow } from "@/shared/analysis-contract/business-flow";
+import type { BusinessFlowQuarter, PublicBusinessFlow } from "@/shared/analysis-contract/business-flow";
 import type { CapitalMetric, FindingLens, FindingRef, FindingSpan, FindingsPublication } from "@/shared/analysis-contract/findings";
 import type { PublicCapitalStructure } from "@/shared/analysis-contract/capital-structure";
 import type { GuidancePublication } from "@/shared/analysis-contract/guidance";
@@ -108,8 +108,6 @@ export function lensShares(lens: Extract<FindingLens, { type: "share_area" }>, p
   const shares = periods.map((end, i) => nodes.map(n => { const v = resolveRef(data, { nodeId: n.id }, end, "quarter"); return v && totals[i] ? v.value / totals[i]! : NaN; }));
   return { periods, nodes, shares, totals };
 }
-
-export const metricLabel = (metric: FlowMetric, data: FindingData) => refLabel(data, { metric });
 
 /** One rung of the conversion ladder: the share (and amount, when tagged) expected within a span of months after the period end. */
 export type LadderStep = { from: number; to: number | null; share: number | null; amount: number | null };

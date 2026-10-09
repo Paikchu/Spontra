@@ -1,5 +1,5 @@
 import { Button } from "@/packages/web/src/ui/button";
-import React, { useMemo, useState, type CSSProperties } from "react";
+import { useMemo, useState, type CSSProperties } from "react";
 import type { CompanyEvent, EventsPublication } from "@/shared/analysis-contract/events";
 import { INSIDER_RULES } from "@/shared/analysis-runtime/events";
 import { EVENT_CLASS_LABEL, dollars, eventTitle, insiderLens, shares, shortDate, type InsiderLensModel } from "./events-model";

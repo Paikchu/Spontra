@@ -137,7 +137,7 @@ function Bars({ columns, nodeColor }: { columns: LensColumns; nodeColor: (id: st
       {columns.periods.map((end, c) => {
         const shown = hover === c || (hover == null && c === columns.periods.length - 1);
         return <div key={end} className="lens-col" role="listitem" data-current={c === columns.periods.length - 1 || undefined} onMouseEnter={() => setHover(c)}
-          aria-label={`${label(end)}：${columns.series.map((s, i) => `${s.label} ${s.values[c] ? fmt(s.values[c]!.value) : "未披露"}`).join("，")}${columns.rates[c] != null ? `，${columns.rateLabel} ${percent(columns.rates[c])}` : ""}`}>
+          aria-label={`${label(end)}：${columns.series.map((s) => `${s.label} ${s.values[c] ? fmt(s.values[c]!.value) : "未披露"}`).join("，")}${columns.rates[c] != null ? `，${columns.rateLabel} ${percent(columns.rates[c])}` : ""}`}>
           <div className="lens-group">
             {columns.series.map((s, i) => {
               const v = s.values[c]?.value ?? null;

@@ -532,5 +532,3 @@ export const ANALYSIS_API_SCHEMAS = {
   Fundamentals: FUNDAMENTALS_SCHEMA,
   AnalysisError: ERROR_SCHEMA,
 } as const;
-
-export type AnalysisApiSchemaName = keyof typeof ANALYSIS_API_SCHEMAS;

@@ -201,12 +201,6 @@ export type AnalysisClaim = {
   targetPeriodId?: string;
 };
 
-export type MemoryCandidate = AnalysisClaim & {
-  memoryType: "guidance" | "risk" | "commitment" | "definition" | "driver" | "one_off";
-  firstSeenPeriod?: string;
-  expectedResolutionPeriod?: string;
-};
-
 export type ComparisonResult = {
   comparisonType: SecComparisonType;
   currentPeriodId: string;

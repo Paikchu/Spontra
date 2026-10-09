@@ -8,4 +8,3 @@ export type CompleteFlowPublication={schemaVersion:'complete-business-flow.v1';s
  /** Independently audited quarterly statements from the last two years; latest pair remains the publication gate. */
  reports?:PublicBusinessFlow|null};
 export type FinancialIssuer={cik:string;tickers:string[];name:string;industry:'standard'|'financial'|'insurance'|'unknown'};
-export type FinancialUniverse={schemaVersion:'financial-universe.v1';id:string;asOf:string;sourceUrl:string;issuers:FinancialIssuer[]};

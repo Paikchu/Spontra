@@ -114,13 +114,6 @@ export async function discoverSecTicker(rawTicker: string, runtime: SecDiscovery
   };
 }
 
-export function selectWorkflowFilings(filings: SecFiling[]): SecFiling[] {
-  const primary = filings.find((filing) => /^(10-Q|10-K|20-F)(\/A)?$/.test(filing.form));
-  const events = filings.slice(0, 5).filter((filing) => /^(8-K|6-K)(\/A)?$/.test(filing.form));
-  return [...(primary ? [primary] : []), ...events]
-    .filter((filing, index, selected) => selected.findIndex((candidate) => candidate.accessionNumber === filing.accessionNumber) === index);
-}
-
 export async function prepareSecFiling(filing: SecFiling, runtime: SecPreparationRuntime): Promise<PreparedSecFiling> {
   if (/^(10-K|10-Q|20-F|8-K|6-K)(\/A)?$/.test(filing.form)) {
     try {

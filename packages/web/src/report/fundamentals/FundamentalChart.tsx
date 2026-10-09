@@ -10,30 +10,8 @@ import {
   type PointerEvent,
   type ReactNode,
 } from "react";
-
-import type { FundamentalMetricKey } from "@/packages/web/src/model/fundamental-metrics.ts";
-import type {
-  PublicFundamentalsResponse,
-  PublicFundamentalSeries,
-} from "@/shared/analysis-contract/fundamentals.ts";
-import {
-  FUNDAMENTAL_CHART_HEIGHT,
-  FUNDAMENTAL_CHART_MAX_SERIES,
-  FUNDAMENTAL_CHART_WIDTH,
-  buildFundamentalChartGeometry,
-  buildFundamentalChartModel,
-  buildFundamentalChartTooltip,
-  formatFundamentalAxisTick,
-  fundamentalSeriesAxisKey,
-  getFundamentalSeriesVisual,
-  linePath,
-  selectFundamentalPeriodTickIndexes,
-  toggleFundamentalMetricSelection,
-  type FundamentalChartAxis,
-  type FundamentalChartModel,
-  type FundamentalChartSeriesSpec,
-  type FundamentalSeriesVisual,
-} from "@/packages/web/src/model/fundamental-chart.ts";
+import type { PublicFundamentalsResponse } from "@/shared/analysis-contract/fundamentals.ts";
+import { FUNDAMENTAL_CHART_HEIGHT, FUNDAMENTAL_CHART_WIDTH, buildFundamentalChartGeometry, buildFundamentalChartModel, buildFundamentalChartTooltip, formatFundamentalAxisTick, getFundamentalSeriesVisual, linePath, selectFundamentalPeriodTickIndexes, type FundamentalChartAxis, type FundamentalChartModel, type FundamentalChartSeriesSpec, type FundamentalSeriesVisual } from "@/packages/web/src/model/fundamental-chart.ts";
 
 export type FundamentalChartRendererProps = {
   title: string;
@@ -48,16 +26,6 @@ export type FundamentalChartRendererProps = {
 
 /** Marks the picked period apart from every series colour in the palette. */
 const SELECTED_PERIOD_COLOR = "var(--chart-selected)";
-
-export type MetricSelectorProps = {
-  availableSeries: readonly PublicFundamentalSeries[];
-  selectedMetricKeys: readonly FundamentalMetricKey[];
-  onChange(next: FundamentalMetricKey[]): void;
-  maxSelection?: number;
-  minSelection?: number;
-  legend?: string;
-  id?: string;
-};
 
 export function FundamentalChartRenderer({
   title,
@@ -142,92 +110,6 @@ export function FundamentalChartRenderer({
           : buildFundamentalChartTooltip(model, activePeriodIndex).accessibleLabel}
       </p>
     </figure>
-  );
-}
-
-export function FundamentalBarChart(props: FundamentalChartRendererProps) {
-  return (
-    <FundamentalChartRenderer
-      {...props}
-      series={props.series.map((series) => ({ ...series, mark: "bar" }))}
-    />
-  );
-}
-
-export function FundamentalLineChart(props: FundamentalChartRendererProps) {
-  return (
-    <FundamentalChartRenderer
-      {...props}
-      series={props.series.map((series) => ({ ...series, mark: "line" }))}
-    />
-  );
-}
-
-export function FundamentalComboChart(props: FundamentalChartRendererProps) {
-  return <FundamentalChartRenderer {...props} />;
-}
-
-export function MetricSelector({
-  availableSeries,
-  selectedMetricKeys,
-  onChange,
-  maxSelection = FUNDAMENTAL_CHART_MAX_SERIES,
-  minSelection = 0,
-  legend = "选择叠加指标",
-  id,
-}: MetricSelectorProps) {
-  const generatedId = useId();
-  const selectorId = id ?? generatedId.replace(/[^a-zA-Z0-9_-]/g, "");
-  const helpId = `${selectorId}-help`;
-  const maxReached = selectedMetricKeys.length >= maxSelection;
-  const selectedAxisKeys = new Set(
-    availableSeries
-      .filter((series) => selectedMetricKeys.includes(series.metricKey))
-      .map(fundamentalSeriesAxisKey),
-  );
-
-  return (
-    <fieldset id={selectorId} className="fundamental-metric-selector" aria-describedby={helpId} data-chart-role="metric-selector">
-      <legend>{legend}</legend>
-      <p id={helpId} className="fundamental-metric-selector__help">
-        已选 {selectedMetricKeys.length}/{maxSelection}；同图最多使用两种单位。
-      </p>
-      <div className="fundamental-metric-selector__options">
-        {availableSeries.map((series) => {
-          const checked = selectedMetricKeys.includes(series.metricKey);
-          const axisKey = fundamentalSeriesAxisKey(series);
-          const incompatible = !checked && !selectedAxisKeys.has(axisKey) && selectedAxisKeys.size >= 2;
-          const disabled = (!series.available && !checked)
-            || (!checked && maxReached)
-            || incompatible
-            || (checked && selectedMetricKeys.length <= minSelection);
-          return (
-            <label
-              className="fundamental-metric-selector__option"
-              data-selected={checked ? "true" : "false"}
-              data-available={series.available ? "true" : "false"}
-              data-compatible={incompatible ? "false" : "true"}
-              key={series.metricKey}
-            >
-              <input
-                type="checkbox"
-                checked={checked}
-                disabled={disabled}
-                onChange={(event) => onChange(toggleFundamentalMetricSelection(
-                  selectedMetricKeys,
-                  series.metricKey,
-                  event.currentTarget.checked,
-                  maxSelection,
-                ))}
-              />
-              <span>{series.shortLabel}</span>
-              {!series.available ? <small>暂无</small> : incompatible ? <small>单位冲突</small> : null}
-            </label>
-          );
-        })}
-      </div>
-      {maxReached ? <p className="fundamental-metric-selector__limit">已达到叠加上限；取消一项后可继续选择。</p> : null}
-    </fieldset>
   );
 }
 

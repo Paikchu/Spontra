@@ -1,5 +1,5 @@
 import { Button } from "@/packages/web/src/ui/button";
-import React, { useState } from "react";
+import { useState } from "react";
 import type { PublicFilingDigest } from "@/shared/analysis-contract/filings";
 import { reportTitle } from "./reports-model";
 

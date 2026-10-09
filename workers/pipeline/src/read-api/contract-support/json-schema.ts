@@ -41,10 +41,6 @@ const SUPPORTED_KEYWORDS = new Set([
 
 export type ValidationError = { path: string; message: string };
 
-export function validateJsonSchema(schema: JsonSchema, value: unknown): ValidationError[] {
-  return validate(schema, value, "$", schema);
-}
-
 /** Throws unless every subschema uses only keywords this validator actually enforces. */
 export function assertSupportedSchema(schema: JsonSchema, path = "$"): void {
   for (const key of Object.keys(schema)) {

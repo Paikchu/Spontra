@@ -4,11 +4,7 @@ import { RichText } from "@/packages/web/src/report/rich-text/RichText.tsx";
 import { formatSecMetricLabel, formatSecMetricValue } from "@/packages/web/src/model/sec-metric-format.ts";
 import type { PublicFundamentalsResponse } from "@/shared/analysis-contract/fundamentals.ts";
 import type { PublishedSecReport } from "@/shared/analysis-contract/report.ts";
-import type {
-  ReportBlock,
-  ReportBlockDocument,
-  ReportBlockSection,
-} from "@/shared/analysis-contract/report-blocks.ts";
+import type { ReportBlock } from "@/shared/analysis-contract/report-blocks.ts";
 
 /**
  * The renderer for a model-composed report: a registry keyed by block type, over a section list of
@@ -24,41 +20,6 @@ export type ReportBlockRenderContext = {
   fundamentals: PublicFundamentalsResponse | null;
 };
 
-export function ReportBlocks({ document, context }: { document: ReportBlockDocument; context: ReportBlockRenderContext }) {
-  if (document.sections.length === 0) return null;
-  return (
-    <div className="report-blocks" data-report-sections>
-      {document.sections.map((section, index) => (
-        <Section context={context} index={index} key={section.id} section={section} />
-      ))}
-    </div>
-  );
-}
-
-function Section({ context, index, section }: { context: ReportBlockRenderContext; index: number; section: ReportBlockSection }) {
-  const order = String(index + 1).padStart(2, "0");
-  return (
-    <section
-      aria-labelledby={`${section.id}-title`}
-      className="sec-report-section report-block-section scroll-mt-24"
-      data-report-depth="0"
-      data-report-description={section.description}
-      data-report-index={order}
-      // Only navigable sections reach the table of contents; a variable block list would otherwise
-      // grow a contents panel longer than the report it indexes.
-      {...(section.navigable ? { "data-report-nav-item": true } : {})}
-      data-report-section
-      data-report-title={section.title}
-      id={section.id}
-      tabIndex={-1}
-    >
-      <div className="sec-report-section-heading">
-        <span>{order}</span><h2 id={`${section.id}-title`}>{section.title}</h2>
-      </div>
-      {section.blocks.map((block) => <Block block={block} context={context} key={block.id} />)}
-    </section>
-  );
-}
 
 /**
  * A bare run of blocks, for a surface that composes its own frame rather than a section list — the

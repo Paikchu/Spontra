@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CompanyLogo } from "./CompanyMark";
 import { SearchPanel } from "./SearchDialog";
 import { ThemeToggle } from "./Sidebar";

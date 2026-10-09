@@ -1,7 +1,7 @@
 import type { BusinessFlowQuarter, FlowMetric } from "../../../../shared/analysis-contract/business-flow.ts";
 import type { CapitalMetric, FindingBaseRef, FindingRef, FindingSpan } from "../../../../shared/analysis-contract/findings.ts";
 import type { ExplainerSource } from "../../../../shared/analysis-contract/business-explainer.ts";
-import { CAPITAL_METRICS, refLabel, resolveEvidence, shiftPeriod, type FindingData, type ResolvedEvidence } from "../../../../shared/analysis-runtime/findings.ts";
+import { CAPITAL_METRICS, resolveEvidence, shiftPeriod, type FindingData, type ResolvedEvidence } from "../../../../shared/analysis-runtime/findings.ts";
 
 /**
  * The figures a findings writer may speak about: every reference the verifier can resolve, already
@@ -116,5 +116,3 @@ export function buildLedger(data: FindingData, periodEnd: string, sources: Expla
     .map(i => ({ guidanceId: i.id, text: i.text, periodEnd: i.periodEnd, horizon: i.horizon }));
   return { periodEnd, rows: rows.slice(0, 640), nodes, guidance, sources };
 }
-
-export const ledgerRefLabel = (data: FindingData, ref: FindingRef) => refLabel(data, ref);

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { CompanyEvent, EventClass, EventsPublication, InsiderLine, InsiderTransaction } from "../analysis-contract/events.ts";
+import type { CompanyEvent, EventClass, EventsPublication, InsiderTransaction } from "../analysis-contract/events.ts";
 
 /* ---------- Classification ---------- */
 
@@ -97,9 +97,6 @@ export function readEventsPublication(value: unknown, ticker: string): EventsPub
 /* ---------- Insider analytics ---------- */
 
 export const DAY_MS = 86_400_000;
-
-/** Open-market sales only: option exercises, withholding and gifts move shares without a sale decision. */
-export const isOpenMarketSale = (line: InsiderLine) => line.code === "S" && line.acquiredDisposed === "D" && !line.derivative;
 
 /** Share of the owner's pre-trade direct holding this filing's sales represent, in percent; null when the holding after is unknown. */
 export function soldShareOfHolding(t: InsiderTransaction): number | null {

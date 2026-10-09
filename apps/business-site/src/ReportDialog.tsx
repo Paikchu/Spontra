@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/packages/web/src/ui/button";
 import type { PublicFilingDetail } from "@/shared/analysis-contract/filings";
 import { filingPresentation } from "@/packages/web/src/report-client";

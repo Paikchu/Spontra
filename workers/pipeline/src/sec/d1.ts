@@ -6,8 +6,6 @@ import { loadReportContinuity } from "./continuity.ts";
 import { SecMemoryRepository } from "./d1-memory.ts";
 import { parseJson, hashJson, type D1Like } from "./d1-support.ts";
 export { SEC_ANALYSIS_JOB_LEASE_MS } from "./d1-jobs.ts";
-export type { SecAnalysisJobUpdate, SecAnalysisJobStatus } from "./d1-jobs.ts";
-export type { SecMemoryJobClaim, SecMemoryExtractionPayload, SecMemoryCommitResult } from "./d1-memory.ts";
 
 import type { SecFiling, SecFilingSummary, SecFilingWithSummary } from "./sec.ts";
 import {

@@ -12,8 +12,6 @@ import type {
   PublicFundamentalPeriod,
   PublicFundamentalSeries,
 } from "../../../../shared/analysis-contract/fundamentals.ts";
-
-export const FUNDAMENTAL_CHART_SPEC_VERSION = "fundamental-chart.v1";
 // Defined in the contract so the Pipeline enforces the same ceilings; re-exported so every
 // existing consumer keeps its import path.
 export { FUNDAMENTAL_CHART_MAX_AXES, FUNDAMENTAL_CHART_MAX_SERIES };
@@ -34,13 +32,6 @@ export type FundamentalChartSeriesSpec = {
   transform?: FundamentalTransform;
   mark?: FundamentalChartMark;
   axis?: FundamentalChartAxisSide;
-};
-
-export type FundamentalChartSpec = {
-  version: typeof FUNDAMENTAL_CHART_SPEC_VERSION;
-  title: string;
-  description?: string;
-  series: readonly FundamentalChartSeriesSpec[];
 };
 
 /**
@@ -400,25 +391,6 @@ export function selectFundamentalPeriodTickIndexes(
 
 export function getFundamentalSeriesVisual(index: number): FundamentalSeriesVisual {
   return SERIES_VISUALS[index % SERIES_VISUALS.length]!;
-}
-
-export function toggleFundamentalMetricSelection(
-  current: readonly FundamentalMetricKey[],
-  metricKey: FundamentalMetricKey,
-  checked: boolean,
-  max = FUNDAMENTAL_CHART_MAX_SERIES,
-): FundamentalMetricKey[] {
-  if (!checked) return current.filter((key) => key !== metricKey);
-  if (current.includes(metricKey) || current.length >= max) return [...current];
-  return [...current, metricKey];
-}
-
-export function fundamentalSeriesAxisKey(
-  series: Pick<PublicFundamentalSeries, "unitFamily" | "unit" | "currency">,
-): string {
-  if (series.unitFamily === "percent") return "percent";
-  if (series.unitFamily === "currency") return `currency:${series.currency || series.unit}`;
-  return `${series.unitFamily}:${series.currency || series.unit}`;
 }
 
 function prepareSeries(

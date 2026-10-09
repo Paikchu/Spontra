@@ -293,11 +293,3 @@ export const EDITORIAL_REVIEW_PROMPT = [
   "审查普通读者能否据此解释判断变化，是否有重复、未解释的术语或机器日志；任何重大错误或缺口返回revise。无法核实重大因果也须revise。",
   '只输出JSON：{"verdict":"pass|revise","issues":[{"id":"稳定规则编号","category":"fact|consistency|coverage|evidence|presentation","severity":"critical|major|minor","sectionIds":["sec-reader-1"],"quote":"原稿中的具体原句","evidenceIds":["原文ID"],"detail":"具体问题","acceptance":"可验证的通过条件"}]}。pass不能同时含critical/major问题。',
 ].join("\n");
-
-export function editorialIssues(value: unknown): string[] {
-  const root = object(value);
-  const issues = list(root.issues).map((raw) => object(raw));
-  if (!["pass", "revise"].includes(String(root.verdict)) || !Array.isArray(root.issues)) return ["审稿响应不完整"];
-  const blocking = issues.filter((i) => i.severity !== "minor").map((i) => string(i.detail, 800) || "审稿未说明问题");
-  return root.verdict === "revise" && !blocking.length ? ["需修订：" + issues.map((i) => string(i.detail)).join("；")] : blocking;
-}

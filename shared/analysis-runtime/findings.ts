@@ -2,7 +2,7 @@ import { z } from "zod";
 import { FLOW_METRICS, type BusinessFlowQuarter, type FlowMetric } from "../analysis-contract/business-flow.ts";
 import { FUNDAMENTAL_METRIC_CATALOG } from "../analysis-contract/fundamental-metric-catalog.ts";
 import type { FundamentalMetricKey, PublicFundamentalPoint, PublicFundamentalSeries } from "../analysis-contract/fundamentals.ts";
-import type { AnalysisFinding, CapitalMetric, FindingBaseRef, FindingEvidence, FindingRef, FindingSpan, FindingWatch, FindingsPublication } from "../analysis-contract/findings.ts";
+import type { AnalysisFinding, CapitalMetric, FindingEvidence, FindingRef, FindingSpan, FindingWatch, FindingsPublication } from "../analysis-contract/findings.ts";
 import type { CashFlowStatement, PublicCapitalStructure, RpoDisclosure } from "../analysis-contract/capital-structure.ts";
 import type { GuidanceItem, GuidancePublication } from "../analysis-contract/guidance.ts";
 import type { RevenueHistory, RevenueHistoryNode } from "../analysis-contract/revenue-history.ts";

@@ -3,7 +3,6 @@ import {assertDataTicker, requireDb} from '../core.ts';
 import {normalizeTrackedTicker, parseTrackedTickers} from './config.ts';
 import type {SecPipelineEnv} from '../operations.ts';
 import {requestFinancialCollection} from '../financial-data/requests.ts';
-export {buildPublishedBusinessQuarter} from '../../../../shared/analysis-runtime/financial-data/disclosed-quarter.ts';
 
 const collectionEnv=(env:SecPipelineEnv)=>({DB:requireDb(env),SEC_USER_AGENT:env.SEC_USER_AGENT,SEC_DATA_TICKERS:env.SEC_DATA_TICKERS,SEC_TRACKED_TICKERS:env.SEC_TRACKED_TICKERS});
 

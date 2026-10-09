@@ -3,4 +3,4 @@
  * application-built report (trends and figures), never from model output.
  */
 export { readableTrend, SecTrendFigure, SecTrendSource } from "./SecTrendFigure.tsx";
-export { findSecFigure, SecFigureSource, SecFigureView, secFigureRows } from "./SecFigure.tsx";
+export { findSecFigure, SecFigureSource, SecFigureView } from "./SecFigure.tsx";

@@ -1,4 +1,4 @@
-import type { ProductOffering } from "@/shared/analysis-contract/business-explainer";
+
 import { Button } from "@/packages/web/src/ui/button";
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { FinancialGraph } from "@/packages/web/src/model/business-flow-sankey";
@@ -445,30 +445,4 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
 function Tooltip({ x, y, width, children }: { x: number; y: number; width: number; children: ReactNode }) {
   const flip = x > width - 240;
   return <div className="fc-tip" role="presentation" style={{ transform: `translate(${flip ? x - 16 : x + 16}px, ${y + 16}px) translateX(${flip ? "-100%" : "0"})` }}>{children}</div>;
-}
-
-/** Shared qualitative product relationships, including financial/insurance fallback views. */
-export function ProductBranches({ target, offerings }: { target: { x: number; y: number; h: number; label: string }; offerings: ProductOffering[] }) {
-  return <g className="fc-products" transform={`translate(${target.x},0)`} aria-label="产品到业务的归属关系">
-        <text x={-670} y={28}>产品</text><text x={-410} y={28}>收入模式</text><text x={-205} y={28}>产品线</text>
-        {offerings.length ? <>
-          {offerings.map((p, i) => {
-            const y = 56 + i * 94;
-            const siblings = offerings.map((entry, index) => ({ entry, index })).filter(({ entry }) => entry.line === p.line);
-            const lineY = 81 + siblings.reduce((sum, { index }) => sum + index * 94, 0) / siblings.length;
-            return <g key={p.id}>
-              <path className="fc-product-link" d={linePath(-420, y + 25, -210, lineY)} />
-              <foreignObject x={-670} y={y} width={250} height={88}><div className="fc-product-card" title={p.description.text}><strong>{p.name}</strong><span>{p.description.text}</span></div></foreignObject>
-              <foreignObject x={-410} y={y + 6} width={190} height={76}><div className="fc-charging" title={p.charging?.text ?? "收费模式未核实"}>{p.charging?.text ?? "收费模式未核实"}</div></foreignObject>
-              <title>{p.name} → {p.line ?? "产品线未核实"} → {target.label}；{p.charging?.text ?? "收费模式未核实"}</title>
-            </g>;
-          })}
-          {[...new Set(offerings.map(p => p.line))].map(line => {
-            const indices = offerings.flatMap((p, i) => p.line === line ? [i] : []);
-            const y = 81 + indices.reduce((sum, i) => sum + i * 94, 0) / indices.length;
-            return <g key={line ?? "unknown"}><path className="fc-product-link" d={linePath(-30, y, 0, target.y + target.h / 2)} /><foreignObject x={-210} y={y - 25} width={180} height={76}><div className="fc-product-line"><strong>{line ?? "产品线未核实"}</strong></div></foreignObject></g>;
-          })}
-        </> : <foreignObject x={-670} y={65} width={420} height={100}><div className="fc-product-card">该业务暂无可溯源的产品映射</div></foreignObject>}
-  </g>;
-
 }

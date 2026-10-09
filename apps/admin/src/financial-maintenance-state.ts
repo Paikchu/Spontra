@@ -24,14 +24,6 @@ export function completeRequestId(key: string, storage?: RequestIdStore): void {
   try { storage?.removeItem(PREFIX + key); } catch { /* Storage can be disabled. */ }
 }
 
-export function safeEvidenceUrl(value?: string | null): string | null {
-  if (!value) return null;
-  try {
-    const url = new URL(value);
-    return url.protocol === "https:" && !url.username && !url.password ? url.href : null;
-  } catch { return null; }
-}
-
 /** Use the decimal string, preserving disclosed precision and never coercing null to zero. */
 export function displayFinancialValue(value: string | null): string {
   if (value === null) return "未提取";

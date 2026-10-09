@@ -13,7 +13,7 @@ import {
   FUNDAMENTAL_CHART_MAX_SERIES,
   type FundamentalTransform,
 } from "../../../../shared/analysis-contract/fundamentals.ts";
-export type { CompanyAnalysisCoverageStatus, CompanyAnalysisHighlight, CompanyAnalysisOverview, PublicCompanyAnalysisResponse } from "../../../../shared/analysis-contract/company-analysis.ts";
+export type { CompanyAnalysisCoverageStatus, CompanyAnalysisOverview, PublicCompanyAnalysisResponse } from "../../../../shared/analysis-contract/company-analysis.ts";
 import { normalizeTrackedTicker } from "../sec/config.ts";
 import type { AnalysisRunSummary } from "../../../../shared/analysis-contract/filings.ts";
 import { ANALYSIS_API_SCHEMA_VERSION } from "../read-api/contract-support/versions.ts";
