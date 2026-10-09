@@ -1,8 +1,7 @@
-import type {PublicBusinessFlow} from "@/shared/analysis-contract/business-flow";
+
 import { selectFlow } from "@/packages/web/src/model/business-flow-model";
 import { checkCompleteFlow, newestPair } from "@/shared/analysis-runtime/financial-data/completeness";
 import type { CompleteFlowPublication } from "@/shared/analysis-contract/complete-business-flow";
-import {withLegacyInterestFormula} from "@/shared/analysis-runtime/financial-data/disclosed-quarter";
 import {readReportHistory} from "@/shared/analysis-runtime/financial-data/report-history";
 import {readHistory} from "@/shared/analysis-runtime/financial-data/history";
 import {readCapitalStructure} from "@/shared/analysis-runtime/financial-data/capital-structure";
@@ -43,29 +42,16 @@ export function analysisFetcher(env:Pick<SiteEnv,"EARNING_REPORT_PIPELINE">):typ
 export type SiteContext={waitUntil(promise:Promise<unknown>):void};
 const security={"x-content-type-options":"nosniff","referrer-policy":"strict-origin-when-cross-origin","content-security-policy":"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://images.financialmodelingprep.com; connect-src 'self'; font-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"};
 function json(body:unknown,status=200){return Response.json(body,{status,headers:{...security,"cache-control":status===200?"public, max-age=60":"no-store"}});}
-/** Answers built from the legacy fallback: shown while the business-flow read fails, never cached, so the next request tries the full read again. */
-const fallbacks=new WeakSet<CompleteFlowPublication>();
-export const isFallback=(publication:CompleteFlowPublication)=>fallbacks.has(publication);
 /** The only public output is schema-stripped SEC business flow, never the analysis envelope. */
 export async function loadPublicFlow(ticker:string,fetcher:typeof fetch=fetch):Promise<CompleteFlowPublication>{
- try{
  const response=await fetcher(ANALYSIS_ORIGIN+`/api/v1/companies/${ticker}/business-flow`,{signal:AbortSignal.timeout(12000),headers:{accept:"application/json"}});
  if(!response.ok)throw new Error("Public source unavailable");
  const publication=await response.json() as CompleteFlowPublication;
  if(publication.schemaVersion!=="complete-business-flow.v1"||!['ready','preparing','unavailable'].includes(publication.status))throw new Error('Invalid publication');
  if(publication.status!=='ready')return {schemaVersion:publication.schemaVersion,status:publication.status,flow:null,reasons:publication.reasons,outdated:false,lastAttemptAt:publication.lastAttemptAt};
- const flow=newestPair(withLegacyInterestFormula(selectFlow(publication.flow??undefined,null,ticker)));const check=checkCompleteFlow(flow);
+ const flow=newestPair(selectFlow(publication.flow??undefined,null,ticker));const check=checkCompleteFlow(flow);
  // History is re-validated here and stripped to its schema; an invalid record is dropped, never repaired.
  return {schemaVersion:"complete-business-flow.v1",status:check.complete?"ready":"preparing",flow:check.complete?flow:null,reasons:check.complete&&publication.outdated?publication.reasons:check.reasons,outdated:check.complete&&publication.outdated===true,lastAttemptAt:publication.lastAttemptAt??null,history:check.complete?readHistory(publication.history,ticker):null,...(check.complete&&publication.reports?{reports:readReportHistory(publication.reports,ticker)}:{})};
- }catch{
-  // Rollout compatibility: only a verified complete legacy SEC projection may survive a new API outage.
-  const legacy=await fetcher(ANALYSIS_ORIGIN+`/api/v1/companies/${ticker}/analysis`,{signal:AbortSignal.timeout(12000),headers:{accept:"application/json"}});
-  if(!legacy.ok)throw new Error("Public source unavailable");
-  const raw=await legacy.json() as {businessFlow?:PublicBusinessFlow};
-  const flow=newestPair(withLegacyInterestFormula(selectFlow(raw.businessFlow,null,ticker)));const check=checkCompleteFlow(flow);
-  const fallback:CompleteFlowPublication={schemaVersion:"complete-business-flow.v1",status:check.complete?"ready":"preparing",flow:check.complete?flow:null,reasons:check.complete?["PREPARING"]:check.reasons,outdated:check.complete,lastAttemptAt:null};
-  fallbacks.add(fallback);return fallback;
- }
 }
 
 /** Supplementary: an unavailable or invalid explanation reads as null and never fails the flow. */
@@ -209,8 +195,8 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
    return supplementary("fundamentals","fundamentals-response.v1",()=>loadFundamentals(match[1],fetcher));
   }
   try{const [flow,explainer,guidance]=await Promise.all([loadPublicFlow(match[1],fetcher),loadExplainer(match[1],fetcher),loadGuidance(match[1],fetcher)]);const response=json({...flow,explainer,guidance});
-   // A fallback or incomplete answer is never cached, so one slow upstream read cannot pin "preparing" or a history-less snapshot for a minute.
-   const cacheable=flow.status==="ready"&&!isFallback(flow);
+   // An incomplete answer is never cached, so one slow upstream read cannot pin "preparing" for a minute.
+   const cacheable=flow.status==="ready";
    if(!cacheable)response.headers.set("cache-control","no-store");
    if(cache&&cacheable)ctx.waitUntil(cache.put(key,response.clone()));return response;}catch{return json({error:"Public company data temporarily unavailable"},503);}
  }

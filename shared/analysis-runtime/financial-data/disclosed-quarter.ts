@@ -31,9 +31,3 @@ export function buildPublishedBusinessQuarter(parsed: ParsedBusinessQuarter, fil
  if([r,o,p,t,n].some(v=>!Number.isFinite(v)) || Math.abs(r-sum(parsed.expenses.map(c=>c.fact))-o)>tolerance || Math.abs(o-f.interestExpense.value+f.otherIncome.value-p)>tolerance || Math.abs(p-t-n)>tolerance)return null;
  return {id:parsed.end,incomeModel:'direct_operating',label:`截至 ${parsed.end} 的三个月`,periodStart:parsed.start,periodEnd:parsed.end,periodType:'3M',currency:parsed.currency,scale:1,basisLabel:'SEC 原始季度披露 · 直接营业费用口径（未披露 GAAP 毛利）· 各期原披露分类对比',reportedAt:filedAt,figures,segments,segmentsComplete:true,expenseComponents,otherComponents,sources:[{id:source.accession,title:`SEC 原文 ${source.accession}`,url:source.sourceUrl,publishedAt:filedAt}]};
 }
-
-/** Compatibility for snapshots produced before signed interest received an explicit formula.
- * Only the known v2 mapping and original InterestExpense lineage qualify; amounts are untouched. */
-export function withLegacyInterestFormula(flow: import('../../analysis-contract/business-flow.ts').PublicBusinessFlow){
- return {...flow,quarters:flow.quarters.map(q=>({...q,otherComponents:q.otherComponents?.map(c=>c.id==='interest'&&c.amount.basis==='derived'&&!c.amount.formula&&c.amount.definition==='sec-business-flow.v2:interest'&&Number(c.amount.value)<=0&&c.amount.lineage?.every(l=>(['InterestExpense','InterestAndDebtExpense'].includes(l.concept.split(':').at(-1)!)||l.concept==='table:Interest expense'))?{...c,amount:{...c.amount,formula:'有符号利息流向 = − 原披露利息费用'}}:c)}))};
-}

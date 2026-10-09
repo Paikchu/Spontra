@@ -5,7 +5,7 @@ import {
   COMPANY_ANALYSIS_MIN_HIGHLIGHTS,
   COMPANY_ANALYSIS_OVERVIEW_LABEL,
 } from "../../../../shared/analysis-contract/company-analysis.ts";
-import type { BusinessDeepDive, CompanyAnalysisBlock, CompanyAnalysisCoverageStatus, CompanyAnalysisOverview, PublicCompanyAnalysisResponse } from "../../../../shared/analysis-contract/company-analysis.ts";
+import type { BusinessDeepDive, CompanyAnalysisBlock, CompanyAnalysisCoverageStatus, CompanyAnalysisOverview } from "../../../../shared/analysis-contract/company-analysis.ts";
 import type { ReportBlockImportance, ReportBlockTone } from "../../../../shared/analysis-contract/report-blocks.ts";
 import { FUNDAMENTAL_METRIC_CATALOG, isFundamentalMetricKey, type FundamentalMetricKey } from "../fundamentals/fundamental-metrics.ts";
 import {
@@ -13,10 +13,8 @@ import {
   FUNDAMENTAL_CHART_MAX_SERIES,
   type FundamentalTransform,
 } from "../../../../shared/analysis-contract/fundamentals.ts";
-export type { CompanyAnalysisCoverageStatus, CompanyAnalysisOverview, PublicCompanyAnalysisResponse } from "../../../../shared/analysis-contract/company-analysis.ts";
+export type { CompanyAnalysisCoverageStatus, CompanyAnalysisOverview } from "../../../../shared/analysis-contract/company-analysis.ts";
 import { normalizeTrackedTicker } from "../sec/config.ts";
-import type { AnalysisRunSummary } from "../../../../shared/analysis-contract/filings.ts";
-import { ANALYSIS_API_SCHEMA_VERSION } from "../read-api/contract-support/versions.ts";
 
 export const COMPANY_ANALYSIS_SCHEMA_VERSION = "company-analysis.v1";
 /**
@@ -53,10 +51,6 @@ export type CompanyAnalysisPublication = {
   promptVersion: string;
   generatedAt: string;
 };
-
-/** Where a run summary comes from when the backend could not read run history at all. */
-export const UNKNOWN_ANALYSIS_RUN: AnalysisRunSummary = { state: "unknown", updatedAt: null, errorCode: null };
-export const NO_ANALYSIS_RUN: AnalysisRunSummary = { state: "none", updatedAt: null, errorCode: null };
 
 export class CompanyAnalysisValidationError extends Error {
   constructor(message: string) {
@@ -104,58 +98,6 @@ export function normalizeCompanyAnalysisPublication(value: unknown): CompanyAnal
     modelVersion,
     promptVersion,
     generatedAt,
-  };
-}
-
-export function toPublicCompanyAnalysis(
-  publication: CompanyAnalysisPublication,
-  latestRun: AnalysisRunSummary = NO_ANALYSIS_RUN,
-): PublicCompanyAnalysisResponse {
-  return {
-    apiSchemaVersion: ANALYSIS_API_SCHEMA_VERSION,
-    schemaVersion: COMPANY_ANALYSIS_SCHEMA_VERSION,
-    ticker: publication.ticker,
-    status: "ready",
-    analysisId: publication.analysisId,
-    period: { periodId: publication.periodId, periodEnd: publication.periodEnd, label: publication.reportLabel },
-    generatedAt: publication.generatedAt,
-    coverageStatus: publication.coverageStatus,
-    // Evidence references travel with the highlight they support. They used to be stripped here,
-    // which left a consumer with prose and no way to reach the underlying observation.
-    overview: publication.overview,
-    latestRun,
-    versions: {
-      apiSchema: ANALYSIS_API_SCHEMA_VERSION,
-      payloadSchema: COMPANY_ANALYSIS_SCHEMA_VERSION,
-      contentRevision: publication.inputHash,
-      model: publication.modelVersion,
-      prompt: publication.promptVersion,
-    },
-  };
-}
-
-export function unavailableCompanyAnalysis(
-  ticker: string,
-  latestRun: AnalysisRunSummary = NO_ANALYSIS_RUN,
-): PublicCompanyAnalysisResponse {
-  return {
-    apiSchemaVersion: ANALYSIS_API_SCHEMA_VERSION,
-    schemaVersion: COMPANY_ANALYSIS_SCHEMA_VERSION,
-    ticker,
-    status: "unavailable",
-    analysisId: null,
-    period: null,
-    generatedAt: null,
-    coverageStatus: null,
-    overview: null,
-    latestRun,
-    versions: {
-      apiSchema: ANALYSIS_API_SCHEMA_VERSION,
-      payloadSchema: COMPANY_ANALYSIS_SCHEMA_VERSION,
-      contentRevision: null,
-      model: null,
-      prompt: null,
-    },
   };
 }
 

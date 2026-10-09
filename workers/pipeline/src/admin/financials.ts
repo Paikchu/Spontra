@@ -48,7 +48,7 @@ async function financialCompanyRows(env: SecPipelineEnv, selectedTicker?: string
     SELECT ticker FROM stored_tickers UNION SELECT ticker FROM statement_data
     UNION SELECT ticker FROM financial_company_settings
     UNION SELECT CASE WHEN json_valid(payload) THEN json_extract(payload,'$.ticker') END FROM sec_cache
-      WHERE cache_key LIKE 'sec:business-flow:v2:%' OR cache_key LIKE 'sec:revenue-history:v1:%'
+      WHERE cache_key LIKE 'sec:revenue-history:v1:%'
     UNION SELECT value ticker FROM json_each(?)
   ), identities AS (SELECT t.ticker,
     COALESCE(CASE WHEN json_valid(i.payload) THEN json_extract(i.payload,'$.name') END,
@@ -61,15 +61,14 @@ async function financialCompanyRows(env: SecPipelineEnv, selectedTicker?: string
     FROM tickers t LEFT JOIN sec_cache i ON i.cache_key='admin:financial-issuer:'||t.ticker
     LEFT JOIN sec_cache f ON f.cache_key='sec:filings:'||t.ticker
     WHERE t.ticker IS NOT NULL AND (? IS NULL OR t.ticker=?) ORDER BY t.ticker LIMIT 1000)
-  SELECT i.*,(SELECT enabled FROM financial_company_settings WHERE ticker=i.ticker) settingEnabled,v.payload_json currentPayload,v.published_at publishedAt,l.payload legacyPayload,h.payload historyPayload,
+  SELECT i.*,(SELECT enabled FROM financial_company_settings WHERE ticker=i.ticker) settingEnabled,v.payload_json currentPayload,v.published_at publishedAt,h.payload historyPayload,
     s.statementPeriodEnd,s.statementUpdatedAt
     FROM identities i LEFT JOIN financial_complete_current c ON c.cik=i.cik
     LEFT JOIN financial_complete_versions v ON v.version_id=c.version_id
-    LEFT JOIN sec_cache l ON l.cache_key='sec:business-flow:v2:'||i.ticker
     LEFT JOIN sec_cache h ON h.cache_key='sec:revenue-history:v1:'||i.cik
     LEFT JOIN statement_data s ON s.ticker=i.ticker ORDER BY i.ticker`)
     .bind(JSON.stringify([...new Set([...dataEnabled,...tracked,...(selectedTicker?[selectedTicker]:[])])]),selectedTicker??null,selectedTicker??null)
-    .all<{ticker:string;name:string;cik:string|null;currentPayload:string|null;publishedAt:string|null;legacyPayload:string|null;historyPayload:string|null;statementPeriodEnd:string|null;statementUpdatedAt:string|null;settingEnabled:number|null}>();
+    .all<{ticker:string;name:string;cik:string|null;currentPayload:string|null;publishedAt:string|null;historyPayload:string|null;statementPeriodEnd:string|null;statementUpdatedAt:string|null;settingEnabled:number|null}>();
   return rows.results.map(row => {
     const publication = financialPublicationMetadata(row.ticker, row);
     const periods = [publication.latestPeriodEnd, row.statementPeriodEnd].filter((value): value is string => value !== null).sort();

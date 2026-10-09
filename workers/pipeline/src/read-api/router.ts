@@ -6,10 +6,6 @@ import { readBusinessExplainerResponse } from "../business-explainer/workflow.ts
 import { readGuidanceResponse } from "../guidance/workflow.ts";
 import { readFindingsResponse } from "../findings/read.ts";
 import { readEventsResponse } from "../events/read.ts";
-import { businessFlowCacheKey } from "../sec/business-flow-cache.ts";
-import type { PublicBusinessFlow } from "../../../../shared/analysis-contract/business-flow.ts";
-import { getPublicCompanyAnalysis } from "../company-analysis/api.ts";
-import { D1CompanyAnalysisRepository } from "../company-analysis/repository.ts";
 import { parseFundamentalApiQuery } from "../fundamentals/fundamentals-api.ts";
 import { getSecFundamentals } from "../fundamentals/sec-fundamentals.ts";
 import { getPublicFiling, getPublicFilingPage } from "../sec/public-api.ts";
@@ -41,7 +37,6 @@ const MAX_QUERY_PARAMETERS = 8;
 type RouteMatch =
   | { kind: "filings"; ticker: string }
   | { kind: "filing"; ticker: string; accession: string }
-  | { kind: "analysis"; ticker: string }
   | { kind: "business-flow"; ticker: string }
   | { kind: "capital"; ticker: string }
   | { kind: "business-explainer"; ticker: string }
@@ -126,14 +121,6 @@ async function handleRoute(request: Request, database: D1Database, route: RouteM
       const payload = await readEventsResponse(database, route.ticker);
       return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
     }
-    case "analysis": {
-      const payload = await getPublicCompanyAnalysis(new D1CompanyAnalysisRepository(database), route.ticker);
-      const business = await new D1SecRepository(database).getCache<PublicBusinessFlow>(businessFlowCacheKey(route.ticker));
-      if (business?.payload.schemaVersion === "business-flow.v1" && business.payload.ticker === route.ticker) payload.businessFlow = business.payload;
-      // A published result is a durable artefact and may be reused briefly. Everything else here
-      // is execution state, which must not be cached as though it were report content.
-      return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
-    }
     case "fundamentals": {
       const query = parseFundamentalApiQuery(route.ticker, url.searchParams);
       const payload = await getSecFundamentals(database, query);
@@ -148,7 +135,7 @@ async function handleRoute(request: Request, database: D1Database, route: RouteM
 }
 
 function matchRoute(pathname: string): RouteMatch | null {
-  const company = /^\/api\/v1\/companies\/([^/]+)\/(filings|analysis|fundamentals|business-flow|capital|business-explainer|guidance|findings|events)(?:\/([^/]+))?\/?$/.exec(pathname);
+  const company = /^\/api\/v1\/companies\/([^/]+)\/(filings|fundamentals|business-flow|capital|business-explainer|guidance|findings|events)(?:\/([^/]+))?\/?$/.exec(pathname);
   if (!company) return null;
   const ticker = safeDecode(company[1]!);
   const resource = company[2]!;
@@ -166,7 +153,7 @@ function matchRoute(pathname: string): RouteMatch | null {
   if (resource === "guidance") return { kind: "guidance", ticker };
   if (resource === "findings") return { kind: "findings", ticker };
   if (resource === "events") return { kind: "events", ticker };
-  return resource === "analysis" ? { kind: "analysis", ticker } : { kind: "fundamentals", ticker };
+  return { kind: "fundamentals", ticker };
 }
 
 function safeDecode(value: string): string | null {

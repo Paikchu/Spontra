@@ -6,7 +6,6 @@ import { FinancialMaintenanceStore, taskView, type MaintenanceRow } from './fina
 import { flowForIssuer } from '../financial-data/publication.ts';
 import { publicFlowSchema } from '../../../../shared/analysis-runtime/financial-data/schema.ts';
 import { checkCompleteFlow, newestPair } from '../../../../shared/analysis-runtime/financial-data/completeness.ts';
-import { withLegacyInterestFormula } from '../../../../shared/analysis-runtime/financial-data/disclosed-quarter.ts';
 import { financialPolicy } from '../../../../shared/analysis-runtime/financial-data/policy.ts';
 import { normalizeTrackedTicker } from '../sec/config.ts';
 
@@ -21,18 +20,17 @@ export async function handleBusinessMapAdminRequest(request: Request, env: SecPi
       const rows = await db.prepare(`WITH companies AS (
         SELECT json_extract(value,'$.ticker') ticker,json_extract(value,'$.cik') cik FROM json_each(?)
       ) SELECT c.ticker companyTicker,m.*,j.status collectionStatus,j.reasons_json collectionReasons,j.updated_at collectionUpdatedAt,json_extract(j.cursor_json,'$.index') collectionCompleted,json_array_length(j.cursor_json,'$.documents') collectionTotal,
-        json_extract(h.payload,'$.index') historyCompleted,json_array_length(h.payload,'$.documents') historyTotal,v.payload_json snapshot,l.payload legacy,d.payload discovery,d.fetched_at discoveryAt
+        json_extract(h.payload,'$.index') historyCompleted,json_array_length(h.payload,'$.documents') historyTotal,v.payload_json snapshot,d.payload discovery,d.fetched_at discoveryAt
       FROM companies c
       LEFT JOIN financial_maintenance_tasks m ON m.task_id=(SELECT task_id FROM financial_maintenance_tasks WHERE ticker=c.ticker ORDER BY created_at DESC,task_id DESC LIMIT 1)
       LEFT JOIN financial_collection_jobs j ON j.job_id=(SELECT job_id FROM financial_collection_jobs WHERE ticker=c.ticker ORDER BY generation DESC LIMIT 1)
       LEFT JOIN financial_complete_current p ON p.cik=c.cik
       LEFT JOIN financial_complete_versions v ON v.version_id=p.version_id
       LEFT JOIN sec_cache h ON h.cache_key='sec:revenue-history-cursor:v1:'||c.cik
-      LEFT JOIN sec_cache l ON l.cache_key='sec:business-flow:v2:'||c.ticker
       LEFT JOIN sec_cache d ON d.cache_key='sec:financial-discovery-failure:v1:'||c.ticker`)
         .bind(JSON.stringify(list.companies.map(({ticker,cik})=>({ticker,cik})))).all<MaintenanceRow & {
           companyTicker:string;collectionStatus:string|null;collectionReasons:string|null;collectionUpdatedAt:string|null;collectionCompleted:number|null;collectionTotal:number|null;
-          historyCompleted:number|null;historyTotal:number|null;snapshot:string|null;legacy:string|null;discovery:string|null;discoveryAt:string|null;
+          historyCompleted:number|null;historyTotal:number|null;snapshot:string|null;discovery:string|null;discoveryAt:string|null;
         }>();
       const byTicker = new Map(rows.results.map(row=>[row.companyTicker,row]));
       const companies: BusinessMapCompanies['companies'] = list.companies.map(company=>{
@@ -40,8 +38,8 @@ export async function handleBusinessMapAdminRequest(request: Request, env: SecPi
         const reasons:string[]=JSON.parse(row.collectionReasons??'[]');
         let flow=null, invalid=false;
         try {
-          const raw=row.snapshot??row.legacy;
-          if(raw){const parsed=newestPair(withLegacyInterestFormula(publicFlowSchema.parse(JSON.parse(raw))));
+          const raw=row.snapshot;
+          if(raw){const parsed=newestPair(publicFlowSchema.parse(JSON.parse(raw)));
             const candidate=parsed.ticker===company.ticker?parsed:company.cik?flowForIssuer(parsed,company.cik,company.ticker):null;
             if(candidate&&checkCompleteFlow(candidate).complete)flow=candidate;else invalid=true;}
         } catch { invalid=true; }

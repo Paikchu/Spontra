@@ -1,9 +1,5 @@
 import {AnalysisRequestError} from '../read-api/contract-support/errors.ts';
 import {publicFlowSchema} from '../../../../shared/analysis-runtime/financial-data/schema.ts';
-import {D1SecRepository} from '../sec/d1.ts';
-import {businessFlowCacheKey} from '../sec/business-flow-cache.ts';
-import {newestPair} from '../../../../shared/analysis-runtime/financial-data/completeness.ts';
-import {withLegacyInterestFormula} from '../../../../shared/analysis-runtime/financial-data/disclosed-quarter.ts';
 import type {CompleteFlowPublication} from '../../../../shared/analysis-contract/complete-business-flow.ts';
 import type {PublicBusinessFlow,FlowAmount,BusinessSegment} from '../../../../shared/analysis-contract/business-flow.ts';
 import {checkCompleteFlow} from '../../../../shared/analysis-runtime/financial-data/completeness.ts';
@@ -15,7 +11,7 @@ import type {RevenueHistoryQuarter} from '../../../../shared/analysis-contract/r
  * in-progress/failed attempt or a newly discovered filing that has not yielded usable data. */
 export function financialPublicationMetadata(ticker: string, source: {
  cik: string | null; currentPayload: string | null; publishedAt: string | null;
- legacyPayload: string | null; historyPayload: string | null;
+ historyPayload: string | null;
 }): { latestPeriodEnd: string | null; lastUpdatedAt: string | null } {
  let flow: PublicBusinessFlow | null = null;
  try {
@@ -23,12 +19,6 @@ export function financialPublicationMetadata(ticker: string, source: {
    const current = publicFlowSchema.parse(JSON.parse(source.currentPayload));
    if (!checkCompleteFlow(current).complete) throw new Error('Published snapshot failed validation');
    flow = current.ticker === ticker ? current : source.cik ? flowForIssuer(current, source.cik, ticker) : null;
-  } else if (source.legacyPayload) {
-   const legacy = publicFlowSchema.parse(JSON.parse(source.legacyPayload));
-   if (legacy.ticker === ticker) {
-    const candidate = newestPair(withLegacyInterestFormula(legacy));
-    if (checkCompleteFlow(candidate).complete) flow = candidate;
-   }
   }
  } catch { /* A corrupt publication must not hide other companies in the admin list. */ }
  let history = null;
@@ -80,9 +70,6 @@ async function readFlowPublication(db:D1Database,ticker:string,identity:{cik:str
   const flow=flowForIssuer(current.flow,identity!.cik,ticker);
   return flow?{...current,flow}:{...current,status:'preparing',flow:null,reasons:['INVALID_SOURCE'],outdated:false};
  }
- // Preserve an already verified legacy complete snapshot during the migration.
- const legacy=await new D1SecRepository(db).getCache<PublicBusinessFlow>(businessFlowCacheKey(ticker));
- if(legacy?.payload.ticker===ticker){const flow=newestPair(withLegacyInterestFormula(publicFlowSchema.parse(legacy.payload)));if(checkCompleteFlow(flow).complete)return {schemaVersion:'complete-business-flow.v1',status:'ready',flow,reasons:current?.reasons??[],outdated:!!identity,lastAttemptAt:current?.lastAttemptAt??null};}
  return current??{schemaVersion:'complete-business-flow.v1',status:'preparing',flow:null,reasons:['MISSING_TWO_QUARTERS'],outdated:false,lastAttemptAt:null};
 }
 
