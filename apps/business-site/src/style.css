@@ -1029,3 +1029,16 @@ button { cursor: pointer; }
 .report-dialog-bar .lens-close { width: 28px; padding: 4px 0; border-radius: 999px; background: var(--surface); border: 1px solid var(--hairline); color: var(--muted-foreground); }
 .report-dialog-body { padding: 8px 24px 32px; }
 .report-dialog-body .lens-empty { padding: 60px 0; }
+
+/* Findings hang under the report they were written from: a report group in the filing timeline, with the findings indented beneath its row. */
+.report-group { display: flex; flex-direction: column; gap: 1px; }
+.report-group[data-host] { padding-bottom: 6px; }
+.findings[data-nested] { margin: 2px 0 2px 14px; padding: 6px 0 0 10px; border-top: 0; border-left: 2px solid var(--hairline); animation: none; }
+.findings[data-nested] .findings-head { padding: 0 6px 4px; }
+.findings[data-nested] .findings-title { font-size: 12px; }
+.findings[data-nested] .finding-row { padding: 6px 8px; }
+.findings[data-nested] .finding-row::after { left: -13px; }
+/* The report tick that produced the findings carries their count in the kind colour of the overview badges. */
+.timeline-point .timeline-findings { position: absolute; left: 50%; bottom: calc(100% + 3px); transform: translateX(-50%); display: grid; place-items: center; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 999px; font-size: 9.5px; font-style: normal; font-weight: 700; color: var(--background); background: var(--loss); pointer-events: none; }
+.timeline-point:hover .timeline-findings, .timeline-point[aria-pressed="true"] .timeline-findings { transform: translateX(-50%) scale(.67); }
+@media (max-width: 960px) { .findings[data-nested] { margin-left: 0; padding-left: 0; border-left: 0; } .report-group { display: contents; } }

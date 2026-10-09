@@ -1,3 +1,4 @@
+import React from "react";
 import { Button } from "@/components/ui/button";
 import { KIND_LABEL, type VerifiedFinding } from "./findings-model";
 
@@ -5,7 +6,7 @@ import { KIND_LABEL, type VerifiedFinding } from "./findings-model";
  * The report's findings as a section of the rail, most severe first. One row in focus reshapes the
  * stage; 逐条看 walks them in order. Nothing here is a summary: each row is a claim the data supports.
  */
-export function FindingsList({ findings, focus, story, periodEnd, onFocus, onStory }: {
+export function FindingsList({ findings, focus, story, periodEnd, onFocus, onStory, nested = false }: {
   findings: VerifiedFinding[];
   focus: string | null;
   story: boolean;
@@ -13,12 +14,14 @@ export function FindingsList({ findings, focus, story, periodEnd, onFocus, onSto
   periodEnd: string;
   onFocus: (id: string | null) => void;
   onStory: () => void;
+  /** Hung under the report row they were written from, inside the filing timeline. */
+  nested?: boolean;
 }) {
   if (!findings.length) return null;
   const index = findings.findIndex(f => f.id === focus);
-  return <section className="findings" aria-label="本期要点" data-focus={focus ? "" : undefined}>
+  return <section className="findings" aria-label="本期要点" data-focus={focus ? "" : undefined} data-nested={nested || undefined}>
     <header className="findings-head">
-      <span className="findings-title">要点<small>{periodEnd.slice(0, 7).replace("-", ".")} 财报{focus ? ` · ${index + 1}/${findings.length}` : ""}</small></span>
+      <span className="findings-title">{nested ? "这份财报的要点" : "要点"}<small>{nested ? `${findings.length} 条` : `${periodEnd.slice(0, 7).replace("-", ".")} 财报`}{focus ? ` · ${index + 1}/${findings.length}` : ""}</small></span>
       <Button variant="unstyled" type="button" className="findings-story" aria-pressed={story} onClick={onStory}>{story ? "退出逐条看" : "逐条看"}</Button>
     </header>
     <div className="findings-rows" role="radiogroup" aria-label="选择要点以在图中聚焦">

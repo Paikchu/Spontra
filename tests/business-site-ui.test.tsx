@@ -133,6 +133,17 @@ test("the rail, lenses and time axis render reports and filed events with their 
   const reportLens = renderToStaticMarkup(<ReportLens report={report} ticker="ORCL" index={2} count={5} onStep={() => {}} onClose={() => {}} onOpenReport={() => {}} />);
   for (const text of ["149.26 亿美元", "同比 +12.0%", "环比 -3.1%", "投资含义", "补充分析", "FY2027 云收入增长 40%", "资本开支超过经营现金流", "阅读完整报告", "数字已核验", "8-K · 2026-09-10", "EDGAR 申报索引"]) assert.ok(reportLens.includes(text), text);
   assert.match(reportLens, /data-trend="up"[^>]*>同比 \+12\.0%/);
+  // The findings written from this report hang under its row, and its tick on the axis carries their count.
+  const { FindingsList } = await import("../apps/business-site/src/FindingsList");
+  const finding = { id: "capex", kind: "risk", severity: 3, title: "资本开支超过经营现金流", judgment: { text: "", sourceIds: [] }, evidence: [], anchors: { view: "cash", nodeIds: [], metrics: [] }, lens: { type: "ladder" }, resolved: [], periodEnd: "2026-08-31", watchOutcome: null } as unknown as Parameters<typeof FindingsList>[0]["findings"][number];
+  const nested = renderToStaticMarkup(<EventsList rail={rail} focus={null} pendingInsider={0} onFocus={() => {}} hostPeriodEnd="2026-08-31"
+    findings={<FindingsList nested findings={[finding]} focus="capex" story={false} periodEnd="2026-08-31" onFocus={() => {}} onStory={() => {}} />} />);
+  assert.match(nested, /class="report-group" data-host="true"/);
+  assert.ok(nested.indexOf("云基础设施拉动收入增长 12%") < nested.indexOf("资本开支超过经营现金流"), "the finding row follows its report row");
+  assert.ok(nested.includes("这份财报的要点") && nested.includes("1 条 · 1/1"));
+  assert.equal((nested.match(/data-nested="true"/g) ?? []).length, 1);
+  const badged = renderToStaticMarkup(<Timeline points={timelineFromFilings(filings, publication, 24, new Date("2026-10-09T00:00:00Z"))} now={Date.parse("2026-10-09T00:00:00Z")} currentPeriod="2026-08-31" focus={null} findingsAt={{ periodEnd: "2026-08-31", count: 4, focused: true }} onReport={() => {}} onEvent={() => {}} />);
+  assert.match(badged, /data-kind="report"[^>]*aria-pressed="true"[^>]*>[^<]*<i class="timeline-findings"[^>]*>4<\/i>/);
   const axis = renderToStaticMarkup(<Timeline points={timelineFromFilings(filings, publication, 24, new Date("2026-10-09T00:00:00Z"))} now={Date.parse("2026-10-09T00:00:00Z")} currentPeriod="2026-08-31" focus="f3" onReport={() => {}} onEvent={() => {}} />);
   assert.equal((axis.match(/class="timeline-point"/g) ?? []).length, 5, "one report, the merged 8-K folded into it, four other filings");
   assert.match(axis, /data-kind="report"[^>]*aria-pressed="true"/);

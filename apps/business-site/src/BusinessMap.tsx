@@ -276,6 +276,9 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
     const match = end ? quarters.find(q => q.periodEnd === end) : null;
     if (match) setPeriod(match.id);
   };
+  const toggleStory = () => { if (story) { setStory(false); setFocusId(null); } else { setStory(true); setEventId(null); setReportId(null); setFocusId(focused?.id ?? verified[0]?.id ?? null); } };
+  // The findings hang under the report they were written from when that report is in view; the time axis marks that report with their count.
+  const hostReport = findings && verified.length > 0 && rail ? rail.recent.find((i): i is Extract<RailItem, { kind: "report" }> => i.kind === "report" && i.report.periodEnd === findings.periodEnd)?.report ?? null : null;
   const focusItem = (item: RailItem | null) => { if (!item) { setEventId(null); setReportId(null); } else if (item.kind === "report") focusReport(item.id); else focusEvent(item.id); };
   // The business list is a drawer under 全部业务: closed by default once findings share the rail, open while a business is picked.
   const [drawerOpen, setDrawerOpen] = useState<boolean | null>(null);
@@ -331,9 +334,11 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
           </Button>;
         })}</div>}
       </div>
-      {findings && verified.length > 0 && <FindingsList findings={verified} focus={focused?.id ?? null} story={story} periodEnd={findings.periodEnd}
-        onFocus={focusFinding} onStory={() => { if (story) { setStory(false); setFocusId(null); } else { setStory(true); setEventId(null); setFocusId(focused?.id ?? verified[0].id); } }} />}
-      {rail && <EventsList rail={rail} focus={focusedReport?.accessionNumber ?? focusedEvent?.id ?? null} pendingInsider={events?.pendingInsider ?? 0} onFocus={focusItem} />}
+      {findings && verified.length > 0 && !hostReport && <FindingsList findings={verified} focus={focused?.id ?? null} story={story} periodEnd={findings.periodEnd}
+        onFocus={focusFinding} onStory={toggleStory} />}
+      {rail && <EventsList rail={rail} focus={focusedReport?.accessionNumber ?? focusedEvent?.id ?? null} pendingInsider={events?.pendingInsider ?? 0} onFocus={focusItem}
+        hostPeriodEnd={hostReport?.periodEnd ?? null}
+        findings={hostReport && findings && <FindingsList nested findings={verified} focus={focused?.id ?? null} story={story} periodEnd={findings.periodEnd} onFocus={focusFinding} onStory={toggleStory} />} />}
       {!!quarter?.revenueAdjustments?.length&&<p className="revenue-reconciliation">收入对账 · {quarter.currency} 百万<br/>分部收入（抵销前） {formatFlowValue(segmentRevenue,quarter)}<br/>{quarter.revenueAdjustments.map(a=><span key={a.id}>{a.name} {formatFlowValue(numeric(a.amount),quarter)}<br/></span>)}合并收入 {formatFlowValue(revenue,quarter)}</p>}
     </Rail>
 
@@ -379,6 +384,7 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
       </div>
 
       {points.length > 0 && <Timeline points={points} now={now.getTime()} currentPeriod={quarter?.periodEnd ?? null} focus={focusedReport?.accessionNumber ?? focusedEvent?.id ?? null}
+        findingsAt={findings && verified.length ? { periodEnd: findings.periodEnd, count: verified.length, focused: !!focused } : null}
         onReport={(id, end) => { if (filings?.filings.some(f => f.accessionNumber === id)) { focusFinding(null); focusReport(id); } else { setPeriod(quarters.find(q => q.periodEnd === end)?.id ?? null); focusFinding(null); setEventId(null); setReportId(null); } }} onEvent={id => focusEvent(id)} />}
 
       {focusedReport ? <div className="lens-stage"><ReportLens report={focusedReport} ticker={ticker} index={railIndex} count={railList.length}
