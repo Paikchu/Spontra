@@ -285,12 +285,14 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
   const badges = useMemo(() => new Map([...badgeFindings].map(([name, f]) => [name, { kind: f.kind, severity: f.severity, title: f.title }])), [badgeFindings]);
   const nodeColor = useCallback((id: string) => { const item = items.find(i => i.id === id); return item ? hue(item.slot) : "var(--biz-0)"; }, [items]);
   const focusFinding = (id: string | null) => { setFocusId(id); if (id) { setEventId(null); setReportId(null); } else { setStory(false); setSplit(false); } };
-  const focusEvent = (id: string | null) => { setEventId(id); if (id) { setFocusId(null); setReportId(null); setStory(false); setSplit(false); } };
+  const focusEvent = (id: string | null) => { setEventId(id); if (id) { setSelected(null); setFocusId(null); setReportId(null); setStory(false); setSplit(false); } };
+  // The rail holds one pick at a time: a business, a finding, or a report/event.
+  const pickBusiness = (id: string | null) => { setSelected(id); if (id) { setFocusId(null); setEventId(null); setReportId(null); setStory(false); setSplit(false); } };
   // A report in focus also brings the stage to its quarter when the flow has it.
   const focusReport = (id: string | null) => {
     setReportId(id); setReader(false);
     if (!id) return;
-    setFocusId(null); setEventId(null); setStory(false); setSplit(false);
+    setSelected(null); setFocusId(null); setEventId(null); setStory(false); setSplit(false);
     const end = filings?.filings.find(f => f.accessionNumber === id)?.periodEnd;
     const match = end ? quarters.find(q => q.periodEnd === end) : null;
     if (match) setPeriod(match.id);
@@ -310,7 +312,7 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
     const options = [...(listRef.current?.querySelectorAll<HTMLElement>("[role=option]") ?? [])];
     const index = Math.max(0, options.indexOf(e.target as HTMLElement));
     const next = e.key === "Home" ? 0 : e.key === "End" ? order.length - 1 : Math.max(0, Math.min(order.length - 1, index + (e.key === "ArrowDown" ? 1 : -1)));
-    setSelected(order[next]);
+    pickBusiness(order[next]);
     listRef.current?.querySelectorAll<HTMLElement>("[role=option]")[next]?.focus();
   }
 
@@ -326,7 +328,7 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
     <Rail ticker={ticker} actions={tools} label="公司业务">
       <div className="rail-list" role="listbox" aria-label="选择业务以在图中高亮" ref={listRef} onKeyDown={onListKey} onMouseLeave={() => setPreview(null)} data-drawer={drawer ? "open" : "closed"}>
         <div className="row-head">
-          <Button variant="unstyled" type="button" role="option" aria-selected={!current} tabIndex={!current ? 0 : -1} className="row row--all" onClick={() => setSelected(null)} onMouseEnter={() => setPreview(null)}>
+          <Button variant="unstyled" type="button" role="option" aria-selected={!current} tabIndex={!current ? 0 : -1} className="row row--all" onClick={() => pickBusiness(null)} onMouseEnter={() => setPreview(null)}>
             <i className="row-chip row-chip--all" aria-hidden="true" />
             <span className="row-name">全部业务</span>
             <span className="row-value">{revenue != null ? money(revenue) : ""}</span>
@@ -341,7 +343,7 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
           const delta = quarter && quantified ? compareRevenueNode(quarter, previous, item.key).label : "不可比";
           return <Button variant="unstyled" type="button" role="option" key={item.key} aria-selected={current?.key === item.key} tabIndex={current?.key === item.key ? 0 : -1}
             className="row" data-depth={item.depth} data-hover={hovered === item.key || undefined} style={{ "--c": hue(item.slot) } as CSSProperties}
-            onClick={() => setSelected(current?.key === item.key ? null : item.id)} onMouseEnter={() => setPreview(item.key)}>
+            onClick={() => pickBusiness(current?.key === item.key ? null : item.id)} onMouseEnter={() => setPreview(item.key)}>
             <i className="row-chip" aria-hidden="true" />
             <span className="row-name">{item.name}</span>
             <span className="row-value">{item.value != null ? money(item.value) : ""}</span>
@@ -350,7 +352,7 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
           </Button>;
         })}</div>}
       </div>
-      {findings && verified.length > 0 && <FindingsList findings={verified} focus={focused?.id ?? null} story={story} periodEnd={findings.periodEnd}
+      {!current && findings && verified.length > 0 && <FindingsList findings={verified} focus={focused?.id ?? null} story={story} periodEnd={findings.periodEnd}
         onFocus={focusFinding} onStory={() => { if (story) { setStory(false); setFocusId(null); } else { setStory(true); setEventId(null); setFocusId(focused?.id ?? verified[0].id); } }} />}
       {rail && <EventsList rail={rail} focus={focusedReport?.accessionNumber ?? focusedEvent?.id ?? null} pendingInsider={events?.pendingInsider ?? 0} onFocus={focusItem} />}
       {!!quarter?.revenueAdjustments?.length&&<p className="revenue-reconciliation">收入对账 · {quarter.currency} 百万<br/>分部收入（抵销前） {formatFlowValue(segmentRevenue,quarter)}<br/>{quarter.revenueAdjustments.map(a=><span key={a.id}>{a.name} {formatFlowValue(numeric(a.amount),quarter)}<br/></span>)}合并收入 {formatFlowValue(revenue,quarter)}</p>}
@@ -392,9 +394,9 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
           : proportional && layout ? <FlowChart graph={graph!} copy={copy} money={v => money(v)} colorOf={colorOf} active={active} revealKey={quarter.id} productBusiness={current ? "segment:" + current.key : null} businessDetails={<Dossier item={current} parent={parent ?? null} sources={quarter?.sources.length ? quarter.sources : business?.sources ?? []} explainer={explainer} />}
               focusSlot={n => segmentRevenue ? `占${shareBasis} ${percent(n.value / segmentRevenue * 100)}` : null}
               onHover={name => setHoverNode(name)} tipFor={tipFor} spotlight={spotlight} badges={badges} priorOf={priorOf} previous={priorQuarter} brackets={guideMarks.brackets} pills={guideMarks.pills} onBadge={name => { const f = badgeFindings.get(name); if (f) focusFinding(f.id); }}
-              onPick={n => { const item = itemByNode.get(n.name); setSelected(item && current?.key !== item.key ? item.id : null); }}
+              onPick={n => { const item = itemByNode.get(n.name); pickBusiness(item && current?.key !== item.key ? item.id : null); }}
               label={`${ticker} ${quarter.label} 收入到净利润桑基图，金额单位 ${quarter.currency}`} />
-          : <div className="business-flow chart-fallback">{current && <Dossier item={current} parent={parent ?? null} sources={quarter.sources.length ? quarter.sources : business?.sources ?? []} explainer={explainer} />}<FinancialSankey quarter={quarter} previous={previous} onSegment={key => setSelected(items.find(item => item.key === key)?.id ?? null)} /></div>}
+          : <div className="business-flow chart-fallback">{current && <Dossier item={current} parent={parent ?? null} sources={quarter.sources.length ? quarter.sources : business?.sources ?? []} explainer={explainer} />}<FinancialSankey quarter={quarter} previous={previous} onSegment={key => pickBusiness(items.find(item => item.key === key)?.id ?? null)} /></div>}
       </div>
 
       {points.length > 0 && <Timeline points={points} now={now.getTime()} currentPeriod={quarter?.periodEnd ?? null} focus={focusedReport?.accessionNumber ?? focusedEvent?.id ?? null}
