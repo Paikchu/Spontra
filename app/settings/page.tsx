@@ -5,7 +5,7 @@ import { platformKind } from "@/packages/client/src/platform";
 import { Sun, Moon, Monitor, ShieldCheck, ArrowUpRight } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { FieldGroup, Field, FieldLabel, FieldDescription, FieldSeparator } from "@/components/ui/field";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { ToggleGroup, ToggleGroupItem } from "@/packages/web/src/ui/toggle-group";
 import { useTheme } from "../theme-control";
 import { useLanguage } from "../language-provider";
 

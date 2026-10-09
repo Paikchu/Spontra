@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "@/packages/ui/src/navigation";
+import Link from "@/packages/web/src/navigation";
 import type { CSSProperties } from "react";
 import { useLanguage } from "@/app/language-provider";
 import { CountUp } from "@/components/spontra/effects";

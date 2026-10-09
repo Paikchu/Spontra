@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { ReportContentRenderer } from "../components/earning-report/report-blocks/ReportContentRenderer.tsx";
-import { ReportMarkdown, ReportFormula, safeReportUrl } from "../components/earning-report/report-blocks/ReportMarkdown.tsx";
-import { SecTrendFigure, SecTrendSource } from "../components/earning-report/figures/index.ts";
+import { ReportContentRenderer } from "../packages/web/src/report/report-blocks/ReportContentRenderer.tsx";
+import { ReportMarkdown, ReportFormula, safeReportUrl } from "../packages/web/src/report/report-blocks/ReportMarkdown.tsx";
+import { SecTrendFigure, SecTrendSource } from "../packages/web/src/report/figures/index.ts";
 import { readerFilingFixture } from "./fixtures/sec-reader-fixture.ts";
 import type { SecReaderContentBlock } from "../shared/analysis-runtime/sec-reader-schema.ts";
 import type { SecTrend } from "../shared/analysis-contract/sec-presentation.ts";

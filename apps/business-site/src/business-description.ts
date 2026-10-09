@@ -1,5 +1,5 @@
 import type { PublicBusinessFlow } from "@/shared/analysis-contract/business-flow";
-import type { CompanyBusinessContent } from "@/lib/earning-report/web/company-business-content";
+import type { CompanyBusinessContent } from "@/packages/web/src/model/company-business-content";
 /** Public qualitative context has its own disclosure period; financial amounts remain unchanged. */
 export function withBusinessDescriptions(flow:PublicBusinessFlow,business:CompanyBusinessContent|null):PublicBusinessFlow{
  if(!business)return flow;

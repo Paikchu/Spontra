@@ -37,6 +37,8 @@
     "app/**/*.ts",
     "app/**/*.tsx",
     "components/**/*.tsx",
+    "packages/web/**/*.ts",
+    "packages/web/**/*.tsx",
     "lib/**/*.ts",
     "shared/**/*.ts",
     "db/**/*.ts",

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/packages/web/src/ui/button";
 import type { ProductOffering } from "@/shared/analysis-contract/business-explainer";
 import { ProductBranches } from "./FlowChart";
 

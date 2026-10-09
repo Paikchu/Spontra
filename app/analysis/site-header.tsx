@@ -4,11 +4,11 @@ import { apiFetch } from "@/packages/client/src/platform";
 
 import { useEffect, useState } from "react";
 import { Search, ArrowRight, LoaderCircle } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/packages/web/src/ui/button";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { InputGroup, InputGroupInput, InputGroupAddon, InputGroupButton } from "@/components/ui/input-group";
 import { useDelayedBusy } from "@/app/use-delayed-busy";
-import { useAppNavigation } from "@/packages/ui/src/navigation";
+import { useAppNavigation } from "@/packages/web/src/navigation";
 
 import type { SecurityType } from "@/lib/earning-report/web/symbol-directory.ts";
 

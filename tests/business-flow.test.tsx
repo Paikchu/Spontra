@@ -1,5 +1,5 @@
-import { selectRevenueTree, compareRevenueNode, revenueNodeKey } from "../lib/earning-report/web/revenue-tree";
-import { enrichDisclosedRevenue } from "../lib/earning-report/web/company-revenue-disclosures";
+import { selectRevenueTree, compareRevenueNode, revenueNodeKey } from "../packages/web/src/model/revenue-tree";
+import { enrichDisclosedRevenue } from "../packages/web/src/model/company-revenue-disclosures";
 import type { RevenueBreakdown } from "../shared/analysis-contract/business-flow";
 import { readFileSync } from "node:fs";
 import { extractDisclosedQuarters } from "../workers/pipeline/src/financial-data/parser";
@@ -7,9 +7,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { BusinessFlow } from "../app/analysis/stocks/[ticker]/BusinessFlow";
-import { adaptFundamentals, segmentChangeLabel, compareAmount, marginChange, numeric, previousQuarter, reconcileQuarter, selectFlow } from "../lib/earning-report/web/business-flow-model";
+import { adaptFundamentals, segmentChangeLabel, compareAmount, marginChange, numeric, previousQuarter, reconcileQuarter, selectFlow } from "../packages/web/src/model/business-flow-model";
 import { businessFlowFixture } from "./fixtures/business-flow-fixture";
-import { financialGraph, validateGraph } from "../lib/earning-report/web/business-flow-sankey";
+import { financialGraph, validateGraph } from "../packages/web/src/model/business-flow-sankey";
 import type { PublicFundamentalsResponse } from "../shared/analysis-contract/fundamentals";
 
 const [q4, q3] = businessFlowFixture.quarters;
@@ -108,7 +108,7 @@ test("mobile keeps revenue detail while grouping only expense totals",()=>{
 
 
 test("real sourced business remains visible without quarterly revenue and never leaks across tickers", async () => {
- const { resolveCompanyBusiness } = await import("../lib/earning-report/web/company-business-content");
+ const { resolveCompanyBusiness } = await import("../packages/web/src/model/company-business-content");
  const nvda = resolveCompanyBusiness("NVDA");
  assert.equal(nvda?.groups.length, 2);
  assert.ok(nvda?.groups.every(group => group.revenue === null));
@@ -121,7 +121,7 @@ test("real sourced business remains visible without quarterly revenue and never 
  assert.match(html, /计算与网络/); assert.match(html, /展开业务/); assert.match(html, /季度财务未披露/);
 });
 test("published sourced analysis takes priority over curated historical disclosures", async () => {
- const { resolveCompanyBusiness } = await import("../lib/earning-report/web/company-business-content");
+ const { resolveCompanyBusiness } = await import("../packages/web/src/model/company-business-content");
  const overview = { label: "业务", headline: "真实业务", introduction: "简介", highlights: [], deepDive: { headline: "业务", introduction: "简介", sections: [{ key: "business" as const, title: "业务", paragraphs: [{ text: "已发布真实公司业务", sourceIds: ["source"] }, { text: "无来源陈述不能映射", sourceIds: [] }] }], sources: [{ id: "source", title: "披露", url: "https://example.com/report", kind: "sec" as const, publishedAt: null, retrievedAt: "2026-09-30" }], limitations: ["分部金额未披露"] } };
  const result = resolveCompanyBusiness("NVDA", overview)!;
  assert.equal(result.groups.length, 1);

@@ -1,11 +1,11 @@
-import { Button } from "@/components/ui/button";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { ChartContainer, ChartLegendContent, ChartTooltipContent, useChart, type ChartConfig } from "@/components/ui/chart";
+import { Button } from "@/packages/web/src/ui/button";
+import { ToggleGroup, ToggleGroupItem } from "@/packages/web/src/ui/toggle-group";
+import { ChartContainer, ChartLegendContent, ChartTooltipContent, useChart, type ChartConfig } from "@/packages/web/src/ui/chart";
 import React, { useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import type { RevenueHistory } from "@/shared/analysis-contract/revenue-history";
 import type { BusinessFlowQuarter } from "@/shared/analysis-contract/business-flow";
-import { compactFlowValue } from "@/lib/earning-report/web/business-flow-layout";
-import { disclosedSegmentLabel } from "@/lib/earning-report/web/business-flow-model";
+import { compactFlowValue } from "@/packages/web/src/model/business-flow-layout";
+import { disclosedSegmentLabel } from "@/packages/web/src/model/business-flow-model";
 import type { GuidancePublication } from "@/shared/analysis-contract/guidance";
 import { SLOTS, ACTION_NAMES, buildBridge, buildColumns, buildSlots, columnIndex, visibleSlotCount, growth, growthSeries, guidanceLabel, guidanceOverlay, layerOrder, niceTicks, rateTicks, type Bridge, type Column, type GuideMark, type Layer, type TrendItem } from "./trend-model";
 

@@ -6,8 +6,8 @@ import { revealContent } from "./content-motion";
 import { NavigationPlaceholder } from "./navigation-placeholder";
 import { loadAppPage } from "./load-app-page";
 
-import { NavigationContext, type NavigationOptions } from "@/packages/ui/src/navigation";
-export { useAppNavigation, useReportReturnPath } from "@/packages/ui/src/navigation";
+import { NavigationContext, type NavigationOptions } from "@/packages/web/src/navigation";
+export { useAppNavigation, useReportReturnPath } from "@/packages/web/src/navigation";
 
 function normalize(href: string, current: string) {
   const url = new URL(href, `${window.location.origin}${current}`);

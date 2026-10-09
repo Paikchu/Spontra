@@ -1,4 +1,4 @@
-import type { PublicSecFiling } from "../../../shared/analysis-contract/filings.ts";
+import type { PublicSecFiling } from "../../../../shared/analysis-contract/filings.ts";
 
 /** Display SEC-reported fiscal focus; never infer it from prose or calendar dates. */
 export function formatFilingPeriodLabel(filing: PublicSecFiling): string {

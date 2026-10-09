@@ -1,12 +1,12 @@
 "use client";
 
 import { useCallback, useId, useState } from "react";
-import type { CompanyBusinessContent } from "@/lib/earning-report/web/company-business-content";
-import { FinancialSankey } from "./FinancialSankey";
-import { availableRevenueTrees, compareRevenueNode, revenueNodeKey } from "@/lib/earning-report/web/revenue-tree";
+import type { CompanyBusinessContent } from "@/packages/web/src/model/company-business-content";
+import { FinancialSankey } from "../../../../packages/web/src/business-flow/FinancialSankey";
+import { availableRevenueTrees, compareRevenueNode, revenueNodeKey } from "@/packages/web/src/model/revenue-tree";
 import type { BusinessFlowQuarter, BusinessSegment, FlowMetric, FlowSource, PublicBusinessFlow } from "@/shared/analysis-contract/business-flow";
 import type { CompanyAnalysisOverview } from "@/shared/analysis-contract/company-analysis";
-import { disclosedSegmentLabel, segmentChangeLabel, compareAmount, compareFlowAmounts, formatFlowValue, marginChange, numeric, previousQuarter, reconcileQuarter } from "@/lib/earning-report/web/business-flow-model";
+import { disclosedSegmentLabel, segmentChangeLabel, compareAmount, compareFlowAmounts, formatFlowValue, marginChange, numeric, previousQuarter, reconcileQuarter } from "@/packages/web/src/model/business-flow-model";
 
 const revenueChangeLabel = (q: BusinessFlowQuarter, previous: BusinessFlowQuarter | null, id: string) => {
  const comparison=compareRevenueNode(q,previous,id);

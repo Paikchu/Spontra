@@ -1,7 +1,7 @@
-import { FundamentalChartRenderer } from "@/components/earning-report/fundamentals/FundamentalChart.tsx";
-import { ReportBlockBoundary } from "@/components/earning-report/report-blocks/ReportBlockBoundary.tsx";
-import { RichText } from "@/components/earning-report/rich-text/RichText.tsx";
-import { formatSecMetricLabel, formatSecMetricValue } from "@/lib/earning-report/web/sec-metric-format.ts";
+import { FundamentalChartRenderer } from "@/packages/web/src/report/fundamentals/FundamentalChart.tsx";
+import { ReportBlockBoundary } from "@/packages/web/src/report/report-blocks/ReportBlockBoundary.tsx";
+import { RichText } from "@/packages/web/src/report/rich-text/RichText.tsx";
+import { formatSecMetricLabel, formatSecMetricValue } from "@/packages/web/src/model/sec-metric-format.ts";
 import type { PublicFundamentalsResponse } from "@/shared/analysis-contract/fundamentals.ts";
 import type { PublishedSecReport } from "@/shared/analysis-contract/report.ts";
 import type {

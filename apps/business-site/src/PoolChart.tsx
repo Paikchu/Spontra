@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { estimateTextWidth } from "@/lib/earning-report/web/business-flow-layout";
+import { estimateTextWidth } from "@/packages/web/src/model/business-flow-layout";
 import type { Pool, PoolItem, PoolTone } from "./capital-model";
 
 const TONE: Record<PoolTone, string> = {

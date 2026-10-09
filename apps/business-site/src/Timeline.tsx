@@ -1,4 +1,4 @@
-import { Button } from "@/components/ui/button";
+import { Button } from "@/packages/web/src/ui/button";
 import React, { useMemo, type CSSProperties } from "react";
 import { CLASS_TONE, EVENT_CLASS_LABEL, type TimelinePoint } from "./events-model";
 

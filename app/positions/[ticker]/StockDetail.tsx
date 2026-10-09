@@ -2,14 +2,14 @@
 
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { useAppNavigation } from "@/packages/ui/src/navigation";
-import { CompanyLogo } from "@/app/company-logo";
+import { useAppNavigation } from "@/packages/web/src/navigation";
+import { CompanyLogo } from "@/packages/web/src/company-logo";
 import { useMarketQuotes } from "@/app/use-market-quotes";
 import { SiteHeader } from "@/app/analysis/site-header";
 import { BusinessOutlook } from "@/app/analysis/stocks/[ticker]/BusinessOutlook";
 import { SecFilingsSection } from "@/app/analysis/stocks/[ticker]/SecFilingsSection";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Skeleton } from "@/packages/web/src/ui/skeleton";
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { money, number, percent } from "@/lib/portfolio-format";

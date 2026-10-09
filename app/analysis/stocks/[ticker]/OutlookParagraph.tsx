@@ -1,6 +1,6 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
+import { Button } from "@/packages/web/src/ui/button";
 import { useEffect, useId, useRef, useState } from "react";
 
 /** Keep the original analysis intact; only long paragraphs need progressive disclosure. */

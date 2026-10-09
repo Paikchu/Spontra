@@ -2,8 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import type { BusinessFlowQuarter, FlowMetric } from "../shared/analysis-contract/business-flow";
 import type { BalanceSheet, CashFlowStatement, PublicCapitalStructure } from "../shared/analysis-contract/capital-structure";
-import { deficitFinancialGraph, validateGraph } from "../lib/earning-report/web/business-flow-sankey";
-import { layoutInfographic } from "../lib/earning-report/web/business-flow-layout";
+import { deficitFinancialGraph, validateGraph } from "../packages/web/src/model/business-flow-sankey";
+import { layoutInfographic } from "../packages/web/src/model/business-flow-layout";
 import { balancePool, balanceVerdict, cashPool, fundingVerdict } from "../apps/business-site/src/capital-model";
 import { handle, loadCapital, type SiteEnv } from "../apps/business-site/worker/index";
 

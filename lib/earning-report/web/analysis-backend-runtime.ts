@@ -1,5 +1,5 @@
 import { AnalysisBackendClient } from "./analysis-client.ts";
-import { asServiceBinding, serviceFetcher } from "./service-binding.ts";
+import { asServiceBinding, serviceFetcher } from "../../../packages/web/src/model/service-binding.ts";
 
 /**
  * Builds the Web Worker's client for the analysis backend. **Server-only** — it reads a runtime

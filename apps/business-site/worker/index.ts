@@ -1,5 +1,5 @@
 import type {PublicBusinessFlow} from "@/shared/analysis-contract/business-flow";
-import { selectFlow } from "@/lib/earning-report/web/business-flow-model";
+import { selectFlow } from "@/packages/web/src/model/business-flow-model";
 import { checkCompleteFlow, newestPair } from "@/shared/analysis-runtime/financial-data/completeness";
 import type { CompleteFlowPublication } from "@/shared/analysis-contract/complete-business-flow";
 import {withLegacyInterestFormula} from "@/shared/analysis-runtime/financial-data/disclosed-quarter";
@@ -16,8 +16,8 @@ import type {FindingsPublication} from "@/shared/analysis-contract/findings";
 import {readEventsPublication} from "@/shared/analysis-runtime/events";
 import type {EventsPublication} from "@/shared/analysis-contract/events";
 import type {PublicFilingDetail,PublicFilingDigest,PublicFilingDigestPage,PublicFilingPage,PublicSecFiling} from "@/shared/analysis-contract/filings";
-import {formatFilingPeriodLabel} from "@/lib/earning-report/web/filing-period-label";
-import {formatSecMetricLabel,formatSecMetricValue} from "@/lib/earning-report/web/sec-metric-format";
+import {formatFilingPeriodLabel} from "@/packages/web/src/model/filing-period-label";
+import {formatSecMetricLabel,formatSecMetricValue} from "@/packages/web/src/model/sec-metric-format";
 /** The analysis pipeline is reached over its Service Binding; the host is a label the binding ignores. */
 const ANALYSIS_ORIGIN="https://spontra-analysis.internal";
 export type SiteEnv={ASSETS:{fetch(request:Request):Promise<Response>};PUBLIC_READ_LIMIT:{limit(options:{key:string}):Promise<{success:boolean}>};

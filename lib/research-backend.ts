@@ -1,4 +1,4 @@
-import { asServiceBinding, serviceFetcher } from "./earning-report/web/service-binding.ts";
+import { asServiceBinding, serviceFetcher } from "../packages/web/src/model/service-binding.ts";
 
 /** Personal research uses its own server-side credential, separate from public financial reads. */
 export async function researchBackend(path: string, init: RequestInit = {}): Promise<Response> {

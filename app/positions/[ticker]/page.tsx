@@ -8,7 +8,7 @@ import { normalizeTicker } from "@/lib/symbol-directory";
 import { notFound } from "next/navigation";
 import { StockDetail } from "./StockDetail";
 import { canonicalUnderlying } from "@/lib/portfolio-snapshot";
-import "@/app/analysis/earning-report.css";
+import "@/packages/web/src/styles/earning-report.css";
 
 export const dynamic = "force-dynamic";
 

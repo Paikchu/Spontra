@@ -5,12 +5,12 @@ import { BusinessMapCompanies } from './business-map-companies';
 import { AiRuns } from "./ai-runs";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import Link from "@/packages/ui/src/navigation";
+import Link from "@/packages/web/src/navigation";
 import { ArrowLeft, Bot, Check, ChevronRight, Clock3, Database, FileText, History, Info, LoaderCircle, LogOut, RefreshCw, Search, ShieldCheck, X } from "lucide-react";
 import type { ReportAdminDetail, ReportAdminItem, ReportAdminPage, ReportAdminStatus } from "@/shared/analysis-contract/admin";
-import { CompanyLogo } from "@/app/company-logo";
-import { SecReportDocument } from "@/app/analysis/stocks/[ticker]/sec/[accession]/SecReportDocument";
-import { filingPresentation } from "@/packages/client/src/report";
+import { CompanyLogo } from "@/packages/web/src/company-logo";
+import { SecReportDocument } from "@/packages/web/src/sec-report/SecReportDocument";
+import { filingPresentation } from "@/packages/web/src/report-client";
 import { adminApi as api, AdminApiError as ApiError } from "./admin-api";
 import { FinancialMaintenance } from "./financial-maintenance";
 

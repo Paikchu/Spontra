@@ -1,4 +1,4 @@
-import { Button } from "@/components/ui/button";
+import { Button } from "@/packages/web/src/ui/button";
 import React, { useState } from "react";
 import type { CompanyEvent } from "@/shared/analysis-contract/events";
 import type { PublicFilingDigest } from "@/shared/analysis-contract/filings";

@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "@/packages/ui/src/navigation";
+import Link from "@/packages/web/src/navigation";
 
 export default function AnalysisError({ reset }: { reset: () => void }) {
   return <main className="sec-home" role="alert">

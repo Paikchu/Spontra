@@ -1,11 +1,11 @@
-import { filingPresentation } from "@/packages/client/src/report";
+import { filingPresentation } from "@/packages/web/src/report-client";
 import { notFound } from "next/navigation";
 import { getAnalysisBackendRuntime } from "@/lib/earning-report/web/analysis-backend-runtime.ts";
 import { isAnalysisErrorBody } from "@/lib/earning-report/web/analysis-client.ts";
 import type { PublicFilingDetail } from "@/shared/analysis-contract/filings.ts";
 import { findSecurity } from "@/lib/earning-report/web/site-data.ts";
 import { normalizeTrackedTicker } from "@/lib/earning-report/web/ticker.ts";
-import { SecReportDocument } from "@/app/analysis/stocks/[ticker]/sec/[accession]/SecReportDocument.tsx";
+import { SecReportDocument } from "@/packages/web/src/sec-report/SecReportDocument.tsx";
 
 export const dynamic = "force-dynamic";
 

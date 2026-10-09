@@ -1,6 +1,6 @@
 import type { RevenueHistory, RevenueHistoryNode, RevenueHistoryQuarter } from "@/shared/analysis-contract/revenue-history";
 import type { GuidanceItem, GuidancePublication, GuidanceSource } from "@/shared/analysis-contract/guidance";
-import { disclosedSegmentLabel } from "@/lib/earning-report/web/business-flow-model";
+import { disclosedSegmentLabel } from "@/packages/web/src/model/business-flow-model";
 
 export type TrendItem = { key: string; id: string; parent: string | null; name: string; slot: number };
 export type Slot = { periodEnd: string; quarter: RevenueHistoryQuarter | null; missingReason?: "currency" };

@@ -1,7 +1,7 @@
 import test from 'node:test';import assert from 'node:assert/strict';import{readFileSync}from'node:fs';
 import{extractDisclosedQuarters,type DocumentSource}from'../workers/pipeline/src/financial-data/parser.ts';
-import{financialGraph,validateGraph}from'../lib/earning-report/web/business-flow-sankey';
-import{reconcileQuarter}from'../lib/earning-report/web/business-flow-model';
+import{financialGraph,validateGraph}from'../packages/web/src/model/business-flow-sankey';
+import{reconcileQuarter}from'../packages/web/src/model/business-flow-model';
 import{checkCompleteFlow,newestPair}from'../shared/analysis-runtime/financial-data/completeness.ts';
 const sources=JSON.parse(readFileSync(new URL('./pipeline/fixtures/multi-company-income-sources.json',import.meta.url),'utf8')) as Array<{ticker:string;file:string;sourceUrl:string;accession:string;filedAt:string;cik:string;industry:DocumentSource['industry']}>;
 for(const ticker of ['MSFT','JPM'])test(`actual sourced ${ticker} two-quarter extraction reconciles`,()=>{

@@ -6,7 +6,7 @@ import type {
   FinancialMaintenanceCompanyList, FinancialMaintenanceTask,
 } from "@/shared/analysis-contract/financial-maintenance";
 import { adminApi, AdminApiError } from "./admin-api";
-import { CompanyLogo } from "@/app/company-logo";
+import { CompanyLogo } from "@/packages/web/src/company-logo";
 import { FinancialQuarterSummary } from "./financial-quarter-summary";
 import { FinancialUpdateHistory, financialDate } from "./financial-update-history";
 import { completeRequestId, normalizeCompanyTicker, pendingRequestId } from "./financial-maintenance-state";

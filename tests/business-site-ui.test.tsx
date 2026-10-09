@@ -1,9 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { renderToStaticMarkup } from "react-dom/server";
-import { SidebarProvider } from "../components/ui/sidebar";
-import { ChartContainer, ChartTooltipContent } from "../components/ui/chart";
-import { NativeSelect, NativeSelectOptGroup, NativeSelectOption } from "../components/ui/native-select";
+import { SidebarProvider } from "../packages/web/src/ui/sidebar";
+import { ChartContainer, ChartTooltipContent } from "../packages/web/src/ui/chart";
+import { NativeSelect, NativeSelectOptGroup, NativeSelectOption } from "../packages/web/src/ui/native-select";
 import { Rail, RailActions } from "../apps/business-site/src/Sidebar";
 import { Home } from "../apps/business-site/src/Home";
 

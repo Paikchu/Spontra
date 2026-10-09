@@ -6,7 +6,7 @@ import { apiFetch } from "@/packages/client/src/platform";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { revealContent } from "@/app/content-motion";
 import { useDelayedBusy } from "@/app/use-delayed-busy";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Skeleton } from "@/packages/web/src/ui/skeleton";
 import { SiteHeader } from "./site-header";
 import { StockDetail } from "@/app/positions/[ticker]/StockDetail";
 import type { HoldingPlanRecord } from "@/lib/holding-plan-store";

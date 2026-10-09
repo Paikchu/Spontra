@@ -1,9 +1,9 @@
-import { Button } from "@/components/ui/button";
+import { Button } from "@/packages/web/src/ui/button";
 import { useMemo, useState, type CSSProperties } from "react";
 import type { BusinessFlowQuarter } from "@/shared/analysis-contract/business-flow";
 import type { ExplainerSource } from "@/shared/analysis-contract/business-explainer";
 import type { FindingRef } from "@/shared/analysis-contract/findings";
-import { compactFlowValue } from "@/lib/earning-report/web/business-flow-layout";
+import { compactFlowValue } from "@/packages/web/src/model/business-flow-layout";
 import { spanLabel, watchPeriod, type FindingData, type ResolvedEvidence, type ResolvedValue } from "@/shared/analysis-runtime/findings";
 import { KIND_LABEL, VIEW_LABEL, lensColumns, lensLadder, lensShares, type LensColumns, type LensLadder, type LensShares, type VerifiedFinding } from "./findings-model";
 

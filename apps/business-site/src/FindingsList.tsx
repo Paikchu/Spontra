@@ -1,4 +1,4 @@
-import { Button } from "@/components/ui/button";
+import { Button } from "@/packages/web/src/ui/button";
 import { KIND_LABEL, type VerifiedFinding } from "./findings-model";
 
 /**

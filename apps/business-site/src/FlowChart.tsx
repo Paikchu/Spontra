@@ -1,9 +1,9 @@
 import type { ProductOffering } from "@/shared/analysis-contract/business-explainer";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/packages/web/src/ui/button";
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import type { FinancialGraph } from "@/lib/earning-report/web/business-flow-sankey";
-import { estimateTextWidth, INFOGRAPHIC, layoutInfographic, type InfographicGeometry, type InfographicLayout, type PlacedLink, type PlacedNode } from "@/lib/earning-report/web/business-flow-layout";
-import { alignedGraph, ghostFrames, morphLayout, priorRevenueHeight } from "@/lib/earning-report/web/business-flow-compare";
+import type { FinancialGraph } from "@/packages/web/src/model/business-flow-sankey";
+import { estimateTextWidth, INFOGRAPHIC, layoutInfographic, type InfographicGeometry, type InfographicLayout, type PlacedLink, type PlacedNode } from "@/packages/web/src/model/business-flow-layout";
+import { alignedGraph, ghostFrames, morphLayout, priorRevenueHeight } from "@/packages/web/src/model/business-flow-compare";
 
 /** `change` is the comparable change against the prior quarter; absent when the two quarters cannot be compared. */
 export type NodeCopy = { name: string; value: string; change?: { label: string; trend?: "up" | "down" } };

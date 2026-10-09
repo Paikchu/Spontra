@@ -6,9 +6,9 @@ import { apiFetch } from "@/packages/client/src/platform";
 import { useLanguage } from "@/app/language-provider";
 
 import { useEffect, useState } from "react";
-import Link from "@/packages/ui/src/navigation";
+import Link from "@/packages/web/src/navigation";
 import { AddPlanDialog } from "./AddPlanDialog";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/packages/web/src/ui/button";
 import { Empty } from "@/components/ui/empty";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { HoldingPlanSummary } from "@/lib/holding-plan-store";

@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { FlowChart, layoutFor, priorLayoutFor, type NodeCopy } from "../apps/business-site/src/FlowChart";
-import { alignedGraph, ghostFrames, morphLayout, priorRevenueHeight } from "../lib/earning-report/web/business-flow-compare";
-import { INFOGRAPHIC, layoutInfographic, type PlacedNode } from "../lib/earning-report/web/business-flow-layout";
-import { compareAmount, numeric } from "../lib/earning-report/web/business-flow-model";
-import { financialGraph } from "../lib/earning-report/web/business-flow-sankey";
+import { alignedGraph, ghostFrames, morphLayout, priorRevenueHeight } from "../packages/web/src/model/business-flow-compare";
+import { INFOGRAPHIC, layoutInfographic, type PlacedNode } from "../packages/web/src/model/business-flow-layout";
+import { compareAmount, numeric } from "../packages/web/src/model/business-flow-model";
+import { financialGraph } from "../packages/web/src/model/business-flow-sankey";
 import { businessFlowFixture } from "./fixtures/business-flow-fixture";
 
 const [q4, q3] = businessFlowFixture.quarters;

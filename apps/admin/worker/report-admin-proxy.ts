@@ -1,4 +1,4 @@
-import { asServiceBinding, serviceFetcher } from "../../../lib/earning-report/web/service-binding.ts";
+import { asServiceBinding, serviceFetcher } from "../../../packages/web/src/model/service-binding.ts";
 
 const COOKIE = "spontra_report_admin";
 const MAX_BODY = 8192;

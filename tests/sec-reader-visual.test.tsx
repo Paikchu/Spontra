@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { SecReportDocument } from "../app/analysis/stocks/[ticker]/sec/[accession]/SecReportDocument";
+import { SecReportDocument } from "../packages/web/src/sec-report/SecReportDocument";
 import { readerFilingFixture } from "./fixtures/sec-reader-fixture.ts";
 
 test("reader visual plan reaches HTML with a bar chart, caption, comparison labels and trusted values", () => {

@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { TodayDashboard, PortfolioDashboard, StockWorkspace, SecReportDocument, ReportShare } from "@/packages/ui/src/screens";
-import { filingPresentation } from "@/packages/client/src/report";
+import { filingPresentation } from "@/packages/web/src/report-client";
 import type { PortfolioData, StockContext } from "@/packages/client/src/contracts";
 import type { PublicFilingDetail } from "@/shared/analysis-contract/filings";
 import { refreshClientData } from "@/packages/client/src/refresh";

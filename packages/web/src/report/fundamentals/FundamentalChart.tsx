@@ -11,7 +11,7 @@ import {
   type ReactNode,
 } from "react";
 
-import type { FundamentalMetricKey } from "@/lib/earning-report/web/fundamental-metrics.ts";
+import type { FundamentalMetricKey } from "@/packages/web/src/model/fundamental-metrics.ts";
 import type {
   PublicFundamentalsResponse,
   PublicFundamentalSeries,
@@ -33,7 +33,7 @@ import {
   type FundamentalChartModel,
   type FundamentalChartSeriesSpec,
   type FundamentalSeriesVisual,
-} from "@/lib/earning-report/web/fundamental-chart.ts";
+} from "@/packages/web/src/model/fundamental-chart.ts";
 
 export type FundamentalChartRendererProps = {
   title: string;

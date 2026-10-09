@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReportStreamState } from "@/shared/analysis-runtime/report-stream.ts";
-import { ReportContentRenderer, type ReportContentContext } from "./ReportContentRenderer.tsx";
+import { ReportContentRenderer, type ReportContentContext } from "../../../packages/web/src/report/report-blocks/ReportContentRenderer.tsx";
 
 /** Transport-independent draft surface. Publishing remains an explicit server event. */
 export function ReportStreamView({ state, context }: { state: ReportStreamState; context: ReportContentContext }) {

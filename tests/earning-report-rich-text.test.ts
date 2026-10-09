@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { parseInline, parseRichText } from "../lib/earning-report/web/rich-text.ts";
+import { parseInline, parseRichText } from "../packages/web/src/model/rich-text.ts";
 
 test("prose without markup keeps rendering one paragraph per line", () => {
   const blocks = parseRichText("第一段。\n第二段。\n\n第三段。");

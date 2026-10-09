@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { guidanceMarks, nodeForGuidance, pillText } from "../apps/business-site/src/guidance-marks";
 import type { GuidanceItem, GuidancePublication } from "../shared/analysis-contract/guidance";
 import { businessFlowFixture } from "./fixtures/business-flow-fixture";
-import { numeric } from "../lib/earning-report/web/business-flow-model";
+import { numeric } from "../packages/web/src/model/business-flow-model";
 
 const [q4] = businessFlowFixture.quarters;
 const revenue = numeric(q4.figures.revenue)! * q4.scale;

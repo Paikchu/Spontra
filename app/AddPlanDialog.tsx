@@ -5,15 +5,15 @@ import { apiFetch } from "@/packages/client/src/platform";
 import { useLanguage } from "@/app/language-provider";
 
 import { useEffect, useState } from "react";
-import { useAppNavigation } from "@/packages/ui/src/navigation";
+import { useAppNavigation } from "@/packages/web/src/navigation";
 
-import { Button } from "@/components/ui/button";
+import { Button } from "@/packages/web/src/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from "@/components/ui/dialog";
 import { Command, CommandInput, CommandList, CommandGroup, CommandItem } from "@/components/ui/command";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Skeleton } from "@/packages/web/src/ui/skeleton";
 import { Empty, EmptyHeader, EmptyDescription } from "@/components/ui/empty";
 import { PlusIcon } from "lucide-react";
-import { CompanyLogo } from "./company-logo";
+import { CompanyLogo } from "../packages/web/src/company-logo";
 
 type SearchResult = { symbol: string; name: string; exchange: string; type: "stock" | "etf"; isHeld: boolean };
 

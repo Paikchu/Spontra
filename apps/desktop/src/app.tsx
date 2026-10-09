@@ -1,7 +1,7 @@
 import { Component, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { HashRouter, useLocation, useNavigate } from "react-router-dom";
 import { listen } from "@tauri-apps/api/event";
-import AppLink, { NavigationContext } from "@/packages/ui/src/navigation";
+import AppLink, { NavigationContext } from "@/packages/web/src/navigation";
 import { AnalysisPage, SettingsPage, MacroPage } from "@/packages/ui/src/screens";
 import { NavigationDock } from "@/components/navigation-dock";
 import { ThemeProvider } from "@/app/theme-control";

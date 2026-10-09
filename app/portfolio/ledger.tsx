@@ -2,18 +2,18 @@
 
 import { useLanguage } from "@/app/language-provider";
 import { Empty, EmptyHeader, EmptyDescription } from "@/components/ui/empty";
-import { Button } from "@/components/ui/button";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Button } from "@/packages/web/src/ui/button";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/packages/web/src/ui/tooltip";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ChevronUp, ChevronDown, CalendarDays } from "lucide-react";
 import { Fragment, useMemo, useState, type CSSProperties } from "react";
-import Link from "@/packages/ui/src/navigation";
+import Link from "@/packages/web/src/navigation";
 import { sortPositionGroups, type PositionSortKey, type SortDirection } from "@/lib/portfolio-dashboard";
 import { buildEarningsReminder, type EarningsEvent } from "@/lib/earnings-calendar";
 import { money, number, percent } from "@/lib/portfolio-format";
 import { heatmapThemeColor } from "@/lib/portfolio-heatmap";
 import type { HistoricalPositionGroupView, PositionGroupView } from "@/lib/portfolio-view-model";
-import { CompanyLogo } from "../company-logo";
+import { CompanyLogo } from "../../packages/web/src/company-logo";
 import { OptionContractLabel } from "./option-contract-label";
 import { type QuoteLoadStatus } from "../use-market-quotes";
 import type { MarketQuoteMap } from "@/lib/yahoo-quotes";

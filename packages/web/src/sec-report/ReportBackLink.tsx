@@ -1,6 +1,6 @@
 "use client";
 
-import { useReportReturnPath } from "@/packages/ui/src/navigation";
+import { useReportReturnPath } from "@/packages/web/src/navigation";
 
 export function ReportBackLink({ ticker }: { ticker: string }) {
   const reportReturnPath = useReportReturnPath();

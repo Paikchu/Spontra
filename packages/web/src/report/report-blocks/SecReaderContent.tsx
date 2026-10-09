@@ -1,6 +1,6 @@
 import type { PublishedSecReport, SecNodeResult } from "@/shared/analysis-contract/report.ts";
 import type { SecReaderReport } from "@/shared/analysis-contract/sec-reader.ts";
-import { formatSecMetricValue, formatSecMetricLabel } from "@/lib/earning-report/web/sec-metric-format.ts";
+import { formatSecMetricValue, formatSecMetricLabel } from "@/packages/web/src/model/sec-metric-format.ts";
 import { RichText } from "../rich-text/RichText.tsx";
 import { ReportContentRenderer } from "./ReportContentRenderer.tsx";
 import { ReportMediaGroup } from "./ReportMediaGroup.tsx";

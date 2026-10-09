@@ -1,12 +1,12 @@
-import { SecComposedSection } from "@/components/earning-report/report-blocks/SecComposedSection.tsx";
+import { SecComposedSection } from "@/packages/web/src/report/report-blocks/SecComposedSection.tsx";
 import type { PublishedSecReport } from "@/shared/analysis-contract/report.ts";
 import type { SecFilingWithSummary } from "@/shared/analysis-contract/report.ts";
 import type { ReactNode } from "react";
 import { ReportBackLink } from "./ReportBackLink";
-import { RichText } from "@/components/earning-report/rich-text/RichText.tsx";
-import { SecReportNavigator, type ReportSectionLink } from "@/app/analysis/stocks/[ticker]/sec/[accession]/SecReportNavigator.tsx";
-import { FinancialBridge, QuarterChanges, ReaderSection, WatchConditions } from "@/components/earning-report/report-blocks/SecReaderContent.tsx";
-import { formatSecMetricLabel, formatSecMetricValue } from "@/lib/earning-report/web/sec-metric-format.ts";
+import { RichText } from "@/packages/web/src/report/rich-text/RichText.tsx";
+import { SecReportNavigator, type ReportSectionLink } from "@/packages/web/src/sec-report/SecReportNavigator.tsx";
+import { FinancialBridge, QuarterChanges, ReaderSection, WatchConditions } from "@/packages/web/src/report/report-blocks/SecReaderContent.tsx";
+import { formatSecMetricLabel, formatSecMetricValue } from "@/packages/web/src/model/sec-metric-format.ts";
 import { parseSecReaderReport } from "@/shared/analysis-runtime/sec-reader-schema.ts";
 
 type ReportSectionDefinition = ReportSectionLink & {

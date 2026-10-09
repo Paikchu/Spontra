@@ -1,10 +1,10 @@
-import { Button } from "@/components/ui/button";
-import { ChartContainer, ChartLegendContent, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
-import { NativeSelect, NativeSelectOptGroup, NativeSelectOption } from "@/components/ui/native-select";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Button } from "@/packages/web/src/ui/button";
+import { ChartContainer, ChartLegendContent, ChartTooltipContent, type ChartConfig } from "@/packages/web/src/ui/chart";
+import { NativeSelect, NativeSelectOptGroup, NativeSelectOption } from "@/packages/web/src/ui/native-select";
+import { ToggleGroup, ToggleGroupItem } from "@/packages/web/src/ui/toggle-group";
 import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import type { BusinessFlowQuarter } from "@/shared/analysis-contract/business-flow";
-import { compactFlowValue } from "@/lib/earning-report/web/business-flow-layout";
+import { compactFlowValue } from "@/packages/web/src/model/business-flow-layout";
 import { REVENUE_METRIC, metricChanges, metricTicks, type MetricOption, type MetricTrend } from "./metric-model";
 import { growth, rateTicks } from "./trend-model";
 

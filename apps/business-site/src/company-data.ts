@@ -1,4 +1,4 @@
-import { selectFlow } from "@/lib/earning-report/web/business-flow-model";
+import { selectFlow } from "@/packages/web/src/model/business-flow-model";
 import type { CompleteFlowPublication } from "@/shared/analysis-contract/complete-business-flow";
 import type { PublicBusinessFlow } from "@/shared/analysis-contract/business-flow";
 import type { BusinessExplainer } from "@/shared/analysis-contract/business-explainer";

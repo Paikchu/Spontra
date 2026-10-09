@@ -1,5 +1,5 @@
 /* Independent shell: list on the left, the full statement on the right. Signed bridges reuse Spontra's shared stylesheet. */
-@font-face { font-family: "Geist"; src: url("../../../public/fonts/Geist-Variable.woff2") format("woff2"); font-weight: 100 900; font-style: normal; font-display: swap; }
+@font-face { font-family: "Geist"; src: url("../../../packages/web/fonts/Geist-Variable.woff2") format("woff2"); font-weight: 100 900; font-style: normal; font-display: swap; }
 
 :root {
   color-scheme: dark;

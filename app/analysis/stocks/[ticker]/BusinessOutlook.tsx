@@ -3,13 +3,13 @@
 import { useEffect, useState } from "react";
 import { useDataRevision } from "@/packages/client/src/refresh";
 import { apiFetch } from "@/packages/client/src/platform";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/packages/web/src/ui/button";
+import { Skeleton } from "@/packages/web/src/ui/skeleton";
 import type { PublicCompanyAnalysisResponse } from "@/shared/analysis-contract/company-analysis";
 import type { PublicFundamentalsResponse } from "@/shared/analysis-contract/fundamentals";
 import { companyAnalysisNotice, shouldPollCompanyAnalysis } from "@/lib/earning-report/web/company-analysis-display-state";
-import { selectFlow } from "@/lib/earning-report/web/business-flow-model";
-import { resolveCompanyBusiness } from "@/lib/earning-report/web/company-business-content";
+import { selectFlow } from "@/packages/web/src/model/business-flow-model";
+import { resolveCompanyBusiness } from "@/packages/web/src/model/company-business-content";
 import { BusinessFlow } from "./BusinessFlow";
 
 export function BusinessOutlook({ ticker }: { ticker: string }) {

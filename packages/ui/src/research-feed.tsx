@@ -3,11 +3,11 @@ import { useDataRevision } from "@/packages/client/src/refresh";
 
 import { apiFetch } from "@/packages/client/src/platform";
 
-import Link from "@/packages/ui/src/navigation";
+import Link from "@/packages/web/src/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ArrowLeft, ArrowUpRight, ChevronDown } from "lucide-react";
-import { ReportContentRenderer } from "@/components/earning-report/report-blocks/ReportContentRenderer";
-import { CompanyLogo } from "@/app/company-logo";
+import { ReportContentRenderer } from "@/packages/web/src/report/report-blocks/ReportContentRenderer";
+import { CompanyLogo } from "@/packages/web/src/company-logo";
 import { useLanguage } from "@/app/language-provider";
 import type { ResearchFeed as Feed, ResearchReport } from "@/shared/analysis-contract/research";
 import { RESEARCH_REPORT_SCHEMA } from "@/shared/analysis-runtime/research-schema";

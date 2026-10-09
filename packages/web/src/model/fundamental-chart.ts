@@ -1,7 +1,7 @@
 import {
   FUNDAMENTAL_CHART_MAX_AXES,
   FUNDAMENTAL_CHART_MAX_SERIES,
-} from "../../../shared/analysis-contract/fundamentals.ts";
+} from "../../../../shared/analysis-contract/fundamentals.ts";
 import type {
   FundamentalChartMark,
   FundamentalMetricKey,
@@ -11,7 +11,7 @@ import type {
 import type {
   PublicFundamentalPeriod,
   PublicFundamentalSeries,
-} from "../../../shared/analysis-contract/fundamentals.ts";
+} from "../../../../shared/analysis-contract/fundamentals.ts";
 
 export const FUNDAMENTAL_CHART_SPEC_VERSION = "fundamental-chart.v1";
 // Defined in the contract so the Pipeline enforces the same ceilings; re-exported so every

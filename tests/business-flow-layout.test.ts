@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { enrichDisclosedRevenue } from "../lib/earning-report/web/company-revenue-disclosures";
-import { financialGraph } from "../lib/earning-report/web/business-flow-sankey";
-import { compactFlowValue, estimateTextWidth, INFOGRAPHIC, layoutInfographic, type InfographicLayout, type PlacedNode } from "../lib/earning-report/web/business-flow-layout";
+import { enrichDisclosedRevenue } from "../packages/web/src/model/company-revenue-disclosures";
+import { financialGraph } from "../packages/web/src/model/business-flow-sankey";
+import { compactFlowValue, estimateTextWidth, INFOGRAPHIC, layoutInfographic, type InfographicLayout, type PlacedNode } from "../packages/web/src/model/business-flow-layout";
 import { businessFlowFixture } from "./fixtures/business-flow-fixture";
 
 const latest = [...businessFlowFixture.quarters].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd))[0];

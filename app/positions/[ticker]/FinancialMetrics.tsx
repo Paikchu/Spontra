@@ -4,12 +4,12 @@ import { useDataRevision } from "@/packages/client/src/refresh";
 import { apiFetch } from "@/packages/client/src/platform";
 
 import { useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/packages/web/src/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Skeleton } from "@/packages/web/src/ui/skeleton";
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
-import { FundamentalChartRenderer } from "@/components/earning-report/fundamentals/FundamentalChart";
+import { FundamentalChartRenderer } from "@/packages/web/src/report/fundamentals/FundamentalChart";
 import type { PublicFundamentalsResponse } from "@/shared/analysis-contract/fundamentals";
 
 import { formatStockFundamentalValue as formatValue } from "@/lib/stock-detail-format";

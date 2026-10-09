@@ -1,12 +1,12 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/packages/web/src/ui/button";
 import type { PublicFilingDetail } from "@/shared/analysis-contract/filings";
-import { filingPresentation } from "@/packages/client/src/report";
-import { SecReportDocument } from "@/app/analysis/stocks/[ticker]/sec/[accession]/SecReportDocument";
+import { filingPresentation } from "@/packages/web/src/report-client";
+import { SecReportDocument } from "@/packages/web/src/sec-report/SecReportDocument";
 import "katex/dist/katex.min.css";
-import "@/app/analysis/earning-report.css";
-import "@/components/earning-report/report-blocks/report-content.css";
-import "@/components/earning-report/figures/figures.css";
+import "@/packages/web/src/styles/earning-report.css";
+import "@/packages/web/src/report/report-blocks/report-content.css";
+import "@/packages/web/src/report/figures/figures.css";
 
 /**
  * The full published report, read in place: the same document the report page renders, inside a

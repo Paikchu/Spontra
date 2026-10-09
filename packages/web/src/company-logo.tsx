@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { cachedCompanyLogo, loadCompanyLogo } from "@/lib/company-logo-cache";
+import { cachedCompanyLogo, loadCompanyLogo } from "@/packages/web/src/company-logo-cache";
 
 export function CompanyLogo({ symbol, size = "sm" }: { symbol: string; size?: "sm" | "lg" }) {
   const [image, setImage] = useState<{ symbol: string; src: string } | null>(null);

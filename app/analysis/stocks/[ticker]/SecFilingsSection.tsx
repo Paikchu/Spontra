@@ -5,15 +5,15 @@ import { apiFetch } from "@/packages/client/src/platform";
 
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/packages/web/src/ui/button";
+import { Skeleton } from "@/packages/web/src/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Empty, EmptyHeader, EmptyDescription } from "@/components/ui/empty";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { SecEventCategory } from "@/shared/analysis-contract/report.ts";
-import { formatSecMetricLabel, formatSecMetricValue } from "@/lib/earning-report/web/sec-metric-format.ts";
-import { formatFilingPeriodLabel } from "@/lib/earning-report/web/filing-period-label.ts";
+import { formatSecMetricLabel, formatSecMetricValue } from "@/packages/web/src/model/sec-metric-format.ts";
+import { formatFilingPeriodLabel } from "@/packages/web/src/model/filing-period-label.ts";
 import type { PublicSecFiling } from "@/shared/analysis-contract/filings.ts";
 
 

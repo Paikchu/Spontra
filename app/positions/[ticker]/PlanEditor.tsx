@@ -8,8 +8,8 @@ import { useEffect, useRef, useState } from "react";
 import type { HoldingPlanRecord } from "@/lib/holding-plan-store";
 import type { PlanAction } from "@/lib/holding-plan";
 
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Button } from "@/packages/web/src/ui/button";
+import { Input } from "@/packages/web/src/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";

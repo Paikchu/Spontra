@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { SecReportDocument } from "../app/analysis/stocks/[ticker]/sec/[accession]/SecReportDocument";
-import { SecReportNavigator } from "../app/analysis/stocks/[ticker]/sec/[accession]/SecReportNavigator";
+import { SecReportDocument } from "../packages/web/src/sec-report/SecReportDocument";
+import { SecReportNavigator } from "../packages/web/src/sec-report/SecReportNavigator";
 import type { SecFilingWithSummary } from "../shared/analysis-contract/report";
 import { readerFilingFixture } from "./fixtures/sec-reader-fixture.ts";
 
@@ -109,7 +109,7 @@ test("reader report preserves cash definitions and collapsed details without the
 });
 
 test('chart displays ratios as percentages and preserves gaps between observation dates', async () => {
-  const { SecComposedSection } = await import('../components/earning-report/report-blocks/SecComposedSection');
+  const { SecComposedSection } = await import('../packages/web/src/report/report-blocks/SecComposedSection');
   const report = { keyMetrics: [] } as unknown as import('../shared/analysis-contract/report').PublishedSecReport;
   const html = renderToStaticMarkup(<SecComposedSection report={report} section={{ id: 'chart', title: '毛利率', layout: 'flow', blocks: [{ id: 'margin', type: 'sec_chart', title: '毛利率', mark: 'line', trend: { metricKey: 'gross_margin', unit: 'ratio', basis: 'gaap', periodScope: 'quarter', points: [{ date: '2025-01-01', value: 0.25, accession: 'a' }, { date: '2025-04-01', value: 0.5, accession: 'b' }, { date: '2026-01-01', value: 0.6, accession: 'c' }] } }] }} />);
   assert.match(html, /report-content-chart-label[^>]*>25%<\/span>/);

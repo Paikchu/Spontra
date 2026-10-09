@@ -2,11 +2,11 @@
 
 import { useLanguage } from "@/app/language-provider";
 
-import { CompanyLogo } from "./company-logo";
+import { CompanyLogo } from "../packages/web/src/company-logo";
 import { Switch } from "@/components/ui/switch";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/packages/web/src/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Separator } from "@/components/ui/separator";
+import { Separator } from "@/packages/web/src/ui/separator";
 import { InfoIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 

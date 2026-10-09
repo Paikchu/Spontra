@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { formatFilingPeriodLabel } from '../lib/earning-report/web/filing-period-label.ts';
+import { formatFilingPeriodLabel } from '../packages/web/src/model/filing-period-label.ts';
 import type { PublicSecFiling } from '../shared/analysis-contract/filings.ts';
 const filing = { form: '10-Q', reportDate: '2026-08-31', fiscalPeriod: { fiscalYear: 2027, fiscalPeriod: 'Q1', periodEnd: '2026-08-31' } } as PublicSecFiling;
 test('uses SEC fiscal focus, and distinguishes annual reports from Q4', () => {

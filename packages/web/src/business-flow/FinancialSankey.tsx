@@ -1,10 +1,10 @@
 "use client";
 import { useMemo, useState, type KeyboardEvent } from "react";
 import type { BusinessFlowQuarter, FlowMetric } from "@/shared/analysis-contract/business-flow";
-import { compareAmount, compareFlowAmounts, formatFlowValue, numeric } from "@/lib/earning-report/web/business-flow-model";
-import { financialGraph, hasSignedFigures, metricLabels, type FinancialGraph } from "@/lib/earning-report/web/business-flow-sankey";
-import { compactFlowValue, estimateTextWidth, layoutInfographic, type PlacedNode } from "@/lib/earning-report/web/business-flow-layout";
-import { compareRevenueNode } from "@/lib/earning-report/web/revenue-tree";
+import { compareAmount, compareFlowAmounts, formatFlowValue, numeric } from "@/packages/web/src/model/business-flow-model";
+import { financialGraph, hasSignedFigures, metricLabels, type FinancialGraph } from "@/packages/web/src/model/business-flow-sankey";
+import { compactFlowValue, estimateTextWidth, layoutInfographic, type PlacedNode } from "@/packages/web/src/model/business-flow-layout";
+import { compareRevenueNode } from "@/packages/web/src/model/revenue-tree";
 
 const ratioNames: Partial<Record<FlowMetric, string>> = { gross: "毛利率", operating: "营业利润率", pretax: "税前利润率", net: "净利率" };
 

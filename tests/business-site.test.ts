@@ -56,18 +56,18 @@ test("public responses carry security headers and the independent asset shell",a
 });
 
 test("standalone represents expense reversals as sources and does not guess issuer CIK",async()=>{
- const {financialGraph}=await import("../lib/earning-report/web/business-flow-sankey");
+ const {financialGraph}=await import("../packages/web/src/model/business-flow-sankey");
  const base=structuredClone(businessFlowFixture.quarters[0]);base.incomeModel="direct_operating";base.figures.operatingExpenses={...base.figures.research!,value:"49404"};
  base.expenseComponents=[{id:"refund",name:"Expense reversal",group:"direct",amount:{...base.figures.research!,value:"-100"}},{id:"costs",name:"Other actual costs",group:"direct",amount:{...base.figures.research!,value:"49504"}}];
  base.otherComponents=[{id:"netOther",name:"Signed other income",amount:{...base.figures.other!}}];
- const {reconcileQuarter}=await import("../lib/earning-report/web/business-flow-model");assert.ok(reconcileQuarter(base).every(row=>row.status==="balanced"));
+ const {reconcileQuarter}=await import("../packages/web/src/model/business-flow-model");assert.ok(reconcileQuarter(base).every(row=>row.status==="balanced"));
  const positive=structuredClone(base);positive.expenseComponents![0].amount.value="100";positive.expenseComponents![1].amount.value="49304";assert.ok(financialGraph(positive).links.length>0);
  const graph=financialGraph(base);assert.ok(graph.links.length>0);assert.equal(graph.nodes.find(n=>n.name==="expense:refund")?.amount?.value,"-100");assert.equal(graph.links.filter(l=>l.source==="expense:refund").reduce((sum,l)=>sum+l.value,0),100);
- const fs=await import("node:fs/promises");const model=await fs.readFile(new URL("../lib/earning-report/web/business-flow-model.ts",import.meta.url),"utf8");assert.ok(!model.includes("sourceAccession.slice(0, 10)"));assert.match(model,/sec\.gov\/edgar\/search/);
+ const fs=await import("node:fs/promises");const model=await fs.readFile(new URL("../packages/web/src/model/business-flow-model.ts",import.meta.url),"utf8");assert.ok(!model.includes("sourceAccession.slice(0, 10)"));assert.match(model,/sec\.gov\/edgar\/search/);
 });
 
 test("public business reading adds sourced context without altering financial amounts or periods",async()=>{
- const {withBusinessDescriptions}=await import("../apps/business-site/src/business-description");const {resolveCompanyBusiness}=await import("../lib/earning-report/web/company-business-content");
+ const {withBusinessDescriptions}=await import("../apps/business-site/src/business-description");const {resolveCompanyBusiness}=await import("../packages/web/src/model/company-business-content");
  const original=structuredClone(businessFlowFixture);original.ticker="ORCL";original.quarters[0].segments[0].id="cloud";const before=JSON.stringify(original.quarters[0].figures);const enhanced=withBusinessDescriptions(original,resolveCompanyBusiness("ORCL"));
  assert.equal(JSON.stringify(enhanced.quarters[0].figures),before);assert.equal(enhanced.quarters[0].periodEnd,original.quarters[0].periodEnd);assert.match(enhanced.quarters[0].segments[0].description,/2026-06-10/);assert.ok(enhanced.quarters[0].segments[0].products.includes("云应用"));assert.ok(enhanced.quarters[0].sources.some(source=>source.id==="orcl-fy26"));assert.ok(!original.quarters[0].sources.some(source=>source.id==="orcl-fy26"));assert.equal(withBusinessDescriptions(original,null),original);
 });

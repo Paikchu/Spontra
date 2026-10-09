@@ -1,14 +1,14 @@
-import { SidebarProvider } from "@/components/ui/sidebar";
+import { SidebarProvider } from "@/packages/web/src/ui/sidebar";
 import { StrictMode, useCallback, useEffect, useState, Component, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
-import { resolveCompanyBusiness } from "@/lib/earning-report/web/company-business-content";
+import { resolveCompanyBusiness } from "@/packages/web/src/model/company-business-content";
 import type { PublicBusinessFlow } from "@/shared/analysis-contract/business-flow";
 import type { PublicCapitalStructure } from "@/shared/analysis-contract/capital-structure";
 import type { FindingsPublication } from "@/shared/analysis-contract/findings";
 import type { EventsPublication } from "@/shared/analysis-contract/events";
 import type { PublicFilingDigestPage } from "@/shared/analysis-contract/filings";
 import type { FindingFundamentals } from "@/shared/analysis-runtime/findings";
-import "@/app/analysis/stocks/[ticker]/business-flow.css";
+import "@/packages/web/src/business-flow/business-flow.css";
 import "./style.css";
 import { withBusinessDescriptions } from "./business-description";
 import { BusinessMap } from "./BusinessMap";

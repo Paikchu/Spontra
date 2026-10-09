@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import "./earning-report.css";
+import "../../packages/web/src/styles/earning-report.css";
 
 export const metadata: Metadata = {
   title: "公司业务分析 · Spontra",

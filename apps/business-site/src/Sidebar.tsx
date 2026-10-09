@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, type ReactNode, type UIEvent } from "react";
-import { Button } from "@/components/ui/button";
-import { Sidebar, SidebarHeader, SidebarContent, SidebarTrigger } from "@/components/ui/sidebar";
+import { Button } from "@/packages/web/src/ui/button";
+import { Sidebar, SidebarHeader, SidebarContent, SidebarTrigger } from "@/packages/web/src/ui/sidebar";
 import { CompanyMark } from "./CompanyMark";
 
 export function ThemeToggle({ light, onToggle }: { light: boolean; onToggle: () => void }) {

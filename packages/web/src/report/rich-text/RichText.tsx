@@ -1,6 +1,6 @@
 import { Fragment } from "react";
 
-import { parseRichText, type BlockNode, type InlineNode } from "@/lib/earning-report/web/rich-text.ts";
+import { parseRichText, type BlockNode, type InlineNode } from "@/packages/web/src/model/rich-text.ts";
 
 /**
  * Renders model-written prose. The parser hands back an AST and this builds React elements from it,
