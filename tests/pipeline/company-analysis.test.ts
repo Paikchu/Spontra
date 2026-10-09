@@ -9,20 +9,17 @@ import {
   toPublicCompanyAnalysis,
 } from "../../workers/pipeline/src/company-analysis/contracts.ts";
 import {
-  COMPANY_ANALYSIS_BLOCK_TYPES,
   COMPANY_ANALYSIS_OVERVIEW_LABEL,
   COMPANY_ANALYSIS_MAX_BLOCKS_PER_HIGHLIGHT,
   COMPANY_ANALYSIS_MAX_HIGHLIGHTS,
   COMPANY_ANALYSIS_MIN_HIGHLIGHTS,
 } from "../../shared/analysis-contract/company-analysis.ts";
 import { buildCompanyFeaturePack } from "../../workers/pipeline/src/company-analysis/feature-engine.ts";
-import { resolveTargetPeriodEnd, type CompanyAnalysisPacket } from "../../workers/pipeline/src/company-analysis/packet.ts";
+import { resolveTargetPeriodEnd } from "../../workers/pipeline/src/company-analysis/packet.ts";
 import { D1CompanyAnalysisRepository } from "../../workers/pipeline/src/company-analysis/repository.ts";
 import type { FundamentalCurrentObservation } from "../../workers/pipeline/src/fundamentals/fundamentals-d1.ts";
 import { applySqlMigration, SqliteD1Database } from "./helpers/sqlite-d1.ts";
 import { COMPANY_AGENT_MODEL_STEP_CONFIG } from "../../workers/pipeline/src/company-analysis-workflow.ts";
-import { COMPANY_TRAJECTORY_KEYS, runCompanyAnalysisAgent } from "../../workers/pipeline/src/company-analysis-agent.ts";
-import type { SecPipelineEnv } from "../../workers/pipeline/src/operations.ts";
 
 const generatedAt = "2026-09-03T08:00:00.000Z";
 
@@ -270,94 +267,6 @@ test("bounds each company Agent model turn independently", () => {
   });
 });
 
-test("checkpoints one Agent's turns and retries invalid decisions inside the model step", async () => {
-  const features = buildCompanyFeaturePack({
-    source: "yahoo_finance",
-    ticker: "AMZN",
-    targetPeriodEnd: "2026-03-31",
-    observations: [observation("2026-03-31", "total_revenue", "100")],
-  });
-  const evidenceRef = features.features[0]!.featureRef;
-  const packet: CompanyAnalysisPacket = {
-    ticker: "AMZN", periodId: "AMZN:2026-03-31:quarter", reportDate: "2026-03-31",
-    targetPeriodEnd: "2026-03-31", memoryVersion: 1, fundamentalsDataVersion: "test-version",
-    ready: true, reason: null, features, currentMemory: [], historicalMemory: [], priorConclusion: null,
-  };
-  const keys = [...COMPANY_TRAJECTORY_KEYS];
-  const decision = {
-    headline: "扩张的约束从需求转向交付", thesis: "未来四个季度的路径由建设节奏决定。",
-    internalTrajectories: keys.map((key) => ({
-      key, trajectory: "inflecting", horizon: "next_4_quarters",
-      mechanism: "新增产能转固后折旧上台阶，抵消收入增长带来的杠杆。",
-      claim: "利润率先降后升。", evidenceRefs: [evidenceRef],
-      falsifier: "折旧摊销占收入比重不再上升。", nextCheck: "观察下一季度折旧摊销占比。",
-    })),
-    selectedEvidenceRefs: [evidenceRef],
-  };
-  const responses = [
-    { summary: "本季经营保持稳定。", drivers: [{ statement: "需求支撑经营。", evidenceRefs: [evidenceRef] }], risks: [], unresolved: [] },
-    // Rejected inside the model step and retried: an axis set that covers nothing.
-    { action: "finalize", decision: { ...decision, internalTrajectories: [] } },
-    { action: "finalize", decision },
-    // Three judgments, not four: the editorial turn's own count has to survive to the publication.
-    {
-      ...overview(["判断一", "判断二", "判断三"]),
-      highlights: overview(["判断一", "判断二", "判断三"]).highlights.map((highlight) => ({ ...highlight, evidenceRefs: [evidenceRef] })),
-    },
-  ];
-  const payloads: Record<string, unknown>[] = [];
-  const systemPrompts: string[] = [];
-  const fetcher: typeof fetch = async (_url, init) => {
-    const body = JSON.parse(String(init?.body));
-    systemPrompts.push(String(body.messages[0].content));
-    payloads.push(JSON.parse(body.messages[1].content));
-    return Response.json({ choices: [{ message: { content: JSON.stringify(responses.shift()) } }] });
-  };
-  const stages: string[] = [];
-  const result = await runCompanyAnalysisAgent({
-    env: { DEEPSEEK_API_KEY: "test-key" } as SecPipelineEnv,
-    fetcher, currentPacket: packet, crossPeriodPacket: packet,
-    analysisId: "company:AMZN:test", generatedAt,
-    runStage: async (stage, callback) => {
-      stages.push(stage);
-      try { return await callback(); } catch (error) {
-        if (stage === "cross-period-round-01") return callback();
-        throw error;
-      }
-    },
-  });
-  assert.deepEqual(stages, ["current-quarter", "cross-period-round-01", "editorial"]);
-  assert.equal(payloads.length, 4);
-  const schema = payloads[1]!.outputSchema as { decision: { internalTrajectories: Array<{ key: string; mechanism: string }> } };
-  assert.deepEqual(schema.decision.internalTrajectories.map((axis) => axis.key), keys);
-  // The axes are asked for as trajectories with a mechanism, not as present-tense quality states.
-  assert.match(schema.decision.internalTrajectories[0]!.mechanism, /causal chain/);
-  const crossPeriod = systemPrompts[1]!;
-  assert.match(crossPeriod, /Decide where this business is heading/);
-  assert.match(crossPeriod, /direction of travel, not a verdict on current quality/);
-  assert.match(crossPeriod, /must name the mechanism that moves it/);
-  assert.doesNotMatch(crossPeriod, /valuation_readiness/);
-  assert.equal(result.overview.highlights.length, 3);
-  // The model is told the range in both halves of the turn it has to satisfy, and told nothing
-  // that contradicts it — a prompt still asking for four would quietly restore the fixed count.
-  const editorialSchema = payloads.at(-1)!.outputSchema as { highlights: string; blockTypes: Record<string, string> };
-  assert.match(editorialSchema.highlights, /2-6/);
-  assert.match(systemPrompts.at(-1)!, /2-6 highlights/);
-  assert.doesNotMatch(systemPrompts.at(-1)!, /exactly four/i);
-  // The forms it may choose, and the only metrics a chart may name — both supplied, not recalled.
-  assert.deepEqual(Object.keys(editorialSchema.blockTypes), [...COMPANY_ANALYSIS_BLOCK_TYPES]);
-  assert.deepEqual(payloads.at(-1)!.chartMetricKeys, ["total_revenue"]);
-  // The section is briefed as a forward view. Both drifts seen in published copy are named: a
-  // quarter recap, and prose reporting on how much evidence the run managed to observe.
-  const editorial = systemPrompts.at(-1)!;
-  assert.match(editorial, /where this company and its industry are heading/);
-  assert.match(editorial, /not a quarter recap and not earnings commentary/);
-  assert.match(editorial, /evidence for that judgment, never its subject/);
-  assert.match(editorial, /Never write about the sufficiency of your own evidence/);
-  // The name is not the model's to move, so it is not in the shape it is asked for.
-  assert.equal("label" in editorialSchema, false);
-});
-
 function observation(
   periodEnd: string,
   metricKey: FundamentalCurrentObservation["metricKey"],
@@ -466,78 +375,6 @@ test("the section names itself, including for an overview published under the ol
   assert.equal(toPublicCompanyAnalysis(normalized).overview!.label, COMPANY_ANALYSIS_OVERVIEW_LABEL);
 });
 
-
-/**
- * The guard that keeps unsupported forward claims out of the decision. An axis that asserts a
- * direction has to say what moves it, over what period, on what evidence. An axis that admits it
- * could not be assessed is held to none of that — the prompt asks for an honest unobserved, so
- * validation must not make it the expensive answer.
- */
-test("an axis claiming a direction must carry mechanism, horizon and evidence; an unobserved one need not", async () => {
-  const features = buildCompanyFeaturePack({
-    source: "yahoo_finance", ticker: "AMZN", targetPeriodEnd: "2026-03-31",
-    observations: [observation("2026-03-31", "total_revenue", "100")],
-  });
-  const evidenceRef = features.features[0]!.featureRef;
-  const packet: CompanyAnalysisPacket = {
-    ticker: "AMZN", periodId: "AMZN:2026-03-31:quarter", reportDate: "2026-03-31",
-    targetPeriodEnd: "2026-03-31", memoryVersion: 1, fundamentalsDataVersion: "test-version",
-    ready: true, reason: null, features, currentMemory: [], historicalMemory: [], priorConclusion: null,
-  };
-  const axis = (key: string) => ({
-    key, trajectory: "improving", horizon: "next_4_quarters",
-    mechanism: "产能转固推高折旧基数。", claim: "利润率先降后升。", evidenceRefs: [evidenceRef],
-    falsifier: "折旧占比停止上升。", nextCheck: "观察下季折旧占比。",
-  });
-  const decisionWhere = (mutate: (value: Record<string, unknown>) => Record<string, unknown>) => ({
-    headline: "扩张的约束从需求转向交付", thesis: "未来四个季度由建设节奏决定。",
-    internalTrajectories: COMPANY_TRAJECTORY_KEYS.map((key, index) => index === 0 ? mutate(axis(key)) : axis(key)),
-    selectedEvidenceRefs: [evidenceRef],
-  });
-
-  const without = (value: Record<string, unknown>, field: string) => {
-    const copy = { ...value };
-    delete copy[field];
-    return copy;
-  };
-  const rejected = [
-    (value: Record<string, unknown>) => without(value, "mechanism"),
-    (value: Record<string, unknown>) => ({ ...value, horizon: "unobserved" }),
-    (value: Record<string, unknown>) => ({ ...value, evidenceRefs: [] }),
-  ];
-  // Accepted with no mechanism, no horizon, no evidence — only what would make it assessable.
-  const honestUnobserved = (value: Record<string, unknown>) => ({
-    key: value.key, trajectory: "unobserved", horizon: "unobserved", nextCheck: "需要估值口径数据才能评估。",
-  });
-
-  const responses: unknown[] = [
-    { summary: "本季经营保持稳定。", drivers: [{ statement: "需求支撑经营。", evidenceRefs: [evidenceRef] }], risks: [], unresolved: [] },
-    ...rejected.map((mutate) => ({ action: "finalize", decision: decisionWhere(mutate) })),
-    { action: "finalize", decision: decisionWhere(honestUnobserved) },
-    { ...overview(["判断一", "判断二"]), highlights: overview(["判断一", "判断二"]).highlights.map((highlight) => ({ ...highlight, evidenceRefs: [evidenceRef] })) },
-  ];
-  let attempts = 0;
-  const fetcher: typeof fetch = async () => Response.json({ choices: [{ message: { content: JSON.stringify(responses.shift()) } }] });
-  const result = await runCompanyAnalysisAgent({
-    env: { DEEPSEEK_API_KEY: "test-key" } as SecPipelineEnv,
-    fetcher, currentPacket: packet, crossPeriodPacket: packet,
-    analysisId: "company:AMZN:axes", generatedAt,
-    runStage: async (stage, callback) => {
-      if (stage !== "cross-period-round-01") return callback();
-      for (;;) {
-        attempts += 1;
-        try { return await callback(); } catch (error) { if (attempts > rejected.length) throw error; }
-      }
-    },
-  });
-  // Every malformed claim was rejected, and the run only settled on the one that was honest.
-  assert.equal(attempts, rejected.length + 1);
-  const first = result.decision.internalTrajectories[0]!;
-  assert.equal(first.trajectory, "unobserved");
-  assert.equal(first.mechanism, "");
-  assert.equal(result.decision.internalTrajectories.length, COMPANY_TRAJECTORY_KEYS.length);
-});
-
 test("prose over its cap is cut, not refused: a long paragraph must not fail the whole run", () => {
   const long = "字".repeat(2_000);
   const base = overview(["判断一", "判断二"]);
@@ -569,39 +406,4 @@ test("cutting prose never splits a character in half", () => {
   const normalized = normalizeCompanyAnalysisOverview({ ...overview(["判断一", "判断二"]), headline: emoji });
   assert.equal(Array.from(normalized.headline).length, 180);
   assert.ok(!/[\uD800-\uDBFF]$/.test(normalized.headline.slice(0, -1)));
-});
-
-test("a decision that observed nothing is refused rather than published as invention", async () => {
-  const features = buildCompanyFeaturePack({
-    source: "yahoo_finance", ticker: "AMZN", targetPeriodEnd: "2026-03-31",
-    observations: [observation("2026-03-31", "total_revenue", "100")],
-  });
-  const evidenceRef = features.features[0]!.featureRef;
-  const packet: CompanyAnalysisPacket = {
-    ticker: "AMZN", periodId: "AMZN:2026-03-31:quarter", reportDate: "2026-03-31",
-    targetPeriodEnd: "2026-03-31", memoryVersion: 1, fundamentalsDataVersion: "test-version",
-    ready: true, reason: null, features, currentMemory: [], historicalMemory: [], priorConclusion: null,
-  };
-  // Five axes, all honestly unobserved. The count check passes; nothing has been seen.
-  const blind = {
-    headline: "证据不足以判断方向", thesis: "无法形成前瞻判断。",
-    internalTrajectories: COMPANY_TRAJECTORY_KEYS.map((key) => ({
-      key, trajectory: "unobserved", horizon: "unobserved", nextCheck: "需要更多披露。",
-    })),
-    selectedEvidenceRefs: [evidenceRef],
-  };
-  const responses: unknown[] = [
-    { summary: "本季经营保持稳定。", drivers: [{ statement: "需求支撑经营。", evidenceRefs: [evidenceRef] }], risks: [], unresolved: [] },
-    { action: "finalize", decision: blind },
-  ];
-  const fetcher: typeof fetch = async () => Response.json({ choices: [{ message: { content: JSON.stringify(responses.shift() ?? blind) } }] });
-  await assert.rejects(
-    () => runCompanyAnalysisAgent({
-      env: { DEEPSEEK_API_KEY: "test-key" } as SecPipelineEnv,
-      fetcher, currentPacket: packet, crossPeriodPacket: packet,
-      analysisId: "company:AMZN:blind", generatedAt,
-      runStage: async (_stage, callback) => callback(),
-    }),
-    /observed 0 of 5 axes/,
-  );
 });

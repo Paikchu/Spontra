@@ -7,7 +7,7 @@ import { assertTrackedTicker, requireDb, trackedTickersFor } from "../core.ts";
 import { readCompletePublicationForTicker } from "../financial-data/publication.ts";
 import { callWorkerSecModel, type SecPipelineEnv } from "../operations.ts";
 import { AnalysisRequestError } from "../read-api/contract-support/errors.ts";
-import { researchSearch } from "../research/runtime.ts";
+import { researchSearch } from "../web-search/research-search.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import type { WorkflowStepLike } from "../workflow-core.ts";
 import { AiRunStore, quietly } from "../ai-runs/store.ts";

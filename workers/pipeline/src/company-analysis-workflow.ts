@@ -11,7 +11,7 @@ import { assertTrackedTicker, requireDb, type CompanyAnalysisWorkflowParams } fr
 import { runBusinessModelAgent } from "./company-analysis/business-agent.ts";
 import { createBusinessResearchTools } from "./company-analysis/business-tools.ts";
 import { findSecurity } from "./catalog/security-directory.ts";
-import { researchSearch } from "./research/runtime.ts";
+import { researchSearch } from "./web-search/research-search.ts";
 import { callWorkerSecModel } from "./operations.ts";
 import type { SecPipelineEnv } from "./operations.ts";
 import { SEC_WORKFLOW_STEP_TIMEOUT } from "./retry-policy.ts";

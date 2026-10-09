@@ -9,8 +9,6 @@ import { handleFundamentalsRefreshRequest } from "./fundamentals.ts";
 import { runFundamentalsStalenessSweep } from "./fundamentals-sweep.ts";
 import type { SecPipelineEnv } from "./operations.ts";
 import { handleAnalysisReadRequest, isAnalysisReadPath } from "./read-api/router.ts";
-import { handleResearchRequest } from "./research/api.ts";
-import { runResearchMonitor } from "./research/monitor.ts";
 import { runBusinessExplainerSweep } from "./business-explainer/workflow.ts";
 import { runGuidanceSweep } from "./guidance/workflow.ts";
 import { runFindingsSweep } from "./findings/workflow.ts";
@@ -79,7 +77,6 @@ const worker = {
      * thing standing between a read path and a workflow trigger if a route is ever mistyped.
      */
     if (isAnalysisReadPath(path)) return handleAnalysisReadRequest(request, env);
-    if (path.startsWith("/research/")) return handleResearchRequest(request, env);
     if (path.startsWith("/sec-financials/refresh/")) return handleBusinessFlowRefresh(request, env);
     if (path.startsWith("/fundamentals/refresh/")) return handleFundamentalsRefreshRequest(request, env);
     if (path.startsWith("/company-analysis/")) return handleCompanyAnalysisRequest(request, env);
@@ -98,10 +95,6 @@ const worker = {
       }
       const result = env.DB ? await runDataOnlySweep({DB:env.DB,SEC_FILINGS:env.SEC_FILINGS,SEC_USER_AGENT:env.SEC_USER_AGENT,SEC_DATA_TICKERS:env.SEC_DATA_TICKERS,SEC_TRACKED_TICKERS:env.SEC_TRACKED_TICKERS,SEC_DATA_COLLECTION_ENABLED:env.SEC_DATA_COLLECTION_ENABLED}) : {enabled:false,published:false,reasons:[],modelCalls:0};
       console.log(JSON.stringify({event:"financial-data",...result}));
-      return;
-    }
-    if (_controller.cron === "* * * * *") {
-      console.log(JSON.stringify({ event: "research-monitor", ...await runResearchMonitor(env) }));
       return;
     }
     const results = await Promise.allSettled([

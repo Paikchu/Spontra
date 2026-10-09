@@ -9,7 +9,7 @@ import { assertTrackedTicker, requireDb, trackedTickersFor } from "../core.ts";
 import { readCompletePublicationForTicker } from "../financial-data/publication.ts";
 import { callWorkerSecModel, SecModelHttpError, type SecPipelineEnv } from "../operations.ts";
 import { AnalysisRequestError } from "../read-api/contract-support/errors.ts";
-import { researchSearch } from "../research/runtime.ts";
+import { researchSearch } from "../web-search/research-search.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import { fiscalPeriodKey, readFiscalPeriod } from "../sec/fiscal-period.ts";
 import type { SecFilingFeed } from "../sec/sec.ts";

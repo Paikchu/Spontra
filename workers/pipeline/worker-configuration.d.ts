@@ -12,7 +12,6 @@ interface __BaseEnv_Env {
 	COMPANY_ANALYSIS_BACKFILL_WORKFLOW: Workflow<Parameters<import("./src/index").CompanyAnalysisBackfillWorkflow['run']>[0]['payload']>;
 	DB?: D1Database;
 	DEEPSEEK_API_KEY?: string;
-	RESEARCH_WORKFLOW?: Workflow<Parameters<import("./src/index").ResearchWorkflow['run']>[0]['payload']>;
 	BUSINESS_EXPLAINER_WORKFLOW?: Workflow<Parameters<import("./src/index").BusinessExplainerWorkflow['run']>[0]['payload']>;
 	FINDINGS_WORKFLOW?: Workflow<Parameters<import("./src/index").FindingsWorkflow['run']>[0]['payload']>;
 }

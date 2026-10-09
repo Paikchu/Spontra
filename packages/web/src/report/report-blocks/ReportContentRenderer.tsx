@@ -6,9 +6,8 @@ import { ReportMarkdown, ReportFormula, safeReportUrl } from "./ReportMarkdown.t
 import { ReportAssetImage } from "./ReportAssetImage.tsx";
 import { ReportMediaGroup } from "./ReportMediaGroup.tsx";
 import { findSecFigure, readableTrend, SecFigureSource, SecFigureView, SecTrendFigure, SecTrendSource } from "../figures/index.ts";
-import type { ResearchSource } from "@/shared/analysis-contract/research.ts";
 
-export type ReportContentContext = { report?: PublishedSecReport; sources?: ResearchSource[]; nodes?: SecNodeResult[]; assets?: SecReaderAsset[]; paragraphLabels?: Record<string, string> };
+export type ReportContentContext = { report?: PublishedSecReport; nodes?: SecNodeResult[]; assets?: SecReaderAsset[]; paragraphLabels?: Record<string, string> };
 type RenderProps = { content: readonly SecReaderContentBlock[]; context: ReportContentContext; surface?: "article" | "chat"; phase?: "draft" | "final"; activeBlockId?: string };
 
 /** A shared, closed registry. Unknown or damaged blocks cannot execute code or break their siblings. */
@@ -75,7 +74,6 @@ function ContentBlock({ block, domId, context, active }: { block: SecReaderConte
       : <figure className="report-content-data-table" data-density={block.density ?? "comfortable"}><figcaption>{block.caption}</figcaption><div className="report-content-table-scroll" tabIndex={0} role="region" aria-label={block.caption}><table><thead><tr>{block.headers.map((header, i) => <th scope="col" data-column-kind={block.columnKinds?.[i] ?? (i === 0 ? "label" : "text")} key={i}>{header}</th>)}</tr></thead><tbody>{block.rows.map((row, i) => <tr key={i}>{row.map((cell, j) => j === 0 && (block.columnKinds?.[j] ?? "label") === "label" ? <th scope="row" data-column-kind="label" key={j}>{cell}</th> : <td data-column-kind={block.columnKinds?.[j] ?? "text"} key={j}>{cell}</td>)}</tr>)}</tbody></table></div></figure>;
     case "callout": return <aside className="report-content-callout" data-tone={block.tone}>{block.title && <strong>{block.title}</strong>}<ReportMarkdown markdown={block.text} /></aside>;
     case "evidence": {
-      if (context.sources) return <ResearchSources ids={block.evidenceIds} sources={context.sources} title={block.title} />;
       const nodes = context.nodes ?? context.report?.publication?.summary.nodes ?? [];
       const evidence = nodes.filter((node) => node.evidenceIds?.some((id) => block.evidenceIds.includes(id))).flatMap((node) => node.evidence)
         .filter((item, index, all) => all.findIndex((other) => other.excerpt === item.excerpt) === index);
@@ -85,7 +83,6 @@ function ContentBlock({ block, domId, context, active }: { block: SecReaderConte
 }
 
 function BlockSource({ block, context }: { block: SecReaderContentBlock; context: ReportContentContext }) {
-  if (context.sources && block.type !== "evidence" && block.evidenceIds.length) return <ResearchSources ids={block.evidenceIds} sources={context.sources} />;
   if (block.type === "figure") {
     const figure = findSecFigure(context.report?.figures, block.figureKey);
     return figure ? <SecFigureSource figure={figure} title={block.title} /> : null;
@@ -93,13 +90,4 @@ function BlockSource({ block, context }: { block: SecReaderContentBlock; context
   if (block.type !== "chart") return null;
   const trend = readableTrend(context.report?.trends?.find((t) => t.metricKey === block.metricKey));
   return trend ? <Fragment><SecTrendSource title={block.title} trend={trend} /></Fragment> : null;
-}
-
-function ResearchSources({ ids, sources, title = "查看依据" }: { ids: string[]; sources: ResearchSource[]; title?: string }) {
-  const selected = sources.filter(source => ids.includes(source.id));
-  return <details className="report-content-source report-content-evidence"><summary>{title} · {selected.length}</summary>
-    {selected.map(source => <blockquote key={source.id}><a href={safeReportUrl(source.url)} target="_blank" rel="noopener noreferrer">{source.title}</a>
-      <p>{source.excerpt.slice(0, 600)}{source.excerpt.length > 600 ? "…" : ""}</p>
-      <footer>发布时间：{source.publishedAt ?? "未提供"} · 检索时间：{source.retrievedAt}</footer></blockquote>)}
-  </details>;
 }

@@ -11,7 +11,6 @@ import { retryDelayForAttempt, SEC_WORKFLOW_STEP_TIMEOUT } from "./retry-policy.
 import worker from "./worker.ts";
 import { executeSecAnalysisWorkflow, type WorkflowStepContextLike, type WorkflowStepLike } from "./workflow-core.ts";
 import { storeWorkflowResult, loadWorkflowResult } from "./workflow-results.ts";
-import { executeResearchWorkflow } from "./research/runtime.ts";
 import { executeBusinessExplainerWorkflow, type BusinessExplainerParams } from "./business-explainer/workflow.ts";
 import { maintenanceAnalysisEnvironment } from "./admin/financial-maintenance-runner.ts";
 import { executeGuidanceWorkflow, type GuidanceWorkflowParams } from "./guidance/workflow.ts";
@@ -75,12 +74,6 @@ export class SecAnalysisWorkflow extends WorkflowEntrypoint<SecPipelineEnv, SecW
 export class MapReads extends WorkerEntrypoint<SecPipelineEnv> {
   fetch(request: Request) {
     return handleBoundReadRequest(request, this.env, BOUND_MAP_READER);
-  }
-}
-
-export class ResearchWorkflow extends WorkflowEntrypoint<SecPipelineEnv, { caseId: string }> {
-  async run(event: WorkflowEvent<{ caseId: string }>, step: WorkflowStep) {
-    return executeResearchWorkflow(event.payload.caseId, durableSteps(step, this.env, event.instanceId), this.env);
   }
 }
 

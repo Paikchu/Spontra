@@ -55,8 +55,6 @@ export type AiWorkflowBinding<P> = {
 
 export type SecPipelineEnv = SecCronEnv & AnalysisReadEnv & {
   TAVILY_API_KEY?: string;
-  RESEARCH_SYNC_KEY?: string;
-  RESEARCH_WORKFLOW?: { create(options: { id: string; params: { caseId: string } }): Promise<unknown>; get(id: string): Promise<{ status(): Promise<{ status: string }> }> };
   BUSINESS_EXPLAINER_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
   GUIDANCE_WORKFLOW?: AiWorkflowBinding<{ ticker: string; accession: string; eventDate: string; manual?: boolean }>;
   FINDINGS_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
