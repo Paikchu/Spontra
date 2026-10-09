@@ -9,10 +9,8 @@ const DAY = 86_400_000;
  * insider sales or an 8-K between two reports reads where it happened. A report tick moves the
  * stage to that quarter; an event tick opens its lens.
  */
-export function Timeline({ points, currentPeriod, focus, now, onReport, onEvent, findingsAt = null }: {
+export function Timeline({ points, currentPeriod, focus, now, onReport, onEvent }: {
   points: TimelinePoint[];
-  /** The report the findings were written from, and how many there are; its tick carries the count. */
-  findingsAt?: { periodEnd: string; count: number; focused: boolean } | null;
   /** The reference date the axis extends to, fixed by the page so a re-render never shifts the track. */
   now: number;
   currentPeriod: string | null;
@@ -43,11 +41,10 @@ export function Timeline({ points, currentPeriod, focus, now, onReport, onEvent,
       {points.map(p => {
         const report = p.kind === "report";
         const active = report ? (reportFocused ? p.id === focus : p.periodEnd === currentPeriod) : p.id === focus;
-        const host = report && findingsAt && p.periodEnd === findingsAt.periodEnd ? findingsAt : null;
-        return <Button variant="unstyled" type="button" key={p.id} className="timeline-point" data-kind={p.kind} data-weight={p.weight} data-class={p.cls} aria-pressed={active || (host?.focused ?? false)}
+        return <Button variant="unstyled" type="button" key={p.id} className="timeline-point" data-kind={p.kind} data-weight={p.weight} data-class={p.cls} aria-pressed={active}
           style={{ left: `${x(p.date)}%`, "--tone": report ? "var(--foreground)" : CLASS_TONE[p.cls!] } as CSSProperties}
-          title={`${p.date} · ${report ? p.title : `${EVENT_CLASS_LABEL[p.cls!]} · ${p.title}`}${host ? ` · ${host.count} 条要点` : ""}`} aria-label={`${p.date} ${p.title}${host ? `，${host.count} 条要点` : ""}`}
-          onClick={() => report ? onReport(p.id, p.periodEnd!) : onEvent(p.id)}>{host && <i className="timeline-findings" aria-hidden="true">{host.count}</i>}</Button>;
+          title={`${p.date} · ${report ? p.title : `${EVENT_CLASS_LABEL[p.cls!]} · ${p.title}`}`} aria-label={`${p.date} ${p.title}`}
+          onClick={() => report ? onReport(p.id, p.periodEnd!) : onEvent(p.id)} />;
       })}
     </div>
   </div>;

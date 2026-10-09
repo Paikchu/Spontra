@@ -4,22 +4,18 @@ import type { CompanyEvent } from "@/shared/analysis-contract/events";
 import type { PublicFilingDigest } from "@/shared/analysis-contract/filings";
 import { EVENT_CLASS_LABEL, eventTitle, shortDate } from "./events-model";
 import { reportTitle, type RailItem, type RailItems } from "./reports-model";
-import type { ReactNode } from "react";
 
 /**
  * The filing timeline, under the findings in the rail: every report and every 8-K or traded Form 4,
  * newest first, one row each. A row in focus opens its lens on the stage. Older rows and untraded
  * Form 4 filings fold away so the current period stays in view.
  */
-export function EventsList({ rail, focus, pendingInsider, onFocus, hostPeriodEnd = null, findings = null }: {
+export function EventsList({ rail, focus, pendingInsider, onFocus }: {
   rail: RailItems;
   /** The focused report accession or event id. */
   focus: string | null;
   pendingInsider: number;
   onFocus: (item: RailItem | null) => void;
-  /** The report period the findings were written from; its row carries them. */
-  hostPeriodEnd?: string | null;
-  findings?: ReactNode;
 }) {
   const [earlier, setEarlier] = useState(false);
   const rows = earlier ? [...rail.recent, ...rail.earlier] : rail.recent;
@@ -30,10 +26,7 @@ export function EventsList({ rail, focus, pendingInsider, onFocus, hostPeriodEnd
     </header>
     <div className="findings-rows" role="radiogroup" aria-label="选择财报或事件以在图中查看">
       {rows.map(item => item.kind === "report"
-        ? <div key={item.id} className="report-group" data-host={findings && item.report.periodEnd === hostPeriodEnd || undefined}>
-            <ReportRow report={item.report} checked={focus === item.id} onClick={() => onFocus(focus === item.id ? null : item)} />
-            {findings && item.report.periodEnd === hostPeriodEnd && findings}
-          </div>
+        ? <ReportRow key={item.id} report={item.report} checked={focus === item.id} onClick={() => onFocus(focus === item.id ? null : item)} />
         : <EventRow key={item.id} event={item.event} checked={focus === item.id} onClick={() => onFocus(focus === item.id ? null : item)} />)}
     </div>
     {(rail.quiet > 0 || pendingInsider > 0) && <p className="events-note">
