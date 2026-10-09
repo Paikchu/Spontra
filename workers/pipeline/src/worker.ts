@@ -14,6 +14,7 @@ import { runResearchMonitor } from "./research/monitor.ts";
 import { runBusinessExplainerSweep } from "./business-explainer/workflow.ts";
 import { runGuidanceSweep } from "./guidance/workflow.ts";
 import { runFindingsSweep } from "./findings/workflow.ts";
+import { runEventsSweep } from "./events/workflow.ts";
 import { handleReportAdminRequest } from "./admin/reports.ts";
 import { handleFinancialAdminRequest } from "./admin/financials.ts";
 import { runFinancialMaintenanceTick } from "./admin/financial-maintenance-runner.ts";
@@ -114,9 +115,11 @@ const worker = {
       runBusinessExplainerSweep(env),
       runGuidanceSweep(env),
       runFindingsSweep(env),
+      // Deterministic: EDGAR's current reports and Form 4 filings for the map's event rail, no model.
+      runEventsSweep(env),
     ]);
-    const [analysis, memory, companyAnalysis, fundamentals, businessFlow, businessExplainer, guidance, findings] = results.map(describeSettled);
-    const payload = JSON.stringify({ event: "sec-workflows", analysis, memory, companyAnalysis, fundamentals, businessFlow, businessExplainer, guidance, findings });
+    const [analysis, memory, companyAnalysis, fundamentals, businessFlow, businessExplainer, guidance, findings, events] = results.map(describeSettled);
+    const payload = JSON.stringify({ event: "sec-workflows", analysis, memory, companyAnalysis, fundamentals, businessFlow, businessExplainer, guidance, findings, events });
     const rejected = results.filter((result): result is PromiseRejectedResult => result.status === "rejected");
     if (!rejected.length) {
       console.log(payload);

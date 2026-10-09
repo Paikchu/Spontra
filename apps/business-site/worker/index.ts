@@ -13,6 +13,8 @@ import {readGuidancePublication} from "@/shared/analysis-runtime/guidance";
 import type {GuidancePublication} from "@/shared/analysis-contract/guidance";
 import {readFindingFundamentals,readFindingsPublication,type FindingFundamentals} from "@/shared/analysis-runtime/findings";
 import type {FindingsPublication} from "@/shared/analysis-contract/findings";
+import {readEventsPublication} from "@/shared/analysis-runtime/events";
+import type {EventsPublication} from "@/shared/analysis-contract/events";
 const PUBLIC_ORIGIN="https://spontra-app.max-zhangyuchen.workers.dev";
 export type SiteEnv={ASSETS:{fetch(request:Request):Promise<Response>};PUBLIC_READ_LIMIT:{limit(options:{key:string}):Promise<{success:boolean}>}};
 export type SiteContext={waitUntil(promise:Promise<unknown>):void};
@@ -83,6 +85,16 @@ export async function loadFindings(ticker:string,fetcher:typeof fetch=fetch):Pro
  }catch{return null;}
 }
 
+/** Filed events (8-K and Form 4), re-validated; unavailable reads as null. */
+export async function loadEvents(ticker:string,fetcher:typeof fetch=fetch):Promise<EventsPublication|null>{
+ try{
+  const response=await fetcher(PUBLIC_ORIGIN+`/api/analysis/v1/companies/${ticker}/events`,{signal:AbortSignal.timeout(8000),headers:{accept:"application/json"}});
+  if(!response.ok)return null;
+  const body=await response.json() as {schemaVersion?:string;status?:string;events?:unknown};
+  return body.schemaVersion==="events-response.v1"&&body.status==="ready"?readEventsPublication(body.events,ticker):null;
+ }catch{return null;}
+}
+
 /** SEC fundamentals series, stripped to the fields findings resolve against; provider and refresh state never pass through. */
 export async function loadFundamentals(ticker:string,fetcher:typeof fetch=fetch):Promise<FindingFundamentals|null>{
  try{
@@ -95,7 +107,7 @@ export async function loadFundamentals(ticker:string,fetcher:typeof fetch=fetch)
 export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,fetcher:typeof fetch=fetch,cache?:Cache):Promise<Response>{
  const url=new URL(request.url);
  if(url.pathname.startsWith("/api/")){
-  const match=url.pathname.match(/^\/api\/business\/v1\/companies\/([A-Z][A-Z0-9.-]{0,11})(\/capital|\/findings|\/fundamentals)?$/);
+  const match=url.pathname.match(/^\/api\/business\/v1\/companies\/([A-Z][A-Z0-9.-]{0,11})(\/capital|\/findings|\/fundamentals|\/events)?$/);
   if(!match||url.search)return json({error:"Not found"},404);
   if(request.method!=="GET")return json({error:"Method not allowed"},405);
   try{if(!env.PUBLIC_READ_LIMIT||!(await env.PUBLIC_READ_LIMIT.limit({key:request.headers.get("cf-connecting-ip")??"anonymous"})).success)return json({error:"Too many requests"},429);}catch{return json({error:"Read service unavailable"},503);}
@@ -105,6 +117,7 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,fetcher
    const supplementary=async<T>(name:string,version:string,load:()=>Promise<T|null>)=>{const body=await load();const response=json({schemaVersion:version,status:body?"ready":"unavailable",[name]:body});if(!body)response.headers.set("cache-control","no-store");if(cache&&body)ctx.waitUntil(cache.put(key,response.clone()));return response;};
    if(match[2]==="/capital")return supplementary("capital","capital-response.v1",()=>loadCapital(match[1],fetcher));
    if(match[2]==="/findings")return supplementary("findings","findings-response.v1",()=>loadFindings(match[1],fetcher));
+   if(match[2]==="/events")return supplementary("events","events-response.v1",()=>loadEvents(match[1],fetcher));
    return supplementary("fundamentals","fundamentals-response.v1",()=>loadFundamentals(match[1],fetcher));
   }
   try{const [flow,explainer,guidance]=await Promise.all([loadPublicFlow(match[1],fetcher),loadExplainer(match[1],fetcher),loadGuidance(match[1],fetcher)]);const response=json({...flow,explainer,guidance});

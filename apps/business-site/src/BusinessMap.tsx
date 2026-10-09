@@ -23,6 +23,11 @@ import type { FindingFundamentals } from "@/shared/analysis-runtime/findings";
 import { anchorNodeNames, anchorPoolKeys, badgesByNode, findingData, verifiedFindings } from "./findings-model";
 import { FindingsList } from "./FindingsList";
 import { LensPanel } from "./LensPanel";
+import type { EventsPublication } from "@/shared/analysis-contract/events";
+import { railEvents, timelinePoints } from "./events-model";
+import { EventsList } from "./EventsList";
+import { EventLens } from "./EventLens";
+import { Timeline } from "./Timeline";
 
 type Item = { key: string; id: string; parent: string | null; depth: number; name: string; value: number | null; slot: number; segment: BusinessSegment };
 
@@ -112,7 +117,7 @@ function Sources({ sources, ids }: { sources: FlowSource[]; ids?: string[] }) {
   return <ul className="sources">{list.map(s => <li key={s.id}><a href={s.url} target="_blank" rel="noopener noreferrer">{s.title}<span aria-hidden="true"> ↗</span></a></li>)}</ul>;
 }
 
-export function BusinessMap({ ticker, tools, flow, business, notice, revenueHistory, explainer = null, guidance = null, capital = null, findings = null, fundamentals = null }: { ticker: string; tools: ReactNode; flow: PublicBusinessFlow; business: CompanyBusinessContent | null; notice: string | null; revenueHistory: RevenueHistory | null; explainer?: BusinessExplainer | null; guidance?: GuidancePublication | null; capital?: PublicCapitalStructure | null; findings?: FindingsPublication | null; fundamentals?: FindingFundamentals | null }) {
+export function BusinessMap({ ticker, tools, flow, business, notice, revenueHistory, explainer = null, guidance = null, capital = null, findings = null, fundamentals = null, events = null }: { ticker: string; tools: ReactNode; flow: PublicBusinessFlow; business: CompanyBusinessContent | null; notice: string | null; revenueHistory: RevenueHistory | null; explainer?: BusinessExplainer | null; guidance?: GuidancePublication | null; capital?: PublicCapitalStructure | null; findings?: FindingsPublication | null; fundamentals?: FindingFundamentals | null; events?: EventsPublication | null }) {
   const quarters = useMemo(() => [...flow.quarters].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd)), [flow]);
   const [period, setPeriod] = useState<string | null>(null);
   const quarter = quarters.find(q => q.id === period) ?? quarters[0];
@@ -129,6 +134,14 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
   const [story, setStory] = useState(false);
   const [split, setSplit] = useState(false);
   const focused = verified.find(f => f.id === focusId) ?? null;
+  // Filed events share the rail with the findings; one of the two is in focus at a time, and the time axis lists both with the reports.
+  const [eventId, setEventId] = useState<string | null>(() => new URLSearchParams(location.search).get("event"));
+  const [now] = useState(() => new Date());
+  const rail = useMemo(() => railEvents(events, quarters, now), [events, quarters, now]);
+  const railIds = useMemo(() => rail ? [...rail.recent, ...rail.earlier].map(e => e.id) : [], [rail]);
+  const focusedEvent = focusId ? null : events?.events.find(e => e.id === eventId) ?? null;
+  const eventIndex = focusedEvent ? railIds.indexOf(focusedEvent.id) : -1;
+  const points = useMemo(() => timelinePoints(quarters, events, 24, now), [quarters, events, now]);
   const pair = focused ? verified.find(f => f.id === focused.pairWith) ?? null : null;
   const focusIndex = focused ? verified.indexOf(focused) : -1;
   const [preview, setPreview] = useState<string | null>(null);
@@ -144,15 +157,16 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
     const url = new URL(location.href);
     if (current) url.searchParams.set("business", current.id); else url.searchParams.delete("business");
     if (focused) url.searchParams.set("finding", focused.id); else url.searchParams.delete("finding");
+    if (focusedEvent) url.searchParams.set("event", focusedEvent.id); else url.searchParams.delete("event");
     if (url.href !== location.href) history.replaceState(history.state, "", url);
-  }, [current, focused]);
+  }, [current, focused, focusedEvent]);
   // A business picked in the chart is brought into view in the list, scrolling only the list (a column or, on narrow screens, a chip row).
   useEffect(() => {
     const option = listRef.current?.querySelector<HTMLElement>('[role=option][aria-selected="true"]');
     if (option) revealInList(option, behavior());
   }, [current?.key]);
   useEffect(() => {
-    const escape = (e: globalThis.KeyboardEvent) => { if (e.key === "Escape" && !(e.target as HTMLElement).closest("input,select")) { setSelected(null); setFocusId(null); setStory(false); } };
+    const escape = (e: globalThis.KeyboardEvent) => { if (e.key === "Escape" && !(e.target as HTMLElement).closest("input,select")) { setSelected(null); setFocusId(null); setEventId(null); setStory(false); } };
     addEventListener("keydown", escape);
     return () => removeEventListener("keydown", escape);
   }, []);
@@ -223,7 +237,8 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
   const badgeFindings = useMemo(() => focused || view !== "profit" ? new Map() : badgesByNode(verified, quarter, items), [focused, view, verified, quarter, items]);
   const badges = useMemo(() => new Map([...badgeFindings].map(([name, f]) => [name, { kind: f.kind, severity: f.severity, title: f.title }])), [badgeFindings]);
   const nodeColor = useCallback((id: string) => { const item = items.find(i => i.id === id); return item ? hue(item.slot) : "var(--biz-0)"; }, [items]);
-  const focusFinding = (id: string | null) => { setFocusId(id); if (!id) { setStory(false); setSplit(false); } };
+  const focusFinding = (id: string | null) => { setFocusId(id); if (id) setEventId(null); else { setStory(false); setSplit(false); } };
+  const focusEvent = (id: string | null) => { setEventId(id); if (id) { setFocusId(null); setStory(false); setSplit(false); } };
   // The business list is a drawer under 全部业务: closed by default once findings share the rail, open while a business is picked.
   const [drawerOpen, setDrawerOpen] = useState<boolean | null>(null);
   const drawer = drawerOpen ?? (current != null || !(findings && verified.length));
@@ -279,11 +294,12 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
         })}</div>}
       </div>
       {findings && verified.length > 0 && <FindingsList findings={verified} focus={focused?.id ?? null} story={story} periodEnd={findings.periodEnd}
-        onFocus={focusFinding} onStory={() => { if (story) { setStory(false); setFocusId(null); } else { setStory(true); setFocusId(focused?.id ?? verified[0].id); } }} />}
+        onFocus={focusFinding} onStory={() => { if (story) { setStory(false); setFocusId(null); } else { setStory(true); setEventId(null); setFocusId(focused?.id ?? verified[0].id); } }} />}
+      {rail && <EventsList rail={rail} focus={focusedEvent?.id ?? null} pendingInsider={events?.pendingInsider ?? 0} onFocus={focusEvent} />}
       {!!quarter?.revenueAdjustments?.length&&<p className="revenue-reconciliation">收入对账 · {quarter.currency} 百万<br/>分部收入（抵销前） {formatFlowValue(segmentRevenue,quarter)}<br/>{quarter.revenueAdjustments.map(a=><span key={a.id}>{a.name} {formatFlowValue(numeric(a.amount),quarter)}<br/></span>)}合并收入 {formatFlowValue(revenue,quarter)}</p>}
     </Rail>
 
-    <section className="stage" data-trend={revenueHistory && revenueHistory.quarters.length >= 2 ? "" : undefined} data-finding={focused?.kind} aria-label={`${ticker} 收入到利润流向`}>
+    <section className="stage" data-trend={revenueHistory && revenueHistory.quarters.length >= 2 ? "" : undefined} data-finding={focused?.kind} data-timeline={points.length ? "" : undefined} aria-label={`${ticker} 收入到利润流向`}>
       <header className="stage-head stage-head--summary">
         {quarter && view !== "profit" && funding ? <CapitalStats view={view} funding={funding} /> : quarter && <div className="stats" aria-live="polite">
           {current && current.value != null ? <>
@@ -333,7 +349,12 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
           : <div className="business-flow chart-fallback">{current && <Dossier item={current} parent={parent ?? null} sources={quarter.sources.length ? quarter.sources : business?.sources ?? []} explainer={explainer} />}<FinancialSankey quarter={quarter} previous={previous} onSegment={key => setSelected(items.find(item => item.key === key)?.id ?? null)} /></div>}
       </div>
 
-      {focused && findings ? <div className="lens-stage" data-split={split && pair ? "" : undefined}>
+      {points.length > 0 && <Timeline points={points} now={now.getTime()} currentPeriod={quarter?.periodEnd ?? null} focus={focusedEvent?.id ?? null}
+        onReport={end => { setPeriod(quarters.find(q => q.periodEnd === end)?.id ?? null); focusFinding(null); setEventId(null); }} onEvent={id => focusEvent(id)} />}
+
+      {focusedEvent && events ? <div className="lens-stage"><EventLens event={focusedEvent} publication={events} index={eventIndex} count={railIds.length}
+        onStep={delta => { const next = railIds[eventIndex + delta]; if (next) focusEvent(next); }} onClose={() => focusEvent(null)} /></div>
+      : focused && findings ? <div className="lens-stage" data-split={split && pair ? "" : undefined}>
         <LensPanel finding={focused} data={data} sources={findings.sources} nodeColor={nodeColor} pair={pair} split={split && !!pair}
           story={story} index={focusIndex} count={verified.length} onPair={() => setSplit(v => !v)}
           onStep={delta => { const next = verified[focusIndex + delta]; if (next) focusFinding(next.id); }} onClose={() => focusFinding(null)} />
