@@ -12,8 +12,8 @@ export type Column = { slot: Slot; layers: Layer[]; total: number | null; state:
 export const SLOTS = 5;
 const norm = (name: string) => disclosedSegmentLabel(name).replace(/[\s（）()]/g, "").toLowerCase();
 
-const monthIndex = (date: string) => Number(date.slice(0, 4)) * 12 + Number(date.slice(5, 7)) - 1;
-const monthEnd = (index: number) => new Date(Date.UTC(Math.floor(index / 12), index % 12 + 1, 0)).toISOString().slice(0, 10);
+export const monthIndex = (date: string) => Number(date.slice(0, 4)) * 12 + Number(date.slice(5, 7)) - 1;
+export const monthEnd = (index: number) => new Date(Date.UTC(Math.floor(index / 12), index % 12 + 1, 0)).toISOString().slice(0, 10);
 
 /** Use base currency units for both actuals and guidance; never compare different currencies without an exchange-rate basis. */
 function unscaledQuarter(quarter: RevenueHistoryQuarter): RevenueHistoryQuarter {

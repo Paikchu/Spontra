@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ChartContainer, ChartLegendContent, ChartTooltipContent, useChart, type ChartConfig } from "@/components/ui/chart";
-import React, { useMemo, useState, type CSSProperties } from "react";
+import React, { useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import type { RevenueHistory } from "@/shared/analysis-contract/revenue-history";
 import type { BusinessFlowQuarter } from "@/shared/analysis-contract/business-flow";
 import { compactFlowValue } from "@/lib/earning-report/web/business-flow-layout";
@@ -24,8 +24,10 @@ function layerColor(layer: Layer, hue: (slot: number) => string) {
  * Up to five quarterly bars (fewer for a short disclosure history) that morph rather than remount: every column always renders every layer, and a
  * focus change only moves heights, so "all businesses" collapses into the selected business continuously.
  */
-export function TrendPanel({ history, items, selected, currentPeriod, periods, onPickPeriod, hue, guidance = null }: {
+export function TrendPanel({ history, items, selected, currentPeriod, periods, onPickPeriod, hue, guidance = null, picker = null }: {
   history: RevenueHistory;
+  /** Metric picker beside the heading; switching away from revenue replaces this panel with a company-level metric. */
+  picker?: ReactNode;
   /** Management guidance; quarterly revenue ranges are drawn on the bars, longer horizons listed below. */
   guidance?: GuidancePublication | null;
   items: TrendItem[];
@@ -91,6 +93,7 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
       <div className="trend-title">
         <div className="trend-heading">
           <h2 key={mode}>{subject}</h2>
+          {picker}
           <ToggleGroup type="single" variant="unstyled" rovingFocus={false} value={view} onValueChange={next => { if (next) setView(next as "trend" | "bridge"); }} asChild>
             <span className="trend-views" role="radiogroup" aria-label="收入视图">
               <ToggleGroupItem value="trend" role="radio" aria-checked={view === "trend"}>近 {slots.length} 季收入</ToggleGroupItem>

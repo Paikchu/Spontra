@@ -281,6 +281,12 @@ button { cursor: pointer; }
 
 .fc-hit { fill: transparent; }
 .fc-bar { fill: var(--c); transition: opacity .3s, filter .3s; }
+/* The prior quarter's amount as a dashed frame around the bar: the gap between frame and bar is the change. */
+.fc-ghost { fill: none; stroke: var(--c); stroke-width: 1.2; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; opacity: .75; pointer-events: none; animation: fade-in .6s var(--ease) both; animation-delay: var(--d); }
+.light .fc-ghost { stroke: color-mix(in srgb, var(--c) 80%, var(--foreground)); }
+.fc-svg[data-focus] .fc-node:not([data-lit]) .fc-ghost { opacity: .35; }
+.fc-period { position: absolute; left: 12px; bottom: 10px; z-index: 2; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--muted-foreground); font-size: 12px; pointer-events: none; }
+.fc-controls button[data-on], .fc-controls button[data-on]:hover { background: var(--foreground); color: var(--background); border-color: var(--foreground); }
 .fc-node { transition: opacity .35s var(--ease); }
 .fc-svg[data-focus] .fc-node:not([data-lit]) { opacity: .34; }
 .fc-node[data-active] .fc-bar { filter: drop-shadow(0 0 8px var(--c)); }
@@ -374,6 +380,13 @@ button { cursor: pointer; }
 .trend-views button, .periods--small button { border: 0; background: transparent; padding: 3px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 500; color: var(--muted-foreground); transition: background .2s, color .2s; }
 .trend-views button:hover { color: var(--foreground); }
 .trend-views button[aria-checked="true"] { background: var(--foreground); color: var(--background); font-weight: 600; }
+/* Metric picker beside the heading: the pill shape of the view toggle, as a native select. */
+.metric-select select { max-width: 160px; padding: 3px 24px 3px 10px; border: 1px solid var(--hairline); border-radius: 999px; background: var(--surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' fill='none' stroke='%23888' stroke-width='1.5'%3E%3Cpath d='M1 1l4 4 4-4'/%3E%3C/svg%3E") no-repeat right 9px center; appearance: none; color: var(--foreground); font: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer; }
+.metric-select select:hover { border-color: var(--border); }
+/* A company metric may be negative: zero is a solid gridline, and a bar below it grows downward with its label beneath. */
+.trend-grid div[data-zero] { border-top-style: solid; border-color: var(--border); }
+.trend-stack[data-negative] { transform-origin: top; }
+.trend-value[data-below] { padding: 5px 0 0; transform: translateY(100%); }
 .trend-kpis { align-items: flex-start; }
 .trend-kpis dl { display: flex; gap: 24px; margin: 0; }
 .trend-kpis dd small { margin-left: 8px; font-size: 12px; font-weight: 560; }
@@ -546,7 +559,7 @@ button { cursor: pointer; }
   .stage-foot { flex-direction: column; align-items: flex-start; }
   .trend { --axis: 40px; --gap: 6px; height: 240px; }
   /* The header wraps on narrow screens, so the bar view sizes to its content with a fixed plot height. */
-  .trend[data-view="trend"] { height: auto; grid-template-rows: auto 220px; }
+  .trend:not([data-view="bridge"]) { height: auto; grid-template-rows: auto 220px; }
   .trend-plot[data-rates] { --axis-r: 40px; }
   .provenance { justify-content: flex-start; }
 }
