@@ -16,12 +16,7 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "jsx": "react-jsx",
-    "incremental": true,
-    "plugins": [
-      {
-        "name": "next"
-      }
-    ],
+    "incremental": false,
     "paths": {
       "@/*": [
         "./*"
@@ -34,18 +29,10 @@
     ]
   },
   "include": [
-    "app/**/*.ts",
-    "app/**/*.tsx",
-    "components/**/*.tsx",
     "packages/web/**/*.ts",
     "packages/web/**/*.tsx",
-    "lib/**/*.ts",
     "shared/**/*.ts",
-    "db/**/*.ts",
-    "worker/**/*.ts",
-    "scripts/**/*.ts",
-    "workers/sec-cron/**/*.ts",
-    "*.config.ts"
+    "scripts/**/*.ts"
   ],
   "exclude": [
     "node_modules",

@@ -27,7 +27,7 @@ test("contracts may infer runtime types without importing executable schemas", (
 test("shared runtime allows only Zod, its own modules and shared contracts", () => {
   const allowed = 'import { z } from "zod"; import { ID } from "./identity.ts"; import type { Reader } from "../analysis-contract/report.ts"; export const schema = z.string();';
   assert.deepEqual(checkSourceBoundary(runtime, allowed), []);
-  for (const specifier of ["node:fs", "fs", "react", "@cloudflare/workers-types", "../../lib/analysis-client.ts", "../../workers/pipeline/src/sec/d1.ts", "@/app/page.tsx", "zod/../../node:fs"]) {
+  for (const specifier of ["node:fs", "fs", "react", "@cloudflare/workers-types", "../../packages/web/src/utils.ts", "../../workers/pipeline/src/sec/d1.ts", "@/apps/business-site/src/main.tsx", "zod/../../node:fs"]) {
     assert.ok(checkSourceBoundary(runtime, `import { value } from ${JSON.stringify(specifier)};`).length, specifier);
     assert.ok(checkSourceBoundary(runtime, `export * from ${JSON.stringify(specifier)};`).length, specifier);
   }
@@ -49,8 +49,8 @@ test("pure runtime rejects browser, worker and process capabilities", () => {
 
 test("runtime sharing does not weaken the existing Pipeline and Web boundaries", () => {
   assert.deepEqual(checkSourceBoundary("workers/pipeline/src/example.ts", 'import { schema } from "../../../shared/analysis-runtime/schema.ts";'), []);
-  assert.deepEqual(checkSourceBoundary("app/example.tsx", 'import { schema } from "@/shared/analysis-runtime/schema.ts";'), []);
-  assert.ok(checkSourceBoundary("workers/pipeline/src/example.ts", 'import { client } from "../../../lib/client.ts";').length);
-  assert.ok(checkSourceBoundary("app/example.tsx", 'import { model } from "@/workers/pipeline/src/model.ts";').length);
+  assert.deepEqual(checkSourceBoundary("apps/business-site/src/example.tsx", 'import { schema } from "@/shared/analysis-runtime/schema.ts";'), []);
+  assert.ok(checkSourceBoundary("workers/pipeline/src/example.ts", 'import { client } from "../../../packages/web/src/utils.ts";').length);
+  assert.ok(checkSourceBoundary("apps/business-site/src/example.tsx", 'import { model } from "@/workers/pipeline/src/model.ts";').length);
   assert.ok(checkSourceBoundary("workers/pipeline/src/example.ts", 'const target = WEB_APP_ORIGIN + "/api/internal/result";').length);
 });

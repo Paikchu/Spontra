@@ -13,11 +13,6 @@
 # testing
 /coverage
 
-# next.js
-/.next/
-/.vinext/
-/out/
-
 # misc
 .DS_Store
 *.pem
@@ -30,36 +25,21 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
-!.env.example
 .dev.vars*
 
-# vercel
-.vercel
-
 # typescript
-next-env.d.ts
 *.tsbuildinfo
 /dist/
 /.wrangler/
-/workers/sec-cron/.wrangler/
 /outputs/
 /work/
 
 !workers/pipeline/.dev.vars.example
-!workers/sec-cron/.dev.vars.example
 
-# desktop workspace build output
-/apps/desktop/dist/
-/apps/desktop/src-tauri/target/
-/apps/desktop/src-tauri/gen/
 **/node_modules/
 
 /apps/business-site/dist/
 /apps/business-site/.wrangler/
-
-# Marketing website generated assets and local Wrangler state
-/apps/marketing/dist/
-/apps/marketing/.wrangler/
 
 apps/admin/dist/
 apps/admin/.wrangler/

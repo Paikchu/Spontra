@@ -1,18 +1,23 @@
 import { selectRevenueTree, compareRevenueNode, revenueNodeKey } from "../packages/web/src/model/revenue-tree";
 import { enrichDisclosedRevenue } from "../packages/web/src/model/company-revenue-disclosures";
-import type { RevenueBreakdown } from "../shared/analysis-contract/business-flow";
+import type { BusinessFlowQuarter, RevenueBreakdown } from "../shared/analysis-contract/business-flow";
 import { readFileSync } from "node:fs";
 import { extractDisclosedQuarters } from "../workers/pipeline/src/financial-data/parser";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { BusinessFlow } from "../app/analysis/stocks/[ticker]/BusinessFlow";
+import { FinancialSankey } from "../packages/web/src/business-flow/FinancialSankey";
 import { adaptFundamentals, segmentChangeLabel, compareAmount, marginChange, numeric, previousQuarter, reconcileQuarter, selectFlow } from "../packages/web/src/model/business-flow-model";
 import { businessFlowFixture } from "./fixtures/business-flow-fixture";
 import { financialGraph, validateGraph } from "../packages/web/src/model/business-flow-sankey";
 import type { PublicFundamentalsResponse } from "../shared/analysis-contract/fundamentals";
 
 const [q4, q3] = businessFlowFixture.quarters;
+// The map renders the newest quarter against the one before it.
+const sankey = (quarters: BusinessFlowQuarter[]) => {
+  const [quarter, previous = null] = [...quarters].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd));
+  return renderToStaticMarkup(<FinancialSankey quarter={quarter} previous={previous} onSegment={() => {}} />);
+};
 test("verified FY26 example balances every equation and retains the original disclosure basis", () => {
   assert.ok(reconcileQuarter(q4).every(r => r.status === "balanced"));
   assert.ok(reconcileQuarter(q3).every(r => r.status === "balanced"));
@@ -47,8 +52,8 @@ test("loss Sankey preserves signed labels and distinguishes deficits from revenu
   const loss = structuredClone(q4);
   loss.figures.other!.value = "-50000"; loss.figures.pretax!.value = "-9397"; loss.figures.net!.value = "-17678";
   assert.ok(reconcileQuarter(loss).every(r => r.status === "balanced"));
-  const html = renderToStaticMarkup(<BusinessFlow flow={{ ...businessFlowFixture, quarters: [loss] }} />);
-  assert.match(html, /-17,678/); assert.match(html, /data-tone="negative"/); assert.match(html, /财务金额明细/); assert.match(html, /收入到净利润桑基图/); assert.match(html, /净亏损/); assert.match(html, /利润或亏损向右结转/);
+  const html = sankey([loss]);
+  assert.match(html, /收入到净利润桑基图/); assert.match(html, /净亏损/); assert.match(html, /利润或亏损向右结转/);
   const graph = financialGraph(loss); assert.ok(validateGraph(graph.nodes, graph.links));
   assert.equal(graph.nodes.find(n => n.name === "net")?.value, 17678);
   const stages = ["revenue", "gross", "operating", "pretax", "net"].map(name => graph.nodes.find(n => n.name === name)!);
@@ -65,15 +70,6 @@ test("real fundamentals adapter preserves source, missing details and conservati
   assert.equal(selectFlow(businessFlowFixture, data, "OTHER").ticker, "OTHER");
   assert.equal(adaptFundamentals(data, "MSFT").quarters.length, 0);
 });
-test("graph exposes quarter controls, all endpoints, sources and honest empty states", () => {
-  const html = renderToStaticMarkup(<BusinessFlow flow={businessFlowFixture} />);
-  for (const label of ["业务前瞻", "收入", "营业成本", "毛利", "营业利润", "其他损益", "税前利润", "所得税", "净利润", "展开比较", "会计核对", "FY26 原披露"]) assert.ok(html.includes(label), label);
-  assert.match(html, /aria-expanded="false"/); assert.match(html, /aria-controls=/);
-  assert.match(html, /90,007/); assert.ok(!html.includes("我的持仓"));
-  const missing = renderToStaticMarkup(<BusinessFlow flow={{ ...businessFlowFixture, quarters: [] }} />);
-  assert.match(missing, /不会用示例数据/);
-});
-
 test("Sankey validates finite nonnegative edges, conservation, IDs and acyclic topology",()=>{
  const graph=financialGraph(q4);assert.equal(validateGraph(graph.nodes,graph.links),true);
  assert.ok(graph.nodes.some(n=>n.name==="net"));
@@ -117,8 +113,6 @@ test("real sourced business remains visible without quarterly revenue and never 
  const msft = resolveCompanyBusiness("MSFT");
  assert.equal(msft?.groups.length, 3);
  assert.match(msft!.basisLabel, /非 FY2027/);
- const html = renderToStaticMarkup(<BusinessFlow business={nvda} flow={{ schemaVersion: "business-flow.v1", ticker: "NVDA", fetchedAt: null, quarters: [] }} />);
- assert.match(html, /计算与网络/); assert.match(html, /展开业务/); assert.match(html, /季度财务未披露/);
 });
 test("published sourced analysis takes priority over curated historical disclosures", async () => {
  const { resolveCompanyBusiness } = await import("../packages/web/src/model/company-business-content");
@@ -140,7 +134,7 @@ test('actual SEC direct-operating schema renders complete conserved flow without
  assert.ok(reconcileQuarter(current).every(c=>c.status==='balanced'));assert.equal(compareAmount(current,prior,'net').label,'+10.6%');assert.equal(compareAmount(current,prior,'revenue','CloudInfrastructure').label,'+27.7%');
  for(const compact of [false,true]){const graph=financialGraph(current,compact);assert.equal(validateGraph(graph.nodes,graph.links),true);assert.ok(graph.nodes.some(n=>n.name==='net'));assert.ok(!graph.nodes.some(n=>n.name==='gross'));assert.ok(graph.links.some(l=>l.source==='other:nonoperating'&&l.target==='pretax'));assert.ok(graph.links.some(l=>l.source==='operating'&&l.target==='other:interest'));}
  const flow={schemaVersion:'business-flow.v1' as const,ticker:'ORCL',fetchedAt:'2026-09-30',quarters:[current,prior]};assert.equal(selectFlow(flow,null,'ORCL').quarters.length,2);assert.equal(selectFlow(flow,null,'NVDA').quarters.length,0);
- const html=renderToStaticMarkup(<BusinessFlow flow={flow}/>);assert.match(html,/19,345/);assert.match(html,/4,760/);assert.match(html,/云服务/);assert.match(html,/无形资产摊销/);
+ const html=sankey(flow.quarters);assert.match(html,/云服务/);
  const bad=structuredClone(current);bad.expenseComponents![0].amount.value='NaN';assert.equal(financialGraph(bad).links.length,0);
 });
 
@@ -148,7 +142,7 @@ test("actual JPM bank bridge renders pretax, tax, net and disclosed expense cate
  const htmlSource=readFileSync(new URL("./pipeline/fixtures/jpm-2026-06-30-sec-income.html",import.meta.url),"utf8");
  const parsed=extractDisclosedQuarters(htmlSource,{cik:"0000019617",industry:"financial",accession:"0001628280-26-054343",url:"https://www.sec.gov/Archives/edgar/data/19617/000162828026054343/jpm-20260630.htm",filedAt:"2026-08-06"});
  const quarter=parsed.quarters.find(q=>q.periodEnd==="2026-06-30")!;assert.ok(quarter);
- const rendered=renderToStaticMarkup(<BusinessFlow flow={{schemaVersion:"business-flow.v1",ticker:"JPM",fetchedAt:"2026-10-01",quarters:[quarter]}}/>);
+ const rendered=sankey([quarter]);
  assert.match(rendered,/完整银行财务桥图/);assert.match(rendered,/税前利润/);assert.match(rendered,/所得税/);assert.match(rendered,/27,516/);assert.match(rendered,/6,361/);assert.match(rendered,/21,155/);assert.match(rendered,/非利息费用/);assert.match(rendered,/信用损失准备/);assert.match(rendered,/宽度不表示金额比例/);
 });
 
@@ -157,10 +151,10 @@ test('latest disclosed departments retain amounts while unavailable or redefined
  current.segments[0].id='new-department';current.segments[0].name='本季新披露部门';
  prior.segments[0].name='仅历史部门';
  assert.equal(segmentChangeLabel(current,prior,'new-department'),'');
- const html=renderToStaticMarkup(<BusinessFlow flow={{...businessFlowFixture,quarters:[prior,current]}}/>);
+ const html=sankey([prior,current]);
  assert.match(html,/本季新披露部门/);assert.ok(!html.includes('仅历史部门'));
- const button=html.match(/<button[^>]*id="[^"]*-segment-new-department"[^>]*>[\s\S]*?<\/button>/)?.[0];
- assert.ok(button);assert.match(button,/<strong>/);assert.ok(!button.includes('环比'));assert.ok(!button.includes('不可比'));
+ const node=html.match(/aria-label="本季新披露部门，展开业务介绍">[\s\S]*?<\/g><\/g>/)?.[0];
+ assert.ok(node);assert.match(node,/\$37\.8B/);assert.ok(!node.includes('环比'));assert.ok(!node.includes('不可比'));
  current.segments[0].id=prior.segments[0].id;
  current.segments[0].revenue!.comparabilityKey='changed-definition';
  assert.equal(segmentChangeLabel(current,prior,current.segments[0].id),'');
@@ -188,11 +182,8 @@ test("automatically builds one revenue tree and never connects alternative dimen
  assert.ok(graph.links.some(l=>l.source.includes("infrastructure") && l.target.includes("cloud")));
  assert.equal(graph.links.filter(l=>l.target==="revenue").reduce((sum,l)=>sum+l.value,0),90007);
  assert.ok(!graph.nodes.some(n=>n.name.includes("regions")||n.name.includes("segment-0")));
- const html=renderToStaticMarkup(<BusinessFlow flow={{...businessFlowFixture,quarters:[quarter]}} />);
- assert.match(html,/收入构成 · 产品与服务/);
- assert.match(html,/infrastructure/);
- assert.match(html,/财务分部收入/);
- assert.equal((html.match(/<select/g)??[]).length,1); // Only quarter selection, no dimension switch.
+ const html=sankey([quarter]);
+  assert.match(html,/infrastructure/);
  const mobile=financialGraph(quarter,true);
  assert.deepEqual(mobile.nodes.filter(n=>n.segmentId),graph.nodes.filter(n=>n.segmentId));
 });
@@ -257,8 +248,8 @@ test("NVDA filing adds the correct income hierarchy only to the matching verifie
  const graph=financialGraph(quarter);assert.ok(validateGraph(graph.nodes,graph.links));
  assert.ok(graph.links.some(l=>l.source.includes("hyperscale")&&l.target.includes("data-center")&&l.value===48710000000));
  assert.ok(!graph.nodes.some(n=>n.label==="计算与网络"));
- const html=renderToStaticMarkup(<BusinessFlow flow={{schemaVersion:"business-flow.v1",ticker:"NVDA",fetchedAt:null,quarters:[quarter]}}/>);
- assert.match(html,/超大规模云客户/);assert.match(html,/88,299/);assert.match(html,/96,221/);
+ const html=sankey([quarter]);
+ assert.match(html,/超大规模云客户/);
  assert.equal(enrichDisclosedRevenue("MSFT",base),base);
  for (const other of [{...base,periodEnd:"2026-04-26"},{...base,currency:"EUR"},{...base,figures:{...base.figures,revenue:{...base.figures.revenue,value:"66595000000"}}},{...base,figures:{...base.figures,operating:{...base.figures.revenue,value:"66595000000"}}}]) assert.equal(enrichDisclosedRevenue("NVDA",other),other);
  assert.deepEqual(enrichDisclosedRevenue("NVDA",quarter),quarter);

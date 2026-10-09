@@ -3,8 +3,6 @@
   "include": [
     "tests/**/*.ts",
     "tests/**/*.tsx",
-    "app/**/*.tsx",
-    "components/**/*.tsx",
     "packages/web/**/*.tsx"
   ],
   "exclude": [

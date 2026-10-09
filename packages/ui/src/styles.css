@@ -1,8 +1,0 @@
-@import "../../web/src/styles/globals.css";
-@import "../../../app/research-feed.css";
-@import "../../web/src/styles/earning-report.css";
-@import "../../web/src/report/report-blocks/report-content.css";
-@import "../../web/src/styles/spontra-ui.css";
-@source "../../../app";
-@source "../../../components";
-@source "./";

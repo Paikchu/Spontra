@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { handleAdminRequest, type AdminEnv } from "../apps/admin/worker/index.ts";
-import { GET, POST } from "../app/api/admin/[...path]/route.ts";
 
 const origin = "https://admin.example.com";
 const assets = { fetch: async () => new Response("<html>admin</html>", { headers: { "content-type": "text/html" } }) };
@@ -47,13 +46,4 @@ test("login uses the HTTP binding, hides credentials and rejects cross-origin wr
   assert.match(response.headers.get("set-cookie")!, /HttpOnly; SameSite=Strict;.*Secure/);
   assert.equal(calls, 1);
   assert.equal((await handleAdminRequest(login(origin), { ASSETS: assets })).status, 503);
-});
-
-test("old main API is retired rather than redirecting authenticated writes", async () => {
-  for (const handler of [GET, POST]) {
-    const response = handler();
-    assert.equal(response.status, 410);
-    assert.equal(response.headers.get("location"), null);
-    assert.match(response.headers.get("set-cookie")!, /Max-Age=0/);
-  }
 });

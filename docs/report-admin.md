@@ -31,7 +31,7 @@ Pipeline 对应路径为 `/admin/*`，管理接口需要签名会话。现有公
 
 后台代码位于 `apps/admin/`，部署为 `spontra-admin`，仅绑定 `ASSETS` 和 `EARNING_REPORT_PIPELINE`（`spontra-analysis`）。继续使用 HTTP Service Binding，生产配置缺少绑定时返回 503，不回退到公网 fetch。页面、样式和报告阅读组件保持原有设计，返回主站链接指向 `spontra-app`。
 
-推送 `origin/main` 后，主应用自动构建会先验证、构建后台，并在 CI 中发布独立 admin Worker；没有新增第三个 Git 构建项目。后台可独立运行，但当前发布仍由主应用 CI 编排。若未来要求只改后台就独立发布，再配置单独的 Workers Builds 项目和 watch paths。首次发布无需复制数据库、迁移表或新增密钥。Pipeline 管理接口仍要求签名会话。
+推送 `origin/main` 后，地图与后台的自动构建会先验证、构建后台，并在 CI 中发布独立 admin Worker。若未来要求只改后台就独立发布，再配置单独的 Workers Builds 项目和 watch paths。首次发布无需复制数据库、迁移表或新增密钥。Pipeline 管理接口仍要求签名会话。
 
 本次保留原有密钥登录，尚未启用 Cloudflare Access；之后可以在整个 admin Worker 上配置 Access，保持主站公开。仅推送成功不能证明线上部署成功。
 

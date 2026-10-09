@@ -102,9 +102,9 @@ test("cash pool balances and the verdict names how the gap was funded", () => {
 });
 
 test("the site serves capital on its own route, only after re-validating it, and never caches a non-ready answer", async () => {
-  const capital: PublicCapitalStructure = { schemaVersion: "capital-structure.v1", ticker: "ORCL", quarters: [{ periodEnd: "2026-06-30", balanceSheet: balance, cashFlow: cash, yearToDate: null }] };
+  const capital: PublicCapitalStructure = { schemaVersion: "capital-structure.v1", ticker: "ORCL", quarters: [{ periodEnd: "2026-06-30", rpo: null, balanceSheet: balance, cashFlow: cash, yearToDate: null }] };
   const upstream = (value: unknown, status = "ready") => async (url: string | URL | Request) => {
-    assert.match(String(url), /\/api\/analysis\/v1\/companies\/ORCL\/capital$/);
+    assert.match(String(url), /\/api\/v1\/companies\/ORCL\/capital$/);
     return Response.json({ schemaVersion: "capital-response.v1", status, capital: value });
   };
   assert.deepEqual(await loadCapital("ORCL", upstream(capital) as typeof fetch), capital);

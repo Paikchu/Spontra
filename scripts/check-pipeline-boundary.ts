@@ -7,7 +7,7 @@ export function checkSourceBoundary(file: string, source: string): string[] {
   const contract = file.startsWith("shared/analysis-contract/");
   const runtime = file.startsWith("shared/analysis-runtime/");
   const pipeline = file.startsWith("workers/pipeline/");
-  const web = /^(app|components|lib|worker)\//.test(file);
+  const web = /^(apps\/(business-site|admin)|packages\/web)\//.test(file);
   if (!contract && !runtime && !pipeline && !web) return [];
   const errors: string[] = [];
   const ast = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
@@ -52,13 +52,13 @@ export function checkSourceBoundary(file: string, source: string): string[] {
 }
 
 async function files(directory: string): Promise<string[]> {
-  const entries = await readdir(directory, { withFileTypes: true });
+  const entries = (await readdir(directory, { withFileTypes: true })).filter((entry) => !["node_modules", "dist", ".wrangler"].includes(entry.name));
   return (await Promise.all(entries.map((entry) => entry.isDirectory()
     ? files(`${directory}/${entry.name}`)
     : Promise.resolve(/\.(ts|tsx|mts)$/.test(entry.name) && !entry.name.endsWith(".d.ts") ? [`${directory}/${entry.name}`] : [])))).flat();
 }
 export async function checkArchitecture(): Promise<string[]> {
-  const paths = (await Promise.all(["app", "components", "lib", "shared", "workers", "worker"].map(files))).flat();
+  const paths = (await Promise.all(["apps/business-site", "apps/admin", "packages/web", "shared", "workers/pipeline"].map(files))).flat();
   return (await Promise.all(paths.map(async (file) => checkSourceBoundary(file, await readFile(file, "utf8"))))).flat();
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

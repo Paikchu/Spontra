@@ -1,6 +1,0 @@
-{
-  "hero": {
-    "desktop": { "src": "product/app-research.webp", "width": 1920, "height": 1286 },
-    "mobile": { "src": "product/app-report.webp", "width": 900, "height": 1063 }
-  }
-}
