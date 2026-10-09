@@ -18,8 +18,17 @@ import type {EventsPublication} from "@/shared/analysis-contract/events";
 import type {PublicFilingDetail,PublicFilingDigest,PublicFilingDigestPage,PublicFilingPage,PublicSecFiling} from "@/shared/analysis-contract/filings";
 import {formatFilingPeriodLabel} from "@/lib/earning-report/web/filing-period-label";
 import {formatSecMetricLabel,formatSecMetricValue} from "@/lib/earning-report/web/sec-metric-format";
-const PUBLIC_ORIGIN="https://spontra-app.max-zhangyuchen.workers.dev";
-export type SiteEnv={ASSETS:{fetch(request:Request):Promise<Response>};PUBLIC_READ_LIMIT:{limit(options:{key:string}):Promise<{success:boolean}>}};
+/** The analysis pipeline is reached over its Service Binding; the host is a label the binding ignores. */
+const ANALYSIS_ORIGIN="https://spontra-analysis.internal";
+export type SiteEnv={ASSETS:{fetch(request:Request):Promise<Response>};PUBLIC_READ_LIMIT:{limit(options:{key:string}):Promise<{success:boolean}>};
+ /** Service Binding to `spontra-analysis` and the read credential it accepts; without both, every data route answers 503. */
+ EARNING_REPORT_PIPELINE?:{fetch(request:Request):Promise<Response>};EARNING_REPORT_READ_TOKEN?:string};
+/** Reads go straight to the pipeline's read API with this Worker's own credential; nothing from the browser's request is forwarded. */
+export function analysisFetcher(env:Pick<SiteEnv,"EARNING_REPORT_PIPELINE"|"EARNING_REPORT_READ_TOKEN">):typeof fetch|null{
+ const binding=env.EARNING_REPORT_PIPELINE,token=env.EARNING_REPORT_READ_TOKEN;
+ if(!binding||typeof binding.fetch!=="function"||!token||!/^[!-~]{24,512}$/.test(token))return null;
+ return (input,init)=>{const request=new Request(input,init);request.headers.set("authorization",`Bearer ${token}`);return binding.fetch(request);};
+}
 export type SiteContext={waitUntil(promise:Promise<unknown>):void};
 const security={"x-content-type-options":"nosniff","referrer-policy":"strict-origin-when-cross-origin","content-security-policy":"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://images.financialmodelingprep.com; connect-src 'self'; font-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"};
 function json(body:unknown,status=200){return Response.json(body,{status,headers:{...security,"cache-control":status===200?"public, max-age=60":"no-store"}});}
@@ -29,7 +38,7 @@ export const isFallback=(publication:CompleteFlowPublication)=>fallbacks.has(pub
 /** The only public output is schema-stripped SEC business flow, never the analysis envelope. */
 export async function loadPublicFlow(ticker:string,fetcher:typeof fetch=fetch):Promise<CompleteFlowPublication>{
  try{
- const response=await fetcher(PUBLIC_ORIGIN+`/api/analysis/v1/companies/${ticker}/business-flow`,{signal:AbortSignal.timeout(12000),headers:{accept:"application/json"}});
+ const response=await fetcher(ANALYSIS_ORIGIN+`/api/v1/companies/${ticker}/business-flow`,{signal:AbortSignal.timeout(12000),headers:{accept:"application/json"}});
  if(!response.ok)throw new Error("Public source unavailable");
  const publication=await response.json() as CompleteFlowPublication;
  if(publication.schemaVersion!=="complete-business-flow.v1"||!['ready','preparing','unavailable'].includes(publication.status))throw new Error('Invalid publication');
@@ -39,7 +48,7 @@ export async function loadPublicFlow(ticker:string,fetcher:typeof fetch=fetch):P
  return {schemaVersion:"complete-business-flow.v1",status:check.complete?"ready":"preparing",flow:check.complete?flow:null,reasons:check.complete&&publication.outdated?publication.reasons:check.reasons,outdated:check.complete&&publication.outdated===true,lastAttemptAt:publication.lastAttemptAt??null,history:check.complete?readHistory(publication.history,ticker):null,...(check.complete&&publication.reports?{reports:readReportHistory(publication.reports,ticker)}:{})};
  }catch{
   // Rollout compatibility: only a verified complete legacy SEC projection may survive a new API outage.
-  const legacy=await fetcher(PUBLIC_ORIGIN+`/api/analysis/v1/companies/${ticker}/analysis`,{signal:AbortSignal.timeout(12000),headers:{accept:"application/json"}});
+  const legacy=await fetcher(ANALYSIS_ORIGIN+`/api/v1/companies/${ticker}/analysis`,{signal:AbortSignal.timeout(12000),headers:{accept:"application/json"}});
   if(!legacy.ok)throw new Error("Public source unavailable");
   const raw=await legacy.json() as {businessFlow?:PublicBusinessFlow};
   const flow=newestPair(withLegacyInterestFormula(selectFlow(raw.businessFlow,null,ticker)));const check=checkCompleteFlow(flow);
@@ -51,7 +60,7 @@ export async function loadPublicFlow(ticker:string,fetcher:typeof fetch=fetch):P
 /** Supplementary: an unavailable or invalid explanation reads as null and never fails the flow. */
 export async function loadExplainer(ticker:string,fetcher:typeof fetch=fetch):Promise<BusinessExplainer|null>{
  try{
-  const response=await fetcher(PUBLIC_ORIGIN+`/api/analysis/v1/companies/${ticker}/business-explainer`,{signal:AbortSignal.timeout(8000),headers:{accept:"application/json"}});
+  const response=await fetcher(ANALYSIS_ORIGIN+`/api/v1/companies/${ticker}/business-explainer`,{signal:AbortSignal.timeout(8000),headers:{accept:"application/json"}});
   if(!response.ok)return null;
   const body=await response.json() as {schemaVersion?:string;status?:string;explainer?:unknown};
   return body.schemaVersion==="business-explainer-response.v1"&&body.status==="ready"?readBusinessExplainer(body.explainer,ticker):null;
@@ -61,7 +70,7 @@ export async function loadExplainer(ticker:string,fetcher:typeof fetch=fetch):Pr
 /** Supplementary and loaded on its own, so the map never waits for it; anything that fails re-validation reads as null. */
 export async function loadCapital(ticker:string,fetcher:typeof fetch=fetch):Promise<PublicCapitalStructure|null>{
  try{
-  const response=await fetcher(PUBLIC_ORIGIN+`/api/analysis/v1/companies/${ticker}/capital`,{signal:AbortSignal.timeout(25000),headers:{accept:"application/json"}});
+  const response=await fetcher(ANALYSIS_ORIGIN+`/api/v1/companies/${ticker}/capital`,{signal:AbortSignal.timeout(25000),headers:{accept:"application/json"}});
   if(!response.ok)return null;
   const body=await response.json() as {schemaVersion?:string;status?:string;capital?:unknown};
   return body.schemaVersion==="capital-response.v1"&&body.status==="ready"?readCapitalStructure(body.capital,ticker):null;
@@ -71,7 +80,7 @@ export async function loadCapital(ticker:string,fetcher:typeof fetch=fetch):Prom
 /** Supplementary, like the explainer: unavailable or invalid guidance reads as null. */
 export async function loadGuidance(ticker:string,fetcher:typeof fetch=fetch):Promise<GuidancePublication|null>{
  try{
-  const response=await fetcher(PUBLIC_ORIGIN+`/api/analysis/v1/companies/${ticker}/guidance`,{signal:AbortSignal.timeout(8000),headers:{accept:"application/json"}});
+  const response=await fetcher(ANALYSIS_ORIGIN+`/api/v1/companies/${ticker}/guidance`,{signal:AbortSignal.timeout(8000),headers:{accept:"application/json"}});
   if(!response.ok)return null;
   const body=await response.json() as {schemaVersion?:string;status?:string;guidance?:unknown};
   return body.schemaVersion==="guidance-response.v1"&&body.status==="ready"?readGuidancePublication(body.guidance,ticker):null;
@@ -81,7 +90,7 @@ export async function loadGuidance(ticker:string,fetcher:typeof fetch=fetch):Pro
 /** Analyst findings, re-validated like the explainer; the page withholds any the statements do not support. */
 export async function loadFindings(ticker:string,fetcher:typeof fetch=fetch):Promise<FindingsPublication|null>{
  try{
-  const response=await fetcher(PUBLIC_ORIGIN+`/api/analysis/v1/companies/${ticker}/findings`,{signal:AbortSignal.timeout(8000),headers:{accept:"application/json"}});
+  const response=await fetcher(ANALYSIS_ORIGIN+`/api/v1/companies/${ticker}/findings`,{signal:AbortSignal.timeout(8000),headers:{accept:"application/json"}});
   if(!response.ok)return null;
   const body=await response.json() as {schemaVersion?:string;status?:string;findings?:unknown};
   return body.schemaVersion==="findings-response.v1"&&body.status==="ready"?readFindingsPublication(body.findings,ticker):null;
@@ -91,7 +100,7 @@ export async function loadFindings(ticker:string,fetcher:typeof fetch=fetch):Pro
 /** Filed events (8-K and Form 4), re-validated; unavailable reads as null. */
 export async function loadEvents(ticker:string,fetcher:typeof fetch=fetch):Promise<EventsPublication|null>{
  try{
-  const response=await fetcher(PUBLIC_ORIGIN+`/api/analysis/v1/companies/${ticker}/events`,{signal:AbortSignal.timeout(8000),headers:{accept:"application/json"}});
+  const response=await fetcher(ANALYSIS_ORIGIN+`/api/v1/companies/${ticker}/events`,{signal:AbortSignal.timeout(8000),headers:{accept:"application/json"}});
   if(!response.ok)return null;
   const body=await response.json() as {schemaVersion?:string;status?:string;events?:unknown};
   return body.schemaVersion==="events-response.v1"&&body.status==="ready"?readEventsPublication(body.events,ticker):null;
@@ -131,7 +140,7 @@ export function digestFiling(filing:PublicSecFiling):PublicFilingDigest{
 /** The company's filings as digests: one upstream page of up to fifty, newest first. */
 export async function loadFilings(ticker:string,fetcher:typeof fetch=fetch):Promise<PublicFilingDigestPage|null>{
  try{
-  const response=await fetcher(PUBLIC_ORIGIN+`/api/analysis/v1/companies/${ticker}/filings?limit=50`,{signal:AbortSignal.timeout(12000),headers:{accept:"application/json"}});
+  const response=await fetcher(ANALYSIS_ORIGIN+`/api/v1/companies/${ticker}/filings?limit=50`,{signal:AbortSignal.timeout(12000),headers:{accept:"application/json"}});
   if(!response.ok)return null;
   const page=await response.json() as PublicFilingPage;
   if(page.ticker!==ticker||!Array.isArray(page.filings))return null;
@@ -145,7 +154,7 @@ export async function loadFilingDetail(ticker:string,accession:string,snapshot:{
  if(!ACCESSION.test(accession))return null;
  try{
   const query=snapshot?"?"+new URLSearchParams(snapshot):"";
-  const response=await fetcher(PUBLIC_ORIGIN+`/api/analysis/v1/companies/${ticker}/filings/${accession}${query}`,{signal:AbortSignal.timeout(12000),headers:{accept:"application/json"}});
+  const response=await fetcher(ANALYSIS_ORIGIN+`/api/v1/companies/${ticker}/filings/${accession}${query}`,{signal:AbortSignal.timeout(12000),headers:{accept:"application/json"}});
   if(!response.ok)return null;
   const detail=await response.json() as PublicFilingDetail;
   if(detail.ticker!==ticker||detail.filing?.ticker!==ticker)return null;
@@ -156,15 +165,17 @@ export async function loadFilingDetail(ticker:string,accession:string,snapshot:{
 /** SEC fundamentals series, stripped to the fields findings resolve against; provider and refresh state never pass through. */
 export async function loadFundamentals(ticker:string,fetcher:typeof fetch=fetch):Promise<FindingFundamentals|null>{
  try{
-  const response=await fetcher(PUBLIC_ORIGIN+`/api/analysis/v1/companies/${ticker}/fundamentals?periodCount=12`,{signal:AbortSignal.timeout(12000),headers:{accept:"application/json"}});
+  const response=await fetcher(ANALYSIS_ORIGIN+`/api/v1/companies/${ticker}/fundamentals?periodCount=12`,{signal:AbortSignal.timeout(12000),headers:{accept:"application/json"}});
   if(!response.ok)return null;
   return readFindingFundamentals(await response.json(),ticker);
  }catch{return null;}
 }
 
-export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,fetcher:typeof fetch=fetch,cache?:Cache):Promise<Response>{
+export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstream?:typeof fetch,cache?:Cache):Promise<Response>{
  const url=new URL(request.url);
  if(url.pathname.startsWith("/api/")){
+  const fetcher=upstream??analysisFetcher(env);
+  if(!fetcher)return json({error:"Read service unavailable"},503);
   const match=url.pathname.match(/^\/api\/business\/v1\/companies\/([A-Z][A-Z0-9.-]{0,11})(\/capital|\/findings|\/fundamentals|\/events|\/filings|\/filings\/\d{10}-\d{2}-\d{6})?$/);
   const detail=match?.[2]?.startsWith("/filings/")?match[2].slice("/filings/".length):null;
   // The reader pins a report to its published revision; nothing else takes a query.

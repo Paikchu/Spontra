@@ -25,6 +25,15 @@
   "observability": {
     "enabled": true
   },
+  // Reads go to the analysis pipeline over its Service Binding with this Worker's own read credential
+  // (secret EARNING_REPORT_READ_TOKEN, a key listed in the pipeline's ANALYSIS_READ_KEYS). No public
+  // origin is involved, so the main app can be retired without touching this Worker.
+  "services": [
+    {
+      "binding": "EARNING_REPORT_PIPELINE",
+      "service": "spontra-analysis"
+    }
+  ],
   "compatibility_flags": [
     "global_fetch_strictly_public"
   ]

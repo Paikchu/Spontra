@@ -27,9 +27,20 @@ test("limiter rejects excess requests and fails closed without a binding",async(
  assert.equal((await handle(request(endpoint),{...env,PUBLIC_READ_LIMIT:undefined} as unknown as SiteEnv,context,success)).status,429);
  const broken={...env,PUBLIC_READ_LIMIT:{limit:async()=>{throw new Error("broken");}}};assert.equal((await handle(request(endpoint),broken,context,success)).status,503);
 });
-test("only fixed public reads occur, with no cookie or authentication forwarded",async()=>{
+test("reads go to the pipeline's read API over the binding with the Worker's own credential, never the browser's headers",async()=>{
  const seen:Request[]=[];await loadPublicFlow("MSFT",async(input,init)=>{const req=new Request(input,init);seen.push(req);return success(input,init);});
- assert.equal(seen.length,1);assert.equal(seen[0].url,"https://spontra-app.max-zhangyuchen.workers.dev/api/analysis/v1/companies/MSFT/business-flow");assert.equal(seen[0].headers.get("authorization"),null);assert.equal(seen[0].headers.get("cookie"),null);
+ assert.equal(seen.length,1);assert.equal(seen[0].url,"https://spontra-analysis.internal/api/v1/companies/MSFT/business-flow");assert.equal(seen[0].headers.get("cookie"),null);
+ const {analysisFetcher}=await import("../apps/business-site/worker/index");
+ const bound:Request[]=[];const binding={fetch:async(req:Request)=>{bound.push(req);return success(req);}};
+ const token="site-read-credential-of-sufficient-length";
+ const browser=new Request("https://site.test"+endpoint,{headers:{cookie:"session=PRIVATE",authorization:"Bearer BROWSER"}});
+ const answered=await handle(browser,{...env,EARNING_REPORT_PIPELINE:binding,EARNING_REPORT_READ_TOKEN:token},context);
+ assert.equal(answered.status,200);assert.equal(bound.length,3,"flow, explainer and guidance");
+ for(const req of bound){assert.equal(req.headers.get("authorization"),`Bearer ${token}`);assert.equal(req.headers.get("cookie"),null);assert.ok(req.url.startsWith("https://spontra-analysis.internal/api/v1/companies/ORCL"));}
+ assert.equal(analysisFetcher({EARNING_REPORT_PIPELINE:binding}),null);assert.equal(analysisFetcher({EARNING_REPORT_READ_TOKEN:"short"}),null);
+ // Without the binding or the credential the data routes say so instead of reaching for a public origin.
+ const unconfigured=await handle(request(endpoint),env,context);assert.equal(unconfigured.status,503);assert.equal(unconfigured.headers.get("cache-control"),"no-store");
+ assert.equal((await handle(request("/"),env,context)).status,200,"the shell is served without the binding");
 });
 test("missing quarters remain empty, upstream errors expose no detail, mismatched tickers never leak",async()=>{
  const empty=await handle(request("/api/business/v1/companies/NVDA"),env,context,success);assert.equal((await empty.json() as {flow:null}).flow,null);
@@ -149,7 +160,7 @@ test("findings and fundamentals are supplementary routes: re-validated, stripped
  assert.equal(findings.status,200);assert.ok(!body.includes("PRIVATE_"));assert.equal(JSON.parse(body).findings.findings.length,6);assert.equal(findings.headers.get("cache-control"),"public, max-age=60");
  const fundamentals=await handle(request(endpoint+"/fundamentals"),env,context,upstream);const text=await fundamentals.text();
  assert.ok(!text.includes("PRIVATE_"));assert.deepEqual(Object.keys(JSON.parse(text).fundamentals),["series"]);assert.equal(JSON.parse(text).fundamentals.series[0].points[0].revision,undefined);
- assert.ok(seen.some(u=>u==="https://spontra-app.max-zhangyuchen.workers.dev/api/analysis/v1/companies/ORCL/fundamentals?periodCount=12"));
+ assert.ok(seen.some(u=>u==="https://spontra-analysis.internal/api/v1/companies/ORCL/fundamentals?periodCount=12"));
  assert.equal(await loadFindings("MSFT",async()=>Response.json({schemaVersion:"findings-response.v1",status:"ready",findings:ORCL_FINDINGS})),null);
  assert.equal(await loadFundamentals("ORCL",async()=>Response.json({ticker:"ORCL",source:"yahoo_finance",status:"ready",series:[]})),null);
  const missing=await handle(request(endpoint+"/findings"),env,context,async()=>Response.json({schemaVersion:"findings-response.v1",status:"preparing",findings:null}));
