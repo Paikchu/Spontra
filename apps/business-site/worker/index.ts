@@ -33,6 +33,9 @@ export function analysisFetcher(env:Pick<SiteEnv,"EARNING_REPORT_PIPELINE">):typ
    const response=await binding.fetch(request);
    // A refused read is the operator's signal, not the reader's: the status and route are logged, never a body.
    if(!response.ok)console.warn(JSON.stringify({event:"analysis-read-refused",status:response.status,path:new URL(request.url).pathname}));
+   // Shape only, never values: enough to tell a wrong envelope from a wrong route.
+   else{const copy=response.clone();const text=await copy.text();let keys:string[]|string="unparsed";try{const body=JSON.parse(text);keys=body&&typeof body==="object"?Object.keys(body).slice(0,12):typeof body;}catch{}
+    console.log(JSON.stringify({event:"analysis-read",status:response.status,path:new URL(request.url).pathname,type:response.headers.get("content-type"),bytes:text.length,keys}));}
    return response;
   }catch(error){
    console.error(JSON.stringify({event:"analysis-binding-failed",path:new URL(request.url).pathname,message:error instanceof Error?error.message:String(error)}));
