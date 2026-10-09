@@ -13,6 +13,8 @@ import type { RevenueHistory } from "@/shared/analysis-contract/revenue-history"
 import type { BusinessExplainer, ExplainerClaim, ExplainerSection } from "@/shared/analysis-contract/business-explainer";
 import type { GuidancePublication } from "@/shared/analysis-contract/guidance";
 import { TrendPanel } from "./TrendPanel";
+import { MetricPicker, MetricTrendPanel } from "./MetricTrend";
+import { REVENUE_METRIC, metricOptions, metricTrend } from "./metric-model";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { CapitalQuarter, PublicCapitalStructure } from "@/shared/analysis-contract/capital-structure";
 import { balanceMetrics, balancePool, balanceVerdict, cashMetrics, cashPool, fundingVerdict, type Pool } from "./capital-model";
@@ -129,6 +131,15 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
   const [story, setStory] = useState(false);
   const [split, setSplit] = useState(false);
   const focused = verified.find(f => f.id === focusId) ?? null;
+  // The trend below the flow shows revenue by business, or one company-level SEC series picked from the fundamentals.
+  const metricGroups = useMemo(() => metricOptions(fundamentals), [fundamentals]);
+  const hasRevenueTrend = !!revenueHistory && revenueHistory.quarters.length >= 2;
+  const [metricKey, setMetricKey] = useState<string>(() => new URLSearchParams(location.search).get("metric") ?? REVENUE_METRIC);
+  const metricSeries = metricKey === REVENUE_METRIC ? null : fundamentals?.series.find(s => s.metricKey === metricKey && metricGroups.some(g => g.options.some(o => o.key === s.metricKey)));
+  const metric = useMemo(() => metricSeries ? metricTrend(metricSeries) : null, [metricSeries]);
+  const firstMetric = metricGroups[0]?.options[0]?.key;
+  const fallbackMetric = !metric && !hasRevenueTrend && firstMetric ? metricTrend(fundamentals!.series.find(s => s.metricKey === firstMetric)!) : null;
+  const shownMetric = metric ?? fallbackMetric;
   const pair = focused ? verified.find(f => f.id === focused.pairWith) ?? null : null;
   const focusIndex = focused ? verified.indexOf(focused) : -1;
   const [preview, setPreview] = useState<string | null>(null);
@@ -144,8 +155,9 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
     const url = new URL(location.href);
     if (current) url.searchParams.set("business", current.id); else url.searchParams.delete("business");
     if (focused) url.searchParams.set("finding", focused.id); else url.searchParams.delete("finding");
+    if (metric) url.searchParams.set("metric", metric.key); else url.searchParams.delete("metric");
     if (url.href !== location.href) history.replaceState(history.state, "", url);
-  }, [current, focused]);
+  }, [current, focused, metric]);
   // A business picked in the chart is brought into view in the list, scrolling only the list (a column or, on narrow screens, a chip row).
   useEffect(() => {
     const option = listRef.current?.querySelector<HTMLElement>('[role=option][aria-selected="true"]');
@@ -283,7 +295,7 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
       {!!quarter?.revenueAdjustments?.length&&<p className="revenue-reconciliation">收入对账 · {quarter.currency} 百万<br/>分部收入（抵销前） {formatFlowValue(segmentRevenue,quarter)}<br/>{quarter.revenueAdjustments.map(a=><span key={a.id}>{a.name} {formatFlowValue(numeric(a.amount),quarter)}<br/></span>)}合并收入 {formatFlowValue(revenue,quarter)}</p>}
     </Rail>
 
-    <section className="stage" data-trend={revenueHistory && revenueHistory.quarters.length >= 2 ? "" : undefined} data-finding={focused?.kind} aria-label={`${ticker} 收入到利润流向`}>
+    <section className="stage" data-trend={hasRevenueTrend || metricGroups.length ? "" : undefined} data-finding={focused?.kind} aria-label={`${ticker} 收入到利润流向`}>
       <header className="stage-head stage-head--summary">
         {quarter && view !== "profit" && funding ? <CapitalStats view={view} funding={funding} /> : quarter && <div className="stats" aria-live="polite">
           {current && current.value != null ? <>
@@ -340,8 +352,12 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
         {split && pair && <LensPanel finding={pair} data={data} sources={findings.sources} nodeColor={nodeColor} pair={null} compact
           story={false} index={-1} count={verified.length} onPair={() => {}} onStep={() => {}} onClose={() => setSplit(false)} onFocusThis={() => setFocusId(pair.id)} />}
       </div>
-      : revenueHistory && revenueHistory.quarters.length >= 2 && <TrendPanel history={revenueHistory} items={items} selected={current} currentPeriod={quarter?.periodEnd ?? null}
-        periods={new Set(quarters.map(q => q.periodEnd))} onPickPeriod={end => setPeriod(quarters.find(q => q.periodEnd === end)?.id ?? null)} hue={hue} guidance={guidance} />}
+      : shownMetric ? <MetricTrendPanel trend={shownMetric} currentPeriod={quarter?.periodEnd ?? null} periods={new Set(quarters.map(q => q.periodEnd))}
+        onPickPeriod={end => setPeriod(quarters.find(q => q.periodEnd === end)?.id ?? null)}
+        picker={<MetricPicker value={shownMetric.key} groups={metricGroups} revenue={hasRevenueTrend} onChange={setMetricKey} />} />
+      : hasRevenueTrend && <TrendPanel history={revenueHistory!} items={items} selected={current} currentPeriod={quarter?.periodEnd ?? null}
+        periods={new Set(quarters.map(q => q.periodEnd))} onPickPeriod={end => setPeriod(quarters.find(q => q.periodEnd === end)?.id ?? null)} hue={hue} guidance={guidance}
+        picker={<MetricPicker value={REVENUE_METRIC} groups={metricGroups} revenue onChange={setMetricKey} />} />}
 
       <footer className="stage-foot">
         {view !== "profit" && funding ? <CapitalLegend view={view} funding={funding} /> : proportional ? <div className="legend" aria-label="图例">
