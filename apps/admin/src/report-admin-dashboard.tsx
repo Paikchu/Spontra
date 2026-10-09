@@ -24,7 +24,7 @@ function date(value?: string | null) {
 function period(item: { reportDate: string; form: string }) { return `${item.reportDate || "报告期待确认"} · ${item.form}`; }
 const identity = (item: Pick<ReportAdminItem, "ticker" | "accessionNumber">) => `${item.ticker}/${item.accessionNumber}`;
 
-export function ReportAdminDashboard({ mainAppOrigin = "" }: { mainAppOrigin?: string }) {
+export function ReportAdminDashboard({ mapOrigin = "" }: { mapOrigin?: string }) {
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
   const [key, setKey] = useState("");
   const [loginBusy, setLoginBusy] = useState(false);
@@ -174,7 +174,7 @@ export function ReportAdminDashboard({ mainAppOrigin = "" }: { mainAppOrigin?: s
         <button aria-current={section === "tasks" ? "page" : undefined} onClick={() => navigate("tasks")}><Clock3 size={19} />生成任务</button>
         <button aria-current={section === "history" ? "page" : undefined} onClick={() => navigate("history")}><History size={19} />生成记录</button>
       </nav>
-      <div className="ra-sidebar-bottom"><Link href={`${mainAppOrigin}/`}><ArrowLeft size={17} />返回 Spontra</Link><div><ShieldCheck size={23} /><span>管理员</span>{authenticated && <button onClick={() => void logout()} aria-label="退出登录" title="退出登录"><LogOut size={17} /></button>}</div></div>
+      <div className="ra-sidebar-bottom"><Link href={`${mapOrigin}/`}><ArrowLeft size={17} />返回业务地图</Link><div><ShieldCheck size={23} /><span>管理员</span>{authenticated && <button onClick={() => void logout()} aria-label="退出登录" title="退出登录"><LogOut size={17} /></button>}</div></div>
     </aside>
     <main className="ra-main">
       <header className={`ra-page-header${section === "business-map" ? " ra-business-map-header" : ""}${section === "financials" && authenticated !== false ? " ra-financial-header" : ""}`}><div><p>工作台 <ChevronRight size={13} /> {title}</p><h1>{title}</h1><span>{section === "transcripts" ? "按公司和财季阅读电话会全文，查看后台获取状态" : section === "business-map" ? "管理公司白名单，跟踪数据准备与采集问题" : section === "ai" ? "按公司触发财报发现、业务解读与业绩指引，查看进度和历史版本" : section === "financials" ? "清晰阅读报表，比较不同期间的数据" : section === "tasks" ? "查看生成进度，跟踪报告发布" : "检查分析内容，管理报告生成"}</span></div><div className="ra-header-actions"><div className="ra-live"><span />{preview ? "本地预览" : "管理工作台"}</div>{authenticated && <button className="ra-mobile-logout" onClick={() => void logout()} aria-label="退出登录"><LogOut size={17} /></button>}</div></header>
