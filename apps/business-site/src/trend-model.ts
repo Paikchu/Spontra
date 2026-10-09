@@ -178,11 +178,15 @@ const near = (a: string, b: string) => Math.abs(Date.parse(a) - Date.parse(b)) <
 const plain = (value: string) => value.toLowerCase().replace(/revenues?$|net$/g, "").replace(/[^a-z0-9]/g, "");
 
 /** Segment guidance names the business in the filing's words; match it to the member id, never to a translated label. */
-function forSubject(item: GuidanceItem, selected: TrendItem | null) {
-  if (!selected) return item.metric === "revenue" && !item.segment;
+export function segmentMatches(item: GuidanceItem, businessId: string): boolean {
   if (item.metric !== "segment_revenue" || !item.segment) return false;
   const name = plain(item.segment);
-  return name.length >= 3 && (name === plain(selected.id) || name === plain(selected.id.replace(/Revenues?$/, "")));
+  return name.length >= 3 && (name === plain(businessId) || name === plain(businessId.replace(/Revenues?$/, "")));
+}
+
+function forSubject(item: GuidanceItem, selected: TrendItem | null) {
+  if (!selected) return item.metric === "revenue" && !item.segment;
+  return segmentMatches(item, selected.id);
 }
 
 function mark(item: GuidanceItem, sources: GuidanceSource[]): GuideMark | null {
