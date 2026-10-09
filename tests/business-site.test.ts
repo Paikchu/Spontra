@@ -27,18 +27,17 @@ test("limiter rejects excess requests and fails closed without a binding",async(
  assert.equal((await handle(request(endpoint),{...env,PUBLIC_READ_LIMIT:undefined} as unknown as SiteEnv,context,success)).status,429);
  const broken={...env,PUBLIC_READ_LIMIT:{limit:async()=>{throw new Error("broken");}}};assert.equal((await handle(request(endpoint),broken,context,success)).status,503);
 });
-test("reads go to the pipeline's read API over the binding with the Worker's own credential, never the browser's headers",async()=>{
+test("reads go to the pipeline's read API over the named-entrypoint binding, with nothing from the browser's request forwarded",async()=>{
  const seen:Request[]=[];await loadPublicFlow("MSFT",async(input,init)=>{const req=new Request(input,init);seen.push(req);return success(input,init);});
- assert.equal(seen.length,1);assert.equal(seen[0].url,"https://spontra-analysis.internal/api/v1/companies/MSFT/business-flow");assert.equal(seen[0].headers.get("cookie"),null);
+ assert.equal(seen.length,1);assert.equal(seen[0].url,"https://spontra-analysis.internal/api/v1/companies/MSFT/business-flow");assert.equal(seen[0].headers.get("cookie"),null);assert.equal(seen[0].headers.get("authorization"),null);
  const {analysisFetcher}=await import("../apps/business-site/worker/index");
  const bound:Request[]=[];const binding={fetch:async(req:Request)=>{bound.push(req);return success(req);}};
- const token="site-read-credential-of-sufficient-length";
  const browser=new Request("https://site.test"+endpoint,{headers:{cookie:"session=PRIVATE",authorization:"Bearer BROWSER"}});
- const answered=await handle(browser,{...env,EARNING_REPORT_PIPELINE:binding,EARNING_REPORT_READ_TOKEN:token},context);
+ const answered=await handle(browser,{...env,EARNING_REPORT_PIPELINE:binding},context);
  assert.equal(answered.status,200);assert.equal(bound.length,3,"flow, explainer and guidance");
- for(const req of bound){assert.equal(req.headers.get("authorization"),`Bearer ${token}`);assert.equal(req.headers.get("cookie"),null);assert.ok(req.url.startsWith("https://spontra-analysis.internal/api/v1/companies/ORCL"));}
- assert.equal(analysisFetcher({EARNING_REPORT_PIPELINE:binding}),null);assert.equal(analysisFetcher({EARNING_REPORT_READ_TOKEN:"short"}),null);
- // Without the binding or the credential the data routes say so instead of reaching for a public origin.
+ for(const req of bound){assert.equal(req.headers.get("authorization"),null);assert.equal(req.headers.get("cookie"),null);assert.ok(req.url.startsWith("https://spontra-analysis.internal/api/v1/companies/ORCL"));}
+ assert.equal(analysisFetcher({}),null);
+ // Without the binding the data routes say so instead of reaching for a public origin.
  const unconfigured=await handle(request(endpoint),env,context);assert.equal(unconfigured.status,503);assert.equal(unconfigured.headers.get("cache-control"),"no-store");
  assert.equal((await handle(request("/"),env,context)).status,200,"the shell is served without the binding");
 });

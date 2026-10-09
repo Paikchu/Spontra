@@ -8,8 +8,6 @@ if (!process.env.CI) throw new Error('Deployment is restricted to the Git main C
 const credential = process.env.DESKTOP_ACCESS_TOKEN;
 const portfolioToken = process.env.PORTFOLIO_READ_TOKEN;
 const portfolioSiteToken = process.env.PORTFOLIO_SITE_READ_TOKEN;
-const siteReadToken = process.env.BUSINESS_SITE_READ_TOKEN;
-if (siteReadToken && !/^[!-~]{24,512}$/.test(siteReadToken)) throw new Error('Invalid business map read credential configuration.');
 if (!portfolioToken || !/^[!-~]{32,512}$/.test(portfolioToken)) throw new Error('Set PORTFOLIO_READ_TOKEN in the main Git build secrets before releasing.');
 if (portfolioSiteToken && !/^[!-~]{32,512}$/.test(portfolioSiteToken)) throw new Error('Invalid portfolio Site read credential configuration.');
 if (!process.env.CLOUDFLARE_API_TOKEN) throw new Error('Cloudflare CI API credential is required for portfolio migration.');
@@ -90,14 +88,8 @@ try {
   const siteEnv = { ...process.env };
   delete siteEnv.WRANGLER_CI_OVERRIDE_NAME;
   delete siteEnv.WRANGLER_CI_MATCH_TAG;
-  // The map reads the pipeline over its binding with its own credential; CI writes it when the build holds one, else the stored secret stays (--keep-vars).
-  const siteArgs = ['node_modules/wrangler/bin/wrangler.js', 'deploy', '--config', 'apps/business-site/wrangler.jsonc', '--keep-vars'];
-  if (siteReadToken) {
-    const siteSecrets = join(directory, 'site-secrets.json');
-    writeFileSync(siteSecrets, JSON.stringify({ EARNING_REPORT_READ_TOKEN: siteReadToken }), { mode: 0o600 });
-    siteArgs.push('--secrets-file', siteSecrets);
-  }
-  run(process.execPath, siteArgs, siteEnv);
+  // The map reads the pipeline over a named-entrypoint binding; the binding is its credential, so no secret is written here.
+  run(process.execPath, ['node_modules/wrangler/bin/wrangler.js', 'deploy', '--config', 'apps/business-site/wrangler.jsonc', '--keep-vars'], siteEnv);
   // Public marketing website: static assets only, published by the same main build.
   run('npm', ['run', 'marketing:deploy:ci']);
 } catch (error) {

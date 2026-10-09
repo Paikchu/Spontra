@@ -17,6 +17,7 @@ import {
   TEST_READ_KEY_ID,
   TEST_READ_SECRET,
   TEST_READ_TOKEN,
+  createAnalysisDatabase,
   readEnv,
   readRequest,
 } from "./helpers/analysis-backend.ts";
@@ -190,4 +191,24 @@ test("additional credentials preserve original readers and do not broaden scopes
     assert.equal((await handleAnalysisReadRequest(readRequest(path, { token: "investment-test.wrong-secret" }), env)).status, 401);
     assert.equal((await handleAnalysisReadRequest(readRequest(path), { ...env, ANALYSIS_ADDITIONAL_READ_KEYS: "malformed" })).status, 200);
   } finally { db.close(); }
+});
+
+test("a named-entrypoint binding reads without a credential as the fixed map identity, scoped and rate-limited like any reader", async () => {
+  const { handleBoundReadRequest, BOUND_MAP_READER } = await import("../../workers/pipeline/src/read-api/router.ts");
+  const database = await createAnalysisDatabase();
+  const env = readEnv(database, { ANALYSIS_READ_KEYS: undefined });
+  const bare = new Request("https://spontra-analysis.internal/api/v1/companies/ORCL/findings");
+  const bound = await handleBoundReadRequest(bare, env, BOUND_MAP_READER);
+  assert.equal(bound.status, 200);
+  assert.equal(((await bound.json()) as { status: string }).status, "ready");
+  // The default entrypoint still demands a credential for the same request.
+  assert.equal((await handleAnalysisReadRequest(bare, env)).status, 503, "no keys configured");
+  assert.equal((await handleAnalysisReadRequest(bare, readEnv(database))).status, 401);
+  // The bound identity keeps the read scopes only, and is counted under its own key by the limiter.
+  const limited: string[] = [];
+  const throttled = readEnv(database, { ANALYSIS_READ_KEYS: undefined, ANALYSIS_READ_RATE_LIMIT: { async limit({ key }: { key: string }) { limited.push(key); return { success: false }; } } });
+  assert.equal((await handleBoundReadRequest(bare, throttled, BOUND_MAP_READER)).status, 429);
+  assert.deepEqual(limited, ["business-map"]);
+  assert.equal((await handleBoundReadRequest(new Request("https://spontra-analysis.internal/api/v1/companies/ORCL/findings", { method: "POST" }), env, BOUND_MAP_READER)).status, 405);
+  assert.equal((await handleBoundReadRequest(bare, env, { keyId: "narrow", scopes: new Set(["filings:read"]) })).status, 403);
 });

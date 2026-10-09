@@ -18,7 +18,7 @@ import { findSecurity } from "../catalog/security-directory.ts";
 import { AnalysisRequestError, type AnalysisErrorCode } from "./contract-support/errors.ts";
 import { buildAnalysisOpenApiDocument } from "./contract-support/openapi.ts";
 import type { AnalysisReadScope } from "./contract-support/versions.ts";
-import { authenticateReadRequest, hasScope, type AnalysisReadIdentity } from "./auth.ts";
+import { authenticateReadRequest, hasScope, type AnalysisReadIdentity, type ReadAuthOutcome } from "./auth.ts";
 import { dataResponse, errorResponse } from "./http.ts";
 
 /**
@@ -88,7 +88,23 @@ export function isAnalysisReadPath(pathname: string): boolean {
   return pathname === "/api/v1" || pathname.startsWith(ANALYSIS_READ_PREFIX);
 }
 
-export async function handleAnalysisReadRequest(request: Request, env: AnalysisReadEnv): Promise<Response> {
+/**
+ * A consumer bound to a named entrypoint of this Worker: the binding itself is the credential, since
+ * no public request can reach that entrypoint. Reads are served with this fixed identity and the
+ * same scope and rate-limit checks a credentialed read gets.
+ */
+export const BOUND_MAP_READER: AnalysisReadIdentity = { keyId: "business-map", scopes: new Set<string>(["analysis:read", "filings:read", "fundamentals:read"]) };
+
+export function handleAnalysisReadRequest(request: Request, env: AnalysisReadEnv): Promise<Response> {
+  return serveRead(request, env, null);
+}
+
+/** The read API for a Worker reaching it over a named-entrypoint binding; no credential is parsed. */
+export function handleBoundReadRequest(request: Request, env: AnalysisReadEnv, identity: AnalysisReadIdentity): Promise<Response> {
+  return serveRead(request, env, identity);
+}
+
+async function serveRead(request: Request, env: AnalysisReadEnv, bound: AnalysisReadIdentity | null): Promise<Response> {
   // Method is checked before anything else: this router owns the whole `/api/v1` prefix precisely
   // so a POST cannot slip past it into a control handler further down the entry point.
   if (request.method !== "GET" && request.method !== "HEAD") {
@@ -111,7 +127,7 @@ export async function handleAnalysisReadRequest(request: Request, env: AnalysisR
     return dataResponse(request, buildAnalysisOpenApiDocument(url.origin));
   }
 
-  let auth = await authenticateReadRequest(request, env.ANALYSIS_READ_KEYS);
+  let auth: ReadAuthOutcome = bound ? { ok: true, identity: bound } : await authenticateReadRequest(request, env.ANALYSIS_READ_KEYS);
   if (!auth.ok && env.ANALYSIS_ADDITIONAL_READ_KEYS?.trim()) {
     auth = await authenticateReadRequest(request, env.ANALYSIS_ADDITIONAL_READ_KEYS);
   }

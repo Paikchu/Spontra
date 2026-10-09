@@ -21,13 +21,13 @@ import {formatSecMetricLabel,formatSecMetricValue} from "@/lib/earning-report/we
 /** The analysis pipeline is reached over its Service Binding; the host is a label the binding ignores. */
 const ANALYSIS_ORIGIN="https://spontra-analysis.internal";
 export type SiteEnv={ASSETS:{fetch(request:Request):Promise<Response>};PUBLIC_READ_LIMIT:{limit(options:{key:string}):Promise<{success:boolean}>};
- /** Service Binding to `spontra-analysis` and the read credential it accepts; without both, every data route answers 503. */
- EARNING_REPORT_PIPELINE?:{fetch(request:Request):Promise<Response>};EARNING_REPORT_READ_TOKEN?:string};
-/** Reads go straight to the pipeline's read API with this Worker's own credential; nothing from the browser's request is forwarded. */
-export function analysisFetcher(env:Pick<SiteEnv,"EARNING_REPORT_PIPELINE"|"EARNING_REPORT_READ_TOKEN">):typeof fetch|null{
- const binding=env.EARNING_REPORT_PIPELINE,token=env.EARNING_REPORT_READ_TOKEN;
- if(!binding||typeof binding.fetch!=="function"||!token||!/^[!-~]{24,512}$/.test(token))return null;
- return (input,init)=>{const request=new Request(input,init);request.headers.set("authorization",`Bearer ${token}`);return binding.fetch(request);};
+ /** Service Binding to the pipeline's `MapReads` named entrypoint; the binding is the credential. Without it every data route answers 503. */
+ EARNING_REPORT_PIPELINE?:{fetch(request:Request):Promise<Response>}};
+/** Reads go straight to the pipeline's read API over the binding; each call is a fresh request, so nothing from the browser's request is forwarded. */
+export function analysisFetcher(env:Pick<SiteEnv,"EARNING_REPORT_PIPELINE">):typeof fetch|null{
+ const binding=env.EARNING_REPORT_PIPELINE;
+ if(!binding||typeof binding.fetch!=="function")return null;
+ return (input,init)=>binding.fetch(new Request(input,init));
 }
 export type SiteContext={waitUntil(promise:Promise<unknown>):void};
 const security={"x-content-type-options":"nosniff","referrer-policy":"strict-origin-when-cross-origin","content-security-policy":"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://images.financialmodelingprep.com; connect-src 'self'; font-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"};
