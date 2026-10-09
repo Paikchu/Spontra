@@ -7,7 +7,8 @@ import { compactFlowValue, type PlacedNode } from "@/lib/earning-report/web/busi
 import { availableRevenueTrees, compareRevenueNode, revenueNodeKey } from "@/lib/earning-report/web/revenue-tree";
 import { formatFlowValue, compareAmount, compareFlowAmounts, disclosedSegmentLabel, numeric, previousQuarter, reconcileQuarter } from "@/lib/earning-report/web/business-flow-model";
 import { FinancialSankey } from "@/app/analysis/stocks/[ticker]/FinancialSankey";
-import { FlowChart, layoutFor, type NodeCopy, type Tip } from "./FlowChart";
+import { FlowChart, layoutFor, type GuideBracketMark, type GuidePillMark, type NodeCopy, type Tip } from "./FlowChart";
+import { ACTION_GLYPH, actionName, guidanceMarks, markSentence } from "./guidance-marks";
 import type { RevenueHistory } from "@/shared/analysis-contract/revenue-history";
 import type { BusinessExplainer, ExplainerClaim, ExplainerSection } from "@/shared/analysis-contract/business-explainer";
 import type { GuidancePublication } from "@/shared/analysis-contract/guidance";
@@ -260,6 +261,24 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
     return { title: n.label, color: colorOf(n.name), rows };
   }, [quarter, revenue, money, amountOf, colorOf, changeOf, graph, segmentRevenue]);
 
+  // Guidance on the bars: this quarter's guided range as a bracket with its verdict, next quarter's as a pill, both at the chart's units.
+  const guideMarks = useMemo((): { brackets: GuideBracketMark[]; pills: GuidePillMark[] } => {
+    if (!quarter || !graph || !guidance) return { brackets: [], pills: [] };
+    const dollars = (v: number | null) => v == null ? "—" : compactFlowValue(v / quarter.scale, quarter);
+    const amountOfNode = (name: string) => { const n = graph.nodes.find(n => n.name === name); return n ? (n.amount ? numeric(n.amount) : n.metric ? numeric(quarter.figures[n.metric]) : n.value) : null; };
+    const marks = guidanceMarks(quarter, graph.nodes.map(n => n.name), guidance, { amountOf: amountOfNode, businessIdOf: name => itemByNode.get(name)?.id ?? null, money: v => dollars(v) });
+    const VERDICT = { above: "高于指引上限", within: "落在指引区间内", below: "低于指引下限" } as const;
+    return {
+      brackets: marks.brackets.map(b => ({ node: b.node, low: b.low / quarter.scale, high: b.high / quarter.scale, derived: b.derived, verdict: b.verdict, url: b.source?.url ?? null,
+        tip: { title: `本季指引 · ${markSentence(b.item, dollars)}`, color: colorOf(b.node), note: b.item.quote,
+          rows: [[b.derived ? "指引（按增速换算）" : "指引区间", `${dollars(b.low)}–${dollars(b.high)}`], ["本季", money(amountOfNode(b.node))], ["结果", VERDICT[b.verdict]], ["发布于", b.item.issuedAt.slice(0, 10)]],
+          link: b.source ? `来源：${b.source.title}` : undefined } })),
+      pills: marks.pills.map(p => ({ node: p.node, text: p.text, action: p.action ?? null, glyph: p.action ? ACTION_GLYPH[p.action] : "", url: p.source?.url ?? null,
+        tip: { title: `下季指引 · ${markSentence(p.item, dollars)}`, color: colorOf(p.node), note: p.item.quote,
+          rows: [...(p.action && p.action !== "initiated" ? [["较上次", actionName(p.action) + (p.item.previous && p.item.previous.low != null ? `（此前 ${p.item.measure === "growth" || p.item.unit === "percent" ? `${p.item.previous.low}%–${p.item.previous.high}%` : `${dollars(p.item.previous.low)}–${dollars(p.item.previous.high)}`}）` : "")] as [string, string]] : []), ["发布于", p.item.issuedAt.slice(0, 10)]],
+          link: p.source ? `来源：${p.source.title}` : undefined } })),
+    };
+  }, [quarter, graph, guidance, itemByNode, colorOf, money]);
   const spotlight = useMemo(() => focused && view === "profit" ? anchorNodeNames(focused, quarter, items) : null, [focused, view, quarter, items]);
   const poolSpotlight = useMemo(() => focused && view !== "profit" ? anchorPoolKeys(focused) : null, [focused, view]);
   const badgeFindings = useMemo(() => focused || view !== "profit" ? new Map() : badgesByNode(verified, quarter, items), [focused, view, verified, quarter, items]);
@@ -377,7 +396,7 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
           : !quarter ? <div className="empty"><h2>季度财务未披露</h2><p>需要同币种、同口径的三个月数据才能绘制流向；不会用示例数据替代。</p></div>
           : proportional && layout ? <FlowChart graph={graph!} copy={copy} money={v => money(v)} colorOf={colorOf} active={active} revealKey={quarter.id} productBusiness={current ? "segment:" + current.key : null} businessDetails={<Dossier item={current} parent={parent ?? null} sources={quarter?.sources.length ? quarter.sources : business?.sources ?? []} explainer={explainer} />}
               focusSlot={n => segmentRevenue ? `占${shareBasis} ${percent(n.value / segmentRevenue * 100)}` : null}
-              onHover={name => setHoverNode(name)} tipFor={tipFor} spotlight={spotlight} badges={badges} priorOf={priorOf} previous={priorQuarter} onBadge={name => { const f = badgeFindings.get(name); if (f) focusFinding(f.id); }}
+              onHover={name => setHoverNode(name)} tipFor={tipFor} spotlight={spotlight} badges={badges} priorOf={priorOf} previous={priorQuarter} brackets={guideMarks.brackets} pills={guideMarks.pills} onBadge={name => { const f = badgeFindings.get(name); if (f) focusFinding(f.id); }}
               onPick={n => { const item = itemByNode.get(n.name); setSelected(item && current?.key !== item.key ? item.id : null); }}
               label={`${ticker} ${quarter.label} 收入到净利润桑基图，金额单位 ${quarter.currency}`} />
           : <div className="business-flow chart-fallback">{current && <Dossier item={current} parent={parent ?? null} sources={quarter.sources.length ? quarter.sources : business?.sources ?? []} explainer={explainer} />}<FinancialSankey quarter={quarter} previous={previous} onSegment={key => setSelected(items.find(item => item.key === key)?.id ?? null)} /></div>}
@@ -413,7 +432,7 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
           <span><i style={{ background: "var(--flow-profit)" }} />利润</span>
           {(graph?.signed || graph?.deficit) && <span><i style={{ background: "var(--loss)" }} />{graph?.deficit ? "净亏损（资金缺口）" : "亏损"}</span>}
           <span><i style={{ background: "var(--flow-expense)" }} />成本与费用</span>
-          <span className="legend-note">线宽 = 本季金额{graph?.signed ? "绝对值" : ""}{previous ? " · 百分比 = 较上季变化 · 虚线框 = 上季金额" : ""}</span>
+          <span className="legend-note">线宽 = 本季金额{graph?.signed ? "绝对值" : ""}{previous ? " · 百分比 = 较上季变化 · 虚线框 = 上季金额" : ""}{guideMarks.brackets.length ? " · 括号 = 本季指引区间" : ""}{guideMarks.pills.length ? " · 胶囊 = 下季指引" : ""}</span>
         </div> : <span className="legend-note">框图表示会计关系，宽度不代表金额</span>}
         <p className="provenance">
           {notice && <span>{notice}</span>}

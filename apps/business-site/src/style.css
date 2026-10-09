@@ -285,6 +285,23 @@ button { cursor: pointer; }
 .light .fc-ghost { stroke: color-mix(in srgb, var(--c) 80%, var(--foreground)); }
 .fc-svg[data-focus] .fc-node:not([data-lit]) .fc-ghost { opacity: .35; }
 .fc-period { position: absolute; left: 12px; bottom: 10px; z-index: 2; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--muted-foreground); font-size: 12px; pointer-events: none; }
+/* Guidance on the bars: a bracket is the range guided for this quarter, coloured by where the bar landed; a pill is next quarter's. */
+.fc-guide path { fill: none; stroke: var(--foreground); stroke-width: 2; vector-effect: non-scaling-stroke; opacity: .85; animation: fade-in .6s var(--ease) both; animation-delay: var(--d); }
+.fc-guide[data-derived] path { stroke-dasharray: 4 3; }
+.fc-guide[data-verdict="above"] path { stroke: var(--up); }
+.fc-guide[data-verdict="below"] path { stroke: var(--loss); }
+.fc-guide-hit { fill: transparent; }
+.fc-guide:hover path { opacity: 1; stroke-width: 3; }
+.fc-guide-pill { cursor: pointer; animation: fade-in .5s var(--ease) both; animation-delay: var(--d); }
+.fc-guide-pill rect { fill: var(--surface-raised); stroke: var(--border); stroke-width: 1; }
+.fc-guide-pill text { font-size: 13px; font-weight: 600; fill: var(--foreground); font-variant-numeric: tabular-nums; }
+.fc-guide-pill .fc-guide-when { fill: var(--muted-foreground); font-weight: 500; }
+.fc-guide-pill[data-action="raised"] .fc-guide-glyph { fill: var(--up); }
+.fc-guide-pill[data-action="lowered"] .fc-guide-glyph { fill: var(--loss); }
+.fc-guide-pill:hover rect, .fc-guide-pill:focus-visible rect { stroke: var(--foreground); }
+.fc-guide-pill:focus { outline: none; }
+.fc-tip-note { margin: 8px 0 0; max-width: 260px; font-size: 12px; line-height: 1.5; color: var(--muted-foreground); font-style: italic; }
+.fc-tip-link { margin: 6px 0 0; font-size: 11px; color: var(--muted-foreground); }
 .fc-controls button[data-on], .fc-controls button[data-on]:hover { background: var(--foreground); color: var(--background); border-color: var(--foreground); }
 .fc-node { transition: opacity .35s var(--ease); }
 .fc-svg[data-focus] .fc-node:not([data-lit]) { opacity: .34; }

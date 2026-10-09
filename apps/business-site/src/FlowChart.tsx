@@ -7,7 +7,11 @@ import { alignedGraph, ghostFrames, morphLayout, priorRevenueHeight } from "@/li
 
 /** `change` is the comparable change against the prior quarter; absent when the two quarters cannot be compared. */
 export type NodeCopy = { name: string; value: string; change?: { label: string; trend?: "up" | "down" } };
-export type Tip = { title: string; color: string; rows: Array<[string, string]> };
+export type Tip = { title: string; color: string; rows: Array<[string, string]>; note?: string; link?: string };
+/** A range guided for this quarter beside a bar, in the chart's units: where the bar ends against it is the verdict. */
+export type GuideBracketMark = { node: string; low: number; high: number; derived: boolean; verdict: "above" | "within" | "below"; tip: Tip; url: string | null };
+/** What the latest report guides for the next quarter on a line. */
+export type GuidePillMark = { node: string; text: string; action: string | null; glyph: string; tip: Tip; url: string | null };
 
 type Band = { x0: number; x1: number; sy: number; ty: number; h: number; color: string; key: string; owner: string; fade?: number };
 
@@ -129,12 +133,14 @@ export type Badge = { kind: "risk" | "strength" | "shift" | "watch"; severity: n
 
 export type PriorQuarter = { graph: FinancialGraph; copy: (n: PlacedNode) => NodeCopy; label: string };
 
-export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHover, onPick, tipFor, label, revealKey, businessDetails, productBusiness = null, spotlight = null, badges, onBadge, priorOf, previous = null }: {
+export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHover, onPick, tipFor, label, revealKey, businessDetails, productBusiness = null, spotlight = null, badges, onBadge, priorOf, previous = null, brackets, pills }: {
   businessDetails?: ReactNode;
   /** The comparable prior-quarter amount of a node, drawn as a dashed outline over its bar; null when the two quarters cannot be compared. */
   priorOf?: (n: PlacedNode) => number | null;
   /** The prior quarter's statement: 对比上季 morphs the whole chart to it at the current quarter's scale. */
   previous?: PriorQuarter | null;
+  brackets?: GuideBracketMark[];
+  pills?: GuidePillMark[];
   productBusiness?: string | null;
   /** Nodes a finding is about: they and their bands stay lit while the rest of the statement recedes. */
   spotlight?: Set<string> | null;
@@ -202,6 +208,8 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
   const textOf = useCallback((n: PlacedNode) => showingPrior ? previous!.copy(priorByName.get(n.name) ?? n) : copy(n), [showingPrior, previous, priorByName, copy]);
   const ghosts = useMemo(() => priorOf ? ghostFrames(layout, priorOf) : [], [layout, priorOf]);
   const byName = useMemo(() => new Map(shown.nodes.map(n => [n.name, n])), [shown]);
+  const bracketOf = useMemo(() => new Map((brackets ?? []).map(b => [b.node, b])), [brackets]);
+  const pillOf = useMemo(() => new Map((pills ?? []).map(p => [p.node, p])), [pills]);
   const productTarget = productBusiness ? byName.get(productBusiness) : null;
   const expanded = Boolean(productTarget);
   // The explanation's scrollbar stays hidden until the reader scrolls it, and fades shortly after.
@@ -374,6 +382,12 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
         {shown.nodes.map(n => {
           const text = textOf(n), vs = valueSize(n, k), side = Math.max(n.h, geometryFor(k).sideLabelHeight), gap = geometryFor(k).labelOffset;
           const ghost = t < 1 ? ghosts.find(g => g.name === n.name) : undefined;
+          // Guidance rests while a hover, a pick or a finding has the stage, and while the prior quarter shows.
+          const marksShown = !lit && t === 0;
+          const bracket = marksShown ? bracketOf.get(n.name) : undefined, pill = marksShown ? pillOf.get(n.name) : undefined;
+          const unitScale = n.value > 0 ? n.h / n.value : 0;
+          const span = bracket && unitScale ? (n.side === "bottom" ? [n.y + n.h - bracket.high * unitScale, n.y + n.h - bracket.low * unitScale] : [n.y + bracket.low * unitScale, n.y + bracket.high * unitScale]) : null;
+          const pillX = n.x + w + (span ? 16 : 8) * k;
           const [x, y, anchor]: [number, number, "start" | "middle" | "end"] = n.side === "top" ? [n.x + w / 2, n.y - type.offset - 2, "middle"]
             : n.side === "bottom" ? [n.x + w / 2, n.y + n.h + type.offset + vs * 0.78, "middle"]
             : [n.side === "left" ? n.x - gap : n.x + w + gap, n.y + side / 2 + vs * 0.36, n.side === "left" ? "end" : "start"];
@@ -394,6 +408,16 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
               onClick={e => { e.stopPropagation(); onBadge?.(n.name); }} onKeyDown={(e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); onBadge?.(n.name); } }}>
               <circle r={9 * k} /><text y={3.4 * k} textAnchor="middle" style={{ fontSize: 10 * k }}>{badge.severity}</text>
             </g>}
+            {bracket && span && <g className="fc-guide" data-verdict={bracket.verdict} data-derived={bracket.derived || undefined} transform={`translate(${r(n.x + w + 4 * k)},0)`}
+              onMouseMove={e => { e.stopPropagation(); point(e, bracket.tip); }} onMouseLeave={() => setTip(null)}>
+              <title>{bracket.tip.title}</title>
+              <rect className="fc-guide-hit" x={-3 * k} y={Math.min(span[0], span[1]) - 6 * k} width={14 * k} height={Math.abs(span[1] - span[0]) + 12 * k} />
+              <path d={`M${r(8 * k)},${r(span[0])}H0V${r(span[1])}H${r(8 * k)}`} />
+            </g>}
+            {pill && <g className="fc-guide-pill" data-action={pill.action ?? undefined} transform={`translate(${r(pillX)},${r(n.y + n.h / 2)})`} onMouseMove={e => { e.stopPropagation(); point(e, pill.tip); }} onMouseLeave={() => setTip(null)}><a href={pill.url ?? undefined} target="_blank" rel="noopener noreferrer" aria-label={`${pill.tip.title}，打开来源`}>
+              <rect x={0} y={-type.pill} width={estimateTextWidth(`下季 ${pill.glyph} ${pill.text}`, type.pill, true) + type.pill * 1.6} height={type.pill * 2} rx={type.pill} />
+              <text x={type.pill * 0.8} y={type.pill * 0.38} style={{ fontSize: type.pill }}><tspan className="fc-guide-when">下季</tspan>{pill.glyph && <tspan className="fc-guide-glyph" dx={type.pill * 0.4}>{pill.glyph}</tspan>}<tspan dx={type.pill * 0.4}>{pill.text}</tspan></text>
+            </a></g>}
           </g>;
         })}
       </g>
@@ -411,6 +435,8 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
     {tip && <Tooltip x={tip.x} y={tip.y} width={tip.width}>
       <div className="fc-tip-title"><i style={{ background: tip.tip.color }} />{tip.tip.title}</div>
       {tip.tip.rows.map(([k, v]) => <div className="fc-tip-row" key={k}><span>{k}</span><b>{v}</b></div>)}
+      {tip.tip.note && <p className="fc-tip-note">“{tip.tip.note}”</p>}
+      {tip.tip.link && <p className="fc-tip-link">{tip.tip.link}</p>}
     </Tooltip>}
     </div>
   </div>;
