@@ -40,33 +40,6 @@ export function eventTitle(e: CompanyEvent): string {
   return `${EVENT_CLASS_LABEL[e.class]} · ${e.form}${e.items.length ? ` · Item ${e.items.filter(i => i !== "9.01").join(", ") || e.items.join(", ")}` : ""}`;
 }
 
-export type RailEvents = {
-  /** Since the newest report was filed (or the last 90 days when that leaves too few), newest first. */
-  recent: CompanyEvent[];
-  /** Everything older inside the publication's window, newest first. */
-  earlier: CompanyEvent[];
-  /** Form 4 filings with nothing traded, counted rather than listed. */
-  quiet: number;
-  /** The date the recent section starts at. */
-  since: string;
-};
-
-/** Splits the publication for the rail: events after the newest report's filing date are "this period", the rest fold under 更早. */
-export function railEvents(publication: EventsPublication | null, quarters: BusinessFlowQuarter[], now = new Date()): RailEvents | null {
-  if (!publication?.events.length) return null;
-  const newest = [...quarters].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd))[0];
-  const reported = newest?.reportedAt ?? null;
-  const ninety = new Date(now.getTime() - 90 * DAY_MS).toISOString().slice(0, 10);
-  const since = reported && reported < now.toISOString().slice(0, 10) ? reported : ninety;
-  const loud = publication.events.filter(e => !isQuietInsider(e)).sort((a, b) => b.filedAt.localeCompare(a.filedAt) || b.eventDate.localeCompare(a.eventDate));
-  let recent = loud.filter(e => e.filedAt >= since);
-  let cut = since;
-  if (recent.length < 3) { recent = loud.filter(e => e.filedAt >= ninety); cut = ninety < since ? ninety : since; }
-  if (recent.length < 3) { recent = loud.slice(0, 5); cut = recent[recent.length - 1]?.filedAt ?? cut; }
-  const ids = new Set(recent.map(e => e.id));
-  return { recent, earlier: loud.filter(e => !ids.has(e.id)), quiet: publication.events.length - loud.length, since: cut };
-}
-
 export type TimelinePoint = {
   id: string;
   date: string;

@@ -6,6 +6,7 @@ import type { PublicBusinessFlow } from "@/shared/analysis-contract/business-flo
 import type { PublicCapitalStructure } from "@/shared/analysis-contract/capital-structure";
 import type { FindingsPublication } from "@/shared/analysis-contract/findings";
 import type { EventsPublication } from "@/shared/analysis-contract/events";
+import type { PublicFilingDigestPage } from "@/shared/analysis-contract/filings";
 import type { FindingFundamentals } from "@/shared/analysis-runtime/findings";
 import "@/app/analysis/stocks/[ticker]/business-flow.css";
 import "./style.css";
@@ -79,6 +80,7 @@ function Company({ ticker, tools, onSeen }: { ticker: string; tools: ReactNode; 
     [capital, setCapital] = useState<PublicCapitalStructure | null>(null),
     [findings, setFindings] = useState<FindingsPublication | null>(null),
     [events, setEvents] = useState<EventsPublication | null>(null),
+    [filings, setFilings] = useState<PublicFilingDigestPage | null>(null),
     [fundamentals, setFundamentals] = useState<FindingFundamentals | null>(null),
     [retry, setRetry] = useState(0);
   useEffect(() => {
@@ -98,7 +100,7 @@ function Company({ ticker, tools, onSeen }: { ticker: string; tools: ReactNode; 
   // Balance sheet, cash flow, findings and the SEC series they resolve against load on their own; the map is drawn without waiting for them.
   useEffect(() => {
     const controller = new AbortController();
-    const load = <T,>(resource: "capital" | "findings" | "fundamentals" | "events", set: (value: T | null) => void) =>
+    const load = <T,>(resource: "capital" | "findings" | "fundamentals" | "events" | "filings", set: (value: T | null) => void) =>
       fetchSupplement<T>(ticker, resource, controller.signal)
         .then(value => { if (!controller.signal.aborted && value) set(value); })
         .catch(() => { /* Supplementary: the map stands on its own. */ });
@@ -106,6 +108,7 @@ function Company({ ticker, tools, onSeen }: { ticker: string; tools: ReactNode; 
     void load<FindingsPublication>("findings", setFindings);
     void load<FindingFundamentals>("fundamentals", setFundamentals);
     void load<EventsPublication>("events", setEvents);
+    void load<PublicFilingDigestPage>("filings", setFilings);
     return () => controller.abort();
   }, [ticker, retry]);
   const business = resolveCompanyBusiness(ticker);
@@ -124,6 +127,7 @@ function Company({ ticker, tools, onSeen }: { ticker: string; tools: ReactNode; 
           findings={findings}
           fundamentals={fundamentals}
           events={events}
+          filings={filings}
           notice={
             publication?.outdated
               ? publication.reasons.includes("SIGNED_LAYOUT_UNSUPPORTED")

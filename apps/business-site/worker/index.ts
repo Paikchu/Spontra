@@ -15,6 +15,9 @@ import {readFindingFundamentals,readFindingsPublication,type FindingFundamentals
 import type {FindingsPublication} from "@/shared/analysis-contract/findings";
 import {readEventsPublication} from "@/shared/analysis-runtime/events";
 import type {EventsPublication} from "@/shared/analysis-contract/events";
+import type {PublicFilingDetail,PublicFilingDigest,PublicFilingDigestPage,PublicFilingPage,PublicSecFiling} from "@/shared/analysis-contract/filings";
+import {formatFilingPeriodLabel} from "@/lib/earning-report/web/filing-period-label";
+import {formatSecMetricLabel,formatSecMetricValue} from "@/lib/earning-report/web/sec-metric-format";
 const PUBLIC_ORIGIN="https://spontra-app.max-zhangyuchen.workers.dev";
 export type SiteEnv={ASSETS:{fetch(request:Request):Promise<Response>};PUBLIC_READ_LIMIT:{limit(options:{key:string}):Promise<{success:boolean}>}};
 export type SiteContext={waitUntil(promise:Promise<unknown>):void};
@@ -95,6 +98,61 @@ export async function loadEvents(ticker:string,fetcher:typeof fetch=fetch):Promi
  }catch{return null;}
 }
 
+const ACCESSION=/^\d{10}-\d{2}-\d{6}$/;
+const isPeriodic=(form:string)=>/^(10-Q|10-K|20-F)(\/A)?$/.test(form);
+/** One filing as the map lists it: labels instead of metric keys, text instead of evidence ids, and never the analysis envelope. */
+export function digestFiling(filing:PublicSecFiling):PublicFilingDigest{
+ const group=filing.earningsGroup,summary=filing.summary,analysis=filing.analysis;
+ const periodic=!!group||isPeriodic(filing.form);
+ const published=analysis?.publication;
+ const text=(v:unknown)=>typeof v==="string"?v:"";
+ return {
+  accessionNumber:filing.accessionNumber,form:filing.form,filingDate:filing.filingDate,reportDate:filing.reportDate,
+  periodEnd:periodic?group?.periodEnd??filing.fiscalPeriod?.periodEnd??filing.reportDate:null,periodLabel:periodic?formatFilingPeriodLabel(filing):null,
+  date:group?.earningsDate??filing.filingDate,
+  sources:(group?.sources??[]).map(s=>({form:s.form,filingDate:s.filingDate,accessionNumber:s.accessionNumber,indexUrl:s.indexUrl})),
+  headline:text(summary?.headline)||text(analysis?.headline),
+  bullets:(summary?.bullets??[]).map(b=>({label:text(b.label),detail:text(b.detail),importance:b.importance})).slice(0,12),
+  analystView:text(summary?.analystView),report:text(summary?.report)||null,
+  warnings:[...(summary?.discovery?.warnings??[]),...(analysis?.dataQuality.warnings??[])].filter(w=>typeof w==="string").slice(0,8),
+  generatedAt:summary?.generatedAt??null,
+  keyMetrics:(analysis?.keyMetrics??[]).slice(0,8).map(m=>({key:m.metricKey,label:formatSecMetricLabel(m.metricKey),value:formatSecMetricValue(m.metricKey,m.currentValue,m.unit,m.currency),yoy:m.yoy??null,qoq:m.qoq??null,status:m.status})),
+  changes:[...(analysis?.changes.qoq??[]).map(c=>({compare:"环比" as const,...c})),...(analysis?.changes.yoy??[]).map(c=>({compare:"同比" as const,...c}))]
+   .filter(c=>c.changeType!=="not_mentioned"&&(c.currentStatement||c.priorStatement)).slice(0,8).map(c=>({compare:c.compare,topic:c.topicKey,statement:c.currentStatement??c.priorStatement??""})),
+  risks:(analysis?.changes.risks??[]).map(c=>text(c.statement)).filter(Boolean).slice(0,6),
+  guidance:(analysis?.changes.guidance??[]).map(c=>text(c.statement)).filter(Boolean).slice(0,6),
+  verification:analysis?.dataQuality.verificationStatus??null,analysisStatus:filing.analysisStatus,
+  hasReport:!!summary?.report,
+  snapshot:published&&analysis?{accession:published.filing.accessionNumber,reportDate:published.filing.reportDate||published.filing.filingDate,reportVersion:analysis.reportVersion}:null,
+  edgarUrl:filing.edgarUrl,documentUrl:filing.documentUrl,
+ };
+}
+
+/** The company's filings as digests: one upstream page of up to fifty, newest first. */
+export async function loadFilings(ticker:string,fetcher:typeof fetch=fetch):Promise<PublicFilingDigestPage|null>{
+ try{
+  const response=await fetcher(PUBLIC_ORIGIN+`/api/analysis/v1/companies/${ticker}/filings?limit=50`,{signal:AbortSignal.timeout(12000),headers:{accept:"application/json"}});
+  if(!response.ok)return null;
+  const page=await response.json() as PublicFilingPage;
+  if(page.ticker!==ticker||!Array.isArray(page.filings))return null;
+  const filings=page.filings.filter(f=>f&&f.ticker===ticker&&ACCESSION.test(f.accessionNumber)).map(digestFiling);
+  return {schemaVersion:"filing-digests.v1",ticker,filings,total:page.total??null,checkedAt:page.checkedAt??null};
+ }catch{return null;}
+}
+
+/** One filing with its full published report, for the in-page reader; only the documented envelope passes through. */
+export async function loadFilingDetail(ticker:string,accession:string,snapshot:{reportDate:string;reportVersion:string}|null,fetcher:typeof fetch=fetch):Promise<PublicFilingDetail|null>{
+ if(!ACCESSION.test(accession))return null;
+ try{
+  const query=snapshot?"?"+new URLSearchParams(snapshot):"";
+  const response=await fetcher(PUBLIC_ORIGIN+`/api/analysis/v1/companies/${ticker}/filings/${accession}${query}`,{signal:AbortSignal.timeout(12000),headers:{accept:"application/json"}});
+  if(!response.ok)return null;
+  const detail=await response.json() as PublicFilingDetail;
+  if(detail.ticker!==ticker||detail.filing?.ticker!==ticker)return null;
+  return {apiSchemaVersion:detail.apiSchemaVersion,ticker,company:detail.company?{ticker:detail.company.ticker,name:detail.company.name,cik:detail.company.cik}:null,filing:detail.filing};
+ }catch{return null;}
+}
+
 /** SEC fundamentals series, stripped to the fields findings resolve against; provider and refresh state never pass through. */
 export async function loadFundamentals(ticker:string,fetcher:typeof fetch=fetch):Promise<FindingFundamentals|null>{
  try{
@@ -107,8 +165,11 @@ export async function loadFundamentals(ticker:string,fetcher:typeof fetch=fetch)
 export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,fetcher:typeof fetch=fetch,cache?:Cache):Promise<Response>{
  const url=new URL(request.url);
  if(url.pathname.startsWith("/api/")){
-  const match=url.pathname.match(/^\/api\/business\/v1\/companies\/([A-Z][A-Z0-9.-]{0,11})(\/capital|\/findings|\/fundamentals|\/events)?$/);
-  if(!match||url.search)return json({error:"Not found"},404);
+  const match=url.pathname.match(/^\/api\/business\/v1\/companies\/([A-Z][A-Z0-9.-]{0,11})(\/capital|\/findings|\/fundamentals|\/events|\/filings|\/filings\/\d{10}-\d{2}-\d{6})?$/);
+  const detail=match?.[2]?.startsWith("/filings/")?match[2].slice("/filings/".length):null;
+  // The reader pins a report to its published revision; nothing else takes a query.
+  const allowed=detail?new Set(["reportDate","reportVersion"]):new Set<string>();
+  if(!match||[...url.searchParams.keys()].some(k=>!allowed.has(k)))return json({error:"Not found"},404);
   if(request.method!=="GET")return json({error:"Method not allowed"},405);
   try{if(!env.PUBLIC_READ_LIMIT||!(await env.PUBLIC_READ_LIMIT.limit({key:request.headers.get("cf-connecting-ip")??"anonymous"})).success)return json({error:"Too many requests"},429);}catch{return json({error:"Read service unavailable"},503);}
   const key=new Request(url.href,{method:"GET"});const cached=await cache?.match(key);if(cached)return cached;
@@ -118,6 +179,11 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,fetcher
    if(match[2]==="/capital")return supplementary("capital","capital-response.v1",()=>loadCapital(match[1],fetcher));
    if(match[2]==="/findings")return supplementary("findings","findings-response.v1",()=>loadFindings(match[1],fetcher));
    if(match[2]==="/events")return supplementary("events","events-response.v1",()=>loadEvents(match[1],fetcher));
+   if(match[2]==="/filings")return supplementary("filings","filing-digests-response.v1",()=>loadFilings(match[1],fetcher));
+   if(detail){const reportDate=url.searchParams.get("reportDate"),reportVersion=url.searchParams.get("reportVersion");
+    const body=await loadFilingDetail(match[1],detail,reportDate&&reportVersion?{reportDate,reportVersion}:null,fetcher);
+    if(!body)return json({error:"Not found"},404);
+    const response=json(body);if(cache)ctx.waitUntil(cache.put(key,response.clone()));return response;}
    return supplementary("fundamentals","fundamentals-response.v1",()=>loadFundamentals(match[1],fetcher));
   }
   try{const [flow,explainer,guidance]=await Promise.all([loadPublicFlow(match[1],fetcher),loadExplainer(match[1],fetcher),loadGuidance(match[1],fetcher)]);const response=json({...flow,explainer,guidance});

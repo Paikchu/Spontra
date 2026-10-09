@@ -19,7 +19,7 @@ export async function fetchCompany(ticker: string, signal: AbortSignal): Promise
 }
 
 /** A supplementary resource answers on its own; anything but "ready" reads as null. */
-export async function fetchSupplement<T>(ticker: string, resource: "capital" | "findings" | "fundamentals" | "events", signal: AbortSignal): Promise<T | null> {
+export async function fetchSupplement<T>(ticker: string, resource: "capital" | "findings" | "fundamentals" | "events" | "filings", signal: AbortSignal): Promise<T | null> {
   const response = await fetch(companyPath(ticker, "/" + resource), { signal });
   if (!response.ok) return null;
   const body = await response.json() as { status?: string } & Record<string, unknown>;

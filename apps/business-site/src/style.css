@@ -983,3 +983,37 @@ button { cursor: pointer; }
 .insider-ladder .lens-axis { grid-row: 3; }
 .ladder-scale { position: absolute; left: 0; top: 24px; bottom: 20px; display: flex; flex-direction: column; justify-content: space-between; font-size: 10px; color: var(--faint); font-variant-numeric: tabular-nums; pointer-events: none; }
 @media (max-width: 960px) { .events { order: 2; } .event-row { display: inline-flex; } .event-date { display: none; } .timeline-track { margin: 0 2px; } }
+
+/* Reports in the rail and the report lens: the figures the filing verified, the conclusions, and the full report in a modal. */
+[data-class="report"] { --kind: var(--foreground); }
+.report-row .finding-kind > span { font-variant-numeric: tabular-nums; }
+.report-kind { --kind: var(--foreground); }
+.report-open { border-color: color-mix(in srgb, var(--brand) 55%, transparent) !important; color: var(--foreground) !important; }
+.report-figures { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 10px; align-content: start; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.report-metrics { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin: 0; }
+.report-metric { display: flex; flex-direction: column; gap: 3px; padding: 9px 11px; border-radius: 10px; background: var(--surface); border: 1px solid var(--hairline); animation: rise .45s var(--ease) both; }
+.report-metric dt { font-size: 11.5px; color: var(--muted-foreground); }
+.report-metric dd { margin: 0; display: flex; flex-direction: column; gap: 2px; }
+.report-metric dd b { font-size: 15px; font-weight: 620; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+.report-metric dd small { display: flex; flex-wrap: wrap; gap: 2px 10px; font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; }
+.report-metric dd em { font-style: normal; }
+.report-metric dd em[data-trend="up"] { color: var(--up); } .report-metric dd em[data-trend="down"] { color: var(--loss); }
+.report-metric[data-status="derived"] dt::after { content: " · 推算"; color: var(--faint); }
+.report-metric[data-status="not_comparable"] dt::after { content: " · 不可比"; color: var(--faint); }
+.report-changes { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; font-size: 12.5px; color: var(--muted-foreground); }
+.report-changes li b { display: block; font-size: 11.5px; font-weight: 600; color: var(--foreground); }
+.report-changes--below { padding-top: 8px; border-top: 1px solid var(--hairline); }
+.report-more { padding: 0; border: 0; background: transparent; font-size: 11.5px; color: var(--brand); }
+.report-claims { margin: 0 0 8px; padding: 0; list-style: none; display: grid; gap: 4px; font-size: 12.5px; color: var(--muted-foreground); }
+.report-claims li b { display: inline-block; margin-right: 8px; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; color: var(--foreground); background: var(--surface); border: 1px solid var(--hairline); }
+.report-claims[data-kind="risk"] li b { color: var(--loss); border-color: color-mix(in srgb, var(--loss) 35%, transparent); }
+.report-warnings { margin: 0 0 8px; padding-left: 16px; font-size: 11.5px; color: var(--faint); }
+
+/* The full report: a modal over the map, the report page's document inside its own styles. */
+.report-dialog { width: min(100vw - 32px, 1080px); max-height: calc(100vh - 32px); padding: 0; border: 1px solid var(--hairline); border-radius: 16px; background: var(--background); color: var(--foreground); box-shadow: 0 30px 80px #0008; }
+.report-dialog::backdrop { background: color-mix(in srgb, var(--background) 62%, transparent); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+.report-dialog[open] { animation: pop .24s var(--ease) both; }
+.report-dialog-bar { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px 10px 20px; font-size: 12.5px; color: var(--muted-foreground); background: color-mix(in srgb, var(--background) 88%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--hairline); }
+.report-dialog-bar .lens-close { width: 28px; padding: 4px 0; border-radius: 999px; background: var(--surface); border: 1px solid var(--hairline); color: var(--muted-foreground); }
+.report-dialog-body { padding: 8px 24px 32px; }
+.report-dialog-body .lens-empty { padding: 60px 0; }

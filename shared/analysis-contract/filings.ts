@@ -84,3 +84,51 @@ export type PublicFilingDetail = {
 /** Bounds the backend enforces on a filing page request. Published so consumers can page safely. */
 export const ANALYSIS_FILING_PAGE_DEFAULT_LIMIT = 20;
 export const ANALYSIS_FILING_PAGE_MAX_LIMIT = 50;
+
+/**
+ * A filing as a reading surface lists it: the period it reports, what the analysis concluded, the
+ * verified key figures with their comparisons, and where the original is. Built by a consumer from
+ * `PublicSecFiling`; it carries labels, not raw metric keys, so a page renders it without the
+ * pipeline's formatting rules.
+ */
+export type PublicFilingDigest = {
+  accessionNumber: string;
+  form: string;
+  filingDate: string;
+  reportDate: string;
+  /** The reporting period end for a periodic filing or an earnings group; null for a standalone event. */
+  periodEnd: string | null;
+  /** "FY2026 Q1", "FY2026 全年", "财季待确认", or null for an event. */
+  periodLabel: string | null;
+  /** The earnings release date for a group, else the filing date. */
+  date: string;
+  /** Every filing an earnings group merged, each with its EDGAR index. */
+  sources: Array<{ form: string; filingDate: string; accessionNumber: string; indexUrl: string }>;
+  headline: string;
+  bullets: Array<{ label: string; detail: string; importance: "high" | "medium" | "low" }>;
+  analystView: string;
+  /** The short supplementary analysis, when the summary carries one. */
+  report: string | null;
+  warnings: string[];
+  generatedAt: string | null;
+  keyMetrics: Array<{ key: string; label: string; value: string; yoy: string | null; qoq: string | null; status: "verified" | "derived" | "not_comparable" | "not_disclosed" }>;
+  changes: Array<{ compare: "同比" | "环比"; topic: string; statement: string }>;
+  risks: string[];
+  guidance: string[];
+  verification: "verified" | "partial" | "failed" | null;
+  analysisStatus: PublicAnalysisStatus;
+  /** True when a full report can be opened for this filing. */
+  hasReport: boolean;
+  /** Pin the full report to the published revision, as the report page does. */
+  snapshot: { accession: string; reportDate: string; reportVersion: string } | null;
+  edgarUrl: string;
+  documentUrl: string;
+};
+
+export type PublicFilingDigestPage = {
+  schemaVersion: "filing-digests.v1";
+  ticker: string;
+  filings: PublicFilingDigest[];
+  total: number | null;
+  checkedAt: string | null;
+};
