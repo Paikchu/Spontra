@@ -5,6 +5,7 @@ import type { GuidanceResponse } from "../../shared/analysis-contract/guidance.t
 import { GUIDANCE_SYSTEM_PROMPT } from "../../workers/pipeline/src/guidance/extract.ts";
 import type { FoundMaterial } from "../../workers/pipeline/src/guidance/sources.ts";
 import { GuidanceStore } from "../../workers/pipeline/src/guidance/store.ts";
+import { AiRunStore } from "../../workers/pipeline/src/ai-runs/store.ts";
 import { earningsEvents, executeGuidanceWorkflow, guidanceCacheKey, runGuidanceSweep, type GuidanceDeps, type GuidanceStep } from "../../workers/pipeline/src/guidance/workflow.ts";
 import type { SecPipelineEnv } from "../../workers/pipeline/src/operations.ts";
 import { handleAnalysisReadRequest } from "../../workers/pipeline/src/read-api/router.ts";
@@ -245,5 +246,25 @@ test("Alpha Vantage is the default source and the daily budget is shared across 
     assert.ok(h.sleeps.every(s => s.ms > 0 && s.ms <= 86_400_000 + 600_000));
     const publication = await new D1SecRepository(db).getCache(guidanceCacheKey("ORCL"));
     assert.ok(!JSON.stringify(publication).includes(env.ALPHA_VANTAGE_API_KEY));
+  } finally { db.close(); }
+});
+
+test("a manual re-run extracts the event's documents again, reads the transcript once without waiting, and keeps each changed publication as a version", async () => {
+  const { db, env } = await setup();
+  try {
+    const h = harness({ transcriptAfter: Infinity });
+    const fake = fakeModel();
+    const deps: GuidanceDeps = { model: fake.model, transcripts: h.transcripts, secExhibits: h.secExhibits, deckSearch: null };
+    await executeGuidanceWorkflow({ ticker: "ORCL", accession: "0001341439-26-000020", eventDate: "2026-09-09" }, h.step, env, deps);
+    const before = fake.calls.length;
+    const fresh = harness({ transcriptAfter: Infinity });
+    await executeGuidanceWorkflow({ ticker: "ORCL", accession: "0001341439-26-000040", eventDate: today, manual: true }, fresh.step, env, deps);
+    assert.equal(fresh.sleeps.length, 0, "an operator's run never sleeps for a transcript");
+    const manual = fake.calls.length;
+    await executeGuidanceWorkflow({ ticker: "ORCL", accession: "0001341439-26-000020", eventDate: "2026-09-09", manual: true }, h.step, env, deps);
+    assert.ok(fake.calls.length > manual && manual > before, "stored extractions are redone, not reused");
+    const versions = await new AiRunStore(db).versions("guidance", "ORCL");
+    assert.ok(versions.length >= 2, "a publication whose content changed is kept as a version");
+    assert.ok(versions.length < 5, "republishing the same content adds no version");
   } finally { db.close(); }
 });

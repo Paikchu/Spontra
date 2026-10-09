@@ -98,7 +98,7 @@ export async function runBusinessExplainer(input: {
     businesses.push(...applyReview(written, review));
   }
   if (!businesses.length) throw new Error("Business explainer produced no supported explanation.");
-  const cited = new Set(businesses.flatMap(b => [...b.summary.sourceIds, ...b.sections.flatMap(s => s.items.flatMap(i => i.claim.sourceIds)), ...(b.offerings ?? []).flatMap(p => [...p.sourceIds, ...p.description.sourceIds, ...(p.membership?.sourceIds ?? []), ...(p.charging?.sourceIds ?? [])])]));
+  const cited = new Set(businesses.flatMap(b => [...b.summary?.sourceIds ?? [], ...b.sections.flatMap(s => s.items.flatMap(i => i.claim.sourceIds)), ...(b.offerings ?? []).flatMap(p => [...p.sourceIds, ...p.description.sourceIds, ...(p.membership?.sourceIds ?? []), ...(p.charging?.sourceIds ?? [])])]));
   return {
     schemaVersion: "business-explainer.v1", ticker: input.ticker, companyName: input.companyName, generatedAt: input.now,
     model: input.modelVersion, fingerprint: input.fingerprint, businesses, sources: [...sources.values()].filter(s => cited.has(s.id)),
@@ -231,8 +231,8 @@ function normalizeDraft(draft: Record<string, unknown>, targets: Array<{ nodeId:
   const items = Array.isArray(draft.businesses) ? draft.businesses as Array<Record<string, unknown>> : [];
   return targets.flatMap(target => {
     const item = items.find(i => i && i.nodeId === target.nodeId);
-    const summary = item ? claimOf(item.summary, allowed, 300) : null;
-    if (!item || !summary) return [];
+    if (!item) return [];
+    const summary = claimOf(item.summary, allowed, 300);
     // A product name is kept only when it literally appears in the fetched material.
     const products = (Array.isArray(item.products) ? item.products : []).filter((p): p is string => typeof p === "string")
       .map(p => p.trim()).filter(p => p.length >= 2 && p.length <= 80 && corpus.includes(p.toLowerCase())).slice(0, 6);
@@ -263,7 +263,7 @@ function normalizeDraft(draft: Record<string, unknown>, targets: Array<{ nodeId:
         ? [{ label: (entry as Record<string, unknown>).label, claim: claimOf(entry, allowed, SECTION_LIMITS.text) }] : []);
       return [{ kind: section.kind, title: section.title, layout: section.layout, items }];
     }));
-    return [{ nodeId: target.nodeId, name: target.name, summary, offerings, products: [...new Set(products)], sections }];
+    return summary || sections.length || offerings.length ? [{ nodeId: target.nodeId, name: target.name, summary, offerings, products: [...new Set(products)], sections }] : [];
   });
 }
 
@@ -295,7 +295,10 @@ function claimOf(value: unknown, allowed: Set<string>, max = 600): ExplainerClai
   return ids.length ? { text: text.trim().slice(0, max), sourceIds: ids } : null;
 }
 
-/** A flagged field, product, section or section item is removed; a flagged summary removes the whole business. */
+/**
+ * A flagged field, product, section or section item is removed on its own: one unsupported sentence
+ * never takes down what else was verified. A business with nothing left is removed.
+ */
 function applyReview(written: BusinessExplanation[], review: Record<string, unknown>): BusinessExplanation[] {
   if (!Array.isArray(review.issues)) throw new Error("Business explainer review returned no issue list.");
   const issues = (review.issues as Array<Record<string, unknown>>).filter(i => i && typeof i.nodeId === "string" && typeof i.field === "string");
@@ -305,8 +308,9 @@ function applyReview(written: BusinessExplanation[], review: Record<string, unkn
   const flagged = new Set(issues.filter(i => !(i.field === "offerings" && knownProduct(i)) && !(i.field === "sections" && knownSection(i))).map(i => `${i.nodeId}\u0000${i.field}`));
   const products = new Set(issues.filter(i => i.field === "offerings" && knownProduct(i)).map(i => `${i.nodeId}\u0000${i.productId}`));
   const items = new Set(issues.filter(i => i.field === "sections" && knownSection(i)).map(i => `${i.nodeId}\u0000${i.sectionId}\u0000${Number.isInteger(i.item) ? i.item : "*"}`));
-  return written.flatMap(b => flagged.has(`${b.nodeId}\u0000summary`) ? [] : [{
+  return written.map(b => ({
     ...b,
+    summary: flagged.has(`${b.nodeId}\u0000summary`) ? null : b.summary,
     offerings: flagged.has(`${b.nodeId}\u0000offerings`) ? [] : b.offerings?.filter(p => !products.has(`${b.nodeId}\u0000${p.id}`)),
     products: flagged.has(`${b.nodeId}\u0000products`) ? [] : b.products,
     sections: flagged.has(`${b.nodeId}\u0000sections`) ? [] : b.sections.flatMap(s => {
@@ -315,7 +319,7 @@ function applyReview(written: BusinessExplanation[], review: Record<string, unkn
       // Removing a step can break a chain; the harness re-checks what remains.
       return kept.length ? harnessSections([{ ...s, items: kept }]).map(r => ({ ...r, id: s.id })) : [];
     }),
-  }]);
+  })).filter(b => b.summary || b.sections.length || b.offerings?.length);
 }
 
 /** English search phrase for a disclosed node: XBRL member ids carry the filing's own wording. */

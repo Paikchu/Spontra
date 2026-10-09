@@ -81,7 +81,10 @@ test("explanations keep only cited, material-backed statements and reviewed fiel
   const fake = search(), writer = model([{ nodeId: "SoftwareSupport", field: "summary" }, { nodeId: "SoftwareLicense", field: "sections", sectionId: "section-1" } as { nodeId: string; field: string }]);
   const result = await runBusinessExplainer({ ticker: "ORCL", companyName: "Oracle Corporation", nodes, search: fake, model: writer, modelVersion: "deepseek-flash", fingerprint: "fp", now });
   const ids = result.businesses.map(b => b.nodeId);
-  assert.deepEqual(ids, ["software", "SoftwareLicense", "HardwareRevenues"], "a flagged summary removes the business");
+  assert.deepEqual(ids, ["software", "SoftwareLicense", "SoftwareSupport", "HardwareRevenues"]);
+  const support = result.businesses.find(b => b.nodeId === "SoftwareSupport")!;
+  assert.equal(support.summary, null, "a flagged summary is removed on its own");
+  assert.ok(support.sections.length, "the verified sections of that business remain");
   const license = result.businesses.find(b => b.nodeId === "SoftwareLicense")!;
   assert.deepEqual(license.summary.sourceIds, ["s1"], "unknown source ids are stripped");
   assert.ok(!license.sections.some(s => s.kind === "delivery"), "a claim with no valid source is dropped");
@@ -303,4 +306,19 @@ test("documents written with the four fixed fields are read as sections", () => 
   const parsed = readBusinessExplainer(legacy, "ORCL")!;
   assert.deepEqual(parsed.businesses[0]!.sections.map(s => [s.kind, s.title]), [["delivery", "产品介绍"], ["monetization", "收费方式"]]);
   assert.ok(!("howItWorks" in parsed.businesses[0]!));
+});
+
+test("a business is removed only when review leaves nothing verified", async () => {
+  const run = (sections: unknown[]) => runBusinessExplainer({ ticker: "ORCL", companyName: "Oracle", nodes: [nodes[0]!], search: search(), modelVersion: "fixture", fingerprint: "test", now,
+    model: async stage => stage.includes("plan") ? { queries: [] } : stage.includes("review") ? { issues: [{ nodeId: "software", field: "summary", problem: "overreach" }] }
+      : { businesses: [{ nodeId: "software", summary: { text: "软件业务", sourceIds: ["s1"] }, products: [], sections }] } });
+  await assert.rejects(run([]), /no supported explanation/);
+  const kept = await run([{ kind: "customers", title: "客户", layout: "prose", items: [{ label: null, text: "大型企业", sourceIds: ["s1"] }] }]);
+  assert.equal(kept.businesses[0]!.summary, null);
+  const parsed = readBusinessExplainer(kept, "ORCL")!;
+  assert.equal(parsed.businesses[0]!.summary, null);
+  assert.equal(parsed.businesses[0]!.sections[0]!.title, "客户");
+  const empty = structuredClone(kept);
+  empty.businesses[0]!.sections = [];
+  assert.equal(readBusinessExplainer(empty, "ORCL"), null, "an explanation with nothing left is not shown");
 });

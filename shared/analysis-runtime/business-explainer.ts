@@ -66,7 +66,7 @@ const sectionInput = z.object({
   items: z.array(z.object({ label: z.string().max(80).nullable(), claim })).max(10),
 });
 const explanation = z.object({
-  nodeId: text(200), name: text(200), summary: claim, products: z.array(text(80)).max(10),
+  nodeId: text(200), name: text(200), summary: claim.nullable(), products: z.array(text(80)).max(10),
   offerings: z.array(z.object({ id: text(80), name: text(80), line: text(80).nullable(), description: claim, membership: claim.optional(), charging: claim.nullable(), sourceIds: z.array(text(40)).min(1).max(6) })).max(8).optional(),
   sections: z.array(sectionInput).max(10).optional(),
   // Documents written before sections carried four fixed fields; they are read as sections.
@@ -82,8 +82,8 @@ export const businessExplainerSchema = z.object({
 
 /**
  * Parses an explainer for one ticker, stripping unknown fields. Every claim must cite only sources
- * listed in the same document; an explanation whose summary has no valid citation is dropped, and
- * a document with nothing left is rejected rather than shown empty.
+ * listed in the same document; a claim citing anything else is dropped, an explanation left with no
+ * summary, section or product is dropped, and a document with nothing left is rejected rather than shown empty.
  */
 export function readBusinessExplainer(value: unknown, ticker: string): BusinessExplainer | null {
   const parsed = businessExplainerSchema.safeParse(value);
@@ -91,7 +91,6 @@ export function readBusinessExplainer(value: unknown, ticker: string): BusinessE
   const ids = new Set(parsed.data.sources.map(s => s.id));
   const valid = (c: { text: string; sourceIds: string[] } | null) => c && c.sourceIds.every(id => ids.has(id)) ? c : null;
   const businesses = parsed.data.businesses.flatMap(({ howItWorks, customers, monetization, relation, sections, ...b }) => {
-    if (!valid(b.summary)) return [];
     const offerings = b.offerings?.filter(p => valid(p.description) && valid(p.membership ?? null) && completeProductName(p.name, p.membership!.text) && p.sourceIds.every(id => ids.has(id))).map(p => ({ ...p, line: p.line?.toLowerCase() === p.name.toLowerCase() ? null : p.line, charging: valid(p.charging) }));
     const legacy: SectionCandidate[] = [
       ...(offerings?.length ? [] : [{ kind: "delivery", title: "产品介绍", layout: "prose", items: [{ label: null, claim: howItWorks ?? null }] }]),
@@ -100,7 +99,9 @@ export function readBusinessExplainer(value: unknown, ticker: string): BusinessE
       { kind: "relation", title: "关联业务", layout: "prose", items: [{ label: null, claim: relation ?? null }] },
     ];
     const candidates: SectionCandidate[] = sections ?? legacy;
-    return [{ ...b, offerings, sections: harnessSections(candidates.map(s => ({ ...s, items: s.items.map(i => ({ label: i.label, claim: valid(i.claim) })) }))) }];
+    const kept = harnessSections(candidates.map(s => ({ ...s, items: s.items.map(i => ({ label: i.label, claim: valid(i.claim) })) })));
+    const summary = valid(b.summary);
+    return summary || kept.length || offerings?.length ? [{ ...b, summary, offerings, sections: kept }] : [];
   });
   return businesses.length ? { ...parsed.data, businesses } : null;
 }

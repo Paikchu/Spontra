@@ -83,3 +83,13 @@ Pipeline 对应路径为 `/admin/*`，管理接口需要签名会话。现有公
 私有接口：`GET /api/admin/business-map/companies`、`POST /api/admin/business-map/companies/:ticker`（`enabled`、UUID `requestId`）。继承签名会话、同源写入限制与服务绑定；状态列表合并读取，查询次数不随公司数增长。
 
 新增迁移：`0016_business_map_companies.sql`。当前 `worker:pipeline:deploy` 的 CI 入口先执行 `worker:pipeline:migrate:ci` 再核对迁移，随后发布；必须同时发布 Pipeline、Admin 与业务地图（共享完整性校验更新），依旧只通过推送 `origin/main` 触发自动部署。
+
+## AI 生成（财报发现、业务解读、业绩指引）
+
+导航「AI 生成」进入 `/admin/ai`，URL 保留 `?ticker=&kind=`。公司范围为 Pipeline 的 AI 分析白名单（`SEC_AI_TICKERS`）。
+
+- **手动触发**：按公司、按类型提交一次运行，不要求修改 `FINDINGS_VERSION` 等版本号，也不要求财报、指引或综述变化。发现与业务解读以当前数据指纹启动，发布后定时任务视其为最新，不会重复生成。业绩指引需选择一份业绩发布 8-K（默认最新），手动运行会对其材料重新调用模型提取，只读取一次电话会文字稿、不进入多日等待；仍计入每日模型额度。
+- 手动触发不受 `FINDINGS_ENABLED`、`GUIDANCE_ENABLED` 等自动开关限制，但需要对应 Workflow 绑定和模型密钥；业务解读还需要 `TAVILY_API_KEY`。同一公司同一类型（指引为同一份 8-K）有进行中的运行时拒绝重复提交；请求标识保证网络重试不重复启动。
+- **进度**：每次运行（含定时任务启动的）记录触发方式、状态、当前步骤和逐步时间线，步骤在 Workflow 的持久化步骤内写入，重放不会回退。运行结束时记录结果摘要；发现会列出未通过核对的条目及原因。运行异常终止而未写入结果时，查看详情会向 Workflow 引擎核对并标记失败。
+- **结果与历史版本**：每次发布在 `sec_cache` 中另存一份版本（`ai-version:v1:<kind>:<ticker>:<时间>`），内容与上一版相同则不重复保存，每类每家公司保留最近 30 版；运行记录（`ai-run:v1:…`）保留最近 20 次。页面默认显示当前线上版本，可切换查看历史版本并展开原始 JSON。历史从本功能上线后开始积累，此前只保留当前版本。
+- 无新增迁移。接口：`GET /api/admin/ai/companies`、`GET /api/admin/ai/companies/:ticker/:kind`、`GET …/:kind/versions/:id`、`POST …/:kind/runs`（`kind` 为 `findings`、`explainer`、`guidance`）。

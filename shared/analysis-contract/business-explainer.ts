@@ -26,8 +26,8 @@ export type BusinessExplanation = {
   /** Same id as the flow's segment or revenue node, e.g. `SoftwareLicense`. */
   nodeId: string;
   name: string;
-  /** What this business is, in one or two sentences. */
-  summary: ExplainerClaim;
+  /** What this business is, in one or two sentences; null when review rejected it, while the sections and products that passed remain. */
+  summary: ExplainerClaim | null;
   /** Product names as written in the cited material. */
   products: string[];
   offerings?: ProductOffering[];
