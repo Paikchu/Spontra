@@ -195,15 +195,23 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
   }, [focused?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const amountOf = useCallback((n: PlacedNode) => n.amount ? numeric(n.amount) : n.metric && quarter ? numeric(quarter.figures[n.metric]) : n.value, [quarter]);
   /** Same comparison as the list and tooltip: only an equal-definition prior quarter yields a change. */
-  const changeOf = useCallback((n: PlacedNode) => !quarter ? "不可比"
-    : n.amount ? compareFlowAmounts(quarter, previous, n.name, n.amount, previousGraph?.nodes.find(p => p.name === n.name)?.amount).label
-    : n.metric ? compareAmount(quarter, previous, n.metric).label
-    : n.segmentId ? compareRevenueNode(quarter, previous, n.segmentId).label : "不可比", [quarter, previous, previousGraph]);
+  const comparisonOf = useCallback((n: PlacedNode) => !quarter ? null
+    : n.amount ? compareFlowAmounts(quarter, previous, n.name, n.amount, previousGraph?.nodes.find(p => p.name === n.name)?.amount)
+    : n.metric ? compareAmount(quarter, previous, n.metric)
+    : n.segmentId ? compareRevenueNode(quarter, previous, n.segmentId) : null, [quarter, previous, previousGraph]);
+  const changeOf = useCallback((n: PlacedNode) => comparisonOf(n)?.label ?? "不可比", [comparisonOf]);
+  /** The prior amount behind a percentage change: only a same-sign, same-definition prior quarter is drawn as a ghost outline. */
+  const priorOf = useCallback((n: PlacedNode) => { const c = comparisonOf(n); return c && c.percent != null && c.previous != null ? Math.abs(c.previous) : null; }, [comparisonOf]);
   const copy = useCallback((n: PlacedNode): NodeCopy => {
     const label = changeOf(n);
     return { name: shortName(n.label), value: money(amountOf(n)), ...(label !== "不可比" ? { change: { label, trend: trend(label) } } : {}) };
   }, [money, amountOf, changeOf]);
   const layout = useMemo(() => graph ? layoutFor(graph, copy) : null, [graph, copy]);
+  // 对比上季 needs the prior quarter drawn in this quarter's currency and scale; its labels carry no change of their own.
+  const priorMoney = useCallback((v: number | null) => previous ? compactFlowValue(v, previous) : "—", [previous]);
+  const priorCopy = useCallback((n: PlacedNode): NodeCopy => ({ name: shortName(n.label), value: priorMoney(n.amount ? numeric(n.amount) : n.metric && previous ? numeric(previous.figures[n.metric]) : n.value) }), [priorMoney, previous]);
+  const priorQuarter = useMemo(() => previous && previousGraph?.links.length && quarter && previous.currency === quarter.currency && previous.scale === quarter.scale
+    && previous.incomeModel !== "financial" && previous.incomeModel !== "insurance" ? { graph: previousGraph, copy: priorCopy, label: previous.label } : null, [previous, previousGraph, quarter, priorCopy]);
   const proportional = Boolean(quarter && layout && quarter.incomeModel !== "financial" && quarter.incomeModel !== "insurance");
   const deficit = graph?.deficit && revenue ? deficitVerdict(graph, revenue, v => money(v)) : null;
 
@@ -339,7 +347,7 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
           : !quarter ? <div className="empty"><h2>季度财务未披露</h2><p>需要同币种、同口径的三个月数据才能绘制流向；不会用示例数据替代。</p></div>
           : proportional && layout ? <FlowChart graph={graph!} copy={copy} money={v => money(v)} colorOf={colorOf} active={active} revealKey={quarter.id} productBusiness={current ? "segment:" + current.key : null} businessDetails={<Dossier item={current} parent={parent ?? null} sources={quarter?.sources.length ? quarter.sources : business?.sources ?? []} explainer={explainer} />}
               focusSlot={n => segmentRevenue ? `占${shareBasis} ${percent(n.value / segmentRevenue * 100)}` : null}
-              onHover={name => setHoverNode(name)} tipFor={tipFor} spotlight={spotlight} badges={badges} onBadge={name => { const f = badgeFindings.get(name); if (f) focusFinding(f.id); }}
+              onHover={name => setHoverNode(name)} tipFor={tipFor} spotlight={spotlight} badges={badges} priorOf={priorOf} previous={priorQuarter} onBadge={name => { const f = badgeFindings.get(name); if (f) focusFinding(f.id); }}
               onPick={n => { const item = itemByNode.get(n.name); setSelected(item && current?.key !== item.key ? item.id : null); }}
               label={`${ticker} ${quarter.label} 收入到净利润桑基图，金额单位 ${quarter.currency}`} />
           : <div className="business-flow chart-fallback">{current && <Dossier item={current} parent={parent ?? null} sources={quarter.sources.length ? quarter.sources : business?.sources ?? []} explainer={explainer} />}<FinancialSankey quarter={quarter} previous={previous} onSegment={key => setSelected(items.find(item => item.key === key)?.id ?? null)} /></div>}
@@ -365,7 +373,7 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
           <span><i style={{ background: "var(--flow-profit)" }} />利润</span>
           {(graph?.signed || graph?.deficit) && <span><i style={{ background: "var(--loss)" }} />{graph?.deficit ? "净亏损（资金缺口）" : "亏损"}</span>}
           <span><i style={{ background: "var(--flow-expense)" }} />成本与费用</span>
-          <span className="legend-note">线宽 = 本季金额{graph?.signed ? "绝对值" : ""}{previous ? " · 百分比 = 较上季变化" : ""}</span>
+          <span className="legend-note">线宽 = 本季金额{graph?.signed ? "绝对值" : ""}{previous ? " · 百分比 = 较上季变化 · 虚线框 = 上季金额" : ""}</span>
         </div> : <span className="legend-note">框图表示会计关系，宽度不代表金额</span>}
         <p className="provenance">
           {notice && <span>{notice}</span>}

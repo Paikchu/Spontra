@@ -1,14 +1,15 @@
 import type { ProductOffering } from "@/shared/analysis-contract/business-explainer";
 import { Button } from "@/components/ui/button";
-import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { FinancialGraph } from "@/lib/earning-report/web/business-flow-sankey";
-import { estimateTextWidth, layoutInfographic, type InfographicLayout, type PlacedLink, type PlacedNode } from "@/lib/earning-report/web/business-flow-layout";
+import { estimateTextWidth, INFOGRAPHIC, layoutInfographic, type InfographicGeometry, type InfographicLayout, type PlacedLink, type PlacedNode } from "@/lib/earning-report/web/business-flow-layout";
+import { alignedGraph, ghostFrames, morphLayout, priorRevenueHeight } from "@/lib/earning-report/web/business-flow-compare";
 
 /** `change` is the comparable change against the prior quarter; absent when the two quarters cannot be compared. */
 export type NodeCopy = { name: string; value: string; change?: { label: string; trend?: "up" | "down" } };
 export type Tip = { title: string; color: string; rows: Array<[string, string]> };
 
-type Band = { x0: number; x1: number; sy: number; ty: number; h: number; color: string; key: string; owner: string };
+type Band = { x0: number; x1: number; sy: number; ty: number; h: number; color: string; key: string; owner: string; fade?: number };
 
 /** Type scale in layout units at k = 1; k is solved per pane so labels keep a constant on-screen size. */
 const typeFor = (k: number) => ({ name: 14 * k, value: 21 * k, net: 26 * k, change: 13 * k, gap: 7 * k, offset: 9 * k, pill: 13 * k });
@@ -36,9 +37,16 @@ function labelWidth(n: PlacedNode, text: NodeCopy, k: number) {
     + (text.change ? type.gap * 0.8 + estimateTextWidth(text.change.label, type.change, true) : 0);
 }
 
-export function layoutFor(graph: FinancialGraph, copy: (n: PlacedNode) => NodeCopy, k = 1): InfographicLayout | null {
-  return layoutInfographic(graph, n => labelWidth(n, copy(n), k), geometryFor(k));
+export function layoutFor(graph: FinancialGraph, copy: (n: PlacedNode) => NodeCopy, k = 1, geometry: Partial<InfographicGeometry> = {}): InfographicLayout | null {
+  return layoutInfographic(graph, n => labelWidth(n, copy(n), k), { ...geometryFor(k), ...geometry });
 }
+
+/** The prior quarter at the current quarter's scale, so bars and bands compare by height. */
+export function priorLayoutFor(graph: FinancialGraph, previous: FinancialGraph, copy: (n: PlacedNode) => NodeCopy, k = 1): InfographicLayout | null {
+  return layoutFor(alignedGraph(previous, graph), copy, k, { revenueHeight: priorRevenueHeight(graph, previous, INFOGRAPHIC.revenueHeight) });
+}
+
+const MORPH_MS = 600;
 
 type Box = { x0: number; y0: number; x1: number; y1: number };
 type Camera = { x: number; y: number; zoom: number };
@@ -119,8 +127,14 @@ function Streams({ band, strength }: { band: Band; strength: "ambient" | "lit" }
 
 export type Badge = { kind: "risk" | "strength" | "shift" | "watch"; severity: number; title: string };
 
-export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHover, onPick, tipFor, label, revealKey, businessDetails, productBusiness = null, spotlight = null, badges, onBadge }: {
+export type PriorQuarter = { graph: FinancialGraph; copy: (n: PlacedNode) => NodeCopy; label: string };
+
+export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHover, onPick, tipFor, label, revealKey, businessDetails, productBusiness = null, spotlight = null, badges, onBadge, priorOf, previous = null }: {
   businessDetails?: ReactNode;
+  /** The comparable prior-quarter amount of a node, drawn as a dashed outline over its bar; null when the two quarters cannot be compared. */
+  priorOf?: (n: PlacedNode) => number | null;
+  /** The prior quarter's statement: 对比上季 morphs the whole chart to it at the current quarter's scale. */
+  previous?: PriorQuarter | null;
   productBusiness?: string | null;
   /** Nodes a finding is about: they and their bands stay lit while the rest of the statement recedes. */
   spotlight?: Set<string> | null;
@@ -157,8 +171,37 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
   const fitted = useMemo(() => fitLayout(graph, copy, size), [graph, copy, size]);
   const [tip, setTip] = useState<{ x: number; y: number; width: number; tip: Tip } | null>(null);
   const layout = fitted?.layout ?? EMPTY, k = fitted?.k ?? 1, type = typeFor(k);
-  const byName = useMemo(() => new Map(layout.nodes.map(n => [n.name, n])), [layout]);
   const w = layout.nodeWidth;
+  // 对比上季: the prior quarter laid out at this quarter's scale, and the glide between the two (0 = this quarter, 1 = prior).
+  const priorLayout = useMemo(() => previous && fitted ? priorLayoutFor(graph, previous.graph, previous.copy, k) : null, [graph, previous, fitted, k]);
+  const [compare, setCompare] = useState(false);
+  const [t, setT] = useState(0);
+  const tRef = useRef(0);
+  const morph = useRef(0);
+  useEffect(() => {
+    cancelAnimationFrame(morph.current);
+    const target = compare && priorLayout ? 1 : 0, from = tRef.current;
+    if (from === target) return;
+    if (reducedMotion()) { tRef.current = target; setT(target); return; }
+    const start = performance.now();
+    const step = (now: number) => {
+      const p = Math.min(1, (now - start) / MORPH_MS), e = 1 - Math.pow(1 - p, 3);
+      tRef.current = from + (target - from) * e;
+      setT(tRef.current);
+      if (p < 1) morph.current = requestAnimationFrame(step);
+    };
+    morph.current = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(morph.current);
+  }, [compare, priorLayout]);
+  // A new quarter starts on its own statement.
+  useEffect(() => { setCompare(false); }, [revealKey]);
+  const shown = useMemo(() => morphLayout(layout, priorLayout, t), [layout, priorLayout, t]);
+  // Past the midpoint the labels read the prior quarter: its own node carries that quarter's amounts, the morphed one only its geometry.
+  const priorByName = useMemo(() => new Map(priorLayout?.nodes.map(n => [n.name, n]) ?? []), [priorLayout]);
+  const showingPrior = t > 0.5 && previous;
+  const textOf = useCallback((n: PlacedNode) => showingPrior ? previous!.copy(priorByName.get(n.name) ?? n) : copy(n), [showingPrior, previous, priorByName, copy]);
+  const ghosts = useMemo(() => priorOf ? ghostFrames(layout, priorOf) : [], [layout, priorOf]);
+  const byName = useMemo(() => new Map(shown.nodes.map(n => [n.name, n])), [shown]);
   const productTarget = productBusiness ? byName.get(productBusiness) : null;
   const expanded = Boolean(productTarget);
   // The explanation's scrollbar stays hidden until the reader scrolls it, and fades shortly after.
@@ -205,19 +248,19 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
   const viewportWidth = layout.width / camera.zoom, viewportHeight = layout.height / camera.zoom;
 
 
-  const bands: Band[] = useMemo(() => layout.links.map(l => {
+  const bands: Band[] = useMemo(() => shown.links.map(l => {
     const s = byName.get(l.source)!, t = byName.get(l.target)!;
     // A band belongs to the business feeding revenue, or to the profit/cost it produces after revenue.
     const owner = (l.target === "revenue" || l.target === "segment-total") || t.segmentId ? l.source : l.target;
-    return { x0: s.x + w, x1: t.x, sy: l.sy, ty: l.ty, h: l.h, key: linkKey(l), owner, color: colorOf(owner) };
-  }), [layout, byName, w, colorOf]);
+    return { x0: s.x + w, x1: t.x, sy: l.sy, ty: l.ty, h: l.h, key: linkKey(l), owner, color: colorOf(owner), fade: l.fade };
+  }), [shown, byName, w, colorOf]);
 
   const focus = useMemo(() => {
     if (!active || active === "revenue" || !byName.has(active)) return null;
     const nodes = new Set([active]), links = new Set<string>();
     const walk = (name: string, up: boolean) => {
       if ((name === "revenue" || name === "segment-total") && name !== active) return;
-      for (const l of layout.links) {
+      for (const l of shown.links) {
         if ((up ? l.target : l.source) !== name) continue;
         links.add(linkKey(l));
         const next = up ? l.source : l.target;
@@ -231,7 +274,7 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
     const trace: Band[] = [];
     let slot: { y: number; h: number } | null = null;
     if (node.segmentId) {
-      let link: PlacedLink | undefined = layout.links.find(l => l.source === active);
+      let link: PlacedLink | undefined = shown.links.find(l => l.source === active);
       let offset = 0;
       const h = link?.h ?? 0;
       while (link) {
@@ -239,17 +282,18 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
         trace.push({ x0: s.x + w, x1: t.x, sy: link.sy + offset, ty: link.ty + offset, h, key: "trace:" + linkKey(link), owner: active, color: colorOf(active) });
         if (link.target === "revenue" || link.target === "segment-total") { slot = { y: link.ty + offset, h }; break; }
         offset = link.ty + offset - t.y;
-        link = layout.links.find(l => l.source === t.name);
+        link = shown.links.find(l => l.source === t.name);
       }
     }
     return { nodes, links, trace, slot, segment: Boolean(node.segmentId) };
-  }, [active, byName, layout, w, colorOf]);
+  }, [active, byName, shown, w, colorOf]);
 
   // A hover or a picked business takes over; otherwise the finding's nodes and every band touching them stay lit.
   const lit = focus ? focus.nodes : spotlight && spotlight.size ? spotlight : null;
-  const litLinks = focus ? focus.links : lit ? new Set(layout.links.filter(l => lit.has(l.source) || lit.has(l.target)).map(linkKey)) : null;
+  const litLinks = focus ? focus.links : lit ? new Set(shown.links.filter(l => lit.has(l.source) || lit.has(l.target)).map(linkKey)) : null;
   const revenue = byName.get("segment-total") ?? byName.get("revenue");
   const point = (event: { clientX: number; clientY: number }, value: Tip) => {
+    if (t > 0) return;
     const rect = box.current?.getBoundingClientRect();
     if (rect) setTip({ x: event.clientX - rect.left, y: event.clientY - rect.top, width: rect.width, tip: value });
   };
@@ -263,11 +307,12 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
 
   // The explanation is page text beside the canvas, not part of the scaled drawing: opening it narrows the pane and the Sankey refits.
   return <div className="fc" data-products={expanded || undefined} style={{ "--ratio": `${layout.width} / ${layout.height}`, "--mobile-width": `${Math.ceil(layout.width * SCREEN_VALUE_PX / (21 * k))}px` } as CSSProperties} onMouseLeave={() => { setTip(null); onHover(null); }}>
-    <div className="fc-controls"><Button variant="outline" size="sm" aria-label="缩小画布" onClick={() => zoomBy(1 / 1.2)}>−</Button><Button variant="outline" size="sm" onClick={() => flyTo(HOME)}>适应画布</Button>{productBusiness && <Button variant="outline" size="sm" onClick={() => flyTo(focusCamera)}>聚焦业务</Button>}<Button variant="outline" size="sm" aria-label="放大画布" onClick={() => zoomBy(1.2)}>+</Button></div>
+    <div className="fc-controls"><Button variant="outline" size="sm" aria-label="缩小画布" onClick={() => zoomBy(1 / 1.2)}>−</Button><Button variant="outline" size="sm" onClick={() => flyTo(HOME)}>适应画布</Button>{priorLayout && <Button variant="outline" size="sm" aria-pressed={compare} data-on={compare || undefined} onClick={() => setCompare(v => !v)}>对比上季</Button>}{productBusiness && <Button variant="outline" size="sm" onClick={() => flyTo(focusCamera)}>聚焦业务</Button>}<Button variant="outline" size="sm" aria-label="放大画布" onClick={() => zoomBy(1.2)}>+</Button></div>
     {expanded && productTarget && <aside key={productBusiness} className="fc-business-details" aria-label={`${productTarget.label} 业务说明`}>
       <div className="fc-business-scroll" tabIndex={0} data-scrolling={scrolling || undefined} onScroll={revealScrollbar}>{businessDetails}</div>
     </aside>}
     <div className="fc-canvas" ref={box}>
+    {t > 0 && previous && <div className="fc-period" role="status" style={{ opacity: Math.min(1, t * 2) }}>上季 · {previous.label}</div>}
     <svg key={revealKey} onPointerDown={e => {
         if ((e.target as Element).closest("[data-owner],a,button")) return;
         // Narrow layouts use native horizontal scrolling instead of capturing touch gestures.
@@ -296,7 +341,7 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
             <stop offset="0" style={{ stopColor: from }} /><stop offset="1" style={{ stopColor: b.color }} />
           </linearGradient>;
         })}
-        <clipPath id={`${uid}reveal`}><rect x={0} y={0} width={layout.width} height={layout.height}>{!reducedMotion() && <animate attributeName="width" from="0" to={layout.width} dur="1.4s" calcMode="spline" keyTimes="0;1" keySplines="0.22 1 0.36 1" fill="freeze" />}</rect></clipPath>
+        <clipPath id={`${uid}reveal`}><rect x={0} y={0} width={Math.max(layout.width, priorLayout?.width ?? 0)} height={Math.max(layout.height, priorLayout?.height ?? 0)}>{!reducedMotion() && <animate attributeName="width" from="0" to={Math.max(layout.width, priorLayout?.width ?? 0)} dur="1.4s" calcMode="spline" keyTimes="0;1" keySplines="0.22 1 0.36 1" fill="freeze" />}</rect></clipPath>
         <linearGradient id={`${uid}sheen`} gradientUnits="userSpaceOnUse" x1={0} x2={layout.width * 0.34} y1={0} y2={0} spreadMethod="repeat">
           <stop offset="0" stopColor="#fff" stopOpacity="0" /><stop offset=".72" stopColor="#fff" stopOpacity="0" />
           <stop offset=".9" stopColor="#fff" stopOpacity=".34" /><stop offset=".96" stopColor="#fff" stopOpacity="0" /><stop offset="1" stopColor="#fff" stopOpacity="0" />
@@ -306,11 +351,11 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
       </defs>
       <g clipPath={`url(#${uid}reveal)`}>
         <g className="fc-bands">
-          {bands.map((b, i) => <path key={b.key} className="fc-band" d={bandPath(b)} fill={`url(#${uid}g${i})`} data-owner={b.owner}
+          {bands.map((b, i) => <path key={b.key} className="fc-band" d={bandPath(b)} fill={`url(#${uid}g${i})`} data-owner={b.owner} style={b.fade != null && b.fade < 1 ? { opacity: b.fade } : undefined}
             // A business's own band picks it like its node; keyboard users reach the same pick on the node.
             {...(byName.get(b.owner)?.segmentId ? { "data-pick": "", onClick: () => onPick(byName.get(b.owner)!) } : {})}
             data-lit={litLinks ? (litLinks.has(b.key) ? (focus?.segment && focus.trace.some(t => t.key === "trace:" + b.key) ? "context" : "on") : undefined) : undefined}
-            onMouseMove={e => { const l = layout.links[i]; point(e, { title: `${copy(byName.get(l.source)!).name} → ${copy(byName.get(l.target)!).name}`, color: b.color, rows: [["流量", money(l.value)]] }); }}
+            onMouseMove={e => { const l = shown.links[i]; point(e, { title: `${copy(byName.get(l.source)!).name} → ${copy(byName.get(l.target)!).name}`, color: b.color, rows: [["流量", money(l.value)]] }); }}
             onMouseLeave={() => setTip(null)} />)}
         </g>
         <g className="fc-trace">
@@ -326,8 +371,9 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
         </g>
       </g>
       <g className="fc-nodes">
-        {layout.nodes.map(n => {
-          const text = copy(n), vs = valueSize(n, k), side = Math.max(n.h, geometryFor(k).sideLabelHeight), gap = geometryFor(k).labelOffset;
+        {shown.nodes.map(n => {
+          const text = textOf(n), vs = valueSize(n, k), side = Math.max(n.h, geometryFor(k).sideLabelHeight), gap = geometryFor(k).labelOffset;
+          const ghost = t < 1 ? ghosts.find(g => g.name === n.name) : undefined;
           const [x, y, anchor]: [number, number, "start" | "middle" | "end"] = n.side === "top" ? [n.x + w / 2, n.y - type.offset - 2, "middle"]
             : n.side === "bottom" ? [n.x + w / 2, n.y + n.h + type.offset + vs * 0.78, "middle"]
             : [n.side === "left" ? n.x - gap : n.x + w + gap, n.y + side / 2 + vs * 0.36, n.side === "left" ? "end" : "start"];
@@ -335,15 +381,16 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
           const badge = badges?.get(n.name);
           const interactive = Boolean(n.segmentId) || n.name === "revenue";
           return <g key={n.name} className="fc-node" data-tone={n.tone} data-net={n.name === "net" || undefined} data-lit={isLit} data-active={n.name === active || undefined}
-            style={{ "--c": colorOf(n.name), "--d": `${n.column * 90 + 300}ms` } as CSSProperties}
+            style={{ "--c": colorOf(n.name), "--d": `${n.column * 90 + 300}ms`, ...(n.fade < 1 ? { opacity: n.fade } : {}) } as CSSProperties}
             data-owner={n.name} onMouseMove={e => point(e, tipFor(n))} onMouseLeave={() => setTip(null)}
             {...(interactive ? { role: "button", tabIndex: 0, "aria-label": `${text.name} ${text.value}${text.change ? ` 环比 ${text.change.label}` : ""}${n.segmentId ? "，在列表中选中" : "，显示全部业务"}`, onClick: () => onPick(n), onKeyDown: (e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPick(n); } }, onFocus: () => onHover(n.name), onBlur: () => onHover(null) } : {})}>
             <rect className="fc-hit" x={n.x - 6} y={n.y - 4} width={w + 12} height={n.h + 8} />
             <rect className="fc-bar" x={n.x} y={n.y} width={w} height={n.h} rx={Math.min(3, n.h / 2)} />
+            {ghost && <rect className="fc-ghost" x={ghost.x - 2} y={ghost.y} width={w + 4} height={ghost.h} rx={3} style={{ opacity: 1 - Math.min(1, t * 2) }} aria-hidden="true" />}
             <text className="fc-label" x={r(x)} y={r(y)} textAnchor={anchor}>
               <tspan className="fc-name" style={{ fontSize: type.name }}>{text.name}</tspan><tspan className="fc-value" dx={type.gap} style={{ fontSize: vs }}>{text.value}</tspan>{text.change && <tspan className="fc-change" dx={type.gap * 0.8} data-trend={text.change.trend} style={{ fontSize: type.change }}>{text.change.label}</tspan>}
             </text>
-            {badge && !lit && <g className="fc-badge" data-kind={badge.kind} transform={`translate(${r(n.x + w + 2)},${r(n.y - 2)})`} role="button" tabIndex={0} aria-label={`要点：${badge.title}`}
+            {badge && !lit && t === 0 && <g className="fc-badge" data-kind={badge.kind} transform={`translate(${r(n.x + w + 2)},${r(n.y - 2)})`} role="button" tabIndex={0} aria-label={`要点：${badge.title}`}
               onClick={e => { e.stopPropagation(); onBadge?.(n.name); }} onKeyDown={(e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); onBadge?.(n.name); } }}>
               <circle r={9 * k} /><text y={3.4 * k} textAnchor="middle" style={{ fontSize: 10 * k }}>{badge.severity}</text>
             </g>}

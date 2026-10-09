@@ -281,6 +281,12 @@ button { cursor: pointer; }
 
 .fc-hit { fill: transparent; }
 .fc-bar { fill: var(--c); transition: opacity .3s, filter .3s; }
+/* The prior quarter's amount as a dashed frame around the bar: the gap between frame and bar is the change. */
+.fc-ghost { fill: none; stroke: var(--c); stroke-width: 1.2; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; opacity: .75; pointer-events: none; animation: fade-in .6s var(--ease) both; animation-delay: var(--d); }
+.light .fc-ghost { stroke: color-mix(in srgb, var(--c) 80%, var(--foreground)); }
+.fc-svg[data-focus] .fc-node:not([data-lit]) .fc-ghost { opacity: .35; }
+.fc-period { position: absolute; left: 12px; bottom: 10px; z-index: 2; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--muted-foreground); font-size: 12px; pointer-events: none; }
+.fc-controls button[data-on], .fc-controls button[data-on]:hover { background: var(--foreground); color: var(--background); border-color: var(--foreground); }
 .fc-node { transition: opacity .35s var(--ease); }
 .fc-svg[data-focus] .fc-node:not([data-lit]) { opacity: .34; }
 .fc-node[data-active] .fc-bar { filter: drop-shadow(0 0 8px var(--c)); }
