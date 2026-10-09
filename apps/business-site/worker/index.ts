@@ -27,7 +27,18 @@ export type SiteEnv={ASSETS:{fetch(request:Request):Promise<Response>};PUBLIC_RE
 export function analysisFetcher(env:Pick<SiteEnv,"EARNING_REPORT_PIPELINE">):typeof fetch|null{
  const binding=env.EARNING_REPORT_PIPELINE;
  if(!binding||typeof binding.fetch!=="function")return null;
- return (input,init)=>binding.fetch(new Request(input,init));
+ return async(input,init)=>{
+  const request=new Request(input,init);
+  try{
+   const response=await binding.fetch(request);
+   // A refused read is the operator's signal, not the reader's: the status and route are logged, never a body.
+   if(!response.ok)console.warn(JSON.stringify({event:"analysis-read-refused",status:response.status,path:new URL(request.url).pathname}));
+   return response;
+  }catch(error){
+   console.error(JSON.stringify({event:"analysis-binding-failed",path:new URL(request.url).pathname,message:error instanceof Error?error.message:String(error)}));
+   throw error;
+  }
+ };
 }
 export type SiteContext={waitUntil(promise:Promise<unknown>):void};
 const security={"x-content-type-options":"nosniff","referrer-policy":"strict-origin-when-cross-origin","content-security-policy":"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://images.financialmodelingprep.com; connect-src 'self'; font-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"};
