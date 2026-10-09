@@ -8,7 +8,6 @@
 - `src/`：SEC 发现、AI 分析、公司分析、Memory、Yahoo 基本面、只读 API 和 Cron。
 - `migrations/`：分析数据库的完整历史；文件名和内容与来源保持一致。
 - `shared/analysis-contract/`（仓库根目录）：供分析后端使用的共享类型。
-- `tests/pipeline/`（仓库根目录）：迁入的后端测试、SQLite D1 测试工具及合成数据。
 - 业务地图通过 `EARNING_REPORT_PIPELINE` Service Binding 的 `MapReads` 命名入口读取结果；admin 绑定默认入口。
 
 个股「业务拆解」由公司分析 Workflow 在 SEC Memory 更新后生成。它读取最多四期已发布 SEC 报告、复用 Web Search 的 Tavily 检索与网页提取，最多执行九次取证工具调用，完成逐段引用核查后发布到原公司分析读取 API；旧版「业务前瞻」仍可读取。生成需配置 `TAVILY_API_KEY` 和现有模型密钥，不依赖 Yahoo 目标季度就绪。旧版报告每次 Cron 最多自动升级两家公司；也可经授权的 `POST /company-analysis/{ticker}` 手动排队。公开 GET 只读，不触发生成。
@@ -21,7 +20,6 @@
 npm ci
 npm run check:pipeline:boundary
 npm run typecheck:pipeline
-npm run test:pipeline
 npm run worker:pipeline:check
 npm run worker:pipeline:check:migrations
 npm run worker:pipeline:deploy

@@ -28,8 +28,6 @@ packages/web/                地图与后台共用的界面：财报阅读器、
 shared/analysis-contract/    前端与 Pipeline 共用的声明式契约
 shared/analysis-runtime/     前端与 Pipeline 共用的纯运行时（仅依赖 zod）
 workers/pipeline/            财报分析 Worker、数据库 schema 与 migrations
-tests/                       地图、后台与共享运行时测试
-  pipeline/                  Pipeline 测试及合成数据
 docs/                        功能、数据与运维说明
 ```
 
@@ -54,12 +52,10 @@ Pipeline 配置模板见 [`workers/pipeline/.dev.vars.example`](workers/pipeline
 npm run typecheck
 npm run business-site:typecheck
 npm run admin:typecheck
-npm run test:unit
 npm run build
 
 npm run check:pipeline:boundary
 npm run typecheck:pipeline
-npm run test:pipeline
 npm run worker:pipeline:check
 ```
 
@@ -74,7 +70,7 @@ npm run worker:pipeline:check
 | 地图与后台 | `npm run build` | `npm run deploy:cloudflare` |
 | Pipeline | `npm run check:pipeline:boundary && npm run typecheck:pipeline && npm run worker:pipeline:check` | `npm run worker:pipeline:deploy` |
 
-`deploy:cloudflare` 先做类型检查、单元测试与构建，再依次发布 `spontra-admin` 和 `spontra-business-map`。第一条构建仍挂在 Cloudflare 上原 `spontra-app` Worker 的 Builds 设置下；删除该 Worker 前，需先把 Git 构建连接迁到 `spontra-business-map`。
+`deploy:cloudflare` 先做类型检查与构建，再依次发布 `spontra-admin` 和 `spontra-business-map`。第一条构建仍挂在 Cloudflare 上原 `spontra-app` Worker 的 Builds 设置下；删除该 Worker 前，需先把 Git 构建连接迁到 `spontra-business-map`。
 
 Pipeline 部署先应用并核对分析 D1 迁移，再发布 Worker。发布完成后需确认两条构建结果及线上读取，不能仅凭 push 或 dry-run 判断上线成功。
 

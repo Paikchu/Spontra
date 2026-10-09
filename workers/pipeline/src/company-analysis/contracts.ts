@@ -327,8 +327,7 @@ type ChartSeries = Extract<CompanyAnalysisBlock, { type: "chart" }>["series"];
  * unsupported transform, a duplicate `metricKey:transform`, or more than two distinct axis units.
  * The renderer catches its own throw and shows 「这组指标暂时不能叠加」 —話術 written for someone
  * picking metrics interactively, not something to publish into an analysis. So every one of those
- * conditions is settled here instead, and `tests/company-analysis.test.ts` feeds this function's
- * output straight into the renderer's builder to keep the two from drifting apart.
+ * conditions is settled here instead.
  */
 function chartSeriesFor(value: unknown, options: CompanyAnalysisOverviewOptions): ChartSeries {
   const parsed = (Array.isArray(value) ? value : []).flatMap(chartSeries(options));

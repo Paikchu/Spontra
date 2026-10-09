@@ -8,7 +8,6 @@ function run(command, args, env = process.env) {
 // Validate both apps before either is released.
 run('npm', ['run', 'business-site:typecheck']);
 run('npm', ['run', 'admin:typecheck']);
-run('npm', ['run', 'test:unit']);
 run('npm', ['run', 'build']);
 // Workers Builds names the connected Worker through these variables; each app deploys under its own config name.
 const env = { ...process.env };

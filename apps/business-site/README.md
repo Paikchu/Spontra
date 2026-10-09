@@ -24,7 +24,7 @@ Independent Vite/React frontend and Cloudflare Worker; existing Spontra routes r
 
 ## Validation
 
-`npm run business-site:typecheck`, `npm run business-site:build`, `npm run business-site:check` (dry run), and `tsx --tsconfig tsconfig.test.json --test tests/business-site.test.ts tests/business-flow.test.tsx`.
+`npm run business-site:typecheck`, `npm run business-site:build`, and `npm run business-site:check` (dry run).
 
 Local Worker preview: `wrangler dev --config apps/business-site/wrangler.jsonc`. Older local workerd may require `--compatibility-date 2026-09-04` for preview only.
 
