@@ -5,6 +5,7 @@ import {readCompletePublicationForTicker} from '../financial-data/publication.ts
 import { readBusinessExplainerResponse } from "../business-explainer/workflow.ts";
 import { readGuidanceResponse } from "../guidance/workflow.ts";
 import { readFindingsResponse } from "../findings/read.ts";
+import { readEventsResponse } from "../events/read.ts";
 import { businessFlowCacheKey } from "../sec/business-flow-cache.ts";
 import type { PublicBusinessFlow } from "../../../../shared/analysis-contract/business-flow.ts";
 import { getPublicCompanyAnalysis } from "../company-analysis/api.ts";
@@ -17,7 +18,7 @@ import { findSecurity } from "../catalog/security-directory.ts";
 import { AnalysisRequestError, type AnalysisErrorCode } from "./contract-support/errors.ts";
 import { buildAnalysisOpenApiDocument } from "./contract-support/openapi.ts";
 import type { AnalysisReadScope } from "./contract-support/versions.ts";
-import { authenticateReadRequest, hasScope, type AnalysisReadIdentity } from "./auth.ts";
+import { authenticateReadRequest, hasScope, type AnalysisReadIdentity, type ReadAuthOutcome } from "./auth.ts";
 import { dataResponse, errorResponse } from "./http.ts";
 
 /**
@@ -65,6 +66,7 @@ type RouteMatch =
   | { kind: "business-explainer"; ticker: string }
   | { kind: "guidance"; ticker: string }
   | { kind: "findings"; ticker: string }
+  | { kind: "events"; ticker: string }
   | { kind: "fundamentals"; ticker: string }
   | { kind: "openapi" };
 
@@ -77,6 +79,7 @@ const SCOPE_BY_ROUTE: Record<Exclude<RouteMatch["kind"], "openapi">, AnalysisRea
   "business-explainer": "analysis:read",
   guidance: "analysis:read",
   findings: "analysis:read",
+  events: "analysis:read",
   fundamentals: "fundamentals:read",
 };
 
@@ -85,7 +88,23 @@ export function isAnalysisReadPath(pathname: string): boolean {
   return pathname === "/api/v1" || pathname.startsWith(ANALYSIS_READ_PREFIX);
 }
 
-export async function handleAnalysisReadRequest(request: Request, env: AnalysisReadEnv): Promise<Response> {
+/**
+ * A consumer bound to a named entrypoint of this Worker: the binding itself is the credential, since
+ * no public request can reach that entrypoint. Reads are served with this fixed identity and the
+ * same scope and rate-limit checks a credentialed read gets.
+ */
+export const BOUND_MAP_READER: AnalysisReadIdentity = { keyId: "business-map", scopes: new Set<string>(["analysis:read", "filings:read", "fundamentals:read"]) };
+
+export function handleAnalysisReadRequest(request: Request, env: AnalysisReadEnv): Promise<Response> {
+  return serveRead(request, env, null);
+}
+
+/** The read API for a Worker reaching it over a named-entrypoint binding; no credential is parsed. */
+export function handleBoundReadRequest(request: Request, env: AnalysisReadEnv, identity: AnalysisReadIdentity): Promise<Response> {
+  return serveRead(request, env, identity);
+}
+
+async function serveRead(request: Request, env: AnalysisReadEnv, bound: AnalysisReadIdentity | null): Promise<Response> {
   // Method is checked before anything else: this router owns the whole `/api/v1` prefix precisely
   // so a POST cannot slip past it into a control handler further down the entry point.
   if (request.method !== "GET" && request.method !== "HEAD") {
@@ -108,7 +127,7 @@ export async function handleAnalysisReadRequest(request: Request, env: AnalysisR
     return dataResponse(request, buildAnalysisOpenApiDocument(url.origin));
   }
 
-  let auth = await authenticateReadRequest(request, env.ANALYSIS_READ_KEYS);
+  let auth: ReadAuthOutcome = bound ? { ok: true, identity: bound } : await authenticateReadRequest(request, env.ANALYSIS_READ_KEYS);
   if (!auth.ok && env.ANALYSIS_ADDITIONAL_READ_KEYS?.trim()) {
     auth = await authenticateReadRequest(request, env.ANALYSIS_ADDITIONAL_READ_KEYS);
   }
@@ -177,6 +196,10 @@ async function handleRoute(request: Request, database: D1Database, route: Exclud
       const payload = await readFindingsResponse(database, route.ticker);
       return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
     }
+    case "events": {
+      const payload = await readEventsResponse(database, route.ticker);
+      return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
+    }
     case "analysis": {
       const payload = await getPublicCompanyAnalysis(new D1CompanyAnalysisRepository(database), route.ticker);
       const business = await new D1SecRepository(database).getCache<PublicBusinessFlow>(businessFlowCacheKey(route.ticker));
@@ -216,7 +239,7 @@ async function withinRateLimit(env: AnalysisReadEnv, identity: AnalysisReadIdent
 
 function matchRoute(pathname: string): RouteMatch | null {
   if (pathname === "/api/v1/openapi.json") return { kind: "openapi" };
-  const company = /^\/api\/v1\/companies\/([^/]+)\/(filings|analysis|fundamentals|business-flow|capital|business-explainer|guidance|findings)(?:\/([^/]+))?\/?$/.exec(pathname);
+  const company = /^\/api\/v1\/companies\/([^/]+)\/(filings|analysis|fundamentals|business-flow|capital|business-explainer|guidance|findings|events)(?:\/([^/]+))?\/?$/.exec(pathname);
   if (!company) return null;
   const ticker = safeDecode(company[1]!);
   const resource = company[2]!;
@@ -233,6 +256,7 @@ function matchRoute(pathname: string): RouteMatch | null {
   if (resource === "business-explainer") return { kind: "business-explainer", ticker };
   if (resource === "guidance") return { kind: "guidance", ticker };
   if (resource === "findings") return { kind: "findings", ticker };
+  if (resource === "events") return { kind: "events", ticker };
   return resource === "analysis" ? { kind: "analysis", ticker } : { kind: "fundamentals", ticker };
 }
 

@@ -169,6 +169,14 @@ export function buildAnalysisOpenApiDocument(serverUrl = "https://<analysis-back
           responses: { "200": { description: "findings-response.v1", content: { "application/json": { schema: { type: "object", required: ["schemaVersion", "status", "findings"], properties: { schemaVersion: { const: "findings-response.v1" }, status: { enum: ["ready", "preparing"] }, findings: { type: ["object", "null"], description: "findings.v1: findings (kind, severity, title, cited judgment, evidence references, anchors, lens, pairing, watch) and sources" } } } } } }, ...commonResponses },
         },
       },
+      "/api/v1/companies/{ticker}/events": {
+        get: {
+          summary: "What the company filed between reports: 8-K/6-K current reports and Form 4 insider transactions",
+          description: "Deterministic records from EDGAR's submission list over the trailing 24 months: class from the 8-K item codes or the form, Form 4 figures parsed from the filing XML, exhibits from the filing index, and the event summary the pipeline already wrote for the filing. `pendingInsider` counts Form 4 filings whose XML has not been read yet. `preparing` until the sweep has published. No model call is started by reading.",
+          security: [{ readCredential: ["analysis:read"] }], parameters: [tickerParameter],
+          responses: { "200": { description: "events-response.v1", content: { "application/json": { schema: { type: "object", required: ["schemaVersion", "status", "events"], properties: { schemaVersion: { const: "events-response.v1" }, status: { enum: ["ready", "preparing"] }, events: { type: ["object", "null"], description: "events.v1: events (form, dates, items, class, EDGAR links, exhibits, summary, insider transaction) and the pending Form 4 count" } } } } } }, ...commonResponses },
+        },
+      },
       "/api/v1/companies/{ticker}/analysis": {
         get: {
           summary: "The company's latest published cross-period analysis",

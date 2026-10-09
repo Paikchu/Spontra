@@ -27,9 +27,24 @@ test("limiter rejects excess requests and fails closed without a binding",async(
  assert.equal((await handle(request(endpoint),{...env,PUBLIC_READ_LIMIT:undefined} as unknown as SiteEnv,context,success)).status,429);
  const broken={...env,PUBLIC_READ_LIMIT:{limit:async()=>{throw new Error("broken");}}};assert.equal((await handle(request(endpoint),broken,context,success)).status,503);
 });
-test("only fixed public reads occur, with no cookie or authentication forwarded",async()=>{
+test("reads go to the pipeline's read API over the named-entrypoint binding, with nothing from the browser's request forwarded",async()=>{
  const seen:Request[]=[];await loadPublicFlow("MSFT",async(input,init)=>{const req=new Request(input,init);seen.push(req);return success(input,init);});
- assert.equal(seen.length,1);assert.equal(seen[0].url,"https://spontra-app.max-zhangyuchen.workers.dev/api/analysis/v1/companies/MSFT/business-flow");assert.equal(seen[0].headers.get("authorization"),null);assert.equal(seen[0].headers.get("cookie"),null);
+ assert.equal(seen.length,1);assert.equal(seen[0].url,"https://spontra-analysis.internal/api/v1/companies/MSFT/business-flow");assert.equal(seen[0].headers.get("cookie"),null);assert.equal(seen[0].headers.get("authorization"),null);
+ const {analysisFetcher}=await import("../apps/business-site/worker/index");
+ const bound:Request[]=[];const binding={fetch:async(req:Request)=>{bound.push(req);return success(req);}};
+ const browser=new Request("https://site.test"+endpoint,{headers:{cookie:"session=PRIVATE",authorization:"Bearer BROWSER"}});
+ const answered=await handle(browser,{...env,EARNING_REPORT_PIPELINE:binding},context);
+ assert.equal(answered.status,200);assert.equal(bound.length,3,"flow, explainer and guidance");
+ for(const req of bound){assert.equal(req.headers.get("authorization"),null);assert.equal(req.headers.get("cookie"),null);assert.ok(req.url.startsWith("https://spontra-analysis.internal/api/v1/companies/ORCL"));}
+ assert.equal(analysisFetcher({}),null);
+ // Without the binding the data routes say so instead of reaching for a public origin.
+ const unconfigured=await handle(request(endpoint),env,context);assert.equal(unconfigured.status,503);assert.equal(unconfigured.headers.get("cache-control"),"no-store");
+ assert.equal((await handle(request("/"),env,context)).status,200,"the shell is served without the binding");
+ // The deployed entry point reads over the binding, not a global fetch to a public origin.
+ const worker=(await import("../apps/business-site/worker/index")).default;
+ const viaWorker:Request[]=[];
+ const served=await worker.fetch(request(endpoint+"/findings"),{...env,EARNING_REPORT_PIPELINE:{fetch:async(req:Request)=>{viaWorker.push(req);return Response.json({schemaVersion:"findings-response.v1",status:"preparing",findings:null});}}},context);
+ assert.equal(served.status,200);assert.equal(viaWorker.length,1);assert.ok(viaWorker[0].url.startsWith("https://spontra-analysis.internal/api/v1/companies/ORCL/findings"));
 });
 test("missing quarters remain empty, upstream errors expose no detail, mismatched tickers never leak",async()=>{
  const empty=await handle(request("/api/business/v1/companies/NVDA"),env,context,success);assert.equal((await empty.json() as {flow:null}).flow,null);
@@ -149,7 +164,7 @@ test("findings and fundamentals are supplementary routes: re-validated, stripped
  assert.equal(findings.status,200);assert.ok(!body.includes("PRIVATE_"));assert.equal(JSON.parse(body).findings.findings.length,6);assert.equal(findings.headers.get("cache-control"),"public, max-age=60");
  const fundamentals=await handle(request(endpoint+"/fundamentals"),env,context,upstream);const text=await fundamentals.text();
  assert.ok(!text.includes("PRIVATE_"));assert.deepEqual(Object.keys(JSON.parse(text).fundamentals),["series"]);assert.equal(JSON.parse(text).fundamentals.series[0].points[0].revision,undefined);
- assert.ok(seen.some(u=>u==="https://spontra-app.max-zhangyuchen.workers.dev/api/analysis/v1/companies/ORCL/fundamentals?periodCount=12"));
+ assert.ok(seen.some(u=>u==="https://spontra-analysis.internal/api/v1/companies/ORCL/fundamentals?periodCount=12"));
  assert.equal(await loadFindings("MSFT",async()=>Response.json({schemaVersion:"findings-response.v1",status:"ready",findings:ORCL_FINDINGS})),null);
  assert.equal(await loadFundamentals("ORCL",async()=>Response.json({ticker:"ORCL",source:"yahoo_finance",status:"ready",series:[]})),null);
  const missing=await handle(request(endpoint+"/findings"),env,context,async()=>Response.json({schemaVersion:"findings-response.v1",status:"preparing",findings:null}));
@@ -167,4 +182,36 @@ test("a legacy fallback answer is served but never cached, so the next request r
  assert.equal(served.headers.get("cache-control"),"no-store");assert.deepEqual(put,[]);
  const fresh=await handle(request(endpoint),env,ctx,success,cache);await Promise.all(waits);
  assert.equal(fresh.headers.get("cache-control"),"public, max-age=60");assert.deepEqual(put,["https://site.test"+endpoint]);
+});
+
+test("filings are digested for the map: labels for metric keys, grouped sources, the report pin, and never the analysis envelope",async()=>{
+ const {digestFiling,loadFilings,loadFilingDetail}=await import("../apps/business-site/worker/index");
+ const filing={ticker:"ORCL",companyName:"Oracle",form:"10-Q",filingDate:"2026-09-11",reportDate:"2026-08-31",accessionNumber:"0001193125-26-389274",description:"10-Q",provenance:"sec_edgar",periodId:"ORCL:2026-08-31",analysisSchemaVersion:"sec-analysis.v2",contentRevision:"abc",analysisStatus:"complete",reportVersion:"sec-analysis.v2:abc",
+  edgarUrl:"https://www.sec.gov/i/q1",documentUrl:"https://www.sec.gov/i/q1/10q.htm",analysisRun:{state:"succeeded",updatedAt:null,errorCode:null},
+  fiscalPeriod:{fiscalYear:2027,fiscalPeriod:"Q1",periodEnd:"2026-08-31",source:"sec_dei",sourceAccession:"0001193125-26-389274",sourceUrl:"https://www.sec.gov/i/q1"},
+  earningsGroup:{id:"g1",periodEnd:"2026-08-31",earningsDate:"2026-09-09",canonicalAccession:"0001193125-26-389274",inputKey:"k",sources:[{form:"8-K",filingDate:"2026-09-10",accessionNumber:"0001193125-26-389100",indexUrl:"https://www.sec.gov/i/k1",ticker:"ORCL",cik:"1",cikNumber:1,companyName:"Oracle",reportDate:"2026-09-09",primaryDocument:"",description:"",items:"2.02",documentUrl:"https://www.sec.gov/i/k1/8k.htm"}]},
+  summary:{ticker:"ORCL",form:"10-Q",filingDate:"2026-09-11",accessionNumber:"0001193125-26-389274",headline:"云基础设施拉动增长",bullets:[{label:"收入",detail:"+12%",importance:"high"}],analystView:"看 RPO",report:"补充",source:"deepseek",generatedAt:"2026-09-12T00:00:00.000Z",nodes:[{id:"n",title:"PRIVATE_NODE",status:"complete",findings:[],narrative:"",evidence:[]}],discovery:{version:"sec-discovery.v1",totalCharacters:1,scannedCharacters:1,failedChunks:[],disclosures:[],warnings:["扫描未覆盖附件"]}},
+  analysis:{ticker:"ORCL",periodId:"ORCL:2026-08-31",reportVersion:"sec-analysis.v2:abc",headline:"h",keyMetrics:[{metricKey:"revenue",currentValue:"14926000000",unit:"USD",currency:"USD",yoy:"+12.0%",qoq:"-3.1%",status:"verified",evidenceIds:["PRIVATE_EVIDENCE"]},{metricKey:"operating_margin",currentValue:"0.31",unit:"ratio",status:"derived",evidenceIds:[]}],
+   changes:{qoq:[{topicKey:"cloud",changeType:"strengthened",currentStatement:"云收入加速",evidenceIds:[],materialityScore:1},{topicKey:"x",changeType:"not_mentioned",evidenceIds:[],materialityScore:0}],yoy:[],guidance:[{topicKey:"g",claimType:"guidance",statement:"FY27 云收入 +40%",direction:"positive",horizon:"next_period",materialityScore:1,confidence:"high",evidenceIds:[]}],risks:[]},
+   dataQuality:{coverage:0.9,verificationStatus:"verified",warnings:[]},publication:{filing:{ticker:"ORCL",cik:"1",cikNumber:1,companyName:"Oracle",form:"10-Q",filingDate:"2026-09-11",reportDate:"2026-08-31",accessionNumber:"0001193125-26-389274",primaryDocument:"",description:"",items:"",documentUrl:"",indexUrl:""},summary:{secret:"PRIVATE_SUMMARY"}},reader:{secret:"PRIVATE_READER"}}};
+ const digest=digestFiling(filing as never);
+ assert.equal(digest.periodLabel,"FY2027 Q1");assert.equal(digest.date,"2026-09-09");assert.equal(digest.periodEnd,"2026-08-31");
+ assert.deepEqual(digest.keyMetrics.map(m=>[m.label,m.value,m.yoy,m.status]),[["营收","149.26 亿美元","+12.0%","verified"],["营业利润率","31.0%",null,"derived"]]);
+ assert.deepEqual(digest.changes,[{compare:"环比",topic:"cloud",statement:"云收入加速"}]);
+ assert.deepEqual(digest.guidance,["FY27 云收入 +40%"]);assert.deepEqual(digest.warnings,["扫描未覆盖附件"]);
+ assert.deepEqual(digest.snapshot,{accession:"0001193125-26-389274",reportDate:"2026-08-31",reportVersion:"sec-analysis.v2:abc"});
+ assert.equal(digest.sources[0].indexUrl,"https://www.sec.gov/i/k1");assert.ok(!JSON.stringify(digest).includes("PRIVATE_"));
+ const page={apiSchemaVersion:"analysis-api.v1",ticker:"ORCL",company:{ticker:"ORCL",name:"Oracle",cik:"1"},filings:[filing,{...filing,ticker:"MSFT"}],nextCursor:null,total:2,checkedAt:"2026-10-09T00:00:00.000Z"};
+ const seen:string[]=[];const upstream:typeof fetch=async(input,init)=>{const url=new Request(input,init).url;seen.push(url);
+  if(url.endsWith("/filings?limit=50"))return Response.json(page);
+  if(/\/filings\/0001193125-26-389274\?reportDate=2026-08-31&reportVersion=sec-analysis.v2%3Aabc$/.test(url))return Response.json({apiSchemaVersion:"analysis-api.v1",ticker:"ORCL",company:page.company,filing,extra:"PRIVATE_EXTRA"});
+  return new Response("missing",{status:404});};
+ const list=await handle(request(endpoint+"/filings"),env,context,upstream);const body=await list.text();
+ assert.equal(list.status,200);assert.equal(JSON.parse(body).filings.filings.length,1,"the wrong-company row is dropped");assert.ok(!body.includes("PRIVATE_"));assert.equal(list.headers.get("cache-control"),"public, max-age=60");
+ assert.equal((await loadFilings("ORCL",async()=>Response.json({...page,ticker:"MSFT"}))),null);
+ const detail=await handle(request(endpoint+"/filings/0001193125-26-389274?reportDate=2026-08-31&reportVersion=sec-analysis.v2%3Aabc"),env,context,upstream);const text=await detail.text();
+ assert.equal(detail.status,200);assert.ok(!text.includes("PRIVATE_EXTRA"));assert.ok(text.includes("PRIVATE_READER"),"the reader passes through to the in-page report");
+ assert.equal((await handle(request(endpoint+"/filings/0001193125-26-389274?other=1"),env,context,upstream)).status,404);
+ assert.equal((await handle(request(endpoint+"/filings/not-an-accession"),env,context,upstream)).status,404);
+ assert.equal(await loadFilingDetail("ORCL","0001193125-26-000000",null,upstream),null);
 });

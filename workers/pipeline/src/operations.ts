@@ -62,6 +62,8 @@ export type SecPipelineEnv = SecCronEnv & AnalysisReadEnv & {
   FINDINGS_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
   /** "true" lets the sweep start findings runs for AI-enabled companies; anything else leaves it off. */
   FINDINGS_ENABLED?: string;
+  /** "false" pauses the deterministic events sweep (8-K and Form 4); unset or anything else runs it. */
+  EVENTS_ENABLED?: string;
   /** "true" starts guidance extraction for AI-enabled companies; anything else leaves it off. */
   GUIDANCE_ENABLED?: string;
   /** "false" turns off the IR-site deck search fallback. */

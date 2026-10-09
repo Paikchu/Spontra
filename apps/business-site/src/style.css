@@ -226,9 +226,8 @@ button { cursor: pointer; }
 .stage--state { display: block; overflow-y: auto; }
 .stage-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px 24px; flex-wrap: wrap; }
 .stage-head--summary { align-items: flex-start; }
-.report-select { display: flex; align-items: center; gap: 10px; max-width: 100%; margin-left: auto; color: var(--muted-foreground); font-size: 12px; }
-.report-select select { min-width: 132px; max-width: 100%; padding: 9px 32px 9px 14px; border: 1px solid var(--hairline); border-radius: 12px; background: var(--surface); color: var(--foreground); font: inherit; font-weight: 600; cursor: pointer; }
-.report-select select:focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; }
+.report-current { display: inline-flex; align-items: center; gap: 10px; margin-left: auto; padding: 9px 14px; border: 1px solid var(--hairline); border-radius: 12px; background: var(--surface); color: var(--muted-foreground); font-size: 12px; }
+.report-current b { font-weight: 600; color: var(--foreground); font-variant-numeric: tabular-nums; }
 .periods { display: inline-flex; margin-left: auto; padding: 3px; gap: 2px; border-radius: 999px; background: var(--surface); border: 1px solid var(--hairline); }
 .periods button { border: 0; background: transparent; padding: 6px 13px; border-radius: 999px; font-size: 12.5px; font-variant-numeric: tabular-nums; color: var(--muted-foreground); transition: background .2s, color .2s; }
 .periods button:hover { color: var(--foreground); }
@@ -518,7 +517,7 @@ button { cursor: pointer; }
 .stage-controls { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 10px 12px; margin-left: auto; }
 .stage-views { padding: 3px; }
 .stage-views button { padding: 5px 13px; font-size: 12.5px; }
-.stage-controls .report-select { margin-left: 0; }
+.stage-controls .report-current { margin-left: 0; }
 .stage-verdict { flex-basis: 100%; margin: -4px 0 0; font-size: 13px; line-height: 1.6; color: var(--muted-foreground); animation: rise .45s var(--ease) both; }
 .stage-verdict b { display: inline-block; margin-right: 10px; padding: 1px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600; color: var(--foreground); background: var(--surface); border: 1px solid var(--hairline); }
 .stage-verdict[data-kind="survival"] b { color: var(--loss); border-color: color-mix(in srgb, var(--loss) 35%, transparent); }
@@ -943,3 +942,107 @@ button { cursor: pointer; }
   .search-panel[data-inline] .search-foot { display: none; }
   .marquee-chip { max-width: 260px; }
 }
+
+/* ---------- Events: what was filed between reports, in the rail under the findings ---------- */
+/* Class tones: earnings read as profit, insider trades as capital spending, legal as a loss; the rest take business hues. */
+.map { --class-earnings: var(--flow-profit); --class-guidance: var(--biz-1); --class-executive: var(--biz-3); --class-insider: var(--flow-expense); --class-deal: var(--biz-2); --class-financing: var(--biz-4); --class-capital_return: var(--up); --class-vote: var(--muted-foreground); --class-legal: var(--loss); --class-other: var(--muted-foreground); }
+[data-class="earnings"] { --kind: var(--class-earnings); } [data-class="guidance"] { --kind: var(--class-guidance); } [data-class="executive"] { --kind: var(--class-executive); } [data-class="insider"] { --kind: var(--class-insider); }
+[data-class="deal"] { --kind: var(--class-deal); } [data-class="financing"] { --kind: var(--class-financing); } [data-class="capital_return"] { --kind: var(--class-capital_return); } [data-class="vote"] { --kind: var(--class-vote); } [data-class="legal"] { --kind: var(--class-legal); } [data-class="other"] { --kind: var(--class-other); }
+.event-row { grid-template-columns: 38px minmax(0, 1fr); }
+.event-date { font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; line-height: 1.5; padding-top: 2px; }
+.event-row .finding-kind { flex-wrap: wrap; gap: 1px 8px; }
+.event-row .finding-kind > span { white-space: nowrap; }
+.event-row .finding-kind small { font-size: 10.5px; font-weight: 500; color: var(--faint); }
+.events-note { display: flex; flex-wrap: wrap; gap: 2px 10px; margin: 6px 10px 0; font-size: 11px; color: var(--faint); }
+
+/* The time axis under the chart: quarter ticks along the track, one marker per filing, the current report and the focused event lit. */
+.stage[data-timeline] { grid-template-rows: auto minmax(0, 1fr) auto auto auto; }
+.stage:has(.findings)[data-timeline] { grid-template-rows: auto auto minmax(0, 1fr) auto auto auto; }
+.timeline { margin-top: 6px; padding: 10px 0 0; animation: rise .5s var(--ease) both; }
+.timeline-track { position: relative; height: 30px; margin: 0 6px; }
+.timeline-track::before { content: ""; position: absolute; left: 0; right: 0; top: 12px; border-top: 1px solid var(--border); }
+.timeline-tick { position: absolute; top: 18px; transform: translateX(-50%); font-size: 10px; color: var(--faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.timeline-tick::before { content: ""; position: absolute; left: 50%; top: -6px; height: 4px; border-left: 1px solid var(--border); }
+.timeline-point { position: absolute; top: 12px; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; padding: 0; border: 1.5px solid var(--tone); border-radius: 50%; background: var(--tone); cursor: pointer; transition: transform .2s var(--ease), box-shadow .2s; }
+.timeline-point[data-kind="report"] { width: 11px; height: 11px; margin: -5.5px 0 0 -5.5px; border-radius: 3px; }
+.timeline-point[data-weight="1"] { width: 6px; height: 6px; margin: -3px 0 0 -3px; background: transparent; }
+.timeline-point[data-weight="0"] { width: 4px; height: 4px; margin: -2px 0 0 -2px; background: transparent; opacity: .5; }
+.timeline-point:hover, .timeline-point[aria-pressed="true"] { transform: scale(1.5); z-index: 1; box-shadow: 0 0 0 3px color-mix(in srgb, var(--tone) 25%, transparent); }
+.timeline-point[aria-pressed="true"] { background: var(--tone); }
+.timeline-point:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+
+/* The event lens: a current report's facts or an insider's holding staircase on the left, the reading and the filing's links on the right. */
+.event-kind { --kind: var(--kind, var(--muted-foreground)); }
+.event-facts { display: grid; gap: 8px; align-content: start; margin: 0; padding: 4px 0; font-size: 12.5px; }
+.event-facts div { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 10px; }
+.event-facts dt { color: var(--muted-foreground); }
+.event-facts dd { margin: 0; color: var(--foreground); }
+.event-item { display: inline-flex; align-items: baseline; gap: 5px; margin: 0 10px 4px 0; font-variant-numeric: tabular-nums; }
+.event-item small { color: var(--faint); }
+.event-bullets { margin: 0 0 10px; padding: 0; list-style: none; display: grid; gap: 6px; font-size: 12.5px; color: var(--muted-foreground); }
+.event-bullets b { display: block; font-weight: 600; color: var(--foreground); }
+.event-bullets li[data-importance="high"] b::before { content: "●"; margin-right: 6px; font-size: 7px; vertical-align: middle; color: var(--kind); }
+.event-view { margin: 0 0 8px; font-size: 12.5px; }
+.event-view b { display: inline-block; margin-right: 8px; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; color: var(--foreground); background: var(--surface); border: 1px solid var(--hairline); }
+.event-generated { margin: 0 0 8px; font-size: 11px; color: var(--faint); }
+.event-footnotes { margin: 0 0 10px; font-size: 11.5px; color: var(--muted-foreground); }
+.event-footnotes summary { cursor: pointer; color: var(--faint); }
+.event-footnotes ol { margin: 6px 0 0; padding-left: 18px; }
+.event-verdict b { display: inline-block; margin-right: 8px; padding: 1px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600; color: var(--background); background: var(--muted-foreground); }
+.event-verdict[data-verdict="需要留意"] b { background: var(--loss); }
+.event-verdict[data-verdict="按计划"] b { background: var(--up); }
+.event-verdict[data-verdict="常规"] b { background: var(--muted-foreground); }
+.event-rules { margin: 0 0 8px; padding-left: 16px; font-size: 12px; color: var(--muted-foreground); }
+.event-rules li { margin: 2px 0; }
+.event-cluster { margin: 0 0 10px; padding: 0; list-style: none; font-size: 12px; color: var(--muted-foreground); }
+.event-cluster li { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; border-bottom: 1px solid var(--hairline); font-variant-numeric: tabular-nums; }
+
+/* The staircase: each filing's held-after figure is a step; sales are dots sized by proceeds, hollow under a 10b5-1 plan, the focused one lit. */
+.insider-ladder { position: relative; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 6px; min-height: 0; }
+.insider-ladder svg { width: 100%; height: 100%; min-height: 0; overflow: visible; }
+.ladder-grid { stroke: var(--background); stroke-opacity: .35; stroke-dasharray: 3 4; }
+.ladder-path { fill: none; stroke: var(--class-insider); stroke-width: 1.6; stroke-linejoin: round; animation: fade-in .6s ease both; }
+.ladder-marks { position: absolute; inset: 0; pointer-events: none; }
+.ladder-marks .ladder-dot { position: absolute; transform: translate(-50%, -50%); pointer-events: auto; }
+.ladder-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--class-insider); border: 1.5px solid var(--class-insider); box-sizing: border-box; transition: box-shadow .2s; }
+.ladder-dot[data-planned], .ladder-dot--planned { background: transparent; }
+.ladder-dot[data-focus] { box-shadow: 0 0 0 3px color-mix(in srgb, var(--class-insider) 30%, transparent), 0 0 12px var(--class-insider); z-index: 1; }
+.ladder-step { width: 12px !important; height: 2px !important; border-radius: 1px !important; background: var(--class-insider); }
+.insider-ladder .lens-legend { grid-row: 1; }
+.insider-ladder .lens-axis { grid-row: 3; }
+.ladder-scale { position: absolute; left: 0; top: 24px; bottom: 20px; display: flex; flex-direction: column; justify-content: space-between; font-size: 10px; color: var(--faint); font-variant-numeric: tabular-nums; pointer-events: none; }
+@media (max-width: 960px) { .events { order: 2; } .event-row { display: inline-flex; } .event-date { display: none; } .timeline-track { margin: 0 2px; } }
+
+/* Reports in the rail and the report lens: the figures the filing verified, the conclusions, and the full report in a modal. */
+[data-class="report"] { --kind: var(--foreground); }
+.report-row .finding-kind > span { font-variant-numeric: tabular-nums; }
+.report-kind { --kind: var(--foreground); }
+.report-open { border-color: color-mix(in srgb, var(--brand) 55%, transparent) !important; color: var(--foreground) !important; }
+.report-figures { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 10px; align-content: start; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.report-metrics { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin: 0; }
+.report-metric { display: flex; flex-direction: column; gap: 3px; padding: 9px 11px; border-radius: 10px; background: var(--surface); border: 1px solid var(--hairline); animation: rise .45s var(--ease) both; }
+.report-metric dt { font-size: 11.5px; color: var(--muted-foreground); }
+.report-metric dd { margin: 0; display: flex; flex-direction: column; gap: 2px; }
+.report-metric dd b { font-size: 15px; font-weight: 620; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+.report-metric dd small { display: flex; flex-wrap: wrap; gap: 2px 10px; font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; }
+.report-metric dd em { font-style: normal; }
+.report-metric dd em[data-trend="up"] { color: var(--up); } .report-metric dd em[data-trend="down"] { color: var(--loss); }
+.report-metric[data-status="derived"] dt::after { content: " · 推算"; color: var(--faint); }
+.report-metric[data-status="not_comparable"] dt::after { content: " · 不可比"; color: var(--faint); }
+.report-changes { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; font-size: 12.5px; color: var(--muted-foreground); }
+.report-changes li b { display: block; font-size: 11.5px; font-weight: 600; color: var(--foreground); }
+.report-changes--below { padding-top: 8px; border-top: 1px solid var(--hairline); }
+.report-more { padding: 0; border: 0; background: transparent; font-size: 11.5px; color: var(--brand); }
+.report-claims { margin: 0 0 8px; padding: 0; list-style: none; display: grid; gap: 4px; font-size: 12.5px; color: var(--muted-foreground); }
+.report-claims li b { display: inline-block; margin-right: 8px; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; color: var(--foreground); background: var(--surface); border: 1px solid var(--hairline); }
+.report-claims[data-kind="risk"] li b { color: var(--loss); border-color: color-mix(in srgb, var(--loss) 35%, transparent); }
+.report-warnings { margin: 0 0 8px; padding-left: 16px; font-size: 11.5px; color: var(--faint); }
+
+/* The full report: a modal over the map, the report page's document inside its own styles. */
+.report-dialog { width: min(100vw - 32px, 1080px); max-height: calc(100vh - 32px); padding: 0; border: 1px solid var(--hairline); border-radius: 16px; background: var(--background); color: var(--foreground); box-shadow: 0 30px 80px #0008; }
+.report-dialog::backdrop { background: color-mix(in srgb, var(--background) 62%, transparent); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+.report-dialog[open] { animation: pop .24s var(--ease) both; }
+.report-dialog-bar { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px 10px 20px; font-size: 12.5px; color: var(--muted-foreground); background: color-mix(in srgb, var(--background) 88%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--hairline); }
+.report-dialog-bar .lens-close { width: 28px; padding: 4px 0; border-radius: 999px; background: var(--surface); border: 1px solid var(--hairline); color: var(--muted-foreground); }
+.report-dialog-body { padding: 8px 24px 32px; }
+.report-dialog-body .lens-empty { padding: 60px 0; }

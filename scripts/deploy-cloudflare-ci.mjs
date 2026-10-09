@@ -88,6 +88,7 @@ try {
   const siteEnv = { ...process.env };
   delete siteEnv.WRANGLER_CI_OVERRIDE_NAME;
   delete siteEnv.WRANGLER_CI_MATCH_TAG;
+  // The map reads the pipeline over a named-entrypoint binding; the binding is its credential, so no secret is written here.
   run(process.execPath, ['node_modules/wrangler/bin/wrangler.js', 'deploy', '--config', 'apps/business-site/wrangler.jsonc', '--keep-vars'], siteEnv);
   // Public marketing website: static assets only, published by the same main build.
   run('npm', ['run', 'marketing:deploy:ci']);

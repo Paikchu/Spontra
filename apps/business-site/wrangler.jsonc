@@ -25,6 +25,16 @@
   "observability": {
     "enabled": true
   },
+  // Reads go to the analysis pipeline's MapReads named entrypoint over a Service Binding. A named
+  // entrypoint cannot be reached from the public internet, so the binding is the credential: no
+  // key, no public origin, and the main app can be retired without touching this Worker.
+  "services": [
+    {
+      "binding": "EARNING_REPORT_PIPELINE",
+      "service": "spontra-analysis",
+      "entrypoint": "MapReads"
+    }
+  ],
   "compatibility_flags": [
     "global_fetch_strictly_public"
   ]

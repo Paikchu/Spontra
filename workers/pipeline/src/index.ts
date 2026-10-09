@@ -1,6 +1,7 @@
 import { NonRetryableError } from "cloudflare:workflows";
 import { SecModelHttpError } from "./operations.ts";
-import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
+import { WorkerEntrypoint, WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
+import { BOUND_MAP_READER, handleBoundReadRequest } from "./read-api/router.ts";
 
 import { assertTrackedTicker, runCompanyAnalysisSweep, runSecRefresh, type CompanyAnalysisBackfillParams, type CompanyAnalysisWorkflowParams, type SecMemoryWorkflowParams, type SecWorkflowParams } from "./core.ts";
 import { executeCompanyAnalysisWorkflow, type CompanyWorkflowStep } from "./company-analysis-workflow.ts";
@@ -62,6 +63,18 @@ export class SecAnalysisWorkflow extends WorkflowEntrypoint<SecPipelineEnv, SecW
     // One-off reports do not enroll a company in recurring memory/company analysis.
     if (event.payload.maintenanceTaskId) operations.enqueueMemory = undefined;
     return executeSecAnalysisWorkflow(event.payload, event.instanceId, durableSteps(step, env, event.instanceId), operations);
+  }
+}
+
+/**
+ * The public business map reads over a Service Binding to this named entrypoint. A named entrypoint
+ * is unreachable from the public internet, so the binding is the credential: no key to issue, store
+ * or rotate for that consumer. Only the read API is exposed here; control routes stay on the default
+ * entrypoint behind SEC_REFRESH_KEY.
+ */
+export class MapReads extends WorkerEntrypoint<SecPipelineEnv> {
+  fetch(request: Request) {
+    return handleBoundReadRequest(request, this.env, BOUND_MAP_READER);
   }
 }
 
