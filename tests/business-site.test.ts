@@ -40,6 +40,11 @@ test("reads go to the pipeline's read API over the named-entrypoint binding, wit
  // Without the binding the data routes say so instead of reaching for a public origin.
  const unconfigured=await handle(request(endpoint),env,context);assert.equal(unconfigured.status,503);assert.equal(unconfigured.headers.get("cache-control"),"no-store");
  assert.equal((await handle(request("/"),env,context)).status,200,"the shell is served without the binding");
+ // The deployed entry point reads over the binding, not a global fetch to a public origin.
+ const worker=(await import("../apps/business-site/worker/index")).default;
+ const viaWorker:Request[]=[];
+ const served=await worker.fetch(request(endpoint+"/findings"),{...env,EARNING_REPORT_PIPELINE:{fetch:async(req:Request)=>{viaWorker.push(req);return Response.json({schemaVersion:"findings-response.v1",status:"preparing",findings:null});}}},context);
+ assert.equal(served.status,200);assert.equal(viaWorker.length,1);assert.ok(viaWorker[0].url.startsWith("https://spontra-analysis.internal/api/v1/companies/ORCL/findings"));
 });
 test("missing quarters remain empty, upstream errors expose no detail, mismatched tickers never leak",async()=>{
  const empty=await handle(request("/api/business/v1/companies/NVDA"),env,context,success);assert.equal((await empty.json() as {flow:null}).flow,null);
