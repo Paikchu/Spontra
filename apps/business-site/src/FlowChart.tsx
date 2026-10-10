@@ -133,10 +133,12 @@ export type Badge = { kind: "risk" | "strength" | "shift" | "watch"; severity: n
 
 export type PriorQuarter = { graph: FinancialGraph; copy: (n: PlacedNode) => NodeCopy; label: string };
 
-export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHover, onPick, tipFor, label, revealKey, businessDetails, companyDetails = null, productBusiness = null, spotlight = null, badges, onBadge, priorOf, previous = null, brackets, pills }: {
+export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHover, onPick, tipFor, label, revealKey, businessDetails, companyDetails = null, detailsKey = "company", productBusiness = null, spotlight = null, badges, onBadge, priorOf, previous = null, brackets, pills }: {
   businessDetails?: ReactNode;
   /** The company's own dossier, shown in the same card while no business is picked. */
   companyDetails?: ReactNode;
+  /** Remounts the card (and resets its scroll) when what `companyDetails` shows changes. */
+  detailsKey?: string;
   /** The comparable prior-quarter amount of a node, drawn as a dashed outline over its bar; null when the two quarters cannot be compared. */
   priorOf?: (n: PlacedNode) => number | null;
   /** The prior quarter's statement: 对比上季 morphs the whole chart to it at the current quarter's scale. */
@@ -318,7 +320,7 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
   // The explanation is page text beside the canvas, not part of the scaled drawing: opening it narrows the pane and the Sankey refits.
   return <div className="fc" data-products={expanded || undefined} style={{ "--ratio": `${layout.width} / ${layout.height}`, "--mobile-width": `${Math.ceil(layout.width * SCREEN_VALUE_PX / (21 * k))}px` } as CSSProperties} onMouseLeave={() => { setTip(null); onHover(null); }}>
     <div className="fc-controls"><Button variant="outline" size="sm" aria-label="缩小画布" onClick={() => zoomBy(1 / 1.2)}>−</Button><Button variant="outline" size="sm" onClick={() => flyTo(HOME)}>适应画布</Button>{priorLayout && <Button variant="outline" size="sm" aria-pressed={compare} data-on={compare || undefined} onClick={() => setCompare(v => !v)}>对比上季</Button>}{productBusiness && <Button variant="outline" size="sm" onClick={() => flyTo(focusCamera)}>聚焦业务</Button>}<Button variant="outline" size="sm" aria-label="放大画布" onClick={() => zoomBy(1.2)}>+</Button></div>
-    {expanded && <aside key={productTarget ? productBusiness! : "company"} className="fc-business-details" aria-label={productTarget ? `${productTarget.label} 业务说明` : "公司档案"}>
+    {expanded && <aside key={productTarget ? productBusiness! : detailsKey} className="fc-business-details" aria-label={productTarget ? `${productTarget.label} 业务说明` : "业务档案"}>
       <div className="fc-business-scroll" tabIndex={0} data-scrolling={scrolling || undefined} onScroll={revealScrollbar}>{productTarget ? businessDetails : companyDetails}</div>
     </aside>}
     <div className="fc-canvas" ref={box}>

@@ -1,5 +1,6 @@
 import type { BusinessNarrative, CompanyNarrative, NarrativeCheck, NarrativeLink, NarrativeStatus, NarrativeTie } from "@/shared/analysis-contract/business-narrative";
-import { resolveEvidence, resolveRef, type FindingData, type ResolvedEvidence, type ResolvedValue } from "@/shared/analysis-runtime/findings";
+import { resolveEvidence, resolveRef, type FindingData, type FindingFundamentalSeries, type ResolvedEvidence, type ResolvedValue } from "@/shared/analysis-runtime/findings";
+import type { PublicCapitalStructure } from "@/shared/analysis-contract/capital-structure";
 
 /**
  * The narrative's figures are never written down: a check, a tie or a rail anchor names a statement
@@ -45,3 +46,14 @@ export function worstStatus(statuses: NarrativeStatus[]): NarrativeStatus | null
 
 /** `2026-03-31` reads 2026.03, `2026-03` the same, `2025` as the year alone. */
 export const milestoneDate = (date: string) => date.length >= 7 ? date.slice(0, 7).replace("-", ".") : date;
+
+/**
+ * Remaining performance obligations as a chartable series, read from each filing's capital projection
+ * when the SEC fundamentals carry no series of their own; one point per quarter that disclosed a total.
+ */
+export function rpoSeriesFromCapital(capital: PublicCapitalStructure | null): FindingFundamentalSeries | null {
+  const disclosed = (capital?.quarters ?? []).filter(q => q.rpo?.total);
+  if (disclosed.length < 2) return null;
+  const points = disclosed.map(q => ({ periodEnd: q.periodEnd, valueDecimal: q.rpo!.total, sourceAccession: q.rpo!.source.accession }));
+  return { metricKey: "remaining_performance_obligation", label: "剩余履约义务", category: "balance_sheet", unitFamily: "currency", currency: disclosed[0].rpo!.currency, available: true, points };
+}

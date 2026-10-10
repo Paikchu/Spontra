@@ -26,8 +26,9 @@ import { anchorNodeNames, anchorPoolKeys, badgesByNode, findingData, verifiedFin
 import { FindingsList } from "./FindingsList";
 import { DossierTabs } from "./DossierTabs";
 import { BusinessNarrativeDossier, CompanyDossier, StagePill, StatusDot } from "./NarrativeDossier";
-import { resolveAnchor } from "./narrative-model";
+import { resolveAnchor, rpoSeriesFromCapital } from "./narrative-model";
 import { STAGE_LABEL, type BusinessNarrative, type CompanyNarrative } from "@/shared/analysis-contract/business-narrative";
+import type { FindingRef } from "@/shared/analysis-contract/findings";
 import { LensPanel } from "./LensPanel";
 import type { EventsPublication } from "@/shared/analysis-contract/events";
 import type { PublicFilingDigestPage } from "@/shared/analysis-contract/filings";
@@ -113,7 +114,21 @@ function withNarrativeItems(items: Item[], narrative: CompanyNarrative | null): 
     while (parent && at < out.length && out[at].parent === parent.key) at++;
     out.splice(at, 0, row);
   }
+  // A single reportable segment is the company total under another name: when the narrative's businesses are all it
+  // holds, the row says nothing 全部业务 does not, so they stand in its place and keep lighting its node.
+  const real = out.filter(item => !item.synthetic);
+  if (real.length === 1 && out.some(item => item.synthetic && item.parent === real[0].key)) {
+    return out.filter(item => item !== real[0]).map(item => item.parent === real[0].key ? { ...item, parent: null, depth: 0 } : item);
+  }
   return out;
+}
+
+/** The fundamentals series a narrative anchor can be charted from; null when it has no series of its own. */
+function anchorMetricKey(ref: FindingRef): string | null {
+  if ("capital" in ref) return ref.capital === "rpo" ? "remaining_performance_obligation" : null;
+  if ("fundamental" in ref) return ref.fundamental;
+  if ("metric" in ref) return ref.metric === "revenue" ? REVENUE_METRIC : null;
+  return null;
 }
 
 function useTween(target: number | null, ms = 650) {
@@ -189,7 +204,20 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
   const metric = useMemo(() => metricSeries ? metricTrend(metricSeries) : null, [metricSeries]);
   const firstMetric = metricGroups[0]?.options[0]?.key;
   const fallbackMetric = !metric && !hasRevenueTrend && firstMetric ? metricTrend(fundamentals!.series.find(s => s.metricKey === firstMetric)!) : null;
-  const shownMetric = metric ?? fallbackMetric;
+  // A business the statements do not split out charts its anchor (remaining performance obligations) while picked, until the reader picks a metric.
+  const [metricPicked, setMetricPicked] = useState(false);
+  const anchorTrend = useMemo(() => {
+    const picked = selected ? items.find(i => i.id === selected) : null;
+    const told = picked?.synthetic ? narrativeOf.get(picked.id) : null;
+    const key = told?.anchor ? anchorMetricKey(told.anchor.ref) : null;
+    if (!key || key === REVENUE_METRIC) return null;
+    const series = fundamentals?.series.find(s => s.metricKey === key) ?? (key === "remaining_performance_obligation" ? rpoSeriesFromCapital(capital) : null);
+    return series ? metricTrend(series) : null;
+  }, [selected, items, narrativeOf, fundamentals, capital]);
+  const shownMetric = metric ?? (metricPicked ? null : anchorTrend) ?? fallbackMetric;
+  const pickerGroups = useMemo(() => shownMetric && shownMetric.key !== REVENUE_METRIC && !metricGroups.some(g => g.options.some(o => o.key === shownMetric.key))
+    ? [...metricGroups, { group: "业务锚点", options: [{ key: shownMetric.key, label: shownMetric.label }] }] : metricGroups, [shownMetric, metricGroups]);
+  const chooseMetric = (key: string) => { setMetricPicked(true); setMetricKey(key); };
   const pair = focused ? verified.find(f => f.id === focused.pairWith) ?? null : null;
   const focusIndex = focused ? verified.indexOf(focused) : -1;
   const [preview, setPreview] = useState<string | null>(null);
@@ -316,7 +344,7 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
   const focusFinding = (id: string | null) => { setFocusId(id); if (id) { setEventId(null); setReportId(null); } else { setStory(false); setSplit(false); } };
   const focusEvent = (id: string | null) => { setEventId(id); if (id) { setSelected(null); setFocusId(null); setReportId(null); setStory(false); setSplit(false); } };
   // The rail holds one pick at a time: a business, a finding, or a report/event.
-  const pickBusiness = (id: string | null) => { setSelected(id); if (id) { setFocusId(null); setEventId(null); setReportId(null); setStory(false); setSplit(false); } };
+  const pickBusiness = (id: string | null) => { setSelected(id); setMetricPicked(false); if (id) { setFocusId(null); setEventId(null); setReportId(null); setStory(false); setSplit(false); } };
   // A report in focus also brings the stage to its quarter when the flow has it.
   const focusReport = (id: string | null) => {
     setReportId(id); setReader(false);
@@ -331,7 +359,8 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
   const [drawerOpen, setDrawerOpen] = useState<boolean | null>(null);
   const drawer = drawerOpen ?? (current != null || !(findings && verified.length));
   const previewItem = items.find(item => item.key === preview);
-  const active = previewItem ? "segment:" + previewItem.flowKey : hoverNode ?? (current ? "segment:" + current.flowKey : null);
+  // A business the statements do not split out lights nothing: its figures are the whole statement's, and the chart stays readable while its dossier opens.
+  const active = previewItem ? (previewItem.synthetic ? null : "segment:" + previewItem.flowKey) : hoverNode ?? (current && !current.synthetic ? "segment:" + current.flowKey : null);
   const hovered = hoverNode ? itemByNode.get(hoverNode)?.key : undefined;
 
   function onListKey(e: KeyboardEvent<HTMLDivElement>) {
@@ -425,8 +454,10 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
       <div className="chart">
         {view !== "profit" && funding ? <CapitalChart view={view} funding={funding} ticker={ticker} spotlight={poolSpotlight} />
           : !quarter ? <div className="empty"><h2>季度财务未披露</h2><p>需要同币种、同口径的三个月数据才能绘制流向；不会用示例数据替代。</p></div>
-          : proportional && layout ? <FlowChart graph={graph!} copy={copy} money={v => money(v)} colorOf={colorOf} active={active} revealKey={quarter.id} productBusiness={current ? "segment:" + current.flowKey : null} businessDetails={<Dossier item={current} parent={parent ?? null} sources={quarter?.sources.length ? quarter.sources : business?.sources ?? []} explainer={explainer} narrative={narrative} data={data} periods={narrativePeriods} />}
-              companyDetails={!current && narrative && !focused && !focusedEvent && !focusedReport ? <CompanyDossier narrative={narrative} data={data} periods={narrativePeriods} onPick={id => pickBusiness(id)} /> : null}
+          : proportional && layout ? <FlowChart graph={graph!} copy={copy} money={v => money(v)} colorOf={colorOf} active={active} revealKey={quarter.id} productBusiness={current && !current.synthetic ? "segment:" + current.flowKey : null} businessDetails={<Dossier item={current} parent={parent ?? null} sources={quarter?.sources.length ? quarter.sources : business?.sources ?? []} explainer={explainer} narrative={narrative} data={data} periods={narrativePeriods} />}
+              detailsKey={current?.synthetic ? current.key : "company"}
+              companyDetails={current?.synthetic ? <Dossier item={current} parent={parent ?? null} sources={quarter?.sources.length ? quarter.sources : business?.sources ?? []} explainer={explainer} narrative={narrative} data={data} periods={narrativePeriods} />
+                : !current && narrative && !focused && !focusedEvent && !focusedReport ? <CompanyDossier narrative={narrative} data={data} periods={narrativePeriods} onPick={id => pickBusiness(id)} /> : null}
               focusSlot={n => segmentRevenue ? `占${shareBasis} ${percent(n.value / segmentRevenue * 100)}` : null}
               onHover={name => setHoverNode(name)} tipFor={tipFor} spotlight={spotlight} badges={badges} priorOf={priorOf} previous={priorQuarter} brackets={guideMarks.brackets} pills={guideMarks.pills} onBadge={name => { const f = badgeFindings.get(name); if (f) focusFinding(f.id); }}
               onPick={n => { const item = itemByNode.get(n.name); pickBusiness(item && current?.key !== item.key ? item.id : null); }}
@@ -452,10 +483,10 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
       </div>
       : shownMetric ? <MetricTrendPanel trend={shownMetric} currentPeriod={quarter?.periodEnd ?? null} periods={new Set(quarters.map(q => q.periodEnd))}
         onPickPeriod={end => setPeriod(quarters.find(q => q.periodEnd === end)?.id ?? null)}
-        picker={<MetricPicker value={shownMetric.key} groups={metricGroups} revenue={hasRevenueTrend} onChange={setMetricKey} />} />
+        picker={<MetricPicker value={shownMetric.key} groups={pickerGroups} revenue={hasRevenueTrend} onChange={chooseMetric} />} />
       : hasRevenueTrend && <TrendPanel history={revenueHistory!} items={items.filter(i => !i.synthetic)} selected={current?.synthetic ? null : current} currentPeriod={quarter?.periodEnd ?? null}
         periods={new Set(quarters.map(q => q.periodEnd))} onPickPeriod={end => setPeriod(quarters.find(q => q.periodEnd === end)?.id ?? null)} hue={hue} guidance={guidance}
-        picker={<MetricPicker value={REVENUE_METRIC} groups={metricGroups} revenue onChange={setMetricKey} />} />}
+        picker={<MetricPicker value={REVENUE_METRIC} groups={pickerGroups} revenue onChange={chooseMetric} />} />}
 
       <footer className="stage-foot">
         {view !== "profit" && funding ? <CapitalLegend view={view} funding={funding} /> : proportional ? <div className="legend" aria-label="图例">
