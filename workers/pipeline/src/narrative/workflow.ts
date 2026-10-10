@@ -50,7 +50,8 @@ async function readInput(env: SecPipelineEnv, ticker: string) {
   const findings = findingsRow ? readFindingsPublication(findingsRow.payload, ticker) : null;
   const filings = [...feed.filings].sort((a, b) => b.filingDate.localeCompare(a.filingDate)).slice(0, 16).map(f => f.accessionNumber);
   // Content digests, not timestamps: the metrics set republishes every time a filing is read, and that must not rewrite a narrative whose inputs did not change.
-  const metricsDigest = metrics ? metrics.metrics.map(m => `${m.key}:${m.observations.map(o => `${o.asOf}=${o.value}`).join(",")}`).sort().join(";") : null;
+  // Only the metric keys: a new observation of a known metric is not a reason to rewrite the story.
+  const metricsDigest = metrics ? metrics.metrics.map(m => m.key).sort().join(";") : null;
   const fingerprint = await sha256(JSON.stringify({ version: NARRATIVE_WRITER_VERSION, ticker, explainer: explainer.fingerprint, periodEnd: newest.periodEnd, filings, metrics: metricsDigest, guidance: guidance?.updatedAt ?? null, findings: findings?.fingerprint ?? findings?.generatedAt ?? null }));
   return { explainer, feed, nodes, periodEnd: newest.periodEnd, metrics, guidance, findings, fingerprint };
 }
@@ -102,6 +103,8 @@ export async function executeNarrativeWorkflow(params: NarrativeWorkflowParams, 
     modelVersion, fingerprint: params.fingerprint, now,
   }, (stage, system, payload) => callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, 5 * 60_000, true), (name, run) => step.do(`narrative-${name}`, run));
   const narrative = written.narrative;
+  // The harness's reasons are kept as a step output, so a run that published nothing says why in its history.
+  await step.do("narrative-result", async () => ({ published: !!narrative, businesses: narrative?.businesses.length ?? 0, issues: written.issues }));
   if (!narrative || !readCompanyNarrative(narrative, params.ticker)) return { status: "empty", reason: "nothing verifiable", issues: written.issues };
   await step.do("narrative-publish", async () => {
     await new D1SecRepository(requireDb(env)).setCache(narrativeCacheKey(params.ticker), narrative, now);

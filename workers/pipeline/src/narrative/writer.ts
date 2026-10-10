@@ -8,7 +8,7 @@ import { materialNumbers, unsupportedNumbers } from "../../../../shared/analysis
 import type { NarrativeMaterial } from "./materials.ts";
 
 /** Changing the prompts or the harness rewrites every company once. */
-export const NARRATIVE_WRITER_VERSION = "narrative-writer.v3";
+export const NARRATIVE_WRITER_VERSION = "narrative-writer.v4";
 
 export type NarrativeModel = (stage: string, system: string, payload: unknown) => Promise<Record<string, unknown>>;
 
@@ -27,8 +27,8 @@ export const COMPANY_PROMPT = `${RULES}
  "stage":"scaling","stageClaim":{"text":"为什么处在这个阶段：规模、里程碑、盈亏，带数字","sourceIds":[]},
  "verdict":"一句话判断，不含数字，最多 60 字",
  "industry":{"text":"竞争对手是谁、依赖谁、在行业里的位置","sourceIds":[]},
- "milestones":[{"id":"","date":"YYYY-MM-DD 或 YYYY-MM 或 YYYY","label":"最多 24 字","state":"done|planned|delayed","originalDate":null,"claim":{"text":"公司层事件：融资与发债、重组、公司级收购、CEO/CFO 更替、上市，带数字","sourceIds":[]}}],
- "parties":[{"name":"","role":"funder|partner|supplier","claim":{"text":"公司层的出资方、合作方或关键供应商，带数字","sourceIds":[]}}],
+ "milestones":[{"id":"","date":"YYYY-MM-DD 或 YYYY-MM 或 YYYY","label":"最多 24 字","state":"done|planned|delayed","originalDate":null,"claim":{"text":"公司层事件：融资与发债、重组、公司级收购、CEO/CFO 更替、上市，带数字。不收业绩指引、例行业绩发布、股东大会例行议案、CEO/CFO 以外的人事","sourceIds":[]}}],
+ "parties":[{"name":"","role":"funder|partner|supplier","claim":{"text":"公司层的出资方、合作方或关键供应商，带数字。不收审计师、律所、承销商这类服务机构","sourceIds":[]}}],
  "chain":[{"id":"demand","premise":"前提，不含数字，最多 40 字","status":"confirmed","evidence":[{"text":"带数字的证据","sourceIds":[]}],"failure":"失效条件，不含数字","checkIds":["rpo-growth"]}],
  "checks":[{"id":"rpo-growth","condition":"验证条件，不含数字","status":"confirmed","ref":{"capital":"rpo"},"span":"quarter","compare":"qoq"}]}
 叙事链 3–5 环，按因果顺序；验证点 3–6 条，每条尽量绑定一个可解析的 ref，让页面显示最新数字；chain 的 checkIds 只引用本次给出的 check id。公司层的 milestones 和 parties 收全公司范围的事件与相关方，6–12 条；业务层只收属于那项业务的，两边不重复。`;
@@ -146,10 +146,13 @@ export async function writeNarrative(input: WriterInput, model: NarrativeModel, 
     return out;
   };
 
+  let companyRejects: Array<{ path: string; issues: string[] }> = [];
   const write = async (name: string, system: string, payload: Record<string, unknown>): Promise<Draft> => {
     const first = await stage(`write-${name}`, () => model(`narrative-write-${name}`, system, { ...payload, materials }));
     const rejected: Array<{ path: string; claim: unknown; issues: string[] }> = [];
     let draft = harness(first, rejected);
+    if (name === "company") companyRejects = rejected.map(r => ({ path: r.path, issues: r.issues }));
+    issues.push(...rejected.slice(0, 12).map(r => `${name}: ${r.path}: ${r.issues.join("; ")}`));
     if (rejected.length) {
       const repaired = await stage(`repair-${name}`, () => model(`narrative-repair-${name}`, `${system}\n你上一版的部分内容未通过自动校验，原因列在 rejected 里（引用了不存在的材料、数字不是所引材料写出的、日期格式不对、字数超限、绑定数字的文字里出现了数字、枚举值不对）。只返回修正后的这些条目：{"repairs":[{"path":"与 rejected 里相同的 path","claim":{"text":"","sourceIds":[]} 或 "item":{...完整条目...} 或 "text":"仅文字字段"}]}；修不好的就不要返回。`, { ...payload, rejected: rejected.slice(0, 24), materials }));
       const fixes = Array.isArray(repaired.repairs) ? repaired.repairs as Array<{ path: string; claim?: unknown; item?: unknown; text?: unknown }> : [];
@@ -202,6 +205,9 @@ export async function writeNarrative(input: WriterInput, model: NarrativeModel, 
   };
   // The same reader the page uses decides what is published; anything it strips was never shown.
   const narrative = readCompanyNarrative(candidate, input.ticker);
-  if (!narrative) issues.push(`reader rejected the document: ${JSON.stringify({ positioning: !!candidate.positioning, stage: candidate.stage, verdict: typeof candidate.verdict, businesses: candidate.businesses.length }).slice(0, 300)}`);
+  if (!narrative) {
+    const missing = ["positioning", "stageClaim", "industry"].filter(k => !(candidate as Record<string, unknown>)[k]);
+    issues.push(`reader rejected the document: missing ${missing.join(",") || "nothing"}; stage=${String(candidate.stage)}; verdict=${typeof candidate.verdict}; businesses=${candidate.businesses.length}; company rejects=${JSON.stringify(companyRejects.slice(0, 6)).slice(0, 400)}`);
+  }
   return { narrative, issues: issues.slice(0, 40) };
 }
