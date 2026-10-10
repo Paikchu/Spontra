@@ -116,7 +116,7 @@ button { cursor: pointer; }
 .rail[data-scrolled] .rail-blur { opacity: 1; }
 /* Overlay-style scrollbar: transparent track on the card surface, a translucent thumb only while scrolling or hovered. */
 .rail-scroll {
-  flex: 1; min-height: 0; overflow-y: auto; padding: 14px 12px 20px; overscroll-behavior: contain;
+  flex: 1; min-height: 0; overflow-y: auto; padding: 14px max(0px, calc(12px - var(--rail-gutter, 0px))) 20px 12px; overscroll-behavior: contain; scrollbar-gutter: stable;
   scrollbar-width: thin; scrollbar-color: transparent transparent; transition: scrollbar-color .3s;
 }
 .rail-scroll:hover, .rail-scroll[data-scrolling] { scrollbar-color: color-mix(in srgb, var(--foreground) 22%, transparent) transparent; }
@@ -940,8 +940,10 @@ button { cursor: pointer; }
 .section-action[aria-pressed="true"] { color: var(--background); background: var(--foreground); }
 .section-action[aria-pressed="true"]:hover { color: var(--background); background: var(--foreground); }
 .section-expand svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; transition: transform .3s var(--ease); }
-.section-expand:not([data-drawer]):hover svg { transform: translateX(1px); }
-.section-expand[aria-expanded="true"] svg { transform: rotate(180deg); }
+.section-expand:hover svg { transform: translateX(1px); }
+/* The business drawer's head is 全部业务 itself: its name centred across the row, the company's change under its revenue. */
+.row.row--all .row-meta { grid-column: 3; text-align: right; }
+.row.row--all .row-chip, .row.row--all .row-name { grid-row: 1 / 3; align-self: center; }
 .findings[data-open] [data-extra] { animation: rise .3s var(--ease) both; }
 .section-back { flex: none; width: 28px; height: 28px; margin: -4px 0 -4px -4px; }
 .findings[data-expanded] .findings-head { padding-bottom: 10px; }
@@ -970,12 +972,12 @@ button { cursor: pointer; }
   .findings:not([data-expanded]):not([data-open]) [data-extra] { display: none; }
   .event-row .finding-title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
   /* Open, the section takes the rail's height: its header and filters stay, its rows scroll on their own. */
-  .rail-scroll[data-expanded] { display: flex; flex-direction: column; overflow: hidden; padding-bottom: 0; }
+  .rail-scroll[data-expanded] { display: flex; flex-direction: column; overflow: hidden; padding-right: 12px; padding-bottom: 0; scrollbar-gutter: auto; }
   .rail-scroll[data-expanded] > :not([data-expanded]) { display: none; }
   .findings[data-expanded] { flex: 1; min-height: 0; display: flex; flex-direction: column; margin-top: 0; padding-top: 0; border-top: 0; animation: none; }
   .findings[data-expanded] > * { flex: none; }
   .findings[data-expanded] .section-body {
-    flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin: 0 -12px; padding: 6px 12px 20px; border-top: 1px solid var(--hairline);
+    flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin: 0 -12px; padding: 6px max(0px, calc(12px - var(--rail-gutter, 0px))) 20px 12px; border-top: 1px solid var(--hairline); scrollbar-gutter: stable;
     scrollbar-width: thin; scrollbar-color: transparent transparent; transition: scrollbar-color .3s;
   }
   .findings[data-expanded] .section-body:hover { scrollbar-color: color-mix(in srgb, var(--foreground) 22%, transparent) transparent; }
@@ -983,7 +985,6 @@ button { cursor: pointer; }
 /* Narrow screens keep the chip rows: businesses list in full, findings and filings keep their digest until opened. */
 @media (max-width: 960px) {
   .findings[data-section="business"] { display: contents; }
-  .findings[data-section="business"] > .findings-head { display: none; }
   .findings:not([data-expanded]):not([data-section="business"]) [data-extra] { display: none; }
   .section-group, .section-rule { display: none; }
   .event-row .finding-kind { display: none; }

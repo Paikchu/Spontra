@@ -402,6 +402,8 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
   // The business list is a drawer: closed, only 全部业务 and the business picked (with its parent) show.
   const [businessOpen, setBusinessOpen] = useState(false);
   const businessDigest = new Set([current?.key, current?.parent].filter(Boolean));
+  const businessExpandable = items.some(i => !businessDigest.has(i.key));
+  const toggleBusiness = (open: boolean) => railTransition(() => setBusinessOpen(open));
   // One section can open over the whole rail; the rest of the rail returns when it closes.
   const [section, setSection] = useState<RailSectionKey | null>(null);
   const showFindings = !current && !!findings && verified.length > 0;
@@ -502,10 +504,12 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
 
   return <div className="map">
     <Rail ticker={ticker} actions={tools} label="公司业务" expanded={openSection != null}>
-      <RailSection name="business" title="业务" expandable={items.some(i => !businessDigest.has(i.key))} focused={current != null} drawer expanded={businessOpen} onExpand={open => railTransition(() => setBusinessOpen(open))}>
+      <RailSection name="business" title="业务" expandable={businessExpandable} focused={current != null} drawer expanded={businessOpen} onExpand={toggleBusiness}>
         <div className="rail-list section-body" id="rail-business" role="listbox" aria-label="选择业务以在图中高亮" ref={listRef} onKeyDown={onListKey} onMouseLeave={() => setPreview(null)}>
-          <Button variant="unstyled" type="button" role="option" aria-selected={!current} tabIndex={!current ? 0 : -1} className="row row--all" onClick={() => pickBusiness(null)} onMouseEnter={() => setPreview(null)}
-            title={[quantified ? `总收入 · ${items.filter(i => !i.parent).length} 项一级业务` : "总收入", narrative && STAGE_LABEL[narrative.stage]].filter(Boolean).join(" · ")}>
+          {/* 全部业务 heads the drawer: it shows the whole company, and with nothing else picked a click unfolds or folds the list. */}
+          <Button variant="unstyled" type="button" role="option" aria-selected={!current} tabIndex={!current ? 0 : -1} className="row row--all" onMouseEnter={() => setPreview(null)}
+            onClick={() => { if (current) pickBusiness(null); else if (businessExpandable) toggleBusiness(!businessOpen); }}
+            title={[quantified ? `总收入 · ${items.filter(i => !i.parent).length} 项一级业务` : "总收入", narrative && STAGE_LABEL[narrative.stage], !current && businessExpandable ? (businessOpen ? "点击收起业务" : "点击展开业务") : null].filter(Boolean).join(" · ")}>
             <i className="row-chip row-chip--all" aria-hidden="true" />
             <span className="row-name">全部业务</span>
             <span className="row-value">{revenue != null ? money(revenue) : ""}</span>
