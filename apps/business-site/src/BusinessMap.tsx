@@ -25,7 +25,7 @@ import type { FindingData, FindingFundamentals } from "@/shared/analysis-runtime
 import { anchorNodeNames, anchorPoolKeys, badgesByNode, findingData, verifiedFindings } from "./findings-model";
 import { FindingsList } from "./FindingsList";
 import { DossierTabs } from "./DossierTabs";
-import { BusinessNarrativeDossier, CompanyDossier, StagePill, StatusDot } from "./NarrativeDossier";
+import { BusinessNarrativeDossier, CompanyDossier, StagePill } from "./NarrativeDossier";
 import { resolveAnchor, rpoSeriesFromCapital } from "./narrative-model";
 import { STAGE_LABEL, type BusinessNarrative, type CompanyNarrative } from "@/shared/analysis-contract/business-narrative";
 import type { FindingRef } from "@/shared/analysis-contract/findings";
@@ -408,7 +408,6 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
             <span className="row-value">{item.value != null ? money(item.value) : anchor?.value ? compactFlowValue(anchor.value.value, { currency: anchor.value.currency ?? "USD", scale: 1 } as BusinessFlowQuarter) : ""}</span>
             {share != null && <span className="row-bar" aria-hidden="true"><b style={{ width: `${Math.max(0.6, share)}%` }} /></span>}
             <span className="row-meta">{share != null ? <>{percent(share)}{quarter.revenueAdjustments?.length?" · 抵销前":""}{delta !== "不可比" && <> · <em data-trend={trend(delta)}>环比 {delta}</em></>}</> : anchor?.value ? `${anchor.label} · 收入未单独披露` : "定性归属 · 比例未披露"}</span>
-            {nb && nb.chain.length > 0 && <span className="row-chain" aria-label="叙事链状态">{nb.chain.map(l => <StatusDot key={l.id} status={l.status} title={l.premise} />)}</span>}
           </Button>;
         })}</div>}
       </div>

@@ -1,4 +1,4 @@
-import type { BusinessNarrative, CompanyNarrative, NarrativeCheck, NarrativeLink, NarrativeStatus, NarrativeTie } from "@/shared/analysis-contract/business-narrative";
+import type { BusinessNarrative, CompanyNarrative, NarrativeCheck, NarrativeLink, NarrativeTie } from "@/shared/analysis-contract/business-narrative";
 import { resolveEvidence, resolveRef, type FindingData, type FindingFundamentalSeries, type ResolvedEvidence, type ResolvedValue } from "@/shared/analysis-runtime/findings";
 import type { PublicCapitalStructure } from "@/shared/analysis-contract/capital-structure";
 
@@ -36,12 +36,6 @@ export function checkIndex(narrative: CompanyNarrative): Map<string, NarrativeCh
 /** The checks a link names, in the link's order, skipping any the document no longer carries. */
 export function linkChecks(link: NarrativeLink, index: Map<string, NarrativeCheck>): NarrativeCheck[] {
   return link.checkIds.flatMap(id => { const c = index.get(id); return c ? [c] : []; });
-}
-
-/** The worst status among a set, for a one-glance summary: a failed link outranks an unknown one, which outranks work in progress. */
-const RANK: Record<NarrativeStatus, number> = { confirmed: 0, in_progress: 1, unknown: 2, failed: 3 };
-export function worstStatus(statuses: NarrativeStatus[]): NarrativeStatus | null {
-  return statuses.length ? statuses.reduce((worst, s) => RANK[s] > RANK[worst] ? s : worst) : null;
 }
 
 /** `2026-03-31` reads 2026.03, `2026-03` the same, `2025` as the year alone. */

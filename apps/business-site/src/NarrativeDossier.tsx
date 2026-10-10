@@ -5,7 +5,7 @@ import { GRADE_LABEL, ROLE_LABEL, STAGE_LABEL, STATUS_LABEL, PARTY_ROLES, type B
 import { spanLabel, type FindingData, type ResolvedEvidence } from "@/shared/analysis-runtime/findings";
 import { DossierTabs } from "./DossierTabs";
 import { formatValue } from "./LensPanel";
-import { checkIndex, linkChecks, milestoneDate, resolveCheck, resolveTie, worstStatus } from "./narrative-model";
+import { checkIndex, linkChecks, milestoneDate, resolveCheck, resolveTie } from "./narrative-model";
 
 const percent = (v: number | null, digits = 1) => v == null || !Number.isFinite(v) ? "—" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(digits)}%`;
 const trend = (v: number | null) => v == null || v === 0 ? undefined : v > 0 ? "up" : "down";
@@ -89,13 +89,10 @@ export function CompanyDossier({ narrative, data, periods, onPick }: { narrative
         <p className="dossier-prose"><b>所处阶段：</b>{narrative.stageClaim.text}{cite(narrative.stageClaim)}</p>
       </div>],
       ["验证点", <Checks key="checks" checks={narrative.checks} data={data} periods={periods} />],
-      ["各项业务", <ul key="businesses" className="narrative-businesses">{narrative.businesses.map(b => {
-        const worst = worstStatus(b.chain.map(l => l.status));
-        return <li key={b.nodeId}><Button variant="unstyled" type="button" onClick={() => onPick(b.nodeId)}>
-          <span className="narrative-business-name">{b.name}<StagePill stage={b.stage} />{worst && <StatusDot status={worst} title={`叙事链 ${STATUS_LABEL[worst]}`} />}</span>
-          <span className="narrative-business-verdict">{b.verdict}</span>
-        </Button></li>;
-      })}</ul>],
+      ["各项业务", <ul key="businesses" className="narrative-businesses">{narrative.businesses.map(b => <li key={b.nodeId}><Button variant="unstyled" type="button" onClick={() => onPick(b.nodeId)}>
+        <span className="narrative-business-name">{b.name}<StagePill stage={b.stage} /></span>
+        <span className="narrative-business-verdict">{b.verdict}</span>
+      </Button></li>)}</ul>],
     ]} />
     <ol className="sources sources--numbered">{cited.map(s => <li key={s.id}><a href={s.url} target="_blank" rel="noopener noreferrer">{s.title}<span aria-hidden="true"> ↗</span></a></li>)}</ol>
   </section>;
