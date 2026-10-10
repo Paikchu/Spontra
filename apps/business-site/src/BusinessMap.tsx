@@ -76,9 +76,6 @@ function hueSlots(quarters: BusinessFlowQuarter[]) {
   return slots;
 }
 
-/** How many top-level businesses the rail shows before the section is opened. */
-const BUSINESS_DIGEST = 3;
-
 /** A quarter-over-quarter change as a coloured arrow and figure; nothing when the quarters are not comparable. */
 function Delta({ label }: { label: string }) {
   if (label === "不可比") return null;
@@ -307,11 +304,9 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
     if (match) setPeriod(match.id);
   };
   const focusItem = (item: RailItem | null) => { if (!item) { setEventId(null); setReportId(null); } else if (item.kind === "report") focusReport(item.id); else focusEvent(item.id); };
-  // Closed, the business section shows the largest top-level businesses (and the one picked, with its parent).
-  const businessDigest = useMemo(() => {
-    const top = items.filter(i => !i.parent).sort((a, b) => (b.value ?? -1) - (a.value ?? -1)).slice(0, BUSINESS_DIGEST);
-    return new Set([...top.map(i => i.key), current?.key, current?.parent].filter(Boolean));
-  }, [items, current]);
+  // The business list is a drawer: closed, only 全部业务 and the business picked (with its parent) show.
+  const [businessOpen, setBusinessOpen] = useState(false);
+  const businessDigest = new Set([current?.key, current?.parent].filter(Boolean));
   // One section can open over the whole rail; the rest of the rail returns when it closes.
   const [section, setSection] = useState<RailSectionKey | null>(null);
   const showFindings = !current && !!findings && verified.length > 0;
@@ -347,7 +342,7 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
 
   return <div className="map">
     <Rail ticker={ticker} actions={tools} label="公司业务" expanded={openSection != null}>
-      <RailSection name="business" title="业务" expandable={items.some(i => !businessDigest.has(i.key))} focused={current != null} {...sectionFocus("business")}>
+      <RailSection name="business" title="业务" expandable={items.some(i => !businessDigest.has(i.key))} focused={current != null} drawer expanded={businessOpen} onExpand={open => railTransition(() => setBusinessOpen(open))}>
         <div className="rail-list section-body" id="rail-business" role="listbox" aria-label="选择业务以在图中高亮" ref={listRef} onKeyDown={onListKey} onMouseLeave={() => setPreview(null)}>
           <Button variant="unstyled" type="button" role="option" aria-selected={!current} tabIndex={!current ? 0 : -1} className="row row--all" onClick={() => pickBusiness(null)} onMouseEnter={() => setPreview(null)}
             title={quantified ? `总收入 · ${items.filter(i => !i.parent).length} 项一级业务` : "总收入"}>

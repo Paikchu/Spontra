@@ -931,7 +931,9 @@ button { cursor: pointer; }
 .section-action[aria-pressed="true"] { color: var(--background); background: var(--foreground); }
 .section-action[aria-pressed="true"]:hover { color: var(--background); background: var(--foreground); }
 .section-expand svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; transition: transform .3s var(--ease); }
-.section-expand:hover svg { transform: translateX(1px); }
+.section-expand:not([data-drawer]):hover svg { transform: translateX(1px); }
+.section-expand[aria-expanded="true"] svg { transform: rotate(180deg); }
+.findings[data-open] [data-extra] { animation: rise .3s var(--ease) both; }
 .section-back { flex: none; width: 28px; height: 28px; margin: -4px 0 -4px -4px; }
 .findings[data-expanded] .findings-head { padding-bottom: 10px; }
 .findings[data-expanded] .findings-title { font-size: 14px; }
@@ -956,7 +958,7 @@ button { cursor: pointer; }
 .report-row .event-date::before { width: 8px; height: 8px; border-radius: 2px; }
 
 @media (min-width: 961px) {
-  .findings:not([data-expanded]) [data-extra] { display: none; }
+  .findings:not([data-expanded]):not([data-open]) [data-extra] { display: none; }
   .event-row .finding-title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
   /* Open, the section takes the rail's height: its header and filters stay, its rows scroll on their own. */
   .rail-scroll[data-expanded] { display: flex; flex-direction: column; overflow: hidden; padding-bottom: 0; }
