@@ -30,6 +30,7 @@ import type { PublicFilingDigestPage } from "@/shared/analysis-contract/filings"
 import { timelinePoints } from "./events-model";
 import { railItems, timelineFromFilings, type RailItem } from "./reports-model";
 import { EventsList } from "./EventsList";
+import { RailSection, railTransition, type RailSectionKey } from "./RailSection";
 import { EventLens } from "./EventLens";
 import { ReportLens } from "./ReportLens";
 import { Timeline } from "./Timeline";
@@ -73,6 +74,16 @@ function hueSlots(quarters: BusinessFlowQuarter[]) {
     for (const key of roots) if (!slots.has(key)) slots.set(key, slots.size + 1);
   }
   return slots;
+}
+
+/** How many top-level businesses the rail shows before the section is opened. */
+const BUSINESS_DIGEST = 3;
+
+/** A quarter-over-quarter change as a coloured arrow and figure; nothing when the quarters are not comparable. */
+function Delta({ label }: { label: string }) {
+  if (label === "不可比") return null;
+  const tone = trend(label);
+  return <em data-trend={tone} title="环比">{tone === "up" ? "▲" : tone === "down" ? "▼" : ""}{label.replace(/^[+\-−]/, "")}</em>;
 }
 
 function businessItems(quarter: BusinessFlowQuarter | undefined, business: CompanyBusinessContent | null, slots: Map<string, number>) {
@@ -298,22 +309,34 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
     if (match) setPeriod(match.id);
   };
   const focusItem = (item: RailItem | null) => { if (!item) { setEventId(null); setReportId(null); } else if (item.kind === "report") focusReport(item.id); else focusEvent(item.id); };
-  // The business list is a drawer under 全部业务: closed by default once findings share the rail, open while a business is picked.
-  const [drawerOpen, setDrawerOpen] = useState<boolean | null>(null);
-  const drawer = drawerOpen ?? (current != null || !(findings && verified.length));
+  // Closed, the business section shows the largest top-level businesses (and the one picked, with its parent).
+  const businessDigest = useMemo(() => {
+    const top = items.filter(i => !i.parent).sort((a, b) => (b.value ?? -1) - (a.value ?? -1)).slice(0, BUSINESS_DIGEST);
+    return new Set([...top.map(i => i.key), current?.key, current?.parent].filter(Boolean));
+  }, [items, current]);
+  // One section can open over the whole rail; the rest of the rail returns when it closes.
+  const [section, setSection] = useState<RailSectionKey | null>(null);
+  const showFindings = !current && !!findings && verified.length > 0;
+  const openSection = section === "findings" && !showFindings || section === "events" && !rail ? null : section;
+  const sectionFocus = (key: RailSectionKey) => ({ expanded: openSection === key, onExpand: expandSection(key) });
+  const expandSection = (key: RailSectionKey) => (open: boolean) => railTransition(() => {
+    setSection(open ? key : null);
+    document.getElementById("rail-body")?.scrollTo({ top: 0 });
+  });
   const previewItem = items.find(item => item.key === preview);
   const active = previewItem ? "segment:" + previewItem.key : hoverNode ?? (current ? "segment:" + current.key : null);
   const hovered = hoverNode ? itemByNode.get(hoverNode)?.key : undefined;
 
+  // Arrow keys move through the rows on screen (the digest while the section is closed) and pick each in turn.
   function onListKey(e: KeyboardEvent<HTMLDivElement>) {
     if (e.key !== "ArrowDown" && e.key !== "ArrowUp" && e.key !== "Home" && e.key !== "End") return;
     e.preventDefault();
-    const order = [null, ...items.map(item => item.id)];
-    const options = [...(listRef.current?.querySelectorAll<HTMLElement>("[role=option]") ?? [])];
+    const options = [...(listRef.current?.querySelectorAll<HTMLElement>("[role=option]") ?? [])].filter(o => o.getClientRects().length > 0);
     const index = Math.max(0, options.indexOf(e.target as HTMLElement));
-    const next = e.key === "Home" ? 0 : e.key === "End" ? order.length - 1 : Math.max(0, Math.min(order.length - 1, index + (e.key === "ArrowDown" ? 1 : -1)));
-    pickBusiness(order[next]);
-    listRef.current?.querySelectorAll<HTMLElement>("[role=option]")[next]?.focus();
+    const next = options[e.key === "Home" ? 0 : e.key === "End" ? options.length - 1 : Math.max(0, Math.min(options.length - 1, index + (e.key === "ArrowDown" ? 1 : -1)))];
+    if (!next || next === e.target) return;
+    pickBusiness(next.dataset.id ?? null);
+    next.focus();
   }
 
   const reconciliation = quarter ? reconcileQuarter(quarter) : [];
@@ -325,36 +348,34 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
   const parent = current?.parent ? items.find(item => item.key === current.parent) : null;
 
   return <div className="map">
-    <Rail ticker={ticker} actions={tools} label="公司业务">
-      <div className="rail-list" role="listbox" aria-label="选择业务以在图中高亮" ref={listRef} onKeyDown={onListKey} onMouseLeave={() => setPreview(null)} data-drawer={drawer ? "open" : "closed"}>
-        <div className="row-head">
-          <Button variant="unstyled" type="button" role="option" aria-selected={!current} tabIndex={!current ? 0 : -1} className="row row--all" onClick={() => pickBusiness(null)} onMouseEnter={() => setPreview(null)}>
+    <Rail ticker={ticker} actions={tools} label="公司业务" expanded={openSection != null}>
+      <RailSection name="business" title="业务" expandable={items.some(i => !businessDigest.has(i.key))} focused={current != null} {...sectionFocus("business")}>
+        <div className="rail-list section-body" id="rail-business" role="listbox" aria-label="选择业务以在图中高亮" ref={listRef} onKeyDown={onListKey} onMouseLeave={() => setPreview(null)}>
+          <Button variant="unstyled" type="button" role="option" aria-selected={!current} tabIndex={!current ? 0 : -1} className="row row--all" onClick={() => pickBusiness(null)} onMouseEnter={() => setPreview(null)}
+            title={quantified ? `总收入 · ${items.filter(i => !i.parent).length} 项一级业务` : "总收入"}>
             <i className="row-chip row-chip--all" aria-hidden="true" />
             <span className="row-name">全部业务</span>
             <span className="row-value">{revenue != null ? money(revenue) : ""}</span>
-            {quarter && <span className="row-meta">总收入 · 环比 {change("revenue")}{quantified ? ` · ${items.filter(i => !i.parent).length} 项业务` : ""}</span>}
+            {quarter && <span className="row-meta"><Delta label={change("revenue")} /></span>}
           </Button>
-          <Button variant="unstyled" type="button" className="row-drawer" aria-expanded={drawer} aria-controls="rail-businesses" aria-label={drawer ? "收起业务列表" : "展开业务列表"} onClick={() => setDrawerOpen(!drawer)}>
-            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4" /></svg>
-          </Button>
+          {items.map(item => {
+            const share = item.value != null && segmentRevenue ? item.value / segmentRevenue * 100 : null;
+            const delta = quarter && quantified ? compareRevenueNode(quarter, previous, item.key).label : "不可比";
+            return <Button variant="unstyled" type="button" role="option" key={item.key} data-id={item.id} aria-selected={current?.key === item.key} tabIndex={current?.key === item.key ? 0 : -1}
+              className="row" data-depth={item.depth} data-hover={hovered === item.key || undefined} data-extra={businessDigest.has(item.key) ? undefined : ""} style={{ "--c": hue(item.slot) } as CSSProperties}
+              onClick={() => pickBusiness(current?.key === item.key ? null : item.id)} onMouseEnter={() => setPreview(item.key)}
+              title={share != null ? `占${shareBasis} ${percent(share)}${quarter.revenueAdjustments?.length ? "（抵销前）" : ""}` : "定性归属 · 比例未披露"}>
+              <i className="row-chip" aria-hidden="true" />
+              <span className="row-name">{item.name}</span>
+              <span className="row-value">{item.value != null ? money(item.value) : ""}</span>
+              {share != null && <span className="row-bar" aria-hidden="true"><b style={{ width: `${Math.max(0.6, share)}%` }} /></span>}
+              <span className="row-meta">{share != null ? <>{percent(share)}<Delta label={delta} /></> : "—"}</span>
+            </Button>;
+          })}
         </div>
-        {drawer && <div className="rail-drawer" id="rail-businesses">{items.map(item => {
-          const share = item.value != null && segmentRevenue ? item.value / segmentRevenue * 100 : null;
-          const delta = quarter && quantified ? compareRevenueNode(quarter, previous, item.key).label : "不可比";
-          return <Button variant="unstyled" type="button" role="option" key={item.key} aria-selected={current?.key === item.key} tabIndex={current?.key === item.key ? 0 : -1}
-            className="row" data-depth={item.depth} data-hover={hovered === item.key || undefined} style={{ "--c": hue(item.slot) } as CSSProperties}
-            onClick={() => pickBusiness(current?.key === item.key ? null : item.id)} onMouseEnter={() => setPreview(item.key)}>
-            <i className="row-chip" aria-hidden="true" />
-            <span className="row-name">{item.name}</span>
-            <span className="row-value">{item.value != null ? money(item.value) : ""}</span>
-            {share != null && <span className="row-bar" aria-hidden="true"><b style={{ width: `${Math.max(0.6, share)}%` }} /></span>}
-            <span className="row-meta">{share != null ? <>{percent(share)}{quarter.revenueAdjustments?.length?" · 抵销前":""}{delta !== "不可比" && <> · <em data-trend={trend(delta)}>环比 {delta}</em></>}</> : "定性归属 · 比例未披露"}</span>
-          </Button>;
-        })}</div>}
-      </div>
-      {!current && findings && verified.length > 0 && <FindingsList findings={verified} focus={focused?.id ?? null} story={story} periodEnd={findings.periodEnd}
-        onFocus={focusFinding} onStory={() => { if (story) { setStory(false); setFocusId(null); } else { setStory(true); setEventId(null); setFocusId(focused?.id ?? verified[0].id); } }} />}
-      {rail && <EventsList rail={rail} focus={focusedReport?.accessionNumber ?? focusedEvent?.id ?? null} pendingInsider={events?.pendingInsider ?? 0} onFocus={focusItem} />}
+      </RailSection>
+      {showFindings && <FindingsList findings={verified} focus={focused?.id ?? null} story={story} periodEnd={findings.periodEnd} {...sectionFocus("findings")} onFocus={focusFinding} onStory={() => { if (story) { setStory(false); setFocusId(null); } else { setStory(true); setEventId(null); setFocusId(focused?.id ?? verified[0].id); } }} />}
+      {rail && <EventsList rail={rail} focus={focusedReport?.accessionNumber ?? focusedEvent?.id ?? null} pendingInsider={events?.pendingInsider ?? 0} {...sectionFocus("events")} onFocus={focusItem} />}
       {!!quarter?.revenueAdjustments?.length&&<p className="revenue-reconciliation">收入对账 · {quarter.currency} 百万<br/>分部收入（抵销前） {formatFlowValue(segmentRevenue,quarter)}<br/>{quarter.revenueAdjustments.map(a=><span key={a.id}>{a.name} {formatFlowValue(numeric(a.amount),quarter)}<br/></span>)}合并收入 {formatFlowValue(revenue,quarter)}</p>}
     </Rail>
 
