@@ -17,6 +17,7 @@ import { executeGuidanceWorkflow, type GuidanceWorkflowParams } from "./guidance
 import { executeFindingsWorkflow, type FindingsWorkflowParams } from "./findings/workflow.ts";
 import { executeOperatingMetricsWorkflow, type OperatingMetricsParams } from "./operating-metrics/workflow.ts";
 import { executeFiguresWorkflow, type FiguresWorkflowParams } from "./figures/workflow.ts";
+import { executeNarrativeWorkflow, type NarrativeWorkflowParams } from "./narrative/workflow.ts";
 import { trackRun, trackSleep, trackSteps } from "./ai-runs/tracking.ts";
 
 const WORKFLOW_RETRY = {
@@ -104,6 +105,13 @@ export class BusinessFiguresWorkflow extends WorkflowEntrypoint<SecPipelineEnv, 
   async run(event: WorkflowEvent<FiguresWorkflowParams>, step: WorkflowStep) {
     const run = { env: this.env, kind: "figures" as const, ticker: event.payload.ticker, runId: event.instanceId };
     return trackRun(run, () => executeFiguresWorkflow(event.payload, trackSteps(durableSteps(step, this.env, event.instanceId), run), this.env));
+  }
+}
+
+export class BusinessNarrativeWorkflow extends WorkflowEntrypoint<SecPipelineEnv, NarrativeWorkflowParams> {
+  async run(event: WorkflowEvent<NarrativeWorkflowParams>, step: WorkflowStep) {
+    const run = { env: this.env, kind: "narrative" as const, ticker: event.payload.ticker, runId: event.instanceId };
+    return trackRun(run, () => executeNarrativeWorkflow(event.payload, trackSteps(durableSteps(step, this.env, event.instanceId), run), this.env));
   }
 }
 

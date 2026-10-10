@@ -8,7 +8,7 @@ import { adminApi, AdminApiError } from "./admin-api";
 import { completeRequestId, pendingRequestId } from "./financial-maintenance-state";
 import "./ai-runs.css";
 
-const KINDS: Array<[AiRunKind, string]> = [["findings", "财报发现"], ["explainer", "业务解读"], ["guidance", "业绩指引"], ["metrics", "运营指标"], ["figures", "业务图"]];
+const KINDS: Array<[AiRunKind, string]> = [["findings", "财报发现"], ["explainer", "业务解读"], ["guidance", "业绩指引"], ["metrics", "运营指标"], ["figures", "业务图"], ["narrative", "业务叙事"]];
 const STATUS: Record<AiRunStatus, string> = { queued: "排队中", running: "运行中", waiting: "等待中", succeeded: "已完成", empty: "无可发布内容", superseded: "数据已更新，已跳过", failed: "失败" };
 const ACTIVE = new Set<AiRunStatus>(["queued", "running", "waiting"]);
 const badge = (status: AiRunStatus) => status === "failed" ? "failed" : status === "succeeded" ? "reviewed" : ACTIVE.has(status) ? "processing" : "";

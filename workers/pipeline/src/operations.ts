@@ -60,6 +60,8 @@ export type SecPipelineEnv = SecCronEnv & AnalysisReadEnv & {
   FINDINGS_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
   OPERATING_METRICS_WORKFLOW?: AiWorkflowBinding<{ ticker: string; accession: string; form: string; filingDate: string; manual?: boolean }>;
   FIGURES_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
+  NARRATIVE_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
+  NARRATIVE_ENABLED?: string;
   OPERATING_METRICS_ENABLED?: string;
   FIGURES_ENABLED?: string;
   /** "true" lets the sweep start findings runs for AI-enabled companies; anything else leaves it off. */

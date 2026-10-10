@@ -38,6 +38,11 @@ async function readInput(env: SecPipelineEnv, ticker: string) {
   return { explainer, metrics, narrative, findings, fingerprint };
 }
 
+/** The state a plan would be made from now; null when the company has no explainer yet. */
+export async function figuresFingerprint(env: SecPipelineEnv, ticker: string): Promise<string | null> {
+  return (await readInput(env, ticker))?.fingerprint ?? null;
+}
+
 /** Starts at most one plan per tick, for a company whose explainer, metrics or narrative moved since its last plan. */
 export async function runFiguresSweep(env: SecPipelineEnv, now = Date.now()): Promise<{ checked: number; started: string[]; failed: string[] }> {
   const result = { checked: 0, started: [] as string[], failed: [] as string[] };

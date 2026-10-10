@@ -14,7 +14,8 @@
 
 - Pipeline 读路由 `/api/v1/companies/:ticker/business-narrative`，先读 `sec_cache` 的 `narrative:v1:<ticker>`，没有则用 `workers/pipeline/src/narrative/authored/<ticker>.json` 的人工集，两者都经同一读取器校验。
 - 业务地图 Worker 的 `/api/business/v1/companies/:ticker/narrative` 转读并再次校验；`vite dev` 直接从 authored 目录提供同一文件，便于发布前预览。
-- 本次只有 CRWV 的人工集（来源：FY2025 10-K、2026 Q2 10-Q、Q2 业绩公告与 2025-09 至 2026-09 的 8-K）。模型生成的工作流尚未接入；接入时应沿用 explainer 的来源抓取与 findings 的 ledger 模式，由模型只写判断与引用，数字一律走解析。
+- 人工集：CRWV、ORCL（`authored/*.json`），在模型版本发布前兜底；已存储的模型版本优先。
+- 写叙事的工作流 `spontra-business-narrative`（`NARRATIVE_ENABLED`，2026-10-11 接入）：材料取最新年报的业务章节、最新业绩公告、最新 10-Q 的 MD&A 和最近 15 个月内最多 10 份 8-K 正文；公司层一次模型调用，每项业务各一次；校验规则：每条陈述必须引用给定材料，陈述里的每个数字必须是所引材料写出的数字（亿/万/GW 与 billion/million/MW 换算后 1% 内相符，`shared/analysis-runtime/narrative-verify.ts`），ref 只能指向已知流向节点和指引项，绑定数字的文字（判断、前提、失效条件、验证条件、财报体现说明）不许出现数字；每个主体一次修复调用，最后用页面同一读取器决定发布内容。指纹含 explainer、最新申报、运营指标、指引、要点，任一变化重写。
 
 ## 页面
 

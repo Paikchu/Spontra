@@ -20,6 +20,7 @@
     "FINDINGS_ENABLED": "true",
     "OPERATING_METRICS_ENABLED": "true",
     "FIGURES_ENABLED": "true",
+    "NARRATIVE_ENABLED": "true",
     "GUIDANCE_DECK_SEARCH": "true",
     "GUIDANCE_DAILY_MODEL_CALLS": "40",
     "GUIDANCE_DAILY_TRANSCRIPT_CALLS": "25",
@@ -54,6 +55,12 @@
       "name": "spontra-business-figures",
       "binding": "FIGURES_WORKFLOW",
       "class_name": "BusinessFiguresWorkflow",
+      "concurrency": { "limit": 1 }
+    },
+    {
+      "name": "spontra-business-narrative",
+      "binding": "NARRATIVE_WORKFLOW",
+      "class_name": "BusinessNarrativeWorkflow",
       "concurrency": { "limit": 1 }
     },
     {

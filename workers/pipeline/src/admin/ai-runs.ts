@@ -4,6 +4,10 @@ import { businessExplainerFingerprint, readBusinessExplainerResponse } from "../
 import { findSecurity } from "../catalog/security-directory.ts";
 import { trackedTickersFor } from "../core.ts";
 import { findingsFingerprint } from "../findings/workflow.ts";
+import { figuresFingerprint, readPlannedFiguresResponse } from "../figures/workflow.ts";
+import { narrativeFingerprint } from "../narrative/workflow.ts";
+import { readNarrativeResponse } from "../narrative/read.ts";
+import { readOperatingMetricsResponse } from "../operating-metrics/read.ts";
 import { readFindingsResponse } from "../findings/read.ts";
 import { GuidanceStore } from "../guidance/store.ts";
 import { earningsEvents, readGuidanceResponse } from "../guidance/workflow.ts";
@@ -19,7 +23,7 @@ const SETTLE_AFTER_MS = 60_000, MISSING_AFTER_MS = 10 * 60_000;
 
 type Binding = AiWorkflowBinding<Record<string, unknown>>;
 function binding(env: SecPipelineEnv, kind: AiRunKind): Binding | undefined {
-  return (kind === "findings" ? env.FINDINGS_WORKFLOW : kind === "explainer" ? env.BUSINESS_EXPLAINER_WORKFLOW : env.GUIDANCE_WORKFLOW) as Binding | undefined;
+  return (kind === "findings" ? env.FINDINGS_WORKFLOW : kind === "explainer" ? env.BUSINESS_EXPLAINER_WORKFLOW : kind === "figures" ? env.FIGURES_WORKFLOW : kind === "narrative" ? env.NARRATIVE_WORKFLOW : kind === "metrics" ? undefined : env.GUIDANCE_WORKFLOW) as Binding | undefined;
 }
 function blocked(env: SecPipelineEnv, kind: AiRunKind): string | null {
   if (!binding(env, kind)) return "该任务的工作流未配置。";
@@ -30,12 +34,18 @@ function blocked(env: SecPipelineEnv, kind: AiRunKind): string | null {
 function automatic(env: SecPipelineEnv, kind: AiRunKind): boolean {
   return kind === "findings" ? env.FINDINGS_ENABLED === "true" && !!env.FINDINGS_WORKFLOW
     : kind === "explainer" ? !!env.BUSINESS_EXPLAINER_WORKFLOW && !!env.TAVILY_API_KEY
+    : kind === "figures" ? env.FIGURES_ENABLED === "true" && !!env.FIGURES_WORKFLOW
+    : kind === "narrative" ? env.NARRATIVE_ENABLED === "true" && !!env.NARRATIVE_WORKFLOW
+    : kind === "metrics" ? env.OPERATING_METRICS_ENABLED === "true" && !!env.OPERATING_METRICS_WORKFLOW
     : env.GUIDANCE_ENABLED === "true" && !!env.GUIDANCE_WORKFLOW;
 }
 /** The publication readers are served now, validated the same way the public read API does. */
 async function currentPublication(db: D1Database, kind: AiRunKind, ticker: string): Promise<unknown> {
   if (kind === "findings") return (await readFindingsResponse(db, ticker)).findings;
   if (kind === "explainer") return (await readBusinessExplainerResponse(db, ticker)).explainer;
+  if (kind === "figures") return (await readPlannedFiguresResponse(db, ticker)).figures;
+  if (kind === "narrative") return (await readNarrativeResponse(db, ticker)).narrative;
+  if (kind === "metrics") return (await readOperatingMetricsResponse(db, ticker)).metrics;
   return (await readGuidanceResponse(db, ticker)).guidance;
 }
 function currentVersion(kind: AiRunKind, publication: unknown): AiVersion | null {
@@ -99,7 +109,8 @@ async function start(env: SecPipelineEnv, db: D1Database, kind: AiRunKind, ticke
     accession = event.accession;
     params = { ticker, accession: event.accession, eventDate: event.eventDate, manual: true };
   } else {
-    const fingerprint = kind === "findings" ? await findingsFingerprint(env, ticker) : await businessExplainerFingerprint(env, ticker);
+    if (kind === "metrics") return json({ error: "运营指标按申报自动抽取，暂不支持手动触发。" }, 409);
+    const fingerprint = kind === "findings" ? await findingsFingerprint(env, ticker) : kind === "figures" ? await figuresFingerprint(env, ticker) : kind === "narrative" ? await narrativeFingerprint(env, ticker) : await businessExplainerFingerprint(env, ticker);
     if (!fingerprint) return json({ error: "业务地图尚无完整财报，暂时无法生成。" }, 409);
     params = { ticker, fingerprint };
   }
