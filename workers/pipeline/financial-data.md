@@ -33,4 +33,4 @@ The ten-minute `runBusinessFlowBootstrap` now only submits its existing opt-in t
 
 The existing refresh HTTP endpoint keeps `x-sec-refresh-key` authentication and the data allowlist. It now returns HTTP 202 with queue status/job ID, rather than promising immediate publication. It returns 409 when automatic collection is paused or maintenance owns the issuer. SEC failures retain the previous complete snapshot. No model credentials or analysis workflow bindings enter this compatibility path. Existing AI and market/fundamentals schedules remain independently governed.
 
-Release requires migration 0014 before the new worker; it adds tables without dropping or rewriting historical data. Regression coverage in `financial-cron-migration.test.ts` exercises old producer → new consumer → archives/snapshots/history, concurrent requests, maintenance ownership, failure retention, cooldown, auth and pause behavior.
+Release requires migration 0014 before the new worker; it adds tables without dropping or rewriting historical data.

@@ -23,7 +23,6 @@ h2:not([data-slot]) { font-weight: 650; letter-spacing: -.01em; }
 
 
 /* Spontra v2 — Ink & Highlighter. Every value is a token; prefix sp-. */
-:where(.sp-btn, .sp-seg-item, .sp-tab, .sp-tile, .sp-dock-link, .sp-th-btn, .sp-report a):focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 
 /* ---------- Light: spotlight, sheen, reveal ---------- */
 @keyframes sp-rise { from { opacity: 0; transform: translateY(14px) scale(.985); } to { opacity: 1; transform: none; } }
