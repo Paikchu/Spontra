@@ -54,32 +54,6 @@ export const secFilingPeriods = sqliteTable("sec_filing_periods", {
   role: text("role").notNull(),
 }, (table) => [primaryKey({ columns: [table.filingId, table.periodId, table.role] })]);
 
-export const secFilingBlocks = sqliteTable("sec_filing_blocks", {
-  blockId: text("block_id").primaryKey(),
-  filingId: text("filing_id").notNull(),
-  parentBlockId: text("parent_block_id"),
-  ordinal: integer("ordinal").notNull(),
-  heading: text("heading").notNull(),
-  headingPath: text("heading_path").notNull(),
-  elementType: text("element_type").notNull(),
-  preview: text("preview").notNull(),
-  body: text("body").notNull(),
-  tokenCount: integer("token_count").notNull(),
-  numericDensity: integer("numeric_density").notNull(),
-  tableCount: integer("table_count").notNull(),
-  contentHash: text("content_hash").notNull(),
-}, (table) => [uniqueIndex("sec_filing_blocks_filing_ordinal_idx").on(table.filingId, table.ordinal)]);
-
-export const secEvidence = sqliteTable("sec_evidence", {
-  evidenceId: text("evidence_id").primaryKey(),
-  filingId: text("filing_id").notNull(),
-  blockId: text("block_id").notNull(),
-  locator: text("locator").notNull().default(""),
-  excerpt: text("excerpt").notNull(),
-  sourceRank: integer("source_rank").notNull().default(1),
-  excerptHash: text("excerpt_hash").notNull(),
-});
-
 export const secFacts = sqliteTable("sec_facts", {
   factId: text("fact_id").primaryKey(),
   filingId: text("filing_id").notNull(),
@@ -105,22 +79,6 @@ export const secFacts = sqliteTable("sec_facts", {
   sourceAccession: text("source_accession").notNull().default(""),
   sourceVersion: text("source_version").notNull().default("legacy_unvalidated"),
 }, (table) => [uniqueIndex("sec_facts_period_series_idx").on(table.periodId, table.seriesId, table.dimensionsHash, table.basis)]);
-
-export const secModuleSnapshots = sqliteTable("sec_module_snapshots", {
-  snapshotId: text("snapshot_id").primaryKey(),
-  ticker: text("ticker").notNull(),
-  periodId: text("period_id").notNull(),
-  filingId: text("filing_id").notNull(),
-  moduleKey: text("module_key").notNull(),
-  inputHash: text("input_hash").notNull(),
-  schemaVersion: text("schema_version").notNull(),
-  modelVersion: text("model_version").notNull(),
-  promptVersion: text("prompt_version").notNull(),
-  payload: text("payload").notNull(),
-  evidenceCoverage: integer("evidence_coverage").notNull().default(0),
-  verificationStatus: text("verification_status").notNull().default("pending"),
-  generatedAt: text("generated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-}, (table) => [uniqueIndex("sec_module_snapshots_identity_idx").on(table.periodId, table.moduleKey, table.inputHash)]);
 
 export const secMemoryItems = sqliteTable("sec_memory_items", {
   memoryId: text("memory_id").primaryKey(),
@@ -148,19 +106,6 @@ export const secMemoryItems = sqliteTable("sec_memory_items", {
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [index("sec_memory_items_ticker_status_due_idx").on(table.ticker, table.status, table.duePeriod)]);
 
-export const secMemoryEvents = sqliteTable("sec_memory_events", {
-  eventId: text("event_id").primaryKey(),
-  memoryId: text("memory_id").notNull(),
-  ticker: text("ticker").notNull(),
-  periodId: text("period_id").notNull(),
-  eventType: text("event_type").notNull(),
-  currentStatement: text("current_statement"),
-  priorStatement: text("prior_statement"),
-  evidenceIds: text("evidence_ids").notNull().default("[]"),
-  jobId: text("job_id"),
-  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-});
-
 export const secMemoryJobs = sqliteTable("sec_memory_jobs", {
   jobId: text("job_id").primaryKey(),
   ticker: text("ticker").notNull(),
@@ -177,17 +122,6 @@ export const secMemoryJobs = sqliteTable("sec_memory_jobs", {
   completedAt: text("completed_at"),
 }, (table) => [index("sec_memory_jobs_status_created_idx").on(table.status, table.createdAt)]);
 
-export const secMemoryExtractions = sqliteTable("sec_memory_extractions", {
-  extractionId: text("extraction_id").primaryKey(),
-  jobId: text("job_id").notNull(),
-  ticker: text("ticker").notNull(),
-  periodId: text("period_id").notNull(),
-  payload: text("payload").notNull(),
-  inputHash: text("input_hash").notNull(),
-  schemaVersion: text("schema_version").notNull(),
-  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-}, (table) => [uniqueIndex("sec_memory_extractions_job_idx").on(table.jobId)]);
-
 export const secCompanyMemoryThreads = sqliteTable("sec_company_memory_threads", {
   ticker: text("ticker").primaryKey(),
   summary: text("summary").notNull().default(""),
@@ -196,17 +130,6 @@ export const secCompanyMemoryThreads = sqliteTable("sec_company_memory_threads",
   leaseUntil: text("lease_until"),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
-
-export const secComparisons = sqliteTable("sec_comparisons", {
-  comparisonId: text("comparison_id").primaryKey(),
-  ticker: text("ticker").notNull(),
-  currentPeriodId: text("current_period_id").notNull(),
-  priorPeriodId: text("prior_period_id").notNull(),
-  comparisonType: text("comparison_type").notNull(),
-  comparability: text("comparability").notNull(),
-  payload: text("payload").notNull(),
-  generatedAt: text("generated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-}, (table) => [uniqueIndex("sec_comparisons_identity_idx").on(table.currentPeriodId, table.priorPeriodId, table.comparisonType)]);
 
 export const secAnalysisRuns = sqliteTable("sec_analysis_runs", {
   runId: text("run_id").primaryKey(),
@@ -287,65 +210,4 @@ export const webSearchCache = sqliteTable("web_search_cache", {
   objectKey: text("object_key"),
   leaseOwner: text("lease_owner"),
   leaseUntil: integer("lease_until").notNull().default(0),
-});
-
-/** Single-user research universe, synchronized from the portfolio service. */
-export const researchState = sqliteTable("research_state", {
-  key: text("key").primaryKey().notNull(),
-  payload: text("payload").notNull(),
-  updatedAt: text("updated_at").notNull(),
-});
-
-export const researchEvents = sqliteTable("research_events", {
-  id: text("id").primaryKey().notNull(),
-  ticker: text("ticker").notNull(),
-  kind: text("kind").notNull(),
-  payload: text("payload").notNull(),
-  observedAt: text("observed_at").notNull(),
-  sourceAt: text("source_at"),
-});
-
-/** A durable dispatch outbox: inserting an event never depends on Workflow availability. */
-export const researchCases = sqliteTable("research_cases", {
-  id: text("id").primaryKey().notNull(),
-  eventId: text("event_id").notNull(),
-  ticker: text("ticker").notNull(),
-  status: text("status").notNull().default("pending"),
-  workflowId: text("workflow_id").notNull(),
-  attempts: integer("attempts").notNull().default(0),
-  nextAttemptAt: text("next_attempt_at").notNull(),
-  leaseOwner: text("lease_owner"),
-  leaseUntil: text("lease_until"),
-  errorCode: text("error_code"),
-  createdAt: text("created_at").notNull(),
-  updatedAt: text("updated_at").notNull(),
-}, table => [
-  uniqueIndex("research_cases_event_idx").on(table.eventId),
-  index("research_cases_dispatch_idx").on(table.status, table.nextAttemptAt),
-]);
-
-export const researchReports = sqliteTable("research_reports", {
-  sequence: integer("sequence").primaryKey({ autoIncrement: true }),
-  id: text("id").notNull(),
-  caseId: text("case_id").notNull(),
-  payload: text("payload").notNull(),
-  generatedAt: text("generated_at").notNull(),
-}, table => [
-  uniqueIndex("research_reports_id_idx").on(table.id),
-  uniqueIndex("research_reports_case_idx").on(table.caseId),
-]);
-
-export const researchFollowups = sqliteTable("research_followups", {
-  id: text("id").primaryKey().notNull(),
-  caseId: text("case_id").notNull(),
-  ticker: text("ticker").notNull(),
-  question: text("question").notNull(),
-  query: text("query").notNull(),
-  dueAt: text("due_at").notNull(),
-  status: text("status").notNull().default("pending"),
-}, table => [index("research_followups_due_idx").on(table.status, table.dueAt)]);
-
-export const researchBudget = sqliteTable("research_budget", {
-  day: text("day").primaryKey().notNull(),
-  investigations: integer("investigations").notNull().default(0),
 });

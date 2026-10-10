@@ -1,6 +1,6 @@
 import type { CompanyMemoryItem } from "./analysis.ts";
 import { buildCompanyMemorySummary, consolidateMemoryCandidates, type MemoryCandidateV2 } from "./memory.ts";
-import { parseJson, hashJson, type D1Like, type D1ResultStatement } from "./d1-support.ts";
+import { parseJson, type D1Like, type D1ResultStatement } from "./d1-support.ts";
 
 export type SecMemoryJobClaim = {
   jobId: string;
@@ -121,17 +121,7 @@ export class SecMemoryRepository {
       JOIN sec_company_memory_threads t ON t.ticker = j.ticker
       WHERE j.job_id = ? AND j.status = 'running' AND j.owner_token = ? AND t.lease_owner = ?
     `;
-    const statements: D1ResultStatement[] = [
-      this.database.prepare(`
-        INSERT INTO sec_memory_extractions (extraction_id, job_id, ticker, period_id, payload, input_hash, schema_version)
-        SELECT ?, ?, ?, ?, ?, ?, 'sec-memory-extraction.v1'
-        WHERE EXISTS (${ownershipGuard})
-        ON CONFLICT(job_id) DO NOTHING
-      `).bind(
-        `extraction:${hashJson(claim.jobId)}`, claim.jobId, claim.ticker, claim.periodId, JSON.stringify(extraction), hashJson(extraction),
-        claim.jobId, claim.ownerToken, claim.ownerToken,
-      ),
-    ];
+    const statements: D1ResultStatement[] = [];
     for (const item of consolidated.items) statements.push(this.database.prepare(`
       INSERT INTO sec_memory_items (
         memory_id, ticker, module_key, topic_key, memory_type, statement, normalized_value,
@@ -156,15 +146,6 @@ export class SecMemoryRepository {
       item.horizon ?? null, item.nextTest ?? null, item.falsifier ?? null, item.duePeriod ?? null,
       JSON.stringify(item.sourceJobIds ?? []), `${item.kind}:${item.topicKey.toLowerCase()}`, now,
       claim.jobId, claim.ownerToken, claim.ownerToken,
-      claim.jobId, claim.ownerToken, claim.ownerToken,
-    ));
-    for (const event of consolidated.events) statements.push(this.database.prepare(`
-      INSERT OR IGNORE INTO sec_memory_events (
-        event_id, memory_id, ticker, period_id, event_type, current_statement, prior_statement, evidence_ids, job_id
-      ) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
-      WHERE EXISTS (${ownershipGuard})
-    `).bind(
-      event.eventId, event.memoryId, claim.ticker, claim.periodId, event.eventType, event.currentStatement, event.priorStatement ?? null, JSON.stringify(event.evidenceIds), claim.jobId,
       claim.jobId, claim.ownerToken, claim.ownerToken,
     ));
     const summary = buildCompanyMemorySummary(consolidated.items);

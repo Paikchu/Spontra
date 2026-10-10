@@ -242,32 +242,6 @@ export class D1FundamentalsRepository implements FundamentalsRepository {
         revision,
         input.completedAt,
       ));
-      if (previous && valueChanged) {
-        statements.push(this.database.prepare(`
-          INSERT INTO fundamental_observation_revisions (
-            revision_id, observation_id, source_run_id, old_value_decimal,
-            new_value_decimal, previous_revision, new_revision, changed_at
-          )
-          SELECT ?, ?, ?, ?, ?, ?, ?, ?
-          WHERE EXISTS (
-            SELECT 1 FROM fundamental_fetch_runs
-            WHERE run_id = ? AND status = 'running' AND lease_owner = ? AND lease_until > ?
-          )
-          ON CONFLICT(observation_id, new_revision) DO NOTHING
-        `).bind(
-          `${observation.observationId}:r${revision}`,
-          observation.observationId,
-          input.runId,
-          previous.valueDecimal,
-          observation.valueDecimal,
-          previous.revision,
-          revision,
-          input.completedAt,
-          input.runId,
-          input.leaseOwner,
-          input.completedAt,
-        ));
-      }
     }
 
     statements.push(this.database.prepare(`

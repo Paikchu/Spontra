@@ -24,7 +24,6 @@
 | `earnings_materials` | 材料清单；id = 规范化正文 SHA-256，正文在 R2 `earnings-materials/v1/{ticker}/{id}.txt` |
 | `guidance_extractions` | 模型调用缓存：(材料, 提取器版本) 只调用一次 |
 | `guidance_items` | 已核验条目原样（发布时再归并） |
-| `ai_usage_log` | 按日/功能/模型累计调用次数与 token（含缓存命中 token） |
 | `feature_budget` | 每日硬上限（`guidance-model`、`guidance-search`） |
 
 本工作流的转录材料存私有 R2；公开 API 只返回 ≤200 字符的 quote 与来源。独立的 [Transcript 全文库](transcripts.md) 将正文写入 D1，并通过 Admin 登录后阅读。Alpha Vantage 引用链接不含 key。

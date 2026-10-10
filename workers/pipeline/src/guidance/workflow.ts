@@ -101,13 +101,7 @@ function modelCall(env: SecPipelineEnv, store: GuidanceStore, fetcher: typeof fe
   const cap = Number(env.GUIDANCE_DAILY_MODEL_CALLS) > 0 ? Number(env.GUIDANCE_DAILY_MODEL_CALLS) : DEFAULT_DAILY_MODEL_CALLS;
   return async (stage, system, payload) => {
     if (!await store.reserve("guidance-model", day, cap)) throw new BudgetExhausted("guidance model budget exhausted");
-    let usage: unknown = null;
-    try {
-      return await callWorkerSecModel(env, fetcher, stage, system, payload, model, MODEL_BUDGET_MS, true,
-        { maxTokens: GUIDANCE_MAX_OUTPUT_TOKENS, onMetrics: metrics => { usage = metrics.usage ?? null; } });
-    } finally {
-      await store.recordUsage(day, "guidance", model, usage).catch(() => undefined);
-    }
+    return callWorkerSecModel(env, fetcher, stage, system, payload, model, MODEL_BUDGET_MS, true, { maxTokens: GUIDANCE_MAX_OUTPUT_TOKENS });
   };
 }
 

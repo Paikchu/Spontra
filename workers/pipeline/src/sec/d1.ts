@@ -12,7 +12,6 @@ import {
   buildPeriodIdentity,
   SEC_ANALYSIS_PROMPT_VERSION,
   type CompanyMemoryItem,
-  type FilingBlock,
   type HistoricalObservation,
   type PublishedSecReport,
   type SecHistorySnapshot,
@@ -393,46 +392,6 @@ export class D1SecRepository implements SecRepository {
     }
   }
 
-  async saveFilingBlocks(filing: SecFiling, blocks: FilingBlock[]): Promise<void> {
-    if (!this.database.batch) throw new Error("D1 batch is required for SEC evidence writes");
-    await this.upsertAnalyzedFiling(filing);
-    if (!blocks.length) return;
-    const statements = blocks.flatMap((block) => [
-      this.database.prepare(`
-        INSERT INTO sec_filing_blocks (
-          block_id, filing_id, ordinal, heading, heading_path, element_type,
-          preview, body, token_count, numeric_density, table_count, content_hash
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(filing_id, ordinal) DO UPDATE SET
-          block_id = excluded.block_id,
-          heading = excluded.heading, heading_path = excluded.heading_path,
-          element_type = excluded.element_type,
-          preview = excluded.preview, body = excluded.body,
-          token_count = excluded.token_count, numeric_density = excluded.numeric_density,
-          table_count = excluded.table_count, content_hash = excluded.content_hash
-      `).bind(
-        block.blockId,
-        filing.accessionNumber,
-        block.ordinal,
-        block.heading,
-        block.headingPath,
-        block.elementType,
-        block.preview,
-        block.body,
-        block.tokenCount,
-        block.numericDensity,
-        block.tableCount,
-        block.contentHash,
-      ),
-      this.database.prepare(`
-        INSERT INTO sec_evidence (evidence_id, filing_id, block_id, locator, excerpt, source_rank, excerpt_hash)
-        VALUES (?, ?, ?, ?, ?, 1, ?)
-        ON CONFLICT(evidence_id) DO UPDATE SET excerpt = excluded.excerpt, excerpt_hash = excluded.excerpt_hash
-      `).bind(`ev:${block.blockId}`, filing.accessionNumber, block.blockId, `block:${block.ordinal}`, block.body.slice(0, 900), block.contentHash),
-    ]);
-    await this.database.batch(statements);
-  }
-
   private async upsertAnalyzedFiling(filing: SecFiling): Promise<void> {
     await this.database.prepare(`
       INSERT INTO sec_filings (
@@ -480,18 +439,6 @@ export class D1SecRepository implements SecRepository {
       INSERT OR IGNORE INTO sec_filing_periods (filing_id, period_id, role)
       VALUES (?, ?, ?)
     `).bind(filing.accessionNumber, artifact.periodId, "primary").run();
-
-    for (const comparison of artifact.comparisons) {
-      const comparisonId = `${comparison.currentPeriodId}:${comparison.priorPeriodId}:${comparison.comparisonType}`;
-      await this.database.prepare(`
-        INSERT INTO sec_comparisons (
-          comparison_id, ticker, current_period_id, prior_period_id,
-          comparison_type, comparability, payload
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(comparison_id) DO UPDATE SET
-          comparability = excluded.comparability, payload = excluded.payload
-      `).bind(comparisonId, filing.ticker, comparison.currentPeriodId, comparison.priorPeriodId, comparison.comparisonType, comparison.comparability, JSON.stringify(comparison)).run();
-    }
 
     if (includePublication && artifact.report.dataQuality.verificationStatus !== "failed") {
       await this.database.prepare(`
