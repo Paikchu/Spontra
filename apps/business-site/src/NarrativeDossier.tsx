@@ -10,6 +10,10 @@ import { checkIndex, linkChecks, milestoneDate, resolveCheck, resolveTie, worstS
 const percent = (v: number | null, digits = 1) => v == null || !Number.isFinite(v) ? "—" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(digits)}%`;
 const trend = (v: number | null) => v == null || v === 0 ? undefined : v > 0 ? "up" : "down";
 const MILESTONE_LABEL = { done: "已完成", planned: "计划中", delayed: "已延后" } as const;
+const VERDICT = { above: "高于指引", within: "落在指引内", below: "低于指引" } as const;
+const signed = (v: number, digits: number) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(digits)}`;
+/** A ratio's change reads in points when rate-like (below 1.5) and in turns when a multiple, as the lens does. */
+const ratioChange = (r: ResolvedEvidence) => r.delta == null ? "—" : Math.abs(r.compare?.value ?? 0) < 1.5 && Math.abs(r.current.value) < 1.5 ? `${signed(r.delta * 100, 1)} 点` : `${signed(r.delta, 2)} 倍`;
 
 /** Numbered links to the pages a claim was written from, in the order the document first cites them. */
 function useCites(sources: ExplainerSource[], claims: Array<ExplainerClaim | null | undefined>) {
@@ -35,7 +39,8 @@ function Figure({ r }: { r: ResolvedEvidence }) {
   return <span className="narrative-figure">
     <b data-trend={r.current.value < 0 && r.current.unit === "USD" ? "down" : undefined}>{formatValue(r.current)}</b>
     <small>{spanLabel(r.current)}</small>
-    {r.compare && <em data-trend={trend(r.delta)}>{r.compareLabel} {formatValue(r.compare)}{r.delta != null && <> · {r.current.unit === "percent" || r.current.unit === "ratio" ? `${percent(r.delta)} 点` : percent(r.delta)}</>}</em>}
+    {r.guidance ? <em data-verdict={r.guidance.verdict}>{r.guidance.unit === "percent" && r.current.unit !== "percent" ? `同比 ${percent(r.guidance.measured)} · ` : ""}{VERDICT[r.guidance.verdict]}{r.compare ? `（指引 ${formatValue(r.compare)}）` : ""}</em>
+      : r.compare ? <em data-trend={trend(r.delta)}>{r.compareLabel} {formatValue(r.compare)}{r.delta != null && <> · {r.current.unit === "percent" ? `${percent(r.delta)} 点` : r.current.unit === "ratio" ? ratioChange(r) : percent(r.delta)}</>}</em> : null}
   </span>;
 }
 

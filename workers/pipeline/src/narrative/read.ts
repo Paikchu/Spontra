@@ -3,11 +3,12 @@ import { readCompanyNarrative } from "../../../../shared/analysis-runtime/busine
 import { AnalysisRequestError } from "../read-api/contract-support/errors.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import CRWV from "./authored/CRWV.json" with { type: "json" };
+import ORCL from "./authored/ORCL.json" with { type: "json" };
 
 export const narrativeCacheKey = (ticker: string) => `narrative:v1:${ticker}`;
 
 /** Hand-written narratives that stand in until a workflow publishes for the ticker. */
-const AUTHORED: Record<string, unknown> = { CRWV };
+const AUTHORED: Record<string, unknown> = { CRWV, ORCL };
 
 /** A stored narrative wins over an authored one; both are re-validated and never repaired. */
 export async function readNarrativeResponse(db: D1Database, rawTicker: string): Promise<NarrativeResponse> {
