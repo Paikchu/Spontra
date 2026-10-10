@@ -3,6 +3,7 @@ import {syncTranscript} from './transcripts/library.ts';
 import {handleBusinessMapAdminRequest} from './admin/business-map.ts';
 import {handleAiRunsAdminRequest} from './admin/ai-runs.ts';
 import {runDataOnlySweep} from './financial-data/queue.ts';
+import {runMapDerivationTick} from './financial-data/derived.ts';
 import { handleCompanyAnalysisRequest, handleSecAnalysisRequest, runCompanyAnalysisSweep, runSecMemorySweep, runSecRefresh } from "./core.ts";
 import { handleBusinessFlowRefresh, runBusinessFlowBootstrap } from "./sec/business-flow-refresh.ts";
 import { handleFundamentalsRefreshRequest } from "./fundamentals.ts";
@@ -83,12 +84,19 @@ const worker = {
       const maintenance = await runFinancialMaintenanceTick(env);
       if (maintenance.processed) {
         console.log(JSON.stringify({event:"financial-maintenance",...maintenance}));
-        // Waiting for a model Workflow never mutates the data-only history cursor. Keep that
-        // request's issuer/idempotency lock without starving ordinary deterministic collection.
-        if (maintenance.blocksDataSweep !== false) return;
       }
-      const result = env.DB ? await runDataOnlySweep({DB:env.DB,SEC_FILINGS:env.SEC_FILINGS,SEC_USER_AGENT:env.SEC_USER_AGENT,SEC_DATA_TICKERS:env.SEC_DATA_TICKERS,SEC_TRACKED_TICKERS:env.SEC_TRACKED_TICKERS,SEC_DATA_COLLECTION_ENABLED:env.SEC_DATA_COLLECTION_ENABLED}) : {enabled:false,published:false,reasons:[],modelCalls:0};
-      console.log(JSON.stringify({event:"financial-data",...result}));
+      // Waiting for a model Workflow never mutates the data-only history cursor. Keep that
+      // request's issuer/idempotency lock without starving ordinary deterministic collection.
+      if (!maintenance.processed || maintenance.blocksDataSweep === false) {
+        const result = env.DB ? await runDataOnlySweep({DB:env.DB,SEC_FILINGS:env.SEC_FILINGS,SEC_USER_AGENT:env.SEC_USER_AGENT,SEC_DATA_TICKERS:env.SEC_DATA_TICKERS,SEC_TRACKED_TICKERS:env.SEC_TRACKED_TICKERS,SEC_DATA_COLLECTION_ENABLED:env.SEC_DATA_COLLECTION_ENABLED}) : {enabled:false,published:false,reasons:[],modelCalls:0};
+        console.log(JSON.stringify({event:"financial-data",...result}));
+      }
+      // Whatever collection did this tick, the map's prepared data catches up with the archive. It runs even while
+      // maintenance holds the collection lock: it only reads what is already archived.
+      if (env.DB && env.SEC_FILINGS) {
+        const derived = await runMapDerivationTick({DB:env.DB,SEC_FILINGS:env.SEC_FILINGS,SEC_DATA_TICKERS:env.SEC_DATA_TICKERS,SEC_TRACKED_TICKERS:env.SEC_TRACKED_TICKERS}).catch((error:unknown)=>({error:error instanceof Error?error.message:String(error)}));
+        console.log(JSON.stringify({event:"map-derivation",...derived}));
+      }
       return;
     }
     const results = await Promise.allSettled([

@@ -79,6 +79,15 @@ export async function refreshStaleProjections(env: DisclosureArchiveEnv, limit =
   return done;
 }
 
+/** The archive index for one company, newest first. Malformed rows are skipped, never repaired here. */
+export async function readStoredAudits(db: D1Database, ticker: string): Promise<StoredAudit[]> {
+  const rows = await db.prepare("SELECT payload FROM sec_cache WHERE cache_key LIKE ? ORDER BY fetched_at DESC LIMIT 100")
+    .bind(disclosureAuditPrefix(ticker) + "%").all<{ payload: string }>();
+  const audits: StoredAudit[] = [];
+  for (const row of rows.results) { try { const r = JSON.parse(row.payload) as StoredAudit; if (r.ticker === ticker && r.source?.ticker === ticker) audits.push(r); } catch { /* skipped */ } }
+  return audits;
+}
+
 export async function listFilingDisclosureAudits(db: D1Database, ticker: string): Promise<DisclosureAuditSummary[]> {
   const rows = await db.prepare("SELECT payload FROM sec_cache WHERE cache_key LIKE ? ORDER BY fetched_at DESC LIMIT 200")
     .bind(disclosureAuditPrefix(ticker) + "%").all<{payload: string}>();

@@ -5,9 +5,9 @@ import { sha256 } from "../company-analysis/api.ts";
 import { D1CompanyAnalysisRepository } from "../company-analysis/repository.ts";
 import { findSecurity } from "../catalog/security-directory.ts";
 import { assertTrackedTicker, requireDb, trackedTickersFor } from "../core.ts";
-import { readArchivedCapital } from "../financial-data/capital-history.ts";
+import { assembleCapital } from "../financial-data/capital-history.ts";
+import { readStoredAudits } from "../financial-data/disclosure-audit.ts";
 import { readCompletePublicationForTicker } from "../financial-data/publication.ts";
-import type { ReportArchive } from "../financial-data/report-history.ts";
 import { parseFundamentalApiQuery } from "../fundamentals/fundamentals-api.ts";
 import { getSecFundamentals } from "../fundamentals/sec-fundamentals.ts";
 import { readGuidanceResponse } from "../guidance/workflow.ts";
@@ -38,7 +38,7 @@ async function readInput(env: SecPipelineEnv, ticker: string): Promise<Input> {
   if (!flow || !newest) return null;
   const quarters = [...new Map([...(publication.reports?.quarters ?? []), ...flow.quarters].map(q => [q.periodEnd, q])).values()];
   const [capital, fundamentals, guidance, analysis] = await Promise.all([
-    env.SEC_FILINGS ? readArchivedCapital(db, env.SEC_FILINGS as unknown as ReportArchive, flow).catch(() => null) : Promise.resolve(null),
+    readStoredAudits(db, ticker).then(audits => assembleCapital(audits, flow)).catch(() => null),
     getSecFundamentals(db, parseFundamentalApiQuery(ticker, new URLSearchParams({ periodCount: "12" }))).then(r => readFindingFundamentals(r, ticker)).catch(() => null),
     readGuidanceResponse(db, ticker).then(r => r.guidance).catch(() => null),
     new D1CompanyAnalysisRepository(db).getLatestPublication(ticker).catch(() => null),

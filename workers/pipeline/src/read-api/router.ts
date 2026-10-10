@@ -1,5 +1,4 @@
-import {readArchivedReportHistory, type ReportArchive} from '../financial-data/report-history.ts';
-import {readArchivedCapital} from '../financial-data/capital-history.ts';
+import { readMapDerived } from '../financial-data/derived.ts';
 import type { CapitalResponse } from '../../../../shared/analysis-contract/capital-structure.ts';
 import {readCompletePublicationForTicker} from '../financial-data/publication.ts';
 import { readBusinessExplainerResponse } from "../business-explainer/workflow.ts";
@@ -27,7 +26,6 @@ import { dataResponse, errorResponse } from "./http.ts";
 export type AnalysisReadEnv = {
   /** The analysis database. Absent in a partially configured environment, which answers 503. */
   DB?: D1Database;
-  SEC_FILINGS?: ReportArchive;
 };
 
 /** A read request carries a ticker, a cursor and two small numbers. Anything longer is not one. */
@@ -68,13 +66,13 @@ export async function handleMapRead(request: Request, env: AnalysisReadEnv): Pro
   }
 
   try {
-    return await handleRoute(request, env.DB, route, env.SEC_FILINGS);
+    return await handleRoute(request, env.DB, route);
   } catch (error) {
     return errorResponse(...describeFailure(error));
   }
 }
 
-async function handleRoute(request: Request, database: D1Database, route: RouteMatch, archive?: ReportArchive): Promise<Response> {
+async function handleRoute(request: Request, database: D1Database, route: RouteMatch): Promise<Response> {
   const url = new URL(request.url);
   switch (route.kind) {
     case "filings": {
@@ -95,13 +93,14 @@ async function handleRoute(request: Request, database: D1Database, route: RouteM
     }
     case "business-flow": {
       const payload=await readCompletePublicationForTicker(database,route.ticker);
-      if(payload.flow&&archive)payload.reports=await readArchivedReportHistory(database,archive,payload.flow).catch(()=>payload.flow!);
+      // Older quarters are assembled on the schedule; until then the published pair stands alone.
+      if(payload.flow)payload.reports=(await readMapDerived(database,payload.flow))?.reports??payload.flow;
       return dataResponse(request,payload,payload.status==="ready"?"cacheable":"no-store");
     }
     case "capital": {
-      // Supplementary to the business flow and read on its own, so statement projection never delays the map.
+      // Assembled on the schedule from the projections each filing received at ingestion; a read never parses.
       const publication = await readCompletePublicationForTicker(database, route.ticker);
-      const capital = publication.flow && archive ? await readArchivedCapital(database, archive, publication.flow).catch(() => null) : null;
+      const capital = publication.flow ? (await readMapDerived(database, publication.flow))?.capital ?? null : null;
       const payload: CapitalResponse = { schemaVersion: "capital-response.v1", status: capital ? "ready" : "unavailable", capital };
       return dataResponse(request, payload, capital ? "cacheable" : "no-store");
     }
