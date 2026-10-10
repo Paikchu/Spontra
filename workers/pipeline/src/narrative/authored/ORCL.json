@@ -398,7 +398,16 @@
           ]
         }
       ],
-      "checks": []
+      "checks": [],
+      "layout": {
+        "lead": {
+          "kind": "flow"
+        },
+        "below": {
+          "kind": "revenue_trend"
+        },
+        "reason": "云服务是收入的一半以上，先在流向图里看它占多大、带来多少利润。"
+      }
     },
     {
       "nodeId": "CloudInfrastructure",
@@ -924,7 +933,17 @@
           ],
           "meaning": "算力是 AI 合约买的东西，数据库是它区别于其他云的东西，部署形态决定客户在哪里用。"
         }
-      ]
+      ],
+      "layout": {
+        "lead": {
+          "kind": "cash"
+        },
+        "below": {
+          "kind": "figure",
+          "index": 0
+        },
+        "reason": "这项业务的故事在现金：每季借来的钱买 GPU，经营现金流填不上资本开支，先看现金流再看它由什么组成。"
+      }
     },
     {
       "nodeId": "CloudApplications",
@@ -1163,5 +1182,14 @@
       ],
       "meaning": "增长和资本开支集中在最底层；中间的本地软件在收缩但仍供现金；上层应用稳步增长。"
     }
-  ]
+  ],
+  "layout": {
+    "lead": {
+      "kind": "flow"
+    },
+    "below": {
+      "kind": "revenue_trend"
+    },
+    "reason": "四项业务的收入和利润结构是理解 Oracle 的起点，云在流向图里已经过半，先看它。"
+  }
 }

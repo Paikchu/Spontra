@@ -1,9 +1,9 @@
 import { z } from "zod";
 import type { BusinessExplainer } from "../../../../shared/analysis-contract/business-explainer.ts";
 import type { PlannedFigures } from "../../../../shared/analysis-contract/business-figures.ts";
-import type { CompanyNarrative, NarrativeFigure } from "../../../../shared/analysis-contract/business-narrative.ts";
+import type { CompanyNarrative, NarrativeFigure, PanelPlan } from "../../../../shared/analysis-contract/business-narrative.ts";
 import type { OperatingMetricsPublication } from "../../../../shared/analysis-contract/operating-metrics.ts";
-import { harnessFigures } from "../../../../shared/analysis-runtime/business-narrative.ts";
+import { harnessFigures, harnessLayout } from "../../../../shared/analysis-runtime/business-narrative.ts";
 
 /** Changing the prompt or the harness re-plans every company once. */
 export const FIGURES_PLANNER_VERSION = "figures-planner.v1";
@@ -23,14 +23,33 @@ export const FIGURES_SYSTEM_PROMPT = [
   "ladder: when a metric has a pairWith counterpart (in_use against contracted, delivered against pipeline) or a single metric has three or more dates, bind a ladder: tracks [{metricKey, role}] with role actual for what is in use or delivered, contracted for what is committed, target for a stated goal. Attach a ladder to the business whose operations the metric measures; if that is the whole company, attach it to the company.",
   "Each figure has a title of at most 24 Chinese characters and a meaning of at most 120 Chinese characters saying what the figure shows and why it matters, in Simplified Chinese, with no numbers.",
   "Make at most 3 figures per business and 2 for the company. When nothing meaningful can be drawn, return empty arrays. Do not invent items, keys, layers for a single item, or ladders without metrics.",
-  "Output JSON: {\"company\":[figure],\"businesses\":[{\"nodeId\":\"\",\"figures\":[figure]}]} where figure is {\"type\":\"stack\",\"title\":\"\",\"layers\":[{\"name\":\"\",\"items\":[\"\"]}],\"meaning\":\"\"} or {\"type\":\"ladder\",\"title\":\"\",\"tracks\":[{\"metricKey\":\"\",\"role\":\"actual\"}],\"meaning\":\"\"}.",
+  "Then judge, for the company and for each business, what the stage should lead with: the revenue-to-profit flow (kind flow) when the cost and profit structure is what a reader must understand first, the cash flow (cash) when financing carries the story, the balance sheet (balance) when assets and debt do, or one of the figures you planned (figure with its index in that list) when the build-out or the make-up of the business explains more than the statement does. Also choose what sits below: revenue_trend, a figure, or null. Give a reason of at most 120 Chinese characters, no numbers, that a reader sees beside the choice. Default to flow when unsure.",
+  "Output JSON: {\"company\":[figure],\"businesses\":[{\"nodeId\":\"\",\"figures\":[figure]}],\"layouts\":{\"company\":{\"lead\":{\"kind\":\"flow\"},\"below\":{\"kind\":\"revenue_trend\"},\"reason\":\"\"},\"businesses\":[{\"nodeId\":\"\",\"layout\":{\"lead\":{\"kind\":\"figure\",\"index\":0},\"below\":null,\"reason\":\"\"}}]}} where figure is {\"type\":\"stack\",\"title\":\"\",\"layers\":[{\"name\":\"\",\"items\":[\"\"]}],\"meaning\":\"\"} or {\"type\":\"ladder\",\"title\":\"\",\"tracks\":[{\"metricKey\":\"\",\"role\":\"actual\"}],\"meaning\":\"\"}.",
 ].join("\n");
 
 const figure = z.discriminatedUnion("type", [
   z.object({ type: z.literal("stack"), title: z.string().max(60), layers: z.array(z.object({ name: z.string().max(40), items: z.array(z.string().max(80)).max(12) })).max(8), meaning: z.string().max(300) }),
   z.object({ type: z.literal("ladder"), title: z.string().max(60), tracks: z.array(z.object({ metricKey: z.string().max(60), role: z.string().max(20) })).max(4), meaning: z.string().max(300) }),
 ]);
-const drafted = z.object({ company: z.array(figure).max(6).optional(), businesses: z.array(z.object({ nodeId: z.string().max(200), figures: z.array(figure).max(6) })).max(30).optional() });
+const panelRef = z.object({ kind: z.string().max(20), index: z.number().int().min(0).max(9).optional() });
+const panelPlan = z.object({ lead: panelRef, below: panelRef.nullable().optional(), reason: z.string().max(300) });
+const drafted = z.object({
+  company: z.array(figure).max(6).optional(), businesses: z.array(z.object({ nodeId: z.string().max(200), figures: z.array(figure).max(6) })).max(30).optional(),
+  layouts: z.object({ company: panelPlan.nullable().optional(), businesses: z.array(z.object({ nodeId: z.string().max(200), layout: panelPlan })).max(30).optional() }).optional(),
+});
+
+/** A drafted panel reference as the contract knows it, or null. */
+function panelOf(ref: z.infer<typeof panelRef> | null | undefined): PanelPlan["lead"] | null {
+  if (!ref) return null;
+  if (ref.kind === "figure") return typeof ref.index === "number" ? { kind: "figure", index: ref.index } : null;
+  return ref.kind === "flow" || ref.kind === "cash" || ref.kind === "balance" || ref.kind === "revenue_trend" ? { kind: ref.kind } : null;
+}
+function layoutOf(plan: z.infer<typeof panelPlan> | null | undefined, figureCount: number): PanelPlan | null {
+  if (!plan) return null;
+  const reason = clean(plan.reason, 120);
+  if (!reason || FIGURE_TEXT.test(reason)) return null;
+  return harnessLayout({ lead: panelOf(plan.lead) ?? { kind: "flow" }, below: panelOf(plan.below), reason }, figureCount);
+}
 
 export type PlannerInput = { ticker: string; companyName: string; explainer: BusinessExplainer; metrics: OperatingMetricsPublication | null; narrative: CompanyNarrative | null; fingerprint: string; modelVersion: string; now: string };
 
@@ -82,5 +101,16 @@ export async function planFigures(input: PlannerInput, model: PlannerModelCall):
     company = [...company, ladder].slice(0, 4);
     bound.add(m.key); bound.add(pair.key);
   }
-  return { schemaVersion: "business-figures.v1", ticker: input.ticker, generatedAt: input.now, model: input.modelVersion, fingerprint: input.fingerprint, company, businesses: businessPlans.filter(b => b.figures.length) };
+  const plannedBusinesses = businessPlans.filter(b => b.figures.length);
+  // Judged layouts, with one rule of thumb the model need not restate: a business whose ladder pairs what is in use with what is contracted leads with it.
+  const layouts = {
+    company: layoutOf(plan.layouts?.company, company.length),
+    businesses: (plan.layouts?.businesses ?? []).flatMap(b => { const layout = layoutOf(b.layout, plannedBusinesses.find(x => x.nodeId === b.nodeId)?.figures.length ?? 0); return layout && input.explainer.businesses.some(x => x.nodeId === b.nodeId) ? [{ nodeId: b.nodeId, layout }] : []; }),
+  };
+  for (const b of plannedBusinesses) {
+    if (layouts.businesses.some(l => l.nodeId === b.nodeId)) continue;
+    const index = b.figures.findIndex(f => f.type === "ladder" && f.tracks.some(t => t.role === "contracted" || t.role === "target"));
+    if (index >= 0) layouts.businesses.push({ nodeId: b.nodeId, layout: { lead: { kind: "figure", index }, below: { kind: "revenue_trend" }, reason: "这项业务的关键在签约能否按期变成在用，阶梯图比报表流向更直接。" } });
+  }
+  return { schemaVersion: "business-figures.v1", ticker: input.ticker, generatedAt: input.now, model: input.modelVersion, fingerprint: input.fingerprint, company, businesses: plannedBusinesses, layouts };
 }

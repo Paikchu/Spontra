@@ -1,4 +1,4 @@
-import type { NarrativeFigure } from "./business-narrative.ts";
+import type { NarrativeFigure, PanelPlan } from "./business-narrative.ts";
 
 /**
  * Figures a model planned for a company from what the map already holds: the explainer's businesses
@@ -16,6 +16,8 @@ export type PlannedFigures = {
   fingerprint: string;
   company: NarrativeFigure[];
   businesses: Array<{ nodeId: string; figures: NarrativeFigure[] }>;
+  /** What leads the stage, for the company and for each business the planner judged; absent means the flow. */
+  layouts?: { company: PanelPlan | null; businesses: Array<{ nodeId: string; layout: PanelPlan }> };
 };
 
 export type PlannedFiguresResponse = {

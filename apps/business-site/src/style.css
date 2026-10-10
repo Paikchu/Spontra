@@ -1162,3 +1162,4 @@ button { cursor: pointer; }
 .trend--figure .ladder { max-height: 200px; }
 .trend--figure .ladder-quotes { display: none; }
 .trend--figure .trend-heading h2 { margin: 0; font-size: 13.5px; font-weight: 600; }
+.stage-verdict--plan b { color: var(--brand); border-color: color-mix(in srgb, var(--brand) 40%, transparent); }

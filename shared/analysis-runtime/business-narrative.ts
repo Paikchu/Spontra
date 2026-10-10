@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { MILESTONE_STATES, NARRATIVE_GRADES, NARRATIVE_STAGES, NARRATIVE_STATUSES, PARTY_ROLES, type BusinessNarrative, type CompanyNarrative, type NarrativeCheck, type NarrativeFigure, type NarrativeLink } from "../analysis-contract/business-narrative.ts";
+import { MILESTONE_STATES, NARRATIVE_GRADES, NARRATIVE_STAGES, NARRATIVE_STATUSES, PARTY_ROLES, type BusinessNarrative, type CompanyNarrative, type NarrativeCheck, type NarrativeFigure, type NarrativeLink, type PanelPlan } from "../analysis-contract/business-narrative.ts";
 import type { ExplainerClaim } from "../analysis-contract/business-explainer.ts";
 import { figureSchemas } from "./findings.ts";
 
@@ -22,6 +22,8 @@ export const figureSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("stack"), title: text(24), layers: z.array(z.object({ name: text(12), items: z.array(text(40)).max(8) })).min(1).max(6), meaning: prose(120) }),
   z.object({ type: z.literal("ladder"), title: text(24), tracks: z.array(z.object({ metricKey: z.string().regex(/^[a-z][a-z0-9_]{1,40}$/), role: z.enum(["actual", "contracted", "target"]) })).min(1).max(3), meaning: prose(120) }),
 ]);
+const panelRef = z.discriminatedUnion("kind", [z.object({ kind: z.literal("flow") }), z.object({ kind: z.literal("cash") }), z.object({ kind: z.literal("balance") }), z.object({ kind: z.literal("revenue_trend") }), z.object({ kind: z.literal("figure"), index: z.number().int().min(0).max(3) })]);
+export const panelPlanSchema = z.object({ lead: panelRef, below: panelRef.nullable(), reason: prose(120) });
 const link = z.object({ id: text(80), premise: prose(80), status, evidence: z.array(claim).max(6), failure: prose(120), checkIds: z.array(text(80)).max(6) });
 const business = z.object({
   nodeId: text(200), name: text(80), parentNodeId: text(200).nullable().optional(),
@@ -29,14 +31,14 @@ const business = z.object({
   anchor: z.object({ ref, span, label: text(24) }).nullable().optional(),
   capabilities: z.array(z.object({ label: text(24).nullable(), claim })).max(8),
   milestones: z.array(milestone).max(24), parties: z.array(party).max(16), comparison: comparison.nullable().optional(),
-  ties: z.array(tie).max(8), chain: z.array(link).max(8), checks: z.array(check).max(8), figures: z.array(figureSchema).max(4).optional(),
+  ties: z.array(tie).max(8), chain: z.array(link).max(8), checks: z.array(check).max(8), figures: z.array(figureSchema).max(4).optional(), layout: panelPlanSchema.nullable().optional(),
 });
 export const companyNarrativeSchema = z.object({
   schemaVersion: z.literal("business-narrative.v1"),
   ticker: z.string().regex(/^[A-Z][A-Z0-9.-]{0,11}$/),
   companyName: text(200), periodEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), generatedAt: z.string().max(40), model: text(80), fingerprint: text(128).optional(),
   positioning: claim, stage: z.enum(NARRATIVE_STAGES), stageClaim: claim, verdict: prose(90), industry: claim,
-  chain: z.array(link).max(8), checks: z.array(check).max(10), figures: z.array(figureSchema).max(4).optional(),
+  chain: z.array(link).max(8), checks: z.array(check).max(10), figures: z.array(figureSchema).max(4).optional(), layout: panelPlanSchema.nullable().optional(),
   businesses: z.array(business).min(1).max(16),
   sources: z.array(z.object({ id: text(40), title: text(300), url: https, kind: z.enum(["sec", "web"]), publishedAt: z.string().max(40).nullable() })).min(1).max(60),
 });
@@ -54,6 +56,13 @@ export function harnessFigures(figures: NarrativeFigure[] | undefined, names: Se
     const layers = f.layers.map(l => ({ ...l, items: l.items.filter(i => names.has(i) && !seen.has(i) && (seen.add(i), true)) })).filter(l => l.items.length);
     return layers.length >= 2 ? [{ ...f, layers }] : [];
   }).slice(0, 4);
+}
+
+/** A plan may only lead with, or put below, a figure that exists; a reference past the figures falls back (lead to the flow, below to nothing). */
+export function harnessLayout(plan: PanelPlan | null | undefined, figureCount: number): PanelPlan | null {
+  if (!plan) return null;
+  const ok = (ref: PanelPlan["lead"] | null) => ref && (ref.kind !== "figure" || ref.index < figureCount) ? ref : null;
+  return { lead: ok(plan.lead) ?? { kind: "flow" }, below: ok(plan.below), reason: plan.reason };
 }
 
 /**
@@ -77,6 +86,7 @@ export function readCompanyNarrative(value: unknown, ticker: string): CompanyNar
   const businesses = parsed.data.businesses.flatMap((b): BusinessNarrative[] => {
     if (!cited(b.stageClaim)) return [];
     const checks = checksOf(b.checks);
+    const figures = figuresOf(b.figures, new Set(b.capabilities.filter(c => cited(c.claim)).flatMap(c => c.label ? [c.label] : [])));
     const comparison = b.comparison && b.comparison.self.length === b.comparison.dimensions.length && b.comparison.self.every(c => cited(c.claim))
       ? { ...b.comparison, alternatives: b.comparison.alternatives.filter(a => a.cells.length === b.comparison!.dimensions.length && a.cells.every(c => cited(c.claim))) }
       : null;
@@ -88,9 +98,10 @@ export function readCompanyNarrative(value: unknown, ticker: string): CompanyNar
       comparison: comparison?.alternatives.length ? comparison : null,
       // Links may cite the company's checks as well as the business's own.
       chain: linksOf(b.chain, [...checks, ...companyChecks]), checks,
-      figures: figuresOf(b.figures, new Set(b.capabilities.filter(c => cited(c.claim)).flatMap(c => c.label ? [c.label] : []))),
+      figures, layout: harnessLayout(b.layout, figures.length),
     }];
   });
   if (!businesses.length || !cited(parsed.data.positioning) || !cited(parsed.data.stageClaim) || !cited(parsed.data.industry)) return null;
-  return { ...parsed.data, checks: companyChecks, chain: linksOf(parsed.data.chain, [...companyChecks, ...businesses.flatMap(b => b.checks)]), figures: figuresOf(parsed.data.figures, new Set(businesses.map(b => b.name))), businesses };
+  const figures = figuresOf(parsed.data.figures, new Set(businesses.map(b => b.name)));
+  return { ...parsed.data, checks: companyChecks, chain: linksOf(parsed.data.chain, [...companyChecks, ...businesses.flatMap(b => b.checks)]), figures, layout: harnessLayout(parsed.data.layout, figures.length), businesses };
 }

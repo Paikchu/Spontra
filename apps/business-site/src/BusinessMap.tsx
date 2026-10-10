@@ -30,7 +30,7 @@ import { resolveAnchor, rpoSeriesFromCapital } from "./narrative-model";
 import { BusinessFigures } from "./BusinessFigures";
 import type { OperatingMetricsPublication } from "@/shared/analysis-contract/operating-metrics";
 import type { PlannedFigures } from "@/shared/analysis-contract/business-figures";
-import type { NarrativeFigure } from "@/shared/analysis-contract/business-narrative";
+import type { NarrativeFigure, PanelPlan } from "@/shared/analysis-contract/business-narrative";
 import { STAGE_LABEL, type BusinessNarrative, type CompanyNarrative } from "@/shared/analysis-contract/business-narrative";
 import type { FindingRef } from "@/shared/analysis-contract/findings";
 import { LensPanel } from "./LensPanel";
@@ -209,7 +209,7 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
   const firstMetric = metricGroups[0]?.options[0]?.key;
   const fallbackMetric = !metric && !hasRevenueTrend && firstMetric ? metricTrend(fundamentals!.series.find(s => s.metricKey === firstMetric)!) : null;
   // A business the statements do not split out charts its anchor (remaining performance obligations) while picked, until the reader picks a metric.
-  const [metricPicked, setMetricPicked] = useState(false);
+  const [metricPicked, setMetricPicked] = useState(() => new URLSearchParams(location.search).has("metric"));
   const anchorTrend = useMemo(() => {
     const picked = selected ? items.find(i => i.id === selected) : null;
     const told = picked?.synthetic ? narrativeOf.get(picked.id) : null;
@@ -227,9 +227,17 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
     if (own?.length) return own;
     return (picked ? planned?.businesses.find(b => b.nodeId === picked.id)?.figures : planned?.company) ?? [];
   }, [selected, items, narrativeOf, narrative, planned]);
+  // What leads the stage is the model's call per business (or the narrative author's), until the reader switches; the reason shows beside it.
+  const plan = useMemo((): PanelPlan | null => {
+    const picked = selected ? items.find(i => i.id === selected) ?? null : null;
+    const own = picked ? narrativeOf.get(picked.id)?.layout : narrative?.layout;
+    return own ?? (picked ? planned?.layouts?.businesses.find(b => b.nodeId === picked.id)?.layout : planned?.layouts?.company) ?? null;
+  }, [selected, items, narrativeOf, narrative, planned]);
+  const panelMetric = (ref: PanelPlan["below"]) => !ref ? null : ref.kind === "figure" ? `figure:${ref.index}` : ref.kind === "revenue_trend" ? REVENUE_METRIC : null;
   // The lower panel is the reader's: revenue by business, any SEC series, or one of the figures; `?metric=figure:<n>` keeps it.
   const figureKey = (i: number) => `figure:${i}`;
-  const shownFigure = useMemo(() => { const m = /^figure:(\d+)$/.exec(metricKey); return m ? figures[Number(m[1])] ?? null : null; }, [metricKey, figures]);
+  const effectiveMetricKey = metricPicked ? metricKey : panelMetric(plan?.below ?? null) ?? metricKey;
+  const shownFigure = useMemo(() => { const m = /^figure:(\d+)$/.exec(effectiveMetricKey); return m ? figures[Number(m[1])] ?? null : null; }, [effectiveMetricKey, figures]);
   const pickerGroups = useMemo(() => {
     const base = shownMetric && shownMetric.key !== REVENUE_METRIC && !metricGroups.some(g => g.options.some(o => o.key === shownMetric.key))
       ? [...metricGroups, { group: "业务锚点", options: [{ key: shownMetric.key, label: shownMetric.label }] }] : metricGroups;
@@ -253,9 +261,9 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
     if (focused) url.searchParams.set("finding", focused.id); else url.searchParams.delete("finding");
     if (focusedEvent) url.searchParams.set("event", focusedEvent.id); else url.searchParams.delete("event");
     if (focusedReport) url.searchParams.set("report", focusedReport.accessionNumber); else url.searchParams.delete("report");
-    if (metric) url.searchParams.set("metric", metric.key); else if (shownFigure) url.searchParams.set("metric", metricKey); else url.searchParams.delete("metric");
+    if (metric) url.searchParams.set("metric", metric.key); else if (shownFigure && metricPicked) url.searchParams.set("metric", effectiveMetricKey); else url.searchParams.delete("metric");
     if (url.href !== location.href) history.replaceState(history.state, "", url);
-  }, [current, focused, focusedEvent, focusedReport, metric, shownFigure, metricKey]);
+  }, [current, focused, focusedEvent, focusedReport, metric, shownFigure, metricPicked, effectiveMetricKey]);
   // A business picked in the chart is brought into view in the list, scrolling only the list (a column or, on narrow screens, a chip row).
   useEffect(() => {
     const option = listRef.current?.querySelector<HTMLElement>('[role=option][aria-selected="true"]');
@@ -281,9 +289,15 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
   const graph = useMemo(() => quarter ? statementGraph(quarter) : null, [quarter]);
   const previousGraph = useMemo(() => previous ? statementGraph(previous) : null, [previous]);
   const funding = capital?.quarters.find(q => q.periodEnd === quarter?.periodEnd) ?? null;
-  const [chosenView, setView] = useState<View>("profit");
+  const [chosenView, setChosenView] = useState<View>("profit");
+  const [viewPicked, setViewPicked] = useState(false);
+  const setView = (next: View) => { setChosenView(next); setViewPicked(true); };
+  const plannedView: View = plan?.lead.kind === "figure" ? "figures" : plan?.lead.kind === "cash" ? "cash" : plan?.lead.kind === "balance" ? "balance" : "profit";
+  const wantedView = viewPicked ? chosenView : plannedView;
   const cash = funding?.cashFlow ?? funding?.yearToDate ?? null;
-  const view: View = chosenView === "cash" && cash ? "cash" : chosenView === "balance" && funding?.balanceSheet ? "balance" : chosenView === "figures" && figures.length ? "figures" : "profit";
+  const view: View = wantedView === "cash" && cash ? "cash" : wantedView === "balance" && funding?.balanceSheet ? "balance" : wantedView === "figures" && figures.length ? "figures" : "profit";
+  // The lead figure comes first in the 业务图 view; the rest follow in the planner's order.
+  const stagedFigures = useMemo(() => plan?.lead.kind === "figure" && figures[plan.lead.index] ? [figures[plan.lead.index], ...figures.filter((_, i) => i !== (plan.lead as { index: number }).index)] : figures, [plan, figures]);
   // A finding in focus brings the stage to its report and statement view, and clears any business pick so the whole statement reads.
   useEffect(() => {
     if (!focused) return;
@@ -362,7 +376,7 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
   const focusFinding = (id: string | null) => { setFocusId(id); if (id) { setEventId(null); setReportId(null); } else { setStory(false); setSplit(false); } };
   const focusEvent = (id: string | null) => { setEventId(id); if (id) { setSelected(null); setFocusId(null); setReportId(null); setStory(false); setSplit(false); } };
   // The rail holds one pick at a time: a business, a finding, or a report/event.
-  const pickBusiness = (id: string | null) => { setSelected(id); setMetricPicked(false); if (id) { setFocusId(null); setEventId(null); setReportId(null); setStory(false); setSplit(false); } };
+  const pickBusiness = (id: string | null) => { setSelected(id); setMetricPicked(false); setViewPicked(false); if (id) { setFocusId(null); setEventId(null); setReportId(null); setStory(false); setSplit(false); } };
   // A report in focus also brings the stage to its quarter when the flow has it.
   const focusReport = (id: string | null) => {
     setReportId(id); setReader(false);
@@ -467,10 +481,11 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
         {quarter && <span className="report-current" aria-live="polite"><span>财报季度</span><b>{shortPeriod(quarter.periodEnd)}</b></span>}
         </div>
         {quarter && view !== "figures" && <Verdict view={view} funding={funding} deficit={deficit?.text ?? null} />}
+        {plan && !viewPicked && <p className="stage-verdict stage-verdict--plan"><b>为什么先看这张</b>{plan.reason}</p>}
       </header>
 
       <div className="chart">
-        {view === "figures" ? <BusinessFigures figures={figures} metrics={metrics} aside={current
+        {view === "figures" ? <BusinessFigures figures={stagedFigures} metrics={metrics} aside={current
             ? <Dossier item={current} parent={parent ?? null} sources={quarter?.sources.length ? quarter.sources : business?.sources ?? []} explainer={explainer} narrative={narrative} data={data} periods={narrativePeriods} />
             : narrative ? <CompanyDossier narrative={narrative} data={data} periods={narrativePeriods} onPick={id => pickBusiness(id)} /> : null} />
           : view !== "profit" && funding ? <CapitalChart view={view} funding={funding} ticker={ticker} spotlight={poolSpotlight} />
@@ -503,7 +518,7 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
           story={false} index={-1} count={verified.length} onPair={() => {}} onStep={() => {}} onClose={() => setSplit(false)} onFocusThis={() => setFocusId(pair.id)} />}
       </div>
       : shownFigure ? <section className="trend trend--figure" aria-label={shownFigure.title}>
-        <div className="trend-heading"><h2>{current?.name ?? narrative?.companyName ?? ticker}</h2><MetricPicker value={metricKey} groups={pickerGroups} revenue={hasRevenueTrend} onChange={chooseMetric} /></div>
+        <div className="trend-heading"><h2>{current?.name ?? narrative?.companyName ?? ticker}</h2><MetricPicker value={effectiveMetricKey} groups={pickerGroups} revenue={hasRevenueTrend} onChange={chooseMetric} /></div>
         <BusinessFigures figures={[shownFigure]} metrics={metrics} aside={null} />
       </section>
       : shownMetric ? <MetricTrendPanel trend={shownMetric} currentPeriod={quarter?.periodEnd ?? null} periods={new Set(quarters.map(q => q.periodEnd))}

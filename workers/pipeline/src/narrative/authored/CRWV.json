@@ -1077,7 +1077,18 @@
           ],
           "meaning": "站点数反映地理铺开的速度，单站规模在变大。"
         }
-      ]
+      ],
+      "layout": {
+        "lead": {
+          "kind": "figure",
+          "index": 0
+        },
+        "below": {
+          "kind": "figure",
+          "index": 1
+        },
+        "reason": "这项业务的关键是签约电力能否按期变成在用电力，阶梯图比报表流向更直接；流向图里它和公司总收入是同一个节点。"
+      }
     },
     {
       "nodeId": "managed-software",
@@ -1197,7 +1208,15 @@
           ],
           "meaning": "先把裸金属 GPU 组成可管理的集群，再调度训练任务，最后用监控把故障节点提前换掉。"
         }
-      ]
+      ],
+      "layout": {
+        "lead": {
+          "kind": "figure",
+          "index": 0
+        },
+        "below": null,
+        "reason": "没有单独收入，报表流向说明不了它；先看它由哪三件事组成。"
+      }
     },
     {
       "nodeId": "application-software",
@@ -1290,7 +1309,14 @@
           "checkIds": []
         }
       ],
-      "checks": []
+      "checks": [],
+      "layout": {
+        "lead": {
+          "kind": "flow"
+        },
+        "below": null,
+        "reason": "收购拼出的工具层尚无单独数据，先看公司整体流向即可。"
+      }
     }
   ],
   "figures": [
@@ -1319,5 +1345,15 @@
       ],
       "meaning": "收入几乎全部计在最底层；上两层随平台交付，没有单独收入，作用是让客户把集群跑满并留下来。"
     }
-  ]
+  ],
+  "layout": {
+    "lead": {
+      "kind": "flow"
+    },
+    "below": {
+      "kind": "figure",
+      "index": 0
+    },
+    "reason": "亏损从哪来是公司层最先要看的：收入翻倍但利息吃掉营业利润，流向图一眼能看出缺口在哪。"
+  }
 }

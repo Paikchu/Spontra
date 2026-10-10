@@ -76,6 +76,15 @@ export type NarrativeFigure =
   | { type: "stack"; title: string; layers: Array<{ name: string; items: string[] }>; meaning: string }
   | { type: "ladder"; title: string; tracks: Array<{ metricKey: string; role: "actual" | "contracted" | "target" }>; meaning: string };
 
+/**
+ * What the stage leads with for a business or the company, and what sits under it. The model
+ * judges whether the statement flow is the point (then the Sankey leads), or the build-out, the
+ * make-up or the financing is; `reason` says why in one sentence, shown beside the choice. The
+ * reader can still switch, and a panel the data cannot draw falls back to the flow.
+ */
+export type PanelRef = { kind: "flow" } | { kind: "cash" } | { kind: "balance" } | { kind: "revenue_trend" } | { kind: "figure"; index: number };
+export type PanelPlan = { lead: PanelRef; below: PanelRef | null; reason: string };
+
 /** One link of the thesis: the premise, how far the material bears it out, and what would break it. */
 export type NarrativeLink = { id: string; premise: string; status: NarrativeStatus; evidence: ExplainerClaim[]; failure: string; checkIds: string[] };
 
@@ -99,6 +108,7 @@ export type BusinessNarrative = {
   chain: NarrativeLink[];
   checks: NarrativeCheck[];
   figures?: NarrativeFigure[];
+  layout?: PanelPlan | null;
 };
 
 export type CompanyNarrative = {
@@ -120,6 +130,7 @@ export type CompanyNarrative = {
   chain: NarrativeLink[];
   checks: NarrativeCheck[];
   figures?: NarrativeFigure[];
+  layout?: PanelPlan | null;
   businesses: BusinessNarrative[];
   sources: ExplainerSource[];
 };
