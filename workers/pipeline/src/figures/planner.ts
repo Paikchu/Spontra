@@ -7,7 +7,7 @@ import type { OperatingMetricsPublication } from "../../../../shared/analysis-co
 import { harnessFigures, harnessLayout } from "../../../../shared/analysis-runtime/business-narrative.ts";
 
 /** Changing the prompt, the harness or the model budget re-plans every company once. */
-export const FIGURES_PLANNER_VERSION = "figures-planner.v2";
+export const FIGURES_PLANNER_VERSION = "figures-planner.v3";
 
 export type PlannerModelCall = (stage: string, system: string, payload: unknown) => Promise<Record<string, unknown>>;
 
@@ -24,6 +24,7 @@ export const FIGURES_SYSTEM_PROMPT = [
   "Each figure has a title of at most 24 Chinese characters and a meaning of at most 120 Chinese characters saying what the figure shows and why it matters, in Simplified Chinese, with no numbers.",
   "Make at most 3 figures per business and 2 for the company. When nothing meaningful can be drawn, return empty arrays. Do not invent items, keys, layers for a single item, or ladders without metrics.",
   "Then compose the stage for the company, for each business, and for each finding you are given: an ordered list of 1 to 5 panels from this catalog, the first on the main slot and the rest stacked beneath. flow: revenue-to-profit flow (the Sankey); cash: cash flow; balance: balance sheet; revenue_trend: revenue by business over quarters; metric with key: one operating metric over time; figure with index: one of the figures you planned for that subject (for a finding, from the company's figures); timeline: the business's milestones; parties: who funds and who buys; comparison: the alternatives matrix; checks: the thesis checks bound to figures; chain: the thesis chain.",
+  "The dossier sections (timeline, parties, comparison, checks, chain) exist only when the input says the company has a narrative; without one, never name them. A finding without a metric or figure to rest on gets flow alone.",
   "Judge what the subject needs. A business with its own revenue in the statements is explained by its revenue, growth and what it sells: lead with flow and follow with revenue_trend and a stack. A business the statements do not split out cannot be read from the flow: lead with the figure or section that explains it (a ladder when build-out is the story, a stack when the make-up is, timeline when the milestones are). For the company, lead with flow unless financing (cash) or the build-out (a ladder) is the story. For a finding, give the panels that let a reader check it: the metric or figure it rests on, then checks. Give a reason of at most 120 Chinese characters, no numbers, shown beside the composition.",
   "Output JSON: {\"company\":[figure],\"businesses\":[{\"nodeId\":\"\",\"figures\":[figure]}],\"layouts\":{\"company\":{\"panels\":[{\"kind\":\"flow\"},{\"kind\":\"revenue_trend\"}],\"reason\":\"\"},\"businesses\":[{\"nodeId\":\"\",\"layout\":{\"panels\":[{\"kind\":\"figure\",\"index\":0}],\"reason\":\"\"}}],\"findings\":[{\"findingId\":\"\",\"layout\":{\"panels\":[{\"kind\":\"metric\",\"key\":\"\"},{\"kind\":\"checks\"}],\"reason\":\"\"}}]}} where figure is {\"type\":\"stack\",\"title\":\"\",\"layers\":[{\"name\":\"\",\"items\":[\"\"]}],\"meaning\":\"\"} or {\"type\":\"ladder\",\"title\":\"\",\"tracks\":[{\"metricKey\":\"\",\"role\":\"actual\"}],\"meaning\":\"\"}.",
 ].join("\n");
@@ -44,17 +45,18 @@ const drafted = z.object({
 
 const SECTIONS = new Set(["timeline", "parties", "comparison", "checks", "chain"]);
 /** A drafted panel reference as the contract knows it, or null; a metric must be one of the company's keys. */
-function panelOf(ref: z.infer<typeof panelRef>, metricKeys: Set<string>): PanelRef | null {
+function panelOf(ref: z.infer<typeof panelRef>, metricKeys: Set<string>, sections: boolean): PanelRef | null {
   if (ref.kind === "figure") return typeof ref.index === "number" ? { kind: "figure", index: ref.index } : null;
   if (ref.kind === "metric") { const key = ref.key?.trim().toLowerCase(); return key && metricKeys.has(key) ? { kind: "metric", key } : null; }
   if (ref.kind === "flow" || ref.kind === "cash" || ref.kind === "balance" || ref.kind === "revenue_trend") return { kind: ref.kind };
-  return SECTIONS.has(ref.kind) ? { kind: ref.kind as "timeline" | "parties" | "comparison" | "checks" | "chain" } : null;
+  // Dossier sections exist only where a narrative does; without one they would draw nothing.
+  return sections && SECTIONS.has(ref.kind) ? { kind: ref.kind as "timeline" | "parties" | "comparison" | "checks" | "chain" } : null;
 }
-function layoutOf(plan: z.infer<typeof panelPlan> | null | undefined, figureCount: number, metricKeys: Set<string>): PanelPlan | null {
+function layoutOf(plan: z.infer<typeof panelPlan> | null | undefined, figureCount: number, metricKeys: Set<string>, sections: boolean): PanelPlan | null {
   if (!plan) return null;
   const reason = clean(plan.reason, 120);
   if (!reason || FIGURE_TEXT.test(reason)) return null;
-  const panels = plan.panels.flatMap(ref => { const p = panelOf(ref, metricKeys); return p ? [p] : []; });
+  const panels = plan.panels.flatMap(ref => { const p = panelOf(ref, metricKeys, sections); return p ? [p] : []; });
   return panels.length ? harnessLayout({ panels, reason }, figureCount) : null;
 }
 
@@ -85,7 +87,7 @@ export async function planFigures(input: PlannerInput, model: PlannerModelCall):
   const metrics = input.metrics?.metrics.map(m => ({ key: m.key, label: m.label, unit: m.unit, role: m.role, pairWith: m.pairWith ?? null, dates: m.observations.map(o => o.asOf) })) ?? [];
   const businesses = input.explainer.businesses.map(b => ({ nodeId: b.nodeId, name: b.name, items: [...businessNames(input.explainer, input.narrative, b.nodeId)] }));
   const findings = input.findings?.findings.map(f => ({ id: f.id, kind: f.kind, title: f.title, judgment: f.judgment.text.slice(0, 400) })) ?? [];
-  const draft = drafted.safeParse(await model("figures-plan", FIGURES_SYSTEM_PROMPT, { company: input.companyName, ticker: input.ticker, businesses, metrics, findings }));
+  const draft = drafted.safeParse(await model("figures-plan", FIGURES_SYSTEM_PROMPT, { company: input.companyName, ticker: input.ticker, hasNarrative: !!input.narrative, narrativeBusinesses: input.narrative?.businesses.map(b => b.nodeId) ?? [], businesses, metrics, findings }));
   const plan = draft.success ? draft.data : { company: [], businesses: [] };
   const chartable = new Map(metrics.filter(m => m.dates.length >= 2).map(m => [m.key, m]));
   const normalise = (list: Array<z.infer<typeof figure>>): NarrativeFigure[] => list.flatMap((f): NarrativeFigure[] => {
@@ -111,11 +113,11 @@ export async function planFigures(input: PlannerInput, model: PlannerModelCall):
   }
   const plannedBusinesses = businessPlans.filter(b => b.figures.length);
   // Judged layouts, with one rule of thumb the model need not restate: a business whose ladder pairs what is in use with what is contracted leads with it.
-  const metricKeys = new Set(chartable.keys());
+  const metricKeys = new Set(chartable.keys()), sections = !!input.narrative;
   const layouts = {
-    company: layoutOf(plan.layouts?.company, company.length, metricKeys),
-    businesses: (plan.layouts?.businesses ?? []).flatMap(b => { const layout = layoutOf(b.layout, plannedBusinesses.find(x => x.nodeId === b.nodeId)?.figures.length ?? 0, metricKeys); return layout && input.explainer.businesses.some(x => x.nodeId === b.nodeId) ? [{ nodeId: b.nodeId, layout }] : []; }),
-    findings: (plan.layouts?.findings ?? []).flatMap(f => { const layout = layoutOf(f.layout, company.length, metricKeys); return layout && input.findings?.findings.some(x => x.id === f.findingId) ? [{ findingId: f.findingId, layout }] : []; }),
+    company: layoutOf(plan.layouts?.company, company.length, metricKeys, sections),
+    businesses: (plan.layouts?.businesses ?? []).flatMap(b => { const layout = layoutOf(b.layout, plannedBusinesses.find(x => x.nodeId === b.nodeId)?.figures.length ?? 0, metricKeys, sections && !!input.narrative?.businesses.some(x => x.nodeId === b.nodeId)); return layout && input.explainer.businesses.some(x => x.nodeId === b.nodeId) ? [{ nodeId: b.nodeId, layout }] : []; }),
+    findings: (plan.layouts?.findings ?? []).flatMap(f => { const layout = layoutOf(f.layout, company.length, metricKeys, sections); return layout && input.findings?.findings.some(x => x.id === f.findingId) ? [{ findingId: f.findingId, layout }] : []; }),
   };
   // Every explainer business has its own revenue in the statements, so the flow explains it first; its figures follow.
   for (const b of plannedBusinesses) {
