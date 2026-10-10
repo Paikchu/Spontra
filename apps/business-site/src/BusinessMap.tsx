@@ -449,8 +449,10 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
   const dossierAside = current
     ? <Dossier item={current} parent={parent ?? null} sources={quarter?.sources.length ? quarter.sources : business?.sources ?? []} explainer={explainer} narrative={narrative} data={data} periods={narrativePeriods} />
     : narrative ? <CompanyDossier narrative={narrative} data={data} periods={narrativePeriods} onPick={id => pickBusiness(id)} /> : null;
-  // Below the main slot: the reader's pick when they made one, else the composition's remaining panels, else the revenue trend.
-  const lowerPanels: PanelRef[] = metricPicked || !plan ? [] : plan.panels.slice(1);
+  // Below the main slot: the reader's pick when they made one, else every panel of the composition the main slot is not already showing
+  // (so a lead the reader switched away from moves down, and nothing appears twice).
+  const mainRef: PanelRef | null = view === "profit" ? { kind: "flow" } : view === "cash" ? { kind: "cash" } : view === "balance" ? { kind: "balance" } : lead;
+  const lowerPanels: PanelRef[] = metricPicked || !plan ? [] : plan.panels.filter(p => p.kind !== "flow" && p.kind !== "cash" && p.kind !== "balance" && !(view === "figures" && viewPicked && p.kind === "figure") && JSON.stringify(p) !== JSON.stringify(mainRef));
   const findingPlan = focused ? planned?.layouts?.findings?.find(f => f.findingId === focused.id)?.layout ?? null : null;
   const lowerPicker = <MetricPicker value={effectiveMetricKey} groups={pickerGroups} revenue={hasRevenueTrend} onChange={chooseMetric} />;
 
