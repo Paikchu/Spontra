@@ -26,8 +26,6 @@ const baseRef = z.union([
 const ref = z.union([baseRef, z.object({ ratio: z.object({ numerator: baseRef, denominator: baseRef }) })]);
 const span = z.enum(["quarter", "fiscal_year"]);
 const compare = z.union([z.literal("yoy"), z.literal("qoq"), z.object({ guidanceId: text(200) })]);
-/** The figure vocabulary, shared with every document that binds prose to statement figures (the business narrative among them). */
-export const figureSchemas = { ref, span, compare, claim, https } as const;
 const evidence = z.object({ ref, periodEnd: date, span, compare: compare.optional(), label: text(60).optional() });
 const lens = z.discriminatedUnion("type", [
   z.object({ type: z.literal("trend"), refs: z.array(ref).min(1).max(4), span, rate: z.enum(["yoy", "qoq"]).optional() }),

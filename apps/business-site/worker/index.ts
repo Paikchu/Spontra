@@ -12,12 +12,6 @@ import {readGuidancePublication} from "@/shared/analysis-runtime/guidance";
 import type {GuidancePublication} from "@/shared/analysis-contract/guidance";
 import {readFindingFundamentals,readFindingsPublication,type FindingFundamentals} from "@/shared/analysis-runtime/findings";
 import type {FindingsPublication} from "@/shared/analysis-contract/findings";
-import {readCompanyNarrative} from "@/shared/analysis-runtime/business-narrative";
-import type {CompanyNarrative} from "@/shared/analysis-contract/business-narrative";
-import {readOperatingMetrics} from "@/shared/analysis-runtime/operating-metrics";
-import type {OperatingMetricsPublication} from "@/shared/analysis-contract/operating-metrics";
-import {plannedFiguresSchema} from "@/shared/analysis-runtime/business-figures";
-import type {PlannedFigures} from "@/shared/analysis-contract/business-figures";
 import {readEventsPublication} from "@/shared/analysis-runtime/events";
 import type {EventsPublication} from "@/shared/analysis-contract/events";
 import type {PublicFilingDetail,PublicFilingDigest,PublicFilingDigestPage,PublicFilingPage,PublicSecFiling} from "@/shared/analysis-contract/filings";
@@ -165,38 +159,6 @@ export async function loadFilingDetail(ticker:string,accession:string,snapshot:{
  }catch{return null;}
 }
 
-/** The company narrative, re-validated like the findings; the page resolves its checks against the statements it already draws. */
-export async function loadNarrative(ticker:string,fetcher:typeof fetch=fetch):Promise<CompanyNarrative|null>{
- try{
-  const response=await fetcher(ANALYSIS_ORIGIN+`/api/v1/companies/${ticker}/business-narrative`,{signal:AbortSignal.timeout(8000),headers:{accept:"application/json"}});
-  if(!response.ok)return null;
-  const body=await response.json() as {schemaVersion?:string;status?:string;narrative?:unknown};
-  return body.schemaVersion==="business-narrative-response.v1"&&body.status==="ready"?readCompanyNarrative(body.narrative,ticker):null;
- }catch{return null;}
-}
-
-/** Operating metrics (power, data centers, GPUs), re-validated like the narrative whose figures bind to them. */
-export async function loadOperatingMetrics(ticker:string,fetcher:typeof fetch=fetch):Promise<OperatingMetricsPublication|null>{
- try{
-  const response=await fetcher(ANALYSIS_ORIGIN+`/api/v1/companies/${ticker}/operating-metrics`,{signal:AbortSignal.timeout(8000),headers:{accept:"application/json"}});
-  if(!response.ok)return null;
-  const body=await response.json() as {schemaVersion?:string;status?:string;metrics?:unknown};
-  return body.schemaVersion==="operating-metrics-response.v1"&&body.status==="ready"?readOperatingMetrics(body.metrics,ticker):null;
- }catch{return null;}
-}
-
-/** Planned figures: the pipeline already applied the name harness against its stored explainer and narrative; here the shape is checked and unknown fields stripped. */
-export async function loadFigures(ticker:string,fetcher:typeof fetch=fetch):Promise<PlannedFigures|null>{
- try{
-  const response=await fetcher(ANALYSIS_ORIGIN+`/api/v1/companies/${ticker}/business-figures`,{signal:AbortSignal.timeout(8000),headers:{accept:"application/json"}});
-  if(!response.ok)return null;
-  const body=await response.json() as {schemaVersion?:string;status?:string;figures?:unknown};
-  if(body.schemaVersion!=="business-figures-response.v1"||body.status!=="ready")return null;
-  const parsed=plannedFiguresSchema.safeParse(body.figures);
-  return parsed.success&&parsed.data.ticker===ticker?parsed.data:null;
- }catch{return null;}
-}
-
 /** SEC fundamentals series, stripped to the fields findings resolve against; provider and refresh state never pass through. */
 export async function loadFundamentals(ticker:string,fetcher:typeof fetch=fetch):Promise<FindingFundamentals|null>{
  try{
@@ -211,7 +173,7 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
  if(url.pathname.startsWith("/api/")){
   const fetcher=upstream??analysisFetcher(env);
   if(!fetcher)return json({error:"Read service unavailable"},503);
-  const match=url.pathname.match(/^\/api\/business\/v1\/companies\/([A-Z][A-Z0-9.-]{0,11})(\/capital|\/findings|\/fundamentals|\/events|\/filings|\/narrative|\/metrics|\/figures|\/filings\/\d{10}-\d{2}-\d{6})?$/);
+  const match=url.pathname.match(/^\/api\/business\/v1\/companies\/([A-Z][A-Z0-9.-]{0,11})(\/capital|\/findings|\/fundamentals|\/events|\/filings|\/filings\/\d{10}-\d{2}-\d{6})?$/);
   const detail=match?.[2]?.startsWith("/filings/")?match[2].slice("/filings/".length):null;
   // The reader pins a report to its published revision; nothing else takes a query.
   const allowed=detail?new Set(["reportDate","reportVersion"]):new Set<string>();
@@ -224,9 +186,6 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
    const supplementary=async<T>(name:string,version:string,load:()=>Promise<T|null>)=>{const body=await load();const response=json({schemaVersion:version,status:body?"ready":"unavailable",[name]:body});if(!body)response.headers.set("cache-control","no-store");if(cache&&body)ctx.waitUntil(cache.put(key,response.clone()));return response;};
    if(match[2]==="/capital")return supplementary("capital","capital-response.v1",()=>loadCapital(match[1],fetcher));
    if(match[2]==="/findings")return supplementary("findings","findings-response.v1",()=>loadFindings(match[1],fetcher));
-   if(match[2]==="/narrative")return supplementary("narrative","business-narrative-response.v1",()=>loadNarrative(match[1],fetcher));
-   if(match[2]==="/metrics")return supplementary("metrics","operating-metrics-response.v1",()=>loadOperatingMetrics(match[1],fetcher));
-   if(match[2]==="/figures")return supplementary("figures","business-figures-response.v1",()=>loadFigures(match[1],fetcher));
    if(match[2]==="/events")return supplementary("events","events-response.v1",()=>loadEvents(match[1],fetcher));
    if(match[2]==="/filings")return supplementary("filings","filing-digests-response.v1",()=>loadFilings(match[1],fetcher));
    if(detail){const reportDate=url.searchParams.get("reportDate"),reportVersion=url.searchParams.get("reportVersion");
