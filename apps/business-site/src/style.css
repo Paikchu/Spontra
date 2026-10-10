@@ -1153,3 +1153,12 @@ button { cursor: pointer; }
   .figures, .figures[data-aside] { position: relative; inset: auto; display: flex; flex-direction: column; gap: 12px; }
   .figures-canvas { overflow: visible; }
 }
+
+/* ---------- A figure in the lower panel: the reader picked it from the metric list ---------- */
+.trend--figure { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 8px; height: auto; min-height: clamp(196px, 26vh, 260px); }
+.trend--figure .figures { position: relative; inset: auto; }
+.trend--figure .figures-canvas { overflow: visible; padding: 0; }
+.trend--figure .figure { padding: 10px 12px; }
+.trend--figure .ladder { max-height: 200px; }
+.trend--figure .ladder-quotes { display: none; }
+.trend--figure .trend-heading h2 { margin: 0; font-size: 13.5px; font-weight: 600; }

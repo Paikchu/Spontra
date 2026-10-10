@@ -7,6 +7,7 @@ import type { PublicCapitalStructure } from "@/shared/analysis-contract/capital-
 import type { FindingsPublication } from "@/shared/analysis-contract/findings";
 import type { CompanyNarrative } from "@/shared/analysis-contract/business-narrative";
 import type { OperatingMetricsPublication } from "@/shared/analysis-contract/operating-metrics";
+import type { PlannedFigures } from "@/shared/analysis-contract/business-figures";
 import type { EventsPublication } from "@/shared/analysis-contract/events";
 import type { PublicFilingDigestPage } from "@/shared/analysis-contract/filings";
 import type { FindingFundamentals } from "@/shared/analysis-runtime/findings";
@@ -83,6 +84,7 @@ function Company({ ticker, tools, onSeen }: { ticker: string; tools: ReactNode; 
     [findings, setFindings] = useState<FindingsPublication | null>(null),
     [narrative, setNarrative] = useState<CompanyNarrative | null>(null),
     [metrics, setMetrics] = useState<OperatingMetricsPublication | null>(null),
+    [planned, setPlanned] = useState<PlannedFigures | null>(null),
     [events, setEvents] = useState<EventsPublication | null>(null),
     [filings, setFilings] = useState<PublicFilingDigestPage | null>(null),
     [fundamentals, setFundamentals] = useState<FindingFundamentals | null>(null),
@@ -104,7 +106,7 @@ function Company({ ticker, tools, onSeen }: { ticker: string; tools: ReactNode; 
   // Balance sheet, cash flow, findings and the SEC series they resolve against load on their own; the map is drawn without waiting for them.
   useEffect(() => {
     const controller = new AbortController();
-    const load = <T,>(resource: "capital" | "findings" | "fundamentals" | "events" | "filings" | "narrative" | "metrics", set: (value: T | null) => void) =>
+    const load = <T,>(resource: "capital" | "findings" | "fundamentals" | "events" | "filings" | "narrative" | "metrics" | "figures", set: (value: T | null) => void) =>
       fetchSupplement<T>(ticker, resource, controller.signal)
         .then(value => { if (!controller.signal.aborted && value) set(value); })
         .catch(() => { /* Supplementary: the map stands on its own. */ });
@@ -112,6 +114,7 @@ function Company({ ticker, tools, onSeen }: { ticker: string; tools: ReactNode; 
     void load<FindingsPublication>("findings", setFindings);
     void load<CompanyNarrative>("narrative", setNarrative);
     void load<OperatingMetricsPublication>("metrics", setMetrics);
+    void load<PlannedFigures>("figures", setPlanned);
     void load<FindingFundamentals>("fundamentals", setFundamentals);
     void load<EventsPublication>("events", setEvents);
     void load<PublicFilingDigestPage>("filings", setFilings);
@@ -133,6 +136,7 @@ function Company({ ticker, tools, onSeen }: { ticker: string; tools: ReactNode; 
           findings={findings}
           narrative={narrative}
           metrics={metrics}
+          planned={planned}
           fundamentals={fundamentals}
           events={events}
           filings={filings}

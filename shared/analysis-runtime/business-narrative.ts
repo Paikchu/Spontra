@@ -18,7 +18,7 @@ const cell = z.object({ grade: z.enum(NARRATIVE_GRADES), claim });
 const comparison = z.object({ need: text(80), dimensions: z.array(text(16)).min(1).max(6), self: z.array(cell).min(1).max(6), alternatives: z.array(z.object({ id: text(80), name: text(40), cells: z.array(cell).min(1).max(6) })).min(1).max(6) });
 const tie = z.object({ ref, span, compare: compare.optional(), label: text(40).optional(), meaning: prose(200) });
 const check = z.object({ id: text(80), condition: prose(120), status, ref: ref.optional(), span: span.optional(), compare: compare.optional(), claim: claim.nullable().optional() });
-const figure = z.discriminatedUnion("type", [
+export const figureSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("stack"), title: text(24), layers: z.array(z.object({ name: text(12), items: z.array(text(40)).max(8) })).min(1).max(6), meaning: prose(120) }),
   z.object({ type: z.literal("ladder"), title: text(24), tracks: z.array(z.object({ metricKey: z.string().regex(/^[a-z][a-z0-9_]{1,40}$/), role: z.enum(["actual", "contracted", "target"]) })).min(1).max(3), meaning: prose(120) }),
 ]);
@@ -29,17 +29,32 @@ const business = z.object({
   anchor: z.object({ ref, span, label: text(24) }).nullable().optional(),
   capabilities: z.array(z.object({ label: text(24).nullable(), claim })).max(8),
   milestones: z.array(milestone).max(24), parties: z.array(party).max(16), comparison: comparison.nullable().optional(),
-  ties: z.array(tie).max(8), chain: z.array(link).max(8), checks: z.array(check).max(8), figures: z.array(figure).max(4).optional(),
+  ties: z.array(tie).max(8), chain: z.array(link).max(8), checks: z.array(check).max(8), figures: z.array(figureSchema).max(4).optional(),
 });
 export const companyNarrativeSchema = z.object({
   schemaVersion: z.literal("business-narrative.v1"),
   ticker: z.string().regex(/^[A-Z][A-Z0-9.-]{0,11}$/),
   companyName: text(200), periodEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), generatedAt: z.string().max(40), model: text(80), fingerprint: text(128).optional(),
   positioning: claim, stage: z.enum(NARRATIVE_STAGES), stageClaim: claim, verdict: prose(90), industry: claim,
-  chain: z.array(link).max(8), checks: z.array(check).max(10), figures: z.array(figure).max(4).optional(),
+  chain: z.array(link).max(8), checks: z.array(check).max(10), figures: z.array(figureSchema).max(4).optional(),
   businesses: z.array(business).min(1).max(16),
   sources: z.array(z.object({ id: text(40), title: text(300), url: https, kind: z.enum(["sec", "web"]), publishedAt: z.string().max(40).nullable() })).min(1).max(60),
 });
+
+/**
+ * A stack names only things the material carries: a business's capabilities, or the company's
+ * businesses. Items named nothing go, layers left empty go, and a stack needs two layers. An item
+ * may appear in one layer only; a later repeat is dropped. Ladders pass through: the page withholds
+ * one whose metric keys resolve to fewer than two dates.
+ */
+export function harnessFigures(figures: NarrativeFigure[] | undefined, names: Set<string>): NarrativeFigure[] {
+  const seen = new Set<string>();
+  return (figures ?? []).flatMap((f): NarrativeFigure[] => {
+    if (f.type !== "stack") return [f];
+    const layers = f.layers.map(l => ({ ...l, items: l.items.filter(i => names.has(i) && !seen.has(i) && (seen.add(i), true)) })).filter(l => l.items.length);
+    return layers.length >= 2 ? [{ ...f, layers }] : [];
+  }).slice(0, 4);
+}
 
 /**
  * Parses a narrative for one ticker, stripping unknown fields. Every claim must cite only sources the
@@ -58,12 +73,7 @@ export function readCompanyNarrative(value: unknown, ticker: string): CompanyNar
     return links.map(l => ({ ...l, evidence: l.evidence.filter(cited), checkIds: l.checkIds.filter(id => known.has(id)) }));
   };
   const companyChecks = checksOf(parsed.data.checks);
-  // A stack names only things the document carries: a business's capabilities, or the company's businesses. Layers left empty go, and a stack needs two.
-  const figuresOf = (figures: NarrativeFigure[] | undefined, names: Set<string>): NarrativeFigure[] => (figures ?? []).flatMap((f): NarrativeFigure[] => {
-    if (f.type !== "stack") return [f];
-    const layers = f.layers.map(l => ({ ...l, items: l.items.filter(i => names.has(i)) })).filter(l => l.items.length);
-    return layers.length >= 2 ? [{ ...f, layers }] : [];
-  });
+  const figuresOf = harnessFigures;
   const businesses = parsed.data.businesses.flatMap((b): BusinessNarrative[] => {
     if (!cited(b.stageClaim)) return [];
     const checks = checksOf(b.checks);

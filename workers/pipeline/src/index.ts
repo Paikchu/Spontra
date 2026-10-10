@@ -15,6 +15,8 @@ import { executeBusinessExplainerWorkflow, type BusinessExplainerParams } from "
 import { maintenanceAnalysisEnvironment } from "./admin/financial-maintenance-runner.ts";
 import { executeGuidanceWorkflow, type GuidanceWorkflowParams } from "./guidance/workflow.ts";
 import { executeFindingsWorkflow, type FindingsWorkflowParams } from "./findings/workflow.ts";
+import { executeOperatingMetricsWorkflow, type OperatingMetricsParams } from "./operating-metrics/workflow.ts";
+import { executeFiguresWorkflow, type FiguresWorkflowParams } from "./figures/workflow.ts";
 import { trackRun, trackSleep, trackSteps } from "./ai-runs/tracking.ts";
 
 const WORKFLOW_RETRY = {
@@ -88,6 +90,20 @@ export class FindingsWorkflow extends WorkflowEntrypoint<SecPipelineEnv, Finding
   async run(event: WorkflowEvent<FindingsWorkflowParams>, step: WorkflowStep) {
     const run = { env: this.env, kind: "findings" as const, ticker: event.payload.ticker, runId: event.instanceId };
     return trackRun(run, () => executeFindingsWorkflow(event.payload, trackSteps(durableSteps(step, this.env, event.instanceId), run), this.env));
+  }
+}
+
+export class OperatingMetricsWorkflow extends WorkflowEntrypoint<SecPipelineEnv, OperatingMetricsParams> {
+  async run(event: WorkflowEvent<OperatingMetricsParams>, step: WorkflowStep) {
+    const run = { env: this.env, kind: "metrics" as const, ticker: event.payload.ticker, runId: event.instanceId };
+    return trackRun(run, () => executeOperatingMetricsWorkflow(event.payload, trackSteps(durableSteps(step, this.env, event.instanceId), run), this.env));
+  }
+}
+
+export class BusinessFiguresWorkflow extends WorkflowEntrypoint<SecPipelineEnv, FiguresWorkflowParams> {
+  async run(event: WorkflowEvent<FiguresWorkflowParams>, step: WorkflowStep) {
+    const run = { env: this.env, kind: "figures" as const, ticker: event.payload.ticker, runId: event.instanceId };
+    return trackRun(run, () => executeFiguresWorkflow(event.payload, trackSteps(durableSteps(step, this.env, event.instanceId), run), this.env));
   }
 }
 

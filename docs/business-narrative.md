@@ -26,6 +26,7 @@
 
 - 画布新增「业务图」视图。图由叙事层声明、代码渲染：`figures[]` 里 `stack` 把能力（或公司的各项业务）分层，条目名必须与能力标签或业务名完全一致，读取器丢弃对不上的条目，少于两层不画；`ladder` 按 `metricKey` 绑定运营指标，实柱为在用、虚线框为签约或目标，图下列出每个数值的原文与来源。
 - 运营指标合约 `shared/analysis-contract/operating-metrics.ts`（`operating-metrics.v1`）：开放词汇，键取公司自己的用语（active_power、data_centers、gpus_delivered），单位只有 MW、count、percent，`pairWith` 标明在用与签约的配对。每个观测带原文引用；校验规则沿用 guidance：引用必须逐字出现在原文、数字必须出现在引用里（`shared/analysis-runtime/operating-metrics.ts`）。
-- 抽取器 `workers/pipeline/src/operating-metrics/extract.ts` 与 `locate.ts`：定位含数量或容量用语的段落，一次抽取加一次修复，不做模型复核。尚未接入定时工作流和文档拉取；接入时沿用 guidance 的材料来源（业绩公告、10-K/10-Q 正文、deck、电话会）。
-- 通用性：模型负责拆解（分几层、每层叫什么、哪些能力归哪层、哪两条指标配对），代码负责校验和画图。拆解提示词的规则：层按物理层到客户层排序，2 到 5 层，层名不超过 12 字，每项能力只属于一层；有在用/签约配对或三期以上的计数序列时出阶梯图。
+- 抽取器 `workers/pipeline/src/operating-metrics/extract.ts` 与 `locate.ts`：定位含数量或容量用语的段落，一次抽取加一次修复，不做模型复核。
+- 定时：`spontra-operating-metrics` 工作流（`OPERATING_METRICS_ENABLED`）每个 tick 读一份最新未读的申报（10-K/10-Q/20-F 正文，或业绩 8-K 的 EX-99 附件），结果按申报存在 `operating-metrics:materials:v1:<ticker>`，每次合并重新发布 `operating-metrics:v1:<ticker>`。`spontra-business-figures` 工作流（`FIGURES_ENABLED`）在 explainer、运营指标或叙事任一变化后重新规划业务图，发布 `figures:v1:<ticker>`。电话会和 deck 走 guidance 已有的材料链路，后续可把它们也送进抽取器。
+- 通用性：模型负责拆解（分几层、每层叫什么、哪些能力归哪层、哪两条指标配对），代码负责校验和画图。规划器 `workers/pipeline/src/figures/planner.ts` 只把名字（explainer 的产品名、带标签的条目、叙事的能力标签、业务名）和指标键交给模型；栈图每个条目必须是给定名字且只在一层，阶梯图每个键必须有两期以上数据，模型漏掉的配对指标由代码补一张公司级阶梯图。页面优先用叙事自带的图，其余用规划结果；下方面板的指标列表也能直接选任一张图。
 - 投资者日 deck、产品页和新闻稿里的图是第二阶段：由 explainer 的网页抓取顺带收集，存 R2，模型为每张图写对应的能力条目，审核后作「资料图」显示，永不进验证点。

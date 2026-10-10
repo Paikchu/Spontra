@@ -18,6 +18,8 @@
     // Management guidance is enabled; ALPHA_VANTAGE_API_KEY (transcripts) is an optional secret.
     "GUIDANCE_ENABLED": "true",
     "FINDINGS_ENABLED": "true",
+    "OPERATING_METRICS_ENABLED": "true",
+    "FIGURES_ENABLED": "true",
     "GUIDANCE_DECK_SEARCH": "true",
     "GUIDANCE_DAILY_MODEL_CALLS": "40",
     "GUIDANCE_DAILY_TRANSCRIPT_CALLS": "25",
@@ -40,6 +42,18 @@
       "name": "spontra-findings",
       "binding": "FINDINGS_WORKFLOW",
       "class_name": "FindingsWorkflow",
+      "concurrency": { "limit": 1 }
+    },
+    {
+      "name": "spontra-operating-metrics",
+      "binding": "OPERATING_METRICS_WORKFLOW",
+      "class_name": "OperatingMetricsWorkflow",
+      "concurrency": { "limit": 1 }
+    },
+    {
+      "name": "spontra-business-figures",
+      "binding": "FIGURES_WORKFLOW",
+      "class_name": "BusinessFiguresWorkflow",
       "concurrency": { "limit": 1 }
     },
     {

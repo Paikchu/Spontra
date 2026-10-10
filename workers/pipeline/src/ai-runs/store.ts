@@ -19,7 +19,7 @@ export function summarize(kind: AiRunKind, publication: unknown): AiVersionSumma
   const p = (publication ?? {}) as Record<string, unknown>;
   const list = (key: string) => Array.isArray(p[key]) ? (p[key] as unknown[]).length : 0;
   return {
-    items: list(kind === "findings" ? "findings" : kind === "explainer" ? "businesses" : "items"),
+    items: list(kind === "findings" ? "findings" : kind === "explainer" || kind === "figures" ? "businesses" : kind === "metrics" ? "metrics" : "items"),
     sources: list("sources"),
     periodEnd: typeof p.periodEnd === "string" ? p.periodEnd : null,
     model: typeof p.model === "string" ? p.model : null,

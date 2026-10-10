@@ -8,7 +8,7 @@ import { adminApi, AdminApiError } from "./admin-api";
 import { completeRequestId, pendingRequestId } from "./financial-maintenance-state";
 import "./ai-runs.css";
 
-const KINDS: Array<[AiRunKind, string]> = [["findings", "财报发现"], ["explainer", "业务解读"], ["guidance", "业绩指引"]];
+const KINDS: Array<[AiRunKind, string]> = [["findings", "财报发现"], ["explainer", "业务解读"], ["guidance", "业绩指引"], ["metrics", "运营指标"], ["figures", "业务图"]];
 const STATUS: Record<AiRunStatus, string> = { queued: "排队中", running: "运行中", waiting: "等待中", succeeded: "已完成", empty: "无可发布内容", superseded: "数据已更新，已跳过", failed: "失败" };
 const ACTIVE = new Set<AiRunStatus>(["queued", "running", "waiting"]);
 const badge = (status: AiRunStatus) => status === "failed" ? "failed" : status === "succeeded" ? "reviewed" : ACTIVE.has(status) ? "processing" : "";
@@ -177,7 +177,7 @@ function Versions({ detail, onError }: { detail: AiCompanyDetail; onError: (erro
     <div className="ai-versions-head"><h3>生成结果</h3>{detail.versions.length > 0 && <label>版本<select value={id} onChange={e => setId(e.target.value)}>{detail.versions.map((v, i) => <option key={v.id} value={v.id}>{v.current ? "当前 · " : `v${detail.versions.length - i} · `}{date(v.id)} · {summaryText(detail.kind, v.summary)}</option>)}</select></label>}</div>
     {!detail.versions.length ? <p className="ai-muted">尚无已发布的结果。</p> : error ? <p className="ra-error">{error}</p> : !version || version.version.id !== id ? <p className="ai-muted"><LoaderCircle size={15} className="ra-spin" /> 正在读取版本…</p>
       : <>{!version.version.current && <p className="ai-hint">这是历史版本，线上展示的是当前版本。</p>}
-        {detail.kind === "findings" ? <FindingsView publication={version.publication as FindingsPublication} /> : detail.kind === "explainer" ? <ExplainerView explainer={version.publication as BusinessExplainer} /> : <GuidanceView guidance={version.publication as GuidancePublication} />}
+        {detail.kind === "findings" ? <FindingsView publication={version.publication as FindingsPublication} /> : detail.kind === "explainer" ? <ExplainerView explainer={version.publication as BusinessExplainer} /> : detail.kind === "guidance" ? <GuidanceView guidance={version.publication as GuidancePublication} /> : <p className="ai-muted">该类型暂无专用视图，见下方原始 JSON。</p>}
         <details className="ai-raw"><summary>原始 JSON</summary><pre>{JSON.stringify(version.publication, null, 2)}</pre></details></>}
   </section>;
 }

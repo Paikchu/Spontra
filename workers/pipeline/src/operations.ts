@@ -58,6 +58,10 @@ export type SecPipelineEnv = SecCronEnv & AnalysisReadEnv & {
   BUSINESS_EXPLAINER_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
   GUIDANCE_WORKFLOW?: AiWorkflowBinding<{ ticker: string; accession: string; eventDate: string; manual?: boolean }>;
   FINDINGS_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
+  OPERATING_METRICS_WORKFLOW?: AiWorkflowBinding<{ ticker: string; accession: string; form: string; filingDate: string; manual?: boolean }>;
+  FIGURES_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
+  OPERATING_METRICS_ENABLED?: string;
+  FIGURES_ENABLED?: string;
   /** "true" lets the sweep start findings runs for AI-enabled companies; anything else leaves it off. */
   FINDINGS_ENABLED?: string;
   /** "false" pauses the deterministic events sweep (8-K and Form 4); unset or anything else runs it. */

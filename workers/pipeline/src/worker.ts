@@ -12,6 +12,8 @@ import type { SecPipelineEnv } from "./operations.ts";
 import { runBusinessExplainerSweep } from "./business-explainer/workflow.ts";
 import { runGuidanceSweep } from "./guidance/workflow.ts";
 import { runFindingsSweep } from "./findings/workflow.ts";
+import { runOperatingMetricsSweep } from "./operating-metrics/workflow.ts";
+import { runFiguresSweep } from "./figures/workflow.ts";
 import { runEventsSweep } from "./events/workflow.ts";
 import { handleReportAdminRequest } from "./admin/reports.ts";
 import { handleFinancialAdminRequest } from "./admin/financials.ts";
@@ -112,9 +114,12 @@ const worker = {
       runFindingsSweep(env),
       // Deterministic: EDGAR's current reports and Form 4 filings for the map's event rail, no model.
       runEventsSweep(env),
+      // Operating quantities from the newest unread filing, then the figure plan once its inputs moved.
+      runOperatingMetricsSweep(env),
+      runFiguresSweep(env),
     ]);
-    const [analysis, memory, companyAnalysis, fundamentals, businessFlow, businessExplainer, guidance, findings, events] = results.map(describeSettled);
-    const payload = JSON.stringify({ event: "sec-workflows", analysis, memory, companyAnalysis, fundamentals, businessFlow, businessExplainer, guidance, findings, events });
+    const [analysis, memory, companyAnalysis, fundamentals, businessFlow, businessExplainer, guidance, findings, events, operatingMetrics, figures] = results.map(describeSettled);
+    const payload = JSON.stringify({ event: "sec-workflows", analysis, memory, companyAnalysis, fundamentals, businessFlow, businessExplainer, guidance, findings, events, operatingMetrics, figures });
     const rejected = results.filter((result): result is PromiseRejectedResult => result.status === "rejected");
     if (!rejected.length) {
       console.log(payload);

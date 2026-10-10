@@ -29,6 +29,8 @@ import { BusinessNarrativeDossier, CompanyDossier, StagePill } from "./Narrative
 import { resolveAnchor, rpoSeriesFromCapital } from "./narrative-model";
 import { BusinessFigures } from "./BusinessFigures";
 import type { OperatingMetricsPublication } from "@/shared/analysis-contract/operating-metrics";
+import type { PlannedFigures } from "@/shared/analysis-contract/business-figures";
+import type { NarrativeFigure } from "@/shared/analysis-contract/business-narrative";
 import { STAGE_LABEL, type BusinessNarrative, type CompanyNarrative } from "@/shared/analysis-contract/business-narrative";
 import type { FindingRef } from "@/shared/analysis-contract/findings";
 import { LensPanel } from "./LensPanel";
@@ -167,7 +169,7 @@ function Sources({ sources, ids }: { sources: FlowSource[]; ids?: string[] }) {
   return <ul className="sources">{list.map(s => <li key={s.id}><a href={s.url} target="_blank" rel="noopener noreferrer">{s.title}<span aria-hidden="true"> ↗</span></a></li>)}</ul>;
 }
 
-export function BusinessMap({ ticker, tools, flow, business, notice, revenueHistory, explainer = null, guidance = null, capital = null, findings = null, fundamentals = null, narrative = null, metrics = null, events = null, filings = null }: { ticker: string; tools: ReactNode; flow: PublicBusinessFlow; business: CompanyBusinessContent | null; notice: string | null; revenueHistory: RevenueHistory | null; explainer?: BusinessExplainer | null; guidance?: GuidancePublication | null; capital?: PublicCapitalStructure | null; findings?: FindingsPublication | null; fundamentals?: FindingFundamentals | null; narrative?: CompanyNarrative | null; metrics?: OperatingMetricsPublication | null; events?: EventsPublication | null; filings?: PublicFilingDigestPage | null }) {
+export function BusinessMap({ ticker, tools, flow, business, notice, revenueHistory, explainer = null, guidance = null, capital = null, findings = null, fundamentals = null, narrative = null, metrics = null, planned = null, events = null, filings = null }: { ticker: string; tools: ReactNode; flow: PublicBusinessFlow; business: CompanyBusinessContent | null; notice: string | null; revenueHistory: RevenueHistory | null; explainer?: BusinessExplainer | null; guidance?: GuidancePublication | null; capital?: PublicCapitalStructure | null; findings?: FindingsPublication | null; fundamentals?: FindingFundamentals | null; narrative?: CompanyNarrative | null; metrics?: OperatingMetricsPublication | null; planned?: PlannedFigures | null; events?: EventsPublication | null; filings?: PublicFilingDigestPage | null }) {
   const quarters = useMemo(() => [...flow.quarters].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd)), [flow]);
   const [period, setPeriod] = useState<string | null>(null);
   const quarter = quarters.find(q => q.id === period) ?? quarters[0];
@@ -217,8 +219,22 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
     return series ? metricTrend(series) : null;
   }, [selected, items, narrativeOf, fundamentals, capital]);
   const shownMetric = metric ?? (metricPicked ? null : anchorTrend) ?? fallbackMetric;
-  const pickerGroups = useMemo(() => shownMetric && shownMetric.key !== REVENUE_METRIC && !metricGroups.some(g => g.options.some(o => o.key === shownMetric.key))
-    ? [...metricGroups, { group: "业务锚点", options: [{ key: shownMetric.key, label: shownMetric.label }] }] : metricGroups, [shownMetric, metricGroups]);
+  // 业务图: the figures the narrative asked for, for the picked business or for the company while nothing is picked.
+  // A hand-written narrative's figures come first; the planned set fills in for what it leaves out.
+  const figures = useMemo((): NarrativeFigure[] => {
+    const picked = selected ? items.find(i => i.id === selected) ?? null : null;
+    const own = picked ? narrativeOf.get(picked.id)?.figures : narrative?.figures;
+    if (own?.length) return own;
+    return (picked ? planned?.businesses.find(b => b.nodeId === picked.id)?.figures : planned?.company) ?? [];
+  }, [selected, items, narrativeOf, narrative, planned]);
+  // The lower panel is the reader's: revenue by business, any SEC series, or one of the figures; `?metric=figure:<n>` keeps it.
+  const figureKey = (i: number) => `figure:${i}`;
+  const shownFigure = useMemo(() => { const m = /^figure:(\d+)$/.exec(metricKey); return m ? figures[Number(m[1])] ?? null : null; }, [metricKey, figures]);
+  const pickerGroups = useMemo(() => {
+    const base = shownMetric && shownMetric.key !== REVENUE_METRIC && !metricGroups.some(g => g.options.some(o => o.key === shownMetric.key))
+      ? [...metricGroups, { group: "业务锚点", options: [{ key: shownMetric.key, label: shownMetric.label }] }] : metricGroups;
+    return figures.length ? [...base, { group: "业务图", options: figures.map((f, i) => ({ key: figureKey(i), label: f.title })) }] : base;
+  }, [shownMetric, metricGroups, figures]);
   const chooseMetric = (key: string) => { setMetricPicked(true); setMetricKey(key); };
   const pair = focused ? verified.find(f => f.id === focused.pairWith) ?? null : null;
   const focusIndex = focused ? verified.indexOf(focused) : -1;
@@ -237,9 +253,9 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
     if (focused) url.searchParams.set("finding", focused.id); else url.searchParams.delete("finding");
     if (focusedEvent) url.searchParams.set("event", focusedEvent.id); else url.searchParams.delete("event");
     if (focusedReport) url.searchParams.set("report", focusedReport.accessionNumber); else url.searchParams.delete("report");
-    if (metric) url.searchParams.set("metric", metric.key); else url.searchParams.delete("metric");
+    if (metric) url.searchParams.set("metric", metric.key); else if (shownFigure) url.searchParams.set("metric", metricKey); else url.searchParams.delete("metric");
     if (url.href !== location.href) history.replaceState(history.state, "", url);
-  }, [current, focused, focusedEvent, focusedReport, metric]);
+  }, [current, focused, focusedEvent, focusedReport, metric, shownFigure, metricKey]);
   // A business picked in the chart is brought into view in the list, scrolling only the list (a column or, on narrow screens, a chip row).
   useEffect(() => {
     const option = listRef.current?.querySelector<HTMLElement>('[role=option][aria-selected="true"]');
@@ -267,8 +283,6 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
   const funding = capital?.quarters.find(q => q.periodEnd === quarter?.periodEnd) ?? null;
   const [chosenView, setView] = useState<View>("profit");
   const cash = funding?.cashFlow ?? funding?.yearToDate ?? null;
-  // 业务图: the figures the narrative asked for, for the picked business or for the company while nothing is picked.
-  const figures = useMemo(() => (current ? narrativeOf.get(current.id)?.figures : narrative?.figures) ?? [], [current, narrativeOf, narrative]);
   const view: View = chosenView === "cash" && cash ? "cash" : chosenView === "balance" && funding?.balanceSheet ? "balance" : chosenView === "figures" && figures.length ? "figures" : "profit";
   // A finding in focus brings the stage to its report and statement view, and clears any business pick so the whole statement reads.
   useEffect(() => {
@@ -488,6 +502,10 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
         {split && pair && <LensPanel finding={pair} data={data} sources={findings.sources} nodeColor={nodeColor} pair={null} compact
           story={false} index={-1} count={verified.length} onPair={() => {}} onStep={() => {}} onClose={() => setSplit(false)} onFocusThis={() => setFocusId(pair.id)} />}
       </div>
+      : shownFigure ? <section className="trend trend--figure" aria-label={shownFigure.title}>
+        <div className="trend-heading"><h2>{current?.name ?? narrative?.companyName ?? ticker}</h2><MetricPicker value={metricKey} groups={pickerGroups} revenue={hasRevenueTrend} onChange={chooseMetric} /></div>
+        <BusinessFigures figures={[shownFigure]} metrics={metrics} aside={null} />
+      </section>
       : shownMetric ? <MetricTrendPanel trend={shownMetric} currentPeriod={quarter?.periodEnd ?? null} periods={new Set(quarters.map(q => q.periodEnd))}
         onPickPeriod={end => setPeriod(quarters.find(q => q.periodEnd === end)?.id ?? null)}
         picker={<MetricPicker value={shownMetric.key} groups={pickerGroups} revenue={hasRevenueTrend} onChange={chooseMetric} />} />
