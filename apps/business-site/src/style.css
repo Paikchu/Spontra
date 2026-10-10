@@ -717,12 +717,7 @@ button { cursor: pointer; }
 .finding-settled { display: inline-grid; place-items: center; width: 15px; height: 15px; border-radius: 50%; font-size: 10px; font-style: normal; color: var(--kind); background: color-mix(in srgb, var(--kind) 14%, transparent); }
 
 
-/* Overview marks: a numbered dot at the corner of each node a finding names; the spotlight recedes everything else. */
-.fc-badge { cursor: pointer; animation: pop .35s var(--ease) both; animation-delay: var(--d); }
-.fc-badge circle { fill: var(--kind); stroke: var(--background); stroke-width: 2; }
-.fc-badge text { fill: var(--background); font-weight: 700; font-variant-numeric: tabular-nums; pointer-events: none; }
-.fc-badge:hover circle, .fc-badge:focus-visible circle { filter: drop-shadow(0 0 6px var(--kind)); }
-.fc-badge:focus { outline: none; }
+/* A finding in focus spotlights the nodes it names; everything else recedes. */
 .fc-svg[data-focus="spotlight"] .fc-node:not([data-lit]) { opacity: .28; }
 .fc-svg[data-focus="spotlight"] .fc-band[data-lit="on"] { fill-opacity: .46; }
 .fc-svg[data-focus="spotlight"] .fc-node[data-lit] .fc-bar { filter: drop-shadow(0 0 7px color-mix(in srgb, var(--c) 70%, transparent)); }

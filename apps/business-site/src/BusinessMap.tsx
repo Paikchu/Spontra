@@ -22,7 +22,7 @@ import { PoolChart, TONE_LABEL, toneColor } from "./PoolChart";
 import { Rail } from "./Sidebar";
 import type { FindingsPublication } from "@/shared/analysis-contract/findings";
 import type { FindingFundamentals } from "@/shared/analysis-runtime/findings";
-import { anchorNodeNames, anchorPoolKeys, badgesByNode, findingData, verifiedFindings } from "./findings-model";
+import { anchorNodeNames, anchorPoolKeys, findingData, verifiedFindings } from "./findings-model";
 import { FindingsList } from "./FindingsList";
 import { LensPanel } from "./LensPanel";
 import type { EventsPublication } from "@/shared/analysis-contract/events";
@@ -292,8 +292,6 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
   }, [quarter, graph, guidance, itemByNode, colorOf, money]);
   const spotlight = useMemo(() => focused && view === "profit" ? anchorNodeNames(focused, quarter, items) : null, [focused, view, quarter, items]);
   const poolSpotlight = useMemo(() => focused && view !== "profit" ? anchorPoolKeys(focused) : null, [focused, view]);
-  const badgeFindings = useMemo(() => focused || view !== "profit" ? new Map() : badgesByNode(verified, quarter, items), [focused, view, verified, quarter, items]);
-  const badges = useMemo(() => new Map([...badgeFindings].map(([name, f]) => [name, { kind: f.kind, severity: f.severity, title: f.title }])), [badgeFindings]);
   const nodeColor = useCallback((id: string) => { const item = items.find(i => i.id === id); return item ? hue(item.slot) : "var(--biz-0)"; }, [items]);
   const focusFinding = (id: string | null) => { setFocusId(id); if (id) { setEventId(null); setReportId(null); } else { setStory(false); setSplit(false); } };
   const focusEvent = (id: string | null) => { setEventId(id); if (id) { setSelected(null); setFocusId(null); setReportId(null); setStory(false); setSplit(false); } };
@@ -414,7 +412,7 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
           : !quarter ? <div className="empty"><h2>季度财务未披露</h2><p>需要同币种、同口径的三个月数据才能绘制流向；不会用示例数据替代。</p></div>
           : proportional && layout ? <FlowChart graph={graph!} copy={copy} money={v => money(v)} colorOf={colorOf} active={active} revealKey={quarter.id} productBusiness={current ? "segment:" + current.key : null} businessDetails={<Dossier item={current} parent={parent ?? null} sources={quarter?.sources.length ? quarter.sources : business?.sources ?? []} explainer={explainer} />}
               focusSlot={n => segmentRevenue ? `占${shareBasis} ${percent(n.value / segmentRevenue * 100)}` : null}
-              onHover={name => setHoverNode(name)} tipFor={tipFor} spotlight={spotlight} badges={badges} priorOf={priorOf} previous={priorQuarter} brackets={guideMarks.brackets} pills={guideMarks.pills} onBadge={name => { const f = badgeFindings.get(name); if (f) focusFinding(f.id); }}
+              onHover={name => setHoverNode(name)} tipFor={tipFor} spotlight={spotlight} priorOf={priorOf} previous={priorQuarter} brackets={guideMarks.brackets} pills={guideMarks.pills}
               onPick={n => { const item = itemByNode.get(n.name); pickBusiness(item && current?.key !== item.key ? item.id : null); }}
               label={`${ticker} ${quarter.label} 收入到净利润桑基图，金额单位 ${quarter.currency}`} />
           : <div className="business-flow chart-fallback">{current && <Dossier item={current} parent={parent ?? null} sources={quarter.sources.length ? quarter.sources : business?.sources ?? []} explainer={explainer} />}<FinancialSankey quarter={quarter} previous={previous} onSegment={key => pickBusiness(items.find(item => item.key === key)?.id ?? null)} /></div>}

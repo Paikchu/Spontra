@@ -129,11 +129,10 @@ function Streams({ band, strength }: { band: Band; strength: "ambient" | "lit" }
   </g>;
 }
 
-export type Badge = { kind: "risk" | "strength" | "shift" | "watch"; severity: number; title: string };
 
 export type PriorQuarter = { graph: FinancialGraph; copy: (n: PlacedNode) => NodeCopy; label: string };
 
-export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHover, onPick, tipFor, label, revealKey, businessDetails, productBusiness = null, spotlight = null, badges, onBadge, priorOf, previous = null, brackets, pills }: {
+export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHover, onPick, tipFor, label, revealKey, businessDetails, productBusiness = null, spotlight = null, priorOf, previous = null, brackets, pills }: {
   businessDetails?: ReactNode;
   /** The comparable prior-quarter amount of a node, drawn as a dashed outline over its bar; null when the two quarters cannot be compared. */
   priorOf?: (n: PlacedNode) => number | null;
@@ -145,8 +144,6 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
   /** Nodes a finding is about: they and their bands stay lit while the rest of the statement recedes. */
   spotlight?: Set<string> | null;
   /** A mark beside each node a finding names, for the overview. */
-  badges?: Map<string, Badge>;
-  onBadge?: (name: string) => void;
   graph: FinancialGraph;
   copy: (n: PlacedNode) => NodeCopy;
   money: (value: number) => string;
@@ -392,7 +389,6 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
             : n.side === "bottom" ? [n.x + w / 2, n.y + n.h + type.offset + vs * 0.78, "middle"]
             : [n.side === "left" ? n.x - gap : n.x + w + gap, n.y + side / 2 + vs * 0.36, n.side === "left" ? "end" : "start"];
           const isLit = lit ? lit.has(n.name) || undefined : undefined;
-          const badge = badges?.get(n.name);
           const interactive = Boolean(n.segmentId) || n.name === "revenue";
           return <g key={n.name} className="fc-node" data-tone={n.tone} data-net={n.name === "net" || undefined} data-lit={isLit} data-active={n.name === active || undefined}
             style={{ "--c": colorOf(n.name), "--d": `${n.column * 90 + 300}ms`, ...(n.fade < 1 ? { opacity: n.fade } : {}) } as CSSProperties}
@@ -404,10 +400,6 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
             <text className="fc-label" x={r(x)} y={r(y)} textAnchor={anchor}>
               <tspan className="fc-name" style={{ fontSize: type.name }}>{text.name}</tspan><tspan className="fc-value" dx={type.gap} style={{ fontSize: vs }}>{text.value}</tspan>{text.change && <tspan className="fc-change" dx={type.gap * 0.8} data-trend={text.change.trend} style={{ fontSize: type.change }}>{text.change.label}</tspan>}
             </text>
-            {badge && !lit && t === 0 && <g className="fc-badge" data-kind={badge.kind} transform={`translate(${r(n.x + w + 2)},${r(n.y - 2)})`} role="button" tabIndex={0} aria-label={`要点：${badge.title}`}
-              onClick={e => { e.stopPropagation(); onBadge?.(n.name); }} onKeyDown={(e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); onBadge?.(n.name); } }}>
-              <circle r={9 * k} /><text y={3.4 * k} textAnchor="middle" style={{ fontSize: 10 * k }}>{badge.severity}</text>
-            </g>}
             {bracket && span && <g className="fc-guide" data-verdict={bracket.verdict} data-derived={bracket.derived || undefined} transform={`translate(${r(n.x + w + 4 * k)},0)`}
               onMouseMove={e => { e.stopPropagation(); point(e, bracket.tip); }} onMouseLeave={() => setTip(null)}>
               <title>{bracket.tip.title}</title>
