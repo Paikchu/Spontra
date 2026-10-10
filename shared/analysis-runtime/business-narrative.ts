@@ -1,0 +1,75 @@
+import { z } from "zod";
+import { MILESTONE_STATES, NARRATIVE_GRADES, NARRATIVE_STAGES, NARRATIVE_STATUSES, PARTY_ROLES, type BusinessNarrative, type CompanyNarrative, type NarrativeCheck, type NarrativeLink } from "../analysis-contract/business-narrative.ts";
+import type { ExplainerClaim } from "../analysis-contract/business-explainer.ts";
+import { figureSchemas } from "./findings.ts";
+
+const { ref, span, compare, claim, https } = figureSchemas;
+const text = (max: number) => z.string().trim().min(1).max(max);
+/** A day, a month, or a year alone when the material names no more. */
+const date = z.string().regex(/^\d{4}(-\d{2}(-\d{2})?)?$/);
+/** Prose bound to a resolved figure may not restate one: amounts, shares and rates come from the statements. */
+const FIGURE = /[$¥€£]\s?\d|\d[\d,.]*\s?(%|％|percent|亿|万|千|百万|billion|million|bn\b|美元|元)/i;
+const prose = (max: number) => text(max).refine(v => !FIGURE.test(v), "figures belong to the statements");
+const status = z.enum(NARRATIVE_STATUSES);
+
+const milestone = z.object({ id: text(80), date, label: text(28), state: z.enum(MILESTONE_STATES), originalDate: date.nullable().optional(), claim });
+const party = z.object({ name: text(80), role: z.enum(PARTY_ROLES), claim });
+const cell = z.object({ grade: z.enum(NARRATIVE_GRADES), claim });
+const comparison = z.object({ need: text(80), dimensions: z.array(text(16)).min(1).max(6), self: z.array(cell).min(1).max(6), alternatives: z.array(z.object({ id: text(80), name: text(40), cells: z.array(cell).min(1).max(6) })).min(1).max(6) });
+const tie = z.object({ ref, span, compare: compare.optional(), label: text(40).optional(), meaning: prose(200) });
+const check = z.object({ id: text(80), condition: prose(120), status, ref: ref.optional(), span: span.optional(), compare: compare.optional(), claim: claim.nullable().optional() });
+const link = z.object({ id: text(80), premise: prose(80), status, evidence: z.array(claim).max(6), failure: prose(120), checkIds: z.array(text(80)).max(6) });
+const business = z.object({
+  nodeId: text(200), name: text(80), parentNodeId: text(200).nullable().optional(),
+  stage: z.enum(NARRATIVE_STAGES), stageClaim: claim, verdict: prose(90),
+  anchor: z.object({ ref, span, label: text(24) }).nullable().optional(),
+  capabilities: z.array(z.object({ label: text(24).nullable(), claim })).max(8),
+  milestones: z.array(milestone).max(24), parties: z.array(party).max(16), comparison: comparison.nullable().optional(),
+  ties: z.array(tie).max(8), chain: z.array(link).max(8), checks: z.array(check).max(8),
+});
+export const companyNarrativeSchema = z.object({
+  schemaVersion: z.literal("business-narrative.v1"),
+  ticker: z.string().regex(/^[A-Z][A-Z0-9.-]{0,11}$/),
+  companyName: text(200), periodEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), generatedAt: z.string().max(40), model: text(80), fingerprint: text(128).optional(),
+  positioning: claim, stage: z.enum(NARRATIVE_STAGES), stageClaim: claim, verdict: prose(90), industry: claim,
+  chain: z.array(link).max(8), checks: z.array(check).max(10),
+  businesses: z.array(business).min(1).max(16),
+  sources: z.array(z.object({ id: text(40), title: text(300), url: https, kind: z.enum(["sec", "web"]), publishedAt: z.string().max(40).nullable() })).min(1).max(60),
+});
+
+/**
+ * Parses a narrative for one ticker, stripping unknown fields. Every claim must cite only sources the
+ * document lists: an uncited milestone, party, capability or cell is dropped, a link keeps only its
+ * cited evidence, and a link or check whose cross-references point nowhere loses them. A business
+ * is dropped only when nothing verifiable is left; a document with no business is rejected.
+ */
+export function readCompanyNarrative(value: unknown, ticker: string): CompanyNarrative | null {
+  const parsed = companyNarrativeSchema.safeParse(value);
+  if (!parsed.success || parsed.data.ticker !== ticker) return null;
+  const ids = new Set(parsed.data.sources.map(s => s.id));
+  const cited = (c: ExplainerClaim | null | undefined): c is ExplainerClaim => !!c && c.sourceIds.every(id => ids.has(id));
+  const checksOf = (checks: NarrativeCheck[]): NarrativeCheck[] => checks.flatMap(c => c.claim && !cited(c.claim) ? [{ ...c, claim: null }] : [c]);
+  const linksOf = (links: NarrativeLink[], checks: NarrativeCheck[]): NarrativeLink[] => {
+    const known = new Set(checks.map(c => c.id));
+    return links.map(l => ({ ...l, evidence: l.evidence.filter(cited), checkIds: l.checkIds.filter(id => known.has(id)) }));
+  };
+  const companyChecks = checksOf(parsed.data.checks);
+  const businesses = parsed.data.businesses.flatMap((b): BusinessNarrative[] => {
+    if (!cited(b.stageClaim)) return [];
+    const checks = checksOf(b.checks);
+    const comparison = b.comparison && b.comparison.self.length === b.comparison.dimensions.length && b.comparison.self.every(c => cited(c.claim))
+      ? { ...b.comparison, alternatives: b.comparison.alternatives.filter(a => a.cells.length === b.comparison!.dimensions.length && a.cells.every(c => cited(c.claim))) }
+      : null;
+    return [{
+      ...b, parentNodeId: b.parentNodeId ?? null, anchor: b.anchor ?? null,
+      capabilities: b.capabilities.filter(c => cited(c.claim)),
+      milestones: b.milestones.filter(m => cited(m.claim)).map(m => ({ ...m, originalDate: m.originalDate ?? null })),
+      parties: b.parties.filter(p => cited(p.claim)),
+      comparison: comparison?.alternatives.length ? comparison : null,
+      // Links may cite the company's checks as well as the business's own.
+      chain: linksOf(b.chain, [...checks, ...companyChecks]), checks,
+    }];
+  });
+  if (!businesses.length || !cited(parsed.data.positioning) || !cited(parsed.data.stageClaim) || !cited(parsed.data.industry)) return null;
+  return { ...parsed.data, checks: companyChecks, chain: linksOf(parsed.data.chain, [...companyChecks, ...businesses.flatMap(b => b.checks)]), businesses };
+}
