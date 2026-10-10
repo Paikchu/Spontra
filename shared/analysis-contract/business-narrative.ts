@@ -77,13 +77,19 @@ export type NarrativeFigure =
   | { type: "ladder"; title: string; tracks: Array<{ metricKey: string; role: "actual" | "contracted" | "target" }>; meaning: string };
 
 /**
- * What the stage leads with for a business or the company, and what sits under it. The model
- * judges whether the statement flow is the point (then the Sankey leads), or the build-out, the
- * make-up or the financing is; `reason` says why in one sentence, shown beside the choice. The
- * reader can still switch, and a panel the data cannot draw falls back to the flow.
+ * How the stage is composed for a business, the company or a finding: an ordered list of panels
+ * from a fixed catalog, the first on the main slot and the rest stacked beneath. The model judges
+ * what the subject needs: the statement flow when revenue and its cost structure are the point, a
+ * figure when the build-out or the make-up is, a section of the dossier when the story is in the
+ * milestones, the backers, the comparison or the checks. `reason` says why in one sentence and is
+ * shown beside the composition. The reader can still switch; a panel the data cannot draw is skipped.
  */
-export type PanelRef = { kind: "flow" } | { kind: "cash" } | { kind: "balance" } | { kind: "revenue_trend" } | { kind: "figure"; index: number };
-export type PanelPlan = { lead: PanelRef; below: PanelRef | null; reason: string };
+export type PanelRef =
+  | { kind: "flow" } | { kind: "cash" } | { kind: "balance" }
+  | { kind: "revenue_trend" } | { kind: "metric"; key: string }
+  | { kind: "figure"; index: number }
+  | { kind: "timeline" } | { kind: "parties" } | { kind: "comparison" } | { kind: "checks" } | { kind: "chain" };
+export type PanelPlan = { panels: PanelRef[]; reason: string };
 
 /** One link of the thesis: the premise, how far the material bears it out, and what would break it. */
 export type NarrativeLink = { id: string; premise: string; status: NarrativeStatus; evidence: ExplainerClaim[]; failure: string; checkIds: string[] };

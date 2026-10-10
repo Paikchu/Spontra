@@ -25,12 +25,12 @@ import type { FindingData, FindingFundamentals } from "@/shared/analysis-runtime
 import { anchorNodeNames, anchorPoolKeys, badgesByNode, findingData, verifiedFindings } from "./findings-model";
 import { FindingsList } from "./FindingsList";
 import { DossierTabs } from "./DossierTabs";
-import { BusinessNarrativeDossier, CompanyDossier, StagePill } from "./NarrativeDossier";
+import { BusinessNarrativeDossier, CompanyDossier, SectionPanel, StagePill } from "./NarrativeDossier";
 import { resolveAnchor, rpoSeriesFromCapital } from "./narrative-model";
-import { BusinessFigures } from "./BusinessFigures";
+import { BusinessFigures, FigureCard } from "./BusinessFigures";
 import type { OperatingMetricsPublication } from "@/shared/analysis-contract/operating-metrics";
 import type { PlannedFigures } from "@/shared/analysis-contract/business-figures";
-import type { NarrativeFigure, PanelPlan } from "@/shared/analysis-contract/business-narrative";
+import type { NarrativeFigure, PanelPlan, PanelRef } from "@/shared/analysis-contract/business-narrative";
 import { STAGE_LABEL, type BusinessNarrative, type CompanyNarrative } from "@/shared/analysis-contract/business-narrative";
 import type { FindingRef } from "@/shared/analysis-contract/findings";
 import { LensPanel } from "./LensPanel";
@@ -233,11 +233,16 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
     const own = picked ? narrativeOf.get(picked.id)?.layout : narrative?.layout;
     return own ?? (picked ? planned?.layouts?.businesses.find(b => b.nodeId === picked.id)?.layout : planned?.layouts?.company) ?? null;
   }, [selected, items, narrativeOf, narrative, planned]);
-  const panelMetric = (ref: PanelPlan["below"]) => !ref ? null : ref.kind === "figure" ? `figure:${ref.index}` : ref.kind === "revenue_trend" ? REVENUE_METRIC : null;
+  const panelMetric = (ref: PanelRef | null | undefined) => !ref ? null : ref.kind === "figure" ? `figure:${ref.index}` : ref.kind === "revenue_trend" ? REVENUE_METRIC : ref.kind === "metric" ? ref.key : null;
   // The lower panel is the reader's: revenue by business, any SEC series, or one of the figures; `?metric=figure:<n>` keeps it.
   const figureKey = (i: number) => `figure:${i}`;
-  const effectiveMetricKey = metricPicked ? metricKey : panelMetric(plan?.below ?? null) ?? metricKey;
+  const effectiveMetricKey = metricPicked ? metricKey : panelMetric(plan?.panels[1]) ?? metricKey;
   const shownFigure = useMemo(() => { const m = /^figure:(\d+)$/.exec(effectiveMetricKey); return m ? figures[Number(m[1])] ?? null : null; }, [effectiveMetricKey, figures]);
+  /** A fundamentals series, or the capital-built RPO series, by key. */
+  function metricFor(key: string) {
+    const series = fundamentals?.series.find(s => s.metricKey === key) ?? (key === "remaining_performance_obligation" ? rpoSeriesFromCapital(capital) : null);
+    return series ? metricTrend(series) : null;
+  }
   const pickerGroups = useMemo(() => {
     const base = shownMetric && shownMetric.key !== REVENUE_METRIC && !metricGroups.some(g => g.options.some(o => o.key === shownMetric.key))
       ? [...metricGroups, { group: "业务锚点", options: [{ key: shownMetric.key, label: shownMetric.label }] }] : metricGroups;
@@ -292,12 +297,13 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
   const [chosenView, setChosenView] = useState<View>("profit");
   const [viewPicked, setViewPicked] = useState(false);
   const setView = (next: View) => { setChosenView(next); setViewPicked(true); };
-  const plannedView: View = plan?.lead.kind === "figure" ? "figures" : plan?.lead.kind === "cash" ? "cash" : plan?.lead.kind === "balance" ? "balance" : "profit";
+  // The lead panel: the composition's first entry, or the first figure when the reader chose 业务图 themselves.
+  const lead: PanelRef | null = viewPicked ? (chosenView === "figures" ? { kind: "figure", index: 0 } : null) : plan?.panels[0] ?? null;
+  const plannedView: View = !lead || lead.kind === "flow" ? "profit" : lead.kind === "cash" ? "cash" : lead.kind === "balance" ? "balance" : "figures";
   const wantedView = viewPicked ? chosenView : plannedView;
   const cash = funding?.cashFlow ?? funding?.yearToDate ?? null;
-  const view: View = wantedView === "cash" && cash ? "cash" : wantedView === "balance" && funding?.balanceSheet ? "balance" : wantedView === "figures" && figures.length ? "figures" : "profit";
-  // The lead figure comes first in the 业务图 view; the rest follow in the planner's order.
-  const stagedFigures = useMemo(() => plan?.lead.kind === "figure" && figures[plan.lead.index] ? [figures[plan.lead.index], ...figures.filter((_, i) => i !== (plan.lead as { index: number }).index)] : figures, [plan, figures]);
+  const leadDrawable = lead ? lead.kind === "figure" ? !!figures[lead.index] : lead.kind === "metric" ? !!metricFor(lead.key) : lead.kind === "revenue_trend" ? hasRevenueTrend : lead.kind === "timeline" || lead.kind === "parties" || lead.kind === "comparison" || lead.kind === "checks" || lead.kind === "chain" ? !!narrative : true : false;
+  const view: View = wantedView === "cash" && cash ? "cash" : wantedView === "balance" && funding?.balanceSheet ? "balance" : wantedView === "figures" && lead && leadDrawable ? "figures" : "profit";
   // A finding in focus brings the stage to its report and statement view, and clears any business pick so the whole statement reads.
   useEffect(() => {
     if (!focused) return;
@@ -414,6 +420,24 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
   const itemChange = current && quarter && !current.synthetic ? compareRevenueNode(quarter, previous, current.key).label : "不可比";
   const parent = current?.parent ? items.find(item => item.key === current.parent) : null;
 
+  /** One panel of the composition, wherever it sits; the flow, cash and balance only ever lead, so they draw nothing here. */
+  const renderPanel = (panel: PanelRef, picker?: ReactNode): ReactNode => {
+    const told = current ? narrativeOf.get(current.id) ?? null : null;
+    if (panel.kind === "figure") return figures[panel.index] ? <FigureCard figure={figures[panel.index]} metrics={metrics} /> : null;
+    if (panel.kind === "metric") { const t = metricFor(panel.key); return t ? <MetricTrendPanel trend={t} currentPeriod={quarter?.periodEnd ?? null} periods={new Set(quarters.map(q => q.periodEnd))} onPickPeriod={end => setPeriod(quarters.find(q => q.periodEnd === end)?.id ?? null)} picker={picker ?? null} /> : null; }
+    if (panel.kind === "revenue_trend") return hasRevenueTrend ? <TrendPanel history={revenueHistory!} items={items.filter(i => !i.synthetic)} selected={current?.synthetic ? null : current} currentPeriod={quarter?.periodEnd ?? null}
+      periods={new Set(quarters.map(q => q.periodEnd))} onPickPeriod={end => setPeriod(quarters.find(q => q.periodEnd === end)?.id ?? null)} hue={hue} guidance={guidance} picker={picker ?? null} /> : null;
+    if (panel.kind === "timeline" || panel.kind === "parties" || panel.kind === "comparison" || panel.kind === "checks" || panel.kind === "chain") return narrative ? <SectionPanel kind={panel.kind} business={told} narrative={narrative} data={data} periods={narrativePeriods} /> : null;
+    return null;
+  };
+  const dossierAside = current
+    ? <Dossier item={current} parent={parent ?? null} sources={quarter?.sources.length ? quarter.sources : business?.sources ?? []} explainer={explainer} narrative={narrative} data={data} periods={narrativePeriods} />
+    : narrative ? <CompanyDossier narrative={narrative} data={data} periods={narrativePeriods} onPick={id => pickBusiness(id)} /> : null;
+  // Below the main slot: the reader's pick when they made one, else the composition's remaining panels, else the revenue trend.
+  const lowerPanels: PanelRef[] = metricPicked || !plan ? [] : plan.panels.slice(1);
+  const findingPlan = focused ? planned?.layouts?.findings?.find(f => f.findingId === focused.id)?.layout ?? null : null;
+  const lowerPicker = <MetricPicker value={effectiveMetricKey} groups={pickerGroups} revenue={hasRevenueTrend} onChange={chooseMetric} />;
+
   return <div className="map">
     <Rail ticker={ticker} actions={tools} label="公司业务">
       <div className="rail-list" role="listbox" aria-label="选择业务以在图中高亮" ref={listRef} onKeyDown={onListKey} onMouseLeave={() => setPreview(null)} data-drawer={drawer ? "open" : "closed"}>
@@ -485,9 +509,12 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
       </header>
 
       <div className="chart">
-        {view === "figures" ? <BusinessFigures figures={stagedFigures} metrics={metrics} aside={current
-            ? <Dossier item={current} parent={parent ?? null} sources={quarter?.sources.length ? quarter.sources : business?.sources ?? []} explainer={explainer} narrative={narrative} data={data} periods={narrativePeriods} />
-            : narrative ? <CompanyDossier narrative={narrative} data={data} periods={narrativePeriods} onPick={id => pickBusiness(id)} /> : null} />
+        {view === "figures" && lead ? (lead.kind === "figure" && viewPicked
+            ? <BusinessFigures figures={figures} metrics={metrics} aside={dossierAside} />
+            : <div className="figures" data-aside={dossierAside ? "" : undefined}>
+              {dossierAside && <aside className="fc-business-details figures-aside" aria-label="业务档案"><div className="fc-business-scroll" tabIndex={0}>{dossierAside}</div></aside>}
+              <div className="figures-canvas">{renderPanel(lead)}</div>
+            </div>)
           : view !== "profit" && funding ? <CapitalChart view={view} funding={funding} ticker={ticker} spotlight={poolSpotlight} />
           : !quarter ? <div className="empty"><h2>季度财务未披露</h2><p>需要同币种、同口径的三个月数据才能绘制流向；不会用示例数据替代。</p></div>
           : proportional && layout ? <FlowChart graph={graph!} copy={copy} money={v => money(v)} colorOf={colorOf} active={active} revealKey={quarter.id} productBusiness={current && !current.synthetic ? "segment:" + current.flowKey : null} businessDetails={<Dossier item={current} parent={parent ?? null} sources={quarter?.sources.length ? quarter.sources : business?.sources ?? []} explainer={explainer} narrative={narrative} data={data} periods={narrativePeriods} />}
@@ -517,8 +544,12 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
         {split && pair && <LensPanel finding={pair} data={data} sources={findings.sources} nodeColor={nodeColor} pair={null} compact
           story={false} index={-1} count={verified.length} onPair={() => {}} onStep={() => {}} onClose={() => setSplit(false)} onFocusThis={() => setFocusId(pair.id)} />}
       </div>
+      : lowerPanels.length ? <div className="stage-panels" aria-label="按叙事排布的面板">
+        <div className="stage-panels-head"><span>{current?.name ?? narrative?.companyName ?? ticker} · 按叙事排布</span>{lowerPicker}</div>
+        {lowerPanels.map((panel, i) => <div key={i} className="stage-panel">{renderPanel(panel)}</div>)}
+      </div>
       : shownFigure ? <section className="trend trend--figure" aria-label={shownFigure.title}>
-        <div className="trend-heading"><h2>{current?.name ?? narrative?.companyName ?? ticker}</h2><MetricPicker value={effectiveMetricKey} groups={pickerGroups} revenue={hasRevenueTrend} onChange={chooseMetric} /></div>
+        <div className="trend-heading"><h2>{current?.name ?? narrative?.companyName ?? ticker}</h2>{lowerPicker}</div>
         <BusinessFigures figures={[shownFigure]} metrics={metrics} aside={null} />
       </section>
       : shownMetric ? <MetricTrendPanel trend={shownMetric} currentPeriod={quarter?.periodEnd ?? null} periods={new Set(quarters.map(q => q.periodEnd))}
@@ -527,6 +558,10 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
       : hasRevenueTrend && <TrendPanel history={revenueHistory!} items={items.filter(i => !i.synthetic)} selected={current?.synthetic ? null : current} currentPeriod={quarter?.periodEnd ?? null}
         periods={new Set(quarters.map(q => q.periodEnd))} onPickPeriod={end => setPeriod(quarters.find(q => q.periodEnd === end)?.id ?? null)} hue={hue} guidance={guidance}
         picker={<MetricPicker value={REVENUE_METRIC} groups={pickerGroups} revenue onChange={chooseMetric} />} />}
+      {focused && findingPlan && <div className="stage-panels" aria-label="要点的核验面板">
+        <div className="stage-panels-head"><span>{focused.title} · 核验</span><em>{findingPlan.reason}</em></div>
+        {findingPlan.panels.filter(p => p.kind !== "flow" && p.kind !== "cash" && p.kind !== "balance").map((panel, i) => <div key={i} className="stage-panel">{renderPanel(panel)}</div>)}
+      </div>}
 
       <footer className="stage-foot">
         {view === "figures" ? <span className="legend-note">业务图由叙事层的拆解与运营指标生成；阶梯图数值均引自公司原文</span>

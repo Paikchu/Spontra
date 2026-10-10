@@ -12,6 +12,8 @@ import { sha256 } from "../company-analysis/api.ts";
 import { assertTrackedTicker, requireDb, trackedTickersFor } from "../core.ts";
 import { narrativeCacheKey } from "../narrative/read.ts";
 import { operatingMetricsCacheKey } from "../operating-metrics/read.ts";
+import { findingsCacheKey } from "../findings/read.ts";
+import { readFindingsPublication } from "../../../../shared/analysis-runtime/findings.ts";
 import { callWorkerSecModel, type SecPipelineEnv } from "../operations.ts";
 import { AnalysisRequestError } from "../read-api/contract-support/errors.ts";
 import { D1SecRepository } from "../sec/d1.ts";
@@ -24,15 +26,16 @@ export type FiguresWorkflowParams = { ticker: string; fingerprint: string };
 /** What a plan is made from; the plan is re-made when any of it moves. */
 async function readInput(env: SecPipelineEnv, ticker: string) {
   const repository = new D1SecRepository(requireDb(env));
-  const [explainerRow, metricsRow, narrativeRow] = await Promise.all([
-    repository.getCache<unknown>(businessExplainerCacheKey(ticker)), repository.getCache<unknown>(operatingMetricsCacheKey(ticker)), repository.getCache<unknown>(narrativeCacheKey(ticker)),
+  const [explainerRow, metricsRow, narrativeRow, findingsRow] = await Promise.all([
+    repository.getCache<unknown>(businessExplainerCacheKey(ticker)), repository.getCache<unknown>(operatingMetricsCacheKey(ticker)), repository.getCache<unknown>(narrativeCacheKey(ticker)), repository.getCache<unknown>(findingsCacheKey(ticker)),
   ]);
   const explainer = explainerRow ? readBusinessExplainer(explainerRow.payload, ticker) : null;
   if (!explainer) return null;
   const metrics = metricsRow ? readOperatingMetrics(metricsRow.payload, ticker) : null;
   const narrative = narrativeRow ? readCompanyNarrative(narrativeRow.payload, ticker) : null;
-  const fingerprint = await sha256(JSON.stringify({ version: FIGURES_PLANNER_VERSION, ticker, explainer: explainer.fingerprint, generatedAt: explainer.generatedAt, metrics: metrics?.generatedAt ?? null, narrative: narrative?.generatedAt ?? null }));
-  return { explainer, metrics, narrative, fingerprint };
+  const findings = findingsRow ? readFindingsPublication(findingsRow.payload, ticker) : null;
+  const fingerprint = await sha256(JSON.stringify({ version: FIGURES_PLANNER_VERSION, ticker, explainer: explainer.fingerprint, generatedAt: explainer.generatedAt, metrics: metrics?.generatedAt ?? null, narrative: narrative?.generatedAt ?? null, findings: findings?.generatedAt ?? null }));
+  return { explainer, metrics, narrative, findings, fingerprint };
 }
 
 /** Starts at most one plan per tick, for a company whose explainer, metrics or narrative moved since its last plan. */
@@ -68,7 +71,7 @@ export async function executeFiguresWorkflow(params: FiguresWorkflowParams, step
   if (!input) return { status: "empty" };
   if (input.fingerprint !== params.fingerprint) return { status: "superseded" };
   const plan = await step.do("figures-plan", () => planFigures({
-    ticker: params.ticker, companyName: findSecurity(params.ticker)?.name ?? input.explainer.companyName, explainer: input.explainer, metrics: input.metrics, narrative: input.narrative,
+    ticker: params.ticker, companyName: findSecurity(params.ticker)?.name ?? input.explainer.companyName, explainer: input.explainer, metrics: input.metrics, narrative: input.narrative, findings: input.findings,
     fingerprint: params.fingerprint, modelVersion, now,
   }, (stage, system, payload) => callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, 5 * 60_000, true, { maxTokens: FIGURES_MAX_OUTPUT_TOKENS })));
   const names = { company: companyNames(input.explainer, input.narrative), business: (nodeId: string) => businessNames(input.explainer, input.narrative, nodeId) };

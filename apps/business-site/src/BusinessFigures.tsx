@@ -12,9 +12,14 @@ export function BusinessFigures({ figures, metrics, aside }: { figures: Narrativ
   return <div className="figures" data-aside={aside ? "" : undefined}>
     {aside && <aside className="fc-business-details figures-aside" aria-label="业务档案"><div className="fc-business-scroll" tabIndex={0}>{aside}</div></aside>}
     <div className="figures-canvas">
-      {figures.map((f, i) => f.type === "stack" ? <StackFigure key={i} figure={f} /> : <LadderFigure key={i} figure={f} metrics={metrics} />)}
+      {figures.map((f, i) => <FigureCard key={i} figure={f} metrics={metrics} />)}
     </div>
   </div>;
+}
+
+/** One figure as a card, wherever the stage puts it. */
+export function FigureCard({ figure, metrics }: { figure: NarrativeFigure; metrics: OperatingMetricsPublication | null }) {
+  return figure.type === "stack" ? <StackFigure figure={figure} /> : <LadderFigure figure={figure} metrics={metrics} />;
 }
 
 /** Layers read bottom-up: the physical or lowest layer sits at the bottom, the customer-facing one on top. */

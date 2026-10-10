@@ -117,6 +117,41 @@ function Comparison({ comparison, name, cite }: { comparison: NonNullable<Busine
   </div>;
 }
 
+function TimelineList({ milestones, cite }: { milestones: BusinessNarrative["milestones"]; cite: (c: ExplainerClaim) => ReactNode }) {
+  if (!milestones.length) return <Empty>材料未披露里程碑。</Empty>;
+  return <ol className="narrative-timeline">{[...milestones].sort((a, b) => a.date.localeCompare(b.date)).map(m => <li key={m.id} data-state={m.state}>
+    <time dateTime={m.date}>{milestoneDate(m.date)}</time>
+    <span className="narrative-milestone"><b>{m.label}</b><small>{MILESTONE_LABEL[m.state]}{m.state === "delayed" && m.originalDate ? ` · 原定 ${milestoneDate(m.originalDate)}` : ""}</small><span className="dossier-prose">{m.claim.text}{cite(m.claim)}</span></span>
+  </li>)}</ol>;
+}
+function PartiesList({ parties, cite }: { parties: BusinessNarrative["parties"]; cite: (c: ExplainerClaim) => ReactNode }) {
+  const roles = PARTY_ROLES.map(role => [role, parties.filter(p => p.role === role)] as const).filter(([, list]) => list.length);
+  if (!roles.length) return <Empty>材料未披露出资方或客户。</Empty>;
+  return <div className="narrative-parties">{roles.map(([role, list]) => <section key={role}><h4>{ROLE_LABEL[role]}</h4><ul className="dossier-products">{list.map((p, i) => <li key={i}><b>{p.name}</b>{p.claim.text}{cite(p.claim)}</li>)}</ul></section>)}</div>;
+}
+
+export type SectionKind = "timeline" | "parties" | "comparison" | "checks" | "chain";
+const SECTION_TITLE: Record<SectionKind, string> = { timeline: "进度", parties: "金主与客户", comparison: "对照", checks: "验证点", chain: "叙事链" };
+
+/**
+ * One section of the dossier as a stage panel, where the composition put it: a business's
+ * milestones, backers, comparison, checks or chain, or the company's chain and checks.
+ */
+export function SectionPanel({ kind, business, narrative, data, periods }: { kind: SectionKind; business: BusinessNarrative | null; narrative: CompanyNarrative; data: FindingData; periods: string[] }) {
+  const claims = useMemo(() => business
+    ? [...business.milestones.map(m => m.claim), ...business.parties.map(p => p.claim), ...(business.comparison ? [...business.comparison.self, ...business.comparison.alternatives.flatMap(a => a.cells)].map(c => c.claim) : []), ...business.chain.flatMap(l => l.evidence)]
+    : narrative.chain.flatMap(l => l.evidence), [business, narrative]);
+  const { cite } = useCites(narrative.sources, claims);
+  const index = useMemo(() => checkIndex(narrative), [narrative]);
+  const subject = business?.name ?? narrative.companyName;
+  const body = kind === "timeline" ? (business ? <TimelineList milestones={business.milestones} cite={cite} /> : <Empty>公司层没有里程碑；请选一项业务。</Empty>)
+    : kind === "parties" ? (business ? <PartiesList parties={business.parties} cite={cite} /> : <Empty>公司层没有相关方清单；请选一项业务。</Empty>)
+    : kind === "comparison" ? (business?.comparison ? <Comparison comparison={business.comparison} name={business.name} cite={cite} /> : <Empty>材料没有把这项业务与替代方案作比较。</Empty>)
+    : kind === "checks" ? <Checks checks={business ? [...new Map([...business.checks, ...business.chain.flatMap(l => linkChecks(l, index))].map(c => [c.id, c])).values()] : narrative.checks} data={data} periods={periods} />
+    : <Chain chain={business ? business.chain : narrative.chain} index={index} data={data} periods={periods} cite={cite} />;
+  return <figure className="figure figure--section"><figcaption><b>{subject} · {SECTION_TITLE[kind]}</b></figcaption>{body}</figure>;
+}
+
 /**
  * One business's dossier: stage and verdict up top, then the fixed reading order: what it can do,
  * how far it has got, who pays and who buys, how it compares, where it shows in the statements, and
@@ -132,7 +167,6 @@ export function BusinessNarrativeDossier({ business, narrative, data, periods, p
   const { cited, cite } = useCites(narrative.sources, claims);
   const index = useMemo(() => checkIndex(narrative), [narrative]);
   const ties = useMemo(() => business.ties.map(t => ({ tie: t, resolved: resolveTie(data, t, periods) })), [business, data, periods]);
-  const roles = PARTY_ROLES.map(role => [role, business.parties.filter(p => p.role === role)] as const).filter(([, list]) => list.length);
   const checks = useMemo(() => { const own = business.checks; const named = business.chain.flatMap(l => linkChecks(l, index)); return [...new Map([...own, ...named].map(c => [c.id, c])).values()]; }, [business, index]);
   return <section className="dossier dossier--narrative" aria-label={`${business.name} 业务档案`}>
     <h3>{parentName ? `${parentName} / ` : ""}{business.name}<StagePill stage={business.stage} /></h3>
@@ -140,11 +174,8 @@ export function BusinessNarrativeDossier({ business, narrative, data, periods, p
     <p className="narrative-verdict"><b>判断</b>{business.verdict}</p>
     <DossierTabs label={business.name} sections={[
       ["能做什么", business.capabilities.length ? <ul key="caps" className="dossier-products">{business.capabilities.map((c, i) => <li key={i}>{c.label && <b>{c.label}</b>}{c.claim.text}{cite(c.claim)}</li>)}</ul> : <Empty key="caps">材料未说明产品能力。</Empty>],
-      ["进度", business.milestones.length ? <ol key="ms" className="narrative-timeline">{[...business.milestones].sort((a, b) => a.date.localeCompare(b.date)).map(m => <li key={m.id} data-state={m.state}>
-        <time dateTime={m.date}>{milestoneDate(m.date)}</time>
-        <span className="narrative-milestone"><b>{m.label}</b><small>{MILESTONE_LABEL[m.state]}{m.state === "delayed" && m.originalDate ? ` · 原定 ${milestoneDate(m.originalDate)}` : ""}</small><span className="dossier-prose">{m.claim.text}{cite(m.claim)}</span></span>
-      </li>)}</ol> : <Empty key="ms">材料未披露里程碑。</Empty>],
-      ["金主与客户", roles.length ? <div key="parties" className="narrative-parties">{roles.map(([role, list]) => <section key={role}><h4>{ROLE_LABEL[role]}</h4><ul className="dossier-products">{list.map((p, i) => <li key={i}><b>{p.name}</b>{p.claim.text}{cite(p.claim)}</li>)}</ul></section>)}</div> : <Empty key="parties">材料未披露出资方或客户。</Empty>],
+      ["进度", <TimelineList key="ms" milestones={business.milestones} cite={cite} />],
+      ["金主与客户", <PartiesList key="parties" parties={business.parties} cite={cite} />],
       ["对照", business.comparison ? <Comparison key="cmp" comparison={business.comparison} name={business.name} cite={cite} /> : <Empty key="cmp">材料没有把这项业务与替代方案作比较。</Empty>],
       ["财报体现", ties.length ? <ul key="ties" className="narrative-ties">{ties.map(({ tie, resolved }, i) => <li key={i}>
         {resolved ? <><span className="narrative-tie-label">{resolved.label}</span><Figure r={resolved} /></> : <span className="narrative-tie-label">{tie.label ?? "指标"}<small className="narrative-pending">数字待披露</small></span>}

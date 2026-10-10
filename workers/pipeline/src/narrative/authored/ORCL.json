@@ -400,13 +400,15 @@
       ],
       "checks": [],
       "layout": {
-        "lead": {
-          "kind": "flow"
-        },
-        "below": {
-          "kind": "revenue_trend"
-        },
-        "reason": "云服务是收入的一半以上，先在流向图里看它占多大、带来多少利润。"
+        "panels": [
+          {
+            "kind": "flow"
+          },
+          {
+            "kind": "revenue_trend"
+          }
+        ],
+        "reason": "云服务是收入的一半以上，先在流向图里看它占多大、带来多少利润，再看季度走势。"
       }
     },
     {
@@ -935,14 +937,22 @@
         }
       ],
       "layout": {
-        "lead": {
-          "kind": "cash"
-        },
-        "below": {
-          "kind": "figure",
-          "index": 0
-        },
-        "reason": "这项业务的故事在现金：每季借来的钱买 GPU，经营现金流填不上资本开支，先看现金流再看它由什么组成。"
+        "panels": [
+          {
+            "kind": "flow"
+          },
+          {
+            "kind": "revenue_trend"
+          },
+          {
+            "kind": "figure",
+            "index": 0
+          },
+          {
+            "kind": "timeline"
+          }
+        ],
+        "reason": "它在报表里有自己的收入：先在流向图里看它占多大、增速多快，再看它由什么组成和合约、融资的时间线。"
       }
     },
     {
@@ -1085,7 +1095,18 @@
           ]
         }
       ],
-      "checks": []
+      "checks": [],
+      "layout": {
+        "panels": [
+          {
+            "kind": "flow"
+          },
+          {
+            "kind": "revenue_trend"
+          }
+        ],
+        "reason": "收缩中的业务，看它在流向里还占多少和下滑的速度就够了。"
+      }
     },
     {
       "nodeId": "HardwareRevenues",
@@ -1184,12 +1205,18 @@
     }
   ],
   "layout": {
-    "lead": {
-      "kind": "flow"
-    },
-    "below": {
-      "kind": "revenue_trend"
-    },
-    "reason": "四项业务的收入和利润结构是理解 Oracle 的起点，云在流向图里已经过半，先看它。"
+    "panels": [
+      {
+        "kind": "flow"
+      },
+      {
+        "kind": "revenue_trend"
+      },
+      {
+        "kind": "figure",
+        "index": 0
+      }
+    ],
+    "reason": "四项业务的收入和利润结构是理解 Oracle 的起点，云在流向图里已经过半；再看各业务的季度走势和它们怎么叠。"
   }
 }

@@ -16,8 +16,8 @@ export type PlannedFigures = {
   fingerprint: string;
   company: NarrativeFigure[];
   businesses: Array<{ nodeId: string; figures: NarrativeFigure[] }>;
-  /** What leads the stage, for the company and for each business the planner judged; absent means the flow. */
-  layouts?: { company: PanelPlan | null; businesses: Array<{ nodeId: string; layout: PanelPlan }> };
+  /** How the stage is composed for the company, each business and each finding the planner judged; absent means the flow. */
+  layouts?: { company: PanelPlan | null; businesses: Array<{ nodeId: string; layout: PanelPlan }>; findings?: Array<{ findingId: string; layout: PanelPlan }> };
 };
 
 export type PlannedFiguresResponse = {
