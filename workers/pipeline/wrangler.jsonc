@@ -62,11 +62,6 @@
       "concurrency": {
         "limit": 2
       }
-    },
-    {
-      "name": "earning-report-analysis-company-analysis-backfill",
-      "binding": "COMPANY_ANALYSIS_BACKFILL_WORKFLOW",
-      "class_name": "CompanyAnalysisBackfillWorkflow"
     }
   ],
   "r2_buckets": [

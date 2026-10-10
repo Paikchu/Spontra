@@ -25,7 +25,6 @@ interface __BaseEnv_Env {
 	SEC_ANALYSIS_WORKFLOW: Workflow<Parameters<import("./src/index").SecAnalysisWorkflow['run']>[0]['payload']>;
 	SEC_MEMORY_WORKFLOW: Workflow<Parameters<import("./src/index").SecMemoryWorkflow['run']>[0]['payload']>;
 	COMPANY_ANALYSIS_WORKFLOW: Workflow<Parameters<import("./src/index").CompanyAnalysisWorkflow['run']>[0]['payload']>;
-	COMPANY_ANALYSIS_BACKFILL_WORKFLOW: Workflow<Parameters<import("./src/index").CompanyAnalysisBackfillWorkflow['run']>[0]['payload']>;
 }
 declare namespace Cloudflare {
 	interface GlobalProps {
