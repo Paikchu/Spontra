@@ -40,6 +40,8 @@ const business = z.object({
   milestones: z.array(milestone).max(24), parties: z.array(party).max(16), comparison: comparison.nullable().optional(),
   ties: z.array(tie).max(8), chain: z.array(link).max(8), checks: z.array(check).max(8), figures: z.array(figureSchema).max(4).optional(), layout: panelPlanSchema.nullable().optional(),
 });
+/** The item schemas, for a writer that keeps the valid items of a draft and sends the rest back for repair. */
+export const narrativeSchemas = { claim, milestone, party, cell, comparison, tie, check, link, panelPlan: panelPlanSchema, stage: z.enum(NARRATIVE_STAGES), status, verdict: prose(90), premise: prose(80), figureText: FIGURE } as const;
 export const companyNarrativeSchema = z.object({
   schemaVersion: z.literal("business-narrative.v1"),
   ticker: z.string().regex(/^[A-Z][A-Z0-9.-]{0,11}$/),

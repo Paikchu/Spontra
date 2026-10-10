@@ -1,6 +1,6 @@
 import type { ExplainerSource } from "../../../../shared/analysis-contract/business-explainer.ts";
 import { earningsEvents } from "../guidance/workflow.ts";
-import { streamSecSubmissionParts, type SecFilingFeed } from "../sec/sec.ts";
+import { htmlToSecText, streamSecSubmissionParts, type SecFilingFeed } from "../sec/sec.ts";
 
 /**
  * What the narrative writer reads: the business section of the latest annual report, the latest
@@ -52,9 +52,11 @@ export async function collectNarrativeMaterials(feed: SecFilingFeed, companyName
       out.push({ kind, text: clip(text, CAP[kind]), source: { id: `f-${filing.accessionNumber}`, title: `${companyName} ${filing.form} ${filing.filingDate}`, url: filing.documentUrl, kind: "sec", publishedAt: filing.filingDate } });
     } catch { /* One unreadable filing must not stop the others. */ }
   };
-  const main = (form: string) => (parts: Awaited<ReturnType<typeof streamSecSubmissionParts>>) => parts.find(p => p.type.replace(/\/A$/, "") === form.replace(/\/A$/, ""))?.text ?? null;
+  /** Filed documents are inline XBRL or HTML; the exhibits of a press release usually are too. Text with markup is flattened the way the SEC reader does. */
+  const plain = (text: string | null | undefined) => text ? (/<[a-z?][\s\S]*>/i.test(text.slice(0, 2000)) ? htmlToSecText(text) : text) : null;
+  const main = (form: string) => (parts: Awaited<ReturnType<typeof streamSecSubmissionParts>>) => plain(parts.find(p => p.type.replace(/\/A$/, "") === form.replace(/\/A$/, ""))?.text);
   if (annual) await read(annual, "annual_report", parts => { const t = main(annual.form)(parts); return t ? businessSection(t) : null; });
-  if (release) await read(release, "earnings_release", parts => parts.filter(p => /^EX-99/i.test(p.type)).map(p => p.text).join("\n\n") || null);
+  if (release) await read(release, "earnings_release", parts => parts.filter(p => /^EX-99/i.test(p.type) && !/^begin \d{3} /m.test(p.text.slice(0, 200))).map(p => plain(p.text) ?? "").join("\n\n") || null);
   if (quarterly) await read(quarterly, "quarterly_report", parts => { const t = main("10-Q")(parts); if (!t) return null; const i = t.search(/\bItem\s+2\.?\s+Management/i); return i >= 0 ? t.slice(i) : t; });
   for (const filing of currents) await read(filing, "current_report", parts => { const t = main(filing.form)(parts); return t ? currentReportBody(t) : null; });
   return out;

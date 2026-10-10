@@ -3,12 +3,12 @@ import type { BusinessNarrative, CompanyNarrative, NarrativeCheck, NarrativeLink
 import type { FindingsPublication } from "../../../../shared/analysis-contract/findings.ts";
 import type { GuidancePublication } from "../../../../shared/analysis-contract/guidance.ts";
 import type { OperatingMetricsPublication } from "../../../../shared/analysis-contract/operating-metrics.ts";
-import { readCompanyNarrative } from "../../../../shared/analysis-runtime/business-narrative.ts";
+import { narrativeSchemas, readCompanyNarrative } from "../../../../shared/analysis-runtime/business-narrative.ts";
 import { materialNumbers, unsupportedNumbers } from "../../../../shared/analysis-runtime/narrative-verify.ts";
 import type { NarrativeMaterial } from "./materials.ts";
 
 /** Changing the prompts or the harness rewrites every company once. */
-export const NARRATIVE_WRITER_VERSION = "narrative-writer.v1";
+export const NARRATIVE_WRITER_VERSION = "narrative-writer.v2";
 
 export type NarrativeModel = (stage: string, system: string, payload: unknown) => Promise<Record<string, unknown>>;
 
@@ -43,7 +43,7 @@ export const BUSINESS_PROMPT = `${RULES}
  "ties":[{"ref":{"nodeId":""},"span":"quarter","compare":"yoy","label":"可选","meaning":"这个数字对这项业务意味着什么，不含数字"}],
  "chain":[{"id":"","premise":"不含数字","status":"in_progress","evidence":[{"text":"带数字","sourceIds":[]}],"failure":"不含数字","checkIds":[]}],
  "checks":[]}
-要求：capabilities 3–6 项；milestones 按时间给已完成、计划中、延期的事件，8–16 条，没有材料就少写；parties 按角色给出，最多 10 条；comparison 的 self 和每个 alternative 的 cells 长度都等于 dimensions 长度，评级只取自材料，材料没比较的格子写 unknown 并说明；ties 2–6 条，只用这项业务有收入时才引用它的 nodeId；chain 2–4 环。`;
+要求：capabilities 3–6 项；milestones 只收商业与经营事件：合同与客户承诺、产品或产能上线、收购、融资与大额发债、监管许可、CEO/CFO 更替，不收例行业绩发布、一般人事变动和年报本身，按时间给已完成、计划中、延期的事件，6–14 条，没有材料就少写；parties 按角色给出，最多 10 条；comparison 的 self 和每个 alternative 的 cells 长度都等于 dimensions 长度，评级只取自材料，材料没比较的格子写 unknown 并说明；ties 2–6 条，只用这项业务有收入时才引用它的 nodeId；chain 2–4 环。`;
 
 /** The company-level draft the model returns, parsed loosely; the harness decides what survives. */
 type Draft = Record<string, unknown>;
@@ -71,7 +71,8 @@ function guidanceIds(guidance: GuidancePublication | null) {
  * no cited material states go, and a business left with nothing cited goes. One repair call per
  * subject returns rejected claims for another try; what still fails is left out, never guessed.
  */
-export async function writeNarrative(input: WriterInput, model: NarrativeModel, stage: <T>(name: string, run: () => Promise<T>) => Promise<T>): Promise<CompanyNarrative | null> {
+export async function writeNarrative(input: WriterInput, model: NarrativeModel, stage: <T>(name: string, run: () => Promise<T>) => Promise<T>): Promise<{ narrative: CompanyNarrative | null; issues: string[] }> {
+  const issues: string[] = [];
   const sources = input.materials.map(m => m.source);
   const materials = input.materials.map(m => ({ sourceId: m.source.id, title: m.source.title, kind: m.kind, publishedAt: m.source.publishedAt, text: m.text }));
   const numbers = new Map(input.materials.map(m => [m.source.id, materialNumbers(m.text)]));
@@ -103,23 +104,42 @@ export async function writeNarrative(input: WriterInput, model: NarrativeModel, 
     return "metric" in r || "capital" in r || "fundamental" in r;
   };
 
-  /** Walks a draft, collecting rejected claims with reasons and returning the draft with them removed. */
-  const harness = (draft: Draft, rejected: Array<{ path: string; claim: unknown; issues: string[] }>): Draft => {
+  /**
+   * Walks a draft, collecting rejected claims and items with reasons and returning the draft with them
+   * removed. Each list item is also held to its own schema (dates, label lengths, enums, no numbers in
+   * the prose bound to figures), so one bad item costs itself, never the document.
+   */
+  const harness = (draft: Draft, rejected: Array<{ path: string; claim?: unknown; item?: unknown; issues: string[] }>): Draft => {
     const keep = (path: string, claim: unknown): ExplainerClaim | null => { const issues = claimIssues(claim); if (issues.length) { rejected.push({ path, claim, issues }); return null; } return claim as ExplainerClaim; };
     const list = <T,>(v: unknown): T[] => Array.isArray(v) ? v as T[] : [];
+    const zodIssues = (result: { success: boolean; error?: { issues: Array<{ path: PropertyKey[]; message: string }> } }) => result.success ? [] : (result.error?.issues ?? []).slice(0, 3).map(i => `${i.path.join(".")}: ${i.message}`);
+    const shaped = <T,>(path: string, item: unknown, schema: { safeParse: (v: unknown) => { success: boolean; data?: T; error?: { issues: Array<{ path: PropertyKey[]; message: string }> } } }): T | null => {
+      const result = schema.safeParse(item); const issues = zodIssues(result); if (issues.length) { rejected.push({ path, item, issues }); return null; } return result.data as T;
+    };
     const out: Draft = { ...draft };
+    // Prose bound to figures: wrong length or a number is sent back, not published.
+    for (const key of ["verdict"]) if (typeof out[key] === "string") { const r = narrativeSchemas.verdict.safeParse(out[key]); if (!r.success) { rejected.push({ path: key, item: out[key], issues: zodIssues(r) }); out[key] = null; } }
+    if (out.stage !== undefined && !narrativeSchemas.stage.safeParse(out.stage).success) { rejected.push({ path: "stage", item: out.stage, issues: ["stage is not one of concept, pilot, scaling, established, contracting"] }); out.stage = null; }
     for (const key of ["positioning", "stageClaim", "industry"]) if (key in out) out[key] = keep(key, out[key]);
     out.capabilities = list<{ label: unknown; claim: unknown }>(out.capabilities).flatMap((c, i) => { const claim = keep(`capabilities[${i}]`, c?.claim); return claim ? [{ label: c.label ?? null, claim }] : []; });
-    out.milestones = list<Record<string, unknown>>(out.milestones).flatMap((m, i) => { const claim = keep(`milestones[${i}]`, m?.claim); return claim ? [{ ...m, claim }] : []; });
-    out.parties = list<Record<string, unknown>>(out.parties).flatMap((p, i) => { const claim = keep(`parties[${i}]`, p?.claim); return claim ? [{ ...p, claim }] : []; });
+    out.milestones = list<Record<string, unknown>>(out.milestones).flatMap((m, i) => {
+      const date = typeof m?.date === "string" ? m.date.replace(/\//g, "-").replace(/^(\d{4})-(\d)$/, "$1-0$2").replace(/^(\d{4})-Q([1-4])$/, (_, y, q) => `${y}-${String(Number(q) * 3).padStart(2, "0")}`) : m?.date;
+      const claim = keep(`milestones[${i}]`, m?.claim); if (!claim) return [];
+      const item = shaped(`milestones[${i}]`, { ...m, id: typeof m?.id === "string" && m.id ? m.id : `m${i + 1}`, date, originalDate: m?.originalDate ?? null, claim }, narrativeSchemas.milestone); return item ? [item] : [];
+    });
+    out.parties = list<Record<string, unknown>>(out.parties).flatMap((p, i) => { const claim = keep(`parties[${i}]`, p?.claim); if (!claim) return []; const item = shaped(`parties[${i}]`, { ...p, claim }, narrativeSchemas.party); return item ? [item] : []; });
     const cmp = out.comparison as Record<string, unknown> | null | undefined;
     if (cmp && typeof cmp === "object") {
       const cells = (cs: unknown, path: string) => list<Record<string, unknown>>(cs).map((c, i) => ({ grade: c?.grade, claim: keep(`${path}[${i}]`, c?.claim) ?? { text: "材料未比较。", sourceIds: [sources[0]?.id].filter(Boolean) } }));
       out.comparison = { ...cmp, self: cells(cmp.self, "comparison.self"), alternatives: list<Record<string, unknown>>(cmp.alternatives).map((a, n) => ({ ...a, cells: cells(a?.cells, `comparison.alternatives[${n}]`) })) };
     }
-    out.ties = list<Record<string, unknown>>(out.ties).filter(t => refOk(t?.ref));
-    out.chain = list<Record<string, unknown>>(out.chain).map((l, i) => ({ ...l, evidence: list<unknown>(l?.evidence).flatMap((e, n) => { const c = keep(`chain[${i}].evidence[${n}]`, e); return c ? [c] : []; }) }));
-    out.checks = list<Record<string, unknown>>(out.checks).flatMap(c => { if (c?.ref && !refOk(c.ref)) return []; const claim = c?.claim ? keep(`checks.${String(c.id)}`, c.claim) : null; return [{ ...c, claim }]; });
+    out.ties = list<Record<string, unknown>>(out.ties).flatMap((t, i) => { if (!refOk(t?.ref)) return []; const item = shaped(`ties[${i}]`, t, narrativeSchemas.tie); return item ? [item] : []; });
+    out.chain = list<Record<string, unknown>>(out.chain).flatMap((l, i) => {
+      const evidence = list<unknown>(l?.evidence).flatMap((e, n) => { const c = keep(`chain[${i}].evidence[${n}]`, e); return c ? [c] : []; });
+      const item = shaped(`chain[${i}]`, { ...l, id: typeof l?.id === "string" && l.id ? l.id : `link${i + 1}`, evidence, checkIds: list<unknown>(l?.checkIds).filter(id => typeof id === "string") }, narrativeSchemas.link); return item ? [item] : [];
+    });
+    out.checks = list<Record<string, unknown>>(out.checks).flatMap((c, i) => { if (c?.ref && !refOk(c.ref)) return []; const claim = c?.claim ? keep(`checks[${i}]`, c.claim) : null; const item = shaped(`checks[${i}]`, { ...c, claim }, narrativeSchemas.check); return item ? [item] : []; });
+    if (out.comparison && typeof out.comparison === "object") { const cmp = shaped("comparison", out.comparison, narrativeSchemas.comparison); out.comparison = cmp; }
     if (out.anchor && !refOk((out.anchor as Record<string, unknown>).ref)) out.anchor = null;
     return out;
   };
@@ -129,17 +149,23 @@ export async function writeNarrative(input: WriterInput, model: NarrativeModel, 
     const rejected: Array<{ path: string; claim: unknown; issues: string[] }> = [];
     let draft = harness(first, rejected);
     if (rejected.length) {
-      const repaired = await stage(`repair-${name}`, () => model(`narrative-repair-${name}`, `${system}\n你上一版的部分陈述未通过自动校验（引用了不存在的材料，或数字不是所引材料写出的）。只返回修正后的这些条目，结构与原字段相同：{"repairs":[{"path":"", "claim":{"text":"","sourceIds":[]}}]}；修不好的就不要返回。`, { ...payload, rejected: rejected.slice(0, 24), materials }));
-      const fixes = Array.isArray(repaired.repairs) ? repaired.repairs as Array<{ path: string; claim: unknown }> : [];
+      const repaired = await stage(`repair-${name}`, () => model(`narrative-repair-${name}`, `${system}\n你上一版的部分内容未通过自动校验，原因列在 rejected 里（引用了不存在的材料、数字不是所引材料写出的、日期格式不对、字数超限、绑定数字的文字里出现了数字、枚举值不对）。只返回修正后的这些条目：{"repairs":[{"path":"与 rejected 里相同的 path","claim":{"text":"","sourceIds":[]} 或 "item":{...完整条目...} 或 "text":"仅文字字段"}]}；修不好的就不要返回。`, { ...payload, rejected: rejected.slice(0, 24), materials }));
+      const fixes = Array.isArray(repaired.repairs) ? repaired.repairs as Array<{ path: string; claim?: unknown; item?: unknown; text?: unknown }> : [];
       const again: typeof rejected = [];
+      const listOf = (path: string) => /^(milestones|parties|capabilities|ties|chain|checks)\[/.exec(path)?.[1];
       for (const fix of fixes) {
+        if (fix.text !== undefined && ["verdict"].includes(fix.path)) { draft[fix.path] = fix.text; continue; }
+        if (fix.path === "stage" && fix.text !== undefined) { draft.stage = fix.text; continue; }
+        const key = listOf(fix.path);
+        if (key && fix.item && typeof fix.item === "object") { (draft[key] as unknown[] | undefined)?.push(fix.item); continue; }
         if (claimIssues(fix.claim).length) continue;
         const claim = fix.claim as ExplainerClaim;
-        // A repaired top-level claim slots back; repaired list entries are appended to their list with the model's claim only.
         if (["positioning", "stageClaim", "industry"].includes(fix.path) && !draft[fix.path]) draft[fix.path] = claim;
         else if (/^chain\[(\d+)\]\.evidence/.test(fix.path)) { const i = Number(/^chain\[(\d+)\]/.exec(fix.path)![1]); const chain = draft.chain as Array<{ evidence: ExplainerClaim[] }>; if (chain[i]) chain[i].evidence.push(claim); }
+        else if (key && fix.claim) (draft[key] as unknown[] | undefined)?.push({ claim: fix.claim });
       }
       draft = harness(draft, again);
+      issues.push(...again.map(r => `${name}: ${r.path}: ${r.issues.join("; ")}`));
     }
     return draft;
   };
@@ -158,9 +184,11 @@ export async function writeNarrative(input: WriterInput, model: NarrativeModel, 
     schemaVersion: "business-narrative.v1", ticker: input.ticker, companyName: input.companyName, periodEnd: input.periodEnd, generatedAt: input.now, model: input.modelVersion, fingerprint: input.fingerprint,
     positioning: company.positioning, stage: company.stage, stageClaim: company.stageClaim, verdict: company.verdict, industry: company.industry,
     chain: (company.chain as NarrativeLink[] | undefined) ?? [], checks: (company.checks as NarrativeCheck[] | undefined) ?? [],
-    businesses: businesses.map(b => ({ parentNodeId: null, comparison: null, anchor: null, capabilities: [], milestones: [], parties: [], ties: [], chain: [], checks: [], ...b })) as unknown as BusinessNarrative[],
+    businesses: businesses.filter(b => b.stage && b.verdict && b.stageClaim).map(b => ({ parentNodeId: null, comparison: null, anchor: null, capabilities: [], milestones: [], parties: [], ties: [], chain: [], checks: [], ...b })) as unknown as BusinessNarrative[],
     sources,
   };
   // The same reader the page uses decides what is published; anything it strips was never shown.
-  return readCompanyNarrative(candidate, input.ticker);
+  const narrative = readCompanyNarrative(candidate, input.ticker);
+  if (!narrative) issues.push(`reader rejected the document: ${JSON.stringify({ positioning: !!candidate.positioning, stage: candidate.stage, verdict: typeof candidate.verdict, businesses: candidate.businesses.length }).slice(0, 300)}`);
+  return { narrative, issues: issues.slice(0, 40) };
 }

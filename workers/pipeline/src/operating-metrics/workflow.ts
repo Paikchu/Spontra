@@ -6,7 +6,7 @@ import { assertTrackedTicker, requireDb, trackedTickersFor } from "../core.ts";
 import { earningsEvents } from "../guidance/workflow.ts";
 import { callWorkerSecModel, type SecPipelineEnv } from "../operations.ts";
 import { D1SecRepository } from "../sec/d1.ts";
-import { streamSecSubmissionParts, type SecFilingFeed } from "../sec/sec.ts";
+import { htmlToSecText, streamSecSubmissionParts, type SecFilingFeed } from "../sec/sec.ts";
 import type { WorkflowStepLike } from "../workflow-core.ts";
 import { extractOperatingMetrics, OPERATING_EXTRACTOR_VERSION, OPERATING_MAX_OUTPUT_TOKENS, publishOperatingMetrics, type OperatingModelCall } from "./extract.ts";
 import { operatingMetricsCacheKey } from "./read.ts";
@@ -79,7 +79,8 @@ export async function executeOperatingMetricsWorkflow(params: OperatingMetricsPa
   const parts = await step.do("operating-parts", async () => {
     const all = await streamSecSubmissionParts(filing.cikNumber, params.accession, fetcher, env.SEC_USER_AGENT);
     const wanted = /^(10-K|10-Q|20-F)/.test(filing.form) ? all.filter(p => p.type.replace(/\/A$/, "") === filing.form.replace(/\/A$/, "")) : all.filter(p => /^EX-99/i.test(p.type));
-    return wanted.filter(p => p.text && p.text.length >= 400).slice(0, MAX_PARTS).map(p => ({ type: p.type, filename: p.filename, text: p.text }));
+    // Filed documents are inline XBRL or HTML; flattened the way the SEC reader does, so quotes verify against prose, not tags.
+    return wanted.filter(p => p.text && !/^begin \d{3} /m.test(p.text.slice(0, 200))).map(p => ({ type: p.type, filename: p.filename, text: /<[a-z?][\s\S]*>/i.test(p.text.slice(0, 2000)) ? htmlToSecText(p.text) : p.text })).filter(p => p.text.length >= 400).slice(0, MAX_PARTS);
   });
   const model: OperatingModelCall = (stage, system, payload) => callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, 5 * 60_000, true, { maxTokens: OPERATING_MAX_OUTPUT_TOKENS });
   const folder = `https://www.sec.gov/Archives/edgar/data/${filing.cikNumber}/${params.accession.replaceAll("-", "")}/`;

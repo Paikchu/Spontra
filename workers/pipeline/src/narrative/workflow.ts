@@ -94,15 +94,16 @@ export async function executeNarrativeWorkflow(params: NarrativeWorkflowParams, 
   // Materials are fetched once and stored with the step, so a retried write re-reads the same text.
   const materials = await step.do("narrative-materials", () => collectNarrativeMaterials(input.feed, companyName, fetcher, env.SEC_USER_AGENT));
   if (!materials.length) return { status: "empty", reason: "no readable material" };
-  const narrative = await writeNarrative({
+  const written = await writeNarrative({
     ticker: params.ticker, companyName, periodEnd: input.periodEnd, explainer: input.explainer as BusinessExplainer, nodes: input.nodes, materials,
     metrics: input.metrics as OperatingMetricsPublication | null, guidance: input.guidance as GuidancePublication | null, findings: input.findings as FindingsPublication | null,
     modelVersion, fingerprint: params.fingerprint, now,
   }, (stage, system, payload) => callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, 5 * 60_000, true), (name, run) => step.do(`narrative-${name}`, run));
-  if (!narrative || !readCompanyNarrative(narrative, params.ticker)) return { status: "empty", reason: "nothing verifiable" };
+  const narrative = written.narrative;
+  if (!narrative || !readCompanyNarrative(narrative, params.ticker)) return { status: "empty", reason: "nothing verifiable", issues: written.issues };
   await step.do("narrative-publish", async () => {
     await new D1SecRepository(requireDb(env)).setCache(narrativeCacheKey(params.ticker), narrative, now);
     await new AiRunStore(requireDb(env)).saveVersion("narrative", params.ticker, narrative, now);
   });
-  return { status: "ready", businesses: narrative.businesses.length, sources: narrative.sources.length, materials: materials.length };
+  return { status: "ready", businesses: narrative.businesses.length, sources: narrative.sources.length, materials: materials.length, issues: written.issues };
 }

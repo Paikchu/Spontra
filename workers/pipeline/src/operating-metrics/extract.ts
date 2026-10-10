@@ -6,7 +6,7 @@ import { readOperatingMetrics, verifyObservation } from "../../../../shared/anal
 import { locateOperating } from "./locate.ts";
 
 /** Changing the prompt, the pre-filter or verification re-extracts every stored material once. */
-export const OPERATING_EXTRACTOR_VERSION = "operating-extractor.v1";
+export const OPERATING_EXTRACTOR_VERSION = "operating-extractor.v2";
 export const OPERATING_MAX_OUTPUT_TOKENS = 8_192;
 
 export type OperatingModelCall = (stage: string, system: string, payload: unknown) => Promise<Record<string, unknown>>;
