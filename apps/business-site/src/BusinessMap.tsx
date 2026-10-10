@@ -487,7 +487,7 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
       {!!quarter?.revenueAdjustments?.length&&<p className="revenue-reconciliation">收入对账 · {quarter.currency} 百万<br/>分部收入（抵销前） {formatFlowValue(segmentRevenue,quarter)}<br/>{quarter.revenueAdjustments.map(a=><span key={a.id}>{a.name} {formatFlowValue(numeric(a.amount),quarter)}<br/></span>)}合并收入 {formatFlowValue(revenue,quarter)}</p>}
     </Rail>
 
-    <section className="stage" data-trend={hasRevenueTrend || metricGroups.length ? "" : undefined} data-finding={focused?.kind} data-timeline={points.length ? "" : undefined} aria-label={`${ticker} 收入到利润流向`}>
+    <section className="stage" data-view={view} data-trend={hasRevenueTrend || metricGroups.length ? "" : undefined} data-finding={focused?.kind} data-timeline={points.length ? "" : undefined} aria-label={`${ticker} 收入到利润流向`}>
       <header className="stage-head stage-head--summary">
         {quarter && view !== "profit" && view !== "figures" && funding ? <CapitalStats view={view} funding={funding} /> : quarter && <div className="stats" aria-live="polite">
           {current?.synthetic ? <>
@@ -542,8 +542,6 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
           : <div className="business-flow chart-fallback">{current && <Dossier item={current} parent={parent ?? null} sources={quarter.sources.length ? quarter.sources : business?.sources ?? []} explainer={explainer} narrative={narrative} data={data} periods={narrativePeriods} />}<FinancialSankey quarter={quarter} previous={previous} onSegment={key => pickBusiness(items.find(item => item.key === key)?.id ?? null)} /></div>}
       </div>
 
-      {points.length > 0 && <Timeline points={points} now={now.getTime()} currentPeriod={quarter?.periodEnd ?? null} focus={focusedReport?.accessionNumber ?? focusedEvent?.id ?? null}
-        onReport={(id, end) => { if (filings?.filings.some(f => f.accessionNumber === id)) { focusFinding(null); focusReport(id); } else { setPeriod(quarters.find(q => q.periodEnd === end)?.id ?? null); focusFinding(null); setEventId(null); setReportId(null); } }} onEvent={id => focusEvent(id)} />}
 
       {focusedReport ? <div className="lens-stage"><ReportLens report={focusedReport} ticker={ticker} index={railIndex} count={railList.length}
         onStep={delta => { const next = railList[railIndex + delta]; if (next) focusItem(next); }} onClose={() => focusReport(null)} onOpenReport={() => setReader(true)} />
@@ -576,6 +574,9 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
         <div className="stage-panels-head"><span>{focused.title} · 核验</span><em>{findingPlan.reason}</em></div>
         {findingPlan.panels.filter(p => p.kind !== "flow" && p.kind !== "cash" && p.kind !== "balance").map((panel, i) => <div key={i} className="stage-panel">{renderPanel(panel)}</div>)}
       </div>}
+
+      {points.length > 0 && <Timeline points={points} now={now.getTime()} currentPeriod={quarter?.periodEnd ?? null} focus={focusedReport?.accessionNumber ?? focusedEvent?.id ?? null}
+        onReport={(id, end) => { if (filings?.filings.some(f => f.accessionNumber === id)) { focusFinding(null); focusReport(id); } else { setPeriod(quarters.find(q => q.periodEnd === end)?.id ?? null); focusFinding(null); setEventId(null); setReportId(null); } }} onEvent={id => focusEvent(id)} />}
 
       <footer className="stage-foot">
         {view === "figures" ? <span className="legend-note">业务图由叙事层的拆解与运营指标生成；阶梯图数值均引自公司原文</span>

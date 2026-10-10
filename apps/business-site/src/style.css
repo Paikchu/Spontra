@@ -220,10 +220,18 @@ button { cursor: pointer; }
 .sources a:hover { text-decoration: underline; }
 
 /* ---------- Stage ---------- */
+/* One scrolling column: every panel shows whole, the page scrolls; only the statement charts keep a fixed height, since they fit a box rather than flow. */
 .stage {
-  display: grid; grid-template-rows: auto minmax(0, 1fr) auto auto; min-width: 0; min-height: 0;
+  display: block; min-width: 0; min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border) transparent;
   padding: 14px max(clamp(20px, 3vw, 44px), env(safe-area-inset-right)) 4px clamp(24px, 3vw, 44px);
 }
+.stage > .chart { height: clamp(420px, 56vh, 640px); }
+.stage[data-view="figures"] > .chart { height: auto; }
+.stage[data-view="figures"] .figures { position: relative; inset: auto; }
+.stage[data-view="figures"] .figures[data-aside] { align-items: start; }
+.stage[data-view="figures"] .figures-canvas { overflow: visible; padding: 0; }
+.stage[data-view="figures"] .figures-aside .fc-business-scroll { overflow: visible; max-height: none; }
+.stage[data-view="figures"] .figures-aside .dossier-tablist { position: static; }
 .stage--state { display: block; overflow-y: auto; }
 .stage-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px 24px; flex-wrap: wrap; }
 .stage-head--summary { align-items: flex-start; }
@@ -564,7 +572,8 @@ button { cursor: pointer; }
   .finding-row { display: inline-flex; flex: none; width: auto; align-items: center; gap: 7px; padding: 5px 11px 5px 6px; border-radius: 999px; border: 1px solid var(--hairline); white-space: nowrap; }
   .finding-row::after, .finding-kind { display: none; }
   .finding-title { font-size: 12.5px; }
-  .stage { order: 2; padding: 20px 16px 16px; }
+  .stage { order: 2; padding: 20px 16px 16px; overflow: visible; }
+  .stage > .chart { height: auto; }
   .dossier { order: 3; margin: 0 16px 32px; }
   .chart { margin-top: 16px; overflow-x: auto; overscroll-behavior-x: contain; }
   .fc { position: relative; inset: auto; width: max(100%, 780px, var(--mobile-width, 780px)); aspect-ratio: var(--ratio); }
@@ -994,7 +1003,7 @@ button { cursor: pointer; }
 /* The time axis under the chart: quarter ticks along the track, one marker per filing, the current report and the focused event lit. */
 .stage[data-timeline] { grid-template-rows: auto minmax(0, 1fr) auto auto auto; }
 .stage:has(.findings)[data-timeline] { grid-template-rows: auto auto minmax(0, 1fr) auto auto auto; }
-.timeline { margin-top: 6px; padding: 10px 0 0; animation: rise .5s var(--ease) both; }
+.timeline { margin-top: 14px; padding: 12px 0 0; border-top: 1px solid var(--hairline); animation: rise .5s var(--ease) both; }
 .timeline-track { position: relative; height: 30px; margin: 0 6px; }
 .timeline-track::before { content: ""; position: absolute; left: 0; right: 0; top: 12px; border-top: 1px solid var(--border); }
 .timeline-tick { position: absolute; top: 18px; transform: translateX(-50%); font-size: 10px; color: var(--faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -1218,9 +1227,7 @@ button { cursor: pointer; }
 .stage-verdict--plan b { color: var(--brand); border-color: color-mix(in srgb, var(--brand) 40%, transparent); }
 
 /* ---------- Composition: the panels the plan stacks under the main slot ---------- */
-/* The stacked panels scroll inside their own band, so the main slot keeps its height. */
-.stage-panels { display: grid; gap: 14px; align-content: start; margin-top: 14px; max-height: clamp(220px, 34vh, 380px); overflow-y: auto; padding-right: 4px; scrollbar-width: thin; animation: rise .45s var(--ease) both; }
-@media (max-width: 960px) { .stage-panels { max-height: none; overflow: visible; } }
+.stage-panels { display: grid; gap: 14px; align-content: start; margin-top: 14px; animation: rise .45s var(--ease) both; }
 .stage-panels-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 12.5px; font-weight: 600; color: var(--muted-foreground); }
 .stage-panels-head em { font-style: normal; font-weight: 500; color: var(--faint); }
 .stage-panels .trend { height: auto; min-height: clamp(196px, 26vh, 260px); }
