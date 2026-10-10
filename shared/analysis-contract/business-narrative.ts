@@ -85,11 +85,20 @@ export type NarrativeFigure =
  * shown beside the composition. The reader can still switch; a panel the data cannot draw is skipped.
  */
 export type PanelRef =
+  | { kind: "dossier" }
   | { kind: "flow" } | { kind: "cash" } | { kind: "balance" }
   | { kind: "revenue_trend" } | { kind: "metric"; key: string }
   | { kind: "figure"; index: number }
   | { kind: "timeline" } | { kind: "parties" } | { kind: "comparison" } | { kind: "checks" } | { kind: "chain" };
-export type PanelPlan = { panels: PanelRef[]; reason: string };
+/**
+ * The stage is a two-column grid on wide screens (one column on phones). A panel spans one column
+ * (half the width) or both; the plan reads left to right, top to bottom. `dossier` is the subject's
+ * own text (positioning, verdict, tabs) and is placed like any other panel; a plan that omits it
+ * gets it beside the first panel.
+ */
+export type PanelSpan = 1 | 2;
+export type PlacedPanel = PanelRef & { span?: PanelSpan };
+export type PanelPlan = { panels: PlacedPanel[]; reason: string };
 
 /** One link of the thesis: the premise, how far the material bears it out, and what would break it. */
 export type NarrativeLink = { id: string; premise: string; status: NarrativeStatus; evidence: ExplainerClaim[]; failure: string; checkIds: string[] };

@@ -22,13 +22,15 @@ export const figureSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("stack"), title: text(24), layers: z.array(z.object({ name: text(12), items: z.array(text(40)).max(8) })).min(1).max(6), meaning: prose(120) }),
   z.object({ type: z.literal("ladder"), title: text(24), tracks: z.array(z.object({ metricKey: z.string().regex(/^[a-z][a-z0-9_]{1,40}$/), role: z.enum(["actual", "contracted", "target"]) })).min(1).max(3), meaning: prose(120) }),
 ]);
+const panelSpan = z.union([z.literal(1), z.literal(2)]).optional();
 export const panelRefSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("flow") }), z.object({ kind: z.literal("cash") }), z.object({ kind: z.literal("balance") }),
-  z.object({ kind: z.literal("revenue_trend") }), z.object({ kind: z.literal("metric"), key: z.string().regex(/^[a-z][a-z0-9_]{1,60}$/) }),
-  z.object({ kind: z.literal("figure"), index: z.number().int().min(0).max(3) }),
-  z.object({ kind: z.literal("timeline") }), z.object({ kind: z.literal("parties") }), z.object({ kind: z.literal("comparison") }), z.object({ kind: z.literal("checks") }), z.object({ kind: z.literal("chain") }),
+  z.object({ kind: z.literal("dossier"), span: panelSpan }),
+  z.object({ kind: z.literal("flow"), span: panelSpan }), z.object({ kind: z.literal("cash"), span: panelSpan }), z.object({ kind: z.literal("balance"), span: panelSpan }),
+  z.object({ kind: z.literal("revenue_trend"), span: panelSpan }), z.object({ kind: z.literal("metric"), key: z.string().regex(/^[a-z][a-z0-9_]{1,60}$/), span: panelSpan }),
+  z.object({ kind: z.literal("figure"), index: z.number().int().min(0).max(3), span: panelSpan }),
+  z.object({ kind: z.literal("timeline"), span: panelSpan }), z.object({ kind: z.literal("parties"), span: panelSpan }), z.object({ kind: z.literal("comparison"), span: panelSpan }), z.object({ kind: z.literal("checks"), span: panelSpan }), z.object({ kind: z.literal("chain"), span: panelSpan }),
 ]);
-export const panelPlanSchema = z.object({ panels: z.array(panelRefSchema).min(1).max(6), reason: prose(120) });
+export const panelPlanSchema = z.object({ panels: z.array(panelRefSchema).min(1).max(8), reason: prose(120) });
 const link = z.object({ id: text(80), premise: prose(80), status, evidence: z.array(claim).max(6), failure: prose(120), checkIds: z.array(text(80)).max(6) });
 const business = z.object({
   nodeId: text(200), name: text(80), parentNodeId: text(200).nullable().optional(),
@@ -67,7 +69,8 @@ export function harnessFigures(figures: NarrativeFigure[] | undefined, names: Se
 export function harnessLayout(plan: PanelPlan | null | undefined, figureCount: number): PanelPlan | null {
   if (!plan) return null;
   const seen = new Set<string>();
-  const panels = plan.panels.filter(ref => (ref.kind !== "figure" || ref.index < figureCount) && !seen.has(JSON.stringify(ref)) && (seen.add(JSON.stringify(ref)), true)).slice(0, 6);
+  const identity = (ref: PanelPlan["panels"][number]) => JSON.stringify({ ...ref, span: undefined });
+  const panels = plan.panels.filter(ref => (ref.kind !== "figure" || ref.index < figureCount) && !seen.has(identity(ref)) && (seen.add(identity(ref)), true)).slice(0, 8);
   return { panels: panels.length ? panels : [{ kind: "flow" }], reason: plan.reason };
 }
 

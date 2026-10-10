@@ -1,13 +1,13 @@
 import { z } from "zod";
 import type { BusinessExplainer } from "../../../../shared/analysis-contract/business-explainer.ts";
 import type { PlannedFigures } from "../../../../shared/analysis-contract/business-figures.ts";
-import type { CompanyNarrative, NarrativeFigure, PanelPlan, PanelRef } from "../../../../shared/analysis-contract/business-narrative.ts";
+import type { CompanyNarrative, NarrativeFigure, PanelPlan, PlacedPanel } from "../../../../shared/analysis-contract/business-narrative.ts";
 import type { FindingsPublication } from "../../../../shared/analysis-contract/findings.ts";
 import type { OperatingMetricsPublication } from "../../../../shared/analysis-contract/operating-metrics.ts";
 import { harnessFigures, harnessLayout } from "../../../../shared/analysis-runtime/business-narrative.ts";
 
 /** Changing the prompt, the harness or the model budget re-plans every company once. */
-export const FIGURES_PLANNER_VERSION = "figures-planner.v3";
+export const FIGURES_PLANNER_VERSION = "figures-planner.v4";
 
 export type PlannerModelCall = (stage: string, system: string, payload: unknown) => Promise<Record<string, unknown>>;
 
@@ -23,17 +23,18 @@ export const FIGURES_SYSTEM_PROMPT = [
   "ladder: when a metric has a pairWith counterpart (in_use against contracted, delivered against pipeline) or a single metric has three or more dates, bind a ladder: tracks [{metricKey, role}] with role actual for what is in use or delivered, contracted for what is committed, target for a stated goal. Attach a ladder to the business whose operations the metric measures; if that is the whole company, attach it to the company.",
   "Each figure has a title of at most 24 Chinese characters and a meaning of at most 120 Chinese characters saying what the figure shows and why it matters, in Simplified Chinese, with no numbers.",
   "Make at most 3 figures per business and 2 for the company. When nothing meaningful can be drawn, return empty arrays. Do not invent items, keys, layers for a single item, or ladders without metrics.",
-  "Then compose the stage for the company, for each business, and for each finding you are given: an ordered list of 1 to 5 panels from this catalog, the first on the main slot and the rest stacked beneath. flow: revenue-to-profit flow (the Sankey); cash: cash flow; balance: balance sheet; revenue_trend: revenue by business over quarters; metric with key: one operating metric over time; figure with index: one of the figures you planned for that subject (for a finding, from the company's figures); timeline: the business's milestones; parties: who funds and who buys; comparison: the alternatives matrix; checks: the thesis checks bound to figures; chain: the thesis chain.",
+  "Then compose the stage for the company, for each business, and for each finding you are given. The stage is a two-column grid on wide screens, one column on phones; you place 1 to 7 panels in reading order (left to right, top to bottom), each with span 1 (half the width) or 2 (the full width). Catalog: dossier: the subject's own text (positioning, verdict, tabbed sections), a tall text block that fills whatever width it gets; flow: revenue-to-profit flow (the Sankey), a wide chart; cash: cash flow chart; balance: balance sheet chart; revenue_trend: revenue by business over quarters, wide; metric with key: one operating metric over time; figure with index: one of the figures you planned for that subject (for a finding, from the company's figures), a stack is wide and short, a ladder is wide; timeline: the business's milestones (text); parties: who funds and who buys (text); comparison: the alternatives matrix (wide); checks: the thesis checks bound to figures (text); chain: the thesis chain (text).",
+  "Place the dossier for the company and for each business: beside the lead chart at span 1 when the chart can stand half width (a stack, a ladder, a trend), or at full width on its own when the lead is the flow, which needs the whole width. Two text panels at span 1 sit side by side; a wide chart takes span 2. Never leave a half-width panel alone on a row unless it is the last.",
   "The dossier sections (timeline, parties, comparison, checks, chain) exist only when the input says the company has a narrative; without one, never name them. A finding without a metric or figure to rest on gets flow alone.",
   "Judge what the subject needs. A business with its own revenue in the statements is explained by its revenue, growth and what it sells: lead with flow and follow with revenue_trend and a stack. A business the statements do not split out cannot be read from the flow: lead with the figure or section that explains it (a ladder when build-out is the story, a stack when the make-up is, timeline when the milestones are). For the company, lead with flow unless financing (cash) or the build-out (a ladder) is the story. For a finding, give the panels that let a reader check it: the metric or figure it rests on, then checks. Give a reason of at most 120 Chinese characters, no numbers, shown beside the composition.",
-  "Output JSON: {\"company\":[figure],\"businesses\":[{\"nodeId\":\"\",\"figures\":[figure]}],\"layouts\":{\"company\":{\"panels\":[{\"kind\":\"flow\"},{\"kind\":\"revenue_trend\"}],\"reason\":\"\"},\"businesses\":[{\"nodeId\":\"\",\"layout\":{\"panels\":[{\"kind\":\"figure\",\"index\":0}],\"reason\":\"\"}}],\"findings\":[{\"findingId\":\"\",\"layout\":{\"panels\":[{\"kind\":\"metric\",\"key\":\"\"},{\"kind\":\"checks\"}],\"reason\":\"\"}}]}} where figure is {\"type\":\"stack\",\"title\":\"\",\"layers\":[{\"name\":\"\",\"items\":[\"\"]}],\"meaning\":\"\"} or {\"type\":\"ladder\",\"title\":\"\",\"tracks\":[{\"metricKey\":\"\",\"role\":\"actual\"}],\"meaning\":\"\"}.",
+  "Output JSON: {\"company\":[figure],\"businesses\":[{\"nodeId\":\"\",\"figures\":[figure]}],\"layouts\":{\"company\":{\"panels\":[{\"kind\":\"flow\",\"span\":2},{\"kind\":\"dossier\",\"span\":1},{\"kind\":\"revenue_trend\",\"span\":1}],\"reason\":\"\"},\"businesses\":[{\"nodeId\":\"\",\"layout\":{\"panels\":[{\"kind\":\"dossier\",\"span\":1},{\"kind\":\"figure\",\"index\":0,\"span\":1}],\"reason\":\"\"}}],\"findings\":[{\"findingId\":\"\",\"layout\":{\"panels\":[{\"kind\":\"metric\",\"key\":\"\",\"span\":2}],\"reason\":\"\"}}]}} where figure is {\"type\":\"stack\",\"title\":\"\",\"layers\":[{\"name\":\"\",\"items\":[\"\"]}],\"meaning\":\"\"} or {\"type\":\"ladder\",\"title\":\"\",\"tracks\":[{\"metricKey\":\"\",\"role\":\"actual\"}],\"meaning\":\"\"}.",
 ].join("\n");
 
 const figure = z.discriminatedUnion("type", [
   z.object({ type: z.literal("stack"), title: z.string().max(60), layers: z.array(z.object({ name: z.string().max(40), items: z.array(z.string().max(80)).max(12) })).max(8), meaning: z.string().max(300) }),
   z.object({ type: z.literal("ladder"), title: z.string().max(60), tracks: z.array(z.object({ metricKey: z.string().max(60), role: z.string().max(20) })).max(4), meaning: z.string().max(300) }),
 ]);
-const panelRef = z.object({ kind: z.string().max(20), index: z.number().int().min(0).max(9).optional(), key: z.string().max(60).optional() });
+const panelRef = z.object({ kind: z.string().max(20), index: z.number().int().min(0).max(9).optional(), key: z.string().max(60).optional(), span: z.number().int().min(1).max(2).optional() });
 const panelPlan = z.object({ panels: z.array(panelRef).max(8), reason: z.string().max(300) });
 const drafted = z.object({
   company: z.array(figure).max(6).optional(), businesses: z.array(z.object({ nodeId: z.string().max(200), figures: z.array(figure).max(6) })).max(30).optional(),
@@ -45,12 +46,13 @@ const drafted = z.object({
 
 const SECTIONS = new Set(["timeline", "parties", "comparison", "checks", "chain"]);
 /** A drafted panel reference as the contract knows it, or null; a metric must be one of the company's keys. */
-function panelOf(ref: z.infer<typeof panelRef>, metricKeys: Set<string>, sections: boolean): PanelRef | null {
-  if (ref.kind === "figure") return typeof ref.index === "number" ? { kind: "figure", index: ref.index } : null;
-  if (ref.kind === "metric") { const key = ref.key?.trim().toLowerCase(); return key && metricKeys.has(key) ? { kind: "metric", key } : null; }
-  if (ref.kind === "flow" || ref.kind === "cash" || ref.kind === "balance" || ref.kind === "revenue_trend") return { kind: ref.kind };
+function panelOf(ref: z.infer<typeof panelRef>, metricKeys: Set<string>, sections: boolean): PlacedPanel | null {
+  const span = ref.span === 1 || ref.span === 2 ? { span: ref.span as 1 | 2 } : {};
+  if (ref.kind === "figure") return typeof ref.index === "number" ? { kind: "figure", index: ref.index, ...span } : null;
+  if (ref.kind === "metric") { const key = ref.key?.trim().toLowerCase(); return key && metricKeys.has(key) ? { kind: "metric", key, ...span } : null; }
+  if (ref.kind === "dossier" || ref.kind === "flow" || ref.kind === "cash" || ref.kind === "balance" || ref.kind === "revenue_trend") return { kind: ref.kind, ...span };
   // Dossier sections exist only where a narrative does; without one they would draw nothing.
-  return sections && SECTIONS.has(ref.kind) ? { kind: ref.kind as "timeline" | "parties" | "comparison" | "checks" | "chain" } : null;
+  return sections && SECTIONS.has(ref.kind) ? { kind: ref.kind as "timeline" | "parties" | "comparison" | "checks" | "chain", ...span } : null;
 }
 function layoutOf(plan: z.infer<typeof panelPlan> | null | undefined, figureCount: number, metricKeys: Set<string>, sections: boolean): PanelPlan | null {
   if (!plan) return null;
@@ -122,8 +124,8 @@ export async function planFigures(input: PlannerInput, model: PlannerModelCall):
   // Every explainer business has its own revenue in the statements, so the flow explains it first; its figures follow.
   for (const b of plannedBusinesses) {
     if (layouts.businesses.some(l => l.nodeId === b.nodeId)) continue;
-    const panels: PanelRef[] = [{ kind: "flow" }, { kind: "revenue_trend" }, ...b.figures.map((_, index): PanelRef => ({ kind: "figure", index }))];
-    layouts.businesses.push({ nodeId: b.nodeId, layout: { panels: panels.slice(0, 5), reason: "这项业务在报表里有自己的收入，先看它的收入与利润流向，再看它由什么组成。" } });
+    const panels: PlacedPanel[] = [{ kind: "flow", span: 2 }, { kind: "dossier", span: 1 }, { kind: "revenue_trend", span: 1 }, ...b.figures.map((_, index): PlacedPanel => ({ kind: "figure", index, span: 2 }))];
+    layouts.businesses.push({ nodeId: b.nodeId, layout: { panels: panels.slice(0, 6), reason: "这项业务在报表里有自己的收入，先看它的收入与利润流向，再看它由什么组成。" } });
   }
   return { schemaVersion: "business-figures.v1", ticker: input.ticker, generatedAt: input.now, model: input.modelVersion, fingerprint: input.fingerprint, company, businesses: plannedBusinesses, layouts };
 }

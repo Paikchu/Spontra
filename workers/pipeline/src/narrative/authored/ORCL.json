@@ -402,10 +402,16 @@
       "layout": {
         "panels": [
           {
-            "kind": "flow"
+            "kind": "flow",
+            "span": 2
           },
           {
-            "kind": "revenue_trend"
+            "kind": "dossier",
+            "span": 1
+          },
+          {
+            "kind": "revenue_trend",
+            "span": 1
           }
         ],
         "reason": "云服务是收入的一半以上，先在流向图里看它占多大、带来多少利润，再看季度走势。"
@@ -939,20 +945,32 @@
       "layout": {
         "panels": [
           {
-            "kind": "flow"
+            "kind": "flow",
+            "span": 2
           },
           {
-            "kind": "revenue_trend"
+            "kind": "dossier",
+            "span": 1
+          },
+          {
+            "kind": "revenue_trend",
+            "span": 1
           },
           {
             "kind": "figure",
-            "index": 0
+            "index": 0,
+            "span": 2
           },
           {
-            "kind": "timeline"
+            "kind": "timeline",
+            "span": 1
+          },
+          {
+            "kind": "parties",
+            "span": 1
           }
         ],
-        "reason": "它在报表里有自己的收入：先在流向图里看它占多大、增速多快，再看它由什么组成和合约、融资的时间线。"
+        "reason": "它在报表里有自己的收入：先在流向图里看它占多大，再左文右趋势看增速，然后看它由什么组成、合约与融资的时间线和金主。"
       }
     },
     {
@@ -1099,10 +1117,16 @@
       "layout": {
         "panels": [
           {
-            "kind": "flow"
+            "kind": "flow",
+            "span": 2
           },
           {
-            "kind": "revenue_trend"
+            "kind": "dossier",
+            "span": 1
+          },
+          {
+            "kind": "revenue_trend",
+            "span": 1
           }
         ],
         "reason": "收缩中的业务，看它在流向里还占多少和下滑的速度就够了。"
@@ -1207,16 +1231,23 @@
   "layout": {
     "panels": [
       {
-        "kind": "flow"
+        "kind": "flow",
+        "span": 2
       },
       {
-        "kind": "revenue_trend"
+        "kind": "dossier",
+        "span": 1
+      },
+      {
+        "kind": "revenue_trend",
+        "span": 1
       },
       {
         "kind": "figure",
-        "index": 0
+        "index": 0,
+        "span": 2
       }
     ],
-    "reason": "四项业务的收入和利润结构是理解 Oracle 的起点，云在流向图里已经过半；再看各业务的季度走势和它们怎么叠。"
+    "reason": "四项业务的收入和利润结构是理解 Oracle 的起点，流向图占满一行；下面左文右趋势，最后看各业务怎么叠。"
   }
 }

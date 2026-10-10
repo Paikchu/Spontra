@@ -1228,3 +1228,25 @@ button { cursor: pointer; }
 .stage-panels .trend { height: auto; min-height: clamp(196px, 26vh, 260px); }
 .figure--section { font-size: 13px; line-height: 1.65; }
 .figure--section .narrative-matrix-scroll { margin: 0; padding: 0; }
+
+/* ---------- Composition grid: the plan's cells in reading order, two columns wide ---------- */
+.composition { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 10px; }
+.composition-head { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 12.5px; font-weight: 600; color: var(--muted-foreground); }
+.cell { min-width: 0; }
+.cell[data-span="2"] { grid-column: 1 / -1; }
+.cell--chart { position: relative; height: clamp(420px, 56vh, 640px); }
+.cell--chart .fc, .cell--chart .pool { position: absolute; inset: 0; }
+.cell--dossier { padding: 14px 16px; border: 1px solid var(--hairline); border-radius: 12px; background: var(--surface); }
+.cell--dossier .dossier { margin: 0; padding: 0; border: 0; animation: none; font-size: 13.5px; line-height: 1.7; }
+.cell--dossier .dossier h3 { font-size: 17px; }
+.cell--dossier .dossier-tablist { position: static; }
+.cell--dossier .sources { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--hairline); }
+.cell--figures_all .figures { position: relative; inset: auto; }
+.cell--figures_all .figures-canvas { overflow: visible; padding: 0; }
+.cell .trend { margin-top: 0; padding-top: 0; border-top: 0; }
+@media (max-width: 960px) {
+  .composition { grid-template-columns: minmax(0, 1fr); }
+  .cell[data-span="2"] { grid-column: auto; }
+  .cell--chart { height: auto; }
+  .cell--chart .fc { position: relative; inset: auto; }
+}

@@ -132,12 +132,14 @@ function Streams({ band, strength }: { band: Band; strength: "ambient" | "lit" }
 
 export type PriorQuarter = { graph: FinancialGraph; copy: (n: PlacedNode) => NodeCopy; label: string };
 
-export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHover, onPick, tipFor, label, revealKey, businessDetails, companyDetails = null, detailsKey = "company", productBusiness = null, spotlight = null, priorOf, previous = null, brackets, pills }: {
+export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHover, onPick, tipFor, label, revealKey, businessDetails, companyDetails = null, detailsKey = "company", details = true, productBusiness = null, spotlight = null, priorOf, previous = null, brackets, pills }: {
   businessDetails?: ReactNode;
   /** The company's own dossier, shown in the same card while no business is picked. */
   companyDetails?: ReactNode;
   /** Remounts the card (and resets its scroll) when what `companyDetails` shows changes. */
   detailsKey?: string;
+  /** False when the dossier is placed elsewhere on the stage: the canvas keeps the whole width and still zooms to the picked business. */
+  details?: boolean;
   /** The comparable prior-quarter amount of a node, drawn as a dashed outline over its bar; null when the two quarters cannot be compared. */
   priorOf?: (n: PlacedNode) => number | null;
   /** The prior quarter's statement: 对比上季 morphs the whole chart to it at the current quarter's scale. */
@@ -212,7 +214,7 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
   const bracketOf = useMemo(() => new Map((brackets ?? []).map(b => [b.node, b])), [brackets]);
   const pillOf = useMemo(() => new Map((pills ?? []).map(p => [p.node, p])), [pills]);
   const productTarget = productBusiness ? byName.get(productBusiness) : null;
-  const expanded = Boolean(productTarget) || Boolean(companyDetails);
+  const expanded = details && (Boolean(productTarget) || Boolean(companyDetails));
   // The explanation's scrollbar stays hidden until the reader scrolls it, and fades shortly after.
   const [scrolling, setScrolling] = useState(false);
   const scrollIdle = useRef(0);

@@ -1081,18 +1081,29 @@
       "layout": {
         "panels": [
           {
-            "kind": "figure",
-            "index": 0
+            "kind": "dossier",
+            "span": 1
           },
           {
             "kind": "figure",
-            "index": 1
+            "index": 0,
+            "span": 1
           },
           {
-            "kind": "timeline"
+            "kind": "figure",
+            "index": 1,
+            "span": 2
+          },
+          {
+            "kind": "timeline",
+            "span": 1
+          },
+          {
+            "kind": "parties",
+            "span": 1
           }
         ],
-        "reason": "财报没把它单拆出来，流向图里它就是公司总收入；能说明它的是签约电力变在用电力的进度、它由什么组成、以及合约和融资的时间线。"
+        "reason": "财报没把它单拆出来，流向图里它就是公司总收入；左文右图先看签约电力变在用电力的进度，再看它由什么组成，最后并排看合约时间线和金主。"
       }
     },
     {
@@ -1217,14 +1228,20 @@
       "layout": {
         "panels": [
           {
-            "kind": "figure",
-            "index": 0
+            "kind": "dossier",
+            "span": 1
           },
           {
-            "kind": "parties"
+            "kind": "figure",
+            "index": 0,
+            "span": 1
+          },
+          {
+            "kind": "parties",
+            "span": 2
           }
         ],
-        "reason": "没有单独收入，报表说明不了它；先看它由哪三件事组成，再看它和谁一起做。"
+        "reason": "没有单独收入，报表说明不了它；左文右图看它由哪三件事组成，再看它和谁一起做。"
       }
     },
     {
@@ -1322,10 +1339,16 @@
       "layout": {
         "panels": [
           {
-            "kind": "timeline"
+            "kind": "dossier",
+            "span": 1
           },
           {
-            "kind": "chain"
+            "kind": "timeline",
+            "span": 1
+          },
+          {
+            "kind": "chain",
+            "span": 2
           }
         ],
         "reason": "收购拼出的工具层尚无数据可画，能讲清的是收购节奏和它要证明的事。"
@@ -1362,13 +1385,19 @@
   "layout": {
     "panels": [
       {
-        "kind": "flow"
+        "kind": "flow",
+        "span": 2
+      },
+      {
+        "kind": "dossier",
+        "span": 1
       },
       {
         "kind": "figure",
-        "index": 0
+        "index": 0,
+        "span": 1
       }
     ],
-    "reason": "公司层先看亏损从哪来：收入翻倍但利息吃掉营业利润，流向图一眼能看出缺口；再看三层服务怎么叠。"
+    "reason": "公司层先看亏损从哪来：收入翻倍但利息吃掉营业利润，流向图占满一行一眼看出缺口；下面左文右图，看定位和三层服务怎么叠。"
   }
 }
