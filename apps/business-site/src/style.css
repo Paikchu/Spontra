@@ -1116,3 +1116,40 @@ button { cursor: pointer; }
   /* The drawer's desktop rule is declared after the narrow-screen one; this keeps the rows in the chip strip on phones. */
   .rail-list .rail-drawer { display: contents; }
 }
+
+/* ---------- 业务图: stack and ladder figures beside the dossier ---------- */
+.figures { position: absolute; inset: 0; display: grid; grid-template-columns: minmax(0, 1fr); min-height: 0; }
+.figures[data-aside] { grid-template-columns: clamp(300px, 31%, 390px) minmax(0, 1fr); gap: clamp(12px, 1.4vw, 20px); }
+.figures-aside { min-height: 0; }
+.figures-canvas { min-width: 0; min-height: 0; overflow-y: auto; display: grid; gap: 14px; align-content: start; padding: 2px 4px 8px 0; scrollbar-width: thin; }
+.figure { margin: 0; padding: 14px 16px; border: 1px solid var(--hairline); border-radius: 12px; background: var(--surface); animation: rise .4s var(--ease) both; }
+.figure figcaption { display: grid; gap: 3px; margin-bottom: 12px; }
+.figure figcaption b { font-size: 14px; font-weight: 600; color: var(--foreground); }
+.figure figcaption span { font-size: 12.5px; line-height: 1.55; color: var(--muted-foreground); }
+.stack { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.stack-layer { display: grid; grid-template-columns: 96px minmax(0, 1fr); align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--hairline); background: color-mix(in srgb, var(--biz-1) calc(5% + var(--i) * 4%), var(--surface)); animation: rise .4s var(--ease) both; animation-delay: calc(var(--i) * 70ms); }
+.stack-name { font-size: 12px; font-weight: 600; letter-spacing: .02em; color: var(--muted-foreground); }
+.stack-items { display: flex; flex-wrap: wrap; gap: 6px; }
+.stack-item { padding: 4px 10px; border-radius: 8px; font-size: 12.5px; font-weight: 560; color: var(--foreground); background: var(--surface-raised); border: 1px solid var(--hairline); }
+.ladder { display: block; width: 100%; height: auto; max-height: 240px; }
+.ladder-axis { stroke: var(--border); stroke-width: 1; }
+.ladder-bar { fill: var(--flow-profit); rx: 3; }
+.ladder-outline { fill: color-mix(in srgb, var(--flow-expense) 8%, transparent); stroke: var(--flow-expense); stroke-width: 1.5; stroke-dasharray: 4 3; rx: 3; }
+.ladder-value { fill: var(--foreground); font-size: 12px; font-weight: 600; text-anchor: middle; font-variant-numeric: tabular-nums; }
+.ladder-value--outline { fill: var(--flow-expense); font-weight: 560; }
+.ladder-date { fill: var(--faint); font-size: 11px; text-anchor: middle; font-variant-numeric: tabular-nums; }
+.ladder-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 6px; font-size: 11.5px; color: var(--muted-foreground); }
+.ladder-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.ladder-legend i { width: 10px; height: 10px; border-radius: 2px; background: var(--flow-profit); }
+.ladder-legend span[data-role="contracted"] i, .ladder-legend span[data-role="target"] i { background: transparent; border: 1.5px dashed var(--flow-expense); box-sizing: border-box; }
+.ladder-note { color: var(--faint); margin-left: auto; }
+.ladder-quotes { list-style: none; margin: 10px 0 0; padding: 10px 0 0; border-top: 1px solid var(--hairline); display: grid; gap: 6px; font-size: 11.5px; color: var(--muted-foreground); }
+.ladder-quotes li { display: grid; gap: 1px; }
+.ladder-quotes b { font-weight: 600; color: var(--foreground); font-variant-numeric: tabular-nums; }
+.ladder-quotes q { quotes: "“" "”"; line-height: 1.5; }
+.ladder-quotes a { color: var(--faint); text-decoration: none; }
+.ladder-quotes a:hover { color: var(--foreground); }
+@media (max-width: 960px) {
+  .figures, .figures[data-aside] { position: relative; inset: auto; display: flex; flex-direction: column; gap: 12px; }
+  .figures-canvas { overflow: visible; }
+}

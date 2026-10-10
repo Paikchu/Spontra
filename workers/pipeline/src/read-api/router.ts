@@ -5,6 +5,7 @@ import { readBusinessExplainerResponse } from "../business-explainer/workflow.ts
 import { readGuidanceResponse } from "../guidance/workflow.ts";
 import { readFindingsResponse } from "../findings/read.ts";
 import { readNarrativeResponse } from "../narrative/read.ts";
+import { readOperatingMetricsResponse } from "../operating-metrics/read.ts";
 import { readEventsResponse } from "../events/read.ts";
 import { parseFundamentalApiQuery } from "../fundamentals/fundamentals-api.ts";
 import { getSecFundamentals } from "../fundamentals/sec-fundamentals.ts";
@@ -42,6 +43,7 @@ type RouteMatch =
   | { kind: "guidance"; ticker: string }
   | { kind: "findings"; ticker: string }
   | { kind: "business-narrative"; ticker: string }
+  | { kind: "operating-metrics"; ticker: string }
   | { kind: "events"; ticker: string }
   | { kind: "fundamentals"; ticker: string };
 
@@ -122,6 +124,10 @@ async function handleRoute(request: Request, database: D1Database, route: RouteM
       const payload = await readNarrativeResponse(database, route.ticker);
       return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
     }
+    case "operating-metrics": {
+      const payload = await readOperatingMetricsResponse(database, route.ticker);
+      return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
+    }
     case "events": {
       const payload = await readEventsResponse(database, route.ticker);
       return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
@@ -140,7 +146,7 @@ async function handleRoute(request: Request, database: D1Database, route: RouteM
 }
 
 function matchRoute(pathname: string): RouteMatch | null {
-  const company = /^\/api\/v1\/companies\/([^/]+)\/(filings|fundamentals|business-flow|capital|business-explainer|guidance|findings|business-narrative|events)(?:\/([^/]+))?\/?$/.exec(pathname);
+  const company = /^\/api\/v1\/companies\/([^/]+)\/(filings|fundamentals|business-flow|capital|business-explainer|guidance|findings|business-narrative|operating-metrics|events)(?:\/([^/]+))?\/?$/.exec(pathname);
   if (!company) return null;
   const ticker = safeDecode(company[1]!);
   const resource = company[2]!;
@@ -158,6 +164,7 @@ function matchRoute(pathname: string): RouteMatch | null {
   if (resource === "guidance") return { kind: "guidance", ticker };
   if (resource === "findings") return { kind: "findings", ticker };
   if (resource === "business-narrative") return { kind: "business-narrative", ticker };
+  if (resource === "operating-metrics") return { kind: "operating-metrics", ticker };
   if (resource === "events") return { kind: "events", ticker };
   return { kind: "fundamentals", ticker };
 }

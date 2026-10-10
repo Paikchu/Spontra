@@ -14,6 +14,8 @@ import {readFindingFundamentals,readFindingsPublication,type FindingFundamentals
 import type {FindingsPublication} from "@/shared/analysis-contract/findings";
 import {readCompanyNarrative} from "@/shared/analysis-runtime/business-narrative";
 import type {CompanyNarrative} from "@/shared/analysis-contract/business-narrative";
+import {readOperatingMetrics} from "@/shared/analysis-runtime/operating-metrics";
+import type {OperatingMetricsPublication} from "@/shared/analysis-contract/operating-metrics";
 import {readEventsPublication} from "@/shared/analysis-runtime/events";
 import type {EventsPublication} from "@/shared/analysis-contract/events";
 import type {PublicFilingDetail,PublicFilingDigest,PublicFilingDigestPage,PublicFilingPage,PublicSecFiling} from "@/shared/analysis-contract/filings";
@@ -171,6 +173,16 @@ export async function loadNarrative(ticker:string,fetcher:typeof fetch=fetch):Pr
  }catch{return null;}
 }
 
+/** Operating metrics (power, data centers, GPUs), re-validated like the narrative whose figures bind to them. */
+export async function loadOperatingMetrics(ticker:string,fetcher:typeof fetch=fetch):Promise<OperatingMetricsPublication|null>{
+ try{
+  const response=await fetcher(ANALYSIS_ORIGIN+`/api/v1/companies/${ticker}/operating-metrics`,{signal:AbortSignal.timeout(8000),headers:{accept:"application/json"}});
+  if(!response.ok)return null;
+  const body=await response.json() as {schemaVersion?:string;status?:string;metrics?:unknown};
+  return body.schemaVersion==="operating-metrics-response.v1"&&body.status==="ready"?readOperatingMetrics(body.metrics,ticker):null;
+ }catch{return null;}
+}
+
 /** SEC fundamentals series, stripped to the fields findings resolve against; provider and refresh state never pass through. */
 export async function loadFundamentals(ticker:string,fetcher:typeof fetch=fetch):Promise<FindingFundamentals|null>{
  try{
@@ -185,7 +197,7 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
  if(url.pathname.startsWith("/api/")){
   const fetcher=upstream??analysisFetcher(env);
   if(!fetcher)return json({error:"Read service unavailable"},503);
-  const match=url.pathname.match(/^\/api\/business\/v1\/companies\/([A-Z][A-Z0-9.-]{0,11})(\/capital|\/findings|\/fundamentals|\/events|\/filings|\/narrative|\/filings\/\d{10}-\d{2}-\d{6})?$/);
+  const match=url.pathname.match(/^\/api\/business\/v1\/companies\/([A-Z][A-Z0-9.-]{0,11})(\/capital|\/findings|\/fundamentals|\/events|\/filings|\/narrative|\/metrics|\/filings\/\d{10}-\d{2}-\d{6})?$/);
   const detail=match?.[2]?.startsWith("/filings/")?match[2].slice("/filings/".length):null;
   // The reader pins a report to its published revision; nothing else takes a query.
   const allowed=detail?new Set(["reportDate","reportVersion"]):new Set<string>();
@@ -199,6 +211,7 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
    if(match[2]==="/capital")return supplementary("capital","capital-response.v1",()=>loadCapital(match[1],fetcher));
    if(match[2]==="/findings")return supplementary("findings","findings-response.v1",()=>loadFindings(match[1],fetcher));
    if(match[2]==="/narrative")return supplementary("narrative","business-narrative-response.v1",()=>loadNarrative(match[1],fetcher));
+   if(match[2]==="/metrics")return supplementary("metrics","operating-metrics-response.v1",()=>loadOperatingMetrics(match[1],fetcher));
    if(match[2]==="/events")return supplementary("events","events-response.v1",()=>loadEvents(match[1],fetcher));
    if(match[2]==="/filings")return supplementary("filings","filing-digests-response.v1",()=>loadFilings(match[1],fetcher));
    if(detail){const reportDate=url.searchParams.get("reportDate"),reportVersion=url.searchParams.get("reportVersion");

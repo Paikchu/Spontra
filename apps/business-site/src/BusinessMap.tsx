@@ -27,6 +27,8 @@ import { FindingsList } from "./FindingsList";
 import { DossierTabs } from "./DossierTabs";
 import { BusinessNarrativeDossier, CompanyDossier, StagePill } from "./NarrativeDossier";
 import { resolveAnchor, rpoSeriesFromCapital } from "./narrative-model";
+import { BusinessFigures } from "./BusinessFigures";
+import type { OperatingMetricsPublication } from "@/shared/analysis-contract/operating-metrics";
 import { STAGE_LABEL, type BusinessNarrative, type CompanyNarrative } from "@/shared/analysis-contract/business-narrative";
 import type { FindingRef } from "@/shared/analysis-contract/findings";
 import { LensPanel } from "./LensPanel";
@@ -54,7 +56,7 @@ const trend = (label: string) => label.startsWith("+") || /转盈|收窄|由负�
   : label.startsWith("-") || label.startsWith("−") || /转亏|扩大|由正转负|金额减少/.test(label) ? "down" as const : undefined;
 const shortName = (name: string) => name.length > 9 ? name.slice(0, 8) + "…" : name;
 const shortPeriod = (end: string) => end.slice(0, 7).replace("-", ".");
-type View = "profit" | "cash" | "balance";
+type View = "profit" | "cash" | "balance" | "figures";
 
 /** A loss quarter is drawn as funding (revenue plus the net loss pay every cost); any other quarter as the statement bridge. */
 function statementGraph(q: BusinessFlowQuarter): FinancialGraph {
@@ -165,7 +167,7 @@ function Sources({ sources, ids }: { sources: FlowSource[]; ids?: string[] }) {
   return <ul className="sources">{list.map(s => <li key={s.id}><a href={s.url} target="_blank" rel="noopener noreferrer">{s.title}<span aria-hidden="true"> ↗</span></a></li>)}</ul>;
 }
 
-export function BusinessMap({ ticker, tools, flow, business, notice, revenueHistory, explainer = null, guidance = null, capital = null, findings = null, fundamentals = null, narrative = null, events = null, filings = null }: { ticker: string; tools: ReactNode; flow: PublicBusinessFlow; business: CompanyBusinessContent | null; notice: string | null; revenueHistory: RevenueHistory | null; explainer?: BusinessExplainer | null; guidance?: GuidancePublication | null; capital?: PublicCapitalStructure | null; findings?: FindingsPublication | null; fundamentals?: FindingFundamentals | null; narrative?: CompanyNarrative | null; events?: EventsPublication | null; filings?: PublicFilingDigestPage | null }) {
+export function BusinessMap({ ticker, tools, flow, business, notice, revenueHistory, explainer = null, guidance = null, capital = null, findings = null, fundamentals = null, narrative = null, metrics = null, events = null, filings = null }: { ticker: string; tools: ReactNode; flow: PublicBusinessFlow; business: CompanyBusinessContent | null; notice: string | null; revenueHistory: RevenueHistory | null; explainer?: BusinessExplainer | null; guidance?: GuidancePublication | null; capital?: PublicCapitalStructure | null; findings?: FindingsPublication | null; fundamentals?: FindingFundamentals | null; narrative?: CompanyNarrative | null; metrics?: OperatingMetricsPublication | null; events?: EventsPublication | null; filings?: PublicFilingDigestPage | null }) {
   const quarters = useMemo(() => [...flow.quarters].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd)), [flow]);
   const [period, setPeriod] = useState<string | null>(null);
   const quarter = quarters.find(q => q.id === period) ?? quarters[0];
@@ -265,7 +267,9 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
   const funding = capital?.quarters.find(q => q.periodEnd === quarter?.periodEnd) ?? null;
   const [chosenView, setView] = useState<View>("profit");
   const cash = funding?.cashFlow ?? funding?.yearToDate ?? null;
-  const view: View = chosenView === "cash" && cash ? "cash" : chosenView === "balance" && funding?.balanceSheet ? "balance" : "profit";
+  // 业务图: the figures the narrative asked for, for the picked business or for the company while nothing is picked.
+  const figures = useMemo(() => (current ? narrativeOf.get(current.id)?.figures : narrative?.figures) ?? [], [current, narrativeOf, narrative]);
+  const view: View = chosenView === "cash" && cash ? "cash" : chosenView === "balance" && funding?.balanceSheet ? "balance" : chosenView === "figures" && figures.length ? "figures" : "profit";
   // A finding in focus brings the stage to its report and statement view, and clears any business pick so the whole statement reads.
   useEffect(() => {
     if (!focused) return;
@@ -419,7 +423,7 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
 
     <section className="stage" data-trend={hasRevenueTrend || metricGroups.length ? "" : undefined} data-finding={focused?.kind} data-timeline={points.length ? "" : undefined} aria-label={`${ticker} 收入到利润流向`}>
       <header className="stage-head stage-head--summary">
-        {quarter && view !== "profit" && funding ? <CapitalStats view={view} funding={funding} /> : quarter && <div className="stats" aria-live="polite">
+        {quarter && view !== "profit" && view !== "figures" && funding ? <CapitalStats view={view} funding={funding} /> : quarter && <div className="stats" aria-live="polite">
           {current?.synthetic ? <>
             {(() => { const a = anchorOf(current); const nb = narrativeOf.get(current.id); return a?.value ? <Stat label={a.label} value={a.value.value} format={v => v == null ? "—" : compactFlowValue(v, { currency: a.value!.currency ?? "USD", scale: 1 } as BusinessFlowQuarter)} note={`${nb ? STAGE_LABEL[nb.stage] : ""} · 收入未单独披露`} /> : <Stat label={current.name} value={null} format={() => nb ? STAGE_LABEL[nb.stage] : "—"} note="收入未单独披露" />; })()}
             <Stat label="公司总收入" value={revenue} format={money} note={`环比 ${change("revenue")}`} tone={trend(change("revenue"))} />
@@ -437,21 +441,25 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
           </>}
         </div>}
         <div className="stage-controls">
-        {funding && (cash || funding.balanceSheet) && <ToggleGroup type="single" variant="unstyled" rovingFocus={false} value={view} onValueChange={next => { if (next) setView(next as View); }} asChild>
+        {((funding && (cash || funding.balanceSheet)) || figures.length > 0) && <ToggleGroup type="single" variant="unstyled" rovingFocus={false} value={view} onValueChange={next => { if (next) setView(next as View); }} asChild>
           <span className="trend-views stage-views" role="radiogroup" aria-label="财务视图">
             <ToggleGroupItem value="profit" role="radio" aria-checked={view === "profit"}>利润</ToggleGroupItem>
             {cash && <ToggleGroupItem value="cash" role="radio" aria-checked={view === "cash"}>现金流</ToggleGroupItem>}
-            {funding.balanceSheet && <ToggleGroupItem value="balance" role="radio" aria-checked={view === "balance"}>资产负债</ToggleGroupItem>}
+            {funding?.balanceSheet && <ToggleGroupItem value="balance" role="radio" aria-checked={view === "balance"}>资产负债</ToggleGroupItem>}
+            {figures.length > 0 && <ToggleGroupItem value="figures" role="radio" aria-checked={view === "figures"}>业务图</ToggleGroupItem>}
           </span>
         </ToggleGroup>}
         {/* The quarter is picked on the time axis under the chart; the header only names the one on stage. */}
         {quarter && <span className="report-current" aria-live="polite"><span>财报季度</span><b>{shortPeriod(quarter.periodEnd)}</b></span>}
         </div>
-        {quarter && <Verdict view={view} funding={funding} deficit={deficit?.text ?? null} />}
+        {quarter && view !== "figures" && <Verdict view={view} funding={funding} deficit={deficit?.text ?? null} />}
       </header>
 
       <div className="chart">
-        {view !== "profit" && funding ? <CapitalChart view={view} funding={funding} ticker={ticker} spotlight={poolSpotlight} />
+        {view === "figures" ? <BusinessFigures figures={figures} metrics={metrics} aside={current
+            ? <Dossier item={current} parent={parent ?? null} sources={quarter?.sources.length ? quarter.sources : business?.sources ?? []} explainer={explainer} narrative={narrative} data={data} periods={narrativePeriods} />
+            : narrative ? <CompanyDossier narrative={narrative} data={data} periods={narrativePeriods} onPick={id => pickBusiness(id)} /> : null} />
+          : view !== "profit" && funding ? <CapitalChart view={view} funding={funding} ticker={ticker} spotlight={poolSpotlight} />
           : !quarter ? <div className="empty"><h2>季度财务未披露</h2><p>需要同币种、同口径的三个月数据才能绘制流向；不会用示例数据替代。</p></div>
           : proportional && layout ? <FlowChart graph={graph!} copy={copy} money={v => money(v)} colorOf={colorOf} active={active} revealKey={quarter.id} productBusiness={current && !current.synthetic ? "segment:" + current.flowKey : null} businessDetails={<Dossier item={current} parent={parent ?? null} sources={quarter?.sources.length ? quarter.sources : business?.sources ?? []} explainer={explainer} narrative={narrative} data={data} periods={narrativePeriods} />}
               detailsKey={current?.synthetic ? current.key : "company"}
@@ -488,7 +496,8 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
         picker={<MetricPicker value={REVENUE_METRIC} groups={pickerGroups} revenue onChange={chooseMetric} />} />}
 
       <footer className="stage-foot">
-        {view !== "profit" && funding ? <CapitalLegend view={view} funding={funding} /> : proportional ? <div className="legend" aria-label="图例">
+        {view === "figures" ? <span className="legend-note">业务图由叙事层的拆解与运营指标生成；阶梯图数值均引自公司原文</span>
+          : view !== "profit" && funding ? <CapitalLegend view={view} funding={funding} /> : proportional ? <div className="legend" aria-label="图例">
           <span><i className="legend-biz" />业务收入</span>
           <span><i style={{ background: "var(--flow-profit)" }} />利润</span>
           {(graph?.signed || graph?.deficit) && <span><i style={{ background: "var(--loss)" }} />{graph?.deficit ? "净亏损（资金缺口）" : "亏损"}</span>}
@@ -497,7 +506,7 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
         </div> : <span className="legend-note">框图表示会计关系，宽度不代表金额</span>}
         <p className="provenance">
           {notice && <span>{notice}</span>}
-          {view !== "profit" && funding ? <CapitalProvenance view={view} funding={funding} /> : <>
+          {view === "figures" ? metrics && <span>运营指标 {metrics.model === "authored" ? "人工整理" : metrics.model} · {metrics.generatedAt.slice(0, 10)}</span> : view !== "profit" && funding ? <CapitalProvenance view={view} funding={funding} /> : <>
           {graph?.notice && proportional && <span>{graph.notice}</span>}
           {quarter && <span>{balanced ? `${reconciliation.length} 项会计等式已核对` : "部分披露缺失，只绘制已对平路径"}</span>}
           </>}

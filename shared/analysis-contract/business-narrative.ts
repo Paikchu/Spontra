@@ -65,6 +65,17 @@ export type NarrativeTie = { ref: FindingRef; span: FindingSpan; compare?: Findi
  */
 export type NarrativeCheck = { id: string; condition: string; status: NarrativeStatus; ref?: FindingRef; span?: FindingSpan; compare?: FindingCompare; claim?: ExplainerClaim | null };
 
+/**
+ * A figure the page draws for a business or the company. The model decomposes; code renders. A
+ * stack groups what the business is made of into layers from the physical or lowest to the
+ * customer-facing or highest, naming each item exactly as the capability (for a business) or the
+ * business (for the company) it stands for; a ladder charts operating metrics by key, pairing
+ * what is in use with what is contracted or targeted. Nothing in a figure is a number.
+ */
+export type NarrativeFigure =
+  | { type: "stack"; title: string; layers: Array<{ name: string; items: string[] }>; meaning: string }
+  | { type: "ladder"; title: string; tracks: Array<{ metricKey: string; role: "actual" | "contracted" | "target" }>; meaning: string };
+
 /** One link of the thesis: the premise, how far the material bears it out, and what would break it. */
 export type NarrativeLink = { id: string; premise: string; status: NarrativeStatus; evidence: ExplainerClaim[]; failure: string; checkIds: string[] };
 
@@ -87,6 +98,7 @@ export type BusinessNarrative = {
   ties: NarrativeTie[];
   chain: NarrativeLink[];
   checks: NarrativeCheck[];
+  figures?: NarrativeFigure[];
 };
 
 export type CompanyNarrative = {
@@ -107,6 +119,7 @@ export type CompanyNarrative = {
   industry: ExplainerClaim;
   chain: NarrativeLink[];
   checks: NarrativeCheck[];
+  figures?: NarrativeFigure[];
   businesses: BusinessNarrative[];
   sources: ExplainerSource[];
 };

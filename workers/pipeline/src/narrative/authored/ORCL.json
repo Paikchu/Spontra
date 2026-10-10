@@ -6,30 +6,99 @@
   "generatedAt": "2026-10-10T00:00:00.000Z",
   "model": "authored",
   "sources": [
-    { "id": "10k-fy26", "title": "Oracle 10-K FY2026", "url": "https://www.sec.gov/Archives/edgar/data/1341439/000119312526277521/orcl-20260531.htm", "kind": "sec", "publishedAt": "2026-06-22" },
-    { "id": "pr-q1-fy27", "title": "Oracle Q1 FY2027 业绩公告", "url": "https://www.sec.gov/Archives/edgar/data/1341439/000119312526387905/orcl-ex99_1.htm", "kind": "sec", "publishedAt": "2026-09-10" },
-    { "id": "pr-q4-fy26", "title": "Oracle Q4 FY2026 业绩公告", "url": "https://www.sec.gov/Archives/edgar/data/1341439/000119312526265848/orcl-ex99_1.htm", "kind": "sec", "publishedAt": "2026-06-10" },
-    { "id": "8k-fy26-start", "title": "8-K · FY26 开局与大额云合约（2025-06-30）", "url": "https://www.sec.gov/Archives/edgar/data/1341439/000119312525152035/d136779d8k.htm", "kind": "sec", "publishedAt": "2025-06-30" },
-    { "id": "8k-ceo", "title": "8-K · 联席 CEO 任命（2025-09-22）", "url": "https://www.sec.gov/Archives/edgar/data/1341439/000119312525210089/d921500d8k.htm", "kind": "sec", "publishedAt": "2025-09-22" },
-    { "id": "8k-notes-sep25", "title": "8-K · 180 亿美元票据发行（2025-09-26）", "url": "https://www.sec.gov/Archives/edgar/data/1341439/000119312525220445/d31817d8k.htm", "kind": "sec", "publishedAt": "2025-09-26" },
-    { "id": "8k-notes-feb26", "title": "8-K · 250 亿美元票据与股票增发协议（2026-02-04）", "url": "https://www.sec.gov/Archives/edgar/data/1341439/000119312526037840/d23732d8k.htm", "kind": "sec", "publishedAt": "2026-02-04" },
-    { "id": "8k-pref", "title": "8-K · 强制可转换优先股发行（2026-02-05）", "url": "https://www.sec.gov/Archives/edgar/data/1341439/000119312526039344/d63638d8k.htm", "kind": "sec", "publishedAt": "2026-02-05" },
-    { "id": "8k-cfo", "title": "8-K · 新任 CFO（2026-04-06）", "url": "https://www.sec.gov/Archives/edgar/data/1341439/000119312526142939/d132760d8k.htm", "kind": "sec", "publishedAt": "2026-04-06" },
-    { "id": "8k-ellison", "title": "8-K · Ellison 取消减持计划（2026-09-14）", "url": "https://www.sec.gov/Archives/edgar/data/1341439/000119312526389753/d20034d8k.htm", "kind": "sec", "publishedAt": "2026-09-14" }
+    {
+      "id": "10k-fy26",
+      "title": "Oracle 10-K FY2026",
+      "url": "https://www.sec.gov/Archives/edgar/data/1341439/000119312526277521/orcl-20260531.htm",
+      "kind": "sec",
+      "publishedAt": "2026-06-22"
+    },
+    {
+      "id": "pr-q1-fy27",
+      "title": "Oracle Q1 FY2027 业绩公告",
+      "url": "https://www.sec.gov/Archives/edgar/data/1341439/000119312526387905/orcl-ex99_1.htm",
+      "kind": "sec",
+      "publishedAt": "2026-09-10"
+    },
+    {
+      "id": "pr-q4-fy26",
+      "title": "Oracle Q4 FY2026 业绩公告",
+      "url": "https://www.sec.gov/Archives/edgar/data/1341439/000119312526265848/orcl-ex99_1.htm",
+      "kind": "sec",
+      "publishedAt": "2026-06-10"
+    },
+    {
+      "id": "8k-fy26-start",
+      "title": "8-K · FY26 开局与大额云合约（2025-06-30）",
+      "url": "https://www.sec.gov/Archives/edgar/data/1341439/000119312525152035/d136779d8k.htm",
+      "kind": "sec",
+      "publishedAt": "2025-06-30"
+    },
+    {
+      "id": "8k-ceo",
+      "title": "8-K · 联席 CEO 任命（2025-09-22）",
+      "url": "https://www.sec.gov/Archives/edgar/data/1341439/000119312525210089/d921500d8k.htm",
+      "kind": "sec",
+      "publishedAt": "2025-09-22"
+    },
+    {
+      "id": "8k-notes-sep25",
+      "title": "8-K · 180 亿美元票据发行（2025-09-26）",
+      "url": "https://www.sec.gov/Archives/edgar/data/1341439/000119312525220445/d31817d8k.htm",
+      "kind": "sec",
+      "publishedAt": "2025-09-26"
+    },
+    {
+      "id": "8k-notes-feb26",
+      "title": "8-K · 250 亿美元票据与股票增发协议（2026-02-04）",
+      "url": "https://www.sec.gov/Archives/edgar/data/1341439/000119312526037840/d23732d8k.htm",
+      "kind": "sec",
+      "publishedAt": "2026-02-04"
+    },
+    {
+      "id": "8k-pref",
+      "title": "8-K · 强制可转换优先股发行（2026-02-05）",
+      "url": "https://www.sec.gov/Archives/edgar/data/1341439/000119312526039344/d63638d8k.htm",
+      "kind": "sec",
+      "publishedAt": "2026-02-05"
+    },
+    {
+      "id": "8k-cfo",
+      "title": "8-K · 新任 CFO（2026-04-06）",
+      "url": "https://www.sec.gov/Archives/edgar/data/1341439/000119312526142939/d132760d8k.htm",
+      "kind": "sec",
+      "publishedAt": "2026-04-06"
+    },
+    {
+      "id": "8k-ellison",
+      "title": "8-K · Ellison 取消减持计划（2026-09-14）",
+      "url": "https://www.sec.gov/Archives/edgar/data/1341439/000119312526389753/d20034d8k.htm",
+      "kind": "sec",
+      "publishedAt": "2026-09-14"
+    }
   ],
   "positioning": {
     "text": "Oracle 以数据库起家，现在卖三样东西：云基础设施 OCI（含 GPU 算力和可部署在 Azure、AWS、Google Cloud 里的 Oracle 数据库）、云应用（Fusion ERP/HCM/CX、NetSuite、Oracle Health）以及仍在收许可和支持费的本地软件。云收入已过半，增长几乎全部来自 AI 训练与推理的算力合约。",
-    "sourceIds": ["10k-fy26", "pr-q1-fy27"]
+    "sourceIds": [
+      "10k-fy26",
+      "pr-q1-fy27"
+    ]
   },
   "stage": "scaling",
   "stageClaim": {
     "text": "FY2026 收入创纪录达 674 亿美元，云收入增长 39% 至 340 亿美元；资本开支从 212 亿美元增至 557 亿美元，自由现金流为 −237 亿美元。FY2027 第一季度收入增长 30%，OCI 增长 121%，RPO 升至 6640 亿美元。",
-    "sourceIds": ["pr-q4-fy26", "pr-q1-fy27", "10k-fy26"]
+    "sourceIds": [
+      "pr-q4-fy26",
+      "pr-q1-fy27",
+      "10k-fy26"
+    ]
   },
   "verdict": "成熟软件公司在用资产负债表换一个新业务：云基础设施的合约已经签到几年之后，能否按期建出算力并保住利润率决定一切。",
   "industry": {
     "text": "云基础设施对手是 Microsoft Azure、Amazon Web Services 和 Google Cloud，三家同时是 Oracle 多云数据库的部署伙伴；应用层对手包括大型应用厂商，医疗 IT 对手有 Epic Systems、athenahealth 等。公司自述许多对手在研发和市场上的投入高于自己。FY2026 没有单一客户占收入 10% 以上。",
-    "sourceIds": ["10k-fy26"]
+    "sourceIds": [
+      "10k-fy26"
+    ]
   },
   "chain": [
     {
@@ -37,88 +106,297 @@
       "premise": "AI 训练与推理的算力需求继续超过供给",
       "status": "confirmed",
       "evidence": [
-        { "text": "RPO 同比增加 2090 亿美元至 6640 亿美元；第一季度新签 AI 云合约超过 300 亿美元；管理层称 AI 云训练与推理服务的客户需求增长继续快于供给。", "sourceIds": ["pr-q1-fy27"] },
-        { "text": "2025 年 6 月公司称签订多份大额云服务协议，其中一份预计从 FY2028 起每年贡献超过 300 亿美元收入。", "sourceIds": ["8k-fy26-start"] }
+        {
+          "text": "RPO 同比增加 2090 亿美元至 6640 亿美元；第一季度新签 AI 云合约超过 300 亿美元；管理层称 AI 云训练与推理服务的客户需求增长继续快于供给。",
+          "sourceIds": [
+            "pr-q1-fy27"
+          ]
+        },
+        {
+          "text": "2025 年 6 月公司称签订多份大额云服务协议，其中一份预计从 FY2028 起每年贡献超过 300 亿美元收入。",
+          "sourceIds": [
+            "8k-fy26-start"
+          ]
+        }
       ],
       "failure": "少数 AI 客户缩减或推迟合约，RPO 停止增长。",
-      "checkIds": ["rpo-growth", "rpo-near-term"]
+      "checkIds": [
+        "rpo-growth",
+        "rpo-near-term"
+      ]
     },
     {
       "id": "build-out",
       "premise": "数据中心与 GPU 能按合约节奏建成交付",
       "status": "in_progress",
       "evidence": [
-        { "text": "第四季度以来向 AI 云客户交付超过 30 万块 GPU，接近上季交付容量的三倍；第一季度资本开支 285 亿美元。", "sourceIds": ["pr-q1-fy27"] },
-        { "text": "FY2026 资本开支从 212 亿美元增至 557 亿美元，主要用于数据中心扩张；截至 2026 年 5 月 31 日主要与数据中心电力相关的无条件采购义务合计 133 亿美元。", "sourceIds": ["10k-fy26"] }
+        {
+          "text": "第四季度以来向 AI 云客户交付超过 30 万块 GPU，接近上季交付容量的三倍；第一季度资本开支 285 亿美元。",
+          "sourceIds": [
+            "pr-q1-fy27"
+          ]
+        },
+        {
+          "text": "FY2026 资本开支从 212 亿美元增至 557 亿美元，主要用于数据中心扩张；截至 2026 年 5 月 31 日主要与数据中心电力相关的无条件采购义务合计 133 亿美元。",
+          "sourceIds": [
+            "10k-fy26"
+          ]
+        }
       ],
       "failure": "数据中心电力或 GPU 供应不足，合约收入确认推迟。",
-      "checkIds": ["capex-pace", "cloud-vs-guidance"]
+      "checkIds": [
+        "capex-pace",
+        "cloud-vs-guidance"
+      ]
     },
     {
       "id": "funding",
       "premise": "扩张的资金来自债务、优先股和增发，而非经营现金",
       "status": "confirmed",
       "evidence": [
-        { "text": "FY2026 发行 430 亿美元高级票据、50 亿美元强制可转换优先股；FY2027 预计通过债务与股权再融资约 400 亿美元，含已宣布的 200 亿美元 ATM 增发，但 2026 日历年内不再发债。", "sourceIds": ["pr-q4-fy26", "10k-fy26"] },
-        { "text": "FY2026 利息费用增长 29% 至 46 亿美元；截至 2026 年 5 月 31 日票据及其他长期借款本金合计 1301 亿美元，其中 903 亿美元在 FY2031 之后到期。", "sourceIds": ["10k-fy26"] }
+        {
+          "text": "FY2026 发行 430 亿美元高级票据、50 亿美元强制可转换优先股；FY2027 预计通过债务与股权再融资约 400 亿美元，含已宣布的 200 亿美元 ATM 增发，但 2026 日历年内不再发债。",
+          "sourceIds": [
+            "pr-q4-fy26",
+            "10k-fy26"
+          ]
+        },
+        {
+          "text": "FY2026 利息费用增长 29% 至 46 亿美元；截至 2026 年 5 月 31 日票据及其他长期借款本金合计 1301 亿美元，其中 903 亿美元在 FY2031 之后到期。",
+          "sourceIds": [
+            "10k-fy26"
+          ]
+        }
       ],
       "failure": "评级或市场条件恶化，再融资成本上升。",
-      "checkIds": ["fcf", "debt-load"]
+      "checkIds": [
+        "fcf",
+        "debt-load"
+      ]
     },
     {
       "id": "margin",
       "premise": "算力业务放量后利润率守得住",
       "status": "in_progress",
       "evidence": [
-        { "text": "第一季度 GAAP 营业利润增长 57% 至 67 亿美元，非 GAAP 营业利润增长 31% 至 82 亿美元。", "sourceIds": ["pr-q1-fy27"] },
-        { "text": "第三、四季度 RPO 增量多为客户预付 GPU 采购款或客户自带 GPU 的大型 AI 合约。", "sourceIds": ["pr-q4-fy26"] }
+        {
+          "text": "第一季度 GAAP 营业利润增长 57% 至 67 亿美元，非 GAAP 营业利润增长 31% 至 82 亿美元。",
+          "sourceIds": [
+            "pr-q1-fy27"
+          ]
+        },
+        {
+          "text": "第三、四季度 RPO 增量多为客户预付 GPU 采购款或客户自带 GPU 的大型 AI 合约。",
+          "sourceIds": [
+            "pr-q4-fy26"
+          ]
+        }
       ],
       "failure": "GPU 租赁的毛利低于传统软件，混合利润率持续下滑。",
-      "checkIds": ["operating-margin"]
+      "checkIds": [
+        "operating-margin"
+      ]
     },
     {
       "id": "software-base",
       "premise": "本地软件的许可与支持收入缓慢下滑但仍提供现金",
       "status": "confirmed",
       "evidence": [
-        { "text": "第一季度软件收入下降 3% 至 55 亿美元，反映客户持续从本地软件迁移到云。", "sourceIds": ["pr-q1-fy27"] }
+        {
+          "text": "第一季度软件收入下降 3% 至 55 亿美元，反映客户持续从本地软件迁移到云。",
+          "sourceIds": [
+            "pr-q1-fy27"
+          ]
+        }
       ],
       "failure": "迁移加速，支持收入下滑快于云收入补足。",
-      "checkIds": ["software-decline"]
+      "checkIds": [
+        "software-decline"
+      ]
     }
   ],
   "checks": [
-    { "id": "rpo-growth", "condition": "剩余履约义务是否继续增长", "status": "confirmed", "ref": { "capital": "rpo" }, "span": "quarter", "compare": "qoq" },
-    { "id": "rpo-near-term", "condition": "未来一年可确认的比例是否上升", "status": "in_progress", "ref": { "capital": "rpoNext12MonthsShare" }, "span": "quarter", "compare": "qoq" },
-    { "id": "capex-pace", "condition": "资本开支是否继续加速", "status": "in_progress", "ref": { "capital": "capex" }, "span": "quarter", "compare": "qoq" },
-    { "id": "cloud-vs-guidance", "condition": "云收入增速是否落在管理层指引内", "status": "confirmed", "ref": { "nodeId": "cloud" }, "span": "quarter", "compare": { "guidanceId": "segment_revenue|growth|total-cloud-revenue|quarter|2027|1||gaap|0001193125-26-265848" } },
-    { "id": "fcf", "condition": "自由现金流何时转正", "status": "unknown", "ref": { "capital": "freeCashFlow" }, "span": "quarter", "compare": "yoy" },
-    { "id": "debt-load", "condition": "有息债务的增速", "status": "in_progress", "ref": { "capital": "debt" }, "span": "quarter", "compare": "qoq" },
-    { "id": "operating-margin", "condition": "营业利润率能否维持", "status": "in_progress", "ref": { "ratio": { "numerator": { "metric": "operating" }, "denominator": { "metric": "revenue" } } }, "span": "quarter", "compare": "yoy" },
-    { "id": "software-decline", "condition": "软件收入下滑是否可控", "status": "confirmed", "ref": { "nodeId": "software" }, "span": "quarter", "compare": "yoy" }
+    {
+      "id": "rpo-growth",
+      "condition": "剩余履约义务是否继续增长",
+      "status": "confirmed",
+      "ref": {
+        "capital": "rpo"
+      },
+      "span": "quarter",
+      "compare": "qoq"
+    },
+    {
+      "id": "rpo-near-term",
+      "condition": "未来一年可确认的比例是否上升",
+      "status": "in_progress",
+      "ref": {
+        "capital": "rpoNext12MonthsShare"
+      },
+      "span": "quarter",
+      "compare": "qoq"
+    },
+    {
+      "id": "capex-pace",
+      "condition": "资本开支是否继续加速",
+      "status": "in_progress",
+      "ref": {
+        "capital": "capex"
+      },
+      "span": "quarter",
+      "compare": "qoq"
+    },
+    {
+      "id": "cloud-vs-guidance",
+      "condition": "云收入增速是否落在管理层指引内",
+      "status": "confirmed",
+      "ref": {
+        "nodeId": "cloud"
+      },
+      "span": "quarter",
+      "compare": {
+        "guidanceId": "segment_revenue|growth|total-cloud-revenue|quarter|2027|1||gaap|0001193125-26-265848"
+      }
+    },
+    {
+      "id": "fcf",
+      "condition": "自由现金流何时转正",
+      "status": "unknown",
+      "ref": {
+        "capital": "freeCashFlow"
+      },
+      "span": "quarter",
+      "compare": "yoy"
+    },
+    {
+      "id": "debt-load",
+      "condition": "有息债务的增速",
+      "status": "in_progress",
+      "ref": {
+        "capital": "debt"
+      },
+      "span": "quarter",
+      "compare": "qoq"
+    },
+    {
+      "id": "operating-margin",
+      "condition": "营业利润率能否维持",
+      "status": "in_progress",
+      "ref": {
+        "ratio": {
+          "numerator": {
+            "metric": "operating"
+          },
+          "denominator": {
+            "metric": "revenue"
+          }
+        }
+      },
+      "span": "quarter",
+      "compare": "yoy"
+    },
+    {
+      "id": "software-decline",
+      "condition": "软件收入下滑是否可控",
+      "status": "confirmed",
+      "ref": {
+        "nodeId": "software"
+      },
+      "span": "quarter",
+      "compare": "yoy"
+    }
   ],
   "businesses": [
     {
       "nodeId": "cloud",
       "name": "云服务",
       "stage": "scaling",
-      "stageClaim": { "text": "云收入（IaaS 加 SaaS）第一季度增长 62% 至 116 亿美元，其中云基础设施增长 121%、云应用增长 10%；FY2026 全年云收入 340 亿美元，增长 39%。", "sourceIds": ["pr-q1-fy27", "pr-q4-fy26"] },
+      "stageClaim": {
+        "text": "云收入（IaaS 加 SaaS）第一季度增长 62% 至 116 亿美元，其中云基础设施增长 121%、云应用增长 10%；FY2026 全年云收入 340 亿美元，增长 39%。",
+        "sourceIds": [
+          "pr-q1-fy27",
+          "pr-q4-fy26"
+        ]
+      },
       "verdict": "两种生意合在一张账上：基础设施在以算力合约换增速，应用在稳步长；增长、资本开支和融资压力几乎都来自前者。",
       "capabilities": [
-        { "label": "两条线", "claim": { "text": "云基础设施 OCI 提供计算、GPU、存储、网络及可在其他超大规模云里运行的 Oracle AI 数据库；云应用提供 Fusion ERP/HCM/CX、NetSuite 和 Oracle Health 等 SaaS 套件。", "sourceIds": ["10k-fy26"] } }
+        {
+          "label": "两条线",
+          "claim": {
+            "text": "云基础设施 OCI 提供计算、GPU、存储、网络及可在其他超大规模云里运行的 Oracle AI 数据库；云应用提供 Fusion ERP/HCM/CX、NetSuite 和 Oracle Health 等 SaaS 套件。",
+            "sourceIds": [
+              "10k-fy26"
+            ]
+          }
+        }
       ],
       "milestones": [
-        { "id": "cloud-half", "date": "2026-05", "label": "FY2026 云收入达 340 亿美元", "state": "done", "claim": { "text": "FY2026 云收入增长 39% 至 340 亿美元，总收入 674 亿美元。", "sourceIds": ["pr-q4-fy26"] } },
-        { "id": "cloud-q2-guide", "date": "2026-11", "label": "Q2 云收入指引增长 65%–71%", "state": "planned", "claim": { "text": "管理层指引 FY2027 第二季度云收入按美元计增长 65% 至 71%。", "sourceIds": ["pr-q1-fy27"] } }
+        {
+          "id": "cloud-half",
+          "date": "2026-05",
+          "label": "FY2026 云收入达 340 亿美元",
+          "state": "done",
+          "claim": {
+            "text": "FY2026 云收入增长 39% 至 340 亿美元，总收入 674 亿美元。",
+            "sourceIds": [
+              "pr-q4-fy26"
+            ]
+          }
+        },
+        {
+          "id": "cloud-q2-guide",
+          "date": "2026-11",
+          "label": "Q2 云收入指引增长 65%–71%",
+          "state": "planned",
+          "claim": {
+            "text": "管理层指引 FY2027 第二季度云收入按美元计增长 65% 至 71%。",
+            "sourceIds": [
+              "pr-q1-fy27"
+            ]
+          }
+        }
       ],
       "parties": [],
       "comparison": null,
       "ties": [
-        { "ref": { "nodeId": "cloud" }, "span": "quarter", "compare": "yoy", "meaning": "基础设施与应用合计；同比增速主要由基础设施拉动。" },
-        { "ref": { "nodeId": "cloud" }, "span": "quarter", "compare": { "guidanceId": "segment_revenue|growth|total-cloud-revenue|quarter|2027|1||gaap|0001193125-26-265848" }, "label": "云收入对指引", "meaning": "管理层给出的云收入增速区间，本季实际落在哪里。" }
+        {
+          "ref": {
+            "nodeId": "cloud"
+          },
+          "span": "quarter",
+          "compare": "yoy",
+          "meaning": "基础设施与应用合计；同比增速主要由基础设施拉动。"
+        },
+        {
+          "ref": {
+            "nodeId": "cloud"
+          },
+          "span": "quarter",
+          "compare": {
+            "guidanceId": "segment_revenue|growth|total-cloud-revenue|quarter|2027|1||gaap|0001193125-26-265848"
+          },
+          "label": "云收入对指引",
+          "meaning": "管理层给出的云收入增速区间，本季实际落在哪里。"
+        }
       ],
       "chain": [
-        { "id": "mix", "premise": "基础设施占云收入的比重持续上升", "status": "confirmed", "evidence": [ { "text": "第一季度云基础设施增长 121%、云应用增长 10%。", "sourceIds": ["pr-q1-fy27"] } ], "failure": "基础设施交付受限，云增速回落到应用的个位数区间。", "checkIds": ["cloud-vs-guidance"] }
+        {
+          "id": "mix",
+          "premise": "基础设施占云收入的比重持续上升",
+          "status": "confirmed",
+          "evidence": [
+            {
+              "text": "第一季度云基础设施增长 121%、云应用增长 10%。",
+              "sourceIds": [
+                "pr-q1-fy27"
+              ]
+            }
+          ],
+          "failure": "基础设施交付受限，云增速回落到应用的个位数区间。",
+          "checkIds": [
+            "cloud-vs-guidance"
+          ]
+        }
       ],
       "checks": []
     },
@@ -126,102 +404,603 @@
       "nodeId": "CloudInfrastructure",
       "name": "云基础设施",
       "stage": "scaling",
-      "stageClaim": { "text": "第一季度云基础设施收入增长 121%；第四季度以来交付超过 30 万块 GPU，接近上季的三倍；FY2026 资本开支 557 亿美元主要用于数据中心扩张。", "sourceIds": ["pr-q1-fy27", "10k-fy26"] },
+      "stageClaim": {
+        "text": "第一季度云基础设施收入增长 121%；第四季度以来交付超过 30 万块 GPU，接近上季的三倍；FY2026 资本开支 557 亿美元主要用于数据中心扩张。",
+        "sourceIds": [
+          "pr-q1-fy27",
+          "10k-fy26"
+        ]
+      },
       "verdict": "公司的全部赌注。合约签在前、建设在后，每一季都在用借来的钱买 GPU，再用交付进度换收入确认。",
       "capabilities": [
-        { "label": "AI 算力", "claim": { "text": "OCI 计算服务从虚拟机、GPU 实例到裸金属服务器，支持高 I/O、高性能计算以及 AI 模型训练与推理。", "sourceIds": ["10k-fy26"] } },
-        { "label": "多云数据库", "claim": { "text": "Oracle AI 数据库和自治数据库可部署在 Microsoft Azure、Amazon Web Services 和 Google Cloud 内；第四季度多云 AI 数据库增长 404%，是公司增长最快的业务。", "sourceIds": ["10k-fy26", "pr-q4-fy26"] } },
-        { "label": "部署形态", "claim": { "text": "公有云区域之外，还提供 Exadata Cloud@Customer、OCI Dedicated Region（含主权 AI）、Oracle Alloy 以及 Compute Cloud@Customer 和边缘设备等部署形式。", "sourceIds": ["10k-fy26"] } },
-        { "label": "网络与互连", "claim": { "text": "OCI 提供网络、连接与边缘服务，把客户数据中心和第三方云接到 OCI，形成分布式和多云架构。", "sourceIds": ["10k-fy26"] } }
+        {
+          "label": "AI 算力",
+          "claim": {
+            "text": "OCI 计算服务从虚拟机、GPU 实例到裸金属服务器，支持高 I/O、高性能计算以及 AI 模型训练与推理。",
+            "sourceIds": [
+              "10k-fy26"
+            ]
+          }
+        },
+        {
+          "label": "多云数据库",
+          "claim": {
+            "text": "Oracle AI 数据库和自治数据库可部署在 Microsoft Azure、Amazon Web Services 和 Google Cloud 内；第四季度多云 AI 数据库增长 404%，是公司增长最快的业务。",
+            "sourceIds": [
+              "10k-fy26",
+              "pr-q4-fy26"
+            ]
+          }
+        },
+        {
+          "label": "部署形态",
+          "claim": {
+            "text": "公有云区域之外，还提供 Exadata Cloud@Customer、OCI Dedicated Region（含主权 AI）、Oracle Alloy 以及 Compute Cloud@Customer 和边缘设备等部署形式。",
+            "sourceIds": [
+              "10k-fy26"
+            ]
+          }
+        },
+        {
+          "label": "网络与互连",
+          "claim": {
+            "text": "OCI 提供网络、连接与边缘服务，把客户数据中心和第三方云接到 OCI，形成分布式和多云架构。",
+            "sourceIds": [
+              "10k-fy26"
+            ]
+          }
+        }
       ],
       "milestones": [
-        { "id": "big-contract", "date": "2025-06-30", "label": "签下年收入超 300 亿美元的合约", "state": "done", "claim": { "text": "公司称签订多份大额云服务协议，其中一份预计从 FY2028 起每年贡献超过 300 亿美元收入。", "sourceIds": ["8k-fy26-start"] } },
-        { "id": "ceo", "date": "2025-09-22", "label": "OCI 负责人出任联席 CEO", "state": "done", "claim": { "text": "Clayton Magouyrk 与 Michael Sicilia 升任联席 CEO 并进入董事会。", "sourceIds": ["8k-ceo"] } },
-        { "id": "notes-sep25", "date": "2025-09-26", "label": "发行 180 亿美元票据", "state": "done", "claim": { "text": "2025 年 9 月完成 180 亿美元本金的票据发行。", "sourceIds": ["8k-notes-sep25"] } },
-        { "id": "notes-feb26", "date": "2026-02-04", "label": "发行 250 亿美元票据，签 ATM 增发", "state": "done", "claim": { "text": "2026 年 2 月完成 250 亿美元本金的多期票据发行，同时签订股票增发协议。", "sourceIds": ["8k-notes-feb26"] } },
-        { "id": "pref", "date": "2026-02-05", "label": "发行强制可转换优先股", "state": "done", "claim": { "text": "发行 1 亿份存托股份，对应 6.50% D 系列强制可转换优先股；FY2026 该项融资净额 50 亿美元。", "sourceIds": ["8k-pref", "10k-fy26"] } },
-        { "id": "cfo", "date": "2026-04-06", "label": "新任 CFO 上任", "state": "done", "claim": { "text": "Hilary Maxson 自 Schneider Electric 加入，出任首席财务官。", "sourceIds": ["8k-cfo"] } },
-        { "id": "gpu-q1", "date": "2026-08-31", "label": "单季交付超 30 万块 GPU", "state": "done", "claim": { "text": "第四季度以来向 AI 云客户交付超过 30 万块 GPU，接近上季交付容量的三倍。", "sourceIds": ["pr-q1-fy27"] } },
-        { "id": "ellison", "date": "2026-09-12", "label": "Ellison 取消减持计划", "state": "done", "claim": { "text": "执行主席兼 CTO Larry Ellison 取消其 10b5-1 售股计划，计划终止前未售出任何股票。", "sourceIds": ["8k-ellison"] } },
-        { "id": "funding-fy27", "date": "2027-05", "label": "FY2027 再融资约 400 亿美元", "state": "planned", "claim": { "text": "FY2027 预计通过债务与股权融资约 400 亿美元，含已宣布的 200 亿美元 ATM 增发；2026 日历年内不再发债。", "sourceIds": ["pr-q4-fy26"] } },
-        { "id": "contract-fy28", "date": "2027-06", "label": "大合约开始贡献收入", "state": "planned", "claim": { "text": "一份大额云服务协议预计从 FY2028 起每年贡献超过 300 亿美元收入。", "sourceIds": ["8k-fy26-start"] } }
+        {
+          "id": "big-contract",
+          "date": "2025-06-30",
+          "label": "签下年收入超 300 亿美元的合约",
+          "state": "done",
+          "claim": {
+            "text": "公司称签订多份大额云服务协议，其中一份预计从 FY2028 起每年贡献超过 300 亿美元收入。",
+            "sourceIds": [
+              "8k-fy26-start"
+            ]
+          }
+        },
+        {
+          "id": "ceo",
+          "date": "2025-09-22",
+          "label": "OCI 负责人出任联席 CEO",
+          "state": "done",
+          "claim": {
+            "text": "Clayton Magouyrk 与 Michael Sicilia 升任联席 CEO 并进入董事会。",
+            "sourceIds": [
+              "8k-ceo"
+            ]
+          }
+        },
+        {
+          "id": "notes-sep25",
+          "date": "2025-09-26",
+          "label": "发行 180 亿美元票据",
+          "state": "done",
+          "claim": {
+            "text": "2025 年 9 月完成 180 亿美元本金的票据发行。",
+            "sourceIds": [
+              "8k-notes-sep25"
+            ]
+          }
+        },
+        {
+          "id": "notes-feb26",
+          "date": "2026-02-04",
+          "label": "发行 250 亿美元票据，签 ATM 增发",
+          "state": "done",
+          "claim": {
+            "text": "2026 年 2 月完成 250 亿美元本金的多期票据发行，同时签订股票增发协议。",
+            "sourceIds": [
+              "8k-notes-feb26"
+            ]
+          }
+        },
+        {
+          "id": "pref",
+          "date": "2026-02-05",
+          "label": "发行强制可转换优先股",
+          "state": "done",
+          "claim": {
+            "text": "发行 1 亿份存托股份，对应 6.50% D 系列强制可转换优先股；FY2026 该项融资净额 50 亿美元。",
+            "sourceIds": [
+              "8k-pref",
+              "10k-fy26"
+            ]
+          }
+        },
+        {
+          "id": "cfo",
+          "date": "2026-04-06",
+          "label": "新任 CFO 上任",
+          "state": "done",
+          "claim": {
+            "text": "Hilary Maxson 自 Schneider Electric 加入，出任首席财务官。",
+            "sourceIds": [
+              "8k-cfo"
+            ]
+          }
+        },
+        {
+          "id": "gpu-q1",
+          "date": "2026-08-31",
+          "label": "单季交付超 30 万块 GPU",
+          "state": "done",
+          "claim": {
+            "text": "第四季度以来向 AI 云客户交付超过 30 万块 GPU，接近上季交付容量的三倍。",
+            "sourceIds": [
+              "pr-q1-fy27"
+            ]
+          }
+        },
+        {
+          "id": "ellison",
+          "date": "2026-09-12",
+          "label": "Ellison 取消减持计划",
+          "state": "done",
+          "claim": {
+            "text": "执行主席兼 CTO Larry Ellison 取消其 10b5-1 售股计划，计划终止前未售出任何股票。",
+            "sourceIds": [
+              "8k-ellison"
+            ]
+          }
+        },
+        {
+          "id": "funding-fy27",
+          "date": "2027-05",
+          "label": "FY2027 再融资约 400 亿美元",
+          "state": "planned",
+          "claim": {
+            "text": "FY2027 预计通过债务与股权融资约 400 亿美元，含已宣布的 200 亿美元 ATM 增发；2026 日历年内不再发债。",
+            "sourceIds": [
+              "pr-q4-fy26"
+            ]
+          }
+        },
+        {
+          "id": "contract-fy28",
+          "date": "2027-06",
+          "label": "大合约开始贡献收入",
+          "state": "planned",
+          "claim": {
+            "text": "一份大额云服务协议预计从 FY2028 起每年贡献超过 300 亿美元收入。",
+            "sourceIds": [
+              "8k-fy26-start"
+            ]
+          }
+        }
       ],
       "parties": [
-        { "name": "AI 训练与推理客户", "role": "customer", "claim": { "text": "RPO 的大幅增长来自 AI 训练与推理的云基础设施需求；第三、四季度新增 RPO 多为客户预付 GPU 采购款或客户自带 GPU 的大型合约。FY2026 没有单一客户占收入 10% 以上。", "sourceIds": ["pr-q4-fy26", "10k-fy26"] } },
-        { "name": "Microsoft、Amazon、Google", "role": "partner", "claim": { "text": "OCI 的多云服务与 Azure、AWS、Google Cloud 协同；公司提示多云策略也可能让客户迁往对手。", "sourceIds": ["10k-fy26"] } },
-        { "name": "票据与优先股投资者", "role": "funder", "claim": { "text": "FY2026 发行 430 亿美元高级票据和 50 亿美元强制可转换优先股；利息费用增长 29% 至 46 亿美元。", "sourceIds": ["pr-q4-fy26", "10k-fy26"] } },
-        { "name": "GPU 与数据中心电力供应方", "role": "supplier", "claim": { "text": "公司列出数据中心容量规划和 GPU 等组件采购为主要风险；截至 2026 年 5 月 31 日主要与数据中心电力相关的无条件采购义务合计 133 亿美元。", "sourceIds": ["pr-q1-fy27", "10k-fy26"] } }
+        {
+          "name": "AI 训练与推理客户",
+          "role": "customer",
+          "claim": {
+            "text": "RPO 的大幅增长来自 AI 训练与推理的云基础设施需求；第三、四季度新增 RPO 多为客户预付 GPU 采购款或客户自带 GPU 的大型合约。FY2026 没有单一客户占收入 10% 以上。",
+            "sourceIds": [
+              "pr-q4-fy26",
+              "10k-fy26"
+            ]
+          }
+        },
+        {
+          "name": "Microsoft、Amazon、Google",
+          "role": "partner",
+          "claim": {
+            "text": "OCI 的多云服务与 Azure、AWS、Google Cloud 协同；公司提示多云策略也可能让客户迁往对手。",
+            "sourceIds": [
+              "10k-fy26"
+            ]
+          }
+        },
+        {
+          "name": "票据与优先股投资者",
+          "role": "funder",
+          "claim": {
+            "text": "FY2026 发行 430 亿美元高级票据和 50 亿美元强制可转换优先股；利息费用增长 29% 至 46 亿美元。",
+            "sourceIds": [
+              "pr-q4-fy26",
+              "10k-fy26"
+            ]
+          }
+        },
+        {
+          "name": "GPU 与数据中心电力供应方",
+          "role": "supplier",
+          "claim": {
+            "text": "公司列出数据中心容量规划和 GPU 等组件采购为主要风险；截至 2026 年 5 月 31 日主要与数据中心电力相关的无条件采购义务合计 133 亿美元。",
+            "sourceIds": [
+              "pr-q1-fy27",
+              "10k-fy26"
+            ]
+          }
+        }
       ],
       "comparison": {
         "need": "AI 训练与推理的大规模算力，以及企业数据库上云",
-        "dimensions": ["数据库协同", "多云部署", "资源规模", "融资负担", "客户结构"],
+        "dimensions": [
+          "数据库协同",
+          "多云部署",
+          "资源规模",
+          "融资负担",
+          "客户结构"
+        ],
         "self": [
-          { "grade": "better", "claim": { "text": "Oracle AI 数据库可部署在三大云内，多云数据库第四季度增长 404%。", "sourceIds": ["10k-fy26", "pr-q4-fy26"] } },
-          { "grade": "better", "claim": { "text": "提供 Cloud@Customer、Dedicated Region、Alloy 等多种部署形态，含主权 AI。", "sourceIds": ["10k-fy26"] } },
-          { "grade": "worse", "claim": { "text": "公司自述许多对手在研发与市场上的投入高于自己。", "sourceIds": ["10k-fy26"] } },
-          { "grade": "worse", "claim": { "text": "FY2026 自由现金流 −237 亿美元，扩张靠 430 亿美元票据和 50 亿美元优先股。", "sourceIds": ["pr-q4-fy26"] } },
-          { "grade": "similar", "claim": { "text": "FY2026 没有单一客户占收入 10% 以上，但 RPO 增量集中于少数大型 AI 合约。", "sourceIds": ["10k-fy26", "pr-q4-fy26"] } }
+          {
+            "grade": "better",
+            "claim": {
+              "text": "Oracle AI 数据库可部署在三大云内，多云数据库第四季度增长 404%。",
+              "sourceIds": [
+                "10k-fy26",
+                "pr-q4-fy26"
+              ]
+            }
+          },
+          {
+            "grade": "better",
+            "claim": {
+              "text": "提供 Cloud@Customer、Dedicated Region、Alloy 等多种部署形态，含主权 AI。",
+              "sourceIds": [
+                "10k-fy26"
+              ]
+            }
+          },
+          {
+            "grade": "worse",
+            "claim": {
+              "text": "公司自述许多对手在研发与市场上的投入高于自己。",
+              "sourceIds": [
+                "10k-fy26"
+              ]
+            }
+          },
+          {
+            "grade": "worse",
+            "claim": {
+              "text": "FY2026 自由现金流 −237 亿美元，扩张靠 430 亿美元票据和 50 亿美元优先股。",
+              "sourceIds": [
+                "pr-q4-fy26"
+              ]
+            }
+          },
+          {
+            "grade": "similar",
+            "claim": {
+              "text": "FY2026 没有单一客户占收入 10% 以上，但 RPO 增量集中于少数大型 AI 合约。",
+              "sourceIds": [
+                "10k-fy26",
+                "pr-q4-fy26"
+              ]
+            }
+          }
         ],
         "alternatives": [
           {
             "id": "hyperscalers",
             "name": "超大规模云（Azure、AWS、GCP）",
             "cells": [
-              { "grade": "worse", "claim": { "text": "Oracle 数据库在这些云里以 Oracle 多云服务形式提供，而非对手自有。", "sourceIds": ["10k-fy26"] } },
-              { "grade": "unknown", "claim": { "text": "披露材料未比较对手的多云或本地部署形态。", "sourceIds": ["10k-fy26"] } },
-              { "grade": "better", "claim": { "text": "公司自述对手投入高于自己。", "sourceIds": ["10k-fy26"] } },
-              { "grade": "unknown", "claim": { "text": "披露材料未比较对手的融资方式。", "sourceIds": ["10k-fy26"] } },
-              { "grade": "unknown", "claim": { "text": "披露材料未比较对手的客户结构。", "sourceIds": ["10k-fy26"] } }
+              {
+                "grade": "worse",
+                "claim": {
+                  "text": "Oracle 数据库在这些云里以 Oracle 多云服务形式提供，而非对手自有。",
+                  "sourceIds": [
+                    "10k-fy26"
+                  ]
+                }
+              },
+              {
+                "grade": "unknown",
+                "claim": {
+                  "text": "披露材料未比较对手的多云或本地部署形态。",
+                  "sourceIds": [
+                    "10k-fy26"
+                  ]
+                }
+              },
+              {
+                "grade": "better",
+                "claim": {
+                  "text": "公司自述对手投入高于自己。",
+                  "sourceIds": [
+                    "10k-fy26"
+                  ]
+                }
+              },
+              {
+                "grade": "unknown",
+                "claim": {
+                  "text": "披露材料未比较对手的融资方式。",
+                  "sourceIds": [
+                    "10k-fy26"
+                  ]
+                }
+              },
+              {
+                "grade": "unknown",
+                "claim": {
+                  "text": "披露材料未比较对手的客户结构。",
+                  "sourceIds": [
+                    "10k-fy26"
+                  ]
+                }
+              }
             ]
           },
           {
             "id": "self-build",
             "name": "客户自建 AI 基础设施",
             "cells": [
-              { "grade": "unknown", "claim": { "text": "披露材料未比较自建环境中的数据库选择。", "sourceIds": ["10k-fy26"] } },
-              { "grade": "similar", "claim": { "text": "Cloud@Customer 与 Dedicated Region 让客户在自有数据中心内运行 OCI，是自建的替代。", "sourceIds": ["10k-fy26"] } },
-              { "grade": "unknown", "claim": { "text": "披露材料未比较自建所需规模。", "sourceIds": ["10k-fy26"] } },
-              { "grade": "unknown", "claim": { "text": "披露材料未比较自建的资本负担。", "sourceIds": ["10k-fy26"] } },
-              { "grade": "unknown", "claim": { "text": "披露材料未比较。", "sourceIds": ["10k-fy26"] } }
+              {
+                "grade": "unknown",
+                "claim": {
+                  "text": "披露材料未比较自建环境中的数据库选择。",
+                  "sourceIds": [
+                    "10k-fy26"
+                  ]
+                }
+              },
+              {
+                "grade": "similar",
+                "claim": {
+                  "text": "Cloud@Customer 与 Dedicated Region 让客户在自有数据中心内运行 OCI，是自建的替代。",
+                  "sourceIds": [
+                    "10k-fy26"
+                  ]
+                }
+              },
+              {
+                "grade": "unknown",
+                "claim": {
+                  "text": "披露材料未比较自建所需规模。",
+                  "sourceIds": [
+                    "10k-fy26"
+                  ]
+                }
+              },
+              {
+                "grade": "unknown",
+                "claim": {
+                  "text": "披露材料未比较自建的资本负担。",
+                  "sourceIds": [
+                    "10k-fy26"
+                  ]
+                }
+              },
+              {
+                "grade": "unknown",
+                "claim": {
+                  "text": "披露材料未比较。",
+                  "sourceIds": [
+                    "10k-fy26"
+                  ]
+                }
+              }
             ]
           }
         ]
       },
       "ties": [
-        { "ref": { "nodeId": "CloudInfrastructure" }, "span": "quarter", "compare": "yoy", "meaning": "合约交付后确认的收入，节奏取决于数据中心与 GPU 到位的速度。" },
-        { "ref": { "capital": "rpo" }, "span": "quarter", "compare": "qoq", "meaning": "已签未交付的合约总额，绝大部分排在一年之后。" },
-        { "ref": { "capital": "rpoNext12MonthsShare" }, "span": "quarter", "compare": "qoq", "meaning": "合约里一年内能变成收入的比例，越低说明交付越靠后。" },
-        { "ref": { "capital": "capex" }, "span": "quarter", "compare": "yoy", "meaning": "买 GPU、建数据中心的现金，是这项业务的先期投入。" },
-        { "ref": { "ratio": { "numerator": { "nodeId": "cloud" }, "denominator": { "capital": "capex" } } }, "span": "quarter", "compare": "yoy", "label": "每美元资本开支对应的云收入", "meaning": "投入产出比；下降说明建设跑在收入前面。" },
-        { "ref": { "capital": "freeCashFlow" }, "span": "quarter", "compare": "yoy", "meaning": "经营现金扣掉资本开支后的缺口，由外部融资填补。" }
+        {
+          "ref": {
+            "nodeId": "CloudInfrastructure"
+          },
+          "span": "quarter",
+          "compare": "yoy",
+          "meaning": "合约交付后确认的收入，节奏取决于数据中心与 GPU 到位的速度。"
+        },
+        {
+          "ref": {
+            "capital": "rpo"
+          },
+          "span": "quarter",
+          "compare": "qoq",
+          "meaning": "已签未交付的合约总额，绝大部分排在一年之后。"
+        },
+        {
+          "ref": {
+            "capital": "rpoNext12MonthsShare"
+          },
+          "span": "quarter",
+          "compare": "qoq",
+          "meaning": "合约里一年内能变成收入的比例，越低说明交付越靠后。"
+        },
+        {
+          "ref": {
+            "capital": "capex"
+          },
+          "span": "quarter",
+          "compare": "yoy",
+          "meaning": "买 GPU、建数据中心的现金，是这项业务的先期投入。"
+        },
+        {
+          "ref": {
+            "ratio": {
+              "numerator": {
+                "nodeId": "cloud"
+              },
+              "denominator": {
+                "capital": "capex"
+              }
+            }
+          },
+          "span": "quarter",
+          "compare": "yoy",
+          "label": "每美元资本开支对应的云收入",
+          "meaning": "投入产出比；下降说明建设跑在收入前面。"
+        },
+        {
+          "ref": {
+            "capital": "freeCashFlow"
+          },
+          "span": "quarter",
+          "compare": "yoy",
+          "meaning": "经营现金扣掉资本开支后的缺口，由外部融资填补。"
+        }
       ],
       "chain": [
-        { "id": "build-out", "premise": "数据中心与 GPU 能按合约节奏建成交付", "status": "in_progress", "evidence": [ { "text": "第四季度以来交付超过 30 万块 GPU，接近上季的三倍；第一季度资本开支 285 亿美元。", "sourceIds": ["pr-q1-fy27"] } ], "failure": "电力或 GPU 供应不足，合约收入确认推迟。", "checkIds": ["capex-pace", "cloud-vs-guidance"] },
-        { "id": "funding", "premise": "外部融资持续可得且成本可承受", "status": "confirmed", "evidence": [ { "text": "FY2027 预计再融资约 400 亿美元，2026 日历年内不再发债；FY2026 利息费用增长 29% 至 46 亿美元。", "sourceIds": ["pr-q4-fy26", "10k-fy26"] } ], "failure": "再融资成本上升或增发摊薄超预期。", "checkIds": ["fcf", "debt-load"] },
-        { "id": "margin", "premise": "算力业务放量后利润率守得住", "status": "in_progress", "evidence": [ { "text": "第一季度 GAAP 营业利润增长 57%，快于收入的 30%。", "sourceIds": ["pr-q1-fy27"] } ], "failure": "GPU 租赁毛利拉低混合利润率。", "checkIds": ["operating-margin"] }
+        {
+          "id": "build-out",
+          "premise": "数据中心与 GPU 能按合约节奏建成交付",
+          "status": "in_progress",
+          "evidence": [
+            {
+              "text": "第四季度以来交付超过 30 万块 GPU，接近上季的三倍；第一季度资本开支 285 亿美元。",
+              "sourceIds": [
+                "pr-q1-fy27"
+              ]
+            }
+          ],
+          "failure": "电力或 GPU 供应不足，合约收入确认推迟。",
+          "checkIds": [
+            "capex-pace",
+            "cloud-vs-guidance"
+          ]
+        },
+        {
+          "id": "funding",
+          "premise": "外部融资持续可得且成本可承受",
+          "status": "confirmed",
+          "evidence": [
+            {
+              "text": "FY2027 预计再融资约 400 亿美元，2026 日历年内不再发债；FY2026 利息费用增长 29% 至 46 亿美元。",
+              "sourceIds": [
+                "pr-q4-fy26",
+                "10k-fy26"
+              ]
+            }
+          ],
+          "failure": "再融资成本上升或增发摊薄超预期。",
+          "checkIds": [
+            "fcf",
+            "debt-load"
+          ]
+        },
+        {
+          "id": "margin",
+          "premise": "算力业务放量后利润率守得住",
+          "status": "in_progress",
+          "evidence": [
+            {
+              "text": "第一季度 GAAP 营业利润增长 57%，快于收入的 30%。",
+              "sourceIds": [
+                "pr-q1-fy27"
+              ]
+            }
+          ],
+          "failure": "GPU 租赁毛利拉低混合利润率。",
+          "checkIds": [
+            "operating-margin"
+          ]
+        }
       ],
-      "checks": []
+      "checks": [],
+      "figures": [
+        {
+          "type": "stack",
+          "title": "云基础设施由什么组成",
+          "layers": [
+            {
+              "name": "算力与网络",
+              "items": [
+                "AI 算力",
+                "网络与互连"
+              ]
+            },
+            {
+              "name": "数据层",
+              "items": [
+                "多云数据库"
+              ]
+            },
+            {
+              "name": "交付形态",
+              "items": [
+                "部署形态"
+              ]
+            }
+          ],
+          "meaning": "算力是 AI 合约买的东西，数据库是它区别于其他云的东西，部署形态决定客户在哪里用。"
+        }
+      ]
     },
     {
       "nodeId": "CloudApplications",
       "name": "云应用",
       "stage": "established",
-      "stageClaim": { "text": "第一季度云应用（SaaS）增长 10%；FY2026 第四季度同样增长 10%。公司预计新的 AI 患者护理管理系统将把 Oracle Health 整体增速推到两位数。", "sourceIds": ["pr-q1-fy27", "pr-q4-fy26"] },
+      "stageClaim": {
+        "text": "第一季度云应用（SaaS）增长 10%；FY2026 第四季度同样增长 10%。公司预计新的 AI 患者护理管理系统将把 Oracle Health 整体增速推到两位数。",
+        "sourceIds": [
+          "pr-q1-fy27",
+          "pr-q4-fy26"
+        ]
+      },
       "verdict": "稳定的订阅业务，增速远低于基础设施，但不需要为它借钱。",
       "capabilities": [
-        { "label": "Fusion 套件", "claim": { "text": "Fusion Cloud ERP 是战略性应用套件，与 Fusion HCM、CX 共用一套数据模型，公司认为它是客户采用其他云应用的基础。", "sourceIds": ["10k-fy26"] } },
-        { "label": "NetSuite 与 Oracle Health", "claim": { "text": "NetSuite 面向中小企业；Oracle Health 来自对 Cerner 的收购，对手包括 Epic Systems、athenahealth、InterSystems 等医疗 IT 厂商。", "sourceIds": ["pr-q1-fy27", "10k-fy26"] } }
+        {
+          "label": "Fusion 套件",
+          "claim": {
+            "text": "Fusion Cloud ERP 是战略性应用套件，与 Fusion HCM、CX 共用一套数据模型，公司认为它是客户采用其他云应用的基础。",
+            "sourceIds": [
+              "10k-fy26"
+            ]
+          }
+        },
+        {
+          "label": "NetSuite 与 Oracle Health",
+          "claim": {
+            "text": "NetSuite 面向中小企业；Oracle Health 来自对 Cerner 的收购，对手包括 Epic Systems、athenahealth、InterSystems 等医疗 IT 厂商。",
+            "sourceIds": [
+              "pr-q1-fy27",
+              "10k-fy26"
+            ]
+          }
+        }
       ],
       "milestones": [
-        { "id": "health-ai", "date": "2027-05", "label": "Oracle Health 增速到两位数", "state": "planned", "claim": { "text": "公司预计新的 AI 患者护理管理系统将在 FY2027 把 Oracle Health 整体增速推到两位数。", "sourceIds": ["pr-q4-fy26"] } }
+        {
+          "id": "health-ai",
+          "date": "2027-05",
+          "label": "Oracle Health 增速到两位数",
+          "state": "planned",
+          "claim": {
+            "text": "公司预计新的 AI 患者护理管理系统将在 FY2027 把 Oracle Health 整体增速推到两位数。",
+            "sourceIds": [
+              "pr-q4-fy26"
+            ]
+          }
+        }
       ],
       "parties": [],
       "comparison": null,
       "ties": [
-        { "ref": { "nodeId": "CloudApplications" }, "span": "quarter", "compare": "yoy", "meaning": "订阅收入，按期确认；增速反映新客户与续约，而非建设进度。" }
+        {
+          "ref": {
+            "nodeId": "CloudApplications"
+          },
+          "span": "quarter",
+          "compare": "yoy",
+          "meaning": "订阅收入，按期确认；增速反映新客户与续约，而非建设进度。"
+        }
       ],
       "chain": [
-        { "id": "health", "premise": "Oracle Health 从拖累变成增长点", "status": "in_progress", "evidence": [ { "text": "公司预计新的 AI 患者护理管理系统将把 Oracle Health 整体增速推到两位数。", "sourceIds": ["pr-q4-fy26"] } ], "failure": "医疗客户流失到 Epic 等对手。", "checkIds": [] }
+        {
+          "id": "health",
+          "premise": "Oracle Health 从拖累变成增长点",
+          "status": "in_progress",
+          "evidence": [
+            {
+              "text": "公司预计新的 AI 患者护理管理系统将把 Oracle Health 整体增速推到两位数。",
+              "sourceIds": [
+                "pr-q4-fy26"
+              ]
+            }
+          ],
+          "failure": "医疗客户流失到 Epic 等对手。",
+          "checkIds": []
+        }
       ],
       "checks": []
     },
@@ -229,20 +1008,63 @@
       "nodeId": "software",
       "name": "软件",
       "stage": "contracting",
-      "stageClaim": { "text": "第一季度软件收入下降 3% 至 55 亿美元，反映客户持续从本地软件迁移到云；其中软件支持远大于新许可。", "sourceIds": ["pr-q1-fy27"] },
+      "stageClaim": {
+        "text": "第一季度软件收入下降 3% 至 55 亿美元，反映客户持续从本地软件迁移到云；其中软件支持远大于新许可。",
+        "sourceIds": [
+          "pr-q1-fy27"
+        ]
+      },
       "verdict": "老业务在有序退场，支持费是公司最稳定的现金来源之一。",
       "capabilities": [
-        { "label": "许可与支持", "claim": { "text": "本地部署的 Oracle 数据库、中间件和应用按许可收费，并按年收取支持费；工程系统和数据库也可在客户数据中心以 Cloud@Customer 形式由 Oracle 托管。", "sourceIds": ["10k-fy26"] } }
+        {
+          "label": "许可与支持",
+          "claim": {
+            "text": "本地部署的 Oracle 数据库、中间件和应用按许可收费，并按年收取支持费；工程系统和数据库也可在客户数据中心以 Cloud@Customer 形式由 Oracle 托管。",
+            "sourceIds": [
+              "10k-fy26"
+            ]
+          }
+        }
       ],
       "milestones": [],
       "parties": [],
       "comparison": null,
       "ties": [
-        { "ref": { "nodeId": "software" }, "span": "quarter", "compare": "yoy", "meaning": "许可加支持；下滑幅度就是迁移速度。" },
-        { "ref": { "nodeId": "SoftwareSupport" }, "span": "quarter", "compare": "yoy", "meaning": "存量客户的年度支持费，比许可稳定得多。" }
+        {
+          "ref": {
+            "nodeId": "software"
+          },
+          "span": "quarter",
+          "compare": "yoy",
+          "meaning": "许可加支持；下滑幅度就是迁移速度。"
+        },
+        {
+          "ref": {
+            "nodeId": "SoftwareSupport"
+          },
+          "span": "quarter",
+          "compare": "yoy",
+          "meaning": "存量客户的年度支持费，比许可稳定得多。"
+        }
       ],
       "chain": [
-        { "id": "migration", "premise": "迁移节奏可控，支持收入缓慢下滑", "status": "confirmed", "evidence": [ { "text": "第一季度软件收入下降 3%。", "sourceIds": ["pr-q1-fy27"] } ], "failure": "迁移加速，支持收入下滑快于云收入补足。", "checkIds": ["software-decline"] }
+        {
+          "id": "migration",
+          "premise": "迁移节奏可控，支持收入缓慢下滑",
+          "status": "confirmed",
+          "evidence": [
+            {
+              "text": "第一季度软件收入下降 3%。",
+              "sourceIds": [
+                "pr-q1-fy27"
+              ]
+            }
+          ],
+          "failure": "迁移加速，支持收入下滑快于云收入补足。",
+          "checkIds": [
+            "software-decline"
+          ]
+        }
       ],
       "checks": []
     },
@@ -250,16 +1072,36 @@
       "nodeId": "HardwareRevenues",
       "name": "硬件",
       "stage": "contracting",
-      "stageClaim": { "text": "工程系统以本地、OCI 云服务、多云伙伴数据中心平台和混合云等形式提供；硬件收入在公司收入中占比很小。", "sourceIds": ["10k-fy26"] },
+      "stageClaim": {
+        "text": "工程系统以本地、OCI 云服务、多云伙伴数据中心平台和混合云等形式提供；硬件收入在公司收入中占比很小。",
+        "sourceIds": [
+          "10k-fy26"
+        ]
+      },
       "verdict": "工程系统的本地销售，越来越多以云服务形式计入云收入。",
       "capabilities": [
-        { "label": "工程系统", "claim": { "text": "Oracle 工程系统可作为本地硬件、OCI 云服务、多云伙伴数据中心里的数据库平台，或客户数据中心里的混合云提供。", "sourceIds": ["10k-fy26"] } }
+        {
+          "label": "工程系统",
+          "claim": {
+            "text": "Oracle 工程系统可作为本地硬件、OCI 云服务、多云伙伴数据中心里的数据库平台，或客户数据中心里的混合云提供。",
+            "sourceIds": [
+              "10k-fy26"
+            ]
+          }
+        }
       ],
       "milestones": [],
       "parties": [],
       "comparison": null,
       "ties": [
-        { "ref": { "nodeId": "HardwareRevenues" }, "span": "quarter", "compare": "yoy", "meaning": "本地硬件销售；同一产品以云形式交付时不计在这里。" }
+        {
+          "ref": {
+            "nodeId": "HardwareRevenues"
+          },
+          "span": "quarter",
+          "compare": "yoy",
+          "meaning": "本地硬件销售；同一产品以云形式交付时不计在这里。"
+        }
       ],
       "chain": [],
       "checks": []
@@ -268,17 +1110,58 @@
       "nodeId": "SalesRevenueServicesNet",
       "name": "服务",
       "stage": "established",
-      "stageClaim": { "text": "咨询与托管等服务收入，规模稳定。", "sourceIds": ["10k-fy26"] },
+      "stageClaim": {
+        "text": "咨询与托管等服务收入，规模稳定。",
+        "sourceIds": [
+          "10k-fy26"
+        ]
+      },
       "verdict": "围绕产品的服务收入，不是增长来源。",
       "capabilities": [],
       "milestones": [],
       "parties": [],
       "comparison": null,
       "ties": [
-        { "ref": { "nodeId": "SalesRevenueServicesNet" }, "span": "quarter", "compare": "yoy", "meaning": "随产品部署量起伏。" }
+        {
+          "ref": {
+            "nodeId": "SalesRevenueServicesNet"
+          },
+          "span": "quarter",
+          "compare": "yoy",
+          "meaning": "随产品部署量起伏。"
+        }
       ],
       "chain": [],
       "checks": []
+    }
+  ],
+  "figures": [
+    {
+      "type": "stack",
+      "title": "Oracle 卖什么",
+      "layers": [
+        {
+          "name": "基础设施",
+          "items": [
+            "云基础设施",
+            "硬件"
+          ]
+        },
+        {
+          "name": "数据与软件",
+          "items": [
+            "软件"
+          ]
+        },
+        {
+          "name": "应用与服务",
+          "items": [
+            "云应用",
+            "服务"
+          ]
+        }
+      ],
+      "meaning": "增长和资本开支集中在最底层；中间的本地软件在收缩但仍供现金；上层应用稳步增长。"
     }
   ]
 }
