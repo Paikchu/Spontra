@@ -34,7 +34,9 @@ async function readInput(env: SecPipelineEnv, ticker: string) {
   const metrics = metricsRow ? readOperatingMetrics(metricsRow.payload, ticker) : null;
   const narrative = narrativeRow ? readCompanyNarrative(narrativeRow.payload, ticker) : null;
   const findings = findingsRow ? readFindingsPublication(findingsRow.payload, ticker) : null;
-  const fingerprint = await sha256(JSON.stringify({ version: FIGURES_PLANNER_VERSION, ticker, explainer: explainer.fingerprint, generatedAt: explainer.generatedAt, metrics: metrics?.generatedAt ?? null, narrative: narrative?.generatedAt ?? null, findings: findings?.generatedAt ?? null }));
+  // Content digests, not timestamps, so a republished metrics set or narrative with the same content does not re-plan.
+  const metricsDigest = metrics ? metrics.metrics.map(m => `${m.key}:${m.observations.map(o => `${o.asOf}=${o.value}`).join(",")}`).sort().join(";") : null;
+  const fingerprint = await sha256(JSON.stringify({ version: FIGURES_PLANNER_VERSION, ticker, explainer: explainer.fingerprint, metrics: metricsDigest, narrative: narrative?.fingerprint ?? narrative?.generatedAt ?? null, findings: findings?.fingerprint ?? findings?.generatedAt ?? null }));
   return { explainer, metrics, narrative, findings, fingerprint };
 }
 

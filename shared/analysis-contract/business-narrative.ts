@@ -142,6 +142,10 @@ export type CompanyNarrative = {
   verdict: string;
   /** Where the company sits in its industry: who it competes with and who it depends on. */
   industry: ExplainerClaim;
+  /** Company-wide events (financing, restructuring, company-level M&A, leadership) that belong to no single business. */
+  milestones?: NarrativeMilestone[];
+  /** Company-wide funders, partners and suppliers. */
+  parties?: NarrativeParty[];
   chain: NarrativeLink[];
   checks: NarrativeCheck[];
   figures?: NarrativeFigure[];

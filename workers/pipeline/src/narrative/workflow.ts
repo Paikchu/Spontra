@@ -49,7 +49,9 @@ async function readInput(env: SecPipelineEnv, ticker: string) {
   const guidance = guidanceRow ? readGuidancePublication(guidanceRow.payload, ticker) : null;
   const findings = findingsRow ? readFindingsPublication(findingsRow.payload, ticker) : null;
   const filings = [...feed.filings].sort((a, b) => b.filingDate.localeCompare(a.filingDate)).slice(0, 16).map(f => f.accessionNumber);
-  const fingerprint = await sha256(JSON.stringify({ version: NARRATIVE_WRITER_VERSION, ticker, explainer: explainer.fingerprint, periodEnd: newest.periodEnd, filings, metrics: metrics?.generatedAt ?? null, guidance: guidance?.updatedAt ?? null, findings: findings?.generatedAt ?? null }));
+  // Content digests, not timestamps: the metrics set republishes every time a filing is read, and that must not rewrite a narrative whose inputs did not change.
+  const metricsDigest = metrics ? metrics.metrics.map(m => `${m.key}:${m.observations.map(o => `${o.asOf}=${o.value}`).join(",")}`).sort().join(";") : null;
+  const fingerprint = await sha256(JSON.stringify({ version: NARRATIVE_WRITER_VERSION, ticker, explainer: explainer.fingerprint, periodEnd: newest.periodEnd, filings, metrics: metricsDigest, guidance: guidance?.updatedAt ?? null, findings: findings?.fingerprint ?? findings?.generatedAt ?? null }));
   return { explainer, feed, nodes, periodEnd: newest.periodEnd, metrics, guidance, findings, fingerprint };
 }
 

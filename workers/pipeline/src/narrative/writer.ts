@@ -8,7 +8,7 @@ import { materialNumbers, unsupportedNumbers } from "../../../../shared/analysis
 import type { NarrativeMaterial } from "./materials.ts";
 
 /** Changing the prompts or the harness rewrites every company once. */
-export const NARRATIVE_WRITER_VERSION = "narrative-writer.v2";
+export const NARRATIVE_WRITER_VERSION = "narrative-writer.v3";
 
 export type NarrativeModel = (stage: string, system: string, payload: unknown) => Promise<Record<string, unknown>>;
 
@@ -27,9 +27,11 @@ export const COMPANY_PROMPT = `${RULES}
  "stage":"scaling","stageClaim":{"text":"为什么处在这个阶段：规模、里程碑、盈亏，带数字","sourceIds":[]},
  "verdict":"一句话判断，不含数字，最多 60 字",
  "industry":{"text":"竞争对手是谁、依赖谁、在行业里的位置","sourceIds":[]},
+ "milestones":[{"id":"","date":"YYYY-MM-DD 或 YYYY-MM 或 YYYY","label":"最多 24 字","state":"done|planned|delayed","originalDate":null,"claim":{"text":"公司层事件：融资与发债、重组、公司级收购、CEO/CFO 更替、上市，带数字","sourceIds":[]}}],
+ "parties":[{"name":"","role":"funder|partner|supplier","claim":{"text":"公司层的出资方、合作方或关键供应商，带数字","sourceIds":[]}}],
  "chain":[{"id":"demand","premise":"前提，不含数字，最多 40 字","status":"confirmed","evidence":[{"text":"带数字的证据","sourceIds":[]}],"failure":"失效条件，不含数字","checkIds":["rpo-growth"]}],
  "checks":[{"id":"rpo-growth","condition":"验证条件，不含数字","status":"confirmed","ref":{"capital":"rpo"},"span":"quarter","compare":"qoq"}]}
-叙事链 3–5 环，按因果顺序；验证点 3–6 条，每条尽量绑定一个可解析的 ref，让页面显示最新数字；chain 的 checkIds 只引用本次给出的 check id。`;
+叙事链 3–5 环，按因果顺序；验证点 3–6 条，每条尽量绑定一个可解析的 ref，让页面显示最新数字；chain 的 checkIds 只引用本次给出的 check id。公司层的 milestones 和 parties 收全公司范围的事件与相关方，6–12 条；业务层只收属于那项业务的，两边不重复。`;
 
 export const BUSINESS_PROMPT = `${RULES}
 现在写一项业务。它的 nodeId 必须原样返回。输出 JSON：
@@ -43,7 +45,7 @@ export const BUSINESS_PROMPT = `${RULES}
  "ties":[{"ref":{"nodeId":""},"span":"quarter","compare":"yoy","label":"可选","meaning":"这个数字对这项业务意味着什么，不含数字"}],
  "chain":[{"id":"","premise":"不含数字","status":"in_progress","evidence":[{"text":"带数字","sourceIds":[]}],"failure":"不含数字","checkIds":[]}],
  "checks":[]}
-要求：capabilities 3–6 项；milestones 只收商业与经营事件：合同与客户承诺、产品或产能上线、收购、融资与大额发债、监管许可、CEO/CFO 更替，不收例行业绩发布、一般人事变动和年报本身，按时间给已完成、计划中、延期的事件，6–14 条，没有材料就少写；parties 按角色给出，最多 10 条；comparison 的 self 和每个 alternative 的 cells 长度都等于 dimensions 长度，评级只取自材料，材料没比较的格子写 unknown 并说明；ties 2–6 条，只用这项业务有收入时才引用它的 nodeId；chain 2–4 环。`;
+要求：capabilities 3–6 项；milestones 只收属于这项业务的商业与经营事件：它的合同与客户承诺、产品或产能上线、为它做的收购、监管许可，不收公司层的融资、发债、重组、上市和高管更替（那些在公司层写），不收例行业绩发布和年报本身，按时间给已完成、计划中、延期的事件，4–12 条，没有材料就少写；parties 只收这项业务自己的客户、合作方和供应商；parties 按角色给出，最多 10 条；comparison 的 self 和每个 alternative 的 cells 长度都等于 dimensions 长度，评级只取自材料，材料没比较的格子写 unknown 并说明；ties 2–6 条，只用这项业务有收入时才引用它的 nodeId；chain 2–4 环。`;
 
 /** The company-level draft the model returns, parsed loosely; the harness decides what survives. */
 type Draft = Record<string, unknown>;
@@ -180,9 +182,20 @@ export async function writeNarrative(input: WriterInput, model: NarrativeModel, 
     });
     businesses.push({ ...draft, nodeId: node.nodeId, name: node.name });
   }
+  // An event every business repeats is a company event: it moves to the company level and leaves the businesses.
+  const key = (m: { date?: unknown; label?: unknown; claim?: { text?: string } }) => `${String(m.date ?? "").slice(0, 7)}|${String(m.claim?.text ?? m.label ?? "").replace(/\s+/g, "").slice(0, 40)}`;
+  const counts = new Map<string, number>();
+  for (const b of businesses) for (const m of (b.milestones as Array<Record<string, unknown>> | undefined) ?? []) counts.set(key(m), (counts.get(key(m)) ?? 0) + 1);
+  const companyMilestones = [...((company.milestones as Array<Record<string, unknown>> | undefined) ?? [])];
+  const companyKeys = new Set(companyMilestones.map(key));
+  for (const b of businesses) {
+    const own = (b.milestones as Array<Record<string, unknown>> | undefined) ?? [];
+    b.milestones = own.filter(m => { const k = key(m); const repeated = (counts.get(k) ?? 0) >= 2 || companyKeys.has(k); if (repeated && !companyKeys.has(k)) { companyMilestones.push(m); companyKeys.add(k); } return !repeated; });
+  }
   const candidate = {
     schemaVersion: "business-narrative.v1", ticker: input.ticker, companyName: input.companyName, periodEnd: input.periodEnd, generatedAt: input.now, model: input.modelVersion, fingerprint: input.fingerprint,
     positioning: company.positioning, stage: company.stage, stageClaim: company.stageClaim, verdict: company.verdict, industry: company.industry,
+    milestones: companyMilestones.slice(0, 24), parties: (company.parties as unknown[] | undefined) ?? [],
     chain: (company.chain as NarrativeLink[] | undefined) ?? [], checks: (company.checks as NarrativeCheck[] | undefined) ?? [],
     businesses: businesses.filter(b => b.stage && b.verdict && b.stageClaim).map(b => ({ parentNodeId: null, comparison: null, anchor: null, capabilities: [], milestones: [], parties: [], ties: [], chain: [], checks: [], ...b })) as unknown as BusinessNarrative[],
     sources,

@@ -47,6 +47,7 @@ export const companyNarrativeSchema = z.object({
   ticker: z.string().regex(/^[A-Z][A-Z0-9.-]{0,11}$/),
   companyName: text(200), periodEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), generatedAt: z.string().max(40), model: text(80), fingerprint: text(128).optional(),
   positioning: claim, stage: z.enum(NARRATIVE_STAGES), stageClaim: claim, verdict: prose(90), industry: claim,
+  milestones: z.array(milestone).max(24).optional(), parties: z.array(party).max(16).optional(),
   chain: z.array(link).max(8), checks: z.array(check).max(10), figures: z.array(figureSchema).max(4).optional(), layout: panelPlanSchema.nullable().optional(),
   businesses: z.array(business).min(1).max(16),
   sources: z.array(z.object({ id: text(40), title: text(300), url: https, kind: z.enum(["sec", "web"]), publishedAt: z.string().max(40).nullable() })).min(1).max(60),
@@ -114,5 +115,7 @@ export function readCompanyNarrative(value: unknown, ticker: string): CompanyNar
   });
   if (!businesses.length || !cited(parsed.data.positioning) || !cited(parsed.data.stageClaim) || !cited(parsed.data.industry)) return null;
   const figures = figuresOf(parsed.data.figures, new Set(businesses.map(b => b.name)));
-  return { ...parsed.data, checks: companyChecks, chain: linksOf(parsed.data.chain, [...companyChecks, ...businesses.flatMap(b => b.checks)]), figures, layout: harnessLayout(parsed.data.layout, figures.length), businesses };
+  const milestones = (parsed.data.milestones ?? []).filter(m => cited(m.claim)).map(m => ({ ...m, originalDate: m.originalDate ?? null }));
+  const parties = (parsed.data.parties ?? []).filter(p => cited(p.claim));
+  return { ...parsed.data, milestones, parties, checks: companyChecks, chain: linksOf(parsed.data.chain, [...companyChecks, ...businesses.flatMap(b => b.checks)]), figures, layout: harnessLayout(parsed.data.layout, figures.length), businesses };
 }

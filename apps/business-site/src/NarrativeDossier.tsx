@@ -75,7 +75,7 @@ function Chain({ chain, index, data, periods, cite }: { chain: NarrativeLink[]; 
  * carries its sources; every figure is resolved from the statements on stage.
  */
 export function CompanyDossier({ narrative, data, periods, onPick }: { narrative: CompanyNarrative; data: FindingData; periods: string[]; onPick: (nodeId: string) => void }) {
-  const claims = useMemo(() => [narrative.positioning, narrative.stageClaim, narrative.industry, ...narrative.chain.flatMap(l => l.evidence)], [narrative]);
+  const claims = useMemo(() => [narrative.positioning, narrative.stageClaim, narrative.industry, ...(narrative.milestones ?? []).map(m => m.claim), ...(narrative.parties ?? []).map(p => p.claim), ...narrative.chain.flatMap(l => l.evidence)], [narrative]);
   const { cited, cite } = useCites(narrative.sources, claims);
   const index = useMemo(() => checkIndex(narrative), [narrative]);
   return <section className="dossier dossier--narrative" aria-label={`${narrative.companyName} 公司档案`}>
@@ -88,6 +88,8 @@ export function CompanyDossier({ narrative, data, periods, onPick }: { narrative
         <p className="dossier-prose">{narrative.industry.text}{cite(narrative.industry)}</p>
         <p className="dossier-prose"><b>所处阶段：</b>{narrative.stageClaim.text}{cite(narrative.stageClaim)}</p>
       </div>],
+      ...(narrative.milestones?.length ? [["进度", <TimelineList key="ms" milestones={narrative.milestones} cite={cite} />] as [string, ReactNode]] : []),
+      ...(narrative.parties?.length ? [["金主与合作方", <PartiesList key="parties" parties={narrative.parties} cite={cite} />] as [string, ReactNode]] : []),
       ["验证点", <Checks key="checks" checks={narrative.checks} data={data} periods={periods} />],
       ["各项业务", <ul key="businesses" className="narrative-businesses">{narrative.businesses.map(b => <li key={b.nodeId}><Button variant="unstyled" type="button" onClick={() => onPick(b.nodeId)}>
         <span className="narrative-business-name">{b.name}<StagePill stage={b.stage} /></span>
@@ -140,12 +142,12 @@ const SECTION_TITLE: Record<SectionKind, string> = { timeline: "进度", parties
 export function SectionPanel({ kind, business, narrative, data, periods }: { kind: SectionKind; business: BusinessNarrative | null; narrative: CompanyNarrative; data: FindingData; periods: string[] }) {
   const claims = useMemo(() => business
     ? [...business.milestones.map(m => m.claim), ...business.parties.map(p => p.claim), ...(business.comparison ? [...business.comparison.self, ...business.comparison.alternatives.flatMap(a => a.cells)].map(c => c.claim) : []), ...business.chain.flatMap(l => l.evidence)]
-    : narrative.chain.flatMap(l => l.evidence), [business, narrative]);
+    : [...(narrative.milestones ?? []).map(m => m.claim), ...(narrative.parties ?? []).map(p => p.claim), ...narrative.chain.flatMap(l => l.evidence)], [business, narrative]);
   const { cite } = useCites(narrative.sources, claims);
   const index = useMemo(() => checkIndex(narrative), [narrative]);
   const subject = business?.name ?? narrative.companyName;
-  const body = kind === "timeline" ? (business ? <TimelineList milestones={business.milestones} cite={cite} /> : <Empty>公司层没有里程碑；请选一项业务。</Empty>)
-    : kind === "parties" ? (business ? <PartiesList parties={business.parties} cite={cite} /> : <Empty>公司层没有相关方清单；请选一项业务。</Empty>)
+  const body = kind === "timeline" ? <TimelineList milestones={business ? business.milestones : narrative.milestones ?? []} cite={cite} />
+    : kind === "parties" ? <PartiesList parties={business ? business.parties : narrative.parties ?? []} cite={cite} />
     : kind === "comparison" ? (business?.comparison ? <Comparison comparison={business.comparison} name={business.name} cite={cite} /> : <Empty>材料没有把这项业务与替代方案作比较。</Empty>)
     : kind === "checks" ? <Checks checks={business ? [...new Map([...business.checks, ...business.chain.flatMap(l => linkChecks(l, index))].map(c => [c.id, c])).values()] : narrative.checks} data={data} periods={periods} />
     : <Chain chain={business ? business.chain : narrative.chain} index={index} data={data} periods={periods} cite={cite} />;
