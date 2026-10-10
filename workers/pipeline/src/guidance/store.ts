@@ -116,13 +116,4 @@ export class GuidanceStore {
       ON CONFLICT(day,feature) DO UPDATE SET units=units+1 WHERE units<? RETURNING units`).bind(day, feature, cap).first<{ units: number }>();
     return !!row;
   }
-
-  async recordUsage(day: string, feature: string, model: string, usage: unknown): Promise<void> {
-    const u = (usage ?? {}) as Record<string, unknown>;
-    const n = (v: unknown) => typeof v === "number" && Number.isFinite(v) ? Math.round(v) : 0;
-    await this.db.prepare(`INSERT INTO ai_usage_log (day,feature,provider,model,calls,input_tokens,cached_tokens,output_tokens) VALUES (?,?,'deepseek',?,1,?,?,?)
-      ON CONFLICT(day,feature,provider,model) DO UPDATE SET calls=calls+1,input_tokens=input_tokens+excluded.input_tokens,
-      cached_tokens=cached_tokens+excluded.cached_tokens,output_tokens=output_tokens+excluded.output_tokens`)
-      .bind(day, feature, model, n(u.prompt_tokens), n(u.prompt_cache_hit_tokens), n(u.completion_tokens)).run();
-  }
 }

@@ -38,11 +38,6 @@ export type CompanyAnalysisWorkflowParams = {
   triggerRef: string;
 };
 
-export type CompanyAnalysisBackfillParams = {
-  requestedBy?: "manual" | "scheduled";
-  forceIncomplete?: boolean;
-};
-
 export type SecCronEnv = {
   /** This Worker's own copy of the whitelist — nothing here asks another Worker for it. */
   SEC_TRACKED_TICKERS?: string;

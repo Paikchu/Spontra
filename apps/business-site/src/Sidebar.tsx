@@ -46,7 +46,12 @@ export function RailActions({ light, onToggleTheme, onSearch, collapsed }: {
  * Floating card: the company row stays put, everything below it scrolls inside the card.
  * Once the list moves, a blur band under the row softens what slides beneath it; the scrollbar thumb only shows while scrolling or hovered.
  */
-export function Rail({ ticker, actions, label, children }: { ticker: string; actions: ReactNode; label?: string; children?: ReactNode }) {
+export function Rail({ ticker, actions, label, expanded = false, children }: {
+  ticker: string; actions: ReactNode; label?: string;
+  /** A section has opened over the whole rail: the body stops scrolling and that section scrolls its own list. */
+  expanded?: boolean;
+  children?: ReactNode;
+}) {
   const [scrolled, setScrolled] = useState(false);
   const idle = useRef(0);
   useEffect(() => () => clearTimeout(idle.current), []);
@@ -57,12 +62,12 @@ export function Rail({ ticker, actions, label, children }: { ticker: string; act
     clearTimeout(idle.current);
     idle.current = window.setTimeout(() => delete el.dataset.scrolling, 900);
   }
-  return <Sidebar collapsible="none" asChild><aside className="rail" aria-label={label} data-scrolled={scrolled || undefined}>
+  return <Sidebar collapsible="none" asChild><aside className="rail" aria-label={label} data-scrolled={scrolled && !expanded || undefined}>
     <SidebarHeader asChild><div className="rail-top">
       <CompanyMark ticker={ticker} />
       {actions}
       {children && <div className="rail-blur" aria-hidden="true" />}
     </div></SidebarHeader>
-    {children && <SidebarContent asChild><div className="rail-scroll" id="rail-body" onScroll={onScroll}>{children}</div></SidebarContent>}
+    {children && <SidebarContent asChild><div className="rail-scroll" id="rail-body" data-expanded={expanded || undefined} onScroll={onScroll}>{children}</div></SidebarContent>}
   </aside></Sidebar>;
 }

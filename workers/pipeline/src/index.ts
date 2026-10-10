@@ -3,7 +3,7 @@ import { SecModelHttpError } from "./operations.ts";
 import { WorkerEntrypoint, WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
 import { handleMapRead } from "./read-api/router.ts";
 
-import { assertTrackedTicker, runCompanyAnalysisSweep, runSecRefresh, type CompanyAnalysisBackfillParams, type CompanyAnalysisWorkflowParams, type SecMemoryWorkflowParams, type SecWorkflowParams } from "./core.ts";
+import { assertTrackedTicker, type CompanyAnalysisWorkflowParams, type SecMemoryWorkflowParams, type SecWorkflowParams } from "./core.ts";
 import { executeCompanyAnalysisWorkflow, type CompanyWorkflowStep } from "./company-analysis-workflow.ts";
 import { executeSecMemoryWorkflow } from "./memory-workflow.ts";
 import { createSecPipelineOperations, type SecPipelineEnv } from "./operations.ts";
@@ -134,22 +134,6 @@ export class CompanyAnalysisWorkflow extends WorkflowEntrypoint<SecPipelineEnv, 
       step as unknown as CompanyWorkflowStep,
       this.env,
     );
-  }
-}
-
-export class CompanyAnalysisBackfillWorkflow extends WorkflowEntrypoint<SecPipelineEnv, CompanyAnalysisBackfillParams> {
-  async run(event: WorkflowEvent<CompanyAnalysisBackfillParams>, step: WorkflowStep) {
-    const durable = durableSteps(step, this.env, event.instanceId);
-    // Recovery reuses the latest completed Memory and Yahoo snapshot. Starting every SEC workflow
-    // again would add unrelated model traffic precisely while recovering rate-limited Agent runs.
-    const sec = event.payload.forceIncomplete === true
-      ? { started: [], failed: [], skipped: true }
-      : await durable.do("backfill-latest-sec", () => runSecRefresh(this.env));
-    const company = await durable.do("backfill-company-analysis", () => runCompanyAnalysisSweep(
-      this.env,
-      { forceIncomplete: event.payload.forceIncomplete === true },
-    ));
-    return { sec, company };
   }
 }
 

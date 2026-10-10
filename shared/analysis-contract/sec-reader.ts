@@ -1,4 +1,4 @@
-export type { SecReaderReport, SecReaderVisual, SecReaderContentBlock, SecReaderAsset } from "../analysis-runtime/sec-reader-schema.ts";
+export type { SecReaderReport, SecReaderVisual } from "../analysis-runtime/sec-reader-schema.ts";
 
 export const SEC_READER_VISUAL_CATALOG = {
   essay: "连续叙事：适合解释复杂机制，正文后给出结论。",

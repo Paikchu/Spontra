@@ -224,7 +224,6 @@
 }
 
 .earning-report .loss { color: var(--vermilion); }
-.earning-report .muted { color: var(--ink-soft); }
 
 .earning-report .legend {
   position: relative;

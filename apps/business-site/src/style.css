@@ -173,8 +173,7 @@ button { cursor: pointer; }
 .row-chip { width: 10px; height: 10px; border-radius: 3px; background: var(--c); transition: box-shadow .3s; }
 .row[aria-selected="true"] .row-chip { box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 25%, transparent); }
 .row-chip--all { background: conic-gradient(var(--biz-1) 0 25%, var(--biz-2) 0 50%, var(--biz-3) 0 75%, var(--biz-4) 0); }
-.row--all { --c: var(--foreground); margin-bottom: 9px; padding-block: 8px; }
-.row--all::before { content: ""; position: absolute; left: 10px; right: 10px; bottom: -5px; border-bottom: 1px solid var(--hairline); }
+.row--all { --c: var(--foreground); padding-block: 8px; }
 .row--all:hover { background: color-mix(in srgb, var(--foreground) 4%, transparent); }
 .row--all[aria-selected="true"] { background: color-mix(in srgb, var(--foreground) 6%, transparent); }
 .row-name { font-size: 14.5px; font-weight: 580; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: color-mix(in srgb, var(--foreground) 86%, transparent); transition: color .2s; }
@@ -187,6 +186,8 @@ button { cursor: pointer; }
 /* Rows without a share bar (全部业务, qualitative attribution) give the meta the whole line. */
 .row:not(:has(.row-bar)) .row-meta { grid-column: 2 / 4; text-align: left; }
 .row-meta em, .stat-note { font-style: normal; }
+.row-meta em { margin-left: 8px; }
+.row-meta em:first-child { margin-left: 0; }
 [data-trend="up"] { color: var(--up); }
 [data-trend="down"] { color: var(--loss); }
 .row[data-depth="1"], .row[data-depth="2"], .row[data-depth="3"] { width: calc(100% - 20px); margin-left: 20px; padding-block: 5px; }
@@ -556,9 +557,6 @@ button { cursor: pointer; }
   .row-name, .row-value, .row[data-depth="1"] .row-name, .row[data-depth="1"] .row-value { font-size: 13px; }
   .row-value { color: var(--muted-foreground); font-weight: 500; }
   .row--all { margin: 0; }
-  .row-head { display: contents; }
-  .row-drawer { display: none; }
-  .rail-drawer { display: contents; }
   .findings { order: 2; margin: 0; padding: 8px 16px; border-top: 0; }
   .findings-head { padding: 0 0 6px; }
   .findings-rows { flex-direction: row; gap: 6px; overflow-x: auto; scrollbar-width: none; }
@@ -718,22 +716,8 @@ button { cursor: pointer; }
 .finding-kind { grid-column: 2; display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 560; color: var(--kind); }
 .finding-settled { display: inline-grid; place-items: center; width: 15px; height: 15px; border-radius: 50%; font-size: 10px; font-style: normal; color: var(--kind); background: color-mix(in srgb, var(--kind) 14%, transparent); }
 
-/* The business drawer: 全部业务 is the header; its chevron opens the rows beneath. */
-.row-head { position: relative; }
-.row-head .row--all { margin-bottom: 0; padding-right: 36px; }
-.row-head .row--all::before { display: none; }
-.row-drawer { position: absolute; right: 6px; top: 50%; display: grid; place-items: center; width: 26px; height: 26px; margin-top: -13px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--muted-foreground); transition: background .2s, color .2s, transform .3s var(--ease); }
-.row-drawer svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; transition: transform .3s var(--ease); }
-.row-drawer:hover { background: color-mix(in srgb, var(--foreground) 6%, transparent); color: var(--foreground); }
-.row-drawer[aria-expanded="true"] svg { transform: rotate(180deg); }
-.rail-drawer { display: flex; flex-direction: column; gap: 1px; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--hairline); animation: rise .35s var(--ease) both; }
 
-/* Overview marks: a numbered dot at the corner of each node a finding names; the spotlight recedes everything else. */
-.fc-badge { cursor: pointer; animation: pop .35s var(--ease) both; animation-delay: var(--d); }
-.fc-badge circle { fill: var(--kind); stroke: var(--background); stroke-width: 2; }
-.fc-badge text { fill: var(--background); font-weight: 700; font-variant-numeric: tabular-nums; pointer-events: none; }
-.fc-badge:hover circle, .fc-badge:focus-visible circle { filter: drop-shadow(0 0 6px var(--kind)); }
-.fc-badge:focus { outline: none; }
+/* A finding in focus spotlights the nodes it names; everything else recedes. */
 .fc-svg[data-focus="spotlight"] .fc-node:not([data-lit]) { opacity: .28; }
 .fc-svg[data-focus="spotlight"] .fc-band[data-lit="on"] { fill-opacity: .46; }
 .fc-svg[data-focus="spotlight"] .fc-node[data-lit] .fc-bar { filter: drop-shadow(0 0 7px color-mix(in srgb, var(--c) 70%, transparent)); }
@@ -931,12 +915,81 @@ button { cursor: pointer; }
 .map { --class-earnings: var(--flow-profit); --class-guidance: var(--biz-1); --class-executive: var(--biz-3); --class-insider: var(--flow-expense); --class-deal: var(--biz-2); --class-financing: var(--biz-4); --class-capital_return: var(--up); --class-vote: var(--muted-foreground); --class-legal: var(--loss); --class-other: var(--muted-foreground); }
 [data-class="earnings"] { --kind: var(--class-earnings); } [data-class="guidance"] { --kind: var(--class-guidance); } [data-class="executive"] { --kind: var(--class-executive); } [data-class="insider"] { --kind: var(--class-insider); }
 [data-class="deal"] { --kind: var(--class-deal); } [data-class="financing"] { --kind: var(--class-financing); } [data-class="capital_return"] { --kind: var(--class-capital_return); } [data-class="vote"] { --kind: var(--class-vote); } [data-class="legal"] { --kind: var(--class-legal); } [data-class="other"] { --kind: var(--class-other); }
-.event-row { grid-template-columns: 38px minmax(0, 1fr); }
-.event-date { font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; line-height: 1.5; padding-top: 2px; }
+.event-row { grid-template-columns: 48px minmax(0, 1fr); }
+.event-date { display: inline-flex; align-items: center; gap: 6px; align-self: start; font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; line-height: 1.5; padding-top: 2px; }
 .event-row .finding-kind { flex-wrap: wrap; gap: 1px 8px; }
 .event-row .finding-kind > span { white-space: nowrap; }
 .event-row .finding-kind small { font-size: 10.5px; font-weight: 500; color: var(--faint); }
-.events-note { display: flex; flex-wrap: wrap; gap: 2px 10px; margin: 6px 10px 0; font-size: 11px; color: var(--faint); }
+
+/* ---------- Rail sections: business, findings and filings share one shape ---------- */
+/* Title, icon actions, then a chevron that opens the whole list; closed, rows outside the digest carry data-extra and stay hidden. */
+.rail-scroll > .findings:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+.findings-head { gap: 6px; }
+.findings-head .findings-title { margin-right: auto; }
+.section-action { width: 26px; height: 26px; background: transparent; }
+.section-action svg { width: 13px; height: 13px; fill: currentColor; stroke-width: 1.5; }
+.section-action[aria-pressed="true"] { color: var(--background); background: var(--foreground); }
+.section-action[aria-pressed="true"]:hover { color: var(--background); background: var(--foreground); }
+.section-expand svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; transition: transform .3s var(--ease); }
+.section-expand:not([data-drawer]):hover svg { transform: translateX(1px); }
+.section-expand[aria-expanded="true"] svg { transform: rotate(180deg); }
+.findings[data-open] [data-extra] { animation: rise .3s var(--ease) both; }
+.section-back { flex: none; width: 28px; height: 28px; margin: -4px 0 -4px -4px; }
+.findings[data-expanded] .findings-head { padding-bottom: 10px; }
+.findings[data-expanded] .findings-title { font-size: 14px; }
+.finding-title .finding-settled { margin-left: 6px; vertical-align: 1px; }
+/* The class legend doubles as the filter: the class mark, its name and count. */
+.section-filters { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 10px 10px; }
+.section-filter {
+  display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border: 1px solid var(--hairline); border-radius: 999px; background: transparent;
+  font-size: 11.5px; font-weight: 560; color: var(--muted-foreground); white-space: nowrap; transition: color .2s, background .2s, border-color .2s;
+}
+.section-filter[data-class]::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--kind); }
+.section-filter[data-class="report"]::before { border-radius: 2px; }
+.section-filter small { font-size: 10.5px; font-weight: 500; color: var(--faint); font-variant-numeric: tabular-nums; }
+.section-filter:hover { color: var(--foreground); }
+.section-filter[aria-checked="true"] { color: var(--background); background: var(--foreground); border-color: var(--foreground); }
+.section-filter[aria-checked="true"] small { color: inherit; opacity: .7; }
+/* In the open list a dashed rule ends this period and a year mark sits where the year turns, as on the time axis. */
+.section-rule { margin: 8px 10px; border: 0; border-top: 1px dashed var(--border); }
+.section-group { margin: 10px 10px 2px; font-size: 10.5px; font-weight: 600; color: var(--faint); font-variant-numeric: tabular-nums; }
+/* Filing marks match the time axis: a rounded square for a report, a dot in the class colour for an event. */
+.event-date::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--kind); }
+.report-row .event-date::before { width: 8px; height: 8px; border-radius: 2px; }
+
+@media (min-width: 961px) {
+  .findings:not([data-expanded]):not([data-open]) [data-extra] { display: none; }
+  .event-row .finding-title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+  /* Open, the section takes the rail's height: its header and filters stay, its rows scroll on their own. */
+  .rail-scroll[data-expanded] { display: flex; flex-direction: column; overflow: hidden; padding-bottom: 0; }
+  .rail-scroll[data-expanded] > :not([data-expanded]) { display: none; }
+  .findings[data-expanded] { flex: 1; min-height: 0; display: flex; flex-direction: column; margin-top: 0; padding-top: 0; border-top: 0; animation: none; }
+  .findings[data-expanded] > * { flex: none; }
+  .findings[data-expanded] .section-body {
+    flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin: 0 -12px; padding: 6px 12px 20px; border-top: 1px solid var(--hairline);
+    scrollbar-width: thin; scrollbar-color: transparent transparent; transition: scrollbar-color .3s;
+  }
+  .findings[data-expanded] .section-body:hover { scrollbar-color: color-mix(in srgb, var(--foreground) 22%, transparent) transparent; }
+}
+/* Narrow screens keep the chip rows: businesses list in full, findings and filings keep their digest until opened. */
+@media (max-width: 960px) {
+  .findings[data-section="business"] { display: contents; }
+  .findings[data-section="business"] > .findings-head { display: none; }
+  .findings:not([data-expanded]):not([data-section="business"]) [data-extra] { display: none; }
+  .section-group, .section-rule { display: none; }
+  .event-row .finding-kind { display: none; }
+  .section-filters { padding: 0 0 8px; overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; }
+}
+
+/* The section grows from its place in the rail into the whole rail: the box morphs, its rows are revealed rather than stretched. */
+.findings[data-section="business"] { view-transition-name: rail-business; }
+.findings[data-section="findings"] { view-transition-name: rail-findings; }
+.findings[data-section="events"] { view-transition-name: rail-events; }
+::view-transition-group(rail-business), ::view-transition-group(rail-findings), ::view-transition-group(rail-events) { animation-duration: .42s; animation-timing-function: var(--ease); }
+::view-transition-old(rail-business), ::view-transition-new(rail-business),
+::view-transition-old(rail-findings), ::view-transition-new(rail-findings),
+::view-transition-old(rail-events), ::view-transition-new(rail-events) { height: 100%; object-fit: none; object-position: top left; }
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: .24s; }
 
 /* The time axis under the chart: quarter ticks along the track, one marker per filing, the current report and the focused event lit. */
 .stage[data-timeline] { grid-template-rows: auto minmax(0, 1fr) auto auto auto; }
@@ -994,7 +1047,7 @@ button { cursor: pointer; }
 .insider-ladder .lens-legend { grid-row: 1; }
 .insider-ladder .lens-axis { grid-row: 3; }
 .ladder-scale { position: absolute; left: 0; top: 24px; bottom: 20px; display: flex; flex-direction: column; justify-content: space-between; font-size: 10px; color: var(--faint); font-variant-numeric: tabular-nums; pointer-events: none; }
-@media (max-width: 960px) { .events { order: 2; } .event-row { display: inline-flex; } .event-date { display: none; } .timeline-track { margin: 0 2px; } }
+@media (max-width: 960px) { .event-row { display: inline-flex; } .event-date { font-size: 10.5px; } .timeline-track { margin: 0 2px; } }
 
 /* Reports in the rail and the report lens: the figures the filing verified, the conclusions, and the full report in a modal. */
 [data-class="report"] { --kind: var(--foreground); }

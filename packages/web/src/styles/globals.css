@@ -200,7 +200,6 @@ h2:not([data-slot]) {
 }
 
 .loss { color: var(--vermilion); }
-.muted { color: var(--ink-soft); }
 
 .legend {
   position: relative;
@@ -606,7 +605,7 @@ a[data-navigation-loading="true"]::after { content: ""; position: absolute; righ
 @media (min-width: 1025px) { :root { --content-rail-width: 100%; } }
 @media (max-width: 820px) { :root { --content-rail-width: calc(100% - 32px); } }
 @media (max-width: 620px) { :root { --content-rail-width: calc(100% - 24px); } }
-html body :is(.page-shell, .earning-report.unified-stock, .earning-report .sec-report-shell, .earning-report .sec-app-shell) {
+html body :is(.earning-report .sec-report-shell, .earning-report .sec-app-shell) {
   box-sizing: border-box;
   width: var(--content-rail-width);
   max-width: none;

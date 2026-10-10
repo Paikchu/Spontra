@@ -59,13 +59,6 @@ export function anchorPoolKeys(f: VerifiedFinding): Set<string> {
   return keys;
 }
 
-/** The first finding each Sankey node belongs to, for the overview badges. */
-export function badgesByNode(findings: VerifiedFinding[], quarter: BusinessFlowQuarter | undefined, items: Array<{ id: string; key: string }>): Map<string, VerifiedFinding> {
-  const map = new Map<string, VerifiedFinding>();
-  for (const f of findings) for (const name of anchorNodeNames(f, quarter, items)) if (!map.has(name)) map.set(name, f);
-  return map;
-}
-
 /* ---------- Lens models ---------- */
 
 export type LensSeries = { ref: FindingRef; label: string; unit: ResolvedValue["unit"]; values: Array<ResolvedValue | null> };

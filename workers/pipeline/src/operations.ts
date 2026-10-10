@@ -84,7 +84,6 @@ export type SecPipelineEnv = SecCronEnv & AnalysisReadEnv & {
   SEC_REASONING_MODEL?: string;
 };
 
-const PUBLISH_BLOCK_CHUNK_SIZE = 40;
 
 /** Planning, review and synthesis carry the judgement; node extraction is mechanical. */
 const REASONING_STAGE = /^(manager|synthesis|discovery-audit|editorial-review|editorial-revision)/;
@@ -443,9 +442,6 @@ export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof
       if (artifact.report.reader && artifact.report.editorialReview?.status !== "passed") throw new Error("Reader report has not passed editorial review");
       const reference = { key: preparedKey(artifact.filing.ticker, artifact.filing.accessionNumber), filing: artifact.filing };
       if (artifact.report.reader) await putArtifact(env.SEC_FILINGS, reference, "synthesis", { artifact, summary });
-      const prepared = await readPrepared(env.SEC_FILINGS, reference);
-      const citedBlockIds = collectReferencedBlockIds(artifact);
-      const citedBlocks = prepared.blocks.filter((block) => citedBlockIds.has(block.blockId));
       const ticker = cleanSecTicker(artifact.filing.ticker);
       const accessionNumber = cleanSecAccession(artifact.filing.accessionNumber);
       if (!accessionNumber || !ticker) throw new Error("SEC 分析结果无效。");
@@ -456,9 +452,6 @@ export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof
         if (latest?.payload.inputKey !== artifact.filing.earningsGroup.inputKey) throw new Error("Earnings sources changed during analysis; retry with the current group");
       }
       const normalizedFiling = { ...artifact.filing, ticker, accessionNumber };
-      for (const blocks of chunks(citedBlocks, PUBLISH_BLOCK_CHUNK_SIZE)) {
-        await store.saveFilingBlocks(normalizedFiling, blocks);
-      }
       const normalizedArtifact = { ...artifact, filing: normalizedFiling };
       await store.saveAnalysis(normalizedArtifact, false);
       if (artifact.report.dataQuality.verificationStatus === "failed") return {};
@@ -551,28 +544,6 @@ function preparedKey(ticker: string, accessionNumber: string) {
   return `filings/${ticker}/${accessionNumber}`;
 }
 
-function collectReferencedBlockIds(artifact: SecAnalysisArtifact): Set<string> {
-  const blockIds = new Set<string>();
-  const visit = (value: unknown): void => {
-    if (Array.isArray(value)) {
-      value.forEach(visit);
-      return;
-    }
-    if (!value || typeof value !== "object") return;
-    for (const [key, child] of Object.entries(value)) {
-      if (key === "evidenceIds" && Array.isArray(child)) {
-        child.forEach((evidenceId) => {
-          if (typeof evidenceId === "string" && evidenceId.startsWith("ev:")) blockIds.add(evidenceId.slice(3));
-        });
-      } else {
-        visit(child);
-      }
-    }
-  };
-  visit(artifact);
-  return blockIds;
-}
-
 function summaryIdentity(summary: SecFilingSummary) {
   return {
     ticker: summary.ticker,
@@ -580,12 +551,6 @@ function summaryIdentity(summary: SecFilingSummary) {
     filingDate: summary.filingDate,
     accessionNumber: summary.accessionNumber,
   };
-}
-
-function chunks<T>(values: T[], size: number): T[][] {
-  const result: T[][] = [];
-  for (let index = 0; index < values.length; index += size) result.push(values.slice(index, index + size));
-  return result;
 }
 
 async function fetchCompanyHistory(cik: string, ticker: string, userAgent: string, fetcher: typeof fetch) {

@@ -133,15 +133,6 @@ export type SecFilingFeed = {
   error?: string;
 };
 
-const SEC_REFRESH_INTERVAL_MS = 12 * 60 * 60 * 1_000;
-
-export function isSecFeedRefreshDue(feed: SecFilingFeed, nowMs = Date.now()): boolean {
-  if (feed.status === "unsupported" || feed.status === "not_applicable") return false;
-  if (feed.status === "pending" || feed.status === "stale" || !feed.fetchedAt) return true;
-  const fetchedAt = Date.parse(feed.fetchedAt);
-  return !Number.isFinite(fetchedAt) || nowMs - fetchedAt >= SEC_REFRESH_INTERVAL_MS;
-}
-
 export type SecCompany = {
   ticker: string;
   cik: string;
@@ -382,20 +373,6 @@ export function normalizeSecSummary(
     generatedAt: typeof input.generatedAt === "string" ? input.generatedAt : now.toISOString(),
     ...(typeof input.error === "string" && input.error ? { error: clean(input.error, 240) } : {}),
   };
-}
-
-export function isSummaryRetryDue(summary: SecFilingSummary, nowMs = Date.now()): boolean {
-  const fullReportForm = /^(10-K|10-Q|20-F)(\/A)?$/.test(summary.form);
-  if (fullReportForm && summary.source !== "error" && (summary.version !== SEC_SUMMARY_VERSION || !summary.report)) return true;
-  // Event summaries carry exhibit-grounded content from the current pipeline version; older ones
-  // only contain filing-envelope metadata, so a version bump schedules one regeneration.
-  const eventForm = /^(8-K|6-K)(\/A)?$/.test(summary.form);
-  if (eventForm && summary.source !== "error" && summary.version !== SEC_SUMMARY_VERSION) return true;
-  if (summary.headline || summary.bullets.length || summary.analystView) return false;
-  if (summary.source !== "error") return true;
-  if (summary.error === "DeepSeek HTTP 400") return true;
-  const generatedAt = Date.parse(summary.generatedAt);
-  return !Number.isFinite(generatedAt) || nowMs - generatedAt >= 24 * 60 * 60 * 1_000;
 }
 
 export function parseSecSubmissions(payload: unknown, company: SecCompany, limit = 5): SecFiling[] {
