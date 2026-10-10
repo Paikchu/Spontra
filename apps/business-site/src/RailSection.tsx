@@ -18,7 +18,7 @@ export function railTransition(update: () => void) {
  * One section of the rail, the same shape for businesses, findings and filings: a title, icon actions, and a chevron
  * that opens the whole list over the rail. Closed, rows outside the digest carry `data-extra` and stay hidden on wide
  * screens; open, every row shows and a back button (or Escape, once nothing in it is in focus) returns.
- * As a drawer the section opens in place instead: the chevron turns down and the rows unfold under the header.
+ * As a drawer the section has no header: its first row is the head and toggles it, and the rows unfold under it in place.
  * The body must carry `id="rail-<name>"`.
  */
 export function RailSection({ name, title, hint, expandable, expanded, focused, drawer = false, onExpand, actions, children }: {
@@ -31,7 +31,7 @@ export function RailSection({ name, title, hint, expandable, expanded, focused, 
   expanded: boolean;
   /** A row of this section is in focus: Escape clears it before closing the section. */
   focused: boolean;
-  /** Open in place, under the header, rather than over the whole rail. */
+  /** Open in place, under the section's first row, rather than over the whole rail. */
   drawer?: boolean;
   onExpand: (open: boolean) => void;
   actions?: ReactNode;
@@ -53,21 +53,17 @@ export function RailSection({ name, title, hint, expandable, expanded, focused, 
   };
   const open = expanded ? "" : undefined;
   return <section className="findings" data-section={name} data-expanded={drawer ? undefined : open} data-open={drawer ? open : undefined} data-focus={focused ? "" : undefined} aria-label={title} onKeyDown={onKeyDown}>
-    <header className="findings-head">
-      {expanded && !drawer && <Button variant="unstyled" type="button" ref={back} className="icon-button section-back" aria-label={`收起${title}`} title="返回 (Esc)" onClick={() => toggle(false)}>
+    {!drawer && <header className="findings-head">
+      {expanded && <Button variant="unstyled" type="button" ref={back} className="icon-button section-back" aria-label={`收起${title}`} title="返回 (Esc)" onClick={() => toggle(false)}>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14.5 6-6 6 6 6" /></svg>
       </Button>}
       <span className="findings-title">{title}</span>
       {actions}
-      {drawer ? expandable && <Button variant="unstyled" type="button" className="icon-button section-action section-expand" data-drawer="" aria-expanded={expanded} aria-controls={`rail-${name}`}
-        aria-label={expanded ? `收起${title}` : `展开${title}`} title={expanded ? "收起" : "展开"} onClick={() => onExpand(!expanded)}>
-        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4" /></svg>
-      </Button>
-      : expandable && !expanded && <Button variant="unstyled" type="button" ref={more} className="icon-button section-action section-expand" aria-expanded={false} aria-controls={`rail-${name}`}
+      {expandable && !expanded && <Button variant="unstyled" type="button" ref={more} className="icon-button section-action section-expand" aria-expanded={false} aria-controls={`rail-${name}`}
         aria-label={`展开全部${title}`} title={hint ? `展开全部 · ${hint}` : "展开全部"} onClick={() => toggle(true)}>
         <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m6 4 4 4-4 4" /></svg>
       </Button>}
-    </header>
+    </header>}
     {children}
   </section>;
 }

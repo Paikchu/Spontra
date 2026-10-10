@@ -55,6 +55,19 @@ export function Rail({ ticker, actions, label, expanded = false, children }: {
   const [scrolled, setScrolled] = useState(false);
   const idle = useRef(0);
   useEffect(() => () => clearTimeout(idle.current), []);
+  // The scrollbar's gutter is always reserved and taken out of the right padding, so rows keep one width whether
+  // or not the list overflows. Overlay scrollbars reserve nothing; classic ones their own width, measured here.
+  const aside = useRef<HTMLElement>(null);
+  const body = useRef<HTMLDivElement>(null);
+  const hasBody = children != null;
+  useEffect(() => {
+    const el = body.current;
+    if (!el) return;
+    const measure = () => { if (!el.hasAttribute("data-expanded") && el.clientWidth) aside.current?.style.setProperty("--rail-gutter", `${el.offsetWidth - el.clientWidth}px`); };
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [hasBody]);
   function onScroll(e: UIEvent<HTMLDivElement>) {
     const el = e.currentTarget;
     setScrolled(el.scrollTop > 1);
@@ -62,12 +75,12 @@ export function Rail({ ticker, actions, label, expanded = false, children }: {
     clearTimeout(idle.current);
     idle.current = window.setTimeout(() => delete el.dataset.scrolling, 900);
   }
-  return <Sidebar collapsible="none" asChild><aside className="rail" aria-label={label} data-scrolled={scrolled && !expanded || undefined}>
+  return <Sidebar collapsible="none" asChild><aside className="rail" ref={aside} aria-label={label} data-scrolled={scrolled && !expanded || undefined}>
     <SidebarHeader asChild><div className="rail-top">
       <CompanyMark ticker={ticker} />
       {actions}
       {children && <div className="rail-blur" aria-hidden="true" />}
     </div></SidebarHeader>
-    {children && <SidebarContent asChild><div className="rail-scroll" id="rail-body" data-expanded={expanded || undefined} onScroll={onScroll}>{children}</div></SidebarContent>}
+    {children && <SidebarContent asChild><div className="rail-scroll" id="rail-body" ref={body} data-expanded={expanded || undefined} onScroll={onScroll}>{children}</div></SidebarContent>}
   </aside></Sidebar>;
 }
