@@ -162,18 +162,18 @@ button { cursor: pointer; }
 /* Flat list: a hue indicator and a soft left wash mark the selection; no boxed rows. */
 .row {
   --c: var(--biz-0);
-  position: relative; display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; align-items: center; column-gap: 10px; row-gap: 4px;
-  width: 100%; padding: 7px 10px; border: 0; border-radius: 10px; background: transparent; text-align: left;
+  position: relative; display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; align-items: center; column-gap: 10px; row-gap: 3px;
+  width: 100%; padding: 4px 10px; border: 0; border-radius: 8px; background: transparent; text-align: left;
   transition: background .3s var(--ease), color .2s;
 }
-.row::after { content: ""; position: absolute; left: -11px; top: 6px; bottom: 6px; width: 3px; border-radius: 2px; background: var(--c); transform: scaleY(0); transition: transform .3s var(--ease); }
+.row::after { content: ""; position: absolute; left: -11px; top: 4px; bottom: 4px; width: 3px; border-radius: 2px; background: var(--c); transform: scaleY(0); transition: transform .3s var(--ease); }
 .row:hover, .row[data-hover] { background: color-mix(in srgb, var(--c) 6%, transparent); }
 .row[aria-selected="true"] { background: color-mix(in srgb, var(--c) 12%, transparent); }
 .row:focus-visible { outline-offset: -2px; }
 .row-chip { width: 10px; height: 10px; border-radius: 3px; background: var(--c); transition: box-shadow .3s; }
 .row[aria-selected="true"] .row-chip { box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 25%, transparent); }
 .row-chip--all { background: conic-gradient(var(--biz-1) 0 25%, var(--biz-2) 0 50%, var(--biz-3) 0 75%, var(--biz-4) 0); }
-.row--all { --c: var(--foreground); padding-block: 8px; }
+.row--all { --c: var(--foreground); padding-block: 5px; }
 .row--all:hover { background: color-mix(in srgb, var(--foreground) 4%, transparent); }
 .row--all[aria-selected="true"] { background: color-mix(in srgb, var(--foreground) 6%, transparent); }
 .row-name { font-size: 14.5px; font-weight: 580; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: color-mix(in srgb, var(--foreground) 86%, transparent); transition: color .2s; }
@@ -190,7 +190,7 @@ button { cursor: pointer; }
 .row-meta em:first-child { margin-left: 0; }
 [data-trend="up"] { color: var(--up); }
 [data-trend="down"] { color: var(--loss); }
-.row[data-depth="1"], .row[data-depth="2"], .row[data-depth="3"] { width: calc(100% - 20px); margin-left: 20px; padding-block: 5px; }
+.row[data-depth="1"], .row[data-depth="2"], .row[data-depth="3"] { width: calc(100% - 20px); margin-left: 20px; padding-block: 3px; }
 .row[data-depth="1"]::before, .row[data-depth="2"]::before, .row[data-depth="3"]::before { content: ""; position: absolute; left: -10px; top: -2px; bottom: -2px; border-left: 1px solid var(--border); }
 .row[aria-selected="true"]::after { transform: none; }
 .row--all::after, .row[data-depth="0"]::after { display: none; }
@@ -1173,11 +1173,6 @@ button { cursor: pointer; }
 .narrative-business-name { display: flex; align-items: center; gap: 6px; font-weight: 600; color: var(--foreground); }
 .narrative-business-name .stage-pill { margin-left: 0; }
 .narrative-business-verdict { font-size: 12.5px; line-height: 1.55; color: var(--muted-foreground); }
-@media (max-width: 960px) {
-  .row .stage-pill { margin-left: 4px; }
-  /* The drawer's desktop rule is declared after the narrow-screen one; this keeps the rows in the chip strip on phones. */
-  .rail-list .rail-drawer { display: contents; }
-}
 
 /* ---------- 业务图: stack and ladder figures beside the dossier ---------- */
 .figures { position: absolute; inset: 0; display: grid; grid-template-columns: minmax(0, 1fr); min-height: 0; }

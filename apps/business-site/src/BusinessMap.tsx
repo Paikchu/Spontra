@@ -25,7 +25,7 @@ import type { FindingData, FindingFundamentals } from "@/shared/analysis-runtime
 import { anchorNodeNames, anchorPoolKeys, findingData, verifiedFindings } from "./findings-model";
 import { FindingsList } from "./FindingsList";
 import { DossierTabs } from "./DossierTabs";
-import { BusinessNarrativeDossier, CompanyDossier, SectionPanel, StagePill } from "./NarrativeDossier";
+import { BusinessNarrativeDossier, CompanyDossier, SectionPanel } from "./NarrativeDossier";
 import { resolveAnchor, rpoSeriesFromCapital } from "./narrative-model";
 import { BusinessFigures, FigureCard } from "./BusinessFigures";
 import type { OperatingMetricsPublication } from "@/shared/analysis-contract/operating-metrics";
@@ -459,9 +459,9 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
       <RailSection name="business" title="业务" expandable={items.some(i => !businessDigest.has(i.key))} focused={current != null} drawer expanded={businessOpen} onExpand={open => railTransition(() => setBusinessOpen(open))}>
         <div className="rail-list section-body" id="rail-business" role="listbox" aria-label="选择业务以在图中高亮" ref={listRef} onKeyDown={onListKey} onMouseLeave={() => setPreview(null)}>
           <Button variant="unstyled" type="button" role="option" aria-selected={!current} tabIndex={!current ? 0 : -1} className="row row--all" onClick={() => pickBusiness(null)} onMouseEnter={() => setPreview(null)}
-            title={quantified ? `总收入 · ${items.filter(i => !i.parent).length} 项一级业务` : "总收入"}>
+            title={[quantified ? `总收入 · ${items.filter(i => !i.parent).length} 项一级业务` : "总收入", narrative && STAGE_LABEL[narrative.stage]].filter(Boolean).join(" · ")}>
             <i className="row-chip row-chip--all" aria-hidden="true" />
-            <span className="row-name">全部业务{narrative && <StagePill stage={narrative.stage} />}</span>
+            <span className="row-name">全部业务</span>
             <span className="row-value">{revenue != null ? money(revenue) : ""}</span>
             {quarter && <span className="row-meta"><Delta label={change("revenue")} /></span>}
           </Button>
@@ -472,9 +472,9 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
             return <Button variant="unstyled" type="button" role="option" key={item.key} data-id={item.id} aria-selected={current?.key === item.key} tabIndex={current?.key === item.key ? 0 : -1}
               className="row" data-depth={item.depth} data-hover={hovered === item.key || undefined} data-synthetic={item.synthetic || undefined} data-extra={businessDigest.has(item.key) ? undefined : ""} style={{ "--c": hue(item.slot) } as CSSProperties}
               onClick={() => pickBusiness(current?.key === item.key ? null : item.id)} onMouseEnter={() => setPreview(item.key)}
-              title={share != null ? `占${shareBasis} ${percent(share)}${quarter.revenueAdjustments?.length ? "（抵销前）" : ""}` : anchor?.value ? `${anchor.label} · 收入未单独披露` : "定性归属 · 比例未披露"}>
+              title={[share != null ? `占${shareBasis} ${percent(share)}${quarter.revenueAdjustments?.length ? "（抵销前）" : ""}` : anchor?.value ? `${anchor.label} · 收入未单独披露` : "定性归属 · 比例未披露", nb && STAGE_LABEL[nb.stage]].filter(Boolean).join(" · ")}>
               <i className="row-chip" aria-hidden="true" />
-              <span className="row-name">{item.name}{nb && <StagePill stage={nb.stage} />}</span>
+              <span className="row-name">{item.name}</span>
               <span className="row-value">{item.value != null ? money(item.value) : anchor?.value ? compactFlowValue(anchor.value.value, { currency: anchor.value.currency ?? "USD", scale: 1 } as BusinessFlowQuarter) : ""}</span>
               {share != null && <span className="row-bar" aria-hidden="true"><b style={{ width: `${Math.max(0.6, share)}%` }} /></span>}
               <span className="row-meta">{share != null ? <>{percent(share)}<Delta label={delta} /></> : anchor?.value ? `${anchor.label} · 收入未单独披露` : "定性归属 · 比例未披露"}</span>
