@@ -36,12 +36,26 @@ export function claimNumbers(text: string): number[][] {
 
 const near = (a: number, b: number) => Math.abs(a - b) <= Math.max(Math.abs(b) * 0.01, 0.005);
 
-/** The numbers a material states, in every reading `quoteNumbers` gives them (raw, scaled by billion/million, basis points). */
+/**
+ * The numbers a material states, in every reading `quoteNumbers` gives them (raw, scaled by
+ * billion/million, basis points). A filing's tables carry no unit on each cell; the heading says
+ * "in millions" or "in thousands" once, so every number is also read at the scales the document
+ * declares. A document that declares nothing is read at thousands and millions as well, because the
+ * flattened exhibits of a press release often lose that heading.
+ */
 export function materialNumbers(text: string): number[] {
+  const normalized = text.normalize("NFKC");
   const values = quoteNumbers(normalizeForMatch(text));
-  // "1.5 GW" is also 1,500 MW; "850 MW" is also 0.85 GW.
+  const scales = [/in\s+thousands/i.test(normalized) ? 1e3 : 0, /in\s+millions/i.test(normalized) ? 1e6 : 0].filter(Boolean);
+  const tableScales = scales.length ? scales : [1e3, 1e6];
   const extra: number[] = [];
-  for (const m of text.normalize("NFKC").matchAll(/(\d[\d,]*(?:\.\d+)?)\s*(GW|MW)/gi)) {
+  for (const m of normalized.matchAll(/(?<![\d.])(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d+))?(?![\d,])/g)) {
+    const v = Number(`${m[1].replace(/,/g, "")}${m[2] ? `.${m[2]}` : ""}`);
+    if (!Number.isFinite(v) || v < 1) continue;
+    for (const scale of tableScales) extra.push(v * scale);
+  }
+  // "1.5 GW" is also 1,500 MW; "850 MW" is also 0.85 GW.
+  for (const m of normalized.matchAll(/(\d[\d,]*(?:\.\d+)?)\s*(GW|MW)/gi)) {
     const v = Number(m[1].replace(/,/g, ""));
     if (Number.isFinite(v)) extra.push(m[2].toUpperCase() === "GW" ? v * 1000 : v / 1000);
   }

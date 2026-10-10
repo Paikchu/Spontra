@@ -14,6 +14,7 @@ const status = z.enum(NARRATIVE_STATUSES);
 
 const milestone = z.object({ id: text(80), date, label: text(28), state: z.enum(MILESTONE_STATES), originalDate: date.nullable().optional(), claim });
 const party = z.object({ name: text(80), role: z.enum(PARTY_ROLES), claim });
+const capability = z.object({ label: text(24).nullable(), claim });
 const cell = z.object({ grade: z.enum(NARRATIVE_GRADES), claim });
 const comparison = z.object({ need: text(80), dimensions: z.array(text(16)).min(1).max(6), self: z.array(cell).min(1).max(6), alternatives: z.array(z.object({ id: text(80), name: text(40), cells: z.array(cell).min(1).max(6) })).min(1).max(6) });
 const tie = z.object({ ref, span, compare: compare.optional(), label: text(40).optional(), meaning: prose(200) });
@@ -36,12 +37,12 @@ const business = z.object({
   nodeId: text(200), name: text(80), parentNodeId: text(200).nullable().optional(),
   stage: z.enum(NARRATIVE_STAGES), stageClaim: claim, verdict: prose(90),
   anchor: z.object({ ref, span, label: text(24) }).nullable().optional(),
-  capabilities: z.array(z.object({ label: text(24).nullable(), claim })).max(8),
+  capabilities: z.array(capability).max(8),
   milestones: z.array(milestone).max(24), parties: z.array(party).max(16), comparison: comparison.nullable().optional(),
   ties: z.array(tie).max(8), chain: z.array(link).max(8), checks: z.array(check).max(8), figures: z.array(figureSchema).max(4).optional(), layout: panelPlanSchema.nullable().optional(),
 });
 /** The item schemas, for a writer that keeps the valid items of a draft and sends the rest back for repair. */
-export const narrativeSchemas = { claim, milestone, party, cell, comparison, tie, check, link, panelPlan: panelPlanSchema, stage: z.enum(NARRATIVE_STAGES), status, verdict: prose(90), premise: prose(80), figureText: FIGURE } as const;
+export const narrativeSchemas = { claim, capability, milestone, party, cell, comparison, tie, check, link, panelPlan: panelPlanSchema, stage: z.enum(NARRATIVE_STAGES), status, verdict: prose(90), premise: prose(80), figureText: FIGURE } as const;
 export const companyNarrativeSchema = z.object({
   schemaVersion: z.literal("business-narrative.v1"),
   ticker: z.string().regex(/^[A-Z][A-Z0-9.-]{0,11}$/),
