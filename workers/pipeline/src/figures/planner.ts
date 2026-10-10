@@ -6,9 +6,8 @@ import type { FindingsPublication } from "../../../../shared/analysis-contract/f
 import type { OperatingMetricsPublication } from "../../../../shared/analysis-contract/operating-metrics.ts";
 import { harnessFigures, harnessLayout } from "../../../../shared/analysis-runtime/business-narrative.ts";
 
-/** Changing the prompt or the harness re-plans every company once. */
-export const FIGURES_PLANNER_VERSION = "figures-planner.v1";
-export const FIGURES_MAX_OUTPUT_TOKENS = 6_144;
+/** Changing the prompt, the harness or the model budget re-plans every company once. */
+export const FIGURES_PLANNER_VERSION = "figures-planner.v2";
 
 export type PlannerModelCall = (stage: string, system: string, payload: unknown) => Promise<Record<string, unknown>>;
 

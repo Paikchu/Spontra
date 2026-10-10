@@ -18,7 +18,7 @@ import { callWorkerSecModel, type SecPipelineEnv } from "../operations.ts";
 import { AnalysisRequestError } from "../read-api/contract-support/errors.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import type { WorkflowStepLike } from "../workflow-core.ts";
-import { businessNames, companyNames, FIGURES_MAX_OUTPUT_TOKENS, FIGURES_PLANNER_VERSION, planFigures } from "./planner.ts";
+import { businessNames, companyNames, FIGURES_PLANNER_VERSION, planFigures } from "./planner.ts";
 
 export const figuresCacheKey = (ticker: string) => `figures:v1:${ticker}`;
 export type FiguresWorkflowParams = { ticker: string; fingerprint: string };
@@ -73,7 +73,8 @@ export async function executeFiguresWorkflow(params: FiguresWorkflowParams, step
   const plan = await step.do("figures-plan", () => planFigures({
     ticker: params.ticker, companyName: findSecurity(params.ticker)?.name ?? input.explainer.companyName, explainer: input.explainer, metrics: input.metrics, narrative: input.narrative, findings: input.findings,
     fingerprint: params.fingerprint, modelVersion, now,
-  }, (stage, system, payload) => callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, 5 * 60_000, true, { maxTokens: FIGURES_MAX_OUTPUT_TOKENS })));
+    // The default output budget, as the findings writer uses: an explicit cap is spent by the model's reasoning before any plan is written.
+  }, (stage, system, payload) => callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, 5 * 60_000, true)));
   const names = { company: companyNames(input.explainer, input.narrative), business: (nodeId: string) => businessNames(input.explainer, input.narrative, nodeId) };
   const verified = readPlannedFigures(plan, params.ticker, names);
   await step.do("figures-publish", async () => {
