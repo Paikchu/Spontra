@@ -4,7 +4,7 @@ import { ACTION_NAMES, guidanceLabel, segmentMatches } from "./trend-model";
 
 /**
  * Management guidance on the Sankey itself. A bracket beside a bar is the range guided for this quarter, at the
- * bar's scale, so where the bar ends against it reads as 高于 / 落在 / 低于. A pill is what the latest report guides
+ * bar's scale, so where the bar ends against it reads as above / within / below. A pill is what the latest report guides
  * for the next quarter on that line. Only nodes the statement draws take marks: company revenue, a business whose
  * filing name the guidance uses, and operating profit (gross and operating margins as pills only, since a rate
  * has no height on the bar). Constant-currency variants and lines the chart does not draw stay in the trend panel.
@@ -35,9 +35,9 @@ function dollarRange(item: GuidanceItem): { low: number; high: number; derived: 
   return null;
 }
 
-/** "+30–34%" / "$17.9B–$18.1B" / "≥ $90.0B" / "预计上行": the pill's own words, the full sentence stays in the tooltip. */
+/** "+30–34%" / "$17.9B–$18.1B" / "≥ $90.0B" / "Expected up": the pill's own words, the full sentence stays in the tooltip. */
 export function pillText(item: GuidanceItem, money: (dollars: number) => string): string {
-  if (item.form === "qualitative") return item.direction === "up" ? "预计上行" : item.direction === "down" ? "预计下行" : "预计持平";
+  if (item.form === "qualitative") return item.direction === "up" ? "Expected up" : item.direction === "down" ? "Expected down" : "Expected flat";
   const num = (v: number) => item.unit === "USD" ? money(v) : item.unit === "USD_per_share" ? `$${v.toFixed(2)}` : `${Number(v.toFixed(1))}`;
   const unit = item.unit === "percent" ? "%" : "";
   const sign = item.measure === "growth" ? "+" : "";

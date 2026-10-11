@@ -2,8 +2,14 @@ import type { GuidanceMaterialKind } from "../../../../shared/analysis-contract/
 import { normalizeForMatch, readExtractedGuidance, verifyGuidance, type VerifiedGuidance } from "../../../../shared/analysis-runtime/guidance.ts";
 import { locateGuidance } from "./locate.ts";
 
-/** Changing the prompt, the pre-filter or verification re-extracts every stored material once. */
-export const GUIDANCE_EXTRACTOR_VERSION = "guidance-extractor.v2";
+/**
+ * Changing the prompt, the pre-filter or verification re-extracts every stored material once: the sweep restarts
+ * every earnings event last run under another version, and until a material is re-extracted its earlier items
+ * stay published.
+ */
+export const GUIDANCE_EXTRACTOR_VERSION = "guidance-extractor.v3";
+/** How a guidance Workflow id ends: the extractor version it ran under, letters and digits only. */
+export const guidanceWorkflowSuffix = (version = GUIDANCE_EXTRACTOR_VERSION) => version.replace(/[^A-Za-z0-9]/g, "");
 export const GUIDANCE_MAX_OUTPUT_TOKENS = 8_192;
 
 export type GuidanceModelCall = (stage: string, system: string, payload: unknown) => Promise<Record<string, unknown>>;
@@ -23,7 +29,7 @@ export const GUIDANCE_SYSTEM_PROMPT = [
   "When the source gives both constant-currency and reported USD guidance, emit separate items for both bases, even when their numbers are identical. Use gaap for reported revenue in USD and non_gaap for adjusted EPS in USD; constant_currency applies only to the constant-currency item. Never drop the USD item.",
   "horizon: quarter (set fiscalYear and fiscalQuarter), annual (fiscalYear, fiscalQuarter=null), long_term (multi-year target; fiscalYear of the target year if stated, else null). Use the company's own fiscal year numbering. Resolve phrases like \"next quarter\" or \"this fiscal year\" from documentContext.",
   "quote: copy the supporting sentence exactly from the excerpt, verbatim, at most 300 characters, containing every number you report. Do not paraphrase, translate, or join text from separate places. [...] marks omitted text and must not appear in a quote.",
-  "text: one sentence in Simplified Chinese stating the guidance and its period.",
+  "text: one sentence in plain English stating the guidance and its period, at most 200 characters.",
   "If the excerpt contains no guidance, return {\"items\":[]}. Do not invent items to fill the list.",
   "Output JSON: {\"items\":[{\"metric\":\"\",\"measure\":\"\",\"segment\":null,\"label\":\"\",\"basis\":\"\",\"horizon\":\"\",\"form\":\"\",\"fiscalYear\":2026,\"fiscalQuarter\":1,\"unit\":\"\",\"currency\":\"USD\",\"low\":0,\"high\":0,\"direction\":null,\"text\":\"\",\"quote\":\"\"}]}",
 ].join("\n");

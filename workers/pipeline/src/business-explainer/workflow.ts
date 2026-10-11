@@ -1,21 +1,22 @@
 import { reasoningFor } from "../ai-config.ts";
-import type { BusinessExplainer, BusinessExplainerResponse } from "../../../../shared/analysis-contract/business-explainer.ts";
+import type { BusinessExplainerResponse } from "../../../../shared/analysis-contract/business-explainer.ts";
 import type { PublicBusinessFlow } from "../../../../shared/analysis-contract/business-flow.ts";
 import { readBusinessExplainer } from "../../../../shared/analysis-runtime/business-explainer.ts";
 import { sha256 } from "../company-analysis/api.ts";
 import { findSecurity } from "../catalog/security-directory.ts";
-import { assertTrackedTicker, requireDb, trackedTickersFor } from "../core.ts";
+import { assertTrackedTicker, requireDb } from "../core.ts";
 import { readCompletePublicationForTicker } from "../financial-data/publication.ts";
 import { callWorkerSecModel, type SecPipelineEnv } from "../operations.ts";
 import { AnalysisRequestError } from "../read-api/contract-support/errors.ts";
 import { researchSearch } from "../web-search/research-search.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import type { WorkflowStepLike } from "../workflow-core.ts";
-import { AiRunStore, quietly } from "../ai-runs/store.ts";
+import { AiRunStore } from "../ai-runs/store.ts";
 import { nodeHint, runBusinessExplainer, type ExplainerNode } from "./agent.ts";
+import { outboxStatement } from "../pipeline/outbox.ts";
 
 /** Changing the prompt or output contract regenerates every company once. */
-export const BUSINESS_EXPLAINER_VERSION = "business-explainer.sections.v2";
+export const BUSINESS_EXPLAINER_VERSION = "business-explainer.sections.v3";
 export const businessExplainerCacheKey = (ticker: string) => `business-explainer:v1:${ticker}`;
 export type BusinessExplainerParams = { ticker: string; fingerprint: string };
 
@@ -56,35 +57,6 @@ export async function businessExplainerFingerprint(env: SecPipelineEnv, ticker: 
   return (await readInput(env, ticker)).fingerprint;
 }
 
-/**
- * Starts at most one run per tick, only for AI-enabled companies whose published business list has
- * no explanation yet. The instance id includes the week, so a failed run is retried weekly rather
- * than on every tick, and a running one is never duplicated.
- */
-export async function runBusinessExplainerSweep(env: SecPipelineEnv, now = Date.now()): Promise<{ checked: number; started: string[]; failed: string[] }> {
-  const result = { checked: 0, started: [] as string[], failed: [] as string[] };
-  if (!env.BUSINESS_EXPLAINER_WORKFLOW || !env.DB || !env.TAVILY_API_KEY) return result;
-  const repository = new D1SecRepository(env.DB);
-  for (const ticker of trackedTickersFor(env)) {
-    result.checked++;
-    try {
-      const { fingerprint } = await readInput(env, ticker);
-      if (!fingerprint) continue;
-      const stored = await repository.getCache<BusinessExplainer>(businessExplainerCacheKey(ticker));
-      if (stored?.payload?.fingerprint === fingerprint) continue;
-      const week = Math.floor(now / (7 * 24 * 60 * 60_000));
-      const id = `business-explainer-${ticker.replace(/[^A-Za-z0-9]/g, "-")}-${fingerprint.slice(0, 16)}-${week}`;
-      await env.BUSINESS_EXPLAINER_WORKFLOW.create({ id, params: { ticker, fingerprint } });
-      await quietly(() => new AiRunStore(env.DB!).start({ kind: "explainer", ticker, runId: id, trigger: "schedule" }, new Date(now).toISOString()));
-      result.started.push(ticker);
-      return result;
-    } catch (error) {
-      if (!/already exists|duplicate/i.test(String(error))) result.failed.push(ticker);
-    }
-  }
-  return result;
-}
-
 export async function executeBusinessExplainerWorkflow(params: BusinessExplainerParams, step: WorkflowStepLike, env: SecPipelineEnv, fetcher: typeof fetch = fetch) {
   assertTrackedTicker(env, params.ticker);
   const modelVersion = env.SEC_REASONING_MODEL || env.SEC_ANALYSIS_MODEL || "deepseek-flash";
@@ -100,7 +72,13 @@ export async function executeBusinessExplainerWorkflow(params: BusinessExplainer
   });
   if (!readBusinessExplainer(explainer, params.ticker)) throw new Error("Business explainer failed its public contract.");
   await step.do("explainer-publish", async () => {
-    await new D1SecRepository(requireDb(env)).setCache(businessExplainerCacheKey(params.ticker), explainer, now);
+    const db = requireDb(env);
+    // The publication and its event commit together.
+    await db.batch([
+      db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at")
+        .bind(businessExplainerCacheKey(params.ticker), JSON.stringify(explainer), now),
+      outboxStatement(db, { type: "explainer.published", ticker: params.ticker }, now),
+    ]);
     await new AiRunStore(requireDb(env)).saveVersion("explainer", params.ticker, explainer, now);
   });
   return { status: "ready", businesses: explainer.businesses.length, sources: explainer.sources.length };

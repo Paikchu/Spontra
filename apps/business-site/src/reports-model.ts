@@ -68,7 +68,7 @@ export function timelineFromFilings(filings: PublicFilingDigestPage | null, even
   const covered = new Set(points.map(p => p.periodEnd));
   for (const q of quarters) {
     const date = q.reportedAt ?? q.periodEnd;
-    if (!covered.has(q.periodEnd) && date >= floor) { covered.add(q.periodEnd); points.push({ id: "report:" + q.id, date, kind: "report", periodEnd: q.periodEnd, title: `${q.periodEnd.slice(0, 7).replace("-", ".")} 财报`, weight: 3 }); }
+    if (!covered.has(q.periodEnd) && date >= floor) { covered.add(q.periodEnd); points.push({ id: "report:" + q.id, date, kind: "report", periodEnd: q.periodEnd, title: `${q.periodEnd.slice(0, 7).replace("-", ".")} report`, weight: 3 }); }
   }
   for (const e of events?.events ?? []) {
     if (e.filedAt < floor || merged.has(e.id)) continue;
@@ -79,7 +79,7 @@ export function timelineFromFilings(filings: PublicFilingDigestPage | null, even
 
 /** The rail's one-line title for a report: its headline, or its period and form while the analysis is still running. */
 export function reportTitle(r: PublicFilingDigest): string {
-  return r.headline || `${r.periodLabel ?? r.form} 报告 · 解读生成中`;
+  return r.headline || `${r.periodLabel ?? r.form} report · Analysis in progress`;
 }
 
 /**

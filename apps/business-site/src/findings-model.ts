@@ -8,8 +8,8 @@ import type { RpoDisclosure } from "@/shared/analysis-contract/capital-structure
 
 export type { VerifiedFinding };
 
-export const KIND_LABEL: Record<VerifiedFinding["kind"], string> = { risk: "风险", strength: "亮点", shift: "转变", watch: "跟踪" };
-export const VIEW_LABEL = { profit: "利润", cash: "现金流", balance: "资产负债" } as const;
+export const KIND_LABEL: Record<VerifiedFinding["kind"], string> = { risk: "Risk", strength: "Strength", shift: "Shift", watch: "Watch" };
+export const VIEW_LABEL = { profit: "Profit", cash: "Cash flow", balance: "Balance sheet" } as const;
 
 export function findingData(flow: PublicBusinessFlow, history: RevenueHistory | null, capital: PublicCapitalStructure | null, fundamentals: FindingFundamentals | null, guidance: GuidancePublication | null): FindingData {
   return { quarters: flow.quarters, history, capital, fundamentals, guidance };
@@ -91,7 +91,7 @@ export function lensColumns(lens: Extract<FindingLens, { type: "trend" | "compar
     const base = resolveRef(data, first.ref, shiftPeriod(end, months), lens.span);
     return base && base.value > 0 ? (first.values[i]!.value / base.value - 1) * 100 : null;
   });
-  return { periods, span: lens.span, series, rates, rateLabel: rate ? `${first.label}${rate === "yoy" ? "同比" : "环比"}` : null };
+  return { periods, span: lens.span, series, rates, rateLabel: rate ? `${first.label}${rate === "yoy" ? " YoY" : " QoQ"}` : null };
 }
 
 export function lensShares(lens: Extract<FindingLens, { type: "share_area" }>, periodEnd: string, data: FindingData): LensShares {

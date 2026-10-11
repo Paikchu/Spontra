@@ -108,11 +108,11 @@ export function buildCompanyFeaturePack(input: {
   const current = (metric: FundamentalMetricKey) => map.get(metric)?.value ?? null;
   const ttm = (metric: FundamentalMetricKey) => map.get(metric)?.ttmValue ?? null;
   const derived = [
-    ratioFeature(input, "net_margin", "净利率", current("net_income"), current("total_revenue")),
-    ratioFeature(input, "operating_cash_conversion", "经营现金流 / 净利润", ttm("operating_cash_flow"), ttm("net_income")),
-    ratioFeature(input, "capex_to_net_income", "资本开支 / 净利润", absolute(ttm("capital_expenditure")), ttm("net_income")),
-    ratioFeature(input, "long_term_debt_repayment_years", "长期债务偿还年数", current("long_term_debt"), ttm("net_income")),
-    ratioFeature(input, "return_on_equity_proxy", "TTM 净利润 / 期末股东权益", ttm("net_income"), current("stockholders_equity")),
+    ratioFeature(input, "net_margin", "Net margin", current("net_income"), current("total_revenue")),
+    ratioFeature(input, "operating_cash_conversion", "Operating cash flow / net income", ttm("operating_cash_flow"), ttm("net_income")),
+    ratioFeature(input, "capex_to_net_income", "Capital expenditure / net income", absolute(ttm("capital_expenditure")), ttm("net_income")),
+    ratioFeature(input, "long_term_debt_repayment_years", "Years to repay long-term debt", current("long_term_debt"), ttm("net_income")),
+    ratioFeature(input, "return_on_equity_proxy", "TTM net income / ending stockholders' equity", ttm("net_income"), current("stockholders_equity")),
   ];
   return {
     version: COMPANY_FEATURE_FORMULA_VERSION,

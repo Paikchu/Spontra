@@ -80,7 +80,7 @@ function withFirstQuarters(facts:Fact[]):Fact[] {
   const cumulative=facts.find(f=>f.tag===current.tag&&JSON.stringify(f.dimensions)===JSON.stringify(current.dimensions)&&f.end===current.end&&f.start<current.start&&(Date.parse(f.end)-Date.parse(f.start))/86400000<200);
   if(!cumulative)continue;
   const end=new Date(Date.parse(current.start)-86400000).toISOString().slice(0,10);
-  output.push({...cumulative,end,value:Math.round((cumulative.value-current.value)*1e6)/1e6,context:`derived:${cumulative.context}-${current.context}`,operands:[cumulative,current],formula:'同一份报表、相同口径的六个月累计 − 第二季度 = 第一季度'});
+  output.push({...cumulative,end,value:Math.round((cumulative.value-current.value)*1e6)/1e6,context:`derived:${cumulative.context}-${current.context}`,operands:[cumulative,current],formula:'First quarter = six months to date − second quarter, same statement and basis'});
  }
  return output;
 }

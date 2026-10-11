@@ -38,7 +38,7 @@
 | 维度 | 目标 |
 | --- | --- |
 | 覆盖 | 归档中的全部文档（现在 390 个），随归档自动增长 |
-| 时效 | 文档归档后 10 分钟内进入文件库；从 SEC 申报算起受归档节奏限制，最长约 24 小时 |
+| 时效 | 文档归档后几分钟内进入文件库（事件驱动，见“触发与隔离”） |
 | 读取 | Tool 的每次调用只做 D1 查询，毫秒级 |
 | 正确性 | 引用能逐字对上原文；数字与业务地图同口径；解析器升级不让已发布的引用指错 |
 | 隔离 | 拆解失败或耗时过长不影响数据采集和地图派生 |
@@ -55,8 +55,7 @@ flowchart LR
     subgraph R2["R2：未拆解的内容"]
         RAW["source.html + inventory.json<br/>同一归档目录"]
     end
-    CRON["*/2 cron<br/>找出待拆解文档，启动 Workflow"] --> L1
-    RAW --> L1["L1 Workflow<br/>每份文档一个实例；确定性代码，不用模型"]
+    RAW -->|"filing.archived 事件"| L1["L1 队列任务 library<br/>确定性代码，不用模型"]
     subgraph D1["D1"]
         DOC["sec_documents"]
         SECT["sec_sections"]
@@ -120,20 +119,20 @@ Item 1 的标题树就是业务结构：分部（Productivity and Business Proce
 
 ### 触发与隔离
 
-拆解不和数据采集挤在同一次运行里。`*/2` cron 只做一件很轻的事：找出待拆解的文档，启动 Workflow。
+文件库是事件流水线（`docs/pipeline-events.md`）里的一个队列任务 `library`，没有自己的定时任务：
 
-- **待拆解的文档**：有当前归档指针，但 `sec_documents` 中没有当前解析版本（`parser_version`）结果、或者 `source_sha256` 与指针不一致的文档。不另建队列表：这个条件本身就是队列。新归档的文档优先，然后是历史回填。
-- **启动**：每次最多启动 4 个 Workflow，实例 ID 为 `library-{document_id}-{parser_version}`。同一 ID 已存在时创建会失败，等于天然去重；运行中的文档不会被重复启动。
-- **Workflow**：一个 step 完成“读取 → 解析 → 写入”。每个 step 有自己的 CPU 额度，大文档（JPM 10-Q 约 1,000 万字节 HTML）解析失败或超时只影响这一份文档，不影响同一 cron 里的采集、地图派生和归档清理。step 失败按 Workflow 的重试策略重试；最终失败时在 `sec_documents` 写一行 `status = unreadable` 和原因，直到解析器版本变化才再次尝试。
-- **回填**：现有 390 个文档，每 2 分钟最多启动 4 个，单个文档一般不到一分钟，约 3–4 小时补完。
-- **时效**：新文档归档后，下一次 `*/2` 运行即启动拆解，10 分钟内完成。
-- **成本**：Workers 付费版每月含 50 万个 Workflow step，回填和日常增量都远低于这个量。
+- **触发**：订阅 `filing.archived`（归档写入或替换一份文件时，与指针同一事务发出），以及后台“重新拆解”发出的 `library.requested`。按公司防抖 30 秒、最长 5 分钟。
+- **执行**：任务消息独占一次队列调用（每批 1 条），与采集、地图推导不共享 CPU 和内存。一次运行处理该公司“有归档指针、但没有当前解析版本结果或来源已变化”的文档，按申报日期从旧到新，每次最多约 24 MB 源文件或 60 秒；剩下的立即排下一次运行。
+- **写入与事件**：每份文档的全部行和一条 `library.prepared` 事件在同一个 D1 batch 里提交；索引卡任务订阅这个事件。
+- **版本**：任务版本就是解析器版本 `LIBRARY_PARSER_VERSION`。首次上线和每次升级解析器时，流水线发出 `task.version_changed`，对每家数据公司各运行一次，重新拆解全部文档；原文没变的段落 ID 不变。
+- **失败**：解析器抛错的文档记为 `unreadable`（原因 `PARSE_FAILED`），跳过；D1、R2 等基础设施错误让任务失败，由队列退避重试，超过次数进入 `pipeline_dead`。
+- **时效**：新文档归档后数十秒到几分钟内进入文件库；从 SEC 申报算起，受发现 Cron（每 10 分钟）和采集节奏影响。
 
 ### 输入
 
 - 从同一个归档指针读取 `rawKey` 和 `inventoryKey`，它们在同一个归档目录下，由同一份 HTML 生成。
-- 读取后先核对：`source.html` 的哈希等于指针中的 `contentSha256`，`inventory.json` 的来源与指针一致。不一致就标记 `unreadable`（原因 `ARCHIVE_MISMATCH`），不解析。
-- **不对 HTML 做任何变换**：`inventory.json` 中事实的位置是相对这份 HTML 的字符偏移，变换会让偏移错位。注入脚本在归档时已经去掉（`canonicalSecHtml`）。
+- 读取后先核对：`source.html` 的哈希等于指针中的 `contentSha256`，不一致就标记 `unreadable`（原因 `ARCHIVE_MISMATCH`），不解析。
+- **不对 HTML 做任何变换**：事实位置用的是 HTML 中的字符偏移，变换会让偏移错位。注入脚本在归档时已经去掉（`canonicalSecHtml`）。
 
 ### 文档类型与章节规范名
 
@@ -294,10 +293,9 @@ D1 单条 SQL 最长 100 KB、最多 100 个绑定参数，一次 Worker 调用�
 
 ```mermaid
 flowchart TD
-    A["*/2 cron"] --> B{"有归档指针、但没有当前版本拆解结果的文档？"}
+    A["filing.archived / library.requested / 解析器版本变化"] --> B{"该公司有归档指针、但没有当前版本拆解结果的文档？"}
     B -->|否| Z["结束本次"]
-    B -->|"是：新文档优先，每次最多 4 个"| C["启动 Workflow<br/>实例 ID = library-文档ID-解析版本"]
-    C --> D["读同一归档目录下的 source.html 和 inventory.json"]
+    B -->|"是：从旧到新，每次约 24 MB 或 60 秒"| D["读归档的 source.html"]
     D --> E{"内容哈希与指针一致？"}
     E -->|否| X["标记 unreadable，记录原因"]
     E -->|是| F["识别文档类型；去掉目录区和页眉页脚；识别 Item 并映射规范名"]
@@ -312,8 +310,8 @@ flowchart TD
     L --> M["按内容生成 section_id 和 passage_id"]
     M --> N["按规则标类别；按章节类型与上一期比对"]
     N --> Q["质量检查：分部名是否出现在 Item 1 标题里"]
-    Q --> O["一个 D1 batch 整份替换（json_each 批量插入）"]
-    O -.->|"step 重试用尽"| X
+    Q --> O["一个 D1 batch 整份替换 + library.prepared 事件"]
+    O -.->|"预算用完"| B
 ```
 
 ### L2：写索引卡（用模型）
@@ -385,7 +383,7 @@ Agent 的模型只负责选择读什么和作答；取原文、取数字、计�
 
 ### 运行方式
 
-- `*/10` cron 中新增一个扫描，一个 Workflow 处理一个文档，原文从 D1 读取；同一父节点下的小板块合并成一次调用（输入 ≤12,000 字符），调用次数约为小板块数的五分之一。
+- 队列任务 `library-cards` 订阅 `library.prepared`，按公司防抖后启动一个 Workflow（经流水线的 `driveWorkflow`，实例 ID 去重、失败进 `pipeline_dead`），原文从 D1 读取；同一父节点下的小板块合并成一次调用（输入 ≤12,000 字符），调用次数约为小板块数的五分之一。
 - 首次约 1,000 次调用、约 400 万输入 token 和 100 万输出 token；DeepSeek 写作类调用每次 40–75 秒，4 个并行约 4–5 小时完成。
 - 父节点的卡由子节点的卡生成，不重读原文。
 - 核对失败的字段丢弃并记录原因；整张卡两次都不合格时不写卡，小板块仍可读取，只是目录里没有卡片。
@@ -472,7 +470,7 @@ XBRL 标准概念（`Revenues`、`OperatingIncomeLoss`）各家通用，但分�
 
 | 期 | 内容 | 不包含 |
 | --- | --- | --- |
-| P1 | L1：迁移、解析器（复用报表表格解析）、按内容生成 ID、cron 启动的拆解 Workflow、回填、上一期比对、拆分质量检查；后台“文件库”只读页面；测试接入自动构建 | 不接任何任务；不建 `sec_xbrl_facts` |
+| P1 | L1：迁移、解析器（复用报表表格解析）、按内容生成 ID、事件驱动的 `library` 任务与回填、上一期比对、拆分质量检查；后台“文件库”页面；测试接入自动构建 | 不接任何任务；不建 `sec_xbrl_facts` |
 | P2 | L2：索引卡 Workflow 与核对、后台查看 | 不接任务 |
 | P3 | L3 Tool；业务脑图改用 Tool（取代 Tavily 读 SEC 页面和 10-K 搜索），在后台 研究过程 对比改前改后的树 | 业务解读等其他任务；AI Search |
 | P4 | 业务解读、指引迁移到 Tool | SEC 解读：它要处理所有 8-K 和全部附件，归档范围扩大之后再迁 |
@@ -480,7 +478,7 @@ XBRL 标准概念（`Revenues`、`OperatingIncomeLoss`）各家通用，但分�
 
 如果 P3 中发现单家公司的任务靠实体和主题查找也找不准，AI Search 可以提前到 P3。
 
-代码位置（暂定）：纯解析在 `shared/analysis-runtime/filing-library/`（结构、表格、类别、比对、ID，可单测），存储、cron 和 Workflow 在 `workers/pipeline/src/filing-library/`。
+代码位置：纯解析在 `shared/analysis-runtime/filing-library/`（结构、表格、类别、ID，可单测），存储与准备在 `workers/pipeline/src/filing-library/`，流水线任务在 `workers/pipeline/src/pipeline/library-tasks.ts`。
 
 ## 验证
 
@@ -490,14 +488,14 @@ XBRL 标准概念（`Revenues`、`OperatingIncomeLoss`）各家通用，但分�
 - **全量回填后的统计**：每个文档的 `structure`、`structure_check`、各 Item 字符数、退化为 outline/flat 的比例、`unreadable` 的原因。
 - **D1 内部一致性**：同一文档只有一个解析版本；每个段落属于存在的小板块；`fact_refs` 指向的事实在对应的 `inventory.json` 中存在。
 - **原文核对**：随机抽段落，确认在原 HTML 转出的文字中逐字存在；表格单元格的数值与对应 XBRL 事实一致。
-- **写入与隔离**：最大的文档（JPM 10-Q）在一个 Workflow step 内解析并写完；拆解失败时同一 cron 中的采集和地图派生照常完成。
+- **写入与隔离**：最大的文档（JPM 10-Q）在一次任务运行内解析并写完；拆解失败只影响 `library` 任务本身。
 - **L2**：卡片 `entities` 逐字核对的通过率；抽样人工看 gist 是否准确。
 - **P3**：同一批公司，改前改后的业务脑图节点数、通过 anchor 核对的比例、调用轮数和耗时。
 - **P5**：一组跨公司问题（例如“各家如何描述数据中心电力约束”），对比 D1 精确查找与 AI Search 召回各自找到的小板块。
 
 ## 可观测性
 
-后台“文件库”页面（P1）显示：待拆解数、运行中和失败的 Workflow、`structure` 分布、`structure_check` 未通过的文件、`unreadable` 及原因、每份文档的解析耗时和行数。拆解失败和 `structure_check` 未通过按文档列出，可手动重跑。
+后台“文件库”页面（P1）显示：待拆解数、`structure` 分布、`structure_check` 未通过的文件、`unreadable` 及原因、每份文档的章节数和段落数；可按文档“重新拆解”（发出 `library.requested`）。任务运行记录与失败在后台“事件流水线”页面（`pipeline_log`、`pipeline_dead`）。
 
 ## 风险与未决问题
 
@@ -506,7 +504,7 @@ XBRL 标准概念（`Revenues`、`OperatingIncomeLoss`）各家通用，但分�
 3. 新申报最长约 24 小时才进入归档，对要求当天的任务偏慢；如果指引需要当天，要先调整采集节奏。
 4. D1 单库 10 GB 且不能提高。主库超过 5 GB 或公司超过约 200 家前，把文件库搬到独立的库或按公司分库。
 5. 单个 batch 写不下的超大文档会记为 `TOO_LARGE`；样本测试要覆盖最大文档，确认现有归档里没有这种情况。
-6. 每次最多启动 4 个拆解 Workflow 是暂定值，P1 按实测耗时调整。
+6. 每次运行 24 MB / 60 秒的预算是暂定值，P1 按实测耗时调整。
 7. AI Search 从 2026-11-01 开始计费，自定义元数据只有 5 个字段；它只做召回，任何结论都回到 D1 的原文核对。
 8. 索引卡和召回的范围（每家最新 10-K、两份 10-Q、两份新闻稿）是否合适，需要确认。
 9. 主题分类初版需要确认；分类改动会让卡片的 `topic` 重算，也会改 AI Search 元数据并触发重建索引。

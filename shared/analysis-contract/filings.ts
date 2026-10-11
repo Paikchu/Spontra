@@ -98,7 +98,7 @@ export type PublicFilingDigest = {
   reportDate: string;
   /** The reporting period end for a periodic filing or an earnings group; null for a standalone event. */
   periodEnd: string | null;
-  /** "FY2026 Q1", "FY2026 全年", "财季待确认", or null for an event. */
+  /** "FY2026 Q1", "FY2026 full year", "Fiscal period pending", or null for an event. */
   periodLabel: string | null;
   /** The earnings release date for a group, else the filing date. */
   date: string;
@@ -112,7 +112,7 @@ export type PublicFilingDigest = {
   warnings: string[];
   generatedAt: string | null;
   keyMetrics: Array<{ key: string; label: string; value: string; yoy: string | null; qoq: string | null; status: "verified" | "derived" | "not_comparable" | "not_disclosed" }>;
-  changes: Array<{ compare: "同比" | "环比"; topic: string; statement: string }>;
+  changes: Array<{ compare: "YoY" | "QoQ"; topic: string; statement: string }>;
   risks: string[];
   guidance: string[];
   verification: "verified" | "partial" | "failed" | null;

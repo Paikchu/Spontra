@@ -39,15 +39,33 @@ function band(x0: number, sy: number, x1: number, ty: number, h: number) {
   return `M${r(x0)},${r(sy)}C${r(xm)},${r(sy)} ${r(xm)},${r(ty)} ${r(x1)},${r(ty)}L${r(x1)},${r(ty + h)}C${r(xm)},${r(ty + h)} ${r(xm)},${r(sy + h)} ${r(x0)},${r(sy + h)}Z`;
 }
 
-/** Approximate rendered width: CJK glyphs are one em, Latin digits and punctuation about 0.6 em. */
+/** Approximate rendered width in a proportional sans: CJK glyphs are one em; Latin letters vary from narrow (i, l) to wide (M, W); digits are tabular. */
 export function estimateTextWidth(text: string, size: number, bold = false): number {
   let em = 0;
-  for (const char of text) em += /[\u2e80-\u9fff\uf900-\ufaff\uff00-\uffef]/.test(char) ? 1 : char === " " ? 0.3 : 0.6;
+  for (const char of text) em += /[\u2e80-\u9fff\uf900-\ufaff\uff00-\uffef]/.test(char) ? 1
+    : char === " " ? 0.28
+    : /[ilj.,:;'|!()[\]]/.test(char) ? 0.28
+    : /[ftrI]/.test(char) ? 0.36
+    : /[mwMW]/.test(char) ? 0.86
+    : /[A-Z]/.test(char) ? 0.66
+    : /[a-z]/.test(char) ? 0.54
+    : 0.6;
   return em * size * (bold ? 1.06 : 1);
 }
 
+/** Cuts text to at most `em` ems of estimated width, ending with an ellipsis when cut. */
+export function truncateToWidth(text: string, em: number): string {
+  if (estimateTextWidth(text, 1) <= em) return text;
+  let out = "";
+  for (const char of text) {
+    if (estimateTextWidth(out + char + "…", 1) > em) break;
+    out += char;
+  }
+  return out.trimEnd() + "…";
+}
+
 /** Width of the default two-line label when the caller does not measure its own text. */
-const defaultLabelWidth = (n: PlacedNode) => Math.max(estimateTextWidth(n.label, 15, true) + 8 + estimateTextWidth("$000.0B", 22, true), estimateTextWidth("占收入 00.0% · 环比 +00.0%", 13));
+const defaultLabelWidth = (n: PlacedNode) => Math.max(estimateTextWidth(n.label, 15, true) + 8 + estimateTextWidth("$000.0B", 22, true), estimateTextWidth("Share of revenue 00.0% · QoQ +00.0%", 13));
 
 /** Horizontal span of a node's label relative to its column's x. */
 function labelSpan(n: PlacedNode, width: number, g: InfographicGeometry): [number, number] {
@@ -186,7 +204,7 @@ export function layoutInfographic(graph: FinancialGraph, labelWidth: (n: PlacedN
 const symbols: Record<string, string> = { USD: "$", EUR: "€", GBP: "£", JPY: "¥", CNY: "¥", HKD: "HK$" };
 /** Short label for the diagram only; exact amounts stay in the ledger. */
 export function compactFlowValue(value: number | null, quarter: BusinessFlowQuarter): string {
-  if (value == null || !Number.isFinite(value)) return "未披露";
+  if (value == null || !Number.isFinite(value)) return "Not disclosed";
   const amount = value * quarter.scale, abs = Math.abs(amount);
   const [divisor, suffix] = abs >= 1e12 ? [1e12, "T"] : abs >= 1e9 ? [1e9, "B"] : abs >= 1e6 ? [1e6, "M"] : abs >= 1e3 ? [1e3, "K"] : [1, ""];
   const digits = abs / divisor >= 100 || !suffix ? 0 : 1;

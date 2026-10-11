@@ -7,7 +7,6 @@
   "limits": { "cpu_ms": 300000 },
   "secrets": { "required": ["DEEPSEEK_API_KEY"] },
   "vars": {
-    "SEC_BUSINESS_FLOW_BOOTSTRAP_TICKERS": "ORCL",
     "SEC_DATA_TICKERS": "ORCL,NVDA,MSFT,AAPL,JPM,BRK.B,ADSK,NET",
     "SEC_AI_TICKERS": "ORCL,ADSK,NET",
     "SEC_AI_ENABLED": "true",
@@ -42,12 +41,6 @@
       "binding": "BUSINESS_TREE_WORKFLOW",
       "class_name": "BusinessTreeWorkflow",
       "concurrency": { "limit": 1 }
-    },
-    {
-      "name": "spontra-filing-library",
-      "binding": "FILING_LIBRARY_WORKFLOW",
-      "class_name": "FilingLibraryWorkflow",
-      "concurrency": { "limit": 4 }
     },
     {
       "name": "spontra-findings",
@@ -108,17 +101,25 @@
       "simple": { "limit": 10, "period": 60 }
     }
   ],
-  // TEMPORARY, while the dead scheduled refresh is being diagnosed: every 10 minutes around the
-  // clock, so a failed run surfaces within minutes instead of at the next hourly slot. The market
-  // windows this replaces cover 09:00-23:00 ET Mon-Fri and must go back once the run is healthy:
-  //   "0 13-23 * * 1-5"
-  //   "0 0-3 * * 2-6"
-  "triggers": {
-    "crons": [
-      "*/10 * * * *",
-      // Bounded deterministic financial-data collection only; does not dispatch AI.
-      "*/2 * * * *"
+  // Event-driven pipeline (docs/pipeline-events.md). The three queues were created once by hand; Wrangler does not
+  // create queues on deploy. Events are routed in large batches so a company's triggers collapse into one run; tasks
+  // run one per invocation so a heavy run never shares its CPU and memory with another.
+  "queues": {
+    "producers": [
+      { "queue": "spontra-pipeline-events", "binding": "PIPELINE_EVENTS" },
+      { "queue": "spontra-pipeline-tasks", "binding": "PIPELINE_TASKS" }
+    ],
+    "consumers": [
+      { "queue": "spontra-pipeline-events", "max_batch_size": 100, "max_batch_timeout": 30, "max_concurrency": 1, "max_retries": 10, "retry_delay": 10, "dead_letter_queue": "spontra-pipeline-dlq" },
+      { "queue": "spontra-pipeline-tasks", "max_batch_size": 1, "max_concurrency": 1, "max_retries": 5, "retry_delay": 60, "dead_letter_queue": "spontra-pipeline-dlq" },
+      { "queue": "spontra-pipeline-dlq", "max_batch_size": 10, "max_batch_timeout": 30, "max_concurrency": 1, "max_retries": 3 }
     ]
+  },
+  "version_metadata": { "binding": "CF_VERSION_METADATA" },
+  // The only schedule: SEC filing discovery, because EDGAR pushes nothing (docs/pipeline-events.md). Everything a
+  // filing leads to runs on the queues above.
+  "triggers": {
+    "crons": ["*/10 * * * *"]
   },
   "observability": {
     "enabled": true,

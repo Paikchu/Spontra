@@ -23,7 +23,7 @@ export type BlockNode =
 
 const HEADING = /^(#{3,4})\s+(.+)$/;
 const BULLET = /^[-*•]\s+(.+)$/;
-/** Two digits at most, so a line opening with a year ("2026. 全年指引…") stays a paragraph. */
+/** Two digits at most, so a line opening with a year ("2026. Full-year guidance…") stays a paragraph. */
 const ORDERED = /^\d{1,2}[.)]\s+(.+)$/;
 
 /**
@@ -67,7 +67,7 @@ export function parseRichText(source: string): BlockNode[] {
 /**
  * One pass over the line so a marker cannot be rewritten inside another one's span. Bold uses a
  * lazy `**…**` rather than CommonMark's flanking rules, which need whitespace or punctuation around
- * the marker and therefore miss Chinese prose, where `营收**同比 +18%**增长` has no word boundary.
+ * the marker and therefore miss CJK prose, where a bold span sits between characters with no word boundary.
  *
  * Emphasis by underscore or single asterisk is deliberately absent: metric keys carry underscores
  * (`non_gaap_eps`) and footnote asterisks are literal in filing prose.

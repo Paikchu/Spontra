@@ -17,7 +17,6 @@ import { maintenanceAnalysisEnvironment } from "./admin/financial-maintenance-ru
 import { executeGuidanceWorkflow, type GuidanceWorkflowParams } from "./guidance/workflow.ts";
 import { executeFindingsWorkflow, type FindingsWorkflowParams } from "./findings/workflow.ts";
 import { trackRun, trackSleep, trackSteps } from "./ai-runs/tracking.ts";
-import { prepareLibraryDocument, recordUnreadable, type FilingLibraryParams } from "./filing-library/workflow.ts";
 
 const WORKFLOW_RETRY = {
   retries: {
@@ -91,21 +90,6 @@ export class BusinessTreeWorkflow extends WorkflowEntrypoint<SecPipelineEnv, Bus
   async run(event: WorkflowEvent<BusinessTreeParams>, step: WorkflowStep) {
     const run = { env: this.env, kind: "tree" as const, ticker: event.payload.ticker, runId: event.instanceId };
     return trackRun(run, () => executeBusinessTreeWorkflow(event.payload, trackSteps(durableSteps(step, this.env, event.instanceId), run), this.env));
-  }
-}
-
-/** One archived document split into the filing library. Deterministic: no model call; a split that keeps failing is recorded as unreadable. */
-export class FilingLibraryWorkflow extends WorkflowEntrypoint<SecPipelineEnv, FilingLibraryParams> {
-  async run(event: WorkflowEvent<FilingLibraryParams>, step: WorkflowStep) {
-    const durable = step as unknown as { do<T>(name: string, config: object, callback: () => Promise<T>): Promise<T>; do<T>(name: string, callback: () => Promise<T>): Promise<T> };
-    try {
-      return await durable.do("library-prepare", { retries: { limit: 2, delay: "1 minute", backoff: "exponential" }, timeout: "10 minutes" },
-        () => prepareLibraryDocument(this.env, event.payload));
-    } catch (error) {
-      const reason = (error instanceof Error ? error.message : String(error)).slice(0, 200);
-      await durable.do("library-unreadable", () => recordUnreadable(this.env, event.payload, reason));
-      return { status: "unreadable", reason };
-    }
   }
 }
 

@@ -11,13 +11,13 @@ export type TreeSource = { id: string; title: string; url: string; kind: "sec" |
 export type TreeClaim = { text: string; sourceIds: string[] };
 export const REVENUE_MODEL_TYPES = ["subscription", "consumption", "license", "transaction", "advertising", "hardware", "services", "other"] as const;
 export type RevenueModelType = typeof REVENUE_MODEL_TYPES[number];
-/** How a line or product earns money: a short label for the map (e.g. 按用量计费) and one cited sentence. */
+/** How a line or product earns money: a short label for the map (e.g. `Usage-based`) and one cited sentence. */
 export type TreeRevenueModel = { type: RevenueModelType; label: string; text: string; sourceIds: string[] };
 export type TreeNode = {
   id: string;
   /** As the material writes it, e.g. `Azure`, `Microsoft 365 Copilot`. */
   name: string;
-  /** A few Chinese words saying what it is, e.g. 公有云平台. */
+  /** A short plain-English descriptor of what it is, e.g. `public cloud platform`. */
   gloss: string | null;
   kind: "line" | "product";
   /** The flow node this line is, when the statement itself discloses it; the map attaches the branch there. */

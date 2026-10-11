@@ -1,4 +1,4 @@
-import {extractVerifiedCurrentQuarters,type Fact,type DocumentSource} from './parser.ts';
+import {extractVerifiedCurrentQuarters,hasDisclosureProfile,type Fact,type DocumentSource} from './parser.ts';
 import {checkCompleteFlow} from '../../../../shared/analysis-runtime/financial-data/completeness.ts';
 import type {BusinessFlowQuarter} from '../../../../shared/analysis-contract/business-flow.ts';
 const key=(f:Fact)=>[f.tag,f.currency,JSON.stringify(Object.entries(f.dimensions).sort())].join('|');
@@ -18,19 +18,37 @@ export function priorPresentationOnly(html:string):boolean{
  if(matches.length&&/<ix:nonNumeric[^>]*name=["']dei:DocumentFiscalPeriodFocus["'][^>]*>\s*FY\s*<\/ix:nonNumeric>/i.test(html))return false;
  return matches.every(s=>/prior period amounts[^.]*have been reclassified to conform to the current period(?:&#8217;s|'s)? presentation/i.test(s));
 }
+/** A face-statement line may be tagged with a member; its printed row still belongs to the statement. */
+const statementFacts=(facts:Fact[])=>facts.filter(f=>f.statementRow||Object.keys(f.dimensions).every(a=>['StatementBusinessSegmentsAxis','ProductOrServiceAxis','ConsolidationItemsAxis'].includes(a.split(':').at(-1)!)));
+/** Q4 is FY minus nine months, using the exact same monetary concept, currency and dimensions. */
+function fourthQuarterFacts(annuals:Fact[],facts:Fact[]):Fact[]{
+ const derived:Fact[]=[];
+ for(const annual of annuals){
+  const prior=facts.find(f=>f.start===annual.start&&key(f)===key(annual)&&days(f.start,f.end)>230&&days(f.start,f.end)<310&&days(f.end,annual.end)>=70&&days(f.end,annual.end)<=110);
+  if(prior)derived.push({...annual,start:nextDay(prior.end),context:`derived:${annual.context}-${prior.context}`,value:annual.value-prior.value,precision:Math.min(annual.precision,prior.precision),operands:[annual,prior],formula:`Fourth quarter ${annual.value-prior.value} = full fiscal year ${annual.value} − first nine months ${prior.value}, same fiscal year, currency, concept and dimensions`});
+ }
+ return derived;
+}
+/**
+ * Every fiscal fourth quarter an annual report and the third-quarter report before it can establish: each year the annual
+ * report presents, current and comparative, less the same year's nine months as the third-quarter report presents them.
+ * Both reports present the comparative year on the current year's basis, so a fourth quarter and its year-ago quarter compare.
+ */
+export function fiscalFourthQuarters(annualReport:Fact[],thirdQuarterReport:Fact[]):BusinessFlowQuarter[]{
+ const facts=precisionSelect([...annualReport,...thirdQuarterReport]);if(!facts)return [];
+ const annuals=statementFacts(facts).filter(f=>annualReport.includes(f)&&days(f.start,f.end)>330);
+ const byEnd=new Map<string,Fact[]>();
+ for(const f of fourthQuarterFacts(annuals,facts))byEnd.set(f.end,[...(byEnd.get(f.end)??[]),f]);
+ return [...byEnd.values()].flatMap(q=>extractVerifiedCurrentQuarters(q[0].source,q).quarters).map(q=>({...q,basisLabel:q.basisLabel+' · fourth quarter = full year − first nine months, same basis'}));
+}
 export function reviewedCurrentPair(all:Fact[],expected:string,documents:Array<{source:DocumentSource;html?:string;eligible:boolean}>):{quarters:BusinessFlowQuarter[];reviewed:boolean}{
- // Oracle has an established disclosure-specific expense and revenue profile.
- if(all[0]?.source.cik==='0001341439')return {quarters:[],reviewed:false};
+ // An issuer with a disclosure-specific expense and revenue profile is not read by generic arithmetic.
+ if(all[0]&&hasDisclosureProfile(all[0].source.cik))return {quarters:[],reviewed:false};
  const facts=precisionSelect(all);if(!facts)return {quarters:[],reviewed:false};
- // A face-statement line may be tagged with a member; its printed row still belongs to the statement.
- const usable=facts.filter(f=>f.statementRow||Object.keys(f.dimensions).every(a=>['StatementBusinessSegmentsAxis','ProductOrServiceAxis','ConsolidationItemsAxis'].includes(a.split(':').at(-1)!)));
+ const usable=statementFacts(facts);
  const current=usable.filter(f=>f.end===expected&&days(f.start,f.end)>=70&&days(f.start,f.end)<=110);
  let quarterFacts=current;
- // Q4 is FY minus nine months, using the exact same monetary concept, currency and dimensions.
- if(!quarterFacts.length){const derived:Fact[]=[];for(const annual of usable.filter(f=>f.end===expected&&days(f.start,f.end)>330)){
-   const prior=facts.find(f=>f.start===annual.start&&key(f)===key(annual)&&days(f.start,f.end)>230&&days(f.start,f.end)<310&&days(f.end,annual.end)>=70&&days(f.end,annual.end)<=110);
-   if(prior)derived.push({...annual,start:nextDay(prior.end),context:`derived:${annual.context}-${prior.context}`,value:annual.value-prior.value,precision:Math.min(annual.precision,prior.precision),operands:[annual,prior],formula:`同一财年、币种、概念和维度的全年累计 ${annual.value} − 前九个月累计 ${prior.value} = 第四季度 ${annual.value-prior.value}`});
-  }quarterFacts=derived;}
+ if(!quarterFacts.length)quarterFacts=fourthQuarterFacts(usable.filter(f=>f.end===expected&&days(f.start,f.end)>330),facts);
  if(!quarterFacts.length)return {quarters:[],reviewed:false};
  const start=quarterFacts[0].start,previousEnd=new Date(Date.parse(start)-86400000).toISOString().slice(0,10);
  const directPrevious=usable.filter(f=>f.end===previousEnd&&days(f.start,f.end)>=70&&days(f.start,f.end)<=110);
@@ -46,7 +64,7 @@ export function reviewedCurrentPair(all:Fact[],expected:string,documents:Array<{
  const latestSource=quarterFacts[0].source,previousSource=directPrevious[0].source;
  const extract=(source:DocumentSource,items:Fact[])=>extractVerifiedCurrentQuarters(source,items).quarters;
  const quarters=[...extract(latestSource,quarterFacts),...extract(previousSource,directPrevious)].filter(q=>q.periodEnd===expected||q.periodEnd===previousEnd);
- for(const q of quarters){q.basisLabel=(q.incomeModel==='insurance'?'保险及综合业务 · 投资损益单列 · 净利润含少数股东权益 · ':'')+'SEC 当前财年原披露口径 · 相邻期间累计桥核验；第四季度仅按同口径全年减九个月推导';
-  for(const document of documents)if(!q.sources.some(s=>s.id===document.source.accession))q.sources.push({id:document.source.accession,title:'SEC 累计与重分类范围核验 '+document.source.accession,url:document.source.url,publishedAt:document.source.filedAt});}
+ for(const q of quarters){q.basisLabel=(q.incomeModel==='insurance'?'Insurance and diversified operations · investment gains shown separately · net income includes noncontrolling interests · ':'')+'As reported in the current fiscal year\'s SEC filings · verified against adjacent cumulative periods; a fourth quarter is derived only as the full year less nine months on the same basis';
+  for(const document of documents)if(!q.sources.some(s=>s.id===document.source.accession))q.sources.push({id:document.source.accession,title:'SEC cumulative and reclassification check '+document.source.accession,url:document.source.url,publishedAt:document.source.filedAt});}
  return {quarters,reviewed:checkCompleteFlow({schemaVersion:'business-flow.v1',ticker:latestSource.cik,fetchedAt:null,quarters}).complete};
 }

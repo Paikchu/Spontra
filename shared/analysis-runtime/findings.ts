@@ -15,7 +15,8 @@ const FUNDAMENTAL_KEYS = Object.keys(FUNDAMENTAL_METRIC_CATALOG) as [Fundamental
 const text = (max: number) => z.string().trim().min(1).max(max);
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const https = z.string().max(2000).refine(v => { try { const u = new URL(v); return u.protocol === "https:" && !u.username && !u.password; } catch { return false; } });
-const claim = z.object({ text: text(600), sourceIds: z.array(z.string().max(40)).min(1).max(6) });
+/** English prose: a judgment runs 80 to 180 words, a title a short headline. */
+const claim = z.object({ text: text(1400), sourceIds: z.array(z.string().max(40)).min(1).max(6) });
 const baseRef = z.union([
   z.object({ metric: z.enum(FLOW_METRICS) }),
   z.object({ capital: z.enum(CAPITAL_METRICS) }),
@@ -26,7 +27,7 @@ const baseRef = z.union([
 const ref = z.union([baseRef, z.object({ ratio: z.object({ numerator: baseRef, denominator: baseRef }) })]);
 const span = z.enum(["quarter", "fiscal_year"]);
 const compare = z.union([z.literal("yoy"), z.literal("qoq"), z.object({ guidanceId: text(200) })]);
-const evidence = z.object({ ref, periodEnd: date, span, compare: compare.optional(), label: text(60).optional() });
+const evidence = z.object({ ref, periodEnd: date, span, compare: compare.optional(), label: text(100).optional() });
 const lens = z.discriminatedUnion("type", [
   z.object({ type: z.literal("trend"), refs: z.array(ref).min(1).max(4), span, rate: z.enum(["yoy", "qoq"]).optional() }),
   z.object({ type: z.literal("compare_bars"), refs: z.array(ref).min(1).max(4), span }),
@@ -35,10 +36,10 @@ const lens = z.discriminatedUnion("type", [
 ]);
 const finding = z.object({
   id: text(80), kind: z.enum(["risk", "strength", "shift", "watch"]), severity: z.union([z.literal(1), z.literal(2), z.literal(3)]),
-  title: text(24), judgment: claim, evidence: z.array(evidence).min(1).max(8),
+  title: text(80), judgment: claim, evidence: z.array(evidence).min(1).max(8),
   anchors: z.object({ view: z.enum(["profit", "cash", "balance"]), nodeIds: z.array(text(200)).max(12), metrics: z.array(z.enum(FLOW_METRICS)).max(6), capital: z.array(z.enum(CAPITAL_METRICS)).max(6).optional() }),
   lens, pairWith: text(80).optional(),
-  watch: z.object({ ref, condition: text(200), horizon: z.enum(["next_quarter", "fiscal_year"]), compare: compare.optional() }).optional(),
+  watch: z.object({ ref, condition: text(400), horizon: z.enum(["next_quarter", "fiscal_year"]), compare: compare.optional() }).optional(),
 });
 export const findingsPublicationSchema = z.object({
   schemaVersion: z.literal("findings.v1"),
@@ -114,7 +115,7 @@ export type ResolvedEvidence = {
   compareLabel: string | null;
   /** Percent change for amounts; percentage-point change for rates; plain difference for ratios (×100 gives points). */
   delta: number | null;
-  /** Current over compare, for "x 倍" statements. */
+  /** Current over compare, for "2.6x" statements. */
   ratio: number | null;
   guidance: { item: GuidanceItem; verdict: GuidanceVerdict; measured: number; unit: ValueUnit } | null;
 };
@@ -263,29 +264,31 @@ export function resolveRef(data: FindingData, ref: FindingRef, periodEnd: string
   return item ? guidanceValue(item, span) : null;
 }
 
-const METRIC_LABEL: Record<FlowMetric, string> = { revenue: "总收入", cost: "营业成本", gross: "毛利", research: "研发费用", sales: "销售费用", administration: "管理费用", operatingExpenses: "营业费用", operating: "营业利润", other: "非营业损益", pretax: "税前利润", tax: "所得税", net: "净利润" };
-const GUIDANCE_LABEL: Record<GuidanceItem["metric"], string> = { revenue: "收入", segment_revenue: "收入", gross_margin: "毛利率", operating_margin: "营业利润率", operating_income: "营业利润", eps: "EPS", free_cash_flow: "自由现金流", operating_cash_flow: "经营现金流", capex: "资本开支", rpo: "RPO", billings: "Billings", other: "" };
-const CAPITAL_LABEL: Record<CapitalMetric, string> = { operatingCashFlow: "经营现金流", capex: "资本开支", freeCashFlow: "自由现金流", financing: "融资活动净额", debtIssued: "新增借款", debtRepaid: "偿还借款", equityIssued: "发行股票", buybacks: "股票回购", dividends: "分红", totalAssets: "总资产", debt: "有息债务", cash: "现金与短期投资", equity: "股东权益", rpo: "剩余履约义务 (RPO)", rpoNext12MonthsShare: "RPO 未来 12 个月确认比例" };
+const METRIC_LABEL: Record<FlowMetric, string> = { revenue: "Total revenue", cost: "Cost of revenue", gross: "Gross profit", research: "R&D expense", sales: "Sales and marketing expense", administration: "G&A expense", operatingExpenses: "Operating expenses", operating: "Operating income", other: "Non-operating income (expense)", pretax: "Pretax income", tax: "Income tax", net: "Net income" };
+const GUIDANCE_LABEL: Record<GuidanceItem["metric"], string> = { revenue: "Revenue", segment_revenue: "Revenue", gross_margin: "Gross margin", operating_margin: "Operating margin", operating_income: "Operating income", eps: "EPS", free_cash_flow: "Free cash flow", operating_cash_flow: "Operating cash flow", capex: "Capex", rpo: "RPO", billings: "Billings", other: "" };
+const CAPITAL_LABEL: Record<CapitalMetric, string> = { operatingCashFlow: "Operating cash flow", capex: "Capex", freeCashFlow: "Free cash flow", financing: "Net financing cash flow", debtIssued: "Debt issued", debtRepaid: "Debt repaid", equityIssued: "Stock issued", buybacks: "Share buybacks", dividends: "Dividends", totalAssets: "Total assets", debt: "Total debt", cash: "Cash and short-term investments", equity: "Shareholders' equity", rpo: "Remaining performance obligations (RPO)", rpoNext12MonthsShare: "RPO recognized within 12 months" };
 
 /** Human label of a reference; a business node reads by its disclosed name when the data has it. */
 export function refLabel(data: FindingData, ref: FindingRef): string {
   if ("ratio" in ref) {
     const n = refLabel(data, ref.ratio.numerator), d = refLabel(data, ref.ratio.denominator);
-    const margin: Partial<Record<FlowMetric, string>> = { gross: "毛利率", operating: "营业利润率", net: "净利率", research: "研发费用率", sales: "销售费用率", administration: "管理费用率" };
+    const margin: Partial<Record<FlowMetric, string>> = { gross: "Gross margin", operating: "Operating margin", net: "Net margin", research: "R&D % of revenue", sales: "S&M % of revenue", administration: "G&A % of revenue" };
     if ("metric" in ref.ratio.denominator && ref.ratio.denominator.metric === "revenue" && "metric" in ref.ratio.numerator && margin[ref.ratio.numerator.metric]) return margin[ref.ratio.numerator.metric]!;
     return `${n} / ${d}`;
   }
   if ("metric" in ref) return METRIC_LABEL[ref.metric];
   if ("capital" in ref) return CAPITAL_LABEL[ref.capital];
   if ("fundamental" in ref) return data.fundamentals?.series.find(s => s.metricKey === ref.fundamental)?.label ?? FUNDAMENTAL_METRIC_CATALOG[ref.fundamental as keyof typeof FUNDAMENTAL_METRIC_CATALOG]?.label ?? ref.fundamental;
-  if ("guidanceId" in ref) { const i = data.guidance?.items.find(i => i.id === ref.guidanceId); return i ? `指引 · ${i.segment ? `${i.segment} ` : ""}${GUIDANCE_LABEL[i.metric] || i.label}${i.fiscalYear ? ` FY${i.fiscalYear}${i.fiscalQuarter ? ` Q${i.fiscalQuarter}` : ""}` : ""}` : "指引"; }
+  if ("guidanceId" in ref) { const i = data.guidance?.items.find(i => i.id === ref.guidanceId); return i ? `Guidance · ${i.segment ? `${i.segment} ` : ""}${GUIDANCE_LABEL[i.metric] || i.label}${i.fiscalYear ? ` ${i.fiscalQuarter ? `Q${i.fiscalQuarter} ` : ""}FY${i.fiscalYear}` : ""}` : "Guidance"; }
   for (const q of data.quarters) for (const s of q.segments) { if (s.id === ref.nodeId) return s.name; const c = s.children?.find(c => c.id === ref.nodeId); if (c) return c.name; }
   for (const h of data.history?.quarters ?? []) for (const s of h.segments) { if (s.id === ref.nodeId) return s.name; const c = s.children?.find(c => c.id === ref.nodeId); if (c) return c.name; }
   return ref.nodeId;
 }
 
-/** Plain period label: "FY 截至 2026-05" for a four-quarter span, "2026.05 季" for a quarter. */
-export const spanLabel = (v: { span: FindingSpan; periodEnd: string }) => v.span === "fiscal_year" ? `截至 ${v.periodEnd.slice(0, 7)} 的四个季度` : `${v.periodEnd.slice(0, 7).replace("-", ".")} 季`;
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const monthYear = (date: string) => `${MONTHS[Number(date.slice(5, 7)) - 1] ?? date.slice(5, 7)} ${date.slice(0, 4)}`;
+/** Plain period label: "4 quarters ended May 2026" for a four-quarter span, "Quarter ended May 2026" for a quarter. */
+export const spanLabel = (v: { span: FindingSpan; periodEnd: string }) => v.span === "fiscal_year" ? `4 quarters ended ${monthYear(v.periodEnd)}` : `Quarter ended ${monthYear(v.periodEnd)}`;
 
 /** The comparison the evidence asks for; null when it was asked for and the data cannot make it. */
 function compareOf(data: FindingData, e: FindingEvidence, current: ResolvedValue): Pick<ResolvedEvidence, "compare" | "compareLabel" | "delta" | "ratio" | "guidance"> | null {
@@ -303,7 +306,7 @@ function compareOf(data: FindingData, e: FindingEvidence, current: ResolvedValue
       measured = (current.value / base.value - 1) * 100; unit = "percent";
     } else if (range.unit !== current.unit) return none;
     const verdict: GuidanceVerdict = measured > range.range.high ? "above" : measured < range.range.low ? "below" : "within";
-    return { compare: range, compareLabel: `指引 ${item.label}`, delta: null, ratio: null, guidance: { item, verdict, measured, unit } };
+    return { compare: range, compareLabel: `Guidance: ${item.label}`, delta: null, ratio: null, guidance: { item, verdict, measured, unit } };
   }
   const months = e.compare === "yoy" ? -12 : -3;
   const compare = resolveRef(data, e.ref, shiftPeriod(e.periodEnd, months), e.span);
@@ -311,7 +314,7 @@ function compareOf(data: FindingData, e: FindingEvidence, current: ResolvedValue
   // Rates move in points: a margin, or a ratio of two figures, is compared by its difference ×100, never by its growth.
   // A growth rate needs a positive base and a positive result; a sign change or a zero base has no meaningful rate.
   const delta = current.unit === "percent" ? current.value - compare.value : current.unit === "ratio" ? current.value - compare.value : compare.value > 0 && current.value > 0 ? (current.value - compare.value) / compare.value * 100 : null;
-  return { compare, compareLabel: e.compare === "yoy" ? "去年同期" : "上一季", delta, ratio: compare.value > 0 && current.value > 0 ? current.value / compare.value : null, guidance: null };
+  return { compare, compareLabel: e.compare === "yoy" ? "Year ago" : "Prior quarter", delta, ratio: compare.value > 0 && current.value > 0 ? current.value / compare.value : null, guidance: null };
 }
 
 export function resolveEvidence(data: FindingData, e: FindingEvidence): ResolvedEvidence | null {
@@ -321,32 +324,48 @@ export function resolveEvidence(data: FindingData, e: FindingEvidence): Resolved
 
 /* ---------- Verification ---------- */
 
-/** Numbers a reader could have written from this evidence, in the units Chinese prose uses. */
+/** Amounts are written in trillions, billions or millions of dollars ("$55.7 billion"), as the ledger writes them. */
+const AMOUNT_SCALES = [1e12, 1e9, 1e6];
+
+/** Numbers a reader could have written from this evidence, in the units English prose uses. */
 export function evidenceCandidates(r: ResolvedEvidence): number[] {
   const out: number[] = [];
+  const scaled = (v: ResolvedValue, x: number) => v.unit === "USD" ? AMOUNT_SCALES.map(scale => x / scale) : v.unit === "ratio" ? [x, x * 100] : [x];
   const amount = (v: ResolvedValue) => {
-    if (v.unit === "USD") out.push(v.value / 1e8, v.value / 1e12, v.value / 1e9, v.value / 1e6);
-    else if (v.unit === "ratio") out.push(v.value, v.value * 100);
-    else out.push(v.value);
-    if (v.range) for (const x of [v.range.low, v.range.high]) out.push(v.unit === "USD" ? x / 1e8 : x);
+    out.push(...scaled(v, v.value));
+    if (v.range) for (const x of [v.range.low, v.range.high]) out.push(...scaled(v, x));
   };
   amount(r.current);
   if (r.compare) amount(r.compare);
   if (r.delta != null) out.push(r.delta, ...(r.current.unit === "ratio" ? [r.delta * 100] : []));
   if (r.ratio != null) out.push(r.ratio);
   if (r.guidance) out.push(r.guidance.measured);
-  // "下降 1%" and "亏损 237 亿" write the magnitude; the sign is in the words.
+  // "down 1%" and "a loss of $23.7 billion" write the magnitude; the sign is in the words.
   return out.filter(v => Number.isFinite(v)).flatMap(v => v < 0 ? [v, -v] : [v]);
 }
 
-/** Numeric statements in prose, skipping dates, fiscal periods and citation markers. */
+const MONTH_NAME = String.raw`Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|June?|July?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?`;
+const PERIOD_UNIT = String.raw`months?|quarters?|years?|weeks?|days?|fiscal\s+(?:years?|quarters?)`;
+/**
+ * A number in prose, with what may mark it as a period, a count or a name rather than a figure: a fiscal-period
+ * prefix (FY2026, Q3, H1) or a month name (May 31); a period unit (12 months, 8 quarters, a 3-year plan), an ordinal
+ * (4th), a quarter or half suffix (3Q, 2H) or a form name (10-K, 8-K). Digits inside an ISO date or a word are never read.
+ */
+const PROSE_NUMBER = new RegExp(
+  String.raw`(?<![\w.])(?<!\d{4}-)(?<!\d{4}-\d{2}-)(FY\s?|[QH](?=\d)|(?:${MONTH_NAME})\.?\s)?` +
+  String.raw`([-−]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?)` +
+  String.raw`(\s?-?(?:${PERIOD_UNIT})\b|(?:st|nd|rd|th)\b|[QH](?![a-z])|-[KQF]\b)?`,
+  "gi");
+
+/** Numeric statements in prose, skipping years, dates, fiscal periods, period counts, ordinals and form names. */
 export function proseNumbers(prose: string): number[] {
   const out: number[] = [];
-  for (const match of prose.matchAll(/(?<![\w.])(FY|Q|第)?\s?([-−]?\d+(?:\.\d+)?)\s?(财年|年|月|日|季|个季度|个月|Q)?/g)) {
+  for (const match of prose.matchAll(PROSE_NUMBER)) {
     const [, prefix, raw, suffix] = match;
     if (prefix || suffix) continue;
-    const value = Number(raw.replace("−", "-"));
+    const value = Number(raw.replace("−", "-").replace(/,/g, ""));
     if (!Number.isFinite(value)) continue;
+    // A year, alone or after "fiscal" or "calendar".
     if (Number.isInteger(value) && value >= 1900 && value <= 2100) continue;
     out.push(value);
   }

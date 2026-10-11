@@ -15,18 +15,17 @@ export function readableTrend(value: SecTrend | undefined): SecTrend | null {
 }
 
 function valueText(value: number, trend: SecTrend, exact = false) {
-  if (trend.unit === "ratio") return new Intl.NumberFormat("zh-CN", { style: "percent", maximumFractionDigits: 2 }).format(value);
-  if (exact) return value.toLocaleString("zh-CN", { maximumFractionDigits: 10 });
-  const magnitude = Math.abs(value);
-  const suffix = magnitude >= 1e8 ? " 亿" : magnitude >= 1e4 ? " 万" : "";
-  const divisor = magnitude >= 1e8 ? 1e8 : magnitude >= 1e4 ? 1e4 : 1;
-  return `${new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2, minimumFractionDigits: divisor > 1 ? 2 : 0 }).format(value / divisor)}${suffix}`;
+  if (trend.unit === "ratio") return new Intl.NumberFormat("en-US", { style: "percent", maximumFractionDigits: 2 }).format(value);
+  if (exact) return value.toLocaleString("en-US", { maximumFractionDigits: 10 });
+  // The unit sits in the caption, so values read "39.3B" rather than repeating the currency.
+  const large = Math.abs(value) >= 1e4;
+  return new Intl.NumberFormat("en-US", { notation: large ? "compact" : "standard", maximumFractionDigits: large ? 1 : 2 }).format(value);
 }
 
 /** All figures share verified values; two observations are a comparison, never an interpolated trend. */
 export function SecTrendFigure({ id, title, trend: input, mark = "line", caption }: TrendProps) {
   const trend = readableTrend(input);
-  if (!trend || !trend.points.length) return <div className="report-content-fallback" id={id}>{title}：暂无可绘制的可比数据。</div>;
+  if (!trend || !trend.points.length) return <div className="report-content-fallback" id={id}>{title}: no comparable data to chart.</div>;
   const { points } = trend;
   const comparison = points.length === 2;
   const unit = trend.unit === "ratio" ? "%" : trend.unit;
@@ -37,9 +36,9 @@ export function SecTrendFigure({ id, title, trend: input, mark = "line", caption
   const x = scaleUtc().domain([new Date(points[0].date), new Date(points.at(-1)!.date)]).range([45, 535]);
   const y = scaleLinear().domain(domain).range([180, 25]);
   return <figure id={id} className="report-content-figure" data-chart-kind={points.length === 1 ? "single" : comparison ? "comparison" : "timeline"}>
-    <figcaption><strong>{title}</strong><small>{unit} · {trend.periodScope === "annual" ? "年度" : "季度"} · {trend.basis.toUpperCase()} · SEC XBRL</small></figcaption>
+    <figcaption><strong>{title}</strong><small>{unit} · {trend.periodScope === "annual" ? "Annual" : "Quarterly"} · {trend.basis.toUpperCase()} · SEC XBRL</small></figcaption>
     {points.length === 1 ? <div className="report-content-single"><strong>{valueText(points[0].value, trend)}</strong><span>{points[0].date}</span></div>
-      : comparison ? <div className="report-content-comparison" role="img" aria-label={`${title}；${points.map((p) => `${p.date}：${valueText(p.value, trend)} ${unit}`).join("；")}`}>
+      : comparison ? <div className="report-content-comparison" role="img" aria-label={`${title}; ${points.map((p) => `${p.date}: ${valueText(p.value, trend)} ${unit}`).join("; ")}`}>
         {points.map((p, index) => <div className="report-content-comparison-row" key={p.date} data-current={index === points.length - 1}>
           <div><span>{p.date}</span><strong data-chart-value={p.value}>{valueText(p.value, trend)}</strong></div>
           <svg viewBox="0 0 100 18" preserveAspectRatio="none" aria-hidden="true">
@@ -49,7 +48,7 @@ export function SecTrendFigure({ id, title, trend: input, mark = "line", caption
         </div>)}
       </div> : <div className="report-content-timeline">
         <svg viewBox="0 0 580 220" preserveAspectRatio="none" role="img" aria-labelledby={`${id}-description`}>
-          <title id={`${id}-description`}>{`${title}；${points.map((p) => `${p.date}：${valueText(p.value, trend)}`).join("；")}`}</title>
+          <title id={`${id}-description`}>{`${title}; ${points.map((p) => `${p.date}: ${valueText(p.value, trend)}`).join("; ")}`}</title>
           <line x1="25" x2="555" y1={y(0)} y2={y(0)} className="report-content-chart-zero" vectorEffect="non-scaling-stroke" />
           {mark === "line" && <polyline points={points.map((p) => `${x(new Date(p.date))},${y(p.value)}`).join(" ")} fill="none" className="report-content-chart-line" strokeWidth="2" vectorEffect="non-scaling-stroke" />}
           {points.map((p, index) => <g key={p.date} data-current={index === points.length - 1}>
@@ -69,8 +68,8 @@ export function SecTrendSource({ title, trend: input }: Pick<TrendProps, "title"
   const trend = readableTrend(input);
   if (!trend?.points.length) return null;
   const unit = trend.unit === "ratio" ? "%" : trend.unit;
-  return <details className="report-content-source"><summary>{title} · 查看数据与来源</summary><div className="report-content-table-scroll" tabIndex={0} role="region" aria-label={`${title}原始数据`}>
-    <table><thead><tr><th scope="col">期间</th><th scope="col">数值（{unit}）</th><th scope="col">SEC accession</th></tr></thead>
+  return <details className="report-content-source"><summary>{title} · Data and sources</summary><div className="report-content-table-scroll" tabIndex={0} role="region" aria-label={`${title} source data`}>
+    <table><thead><tr><th scope="col">Period</th><th scope="col">Value ({unit})</th><th scope="col">SEC accession</th></tr></thead>
       <tbody>{trend.points.map((p) => <tr key={p.date}><th scope="row">{p.date}</th><td data-chart-value={p.value}>{valueText(p.value, trend, true)}</td><td>{p.accession}</td></tr>)}</tbody>
     </table></div></details>;
 }

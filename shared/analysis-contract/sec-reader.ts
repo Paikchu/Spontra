@@ -1,16 +1,16 @@
 export type { SecReaderReport, SecReaderVisual } from "../analysis-runtime/sec-reader-schema.ts";
 
 export const SEC_READER_VISUAL_CATALOG = {
-  essay: "连续叙事：适合解释复杂机制，正文后给出结论。",
-  spotlight: "重点侧栏：正文与一句核心判断并列，适合投资含义或关键风险。",
-  comparison: "双栏对照：2或4段按相邻两段配对，分别给paragraphLabels，适合支持/反证或两种业务机制。不得把无关段落凑成对照。",
-  chart_focus: "图文分析：先提出问题和解释，再在content中展示chart及局限；两期比较用紧凑侧图，多期趋势可用宽图。",
+  essay: "Continuous narrative: suits explaining a complex mechanism; the conclusion follows the prose.",
+  spotlight: "Highlight sidebar: prose set beside one core judgment; suits an investment implication or a key risk.",
+  comparison: "Two-column contrast: 2 or 4 blocks paired as adjacent couples, each with a paragraphLabels entry; suits supporting vs. contrary evidence or two business mechanisms. Never pair unrelated paragraphs to fake a contrast.",
+  chart_focus: "Chart-led analysis: state the question and the explanation first, then place the chart and its limits in content; use a compact side chart for a two-period comparison and a wide chart for a multi-period trend.",
   rules: [
-    "每节必须输出visual，先按业务问题选择layout并写rationale，不按章节序号轮换模板。适合时使用至少两种版式。",
-    "每节审视availableCharts和availableFigures：有直接相关的可比数据时主动选择chart或figure；否则填写具体noChartReason。不要无理由省略全部图表。",
-    "chart只能引用availableCharts.metricKey，趋势用line、跨期规模比较用bar；title表达观察问题，caption解释图能说明什么及不能证明什么。禁止生成数据点或HTML/CSS。",
-    "comparison的paragraphLabels与markdown正文块一一对应；其他模板不需要。图表可搭配任何模板，每节chart最多一张、chart与figure合计最多两张，不重复展示同一指标；v2将图表放在content的相关论述之后，不再在visual重复配置chart。",
-    "availableFigures是系统用已核验XBRL预先算好的图形组件（关键数字条、收入与增速、三道利润率、收入到净利润的流向、每100元收入的去向、利润到自由现金流、现金与债务、股数变化）。按每项answers判断它能否直接回答本节问题，能则用figure放在解释它的论述之后；figure与chart不要重复表达同一指标。每个figureKey全篇最多用一次，不适合时不用。",
+    "Every section must output visual: choose the layout for the business question and write a rationale; do not rotate templates by section number. Use at least two layouts across the report when they fit.",
+    "In every section review availableCharts and availableFigures: when directly relevant comparable data exists, choose a chart or figure; otherwise write a specific noChartReason. Do not drop every chart without a reason.",
+    "A chart may only reference availableCharts.metricKey; use line for trends and bar for cross-period size comparisons. The title states the question being observed; the caption explains what the chart shows and what it cannot prove. Never generate data points, HTML or CSS.",
+    "comparison paragraphLabels map one-to-one to the markdown prose blocks; other layouts do not need them. Charts may go with any layout: at most one chart per section and at most two charts and figures combined, never showing the same metric twice. In v2, place charts in content right after the discussion they support; do not configure the chart again in visual.",
+    "availableFigures are graphic components the system precomputed from verified XBRL (Key figures, Revenue and YoY growth, Margin ladder, Revenue to net income, Where each $100 of revenue goes, Net income to free cash flow, Cash and long-term debt, Share count). Judge from each item's answers whether it directly answers the section's question; if it does, place the figure after the discussion that explains it. A figure and a chart must not express the same metric. Each figureKey may be used at most once in the report; skip it when it does not fit.",
   ],
 } as const;
 
@@ -68,46 +68,46 @@ export type SecFinancialLens = {
 };
 
 /** Shared editorial style for report synthesis, review and revision. */
-export const SEC_REPORT_STYLE_RULES = `使用简洁、客观、易懂的中文研究报告语言。标题直接说明分析对象或有证据支持的结论，具体到业务与财务问题，不强制统一成空泛栏目名。
-标题避免设问、对话式引导、悬念和口号，不写「这一季，判断变在哪里」「钱去了哪里」「接下来要盯什么」。可用「经营现金流与利润差异」；只有证据充分时才写「应收账款增长拖累现金回收」等结论式标题。
-正文直接陈述事实、解释机制和说明判断，删除重复的旁白式过渡与空泛评价；不机械添加「这意味着」「值得注意的是」，不为自然感加入第一人称、情绪或题外话。保留必要的因果、转折和术语解释。
-文风调整不得改变事实、数字、财季、单位、会计口径、引用和判断的方向或强度；保留「可能」「管理层预计」「尚不能确认」等限定，不增加未经证据支持的因果。原文引文保持逐字一致。`;
+export const SEC_REPORT_STYLE_RULES = `Write in plain, objective, concise equity-research English that a general investor can follow. All reader-facing text is English; keep company, product and segment names and verbatim source quotations exactly as the filing writes them. Section titles name the subject of the analysis or an evidence-backed conclusion, specific to the business or financial question; do not force them into generic column names.
+Titles avoid rhetorical questions, conversational hooks, suspense and slogans: never write titles like "What changed this quarter", "Where did the money go" or "What to watch next". "Operating cash flow versus earnings" is acceptable; write a conclusion-style title such as "Receivables growth slows cash collection" only when the evidence is sufficient.
+Prose states facts, explains mechanisms and gives judgments directly. Remove repetitive narrator-style transitions and empty evaluation; do not mechanically add "this means" or "it is worth noting", and do not add first person, emotion or digressions to sound natural. Keep the causal links, contrasts and term definitions the argument needs.
+Style edits must never change facts, numbers, fiscal periods, units, accounting basis, citations, or the direction or strength of a judgment. Keep qualifiers such as "may", "management expects" and "cannot yet be confirmed", and do not add causal claims the evidence does not support. Quotations from source documents stay verbatim.`;
 
 export const SEC_READER_SCHEMA = {
   version: "sec-reader.v2",
   contentBlocks: {
-    common: "{blockId:稳定且全篇唯一的英文标识,type,evidenceIds:[本期证据ID],groupId?:相关图文分组ID,layout?:inline|aside|wrap|wide}",
-    markdown: "{...common,type:markdown,markdown:一段完整正文}",
-    chart: "{...common,type:chart,metricKey:availableCharts中的指标,mark:line|bar,title,caption}",
-    figure: "{...common,type:figure,figureKey:availableFigures中的figureKey,title,caption}：图形与数值由系统绘制，只选择组件并写标题和图注。",
-    image: "{...common,type:image,assetId:availableAssets中的ID,alt,caption}",
-    math: "{...common,type:math,latex,displayMode:true|false,explanation,assumption?:分析假设}",
-    table: "{...common,type:table,headers:[string],rows:[[string]],caption,density?:compact|comfortable,columnKinds?:[label|number|text]}：列类型顺序与headers一致；label为行名，number为可比较的短数值，text为可换行的说明。",
+    common: "{blockId:stable English identifier unique across the report,type,evidenceIds:[current-period evidence IDs],groupId?:ID of a related text-and-media group,layout?:inline|aside|wrap|wide}",
+    markdown: "{...common,type:markdown,markdown:one complete prose paragraph, at most 4000 characters}",
+    chart: "{...common,type:chart,metricKey:a metric from availableCharts,mark:line|bar,title,caption}",
+    figure: "{...common,type:figure,figureKey:a figureKey from availableFigures,title,caption}: the system draws the graphic and its values; only choose the component and write its title and caption.",
+    image: "{...common,type:image,assetId:an ID from availableAssets,alt,caption}",
+    math: "{...common,type:math,latex,displayMode:true|false,explanation,assumption?:analytical assumption}",
+    table: "{...common,type:table,headers:[string],rows:[[string]],caption,density?:compact|comfortable,columnKinds?:[label|number|text]}: column kinds follow the order of headers; label is the row name, number is a short comparable value, text is a wrapping explanation.",
     callout: "{...common,type:callout,tone:neutral|positive|negative|caution,title?:string,text}",
     evidence: "{...common,type:evidence,title?:string}",
   },
   contentExample: [
-    { blockId: "cash-definition", type: "markdown", markdown: "此处填写完整正文", evidenceIds: ["替换为allowedEvidenceIds中的真实ID"], groupId: "cash-discussion" },
-    { blockId: "cash-explanation", type: "markdown", markdown: "此处填写下一段解释", evidenceIds: ["替换为allowedEvidenceIds中的真实ID"], groupId: "cash-discussion" },
+    { blockId: "cash-definition", type: "markdown", markdown: "Write the complete paragraph here", evidenceIds: ["replace with a real ID from allowedEvidenceIds"], groupId: "cash-discussion" },
+    { blockId: "cash-explanation", type: "markdown", markdown: "Write the next explanatory paragraph here", evidenceIds: ["replace with a real ID from allowedEvidenceIds"], groupId: "cash-discussion" },
   ],
   visualCatalog: SEC_READER_VISUAL_CATALOG,
   changes: "[{topic,kind:new|changed|continuing|not_comparable,prior,current,implication,evidenceIds,priorEvidenceIds}]",
-  sections: "[{id:稳定英文主题ID,title,role:business|earnings_cash|valuation|bear_case|outlook,content:[contentBlocks中定义的有序块],takeaway,nodeIds:[string],evidenceIds:[string],visual:{layout:essay|spotlight|comparison|chart_focus,rationale,paragraphLabels?:[string],noChartReason?:string}}]",
+  sections: "[{id:stable English topic ID,title,role:business|earnings_cash|valuation|bear_case|outlook,content:[ordered blocks defined in contentBlocks],takeaway,nodeIds:[string],evidenceIds:[string],visual:{layout:essay|spotlight|comparison|chart_focus,rationale,paragraphLabels?:[string],noChartReason?:string}}]",
   watch: "[{condition,deadline,consequence,evidenceIds}]",
   limitations: "[{issue,impact}]",
   rules: [
     SEC_REPORT_STYLE_RULES,
-    "输出version=sec-reader.v2，写一篇可独立阅读、逻辑递进的完整文章；通常3–8节、最多16节，每节2–4个markdown正文块（最多8个），标题围绕本公司真正的问题自拟。不是节点拼接或摘要。",
-    "content每个元素必须是JSON对象，不能是字符串或字符串化JSON；markdown正文写在对象的markdown字段，必须同时提供blockId/type/evidenceIds。contentExample只是对象结构示例，不能复制示例文字或占位引用。content为唯一正文，按读者阅读顺序穿插正文与媒体。paragraphs由系统投影，不要再写第二份正文。相关图文用相同groupId且连续排列，例如首段markdown→chart(layout=wrap)→解释markdown，三块共用groupId。小型比较图可选wrap，复杂图选wide；布局不改变内容顺序。",
-    "每块必须有稳定且全篇唯一的blockId，例如cash-definition或capex-comparison；修订文字、移动块时保持原blockId。禁止按段落内容hash生成ID。图表只能引用availableCharts，图形组件只能引用availableFigures，不得自造points或数据；图片只能引用availableAssets（为空时禁止image），不得输出URL、base64、HTML或内联SVG。",
-    "figure的title写观察对象或有证据的结论，caption说明该图能说明什么、不能证明什么（参照limits）；caption中的数字必须与availableFigures.data一致。",
-    "图注、公式、表格、提示中的所有事实和数字同正文一样必须由evidenceIds支持；公式给出解释，假设单列assumption；表格列数一致，不能填入推测财务数值。美元金额不写单美元数学标记。",
-    "当同口径的多个期间、业务或情景有较多可比较数值时，优先在相关论述旁使用独立table块；少量关键数字和因果解释仍写正文。由你按分析问题决定行列、标题、列类型及compact/comfortable密度，不输出HTML/CSS。通常控制在2–6列；宽表应按共同口径拆成多个有意义的小表，不把订阅KPI、长篇解释和财务数字硬塞进同一张表。caption写明单位、期间、口径和必要的来源差异；缺值写明未披露，不填零。number列只放短数值，长说明放text列并保持可读；每个单元格及跨期可比性均须有证据，无法核实则不要制表。",
-    "sections必须包含独立bear_case和valuation；其余章节按重要性选择。高重要性节点必须在相关章节被整合，低重要性节点留在核查材料。",
-    "每节takeaway用一句简洁、客观的话说明该节的分析结论及投资含义；术语首次出现时翻译，不以审阅流程或证据ID充当正文。",
-    "changes挑选1–5个重要变化，明确前期、本期和判断变化。priorEvidenceIds只能使用给定的历史原始财务证据；无可比证据时填not_comparable，不把本次发现等同首次发生。",
-    "watch给出1–4条可观察条件、检查时点和触发后需要推翻或修改的判断；数字阈值无来源时标为分析假设，不伪装成管理层指引。",
-    "evidenceIds只能引用allowedEvidenceIds。行情块用marketSnapshot.evidenceId（如存在），该ID仅支持同一冻结快照中的价格、日期、估值字段和市场反应；它不是SEC原文，不能支持经营财务事实。缺少合法行情ID时不虚构当前股价或估值；nodeIds只能引用已完成节点。chartMetricKey只能选availableCharts且必须直接服务于本节问题。",
-    "财务数字从facts及financialLens取，行情和估值只能从marketSnapshot取；无数据时明确限制。保留币种、期间、口径及约数标记。",
+    "Output version=sec-reader.v2 and write one complete article that reads on its own and builds its argument step by step: usually 3–8 sections, at most 16, each with 2–4 markdown prose blocks (at most 8). Titles are written for this company's real questions. It is not a concatenation of analysis nodes and not a summary.",
+    "Every content element must be a JSON object, never a string or stringified JSON; prose goes in the object's markdown field and must come with blockId/type/evidenceIds. contentExample only shows the object shape: never copy its text or placeholder citations. content is the only body text, ordered as the reader reads it, interleaving prose and media. paragraphs is projected by the system; do not write a second copy of the prose. Related text and media share one groupId and sit next to each other, e.g. opening markdown → chart(layout=wrap) → explanatory markdown, all three with the same groupId. Small comparison charts may use wrap and complex charts wide; layout never changes content order.",
+    "Every block needs a stable blockId unique across the report, e.g. cash-definition or capex-comparison; keep the original blockId when revising text or moving a block. Never derive IDs from a hash of the paragraph content. Charts may only reference availableCharts and figures only availableFigures; never invent points or data. Images may only reference availableAssets (no image blocks when it is empty); never output URLs, base64, HTML or inline SVG.",
+    "A figure title names what is observed or an evidence-backed conclusion; its caption says what the figure shows and what it cannot prove (see limits). Numbers in a caption must match availableFigures.data.",
+    "Every fact and number in captions, formulas, tables and callouts must be supported by evidenceIds just like the prose. A formula comes with an explanation and lists its assumption separately. Tables keep a consistent column count and must not contain speculative financial values. Do not wrap dollar amounts in single-dollar math markup.",
+    "When there are many comparable values on the same basis across periods, businesses or scenarios, prefer a standalone table block next to the related discussion; a few key numbers and the causal explanation stay in prose. You decide rows, columns, titles, column kinds and compact/comfortable density for the analytical question; never output HTML/CSS. Usually keep 2–6 columns; split a wide table into several meaningful small tables on a shared basis instead of forcing subscription KPIs, long explanations and financial figures into one table. The caption states unit, period, basis and any material source differences; write \"not disclosed\" for a missing value, never zero. number columns hold only short values; long explanations go in text columns and stay readable. Every cell and every cross-period comparison needs evidence; if it cannot be verified, do not build the table.",
+    "sections must include a standalone bear_case and a standalone valuation section; choose the rest by importance. High-materiality nodes must be integrated into the relevant sections; low-materiality nodes stay in the supporting material.",
+    "Each section's takeaway is one concise, objective sentence stating the section's analytical conclusion and its investment implication. Define jargon at first use; never use the review process or evidence IDs as body text.",
+    "changes picks 1–5 important changes and states the prior position, the current position and how the judgment changed. priorEvidenceIds may only use the historical source financial evidence provided; without comparable evidence use not_comparable, and do not equate a finding in this filing with a first occurrence.",
+    "watch gives 1–4 observable conditions, the time to check each, and the judgment that must be overturned or revised if it triggers. A numeric threshold without a source is labeled an analytical assumption, never presented as management guidance.",
+    "evidenceIds may only cite allowedEvidenceIds. Market blocks use marketSnapshot.evidenceId (when present); that ID supports only the price, date, valuation fields and market reaction of the same frozen snapshot. It is not an SEC source and cannot support operating or financial facts. Without a valid market ID, do not invent a current share price or valuation. nodeIds may only cite completed nodes. chartMetricKey may only use availableCharts and must directly serve the section's question.",
+    "Take financial numbers from facts and financialLens, and market and valuation data only from marketSnapshot; state the limitation when data is missing. Preserve currency, period, basis and approximation markers.",
   ],
 } as const;

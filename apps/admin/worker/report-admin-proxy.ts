@@ -9,7 +9,7 @@ function cookie(value: string, request: Request, clear = false): string {
   return `${COOKIE}=${value}; Path=/api/admin; HttpOnly; SameSite=Strict; Max-Age=${clear ? 0 : 8 * 3600}${new URL(request.url).protocol === "https:" ? "; Secure" : ""}`;
 }
 export async function handleReportAdminProxy(request: Request, path: string[], env: ProxyEnv): Promise<Response> {
-  if (!path.length || !/^(session|reports|financials|business-map|transcripts|ai|library)$/.test(path[0]!) || path.length > (path[0] === "financials" || path[0] === "ai" || path[0] === "library" ? 6 : 4)) return json({ error: "Not found" }, 404);
+  if (!path.length || !/^(session|reports|financials|business-map|transcripts|ai|pipeline|library)$/.test(path[0]!) || path.length > (path[0] === "financials" || path[0] === "ai" || path[0] === "library" ? 6 : 4)) return json({ error: "Not found" }, 404);
   if (path[0] === "transcripts" && !(request.method === "GET" && path.length <= 2)) return json({ error: "Not found" }, 404);
   if (path[0] === "business-map") {
     const route = path.slice(1).join("/");
@@ -19,6 +19,18 @@ export async function handleReportAdminProxy(request: Request, path: string[], e
     const route = path.slice(1).join("/");
     const read = request.method === "GET" && /^companies(?:\/[A-Z][A-Z0-9.-]{0,9}\/(?:findings|explainer|guidance|tree)(?:\/versions\/[0-9T:.Z-]{10,40})?)?$/.test(route);
     const write = request.method === "POST" && /^companies\/[A-Z][A-Z0-9.-]{0,9}\/(?:findings|explainer|guidance|tree)\/runs$/.test(route);
+    if (!read && !write) return json({ error: "Not found" }, 404);
+  }
+  if (path[0] === "library") {
+    const route = path.slice(1).join("/");
+    const read = request.method === "GET" && /^(?:|companies\/[A-Z][A-Z0-9.-]{0,9}|documents\/[a-f0-9]{64}(?:\/sections\/s[a-f0-9]{28})?)$/.test(route);
+    const write = request.method === "POST" && /^documents\/[a-f0-9]{64}\/rerun$/.test(route);
+    if (!read && !write) return json({ error: "Not found" }, 404);
+  }
+  if (path[0] === "pipeline") {
+    const route = path.slice(1).join("/");
+    const read = request.method === "GET" && /^(|trail\/[A-Za-z0-9-]{1,64})$/.test(route);
+    const write = request.method === "POST" && /^(events|dead\/[A-Za-z0-9-]{1,64}\/(?:replay|dismiss))$/.test(route);
     if (!read && !write) return json({ error: "Not found" }, 404);
   }
   if (path[0] === "library") {

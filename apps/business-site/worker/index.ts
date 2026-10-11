@@ -135,7 +135,7 @@ export function digestFiling(filing:PublicSecFiling):PublicFilingDigest{
   warnings:[...(summary?.discovery?.warnings??[]),...(analysis?.dataQuality.warnings??[])].filter(w=>typeof w==="string").slice(0,8),
   generatedAt:summary?.generatedAt??null,
   keyMetrics:(analysis?.keyMetrics??[]).slice(0,8).map(m=>({key:m.metricKey,label:formatSecMetricLabel(m.metricKey),value:formatSecMetricValue(m.metricKey,m.currentValue,m.unit,m.currency),yoy:m.yoy??null,qoq:m.qoq??null,status:m.status})),
-  changes:[...(analysis?.changes.qoq??[]).map(c=>({compare:"环比" as const,...c})),...(analysis?.changes.yoy??[]).map(c=>({compare:"同比" as const,...c}))]
+  changes:[...(analysis?.changes.qoq??[]).map(c=>({compare:"QoQ" as const,...c})),...(analysis?.changes.yoy??[]).map(c=>({compare:"YoY" as const,...c}))]
    .filter(c=>c.changeType!=="not_mentioned"&&(c.currentStatement||c.priorStatement)).slice(0,8).map(c=>({compare:c.compare,topic:c.topicKey,statement:c.currentStatement??c.priorStatement??""})),
   risks:(analysis?.changes.risks??[]).map(c=>text(c.statement)).filter(Boolean).slice(0,6),
   guidance:(analysis?.changes.guidance??[]).map(c=>text(c.statement)).filter(Boolean).slice(0,6),

@@ -5,6 +5,7 @@ import { SecAnalysisJobRepository } from "./d1-jobs.ts";
 import { loadReportContinuity } from "./continuity.ts";
 import { SecMemoryRepository } from "./d1-memory.ts";
 import { parseJson, hashJson, type D1Like } from "./d1-support.ts";
+import { outboxInsert } from "../pipeline/outbox.ts";
 export { SEC_ANALYSIS_JOB_LEASE_MS } from "./d1-jobs.ts";
 
 import type { SecFiling, SecFilingSummary, SecFilingWithSummary } from "./sec.ts";
@@ -38,6 +39,12 @@ type PublicFilingRow = {
   companyName?: string | null;
   sortDate?: string;
 };
+
+/** A published report or 8-K summary, announced in the same batch: the event rail attaches the summary to its filing. */
+function reportPublished(database: D1Like, summary: SecFilingSummary) {
+  const { sql, values } = outboxInsert({ type: "report.published", ticker: summary.ticker, detail: { form: summary.form, accession: summary.accessionNumber } }, summary.generatedAt);
+  return database.prepare(sql).bind(...values);
+}
 
 export class D1SecRepository implements SecRepository {
   private readonly database: D1Like;
@@ -92,13 +99,18 @@ export class D1SecRepository implements SecRepository {
     if (summary.ticker !== filing.ticker || summary.accessionNumber !== filing.accessionNumber || summary.form !== filing.form) {
       throw new Error("SEC summary does not match the filing it is being published against");
     }
-    await this.database.prepare(`
-      INSERT INTO sec_filing_summaries (ticker, accession_number, generated_at, payload)
-      VALUES (?, ?, ?, ?)
-      ON CONFLICT(ticker, accession_number) DO UPDATE SET
-        generated_at = excluded.generated_at,
-        payload = excluded.payload
-    `).bind(summary.ticker, summary.accessionNumber, summary.generatedAt, JSON.stringify(summary)).run();
+    const statements = [
+      this.database.prepare(`
+        INSERT INTO sec_filing_summaries (ticker, accession_number, generated_at, payload)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(ticker, accession_number) DO UPDATE SET
+          generated_at = excluded.generated_at,
+          payload = excluded.payload
+      `).bind(summary.ticker, summary.accessionNumber, summary.generatedAt, JSON.stringify(summary)),
+      reportPublished(this.database, summary),
+    ];
+    if (this.database.batch) await this.database.batch(statements);
+    else for (const statement of statements) await statement.run();
   }
 
   async upsertFilingIndex(filing: SecFiling): Promise<void> {
@@ -508,6 +520,7 @@ export class D1SecRepository implements SecRepository {
         VALUES (?, ?, ?, ?, 'pending', ?, CURRENT_TIMESTAMP)
         ON CONFLICT(job_id) DO NOTHING
       `).bind(memoryJobId, artifact.filing.ticker, artifact.filing.accessionNumber, artifact.periodId, sourceR2Key),
+      reportPublished(this.database, summary),
     ];
     await this.database.batch(statements);
     return memoryJobId;

@@ -6,7 +6,7 @@ import { useState } from "react";
 export function ReportAssetImage({ src, alt, width, height }: { src: string; alt: string; width: number; height: number }) {
   const [failed, setFailed] = useState(false);
   return <div className="report-content-image-frame" style={{ aspectRatio: `${width} / ${height}` }}>
-    {failed ? <p className="report-content-image-fallback">图片暂不可用：{alt}</p>
+    {failed ? <p className="report-content-image-fallback">Image unavailable: {alt}</p>
       // The source has already been resolved from the validated persistent asset manifest.
       // eslint-disable-next-line @next/next/no-img-element
       : <img src={src} alt={alt} width={width} height={height} loading="lazy" decoding="async" onError={() => setFailed(true)} />}

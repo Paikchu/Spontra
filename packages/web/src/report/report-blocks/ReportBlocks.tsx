@@ -72,7 +72,7 @@ function Block({ block, context }: { block: ReportBlock; context: ReportBlockRen
               <article key={metric.metricKey}>
                 <span>{formatSecMetricLabel(metric.metricKey)}</span>
                     <strong>{formatSecMetricValue(metric.metricKey, metric.currentValue, metric.unit, metric.currency)}</strong>
-                <small>{metric.qoq ? `环比 ${metric.qoq}` : "环比不可比"} · {metric.yoy ? `同比 ${metric.yoy}` : "同比不可比"}</small>
+                <small>{metric.qoq ? `QoQ ${metric.qoq}` : "QoQ n/a"} · {metric.yoy ? `YoY ${metric.yoy}` : "YoY n/a"}</small>
               </article>
             ))}
           </div>
@@ -83,17 +83,17 @@ function Block({ block, context }: { block: ReportBlock; context: ReportBlockRen
       // Validation already proved every series is available, but the data can go missing between
       // composing the report and rendering it, and a missing panel is worse than a stated absence.
       if (!context.fundamentals) {
-        return <p className="report-block report-block-empty" id={block.id}>{block.title}：基本面数据暂不可用。</p>;
+        return <p className="report-block report-block-empty" id={block.id}>{block.title}: fundamentals data is not available.</p>;
       }
       // Whether a metric is actually in this response is knowable only here — the Pipeline vets a
       // chart against the feature pack it reasoned over, which is a different read. A series the
-      // response does not carry makes the builder throw, and the reader gets 「这组指标暂时不能叠加」,
+      // response does not carry makes the builder throw, and the reader gets "These metrics can't be combined",
       // wording meant for someone choosing metrics by hand. Drop it here instead.
       const series = block.series.filter((entry) => context.fundamentals!.series.some(
         (candidate) => candidate.metricKey === entry.metricKey && candidate.available,
       ));
       if (series.length === 0) {
-        return <p className="report-block report-block-empty" id={block.id}>{block.title}：这组指标暂无可用数据。</p>;
+        return <p className="report-block report-block-empty" id={block.id}>{block.title}: no data for these metrics.</p>;
       }
       return (
         <figure className="report-block report-block-chart" id={block.id}>
@@ -111,11 +111,11 @@ function Block({ block, context }: { block: ReportBlock; context: ReportBlockRen
     case "evidence":
       return (
         <details className="report-block sec-report-evidence" id={block.id}>
-          <summary>{block.title ?? "原文摘录与位置"} · {block.items.length}</summary>
+          <summary>{block.title ?? "Filing excerpts"} · {block.items.length}</summary>
           {block.items.map((item, index) => (
             <blockquote key={`${item.start}-${index}`}>
               <p>{item.excerpt}</p>
-              <footer>字符 {item.start.toLocaleString("zh-CN")}–{item.end.toLocaleString("zh-CN")} · 相关性 {item.score}/100</footer>
+              <footer>Characters {item.start.toLocaleString("en-US")}–{item.end.toLocaleString("en-US")} · Relevance {item.score}/100</footer>
             </blockquote>
           ))}
         </details>

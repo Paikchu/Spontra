@@ -5,8 +5,9 @@ import { CAPITAL_METRICS, resolveEvidence, shiftPeriod, type FindingData, type R
 
 /**
  * The figures a findings writer may speak about: every reference the verifier can resolve, already
- * resolved, in the units Chinese prose uses. The model picks rows and repeats their numbers; it never
- * computes. A number not on the ledger cannot survive verification, so the ledger is also the budget.
+ * resolved, written the way the English findings quote them ("$55.7 billion", "12.3%", "+1.5 pp", "2.6x"). The
+ * model picks rows and repeats their numbers; it never computes. A number not on the ledger cannot survive
+ * verification, so the ledger is also the budget.
  */
 export type LedgerRow = { ref: FindingRef; periodEnd: string; span: FindingSpan; label: string; value: string; yoy: string | null; qoq: string | null };
 export type Ledger = {
@@ -46,26 +47,29 @@ const RATIOS: Array<[RatioForm, FindingBaseRef, FindingBaseRef]> = [
   ["multiple", { capital: "rpo" }, { metric: "revenue" }],
 ];
 
+/** Up to two decimals under ten, one under a hundred (none for millions), trailing zeros dropped: "1.23", "55.7", "638.2", "350". */
+const figure = (x: number, million: boolean) => String(Number(x.toFixed(x < 10 ? 2 : x < 100 || !million ? 1 : 0)));
+/** "$55.7 billion", "$1.23 trillion", "$350 million", "-$23.7 billion"; another currency follows the amount: "4.2 billion EUR". */
 function money(value: number, currency: string | null): string {
   const abs = Math.abs(value), sign = value < 0 ? "-" : "";
-  const unit = currency && currency !== "USD" ? ` ${currency}` : " 美元";
-  if (abs >= 1e12) return `${sign}${(abs / 1e12).toFixed(2)} 万亿${unit}`;
-  if (abs >= 1e8) return `${sign}${(abs / 1e8).toFixed(1)} 亿${unit}`;
-  return `${sign}${(abs / 1e6).toFixed(1)} 百万${unit}`;
+  const [scale, word] = abs >= 1e12 ? [1e12, "trillion"] : abs >= 1e9 ? [1e9, "billion"] : [1e6, "million"];
+  const amount = `${figure(abs / scale, word === "million")} ${word}`;
+  return currency && currency !== "USD" ? `${sign}${amount} ${currency}` : `${sign}$${amount}`;
 }
+const signed = (text: string, value: number) => `${value > 0 ? "+" : ""}${text}`;
 function formatValue(r: ResolvedEvidence["current"], form: RatioForm = "multiple"): string {
-  if (r.range && r.range.low !== r.range.high) return r.unit === "USD" ? `${money(r.range.low, r.currency)} 至 ${money(r.range.high, r.currency)}` : `${r.range.low}% 至 ${r.range.high}%`;
+  if (r.range && r.range.low !== r.range.high) return r.unit === "USD" ? `${money(r.range.low, r.currency)} to ${money(r.range.high, r.currency)}` : `${r.range.low}% to ${r.range.high}%`;
   if (r.unit === "USD") return money(r.value, r.currency);
   if (r.unit === "percent") return `${Number(r.value.toFixed(1))}%`;
   if (r.unit === "per_share") return `$${r.value.toFixed(2)}`;
   // A margin or an intensity reads as a percentage; a coverage or turnover ratio reads as a multiple.
-  return form === "percent" ? `${(r.value * 100).toFixed(1)}%` : `${Number(r.value.toFixed(2))} 倍`;
+  return form === "percent" ? `${Number((r.value * 100).toFixed(1))}%` : `${Number(r.value.toFixed(2))}x`;
 }
-/** A margin moves in points, a multiple in turns, an amount in percent. */
+/** A margin moves in percentage points ("+1.5 pp"), a multiple in turns ("+0.25x"), an amount in percent ("+12.3%"). */
 const change = (r: ResolvedEvidence | null, form: RatioForm = "multiple") => !r || r.delta == null ? null
-  : r.current.unit === "percent" ? `${r.delta > 0 ? "+" : ""}${r.delta.toFixed(1)} 点`
-  : r.current.unit === "ratio" ? (form === "percent" ? `${r.delta > 0 ? "+" : ""}${(r.delta * 100).toFixed(1)} 点` : `${r.delta > 0 ? "+" : ""}${r.delta.toFixed(2)} 倍`)
-  : `${r.delta > 0 ? "+" : ""}${r.delta.toFixed(1)}%`;
+  : r.current.unit === "percent" ? signed(`${r.delta.toFixed(1)} pp`, r.delta)
+  : r.current.unit === "ratio" ? (form === "percent" ? signed(`${(r.delta * 100).toFixed(1)} pp`, r.delta) : signed(`${r.delta.toFixed(2)}x`, r.delta))
+  : signed(`${r.delta.toFixed(1)}%`, r.delta);
 
 /** Every business the report discloses, in any non-geographic, non-customer partition. */
 export function ledgerNodes(quarter: BusinessFlowQuarter | undefined): Ledger["nodes"] {

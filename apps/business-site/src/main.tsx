@@ -1,7 +1,6 @@
 import { SidebarProvider } from "@/packages/web/src/ui/sidebar";
 import { StrictMode, useCallback, useEffect, useState, Component, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
-import { resolveCompanyBusiness } from "@/packages/web/src/model/company-business-content";
 import type { PublicBusinessFlow } from "@/shared/analysis-contract/business-flow";
 import type { PublicCapitalStructure } from "@/shared/analysis-contract/capital-structure";
 import type { FindingsPublication } from "@/shared/analysis-contract/findings";
@@ -10,7 +9,6 @@ import type { PublicFilingDigestPage } from "@/shared/analysis-contract/filings"
 import type { FindingFundamentals } from "@/shared/analysis-runtime/findings";
 import "@/packages/web/src/business-flow/business-flow.css";
 import "./style.css";
-import { withBusinessDescriptions } from "./business-description";
 import { BusinessMap } from "./BusinessMap";
 import { Rail, RailActions } from "./Sidebar";
 import { SearchDialog } from "./SearchDialog";
@@ -54,8 +52,8 @@ class ChartBoundary extends Component<
   render() {
     return this.state.failed ? (
       <StateShell ticker={this.props.ticker} tools={this.props.tools} role="alert">
-        <h2>图表暂时无法显示</h2>
-        <p>请重新加载；不会以示例数据替代真实披露。</p>
+        <h2>The chart can’t be shown right now</h2>
+        <p>Reload the page. Sample data is never shown in place of real disclosures.</p>
       </StateShell>
     ) : (
       this.props.children
@@ -66,7 +64,7 @@ class ChartBoundary extends Component<
 function StateShell({ ticker, tools, role, children }: { ticker: string; tools: ReactNode; role: "alert" | "status"; children: ReactNode }) {
   return (
     <div className="map">
-      <Rail ticker={ticker} actions={tools} label="公司业务" />
+      <Rail ticker={ticker} actions={tools} label="Company businesses" />
       <section className="stage stage--state">
         <div className="state" role={role}>{children}</div>
       </section>
@@ -111,15 +109,13 @@ function Company({ ticker, tools, onSeen }: { ticker: string; tools: ReactNode; 
     void load<PublicFilingDigestPage>("filings", setFilings);
     return () => controller.abort();
   }, [ticker, retry]);
-  const business = resolveCompanyBusiness(ticker);
   if (flow)
     return (
       <ChartBoundary ticker={ticker} tools={tools}>
         <BusinessMap
           ticker={ticker}
           tools={tools}
-          flow={withBusinessDescriptions(flow, business)}
-          business={business}
+          flow={flow}
           revenueHistory={publication?.history ?? null}
           explainer={publication?.explainer ?? null}
           tree={publication?.tree ?? null}
@@ -132,10 +128,10 @@ function Company({ ticker, tools, onSeen }: { ticker: string; tools: ReactNode; 
           notice={
             publication?.outdated
               ? publication.reasons.includes("SIGNED_LAYOUT_UNSUPPORTED")
-                ? "新一期含负值，比例图暂不支持；当前显示上次完整快照"
-                : "更新尚未完成，当前显示上次完整快照"
+                ? "The latest quarter has negative values the proportional chart can’t draw; showing the last complete snapshot"
+                : "The update isn’t finished; showing the last complete snapshot"
               : !flow.quarters.length
-                ? "尚无可用季度财务流"
+                ? "No quarterly financials available yet"
                 : null
           }
         />
@@ -144,8 +140,8 @@ function Company({ ticker, tools, onSeen }: { ticker: string; tools: ReactNode; 
   if (failed)
     return (
       <StateShell ticker={ticker} tools={tools} role="alert">
-        <h2>数据暂时无法读取</h2>
-        <p>请稍后重试。未披露数据不会视为零。</p>
+        <h2>The data can’t be loaded right now</h2>
+        <p>Try again later. Undisclosed figures are never treated as zero.</p>
         <button
           type="button"
           onClick={() => {
@@ -153,15 +149,15 @@ function Company({ ticker, tools, onSeen }: { ticker: string; tools: ReactNode; 
             setRetry((n) => n + 1);
           }}
         >
-          重试
+          Retry
         </button>
       </StateShell>
     );
   if (publication)
     return (
       <StateShell ticker={ticker} tools={tools} role="status">
-        <h2>{publication.status === "unavailable" ? "当前披露无法完整绘图" : "完整财务图准备中"}</h2>
-        <p>不会以缺失值或半图替代完整披露。</p>
+        <h2>{publication.status === "unavailable" ? "The current disclosures can’t be fully charted" : "The full financial chart is being prepared"}</h2>
+        <p>Missing values or a partial chart are never shown in place of complete disclosures.</p>
         <p className="state-reasons">{publication.reasons.join(" · ")}</p>
       </StateShell>
     );
@@ -169,7 +165,7 @@ function Company({ ticker, tools, onSeen }: { ticker: string; tools: ReactNode; 
 }
 function Skeleton({ ticker, tools }: { ticker: string; tools: ReactNode }) {
   return (
-    <div className="map map--loading" role="status" aria-label="正在读取公开财报">
+    <div className="map map--loading" role="status" aria-label="Loading public filings">
       <Rail ticker={ticker} actions={tools}>
         <div className="rail-list">
           {[0, 1, 2, 3, 4, 5].map((i) => (
@@ -248,7 +244,7 @@ function App() {
     return () => window.removeEventListener("keydown", shortcut);
   }, []);
   useEffect(() => {
-    document.title = ticker ? `${ticker} · 业务地图` : "Business View";
+    document.title = ticker ? `${ticker} · Business View` : "Business View";
   }, [ticker]);
   /** Only companies the API answered for are remembered, so typos never become suggestions. */
   const remember = useCallback((seen: string) => {

@@ -1,5 +1,5 @@
 import type { SecEarningsGroup, SecFiling } from '../../../../shared/analysis-contract/report.ts';
-import type { PreparedSecFiling, SecModelCall } from './pipeline.ts';
+import { EXHIBIT_SCOPE_WARNING, type PreparedSecFiling, type SecModelCall } from './pipeline.ts';
 
 export const isPeriodic = (form: string) => /^(10-K|10-Q|20-F)(\/A)?$/.test(form);
 export const earningsKey = (ticker: string, accession: string) => `sec:earnings:${ticker}:${accession}`;
@@ -81,7 +81,8 @@ export function combineEarningsDocuments(primary: PreparedSecFiling, supplements
   }
   return { ...primary, document: { text, headings }, blocks, blockIds: blocks.map((block) => `ev:${block.blockId}`), sourceMaterials: materials,
     materialWarnings: [...new Set([...(primary.materialWarnings ?? []), ...supplements.flatMap((item) => item.materialWarnings ?? [])])]
-      .filter((warning) => !warning.startsWith('材料范围为本 accession'))
-      .concat('材料按已确认的财报期合并；未接入独立电话会或公司 IR 材料。'),
+      // The Chinese prefix covers meta prepared before the English prompts.
+      .filter((warning) => warning !== EXHIBIT_SCOPE_WARNING && !warning.startsWith('材料范围为本 accession'))
+      .concat('Materials are merged by the confirmed fiscal period; no standalone earnings call or company IR materials are included.'),
   };
 }

@@ -35,7 +35,7 @@ export function Timeline({ points, currentPeriod, focus, now, onReport, onEvent 
   const x = (d: string) => (Date.parse(d) - start) / (end - start) * 100;
   // A report in focus is the lit report; otherwise the lit report is the quarter the stage shows.
   const reportFocused = points.some(p => p.kind === "report" && p.id === focus);
-  return <div className="timeline" role="group" aria-label="申报时间轴">
+  return <div className="timeline" role="group" aria-label="Filing timeline">
     <div className="timeline-track">
       {ticks.map(t => <span key={t.label} className="timeline-tick" style={{ left: `${t.at}%` }}>{t.label}</span>)}
       {points.map(p => {

@@ -7,7 +7,7 @@ import { SLOTS, growth, monthEnd, monthIndex, rateTicks } from "./trend-model";
 export const REVENUE_METRIC = "revenue";
 
 const GROUPS: Array<[FundamentalMetricCategory, string]> = [
-  ["income_statement", "利润表"], ["per_share", "每股"], ["ratio", "比率"], ["cash_flow", "现金流"], ["balance_sheet", "资产负债"], ["valuation", "估值"],
+  ["income_statement", "Income statement"], ["per_share", "Per share"], ["ratio", "Ratios"], ["cash_flow", "Cash flow"], ["balance_sheet", "Balance sheet"], ["valuation", "Valuation"],
 ];
 
 export type MetricOption = { key: string; label: string };

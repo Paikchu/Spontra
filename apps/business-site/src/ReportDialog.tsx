@@ -35,15 +35,15 @@ export default function ReportDialog({ ticker, accession, snapshot, onClose }: {
       .catch(() => { if (!controller.signal.aborted) setFailed(true); });
     return () => controller.abort();
   }, [ticker, accession, snapshot?.reportDate, snapshot?.reportVersion]); // eslint-disable-line react-hooks/exhaustive-deps
-  return <dialog ref={ref} className="report-dialog" aria-label="完整报告" onClose={onClose} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+  return <dialog ref={ref} className="report-dialog" aria-label="Full report" onClose={onClose} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
     <div className="report-dialog-bar">
-      <span>{ticker} · {detail?.filing.earningsGroup ? `截至 ${detail.filing.earningsGroup.periodEnd} 的财报期合并报告` : `${detail?.filing.form ?? ""} ${accession}`}</span>
-      <Button variant="unstyled" type="button" className="lens-close" aria-label="关闭报告" onClick={onClose}>✕</Button>
+      <span>{ticker} · {detail?.filing.earningsGroup ? `Combined report for the period ended ${detail.filing.earningsGroup.periodEnd}` : `${detail?.filing.form ?? ""} ${accession}`}</span>
+      <Button variant="unstyled" type="button" className="lens-close" aria-label="Close report" onClick={onClose}>✕</Button>
     </div>
     <div className="report-dialog-body earning-report">
       {detail ? <SecReportDocument {...filingPresentation(detail, ticker)} embedded />
-        : failed ? <p className="lens-empty">报告暂时无法读取，请稍后重试。</p>
-        : <p className="lens-empty">正在读取报告…</p>}
+        : failed ? <p className="lens-empty">The report can’t be loaded right now. Try again later.</p>
+        : <p className="lens-empty">Loading report…</p>}
     </div>
   </dialog>;
 }

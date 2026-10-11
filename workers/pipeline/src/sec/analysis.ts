@@ -1,6 +1,11 @@
 import type { SecPresentation, SecSourceMaterial } from "../../../../shared/analysis-contract/sec-presentation.ts";
-export const SEC_ANALYSIS_SCHEMA_VERSION = "sec-analysis.v3";
-export const SEC_ANALYSIS_PROMPT_VERSION = "sec-analysis-prompt.v8-reader-figures";
+/**
+ * v4: reports are written in English. The version keys analysis jobs and the R2 artifact path, so the bump makes
+ * every filing eligible again and keeps admin regeneration from restoring v3 (Chinese) plans and nodes. Published
+ * v3 reports stay in D1 and keep being served until a v4 report for the same period replaces them.
+ */
+export const SEC_ANALYSIS_SCHEMA_VERSION = "sec-analysis.v4";
+export const SEC_ANALYSIS_PROMPT_VERSION = "sec-analysis-prompt.v9-english";
 // One round, matching what the Manager Review prompt tells the model it gets. Raising this without
 // also rewriting that prompt makes the Manager hoard every repairTask into the first round.
 export const MAX_REPAIR_ROUNDS = 1;
@@ -398,7 +403,7 @@ export function normalizeManagerReview(value: unknown, validNodeIds: Set<string>
     if (!validNodeIds.has(questionId)) return [];
     const allowed = ["answered", "partial", "unanswered", "not_disclosed"] as const;
     const status = allowed.includes(item?.status as typeof allowed[number]) ? item?.status as ManagerQuestionStatus : "unanswered";
-    return [{ questionId, status, explanation: String(item?.explanation ?? "").slice(0, 500) }];
+    return [{ questionId, status, explanation: String(item?.explanation ?? "").slice(0, 1200) }];
   }) : [];
   if (new Set(questions.map((question) => question.questionId)).size !== validNodeIds.size) throw new Error("Manager Review does not cover every planned question");
   const repairTasks = Array.isArray(root.repairTasks) ? root.repairTasks.flatMap((raw): ManagerRepairTask[] => {
@@ -412,8 +417,8 @@ export function normalizeManagerReview(value: unknown, validNodeIds: Set<string>
       id: String(item?.id ?? `repair-${targetNodeId}`).replace(/[^a-z0-9-]/gi, "-").toLowerCase(),
       questionId,
       targetNodeId,
-      title: String(item?.title ?? targetNodeId).slice(0, 120),
-      question: String(item?.question ?? "").slice(0, 500),
+      title: String(item?.title ?? targetNodeId).slice(0, 200),
+      question: String(item?.question ?? "").slice(0, 1200),
       sectionIds,
       keywords: Array.isArray(item?.keywords) ? item.keywords.map(String).slice(0, 12) : [],
       historySeriesIds: canonicalSeriesIds(item?.historySeriesIds),
@@ -522,7 +527,7 @@ export function normalizeAnalysisFacts(value: unknown, validEvidenceIds: Set<str
       ...(flow ? { cashFlow: {
         classification: (["operating", "investing", "financing", "non_cash"].includes(String(flow.classification)) ? flow.classification : "unknown") as NonNullable<AnalysisFact["cashFlow"]>["classification"],
         includedInOperatingCashFlow: (["yes", "no"].includes(String(flow.includedInOperatingCashFlow)) ? flow.includedInOperatingCashFlow : "unknown") as NonNullable<AnalysisFact["cashFlow"]>["includedInOperatingCashFlow"],
-        obligation: String(flow.obligation ?? "未知").slice(0, 600), sourceQuote: String(flow.sourceQuote ?? "").slice(0, 2000),
+        obligation: String(flow.obligation ?? "unknown").slice(0, 1200), sourceQuote: String(flow.sourceQuote ?? "").slice(0, 2000),
       } } : {}),
       metricKey,
       value: valueText.slice(0, 80),
@@ -599,7 +604,7 @@ export function normalizePublishedReport(
   const verificationStatus = keyMetrics.length && coverage >= 0.9 && keyMetrics.every((metric) => metric.evidenceIds.length) ? "verified" : keyMetrics.length && coverage > 0 ? "partial" : "failed";
   return {
     ...fallback,
-    headline: String(root?.headline ?? "").slice(0, 240),
+    headline: String(root?.headline ?? "").slice(0, 600),
     keyMetrics,
     changes: { qoq, yoy, guidance, risks },
     dataQuality: { coverage, verificationStatus, warnings: Array.isArray(dataQuality?.warnings) ? dataQuality.warnings.map(String).slice(0, 20) : [] },
@@ -627,7 +632,7 @@ function normalizeClaim(value: unknown, validEvidenceIds: Set<string>): Analysis
   return [{
     topicKey,
     claimType: claimTypes.includes(item?.claimType as typeof claimTypes[number]) ? item?.claimType as typeof claimTypes[number] : "driver",
-    statement: statement.slice(0, 600),
+    statement: statement.slice(0, 1500),
     direction: directions.includes(item?.direction as typeof directions[number]) ? item?.direction as typeof directions[number] : "unknown",
     horizon: horizons.includes(item?.horizon as typeof horizons[number]) ? item?.horizon as typeof horizons[number] : "unknown",
     materialityScore: clamp(Number(item?.materialityScore ?? 0), 0, 100),
@@ -729,7 +734,7 @@ function confidence(value: unknown): "high" | "medium" | "low" {
 
 function optionalString(value: unknown): string | undefined {
   const result = String(value ?? "").trim();
-  return result ? result.slice(0, 240) : undefined;
+  return result ? result.slice(0, 600) : undefined;
 }
 
 function clamp(value: number, min: number, max: number): number {

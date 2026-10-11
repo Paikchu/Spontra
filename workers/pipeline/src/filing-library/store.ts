@@ -22,7 +22,7 @@ function chunks<T>(rows: T[], encode: (row: T) => unknown[]): string[] {
   return out;
 }
 
-export async function writeLibraryDocument(db: D1Database, document: LibraryDocumentRow, sections: StoredSection[], passages: StoredPassage[]): Promise<void> {
+export async function writeLibraryDocument(db: D1Database, document: LibraryDocumentRow, sections: StoredSection[], passages: StoredPassage[], events: D1PreparedStatement[] = []): Promise<void> {
   const id = document.documentId;
   const statements: D1PreparedStatement[] = [
     db.prepare("DELETE FROM sec_passages WHERE document_id = ?").bind(id),
@@ -41,7 +41,7 @@ export async function writeLibraryDocument(db: D1Database, document: LibraryDocu
   for (const chunk of chunks(passages, p => [p.passageId, p.sectionId, p.ordinal, p.kind, p.text, p.table ? JSON.stringify(p.table) : null, JSON.stringify(p.factRefs), p.chars, p.textHash, p.change])) {
     statements.push(db.prepare(passageSql).bind(id, chunk));
   }
-  statements.push(upsertDocument(db, document, { chars: passages.reduce((n, p) => n + p.chars, 0), passages: passages.length, sections: sections.length }));
+  statements.push(upsertDocument(db, document, { chars: passages.reduce((n, p) => n + p.chars, 0), passages: passages.length, sections: sections.length }), ...events);
   await db.batch(statements);
 }
 
@@ -67,13 +67,26 @@ function upsertDocument(db: D1Database, d: LibraryDocumentRow, size: { chars: nu
       d.structure, JSON.stringify(d.structureCheck), d.status, d.failureReason, JSON.stringify(d.issues), d.previousDocumentId, size.chars, size.passages, size.sections, d.preparedAt);
 }
 
+const ARCHIVE_POINTERS = "sec:disclosure-audit:v1:";
+/** The key range of one company's archive pointers (or of all of them), so the lookup walks the primary key instead of scanning `sec_cache`. */
+const pointerRange = (ticker?: string) => { const prefix = ticker ? `${ARCHIVE_POINTERS}${ticker}:` : ARCHIVE_POINTERS; return [prefix, `${prefix.slice(0, -1)};`] as const; };
+
 /** Archived documents with no library rows for this parser version and source, oldest first so each is compared with a prepared predecessor. */
-export async function pendingLibraryDocuments(db: D1Database, parserVersion: string, limit: number): Promise<Array<{ documentId: string; ticker: string; sha: string }>> {
-  const rows = await db.prepare(`SELECT json_extract(c.payload,'$.documentId') document_id, json_extract(c.payload,'$.ticker') ticker, json_extract(c.payload,'$.contentSha256') sha
+export async function pendingLibraryDocuments(db: D1Database, parserVersion: string, limit: number, ticker?: string): Promise<Array<{ documentId: string; ticker: string; sha: string; bytes: number }>> {
+  const [from, to] = pointerRange(ticker);
+  const rows = await db.prepare(`SELECT json_extract(c.payload,'$.documentId') document_id, json_extract(c.payload,'$.ticker') ticker, json_extract(c.payload,'$.contentSha256') sha,
+      json_extract(c.payload,'$.sourceBytes') bytes
     FROM sec_cache c LEFT JOIN sec_documents d ON d.document_id = json_extract(c.payload,'$.documentId')
-    WHERE c.cache_key LIKE 'sec:disclosure-audit:v1:%' AND (d.document_id IS NULL OR d.parser_version != ?1 OR d.source_sha256 != json_extract(c.payload,'$.contentSha256'))
-    ORDER BY json_extract(c.payload,'$.source.filedAt'), document_id LIMIT ?2`).bind(parserVersion, limit).all<{ document_id: string; ticker: string; sha: string }>();
-  return rows.results.filter(r => r.document_id && r.ticker && r.sha).map(r => ({ documentId: r.document_id, ticker: r.ticker, sha: r.sha }));
+    WHERE c.cache_key >= ?1 AND c.cache_key < ?2 AND (d.document_id IS NULL OR d.parser_version != ?3 OR d.source_sha256 != json_extract(c.payload,'$.contentSha256'))
+    ORDER BY json_extract(c.payload,'$.source.filedAt'), document_id LIMIT ?4`).bind(from, to, parserVersion, limit).all<{ document_id: string; ticker: string; sha: string; bytes: number | null }>();
+  return rows.results.filter(r => r.document_id && r.ticker && r.sha).map(r => ({ documentId: r.document_id, ticker: r.ticker, sha: r.sha, bytes: r.bytes ?? 0 }));
+}
+
+export async function countPendingLibraryDocuments(db: D1Database, parserVersion: string): Promise<number> {
+  const [from, to] = pointerRange();
+  const row = await db.prepare(`SELECT COUNT(*) n FROM sec_cache c LEFT JOIN sec_documents d ON d.document_id = json_extract(c.payload,'$.documentId')
+    WHERE c.cache_key >= ? AND c.cache_key < ? AND (d.document_id IS NULL OR d.parser_version != ? OR d.source_sha256 != json_extract(c.payload,'$.contentSha256'))`).bind(from, to, parserVersion).first<{ n: number }>();
+  return row?.n ?? 0;
 }
 
 /** The prepared predecessor a document is compared with: the same company's previous document of the same kind. */

@@ -21,7 +21,7 @@ export function adaptFundamentals(data: PublicFundamentalsResponse | null, ticke
       const series = data.series.find(s => s && Array.isArray(s.points) && s.metricKey === key && s.unitFamily === "currency" && s.currency === period.currency && s.unit === period.currency);
       const point = series?.points.find(p => p && p.periodEnd === period.periodEnd);
       if (!series || !point) continue;
-      if (point.sourceAccession && !sources.some(s => s.id === point.sourceAccession)) sources.push({ id: point.sourceAccession, title: `SEC 文件 ${point.sourceAccession}`, url: `https://www.sec.gov/edgar/search/#/q=${encodeURIComponent(point.sourceAccession)}`, publishedAt: point.sourceFiledAt });
+      if (point.sourceAccession && !sources.some(s => s.id === point.sourceAccession)) sources.push({ id: point.sourceAccession, title: `SEC filing ${point.sourceAccession}`, url: `https://www.sec.gov/edgar/search/#/q=${encodeURIComponent(point.sourceAccession)}`, publishedAt: point.sourceFiledAt });
       figures[target as FlowMetric] = { value: point.valueDecimal, basis: series.basis, definition: `${data.catalogVersion}:${key}`, comparabilityKey: point.revision != null ? `${data.source}:${key}:revision-${point.revision}` : null, sourceIds: point.sourceAccession ? [point.sourceAccession] : [], formula: point.derivationFormula };
     }
     // Differences are only formed from figures in the same filing/revision. No YTD subtraction.
@@ -34,7 +34,7 @@ export function adaptFundamentals(data: PublicFundamentalsResponse | null, ticke
       const sharedRevision = leftPoint?.revision != null && leftPoint.revision === rightPoint?.revision;
       if (av != null && bv != null && (sharedFiling || sharedRevision)) figures[target] = { value: String(av - bv), basis: "derived", definition: `${left}-${right}`, comparabilityKey: a?.comparabilityKey && b?.comparabilityKey ? `${a.comparabilityKey}|${b.comparabilityKey}` : null, sourceIds: a?.sourceIds ?? [], formula: `${left} − ${right}` };
     }
-    return { id: period.periodEnd, label: `截至 ${period.periodEnd} 的三个月`, periodStart: null, periodEnd: period.periodEnd, periodType: "3M" as const, currency: period.currency, scale: 1, basisLabel: `${data.source === "sec_xbrl" ? "SEC XBRL" : "Yahoo Finance"} · 三个月季度数据 · 重列可比性未验证`, reportedAt: null, figures, segments: [], segmentsComplete: false, sources };
+    return { id: period.periodEnd, label: `Three months ended ${period.periodEnd}`, periodStart: null, periodEnd: period.periodEnd, periodType: "3M" as const, currency: period.currency, scale: 1, basisLabel: `${data.source === "sec_xbrl" ? "SEC XBRL" : "Yahoo Finance"} · Three-month quarterly data · Recast comparability not verified`, reportedAt: null, figures, segments: [], segmentsComplete: false, sources };
   });
   return { schemaVersion: "business-flow.v1", ticker, fetchedAt: data.fetchedAt, quarters };
 }
@@ -45,12 +45,20 @@ export function selectFlow(published: PublicBusinessFlow | undefined, fundamenta
   return { ...flow, quarters: flow.quarters.map(q => enrichDisclosedRevenue(ticker, q)) };
 }
 
+/** The quarter `days` before this one, give or take three weeks; a fiscal calendar's 52/53-week years drift a few days. */
+function quarterBefore(current: BusinessFlowQuarter, quarters: BusinessFlowQuarter[], days: number): BusinessFlowQuarter | null {
+  const end = Date.parse(current.periodEnd);
+  const gap = (q: BusinessFlowQuarter) => Math.abs((end - Date.parse(q.periodEnd)) / 86400000 - days);
+  return quarters.filter(q => q.periodEnd < current.periodEnd && gap(q) <= 21).sort((a, b) => gap(a) - gap(b))[0] ?? null;
+}
+
 export function previousQuarter(current: BusinessFlowQuarter, quarters: BusinessFlowQuarter[]): BusinessFlowQuarter | null {
-  const candidates = quarters.filter(q => q.periodEnd < current.periodEnd).sort((a, b) => b.periodEnd.localeCompare(a.periodEnd));
-  const previous = candidates[0];
-  if (!previous) return null;
-  const days = (Date.parse(current.periodEnd) - Date.parse(previous.periodEnd)) / 86400000;
-  return days >= 70 && days <= 110 ? previous : null;
+  return quarterBefore(current, quarters, 91);
+}
+
+/** The same fiscal quarter a year earlier: the base of a year-over-year change. */
+export function yearAgoQuarter(current: BusinessFlowQuarter, quarters: BusinessFlowQuarter[]): BusinessFlowQuarter | null {
+  return quarterBefore(current, quarters, 365);
 }
 
 export function compareAmount(current: BusinessFlowQuarter, previous: BusinessFlowQuarter | null, key: FlowMetric, segmentId?: string) {
@@ -60,27 +68,33 @@ export function compareAmount(current: BusinessFlowQuarter, previous: BusinessFl
   return compareFlowAmounts(current, previous, key, a, b);
 }
 
-export function compareFlowAmounts(current: BusinessFlowQuarter, previous: BusinessFlowQuarter | null, key: string, a: FlowAmount | null | undefined, b: FlowAmount | null | undefined) {
+/** A change between two quarters. `comparable` is false when the quarters cannot be compared; `trend` says which way the figure moved. */
+export type FlowChange = { label: string; comparable: boolean; trend: "up" | "down" | null; delta: number | null; previous: number | null; percent: number | null };
+export const NOT_COMPARABLE = "n/a";
+
+export function compareFlowAmounts(current: BusinessFlowQuarter, previous: BusinessFlowQuarter | null, key: string, a: FlowAmount | null | undefined, b: FlowAmount | null | undefined): FlowChange {
   const av = numeric(a), bv = numeric(b);
-  if (previous && (current.currency !== previous.currency || current.scale !== previous.scale)) return { label: "不可比", delta: null, previous: null, percent: null };
-  if (!previous || av == null || bv == null || current.currency !== previous.currency || current.scale !== previous.scale || !a?.comparabilityKey || a.comparabilityKey !== b?.comparabilityKey || a.definition !== b.definition) return { label: "不可比", delta: null, previous: bv, percent: null };
+  const none = (prior: number | null): FlowChange => ({ label: NOT_COMPARABLE, comparable: false, trend: null, delta: null, previous: prior, percent: null });
+  if (previous && (current.currency !== previous.currency || current.scale !== previous.scale)) return none(null);
+  if (!previous || av == null || bv == null || current.currency !== previous.currency || current.scale !== previous.scale || !a?.comparabilityKey || a.comparabilityKey !== b?.comparabilityKey || a.definition !== b.definition) return none(bv);
   const delta = av - bv;
-  if (bv === 0) return { label: av === 0 ? "持平" : "上季为零", delta, previous: bv, percent: null };
+  const moved = (label: string, trend: FlowChange["trend"]): FlowChange => ({ label, comparable: true, trend, delta, previous: bv, percent: null });
+  if (bv === 0) return av === 0 ? moved("flat", null) : moved("new", av > 0 ? "up" : "down");
   const profit = ["gross", "operating", "pretax", "net", "other"].includes(key);
-  if ((av < 0 && bv >= 0) || (av >= 0 && bv < 0)) return { label: profit ? av < 0 ? "转亏" : "转盈" : av < 0 ? "由正转负" : "由负转正", delta, previous: bv, percent: null };
-  if (bv < 0) return { label: delta === 0 ? "持平" : profit ? delta > 0 ? "亏损收窄" : "亏损扩大" : delta > 0 ? "金额增加" : "金额减少", delta, previous: bv, percent: null };
+  if ((av < 0 && bv >= 0) || (av >= 0 && bv < 0)) return av < 0 ? moved(profit ? "turned to loss" : "turned negative", "down") : moved(profit ? "turned profitable" : "turned positive", "up");
+  if (bv < 0) return delta === 0 ? moved("flat", null) : delta > 0 ? moved(profit ? "loss narrowed" : "increased", "up") : moved(profit ? "loss widened" : "decreased", "down");
   const percent = delta / bv * 100;
-  return { label: `${percent > 0 ? "+" : ""}${percent.toFixed(1)}%`, delta, previous: bv, percent };
+  return { label: `${percent > 0 ? "+" : ""}${percent.toFixed(1)}%`, comparable: true, trend: percent > 0 ? "up" : percent < 0 ? "down" : null, delta, previous: bv, percent };
 }
 
 export type Reconciliation = { label: string; status: "balanced" | "missing" | "mismatch"; difference: number | null };
 export function reconcileQuarter(q: BusinessFlowQuarter): Reconciliation[] {
   const equations: Array<[string, Array<[FlowMetric, number]>]> = [
-    ["收入 − 营业成本 = 毛利", [["revenue", 1], ["cost", -1], ["gross", -1]]],
-    ["毛利 − 运营费用 = 营业利润", [["gross", 1], ["operatingExpenses", -1], ["operating", -1]]],
-    ["营业利润 + 其他损益 = 税前利润", [["operating", 1], ["other", 1], ["pretax", -1]]],
-    ["税前利润 − 所得税 = 净利润", [["pretax", 1], ["tax", -1], ["net", -1]]],
-    ["研发 + 销售营销 + 行政 = 运营费用", [["research", 1], ["sales", 1], ["administration", 1], ["operatingExpenses", -1]]],
+    ["Revenue − cost of revenue = gross profit", [["revenue", 1], ["cost", -1], ["gross", -1]]],
+    ["Gross profit − operating expenses = operating income", [["gross", 1], ["operatingExpenses", -1], ["operating", -1]]],
+    ["Operating income + other income (expense), net = income before taxes", [["operating", 1], ["other", 1], ["pretax", -1]]],
+    ["Income before taxes − income taxes = net income", [["pretax", 1], ["tax", -1], ["net", -1]]],
+    ["R&D + sales and marketing + G&A = operating expenses", [["research", 1], ["sales", 1], ["administration", 1], ["operatingExpenses", -1]]],
   ];
   const tolerance = Math.max(1e-6, Math.abs(numeric(q.figures.revenue) ?? 0) * 1e-9);
   const check = (label: string, values: Array<number | null>): Reconciliation => {
@@ -89,29 +103,23 @@ export function reconcileQuarter(q: BusinessFlowQuarter): Reconciliation[] {
     return { label, status: Math.abs(difference) <= tolerance ? "balanced" : "mismatch", difference };
   };
   if (q.incomeModel === "financial" || q.incomeModel === "insurance") return [
-    check("业务收入合计 + 合并抵销 = 收入", q.segmentsComplete ? [...q.segments.map(s => numeric(s.revenue)), ...(q.revenueAdjustments ?? []).map(a => numeric(a.amount)), numeric(q.figures.revenue) == null ? null : -numeric(q.figures.revenue)!] : [null]),
-    check(q.incomeModel==="insurance"?"收入 − 已披露费用 + 投资及权益法损益 = 税前利润":"收入 − 已披露费用 = 税前利润", [q.incomeModel==="insurance"?(numeric(q.figures.revenue)==null||numeric(q.figures.other)==null?null:numeric(q.figures.revenue)!+numeric(q.figures.other)!):numeric(q.figures.revenue), numeric(q.figures.operatingExpenses) == null ? null : -numeric(q.figures.operatingExpenses)!, numeric(q.figures.pretax) == null ? null : -numeric(q.figures.pretax)!]),
-    check("费用分类合计 = 已披露费用", q.expenseComponents?.length ? [...q.expenseComponents.map(c => numeric(c.amount)), numeric(q.figures.operatingExpenses) == null ? null : -numeric(q.figures.operatingExpenses)!] : [null]),
-    check("税前利润 − 所得税 = 净利润", [numeric(q.figures.pretax), numeric(q.figures.tax) == null ? null : -numeric(q.figures.tax)!, numeric(q.figures.net) == null ? null : -numeric(q.figures.net)!]),
+    check("Business revenue + eliminations = revenue", q.segmentsComplete ? [...q.segments.map(s => numeric(s.revenue)), ...(q.revenueAdjustments ?? []).map(a => numeric(a.amount)), numeric(q.figures.revenue) == null ? null : -numeric(q.figures.revenue)!] : [null]),
+    check(q.incomeModel==="insurance"?"Revenue − disclosed expenses + investment and equity-method income = income before taxes":"Revenue − disclosed expenses = income before taxes", [q.incomeModel==="insurance"?(numeric(q.figures.revenue)==null||numeric(q.figures.other)==null?null:numeric(q.figures.revenue)!+numeric(q.figures.other)!):numeric(q.figures.revenue), numeric(q.figures.operatingExpenses) == null ? null : -numeric(q.figures.operatingExpenses)!, numeric(q.figures.pretax) == null ? null : -numeric(q.figures.pretax)!]),
+    check("Expense categories = disclosed expenses", q.expenseComponents?.length ? [...q.expenseComponents.map(c => numeric(c.amount)), numeric(q.figures.operatingExpenses) == null ? null : -numeric(q.figures.operatingExpenses)!] : [null]),
+    check("Income before taxes − income taxes = net income", [numeric(q.figures.pretax), numeric(q.figures.tax) == null ? null : -numeric(q.figures.tax)!, numeric(q.figures.net) == null ? null : -numeric(q.figures.net)!]),
   ];
   if (q.incomeModel === "direct_operating") return [
-    check("业务收入合计 + 合并抵销 = 收入", q.segmentsComplete ? [...q.segments.map(s => numeric(s.revenue)), ...(q.revenueAdjustments ?? []).map(a => numeric(a.amount)), numeric(q.figures.revenue) == null ? null : -numeric(q.figures.revenue)!] : [null]),
-    check("收入 − 已披露营业费用 = 营业利润", [numeric(q.figures.revenue), numeric(q.figures.operatingExpenses) == null ? null : -numeric(q.figures.operatingExpenses)!, numeric(q.figures.operating) == null ? null : -numeric(q.figures.operating)!]),
-    check("营业费用分类合计 = 已披露营业费用", q.expenseComponents?.length ? [...q.expenseComponents.map(c => numeric(c.amount)), numeric(q.figures.operatingExpenses) == null ? null : -numeric(q.figures.operatingExpenses)!] : [null]),
+    check("Business revenue + eliminations = revenue", q.segmentsComplete ? [...q.segments.map(s => numeric(s.revenue)), ...(q.revenueAdjustments ?? []).map(a => numeric(a.amount)), numeric(q.figures.revenue) == null ? null : -numeric(q.figures.revenue)!] : [null]),
+    check("Revenue − disclosed operating expenses = operating income", [numeric(q.figures.revenue), numeric(q.figures.operatingExpenses) == null ? null : -numeric(q.figures.operatingExpenses)!, numeric(q.figures.operating) == null ? null : -numeric(q.figures.operating)!]),
+    check("Operating expense categories = disclosed operating expenses", q.expenseComponents?.length ? [...q.expenseComponents.map(c => numeric(c.amount)), numeric(q.figures.operatingExpenses) == null ? null : -numeric(q.figures.operatingExpenses)!] : [null]),
     ...equations.slice(2, 4).map(([label, terms]) => check(label, terms.map(([key, sign]) => { const value = numeric(q.figures[key]); return value == null ? null : value * sign; }))),
-    check("有符号利息及其他损益合计 = 其他损益净额", q.otherComponents?.length ? [...q.otherComponents.map(c => numeric(c.amount)), numeric(q.figures.other) == null ? null : -numeric(q.figures.other)!] : [null]),
+    check("Signed interest and other items = other income (expense), net", q.otherComponents?.length ? [...q.otherComponents.map(c => numeric(c.amount)), numeric(q.figures.other) == null ? null : -numeric(q.figures.other)!] : [null]),
   ];
-  return [check("分部合计 + 合并抵销 = 收入", q.segmentsComplete && q.segments.length ? [...q.segments.map(s => numeric(s.revenue)), ...(q.revenueAdjustments ?? []).map(a => numeric(a.amount)), numeric(q.figures.revenue) == null ? null : -numeric(q.figures.revenue)!] : [null]), ...equations.slice(0, 4).map(([label, terms]) => check(label, terms.map(([key, sign]) => { const value = numeric(q.figures[key]); return value == null ? null : value * sign; }))), q.expenseComponents?.length ? check("费用分类合计 = 已披露运营费用", [...q.expenseComponents.map(c=>numeric(c.amount)), numeric(q.figures.operatingExpenses) == null ? null : -numeric(q.figures.operatingExpenses)!]) : check(equations[4][0], equations[4][1].map(([key, sign])=>{const value=numeric(q.figures[key]);return value==null?null:value*sign;}))];
+  return [check("Segments + eliminations = revenue", q.segmentsComplete && q.segments.length ? [...q.segments.map(s => numeric(s.revenue)), ...(q.revenueAdjustments ?? []).map(a => numeric(a.amount)), numeric(q.figures.revenue) == null ? null : -numeric(q.figures.revenue)!] : [null]), ...equations.slice(0, 4).map(([label, terms]) => check(label, terms.map(([key, sign]) => { const value = numeric(q.figures[key]); return value == null ? null : value * sign; }))), q.expenseComponents?.length ? check("Expense categories = disclosed operating expenses", [...q.expenseComponents.map(c=>numeric(c.amount)), numeric(q.figures.operatingExpenses) == null ? null : -numeric(q.figures.operatingExpenses)!]) : check(equations[4][0], equations[4][1].map(([key, sign])=>{const value=numeric(q.figures[key]);return value==null?null:value*sign;}))];
 }
 
 export function formatFlowValue(value: number | null, quarter: BusinessFlowQuarter): string {
-  if (value == null) return "未披露";
+  if (value == null) return "Not disclosed";
   const display = value * quarter.scale / 1_000_000;
-  return new Intl.NumberFormat("zh-CN", { maximumFractionDigits: Math.abs(display) < 1 ? 3 : 1 }).format(display);
-}
-
-/** Readable labels for explicitly disclosed taxonomy members; identifiers and amounts are unchanged. */
-export function disclosedSegmentLabel(name:string):string{
- const labels:Record<string,string>={CloudAndSoftwareBusiness:'云与软件',HardwareBusiness:'硬件',ServicesBusiness:'服务',ComputeAndNetworkingSegment:'计算与网络',GraphicsSegment:'图形',ReportableSegment:'公司整体（单一报告部门）',ProductivityAndBusinessProcesses:'生产力与业务流程',IntelligentCloud:'智能云',MorePersonalComputing:'更多个人计算',AmericasSegment:'美洲',EuropeSegment:'欧洲',GreaterChinaSegment:'大中华区',JapanSegment:'日本',RestOfAsiaPacificSegment:'亚太其他地区',ArchitectureEngineeringConstructionAndOperations:'建筑、工程、施工与运营',AutoCADandAutoCADLTFamily:'AutoCAD 与 AutoCAD LT 产品族',Manufacturing:'制造',MediaAndEntertainment:'媒体与娱乐',Other:'其他',BurlingtonNorthernSantaFeCorporation:'BNSF 铁路',BerkshireHathawayEnergyCompany:'伯克希尔能源',ManufacturingBusinesses:'制造业务',ServiceAndRetailingBusinesses:'服务与零售',PilotTravelCentersLLC:'Pilot 旅行中心',McLaneCompany:'McLane',InsuranceCorporateAndOther:'保险、总部及其他'};
- return labels[name]??name;
+  return new Intl.NumberFormat("en-US", { maximumFractionDigits: Math.abs(display) < 1 ? 3 : 1 }).format(display);
 }

@@ -9,6 +9,7 @@ import { financialPublicationMetadata, readCompletePublicationForTicker } from "
 import { getFinancialStatements, getFilingDisclosureAuditPage, listFilingDisclosureAudits } from "../financial-data/disclosure-audit.ts";
 import { authenticateAdmin } from "./auth.ts";
 import { FinancialMaintenanceStore, taskView } from "./financial-maintenance-store.ts";
+import { emit } from "../pipeline/outbox.ts";
 
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "cache-control": "private, no-store" } });
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
@@ -120,7 +121,11 @@ export async function handleFinancialAdminRequest(request: Request, env: SecPipe
       const row = await store.get(taskMatch[1]!);
       if (!row) return json({ error: "任务不存在。" }, 404);
       if (taskMatch[2] && ["analysis_dispatch","analysis_wait"].includes(row.stage) && ["running","queued"].includes(row.status)) return json({ error: "分析工作流正在提交或已提交，当前只能停止等待，不能取消已提交的分析。", task: taskView(row) }, 409);
-      return json({ task: taskView(taskMatch[2] ? (await store.cancel(row.task_id, new Date(now)))! : row) });
+      if (!taskMatch[2]) return json({ task: taskView(row) });
+      const cancelled = (await store.cancel(row.task_id, new Date(now)))!;
+      // The maintenance task applies a cancellation at its next step; wake it now.
+      await emit(env, [{ type: "maintenance.requested", ticker: row.ticker }]);
+      return json({ task: taskView(cancelled) });
     }
     const statementsMatch = /^\/admin\/financials\/companies\/([^/]+)\/documents\/([a-f0-9]{64})\/statements$/.exec(path);
     if(statementsMatch){
@@ -178,6 +183,7 @@ export async function handleFinancialAdminRequest(request: Request, env: SecPipe
       const active = await store.active(ticker);
       return json({ error: "该公司已有维护任务，请等待完成或取消后重试。", ...(active ? { task: taskView(active) } : {}) }, 409);
     }
+    await emit(env, [{ type: "maintenance.requested", ticker }]);
     return json({ task: taskView(created), reused: false }, 202);
   } catch { return json({ error: "财报维护服务暂时不可用，请稍后重试。" }, 503); }
 }

@@ -9,10 +9,10 @@ export type MindBranch = { node: string; label: string; summary: TreeClaim | nul
 export type MindMapInput = { branches: MindBranch[]; sources: TreeSource[] };
 
 const r = (v: number) => Math.round(v * 10) / 10;
-const KIND = { line: "产品线", product: "产品" } as const;
+const KIND = { line: "Product line", product: "Product" } as const;
 const describe = (item: MindItem) => item.kind === "revenue"
-  ? `赚钱方式：${item.revenue.label}`
-  : [item.node.name, item.node.gloss, item.node.revenue.length ? `赚钱方式：${item.node.revenue.map(m => m.label).join("、")}` : null].filter(Boolean).join("，");
+  ? `How it makes money: ${item.revenue.label}`
+  : [item.node.name, item.node.gloss, item.node.revenue.length ? `How it makes money: ${item.node.revenue.map(m => m.label).join(", ")}` : null].filter(Boolean).join(", ");
 
 /**
  * The breakdown drawn in the chart's coordinates, left of the Sankey: a trunk from the business's label,
@@ -24,10 +24,10 @@ export function MindLayer({ mind, k, title, colorOf, picked, onPick, onTip, onLe
 }) {
   const t = mindType(k);
   const key = (e: KeyboardEvent, id: string) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPick(id); } };
-  return <g className="fc-mind" aria-label="业务拆解">
+  return <g className="fc-mind" aria-label="Business breakdown">
     <text className="fc-mind-caption" x={mind.caption.x} y={mind.caption.y + t.title}>
-      <tspan className="fc-mind-title" style={{ fontSize: t.title }}>{title} · 业务拆解</tspan>
-      <tspan className="fc-mind-hint" x={mind.caption.x} dy={t.hint * 1.6} style={{ fontSize: t.hint }}>产品线 → 产品 → 赚钱方式 · 点节点看说明与来源</tspan>
+      <tspan className="fc-mind-title" style={{ fontSize: t.title }}>{title} · Business breakdown</tspan>
+      <tspan className="fc-mind-hint" x={mind.caption.x} dy={t.hint * 1.6} style={{ fontSize: t.hint }}>Product lines → products → how it makes money · Select a node for details and sources</tspan>
     </text>
     {mind.trunks.map(trunk => <path key={trunk.anchor} className="fc-mind-trunk" d={`M${r(trunk.x0)},${r(trunk.y)}H${r(trunk.x1)}`} style={{ "--c": colorOf(trunk.anchor) } as CSSProperties} />)}
     {mind.edges.map(e => <path key={e.id} className="fc-mind-edge" data-revenue={e.revenue || undefined} d={mindEdgePath(e)} style={{ "--c": colorOf(e.anchor), "--depth": e.depth } as CSSProperties} />)}
@@ -71,25 +71,25 @@ export function MindLens({ item, branch, sources, onClose }: { item: MindItem; b
   })}</span>;
   // A pill's own path ends with its owner; the lens is about the owner, so it names what the owner hangs from.
   const path = (item.kind === "revenue" ? item.path.slice(0, -1) : item.path).join(" / ");
-  return <section className="lens mind-lens" aria-label={`${name} 说明`} key={item.id}>
+  return <section className="lens mind-lens" aria-label={`${name} details`} key={item.id}>
     <header className="lens-head">
       <div className="lens-title">
-        <b className="mind-lens-kind">{node ? KIND[node.kind] : "业务"}</b>
+        <b className="mind-lens-kind">{node ? KIND[node.kind] : "Business"}</b>
         <h2>{name}</h2>
         {node?.gloss && <span className="lens-basis">{node.gloss}</span>}
-        {path && node && <span className="lens-basis">属于 {path}</span>}
-        {highlight && <span className="lens-basis">赚钱方式 · {highlight.label}</span>}
+        {path && node && <span className="lens-basis">Part of {path}</span>}
+        {highlight && <span className="lens-basis">How it makes money · {highlight.label}</span>}
       </div>
-      <div className="lens-nav"><Button variant="unstyled" type="button" className="lens-close" aria-label="关闭说明" onClick={onClose}>✕</Button></div>
+      <div className="lens-nav"><Button variant="unstyled" type="button" className="lens-close" aria-label="Close details" onClick={onClose}>✕</Button></div>
     </header>
     <div className="lens-body">
       <div className="lens-text">
-        {summary ? <p className="mind-lens-summary">{summary.text}{cite(summary)}</p> : <p className="mind-lens-empty">资料中没有可核实的一句话说明。</p>}
+        {summary ? <p className="mind-lens-summary">{summary.text}{cite(summary)}</p> : <p className="mind-lens-empty">The sources have no verifiable one-line description.</p>}
         {revenue.length > 0 ? <ul className="mind-lens-revenue">{revenue.map((m, i) => <li key={i} data-active={m === highlight || undefined}><b>{m.label}</b><small>{REVENUE_LABEL[m.type]}</small><span>{m.text}{cite(m)}</span></li>)}</ul>
-          : node?.children.length ? <p className="mind-lens-empty">收费方式见下级产品。</p> : <p className="mind-lens-empty">资料没有说明它怎么收费。</p>}
+          : node?.children.length ? <p className="mind-lens-empty">See the products below it for how it charges.</p> : <p className="mind-lens-empty">The sources don’t say how it charges.</p>}
       </div>
       <div className="lens-text">
-        {node?.anchor && <blockquote className="mind-lens-anchor"><small>归属依据</small>{node.anchor.text}{cite(node.anchor)}</blockquote>}
+        {node?.anchor && <blockquote className="mind-lens-anchor"><small>Basis for placement</small>{node.anchor.text}{cite(node.anchor)}</blockquote>}
         {cited.length > 0 && <ol className="sources sources--numbered">{cited.map(s => <li key={s.id}><a href={s.url} target="_blank" rel="noopener noreferrer">{s.title}<span aria-hidden="true"> ↗</span></a></li>)}</ol>}
       </div>
     </div>

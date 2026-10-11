@@ -6,6 +6,7 @@ import { CAPITAL_VERSION, extractCapitalFiling } from "../../../../shared/analys
 import type { DocumentSource } from "./parser.ts";
 import { canonicalSecHtml } from "./provider.ts";
 import { D1SecRepository } from "../sec/d1.ts";
+import { outboxStatement } from "../pipeline/outbox.ts";
 
 type ArchiveBucket = {
   get(key: string): Promise<{ text(): Promise<string> } | null>;
@@ -19,12 +20,13 @@ type PruneBucket = ArchiveBucket & {
 /** `capital` is the reconciled balance sheet and cash flow projection of the archived statements. */
 export type StoredAudit = DisclosureAuditSummary & { rawKey: string; inventoryKey: string; statementsKey?: string; capital?: CapitalFiling };
 export const disclosureAuditPrefix = (ticker: string) => `sec:disclosure-audit:v1:${ticker}:`;
+export const ARCHIVE_PREFIX = "financial-disclosures/";
 const digest = async (text: string) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)))].map(n => n.toString(16).padStart(2, "0")).join("");
 const summary = ({rawKey: _raw, inventoryKey: _inventory, statementsKey: _statements, capital: _capital, ...value}: StoredAudit): DisclosureAuditSummary => value;
 
 /** Source-addressed archives survive reruns; the D1 pointer advances only after all source, inventory and statement objects exist. */
 export async function archiveFilingDisclosures(env: DisclosureArchiveEnv, ticker: string, source: DocumentSource, served: string,
-  metadata: { form?: string; reportDate?: string } = {}): Promise<DisclosureAuditSummary> {
+  metadata: { form?: string; reportDate?: string } = {}, causeId: string | null = null): Promise<DisclosureAuditSummary> {
   if (!/^[A-Z][A-Z0-9.-]{0,11}$/.test(ticker) || !/^\d{10}-\d{2}-\d{6}$/.test(source.accession)) throw new Error("INVALID_DISCLOSURE_SOURCE");
   // Hash and store what was filed, not what sec.gov wrapped around it, so the same document keeps one address.
   const html = canonicalSecHtml(served);
@@ -55,7 +57,18 @@ export async function archiveFilingDisclosures(env: DisclosureArchiveEnv, ticker
     coverage: { ...inventory.coverage, issues: inventory.coverage.issues.slice(0, 100) },
     issueDetailsTruncated: inventory.coverage.issues.length > 100, rawKey, inventoryKey, statementsKey, capital,
     statements: {version: STATEMENTS_VERSION, status: statements.status, tables: statements.coverage.tables, rows: statements.coverage.rows, cells: statements.coverage.cells} };
-  await repository.setCache(cacheKey, record, archivedAt);
+  // The pointer, its events and the copies it replaces commit together: a new or changed filing can change the
+  // company's older quarters and capital on the map, and a replaced copy is deleted a day later if nothing uses it.
+  const superseded = existing ? [existing.payload.rawKey, existing.payload.inventoryKey, existing.payload.statementsKey]
+    .filter((key): key is string => !!key?.startsWith(ARCHIVE_PREFIX) && ![rawKey, inventoryKey, statementsKey].includes(key)) : [];
+  const detail = { form: inventory.source.form, accession: source.accession };
+  await env.DB.batch([
+    env.DB.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at")
+      .bind(cacheKey, JSON.stringify(record), archivedAt),
+    outboxStatement(env.DB, { type: "filing.archived", ticker, cik: source.cik || null, detail, causeId }, archivedAt),
+    ...superseded.map(key => env.DB.prepare("INSERT INTO pipeline_superseded (key, ticker, superseded_at) VALUES (?, ?, ?) ON CONFLICT(key) DO NOTHING").bind(key, ticker, archivedAt)),
+    ...(superseded.length ? [outboxStatement(env.DB, { type: "archive.superseded", ticker, cik: source.cik || null, detail, causeId }, archivedAt)] : []),
+  ]);
   return summary(record);
 }
 
@@ -64,7 +77,7 @@ export async function archiveFilingDisclosures(env: DisclosureArchiveEnv, ticker
  * already in the archive: no SEC fetch. Newest first, so the quarters findings rest on are refreshed before
  * older history; the read API projects whatever is still stale on demand until this catches up.
  */
-export async function refreshStaleProjections(env: DisclosureArchiveEnv, limit = 3): Promise<Array<{ ticker: string; accession: string }>> {
+export async function refreshStaleProjections(env: DisclosureArchiveEnv, limit = 3, causeId: string | null = null): Promise<Array<{ ticker: string; accession: string }>> {
   const rows = await env.DB.prepare("SELECT payload FROM sec_cache WHERE cache_key LIKE 'sec:disclosure-audit:v1:%' ORDER BY fetched_at DESC LIMIT 400").bind().all<{ payload: string }>();
   const stale: StoredAudit[] = [];
   for (const row of rows.results) {
@@ -80,16 +93,15 @@ export async function refreshStaleProjections(env: DisclosureArchiveEnv, limit =
     const raw = await env.SEC_FILINGS.get(record.rawKey);
     if (!raw) continue;
     const s = record.source, cik = s.documentUrl.match(/\/Archives\/edgar\/data\/(\d+)\//)?.[1]?.padStart(10, "0") ?? "";
-    await archiveFilingDisclosures(env, record.ticker, { url: s.documentUrl, accession: s.accessionNumber, cik, filedAt: s.filedAt, industry: "standard" }, await raw.text(), { form: s.form, reportDate: s.reportDate });
+    await archiveFilingDisclosures(env, record.ticker, { url: s.documentUrl, accession: s.accessionNumber, cik, filedAt: s.filedAt, industry: "standard" }, await raw.text(), { form: s.form, reportDate: s.reportDate }, causeId);
     done.push({ ticker: record.ticker, accession: s.accessionNumber });
   }
   return done;
 }
 
-const ARCHIVE_PREFIX = "financial-disclosures/";
 const pruneStateKey = "sec:archive-prune:v1";
 /** Objects younger than this may belong to an archive write whose D1 pointer is not committed yet. */
-const PRUNE_GRACE_MS = 24 * 60 * 60_000, PRUNE_INTERVAL_MS = 24 * 60 * 60_000;
+export const PRUNE_GRACE_MS = 24 * 60 * 60_000;
 type PruneState = { cursor: string | null; startedAt: string | null; finishedAt: string | null; deleted: number };
 /** `{ticker}/{accession}/{documentId}` of an archive key, whatever extraction version wrote it. */
 const archivedDocument = (key: string) => { const parts = key.split("/"); return parts.length === 7 && `${parts[0]}/` === ARCHIVE_PREFIX ? parts.slice(2, 5).join("/") : null; };
@@ -106,13 +118,13 @@ export async function readArchivedDocument(env: DisclosureArchiveEnv, ticker: st
 /**
  * Deletes archive objects no D1 row points at: copies a document left behind when it was stored again under a new
  * content hash or extraction version. A key is kept when a disclosure pointer or a transcript references it, when its
- * document has no current pointer at all, or while it is younger than the grace period. One bounded pass per tick,
- * resumed from a cursor; a finished pass waits a day before the next one.
+ * document has no current pointer at all, or while it is younger than the grace period. Copies replaced since
+ * `pipeline_superseded` existed are deleted one by one by the `archive-prune` task; this full pass is for what was
+ * left before, run by `archive-prune-scan` on request: one bounded step per call, resumed from a cursor.
  */
-export async function pruneSupersededArchives(env: { DB: D1Database; SEC_FILINGS: PruneBucket }, now = new Date(), pages = 4): Promise<{ skipped: true } | { scanned: number; deleted: number; finished: boolean }> {
+export async function pruneSupersededArchives(env: { DB: D1Database; SEC_FILINGS: PruneBucket }, now = new Date(), pages = 4): Promise<{ scanned: number; deleted: number; finished: boolean }> {
   const repository = new D1SecRepository(env.DB);
   const state: PruneState = (await repository.getCache<PruneState>(pruneStateKey))?.payload ?? { cursor: null, startedAt: null, finishedAt: null, deleted: 0 };
-  if (!state.cursor && state.finishedAt && now.getTime() - Date.parse(state.finishedAt) < PRUNE_INTERVAL_MS) return { skipped: true };
   if (!state.cursor) Object.assign(state, { startedAt: now.toISOString(), finishedAt: null, deleted: 0 });
   const pointers = await env.DB.prepare("SELECT json_extract(payload,'$.rawKey') raw, json_extract(payload,'$.inventoryKey') inventory, json_extract(payload,'$.statementsKey') statements FROM sec_cache WHERE cache_key LIKE 'sec:disclosure-audit:v1:%'")
     .bind().all<{ raw: string | null; inventory: string | null; statements: string | null }>();

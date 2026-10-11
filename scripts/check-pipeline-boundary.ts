@@ -2,6 +2,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { dirname, posix } from "node:path";
 import { pathToFileURL } from "node:url";
 import ts from "typescript";
+import { validateRegistry } from "../workers/pipeline/src/pipeline/registry.ts";
 
 export function checkSourceBoundary(file: string, source: string): string[] {
   const contract = file.startsWith("shared/analysis-contract/");
@@ -62,7 +63,9 @@ export async function checkArchitecture(): Promise<string[]> {
   return (await Promise.all(paths.map(async (file) => checkSourceBoundary(file, await readFile(file, "utf8"))))).flat();
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const errors = await checkArchitecture();
+  // The event graph (docs/pipeline-events.md) is checked here too, because this script runs in the Pipeline build:
+  // every subscribed event has an emitter, every name is known, and no task can trigger itself through others.
+  const errors = [...await checkArchitecture(), ...validateRegistry().map(error => `pipeline events: ${error}`)];
   if (errors.length) { console.error(errors.join("\n")); process.exitCode = 1; }
-  else console.log("Architecture boundaries passed: Pipeline depends only on its own code, declarative shared contracts and pure shared runtime; no Web callbacks or imports.");
+  else console.log("Architecture boundaries passed: Pipeline depends only on its own code, declarative shared contracts and pure shared runtime; no Web callbacks or imports. Pipeline event graph is complete and acyclic.");
 }

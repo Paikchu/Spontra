@@ -6,19 +6,20 @@ import {
   type FiscalAnchor, type GuidanceEntry, type VerifiedGuidance,
 } from "../../../../shared/analysis-runtime/guidance.ts";
 import { findSecurity } from "../catalog/security-directory.ts";
-import { assertTrackedTicker, requireDb, trackedTickersFor } from "../core.ts";
+import { assertTrackedTicker, requireDb } from "../core.ts";
 import { readCompletePublicationForTicker } from "../financial-data/publication.ts";
 import { callWorkerSecModel, SecModelHttpError, type SecPipelineEnv } from "../operations.ts";
 import { AnalysisRequestError } from "../read-api/contract-support/errors.ts";
 import { researchSearch } from "../web-search/research-search.ts";
 import { D1SecRepository } from "../sec/d1.ts";
+import { outboxStatement } from "../pipeline/outbox.ts";
 import { fiscalPeriodKey, readFiscalPeriod } from "../sec/fiscal-period.ts";
 import type { SecFilingFeed } from "../sec/sec.ts";
 import type { WorkflowStepContextLike, WorkflowStepLike } from "../workflow-core.ts";
 import { extractGuidance, GUIDANCE_EXTRACTOR_VERSION, GUIDANCE_MAX_OUTPUT_TOKENS, type GuidanceModelCall } from "./extract.ts";
 import { findIrDeck, AlphaVantageTranscriptProvider, readSecExhibits, reportedTranscriptRef, TranscriptAccessError, TranscriptQuotaError, type FoundMaterial, type TranscriptRef } from "./sources.ts";
 import { GuidanceStore, type StoredMaterial } from "./store.ts";
-import { AiRunStore, quietly } from "../ai-runs/store.ts";
+import { AiRunStore } from "../ai-runs/store.ts";
 
 export const guidanceCacheKey = (ticker: string) => `guidance:v1:${ticker}`;
 const irHostsKey = (ticker: string) => `guidance-ir-hosts:v1:${ticker}`;
@@ -35,6 +36,8 @@ const EVENT_LOOKBACK_DAYS = 400;
 const DEFAULT_DAILY_MODEL_CALLS = 40;
 const DAILY_DECK_SEARCHES = 6;
 const MODEL_BUDGET_MS = 3 * 60_000;
+/** Days a material waits for the daily model budget before the event goes on without it: a version change re-extracts the whole history. */
+const BUDGET_ROUNDS = 4;
 
 type TranscriptSource = { fetch(ticker: string, ref: TranscriptRef): Promise<FoundMaterial | null> };
 export type GuidanceDeps = {
@@ -52,38 +55,6 @@ export function earningsEvents(feed: SecFilingFeed | null, now = Date.now()): Ar
   const since = new Date(now - EVENT_LOOKBACK_DAYS * 86_400_000).toISOString().slice(0, 10);
   return (feed?.filings ?? []).filter(f => f.form === "8-K" && /(^|,)\s*2\.02\b/.test(f.items) && f.filingDate >= since)
     .map(f => ({ accession: f.accessionNumber, eventDate: f.filingDate }));
-}
-
-/**
- * Records new earnings events from the cached SEC feed (no SEC request) and starts at most two
- * Workflows per tick, newest first. The instance id is derived from the event and extractor
- * version, so an event is processed once per version.
- */
-export async function runGuidanceSweep(env: SecPipelineEnv, now = Date.now()): Promise<{ enabled: boolean; recorded: number; started: string[]; failed: string[] }> {
-  const result = { enabled: false, recorded: 0, started: [] as string[], failed: [] as string[] };
-  if (env.GUIDANCE_ENABLED !== "true" || !env.GUIDANCE_WORKFLOW || !env.DB) return result;
-  result.enabled = true;
-  const store = new GuidanceStore(env.DB, env.SEC_FILINGS);
-  const repository = new D1SecRepository(env.DB);
-  const tickers = trackedTickersFor(env);
-  const stamp = new Date(now).toISOString();
-  for (const ticker of tickers) {
-    const events = earningsEvents((await repository.getCache<SecFilingFeed>(`sec:filings:${ticker}`))?.payload ?? null, now);
-    await store.recordEvents(ticker, events, stamp);
-    result.recorded += events.length;
-  }
-  for (const event of await store.queuedEvents(tickers, 2)) {
-    const id = `guidance-${event.ticker.replace(/[^A-Za-z0-9]/g, "-")}-${event.accession}-${GUIDANCE_EXTRACTOR_VERSION.replace(/[^A-Za-z0-9]/g, "")}`;
-    try {
-      await env.GUIDANCE_WORKFLOW.create({ id, params: { ticker: event.ticker, accession: event.accession, eventDate: event.event_date } });
-      await quietly(() => new AiRunStore(env.DB!).start({ kind: "guidance", ticker: event.ticker, runId: id, trigger: "schedule", accession: event.accession }, stamp));
-      result.started.push(id);
-    } catch (error) {
-      if (!/already exists|duplicate/i.test(String(error))) { result.failed.push(event.accession); continue; }
-    }
-    await store.updateEvent(event.ticker, event.accession, { status: "started", workflowInstanceId: id }, stamp);
-  }
-  return result;
 }
 
 async function fiscalAnchors(repository: D1SecRepository, feed: SecFilingFeed | null): Promise<FiscalAnchor[]> {
@@ -164,7 +135,12 @@ export async function publishGuidance(env: SecPipelineEnv, ticker: string, now: 
   });
   const publication: GuidancePublication = { schemaVersion: "guidance.v1", ticker, updatedAt: now, items, sources, coverage };
   if (!readGuidancePublication(publication, ticker)) throw new Error("Guidance publication failed its public contract.");
-  await repository.setCache(guidanceCacheKey(ticker), publication, now);
+  // Findings read guidance; the publication and its event commit together.
+  await db.batch([
+    db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at")
+      .bind(guidanceCacheKey(ticker), JSON.stringify(publication), now),
+    outboxStatement(db, { type: "guidance.published", ticker }, now),
+  ]);
   await new AiRunStore(db).saveVersion("guidance", ticker, publication, now);
   return { items: items.length };
 }
@@ -194,10 +170,14 @@ export async function executeGuidanceWorkflow(params: GuidanceWorkflowParams, st
     for (const material of found) saved.push(await store().saveMaterial(params.ticker, params.accession, material, now));
     return saved;
   };
+  // A re-extraction under a new extractor version also takes every material an earlier run stored for this
+  // event (a transcript, an IR deck), so nothing is fetched or searched for again.
   const { materials: sec, ref } = await step.do("guidance-sec", async () => {
     const found = await (deps.secExhibits ?? readSecExhibits)(
       { cikNumber: context.cikNumber, accessionNumber: params.accession, filingDate: params.eventDate }, fetcher, env.SEC_USER_AGENT);
-    return { materials: await saveAll(found), ref: context.ref ?? reportedTranscriptRef(found, params.eventDate) };
+    const saved = await saveAll(found);
+    const stored = (await store().eventMaterials(params.ticker, params.accession)).filter(m => !saved.some(s => s.id === m.id));
+    return { materials: [...saved, ...stored], ref: context.ref ?? reportedTranscriptRef(found, params.eventDate) };
   });
 
   const transcripts = deps.transcripts !== undefined ? deps.transcripts
@@ -218,9 +198,11 @@ export async function executeGuidanceWorkflow(params: GuidanceWorkflowParams, st
       throw error;
     }
   });
-  let transcript: Probe = transcripts ? await probe(0) : { ref, material: null, denied: false, quota: false };
+  const storedTranscript = sec.find(m => m.kind === "transcript") ?? null;
+  let transcript: Probe = storedTranscript ? { ref, material: storedTranscript, denied: false, quota: false }
+    : transcripts ? await probe(0) : { ref, material: null, denied: false, quota: false };
 
-  const materials = [...sec, ...(transcript.material ? [transcript.material] : [])];
+  const materials = [...sec, ...(transcript.material && transcript.material !== storedTranscript ? [transcript.material] : [])];
   const deckSearch = deps.deckSearch !== undefined ? deps.deckSearch : env.GUIDANCE_DECK_SEARCH !== "false" && env.TAVILY_API_KEY ? researchSearch(env) : null;
   if (deckSearch && transcript.ref && !sec.some(m => m.kind === "deck")) {
     const deck = await step.do("guidance-deck", async () => {
@@ -239,7 +221,7 @@ export async function executeGuidanceWorkflow(params: GuidanceWorkflowParams, st
   const reportedQuarter = () => transcript.ref ? `Q${transcript.ref.quarter} FY${transcript.ref.fiscalYear}` : null;
   const extract = async (list: StoredMaterial[], label: string) => {
     let pending = list.filter(m => m.status !== "unsupported");
-    for (let round = 0; round < 2 && pending.length; round++) {
+    for (let round = 0; round < BUDGET_ROUNDS && pending.length; round++) {
       const deferred: StoredMaterial[] = [];
       for (const material of pending) {
         const outcome = await step.do(`guidance-extract-${material.id.slice(0, 16)}${round ? `-r${round}` : ""}`, (ctx) => extractStored(env, deps, material.id,
@@ -247,10 +229,11 @@ export async function executeGuidanceWorkflow(params: GuidanceWorkflowParams, st
         if (outcome.status === "deferred") deferred.push(material);
       }
       pending = deferred;
-      if (pending.length && round === 0) {
+      if (pending.length && round < BUDGET_ROUNDS - 1) {
         // Today's cap is spent; continue just after midnight UTC instead of failing the event.
-        const now = Date.parse(await time(`budget-${label}`));
-        await step.sleep(`guidance-budget-wait-${label}`, Date.UTC(new Date(now).getUTCFullYear(), new Date(now).getUTCMonth(), new Date(now).getUTCDate() + 1, 0, 10) - now);
+        const suffix = round ? `-r${round}` : "";
+        const now = Date.parse(await time(`budget-${label}${suffix}`));
+        await step.sleep(`guidance-budget-wait-${label}${suffix}`, Date.UTC(new Date(now).getUTCFullYear(), new Date(now).getUTCMonth(), new Date(now).getUTCDate() + 1, 0, 10) - now);
       }
     }
   };
@@ -264,6 +247,9 @@ export async function executeGuidanceWorkflow(params: GuidanceWorkflowParams, st
     const callTime = Date.parse(`${params.eventDate}T21:00:00Z`);
     for (let attempt = 1; attempt < TRANSCRIPT_WAIT_HOURS.length && !transcript.material && !transcript.denied; attempt++) {
       const now = Date.parse(await time(`transcript-${attempt}`));
+      // Past the last re-check (an event re-extracted long after its call), a missing transcript will not appear;
+      // only a spent quota is worth waiting for.
+      if (!transcript.quota && now >= callTime + TRANSCRIPT_WAIT_HOURS.at(-1)! * 3_600_000) break;
       // A shared daily quota is different from a missing transcript: wait for the next UTC day.
       const nextDay = new Date(now); nextDay.setUTCHours(24, 10, 0, 0);
       const wait = transcript.quota ? nextDay.getTime() - now : callTime + TRANSCRIPT_WAIT_HOURS[attempt] * 3_600_000 - now;
@@ -275,7 +261,7 @@ export async function executeGuidanceWorkflow(params: GuidanceWorkflowParams, st
       await publish("transcript");
     }
   }
-  const transcriptStatus = !transcripts ? "not_configured" : transcript.material ? "extracted" : "unavailable";
+  const transcriptStatus = transcript.material ? "extracted" : !transcripts ? "not_configured" : "unavailable";
   await step.do("guidance-event-complete", async () => {
     await store().updateEvent(params.ticker, params.accession, { status: "complete", transcriptStatus }, new Date().toISOString());
     // Coverage reflects the final transcript status.

@@ -12,7 +12,7 @@ import type {
  * those cells, signed as the statement shows them. A statement is published only when its lines add up
  * to the totals the issuer reports; anything else is dropped, never estimated.
  */
-export const CAPITAL_VERSION = "sec-capital-structure.v3";
+export const CAPITAL_VERSION = "sec-capital-structure.v4";
 
 type Fact = StatementCell["facts"][number];
 /** `dimensional`: the amount is a member-tagged fact, as a segment subtotal printed on the face statement is. */
@@ -459,7 +459,7 @@ export function quarterCashFlow(current: CashFlowStatement, prior: CashFlowState
   const sources = [...new Map([...current.sources, ...prior.sources].map(s => [s.accession, s])).values()];
   return {
     periodStart: nextDay(prior.periodEnd), periodEnd: current.periodEnd, currency: current.currency, basis: "derived",
-    formula: `截至 ${current.periodEnd} 的年初至今累计 − 截至 ${prior.periodEnd} 的年初至今累计（财年起点 ${current.periodStart}；前期未列示的行按 0 计）`,
+    formula: `Year to date through ${current.periodEnd} − year to date through ${prior.periodEnd} (fiscal year from ${current.periodStart}; a line the earlier period does not show counts as 0)`,
     operating: section(current.operating, prior.operating), investing: section(current.investing, prior.investing), financing: section(current.financing, prior.financing),
     fxEffect: current.fxEffect === null && prior.fxEffect === null ? null : minus(current.fxEffect, prior.fxEffect),
     netChange: minus(current.netChange, prior.netChange),

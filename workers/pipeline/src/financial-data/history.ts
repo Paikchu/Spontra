@@ -1,6 +1,5 @@
 import type {RevenueHistory, RevenueHistoryQuarter} from '../../../../shared/analysis-contract/revenue-history.ts';
 import {historyQuarterFrom, mergeHistory, readHistory, revenueHistorySchema, validHistoryQuarter} from '../../../../shared/analysis-runtime/financial-data/history.ts';
-import {allowData, type FinancialPolicy} from '../../../../shared/analysis-runtime/financial-data/policy.ts';
 import {D1SecRepository} from '../sec/d1.ts';
 import {extractVerifiedCurrentQuarters, readReportedFacts, type DocumentSource, type Fact} from './parser.ts';
 import {readFilingDocuments, type SecReader} from './provider.ts';
@@ -9,7 +8,7 @@ import {extractRevenueHistory, REVENUE_PARSER_VERSION} from './revenue-parser.ts
 /**
  * Deterministic quarterly revenue history, independently validated from complete income statements.
  * Reads direct periods and all explicitly dated supplemental quarterly columns, including comparatives.
- * Runs only on otherwise idle data ticks and never touches the complete-snapshot pointer.
+ * Run by the `history` task after each publication; it never touches the complete-snapshot pointer.
  */
 export const HISTORY_VERSION = 'revenue-history.v6:' + REVENUE_PARSER_VERSION;
 export const historyKey = (cik: string) => `sec:revenue-history:v1:${cik}`;
@@ -73,7 +72,7 @@ export function deriveFourthQuarters(facts: Fact[], cik: string): RevenueHistory
     for (const annual of annuals.filter(f => f.end === end)) {
       const candidates = facts.filter(f => f.source.accession === annual.source.accession && f.start === annual.start && factKey(f) === factKey(annual) && span(f) >= 230 && span(f) <= 310 && span({start: f.end, end: annual.end}) >= 70 && span({start: f.end, end: annual.end}) <= 110);
       const prior = new Set(candidates.map(f => f.value)).size === 1 ? candidates[0] : undefined;
-      if (prior) derived.push({...annual, start: nextDay(prior.end), context: `derived:${annual.context}-${prior.context}`, value: annual.value - prior.value, precision: Math.min(annual.precision, prior.precision), operands: [annual, prior], formula: `同一财年、币种、概念和维度的全年累计 ${annual.value} − 前九个月累计 ${prior.value} = 第四季度 ${annual.value - prior.value}`});
+      if (prior) derived.push({...annual, start: nextDay(prior.end), context: `derived:${annual.context}-${prior.context}`, value: annual.value - prior.value, precision: Math.min(annual.precision, prior.precision), operands: [annual, prior], formula: `Fourth quarter ${annual.value - prior.value} = full fiscal year ${annual.value} − first nine months ${prior.value}, same fiscal year, currency, concept and dimensions`});
     }
     if (!derived.length) continue;
     const source = derived[0].source;
@@ -86,12 +85,13 @@ export function deriveFourthQuarters(facts: Fact[], cik: string): RevenueHistory
 }
 
 /** One bounded step. A failed filing stays at its checkpoint for up to three attempts;
- * exhausted documents are explicitly partial. A manual rescan deletes only the cursor, never good history. */
-export async function runHistoryStep(db: D1Database, reader: SecReader, target: {ticker: string; cik: string}, now = new Date(), maxDocuments = 3): Promise<HistoryStepResult> {
+ * exhausted documents are explicitly partial. A manual rescan deletes only the cursor, never good history.
+ * `restartFinished`: a finished scan starts over now (a new publication), rather than after a day. */
+export async function runHistoryStep(db: D1Database, reader: SecReader, target: {ticker: string; cik: string}, now = new Date(), maxDocuments = 3, options: {restartFinished?: boolean} = {}): Promise<HistoryStepResult> {
   if (!validCik(target.cik) || !/^[A-Z][A-Z0-9.-]{0,11}$/.test(target.ticker)) throw new Error('Invalid issuer identity');
   const repository = new D1SecRepository(db);
   let cursor = (await repository.getCache<HistoryCursor>(cursorKey(target.cik)))?.payload;
-  if (!cursor || cursor.version !== HISTORY_VERSION || cursor.ticker !== target.ticker || (cursor.finishedAt && now.getTime() - Date.parse(cursor.finishedAt) >= REFRESH_MS)) {
+  if (!cursor || cursor.version !== HISTORY_VERSION || cursor.ticker !== target.ticker || (cursor.finishedAt && (options.restartFinished || now.getTime() - Date.parse(cursor.finishedAt) >= REFRESH_MS))) {
     const listing = await listDocuments(target.cik, reader, now);
     cursor = {version: HISTORY_VERSION, ticker: target.ticker, industry: listing.industry, documents: listing.documents, index: 0, facts: [], issues: [], startedAt: now.toISOString()};
   }
@@ -107,8 +107,8 @@ export async function runHistoryStep(db: D1Database, reader: SecReader, target: 
       // Commit a filing's facts only after all linked exhibits have been read and archived.
       // Otherwise a partial success followed by an R2 error would duplicate facts on retry.
       const documentQuarters: RevenueHistoryQuarter[] = [], documentFacts: Fact[] = [], documentIssues: string[] = [];
-      for (const content of await readFilingDocuments(document.url, reader)) {
-        const source: DocumentSource = {url: content.url, accession: document.accession, filedAt: document.filedAt, cik: target.cik, industry: cursor.industry};
+      for (const content of await readFilingDocuments(document.url, reader, document.accession)) {
+        const source: DocumentSource = {url: content.url, accession: document.accession, filedAt: document.filedAt, cik: target.cik, industry: cursor.industry, ...(content.memberLabels ? {memberLabels: content.memberLabels} : {})};
         await reader.archive?.(source, content.html, {form: document.form, reportDate: document.periodEnd});
         const parsed = extractRevenueHistory(content.html, source, document.form);
         documentQuarters.push(...parsed.quarters);
@@ -147,24 +147,6 @@ export async function runHistoryStep(db: D1Database, reader: SecReader, target: 
   if (obtainedData && history.quarters.length) await repository.setCache(historyKey(target.cik), history, now.toISOString());
   await repository.setCache(cursorKey(target.cik), cursor, now.toISOString());
   return {ticker: target.ticker, documents: attempted, finished, quarters: history.quarters.length, issues: cursor.issues.slice(-5), partial: cursor.partial ?? false, ...(retry ? {retry} : {}), ...(resolvedIssues.length ? {resolvedIssues} : {})};
-}
-
-/** Picks the first allowed, already-identified issuer whose history is unfinished or older than a day. */
-export async function runHistoryTick(db: D1Database, reader: SecReader, policy: FinancialPolicy, now = new Date(), archive?: {
-  store(ticker: string, source: DocumentSource, html: string, metadata?: {form?: string; reportDate?: string}): Promise<void>;
-  read(ticker: string, url: string): Promise<string | null>;
-}) {
-  const rows = await db.prepare('SELECT ticker,cik FROM financial_collection_jobs j WHERE generation=(SELECT MAX(generation) FROM financial_collection_jobs WHERE ticker=j.ticker)').bind().all<{ticker: string; cik: string}>();
-  const identities = new Map(rows.results.filter(r => /^\d{10}$/.test(r.cik)).map(r => [r.ticker, r.cik]));
-  const repository = new D1SecRepository(db);
-  for (const ticker of policy.dataTickers) {
-    const cik = identities.get(ticker);
-    if (!cik || !allowData(policy, ticker)) continue;
-    const cursor = (await repository.getCache<HistoryCursor>(cursorKey(cik)))?.payload;
-    const due = !cursor || cursor.version !== HISTORY_VERSION || !cursor.finishedAt || now.getTime() - Date.parse(cursor.finishedAt) >= REFRESH_MS;
-    if (due) return runHistoryStep(db, archive ? {...reader, archive: (source, html, metadata) => archive.store(ticker, source, html, metadata), archived: url => archive.read(ticker, url)} : reader, {ticker, cik}, now);
-  }
-  return null;
 }
 
 export async function readRevenueHistory(db: D1Database, cik: string, ticker: string): Promise<RevenueHistory | null> {

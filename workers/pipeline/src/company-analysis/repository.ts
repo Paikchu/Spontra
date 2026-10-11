@@ -5,6 +5,7 @@ import {
   type CompanyAnalysisPublication,
   type CompanyAnalysisRunStatus,
 } from "./contracts.ts";
+import { outboxInsert } from "../pipeline/outbox.ts";
 
 export type CompanyAnalysisD1Statement = {
   first<T>(): Promise<T | null>;
@@ -261,6 +262,15 @@ export class D1CompanyAnalysisRepository {
     `).bind(update.analysisId, update.workflowInstanceId).first());
   }
 
+  /** When the company's latest failed analysis becomes eligible for its next recovery, or null if none will be. */
+  async nextRecoveryAt(ticker: string): Promise<string | null> {
+    const row = await this.database.prepare(`SELECT updated_at AS updatedAt, recovery_count AS count FROM company_analysis_runs
+      WHERE ticker = ? AND status = 'failed' ORDER BY updated_at DESC LIMIT 1`).bind(ticker).first<{ updatedAt: string; count: number | null }>();
+    const count = row?.count ?? 0;
+    if (!row || count >= COMPANY_ANALYSIS_MAX_RECOVERIES) return null;
+    return new Date(Date.parse(row.updatedAt) + RECOVERY_BACKOFF_MS[count]!).toISOString();
+  }
+
   async listActiveExecutions(tickers: string[], before: string): Promise<Array<{ analysisId: string; workflowInstanceId: string }>> {
     if (!tickers.length) return [];
     const rows = await this.database.prepare(`
@@ -328,7 +338,10 @@ export class D1CompanyAnalysisRepository {
       }
       return { duplicate: true, publication: existing };
     }
-    await this.database.prepare(`
+    const announced = outboxInsert({ type: "analysis.published", ticker: publication.ticker }, publication.generatedAt,
+      { sql: "EXISTS(SELECT 1 FROM company_analysis_runs WHERE analysis_id = ? AND status = 'ready' AND input_hash = ?)", binds: [publication.analysisId, publication.inputHash] });
+    // Findings read the latest analysis; the publication and its event commit together.
+    await this.database.batch([this.database.prepare(`
       INSERT INTO company_analysis_runs (
         analysis_id, ticker, trigger_ref, period_id, period_end, report_label,
         input_hash, memory_version, fundamentals_data_version, status,
@@ -364,7 +377,7 @@ export class D1CompanyAnalysisRepository {
       publication.promptVersion,
       publication.generatedAt,
       publication.generatedAt,
-    ).run();
+    ), this.database.prepare(announced.sql).bind(...announced.values)]);
     const stored = await this.getPublication(publication.ticker, publication.analysisId);
     if (!stored) throw new Error("Company analysis publication was not committed.");
     if (stored.inputHash !== publication.inputHash) {
