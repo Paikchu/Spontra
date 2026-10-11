@@ -6,7 +6,7 @@ import {runDataOnlySweep} from './financial-data/queue.ts';
 import {runMapDerivationTick} from './financial-data/derived.ts';
 import {pruneSupersededArchives} from './financial-data/disclosure-audit.ts';
 import { handleCompanyAnalysisRequest, handleSecAnalysisRequest, runCompanyAnalysisSweep, runSecMemorySweep, runSecRefresh } from "./core.ts";
-import { handleBusinessFlowRefresh, runBusinessFlowBootstrap } from "./sec/business-flow-refresh.ts";
+import { handleBusinessFlowRefresh } from "./sec/business-flow-refresh.ts";
 import { handleFundamentalsRefreshRequest } from "./fundamentals.ts";
 import { runFundamentalsStalenessSweep } from "./fundamentals-sweep.ts";
 import type { SecPipelineEnv } from "./operations.ts";
@@ -111,7 +111,6 @@ const worker = {
       // Took over from the refresh a public read used to trigger. Bounded per tick; the Cron
       // schedule above it is unchanged.
       runFundamentalsStalenessSweep(env),
-      runBusinessFlowBootstrap(env),
       runBusinessExplainerSweep(env),
       runBusinessTreeSweep(env),
       runGuidanceSweep(env),
@@ -119,8 +118,8 @@ const worker = {
       // Deterministic: EDGAR's current reports and Form 4 filings for the map's event rail, no model.
       runEventsSweep(env),
     ]);
-    const [analysis, memory, companyAnalysis, fundamentals, businessFlow, businessExplainer, businessTree, guidance, findings, events] = results.map(describeSettled);
-    const payload = JSON.stringify({ event: "sec-workflows", analysis, memory, companyAnalysis, fundamentals, businessFlow, businessExplainer, businessTree, guidance, findings, events });
+    const [analysis, memory, companyAnalysis, fundamentals, businessExplainer, businessTree, guidance, findings, events] = results.map(describeSettled);
+    const payload = JSON.stringify({ event: "sec-workflows", analysis, memory, companyAnalysis, fundamentals, businessExplainer, businessTree, guidance, findings, events });
     const rejected = results.filter((result): result is PromiseRejectedResult => result.status === "rejected");
     if (!rejected.length) {
       console.log(payload);
