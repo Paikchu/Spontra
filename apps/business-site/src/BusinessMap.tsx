@@ -5,9 +5,9 @@ import type { CompanyBusinessContent } from "@/packages/web/src/model/company-bu
 import { deficitFinancialGraph, financialGraph, type FinancialGraph } from "@/packages/web/src/model/business-flow-sankey";
 import { compactFlowValue, type PlacedNode } from "@/packages/web/src/model/business-flow-layout";
 import { availableRevenueTrees, compareRevenueNode, revenueNodeKey } from "@/packages/web/src/model/revenue-tree";
-import { formatFlowValue, compareAmount, compareFlowAmounts, disclosedSegmentLabel, numeric, previousQuarter, reconcileQuarter } from "@/packages/web/src/model/business-flow-model";
+import { formatFlowValue, compareAmount, compareFlowAmounts, disclosedSegmentLabel, numeric, previousQuarter, reconcileQuarter, yearAgoQuarter } from "@/packages/web/src/model/business-flow-model";
 import { FinancialSankey } from "@/packages/web/src/business-flow/FinancialSankey";
-import { FlowChart, layoutFor, type GuideBracketMark, type GuidePillMark, type NodeCopy, type Tip } from "./FlowChart";
+import { FlowChart, layoutFor, type CompareBasis, type GuideBracketMark, type GuidePillMark, type NodeCopy, type Tip } from "./FlowChart";
 import { ACTION_GLYPH, actionName, guidanceMarks, markSentence } from "./guidance-marks";
 import type { RevenueHistory } from "@/shared/analysis-contract/revenue-history";
 import type { BusinessExplainer, ExplainerClaim, ExplainerSection } from "@/shared/analysis-contract/business-explainer";
@@ -54,6 +54,9 @@ const trend = (label: string) => label.startsWith("+") || /转盈|收窄|由负�
 const shortName = (name: string) => name.length > 9 ? name.slice(0, 8) + "…" : name;
 const shortPeriod = (end: string) => end.slice(0, 7).replace("-", ".");
 type View = "profit" | "cash" | "balance";
+/** Every change on the stage is against one base: the same quarter a year earlier (同比) or the quarter before (环比). */
+type Basis = "yoy" | "qoq";
+const BASIS: Record<Basis, CompareBasis & { period: string }> = { yoy: { change: "同比", prior: "去年", period: "去年同期" }, qoq: { change: "环比", prior: "上季", period: "上季" } };
 
 /** A loss quarter is drawn as funding (revenue plus the net loss pay every cost); any other quarter as the statement bridge. */
 function statementGraph(q: BusinessFlowQuarter): FinancialGraph {
@@ -80,11 +83,11 @@ function hueSlots(quarters: BusinessFlowQuarter[]) {
   return slots;
 }
 
-/** A quarter-over-quarter change as a coloured arrow and figure; nothing when the quarters are not comparable. */
-function Delta({ label }: { label: string }) {
+/** A change against the comparison quarter as a coloured arrow and figure; nothing when the quarters are not comparable. */
+function Delta({ label, word }: { label: string; word: string }) {
   if (label === "不可比") return null;
   const tone = trend(label);
-  return <em data-trend={tone} title="环比">{tone === "up" ? "▲" : tone === "down" ? "▼" : ""}{label.replace(/^[+\-−]/, "")}</em>;
+  return <em data-trend={tone} title={word}>{tone === "up" ? "▲" : tone === "down" ? "▼" : ""}{label.replace(/^[+\-−]/, "")}</em>;
 }
 
 function businessItems(quarter: BusinessFlowQuarter | undefined, business: CompanyBusinessContent | null, slots: Map<string, number>) {
@@ -141,7 +144,12 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
   const quarters = useMemo(() => [...flow.quarters].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd)), [flow]);
   const [period, setPeriod] = useState<string | null>(null);
   const quarter = quarters.find(q => q.id === period) ?? quarters[0];
-  const previous = quarter ? previousQuarter(quarter, quarters) : null;
+  // 同比 by default; 环比 when the year-ago quarter was not collected but the one before was.
+  const [chosenBasis, setBasis] = useState<Basis | null>(null);
+  const yearAgo = quarter ? yearAgoQuarter(quarter, quarters) : null, lastQuarter = quarter ? previousQuarter(quarter, quarters) : null;
+  const basis: Basis = chosenBasis ?? (yearAgo || !lastQuarter ? "yoy" : "qoq");
+  const previous = basis === "yoy" ? yearAgo : lastQuarter;
+  const word = BASIS[basis];
   const slots = useMemo(() => hueSlots(quarters), [quarters]);
   const { items, quantified } = useMemo(() => businessItems(quarter, business, slots), [quarter, business, slots]);
   const [selected, setSelected] = useState<string | null>(() => new URLSearchParams(location.search).get("business"));
@@ -182,6 +190,9 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
   const revenue = quarter ? numeric(quarter.figures.revenue) : null;
   const segmentRevenue = quarter?.revenueAdjustments?.length ? quarter.segments.reduce((sum,s)=>sum+(numeric(s.revenue)??0),0) : revenue;
   const shareBasis = quarter?.revenueAdjustments?.length ? '抵销前分部收入' : '总收入';
+  // The comparison quarter's share needs its total on the same basis and comparable with this quarter's.
+  const priorShareBase = quarter && previous && compareAmount(quarter, previous, "revenue").percent != null
+    ? quarter.revenueAdjustments?.length ? previous.segments.reduce((sum, s) => sum + (numeric(s.revenue) ?? 0), 0) || null : numeric(previous.figures.revenue) : null;
   const money = useCallback((v: number | null) => quarter ? compactFlowValue(v, quarter) : "—", [quarter]);
 
   useEffect(() => {
@@ -229,20 +240,20 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
     setView(focused.anchors.view);
   }, [focused?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const amountOf = useCallback((n: PlacedNode) => n.amount ? numeric(n.amount) : n.metric && quarter ? numeric(quarter.figures[n.metric]) : n.value, [quarter]);
-  /** Same comparison as the list and tooltip: only an equal-definition prior quarter yields a change. */
+  /** Same comparison as the list and tooltip: only an equal-definition comparison quarter yields a change. */
   const comparisonOf = useCallback((n: PlacedNode) => !quarter ? null
     : n.amount ? compareFlowAmounts(quarter, previous, n.name, n.amount, previousGraph?.nodes.find(p => p.name === n.name)?.amount)
     : n.metric ? compareAmount(quarter, previous, n.metric)
     : n.segmentId ? compareRevenueNode(quarter, previous, n.segmentId) : null, [quarter, previous, previousGraph]);
   const changeOf = useCallback((n: PlacedNode) => comparisonOf(n)?.label ?? "不可比", [comparisonOf]);
-  /** The prior amount behind a percentage change: only a same-sign, same-definition prior quarter is drawn as a ghost outline. */
+  /** The comparison amount behind a percentage change: only a same-sign, same-definition comparison quarter is drawn as a tick. */
   const priorOf = useCallback((n: PlacedNode) => { const c = comparisonOf(n); return c && c.percent != null && c.previous != null ? Math.abs(c.previous) : null; }, [comparisonOf]);
   const copy = useCallback((n: PlacedNode): NodeCopy => {
     const label = changeOf(n);
     return { name: shortName(n.label), value: money(amountOf(n)), ...(label !== "不可比" ? { change: { label, trend: trend(label) } } : {}) };
   }, [money, amountOf, changeOf]);
   const layout = useMemo(() => graph ? layoutFor(graph, copy) : null, [graph, copy]);
-  // 对比上季 needs the prior quarter drawn in this quarter's currency and scale; its labels carry no change of their own.
+  // 对比去年 / 对比上季 needs the comparison quarter drawn in this quarter's currency and scale; its labels carry no change of their own.
   const priorMoney = useCallback((v: number | null) => previous ? compactFlowValue(v, previous) : "—", [previous]);
   const priorCopy = useCallback((n: PlacedNode): NodeCopy => ({ name: shortName(n.label), value: priorMoney(n.amount ? numeric(n.amount) : n.metric && previous ? numeric(previous.figures[n.metric]) : n.value) }), [priorMoney, previous]);
   const priorQuarter = useMemo(() => previous && previousGraph?.links.length && quarter && previous.currency === quarter.currency && previous.scale === quarter.scale
@@ -269,9 +280,11 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
       rows.push(["抵减后余额", money(graph.links.filter(l => l.source === n.name).reduce((sum, l) => sum + l.value, 0))]);
     }
     if(n.segmentId&&quarter.revenueAdjustments?.length)rows.splice(1,1,["占抵销前分部收入",percent((amountOf(n)??0)/segmentRevenue!*100)]);
-    rows.push(["环比", changeOf(n)], [`原披露金额（${quarter.currency} 百万）`, formatFlowValue(amountOf(n),quarter)]);
+    const prior = priorOf(n);
+    if (prior != null && previous) rows.push([`${word.period} ${shortPeriod(previous.periodEnd)}`, money(prior)]);
+    rows.push([word.change, changeOf(n)], [`原披露金额（${quarter.currency} 百万）`, formatFlowValue(amountOf(n),quarter)]);
     return { title: n.label, color: colorOf(n.name), rows };
-  }, [quarter, revenue, money, amountOf, colorOf, changeOf, graph, segmentRevenue]);
+  }, [quarter, previous, word, revenue, money, amountOf, colorOf, changeOf, priorOf, graph, segmentRevenue]);
 
   // Guidance on the bars: this quarter's guided range as a bracket with its verdict, next quarter's as a pill, both at the chart's units.
   const guideMarks = useMemo((): { brackets: GuideBracketMark[]; pills: GuidePillMark[] } => {
@@ -373,7 +386,7 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
             <i className="row-chip row-chip--all" aria-hidden="true" />
             <span className="row-name">全部业务</span>
             <span className="row-value">{revenue != null ? money(revenue) : ""}</span>
-            {quarter && <span className="row-meta"><Delta label={change("revenue")} /></span>}
+            {quarter && <span className="row-meta"><Delta label={change("revenue")} word={word.change} /></span>}
           </Button>
           {items.map(item => {
             const share = item.value != null && segmentRevenue ? item.value / segmentRevenue * 100 : null;
@@ -386,7 +399,7 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
               <span className="row-name">{item.name}</span>
               <span className="row-value">{item.value != null ? money(item.value) : ""}</span>
               {share != null && <span className="row-bar" aria-hidden="true"><b style={{ width: `${Math.max(0.6, share)}%` }} /></span>}
-              <span className="row-meta">{share != null ? <>{percent(share)}<Delta label={delta} /></> : "—"}</span>
+              <span className="row-meta">{share != null ? <>{percent(share)}<Delta label={delta} word={word.change} /></> : "—"}</span>
             </Button>;
           })}
         </div>
@@ -400,11 +413,11 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
       <header className="stage-head stage-head--summary">
         {quarter && view !== "profit" && funding ? <CapitalStats view={view} funding={funding} /> : quarter && <div className="stats" aria-live="polite">
           {current && current.value != null ? <>
-            <Stat label="本季收入" value={current.value} format={money} note={`环比 ${itemChange}`} tone={trend(itemChange)} />
+            <Stat label="本季收入" value={current.value} format={money} note={`${word.change} ${itemChange}`} tone={trend(itemChange)} />
             <Stat label={`占${shareBasis}`} value={segmentRevenue ? current.value / segmentRevenue * 100 : null} format={percent} note={parent?.value ? `占${parent.name} ${percent(current.value / parent.value * 100)}` : "一级业务"} />
             <Stat label="公司总收入" value={revenue} format={money} note="成本与利润不按业务分摊" />
           </> : <>
-            <Stat label="总收入" value={revenue} format={money} note={`环比 ${change("revenue")}`} tone={trend(change("revenue"))} />
+            <Stat label="总收入" value={revenue} format={money} note={`${word.change} ${change("revenue")}`} tone={trend(change("revenue"))} />
             {quarter.incomeModel !== "direct_operating" && figure("gross") != null && <Stat label="毛利" value={figure("gross")} format={money} note={margin("gross")} />}
             {figure("operating") != null || figure("pretax") == null
               ? <Stat label="营业利润" value={figure("operating")} format={money} note={margin("operating")} />
@@ -413,6 +426,12 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
           </>}
         </div>}
         <div className="stage-controls">
+        {view === "profit" && yearAgo && lastQuarter && <ToggleGroup type="single" variant="unstyled" rovingFocus={false} value={basis} onValueChange={next => { if (next) setBasis(next as Basis); }} asChild>
+          <span className="trend-views stage-views" role="radiogroup" aria-label="比较基准">
+            <ToggleGroupItem value="yoy" role="radio" aria-checked={basis === "yoy"}>同比</ToggleGroupItem>
+            <ToggleGroupItem value="qoq" role="radio" aria-checked={basis === "qoq"}>环比</ToggleGroupItem>
+          </span>
+        </ToggleGroup>}
         {funding && (cash || funding.balanceSheet) && <ToggleGroup type="single" variant="unstyled" rovingFocus={false} value={view} onValueChange={next => { if (next) setView(next as View); }} asChild>
           <span className="trend-views stage-views" role="radiogroup" aria-label="财务视图">
             <ToggleGroupItem value="profit" role="radio" aria-checked={view === "profit"}>利润</ToggleGroupItem>
@@ -430,11 +449,11 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
         {view !== "profit" && funding ? <CapitalChart view={view} funding={funding} ticker={ticker} spotlight={poolSpotlight} />
           : !quarter ? <div className="empty"><h2>季度财务未披露</h2><p>需要同币种、同口径的三个月数据才能绘制流向；不会用示例数据替代。</p></div>
           : proportional && layout ? <FlowChart graph={graph!} copy={copy} money={v => money(v)} colorOf={colorOf} active={active} revealKey={quarter.id} productBusiness={current ? "segment:" + current.key : null} mindMap={mindMap} mindPick={mindItem?.id ?? null} onMindPick={setMindItem} businessDetails={<Dossier item={current} parent={parent ?? null} sources={quarter?.sources.length ? quarter.sources : business?.sources ?? []} explainer={explainer} />}
-              focusSlot={n => segmentRevenue ? `占${shareBasis} ${percent(n.value / segmentRevenue * 100)}` : null}
-              onHover={name => setHoverNode(name)} tipFor={tipFor} spotlight={spotlight} priorOf={priorOf} previous={priorQuarter} brackets={guideMarks.brackets} pills={guideMarks.pills}
+              focusSlot={n => { const prior = priorOf(n); return segmentRevenue ? `占${shareBasis} ${percent(n.value / segmentRevenue * 100)}${prior != null && priorShareBase ? ` · ${word.prior} ${percent(prior / priorShareBase * 100)}` : ""}` : null; }}
+              onHover={name => setHoverNode(name)} tipFor={tipFor} spotlight={spotlight} priorOf={priorOf} basis={word} previous={priorQuarter} brackets={guideMarks.brackets} pills={guideMarks.pills}
               onPick={n => { const item = itemByNode.get(n.name); pickBusiness(item && current?.key !== item.key ? item.id : null); }}
               label={`${ticker} ${quarter.label} 收入到净利润桑基图，金额单位 ${quarter.currency}`} />
-          : <div className="business-flow chart-fallback">{current && <Dossier item={current} parent={parent ?? null} sources={quarter.sources.length ? quarter.sources : business?.sources ?? []} explainer={explainer} />}<FinancialSankey quarter={quarter} previous={previous} onSegment={key => pickBusiness(items.find(item => item.key === key)?.id ?? null)} /></div>}
+          : <div className="business-flow chart-fallback">{current && <Dossier item={current} parent={parent ?? null} sources={quarter.sources.length ? quarter.sources : business?.sources ?? []} explainer={explainer} />}<FinancialSankey quarter={quarter} previous={previous} word={word.change} onSegment={key => pickBusiness(items.find(item => item.key === key)?.id ?? null)} /></div>}
       </div>
 
       {points.length > 0 && <Timeline points={points} now={now.getTime()} currentPeriod={quarter?.periodEnd ?? null} focus={focusedReport?.accessionNumber ?? focusedEvent?.id ?? null}
@@ -467,7 +486,7 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
           <span><i style={{ background: "var(--flow-profit)" }} />利润</span>
           {(graph?.signed || graph?.deficit) && <span><i style={{ background: "var(--loss)" }} />{graph?.deficit ? "净亏损（资金缺口）" : "亏损"}</span>}
           <span><i style={{ background: "var(--flow-expense)" }} />成本与费用</span>
-          <span className="legend-note">线宽 = 本季金额{graph?.signed ? "绝对值" : ""}{previous ? " · 百分比 = 较上季变化 · 虚线框 = 上季金额" : ""}{guideMarks.brackets.length ? " · 括号 = 本季指引区间" : ""}{guideMarks.pills.length ? " · 胶囊 = 下季指引" : ""}</span>
+          <span className="legend-note">线宽 = 本季金额{graph?.signed ? "绝对值" : ""}{previous ? ` · 百分比 = ${word.change}变化 · 横线 = ${word.period}金额 · 斜纹 = 多出部分 · 虚线空框 = 减少部分` : ""}{guideMarks.brackets.length ? " · 括号 = 本季指引区间" : ""}{guideMarks.pills.length ? " · 胶囊 = 下季指引" : ""}</span>
         </div> : <span className="legend-note">框图表示会计关系，宽度不代表金额</span>}
         <p className="provenance">
           {notice && <span>{notice}</span>}

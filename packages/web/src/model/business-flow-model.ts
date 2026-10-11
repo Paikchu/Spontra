@@ -45,12 +45,20 @@ export function selectFlow(published: PublicBusinessFlow | undefined, fundamenta
   return { ...flow, quarters: flow.quarters.map(q => enrichDisclosedRevenue(ticker, q)) };
 }
 
+/** The quarter `days` before this one, give or take three weeks; a fiscal calendar's 52/53-week years drift a few days. */
+function quarterBefore(current: BusinessFlowQuarter, quarters: BusinessFlowQuarter[], days: number): BusinessFlowQuarter | null {
+  const end = Date.parse(current.periodEnd);
+  const gap = (q: BusinessFlowQuarter) => Math.abs((end - Date.parse(q.periodEnd)) / 86400000 - days);
+  return quarters.filter(q => q.periodEnd < current.periodEnd && gap(q) <= 21).sort((a, b) => gap(a) - gap(b))[0] ?? null;
+}
+
 export function previousQuarter(current: BusinessFlowQuarter, quarters: BusinessFlowQuarter[]): BusinessFlowQuarter | null {
-  const candidates = quarters.filter(q => q.periodEnd < current.periodEnd).sort((a, b) => b.periodEnd.localeCompare(a.periodEnd));
-  const previous = candidates[0];
-  if (!previous) return null;
-  const days = (Date.parse(current.periodEnd) - Date.parse(previous.periodEnd)) / 86400000;
-  return days >= 70 && days <= 110 ? previous : null;
+  return quarterBefore(current, quarters, 91);
+}
+
+/** The same fiscal quarter a year earlier: the base of a year-over-year change. */
+export function yearAgoQuarter(current: BusinessFlowQuarter, quarters: BusinessFlowQuarter[]): BusinessFlowQuarter | null {
+  return quarterBefore(current, quarters, 365);
 }
 
 export function compareAmount(current: BusinessFlowQuarter, previous: BusinessFlowQuarter | null, key: FlowMetric, segmentId?: string) {
@@ -65,7 +73,7 @@ export function compareFlowAmounts(current: BusinessFlowQuarter, previous: Busin
   if (previous && (current.currency !== previous.currency || current.scale !== previous.scale)) return { label: "不可比", delta: null, previous: null, percent: null };
   if (!previous || av == null || bv == null || current.currency !== previous.currency || current.scale !== previous.scale || !a?.comparabilityKey || a.comparabilityKey !== b?.comparabilityKey || a.definition !== b.definition) return { label: "不可比", delta: null, previous: bv, percent: null };
   const delta = av - bv;
-  if (bv === 0) return { label: av === 0 ? "持平" : "上季为零", delta, previous: bv, percent: null };
+  if (bv === 0) return { label: av === 0 ? "持平" : "新增", delta, previous: bv, percent: null };
   const profit = ["gross", "operating", "pretax", "net", "other"].includes(key);
   if ((av < 0 && bv >= 0) || (av >= 0 && bv < 0)) return { label: profit ? av < 0 ? "转亏" : "转盈" : av < 0 ? "由正转负" : "由负转正", delta, previous: bv, percent: null };
   if (bv < 0) return { label: delta === 0 ? "持平" : profit ? delta > 0 ? "亏损收窄" : "亏损扩大" : delta > 0 ? "金额增加" : "金额减少", delta, previous: bv, percent: null };
