@@ -21,7 +21,7 @@
 
 推送 `origin/main` 触发两个独立构建，根目录均为 `/`：
 
-- 业务地图 `spontra-business-map` 与运维后台 `spontra-admin`：构建 `npm run build`，CI 执行 `npm run deploy:cloudflare`。该构建仍挂在 Cloudflare 上原 `spontra-app` Worker 的 Builds 设置下。
+- 业务地图 `spontra-business-map` 与运维后台 `spontra-admin`：构建 `npm run build`，CI 执行 `npm run deploy:cloudflare`。该构建挂在 `spontra-business-map` Worker 的 Builds 设置下（原 `spontra-app` Worker 已删除）。
 - 财报 Pipeline：构建 `npm run check:pipeline:boundary && npm run typecheck:pipeline && npm run worker:pipeline:check`，CI 执行 `npm run worker:pipeline:deploy`。
 
 涉及两个目标的修改须分别核验结果。地图与后台的自动发布不涉及数据库迁移；Pipeline 自动发布先应用（`worker:pipeline:migrate:ci`）并核对分析数据库迁移，再发布 Worker。

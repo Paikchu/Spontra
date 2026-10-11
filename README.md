@@ -70,7 +70,7 @@ npm run worker:pipeline:check
 | 地图与后台 | `npm run build` | `npm run deploy:cloudflare` |
 | Pipeline | `npm run check:pipeline:boundary && npm run typecheck:pipeline && npm run worker:pipeline:check` | `npm run worker:pipeline:deploy` |
 
-`deploy:cloudflare` 先做类型检查与构建，再依次发布 `spontra-admin` 和 `spontra-business-map`。第一条构建仍挂在 Cloudflare 上原 `spontra-app` Worker 的 Builds 设置下；删除该 Worker 前，需先把 Git 构建连接迁到 `spontra-business-map`。
+`deploy:cloudflare` 先做类型检查与构建，再依次发布 `spontra-admin` 和 `spontra-business-map`。这条构建挂在 `spontra-business-map` Worker 的 Builds 设置下（原 `spontra-app` Worker 已删除），部署脚本会清掉 Workers Builds 注入的 Worker 名，两个应用各按自己的配置名发布。
 
 Pipeline 部署先应用并核对分析 D1 迁移，再发布 Worker。发布完成后需确认两条构建结果及线上读取，不能仅凭 push 或 dry-run 判断上线成功。
 
