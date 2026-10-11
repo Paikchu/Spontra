@@ -1,4 +1,4 @@
-import {extractVerifiedCurrentQuarters,type Fact,type DocumentSource} from './parser.ts';
+import {extractVerifiedCurrentQuarters,hasDisclosureProfile,type Fact,type DocumentSource} from './parser.ts';
 import {checkCompleteFlow} from '../../../../shared/analysis-runtime/financial-data/completeness.ts';
 import type {BusinessFlowQuarter} from '../../../../shared/analysis-contract/business-flow.ts';
 const key=(f:Fact)=>[f.tag,f.currency,JSON.stringify(Object.entries(f.dimensions).sort())].join('|');
@@ -42,8 +42,8 @@ export function fiscalFourthQuarters(annualReport:Fact[],thirdQuarterReport:Fact
  return [...byEnd.values()].flatMap(q=>extractVerifiedCurrentQuarters(q[0].source,q).quarters).map(q=>({...q,basisLabel:q.basisLabel+' · fourth quarter = full year − first nine months, same basis'}));
 }
 export function reviewedCurrentPair(all:Fact[],expected:string,documents:Array<{source:DocumentSource;html?:string;eligible:boolean}>):{quarters:BusinessFlowQuarter[];reviewed:boolean}{
- // Oracle has an established disclosure-specific expense and revenue profile.
- if(all[0]?.source.cik==='0001341439')return {quarters:[],reviewed:false};
+ // An issuer with a disclosure-specific expense and revenue profile is not read by generic arithmetic.
+ if(all[0]&&hasDisclosureProfile(all[0].source.cik))return {quarters:[],reviewed:false};
  const facts=precisionSelect(all);if(!facts)return {quarters:[],reviewed:false};
  const usable=statementFacts(facts);
  const current=usable.filter(f=>f.end===expected&&days(f.start,f.end)>=70&&days(f.start,f.end)<=110);
