@@ -106,10 +106,26 @@
   // windows this replaces cover 09:00-23:00 ET Mon-Fri and must go back once the run is healthy:
   //   "0 13-23 * * 1-5"
   //   "0 0-3 * * 2-6"
+  // Event-driven pipeline (docs/pipeline-events.md). The three queues were created once by hand; Wrangler does not
+  // create queues on deploy. Events are routed in large batches so a company's triggers collapse into one run; tasks
+  // run one per invocation so a heavy run never shares its CPU and memory with another.
+  "queues": {
+    "producers": [
+      { "queue": "spontra-pipeline-events", "binding": "PIPELINE_EVENTS" },
+      { "queue": "spontra-pipeline-tasks", "binding": "PIPELINE_TASKS" }
+    ],
+    "consumers": [
+      { "queue": "spontra-pipeline-events", "max_batch_size": 100, "max_batch_timeout": 30, "max_concurrency": 1, "max_retries": 10, "retry_delay": 10, "dead_letter_queue": "spontra-pipeline-dlq" },
+      { "queue": "spontra-pipeline-tasks", "max_batch_size": 1, "max_concurrency": 1, "max_retries": 5, "retry_delay": 60, "dead_letter_queue": "spontra-pipeline-dlq" },
+      { "queue": "spontra-pipeline-dlq", "max_batch_size": 10, "max_batch_timeout": 30, "max_concurrency": 1, "max_retries": 3 }
+    ]
+  },
+  "version_metadata": { "binding": "CF_VERSION_METADATA" },
   "triggers": {
     "crons": [
       "*/10 * * * *",
-      // Bounded deterministic financial-data collection only; does not dispatch AI.
+      // Bounded deterministic financial-data collection only; does not dispatch AI. Map derivation and archive pruning
+      // left it for the queues; collection itself follows in P2 of docs/pipeline-events.md.
       "*/2 * * * *"
     ]
   },

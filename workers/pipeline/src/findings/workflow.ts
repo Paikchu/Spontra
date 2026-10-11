@@ -5,8 +5,7 @@ import { sha256 } from "../company-analysis/api.ts";
 import { D1CompanyAnalysisRepository } from "../company-analysis/repository.ts";
 import { findSecurity } from "../catalog/security-directory.ts";
 import { assertTrackedTicker, requireDb, trackedTickersFor } from "../core.ts";
-import { assembleCapital } from "../financial-data/capital-history.ts";
-import { readStoredAudits } from "../financial-data/disclosure-audit.ts";
+import { readMapDerived } from "../financial-data/derived.ts";
 import { readCompletePublicationForTicker } from "../financial-data/publication.ts";
 import { parseFundamentalApiQuery } from "../fundamentals/fundamentals-api.ts";
 import { getSecFundamentals } from "../fundamentals/sec-fundamentals.ts";
@@ -29,16 +28,22 @@ const MODEL_BUDGET_MS = 8 * 60_000, CONTEXT_CHARS = 12_000;
 
 type Input = { data: FindingData; ledger: Ledger; context: string | null; fingerprint: string } | null;
 
-/** Everything the writer and the verifier see, from stored projections only: no SEC fetch, no model call. */
+/**
+ * Everything the writer sees, from stored projections only: no SEC fetch, no model call. The older quarters and the
+ * capital structure come from the map's prepared snapshot, the same data the map verifies findings against; until
+ * the snapshot matches the current publication there is nothing to write from.
+ */
 async function readInput(env: SecPipelineEnv, ticker: string): Promise<Input> {
   const db = requireDb(env);
   const publication = await readCompletePublicationForTicker(db, ticker);
   const flow = publication.status === "ready" ? publication.flow : null;
   const newest = [...flow?.quarters ?? []].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd))[0];
   if (!flow || !newest) return null;
-  const quarters = [...new Map([...(publication.reports?.quarters ?? []), ...flow.quarters].map(q => [q.periodEnd, q])).values()];
-  const [capital, fundamentals, guidance, analysis] = await Promise.all([
-    readStoredAudits(db, ticker).then(audits => assembleCapital(audits, flow)).catch(() => null),
+  const snapshot = await readMapDerived(db, flow);
+  if (!snapshot) return null;
+  const quarters = [...new Map([...(snapshot.reports?.quarters ?? []), ...flow.quarters].map(q => [q.periodEnd, q])).values()];
+  const capital = snapshot.capital;
+  const [fundamentals, guidance, analysis] = await Promise.all([
     getSecFundamentals(db, parseFundamentalApiQuery(ticker, new URLSearchParams({ periodCount: "12" }))).then(r => readFindingFundamentals(r, ticker)).catch(() => null),
     readGuidanceResponse(db, ticker).then(r => r.guidance).catch(() => null),
     new D1CompanyAnalysisRepository(db).getLatestPublication(ticker).catch(() => null),
@@ -50,7 +55,10 @@ async function readInput(env: SecPipelineEnv, ticker: string): Promise<Input> {
   const ledger = buildLedger(data, newest.periodEnd, [...sources.values()].slice(0, 40));
   const overview = analysis?.overview;
   const context = overview ? [overview.headline, overview.introduction, ...overview.highlights.map(h => `${h.title}：${h.body}`), ...(overview.deepDive?.sections ?? []).flatMap(s => [s.title, ...s.paragraphs.map(p => p.text)])].join("\n").slice(0, CONTEXT_CHARS) : null;
-  const fingerprint = await sha256(JSON.stringify({ version: FINDINGS_VERSION, ticker, periodEnd: newest.periodEnd, guidance: guidance?.updatedAt ?? null, analysis: analysis?.generatedAt ?? null, rpo: capital?.quarters.find(q => q.periodEnd === newest.periodEnd)?.rpo?.total ?? null }));
+  // The periods the snapshot covers and the newest backlog, not when the snapshot was rebuilt: a daily re-collection
+  // that changes nothing must not rewrite the findings.
+  const fingerprint = await sha256(JSON.stringify({ version: FINDINGS_VERSION, ticker, periodEnd: newest.periodEnd, guidance: guidance?.updatedAt ?? null, analysis: analysis?.generatedAt ?? null,
+    quarters: quarters.map(q => q.periodEnd).sort(), capital: capital?.quarters.map(q => q.periodEnd).sort() ?? [], rpo: capital?.quarters.find(q => q.periodEnd === newest.periodEnd)?.rpo?.total ?? null }));
   return { data, ledger, context, fingerprint };
 }
 

@@ -2,19 +2,18 @@ import type { BusinessFlowQuarter, PublicBusinessFlow } from '../../../../shared
 import type { PublicCapitalStructure } from '../../../../shared/analysis-contract/capital-structure.ts';
 import { checkCompleteQuarter } from '../../../../shared/analysis-runtime/financial-data/completeness.ts';
 import { readReportHistory } from '../../../../shared/analysis-runtime/financial-data/report-history.ts';
-import { financialPolicy } from '../../../../shared/analysis-runtime/financial-data/policy.ts';
 import { D1SecRepository } from '../sec/d1.ts';
 import { assembleCapital } from './capital-history.ts';
-import { companyPolicyEnvironment } from './company-policy.ts';
 import { readStoredAudits, type DisclosureArchiveEnv, type StoredAudit } from './disclosure-audit.ts';
 import { extractDisclosedQuarters, SEC_FLOW_PARSER_VERSION, type DocumentSource } from './parser.ts';
 import { readCompletePublicationForTicker } from './publication.ts';
+import { outboxStatement } from '../pipeline/outbox.ts';
 
 /**
- * Everything the business map reads beyond the published latest pair is prepared here, on the schedule,
- * never on a read: each archived filing is parsed for its quarterly statements once and the result stored,
- * then each company's older quarters and capital structure are assembled into one snapshot. A read is a
- * single D1 lookup, whatever the size of the filings behind it.
+ * Everything the business map reads beyond the published latest pair is prepared here, by the `map-derive` task
+ * whenever a filing is archived or a statement published, never on a read: each archived filing is parsed for its
+ * quarterly statements once and the result stored, then each company's older quarters and capital structure are
+ * assembled into one snapshot. A read is a single D1 lookup, whatever the size of the filings behind it.
  */
 export const REPORT_QUARTERS_VERSION = `report-quarters.v1:${SEC_FLOW_PARSER_VERSION}`;
 const quartersPrefix = (ticker: string) => `sec:report-quarters:v1:${ticker}:`;
@@ -22,8 +21,8 @@ const snapshotKey = (ticker: string) => `sec:map-derived:v1:${ticker}`;
 
 /** Two years of quarters behind the latest report, from at most this many filings. */
 const REPORT_QUARTERS = 8, REPORT_FILINGS = 24;
-/** Source bytes parsed per tick across all companies; the rest waits for the next tick. */
-const PARSE_BUDGET_BYTES = 32_000_000;
+/** Source bytes parsed per run; filings beyond it wait for the next run, which the task schedules at once. */
+export const PARSE_BUDGET_BYTES = 32_000_000;
 
 type Industry = DocumentSource['industry'];
 type StoredQuarters = { documentId: string; contentSha256: string; version: string; industry: Industry; quarters: BusinessFlowQuarter[] };
@@ -82,9 +81,10 @@ async function parseFiling(env: DisclosureArchiveEnv, record: StoredAudit, indus
 
 /**
  * Brings one company's snapshot up to date, parsing at most `budget` source bytes. Returns the bytes spent.
- * Quarters are taken in candidate order, newest-preferred, until eight periods are covered.
+ * Quarters are taken in candidate order, newest-preferred, until eight periods are covered. A rebuilt snapshot is
+ * committed together with its `map.derived` event; an unchanged one emits nothing.
  */
-async function deriveCompany(env: DisclosureArchiveEnv, ticker: string, budget: number): Promise<{ spent: number; built: boolean; pending: number }> {
+export async function deriveCompany(env: DisclosureArchiveEnv, ticker: string, budget = PARSE_BUDGET_BYTES, causeId: string | null = null): Promise<{ spent: number; built: boolean; pending: number }> {
   const repository = new D1SecRepository(env.DB);
   const publication = await readCompletePublicationForTicker(env.DB, ticker);
   const flow = publication.status === 'ready' ? publication.flow : null;
@@ -129,28 +129,15 @@ async function deriveCompany(env: DisclosureArchiveEnv, ticker: string, budget: 
     capital: assembleCapital(audits, flow),
     pendingFilings: pending,
   };
-  await repository.setCache(snapshotKey(ticker), snapshot, snapshot.builtAt);
+  await env.DB.batch([
+    env.DB.prepare('INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at')
+      .bind(snapshotKey(ticker), JSON.stringify(snapshot), snapshot.builtAt),
+    outboxStatement(env.DB, { type: 'map.derived', ticker, causeId }, snapshot.builtAt),
+  ]);
   return { spent, built: true, pending };
 }
 
-/** One scheduled pass over every company the data policy collects. No SEC fetch, model call or Workflow. */
-export async function runMapDerivationTick(rawEnv: DisclosureArchiveEnv & { SEC_DATA_TICKERS?: string; SEC_TRACKED_TICKERS?: string }) {
-  const env = await companyPolicyEnvironment(rawEnv);
-  const tickers = [...financialPolicy({ SEC_DATA_TICKERS: env.SEC_DATA_TICKERS, SEC_TRACKED_TICKERS: env.SEC_TRACKED_TICKERS, SEC_AI_ENABLED: 'false' }).dataTickers].sort();
-  let budget = PARSE_BUDGET_BYTES;
-  const built: string[] = [], pending: Record<string, number> = {}, failed: string[] = [];
-  for (const ticker of tickers) {
-    try {
-      const result = await deriveCompany(env, ticker, budget);
-      budget -= result.spent;
-      if (result.built) built.push(ticker);
-      if (result.pending) pending[ticker] = result.pending;
-    } catch { failed.push(ticker); }
-  }
-  return { built, pending, failed, parsedBytes: PARSE_BUDGET_BYTES - budget };
-}
-
-/** The prepared snapshot for this publication, or null until the schedule has assembled it. */
+/** The prepared snapshot for this publication, or null until the `map-derive` task has assembled it. */
 export async function readMapDerived(db: D1Database, flow: PublicBusinessFlow): Promise<MapDerived | null> {
   const record = await new D1SecRepository(db).getCache<MapDerived>(snapshotKey(flow.ticker));
   return record?.payload.flowKey === flowKey(flow) ? record.payload : null;

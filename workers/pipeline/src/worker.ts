@@ -2,9 +2,10 @@ import {handleTranscriptAdminRequest} from './admin/transcripts.ts';
 import {syncTranscript} from './transcripts/library.ts';
 import {handleBusinessMapAdminRequest} from './admin/business-map.ts';
 import {handleAiRunsAdminRequest} from './admin/ai-runs.ts';
+import {handlePipelineAdminRequest} from './admin/pipeline.ts';
 import {runDataOnlySweep} from './financial-data/queue.ts';
-import {runMapDerivationTick} from './financial-data/derived.ts';
-import {pruneSupersededArchives} from './financial-data/disclosure-audit.ts';
+import {flushOutbox} from './pipeline/outbox.ts';
+import {handlePipelineQueue, pipelineEntry} from './pipeline/consumer.ts';
 import { handleCompanyAnalysisRequest, handleSecAnalysisRequest, runCompanyAnalysisSweep, runSecMemorySweep, runSecRefresh } from "./core.ts";
 import { handleBusinessFlowRefresh } from "./sec/business-flow-refresh.ts";
 import { handleFundamentalsRefreshRequest } from "./fundamentals.ts";
@@ -68,6 +69,7 @@ const worker = {
     if (path === "/ready") return readyResponse(env);
     if (path.startsWith("/admin/business-map/")) return handleBusinessMapAdminRequest(request, env);
     if (path.startsWith("/admin/ai/")) return handleAiRunsAdminRequest(request, env);
+    if (path === "/admin/pipeline" || path.startsWith("/admin/pipeline/")) return handlePipelineAdminRequest(request, env);
     if (path === "/admin/financials" || path.startsWith("/admin/financials/")) return handleFinancialAdminRequest(request, env);
     if (path === "/admin/transcripts" || path.startsWith("/admin/transcripts/")) return handleTranscriptAdminRequest(request, env);
     if (path === "/admin" || path.startsWith("/admin/")) return handleReportAdminRequest(request, env);
@@ -81,6 +83,7 @@ const worker = {
   },
 
   async scheduled(_controller: ScheduledController, env: SecPipelineEnv) {
+    await pipelineEntry(env);
     if (_controller.cron === "*/2 * * * *") {
       console.log(JSON.stringify({ event: "transcript-library", ...await syncTranscript(env) }));
       const maintenance = await runFinancialMaintenanceTick(env);
@@ -93,15 +96,9 @@ const worker = {
         const result = env.DB ? await runDataOnlySweep({DB:env.DB,SEC_FILINGS:env.SEC_FILINGS,SEC_USER_AGENT:env.SEC_USER_AGENT,SEC_DATA_TICKERS:env.SEC_DATA_TICKERS,SEC_TRACKED_TICKERS:env.SEC_TRACKED_TICKERS,SEC_DATA_COLLECTION_ENABLED:env.SEC_DATA_COLLECTION_ENABLED}) : {enabled:false,published:false,reasons:[],modelCalls:0};
         console.log(JSON.stringify({event:"financial-data",...result}));
       }
-      // Whatever collection did this tick, the map's prepared data catches up with the archive. It runs even while
-      // maintenance holds the collection lock: it only reads what is already archived.
-      if (env.DB && env.SEC_FILINGS) {
-        const derived = await runMapDerivationTick({DB:env.DB,SEC_FILINGS:env.SEC_FILINGS,SEC_DATA_TICKERS:env.SEC_DATA_TICKERS,SEC_TRACKED_TICKERS:env.SEC_TRACKED_TICKERS}).catch((error:unknown)=>({error:error instanceof Error?error.message:String(error)}));
-        console.log(JSON.stringify({event:"map-derivation",...derived}));
-        // Copies of a document no D1 row points at any more; a finished pass waits a day before the next.
-        const pruned = await pruneSupersededArchives({DB:env.DB,SEC_FILINGS:env.SEC_FILINGS}).catch((error:unknown)=>({error:error instanceof Error?error.message:String(error)}));
-        if (!("skipped" in pruned)) console.log(JSON.stringify({event:"archive-prune",...pruned}));
-      }
+      // What this tick archived and published reaches the map-derive and archive-prune tasks through the events
+      // queue (docs/pipeline-events.md); send them now rather than at the next invocation.
+      await flushOutbox(env).catch((error:unknown)=>console.error(JSON.stringify({event:"pipeline-outbox",error:error instanceof Error?error.message:String(error)})));
       return;
     }
     const results = await Promise.allSettled([
@@ -133,6 +130,11 @@ const worker = {
      */
     console.error(payload);
     throw new AggregateError(rejected.map((result) => result.reason), "SEC scheduled run failed");
+  },
+
+  /** The events, tasks and dead-letter queues of the event-driven pipeline (docs/pipeline-events.md). */
+  async queue(batch: MessageBatch<unknown>, env: SecPipelineEnv) {
+    await handlePipelineQueue(batch, env);
   },
 } satisfies ExportedHandler<SecPipelineEnv>;
 

@@ -37,6 +37,7 @@ import { normalizeCompanyFacts } from "./sec/history.ts";
 import { secFundamentalsKey } from "./fundamentals/sec-fundamentals.ts";
 import { assertTrackedTicker, requireDb, type SecCronEnv } from "./core.ts";
 import type { AnalysisReadEnv } from "./read-api/router.ts";
+import type { EventMessage, TaskMessage } from "./pipeline/messages.ts";
 import { SEC_MODEL_EXECUTION_BUDGET_MS, SEC_MODEL_FIRST_RESPONSE_MS, SEC_MODEL_OUTPUT_TOKENS, type SecModelExecution } from "./retry-policy.ts";
 import type { PreparedFilingReference, SecPipelineOperations, WorkflowJobUpdate } from "./workflow-core.ts";
 import { jobAnalysisVersionFor } from "./workflow-core.ts";
@@ -85,6 +86,11 @@ export type SecPipelineEnv = SecCronEnv & AnalysisReadEnv & {
   SEC_ANALYSIS_MODEL?: string;
   /** Optional stronger model for planning, review and synthesis. Unset means one model everywhere. */
   SEC_REASONING_MODEL?: string;
+  /** Event routing and task runs (docs/pipeline-events.md). Optional so a partial environment simply emits nothing. */
+  PIPELINE_EVENTS?: Queue<EventMessage>;
+  PIPELINE_TASKS?: Queue<TaskMessage>;
+  /** Which deployment is running; task versions only ever move forward to a newer one. */
+  CF_VERSION_METADATA?: { id: string; tag: string; timestamp: string };
 };
 
 
