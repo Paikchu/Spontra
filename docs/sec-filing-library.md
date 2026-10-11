@@ -1,6 +1,6 @@
 # SEC 文件库：预处理、分块与索引卡
 
-日期：2026-10-12（修订：按设计评审调整 ID、触发方式、数字口径、迁移范围和测试；拆解后的内容全部存 D1，R2 只放未拆解的原始内容）。状态：P1（原文结构层）、P2（索引卡）、P3（读取 Tool 与业务脑图）、P4（业务解读、指引）已实现，按分期上线。
+日期：2026-10-12（修订：按设计评审调整 ID、触发方式、数字口径、迁移范围和测试；拆解后的内容全部存 D1，R2 只放未拆解的原始内容）。状态：P1（原文结构层）、P2（索引卡）、P3（读取 Tool 与业务脑图）、P4（业务解读、指引）、P5（业务主线、跨公司查找、AI Search 召回层、公司页面）已实现；另有每日存储清理任务。`sec_xbrl_facts` 仍按需再建。
 
 ## 一句话
 
@@ -464,7 +464,30 @@ XBRL 标准概念（`Revenues`、`OperatingIncomeLoss`）各家通用，但分�
 
 跨公司查询的形状：“比较各家云业务的竞争格局” → `topic = business.competition` 且 `industry_category = cloud_infrastructure`（必要时再经 AI Search 召回补充） → 每家 1–3 个小板块、各 1–3 千字符 → 10 家约 2–3 万字符，一次调用可以处理。数字比较取已校验财务数据，由代码按业务映射对齐并计算，模型只解释结果。已校验数据里没有、但跨公司分析需要的维度，到那时再建 `sec_xbrl_facts`。
 
-公司级 Wiki 页（一个产品或一个主题跨多份文件汇总成一页，每句话带段落出处）放在这一层之后再做。
+### P5 的实现
+
+- **业务主线任务 `library-links`**：订阅 `library.cards.published`（年报的卡片写完）、`financials.published`（地图业务变化）和后台“重新提议”发出的 `library.links.requested`。输入是最新年报中 business、MD&A 的概述和分部业绩、分部和收入附注各小节的路径、卡片和原文开头，加上业务地图的业务和产品线（去掉地区拆分和单一分部的合计）。输入指纹不变就不运行。一次模型调用（`library-links`，高推理）放在 Workflow `spontra-library-links` 的一个 durable step 里。
+- **核对**（`shared/analysis-runtime/filing-library/links.ts`）：只接受给过的地图节点和小节 ID；类别必须在 `INDUSTRY_CATEGORIES` 里；不在地图上的业务，名称必须逐字出现在它引用的小节标题或原文里，否则丢弃；模型漏掉的地图业务照样保留为一条未分类、无小节的记录。每家最多 12 个业务，每个业务最多 8 个小节。
+- **写入**：新提议覆盖 `proposed` 记录，删除不再提到的 `proposed` 记录；`confirmed` 记录只更新小节和地图节点，状态和类别只由管理员在后台改（确认、退回、改类别）。
+- **跨公司查找** `libraryFindAcross`：主题、实体、标题关键词、业务、类别走 D1 精确查找（类别和业务只读已确认的主线，后台可勾选“含待确认”）；带自然语言问题时再经 AI Search 召回，结果合并去重，每条标明来自“索引”还是“语义召回”。数字用 `libraryFactsAcross` 按主线的地图节点从已校验数据里取。
+- **召回层任务 `library-search`**：订阅 `library.cards.published`。范围与索引卡相同（每家最新年报、两份季报、两份新闻稿），上传其中自有原文不少于 200 字符的非套话小节；item 名为 `{section_id}.md`，内容是公司、表格、报告期、标题路径加原文段落，元数据 `ticker / form / canonical / topic / period_end`。`sec_search_items`（迁移 0021）记录每节的 item ID 和内容指纹：只上传新增或变化的小节，删除滚出范围的小节；每次运行最多 120 次上传或删除，其余立即排下一次。实例 `sec-filing-library` 由 Worker 首次使用时在 `default` 命名空间里创建（向量 + BM25、porter 分词、块 2,048 token、无重叠）。
+- **公司页面** `libraryWiki`：读时从文件库拼成，不调用模型。每个业务一节：类别和确认状态、已校验数字、主线引用的小节（整段原文，带段落 ID）；然后是最新季报里有变化的小节和新增或改动的风险因素。另附一份同内容的 Markdown，供 Agent 读取。
+- **后台**：“文件库”页面新增“业务主线”“公司页面”“跨公司查找”三个视图；后台接口 `GET /admin/library/{links,find,facts,search,wiki/{T}}`、`POST /admin/library/links/{T}/{业务}`、`POST /admin/library/links/{T}/run`。
+
+## 存储清理（`storage-sweep`）
+
+每天最多完整扫一遍 R2 和 D1 缓存，删除没有任何代码路径还会读取的数据；每条规则都写明它依赖的读取方。归档的财报原文不在这里处理，由 `archive-prune` 负责。
+
+| 数据 | 删除条件 | 依据 |
+| --- | --- | --- |
+| `filings/{T}/…` 预处理的 SEC 申报 | 公司不在 AI 名单 | 只有 SEC 解读 Workflow 读取，且只为 AI 名单运行 |
+| `analysis/{T}/…/{schema}/…` 解读中间结果 | 旧 schema 版本，或公司不在 AI 名单 | 读取时只按当前 `SEC_ANALYSIS_SCHEMA_VERSION` 拼路径 |
+| `model-recovery/v1/` 模型续写检查点 | 超过 7 天 | 只在同一个 Workflow step 重试时读取 |
+| `workflow-results/v1/` 大的 step 结果 | 超过 30 天 | Workflow 实例只保留 30 天 |
+| `web-search/v1/` 搜索缓存 | 不再被 `web_search_cache` 指向且超过 1 小时，或超过 30 天 | 缓存只读指针指向的对象，最长缓存期 30 天；同时删除对应的 D1 行 |
+| D1 `sec_cache` 中已下线功能的键 | `sec:text:`、`narrative:v1:`、`figures:v1:`、`findings:v1:`、`operating-metrics:`、`ownership:`、`sec:business-flow:`、`sec:ticker-map`、`admin:backup:` | 代码中已没有读取方 |
+
+公司名单或搜索指针读出来为空时，相应规则一个都不删。任务订阅 `filing.archived` 和 `library.cards.published`，距上次完整扫描不足 20 小时就跳过；一次运行最多读 12 页列表，未扫完的位置记在 `storage-sweep:v1:cursor`，下一次接着扫。`STORAGE_SWEEP_ENABLED=false` 可暂停。
 
 ## 分期
 

@@ -27,6 +27,8 @@ interface __BaseEnv_Env {
 	BUSINESS_TREE_WORKFLOW: Workflow<Parameters<import("./src/index").BusinessTreeWorkflow['run']>[0]['payload']>;
 	FINDINGS_WORKFLOW: Workflow<Parameters<import("./src/index").FindingsWorkflow['run']>[0]['payload']>;
 	LIBRARY_CARDS_WORKFLOW: Workflow<Parameters<import("./src/index").LibraryCardsWorkflow['run']>[0]['payload']>;
+	LIBRARY_LINKS_WORKFLOW: Workflow<Parameters<import("./src/index").LibraryLinksWorkflow['run']>[0]['payload']>;
+	AI_SEARCH: AiSearchNamespace;
 	SEC_ANALYSIS_WORKFLOW: Workflow<Parameters<import("./src/index").SecAnalysisWorkflow['run']>[0]['payload']>;
 	SEC_MEMORY_WORKFLOW: Workflow<Parameters<import("./src/index").SecMemoryWorkflow['run']>[0]['payload']>;
 	COMPANY_ANALYSIS_WORKFLOW: Workflow<Parameters<import("./src/index").CompanyAnalysisWorkflow['run']>[0]['payload']>;

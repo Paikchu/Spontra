@@ -66,6 +66,13 @@ export type SecPipelineEnv = SecCronEnv & AnalysisReadEnv & {
   FINDINGS_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
   BUSINESS_TREE_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
   LIBRARY_CARDS_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
+  LIBRARY_LINKS_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
+  /** The AI Search namespace the filing library's recall layer lives in (`ai_search_namespaces`). */
+  AI_SEARCH?: AiSearchNamespace;
+  /** "false" pauses uploading library sections to AI Search; unset or anything else runs it. */
+  LIBRARY_SEARCH_ENABLED?: string;
+  /** "false" pauses the daily storage sweep; unset or anything else runs it. */
+  STORAGE_SWEEP_ENABLED?: string;
   /** "false" pauses splitting archived filings into the library; unset or anything else runs it. */
   FILING_LIBRARY_ENABLED?: string;
   /** "false" pauses writing index cards for library sections; unset or anything else runs it. */

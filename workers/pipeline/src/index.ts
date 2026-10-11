@@ -18,6 +18,7 @@ import { executeGuidanceWorkflow, type GuidanceWorkflowParams } from "./guidance
 import { executeFindingsWorkflow, type FindingsWorkflowParams } from "./findings/workflow.ts";
 import { trackRun, trackSleep, trackSteps } from "./ai-runs/tracking.ts";
 import { executeLibraryCardsWorkflow, type LibraryCardsParams } from "./filing-library/cards.ts";
+import { executeLibraryLinksWorkflow, type LibraryLinksParams } from "./filing-library/links.ts";
 
 const WORKFLOW_RETRY = {
   retries: {
@@ -98,6 +99,13 @@ export class BusinessTreeWorkflow extends WorkflowEntrypoint<SecPipelineEnv, Bus
 export class LibraryCardsWorkflow extends WorkflowEntrypoint<SecPipelineEnv, LibraryCardsParams> {
   async run(event: WorkflowEvent<LibraryCardsParams>, step: WorkflowStep) {
     return executeLibraryCardsWorkflow(event.payload, durableSteps(step, this.env, event.instanceId), this.env);
+  }
+}
+
+/** One company's business links: a single model call at high reasoning, checked and written in one durable step. */
+export class LibraryLinksWorkflow extends WorkflowEntrypoint<SecPipelineEnv, LibraryLinksParams> {
+  async run(event: WorkflowEvent<LibraryLinksParams>, step: WorkflowStep) {
+    return executeLibraryLinksWorkflow(event.payload, durableSteps(step, this.env, event.instanceId), this.env);
   }
 }
 

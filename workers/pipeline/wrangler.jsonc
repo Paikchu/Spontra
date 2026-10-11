@@ -49,6 +49,12 @@
       "concurrency": { "limit": 2 }
     },
     {
+      "name": "spontra-library-links",
+      "binding": "LIBRARY_LINKS_WORKFLOW",
+      "class_name": "LibraryLinksWorkflow",
+      "concurrency": { "limit": 2 }
+    },
+    {
       "name": "spontra-findings",
       "binding": "FINDINGS_WORKFLOW",
       "class_name": "FindingsWorkflow",
@@ -81,6 +87,12 @@
       "binding": "SEC_FILINGS",
       "bucket_name": "earning-report-analysis-sec-filings"
     }
+  ],
+  // The filing library's recall layer (docs/sec-filing-library.md): one AI Search instance with built-in storage,
+  // created by the Worker on first use inside the account's `default` namespace. It holds copies of library
+  // sections for semantic search only; D1 stays the source of every text and number.
+  "ai_search_namespaces": [
+    { "binding": "AI_SEARCH", "namespace": "default" }
   ],
   // This Worker owns the analysis data model: it is the only writer, and since the read API landed
   // it is also the only reader — the Web Worker no longer binds this database at all. The id is an

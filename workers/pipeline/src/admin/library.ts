@@ -1,12 +1,18 @@
-import type { LibraryCard, LibraryDocumentDetail, LibraryOverview, LibrarySectionDetail } from "../../../../shared/analysis-contract/filing-library.ts";
+import { INDUSTRY_CATEGORIES, LIBRARY_CANONICALS, type IndustryCategory, type LibraryCanonical, type LibraryCard, type LibraryDocumentDetail, type LibraryOverview, type LibrarySectionDetail } from "../../../../shared/analysis-contract/filing-library.ts";
 import { LIBRARY_PARSER_VERSION } from "../../../../shared/analysis-runtime/filing-library/parse.ts";
+import { decideLink, readLinksView } from "../filing-library/links.ts";
+import { searchStatus } from "../filing-library/search.ts";
 import { countPendingLibraryDocuments, libraryOutline, librarySectionPassages, listLibraryDocuments, readLibraryDocument } from "../filing-library/store.ts";
+import { libraryFactsAcross, libraryFindAcross } from "../filing-library/tool.ts";
+import { libraryWiki } from "../filing-library/wiki.ts";
 import type { SecPipelineEnv } from "../operations.ts";
 import { flushOutbox, outboxStatement } from "../pipeline/outbox.ts";
 import { authenticateAdmin } from "./auth.ts";
 
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "cache-control": "private, no-store" } });
-const DOCUMENT = /^[a-f0-9]{64}$/, SECTION = /^s[a-f0-9]{28}$/, TICKER = /^[A-Z][A-Z0-9.-]{0,11}$/;
+const DOCUMENT = /^[a-f0-9]{64}$/, SECTION = /^s[a-f0-9]{28}$/, TICKER = /^[A-Z][A-Z0-9.-]{0,11}$/, SLUG = /^[\p{L}\p{N}-]{1,60}$/u;
+const category = (value: string | null): IndustryCategory | undefined => value && Object.hasOwn(INDUSTRY_CATEGORIES, value) ? value as IndustryCategory : undefined;
+const tickerList = (value: string | null) => value ? value.split(",").map(t => t.trim().toUpperCase()).filter(t => TICKER.test(t)).slice(0, 20) : undefined;
 
 type CardRecord = { section_id: string; gist: string | null; entities: string; topic: string | null; answers: string; metrics: string; notes: string; model: string; reasoning: string; status: LibraryCard["status"]; created_at: string };
 const cardOf = (r: CardRecord): LibraryCard => ({
@@ -66,6 +72,42 @@ export async function handleLibraryAdminRequest(request: Request, env: SecPipeli
   const parts = new URL(request.url).pathname.split("/").filter(Boolean).slice(2).map(decodeURIComponent);
   if (request.method === "GET" && !parts.length) return json(await readLibraryOverview(env));
   if (request.method === "GET" && parts[0] === "companies" && parts.length === 2 && TICKER.test(parts[1]!)) return json({ documents: await listLibraryDocuments(env.DB, { ticker: parts[1], limit: 200 }) });
+  const query = new URL(request.url).searchParams;
+  // Cross-company reads: sections by index or by meaning, validated numbers by category, a company's derived page.
+  if (request.method === "GET" && parts[0] === "find" && parts.length === 1) {
+    const canonical = query.get("canonical");
+    const question = query.get("q")?.trim().slice(0, 300) || undefined;
+    return json(await libraryFindAcross(env, {
+      tickers: tickerList(query.get("tickers")), topic: query.get("topic") ?? undefined, entity: query.get("entity") ?? undefined, keywords: query.get("keywords") ?? undefined,
+      canonical: canonical && (LIBRARY_CANONICALS as readonly string[]).includes(canonical) ? canonical as LibraryCanonical : undefined, question,
+      category: category(query.get("category")), businessKey: query.get("business") ?? undefined, includeProposed: query.get("proposed") === "1", limit: Math.min(Number(query.get("limit")) || 20, 50),
+    }));
+  }
+  if (request.method === "GET" && parts[0] === "facts" && parts.length === 1) {
+    return json({ facts: await libraryFactsAcross(env.DB, { tickers: tickerList(query.get("tickers")), category: category(query.get("category")), includeProposed: query.get("proposed") === "1", quarters: Math.min(Number(query.get("quarters")) || 2, 8) }) });
+  }
+  if (request.method === "GET" && parts[0] === "wiki" && parts.length === 2 && TICKER.test(parts[1]!)) return json(await libraryWiki(env.DB, parts[1]!));
+  if (request.method === "GET" && parts[0] === "search" && parts.length === 1) return json(await searchStatus(env));
+  if (parts[0] === "links") {
+    if (request.method === "GET" && parts.length <= 2 && (parts.length === 1 || TICKER.test(parts[1]!))) return json(await readLinksView(env.DB, parts[1]));
+    if (request.method === "POST" && parts.length === 3 && TICKER.test(parts[1]!) && parts[2] === "run") {
+      // A fresh proposal: forget the input it was last proposed on, then ask the company's links task to run.
+      await env.DB.batch([
+        env.DB.prepare("DELETE FROM sec_cache WHERE cache_key = ?").bind(`library-links:v1:${parts[1]}`),
+        outboxStatement(env.DB, { type: "library.links.requested", ticker: parts[1]! }),
+      ]);
+      await flushOutbox(env).catch(() => 0);
+      return json({ status: "requested" }, 202);
+    }
+    if (request.method === "POST" && parts.length === 3 && TICKER.test(parts[1]!) && SLUG.test(parts[2]!)) {
+      let body: { status?: unknown; industryCategory?: unknown };
+      try { body = await request.json() as typeof body; } catch { return json({ error: "请求格式无效。" }, 400); }
+      if (body.status !== "confirmed" && body.status !== "proposed") return json({ error: "状态只能是 confirmed 或 proposed。" }, 400);
+      if (body.industryCategory !== undefined && body.industryCategory !== null && !category(String(body.industryCategory))) return json({ error: "未知的行业类别。" }, 400);
+      const changed = await decideLink(env.DB, parts[1]!, `${parts[1]}:${parts[2]}`, { status: body.status, ...(body.industryCategory !== undefined ? { industryCategory: body.industryCategory as string | null } : {}) });
+      return changed ? json({ status: body.status }) : json({ error: "未找到该业务。" }, 404);
+    }
+  }
   if (parts[0] === "documents" && DOCUMENT.test(parts[1] ?? "")) {
     const documentId = parts[1]!;
     if (request.method === "GET" && parts.length === 2) { const detail = await readLibraryDocumentDetail(env.DB, documentId); return detail ? json(detail) : json({ error: "未找到该文件。" }, 404); }

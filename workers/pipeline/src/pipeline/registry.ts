@@ -10,7 +10,7 @@ export const EVENT_TYPES = [
   "map.derived", "filings.indexed", "report.published", "analysis.published", "fundamentals.updated", "guidance.published",
   "task.version_changed",
   "transcript.stored", "explainer.published", "tree.published", "findings.published", "events.published",
-  "library.requested", "library.prepared", "library.cards.published",
+  "library.requested", "library.prepared", "library.cards.published", "library.links.requested",
 ] as const;
 export type EventType = typeof EVENT_TYPES[number];
 
@@ -19,7 +19,7 @@ export const TASK_NAMES = [
   "map-derive", "archive-prune", "archive-prune-scan",
   "sec-report", "guidance", "events",
   "memory", "company-analysis", "explainer", "tree", "findings",
-  "library", "library-cards",
+  "library", "library-cards", "library-links", "library-search", "storage-sweep",
 ] as const;
 export type TaskName = typeof TASK_NAMES[number];
 
@@ -75,6 +75,12 @@ export const TASKS: Record<TaskName, TaskMeta> = {
   "library": { emits: ["library.prepared"], debounceMs: 30 * SECOND, maxWaitMs: 5 * MINUTE, scope: "data" },
   // Index cards for the sections of the company's recent documents (Workflow; model at low reasoning).
   "library-cards": { emits: ["library.cards.published"], debounceMs: 10 * MINUTE, maxWaitMs: 2 * HOUR, scope: "data" },
+  // Proposes each business's map node, filing sections and cross-company category (Workflow; model at high reasoning).
+  "library-links": { emits: [], debounceMs: 10 * MINUTE, maxWaitMs: 2 * HOUR, scope: "data" },
+  // Uploads carded sections to the AI Search recall layer and removes the ones that left it; no model.
+  "library-search": { emits: [], debounceMs: 2 * MINUTE, maxWaitMs: 30 * MINUTE, scope: "data" },
+  // Deletes stored data no code reads any more, at most once a day; no model.
+  "storage-sweep": { emits: [], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "global" },
 };
 
 const form = (event: PipelineEvent) => event.detail?.form ?? "";
@@ -90,10 +96,12 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
   ],
   "collection.requested": [{ task: "collect" }, { task: "history" }],
   "maintenance.requested": [{ task: "maintenance" }],
-  "financials.published": [{ task: "map-derive" }, { task: "history" }, { task: "explainer" }, { task: "tree" }],
-  "filing.archived": [{ task: "map-derive" }, { task: "transcript", when: e => /^10-[QK](?:\/A)?$/.test(form(e)) }, { task: "library" }],
+  "financials.published": [{ task: "map-derive" }, { task: "history" }, { task: "explainer" }, { task: "tree" }, { task: "library-links" }],
+  "filing.archived": [{ task: "map-derive" }, { task: "transcript", when: e => /^10-[QK](?:\/A)?$/.test(form(e)) }, { task: "library" }, { task: "storage-sweep" }],
   "library.requested": [{ task: "library" }],
   "library.prepared": [{ task: "library-cards" }],
+  "library.cards.published": [{ task: "library-links" }, { task: "library-search" }, { task: "storage-sweep" }],
+  "library.links.requested": [{ task: "library-links" }],
   "archive.superseded": [{ task: "archive-prune" }],
   "archive.prune.requested": [{ task: "archive-prune-scan" }],
   "filings.indexed": [{ task: "guidance" }],
@@ -112,7 +120,7 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
 export const SOURCES: Record<string, readonly EventType[]> = {
   // The only Cron: polls EDGAR, which pushes nothing.
   "sec-discovery": ["filing.discovered"],
-  "admin": ["collection.requested", "maintenance.requested", "archive.prune.requested", "library.requested"],
+  "admin": ["collection.requested", "maintenance.requested", "archive.prune.requested", "library.requested", "library.links.requested"],
   "invocation": ["task.version_changed"],
 };
 

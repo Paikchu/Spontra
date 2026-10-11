@@ -1,5 +1,8 @@
-import type { LibraryCanonical, LibraryPassageView } from "../../../../shared/analysis-contract/filing-library.ts";
+import type { IndustryCategory, LibraryCanonical, LibraryFactRow, LibraryFindResult, LibraryFoundSection, LibraryPassageView } from "../../../../shared/analysis-contract/filing-library.ts";
 import { readCompletePublicationForTicker } from "../financial-data/publication.ts";
+import type { SecPipelineEnv } from "../operations.ts";
+import { readLinks } from "./links.ts";
+import { libraryRecall, searchEnabled } from "./search.ts";
 import { libraryOutline, librarySectionPassages, listLibraryDocuments } from "./store.ts";
 
 /**
@@ -10,7 +13,7 @@ import { libraryOutline, librarySectionPassages, listLibraryDocuments } from "./
 export type TocEntry = { sectionId: string; path: string[]; canonical: LibraryCanonical; role: string; chars: number; change: string; gist: string | null; topic: string | null; entities: string[] };
 export type TocDocument = { documentId: string; form: string; docType: string; filedAt: string; reportDate: string; url: string; structure: string; sections: TocEntry[] };
 export type ReadPassage = { passageId: string; path: string; text: string };
-export type FoundSection = { ticker: string; documentId: string; form: string; filedAt: string; sectionId: string; path: string[]; canonical: string; topic: string | null; gist: string | null; entities: string[]; score: number };
+export type FoundSection = LibraryFoundSection;
 
 const terms = (text: string) => [...new Set(text.toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length >= 3))];
 
@@ -56,9 +59,10 @@ export async function libraryRead(db: D1Database, request: { documentId: string;
 }
 
 /** Sections across companies by card topic, by an entity the card names, or by words in their titles and gists; newest documents first. */
-export async function libraryFind(db: D1Database, request: { tickers?: string[]; topic?: string; entity?: string; keywords?: string; canonical?: LibraryCanonical; limit?: number }): Promise<FoundSection[]> {
+export async function libraryFind(db: D1Database, request: { tickers?: string[]; topic?: string; entity?: string; keywords?: string; canonical?: LibraryCanonical; sectionIds?: string[]; limit?: number }): Promise<FoundSection[]> {
   const where: string[] = ["d.status = 'ready'", "s.role != 'boilerplate'"], binds: unknown[] = [];
   if (request.tickers?.length) { where.push("d.ticker IN (SELECT value FROM json_each(?))"); binds.push(JSON.stringify(request.tickers)); }
+  if (request.sectionIds) { where.push("s.section_id IN (SELECT value FROM json_each(?))"); binds.push(JSON.stringify(request.sectionIds)); }
   if (request.topic) { where.push("c.topic = ?"); binds.push(request.topic.replace(/^[a-z]+\./, "")); }
   if (request.canonical) { where.push("s.canonical = ?"); binds.push(request.canonical); }
   if (request.entity) { where.push("EXISTS (SELECT 1 FROM json_each(c.entities) e WHERE lower(e.value) = lower(?))"); binds.push(request.entity); }
@@ -71,30 +75,73 @@ export async function libraryFind(db: D1Database, request: { tickers?: string[];
     const path = JSON.parse(r.path) as string[], entities = r.entities ? JSON.parse(r.entities) as string[] : [];
     const haystack = `${path.join(" ")} ${r.gist ?? ""} ${entities.join(" ")}`.toLowerCase();
     return { ticker: r.ticker, documentId: r.document_id, form: r.form, filedAt: r.filed_at, sectionId: r.section_id, path, canonical: r.canonical, topic: r.topic, gist: r.gist, entities,
-      score: words.length ? words.filter(w => haystack.includes(w)).length / words.length : 1 };
+      score: words.length ? words.filter(w => haystack.includes(w)).length / words.length : 1, via: "index" as const };
   }).filter(r => r.score > 0);
   // One hit per company and section path: the newest document's.
   const seen = new Set<string>();
   return found.sort((a, b) => b.score - a.score || b.filedAt.localeCompare(a.filedAt)).filter(r => { const key = `${r.ticker}|${r.path.join("›")}`; if (seen.has(key)) return false; seen.add(key); return true; }).slice(0, request.limit ?? 20);
 }
 
-/** The validated quarterly numbers the map draws, one line per number, with the filing each comes from. */
-export async function libraryFacts(db: D1Database, ticker: string, options: { quarters?: number } = {}): Promise<string[]> {
+/**
+ * Sections across companies: exact matches on card topic, entity, title words, a business or a cross-company
+ * category from the index, then, for a natural-language question, sections found by meaning through AI Search.
+ * A category or business reads confirmed links only, unless proposed ones are asked for.
+ */
+export async function libraryFindAcross(env: SecPipelineEnv, request: {
+  tickers?: string[]; topic?: string; entity?: string; keywords?: string; canonical?: LibraryCanonical; question?: string;
+  category?: IndustryCategory; businessKey?: string; includeProposed?: boolean; limit?: number;
+}): Promise<LibraryFindResult> {
+  const db = env.DB!, limit = request.limit ?? 20;
+  let tickers = request.tickers, sectionIds: string[] | undefined;
+  if (request.category || request.businessKey) {
+    const links = (await readLinks(db, { category: request.category, includeProposed: request.includeProposed }))
+      .filter(l => (!request.businessKey || l.businessKey === request.businessKey) && (!tickers?.length || tickers.includes(l.ticker)));
+    sectionIds = links.flatMap(l => l.sectionIds);
+    tickers = [...new Set(links.map(l => l.ticker))];
+    if (!tickers.length) return { found: [], recall: request.question ? "empty" : "off" };
+  }
+  const exact = request.topic || request.entity || request.keywords || request.canonical || sectionIds || !request.question
+    ? await libraryFind(db, { tickers, topic: request.topic, entity: request.entity, keywords: request.keywords, canonical: request.canonical, sectionIds, limit }) : [];
+  if (!request.question) return { found: exact, recall: "off" };
+  if (!searchEnabled(env)) return { found: exact, recall: "off" };
+  try {
+    const recalled = await libraryRecall(env, { question: request.question, tickers, canonical: request.canonical, topic: request.topic, limit });
+    const seen = new Set(exact.map(f => f.sectionId));
+    return { found: [...exact, ...recalled.filter(r => !seen.has(r.sectionId))].slice(0, limit * 2), recall: recalled.length ? "ok" : "empty" };
+  } catch (error) { return { found: exact, recall: "error", recallError: String((error as Error)?.message ?? error).slice(0, 300) }; }
+}
+
+/** The validated quarterly numbers the map draws, one row per number, with the filing each comes from. */
+export async function libraryFactRows(db: D1Database, ticker: string, options: { quarters?: number } = {}): Promise<LibraryFactRow[]> {
   const publication = await readCompletePublicationForTicker(db, ticker);
   if (publication.status !== "ready" || !publication.flow) return [];
-  const lines: string[] = [];
+  const rows: LibraryFactRow[] = [];
   const scaleName = (scale: number) => scale === 1_000_000 ? "million" : scale === 1_000 ? "thousand" : scale === 1 ? "" : `x${scale}`;
   for (const quarter of [...publication.flow.quarters].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd)).slice(0, options.quarters ?? 2)) {
     const unit = `${quarter.currency}${scaleName(quarter.scale) ? ` ${scaleName(quarter.scale)}` : ""}`;
     const source = (ids: string[] | undefined) => quarter.sources.find(s => ids?.includes(s.id))?.url ?? quarter.sources[0]?.url ?? "";
-    const line = (business: string, metric: string, amount: { value: string | null; sourceIds: string[] } | null | undefined) => {
-      if (amount?.value != null) lines.push(`${ticker} · ${business} · ${metric} · ${quarter.periodEnd} · ${amount.value} · ${unit} · ${source(amount.sourceIds)}`);
+    const add = (business: string, flowNodeId: string | null, metric: string, amount: { value: string | null; sourceIds: string[] } | null | undefined) => {
+      if (amount?.value != null) rows.push({ ticker, business, flowNodeId, metric, periodEnd: quarter.periodEnd, value: amount.value, unit, source: source(amount.sourceIds) });
     };
-    for (const [metric, amount] of Object.entries(quarter.figures)) line("total", metric, amount);
+    for (const [metric, amount] of Object.entries(quarter.figures)) add("total", null, metric, amount);
     for (const s of quarter.segments) {
-      line(s.name, "revenue", s.revenue);
-      for (const c of s.children ?? []) line(`${s.name} › ${c.name}`, "revenue", c.revenue);
+      add(s.name, s.id, "revenue", s.revenue);
+      for (const c of s.children ?? []) add(`${s.name} › ${c.name}`, c.id, "revenue", c.revenue);
     }
   }
-  return lines;
+  return rows;
+}
+
+/** The same numbers across companies: for a category, the businesses linked to it (confirmed unless asked otherwise). */
+export async function libraryFactsAcross(db: D1Database, request: { tickers?: string[]; category?: IndustryCategory; includeProposed?: boolean; quarters?: number }): Promise<LibraryFactRow[]> {
+  if (!request.category) return (await Promise.all((request.tickers ?? []).map(t => libraryFactRows(db, t, request)))).flat();
+  const links = (await readLinks(db, { category: request.category, includeProposed: request.includeProposed })).filter(l => l.flowNodeId && (!request.tickers?.length || request.tickers.includes(l.ticker)));
+  const byTicker = new Map<string, Set<string>>();
+  for (const l of links) byTicker.set(l.ticker, (byTicker.get(l.ticker) ?? new Set()).add(l.flowNodeId!));
+  return (await Promise.all([...byTicker].map(async ([ticker, nodes]) => (await libraryFactRows(db, ticker, request)).filter(r => r.flowNodeId && nodes.has(r.flowNodeId))))).flat();
+}
+
+/** The validated quarterly numbers as lines a model reads: `公司 · 业务 · 指标 · 期间 · 数值 · 单位 · 来源申报`. */
+export async function libraryFacts(db: D1Database, ticker: string, options: { quarters?: number } = {}): Promise<string[]> {
+  return (await libraryFactRows(db, ticker, options)).map(r => `${r.ticker} · ${r.business} · ${r.metric} · ${r.periodEnd} · ${r.value} · ${r.unit} · ${r.source}`);
 }

@@ -177,6 +177,11 @@ export async function finishCards(db: D1Database, ticker: string, fingerprint: s
   return { parents: rows.length };
 }
 
+/** Whether a card run has finished for the company at least once; links and recall wait for it rather than read half-carded documents. */
+export async function cardsPublished(db: D1Database, ticker: string): Promise<boolean> {
+  return !!await db.prepare("SELECT 1 FROM sec_cache WHERE cache_key = ?").bind(`library-cards:v1:${ticker}`).first();
+}
+
 export type LibraryCardsParams = { ticker: string; fingerprint: string };
 type Step = { do<T>(name: string, callback: () => Promise<T>): Promise<T> };
 /** Model calls in flight at once within one company's run. */

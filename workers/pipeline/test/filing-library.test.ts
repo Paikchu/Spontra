@@ -118,3 +118,41 @@ test("an index card keeps only what the section's text supports", async () => {
   assert.equal(noteTopic("us-gaap:SegmentReportingDisclosureTextBlock"), "segment");
   assert.equal(noteTopic("us-gaap:LesseeOperatingLeasesTextBlock"), "leases");
 });
+
+test("a business link names only flow nodes and sections it was shown, and keeps every map business", async () => {
+  const { checkLinks } = await import("../../../shared/analysis-runtime/filing-library/links.ts");
+  const sections = new Map([["s1", "Item 1 › Intelligent Cloud\nAzure and other cloud services grew."], ["s2", "Item 7 › Segment results\nServer products."]]);
+  const flow = [{ flowNodeId: "msft:IntelligentCloudMember", name: "Intelligent Cloud" }, { flowNodeId: "msft:MorePersonalComputingMember", name: "More Personal Computing" }];
+  const { links, notes } = checkLinks({ links: [
+    { name: "Intelligent Cloud", flowNodeId: "msft:IntelligentCloudMember", sectionIds: ["s1", "s2", "s9"], industryCategory: "cloud_infrastructure" },
+    { name: "Azure", flowNodeId: null, sectionIds: ["s1"], industryCategory: "made_up" },
+    { name: "Quantum Toaster", flowNodeId: null, sectionIds: ["s1"], industryCategory: "other" },
+  ] }, "MSFT", flow, sections);
+  assert.deepEqual(links.map(l => [l.businessKey, l.flowNodeId, l.sectionIds, l.industryCategory, l.xbrlMembers]), [
+    ["MSFT:intelligent-cloud", "msft:IntelligentCloudMember", ["s1", "s2"], "cloud_infrastructure", ["msft:IntelligentCloudMember"]],
+    ["MSFT:azure", null, ["s1"], null, []],
+    ["MSFT:more-personal-computing", "msft:MorePersonalComputingMember", [], null, ["msft:MorePersonalComputingMember"]],
+  ]);
+  assert.deepEqual(notes.sort(), ["unanchored:Quantum Toaster", "unknown_category:Azure", "unknown_sections:Intelligent Cloud", "unplaced:More Personal Computing"]);
+});
+
+test("the storage sweep deletes only what no reader can reach", async () => {
+  const { SWEEP_RULES } = await import("../src/storage/sweep.ts");
+  const now = Date.parse("2026-10-12T00:00:00Z"), day = 86_400_000;
+  const ctx = { now, aiTickers: new Set(["ORCL"]), liveSearchObjects: new Set(["web-search/v1/k/live.json"]), analysisSchema: "sec-analysis.v4" };
+  const dead = (key: string, age: number) => SWEEP_RULES.find(r => key.startsWith(r.prefix))!.dead(key, now - age, ctx);
+  assert.equal(dead("filings/AMZN/1/meta.json", day), true);
+  assert.equal(dead("filings/ORCL/1/meta.json", 400 * day), false);
+  assert.equal(dead("analysis/ORCL/1/sec-analysis.v3/brief.json", day), true);
+  assert.equal(dead("analysis/ORCL/1/sec-analysis.v4/brief.json", day), false);
+  assert.equal(dead("web-search/v1/k/live.json", 29 * day), false);
+  assert.equal(dead("web-search/v1/k/live.json", 31 * day), true);
+  assert.equal(dead("web-search/v1/k/old.json", 2 * 3_600_000), true);
+  assert.equal(dead("web-search/v1/k/new.json", 10 * 60_000), false);
+  assert.equal(dead("model-recovery/v1/i/f.json", 6 * day), false);
+  assert.equal(dead("workflow-results/v1/i/s/d.json", 31 * day), true);
+  // An empty company list or search index never reads as "everything is dead".
+  const empty = { ...ctx, aiTickers: new Set<string>(), liveSearchObjects: new Set<string>() };
+  assert.equal(SWEEP_RULES[0]!.dead("filings/AMZN/1/meta.json", now, empty), false);
+  assert.equal(SWEEP_RULES[4]!.dead("web-search/v1/k/old.json", now - 2 * 3_600_000, empty), false);
+});
