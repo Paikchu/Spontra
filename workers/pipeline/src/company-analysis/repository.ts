@@ -262,6 +262,15 @@ export class D1CompanyAnalysisRepository {
     `).bind(update.analysisId, update.workflowInstanceId).first());
   }
 
+  /** When the company's latest failed analysis becomes eligible for its next recovery, or null if none will be. */
+  async nextRecoveryAt(ticker: string): Promise<string | null> {
+    const row = await this.database.prepare(`SELECT updated_at AS updatedAt, recovery_count AS count FROM company_analysis_runs
+      WHERE ticker = ? AND status = 'failed' ORDER BY updated_at DESC LIMIT 1`).bind(ticker).first<{ updatedAt: string; count: number | null }>();
+    const count = row?.count ?? 0;
+    if (!row || count >= COMPANY_ANALYSIS_MAX_RECOVERIES) return null;
+    return new Date(Date.parse(row.updatedAt) + RECOVERY_BACKOFF_MS[count]!).toISOString();
+  }
+
   async listActiveExecutions(tickers: string[], before: string): Promise<Array<{ analysisId: string; workflowInstanceId: string }>> {
     if (!tickers.length) return [];
     const rows = await this.database.prepare(`

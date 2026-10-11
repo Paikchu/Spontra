@@ -4,27 +4,13 @@ import {handleAiRunsAdminRequest} from './admin/ai-runs.ts';
 import {handlePipelineAdminRequest} from './admin/pipeline.ts';
 import {flushOutbox} from './pipeline/outbox.ts';
 import {handlePipelineQueue, pipelineEntry} from './pipeline/consumer.ts';
-import { handleCompanyAnalysisRequest, handleSecAnalysisRequest, runCompanyAnalysisSweep, runSecMemorySweep } from "./core.ts";
+import { handleCompanyAnalysisRequest, handleSecAnalysisRequest } from "./core.ts";
 import { runSecDiscovery } from "./pipeline/discovery.ts";
 import { handleBusinessFlowRefresh } from "./sec/business-flow-refresh.ts";
 import { handleFundamentalsRefreshRequest } from "./fundamentals.ts";
 import type { SecPipelineEnv } from "./operations.ts";
-import { runBusinessExplainerSweep } from "./business-explainer/workflow.ts";
-import { runBusinessTreeSweep } from "./business-tree/workflow.ts";
-import { runFindingsSweep } from "./findings/workflow.ts";
 import { handleReportAdminRequest } from "./admin/reports.ts";
 import { handleFinancialAdminRequest } from "./admin/financials.ts";
-
-/**
- * `JSON.stringify` renders an Error as `{}`, so a rejection reason has to be read off it before it
- * reaches the log. The old handler logged the raw settled results and every failure it did report
- * arrived as `"reason":{}` — the one line meant to explain a broken run explained nothing.
- */
-function describeSettled(result: PromiseSettledResult<unknown>) {
-  return result.status === "fulfilled"
-    ? { status: result.status, value: result.value }
-    : { status: result.status, reason: result.reason instanceof Error ? result.reason.message : String(result.reason) };
-}
 
 /**
  * Liveness only: is this Worker running. It deliberately reports no dependency state, so a probe
@@ -78,36 +64,18 @@ const worker = {
   },
 
   /**
-   * The only schedule: discover new SEC filings (docs/pipeline-events.md). Everything downstream of a filing runs on
-   * the events and tasks queues. The model sweeps below still poll until they move to events in P4.
+   * The only schedule: discover new SEC filings, because EDGAR pushes nothing (docs/pipeline-events.md). Everything a
+   * filing leads to runs on the events and tasks queues. A failed discovery fails the invocation, which is what
+   * Cloudflare's error notification watches.
    */
   async scheduled(_controller: ScheduledController, env: SecPipelineEnv) {
     await pipelineEntry(env);
-    const results = await Promise.allSettled([
-      runSecDiscovery(env),
-      runSecMemorySweep(env),
-      runCompanyAnalysisSweep(env),
-      runBusinessExplainerSweep(env),
-      runBusinessTreeSweep(env),
-      runFindingsSweep(env),
-    ]);
-    // Filings just discovered go out now rather than at the next invocation.
-    await flushOutbox(env).catch((error:unknown)=>console.error(JSON.stringify({event:"pipeline-outbox",error:error instanceof Error?error.message:String(error)})));
-    const [discovery, memory, companyAnalysis, businessExplainer, businessTree, findings] = results.map(describeSettled);
-    const payload = JSON.stringify({ event: "sec-workflows", discovery, memory, companyAnalysis, businessExplainer, businessTree, findings });
-    const rejected = results.filter((result): result is PromiseRejectedResult => result.status === "rejected");
-    if (!rejected.length) {
-      console.log(payload);
-      return;
+    try {
+      console.log(JSON.stringify({ event: "sec-discovery", ...await runSecDiscovery(env) }));
+    } finally {
+      // Filings just discovered go out now rather than at the next invocation.
+      await flushOutbox(env).catch((error:unknown)=>console.error(JSON.stringify({event:"pipeline-outbox",error:error instanceof Error?error.message:String(error)})));
     }
-    /**
-     * `allSettled` never rejects, so a broken run used to finish as `outcome: ok` with nothing but
-     * this one log line to show for it — the whole refresh sat dead for days behind that. The work
-     * is awaited rather than handed to `waitUntil` so a rethrow lands on the invocation record,
-     * which is the only part of a Cron run anything can alert on.
-     */
-    console.error(payload);
-    throw new AggregateError(rejected.map((result) => result.reason), "SEC scheduled run failed");
   },
 
   /** The events, tasks and dead-letter queues of the event-driven pipeline (docs/pipeline-events.md). */

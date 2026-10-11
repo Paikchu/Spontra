@@ -17,6 +17,7 @@ export const TASK_NAMES = [
   "collect", "history", "reproject", "maintenance", "transcript",
   "map-derive", "archive-prune", "archive-prune-scan",
   "sec-report", "guidance", "events",
+  "memory", "company-analysis", "explainer", "tree", "findings",
 ] as const;
 export type TaskName = typeof TASK_NAMES[number];
 
@@ -58,6 +59,16 @@ export const TASKS: Record<TaskName, TaskMeta> = {
   "guidance": { emits: ["guidance.published"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "ai" },
   // Current reports and Form 4 filings for the map's event rail; no model.
   "events": { emits: ["events.published"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "data" },
+  // Starts report memory for a published periodic report; the memory Workflow starts the company analysis itself.
+  "memory": { emits: [], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "ai" },
+  // Recovers company analyses that stopped, failed or are behind the prompt version.
+  "company-analysis": { emits: ["analysis.published"], debounceMs: 30 * MINUTE, maxWaitMs: 2 * HOUR, scope: "ai" },
+  // Model-written explanations of each disclosed business (Workflow).
+  "explainer": { emits: ["explainer.published"], debounceMs: 10 * MINUTE, maxWaitMs: 2 * HOUR, scope: "ai" },
+  // The ReAct business mind map (Workflow).
+  "tree": { emits: ["tree.published"], debounceMs: 10 * MINUTE, maxWaitMs: 2 * HOUR, scope: "tree" },
+  // Report findings written from the map snapshot, guidance, SEC fundamentals and the company analysis (Workflow).
+  "findings": { emits: ["findings.published"], debounceMs: 10 * MINUTE, maxWaitMs: 2 * HOUR, scope: "ai" },
 };
 
 const form = (event: PipelineEvent) => event.detail?.form ?? "";
@@ -73,12 +84,20 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
   ],
   "collection.requested": [{ task: "collect" }, { task: "history" }],
   "maintenance.requested": [{ task: "maintenance" }],
-  "financials.published": [{ task: "map-derive" }, { task: "history" }],
+  "financials.published": [{ task: "map-derive" }, { task: "history" }, { task: "explainer" }, { task: "tree" }],
   "filing.archived": [{ task: "map-derive" }, { task: "transcript", when: e => /^10-[QK](?:\/A)?$/.test(form(e)) }],
   "archive.superseded": [{ task: "archive-prune" }],
   "archive.prune.requested": [{ task: "archive-prune-scan" }],
   "filings.indexed": [{ task: "guidance" }],
-  "report.published": [{ task: "events", when: e => /^(?:8|6)-K/.test(form(e)) }],
+  "report.published": [
+    { task: "events", when: e => /^(?:8|6)-K/.test(form(e)) },
+    { task: "memory", when: e => PERIODIC.test(form(e)) },
+    { task: "company-analysis", when: e => PERIODIC.test(form(e)) },
+  ],
+  "map.derived": [{ task: "findings" }],
+  "guidance.published": [{ task: "findings" }],
+  "fundamentals.updated": [{ task: "findings" }],
+  "analysis.published": [{ task: "findings" }],
 };
 
 /** Emitters that are not tasks. `task.version_changed` is routed to the one task it names, never subscribed. */
@@ -87,8 +106,6 @@ export const SOURCES: Record<string, readonly EventType[]> = {
   "sec-discovery": ["filing.discovered"],
   "admin": ["collection.requested", "maintenance.requested", "archive.prune.requested"],
   "invocation": ["task.version_changed"],
-  // Workflows started by tasks announce what they publish.
-  "workflows": ["analysis.published", "guidance.published"],
 };
 
 /** Every problem with the graph: a subscription nobody can trigger, an unknown name, or a loop between tasks. */

@@ -9,6 +9,7 @@ const NAMES: Record<string, string> = {
   "collect": "财报采集", "history": "历史营收", "reproject": "重算资本结构", "maintenance": "财务维护", "transcript": "电话会文字稿",
   "map-derive": "地图快照", "archive-prune": "清理替换的存档", "archive-prune-scan": "全量清理存档",
   "sec-report": "SEC 财报分析", "guidance": "业绩指引", "events": "事件与内幕交易",
+  "memory": "财报记忆", "company-analysis": "公司分析", "explainer": "业务解读", "tree": "业务脑图", "findings": "要点",
   "filing.discovered": "发现新申报", "collection.requested": "请求采集", "maintenance.requested": "维护任务更新",
   "financials.published": "财报发布", "filing.archived": "文件归档", "archive.superseded": "存档被替换", "archive.prune.requested": "请求全量清理",
   "map.derived": "地图快照完成", "filings.indexed": "申报列表更新", "report.published": "报告发布", "analysis.published": "公司分析发布",

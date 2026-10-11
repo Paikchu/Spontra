@@ -11,8 +11,9 @@ import { AnalysisRequestError } from "../read-api/contract-support/errors.ts";
 import { researchSearch } from "../web-search/research-search.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import type { WorkflowStepLike } from "../workflow-core.ts";
-import { AiRunStore, quietly } from "../ai-runs/store.ts";
+import { AiRunStore } from "../ai-runs/store.ts";
 import { runBusinessTree, type TreeBusiness } from "./agent.ts";
+import { outboxStatement } from "../pipeline/outbox.ts";
 
 /** Changing the prompt, the harness or the output contract researches every company once more. */
 export const BUSINESS_TREE_VERSION = "business-tree.react.v1";
@@ -59,35 +60,6 @@ export async function businessTreeFingerprint(env: SecPipelineEnv, ticker: strin
   return (await readInput(env, ticker)).fingerprint;
 }
 
-/**
- * Starts at most one run per tick, for listed companies whose business list has no tree yet. The
- * instance id carries the week, so a failed run is retried weekly rather than every tick, and a run
- * in progress is never duplicated.
- */
-export async function runBusinessTreeSweep(env: SecPipelineEnv, now = Date.now()): Promise<{ checked: number; started: string[]; failed: string[] }> {
-  const result = { checked: 0, started: [] as string[], failed: [] as string[] };
-  if (!env.BUSINESS_TREE_WORKFLOW || !env.DB || !env.TAVILY_API_KEY || env.BUSINESS_TREE_ENABLED === "false") return result;
-  const repository = new D1SecRepository(env.DB);
-  for (const ticker of treeTickersFor(env)) {
-    result.checked++;
-    try {
-      const { fingerprint } = await readInput(env, ticker);
-      if (!fingerprint) continue;
-      const stored = await repository.getCache<BusinessTree>(businessTreeCacheKey(ticker));
-      if (stored?.payload?.fingerprint === fingerprint) continue;
-      const week = Math.floor(now / (7 * 24 * 60 * 60_000));
-      const id = `business-tree-${ticker.replace(/[^A-Za-z0-9]/g, "-")}-${fingerprint.slice(0, 16)}-${week}`;
-      await env.BUSINESS_TREE_WORKFLOW.create({ id, params: { ticker, fingerprint } });
-      await quietly(() => new AiRunStore(env.DB!).start({ kind: "tree", ticker, runId: id, trigger: "schedule" }, new Date(now).toISOString()));
-      result.started.push(ticker);
-      return result;
-    } catch (error) {
-      if (!/already exists|duplicate/i.test(String(error))) result.failed.push(ticker);
-    }
-  }
-  return result;
-}
-
 export async function executeBusinessTreeWorkflow(params: BusinessTreeParams, step: WorkflowStepLike, env: SecPipelineEnv, fetcher: typeof fetch = fetch) {
   if (!treeTickersFor(env).includes(params.ticker)) throw new Error("Ticker is not listed for business trees");
   const modelVersion = env.SEC_REASONING_MODEL || env.SEC_ANALYSIS_MODEL || "deepseek-flash";
@@ -107,7 +79,13 @@ export async function executeBusinessTreeWorkflow(params: BusinessTreeParams, st
   });
   if (!readBusinessTree(tree, params.ticker, { research: true })) throw new Error("Business tree failed its public contract.");
   await step.do("tree-publish", async () => {
-    await new D1SecRepository(requireDb(env)).setCache(businessTreeCacheKey(params.ticker), tree, now);
+    const db = requireDb(env);
+    // The publication and its event commit together.
+    await db.batch([
+      db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at")
+        .bind(businessTreeCacheKey(params.ticker), JSON.stringify(tree), now),
+      outboxStatement(db, { type: "tree.published", ticker: params.ticker }, now),
+    ]);
     await new AiRunStore(requireDb(env)).saveVersion("tree", params.ticker, tree, now);
   });
   const nodes = (list: BusinessTree["branches"][number]["children"]): number => list.reduce((sum, n) => sum + 1 + nodes(n.children), 0);
