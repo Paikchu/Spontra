@@ -96,7 +96,7 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
           {picker}
           <ToggleGroup type="single" variant="unstyled" rovingFocus={false} value={view} onValueChange={next => { if (next) setView(next as "trend" | "bridge"); }} asChild>
             <span className="trend-views" role="radiogroup" aria-label="Revenue view">
-              <ToggleGroupItem value="trend" role="radio" aria-checked={view === "trend"}>Revenue, last {slots.length} quarters</ToggleGroupItem>
+              <ToggleGroupItem value="trend" role="radio" aria-checked={view === "trend"}>Revenue</ToggleGroupItem>
               <ToggleGroupItem value="bridge" role="radio" aria-checked={view === "bridge"}>Growth drivers</ToggleGroupItem>
             </span>
           </ToggleGroup>

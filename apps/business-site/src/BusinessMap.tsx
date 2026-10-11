@@ -439,8 +439,6 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
             {funding.balanceSheet && <ToggleGroupItem value="balance" role="radio" aria-checked={view === "balance"}>Balance sheet</ToggleGroupItem>}
           </span>
         </ToggleGroup>}
-        {/* The quarter is picked on the time axis under the chart; the header only names the one on stage. */}
-        {quarter && <span className="report-current" aria-live="polite"><span>Quarter</span><b>{shortPeriod(quarter.periodEnd)}</b></span>}
         </div>
         {quarter && <Verdict view={view} funding={funding} deficit={deficit?.text ?? null} />}
       </header>
