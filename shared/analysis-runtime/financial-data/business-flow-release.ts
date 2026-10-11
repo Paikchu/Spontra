@@ -29,7 +29,8 @@ const expenseLabels: Record<string,[string,string]> = {
 };
 const financialLabels:Record<string,string>={'total revenues':'revenue','total operating expenses':'totalOperatingExpenses','operating income':'operatingIncome','interest expense':'interestExpense','non-operating income, net':'otherIncome','non-operating expense, net':'otherIncome','non-operating income (expenses), net':'otherIncome','non-operating income (expense), net':'otherIncome','income before income taxes':'pretaxIncome','provision for income taxes':'taxExpense','benefit for income taxes':'taxExpense','net income':'netIncome','net loss':'netIncome'};
 const revenueLabels:Record<string,[string,string]>={
- cloud:['cloud','Cloud'],software:['software','Software'],hardware:['hardware','Hardware'],services:['services','Services'],
+ // The statement rows carry the inline-XBRL category ids, so both source formats describe one category the same way.
+ cloud:['CloudRevenues','云服务'],software:['SoftwareRevenues','软件'],hardware:['HardwareRevenues','硬件'],services:['SalesRevenueServicesNet','服务'],
  'cloud services and license support':['CloudServicesAndLicenseSupportRevenues','云服务与许可支持'],
  'cloud license and on-premise license':['CloudLicenseAndOnPremiseLicenseRevenues','云许可与本地部署许可'],
 };
