@@ -80,7 +80,7 @@ export function compareRevenueNode(q: BusinessFlowQuarter, previous: BusinessFlo
   if (!tree || !old || !previous || tree.dimension.id !== old.dimension.id || tree.dimension.kind !== old.dimension.kind ||
       tree.dimension.definitionKey !== old.dimension.definitionKey || q.currency !== previous.currency || q.scale !== previous.scale ||
       !a?.comparabilityKey || a.comparabilityKey !== b?.comparabilityKey || a.definition !== b.definition || av == null || bv == null) return { label: "不可比", previous: null, percent: null };
-  if (bv === 0) return { label: av === 0 ? "持平" : "上季为零", previous: bv, percent: null };
+  if (bv === 0) return { label: av === 0 ? "持平" : "新增", previous: bv, percent: null };
   const percent = (av - bv) / bv * 100;
   return { label: `${percent > 0 ? "+" : ""}${percent.toFixed(1)}%`, previous: bv, percent };
 }
