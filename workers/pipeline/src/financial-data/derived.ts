@@ -5,7 +5,7 @@ import { readReportHistory } from '../../../../shared/analysis-runtime/financial
 import { D1SecRepository } from '../sec/d1.ts';
 import { assembleCapital } from './capital-history.ts';
 import { readStoredAudits, type DisclosureArchiveEnv, type StoredAudit } from './disclosure-audit.ts';
-import { extractDisclosedQuarters, readReportedFacts, SEC_FLOW_PARSER_VERSION, type DocumentSource } from './parser.ts';
+import { extractDisclosedQuarters, hasDisclosureProfile, readReportedFacts, SEC_FLOW_PARSER_VERSION, type DocumentSource } from './parser.ts';
 import { fiscalFourthQuarters, priorPresentationOnly } from './period-review.ts';
 import { readCompletePublicationForTicker } from './publication.ts';
 import { outboxStatement } from '../pipeline/outbox.ts';
@@ -96,12 +96,13 @@ async function readFiling(env: DisclosureArchiveEnv, record: StoredAudit, indust
 /**
  * The complete quarters one filing establishes. A filing that only reclassified prior periods to conform to its current
  * presentation is read as presented: its comparative columns are then on the current basis, which is what a
- * year-over-year comparison needs. An annual report adds the fourth quarters it and its third-quarter report establish.
+ * year-over-year comparison needs. An annual report adds the fourth quarters it and its third-quarter report establish,
+ * unless the issuer is read through a disclosure profile, whose fourth quarters come from its own earnings releases.
  */
 export function filingQuarters(filing: { html: string; source: DocumentSource }, thirdQuarter: { html: string; source: DocumentSource } | null): BusinessFlowQuarter[] {
   const reviewed = priorPresentationOnly(filing.html);
   let quarters = extractDisclosedQuarters(filing.html, filing.source, [], reviewed).quarters;
-  if (thirdQuarter && reviewed && priorPresentationOnly(thirdQuarter.html)) {
+  if (thirdQuarter && !hasDisclosureProfile(filing.source.cik) && reviewed && priorPresentationOnly(thirdQuarter.html)) {
     const annual = readReportedFacts(filing.html, filing.source), nineMonths = readReportedFacts(thirdQuarter.html, thirdQuarter.source);
     if (!annual.issues.length && !nineMonths.issues.length) quarters = [...quarters, ...fiscalFourthQuarters(annual.facts, nineMonths.facts)];
   }

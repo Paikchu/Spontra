@@ -8,7 +8,9 @@ import {extractFilingDisclosures} from '../../../../shared/analysis-runtime/fina
 import {extractFinancialStatements} from '../../../../shared/analysis-runtime/financial-data/financial-statements.ts';
 import {readIncomeStatementCells} from '../../../../shared/analysis-runtime/financial-data/income-statement.ts';
 export interface DocumentSource {url:string;accession:string;filedAt:string;cik:string;industry:'standard'|'financial'|'insurance'|'unknown';fiscalYear?:string;singleSegment?:boolean;}
-export const SEC_FLOW_PARSER_VERSION='deterministic-sec.v8';
+export const SEC_FLOW_PARSER_VERSION='deterministic-sec.v9';
+/** Issuers read through a disclosure-specific profile; generic statement arithmetic would describe them in another scheme. */
+export const hasDisclosureProfile=(cik:string)=>cik==='0001341439';
 export interface Fact {source:DocumentSource;operands?:Fact[];formula?:string;precision:number;tag:string;value:number;currency:string;start:string;end:string;context:string;dimensions:Record<string,string>;
  /** The issuer's income statement row printing this fact; flip means the statement shows it with the opposite sign. */
  statementRow?:{order:number;label:string;flip:boolean};}
@@ -114,7 +116,7 @@ function extractGenericQuarters(html:string,source:DocumentSource,supplemental:F
  * `presentationReviewed`: the caller established that the filing only reclassified prior periods to its current presentation.
  */
 export function extractDisclosedQuarters(html:string,source:DocumentSource,supplemental:Fact[]=[],presentationReviewed=false):{quarters:BusinessFlowQuarter[];issues:string[]}{
- if(source.cik==='0001341439' && (presentationReviewed || !needsRestatementReview(html))){
+ if(hasDisclosureProfile(source.cik) && (presentationReviewed || !needsRestatementReview(html))){
   const inputs={sourceUrl:source.url,accession:source.accession};
   const parsed=/<ix:nonFraction/i.test(html)?parseSecBusinessFlow(html,inputs):parseSecEarningsRelease(html,inputs);
   const quarters=parsed.map(q=>buildPublishedBusinessQuarter(q,source.filedAt)).filter((q):q is BusinessFlowQuarter=>q!==null);
