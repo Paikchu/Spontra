@@ -17,6 +17,7 @@ import { maintenanceAnalysisEnvironment } from "./admin/financial-maintenance-ru
 import { executeGuidanceWorkflow, type GuidanceWorkflowParams } from "./guidance/workflow.ts";
 import { executeFindingsWorkflow, type FindingsWorkflowParams } from "./findings/workflow.ts";
 import { trackRun, trackSleep, trackSteps } from "./ai-runs/tracking.ts";
+import { executeLibraryCardsWorkflow, type LibraryCardsParams } from "./filing-library/cards.ts";
 
 const WORKFLOW_RETRY = {
   retries: {
@@ -90,6 +91,13 @@ export class BusinessTreeWorkflow extends WorkflowEntrypoint<SecPipelineEnv, Bus
   async run(event: WorkflowEvent<BusinessTreeParams>, step: WorkflowStep) {
     const run = { env: this.env, kind: "tree" as const, ticker: event.payload.ticker, runId: event.instanceId };
     return trackRun(run, () => executeBusinessTreeWorkflow(event.payload, trackSteps(durableSteps(step, this.env, event.instanceId), run), this.env));
+  }
+}
+
+/** Index cards for one company's recent library sections; each batch of sections is a durable step. */
+export class LibraryCardsWorkflow extends WorkflowEntrypoint<SecPipelineEnv, LibraryCardsParams> {
+  async run(event: WorkflowEvent<LibraryCardsParams>, step: WorkflowStep) {
+    return executeLibraryCardsWorkflow(event.payload, durableSteps(step, this.env, event.instanceId), this.env);
   }
 }
 

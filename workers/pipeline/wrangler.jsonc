@@ -43,6 +43,12 @@
       "concurrency": { "limit": 1 }
     },
     {
+      "name": "spontra-library-cards",
+      "binding": "LIBRARY_CARDS_WORKFLOW",
+      "class_name": "LibraryCardsWorkflow",
+      "concurrency": { "limit": 2 }
+    },
+    {
       "name": "spontra-findings",
       "binding": "FINDINGS_WORKFLOW",
       "class_name": "FindingsWorkflow",

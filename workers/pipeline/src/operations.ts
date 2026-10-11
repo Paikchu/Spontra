@@ -65,7 +65,7 @@ export type SecPipelineEnv = SecCronEnv & AnalysisReadEnv & {
   GUIDANCE_WORKFLOW?: AiWorkflowBinding<{ ticker: string; accession: string; eventDate: string; manual?: boolean }>;
   FINDINGS_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
   BUSINESS_TREE_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
-  LIBRARY_CARDS_WORKFLOW?: AiWorkflowBinding<{ documentId: string; ticker: string; version: string }>;
+  LIBRARY_CARDS_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
   /** "false" pauses splitting archived filings into the library; unset or anything else runs it. */
   FILING_LIBRARY_ENABLED?: string;
   /** "false" pauses writing index cards for library sections; unset or anything else runs it. */

@@ -67,3 +67,13 @@ export type LibraryCard = {
 };
 export type LibraryDocumentDetail = { document: LibraryDocumentSummary; outline: LibrarySectionView[]; cards: LibraryCard[] };
 export type LibrarySectionDetail = { section: LibrarySectionView; passages: LibraryPassageView[]; card: LibraryCard | null };
+
+/** The fixed topic taxonomy an index card picks from; only code changes it. */
+export const LIBRARY_TOPICS = {
+  business: ["overview", "segment", "product_line", "customers", "competition", "go_to_market", "seasonality", "supply_chain", "research", "ip", "human_capital", "regulation"],
+  risk: ["macro", "competition", "technology", "supply", "regulatory", "legal", "financial", "operational", "cyber", "other"],
+  mdna: ["overview", "segment_results", "revenue", "costs", "opex", "tax", "liquidity", "capital_return", "obligations", "critical_estimates", "outlook", "market_risk"],
+  note: ["revenue", "segment", "concentration", "leases", "debt", "goodwill", "tax", "equity", "commitments", "investments", "property", "acquisitions", "policies", "statements", "other"],
+  release: ["results", "guidance", "commentary", "other"],
+} as const;
+export type LibraryTopicFamily = keyof typeof LIBRARY_TOPICS;

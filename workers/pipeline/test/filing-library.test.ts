@@ -104,3 +104,17 @@ test("ids depend on content, not position", () => {
   assert.equal(libraryHash("abc"), libraryHash("abc"));
   assert.notEqual(libraryHash("abc"), libraryHash("abd"));
 });
+
+test("an index card keeps only what the section's text supports", async () => {
+  const { checkCard, noteTopic } = await import("../../../shared/analysis-runtime/filing-library/cards.ts");
+  const text = "Server products and cloud services include Azure and SQL Server, sold to enterprises.";
+  const card = checkCard({ gist: "介绍 Azure 与 SQL Server", entities: ["Azure", "SQL Server", "Invented Cloud"], topic: "product_line", answers: ["Azure 卖给谁"] }, text, "business");
+  assert.deepEqual(card.entities, ["Azure", "SQL Server"]);
+  assert.equal(card.topic, "product_line");
+  assert.equal(card.gist, "介绍 Azure 与 SQL Server");
+  assert.equal(checkCard({ gist: "收入增长 12%", topic: "made-up" }, text, "business").gist, null);
+  assert.equal(checkCard({ gist: "收入增长 12%", topic: "made-up" }, text, "business").topic, null);
+  assert.equal(noteTopic("us-gaap:RevenueFromContractWithCustomerTextBlock"), "revenue");
+  assert.equal(noteTopic("us-gaap:SegmentReportingDisclosureTextBlock"), "segment");
+  assert.equal(noteTopic("us-gaap:LesseeOperatingLeasesTextBlock"), "leases");
+});

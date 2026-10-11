@@ -10,7 +10,7 @@ export const EVENT_TYPES = [
   "map.derived", "filings.indexed", "report.published", "analysis.published", "fundamentals.updated", "guidance.published",
   "task.version_changed",
   "transcript.stored", "explainer.published", "tree.published", "findings.published", "events.published",
-  "library.requested", "library.prepared",
+  "library.requested", "library.prepared", "library.cards.published",
 ] as const;
 export type EventType = typeof EVENT_TYPES[number];
 
@@ -19,7 +19,7 @@ export const TASK_NAMES = [
   "map-derive", "archive-prune", "archive-prune-scan",
   "sec-report", "guidance", "events",
   "memory", "company-analysis", "explainer", "tree", "findings",
-  "library",
+  "library", "library-cards",
 ] as const;
 export type TaskName = typeof TASK_NAMES[number];
 
@@ -73,6 +73,8 @@ export const TASKS: Record<TaskName, TaskMeta> = {
   "findings": { emits: ["findings.published"], debounceMs: 10 * MINUTE, maxWaitMs: 2 * HOUR, scope: "ai" },
   // Splits the company's archived documents into the filing library's sections and passages; no model.
   "library": { emits: ["library.prepared"], debounceMs: 30 * SECOND, maxWaitMs: 5 * MINUTE, scope: "data" },
+  // Index cards for the sections of the company's recent documents (Workflow; model at low reasoning).
+  "library-cards": { emits: ["library.cards.published"], debounceMs: 10 * MINUTE, maxWaitMs: 2 * HOUR, scope: "data" },
 };
 
 const form = (event: PipelineEvent) => event.detail?.form ?? "";
@@ -91,6 +93,7 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
   "financials.published": [{ task: "map-derive" }, { task: "history" }, { task: "explainer" }, { task: "tree" }],
   "filing.archived": [{ task: "map-derive" }, { task: "transcript", when: e => /^10-[QK](?:\/A)?$/.test(form(e)) }, { task: "library" }],
   "library.requested": [{ task: "library" }],
+  "library.prepared": [{ task: "library-cards" }],
   "archive.superseded": [{ task: "archive-prune" }],
   "archive.prune.requested": [{ task: "archive-prune-scan" }],
   "filings.indexed": [{ task: "guidance" }],
