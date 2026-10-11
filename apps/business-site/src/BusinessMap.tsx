@@ -4,9 +4,9 @@ import type { BusinessFlowQuarter, BusinessSegment, FlowMetric, FlowSource, Publ
 import { deficitFinancialGraph, financialGraph, type FinancialGraph } from "@/packages/web/src/model/business-flow-sankey";
 import { compactFlowValue, truncateToWidth, type PlacedNode } from "@/packages/web/src/model/business-flow-layout";
 import { availableRevenueTrees, compareRevenueNode, revenueNodeKey } from "@/packages/web/src/model/revenue-tree";
-import { formatFlowValue, compareAmount, compareFlowAmounts, NOT_COMPARABLE, numeric, previousQuarter, reconcileQuarter, type FlowChange } from "@/packages/web/src/model/business-flow-model";
+import { formatFlowValue, compareAmount, compareFlowAmounts, NOT_COMPARABLE, numeric, previousQuarter, reconcileQuarter, yearAgoQuarter, type FlowChange } from "@/packages/web/src/model/business-flow-model";
 import { FinancialSankey } from "@/packages/web/src/business-flow/FinancialSankey";
-import { FlowChart, layoutFor, type GuideBracketMark, type GuidePillMark, type NodeCopy, type Tip } from "./FlowChart";
+import { FlowChart, layoutFor, type CompareBasis, type GuideBracketMark, type GuidePillMark, type NodeCopy, type Tip } from "./FlowChart";
 import { ACTION_GLYPH, actionName, guidanceMarks, markSentence } from "./guidance-marks";
 import type { RevenueHistory } from "@/shared/analysis-contract/revenue-history";
 import type { BusinessExplainer, ExplainerClaim, ExplainerSection } from "@/shared/analysis-contract/business-explainer";
@@ -53,6 +53,9 @@ const NONE: FlowChange = { label: NOT_COMPARABLE, comparable: false, trend: null
 const shortName = (name: string) => truncateToWidth(name, 13);
 const shortPeriod = (end: string) => end.slice(0, 7).replace("-", ".");
 type View = "profit" | "cash" | "balance";
+/** Every change on the stage is against one base: the same quarter a year earlier (YoY) or the quarter before (QoQ). */
+type Basis = "yoy" | "qoq";
+const BASIS: Record<Basis, CompareBasis & { period: string }> = { yoy: { change: "YoY", prior: "last year", period: "Year ago" }, qoq: { change: "QoQ", prior: "last quarter", period: "Last quarter" } };
 
 /** A loss quarter is drawn as funding (revenue plus the net loss pay every cost); any other quarter as the statement bridge. */
 function statementGraph(q: BusinessFlowQuarter): FinancialGraph {
@@ -79,11 +82,11 @@ function hueSlots(quarters: BusinessFlowQuarter[]) {
   return slots;
 }
 
-/** A quarter-over-quarter change as a coloured arrow and figure; nothing when the quarters are not comparable. */
-function Delta({ change }: { change: FlowChange }) {
+/** A change against the comparison quarter as a coloured arrow and figure; nothing when the quarters are not comparable. */
+function Delta({ change, word }: { change: FlowChange; word: string }) {
   if (!change.comparable) return null;
   const tone = change.trend ?? undefined;
-  return <em data-trend={tone} title="QoQ">{tone === "up" ? "▲" : tone === "down" ? "▼" : ""}{change.label.replace(/^[+\-−]/, "")}</em>;
+  return <em data-trend={tone} title={word}>{tone === "up" ? "▲" : tone === "down" ? "▼" : ""}{change.label.replace(/^[+\-−]/, "")}</em>;
 }
 
 function businessItems(quarter: BusinessFlowQuarter | undefined, slots: Map<string, number>) {
@@ -140,7 +143,12 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
   const quarters = useMemo(() => [...flow.quarters].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd)), [flow]);
   const [period, setPeriod] = useState<string | null>(null);
   const quarter = quarters.find(q => q.id === period) ?? quarters[0];
-  const previous = quarter ? previousQuarter(quarter, quarters) : null;
+  // YoY by default; QoQ when the year-ago quarter was not collected but the one before was.
+  const [chosenBasis, setBasis] = useState<Basis | null>(null);
+  const yearAgo = quarter ? yearAgoQuarter(quarter, quarters) : null, lastQuarter = quarter ? previousQuarter(quarter, quarters) : null;
+  const basis: Basis = chosenBasis ?? (yearAgo || !lastQuarter ? "yoy" : "qoq");
+  const previous = basis === "yoy" ? yearAgo : lastQuarter;
+  const word = BASIS[basis];
   const slots = useMemo(() => hueSlots(quarters), [quarters]);
   const { items, quantified } = useMemo(() => businessItems(quarter, slots), [quarter, slots]);
   const [selected, setSelected] = useState<string | null>(() => new URLSearchParams(location.search).get("business"));
@@ -181,6 +189,9 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
   const revenue = quarter ? numeric(quarter.figures.revenue) : null;
   const segmentRevenue = quarter?.revenueAdjustments?.length ? quarter.segments.reduce((sum,s)=>sum+(numeric(s.revenue)??0),0) : revenue;
   const shareLabel = quarter?.revenueAdjustments?.length ? "Share of segment revenue before eliminations" : "Share of revenue";
+  // The comparison quarter's share needs its total on the same basis and comparable with this quarter's.
+  const priorShareBase = quarter && previous && compareAmount(quarter, previous, "revenue").percent != null
+    ? quarter.revenueAdjustments?.length ? previous.segments.reduce((sum, s) => sum + (numeric(s.revenue) ?? 0), 0) || null : numeric(previous.figures.revenue) : null;
   const money = useCallback((v: number | null) => quarter ? compactFlowValue(v, quarter) : "—", [quarter]);
 
   useEffect(() => {
@@ -228,20 +239,20 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
     setView(focused.anchors.view);
   }, [focused?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const amountOf = useCallback((n: PlacedNode) => n.amount ? numeric(n.amount) : n.metric && quarter ? numeric(quarter.figures[n.metric]) : n.value, [quarter]);
-  /** Same comparison as the list and tooltip: only an equal-definition prior quarter yields a change. */
+  /** Same comparison as the list and tooltip: only an equal-definition comparison quarter yields a change. */
   const comparisonOf = useCallback((n: PlacedNode) => !quarter ? null
     : n.amount ? compareFlowAmounts(quarter, previous, n.name, n.amount, previousGraph?.nodes.find(p => p.name === n.name)?.amount)
     : n.metric ? compareAmount(quarter, previous, n.metric)
     : n.segmentId ? compareRevenueNode(quarter, previous, n.segmentId) : null, [quarter, previous, previousGraph]);
   const changeOf = useCallback((n: PlacedNode) => comparisonOf(n) ?? NONE, [comparisonOf]);
-  /** The prior amount behind a percentage change: only a same-sign, same-definition prior quarter is drawn as a ghost outline. */
+  /** The comparison amount behind a percentage change: only a same-sign, same-definition comparison quarter is drawn as a tick. */
   const priorOf = useCallback((n: PlacedNode) => { const c = comparisonOf(n); return c && c.percent != null && c.previous != null ? Math.abs(c.previous) : null; }, [comparisonOf]);
   const copy = useCallback((n: PlacedNode): NodeCopy => {
     const change = changeOf(n);
     return { name: shortName(n.label), value: money(amountOf(n)), ...(change.comparable ? { change: { label: change.label, trend: change.trend ?? undefined } } : {}) };
   }, [money, amountOf, changeOf]);
   const layout = useMemo(() => graph ? layoutFor(graph, copy) : null, [graph, copy]);
-  // Compare with last quarter needs the prior quarter drawn in this quarter's currency and scale; its labels carry no change of their own.
+  // Compare with last year / last quarter needs the comparison quarter drawn in this quarter's currency and scale; its labels carry no change of their own.
   const priorMoney = useCallback((v: number | null) => previous ? compactFlowValue(v, previous) : "—", [previous]);
   const priorCopy = useCallback((n: PlacedNode): NodeCopy => ({ name: shortName(n.label), value: priorMoney(n.amount ? numeric(n.amount) : n.metric && previous ? numeric(previous.figures[n.metric]) : n.value) }), [priorMoney, previous]);
   const priorQuarter = useMemo(() => previous && previousGraph?.links.length && quarter && previous.currency === quarter.currency && previous.scale === quarter.scale
@@ -268,9 +279,11 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
       rows.push(["Remaining after offset", money(graph.links.filter(l => l.source === n.name).reduce((sum, l) => sum + l.value, 0))]);
     }
     if(n.segmentId&&quarter.revenueAdjustments?.length)rows.splice(1,1,["Share of segment revenue before eliminations",percent((amountOf(n)??0)/segmentRevenue!*100)]);
-    rows.push(["QoQ", changeOf(n).label], [`As reported (${quarter.currency} millions)`, formatFlowValue(amountOf(n),quarter)]);
+    const prior = priorOf(n);
+    if (prior != null && previous) rows.push([`${word.period} ${shortPeriod(previous.periodEnd)}`, money(prior)]);
+    rows.push([word.change, changeOf(n).label], [`As reported (${quarter.currency} millions)`, formatFlowValue(amountOf(n),quarter)]);
     return { title: n.label, color: colorOf(n.name), rows };
-  }, [quarter, revenue, money, amountOf, colorOf, changeOf, graph, segmentRevenue]);
+  }, [quarter, previous, word, revenue, money, amountOf, colorOf, changeOf, priorOf, graph, segmentRevenue]);
 
   // Guidance on the bars: this quarter's guided range as a bracket with its verdict, next quarter's as a pill, both at the chart's units.
   const guideMarks = useMemo((): { brackets: GuideBracketMark[]; pills: GuidePillMark[] } => {
@@ -373,7 +386,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
             <i className="row-chip row-chip--all" aria-hidden="true" />
             <span className="row-name">All businesses</span>
             <span className="row-value">{revenue != null ? money(revenue) : ""}</span>
-            {quarter && <span className="row-meta"><Delta change={change("revenue")} /></span>}
+            {quarter && <span className="row-meta"><Delta change={change("revenue")} word={word.change} /></span>}
           </Button>
           {items.map(item => {
             const share = item.value != null && segmentRevenue ? item.value / segmentRevenue * 100 : null;
@@ -386,7 +399,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
               <span className="row-name">{item.name}</span>
               <span className="row-value">{item.value != null ? money(item.value) : ""}</span>
               {share != null && <span className="row-bar" aria-hidden="true"><b style={{ width: `${Math.max(0.6, share)}%` }} /></span>}
-              <span className="row-meta">{share != null ? <>{percent(share)}<Delta change={delta} /></> : "—"}</span>
+              <span className="row-meta">{share != null ? <>{percent(share)}<Delta change={delta} word={word.change} /></> : "—"}</span>
             </Button>;
           })}
         </div>
@@ -400,11 +413,11 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
       <header className="stage-head stage-head--summary">
         {quarter && view !== "profit" && funding ? <CapitalStats view={view} funding={funding} /> : quarter && <div className="stats" aria-live="polite">
           {current && current.value != null ? <>
-            <Stat label="Revenue this quarter" value={current.value} format={money} note={`QoQ ${itemChange.label}`} tone={itemChange.trend ?? undefined} />
+            <Stat label="Revenue this quarter" value={current.value} format={money} note={`${word.change} ${itemChange.label}`} tone={itemChange.trend ?? undefined} />
             <Stat label={shareLabel} value={segmentRevenue ? current.value / segmentRevenue * 100 : null} format={percent} note={parent?.value ? `${percent(current.value / parent.value * 100)} of ${parent.name}` : "Top-level business"} />
             <Stat label="Total company revenue" value={revenue} format={money} note="Costs and profit are not allocated to businesses" />
           </> : <>
-            <Stat label="Total revenue" value={revenue} format={money} note={`QoQ ${change("revenue").label}`} tone={change("revenue").trend ?? undefined} />
+            <Stat label="Total revenue" value={revenue} format={money} note={`${word.change} ${change("revenue").label}`} tone={change("revenue").trend ?? undefined} />
             {quarter.incomeModel !== "direct_operating" && figure("gross") != null && <Stat label="Gross profit" value={figure("gross")} format={money} note={margin("gross")} />}
             {figure("operating") != null || figure("pretax") == null
               ? <Stat label="Operating income" value={figure("operating")} format={money} note={margin("operating")} />
@@ -413,6 +426,12 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
           </>}
         </div>}
         <div className="stage-controls">
+        {view === "profit" && yearAgo && lastQuarter && <ToggleGroup type="single" variant="unstyled" rovingFocus={false} value={basis} onValueChange={next => { if (next) setBasis(next as Basis); }} asChild>
+          <span className="trend-views stage-views" role="radiogroup" aria-label="Comparison base">
+            <ToggleGroupItem value="yoy" role="radio" aria-checked={basis === "yoy"}>YoY</ToggleGroupItem>
+            <ToggleGroupItem value="qoq" role="radio" aria-checked={basis === "qoq"}>QoQ</ToggleGroupItem>
+          </span>
+        </ToggleGroup>}
         {funding && (cash || funding.balanceSheet) && <ToggleGroup type="single" variant="unstyled" rovingFocus={false} value={view} onValueChange={next => { if (next) setView(next as View); }} asChild>
           <span className="trend-views stage-views" role="radiogroup" aria-label="Financial view">
             <ToggleGroupItem value="profit" role="radio" aria-checked={view === "profit"}>Profit</ToggleGroupItem>
@@ -430,11 +449,11 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
         {view !== "profit" && funding ? <CapitalChart view={view} funding={funding} ticker={ticker} spotlight={poolSpotlight} />
           : !quarter ? <div className="empty"><h2>No quarterly financials disclosed</h2><p>The flow needs three-month figures in one currency on one basis. Sample data is never used instead.</p></div>
           : proportional && layout ? <FlowChart graph={graph!} copy={copy} money={v => money(v)} colorOf={colorOf} active={active} revealKey={quarter.id} productBusiness={current ? "segment:" + current.key : null} mindMap={mindMap} mindPick={mindItem?.id ?? null} onMindPick={setMindItem} businessDetails={<Dossier item={current} parent={parent ?? null} sources={quarter.sources} explainer={explainer} />}
-              focusSlot={n => segmentRevenue ? `${shareLabel} ${percent(n.value / segmentRevenue * 100)}` : null}
-              onHover={name => setHoverNode(name)} tipFor={tipFor} spotlight={spotlight} priorOf={priorOf} previous={priorQuarter} brackets={guideMarks.brackets} pills={guideMarks.pills}
+              focusSlot={n => { const prior = priorOf(n); return segmentRevenue ? `${shareLabel} ${percent(n.value / segmentRevenue * 100)}${prior != null && priorShareBase ? ` · ${word.period} ${percent(prior / priorShareBase * 100)}` : ""}` : null; }}
+              onHover={name => setHoverNode(name)} tipFor={tipFor} spotlight={spotlight} priorOf={priorOf} basis={word} previous={priorQuarter} brackets={guideMarks.brackets} pills={guideMarks.pills}
               onPick={n => { const item = itemByNode.get(n.name); pickBusiness(item && current?.key !== item.key ? item.id : null); }}
               label={`${ticker} ${quarter.label} Sankey diagram from revenue to net income, amounts in ${quarter.currency}`} />
-          : <div className="business-flow chart-fallback">{current && <Dossier item={current} parent={parent ?? null} sources={quarter.sources} explainer={explainer} />}<FinancialSankey quarter={quarter} previous={previous} onSegment={key => pickBusiness(items.find(item => item.key === key)?.id ?? null)} /></div>}
+          : <div className="business-flow chart-fallback">{current && <Dossier item={current} parent={parent ?? null} sources={quarter.sources} explainer={explainer} />}<FinancialSankey quarter={quarter} previous={previous} word={word.change} onSegment={key => pickBusiness(items.find(item => item.key === key)?.id ?? null)} /></div>}
       </div>
 
       {points.length > 0 && <Timeline points={points} now={now.getTime()} currentPeriod={quarter?.periodEnd ?? null} focus={focusedReport?.accessionNumber ?? focusedEvent?.id ?? null}
@@ -467,7 +486,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
           <span><i style={{ background: "var(--flow-profit)" }} />Profit</span>
           {(graph?.signed || graph?.deficit) && <span><i style={{ background: "var(--loss)" }} />{graph?.deficit ? "Net loss (funding gap)" : "Loss"}</span>}
           <span><i style={{ background: "var(--flow-expense)" }} />Costs and expenses</span>
-          <span className="legend-note">{graph?.signed ? "Line width = this quarter’s absolute amount" : "Line width = this quarter’s amount"}{previous ? " · % = change from last quarter · Dashed box = last quarter’s amount" : ""}{guideMarks.brackets.length ? " · Bracket = this quarter’s guidance range" : ""}{guideMarks.pills.length ? " · Pill = next quarter’s guidance" : ""}</span>
+          <span className="legend-note">{graph?.signed ? "Line width = this quarter’s absolute amount" : "Line width = this quarter’s amount"}{previous ? ` · % = ${word.change} change · Tick = ${word.period.toLowerCase()} amount · Stripes = gained · Hollow frame = shortfall` : ""}{guideMarks.brackets.length ? " · Bracket = this quarter’s guidance range" : ""}{guideMarks.pills.length ? " · Pill = next quarter’s guidance" : ""}</span>
         </div> : <span className="legend-note">Boxes show accounting relationships; width does not represent amounts</span>}
         <p className="provenance">
           {notice && <span>{notice}</span>}

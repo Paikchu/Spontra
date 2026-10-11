@@ -9,7 +9,7 @@ import type { AiWorkflowBinding, SecPipelineEnv } from "../operations.ts";
 import type { AiRunKind } from "../../../../shared/analysis-contract/ai-runs-admin.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import type { TaskImplementation, TaskOutcome } from "./tasks.ts";
-import { driveWorkflow } from "./workflow-task.ts";
+import { driveWorkflow, failedInputKey } from "./workflow-task.ts";
 
 const MINUTE = 60_000;
 const until = (at: string, now: Date) => Math.max(MINUTE, Date.parse(at) - now.getTime());
@@ -24,9 +24,12 @@ async function runWhenChanged(env: SecPipelineEnv, task: "findings" | "explainer
   return driveWorkflow(env, `${task}:${ticker}`, binding, async () => {
     const current = await fingerprint();
     if (!current || current === await published()) return null;
+    // The last run failed on exactly this input; it runs again when the input changes or the dead letter is replayed.
+    const failed = (await new D1SecRepository(env.DB!).getCache<{ fingerprint: string }>(failedInputKey(task, ticker)))?.payload?.fingerprint;
+    if (failed === current) return { status: "done", detail: { skipped: "failed on this input before; replay the dead letter to retry" } };
     const id = `${task === "findings" ? "findings" : task === "tree" ? "business-tree" : "business-explainer"}-${slug(ticker)}-${current.slice(0, 16)}-${now.getTime()}`;
     await quietly(() => new AiRunStore(env.DB!).start({ kind, ticker, runId: id, trigger: "schedule" }, now.toISOString()));
-    return { id, params: { ticker, fingerprint: current } };
+    return { id, params: { ticker, fingerprint: current }, fingerprint: current };
   }, { deadLetter: { task, ticker, causeId } });
 }
 

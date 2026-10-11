@@ -4,6 +4,9 @@ const BUSINESS_FLOW_PARSER_VERSION='sec-business-flow.v3';
 const sum = (facts: BusinessFact[]) => facts.reduce((v,f)=>v+f.value,0);
 const groupFor = (id: string) => id === 'ResearchAndDevelopmentExpense' ? 'research' : id === 'SellingAndMarketingExpense' ? 'sales' : id === 'GeneralAndAdministrativeExpense' ? 'administration' : ['CloudAndSoftwareExpenses','CloudServicesAndLicenseSupportExpense','HardwareExpenses','ServicesExpense'].includes(id) ? 'direct' : 'other';
 const canonicalRevenue = (id: string) => id === 'SalesRevenueServicesNet1' ? 'SalesRevenueServicesNet' : id;
+/** The disclosed category a leaf belongs to, the same whether a filing prints the category total or only its offerings. */
+const revenueCategory = (id: string) => ['CloudApplications','CloudInfrastructure','CloudRevenues'].includes(id) ? 'cloud' : ['SoftwareLicense','SoftwareSupport','SoftwareRevenues'].includes(id) ? 'software' : id;
+const categoryNames: Record<string,string> = {cloud:'Cloud',software:'Software',HardwareRevenues:'Hardware',SalesRevenueServicesNet:'Services'};
 export function buildPublishedBusinessQuarter(parsed: ParsedBusinessQuarter, filedAt: string): BusinessFlowQuarter | null {
  if(parsed.profile !== 'direct_operating' || Object.values(parsed.coverage).some(v=>!v) || parsed.issues.length) return null;
  const source = Object.values(parsed.financials)[0]?.lineage;
@@ -18,12 +21,13 @@ export function buildPublishedBusinessQuarter(parsed: ParsedBusinessQuarter, fil
  const expenseComponents=parsed.expenses.map(c=>({id:c.id,name:c.label,group:groupFor(c.id) as 'direct'|'research'|'sales'|'administration'|'other',amount:amount(c.fact,c.id)}));
  for(const [key,group] of [['research','research'],['sales','sales'],['administration','administration']] as const){const c=expenseComponents.find(c=>c.group===group);if(c)figures[key]=c.amount;}
  const revenueGroups = new Map<string, typeof parsed.revenues>();
- for(const leaf of parsed.revenues){const id=canonicalRevenue(leaf.id);const key=['CloudApplications','CloudInfrastructure','CloudRevenues'].includes(id)?'cloud':['SoftwareLicense','SoftwareSupport','SoftwareRevenues'].includes(id)?'software':id;revenueGroups.set(key,[...(revenueGroups.get(key)??[]),leaf]);}
+ for(const leaf of parsed.revenues){const key=revenueCategory(canonicalRevenue(leaf.id));revenueGroups.set(key,[...(revenueGroups.get(key)??[]),leaf]);}
  const segments:BusinessSegment[]=[...revenueGroups].map(([id,leaves])=>{
   const children=leaves.map(l=>({id:canonicalRevenue(l.id),name:l.label,revenue:amount(l.fact,canonicalRevenue(l.id))}));
   const total=sum(leaves.map(l=>l.fact));
-  const revenue=leaves.length===1?children[0].revenue:{...amount(leaves[0].fact,`revenue-group:${id}`,total),basis:'derived' as const,formula:children.map(l=>l.name).join(' + '),lineage:children.flatMap(l=>l.revenue.lineage??[])};
-  return {id,name:id==='cloud'?'Cloud':id==='software'?'Software':leaves[0].label,revenue,children:leaves.length>1?children:undefined,description:'Revenue by product or service category as the filing discloses it; the products it covers are as the filing describes them.',products:children.map(l=>l.name),customers:null,monetization:'Revenue from the category\'s products, licenses, support or services; an individual product\'s share is not allocated when the filing does not disclose it.',disclosure:'Quarterly revenue categories do not overlap and sum to company revenue. Expenses are drawn only at the consolidated level, never allocated to products.',sourceIds:[source.accession]};
+  // A category is one measure whether it was printed as a total or summed from its offerings, so periods compare across both.
+  const revenue=leaves.length===1?amount(leaves[0].fact,`segment:${id}`):{...amount(leaves[0].fact,`segment:${id}`,total),basis:'derived' as const,formula:children.map(l=>l.name).join(' + '),lineage:children.flatMap(l=>l.revenue.lineage??[])};
+  return {id,name:categoryNames[id]??leaves[0].label,revenue,children:leaves.length>1?children:undefined,description:'Revenue by product or service category as the filing discloses it; the products it covers are as the filing describes them.',products:children.map(l=>l.name),customers:null,monetization:'Revenue from the category\'s products, licenses, support or services; an individual product\'s share is not allocated when the filing does not disclose it.',disclosure:'Quarterly revenue categories do not overlap and sum to company revenue. Expenses are drawn only at the consolidated level, never allocated to products.',sourceIds:[source.accession]};
  });
  const values=(keys:FlowMetric[])=>keys.map(k=>Number(figures[k]?.value));
  const [r,o,p,t,n]=values(['revenue','operating','pretax','tax','net']);

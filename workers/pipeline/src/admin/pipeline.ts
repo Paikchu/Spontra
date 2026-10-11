@@ -5,6 +5,7 @@ import { emit } from "../pipeline/outbox.ts";
 import { delaySeconds, scopeTickers } from "../pipeline/router.ts";
 import { TASK_NAMES } from "../pipeline/registry.ts";
 import { TASK_IMPLEMENTATIONS } from "../pipeline/tasks.ts";
+import { failedInputKey } from "../pipeline/workflow-task.ts";
 import { authenticateAdmin } from "./auth.ts";
 import { DISCOVERY_HEARTBEAT_KEY } from "../pipeline/discovery.ts";
 
@@ -59,6 +60,8 @@ async function replay(env: SecPipelineEnv, db: D1Database, id: string): Promise<
     await emit(env, [{ type: event.type, ticker: event.ticker, cik: event.cik, task: event.task, detail: event.detail, causeId: event.id }]);
   } else if (task) {
     if (!env.PIPELINE_TASKS) return json({ error: "任务队列未配置。" }, 503);
+    // A replayed model run may run again on the input it failed on.
+    await db.prepare("DELETE FROM sec_cache WHERE cache_key = ?").bind(failedInputKey(task.task, task.ticker)).run();
     const now = Date.now(), dueAt = new Date(now).toISOString();
     await db.prepare(`INSERT INTO pipeline_due (ticker, task, due_at, first_requested_at, cause_id) VALUES (?, ?, ?, ?, ?)
       ON CONFLICT (ticker, task) DO UPDATE SET due_at = excluded.due_at, first_requested_at = excluded.first_requested_at, cause_id = excluded.cause_id`)

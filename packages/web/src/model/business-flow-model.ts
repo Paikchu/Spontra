@@ -45,12 +45,20 @@ export function selectFlow(published: PublicBusinessFlow | undefined, fundamenta
   return { ...flow, quarters: flow.quarters.map(q => enrichDisclosedRevenue(ticker, q)) };
 }
 
+/** The quarter `days` before this one, give or take three weeks; a fiscal calendar's 52/53-week years drift a few days. */
+function quarterBefore(current: BusinessFlowQuarter, quarters: BusinessFlowQuarter[], days: number): BusinessFlowQuarter | null {
+  const end = Date.parse(current.periodEnd);
+  const gap = (q: BusinessFlowQuarter) => Math.abs((end - Date.parse(q.periodEnd)) / 86400000 - days);
+  return quarters.filter(q => q.periodEnd < current.periodEnd && gap(q) <= 21).sort((a, b) => gap(a) - gap(b))[0] ?? null;
+}
+
 export function previousQuarter(current: BusinessFlowQuarter, quarters: BusinessFlowQuarter[]): BusinessFlowQuarter | null {
-  const candidates = quarters.filter(q => q.periodEnd < current.periodEnd).sort((a, b) => b.periodEnd.localeCompare(a.periodEnd));
-  const previous = candidates[0];
-  if (!previous) return null;
-  const days = (Date.parse(current.periodEnd) - Date.parse(previous.periodEnd)) / 86400000;
-  return days >= 70 && days <= 110 ? previous : null;
+  return quarterBefore(current, quarters, 91);
+}
+
+/** The same fiscal quarter a year earlier: the base of a year-over-year change. */
+export function yearAgoQuarter(current: BusinessFlowQuarter, quarters: BusinessFlowQuarter[]): BusinessFlowQuarter | null {
+  return quarterBefore(current, quarters, 365);
 }
 
 export function compareAmount(current: BusinessFlowQuarter, previous: BusinessFlowQuarter | null, key: FlowMetric, segmentId?: string) {
@@ -71,7 +79,7 @@ export function compareFlowAmounts(current: BusinessFlowQuarter, previous: Busin
   if (!previous || av == null || bv == null || current.currency !== previous.currency || current.scale !== previous.scale || !a?.comparabilityKey || a.comparabilityKey !== b?.comparabilityKey || a.definition !== b.definition) return none(bv);
   const delta = av - bv;
   const moved = (label: string, trend: FlowChange["trend"]): FlowChange => ({ label, comparable: true, trend, delta, previous: bv, percent: null });
-  if (bv === 0) return av === 0 ? moved("flat", null) : moved("from zero", av > 0 ? "up" : "down");
+  if (bv === 0) return av === 0 ? moved("flat", null) : moved("new", av > 0 ? "up" : "down");
   const profit = ["gross", "operating", "pretax", "net", "other"].includes(key);
   if ((av < 0 && bv >= 0) || (av >= 0 && bv < 0)) return av < 0 ? moved(profit ? "turned to loss" : "turned negative", "down") : moved(profit ? "turned profitable" : "turned positive", "up");
   if (bv < 0) return delta === 0 ? moved("flat", null) : delta > 0 ? moved(profit ? "loss narrowed" : "increased", "up") : moved(profit ? "loss widened" : "decreased", "down");

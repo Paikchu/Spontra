@@ -29,7 +29,8 @@ const expenseLabels: Record<string,[string,string]> = {
 };
 const financialLabels:Record<string,string>={'total revenues':'revenue','total operating expenses':'totalOperatingExpenses','operating income':'operatingIncome','interest expense':'interestExpense','non-operating income, net':'otherIncome','non-operating expense, net':'otherIncome','non-operating income (expenses), net':'otherIncome','non-operating income (expense), net':'otherIncome','income before income taxes':'pretaxIncome','provision for income taxes':'taxExpense','benefit for income taxes':'taxExpense','net income':'netIncome','net loss':'netIncome'};
 const revenueLabels:Record<string,[string,string]>={
- cloud:['cloud','Cloud'],software:['software','Software'],hardware:['hardware','Hardware'],services:['services','Services'],
+ // The statement rows carry the inline-XBRL category ids, so both source formats describe one category the same way.
+ cloud:['CloudRevenues','Cloud'],software:['SoftwareRevenues','Software'],hardware:['HardwareRevenues','Hardware'],services:['SalesRevenueServicesNet','Services'],
  'cloud services and license support':['CloudServicesAndLicenseSupportRevenues','Cloud services and license support'],
  'cloud license and on-premise license':['CloudLicenseAndOnPremiseLicenseRevenues','Cloud license and on-premise license'],
 };

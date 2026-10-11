@@ -81,7 +81,7 @@ export function compareRevenueNode(q: BusinessFlowQuarter, previous: BusinessFlo
       tree.dimension.definitionKey !== old.dimension.definitionKey || q.currency !== previous.currency || q.scale !== previous.scale ||
       !a?.comparabilityKey || a.comparabilityKey !== b?.comparabilityKey || a.definition !== b.definition || av == null || bv == null) return { label: NOT_COMPARABLE, comparable: false, trend: null, delta: null, previous: null, percent: null };
   const delta = av - bv;
-  if (bv === 0) return { label: av === 0 ? "flat" : "from zero", comparable: true, trend: av > 0 ? "up" : null, delta, previous: bv, percent: null };
+  if (bv === 0) return { label: av === 0 ? "flat" : "new", comparable: true, trend: av > 0 ? "up" : null, delta, previous: bv, percent: null };
   const percent = delta / bv * 100;
   return { label: `${percent > 0 ? "+" : ""}${percent.toFixed(1)}%`, comparable: true, trend: percent > 0 ? "up" : percent < 0 ? "down" : null, delta, previous: bv, percent };
 }
