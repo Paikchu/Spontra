@@ -8,6 +8,8 @@ import {readCapitalStructure} from "@/shared/analysis-runtime/financial-data/cap
 import type {PublicCapitalStructure} from "@/shared/analysis-contract/capital-structure";
 import {readBusinessExplainer} from "@/shared/analysis-runtime/business-explainer";
 import type {BusinessExplainer} from "@/shared/analysis-contract/business-explainer";
+import {readBusinessTree} from "@/shared/analysis-runtime/business-tree";
+import type {BusinessTree} from "@/shared/analysis-contract/business-tree";
 import {readGuidancePublication} from "@/shared/analysis-runtime/guidance";
 import type {GuidancePublication} from "@/shared/analysis-contract/guidance";
 import {readFindingFundamentals,readFindingsPublication,type FindingFundamentals} from "@/shared/analysis-runtime/findings";
@@ -61,6 +63,16 @@ export async function loadExplainer(ticker:string,fetcher:typeof fetch=fetch):Pr
   if(!response.ok)return null;
   const body=await response.json() as {schemaVersion?:string;status?:string;explainer?:unknown};
   return body.schemaVersion==="business-explainer-response.v1"&&body.status==="ready"?readBusinessExplainer(body.explainer,ticker):null;
+ }catch{return null;}
+}
+
+/** The business breakdown the map draws as a mind map beside a picked business; re-validated, and without the agent's trace. */
+export async function loadTree(ticker:string,fetcher:typeof fetch=fetch):Promise<BusinessTree|null>{
+ try{
+  const response=await fetcher(ANALYSIS_ORIGIN+`/api/v1/companies/${ticker}/business-tree`,{signal:AbortSignal.timeout(8000),headers:{accept:"application/json"}});
+  if(!response.ok)return null;
+  const body=await response.json() as {schemaVersion?:string;status?:string;tree?:unknown};
+  return body.schemaVersion==="business-tree-response.v1"&&body.status==="ready"?readBusinessTree(body.tree,ticker):null;
  }catch{return null;}
 }
 
@@ -194,7 +206,7 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
     const response=json(body);if(cache)ctx.waitUntil(cache.put(key,response.clone()));return response;}
    return supplementary("fundamentals","fundamentals-response.v1",()=>loadFundamentals(match[1],fetcher));
   }
-  try{const [flow,explainer,guidance]=await Promise.all([loadPublicFlow(match[1],fetcher),loadExplainer(match[1],fetcher),loadGuidance(match[1],fetcher)]);const response=json({...flow,explainer,guidance});
+  try{const [flow,explainer,guidance,tree]=await Promise.all([loadPublicFlow(match[1],fetcher),loadExplainer(match[1],fetcher),loadGuidance(match[1],fetcher),loadTree(match[1],fetcher)]);const response=json({...flow,explainer,guidance,tree});
    // An incomplete answer is never cached, so one slow upstream read cannot pin "preparing" for a minute.
    const cacheable=flow.status==="ready";
    if(!cacheable)response.headers.set("cache-control","no-store");

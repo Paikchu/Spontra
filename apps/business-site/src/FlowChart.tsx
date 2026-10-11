@@ -4,6 +4,8 @@ import React, { useCallback, useEffect, useId, useMemo, useRef, useState, type C
 import type { FinancialGraph } from "@/packages/web/src/model/business-flow-sankey";
 import { estimateTextWidth, INFOGRAPHIC, layoutInfographic, type InfographicGeometry, type InfographicLayout, type PlacedLink, type PlacedNode } from "@/packages/web/src/model/business-flow-layout";
 import { alignedGraph, ghostFrames, morphLayout, priorRevenueHeight } from "@/packages/web/src/model/business-flow-compare";
+import { layoutMindMap, type MindItem, type MindMapLayout } from "./mindmap-layout";
+import { MindLayer, type MindMapInput } from "./MindMap";
 
 /** `change` is the comparable change against the prior quarter; absent when the two quarters cannot be compared. */
 export type NodeCopy = { name: string; value: string; change?: { label: string; trend?: "up" | "down" } };
@@ -54,7 +56,9 @@ const MORPH_MS = 600;
 
 type Box = { x0: number; y0: number; x1: number; y1: number };
 type Camera = { x: number; y: number; zoom: number };
-const HOME: Camera = { x: 0, y: 0, zoom: 1 };
+/** The drawable area: the statement, widened to the left when a business's breakdown hangs beside it. */
+type World = Box;
+const home = (world: World): Camera => ({ x: world.x0, y: world.y0, zoom: 1 });
 const FOCUS_ZOOM = 1.3;
 
 /**
@@ -90,16 +94,45 @@ function focusBounds(layout: InfographicLayout, name: string, copy: (n: PlacedNo
   return { x0: box.x0 - pad, y0: box.y0 - pad, x1: box.x1 + pad, y1: box.y1 + pad };
 }
 
-/** The camera that fits `box` in a pane of `size`, given that the viewBox keeps the layout's aspect and is centred (xMidYMid meet). */
-function cameraFor(box: Box, layout: InfographicLayout, size: { w: number; h: number } | null): Camera {
-  const aspect = size ? size.w / size.h : layout.width / layout.height;
-  const visibleW = Math.max(layout.width, layout.height * aspect), visibleH = Math.max(layout.height, layout.width / aspect);
+/** The camera that fits `box` in a pane of `size`, given that the viewBox keeps the world's aspect and is centred (xMidYMid meet). */
+function cameraFor(box: Box, world: World, size: { w: number; h: number } | null, cap = FOCUS_ZOOM): Camera {
+  const width = world.x1 - world.x0, height = world.y1 - world.y0;
+  const aspect = size ? size.w / size.h : width / height;
+  const visibleW = Math.max(width, height * aspect), visibleH = Math.max(height, width / aspect);
   // A gentle push-in: enough to set the business apart, never so close that the rest of the statement leaves the frame.
-  const zoom = Math.max(1, Math.min(FOCUS_ZOOM, visibleW / (box.x1 - box.x0), visibleH / (box.y1 - box.y0)));
-  if (zoom < 1.05) return HOME;
-  const vw = layout.width / zoom, vh = layout.height / zoom;
-  const clamp = (v: number, max: number) => Math.max(0, Math.min(max, v));
-  return { x: clamp((box.x0 + box.x1) / 2 - vw / 2, layout.width - vw), y: clamp((box.y0 + box.y1) / 2 - vh / 2, layout.height - vh), zoom };
+  const zoom = Math.max(1, Math.min(cap, visibleW / (box.x1 - box.x0), visibleH / (box.y1 - box.y0)));
+  if (zoom < 1.05) return home(world);
+  const vw = width / zoom, vh = height / zoom;
+  const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
+  return { x: clamp((box.x0 + box.x1) / 2 - vw / 2, world.x0, world.x1 - vw), y: clamp((box.y0 + box.y1) / 2 - vh / 2, world.y0, world.y1 - vh), zoom };
+}
+
+/**
+ * Where a picked business's breakdown goes: each branch leaves its Sankey node from the left end of the
+ * node's label, and the first column starts left of every label in that column, so no branch crosses one.
+ */
+function mindFor(input: MindMapInput, layout: InfographicLayout, copy: (n: PlacedNode) => NodeCopy, k: number, focus: Box | null, size: { w: number; h: number } | null): MindMapLayout | null {
+  const g = geometryFor(k), byName = new Map(layout.nodes.map(n => [n.name, n]));
+  const labelLeft = (n: PlacedNode) => n.side === "left" ? n.x - g.labelOffset - labelWidth(n, copy(n), k) : n.x;
+  const placed = input.branches.flatMap(b => { const n = byName.get(b.node); return n && (b.nodes.length || b.revenue.length) ? [{ b, n }] : []; });
+  if (!placed.length) return null;
+  const column = Math.min(...placed.map(p => p.n.column));
+  const right = Math.min(...layout.nodes.filter(n => n.column === column).map(labelLeft)) - 20 * k;
+  const anchors = placed.map(({ b, n }) => ({ key: b.node, label: b.label, x: labelLeft(n) - 6 * k, y: n.y + Math.max(n.h, g.sideLabelHeight) / 2, revenue: b.revenue, nodes: b.nodes }));
+  const options = { k, right, top: 0, bottom: layout.height };
+  const [flat, stacked] = [layoutMindMap(anchors, options), layoutMindMap(anchors, { ...options, stacked: true })];
+  if (!flat || !stacked || !size) return flat;
+  // The one that lets the focus frame draw its type larger in this pane.
+  const scale = (mind: MindMapLayout) => {
+    const world = worldOf(mind, layout), box = focus ? union(focus, mind.box) : mind.box;
+    const camera = cameraFor(box, world, size, FOCUS_ZOOM * Math.max((world.x1 - world.x0) / layout.width, (world.y1 - world.y0) / layout.height));
+    return Math.min(size.w / ((world.x1 - world.x0) / camera.zoom), size.h / ((world.y1 - world.y0) / camera.zoom));
+  };
+  return scale(stacked) > scale(flat) * 1.04 ? stacked : flat;
+}
+const union = (a: Box, b: Box): Box => ({ x0: Math.min(a.x0, b.x0), y0: Math.min(a.y0, b.y0), x1: Math.max(a.x1, b.x1), y1: Math.max(a.y1, b.y1) });
+function worldOf(mind: MindMapLayout | null, layout: InfographicLayout): World {
+  return mind ? { x0: Math.min(0, mind.box.x0), y0: Math.min(0, mind.box.y0), x1: Math.max(layout.width, mind.box.x1), y1: Math.max(layout.height, mind.box.y1) } : { x0: 0, y0: 0, x1: layout.width, y1: layout.height };
 }
 
 /** A few fixed-point steps: larger type widens the layout, which shrinks the fit scale, so k converges quickly. */
@@ -132,8 +165,13 @@ function Streams({ band, strength }: { band: Band; strength: "ambient" | "lit" }
 
 export type PriorQuarter = { graph: FinancialGraph; copy: (n: PlacedNode) => NodeCopy; label: string };
 
-export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHover, onPick, tipFor, label, revealKey, businessDetails, productBusiness = null, spotlight = null, priorOf, previous = null, brackets, pills }: {
+export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHover, onPick, tipFor, label, revealKey, businessDetails, mindMap = null, mindPick = null, onMindPick, productBusiness = null, spotlight = null, priorOf, previous = null, brackets, pills }: {
   businessDetails?: ReactNode;
+  /** The picked business broken down into product lines, products and how each earns; when present it replaces the written details. */
+  mindMap?: MindMapInput | null;
+  /** The breakdown node whose explanation is open below the chart; picking it again closes it. */
+  mindPick?: string | null;
+  onMindPick?: (item: MindItem | null) => void;
   /** The comparable prior-quarter amount of a node, drawn as a dashed outline over its bar; null when the two quarters cannot be compared. */
   priorOf?: (n: PlacedNode) => number | null;
   /** The prior quarter's statement: 对比上季 morphs the whole chart to it at the current quarter's scale. */
@@ -208,13 +246,19 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
   const bracketOf = useMemo(() => new Map((brackets ?? []).map(b => [b.node, b])), [brackets]);
   const pillOf = useMemo(() => new Map((pills ?? []).map(p => [p.node, p])), [pills]);
   const productTarget = productBusiness ? byName.get(productBusiness) : null;
-  const expanded = Boolean(productTarget);
+  // The breakdown is laid out against this quarter's statement; it steps aside while the prior quarter is shown.
+  const narrowPane = typeof matchMedia === "function" && matchMedia("(max-width: 960px)").matches;
+  const mind = useMemo(() => mindMap && fitted && productBusiness
+    ? mindFor(mindMap, fitted.layout, copy, fitted.k, narrowPane ? null : focusBounds(fitted.layout, productBusiness, copy, fitted.k), size) : null, [mindMap, fitted, copy, productBusiness, size, narrowPane]);
+  const expanded = Boolean(productTarget) && !mind;
+  const world: World = useMemo(() => worldOf(mind, layout), [mind, layout]);
+  const worldW = world.x1 - world.x0, worldH = world.y1 - world.y0;
   // The explanation's scrollbar stays hidden until the reader scrolls it, and fades shortly after.
   const [scrolling, setScrolling] = useState(false);
   const scrollIdle = useRef(0);
   const revealScrollbar = () => { setScrolling(true); clearTimeout(scrollIdle.current); scrollIdle.current = window.setTimeout(() => setScrolling(false), 900); };
   useEffect(() => () => clearTimeout(scrollIdle.current), []);
-  const [camera, setCamera] = useState<Camera>(HOME);
+  const [camera, setCamera] = useState<Camera>(() => home(world));
   const cameraRef = useRef(camera);
   cameraRef.current = camera;
   const flight = useRef(0);
@@ -237,8 +281,8 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
     cancelAnimationFrame(flight.current);
     setCamera(c => {
       const zoom = Math.max(.6, Math.min(3, c.zoom * factor));
-      const cx = c.x + layout.width / c.zoom / 2, cy = c.y + layout.height / c.zoom / 2;
-      return { x: cx - layout.width / zoom / 2, y: cy - layout.height / zoom / 2, zoom };
+      const cx = c.x + worldW / c.zoom / 2, cy = c.y + worldH / c.zoom / 2;
+      return { x: cx - worldW / zoom / 2, y: cy - worldH / zoom / 2, zoom };
     });
   };
   const drag = useRef<{ x: number; y: number; cx: number; cy: number; pointerId: number } | null>(null);
@@ -246,11 +290,14 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
   const focusCamera = useMemo(() => {
     // Narrow layouts scroll the full-size statement sideways instead of zooming it.
     const narrow = typeof matchMedia === "function" && matchMedia("(max-width: 960px)").matches;
-    const box = productBusiness && fitted && !narrow ? focusBounds(fitted.layout, productBusiness, copy, fitted.k) : null;
-    return box ? cameraFor(box, fitted!.layout, size) : HOME;
-  }, [productBusiness, fitted, copy, size]);
+    const own = productBusiness && fitted && !narrow ? focusBounds(fitted.layout, productBusiness, copy, fitted.k) : null;
+    if (!own) return home(world);
+    if (!mind) return cameraFor(own, world, size);
+    // With a breakdown, the frame takes it and the business's path into revenue; type never grows past the plain focus.
+    return cameraFor(union(own, mind.box), world, size, FOCUS_ZOOM * Math.max(worldW / fitted!.layout.width, worldH / fitted!.layout.height));
+  }, [productBusiness, fitted, copy, size, mind, world, worldW, worldH]);
   useEffect(() => { drag.current = null; flyTo(focusCamera); }, [focusCamera, revealKey]); // eslint-disable-line react-hooks/exhaustive-deps
-  const viewportWidth = layout.width / camera.zoom, viewportHeight = layout.height / camera.zoom;
+  const viewportWidth = worldW / camera.zoom, viewportHeight = worldH / camera.zoom;
 
 
   const bands: Band[] = useMemo(() => shown.links.map(l => {
@@ -310,16 +357,23 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
     if (!owner) setTip(null);
   };
 
+  const mindTip = (event: React.MouseEvent, item: MindItem) => {
+    const node = item.kind === "node" ? item.node : null;
+    point(event, item.kind === "revenue"
+      ? { title: `赚钱方式 · ${item.revenue.label}`, color: "var(--flow-profit)", rows: [["属于", item.owner?.name ?? mindMap?.branches.find(b => b.node === item.anchor)?.label ?? ""]], link: "点击查看说明与来源" }
+      : { title: node!.name, color: colorOf(item.anchor), rows: [...(node!.gloss ? [["是什么", node!.gloss] as [string, string]] : []), ...(node!.revenue.length ? [["赚钱方式", node!.revenue.map(m => m.label).join("、")] as [string, string]] : []), ...(node!.children.length ? [["下级", `${node!.children.length} 项`] as [string, string]] : [])], link: "点击查看说明与来源" });
+  };
+
   // The explanation is page text beside the canvas, not part of the scaled drawing: opening it narrows the pane and the Sankey refits.
-  return <div className="fc" data-products={expanded || undefined} style={{ "--ratio": `${layout.width} / ${layout.height}`, "--mobile-width": `${Math.ceil(layout.width * SCREEN_VALUE_PX / (21 * k))}px` } as CSSProperties} onMouseLeave={() => { setTip(null); onHover(null); }}>
-    <div className="fc-controls"><Button variant="outline" size="sm" aria-label="缩小画布" onClick={() => zoomBy(1 / 1.2)}>−</Button><Button variant="outline" size="sm" onClick={() => flyTo(HOME)}>适应画布</Button>{priorLayout && <Button variant="outline" size="sm" aria-pressed={compare} data-on={compare || undefined} onClick={() => setCompare(v => !v)}>对比上季</Button>}{productBusiness && <Button variant="outline" size="sm" onClick={() => flyTo(focusCamera)}>聚焦业务</Button>}<Button variant="outline" size="sm" aria-label="放大画布" onClick={() => zoomBy(1.2)}>+</Button></div>
+  return <div className="fc" data-products={expanded || undefined} data-mind={mind ? "" : undefined} style={{ "--ratio": `${worldW} / ${worldH}`, "--mobile-width": `${Math.ceil(worldW * SCREEN_VALUE_PX / (21 * k))}px` } as CSSProperties} onMouseLeave={() => { setTip(null); onHover(null); }}>
+    <div className="fc-controls"><Button variant="outline" size="sm" aria-label="缩小画布" onClick={() => zoomBy(1 / 1.2)}>−</Button><Button variant="outline" size="sm" onClick={() => flyTo(home(world))}>适应画布</Button>{priorLayout && <Button variant="outline" size="sm" aria-pressed={compare} data-on={compare || undefined} onClick={() => setCompare(v => !v)}>对比上季</Button>}{productBusiness && <Button variant="outline" size="sm" onClick={() => flyTo(focusCamera)}>聚焦业务</Button>}<Button variant="outline" size="sm" aria-label="放大画布" onClick={() => zoomBy(1.2)}>+</Button></div>
     {expanded && productTarget && <aside key={productBusiness} className="fc-business-details" aria-label={`${productTarget.label} 业务说明`}>
       <div className="fc-business-scroll" tabIndex={0} data-scrolling={scrolling || undefined} onScroll={revealScrollbar}>{businessDetails}</div>
     </aside>}
     <div className="fc-canvas" ref={box}>
     {t > 0 && previous && <div className="fc-period" role="status" style={{ opacity: Math.min(1, t * 2) }}>上季 · {previous.label}</div>}
     <svg key={revealKey} onPointerDown={e => {
-        if ((e.target as Element).closest("[data-owner],a,button")) return;
+        if ((e.target as Element).closest("[data-owner],[data-mind],a,button")) return;
         // Narrow layouts use native horizontal scrolling instead of capturing touch gestures.
         const scroller = box.current?.closest(".chart");
         if (scroller && scroller.scrollWidth > scroller.clientWidth) return;
@@ -413,6 +467,7 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
           </g>;
         })}
       </g>
+      {mind && t === 0 && <MindLayer mind={mind} k={k} title={mindMap!.branches.filter(b => mind.trunks.some(tr => tr.anchor === b.node)).map(b => b.label).join("、")} colorOf={colorOf} picked={mindPick} onPick={id => onMindPick?.(id === mindPick ? null : mind.items.find(i => i.id === id) ?? null)} onTip={mindTip} onLeave={() => setTip(null)} />}
       {focus && <g className="fc-slots">
         {focus.trace.slice(0, -1).map(t => <rect key={t.key} x={t.x1} y={t.ty} width={w} height={Math.max(2, t.h)} rx={2} style={{ fill: t.color }} />)}
       </g>}

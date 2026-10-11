@@ -22,7 +22,7 @@ const DEFAULT_TITLE: Record<ExplainerSectionKind, string> = {
   delivery: "怎么交付", customers: "客户", monetization: "收费方式", lifecycle: "客户周期", channel: "销售渠道", economics: "成本结构", relation: "关联业务", other: "运营要点",
 };
 /** Amounts, shares and growth rates belong to the SEC flow, never to model prose. */
-const FIGURE = /[$¥€£]\s?\d|\d[\d,.]*\s?(%|％|percent|亿|万|千|百万|billion|million|bn\b|美元|元)/i;
+export const FIGURE = /[$¥€£]\s?\d|\d[\d,.]*\s?(%|％|percent|亿|万|千|百万|billion|million|bn\b|美元|元)/i;
 const compact = (value: string) => value.normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
 const length = (value: string) => [...value].length;
 

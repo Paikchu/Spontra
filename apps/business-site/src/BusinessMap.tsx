@@ -11,6 +11,10 @@ import { FlowChart, layoutFor, type GuideBracketMark, type GuidePillMark, type N
 import { ACTION_GLYPH, actionName, guidanceMarks, markSentence } from "./guidance-marks";
 import type { RevenueHistory } from "@/shared/analysis-contract/revenue-history";
 import type { BusinessExplainer, ExplainerClaim, ExplainerSection } from "@/shared/analysis-contract/business-explainer";
+import type { BusinessTree } from "@/shared/analysis-contract/business-tree";
+import { treeNodeFor } from "@/shared/analysis-runtime/business-tree";
+import { MindLens, type MindMapInput } from "./MindMap";
+import type { MindItem } from "./mindmap-layout";
 import type { GuidancePublication } from "@/shared/analysis-contract/guidance";
 import { TrendPanel } from "./TrendPanel";
 import { MetricPicker, MetricTrendPanel } from "./MetricTrend";
@@ -133,7 +137,7 @@ function Sources({ sources, ids }: { sources: FlowSource[]; ids?: string[] }) {
   return <ul className="sources">{list.map(s => <li key={s.id}><a href={s.url} target="_blank" rel="noopener noreferrer">{s.title}<span aria-hidden="true"> ↗</span></a></li>)}</ul>;
 }
 
-export function BusinessMap({ ticker, tools, flow, business, notice, revenueHistory, explainer = null, guidance = null, capital = null, findings = null, fundamentals = null, events = null, filings = null }: { ticker: string; tools: ReactNode; flow: PublicBusinessFlow; business: CompanyBusinessContent | null; notice: string | null; revenueHistory: RevenueHistory | null; explainer?: BusinessExplainer | null; guidance?: GuidancePublication | null; capital?: PublicCapitalStructure | null; findings?: FindingsPublication | null; fundamentals?: FindingFundamentals | null; events?: EventsPublication | null; filings?: PublicFilingDigestPage | null }) {
+export function BusinessMap({ ticker, tools, flow, business, notice, revenueHistory, explainer = null, tree = null, guidance = null, capital = null, findings = null, fundamentals = null, events = null, filings = null }: { ticker: string; tools: ReactNode; flow: PublicBusinessFlow; business: CompanyBusinessContent | null; notice: string | null; revenueHistory: RevenueHistory | null; explainer?: BusinessExplainer | null; tree?: BusinessTree | null; guidance?: GuidancePublication | null; capital?: PublicCapitalStructure | null; findings?: FindingsPublication | null; fundamentals?: FindingFundamentals | null; events?: EventsPublication | null; filings?: PublicFilingDigestPage | null }) {
   const quarters = useMemo(() => [...flow.quarters].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd)), [flow]);
   const [period, setPeriod] = useState<string | null>(null);
   const quarter = quarters.find(q => q.id === period) ?? quarters[0];
@@ -335,6 +339,21 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
     next.focus();
   }
 
+  // A picked business is broken down from the businesses the chart draws at its left edge: itself, or the disclosed businesses it is made of.
+  const mindMap = useMemo((): MindMapInput | null => {
+    if (!tree || !current) return null;
+    const leaves = (item: Item): Item[] => { const children = items.filter(i => i.parent === item.key); return children.length ? children.flatMap(leaves) : [item]; };
+    const branches = leaves(current).flatMap(item => {
+      const node = treeNodeFor(tree, item.id);
+      return node && (node.children.length || node.revenue.length) ? [{ node: "segment:" + item.key, label: item.name, summary: node.summary, revenue: node.revenue, nodes: node.children }] : [];
+    });
+    return branches.length ? { branches, sources: tree.sources } : null;
+  }, [tree, current, items]);
+  // A node picked in the breakdown opens below the chart; it belongs to the business picked, and closes with it.
+  const [mindPicked, setMindPicked] = useState<{ business: string; item: MindItem } | null>(null);
+  const mindItem = mindMap && mindPicked && mindPicked.business === current?.key ? mindPicked.item : null;
+  const setMindItem = (item: MindItem | null) => setMindPicked(item && current ? { business: current.key, item } : null);
+
   const reconciliation = quarter ? reconcileQuarter(quarter) : [];
   const balanced = reconciliation.length > 0 && reconciliation.every(r => r.status === "balanced");
   const figure = (key: FlowMetric) => quarter ? numeric(quarter.figures[key]) : null;
@@ -410,7 +429,7 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
       <div className="chart">
         {view !== "profit" && funding ? <CapitalChart view={view} funding={funding} ticker={ticker} spotlight={poolSpotlight} />
           : !quarter ? <div className="empty"><h2>季度财务未披露</h2><p>需要同币种、同口径的三个月数据才能绘制流向；不会用示例数据替代。</p></div>
-          : proportional && layout ? <FlowChart graph={graph!} copy={copy} money={v => money(v)} colorOf={colorOf} active={active} revealKey={quarter.id} productBusiness={current ? "segment:" + current.key : null} businessDetails={<Dossier item={current} parent={parent ?? null} sources={quarter?.sources.length ? quarter.sources : business?.sources ?? []} explainer={explainer} />}
+          : proportional && layout ? <FlowChart graph={graph!} copy={copy} money={v => money(v)} colorOf={colorOf} active={active} revealKey={quarter.id} productBusiness={current ? "segment:" + current.key : null} mindMap={mindMap} mindPick={mindItem?.id ?? null} onMindPick={setMindItem} businessDetails={<Dossier item={current} parent={parent ?? null} sources={quarter?.sources.length ? quarter.sources : business?.sources ?? []} explainer={explainer} />}
               focusSlot={n => segmentRevenue ? `占${shareBasis} ${percent(n.value / segmentRevenue * 100)}` : null}
               onHover={name => setHoverNode(name)} tipFor={tipFor} spotlight={spotlight} priorOf={priorOf} previous={priorQuarter} brackets={guideMarks.brackets} pills={guideMarks.pills}
               onPick={n => { const item = itemByNode.get(n.name); pickBusiness(item && current?.key !== item.key ? item.id : null); }}
@@ -434,6 +453,7 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
         {split && pair && <LensPanel finding={pair} data={data} sources={findings.sources} nodeColor={nodeColor} pair={null} compact
           story={false} index={-1} count={verified.length} onPair={() => {}} onStep={() => {}} onClose={() => setSplit(false)} onFocusThis={() => setFocusId(pair.id)} />}
       </div>
+      : mindItem && mindMap ? <div className="lens-stage"><MindLens item={mindItem} branch={mindMap.branches.find(b => b.node === mindItem.anchor)} sources={mindMap.sources} onClose={() => setMindItem(null)} /></div>
       : shownMetric ? <MetricTrendPanel trend={shownMetric} currentPeriod={quarter?.periodEnd ?? null} periods={new Set(quarters.map(q => q.periodEnd))}
         onPickPeriod={end => setPeriod(quarters.find(q => q.periodEnd === end)?.id ?? null)}
         picker={<MetricPicker value={shownMetric.key} groups={metricGroups} revenue={hasRevenueTrend} onChange={setMetricKey} />} />

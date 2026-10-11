@@ -122,6 +122,7 @@ function Company({ ticker, tools, onSeen }: { ticker: string; tools: ReactNode; 
           business={business}
           revenueHistory={publication?.history ?? null}
           explainer={publication?.explainer ?? null}
+          tree={publication?.tree ?? null}
           guidance={publication?.guidance ?? null}
           capital={capital}
           findings={findings}

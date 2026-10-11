@@ -60,6 +60,11 @@ export type SecPipelineEnv = SecCronEnv & AnalysisReadEnv & {
   BUSINESS_EXPLAINER_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
   GUIDANCE_WORKFLOW?: AiWorkflowBinding<{ ticker: string; accession: string; eventDate: string; manual?: boolean }>;
   FINDINGS_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
+  BUSINESS_TREE_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
+  /** Companies whose businesses the ReAct agent breaks down; unset falls back to the AI list. */
+  BUSINESS_TREE_TICKERS?: string;
+  /** "false" pauses the business-tree sweep; unset or anything else runs it. */
+  BUSINESS_TREE_ENABLED?: string;
   /** "true" lets the sweep start findings runs for AI-enabled companies; anything else leaves it off. */
   FINDINGS_ENABLED?: string;
   /** "false" pauses the deterministic events sweep (8-K and Form 4); unset or anything else runs it. */

@@ -326,6 +326,41 @@ button { cursor: pointer; }
 .fc-slot-pill { fill: var(--surface-raised); stroke-width: 1.2; animation: fade-in .4s ease both; }
 .fc-slot-text { font-size: 13px; font-weight: 600; fill: var(--foreground); font-variant-numeric: tabular-nums; animation: fade-in .4s ease both; }
 
+/* The picked business's breakdown, left of the Sankey: product lines, products, and money pills at the ends of branches. */
+.fc-mind-trunk, .fc-mind-edge { fill: none; stroke: var(--c); stroke-width: 1.5; vector-effect: non-scaling-stroke; stroke-linecap: round; opacity: .55; animation: fade-in .5s var(--ease) both; animation-delay: calc(var(--depth, 0) * 110ms + 120ms); }
+.fc-mind-trunk { opacity: .75; stroke-width: 2; animation-delay: 0ms; }
+.fc-mind-edge[data-revenue] { stroke: var(--flow-profit); stroke-dasharray: 3 4; opacity: .8; }
+.fc-mind-item { cursor: pointer; outline: none; animation: mind-in .5s var(--ease) both; animation-delay: calc(var(--depth, 1) * 110ms + 160ms); transform-box: fill-box; }
+@keyframes mind-in { from { opacity: 0; transform: translateX(14px); } }
+.fc-mind-node rect { fill: var(--surface); stroke: color-mix(in srgb, var(--c) 45%, var(--border)); stroke-width: 1.2; vector-effect: non-scaling-stroke; transition: stroke .2s, fill .2s; }
+.fc-mind-node[data-kind="line"] rect { fill: color-mix(in srgb, var(--c) 13%, var(--surface)); stroke: color-mix(in srgb, var(--c) 75%, var(--border)); }
+.fc-mind-name { font-weight: 600; fill: var(--foreground); }
+.fc-mind-node[data-kind="product"] .fc-mind-name { font-weight: 540; }
+.fc-mind-gloss { fill: var(--muted-foreground); }
+.fc-mind-pill rect { fill: color-mix(in srgb, var(--flow-profit) 14%, var(--surface)); stroke: color-mix(in srgb, var(--flow-profit) 70%, var(--border)); stroke-width: 1.1; vector-effect: non-scaling-stroke; }
+.fc-mind-pill text { font-weight: 600; fill: color-mix(in srgb, var(--flow-profit) 55%, var(--foreground)); }
+.fc-mind-coin { fill: var(--flow-profit); }
+.fc-mind-item:hover rect { stroke: var(--foreground); }
+.fc-mind-item:focus-visible rect { stroke: var(--focus-ring); stroke-width: 2.5; }
+.fc-mind-item[data-picked] rect { stroke: var(--foreground); stroke-width: 2; }
+.fc-mind-caption { pointer-events: none; animation: fade-in .4s ease both; }
+.fc-mind-title { font-weight: 600; fill: var(--foreground); }
+.fc-mind-hint { fill: var(--faint); }
+@media (max-width: 960px) { .mind-lens .lens-body { grid-template-columns: minmax(0, 1fr); } }
+.mind-lens-kind { font-size: 12px; font-weight: 600; color: var(--muted-foreground); }
+.mind-lens .lens-body { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.mind-lens-summary { margin: 0 0 10px; font-size: 13.5px; }
+.mind-lens-empty { margin: 0 0 10px; color: var(--faint); }
+.mind-lens-revenue { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.mind-lens-revenue li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 10px; padding: 8px 10px; border-radius: 8px; border: 1px solid color-mix(in srgb, var(--flow-profit) 35%, var(--border)); background: color-mix(in srgb, var(--flow-profit) 6%, transparent); }
+.mind-lens-revenue li[data-active] { border-color: var(--flow-profit); background: color-mix(in srgb, var(--flow-profit) 15%, transparent); }
+.mind-lens-revenue b { font-weight: 600; }
+.mind-lens-revenue small { align-self: center; color: var(--faint); }
+.mind-lens-revenue span { grid-column: 1 / -1; color: var(--muted-foreground); }
+.mind-lens-anchor { margin: 0 0 10px; padding: 2px 0 2px 12px; border-left: 2px solid var(--border); color: var(--muted-foreground); font-size: 12.5px; font-style: italic; overflow-wrap: anywhere; }
+.mind-lens-anchor small { display: block; margin-bottom: 2px; font-style: normal; color: var(--faint); }
+.mind-lens .sources { margin-top: 4px; }
+
 .fc-tip {
   position: absolute; top: 0; left: 0; z-index: 3; pointer-events: none; min-width: 168px;
   padding: 10px 12px; border-radius: 10px; font-size: 12px;
