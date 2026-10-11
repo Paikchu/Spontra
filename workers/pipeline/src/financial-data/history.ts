@@ -150,7 +150,10 @@ export async function runHistoryStep(db: D1Database, reader: SecReader, target: 
 }
 
 /** Picks the first allowed, already-identified issuer whose history is unfinished or older than a day. */
-export async function runHistoryTick(db: D1Database, reader: SecReader, policy: FinancialPolicy, now = new Date(), archive?: (ticker: string, source: DocumentSource, html: string, metadata?: {form?: string; reportDate?: string}) => Promise<void>) {
+export async function runHistoryTick(db: D1Database, reader: SecReader, policy: FinancialPolicy, now = new Date(), archive?: {
+  store(ticker: string, source: DocumentSource, html: string, metadata?: {form?: string; reportDate?: string}): Promise<void>;
+  read(ticker: string, url: string): Promise<string | null>;
+}) {
   const rows = await db.prepare('SELECT ticker,cik FROM financial_collection_jobs j WHERE generation=(SELECT MAX(generation) FROM financial_collection_jobs WHERE ticker=j.ticker)').bind().all<{ticker: string; cik: string}>();
   const identities = new Map(rows.results.filter(r => /^\d{10}$/.test(r.cik)).map(r => [r.ticker, r.cik]));
   const repository = new D1SecRepository(db);
@@ -159,7 +162,7 @@ export async function runHistoryTick(db: D1Database, reader: SecReader, policy: 
     if (!cik || !allowData(policy, ticker)) continue;
     const cursor = (await repository.getCache<HistoryCursor>(cursorKey(cik)))?.payload;
     const due = !cursor || cursor.version !== HISTORY_VERSION || !cursor.finishedAt || now.getTime() - Date.parse(cursor.finishedAt) >= REFRESH_MS;
-    if (due) return runHistoryStep(db, archive ? {...reader, archive: (source, html, metadata) => archive(ticker, source, html, metadata)} : reader, {ticker, cik}, now);
+    if (due) return runHistoryStep(db, archive ? {...reader, archive: (source, html, metadata) => archive.store(ticker, source, html, metadata), archived: url => archive.read(ticker, url)} : reader, {ticker, cik}, now);
   }
   return null;
 }

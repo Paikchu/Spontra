@@ -7,7 +7,7 @@ import { collectComplete } from "../financial-data/collect.ts";
 import { readCompletePublicationForTicker } from "../financial-data/publication.ts";
 import { D1CompleteStore, type Job } from "../financial-data/store.ts";
 import { runHistoryStep } from "../financial-data/history.ts";
-import { archiveFilingDisclosures, listFilingDisclosureAudits } from "../financial-data/disclosure-audit.ts";
+import { archiveFilingDisclosures, listFilingDisclosureAudits, readArchivedDocument } from "../financial-data/disclosure-audit.ts";
 import { FinancialMaintenanceStore, type MaintenanceRow, type MaintenanceState } from "./financial-maintenance-store.ts";
 
 export interface MaintenanceDependencies {
@@ -19,7 +19,9 @@ export interface MaintenanceDependencies {
 const dependencies: MaintenanceDependencies = {
   reader(env, ticker) {
     const reader = throttledSecReader(env.SEC_USER_AGENT, fetch, 1000);
-    reader.archive = (source, html, metadata) => archiveFilingDisclosures({ DB: env.DB!, SEC_FILINGS: env.SEC_FILINGS }, ticker, source, html, metadata).then(() => undefined);
+    const archive = { DB: env.DB!, SEC_FILINGS: env.SEC_FILINGS };
+    reader.archive = (source, html, metadata) => archiveFilingDisclosures(archive, ticker, source, html, metadata).then(() => undefined);
+    reader.archived = url => readArchivedDocument(archive, ticker, url);
     return reader;
   },
   discover: discoverDataIssuer,

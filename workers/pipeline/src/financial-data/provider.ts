@@ -6,7 +6,15 @@ export interface SecReader {
  read(url:string):Promise<Response>;
  /** Persist exact bytes and all encountered facts independently of the chart projection. */
  archive?(source:DocumentSource,html:string,metadata?:{form?:string;reportDate?:string}):Promise<void>;
+ /** The stored copy of a document this issuer already archived. A filed EDGAR document never changes, so it stands in for the download. */
+ archived?(url:string):Promise<string|null>;
 }
+/**
+ * EDGAR accepts no script in a filing, yet sec.gov appends one with a random path to every page it serves, so the same
+ * document hashed differently on each download and was archived again in full. Dropping script elements leaves exactly
+ * what was filed.
+ */
+export function canonicalSecHtml(html:string):string{return html.replace(/\s*<script\b[^>]*?(?:\/>|>[\s\S]*?<\/script\s*>)/gi,'');}
 /** One reader is shared by the bounded consumer. It is not a promise of account-wide rate limiting. */
 export function throttledSecReader(userAgent:string,fetcher:typeof fetch=fetch,delayMs=500):SecReader{
  if(!userAgent.trim())throw new Error('SEC contact user-agent is required');let next=0;
@@ -16,12 +24,16 @@ async function readBoundedReport(response:Response):Promise<string>{
  if(Number(response.headers.get('content-length'))>12000000||!response.body)throw new Error('SEC_DOCUMENT_UNAVAILABLE');
  const reader=response.body.getReader(),decoder=new TextDecoder(),parts:string[]=[];let bytes=0;
  try{while(true){const part=await reader.read();if(part.done)break;bytes+=part.value.byteLength;if(bytes>12000000){await reader.cancel();throw new Error('SEC_DOCUMENT_UNAVAILABLE');}parts.push(decoder.decode(part.value,{stream:true}));}parts.push(decoder.decode());}finally{reader.releaseLock();}
- const html=parts.join('');if(!html.trim())throw new Error('SEC_DOCUMENT_UNAVAILABLE');return html;
+ const html=canonicalSecHtml(parts.join(''));if(!html.trim())throw new Error('SEC_DOCUMENT_UNAVAILABLE');return html;
 }
-/** A filing's primary document plus at most two same-filing Exhibit 99 documents, each size-bounded. */
+async function readDocument(url:string,reader:SecReader):Promise<string>{
+ const stored=await reader.archived?.(url);if(stored)return stored;
+ const response=await reader.read(url);if(Number(response.headers.get('content-length'))>12000000)throw new Error('Document too large');
+ return readBoundedReport(response);
+}
+/** A filing's primary document plus at most two same-filing Exhibit 99 documents, each size-bounded; archived ones are not downloaded again. */
 export async function readFilingDocuments(primaryUrl:string,reader:SecReader):Promise<Array<{url:string;html:string}>>{
- const response=await reader.read(primaryUrl);if(Number(response.headers.get('content-length'))>12000000)throw new Error('Document too large');
- const html=await readBoundedReport(response);const documents=[{url:primaryUrl,html}];
+ const html=await readDocument(primaryUrl,reader);const documents=[{url:primaryUrl,html}];
  // Earnings 8-K primary documents often link their actual GAAP statements in Exhibit 99.
  // Follow at most two same-filing named exhibits, never an arbitrary outbound URL.
  const folder=primaryUrl.slice(0,primaryUrl.lastIndexOf('/')+1);
@@ -31,7 +43,7 @@ export async function readFilingDocuments(primaryUrl:string,reader:SecReader):Pr
  candidates.push(...[...html.matchAll(/href\s*=\s*["']([^"']+)["']/gi)].map(m=>m[1]).filter(path=>/ex[-_]?99/i.test(path)));
  const exhibits=[...new Set(candidates.map(path=>{try{return new URL(path,primaryUrl);}catch{return null;}})
   .filter((url):url is URL=>!!url&&url.href.startsWith(folder)&&url.href!==primaryUrl&&!url.search&&!url.hash&&/^[A-Za-z0-9_.-]+\.html?$/i.test(url.pathname.split('/').at(-1)!)).map(url=>url.href))].slice(0,2);
- for(const url of exhibits){const exhibit=await reader.read(url);if(Number(exhibit.headers.get('content-length'))>12000000)throw new Error('Document too large');const body=await readBoundedReport(exhibit);if(documents.reduce((n,d)=>n+d.html.length,0)+body.length>16000000)throw new Error('SEC_DOCUMENT_UNAVAILABLE');documents.push({url,html:body});}
+ for(const url of exhibits){const body=await readDocument(url,reader);if(documents.reduce((n,d)=>n+d.html.length,0)+body.length>16000000)throw new Error('SEC_DOCUMENT_UNAVAILABLE');documents.push({url,html:body});}
  return documents;
 }
 export async function readSecDocumentBatch(job:Job,reader:SecReader,maxDocuments=2):Promise<DocumentBatch>{

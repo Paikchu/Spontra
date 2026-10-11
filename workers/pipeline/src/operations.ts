@@ -45,6 +45,8 @@ type R2ObjectLike = { etag?: string; text(): Promise<string> };
 type R2BucketLike = {
   get(key: string): Promise<R2ObjectLike | null>;
   put(key: string, value: string, options?: { httpMetadata?: { contentType?: string }; onlyIf?: { etagMatches?: string; etagDoesNotMatch?: string } }): Promise<unknown>;
+  list(options: { prefix: string; cursor?: string; limit?: number }): Promise<{ objects: Array<{ key: string; uploaded: Date }>; truncated: boolean; cursor?: string }>;
+  delete(keys: string[]): Promise<unknown>;
 };
 
 /** `get` reads an instance's engine status; the admin view uses it to settle runs that ended without a record. */
