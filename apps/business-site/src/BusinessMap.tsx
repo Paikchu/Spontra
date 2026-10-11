@@ -311,7 +311,8 @@ export function BusinessMap({ ticker, tools, flow, business, notice, revenueHist
   const toggleBusiness = (open: boolean) => railTransition(() => setBusinessOpen(open));
   // One section can open over the whole rail; the rest of the rail returns when it closes.
   const [section, setSection] = useState<RailSectionKey | null>(null);
-  const showFindings = !current && !!findings && verified.length > 0;
+  // The findings stay in the rail whatever business is picked; focusing one brings the stage back to the whole company.
+  const showFindings = !!findings && verified.length > 0;
   const openSection = section === "findings" && !showFindings || section === "events" && !rail ? null : section;
   const sectionFocus = (key: RailSectionKey) => ({ expanded: openSection === key, onExpand: expandSection(key) });
   const expandSection = (key: RailSectionKey) => (open: boolean) => railTransition(() => {
