@@ -12,11 +12,17 @@ const COLUMNS = "id, type, ticker, cik, task, detail, cause_id, created_at";
  * `guard` makes the insert conditional on the batch's own write having taken effect (an SQL boolean expression).
  */
 export function outboxStatement(db: D1Database, event: OutboxEvent, at = new Date().toISOString(), guard?: { sql: string; binds: unknown[] }): D1PreparedStatement {
+  const { sql, values } = outboxInsert(event, at, guard);
+  return db.prepare(sql).bind(...values);
+}
+
+/** The same insert as SQL and values, for repositories that build statements through their own D1 wrapper. */
+export function outboxInsert(event: OutboxEvent, at = new Date().toISOString(), guard?: { sql: string; binds: unknown[] }): { sql: string; values: unknown[] } {
   const values = [crypto.randomUUID(), event.type, event.ticker, event.cik ?? null, event.task ?? null,
     event.detail ? JSON.stringify(event.detail) : null, event.causeId ?? null, at];
   return guard
-    ? db.prepare(`INSERT INTO pipeline_outbox (${COLUMNS}) SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE ${guard.sql}`).bind(...values, ...guard.binds)
-    : db.prepare(`INSERT INTO pipeline_outbox (${COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).bind(...values);
+    ? { sql: `INSERT INTO pipeline_outbox (${COLUMNS}) SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE ${guard.sql}`, values: [...values, ...guard.binds] }
+    : { sql: `INSERT INTO pipeline_outbox (${COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, values };
 }
 
 const message = (row: OutboxRow): EventMessage => ({

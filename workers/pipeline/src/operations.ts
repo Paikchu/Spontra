@@ -38,6 +38,7 @@ import { secFundamentalsKey } from "./fundamentals/sec-fundamentals.ts";
 import { assertTrackedTicker, requireDb, type SecCronEnv } from "./core.ts";
 import type { AnalysisReadEnv } from "./read-api/router.ts";
 import type { EventMessage, TaskMessage } from "./pipeline/messages.ts";
+import { outboxStatement } from "./pipeline/outbox.ts";
 import { SEC_MODEL_EXECUTION_BUDGET_MS, SEC_MODEL_FIRST_RESPONSE_MS, SEC_MODEL_OUTPUT_TOKENS, type SecModelExecution } from "./retry-policy.ts";
 import type { PreparedFilingReference, SecPipelineOperations, WorkflowJobUpdate } from "./workflow-core.ts";
 import { jobAnalysisVersionFor } from "./workflow-core.ts";
@@ -232,7 +233,13 @@ export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof
       assertTrackedTicker(env, ticker);
       const normalizedFeed = { ...typedFeed, ticker, filings: typedFeed.filings.map(toStoredFiling) };
       const store = repository();
-      await store.setCache(`sec:filings:${ticker}`, normalizedFeed, typedFeed.fetchedAt ?? new Date().toISOString());
+      const db = requireDb(env), indexedAt = typedFeed.fetchedAt ?? new Date().toISOString();
+      // The indexed list and its event commit together; guidance reads this list for the filings it extracts from.
+      await db.batch([
+        db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at")
+          .bind(`sec:filings:${ticker}`, JSON.stringify(normalizedFeed), indexedAt),
+        outboxStatement(db, { type: "filings.indexed", ticker, cik: normalizedFeed.company?.cik ?? null, causeId: null }, indexedAt),
+      ]);
       await Promise.all(normalizedFeed.filings.map((filing) => store.upsertFilingIndex(filing)));
       await refreshFiscalPeriods(store, normalizedFeed.filings, env.SEC_USER_AGENT, fetcher);
       // Retry on every discovery sweep: Company Facts can arrive after the filing index.
@@ -242,7 +249,12 @@ export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof
         try {
           const history = await fetchCompanyHistory(cik, ticker, env.SEC_USER_AGENT, fetcher);
           if (history.series.some((series) => series.seriesId === "revenue" && series.quarters.length)) {
-            await store.setCache(secFundamentalsKey(ticker), history, new Date().toISOString());
+            const at = new Date().toISOString();
+            await db.batch([
+              db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at")
+                .bind(secFundamentalsKey(ticker), JSON.stringify(history), at),
+              outboxStatement(db, { type: "fundamentals.updated", ticker, cik, causeId: null }, at),
+            ]);
           }
         } catch (error) {
           console.warn("SEC fundamentals refresh failed", { ticker, error: error instanceof Error ? error.message : String(error) });

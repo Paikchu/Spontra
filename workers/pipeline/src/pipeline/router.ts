@@ -19,14 +19,20 @@ export async function scopeTickers(env: SecPipelineEnv, scope: TaskScope): Promi
 type Target = { task: TaskName; ticker: string; causeId: string };
 type DueRow = { ticker: string; task: string; due_at: string; first_requested_at: string };
 
-async function targets(env: SecPipelineEnv, event: EventMessage): Promise<Target[]> {
+async function targets(env: SecPipelineEnv, event: EventMessage, scopes: (scope: TaskScope) => Promise<string[]>): Promise<Target[]> {
   if (event.type === "task.version_changed") {
     if (!event.task) return [];
-    return (await scopeTickers(env, TASKS[event.task].scope)).map(ticker => ({ task: event.task!, ticker, causeId: event.id }));
+    return (await scopes(TASKS[event.task].scope)).map(ticker => ({ task: event.task!, ticker, causeId: event.id }));
   }
-  const ticker = event.ticker;
-  return (SUBSCRIPTIONS[event.type] ?? []).filter(s => !s.when || s.when(event))
-    .map(s => ({ task: s.task, ticker: TASKS[s.task].scope === "global" ? "*" : ticker, causeId: event.id }));
+  const list: Target[] = [];
+  for (const subscription of SUBSCRIPTIONS[event.type] ?? []) {
+    if (subscription.when && !subscription.when(event)) continue;
+    const scope = TASKS[subscription.task].scope;
+    // A company task runs only for companies in its scope: the SEC report and guidance only for the AI list.
+    if (scope !== "global" && !(await scopes(scope)).includes(event.ticker)) continue;
+    list.push({ task: subscription.task, ticker: scope === "global" ? "*" : event.ticker, causeId: event.id });
+  }
+  return list;
 }
 
 /** When the run should happen: pushed back by each trigger, never past the task's longest wait from the first. */
@@ -49,8 +55,10 @@ export async function routeEvents(env: SecPipelineEnv, events: EventMessage[], n
   const db = env.DB!;
   const wanted = new Map<string, Target>();
   const fanout = new Map<string, number>();
+  const known = new Map<TaskScope, Promise<string[]>>();
+  const scopes = (scope: TaskScope) => { if (!known.has(scope)) known.set(scope, scopeTickers(env, scope)); return known.get(scope)!; };
   for (const event of events) {
-    const list = await targets(env, event);
+    const list = await targets(env, event, scopes);
     fanout.set(event.id, list.length);
     for (const target of list) wanted.set(`${target.ticker}\u0000${target.task}`, target);
   }

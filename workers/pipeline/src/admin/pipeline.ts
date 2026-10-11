@@ -6,6 +6,7 @@ import { delaySeconds, scopeTickers } from "../pipeline/router.ts";
 import { TASK_NAMES } from "../pipeline/registry.ts";
 import { TASK_IMPLEMENTATIONS } from "../pipeline/tasks.ts";
 import { authenticateAdmin } from "./auth.ts";
+import { DISCOVERY_HEARTBEAT_KEY } from "../pipeline/discovery.ts";
 
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "cache-control": "private, no-store" } });
 const LOG_COLUMNS = "id, message_id AS messageId, cause_id AS causeId, kind, name, ticker, outcome, detail, created_at AS createdAt";
@@ -20,13 +21,14 @@ async function overview(env: SecPipelineEnv, db: D1Database, ticker: string | nu
       ? db.prepare(`SELECT ${LOG_COLUMNS} FROM pipeline_log WHERE ticker = ? ORDER BY created_at DESC LIMIT 200`).bind(ticker).all<PipelineLogEntry>()
       : db.prepare(`SELECT ${LOG_COLUMNS} FROM pipeline_log ORDER BY created_at DESC LIMIT 200`).all<PipelineLogEntry>(),
     db.prepare("SELECT payload, deployed_at FROM pipeline_versions WHERE id = 'tasks'").first<{ payload: string; deployed_at: string }>(),
-    db.prepare("SELECT fetched_at FROM sec_cache WHERE cache_key = 'pipeline:discovery-heartbeat'").first<{ fetched_at: string }>(),
+    db.prepare("SELECT fetched_at FROM sec_cache WHERE cache_key = ?").bind(DISCOVERY_HEARTBEAT_KEY).first<{ fetched_at: string }>(),
     scopeTickers(env, "data"),
   ]);
   let announced: Record<string, string> | null = null;
   try { announced = versions ? JSON.parse(versions.payload) as Record<string, string> : null; } catch { /* shown as unknown */ }
   return {
     discoveryAt: heartbeat?.fetched_at ?? null,
+    discoveryStale: !!heartbeat && Date.now() - Date.parse(heartbeat.fetched_at) > 30 * 60_000,
     outbox: { pending: outbox?.pending ?? 0, oldestAt: outbox?.oldestAt ?? null, stale: !!outbox?.oldestAt && Date.now() - Date.parse(outbox.oldestAt) > 15 * 60_000 },
     due: due.results, dead: dead.results, log: log.results,
     versions: { current: Object.fromEntries(TASK_NAMES.map(task => [task, TASK_IMPLEMENTATIONS[task].version])), announced, deployedAt: versions?.deployed_at ?? null },

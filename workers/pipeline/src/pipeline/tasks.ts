@@ -7,6 +7,9 @@ import { logStatements } from "./log.ts";
 import type { TaskMessage } from "./messages.ts";
 import { delaySeconds } from "./router.ts";
 import type { TaskName } from "./registry.ts";
+import { FINANCIAL_TASKS } from "./financial-tasks.ts";
+import { SEC_TASKS } from "./sec-tasks.ts";
+import { AI_TASKS } from "./ai-tasks.ts";
 
 /** `later`: the run is not finished (budget spent, input not ready); it runs again after `afterMs`. */
 export type TaskOutcome = { status: "done"; detail?: unknown } | { status: "later"; afterMs: number; detail?: unknown };
@@ -28,6 +31,10 @@ type R2Prunable = SecPipelineEnv["SEC_FILINGS"] & {
 };
 
 export const TASK_IMPLEMENTATIONS: Record<TaskName, TaskImplementation> = {
+  ...FINANCIAL_TASKS,
+  ...SEC_TASKS,
+  ...AI_TASKS,
+
   "map-derive": {
     version: REPORT_QUARTERS_VERSION,
     async run(env, ticker, { causeId }) {

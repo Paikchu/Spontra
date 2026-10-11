@@ -5,19 +5,20 @@ import {
   type FiscalAnchor, type GuidanceEntry, type VerifiedGuidance,
 } from "../../../../shared/analysis-runtime/guidance.ts";
 import { findSecurity } from "../catalog/security-directory.ts";
-import { assertTrackedTicker, requireDb, trackedTickersFor } from "../core.ts";
+import { assertTrackedTicker, requireDb } from "../core.ts";
 import { readCompletePublicationForTicker } from "../financial-data/publication.ts";
 import { callWorkerSecModel, SecModelHttpError, type SecPipelineEnv } from "../operations.ts";
 import { AnalysisRequestError } from "../read-api/contract-support/errors.ts";
 import { researchSearch } from "../web-search/research-search.ts";
 import { D1SecRepository } from "../sec/d1.ts";
+import { outboxStatement } from "../pipeline/outbox.ts";
 import { fiscalPeriodKey, readFiscalPeriod } from "../sec/fiscal-period.ts";
 import type { SecFilingFeed } from "../sec/sec.ts";
 import type { WorkflowStepContextLike, WorkflowStepLike } from "../workflow-core.ts";
 import { extractGuidance, GUIDANCE_EXTRACTOR_VERSION, GUIDANCE_MAX_OUTPUT_TOKENS, type GuidanceModelCall } from "./extract.ts";
 import { findIrDeck, AlphaVantageTranscriptProvider, readSecExhibits, reportedTranscriptRef, TranscriptAccessError, TranscriptQuotaError, type FoundMaterial, type TranscriptRef } from "./sources.ts";
 import { GuidanceStore, type StoredMaterial } from "./store.ts";
-import { AiRunStore, quietly } from "../ai-runs/store.ts";
+import { AiRunStore } from "../ai-runs/store.ts";
 
 export const guidanceCacheKey = (ticker: string) => `guidance:v1:${ticker}`;
 const irHostsKey = (ticker: string) => `guidance-ir-hosts:v1:${ticker}`;
@@ -51,38 +52,6 @@ export function earningsEvents(feed: SecFilingFeed | null, now = Date.now()): Ar
   const since = new Date(now - EVENT_LOOKBACK_DAYS * 86_400_000).toISOString().slice(0, 10);
   return (feed?.filings ?? []).filter(f => f.form === "8-K" && /(^|,)\s*2\.02\b/.test(f.items) && f.filingDate >= since)
     .map(f => ({ accession: f.accessionNumber, eventDate: f.filingDate }));
-}
-
-/**
- * Records new earnings events from the cached SEC feed (no SEC request) and starts at most two
- * Workflows per tick, newest first. The instance id is derived from the event and extractor
- * version, so an event is processed once per version.
- */
-export async function runGuidanceSweep(env: SecPipelineEnv, now = Date.now()): Promise<{ enabled: boolean; recorded: number; started: string[]; failed: string[] }> {
-  const result = { enabled: false, recorded: 0, started: [] as string[], failed: [] as string[] };
-  if (env.GUIDANCE_ENABLED !== "true" || !env.GUIDANCE_WORKFLOW || !env.DB) return result;
-  result.enabled = true;
-  const store = new GuidanceStore(env.DB, env.SEC_FILINGS);
-  const repository = new D1SecRepository(env.DB);
-  const tickers = trackedTickersFor(env);
-  const stamp = new Date(now).toISOString();
-  for (const ticker of tickers) {
-    const events = earningsEvents((await repository.getCache<SecFilingFeed>(`sec:filings:${ticker}`))?.payload ?? null, now);
-    await store.recordEvents(ticker, events, stamp);
-    result.recorded += events.length;
-  }
-  for (const event of await store.queuedEvents(tickers, 2)) {
-    const id = `guidance-${event.ticker.replace(/[^A-Za-z0-9]/g, "-")}-${event.accession}-${GUIDANCE_EXTRACTOR_VERSION.replace(/[^A-Za-z0-9]/g, "")}`;
-    try {
-      await env.GUIDANCE_WORKFLOW.create({ id, params: { ticker: event.ticker, accession: event.accession, eventDate: event.event_date } });
-      await quietly(() => new AiRunStore(env.DB!).start({ kind: "guidance", ticker: event.ticker, runId: id, trigger: "schedule", accession: event.accession }, stamp));
-      result.started.push(id);
-    } catch (error) {
-      if (!/already exists|duplicate/i.test(String(error))) { result.failed.push(event.accession); continue; }
-    }
-    await store.updateEvent(event.ticker, event.accession, { status: "started", workflowInstanceId: id }, stamp);
-  }
-  return result;
 }
 
 async function fiscalAnchors(repository: D1SecRepository, feed: SecFilingFeed | null): Promise<FiscalAnchor[]> {
@@ -163,7 +132,12 @@ export async function publishGuidance(env: SecPipelineEnv, ticker: string, now: 
   });
   const publication: GuidancePublication = { schemaVersion: "guidance.v1", ticker, updatedAt: now, items, sources, coverage };
   if (!readGuidancePublication(publication, ticker)) throw new Error("Guidance publication failed its public contract.");
-  await repository.setCache(guidanceCacheKey(ticker), publication, now);
+  // Findings read guidance; the publication and its event commit together.
+  await db.batch([
+    db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at")
+      .bind(guidanceCacheKey(ticker), JSON.stringify(publication), now),
+    outboxStatement(db, { type: "guidance.published", ticker }, now),
+  ]);
   await new AiRunStore(db).saveVersion("guidance", ticker, publication, now);
   return { items: items.length };
 }

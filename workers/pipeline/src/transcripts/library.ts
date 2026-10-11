@@ -5,6 +5,7 @@ import { AlphaVantageTranscriptProvider, TranscriptAccessError, TranscriptQuotaE
 import { GuidanceStore } from '../guidance/store.ts';
 import type { SecPipelineEnv } from '../operations.ts';
 import { parseFiscalPeriod } from '../sec/fiscal-period.ts';
+import { outboxStatement } from '../pipeline/outbox.ts';
 
 const columns = `id,ticker,period_end periodEnd,accession,filing_url filingUrl,filed_at filedAt,
  fiscal_year fiscalYear,fiscal_quarter fiscalQuarter,status,title,source_url sourceUrl,characters,
@@ -28,7 +29,7 @@ export async function seedTranscripts(env: SecPipelineEnv, now = new Date()): Pr
     ON CONFLICT(ticker,period_end) DO NOTHING`).bind(now.toISOString(),now.toISOString(),JSON.stringify(tickers)).run();
 }
 
-export async function syncTranscript(env: SecPipelineEnv, now = new Date(), fetcher: typeof fetch = fetch) {
+export async function syncTranscript(env: SecPipelineEnv, now = new Date(), fetcher: typeof fetch = fetch, causeId: string | null = null) {
   if (env.TRANSCRIPTS_ENABLED !== 'true' || !env.DB || !env.ALPHA_VANTAGE_API_KEY) return { status: 'disabled' };
   await seedTranscripts(env, now);
   const tickers = await allowed(env), stamp = now.toISOString();
@@ -62,8 +63,11 @@ export async function syncTranscript(env: SecPipelineEnv, now = new Date(), fetc
     await env.DB.prepare('UPDATE company_transcripts SET attempts=attempts+1 WHERE id=? AND lease_until=?').bind(row.id,lease).run();
     const material = await new AlphaVantageTranscriptProvider(env.ALPHA_VANTAGE_API_KEY,fetcher).fetch(row.ticker,{fiscalYear:period.fiscalYear,quarter:q as 1|2|3|4,date:row.filedAt});
     if (!material || !('text' in material)) return await finish('unavailable','PROVIDER_NO_TRANSCRIPT');
-    await env.DB.prepare(`UPDATE company_transcripts SET status='ready',title=?,source_url=?,content=?,characters=?,error_code=NULL,fetched_at=?,updated_at=?,lease_until=NULL WHERE id=? AND lease_until=?`)
-      .bind(material.title,material.url,material.text,material.text.length,stamp,stamp,row.id,lease).run();
+    await env.DB.batch([
+      env.DB.prepare(`UPDATE company_transcripts SET status='ready',title=?,source_url=?,content=?,characters=?,error_code=NULL,fetched_at=?,updated_at=?,lease_until=NULL WHERE id=? AND lease_until=?`)
+        .bind(material.title,material.url,material.text,material.text.length,stamp,stamp,row.id,lease),
+      outboxStatement(env.DB,{type:'transcript.stored',ticker:row.ticker,causeId},stamp,{sql:"EXISTS(SELECT 1 FROM company_transcripts WHERE id=? AND status='ready' AND fetched_at=?)",binds:[row.id,stamp]}),
+    ]);
     return {status:'ready',ticker:row.ticker,period:row.periodEnd,characters:material.text.length};
   } catch(error) {
     const message = (error instanceof Error ? error.message : 'Unknown failure')

@@ -15,6 +15,9 @@ import { researchSearch } from "./web-search/research-search.ts";
 import { callWorkerSecModel } from "./operations.ts";
 import type { SecPipelineEnv } from "./operations.ts";
 import { SEC_WORKFLOW_STEP_TIMEOUT } from "./retry-policy.ts";
+import { FUNDAMENTALS_STALE_AFTER_MS } from "../../../shared/analysis-contract/fundamentals.ts";
+import { D1FundamentalsRepository } from "./fundamentals/fundamentals-d1.ts";
+import { syncFundamentals } from "./fundamentals.ts";
 
 export type CompanyWorkflowStep = {
   do<T>(name: string, callback: () => Promise<T>): Promise<T>;
@@ -40,6 +43,13 @@ export const COMPANY_AGENT_MODEL_STEP_CONFIG = {
   },
   timeout: SEC_WORKFLOW_STEP_TIMEOUT,
 } as const satisfies CompanyWorkflowStepConfig;
+
+async function refreshFundamentalsIfStale(env: SecPipelineEnv, ticker: string): Promise<{ refreshed: boolean; error?: string }> {
+  const [freshness] = await new D1FundamentalsRepository(requireDb(env)).listFundamentalsFreshness([ticker]);
+  if (freshness?.fetchedAt && Date.now() - Date.parse(freshness.fetchedAt) < FUNDAMENTALS_STALE_AFTER_MS) return { refreshed: false };
+  try { await syncFundamentals(requireDb(env), ticker); return { refreshed: true }; }
+  catch (error) { return { refreshed: false, error: error instanceof Error ? error.message.slice(0, 200) : "sync failed" }; }
+}
 
 export async function executeCompanyAnalysisWorkflow(
   params: CompanyAnalysisWorkflowParams,
@@ -69,8 +79,9 @@ export async function executeCompanyAnalysisWorkflow(
       }, params.recoveryAttempt ?? 0, params.expectedUpdatedAt);
     });
     if (!claimed) return { status: "superseded", analysisId };
-    // A business explanation is possible before Yahoo has ingested a matching quarter. SEC reports
-    // and public business evidence are its inputs; the fundamentals sync has its own Cron sweep.
+    // The Yahoo fundamentals in the packet are refreshed here, when an analysis needs them, rather than on a
+    // schedule. A failed refresh keeps the last good snapshot: SEC reports and business evidence are the main inputs.
+    await step.do("fundamentals-refresh", () => refreshFundamentalsIfStale(env, params.ticker));
     const packet = await step.do("business-packet", () => readPacket(env, params, "cross_period"));
     const generatedAt = await step.do("company-generation-time", async () => new Date().toISOString());
     const tools = createBusinessResearchTools({

@@ -6,9 +6,15 @@ import "./ai-runs.css";
 import "./pipeline.css";
 
 const NAMES: Record<string, string> = {
+  "collect": "财报采集", "history": "历史营收", "reproject": "重算资本结构", "maintenance": "财务维护", "transcript": "电话会文字稿",
   "map-derive": "地图快照", "archive-prune": "清理替换的存档", "archive-prune-scan": "全量清理存档",
+  "sec-report": "SEC 财报分析", "guidance": "业绩指引", "events": "事件与内幕交易",
+  "memory": "财报记忆", "company-analysis": "公司分析", "explainer": "业务解读", "tree": "业务脑图", "findings": "要点",
+  "filing.discovered": "发现新申报", "collection.requested": "请求采集", "maintenance.requested": "维护任务更新",
   "financials.published": "财报发布", "filing.archived": "文件归档", "archive.superseded": "存档被替换", "archive.prune.requested": "请求全量清理",
-  "map.derived": "地图快照完成", "task.version_changed": "任务版本变化", "filing.discovered": "发现新申报",
+  "map.derived": "地图快照完成", "filings.indexed": "申报列表更新", "report.published": "报告发布", "analysis.published": "公司分析发布",
+  "fundamentals.updated": "SEC 基本面更新", "guidance.published": "指引发布", "task.version_changed": "任务版本变化",
+  "transcript.stored": "文字稿入库", "explainer.published": "业务解读发布", "tree.published": "业务脑图发布", "findings.published": "要点发布", "events.published": "事件更新",
 };
 const OUTCOMES: Record<string, string> = { done: "完成", later: "稍后继续", failed: "失败", superseded: "已被更新的触发取代", deferred: "延后" };
 const name = (value: string | null) => value ? NAMES[value] ?? value : "—";
@@ -51,7 +57,7 @@ export function Pipeline({ onUnauthorized, onAuthenticated }: { onUnauthorized: 
   if (!data) return <div className="pl-page">{error ? <p className="ra-error" role="alert">{error}</p> : <p className="ai-empty" role="status"><LoaderCircle size={15} className="ra-spin" /> 正在读取…</p>}</div>;
   return <div className="pl-page">
     <div className="pl-stats">
-      <div><span>SEC 申报发现</span><strong>{data.discoveryAt ? date(data.discoveryAt) : "尚未启用"}</strong></div>
+      <div data-alert={data.discoveryStale || undefined}><span>SEC 申报发现</span><strong>{data.discoveryAt ? date(data.discoveryAt) : "尚未运行"}</strong>{data.discoveryStale && <small>超过 30 分钟未成功</small>}</div>
       <div data-alert={data.outbox.stale || undefined}><span>待发事件</span><strong>{data.outbox.pending}</strong>{data.outbox.oldestAt && <small>最早 {date(data.outbox.oldestAt)}</small>}</div>
       <div><span>待执行任务</span><strong>{data.due.length}</strong></div>
       <div data-alert={data.dead.length > 0 || undefined}><span>死信</span><strong>{data.dead.length}</strong></div>

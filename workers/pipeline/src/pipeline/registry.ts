@@ -5,15 +5,20 @@
  * `tasks.ts`; no queue, marker or Cron.
  */
 export const EVENT_TYPES = [
-  "filing.discovered", "company.added", "maintenance.requested",
+  "filing.discovered", "collection.requested", "maintenance.requested",
   "financials.published", "filing.archived", "archive.superseded", "archive.prune.requested",
-  "map.derived", "report.published", "analysis.published", "fundamentals.updated", "guidance.published",
+  "map.derived", "filings.indexed", "report.published", "analysis.published", "fundamentals.updated", "guidance.published",
   "task.version_changed",
   "transcript.stored", "explainer.published", "tree.published", "findings.published", "events.published",
 ] as const;
 export type EventType = typeof EVENT_TYPES[number];
 
-export const TASK_NAMES = ["map-derive", "archive-prune", "archive-prune-scan"] as const;
+export const TASK_NAMES = [
+  "collect", "history", "reproject", "maintenance", "transcript",
+  "map-derive", "archive-prune", "archive-prune-scan",
+  "sec-report", "guidance", "events",
+  "memory", "company-analysis", "explainer", "tree", "findings",
+] as const;
 export type TaskName = typeof TASK_NAMES[number];
 
 /** What a filing event says about the filing, for subscribers that only want some forms. */
@@ -32,27 +37,74 @@ export type TaskMeta = {
 
 const SECOND = 1000, MINUTE = 60 * SECOND, HOUR = 60 * MINUTE;
 export const TASKS: Record<TaskName, TaskMeta> = {
+  // Collects a company's latest complete statements from EDGAR and publishes them.
+  "collect": { emits: ["financials.published", "filing.archived", "archive.superseded"], debounceMs: 30 * SECOND, maxWaitMs: 5 * MINUTE, scope: "data" },
+  // Brings the company's quarterly revenue history up to date after a publication.
+  "history": { emits: ["filing.archived", "archive.superseded"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "data" },
+  // Re-projects archived filings whose capital projection predates the current version.
+  "reproject": { emits: ["filing.archived", "archive.superseded"], debounceMs: 0, maxWaitMs: 0, scope: "global" },
+  // Advances the admin's financial maintenance tasks, one step per run.
+  "maintenance": { emits: ["financials.published", "filing.archived", "archive.superseded"], debounceMs: 0, maxWaitMs: 0, scope: "global" },
+  // Fetches earnings-call transcripts for archived periodic reports, within the daily budget.
+  "transcript": { emits: ["transcript.stored"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "global" },
   // Rebuilds the map's older quarters and capital snapshot from archived filings.
   "map-derive": { emits: ["map.derived"], debounceMs: 30 * SECOND, maxWaitMs: 5 * MINUTE, scope: "data" },
   // Deletes archive copies replaced by a newer one, a day after the replacement.
   "archive-prune": { emits: [], debounceMs: 24 * HOUR, maxWaitMs: 24 * HOUR, scope: "data" },
   // A full pass over the archive for copies left behind before replacements were recorded; admin-requested.
   "archive-prune-scan": { emits: [], debounceMs: 0, maxWaitMs: 0, scope: "global" },
+  // Runs the SEC report Workflow, which indexes the filing list, writes reports and 8-K summaries.
+  "sec-report": { emits: ["filings.indexed", "report.published", "fundamentals.updated"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "ai" },
+  // Extracts management guidance from earnings releases (Workflow).
+  "guidance": { emits: ["guidance.published"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "ai" },
+  // Current reports and Form 4 filings for the map's event rail; no model.
+  "events": { emits: ["events.published"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "data" },
+  // Starts report memory for a published periodic report; the memory Workflow starts the company analysis itself.
+  "memory": { emits: [], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "ai" },
+  // Recovers company analyses that stopped, failed or are behind the prompt version.
+  "company-analysis": { emits: ["analysis.published"], debounceMs: 30 * MINUTE, maxWaitMs: 2 * HOUR, scope: "ai" },
+  // Model-written explanations of each disclosed business (Workflow).
+  "explainer": { emits: ["explainer.published"], debounceMs: 10 * MINUTE, maxWaitMs: 2 * HOUR, scope: "ai" },
+  // The ReAct business mind map (Workflow).
+  "tree": { emits: ["tree.published"], debounceMs: 10 * MINUTE, maxWaitMs: 2 * HOUR, scope: "tree" },
+  // Report findings written from the map snapshot, guidance, SEC fundamentals and the company analysis (Workflow).
+  "findings": { emits: ["findings.published"], debounceMs: 10 * MINUTE, maxWaitMs: 2 * HOUR, scope: "ai" },
 };
+
+const form = (event: PipelineEvent) => event.detail?.form ?? "";
+const PERIODIC = /^(?:10-[QK]|20-F|40-F)(?:\/A)?$/;
+const earnings = (event: PipelineEvent) => /^8-K/.test(form(event)) && /(^|,)\s*2\.02\b/.test(event.detail?.items ?? "");
 
 export type Subscription = { task: TaskName; when?: (event: PipelineEvent) => boolean };
 export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> = {
-  "financials.published": [{ task: "map-derive" }],
-  "filing.archived": [{ task: "map-derive" }],
+  "filing.discovered": [
+    { task: "collect", when: e => PERIODIC.test(form(e)) || /^6-K/.test(form(e)) || earnings(e) },
+    { task: "sec-report", when: e => PERIODIC.test(form(e)) || /^(?:8|6)-K/.test(form(e)) },
+    { task: "events", when: e => /^(?:8-K|6-K|4)(?:\/A)?$/.test(form(e)) },
+  ],
+  "collection.requested": [{ task: "collect" }, { task: "history" }],
+  "maintenance.requested": [{ task: "maintenance" }],
+  "financials.published": [{ task: "map-derive" }, { task: "history" }, { task: "explainer" }, { task: "tree" }],
+  "filing.archived": [{ task: "map-derive" }, { task: "transcript", when: e => /^10-[QK](?:\/A)?$/.test(form(e)) }],
   "archive.superseded": [{ task: "archive-prune" }],
   "archive.prune.requested": [{ task: "archive-prune-scan" }],
+  "filings.indexed": [{ task: "guidance" }],
+  "report.published": [
+    { task: "events", when: e => /^(?:8|6)-K/.test(form(e)) },
+    { task: "memory", when: e => PERIODIC.test(form(e)) },
+    { task: "company-analysis", when: e => PERIODIC.test(form(e)) },
+  ],
+  "map.derived": [{ task: "findings" }],
+  "guidance.published": [{ task: "findings" }],
+  "fundamentals.updated": [{ task: "findings" }],
+  "analysis.published": [{ task: "findings" }],
 };
 
 /** Emitters that are not tasks. `task.version_changed` is routed to the one task it names, never subscribed. */
 export const SOURCES: Record<string, readonly EventType[]> = {
-  // Financial collection and archiving still run on the two-minute Cron until they become tasks (P2).
-  "financial-data": ["financials.published", "filing.archived", "archive.superseded"],
-  "admin": ["archive.prune.requested"],
+  // The only Cron: polls EDGAR, which pushes nothing.
+  "sec-discovery": ["filing.discovered"],
+  "admin": ["collection.requested", "maintenance.requested", "archive.prune.requested"],
   "invocation": ["task.version_changed"],
 };
 
