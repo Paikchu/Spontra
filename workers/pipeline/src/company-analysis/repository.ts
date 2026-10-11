@@ -5,6 +5,7 @@ import {
   type CompanyAnalysisPublication,
   type CompanyAnalysisRunStatus,
 } from "./contracts.ts";
+import { outboxInsert } from "../pipeline/outbox.ts";
 
 export type CompanyAnalysisD1Statement = {
   first<T>(): Promise<T | null>;
@@ -328,7 +329,10 @@ export class D1CompanyAnalysisRepository {
       }
       return { duplicate: true, publication: existing };
     }
-    await this.database.prepare(`
+    const announced = outboxInsert({ type: "analysis.published", ticker: publication.ticker }, publication.generatedAt,
+      { sql: "EXISTS(SELECT 1 FROM company_analysis_runs WHERE analysis_id = ? AND status = 'ready' AND input_hash = ?)", binds: [publication.analysisId, publication.inputHash] });
+    // Findings read the latest analysis; the publication and its event commit together.
+    await this.database.batch([this.database.prepare(`
       INSERT INTO company_analysis_runs (
         analysis_id, ticker, trigger_ref, period_id, period_end, report_label,
         input_hash, memory_version, fundamentals_data_version, status,
@@ -364,7 +368,7 @@ export class D1CompanyAnalysisRepository {
       publication.promptVersion,
       publication.generatedAt,
       publication.generatedAt,
-    ).run();
+    ), this.database.prepare(announced.sql).bind(...announced.values)]);
     const stored = await this.getPublication(publication.ticker, publication.analysisId);
     if (!stored) throw new Error("Company analysis publication was not committed.");
     if (stored.inputHash !== publication.inputHash) {

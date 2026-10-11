@@ -8,6 +8,7 @@ import { publicFlowSchema } from '../../../../shared/analysis-runtime/financial-
 import { checkCompleteFlow, newestPair } from '../../../../shared/analysis-runtime/financial-data/completeness.ts';
 import { financialPolicy } from '../../../../shared/analysis-runtime/financial-data/policy.ts';
 import { normalizeTrackedTicker } from '../sec/config.ts';
+import { emit } from '../pipeline/outbox.ts';
 
 const json = (body: unknown, status = 200) => Response.json(body, {status, headers: {'cache-control':'private, no-store'}});
 export async function handleBusinessMapAdminRequest(request: Request, env: SecPipelineEnv): Promise<Response> {
@@ -77,6 +78,8 @@ export async function handleBusinessMapAdminRequest(request: Request, env: SecPi
     ]);
     const saved=await db.prepare('SELECT ticker,enabled FROM financial_company_setting_requests WHERE request_id=?').bind(body.requestId).first<{ticker:string;enabled:number}>();
     if(saved?.ticker!==ticker||saved.enabled!==Number(body.enabled))return json({error:'操作标识已用于不同请求。'},409);
+    // A newly added company starts with an extract task; the maintenance task picks it up.
+    if(await db.prepare('SELECT 1 FROM financial_maintenance_tasks WHERE request_id=?').bind(body.requestId).first())await emit(env,[{type:'maintenance.requested',ticker}]);
     return json({ticker,enabled:body.enabled},200);
   } catch (error) {
     if (error instanceof SyntaxError) return json({error:'操作参数无效。'},400);

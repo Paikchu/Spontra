@@ -1,24 +1,19 @@
 import {handleTranscriptAdminRequest} from './admin/transcripts.ts';
-import {syncTranscript} from './transcripts/library.ts';
 import {handleBusinessMapAdminRequest} from './admin/business-map.ts';
 import {handleAiRunsAdminRequest} from './admin/ai-runs.ts';
 import {handlePipelineAdminRequest} from './admin/pipeline.ts';
-import {runDataOnlySweep} from './financial-data/queue.ts';
 import {flushOutbox} from './pipeline/outbox.ts';
 import {handlePipelineQueue, pipelineEntry} from './pipeline/consumer.ts';
-import { handleCompanyAnalysisRequest, handleSecAnalysisRequest, runCompanyAnalysisSweep, runSecMemorySweep, runSecRefresh } from "./core.ts";
+import { handleCompanyAnalysisRequest, handleSecAnalysisRequest, runCompanyAnalysisSweep, runSecMemorySweep } from "./core.ts";
+import { runSecDiscovery } from "./pipeline/discovery.ts";
 import { handleBusinessFlowRefresh } from "./sec/business-flow-refresh.ts";
 import { handleFundamentalsRefreshRequest } from "./fundamentals.ts";
-import { runFundamentalsStalenessSweep } from "./fundamentals-sweep.ts";
 import type { SecPipelineEnv } from "./operations.ts";
 import { runBusinessExplainerSweep } from "./business-explainer/workflow.ts";
 import { runBusinessTreeSweep } from "./business-tree/workflow.ts";
-import { runGuidanceSweep } from "./guidance/workflow.ts";
 import { runFindingsSweep } from "./findings/workflow.ts";
-import { runEventsSweep } from "./events/workflow.ts";
 import { handleReportAdminRequest } from "./admin/reports.ts";
 import { handleFinancialAdminRequest } from "./admin/financials.ts";
-import { runFinancialMaintenanceTick } from "./admin/financial-maintenance-runner.ts";
 
 /**
  * `JSON.stringify` renders an Error as `{}`, so a rejection reason has to be read off it before it
@@ -82,41 +77,24 @@ const worker = {
     return handleSecAnalysisRequest(request, env);
   },
 
+  /**
+   * The only schedule: discover new SEC filings (docs/pipeline-events.md). Everything downstream of a filing runs on
+   * the events and tasks queues. The model sweeps below still poll until they move to events in P4.
+   */
   async scheduled(_controller: ScheduledController, env: SecPipelineEnv) {
     await pipelineEntry(env);
-    if (_controller.cron === "*/2 * * * *") {
-      console.log(JSON.stringify({ event: "transcript-library", ...await syncTranscript(env) }));
-      const maintenance = await runFinancialMaintenanceTick(env);
-      if (maintenance.processed) {
-        console.log(JSON.stringify({event:"financial-maintenance",...maintenance}));
-      }
-      // Waiting for a model Workflow never mutates the data-only history cursor. Keep that
-      // request's issuer/idempotency lock without starving ordinary deterministic collection.
-      if (!maintenance.processed || maintenance.blocksDataSweep === false) {
-        const result = env.DB ? await runDataOnlySweep({DB:env.DB,SEC_FILINGS:env.SEC_FILINGS,SEC_USER_AGENT:env.SEC_USER_AGENT,SEC_DATA_TICKERS:env.SEC_DATA_TICKERS,SEC_TRACKED_TICKERS:env.SEC_TRACKED_TICKERS,SEC_DATA_COLLECTION_ENABLED:env.SEC_DATA_COLLECTION_ENABLED}) : {enabled:false,published:false,reasons:[],modelCalls:0};
-        console.log(JSON.stringify({event:"financial-data",...result}));
-      }
-      // What this tick archived and published reaches the map-derive and archive-prune tasks through the events
-      // queue (docs/pipeline-events.md); send them now rather than at the next invocation.
-      await flushOutbox(env).catch((error:unknown)=>console.error(JSON.stringify({event:"pipeline-outbox",error:error instanceof Error?error.message:String(error)})));
-      return;
-    }
     const results = await Promise.allSettled([
-      runSecRefresh(env),
+      runSecDiscovery(env),
       runSecMemorySweep(env),
       runCompanyAnalysisSweep(env),
-      // Took over from the refresh a public read used to trigger. Bounded per tick; the Cron
-      // schedule above it is unchanged.
-      runFundamentalsStalenessSweep(env),
       runBusinessExplainerSweep(env),
       runBusinessTreeSweep(env),
-      runGuidanceSweep(env),
       runFindingsSweep(env),
-      // Deterministic: EDGAR's current reports and Form 4 filings for the map's event rail, no model.
-      runEventsSweep(env),
     ]);
-    const [analysis, memory, companyAnalysis, fundamentals, businessExplainer, businessTree, guidance, findings, events] = results.map(describeSettled);
-    const payload = JSON.stringify({ event: "sec-workflows", analysis, memory, companyAnalysis, fundamentals, businessExplainer, businessTree, guidance, findings, events });
+    // Filings just discovered go out now rather than at the next invocation.
+    await flushOutbox(env).catch((error:unknown)=>console.error(JSON.stringify({event:"pipeline-outbox",error:error instanceof Error?error.message:String(error)})));
+    const [discovery, memory, companyAnalysis, businessExplainer, businessTree, findings] = results.map(describeSettled);
+    const payload = JSON.stringify({ event: "sec-workflows", discovery, memory, companyAnalysis, businessExplainer, businessTree, findings });
     const rejected = results.filter((result): result is PromiseRejectedResult => result.status === "rejected");
     if (!rejected.length) {
       console.log(payload);

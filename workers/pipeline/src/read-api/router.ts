@@ -21,8 +21,8 @@ import { dataResponse, errorResponse } from "./http.ts";
  *
  * Strictly read-only. Nothing reachable from here calls a model, fetches from SEC or Yahoo,
  * creates a Workflow, enqueues a refresh, or writes business data — including transitively, which
- * is why the fundamentals refresh that used to be triggered by a read now lives on the scheduled
- * sweep instead (`workers/pipeline/fundamentals-sweep.ts`).
+ * is why the fundamentals refresh that used to be triggered by a read now happens inside the company
+ * analysis Workflow, when an analysis needs it.
  */
 export type AnalysisReadEnv = {
   /** The analysis database. Absent in a partially configured environment, which answers 503. */

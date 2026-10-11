@@ -1,5 +1,6 @@
 /** Events the admin may send by hand: replaying what a source would have emitted, for one company or all. */
 export const MANUAL_PIPELINE_EVENTS = [
+  { type: "collection.requested", label: "重新采集财报", scope: "company" },
   { type: "financials.published", label: "重建地图快照", scope: "company" },
   { type: "archive.prune.requested", label: "全量清理存档副本", scope: "global" },
 ] as const;
@@ -13,8 +14,10 @@ export type PipelineLogEntry = {
 };
 
 export type PipelineOverview = {
-  /** When the SEC discovery Cron last finished; null until it exists (P3). */
+  /** When the SEC discovery Cron last read EDGAR successfully; null before its first run. */
   discoveryAt: string | null;
+  /** The discovery Cron runs every 10 minutes; no success for 30 means it stopped. */
+  discoveryStale: boolean;
   /** `stale`: an event has waited more than 15 minutes, longer than one discovery period should allow. */
   outbox: { pending: number; oldestAt: string | null; stale: boolean };
   due: PipelineDue[];

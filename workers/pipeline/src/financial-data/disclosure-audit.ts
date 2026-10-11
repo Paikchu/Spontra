@@ -77,7 +77,7 @@ export async function archiveFilingDisclosures(env: DisclosureArchiveEnv, ticker
  * already in the archive: no SEC fetch. Newest first, so the quarters findings rest on are refreshed before
  * older history; the read API projects whatever is still stale on demand until this catches up.
  */
-export async function refreshStaleProjections(env: DisclosureArchiveEnv, limit = 3): Promise<Array<{ ticker: string; accession: string }>> {
+export async function refreshStaleProjections(env: DisclosureArchiveEnv, limit = 3, causeId: string | null = null): Promise<Array<{ ticker: string; accession: string }>> {
   const rows = await env.DB.prepare("SELECT payload FROM sec_cache WHERE cache_key LIKE 'sec:disclosure-audit:v1:%' ORDER BY fetched_at DESC LIMIT 400").bind().all<{ payload: string }>();
   const stale: StoredAudit[] = [];
   for (const row of rows.results) {
@@ -93,7 +93,7 @@ export async function refreshStaleProjections(env: DisclosureArchiveEnv, limit =
     const raw = await env.SEC_FILINGS.get(record.rawKey);
     if (!raw) continue;
     const s = record.source, cik = s.documentUrl.match(/\/Archives\/edgar\/data\/(\d+)\//)?.[1]?.padStart(10, "0") ?? "";
-    await archiveFilingDisclosures(env, record.ticker, { url: s.documentUrl, accession: s.accessionNumber, cik, filedAt: s.filedAt, industry: "standard" }, await raw.text(), { form: s.form, reportDate: s.reportDate });
+    await archiveFilingDisclosures(env, record.ticker, { url: s.documentUrl, accession: s.accessionNumber, cik, filedAt: s.filedAt, industry: "standard" }, await raw.text(), { form: s.form, reportDate: s.reportDate }, causeId);
     done.push({ ticker: record.ticker, accession: s.accessionNumber });
   }
   return done;
