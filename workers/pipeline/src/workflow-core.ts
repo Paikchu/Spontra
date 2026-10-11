@@ -1,5 +1,5 @@
 import type { EditorialIssue } from "./sec/editorial.ts";
-import type { DiscoveryChunk } from "./sec/discovery.ts";
+import { DISCOVERY_BUDGET_WARNING, type DiscoveryChunk } from "./sec/discovery.ts";
 import {
   MAX_REPAIR_NODES_PER_ROUND,
   MAX_REPAIR_ROUNDS,
@@ -269,7 +269,8 @@ export async function executeSecAnalysisWorkflow(
       let result = await step.do(`synthesis:${accession}`, (stepContext) => operations.summarize(filing, prepared, context, plan, loop.nodes, brief, managerReview, executionFor(stepContext)));
       const discoveryWarnings = [
         ...(result.artifact.report.discovery?.warnings ?? []),
-        ...(plan.warnings ?? []).filter((warning) => warning.includes("仍有发现未展开")),
+        // The Chinese match covers plans restored from reports written before the English prompts.
+        ...(plan.warnings ?? []).filter((warning) => warning === DISCOVERY_BUDGET_WARNING || warning.includes("仍有发现未展开")),
       ];
       if (discoveryWarnings.length) {
         managerReview.status = "partial";

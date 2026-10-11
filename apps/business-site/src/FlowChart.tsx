@@ -174,7 +174,7 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
   onMindPick?: (item: MindItem | null) => void;
   /** The comparable prior-quarter amount of a node, drawn as a dashed outline over its bar; null when the two quarters cannot be compared. */
   priorOf?: (n: PlacedNode) => number | null;
-  /** The prior quarter's statement: 对比上季 morphs the whole chart to it at the current quarter's scale. */
+  /** The prior quarter's statement: Compare with last quarter morphs the whole chart to it at the current quarter's scale. */
   previous?: PriorQuarter | null;
   brackets?: GuideBracketMark[];
   pills?: GuidePillMark[];
@@ -213,7 +213,7 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
   const [tip, setTip] = useState<{ x: number; y: number; width: number; tip: Tip } | null>(null);
   const layout = fitted?.layout ?? EMPTY, k = fitted?.k ?? 1, type = typeFor(k);
   const w = layout.nodeWidth;
-  // 对比上季: the prior quarter laid out at this quarter's scale, and the glide between the two (0 = this quarter, 1 = prior).
+  // Compare with last quarter: the prior quarter laid out at this quarter's scale, and the glide between the two (0 = this quarter, 1 = prior).
   const priorLayout = useMemo(() => previous && fitted ? priorLayoutFor(graph, previous.graph, previous.copy, k) : null, [graph, previous, fitted, k]);
   const [compare, setCompare] = useState(false);
   const [t, setT] = useState(0);
@@ -360,18 +360,18 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
   const mindTip = (event: React.MouseEvent, item: MindItem) => {
     const node = item.kind === "node" ? item.node : null;
     point(event, item.kind === "revenue"
-      ? { title: `赚钱方式 · ${item.revenue.label}`, color: "var(--flow-profit)", rows: [["属于", item.owner?.name ?? mindMap?.branches.find(b => b.node === item.anchor)?.label ?? ""]], link: "点击查看说明与来源" }
-      : { title: node!.name, color: colorOf(item.anchor), rows: [...(node!.gloss ? [["是什么", node!.gloss] as [string, string]] : []), ...(node!.revenue.length ? [["赚钱方式", node!.revenue.map(m => m.label).join("、")] as [string, string]] : []), ...(node!.children.length ? [["下级", `${node!.children.length} 项`] as [string, string]] : [])], link: "点击查看说明与来源" });
+      ? { title: `How it makes money · ${item.revenue.label}`, color: "var(--flow-profit)", rows: [["Part of", item.owner?.name ?? mindMap?.branches.find(b => b.node === item.anchor)?.label ?? ""]], link: "Click for details and sources" }
+      : { title: node!.name, color: colorOf(item.anchor), rows: [...(node!.gloss ? [["What it is", node!.gloss] as [string, string]] : []), ...(node!.revenue.length ? [["How it makes money", node!.revenue.map(m => m.label).join(", ")] as [string, string]] : []), ...(node!.children.length ? [["Contains", `${node!.children.length} ${node!.children.length === 1 ? "item" : "items"}`] as [string, string]] : [])], link: "Click for details and sources" });
   };
 
   // The explanation is page text beside the canvas, not part of the scaled drawing: opening it narrows the pane and the Sankey refits.
   return <div className="fc" data-products={expanded || undefined} data-mind={mind ? "" : undefined} style={{ "--ratio": `${worldW} / ${worldH}`, "--mobile-width": `${Math.ceil(worldW * SCREEN_VALUE_PX / (21 * k))}px` } as CSSProperties} onMouseLeave={() => { setTip(null); onHover(null); }}>
-    <div className="fc-controls"><Button variant="outline" size="sm" aria-label="缩小画布" onClick={() => zoomBy(1 / 1.2)}>−</Button><Button variant="outline" size="sm" onClick={() => flyTo(home(world))}>适应画布</Button>{priorLayout && <Button variant="outline" size="sm" aria-pressed={compare} data-on={compare || undefined} onClick={() => setCompare(v => !v)}>对比上季</Button>}{productBusiness && <Button variant="outline" size="sm" onClick={() => flyTo(focusCamera)}>聚焦业务</Button>}<Button variant="outline" size="sm" aria-label="放大画布" onClick={() => zoomBy(1.2)}>+</Button></div>
-    {expanded && productTarget && <aside key={productBusiness} className="fc-business-details" aria-label={`${productTarget.label} 业务说明`}>
+    <div className="fc-controls"><Button variant="outline" size="sm" aria-label="Zoom out" onClick={() => zoomBy(1 / 1.2)}>−</Button><Button variant="outline" size="sm" onClick={() => flyTo(home(world))}>Fit</Button>{priorLayout && <Button variant="outline" size="sm" aria-pressed={compare} data-on={compare || undefined} onClick={() => setCompare(v => !v)}>Compare with last quarter</Button>}{productBusiness && <Button variant="outline" size="sm" onClick={() => flyTo(focusCamera)}>Focus business</Button>}<Button variant="outline" size="sm" aria-label="Zoom in" onClick={() => zoomBy(1.2)}>+</Button></div>
+    {expanded && productTarget && <aside key={productBusiness} className="fc-business-details" aria-label={`${productTarget.label} business details`}>
       <div className="fc-business-scroll" tabIndex={0} data-scrolling={scrolling || undefined} onScroll={revealScrollbar}>{businessDetails}</div>
     </aside>}
     <div className="fc-canvas" ref={box}>
-    {t > 0 && previous && <div className="fc-period" role="status" style={{ opacity: Math.min(1, t * 2) }}>上季 · {previous.label}</div>}
+    {t > 0 && previous && <div className="fc-period" role="status" style={{ opacity: Math.min(1, t * 2) }}>Last quarter · {previous.label}</div>}
     <svg key={revealKey} onPointerDown={e => {
         if ((e.target as Element).closest("[data-owner],[data-mind],a,button")) return;
         // Narrow layouts use native horizontal scrolling instead of capturing touch gestures.
@@ -414,7 +414,7 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
             // A business's own band picks it like its node; keyboard users reach the same pick on the node.
             {...(byName.get(b.owner)?.segmentId ? { "data-pick": "", onClick: () => onPick(byName.get(b.owner)!) } : {})}
             data-lit={litLinks ? (litLinks.has(b.key) ? (focus?.segment && focus.trace.some(t => t.key === "trace:" + b.key) ? "context" : "on") : undefined) : undefined}
-            onMouseMove={e => { const l = shown.links[i]; point(e, { title: `${copy(byName.get(l.source)!).name} → ${copy(byName.get(l.target)!).name}`, color: b.color, rows: [["流量", money(l.value)]] }); }}
+            onMouseMove={e => { const l = shown.links[i]; point(e, { title: `${copy(byName.get(l.source)!).name} → ${copy(byName.get(l.target)!).name}`, color: b.color, rows: [["Flow", money(l.value)]] }); }}
             onMouseLeave={() => setTip(null)} />)}
         </g>
         <g className="fc-trace">
@@ -447,7 +447,7 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
           return <g key={n.name} className="fc-node" data-tone={n.tone} data-net={n.name === "net" || undefined} data-lit={isLit} data-active={n.name === active || undefined}
             style={{ "--c": colorOf(n.name), "--d": `${n.column * 90 + 300}ms`, ...(n.fade < 1 ? { opacity: n.fade } : {}) } as CSSProperties}
             data-owner={n.name} onMouseMove={e => point(e, tipFor(n))} onMouseLeave={() => setTip(null)}
-            {...(interactive ? { role: "button", tabIndex: 0, "aria-label": `${text.name} ${text.value}${text.change ? ` 环比 ${text.change.label}` : ""}${n.segmentId ? "，在列表中选中" : "，显示全部业务"}`, onClick: () => onPick(n), onKeyDown: (e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPick(n); } }, onFocus: () => onHover(n.name), onBlur: () => onHover(null) } : {})}>
+            {...(interactive ? { role: "button", tabIndex: 0, "aria-label": `${text.name} ${text.value}${text.change ? `, QoQ ${text.change.label}` : ""}${n.segmentId ? ", select in list" : ", show all businesses"}`, onClick: () => onPick(n), onKeyDown: (e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPick(n); } }, onFocus: () => onHover(n.name), onBlur: () => onHover(null) } : {})}>
             <rect className="fc-hit" x={n.x - 6} y={n.y - 4} width={w + 12} height={n.h + 8} />
             <rect className="fc-bar" x={n.x} y={n.y} width={w} height={n.h} rx={Math.min(3, n.h / 2)} />
             {ghost && <rect className="fc-ghost" x={ghost.x - 2} y={ghost.y} width={w + 4} height={ghost.h} rx={3} style={{ opacity: 1 - Math.min(1, t * 2) }} aria-hidden="true" />}
@@ -460,9 +460,9 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
               <rect className="fc-guide-hit" x={-3 * k} y={Math.min(span[0], span[1]) - 6 * k} width={14 * k} height={Math.abs(span[1] - span[0]) + 12 * k} />
               <path d={`M${r(8 * k)},${r(span[0])}H0V${r(span[1])}H${r(8 * k)}`} />
             </g>}
-            {pill && <g className="fc-guide-pill" data-action={pill.action ?? undefined} transform={`translate(${r(pillX)},${r(n.y + n.h / 2)})`} onMouseMove={e => { e.stopPropagation(); point(e, pill.tip); }} onMouseLeave={() => setTip(null)}><a href={pill.url ?? undefined} target="_blank" rel="noopener noreferrer" aria-label={`${pill.tip.title}，打开来源`}>
-              <rect x={0} y={-type.pill} width={estimateTextWidth(`下季 ${pill.glyph} ${pill.text}`, type.pill, true) + type.pill * 1.6} height={type.pill * 2} rx={type.pill} />
-              <text x={type.pill * 0.8} y={type.pill * 0.38} style={{ fontSize: type.pill }}><tspan className="fc-guide-when">下季</tspan>{pill.glyph && <tspan className="fc-guide-glyph" dx={type.pill * 0.4}>{pill.glyph}</tspan>}<tspan dx={type.pill * 0.4}>{pill.text}</tspan></text>
+            {pill && <g className="fc-guide-pill" data-action={pill.action ?? undefined} transform={`translate(${r(pillX)},${r(n.y + n.h / 2)})`} onMouseMove={e => { e.stopPropagation(); point(e, pill.tip); }} onMouseLeave={() => setTip(null)}><a href={pill.url ?? undefined} target="_blank" rel="noopener noreferrer" aria-label={`${pill.tip.title}, open source`}>
+              <rect x={0} y={-type.pill} width={estimateTextWidth(`Next Q ${pill.glyph} ${pill.text}`, type.pill, true) + type.pill * 1.6} height={type.pill * 2} rx={type.pill} />
+              <text x={type.pill * 0.8} y={type.pill * 0.38} style={{ fontSize: type.pill }}><tspan className="fc-guide-when">Next Q</tspan>{pill.glyph && <tspan className="fc-guide-glyph" dx={type.pill * 0.4}>{pill.glyph}</tspan>}<tspan dx={type.pill * 0.4}>{pill.text}</tspan></text>
             </a></g>}
           </g>;
         })}

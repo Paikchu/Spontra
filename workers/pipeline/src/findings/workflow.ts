@@ -18,7 +18,7 @@ import { writeFindings, type FindingsModel } from "./writer.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
 
 /** Changing the prompt or the ledger regenerates every company once. */
-export const FINDINGS_VERSION = "findings.writer.v5";
+export const FINDINGS_VERSION = "findings.writer.v6";
 export type FindingsWorkflowParams = { ticker: string; fingerprint: string };
 export type FindingsDeps = { model?: FindingsModel; fetcher?: typeof fetch };
 
@@ -53,7 +53,7 @@ async function readInput(env: SecPipelineEnv, ticker: string): Promise<Input> {
   for (const s of guidance?.sources ?? []) if (!sources.has(s.id)) sources.set(s.id, { id: s.id, title: s.title, url: s.url, kind: s.sourceKind === "sec" ? "sec" : "web", publishedAt: s.publishedAt });
   const ledger = buildLedger(data, newest.periodEnd, [...sources.values()].slice(0, 40));
   const overview = analysis?.overview;
-  const context = overview ? [overview.headline, overview.introduction, ...overview.highlights.map(h => `${h.title}：${h.body}`), ...(overview.deepDive?.sections ?? []).flatMap(s => [s.title, ...s.paragraphs.map(p => p.text)])].join("\n").slice(0, CONTEXT_CHARS) : null;
+  const context = overview ? [overview.headline, overview.introduction, ...overview.highlights.map(h => `${h.title}: ${h.body}`), ...(overview.deepDive?.sections ?? []).flatMap(s => [s.title, ...s.paragraphs.map(p => p.text)])].join("\n").slice(0, CONTEXT_CHARS) : null;
   // The periods the snapshot covers and the newest backlog, not when the snapshot was rebuilt: a daily re-collection
   // that changes nothing must not rewrite the findings.
   const fingerprint = await sha256(JSON.stringify({ version: FINDINGS_VERSION, ticker, periodEnd: newest.periodEnd, guidance: guidance?.updatedAt ?? null, analysis: analysis?.generatedAt ?? null,

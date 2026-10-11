@@ -29,7 +29,7 @@ export function reviewedCurrentPair(all:Fact[],expected:string,documents:Array<{
  // Q4 is FY minus nine months, using the exact same monetary concept, currency and dimensions.
  if(!quarterFacts.length){const derived:Fact[]=[];for(const annual of usable.filter(f=>f.end===expected&&days(f.start,f.end)>330)){
    const prior=facts.find(f=>f.start===annual.start&&key(f)===key(annual)&&days(f.start,f.end)>230&&days(f.start,f.end)<310&&days(f.end,annual.end)>=70&&days(f.end,annual.end)<=110);
-   if(prior)derived.push({...annual,start:nextDay(prior.end),context:`derived:${annual.context}-${prior.context}`,value:annual.value-prior.value,precision:Math.min(annual.precision,prior.precision),operands:[annual,prior],formula:`同一财年、币种、概念和维度的全年累计 ${annual.value} − 前九个月累计 ${prior.value} = 第四季度 ${annual.value-prior.value}`});
+   if(prior)derived.push({...annual,start:nextDay(prior.end),context:`derived:${annual.context}-${prior.context}`,value:annual.value-prior.value,precision:Math.min(annual.precision,prior.precision),operands:[annual,prior],formula:`Fourth quarter ${annual.value-prior.value} = full fiscal year ${annual.value} − first nine months ${prior.value}, same fiscal year, currency, concept and dimensions`});
   }quarterFacts=derived;}
  if(!quarterFacts.length)return {quarters:[],reviewed:false};
  const start=quarterFacts[0].start,previousEnd=new Date(Date.parse(start)-86400000).toISOString().slice(0,10);
@@ -46,7 +46,7 @@ export function reviewedCurrentPair(all:Fact[],expected:string,documents:Array<{
  const latestSource=quarterFacts[0].source,previousSource=directPrevious[0].source;
  const extract=(source:DocumentSource,items:Fact[])=>extractVerifiedCurrentQuarters(source,items).quarters;
  const quarters=[...extract(latestSource,quarterFacts),...extract(previousSource,directPrevious)].filter(q=>q.periodEnd===expected||q.periodEnd===previousEnd);
- for(const q of quarters){q.basisLabel=(q.incomeModel==='insurance'?'保险及综合业务 · 投资损益单列 · 净利润含少数股东权益 · ':'')+'SEC 当前财年原披露口径 · 相邻期间累计桥核验；第四季度仅按同口径全年减九个月推导';
-  for(const document of documents)if(!q.sources.some(s=>s.id===document.source.accession))q.sources.push({id:document.source.accession,title:'SEC 累计与重分类范围核验 '+document.source.accession,url:document.source.url,publishedAt:document.source.filedAt});}
+ for(const q of quarters){q.basisLabel=(q.incomeModel==='insurance'?'Insurance and diversified operations · investment gains shown separately · net income includes noncontrolling interests · ':'')+'As reported in the current fiscal year\'s SEC filings · verified against adjacent cumulative periods; a fourth quarter is derived only as the full year less nine months on the same basis';
+  for(const document of documents)if(!q.sources.some(s=>s.id===document.source.accession))q.sources.push({id:document.source.accession,title:'SEC cumulative and reclassification check '+document.source.accession,url:document.source.url,publishedAt:document.source.filedAt});}
  return {quarters,reviewed:checkCompleteFlow({schemaVersion:'business-flow.v1',ticker:latestSource.cik,fetchedAt:null,quarters}).complete};
 }

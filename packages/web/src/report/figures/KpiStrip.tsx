@@ -12,7 +12,7 @@ export function KpiStrip({ figure }: { figure: Extract<SecFigure, { kind: "kpi_s
       return <li key={series.metricKey}>
         <span className="sec-figure-kpi-label">{metricLabel(series.metricKey)}</span>
         <strong className="sec-figure-kpi-value">{formatValue(change.current.value, series.unit)}</strong>
-        <span className="sec-figure-change" data-direction={direction(change.delta)}>{text}<small>{change.basis === "yoy" ? "同比" : "较上期"}</small></span>
+        <span className="sec-figure-change" data-direction={direction(change.delta)}>{text}<small>{change.basis === "yoy" ? "YoY" : "vs. prior"}</small></span>
         <Sparkline points={series.points} mark={ratio ? "line" : "bar"} />
       </li>;
     })}

@@ -190,6 +190,6 @@ function updateStatus(env: SecPipelineEnv, value: Omit<CompanyAnalysisRunUpdate,
 }
 
 function formatReportLabel(periodEnd: string): string {
-  const [year, month, day] = periodEnd.split("-");
-  return `截至 ${year}年${Number(month)}月${Number(day)}日`;
+  const date = new Date(`${periodEnd}T00:00:00Z`);
+  return Number.isNaN(date.getTime()) ? `As of ${periodEnd}` : `As of ${new Intl.DateTimeFormat("en-US", { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" }).format(date)}`;
 }

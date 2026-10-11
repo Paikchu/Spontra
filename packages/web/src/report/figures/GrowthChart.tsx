@@ -15,9 +15,9 @@ export function GrowthChart({ figure }: { figure: Extract<SecFigure, { kind: "gr
   const growthTicks = rates.length ? niceTicks(Math.min(0, ...rates), Math.max(0, ...rates) * 1.15, 3) : [];
   const gy = growthTicks.length ? scale([growthTicks[0], growthTicks.at(-1)!], [bottom, top]) : () => bottom;
   const latest = points.at(-1)!;
-  const description = `收入：${points.map((p) => `${p.date} ${formatValue(p.value, unit)}`).join("；")}。同比增速：${growth.map((g) => `${g.date} ${formatChange(g.growth)}`).join("；") || "无可比去年同期"}`;
+  const description = `Revenue: ${points.map((p) => `${p.date} ${formatValue(p.value, unit)}`).join("; ")}. YoY growth: ${growth.map((g) => `${g.date} ${formatChange(g.growth)}`).join("; ") || "no prior-year period to compare"}`;
   return <>
-    <div className="sec-figure-legend"><span data-role="total">收入（左轴）</span>{growth.length > 0 && <span data-role="rate">同比增速（右轴）</span>}</div>
+    <div className="sec-figure-legend"><span data-role="total">Revenue (left axis)</span>{growth.length > 0 && <span data-role="rate">YoY growth (right axis)</span>}</div>
     <svg className="sec-figure-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={description}>
       {valueTicks.map((t) => <g key={t} className="sec-figure-grid"><line x1={left} x2={width - right} y1={vy(t)} y2={vy(t)} data-zero={t === 0 || undefined} />
         <text x={left - 8} y={vy(t) + 4} textAnchor="end">{formatValue(t, unit, { withUnit: false })}</text></g>)}

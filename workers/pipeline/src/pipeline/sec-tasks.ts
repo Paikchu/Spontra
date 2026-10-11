@@ -2,7 +2,7 @@ import { readEventsPublication } from "../../../../shared/analysis-runtime/event
 import { AiRunStore, quietly } from "../ai-runs/store.ts";
 import { refreshCompanyEvents } from "../events/workflow.ts";
 import { eventsCacheKey } from "../events/read.ts";
-import { GUIDANCE_EXTRACTOR_VERSION } from "../guidance/extract.ts";
+import { guidanceWorkflowSuffix } from "../guidance/extract.ts";
 import { GuidanceStore } from "../guidance/store.ts";
 import { earningsEvents } from "../guidance/workflow.ts";
 import { D1SecRepository } from "../sec/d1.ts";
@@ -19,7 +19,7 @@ export const SEC_TASKS = {
    * already in progress started before this filing, so the task waits for it and then starts its own.
    */
   "sec-report": {
-    version: "sec-report.v1",
+    version: "sec-report.v2-english",
     async run(env, ticker, { now }): Promise<TaskOutcome> {
       return driveWorkflow(env, `sec-report:${ticker}`, env.SEC_ANALYSIS_WORKFLOW as WorkflowBindingLike, async () => {
         const active = await env.DB!.prepare("SELECT job_id FROM sec_analysis_jobs WHERE ticker = ? AND status IN ('running', 'queued') AND updated_at >= ? LIMIT 1")
@@ -35,7 +35,7 @@ export const SEC_TASKS = {
    * processed, two at a time; each Workflow publishes on its own (`guidance.published`).
    */
   guidance: {
-    version: "guidance.v1",
+    version: "guidance.v2",
     async run(env, ticker, { now }): Promise<TaskOutcome> {
       if (env.GUIDANCE_ENABLED !== "true" || !env.GUIDANCE_WORKFLOW) return { status: "done", detail: { skipped: "guidance disabled" } };
       const db = env.DB!, stamp = now.toISOString();
@@ -46,7 +46,7 @@ export const SEC_TASKS = {
       const queued = await store.queuedEvents([ticker], 2);
       const started: string[] = [];
       for (const event of queued) {
-        const id = `guidance-${event.ticker.replace(/[^A-Za-z0-9]/g, "-")}-${event.accession}-${GUIDANCE_EXTRACTOR_VERSION.replace(/[^A-Za-z0-9]/g, "")}`;
+        const id = `guidance-${event.ticker.replace(/[^A-Za-z0-9]/g, "-")}-${event.accession}-${guidanceWorkflowSuffix()}`;
         try {
           await env.GUIDANCE_WORKFLOW.create({ id, params: { ticker: event.ticker, accession: event.accession, eventDate: event.event_date } });
           await quietly(() => new AiRunStore(db).start({ kind: "guidance", ticker: event.ticker, runId: id, trigger: "schedule", accession: event.accession }, stamp));

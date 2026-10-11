@@ -10,7 +10,7 @@ const FINDINGS_TICKERS = ["ORCL", "ADSK", "NET"];
 /** Each company costs four reads against a 60-per-minute public limit. */
 const MAX_COMPANIES = 12;
 
-const report = (periodEnd: string) => `${periodEnd.slice(0, 7).replace("-", ".")} 财报`;
+const report = (periodEnd: string) => `${periodEnd.slice(0, 7).replace("-", ".")} report`;
 
 /** Newest report first; within a report, the company with the most severe finding. */
 function byReport(a: CompanyDigest, b: CompanyDigest) {
@@ -76,7 +76,7 @@ function Chip({ item, copy }: { item: Item; copy: boolean }) {
     tabIndex={copy ? -1 : undefined} title={`${ticker} · ${report(periodEnd)} · ${KIND_LABEL[f.kind]}`}>
     <CompanyLogo ticker={ticker} small />
     <span>{f.title}</span>
-    {f.watchOutcome && <i className="finding-settled" aria-label="跟踪项已有新披露">↻</i>}
+    {f.watchOutcome && <i className="finding-settled" aria-label="New disclosure on what to watch">↻</i>}
   </a>;
 }
 
@@ -113,17 +113,17 @@ export function Home({ light, onToggleTheme, recent, onPick }: { light: boolean;
     <div className="home-center">
     <section className="home-hero" aria-labelledby="home-title">
       <h1 id="home-title">Business View</h1>
-      <p>从业务、产品到净利润，基于公开财报。</p>
+      <p>From businesses and products to net income, built from public filings.</p>
       <SearchPanel inline current={null} recent={recent} onPick={onPick} inputRef={inputRef} />
-      {recent.length > 0 && <nav className="home-recent" aria-label="最近查看">
-        <span>最近查看</span>
+      {recent.length > 0 && <nav className="home-recent" aria-label="Recently viewed">
+        <span>Recently viewed</span>
         {recent.slice(0, 5).map(t => <a key={t} href={`/companies/${t}`} data-nav><CompanyLogo ticker={t} small />{t}</a>)}
       </nav>}
     </section>
-    {(loading || items.length > 0) && <section className="home-findings" aria-label="要点" aria-busy={loading}>
-      <h2 className="home-findings-title">要点<small>最新财报</small></h2>
+    {(loading || items.length > 0) && <section className="home-findings" aria-label="Findings" aria-busy={loading}>
+      <h2 className="home-findings-title">Findings<small>Latest reports</small></h2>
       {items.length > 0 ? <div className="marquee">{rows(items).map((row, i) => <MarqueeRow key={i} items={row} index={i} />)}</div>
-        : <div className="marquee" role="status" aria-label="正在读取要点"><div className="marquee-row"><div className="marquee-track">
+        : <div className="marquee" role="status" aria-label="Loading findings"><div className="marquee-row"><div className="marquee-track">
           {[0, 1, 2, 3, 4, 5].map(i => <span key={i} className="finding-chip marquee-chip marquee-ghost" style={{ animationDelay: `${i * 90}ms` }} />)}
         </div></div><div className="marquee-row" data-offset><div className="marquee-track">
           {[0, 1, 2, 3, 4, 5].map(i => <span key={i} className="finding-chip marquee-chip marquee-ghost" style={{ animationDelay: `${i * 90 + 45}ms` }} />)}

@@ -4,7 +4,8 @@ import { AnalysisRequestError } from "../read-api/contract-support/errors.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import { ORCL_FINDINGS } from "./authored/ORCL.ts";
 
-export const findingsCacheKey = (ticker: string) => `findings:v1:${ticker}`;
+/** v2: English findings. Sets stored under v1 are Chinese and are no longer served; each ticker rewrites under v2. */
+export const findingsCacheKey = (ticker: string) => `findings:v2:${ticker}`;
 
 /** Hand-written sets that stand in until the findings workflow publishes for the ticker. */
 const AUTHORED: Record<string, unknown> = { ORCL: ORCL_FINDINGS };

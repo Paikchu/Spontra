@@ -28,12 +28,12 @@ export const REPORT_MARKDOWN_COMPONENTS: Components = {
     return safe ? <a href={safe} {...(safe.startsWith("https://") ? { target: "_blank", rel: "noopener noreferrer" } : {})}>{children}</a> : <span>{children}</span>;
   },
   // Asset IDs are resolved by image blocks. Model-written Markdown must not initiate remote loads.
-  img: ({ alt }) => <span className="report-content-inline-fallback">{alt ? `图片：${alt}` : "图片暂不可用"}</span>,
+  img: ({ alt }) => <span className="report-content-inline-fallback">{alt ? `Image: ${alt}` : "Image unavailable"}</span>,
   h1: ({ children }) => <h3>{children}</h3>,
   h2: ({ children }) => <h3>{children}</h3>,
   h3: ({ children }) => <h3>{children}</h3>,
   h4: ({ children }) => <h4>{children}</h4>,
-  table: ({ children }) => <div className="report-content-table-scroll" tabIndex={0} role="region" aria-label="报告表格"><table>{children}</table></div>,
+  table: ({ children }) => <div className="report-content-table-scroll" tabIndex={0} role="region" aria-label="Report table"><table>{children}</table></div>,
 };
 
 /** The synchronous parser is evaluated inside the guard; server errors stay within this block. */
@@ -56,8 +56,8 @@ export function ReportFormula({ latex, displayMode, explanation, assumption }: {
     html = katex.renderToString(latex, { displayMode, throwOnError: true, trust: false, strict: "error", maxExpand: 100, maxSize: 10, macros: {}, output: "htmlAndMathml" });
   } catch { /* Preserve the source and surrounding explanation when a formula cannot be rendered. */ }
   return <figure className="report-content-formula">
-    {html ? <div className="report-content-math-scroll" dangerouslySetInnerHTML={{ __html: html }} /> : <div className="report-content-fallback"><span>公式暂无法排版</span><code>{latex}</code></div>}
+    {html ? <div className="report-content-math-scroll" dangerouslySetInnerHTML={{ __html: html }} /> : <div className="report-content-fallback"><span>Formula can't be rendered</span><code>{latex}</code></div>}
     {explanation && <figcaption>{explanation}</figcaption>}
-    {assumption && <p className="report-content-caption">分析假设：{assumption}</p>}
+    {assumption && <p className="report-content-caption">Assumption: {assumption}</p>}
   </figure>;
 }

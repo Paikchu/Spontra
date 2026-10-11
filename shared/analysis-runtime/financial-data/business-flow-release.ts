@@ -19,19 +19,19 @@ function rows(table: string): Row[] {
  });
 }
 const expenseLabels: Record<string,[string,string]> = {
- 'cloud and software':['CloudAndSoftwareExpenses','云与软件费用'],hardware:['HardwareExpenses','硬件费用'],services:['ServicesExpense','服务费用'],
- 'cloud services and license support':['CloudServicesAndLicenseSupportExpense','云服务与许可支持费用'],
- 'sales and marketing':['SellingAndMarketingExpense','销售与营销'],'research and development':['ResearchAndDevelopmentExpense','研发'],
- 'general and administrative':['GeneralAndAdministrativeExpense','一般及行政'],'amortization of intangible assets':['AmortizationOfIntangibleAssets','无形资产摊销'],
- 'restructuring and other':['RestructuringAndOtherExpenses','重组及其他'],
- 'acquisition related and other':['AcquisitionRelatedAndOtherExpense','收购相关及其他费用'],
- restructuring:['RestructuringExpense','重组费用'],
+ 'cloud and software':['CloudAndSoftwareExpenses','Cloud and software'],hardware:['HardwareExpenses','Hardware'],services:['ServicesExpense','Services'],
+ 'cloud services and license support':['CloudServicesAndLicenseSupportExpense','Cloud services and license support'],
+ 'sales and marketing':['SellingAndMarketingExpense','Sales and marketing'],'research and development':['ResearchAndDevelopmentExpense','Research and development'],
+ 'general and administrative':['GeneralAndAdministrativeExpense','General and administrative'],'amortization of intangible assets':['AmortizationOfIntangibleAssets','Amortization of intangible assets'],
+ 'restructuring and other':['RestructuringAndOtherExpenses','Restructuring and other'],
+ 'acquisition related and other':['AcquisitionRelatedAndOtherExpense','Acquisition related and other'],
+ restructuring:['RestructuringExpense','Restructuring'],
 };
 const financialLabels:Record<string,string>={'total revenues':'revenue','total operating expenses':'totalOperatingExpenses','operating income':'operatingIncome','interest expense':'interestExpense','non-operating income, net':'otherIncome','non-operating expense, net':'otherIncome','non-operating income (expenses), net':'otherIncome','non-operating income (expense), net':'otherIncome','income before income taxes':'pretaxIncome','provision for income taxes':'taxExpense','benefit for income taxes':'taxExpense','net income':'netIncome','net loss':'netIncome'};
 const revenueLabels:Record<string,[string,string]>={
  cloud:['cloud','Cloud'],software:['software','Software'],hardware:['hardware','Hardware'],services:['services','Services'],
- 'cloud services and license support':['CloudServicesAndLicenseSupportRevenues','云服务与许可支持'],
- 'cloud license and on-premise license':['CloudLicenseAndOnPremiseLicenseRevenues','云许可与本地部署许可'],
+ 'cloud services and license support':['CloudServicesAndLicenseSupportRevenues','Cloud services and license support'],
+ 'cloud license and on-premise license':['CloudLicenseAndOnPremiseLicenseRevenues','Cloud license and on-premise license'],
 };
 /** Extract only a clearly identified direct-three-month GAAP operations table.
  * Amounts are dynamic disclosed cells; no company/ticker or fixture amounts are used.
@@ -81,7 +81,7 @@ export function parseSecEarningsRelease(html:string,source:ParserSource):ParsedB
    if(!annualEnd.test(clean(html)))continue;
    const group=fiscalYears.indexOf(year);if(group<0)continue;
    const col=group*5+3;
-   const ids:Record<string,[string,string]>={'cloud applications':['CloudApplications','云应用'],'cloud infrastructure':['CloudInfrastructure','云基础设施'],'software license':['SoftwareLicense','软件许可'],'software support':['SoftwareSupport','软件支持'],hardware:['HardwareRevenues','硬件'],services:['SalesRevenueServicesNet','服务']};
+   const ids:Record<string,[string,string]>={'cloud applications':['CloudApplications','Cloud applications'],'cloud infrastructure':['CloudInfrastructure','Cloud infrastructure'],'software license':['SoftwareLicense','Software license'],'software support':['SoftwareSupport','Software support'],hardware:['HardwareRevenues','Hardware'],services:['SalesRevenueServicesNet','Services']};
    const leaves:BusinessLeaf[]=[];const seen=new Set<string>();
    for(const row of rows(tables[si][0])) {
     const item=ids[row.label.toLowerCase()];if(!item||seen.has(item[0])||row.values.length!==fiscalYears.length*5||!Number.isFinite(row.values[col]))continue;

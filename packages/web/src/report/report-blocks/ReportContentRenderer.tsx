@@ -17,7 +17,7 @@ export function ReportContentRenderer({ content, context, surface = "article", p
   const blocks = Array.isArray(content) ? content : [];
   for (let index = 0; index < blocks.length; index++) {
     const parsed = SEC_READER_CONTENT_BLOCK_SCHEMA.safeParse(blocks[index]);
-    if (!parsed.success) { rendered.push(<p className="report-content-fallback" key={`invalid-${index}`}>此内容块暂无法显示，其他正文已保留。</p>); continue; }
+    if (!parsed.success) { rendered.push(<p className="report-content-fallback" key={`invalid-${index}`}>This block can't be shown. The rest of the report is unaffected.</p>); continue; }
     const block = parsed.data;
     const group = [block];
     if (block.groupId) {
@@ -52,11 +52,11 @@ function ContentBlock({ block, domId, context, active }: { block: SecReaderConte
     case "markdown": return <>{context.paragraphLabels?.[block.blockId] && <h3 className="report-content-paragraph-label">{context.paragraphLabels[block.blockId]}</h3>}{active ? <StreamingReportText text={block.markdown} /> : <ReportMarkdown markdown={block.markdown} />}</>;
     case "chart": {
       const trend = readableTrend(context.report?.trends?.find((t) => t.metricKey === block.metricKey));
-      return trend ? <SecTrendFigure id={`${domId}-figure`} title={block.title} trend={trend} mark={block.mark} caption={block.caption} /> : <div className="report-content-fallback"><strong>{block.title}</strong><p>暂无可绘制的可比数据。</p><p>{block.caption}</p></div>;
+      return trend ? <SecTrendFigure id={`${domId}-figure`} title={block.title} trend={trend} mark={block.mark} caption={block.caption} /> : <div className="report-content-fallback"><strong>{block.title}</strong><p>No comparable data to chart.</p><p>{block.caption}</p></div>;
     }
     case "figure": {
       const figure = findSecFigure(context.report?.figures, block.figureKey);
-      return figure ? <SecFigureView id={`${domId}-figure`} figure={figure} title={block.title} caption={block.caption} /> : <div className="report-content-fallback"><strong>{block.title}</strong><p>该图所需的已核验数据暂不可用。</p><p>{block.caption}</p></div>;
+      return figure ? <SecFigureView id={`${domId}-figure`} figure={figure} title={block.title} caption={block.caption} /> : <div className="report-content-fallback"><strong>{block.title}</strong><p>The verified data for this figure is not available.</p><p>{block.caption}</p></div>;
     }
     case "image": {
       const candidate = (context.assets ?? context.report?.reader?.assets)?.find((asset) => asset.assetId === block.assetId);
@@ -64,20 +64,20 @@ function ContentBlock({ block, domId, context, active }: { block: SecReaderConte
       const asset = parsed.success ? parsed.data : undefined;
       const src = asset && safeReportUrl(asset.src);
       return <figure className="report-content-image">
-        {asset && src && !src.startsWith("#") ? <ReportAssetImage key={src} src={src} width={asset.width} height={asset.height} alt={block.alt} /> : <div className="report-content-fallback">图片暂不可用：{block.alt}</div>}
-        <figcaption>{block.caption}{asset && <><br /><span>{asset.source.kind === "generated" ? "生成插图" : "申报材料图片"} · {safeReportUrl(asset.source.url ?? "") ? <a href={safeReportUrl(asset.source.url!)} target="_blank" rel="noopener noreferrer">{asset.source.label}</a> : asset.source.label}</span></>}</figcaption>
+        {asset && src && !src.startsWith("#") ? <ReportAssetImage key={src} src={src} width={asset.width} height={asset.height} alt={block.alt} /> : <div className="report-content-fallback">Image unavailable: {block.alt}</div>}
+        <figcaption>{block.caption}{asset && <><br /><span>{asset.source.kind === "generated" ? "Generated illustration" : "Image from filing"} · {safeReportUrl(asset.source.url ?? "") ? <a href={safeReportUrl(asset.source.url!)} target="_blank" rel="noopener noreferrer">{asset.source.label}</a> : asset.source.label}</span></>}</figcaption>
       </figure>;
     }
     case "math": return <ReportFormula latex={block.latex} displayMode={block.displayMode} explanation={block.explanation} assumption={block.assumption} />;
     case "table": return block.rows.some((row) => row.length !== block.headers.length) || block.columnKinds && block.columnKinds.length !== block.headers.length
-      ? <p className="report-content-fallback">表格列数不一致，暂无法显示。</p>
+      ? <p className="report-content-fallback">This table has inconsistent columns and can't be shown.</p>
       : <figure className="report-content-data-table" data-density={block.density ?? "comfortable"}><figcaption>{block.caption}</figcaption><div className="report-content-table-scroll" tabIndex={0} role="region" aria-label={block.caption}><table><thead><tr>{block.headers.map((header, i) => <th scope="col" data-column-kind={block.columnKinds?.[i] ?? (i === 0 ? "label" : "text")} key={i}>{header}</th>)}</tr></thead><tbody>{block.rows.map((row, i) => <tr key={i}>{row.map((cell, j) => j === 0 && (block.columnKinds?.[j] ?? "label") === "label" ? <th scope="row" data-column-kind="label" key={j}>{cell}</th> : <td data-column-kind={block.columnKinds?.[j] ?? "text"} key={j}>{cell}</td>)}</tr>)}</tbody></table></div></figure>;
     case "callout": return <aside className="report-content-callout" data-tone={block.tone}>{block.title && <strong>{block.title}</strong>}<ReportMarkdown markdown={block.text} /></aside>;
     case "evidence": {
       const nodes = context.nodes ?? context.report?.publication?.summary.nodes ?? [];
       const evidence = nodes.filter((node) => node.evidenceIds?.some((id) => block.evidenceIds.includes(id))).flatMap((node) => node.evidence)
         .filter((item, index, all) => all.findIndex((other) => other.excerpt === item.excerpt) === index);
-      return <details className="report-content-source report-content-evidence"><summary>{block.title ?? "相关研究摘录"} · {evidence.length} 段</summary>{evidence.length ? <><p className="report-content-caption">以下摘录来自包含所引证据的研究主题，尚未逐条对应本段论述。</p>{evidence.map((item, i) => <blockquote key={i}><p>{item.excerpt}</p><footer>字符位置 {item.start}–{item.end}</footer></blockquote>)}</> : <p>该内容块暂无可展开的原文摘录。</p>}</details>;
+      return <details className="report-content-source report-content-evidence"><summary>{block.title ?? "Related research excerpts"} · {evidence.length}</summary>{evidence.length ? <><p className="report-content-caption">These excerpts come from the research topics that hold the cited evidence. They are not matched one by one to this passage.</p>{evidence.map((item, i) => <blockquote key={i}><p>{item.excerpt}</p><footer>Characters {item.start.toLocaleString("en-US")}–{item.end.toLocaleString("en-US")}</footer></blockquote>)}</> : <p>No filing excerpts for this block.</p>}</details>;
     }
   }
 }

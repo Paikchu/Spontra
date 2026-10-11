@@ -8,7 +8,7 @@ import { RailSection } from "./RailSection";
 
 /** A row's group for the open list's filter: reports, or the event's class. */
 const groupOf = (item: RailItem) => item.kind === "report" ? "report" : item.event.class;
-const groupLabel = (key: string) => key === "report" ? "财报" : EVENT_CLASS_LABEL[key as EventClass];
+const groupLabel = (key: string) => key === "report" ? "Reports" : EVENT_CLASS_LABEL[key as EventClass];
 
 /**
  * The filing timeline, under the findings in the rail: every report and every 8-K or traded Form 4, newest first,
@@ -36,16 +36,16 @@ export function EventsList({ rail, focus, pendingInsider, expanded, onFocus, onE
   const shown = expanded && group ? all.filter(i => groupOf(i) === group) : all;
   const firstEarlier = rail.earlier.find(i => shown.includes(i))?.id;
   const thisYear = (rail.recent[0] ?? all[0])?.date.slice(0, 4);
-  const notes = [rail.quiet > 0 ? `另有 ${rail.quiet} 份 Form 4 为授予、代扣或赠与` : null, pendingInsider > 0 ? `${pendingInsider} 份 Form 4 待读取` : null].filter(Boolean).join("；");
-  return <RailSection name="events" title="财报与事件" hint={notes || undefined} expandable={all.length > digest.size}
+  const notes = [rail.quiet > 0 ? `${rail.quiet} more Form 4 ${rail.quiet === 1 ? "filing is a grant, withholding or gift" : "filings are grants, withholdings or gifts"}` : null, pendingInsider > 0 ? `${pendingInsider} Form 4 ${pendingInsider === 1 ? "filing" : "filings"} not yet read` : null].filter(Boolean).join("; ");
+  return <RailSection name="events" title="Filings and events" hint={notes || undefined} expandable={all.length > digest.size}
     expanded={expanded} focused={focus != null} onExpand={open => { if (!open) setGroup(null); onExpand(open); }}>
-    {expanded && groups.length > 1 && <div className="section-filters" role="radiogroup" aria-label="按类型筛选">
+    {expanded && groups.length > 1 && <div className="section-filters" role="radiogroup" aria-label="Filter by type">
       {[[null, all.length] as const, ...groups].map(([key, count]) => <Button variant="unstyled" type="button" key={key ?? "all"} role="radio" aria-checked={group === key} className="section-filter"
         data-class={key ?? undefined} onClick={() => setGroup(key)}>
-        {key == null ? "全部" : groupLabel(key)}{key != null && <small>{count}</small>}
+        {key == null ? "All" : groupLabel(key)}{key != null && <small>{count}</small>}
       </Button>)}
     </div>}
-    <div className="findings-rows section-body" id="rail-events" role="radiogroup" aria-label="选择财报或事件以在图中查看">
+    <div className="findings-rows section-body" id="rail-events" role="radiogroup" aria-label="Select a filing or event to view it in the chart">
       {shown.map((item, i) => {
         const year = item.date.slice(0, 4);
         const turn = year !== (i ? shown[i - 1].date.slice(0, 4) : thisYear);
@@ -66,7 +66,7 @@ export function EventsList({ rail, focus, pendingInsider, expanded, onFocus, onE
 function ReportRow({ report, checked, extra, onClick }: { report: PublicFilingDigest; checked: boolean; extra?: string; onClick: () => void }) {
   const forms = report.sources.length ? report.sources.map(s => s.form).join(" + ") : report.form;
   return <Button variant="unstyled" type="button" role="radio" aria-checked={checked} className="finding-row event-row report-row" data-class="report" data-extra={extra} onClick={onClick}
-    title={`财报 · ${forms} · 截至 ${report.periodEnd} · ${report.filingDate}`} aria-label={`财报 ${shortDate(report.date)} ${reportTitle(report)}`}>
+    title={`Report · ${forms} · Period ended ${report.periodEnd} · ${report.filingDate}`} aria-label={`Report ${shortDate(report.date)} ${reportTitle(report)}`}>
     <time className="event-date" dateTime={report.date}>{shortDate(report.date)}</time>
     <span className="finding-title">{reportTitle(report)}</span>
     {report.periodLabel && <span className="finding-kind"><small>{report.periodLabel}</small></span>}
@@ -76,7 +76,7 @@ function ReportRow({ report, checked, extra, onClick }: { report: PublicFilingDi
 function EventRow({ event, checked, extra, onClick }: { event: CompanyEvent; checked: boolean; extra?: string; onClick: () => void }) {
   const t = event.insider;
   // The class reads from the mark; only an insider's role is worth a line of its own.
-  const meta = t ? [t.title ?? (t.isDirector ? "董事" : t.isTenPercentOwner ? "10% 股东" : null), t.sold && t.rule10b51 === true ? "10b5-1" : null].filter(Boolean).join(" · ") : "";
+  const meta = t ? [t.title ?? (t.isDirector ? "Director" : t.isTenPercentOwner ? "10% owner" : null), t.sold && t.rule10b51 === true ? "10b5-1" : null].filter(Boolean).join(" · ") : "";
   const items = event.items.filter(i => i !== "9.01").map(i => `Item ${i}`).join(", ");
   return <Button variant="unstyled" type="button" role="radio" aria-checked={checked} className="finding-row event-row" data-class={event.class} data-extra={extra} onClick={onClick}
     title={[EVENT_CLASS_LABEL[event.class], event.form, items, event.filedAt].filter(Boolean).join(" · ")} aria-label={`${EVENT_CLASS_LABEL[event.class]} ${shortDate(event.filedAt)} ${eventTitle(event)}${meta ? ` ${meta}` : ""}`}>

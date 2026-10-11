@@ -22,7 +22,7 @@ export const COMPANY_ANALYSIS_SCHEMA_VERSION = "company-analysis.v1";
  * run's input hash, so a company already analysed under the previous label would otherwise be
  * deduplicated against that publication and never see the new prompt's output at all.
  */
-export const COMPANY_ANALYSIS_PROMPT_VERSION = "business-deep-dive-react.v1";
+export const COMPANY_ANALYSIS_PROMPT_VERSION = "business-deep-dive-react.v2";
 
 export type CompanyAnalysisRunStatus =
   | "waiting_fundamentals"
@@ -142,7 +142,7 @@ export function normalizeCompanyAnalysisOverview(
     throw new CompanyAnalysisValidationError(`Company analysis overview must contain one headline, one introduction, and at least ${COMPANY_ANALYSIS_MIN_HIGHLIGHTS} evidence-backed highlights.`);
   }
   const deepDive = item?.deepDive === undefined ? undefined : normalizeBusinessDeepDive(item.deepDive);
-  return { label: deepDive ? "公司业务拆解" : label, headline, introduction, highlights, ...(deepDive ? { deepDive } : {}) };
+  return { label: deepDive ? "Business breakdown" : label, headline, introduction, highlights, ...(deepDive ? { deepDive } : {}) };
 }
 
 const BUSINESS_SECTION_KEYS = new Set<BusinessDeepDive["sections"][number]["key"]>([
@@ -267,8 +267,8 @@ type ChartSeries = Extract<CompanyAnalysisBlock, { type: "chart" }>["series"];
  *
  * `buildFundamentalChartModel` throws on an empty series, too many series, an unknown metric, an
  * unsupported transform, a duplicate `metricKey:transform`, or more than two distinct axis units.
- * The renderer catches its own throw and shows 「这组指标暂时不能叠加」 —話術 written for someone
- * picking metrics interactively, not something to publish into an analysis. So every one of those
+ * The renderer catches its own throw and shows a "these metrics cannot be combined" notice, wording meant
+ * for someone picking metrics interactively, not something to publish into an analysis. So every one of those
  * conditions is settled here instead.
  */
 function chartSeriesFor(value: unknown, options: CompanyAnalysisOverviewOptions): ChartSeries {

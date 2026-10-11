@@ -69,8 +69,8 @@ export function normalizeSecNodePlan(value: unknown, outline: SecOutlineSection[
   const nodes = (Array.isArray(root?.nodes) ? root.nodes : []).flatMap((item): SecNodeSpec[] => {
     const input = asRecord(item);
     if (!input) return [];
-    const title = cleanLine(input.title, 60);
-    const question = cleanLine(input.question, 400);
+    const title = cleanLine(input.title, 140);
+    const question = cleanLine(input.question, 1000);
     const sectionIds = [...new Set((Array.isArray(input.sectionIds) ? input.sectionIds : [])
       .map((id) => String(id ?? "").trim())
       .filter((id) => knownSections.has(id)))];
@@ -87,12 +87,12 @@ export function normalizeSecNodePlan(value: unknown, outline: SecOutlineSection[
     return [{
       id,
       title,
-      question: question || `围绕「${title}」说明本期财报的变化、驱动因素与需要验证的问题。`,
+      question: question || `For "${title}", explain what changed in this filing, the drivers, and what still needs to be verified.`,
       sectionIds,
       ...(keywords.length ? { keywords } : {}),
       historySeriesIds: requestedSeriesIds.filter((item) => knownSeriesIds.has(item)).slice(0, 12) as SecCanonicalSeriesId[],
       memoryIds: [],
-      acceptanceCriteria: Array.isArray(input.acceptanceCriteria) ? input.acceptanceCriteria.map((criterion) => cleanLine(criterion, 240)).filter(Boolean).slice(0, 8) : ["明确回答任务问题并引用当前 filing 证据"],
+      acceptanceCriteria: Array.isArray(input.acceptanceCriteria) ? input.acceptanceCriteria.map((criterion) => cleanLine(criterion, 500)).filter(Boolean).slice(0, 8) : ["Answers the task question directly and cites evidence from the current filing"],
       materiality: input.materiality === "high" || input.materiality === "low" ? input.materiality : "medium",
     }];
   });
@@ -170,7 +170,7 @@ function fallbackEvidence(text: string): SecWorkflowEvidence[] {
     start: match.index,
     end: match.index + excerpt.length,
     score: 0,
-    reasons: ["绑定章节原文"],
+    reasons: ["bound section source text"],
     excerpt,
   }];
 }
@@ -184,13 +184,13 @@ export function normalizeSecNodeResult(
   const input = asRecord(value) ?? {};
   const findings = (Array.isArray(input.findings) ? input.findings : []).flatMap((item) => {
     const finding = asRecord(item);
-    const label = cleanLine(finding?.label, 24);
-    const detail = cleanLine(finding?.detail, 320);
+    const label = cleanLine(finding?.label, 60);
+    const detail = cleanLine(finding?.detail, 800);
     if (!label || !detail) return [];
     const importance: SecSummaryImportance = finding?.importance === "high" || finding?.importance === "low" ? finding.importance : "medium";
     return [{ label, detail, importance }];
   }).slice(0, 6);
-  const narrative = cleanProse(input.narrative, 4_000);
+  const narrative = cleanProse(input.narrative, 8_000);
   const facts = normalizeAnalysisFacts(input.facts, validEvidenceIds);
   return {
     id: spec.id,
@@ -256,23 +256,23 @@ function scoreCandidate(text: string, terms: string[]): { rawScore: number; scor
   const matchedTerms = terms.filter((term) => lower.includes(term));
   if (matchedTerms.length) {
     rawScore += Math.min(12, matchedTerms.length * 3);
-    reasons.push(`主题词：${matchedTerms.slice(0, 3).join("、")}`);
+    reasons.push(`topic terms: ${matchedTerms.slice(0, 3).join(", ")}`);
   }
   if (/[$€£¥]|\b\d+(?:\.\d+)?%|\b\d{1,3}(?:,\d{3})+(?:\.\d+)?\b/.test(text)) {
     rawScore += 5;
-    reasons.push("包含定量数据");
+    reasons.push("contains quantitative data");
   }
   if (/increase|decrease|grew|growth|decline|improve|expand|contract|higher|lower|up \d|down \d/i.test(text)) {
     rawScore += 3;
-    reasons.push("包含变化表述");
+    reasons.push("describes a change");
   }
   if (/driven by|due to|primarily|reflecting|resulted from|attributable to/i.test(text)) {
     rawScore += 3;
-    reasons.push("包含驱动解释");
+    reasons.push("explains a driver");
   }
   if (/management['’]s discussion|results of operations|liquidity and capital resources|item\s+[12]a?\b/i.test(text)) {
     rawScore += 4;
-    reasons.push("位于高价值章节");
+    reasons.push("in a high-value section");
   }
   const riskNode = terms.some((term) => term.includes("risk"));
   if (!riskNode && /forward-looking statements?|safe harbor|uncertaint(?:y|ies)|may be affected/i.test(text)) rawScore -= 7;

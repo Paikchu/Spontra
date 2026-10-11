@@ -2,12 +2,15 @@ import type {Job} from './store.ts';
 import type {DocumentBatch} from './collect.ts';
 import {extractDisclosedQuarters, readReportedFacts, SEC_FLOW_PARSER_VERSION, type Fact, type DocumentSource} from './parser.ts';
 import {priorPresentationOnly,reviewedCurrentPair} from './period-review.ts';
+import {namesMembers} from './member-labels.ts';
 export interface SecReader {
  read(url:string):Promise<Response>;
  /** Persist exact bytes and all encountered facts independently of the chart projection. */
  archive?(source:DocumentSource,html:string,metadata?:{form?:string;reportDate?:string}):Promise<void>;
  /** The stored copy of a document this issuer already archived. A filed EDGAR document never changes, so it stands in for the download. */
  archived?(url:string):Promise<string|null>;
+ /** The filing's own names for its dimension members, keyed by member QName; absent, members read by their local names. */
+ memberLabels?(documentUrl:string,accession:string):Promise<Record<string,string>>;
 }
 /**
  * EDGAR accepts no script in a filing, yet sec.gov appends one with a random path to every page it serves, so the same
@@ -32,8 +35,8 @@ async function readDocument(url:string,reader:SecReader):Promise<string>{
  return readBoundedReport(response);
 }
 /** A filing's primary document plus at most two same-filing Exhibit 99 documents, each size-bounded; archived ones are not downloaded again. */
-export async function readFilingDocuments(primaryUrl:string,reader:SecReader):Promise<Array<{url:string;html:string}>>{
- const html=await readDocument(primaryUrl,reader);const documents=[{url:primaryUrl,html}];
+export async function readFilingDocuments(primaryUrl:string,reader:SecReader,accession?:string):Promise<Array<{url:string;html:string;memberLabels?:Record<string,string>}>>{
+ const html=await readDocument(primaryUrl,reader);const documents:Array<{url:string;html:string;memberLabels?:Record<string,string>}>=[{url:primaryUrl,html}];
  // Earnings 8-K primary documents often link their actual GAAP statements in Exhibit 99.
  // Follow at most two same-filing named exhibits, never an arbitrary outbound URL.
  const folder=primaryUrl.slice(0,primaryUrl.lastIndexOf('/')+1);
@@ -44,6 +47,8 @@ export async function readFilingDocuments(primaryUrl:string,reader:SecReader):Pr
  const exhibits=[...new Set(candidates.map(path=>{try{return new URL(path,primaryUrl);}catch{return null;}})
   .filter((url):url is URL=>!!url&&url.href.startsWith(folder)&&url.href!==primaryUrl&&!url.search&&!url.hash&&/^[A-Za-z0-9_.-]+\.html?$/i.test(url.pathname.split('/').at(-1)!)).map(url=>url.href))].slice(0,2);
  for(const url of exhibits){const body=await readDocument(url,reader);if(documents.reduce((n,d)=>n+d.html.length,0)+body.length>16000000)throw new Error('SEC_DOCUMENT_UNAVAILABLE');documents.push({url,html:body});}
+ // One label set covers the filing; only a document that names members needs it.
+ if(accession&&reader.memberLabels&&documents.some(d=>namesMembers(d.html))){const labels=await reader.memberLabels(primaryUrl,accession);for(const d of documents)if(namesMembers(d.html))d.memberLabels=labels;}
  return documents;
 }
 export async function readSecDocumentBatch(job:Job,reader:SecReader,maxDocuments=2):Promise<DocumentBatch>{
@@ -64,9 +69,9 @@ export async function readSecDocumentBatch(job:Job,reader:SecReader,maxDocuments
  }
  const quarters=[];const index=cursor.index??0;const selected=cursor.documents.slice(index,index+Math.max(1,Math.min(3,maxDocuments)));
  for(const document of selected){
-  const documents=await readFilingDocuments(document.url,reader);
+  const documents=await readFilingDocuments(document.url,reader,document.accession);
   for(const content of documents){
-   const source={...document,url:content.url,cik,industry:cursor.industry??'unknown'};
+   const source:DocumentSource={...document,url:content.url,cik,industry:cursor.industry??'unknown',...(content.memberLabels?{memberLabels:content.memberLabels}:{})};
    await reader.archive?.(source,content.html,{form:document.form,reportDate:document.periodEnd});
    const parsed=extractDisclosedQuarters(content.html,source),reported=readReportedFacts(content.html,source);
    if(reported.issues.length)throw new Error('SEC_FACT_FORMAT_UNSUPPORTED');

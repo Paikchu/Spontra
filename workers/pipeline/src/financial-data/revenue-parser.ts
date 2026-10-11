@@ -4,7 +4,7 @@ import {parseSecBusinessFlow, type BusinessFact, type ParsedBusinessQuarter} fro
 import {parseSecEarningsRelease} from '../../../../shared/analysis-runtime/financial-data/business-flow-release.ts';
 import {extractDisclosedQuarters, extractVerifiedCurrentQuarters, readReportedFacts, type DocumentSource} from './parser.ts';
 
-export const REVENUE_PARSER_VERSION = 'sec-revenue-history.v3';
+export const REVENUE_PARSER_VERSION = 'sec-revenue-history.v4';
 type HistorySource = RevenueHistoryQuarter['source'];
 const near = (a: number, b: number) => Math.abs(a - b) <= Math.max(1, Math.max(Math.abs(a), Math.abs(b)) * 1e-9);
 const clean = (html: string) => html.replace(/<[^>]*>/g, ' ').replace(/&#(?:x([\da-f]+)|(\d+));/gi, (_, hex, dec) => String.fromCodePoint(parseInt(hex ?? dec, hex ? 16 : 10))).replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/\s+/g, ' ').trim();
@@ -21,8 +21,8 @@ function fromRevenueProfile(parsed: ParsedBusinessQuarter, source: HistorySource
     groups.set(id, [...(groups.get(id) ?? []), {id: canonical, name: leaf.label, value: String(leaf.fact.value), lineage: lineage(leaf.fact)}]);
   }
   const quarter: RevenueHistoryQuarter = {periodStart: parsed.start, periodEnd: parsed.end, currency: parsed.currency, scale: 1, revenue: String(parsed.financials.revenue.value), basis: 'reported', source,
-    presentation: '该来源直接披露的季度收入分类；收入覆盖独立于利润和费用覆盖', lineage: lineage(parsed.financials.revenue),
-    segments: [...groups].map(([id, leaves]) => ({id, name: id === 'cloud' ? '云服务' : id === 'software' ? '软件' : leaves[0].name, value: String(leaves.reduce((sum, leaf) => sum + Number(leaf.value), 0)), lineage: leaves.flatMap(leaf => leaf.lineage ?? []), ...(leaves.length > 1 ? {children: leaves} : {})}))};
+    presentation: 'Quarterly revenue categories this source discloses directly; revenue coverage is independent of profit and expense coverage', lineage: lineage(parsed.financials.revenue),
+    segments: [...groups].map(([id, leaves]) => ({id, name: id === 'cloud' ? 'Cloud' : id === 'software' ? 'Software' : leaves[0].name, value: String(leaves.reduce((sum, leaf) => sum + Number(leaf.value), 0)), lineage: leaves.flatMap(leaf => leaf.lineage ?? []), ...(leaves.length > 1 ? {children: leaves} : {})}))};
   return validHistoryQuarter(quarter) ? quarter : null;
 }
 
@@ -92,17 +92,17 @@ export function parseOracleOfferingsHistory(html: string, source: HistorySource)
         if (!row || !amount || !Number.isFinite(amount.value) || amount.value < 0) return null;
         return {id, name, value: String(amount.value * 1e6), lineage: [{accession: source.accession, url: source.url, concept: `table:${row.label}`, contextId: `table-${tableIndex}:row-${row.index}:cell-${amount.cell}:FY${year}:Q${quarter}`, periodStart: start, periodEnd: end, dimensions: {}, parserVersion: REVENUE_PARSER_VERSION}]};
       };
-      const cloud = legacy ? leaf(businessKeys[0], 'CloudServicesAndLicenseSupportRevenues', '云服务与许可支持') : leaf('cloud', 'cloud', '云服务');
-      const software = legacy ? leaf(businessKeys[1], 'CloudLicenseAndOnPremiseLicenseRevenues', '云许可与本地部署许可') : leaf('software', 'software', '软件');
-      const hardware = leaf('hardware', 'HardwareRevenues', '硬件'), services = leaf('services', 'SalesRevenueServicesNet', '服务'), total = leaf('total revenues', 'total', '总收入');
+      const cloud = legacy ? leaf(businessKeys[0], 'CloudServicesAndLicenseSupportRevenues', 'Cloud services and license support') : leaf('cloud', 'cloud', 'Cloud');
+      const software = legacy ? leaf(businessKeys[1], 'CloudLicenseAndOnPremiseLicenseRevenues', 'Cloud license and on-premise license') : leaf('software', 'software', 'Software');
+      const hardware = leaf('hardware', 'HardwareRevenues', 'Hardware'), services = leaf('services', 'SalesRevenueServicesNet', 'Services'), total = leaf('total revenues', 'total', 'Total revenues');
       if (!cloud || !software || !hardware || !services || !total) continue;
       const children = (keys: Array<[string, string, string]>, parent: RevenueHistoryLeaf) => {
         const leaves = keys.map(([key, id, name]) => leaf(key, id, name));
         return leaves.every((value): value is RevenueHistoryLeaf => !!value) && near(leaves.reduce((sum, value) => sum + Number(value.value), 0), Number(parent.value)) ? {children: leaves} : {};
       };
       const q: RevenueHistoryQuarter = {periodStart: start, periodEnd: end, currency: 'USD', scale: 1, revenue: total.value, basis: 'reported', source, lineage: total.lineage,
-        presentation: `该附件 GAAP 收入补充表直接披露 FY${year} Q${quarter}；按附件展示口径，非累计相减`,
-        segments: [{...cloud, ...children(legacy ? [['cloud services', 'cloud', '云服务'], ['license support', 'SoftwareSupport', '软件支持']] : [['cloud applications', 'CloudApplications', '云应用'], ['cloud infrastructure', 'CloudInfrastructure', '云基础设施']], cloud)}, {...software, ...children([['software license', 'SoftwareLicense', '软件许可'], ['software support', 'SoftwareSupport', '软件支持']], software)}, hardware, services]};
+        presentation: `The exhibit's supplemental GAAP revenue table discloses FY${year} Q${quarter} directly; as the exhibit presents it, not derived from cumulative periods`,
+        segments: [{...cloud, ...children(legacy ? [['cloud services', 'cloud', 'Cloud services'], ['license support', 'SoftwareSupport', 'License support']] : [['cloud applications', 'CloudApplications', 'Cloud applications'], ['cloud infrastructure', 'CloudInfrastructure', 'Cloud infrastructure']], cloud)}, {...software, ...children([['software license', 'SoftwareLicense', 'Software license'], ['software support', 'SoftwareSupport', 'Software support']], software)}, hardware, services]};
       if (validHistoryQuarter(q)) output.push(q);
     }
   }

@@ -72,7 +72,7 @@ export function deriveFourthQuarters(facts: Fact[], cik: string): RevenueHistory
     for (const annual of annuals.filter(f => f.end === end)) {
       const candidates = facts.filter(f => f.source.accession === annual.source.accession && f.start === annual.start && factKey(f) === factKey(annual) && span(f) >= 230 && span(f) <= 310 && span({start: f.end, end: annual.end}) >= 70 && span({start: f.end, end: annual.end}) <= 110);
       const prior = new Set(candidates.map(f => f.value)).size === 1 ? candidates[0] : undefined;
-      if (prior) derived.push({...annual, start: nextDay(prior.end), context: `derived:${annual.context}-${prior.context}`, value: annual.value - prior.value, precision: Math.min(annual.precision, prior.precision), operands: [annual, prior], formula: `同一财年、币种、概念和维度的全年累计 ${annual.value} − 前九个月累计 ${prior.value} = 第四季度 ${annual.value - prior.value}`});
+      if (prior) derived.push({...annual, start: nextDay(prior.end), context: `derived:${annual.context}-${prior.context}`, value: annual.value - prior.value, precision: Math.min(annual.precision, prior.precision), operands: [annual, prior], formula: `Fourth quarter ${annual.value - prior.value} = full fiscal year ${annual.value} − first nine months ${prior.value}, same fiscal year, currency, concept and dimensions`});
     }
     if (!derived.length) continue;
     const source = derived[0].source;
@@ -107,8 +107,8 @@ export async function runHistoryStep(db: D1Database, reader: SecReader, target: 
       // Commit a filing's facts only after all linked exhibits have been read and archived.
       // Otherwise a partial success followed by an R2 error would duplicate facts on retry.
       const documentQuarters: RevenueHistoryQuarter[] = [], documentFacts: Fact[] = [], documentIssues: string[] = [];
-      for (const content of await readFilingDocuments(document.url, reader)) {
-        const source: DocumentSource = {url: content.url, accession: document.accession, filedAt: document.filedAt, cik: target.cik, industry: cursor.industry};
+      for (const content of await readFilingDocuments(document.url, reader, document.accession)) {
+        const source: DocumentSource = {url: content.url, accession: document.accession, filedAt: document.filedAt, cik: target.cik, industry: cursor.industry, ...(content.memberLabels ? {memberLabels: content.memberLabels} : {})};
         await reader.archive?.(source, content.html, {form: document.form, reportDate: document.periodEnd});
         const parsed = extractRevenueHistory(content.html, source, document.form);
         documentQuarters.push(...parsed.quarters);

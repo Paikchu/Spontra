@@ -36,7 +36,7 @@ export type FindingEvidence = {
   periodEnd: string;
   span: FindingSpan;
   compare?: FindingCompare;
-  /** Overrides the resolved label, e.g. "FY2026 资本开支". */
+  /** Overrides the resolved label, e.g. "FY2026 capex"; at most 100 characters. */
   label?: string;
 };
 
@@ -57,14 +57,15 @@ export type FindingLens =
  * far ahead. Once that period is published the page resolves the figure (and its comparison) and
  * shows the outcome beside the condition.
  */
-export type FindingWatch = { ref: FindingRef; condition: string; horizon: "next_quarter" | "fiscal_year"; compare?: FindingCompare };
+export type FindingWatch = { ref: FindingRef; /** One sentence, at most 400 characters. */ condition: string; horizon: "next_quarter" | "fiscal_year"; compare?: FindingCompare };
 
 export type AnalysisFinding = {
   id: string;
   kind: FindingKind;
   severity: FindingSeverity;
-  /** At most 24 characters. */
+  /** A headline of at most 80 characters. */
   title: string;
+  /** One paragraph of 80 to 180 words, at most 1,400 characters. */
   judgment: ExplainerClaim;
   evidence: FindingEvidence[];
   /** What the stage shows while the finding is in focus. */

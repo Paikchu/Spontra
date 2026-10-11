@@ -8,6 +8,7 @@ import { readStoredAudits, type DisclosureArchiveEnv, type StoredAudit } from '.
 import { extractDisclosedQuarters, SEC_FLOW_PARSER_VERSION, type DocumentSource } from './parser.ts';
 import { readCompletePublicationForTicker } from './publication.ts';
 import { outboxStatement } from '../pipeline/outbox.ts';
+import { namesMembers, storedMemberLabels } from './member-labels.ts';
 
 /**
  * Everything the business map reads beyond the published latest pair is prepared here, by the `map-derive` task
@@ -25,7 +26,8 @@ const REPORT_QUARTERS = 8, REPORT_FILINGS = 24;
 export const PARSE_BUDGET_BYTES = 32_000_000;
 
 type Industry = DocumentSource['industry'];
-type StoredQuarters = { documentId: string; contentSha256: string; version: string; industry: Industry; quarters: BusinessFlowQuarter[] };
+/** `labels`: whether the filing's member labels named its businesses, so a filing parsed before they were stored is parsed again once they are. */
+type StoredQuarters = { documentId: string; contentSha256: string; version: string; industry: Industry; labels?: 'named' | 'missing' | 'unneeded'; quarters: BusinessFlowQuarter[] };
 export type MapDerived = {
   ticker: string;
   /** The publication these were assembled against; a newer publication makes the snapshot stale. */
@@ -72,11 +74,12 @@ async function parseFiling(env: DisclosureArchiveEnv, record: StoredAudit, indus
   const html = await raw.text();
   if (new TextEncoder().encode(html).byteLength !== record.sourceBytes) return null;
   const cik = record.source.documentUrl.match(/\/Archives\/edgar\/data\/(\d+)\//)![1]!.padStart(10, '0');
-  const source: DocumentSource = { url: record.source.documentUrl, cik, accession: record.source.accessionNumber, filedAt: record.source.filedAt, industry };
+  const needed = namesMembers(html), memberLabels = needed ? await storedMemberLabels(env.DB, record.source.accessionNumber) : null;
+  const source: DocumentSource = { url: record.source.documentUrl, cik, accession: record.source.accessionNumber, filedAt: record.source.filedAt, industry, ...(memberLabels ? { memberLabels } : {}) };
   let quarters: BusinessFlowQuarter[] = [];
   try { quarters = extractDisclosedQuarters(html, source).quarters.filter(q => checkCompleteQuarter(q).complete); }
   catch { /* An unsupported layout yields no quarters, and is recorded so it is not parsed again. */ }
-  return { documentId: record.documentId, contentSha256: record.contentSha256, version: REPORT_QUARTERS_VERSION, industry, quarters };
+  return { documentId: record.documentId, contentSha256: record.contentSha256, version: REPORT_QUARTERS_VERSION, industry, labels: !needed ? 'unneeded' : memberLabels ? 'named' : 'missing', quarters };
 }
 
 /**
@@ -104,7 +107,8 @@ export async function deriveCompany(env: DisclosureArchiveEnv, ticker: string, b
   for (const record of reportCandidates(audits, flow)) {
     if (byPeriod.size >= REPORT_QUARTERS) break;
     let entry = stored.get(record.documentId);
-    if (!entry || entry.contentSha256 !== record.contentSha256 || entry.version !== REPORT_QUARTERS_VERSION || entry.industry !== industry) {
+    const relabel = entry?.labels === 'missing' && !!await storedMemberLabels(env.DB, record.source.accessionNumber);
+    if (!entry || relabel || entry.contentSha256 !== record.contentSha256 || entry.version !== REPORT_QUARTERS_VERSION || entry.industry !== industry) {
       if (spent + record.sourceBytes > budget) { pending++; continue; }
       spent += record.sourceBytes;
       const parsed = await parseFiling(env, record, industry).catch(() => null);
@@ -112,7 +116,7 @@ export async function deriveCompany(env: DisclosureArchiveEnv, ticker: string, b
       await repository.setCache(quartersPrefix(ticker) + record.documentId, parsed, new Date().toISOString());
       entry = parsed;
     }
-    used.push(`${record.documentId}:${record.contentSha256}`);
+    used.push(`${record.documentId}:${record.contentSha256}:${entry.labels ?? ''}`);
     for (const q of entry.quarters) {
       if (q.periodEnd > latest.periodEnd || Date.parse(q.periodEnd) <= cutoff.getTime() || byPeriod.has(q.periodEnd)) continue;
       byPeriod.set(q.periodEnd, q);

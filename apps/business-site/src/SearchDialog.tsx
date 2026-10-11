@@ -4,6 +4,7 @@ import { CompanyLogo } from "./CompanyMark";
 const TICKER = /^[A-Z][A-Z0-9.-]{0,11}$/;
 
 type Option = { ticker: string; hint: string };
+const OPEN_HINT = "Open business map";
 
 /**
  * Ticker field with recently opened companies. The dialog shows it in the top layer; the home page
@@ -23,10 +24,10 @@ export function SearchPanel({ current, recent, onPick, inputRef, inline = false 
   /** The current company sinks to the end so Enter on an empty query moves somewhere new. */
   const matches = recent.filter(t => t.startsWith(query)).sort((a, b) => Number(a === current) - Number(b === current));
   const options: Option[] = [
-    ...(query && !invalid && !matches.includes(query) ? [{ ticker: query, hint: "打开业务地图" }] : []),
-    ...matches.map(t => ({ ticker: t, hint: t === current ? "当前" : "" })),
+    ...(query && !invalid && !matches.includes(query) ? [{ ticker: query, hint: OPEN_HINT }] : []),
+    ...matches.map(t => ({ ticker: t, hint: t === current ? "Current" : "" })),
   ];
-  const typed = options.length > 0 && options[0].hint === "打开业务地图";
+  const typed = options.length > 0 && options[0].hint === OPEN_HINT;
   const selected = Math.min(active, options.length - 1);
   const open = expanded && (!inline || options.length > 0 || invalid);
 
@@ -40,9 +41,9 @@ export function SearchPanel({ current, recent, onPick, inputRef, inline = false 
         <circle cx="11" cy="11" r="6.5" />
         <path d="m16 16 4 4" />
       </svg>
-      <input ref={inputRef} role="combobox" aria-label="股票代码" aria-expanded={open && options.length > 0} aria-controls={listId}
+      <input ref={inputRef} role="combobox" aria-label="Ticker" aria-expanded={open && options.length > 0} aria-controls={listId}
         aria-activedescendant={open && options[selected] ? `${listId}-${selected}` : undefined} aria-invalid={invalid}
-        value={input} placeholder="输入股票代码" maxLength={12} autoCapitalize="characters" autoComplete="off" spellCheck={false}
+        value={input} placeholder="Enter a ticker" maxLength={12} autoCapitalize="characters" autoComplete="off" spellCheck={false}
         onChange={e => { setInput(e.target.value); setActive(0); setExpanded(true); }}
         onKeyDown={e => {
           if (inline && e.key === "Escape" && open) { e.preventDefault(); setExpanded(false); return; }
@@ -55,11 +56,11 @@ export function SearchPanel({ current, recent, onPick, inputRef, inline = false 
     </form>
     <div className="search-drop" hidden={!open}>
       <div className="search-body">
-        {invalid ? <p className="search-error" role="alert">请输入有效的股票代码</p>
-          : !options.length && <p className="search-empty">输入代码后按回车打开</p>}
-        <ul id={listId} role="listbox" aria-label="公司">
+        {invalid ? <p className="search-error" role="alert">Enter a valid ticker</p>
+          : !options.length && <p className="search-empty">Type a ticker and press Enter</p>}
+        <ul id={listId} role="listbox" aria-label="Companies">
           {options.map((option, i) => <Fragment key={option.ticker}>
-            {i === (typed ? 1 : 0) && matches.length > 0 && <li role="presentation" className="search-group">最近查看</li>}
+            {i === (typed ? 1 : 0) && matches.length > 0 && <li role="presentation" className="search-group">Recently viewed</li>}
             <li id={`${listId}-${i}`} role="option" aria-selected={i === selected}
               className="search-option" onMouseMove={() => setActive(i)} onMouseDown={e => e.preventDefault()} onClick={() => onPick(option.ticker)}>
               <CompanyLogo ticker={option.ticker} small />
@@ -71,9 +72,9 @@ export function SearchPanel({ current, recent, onPick, inputRef, inline = false 
         </ul>
       </div>
       <footer className="search-foot" aria-hidden="true">
-        <span><kbd>↑</kbd><kbd>↓</kbd> 选择</span>
-        <span><kbd>↵</kbd> 打开</span>
-        <span><kbd>esc</kbd> 关闭</span>
+        <span><kbd>↑</kbd><kbd>↓</kbd> Select</span>
+        <span><kbd>↵</kbd> Open</span>
+        <span><kbd>esc</kbd> Close</span>
       </footer>
     </div>
   </div>;
@@ -96,7 +97,7 @@ export function SearchDialog({ open, current, recent, onClose, onPick }: { open:
     } else if (!open && dialog.open) dialog.close();
   }, [open]);
 
-  return <dialog ref={ref} className="search-dialog" aria-label="搜索公司" onClose={onClose}
+  return <dialog ref={ref} className="search-dialog" aria-label="Search companies" onClose={onClose}
     onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
     <SearchPanel key={session} current={current} recent={recent} inputRef={inputRef} onPick={ticker => { onPick(ticker); onClose(); }} />
   </dialog>;

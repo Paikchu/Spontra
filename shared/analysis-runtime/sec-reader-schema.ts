@@ -1,6 +1,8 @@
 import { z } from "zod";
 
 export const SEC_READER_MAX_SECTIONS = 16;
+/** One prose block. Sized for English (roughly 2.5x the characters the Chinese reports used); limits only ever grow so stored reports keep parsing. */
+export const SEC_READER_PARAGRAPH_MAX = 4000;
 const text = (max: number) => z.string().min(1).max(max);
 const id = text(160).regex(/^[a-zA-Z0-9][a-zA-Z0-9_.:-]*$/);
 // Historical readers had no reference-count cap. Keep their valid source lists intact.
@@ -14,14 +16,14 @@ const common = { blockId: id, evidenceIds: references.max(80), groupId: id.optio
 
 /** Values and asset URLs are resolved by the application, never supplied by chart/figure/image blocks. */
 export const SEC_READER_CONTENT_BLOCK_SCHEMA = z.discriminatedUnion("type", [
-  z.strictObject({ ...common, type: z.literal("markdown"), markdown: text(1800) }),
-  z.strictObject({ ...common, type: z.literal("chart"), metricKey: text(120), mark: z.enum(["line", "bar"]), title: text(120), caption: text(500) }),
-  z.strictObject({ ...common, type: z.literal("figure"), figureKey: id, title: text(120), caption: text(500) }),
-  z.strictObject({ ...common, type: z.literal("image"), assetId: id, alt: text(300), caption: text(500) }),
-  z.strictObject({ ...common, type: z.literal("math"), latex: text(4000), displayMode: z.boolean(), explanation: text(1000), assumption: text(500).optional() }),
-  z.strictObject({ ...common, type: z.literal("table"), headers: z.array(text(160)).min(1).max(12), rows: z.array(z.array(z.string().max(1000)).min(1).max(12)).min(1).max(40), caption: text(500), density: z.enum(["compact", "comfortable"]).optional(), columnKinds: z.array(z.enum(["label", "number", "text"])).min(1).max(12).optional() }),
-  z.strictObject({ ...common, type: z.literal("callout"), tone: z.enum(["neutral", "positive", "negative", "caution"]), title: text(120).optional(), text: text(1800) }),
-  z.strictObject({ ...common, type: z.literal("evidence"), title: text(120).optional() }),
+  z.strictObject({ ...common, type: z.literal("markdown"), markdown: text(SEC_READER_PARAGRAPH_MAX) }),
+  z.strictObject({ ...common, type: z.literal("chart"), metricKey: text(120), mark: z.enum(["line", "bar"]), title: text(240), caption: text(1200) }),
+  z.strictObject({ ...common, type: z.literal("figure"), figureKey: id, title: text(240), caption: text(1200) }),
+  z.strictObject({ ...common, type: z.literal("image"), assetId: id, alt: text(700), caption: text(1200) }),
+  z.strictObject({ ...common, type: z.literal("math"), latex: text(4000), displayMode: z.boolean(), explanation: text(2400), assumption: text(1200).optional() }),
+  z.strictObject({ ...common, type: z.literal("table"), headers: z.array(text(320)).min(1).max(12), rows: z.array(z.array(z.string().max(2000)).min(1).max(12)).min(1).max(40), caption: text(1200), density: z.enum(["compact", "comfortable"]).optional(), columnKinds: z.array(z.enum(["label", "number", "text"])).min(1).max(12).optional() }),
+  z.strictObject({ ...common, type: z.literal("callout"), tone: z.enum(["neutral", "positive", "negative", "caution"]), title: text(240).optional(), text: text(SEC_READER_PARAGRAPH_MAX) }),
+  z.strictObject({ ...common, type: z.literal("evidence"), title: text(240).optional() }),
 ]);
 
 /** Only application-persisted, ready assets belong in this manifest. */
@@ -34,22 +36,22 @@ export const SEC_READER_ASSET_SCHEMA = z.strictObject({
 });
 
 export const SEC_READER_VISUAL_SCHEMA = z.object({
-  layout: z.enum(["essay", "spotlight", "comparison", "chart_focus"]), rationale: text(400),
-  paragraphLabels: z.array(text(100)).max(8).optional(),
-  chart: z.object({ metricKey: text(120), mark: z.enum(["line", "bar"]), title: text(120), caption: text(500) }).optional(),
-  noChartReason: text(400).optional(),
+  layout: z.enum(["essay", "spotlight", "comparison", "chart_focus"]), rationale: text(900),
+  paragraphLabels: z.array(text(200)).max(8).optional(),
+  chart: z.object({ metricKey: text(120), mark: z.enum(["line", "bar"]), title: text(240), caption: text(1200) }).optional(),
+  noChartReason: text(900).optional(),
 });
 const section = {
-  id, title: text(100), role: z.enum(["business", "earnings_cash", "valuation", "bear_case", "outlook"]),
-  paragraphs: z.array(text(1800)).min(2).max(8), takeaway: text(400), nodeIds: references.min(1), evidenceIds: references.min(1),
+  id, title: text(200), role: z.enum(["business", "earnings_cash", "valuation", "bear_case", "outlook"]),
+  paragraphs: z.array(text(SEC_READER_PARAGRAPH_MAX)).min(2).max(8), takeaway: text(900), nodeIds: references.min(1), evidenceIds: references.min(1),
   chartMetricKey: text(120).optional(), visual: SEC_READER_VISUAL_SCHEMA.optional(),
 };
 export const SEC_READER_SECTION_SCHEMA = z.object({ ...section, content: z.array(SEC_READER_CONTENT_BLOCK_SCHEMA).min(2).max(32).optional() });
 const report = {
   presentationWarnings: z.array(text(1000)).max(128).optional(),
-  changes: z.array(z.object({ topic: text(100), kind: z.enum(["new", "changed", "continuing", "not_comparable"]), prior: text(400), current: text(500), implication: text(500), evidenceIds: references.min(1), priorEvidenceIds: references })).min(1).max(5),
-  watch: z.array(z.object({ condition: text(500), deadline: text(150), consequence: text(500), evidenceIds: references.min(1) })).min(1).max(4),
-  limitations: z.array(z.object({ issue: text(300), impact: text(500) })).max(8),
+  changes: z.array(z.object({ topic: text(200), kind: z.enum(["new", "changed", "continuing", "not_comparable"]), prior: text(900), current: text(1200), implication: text(1200), evidenceIds: references.min(1), priorEvidenceIds: references })).min(1).max(5),
+  watch: z.array(z.object({ condition: text(1200), deadline: text(300), consequence: text(1200), evidenceIds: references.min(1) })).min(1).max(4),
+  limitations: z.array(z.object({ issue: text(700), impact: text(1200) })).max(8),
   assets: z.array(SEC_READER_ASSET_SCHEMA).max(32).optional(),
 };
 
@@ -83,15 +85,15 @@ const record = (v: unknown): Record<string, unknown> => v && typeof v === "objec
 export function parseSecReaderReport(value: unknown): { reader?: SecReaderReport; warnings: string[]; unsupportedVersion?: string } {
   const root = record(value);
   if (root.version !== "sec-reader.v1" && root.version !== "sec-reader.v2") {
-    return { warnings: ["报告内容版本暂不支持，已切换到兼容正文。"], unsupportedVersion: String(root.version ?? "missing") };
+    return { warnings: ["This report content version is not supported; showing the compatibility text instead."], unsupportedVersion: String(root.version ?? "missing") };
   }
   const warnings: string[] = [];
   const assets: SecReaderAsset[] = [];
   const assetIds = new Set<string>();
-  if (Array.isArray(root.assets) && root.assets.length > 32) return { warnings: ["报告图片资源数量异常，已切换到兼容正文。"] };
+  if (Array.isArray(root.assets) && root.assets.length > 32) return { warnings: ["The report has an abnormal number of image assets; showing the compatibility text instead."] };
   for (const raw of Array.isArray(root.assets) ? root.assets : []) {
     const result = SEC_READER_ASSET_SCHEMA.safeParse(raw);
-    if (!result.success || assetIds.has(result.data.assetId)) { warnings.push("一项图片资源不可用，已保留图注。"); continue; }
+    if (!result.success || assetIds.has(result.data.assetId)) { warnings.push("An image asset is unavailable; its caption is kept."); continue; }
     assets.push(result.data); assetIds.add(result.data.assetId);
   }
   const reservedBlockIds = new Set((Array.isArray(root.sections) ? root.sections : []).flatMap((raw) => {
@@ -110,7 +112,7 @@ export function parseSecReaderReport(value: unknown): { reader?: SecReaderReport
   const sections = (Array.isArray(root.sections) ? root.sections : []).flatMap((raw, index) => {
     const row = record(raw);
     const sectionId = typeof row.id === "string" ? row.id : `sec-reader-${index + 1}`;
-    if (sectionIds.has(sectionId)) { warnings.push(`第${index + 1}节标识重复，已切换到兼容正文。`); return []; }
+    if (sectionIds.has(sectionId)) { warnings.push(`Section ${index + 1} repeats an ID; showing the compatibility text instead.`); return []; }
     sectionIds.add(sectionId);
     let content: SecReaderContentBlock[] | undefined;
     let damagedProse = false;
@@ -119,13 +121,13 @@ export function parseSecReaderReport(value: unknown): { reader?: SecReaderReport
         const result = SEC_READER_CONTENT_BLOCK_SCHEMA.safeParse(item);
         if (!result.success || blockIds.has(result.data.blockId)) {
           if (record(item).type === "markdown" || "markdown" in record(item)) damagedProse = true;
-          warnings.push(`第${index + 1}节部分内容格式无效，已跳过该内容块。`); return [];
+          warnings.push(`Section ${index + 1} has a content block with an invalid format; the block was skipped.`); return [];
         }
         const block = result.data;
-        if (block.type === "table" && (block.rows.some((r) => r.length !== block.headers.length) || block.columnKinds && block.columnKinds.length !== block.headers.length)) { warnings.push(`第${index + 1}节表格列数不一致，已跳过表格。`); return []; }
+        if (block.type === "table" && (block.rows.some((r) => r.length !== block.headers.length) || block.columnKinds && block.columnKinds.length !== block.headers.length)) { warnings.push(`Section ${index + 1} has a table with inconsistent column counts; the table was skipped.`); return []; }
         blockIds.add(block.blockId);
         // Preserve the image block/description. The renderer provides a missing-asset fallback.
-        if (block.type === "image" && !assetIds.has(block.assetId)) warnings.push(`第${index + 1}节图片暂不可用，已保留图注。`);
+        if (block.type === "image" && !assetIds.has(block.assetId)) warnings.push(`Section ${index + 1} has an image that is unavailable; its caption is kept.`);
         return [block];
       });
     }
@@ -156,17 +158,17 @@ export function parseSecReaderReport(value: unknown): { reader?: SecReaderReport
       }
       while (ordinal < fallbackProse.length) restoreParagraph();
       content = restored;
-      warnings.push(`第${index + 1}节内容格式不完整，已显示兼容正文。`);
+      warnings.push(`Section ${index + 1} has incomplete content; showing the compatibility text instead.`);
     }
     const visual = SEC_READER_VISUAL_SCHEMA.safeParse(row.visual);
-    if (row.visual !== undefined && !visual.success) warnings.push(`第${index + 1}节版式已回退，正文保留。`);
+    if (row.visual !== undefined && !visual.success) warnings.push(`Section ${index + 1} fell back to the default layout; the text is kept.`);
     const result = SEC_READER_SECTION_SCHEMA.safeParse({ ...row, id: sectionId, paragraphs, ...(content ? { content } : {}), visual: visual.success ? visual.data : undefined });
-    if (!result.success) { warnings.push(`第${index + 1}节结构不完整，已切换到兼容正文。`); return []; }
+    if (!result.success) { warnings.push(`Section ${index + 1} has an incomplete structure; showing the compatibility text instead.`); return []; }
     return [result.data];
   });
   // Never silently publish/read a shortened article after losing a whole section.
   if (sections.length !== (Array.isArray(root.sections) ? root.sections.length : 0)) return { warnings };
   const result = SEC_READER_REPORT_SCHEMA.safeParse({ ...root, sections, ...(root.assets !== undefined ? { assets } : {}), presentationWarnings: [...new Set([...(Array.isArray(root.presentationWarnings) ? root.presentationWarnings.filter((w): w is string => typeof w === "string") : []), ...warnings])].slice(0, 128) });
-  if (!result.success) return { warnings: [...warnings, "报告结构不完整，已切换到兼容正文。"] };
+  if (!result.success) return { warnings: [...warnings, "The report structure is incomplete; showing the compatibility text instead."] };
   return { reader: result.data, warnings };
 }

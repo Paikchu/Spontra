@@ -68,7 +68,7 @@ export function createBusinessResearchTools(input: {
       }
       const id = `sec-${filing.accessionNumber}`;
       sources.set(id, {
-        id, title: `${input.ticker} ${filing.form}（${filing.reportDate || filing.filingDate}）`,
+        id, title: `${input.ticker} ${filing.form} (${filing.reportDate || filing.filingDate})`,
         url: filing.indexUrl, kind: "sec", publishedAt: isoDate(filing.filingDate), retrievedAt: input.now,
       });
       return { sourceId: id, observation: {

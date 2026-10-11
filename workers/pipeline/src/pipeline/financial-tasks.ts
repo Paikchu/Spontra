@@ -8,6 +8,7 @@ import { archiveFilingDisclosures, readArchivedDocument, refreshStaleProjections
 import { HISTORY_VERSION, runHistoryStep } from "../financial-data/history.ts";
 import { SEC_FLOW_PARSER_VERSION } from "../financial-data/parser.ts";
 import { discoverDataIssuer, readSecDocumentBatch, throttledSecReader, type SecReader } from "../financial-data/provider.ts";
+import { filingMemberLabels } from "../financial-data/member-labels.ts";
 import { claimJobFor, latestJob, startCollection } from "../financial-data/queue.ts";
 import { D1CompleteStore } from "../financial-data/store.ts";
 import type { SecPipelineEnv } from "../operations.ts";
@@ -30,6 +31,7 @@ function archivingReader(env: SecPipelineEnv, ticker: string, causeId: string): 
   const archive = { DB: env.DB!, SEC_FILINGS: env.SEC_FILINGS };
   reader.archive = (source, html, metadata) => archiveFilingDisclosures(archive, ticker, source, html, metadata, causeId).then(() => undefined);
   reader.archived = url => readArchivedDocument(archive, ticker, url);
+  reader.memberLabels = (url, accession) => filingMemberLabels(env.DB!, reader.read, url, accession);
   return reader;
 }
 

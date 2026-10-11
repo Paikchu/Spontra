@@ -17,6 +17,7 @@ import {
   buildPreparedSecBrief,
   failedSecNode,
   discoverSecTicker,
+  PRESENTATION_FALLBACK_WARNING,
   planPreparedSecFiling,
   prepareSecFiling,
   reviewPreparedSecAnalysis,
@@ -229,7 +230,7 @@ export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof
     publishFeed: async (feed) => {
       const typedFeed = feed as SecFilingFeed;
       const ticker = cleanSecTicker(typedFeed.ticker);
-      if (!ticker) throw new Error("SEC 索引数据无效。");
+      if (!ticker) throw new Error("Invalid SEC filing index data.");
       assertTrackedTicker(env, ticker);
       const normalizedFeed = { ...typedFeed, ticker, filings: typedFeed.filings.map(toStoredFiling) };
       const store = repository();
@@ -265,7 +266,7 @@ export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof
       try { assertTrackedTicker(env, filing.ticker); } catch { return false; }
       if (requestedBy === "manual") return true;
       const ticker = cleanSecTicker(filing.ticker);
-      if (!ticker) throw new Error("SEC 任务查询无效。");
+      if (!ticker) throw new Error("Invalid SEC job lookup.");
       assertTrackedTicker(env, ticker);
       if (filing.earningsGroup) {
         const summary = await repository().getSummary(ticker, filing.accessionNumber);
@@ -284,7 +285,7 @@ export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof
     getContext: async (filing, reference) => {
       const history = reference ? await readHistory(env.SEC_FILINGS, reference) : EMPTY_HISTORY;
       const ticker = cleanSecTicker(filing.ticker);
-      if (!ticker || !filing.accessionNumber) throw new Error("SEC filing 无效。");
+      if (!ticker || !filing.accessionNumber) throw new Error("Invalid SEC filing.");
       assertTrackedTicker(env, ticker);
       const normalizedFiling = { ...filing, ticker };
       const store = repository();
@@ -345,7 +346,7 @@ export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof
         return tasks;
       } catch (error) {
         if (!execution?.finalAttempt) throw error;
-        const warning = "披露遗漏审校未完成，不能确认重要事项已完整覆盖。";
+        const warning = "The disclosure omission audit did not finish, so complete coverage of important items cannot be confirmed.";
         if (meta.discovery) meta.discovery.warnings.push(warning);
         meta.materialWarnings = [...(meta.materialWarnings ?? []), warning];
         await putJson(env.SEC_FILINGS, `${reference.key}/meta.json`, meta);
@@ -413,12 +414,12 @@ export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof
           renderedComponents: { cashBridge: result.artifact.report.financialLens?.cashBridge,
             standardFCFVisible: Boolean(result.artifact.report.financialLens?.cashBridge),
             adjustedFCFVisible: result.artifact.report.financialLens?.cashBridge?.adjustedFCF !== undefined,
-            placement: "只展示实际存在的字段；adjustedFCFVisible=false时页面没有第二种FCF，禁止声称已并列展示" },
+            placement: "Only fields that actually exist are shown; when adjustedFCFVisible=false the page has no second FCF, and the text must not claim both are shown side by side" },
       });
       await putArtifact(env.SEC_FILINGS, reference, `editorial-review/${round}`, audit);
       const allowed = new Set([...brief.currentFacts.flatMap((f) => f.evidenceIds), ...nodes.flatMap((n) => n.evidenceIds ?? []), ...(marketSnapshot?.evidenceId ? [marketSnapshot.evidenceId] : [])]);
       const findings = normalizeEditorialIssues(audit, allowed);
-      return { findings, issues: findings.filter((i) => i.severity !== "minor" && i.category !== "presentation").map((i) => `${i.id}: ${i.detail} 通过条件：${i.acceptance}`), reviewedAt: new Date().toISOString() };
+      return { findings, issues: findings.filter((i) => i.severity !== "minor" && i.category !== "presentation").map((i) => `${i.id}: ${i.detail} Acceptance: ${i.acceptance}`), reviewedAt: new Date().toISOString() };
     },
     reviseReport: async (filing, reference, context, plan, nodes, brief, review, issues, execution, revision) => {
       if (!revision?.draft.summary || !revision.draft.artifact.report.reader) throw new Error("Editorial revision requires the reviewed draft");
@@ -439,7 +440,7 @@ export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof
       const usableNodes = nodes.filter((node) => node.status === "complete" && (node.narrative || node.findings.length));
       if (!usableNodes.length) return report;
       try {
-        const candidate = await modelFor(execution)("presentation", "你是公司业务研究报告的编辑。只为已完成的分析设计阅读结构，不生成事实、正文或数据。严格按 schema 输出一个 JSON 对象，顶层为 density 和 sections。必须覆盖 requiredNodeIds 中每个节点；没有 narrative 的节点使用 findings，不能遗漏。不要同时用 narrative 和 callout 重复同一节点正文。chart 紧跟同一节点的 narrative/findings/callout。可用趋势与业务问题直接相关时，应选择至少一张辅助解释的图表；不以全公司收入替代分部或客户数据。只使用提供的 ID 和可用块类型。", {
+        const candidate = await modelFor(execution)("presentation", "You are the editor of a company business research report. Design only the reading structure for the completed analysis; never generate facts, body text or data. Output exactly one JSON object following the schema, with density and sections at the top level. Cover every node in requiredNodeIds; a node without narrative uses findings and must not be left out. Do not repeat the same node's text as both narrative and callout. A chart directly follows the narrative/findings/callout of the same node. When an available trend relates directly to a business question, choose at least one chart that helps explain it; never let company-wide revenue stand in for segment or customer data. Use only the IDs and block types provided. Write section titles in plain, concise English.", {
           schema: SEC_PRESENTATION_SCHEMA,
           requiredNodeIds: usableNodes.map((node) => node.id),
           nodes: usableNodes.map((node) => ({
@@ -453,10 +454,10 @@ export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof
         const presentation = composeSecPresentation(candidate.presentation ?? candidate, usableNodes, report.keyMetrics, trends);
         if (!presentation) throw new Error("Presentation references or coverage failed validation");
         await putArtifact(env.SEC_FILINGS, reference, "presentation/resolved", presentation);
-        return { ...report, presentation, dataQuality: { ...report.dataQuality, warnings: report.dataQuality.warnings.filter((warning) => warning !== "模型报告编排未通过校验，已保留完整标准报告。") } };
+        return { ...report, presentation, dataQuality: { ...report.dataQuality, warnings: report.dataQuality.warnings.filter((warning) => warning !== PRESENTATION_FALLBACK_WARNING) } };
       } catch (error) {
         if (!execution?.finalAttempt) throw error;
-        return { ...report, dataQuality: { ...report.dataQuality, warnings: [...new Set([...report.dataQuality.warnings, "报告编排重试未完成，已保留完整标准报告。"])] } };
+        return { ...report, dataQuality: { ...report.dataQuality, warnings: [...new Set([...report.dataQuality.warnings, "Report layout retries did not finish; the complete standard report is kept."])] } };
       }
     },
     publish: async (artifact, summary) => {
@@ -465,7 +466,7 @@ export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof
       if (artifact.report.reader) await putArtifact(env.SEC_FILINGS, reference, "synthesis", { artifact, summary });
       const ticker = cleanSecTicker(artifact.filing.ticker);
       const accessionNumber = cleanSecAccession(artifact.filing.accessionNumber);
-      if (!accessionNumber || !ticker) throw new Error("SEC 分析结果无效。");
+      if (!accessionNumber || !ticker) throw new Error("Invalid SEC analysis result.");
       assertTrackedTicker(env, ticker);
       const store = repository();
       if (artifact.filing.earningsGroup) {
@@ -476,7 +477,7 @@ export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof
       const normalizedArtifact = { ...artifact, filing: normalizedFiling };
       await store.saveAnalysis(normalizedArtifact, false);
       if (artifact.report.dataQuality.verificationStatus === "failed") return {};
-      if (!summary) throw new Error("SEC 最终发布缺少报告摘要。");
+      if (!summary) throw new Error("SEC publication is missing the report summary.");
       const memoryJobId = await store.commitFinalPublication(normalizedArtifact, summary);
       return { memoryJobId };
     },
@@ -494,7 +495,7 @@ export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof
         && summary.ticker === eventTicker
         && summary.form === identity.form
         && summary.accessionNumber === eventAccession;
-      if (!validEvent) throw new Error("SEC 事件简析无效。");
+      if (!validEvent) throw new Error("Invalid SEC event summary.");
       assertTrackedTicker(env, eventTicker);
       // Compact event reports also retain versions when their current summary is replaced.
       const previous = await repository().getSummary(eventTicker, eventAccession);
@@ -507,7 +508,7 @@ export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof
     },
     updateJob: async (job: WorkflowJobUpdate) => {
       const ticker = cleanSecTicker(job.ticker);
-      if (!ticker || !job.jobId || !job.accessionNumber) throw new Error("SEC 任务状态无效。");
+      if (!ticker || !job.jobId || !job.accessionNumber) throw new Error("Invalid SEC job status.");
       assertTrackedTicker(env, ticker);
       await repository().upsertAnalysisJob({ ...job, ticker });
     },

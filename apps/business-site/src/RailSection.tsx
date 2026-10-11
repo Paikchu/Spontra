@@ -54,13 +54,13 @@ export function RailSection({ name, title, hint, expandable, expanded, focused, 
   const open = expanded ? "" : undefined;
   return <section className="findings" data-section={name} data-expanded={drawer ? undefined : open} data-open={drawer ? open : undefined} data-focus={focused ? "" : undefined} aria-label={title} onKeyDown={onKeyDown}>
     {!drawer && <header className="findings-head">
-      {expanded && <Button variant="unstyled" type="button" ref={back} className="icon-button section-back" aria-label={`收起${title}`} title="返回 (Esc)" onClick={() => toggle(false)}>
+      {expanded && <Button variant="unstyled" type="button" ref={back} className="icon-button section-back" aria-label={`Collapse ${title.toLowerCase()}`} title="Back (Esc)" onClick={() => toggle(false)}>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14.5 6-6 6 6 6" /></svg>
       </Button>}
       <span className="findings-title">{title}</span>
       {actions}
       {expandable && !expanded && <Button variant="unstyled" type="button" ref={more} className="icon-button section-action section-expand" aria-expanded={false} aria-controls={`rail-${name}`}
-        aria-label={`展开全部${title}`} title={hint ? `展开全部 · ${hint}` : "展开全部"} onClick={() => toggle(true)}>
+        aria-label={`Show all ${title.toLowerCase()}`} title={hint ? `Show all · ${hint}` : "Show all"} onClick={() => toggle(true)}>
         <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m6 4 4 4-4 4" /></svg>
       </Button>}
     </header>}

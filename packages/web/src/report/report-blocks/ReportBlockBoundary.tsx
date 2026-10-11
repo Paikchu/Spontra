@@ -24,6 +24,6 @@ export class ReportBlockBoundary extends Component<{ children: ReactNode; label:
 
   render(): ReactNode {
     if (!this.state.failed) return this.props.children;
-    return <p className="report-block report-block-empty">{this.props.label}：该模块无法显示，请回到 SEC 原文核对。</p>;
+    return <p className="report-block report-block-empty">{this.props.label}: this section can't be shown. Check the SEC filing.</p>;
   }
 }

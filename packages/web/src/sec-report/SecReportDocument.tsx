@@ -26,38 +26,38 @@ export function SecReportDocument({ companyName, filing, embedded = false }: { c
   const reportReady = Boolean(summary?.report || (embedded && (report?.reader || report?.presentation)));
   const composed = report?.presentation?.version === "sec-presentation.v1" && report.presentation.sections.length > 0;
   const nodeSectionIndex = composed ? String(report!.presentation!.sections.length + 1).padStart(2, "0") : "04";
-  const nodeSectionTitle = "原文与分析依据";
+  const nodeSectionTitle = "Sources and analysis basis";
   const nodeLinks: ReportSectionLink[] = (summary?.nodes ?? []).map((node, index) => ({
     id: `sec-report-node-${index + 1}`,
     index: `${nodeSectionIndex}.${String(index + 1).padStart(2, "0")}`,
     title: node.title,
-    description: node.narrative || node.findings[0]?.detail || "展开查看该主题的分析发现与原文证据。",
+    description: node.narrative || node.findings[0]?.detail || "Findings and filing excerpts for this topic.",
     depth: 1,
     parentTitle: nodeSectionTitle,
   }));
   const reportSections: ReportSectionDefinition[] = reportReady ? [
     {
       id: "sec-report-conclusions",
-      title: "核心结论",
-      description: "先看经营结果、主要驱动和对投资判断的直接含义。",
+      title: "Key takeaways",
+      description: "Operating results, main drivers and what they mean for the investment case.",
       className: "sec-report-conclusions",
       content: (
         <>
           <ConclusionList bullets={summary?.bullets ?? []} />
-          {summary?.analystView && <p className="sec-report-investment-view"><span>投资含义</span>{summary.analystView}</p>}
+          {summary?.analystView && <p className="sec-report-investment-view"><span>Investment view</span>{summary.analystView}</p>}
         </>
       ),
     },
     {
       id: "sec-report-metrics",
-      title: "关键数据",
-      description: "集中查看已验证的关键财务指标与同比、环比变化。",
+      title: "Key metrics",
+      description: "Verified financial metrics with year-over-year and quarter-over-quarter changes.",
       content: <VerifiedMetrics report={report} />,
     },
     {
       id: "sec-report-body",
-      title: "报告概览",
-      description: "阅读基于 SEC 申报材料形成的连续分析叙述。",
+      title: "Report overview",
+      description: "The full analysis based on the SEC filing.",
       content: (
         <div className="sec-report-body">
           <RichText text={summary?.report ?? ""} />
@@ -67,7 +67,7 @@ export function SecReportDocument({ companyName, filing, embedded = false }: { c
     {
       id: "sec-report-nodes",
       title: nodeSectionTitle,
-      description: "按主题展开分析发现、叙述和对应的原文证据。",
+      description: "Findings, analysis and filing excerpts by topic.",
       content: (
         <div className="sec-report-node-list">
           {(summary?.nodes ?? []).map((node, index) => (
@@ -95,8 +95,8 @@ export function SecReportDocument({ companyName, filing, embedded = false }: { c
     },
     {
       id: "sec-report-quality",
-      title: "数据质量",
-      description: "检查证据覆盖率、验证状态和需要人工复核的提示。",
+      title: "Data quality",
+      description: "Evidence coverage, verification status and items that need manual review.",
       content: <DataQuality report={report} />,
     },
   ] : [];
@@ -113,8 +113,8 @@ export function SecReportDocument({ companyName, filing, embedded = false }: { c
     const evidenceSection = reportSections.find((section) => section.id === "sec-report-nodes")!;
     const qualitySection = reportSections.find((section) => section.id === "sec-report-quality")!;
     reportSections.splice(0, reportSections.length,
-      ...report.presentation.sections.map((section) => ({ id: section.id, title: section.title, description: "围绕公司业务展开分析与证据。", content: <SecComposedSection section={section} report={report} /> })),
-      { ...evidenceSection, title: "原文与分析依据", description: "按需展开研究依据和原文摘录。" },
+      ...report.presentation.sections.map((section) => ({ id: section.id, title: section.title, description: "Analysis and evidence on the company's business.", content: <SecComposedSection section={section} report={report} /> })),
+      { ...evidenceSection, title: "Sources and analysis basis", description: "Research basis and filing excerpts." },
       qualitySection,
     );
   }
@@ -122,12 +122,12 @@ export function SecReportDocument({ companyName, filing, embedded = false }: { c
     const qualitySection = reportSections.find((s) => s.id === "sec-report-quality")!;
     const evidenceSection = reportSections.find((s) => s.id === "sec-report-nodes")!;
     reportSections.splice(0, reportSections.length,
-      { id: "sec-report-conclusions", title: "核心结论", description: "核心结论与影响投资判断的变化。", content: <><ConclusionList bullets={summary?.bullets ?? []} />{summary?.analystView && <p className="sec-report-investment-view"><span>投资含义</span>{summary.analystView}</p>}<FinancialBridge report={report} /></> },
-      { id: "sec-report-changes", title: "本期变化", description: "区分新增、变化、延续与尚缺基线的事项。", content: <QuarterChanges reader={reader} /> },
-      { id: "sec-report-metrics", title: "关键数据", description: "同口径的本期数值及同比、环比。", content: <VerifiedMetrics report={report} /> },
+      { id: "sec-report-conclusions", title: "Key takeaways", description: "Key takeaways and changes that affect the investment case.", content: <><ConclusionList bullets={summary?.bullets ?? []} />{summary?.analystView && <p className="sec-report-investment-view"><span>Investment view</span>{summary.analystView}</p>}<FinancialBridge report={report} /></> },
+      { id: "sec-report-changes", title: "Changes this period", description: "What is new, changed, continuing or lacks a baseline.", content: <QuarterChanges reader={reader} /> },
+      { id: "sec-report-metrics", title: "Key metrics", description: "Current values on a consistent basis, with YoY and QoQ changes.", content: <VerifiedMetrics report={report} /> },
       ...reader.sections.map((section) => ({ id: section.id, title: section.title, description: section.takeaway, className: `sec-reader-section sec-reader-role-${section.role}`, content: <ReaderSection section={section} report={report} nodes={summary?.nodes ?? []} /> })),
-      { id: "sec-report-watch", title: "后续验证条件", description: "下一次检查的条件、时点与需要修订的判断。", content: <WatchConditions reader={reader} /> },
-      { ...evidenceSection, content: <details className="sec-reader-workpapers"><summary>展开研究依据与原文</summary>{evidenceSection.content}</details> },
+      { id: "sec-report-watch", title: "What to check next", description: "Conditions and timing for the next check, and the views they would revise.", content: <WatchConditions reader={reader} /> },
+      { ...evidenceSection, content: <details className="sec-reader-workpapers"><summary>Research basis and filing text</summary>{evidenceSection.content}</details> },
       qualitySection,
     );
   }
@@ -142,22 +142,22 @@ export function SecReportDocument({ companyName, filing, embedded = false }: { c
       {!embedded && <ReportBackLink ticker={filing.ticker} />}
       {!embedded && <header className="sec-report-header">
         <div>
-          <span className="sec-report-kicker">{group ? "财报期合并报告" : `${filing.form} · SEC 分析报告`}</span>
+          <span className="sec-report-kicker">{group ? "Earnings period report" : `${filing.form} · SEC filing analysis`}</span>
           <h1>{companyName}</h1>
-          <p>{summary?.headline || report?.headline || filing.description || "财报分析正在生成"}</p>
+          <p>{summary?.headline || report?.headline || filing.description || "Analysis in progress"}</p>
         </div>
         <dl className="sec-report-meta">
-          <div><dt>股票</dt><dd>{filing.ticker}</dd></div>
-          <div><dt>报告期</dt><dd>{formatDate(group?.periodEnd ?? filing.reportDate)}</dd></div>
-          <div><dt>{group ? "业绩发布日" : "申报日"}</dt><dd>{formatDate(group?.earningsDate ?? filing.filingDate)}</dd></div>
-          <div><dt>生成日期</dt><dd>{summary?.generatedAt.slice(0, 10) ?? "—"}</dd></div>
+          <div><dt>Ticker</dt><dd>{filing.ticker}</dd></div>
+          <div><dt>Period end</dt><dd>{formatDate(group?.periodEnd ?? filing.reportDate)}</dd></div>
+          <div><dt>{group ? "Earnings date" : "Filed"}</dt><dd>{formatDate(group?.earningsDate ?? filing.filingDate)}</dd></div>
+          <div><dt>Generated</dt><dd>{summary?.generatedAt.slice(0, 10) ?? "—"}</dd></div>
         </dl>
       </header>}
-      {renderWarnings.length > 0 && <p role="status" className="sec-report-empty">部分图文无法完整显示，已保留可用正文。详情见数据质量。</p>}
+      {renderWarnings.length > 0 && <p role="status" className="sec-report-empty">Some charts or text could not be shown. The available text is kept; see Data quality for details.</p>}
       {!reportReady ? (
         <section className="sec-report-pending" aria-labelledby="sec-report-pending-title">
-          <h2 id="sec-report-pending-title">{embedded ? summary ? "核心结论" : "暂无可用报告" : "完整报告生成中"}</h2>
-          <p>{embedded ? summary ? summary.headline : "可在生成记录中查看任务进度与失败原因。" : "当前保留上一份可用简析。完整研报通过验证后会在此替换。"}</p>
+          <h2 id="sec-report-pending-title">{embedded ? summary ? "Key takeaways" : "No report available" : "Full report in progress"}</h2>
+          <p>{embedded ? summary ? summary.headline : "Check the run history for progress and failure reasons." : "Showing the last available summary. The full report replaces it once verified."}</p>
           {summary?.bullets.length ? <ConclusionList bullets={summary.bullets} /> : null}
           {embedded && summary?.analystView && <p>{summary.analystView}</p>}
         </section>
@@ -187,17 +187,17 @@ export function SecReportDocument({ companyName, filing, embedded = false }: { c
         </>
       )}
 
-      {report?.sourceMaterials?.length ? <section className="sec-report-section sec-materials" aria-label="分析材料">
-        <h2>分析材料</h2>
+      {report?.sourceMaterials?.length ? <section className="sec-report-section sec-materials" aria-label="Source materials">
+        <h2>Source materials</h2>
         <ul>{report.sourceMaterials.map((material, index) => <li key={`${material.filename}-${index}`}>
           <a href={material.url} target="_blank" rel="noopener noreferrer">{material.type} · {material.filename}</a>
-          <span>{material.status === "read" ? "已读取文本" : "未解析"}</span>
+          <span>{material.status === "read" ? "Text read" : "Not parsed"}</span>
         </li>)}</ul>
       </section> : null}
       <footer className="sec-report-source">
-        <div><span>SEC 原文</span><strong>{filing.form} · {filing.accessionNumber}</strong></div>
-        <a href={filing.indexUrl} rel="noopener noreferrer" target="_blank">在 EDGAR 阅读原始申报 ↗</a>
-        <p>报告用于研究记录，不构成投资建议。数字与判断应回到原始申报核对。</p>
+        <div><span>SEC filing</span><strong>{filing.form} · {filing.accessionNumber}</strong></div>
+        <a href={filing.indexUrl} rel="noopener noreferrer" target="_blank">View filing on EDGAR ↗</a>
+        <p>For research only. Not investment advice. Check figures and conclusions against the original filing.</p>
       </footer>
     </Container>
   );
@@ -211,14 +211,14 @@ function NodeContent({ node }: { node: NonNullable<NonNullable<SecFilingWithSumm
   return <>
     {node.findings.length > 0 && <ConclusionList bullets={node.findings} />}
     {node.narrative && <RichText text={node.narrative} />}
-    {node.error && <p className="sec-report-error">该主题尚未形成可用分析。</p>}
+    {node.error && <p className="sec-report-error">No analysis is available for this topic yet.</p>}
     {node.evidence.length > 0 && (
       <details className="sec-report-evidence">
-        <summary>核对原文 · {node.evidence.length} 段</summary>
+        <summary>Filing excerpts · {node.evidence.length}</summary>
         {node.evidence.map((evidence, index) => (
           <blockquote key={`${evidence.start}-${index}`}>
             <p>{evidence.excerpt}</p>
-            <footer>字符位置 {evidence.start.toLocaleString("zh-CN")}–{evidence.end.toLocaleString("zh-CN")}</footer>
+            <footer>Characters {evidence.start.toLocaleString("en-US")}–{evidence.end.toLocaleString("en-US")}</footer>
           </blockquote>
         ))}
       </details>
@@ -227,7 +227,7 @@ function NodeContent({ node }: { node: NonNullable<NonNullable<SecFilingWithSumm
 }
 
 function ConclusionList({ bullets }: { bullets: NonNullable<SecFilingWithSummary["summary"]>["bullets"] }) {
-  if (!bullets.length) return <p className="sec-report-empty">暂无可验证结论。</p>;
+  if (!bullets.length) return <p className="sec-report-empty">No verifiable takeaways yet.</p>;
   return (
     <ul className="sec-report-conclusion-list">
       {bullets.map((bullet, index) => (
@@ -240,16 +240,16 @@ function ConclusionList({ bullets }: { bullets: NonNullable<SecFilingWithSummary
 }
 
 function VerifiedMetrics({ report }: { report: PublishedSecReport | null | undefined }) {
-  if (!report?.keyMetrics.length) return <p className="sec-report-empty">结构化指标尚未通过验证。</p>;
+  if (!report?.keyMetrics.length) return <p className="sec-report-empty">Structured metrics have not been verified yet.</p>;
   return (
     <div className="sec-report-metrics">
       {report.keyMetrics.map((metric) => (
         <article key={metric.metricKey}>
           <span>{formatSecMetricLabel(metric.metricKey)}</span>
           <strong>{formatSecMetricValue(metric.metricKey, metric.currentValue, metric.unit, metric.currency)}</strong>
-          <small>{metric.qoq ? `环比 ${metric.qoq}` : "环比不可比"} · {metric.yoy ? `同比 ${metric.yoy}` : "同比不可比"}</small>
+          <small>{metric.qoq ? `QoQ ${metric.qoq}` : "QoQ n/a"} · {metric.yoy ? `YoY ${metric.yoy}` : "YoY n/a"}</small>
           <i>{metricStatus(metric.status)}</i>
-          {metric.definition && <details><summary>指标口径</summary><p>{metric.definition}</p></details>}
+          {metric.definition && <details><summary>Definition</summary><p>{metric.definition}</p></details>}
         </article>
       ))}
     </div>
@@ -257,35 +257,35 @@ function VerifiedMetrics({ report }: { report: PublishedSecReport | null | undef
 }
 
 function DataQuality({ report }: { report: PublishedSecReport | null | undefined }) {
-  if (!report) return <p className="sec-report-empty">结构化验证结果尚不可用。</p>;
+  if (!report) return <p className="sec-report-empty">Verification results are not available yet.</p>;
   const quality = report.dataQuality;
   const notes = [
     ...quality.warnings,
-    ...(quality.unresolvedQuestions ?? []).map((question) => `未解决问题：${question}`),
-    ...(quality.failedNodeIds ?? []).map((nodeId) => `未完成节点：${nodeId}`),
+    ...(quality.unresolvedQuestions ?? []).map((question) => `Open question: ${question}`),
+    ...(quality.failedNodeIds ?? []).map((nodeId) => `Incomplete node: ${nodeId}`),
   ];
   return (
     <div className="sec-report-quality">
-      <p>{quality.analysisStatus === "complete" ? "已完成本次研究问题，" : "部分研究问题尚未完成，"}财务数值核验与投资判断的正确性是两回事。</p>
-      {report.reader?.limitations.map((l, i) => <p key={i}><strong>{l.issue}：</strong>{l.impact}</p>)}
+      <p>{quality.analysisStatus === "complete" ? "All research questions answered. " : "Some research questions are unanswered. "}Verified figures do not make the investment view correct.</p>
+      {report.reader?.limitations.map((l, i) => <p key={i}><strong>{l.issue}: </strong>{l.impact}</p>)}
       {report.financialLens?.limitations.map((l) => <p key={l}>{l}</p>)}
-      <details><summary>核对数据覆盖与处理记录</summary>
+      <details><summary>Data coverage and processing log</summary>
       <dl>
         {report.discovery && <>
-          <div><dt>已采集文本扫描</dt><dd>{report.discovery.totalCharacters ? Math.round(report.discovery.scannedCharacters/report.discovery.totalCharacters*100) : 0}%</dd></div>
-          <div><dt>原文发现候选</dt><dd>{report.discovery.disclosures.length} 项（不代表全部已分析）</dd></div>
+          <div><dt>Collected text scanned</dt><dd>{report.discovery.totalCharacters ? Math.round(report.discovery.scannedCharacters/report.discovery.totalCharacters*100) : 0}%</dd></div>
+          <div><dt>Disclosure candidates</dt><dd>{report.discovery.disclosures.length} (not all analyzed)</dd></div>
         </>}
-        <div><dt>财务指标覆盖率</dt><dd>{Math.round(quality.coverage * 100)}%</dd></div>
-        <div><dt>结构化数据核验</dt><dd>{verificationStatus(quality.verificationStatus)}</dd></div>
-        <div><dt>分析完整性</dt><dd>{analysisStatus(quality.analysisStatus, quality.stopReason)}</dd></div>
+        <div><dt>Metric coverage</dt><dd>{Math.round(quality.coverage * 100)}%</dd></div>
+        <div><dt>Structured data check</dt><dd>{verificationStatus(quality.verificationStatus)}</dd></div>
+        <div><dt>Analysis completeness</dt><dd>{analysisStatus(quality.analysisStatus, quality.stopReason)}</dd></div>
         {typeof quality.managerCoverageScore === "number"
-          ? <div><dt>研究问题覆盖（非可信度）</dt><dd>{Math.round(quality.managerCoverageScore * 100)}%</dd></div>
+          ? <div><dt>Research question coverage (not confidence)</dt><dd>{Math.round(quality.managerCoverageScore * 100)}%</dd></div>
           : null}
-        <div><dt>报告版本</dt><dd>{report.reportVersion}</dd></div>
+        <div><dt>Report version</dt><dd>{report.reportVersion}</dd></div>
       </dl>
       {notes.length > 0
         ? <ul>{notes.map((note) => <li key={note}>{note}</li>)}</ul>
-        : <p>未发现需要单独提示的数据质量问题。</p>}
+        : <p>No data quality issues to flag.</p>}
       </details>
     </div>
   );
@@ -294,28 +294,28 @@ function DataQuality({ report }: { report: PublishedSecReport | null | undefined
 function formatDate(value: string): string {
   const date = new Date(`${value}T00:00:00Z`);
   if (!Number.isFinite(date.getTime())) return value;
-  return new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" }).format(date);
+  return new Intl.DateTimeFormat("en-US", { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" }).format(date);
 }
 
 function metricStatus(value: PublishedSecReport["keyMetrics"][number]["status"]): string {
-  return value === "verified" ? "已验证" : value === "derived" ? "推导值" : value === "not_disclosed" ? "未披露" : "不可比";
+  return value === "verified" ? "Verified" : value === "derived" ? "Derived" : value === "not_disclosed" ? "Not disclosed" : "Not comparable";
 }
 
 function verificationStatus(value: PublishedSecReport["dataQuality"]["verificationStatus"]): string {
-  return value === "verified" ? "已验证" : value === "partial" ? "部分完成" : "未通过";
+  return value === "verified" ? "Verified" : value === "partial" ? "Partial" : "Failed";
 }
 
 function analysisStatus(
   value: PublishedSecReport["dataQuality"]["analysisStatus"],
   stopReason: PublishedSecReport["dataQuality"]["stopReason"],
 ): string {
-  if (value === "complete") return "全部问题已回答";
+  if (value === "complete") return "All questions answered";
   const reason = stopReason === "max_rounds"
-    ? "修复轮次用尽"
+    ? "Repair rounds exhausted"
     : stopReason === "no_progress"
-      ? "修复无进展"
+      ? "Repairs made no progress"
       : stopReason === "analysis_incomplete"
-        ? "原文未提供足够依据"
+        ? "Filing lacks enough support"
         : null;
-  return reason ? `部分完成 · ${reason}` : "部分完成";
+  return reason ? `Partial · ${reason}` : "Partial";
 }
