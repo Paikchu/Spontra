@@ -27,20 +27,28 @@ const SEARCH_CONFIG = {
 /** A section with less text than this is a heading, not something to find. */
 const MIN_CHARS = 200;
 /** Uploads and deletes one run makes; the rest waits for the next run, right away. */
-const RUN_BUDGET = 120;
+const RUN_BUDGET = 120, PARALLEL = 6;
+/** Errors that concern one item's content; any other error is the service or the binding, and stops the run. */
+const ITEM_ERROR = /too large|exceed|invalid|unsupported|unprocessable|payload|413|415|422/i;
 
 export const searchEnabled = (env: SecPipelineEnv) => !!env.AI_SEARCH && env.LIBRARY_SEARCH_ENABLED !== "false";
 
-let ready: Promise<AiSearchInstance> | null = null;
-/** The instance, created on first use; a failed creation is retried by the next call. */
-export function searchInstance(env: SecPipelineEnv): Promise<AiSearchInstance> {
-  ready ??= (async () => {
-    const instance = env.AI_SEARCH!.get(SEARCH_INSTANCE);
-    try { await instance.info(); return instance; }
-    catch (error) { if (!/not.?found|404|does not exist/i.test(String((error as Error)?.message ?? error))) throw error; }
-    return env.AI_SEARCH!.create(SEARCH_CONFIG);
-  })().catch(error => { ready = null; throw error; });
-  return ready;
+const message = (error: unknown) => String((error as Error)?.message ?? error);
+const NOT_FOUND = /not.?found|404|does not exist/i;
+/** Whether this isolate has seen the instance exist; the handle itself is per request and is never kept. */
+let instanceExists = false;
+/** The instance, created on first use. Another isolate creating it at the same time is not an error. */
+export async function searchInstance(env: SecPipelineEnv): Promise<AiSearchInstance> {
+  if (!instanceExists) {
+    try { await env.AI_SEARCH!.get(SEARCH_INSTANCE).info(); }
+    catch (error) {
+      if (!NOT_FOUND.test(message(error))) throw error;
+      try { await env.AI_SEARCH!.create(SEARCH_CONFIG); }
+      catch (created) { if (!/already exists|duplicate|conflict/i.test(message(created))) throw created; }
+    }
+    instanceExists = true;
+  }
+  return env.AI_SEARCH!.get(SEARCH_INSTANCE);
 }
 
 type Wanted = { sectionId: string; documentId: string; canonical: string; path: string[]; form: string; reportDate: string; filedAt: string; topic: string | null; passageIds: string };
@@ -86,35 +94,38 @@ export async function syncSearchItems(env: SecPipelineEnv, ticker: string): Prom
   const result = { uploaded: 0, deleted: 0, failed: 0, remaining: 0 };
   if (!uploads.length && !deletes.length) return result;
   const instance = await searchInstance(env);
-  let budget = RUN_BUDGET;
-  for (const s of deletes) {
-    if (budget-- <= 0) break;
+  const deleting = deletes.slice(0, RUN_BUDGET), uploading = uploads.slice(0, RUN_BUDGET - deleting.length);
+  for (const s of deleting) {
     if (s.item_id) {
       try { await instance.items.delete(s.item_id); }
-      catch (error) { if (!/not.?found|404/i.test(String((error as Error)?.message ?? error))) throw error; }
+      catch (error) { if (!NOT_FOUND.test(message(error))) throw error; }
     }
     await db.prepare("DELETE FROM sec_search_items WHERE section_id = ?").bind(s.section_id).run();
     result.deleted++;
   }
-  for (const w of uploads) {
-    if (budget-- <= 0) break;
-    const at = new Date().toISOString();
-    try {
+  const record = (w: Wanted & { contentSha: string }, itemId: string | null, error: string | null, at: string) => db.prepare(`INSERT INTO sec_search_items (section_id, ticker, document_id, item_id, content_sha256, status, error, uploaded_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(section_id) DO UPDATE SET ticker = excluded.ticker, document_id = excluded.document_id, item_id = COALESCE(excluded.item_id, sec_search_items.item_id),
+    content_sha256 = excluded.content_sha256, status = excluded.status, error = excluded.error, uploaded_at = excluded.uploaded_at`)
+    .bind(w.sectionId, ticker, w.documentId, itemId, w.contentSha, error ? "error" : "uploaded", error, at);
+  // A few uploads at a time: each waits on the service, not on this Worker's CPU.
+  for (let i = 0; i < uploading.length; i += PARALLEL) {
+    const outcomes = await Promise.allSettled(uploading.slice(i, i + PARALLEL).map(async w => {
       const item = await instance.items.upload(`${w.sectionId}.md`, await itemContent(db, ticker, w), {
         metadata: { ticker, form: w.form, canonical: w.canonical, topic: w.topic ?? "", period_end: w.reportDate },
       });
-      await db.prepare(`INSERT INTO sec_search_items (section_id, ticker, document_id, item_id, content_sha256, status, error, uploaded_at) VALUES (?, ?, ?, ?, ?, 'uploaded', NULL, ?)
-        ON CONFLICT(section_id) DO UPDATE SET ticker = excluded.ticker, document_id = excluded.document_id, item_id = excluded.item_id, content_sha256 = excluded.content_sha256,
-        status = 'uploaded', error = NULL, uploaded_at = excluded.uploaded_at`).bind(w.sectionId, ticker, w.documentId, item.id, w.contentSha, at).run();
-      result.uploaded++;
-    } catch (error) {
-      const message = String((error as Error)?.message ?? error).slice(0, 300);
-      // An error the service reports for this item is recorded and retried next time; an outage stops the run.
-      if (/unauthori|forbidden|not enabled|binding/i.test(message)) throw error;
-      await db.prepare(`INSERT INTO sec_search_items (section_id, ticker, document_id, item_id, content_sha256, status, error, uploaded_at) VALUES (?, ?, ?, NULL, ?, 'error', ?, ?)
-        ON CONFLICT(section_id) DO UPDATE SET status = 'error', error = excluded.error, uploaded_at = excluded.uploaded_at`).bind(w.sectionId, ticker, w.documentId, w.contentSha, message, at).run();
-      result.failed++;
-    }
+      return item.id;
+    }));
+    const at = new Date().toISOString(), statements: D1PreparedStatement[] = [];
+    let unexpected: unknown = null;
+    outcomes.forEach((o, k) => {
+      const w = uploading[i + k]!;
+      if (o.status === "fulfilled") { statements.push(record(w, o.value, null, at)); result.uploaded++; return; }
+      // The service refusing this one item is recorded and retried next run; anything else stops the run for the queue to retry.
+      if (ITEM_ERROR.test(message(o.reason))) { statements.push(record(w, null, message(o.reason).slice(0, 300), at)); result.failed++; }
+      else unexpected ??= o.reason;
+    });
+    if (statements.length) await db.batch(statements);
+    if (unexpected) throw unexpected;
   }
   result.remaining = Math.max(0, uploads.length + deletes.length - RUN_BUDGET);
   return result;
