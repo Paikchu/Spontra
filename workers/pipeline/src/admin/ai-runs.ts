@@ -1,6 +1,7 @@
 import { AI_RUN_KINDS, type AiCompanies, type AiCompanyDetail, type AiKindState, type AiRun, type AiRunKind, type AiRunStarted, type AiVersion, type AiVersionDetail } from "../../../../shared/analysis-contract/ai-runs-admin.ts";
 import { AiRunStore, publishedAt, summarize, TERMINAL } from "../ai-runs/store.ts";
 import { businessExplainerFingerprint, readBusinessExplainerResponse } from "../business-explainer/workflow.ts";
+import { businessTreeFingerprint, readBusinessTreeResponse, treeTickersFor } from "../business-tree/workflow.ts";
 import { findSecurity } from "../catalog/security-directory.ts";
 import { trackedTickersFor } from "../core.ts";
 import { findingsFingerprint } from "../findings/workflow.ts";
@@ -19,23 +20,31 @@ const SETTLE_AFTER_MS = 60_000, MISSING_AFTER_MS = 10 * 60_000;
 
 type Binding = AiWorkflowBinding<Record<string, unknown>>;
 function binding(env: SecPipelineEnv, kind: AiRunKind): Binding | undefined {
-  return (kind === "findings" ? env.FINDINGS_WORKFLOW : kind === "explainer" ? env.BUSINESS_EXPLAINER_WORKFLOW : env.GUIDANCE_WORKFLOW) as Binding | undefined;
+  return (kind === "findings" ? env.FINDINGS_WORKFLOW : kind === "explainer" ? env.BUSINESS_EXPLAINER_WORKFLOW : kind === "tree" ? env.BUSINESS_TREE_WORKFLOW : env.GUIDANCE_WORKFLOW) as Binding | undefined;
 }
-function blocked(env: SecPipelineEnv, kind: AiRunKind): string | null {
+/** The business tree has its own company list; the other kinds run for the AI-enabled companies. */
+function enabled(env: SecPipelineEnv, kind: AiRunKind, ticker: string): boolean {
+  return (kind === "tree" ? treeTickersFor(env) : trackedTickersFor(env)).includes(ticker);
+}
+function blocked(env: SecPipelineEnv, kind: AiRunKind, ticker: string): string | null {
+  if (!enabled(env, kind, ticker)) return "该公司未纳入此任务。";
   if (!binding(env, kind)) return "该任务的工作流未配置。";
   if (!env.DEEPSEEK_API_KEY) return "模型密钥未配置。";
-  if (kind === "explainer" && !env.TAVILY_API_KEY) return "资料检索未配置，无法撰写业务解读。";
+  if ((kind === "explainer" || kind === "tree") && !env.TAVILY_API_KEY) return kind === "tree" ? "资料检索未配置，无法拆解业务。" : "资料检索未配置，无法撰写业务解读。";
   return null;
 }
-function automatic(env: SecPipelineEnv, kind: AiRunKind): boolean {
+function automatic(env: SecPipelineEnv, kind: AiRunKind, ticker: string): boolean {
+  if (!enabled(env, kind, ticker)) return false;
   return kind === "findings" ? env.FINDINGS_ENABLED === "true" && !!env.FINDINGS_WORKFLOW
     : kind === "explainer" ? !!env.BUSINESS_EXPLAINER_WORKFLOW && !!env.TAVILY_API_KEY
+    : kind === "tree" ? !!env.BUSINESS_TREE_WORKFLOW && !!env.TAVILY_API_KEY && env.BUSINESS_TREE_ENABLED !== "false"
     : env.GUIDANCE_ENABLED === "true" && !!env.GUIDANCE_WORKFLOW;
 }
 /** The publication readers are served now, validated the same way the public read API does. */
 async function currentPublication(db: D1Database, kind: AiRunKind, ticker: string): Promise<unknown> {
   if (kind === "findings") return (await readFindingsResponse(db, ticker)).findings;
   if (kind === "explainer") return (await readBusinessExplainerResponse(db, ticker)).explainer;
+  if (kind === "tree") return (await readBusinessTreeResponse(db, ticker, { research: true })).tree;
   return (await readGuidanceResponse(db, ticker)).guidance;
 }
 function currentVersion(kind: AiRunKind, publication: unknown): AiVersion | null {
@@ -80,13 +89,13 @@ async function guidanceEvents(db: D1Database, env: SecPipelineEnv, ticker: strin
 }
 
 async function state(env: SecPipelineEnv, db: D1Database, kind: AiRunKind, ticker: string, latestRun: AiKindState["latestRun"]): Promise<AiKindState> {
-  return { blocked: blocked(env, kind), automatic: automatic(env, kind), current: currentVersion(kind, await currentPublication(db, kind, ticker).catch(() => null)), latestRun };
+  return { blocked: blocked(env, kind, ticker), automatic: automatic(env, kind, ticker), current: currentVersion(kind, await currentPublication(db, kind, ticker).catch(() => null)), latestRun };
 }
 
 async function start(env: SecPipelineEnv, db: D1Database, kind: AiRunKind, ticker: string, body: { requestId?: unknown; accession?: unknown }, now: number): Promise<Response> {
   if (typeof body.requestId !== "string" || !UUID.test(body.requestId)) return json({ error: "操作参数无效。" }, 400);
-  const reason = blocked(env, kind);
-  if (reason) return json({ error: reason }, 503);
+  const reason = blocked(env, kind, ticker);
+  if (reason) return json({ error: reason }, enabled(env, kind, ticker) ? 503 : 404);
   const store = new AiRunStore(db);
   const runId = `${kind}-manual-${ticker.replace(/[^A-Za-z0-9]/g, "-")}-${body.requestId}`;
   if (await store.get(kind, ticker, runId)) return json({ runId, reused: true } satisfies AiRunStarted, 202);
@@ -99,7 +108,7 @@ async function start(env: SecPipelineEnv, db: D1Database, kind: AiRunKind, ticke
     accession = event.accession;
     params = { ticker, accession: event.accession, eventDate: event.eventDate, manual: true };
   } else {
-    const fingerprint = kind === "findings" ? await findingsFingerprint(env, ticker) : await businessExplainerFingerprint(env, ticker);
+    const fingerprint = kind === "findings" ? await findingsFingerprint(env, ticker) : kind === "tree" ? await businessTreeFingerprint(env, ticker) : await businessExplainerFingerprint(env, ticker);
     if (!fingerprint) return json({ error: "业务地图尚无完整财报，暂时无法生成。" }, 409);
     params = { ticker, fingerprint };
   }
@@ -121,7 +130,7 @@ async function start(env: SecPipelineEnv, db: D1Database, kind: AiRunKind, ticke
 export async function handleAiRunsAdminRequest(request: Request, env: SecPipelineEnv, now = Date.now()): Promise<Response> {
   if (!await authenticateAdmin(request, env.REPORT_ADMIN_PASSWORD, now)) return json({ error: "请登录管理后台。" }, 401);
   if (!env.DB) return json({ error: "数据服务尚未连接。" }, 503);
-  const db = env.DB, tickers = trackedTickersFor(env);
+  const db = env.DB, tickers = [...new Set([...trackedTickersFor(env), ...treeTickersFor(env)])];
   try {
     // Version ids are timestamps; the admin proxy percent-encodes their colons.
     const path = decodeURIComponent(new URL(request.url).pathname);
@@ -133,7 +142,7 @@ export async function handleAiRunsAdminRequest(request: Request, env: SecPipelin
       })));
       return json({ companies } satisfies AiCompanies);
     }
-    const match = /^\/admin\/ai\/companies\/([A-Z][A-Z0-9.-]{0,9})\/(findings|explainer|guidance)(?:\/(runs|versions\/([0-9T:.Z-]{10,40})))?$/.exec(path);
+    const match = /^\/admin\/ai\/companies\/([A-Z][A-Z0-9.-]{0,9})\/(findings|explainer|tree|guidance)(?:\/(runs|versions\/([0-9T:.Z-]{10,40})))?$/.exec(path);
     if (!match) return json({ error: "Not found" }, 404);
     const [, ticker, kindName, action, versionId] = match;
     const kind = kindName as AiRunKind;
@@ -158,7 +167,7 @@ export async function handleAiRunsAdminRequest(request: Request, env: SecPipelin
     const latestRun = runs[0] ? { runId: runs[0].runId, status: runs[0].status, stage: runs[0].stage, trigger: runs[0].trigger, startedAt: runs[0].startedAt, updatedAt: runs[0].updatedAt } : null;
     return json({
       ticker: ticker!, name: findSecurity(ticker!)?.name ?? ticker!, kind,
-      state: { blocked: blocked(env, kind), automatic: automatic(env, kind), current: head, latestRun },
+      state: { blocked: blocked(env, kind, ticker!), automatic: automatic(env, kind, ticker!), current: head, latestRun },
       runs, versions, events: kind === "guidance" ? await guidanceEvents(db, env, ticker!, now) : [],
     } satisfies AiCompanyDetail);
   } catch (error) {

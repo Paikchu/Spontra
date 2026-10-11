@@ -2,13 +2,14 @@ import { selectFlow } from "@/packages/web/src/model/business-flow-model";
 import type { CompleteFlowPublication } from "@/shared/analysis-contract/complete-business-flow";
 import type { PublicBusinessFlow } from "@/shared/analysis-contract/business-flow";
 import type { BusinessExplainer } from "@/shared/analysis-contract/business-explainer";
+import type { BusinessTree } from "@/shared/analysis-contract/business-tree";
 import type { GuidancePublication } from "@/shared/analysis-contract/guidance";
 import type { PublicCapitalStructure } from "@/shared/analysis-contract/capital-structure";
 import type { FindingsPublication } from "@/shared/analysis-contract/findings";
 import type { FindingFundamentals } from "@/shared/analysis-runtime/findings";
 import { findingData, verifiedFindings, type VerifiedFinding } from "./findings-model";
 
-export type CompanyPublication = CompleteFlowPublication & { explainer?: BusinessExplainer | null; guidance?: GuidancePublication | null };
+export type CompanyPublication = CompleteFlowPublication & { explainer?: BusinessExplainer | null; guidance?: GuidancePublication | null; tree?: BusinessTree | null };
 
 const companyPath = (ticker: string, resource = "") => `/api/business/v1/companies/${encodeURIComponent(ticker)}${resource}`;
 

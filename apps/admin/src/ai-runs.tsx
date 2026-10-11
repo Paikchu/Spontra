@@ -3,17 +3,25 @@ import { LoaderCircle, RefreshCw, Search } from "lucide-react";
 import type { AiCompanies, AiCompanyDetail, AiRun, AiRunKind, AiRunStarted, AiRunStatus, AiVersionDetail } from "@/shared/analysis-contract/ai-runs-admin";
 import type { AnalysisFinding, FindingsPublication } from "@/shared/analysis-contract/findings";
 import type { BusinessExplainer } from "@/shared/analysis-contract/business-explainer";
+import type { BusinessTree, TreeNode } from "@/shared/analysis-contract/business-tree";
 import type { GuidancePublication } from "@/shared/analysis-contract/guidance";
 import { adminApi, AdminApiError } from "./admin-api";
 import { completeRequestId, pendingRequestId } from "./financial-maintenance-state";
 import "./ai-runs.css";
 
-const KINDS: Array<[AiRunKind, string]> = [["findings", "财报发现"], ["explainer", "业务解读"], ["guidance", "业绩指引"]];
+const KINDS: Array<[AiRunKind, string]> = [["findings", "财报发现"], ["explainer", "业务解读"], ["tree", "业务脑图"], ["guidance", "业绩指引"]];
 const STATUS: Record<AiRunStatus, string> = { queued: "排队中", running: "运行中", waiting: "等待中", succeeded: "已完成", empty: "无可发布内容", superseded: "数据已更新，已跳过", failed: "失败" };
 const ACTIVE = new Set<AiRunStatus>(["queued", "running", "waiting"]);
 const badge = (status: AiRunStatus) => status === "failed" ? "failed" : status === "succeeded" ? "reviewed" : ACTIVE.has(status) ? "processing" : "";
 const STAGES: Array<[RegExp, (m: RegExpExecArray) => string]> = [
-  [/^(findings|explainer)-time$|^guidance-time-/, () => "记录开始时间"],
+  [/^(findings|explainer|tree)-time$|^guidance-time-/, () => "记录开始时间"],
+  [/^tree-input$/, () => "读取业务列表"],
+  [/^tree-filings$/, () => "列出财报与年报"],
+  [/^tree-b(\d+)-t(\d+)-think$/, m => `第 ${m[1]} 项业务 · 第 ${m[2]} 轮思考`],
+  [/^tree-b(\d+)-t(\d+)-search$/, m => `第 ${m[1]} 项业务 · 第 ${m[2]} 轮搜索`],
+  [/^tree-b(\d+)-t(\d+)-read$/, m => `第 ${m[1]} 项业务 · 第 ${m[2]} 轮读取网页`],
+  [/^tree-b(\d+)-review/, m => `第 ${m[1]} 项业务 · 审校`],
+  [/^tree-publish$/, () => "发布"],
   [/^findings-input$/, () => "读取财报、指引与公司综述"],
   [/^findings-write$/, () => "模型撰写发现"],
   [/^findings-repair$/, () => "修正未通过核对的发现"],
@@ -121,6 +129,7 @@ function KindDetail({ detail, onChanged, onError }: { detail: AiCompanyDetail; o
   }
   const hint = detail.kind === "findings" ? "按最新财报、指引和综述重新撰写发现，即使数据没有变化。通过核对的内容会替换当前版本。"
     : detail.kind === "explainer" ? "重新检索资料并撰写每项业务的解读，替换当前版本。"
+    : detail.kind === "tree" ? "让 ReAct 研究员逐项业务重新搜索、阅读并拆解到产品线、产品和赚钱方式，替换当前版本。"
     : "重新读取所选业绩发布的材料并用模型再次提取，不等待尚未发布的电话会文字稿。";
   return <div className="ai-pad">
     <header className="ai-head">
@@ -142,17 +151,17 @@ function KindDetail({ detail, onChanged, onError }: { detail: AiCompanyDetail; o
 }
 
 function summaryText(kind: AiRunKind, s: { items: number; sources: number; periodEnd: string | null }) {
-  return `${s.items} ${kind === "findings" ? "条发现" : kind === "explainer" ? "项业务" : "条指引"} · ${s.sources} 个来源${s.periodEnd ? ` · 报告期 ${s.periodEnd}` : ""}`;
+  return `${s.items} ${kind === "findings" ? "条发现" : kind === "explainer" || kind === "tree" ? "项业务" : "条指引"} · ${s.sources} 个来源${s.periodEnd ? ` · 报告期 ${s.periodEnd}` : ""}`;
 }
 
 function RunItem({ run, open }: { run: AiRun; open: boolean }) {
-  const result = run.result as { findings?: number; businesses?: number; materials?: number; transcript?: string; withheld?: Array<{ id: string; reasons: string[] }> } | null;
+  const result = run.result as { findings?: number; businesses?: number; nodes?: number; materials?: number; transcript?: string; withheld?: Array<{ id: string; reasons: string[] }> } | null;
   return <li><details open={open}>
     <summary><span className="ra-badge" data-status={badge(run.status)}>{STATUS[run.status]}</span><strong>{ACTIVE.has(run.status) ? stageLabel(run.stage) : date(run.startedAt)}</strong>
       <small>{run.trigger === "manual" ? "手动" : "自动"} · 开始 {date(run.startedAt)} · 用时 {elapsed(run)}{run.accession ? ` · ${run.accession}` : ""}</small></summary>
     {run.error && <p className="ra-error">{run.error}</p>}
     {result && <p className="ai-result">{[
-      result.findings !== undefined && `发布 ${result.findings} 条发现`, result.businesses !== undefined && `${result.businesses} 项业务`,
+      result.findings !== undefined && `发布 ${result.findings} 条发现`, result.businesses !== undefined && `${result.businesses} 项业务`, result.nodes !== undefined && `${result.nodes} 个节点`,
       result.materials !== undefined && `${result.materials} 份材料`, result.transcript && `文字稿：${result.transcript === "extracted" ? "已提取" : result.transcript === "unavailable" ? "未取得" : "未配置"}`,
       result.withheld?.length ? `${result.withheld.length} 条未通过核对` : null,
     ].filter(Boolean).join(" · ")}</p>}
@@ -177,7 +186,7 @@ function Versions({ detail, onError }: { detail: AiCompanyDetail; onError: (erro
     <div className="ai-versions-head"><h3>生成结果</h3>{detail.versions.length > 0 && <label>版本<select value={id} onChange={e => setId(e.target.value)}>{detail.versions.map((v, i) => <option key={v.id} value={v.id}>{v.current ? "当前 · " : `v${detail.versions.length - i} · `}{date(v.id)} · {summaryText(detail.kind, v.summary)}</option>)}</select></label>}</div>
     {!detail.versions.length ? <p className="ai-muted">尚无已发布的结果。</p> : error ? <p className="ra-error">{error}</p> : !version || version.version.id !== id ? <p className="ai-muted"><LoaderCircle size={15} className="ra-spin" /> 正在读取版本…</p>
       : <>{!version.version.current && <p className="ai-hint">这是历史版本，线上展示的是当前版本。</p>}
-        {detail.kind === "findings" ? <FindingsView publication={version.publication as FindingsPublication} /> : detail.kind === "explainer" ? <ExplainerView explainer={version.publication as BusinessExplainer} /> : <GuidanceView guidance={version.publication as GuidancePublication} />}
+        {detail.kind === "findings" ? <FindingsView publication={version.publication as FindingsPublication} /> : detail.kind === "explainer" ? <ExplainerView explainer={version.publication as BusinessExplainer} /> : detail.kind === "tree" ? <TreeView tree={version.publication as BusinessTree} /> : <GuidanceView guidance={version.publication as GuidancePublication} />}
         <details className="ai-raw"><summary>原始 JSON</summary><pre>{JSON.stringify(version.publication, null, 2)}</pre></details></>}
   </section>;
 }
@@ -197,6 +206,27 @@ function ExplainerView({ explainer }: { explainer: BusinessExplainer }) {
     {b.products.length > 0 && <small>产品：{b.products.join("、")}</small>}
     {b.sections.map(s => <div key={s.id} className="ai-section"><h4>{s.title}</h4><ul>{s.items.map((item, i) => <li key={i}>{item.label && <strong>{item.label}：</strong>}{item.claim.text}</li>)}</ul></div>)}
   </article>)}</div>;
+}
+/** The breakdown as nested lists, and under each business the agent's turns: thought, action, and what the harness answered. */
+function TreeView({ tree }: { tree: BusinessTree }) {
+  const sourceTitle = (id: string) => tree.sources.find(s => s.id === id)?.title ?? id;
+  const Node = ({ node }: { node: TreeNode }) => <li>
+    <strong>{node.name}</strong>{node.gloss && <span className="ai-muted"> · {node.gloss}</span>}{node.flowNodeId && <small> （财报披露）</small>}
+    {node.revenue.length > 0 && <div className="ai-tree-revenue">{node.revenue.map((r, i) => <span key={i} title={`${r.text}（${r.sourceIds.map(sourceTitle).join("、")}）`}>¥ {r.label}</span>)}</div>}
+    {node.anchor && <small className="ai-tree-anchor" title={node.anchor.sourceIds.map(sourceTitle).join("、")}>“{node.anchor.text}”</small>}
+    {node.children.length > 0 && <ul>{node.children.map(c => <Node key={c.id} node={c} />)}</ul>}
+  </li>;
+  return <div className="ai-cards"><p className="ai-muted">报告期 {tree.periodEnd} · 模型 {tree.model} · {tree.sources.length} 个来源</p>{tree.branches.map(b => {
+    const steps = tree.research?.find(r => r.flowNodeId === b.flowNodeId)?.steps ?? [];
+    return <article key={b.flowNodeId} className="ai-card">
+      <header><strong>{b.name}</strong><small>{b.flowNodeId}</small></header>
+      {b.summary && <p>{b.summary.text}</p>}
+      <ul className="ai-tree">{b.children.map(c => <Node key={c.id} node={c} />)}</ul>
+      {steps.length > 0 && <details className="ai-raw"><summary>研究过程 · {steps.length} 轮</summary><ol className="ai-tree-steps">{steps.map((s, i) => <li key={i}>
+        <p><b>{s.action}</b> {s.thought}</p><code>{s.input}</code><pre>{s.observation}</pre>
+      </li>)}</ol></details>}
+    </article>;
+  })}</div>;
 }
 function GuidanceView({ guidance }: { guidance: GuidancePublication }) {
   const range = (i: GuidancePublication["items"][number]) => i.low === null && i.high === null ? (i.direction ?? "—") : i.low === i.high || i.high === null ? `${i.low}` : `${i.low ?? "—"} ~ ${i.high}`;

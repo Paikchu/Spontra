@@ -1,0 +1,66 @@
+# 业务脑图：ReAct 拆解公司业务
+
+日期：2026-10-11。状态：已实现，尚未上线；线上首轮运行结果待核验。
+
+## 一句话
+
+用户在业务地图上点中某个业务（如 MSFT 的智能云）后，原来的文字档案换成一棵脑图：它从桑基图上这个业务的节点向左长出，依次是产品线 → 具体产品 → 赚钱方式。树由 Pipeline 里的 ReAct 研究员（DeepSeek + Tavily）逐项业务一步一步拆出来，每个节点都要有一段把它归入上级的原文。
+
+```
+赚钱方式      产品                   产品线          财报业务（桑基图）
+[按用量计费] ─┐
+[预留容量]   ─┤
+Azure AI Foundry ─┼─ Azure ──────┐
+Azure Arc     ─┘                ├──────── 智能云 $39.3B ──▶ 收入
+[按核心授权] ─── SQL Server ────┤
+GitHub Copilot ─ GitHub ────────┘
+```
+
+## 拆解层级
+
+1. 公司 → 财报业务：直接来自已发布的 SEC flow（`quarter.segments` 及其披露的 children），不让模型猜。地区分部（Americas、Europe…）和银行、保险口径不拆。
+2. 财报业务 → 产品线 → 产品：ReAct 研究员负责，最多 3 层、每个节点最多 10 个下级、每项业务最多 40 个节点。财报自己披露的下级业务（如 ORCL cloud 下的两项）预先放进树里（`flowNodeId`），产品挂在它们下面。
+3. 赚钱方式：挂在材料能证明的那一层（多在产品线），`type` 为 subscription / consumption / license / transaction / advertising / hardware / services / other，`label` 是地图上的短标签（≤10 字），`text` 一句话说明谁付钱、按什么付。
+
+## ReAct 循环
+
+代码：`workers/pipeline/src/business-tree/agent.ts`（纯逻辑，可注入模型、搜索和 step），`workflow.ts`（Workflow、扫描、读取）。
+
+每项业务一轮循环，预算 16 轮、6 次搜索、6 次读页。每轮：
+
+- think：模型收到这项业务、公司其他业务、当前树（带节点 ID）、来源列表、历史（最近 3 轮和最近 2 次读页全文，更早的截断）和剩余预算，返回 `{thought, action, input}`。
+- act：`search {query}`、`read {source, focus}`、`add {parent, nodes}`、`revise {id, …}`、`remove {id}`、`finish {}`。
+- observe：harness 把执行结果写成下一轮的 observation。`add` 逐个核对节点，通过的给 ID，未通过的写明原因（例如“anchor 没有同时写出 Azure 和它的上级”），模型下一轮可以改。
+
+搜索和读页是 durable step（`tree-b{n}-t{k}-search/read`），模型调用也是（`tree-b{n}-t{k}-think`）；增删改节点是纯函数，Workflow 重放时按 step 结果重建同一棵树，来源编号也一致。模型返回非 JSON 时记为一轮无效动作，不让整个运行失败；网络和 HTTP 错误仍由 step 重试。
+
+开始前列出两份 flow 自身的 SEC 文件和最近一份 10-K（只列不读，读不读由模型决定）。
+
+## 核对（写入和读取用同一套规则）
+
+- anchor：必须是模型本次运行读到的某个来源中的原文（压缩空白和标点后逐字匹配），≤600 字符，并且同时写出节点名（完整词，不是前缀）和某个上级的名称（父节点、更上层节点或这项业务；公司只披露一项业务时，公司名也算）。原文用 “this segment” 指代上级时，要把点出上级名称的前一句一并引用。
+- gloss / summary / revenue：引用已出现的来源，不含金额、比例、增速等数字；revenue 的来源还必须提到该节点或其上级。
+- 独立审校：每项业务结束后，审校模型拿到每个节点及其来源中提到它的句子，只能删除整个节点或单个字段；两次都拿不到合法结果时，保留已通过 harness 的内容。
+- 读取：`shared/analysis-runtime/business-tree.ts` 的 `readBusinessTree` 用同一套 `harnessNode` 重新核对，失败的节点连同下级删除，没有内容的业务不展示。
+
+## 存储、触发与读取
+
+- 结果存 `sec_cache` 的 `business-tree:v1:{ticker}`，版本记录走 `AiRunStore`（kind `tree`）。研究过程（每轮 thought / action / observation）存在同一文档的 `research` 字段，仅后台可见。
+- 扫描：`*/10` Cron 的 `runBusinessTreeSweep`，每次最多启动一家；只处理 `BUSINESS_TREE_TICKERS`（默认 `MSFT,ORCL,NVDA,ADSK,NET`，未设置时退回 AI 名单）中业务列表指纹变化的公司；实例 ID 含周数，失败的每周重试一次。`BUSINESS_TREE_ENABLED=false` 暂停。需要 `TAVILY_API_KEY` 与 `DEEPSEEK_API_KEY`。
+- 后台：AI 任务页新增“业务脑图”，可手动重跑，查看每轮步骤、树和研究过程。
+- 读取：Pipeline `GET /api/v1/companies/:t/business-tree`（只读 D1），地图 Worker 与 flow、解读、指引一起取回并复核，去掉 `research` 后作为 `tree` 返回。
+
+## 地图上的画法
+
+- `apps/business-site/src/mindmap-layout.ts`：右到左的整齐树布局。第一列从桑基图最左列所有标签的左侧开始，主干从被点业务的标签左端水平引出，不穿过其他业务的标签；赚钱方式是节点下级里的绿色胶囊，排在产品之前。
+- 布局有单行和双行两种节点，`FlowChart` 按当前画布比例都算一遍，取聚焦后字更大的那种。脑图画在桑基图的同一坐标系里，画布范围（world）向左扩展；“适应画布”看全图，“聚焦业务”框住脑图和该业务到收入的路径，字号不超过原来聚焦时的大小。
+- 点节点或胶囊，在图下方（要点和财报卡片出现的位置）打开说明：是什么、赚钱方式、归属原文和编号来源；再点一次或 ✕ 关闭。
+- 被点业务若有财报披露的下级，脑图挂在每个下级上。没有树的业务仍显示原来的文字档案。
+
+## 已知限制
+
+- 地区分部的公司（如 AAPL）和只按银行、保险口径绘图的公司暂不拆。
+- 产品名保留材料原文（多为英文），中文靠 gloss。
+- 首轮线上运行后需要看后台的研究过程，调整提示词和预算；改动后提升 `BUSINESS_TREE_VERSION` 会让每家公司重跑一次。
+
+待办与优化项见 [business-tree-backlog.md](business-tree-backlog.md)。

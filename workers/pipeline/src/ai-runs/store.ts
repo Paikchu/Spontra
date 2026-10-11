@@ -2,7 +2,7 @@ import type { AiRun, AiRunKind, AiRunStatus, AiRunTrigger, AiVersion, AiVersionS
 import { sha256 } from "../company-analysis/api.ts";
 
 /**
- * Run records and published versions of the findings, explainer and guidance workflows, kept in
+ * Run records and published versions of the findings, explainer, business-tree and guidance workflows, kept in
  * `sec_cache` under ordered keys so each company and kind reads as one key range. The current
  * publication stays under its own key; this is the audit trail beside it.
  */
@@ -19,7 +19,7 @@ export function summarize(kind: AiRunKind, publication: unknown): AiVersionSumma
   const p = (publication ?? {}) as Record<string, unknown>;
   const list = (key: string) => Array.isArray(p[key]) ? (p[key] as unknown[]).length : 0;
   return {
-    items: list(kind === "findings" ? "findings" : kind === "explainer" ? "businesses" : "items"),
+    items: list(kind === "findings" ? "findings" : kind === "explainer" ? "businesses" : kind === "tree" ? "branches" : "items"),
     sources: list("sources"),
     periodEnd: typeof p.periodEnd === "string" ? p.periodEnd : null,
     model: typeof p.model === "string" ? p.model : null,

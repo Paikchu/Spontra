@@ -12,6 +12,7 @@ import worker from "./worker.ts";
 import { executeSecAnalysisWorkflow, type WorkflowStepContextLike, type WorkflowStepLike } from "./workflow-core.ts";
 import { storeWorkflowResult, loadWorkflowResult } from "./workflow-results.ts";
 import { executeBusinessExplainerWorkflow, type BusinessExplainerParams } from "./business-explainer/workflow.ts";
+import { executeBusinessTreeWorkflow, type BusinessTreeParams } from "./business-tree/workflow.ts";
 import { maintenanceAnalysisEnvironment } from "./admin/financial-maintenance-runner.ts";
 import { executeGuidanceWorkflow, type GuidanceWorkflowParams } from "./guidance/workflow.ts";
 import { executeFindingsWorkflow, type FindingsWorkflowParams } from "./findings/workflow.ts";
@@ -81,6 +82,14 @@ export class BusinessExplainerWorkflow extends WorkflowEntrypoint<SecPipelineEnv
   async run(event: WorkflowEvent<BusinessExplainerParams>, step: WorkflowStep) {
     const run = { env: this.env, kind: "explainer" as const, ticker: event.payload.ticker, runId: event.instanceId };
     return trackRun(run, () => executeBusinessExplainerWorkflow(event.payload, trackSteps(durableSteps(step, this.env, event.instanceId), run), this.env));
+  }
+}
+
+/** The ReAct business breakdown: one think → act loop per disclosed business, each turn a durable step. */
+export class BusinessTreeWorkflow extends WorkflowEntrypoint<SecPipelineEnv, BusinessTreeParams> {
+  async run(event: WorkflowEvent<BusinessTreeParams>, step: WorkflowStep) {
+    const run = { env: this.env, kind: "tree" as const, ticker: event.payload.ticker, runId: event.instanceId };
+    return trackRun(run, () => executeBusinessTreeWorkflow(event.payload, trackSteps(durableSteps(step, this.env, event.instanceId), run), this.env));
   }
 }
 
