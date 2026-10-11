@@ -17,6 +17,7 @@ import { fiscalPeriodKey, readFiscalPeriod } from "../sec/fiscal-period.ts";
 import type { SecFilingFeed } from "../sec/sec.ts";
 import type { WorkflowStepContextLike, WorkflowStepLike } from "../workflow-core.ts";
 import { extractGuidance, GUIDANCE_EXTRACTOR_VERSION, GUIDANCE_MAX_OUTPUT_TOKENS, type GuidanceModelCall } from "./extract.ts";
+import { libraryExhibits } from "../filing-library/exhibits.ts";
 import { findIrDeck, AlphaVantageTranscriptProvider, readSecExhibits, reportedTranscriptRef, TranscriptAccessError, TranscriptQuotaError, type FoundMaterial, type TranscriptRef } from "./sources.ts";
 import { GuidanceStore, type StoredMaterial } from "./store.ts";
 import { AiRunStore } from "../ai-runs/store.ts";
@@ -173,8 +174,9 @@ export async function executeGuidanceWorkflow(params: GuidanceWorkflowParams, st
   // A re-extraction under a new extractor version also takes every material an earlier run stored for this
   // event (a transcript, an IR deck), so nothing is fetched or searched for again.
   const { materials: sec, ref } = await step.do("guidance-sec", async () => {
-    const found = await (deps.secExhibits ?? readSecExhibits)(
-      { cikNumber: context.cikNumber, accessionNumber: params.accession, filingDate: params.eventDate }, fetcher, env.SEC_USER_AGENT);
+    // The filing library already holds the release as text; EDGAR is read only when it does not.
+    const found = (!deps.secExhibits && env.DB ? await libraryExhibits(env.DB, params.ticker, params.accession, params.eventDate) : null)
+      ?? await (deps.secExhibits ?? readSecExhibits)({ cikNumber: context.cikNumber, accessionNumber: params.accession, filingDate: params.eventDate }, fetcher, env.SEC_USER_AGENT);
     const saved = await saveAll(found);
     const stored = (await store().eventMaterials(params.ticker, params.accession)).filter(m => !saved.some(s => s.id === m.id));
     return { materials: [...saved, ...stored], ref: context.ref ?? reportedTranscriptRef(found, params.eventDate) };

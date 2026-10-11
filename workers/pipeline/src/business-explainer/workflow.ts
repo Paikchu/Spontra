@@ -1,4 +1,5 @@
 import { reasoningFor } from "../ai-config.ts";
+import { treeLibrary } from "../filing-library/tree-source.ts";
 import type { BusinessExplainerResponse } from "../../../../shared/analysis-contract/business-explainer.ts";
 import type { PublicBusinessFlow } from "../../../../shared/analysis-contract/business-flow.ts";
 import { readBusinessExplainer } from "../../../../shared/analysis-runtime/business-explainer.ts";
@@ -16,7 +17,7 @@ import { nodeHint, runBusinessExplainer, type ExplainerNode } from "./agent.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
 
 /** Changing the prompt or output contract regenerates every company once. */
-export const BUSINESS_EXPLAINER_VERSION = "business-explainer.sections.v3";
+export const BUSINESS_EXPLAINER_VERSION = "business-explainer.sections.v4";
 export const businessExplainerCacheKey = (ticker: string) => `business-explainer:v1:${ticker}`;
 export type BusinessExplainerParams = { ticker: string; fingerprint: string };
 
@@ -67,6 +68,7 @@ export async function executeBusinessExplainerWorkflow(params: BusinessExplainer
   const explainer = await runBusinessExplainer({
     ticker: params.ticker, companyName: findSecurity(params.ticker)?.name ?? params.ticker, nodes: input.nodes,
     filings: input.filings, search: researchSearch(env), modelVersion, fingerprint: params.fingerprint, now,
+    filingLibrary: treeLibrary(requireDb(env), params.ticker, input.filings),
     model: (stage, system, payload) => callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, 5 * 60_000, true, { reasoning: reasoningFor(env, "explainer") }),
     stage: (name, callback) => step.do(`explainer-${name}`, callback),
   });

@@ -54,8 +54,13 @@ const REVIEW = `You independently check one explanation of a business. The sourc
  * is written from the angles its business model calls for, and is independently reviewed on its
  * own, so a gap in one business never blocks the others; unsupported fields are removed, not kept.
  */
+/** The filing library's documents and verbatim reads of them (docs/sec-filing-library.md). */
+export type ExplainerLibrary = { documents(): Promise<Array<{ url: string; title: string; publishedAt: string | null }>>; read(url: string, terms: string[], maxChars: number): Promise<string | null> };
+
 export async function runBusinessExplainer(input: {
   ticker: string; companyName: string; nodes: ExplainerNode[]; filings?: ExplainerFiling[]; search: ExplainerSearch; model: ExplainerModel;
+  /** SEC filings as the filing library holds them; without it they are fetched from the web. */
+  filingLibrary?: ExplainerLibrary;
   modelVersion: string; fingerprint: string; now: string; stage?: Stage;
 }): Promise<BusinessExplainer> {
   const stage: Stage = input.stage ?? ((_name, callback) => callback());
@@ -112,8 +117,17 @@ export async function runBusinessExplainer(input: {
   };
 }
 
-async function collectFilings(input: { companyName: string; filings?: ExplainerFiling[]; search: ExplainerSearch; now: string },
+async function collectFilings(input: { companyName: string; filings?: ExplainerFiling[]; search: ExplainerSearch; now: string; filingLibrary?: ExplainerLibrary },
   terms: string[], scope: { scope: string; maxAgeMs: number }): Promise<EvidenceDocument[]> {
+  // The library holds the newest annual report and the flow's own filings as verbatim passages: no fetch, no search.
+  if (input.filingLibrary) {
+    const documents: EvidenceDocument[] = [];
+    for (const document of await input.filingLibrary.documents()) {
+      const text = await input.filingLibrary.read(document.url, terms, 20_000);
+      if (text) documents.push(documentFor({ url: document.url, title: document.title, snippet: "", publishedAt: document.publishedAt, score: null }, text));
+    }
+    if (documents.length) return documents;
+  }
   const read = async (hit: SearchHit) => {
     try { return documentFor(hit, excerpt((await input.search.fetchContent({ url: hit.url, depth: "advanced" }, { ...scope, maxAgeMs: 30 * 24 * 60 * 60_000 })).data.text, terms, 20_000)); }
     catch { return null; }

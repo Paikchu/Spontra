@@ -14,10 +14,11 @@ import { D1SecRepository } from "../sec/d1.ts";
 import type { WorkflowStepLike } from "../workflow-core.ts";
 import { AiRunStore } from "../ai-runs/store.ts";
 import { runBusinessTree, type TreeBusiness } from "./agent.ts";
+import { treeLibrary } from "../filing-library/tree-source.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
 
 /** Changing the prompt, the harness or the output contract researches every company once more. */
-export const BUSINESS_TREE_VERSION = "business-tree.react.v2";
+export const BUSINESS_TREE_VERSION = "business-tree.react.v3";
 export const businessTreeCacheKey = (ticker: string) => `business-tree:v1:${ticker}`;
 export type BusinessTreeParams = { ticker: string; fingerprint: string };
 
@@ -71,6 +72,8 @@ export async function executeBusinessTreeWorkflow(params: BusinessTreeParams, st
   const tree = await runBusinessTree({
     ticker: params.ticker, companyName: findSecurity(params.ticker)?.name ?? params.ticker, periodEnd: input.periodEnd, businesses: input.businesses,
     filings: input.filings, search: researchSearch(env), modelVersion, fingerprint: params.fingerprint, now,
+    // SEC filings are read from the filing library; the web search is left for vendor pages.
+    filingLibrary: treeLibrary(requireDb(env), params.ticker, input.filings),
     // A reply that is not JSON is the model's turn gone wrong, answered in the next observation; transport errors still retry the step.
     model: async (stage, system, payload) => {
       try { return await callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, 5 * 60_000, true, { reasoning: reasoningFor(env, "tree") }); }

@@ -9,6 +9,18 @@ export type TreeBusiness = { flowNodeId: string; name: string; children: Array<{
 /** A filing the published flow itself was read from. */
 export type TreeFiling = { url: string; title: string; publishedAt: string | null };
 export type TreeSearch = Pick<WebSearchService, "search" | "fetchContent">;
+/**
+ * The filing library (docs/sec-filing-library.md): the company's SEC documents already split into verbatim passages.
+ * Reading an SEC source through it is a D1 lookup; null means the library does not hold the document.
+ */
+export type TreeLibrary = {
+  /** The newest annual report and the documents the flow was read from, as the library holds them. */
+  documents(): Promise<Array<{ url: string; title: string; publishedAt: string | null }>>;
+  /** Verbatim passages of one SEC document most about `terms`. */
+  read(url: string, terms: string[], maxChars: number): Promise<string | null>;
+  /** The annual report's own section on one disclosed business, verbatim. */
+  businessSection(names: string[], maxChars: number): Promise<{ url: string; title: string; text: string } | null>;
+};
 /** One model turn. A reply that is not a JSON object comes back as `{ action: "invalid" }` rather than failing the run. */
 export type TreeModel = (stage: string, system: string, payload: unknown) => Promise<Record<string, unknown>>;
 type Stage = <T>(name: string, callback: () => Promise<T>) => Promise<T>;
@@ -33,7 +45,7 @@ Rules:
 - revenue goes on the level where the material proves how it is charged for (often the product line). type is one of ${REVENUE_MODEL_TYPES.map(t => `${t} (${REVENUE_LABEL[t]})`).join(", ")}; label is a map label of at most ${TREE_LIMITS.label} characters, such as "Per-seat subscription", "Usage-based", "Device sales"; text is one sentence saying who pays and on what basis, at most ${TREE_LIMITS.revenueText} characters. Without evidence, leave it out; never copy the parent's or the whole company's charging model onto every product.
 - summary is optional: one sentence on what this node sells and whose problem it solves, at most ${TREE_LIMITS.summary} characters, with its sources.
 - No text may contain amounts, percentages, growth rates, market shares or other figures (numbers inside a product name are fine).
-- Read the filings first (the Business section of the 10-K is the most authoritative), then search to fill in products and how they are charged for; prefer the company's own website, investor relations pages and SEC filings.
+- Read the filings first (the Business section of the 10-K is the most authoritative), then search to fill in products and how they are charged for; prefer the company's own website, investor relations pages and SEC filings. When history starts with turn 0, the harness has already read the annual report's section on this business for you: quote from it directly instead of reading it again.
 - A good tree: 2–8 product lines, at most 8 representative products under each line, no more than ${TREE_LIMITS.depth} levels deep; fewer, well-supported nodes beat many weak ones. Call finish before the budget runs out.
 
 Actions (one per turn):
@@ -58,18 +70,23 @@ type Decision = { thought: string; action: string; input: Record<string, unknown
 type Turn = TreeStep & { turn: number; full: string };
 export type TreeRunInput = {
   ticker: string; companyName: string; periodEnd: string; businesses: TreeBusiness[]; filings?: TreeFiling[]; search: TreeSearch; model: TreeModel;
-  modelVersion: string; fingerprint: string; now: string; stage?: Stage;
+  modelVersion: string; fingerprint: string; now: string; stage?: Stage; filingLibrary?: TreeLibrary;
 };
 
-/** Every source the run has seen, numbered in the order the durable steps returned them, so a replay numbers them alike. */
+/**
+ * Every source one business's research has seen, numbered in the order its durable steps returned them, so a replay
+ * numbers them alike. Each business has its own, under its own prefix, so businesses research in parallel.
+ */
 class Library {
   readonly list: Material[] = [];
+  private readonly prefix: string;
+  constructor(prefix: string) { this.prefix = prefix; }
   register(hit: { url: string; title: string; snippet: string; publishedAt: string | null }): Material | null {
     const url = canonical(hit.url);
     if (!url) return null;
     let material = this.list.find(m => m.url === url);
     if (!material) {
-      material = { id: `s${this.list.length + 1}`, url, title: hit.title.slice(0, 300) || hostname(url), publishedAt: validDate(hit.publishedAt), kind: isSec(url) ? "sec" : "web", snippet: "", text: "", read: false };
+      material = { id: `${this.prefix}-s${this.list.length + 1}`, url, title: hit.title.slice(0, 300) || hostname(url), publishedAt: validDate(hit.publishedAt), kind: isSec(url) ? "sec" : "web", snippet: "", text: "", read: false };
       this.list.push(material);
     }
     if (hit.snippet && !material.snippet.includes(hit.snippet.slice(0, 200))) material.snippet = `${material.snippet}\n${hit.snippet}`.trim().slice(0, 3_000);
@@ -92,26 +109,42 @@ export async function runBusinessTree(input: TreeRunInput): Promise<BusinessTree
   const businesses = input.businesses.slice(0, TREE_LIMITS.branches);
   if (!businesses.length) throw new Error("Business tree has no businesses to break down.");
   const scope = { scope: `spontra:business-tree:${input.ticker}`, maxAgeMs: 7 * 24 * 60 * 60_000 };
-  const library = new Library();
-  const filings = await stage("filings", () => collectFilings(input, scope));
-  for (const filing of filings) library.register(filing);
-
-  const branches: TreeBranch[] = [], research: NonNullable<BusinessTree["research"]> = [];
+  const filings = await stage("filings", () => input.filingLibrary ? libraryFilings(input, scope) : collectFilings(input, scope));
   const single = businesses.length === 1;
-  for (const [index, business] of businesses.entries()) {
+  // Businesses research at once: each has its own sources and step names, so the order steps finish in changes nothing.
+  const results = await Promise.all(businesses.map((business, index) => {
+    const library = new Library(`b${index + 1}`);
+    for (const filing of filings) library.register(filing);
     const others = businesses.filter(b => b !== business).map(b => businessHint(b.flowNodeId, b.name));
-    const { branch, steps } = await researchBranch({ ...input, stage, scope, library, business, index, others, single });
-    research.push({ flowNodeId: business.flowNodeId, steps });
-    if (branch.children.some(hasContent)) branches.push(branch);
+    return researchBranch({ ...input, stage, scope, library, business, index, others, single }).then(result => ({ ...result, library, business }));
+  }));
+  const research: NonNullable<BusinessTree["research"]> = results.map(r => ({ flowNodeId: r.business.flowNodeId, steps: r.steps }));
+  const kept = results.filter(r => r.branch.children.some(hasContent));
+  if (!kept.length) throw new Error("Business tree found nothing it could anchor in the material.");
+  // One id per cited source across businesses, numbered in business order.
+  const ids = new Map<string, string>(), sources: TreeSource[] = [];
+  const rename = new Map<string, string>();
+  for (const r of kept) {
+    const cited = new Set([...r.branch.summary?.sourceIds ?? [], ...r.branch.children.flatMap(citedIds)]);
+    for (const m of r.library.list.filter(m => cited.has(m.id))) {
+      let id = ids.get(m.url);
+      if (!id) { id = `s${ids.size + 1}`; ids.set(m.url, id); sources.push({ id, title: m.title, url: m.url, kind: m.kind, publishedAt: m.publishedAt }); }
+      rename.set(m.id, id);
+    }
   }
-  if (!branches.length) throw new Error("Business tree found nothing it could anchor in the material.");
-  const cited = new Set(branches.flatMap(b => [...b.summary?.sourceIds ?? [], ...b.children.flatMap(citedIds)]));
-  const sources: TreeSource[] = library.list.filter(m => cited.has(m.id)).map(m => ({ id: m.id, title: m.title, url: m.url, kind: m.kind, publishedAt: m.publishedAt }));
+  const branches = kept.map(r => renameSources(r.branch, rename));
   return {
     schemaVersion: "business-tree.v1", ticker: input.ticker, companyName: input.companyName, generatedAt: input.now, model: input.modelVersion,
     fingerprint: input.fingerprint, periodEnd: input.periodEnd, branches, sources, research,
   };
 }
+
+const renameClaim = (claim: TreeClaim | null, rename: Map<string, string>): TreeClaim | null => claim && { ...claim, sourceIds: [...new Set(claim.sourceIds.map(id => rename.get(id) ?? id))] };
+function renameNode(node: TreeNode, rename: Map<string, string>): TreeNode {
+  return { ...node, anchor: renameClaim(node.anchor, rename), summary: renameClaim(node.summary, rename),
+    revenue: node.revenue.map(r => ({ ...r, sourceIds: [...new Set(r.sourceIds.map(id => rename.get(id) ?? id))] })), children: node.children.map(c => renameNode(c, rename)) };
+}
+const renameSources = (branch: TreeBranch, rename: Map<string, string>): TreeBranch => ({ ...branch, summary: renameClaim(branch.summary, rename), children: branch.children.map(c => renameNode(c, rename)) });
 
 const citedIds = (node: TreeNode): string[] => [...node.anchor?.sourceIds ?? [], ...node.summary?.sourceIds ?? [], ...node.revenue.flatMap(r => r.sourceIds), ...node.children.flatMap(citedIds)];
 
@@ -131,6 +164,17 @@ async function researchBranch(ctx: BranchContext): Promise<{ branch: TreeBranch;
   const used = { searches: 0, reads: 0 };
   const queries = new Set<string>();
   let refusedFinish = false;
+  // The annual report's own section on this business, read once from the library before the first turn; it costs no read.
+  if (ctx.filingLibrary) {
+    const names = [label, business.name, ...business.children.map(c => businessHint(c.flowNodeId, c.name))];
+    const section = await stage(`${prefix}-library`, () => ctx.filingLibrary!.businessSection(names, READ_CHARS));
+    const material = section ? library.register({ url: section.url, title: section.title, snippet: "", publishedAt: null }) : null;
+    if (section && material) {
+      material.text = section.text; material.read = true;
+      const full = `[${material.id}] ${material.title}\n${section.text}`;
+      turns.push({ turn: 0, thought: "The harness read the annual report's section on this business.", action: "read", input: JSON.stringify({ source: material.id, focus: label }), observation: full.slice(0, 800), full });
+    }
+  }
 
   const childrenOf = (id: string | null) => drafts.filter(d => d.parentId === id);
   const depthOf = (id: string | null): number => { let depth = 0; for (let d = drafts.find(x => x.id === id); d; d = drafts.find(x => x.id === d!.parentId)) depth++; return depth; };
@@ -168,7 +212,11 @@ async function researchBranch(ctx: BranchContext): Promise<{ branch: TreeBranch;
         used.reads++;
         const focus = typeof decision.input.focus === "string" ? decision.input.focus.slice(0, 200) : "";
         const terms = keywords([focus, label, ...ancestorsOf(null)]);
-        const page = await stage(`${prefix}-t${turn}-read`, () => readPage(ctx, material.url, terms));
+        // An SEC document the library holds is read from its passages; anything else from the web.
+        const page = await stage(`${prefix}-t${turn}-read`, async () => {
+          const stored = material.kind === "sec" && ctx.filingLibrary ? await ctx.filingLibrary.read(material.url, terms, READ_CHARS) : null;
+          return stored !== null ? { text: stored } : readPage(ctx, material.url, terms);
+        });
         if ("error" in page) { observation = `Reading ${material.id} failed (${page.error}); try another source.`; break; }
         const fresh = page.text.split(/\n{2,}/).filter(p => !material.text.includes(p.slice(0, 160))).join("\n\n");
         material.text = `${material.text}\n\n${fresh}`.trim();
@@ -431,6 +479,14 @@ async function readPage(ctx: BranchContext, url: string, terms: string[]): Promi
     const page = await ctx.search.fetchContent({ url, depth: "advanced" }, { ...ctx.scope, maxAgeMs: 30 * 24 * 60 * 60_000 });
     return { text: excerpt(page.data.text, terms, READ_CHARS) };
   } catch (error) { return { error: error instanceof Error ? error.message.slice(0, 120) : "unknown" }; }
+}
+
+/** The filings every business starts from, as the filing library holds them; a web search finds the annual report only when the library has none. */
+async function libraryFilings(input: TreeRunInput, scope: { scope: string; maxAgeMs: number }): Promise<Array<{ url: string; title: string; snippet: string; publishedAt: string | null }>> {
+  const documents = await input.filingLibrary!.documents();
+  if (documents.some(d => /10-K|20-F|annual/i.test(d.title))) return documents.map(d => ({ ...d, snippet: "" }));
+  const searched = await collectFilings(input, scope);
+  return [...documents.map(d => ({ ...d, snippet: "" })), ...searched.filter(f => !documents.some(d => d.url === f.url))];
 }
 
 /**

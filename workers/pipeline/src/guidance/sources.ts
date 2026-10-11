@@ -20,7 +20,7 @@ export function classifyExhibit(text: string): GuidanceMaterialKind {
   return "press_release";
 }
 
-function exhibitTitle(text: string, fallback: string): string {
+export function exhibitTitle(text: string, fallback: string): string {
   const line = text.split("\n").map(l => l.trim()).find(l => l.length >= 12 && l.length <= 160 && /[A-Za-z]/.test(l) && !/^exhibit\b/i.test(l));
   return line ?? fallback;
 }
