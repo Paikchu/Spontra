@@ -39,7 +39,9 @@ export function treeLibrary(db: D1Database, ticker: string, flowFilings: TreeFil
       const match = outline.filter(s => wanted.some(n => compactName(s.title).includes(n))).sort((a, b) => a.depth - b.depth)[0];
       const scope = match ? outline.filter(s => JSON.stringify(s.path).startsWith(JSON.stringify(match.path).slice(0, -1))) : outline;
       const passages = await librarySectionPassages(db, latest.document_id, scope.map(s => s.sectionId));
-      const kept = match && passages.reduce((n, p) => n + p.text.length, 0) <= maxChars ? passages : rankPassages(passages, names, maxChars);
+      const ranked = match && passages.reduce((n, p) => n + p.text.length, 0) <= maxChars ? passages : rankPassages(passages, names, maxChars);
+      // No passage naming the business: the business item from its start, which is where filings describe what they sell.
+      const kept = ranked.length ? ranked : rankPassages(passages, [], maxChars);
       if (!kept.length) return null;
       return { url: latest.document_url, title: annualTitle(latest.form, latest.filed_at), text: kept.map(p => p.text).join("\n\n") };
     },

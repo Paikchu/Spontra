@@ -2,6 +2,7 @@ import { INDUSTRY_CATEGORIES, type IndustryCategory, type LibraryBusinessLink, t
 import { checkLinks, LIBRARY_LINKS_VERSION, type LinkDraft, type LinkFlowNode } from "../../../../shared/analysis-runtime/filing-library/links.ts";
 import { libraryHash } from "../../../../shared/analysis-runtime/filing-library/parse.ts";
 import { reasoningFor } from "../ai-config.ts";
+import { issuerNames } from "../../../../shared/analysis-runtime/business-tree.ts";
 import { findSecurity } from "../catalog/security-directory.ts";
 import { readCompletePublicationForTicker } from "../financial-data/publication.ts";
 import { SecModelOutputError } from "../model-stream.ts";
@@ -64,7 +65,7 @@ export async function proposeLinks(env: SecPipelineEnv, ticker: string, fetcher:
   // A section's title belongs to its text for the name check: headings name businesses as often as prose does.
   const sections = new Map(input.candidates.map(c => [c.sectionId, `${c.path.join(" ")}\n${texts.get(c.sectionId) ?? ""}`]));
   const payload = {
-    company: findSecurity(ticker)?.name ?? ticker, ticker, flow: input.flow, categories: INDUSTRY_CATEGORIES,
+    company: issuerNames(findSecurity(ticker)?.name ?? ticker)[0], ticker, flow: input.flow, categories: INDUSTRY_CATEGORIES,
     sections: input.candidates.map(c => ({ id: c.sectionId, path: c.path.join(" › "), gist: c.gist, entities: c.entities.slice(0, 12), excerpt: (texts.get(c.sectionId) ?? "").slice(0, SECTION_TEXT) })),
   };
   const model = env.SEC_REASONING_MODEL || env.SEC_ANALYSIS_MODEL || "deepseek-flash";

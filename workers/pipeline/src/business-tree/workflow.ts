@@ -1,7 +1,7 @@
 import { reasoningFor } from "../ai-config.ts";
 import type { BusinessTree, BusinessTreeResponse } from "../../../../shared/analysis-contract/business-tree.ts";
 import type { PublicBusinessFlow } from "../../../../shared/analysis-contract/business-flow.ts";
-import { readBusinessTree } from "../../../../shared/analysis-runtime/business-tree.ts";
+import { issuerNames, readBusinessTree } from "../../../../shared/analysis-runtime/business-tree.ts";
 import { sha256 } from "../company-analysis/api.ts";
 import { findSecurity } from "../catalog/security-directory.ts";
 import { requireDb, trackedTickersFor } from "../core.ts";
@@ -18,7 +18,7 @@ import { treeLibrary } from "../filing-library/tree-source.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
 
 /** Changing the prompt, the harness or the output contract researches every company once more. */
-export const BUSINESS_TREE_VERSION = "business-tree.react.v3";
+export const BUSINESS_TREE_VERSION = "business-tree.react.v4";
 export const businessTreeCacheKey = (ticker: string) => `business-tree:v1:${ticker}`;
 export type BusinessTreeParams = { ticker: string; fingerprint: string };
 
@@ -70,7 +70,7 @@ export async function executeBusinessTreeWorkflow(params: BusinessTreeParams, st
   // The business list changed after scheduling; the next sweep starts a run for the new list.
   if (input.fingerprint !== params.fingerprint || !input.periodEnd) return { status: "superseded" };
   const tree = await runBusinessTree({
-    ticker: params.ticker, companyName: findSecurity(params.ticker)?.name ?? params.ticker, periodEnd: input.periodEnd, businesses: input.businesses,
+    ticker: params.ticker, companyName: issuerNames(findSecurity(params.ticker)?.name ?? params.ticker)[0]!, periodEnd: input.periodEnd, businesses: input.businesses,
     filings: input.filings, search: researchSearch(env), modelVersion, fingerprint: params.fingerprint, now,
     // SEC filings are read from the filing library; the web search is left for vendor pages.
     filingLibrary: treeLibrary(requireDb(env), params.ticker, input.filings),

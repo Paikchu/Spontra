@@ -1,5 +1,5 @@
 import { REVENUE_MODEL_TYPES, type BusinessTree, type TreeBranch, type TreeClaim, type TreeNode, type TreeRevenueModel, type TreeSource, type TreeStep } from "../../../../shared/analysis-contract/business-tree.ts";
-import { anchors, branchAncestors, businessHint, compactName, hasContent, plainText, REVENUE_LABEL, TREE_LIMITS } from "../../../../shared/analysis-runtime/business-tree.ts";
+import { anchors, branchAncestors, businessHint, compactName, hasContent, issuerNames, plainText, REVENUE_LABEL, TREE_LIMITS } from "../../../../shared/analysis-runtime/business-tree.ts";
 import { excerpt } from "../business-explainer/agent.ts";
 import type { WebSearchService } from "../web-search/service.ts";
 import type { SearchHit } from "../web-search/types.ts";
@@ -166,7 +166,8 @@ async function researchBranch(ctx: BranchContext): Promise<{ branch: TreeBranch;
   let refusedFinish = false;
   // The annual report's own section on this business, read once from the library before the first turn; it costs no read.
   if (ctx.filingLibrary) {
-    const names = [label, business.name, ...business.children.map(c => businessHint(c.flowNodeId, c.name))];
+    // A company with one disclosed business is that business: its annual report describes it under the company's name.
+    const names = [label, business.name, ...business.children.map(c => businessHint(c.flowNodeId, c.name)), ...(ctx.single ? issuerNames(ctx.companyName) : [])];
     const section = await stage(`${prefix}-library`, () => ctx.filingLibrary!.businessSection(names, READ_CHARS));
     const material = section ? library.register({ url: section.url, title: section.title, snippet: "", publishedAt: null }) : null;
     if (section && material) {

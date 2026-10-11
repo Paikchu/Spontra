@@ -92,7 +92,24 @@ export function harnessNode(raw: unknown, ancestors: AncestorChain, depth: numbe
 
 /** The names a branch's top-level nodes may cite as their parent. */
 export function branchAncestors(branch: { flowNodeId: string; name: string }, companyName: string, single: boolean): AncestorChain {
-  return [...new Set([branch.name, businessHint(branch.flowNodeId, branch.name), ...(single ? [companyName, companyName.replace(/\b(Inc|Corp|Corporation|Ltd|Holdings|Co|Company|PLC|N\.V)\.?$/i, "").trim()] : [])])];
+  return [...new Set([branch.name, businessHint(branch.flowNodeId, branch.name), ...(single ? issuerNames(companyName) : [])])];
+}
+
+const SHARE_CLASS = /\s*(?:[-–—,]\s*)?(?:Class [A-Z]\b.*|(?:New )?(?:Common|Ordinary|Capital) (?:Stock|Shares)\b.*|American Depositary.*)$/i;
+const LEGAL_FORM = /[,\s&]+(?:Inc|Incorporated|Corp|Corporation|Ltd|Limited|Holdings|Co|Company|PLC|N\.?V|S\.?A|AG|SE|LLC|L\.?P|Group)\.?$/i;
+/**
+ * The names filings use for the issuer, from its listing title: `Cloudflare, Inc. Class A Common Stock` gives
+ * `Cloudflare, Inc.` and `Cloudflare`. A listing title itself never appears in a filing's prose.
+ */
+export function issuerNames(listing: string): string[] {
+  const issuer = listing.replace(SHARE_CLASS, "").trim() || listing.trim();
+  const names = [issuer];
+  for (let name = issuer, previous = ""; name !== previous;) {
+    previous = name;
+    name = name.replace(LEGAL_FORM, "").replace(/[,\s&]+$/, "").trim();
+    if (name && compactName(name).length >= 2 && !names.includes(name)) names.push(name);
+  }
+  return names;
 }
 
 /**

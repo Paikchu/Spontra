@@ -156,3 +156,15 @@ test("the storage sweep deletes only what no reader can reach", async () => {
   assert.equal(SWEEP_RULES[0]!.dead("filings/AMZN/1/meta.json", now, empty), false);
   assert.equal(SWEEP_RULES[4]!.dead("web-search/v1/k/old.json", now - 2 * 3_600_000, empty), false);
 });
+
+test("a single-business company is named as filings name it, so its anchors can name it", async () => {
+  const { anchors, branchAncestors, issuerNames } = await import("../../../shared/analysis-runtime/business-tree.ts");
+  assert.deepEqual(issuerNames("Cloudflare, Inc. Class A Common Stock"), ["Cloudflare, Inc.", "Cloudflare"]);
+  assert.deepEqual(issuerNames("Nebius Group N.V. - Class A Ordinary Shares"), ["Nebius Group N.V.", "Nebius Group", "Nebius"]);
+  assert.deepEqual(issuerNames("Berkshire Hathaway Inc. New Common Stock"), ["Berkshire Hathaway Inc.", "Berkshire Hathaway"]);
+  assert.deepEqual(issuerNames("Microsoft Corporation"), ["Microsoft Corporation", "Microsoft"]);
+  const passage = "Customers can quickly and easily join Cloudflare by using just one of our products. Our full suite of products consists of (1) our application services.";
+  const segment = { flowNodeId: "cloud:ReportableSegmentMember", name: "Reportable Segment" };
+  assert.equal(anchors("application services", branchAncestors(segment, "Cloudflare, Inc. Class A Common Stock", true), passage), true);
+  assert.equal(anchors("application services", branchAncestors(segment, "Cloudflare, Inc. Class A Common Stock", false), passage), false);
+});

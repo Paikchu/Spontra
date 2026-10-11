@@ -1,5 +1,6 @@
 import type { LibraryCanonical, LibraryFoundSection } from "../../../../shared/analysis-contract/filing-library.ts";
 import { libraryHash } from "../../../../shared/analysis-runtime/filing-library/parse.ts";
+import { issuerNames } from "../../../../shared/analysis-runtime/business-tree.ts";
 import { findSecurity } from "../catalog/security-directory.ts";
 import type { SecPipelineEnv } from "../operations.ts";
 import { cardDocuments, cardsPublished } from "./cards.ts";
@@ -72,7 +73,7 @@ async function wantedSections(db: D1Database, ticker: string): Promise<Array<Wan
 /** The item's text: a header naming the company, form, period and heading path, then the section's own passages verbatim. */
 async function itemContent(db: D1Database, ticker: string, w: Wanted): Promise<string> {
   const passages = (await db.prepare("SELECT text FROM sec_passages WHERE section_id = ? ORDER BY ordinal").bind(w.sectionId).all<{ text: string }>()).results;
-  const company = findSecurity(ticker)?.name ?? ticker;
+  const company = issuerNames(findSecurity(ticker)?.name ?? ticker)[0];
   return `# ${company} (${ticker}) · ${w.form} · period ${w.reportDate} · filed ${w.filedAt.slice(0, 10)}\n## ${w.path.join(" › ")}\n\n${passages.map(p => p.text).join("\n\n")}\n`;
 }
 
