@@ -13,7 +13,10 @@ export type StoredMemberLabels = { version: string; accession: string; labels: R
 type MetaLinksRole = { terseLabel?: unknown; label?: unknown };
 type MetaLinks = { instance?: Record<string, { tag?: Record<string, { lang?: Record<string, { role?: MetaLinksRole }> }> }> };
 
-const clean = (value: unknown) => typeof value === 'string' ? value.replace(/\s+/g, ' ').replace(/\s*\[Member\]$/i, '').trim().slice(0, 120) : '';
+/** MetaLinks keeps a label's XML escapes (`Compute &amp; Networking`). */
+const unescape = (text: string) => text.replace(/&(?:#(\d+)|#x([\da-f]+)|(amp|lt|gt|quot|apos));/gi, (_, dec, hex, name) =>
+  dec ? String.fromCodePoint(Number(dec)) : hex ? String.fromCodePoint(parseInt(hex, 16)) : ({ amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" } as Record<string, string>)[name.toLowerCase()]);
+const clean = (value: unknown) => typeof value === 'string' ? unescape(value).replace(/\s+/g, ' ').replace(/\s*\[Member\]$/i, '').trim().slice(0, 120) : '';
 
 /** `prefix_LocalMember` → `prefix:LocalMember`, the form an instance names an explicit member in. */
 export function parseMemberLabels(json: unknown): Record<string, string> {
@@ -32,7 +35,9 @@ export function parseMemberLabels(json: unknown): Record<string, string> {
 
 /** A member the filing gave no label: its local name, words split, e.g. `AmericasSegmentMember` → "Americas Segment". */
 export function memberName(member: string, labels?: Record<string, string>): string {
-  return labels?.[member] ?? member.split(':').at(-1)!.replace(/Member$/, '').replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2');
+  const label = labels?.[member];
+  if (label) return unescape(label);
+  return member.split(':').at(-1)!.replace(/Member$/, '').replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2');
 }
 
 /** Only an inline XBRL document with dimensional contexts names members. */

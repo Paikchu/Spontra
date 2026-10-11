@@ -11,7 +11,7 @@ import {readIncomeStatementCells} from '../../../../shared/analysis-runtime/fina
 export interface DocumentSource {url:string;accession:string;filedAt:string;cik:string;industry:'standard'|'financial'|'insurance'|'unknown';fiscalYear?:string;singleSegment?:boolean;
  /** The filing's labels for its dimension members (member-labels.ts); handed to each dimensional fact, not kept on its source. */
  memberLabels?:Record<string,string>;}
-export const SEC_FLOW_PARSER_VERSION='deterministic-sec.v10';
+export const SEC_FLOW_PARSER_VERSION='deterministic-sec.v11';
 /** Issuers read through a disclosure-specific profile; generic statement arithmetic would describe them in another scheme. */
 export const hasDisclosureProfile=(cik:string)=>cik==='0001341439';
 export interface Fact {source:DocumentSource;operands?:Fact[];formula?:string;precision:number;tag:string;value:number;currency:string;start:string;end:string;context:string;dimensions:Record<string,string>;
