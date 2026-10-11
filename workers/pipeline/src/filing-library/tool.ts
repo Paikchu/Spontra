@@ -82,6 +82,15 @@ export async function libraryFind(db: D1Database, request: { tickers?: string[];
   return found.sort((a, b) => b.score - a.score || b.filedAt.localeCompare(a.filedAt)).filter(r => { const key = `${r.ticker}|${r.path.join("›")}`; if (seen.has(key)) return false; seen.add(key); return true; }).slice(0, request.limit ?? 20);
 }
 
+/** Interleaves sections by company, keeping each company's own order. */
+export function alternate(found: FoundSection[]): FoundSection[] {
+  const queues = new Map<string, FoundSection[]>();
+  for (const f of found) queues.set(f.ticker, [...queues.get(f.ticker) ?? [], f]);
+  const out: FoundSection[] = [];
+  for (let round = 0; out.length < found.length; round++) for (const queue of queues.values()) if (queue[round]) out.push(queue[round]!);
+  return out;
+}
+
 /**
  * Sections across companies: exact matches on card topic, entity, title words, a business or a cross-company
  * category from the index, then, for a natural-language question, sections found by meaning through AI Search.
@@ -100,8 +109,9 @@ export async function libraryFindAcross(env: SecPipelineEnv, request: {
     tickers = [...new Set(links.map(l => l.ticker))];
     if (!tickers.length) return { found: [], recall: request.question ? "empty" : "off" };
   }
+  // Asked across companies, each company's best sections take turns, so one filer's long report does not fill the list.
   const exact = request.topic || request.entity || request.keywords || request.canonical || sectionIds || !request.question
-    ? await libraryFind(db, { tickers, topic: request.topic, entity: request.entity, keywords: request.keywords, canonical: request.canonical, sectionIds, limit }) : [];
+    ? alternate(await libraryFind(db, { tickers, topic: request.topic, entity: request.entity, keywords: request.keywords, canonical: request.canonical, sectionIds, limit: limit * 4 })).slice(0, limit) : [];
   if (!request.question) return { found: exact, recall: "off" };
   if (!searchEnabled(env)) return { found: exact, recall: "off" };
   try {

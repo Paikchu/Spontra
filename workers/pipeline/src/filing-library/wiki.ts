@@ -6,7 +6,7 @@ import { flowNodes, readLinks } from "./links.ts";
 import { libraryFactRows, rankPassages } from "./tool.ts";
 
 /** Verbatim text a page shows per section, and how many changed sections and risk sections it lists. */
-const EXCERPT_CHARS = 1_200, CHANGES = 12, RISKS = 10;
+const EXCERPT_CHARS = 900, SECTIONS_PER_BUSINESS = 3, CHANGES = 10, RISKS = 8;
 
 type SectionRow = { section_id: string; document_id: string; form: string; filed_at: string; path: string; change: LibraryChange; gist: string | null; entities: string | null; chars: number };
 const SECTION_SQL = `SELECT s.section_id, s.document_id, d.form, d.filed_at, s.path, s.change, c.gist, c.entities, s.chars
@@ -47,7 +47,7 @@ export async function libraryWiki(db: D1Database, ticker: string): Promise<Libra
   const rowOf = new Map(linkedRows.map(r => [r.section_id, r]));
   const businesses: LibraryWikiBusiness[] = [];
   for (const l of links) {
-    const rows = l.sectionIds.flatMap(id => rowOf.get(id) ?? []).slice(0, 4);
+    const rows = l.sectionIds.flatMap(id => rowOf.get(id) ?? []).slice(0, SECTIONS_PER_BUSINESS);
     businesses.push({
       businessKey: l.businessKey, name: l.name, industryCategory: l.industryCategory, status: l.status,
       facts: facts.filter(f => f.flowNodeId && f.flowNodeId === l.flowNodeId), sections: await entries(db, rows, () => [l.name]),
