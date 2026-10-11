@@ -1,3 +1,4 @@
+import { reasoningFor } from "../ai-config.ts";
 import type { BusinessExplainer, BusinessExplainerResponse } from "../../../../shared/analysis-contract/business-explainer.ts";
 import type { PublicBusinessFlow } from "../../../../shared/analysis-contract/business-flow.ts";
 import { readBusinessExplainer } from "../../../../shared/analysis-runtime/business-explainer.ts";
@@ -94,7 +95,7 @@ export async function executeBusinessExplainerWorkflow(params: BusinessExplainer
   const explainer = await runBusinessExplainer({
     ticker: params.ticker, companyName: findSecurity(params.ticker)?.name ?? params.ticker, nodes: input.nodes,
     filings: input.filings, search: researchSearch(env), modelVersion, fingerprint: params.fingerprint, now,
-    model: (stage, system, payload) => callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, 5 * 60_000),
+    model: (stage, system, payload) => callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, 5 * 60_000, true, { reasoning: reasoningFor(env, "explainer") }),
     stage: (name, callback) => step.do(`explainer-${name}`, callback),
   });
   if (!readBusinessExplainer(explainer, params.ticker)) throw new Error("Business explainer failed its public contract.");

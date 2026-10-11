@@ -1,3 +1,4 @@
+import { reasoningFor } from "../ai-config.ts";
 import type { GuidanceCoverage, GuidancePublication, GuidanceResponse, GuidanceSource } from "../../../../shared/analysis-contract/guidance.ts";
 import type { SecFiscalPeriod } from "../../../../shared/analysis-contract/report.ts";
 import {
@@ -101,7 +102,7 @@ function modelCall(env: SecPipelineEnv, store: GuidanceStore, fetcher: typeof fe
   const cap = Number(env.GUIDANCE_DAILY_MODEL_CALLS) > 0 ? Number(env.GUIDANCE_DAILY_MODEL_CALLS) : DEFAULT_DAILY_MODEL_CALLS;
   return async (stage, system, payload) => {
     if (!await store.reserve("guidance-model", day, cap)) throw new BudgetExhausted("guidance model budget exhausted");
-    return callWorkerSecModel(env, fetcher, stage, system, payload, model, MODEL_BUDGET_MS, true, { maxTokens: GUIDANCE_MAX_OUTPUT_TOKENS });
+    return callWorkerSecModel(env, fetcher, stage, system, payload, model, MODEL_BUDGET_MS, true, { maxTokens: GUIDANCE_MAX_OUTPUT_TOKENS, reasoning: reasoningFor(env, "guidance") });
   };
 }
 

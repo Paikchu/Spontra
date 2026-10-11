@@ -1,3 +1,4 @@
+import { reasoningFor } from "../ai-config.ts";
 import type { BusinessTree, BusinessTreeResponse } from "../../../../shared/analysis-contract/business-tree.ts";
 import type { PublicBusinessFlow } from "../../../../shared/analysis-contract/business-flow.ts";
 import { readBusinessTree } from "../../../../shared/analysis-runtime/business-tree.ts";
@@ -100,7 +101,7 @@ export async function executeBusinessTreeWorkflow(params: BusinessTreeParams, st
     filings: input.filings, search: researchSearch(env), modelVersion, fingerprint: params.fingerprint, now,
     // A reply that is not JSON is the model's turn gone wrong, answered in the next observation; transport errors still retry the step.
     model: async (stage, system, payload) => {
-      try { return await callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, 5 * 60_000); }
+      try { return await callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, 5 * 60_000, true, { reasoning: reasoningFor(env, "tree") }); }
       catch (error) { if (error instanceof SecModelOutputError) return { action: "invalid" }; throw error; }
     },
     stage: (name, callback) => step.do(`tree-${name}`, callback),

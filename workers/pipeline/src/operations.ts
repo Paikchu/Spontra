@@ -1,3 +1,4 @@
+import { reasoningFor, type ReasoningEffort } from "./ai-config.ts";
 import { boundedModelIO } from "./model-io.ts";
 import { readModelContent, parseModelJson, SecModelOutputError } from "./model-stream.ts";
 import { recoverModelJson, SecModelHttpError, type ModelRequestOptions, type ModelCheckpoint, type ModelCheckpointStore } from "./model-recovery.ts";
@@ -61,6 +62,14 @@ export type SecPipelineEnv = SecCronEnv & AnalysisReadEnv & {
   GUIDANCE_WORKFLOW?: AiWorkflowBinding<{ ticker: string; accession: string; eventDate: string; manual?: boolean }>;
   FINDINGS_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
   BUSINESS_TREE_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
+  FILING_LIBRARY_WORKFLOW?: AiWorkflowBinding<{ documentId: string; ticker: string; sha: string }>;
+  LIBRARY_CARDS_WORKFLOW?: AiWorkflowBinding<{ documentId: string; ticker: string; version: string }>;
+  /** "false" pauses splitting archived filings into the library; unset or anything else runs it. */
+  FILING_LIBRARY_ENABLED?: string;
+  /** "false" pauses writing index cards for library sections; unset or anything else runs it. */
+  LIBRARY_CARDS_ENABLED?: string;
+  /** JSON overriding an AI tool's reasoning level, e.g. {"library-cards":"high"}; see `ai-config.ts`. */
+  AI_REASONING?: string;
   /** Companies whose businesses the ReAct agent breaks down; unset falls back to the AI list. */
   BUSINESS_TREE_TICKERS?: string;
   /** "false" pauses the business-tree sweep; unset or anything else runs it. */
@@ -141,7 +150,7 @@ export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof
         },
         log: (event) => console.log(JSON.stringify({ ...event, workflowInstanceId })),
         request: (options) => requestWorkerSecModelContent(env, fetcher, stage, system, payload, options.model,
-          Math.max(1, deadline - Date.now()), options.jsonMode, { ...options, workflowInstanceId }),
+          Math.max(1, deadline - Date.now()), options.jsonMode, { ...options, workflowInstanceId, reasoning: reasoningFor(env, "sec-analysis") }),
       });
     };
   };
@@ -594,8 +603,8 @@ export async function callWorkerSecModel(
   return parseModelJson(await requestWorkerSecModelContent(env, fetcher, stage, system, payload, modelOverride, executionBudgetMs, jsonMode, tuning));
 }
 
-/** Per-call limits for narrow extraction stages, and the provider-reported usage when the call ends. */
-export type ModelCallTuning = { maxTokens?: number; onMetrics?: (metrics: Readonly<Record<string, unknown>>) => void };
+/** Per-call limits for narrow extraction stages, the AI tool's reasoning level, and the provider-reported usage when the call ends. */
+export type ModelCallTuning = { maxTokens?: number; reasoning?: ReasoningEffort; onMetrics?: (metrics: Readonly<Record<string, unknown>>) => void };
 
 async function requestWorkerSecModelContent(
   env: SecPipelineEnv,
@@ -606,7 +615,7 @@ async function requestWorkerSecModelContent(
   modelOverride?: string,
   executionBudgetMs = SEC_MODEL_EXECUTION_BUDGET_MS,
   jsonMode = true,
-  options?: Partial<ModelRequestOptions> & Pick<ModelCallTuning, "onMetrics">,
+  options?: Partial<ModelRequestOptions> & Pick<ModelCallTuning, "onMetrics" | "reasoning">,
 ): Promise<string> {
   const apiKey = await resolveWorkerModelKey(env, fetcher);
   const started = Date.now();
@@ -630,6 +639,7 @@ async function requestWorkerSecModelContent(
     { role: "user", content: "Repair the previous response into one complete JSON object matching the original schema. Preserve its substantive analysis and evidence; fix syntax and complete missing fields from the original inputs. Do not replace the report with a summary. Output the complete repaired object only." },
   );
   metrics.maxTokens = options?.maxTokens ?? SEC_MODEL_OUTPUT_TOKENS;
+  metrics.reasoning = options?.reasoning ?? "high";
   metrics.mode = options?.continuation ? "continuation" : options?.repair ? "repair" : "initial";
   const response = await fetcher("https://api.deepseek.com/chat/completions", {
     method: "POST",
@@ -638,7 +648,7 @@ async function requestWorkerSecModelContent(
       model: modelOverride || env.SEC_ANALYSIS_MODEL || "deepseek-flash",
       messages,
       ...(jsonMode ? { response_format: { type: "json_object" } } : {}),
-      reasoning_effort: "high",
+      reasoning_effort: options?.reasoning ?? "high",
       max_tokens: options?.maxTokens ?? SEC_MODEL_OUTPUT_TOKENS,
       stream_options: { include_usage: true },
       // Streaming keeps bytes flowing so the provider's proxy cannot time the request out at ~100s.

@@ -44,6 +44,12 @@
       "concurrency": { "limit": 1 }
     },
     {
+      "name": "spontra-filing-library",
+      "binding": "FILING_LIBRARY_WORKFLOW",
+      "class_name": "FilingLibraryWorkflow",
+      "concurrency": { "limit": 4 }
+    },
+    {
       "name": "spontra-findings",
       "binding": "FINDINGS_WORKFLOW",
       "class_name": "FindingsWorkflow",

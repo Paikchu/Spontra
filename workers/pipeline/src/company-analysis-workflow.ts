@@ -1,3 +1,4 @@
+import { reasoningFor } from "./ai-config.ts";
 import {
   COMPANY_ANALYSIS_PROMPT_VERSION,
   COMPANY_ANALYSIS_SCHEMA_VERSION,
@@ -100,7 +101,7 @@ export async function executeCompanyAnalysisWorkflow(
     const output = await runBusinessModelAgent({
       ticker: params.ticker, companyName: findSecurity(params.ticker)?.name ?? params.ticker,
       reportDate: packet.reportDate, now: generatedAt, tools,
-      model: (stage, system, payload) => callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, 5 * 60_000),
+      model: (stage, system, payload) => callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, 5 * 60_000, true, { reasoning: reasoningFor(env, "company-analysis") }),
       runStage: (name, callback) => step.do(`business-agent-${name}`, COMPANY_AGENT_MODEL_STEP_CONFIG, callback),
     });
     await step.do("company-run-validating", () => updateStatus(env, {

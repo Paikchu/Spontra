@@ -1,3 +1,4 @@
+import { reasoningFor } from "../ai-config.ts";
 import type { ExplainerSource } from "../../../../shared/analysis-contract/business-explainer.ts";
 import type { FindingsPublication } from "../../../../shared/analysis-contract/findings.ts";
 import { readFindingFundamentals, type FindingData } from "../../../../shared/analysis-runtime/findings.ts";
@@ -96,7 +97,7 @@ export async function executeFindingsWorkflow(params: FindingsWorkflowParams, st
   const input = await step.do("findings-input", () => readInput(env, params.ticker));
   // The report, guidance or narrative moved on after scheduling; the next sweep starts a run for the new state.
   if (!input || input.fingerprint !== params.fingerprint) return { status: "superseded" as const };
-  const model: FindingsModel = deps.model ?? ((stage, system, payload) => callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, MODEL_BUDGET_MS, true));
+  const model: FindingsModel = deps.model ?? ((stage, system, payload) => callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, MODEL_BUDGET_MS, true, { reasoning: reasoningFor(env, "findings") }));
   const outcome = await writeFindings({
     ticker: params.ticker, companyName: findSecurity(params.ticker)?.name ?? params.ticker, ledger: input.ledger, context: input.context, data: input.data,
     model, modelVersion, fingerprint: params.fingerprint, now, stage: (name, callback) => step.do(`findings-${name}`, callback),

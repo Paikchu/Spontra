@@ -2,9 +2,11 @@ import {handleTranscriptAdminRequest} from './admin/transcripts.ts';
 import {syncTranscript} from './transcripts/library.ts';
 import {handleBusinessMapAdminRequest} from './admin/business-map.ts';
 import {handleAiRunsAdminRequest} from './admin/ai-runs.ts';
+import {handleLibraryAdminRequest} from './admin/library.ts';
 import {runDataOnlySweep} from './financial-data/queue.ts';
 import {runMapDerivationTick} from './financial-data/derived.ts';
 import {pruneSupersededArchives} from './financial-data/disclosure-audit.ts';
+import {runFilingLibrarySweep} from './filing-library/workflow.ts';
 import { handleCompanyAnalysisRequest, handleSecAnalysisRequest, runCompanyAnalysisSweep, runSecMemorySweep, runSecRefresh } from "./core.ts";
 import { handleBusinessFlowRefresh, runBusinessFlowBootstrap } from "./sec/business-flow-refresh.ts";
 import { handleFundamentalsRefreshRequest } from "./fundamentals.ts";
@@ -68,6 +70,7 @@ const worker = {
     if (path === "/ready") return readyResponse(env);
     if (path.startsWith("/admin/business-map/")) return handleBusinessMapAdminRequest(request, env);
     if (path.startsWith("/admin/ai/")) return handleAiRunsAdminRequest(request, env);
+    if (path === "/admin/library" || path.startsWith("/admin/library/")) return handleLibraryAdminRequest(request, env);
     if (path === "/admin/financials" || path.startsWith("/admin/financials/")) return handleFinancialAdminRequest(request, env);
     if (path === "/admin/transcripts" || path.startsWith("/admin/transcripts/")) return handleTranscriptAdminRequest(request, env);
     if (path === "/admin" || path.startsWith("/admin/")) return handleReportAdminRequest(request, env);
@@ -101,6 +104,9 @@ const worker = {
         // Copies of a document no D1 row points at any more; a finished pass waits a day before the next.
         const pruned = await pruneSupersededArchives({DB:env.DB,SEC_FILINGS:env.SEC_FILINGS}).catch((error:unknown)=>({error:error instanceof Error?error.message:String(error)}));
         if (!("skipped" in pruned)) console.log(JSON.stringify({event:"archive-prune",...pruned}));
+        // Archived documents not yet split into the filing library; each split runs as its own Workflow.
+        const library = await runFilingLibrarySweep(env).catch((error:unknown)=>({error:error instanceof Error?error.message:String(error)}));
+        if (!("skipped" in library)) console.log(JSON.stringify({event:"filing-library",...library}));
       }
       return;
     }
