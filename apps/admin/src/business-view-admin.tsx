@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { ArrowUpRight, ChevronRight, FileStack, ListChecks, LoaderCircle, LogOut, Moon, Network, ShieldCheck, Sparkles, Sun } from "lucide-react";
+import { ArrowUpRight, FileStack, ListChecks, LoaderCircle, LogOut, Moon, Network, ShieldCheck, Sparkles, Sun } from "lucide-react";
 import Link from "@/packages/web/src/navigation";
 import { adminApi } from "./admin-api";
 import { BusinessMapCompanies } from "./business-map-companies";
@@ -85,15 +85,11 @@ export function BusinessViewAdmin({ mapOrigin = "" }: { mapOrigin?: string }) {
       </div>
     </aside>
     <main className="ra-main">
-      <header className={`ra-page-header${section === "whitelist" ? " ra-business-map-header" : ""}${section === "financials" && authenticated !== false ? " ra-financial-header" : ""}`}>
-        <div><p>BusinessView <ChevronRight size={13} />{page.nav && <>{PAGES[page.nav].title} <ChevronRight size={13} /></>}{page.title}</p><h1>{page.title}</h1></div>
-        {authenticated && <div className="ra-header-actions"><button className="ra-mobile-logout" onClick={() => void logout()} aria-label="退出登录"><LogOut size={17} /></button></div>}
-      </header>
       {authenticated === false ? <div className="ra-login"><ShieldCheck size={34} /><h2>登录</h2><form onSubmit={event => void login(event)}><label htmlFor="admin-key">管理密码</label><input id="admin-key" type="password" autoComplete="current-password" value={key} onChange={event => setKey(event.target.value)} required /><button className="ra-primary" disabled={loginBusy || !key}>{loginBusy && <LoaderCircle className="ra-spin" size={16} />}{loginBusy ? "登录中" : "登录"}</button></form>{error && <p role="alert" className="ra-error">{error}</p>}</div>
         : <>
           {error && <div className="ra-error ra-error-banner" role="alert">{error}</div>}
           {section === "whitelist" ? <BusinessMapCompanies {...auth} />
-            : section === "financials" ? <FinancialMaintenance {...auth} onLogout={() => void logout()} />
+            : section === "financials" ? <FinancialMaintenance {...auth} />
             : section === "filings" ? <FilingLibrary {...auth} />
             : section === "business" ? <BusinessSegments {...auth} onOpenSection={openSection} />
             : <AiRuns {...auth} kinds={["findings"]} />}

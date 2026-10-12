@@ -5,6 +5,7 @@ import type { AnalysisFinding, FindingsPublication } from "@/shared/analysis-con
 import type { BusinessExplainer } from "@/shared/analysis-contract/business-explainer";
 import type { BusinessTree, TreeNode } from "@/shared/analysis-contract/business-tree";
 import { adminApi, AdminApiError } from "./admin-api";
+import { CompanyLogo } from "@/packages/web/src/company-logo";
 import { completeRequestId, pendingRequestId } from "./financial-maintenance-state";
 import "./ai-runs.css";
 
@@ -70,15 +71,14 @@ export function AiRuns({ onUnauthorized, onAuthenticated, kinds }: { onUnauthori
     try { window.history.replaceState(null, "", `${window.location.pathname}?${new URLSearchParams(tabs.length > 1 ? { ticker, kind } : { ticker })}`); } catch { /* Sandboxed preview. */ }
   }, [ticker, kind, tabs.length]);
 
-  const companies = list?.companies.filter(c => `${c.ticker} ${c.name}`.toLowerCase().includes(search.toLowerCase())) ?? [];
+  const companies = list?.companies.filter(c => c.ticker.toLowerCase().includes(search.toLowerCase())) ?? [];
   return <div className="ra-workspace ai-workspace">
     <section className="ra-list" aria-label="公司">
-      <div className="ra-filters"><label className="ra-search"><Search size={17} /><input aria-label="搜索公司" placeholder="代码或名称" value={search} onChange={e => setSearch(e.target.value)} /></label></div>
+      <div className="ra-filters"><label className="ra-search"><Search size={17} /><input aria-label="搜索公司" placeholder="代码" value={search} onChange={e => setSearch(e.target.value)} /></label></div>
       <div className="ra-list-caption"><span>{list ? `${list.companies.length} 家公司` : "加载中"}</span><button aria-label="刷新" onClick={() => setRefresh(n => n + 1)}><RefreshCw size={14} /></button></div>
       {listError && <p className="ra-error" role="alert">{listError}</p>}
       <div className="ra-list-scroll">{companies.map(c => <button key={c.ticker} className="ra-report-row" aria-pressed={ticker === c.ticker} onClick={() => setTicker(c.ticker)}>
-        <span className="ra-row-info"><strong>{c.ticker}</strong><small>{c.name !== c.ticker ? c.name : ""}</small>
-          <span className="ai-kind-chips">{tabs.map(([k, label]) => { const run = c.kinds[k].latestRun; return <span key={k} className="ra-badge" data-status={run ? badge(run.status) : ""} title={run ? `${label}：${STATUS[run.status]} · ${date(run.startedAt)}` : `${label}：无运行记录`}>{label}{run && ACTIVE.has(run.status) ? " · 运行中" : run?.status === "failed" ? " · 失败" : c.kinds[k].current ? "" : " · 未生成"}</span>; })}</span>
+        <CompanyLogo symbol={c.ticker} /><span className="ra-row-info"><strong>{c.ticker}</strong>{tabs.map(([k]) => { const run = c.kinds[k].latestRun, note = run && ACTIVE.has(run.status) ? "生成中" : run?.status === "failed" ? "上次生成失败" : c.kinds[k].current ? "" : "尚未生成"; return note && <small key={k} data-note={run?.status === "failed" || undefined}>{note}</small>; })}
         </span></button>)}
         {list && !companies.length && <p className="ai-empty">无匹配公司</p>}
       </div>
