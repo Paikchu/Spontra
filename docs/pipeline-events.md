@@ -243,7 +243,7 @@ tasks 并发 1 在 10 家公司时足够，同时让 SEC 访问天然不超频�
 
 P1 的实现要点：
 
-- 代码在 `workers/pipeline/src/pipeline/`：`registry.ts`（事件、任务、订阅表，构建时由 `scripts/check-pipeline-boundary.ts` 校验）、`outbox.ts`、`router.ts`、`tasks.ts`（任务实现与到期检查）、`versions.ts`、`consumer.ts`（三个队列的消费入口）。后台页面“事件流水线”（`/admin/pipeline`）显示待发事件、待执行任务、死信、记录与触发链，可手动发事件、重放或关闭死信。
+- 代码在 `workers/pipeline/src/pipeline/`：`registry.ts`（事件、任务、订阅表，构建时由 `scripts/check-pipeline-boundary.ts` 校验）、`outbox.ts`、`router.ts`、`tasks.ts`（任务实现与到期检查）、`versions.ts`、`consumer.ts`（三个队列的消费入口）。后台页面“事件流水线”（`/admin/pipeline`）曾显示待发事件、待执行任务、死信、记录与触发链，可手动发事件、重放或关闭死信；2026-10-12 后台改为只服务 BusinessView 时移除，运行状况改在 Cloudflare 控制台查看，Pipeline 的 `/admin/pipeline` 接口保留。
 - **防抖键用股票代码，不用 CIK。** 数据白名单每个发行人只采集一个代码（`enqueueIssuer` 取第一个允许的代码），采集、归档、发布产生的事件天然带同一个代码；事件仍带 `cik` 供排查。
 - **被替换的存档副本记在 `pipeline_superseded` 表里。** 事件只带公司和类型，被替换对象的 key 是数据，与新的披露记录在同一个 batch 里写入；`archive-prune` 任务删除超过 24 小时且无引用的副本。
 - **历史遗留副本的全量清理**是 `archive-prune-scan` 任务，由后台手动发送“全量清理存档副本”触发，每次推进 4 页，未完成就立即续作。

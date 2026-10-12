@@ -11,6 +11,8 @@ export const AI_TOOL_REASONING = {
   "library-cards": "low",
   /** Business-map proposals for the cross-company category of each disclosed business. */
   "library-links": "high",
+  /** The independent second judgment that settles a proposal's category and sections instead of a person. */
+  "library-links-review": "high",
   "sec-analysis": "high",
   memory: "high",
   "company-analysis": "high",

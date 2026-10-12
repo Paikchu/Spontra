@@ -111,10 +111,20 @@ export const INDUSTRY_CATEGORIES = {
 } as const;
 export type IndustryCategory = keyof typeof INDUSTRY_CATEGORIES;
 
-/** One business of a company joined across its disclosures: the map's node, its XBRL members and the sections that describe it. */
+/**
+ * How a link's category was settled without a person: the proposal's category, an independent reviewer's, and the
+ * cited sections the reviewer did not vouch for. The link is verified when the two categories agree.
+ */
+export type LibraryLinkReview = { proposed: IndustryCategory | null; reviewed: IndustryCategory | null; reviewedPresent: boolean; droppedSections: string[] };
+/**
+ * One business of a company joined across its disclosures: the map's node, its XBRL members and the sections that
+ * describe it. `verified`: proposal and review agree; `disputed`: they do not, so the link has no category;
+ * `confirmed`: an admin set the category, which later runs keep.
+ */
+export type LibraryLinkStatus = "verified" | "disputed" | "confirmed";
 export type LibraryBusinessLink = {
   ticker: string; businessKey: string; name: string; flowNodeId: string | null; xbrlMembers: string[]; sectionIds: string[];
-  industryCategory: IndustryCategory | null; status: "proposed" | "confirmed"; proposedBy: string | null; updatedAt: string;
+  industryCategory: IndustryCategory | null; status: LibraryLinkStatus; review: LibraryLinkReview | null; proposedBy: string | null; updatedAt: string;
 };
 export type LibraryLinkSection = { sectionId: string; documentId: string; path: string[]; gist: string | null };
 export type LibraryLinksView = { links: Array<LibraryBusinessLink & { sections: LibraryLinkSection[] }>; categories: typeof INDUSTRY_CATEGORIES };
@@ -134,7 +144,7 @@ export type LibraryWikiEntry = {
   excerpts: Array<{ passageId: string; text: string }>;
 };
 export type LibraryWikiBusiness = {
-  businessKey: string | null; name: string; industryCategory: IndustryCategory | null; status: "proposed" | "confirmed" | "unlinked";
+  businessKey: string | null; name: string; industryCategory: IndustryCategory | null; status: LibraryLinkStatus | "unlinked";
   facts: LibraryFactRow[]; sections: LibraryWikiEntry[];
 };
 export type LibraryWikiPage = {

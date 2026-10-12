@@ -1,8 +1,21 @@
-# 财报管理后台
+# BusinessView 后台
 
-入口：`https://spontra-admin.max-zhangyuchen.workers.dev/admin/reports`，也可从主站设置页进入。主站旧 `/admin/reports` 跳转到独立后台，旧 `/api/admin/*` 返回 410 并清除旧会话；需要在新域名重新登录。
+入口：`https://spontra-admin.max-zhangyuchen.workers.dev/admin/whitelist`。后台只服务 BusinessView（业务地图），所有数据来自 `EARNING_REPORT_PIPELINE` 的分析数据库；Admin Worker 不直接读取分析 D1，数据服务异常时显示错误，不用示例数据兜底。
 
-报告列表、版本、生成任务、检查标记均来自 `EARNING_REPORT_PIPELINE` 的分析数据库。Admin Worker 不直接读取分析 D1，也不会把只读接口改为触发生成的接口。看板不会使用示例数据兜底；数据服务异常时显示错误。
+## 导航
+
+| 页面 | 路径 | 内容 |
+|---|---|---|
+| 白名单管理 | `/admin/whitelist` | 加入或移出公司、数据准备进度、采集问题；卡片可进入「财报与更新记录」（`/admin/financials`，导航仍高亮白名单管理） |
+| SEC 文件拆分 | `/admin/filings` | 时间线（按申报日期列出每份申报及拆出的文件）、文件结构（章节、原文段落、索引卡、重新拆解）、跨公司查找 |
+| 公司业务板块 | `/admin/business` | 板块数据（文件库拼出的公司页面：分部数字与原文）、业务脑图、业务解读、业务主线（提议与独立复核自动核验，无需人工确认） |
+| 公司要点 | `/admin/findings` | 要点的当前版本、历史版本、运行记录与手动重新生成 |
+
+旧路径 `/admin/business-map`、`/admin/library`、`/admin/ai`（`kind=findings` 进入公司要点，其余进入公司业务板块）打开对应的新页面并改写地址；其他路径进入白名单管理。业务板块、要点页面的 URL 保留 `?ticker=`，从业务板块打开的原文小节以 `/admin/filings?ticker=&document=&section=` 定位。
+
+报告管理、生成任务、Transcript、业绩指引不属于 BusinessView，事件流水线（运行状态）由 Cloudflare 控制台替代，后台已移除这些页面，Admin 代理也不再转发 `reports`、`transcripts`、`guidance` 与 `pipeline` 接口；Pipeline 自身的这些接口和数据未改动。
+
+运行状况在 Cloudflare 控制台查看：Cron 在 `spontra-analysis` 的 Settings → Trigger Events；队列积压与重试在 Queues 的三条 `spontra-pipeline-*` 队列；Workflow 实例在 Workflows；报错与重试在 `spontra-analysis` 的 Workers Logs（按 `pipeline-task`、`pipeline-route`、`pipeline-dead` 筛选）。死信仍写入 D1 `pipeline_dead`，后台不再提供重放、关闭和手动发送事件的入口。
 
 ## 登录
 
@@ -12,20 +25,9 @@
 
 会话由 Pipeline 自己的密钥签名并验证，无需给 Admin Worker 新增管理密钥。轮换 `REPORT_ADMIN_PASSWORD` 会同时使现有会话失效。Pipeline 的 `REPORT_ADMIN_RATE_LIMIT` 限制登录尝试。
 
-## 报告管理
-
-- 搜索公司名称或代码，按待检查、已检查、生成中、生成失败和待生成筛选；列表每页 40 条，可继续加载。
-- 正文复用线上报告阅读组件，包含分析、图表、研究依据、原文链接及数据质量说明。
-- 已检查状态绑定财报及具体版本。新版本不会继承旧版本的检查状态；历史版本可以单独查看和检查。
-- 生成记录展示任务阶段、尝试次数、时间和安全的错误代码，不转发模型提供商错误正文或凭证。
-- 手动重新生成要求该公司仍在 Pipeline 的 AI 范围内，且选择具体 accession；不会自动重新生成该公司的所有报告。
-- 重新生成读取已保存的财报，即使旧财报已离开最新 SEC discovery 窗口仍可执行。已核验研究材料可被复用，但报告重写、审校与发布仍运行。
-- 使用操作标识、数据库短锁和已持久化的运行中任务抑制重复提交。失败任务保留记录；原报告不会被删除。
-- 结构化财报沿用 `sec_published_reports` 的版本存储。简析历史存入 `sec_cache`；部署前已丢失的简析版本无法恢复。
-
 ## 接口与发布
 
-Admin Worker：`/api/admin/session`（POST 登录、DELETE 退出）、`/api/admin/reports`（GET）、`/api/admin/reports/:ticker/:accession`（GET）、末尾 `/review` 和 `/regenerate`（POST）。写操作要求同源 Origin；全部响应为 `private, no-store`。
+Admin Worker：`/api/admin/session`（POST 登录、DELETE 退出），其余为 `financials`、`business-map`、`ai`、`library` 的白名单路径。写操作要求同源 Origin；全部响应为 `private, no-store`。
 
 Pipeline 对应路径为 `/admin/*`，管理接口需要签名会话。现有公开只读凭证不能访问管理接口。报告管理本身使用已有表；财报数据维护任务使用下述新增迁移。
 
@@ -37,7 +39,7 @@ Pipeline 对应路径为 `/admin/*`，管理接口需要签名会话。现有公
 
 ## 财报数据维护
 
-后台导航的「财报数据」打开 `/admin/financials`，复用上述登录，不接受内部维护密钥作为浏览器会话。页面 URL 中仅保留选中的股票代码；刷新后会重新读取服务端任务。
+白名单管理卡片上的「查看财报与更新记录」打开 `/admin/financials`，复用上述登录，不接受内部维护密钥作为浏览器会话。页面 URL 中仅保留选中的股票代码；刷新后会重新读取服务端任务。
 
 - 页面以完整财报阅读为主：左侧选择公司，上方选择财报期间，按资产负债表、利润表、现金流量表、其他报表和附注切换实际存在的表格。
 - 常见财务项目提供中文名称，保留原始名称可供查看；表格保留披露金额、比较期间、空白、破折号和合并表头。表内搜索高亮并定位结果，不筛掉小计或打乱原始行序。展开阅读可获得更宽的表格空间。
@@ -58,7 +60,7 @@ Pipeline 对应路径为 `/admin/*`，管理接口需要签名会话。现有公
 
 ## 业务地图公司管理
 
-导航「业务地图」进入 `/admin/business-map`。输入股票代码并加入白名单后，Pipeline 在同一个 D1 事务中保存公司配置和首次数据准备任务。配置存于 `financial_company_settings`，覆盖 `SEC_DATA_TICKERS` 的部署默认值；显式移出也不会被后续部署重新加入。操作回执独立保存，网络重试不重复建任务，旧请求重放不会覆盖后来的移出操作。此配置不扩展 AI 分析白名单。
+导航「白名单管理」进入 `/admin/whitelist`。输入股票代码并加入白名单后，Pipeline 在同一个 D1 事务中保存公司配置和首次数据准备任务。配置存于 `financial_company_settings`，覆盖 `SEC_DATA_TICKERS` 的部署默认值；显式移出也不会被后续部署重新加入。操作回执独立保存，网络重试不重复建任务，旧请求重放不会覆盖后来的移出操作。此配置不扩展 AI 分析白名单。
 
 - 管理页自动刷新公司识别、最新财报采集、历史扫描、披露检查的进度，显示文件扫描数量、最近更新时间、具体问题以及重新准备入口。
 - 收入构成逐季区分「分部及抵销已核验」「财报明确单一报告部门」「仅合并收入、拆分待核验」。最后一种显示警示，并将维护结果保留为部分完成，不能被合并收入占位标记为地图完整。
@@ -73,12 +75,12 @@ Pipeline 对应路径为 `/admin/*`，管理接口需要签名会话。现有公
 
 新增迁移：`0016_business_map_companies.sql`。当前 `worker:pipeline:deploy` 的 CI 入口先执行 `worker:pipeline:migrate:ci` 再核对迁移，随后发布；必须同时发布 Pipeline、Admin 与业务地图（共享完整性校验更新），依旧只通过推送 `origin/main` 触发自动部署。
 
-## AI 生成（财报发现、业务解读、业绩指引）
+## 模型生成（公司要点、业务脑图、业务解读）
 
-导航「AI 生成」进入 `/admin/ai`，URL 保留 `?ticker=&kind=`。公司范围为 Pipeline 的 AI 分析白名单（`SEC_AI_TICKERS`）。
+「公司要点」显示要点；「公司业务板块」的「业务脑图」「业务解读」显示另外两类。公司要点与业务解读的范围是 `SEC_AI_TICKERS`，业务脑图是 `BUSINESS_TREE_TICKERS`；不在范围内的公司显示「该公司不在 AI 分析范围内」。
 
-- **手动触发**：按公司、按类型提交一次运行，不要求修改 `FINDINGS_VERSION` 等版本号，也不要求财报、指引或综述变化。发现与业务解读以当前数据指纹启动，发布后定时任务视其为最新，不会重复生成。业绩指引需选择一份业绩发布 8-K（默认最新），手动运行会对其材料重新调用模型提取，只读取一次电话会文字稿、不进入多日等待；仍计入每日模型额度。
-- 手动触发不受 `FINDINGS_ENABLED`、`GUIDANCE_ENABLED` 等自动开关限制，但需要对应 Workflow 绑定和模型密钥；业务解读还需要 `TAVILY_API_KEY`。同一公司同一类型（指引为同一份 8-K）有进行中的运行时拒绝重复提交；请求标识保证网络重试不重复启动。
-- **进度**：每次运行（含定时任务启动的）记录触发方式、状态、当前步骤和逐步时间线，步骤在 Workflow 的持久化步骤内写入，重放不会回退。运行结束时记录结果摘要；发现会列出未通过核对的条目及原因。运行异常终止而未写入结果时，查看详情会向 Workflow 引擎核对并标记失败。
+- **手动触发**：按公司、按类型提交一次运行，不要求修改 `FINDINGS_VERSION` 等版本号，也不要求财报、指引或综述变化。以当前数据指纹启动，发布后事件任务视其为最新，不会重复生成。
+- 手动触发不受 `FINDINGS_ENABLED` 等自动开关限制，但需要对应 Workflow 绑定和模型密钥；业务解读还需要 `TAVILY_API_KEY`。同一公司同一类型有进行中的运行时拒绝重复提交；请求标识保证网络重试不重复启动。
+- **进度**：每次运行（含定时任务启动的）记录触发方式、状态、当前步骤和逐步时间线，步骤在 Workflow 的持久化步骤内写入，重放不会回退。运行结束时记录结果摘要；要点会列出未通过核对的条目及原因。运行异常终止而未写入结果时，查看详情会向 Workflow 引擎核对并标记失败。
 - **结果与历史版本**：每次发布在 `sec_cache` 中另存一份版本（`ai-version:v1:<kind>:<ticker>:<时间>`），内容与上一版相同则不重复保存，每类每家公司保留最近 30 版；运行记录（`ai-run:v1:…`）保留最近 20 次。页面默认显示当前线上版本，可切换查看历史版本并展开原始 JSON。历史从本功能上线后开始积累，此前只保留当前版本。
-- 无新增迁移。接口：`GET /api/admin/ai/companies`、`GET /api/admin/ai/companies/:ticker/:kind`、`GET …/:kind/versions/:id`、`POST …/:kind/runs`（`kind` 为 `findings`、`explainer`、`guidance`）。
+- 无新增迁移。接口：`GET /api/admin/ai/companies`、`GET /api/admin/ai/companies/:ticker/:kind`、`GET …/:kind/versions/:id`、`POST …/:kind/runs`（`kind` 为 `findings`、`explainer`、`tree`）。

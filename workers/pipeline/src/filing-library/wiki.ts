@@ -38,7 +38,7 @@ export async function libraryWiki(db: D1Database, ticker: string): Promise<Libra
   const documentIds = await cardDocuments(db, ticker);
   const documents = documentIds.length ? (await db.prepare("SELECT document_id, form, doc_type, filed_at, report_date, document_url FROM sec_documents WHERE document_id IN (SELECT value FROM json_each(?)) ORDER BY filed_at DESC")
     .bind(JSON.stringify(documentIds)).all<{ document_id: string; form: string; doc_type: LibraryDocType; filed_at: string; report_date: string; document_url: string }>()).results : [];
-  const [links, flow, facts] = await Promise.all([readLinks(db, { ticker, includeProposed: true }), flowNodes(db, ticker),
+  const [links, flow, facts] = await Promise.all([readLinks(db, { ticker }), flowNodes(db, ticker),
     // The page is text first: without validated numbers it still shows every section.
     libraryFactRows(db, ticker, { quarters: 2 }).catch(() => [])]);
 
@@ -86,7 +86,7 @@ export function wikiMarkdown(page: Omit<LibraryWikiPage, "markdown">): string {
   };
   lines.push("", "## 业务");
   for (const b of page.businesses) {
-    lines.push("", `### ${b.name}${b.industryCategory ? ` · ${b.industryCategory}` : ""}${b.status === "confirmed" ? "" : ` · ${b.status === "proposed" ? "待确认" : "未关联"}`}`);
+    lines.push("", `### ${b.name}${b.industryCategory ? ` · ${b.industryCategory}` : ""}${b.status === "disputed" ? " · 类别未定（两次判断不一致）" : b.status === "unlinked" ? " · 未关联" : ""}`);
     for (const f of b.facts) lines.push(`- ${f.ticker} · ${f.business} · ${f.metric} · ${f.periodEnd} · ${f.value} · ${f.unit} · ${f.source}`);
     for (const e of b.sections) entry(e);
   }
