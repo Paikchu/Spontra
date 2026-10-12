@@ -43,13 +43,25 @@ export function higherIsBetter(ref: FindingRef): boolean {
   return "capital" in numerator && (numerator.capital === "operatingCashFlow" && "metric" in denominator && denominator.metric === "net" || numerator.capital === "cash" && "capital" in denominator && denominator.capital === "debt");
 }
 
-/** The change as the tile's note writes it: "+12.3%" for an amount, "+1.5 pp" for a rate or a margin, "+0.25x" for a multiple. */
-export function highlightChange(r: ResolvedEvidence): string | null {
-  if (r.delta == null) return null;
-  const sign = r.delta > 0 ? "+" : r.delta < 0 ? "−" : "", abs = Math.abs(r.delta);
+/** A change as a tile writes it: "+12.3%" for an amount, "+1.5 pp" for a rate or a margin, "+0.25x" for a multiple. */
+export function formatChange(delta: number, r: ResolvedEvidence): string {
+  const sign = delta > 0 ? "+" : delta < 0 ? "−" : "", abs = Math.abs(delta);
   if (r.current.unit === "percent") return `${sign}${abs.toFixed(1)} pp`;
   if (r.current.unit === "ratio") return ratioForm(r.evidence.ref) === "percent" ? `${sign}${(abs * 100).toFixed(1)} pp` : `${sign}${abs.toFixed(2)}x`;
   return `${sign}${abs.toFixed(abs >= 100 ? 0 : 1)}%`;
+}
+export const highlightChange = (r: ResolvedEvidence): string | null => r.delta == null ? null : formatChange(r.delta, r);
+
+/**
+ * Words that dramatise a movement or praise it instead of naming the figure. The tile's number and its change carry
+ * the news, so a title using one falls back to the figure's plain name.
+ */
+const EMPHASIS = new RegExp(String.raw`\b(?:(?:climb|jump|surge|soar|skyrocket|rocket|leap|vault|spike|balloon|swell|explode|boom|plunge|plummet|tumble|slump|sink|crater|tank|collapse|rise|fall|grow|accelerate|decelerate|outrun|outpace|eclipse|stay|remain|hold|keep|continue|turn|hit|reach|top|pass)(?:s|es|d|ed|ing)?|slip(?:s|ped|ping)?|slide[sd]?|sliding|dip(?:s|ped|ping)?|rose|risen|rising|fell|fallen|grew|grown|accelerating|decelerating|sank|sunk|leapt|strong|stronger|robust|stellar|impressive|massive|huge|dramatic|remarkable|record|sharp|sharply|steep|solid|healthy|blowout|unprecedented|soaring|booming)\b`, "i");
+
+/** The figure's own name, and "growth" or "change" when the large number is its change. */
+export function plainTitle(r: ResolvedEvidence, show: StatementHighlight["show"]): string {
+  if (show !== "change") return r.label.slice(0, 40);
+  return `${r.label} ${r.current.unit === "USD" ? "growth" : "change"}`.slice(0, 40);
 }
 
 export type VerifiedHighlight = StatementHighlight & { resolved: ResolvedEvidence };
@@ -58,7 +70,8 @@ export type WithheldHighlight = { view: FindingView; index: number; reasons: str
 
 /**
  * Keeps the tiles the data can stand behind: the figure belongs to the view, resolves at the report's quarter (with
- * its comparison when one is asked for), is not repeated within the view, and the title states no number.
+ * its comparison when one is asked for, and a measurable change when the change is the large number), and is not
+ * repeated within the view. A title that states a number or dramatises the move is replaced by the figure's plain name.
  */
 export function verifyHighlights(highlights: ReportHighlights, data: FindingData): { verified: VerifiedReportHighlights; withheld: WithheldHighlight[] } {
   const verified: VerifiedReportHighlights = { periodEnd: highlights.periodEnd, profit: [], cash: [], balance: [] };
@@ -70,12 +83,12 @@ export function verifyHighlights(highlights: ReportHighlights, data: FindingData
       const key = JSON.stringify(h.ref);
       if (refView(h.ref) !== view) reasons.push(`figure is not on the ${view} view`);
       if (seen.has(key)) reasons.push("figure repeated");
-      if (proseNumbers(h.title).length) reasons.push("title states a number");
       const resolved = resolveEvidence(data, { ref: h.ref, periodEnd: highlights.periodEnd, span: "quarter", ...(h.compare ? { compare: h.compare } : {}) });
       if (!resolved) reasons.push(h.compare ? `figure or its ${h.compare} comparison unresolved` : "figure unresolved");
+      if (h.show === "change" && resolved && resolved.delta == null) reasons.push("change shown without a measurable change");
       seen.add(key);
       if (reasons.length || !resolved) withheld.push({ view, index, reasons });
-      else verified[view].push({ ...h, resolved });
+      else verified[view].push({ ...h, title: proseNumbers(h.title).length || EMPHASIS.test(h.title) ? plainTitle(resolved, h.show) : h.title, resolved });
     });
   }
   return { verified, withheld };

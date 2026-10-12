@@ -4,7 +4,7 @@ import type { BusinessFlowQuarter } from "../../../shared/analysis-contract/busi
 import type { CapitalQuarter, CashFlowStatement } from "../../../shared/analysis-contract/capital-structure.ts";
 import type { FindingsPublication, ReportHighlights } from "../../../shared/analysis-contract/findings.ts";
 import { readFindingsPublication, resolveEvidence, type FindingData } from "../../../shared/analysis-runtime/findings.ts";
-import { highlightChange, highlightsFor, refView, verifyHighlights } from "../../../shared/analysis-runtime/highlights.ts";
+import { highlightChange, highlightsFor, plainTitle, refView, verifyHighlights } from "../../../shared/analysis-runtime/highlights.ts";
 import { buildHighlightTable } from "../src/findings/ledger.ts";
 import { mergeHighlights, writeHighlights } from "../src/findings/highlights.ts";
 
@@ -61,17 +61,31 @@ test("the highlight table holds the newest quarter and the five before it, by vi
 test("verification keeps resolvable tiles on their own view and drops the rest", () => {
   const highlights: ReportHighlights = {
     periodEnd: PERIOD,
-    profit: [{ ref: { nodeId: "cloud" }, title: "Cloud keeps accelerating", compare: "yoy" }, { ref: { capital: "capex" }, title: "Capex surges" }],
-    cash: [{ ref: { capital: "capex" }, title: "Capex surges", compare: "yoy" }, { ref: { capital: "capex" }, title: "Capex again" }, { ref: { capital: "freeCashFlow" }, title: "Free cash flow falls 50%" }],
-    balance: [{ ref: { capital: "debt" }, title: "Debt climbs", compare: "qoq" }, { ref: { nodeId: "missing" }, title: "Nothing" }],
+    profit: [{ ref: { nodeId: "cloud" }, title: "Cloud revenue growth", compare: "yoy", show: "change" }, { ref: { capital: "capex" }, title: "Capex" }],
+    cash: [{ ref: { capital: "capex" }, title: "Capital expenditures", compare: "yoy" }, { ref: { capital: "capex" }, title: "Capex again" }, { ref: { capital: "freeCashFlow" }, title: "Free cash flow", show: "change" }],
+    balance: [{ ref: { capital: "debt" }, title: "Total debt", compare: "qoq" }, { ref: { nodeId: "missing" }, title: "Nothing" }],
   };
   const { verified, withheld } = verifyHighlights(highlights, data);
-  assert.deepEqual(verified.profit.map(h => h.title), ["Cloud keeps accelerating"]);
-  assert.deepEqual(verified.cash.map(h => h.title), ["Capex surges"]);
-  assert.deepEqual(verified.balance.map(h => h.title), ["Debt climbs"]);
+  assert.deepEqual(verified.profit.map(h => h.title), ["Cloud revenue growth"]);
+  assert.deepEqual(verified.cash.map(h => h.title), ["Capital expenditures"]);
+  assert.deepEqual(verified.balance.map(h => h.title), ["Total debt"]);
   assert.deepEqual(withheld.map(w => `${w.view}:${w.index}`), ["profit:1", "cash:1", "cash:2", "balance:1"]);
-  assert.ok(withheld.find(w => w.view === "cash" && w.index === 2)!.reasons.includes("title states a number"));
+  assert.ok(withheld.find(w => w.view === "cash" && w.index === 2)!.reasons.includes("change shown without a measurable change"));
   assert.equal(highlightChange(verified.cash[0].resolved), "+100%");
+});
+
+test("a title that states a number or dramatises the move falls back to the figure's plain name", () => {
+  const highlights: ReportHighlights = {
+    periodEnd: PERIOD,
+    profit: [{ ref: { nodeId: "cloud" }, title: "Cloud infrastructure jumps", compare: "yoy", show: "change" }, { ref: { ratio: { numerator: { metric: "operating" }, denominator: { metric: "revenue" } } }, title: "Operating margin climbs", compare: "yoy" }],
+    cash: [{ ref: { capital: "capex" }, title: "Capex up 100%", compare: "yoy" }, { ref: { capital: "freeCashFlow" }, title: "Free cash flow stays negative" }],
+    balance: [{ ref: { capital: "debt" }, title: "Inventory turnover and holdings", compare: "qoq" }],
+  };
+  const { verified } = verifyHighlights(highlights, data);
+  assert.deepEqual(verified.profit.map(h => h.title), ["Cloud growth", "Operating margin"]);
+  assert.deepEqual(verified.cash.map(h => h.title), ["Capex", "Free cash flow"]);
+  assert.deepEqual(verified.balance.map(h => h.title), ["Inventory turnover and holdings"]);
+  assert.equal(plainTitle(verified.profit[1].resolved, "change"), "Operating margin change");
 });
 
 test("a view with fewer than two verified tiles keeps its fixed tiles", () => {
@@ -84,12 +98,12 @@ test("a view with fewer than two verified tiles keeps its fixed tiles", () => {
 
 test("the writer keeps only verified tiles, and earlier reports keep theirs", async () => {
   const model = async () => ({
-    profit: [{ ref: { nodeId: "cloud" }, title: "Cloud jumps", compare: "yoy" }, { ref: { metric: "nope" }, title: "Bad" }],
-    cash: [{ ref: { capital: "capex" }, title: "Capex surges", compare: "yoy" }],
+    profit: [{ ref: { nodeId: "cloud" }, title: "Cloud revenue growth", compare: "yoy", show: "change" }, { ref: { metric: "nope" }, title: "Bad" }],
+    cash: [{ ref: { capital: "capex" }, title: "Capex", compare: "yoy" }],
     balance: "not a list",
   });
   const { highlights } = await writeHighlights({ ticker: "TEST", companyName: "Test", periodEnd: PERIOD, table: buildHighlightTable(data, PERIOD), findings: [], data, model, stage: (_, callback) => callback() });
-  assert.deepEqual(highlights, { periodEnd: PERIOD, profit: [{ ref: { nodeId: "cloud" }, title: "Cloud jumps", compare: "yoy" }], cash: [{ ref: { capital: "capex" }, title: "Capex surges", compare: "yoy" }], balance: [] });
+  assert.deepEqual(highlights, { periodEnd: PERIOD, profit: [{ ref: { nodeId: "cloud" }, title: "Cloud revenue growth", compare: "yoy", show: "change" }], cash: [{ ref: { capital: "capex" }, title: "Capex", compare: "yoy" }], balance: [] });
   const older: ReportHighlights = { periodEnd: "2026-03-31", profit: [], cash: [], balance: [] }, stale: ReportHighlights = { periodEnd: PERIOD, profit: [], cash: [], balance: [] };
   assert.deepEqual(mergeHighlights(highlights, [stale, older])!.map(h => h.periodEnd), [PERIOD, "2026-03-31"]);
   assert.deepEqual(mergeHighlights(null, [stale, older])!.map(h => h.periodEnd), [PERIOD, "2026-03-31"]);

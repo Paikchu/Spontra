@@ -25,7 +25,7 @@ import { PoolChart, TONE_LABEL, toneColor } from "./PoolChart";
 import { Rail } from "./Sidebar";
 import type { FindingsPublication } from "@/shared/analysis-contract/findings";
 import type { FindingFundamentals, ResolvedEvidence, ResolvedValue } from "@/shared/analysis-runtime/findings";
-import { higherIsBetter, highlightChange, highlightsFor, ratioForm, type VerifiedHighlight } from "@/shared/analysis-runtime/highlights";
+import { formatChange, higherIsBetter, highlightChange, highlightsFor, ratioForm, type VerifiedHighlight } from "@/shared/analysis-runtime/highlights";
 import { anchorNodeNames, anchorPoolKeys, findingData, verifiedFindings } from "./findings-model";
 import { FindingsList } from "./FindingsList";
 import { LensPanel } from "./LensPanel";
@@ -141,13 +141,22 @@ function highlightValue(v: number | null, r: ResolvedValue, ref: ResolvedEvidenc
   return ratioForm(ref) === "percent" ? percent(v * 100) : `${v.toFixed(2)}×`;
 }
 
-/** The headline figures a model picked for this report and view; label, figure and change, each resolved from the data. */
+/**
+ * The headline figures a model picked for this report and view, each resolved from the data. The large number is the
+ * figure, or its change when the rate is the news; the note carries the other, and the label is left out of the note
+ * when the title already names it.
+ */
 function HighlightStats({ tiles }: { tiles: VerifiedHighlight[] }) {
   return <div className="stats" aria-live="polite">{tiles.map(tile => {
-    const r = tile.resolved, change = highlightChange(r);
-    const note = change ? `${r.label} · ${r.evidence.compare === "qoq" ? "QoQ" : "YoY"} ${change}`
-      : r.compare ? `${r.label} · ${r.compareLabel} ${highlightValue(r.compare.value, r.compare, tile.ref)}` : r.label;
+    const r = tile.resolved, change = highlightChange(r), basis = r.evidence.compare === "qoq" ? "QoQ" : "YoY";
+    const level = (v: ResolvedValue | null) => v ? highlightValue(v.value, v, tile.ref) : "";
     const tone = change && r.delta && higherIsBetter(tile.ref) ? r.delta > 0 ? "up" : "down" : undefined;
+    if (tile.show === "change" && r.delta != null) {
+      const note = `${level(r.current)}${r.compare ? ` · ${r.compareLabel} ${level(r.compare)}` : ""}`;
+      return <Stat key={JSON.stringify(tile.ref)} label={`${tile.title} · ${basis}`} value={r.delta} format={v => v == null ? "—" : formatChange(v, r)} note={note} tone={tone} />;
+    }
+    const named = tile.title.toLowerCase() === r.label.toLowerCase() ? "" : `${r.label} · `;
+    const note = change ? `${named}${basis} ${change}` : r.compare ? `${named}${r.compareLabel} ${level(r.compare)}` : named.slice(0, -3) || undefined;
     return <Stat key={JSON.stringify(tile.ref)} label={tile.title} value={r.current.value} format={v => highlightValue(v, r.current, tile.ref)} note={note} tone={tone} />;
   })}</div>;
 }

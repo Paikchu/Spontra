@@ -78,15 +78,17 @@ export type AnalysisFinding = {
 
 /**
  * A headline figure for one statement view, picked by the model because it moved against the five quarters before:
- * the model names the figure and the change in words; the page resolves the number and the comparison.
+ * the model names the figure and says whether its level or its change is the news; the page resolves both.
  */
 export type StatementHighlight = {
-  /** At most 40 characters, and no number: "Capex surges", "Cloud operating income jumps". */
+  /** A plain name of at most 40 characters, no number and no word of motion or emphasis: "Cloud infrastructure revenue growth". */
   title: string;
   /** Always read at the report's quarter. */
   ref: FindingRef;
-  /** The change the tile's note shows. */
+  /** The comparison the tile shows. */
   compare?: "yoy" | "qoq";
+  /** What the large number is: the figure itself (default), or its change against `compare` when the rate is the news. */
+  show?: "value" | "change";
 };
 
 /** One report's headline figures per statement view, most notable first. */

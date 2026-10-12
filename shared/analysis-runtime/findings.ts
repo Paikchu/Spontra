@@ -41,7 +41,7 @@ const finding = z.object({
   lens, pairWith: text(80).optional(),
   watch: z.object({ ref, condition: text(400), horizon: z.enum(["next_quarter", "fiscal_year"]), compare: compare.optional() }).optional(),
 });
-const highlight = z.object({ title: text(40), ref, compare: z.enum(["yoy", "qoq"]).optional() });
+const highlight = z.object({ title: text(40), ref, compare: z.enum(["yoy", "qoq"]).optional(), show: z.enum(["value", "change"]).optional() });
 export const reportHighlightsSchema = z.object({ periodEnd: date, profit: z.array(highlight).max(4), cash: z.array(highlight).max(4), balance: z.array(highlight).max(4) });
 export const findingsPublicationSchema = z.object({
   schemaVersion: z.literal("findings.v1"),

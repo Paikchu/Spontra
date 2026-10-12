@@ -22,7 +22,7 @@ import { outboxStatement } from "../pipeline/outbox.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 
 /** Changing the prompt or the ledger regenerates every company once. */
-export const FINDINGS_VERSION = "findings.writer.v7";
+export const FINDINGS_VERSION = "findings.writer.v8";
 export type FindingsWorkflowParams = { ticker: string; fingerprint: string };
 export type FindingsDeps = { model?: FindingsModel; fetcher?: typeof fetch };
 
