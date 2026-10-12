@@ -20,8 +20,8 @@ const r = (v: number) => Math.round(v * 10) / 10;
 /** Items that carry the story are never folded into "other" once they are visible at all; a deficit never is. */
 const KEEP: PoolTone[] = ["own", "debt", "customer", "equity", "returned"];
 
-/** When a side has more items than label slots fit, only its smallest supporting items fold into one, just enough to fit. */
-function fit(items: PoolItem[], room: number, total: number): PoolItem[] {
+/** When a side has more items than label slots fit, only its smallest supporting items fold into one, just enough to fit; the merged key names its side so both sides can fold. */
+function fit(items: PoolItem[], room: number, total: number, side: Placed["side"]): PoolItem[] {
   const capacity = Math.max(3, Math.floor((room + GAP) / (SLOT + GAP)));
   if (items.length <= capacity) return items;
   const keep = (i: PoolItem) => i.tone === "deficit" || (KEEP.includes(i.tone) && i.value >= total * 0.01);
@@ -29,13 +29,13 @@ function fit(items: PoolItem[], room: number, total: number): PoolItem[] {
   const fold = new Set(foldable.slice(0, items.length - capacity + 1).map(i => i.key));
   if (fold.size < 2) return items;
   const folded = items.filter(i => fold.has(i.key));
-  const merged: PoolItem = { key: "folded", label: `${folded.length} other items`, tone: "other", value: folded.reduce((s, i) => s + i.value, 0), lines: folded.map(i => ({ label: i.label, value: i.value })) };
+  const merged: PoolItem = { key: `folded-${side}`, label: `${folded.length} other items`, tone: "other", value: folded.reduce((s, i) => s + i.value, 0), lines: folded.map(i => ({ label: i.label, value: i.value })) };
   return [...items.filter(i => !fold.has(i.key)), merged];
 }
 
 function layoutPool(full: Pool, width: number, height: number, money: (v: number) => string) {
   const room = Math.max(120, height - TOP - BOTTOM);
-  const pool = { ...full, sources: fit(full.sources, room, full.total), uses: fit(full.uses, room, full.total) };
+  const pool = { ...full, sources: fit(full.sources, room, full.total, "source"), uses: fit(full.uses, room, full.total, "use") };
   const labelWidth = (item: PoolItem) => Math.max(estimateTextWidth(item.label, NAME), estimateTextWidth(money(item.value) + " 00%", VALUE, true));
   const side = Math.min(width * 0.3, Math.max(110, ...[...pool.sources, ...pool.uses].map(labelWidth)) + 14);
   const avail = Math.max(120, height - TOP - BOTTOM);
