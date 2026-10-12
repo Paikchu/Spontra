@@ -38,7 +38,7 @@ function TableView({ table }: { table: LibraryTable }) {
 
 /** Every company in the library, with how far its filings are split. */
 function Companies({ overview, onOpen }: { overview: LibraryOverview; onOpen: (ticker: string) => void }) {
-  if (!overview.companies.length) return <p className="fl-empty">文件库还没有公司。</p>;
+  if (!overview.companies.length) return <p className="fl-empty">无公司</p>;
   return <div className="fl-scroll"><table className="fl-list">
     <thead><tr><th>公司</th><th>文件</th><th>最新申报</th><th>无法读取</th><th>标题缺业务部门</th><th /></tr></thead>
     <tbody>{overview.companies.map(c => <tr key={c.ticker} tabIndex={0} onClick={() => onOpen(c.ticker)} onKeyDown={e => { if (e.key === 'Enter') onOpen(c.ticker); }}>
@@ -52,7 +52,7 @@ function Companies({ overview, onOpen }: { overview: LibraryOverview; onOpen: (t
 
 /** A company's filings newest first, grouped by year; each row opens that filing. */
 function Filings({ filings, onOpen }: { filings: Filing[]; onOpen: (accession: string) => void }) {
-  if (!filings.length) return <p className="fl-empty">这家公司还没有拆分的 SEC 文件。</p>;
+  if (!filings.length) return <p className="fl-empty">无已拆分 SEC 文件</p>;
   const years = [...new Set(filings.map(f => f.head.filedAt.slice(0, 4)))];
   return <div className="fl-scroll fl-timeline">
     <p className="fl-caption">{filings.length} 份申报 · {filings.reduce((n, f) => n + f.docs.length, 0)} 个文件 · 最早 {day(filings.at(-1)!.head.filedAt)}</p>
@@ -77,27 +77,27 @@ function FilingDocuments({ filing, documentId, sectionId, onDocument, onSection,
   const shown = detail?.document.documentId === documentId ? detail : null;
   const reading = section?.section.sectionId === sectionId ? section : null;
   const document = filing.docs.find(d => d.documentId === documentId) ?? filing.head;
-  const rerun = () => void adminApi(`library/documents/${documentId}/rerun`, { method: 'POST', body: '{}' }).then(() => setNotice('已重新排入拆解，约一分钟后刷新查看。')).catch(fail);
+  const rerun = () => void adminApi(`library/documents/${documentId}/rerun`, { method: 'POST', body: '{}' }).then(() => setNotice('已重新排队')).catch(fail);
   const cards = new Map(shown?.cards.map(c => [c.sectionId, c]));
   return <>
     <header className="fl-header"><div>
       <p><em data-form={formKey(filing.head.form)}>{filing.head.form}</em>申报 {day(filing.head.filedAt)}{filing.head.reportDate ? ` · 报告期 ${filing.head.reportDate}` : ''}</p>
       <h2>{filing.accession}</h2></div>
-      <div className="fl-header-actions"><a href={document.documentUrl} target="_blank" rel="noreferrer">在 SEC 打开原文 ↗</a><button className="fl-rerun" onClick={rerun}><RotateCcw size={15} />重新拆解</button></div>
+      <div className="fl-header-actions"><a href={document.documentUrl} target="_blank" rel="noreferrer">SEC 原文 ↗</a><button className="fl-rerun" onClick={rerun}><RotateCcw size={15} />重新拆解</button></div>
     </header>
     <nav className="fl-views" aria-label="文件">{filing.docs.map(d => <button key={d.documentId} aria-pressed={d.documentId === documentId} onClick={() => onDocument(d.documentId)}>
       {docTypes[d.docType]}<small>{d.status === 'unreadable' ? '无法读取' : `${structures[d.structure]} · ${d.sections} 节 · ${d.passages} 段`}</small></button>)}</nav>
     {notice && <p className="fl-notice" role="status">{notice}</p>}
     {document.status === 'unreadable' ? <p className="fl-empty">无法读取：{reasons[document.failureReason ?? ''] ?? document.failureReason}</p>
-      : document.structureCheck.status === 'segments_missing' && <p className="fl-caption">业务部门未出现在标题中：{document.structureCheck.missing.join('、')}</p>}
-    {!shown ? <p className="fl-empty">正在读取文件结构…</p> : <div className="fl-columns">
+      : document.structureCheck.status === 'segments_missing' && <p className="fl-caption">标题缺少业务部门：{document.structureCheck.missing.join('、')}</p>}
+    {!shown ? <p className="fl-empty">加载中</p> : <div className="fl-columns">
       <ol className="fl-outline" aria-label="章节">{shown.outline.map(s => <li key={s.sectionId} style={{ paddingLeft: s.depth * 14 }}><button aria-pressed={sectionId === s.sectionId} onClick={() => onSection(s.sectionId)}>
         <span className="fl-title">{s.title}</span><span className="fl-meta"><em data-role={s.role}>{roles[s.role]}</em>{s.change !== 'unchanged' && <em data-change={s.change}>{changes[s.change]}</em>}{cards.has(s.sectionId) && <em data-card>卡片</em>}<small>{s.chars.toLocaleString()}</small></span></button></li>)}</ol>
       <div className="fl-reader">{reading ? <>
         <p className="fl-path">{reading.section.path.join(' › ')}</p>
         {reading.card && <div className="fl-card"><p><strong>索引卡</strong>{reading.card.topic && <em>{reading.card.topic}</em>}<small>{reading.card.model} · 推理 {reading.card.reasoning}</small></p>{reading.card.gist && <p>{reading.card.gist}</p>}{!!reading.card.entities.length && <p className="fl-entities">{reading.card.entities.map(e => <span key={e}>{e}</span>)}</p>}{!!reading.card.answers.length && <ul>{reading.card.answers.map(a => <li key={a}>{a}</li>)}</ul>}</div>}
         {reading.passages.map(p => <article key={p.passageId} className="fl-passage" data-change={p.change}><small>{p.passageId}{p.factRefs.length ? ` · ${p.factRefs.length} 个 XBRL 数字` : ''}{p.change !== 'unchanged' ? ` · ${changes[p.change]}` : ''}</small>{p.table ? <TableView table={p.table} /> : <p>{p.text}</p>}</article>)}
-      </> : <p className="fl-empty">{sectionId ? '正在读取…' : '选择左侧章节查看原文段落。'}</p>}</div>
+      </> : <p className="fl-empty">{sectionId ? '加载中' : '未选择章节'}</p>}</div>
     </div>}
   </>;
 }
@@ -145,9 +145,9 @@ export function FilingLibrary({ onAuthenticated, onUnauthorized }: { onAuthentic
       {overview && <div className="fl-stats"><span><strong>{overview.totals.ready}</strong>已拆解</span><span><strong>{overview.pending}</strong>待拆解</span><span><strong>{overview.totals.unreadable}</strong>无法读取</span><span><strong>{overview.totals.cards}</strong>索引卡</span>
         <small>{overview.totals.sections.toLocaleString()} 个章节 · {overview.totals.passages.toLocaleString()} 段 · 解析器 {overview.parserVersion}{overview.enabled ? '' : ' · 自动拆解未开启'}</small></div>}
       <nav className="fl-views" aria-label="视图"><button aria-pressed={tab === 'companies'} onClick={() => setTab('companies')}>公司</button><button aria-pressed={tab === 'find'} onClick={() => setTab('find')}>跨公司查找</button></nav>
-      {tab === 'find' ? <div className="fl-scroll"><FindPanel tickers={overview?.companies.map(c => c.ticker) ?? []} onOpen={openSection} fail={fail} /></div>
-        : overview ? <Companies overview={overview} onOpen={ticker => go({ ticker, accession: '', document: '', section: '' })} /> : <p className="fl-empty">正在读取…</p>}
-    </> : !list ? <p className="fl-empty">正在读取 {place.ticker} 的文件…</p>
+      {tab === 'find' ? <div className="fl-scroll"><FindPanel onOpen={openSection} fail={fail} /></div>
+        : overview ? <Companies overview={overview} onOpen={ticker => go({ ticker, accession: '', document: '', section: '' })} /> : <p className="fl-empty">加载中</p>}
+    </> : !list ? <p className="fl-empty">加载中</p>
       : filing && documentId ? <FilingDocuments filing={filing} documentId={documentId} sectionId={place.section}
           onDocument={document => go({ ...place, accession, document, section: '' })} onSection={section => go({ ...place, accession, document: documentId, section })} fail={fail} />
       : <Filings filings={filings} onOpen={a => go({ ticker: place.ticker, accession: a, document: '', section: '' })} />}
