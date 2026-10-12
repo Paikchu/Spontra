@@ -656,14 +656,10 @@ button { cursor: pointer; }
 }
 
 /* Product relationships are qualitative: constant strokes carry no financial amount. */
-.fc-controls { position: absolute; right: 8px; top: 8px; display: flex; gap: 4px; z-index: 2; }
 .fc-svg { touch-action: none; cursor: grab; }
 @keyframes product-enter { from { opacity: 0; } to { opacity: 1; } }
 
 .fc-svg { overflow: hidden; }
-.fc-controls button { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--foreground); padding: 5px 9px; font: inherit; font-size: 12px; cursor: pointer; }
-.fc-controls button:hover { background: var(--surface-raised); }
-.fc-controls button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 
 /* Business copy sits beside the canvas at page scale; the Sankey refits to the remaining width and the stage keeps its height. */
 .fc[data-products] { grid-template-columns: clamp(300px, 31%, 390px) minmax(0, 1fr); gap: clamp(12px, 1.4vw, 20px); }
@@ -705,7 +701,6 @@ button { cursor: pointer; }
 }
 
 @media (max-width: 960px) {
-  .fc-controls { left: 8px; right: auto; }
   .fc-svg { touch-action: pan-x pan-y; cursor: auto; }
 }
 

@@ -94,16 +94,16 @@ export function alternate(found: FoundSection[]): FoundSection[] {
 /**
  * Sections across companies: exact matches on card topic, entity, title words, a business or a cross-company
  * category from the index, then, for a natural-language question, sections found by meaning through AI Search.
- * A category or business reads confirmed links only, unless proposed ones are asked for.
+ * A category reads the links whose category was verified by review or set by an admin.
  */
 export async function libraryFindAcross(env: SecPipelineEnv, request: {
   tickers?: string[]; topic?: string; entity?: string; keywords?: string; canonical?: LibraryCanonical; question?: string;
-  category?: IndustryCategory; businessKey?: string; includeProposed?: boolean; limit?: number;
+  category?: IndustryCategory; businessKey?: string; limit?: number;
 }): Promise<LibraryFindResult> {
   const db = env.DB!, limit = request.limit ?? 20;
   let tickers = request.tickers, sectionIds: string[] | undefined;
   if (request.category || request.businessKey) {
-    const links = (await readLinks(db, { category: request.category, includeProposed: request.includeProposed }))
+    const links = (await readLinks(db, { category: request.category }))
       .filter(l => (!request.businessKey || l.businessKey === request.businessKey) && (!tickers?.length || tickers.includes(l.ticker)));
     sectionIds = links.flatMap(l => l.sectionIds);
     tickers = [...new Set(links.map(l => l.ticker))];
@@ -142,10 +142,10 @@ export async function libraryFactRows(db: D1Database, ticker: string, options: {
   return rows;
 }
 
-/** The same numbers across companies: for a category, the businesses linked to it (confirmed unless asked otherwise). */
-export async function libraryFactsAcross(db: D1Database, request: { tickers?: string[]; category?: IndustryCategory; includeProposed?: boolean; quarters?: number }): Promise<LibraryFactRow[]> {
+/** The same numbers across companies: for a category, the businesses whose link carries it. */
+export async function libraryFactsAcross(db: D1Database, request: { tickers?: string[]; category?: IndustryCategory; quarters?: number }): Promise<LibraryFactRow[]> {
   if (!request.category) return (await Promise.all((request.tickers ?? []).map(t => libraryFactRows(db, t, request)))).flat();
-  const links = (await readLinks(db, { category: request.category, includeProposed: request.includeProposed })).filter(l => l.flowNodeId && (!request.tickers?.length || request.tickers.includes(l.ticker)));
+  const links = (await readLinks(db, { category: request.category })).filter(l => l.flowNodeId && (!request.tickers?.length || request.tickers.includes(l.ticker)));
   const byTicker = new Map<string, Set<string>>();
   for (const l of links) byTicker.set(l.ticker, (byTicker.get(l.ticker) ?? new Set()).add(l.flowNodeId!));
   return (await Promise.all([...byTicker].map(async ([ticker, nodes]) => (await libraryFactRows(db, ticker, request)).filter(r => r.flowNodeId && nodes.has(r.flowNodeId))))).flat();

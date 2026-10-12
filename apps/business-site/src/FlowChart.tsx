@@ -1,5 +1,4 @@
 
-import { Button } from "@/packages/web/src/ui/button";
 import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { FinancialGraph } from "@/packages/web/src/model/business-flow-sankey";
 import { estimateTextWidth, layoutInfographic, type InfographicGeometry, type InfographicLayout, type PlacedLink, type PlacedNode } from "@/packages/web/src/model/business-flow-layout";
@@ -380,7 +379,6 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
 
   // The explanation is page text beside the canvas, not part of the scaled drawing: opening it narrows the pane and the Sankey refits.
   return <div className="fc" data-products={expanded || undefined} data-mind={mind ? "" : undefined} style={{ "--ratio": `${worldW} / ${worldH}`, "--mobile-width": `${Math.ceil(worldW * SCREEN_VALUE_PX / (21 * k))}px` } as CSSProperties} onMouseLeave={() => { setTip(null); onHover(null); }}>
-    {productBusiness && <div className="fc-controls"><Button variant="outline" size="sm" onClick={() => flyTo(focusCamera)}>Focus business</Button></div>}
     {expanded && productTarget && <aside key={productBusiness} className="fc-business-details" aria-label={`${productTarget.label} business details`}>
       <div className="fc-business-scroll" tabIndex={0} data-scrolling={scrolling || undefined} onScroll={revealScrollbar}>{businessDetails}</div>
     </aside>}

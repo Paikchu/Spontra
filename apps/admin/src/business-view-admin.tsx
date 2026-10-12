@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { ArrowLeft, ChevronRight, FileStack, LayoutGrid, ListChecks, LoaderCircle, LogOut, Network, ShieldCheck, Sparkles } from "lucide-react";
+import { ArrowUpRight, ChevronRight, FileStack, ListChecks, LoaderCircle, LogOut, Moon, Network, ShieldCheck, Sparkles, Sun } from "lucide-react";
 import Link from "@/packages/web/src/navigation";
 import { adminApi } from "./admin-api";
 import { BusinessMapCompanies } from "./business-map-companies";
@@ -9,17 +9,19 @@ import { AiRuns } from "./ai-runs";
 import { FinancialMaintenance } from "./financial-maintenance";
 
 type Section = "whitelist" | "financials" | "filings" | "business" | "findings";
-type Page = { path: string; title: string; nav?: Section };
+type Page = { path: string; title: string; summary: string; nav?: Section };
 
 /** Every page of the BusinessView admin. Financials is a drill-down from the whitelist, so it has no entry of its own. */
 const PAGES: Record<Section, Page> = {
-  whitelist: { path: "/admin/whitelist", title: "白名单管理" },
-  financials: { path: "/admin/financials", title: "财报与更新记录", nav: "whitelist" },
-  filings: { path: "/admin/filings", title: "SEC 文件拆分" },
-  business: { path: "/admin/business", title: "公司业务板块" },
-  findings: { path: "/admin/findings", title: "公司要点" },
+  whitelist: { path: "/admin/whitelist", title: "白名单管理", summary: "管理 BusinessView 覆盖的公司，跟踪数据准备与采集问题" },
+  financials: { path: "/admin/financials", title: "财报与更新记录", summary: "阅读已采集的报表，查看或停止数据更新任务", nav: "whitelist" },
+  filings: { path: "/admin/filings", title: "SEC 文件拆分", summary: "从公司进入它的申报时间线，再进入单份申报的文件、章节、段落和索引卡" },
+  business: { path: "/admin/business", title: "公司业务板块", summary: "查询每家公司的业务板块数据、业务脑图、业务解读与业务主线" },
+  findings: { path: "/admin/findings", title: "公司要点", summary: "查看每家公司的要点版本与生成记录，必要时重新生成" },
 };
 const NAV: Array<[Section, typeof ListChecks]> = [["whitelist", ListChecks], ["filings", FileStack], ["business", Network], ["findings", Sparkles]];
+/** Ink is the default, as on BusinessView; paper is a per-viewer choice. main.tsx applies it before the first paint. */
+export const THEME_KEY = "businessview-admin-theme";
 /** Paths of the earlier admin, kept so bookmarks land on the page that replaced them. */
 const LEGACY: Record<string, Section> = { "/admin/business-map": "whitelist", "/admin/library": "filings" };
 
@@ -39,6 +41,12 @@ export function BusinessViewAdmin({ mapOrigin = "" }: { mapOrigin?: string }) {
   const [loginBusy, setLoginBusy] = useState(false);
   const [error, setError] = useState("");
   const page = PAGES[section];
+  const [light, setLight] = useState(() => typeof document !== "undefined" && !document.documentElement.classList.contains("dark"));
+  function toggleTheme() {
+    const next = !light;
+    setLight(next); document.documentElement.classList.toggle("dark", !next);
+    try { localStorage.setItem(THEME_KEY, next ? "light" : "dark"); } catch { /* Private window. */ }
+  }
   useEffect(() => {
     // An old path is replaced by its page's own, keeping the company it named.
     const { pathname, search } = window.location;
@@ -46,6 +54,8 @@ export function BusinessViewAdmin({ mapOrigin = "" }: { mapOrigin?: string }) {
     const ticker = new URLSearchParams(search).get("ticker");
     try { window.history.replaceState(null, "", `${PAGES[section].path}${ticker ? `?${new URLSearchParams({ ticker })}` : ""}`); } catch { /* Sandboxed preview. */ }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Pages push their own levels into history; back and forward also move between pages.
+  useEffect(() => { const onPop = () => setSection(initialSection()); window.addEventListener("popstate", onPop); return () => window.removeEventListener("popstate", onPop); }, []);
 
   function navigate(next: Section, search = "") {
     setSection(next); setError("");
@@ -66,16 +76,20 @@ export function BusinessViewAdmin({ mapOrigin = "" }: { mapOrigin?: string }) {
 
   return <div className="report-admin">
     <aside className="ra-sidebar">
-      <a className="ra-brand" href={PAGES.whitelist.path}><span><LayoutGrid size={21} /></span>BusinessView</a>
-      <nav aria-label="后台导航">{NAV.map(([key, Icon]) => <button key={key} aria-current={(page.nav ?? section) === key ? "page" : undefined} onClick={() => navigate(key)}><Icon size={19} />{PAGES[key].title}</button>)}</nav>
-      <div className="ra-sidebar-bottom"><Link href={`${mapOrigin}/`}><ArrowLeft size={17} />打开 BusinessView</Link><div><ShieldCheck size={23} /><span>管理员</span>{authenticated && <button onClick={() => void logout()} aria-label="退出登录" title="退出登录"><LogOut size={17} /></button>}</div></div>
+      <a className="ra-brand" href={PAGES.whitelist.path}><span className="ra-brand-dot" aria-hidden="true" />BusinessView<small>后台</small></a>
+      <nav aria-label="BusinessView 后台导航">{NAV.map(([key, Icon]) => <button key={key} aria-current={(page.nav ?? section) === key ? "page" : undefined} onClick={() => navigate(key)}><Icon size={19} />{PAGES[key].title}</button>)}</nav>
+      <div className="ra-sidebar-bottom">
+        <button onClick={toggleTheme} aria-pressed={light}>{light ? <Moon size={16} /> : <Sun size={16} />}{light ? "深色" : "浅色"}</button>
+        <Link href={`${mapOrigin}/`}><ArrowUpRight size={16} />打开 BusinessView</Link>
+        <div className="ra-account"><ShieldCheck size={18} /><span>管理员</span>{authenticated && <button onClick={() => void logout()} aria-label="退出登录" title="退出登录"><LogOut size={16} /></button>}</div>
+      </div>
     </aside>
     <main className="ra-main">
       <header className={`ra-page-header${section === "whitelist" ? " ra-business-map-header" : ""}${section === "financials" && authenticated !== false ? " ra-financial-header" : ""}`}>
-        <div><p>BusinessView <ChevronRight size={13} />{page.nav && <>{PAGES[page.nav].title} <ChevronRight size={13} /></>}{page.title}</p><h1>{page.title}</h1></div>
+        <div><p>BusinessView <ChevronRight size={13} />{page.nav && <>{PAGES[page.nav].title} <ChevronRight size={13} /></>}{page.title}</p><h1>{page.title}</h1><span>{page.summary}</span></div>
         {authenticated && <div className="ra-header-actions"><button className="ra-mobile-logout" onClick={() => void logout()} aria-label="退出登录"><LogOut size={17} /></button></div>}
       </header>
-      {authenticated === false ? <div className="ra-login"><ShieldCheck size={34} /><h2>登录</h2><form onSubmit={event => void login(event)}><label htmlFor="admin-key">管理密码</label><input id="admin-key" type="password" autoComplete="current-password" value={key} onChange={event => setKey(event.target.value)} required /><button className="ra-primary" disabled={loginBusy || !key}>{loginBusy && <LoaderCircle className="ra-spin" size={16} />}{loginBusy ? "登录中" : "登录"}</button></form>{error && <p role="alert" className="ra-error">{error}</p>}</div>
+      {authenticated === false ? <div className="ra-login"><ShieldCheck size={34} /><h2>登录 BusinessView 后台</h2><p>使用专用管理密码登录。</p><form onSubmit={event => void login(event)}><label htmlFor="admin-key">管理密码</label><input id="admin-key" type="password" autoComplete="current-password" value={key} onChange={event => setKey(event.target.value)} required placeholder="输入管理密码" /><button className="ra-primary" disabled={loginBusy || !key}>{loginBusy && <LoaderCircle className="ra-spin" size={16} />}{loginBusy ? "正在登录" : "登录后台"}</button></form>{error && <p role="alert" className="ra-error">{error}</p>}<small>登录有效期 8 小时，密码不会保存在浏览器本地存储。</small></div>
         : <>
           {error && <div className="ra-error ra-error-banner" role="alert">{error}</div>}
           {section === "whitelist" ? <BusinessMapCompanies {...auth} />
