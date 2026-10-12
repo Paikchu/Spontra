@@ -3,6 +3,7 @@ import { treeLibrary } from "../filing-library/tree-source.ts";
 import type { BusinessExplainerResponse } from "../../../../shared/analysis-contract/business-explainer.ts";
 import type { PublicBusinessFlow } from "../../../../shared/analysis-contract/business-flow.ts";
 import { readBusinessExplainer } from "../../../../shared/analysis-runtime/business-explainer.ts";
+import { issuerNames } from "../../../../shared/analysis-runtime/business-tree.ts";
 import { sha256 } from "../company-analysis/api.ts";
 import { findSecurity } from "../catalog/security-directory.ts";
 import { assertTrackedTicker, requireDb } from "../core.ts";
@@ -17,7 +18,7 @@ import { nodeHint, runBusinessExplainer, type ExplainerNode } from "./agent.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
 
 /** Changing the prompt or output contract regenerates every company once. */
-export const BUSINESS_EXPLAINER_VERSION = "business-explainer.sections.v4";
+export const BUSINESS_EXPLAINER_VERSION = "business-explainer.sections.v5";
 export const businessExplainerCacheKey = (ticker: string) => `business-explainer:v1:${ticker}`;
 export type BusinessExplainerParams = { ticker: string; fingerprint: string };
 
@@ -66,7 +67,7 @@ export async function executeBusinessExplainerWorkflow(params: BusinessExplainer
   // The business list changed after scheduling; the next sweep starts a run for the new list.
   if (input.fingerprint !== params.fingerprint) return { status: "superseded" };
   const explainer = await runBusinessExplainer({
-    ticker: params.ticker, companyName: findSecurity(params.ticker)?.name ?? params.ticker, nodes: input.nodes,
+    ticker: params.ticker, companyName: issuerNames(findSecurity(params.ticker)?.name ?? params.ticker)[0]!, nodes: input.nodes,
     filings: input.filings, search: researchSearch(env), modelVersion, fingerprint: params.fingerprint, now,
     filingLibrary: treeLibrary(requireDb(env), params.ticker, input.filings),
     model: (stage, system, payload) => callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, 5 * 60_000, true, { reasoning: reasoningFor(env, "explainer") }),

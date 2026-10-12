@@ -1,5 +1,6 @@
 import { reasoningFor } from "../ai-config.ts";
 import type { ExplainerSource } from "../../../../shared/analysis-contract/business-explainer.ts";
+import { issuerNames } from "../../../../shared/analysis-runtime/business-tree.ts";
 import { readFindingFundamentals, type FindingData } from "../../../../shared/analysis-runtime/findings.ts";
 import { sha256 } from "../company-analysis/api.ts";
 import { D1CompanyAnalysisRepository } from "../company-analysis/repository.ts";
@@ -77,7 +78,7 @@ export async function executeFindingsWorkflow(params: FindingsWorkflowParams, st
   if (!input || input.fingerprint !== params.fingerprint) return { status: "superseded" as const };
   const model: FindingsModel = deps.model ?? ((stage, system, payload) => callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, MODEL_BUDGET_MS, true, { reasoning: reasoningFor(env, "findings") }));
   const outcome = await writeFindings({
-    ticker: params.ticker, companyName: findSecurity(params.ticker)?.name ?? params.ticker, ledger: input.ledger, context: input.context, data: input.data,
+    ticker: params.ticker, companyName: issuerNames(findSecurity(params.ticker)?.name ?? params.ticker)[0]!, ledger: input.ledger, context: input.context, data: input.data,
     model, modelVersion, fingerprint: params.fingerprint, now, stage: (name, callback) => step.do(`findings-${name}`, callback),
   });
   // Nothing verifiable is not a publication: whatever is stored (an authored set, an older run) keeps serving.

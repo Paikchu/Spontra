@@ -168,3 +168,14 @@ test("a single-business company is named as filings name it, so its anchors can 
   assert.equal(anchors("application services", branchAncestors(segment, "Cloudflare, Inc. Class A Common Stock", true), passage), true);
   assert.equal(anchors("application services", branchAncestors(segment, "Cloudflare, Inc. Class A Common Stock", false), passage), false);
 });
+
+test("a follow-up query is anchored on the issuer's names, never on the listing title", async () => {
+  const { issuerNames } = await import("../../../shared/analysis-runtime/business-tree.ts");
+  const { companyQuery } = await import("../src/business-explainer/agent.ts");
+  const company = issuerNames("Cloudflare, Inc. Class A Common Stock")[0]!;
+  assert.equal(companyQuery("cloudflare workers pricing per request", company), "cloudflare workers pricing per request");
+  assert.equal(companyQuery("edge compute pricing per request", company), "Cloudflare, Inc. edge compute pricing per request");
+  assert.equal(companyQuery("JPMorgan Chase card interchange fees", issuerNames("JP Morgan Chase & Co. Common Stock")[0]!), "JPMorgan Chase card interchange fees");
+  // A leading article is not the company's name.
+  assert.equal(companyQuery("how the platform charges advertisers", issuerNames("The Trade Desk, Inc. Class A Common Stock")[0]!), "The Trade Desk, Inc. how the platform charges advertisers");
+});

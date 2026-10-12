@@ -1,5 +1,6 @@
 import type { BusinessExplainer, BusinessExplanation, ExplainerClaim, ExplainerSource } from "../../../../shared/analysis-contract/business-explainer.ts";
 import { completeProductName, harnessSections, SECTION_LIMITS } from "../../../../shared/analysis-runtime/business-explainer.ts";
+import { compactName, issuerNames } from "../../../../shared/analysis-runtime/business-tree.ts";
 import type { WebSearchService } from "../web-search/service.ts";
 import type { SearchHit } from "../web-search/types.ts";
 
@@ -201,15 +202,19 @@ async function planFollowUps(input: { companyName: string; ticker: string; model
       businesses: [group.root, ...group.children].map(n => ({ nodeId: n.nodeId, name: n.name, englishName: n.hint })),
       materials: documents.map(d => ({ title: d.title, url: d.url, snippet: d.snippet, excerpt: d.excerpt?.slice(0, 2_000) ?? null })),
     });
-    const token = input.companyName.toLowerCase().split(/[^a-z0-9]+/).find(w => w.length >= 3) ?? input.companyName.toLowerCase();
     const queries = (Array.isArray(plan.queries) ? plan.queries : []).flatMap(q => {
       const raw = q && typeof q === "object" ? (q as Record<string, unknown>).query : null;
       const query = typeof raw === "string" ? raw.replace(/\s+/g, " ").trim().slice(0, 200) : "";
-      if (query.length < 8) return [];
-      return [query.toLowerCase().includes(token) ? query : `${input.companyName} ${query}`];
+      return query.length < 8 ? [] : [companyQuery(query, input.companyName)];
     });
     return [...new Set(queries)].slice(0, MAX_FOLLOW_UPS);
   } catch { return []; }
+}
+
+/** A query that names the issuer, in any form its filings use, stands as written; any other is prefixed with the company. */
+export function companyQuery(query: string, companyName: string): string {
+  const text = compactName(query);
+  return issuerNames(companyName).some(name => text.includes(compactName(name))) ? query : `${companyName} ${query}`;
 }
 
 /** Runs the planned queries: the best new page per query is read, a further result kept as a snippet. */

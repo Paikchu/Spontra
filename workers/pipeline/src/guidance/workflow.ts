@@ -5,6 +5,7 @@ import {
   attachRevenueContext, consolidateGuidance, readGuidancePublication, resolvePeriodEnd,
   type FiscalAnchor, type GuidanceEntry, type VerifiedGuidance,
 } from "../../../../shared/analysis-runtime/guidance.ts";
+import { issuerNames } from "../../../../shared/analysis-runtime/business-tree.ts";
 import { findSecurity } from "../catalog/security-directory.ts";
 import { assertTrackedTicker, requireDb } from "../core.ts";
 import { readCompletePublicationForTicker } from "../financial-data/publication.ts";
@@ -162,7 +163,7 @@ export async function executeGuidanceWorkflow(params: GuidanceWorkflowParams, st
     const quarter = period?.fiscalPeriod === "FY" ? 4 : Number(period?.fiscalPeriod.slice(1));
     const ref: TranscriptRef | null = period && [1, 2, 3, 4].includes(quarter)
       ? { fiscalYear: period.fiscalYear, quarter: quarter as TranscriptRef["quarter"], date: params.eventDate } : null;
-    return { cikNumber: filing.cikNumber, companyName: findSecurity(params.ticker)?.name ?? feed?.company?.name ?? params.ticker, ref };
+    return { cikNumber: filing.cikNumber, companyName: issuerNames(findSecurity(params.ticker)?.name ?? feed?.company?.name ?? params.ticker)[0]!, ref };
   });
 
   const saveAll = async (found: FoundMaterial[]) => {
