@@ -29,3 +29,14 @@ em[data-status]{font-style:normal;font-size:11px;padding:1px 7px;border-radius:9
 .fl-wiki-entry{display:flex;flex-direction:column;gap:6px;padding:8px 0}.fl-wiki-entry>small{font-size:11px;color:#64748b}.fl-gist{font-size:12px;color:#475569;background:#f8fafc;padding:6px 10px;border-radius:6px}
 .fl-wiki-entry blockquote{margin:0;padding:8px 12px;border-left:3px solid #cbd5e1;font-size:13px;line-height:1.65;white-space:pre-wrap;color:#1e293b}.fl-wiki-entry blockquote small{display:block;font-size:10px;color:#94a3b8;margin-bottom:2px}
 @media (max-width:760px){.fl-find{grid-template-columns:1fr 1fr}.fl-find label,.fl-find button{grid-column:auto}}
+.fl-timeline section{display:flex;flex-direction:column;gap:6px}.fl-timeline h3{font-size:15px;margin:6px 0 2px;position:sticky;top:0;background:#fff;padding:4px 0;z-index:1}
+.fl-timeline ol{list-style:none;margin:0 0 0 7px;padding:0 0 0 16px;border-left:2px solid #e2e8f0;display:flex;flex-direction:column}
+.fl-timeline li{display:grid;grid-template-columns:52px 64px minmax(0,1fr);gap:10px;align-items:start;padding:9px 0;border-bottom:1px solid #f1f5f9;position:relative}
+.fl-timeline li::before{content:"";position:absolute;left:-20px;top:15px;width:10px;height:10px;border-radius:50%;background:#fff;border:2px solid #94a3b8}
+.fl-timeline time{font-size:12px;color:#64748b;font-variant-numeric:tabular-nums;padding-top:2px}
+.fl-timeline em{font-style:normal;font-size:11.5px;font-weight:600;text-align:center;padding:2px 6px;border-radius:5px;background:#f1f5f9;color:#475569}
+.fl-timeline em[data-form="10-K"],.fl-timeline em[data-form="20-F"]{background:#e0e7ff;color:#3730a3}.fl-timeline em[data-form="10-Q"]{background:#dcfce7;color:#166534}.fl-timeline em[data-form="8-K"],.fl-timeline em[data-form="6-K"]{background:#fef3c7;color:#92400e}
+.fl-timeline li p{margin:0;font-size:13px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}.fl-timeline li p small{font-size:11px;color:#94a3b8;font-family:ui-monospace,monospace}
+.fl-timeline li span{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.fl-chip{border:1px solid #dbe3ee;background:#fff;border-radius:999px;padding:1px 9px;font-size:11.5px;color:#334155}.fl-chip:hover{border-color:#3549ee;color:#3549ee}.fl-chip[data-status=unreadable]{border-color:#f3c7cb;color:#b4343f;background:#fdf5f6}
+@media(max-width:760px){.fl-timeline li{grid-template-columns:44px minmax(0,1fr)}.fl-timeline li>div{grid-column:1/-1}}

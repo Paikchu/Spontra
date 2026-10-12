@@ -78,6 +78,6 @@ Pipeline 部署先应用并核对分析 D1 迁移，再发布 Worker。发布完
 
 - [财报 Pipeline](workers/pipeline/README.md)
 - [业务地图](apps/business-site/README.md)
-- [财报管理后台](docs/report-admin.md)
+- [BusinessView 后台](docs/businessview-admin.md)
 - [发现与事件](docs/findings-events-design.md)
 - [业绩指引](docs/guidance.md)

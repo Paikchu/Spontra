@@ -1,11 +1,7 @@
 import { createRoot } from "react-dom/client";
-import { ReportAdminDashboard } from "./report-admin-dashboard";
+import { BusinessViewAdmin } from "./business-view-admin";
 import { BUSINESS_MAP_ORIGIN } from "@/shared/admin-site";
 import "@/packages/web/src/styles/globals.css";
-import "@/packages/web/src/styles/earning-report.css";
-import "@/packages/web/src/report/report-blocks/report-content.css";
-import "@/packages/web/src/report/figures/figures.css";
-import "katex/dist/katex.min.css";
 import "@/packages/web/src/styles/spontra-ui.css";
 import "./report-admin.css";
-createRoot(document.getElementById("root")!).render(<ReportAdminDashboard mapOrigin={BUSINESS_MAP_ORIGIN} />);
+createRoot(document.getElementById("root")!).render(<BusinessViewAdmin mapOrigin={BUSINESS_MAP_ORIGIN} />);

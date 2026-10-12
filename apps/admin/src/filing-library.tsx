@@ -2,17 +2,19 @@ import { useEffect, useRef, useState } from 'react';
 import { RefreshCw, RotateCcw } from 'lucide-react';
 import type { LibraryDocumentDetail, LibraryDocumentSummary, LibraryOverview, LibrarySectionDetail, LibraryTable } from '@/shared/analysis-contract/filing-library';
 import { adminApi, AdminApiError } from './admin-api';
-import { FindPanel, LinksPanel, WikiPanel } from './filing-library-cross';
+import { FindPanel } from './filing-library-cross';
 import './filing-library.css';
 
-type View = 'documents' | 'links' | 'find' | 'wiki';
-const views: Array<[View, string]> = [['documents', '文件结构'], ['links', '业务主线'], ['wiki', '公司页面'], ['find', '跨公司查找']];
+type View = 'timeline' | 'documents' | 'find';
+const views: Array<[View, string]> = [['timeline', '时间线'], ['documents', '文件结构'], ['find', '跨公司查找']];
 
 const roles: Record<string, string> = { core: '正文', signal: '信号', boilerplate: '套话' };
 const changes: Record<string, string> = { new: '新增', changed: '有变化', unchanged: '未变' };
 const structures: Record<string, string> = { items: '按 Item', outline: '按标题', flat: '平铺' };
 const docTypes: Record<string, string> = { primary: '正文', press_release: '新闻稿', exhibit: '附件' };
 const reasons: Record<string, string> = { ARCHIVE_MISMATCH: '原始归档与指针不一致', NO_READABLE_TEXT: '没有可读文字', ARCHIVE_SOURCE_MISSING: '原始归档缺失' };
+/** A section opened from another page arrives as `?ticker=&document=&section=`. */
+function linked(name: 'ticker' | 'document' | 'section') { try { return new URLSearchParams(window.location.search).get(name) ?? ''; } catch { return ''; } }
 const day = (value: string) => value ? value.slice(0, 10) : '—';
 
 function TableView({ table }: { table: LibraryTable }) {
@@ -21,12 +23,29 @@ function TableView({ table }: { table: LibraryTable }) {
     {table.notes.map((n, i) => <p key={i} className="fl-note">{n}</p>)}</div>;
 }
 
+/** A company's SEC filings newest first, grouped by year: each filing with the documents it was split into. */
+function Timeline({ documents, onOpen }: { documents: LibraryDocumentSummary[]; onOpen: (documentId: string) => void }) {
+  const filings = new Map<string, LibraryDocumentSummary[]>();
+  for (const d of documents) filings.set(d.accessionNumber, [...filings.get(d.accessionNumber) ?? [], d]);
+  const rows = [...filings.values()].map(docs => ({ head: docs.find(d => d.docType === 'primary') ?? docs[0]!, docs })).sort((a, b) => b.head.filedAt.localeCompare(a.head.filedAt));
+  const years = [...new Set(rows.map(r => r.head.filedAt.slice(0, 4)))];
+  if (!rows.length) return <p className="fl-empty">这家公司还没有拆分的 SEC 文件。</p>;
+  return <div className="fl-panel fl-timeline">
+    <p className="fl-caption">{rows.length} 份申报 · {documents.length} 个文件 · 最早 {day(rows.at(-1)!.head.filedAt)}</p>
+    {years.map(year => <section key={year}><h3>{year}</h3><ol>{rows.filter(r => r.head.filedAt.startsWith(year)).map(({ head, docs }) => <li key={head.accessionNumber}>
+      <time>{day(head.filedAt).slice(5)}</time><em data-form={head.form.replace(/\/A$/, '')}>{head.form}</em>
+      <div><p>{head.reportDate ? `报告期 ${head.reportDate}` : '无报告期'}<small>{head.accessionNumber}</small></p>
+        <span>{docs.map(d => <button key={d.documentId} className="fl-chip" data-status={d.status} onClick={() => onOpen(d.documentId)} title={d.status === 'unreadable' ? reasons[d.failureReason ?? ''] ?? d.failureReason ?? '' : `${d.sections} 节 · ${d.passages} 段`}>{docTypes[d.docType]}{d.status === 'unreadable' ? ' · 无法读取' : ` · ${d.sections} 节`}</button>)}</span></div>
+    </li>)}</ol></section>)}
+  </div>;
+}
+
 /** The filing library: how far splitting is, which documents need a look, and each document's sections and passages as stored. */
 export function FilingLibrary({ onAuthenticated, onUnauthorized }: { onAuthenticated: () => void; onUnauthorized: () => void }) {
-  const [overview, setOverview] = useState<LibraryOverview | null>(null), [ticker, setTicker] = useState(''), [documents, setDocuments] = useState<LibraryDocumentSummary[]>([]);
-  const [documentId, setDocumentId] = useState(''), [detail, setDetail] = useState<LibraryDocumentDetail | null>(null), [sectionId, setSectionId] = useState('');
+  const [overview, setOverview] = useState<LibraryOverview | null>(null), [ticker, setTicker] = useState(() => linked('ticker')), [documents, setDocuments] = useState<LibraryDocumentSummary[]>([]);
+  const [documentId, setDocumentId] = useState(() => linked('document')), [detail, setDetail] = useState<LibraryDocumentDetail | null>(null), [sectionId, setSectionId] = useState('');
   const [section, setSection] = useState<LibrarySectionDetail | null>(null), [error, setError] = useState(''), [refresh, setRefresh] = useState(0), [notice, setNotice] = useState('');
-  const [view, setView] = useState<View>('documents'), pendingSection = useRef('');
+  const [view, setView] = useState<View>(() => linked('document') ? 'documents' : 'timeline'), pendingSection = useRef(linked('section'));
   const callbacks = useRef({ onAuthenticated, onUnauthorized }); callbacks.current = { onAuthenticated, onUnauthorized };
   const fail = (e: unknown) => { if (e instanceof AdminApiError && e.status === 401) callbacks.current.onUnauthorized(); else setError(e instanceof Error ? e.message : String(e)); };
   useEffect(() => { const c = new AbortController(); void adminApi<LibraryOverview>('library', { signal: c.signal }).then(r => { setOverview(r); setError(''); callbacks.current.onAuthenticated(); setTicker(t => t || r.companies[0]?.ticker || ''); }).catch(e => { if (!c.signal.aborted) fail(e); }); return () => c.abort(); }, [refresh]);
@@ -48,8 +67,8 @@ export function FilingLibrary({ onAuthenticated, onUnauthorized }: { onAuthentic
           <small>{d.structureCheck.status === 'segments_missing' ? `业务部门未出现在标题中：${d.structureCheck.missing.join('、')}` : d.accessionNumber}</small></span></button>)}</div>
     </section>
     <section className="ra-detail fl-detail" aria-label="文件库" aria-busy={view === 'documents' && !!documentId && !detail}>
-      <nav className="fl-views" aria-label="视图">{views.map(([v, label]) => <button key={v} aria-pressed={view === v} onClick={() => setView(v)}>{label}{v === 'links' || v === 'wiki' ? ` · ${ticker}` : ''}</button>)}</nav>
-      {view === 'links' ? <LinksPanel ticker={ticker} onOpen={open} fail={fail} /> : view === 'wiki' ? <WikiPanel ticker={ticker} onOpen={open} fail={fail} /> : view === 'find' ? <FindPanel tickers={overview?.companies.map(c => c.ticker) ?? []} onOpen={open} fail={fail} /> : <>
+      <nav className="fl-views" aria-label="视图">{views.map(([v, label]) => <button key={v} aria-pressed={view === v} onClick={() => setView(v)}>{label}{v === 'timeline' ? ` · ${ticker}` : ''}</button>)}</nav>
+      {view === 'timeline' ? <Timeline documents={documents} onOpen={d => { setView('documents'); setDocumentId(d); }} /> : view === 'find' ? <FindPanel tickers={overview?.companies.map(c => c.ticker) ?? []} onOpen={open} fail={fail} /> : <>
       {notice && <p className="fl-notice" role="status">{notice}</p>}
       {detail ? <>
         <header className="fl-header"><div><p>{detail.document.ticker} · {detail.document.form} · {docTypes[detail.document.docType]} · {structures[detail.document.structure]}</p><h2>{detail.document.accessionNumber}</h2><a href={detail.document.documentUrl} target="_blank" rel="noreferrer">在 SEC 打开原文 ↗</a></div><button className="fl-rerun" onClick={rerun}><RotateCcw size={15} />重新拆解</button></header>
