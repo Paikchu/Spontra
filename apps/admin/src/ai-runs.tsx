@@ -191,7 +191,7 @@ function Versions({ detail, onError }: { detail: AiCompanyDetail; onError: (erro
 const FINDING_KIND: Record<AnalysisFinding["kind"], string> = { risk: "风险", strength: "优势", shift: "变化", watch: "关注" };
 function FindingsView({ publication }: { publication: FindingsPublication }) {
   return <div className="ai-cards"><p className="ai-muted">报告期 {publication.periodEnd} · 模型 {publication.model}</p>{publication.findings.map(f => <article key={f.id} className="ai-card" data-kind={f.kind}>
-    <header><span className="ra-badge" data-status={f.kind === "risk" ? "failed" : f.kind === "strength" ? "reviewed" : "processing"}>{FINDING_KIND[f.kind]}</span><span className="ai-severity">{"●".repeat(f.severity)}{"○".repeat(3 - f.severity)}</span><strong>{f.title}</strong></header>
+    <header><span className="ra-badge" data-status={f.kind === "risk" ? "caution" : f.kind === "strength" ? "reviewed" : "processing"}>{FINDING_KIND[f.kind]}</span><span className="ai-severity">{"●".repeat(f.severity)}{"○".repeat(3 - f.severity)}</span><strong>{f.title}</strong></header>
     <p>{f.judgment.text}</p>
     <small>{f.evidence.length} 项证据{f.pairWith ? ` · 对照 ${f.pairWith}` : ""} · 视图 {f.anchors.view}{f.watch ? ` · 下期验证：${f.watch.condition}` : ""}</small>
   </article>)}</div>;

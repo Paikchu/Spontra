@@ -2,12 +2,16 @@
 
 入口：`https://spontra-admin.max-zhangyuchen.workers.dev/admin/whitelist`。后台只服务 BusinessView（业务地图），所有数据来自 `EARNING_REPORT_PIPELINE` 的分析数据库；Admin Worker 不直接读取分析 D1，数据服务异常时显示错误，不用示例数据兜底。
 
+## 视觉
+
+后台沿用 Spontra Design System（Ink & Highlighter），与 BusinessView 同一套 token（`packages/web/src/styles/globals.css`）：默认墨色主题，侧栏底部可切到纸色，选择保存在本浏览器。样式只引用语义 token，不写死颜色；每屏只有一个荧光笔主按钮，其余为描边药丸按钮；标签页为药丸分段控件，选中项反色；代码、accession 等标识用等宽字体。
+
 ## 导航
 
 | 页面 | 路径 | 内容 |
 |---|---|---|
-| 白名单管理 | `/admin/whitelist` | 加入或移出公司、数据准备进度、采集问题；卡片可进入「财报与更新记录」（`/admin/financials`，导航仍高亮白名单管理） |
-| SEC 文件拆分 | `/admin/filings` | 时间线（按申报日期列出每份申报及拆出的文件）、文件结构（章节、原文段落、索引卡、重新拆解）、跨公司查找 |
+| 白名单管理 | `/admin/whitelist` | 公司列表：状态、可展示期间、收入构成、采集进度、问题数与操作，展开一行查看各期收入构成、任务进度和采集问题；可进入「财报与更新记录」（`/admin/financials`，导航仍高亮白名单管理） |
+| SEC 文件拆分 | `/admin/filings` | 逐层进入：公司列表 → 该公司的申报时间线（按年份）→ 单份申报（正文、新闻稿、附件分标签，章节、原文段落、索引卡、重新拆解）；公司列表旁有跨公司查找。地址带 `?ticker=&accession=&document=&section=`，浏览器后退回到上一层 |
 | 公司业务板块 | `/admin/business` | 板块数据（文件库拼出的公司页面：分部数字与原文）、业务脑图、业务解读、业务主线（提议与独立复核自动核验，无需人工确认） |
 | 公司要点 | `/admin/findings` | 要点的当前版本、历史版本、运行记录与手动重新生成 |
 
