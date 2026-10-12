@@ -186,12 +186,19 @@ function Versions({ detail, onError }: { detail: AiCompanyDetail; onError: (erro
 }
 
 const FINDING_KIND: Record<AnalysisFinding["kind"], string> = { risk: "风险", strength: "优势", shift: "变化", watch: "关注" };
-function FindingsView({ publication }: { publication: FindingsPublication }) {
-  return <div className="ai-cards"><p className="ai-muted">报告期 {publication.periodEnd} · 模型 {publication.model}</p>{publication.findings.map(f => <article key={f.id} className="ai-card" data-kind={f.kind}>
+/** The lens agent's trace rides beside the publication for the operator: every turn of every finding, and what was accepted. */
+type LensTrace = { version: string; generatedAt: string; findings: Array<{ id: string; document: unknown; turns: Array<{ turn: number; thought: string; action: string; input: string; observation: string }>; warnings: string[] }> };
+function FindingsView({ publication }: { publication: FindingsPublication & { lensTrace?: LensTrace } }) {
+  const trace = (id: string) => publication.lensTrace?.findings.find(f => f.id === id);
+  return <div className="ai-cards"><p className="ai-muted">报告期 {publication.periodEnd} · 模型 {publication.model}{publication.lensTrace ? ` · Lens ${publication.lensTrace.version}` : ""}</p>{publication.findings.map(f => { const t = trace(f.id); return <article key={f.id} className="ai-card" data-kind={f.kind}>
     <header><span className="ra-badge" data-status={f.kind === "risk" ? "caution" : f.kind === "strength" ? "reviewed" : "processing"}>{FINDING_KIND[f.kind]}</span><span className="ai-severity">{"●".repeat(f.severity)}{"○".repeat(3 - f.severity)}</span><strong>{f.title}</strong></header>
     <p>{f.judgment.text}</p>
-    <small>{f.evidence.length} 项证据{f.pairWith ? ` · 对照 ${f.pairWith}` : ""} · 视图 {f.anchors.view}{f.watch ? ` · 下期验证：${f.watch.condition}` : ""}</small>
-  </article>)}</div>;
+    <small>{f.evidence.length} 项证据{f.pairWith ? ` · 对照 ${f.pairWith}` : ""} · 视图 {f.anchors.view} · 版面 {f.lens.type === "document" ? `${f.lens.document.rows.length} 行 · ${f.lens.document.rows.flatMap(r => r.cells.flat()).filter(b => b.kind === "chart").length} 张图` : f.lens.type}{f.watch ? ` · 下期验证：${f.watch.condition}` : ""}</small>
+    {t && <details className="ai-raw"><summary>Lens 生成过程 · {t.turns.length} 轮{t.document ? "" : " · 未采用，沿用原图"}{t.warnings.length ? ` · ${t.warnings.length} 条提示` : ""}</summary>
+      {t.warnings.length > 0 && <ul className="ai-lens-warnings">{t.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>}
+      <ol className="ai-tree-steps">{t.turns.map((s, i) => <li key={i}><p><b>{s.action}</b> {s.thought}</p><code>{s.input}</code><pre>{s.observation}</pre></li>)}</ol>
+    </details>}
+  </article>; })}</div>;
 }
 function ExplainerView({ explainer }: { explainer: BusinessExplainer }) {
   return <div className="ai-cards"><p className="ai-muted">模型 {explainer.model} · {explainer.sources.length} 个来源</p>{explainer.businesses.map(b => <article key={b.nodeId} className="ai-card">

@@ -63,3 +63,4 @@
 .ai-tree-steps code { display: block; color: var(--ink-muted); font-size: 11px; overflow-wrap: anywhere; }
 .ai-tree-steps pre { max-height: 220px; margin: 4px 0 0; }
 @media (max-width: 760px) { .ai-workspace { display: block; } .ai-workspace .ra-list { border-right: 0; border-bottom: 1px solid var(--line); } .ai-workspace .ra-list-scroll { max-height: 260px; } .ai-detail { max-height: none; } .ai-pad { padding: var(--space-4); } }
+.ai-lens-warnings { margin: 6px 0 10px; padding-left: 18px; color: var(--muted-foreground); font-size: 12px; }

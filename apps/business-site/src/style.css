@@ -763,10 +763,6 @@ button { cursor: pointer; }
 .lens-steps { display: inline-flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
 .lens-steps button { width: 28px; padding: 4px 0 !important; }
 .lens-close { width: 28px; padding: 4px 0 !important; }
-.lens-body { display: grid; grid-template-columns: minmax(0, 11fr) minmax(280px, 9fr); gap: 0 clamp(18px, 3vw, 40px); min-height: 0; }
-.lens-chart { position: relative; min-width: 0; min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr); }
-.lens-chart > * { min-height: 0; }
-.lens-text { min-width: 0; min-height: 0; overflow-y: auto; padding-right: 4px; font-size: 13px; line-height: 1.65; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 .lens-judgment { margin: 0 0 10px; color: var(--foreground); }
 .lens-evidence { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 14px; margin: 0 0 10px; padding: 8px 0; border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline); }
 .lens-row { display: contents; }
@@ -795,7 +791,6 @@ button { cursor: pointer; }
 .lens-stage[data-split] { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 clamp(16px, 2.5vw, 36px); }
 .lens-stage[data-split] .lens { height: clamp(260px, 38vh, 380px); }
 .lens-stage[data-split] .lens + .lens { padding-left: clamp(16px, 2.5vw, 36px); border-left: 1px solid var(--hairline); }
-.lens-stage[data-split] .lens-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 11fr) minmax(0, 9fr); gap: 8px 0; }
 .lens-stage[data-split] .lens-title h2 { font-size: 14px; }
 .lens[data-compact] .lens-basis { display: none; }
 @media (max-width: 1100px) { .lens-stage[data-split] { grid-template-columns: minmax(0, 1fr); } .lens-stage[data-split] .lens + .lens { padding-left: 0; border-left: 0; } }
@@ -806,55 +801,34 @@ button { cursor: pointer; }
 .lens-legend-rate { color: var(--faint); }
 .lens-empty { display: grid; place-items: center; height: 100%; color: var(--faint); font-size: 12px; }
 
-/* Grouped bars standing on a shared zero line; a negative figure hangs below it in the loss colour. */
-.lens-bars { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 6px; min-height: 0; }
-.lens-plot { position: relative; display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); gap: clamp(6px, 1.2vw, 18px); min-height: 0; padding: 20px 0 24px; }
-.lens-zero { position: absolute; left: 0; right: 0; border-top: 1px solid var(--border); margin-bottom: 24px; pointer-events: none; }
-.lens-col { position: relative; min-width: 0; }
-.lens-group { position: absolute; inset: 0; display: flex; justify-content: center; gap: 3px; }
-.lens-slot { position: relative; flex: 0 1 34px; min-width: 6px; height: 100%; }
-.lens-bar { position: absolute; left: 0; right: 0; border-radius: 3px 3px 0 0; transform-origin: bottom; animation: grow .7s var(--ease) both; animation-delay: calc(var(--i) * 60ms); transition: height .6s var(--ease), bottom .6s var(--ease), opacity .25s; }
-.lens-bar[data-negative] { transform-origin: top; border-radius: 0 0 3px 3px; }
-.lens-bar[data-missing] { background: var(--hairline); }
-.lens-col:not([data-current]) .lens-bar { opacity: .55; }
-.lens-col:hover .lens-bar { opacity: 1; }
-.lens-value { position: absolute; left: 50%; bottom: calc(100% + 4px); transform: translateX(-50%); font-size: 11px; font-weight: 600; color: var(--foreground); white-space: nowrap; font-variant-numeric: tabular-nums; text-shadow: 0 0 4px var(--background), 0 0 2px var(--background); animation: fade-in .3s ease both; }
-/* A negative bar hangs from the zero line, so its label sits above that line, clear of the period labels. */
-.lens-bar[data-negative] .lens-value { bottom: calc(100% + 4px); }
-.lens-period { position: absolute; top: calc(100% + 6px); left: -10px; right: -10px; display: flex; flex-direction: column; align-items: center; gap: 1px; font-size: 11px; color: var(--faint); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.lens-col[data-current] .lens-period { color: var(--foreground); }
-.lens-period b { font-size: 10.5px; font-weight: 600; }
-
-/* RPO ladder: the balance over quarters above, and the rungs of its expected conversion below. */
-.lens-ladder { display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: 8px; min-height: 0; }
-.lens-ladder .lens-bars { min-height: 0; }
-.lens-rungs { display: grid; gap: 5px; font-size: 11.5px; color: var(--muted-foreground); }
-.lens-rungs-title { font-weight: 600; color: var(--foreground); }
-.lens-rungs-bar { display: flex; height: 10px; gap: 2px; border-radius: 5px; overflow: hidden; }
-.lens-rungs-bar i { display: block; flex-basis: 0; background: color-mix(in srgb, var(--flow-profit) calc(100% - var(--i) * 22%), var(--background)); animation: grow-x .6s var(--ease) both; animation-delay: calc(var(--i) * 80ms); }
-.lens-rungs-bar i.lens-rung--rest, .lens-rungs-legend i.lens-rung--rest { background: repeating-linear-gradient(135deg, var(--hairline) 0 3px, transparent 3px 6px); border: 1px solid var(--hairline); }
-.lens-rungs-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-variant-numeric: tabular-nums; }
-.lens-rungs-legend span { display: inline-flex; align-items: center; gap: 6px; }
-.lens-rungs-legend i { width: 8px; height: 8px; border-radius: 2px; background: color-mix(in srgb, var(--flow-profit) calc(100% - var(--i) * 22%), var(--background)); }
-.lens-rungs-legend b { font-weight: 600; color: var(--foreground); }
-@keyframes grow-x { from { flex-grow: 0.001; } }
-
-/* Stacked shares: one area per business, the newest column's shares in the legend. */
-.lens-shares { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 6px; min-height: 0; }
-.lens-shares svg { width: 100%; height: 100%; min-height: 0; overflow: visible; }
-.lens-shares path { fill-opacity: .78; stroke: var(--background); stroke-width: 1; vector-effect: non-scaling-stroke; animation: fade-in .6s ease both; animation-delay: calc(var(--i) * 90ms); transition: fill-opacity .2s; }
-.lens-shares path:hover { fill-opacity: 1; }
-.lens-shares line { stroke: var(--background); stroke-opacity: .35; stroke-dasharray: 3 4; }
-.lens-axis { position: relative; height: 14px; font-size: 10.5px; color: var(--faint); font-variant-numeric: tabular-nums; }
-.lens-axis span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
-.lens-axis span[data-edge="start"] { transform: none; } .lens-axis span[data-edge="end"] { transform: translateX(-100%); }
-.lens-axis span:not([data-edge]):nth-child(even) { display: none; }
-
+/* A finding in focus holds the whole stage: tiles, chart, time axis and legend step aside, the document scrolls in their place. */
+.stage[data-focus="finding"] { grid-template-rows: minmax(0, 1fr); padding-bottom: 12px; }
+.stage[data-focus] .lens, .stage[data-focus] .lens-stage[data-split] .lens { height: auto; min-height: 0; margin-top: 0; padding-top: 2px; border-top: 0; }
+.stage[data-focus] .lens-stage[data-split] .lens + .lens { padding-left: clamp(16px, 2.5vw, 36px); border-left: 1px solid var(--hairline); }
+.lens-doc { container: lens-doc / inline-size; display: grid; align-content: start; gap: 18px 0; min-height: 0; overflow-y: auto; padding: 4px 6px 8px 0; font-size: 13px; line-height: 1.65; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.lens-doc-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px clamp(18px, 3vw, 40px); align-items: start; }
+.lens-doc-row[data-cells="2"] { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.lens-doc-row[data-cells="2"][data-lead="first"] { grid-template-columns: minmax(0, 11fr) minmax(280px, 9fr); }
+.lens-doc-row[data-cells="2"][data-lead="second"] { grid-template-columns: minmax(280px, 9fr) minmax(0, 11fr); }
+.lens-doc-cell { display: flex; flex-direction: column; gap: 12px; min-width: 0; container-type: inline-size; }
+.lens-doc-cell > * { margin: 0; }
+.lens-prose { color: var(--foreground); }
+/* The chart cell's height follows its width through the chart's aspect; the frame fills it exactly and never sizes itself. */
+.lens-chart-cell { position: relative; height: clamp(200px, calc(100cqw * var(--aspect, .42)), min(420px, 52vh)); animation: rise .5s var(--ease) both; }
+.lens-chart-cell iframe, .lens-inline { display: block; width: 100%; height: 100%; border: 0; background: transparent; color-scheme: normal; opacity: 0; transition: opacity .3s ease; }
+.lens-chart-cell[data-ready] iframe, .lens-chart-cell[data-ready] .lens-inline { opacity: 1; }
+.lens-inline svg { width: 100%; height: 100%; }
+.lens-chart-cell .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.lens-row[data-lit] dt, .lens-row[data-lit] dd b { color: var(--foreground); }
+.lens-row[data-lit] dt { font-weight: 600; }
+.lens-row dt, .lens-row dd b { transition: color .2s; }
+/* Two cells need room for both; in a narrow document (a phone, or one side of a comparison) they stack. */
+@container lens-doc (max-width: 680px) {
+  .lens-doc-row[data-cells="2"], .lens-doc-row[data-cells="2"][data-lead] { grid-template-columns: minmax(0, 1fr); }
+}
 @media (max-width: 960px) {
   .lens { height: auto; }
-  .lens-body { grid-template-columns: minmax(0, 1fr); gap: 12px; }
-  .lens-chart { height: 200px; }
-  .lens-text { max-height: 260px; }
+  .lens-doc { max-height: none; }
 }
 
 /* ---------- Home: search in the middle, the latest findings drifting beneath ---------- */

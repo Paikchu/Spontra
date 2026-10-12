@@ -36,7 +36,8 @@ export function checkSourceBoundary(file: string, source: string): string[] {
       if (argument && ts.isStringLiteral(argument)) dependency(argument.text);
       else errors.push(`${file}: nonliteral module loading bypasses ownership checks`);
     }
-    if (runtime && ts.isIdentifier(node) && /^(?:globalThis|window|document|navigator|localStorage|sessionStorage|indexedDB|fetch|XMLHttpRequest|WebSocket|Worker|D1Database|D1PreparedStatement|Workflow|R2Bucket|process|Deno|Bun|Buffer|crypto|setTimeout|setInterval|requestAnimationFrame)$/.test(node.text)) {
+    const propertyName = ts.isIdentifier(node) && node.parent && ((ts.isPropertyAccessExpression(node.parent) && node.parent.name === node) || ((ts.isPropertyAssignment(node.parent) || ts.isPropertySignature(node.parent) || ts.isPropertyDeclaration(node.parent)) && node.parent.name === node));
+    if (runtime && !propertyName && ts.isIdentifier(node) && /^(?:globalThis|window|document|navigator|localStorage|sessionStorage|indexedDB|fetch|XMLHttpRequest|WebSocket|Worker|D1Database|D1PreparedStatement|Workflow|R2Bucket|process|Deno|Bun|Buffer|crypto|setTimeout|setInterval|requestAnimationFrame)$/.test(node.text)) {
       errors.push(`${file}: shared runtime uses platform API ${node.text}`);
     }
     if (contract && (ts.isFunctionDeclaration(node) || ts.isClassDeclaration(node) || ts.isCallExpression(node) || ts.isNewExpression(node) || ts.isArrowFunction(node))) errors.push(`${file}: contract contains implementation code`);

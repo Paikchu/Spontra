@@ -18,11 +18,15 @@ import { buildHighlightTable, buildLedger, type Ledger } from "./ledger.ts";
 import { mergeHighlights, writeHighlights } from "./highlights.ts";
 import { authoredFindings, findingsCacheKey } from "./read.ts";
 import { writeFindings, type FindingsModel } from "./writer.ts";
+import { writeLensDocuments, type LensTrace } from "../lens/agent.ts";
+import { SecModelOutputError } from "../model-stream.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 
 /** Changing the prompt or the ledger regenerates every company once. */
-export const FINDINGS_VERSION = "findings.writer.v8";
+export const FINDINGS_VERSION = "findings.writer.v9";
+/** Changing the lens agent's prompt, grammar or harness redraws every company's findings once (through the findings fingerprint). */
+export const LENS_VERSION = "lens.agent.v1";
 export type FindingsWorkflowParams = { ticker: string; fingerprint: string };
 export type FindingsDeps = { model?: FindingsModel; fetcher?: typeof fetch };
 
@@ -60,7 +64,7 @@ async function readInput(env: SecPipelineEnv, ticker: string): Promise<Input> {
   const context = overview ? [overview.headline, overview.introduction, ...overview.highlights.map(h => `${h.title}: ${h.body}`), ...(overview.deepDive?.sections ?? []).flatMap(s => [s.title, ...s.paragraphs.map(p => p.text)])].join("\n").slice(0, CONTEXT_CHARS) : null;
   // The periods the snapshot covers and the newest backlog, not when the snapshot was rebuilt: a daily re-collection
   // that changes nothing must not rewrite the findings.
-  const fingerprint = await sha256(JSON.stringify({ version: FINDINGS_VERSION, ticker, periodEnd: newest.periodEnd, guidance: guidance?.updatedAt ?? null, analysis: analysis?.generatedAt ?? null,
+  const fingerprint = await sha256(JSON.stringify({ version: FINDINGS_VERSION, lens: LENS_VERSION, ticker, periodEnd: newest.periodEnd, guidance: guidance?.updatedAt ?? null, analysis: analysis?.generatedAt ?? null,
     quarters: quarters.map(q => q.periodEnd).sort(), capital: capital?.quarters.map(q => q.periodEnd).sort() ?? [], rpo: capital?.quarters.find(q => q.periodEnd === newest.periodEnd)?.rpo?.total ?? null }));
   return { data, ledger, context, fingerprint };
 }
@@ -81,10 +85,18 @@ export async function executeFindingsWorkflow(params: FindingsWorkflowParams, st
   const model: FindingsModel = deps.model ?? ((stage, system, payload) => callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, MODEL_BUDGET_MS, true, { reasoning: reasoningFor(env, "findings") }));
   const companyName = issuerNames(findSecurity(params.ticker)?.name ?? params.ticker)[0]!;
   const stage = <T>(name: string, callback: () => Promise<T>) => step.do(`findings-${name}`, callback);
-  const outcome = await writeFindings({
+  const draft = await writeFindings({
     ticker: params.ticker, companyName, ledger: input.ledger, context: input.context, data: input.data,
     model, modelVersion, fingerprint: params.fingerprint, now, stage,
   });
+  // Each verified finding's lens document, composed by the agent at low reasoning; a reply that is not JSON is its turn gone wrong, not a failed step.
+  const lensModel: FindingsModel = deps.model ?? (async (stage, system, payload) => {
+    try { return await callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, 3 * 60_000, true, { reasoning: reasoningFor(env, "lens") }); }
+    catch (error) { if (error instanceof SecModelOutputError) return { action: "invalid" }; throw error; }
+  });
+  const lensed = draft.publication ? await writeLensDocuments({ publication: draft.publication, ledger: input.ledger, data: input.data, model: lensModel, version: LENS_VERSION, now, stage }).catch(() => null) : null;
+  const outcome = lensed ? { ...draft, publication: lensed.publication } : draft;
+  const lensTrace: LensTrace | null = lensed?.trace ?? null;
   // The headline figures of each statement view for this report; a failed call publishes the findings without them.
   const periodEnd = input.ledger.periodEnd;
   const written = await writeHighlights({
@@ -105,15 +117,18 @@ export async function executeFindingsWorkflow(params: FindingsWorkflowParams, st
       : { schemaVersion: "findings.v1", ticker: params.ticker, periodEnd, generatedAt: now, model: modelVersion, fingerprint: params.fingerprint, findings: [], sources: input.ledger.sources });
     const publication = readFindingsPublication({ ...base, highlights }, params.ticker);
     if (!publication) return false;
+    // The operator's trace of the lens agent rides in the same record; readers get the publication through the contract, which drops it.
+    const record = { ...publication, ...(lensTrace ? { lensTrace } : {}) };
     // The publication and its event commit together.
     await db.batch([
       db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at")
-        .bind(findingsCacheKey(params.ticker), JSON.stringify(publication), now),
+        .bind(findingsCacheKey(params.ticker), JSON.stringify(record), now),
       outboxStatement(db, { type: "findings.published", ticker: params.ticker }, now),
     ]);
-    await new AiRunStore(requireDb(env)).saveVersion("findings", params.ticker, publication, now);
+    await new AiRunStore(requireDb(env)).saveVersion("findings", params.ticker, record, now);
     return true;
   });
   if (!published) return { status: "empty" as const, withheld: outcome.withheld };
-  return { status: "ready" as const, findings: outcome.publication?.findings.length ?? 0, findingsFallback: !outcome.publication, withheld: outcome.withheld, highlights: written.highlights ? { cash: written.highlights.cash.length, profit: written.highlights.profit.length, balance: written.highlights.balance.length } : null, highlightsWithheld: written.withheld.length };
+  return { status: "ready" as const, findings: outcome.publication?.findings.length ?? 0, findingsFallback: !outcome.publication, withheld: outcome.withheld,
+    lenses: lensTrace ? { composed: lensTrace.findings.filter(f => f.document).length, kept: lensTrace.findings.filter(f => !f.document).length, turns: lensTrace.findings.reduce((n, f) => n + f.turns.length, 0) } : null, highlights: written.highlights ? { cash: written.highlights.cash.length, profit: written.highlights.profit.length, balance: written.highlights.balance.length } : null, highlightsWithheld: written.withheld.length };
 }

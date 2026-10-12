@@ -6,6 +6,8 @@ import type { AnalysisFinding, CapitalMetric, FindingEvidence, FindingRef, Findi
 import type { CashFlowStatement, PublicCapitalStructure, RpoDisclosure } from "../analysis-contract/capital-structure.ts";
 import type { GuidanceItem, GuidancePublication } from "../analysis-contract/guidance.ts";
 import type { RevenueHistory, RevenueHistoryNode } from "../analysis-contract/revenue-history.ts";
+import type { LensDocument } from "../analysis-contract/lens.ts";
+import { lensDocumentSchemaFor } from "./lens/schema.ts";
 
 /* ---------- Schema ---------- */
 
@@ -23,8 +25,13 @@ const baseRef = z.union([
   z.object({ fundamental: z.enum(FUNDAMENTAL_KEYS) }),
   z.object({ nodeId: text(200) }),
   z.object({ guidanceId: text(200) }),
+  z.object({ rpoBucket: z.number().int().min(0).max(11) }),
 ]);
 const ref = z.union([baseRef, z.object({ ratio: z.object({ numerator: baseRef, denominator: baseRef }) })]);
+export const findingRefSchema = ref;
+const lensDocument = lensDocumentSchemaFor(ref);
+/** A lens document as the agent wrote it, through the contract; null when its shape is wrong. */
+export function readLensDocument(value: unknown): LensDocument | null { const parsed = lensDocument.safeParse(value); return parsed.success ? parsed.data : null; }
 const span = z.enum(["quarter", "fiscal_year"]);
 const compare = z.union([z.literal("yoy"), z.literal("qoq"), z.object({ guidanceId: text(200) })]);
 const evidence = z.object({ ref, periodEnd: date, span, compare: compare.optional(), label: text(100).optional() });
@@ -33,6 +40,7 @@ const lens = z.discriminatedUnion("type", [
   z.object({ type: z.literal("compare_bars"), refs: z.array(ref).min(1).max(4), span }),
   z.object({ type: z.literal("share_area"), nodeIds: z.array(text(200)).min(1).max(6) }),
   z.object({ type: z.literal("ladder") }),
+  z.object({ type: z.literal("document"), document: lensDocument }),
 ]);
 const finding = z.object({
   id: text(80), kind: z.enum(["risk", "strength", "shift", "watch"]), severity: z.union([z.literal(1), z.literal(2), z.literal(3)]),
@@ -97,7 +105,8 @@ export type FindingData = {
   guidance: GuidancePublication | null;
 };
 
-export type ValueUnit = "USD" | "percent" | "per_share" | "shares" | "ratio";
+/** `points`: a change in a rate, in percentage points, as a transformed lens series carries it. */
+export type ValueUnit = "USD" | "percent" | "per_share" | "shares" | "ratio" | "points";
 export type ResolvedValue = {
   value: number;
   unit: ValueUnit;
@@ -230,6 +239,25 @@ function capitalAt(data: FindingData, metric: CapitalMetric, periodEnd: string, 
   return overSpan(span, periodEnd, end => point(quarters.find(q => near(q.periodEnd, end))?.cashFlow));
 }
 
+/** The rungs of a filing's RPO schedule, nearest first, each as the months after the period end it covers and the amount expected in it. */
+export function rpoBuckets(rpo: RpoDisclosure): Array<{ from: number; to: number | null; amount: number | null; share: number | null }> {
+  const total = Number(rpo.total);
+  return rpo.buckets.map(b => {
+    // A bucket starts the month after the period end unless its start says otherwise; its end is its tagged length later.
+    const from = b.start ? Math.max(0, monthIndex(b.start) - monthIndex(rpo.asOf) - 1) : 0;
+    const share = b.share != null ? Number(b.share) * 100 : b.amount != null && total ? Number(b.amount) / total * 100 : null;
+    const amount = b.amount != null ? Number(b.amount) : share != null ? total * share / 100 : null;
+    return { from, to: b.months == null ? null : from + b.months, amount: amount != null && Number.isFinite(amount) ? amount : null, share: share != null && Number.isFinite(share) ? share : null };
+  }).sort((a, b) => a.from - b.from);
+}
+/** "within 12 months", "13–24 months", "after 24 months". */
+export const rpoBucketSpan = (b: { from: number; to: number | null }) => b.from === 0 && b.to != null ? `within ${b.to} months` : b.to == null ? `after ${b.from} months` : `${b.from + 1}–${b.to} months`;
+function rpoBucketAt(data: FindingData, index: number, periodEnd: string): Point | null {
+  const rpo = data.capital?.quarters.find(q => near(q.periodEnd, periodEnd))?.rpo;
+  const bucket = rpo ? rpoBuckets(rpo)[index] : undefined;
+  return rpo && bucket && bucket.amount != null ? { value: bucket.amount, periodStart: null, periodEnd: rpo.asOf, currency: rpo.currency, accessions: [rpo.source.accession] } : null;
+}
+
 function fundamentalAt(data: FindingData, key: string, periodEnd: string, span: FindingSpan): { point: Point; unit: ValueUnit } | null {
   const series = data.fundamentals?.series.find(s => s.metricKey === key && s.available);
   if (!series) return null;
@@ -264,6 +292,7 @@ export function resolveRef(data: FindingData, ref: FindingRef, periodEnd: string
   if ("nodeId" in ref) return amount(overSpan(span, periodEnd, end => nodeAt(data, ref.nodeId, end)));
   if ("capital" in ref) return amount(capitalAt(data, ref.capital, periodEnd, span), ref.capital === "rpoNext12MonthsShare" ? "percent" : "USD");
   if ("fundamental" in ref) { const r = fundamentalAt(data, ref.fundamental, periodEnd, span); return r && amount(r.point, r.unit); }
+  if ("rpoBucket" in ref) return amount(rpoBucketAt(data, ref.rpoBucket, periodEnd));
   const item = data.guidance?.items.find(i => i.id === ref.guidanceId);
   return item ? guidanceValue(item, span) : null;
 }
@@ -283,6 +312,11 @@ export function refLabel(data: FindingData, ref: FindingRef): string {
   if ("metric" in ref) return METRIC_LABEL[ref.metric];
   if ("capital" in ref) return CAPITAL_LABEL[ref.capital];
   if ("fundamental" in ref) return data.fundamentals?.series.find(s => s.metricKey === ref.fundamental)?.label ?? FUNDAMENTAL_METRIC_CATALOG[ref.fundamental as keyof typeof FUNDAMENTAL_METRIC_CATALOG]?.label ?? ref.fundamental;
+  if ("rpoBucket" in ref) {
+    const rpo = [...(data.capital?.quarters ?? [])].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd)).find(q => q.rpo)?.rpo;
+    const bucket = rpo ? rpoBuckets(rpo)[ref.rpoBucket] : undefined;
+    return bucket ? `RPO due ${rpoBucketSpan(bucket)}` : `RPO rung ${ref.rpoBucket + 1}`;
+  }
   if ("guidanceId" in ref) { const i = data.guidance?.items.find(i => i.id === ref.guidanceId); return i ? `Guidance · ${i.segment ? `${i.segment} ` : ""}${GUIDANCE_LABEL[i.metric] || i.label}${i.fiscalYear ? ` ${i.fiscalQuarter ? `Q${i.fiscalQuarter} ` : ""}FY${i.fiscalYear}` : ""}` : "Guidance"; }
   for (const q of data.quarters) for (const s of q.segments) { if (s.id === ref.nodeId) return s.name; const c = s.children?.find(c => c.id === ref.nodeId); if (c) return c.name; }
   for (const h of data.history?.quarters ?? []) for (const s of h.segments) { if (s.id === ref.nodeId) return s.name; const c = s.children?.find(c => c.id === ref.nodeId); if (c) return c.name; }

@@ -5,7 +5,7 @@ import { businessTreeFingerprint, readBusinessTreeResponse, treeTickersFor } fro
 import { findSecurity } from "../catalog/security-directory.ts";
 import { trackedTickersFor } from "../core.ts";
 import { findingsFingerprint } from "../findings/workflow.ts";
-import { readFindingsResponse } from "../findings/read.ts";
+import { findingsCacheKey, readFindingsResponse } from "../findings/read.ts";
 import { GuidanceStore } from "../guidance/store.ts";
 import { earningsEvents, readGuidanceResponse } from "../guidance/workflow.ts";
 import type { AiWorkflowBinding, SecPipelineEnv } from "../operations.ts";
@@ -42,7 +42,12 @@ function automatic(env: SecPipelineEnv, kind: AiRunKind, ticker: string): boolea
 }
 /** The publication readers are served now, validated the same way the public read API does. */
 async function currentPublication(db: D1Database, kind: AiRunKind, ticker: string): Promise<unknown> {
-  if (kind === "findings") return (await readFindingsResponse(db, ticker)).findings;
+  if (kind === "findings") {
+    // The lens agent's trace is stored beside the publication and shown only here.
+    const [publication, stored] = await Promise.all([readFindingsResponse(db, ticker), new D1SecRepository(db).getCache<{ lensTrace?: unknown }>(findingsCacheKey(ticker))]);
+    const trace = stored?.payload?.lensTrace;
+    return publication.findings && trace ? { ...publication.findings, lensTrace: trace } : publication.findings;
+  }
   if (kind === "explainer") return (await readBusinessExplainerResponse(db, ticker)).explainer;
   if (kind === "tree") return (await readBusinessTreeResponse(db, ticker, { research: true })).tree;
   return (await readGuidanceResponse(db, ticker)).guidance;

@@ -20,6 +20,8 @@ export const AI_TOOL_REASONING = {
   explainer: "high",
   tree: "high",
   findings: "high",
+  /** The lens agent chooses charts and layout from an already-computed observation. */
+  lens: "low",
 } as const satisfies Record<string, ReasoningEffort>;
 export type AiTool = keyof typeof AI_TOOL_REASONING;
 

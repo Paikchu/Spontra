@@ -1,45 +1,31 @@
 import { Button } from "@/packages/web/src/ui/button";
-import { useMemo, useState, type CSSProperties } from "react";
-import type { BusinessFlowQuarter } from "@/shared/analysis-contract/business-flow";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
 import type { ExplainerSource } from "@/shared/analysis-contract/business-explainer";
 import type { FindingRef } from "@/shared/analysis-contract/findings";
-import { compactFlowValue } from "@/packages/web/src/model/business-flow-layout";
+import type { LensBlock } from "@/shared/analysis-contract/lens";
 import { spanLabel, watchPeriod, type FindingData, type ResolvedEvidence, type ResolvedValue } from "@/shared/analysis-runtime/findings";
-import { KIND_LABEL, VIEW_LABEL, lensColumns, lensLadder, lensShares, type LensColumns, type LensLadder, type LensShares, type VerifiedFinding } from "./findings-model";
+import { formatResolved } from "@/shared/analysis-runtime/lens/format";
+import { documentFromEvidence, lensDocumentOf } from "@/shared/analysis-runtime/lens/legacy";
+import { verifyLensDocument, type VerifiedLens } from "@/shared/analysis-runtime/lens/verify";
+import { KIND_LABEL, VIEW_LABEL, type VerifiedFinding } from "./findings-model";
+import { LensFrame } from "./LensFrame";
 
 const shortPeriod = (end: string) => end.slice(0, 7).replace("-", ".");
 const percent = (v: number | null, digits = 1) => v == null || !Number.isFinite(v) ? "—" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(digits)}%`;
 const trend = (v: number | null) => v == null || v === 0 ? undefined : v > 0 ? "up" : "down";
-const money = (v: number, currency = "USD") => compactFlowValue(v, { currency, scale: 1 } as BusinessFlowQuarter);
 const VERDICT = { above: "Above guidance", within: "Within guidance", below: "Below guidance" } as const;
 /** The first sentence: English sentences end at . ! or ? followed by a capital (so "$55.7" never splits); CJK prose at 。 */
 const firstSentence = (text: string) => text.split(/(?<=[.!?])\s+(?=[A-Z])|(?<=。)/)[0];
-
-/** One figure in the unit it was resolved in; signed amounts keep their sign. */
-/** A ratio's change: percentage points for a rate-like ratio (below 1.5), turns for a multiple. */
 const signed = (v: number, digits: number) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(digits)}`;
+/** A ratio's change: percentage points for a rate-like ratio (below 1.5), turns for a multiple. */
 const ratioChange = (r: ResolvedEvidence) => r.delta == null ? "—" : Math.abs(r.compare?.value ?? 0) < 1.5 && Math.abs(r.current.value) < 1.5 ? `${signed(r.delta * 100, 1)} pp` : `${signed(r.delta, 2)}x`;
-
-export function formatValue(v: ResolvedValue): string {
-  if (v.range && v.range.low !== v.range.high) return v.unit === "USD" ? `${money(v.range.low, v.currency ?? "USD")}–${money(v.range.high, v.currency ?? "USD")}` : `${v.range.low}–${v.range.high}%`;
-  if (v.unit === "USD") return (v.value < 0 ? "−" : "") + money(Math.abs(v.value), v.currency ?? "USD");
-  if (v.unit === "percent") return `${Number(v.value.toFixed(1))}%`;
-  if (v.unit === "per_share") return `$${v.value.toFixed(2)}`;
-  if (v.unit === "ratio") return v.value.toFixed(2);
-  return String(Number(v.value.toFixed(2)));
-}
-
-/** Series colour follows what the figure is: revenue neutral, profit and operating cash teal, costs and capital spending amber. */
-function refColor(ref: FindingRef, nodeColor: (id: string) => string, index: number): string {
-  if ("nodeId" in ref) return nodeColor(ref.nodeId);
-  if ("metric" in ref) return ref.metric === "revenue" ? "var(--flow-revenue)" : ["gross", "operating", "pretax", "net"].includes(ref.metric) ? "var(--flow-profit)" : "var(--flow-expense)";
-  if ("capital" in ref) return ref.capital === "operatingCashFlow" || ref.capital === "cash" || ref.capital === "equity" ? "var(--flow-profit)" : ref.capital === "freeCashFlow" || ref.capital === "totalAssets" ? "var(--biz-1)" : "var(--flow-expense)";
-  return ["var(--biz-3)", "var(--biz-4)", "var(--biz-2)", "var(--biz-0)"][index % 4];
-}
+export const formatValue = (v: ResolvedValue, ref?: FindingRef): string => formatResolved(v, ref);
+const near = (a: string, b: string) => Math.abs(Date.parse(a) - Date.parse(b)) <= 20 * 86_400_000;
 
 /**
- * The finding in focus: its chart on the left, bound to the same figures the stage shows, and its
- * judgment, evidence and what to watch next on the right. Replaces the revenue trend while open.
+ * The finding in focus, holding the whole stage: its lens document (charts in frames, the judgment,
+ * the figures, what to watch, the sources) as the agent laid it out, verified against the same data
+ * the stage draws. Findings written before the agent are laid out the standard way from their chart.
  */
 export function LensPanel({ finding, data, sources, nodeColor, pair, story, index, count, onPair, onStep, onClose, split = false, compact = false, onFocusThis }: {
   finding: VerifiedFinding;
@@ -55,15 +41,10 @@ export function LensPanel({ finding, data, sources, nodeColor, pair, story, inde
   onStep: (delta: 1 | -1) => void;
   onClose: () => void;
   split?: boolean;
-  /** The second panel of a pair: chart and figures, with the judgment folded. */
+  /** The second panel of a pair: the judgment folded to its first sentence. */
   compact?: boolean;
   onFocusThis?: () => void;
 }) {
-  const cited = finding.judgment.sourceIds.map(id => sources.find(s => s.id === id)).filter(s => s != null);
-  const columns = useMemo(() => finding.lens.type === "share_area" || finding.lens.type === "ladder" ? null : lensColumns(finding.lens, finding.periodEnd, data), [finding, data]);
-  const shares = useMemo(() => finding.lens.type === "share_area" ? lensShares(finding.lens, finding.periodEnd, data) : null, [finding, data]);
-  const ladder = useMemo(() => finding.lens.type === "ladder" ? lensLadder(finding.periodEnd, data) : null, [finding, data]);
-  const watch = finding.watch, outcome = finding.watchOutcome;
   return <section className="lens" data-kind={finding.kind} data-compact={compact || undefined} aria-label={`Finding: ${finding.title}`} key={finding.id}>
     <header className="lens-head">
       <div className="lens-title">
@@ -79,122 +60,67 @@ export function LensPanel({ finding, data, sources, nodeColor, pair, story, inde
         </>}
       </div>
     </header>
-    <div className="lens-body">
-      <div className="lens-chart">
-        {columns && <Bars columns={columns} nodeColor={nodeColor} />}
-        {shares && <Shares shares={shares} nodeColor={nodeColor} />}
-        {ladder && <Ladder ladder={ladder} nodeColor={nodeColor} />}
-      </div>
-      <div className="lens-text">
-        <p className="lens-judgment">{compact ? firstSentence(finding.judgment.text) : finding.judgment.text}<span className="cites">{finding.judgment.sourceIds.map(id => { const i = cited.findIndex(s => s.id === id); return i < 0 ? null : <a key={id} href={cited[i].url} target="_blank" rel="noopener noreferrer" title={cited[i].title}>{i + 1}</a>; })}</span></p>
-        <dl className="lens-evidence">
-          {finding.resolved.map((r, i) => <Evidence key={i} r={r} />)}
-        </dl>
-        {watch && <div className="lens-watch" data-settled={outcome ? "" : undefined}>
-          <p><b>{watch.horizon === "next_quarter" ? "Next quarter" : "Full year"}</b>{watch.condition}</p>
-          {outcome ? <p className="lens-outcome"><b>{shortPeriod(outcome.periodEnd)} reported</b><Outcome r={outcome.resolved} /></p>
-            : <p className="lens-outcome lens-outcome--pending">Pending · {shortPeriod(watchPeriodOf(finding))} report</p>}
-        </div>}
-        {cited.length > 0 && <ol className="sources sources--numbered">{cited.map(s => <li key={s.id}><a href={s.url} target="_blank" rel="noopener noreferrer">{s.title}<span aria-hidden="true"> ↗</span></a></li>)}</ol>}
-      </div>
-    </div>
+    <LensDocument finding={finding} data={data} sources={sources} nodeColor={nodeColor} compact={compact} />
   </section>;
 }
 
-const watchPeriodOf = (f: VerifiedFinding) => watchPeriod(f.periodEnd, f.watch!);
+/** The document as rows of cells; a chart's hover lights the evidence rows of the same period. */
+function LensDocument({ finding, data, sources, nodeColor, compact }: { finding: VerifiedFinding; data: FindingData; sources: ExplainerSource[]; nodeColor: (id: string) => string; compact: boolean }) {
+  const colorOf = useCallback((ref: FindingRef) => "nodeId" in ref ? nodeColor(ref.nodeId) : "ratio" in ref && "nodeId" in ref.ratio.numerator ? nodeColor(ref.ratio.numerator.nodeId) : null, [nodeColor]);
+  const lens = useMemo<VerifiedLens | null>(() => {
+    const options = { colorOf };
+    return verifyLensDocument(lensDocumentOf(finding, data, finding.periodEnd), finding, finding.resolved, data, finding.periodEnd, options)
+      ?? verifyLensDocument(documentFromEvidence(finding), finding, finding.resolved, data, finding.periodEnd, options);
+  }, [finding, data, colorOf]);
+  // Sources numbered in the order the document cites them, so every citation mark points at one list.
+  const cited = useMemo(() => {
+    const ids = [...finding.judgment.sourceIds, ...(lens?.document.rows ?? []).flatMap(r => r.cells.flat()).flatMap(b => b.kind === "prose" ? b.paragraphs.flatMap(p => p.sourceIds) : [])];
+    return [...new Set(ids)].map(id => sources.find(s => s.id === id)).filter((s): s is ExplainerSource => s != null);
+  }, [finding, lens, sources]);
+  const cites = (ids: string[]) => <span className="cites">{ids.map(id => { const i = cited.findIndex(s => s.id === id); return i < 0 ? null : <a key={id} href={cited[i]!.url} target="_blank" rel="noopener noreferrer" title={cited[i]!.title}>{i + 1}</a>; })}</span>;
+  const [hover, setHover] = useState<string | null>(null);
+  const hoverOf = useCallback((chartId: string) => (period: number | null) => { const c = lens?.charts[chartId]; setHover(period != null && c ? c.periods[period]?.end ?? null : null); }, [lens]);
+  if (!lens) return null;
+  const watch = finding.watch, outcome = finding.watchOutcome;
+  const block = (b: LensBlock, key: number): ReactNode => {
+    switch (b.kind) {
+      case "judgment": return <p key={key} className="lens-judgment">{compact ? firstSentence(finding.judgment.text) : finding.judgment.text}{cites(finding.judgment.sourceIds)}</p>;
+      case "prose": return b.paragraphs.map((p, i) => <p key={`${key}-${i}`} className="lens-prose">{p.text}{cites(p.sourceIds)}</p>);
+      case "chart": { const chart = lens.charts[b.chart.id]; return chart ? <LensFrame key={key} chart={chart} onHover={hoverOf(chart.id)} /> : null; }
+      case "figures": return <dl key={key} className="lens-evidence">{finding.resolved.map((r, i) => <Evidence key={i} r={r} lit={hover != null && near(r.current.periodEnd, hover)} />)}</dl>;
+      case "watch": return watch ? <div key={key} className="lens-watch" data-settled={outcome ? "" : undefined}>
+        <p><b>{watch.horizon === "next_quarter" ? "Next quarter" : "Full year"}</b>{watch.condition}</p>
+        {outcome ? <p className="lens-outcome"><b>{shortPeriod(outcome.periodEnd)} reported</b><Outcome r={outcome.resolved} /></p>
+          : <p className="lens-outcome lens-outcome--pending">Pending · {shortPeriod(watchPeriod(finding.periodEnd, watch))} report</p>}
+      </div> : null;
+      case "sources": return cited.length > 0 ? <ol key={key} className="sources sources--numbered">{cited.map(s => <li key={s.id}><a href={s.url} target="_blank" rel="noopener noreferrer">{s.title}<span aria-hidden="true"> ↗</span></a></li>)}</ol> : null;
+    }
+  };
+  return <div className="lens-doc">
+    {lens.document.rows.map((row, i) => {
+      const chartIn = (cell: LensBlock[]) => cell.some(b => b.kind === "chart");
+      const lead = row.cells.length === 2 ? chartIn(row.cells[0]!) && !chartIn(row.cells[1]!) ? "first" : chartIn(row.cells[1]!) && !chartIn(row.cells[0]!) ? "second" : undefined : undefined;
+      return <div key={i} className="lens-doc-row" data-cells={row.cells.length} data-lead={lead}>
+        {row.cells.map((cell, j) => <div key={j} className="lens-doc-cell">{cell.map((b, k) => block(b, k))}</div>)}
+      </div>;
+    })}
+  </div>;
+}
 
 /** The watched figure as it came in: value, comparison and, against guidance, whether it landed inside. */
 function Outcome({ r }: { r: ResolvedEvidence }) {
   return <span className="lens-outcome-body">
-    <span>{r.label} <b data-trend={r.current.value < 0 && r.current.unit === "USD" ? "down" : undefined}>{formatValue(r.current)}</b></span>
-    {r.guidance ? <em data-verdict={r.guidance.verdict}>{r.guidance.unit === "percent" && r.current.unit !== "percent" ? `YoY ${percent(r.guidance.measured)} · ` : ""}{VERDICT[r.guidance.verdict]}{r.compare ? ` ${formatValue(r.compare)}` : ""}</em>
-      : r.compare ? <em data-trend={trend(r.delta)}>{r.compareLabel} {formatValue(r.compare)} · {r.current.unit === "percent" ? `${percent(r.delta).replace("%", "")} pp` : r.current.unit === "ratio" ? ratioChange(r) : percent(r.delta)}</em> : null}
+    <span>{r.label} <b data-trend={r.current.value < 0 && r.current.unit === "USD" ? "down" : undefined}>{formatValue(r.current, r.evidence.ref)}</b></span>
+    {r.guidance ? <em data-verdict={r.guidance.verdict}>{r.guidance.unit === "percent" && r.current.unit !== "percent" ? `YoY ${percent(r.guidance.measured)} · ` : ""}{VERDICT[r.guidance.verdict]}{r.compare ? ` ${formatValue(r.compare, r.evidence.ref)}` : ""}</em>
+      : r.compare ? <em data-trend={trend(r.delta)}>{r.compareLabel} {formatValue(r.compare, r.evidence.ref)} · {r.current.unit === "percent" ? `${percent(r.delta).replace("%", "")} pp` : r.current.unit === "ratio" ? ratioChange(r) : percent(r.delta)}</em> : null}
   </span>;
 }
 
-function Evidence({ r }: { r: ResolvedEvidence }) {
-  const note = r.guidance ? <em data-verdict={r.guidance.verdict}>{VERDICT[r.guidance.verdict]}{r.compare ? ` ${formatValue(r.compare)}` : ""}</em>
-    : r.compare ? <em data-trend={trend(r.delta)}>{r.compareLabel} {formatValue(r.compare)} · {r.current.unit === "percent" ? `${percent(r.delta).replace("%", "")} pp` : r.current.unit === "ratio" ? ratioChange(r) : percent(r.delta)}</em> : null;
-  return <div className="lens-row">
+function Evidence({ r, lit }: { r: ResolvedEvidence; lit: boolean }) {
+  const note = r.guidance ? <em data-verdict={r.guidance.verdict}>{VERDICT[r.guidance.verdict]}{r.compare ? ` ${formatValue(r.compare, r.evidence.ref)}` : ""}</em>
+    : r.compare ? <em data-trend={trend(r.delta)}>{r.compareLabel} {formatValue(r.compare, r.evidence.ref)} · {r.current.unit === "percent" ? `${percent(r.delta).replace("%", "")} pp` : r.current.unit === "ratio" ? ratioChange(r) : percent(r.delta)}</em> : null;
+  return <div className="lens-row" data-lit={lit || undefined}>
     <dt>{r.label}<small>{spanLabel(r.current)}</small></dt>
-    <dd><b data-trend={r.current.value < 0 && r.current.unit === "USD" ? "down" : undefined}>{formatValue(r.current)}</b>{note}</dd>
-  </div>;
-}
-
-/** Grouped bars per period, one group per series, standing on a shared zero line so a negative figure reads as one. */
-function Bars({ columns, nodeColor }: { columns: LensColumns; nodeColor: (id: string) => string }) {
-  const [hover, setHover] = useState<number | null>(null);
-  const values = columns.series.flatMap(s => s.values.map(v => v?.value ?? 0));
-  const top = Math.max(0, ...values), bottom = Math.min(0, ...values), range = top - bottom || 1;
-  const y = (v: number) => (v - bottom) / range * 100;
-  const zero = y(0);
-  const colors = columns.series.map((s, i) => refColor(s.ref, nodeColor, i));
-  const unit = columns.series[0]?.unit ?? "USD", currency = columns.series[0]?.values.find(v => v)?.currency ?? "USD";
-  const fmt = (v: number) => unit === "USD" ? (v < 0 ? "−" : "") + money(Math.abs(v), currency) : unit === "percent" ? `${Number(v.toFixed(1))}%` : unit === "ratio" ? v.toFixed(2) : String(Number(v.toFixed(2)));
-  const label = columns.span === "fiscal_year" ? (end: string) => `FY to ${shortPeriod(end)}` : shortPeriod;
-  return <div className="lens-bars" role="list" style={{ "--cols": columns.periods.length } as CSSProperties} onMouseLeave={() => setHover(null)}>
-    <div className="lens-legend">{columns.series.map((s, i) => <span key={i}><i style={{ background: colors[i] }} />{s.label}</span>)}{columns.rateLabel && <span className="lens-legend-rate">{columns.rateLabel}</span>}</div>
-    <div className="lens-plot">
-      <i className="lens-zero" style={{ bottom: `${zero}%` }} aria-hidden="true" />
-      {columns.periods.map((end, c) => {
-        const shown = hover === c || (hover == null && c === columns.periods.length - 1);
-        return <div key={end} className="lens-col" role="listitem" data-current={c === columns.periods.length - 1 || undefined} onMouseEnter={() => setHover(c)}
-          aria-label={`${label(end)}: ${columns.series.map((s) => `${s.label} ${s.values[c] ? fmt(s.values[c]!.value) : "not disclosed"}`).join(", ")}${columns.rates[c] != null ? `, ${columns.rateLabel} ${percent(columns.rates[c])}` : ""}`}>
-          <div className="lens-group">
-            {columns.series.map((s, i) => {
-              const v = s.values[c]?.value ?? null;
-              const lo = v == null ? zero : Math.min(y(v), zero), hi = v == null ? zero : Math.max(y(v), zero);
-              return <span key={i} className="lens-slot"><i className="lens-bar" data-missing={v == null || undefined} data-negative={v != null && v < 0 || undefined}
-                style={{ bottom: `${lo}%`, height: v == null ? "2px" : `max(2px, ${hi - lo}%)`, background: v != null && v < 0 ? "var(--loss)" : colors[i], "--i": c } as CSSProperties}>
-                {shown && v != null && <span className="lens-value">{fmt(v)}</span>}
-              </i></span>;
-            })}
-          </div>
-          <span className="lens-period">{label(end)}{columns.rates[c] != null && <b data-trend={trend(columns.rates[c])}>{percent(columns.rates[c])}</b>}</span>
-        </div>;
-      })}
-    </div>
-  </div>;
-}
-
-/** Contracted revenue not yet recognised: its quarterly path on top, and below it when the latest balance is expected to convert. */
-function Ladder({ ladder, nodeColor }: { ladder: LensLadder; nodeColor: (id: string) => string }) {
-  const latest = ladder.latest;
-  const span = (s: { from: number; to: number | null }) => s.from === 0 && s.to != null ? `Within ${s.to} months` : s.to == null ? `After ${s.from} months` : `${s.from + 1}–${s.to} months`;
-  return <div className="lens-ladder">
-    <Bars columns={ladder.columns} nodeColor={nodeColor} />
-    {latest ? <div className="lens-rungs" role="list" aria-label={`Recognition schedule of ${money(latest.total, latest.currency)} RPO as of ${shortPeriod(latest.asOf)}`}>
-      <span className="lens-rungs-title">Recognition schedule · {shortPeriod(latest.asOf)}</span>
-      <div className="lens-rungs-bar" aria-hidden="true">
-        {latest.steps.map((s, i) => s.share != null && <i key={i} style={{ flexGrow: s.share, "--i": i } as CSSProperties} />)}
-        {latest.remainder != null && <i className="lens-rung--rest" style={{ flexGrow: latest.remainder } as CSSProperties} />}
-      </div>
-      <div className="lens-rungs-legend">
-        {latest.steps.map((s, i) => <span key={i} role="listitem"><i style={{ "--i": i } as CSSProperties} /><b>{span(s)}</b>{s.share != null ? `${Number(s.share.toFixed(1))}%` : ""}{s.amount != null ? ` · ${money(s.amount, latest.currency)}` : ""}</span>)}
-        {latest.remainder != null && <span role="listitem"><i className="lens-rung--rest" /><b>Thereafter</b>{Number(latest.remainder.toFixed(1))}% · {money(latest.total * latest.remainder / 100, latest.currency)}</span>}
-      </div>
-    </div> : <p className="lens-empty">No RPO recognition schedule</p>}
-  </div>;
-}
-
-/** Stacked share of revenue by business over the disclosed quarters; the newest column carries each share. */
-function Shares({ shares, nodeColor }: { shares: LensShares; nodeColor: (id: string) => string }) {
-  const periods = shares.periods.map((end, i) => ({ end, row: shares.shares[i] })).filter(p => p.row.every(v => Number.isFinite(v)));
-  if (periods.length < 2) return <div className="lens-empty">No comparable segment quarters</div>;
-  const x = (i: number) => i / (periods.length - 1) * 100;
-  const stack = periods.map(p => p.row.reduce<number[]>((acc, v) => [...acc, (acc.at(-1) ?? 0) + v], []));
-  const area = (n: number) => {
-    const upper = periods.map((_, i) => `${x(i).toFixed(2)},${(100 - stack[i][n] * 100).toFixed(2)}`);
-    const lower = periods.map((_, i) => `${x(i).toFixed(2)},${(100 - (n ? stack[i][n - 1] : 0) * 100).toFixed(2)}`).reverse();
-    return `M${upper.join("L")}L${lower.join("L")}Z`;
-  };
-  const last = periods.at(-1)!;
-  return <div className="lens-shares" role="img" aria-label={`Share of total revenue by business, ${shortPeriod(periods[0].end)} to ${shortPeriod(last.end)}: ${shares.nodes.map((n, i) => `${n.label} ${(last.row[i] * 100).toFixed(0)}%`).join(", ")}`}>
-    <div className="lens-legend">{shares.nodes.map((n, i) => <span key={n.id}><i style={{ background: nodeColor(n.id) }} />{n.label}<b>{(last.row[i] * 100).toFixed(0)}%</b></span>)}</div>
-    <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-      {shares.nodes.map((n, i) => <path key={n.id} d={area(i)} style={{ fill: nodeColor(n.id), "--i": i } as CSSProperties} />)}
-      {[0.25, 0.5, 0.75].map(t => <line key={t} x1="0" x2="100" y1={100 - t * 100} y2={100 - t * 100} vectorEffect="non-scaling-stroke" />)}
-    </svg>
-    <div className="lens-axis">{periods.map((p, i) => <span key={p.end} style={{ left: `${x(i)}%` }} data-edge={i === 0 ? "start" : i === periods.length - 1 ? "end" : undefined}>{shortPeriod(p.end)}</span>)}</div>
+    <dd><b data-trend={r.current.value < 0 && r.current.unit === "USD" ? "down" : undefined}>{formatValue(r.current, r.evidence.ref)}</b>{note}</dd>
   </div>;
 }

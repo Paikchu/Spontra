@@ -1,6 +1,7 @@
 import type { FlowMetric } from "./business-flow.ts";
 import type { ExplainerClaim, ExplainerSource } from "./business-explainer.ts";
 import type { FundamentalMetricKey } from "./fundamentals.ts";
+import type { LensDocument } from "./lens.ts";
 
 /**
  * What an analyst (a model, or a person until the model runs) says deserves attention in a
@@ -22,7 +23,9 @@ export type FindingBaseRef =
   | { capital: CapitalMetric }
   | { fundamental: FundamentalMetricKey }
   | { nodeId: string }
-  | { guidanceId: string };
+  | { guidanceId: string }
+  /** One rung of the RPO conversion schedule the filing tags, by position from the nearest (0); the amount expected in that stretch. */
+  | { rpoBucket: number };
 /** A base figure, or one figure over another at the same period and span (cloud revenue per dollar of capex). */
 export type FindingRef = FindingBaseRef | { ratio: { numerator: FindingBaseRef; denominator: FindingBaseRef } };
 
@@ -50,7 +53,9 @@ export type FindingLens =
   | { type: "compare_bars"; refs: FindingRef[]; span: FindingSpan }
   | { type: "share_area"; nodeIds: string[] }
   /** Remaining performance obligations over the quarters and, for the finding's report, how they convert over time. */
-  | { type: "ladder" };
+  | { type: "ladder" }
+  /** The lens agent's composition: charts and paragraphs laid out as rows (docs/finding-lens-agent.md). */
+  | { type: "document"; document: LensDocument };
 
 /**
  * What to look at when the next report lands: the figure, in words what would settle it, and how

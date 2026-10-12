@@ -1,0 +1,5 @@
+/* The frame draws on the page's own paper: transparent, no margins, the same type; the host sets every token at render time. */
+@font-face { font-family: "Geist"; src: url("../../../../packages/web/fonts/Geist-Variable.woff2") format("woff2"); font-weight: 100 900; font-style: normal; font-display: swap; }
+html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: transparent; }
+body { font-family: var(--sans, system-ui, sans-serif); -webkit-font-smoothing: antialiased; }
+svg { display: block; }

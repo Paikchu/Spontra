@@ -434,7 +434,14 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
       {!!quarter?.revenueAdjustments?.length&&<p className="revenue-reconciliation">Revenue reconciliation · {quarter.currency} millions<br/>Segment revenue (before eliminations) {formatFlowValue(segmentRevenue,quarter)}<br/>{quarter.revenueAdjustments.map(a=><span key={a.id}>{a.name} {formatFlowValue(numeric(a.amount),quarter)}<br/></span>)}Consolidated revenue {formatFlowValue(revenue,quarter)}</p>}
     </Rail>
 
-    <section className="stage" data-trend={hasRevenueTrend || metricGroups.length ? "" : undefined} data-finding={focused?.kind} data-timeline={points.length ? "" : undefined} aria-label={`${ticker} revenue to profit flow`}>
+    <section className="stage" data-focus={focused && findings ? "finding" : undefined} data-trend={hasRevenueTrend || metricGroups.length ? "" : undefined} data-finding={focused?.kind} data-timeline={points.length ? "" : undefined} aria-label={focused ? `${ticker} finding: ${focused.title}` : `${ticker} revenue to profit flow`}>
+      {focused && findings ? <div className="lens-stage" data-split={split && pair ? "" : undefined}>
+        <LensPanel finding={focused} data={data} sources={findings.sources} nodeColor={nodeColor} pair={pair} split={split && !!pair}
+          story={story} index={focusIndex} count={verified.length} onPair={() => setSplit(v => !v)}
+          onStep={delta => { const next = verified[focusIndex + delta]; if (next) focusFinding(next.id); }} onClose={() => focusFinding(null)} />
+        {split && pair && <LensPanel finding={pair} data={data} sources={findings.sources} nodeColor={nodeColor} pair={null} compact
+          story={false} index={-1} count={verified.length} onPair={() => {}} onStep={() => {}} onClose={() => setSplit(false)} onFocusThis={() => setFocusId(pair.id)} />}
+      </div> : <>
       <header className="stage-head stage-head--summary">
         {quarter && view !== "profit" && funding ? <CapitalStats view={view} funding={funding} tiles={highlights} />
           : quarter && !current && highlights ? <HighlightStats tiles={highlights} />
@@ -489,13 +496,6 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
           snapshot={focusedReport.snapshot ? { reportDate: focusedReport.snapshot.reportDate, reportVersion: focusedReport.snapshot.reportVersion } : null} onClose={() => setReader(false)} /></Suspense>}</div>
       : focusedEvent && events ? <div className="lens-stage"><EventLens event={focusedEvent} publication={events} index={railIndex} count={railList.length}
         onStep={delta => { const next = railList[railIndex + delta]; if (next) focusItem(next); }} onClose={() => focusEvent(null)} /></div>
-      : focused && findings ? <div className="lens-stage" data-split={split && pair ? "" : undefined}>
-        <LensPanel finding={focused} data={data} sources={findings.sources} nodeColor={nodeColor} pair={pair} split={split && !!pair}
-          story={story} index={focusIndex} count={verified.length} onPair={() => setSplit(v => !v)}
-          onStep={delta => { const next = verified[focusIndex + delta]; if (next) focusFinding(next.id); }} onClose={() => focusFinding(null)} />
-        {split && pair && <LensPanel finding={pair} data={data} sources={findings.sources} nodeColor={nodeColor} pair={null} compact
-          story={false} index={-1} count={verified.length} onPair={() => {}} onStep={() => {}} onClose={() => setSplit(false)} onFocusThis={() => setFocusId(pair.id)} />}
-      </div>
       : mindItem && mindMap ? <div className="lens-stage"><MindLens item={mindItem} branch={mindMap.branches.find(b => b.node === mindItem.anchor)} sources={mindMap.sources} onClose={() => setMindItem(null)} /></div>
       : shownMetric ? <MetricTrendPanel trend={shownMetric} currentPeriod={quarter?.periodEnd ?? null} periods={new Set(quarters.map(q => q.periodEnd))}
         onPickPeriod={end => setPeriod(quarters.find(q => q.periodEnd === end)?.id ?? null)}
@@ -517,6 +517,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
           {flow.fetchedAt && <span>Data {flow.fetchedAt.slice(0, 10)}</span>}
         </p>
       </footer>
+      </>}
     </section>
   </div>;
 }
