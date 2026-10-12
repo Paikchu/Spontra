@@ -41,12 +41,15 @@ const finding = z.object({
   lens, pairWith: text(80).optional(),
   watch: z.object({ ref, condition: text(400), horizon: z.enum(["next_quarter", "fiscal_year"]), compare: compare.optional() }).optional(),
 });
+const highlight = z.object({ title: text(40), ref, compare: z.enum(["yoy", "qoq"]).optional() });
+export const reportHighlightsSchema = z.object({ periodEnd: date, profit: z.array(highlight).max(4), cash: z.array(highlight).max(4), balance: z.array(highlight).max(4) });
 export const findingsPublicationSchema = z.object({
   schemaVersion: z.literal("findings.v1"),
   ticker: z.string().regex(/^[A-Z][A-Z0-9.-]{0,11}$/),
   periodEnd: date, generatedAt: z.string().max(40), model: text(80), fingerprint: text(128).optional(),
-  findings: z.array(finding).min(1).max(8),
+  findings: z.array(finding).max(8),
   sources: z.array(z.object({ id: text(40), title: text(300), url: https, kind: z.enum(["sec", "web"]), publishedAt: z.string().max(40).nullable() })).min(1).max(40),
+  highlights: z.array(reportHighlightsSchema).max(8).optional(),
 });
 
 /**
@@ -76,7 +79,8 @@ export function readFindingsPublication(value: unknown, ticker: string): Finding
   const kept = parsed.data.findings.filter(f => { if (seen.has(f.id) || !f.judgment.sourceIds.every(id => sources.has(id))) return false; seen.add(f.id); return true; });
   const ids = new Set(kept.map(f => f.id));
   const findings: AnalysisFinding[] = kept.map(f => { if (f.pairWith && (f.pairWith === f.id || !ids.has(f.pairWith))) { const { pairWith, ...rest } = f; void pairWith; return rest; } return f; });
-  return findings.length ? { ...parsed.data, findings } : null;
+  // Highlights alone are a publication: the findings of a run that verified none are empty, the stat tiles still show.
+  return findings.length || parsed.data.highlights?.length ? { ...parsed.data, findings } : null;
 }
 
 /* ---------- Resolution ---------- */

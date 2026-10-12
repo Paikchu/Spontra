@@ -1,7 +1,8 @@
 import type { BusinessFlowQuarter, FlowMetric } from "../../../../shared/analysis-contract/business-flow.ts";
-import type { CapitalMetric, FindingBaseRef, FindingRef, FindingSpan } from "../../../../shared/analysis-contract/findings.ts";
+import type { CapitalMetric, FindingBaseRef, FindingRef, FindingSpan, FindingView } from "../../../../shared/analysis-contract/findings.ts";
 import type { ExplainerSource } from "../../../../shared/analysis-contract/business-explainer.ts";
-import { CAPITAL_METRICS, resolveEvidence, shiftPeriod, type FindingData, type ResolvedEvidence } from "../../../../shared/analysis-runtime/findings.ts";
+import { CAPITAL_METRICS, refLabel, resolveEvidence, shiftPeriod, type FindingData, type ResolvedEvidence } from "../../../../shared/analysis-runtime/findings.ts";
+import { ratioForm, refView } from "../../../../shared/analysis-runtime/highlights.ts";
 
 /**
  * The figures a findings writer may speak about: every reference the verifier can resolve, already
@@ -119,4 +120,36 @@ export function buildLedger(data: FindingData, periodEnd: string, sources: Expla
   const guidance = (data.guidance?.items ?? []).filter(i => !i.periodEnd || i.periodEnd >= shiftPeriod(periodEnd, -12)).slice(0, 40)
     .map(i => ({ guidanceId: i.id, text: i.text, periodEnd: i.periodEnd, horizon: i.horizon }));
   return { periodEnd, rows: rows.slice(0, 640), nodes, guidance, sources };
+}
+
+/**
+ * The newest quarter against the five before it, one row per figure, grouped by the statement view it belongs to: what
+ * a highlights writer reads to tell which figures broke from their trend. Values are written as the ledger writes them;
+ * the change columns are the newest quarter's.
+ */
+export type HighlightRow = { ref: FindingRef; view: FindingView; label: string; quarters: Array<{ periodEnd: string; value: string }>; yoy: string | null; qoq: string | null };
+const HIGHLIGHT_QUARTERS = 6;
+
+export function buildHighlightTable(data: FindingData, periodEnd: string): HighlightRow[] {
+  const ends = Array.from({ length: HIGHLIGHT_QUARTERS }, (_, i) => shiftPeriod(periodEnd, -3 * (HIGHLIGHT_QUARTERS - 1 - i)));
+  const rows: HighlightRow[] = [];
+  const add = (ref: FindingRef) => {
+    const view = refView(ref);
+    if (!view) return;
+    const form = ratioForm(ref);
+    const yoy = resolveEvidence(data, { ref, periodEnd, span: "quarter", compare: "yoy" });
+    const qoq = resolveEvidence(data, { ref, periodEnd, span: "quarter", compare: "qoq" });
+    const quarters = ends.flatMap(end => { const r = resolveEvidence(data, { ref, periodEnd: end, span: "quarter" }); return r ? [{ periodEnd: r.current.periodEnd, value: formatValue(r.current, form) }] : []; });
+    // Only figures the newest report discloses can lead it.
+    const newest = quarters.at(-1);
+    if (!newest || Math.abs(Date.parse(newest.periodEnd) - Date.parse(periodEnd)) > 20 * 86_400_000) return;
+    rows.push({ ref, view, label: (yoy ?? qoq)?.label ?? refLabel(data, ref), quarters, yoy: change(yoy, form), qoq: change(qoq, form) });
+  };
+  const newest = data.quarters.find(q => q.periodEnd === periodEnd) ?? [...data.quarters].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd))[0];
+  for (const metric of FLOW) add({ metric });
+  for (const node of ledgerNodes(newest).slice(0, 12)) add({ nodeId: node.nodeId });
+  for (const [, numerator, denominator] of RATIOS) add({ ratio: { numerator, denominator } });
+  for (const capital of CAPITAL_METRICS as readonly CapitalMetric[]) add({ capital });
+  for (const key of ["diluted_eps", "stock_based_compensation", "depreciation_and_amortization", "accounts_receivable", "inventory"] as const) add({ fundamental: key });
+  return rows;
 }

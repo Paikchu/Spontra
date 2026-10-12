@@ -76,6 +76,22 @@ export type AnalysisFinding = {
   watch?: FindingWatch;
 };
 
+/**
+ * A headline figure for one statement view, picked by the model because it moved against the five quarters before:
+ * the model names the figure and the change in words; the page resolves the number and the comparison.
+ */
+export type StatementHighlight = {
+  /** At most 40 characters, and no number: "Capex surges", "Cloud operating income jumps". */
+  title: string;
+  /** Always read at the report's quarter. */
+  ref: FindingRef;
+  /** The change the tile's note shows. */
+  compare?: "yoy" | "qoq";
+};
+
+/** One report's headline figures per statement view, most notable first. */
+export type ReportHighlights = { periodEnd: string; profit: StatementHighlight[]; cash: StatementHighlight[]; balance: StatementHighlight[] };
+
 export type FindingsPublication = {
   schemaVersion: "findings.v1";
   ticker: string;
@@ -88,6 +104,8 @@ export type FindingsPublication = {
   fingerprint?: string;
   findings: AnalysisFinding[];
   sources: ExplainerSource[];
+  /** Headline figures of this report and of the reports before it, each written when its report was the newest. */
+  highlights?: ReportHighlights[];
 };
 
 export type FindingsResponse = {

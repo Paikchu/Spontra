@@ -8,7 +8,7 @@ interface __BaseEnv_Env {
 	REPORT_ADMIN_RATE_LIMIT: RateLimit;
 	CF_VERSION_METADATA: WorkerVersionMetadata;
 	SEC_DATA_TICKERS: "ORCL,NVDA,MSFT,AAPL,JPM,BRK.B,ADSK,NET";
-	SEC_AI_TICKERS: "ORCL,ADSK,NET";
+	SEC_AI_TICKERS: "ORCL";
 	SEC_AI_ENABLED: "true";
 	SEC_DATA_COLLECTION_ENABLED: "true";
 	SEC_USER_AGENT: "earning-report-analysis/1.0 max.zhangyuchen@gmail.com";

@@ -24,7 +24,8 @@ import { balanceMetrics, balancePool, cashMetrics, cashPool, type Pool } from ".
 import { PoolChart, TONE_LABEL, toneColor } from "./PoolChart";
 import { Rail } from "./Sidebar";
 import type { FindingsPublication } from "@/shared/analysis-contract/findings";
-import type { FindingFundamentals } from "@/shared/analysis-runtime/findings";
+import type { FindingFundamentals, ResolvedEvidence, ResolvedValue } from "@/shared/analysis-runtime/findings";
+import { higherIsBetter, highlightChange, highlightsFor, ratioForm, type VerifiedHighlight } from "@/shared/analysis-runtime/highlights";
 import { anchorNodeNames, anchorPoolKeys, findingData, verifiedFindings } from "./findings-model";
 import { FindingsList } from "./FindingsList";
 import { LensPanel } from "./LensPanel";
@@ -130,6 +131,27 @@ function Stat({ label, value, format, note, tone }: { label: string; value: numb
   </div>;
 }
 
+/** A highlight's figure in its own unit: an amount, a rate, a margin or a multiple, per share. */
+function highlightValue(v: number | null, r: ResolvedValue, ref: ResolvedEvidence["evidence"]["ref"]): string {
+  if (v == null || !Number.isFinite(v)) return "—";
+  if (r.unit === "USD") return compactFlowValue(v, { currency: r.currency ?? "USD", scale: 1 } as BusinessFlowQuarter);
+  if (r.unit === "percent") return percent(v);
+  if (r.unit === "per_share") return `$${v.toFixed(2)}`;
+  if (r.unit === "shares") return `${(v / 1e6).toFixed(0)}M`;
+  return ratioForm(ref) === "percent" ? percent(v * 100) : `${v.toFixed(2)}×`;
+}
+
+/** The headline figures a model picked for this report and view; label, figure and change, each resolved from the data. */
+function HighlightStats({ tiles }: { tiles: VerifiedHighlight[] }) {
+  return <div className="stats" aria-live="polite">{tiles.map(tile => {
+    const r = tile.resolved, change = highlightChange(r);
+    const note = change ? `${r.label} · ${r.evidence.compare === "qoq" ? "QoQ" : "YoY"} ${change}`
+      : r.compare ? `${r.label} · ${r.compareLabel} ${highlightValue(r.compare.value, r.compare, tile.ref)}` : r.label;
+    const tone = change && r.delta && higherIsBetter(tile.ref) ? r.delta > 0 ? "up" : "down" : undefined;
+    return <Stat key={JSON.stringify(tile.ref)} label={tile.title} value={r.current.value} format={v => highlightValue(v, r.current, tile.ref)} note={note} tone={tone} />;
+  })}</div>;
+}
+
 function Sources({ sources, ids }: { sources: FlowSource[]; ids?: string[] }) {
   const list = sources.filter(s => (!ids || ids.includes(s.id)) && /^https?:\/\//.test(s.url));
   if (!list.length) return null;
@@ -228,6 +250,8 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
   const [chosenView, setView] = useState<View>("profit");
   const cash = funding?.cashFlow ?? funding?.yearToDate ?? null;
   const view: View = chosenView === "cash" && cash ? "cash" : chosenView === "balance" && funding?.balanceSheet ? "balance" : "profit";
+  // The company's headline figures for the report and view, as the findings run picked them; too few verified keeps the fixed tiles.
+  const highlights = useMemo(() => quarter ? highlightsFor(findings, data, quarter.periodEnd, view) : null, [findings, data, quarter, view]);
   // A finding in focus brings the stage to its report and statement view, and clears any business pick so the whole statement reads.
   useEffect(() => {
     if (!focused) return;
@@ -401,7 +425,9 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
 
     <section className="stage" data-trend={hasRevenueTrend || metricGroups.length ? "" : undefined} data-finding={focused?.kind} data-timeline={points.length ? "" : undefined} aria-label={`${ticker} revenue to profit flow`}>
       <header className="stage-head stage-head--summary">
-        {quarter && view !== "profit" && funding ? <CapitalStats view={view} funding={funding} /> : quarter && <div className="stats" aria-live="polite">
+        {quarter && view !== "profit" && funding ? <CapitalStats view={view} funding={funding} tiles={highlights} />
+          : quarter && !current && highlights ? <HighlightStats tiles={highlights} />
+          : quarter && <div className="stats" aria-live="polite">
           {current && current.value != null ? <>
             <Stat label="Revenue this quarter" value={current.value} format={money} note={`${word.change} ${itemChange.label}`} tone={itemChange.trend ?? undefined} />
             <Stat label={shareLabel} value={segmentRevenue ? current.value / segmentRevenue * 100 : null} format={percent} note={parent?.value ? `${percent(current.value / parent.value * 100)} of ${parent.name}` : "Top-level business"} />
@@ -495,7 +521,8 @@ const months = (start: string, end: string) => Math.round((Date.parse(end) - Dat
 const cashPeriod = (funding: CapitalQuarter) => funding.cashFlow ? "This quarter" : `Year to date (${months(funding.yearToDate!.periodStart, funding.yearToDate!.periodEnd)} months)`;
 const pct = (v: number | null) => v == null || !Number.isFinite(v) ? "—" : `${Math.round(v * 100)}%`;
 
-function CapitalStats({ view, funding }: { view: View; funding: CapitalQuarter }) {
+function CapitalStats({ view, funding, tiles }: { view: View; funding: CapitalQuarter; tiles: VerifiedHighlight[] | null }) {
+  if (tiles) return <HighlightStats tiles={tiles} />;
   const money = capitalMoney(funding);
   if (view === "balance") {
     const b = funding.balanceSheet!, m = balanceMetrics(b);

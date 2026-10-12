@@ -10,11 +10,14 @@ export const findingsCacheKey = (ticker: string) => `findings:v2:${ticker}`;
 /** Hand-written sets that stand in until the findings workflow publishes for the ticker. */
 const AUTHORED: Record<string, unknown> = { ORCL: ORCL_FINDINGS };
 
+/** The hand-written set for a ticker, validated; null where none exists. */
+export const authoredFindings = (ticker: string) => readFindingsPublication(AUTHORED[ticker], ticker);
+
 /** A stored publication wins over an authored one; both are re-validated and never repaired. */
 export async function readFindingsResponse(db: D1Database, rawTicker: string): Promise<FindingsResponse> {
   const ticker = rawTicker.trim().toUpperCase();
   if (!/^[A-Z][A-Z0-9.-]{0,11}$/.test(ticker)) throw new AnalysisRequestError("INVALID_TICKER", "Invalid company ticker.");
   const stored = await new D1SecRepository(db).getCache<unknown>(findingsCacheKey(ticker));
-  const findings = (stored ? readFindingsPublication(stored.payload, ticker) : null) ?? readFindingsPublication(AUTHORED[ticker], ticker);
+  const findings = (stored ? readFindingsPublication(stored.payload, ticker) : null) ?? authoredFindings(ticker);
   return { schemaVersion: "findings-response.v1", status: findings ? "ready" : "preparing", findings };
 }
