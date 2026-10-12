@@ -17,7 +17,7 @@ export function ReportContentRenderer({ content, context, surface = "article", p
   const blocks = Array.isArray(content) ? content : [];
   for (let index = 0; index < blocks.length; index++) {
     const parsed = SEC_READER_CONTENT_BLOCK_SCHEMA.safeParse(blocks[index]);
-    if (!parsed.success) { rendered.push(<p className="report-content-fallback" key={`invalid-${index}`}>This block can't be shown. The rest of the report is unaffected.</p>); continue; }
+    if (!parsed.success) { rendered.push(<p className="report-content-fallback" key={`invalid-${index}`}>Unavailable</p>); continue; }
     const block = parsed.data;
     const group = [block];
     if (block.groupId) {
@@ -52,11 +52,11 @@ function ContentBlock({ block, domId, context, active }: { block: SecReaderConte
     case "markdown": return <>{context.paragraphLabels?.[block.blockId] && <h3 className="report-content-paragraph-label">{context.paragraphLabels[block.blockId]}</h3>}{active ? <StreamingReportText text={block.markdown} /> : <ReportMarkdown markdown={block.markdown} />}</>;
     case "chart": {
       const trend = readableTrend(context.report?.trends?.find((t) => t.metricKey === block.metricKey));
-      return trend ? <SecTrendFigure id={`${domId}-figure`} title={block.title} trend={trend} mark={block.mark} caption={block.caption} /> : <div className="report-content-fallback"><strong>{block.title}</strong><p>No comparable data to chart.</p><p>{block.caption}</p></div>;
+      return trend ? <SecTrendFigure id={`${domId}-figure`} title={block.title} trend={trend} mark={block.mark} caption={block.caption} /> : <div className="report-content-fallback"><strong>{block.title}</strong><p>No data</p><p>{block.caption}</p></div>;
     }
     case "figure": {
       const figure = findSecFigure(context.report?.figures, block.figureKey);
-      return figure ? <SecFigureView id={`${domId}-figure`} figure={figure} title={block.title} caption={block.caption} /> : <div className="report-content-fallback"><strong>{block.title}</strong><p>The verified data for this figure is not available.</p><p>{block.caption}</p></div>;
+      return figure ? <SecFigureView id={`${domId}-figure`} figure={figure} title={block.title} caption={block.caption} /> : <div className="report-content-fallback"><strong>{block.title}</strong><p>No data</p><p>{block.caption}</p></div>;
     }
     case "image": {
       const candidate = (context.assets ?? context.report?.reader?.assets)?.find((asset) => asset.assetId === block.assetId);
@@ -70,14 +70,14 @@ function ContentBlock({ block, domId, context, active }: { block: SecReaderConte
     }
     case "math": return <ReportFormula latex={block.latex} displayMode={block.displayMode} explanation={block.explanation} assumption={block.assumption} />;
     case "table": return block.rows.some((row) => row.length !== block.headers.length) || block.columnKinds && block.columnKinds.length !== block.headers.length
-      ? <p className="report-content-fallback">This table has inconsistent columns and can't be shown.</p>
+      ? <p className="report-content-fallback">Table unavailable</p>
       : <figure className="report-content-data-table" data-density={block.density ?? "comfortable"}><figcaption>{block.caption}</figcaption><div className="report-content-table-scroll" tabIndex={0} role="region" aria-label={block.caption}><table><thead><tr>{block.headers.map((header, i) => <th scope="col" data-column-kind={block.columnKinds?.[i] ?? (i === 0 ? "label" : "text")} key={i}>{header}</th>)}</tr></thead><tbody>{block.rows.map((row, i) => <tr key={i}>{row.map((cell, j) => j === 0 && (block.columnKinds?.[j] ?? "label") === "label" ? <th scope="row" data-column-kind="label" key={j}>{cell}</th> : <td data-column-kind={block.columnKinds?.[j] ?? "text"} key={j}>{cell}</td>)}</tr>)}</tbody></table></div></figure>;
     case "callout": return <aside className="report-content-callout" data-tone={block.tone}>{block.title && <strong>{block.title}</strong>}<ReportMarkdown markdown={block.text} /></aside>;
     case "evidence": {
       const nodes = context.nodes ?? context.report?.publication?.summary.nodes ?? [];
       const evidence = nodes.filter((node) => node.evidenceIds?.some((id) => block.evidenceIds.includes(id))).flatMap((node) => node.evidence)
         .filter((item, index, all) => all.findIndex((other) => other.excerpt === item.excerpt) === index);
-      return <details className="report-content-source report-content-evidence"><summary>{block.title ?? "Related research excerpts"} · {evidence.length}</summary>{evidence.length ? <><p className="report-content-caption">These excerpts come from the research topics that hold the cited evidence. They are not matched one by one to this passage.</p>{evidence.map((item, i) => <blockquote key={i}><p>{item.excerpt}</p><footer>Characters {item.start.toLocaleString("en-US")}–{item.end.toLocaleString("en-US")}</footer></blockquote>)}</> : <p>No filing excerpts for this block.</p>}</details>;
+      return <details className="report-content-source report-content-evidence"><summary>{block.title ?? "Related research excerpts"} · {evidence.length}</summary>{evidence.length ? <>{evidence.map((item, i) => <blockquote key={i}><p>{item.excerpt}</p><footer>Characters {item.start.toLocaleString("en-US")}–{item.end.toLocaleString("en-US")}</footer></blockquote>)}</> : <p>No excerpts</p>}</details>;
     }
   }
 }

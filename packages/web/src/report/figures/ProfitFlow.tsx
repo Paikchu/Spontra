@@ -11,7 +11,7 @@ type Node = { key: string; label: string; value: number; role: string; column: n
 export function ProfitFlow({ figure }: { figure: Extract<SecFigure, { kind: "profit_flow" }> }) {
   const income = figure.current;
   const parts = incomeParts(income);
-  if (!parts) return <p className="report-content-fallback">An income statement layer is negative this period, so the flow can't be drawn.</p>;
+  if (!parts) return <p className="report-content-fallback">Unavailable</p>;
   const currency = income.currency;
   const k = 240 / income.revenue, gap = 20, rise = 20, nodeWidth = 14, offset = 30;
   const columns = [30, 280, 530, 770];

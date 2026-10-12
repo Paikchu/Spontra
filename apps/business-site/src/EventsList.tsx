@@ -36,16 +36,16 @@ export function EventsList({ rail, focus, pendingInsider, expanded, onFocus, onE
   const shown = expanded && group ? all.filter(i => groupOf(i) === group) : all;
   const firstEarlier = rail.earlier.find(i => shown.includes(i))?.id;
   const thisYear = (rail.recent[0] ?? all[0])?.date.slice(0, 4);
-  const notes = [rail.quiet > 0 ? `${rail.quiet} more Form 4 ${rail.quiet === 1 ? "filing is a grant, withholding or gift" : "filings are grants, withholdings or gifts"}` : null, pendingInsider > 0 ? `${pendingInsider} Form 4 ${pendingInsider === 1 ? "filing" : "filings"} not yet read` : null].filter(Boolean).join("; ");
+  const notes = [rail.quiet > 0 ? `Form 4 non-trade ${rail.quiet}` : null, pendingInsider > 0 ? `Form 4 pending ${pendingInsider}` : null].filter(Boolean).join(" · ");
   return <RailSection name="events" title="Filings and events" hint={notes || undefined} expandable={all.length > digest.size}
     expanded={expanded} focused={focus != null} onExpand={open => { if (!open) setGroup(null); onExpand(open); }}>
-    {expanded && groups.length > 1 && <div className="section-filters" role="radiogroup" aria-label="Filter by type">
+    {expanded && groups.length > 1 && <div className="section-filters" role="radiogroup" aria-label="Type">
       {[[null, all.length] as const, ...groups].map(([key, count]) => <Button variant="unstyled" type="button" key={key ?? "all"} role="radio" aria-checked={group === key} className="section-filter"
         data-class={key ?? undefined} onClick={() => setGroup(key)}>
         {key == null ? "All" : groupLabel(key)}{key != null && <small>{count}</small>}
       </Button>)}
     </div>}
-    <div className="findings-rows section-body" id="rail-events" role="radiogroup" aria-label="Select a filing or event to view it in the chart">
+    <div className="findings-rows section-body" id="rail-events" role="radiogroup" aria-label="Filings and events">
       {shown.map((item, i) => {
         const year = item.date.slice(0, 4);
         const turn = year !== (i ? shown[i - 1].date.slice(0, 4) : thisYear);

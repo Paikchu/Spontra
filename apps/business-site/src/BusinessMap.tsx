@@ -4,7 +4,7 @@ import type { BusinessFlowQuarter, BusinessSegment, FlowMetric, FlowSource, Publ
 import { deficitFinancialGraph, financialGraph, type FinancialGraph } from "@/packages/web/src/model/business-flow-sankey";
 import { compactFlowValue, truncateToWidth, type PlacedNode } from "@/packages/web/src/model/business-flow-layout";
 import { availableRevenueTrees, compareRevenueNode, revenueNodeKey } from "@/packages/web/src/model/revenue-tree";
-import { formatFlowValue, compareAmount, compareFlowAmounts, NOT_COMPARABLE, numeric, previousQuarter, reconcileQuarter, yearAgoQuarter, type FlowChange } from "@/packages/web/src/model/business-flow-model";
+import { formatFlowValue, compareAmount, compareFlowAmounts, NOT_COMPARABLE, numeric, previousQuarter, yearAgoQuarter, type FlowChange } from "@/packages/web/src/model/business-flow-model";
 import { FinancialSankey } from "@/packages/web/src/business-flow/FinancialSankey";
 import { FlowChart, layoutFor, type CompareBasis, type GuideBracketMark, type GuidePillMark, type NodeCopy, type Tip } from "./FlowChart";
 import { ACTION_GLYPH, actionName, guidanceMarks, markSentence } from "./guidance-marks";
@@ -20,7 +20,7 @@ import { MetricPicker, MetricTrendPanel } from "./MetricTrend";
 import { REVENUE_METRIC, metricOptions, metricTrend } from "./metric-model";
 import { ToggleGroup, ToggleGroupItem } from "@/packages/web/src/ui/toggle-group";
 import type { CapitalQuarter, PublicCapitalStructure } from "@/shared/analysis-contract/capital-structure";
-import { balanceMetrics, balancePool, balanceVerdict, cashMetrics, cashPool, fundingVerdict, type Pool } from "./capital-model";
+import { balanceMetrics, balancePool, cashMetrics, cashPool, type Pool } from "./capital-model";
 import { PoolChart, TONE_LABEL, toneColor } from "./PoolChart";
 import { Rail } from "./Sidebar";
 import type { FindingsPublication } from "@/shared/analysis-contract/findings";
@@ -62,13 +62,10 @@ function statementGraph(q: BusinessFlowQuarter): FinancialGraph {
   return (numeric(q.figures.net) ?? 0) < 0 ? deficitFinancialGraph(q) ?? financialGraph(q) : financialGraph(q);
 }
 
-/** Where the net loss had to be covered, by statement stage. */
-function deficitVerdict(graph: FinancialGraph, revenue: number, money: (v: number) => string) {
-  const into = graph.links.filter(l => l.source === "net"), loss = into.reduce((sum, l) => sum + l.value, 0);
+/** The share of all costs and expenses that revenue paid for in a loss quarter; the net loss paid the rest. */
+function revenueCoverage(graph: FinancialGraph, revenue: number) {
   const uses = graph.nodes.filter(n => !graph.links.some(l => l.source === n.name)).reduce((sum, n) => sum + n.value, 0);
-  const stage = (name: string) => /^(?:other)/.test(name) ? "other expense, net" : name === "tax" ? "income taxes" : "operating costs and expenses";
-  const parts = [...into.reduce((map, l) => map.set(stage(l.target), (map.get(stage(l.target)) ?? 0) + l.value), new Map<string, number>())];
-  return { coverage: uses ? revenue / uses : null, text: `Revenue covers ${percent(revenue / uses * 100)} of all costs and expenses; the ${money(loss)} net loss covers ${parts.map(([name, v]) => `${name} of ${money(v)}`).join(", ")}.` };
+  return uses ? revenue / uses : null;
 }
 
 /** Hue follows the business, not its rank: slots are assigned once, newest quarter first, and kept when the period changes. */
@@ -253,7 +250,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
   }, [money, amountOf, changeOf]);
   const layout = useMemo(() => graph ? layoutFor(graph, copy) : null, [graph, copy]);
   const proportional = Boolean(quarter && layout && quarter.incomeModel !== "financial" && quarter.incomeModel !== "insurance");
-  const deficit = graph?.deficit && revenue ? deficitVerdict(graph, revenue, v => money(v)) : null;
+  const coverage = graph?.deficit && revenue ? revenueCoverage(graph, revenue) : null;
 
   const itemByNode = useMemo(() => new Map(items.map(item => ["segment:" + item.key, item])), [items]);
   const toneOf = useMemo(() => new Map(layout?.nodes.map(n => [n.name, n.tone]) ?? []), [layout]);
@@ -286,7 +283,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
     const dollars = (v: number | null) => v == null ? "—" : compactFlowValue(v / quarter.scale, quarter);
     const amountOfNode = (name: string) => { const n = graph.nodes.find(n => n.name === name); return n ? (n.amount ? numeric(n.amount) : n.metric ? numeric(quarter.figures[n.metric]) : n.value) : null; };
     const marks = guidanceMarks(quarter, graph.nodes.map(n => n.name), guidance, { amountOf: amountOfNode, businessIdOf: name => itemByNode.get(name)?.id ?? null, money: v => dollars(v) });
-    const VERDICT = { above: "Above the high end", within: "Within the range", below: "Below the low end" } as const;
+    const VERDICT = { above: "Above range", within: "Within range", below: "Below range" } as const;
     return {
       brackets: marks.brackets.map(b => ({ node: b.node, low: b.low / quarter.scale, high: b.high / quarter.scale, derived: b.derived, verdict: b.verdict, url: b.source?.url ?? null,
         tip: { title: `This quarter’s guidance · ${markSentence(b.item, dollars)}`, color: colorOf(b.node), note: b.item.quote,
@@ -361,8 +358,6 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
   const mindItem = mindMap && mindPicked && mindPicked.business === current?.key ? mindPicked.item : null;
   const setMindItem = (item: MindItem | null) => setMindPicked(item && current ? { business: current.key, item } : null);
 
-  const reconciliation = quarter ? reconcileQuarter(quarter) : [];
-  const balanced = reconciliation.length > 0 && reconciliation.every(r => r.status === "balanced");
   const figure = (key: FlowMetric) => quarter ? numeric(quarter.figures[key]) : null;
   const margin = (key: FlowMetric) => { const v = figure(key); return v != null && revenue ? `Margin ${percent(v / revenue * 100)}` : "Margin —"; };
   const change = (key: FlowMetric) => quarter ? compareAmount(quarter, previous, key) : NONE;
@@ -373,11 +368,11 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
   return <div className="map">
     <Rail ticker={ticker} actions={tools} label="Company businesses" expanded={openSection != null}>
       <RailSection name="business" title="Businesses" expandable={businessExpandable} focused={current != null} drawer expanded={businessOpen} onExpand={toggleBusiness}>
-        <div className="rail-list section-body" id="rail-business" role="listbox" aria-label="Select a business to highlight it in the chart" ref={listRef} onKeyDown={onListKey} onMouseLeave={() => setPreview(null)}>
+        <div className="rail-list section-body" id="rail-business" role="listbox" aria-label="Businesses" ref={listRef} onKeyDown={onListKey} onMouseLeave={() => setPreview(null)}>
           {/* All businesses heads the drawer: it shows the whole company, and with nothing else picked a click unfolds or folds the list. */}
           <Button variant="unstyled" type="button" role="option" aria-selected={!current} tabIndex={!current ? 0 : -1} className="row row--all" onMouseEnter={() => setPreview(null)}
             onClick={() => { if (current) pickBusiness(null); else if (businessExpandable) toggleBusiness(!businessOpen); }}
-            title={[quantified ? `Total revenue · ${topLevel} top-level ${topLevel === 1 ? "business" : "businesses"}` : "Total revenue", !current && businessExpandable ? (businessOpen ? "Click to collapse businesses" : "Click to expand businesses") : null].filter(Boolean).join(" · ")}>
+            title={quantified ? `Total revenue · ${topLevel} top-level ${topLevel === 1 ? "business" : "businesses"}` : "Total revenue"}>
             <i className="row-chip row-chip--all" aria-hidden="true" />
             <span className="row-name">All businesses</span>
             <span className="row-value">{revenue != null ? money(revenue) : ""}</span>
@@ -389,7 +384,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
             return <Button variant="unstyled" type="button" role="option" key={item.key} data-id={item.id} aria-selected={current?.key === item.key} tabIndex={current?.key === item.key ? 0 : -1}
               className="row" data-depth={item.depth} data-hover={hovered === item.key || undefined} data-extra={businessDigest.has(item.key) ? undefined : ""} style={{ "--c": hue(item.slot) } as CSSProperties}
               onClick={() => pickBusiness(current?.key === item.key ? null : item.id)} onMouseEnter={() => setPreview(item.key)}
-              title={share != null ? `${shareLabel} ${percent(share)}` : "Qualitative attribution · Share not disclosed"}>
+              title={share != null ? `${shareLabel} ${percent(share)}` : undefined}>
               <i className="row-chip" aria-hidden="true" />
               <span className="row-name">{item.name}</span>
               <span className="row-value">{item.value != null ? money(item.value) : ""}</span>
@@ -410,14 +405,14 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
           {current && current.value != null ? <>
             <Stat label="Revenue this quarter" value={current.value} format={money} note={`${word.change} ${itemChange.label}`} tone={itemChange.trend ?? undefined} />
             <Stat label={shareLabel} value={segmentRevenue ? current.value / segmentRevenue * 100 : null} format={percent} note={parent?.value ? `${percent(current.value / parent.value * 100)} of ${parent.name}` : "Top-level business"} />
-            <Stat label="Total company revenue" value={revenue} format={money} note="Costs and profit are not allocated to businesses" />
+            <Stat label="Total company revenue" value={revenue} format={money} />
           </> : <>
             <Stat label="Total revenue" value={revenue} format={money} note={`${word.change} ${change("revenue").label}`} tone={change("revenue").trend ?? undefined} />
             {quarter.incomeModel !== "direct_operating" && figure("gross") != null && <Stat label="Gross profit" value={figure("gross")} format={money} note={margin("gross")} />}
             {figure("operating") != null || figure("pretax") == null
               ? <Stat label="Operating income" value={figure("operating")} format={money} note={margin("operating")} />
               : <Stat label="Income before taxes" value={figure("pretax")} format={money} note={margin("pretax")} />}
-            <Stat label={deficit ? "Net loss" : "Net income"} value={figure("net")} format={money} note={deficit?.coverage != null ? `${margin("net")} · Revenue covers ${percent(deficit.coverage * 100)}` : margin("net")} />
+            <Stat label={graph?.deficit ? "Net loss" : "Net income"} value={figure("net")} format={money} note={coverage != null ? `${margin("net")} · Cost coverage ${percent(coverage * 100)}` : margin("net")} />
           </>}
         </div>}
         <div className="stage-controls">
@@ -435,17 +430,16 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
           </span>
         </ToggleGroup>}
         </div>
-        {quarter && <Verdict view={view} funding={funding} deficit={deficit?.text ?? null} />}
       </header>
 
       <div className="chart">
         {view !== "profit" && funding ? <CapitalChart view={view} funding={funding} ticker={ticker} spotlight={poolSpotlight} />
-          : !quarter ? <div className="empty"><h2>No quarterly financials disclosed</h2><p>The flow needs three-month figures in one currency on one basis. Sample data is never used instead.</p></div>
+          : !quarter ? <div className="empty"><h2>No quarterly financials disclosed</h2></div>
           : proportional && layout ? <FlowChart graph={graph!} copy={copy} money={v => money(v)} colorOf={colorOf} active={active} revealKey={quarter.id} productBusiness={current ? "segment:" + current.key : null} mindMap={mindMap} mindPick={mindItem?.id ?? null} onMindPick={setMindItem} businessDetails={<Dossier item={current} parent={parent ?? null} sources={quarter.sources} explainer={explainer} />}
               focusSlot={n => { const prior = priorOf(n); return segmentRevenue ? `${shareLabel} ${percent(n.value / segmentRevenue * 100)}${prior != null && priorShareBase ? ` · ${word.period} ${percent(prior / priorShareBase * 100)}` : ""}` : null; }}
               onHover={name => setHoverNode(name)} tipFor={tipFor} spotlight={spotlight} priorOf={priorOf} basis={word} brackets={guideMarks.brackets} pills={guideMarks.pills}
               onPick={n => { const item = itemByNode.get(n.name); pickBusiness(item && current?.key !== item.key ? item.id : null); }}
-              label={`${ticker} ${quarter.label} Sankey diagram from revenue to net income, amounts in ${quarter.currency}`} />
+              label={`${ticker} ${quarter.label} revenue to net income, ${quarter.currency}`} />
           : <div className="business-flow chart-fallback">{current && <Dossier item={current} parent={parent ?? null} sources={quarter.sources} explainer={explainer} />}<FinancialSankey quarter={quarter} previous={previous} word={word.change} onSegment={key => pickBusiness(items.find(item => item.key === key)?.id ?? null)} /></div>}
       </div>
 
@@ -477,16 +471,12 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
         {view !== "profit" && funding ? <CapitalLegend view={view} funding={funding} /> : proportional ? <div className="legend" aria-label="Legend">
           <span><i className="legend-biz" />Business revenue</span>
           <span><i style={{ background: "var(--flow-profit)" }} />Profit</span>
-          {(graph?.signed || graph?.deficit) && <span><i style={{ background: "var(--loss)" }} />{graph?.deficit ? "Net loss (funding gap)" : "Loss"}</span>}
+          {(graph?.signed || graph?.deficit) && <span><i style={{ background: "var(--loss)" }} />{graph?.deficit ? "Net loss" : "Loss"}</span>}
           <span><i style={{ background: "var(--flow-expense)" }} />Costs and expenses</span>
-          <span className="legend-note">{graph?.signed ? "Line width = this quarter’s absolute amount" : "Line width = this quarter’s amount"}{previous ? ` · % = ${word.change} change · Tick = ${word.period.toLowerCase()} amount · Stripes = gained · Hollow frame = shortfall` : ""}{guideMarks.brackets.length ? " · Bracket = this quarter’s guidance range" : ""}{guideMarks.pills.length ? " · Pill = next quarter’s guidance" : ""}</span>
-        </div> : <span className="legend-note">Boxes show accounting relationships; width does not represent amounts</span>}
+        </div> : null}
         <p className="provenance">
           {notice && <span>{notice}</span>}
-          {view !== "profit" && funding ? <CapitalProvenance view={view} funding={funding} /> : <>
-          {graph?.notice && proportional && <span>{graph.notice}</span>}
-          {quarter && <span>{balanced ? `${reconciliation.length} accounting identities checked` : "Some disclosures are missing; only balanced paths are drawn"}</span>}
-          </>}
+          {view !== "profit" && funding && <CapitalProvenance view={view} funding={funding} />}
           {flow.fetchedAt && <span>Data {flow.fetchedAt.slice(0, 10)}</span>}
         </p>
       </footer>
@@ -513,27 +503,18 @@ function CapitalStats({ view, funding }: { view: View; funding: CapitalQuarter }
       <Stat label="Total assets" value={m.assets} format={money} note={`As of ${b.asOf}`} />
       <Stat label="Debt" value={m.debt} format={money} note={`Debt and leases ${pct(m.leverage)} of assets`} />
       {m.customer > 0 ? <Stat label="Customer prepayments" value={m.customer} format={money} note={`${pct(m.customer / m.assets)} of assets`} />
-        : <Stat label="Cash and short-term investments" value={b.assets.filter(l => l.group === "cash").reduce((s, l) => s + Number(l.value), 0)} format={money} note="Includes restricted cash" />}
+        : <Stat label="Cash and short-term investments" value={b.assets.filter(l => l.group === "cash").reduce((s, l) => s + Number(l.value), 0)} format={money} />}
       <Stat label="Stockholders’ equity" value={m.equity} format={money} note={m.deficit > 0 ? `Paid-in ${money(m.paidIn)} · Accumulated deficit ${money(m.deficit)}` : `${pct(m.equity / m.assets)} of assets`} tone={m.equity < 0 ? "down" : undefined} />
     </div>;
   }
   const c = cashOf(funding), m = cashMetrics(c), period = cashPeriod(funding);
   const outside = [m.debtNet != null ? `Net borrowing ${money(m.debtNet)}` : null, m.equityIssued ? `Shares issued ${money(m.equityIssued)}` : null].filter(Boolean).join(" · ");
   return <div className="stats" aria-live="polite">
-    <Stat label={`Operating cash flow · ${period}`} value={m.operating} format={money} note={m.selfFunding == null ? "Cash from operations" : m.selfFunding >= 2 ? `${m.selfFunding.toFixed(1)}× capital expenditures` : `Covers ${pct(m.selfFunding)} of capital expenditures`} tone={m.operating < 0 ? "down" : undefined} />
+    <Stat label={`Operating cash flow · ${period}`} value={m.operating} format={money} note={m.selfFunding == null ? undefined : `Capex coverage ${m.selfFunding >= 2 ? `${m.selfFunding.toFixed(1)}×` : pct(m.selfFunding)}`} tone={m.operating < 0 ? "down" : undefined} />
     {m.capex != null && <Stat label="Capital expenditures" value={m.capex} format={money} note={m.free != null ? `Free cash flow ${money(m.free)}` : undefined} />}
-    <Stat label="Net cash from financing" value={m.financing} format={money} note={outside || "Borrowing, share issuance and shareholder returns combined"} />
+    <Stat label="Net cash from financing" value={m.financing} format={money} note={outside || undefined} />
     <Stat label="Change in cash" value={Number(c.netChange)} format={money} note={funding.balanceSheet ? `Ending cash and short-term investments ${money(funding.balanceSheet.assets.filter(l => l.group === "cash").reduce((s, l) => s + Number(l.value), 0))}` : undefined} />
   </div>;
-}
-
-function Verdict({ view, funding, deficit }: { view: View; funding: CapitalQuarter | null; deficit: string | null }) {
-  if (view === "balance" && funding?.balanceSheet) return <p className="stage-verdict"><b>Funding structure</b>{balanceVerdict(funding.balanceSheet)}</p>;
-  if (view === "cash" && funding && (funding.cashFlow || funding.yearToDate)) {
-    const money = capitalMoney(funding), verdict = fundingVerdict(cashOf(funding), funding.balanceSheet, v => money(v));
-    return <p className="stage-verdict" data-kind={verdict.kind}><b>{verdict.label}</b>{verdict.text}</p>;
-  }
-  return deficit ? <p className="stage-verdict" data-kind="survival"><b>Where the loss comes from</b>{deficit}</p> : null;
 }
 
 function poolOf(view: View, funding: CapitalQuarter): Pool {
@@ -553,19 +534,14 @@ function CapitalLegend({ view, funding }: { view: View; funding: CapitalQuarter 
   const tones = [...new Set([...pool.sources, ...pool.uses].filter(item => item.value >= pool.total * 0.01).map(item => item.tone))];
   return <div className="legend" aria-label="Legend">
     {tones.map(tone => <span key={tone}><i style={{ background: toneColor(tone) }} />{TONE_LABEL[tone]}</span>)}
-    <span className="legend-note">Sources on the left equal uses on the right · Line width = amount</span>
   </div>;
 }
 
 function CapitalProvenance({ view, funding }: { view: View; funding: CapitalQuarter }) {
-  if (view === "balance") return <>
-    <span>Each asset, liability and equity line is checked against the statement totals</span>
-    <a href={funding.balanceSheet!.source.url} target="_blank" rel="noopener noreferrer">{funding.balanceSheet!.source.form} {funding.balanceSheet!.source.accession}</a>
-  </>;
+  if (view === "balance") return <a href={funding.balanceSheet!.source.url} target="_blank" rel="noopener noreferrer">{funding.balanceSheet!.source.form} {funding.balanceSheet!.source.accession}</a>;
   const c = cashOf(funding);
   return <>
-    <span title={c.formula}>{c.basis === "derived" ? `This quarter = ${months(funding.yearToDate!.periodStart, c.periodEnd)}-month year to date − first ${months(funding.yearToDate!.periodStart, c.periodStart)} months (difference of two filings)` : funding.cashFlow ? "As reported in this quarter’s cash flow statement" : "This quarter can’t be split from the cumulative figure; showing year to date"}</span>
-    <span>Operating, investing and financing cash flows are checked against the change in cash</span>
+    {c.basis === "derived" && <span title={c.formula}>Derived · {months(funding.yearToDate!.periodStart, c.periodEnd)}M − {months(funding.yearToDate!.periodStart, c.periodStart)}M year to date</span>}
     {c.sources.map(s => <a key={s.accession} href={s.url} target="_blank" rel="noopener noreferrer">{s.form} {s.accession}</a>)}
   </>;
 }
@@ -587,12 +563,12 @@ function Dossier({ item, parent, sources, explainer }: { item: Item | null; pare
   const explained = explainer?.businesses.find(b => b.nodeId === item.id);
   if (explainer && explained) return <ExplainedDossier key={item.key} item={item} parent={parent} explainer={explainer} explained={explained} />;
   const segment = item.segment;
-  const [description, basis] = (segment.description || "No business description disclosed").split("\n");
+  const [description, basis] = (segment.description || "No description").split("\n");
   return <section className="dossier" key={item.key} aria-label={`${item.name} business profile`}>
     <h3>{parent ? `${parent.name} / ` : ""}{item.name}</h3>
     <p>{description}</p>
 
-    <DossierTabs label={item.name} sections={[["Customers", segment.customers ?? "Not disclosed"], ["How it charges", segment.monetization ?? "Not disclosed"]]} />
+    <DossierTabs label={item.name} sections={[["Customers", segment.customers ?? "Not disclosed"], ["Revenue model", segment.monetization ?? "Not disclosed"]]} />
     {basis && <p className="fine">{basis}</p>}
     <Sources sources={sources} ids={segment.sourceIds} />
   </section>;

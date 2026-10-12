@@ -15,7 +15,7 @@ export function GrowthChart({ figure }: { figure: Extract<SecFigure, { kind: "gr
   const growthTicks = rates.length ? niceTicks(Math.min(0, ...rates), Math.max(0, ...rates) * 1.15, 3) : [];
   const gy = growthTicks.length ? scale([growthTicks[0], growthTicks.at(-1)!], [bottom, top]) : () => bottom;
   const latest = points.at(-1)!;
-  const description = `Revenue: ${points.map((p) => `${p.date} ${formatValue(p.value, unit)}`).join("; ")}. YoY growth: ${growth.map((g) => `${g.date} ${formatChange(g.growth)}`).join("; ") || "no prior-year period to compare"}`;
+  const description = `Revenue: ${points.map((p) => `${p.date} ${formatValue(p.value, unit)}`).join("; ")}. YoY growth: ${growth.map((g) => `${g.date} ${formatChange(g.growth)}`).join("; ") || "n/a"}`;
   return <>
     <div className="sec-figure-legend"><span data-role="total">Revenue (left axis)</span>{growth.length > 0 && <span data-role="rate">YoY growth (right axis)</span>}</div>
     <svg className="sec-figure-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={description}>

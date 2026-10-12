@@ -4,7 +4,7 @@ import { Sidebar, SidebarHeader, SidebarContent, SidebarTrigger } from "@/packag
 import { CompanyMark } from "./CompanyMark";
 
 export function ThemeToggle({ light, onToggle }: { light: boolean; onToggle: () => void }) {
-  return <Button variant="unstyled" type="button" className="icon-button" aria-label={light ? "Switch to dark theme" : "Switch to light theme"} aria-pressed={light} onClick={onToggle}>
+  return <Button variant="unstyled" type="button" className="icon-button" aria-label="Light theme" aria-pressed={light} onClick={onToggle}>
     <svg viewBox="0 0 24 24" aria-hidden="true">
       {light ? <path d="M20 15a8 8 0 0 1-11-11A8.5 8.5 0 1 0 20 15Z" /> : <>
         <circle cx="12" cy="12" r="4" />

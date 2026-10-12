@@ -52,8 +52,7 @@ class ChartBoundary extends Component<
   render() {
     return this.state.failed ? (
       <StateShell ticker={this.props.ticker} tools={this.props.tools} role="alert">
-        <h2>The chart can’t be shown right now</h2>
-        <p>Reload the page. Sample data is never shown in place of real disclosures.</p>
+        <h2>Chart unavailable</h2>
       </StateShell>
     ) : (
       this.props.children
@@ -125,23 +124,14 @@ function Company({ ticker, tools, onSeen }: { ticker: string; tools: ReactNode; 
           fundamentals={fundamentals}
           events={events}
           filings={filings}
-          notice={
-            publication?.outdated
-              ? publication.reasons.includes("SIGNED_LAYOUT_UNSUPPORTED")
-                ? "The latest quarter has negative values the proportional chart can’t draw; showing the last complete snapshot"
-                : "The update isn’t finished; showing the last complete snapshot"
-              : !flow.quarters.length
-                ? "No quarterly financials available yet"
-                : null
-          }
+          notice={publication?.outdated ? "Last complete snapshot" : null}
         />
       </ChartBoundary>
     );
   if (failed)
     return (
       <StateShell ticker={ticker} tools={tools} role="alert">
-        <h2>The data can’t be loaded right now</h2>
-        <p>Try again later. Undisclosed figures are never treated as zero.</p>
+        <h2>Load failed</h2>
         <button
           type="button"
           onClick={() => {
@@ -156,8 +146,7 @@ function Company({ ticker, tools, onSeen }: { ticker: string; tools: ReactNode; 
   if (publication)
     return (
       <StateShell ticker={ticker} tools={tools} role="status">
-        <h2>{publication.status === "unavailable" ? "The current disclosures can’t be fully charted" : "The full financial chart is being prepared"}</h2>
-        <p>Missing values or a partial chart are never shown in place of complete disclosures.</p>
+        <h2>{publication.status === "unavailable" ? "Unavailable" : "Processing"}</h2>
         <p className="state-reasons">{publication.reasons.join(" · ")}</p>
       </StateShell>
     );
@@ -165,7 +154,7 @@ function Company({ ticker, tools, onSeen }: { ticker: string; tools: ReactNode; 
 }
 function Skeleton({ ticker, tools }: { ticker: string; tools: ReactNode }) {
   return (
-    <div className="map map--loading" role="status" aria-label="Loading public filings">
+    <div className="map map--loading" role="status" aria-label="Loading">
       <Rail ticker={ticker} actions={tools}>
         <div className="rail-list">
           {[0, 1, 2, 3, 4, 5].map((i) => (

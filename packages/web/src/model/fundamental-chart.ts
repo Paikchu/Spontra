@@ -19,12 +19,12 @@ export const FUNDAMENTAL_CHART_WIDTH = 760;
 export const FUNDAMENTAL_CHART_HEIGHT = 280;
 
 /**
- * Marker for a meaningless growth rate, and the sentence that spells it out. Growth is undefined
+ * Marker for a meaningless growth rate, and its spoken form. Growth is undefined
  * when the base is zero or negative; the convention is NM (not meaningful), not the same dash
  * used for "no data this period".
  */
 export const FUNDAMENTAL_NOT_MEANINGFUL_LABEL = "NM";
-export const FUNDAMENTAL_NOT_MEANINGFUL_HINT = "Not meaningful: the base is zero or negative, so growth is undefined";
+export const FUNDAMENTAL_NOT_MEANINGFUL_HINT = "Not meaningful";
 
 export type FundamentalChartAxisSide = "left" | "right";
 

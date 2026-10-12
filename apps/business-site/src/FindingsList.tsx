@@ -28,11 +28,11 @@ export function FindingsList({ findings, focus, story, periodEnd, expanded, onFo
     actions={<Button variant="unstyled" type="button" className="icon-button section-action" aria-pressed={story} aria-label={story ? "Stop walk-through" : "Walk through"} title={story ? "Stop walk-through" : "Walk through (← →)"} onClick={onStory}>
       <svg viewBox="0 0 24 24" aria-hidden="true">{story ? <rect x="7" y="7" width="10" height="10" rx="2" /> : <path d="M8 6.5v11l9-5.5Z" />}</svg>
     </Button>}>
-    <div className="findings-rows section-body" id="rail-findings" role="radiogroup" aria-label="Select a finding to focus it in the chart">
+    <div className="findings-rows section-body" id="rail-findings" role="radiogroup" aria-label="Findings">
       {findings.map((f, i) => <Button variant="unstyled" type="button" key={f.id} role="radio" aria-checked={focus === f.id} className="finding-row" data-kind={f.kind}
         data-extra={extra(f, i) ? "" : undefined} onClick={() => onFocus(focus === f.id ? null : f.id)} title={`${KIND_LABEL[f.kind]} · Severity ${f.severity}`}>
         <i className="finding-mark" aria-label={`${KIND_LABEL[f.kind]} · Severity ${f.severity}`}>{f.severity}</i>
-        <span className="finding-title">{f.title}{f.watchOutcome && <i className="finding-settled" title="New disclosure on what to watch" aria-label="New disclosure on what to watch">↻</i>}</span>
+        <span className="finding-title">{f.title}{f.watchOutcome && <i className="finding-settled" title="Watch outcome" aria-label="Watch outcome">↻</i>}</span>
       </Button>)}
     </div>
   </RailSection>;

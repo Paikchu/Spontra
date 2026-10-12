@@ -76,7 +76,7 @@ function Chip({ item, copy }: { item: Item; copy: boolean }) {
     tabIndex={copy ? -1 : undefined} title={`${ticker} · ${report(periodEnd)} · ${KIND_LABEL[f.kind]}`}>
     <CompanyLogo ticker={ticker} small />
     <span>{f.title}</span>
-    {f.watchOutcome && <i className="finding-settled" aria-label="New disclosure on what to watch">↻</i>}
+    {f.watchOutcome && <i className="finding-settled" aria-label="Watch outcome">↻</i>}
   </a>;
 }
 
@@ -113,7 +113,6 @@ export function Home({ light, onToggleTheme, recent, onPick }: { light: boolean;
     <div className="home-center">
     <section className="home-hero" aria-labelledby="home-title">
       <h1 id="home-title">Business View</h1>
-      <p>From businesses and products to net income, built from public filings.</p>
       <SearchPanel inline current={null} recent={recent} onPick={onPick} inputRef={inputRef} />
       {recent.length > 0 && <nav className="home-recent" aria-label="Recently viewed">
         <span>Recently viewed</span>

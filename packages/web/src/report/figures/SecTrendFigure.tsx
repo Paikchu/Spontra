@@ -25,7 +25,7 @@ function valueText(value: number, trend: SecTrend, exact = false) {
 /** All figures share verified values; two observations are a comparison, never an interpolated trend. */
 export function SecTrendFigure({ id, title, trend: input, mark = "line", caption }: TrendProps) {
   const trend = readableTrend(input);
-  if (!trend || !trend.points.length) return <div className="report-content-fallback" id={id}>{title}: no comparable data to chart.</div>;
+  if (!trend || !trend.points.length) return <div className="report-content-fallback" id={id}>{title}: No data</div>;
   const { points } = trend;
   const comparison = points.length === 2;
   const unit = trend.unit === "ratio" ? "%" : trend.unit;

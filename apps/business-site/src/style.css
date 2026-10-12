@@ -247,9 +247,8 @@ button { cursor: pointer; }
 .legend span { display: inline-flex; align-items: center; gap: 7px; }
 .legend i { width: 10px; height: 10px; border-radius: 3px; }
 .legend .legend-biz { background: linear-gradient(135deg, var(--biz-1), var(--biz-2) 35%, var(--biz-3) 65%, var(--biz-4)); }
-.legend-note { color: var(--faint); }
 .provenance { display: flex; flex-wrap: wrap; justify-content: flex-end; margin: 0; color: var(--faint); }
-.provenance span + span::before { content: "·"; margin: 0 8px; }
+.provenance > * + *::before { content: "·"; margin: 0 8px; color: var(--faint); display: inline-block; }
 
 /* ---------- Chart ---------- */
 .fc { position: absolute; inset: 0; display: grid; grid-template-columns: minmax(0, 1fr); }
@@ -349,7 +348,6 @@ button { cursor: pointer; }
 .fc-mind-item[data-picked] rect { stroke: var(--foreground); stroke-width: 2; }
 .fc-mind-caption { pointer-events: none; animation: fade-in .4s ease both; }
 .fc-mind-title { font-weight: 600; fill: var(--foreground); }
-.fc-mind-hint { fill: var(--faint); }
 @media (max-width: 960px) { .mind-lens .lens-body { grid-template-columns: minmax(0, 1fr); } }
 .mind-lens-kind { font-size: 12px; font-weight: 600; color: var(--muted-foreground); }
 .mind-lens .lens-body { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
@@ -536,7 +534,7 @@ button { cursor: pointer; }
 .state, .empty { max-width: 520px; margin: 12vh auto 0; padding: 0 24px; text-align: center; line-height: 1.7; }
 .empty { margin-top: 18%; }
 .state h2, .empty h2 { margin: 0 0 8px; font-size: 20px; font-weight: 620; letter-spacing: -.02em; }
-.state p, .empty p { margin: 0 0 6px; color: var(--muted-foreground); font-size: 14px; }
+.state p { margin: 0 0 6px; color: var(--muted-foreground); font-size: 14px; }
 .state-reasons { font-size: 12px !important; color: var(--faint) !important; }
 .state button { margin-top: 14px; padding: 9px 18px; border-radius: 10px; background: var(--surface); border: 1px solid var(--border); }
 .row--ghost { height: 48px; background: linear-gradient(90deg, var(--hairline), color-mix(in srgb, var(--foreground) 7%, transparent), var(--hairline)) 0 0 / 200% 100%; animation: shimmer 1.6s ease-in-out infinite both; }
@@ -557,11 +555,6 @@ button { cursor: pointer; }
 .stage-controls { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 10px 12px; margin-left: auto; }
 .stage-views { padding: 3px; }
 .stage-views button { padding: 5px 13px; font-size: 12.5px; }
-.stage-verdict { flex-basis: 100%; margin: -4px 0 0; font-size: 13px; line-height: 1.6; color: var(--muted-foreground); animation: rise .45s var(--ease) both; }
-.stage-verdict b { display: inline-block; margin-right: 10px; padding: 1px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600; color: var(--foreground); background: var(--surface); border: 1px solid var(--hairline); }
-.stage-verdict[data-kind="survival"] b { color: var(--loss); border-color: color-mix(in srgb, var(--loss) 35%, transparent); }
-.stage-verdict[data-kind="expansion"] b { color: var(--flow-expense); border-color: color-mix(in srgb, var(--flow-expense) 35%, transparent); }
-.stage-verdict[data-kind="self"] b { color: var(--up); border-color: color-mix(in srgb, var(--up) 35%, transparent); }
 .pool { position: absolute; inset: 0; display: grid; }
 .pool-canvas { position: relative; min-width: 0; min-height: 0; }
 .pool-svg .fc-band[data-lit="on"] { fill-opacity: .55; }
@@ -570,7 +563,6 @@ button { cursor: pointer; }
 .pool-tip-line span { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .provenance a { color: var(--faint); text-decoration: underline; text-decoration-color: var(--hairline); text-underline-offset: 3px; }
 .provenance a:hover { color: var(--foreground); }
-.provenance span + a::before, .provenance a + a::before { content: "·"; margin: 0 8px; color: var(--faint); display: inline-block; }
 
 /* ---------- Narrow screens: stack, keep the diagram legible with horizontal scroll ---------- */
 @media (max-width: 960px) {
@@ -664,14 +656,10 @@ button { cursor: pointer; }
 }
 
 /* Product relationships are qualitative: constant strokes carry no financial amount. */
-.fc-controls { position: absolute; right: 8px; top: 8px; display: flex; gap: 4px; z-index: 2; }
 .fc-svg { touch-action: none; cursor: grab; }
 @keyframes product-enter { from { opacity: 0; } to { opacity: 1; } }
 
 .fc-svg { overflow: hidden; }
-.fc-controls button { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--foreground); padding: 5px 9px; font: inherit; font-size: 12px; cursor: pointer; }
-.fc-controls button:hover { background: var(--surface-raised); }
-.fc-controls button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 
 /* Business copy sits beside the canvas at page scale; the Sankey refits to the remaining width and the stage keeps its height. */
 .fc[data-products] { grid-template-columns: clamp(300px, 31%, 390px) minmax(0, 1fr); gap: clamp(12px, 1.4vw, 20px); }
@@ -713,8 +701,6 @@ button { cursor: pointer; }
 }
 
 @media (max-width: 960px) {
-  .chart:has(.fc)::before { content: "Swipe sideways to see the full Sankey"; display: block; position: sticky; left: 0; width: fit-content; margin-bottom: 8px; font-size: 12px; color: var(--muted-foreground); }
-  .fc-controls { left: 8px; right: auto; }
   .fc-svg { touch-action: pan-x pan-y; cursor: auto; }
 }
 
@@ -887,8 +873,7 @@ button { cursor: pointer; }
   position: relative; z-index: 2; display: flex; flex-direction: column; align-items: center; width: min(720px, 100% - 48px);
   text-align: center; animation: rise .5s var(--ease) both;
 }
-.home-hero h1 { margin: 0; font-size: clamp(32px, 5vw, 48px); font-weight: 650; letter-spacing: -.03em; line-height: 1.1; }
-.home-hero > p { margin: 12px 0 32px; font-size: 15px; color: var(--muted-foreground); }
+.home-hero h1 { margin: 0 0 32px; font-size: clamp(32px, 5vw, 48px); font-weight: 650; letter-spacing: -.03em; line-height: 1.1; }
 
 /* The inline search is the dialog's panel resting on the page; its list floats beneath the field. */
 .search-panel[data-inline] { position: relative; z-index: 5; width: 100%; overflow: visible; text-align: left; border-radius: 22px; box-shadow: var(--rail-shadow); transition: border-color .2s, box-shadow .2s; }
@@ -941,7 +926,7 @@ button { cursor: pointer; }
 }
 @media (max-width: 620px) {
   .home-hero { width: calc(100% - 32px); }
-  .home-hero > p { margin-bottom: 24px; }
+  .home-hero h1 { margin-bottom: 24px; }
   .search-panel[data-inline] .search-field { height: 58px; padding: 0 18px; }
   .search-panel[data-inline] .search-field input { font-size: 17px; }
   .search-panel[data-inline] .search-foot { display: none; }
@@ -1067,8 +1052,6 @@ button { cursor: pointer; }
 .event-verdict[data-verdict="attention"] b { background: var(--loss); }
 .event-verdict[data-verdict="planned"] b { background: var(--up); }
 .event-verdict[data-verdict="routine"] b { background: var(--muted-foreground); }
-.event-rules { margin: 0 0 8px; padding-left: 16px; font-size: 12px; color: var(--muted-foreground); }
-.event-rules li { margin: 2px 0; }
 .event-cluster { margin: 0 0 10px; padding: 0; list-style: none; font-size: 12px; color: var(--muted-foreground); }
 .event-cluster li { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; border-bottom: 1px solid var(--hairline); font-variant-numeric: tabular-nums; }
 

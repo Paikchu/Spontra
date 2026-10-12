@@ -11,7 +11,7 @@ const PARTS: Array<{ key: keyof IncomeParts; label: string; role: string }> = [
 /** Each 100 of revenue split into the layers it pays for, this period against the same period last year. */
 export function PerHundred({ figure }: { figure: Extract<SecFigure, { kind: "per_hundred" }> }) {
   const current = perHundred(figure.current), prior = perHundred(figure.prior);
-  if (!current || !prior) return <p className="report-content-fallback">An income statement layer is negative, so revenue can&apos;t be split per 100.</p>;
+  if (!current || !prior) return <p className="report-content-fallback">Unavailable</p>;
   const hundred = `${currencySymbol(figure.current.currency)}100`;
   const delta = current.netIncome - prior.netIncome;
   const row = (label: string, date: string, parts: IncomeParts, current: boolean) => <div className="sec-figure-hundred-row" data-current={current}>

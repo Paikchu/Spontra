@@ -82,9 +82,8 @@ export function MetricTrendPanel({ trend, picker, currentPeriod, periods, onPick
       <div className="trend-title">
         <div className="trend-heading"><h2>Whole company</h2>{picker}</div>
         <ChartLegendContent asChild key={"legend" + trend.key}><div className="trend-legend">
-          {rateAxis && <span className="trend-legend-line" style={{ "--line": "var(--foreground)" } as CSSProperties}><i />{rateName} · right axis</span>}
-          <span className="trend-basis">SEC XBRL quarterly values · Not split by business</span>
-          {rate && !rateAxis && <span className="trend-basis">Growth isn’t calculated where the comparison period is missing or not positive</span>}
+          {rateAxis && <span className="trend-legend-line" style={{ "--line": "var(--foreground)" } as CSSProperties}><i />{rateName}</span>}
+          <span className="trend-basis">SEC XBRL</span>
         </div></ChartLegendContent>
       </div>
       <div className="trend-kpis">
@@ -116,7 +115,7 @@ export function MetricTrendPanel({ trend, picker, currentPeriod, periods, onPick
         return <div key={point.periodEnd} className="trend-col" role="listitem" data-state={v == null ? "missing" : "ok"} data-current={i === current || undefined}
           data-align={i < 2 ? "start" : i > trend.points.length - 3 ? "end" : undefined} style={{ "--i": i } as CSSProperties} onMouseEnter={() => setHover(i)}>
           <Button variant="unstyled" type="button" className="trend-hit" disabled={!pick} onClick={() => pick && onPickPeriod(pick)} onFocus={() => setHover(i)}
-            aria-label={`${shortPeriod(point.periodEnd)} ${trend.label} ${v == null ? "not disclosed" : format(v)}${pick ? ", view this quarter in the flow chart" : ""}`} />
+            aria-label={`${shortPeriod(point.periodEnd)} ${trend.label} ${v == null ? "not disclosed" : format(v)}`} />
           <span className="trend-value" data-below={v != null && v < 0 || undefined} data-quiet={rateAxis && i !== current && !(hover === i && series !== "line") ? "" : undefined}
             style={{ bottom: `${v == null ? 22 : v < 0 ? bottom : top}%` }}>{format(v)}</span>
           {v != null ? <span className="trend-stack" data-negative={v < 0 || undefined} aria-hidden="true" style={{ top: "auto", bottom: `${bottom}%`, height: `${top - bottom}%` }}>
@@ -134,8 +133,8 @@ export function MetricTrendPanel({ trend, picker, currentPeriod, periods, onPick
             <div className="trend-tip-title">{shortPeriod(point.periodEnd)} · {trend.label}</div>
             <div className="trend-tip-row trend-tip-lead"><span>{series === "line" && rate ? rateName : "This quarter"}</span><b data-trend={series === "line" ? direction(delta) : undefined}>{series === "line" && rate ? percent(delta) : format(v)}</b></div>
             {series !== "line" && delta != null && <div className="trend-tip-row"><span>{lag === 4 ? "YoY" : "QoQ"}</span><b data-trend={direction(delta)}>{rate ? percent(delta) : points(delta)}</b></div>}
-            {v == null && <p>No verifiable SEC disclosure for this quarter</p>}
-            {v != null && delta == null && <p>{rate ? "Comparison period missing or not positive; growth is blank" : "Comparison period missing"}</p>}
+            {v == null && <p>Not disclosed</p>}
+            {v != null && delta == null && <p>No comparison period</p>}
             {point.accession && <p className="trend-tip-source">SEC {point.accession}</p>}
           </div></ChartTooltipContent>}
         </div>;
