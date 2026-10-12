@@ -1,4 +1,4 @@
-import type { BusinessMapCompanies } from '../../../../shared/analysis-contract/business-map-admin.ts';
+import type { BusinessMapCharts, BusinessMapCompanies } from '../../../../shared/analysis-contract/business-map-admin.ts';
 import type { SecPipelineEnv } from '../operations.ts';
 import { authenticateAdmin } from './auth.ts';
 import { listFinancialCompanies } from './financials.ts';
@@ -9,6 +9,8 @@ import { checkCompleteFlow, newestPair } from '../../../../shared/analysis-runti
 import { financialPolicy } from '../../../../shared/analysis-runtime/financial-data/policy.ts';
 import { normalizeTrackedTicker } from '../sec/config.ts';
 import { emit } from '../pipeline/outbox.ts';
+import { readCompletePublicationForTicker } from '../financial-data/publication.ts';
+import { readMapDerived } from '../financial-data/derived.ts';
 
 const json = (body: unknown, status = 200) => Response.json(body, {status, headers: {'cache-control':'private, no-store'}});
 export async function handleBusinessMapAdminRequest(request: Request, env: SecPipelineEnv): Promise<Response> {
@@ -52,6 +54,19 @@ export async function handleBusinessMapAdminRequest(request: Request, env: SecPi
             reasons:invalid?['INVALID_PAYLOAD']:reasons.length?reasons:flow?[]:['MISSING_TWO_QUARTERS'],periods:flow?.quarters.map(q=>q.periodEnd)??[],revenueCoverage:flow?.quarters.map(q=>({period:q.periodEnd,status:q.segmentDisclosure==='single_reportable_segment'?'single_segment' as const:q.segments.some(s=>s.id==='reported-company-total')?'unverified' as const:'verified' as const,segments:q.segments.length,adjustments:q.revenueAdjustments?.length??0}))??[]}};
       });
       return json({companies,automaticCollection:list.environment.dataCollectionEnabled} satisfies BusinessMapCompanies);
+    }
+    // The three BusinessView charts as the map reads them: profit from the published flow and its archived quarters,
+    // cash flow and balance sheet from the derived capital structure. Read only, like the map's own routes.
+    const charts = /^\/admin\/business-map\/companies\/([^/]+)\/charts$/.exec(path);
+    if (charts && request.method === 'GET') {
+      const ticker = normalizeTrackedTicker(decodeURIComponent(charts[1]!));
+      if (!ticker) return json({error:'公司代码无效。'},400);
+      const publication = await readCompletePublicationForTicker(db, ticker);
+      const derived = publication.flow ? await readMapDerived(db, publication.flow) : null;
+      // As the map merges them: archived quarters first, the published pair overriding any period they share.
+      const flow = publication.flow;
+      const profit = flow ? {...flow, quarters: [...new Map([...(derived?.reports?.quarters ?? []), ...flow.quarters].map(q => [q.periodEnd, q])).values()].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd))} : null;
+      return json({ticker, status: publication.status, reasons: publication.reasons, profit, capital: derived?.capital ?? null} satisfies BusinessMapCharts);
     }
     const match = /^\/admin\/business-map\/companies\/([^/]+)$/.exec(path);
     if (!match || request.method !== 'POST') return json({error:'Not found'},404);

@@ -350,6 +350,8 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
   const businessDigest = new Set([current?.key, current?.parent].filter(Boolean));
   const businessExpandable = items.some(i => !businessDigest.has(i.key));
   const toggleBusiness = (open: boolean) => railTransition(() => setBusinessOpen(open));
+  // A business picked on the chart unfolds the whole list, so it reads in place among its siblings.
+  const pickOnChart = (id: string | null) => { pickBusiness(id); if (id) setBusinessOpen(true); };
   // One section can open over the whole rail; the rest of the rail returns when it closes.
   const [section, setSection] = useState<RailSectionKey | null>(null);
   // The findings stay in the rail whatever business is picked; focusing one brings the stage back to the whole company.
@@ -473,9 +475,9 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
           : proportional && layout ? <FlowChart graph={graph!} copy={copy} money={v => money(v)} colorOf={colorOf} active={active} revealKey={quarter.id} productBusiness={current ? "segment:" + current.key : null} mindMap={mindMap} mindPick={mindItem?.id ?? null} onMindPick={setMindItem} businessDetails={<Dossier item={current} parent={parent ?? null} sources={quarter.sources} explainer={explainer} />}
               focusSlot={n => { const prior = priorOf(n); return segmentRevenue ? `${shareLabel} ${percent(n.value / segmentRevenue * 100)}${prior != null && priorShareBase ? ` · ${word.period} ${percent(prior / priorShareBase * 100)}` : ""}` : null; }}
               onHover={name => setHoverNode(name)} tipFor={tipFor} spotlight={spotlight} priorOf={priorOf} basis={word} brackets={guideMarks.brackets} pills={guideMarks.pills}
-              onPick={n => { const item = itemByNode.get(n.name); pickBusiness(item && current?.key !== item.key ? item.id : null); }}
+              onPick={n => { const item = itemByNode.get(n.name); pickOnChart(item && current?.key !== item.key ? item.id : null); }}
               label={`${ticker} ${quarter.label} revenue to net income, ${quarter.currency}`} />
-          : <div className="business-flow chart-fallback">{current && <Dossier item={current} parent={parent ?? null} sources={quarter.sources} explainer={explainer} />}<FinancialSankey quarter={quarter} previous={previous} word={word.change} onSegment={key => pickBusiness(items.find(item => item.key === key)?.id ?? null)} /></div>}
+          : <div className="business-flow chart-fallback">{current && <Dossier item={current} parent={parent ?? null} sources={quarter.sources} explainer={explainer} />}<FinancialSankey quarter={quarter} previous={previous} word={word.change} onSegment={key => pickOnChart(items.find(item => item.key === key)?.id ?? null)} /></div>}
       </div>
 
       {points.length > 0 && <Timeline points={points} now={now.getTime()} currentPeriod={quarter?.periodEnd ?? null} focus={focusedReport?.accessionNumber ?? focusedEvent?.id ?? null}

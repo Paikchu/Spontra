@@ -88,7 +88,7 @@ function Company({company:c,busy,onToggle,onPrepare}:{company:BusinessMapCompany
   const scans=[c.collection?.total?`最新 ${c.collection.completed}/${c.collection.total}`:'',c.history?`历史 ${c.history.completed}/${c.history.total}`:''].filter(Boolean).join(' · ');
   return <tbody data-open={open||undefined}>
     <tr className="bm-admin-row" aria-label={`${c.ticker} 数据准备`}>
-      <td><button className="bm-admin-toggle" aria-expanded={open} aria-label={`${c.ticker} 详情`} onClick={()=>setOpen(o=>!o)}><ChevronRight size={15}/></button><CompanyLogo symbol={c.ticker}/><span className="bm-admin-name"><strong className="ra-mono">{c.ticker}</strong><small>{c.dataEnabled?'已加入白名单':'未加入白名单'}{c.cik?` · CIK ${c.cik}`:''}</small></span></td>
+      <td><div className="bm-admin-company-cell"><button className="bm-admin-toggle" aria-expanded={open} aria-label={`${c.ticker} 详情`} onClick={()=>setOpen(o=>!o)}><ChevronRight size={15}/></button><CompanyLogo symbol={c.ticker}/><span className="bm-admin-name"><strong className="ra-mono">{c.ticker}</strong><small>{c.dataEnabled?'已加入白名单':'未加入白名单'}{c.cik?` · CIK ${c.cik}`:''}</small></span></div></td>
       <td><span className="ra-badge" data-status={ready?(revenuePending?'caution':'reviewed'):running||collecting?'processing':'idle'}>{ready?(revenuePending?'业务拆分待核验':c.publication.outdated||running?'已就绪 · 更新中':'地图已就绪'):running||collecting?'准备中':'未就绪'}</span></td>
       <td>{ready?c.publication.periods.join('、'):'—'}</td>
       <td>{latest?coverage(latest):'—'}</td>

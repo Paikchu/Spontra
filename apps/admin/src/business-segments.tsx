@@ -4,12 +4,14 @@ import type { AiCompanies } from '@/shared/analysis-contract/ai-runs-admin';
 import type { LibraryOverview } from '@/shared/analysis-contract/filing-library';
 import { adminApi, AdminApiError } from './admin-api';
 import { AiKindPanel } from './ai-runs';
+import { BusinessCharts } from './business-charts';
+import './business-charts.css';
 import { CompanyLogo } from '@/packages/web/src/company-logo';
 import { LinksPanel, WikiPanel } from './filing-library-cross';
 import './filing-library.css';
 
-type View = 'wiki' | 'tree' | 'explainer' | 'links';
-const views: Array<[View, string]> = [['wiki', '板块数据'], ['tree', '业务脑图'], ['explainer', '业务解读'], ['links', '业务主线']];
+type View = 'wiki' | 'charts' | 'tree' | 'explainer' | 'links';
+const views: Array<[View, string]> = [['wiki', '板块数据'], ['charts', '图表数据'], ['tree', '业务脑图'], ['explainer', '业务解读'], ['links', '业务主线']];
 type Company = { ticker: string; documents: number };
 function initial(name: 'ticker' | 'view') { try { return new URLSearchParams(window.location.search).get(name) ?? ''; } catch { return ''; } }
 
@@ -52,6 +54,7 @@ export function BusinessSegments({ onAuthenticated, onUnauthorized, onOpenSectio
       <nav className="fl-views" aria-label="视图">{views.map(([v, label]) => <button key={v} aria-pressed={view === v} onClick={() => setView(v)}>{label}</button>)}</nav>
       {!ticker ? <p className="fl-empty">未选择公司</p>
         : view === 'wiki' ? <WikiPanel key={ticker} ticker={ticker} onOpen={onOpenSection} fail={fail} />
+        : view === 'charts' ? <div className="fl-panel"><BusinessCharts key={ticker} ticker={ticker} onUnauthorized={onUnauthorized} /></div>
         : view === 'links' ? <LinksPanel key={ticker} ticker={ticker} onOpen={onOpenSection} fail={fail} />
         : <div className="fl-panel"><AiKindPanel key={`${ticker}:${view}`} ticker={ticker} kind={view} onUnauthorized={onUnauthorized} /></div>}
     </section>
