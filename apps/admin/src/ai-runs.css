@@ -1,5 +1,5 @@
 /* Model-written outputs (findings, business tree, explainer): runs and versions, on Spontra tokens. */
-.ai-detail { max-height: calc(100svh - 160px); overflow: auto; }
+.ai-detail { overflow: auto; }
 .ai-pad { padding: var(--space-5) var(--space-6) var(--space-8); }
 .fl-panel .ai-pad { padding: 0 0 var(--space-6); }
 .ai-empty { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-6); color: var(--ink-muted); font-size: 14px; }

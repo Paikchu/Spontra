@@ -1,6 +1,6 @@
 import { FinancialStatementsInspector } from "./financial-statements-inspector";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { Check, ChevronDown, Database, FileSearch, History, LoaderCircle, LogOut, Plus, RefreshCw, Search, X } from "lucide-react";
+import { Check, ChevronDown, Database, FileSearch, History, LoaderCircle, Plus, RefreshCw, Search, X } from "lucide-react";
 import type {
   FinancialMaintenanceActionResponse, FinancialMaintenanceCompanyDetail,
   FinancialMaintenanceCompanyList, FinancialMaintenanceTask,
@@ -19,7 +19,7 @@ const activeStatuses = new Set(["queued", "running", "cancel_requested"]);
 const initialTicker = () => typeof window === "undefined" ? "" : normalizeCompanyTicker(new URL(window.location.href).searchParams.get("ticker") ?? "");
 function storage(): Storage | undefined { try { return window.sessionStorage; } catch { return undefined; } }
 
-export function FinancialMaintenance({ onUnauthorized, onAuthenticated, onLogout }: { onUnauthorized: () => void; onAuthenticated: () => void; onLogout?: () => void }) {
+export function FinancialMaintenance({ onUnauthorized, onAuthenticated }: { onUnauthorized: () => void; onAuthenticated: () => void }) {
   const [list, setList] = useState<FinancialMaintenanceCompanyList | null>(null);
   const [ticker, setTicker] = useState(initialTicker);
   const [search, setSearch] = useState("");
@@ -162,13 +162,12 @@ export function FinancialMaintenance({ onUnauthorized, onAuthenticated, onLogout
         <div className="fm-company-search"><label className="ra-search"><Search size={17} /><input aria-label="筛选财报公司" value={search} onChange={event => setSearch(event.target.value)} placeholder="筛选公司" /></label></div>
         <div className="fm-list-caption"><span>{list ? `${companies.length} 家公司` : "加载中"}</span><button className="fm-icon-button" aria-label="刷新" onClick={requestRefresh} disabled={!!mutation}><RefreshCw size={15} /></button></div>
         <div className="fm-company-scroll">
-          {companies.map(company => <button className="fm-company" key={company.ticker} aria-pressed={ticker === company.ticker} onClick={() => chooseCompany(company.ticker)}><CompanyLogo symbol={company.ticker} /><span className="fm-company-copy"><strong>{company.ticker}</strong><span>{company.name !== company.ticker ? company.name : ""}</span><small>{company.latestPeriodEnd || "暂无数据"}</small></span></button>)}
+          {companies.map(company => <button className="fm-company" key={company.ticker} aria-pressed={ticker === company.ticker} onClick={() => chooseCompany(company.ticker)}><CompanyLogo symbol={company.ticker} /><span className="fm-company-copy"><strong>{company.ticker}</strong><small>{company.latestPeriodEnd || "暂无数据"}</small></span></button>)}
           {list && !companies.length && <p className="fm-muted">{search ? "无匹配公司" : "无公司"}</p>}
         </div>
         <button className="fm-add-company" onClick={() => setAdding(true)} disabled={!list || !!mutation}><Plus size={17} />添加公司</button>
       </aside>
       <div className="fm-detail" aria-busy={loading}>
-        <header className="fm-page-heading"><h1>财报数据</h1>{onLogout && <button className="fm-icon-button fm-mobile-logout" aria-label="退出登录" onClick={onLogout}><LogOut size={18} /></button>}</header>
         {notice && <div className="ra-notice fm-notice" role="status"><Check size={16} />{notice}<button aria-label="关闭" onClick={() => setNotice("")}><X size={16} /></button></div>}
         {error && <div className="ra-error ra-error-banner" role="alert">{error}<button onClick={requestRefresh}>重新加载</button></div>}
         {loading && !detail ? <div className="ra-empty" role="status"><LoaderCircle className="ra-spin" />加载中</div> : detail ? <>

@@ -4,6 +4,7 @@ import type { BusinessMapCompanies, BusinessMapCompany } from '@/shared/analysis
 import { adminApi, AdminApiError } from './admin-api';
 import { normalizeCompanyTicker, pendingRequestId, completeRequestId } from './financial-maintenance-state';
 import { financialDate } from './financial-update-history';
+import { CompanyLogo } from '@/packages/web/src/company-logo';
 import './business-map-companies.css';
 
 const stages: Record<string,string> = {identify:'识别公司',waiting_issuer:'等待同公司任务',collect:'采集及核验最新财报',history:'补充季度历史',audit:'检查披露完整性',complete:'任务结束'};
@@ -57,11 +58,11 @@ export function BusinessMapCompanies({onUnauthorized,onAuthenticated}:{onUnautho
     } finally {lock.current=false;setBusy('');}
   }
   function add(event:FormEvent){event.preventDefault();const symbol=normalizeCompanyTicker(ticker);if(!symbol){setError('股票代码无效');return;}void mutate(symbol,true);}
-  const companies=data?.companies.filter(c=>`${c.ticker} ${c.name}`.toLowerCase().includes(search.toLowerCase()))??[];
+  const companies=data?.companies.filter(c=>c.ticker.toLowerCase().includes(search.toLowerCase()))??[];
   return <section className="bm-admin" aria-label="白名单">
     <div className="bm-admin-toolbar">
       <form className="bm-admin-add" onSubmit={add}><label htmlFor="bm-ticker" className="bm-admin-sr">股票代码</label><input id="bm-ticker" placeholder="股票代码" value={ticker} maxLength={10} onChange={e=>setTicker(e.target.value.toUpperCase())} required/><button className="ra-primary" disabled={!data||!!busy}><Plus size={16}/>加入白名单</button></form>
-      <div className="bm-admin-filter"><span>白名单 · {data?.companies.filter(c=>c.dataEnabled).length??0} 家</span><label className="ra-search"><Search size={16}/><input aria-label="筛选公司" placeholder="代码或名称" value={search} onChange={e=>setSearch(e.target.value)}/></label><button className="ra-icon-button" onClick={()=>setRefresh(n=>n+1)} disabled={!!busy} aria-label="刷新"><RefreshCw size={16}/></button></div>
+      <div className="bm-admin-filter"><span>白名单 · {data?.companies.filter(c=>c.dataEnabled).length??0} 家</span><label className="ra-search"><Search size={16}/><input aria-label="筛选公司" placeholder="代码" value={search} onChange={e=>setSearch(e.target.value)}/></label><button className="ra-icon-button" onClick={()=>setRefresh(n=>n+1)} disabled={!!busy} aria-label="刷新"><RefreshCw size={16}/></button></div>
     </div>
     {notice&&<p className="ra-notice" role="status">{notice}</p>}{(error||loadError)&&<p className="ra-error ra-error-banner" role="alert">{error||loadError}</p>}
     {data&&!data.automaticCollection&&<p className="bm-admin-warning">自动采集已暂停</p>}
@@ -87,7 +88,7 @@ function Company({company:c,busy,onToggle,onPrepare}:{company:BusinessMapCompany
   const scans=[c.collection?.total?`最新 ${c.collection.completed}/${c.collection.total}`:'',c.history?`历史 ${c.history.completed}/${c.history.total}`:''].filter(Boolean).join(' · ');
   return <tbody data-open={open||undefined}>
     <tr className="bm-admin-row" aria-label={`${c.ticker} 数据准备`}>
-      <td><button className="bm-admin-toggle" aria-expanded={open} aria-label={`${c.ticker} 详情`} onClick={()=>setOpen(o=>!o)}><ChevronRight size={15}/></button><span className="bm-admin-name"><strong className="ra-mono">{c.ticker}</strong>{c.name!==c.ticker&&<small>{c.name}</small>}<small>{c.dataEnabled?'已加入白名单':'未加入白名单'}{c.cik?` · CIK ${c.cik}`:''}</small></span></td>
+      <td><button className="bm-admin-toggle" aria-expanded={open} aria-label={`${c.ticker} 详情`} onClick={()=>setOpen(o=>!o)}><ChevronRight size={15}/></button><CompanyLogo symbol={c.ticker}/><span className="bm-admin-name"><strong className="ra-mono">{c.ticker}</strong><small>{c.dataEnabled?'已加入白名单':'未加入白名单'}{c.cik?` · CIK ${c.cik}`:''}</small></span></td>
       <td><span className="ra-badge" data-status={ready?(revenuePending?'caution':'reviewed'):running||collecting?'processing':'idle'}>{ready?(revenuePending?'业务拆分待核验':c.publication.outdated||running?'已就绪 · 更新中':'地图已就绪'):running||collecting?'准备中':'未就绪'}</span></td>
       <td>{ready?c.publication.periods.join('、'):'—'}</td>
       <td>{latest?coverage(latest):'—'}</td>

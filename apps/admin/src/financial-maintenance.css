@@ -1,19 +1,19 @@
 /* Financial reading workspace: white paper, one quiet company rail, indigo controls. */
-.report-admin .ra-page-header.ra-financial-header { display: none; }
-.fm-workspace { --fm-ink: var(--ink); --fm-muted: var(--ink-muted); --fm-line: var(--line); --fm-accent: var(--brand); min-width: 0; margin-top: var(--space-4); color: var(--fm-ink); background: var(--surface); border-radius: var(--sp-radius-md); box-shadow: 0 0 0 1px var(--line), inset 0 1px 0 var(--sheen); overflow: clip; }
-.fm-columns { display: grid; grid-template-columns: 220px minmax(0, 1fr); min-height: calc(100svh - 56px); }
-.fm-company-list { min-width: 0; border-right: 1px solid var(--fm-line); padding: 22px 10px; position: sticky; top: var(--space-3); height: calc(100svh - 56px); display: flex; flex-direction: column; gap: 6px; }
+.fm-workspace { --fm-ink: var(--ink); --fm-muted: var(--ink-muted); --fm-line: var(--line); --fm-accent: var(--brand); min-width: 0; color: var(--fm-ink); background: var(--surface); border-radius: var(--sp-radius-md); box-shadow: 0 0 0 1px var(--line), inset 0 1px 0 var(--sheen); overflow: clip; }
+.fm-columns { display: grid; grid-template-columns: 220px minmax(0, 1fr); min-height: var(--page-height); }
+.fm-company-list { min-width: 0; border-right: 1px solid var(--fm-line); padding: 22px 10px; position: sticky; top: var(--space-3); height: var(--page-height); display: flex; flex-direction: column; gap: 6px; }
 .fm-company-search { padding: 0 7px 9px; }
 .fm-company-search .ra-search { padding: 10px 11px; background: var(--surface); }
 .fm-list-caption { display: flex; align-items: center; justify-content: space-between; padding: 4px 12px 6px; color: var(--fm-muted); font-size: 12px; }
 .fm-company-scroll { overflow-y: auto; min-height: 0; }
-.fm-company { position: relative; display: flex; align-items: center; gap: 12px; width: 100%; padding: 17px 12px; border: 0; border-radius: var(--sp-radius-sm); background: var(--surface); color: var(--fm-ink); text-align: left; margin: 3px 0; }
+.fm-company { position: relative; display: flex; align-items: center; gap: 10px; width: 100%; padding: 6px 10px; border: 0; border-radius: var(--sp-radius-sm); background: var(--surface); color: var(--fm-ink); text-align: left; margin: 0; }
 .fm-company:hover { background: var(--fill); }
 .fm-company[aria-pressed="true"] { background: var(--brand-soft); }
 .fm-company[aria-pressed="true"]::before { content: ""; position: absolute; left: 0; inset-block: 10px; width: 3px; border-radius: 3px; background: var(--fm-accent); }
-.fm-company .company-logo { width: 31px; height: 31px; flex: 0 0 31px; background: var(--surface); border: 0; border-radius: var(--sp-radius-sm); }
+.fm-company .company-logo { width: 22px; height: 22px; flex: 0 0 22px; }
 .fm-company .company-logo-fallback { font-size: 11px; color: var(--fm-muted); }
-.fm-company-copy { display: flex; flex-direction: column; min-width: 0; gap: 3px; }
+.fm-company-copy { display: flex; align-items: baseline; flex: 1; min-width: 0; gap: var(--space-2); }
+.fm-company-copy small { margin-left: auto; white-space: nowrap; }
 .fm-company-copy strong { font-size: 14px; font-weight: 650; letter-spacing: .15px; }
 .fm-company-copy > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 141px; font-size: 11px; color: var(--ink-soft); }
 .fm-company-copy small { font-size: 12px; color: var(--fm-muted); font-variant-numeric: tabular-nums; }
