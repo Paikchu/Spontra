@@ -374,8 +374,8 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
   const mindTip = (event: React.MouseEvent, item: MindItem) => {
     const node = item.kind === "node" ? item.node : null;
     point(event, item.kind === "revenue"
-      ? { title: `How it makes money · ${item.revenue.label}`, color: "var(--flow-profit)", rows: [["Part of", item.owner?.name ?? mindMap?.branches.find(b => b.node === item.anchor)?.label ?? ""]], link: "Click for details and sources" }
-      : { title: node!.name, color: colorOf(item.anchor), rows: [...(node!.gloss ? [["What it is", node!.gloss] as [string, string]] : []), ...(node!.revenue.length ? [["How it makes money", node!.revenue.map(m => m.label).join(", ")] as [string, string]] : []), ...(node!.children.length ? [["Contains", `${node!.children.length} ${node!.children.length === 1 ? "item" : "items"}`] as [string, string]] : [])], link: "Click for details and sources" });
+      ? { title: `Revenue model · ${item.revenue.label}`, color: "var(--flow-profit)", rows: [["Part of", item.owner?.name ?? mindMap?.branches.find(b => b.node === item.anchor)?.label ?? ""]] }
+      : { title: node!.name, color: colorOf(item.anchor), rows: [...(node!.gloss ? [["Description", node!.gloss] as [string, string]] : []), ...(node!.revenue.length ? [["Revenue model", node!.revenue.map(m => m.label).join(", ")] as [string, string]] : []), ...(node!.children.length ? [["Contains", `${node!.children.length} ${node!.children.length === 1 ? "item" : "items"}`] as [string, string]] : [])] });
   };
 
   // The explanation is page text beside the canvas, not part of the scaled drawing: opening it narrows the pane and the Sankey refits.
@@ -484,7 +484,7 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
           return <g key={n.name} className="fc-node" data-tone={n.tone} data-net={n.name === "net" || undefined} data-lit={isLit} data-active={n.name === active || undefined}
             style={{ "--c": colorOf(n.name), "--d": `${n.column * 90 + 300}ms` } as CSSProperties}
             data-owner={n.name} onMouseMove={e => point(e, tipFor(n))} onMouseLeave={() => setTip(null)}
-            {...(interactive ? { role: "button", tabIndex: 0, "aria-label": `${text.name} ${text.value}${text.change ? `, ${basis.change} ${text.change.label}` : ""}${n.segmentId ? ", select in list" : ", show all businesses"}`, onClick: () => onPick(n), onKeyDown: (e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPick(n); } }, onFocus: () => onHover(n.name), onBlur: () => onHover(null) } : {})}>
+            {...(interactive ? { role: "button", tabIndex: 0, "aria-label": `${text.name} ${text.value}${text.change ? `, ${basis.change} ${text.change.label}` : ""}`, onClick: () => onPick(n), onKeyDown: (e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPick(n); } }, onFocus: () => onHover(n.name), onBlur: () => onHover(null) } : {})}>
             <rect className="fc-hit" x={n.x - 6} y={n.y - 4} width={w + 12} height={n.h + 8} />
             <rect className="fc-bar" x={n.x} y={n.y} width={w} height={n.h} rx={Math.min(3, n.h / 2)} />
             {mark && <g className="fc-prior" aria-hidden="true">
@@ -503,7 +503,7 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
               <rect className="fc-guide-hit" x={-3 * k} y={Math.min(span[0], span[1]) - 6 * k} width={14 * k} height={Math.abs(span[1] - span[0]) + 12 * k} />
               <path d={`M${r(8 * k)},${r(span[0])}H0V${r(span[1])}H${r(8 * k)}`} />
             </g>}
-            {pill && <g className="fc-guide-pill" data-action={pill.action ?? undefined} transform={`translate(${r(pillX)},${r(n.y + n.h / 2)})`} onMouseMove={e => { e.stopPropagation(); point(e, pill.tip); }} onMouseLeave={() => setTip(null)}><a href={pill.url ?? undefined} target="_blank" rel="noopener noreferrer" aria-label={`${pill.tip.title}, open source`}>
+            {pill && <g className="fc-guide-pill" data-action={pill.action ?? undefined} transform={`translate(${r(pillX)},${r(n.y + n.h / 2)})`} onMouseMove={e => { e.stopPropagation(); point(e, pill.tip); }} onMouseLeave={() => setTip(null)}><a href={pill.url ?? undefined} target="_blank" rel="noopener noreferrer" aria-label={pill.tip.title}>
               <rect x={0} y={-type.pill} width={estimateTextWidth(`Next Q ${pill.glyph} ${pill.text}`, type.pill, true) + type.pill * 1.6} height={type.pill * 2} rx={type.pill} />
               <text x={type.pill * 0.8} y={type.pill * 0.38} style={{ fontSize: type.pill }}><tspan className="fc-guide-when">Next Q</tspan>{pill.glyph && <tspan className="fc-guide-glyph" dx={type.pill * 0.4}>{pill.glyph}</tspan>}<tspan dx={type.pill * 0.4}>{pill.text}</tspan></text>
             </a></g>}

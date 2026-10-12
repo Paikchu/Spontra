@@ -45,8 +45,8 @@ export function BusinessSegments({ onAuthenticated, onUnauthorized, onOpenSectio
   const shown = companies?.filter(c => `${c.ticker} ${c.name}`.toLowerCase().includes(search.toLowerCase())) ?? [];
   return <div className="ra-workspace fl-workspace">
     <section className="ra-list" aria-label="公司">
-      <div className="ra-filters"><label className="ra-search"><Search size={17} /><input aria-label="搜索公司" placeholder="搜索代码或名称" value={search} onChange={e => setSearch(e.target.value)} /></label><button className="fl-icon" aria-label="刷新" onClick={() => setRefresh(n => n + 1)}><RefreshCw size={17} /></button></div>
-      <div className="ra-list-caption">{companies ? `${companies.length} 家公司` : '正在加载…'}</div>
+      <div className="ra-filters"><label className="ra-search"><Search size={17} /><input aria-label="搜索公司" placeholder="代码或名称" value={search} onChange={e => setSearch(e.target.value)} /></label><button className="fl-icon" aria-label="刷新" onClick={() => setRefresh(n => n + 1)}><RefreshCw size={17} /></button></div>
+      <div className="ra-list-caption">{companies ? `${companies.length} 家公司` : '加载中'}</div>
       {error && <p className="ra-error" role="alert">{error}</p>}
       <div className="ra-list-scroll">{shown.map(c => <button key={c.ticker} className="ra-report-row" aria-pressed={ticker === c.ticker} onClick={() => setTicker(c.ticker)}>
         <span className="ra-row-info"><strong>{c.ticker}</strong><small>{c.name !== c.ticker ? c.name : ''}</small>
@@ -54,7 +54,7 @@ export function BusinessSegments({ onAuthenticated, onUnauthorized, onOpenSectio
     </section>
     <section className="ra-detail fl-detail" aria-label="业务板块">
       <nav className="fl-views" aria-label="视图">{views.map(([v, label]) => <button key={v} aria-pressed={view === v} onClick={() => setView(v)}>{label}</button>)}</nav>
-      {!ticker ? <p className="fl-empty">选择一家公司。</p>
+      {!ticker ? <p className="fl-empty">未选择公司</p>
         : view === 'wiki' ? <WikiPanel key={ticker} ticker={ticker} onOpen={onOpenSection} fail={fail} />
         : view === 'links' ? <LinksPanel key={ticker} ticker={ticker} onOpen={onOpenSection} fail={fail} />
         : <div className="fl-panel"><AiKindPanel key={`${ticker}:${view}`} ticker={ticker} kind={view} onUnauthorized={onUnauthorized} /></div>}

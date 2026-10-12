@@ -123,33 +123,6 @@ export function cashMetrics(c: CashFlowStatement): CashMetrics {
   };
 }
 
-export type FundingKind = "survival" | "expansion" | "self";
-const share = (part: number, whole: number) => `${Math.round(part / whole * 100)}%`;
-
-/**
- * One factual sentence on how the period was funded, from reported totals and reconciled lines only.
- * Operating cash below zero means the business consumed cash; above zero but short of capital spending
- * means outside money paid for expansion; otherwise operations funded it.
- */
-export function fundingVerdict(c: CashFlowStatement, b: BalanceSheet | null, money: (v: number) => string): { kind: FundingKind; label: string; text: string } {
-  const m = cashMetrics(c);
-  const outside = [
-    m.debtNet != null && m.debtNet > 0 ? `net borrowing ${money(m.debtNet)}` : null,
-    m.equityIssued != null && m.equityIssued > 0 ? `shares issued ${money(m.equityIssued)}` : null,
-  ].filter(Boolean).join(", ");
-  if (m.operating < 0) {
-    const cash = b ? sum(b.assets.filter(l => l.group === "cash")) : null;
-    // Runway is stated only for a single quarter's burn; a cumulative period would understate the pace.
-    const quarters = cash != null && daysOf(c) <= 110 ? cash / -m.operating : null;
-    return { kind: "survival", label: "Operations burn cash", text: `Operating cash flow was ${money(m.operating)}; the business itself is consuming cash${m.financing > 0 ? `. Outside financing this period was ${money(m.financing)}${outside ? ` (${outside})` : ""}` : ""}${quarters != null && Number.isFinite(quarters) ? `. At this quarter’s burn rate, ending cash and short-term investments last about ${quarters.toFixed(1)} quarters` : ""}.` };
-  }
-  if (m.capex != null && m.capex > m.operating) {
-    return { kind: "expansion", label: "Expansion relies on outside funding", text: `Operating cash flow of ${money(m.operating)} covers only ${share(m.operating, m.capex)} of ${money(m.capex)} in capital expenditures${m.financing > 0 ? `; outside financing of ${money(m.financing)}${outside ? ` (${outside})` : ""} fills the gap` : "; cash reserves fill the gap"}.` };
-  }
-  return { kind: "self", label: "Self-funded", text: `Operating cash flow of ${money(m.operating)}${m.capex != null ? ` covers ${money(m.capex)} in capital expenditures, leaving ${money(m.free!)} in free cash flow` : ""}${m.financing < 0 ? `; ${money(-m.financing)} net went back to lenders and shareholders` : ""}.` };
-}
-const daysOf = (c: CashFlowStatement) => (Date.parse(c.periodEnd) - Date.parse(c.periodStart)) / 86400000;
-
 export type BalanceMetrics = { assets: number; debt: number; leases: number; customer: number; equity: number; paidIn: number; deficit: number; leverage: number };
 export function balanceMetrics(b: BalanceSheet): BalanceMetrics {
   const group = (lines: CapitalLine<string>[], g: string) => sum(lines.filter(l => l.group === g));
@@ -157,12 +130,4 @@ export function balanceMetrics(b: BalanceSheet): BalanceMetrics {
   const paidIn = sum(b.equity.filter(l => l.group === "paidIn" && Number(l.value) > 0));
   const retained = group(b.equity, "retained");
   return { assets, debt, leases, customer: group(b.liabilities, "customerAdvances"), equity: Number(b.totals.equity), paidIn, deficit: retained < 0 ? -retained : 0, leverage: assets ? (debt + leases) / assets : 0 };
-}
-
-export function balanceVerdict(b: BalanceSheet): string {
-  const m = balanceMetrics(b), pct = (v: number) => `${Math.round(v * 100)}%`;
-  const parts = [`Debt and leases fund ${pct(m.leverage)} of assets`, `stockholders’ equity is ${pct(m.equity / m.assets)}`];
-  if (m.customer > 0 && m.customer / m.assets >= 0.05) parts.push(`customer prepayments are ${pct(m.customer / m.assets)}`);
-  if (m.deficit > 0 && m.paidIn > 0) parts.push(`the accumulated deficit has used ${pct(m.deficit / m.paidIn)} of paid-in capital`);
-  return parts.join("; ") + ".";
 }

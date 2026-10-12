@@ -20,19 +20,16 @@ export function FinancialBridge({ report }: { report: PublishedSecReport }) {
   const cash = lens.cashBridge, dep = lens.depreciation;
   return <div className="sec-reader-financial-lens">
     {cash && <div className="sec-reader-cash">
-      <h3>{cash.adjustedFCF !== undefined ? "Free cash flow: two calculations" : "Cash flow and capital expenditures"}</h3><p className="sec-reader-caption">{cash.period} · Free cash flow is a non-GAAP liquidity measure</p>
+      <h3>{cash.adjustedFCF !== undefined ? "Free cash flow" : "Cash flow and capital expenditures"}</h3><p className="sec-reader-caption">{cash.period} · Non-GAAP</p>
       <div className="sec-reader-cash-values">
         <div><span>Operating cash flow − gross capex</span><strong data-direction={cash.standardFCF < 0 ? "negative" : "positive"}>{amount(cash.standardFCF, cash.currency)}</strong><small>{amount(cash.operatingCashFlow, cash.currency)} − {amount(cash.grossCapex, cash.currency)}</small></div>
-        {cash.adjustedFCF !== undefined && <div><span>Using management's net capex</span><strong data-direction={cash.adjustedFCF < 0 ? "negative" : "positive"}>{amount(cash.adjustedFCF, cash.currency)}</strong><small>{amount(cash.operatingCashFlow, cash.currency)} − {amount(cash.managementNetCapex!, cash.currency)}</small></div>}
+        {cash.adjustedFCF !== undefined && <div><span>Operating cash flow − net capex (management)</span><strong data-direction={cash.adjustedFCF < 0 ? "negative" : "positive"}>{amount(cash.adjustedFCF, cash.currency)}</strong><small>{amount(cash.operatingCashFlow, cash.currency)} − {amount(cash.managementNetCapex!, cash.currency)}</small></div>}
       </div>
-      {cash.adjustments && <details><summary>Net capex reconciliation</summary><p>{amount(cash.grossCapex, cash.currency)}{cash.adjustments.map((a) => ` ${a.value < 0 ? "−" : "+"} ${amount(Math.abs(a.value), cash.currency)}`).join("")} = {amount(cash.managementNetCapex!, cash.currency)}</p><ul>{cash.adjustments.map((a, i) => <li key={i}>{a.label}: {a.value < 0 ? "less" : "add back"} {amount(Math.abs(a.value), cash.currency)}</li>)}</ul><p>Checked against the signs in the original table. Matching arithmetic does not mean the adjustments and operating cash flow do not overlap.</p></details>}
-      {cash.reconciliationStatus === "unverified" && <p className="sec-reader-caption">The management basis is an arithmetic estimate; whether its adjustments overlap with operating cash flow is not yet checked. Do not treat it as discretionary cash.</p>}
-      {cash.adjustment !== undefined && <p>The {amount(cash.adjustment, cash.currency)} difference comes from capex adjustments. A positive adjusted figure alone does not prove that no financing is needed.</p>}
+      {cash.adjustments && <details><summary>Net capex reconciliation</summary><p>{amount(cash.grossCapex, cash.currency)}{cash.adjustments.map((a) => ` ${a.value < 0 ? "−" : "+"} ${amount(Math.abs(a.value), cash.currency)}`).join("")} = {amount(cash.managementNetCapex!, cash.currency)}</p><ul>{cash.adjustments.map((a, i) => <li key={i}>{a.label}: {a.value < 0 ? "less" : "add back"} {amount(Math.abs(a.value), cash.currency)}</li>)}</ul></details>}
+      {cash.reconciliationStatus === "unverified" && <p className="sec-reader-caption">Net capex reconciliation unverified</p>}
     </div>}
-    {dep && <div className="sec-reader-depreciation"><h3>How investment flows into future earnings</h3>
-      <p>If the current pace of investment holds for a year, annualized capex is {amount(dep.annualizedCapex, dep.currency)}. Depreciated straight-line over {dep.usefulLifeYears} years with no salvage value, the annual expense is about <strong>{amount(dep.annualExpenseIllustration, dep.currency)}</strong>.</p>
-      <dl>{dep.currentAnnualizedDepreciation !== undefined && <div><dt>Current depreciation, annualized</dt><dd>{amount(dep.currentAnnualizedDepreciation, dep.currency)}</dd></div>}{dep.currentAnnualizedOperatingIncome !== undefined && <div><dt>Current operating income, annualized</dt><dd>{amount(dep.currentAnnualizedOperatingIncome, dep.currency)}</dd></div>}</dl>
-      <p className="sec-reader-caption">This is an order-of-magnitude stress test. It is not next year's added depreciation and cannot be added to current depreciation.</p>
+    {dep && <div className="sec-reader-depreciation"><h3>Capex depreciation</h3>
+      <dl><div><dt>Annualized capex</dt><dd>{amount(dep.annualizedCapex, dep.currency)}</dd></div><div><dt>Annual depreciation · {dep.usefulLifeYears}-year straight-line, no salvage</dt><dd>≈{amount(dep.annualExpenseIllustration, dep.currency)}</dd></div>{dep.currentAnnualizedDepreciation !== undefined && <div><dt>Current depreciation, annualized</dt><dd>{amount(dep.currentAnnualizedDepreciation, dep.currency)}</dd></div>}{dep.currentAnnualizedOperatingIncome !== undefined && <div><dt>Current operating income, annualized</dt><dd>{amount(dep.currentAnnualizedOperatingIncome, dep.currency)}</dd></div>}</dl>
       <details><summary>Assumptions</summary><ul>{dep.assumptions.map((a) => <li key={a}>{a}</li>)}</ul></details>
     </div>}
     {lens.limitations.filter((l) => !MISSING_METRIC_LIMITATION.test(l)).map((l) => <p className="sec-reader-caption" key={l}>{l}</p>)}
@@ -77,13 +74,13 @@ export function ReaderSection({ section, report, nodes }: { section: SecReaderRe
 
 export function MarketContext({ report }: { report: PublishedSecReport }) {
   const market = report.marketSnapshot;
-  if (market?.status !== "available" || market.price === undefined) return <aside className="sec-reader-market"><p>No verifiable market snapshot. The section below covers business conditions only and cannot say whether the current price is attractive.</p></aside>;
+  if (market?.status !== "available" || market.price === undefined) return <aside className="sec-reader-market"><p>No market snapshot</p></aside>;
   const move = market.reaction;
   return <aside className="sec-reader-market"><dl>
     <div><dt>Close, {market.priceDate}</dt><dd>{amount(market.price, market.currency ?? "")}</dd></div>
     {market.trailingPE !== undefined && <div><dt>P/E · trailing 12-month diluted EPS through {market.earningsPeriodEnd}</dt><dd>{market.trailingPE.toFixed(1)}x</dd></div>}
     {move && <div><dt>{move.from} → {move.to}</dt><dd>{move.changePercent > 0 ? "+" : ""}{move.changePercent.toFixed(1)}%</dd></div>}
-  </dl><p className="sec-reader-caption">{move ? `Through ${move.sessions} full trading ${move.sessions === 1 ? "day" : "days"} after release. ` : ""}Snapshot as of {market.asOf.slice(0, 10)} · <a href={market.sourceUrl} target="_blank" rel="noopener noreferrer">{market.source}</a></p>
+  </dl><p className="sec-reader-caption">{move ? `${move.sessions} trading ${move.sessions === 1 ? "day" : "days"} after release · ` : ""}As of {market.asOf.slice(0, 10)} · <a href={market.sourceUrl} target="_blank" rel="noopener noreferrer">{market.source}</a></p>
     <details><summary>Market data and valuation basis</summary><ul>{market.limitations.map((l) => <li key={l}>{l}</li>)}</ul></details>
   </aside>;
 }

@@ -4,7 +4,7 @@ import { CompanyLogo } from "./CompanyMark";
 const TICKER = /^[A-Z][A-Z0-9.-]{0,11}$/;
 
 type Option = { ticker: string; hint: string };
-const OPEN_HINT = "Open business map";
+const OPEN_HINT = "Open";
 
 /**
  * Ticker field with recently opened companies. The dialog shows it in the top layer; the home page
@@ -43,7 +43,7 @@ export function SearchPanel({ current, recent, onPick, inputRef, inline = false 
       </svg>
       <input ref={inputRef} role="combobox" aria-label="Ticker" aria-expanded={open && options.length > 0} aria-controls={listId}
         aria-activedescendant={open && options[selected] ? `${listId}-${selected}` : undefined} aria-invalid={invalid}
-        value={input} placeholder="Enter a ticker" maxLength={12} autoCapitalize="characters" autoComplete="off" spellCheck={false}
+        value={input} placeholder="Ticker" maxLength={12} autoCapitalize="characters" autoComplete="off" spellCheck={false}
         onChange={e => { setInput(e.target.value); setActive(0); setExpanded(true); }}
         onKeyDown={e => {
           if (inline && e.key === "Escape" && open) { e.preventDefault(); setExpanded(false); return; }
@@ -56,8 +56,8 @@ export function SearchPanel({ current, recent, onPick, inputRef, inline = false 
     </form>
     <div className="search-drop" hidden={!open}>
       <div className="search-body">
-        {invalid ? <p className="search-error" role="alert">Enter a valid ticker</p>
-          : !options.length && <p className="search-empty">Type a ticker and press Enter</p>}
+        {invalid ? <p className="search-error" role="alert">Invalid ticker</p>
+          : !options.length && <p className="search-empty">No recent companies</p>}
         <ul id={listId} role="listbox" aria-label="Companies">
           {options.map((option, i) => <Fragment key={option.ticker}>
             {i === (typed ? 1 : 0) && matches.length > 0 && <li role="presentation" className="search-group">Recently viewed</li>}

@@ -69,6 +69,5 @@ export function SecFigureSource({ figure, title }: { figure: SecFigure; title: s
         <tbody>{rows.map((r, i) => <tr key={i}><th scope="row">{r.period}</th><td>{r.label}</td><td data-chart-value={r.value}>{r.value.toLocaleString("en-US", { maximumFractionDigits: 10 })}</td><td>{r.unit === "ratio" ? "Ratio" : r.unit}</td><td>{r.accession}</td></tr>)}</tbody>
       </table>
     </div>
-    {figure.kind === "margin_ladder" && figure.series.some((s) => s.basis === "derived") && <p className="report-content-caption">Margins are calculated from verified profit and revenue for the same period.</p>}
   </details>;
 }

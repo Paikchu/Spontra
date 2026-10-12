@@ -83,17 +83,17 @@ function Block({ block, context }: { block: ReportBlock; context: ReportBlockRen
       // Validation already proved every series is available, but the data can go missing between
       // composing the report and rendering it, and a missing panel is worse than a stated absence.
       if (!context.fundamentals) {
-        return <p className="report-block report-block-empty" id={block.id}>{block.title}: fundamentals data is not available.</p>;
+        return <p className="report-block report-block-empty" id={block.id}>{block.title}: No data</p>;
       }
       // Whether a metric is actually in this response is knowable only here — the Pipeline vets a
       // chart against the feature pack it reasoned over, which is a different read. A series the
-      // response does not carry makes the builder throw, and the reader gets "These metrics can't be combined",
-      // wording meant for someone choosing metrics by hand. Drop it here instead.
+      // response does not carry makes the builder throw, and the reader gets "Unsupported metrics",
+      // a status meant for someone choosing metrics by hand. Drop it here instead.
       const series = block.series.filter((entry) => context.fundamentals!.series.some(
         (candidate) => candidate.metricKey === entry.metricKey && candidate.available,
       ));
       if (series.length === 0) {
-        return <p className="report-block report-block-empty" id={block.id}>{block.title}: no data for these metrics.</p>;
+        return <p className="report-block report-block-empty" id={block.id}>{block.title}: No data</p>;
       }
       return (
         <figure className="report-block report-block-chart" id={block.id}>

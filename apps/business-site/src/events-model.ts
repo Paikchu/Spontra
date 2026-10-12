@@ -32,10 +32,10 @@ export function eventTitle(e: CompanyEvent): string {
   const t = e.insider;
   if (t) {
     const who = t.ownerName.replace(/\s+/g, " ");
-    if (t.sold) return `${who} sold ${shares(t.sold.shares)}`;
-    if (t.bought) return `${who} bought ${shares(t.bought.shares)}`;
-    if (t.exercised) return `${who} exercised ${shares(t.exercised)}`;
-    return `${who} holding change`;
+    if (t.sold) return `${who} · Sale ${shares(t.sold.shares)}`;
+    if (t.bought) return `${who} · Purchase ${shares(t.bought.shares)}`;
+    if (t.exercised) return `${who} · Exercise ${shares(t.exercised)}`;
+    return `${who} · Holding change`;
   }
   if (e.summary?.headline) return e.summary.headline;
   if (e.description && !/^(8-K|6-K|FORM)\b/i.test(e.description)) return e.description;

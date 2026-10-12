@@ -41,29 +41,19 @@ export function FundamentalChartRenderer({
   const rawPatternId = useId();
   const patternId = rawPatternId.replace(/[^a-zA-Z0-9_-]/g, "");
   const [activePeriodIndex, setActivePeriodIndex] = useState<number | null>(null);
-  const modelResult = useMemo(() => {
-    if (data.status !== "ready") return { model: null, error: null };
+  const model = useMemo(() => {
+    if (data.status !== "ready") return null;
     try {
-      return {
-        model: buildFundamentalChartModel(data.periods, data.series, series),
-        error: null,
-      };
-    } catch (error) {
-      return {
-        model: null,
-        error: error instanceof Error ? error.message : "The chart configuration could not be read.",
-      };
+      return buildFundamentalChartModel(data.periods, data.series, series);
+    } catch {
+      return null;
     }
   }, [data, series]);
-  const model = modelResult.model;
 
   if (data.status === "pending") {
     return (
       <ChartFrame className={className} title={title} description={description}>
-        <ChartMessage
-          title="Preparing financial trends"
-          detail="Syncing quarterly data. The chart updates when it is ready."
-        />
+        <ChartMessage title="Syncing" />
       </ChartFrame>
     );
   }
@@ -71,7 +61,7 @@ export function FundamentalChartRenderer({
   if (!model) {
     return (
       <ChartFrame className={className} title={title} description={description}>
-        <ChartMessage title="These metrics can't be combined" detail={modelResult.error ?? "Try a different set of metrics."} />
+        <ChartMessage title="Unsupported metrics" />
       </ChartFrame>
     );
   }
@@ -80,7 +70,7 @@ export function FundamentalChartRenderer({
   if (!hasValues) {
     return (
       <ChartFrame className={className} title={title} description={description}>
-        <ChartMessage title="No data to chart" detail="The selected metrics have no values in these periods. Choose other metrics or a wider range." />
+        <ChartMessage title="No data" />
       </ChartFrame>
     );
   }
@@ -105,9 +95,7 @@ export function FundamentalChartRenderer({
       />
 
       <p className="sr-only" aria-live="polite" data-chart-role="live-region">
-        {activePeriodIndex === null
-          ? "Press Tab to step through each period's data."
-          : buildFundamentalChartTooltip(model, activePeriodIndex).accessibleLabel}
+        {activePeriodIndex === null ? null : buildFundamentalChartTooltip(model, activePeriodIndex).accessibleLabel}
       </p>
     </figure>
   );
@@ -135,11 +123,10 @@ function ChartFrame({
   );
 }
 
-function ChartMessage({ title, detail }: { title: string; detail: string }) {
+function ChartMessage({ title }: { title: string }) {
   return (
     <div className="fundamental-chart__message" role="status" data-chart-role="message">
       <strong>{title}</strong>
-      <p>{detail}</p>
     </div>
   );
 }

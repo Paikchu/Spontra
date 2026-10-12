@@ -62,8 +62,7 @@
 .fs-table [data-active-match="true"] mark { background: #dce2ff; }
 .fs-original-match { display: block; color: var(--fs-muted); font-size: 10px; margin-top: 3px; }
 .fs-workspace .fs-reader[data-density="compact"] .fs-table :is(td, th) { padding-block: 4px; font-size: 11px; }
-.fs-reader-footer { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-top: 16px; color: var(--fs-muted); font-size: 11px; line-height: 1.6; }
-.fs-reader-footer > span { padding-top: 2px; flex-shrink: 0; }
+.fs-reader-footer { display: flex; align-items: flex-start; justify-content: flex-end; gap: 16px; margin-top: 16px; color: var(--fs-muted); font-size: 11px; line-height: 1.6; }
 .fs-notes { max-width: 74%; text-align: right; }
 .fs-notes summary { cursor: pointer; display: inline-flex; align-items: center; justify-content: flex-end; gap: 7px; list-style: none; padding: 2px 0; color: #627b9c; }
 .fs-notes summary::-webkit-details-marker { display: none; }
@@ -71,7 +70,6 @@
 .fs-notes p { text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; margin: 12px 0 0; padding: 13px 15px; color: #546c89; border-radius: 5px; background: #f7f9fc; max-height: 300px; overflow: auto; line-height: 1.85; }
 .fs-empty { display: flex; align-items: center; justify-content: center; flex-direction: column; text-align: center; gap: 13px; padding: 65px 20px; color: var(--fs-muted); background: #fbfcfe; border: 1px solid var(--fs-line); border-radius: 7px; }
 .fs-empty h3 { margin: 0; font-size: 17px; font-weight: 550; color: var(--fs-ink); }
-.fs-empty p { margin: 0 0 7px; font-size: 13px; }
 .fs-error { display: flex; align-items: center; justify-content: space-between; gap: 15px; padding: 14px 16px; border: 1px solid #ecdbcf; border-radius: 6px; margin: 12px 0; background: #fffcf9; color: #946e4d; font-size: 12px; }
 .fs-workspace .fs-expanded { width: calc(100vw - 48px); max-width: 1800px; height: calc(100dvh - 48px); max-height: none; box-sizing: border-box; border: 1px solid #d7dfeb; border-radius: 10px; padding: 0; margin: auto; background: white; color: var(--fs-ink); box-shadow: 0 20px 80px #172b4633; }
 .fs-expanded::backdrop { background: #172b4680; backdrop-filter: blur(3px); }

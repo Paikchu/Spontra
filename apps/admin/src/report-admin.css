@@ -21,7 +21,6 @@ html body:has(.report-admin) { padding: 0; }
 .ra-page-header { display: flex; justify-content: space-between; align-items: center; padding: 22px 28px 20px; border-bottom: 1px solid #e7edf4; }
 .ra-page-header p { display: flex; align-items: center; gap: 10px; color: #64748b; font-size: 12px; margin: 0 0 15px; }
 .ra-page-header h1 { font-size: 27px; line-height: 1.2; letter-spacing: -.5px; margin: 0 0 8px; }
-.ra-page-header > div > span { color: #64748b; font-size: 14px; }
 .ra-live { display: flex; align-items: center; gap: 7px; border-radius: 4px; color: #206951; background: #eef8f3; padding: 5px 8px; font-size: 11px; }
 .ra-live > span { width: 5px; height: 5px; border-radius: 50%; background: #219267; }
 .ra-header-actions { display: flex; align-items: center; gap: 12px; }
@@ -98,7 +97,6 @@ html body:has(.report-admin) { padding: 0; }
 .ra-progress { display: flex; align-items: center; gap: 8px; background: #f3f5ff; color: #5365b7; border-radius: 5px; padding: 10px; font-size: 12px; }
 .ra-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; min-height: 340px; padding: 30px; text-align: center; color: #8491a6; }
 .ra-empty h3 { color: #50617c; font-size: 15px; margin: 4px 0 0; }
-.ra-empty p { font-size: 12px; margin: 0; }
 .ra-load-more { display: block; margin: 18px auto; background: transparent; color: #5264bf; border: 1px solid #dce4ef; padding: 9px 18px; border-radius: 5px; }
 .ra-notice { display: flex; align-items: center; gap: 9px; padding: 12px 28px; background: #edf8f2; color: #267752; font-size: 12px; }
 .ra-notice button { border: 0; background: transparent; color: inherit; margin-left: auto; }
@@ -112,7 +110,6 @@ html body:has(.report-admin) { padding: 0; }
 .ra-login form { display: flex; flex-direction: column; gap: 12px; margin: 22px 0; }
 .ra-login label { font-size: 12px; }
 .ra-login input { border: 1px solid #dce4ef; padding: 11px 12px; border-radius: 5px; background: #fff; color: #152238; }
-.ra-login small { color: #929db0; font-size: 11px; }
 .ra-history { padding-top: 26px; }
 .ra-history h3 { font-size: 16px; margin: 0 0 18px; }
 .ra-history ol { list-style: none; padding: 0; margin: 0 0 36px; }

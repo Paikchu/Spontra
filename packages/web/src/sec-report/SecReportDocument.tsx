@@ -31,7 +31,7 @@ export function SecReportDocument({ companyName, filing, embedded = false }: { c
     id: `sec-report-node-${index + 1}`,
     index: `${nodeSectionIndex}.${String(index + 1).padStart(2, "0")}`,
     title: node.title,
-    description: node.narrative || node.findings[0]?.detail || "Findings and filing excerpts for this topic.",
+    description: node.narrative || node.findings[0]?.detail,
     depth: 1,
     parentTitle: nodeSectionTitle,
   }));
@@ -39,7 +39,6 @@ export function SecReportDocument({ companyName, filing, embedded = false }: { c
     {
       id: "sec-report-conclusions",
       title: "Key takeaways",
-      description: "Operating results, main drivers and what they mean for the investment case.",
       className: "sec-report-conclusions",
       content: (
         <>
@@ -51,13 +50,11 @@ export function SecReportDocument({ companyName, filing, embedded = false }: { c
     {
       id: "sec-report-metrics",
       title: "Key metrics",
-      description: "Verified financial metrics with year-over-year and quarter-over-quarter changes.",
       content: <VerifiedMetrics report={report} />,
     },
     {
       id: "sec-report-body",
       title: "Report overview",
-      description: "The full analysis based on the SEC filing.",
       content: (
         <div className="sec-report-body">
           <RichText text={summary?.report ?? ""} />
@@ -67,7 +64,6 @@ export function SecReportDocument({ companyName, filing, embedded = false }: { c
     {
       id: "sec-report-nodes",
       title: nodeSectionTitle,
-      description: "Findings, analysis and filing excerpts by topic.",
       content: (
         <div className="sec-report-node-list">
           {(summary?.nodes ?? []).map((node, index) => (
@@ -96,7 +92,6 @@ export function SecReportDocument({ companyName, filing, embedded = false }: { c
     {
       id: "sec-report-quality",
       title: "Data quality",
-      description: "Evidence coverage, verification status and items that need manual review.",
       content: <DataQuality report={report} />,
     },
   ] : [];
@@ -113,8 +108,8 @@ export function SecReportDocument({ companyName, filing, embedded = false }: { c
     const evidenceSection = reportSections.find((section) => section.id === "sec-report-nodes")!;
     const qualitySection = reportSections.find((section) => section.id === "sec-report-quality")!;
     reportSections.splice(0, reportSections.length,
-      ...report.presentation.sections.map((section) => ({ id: section.id, title: section.title, description: "Analysis and evidence on the company's business.", content: <SecComposedSection section={section} report={report} /> })),
-      { ...evidenceSection, title: "Sources and analysis basis", description: "Research basis and filing excerpts." },
+      ...report.presentation.sections.map((section) => ({ id: section.id, title: section.title, content: <SecComposedSection section={section} report={report} /> })),
+      { ...evidenceSection, title: "Sources and analysis basis" },
       qualitySection,
     );
   }
@@ -122,11 +117,11 @@ export function SecReportDocument({ companyName, filing, embedded = false }: { c
     const qualitySection = reportSections.find((s) => s.id === "sec-report-quality")!;
     const evidenceSection = reportSections.find((s) => s.id === "sec-report-nodes")!;
     reportSections.splice(0, reportSections.length,
-      { id: "sec-report-conclusions", title: "Key takeaways", description: "Key takeaways and changes that affect the investment case.", content: <><ConclusionList bullets={summary?.bullets ?? []} />{summary?.analystView && <p className="sec-report-investment-view"><span>Investment view</span>{summary.analystView}</p>}<FinancialBridge report={report} /></> },
-      { id: "sec-report-changes", title: "Changes this period", description: "What is new, changed, continuing or lacks a baseline.", content: <QuarterChanges reader={reader} /> },
-      { id: "sec-report-metrics", title: "Key metrics", description: "Current values on a consistent basis, with YoY and QoQ changes.", content: <VerifiedMetrics report={report} /> },
+      { id: "sec-report-conclusions", title: "Key takeaways", content: <><ConclusionList bullets={summary?.bullets ?? []} />{summary?.analystView && <p className="sec-report-investment-view"><span>Investment view</span>{summary.analystView}</p>}<FinancialBridge report={report} /></> },
+      { id: "sec-report-changes", title: "Changes this period", content: <QuarterChanges reader={reader} /> },
+      { id: "sec-report-metrics", title: "Key metrics", content: <VerifiedMetrics report={report} /> },
       ...reader.sections.map((section) => ({ id: section.id, title: section.title, description: section.takeaway, className: `sec-reader-section sec-reader-role-${section.role}`, content: <ReaderSection section={section} report={report} nodes={summary?.nodes ?? []} /> })),
-      { id: "sec-report-watch", title: "What to check next", description: "Conditions and timing for the next check, and the views they would revise.", content: <WatchConditions reader={reader} /> },
+      { id: "sec-report-watch", title: "Watch list", content: <WatchConditions reader={reader} /> },
       { ...evidenceSection, content: <details className="sec-reader-workpapers"><summary>Research basis and filing text</summary>{evidenceSection.content}</details> },
       qualitySection,
     );
@@ -153,11 +148,11 @@ export function SecReportDocument({ companyName, filing, embedded = false }: { c
           <div><dt>Generated</dt><dd>{summary?.generatedAt.slice(0, 10) ?? "—"}</dd></div>
         </dl>
       </header>}
-      {renderWarnings.length > 0 && <p role="status" className="sec-report-empty">Some charts or text could not be shown. The available text is kept; see Data quality for details.</p>}
+      {renderWarnings.length > 0 && <p role="status" className="sec-report-empty">Some content unavailable</p>}
       {!reportReady ? (
         <section className="sec-report-pending" aria-labelledby="sec-report-pending-title">
-          <h2 id="sec-report-pending-title">{embedded ? summary ? "Key takeaways" : "No report available" : "Full report in progress"}</h2>
-          <p>{embedded ? summary ? summary.headline : "Check the run history for progress and failure reasons." : "Showing the last available summary. The full report replaces it once verified."}</p>
+          <h2 id="sec-report-pending-title">{embedded ? summary ? "Key takeaways" : "No report" : "Report in progress"}</h2>
+          {embedded && summary?.headline && <p>{summary.headline}</p>}
           {summary?.bullets.length ? <ConclusionList bullets={summary.bullets} /> : null}
           {embedded && summary?.analystView && <p>{summary.analystView}</p>}
         </section>
@@ -197,7 +192,7 @@ export function SecReportDocument({ companyName, filing, embedded = false }: { c
       <footer className="sec-report-source">
         <div><span>SEC filing</span><strong>{filing.form} · {filing.accessionNumber}</strong></div>
         <a href={filing.indexUrl} rel="noopener noreferrer" target="_blank">View filing on EDGAR ↗</a>
-        <p>For research only. Not investment advice. Check figures and conclusions against the original filing.</p>
+        <p>Not investment advice</p>
       </footer>
     </Container>
   );
@@ -211,7 +206,7 @@ function NodeContent({ node }: { node: NonNullable<NonNullable<SecFilingWithSumm
   return <>
     {node.findings.length > 0 && <ConclusionList bullets={node.findings} />}
     {node.narrative && <RichText text={node.narrative} />}
-    {node.error && <p className="sec-report-error">No analysis is available for this topic yet.</p>}
+    {node.error && <p className="sec-report-error">No analysis</p>}
     {node.evidence.length > 0 && (
       <details className="sec-report-evidence">
         <summary>Filing excerpts · {node.evidence.length}</summary>
@@ -227,7 +222,7 @@ function NodeContent({ node }: { node: NonNullable<NonNullable<SecFilingWithSumm
 }
 
 function ConclusionList({ bullets }: { bullets: NonNullable<SecFilingWithSummary["summary"]>["bullets"] }) {
-  if (!bullets.length) return <p className="sec-report-empty">No verifiable takeaways yet.</p>;
+  if (!bullets.length) return <p className="sec-report-empty">No takeaways</p>;
   return (
     <ul className="sec-report-conclusion-list">
       {bullets.map((bullet, index) => (
@@ -240,7 +235,7 @@ function ConclusionList({ bullets }: { bullets: NonNullable<SecFilingWithSummary
 }
 
 function VerifiedMetrics({ report }: { report: PublishedSecReport | null | undefined }) {
-  if (!report?.keyMetrics.length) return <p className="sec-report-empty">Structured metrics have not been verified yet.</p>;
+  if (!report?.keyMetrics.length) return <p className="sec-report-empty">No verified metrics</p>;
   return (
     <div className="sec-report-metrics">
       {report.keyMetrics.map((metric) => (
@@ -257,7 +252,7 @@ function VerifiedMetrics({ report }: { report: PublishedSecReport | null | undef
 }
 
 function DataQuality({ report }: { report: PublishedSecReport | null | undefined }) {
-  if (!report) return <p className="sec-report-empty">Verification results are not available yet.</p>;
+  if (!report) return <p className="sec-report-empty">No verification results</p>;
   const quality = report.dataQuality;
   const notes = [
     ...quality.warnings,
@@ -266,26 +261,25 @@ function DataQuality({ report }: { report: PublishedSecReport | null | undefined
   ];
   return (
     <div className="sec-report-quality">
-      <p>{quality.analysisStatus === "complete" ? "All research questions answered. " : "Some research questions are unanswered. "}Verified figures do not make the investment view correct.</p>
       {report.reader?.limitations.map((l, i) => <p key={i}><strong>{l.issue}: </strong>{l.impact}</p>)}
       {report.financialLens?.limitations.map((l) => <p key={l}>{l}</p>)}
       <details><summary>Data coverage and processing log</summary>
       <dl>
         {report.discovery && <>
           <div><dt>Collected text scanned</dt><dd>{report.discovery.totalCharacters ? Math.round(report.discovery.scannedCharacters/report.discovery.totalCharacters*100) : 0}%</dd></div>
-          <div><dt>Disclosure candidates</dt><dd>{report.discovery.disclosures.length} (not all analyzed)</dd></div>
+          <div><dt>Disclosure candidates</dt><dd>{report.discovery.disclosures.length}</dd></div>
         </>}
         <div><dt>Metric coverage</dt><dd>{Math.round(quality.coverage * 100)}%</dd></div>
         <div><dt>Structured data check</dt><dd>{verificationStatus(quality.verificationStatus)}</dd></div>
         <div><dt>Analysis completeness</dt><dd>{analysisStatus(quality.analysisStatus, quality.stopReason)}</dd></div>
         {typeof quality.managerCoverageScore === "number"
-          ? <div><dt>Research question coverage (not confidence)</dt><dd>{Math.round(quality.managerCoverageScore * 100)}%</dd></div>
+          ? <div><dt>Research question coverage</dt><dd>{Math.round(quality.managerCoverageScore * 100)}%</dd></div>
           : null}
         <div><dt>Report version</dt><dd>{report.reportVersion}</dd></div>
       </dl>
       {notes.length > 0
         ? <ul>{notes.map((note) => <li key={note}>{note}</li>)}</ul>
-        : <p>No data quality issues to flag.</p>}
+        : <p>No issues</p>}
       </details>
     </div>
   );
@@ -313,9 +307,9 @@ function analysisStatus(
   const reason = stopReason === "max_rounds"
     ? "Repair rounds exhausted"
     : stopReason === "no_progress"
-      ? "Repairs made no progress"
+      ? "No repair progress"
       : stopReason === "analysis_incomplete"
-        ? "Filing lacks enough support"
+        ? "Insufficient filing support"
         : null;
   return reason ? `Partial · ${reason}` : "Partial";
 }

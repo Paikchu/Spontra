@@ -7,7 +7,7 @@ export const metricLabels: Record<FlowMetric, string> = { revenue:"Revenue", cos
 export type SankeyNode = { name:string; label:string; metric?:FlowMetric; segmentId?:string; depth:number; expense:boolean; loss?:boolean; credit?:boolean; offset?:boolean; value:number; amount?:FlowAmount };
 export type SankeyLink = { source:string; target:string; value:number };
 /** `deficit` graphs draw a loss as funding: every link is a positive flow, and the net loss is a source. */
-export type FinancialGraph = { nodes:SankeyNode[]; links:SankeyLink[]; notice:string | null; signed?:boolean; deficit?:boolean };
+export type FinancialGraph = { nodes:SankeyNode[]; links:SankeyLink[]; signed?:boolean; deficit?:boolean };
 
 export function validateGraph(nodes:SankeyNode[], links:SankeyLink[]): boolean {
   if (!nodes.length || nodes.length > 64 || links.length > 128) return false;
@@ -32,24 +32,23 @@ export function financialGraph(q:BusinessFlowQuarter, compact=false):FinancialGr
  const nodes:SankeyNode[]=[],links:SankeyLink[]=[];
  if(q.incomeModel==="financial"||q.incomeModel==="insurance"){
   const v=(key:FlowMetric)=>numeric(q.figures[key]);const r=v("revenue"),e=v("operatingExpenses"),p=v("pretax"),t=v("tax"),n=v("net");
-  if([r,e,p,t,n].some(value=>value==null||value<0)||r!<=0||Math.abs(r!-e!-p!)>Math.max(1,r!*1e-9)||Math.abs(p!-t!-n!)>Math.max(1,p!*1e-9))return {nodes,links,notice:"Financial and insurance statements need revenue, disclosed expenses, income before taxes, income taxes and net income to bridge; missing items or losses are not drawn as positive flows."};
+  if([r,e,p,t,n].some(value=>value==null||value<0)||r!<=0||Math.abs(r!-e!-p!)>Math.max(1,r!*1e-9)||Math.abs(p!-t!-n!)>Math.max(1,p!*1e-9))return {nodes,links};
   const defs=[['revenue',"Revenue (as reported)",0,r,false],['operatingExpenses',"Total expenses",1,e,true],['pretax',"Income before taxes",1,p,false],['tax',"Income taxes",2,t,true],['net',"Net income",2,n,false]] as const;
   for(const[key,label,depth,value,expense]of defs)nodes.push({name:key,label,metric:key,depth,expense,value:value!});
   for(const[source,target,value]of [['revenue','operatingExpenses',e],['revenue','pretax',p],['pretax','tax',t],['pretax','net',n]] as const)if(value!>0)links.push({source,target,value:value!});
-  const connected=nodes.filter(node=>links.some(link=>link.source===node.name||link.target===node.name));return validateGraph(connected,links)?{nodes:connected,links,notice:"Financial and insurance companies are shown by reported net revenue and actual expenses; cost of revenue and gross profit are not inferred."}:{nodes:[],links:[],notice:"The financial statement flows do not balance."};
+  const connected=nodes.filter(node=>links.some(link=>link.source===node.name||link.target===node.name));return validateGraph(connected,links)?{nodes:connected,links}:{nodes:[],links:[]};
  }
  if (hasSignedFigures(q)) return signedFinancialGraph(q);
  const v=(key:FlowMetric)=>numeric(q.figures[key]);
  const checks=reconcileQuarter(q);
  const balanced=(i:number)=>checks[i]?.status==="balanced";
  const segmentIds=q.segments.map(s=>s.id);
- if(segmentIds.length>40 || new Set(segmentIds).size!==segmentIds.length) return {nodes,links,notice:"Segment identifiers repeat or exceed the chart limit; check the disclosure details."};
+ if(segmentIds.length>40 || new Set(segmentIds).size!==segmentIds.length) return {nodes,links};
  const tree=selectRevenueTree(q);
- const hasSegments=tree!==null;
  const offset=(tree?.depth??0)+(q.revenueAdjustments?.length?1:0);
  function node(key:FlowMetric,depth:number,expense=false){ if(!nodes.some(n=>n.name===key))nodes.push({name:key,label:metricLabels[key],metric:key,depth:depth+offset,expense,value:v(key)??0}); }
  function link(source:FlowMetric,target:FlowMetric,value:number|null,depth:number,expense=false){if(value==null||value<=0)return;node(source,depth-1);node(target,depth,expense);links.push({source,target,value});}
- if((v("revenue")??0)<=0) return {nodes,links,notice:"Revenue is zero, negative or not disclosed; reported amounts are kept and no proportional flows are drawn."};
+ if((v("revenue")??0)<=0) return {nodes,links};
  node("revenue",0);
  if(tree) appendRevenueTree(q, tree, nodes, links, offset);
 
@@ -57,34 +56,34 @@ export function financialGraph(q:BusinessFlowQuarter, compact=false):FinancialGr
  if(q.incomeModel==="direct_operating"){
 
 
-  if(!balanced(1)||!balanced(2)||!balanced(3)||!balanced(4)||!balanced(5)||["operating","pretax","net","tax"].some(k=>(v(k as FlowMetric)??-1)<0))return {nodes:[],links:[],notice:"The operating expense statement has missing items or signed losses; reported amounts stay in the details and are not drawn as positive flows."};
+  if(!balanced(1)||!balanced(2)||!balanced(3)||!balanced(4)||!balanced(5)||["operating","pretax","net","tax"].some(k=>(v(k as FlowMetric)??-1)<0))return {nodes:[],links:[]};
   link("revenue","operating",v("operating"),1);
   const components=q.expenseComponents??[];
-  if(components.some(c=>numeric(c.amount)==null||numeric(c.amount)!<0))return {nodes:[],links:[],notice:"Expenses have missing items or signed reversals; reported details are kept and not drawn as positive flows."};
+  if(components.some(c=>numeric(c.amount)==null||numeric(c.amount)!<0))return {nodes:[],links:[]};
   const grouped=new Map<string,typeof components>();
   for(const c of components){const group=compact?"all":c.group==="other"||c.group==="administration"?"administration-other":c.group;grouped.set(group,[...(grouped.get(group)??[]),c]);}
   const labels:Record<string,string>={all:"Operating expenses",direct:"Cost of products and services",research:"Research and development",sales:"Sales and marketing","administration-other":"G&A, amortization and restructuring"};
   for(const [group,items] of grouped){
-   const value=items.reduce((sum,c)=>sum+(numeric(c.amount)??0),0);if(value<0)return {nodes:[],links:[],notice:"Expenses include signed reversals; reported details are kept."};if(!value)continue;
+   const value=items.reduce((sum,c)=>sum+(numeric(c.amount)??0),0);if(value<0)return {nodes:[],links:[]};if(!value)continue;
    const names=items.map(c=>c.id).sort().join("+");const amount:FlowAmount={value:String(value),basis:"derived",definition:"expense-group:"+names,comparabilityKey:"expense-group:"+names,sourceIds:[...new Set(items.flatMap(c=>c.amount.sourceIds))],formula:items.map(c=>c.name).join(" + "),lineage:items.flatMap(c=>c.amount.lineage??[])};
    const name="expense:"+group;nodes.push({name,label:labels[group]??group,depth:1+offset,expense:true,value,amount});links.push({source:"revenue",target:name,value});
   }
   let negative=0;
-  for(const c of q.otherComponents??[]){const signed=numeric(c.amount);if(signed==null)return {nodes:[],links:[],notice:"Other income (expense) is not fully disclosed."};if(!signed)continue;
+  for(const c of q.otherComponents??[]){const signed=numeric(c.amount);if(signed==null)return {nodes:[],links:[]};if(!signed)continue;
    const name="other:"+c.id;nodes.push({name,label:c.name,depth:(signed<0?2:1)+offset,expense:signed<0,value:Math.abs(signed),amount:c.amount});
    if(signed<0){negative-=signed;links.push({source:"operating",target:name,value:-signed});}else links.push({source:name,target:"pretax",value:signed});
   }
   link("operating","pretax",v("operating")!-negative,2);
   link("pretax","net",v("net"),3);link("pretax","tax",v("tax"),3,true);
   const connected=nodes.filter(n=>links.some(l=>l.source===n.name||l.target===n.name));
-  return validateGraph(connected,links)?{nodes:connected,links,notice:"Operating expense statement · No GAAP gross profit is disclosed, so none is inferred; expense groups can be expanded."}:{nodes:[],links:[],notice:"The flows failed validation; reported details are kept."};
+  return validateGraph(connected,links)?{nodes:connected,links}:{nodes:[],links:[]};
  }
 
  if(balanced(1) && (v("gross")??-1)>=0 && (v("cost")??-1)>=0){link("revenue","gross",v("gross"),1);link("revenue","cost",v("cost"),1,true);stage=1;}
  if(stage===1 && balanced(2) && (v("operating")??-1)>=0 && (v("operatingExpenses")??-1)>=0){
    link("gross","operating",v("operating"),2);
    if(balanced(5) && !compact && q.expenseComponents?.length){
-    for(const component of q.expenseComponents){const value=numeric(component.amount);if(value==null||value<0)return {nodes:[],links:[],notice:"Expense categories include unknown or negative values; reported details are kept."};if(!value)continue;const name="expense:"+component.id;nodes.push({name,label:component.name,depth:2+offset,expense:true,value,amount:component.amount});links.push({source:"gross",target:name,value});}
+    for(const component of q.expenseComponents){const value=numeric(component.amount);if(value==null||value<0)return {nodes:[],links:[]};if(!value)continue;const name="expense:"+component.id;nodes.push({name,label:component.name,depth:2+offset,expense:true,value,amount:component.amount});links.push({source:"gross",target:name,value});}
    }else if(balanced(5) && ["research","sales","administration"].every(k=>(v(k as FlowMetric)??-1)>=0)){
     for(const k of ["research","sales","administration"] as const)link("gross",k,v(k),2,true);
    }else link("gross","operatingExpenses",v("operatingExpenses"),2,true);
@@ -105,8 +104,8 @@ export function financialGraph(q:BusinessFlowQuarter, compact=false):FinancialGr
   node("operatingExpenses",2,true);links.push({source:"gross",target:"operatingExpenses",value});
  }
  const connected=nodes.filter(n=>links.some(l=>l.source===n.name||l.target===n.name));
- if(!links.length || !validateGraph(connected,links))return {nodes:[],links:[],notice:"The disclosures are not enough to build balanced non-negative flows; amounts and business notes are below."};
- return {nodes:connected,links,notice:stage<4?"Only disclosed, balanced, non-negative parts are drawn; losses and missing items keep their reported values and are not drawn as positive flows.":!hasSegments?"The statement balances; revenue by business is not fully disclosed, so no business shares are drawn.":null};
+ if(!links.length || !validateGraph(connected,links))return {nodes:[],links:[]};
+ return {nodes:connected,links};
 }
 
 
@@ -120,7 +119,7 @@ export function hasSignedFigures(q: BusinessFlowQuarter): boolean {
  * into the amount offset against the prior balance and the remainder carried forward. */
 function signedFinancialGraph(q: BusinessFlowQuarter): FinancialGraph {
  const nodes = new Map<string, SankeyNode>(), links: SankeyLink[] = [];
- const unavailable = (): FinancialGraph => ({ nodes: [], links: [], signed: true, notice: "The signed statement has missing items or does not balance; reported amounts are kept and no flows are inferred." });
+ const unavailable = (): FinancialGraph => ({ nodes: [], links: [], signed: true });
  const checks = reconcileQuarter(q), direct = q.incomeModel === "direct_operating";
  if (!(direct ? [1, 3, 4] : [1, 2, 3, 4]).every(i => checks[i]?.status === "balanced")) return unavailable();
  type Term = { node: SankeyNode; value: number };
@@ -191,7 +190,7 @@ function signedFinancialGraph(q: BusinessFlowQuarter): FinancialGraph {
   indegree.set(target.name, indegree.get(target.name)! - 1);
   if (indegree.get(target.name) === 0) queue.push(target);
  }
- return { nodes: connected, links, signed: true, notice: "Costs and expenses are deducted from revenue step by step, carrying profit or loss to the right; an item that crosses zero shows the offset and remaining amounts separately. Line width is the absolute amount." };
+ return { nodes: connected, links, signed: true };
 }
 
 /**
@@ -286,7 +285,7 @@ export function deficitFinancialGraph(q: BusinessFlowQuarter): FinancialGraph | 
  if (tree) { const branches: SankeyNode[] = []; appendRevenueTree(q, tree, branches, links, 0); for (const node of branches) list.push(node); }
  const connected = list.filter(n => links.some(l => l.source === n.name || l.target === n.name));
  if (!validateGraph(connected, links)) return null;
- return { nodes: connected, links, deficit: true, notice: "Revenue and the net loss together pay for costs and expenses: the net loss is what revenue did not cover, entering where revenue runs out, and is funded by cash reserves, borrowing or issuing shares. Line width is the amount." };
+ return { nodes: connected, links, deficit: true };
 }
 
 /** Gross segment revenue is reconciled through explicit signed consolidation items.

@@ -69,7 +69,6 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
   // The growth line has its own default: year over year needs four earlier quarters, so a short history reads quarter over quarter.
   const lineLag = chosenLag ?? (growthSeries(historyColumns, 4).slice(-visible).filter(v => v != null).length >= 2 ? 4 : 1);
   const rates = useMemo(() => growthSeries(historyColumns, lineLag).slice(-visible), [historyColumns, lineLag, visible]);
-  const rateCount = rates.filter(rate => rate != null).length;
   const rateAxis = useMemo(() => rateTicks(rates), [rates]);
   const rateY = (v: number) => rateAxis ? (v - rateAxis[0]) / (rateAxis[3] - rateAxis[0]) * 100 : 0;
   const rateName = lineLag === 4 ? "YoY growth" : "QoQ growth";
@@ -103,10 +102,9 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
         </div>
         <ChartLegendContent asChild key={"legend" + mode + view}><div className="trend-legend">
           {view === "trend" && legend.length > 1 && legend.map(layer => <span key={layer.key}><i style={{ background: chartConfig[layer.key]?.color ?? layerColor(layer, hue) }} />{layer.name}</span>)}
-          {view === "trend" && rateAxis && <span className="trend-legend-line" style={{ "--line": lineColor } as CSSProperties}><i />{rateName} · right axis{rateCount < slots.length ? ` · ${rateCount}/${slots.length} quarters comparable` : ""}</span>}
-          {view === "trend" && guided.length > 0 && <span className="trend-legend-guide"><i />Management guidance range</span>}
-          <span className="trend-basis">{view === "trend" ? `${rateAxis ? "Bars: revenue · left axis · " : ""}As reported each period` : bridgeNote(bridge, lag, historyColumns[historyIndex - lag])}</span>
-          {view === "trend" && rateCount < slots.length && <span className="trend-basis">Growth is blank where a quarter lacks comparable revenue</span>}
+          {view === "trend" && rateAxis && <span className="trend-legend-line" style={{ "--line": lineColor } as CSSProperties}><i />{rateName}</span>}
+          {view === "trend" && guided.length > 0 && <span className="trend-legend-guide"><i />Guidance range</span>}
+          {view === "bridge" && bridge && bridge.reason !== "split" && <span className="trend-basis">Totals only</span>}
         </div></ChartLegendContent>
       </div>
       {view === "trend" ? <div className="trend-kpis">
@@ -120,7 +118,7 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
         {lagSwitch(lag)}
       </div>}
     </header>
-    {view === "bridge" ? <BridgePlot key={mode + lag} bridge={bridge} empty={bridgeNote(bridge, lag, historyColumns[historyIndex - lag])} subject={revenueName} hue={hue} money={money} /> : <>
+    {view === "bridge" ? <BridgePlot key={mode + lag} bridge={bridge} empty={lag === 4 ? "No comparable year-ago quarter" : "No comparable prior quarter"} subject={revenueName} hue={hue} money={money} /> : <>
     <div className="trend-plot" role="list" data-series={series ?? undefined} data-rates={rateAxis ? "" : undefined} style={{ "--line": lineColor, "--cols": columns.length + (overlay.next ? 1 : 0) } as CSSProperties}
       onMouseMove={e => setSeries((e.target as Element).closest("[data-series-line]") ? "line" : (e.target as Element).closest(".trend-col") ? "bar" : null)}>
       <div className="trend-grid" key={scale} aria-hidden="true">
@@ -145,14 +143,6 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
 const signed = (v: number, money: (v: number | null) => string) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${money(Math.abs(v))}`;
 const axisPercent = (v: number) => `${v < 0 ? "−" : ""}${Number(Math.abs(v).toFixed(1))}%`;
 const points = (v: number) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(1)} pp`;
-
-function bridgeNote(bridge: Bridge | null, lag: 1 | 4, base: Column | undefined) {
-  const when = lag === 4 ? "The year-ago quarter" : "The prior quarter";
-  if (!bridge) return base?.state === "basis" ? `${when} was not reported by these businesses` : `${when} has no verifiable disclosure`;
-  if (bridge.reason === "basis") return "The two quarters report different businesses; only totals are compared";
-  if (bridge.reason === "single") return "This business discloses no breakdown; only totals are compared";
-  return "Ends are total revenue · Steps are each business’s change · Axis is cut";
-}
 
 /**
  * Revenue bridge: the base quarter's total as a bar, one floating step per business sorted by its change, then the current total.
@@ -179,7 +169,7 @@ function BridgePlot({ bridge, empty, subject, hue, money }: { bridge: Bridge | n
     <span className="bridge-value" style={{ bottom: `${y(end.value)}%` }}>{money(end.value)}</span>
     <span className="bridge-name"><span className="bridge-period">{end.label}</span><b>{end.note}</b></span>
   </div>;
-  return <div className="bridge-plot" role="list" aria-label={`Sources of the change in ${subject} from ${ends[0].label} to ${ends[1].label}`} style={{ "--cols": bridge.steps.length + 2 } as CSSProperties} onMouseLeave={() => setHover(null)}>
+  return <div className="bridge-plot" role="list" aria-label={`${subject} change, ${ends[0].label} to ${ends[1].label}`} style={{ "--cols": bridge.steps.length + 2 } as CSSProperties} onMouseLeave={() => setHover(null)}>
     {end(ends[0], 0)}
     {bridge.steps.map((step, i) => {
       const top = Math.max(step.before, step.after), bottom = Math.min(step.before, step.after);
@@ -188,7 +178,7 @@ function BridgePlot({ bridge, empty, subject, hue, money }: { bridge: Bridge | n
       return <div key={step.key} className="bridge-col" role="listitem" tabIndex={0} style={{ "--i": i + 1 } as CSSProperties}
         data-align={i < 1 ? "start" : i >= bridge.steps.length - 1 ? "end" : undefined}
         onMouseEnter={() => setHover(i)} onFocus={() => setHover(i)} onBlur={() => setHover(null)}
-        aria-label={`${step.name} ${signed(step.delta, money)}, contributes ${points(share)}`}>
+        aria-label={`${step.name} ${signed(step.delta, money)}, ${points(share)}`}>
         <span className="bridge-link" style={{ bottom: `${y(step.before)}%` }} aria-hidden="true" />
         <span className="bridge-step" aria-hidden="true" style={{ bottom: `${y(bottom)}%`, height: `max(2px, ${y(top) - y(bottom)}%)`, background: config[step.key]?.color ?? layerColor(step, hue) }} />
         <span className="bridge-value" data-trend={trend(step.delta)} style={{ bottom: `${y(top)}%` }}>{signed(step.delta, money)}</span>
@@ -198,7 +188,7 @@ function BridgePlot({ bridge, empty, subject, hue, money }: { bridge: Bridge | n
           <div className="trend-tip-row"><span>{ends[0].label}</span><b>{money(step.base)}</b></div>
           <div className="trend-tip-row"><span>{ends[1].label}</span><b>{money(step.value)}</b></div>
           <div className="trend-tip-row trend-tip-total"><span>Change</span><b>{signed(step.delta, money)}{growthRate != null && ` (${percent(growthRate)})`}</b></div>
-          <p>Contributes {points(share)} to {subject}</p>
+          <div className="trend-tip-row"><span>Contribution</span><b>{points(share)}</b></div>
         </div></ChartTooltipContent>}
       </div>;
     })}
@@ -218,12 +208,12 @@ function Bar({ column, index, order, scale, hue, money, current, pickable, hover
 }) {
   const { config } = useChart();
   const q = column.slot.quarter;
-  const label = column.state === "missing" ? (column.slot.missingReason === "currency" ? "This quarter was reported in another currency and is not converted; amount and growth are blank" : "No verifiable disclosure for this quarter") : column.state === "basis" ? (selected ? "This filing does not report this business" : q?.revenueAdjustments?.length ? "Segments include intersegment sales; this bar shows consolidated revenue after eliminations. Select a business for segment revenue" : column.layers.length > 1 ? "Shown by the businesses reported in this filing; today’s breakdown is not inferred" : "Only verifiable total company revenue for this quarter") : "";
+  const label = column.state === "missing" ? (column.slot.missingReason === "currency" ? "Other reporting currency" : "Not disclosed") : column.state === "basis" ? (selected ? "Not reported" : q?.revenueAdjustments?.length ? "Consolidated revenue after eliminations" : column.layers.length > 1 ? "Segments as reported" : "Total revenue only") : "";
   const height = (column.total ?? 0) / scale * 100;
   const nearBarLabel = line != null && Math.abs(line.y - height) < 16;
   return <div className="trend-col" role="listitem" data-state={column.state} data-current={current || undefined} data-align={index < 2 ? "start" : index > 5 ? "end" : undefined} style={{ "--i": index } as CSSProperties} onMouseEnter={onHover}>
     <Button variant="unstyled" type="button" className="trend-hit" disabled={!pickable} onClick={onPick} onFocus={onHover}
-      aria-label={`${shortPeriod(column.slot.periodEnd)} ${column.total != null ? money(column.total) : ""}${label ? `, ${label}` : ""}${guide ? `, guidance ${money(guide.low)}–${money(guide.high)}` : ""}${pickable ? ", view this quarter in the flow chart" : ""}`} />
+      aria-label={`${shortPeriod(column.slot.periodEnd)} ${column.total != null ? money(column.total) : ""}${label ? `, ${label}` : ""}${guide ? `, guidance ${money(guide.low)}–${money(guide.high)}` : ""}`} />
     {/* With the growth line drawn, the axes carry the scale and only the current or hovered bar keeps its value label. */}
     <span className="trend-value" data-quiet={line && !current && !(hovered && !onLine) ? "" : undefined} style={{ bottom: `${height}%` }}>{column.total != null ? money(column.total) : "—"}</span>
     <span className="trend-stack" aria-hidden="true">
@@ -249,9 +239,9 @@ function Bar({ column, index, order, scale, hue, money, current, pickable, hover
       {column.total != null && <div className="trend-tip-row trend-tip-total"><span>{selected ? "Business revenue" : "Total revenue"}</span><b>{money(column.total)}</b></div>}
       {!onLine && rate != null && <div className="trend-tip-row"><span>{lag === 4 ? "YoY" : "QoQ"}</span><b data-trend={trend(rate)}>{percent(rate)}</b></div>}
       {!onLine && guide && <div className="trend-tip-row"><span>{guide.derived ? "Guidance (from growth rate)" : "Guidance"}</span><b>{money(guide.low)}–{money(guide.high)}</b></div>}
-      {!onLine && guide && column.total != null && <p>{column.total > guide.high ? "Above the high end" : column.total < guide.low ? "Below the low end" : "Within the range"} · Guidance issued {guide.item.issuedAt}</p>}
+      {!onLine && guide && column.total != null && <p>{column.total > guide.high ? "Above range" : column.total < guide.low ? "Below range" : "Within range"} · Issued {guide.item.issuedAt}</p>}
       {label && <p>{label}{column.state === "basis" && q && !selected ? `: ${q.segments.map(s => s.name).join(", ")}` : ""}</p>}
-      {q && <p className="trend-tip-source">{q.basis === "derived" ? "Fourth quarter = full year − first nine months · " : ""}SEC {q.source.form} · {q.source.filedAt}</p>}
+      {q && <p className="trend-tip-source">{q.basis === "derived" ? "Derived Q4 · " : ""}SEC {q.source.form} · {q.source.filedAt}</p>}
     </div></ChartTooltipContent>}
   </div>;
 }
@@ -269,7 +259,8 @@ function GuideColumn({ mark, index, scale, money, hovered, onHover }: { mark: Gu
     {hovered && <ChartTooltipContent asChild><div className="trend-tip" role="presentation">
       <div className="trend-tip-title">{shortPeriod(mark.periodEnd)} management guidance</div>
       <div className="trend-tip-row trend-tip-lead"><span>Revenue</span><b>{money(mark.low)}–{money(mark.high)}</b></div>
-      {item.derived && <p>From YoY {Number(item.low!.toFixed(2))}%–{Number(item.high!.toFixed(2))}% on the year-ago quarter’s {money(item.derived.base)}</p>}
+      {item.derived && <div className="trend-tip-row"><span>Guided YoY</span><b>{Number(item.low!.toFixed(2))}%–{Number(item.high!.toFixed(2))}%</b></div>}
+      {item.derived && <div className="trend-tip-row"><span>Year-ago base</span><b>{money(item.derived.base)}</b></div>}
       {item.action && item.previous && <div className="trend-tip-row"><span>vs. previous</span><b>{ACTION_NAMES[item.action]}</b></div>}
       <p>“{item.quote}”</p>
       <p className="trend-tip-source">{mark.source ? `${mark.source.title} · ` : ""}{item.issuedAt}</p>

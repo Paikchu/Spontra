@@ -69,7 +69,7 @@ export function LensPanel({ finding, data, sources, nodeColor, pair, story, inde
       <div className="lens-title">
         <b className="lens-kind" data-kind={finding.kind}>{KIND_LABEL[finding.kind]}<i aria-label={`Severity ${finding.severity}`}>{"●".repeat(finding.severity)}</i></b>
         <h2>{finding.title}</h2>
-        <span className="lens-basis">From the {shortPeriod(finding.periodEnd)} report · Chart shows the {VIEW_LABEL[finding.anchors.view].toLowerCase()} view</span>
+        <span className="lens-basis">{shortPeriod(finding.periodEnd)} report · {VIEW_LABEL[finding.anchors.view]}</span>
       </div>
       <div className="lens-nav">
         {compact ? <Button variant="unstyled" type="button" className="lens-pair" onClick={onFocusThis}>Focus this</Button> : <>
@@ -93,7 +93,7 @@ export function LensPanel({ finding, data, sources, nodeColor, pair, story, inde
         {watch && <div className="lens-watch" data-settled={outcome ? "" : undefined}>
           <p><b>{watch.horizon === "next_quarter" ? "Next quarter" : "Full year"}</b>{watch.condition}</p>
           {outcome ? <p className="lens-outcome"><b>{shortPeriod(outcome.periodEnd)} reported</b><Outcome r={outcome.resolved} /></p>
-            : <p className="lens-outcome lens-outcome--pending">Waiting for the {shortPeriod(watchPeriodOf(finding))} report</p>}
+            : <p className="lens-outcome lens-outcome--pending">Pending · {shortPeriod(watchPeriodOf(finding))} report</p>}
         </div>}
         {cited.length > 0 && <ol className="sources sources--numbered">{cited.map(s => <li key={s.id}><a href={s.url} target="_blank" rel="noopener noreferrer">{s.title}<span aria-hidden="true"> ↗</span></a></li>)}</ol>}
       </div>
@@ -173,14 +173,14 @@ function Ladder({ ladder, nodeColor }: { ladder: LensLadder; nodeColor: (id: str
         {latest.steps.map((s, i) => <span key={i} role="listitem"><i style={{ "--i": i } as CSSProperties} /><b>{span(s)}</b>{s.share != null ? `${Number(s.share.toFixed(1))}%` : ""}{s.amount != null ? ` · ${money(s.amount, latest.currency)}` : ""}</span>)}
         {latest.remainder != null && <span role="listitem"><i className="lens-rung--rest" /><b>Thereafter</b>{Number(latest.remainder.toFixed(1))}% · {money(latest.total * latest.remainder / 100, latest.currency)}</span>}
       </div>
-    </div> : <p className="lens-empty">This report does not tag an RPO recognition schedule</p>}
+    </div> : <p className="lens-empty">No RPO recognition schedule</p>}
   </div>;
 }
 
 /** Stacked share of revenue by business over the disclosed quarters; the newest column carries each share. */
 function Shares({ shares, nodeColor }: { shares: LensShares; nodeColor: (id: string) => string }) {
   const periods = shares.periods.map((end, i) => ({ end, row: shares.shares[i] })).filter(p => p.row.every(v => Number.isFinite(v)));
-  if (periods.length < 2) return <div className="lens-empty">Not enough comparable segment quarters to chart shares.</div>;
+  if (periods.length < 2) return <div className="lens-empty">No comparable segment quarters</div>;
   const x = (i: number) => i / (periods.length - 1) * 100;
   const stack = periods.map(p => p.row.reduce<number[]>((acc, v) => [...acc, (acc.at(-1) ?? 0) + v], []));
   const area = (n: number) => {

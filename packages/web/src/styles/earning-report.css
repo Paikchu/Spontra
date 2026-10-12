@@ -150,7 +150,6 @@
 }
 
 .earning-report .fundamental-chart__message strong { color: var(--ink); font: 600 18px/1.2 var(--serif); }
-.earning-report .fundamental-chart__message p { max-width: 520px; margin: 0; font-size: 12px; line-height: 1.5; }
 
 @media (max-width: 540px) {
   .earning-report .fundamental-chart { padding-top: 16px; }

@@ -8,7 +8,7 @@ export type ReportSectionLink = {
   id: string;
   index?: string;
   title: string;
-  description: string;
+  description?: string;
   depth?: 0 | 1;
   parentTitle?: string;
 };
@@ -36,7 +36,7 @@ export function SecReportNavigator({ initialSections }: { initialSections: Repor
           id: section.id,
           index: section.dataset.reportIndex,
           title: section.dataset.reportTitle ?? "",
-          description: section.dataset.reportDescription ?? "",
+          description: section.dataset.reportDescription,
           depth: section.dataset.reportDepth === "1" ? 1 as const : 0 as const,
           parentTitle: section.dataset.reportParentTitle,
         }))
@@ -196,7 +196,7 @@ export function SecReportNavigator({ initialSections }: { initialSections: Repor
                   <span className="min-w-0">
                     {nested && <small className="mb-0.5 block text-[9px] tracking-[.08em] text-[var(--ink-muted)]">{section.parentTitle}</small>}
                     <strong className={`block font-[family-name:var(--serif)] font-semibold leading-5 ${nested ? "text-sm" : "text-[15px]"}`}>{section.title}</strong>
-                    <small className="mt-1 block text-xs leading-5 text-[var(--ink-muted)]">{section.description}</small>
+                    {section.description && <small className="mt-1 block text-xs leading-5 text-[var(--ink-muted)]">{section.description}</small>}
                   </span>
                 </a>
                 );

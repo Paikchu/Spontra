@@ -7,13 +7,6 @@ import { classifyStatementCategory, STATEMENT_CATEGORY_LABELS, statementColumnLa
 import "./financial-statements.css";
 
 const categoryOrder: StatementCategory[] = ["balance", "income", "cashflow", "other", "notes"];
-const categoryDescriptions: Record<StatementCategory, string> = {
-  balance: "公司拥有的资产、承担的负债与股东权益",
-  income: "收入、成本与最终利润",
-  cashflow: "经营、投资和融资活动带来的现金变化",
-  other: "综合收益、股东权益变化及其他财务报表",
-  notes: "主要财务项目的补充说明与明细",
-};
 const formLabel = (form: string) => `${/^(?:10-K|20-F)/.test(form) ? "年报" : form.startsWith("6-K") ? "中期报表（6-K 申报日）" : "季报"}${form.endsWith("/A") ? "（修订）" : ""}`;
 const cellKey = (row: number, cell: StatementCell) => `${row}:${cell.column}`;
 const hasNumericFact = (cell: StatementCell) => cell.facts.some(fact => fact.status === "parsed" && fact.value !== null && fact.value.trim() !== "" && Number.isFinite(Number(fact.value)));
@@ -175,32 +168,32 @@ export function FinancialStatementsInspector({ ticker, documents, onUnauthorized
     if (!table || !category) return null;
     return <div className="fs-reader" data-density={dense ? "compact" : "comfortable"}>
       <div className="fs-reader-heading">
-        <div className="fs-heading-copy"><h3 id={`${titleId}-${isExpanded ? "expanded" : "inline"}`}>{STATEMENT_CATEGORY_LABELS[category]}</h3><p>{categoryDescriptions[category]}</p><p className="fs-original-title" lang="en">{table.section}</p></div>
+        <div className="fs-heading-copy"><h3 id={`${titleId}-${isExpanded ? "expanded" : "inline"}`}>{STATEMENT_CATEGORY_LABELS[category]}</h3><p className="fs-original-title" lang="en">{table.section}</p></div>
         <div className="fs-reader-tools">
-          <label className="fs-search"><Search size={16} aria-hidden="true" /><input aria-label="搜索表内项目" placeholder="搜索表内项目" value={query} onChange={event => { setQuery(event.target.value); setMatchIndex(0); }} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); moveMatch(event.shiftKey ? -1 : 1); } }} />{query && <button type="button" aria-label="清除表内搜索" onClick={() => { setQuery(""); setMatchIndex(0); }}><X size={14} /></button>}</label>
+          <label className="fs-search"><Search size={16} aria-hidden="true" /><input aria-label="搜索表内项目" placeholder="搜索项目" value={query} onChange={event => { setQuery(event.target.value); setMatchIndex(0); }} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); moveMatch(event.shiftKey ? -1 : 1); } }} />{query && <button type="button" aria-label="清除搜索" onClick={() => { setQuery(""); setMatchIndex(0); }}><X size={14} /></button>}</label>
           {search && <span className="fs-match-count" role="status">{matches.length ? `${activeMatch + 1} / ${matches.length}` : "无匹配"}</span>}
-          <div className="fs-search-navigation"><button type="button" className="fs-icon-button" aria-label="上一个匹配项目" disabled={!matches.length} onClick={() => moveMatch(-1)}><ArrowUp size={16} /></button><button type="button" className="fs-icon-button" aria-label="下一个匹配项目" disabled={!matches.length} onClick={() => moveMatch(1)}><ArrowDown size={16} /></button></div>
-          {isExpanded ? <button type="button" className="fs-button" onClick={() => setExpanded(false)}><X size={15} />收起阅读</button> : <button type="button" className="fs-button" onClick={() => setExpanded(true)}><Maximize2 size={15} />展开阅读</button>}
+          <div className="fs-search-navigation"><button type="button" className="fs-icon-button" aria-label="上一项" disabled={!matches.length} onClick={() => moveMatch(-1)}><ArrowUp size={16} /></button><button type="button" className="fs-icon-button" aria-label="下一项" disabled={!matches.length} onClick={() => moveMatch(1)}><ArrowDown size={16} /></button></div>
+          {isExpanded ? <button type="button" className="fs-button" onClick={() => setExpanded(false)}><X size={15} />收起</button> : <button type="button" className="fs-button" onClick={() => setExpanded(true)}><Maximize2 size={15} />展开</button>}
         </div>
       </div>
-      <div className="fs-table-options">{unitCaption && <span>{unitCaption}</span>}<button type="button" className="fs-density" aria-pressed={dense} onClick={() => setDense(value => !value)}>紧凑显示</button></div>
-      <div className="fs-table-scroll" ref={isExpanded ? expandedGrid : grid} tabIndex={0} aria-label={`${STATEMENT_CATEGORY_LABELS[category]}，可横向和纵向滚动`}>
+      <div className="fs-table-options">{unitCaption && <span>{unitCaption}</span>}<button type="button" className="fs-density" aria-pressed={dense} onClick={() => setDense(value => !value)}>紧凑</button></div>
+      <div className="fs-table-scroll" ref={isExpanded ? expandedGrid : grid} tabIndex={0} aria-label={STATEMENT_CATEGORY_LABELS[category]}>
         <table className="fs-table" aria-labelledby={`${titleId}-${isExpanded ? "expanded" : "inline"}`}>
           <colgroup>{columns.map(column => <col key={column.index} data-column-kind={column.kind} />)}</colgroup>
           {headerRows > 0 && <thead>{renderRows(0, headerRows)}</thead>}
           <tbody>{renderRows(headerRows, table.rows.length)}</tbody>
         </table>
       </div>
-      <div className="fs-reader-footer"><span>金额中的括号表示负数；空白与破折号按原表保留。</span>{table.precedingText && <details className="fs-notes"><summary>报表说明<ChevronDown size={15} aria-hidden="true" /></summary><p>{table.precedingText}</p></details>}</div>
+      {table.precedingText && <div className="fs-reader-footer"><details className="fs-notes"><summary>报表说明<ChevronDown size={15} aria-hidden="true" /></summary><p>{table.precedingText}</p></details></div>}
     </div>;
   }
 
   return <section className="fs-workspace" aria-label="财务报表">
-    {!!filings.length && <div className="fs-report-control"><label htmlFor={`${titleId}-report`}>财报期间</label><div className="fs-select-wrap"><select id={`${titleId}-report`} aria-label="选择财报期间" value={documentId ?? ""} onChange={event => setSelected(event.target.value)}>{filings.map(filing => <option key={filing.documentId} value={filing.documentId}>{filing.source.reportDate} · {formLabel(filing.source.form)}</option>)}</select><ChevronDown size={15} aria-hidden="true" /></div>{loading && data && <span className="fs-refreshing" role="status"><LoaderCircle size={13} className="fs-spin" />更新中</span>}</div>}
-    {loading && documentId && !data ? <div className="fs-empty" role="status"><LoaderCircle className="fs-spin" size={24} /><h3>正在读取财务报表</h3></div> : !filings.length ? <div className="fs-empty"><FileText size={30} /><h3>这家公司的报表还未准备好</h3><p>更新数据后，在这里阅读财务报表。</p>{onRequestUpdate && <button type="button" className="fs-button fs-primary" onClick={onRequestUpdate}>获取财报数据</button>}</div> : !error && data && !table ? <div className="fs-empty"><FileText size={30} /><h3>本期暂无可阅读的报表</h3><p>可切换其他财报期间，或更新数据后重试。</p><button type="button" className="fs-button" onClick={onRequestUpdate ?? (() => setRetry(value => value + 1))}>{onRequestUpdate ? "更新数据" : "重新读取"}</button></div> : null}
-    {error && documentId && <div className="fs-error" role="alert"><span>{data ? "暂时无法刷新，已保留当前报表。" : "暂时无法读取报表，请重试。"}</span><button type="button" className="fs-button" onClick={() => setRetry(value => value + 1)}>重新读取</button></div>}
+    {!!filings.length && <div className="fs-report-control"><label htmlFor={`${titleId}-report`}>财报期间</label><div className="fs-select-wrap"><select id={`${titleId}-report`} aria-label="财报期间" value={documentId ?? ""} onChange={event => setSelected(event.target.value)}>{filings.map(filing => <option key={filing.documentId} value={filing.documentId}>{filing.source.reportDate} · {formLabel(filing.source.form)}</option>)}</select><ChevronDown size={15} aria-hidden="true" /></div>{loading && data && <span className="fs-refreshing" role="status"><LoaderCircle size={13} className="fs-spin" />更新中</span>}</div>}
+    {loading && documentId && !data ? <div className="fs-empty" role="status"><LoaderCircle className="fs-spin" size={24} /><h3>加载中</h3></div> : !filings.length ? <div className="fs-empty"><FileText size={30} /><h3>无报表</h3>{onRequestUpdate && <button type="button" className="fs-button fs-primary" onClick={onRequestUpdate}>获取财报数据</button>}</div> : !error && data && !table ? <div className="fs-empty"><FileText size={30} /><h3>本期无报表</h3><button type="button" className="fs-button" onClick={onRequestUpdate ?? (() => setRetry(value => value + 1))}>{onRequestUpdate ? "更新数据" : "重新读取"}</button></div> : null}
+    {error && documentId && <div className="fs-error" role="alert"><span>{data ? "刷新失败" : "加载失败"}</span><button type="button" className="fs-button" onClick={() => setRetry(value => value + 1)}>重新读取</button></div>}
     {table && <><nav className="fs-tabs" aria-label="报表类别">{categories.map(kind => <button type="button" key={kind} aria-pressed={kind === category} onClick={() => chooseCategory(kind)}>{STATEMENT_CATEGORY_LABELS[kind]}</button>)}</nav>
-      {categoryTables.length > 1 && <div className="fs-table-picker"><label htmlFor={`${titleId}-table`}>选择{category && STATEMENT_CATEGORY_LABELS[category]}</label><div className="fs-select-wrap"><select id={`${titleId}-table`} aria-label="选择财务报表或附注表格" value={tableId} onChange={event => chooseTable(event.target.value)}>{categoryTables.map((candidate, index) => <option key={candidate.id} value={candidate.id}>{translateStatementLabel(candidate.section)}{categoryTables.filter(other => other.section === candidate.section).length > 1 ? ` · 表 ${index + 1}` : ""}</option>)}</select><ChevronDown size={15} aria-hidden="true" /></div></div>}
+      {categoryTables.length > 1 && <div className="fs-table-picker"><label htmlFor={`${titleId}-table`}>{category && STATEMENT_CATEGORY_LABELS[category]}</label><div className="fs-select-wrap"><select id={`${titleId}-table`} aria-label="报表" value={tableId} onChange={event => chooseTable(event.target.value)}>{categoryTables.map((candidate, index) => <option key={candidate.id} value={candidate.id}>{translateStatementLabel(candidate.section)}{categoryTables.filter(other => other.section === candidate.section).length > 1 ? ` · 表 ${index + 1}` : ""}</option>)}</select><ChevronDown size={15} aria-hidden="true" /></div></div>}
       {reader(false)}</>}
     <dialog ref={dialog} className="fs-expanded" aria-labelledby={`${titleId}-expanded`} onCancel={() => setExpanded(false)} onClose={() => setExpanded(false)}>{expanded && reader(true)}</dialog>
   </section>;
