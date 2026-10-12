@@ -252,11 +252,6 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
     return { name: shortName(n.label), value: money(amountOf(n)), ...(change.comparable ? { change: { label: change.label, trend: change.trend ?? undefined } } : {}) };
   }, [money, amountOf, changeOf]);
   const layout = useMemo(() => graph ? layoutFor(graph, copy) : null, [graph, copy]);
-  // Compare with last year / last quarter needs the comparison quarter drawn in this quarter's currency and scale; its labels carry no change of their own.
-  const priorMoney = useCallback((v: number | null) => previous ? compactFlowValue(v, previous) : "—", [previous]);
-  const priorCopy = useCallback((n: PlacedNode): NodeCopy => ({ name: shortName(n.label), value: priorMoney(n.amount ? numeric(n.amount) : n.metric && previous ? numeric(previous.figures[n.metric]) : n.value) }), [priorMoney, previous]);
-  const priorQuarter = useMemo(() => previous && previousGraph?.links.length && quarter && previous.currency === quarter.currency && previous.scale === quarter.scale
-    && previous.incomeModel !== "financial" && previous.incomeModel !== "insurance" ? { graph: previousGraph, copy: priorCopy, label: previous.label } : null, [previous, previousGraph, quarter, priorCopy]);
   const proportional = Boolean(quarter && layout && quarter.incomeModel !== "financial" && quarter.incomeModel !== "insurance");
   const deficit = graph?.deficit && revenue ? deficitVerdict(graph, revenue, v => money(v)) : null;
 
@@ -448,7 +443,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
           : !quarter ? <div className="empty"><h2>No quarterly financials disclosed</h2><p>The flow needs three-month figures in one currency on one basis. Sample data is never used instead.</p></div>
           : proportional && layout ? <FlowChart graph={graph!} copy={copy} money={v => money(v)} colorOf={colorOf} active={active} revealKey={quarter.id} productBusiness={current ? "segment:" + current.key : null} mindMap={mindMap} mindPick={mindItem?.id ?? null} onMindPick={setMindItem} businessDetails={<Dossier item={current} parent={parent ?? null} sources={quarter.sources} explainer={explainer} />}
               focusSlot={n => { const prior = priorOf(n); return segmentRevenue ? `${shareLabel} ${percent(n.value / segmentRevenue * 100)}${prior != null && priorShareBase ? ` · ${word.period} ${percent(prior / priorShareBase * 100)}` : ""}` : null; }}
-              onHover={name => setHoverNode(name)} tipFor={tipFor} spotlight={spotlight} priorOf={priorOf} basis={word} previous={priorQuarter} brackets={guideMarks.brackets} pills={guideMarks.pills}
+              onHover={name => setHoverNode(name)} tipFor={tipFor} spotlight={spotlight} priorOf={priorOf} basis={word} brackets={guideMarks.brackets} pills={guideMarks.pills}
               onPick={n => { const item = itemByNode.get(n.name); pickBusiness(item && current?.key !== item.key ? item.id : null); }}
               label={`${ticker} ${quarter.label} Sankey diagram from revenue to net income, amounts in ${quarter.currency}`} />
           : <div className="business-flow chart-fallback">{current && <Dossier item={current} parent={parent ?? null} sources={quarter.sources} explainer={explainer} />}<FinancialSankey quarter={quarter} previous={previous} word={word.change} onSegment={key => pickBusiness(items.find(item => item.key === key)?.id ?? null)} /></div>}
