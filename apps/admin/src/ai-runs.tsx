@@ -140,7 +140,7 @@ function KindDetail({ detail, onChanged, onError }: { detail: AiCompanyDetail; o
     {detail.state.blocked && <p className="ai-hint">{detail.state.blocked}</p>}
     {notice && <p className="ra-notice" role="status">{notice}</p>}{error && <p className="ra-error" role="alert">{error}</p>}
     <h3>运行记录</h3>
-    {!detail.runs.length ? <p className="ai-muted">无运行记录</p> : <ol className="ai-runs">{detail.runs.map((run, i) => <RunItem key={run.runId} run={run} open={i === 0} />)}</ol>}
+    {!detail.runs.length ? <p className="ai-muted">无运行记录</p> : <ol className="ai-runs">{detail.runs.map(run => <RunItem key={run.runId} run={run} />)}</ol>}
     <Versions detail={detail} onError={onError} />
   </div>;
 }
@@ -149,9 +149,9 @@ function summaryText(kind: AiRunKind, s: { items: number; sources: number; perio
   return `${s.items} ${kind === "findings" ? "条要点" : "项业务"} · ${s.sources} 个来源${s.periodEnd ? ` · 报告期 ${s.periodEnd}` : ""}`;
 }
 
-function RunItem({ run, open }: { run: AiRun; open: boolean }) {
+function RunItem({ run }: { run: AiRun }) {
   const result = run.result as { findings?: number; businesses?: number; nodes?: number; withheld?: Array<{ id: string; reasons: string[] }> } | null;
-  return <li><details open={open}>
+  return <li><details>
     <summary><span className="ra-badge" data-status={badge(run.status)}>{STATUS[run.status]}</span><strong>{ACTIVE.has(run.status) ? stageLabel(run.stage) : date(run.startedAt)}</strong>
       <small>{run.trigger === "manual" ? "手动" : "自动"} · 开始 {date(run.startedAt)} · 用时 {elapsed(run)}</small></summary>
     {run.error && <p className="ra-error">{run.error}</p>}
