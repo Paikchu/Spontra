@@ -127,3 +127,18 @@ test("highlights alone are a publication; an empty one is not", () => {
   assert.deepEqual(withHighlights?.findings, []);
   assert.equal(withHighlights?.highlights?.length, 1);
 });
+
+test("a multiple shows its level even when its change was asked for, and its change reads in ×", () => {
+  const debtToEquity = { ratio: { numerator: { capital: "debt" as const }, denominator: { capital: "equity" as const } } };
+  const margin = { ratio: { numerator: { metric: "operating" as const }, denominator: { metric: "revenue" as const } } };
+  const highlights: ReportHighlights = {
+    periodEnd: PERIOD, profit: [{ ref: margin, title: "Operating margin change", compare: "yoy", show: "change" }], cash: [],
+    balance: [{ ref: debtToEquity, title: "Debt-to-equity ratio change", compare: "yoy", show: "change" }],
+  };
+  const { verified } = verifyHighlights(highlights, data);
+  assert.equal(verified.balance[0].show, "value");
+  assert.equal(verified.balance[0].title, "Debt-to-equity ratio");
+  assert.match(highlightChange(verified.balance[0].resolved)!, /^[+−]\d+\.\d{2}×$/);
+  assert.equal(verified.profit[0].show, "change");
+  assert.equal(verified.profit[0].title, "Operating margin change");
+});

@@ -14,7 +14,7 @@ How to choose:
 - Each view's figures must come from table rows of that view, copied exactly (the ref object as written). Do not use the same ref twice in a view.
 
 What the large number shows (show):
-- "change" when the rate is the news: revenue of a business more than doubling, growth speeding up or slowing down, a margin widening or narrowing by points. The tile then shows the change itself (e.g. +121% or +6.1 pp) as the large number, with the figure's level below it. Use "change" only with a compare whose value the row has.
+- "change" when the rate is the news: revenue of a business more than doubling, growth speeding up or slowing down, a margin widening or narrowing by points. The tile then shows the change itself (e.g. +121% or +6.1 pp) as the large number, with the figure's level below it. Use "change" only with a compare whose value the row has, and only for an amount, a margin or a percentage; a multiple such as debt to equity or capex to depreciation always shows "value".
 - "value" when the level is the news: a sign change (free cash flow below zero), a size that matters on its own (a backlog, the cash balance), a new six-quarter high or low, or an anchor figure filling a place.
 - Decide per tile. A business whose revenue rose 121% is about its growth, not its revenue: show "change". A margin that moved 6 points is about the move: show "change".
 

@@ -43,11 +43,11 @@ export function higherIsBetter(ref: FindingRef): boolean {
   return "capital" in numerator && (numerator.capital === "operatingCashFlow" && "metric" in denominator && denominator.metric === "net" || numerator.capital === "cash" && "capital" in denominator && denominator.capital === "debt");
 }
 
-/** A change as a tile writes it: "+12.3%" for an amount, "+1.5 pp" for a rate or a margin, "+0.25x" for a multiple. */
+/** A change as a tile writes it: "+12.3%" for an amount, "+1.5 pp" for a rate or a margin, "+0.25×" for a multiple. */
 export function formatChange(delta: number, r: ResolvedEvidence): string {
   const sign = delta > 0 ? "+" : delta < 0 ? "−" : "", abs = Math.abs(delta);
   if (r.current.unit === "percent") return `${sign}${abs.toFixed(1)} pp`;
-  if (r.current.unit === "ratio") return ratioForm(r.evidence.ref) === "percent" ? `${sign}${(abs * 100).toFixed(1)} pp` : `${sign}${abs.toFixed(2)}x`;
+  if (r.current.unit === "ratio") return ratioForm(r.evidence.ref) === "percent" ? `${sign}${(abs * 100).toFixed(1)} pp` : `${sign}${abs.toFixed(2)}×`;
   return `${sign}${abs.toFixed(abs >= 100 ? 0 : 1)}%`;
 }
 export const highlightChange = (r: ResolvedEvidence): string | null => r.delta == null ? null : formatChange(r.delta, r);
@@ -88,7 +88,12 @@ export function verifyHighlights(highlights: ReportHighlights, data: FindingData
       if (h.show === "change" && resolved && resolved.delta == null) reasons.push("change shown without a measurable change");
       seen.add(key);
       if (reasons.length || !resolved) withheld.push({ view, index, reasons });
-      else verified[view].push({ ...h, title: proseNumbers(h.title).length || EMPHASIS.test(h.title) ? plainTitle(resolved, h.show) : h.title, resolved });
+      else {
+        // A multiple (debt to equity, capex to depreciation) reads by its level; its change in turns says little on its own.
+        const multiple = h.show === "change" && resolved.current.unit === "ratio" && ratioForm(h.ref) === "multiple";
+        const show = multiple ? "value" : h.show, named = multiple ? h.title.replace(/\s+(?:change|growth)$/i, "") : h.title;
+        verified[view].push({ ...h, ...(show ? { show } : {}), title: proseNumbers(named).length || EMPHASIS.test(named) ? plainTitle(resolved, show) : named, resolved });
+      }
     });
   }
   return { verified, withheld };
