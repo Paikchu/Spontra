@@ -136,7 +136,7 @@ export type LibraryFoundSection = {
 };
 export type LibraryFindResult = { found: LibraryFoundSection[]; recall: "ok" | "off" | "empty" | "error"; recallError?: string };
 /** One validated number, the same as the business map draws. */
-export type LibraryFactRow = { ticker: string; business: string; flowNodeId: string | null; metric: string; periodEnd: string; value: string; unit: string; source: string };
+export type LibraryFactRow = { ticker: string; business: string; flowNodeId: string | null; parentFlowNodeId: string | null; metric: string; periodEnd: string; value: string; unit: string; source: string };
 
 /** A derived company page: the library's own cards, verbatim excerpts and validated numbers, with no model writing. */
 export type LibraryWikiEntry = {

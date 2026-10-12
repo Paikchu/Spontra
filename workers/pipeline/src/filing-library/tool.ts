@@ -130,25 +130,32 @@ export async function libraryFactRows(db: D1Database, ticker: string, options: {
   for (const quarter of [...publication.flow.quarters].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd)).slice(0, options.quarters ?? 2)) {
     const unit = `${quarter.currency}${scaleName(quarter.scale) ? ` ${scaleName(quarter.scale)}` : ""}`;
     const source = (ids: string[] | undefined) => quarter.sources.find(s => ids?.includes(s.id))?.url ?? quarter.sources[0]?.url ?? "";
-    const add = (business: string, flowNodeId: string | null, metric: string, amount: { value: string | null; sourceIds: string[] } | null | undefined) => {
-      if (amount?.value != null) rows.push({ ticker, business, flowNodeId, metric, periodEnd: quarter.periodEnd, value: amount.value, unit, source: source(amount.sourceIds) });
+    const add = (business: string, flowNodeId: string | null, parentFlowNodeId: string | null, metric: string, amount: { value: string | null; sourceIds: string[] } | null | undefined) => {
+      if (amount?.value != null) rows.push({ ticker, business, flowNodeId, parentFlowNodeId, metric, periodEnd: quarter.periodEnd, value: amount.value, unit, source: source(amount.sourceIds) });
     };
-    for (const [metric, amount] of Object.entries(quarter.figures)) add("total", null, metric, amount);
+    for (const [metric, amount] of Object.entries(quarter.figures)) add("total", null, null, metric, amount);
     for (const s of quarter.segments) {
-      add(s.name, s.id, "revenue", s.revenue);
-      for (const c of s.children ?? []) add(`${s.name} › ${c.name}`, c.id, "revenue", c.revenue);
+      add(s.name, s.id, null, "revenue", s.revenue);
+      for (const c of s.children ?? []) add(`${s.name} › ${c.name}`, c.id, s.id, "revenue", c.revenue);
     }
   }
   return rows;
 }
 
-/** The same numbers across companies: for a category, the businesses whose link carries it. */
+/**
+ * The same numbers across companies: for a category, the businesses whose link carries it. When a business and one of
+ * its own lines both carry the category, only the lines count, so no company's revenue is listed twice.
+ */
 export async function libraryFactsAcross(db: D1Database, request: { tickers?: string[]; category?: IndustryCategory; quarters?: number }): Promise<LibraryFactRow[]> {
   if (!request.category) return (await Promise.all((request.tickers ?? []).map(t => libraryFactRows(db, t, request)))).flat();
   const links = (await readLinks(db, { category: request.category })).filter(l => l.flowNodeId && (!request.tickers?.length || request.tickers.includes(l.ticker)));
   const byTicker = new Map<string, Set<string>>();
   for (const l of links) byTicker.set(l.ticker, (byTicker.get(l.ticker) ?? new Set()).add(l.flowNodeId!));
-  return (await Promise.all([...byTicker].map(async ([ticker, nodes]) => (await libraryFactRows(db, ticker, request)).filter(r => r.flowNodeId && nodes.has(r.flowNodeId))))).flat();
+  return (await Promise.all([...byTicker].map(async ([ticker, nodes]) => {
+    const rows = (await libraryFactRows(db, ticker, request)).filter(r => r.flowNodeId && nodes.has(r.flowNodeId));
+    const covered = new Set(rows.flatMap(r => r.parentFlowNodeId ? [`${r.periodEnd}|${r.parentFlowNodeId}`] : []));
+    return rows.filter(r => !covered.has(`${r.periodEnd}|${r.flowNodeId}`));
+  }))).flat();
 }
 
 /** The validated quarterly numbers as lines a model reads: `公司 · 业务 · 指标 · 期间 · 数值 · 单位 · 来源申报`. */
