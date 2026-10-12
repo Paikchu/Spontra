@@ -179,3 +179,24 @@ test("a follow-up query is anchored on the issuer's names, never on the listing 
   // A leading article is not the company's name.
   assert.equal(companyQuery("how the platform charges advertisers", issuerNames("The Trade Desk, Inc. Class A Common Stock")[0]!), "The Trade Desk, Inc. how the platform charges advertisers");
 });
+
+test("a link is verified only when an independent review agrees on its category, and keeps only the sections the review vouches for", async () => {
+  const { readReviews, settleLinks } = await import("../../../shared/analysis-runtime/filing-library/links.ts");
+  const draft = (key: string, category: string | null, sectionIds: string[]) => ({ businessKey: key, name: key, flowNodeId: null, xbrlMembers: [], sectionIds, industryCategory: category as never });
+  const drafts = [draft("A:cloud", "cloud_infrastructure", ["s1", "s2"]), draft("A:devices", "consumer_devices", ["s3"]), draft("A:other", null, []), draft("A:skipped", "advertising", ["s4"])];
+  const reviews = readReviews({ reviews: [
+    { key: "A:cloud", industryCategory: "cloud_infrastructure", sectionIds: ["s1"] },
+    { key: "A:devices", industryCategory: "hardware_systems", sectionIds: ["s3"] },
+    { key: "A:other", industryCategory: null, sectionIds: [] },
+    { key: "A:invented", industryCategory: "other", sectionIds: [] },
+    { key: "A:cloud", industryCategory: "advertising", sectionIds: [] },
+  ] }, drafts);
+  const settled = settleLinks(drafts, reviews);
+  assert.deepEqual(settled.map(l => [l.businessKey, l.status, l.industryCategory, l.sectionIds, l.review.droppedSections]), [
+    ["A:cloud", "verified", "cloud_infrastructure", ["s1"], ["s2"]],
+    ["A:devices", "disputed", null, ["s3"], []],
+    ["A:other", "verified", null, [], []],
+    ["A:skipped", "disputed", null, ["s4"], []],
+  ]);
+  assert.equal(settled[3]!.review.reviewedPresent, false);
+});

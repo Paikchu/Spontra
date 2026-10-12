@@ -1,6 +1,6 @@
 import { INDUSTRY_CATEGORIES, LIBRARY_CANONICALS, type IndustryCategory, type LibraryCanonical, type LibraryCard, type LibraryDocumentDetail, type LibraryOverview, type LibrarySectionDetail } from "../../../../shared/analysis-contract/filing-library.ts";
 import { LIBRARY_PARSER_VERSION } from "../../../../shared/analysis-runtime/filing-library/parse.ts";
-import { decideLink, readLinksView } from "../filing-library/links.ts";
+import { overrideLink, readLinksView } from "../filing-library/links.ts";
 import { searchStatus } from "../filing-library/search.ts";
 import { countPendingLibraryDocuments, libraryOutline, librarySectionPassages, listLibraryDocuments, readLibraryDocument } from "../filing-library/store.ts";
 import { libraryFactsAcross, libraryFindAcross } from "../filing-library/tool.ts";
@@ -80,11 +80,11 @@ export async function handleLibraryAdminRequest(request: Request, env: SecPipeli
     return json(await libraryFindAcross(env, {
       tickers: tickerList(query.get("tickers")), topic: query.get("topic") ?? undefined, entity: query.get("entity") ?? undefined, keywords: query.get("keywords") ?? undefined,
       canonical: canonical && (LIBRARY_CANONICALS as readonly string[]).includes(canonical) ? canonical as LibraryCanonical : undefined, question,
-      category: category(query.get("category")), businessKey: query.get("business") ?? undefined, includeProposed: query.get("proposed") === "1", limit: Math.min(Number(query.get("limit")) || 20, 50),
+      category: category(query.get("category")), businessKey: query.get("business") ?? undefined, limit: Math.min(Number(query.get("limit")) || 20, 50),
     }));
   }
   if (request.method === "GET" && parts[0] === "facts" && parts.length === 1) {
-    return json({ facts: await libraryFactsAcross(env.DB, { tickers: tickerList(query.get("tickers")), category: category(query.get("category")), includeProposed: query.get("proposed") === "1", quarters: Math.min(Number(query.get("quarters")) || 2, 8) }) });
+    return json({ facts: await libraryFactsAcross(env.DB, { tickers: tickerList(query.get("tickers")), category: category(query.get("category")), quarters: Math.min(Number(query.get("quarters")) || 2, 8) }) });
   }
   if (request.method === "GET" && parts[0] === "wiki" && parts.length === 2 && TICKER.test(parts[1]!)) return json(await libraryWiki(env.DB, parts[1]!));
   if (request.method === "GET" && parts[0] === "search" && parts.length === 1) return json(await searchStatus(env));
@@ -100,12 +100,12 @@ export async function handleLibraryAdminRequest(request: Request, env: SecPipeli
       return json({ status: "requested" }, 202);
     }
     if (request.method === "POST" && parts.length === 3 && TICKER.test(parts[1]!) && SLUG.test(parts[2]!)) {
-      let body: { status?: unknown; industryCategory?: unknown };
+      // Optional: an admin's category for one link, or `{ "automatic": true }` to hand it back to the review's result.
+      let body: { automatic?: unknown; industryCategory?: unknown };
       try { body = await request.json() as typeof body; } catch { return json({ error: "请求格式无效。" }, 400); }
-      if (body.status !== "confirmed" && body.status !== "proposed") return json({ error: "状态只能是 confirmed 或 proposed。" }, 400);
-      if (body.industryCategory !== undefined && body.industryCategory !== null && !category(String(body.industryCategory))) return json({ error: "未知的行业类别。" }, 400);
-      const changed = await decideLink(env.DB, parts[1]!, `${parts[1]}:${parts[2]}`, { status: body.status, ...(body.industryCategory !== undefined ? { industryCategory: body.industryCategory as string | null } : {}) });
-      return changed ? json({ status: body.status }) : json({ error: "未找到该业务。" }, 404);
+      if (body.automatic !== true && (body.industryCategory === undefined || (body.industryCategory !== null && !category(String(body.industryCategory))))) return json({ error: "未知的行业类别。" }, 400);
+      const changed = await overrideLink(env.DB, parts[1]!, `${parts[1]}:${parts[2]}`, body.automatic === true ? { automatic: true } : { industryCategory: body.industryCategory as string | null });
+      return changed ? json({ status: "saved" }) : json({ error: "未找到该业务。" }, 404);
     }
   }
   if (parts[0] === "documents" && DOCUMENT.test(parts[1] ?? "")) {

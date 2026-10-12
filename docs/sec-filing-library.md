@@ -89,7 +89,7 @@ flowchart LR
 | L2 索引卡层 | D1 | `sec_section_cards`：gist、entities、topic、answers、metrics | 是（附注的 topic 和 metrics 除外） |
 | L3 读取 Tool | 只查 D1 | toc / read / find / facts；数字取已校验财务数据 | 否 |
 | 召回（P5 起） | AI Search 自带存储，由 D1 推送 | 只返回 `section_id` | Cloudflare 计算向量，不调用我们的模型 |
-| L4 业务主线与跨公司 | D1 | `sec_business_links`；以后的公司级 Wiki 页 | 模型提议，人工确认 |
+| L4 业务主线与跨公司 | D1 | `sec_business_links`；公司页面 | 模型提议，独立复核自动核验 |
 
 ## 实测：一份 10-K 的形状
 
@@ -399,6 +399,7 @@ Agent 的模型只负责选择读什么和作答；取原文、取数字、计�
 | --- | --- | --- |
 | `library-cards`（索引卡） | low | 从一段原文提取摘要、实体和主题，程序核对兜底 |
 | `library-links`（业务映射提议） | high | 跨章节判断业务归属 |
+| `library-links-review`（业务映射复核） | high | 不看提议的类别，独立判断类别并核对引用小节 |
 | 业务脑图、业务解读、要点、指引、SEC 解读、记忆、公司分析 | high | 分析和写作 |
 
 环境变量 `AI_REASONING`（JSON，如 `{"library-cards":"high"}`）可以不改代码调整某个工具的档位。
@@ -456,23 +457,25 @@ sec_business_links (
   flow_node_id, xbrl_members,
   section_ids,                       -- 最新文件中描述、业绩讨论、附注各节
   industry_category,                 -- 跨公司统一分类，如 cloud_infrastructure
-  status                             -- proposed | confirmed
+  status                             -- verified | disputed | confirmed
+  review                             -- 提议类别、复核类别、复核去掉的小节
 )
 ```
 
-XBRL 标准概念（`Revenues`、`OperatingIncomeLoss`）各家通用，但分部成员是公司自定义的。每家公司做一次映射：模型提议，管理员在后台确认后才用于跨公司查询。
+XBRL 标准概念（`Revenues`、`OperatingIncomeLoss`）各家通用，但分部成员是公司自定义的。每家公司做一次映射：模型提议，再由一次独立复核自动核验，不需要人工确认；两次判断一致的类别才用于跨公司查询。
 
 跨公司查询的形状：“比较各家云业务的竞争格局” → `topic = business.competition` 且 `industry_category = cloud_infrastructure`（必要时再经 AI Search 召回补充） → 每家 1–3 个小板块、各 1–3 千字符 → 10 家约 2–3 万字符，一次调用可以处理。数字比较取已校验财务数据，由代码按业务映射对齐并计算，模型只解释结果。已校验数据里没有、但跨公司分析需要的维度，到那时再建 `sec_xbrl_facts`。
 
 ### P5 的实现
 
-- **业务主线任务 `library-links`**：订阅 `library.cards.published`（年报的卡片写完）、`financials.published`（地图业务变化）和后台“重新提议”发出的 `library.links.requested`。输入是最新年报中 business、MD&A 的概述和分部业绩、分部和收入附注各小节的路径、卡片和原文开头，加上业务地图的业务和产品线（去掉地区拆分和单一分部的合计）。输入指纹不变就不运行。一次模型调用（`library-links`，高推理）放在 Workflow `spontra-library-links` 的一个 durable step 里。
+- **业务主线任务 `library-links`**：订阅 `library.cards.published`（年报的卡片写完）、`financials.published`（地图业务变化）和后台“重新提议”发出的 `library.links.requested`。输入是最新年报中 business、MD&A 的概述和分部业绩、分部和收入附注各小节的路径、卡片和原文开头，加上业务地图的业务和产品线（去掉地区拆分和单一分部的合计）。输入指纹不变就不运行。Workflow `spontra-library-links` 分三个 durable step：提议（`library-links`，高推理）、复核（`library-links-review`，高推理）、写入；重放时不会再调用模型。
 - **核对**（`shared/analysis-runtime/filing-library/links.ts`）：只接受给过的地图节点和小节 ID；类别必须在 `INDUSTRY_CATEGORIES` 里；不在地图上的业务，名称必须逐字出现在它引用的小节标题或原文里，否则丢弃；模型漏掉的地图业务照样保留为一条未分类、无小节的记录。每家最多 12 个业务，每个业务最多 8 个小节。
-- **写入**：新提议覆盖 `proposed` 记录，删除不再提到的 `proposed` 记录；`confirmed` 记录只更新小节和地图节点，状态和类别只由管理员在后台改（确认、退回、改类别）。
-- **跨公司查找** `libraryFindAcross`：主题、实体、标题关键词、业务、类别走 D1 精确查找（类别和业务只读已确认的主线，后台可勾选“含待确认”）；带自然语言问题时再经 AI Search 召回，结果合并去重，每条标明来自“索引”还是“语义召回”。数字用 `libraryFactsAcross` 按主线的地图节点从已校验数据里取。
+- **自动核验，代替人工确认**（`settleLinks`）：复核是第二次独立的模型判断，看得到每个业务和它引用小节的原文，看不到提议选的类别。它独立给出类别，并指出哪些引用小节确实在讲这个业务。两次类别一致，记为 `verified`，类别生效；不一致（或复核漏答），记为 `disputed`，类别留空，不参与按类别的跨公司查询，避免只有一次判断支持的类别混进比较。复核不认可的小节从主线里去掉。两次判断和被去掉的小节记在 `review` 列（迁移 0022）。
+- **写入**：每次运行覆盖自动结果，删除不再提到的记录。管理员可以选填类别（记为 `confirmed`，之后的运行保留这个类别，只更新小节、地图节点和复核记录），也可以“恢复自动结果”；这只是可选的修正，不是生效的前提。
+- **跨公司查找** `libraryFindAcross`：主题、实体、标题关键词、业务、类别走 D1 精确查找（按类别只读复核通过或管理员指定类别的主线）；带自然语言问题时再经 AI Search 召回，结果合并去重，每条标明来自“索引”还是“语义召回”。数字用 `libraryFactsAcross` 按主线的地图节点从已校验数据里取。
 - **召回层任务 `library-search`**：订阅 `library.cards.published`。范围与索引卡相同（每家最新年报、两份季报、两份新闻稿），上传其中自有原文不少于 200 字符的非套话小节；item 名为 `{section_id}.md`，内容是公司、表格、报告期、标题路径加原文段落，元数据 `ticker / form / canonical / topic / period_end`。`sec_search_items`（迁移 0021）记录每节的 item ID 和内容指纹：只上传新增或变化的小节，删除滚出范围的小节；每次运行最多 120 次上传或删除，其余立即排下一次。实例 `sec-filing-library` 由 Worker 首次使用时在 `default` 命名空间里创建（向量 + BM25、porter 分词、块 2,048 token、无重叠）。
 - **公司页面** `libraryWiki`：读时从文件库拼成，不调用模型。每个业务一节：类别和确认状态、已校验数字、主线引用的小节（整段原文，带段落 ID）；然后是最新季报里有变化的小节和新增或改动的风险因素。另附一份同内容的 Markdown，供 Agent 读取。
-- **后台**：“文件库”页面新增“业务主线”“公司页面”“跨公司查找”三个视图；后台接口 `GET /admin/library/{links,find,facts,search,wiki/{T}}`、`POST /admin/library/links/{T}/{业务}`、`POST /admin/library/links/{T}/run`。
+- **后台**：业务主线和公司页面在“公司业务板块”页，跨公司查找在“SEC 文件拆分”页。接口：`GET /admin/library/{links,find,facts,search,wiki/{T}}`；`POST /admin/library/links/{T}/{业务}`，请求体 `{"industryCategory": …}` 指定类别或 `{"automatic": true}` 恢复自动结果；`POST /admin/library/links/{T}/run` 重新提议和复核。
 
 ## 存储清理（`storage-sweep`）
 
@@ -531,4 +534,4 @@ XBRL 标准概念（`Revenues`、`OperatingIncomeLoss`）各家通用，但分�
 7. AI Search 从 2026-11-01 开始计费，自定义元数据只有 5 个字段；它只做召回，任何结论都回到 D1 的原文核对。
 8. 索引卡和召回的范围（每家最新 10-K、两份 10-Q、两份新闻稿）是否合适，需要确认。
 9. 主题分类初版需要确认；分类改动会让卡片的 `topic` 重算，也会改 AI Search 元数据并触发重建索引。
-10. 分部成员到跨公司分类的映射需要人工确认，确认入口放在后台。
+10. 分部成员到跨公司分类的映射由两次独立的模型判断自动核验，不一致的不设类别；同一个模型的两次判断仍可能一起出错，后台可以手动纠正个别类别。

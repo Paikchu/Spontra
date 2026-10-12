@@ -1,8 +1,8 @@
-import { INDUSTRY_CATEGORIES, type IndustryCategory } from "../../analysis-contract/filing-library.ts";
+import { INDUSTRY_CATEGORIES, type IndustryCategory, type LibraryLinkReview } from "../../analysis-contract/filing-library.ts";
 import { compactName } from "../business-tree.ts";
 
-/** Bumping this proposes every company's business links again; confirmed links keep their category. */
-export const LIBRARY_LINKS_VERSION = "library-links.v1";
+/** Bumping this proposes and reviews every company's business links again; an admin's category stays. */
+export const LIBRARY_LINKS_VERSION = "library-links.v2";
 /** Businesses one company can have linked, and sections one business can name. */
 export const LINK_LIMITS = { businesses: 12, sections: 8 } as const;
 
@@ -50,4 +50,42 @@ export function checkLinks(raw: unknown, ticker: string, flow: LinkFlowNode[], s
     if (!links.has(key)) links.set(key, { businessKey: key, name: node.name, flowNodeId: node.flowNodeId, xbrlMembers: xbrlMembersOf(node.flowNodeId), sectionIds: [], industryCategory: null });
   }
   return { links: [...links.values()], notes };
+}
+
+export type LinkReview = { industryCategory: IndustryCategory | null; sectionIds: string[] };
+export type SettledLink = LinkDraft & { status: "verified" | "disputed"; review: LibraryLinkReview };
+
+/** Reads an independent reviewer's answer: one entry per business it was shown, categories from the taxonomy only. */
+export function readReviews(raw: unknown, drafts: LinkDraft[]): Map<string, LinkReview> {
+  const reviews = new Map<string, LinkReview>(), keys = new Set(drafts.map(d => d.businessKey));
+  const items = Array.isArray((raw as { reviews?: unknown } | null)?.reviews) ? (raw as { reviews: unknown[] }).reviews : [];
+  for (const item of items) {
+    const value = item as Record<string, unknown> | null;
+    const key = typeof value?.key === "string" ? value.key : "";
+    if (!keys.has(key) || reviews.has(key)) continue;
+    reviews.set(key, {
+      industryCategory: isCategory(value?.industryCategory) ? value.industryCategory : null,
+      sectionIds: Array.isArray(value?.sectionIds) ? value.sectionIds.filter((id): id is string => typeof id === "string") : [],
+    });
+  }
+  return reviews;
+}
+
+/**
+ * Replaces a person's check with a second, independent one. The reviewer picks each business's category without
+ * seeing the proposal's, and says which of the cited sections really describe the business. Agreement verifies the
+ * link; disagreement leaves it without a category, so cross-company reads never use a category only one judgment
+ * gave. A section the reviewer does not vouch for is dropped. A business the reviewer skipped counts as disagreement.
+ */
+export function settleLinks(drafts: LinkDraft[], reviews: Map<string, LinkReview>): SettledLink[] {
+  return drafts.map(d => {
+    const r = reviews.get(d.businessKey);
+    const agreed = !!r && r.industryCategory === d.industryCategory;
+    const vouched = new Set(r?.sectionIds ?? d.sectionIds);
+    const sectionIds = d.sectionIds.filter(id => vouched.has(id));
+    return {
+      ...d, sectionIds, industryCategory: agreed ? d.industryCategory : null, status: agreed ? "verified" as const : "disputed" as const,
+      review: { proposed: d.industryCategory, reviewed: r ? r.industryCategory : null, reviewedPresent: !!r, droppedSections: d.sectionIds.filter(id => !vouched.has(id)) },
+    };
+  });
 }
