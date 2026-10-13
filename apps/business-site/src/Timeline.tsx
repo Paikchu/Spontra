@@ -1,6 +1,9 @@
 import { Button } from "@/packages/web/src/ui/button";
 import { useMemo, type CSSProperties } from "react";
+import { messages } from "@/packages/web/src/i18n";
 import { CLASS_TONE, EVENT_CLASS_LABEL, type TimelinePoint } from "./events-model";
+
+const m = messages({ label: "Filing timeline" }, { label: "文件时间轴" });
 
 const DAY = 86_400_000;
 
@@ -35,7 +38,7 @@ export function Timeline({ points, currentPeriod, focus, now, onReport, onEvent 
   const x = (d: string) => (Date.parse(d) - start) / (end - start) * 100;
   // A report in focus is the lit report; otherwise the lit report is the quarter the stage shows.
   const reportFocused = points.some(p => p.kind === "report" && p.id === focus);
-  return <div className="timeline" role="group" aria-label="Filing timeline">
+  return <div className="timeline" role="group" aria-label={m.label}>
     <div className="timeline-track">
       {ticks.map(t => <span key={t.label} className="timeline-tick" style={{ left: `${t.at}%` }}>{t.label}</span>)}
       {points.map(p => {

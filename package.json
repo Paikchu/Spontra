@@ -8,7 +8,8 @@
   },
   "scripts": {
     "dev": "npm run dev --workspace @spontra/business-site",
-    "build": "npm run business-site:build && npm run admin:build",
+    "build": "npm run check:i18n && npm run business-site:build && npm run admin:build",
+    "check:i18n": "node --experimental-strip-types --no-warnings scripts/check-i18n.ts",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "typecheck": "tsc --noEmit",
     "deploy:cloudflare": "node --experimental-strip-types scripts/deploy-cloudflare-ci.mjs",

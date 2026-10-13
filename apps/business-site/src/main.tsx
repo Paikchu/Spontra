@@ -1,5 +1,6 @@
 import { SidebarProvider } from "@/packages/web/src/ui/sidebar";
-import { StrictMode, useCallback, useEffect, useState, Component, type ReactNode } from "react";
+import { Fragment, StrictMode, useCallback, useEffect, useState, Component, type ReactNode } from "react";
+import { messages, useLocale } from "@/packages/web/src/i18n";
 import { createRoot } from "react-dom/client";
 import type { PublicBusinessFlow } from "@/shared/analysis-contract/business-flow";
 import type { PublicCapitalStructure } from "@/shared/analysis-contract/capital-structure";
@@ -14,6 +15,16 @@ import { Rail, RailActions } from "./Sidebar";
 import { SearchDialog } from "./SearchDialog";
 import { fetchCompany, fetchSupplement, publicationFlow, type CompanyPublication } from "./company-data";
 import { Home } from "./Home";
+
+const m = messages({
+  chartUnavailable: "Chart unavailable", companyBusinesses: "Company businesses", lastSnapshot: "Last complete snapshot",
+  loadFailed: "Load failed", retry: "Retry", unavailable: "Unavailable", processing: "Processing", loading: "Loading",
+  title: "Business View", description: "Business map · Businesses, revenue, costs and net income from SEC filings",
+}, {
+  chartUnavailable: "图表无法显示", companyBusinesses: "公司业务", lastSnapshot: "最近一次完整快照",
+  loadFailed: "加载失败", retry: "重试", unavailable: "暂无数据", processing: "处理中", loading: "加载中",
+  title: "Business View", description: "业务地图 · 从 SEC 文件看公司的业务、营收、成本费用与净利润",
+});
 
 const RECENT_KEY = "business-map-recent";
 function readRecent(): string[] {
@@ -52,7 +63,7 @@ class ChartBoundary extends Component<
   render() {
     return this.state.failed ? (
       <StateShell ticker={this.props.ticker} tools={this.props.tools} role="alert">
-        <h2>Chart unavailable</h2>
+        <h2>{m.chartUnavailable}</h2>
       </StateShell>
     ) : (
       this.props.children
@@ -63,7 +74,7 @@ class ChartBoundary extends Component<
 function StateShell({ ticker, tools, role, children }: { ticker: string; tools: ReactNode; role: "alert" | "status"; children: ReactNode }) {
   return (
     <div className="map">
-      <Rail ticker={ticker} actions={tools} label="Company businesses" />
+      <Rail ticker={ticker} actions={tools} label={m.companyBusinesses} />
       <section className="stage stage--state">
         <div className="state" role={role}>{children}</div>
       </section>
@@ -124,14 +135,14 @@ function Company({ ticker, tools, onSeen }: { ticker: string; tools: ReactNode; 
           fundamentals={fundamentals}
           events={events}
           filings={filings}
-          notice={publication?.outdated ? "Last complete snapshot" : null}
+          notice={publication?.outdated ? m.lastSnapshot : null}
         />
       </ChartBoundary>
     );
   if (failed)
     return (
       <StateShell ticker={ticker} tools={tools} role="alert">
-        <h2>Load failed</h2>
+        <h2>{m.loadFailed}</h2>
         <button
           type="button"
           onClick={() => {
@@ -139,14 +150,14 @@ function Company({ ticker, tools, onSeen }: { ticker: string; tools: ReactNode; 
             setRetry((n) => n + 1);
           }}
         >
-          Retry
+          {m.retry}
         </button>
       </StateShell>
     );
   if (publication)
     return (
       <StateShell ticker={ticker} tools={tools} role="status">
-        <h2>{publication.status === "unavailable" ? "Unavailable" : "Processing"}</h2>
+        <h2>{publication.status === "unavailable" ? m.unavailable : m.processing}</h2>
         <p className="state-reasons">{publication.reasons.join(" · ")}</p>
       </StateShell>
     );
@@ -154,7 +165,7 @@ function Company({ ticker, tools, onSeen }: { ticker: string; tools: ReactNode; 
 }
 function Skeleton({ ticker, tools }: { ticker: string; tools: ReactNode }) {
   return (
-    <div className="map map--loading" role="status" aria-label="Loading">
+    <div className="map map--loading" role="status" aria-label={m.loading}>
       <Rail ticker={ticker} actions={tools}>
         <div className="rail-list">
           {[0, 1, 2, 3, 4, 5].map((i) => (
@@ -169,6 +180,7 @@ function Skeleton({ ticker, tools }: { ticker: string; tools: ReactNode }) {
   );
 }
 function App() {
+  const locale = useLocale();
   const [ticker, setTicker] = useState(tickerFromUrl),
     [searching, setSearching] = useState(false),
     [recent, setRecent] = useState(readRecent),
@@ -233,8 +245,9 @@ function App() {
     return () => window.removeEventListener("keydown", shortcut);
   }, []);
   useEffect(() => {
-    document.title = ticker ? `${ticker} · Business View` : "Business View";
-  }, [ticker]);
+    document.title = ticker ? `${ticker} · ${m.title}` : m.title;
+    document.querySelector('meta[name="description"]')?.setAttribute("content", m.description);
+  }, [ticker, locale]);
   /** Only companies the API answered for are remembered, so typos never become suggestions. */
   const remember = useCallback((seen: string) => {
     setRecent((list) => {
@@ -270,8 +283,9 @@ function App() {
     else setCollapsed(!open);
   }
   const toggleTheme = () => setLight((v) => !v);
+  // Text and number forms are produced in the locale current when they render, so a switch remounts the page under the new one.
   if (!ticker)
-    return <Home light={light} onToggleTheme={toggleTheme} recent={recent} onPick={openCompany} />;
+    return <Home key={locale} light={light} onToggleTheme={toggleTheme} recent={recent} onPick={openCompany} />;
   const actions = (
     <RailActions
       light={light}
@@ -281,14 +295,14 @@ function App() {
     />
   );
   return (
-    <>
+    <Fragment key={locale}>
       <SidebarProvider asChild open={!railCollapsed} onOpenChange={setRailOpen} keyboardShortcut={null} persistState={false}>
         <main data-rail={railCollapsed ? "collapsed" : undefined}>
           <Company key={ticker} ticker={ticker} tools={actions} onSeen={remember} />
         </main>
       </SidebarProvider>
       <SearchDialog open={searching} current={ticker} recent={recent} onClose={() => setSearching(false)} onPick={openCompany} />
-    </>
+    </Fragment>
   );
 }
 createRoot(document.getElementById("root")!).render(

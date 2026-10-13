@@ -1,26 +1,35 @@
 import type { BusinessFlowQuarter } from "@/shared/analysis-contract/business-flow";
 import type { CompanyEvent, EventClass, EventsPublication } from "@/shared/analysis-contract/events";
-import { DAY_MS, EVENT_CLASS_LABEL, holdingPath, INSIDER_RULES, insiderCadence, insiderCluster, insiderVerdict, soldShareOfHolding, type InsiderVerdict } from "@/shared/analysis-runtime/events";
+import { DAY_MS, EVENT_CLASS_LABEL as EVENT_CLASS_LABEL_EN, eventClassLabel, holdingPath, INSIDER_RULES, insiderCadence, insiderCluster, insiderVerdict, soldShareOfHolding, type InsiderVerdict } from "@/shared/analysis-runtime/events";
+import { compactMoney, compactShares, shortPeriod } from "@/shared/analysis-runtime/locale";
+import { getLocale, labels, messages } from "@/packages/web/src/i18n";
 
-export { EVENT_CLASS_LABEL };
+const m = messages({
+  sale: (who: string, n: string) => `${who} · Sale ${n}`,
+  purchase: (who: string, n: string) => `${who} · Purchase ${n}`,
+  exercise: (who: string, n: string) => `${who} · Exercise ${n}`,
+  holdingChange: (who: string) => `${who} · Holding change`,
+  report: (period: string) => `${period} report`,
+}, {
+  sale: (who: string, n: string) => `${who} · 卖出 ${n}`,
+  purchase: (who: string, n: string) => `${who} · 买入 ${n}`,
+  exercise: (who: string, n: string) => `${who} · 行权 ${n}`,
+  holdingChange: (who: string) => `${who} · 持股变动`,
+  report: (period: string) => `${period} 财报`,
+});
 
-/** Share-count formatting: 1,234,567 reads as 1.23M shares in the rail and the lens. */
-export function shares(v: number): string {
-  const a = Math.abs(v);
-  if (a >= 1e9) return `${(v / 1e9).toFixed(2)}B shares`;
-  if (a >= 1e6) return `${(v / 1e6).toFixed(2)}M shares`;
-  if (a >= 1e4) return `${(v / 1e3).toFixed(1)}K shares`;
-  return `${Math.round(v).toLocaleString("en-US")} shares`;
-}
+/** Event classes in the reader's language. */
+export const EVENT_CLASS_LABEL = labels(EVENT_CLASS_LABEL_EN,
+  Object.fromEntries(Object.keys(EVENT_CLASS_LABEL_EN).map(k => [k, eventClassLabel(k as EventClass, "zh-CN")])) as Record<EventClass, string>);
 
-/** US dollars compact: $12.3M, $1.2B. */
-export function dollars(v: number): string {
-  const a = Math.abs(v), sign = v < 0 ? "−" : "";
-  if (a >= 1e9) return `${sign}$${(a / 1e9).toFixed(2)}B`;
-  if (a >= 1e6) return `${sign}$${(a / 1e6).toFixed(1)}M`;
-  if (a >= 1e3) return `${sign}$${(a / 1e3).toFixed(0)}K`;
-  return `${sign}$${a.toFixed(0)}`;
-}
+/** Share-count formatting: 1,234,567 reads as 1.23M shares (123万股) in the rail and the lens. */
+export const shares = (v: number): string => compactShares(v, getLocale());
+
+/** US dollars compact: $12.3M, $1.2B (1230万美元, 12亿美元). */
+export const dollars = (v: number): string => compactMoney(v, "USD", getLocale());
+
+/** "2026.08 report" / "2026.08 财报": a quarter's report by its period end. */
+export const periodReport = (periodEnd: string) => m.report(shortPeriod(periodEnd));
 
 export const shortDate = (d: string) => d.slice(5).replace("-", ".");
 
@@ -32,15 +41,19 @@ export function eventTitle(e: CompanyEvent): string {
   const t = e.insider;
   if (t) {
     const who = t.ownerName.replace(/\s+/g, " ");
-    if (t.sold) return `${who} · Sale ${shares(t.sold.shares)}`;
-    if (t.bought) return `${who} · Purchase ${shares(t.bought.shares)}`;
-    if (t.exercised) return `${who} · Exercise ${shares(t.exercised)}`;
-    return `${who} · Holding change`;
+    if (t.sold) return m.sale(who, shares(t.sold.shares));
+    if (t.bought) return m.purchase(who, shares(t.bought.shares));
+    if (t.exercised) return m.exercise(who, shares(t.exercised));
+    return m.holdingChange(who);
   }
   if (e.summary?.headline) return e.summary.headline;
   if (e.description && !/^(8-K|6-K|FORM)\b/i.test(e.description)) return e.description;
   return `${EVENT_CLASS_LABEL[e.class]} · ${e.form}${e.items.length ? ` · Item ${e.items.filter(i => i !== "9.01").join(", ") || e.items.join(", ")}` : ""}`;
 }
+
+/** "en" when the event's title is generated or EDGAR text (left in English), undefined when it is composed in the reader's language. */
+export const eventTitleLang = (e: CompanyEvent): "en" | undefined =>
+  !e.insider && (!!e.summary?.headline || (!!e.description && !/^(8-K|6-K|FORM)\b/i.test(e.description))) ? "en" : undefined;
 
 export type TimelinePoint = {
   id: string;
@@ -60,7 +73,7 @@ export function timelinePoints(quarters: BusinessFlowQuarter[], publication: Eve
   const points: TimelinePoint[] = [];
   for (const q of quarters) {
     const date = q.reportedAt ?? q.periodEnd;
-    if (date >= floor) points.push({ id: "report:" + q.id, date, kind: "report", periodEnd: q.periodEnd, title: `${q.periodEnd.slice(0, 7).replace("-", ".")} report`, weight: 3 });
+    if (date >= floor) points.push({ id: "report:" + q.id, date, kind: "report", periodEnd: q.periodEnd, title: periodReport(q.periodEnd), weight: 3 });
   }
   for (const e of publication?.events ?? []) {
     if (e.filedAt < floor) continue;
@@ -92,7 +105,7 @@ export function insiderLens(publication: EventsPublication, event: CompanyEvent)
   const tone: InsiderTone = !t.sold ? "none"
     : (share != null && share >= INSIDER_RULES.attentionShare) || cluster.length + 1 >= INSIDER_RULES.clusterSellers || (cadence.sales.length <= 1 && t.rule10b51 !== true) ? "attention"
     : t.rule10b51 === true || cadence.regular ? "planned" : "routine";
-  return { verdict: insiderVerdict(t, cadence, cluster), tone, share, cadence, cluster, path: holdingPath(publication.events, t.ownerCik, 24, event.eventDate) };
+  return { verdict: insiderVerdict(t, cadence, cluster, getLocale()), tone, share, cadence, cluster, path: holdingPath(publication.events, t.ownerCik, 24, event.eventDate) };
 }
 
 export const CLASS_TONE: Record<EventClass, string> = {

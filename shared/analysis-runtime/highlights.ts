@@ -2,6 +2,7 @@ import { FUNDAMENTAL_METRIC_CATALOG } from "../analysis-contract/fundamental-met
 import type { FlowMetric } from "../analysis-contract/business-flow.ts";
 import type { CapitalMetric, FindingBaseRef, FindingRef, FindingView, FindingsPublication, ReportHighlights, StatementHighlight } from "../analysis-contract/findings.ts";
 import { proseNumbers, resolveEvidence, type FindingData, type ResolvedEvidence } from "./findings.ts";
+import { multiple, type Locale } from "./locale.ts";
 
 /**
  * Headline figures per statement view. The model picks which figures lead each view and names the change; every
@@ -43,14 +44,15 @@ export function higherIsBetter(ref: FindingRef): boolean {
   return "capital" in numerator && (numerator.capital === "operatingCashFlow" && "metric" in denominator && denominator.metric === "net" || numerator.capital === "cash" && "capital" in denominator && denominator.capital === "debt");
 }
 
-/** A change as a tile writes it: "+12.3%" for an amount, "+1.5 pp" for a rate or a margin, "+0.25×" for a multiple. */
-export function formatChange(delta: number, r: ResolvedEvidence): string {
+/** A change as a tile writes it: "+12.3%" for an amount, "+1.5 pp" / "+1.5个百分点" for a rate or a margin, "+0.25×" / "+0.25倍" for a multiple. */
+export function formatChange(delta: number, r: ResolvedEvidence, locale: Locale = "en"): string {
   const sign = delta > 0 ? "+" : delta < 0 ? "−" : "", abs = Math.abs(delta);
-  if (r.current.unit === "percent") return `${sign}${abs.toFixed(1)} pp`;
-  if (r.current.unit === "ratio") return ratioForm(r.evidence.ref) === "percent" ? `${sign}${(abs * 100).toFixed(1)} pp` : `${sign}${abs.toFixed(2)}×`;
+  const pp = locale === "zh-CN" ? "个百分点" : " pp";
+  if (r.current.unit === "percent") return `${sign}${abs.toFixed(1)}${pp}`;
+  if (r.current.unit === "ratio") return ratioForm(r.evidence.ref) === "percent" ? `${sign}${(abs * 100).toFixed(1)}${pp}` : multiple(`${sign}${abs.toFixed(2)}`, locale);
   return `${sign}${abs.toFixed(abs >= 100 ? 0 : 1)}%`;
 }
-export const highlightChange = (r: ResolvedEvidence): string | null => r.delta == null ? null : formatChange(r.delta, r);
+export const highlightChange = (r: ResolvedEvidence, locale: Locale = "en"): string | null => r.delta == null ? null : formatChange(r.delta, r, locale);
 
 /**
  * Words that dramatise a movement or praise it instead of naming the figure. The tile's number and its change carry
@@ -59,8 +61,9 @@ export const highlightChange = (r: ResolvedEvidence): string | null => r.delta =
 const EMPHASIS = new RegExp(String.raw`\b(?:(?:climb|jump|surge|soar|skyrocket|rocket|leap|vault|spike|balloon|swell|explode|boom|plunge|plummet|tumble|slump|sink|crater|tank|collapse|rise|fall|grow|accelerate|decelerate|outrun|outpace|eclipse|stay|remain|hold|keep|continue|turn|hit|reach|top|pass)(?:s|es|d|ed|ing)?|slip(?:s|ped|ping)?|slide[sd]?|sliding|dip(?:s|ped|ping)?|rose|risen|rising|fell|fallen|grew|grown|accelerating|decelerating|sank|sunk|leapt|strong|stronger|robust|stellar|impressive|massive|huge|dramatic|remarkable|record|sharp|sharply|steep|solid|healthy|blowout|unprecedented|soaring|booming)\b`, "i");
 
 /** The figure's own name, and "growth" or "change" when the large number is its change. */
-export function plainTitle(r: ResolvedEvidence, show: StatementHighlight["show"]): string {
+export function plainTitle(r: ResolvedEvidence, show: StatementHighlight["show"], locale: Locale = "en"): string {
   if (show !== "change") return r.label.slice(0, 40);
+  if (locale === "zh-CN") return `${r.label}${r.current.unit === "USD" ? "增长" : "变化"}`.slice(0, 40);
   return `${r.label} ${r.current.unit === "USD" ? "growth" : "change"}`.slice(0, 40);
 }
 
@@ -73,7 +76,7 @@ export type WithheldHighlight = { view: FindingView; index: number; reasons: str
  * its comparison when one is asked for, and a measurable change when the change is the large number), and is not
  * repeated within the view. A title that states a number or dramatises the move is replaced by the figure's plain name.
  */
-export function verifyHighlights(highlights: ReportHighlights, data: FindingData): { verified: VerifiedReportHighlights; withheld: WithheldHighlight[] } {
+export function verifyHighlights(highlights: ReportHighlights, data: FindingData, locale: Locale = "en"): { verified: VerifiedReportHighlights; withheld: WithheldHighlight[] } {
   const verified: VerifiedReportHighlights = { periodEnd: highlights.periodEnd, profit: [], cash: [], balance: [] };
   const withheld: WithheldHighlight[] = [];
   for (const view of HIGHLIGHT_VIEWS) {
@@ -83,7 +86,7 @@ export function verifyHighlights(highlights: ReportHighlights, data: FindingData
       const key = JSON.stringify(h.ref);
       if (refView(h.ref) !== view) reasons.push(`figure is not on the ${view} view`);
       if (seen.has(key)) reasons.push("figure repeated");
-      const resolved = resolveEvidence(data, { ref: h.ref, periodEnd: highlights.periodEnd, span: "quarter", ...(h.compare ? { compare: h.compare } : {}) });
+      const resolved = resolveEvidence(data, { ref: h.ref, periodEnd: highlights.periodEnd, span: "quarter", ...(h.compare ? { compare: h.compare } : {}) }, locale);
       if (!resolved) reasons.push(h.compare ? `figure or its ${h.compare} comparison unresolved` : "figure unresolved");
       if (h.show === "change" && resolved && resolved.delta == null) reasons.push("change shown without a measurable change");
       seen.add(key);
@@ -92,7 +95,7 @@ export function verifyHighlights(highlights: ReportHighlights, data: FindingData
         // A multiple (debt to equity, capex to depreciation) reads by its level; its change in turns says little on its own.
         const multiple = h.show === "change" && resolved.current.unit === "ratio" && ratioForm(h.ref) === "multiple";
         const show = multiple ? "value" : h.show, named = multiple ? h.title.replace(/\s+(?:change|growth)$/i, "") : h.title;
-        verified[view].push({ ...h, ...(show ? { show } : {}), title: proseNumbers(named).length || EMPHASIS.test(named) ? plainTitle(resolved, show) : named, resolved });
+        verified[view].push({ ...h, ...(show ? { show } : {}), title: proseNumbers(named).length || EMPHASIS.test(named) ? plainTitle(resolved, show, locale) : named, resolved });
       }
     });
   }
@@ -102,9 +105,9 @@ export function verifyHighlights(highlights: ReportHighlights, data: FindingData
 const near = (a: string, b: string) => Math.abs(Date.parse(a) - Date.parse(b)) <= 20 * 86_400_000;
 
 /** The verified tiles a view shows for a report, or null when too few survive and the view keeps its fixed tiles. */
-export function highlightsFor(publication: FindingsPublication | null, data: FindingData, periodEnd: string, view: FindingView): VerifiedHighlight[] | null {
+export function highlightsFor(publication: FindingsPublication | null, data: FindingData, periodEnd: string, view: FindingView, locale: Locale = "en"): VerifiedHighlight[] | null {
   const report = publication?.highlights?.find(h => near(h.periodEnd, periodEnd));
   if (!report) return null;
-  const tiles = verifyHighlights(report, data).verified[view].slice(0, HIGHLIGHT_COUNT);
+  const tiles = verifyHighlights(report, data, locale).verified[view].slice(0, HIGHLIGHT_COUNT);
   return tiles.length >= MIN_HIGHLIGHTS ? tiles : null;
 }

@@ -1,6 +1,15 @@
 import { useEffect, useRef, type KeyboardEvent, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import { Button } from "@/packages/web/src/ui/button";
+import { messages } from "@/packages/web/src/i18n";
+
+const m = messages({
+  collapse: (title: string) => `Collapse ${title.toLowerCase()}`, back: "Back (Esc)",
+  showAllOf: (title: string) => `Show all ${title.toLowerCase()}`, showAll: "Show all", showAllHint: (hint: string) => `Show all · ${hint}`,
+}, {
+  collapse: (title: string) => `收起${title}`, back: "返回（Esc）",
+  showAllOf: (title: string) => `显示全部${title}`, showAll: "显示全部", showAllHint: (hint: string) => `显示全部 · ${hint}`,
+});
 
 /** The rail sections; each can open over the whole rail. */
 export type RailSectionKey = "business" | "findings" | "events";
@@ -21,9 +30,11 @@ export function railTransition(update: () => void) {
  * As a drawer the section has no header: its first row is the head and toggles it, and the rows unfold under it in place.
  * The body must carry `id="rail-<name>"`.
  */
-export function RailSection({ name, title, hint, expandable, expanded, focused, drawer = false, onExpand, actions, children }: {
+export function RailSection({ name, title, tag, hint, expandable, expanded, focused, drawer = false, onExpand, actions, children }: {
   name: RailSectionKey;
   title: string;
+  /** Shown beside the title, such as the source-language tag over generated rows. */
+  tag?: ReactNode;
   /** Context for the chevron's tooltip, such as the report the rows come from. */
   hint?: string;
   /** The digest hides some rows, so opening the section shows more. */
@@ -54,13 +65,13 @@ export function RailSection({ name, title, hint, expandable, expanded, focused, 
   const open = expanded ? "" : undefined;
   return <section className="findings" data-section={name} data-expanded={drawer ? undefined : open} data-open={drawer ? open : undefined} data-focus={focused ? "" : undefined} aria-label={title} onKeyDown={onKeyDown}>
     {!drawer && <header className="findings-head">
-      {expanded && <Button variant="unstyled" type="button" ref={back} className="icon-button section-back" aria-label={`Collapse ${title.toLowerCase()}`} title="Back (Esc)" onClick={() => toggle(false)}>
+      {expanded && <Button variant="unstyled" type="button" ref={back} className="icon-button section-back" aria-label={m.collapse(title)} title={m.back} onClick={() => toggle(false)}>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14.5 6-6 6 6 6" /></svg>
       </Button>}
-      <span className="findings-title">{title}</span>
+      <span className="findings-title">{title}{tag}</span>
       {actions}
       {expandable && !expanded && <Button variant="unstyled" type="button" ref={more} className="icon-button section-action section-expand" aria-expanded={false} aria-controls={`rail-${name}`}
-        aria-label={`Show all ${title.toLowerCase()}`} title={hint ? `Show all · ${hint}` : "Show all"} onClick={() => toggle(true)}>
+        aria-label={m.showAllOf(title)} title={hint ? m.showAllHint(hint) : m.showAll} onClick={() => toggle(true)}>
         <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m6 4 4 4-4 4" /></svg>
       </Button>}
     </header>}

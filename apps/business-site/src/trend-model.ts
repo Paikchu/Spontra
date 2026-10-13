@@ -1,5 +1,25 @@
 import type { RevenueHistory, RevenueHistoryNode, RevenueHistoryQuarter } from "@/shared/analysis-contract/revenue-history";
 import type { GuidanceItem, GuidancePublication, GuidanceSource } from "@/shared/analysis-contract/guidance";
+import { getLocale, labels, messages } from "@/packages/web/src/i18n";
+import { perShare, range as spanOf } from "@/shared/analysis-runtime/locale";
+
+const m = messages({
+  totalRevenue: "Total company revenue", revenueChange: "Revenue change",
+  fiscalYear: (year: number | null) => `FY${year}`, fiscalQuarter: (year: number | null, quarter: number | null) => `FY${year} Q${quarter}`,
+  longTerm: (year: number | null) => `Long term${year ? ` FY${year}` : ""}`,
+  segmentMetric: (segment: string, metric: string) => `${segment} ${/^[A-Z][a-z]/.test(metric) ? metric[0].toLowerCase() + metric.slice(1) : metric}`,
+  nonGaap: " (non-GAAP)", constantCurrency: " (constant currency)",
+  expected: (period: string, name: string, direction: "up" | "down" | "flat", basis: string) => `${period} ${name} expected ${direction}${basis}`,
+  guided: (period: string, name: string, growth: boolean, range: string, basis: string) => `${period} ${name}${growth ? " growth " : " "}${range}${basis}`,
+}, {
+  totalRevenue: "公司总营收", revenueChange: "营收变化",
+  fiscalYear: (year: number | null) => `${year} 财年`, fiscalQuarter: (year: number | null, quarter: number | null) => `${year} 财年 Q${quarter}`,
+  longTerm: (year: number | null) => `长期${year ? ` ${year} 财年` : ""}`,
+  segmentMetric: (segment: string, metric: string) => `${segment} ${metric}`,
+  nonGaap: "（Non-GAAP）", constantCurrency: "（固定汇率）",
+  expected: (period: string, name: string, direction: "up" | "down" | "flat", basis: string) => `${period} ${name}预计${direction === "up" ? "上升" : direction === "down" ? "下降" : "持平"}${basis}`,
+  guided: (period: string, name: string, growth: boolean, range: string, basis: string) => `${period} ${name}${growth ? "增长 " : " "}${range}${basis}`,
+});
 
 export type TrendItem = { key: string; id: string; parent: string | null; name: string; slot: number };
 export type Slot = { periodEnd: string; quarter: RevenueHistoryQuarter | null; missingReason?: "currency" };
@@ -90,7 +110,7 @@ export function buildColumns(slots: Slot[], items: TrendItem[], selected: TrendI
             shade: 0, name: node.name };
         }) };
       }
-      return { slot, total: revenue, state: "basis", layers: [{ key: "__total", value: revenue, tone: "total", slot: 0, shade: 0, name: "Total company revenue" }] };
+      return { slot, total: revenue, state: "basis", layers: [{ key: "__total", value: revenue, tone: "total", slot: 0, shade: 0, name: m.totalRevenue }] };
     }
     const value = matchItem(q, selected, items);
     if (value == null) return { slot, layers: [], total: null, state: "basis" };
@@ -136,7 +156,7 @@ export function buildBridge(columns: Column[], index: number, lag: 1 | 4): Bridg
   // Without a common split the whole change is one step: the business itself, or neutral company revenue.
   const whole = (layer: Layer, reason: Bridge["reason"]): Bridge =>
     ({ base, current, lag, change, percent, reason, steps: [{ ...layer, value: current.total!, base: base.total!, delta: change, before: base.total!, after: current.total! }] });
-  const total: Layer = { key: "__total", value: 0, tone: "total", slot: 0, shade: 0, name: "Revenue change" };
+  const total: Layer = { key: "__total", value: 0, tone: "total", slot: 0, shade: 0, name: m.revenueChange };
   if (current.state !== "ok" || base.state !== "ok") return whole(total, "basis");
   if (current.layers.length < 2) return whole(current.layers[0] ?? total, "single");
   if (keys(current) !== keys(base)) return whole(total, "basis");
@@ -224,23 +244,29 @@ export function guidanceOverlay(slots: Slot[], guidance: GuidancePublication | n
   };
 }
 
-const METRIC_NAMES: Record<GuidanceItem["metric"], string> = {
+const METRIC_NAMES: Record<GuidanceItem["metric"], string> = labels({
   revenue: "Revenue", segment_revenue: "Revenue", gross_margin: "Gross margin", operating_margin: "Operating margin", operating_income: "Operating income", eps: "EPS",
   free_cash_flow: "Free cash flow", operating_cash_flow: "Operating cash flow", capex: "Capital expenditures", rpo: "RPO", billings: "Billings", other: "",
-};
-export const ACTION_NAMES: Record<NonNullable<GuidanceItem["action"]>, string> = {
+}, {
+  revenue: "营收", segment_revenue: "营收", gross_margin: "毛利率", operating_margin: "营业利润率", operating_income: "营业利润", eps: "每股收益",
+  free_cash_flow: "自由现金流", operating_cash_flow: "经营现金流", capex: "资本开支", rpo: "剩余履约义务", billings: "开票额", other: "",
+});
+export const ACTION_NAMES: Record<NonNullable<GuidanceItem["action"]>, string> = labels({
   initiated: "Initiated", raised: "Raised", lowered: "Lowered", reaffirmed: "Reaffirmed", narrowed: "Narrowed", widened: "Widened", updated: "Updated",
-};
+}, {
+  initiated: "首次给出", raised: "上调", lowered: "下调", reaffirmed: "重申", narrowed: "收窄", widened: "放宽", updated: "更新",
+});
 
 /** "FY2027 Revenue growth 16%–17% (non-GAAP)" from an item; the money formatter is the panel's own. */
 export function guidanceLabel(item: GuidanceItem, money: (v: number | null) => string): string {
-  const period = item.horizon === "long_term" ? `Long term${item.fiscalYear ? ` FY${item.fiscalYear}` : ""}` : item.horizon === "annual" ? `FY${item.fiscalYear}` : `FY${item.fiscalYear} Q${item.fiscalQuarter}`;
+  const period = item.horizon === "long_term" ? m.longTerm(item.fiscalYear) : item.horizon === "annual" ? m.fiscalYear(item.fiscalYear) : m.fiscalQuarter(item.fiscalYear, item.fiscalQuarter);
   const metric = METRIC_NAMES[item.metric];
   // After a segment name the metric reads in lower case ("Intelligent Cloud revenue"); acronyms such as EPS keep their case.
-  const name = item.metric === "other" ? item.label : item.segment ? `${item.segment} ${/^[A-Z][a-z]/.test(metric) ? metric[0].toLowerCase() + metric.slice(1) : metric}` : metric;
-  const basis = item.basis === "non_gaap" ? " (non-GAAP)" : item.basis === "constant_currency" ? " (constant currency)" : "";
-  if (item.form === "qualitative") return `${period} ${name} expected ${item.direction === "up" ? "up" : item.direction === "down" ? "down" : "flat"}${basis}`;
-  const one = (v: number | null) => v == null ? "" : item.unit === "USD" ? money(v) : item.unit === "USD_per_share" ? `$${v.toFixed(2)}` : `${Number(v.toFixed(2))}%`;
-  const range = item.form === "floor" ? `≥ ${one(item.low)}` : item.form === "ceiling" ? `≤ ${one(item.high)}` : item.low === item.high ? one(item.low) : `${one(item.low)}–${one(item.high)}`;
-  return `${period} ${name}${item.measure === "growth" ? " growth " : " "}${range}${basis}`;
+  const name = item.metric === "other" ? item.label : item.segment ? m.segmentMetric(item.segment, metric) : metric;
+  const basis = item.basis === "non_gaap" ? m.nonGaap : item.basis === "constant_currency" ? m.constantCurrency : "";
+  if (item.form === "qualitative") return m.expected(period, name, item.direction === "up" ? "up" : item.direction === "down" ? "down" : "flat", basis);
+  const locale = getLocale();
+  const one = (v: number | null) => v == null ? "" : item.unit === "USD" ? money(v) : item.unit === "USD_per_share" ? locale === "en" ? `$${v.toFixed(2)}` : perShare(v, "USD", locale) : `${Number(v.toFixed(2))}%`;
+  const range = item.form === "floor" ? `≥ ${one(item.low)}` : item.form === "ceiling" ? `≤ ${one(item.high)}` : item.low === item.high ? one(item.low) : spanOf(one(item.low), one(item.high), locale);
+  return m.guided(period, name, item.measure === "growth", range, basis);
 }

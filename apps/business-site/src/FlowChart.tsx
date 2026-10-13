@@ -5,6 +5,18 @@ import { estimateTextWidth, layoutInfographic, type InfographicGeometry, type In
 import { priorMarks } from "@/packages/web/src/model/business-flow-compare";
 import { layoutMindMap, type MindItem, type MindMapLayout } from "./mindmap-layout";
 import { MindLayer, type MindMapInput } from "./MindMap";
+import { getLocale, messages } from "@/packages/web/src/i18n";
+import { qoqLabel } from "@/shared/analysis-runtime/locale";
+
+const m = messages({
+  revenueModel: "Revenue model", partOf: "Part of", description: "Description", contains: "Contains",
+  items: (n: number) => `${n} ${n === 1 ? "item" : "items"}`, details: (label: string) => `${label} business details`,
+  flow: "Flow", nextQ: "Next Q", lastQuarter: "last quarter",
+}, {
+  revenueModel: "收入模式", partOf: "所属", description: "描述", contains: "包含",
+  items: (n: number) => `${n} 项`, details: (label: string) => `${label} 业务详情`,
+  flow: "金额", nextQ: "下季度", lastQuarter: "上季度",
+});
 
 /** `change` is the comparable change against the comparison quarter; absent when the two quarters cannot be compared. */
 export type NodeCopy = { name: string; value: string; change?: { label: string; trend?: "up" | "down" } };
@@ -158,11 +170,11 @@ function Streams({ band, strength }: { band: Band; strength: "ambient" | "lit" }
 }
 
 
-/** What the chart compares against: `change` names the change (YoY / QoQ), `prior` the comparison quarter (last year / last quarter). */
-export type CompareBasis = { change: "YoY" | "QoQ"; prior: "last year" | "last quarter" };
-const QOQ: CompareBasis = { change: "QoQ", prior: "last quarter" };
+/** What the chart compares against: `change` names the change (YoY / QoQ), `prior` the comparison quarter (last year / last quarter), both in the page's locale. */
+export type CompareBasis = { change: string; prior: string };
+const qoq = (): CompareBasis => ({ change: qoqLabel(getLocale()), prior: m.lastQuarter });
 
-export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHover, onPick, tipFor, label, revealKey, businessDetails, mindMap = null, mindPick = null, onMindPick, productBusiness = null, spotlight = null, priorOf, basis = QOQ, brackets, pills }: {
+export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHover, onPick, tipFor, label, revealKey, businessDetails, mindMap = null, mindPick = null, onMindPick, productBusiness = null, spotlight = null, priorOf, basis = qoq(), brackets, pills }: {
   businessDetails?: ReactNode;
   /** The picked business broken down into product lines, products and how each earns; when present it replaces the written details. */
   mindMap?: MindMapInput | null;
@@ -373,13 +385,13 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
   const mindTip = (event: React.MouseEvent, item: MindItem) => {
     const node = item.kind === "node" ? item.node : null;
     point(event, item.kind === "revenue"
-      ? { title: `Revenue model · ${item.revenue.label}`, color: "var(--flow-profit)", rows: [["Part of", item.owner?.name ?? mindMap?.branches.find(b => b.node === item.anchor)?.label ?? ""]] }
-      : { title: node!.name, color: colorOf(item.anchor), rows: [...(node!.gloss ? [["Description", node!.gloss] as [string, string]] : []), ...(node!.revenue.length ? [["Revenue model", node!.revenue.map(m => m.label).join(", ")] as [string, string]] : []), ...(node!.children.length ? [["Contains", `${node!.children.length} ${node!.children.length === 1 ? "item" : "items"}`] as [string, string]] : [])] });
+      ? { title: `${m.revenueModel} · ${item.revenue.label}`, color: "var(--flow-profit)", rows: [[m.partOf, item.owner?.name ?? mindMap?.branches.find(b => b.node === item.anchor)?.label ?? ""]] }
+      : { title: node!.name, color: colorOf(item.anchor), rows: [...(node!.gloss ? [[m.description, node!.gloss] as [string, string]] : []), ...(node!.revenue.length ? [[m.revenueModel, node!.revenue.map(r => r.label).join(", ")] as [string, string]] : []), ...(node!.children.length ? [[m.contains, m.items(node!.children.length)] as [string, string]] : [])] });
   };
 
   // The explanation is page text beside the canvas, not part of the scaled drawing: opening it narrows the pane and the Sankey refits.
   return <div className="fc" data-products={expanded || undefined} data-mind={mind ? "" : undefined} style={{ "--ratio": `${worldW} / ${worldH}`, "--mobile-width": `${Math.ceil(worldW * SCREEN_VALUE_PX / (21 * k))}px` } as CSSProperties} onMouseLeave={() => { setTip(null); onHover(null); }}>
-    {expanded && productTarget && <aside key={productBusiness} className="fc-business-details" aria-label={`${productTarget.label} business details`}>
+    {expanded && productTarget && <aside key={productBusiness} className="fc-business-details" aria-label={m.details(productTarget.label)}>
       <div className="fc-business-scroll" tabIndex={0} data-scrolling={scrolling || undefined} onScroll={revealScrollbar}>{businessDetails}</div>
     </aside>}
     <div className="fc-canvas" ref={box}>
@@ -446,7 +458,7 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
             // A business's own band picks it like its node; keyboard users reach the same pick on the node.
             {...(byName.get(b.owner)?.segmentId ? { "data-pick": "", onClick: () => onPick(byName.get(b.owner)!) } : {})}
             data-lit={litLinks ? (litLinks.has(b.key) ? (focus?.segment && focus.trace.some(t => t.key === "trace:" + b.key) ? "context" : "on") : undefined) : undefined}
-            onMouseMove={e => { const l = layout.links[i]; point(e, { title: `${copy(byName.get(l.source)!).name} → ${copy(byName.get(l.target)!).name}`, color: b.color, rows: [["Flow", money(l.value)]] }); }}
+            onMouseMove={e => { const l = layout.links[i]; point(e, { title: `${copy(byName.get(l.source)!).name} → ${copy(byName.get(l.target)!).name}`, color: b.color, rows: [[m.flow, money(l.value)]] }); }}
             onMouseLeave={() => setTip(null)} />)}
         </g>
         <g className="fc-trace">
@@ -502,8 +514,8 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
               <path d={`M${r(8 * k)},${r(span[0])}H0V${r(span[1])}H${r(8 * k)}`} />
             </g>}
             {pill && <g className="fc-guide-pill" data-action={pill.action ?? undefined} transform={`translate(${r(pillX)},${r(n.y + n.h / 2)})`} onMouseMove={e => { e.stopPropagation(); point(e, pill.tip); }} onMouseLeave={() => setTip(null)}><a href={pill.url ?? undefined} target="_blank" rel="noopener noreferrer" aria-label={pill.tip.title}>
-              <rect x={0} y={-type.pill} width={estimateTextWidth(`Next Q ${pill.glyph} ${pill.text}`, type.pill, true) + type.pill * 1.6} height={type.pill * 2} rx={type.pill} />
-              <text x={type.pill * 0.8} y={type.pill * 0.38} style={{ fontSize: type.pill }}><tspan className="fc-guide-when">Next Q</tspan>{pill.glyph && <tspan className="fc-guide-glyph" dx={type.pill * 0.4}>{pill.glyph}</tspan>}<tspan dx={type.pill * 0.4}>{pill.text}</tspan></text>
+              <rect x={0} y={-type.pill} width={estimateTextWidth(`${m.nextQ} ${pill.glyph} ${pill.text}`, type.pill, true) + type.pill * 1.6} height={type.pill * 2} rx={type.pill} />
+              <text x={type.pill * 0.8} y={type.pill * 0.38} style={{ fontSize: type.pill }}><tspan className="fc-guide-when">{m.nextQ}</tspan>{pill.glyph && <tspan className="fc-guide-glyph" dx={type.pill * 0.4}>{pill.glyph}</tspan>}<tspan dx={type.pill * 0.4}>{pill.text}</tspan></text>
             </a></g>}
           </g>;
         })}

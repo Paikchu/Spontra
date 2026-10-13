@@ -2,8 +2,23 @@ import type { BusinessFlowQuarter, FlowMetric, FlowAmount } from "@/shared/analy
 import { numeric, reconcileQuarter } from "./business-flow-model";
 
 import { revenueNodeKey, selectRevenueTree } from "./revenue-tree";
+import { labels, messages } from "@/packages/web/src/i18n/core";
 
-export const metricLabels: Record<FlowMetric, string> = { revenue:"Revenue", cost:"Cost of revenue", gross:"Gross profit", research:"Research and development", sales:"Sales and marketing", administration:"General and administrative", operatingExpenses:"Operating expenses", operating:"Operating income", other:"Other income (expense), net", pretax:"Income before taxes", tax:"Income taxes", net:"Net income" };
+/** Statement lines in the page's locale; a node's label is read when its graph is built. */
+export const metricLabels: Record<FlowMetric, string> = labels(
+ { revenue:"Revenue", cost:"Cost of revenue", gross:"Gross profit", research:"Research and development", sales:"Sales and marketing", administration:"General and administrative", operatingExpenses:"Operating expenses", operating:"Operating income", other:"Other income (expense), net", pretax:"Income before taxes", tax:"Income taxes", net:"Net income" },
+ { revenue:"营收", cost:"营业成本", gross:"毛利", research:"研发费用", sales:"销售及市场费用", administration:"管理费用", operatingExpenses:"营业费用", operating:"营业利润", other:"营业外收支净额", pretax:"税前利润", tax:"所得税", net:"净利润" });
+const m = messages({
+ revenueReported: "Revenue (as reported)", totalExpenses: "Total expenses", allExpenses: "Operating expenses", direct: "Cost of products and services",
+ adminOther: "G&A, amortization and restructuring", grossLoss: "Gross loss", operatingLoss: "Operating loss", pretaxLoss: "Loss before taxes", netLoss: "Net loss",
+ taxBenefit: "Income tax benefit", reversal: (label: string) => `${label} reversal`, otherExpense: "Other expense, net", otherIncome: "Other income, net",
+ segmentTotal: "Segment revenue (before eliminations)", segmentTotalFormula: "Sum of disclosed segment revenue (before eliminations)",
+}, {
+ revenueReported: "营收（披露值）", totalExpenses: "总费用", allExpenses: "营业费用", direct: "产品与服务成本",
+ adminOther: "管理、摊销及重组费用", grossLoss: "毛亏损", operatingLoss: "营业亏损", pretaxLoss: "税前亏损", netLoss: "净亏损",
+ taxBenefit: "所得税收益", reversal: (label: string) => `${label}冲回`, otherExpense: "营业外支出净额", otherIncome: "营业外收入净额",
+ segmentTotal: "分部营收（抵销前）", segmentTotalFormula: "已披露分部营收之和（抵销前）",
+});
 export type SankeyNode = { name:string; label:string; metric?:FlowMetric; segmentId?:string; depth:number; expense:boolean; loss?:boolean; credit?:boolean; offset?:boolean; value:number; amount?:FlowAmount };
 export type SankeyLink = { source:string; target:string; value:number };
 /** `deficit` graphs draw a loss as funding: every link is a positive flow, and the net loss is a source. */
@@ -33,7 +48,7 @@ export function financialGraph(q:BusinessFlowQuarter, compact=false):FinancialGr
  if(q.incomeModel==="financial"||q.incomeModel==="insurance"){
   const v=(key:FlowMetric)=>numeric(q.figures[key]);const r=v("revenue"),e=v("operatingExpenses"),p=v("pretax"),t=v("tax"),n=v("net");
   if([r,e,p,t,n].some(value=>value==null||value<0)||r!<=0||Math.abs(r!-e!-p!)>Math.max(1,r!*1e-9)||Math.abs(p!-t!-n!)>Math.max(1,p!*1e-9))return {nodes,links};
-  const defs=[['revenue',"Revenue (as reported)",0,r,false],['operatingExpenses',"Total expenses",1,e,true],['pretax',"Income before taxes",1,p,false],['tax',"Income taxes",2,t,true],['net',"Net income",2,n,false]] as const;
+  const defs=[['revenue',m.revenueReported,0,r,false],['operatingExpenses',m.totalExpenses,1,e,true],['pretax',metricLabels.pretax,1,p,false],['tax',metricLabels.tax,2,t,true],['net',metricLabels.net,2,n,false]] as const;
   for(const[key,label,depth,value,expense]of defs)nodes.push({name:key,label,metric:key,depth,expense,value:value!});
   for(const[source,target,value]of [['revenue','operatingExpenses',e],['revenue','pretax',p],['pretax','tax',t],['pretax','net',n]] as const)if(value!>0)links.push({source,target,value:value!});
   const connected=nodes.filter(node=>links.some(link=>link.source===node.name||link.target===node.name));return validateGraph(connected,links)?{nodes:connected,links}:{nodes:[],links:[]};
@@ -62,11 +77,11 @@ export function financialGraph(q:BusinessFlowQuarter, compact=false):FinancialGr
   if(components.some(c=>numeric(c.amount)==null||numeric(c.amount)!<0))return {nodes:[],links:[]};
   const grouped=new Map<string,typeof components>();
   for(const c of components){const group=compact?"all":c.group==="other"||c.group==="administration"?"administration-other":c.group;grouped.set(group,[...(grouped.get(group)??[]),c]);}
-  const labels:Record<string,string>={all:"Operating expenses",direct:"Cost of products and services",research:"Research and development",sales:"Sales and marketing","administration-other":"G&A, amortization and restructuring"};
+  const groupLabels:Record<string,string>={all:m.allExpenses,direct:m.direct,research:metricLabels.research,sales:metricLabels.sales,"administration-other":m.adminOther};
   for(const [group,items] of grouped){
    const value=items.reduce((sum,c)=>sum+(numeric(c.amount)??0),0);if(value<0)return {nodes:[],links:[]};if(!value)continue;
    const names=items.map(c=>c.id).sort().join("+");const amount:FlowAmount={value:String(value),basis:"derived",definition:"expense-group:"+names,comparabilityKey:"expense-group:"+names,sourceIds:[...new Set(items.flatMap(c=>c.amount.sourceIds))],formula:items.map(c=>c.name).join(" + "),lineage:items.flatMap(c=>c.amount.lineage??[])};
-   const name="expense:"+group;nodes.push({name,label:labels[group]??group,depth:1+offset,expense:true,value,amount});links.push({source:"revenue",target:name,value});
+   const name="expense:"+group;nodes.push({name,label:groupLabels[group]??group,depth:1+offset,expense:true,value,amount});links.push({source:"revenue",target:name,value});
   }
   let negative=0;
   for(const c of q.otherComponents??[]){const signed=numeric(c.amount);if(signed==null)return {nodes:[],links:[]};if(!signed)continue;
@@ -128,8 +143,8 @@ function signedFinancialGraph(q: BusinessFlowQuarter): FinancialGraph {
   const value = numeric(q.figures[key])!;
   const loss = profit.has(key) && value < 0;
   const expense = ["cost", "operatingExpenses", "tax", "research", "sales", "administration"].includes(key);
-  const label = loss ? ({ gross: "Gross loss", operating: "Operating loss", pretax: "Loss before taxes", net: "Net loss" } as Partial<Record<FlowMetric, string>>)[key]!
-   : expense && value < 0 ? key === "tax" ? "Income tax benefit" : metricLabels[key] + " reversal" : metricLabels[key];
+  const label = loss ? ({ gross: m.grossLoss, operating: m.operatingLoss, pretax: m.pretaxLoss, net: m.netLoss } as Partial<Record<FlowMetric, string>>)[key]!
+   : expense && value < 0 ? key === "tax" ? m.taxBenefit : m.reversal(metricLabels[key]) : metricLabels[key];
   return { node: { name: key, label, metric: key, value: Math.abs(value), depth: 0, expense: (expense && value > 0) || (key === "other" && value < 0), loss, credit: expense && value < 0 }, value };
  }
  function components(kind: "expense" | "other", fallback: FlowMetric): Term[] | null {
@@ -219,13 +234,13 @@ export function deficitFinancialGraph(q: BusinessFlowQuarter): FinancialGraph | 
  };
  const other = figure("other"), tax = figure("tax"), cost = figure("cost");
  const expenses = parts("expense", "operatingExpenses", 1, metricLabels.operatingExpenses);
- const others = parts("other", "other", -1, (other ?? 0) < 0 ? "Other expense, net" : "Other income, net");
+ const others = parts("other", "other", -1, (other ?? 0) < 0 ? m.otherExpense : m.otherIncome);
  if (!expenses || !others || tax == null || (!direct && cost == null)) return null;
  const stages: Array<{ terms: Term[]; after: FlowMetric | null }> = [
   ...(direct ? [] : [{ terms: cost ? [metricTerm("cost", cost, metricLabels.cost)] : [], after: "gross" as const }]),
   { terms: expenses, after: "operating" },
   { terms: others, after: "pretax" },
-  { terms: tax ? [metricTerm("tax", tax, tax > 0 ? metricLabels.tax : "Income tax benefit")] : [], after: null },
+  { terms: tax ? [metricTerm("tax", tax, tax > 0 ? metricLabels.tax : m.taxBenefit)] : [], after: null },
  ];
  const nodes = new Map<string, SankeyNode>(), links: SankeyLink[] = [];
  const flow = (source: string, target: string, value: number) => { if (value > tolerance) links.push({ source, target, value }); };
@@ -263,7 +278,7 @@ export function deficitFinancialGraph(q: BusinessFlowQuarter): FinancialGraph | 
  }
  const deficit = gaps.reduce((a, g) => a + g.amount, 0);
  if ((carrier?.balance ?? 0) > tolerance || credits.some(c => c.amount > tolerance) || Math.abs(deficit + net) > tolerance) return null;
- nodes.set("net", { name: "net", label: "Net loss", metric: "net", depth: 0, expense: false, loss: true, value: -net });
+ nodes.set("net", { name: "net", label: m.netLoss, metric: "net", depth: 0, expense: false, loss: true, value: -net });
  for (const gap of gaps) flow("net", gap.target, gap.amount);
  // Depth: profit follows revenue; a cost only the deficit pays sits next to the last profit; sources sit just left of what they fund.
  const list = [...nodes.values()], into = (name: string) => links.filter(l => l.target === name), out = (name: string) => links.filter(l => l.source === name);
@@ -302,8 +317,8 @@ function appendRevenueTree(q:BusinessFlowQuarter,tree:NonNullable<ReturnType<typ
  }
  if(!hasAdjustments)return;
  const roots=tree.nodes.filter(n=>n.parentId===null),total=roots.reduce((sum,n)=>sum+numeric(n.revenue)!,0);
- const amount:FlowAmount={value:String(total),basis:'derived',definition:'segment-revenue-before-eliminations',comparabilityKey:'segment-total:'+roots.map(n=>n.revenue?.comparabilityKey??'').join('|'),sourceIds:[...new Set(roots.flatMap(n=>n.revenue!.sourceIds))],formula:'Sum of disclosed segment revenue (before eliminations)',lineage:roots.flatMap(n=>n.revenue?.lineage??[])};
- nodes.push({name:root,label:'Segment revenue (before eliminations)',amount,value:total,depth:revenueDepth-1,expense:false});
+ const amount:FlowAmount={value:String(total),basis:'derived',definition:'segment-revenue-before-eliminations',comparabilityKey:'segment-total:'+roots.map(n=>n.revenue?.comparabilityKey??'').join('|'),sourceIds:[...new Set(roots.flatMap(n=>n.revenue!.sourceIds))],formula:m.segmentTotalFormula,lineage:roots.flatMap(n=>n.revenue?.lineage??[])};
+ nodes.push({name:root,label:m.segmentTotal,amount,value:total,depth:revenueDepth-1,expense:false});
  let negative=0;
  for(const item of adjustments){const value=numeric(item.amount)!;if(!value)continue;
   const name='revenue-adjustment:'+item.id;

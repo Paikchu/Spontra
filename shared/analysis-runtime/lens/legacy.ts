@@ -1,6 +1,7 @@
 import type { AnalysisFinding, FindingLens, FindingRef } from "../../analysis-contract/findings.ts";
 import type { LensBlock, LensChart, LensDocument, LensRow } from "../../analysis-contract/lens.ts";
 import { rpoBuckets, type FindingData } from "../findings.ts";
+import type { Locale } from "../locale.ts";
 
 /**
  * Findings written before the lens document carry one of four chart names; each becomes a document
@@ -20,8 +21,10 @@ function layout(finding: Pick<AnalysisFinding, "watch">, charts: LensChart[]): L
   return { rows };
 }
 
-/** The legacy chart names as grammar charts; `data` tells how many RPO rungs the ladder can draw. */
-export function legacyCharts(lens: Exclude<FindingLens, { type: "document" }>, data: FindingData | null, periodEnd: string): LensChart[] {
+const SCHEDULE_TITLE: Record<Locale, string> = { en: "Expected recognition of the backlog", "zh-CN": "RPO 预计确认进度" };
+
+/** The legacy chart names as grammar charts; `data` tells how many RPO rungs the ladder can draw; `locale` the language of the one title written here. */
+export function legacyCharts(lens: Exclude<FindingLens, { type: "document" }>, data: FindingData | null, periodEnd: string, locale: Locale = "en"): LensChart[] {
   switch (lens.type) {
     case "trend": {
       const refs = dedupe(lens.refs), sid = ids("s", refs.length);
@@ -44,15 +47,15 @@ export function legacyCharts(lens: Exclude<FindingLens, { type: "document" }>, d
       const rungs = rpo ? rpoBuckets(rpo).filter(b => b.amount != null).length : 0;
       if (!rungs) return [balance];
       const sid = ids("rung", rungs);
-      return [balance, { id: "schedule", title: "Expected recognition of the backlog", aspect: "wide", span: "quarter", periods: 8, series: sid.map((id, i) => ({ id, ref: { rpoBucket: i } })), marks: [{ type: "stacked_bar", series: sid }], periodLabels: "sparse" }];
+      return [balance, { id: "schedule", title: SCHEDULE_TITLE[locale], aspect: "wide", span: "quarter", periods: 8, series: sid.map((id, i) => ({ id, ref: { rpoBucket: i } })), marks: [{ type: "stacked_bar", series: sid }], periodLabels: "sparse" }];
     }
   }
 }
 
 /** A finding's lens as a document: its own when it has one, otherwise its legacy chart laid out the standard way. */
-export function lensDocumentOf(finding: AnalysisFinding, data: FindingData | null, periodEnd: string): LensDocument {
+export function lensDocumentOf(finding: AnalysisFinding, data: FindingData | null, periodEnd: string, locale: Locale = "en"): LensDocument {
   if (finding.lens.type === "document") return finding.lens.document;
-  return layout(finding, legacyCharts(finding.lens, data, periodEnd));
+  return layout(finding, legacyCharts(finding.lens, data, periodEnd, locale));
 }
 
 /** The last resort when a stored document verifies nothing: bars of the evidence's own references. */

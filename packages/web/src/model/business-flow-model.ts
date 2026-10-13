@@ -2,6 +2,45 @@ import { enrichDisclosedRevenue } from "./company-revenue-disclosures";
 import {publicFlowSchema} from "@/shared/analysis-runtime/financial-data/schema";
 import { type BusinessFlowQuarter, type FlowAmount, type FlowMetric, type PublicBusinessFlow } from "@/shared/analysis-contract/business-flow";
 import type { PublicFundamentalsResponse, FundamentalMetricKey } from "@/shared/analysis-contract/fundamentals";
+import { currencyName, MINUS } from "@/shared/analysis-runtime/locale";
+import { getLocale, messages } from "@/packages/web/src/i18n/core";
+
+/** Change words and statement checks; a change's label reads in the page's locale when it is formed. */
+export const flowWords = messages({
+  na: "n/a", flat: "flat", new: "new", turnedLoss: "turned to loss", turnedNegative: "turned negative", turnedProfit: "turned profitable", turnedPositive: "turned positive",
+  lossNarrowed: "loss narrowed", increased: "increased", lossWidened: "loss widened", decreased: "decreased", notDisclosed: "Not disclosed",
+  grossCheck: "Revenue − cost of revenue = gross profit",
+  operatingCheck: "Gross profit − operating expenses = operating income",
+  pretaxCheck: "Operating income + other income (expense), net = income before taxes",
+  netCheck: "Income before taxes − income taxes = net income",
+  expenseCheck: "R&D + sales and marketing + G&A = operating expenses",
+  businessCheck: "Business revenue + eliminations = revenue",
+  insuranceCheck: "Revenue − disclosed expenses + investment and equity-method income = income before taxes",
+  financialCheck: "Revenue − disclosed expenses = income before taxes",
+  categoriesCheck: "Expense categories = disclosed expenses",
+  directCheck: "Revenue − disclosed operating expenses = operating income",
+  directCategoriesCheck: "Operating expense categories = disclosed operating expenses",
+  otherCheck: "Signed interest and other items = other income (expense), net",
+  segmentsCheck: "Segments + eliminations = revenue",
+  operatingCategoriesCheck: "Expense categories = disclosed operating expenses",
+}, {
+  na: "不可比", flat: "持平", new: "新增", turnedLoss: "转亏", turnedNegative: "转负", turnedProfit: "扭亏为盈", turnedPositive: "转正",
+  lossNarrowed: "亏损收窄", increased: "增加", lossWidened: "亏损扩大", decreased: "减少", notDisclosed: "未披露",
+  grossCheck: "营收 − 营业成本 = 毛利",
+  operatingCheck: "毛利 − 营业费用 = 营业利润",
+  pretaxCheck: "营业利润 + 营业外收支净额 = 税前利润",
+  netCheck: "税前利润 − 所得税 = 净利润",
+  expenseCheck: "研发费用 + 销售及市场费用 + 管理费用 = 营业费用",
+  businessCheck: "业务营收 + 抵销 = 营收",
+  insuranceCheck: "营收 − 已披露费用 + 投资及权益法收益 = 税前利润",
+  financialCheck: "营收 − 已披露费用 = 税前利润",
+  categoriesCheck: "各类费用之和 = 已披露费用",
+  directCheck: "营收 − 已披露营业费用 = 营业利润",
+  directCategoriesCheck: "各类营业费用之和 = 已披露营业费用",
+  otherCheck: "利息及其他项目（含符号）= 营业外收支净额",
+  segmentsCheck: "分部营收 + 抵销 = 营收",
+  operatingCategoriesCheck: "各类费用之和 = 已披露营业费用",
+});
 
 
 export function numeric(amount: FlowAmount | null | undefined): number | null {
@@ -70,19 +109,20 @@ export function compareAmount(current: BusinessFlowQuarter, previous: BusinessFl
 
 /** A change between two quarters. `comparable` is false when the quarters cannot be compared; `trend` says which way the figure moved. */
 export type FlowChange = { label: string; comparable: boolean; trend: "up" | "down" | null; delta: number | null; previous: number | null; percent: number | null };
+/** The English label of a change that cannot be formed; `flowWords.na` is the page's own. */
 export const NOT_COMPARABLE = "n/a";
 
 export function compareFlowAmounts(current: BusinessFlowQuarter, previous: BusinessFlowQuarter | null, key: string, a: FlowAmount | null | undefined, b: FlowAmount | null | undefined): FlowChange {
   const av = numeric(a), bv = numeric(b);
-  const none = (prior: number | null): FlowChange => ({ label: NOT_COMPARABLE, comparable: false, trend: null, delta: null, previous: prior, percent: null });
+  const none = (prior: number | null): FlowChange => ({ label: flowWords.na, comparable: false, trend: null, delta: null, previous: prior, percent: null });
   if (previous && (current.currency !== previous.currency || current.scale !== previous.scale)) return none(null);
   if (!previous || av == null || bv == null || current.currency !== previous.currency || current.scale !== previous.scale || !a?.comparabilityKey || a.comparabilityKey !== b?.comparabilityKey || a.definition !== b.definition) return none(bv);
   const delta = av - bv;
   const moved = (label: string, trend: FlowChange["trend"]): FlowChange => ({ label, comparable: true, trend, delta, previous: bv, percent: null });
-  if (bv === 0) return av === 0 ? moved("flat", null) : moved("new", av > 0 ? "up" : "down");
+  if (bv === 0) return av === 0 ? moved(flowWords.flat, null) : moved(flowWords.new, av > 0 ? "up" : "down");
   const profit = ["gross", "operating", "pretax", "net", "other"].includes(key);
-  if ((av < 0 && bv >= 0) || (av >= 0 && bv < 0)) return av < 0 ? moved(profit ? "turned to loss" : "turned negative", "down") : moved(profit ? "turned profitable" : "turned positive", "up");
-  if (bv < 0) return delta === 0 ? moved("flat", null) : delta > 0 ? moved(profit ? "loss narrowed" : "increased", "up") : moved(profit ? "loss widened" : "decreased", "down");
+  if ((av < 0 && bv >= 0) || (av >= 0 && bv < 0)) return av < 0 ? moved(profit ? flowWords.turnedLoss : flowWords.turnedNegative, "down") : moved(profit ? flowWords.turnedProfit : flowWords.turnedPositive, "up");
+  if (bv < 0) return delta === 0 ? moved(flowWords.flat, null) : delta > 0 ? moved(profit ? flowWords.lossNarrowed : flowWords.increased, "up") : moved(profit ? flowWords.lossWidened : flowWords.decreased, "down");
   const percent = delta / bv * 100;
   return { label: `${percent > 0 ? "+" : ""}${percent.toFixed(1)}%`, comparable: true, trend: percent > 0 ? "up" : percent < 0 ? "down" : null, delta, previous: bv, percent };
 }
@@ -90,11 +130,11 @@ export function compareFlowAmounts(current: BusinessFlowQuarter, previous: Busin
 export type Reconciliation = { label: string; status: "balanced" | "missing" | "mismatch"; difference: number | null };
 export function reconcileQuarter(q: BusinessFlowQuarter): Reconciliation[] {
   const equations: Array<[string, Array<[FlowMetric, number]>]> = [
-    ["Revenue − cost of revenue = gross profit", [["revenue", 1], ["cost", -1], ["gross", -1]]],
-    ["Gross profit − operating expenses = operating income", [["gross", 1], ["operatingExpenses", -1], ["operating", -1]]],
-    ["Operating income + other income (expense), net = income before taxes", [["operating", 1], ["other", 1], ["pretax", -1]]],
-    ["Income before taxes − income taxes = net income", [["pretax", 1], ["tax", -1], ["net", -1]]],
-    ["R&D + sales and marketing + G&A = operating expenses", [["research", 1], ["sales", 1], ["administration", 1], ["operatingExpenses", -1]]],
+    [flowWords.grossCheck, [["revenue", 1], ["cost", -1], ["gross", -1]]],
+    [flowWords.operatingCheck, [["gross", 1], ["operatingExpenses", -1], ["operating", -1]]],
+    [flowWords.pretaxCheck, [["operating", 1], ["other", 1], ["pretax", -1]]],
+    [flowWords.netCheck, [["pretax", 1], ["tax", -1], ["net", -1]]],
+    [flowWords.expenseCheck, [["research", 1], ["sales", 1], ["administration", 1], ["operatingExpenses", -1]]],
   ];
   const tolerance = Math.max(1e-6, Math.abs(numeric(q.figures.revenue) ?? 0) * 1e-9);
   const check = (label: string, values: Array<number | null>): Reconciliation => {
@@ -103,23 +143,33 @@ export function reconcileQuarter(q: BusinessFlowQuarter): Reconciliation[] {
     return { label, status: Math.abs(difference) <= tolerance ? "balanced" : "mismatch", difference };
   };
   if (q.incomeModel === "financial" || q.incomeModel === "insurance") return [
-    check("Business revenue + eliminations = revenue", q.segmentsComplete ? [...q.segments.map(s => numeric(s.revenue)), ...(q.revenueAdjustments ?? []).map(a => numeric(a.amount)), numeric(q.figures.revenue) == null ? null : -numeric(q.figures.revenue)!] : [null]),
-    check(q.incomeModel==="insurance"?"Revenue − disclosed expenses + investment and equity-method income = income before taxes":"Revenue − disclosed expenses = income before taxes", [q.incomeModel==="insurance"?(numeric(q.figures.revenue)==null||numeric(q.figures.other)==null?null:numeric(q.figures.revenue)!+numeric(q.figures.other)!):numeric(q.figures.revenue), numeric(q.figures.operatingExpenses) == null ? null : -numeric(q.figures.operatingExpenses)!, numeric(q.figures.pretax) == null ? null : -numeric(q.figures.pretax)!]),
-    check("Expense categories = disclosed expenses", q.expenseComponents?.length ? [...q.expenseComponents.map(c => numeric(c.amount)), numeric(q.figures.operatingExpenses) == null ? null : -numeric(q.figures.operatingExpenses)!] : [null]),
-    check("Income before taxes − income taxes = net income", [numeric(q.figures.pretax), numeric(q.figures.tax) == null ? null : -numeric(q.figures.tax)!, numeric(q.figures.net) == null ? null : -numeric(q.figures.net)!]),
+    check(flowWords.businessCheck, q.segmentsComplete ? [...q.segments.map(s => numeric(s.revenue)), ...(q.revenueAdjustments ?? []).map(a => numeric(a.amount)), numeric(q.figures.revenue) == null ? null : -numeric(q.figures.revenue)!] : [null]),
+    check(q.incomeModel==="insurance"?flowWords.insuranceCheck:flowWords.financialCheck, [q.incomeModel==="insurance"?(numeric(q.figures.revenue)==null||numeric(q.figures.other)==null?null:numeric(q.figures.revenue)!+numeric(q.figures.other)!):numeric(q.figures.revenue), numeric(q.figures.operatingExpenses) == null ? null : -numeric(q.figures.operatingExpenses)!, numeric(q.figures.pretax) == null ? null : -numeric(q.figures.pretax)!]),
+    check(flowWords.categoriesCheck, q.expenseComponents?.length ? [...q.expenseComponents.map(c => numeric(c.amount)), numeric(q.figures.operatingExpenses) == null ? null : -numeric(q.figures.operatingExpenses)!] : [null]),
+    check(flowWords.netCheck, [numeric(q.figures.pretax), numeric(q.figures.tax) == null ? null : -numeric(q.figures.tax)!, numeric(q.figures.net) == null ? null : -numeric(q.figures.net)!]),
   ];
   if (q.incomeModel === "direct_operating") return [
-    check("Business revenue + eliminations = revenue", q.segmentsComplete ? [...q.segments.map(s => numeric(s.revenue)), ...(q.revenueAdjustments ?? []).map(a => numeric(a.amount)), numeric(q.figures.revenue) == null ? null : -numeric(q.figures.revenue)!] : [null]),
-    check("Revenue − disclosed operating expenses = operating income", [numeric(q.figures.revenue), numeric(q.figures.operatingExpenses) == null ? null : -numeric(q.figures.operatingExpenses)!, numeric(q.figures.operating) == null ? null : -numeric(q.figures.operating)!]),
-    check("Operating expense categories = disclosed operating expenses", q.expenseComponents?.length ? [...q.expenseComponents.map(c => numeric(c.amount)), numeric(q.figures.operatingExpenses) == null ? null : -numeric(q.figures.operatingExpenses)!] : [null]),
+    check(flowWords.businessCheck, q.segmentsComplete ? [...q.segments.map(s => numeric(s.revenue)), ...(q.revenueAdjustments ?? []).map(a => numeric(a.amount)), numeric(q.figures.revenue) == null ? null : -numeric(q.figures.revenue)!] : [null]),
+    check(flowWords.directCheck, [numeric(q.figures.revenue), numeric(q.figures.operatingExpenses) == null ? null : -numeric(q.figures.operatingExpenses)!, numeric(q.figures.operating) == null ? null : -numeric(q.figures.operating)!]),
+    check(flowWords.directCategoriesCheck, q.expenseComponents?.length ? [...q.expenseComponents.map(c => numeric(c.amount)), numeric(q.figures.operatingExpenses) == null ? null : -numeric(q.figures.operatingExpenses)!] : [null]),
     ...equations.slice(2, 4).map(([label, terms]) => check(label, terms.map(([key, sign]) => { const value = numeric(q.figures[key]); return value == null ? null : value * sign; }))),
-    check("Signed interest and other items = other income (expense), net", q.otherComponents?.length ? [...q.otherComponents.map(c => numeric(c.amount)), numeric(q.figures.other) == null ? null : -numeric(q.figures.other)!] : [null]),
+    check(flowWords.otherCheck, q.otherComponents?.length ? [...q.otherComponents.map(c => numeric(c.amount)), numeric(q.figures.other) == null ? null : -numeric(q.figures.other)!] : [null]),
   ];
-  return [check("Segments + eliminations = revenue", q.segmentsComplete && q.segments.length ? [...q.segments.map(s => numeric(s.revenue)), ...(q.revenueAdjustments ?? []).map(a => numeric(a.amount)), numeric(q.figures.revenue) == null ? null : -numeric(q.figures.revenue)!] : [null]), ...equations.slice(0, 4).map(([label, terms]) => check(label, terms.map(([key, sign]) => { const value = numeric(q.figures[key]); return value == null ? null : value * sign; }))), q.expenseComponents?.length ? check("Expense categories = disclosed operating expenses", [...q.expenseComponents.map(c=>numeric(c.amount)), numeric(q.figures.operatingExpenses) == null ? null : -numeric(q.figures.operatingExpenses)!]) : check(equations[4][0], equations[4][1].map(([key, sign])=>{const value=numeric(q.figures[key]);return value==null?null:value*sign;}))];
+  return [check(flowWords.segmentsCheck, q.segmentsComplete && q.segments.length ? [...q.segments.map(s => numeric(s.revenue)), ...(q.revenueAdjustments ?? []).map(a => numeric(a.amount)), numeric(q.figures.revenue) == null ? null : -numeric(q.figures.revenue)!] : [null]), ...equations.slice(0, 4).map(([label, terms]) => check(label, terms.map(([key, sign]) => { const value = numeric(q.figures[key]); return value == null ? null : value * sign; }))), q.expenseComponents?.length ? check(flowWords.operatingCategoriesCheck, [...q.expenseComponents.map(c=>numeric(c.amount)), numeric(q.figures.operatingExpenses) == null ? null : -numeric(q.figures.operatingExpenses)!]) : check(equations[4][0], equations[4][1].map(([key, sign])=>{const value=numeric(q.figures[key]);return value==null?null:value*sign;}))];
 }
 
+/**
+ * An exact ledger amount. English writes it in millions without a unit, beside a "(USD millions)" label;
+ * Chinese writes it in 亿 or 万 with the currency, at the same precision, beside a label without a unit.
+ */
 export function formatFlowValue(value: number | null, quarter: BusinessFlowQuarter): string {
-  if (value == null) return "Not disclosed";
+  if (value == null) return flowWords.notDisclosed;
+  if (getLocale() === "zh-CN") {
+    const amount = value * quarter.scale, abs = Math.abs(amount);
+    const [divisor, suffix, digits] = abs >= 1e8 ? [1e8, "亿", 3] : abs >= 1e4 ? [1e4, "万", 1] : [1, "", 0];
+    const name = currencyName(quarter.currency, "zh-CN");
+    return (amount < 0 ? MINUS : "") + new Intl.NumberFormat("en-US", { maximumFractionDigits: digits }).format(abs / divisor) + suffix + (name === quarter.currency ? ` ${name}` : name);
+  }
   const display = value * quarter.scale / 1_000_000;
   return new Intl.NumberFormat("en-US", { maximumFractionDigits: Math.abs(display) < 1 ? 3 : 1 }).format(display);
 }

@@ -33,9 +33,10 @@ export const mindType = (k: number) => ({ name: 14 * k, gloss: 12 * k, pill: 12.
 /** Clips a name to the width a column allows; the full name stays in the tooltip and the card. */
 function fit(text: string, size: number, max: number, bold = false): string {
   if (estimateTextWidth(text, size, bold) <= max) return text;
-  let out = text;
-  while (out.length > 4 && estimateTextWidth(out + "…", size, bold) > max) out = out.slice(0, -1);
-  return out.trimEnd() + "…";
+  // Cut by code point, not UTF-16 unit, so a CJK or astral character is never split; widths are per glyph (CJK one em).
+  const chars = [...text];
+  while (chars.length > 4 && estimateTextWidth(chars.join("") + "…", size, bold) > max) chars.pop();
+  return chars.join("").trimEnd() + "…";
 }
 
 type Draft = { item: MindItem; children: Draft[]; span: number };

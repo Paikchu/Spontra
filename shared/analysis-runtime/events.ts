@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { CompanyEvent, EventClass, EventsPublication, InsiderTransaction } from "../analysis-contract/events.ts";
+import type { Locale } from "./locale.ts";
 
 /* ---------- Classification ---------- */
 
@@ -7,6 +8,13 @@ export const EVENT_CLASS_LABEL: Record<EventClass, string> = {
   earnings: "Earnings", guidance: "Guidance", executive: "Leadership change", insider: "Insider trade", deal: "M&A", financing: "Financing",
   capital_return: "Buybacks & dividends", vote: "Shareholder vote", legal: "Legal & regulatory", other: "Other",
 };
+const EVENT_CLASS_LABEL_ZH: Record<EventClass, string> = {
+  earnings: "业绩", guidance: "业绩指引", executive: "管理层变动", insider: "内部人交易", deal: "并购交易", financing: "融资",
+  capital_return: "回购与分红", vote: "股东投票", legal: "法律与监管", other: "其他",
+};
+
+/** An event class as the reader's locale names it; English is EVENT_CLASS_LABEL. */
+export const eventClassLabel = (cls: EventClass, locale: Locale = "en") => (locale === "zh-CN" ? EVENT_CLASS_LABEL_ZH : EVENT_CLASS_LABEL)[cls];
 
 /**
  * The 8-K item codes that decide an event's class, most specific first: a results release that also
@@ -140,25 +148,59 @@ export function insiderCluster(events: CompanyEvent[], eventId: string, days = 3
     .map(e => ({ id: e.id, ownerName: e.insider!.ownerName, title: e.insider!.title, date: e.eventDate, proceeds: e.insider!.sold!.proceeds }));
 }
 
-export type InsiderVerdict = { label: "Planned" | "Routine" | "Watch" | "Non-trade"; rules: string[] };
+export type InsiderVerdictLabel = "Planned" | "Routine" | "Watch" | "Non-trade";
+/** `label` is display text in the requested locale: one of InsiderVerdictLabel in English. */
+export type InsiderVerdict = { label: string; rules: string[] };
 
 /** Thresholds the verdict rules use; shown beside the verdict so the reader sees which rule fired. */
 export const INSIDER_RULES = { attentionShare: 10, routineShare: 5, clusterSellers: 3, clusterDays: 30 } as const;
+
+const VERDICT_TEXT = {
+  en: {
+    label: { Planned: "Planned", Routine: "Routine", Watch: "Watch", "Non-trade": "Non-trade" } as Record<InsiderVerdictLabel, string>,
+    purchase: "Open-market purchase",
+    exercise: "Exercise or conversion, no sale",
+    quiet: "Grant, tax withholding or gift; not a trading signal",
+    soldAbove: (share: string, threshold: number) => `Sold ${share}% of the pre-trade holding, at or above the ${threshold}% threshold`,
+    cluster: (sellers: number, days: number) => `${sellers} insiders sold within ${days} days`,
+    firstSale: "First sale in the past 12 months, not marked as a 10b5-1 plan",
+    plan: "Filing marks the trade as made under a 10b5-1 plan",
+    cadence: (sales: number, days: number) => `${sales} sales in the past 12 months, about ${days} days apart`,
+    soldBelow: (share: string, threshold: number) => `Sold ${share}% of the pre-trade holding, below ${threshold}%`,
+    holdingUnknown: "Holding after the trade is not disclosed, so the share sold cannot be calculated",
+    noCluster: "No cluster of other insider sales in the same window",
+  },
+  "zh-CN": {
+    label: { Planned: "计划内", Routine: "常规", Watch: "关注", "Non-trade": "非交易" } as Record<InsiderVerdictLabel, string>,
+    purchase: "公开市场买入",
+    exercise: "行权或转换，未卖出",
+    quiet: "授予、代扣税或赠与，非交易信号",
+    soldAbove: (share: string, threshold: number) => `卖出交易前持股的 ${share}%，达到 ${threshold}% 阈值`,
+    cluster: (sellers: number, days: number) => `${days} 天内 ${sellers} 名内部人卖出`,
+    firstSale: "近 12 个月首次卖出，未标注 10b5-1 交易计划",
+    plan: "文件标注该交易依 10b5-1 交易计划进行",
+    cadence: (sales: number, days: number) => `近 12 个月卖出 ${sales} 次，间隔约 ${days} 天`,
+    soldBelow: (share: string, threshold: number) => `卖出交易前持股的 ${share}%，低于 ${threshold}%`,
+    holdingUnknown: "交易后持股未披露，无法计算卖出比例",
+    noCluster: "同期无其他内部人集中卖出",
+  },
+} satisfies Record<Locale, unknown>;
 
 /**
  * A deterministic reading of one filing against the owner's own history and the other insiders:
  * which rule fired is part of the answer, so the page can show it rather than a bare label.
  */
-export function insiderVerdict(t: InsiderTransaction, cadence: InsiderCadence, cluster: ReturnType<typeof insiderCluster>): InsiderVerdict {
-  if (!t.sold) return { label: "Non-trade", rules: t.bought ? ["Open-market purchase"] : t.exercised ? ["Exercise or conversion, no sale"] : ["Grant, tax withholding or gift; not a trading signal"] };
+export function insiderVerdict(t: InsiderTransaction, cadence: InsiderCadence, cluster: ReturnType<typeof insiderCluster>, locale: Locale = "en"): InsiderVerdict {
+  const w = VERDICT_TEXT[locale];
+  if (!t.sold) return { label: w.label["Non-trade"], rules: t.bought ? [w.purchase] : t.exercised ? [w.exercise] : [w.quiet] };
   const share = soldShareOfHolding(t);
   const rules: string[] = [];
-  if (share != null && share >= INSIDER_RULES.attentionShare) rules.push(`Sold ${share.toFixed(1)}% of the pre-trade holding, at or above the ${INSIDER_RULES.attentionShare}% threshold`);
-  if (cluster.length + 1 >= INSIDER_RULES.clusterSellers) rules.push(`${cluster.length + 1} insiders sold within ${INSIDER_RULES.clusterDays} days`);
-  if (cadence.sales.length <= 1 && t.rule10b51 !== true) rules.push("First sale in the past 12 months, not marked as a 10b5-1 plan");
-  if (rules.length) return { label: "Watch", rules };
-  if (t.rule10b51 === true || cadence.regular) return { label: "Planned", rules: [t.rule10b51 === true ? "Filing marks the trade as made under a 10b5-1 plan" : `${cadence.sales.length} sales in the past 12 months, about ${Math.round(cadence.intervalDays ?? 0)} days apart`] };
-  return { label: "Routine", rules: [share != null ? `Sold ${share.toFixed(1)}% of the pre-trade holding, below ${INSIDER_RULES.attentionShare}%` : "Holding after the trade is not disclosed, so the share sold cannot be calculated", "No cluster of other insider sales in the same window"] };
+  if (share != null && share >= INSIDER_RULES.attentionShare) rules.push(w.soldAbove(share.toFixed(1), INSIDER_RULES.attentionShare));
+  if (cluster.length + 1 >= INSIDER_RULES.clusterSellers) rules.push(w.cluster(cluster.length + 1, INSIDER_RULES.clusterDays));
+  if (cadence.sales.length <= 1 && t.rule10b51 !== true) rules.push(w.firstSale);
+  if (rules.length) return { label: w.label.Watch, rules };
+  if (t.rule10b51 === true || cadence.regular) return { label: w.label.Planned, rules: [t.rule10b51 === true ? w.plan : w.cadence(cadence.sales.length, Math.round(cadence.intervalDays ?? 0))] };
+  return { label: w.label.Routine, rules: [share != null ? w.soldBelow(share.toFixed(1), INSIDER_RULES.attentionShare) : w.holdingUnknown, w.noCluster] };
 }
 
 /** The holding path one owner's filings trace, oldest first: each filing's held-after figure, for the ladder. */

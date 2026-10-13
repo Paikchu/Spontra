@@ -6,7 +6,50 @@ import type { RevenueHistory } from "@/shared/analysis-contract/revenue-history"
 import type { BusinessFlowQuarter } from "@/shared/analysis-contract/business-flow";
 import { compactFlowValue } from "@/packages/web/src/model/business-flow-layout";
 import type { GuidancePublication } from "@/shared/analysis-contract/guidance";
+import { getLocale, messages } from "@/packages/web/src/i18n";
+import { compactMoney, qoqLabel, range, yoyLabel } from "@/shared/analysis-runtime/locale";
 import { SLOTS, ACTION_NAMES, buildBridge, buildColumns, buildSlots, columnIndex, visibleSlotCount, growth, growthSeries, guidanceLabel, guidanceOverlay, layerOrder, niceTicks, rateTicks, type Bridge, type Column, type GuideMark, type Layer, type TrendItem } from "./trend-model";
+
+const m = messages({
+  yoyGrowth: "YoY growth", qoqGrowth: "QoQ growth", comparisonBase: "Comparison base", allBusinesses: "All businesses",
+  revenueOf: (name: string) => `${name} revenue`, totalRevenueLower: "total revenue", trendLabel: (subject: string, n: number) => `${subject}: revenue, last ${n} quarters`,
+  revenueView: "Revenue view", revenue: "Revenue", growthDrivers: "Growth drivers", guidanceRange: "Guidance range", totalsOnly: "Totals only",
+  since: (period: string) => `Since ${period}`, period: "Period", change: (basis: string) => `${basis} change`,
+  noYearAgo: "No comparable year-ago quarter", noPrior: "No comparable prior quarter", outlook: "Management outlook", guidanceIssued: (date: string) => `Guidance · ${date}`,
+  pp: " pp", yearAgo: "Year ago", priorQuarter: "Prior quarter", thisQuarter: "This quarter",
+  bridgeLabel: (subject: string, from: string, to: string) => `${subject} change, ${from} to ${to}`, changeHead: "Change", contribution: "Contribution",
+  otherCurrency: "Other reporting currency", notDisclosed: "Not disclosed", notReported: "Not reported", afterEliminations: "Consolidated revenue after eliminations",
+  segmentsAsReported: "Segments as reported", totalOnly: "Total revenue only", guidanceAria: (low: string, high: string) => `, guidance ${low}–${high}`,
+  businessRevenue: "Business revenue", totalRevenue: "Total revenue", guidanceDerived: "Guidance (from growth rate)", guidance: "Guidance",
+  aboveRange: "Above range", belowRange: "Below range", withinRange: "Within range", issued: (date: string) => `Issued ${date}`, derivedQ4: "Derived Q4 · ",
+  guideAria: (period: string, low: string, high: string, derived: boolean) => `${period} management revenue guidance ${low}–${high}${derived ? ", from growth rate" : ""}`,
+  managementGuidance: (period: string) => `${period} management guidance`, guidedYoy: "Guided YoY", yearAgoBase: "Year-ago base", vsPrevious: "vs. previous",
+  secFiling: (form: string, filed: string) => `SEC ${form} · ${filed}`,
+  comma: ", ",
+}, {
+  yoyGrowth: "同比增长", qoqGrowth: "环比增长", comparisonBase: "比较基准", allBusinesses: "全部业务",
+  revenueOf: (name: string) => `${name} 营收`, totalRevenueLower: "总营收", trendLabel: (subject: string, n: number) => `${subject}：营收，最近 ${n} 个季度`,
+  revenueView: "营收视图", revenue: "营收", growthDrivers: "增长来源", guidanceRange: "指引区间", totalsOnly: "仅总额",
+  since: (period: string) => `${period} 以来`, period: "区间", change: (basis: string) => `${basis}变化`,
+  noYearAgo: "无可比的上年同期季度", noPrior: "无可比的上一季度", outlook: "管理层展望", guidanceIssued: (date: string) => `业绩指引 · ${date}`,
+  pp: "个百分点", yearAgo: "上年同期", priorQuarter: "上一季度", thisQuarter: "本季度",
+  bridgeLabel: (subject: string, from: string, to: string) => `${subject}变化，${from} 至 ${to}`, changeHead: "变化", contribution: "贡献",
+  otherCurrency: "其他报告货币", notDisclosed: "未披露", notReported: "未报告", afterEliminations: "抵销后的合并营收",
+  segmentsAsReported: "按披露的分部", totalOnly: "仅披露总营收", guidanceAria: (low: string, high: string) => `，业绩指引 ${low}–${high}`,
+  businessRevenue: "业务营收", totalRevenue: "总营收", guidanceDerived: "业绩指引（按增长率推算）", guidance: "业绩指引",
+  aboveRange: "高于指引区间", belowRange: "低于指引区间", withinRange: "处于指引区间", issued: (date: string) => `发布于 ${date}`, derivedQ4: "推算 Q4 · ",
+  guideAria: (period: string, low: string, high: string, derived: boolean) => `${period} 管理层营收指引 ${low}–${high}${derived ? "，按增长率推算" : ""}`,
+  managementGuidance: (period: string) => `${period} 管理层指引`, guidedYoy: "指引同比", yearAgoBase: "上年同期基数", vsPrevious: "较前次",
+  secFiling: (form: string, filed: string) => `SEC ${form} · ${filed}`,
+  comma: "，",
+});
+
+/** An amount in the reader's number form; English keeps the flow chart's own formatter. */
+function flowMoney(v: number | null, currency: string, scale: number): string {
+  const locale = getLocale();
+  if (locale === "en") return compactFlowValue(v, { currency, scale } as BusinessFlowQuarter);
+  return v == null || !Number.isFinite(v) ? m.notDisclosed : compactMoney(v * scale, currency, locale);
+}
 
 const SHADES = [100, 66, 44, 30];
 const shortPeriod = (end: string) => end.slice(0, 7).replace("-", ".");
@@ -53,8 +96,8 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
   const ticks = niceTicks(Math.max(0, ...columns.map(c => c.total ?? 0), ...guided.map(m => m.high)));
   const scale = ticks.at(-1)!;
   const unit = historySlots.at(-1)!.quarter!;
-  const money = (v: number | null) => compactFlowValue(v, { currency: unit.currency, scale: unit.scale } as BusinessFlowQuarter);
-  const guidanceMoney = (v: number | null) => compactFlowValue(v, { currency: "USD", scale: 1 } as BusinessFlowQuarter);
+  const money = (v: number | null) => flowMoney(v, unit.currency, unit.scale);
+  const guidanceMoney = (v: number | null) => flowMoney(v, "USD", 1);
   const known = columns.filter(c => c.total != null);
   const last = historyColumns.at(-1)?.total ?? null, yearAgo = historyColumns.at(-5)?.total ?? null;
   const yoy = growth(last, yearAgo), span = known.length > 1 ? growth(known.at(-1)!.total, known[0].total) : null;
@@ -71,15 +114,15 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
   const rates = useMemo(() => growthSeries(historyColumns, lineLag).slice(-visible), [historyColumns, lineLag, visible]);
   const rateAxis = useMemo(() => rateTicks(rates), [rates]);
   const rateY = (v: number) => rateAxis ? (v - rateAxis[0]) / (rateAxis[3] - rateAxis[0]) * 100 : 0;
-  const rateName = lineLag === 4 ? "YoY growth" : "QoQ growth";
+  const rateName = lineLag === 4 ? m.yoyGrowth : m.qoqGrowth;
   const lagSwitch = (value: 1 | 4) => <ToggleGroup type="single" variant="unstyled" rovingFocus={false} value={String(value)} onValueChange={next => { if (next) setLag(next === "4" ? 4 : 1); }} asChild>
-    <span className="periods periods--small" role="radiogroup" aria-label="Comparison base">
-      <ToggleGroupItem value="4" role="radio" aria-checked={value === 4}>YoY</ToggleGroupItem>
-      <ToggleGroupItem value="1" role="radio" aria-checked={value === 1}>QoQ</ToggleGroupItem>
+    <span className="periods periods--small" role="radiogroup" aria-label={m.comparisonBase}>
+      <ToggleGroupItem value="4" role="radio" aria-checked={value === 4}>{yoyLabel(getLocale())}</ToggleGroupItem>
+      <ToggleGroupItem value="1" role="radio" aria-checked={value === 1}>{qoqLabel(getLocale())}</ToggleGroupItem>
     </span>
   </ToggleGroup>;
-  const subject = selected?.name ?? "All businesses";
-  const revenueName = selected ? `${selected.name} revenue` : "total revenue";
+  const subject = selected?.name ?? m.allBusinesses;
+  const revenueName = selected ? m.revenueOf(selected.name) : m.totalRevenueLower;
   const lineColor = selected ? hue(selected.slot) : "var(--foreground)";
 
   const chartConfig = useMemo<ChartConfig>(() => ({
@@ -87,38 +130,38 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
     growth: { label: rateName, color: lineColor },
   }), [historyColumns, hue, rateName, lineColor]);
 
-  return <ChartContainer asChild config={chartConfig}><section className="trend" data-view={view} data-outlook={view === "trend" && overlay.outlook.length ? "" : undefined} aria-label={`${subject}: revenue, last ${slots.length} quarters`} onMouseLeave={() => { setHover(null); setSeries(null); }}>
+  return <ChartContainer asChild config={chartConfig}><section className="trend" data-view={view} data-outlook={view === "trend" && overlay.outlook.length ? "" : undefined} aria-label={m.trendLabel(subject, slots.length)} onMouseLeave={() => { setHover(null); setSeries(null); }}>
     <header className="trend-head">
       <div className="trend-title">
         <div className="trend-heading">
           <h2 key={mode}>{subject}</h2>
           {picker}
           <ToggleGroup type="single" variant="unstyled" rovingFocus={false} value={view} onValueChange={next => { if (next) setView(next as "trend" | "bridge"); }} asChild>
-            <span className="trend-views" role="radiogroup" aria-label="Revenue view">
-              <ToggleGroupItem value="trend" role="radio" aria-checked={view === "trend"}>Revenue</ToggleGroupItem>
-              <ToggleGroupItem value="bridge" role="radio" aria-checked={view === "bridge"}>Growth drivers</ToggleGroupItem>
+            <span className="trend-views" role="radiogroup" aria-label={m.revenueView}>
+              <ToggleGroupItem value="trend" role="radio" aria-checked={view === "trend"}>{m.revenue}</ToggleGroupItem>
+              <ToggleGroupItem value="bridge" role="radio" aria-checked={view === "bridge"}>{m.growthDrivers}</ToggleGroupItem>
             </span>
           </ToggleGroup>
         </div>
         <ChartLegendContent asChild key={"legend" + mode + view}><div className="trend-legend">
           {view === "trend" && legend.length > 1 && legend.map(layer => <span key={layer.key}><i style={{ background: chartConfig[layer.key]?.color ?? layerColor(layer, hue) }} />{layer.name}</span>)}
           {view === "trend" && rateAxis && <span className="trend-legend-line" style={{ "--line": lineColor } as CSSProperties}><i />{rateName}</span>}
-          {view === "trend" && guided.length > 0 && <span className="trend-legend-guide"><i />Guidance range</span>}
-          {view === "bridge" && bridge && bridge.reason !== "split" && <span className="trend-basis">Totals only</span>}
+          {view === "trend" && guided.length > 0 && <span className="trend-legend-guide"><i />{m.guidanceRange}</span>}
+          {view === "bridge" && bridge && bridge.reason !== "split" && <span className="trend-basis">{m.totalsOnly}</span>}
         </div></ChartLegendContent>
       </div>
       {view === "trend" ? <div className="trend-kpis">
         <dl>
-          <div><dt>YoY</dt><dd data-trend={trend(yoy)}>{percent(yoy)}</dd></div>
-          <div><dt>{known.length > 1 ? `Since ${shortPeriod(known[0].slot.periodEnd)}` : "Period"}</dt><dd data-trend={trend(span)}>{percent(span)}</dd></div>
+          <div><dt>{yoyLabel(getLocale())}</dt><dd data-trend={trend(yoy)}>{percent(yoy)}</dd></div>
+          <div><dt>{known.length > 1 ? m.since(shortPeriod(known[0].slot.periodEnd)) : m.period}</dt><dd data-trend={trend(span)}>{percent(span)}</dd></div>
         </dl>
         {lagSwitch(lineLag)}
       </div> : <div className="trend-kpis">
-        {bridge && <dl><div><dt>{lag === 4 ? "YoY" : "QoQ"} change</dt><dd data-trend={trend(bridge.change)}>{signed(bridge.change, money)}<small>{percent(bridge.percent)}</small></dd></div></dl>}
+        {bridge && <dl><div><dt>{m.change(lag === 4 ? yoyLabel(getLocale()) : qoqLabel(getLocale()))}</dt><dd data-trend={trend(bridge.change)}>{signed(bridge.change, money)}<small>{percent(bridge.percent)}</small></dd></div></dl>}
         {lagSwitch(lag)}
       </div>}
     </header>
-    {view === "bridge" ? <BridgePlot key={mode + lag} bridge={bridge} empty={lag === 4 ? "No comparable year-ago quarter" : "No comparable prior quarter"} subject={revenueName} hue={hue} money={money} /> : <>
+    {view === "bridge" ? <BridgePlot key={mode + lag} bridge={bridge} empty={lag === 4 ? m.noYearAgo : m.noPrior} subject={revenueName} hue={hue} money={money} /> : <>
     <div className="trend-plot" role="list" data-series={series ?? undefined} data-rates={rateAxis ? "" : undefined} style={{ "--line": lineColor, "--cols": columns.length + (overlay.next ? 1 : 0) } as CSSProperties}
       onMouseMove={e => setSeries((e.target as Element).closest("[data-series-line]") ? "line" : (e.target as Element).closest(".trend-col") ? "bar" : null)}>
       <div className="trend-grid" key={scale} aria-hidden="true">
@@ -132,8 +175,8 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
         guide={overlay.bySlot[i]} />)}
       {overlay.next && <GuideColumn mark={overlay.next} index={columns.length} scale={scale} money={money} hovered={hover === columns.length} onHover={() => setHover(columns.length)} />}
     </div>
-    {overlay.outlook.length > 0 && <p className="trend-outlook" aria-label="Management outlook">
-      <span>Guidance · {overlay.outlook[0].issuedAt}</span>
+    {overlay.outlook.length > 0 && <p className="trend-outlook" aria-label={m.outlook}>
+      <span>{m.guidanceIssued(overlay.outlook[0].issuedAt)}</span>
       {overlay.outlook.map(item => <span key={item.id} title={item.text}><b>{guidanceLabel(item, guidanceMoney)}</b>{item.action && item.previous && <em data-action={item.action}>{ACTION_NAMES[item.action]}</em>}</span>)}
     </p>}
     </>}
@@ -142,7 +185,7 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
 
 const signed = (v: number, money: (v: number | null) => string) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${money(Math.abs(v))}`;
 const axisPercent = (v: number) => `${v < 0 ? "−" : ""}${Number(Math.abs(v).toFixed(1))}%`;
-const points = (v: number) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(1)} pp`;
+const points = (v: number) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(1)}${m.pp}`;
 
 /**
  * Revenue bridge: the base quarter's total as a bar, one floating step per business sorted by its change, then the current total.
@@ -160,8 +203,8 @@ function BridgePlot({ bridge, empty, subject, hue, money }: { bridge: Bridge | n
   const cut = floor > 0;
   const y = (v: number) => (v - floor) / (ceil - floor) * 100;
   const ends = [
-    { key: "base", label: shortPeriod(bridge.base.slot.periodEnd), note: bridge.lag === 4 ? "Year ago" : "Prior quarter", value: base },
-    { key: "current", label: shortPeriod(bridge.current.slot.periodEnd), note: "This quarter", value: current },
+    { key: "base", label: shortPeriod(bridge.base.slot.periodEnd), note: bridge.lag === 4 ? m.yearAgo : m.priorQuarter, value: base },
+    { key: "current", label: shortPeriod(bridge.current.slot.periodEnd), note: m.thisQuarter, value: current },
   ];
   const end = (end: typeof ends[number], i: number) => <div key={end.key} className="bridge-col bridge-col--end" role="listitem" style={{ "--i": i } as CSSProperties}
     aria-label={`${end.note} ${end.label} ${subject} ${money(end.value)}`}>
@@ -169,7 +212,7 @@ function BridgePlot({ bridge, empty, subject, hue, money }: { bridge: Bridge | n
     <span className="bridge-value" style={{ bottom: `${y(end.value)}%` }}>{money(end.value)}</span>
     <span className="bridge-name"><span className="bridge-period">{end.label}</span><b>{end.note}</b></span>
   </div>;
-  return <div className="bridge-plot" role="list" aria-label={`${subject} change, ${ends[0].label} to ${ends[1].label}`} style={{ "--cols": bridge.steps.length + 2 } as CSSProperties} onMouseLeave={() => setHover(null)}>
+  return <div className="bridge-plot" role="list" aria-label={m.bridgeLabel(subject, ends[0].label, ends[1].label)} style={{ "--cols": bridge.steps.length + 2 } as CSSProperties} onMouseLeave={() => setHover(null)}>
     {end(ends[0], 0)}
     {bridge.steps.map((step, i) => {
       const top = Math.max(step.before, step.after), bottom = Math.min(step.before, step.after);
@@ -187,8 +230,8 @@ function BridgePlot({ bridge, empty, subject, hue, money }: { bridge: Bridge | n
           <div className="trend-tip-title"><i style={{ background: config[step.key]?.color ?? layerColor(step, hue) }} />{step.name}</div>
           <div className="trend-tip-row"><span>{ends[0].label}</span><b>{money(step.base)}</b></div>
           <div className="trend-tip-row"><span>{ends[1].label}</span><b>{money(step.value)}</b></div>
-          <div className="trend-tip-row trend-tip-total"><span>Change</span><b>{signed(step.delta, money)}{growthRate != null && ` (${percent(growthRate)})`}</b></div>
-          <div className="trend-tip-row"><span>Contribution</span><b>{points(share)}</b></div>
+          <div className="trend-tip-row trend-tip-total"><span>{m.changeHead}</span><b>{signed(step.delta, money)}{growthRate != null && ` (${percent(growthRate)})`}</b></div>
+          <div className="trend-tip-row"><span>{m.contribution}</span><b>{points(share)}</b></div>
         </div></ChartTooltipContent>}
       </div>;
     })}
@@ -208,12 +251,12 @@ function Bar({ column, index, order, scale, hue, money, current, pickable, hover
 }) {
   const { config } = useChart();
   const q = column.slot.quarter;
-  const label = column.state === "missing" ? (column.slot.missingReason === "currency" ? "Other reporting currency" : "Not disclosed") : column.state === "basis" ? (selected ? "Not reported" : q?.revenueAdjustments?.length ? "Consolidated revenue after eliminations" : column.layers.length > 1 ? "Segments as reported" : "Total revenue only") : "";
+  const label = column.state === "missing" ? (column.slot.missingReason === "currency" ? m.otherCurrency : m.notDisclosed) : column.state === "basis" ? (selected ? m.notReported : q?.revenueAdjustments?.length ? m.afterEliminations : column.layers.length > 1 ? m.segmentsAsReported : m.totalOnly) : "";
   const height = (column.total ?? 0) / scale * 100;
   const nearBarLabel = line != null && Math.abs(line.y - height) < 16;
   return <div className="trend-col" role="listitem" data-state={column.state} data-current={current || undefined} data-align={index < 2 ? "start" : index > 5 ? "end" : undefined} style={{ "--i": index } as CSSProperties} onMouseEnter={onHover}>
     <Button variant="unstyled" type="button" className="trend-hit" disabled={!pickable} onClick={onPick} onFocus={onHover}
-      aria-label={`${shortPeriod(column.slot.periodEnd)} ${column.total != null ? money(column.total) : ""}${label ? `, ${label}` : ""}${guide ? `, guidance ${money(guide.low)}–${money(guide.high)}` : ""}`} />
+      aria-label={`${shortPeriod(column.slot.periodEnd)} ${column.total != null ? money(column.total) : ""}${label ? m.comma + label : ""}${guide ? m.guidanceAria(money(guide.low), money(guide.high)) : ""}`} />
     {/* With the growth line drawn, the axes carry the scale and only the current or hovered bar keeps its value label. */}
     <span className="trend-value" data-quiet={line && !current && !(hovered && !onLine) ? "" : undefined} style={{ bottom: `${height}%` }}>{column.total != null ? money(column.total) : "—"}</span>
     <span className="trend-stack" aria-hidden="true">
@@ -231,17 +274,17 @@ function Bar({ column, index, order, scale, hue, money, current, pickable, hover
     </svg>}
     {line && rate != null && <i className="trend-dot" data-series-line="" data-hover={hovered || undefined} aria-hidden="true" style={{ bottom: `${line.y}%` }} onClick={pickable ? onPick : undefined} />}
     {line?.labelled && rate != null && <span className="trend-rate" data-trend={trend(rate)} data-below={rate < 0 || nearBarLabel || undefined} aria-hidden="true" style={{ bottom: `${nearBarLabel ? Math.min(line.y, height) : line.y}%` }}>{percent(rate)}</span>}
-    <span className="trend-period">{periodLabel(column.slot.periodEnd)}{current && <b>This quarter</b>}</span>
+    <span className="trend-period">{periodLabel(column.slot.periodEnd)}{current && <b>{m.thisQuarter}</b>}</span>
     {hovered && <ChartTooltipContent asChild><div className="trend-tip" role="presentation">
       <div className="trend-tip-title">{q ? `${q.periodStart} — ${q.periodEnd}` : shortPeriod(column.slot.periodEnd)}</div>
-      {onLine && rate != null && <div className="trend-tip-row trend-tip-lead"><span>{lag === 4 ? "YoY growth" : "QoQ growth"}</span><b data-trend={trend(rate)}>{percent(rate)}</b></div>}
+      {onLine && rate != null && <div className="trend-tip-row trend-tip-lead"><span>{lag === 4 ? m.yoyGrowth : m.qoqGrowth}</span><b data-trend={trend(rate)}>{percent(rate)}</b></div>}
       {!onLine && column.layers.length > 1 && column.layers.map(layer => <div className="trend-tip-row" key={layer.key}><span><i style={{ background: config[layer.key]?.color ?? layerColor(layer, hue) }} />{layer.name}</span><b>{money(layer.value)}</b></div>)}
-      {column.total != null && <div className="trend-tip-row trend-tip-total"><span>{selected ? "Business revenue" : "Total revenue"}</span><b>{money(column.total)}</b></div>}
-      {!onLine && rate != null && <div className="trend-tip-row"><span>{lag === 4 ? "YoY" : "QoQ"}</span><b data-trend={trend(rate)}>{percent(rate)}</b></div>}
-      {!onLine && guide && <div className="trend-tip-row"><span>{guide.derived ? "Guidance (from growth rate)" : "Guidance"}</span><b>{money(guide.low)}–{money(guide.high)}</b></div>}
-      {!onLine && guide && column.total != null && <p>{column.total > guide.high ? "Above range" : column.total < guide.low ? "Below range" : "Within range"} · Issued {guide.item.issuedAt}</p>}
+      {column.total != null && <div className="trend-tip-row trend-tip-total"><span>{selected ? m.businessRevenue : m.totalRevenue}</span><b>{money(column.total)}</b></div>}
+      {!onLine && rate != null && <div className="trend-tip-row"><span>{lag === 4 ? yoyLabel(getLocale()) : qoqLabel(getLocale())}</span><b data-trend={trend(rate)}>{percent(rate)}</b></div>}
+      {!onLine && guide && <div className="trend-tip-row"><span>{guide.derived ? m.guidanceDerived : m.guidance}</span><b>{range(money(guide.low), money(guide.high), getLocale())}</b></div>}
+      {!onLine && guide && column.total != null && <p>{column.total > guide.high ? m.aboveRange : column.total < guide.low ? m.belowRange : m.withinRange} · {m.issued(guide.item.issuedAt)}</p>}
       {label && <p>{label}{column.state === "basis" && q && !selected ? `: ${q.segments.map(s => s.name).join(", ")}` : ""}</p>}
-      {q && <p className="trend-tip-source">{q.basis === "derived" ? "Derived Q4 · " : ""}SEC {q.source.form} · {q.source.filedAt}</p>}
+      {q && <p className="trend-tip-source">{q.basis === "derived" ? m.derivedQ4 : ""}{m.secFiling(q.source.form, q.source.filedAt)}</p>}
     </div></ChartTooltipContent>}
   </div>;
 }
@@ -250,19 +293,19 @@ function Bar({ column, index, order, scale, hue, money, current, pickable, hover
 function GuideColumn({ mark, index, scale, money, hovered, onHover }: { mark: GuideMark; index: number; scale: number; money: (v: number | null) => string; hovered: boolean; onHover: () => void }) {
   const { item } = mark;
   return <div className="trend-col trend-col--guide" role="listitem" tabIndex={0} data-align="end" style={{ "--i": index } as CSSProperties} onMouseEnter={onHover} onFocus={onHover}
-    aria-label={`${shortPeriod(mark.periodEnd)} management revenue guidance ${money(mark.low)}–${money(mark.high)}${mark.derived ? ", from growth rate" : ""}`}>
+    aria-label={m.guideAria(shortPeriod(mark.periodEnd), money(mark.low), money(mark.high), mark.derived)}>
     {/* An outline up to the low end reads as the expected bar; the solid band is the guided range itself. */}
     <span className="trend-guide-ghost" aria-hidden="true" style={{ height: `${mark.low / scale * 100}%` }} />
     <span className="trend-guide-band" aria-hidden="true" style={{ bottom: `${mark.low / scale * 100}%`, height: `max(3px, ${(mark.high - mark.low) / scale * 100}%)` }} />
-    <span className="trend-value" style={{ bottom: `${mark.high / scale * 100}%` }}>Guidance</span>
-    <span className="trend-period">{periodLabel(mark.periodEnd)}<b className="trend-period-guide">Guidance</b></span>
+    <span className="trend-value" style={{ bottom: `${mark.high / scale * 100}%` }}>{m.guidance}</span>
+    <span className="trend-period">{periodLabel(mark.periodEnd)}<b className="trend-period-guide">{m.guidance}</b></span>
     {hovered && <ChartTooltipContent asChild><div className="trend-tip" role="presentation">
-      <div className="trend-tip-title">{shortPeriod(mark.periodEnd)} management guidance</div>
-      <div className="trend-tip-row trend-tip-lead"><span>Revenue</span><b>{money(mark.low)}–{money(mark.high)}</b></div>
-      {item.derived && <div className="trend-tip-row"><span>Guided YoY</span><b>{Number(item.low!.toFixed(2))}%–{Number(item.high!.toFixed(2))}%</b></div>}
-      {item.derived && <div className="trend-tip-row"><span>Year-ago base</span><b>{money(item.derived.base)}</b></div>}
-      {item.action && item.previous && <div className="trend-tip-row"><span>vs. previous</span><b>{ACTION_NAMES[item.action]}</b></div>}
-      <p>“{item.quote}”</p>
+      <div className="trend-tip-title">{m.managementGuidance(shortPeriod(mark.periodEnd))}</div>
+      <div className="trend-tip-row trend-tip-lead"><span>{m.revenue}</span><b>{range(money(mark.low), money(mark.high), getLocale())}</b></div>
+      {item.derived && <div className="trend-tip-row"><span>{m.guidedYoy}</span><b>{Number(item.low!.toFixed(2))}%–{Number(item.high!.toFixed(2))}%</b></div>}
+      {item.derived && <div className="trend-tip-row"><span>{m.yearAgoBase}</span><b>{money(item.derived.base)}</b></div>}
+      {item.action && item.previous && <div className="trend-tip-row"><span>{m.vsPrevious}</span><b>{ACTION_NAMES[item.action]}</b></div>}
+      <p lang="en">“{item.quote}”</p>
       <p className="trend-tip-source">{mark.source ? `${mark.source.title} · ` : ""}{item.issuedAt}</p>
     </div></ChartTooltipContent>}
   </div>;

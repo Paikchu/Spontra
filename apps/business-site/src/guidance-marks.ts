@@ -1,6 +1,10 @@
 import type { BusinessFlowQuarter } from "@/shared/analysis-contract/business-flow";
 import type { GuidanceItem, GuidancePublication, GuidanceSource } from "@/shared/analysis-contract/guidance";
+import { getLocale, labels } from "@/packages/web/src/i18n";
+import { perShare, range } from "@/shared/analysis-runtime/locale";
 import { ACTION_NAMES, guidanceLabel, segmentMatches } from "./trend-model";
+
+const EXPECTED = labels({ up: "Expected up", down: "Expected down", flat: "Expected flat" }, { up: "预计上升", down: "预计下降", flat: "预计持平" });
 
 /**
  * Management guidance on the Sankey itself. A bracket beside a bar is the range guided for this quarter, at the
@@ -37,15 +41,16 @@ function dollarRange(item: GuidanceItem): { low: number; high: number; derived: 
 
 /** "+30–34%" / "$17.9B–$18.1B" / "≥ $90.0B" / "Expected up": the pill's own words, the full sentence stays in the tooltip. */
 export function pillText(item: GuidanceItem, money: (dollars: number) => string): string {
-  if (item.form === "qualitative") return item.direction === "up" ? "Expected up" : item.direction === "down" ? "Expected down" : "Expected flat";
-  const num = (v: number) => item.unit === "USD" ? money(v) : item.unit === "USD_per_share" ? `$${v.toFixed(2)}` : `${Number(v.toFixed(1))}`;
+  if (item.form === "qualitative") return EXPECTED[item.direction === "up" ? "up" : item.direction === "down" ? "down" : "flat"];
+  const locale = getLocale();
+  const num = (v: number) => item.unit === "USD" ? money(v) : item.unit === "USD_per_share" ? locale === "en" ? `$${v.toFixed(2)}` : perShare(v, "USD", locale) : `${Number(v.toFixed(1))}`;
   const unit = item.unit === "percent" ? "%" : "";
   const sign = item.measure === "growth" ? "+" : "";
   if (item.form === "floor" && item.low != null) return `≥ ${sign}${num(item.low)}${unit}`;
   if (item.form === "ceiling" && item.high != null) return `≤ ${sign}${num(item.high)}${unit}`;
   const only = item.low ?? item.high;
   if (item.low == null || item.high == null) return only == null ? "" : `${sign}${num(only)}${unit}`;
-  return item.low === item.high ? `${sign}${num(item.low)}${unit}` : `${sign}${num(item.low)}–${num(item.high)}${unit}`;
+  return item.low === item.high ? `${sign}${num(item.low)}${unit}` : `${sign}${range(num(item.low), num(item.high), locale)}${unit}`;
 }
 
 export const ACTION_GLYPH: Record<NonNullable<GuidanceItem["action"]>, string> = { raised: "↑", lowered: "↓", reaffirmed: "=", narrowed: "↔", widened: "↔", updated: "·", initiated: "" };

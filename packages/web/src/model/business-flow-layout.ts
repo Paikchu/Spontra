@@ -1,5 +1,8 @@
 import type { BusinessFlowQuarter } from "@/shared/analysis-contract/business-flow";
 import type { FinancialGraph, SankeyNode } from "./business-flow-sankey";
+import { compactMoney } from "@/shared/analysis-runtime/locale";
+import { getLocale } from "@/packages/web/src/i18n/core";
+import { flowWords } from "./business-flow-model";
 
 export type FlowTone = "source" | "profit" | "expense" | "loss";
 export type LabelSide = "top" | "bottom" | "left" | "right";
@@ -202,10 +205,11 @@ export function layoutInfographic(graph: FinancialGraph, labelWidth: (n: PlacedN
 }
 
 const symbols: Record<string, string> = { USD: "$", EUR: "€", GBP: "£", JPY: "¥", CNY: "¥", HKD: "HK$" };
-/** Short label for the diagram only; exact amounts stay in the ledger. */
+/** Short label for the diagram only; exact amounts stay in the ledger. Chinese counts in 万 and 亿 ("757亿美元"). */
 export function compactFlowValue(value: number | null, quarter: BusinessFlowQuarter): string {
-  if (value == null || !Number.isFinite(value)) return "Not disclosed";
+  if (value == null || !Number.isFinite(value)) return flowWords.notDisclosed;
   const amount = value * quarter.scale, abs = Math.abs(amount);
+  if (getLocale() === "zh-CN") return compactMoney(amount, quarter.currency, "zh-CN");
   const [divisor, suffix] = abs >= 1e12 ? [1e12, "T"] : abs >= 1e9 ? [1e9, "B"] : abs >= 1e6 ? [1e6, "M"] : abs >= 1e3 ? [1e3, "K"] : [1, ""];
   const digits = abs / divisor >= 100 || !suffix ? 0 : 1;
   const text = (abs / divisor).toFixed(digits) + suffix;

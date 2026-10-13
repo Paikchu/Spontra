@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { Locale } from "./locale.ts";
 
 /**
  * Report figures the application draws from validated XBRL. The Pipeline builds every instance
@@ -25,6 +26,24 @@ export const SEC_FIGURE_METRIC_LABELS: Record<string, string> = {
   net_income: "Net income", net_margin: "Net margin", diluted_eps: "Diluted EPS", operating_cash_flow: "Operating cash flow", capex: "Capital expenditures",
   free_cash_flow: "Free cash flow", cash: "Cash and equivalents", debt: "Long-term debt", shares: "Shares outstanding",
 };
+
+/** Reader-facing names in Chinese, beside the English the Pipeline shows the writer. */
+const SEC_FIGURE_LABELS_ZH: Record<SecFigureKind, string> = {
+  kpi_strip: "关键数据", growth: "营收与同比增长", margin_ladder: "利润率阶梯", profit_flow: "营收到净利润",
+  per_hundred: "每 100 美元营收的去向", cash_bridge: "净利润到自由现金流", cash_debt: "现金与长期债务", share_count: "股数",
+};
+const SEC_FIGURE_METRIC_LABELS_ZH: Record<string, string> = {
+  revenue: "营收", gross_profit: "毛利", gross_margin: "毛利率", operating_income: "营业利润", operating_margin: "营业利润率",
+  net_income: "净利润", net_margin: "净利率", diluted_eps: "稀释每股收益", operating_cash_flow: "经营现金流", capex: "资本开支",
+  free_cash_flow: "自由现金流", cash: "现金及等价物", debt: "长期债务", shares: "流通股数",
+};
+
+/** A figure kind's name for the reader. */
+export const secFigureLabel = (kind: SecFigureKind, locale: Locale = "en"): string =>
+  locale === "zh-CN" ? SEC_FIGURE_LABELS_ZH[kind] : SEC_FIGURE_CATALOG[kind].label;
+/** A figure metric's name for the reader; undefined for a key outside the catalog. */
+export const secFigureMetricLabel = (metricKey: string, locale: Locale = "en"): string | undefined =>
+  (locale === "zh-CN" ? SEC_FIGURE_METRIC_LABELS_ZH : SEC_FIGURE_METRIC_LABELS)[metricKey];
 
 const id = z.string().min(1).max(160).regex(/^[a-zA-Z0-9][a-zA-Z0-9_.:-]*$/);
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((value) => Number.isFinite(Date.parse(value)), "Invalid date");
@@ -118,16 +137,21 @@ export function perHundred(snapshot: SecIncomeSnapshot): IncomeParts | null {
 }
 
 export type CashBridgeStep = { key: string; label: string; value: number; kind: "total" | "change"; start: number; end: number };
-export function cashBridgeSteps(figure: Extract<SecFigure, { kind: "cash_bridge" }>): CashBridgeStep[] {
+const CASH_BRIDGE_LABELS: Record<Locale, Record<"net_income" | "adjustments" | "operating_cash_flow" | "capex" | "free_cash_flow", string>> = {
+  en: { net_income: "Net income", adjustments: "Non-cash and working capital", operating_cash_flow: "Operating cash flow", capex: "Capital expenditures", free_cash_flow: "Free cash flow" },
+  "zh-CN": { net_income: "净利润", adjustments: "非现金项目与营运资本", operating_cash_flow: "经营现金流", capex: "资本开支", free_cash_flow: "自由现金流" },
+};
+export function cashBridgeSteps(figure: Extract<SecFigure, { kind: "cash_bridge" }>, locale: Locale = "en"): CashBridgeStep[] {
+  const label = CASH_BRIDGE_LABELS[locale];
   const steps: CashBridgeStep[] = [];
   if (figure.netIncome !== undefined) {
-    steps.push({ key: "net_income", label: "Net income", value: figure.netIncome, kind: "total", start: 0, end: figure.netIncome });
+    steps.push({ key: "net_income", label: label.net_income, value: figure.netIncome, kind: "total", start: 0, end: figure.netIncome });
     const adjustment = figure.operatingCashFlow - figure.netIncome;
-    steps.push({ key: "adjustments", label: "Non-cash and working capital", value: adjustment, kind: "change", start: figure.netIncome, end: figure.operatingCashFlow });
+    steps.push({ key: "adjustments", label: label.adjustments, value: adjustment, kind: "change", start: figure.netIncome, end: figure.operatingCashFlow });
   }
-  steps.push({ key: "operating_cash_flow", label: "Operating cash flow", value: figure.operatingCashFlow, kind: "total", start: 0, end: figure.operatingCashFlow });
-  steps.push({ key: "capex", label: "Capital expenditures", value: -figure.capex, kind: "change", start: figure.operatingCashFlow, end: figure.operatingCashFlow - figure.capex });
-  steps.push({ key: "free_cash_flow", label: "Free cash flow", value: figure.freeCashFlow, kind: "total", start: 0, end: figure.freeCashFlow });
+  steps.push({ key: "operating_cash_flow", label: label.operating_cash_flow, value: figure.operatingCashFlow, kind: "total", start: 0, end: figure.operatingCashFlow });
+  steps.push({ key: "capex", label: label.capex, value: -figure.capex, kind: "change", start: figure.operatingCashFlow, end: figure.operatingCashFlow - figure.capex });
+  steps.push({ key: "free_cash_flow", label: label.free_cash_flow, value: figure.freeCashFlow, kind: "total", start: 0, end: figure.freeCashFlow });
   return steps;
 }
 

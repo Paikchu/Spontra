@@ -1,5 +1,5 @@
 import type { BusinessFlowQuarter, RevenueBreakdown, RevenueBreakdownNode } from "@/shared/analysis-contract/business-flow";
-import { NOT_COMPARABLE, numeric, type FlowChange } from "./business-flow-model";
+import { flowWords, numeric, type FlowChange } from "./business-flow-model";
 
 export type RevenueTree = { dimension: RevenueBreakdown; nodes: RevenueBreakdownNode[]; depth: number; legacy: boolean };
 const priorities: Record<RevenueBreakdown["kind"], number> = { business: 0, product_service: 0, end_market: 0, segment: 1, customer: 2, geography: 3 };
@@ -79,9 +79,9 @@ export function compareRevenueNode(q: BusinessFlowQuarter, previous: BusinessFlo
   const av = numeric(a), bv = numeric(b);
   if (!tree || !old || !previous || tree.dimension.id !== old.dimension.id || tree.dimension.kind !== old.dimension.kind ||
       tree.dimension.definitionKey !== old.dimension.definitionKey || q.currency !== previous.currency || q.scale !== previous.scale ||
-      !a?.comparabilityKey || a.comparabilityKey !== b?.comparabilityKey || a.definition !== b.definition || av == null || bv == null) return { label: NOT_COMPARABLE, comparable: false, trend: null, delta: null, previous: null, percent: null };
+      !a?.comparabilityKey || a.comparabilityKey !== b?.comparabilityKey || a.definition !== b.definition || av == null || bv == null) return { label: flowWords.na, comparable: false, trend: null, delta: null, previous: null, percent: null };
   const delta = av - bv;
-  if (bv === 0) return { label: av === 0 ? "flat" : "new", comparable: true, trend: av > 0 ? "up" : null, delta, previous: bv, percent: null };
+  if (bv === 0) return { label: av === 0 ? flowWords.flat : flowWords.new, comparable: true, trend: av > 0 ? "up" : null, delta, previous: bv, percent: null };
   const percent = delta / bv * 100;
   return { label: `${percent > 0 ? "+" : ""}${percent.toFixed(1)}%`, comparable: true, trend: percent > 0 ? "up" : percent < 0 ? "down" : null, delta, previous: bv, percent };
 }

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { FLOW_METRICS, type BusinessFlowQuarter, type FlowMetric } from "../analysis-contract/business-flow.ts";
-import { FUNDAMENTAL_METRIC_CATALOG } from "../analysis-contract/fundamental-metric-catalog.ts";
+import { FUNDAMENTAL_METRIC_CATALOG, FUNDAMENTAL_METRIC_LABEL_ZH } from "../analysis-contract/fundamental-metric-catalog.ts";
 import type { FundamentalMetricKey, PublicFundamentalPoint, PublicFundamentalSeries } from "../analysis-contract/fundamentals.ts";
 import type { AnalysisFinding, CapitalMetric, FindingEvidence, FindingRef, FindingSpan, FindingWatch, FindingsPublication } from "../analysis-contract/findings.ts";
 import type { CashFlowStatement, PublicCapitalStructure, RpoDisclosure } from "../analysis-contract/capital-structure.ts";
@@ -8,6 +8,7 @@ import type { GuidanceItem, GuidancePublication } from "../analysis-contract/gui
 import type { RevenueHistory, RevenueHistoryNode } from "../analysis-contract/revenue-history.ts";
 import type { LensDocument } from "../analysis-contract/lens.ts";
 import { lensDocumentSchemaFor } from "./lens/schema.ts";
+import type { Locale } from "./locale.ts";
 
 /* ---------- Schema ---------- */
 
@@ -250,8 +251,10 @@ export function rpoBuckets(rpo: RpoDisclosure): Array<{ from: number; to: number
     return { from, to: b.months == null ? null : from + b.months, amount: amount != null && Number.isFinite(amount) ? amount : null, share: share != null && Number.isFinite(share) ? share : null };
   }).sort((a, b) => a.from - b.from);
 }
-/** "within 12 months", "13–24 months", "after 24 months". */
-export const rpoBucketSpan = (b: { from: number; to: number | null }) => b.from === 0 && b.to != null ? `within ${b.to} months` : b.to == null ? `after ${b.from} months` : `${b.from + 1}–${b.to} months`;
+/** "within 12 months", "13–24 months", "after 24 months" / "12 个月内", "13–24 个月", "24 个月后". */
+export const rpoBucketSpan = (b: { from: number; to: number | null }, locale: Locale = "en") => locale === "zh-CN"
+  ? b.from === 0 && b.to != null ? `${b.to} 个月内` : b.to == null ? `${b.from} 个月后` : `${b.from + 1}–${b.to} 个月`
+  : b.from === 0 && b.to != null ? `within ${b.to} months` : b.to == null ? `after ${b.from} months` : `${b.from + 1}–${b.to} months`;
 function rpoBucketAt(data: FindingData, index: number, periodEnd: string): Point | null {
   const rpo = data.capital?.quarters.find(q => near(q.periodEnd, periodEnd))?.rpo;
   const bucket = rpo ? rpoBuckets(rpo)[index] : undefined;
@@ -301,23 +304,39 @@ const METRIC_LABEL: Record<FlowMetric, string> = { revenue: "Total revenue", cos
 const GUIDANCE_LABEL: Record<GuidanceItem["metric"], string> = { revenue: "Revenue", segment_revenue: "Revenue", gross_margin: "Gross margin", operating_margin: "Operating margin", operating_income: "Operating income", eps: "EPS", free_cash_flow: "Free cash flow", operating_cash_flow: "Operating cash flow", capex: "Capex", rpo: "RPO", billings: "Billings", other: "" };
 const CAPITAL_LABEL: Record<CapitalMetric, string> = { operatingCashFlow: "Operating cash flow", capex: "Capex", freeCashFlow: "Free cash flow", financing: "Net financing cash flow", debtIssued: "Debt issued", debtRepaid: "Debt repaid", equityIssued: "Stock issued", buybacks: "Share buybacks", dividends: "Dividends", totalAssets: "Total assets", debt: "Total debt", cash: "Cash and short-term investments", equity: "Shareholders' equity", rpo: "Remaining performance obligations (RPO)", rpoNext12MonthsShare: "RPO recognized within 12 months" };
 
-/** Human label of a reference; a business node reads by its disclosed name when the data has it. */
-export function refLabel(data: FindingData, ref: FindingRef): string {
+/** The same names in Chinese, for a reader's page; the pipeline and the model read the English ones. */
+const METRIC_LABEL_ZH: Record<FlowMetric, string> = { revenue: "总营收", cost: "营业成本", gross: "毛利", research: "研发费用", sales: "销售及市场费用", administration: "管理费用", operatingExpenses: "营业费用", operating: "营业利润", other: "营业外收支", pretax: "税前利润", tax: "所得税", net: "净利润" };
+const GUIDANCE_LABEL_ZH: Record<GuidanceItem["metric"], string> = { revenue: "营收", segment_revenue: "营收", gross_margin: "毛利率", operating_margin: "营业利润率", operating_income: "营业利润", eps: "每股收益", free_cash_flow: "自由现金流", operating_cash_flow: "经营现金流", capex: "资本开支", rpo: "剩余履约义务", billings: "开票额", other: "" };
+const CAPITAL_LABEL_ZH: Record<CapitalMetric, string> = { operatingCashFlow: "经营现金流", capex: "资本开支", freeCashFlow: "自由现金流", financing: "筹资活动净现金流", debtIssued: "新增借款", debtRepaid: "偿还债务", equityIssued: "股权融资", buybacks: "回购", dividends: "分红", totalAssets: "总资产", debt: "总债务", cash: "现金及短期投资", equity: "股东权益", rpo: "剩余履约义务（RPO）", rpoNext12MonthsShare: "12 个月内确认的 RPO" };
+const MARGIN_LABEL: Partial<Record<FlowMetric, string>> = { gross: "Gross margin", operating: "Operating margin", net: "Net margin", research: "R&D % of revenue", sales: "S&M % of revenue", administration: "G&A % of revenue" };
+const MARGIN_LABEL_ZH: Partial<Record<FlowMetric, string>> = { gross: "毛利率", operating: "营业利润率", net: "净利率", research: "研发费用率", sales: "销售及市场费用率", administration: "管理费用率" };
+
+/** Human label of a reference; a business node reads by its disclosed name when the data has it. `locale` names fixed metrics in the reader's language. */
+export function refLabel(data: FindingData, ref: FindingRef, locale: Locale = "en"): string {
+  const zh = locale === "zh-CN";
   if ("ratio" in ref) {
-    const n = refLabel(data, ref.ratio.numerator), d = refLabel(data, ref.ratio.denominator);
-    const margin: Partial<Record<FlowMetric, string>> = { gross: "Gross margin", operating: "Operating margin", net: "Net margin", research: "R&D % of revenue", sales: "S&M % of revenue", administration: "G&A % of revenue" };
+    const n = refLabel(data, ref.ratio.numerator, locale), d = refLabel(data, ref.ratio.denominator, locale);
+    const margin = zh ? MARGIN_LABEL_ZH : MARGIN_LABEL;
     if ("metric" in ref.ratio.denominator && ref.ratio.denominator.metric === "revenue" && "metric" in ref.ratio.numerator && margin[ref.ratio.numerator.metric]) return margin[ref.ratio.numerator.metric]!;
     return `${n} / ${d}`;
   }
-  if ("metric" in ref) return METRIC_LABEL[ref.metric];
-  if ("capital" in ref) return CAPITAL_LABEL[ref.capital];
-  if ("fundamental" in ref) return data.fundamentals?.series.find(s => s.metricKey === ref.fundamental)?.label ?? FUNDAMENTAL_METRIC_CATALOG[ref.fundamental as keyof typeof FUNDAMENTAL_METRIC_CATALOG]?.label ?? ref.fundamental;
+  if ("metric" in ref) return (zh ? METRIC_LABEL_ZH : METRIC_LABEL)[ref.metric];
+  if ("capital" in ref) return (zh ? CAPITAL_LABEL_ZH : CAPITAL_LABEL)[ref.capital];
+  if ("fundamental" in ref) {
+    const zhLabel = zh ? (FUNDAMENTAL_METRIC_LABEL_ZH as Record<string, string | undefined>)[ref.fundamental] : undefined;
+    return zhLabel ?? data.fundamentals?.series.find(s => s.metricKey === ref.fundamental)?.label ?? FUNDAMENTAL_METRIC_CATALOG[ref.fundamental as keyof typeof FUNDAMENTAL_METRIC_CATALOG]?.label ?? ref.fundamental;
+  }
   if ("rpoBucket" in ref) {
     const rpo = [...(data.capital?.quarters ?? [])].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd)).find(q => q.rpo)?.rpo;
     const bucket = rpo ? rpoBuckets(rpo)[ref.rpoBucket] : undefined;
+    if (zh) return bucket ? `${rpoBucketSpan(bucket, locale)}确认的 RPO` : `RPO 第 ${ref.rpoBucket + 1} 档`;
     return bucket ? `RPO due ${rpoBucketSpan(bucket)}` : `RPO rung ${ref.rpoBucket + 1}`;
   }
-  if ("guidanceId" in ref) { const i = data.guidance?.items.find(i => i.id === ref.guidanceId); return i ? `Guidance · ${i.segment ? `${i.segment} ` : ""}${GUIDANCE_LABEL[i.metric] || i.label}${i.fiscalYear ? ` ${i.fiscalQuarter ? `Q${i.fiscalQuarter} ` : ""}FY${i.fiscalYear}` : ""}` : "Guidance"; }
+  if ("guidanceId" in ref) {
+    const i = data.guidance?.items.find(i => i.id === ref.guidanceId);
+    if (zh) return i ? `业绩指引 · ${i.segment ? `${i.segment} ` : ""}${GUIDANCE_LABEL_ZH[i.metric] || i.label}${i.fiscalYear ? ` ${i.fiscalYear} 财年${i.fiscalQuarter ? ` Q${i.fiscalQuarter}` : ""}` : ""}` : "业绩指引";
+    return i ? `Guidance · ${i.segment ? `${i.segment} ` : ""}${GUIDANCE_LABEL[i.metric] || i.label}${i.fiscalYear ? ` ${i.fiscalQuarter ? `Q${i.fiscalQuarter} ` : ""}FY${i.fiscalYear}` : ""}` : "Guidance";
+  }
   for (const q of data.quarters) for (const s of q.segments) { if (s.id === ref.nodeId) return s.name; const c = s.children?.find(c => c.id === ref.nodeId); if (c) return c.name; }
   for (const h of data.history?.quarters ?? []) for (const s of h.segments) { if (s.id === ref.nodeId) return s.name; const c = s.children?.find(c => c.id === ref.nodeId); if (c) return c.name; }
   return ref.nodeId;
@@ -325,11 +344,15 @@ export function refLabel(data: FindingData, ref: FindingRef): string {
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const monthYear = (date: string) => `${MONTHS[Number(date.slice(5, 7)) - 1] ?? date.slice(5, 7)} ${date.slice(0, 4)}`;
+/** "2026 年 5 月" */
+const monthYearZh = (date: string) => `${date.slice(0, 4)} 年 ${Number(date.slice(5, 7))} 月`;
 /** Plain period label: "4 quarters ended May 2026" for a four-quarter span, "Quarter ended May 2026" for a quarter. */
-export const spanLabel = (v: { span: FindingSpan; periodEnd: string }) => v.span === "fiscal_year" ? `4 quarters ended ${monthYear(v.periodEnd)}` : `Quarter ended ${monthYear(v.periodEnd)}`;
+export const spanLabel = (v: { span: FindingSpan; periodEnd: string }, locale: Locale = "en") => locale === "zh-CN"
+  ? v.span === "fiscal_year" ? `截至 ${monthYearZh(v.periodEnd)}的 4 个季度` : `截至 ${monthYearZh(v.periodEnd)}的季度`
+  : v.span === "fiscal_year" ? `4 quarters ended ${monthYear(v.periodEnd)}` : `Quarter ended ${monthYear(v.periodEnd)}`;
 
 /** The comparison the evidence asks for; null when it was asked for and the data cannot make it. */
-function compareOf(data: FindingData, e: FindingEvidence, current: ResolvedValue): Pick<ResolvedEvidence, "compare" | "compareLabel" | "delta" | "ratio" | "guidance"> | null {
+function compareOf(data: FindingData, e: FindingEvidence, current: ResolvedValue, locale: Locale = "en"): Pick<ResolvedEvidence, "compare" | "compareLabel" | "delta" | "ratio" | "guidance"> | null {
   const none = null;
   if (!e.compare) return { compare: null, compareLabel: null, delta: null, ratio: null, guidance: null };
   if (typeof e.compare === "object") {
@@ -344,7 +367,7 @@ function compareOf(data: FindingData, e: FindingEvidence, current: ResolvedValue
       measured = (current.value / base.value - 1) * 100; unit = "percent";
     } else if (range.unit !== current.unit) return none;
     const verdict: GuidanceVerdict = measured > range.range.high ? "above" : measured < range.range.low ? "below" : "within";
-    return { compare: range, compareLabel: `Guidance: ${item.label}`, delta: null, ratio: null, guidance: { item, verdict, measured, unit } };
+    return { compare: range, compareLabel: locale === "zh-CN" ? `业绩指引：${item.label}` : `Guidance: ${item.label}`, delta: null, ratio: null, guidance: { item, verdict, measured, unit } };
   }
   const months = e.compare === "yoy" ? -12 : -3;
   const compare = resolveRef(data, e.ref, shiftPeriod(e.periodEnd, months), e.span);
@@ -352,12 +375,13 @@ function compareOf(data: FindingData, e: FindingEvidence, current: ResolvedValue
   // Rates move in points: a margin, or a ratio of two figures, is compared by its difference ×100, never by its growth.
   // A growth rate needs a positive base and a positive result; a sign change or a zero base has no meaningful rate.
   const delta = current.unit === "percent" ? current.value - compare.value : current.unit === "ratio" ? current.value - compare.value : compare.value > 0 && current.value > 0 ? (current.value - compare.value) / compare.value * 100 : null;
-  return { compare, compareLabel: e.compare === "yoy" ? "Year ago" : "Prior quarter", delta, ratio: compare.value > 0 && current.value > 0 ? current.value / compare.value : null, guidance: null };
+  return { compare, compareLabel: locale === "zh-CN" ? e.compare === "yoy" ? "上年同期" : "上一季度" : e.compare === "yoy" ? "Year ago" : "Prior quarter", delta, ratio: compare.value > 0 && current.value > 0 ? current.value / compare.value : null, guidance: null };
 }
 
-export function resolveEvidence(data: FindingData, e: FindingEvidence): ResolvedEvidence | null {
-  const current = resolveRef(data, e.ref, e.periodEnd, e.span), compared = current && compareOf(data, e, current);
-  return current && compared ? { evidence: e, label: e.label ?? refLabel(data, e.ref), current, ...compared } : null;
+/** `locale` names the figure and its comparison in the reader's language; the figures are the same in every locale. */
+export function resolveEvidence(data: FindingData, e: FindingEvidence, locale: Locale = "en"): ResolvedEvidence | null {
+  const current = resolveRef(data, e.ref, e.periodEnd, e.span), compared = current && compareOf(data, e, current, locale);
+  return current && compared ? { evidence: e, label: e.label ?? refLabel(data, e.ref, locale), current, ...compared } : null;
 }
 
 /* ---------- Verification ---------- */
@@ -425,9 +449,9 @@ export type VerifiedFinding = AnalysisFinding & { resolved: ResolvedEvidence[]; 
 export const watchPeriod = (publicationPeriodEnd: string, watch: FindingWatch) => shiftPeriod(publicationPeriodEnd, watch.horizon === "next_quarter" ? 3 : 12);
 
 /** Resolves the watch at its own period; null until that period's data exists. */
-export function resolveWatch(data: FindingData, watch: FindingWatch, publicationPeriodEnd: string): WatchOutcome | null {
+export function resolveWatch(data: FindingData, watch: FindingWatch, publicationPeriodEnd: string, locale: Locale = "en"): WatchOutcome | null {
   const periodEnd = watchPeriod(publicationPeriodEnd, watch);
-  const resolved = resolveEvidence(data, { ref: watch.ref, periodEnd, span: watch.horizon === "next_quarter" ? "quarter" : "fiscal_year", ...(watch.compare ? { compare: watch.compare } : {}) });
+  const resolved = resolveEvidence(data, { ref: watch.ref, periodEnd, span: watch.horizon === "next_quarter" ? "quarter" : "fiscal_year", ...(watch.compare ? { compare: watch.compare } : {}) }, locale);
   return resolved ? { periodEnd, resolved } : null;
 }
 export type WithheldFinding = { id: string; reasons: string[] };
@@ -438,12 +462,12 @@ export type WithheldFinding = { id: string; reasons: string[] };
  * its title and judgment is one the evidence produces. Capital anchors are checked only once the
  * capital projection has loaded; the order is severity first, then risks before the rest.
  */
-export function verifyFindings(publication: FindingsPublication, data: FindingData): { verified: VerifiedFinding[]; withheld: WithheldFinding[] } {
+export function verifyFindings(publication: FindingsPublication, data: FindingData, locale: Locale = "en"): { verified: VerifiedFinding[]; withheld: WithheldFinding[] } {
   const verified: VerifiedFinding[] = [], withheld: WithheldFinding[] = [];
   const order: Record<AnalysisFinding["kind"], number> = { risk: 0, strength: 1, shift: 2, watch: 3 };
   for (const f of publication.findings) {
     const reasons: string[] = [];
-    const resolved = f.evidence.map(e => resolveEvidence(data, e));
+    const resolved = f.evidence.map(e => resolveEvidence(data, e, locale));
     resolved.forEach((r, i) => { if (!r) reasons.push(`evidence ${i} unresolved`); });
     // Anchors are checked on the report the findings were written from, whatever periods the evidence spans.
     const periodEnd = publication.periodEnd;
@@ -458,7 +482,7 @@ export function verifyFindings(publication: FindingsPublication, data: FindingDa
     const candidates = resolved.flatMap(r => r ? evidenceCandidates(r) : []);
     for (const n of proseNumbers(`${f.title} ${f.judgment.text}`)) if (!numberSupported(n, candidates)) reasons.push(`number ${n} unsupported`);
     if (reasons.length) withheld.push({ id: f.id, reasons });
-    else verified.push({ ...f, resolved: resolved as ResolvedEvidence[], periodEnd, watchOutcome: f.watch ? resolveWatch(data, f.watch, periodEnd) : null });
+    else verified.push({ ...f, resolved: resolved as ResolvedEvidence[], periodEnd, watchOutcome: f.watch ? resolveWatch(data, f.watch, periodEnd, locale) : null });
   }
   verified.sort((a, b) => b.severity - a.severity || order[a.kind] - order[b.kind]);
   return { verified, withheld };

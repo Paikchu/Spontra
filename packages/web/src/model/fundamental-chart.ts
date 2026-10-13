@@ -12,6 +12,8 @@ import type {
   PublicFundamentalPeriod,
   PublicFundamentalSeries,
 } from "../../../../shared/analysis-contract/fundamentals.ts";
+import { compactMoney, compactNumber, compactShares, currencyName, MINUS } from "../../../../shared/analysis-runtime/locale.ts";
+import { getLocale, labels, messages } from "../i18n/index.ts";
 // Defined in the contract so the Pipeline enforces the same ceilings; re-exported so every
 // existing consumer keeps its import path.
 export { FUNDAMENTAL_CHART_MAX_AXES, FUNDAMENTAL_CHART_MAX_SERIES };
@@ -25,6 +27,18 @@ export const FUNDAMENTAL_CHART_HEIGHT = 280;
  */
 export const FUNDAMENTAL_NOT_MEANINGFUL_LABEL = "NM";
 export const FUNDAMENTAL_NOT_MEANINGFUL_HINT = "Not meaningful";
+
+const m = messages({
+  notMeaningfulLabel: FUNDAMENTAL_NOT_MEANINGFUL_LABEL, notMeaningfulHint: FUNDAMENTAL_NOT_MEANINGFUL_HINT, noData: "No data",
+}, {
+  notMeaningfulLabel: "不适用", notMeaningfulHint: "不适用", noData: "无数据",
+});
+const TRANSFORM_SUFFIX = labels<FundamentalTransform>({
+  value: "", qoq_growth: " · QoQ growth", yoy_growth: " · YoY growth", qoq_change: " · QoQ change", yoy_change: " · YoY change",
+}, {
+  value: "", qoq_growth: " · 环比增长", yoy_growth: " · 同比增长", qoq_change: " · 环比变动", yoy_change: " · 同比变动",
+});
+const zh = () => getLocale() === "zh-CN";
 
 export type FundamentalChartAxisSide = "left" | "right";
 
@@ -315,7 +329,7 @@ export function buildFundamentalChartTooltip(
   const periodLabel = formatFundamentalPeriod(period.periodEnd);
   // Screen readers spell "NM" letter by letter, so the spoken text expands it; the narrow visual column keeps the abbreviation.
   const spoken = (row: FundamentalChartTooltipRow) =>
-    (row.unavailableReason === "not_meaningful" ? FUNDAMENTAL_NOT_MEANINGFUL_HINT : row.formattedValue);
+    (row.unavailableReason === "not_meaningful" ? m.notMeaningfulHint : row.formattedValue);
   return {
     periodEnd: period.periodEnd,
     periodLabel,
@@ -331,7 +345,7 @@ export function formatFundamentalChartPoint(
   point: Pick<FundamentalChartPoint, "value" | "unavailableReason"> | null | undefined,
   seriesOrAxis: Pick<PreparedFundamentalSeries | FundamentalChartAxis, "unitFamily" | "unit" | "currency">,
 ): string {
-  if (point?.unavailableReason === "not_meaningful") return FUNDAMENTAL_NOT_MEANINGFUL_LABEL;
+  if (point?.unavailableReason === "not_meaningful") return m.notMeaningfulLabel;
   return formatFundamentalChartValue(point?.value ?? null, seriesOrAxis);
 }
 
@@ -339,13 +353,14 @@ export function formatFundamentalChartValue(
   value: number | null,
   seriesOrAxis: Pick<PreparedFundamentalSeries | FundamentalChartAxis, "unitFamily" | "unit" | "currency">,
 ): string {
-  if (value === null || !Number.isFinite(value)) return "No data";
+  if (value === null || !Number.isFinite(value)) return m.noData;
   if (seriesOrAxis.unit === "percentage_point") {
-    return `${formatDecimal(value, 1)} pp`;
+    return `${formatDecimal(value, 1)}${zh() ? "个百分点" : " pp"}`;
   }
   if (seriesOrAxis.unitFamily === "percent") return `${formatDecimal(value, 1)}%`;
   // A multiple reads as "42.6x"; compact notation would round it to nothing.
-  if (seriesOrAxis.unitFamily === "multiple") return `${formatDecimal(value, 2)}x`;
+  if (seriesOrAxis.unitFamily === "multiple") return `${formatDecimal(value, 2)}${zh() ? "倍" : "x"}`;
+  if (zh()) return chineseValue(value, seriesOrAxis);
   if (seriesOrAxis.unitFamily === "per_share") {
     const code = seriesOrAxis.currency || seriesOrAxis.unit;
     return formatCurrency(value, code, { maximumFractionDigits: 2, minimumFractionDigits: 2 })
@@ -356,6 +371,19 @@ export function formatFundamentalChartValue(
   const code = seriesOrAxis.currency || seriesOrAxis.unit;
   return formatCurrency(value, code, compact)
     ?? `${new Intl.NumberFormat("en-US", compact).format(value)} ${code}`.trim();
+}
+
+/** "393亿美元", "1.24美元", "123万股": Chinese counting units, the currency named after the amount. */
+function chineseValue(value: number, seriesOrAxis: Pick<PreparedFundamentalSeries | FundamentalChartAxis, "unitFamily" | "unit" | "currency">): string {
+  const code = seriesOrAxis.currency || seriesOrAxis.unit;
+  const iso = /^[A-Z]{3}$/.test(code);
+  const sign = value < 0 ? MINUS : "";
+  if (seriesOrAxis.unitFamily === "per_share") {
+    return iso ? sign + Math.abs(value).toFixed(2) + currencyName(code, "zh-CN") : `${code} ${formatDecimal(value, 2)}`.trim();
+  }
+  if (seriesOrAxis.unitFamily === "shares") return compactShares(value, "zh-CN");
+  if (iso) return compactMoney(value, code, "zh-CN");
+  return `${sign}${compactNumber(Math.abs(value), "zh-CN")} ${code}`.trim();
 }
 
 /** "$39.3B" for an ISO currency code; null when the unit is not one. */
@@ -375,6 +403,7 @@ export function formatFundamentalAxisTick(value: number, axis: FundamentalChartA
 export function formatFundamentalPeriod(periodEnd: string): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(periodEnd);
   if (!match) return periodEnd;
+  if (zh()) return `${match[1]}年${Number(match[2])}月`;
   return new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric", timeZone: "UTC" })
     .format(new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, 1)));
 }
@@ -692,14 +721,7 @@ function parseChartNumber(value: string | null): number | null {
 }
 
 function labelForTransform(label: string, transform: FundamentalTransform): string {
-  const suffix: Record<FundamentalTransform, string> = {
-    value: "",
-    qoq_growth: " · QoQ growth",
-    yoy_growth: " · YoY growth",
-    qoq_change: " · QoQ change",
-    yoy_change: " · YoY change",
-  };
-  return `${label}${suffix[transform]}`;
+  return `${label}${TRANSFORM_SUFFIX[transform]}`;
 }
 
 function formatDecimal(value: number, maximumFractionDigits: number): string {

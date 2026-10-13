@@ -32,7 +32,8 @@
     "packages/web/**/*.ts",
     "packages/web/**/*.tsx",
     "shared/**/*.ts",
-    "scripts/**/*.ts"
+    "scripts/**/*.ts",
+    "scripts/**/*.tsx"
   ],
   "exclude": [
     "node_modules",

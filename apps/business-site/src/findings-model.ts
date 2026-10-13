@@ -4,19 +4,20 @@ import type { PublicCapitalStructure } from "@/shared/analysis-contract/capital-
 import type { GuidancePublication } from "@/shared/analysis-contract/guidance";
 import type { RevenueHistory } from "@/shared/analysis-contract/revenue-history";
 import { verifyFindings, type FindingData, type FindingFundamentals, type VerifiedFinding } from "@/shared/analysis-runtime/findings";
+import { getLocale, labels, type Locale } from "@/packages/web/src/i18n";
 
 export type { VerifiedFinding };
 
-export const KIND_LABEL: Record<VerifiedFinding["kind"], string> = { risk: "Risk", strength: "Strength", shift: "Shift", watch: "Watch" };
-export const VIEW_LABEL = { profit: "Profit", cash: "Cash flow", balance: "Balance sheet" } as const;
+export const KIND_LABEL: Record<VerifiedFinding["kind"], string> = labels({ risk: "Risk", strength: "Strength", shift: "Shift", watch: "Watch" }, { risk: "风险", strength: "优势", shift: "变化", watch: "跟踪" });
+export const VIEW_LABEL = labels({ profit: "Profit", cash: "Cash flow", balance: "Balance sheet" }, { profit: "利润", cash: "现金流", balance: "资产负债表" });
 
 export function findingData(flow: PublicBusinessFlow, history: RevenueHistory | null, capital: PublicCapitalStructure | null, fundamentals: FindingFundamentals | null, guidance: GuidancePublication | null): FindingData {
   return { quarters: flow.quarters, history, capital, fundamentals, guidance };
 }
 
-/** Findings the page can stand behind, most severe first. */
-export function verifiedFindings(publication: FindingsPublication | null, data: FindingData): VerifiedFinding[] {
-  return publication ? verifyFindings(publication, data).verified : [];
+/** Findings the page can stand behind, most severe first; their figures named in the reader's language. */
+export function verifiedFindings(publication: FindingsPublication | null, data: FindingData, locale: Locale = getLocale()): VerifiedFinding[] {
+  return publication ? verifyFindings(publication, data, locale).verified : [];
 }
 
 /** Sankey node names a finding lights on the profit statement: its businesses, and the statement lines it names. */

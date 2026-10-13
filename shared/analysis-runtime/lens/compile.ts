@@ -3,11 +3,17 @@ import { LENS_ASPECT, type LensChart, type LensColorToken, type LensMark, type L
 import type { CompiledAxis, CompiledChart, CompiledSeries } from "../../analysis-contract/lens-frame.ts";
 import { refLabel, resolveEvidence, resolveRef, shiftPeriod, type FindingData, type ResolvedValue, type ValueUnit } from "../findings.ts";
 import { ratioForm } from "../highlights.ts";
-import { formatDelta, formatResolved, periodLabel, tickLabel } from "./format.ts";
+import { formatDelta, formatResolved, periodLabel, shortPeriod, tickLabel } from "./format.ts";
+import { qoqLabel, yoyLabel, type Locale } from "../locale.ts";
 
 export type CompileOptions = {
   /** The page's colour for a reference (a business node's own hue); unset falls back to the design tokens by what the figure is. */
   colorOf?: (ref: FindingRef, index: number) => string | null;
+  /**
+   * The reader's language for every word and figure the compiler writes into the picture (values, ticks, period
+   * labels, metric names, the summary). Errors and notes stay English: they are for the model. Defaults to "en".
+   */
+  locale?: Locale;
 };
 export type CompileResult = { chart: CompiledChart | null; errors: string[]; notes: string[] };
 
@@ -37,11 +43,11 @@ const FROM_ZERO = new Set(["bar", "area", "stacked_bar", "stacked_area", "waterf
 
 type Resolved = { value: number | null; text: string | null; range: { low: number; high: number } | null; unit: ValueUnit | null; currency: string | null };
 
-function resolveSeries(data: FindingData, s: LensSeries, end: string, span: FindingSpan): Resolved {
+function resolveSeries(data: FindingData, s: LensSeries, end: string, span: FindingSpan, locale: Locale): Resolved {
   const none: Resolved = { value: null, text: null, range: null, unit: null, currency: null };
   if (!s.transform || s.transform === "value") {
     const v = resolveRef(data, s.ref, end, span);
-    return v ? { value: v.value, text: formatResolved(v, s.ref), range: v.range && v.range.low !== v.range.high ? v.range : null, unit: v.unit, currency: v.currency } : none;
+    return v ? { value: v.value, text: formatResolved(v, s.ref, locale), range: v.range && v.range.low !== v.range.high ? v.range : null, unit: v.unit, currency: v.currency } : none;
   }
   // A change is the evidence comparison the verifier makes: percent for amounts, points for rates, turns for multiples.
   const r = resolveEvidence(data, { ref: s.ref, periodEnd: end, span, compare: s.transform });
@@ -49,7 +55,7 @@ function resolveSeries(data: FindingData, s: LensSeries, end: string, span: Find
   // An amount changes in percent, a rate in points (a margin written as a percentage scales by a hundred to match its text), a multiple in turns.
   const percentForm = r.current.unit === "ratio" && ratioForm(s.ref) === "percent";
   const unit: ValueUnit = r.current.unit === "USD" || r.current.unit === "per_share" || r.current.unit === "shares" ? "percent" : r.current.unit === "ratio" && !percentForm ? "ratio" : "points";
-  return { value: percentForm ? r.delta * 100 : r.delta, text: formatDelta(r.delta, r.current.unit, s.ref), range: null, unit, currency: null };
+  return { value: percentForm ? r.delta * 100 : r.delta, text: formatDelta(r.delta, r.current.unit, s.ref, locale), range: null, unit, currency: null };
 }
 
 /** Three round ticks spanning the domain, zero among them when the domain crosses it. */
@@ -62,7 +68,7 @@ function ticksFor(min: number, max: number): number[] {
   return out.length >= 2 ? out : [min, max];
 }
 
-function axisFor(series: CompiledSeries[], marks: LensMark[], refs: Map<string, FindingRef>): { axis: CompiledAxis | null; error: string | null } {
+function axisFor(series: CompiledSeries[], marks: LensMark[], refs: Map<string, FindingRef>, locale: Locale): { axis: CompiledAxis | null; error: string | null } {
   if (!series.length) return { axis: null, error: null };
   const units = [...new Set(series.map(s => s.unit))];
   if (units.length > 1) return { axis: null, error: `an axis mixes ${units.join(" and ")} series; put one of them on the other axis` };
@@ -89,7 +95,7 @@ function axisFor(series: CompiledSeries[], marks: LensMark[], refs: Map<string, 
   // Lines float: a little headroom so the top point is not on the frame.
   if (!fromZero) { const pad = (max - min) * 0.12; min -= pad; max += pad; }
   const first = series[0]!, ref = refs.get(first.id);
-  const ticks = ticksFor(min, max).map(value => ({ value, label: tickLabel(value, first.unit, first.currency, ref) }));
+  const ticks = ticksFor(min, max).map(value => ({ value, label: tickLabel(value, first.unit, first.currency, ref, locale) }));
   return { axis: { unit: first.unit, currency: first.currency, min: Math.min(min, ticks[0]?.value ?? min), max: Math.max(max, ticks.at(-1)?.value ?? max), ticks, zero: min < 0 && max > 0 }, error: null };
 }
 
@@ -103,6 +109,7 @@ const PLACEHOLDER = /\{(value|change|label|period)\}/g;
  */
 export function compileChart(chart: LensChart, data: FindingData, periodEnd: string, options: CompileOptions = {}): CompileResult {
   const errors: string[] = [], notes: string[] = [];
+  const locale = options.locale ?? "en", zh = locale === "zh-CN";
   const ends = chartPeriods(periodEnd, chart.span, chart.periods);
   const refs = new Map(chart.series.map(s => [s.id, s.ref]));
   const ids = new Set<string>();
@@ -114,11 +121,11 @@ export function compileChart(chart: LensChart, data: FindingData, periodEnd: str
   for (const s of chart.series) if (!chart.marks.some(m => m.series.includes(s.id))) errors.push(`series ${s.id} is not drawn by any mark`);
   if (errors.length) return { chart: null, errors, notes };
 
-  const resolved = chart.series.map(s => ends.map(end => resolveSeries(data, s, end, chart.span)));
+  const resolved = chart.series.map(s => ends.map(end => resolveSeries(data, s, end, chart.span, locale)));
   // Leading periods no series can answer are left out, so a short history does not open with empty slots.
   const lead = ends.findIndex((_, i) => resolved.some(r => r[i]!.value != null));
   if (lead < 0) { errors.push(`no series resolves at any of the ${chart.periods} ${chart.span} periods ending ${periodEnd}`); return { chart: null, errors, notes }; }
-  const periods = ends.slice(lead).map((end, i, all) => ({ end, label: periodLabel(end, chart.span), current: i === all.length - 1 }));
+  const periods = ends.slice(lead).map((end, i, all) => ({ end, label: periodLabel(end, chart.span, locale), current: i === all.length - 1 }));
   const series: CompiledSeries[] = chart.series.map((s, i) => {
     const rows = resolved[i]!.slice(lead);
     const count = rows.filter(r => r.value != null).length;
@@ -126,9 +133,11 @@ export function compileChart(chart: LensChart, data: FindingData, periodEnd: str
     else if (count === 1 && periods.length > 1) notes.push(`series ${s.id} has one value in ${periods.length} periods`);
     const mark = chart.marks.find(m => m.series.includes(s.id))!;
     const unit = rows.find(r => r.unit)?.unit ?? "USD";
-    const suffix = s.transform === "yoy" ? " YoY" : s.transform === "qoq" ? " QoQ" : "";
+    const named = s.label ?? refLabel(data, s.ref, locale);
+    // Chinese joins 同比/环比 straight onto a Chinese label and after a space when the label ends in Latin text.
+    const gap = zh && !/[A-Za-z0-9)]$/.test(named) ? "" : " ", suffix = s.transform === "yoy" ? gap + yoyLabel(locale) : s.transform === "qoq" ? gap + qoqLabel(locale) : "";
     return {
-      id: s.id, label: (s.label ?? refLabel(data, s.ref)) + suffix, unit, currency: rows.find(r => r.currency)?.currency ?? null,
+      id: s.id, label: named + suffix, unit, currency: rows.find(r => r.currency)?.currency ?? null,
       color: mark.color ? colorVar(mark.color) : options.colorOf?.(s.ref, i) ?? defaultColor(s.ref, i), axis: mark.axis ?? "left",
       values: rows.map(r => r.value), text: rows.map(r => r.text), ...(rows.some(r => r.range) ? { ranges: rows.map(r => r.range) } : {}),
     };
@@ -138,7 +147,7 @@ export function compileChart(chart: LensChart, data: FindingData, periodEnd: str
     const units = new Set(m.series.map(id => series.find(s => s.id === id)!.unit));
     if (units.size > 1) errors.push(`${m.type} stacks series in different units (${[...units].join(", ")})`);
   }
-  const left = axisFor(series.filter(s => s.axis === "left"), chart.marks, refs), right = axisFor(series.filter(s => s.axis === "right"), chart.marks, refs);
+  const left = axisFor(series.filter(s => s.axis === "left"), chart.marks, refs, locale), right = axisFor(series.filter(s => s.axis === "right"), chart.marks, refs, locale);
   if (left.error) errors.push(`left ${left.error}`);
   if (right.error) errors.push(`right ${right.error}`);
   const annotations = (chart.annotations ?? []).flatMap(a => {
@@ -150,7 +159,7 @@ export function compileChart(chart: LensChart, data: FindingData, periodEnd: str
     if (/\{change\}/.test(a.text) && (!change || change.delta == null)) { errors.push(`annotation on ${a.series} at ${a.period} asks for {change} but no comparison exists`); return []; }
     const residual = a.text.replace(PLACEHOLDER, "");
     if (/\d/.test(residual)) { errors.push(`annotation "${a.text}" states a figure; use {value} or {change}`); return []; }
-    const text = a.text.replace(PLACEHOLDER, (_, key: string) => key === "value" ? s.text[i]! : key === "label" ? s.label : key === "period" ? periods[i]!.label : formatDelta(change!.delta!, change!.current.unit, refs.get(s.id)));
+    const text = a.text.replace(PLACEHOLDER, (_, key: string) => key === "value" ? s.text[i]! : key === "label" ? s.label : key === "period" ? periods[i]!.label : formatDelta(change!.delta!, change!.current.unit, refs.get(s.id), locale));
     return [{ series: s.id, period: i, text }];
   });
   const bands = (chart.bands ?? []).flatMap(b => {
@@ -160,7 +169,9 @@ export function compileChart(chart: LensChart, data: FindingData, periodEnd: str
   });
   if (errors.length) return { chart: null, errors, notes };
   const latest = periods.length - 1;
-  const summary = `${chart.title ?? series.map(s => s.label).join(", ")} over ${periods.length} ${chart.span === "quarter" ? "quarters" : "fiscal years"} to ${periods[latest]!.label}: ${series.map(s => `${s.label} ${s.text[latest] ?? "not disclosed"}`).join("; ")}.`;
+  const summary = zh
+    ? `${chart.title ?? series.map(s => s.label).join("、")}，截至 ${shortPeriod(periods[latest]!.end)} 的 ${periods.length} 个${chart.span === "quarter" ? "季度" : "财年"}：${series.map(s => `${s.label} ${s.text[latest] ?? "未披露"}`).join("；")}。`
+    : `${chart.title ?? series.map(s => s.label).join(", ")} over ${periods.length} ${chart.span === "quarter" ? "quarters" : "fiscal years"} to ${periods[latest]!.label}: ${series.map(s => `${s.label} ${s.text[latest] ?? "not disclosed"}`).join("; ")}.`;
   return {
     chart: {
       id: chart.id, title: chart.title ?? null, aspect: chart.aspect, span: chart.span, periods, series, marks: chart.marks.map(m => ({ type: m.type, series: m.series })),
@@ -171,4 +182,4 @@ export function compileChart(chart: LensChart, data: FindingData, periodEnd: str
 
 /** Pixel height the host gives a chart cell of a given width; the audit estimates with the same rule. */
 export const chartHeight = (width: number, aspect: keyof typeof LENS_ASPECT) => Math.max(200, Math.min(420, Math.round(width * LENS_ASPECT[aspect])));
-export const resolvedText = (v: ResolvedValue, ref?: FindingRef) => formatResolved(v, ref);
+export const resolvedText = (v: ResolvedValue, ref?: FindingRef, locale: Locale = "en") => formatResolved(v, ref, locale);
