@@ -2,8 +2,10 @@ import { z } from "zod";
 import { FLOW_METRICS, type BusinessFlowQuarter, type FlowMetric } from "../analysis-contract/business-flow.ts";
 import { FUNDAMENTAL_METRIC_CATALOG } from "../analysis-contract/fundamental-metric-catalog.ts";
 import type { FundamentalMetricKey, PublicFundamentalPoint, PublicFundamentalSeries } from "../analysis-contract/fundamentals.ts";
-import type { AnalysisFinding, CapitalMetric, FindingEvidence, FindingRef, FindingSpan, FindingWatch, FindingsPublication } from "../analysis-contract/findings.ts";
-import type { CashFlowStatement, PublicCapitalStructure, RpoDisclosure } from "../analysis-contract/capital-structure.ts";
+import type { AnalysisFinding, CapitalMetric, FindingEvidence, FindingPassage, FindingRef, FindingSpan, FindingWatch, FindingsPublication } from "../analysis-contract/findings.ts";
+import type { PeersPublication } from "../analysis-contract/peers.ts";
+import { alignedPeerQuarter } from "./peers.ts";
+import type { BalanceSheet, CashFlowStatement, PublicCapitalStructure, RpoDisclosure } from "../analysis-contract/capital-structure.ts";
 import type { GuidanceItem, GuidancePublication } from "../analysis-contract/guidance.ts";
 import type { RevenueHistory, RevenueHistoryNode } from "../analysis-contract/revenue-history.ts";
 import type { LensDocument } from "../analysis-contract/lens.ts";
@@ -11,7 +13,14 @@ import { lensDocumentSchemaFor } from "./lens/schema.ts";
 
 /* ---------- Schema ---------- */
 
-export const CAPITAL_METRICS = ["operatingCashFlow", "capex", "freeCashFlow", "financing", "debtIssued", "debtRepaid", "equityIssued", "buybacks", "dividends", "totalAssets", "debt", "cash", "equity", "rpo", "rpoNext12MonthsShare"] as const satisfies readonly CapitalMetric[];
+export const CAPITAL_METRICS = [
+  "operatingCashFlow", "capex", "freeCashFlow", "financing", "debtIssued", "debtRepaid", "equityIssued", "buybacks", "dividends",
+  "acquisitions", "investmentsNet", "leasePrincipal", "depreciation", "stockCompensation", "interestPaid", "taxesPaid", "unpaidCapex", "leaseAssetsObtained",
+  "totalAssets", "debt", "cash", "equity", "totalLiabilities", "currentAssets", "currentLiabilities", "receivables", "inventory", "productive", "leaseAssets", "intangibles", "investments", "leases", "customerAdvances", "payables", "deferredTax",
+  "rpo", "rpoNext12MonthsShare",
+] as const satisfies readonly CapitalMetric[];
+/** Balance-sheet instants: read at the period end, no span. */
+export const CAPITAL_INSTANTS = ["totalAssets", "debt", "cash", "equity", "totalLiabilities", "currentAssets", "currentLiabilities", "receivables", "inventory", "productive", "leaseAssets", "intangibles", "investments", "leases", "customerAdvances", "payables", "deferredTax", "rpo", "rpoNext12MonthsShare"] as const satisfies readonly CapitalMetric[];
 const FUNDAMENTAL_KEYS = Object.keys(FUNDAMENTAL_METRIC_CATALOG) as [FundamentalMetricKey, ...FundamentalMetricKey[]];
 
 const text = (max: number) => z.string().trim().min(1).max(max);
@@ -26,6 +35,8 @@ const baseRef = z.union([
   z.object({ nodeId: text(200) }),
   z.object({ guidanceId: text(200) }),
   z.object({ rpoBucket: z.number().int().min(0).max(11) }),
+  z.object({ peer: z.object({ ticker: z.string().regex(/^[A-Z][A-Z0-9.-]{0,11}$/), ref: z.union([z.object({ capital: z.enum(CAPITAL_METRICS) }), z.object({ fundamental: z.enum(FUNDAMENTAL_KEYS) }), z.object({ metric: z.enum(FLOW_METRICS) })]) }) }),
+  z.object({ passageCell: z.object({ passageId: z.string().regex(/^[a-z0-9]{8,64}$/), row: z.number().int().min(0).max(200), col: z.number().int().min(0).max(40) }) }),
 ]);
 const ref = z.union([baseRef, z.object({ ratio: z.object({ numerator: baseRef, denominator: baseRef }) })]);
 export const findingRefSchema = ref;
@@ -35,6 +46,8 @@ export function readLensDocument(value: unknown): LensDocument | null { const pa
 const span = z.enum(["quarter", "fiscal_year"]);
 const compare = z.union([z.literal("yoy"), z.literal("qoq"), z.object({ guidanceId: text(200) })]);
 const evidence = z.object({ ref, periodEnd: date, span, compare: compare.optional(), label: text(100).optional() });
+const watchTest = z.object({ expect: z.enum(["above", "below", "within"]), against: z.union([z.literal("yoy"), z.literal("qoq"), z.object({ guidanceId: text(200) }), z.object({ ref })]), tolerance: z.number().min(0).max(100).optional() });
+const watchSchema = z.object({ ref, condition: text(400), horizon: z.enum(["next_quarter", "fiscal_year"]), compare: compare.optional(), test: watchTest.optional() });
 const lens = z.discriminatedUnion("type", [
   z.object({ type: z.literal("trend"), refs: z.array(ref).min(1).max(4), span, rate: z.enum(["yoy", "qoq"]).optional() }),
   z.object({ type: z.literal("compare_bars"), refs: z.array(ref).min(1).max(4), span }),
@@ -47,8 +60,10 @@ const finding = z.object({
   title: text(80), judgment: claim, evidence: z.array(evidence).min(1).max(8),
   anchors: z.object({ view: z.enum(["profit", "cash", "balance"]), nodeIds: z.array(text(200)).max(12), metrics: z.array(z.enum(FLOW_METRICS)).max(6), capital: z.array(z.enum(CAPITAL_METRICS)).max(6).optional() }),
   lens, pairWith: text(80).optional(),
-  watch: z.object({ ref, condition: text(400), horizon: z.enum(["next_quarter", "fiscal_year"]), compare: compare.optional() }).optional(),
+  watch: watchSchema.optional(),
 });
+const recordEntry = z.object({ findingId: text(80), title: text(80), kind: z.enum(["risk", "strength", "shift", "watch"]), periodEnd: date, publishedAt: z.string().max(40), watch: watchSchema });
+const material = z.object({ id: text(40), kind: z.enum(["sec", "transcript", "web"]), title: text(300), url: https, publishedAt: z.string().max(40).nullable(), passageId: z.string().regex(/^[a-z0-9]{8,64}$/).optional(), documentId: z.string().max(80).optional(), form: z.string().max(20).optional(), path: z.array(z.string().max(200)).max(12).optional(), textSha256: z.string().regex(/^[a-f0-9]{64}$/).optional() });
 const highlight = z.object({ title: text(40), ref, compare: z.enum(["yoy", "qoq"]).optional(), show: z.enum(["value", "change"]).optional() });
 export const reportHighlightsSchema = z.object({ periodEnd: date, profit: z.array(highlight).max(4), cash: z.array(highlight).max(4), balance: z.array(highlight).max(4) });
 export const findingsPublicationSchema = z.object({
@@ -58,6 +73,8 @@ export const findingsPublicationSchema = z.object({
   findings: z.array(finding).max(8),
   sources: z.array(z.object({ id: text(40), title: text(300), url: https, kind: z.enum(["sec", "web"]), publishedAt: z.string().max(40).nullable() })).min(1).max(40),
   highlights: z.array(reportHighlightsSchema).max(8).optional(),
+  record: z.array(recordEntry).max(24).optional(),
+  materials: z.array(material).max(60).optional(),
 });
 
 /**
@@ -103,6 +120,10 @@ export type FindingData = {
   capital: PublicCapitalStructure | null;
   fundamentals: FindingFundamentals | null;
   guidance: GuidancePublication | null;
+  /** The peers projection, for `{ peer }` references; absent when not loaded. */
+  peers?: PeersPublication | null;
+  /** Library passages the publication quotes or reads cells from, as served now; absent when not loaded. */
+  passages?: FindingPassage[] | null;
 };
 
 /** `points`: a change in a rate, in percentage points, as a transformed lens series carries it. */
@@ -192,7 +213,8 @@ function nodeAt(data: FindingData, id: string, periodEnd: string): Point | null 
   return q && v != null ? flowPoint(q, v) : null;
 }
 
-const BALANCE: CapitalMetric[] = ["totalAssets", "debt", "cash", "equity"];
+const BALANCE: readonly CapitalMetric[] = CAPITAL_INSTANTS.filter(m => m !== "rpo" && m !== "rpoNext12MonthsShare");
+const NON_CASH = { depreciation: /Depreciation|Amortization|Depletion/i, stockCompensation: /ShareBasedCompensation|StockBasedCompensation|ShareBasedPayment/i } as const;
 
 /** The bucket covering the first twelve months after the period end, by its tagged length or its start date. */
 export function rpoNextYearShare(rpo: RpoDisclosure): number | null {
@@ -203,18 +225,46 @@ export function rpoNextYearShare(rpo: RpoDisclosure): number | null {
 function cashMetric(c: CashFlowStatement, metric: CapitalMetric): number | null {
   const lines = (section: "investing" | "financing", group: string) => { const l = c[section].lines; return l ? sum(l.filter(line => line.group === group)) : null; };
   const operating = Number(c.operating.total), capex = lines("investing", "capex");
+  // A group absent from a reconciled section is zero by the statement's own arithmetic, not unknown.
+  const groupOf = (section: "investing" | "financing", group: string) => { const l = c[section].lines; return l ? sum(l.filter(line => line.group === group)) : null; };
+  const nonCash = (pattern: RegExp) => { const l = c.operating.lines; if (!l) return null; const hits = l.filter(line => line.group === "nonCash" && pattern.test(line.concept)); return hits.length ? sum(hits) : null; };
+  const supplemental = (group: string) => { const hits = c.supplemental.filter(line => line.group === group); return hits.length ? sum(hits) : null; };
+  const outflow = (v: number | null) => v == null ? null : -v;
   switch (metric) {
     case "operatingCashFlow": return operating;
-    case "capex": return capex == null ? null : -capex;
+    case "capex": return outflow(capex);
     case "freeCashFlow": return capex == null ? null : operating + capex;
     case "financing": return Number(c.financing.total);
     case "debtIssued": return lines("financing", "debtIssued");
-    case "debtRepaid": { const v = lines("financing", "debtRepaid"); return v == null ? null : -v; }
+    case "debtRepaid": return outflow(lines("financing", "debtRepaid"));
     case "equityIssued": return lines("financing", "equityIssued");
-    case "buybacks": { const v = lines("financing", "buybacks"); return v == null ? null : -v; }
-    case "dividends": { const v = lines("financing", "dividends"); return v == null ? null : -v; }
+    case "buybacks": return outflow(lines("financing", "buybacks"));
+    case "dividends": return outflow(lines("financing", "dividends"));
+    case "acquisitions": return outflow(groupOf("investing", "acquisitions"));
+    case "investmentsNet": return outflow(groupOf("investing", "investments"));
+    case "leasePrincipal": return outflow(groupOf("financing", "leasePrincipal"));
+    case "depreciation": return nonCash(NON_CASH.depreciation);
+    case "stockCompensation": return nonCash(NON_CASH.stockCompensation);
+    case "interestPaid": return supplemental("interestPaid");
+    case "taxesPaid": return supplemental("taxesPaid");
+    case "unpaidCapex": return supplemental("unpaidCapex");
+    case "leaseAssetsObtained": return supplemental("leaseAssetsObtained");
     default: return null;
   }
+}
+const ASSET_GROUPS: Partial<Record<CapitalMetric, string>> = { cash: "cash", receivables: "receivables", inventory: "inventory", productive: "productive", leaseAssets: "leaseAssets", intangibles: "intangibles", investments: "investments" };
+const LIABILITY_GROUPS: Partial<Record<CapitalMetric, string>> = { debt: "debt", leases: "leases", customerAdvances: "customerAdvances", payables: "payables", deferredTax: "deferredTax" };
+/** A balance-sheet figure: a total as stated, or the sum of the lines in one economic group (zero when the group is empty on a reconciled sheet). */
+export function balanceMetric(b: BalanceSheet, metric: CapitalMetric): number | null {
+  if (metric === "totalAssets") return Number(b.totals.assets);
+  if (metric === "equity") return Number(b.totals.equity);
+  if (metric === "totalLiabilities") return Number(b.totals.liabilities);
+  if (metric === "currentAssets") return finite(b.totals.currentAssets);
+  if (metric === "currentLiabilities") return finite(b.totals.currentLiabilities);
+  const asset = ASSET_GROUPS[metric], liability = LIABILITY_GROUPS[metric];
+  if (asset) return sum(b.assets.filter(l => l.group === asset));
+  if (liability) return sum(b.liabilities.filter(l => l.group === liability));
+  return null;
 }
 function capitalAt(data: FindingData, metric: CapitalMetric, periodEnd: string, span: FindingSpan): Point | null {
   const quarters = data.capital?.quarters ?? [];
@@ -227,8 +277,8 @@ function capitalAt(data: FindingData, metric: CapitalMetric, periodEnd: string, 
   if (BALANCE.includes(metric)) {
     const b = quarters.find(q => near(q.periodEnd, periodEnd))?.balanceSheet;
     if (!b) return null;
-    const value = metric === "totalAssets" ? Number(b.totals.assets) : metric === "equity" ? Number(b.totals.equity) : metric === "debt" ? sum(b.liabilities.filter(l => l.group === "debt")) : sum(b.assets.filter(l => l.group === "cash"));
-    return { value, periodStart: null, periodEnd: b.asOf, currency: b.currency, accessions: [b.source.accession] };
+    const value = balanceMetric(b, metric);
+    return value == null ? null : { value, periodStart: null, periodEnd: b.asOf, currency: b.currency, accessions: [b.source.accession] };
   }
   const point = (c: CashFlowStatement | null | undefined): Point | null => { const v = c ? cashMetric(c, metric) : null; return c && v != null ? { value: v, periodStart: c.periodStart, periodEnd: c.periodEnd, currency: c.currency, accessions: c.sources.map(s => s.accession) } : null; };
   if (span === "fiscal_year") {
@@ -237,6 +287,47 @@ function capitalAt(data: FindingData, metric: CapitalMetric, periodEnd: string, 
     if (ytd && monthIndex(ytd.periodEnd) - monthIndex(ytd.periodStart) >= 11) return point(ytd);
   }
   return overSpan(span, periodEnd, end => point(quarters.find(q => near(q.periodEnd, end))?.cashFlow));
+}
+
+/**
+ * A peer's figure from the peers projection: the peer's latest quarter ending on or before the period asked for (within
+ * 120 days), or the four such quarters summed for a four-quarter span of a flow. Instants and rates never sum.
+ */
+const PEER_FLOWS: readonly string[] = ["revenue", "grossProfit", "operatingIncome", "netIncome", "operatingCashFlow", "capex", "freeCashFlow", "debtIssued", "equityIssued", "buybacks", "dividends", "depreciation", "stockBasedCompensation"];
+const PEER_FIGURE: Partial<Record<string, string>> = { revenue: "revenue", gross: "grossProfit", operating: "operatingIncome", net: "netIncome", operatingCashFlow: "operatingCashFlow", capex: "capex", freeCashFlow: "freeCashFlow", debtIssued: "debtIssued", equityIssued: "equityIssued", buybacks: "buybacks", dividends: "dividends", totalAssets: "totalAssets", debt: "debt", cash: "cash", equity: "equity", leases: "leases", customerAdvances: "customerAdvances", rpo: "rpo", depreciation: "depreciation", stockCompensation: "stockBasedCompensation", stock_based_compensation: "stockBasedCompensation", depreciation_and_amortization: "depreciation", total_revenue: "revenue", operating_cash_flow: "operatingCashFlow", capital_expenditure: "capex", free_cash_flow: "freeCashFlow", net_income: "netIncome", operating_income: "operatingIncome", gross_profit: "grossProfit", total_assets: "totalAssets", long_term_debt: "debt", cash_and_cash_equivalents: "cash", stockholders_equity: "equity", remaining_performance_obligation: "rpo" };
+function peerAt(data: FindingData, ticker: string, ref: { capital: CapitalMetric } | { fundamental: string } | { metric: string }, periodEnd: string, span: FindingSpan): ResolvedValue | null {
+  const company = data.peers?.companies.find(c => c.ticker === ticker);
+  const key = PEER_FIGURE["capital" in ref ? ref.capital : "fundamental" in ref ? ref.fundamental : ref.metric];
+  if (!company || !key) return null;
+  const aligned = alignedPeerQuarter(company, periodEnd);
+  if (!aligned) return null;
+  if (span === "quarter" || !PEER_FLOWS.includes(key)) {
+    const v = finite(aligned.figures[key as keyof typeof aligned.figures]);
+    return v == null ? null : { value: v, unit: "USD", currency: "USD", periodStart: null, periodEnd: aligned.periodEnd, span, accessions: aligned.accessions };
+  }
+  // Four consecutive quarters ending at the aligned one, each present; a gap means no four-quarter figure.
+  const sorted = [...company.quarters].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd));
+  const start = sorted.findIndex(q => q.periodEnd === aligned.periodEnd);
+  const four = sorted.slice(start, start + 4);
+  if (four.length < 4 || four.some((q, i) => i > 0 && Math.abs(monthIndex(four[i - 1]!.periodEnd) - monthIndex(q.periodEnd) - 3) > 1)) return null;
+  const values = four.map(q => finite(q.figures[key as keyof typeof q.figures]));
+  if (values.some(v => v == null)) return null;
+  return { value: values.reduce<number>((total, v) => total + (v ?? 0), 0), unit: "USD", currency: "USD", periodStart: four[3]!.periodEnd, periodEnd: aligned.periodEnd, span, accessions: [...new Set(four.flatMap(q => q.accessions))] };
+}
+
+/** "(in millions)", "(Dollars in thousands)", "(in billions, except per share data)": the scale a table's unit header states, or null. */
+export function tableScale(unit: string | null): number | null {
+  if (!unit) return null;
+  const m = /\b(thousand|million|billion)s?\b/i.exec(unit);
+  return m ? { thousand: 1e3, million: 1e6, billion: 1e9 }[m[1]!.toLowerCase()]! : null;
+}
+/** One table cell as a figure: only when the table states a scale and the cell is a plain amount (no percent, no per-share). */
+function passageCellAt(data: FindingData, cell: { passageId: string; row: number; col: number }, periodEnd: string, span: FindingSpan): ResolvedValue | null {
+  const passage = data.passages?.find(p => p.passageId === cell.passageId);
+  const scale = passage?.table ? tableScale(passage.table.unit) : null;
+  const c = passage?.table?.rows[cell.row]?.cells[cell.col];
+  if (!passage || !scale || !c || c.value == null || /%|per share/i.test(c.text) || !Number.isFinite(c.value)) return null;
+  return { value: c.value * scale, unit: "USD", currency: "USD", periodStart: null, periodEnd, span, accessions: [] };
 }
 
 /** The rungs of a filing's RPO schedule, nearest first, each as the months after the period end it covers and the amount expected in it. */
@@ -293,13 +384,22 @@ export function resolveRef(data: FindingData, ref: FindingRef, periodEnd: string
   if ("capital" in ref) return amount(capitalAt(data, ref.capital, periodEnd, span), ref.capital === "rpoNext12MonthsShare" ? "percent" : "USD");
   if ("fundamental" in ref) { const r = fundamentalAt(data, ref.fundamental, periodEnd, span); return r && amount(r.point, r.unit); }
   if ("rpoBucket" in ref) return amount(rpoBucketAt(data, ref.rpoBucket, periodEnd));
+  if ("peer" in ref) return peerAt(data, ref.peer.ticker, ref.peer.ref, periodEnd, span);
+  if ("passageCell" in ref) return passageCellAt(data, ref.passageCell, periodEnd, span);
   const item = data.guidance?.items.find(i => i.id === ref.guidanceId);
   return item ? guidanceValue(item, span) : null;
 }
 
 const METRIC_LABEL: Record<FlowMetric, string> = { revenue: "Total revenue", cost: "Cost of revenue", gross: "Gross profit", research: "R&D expense", sales: "Sales and marketing expense", administration: "G&A expense", operatingExpenses: "Operating expenses", operating: "Operating income", other: "Non-operating income (expense)", pretax: "Pretax income", tax: "Income tax", net: "Net income" };
 const GUIDANCE_LABEL: Record<GuidanceItem["metric"], string> = { revenue: "Revenue", segment_revenue: "Revenue", gross_margin: "Gross margin", operating_margin: "Operating margin", operating_income: "Operating income", eps: "EPS", free_cash_flow: "Free cash flow", operating_cash_flow: "Operating cash flow", capex: "Capex", rpo: "RPO", billings: "Billings", other: "" };
-const CAPITAL_LABEL: Record<CapitalMetric, string> = { operatingCashFlow: "Operating cash flow", capex: "Capex", freeCashFlow: "Free cash flow", financing: "Net financing cash flow", debtIssued: "Debt issued", debtRepaid: "Debt repaid", equityIssued: "Stock issued", buybacks: "Share buybacks", dividends: "Dividends", totalAssets: "Total assets", debt: "Total debt", cash: "Cash and short-term investments", equity: "Shareholders' equity", rpo: "Remaining performance obligations (RPO)", rpoNext12MonthsShare: "RPO recognized within 12 months" };
+const CAPITAL_LABEL: Record<CapitalMetric, string> = {
+  operatingCashFlow: "Operating cash flow", capex: "Capex", freeCashFlow: "Free cash flow", financing: "Net financing cash flow", debtIssued: "Debt issued", debtRepaid: "Debt repaid", equityIssued: "Stock issued", buybacks: "Share buybacks", dividends: "Dividends",
+  acquisitions: "Acquisitions", investmentsNet: "Net purchases of investments", leasePrincipal: "Lease principal repaid", depreciation: "Depreciation and amortization", stockCompensation: "Stock-based compensation",
+  interestPaid: "Cash interest paid", taxesPaid: "Cash taxes paid", unpaidCapex: "Capex incurred but unpaid", leaseAssetsObtained: "Lease assets obtained",
+  totalAssets: "Total assets", debt: "Total debt", cash: "Cash and short-term investments", equity: "Shareholders' equity", totalLiabilities: "Total liabilities", currentAssets: "Current assets", currentLiabilities: "Current liabilities",
+  receivables: "Receivables", inventory: "Inventory", productive: "Property and equipment", leaseAssets: "Lease right-of-use assets", intangibles: "Goodwill and intangibles", investments: "Investments", leases: "Lease liabilities", customerAdvances: "Deferred revenue and customer advances", payables: "Accounts payable and accrued liabilities", deferredTax: "Deferred tax liabilities",
+  rpo: "Remaining performance obligations (RPO)", rpoNext12MonthsShare: "RPO recognized within 12 months",
+};
 
 /** Human label of a reference; a business node reads by its disclosed name when the data has it. */
 export function refLabel(data: FindingData, ref: FindingRef): string {
@@ -312,6 +412,8 @@ export function refLabel(data: FindingData, ref: FindingRef): string {
   if ("metric" in ref) return METRIC_LABEL[ref.metric];
   if ("capital" in ref) return CAPITAL_LABEL[ref.capital];
   if ("fundamental" in ref) return data.fundamentals?.series.find(s => s.metricKey === ref.fundamental)?.label ?? FUNDAMENTAL_METRIC_CATALOG[ref.fundamental as keyof typeof FUNDAMENTAL_METRIC_CATALOG]?.label ?? ref.fundamental;
+  if ("peer" in ref) return `${ref.peer.ticker} · ${refLabel(data, ref.peer.ref)}`;
+  if ("passageCell" in ref) { const p = data.passages?.find(p => p.passageId === ref.passageCell.passageId); const row = p?.table?.rows[ref.passageCell.row]; return row ? `${row.label}${p?.table?.columns[ref.passageCell.col] ? ` · ${p.table.columns[ref.passageCell.col]}` : ""}` : "Table figure"; }
   if ("rpoBucket" in ref) {
     const rpo = [...(data.capital?.quarters ?? [])].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd)).find(q => q.rpo)?.rpo;
     const bucket = rpo ? rpoBuckets(rpo)[ref.rpoBucket] : undefined;
@@ -429,6 +531,30 @@ export function resolveWatch(data: FindingData, watch: FindingWatch, publication
   const periodEnd = watchPeriod(publicationPeriodEnd, watch);
   const resolved = resolveEvidence(data, { ref: watch.ref, periodEnd, span: watch.horizon === "next_quarter" ? "quarter" : "fiscal_year", ...(watch.compare ? { compare: watch.compare } : {}) });
   return resolved ? { periodEnd, resolved } : null;
+}
+/**
+ * Pass or fail of a watch's test against its published outcome: above/below the comparison, or within a guided range
+ * (or within `tolerance` percent of the comparison). Null when the test cannot be read against the data.
+ */
+export function watchVerdict(data: FindingData, watch: FindingWatch, publicationPeriodEnd: string): { verdict: "pass" | "fail"; outcome: WatchOutcome } | null {
+  const test = watch.test;
+  if (!test) return null;
+  const periodEnd = watchPeriod(publicationPeriodEnd, watch), span: FindingSpan = watch.horizon === "next_quarter" ? "quarter" : "fiscal_year";
+  const against = test.against;
+  const compare: FindingEvidence["compare"] | undefined = against === "yoy" || against === "qoq" ? against : "guidanceId" in against ? { guidanceId: against.guidanceId } : undefined;
+  const resolved = resolveEvidence(data, { ref: watch.ref, periodEnd, span, ...(compare ? { compare } : {}) });
+  if (!resolved) return null;
+  const outcome: WatchOutcome = { periodEnd, resolved };
+  const current = resolved.current.value;
+  if (compare && typeof compare === "object") {
+    if (!resolved.guidance) return null;
+    const verdict = test.expect === "within" ? resolved.guidance.verdict === "within" : resolved.guidance.verdict === test.expect;
+    return { verdict: verdict ? "pass" : "fail", outcome };
+  }
+  const base = compare ? resolved.compare?.value : typeof against === "object" && "ref" in against ? resolveRef(data, against.ref, periodEnd, span)?.value : null;
+  if (base == null) return null;
+  const pass = test.expect === "above" ? current > base : test.expect === "below" ? current < base : Math.abs(current - base) <= Math.abs(base) * ((test.tolerance ?? 5) / 100);
+  return { verdict: pass ? "pass" : "fail", outcome };
 }
 export type WithheldFinding = { id: string; reasons: string[] };
 

@@ -21,7 +21,9 @@ export const colorVar = (token: LensColorToken) => TOKEN_VAR[token];
 export function defaultColor(ref: FindingRef, index: number): string {
   if ("ratio" in ref) return defaultColor(ref.ratio.numerator, index);
   if ("metric" in ref) return ref.metric === "revenue" ? TOKEN_VAR.revenue : ["gross", "operating", "pretax", "net"].includes(ref.metric) ? TOKEN_VAR.profit : TOKEN_VAR.expense;
-  if ("capital" in ref) return ["operatingCashFlow", "cash", "equity", "rpo", "rpoNext12MonthsShare"].includes(ref.capital) ? TOKEN_VAR.profit : ref.capital === "freeCashFlow" || ref.capital === "totalAssets" ? TOKEN_VAR["biz-1"] : TOKEN_VAR.expense;
+  if ("capital" in ref) return ["operatingCashFlow", "cash", "equity", "rpo", "rpoNext12MonthsShare", "currentAssets", "receivables", "investments", "customerAdvances"].includes(ref.capital) ? TOKEN_VAR.profit : ["freeCashFlow", "totalAssets", "productive", "leaseAssets", "intangibles", "inventory"].includes(ref.capital) ? TOKEN_VAR["biz-1"] : ["debt", "leases", "payables", "deferredTax", "totalLiabilities", "currentLiabilities"].includes(ref.capital) ? TOKEN_VAR["biz-2"] : TOKEN_VAR.expense;
+  if ("peer" in ref) return TOKEN_VAR.muted;
+  if ("passageCell" in ref) return TOKEN_VAR["biz-3"];
   if ("rpoBucket" in ref) return TOKEN_VAR[(["biz-4", "biz-1", "biz-3", "biz-0"] as const)[ref.rpoBucket % 4]];
   return TOKEN_VAR[(["biz-3", "biz-4", "biz-2", "biz-0", "biz-1"] as const)[index % 5]];
 }

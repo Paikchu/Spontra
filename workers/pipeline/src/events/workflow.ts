@@ -160,7 +160,8 @@ export async function refreshCompanyEvents(env: EventsSweepEnv, ticker: string, 
   await db.batch([
     db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at")
       .bind(eventsCacheKey(ticker), JSON.stringify(next), now.toISOString()),
-    outboxStatement(db, { type: "events.published", ticker, causeId: options.causeId ?? null }, now.toISOString()),
+    // The classes filed since the last publication ride in the event, so a subscriber can take only financing or deal news.
+    outboxStatement(db, { type: "events.published", ticker, causeId: options.causeId ?? null, detail: { classes: [...new Set(events.filter(e => !previous.has(e.id)).map(e => e.class))].join(",") } }, now.toISOString()),
   ]);
   return { published: true, insiderReads, exhibitReads, pending: pendingInsider + pendingExhibits, progressed: saved > 0 };
 }

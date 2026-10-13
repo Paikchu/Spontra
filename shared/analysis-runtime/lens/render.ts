@@ -184,8 +184,9 @@ export function renderChartSvg(chart: CompiledChart, size: LensFrameSize, option
     if (!p) continue;
     const above = p.y - 22 > top;
     const x = Math.min(x1 - 4, Math.max(x0 + 4, p.x)), anchor = p.x > x1 - 80 ? "end" : p.x < x0 + 80 ? "start" : "middle";
-    out.push(`<line class="leader" x1="${n2(p.x)}" x2="${n2(p.x)}" y1="${n2(above ? p.y - 6 : p.y + 6)}" y2="${n2(above ? p.y - 16 : p.y + 16)}"/>`);
-    text(x, above ? p.y - 20 : p.y + 28, a.text, "ann", anchor);
+    // Below a point the value label already sits at +12, so the callout starts under it.
+    out.push(`<line class="leader" x1="${n2(p.x)}" x2="${n2(p.x)}" y1="${n2(above ? p.y - 6 : p.y + 16)}" y2="${n2(above ? p.y - 16 : p.y + 28)}"/>`);
+    text(x, above ? p.y - 20 : p.y + 40, a.text, "ann", anchor);
   }
   // Period labels along the bottom; sparse (asked for, or forced when they would collide) keeps the newest and every other one before it.
   const labelW = Math.max(...chart.periods.map(p => p.label.length)) * CHAR + 8;

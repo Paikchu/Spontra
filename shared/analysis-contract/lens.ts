@@ -1,4 +1,4 @@
-import type { FindingRef, FindingSpan } from "./findings.ts";
+import type { FindingRef, FindingSpan, PeerBaseRef } from "./findings.ts";
 import type { ExplainerClaim } from "./business-explainer.ts";
 
 /**
@@ -69,14 +69,36 @@ export type LensBlock =
   | { kind: "figures" }
   /** The watch item and, once published, its outcome. */
   | { kind: "watch" }
-  | { kind: "sources" };
+  | { kind: "sources" }
+  /** The filing's (or transcript's, or article's) own words, verbatim; verified against the material at read time. */
+  | { kind: "quote"; materialId: string; text: string; said?: { speaker: string; role?: string } }
+  /** Figures laid out as a table: one row per reference over the latest periods, or one row per reference across tracked peers. */
+  | { kind: "table"; table: LensTable }
+  /** This company's earlier watches and how each scored, from the publication's record. */
+  | { kind: "record" };
 
-/** A cell stacks one to three blocks; a row holds one or two cells, side by side, that stack on a narrow screen. */
+export type LensTable = {
+  /** At most 60 characters, no figure. */
+  title?: string;
+  columns: "periods" | "peers";
+  span: FindingSpan;
+  /** Periods drawn for a periods table, ending at the finding's report: 2–8. */
+  periods?: number;
+  /** Peer tickers for a peers table, in column order after the company itself; omitted means every peer sharing a category. */
+  peers?: string[];
+  rows: LensTableRow[];
+};
+/** For a peers table the reference must be one a peer can answer (`PeerBaseRef`); the company's own cell uses it directly. */
+export type LensTableRow = { ref: FindingRef | PeerBaseRef; label?: string; compare?: "yoy" | "qoq" };
+
+/** A cell stacks one to four blocks; a row holds one or two cells, side by side, that stack on a narrow screen. */
 export type LensCell = LensBlock[];
-export type LensRow = { cells: LensCell[] };
+/** `title`: an AI-written heading for the row, at most 60 characters and no figure. */
+export type LensRow = { title?: string; cells: LensCell[] };
 export type LensDocument = { rows: LensRow[] };
 
 export const LENS_LIMITS = {
-  rows: 6, cells: 2, blocksPerCell: 3, charts: 3, series: 6, marks: 6, periods: 12, annotations: 6, bands: 3,
+  rows: 9, cells: 2, blocksPerCell: 4, charts: 4, series: 6, marks: 6, periods: 12, annotations: 6, bands: 3,
   paragraphs: 3, paragraphChars: 1400, titleChars: 60, labelChars: 40, annotationChars: 60, idChars: 24,
+  quotes: 8, quoteChars: 600, tables: 3, tableRows: 8, tablePeriods: 8, tablePeers: 6,
 } as const;

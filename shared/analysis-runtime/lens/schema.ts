@@ -25,6 +25,13 @@ export function lensDocumentSchemaFor(ref: z.ZodTypeAny): z.ZodType<LensDocument
     annotations: z.array(annotation).max(LENS_LIMITS.annotations).optional(), bands: z.array(band).max(LENS_LIMITS.bands).optional(),
     periodLabels: z.enum(["all", "sparse"]).optional(), legend: z.enum(["top", "none"]).optional(),
   });
+  const peerRef = z.union([z.object({ capital: z.string().max(40) }), z.object({ fundamental: z.string().max(60) }), z.object({ metric: z.string().max(40) })]);
+  const tableRow = z.object({ ref: z.union([ref, peerRef]), label: plain(LENS_LIMITS.labelChars).optional(), compare: z.enum(["yoy", "qoq"]).optional() });
+  const table = z.object({
+    title: plain(LENS_LIMITS.titleChars).optional(), columns: z.enum(["periods", "peers"]), span: z.enum(["quarter", "fiscal_year"]),
+    periods: z.number().int().min(2).max(LENS_LIMITS.tablePeriods).optional(), peers: z.array(z.string().regex(/^[A-Z][A-Z0-9.-]{0,11}$/)).max(LENS_LIMITS.tablePeers).optional(),
+    rows: z.array(tableRow).min(1).max(LENS_LIMITS.tableRows),
+  });
   const block = z.discriminatedUnion("kind", [
     z.object({ kind: z.literal("judgment") }),
     z.object({ kind: z.literal("prose"), paragraphs: z.array(claim).min(1).max(LENS_LIMITS.paragraphs) }),
@@ -32,7 +39,10 @@ export function lensDocumentSchemaFor(ref: z.ZodTypeAny): z.ZodType<LensDocument
     z.object({ kind: z.literal("figures") }),
     z.object({ kind: z.literal("watch") }),
     z.object({ kind: z.literal("sources") }),
+    z.object({ kind: z.literal("quote"), materialId: z.string().trim().min(1).max(40), text: z.string().trim().min(20).max(LENS_LIMITS.quoteChars), said: z.object({ speaker: z.string().max(80), role: z.string().max(80).optional() }).optional() }),
+    z.object({ kind: z.literal("table"), table }),
+    z.object({ kind: z.literal("record") }),
   ]);
   const cell = z.array(block).min(1).max(LENS_LIMITS.blocksPerCell);
-  return z.object({ rows: z.array(z.object({ cells: z.array(cell).min(1).max(LENS_LIMITS.cells) })).min(1).max(LENS_LIMITS.rows) }) as unknown as z.ZodType<LensDocument>;
+  return z.object({ rows: z.array(z.object({ title: plain(LENS_LIMITS.titleChars).optional(), cells: z.array(cell).min(1).max(LENS_LIMITS.cells) })).min(1).max(LENS_LIMITS.rows) }) as unknown as z.ZodType<LensDocument>;
 }

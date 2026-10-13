@@ -44,6 +44,8 @@ const BUDGET_ROUNDS = 4;
 type TranscriptSource = { fetch(ticker: string, ref: TranscriptRef): Promise<FoundMaterial | null> };
 export type GuidanceDeps = {
   fetcher?: typeof fetch;
+  /** The Workflow instance, so the cost ledger can name the run. */
+  runId?: string;
   model?: GuidanceModelCall;
   transcripts?: TranscriptSource | null;
   deckSearch?: Parameters<typeof findIrDeck>[0] | null;
@@ -70,12 +72,12 @@ async function fiscalAnchors(repository: D1SecRepository, feed: SecFilingFeed | 
   return anchors;
 }
 
-function modelCall(env: SecPipelineEnv, store: GuidanceStore, fetcher: typeof fetch, day: string): GuidanceModelCall {
+function modelCall(env: SecPipelineEnv, store: GuidanceStore, fetcher: typeof fetch, day: string, call: { ticker: string; runId?: string }): GuidanceModelCall {
   const model = env.SEC_ANALYSIS_MODEL || "deepseek-flash";
   const cap = Number(env.GUIDANCE_DAILY_MODEL_CALLS) > 0 ? Number(env.GUIDANCE_DAILY_MODEL_CALLS) : DEFAULT_DAILY_MODEL_CALLS;
   return async (stage, system, payload) => {
     if (!await store.reserve("guidance-model", day, cap)) throw new BudgetExhausted("guidance model budget exhausted");
-    return callWorkerSecModel(env, fetcher, stage, system, payload, model, MODEL_BUDGET_MS, true, { maxTokens: GUIDANCE_MAX_OUTPUT_TOKENS, reasoning: reasoningFor(env, "guidance") });
+    return callWorkerSecModel(env, fetcher, stage, system, payload, model, MODEL_BUDGET_MS, true, { maxTokens: GUIDANCE_MAX_OUTPUT_TOKENS, reasoning: reasoningFor(env, "guidance"), ticker: call.ticker, runId: call.runId });
   };
 }
 
@@ -89,7 +91,7 @@ async function extractStored(env: SecPipelineEnv, deps: GuidanceDeps, materialId
   const text = await store.materialText(row);
   if (!text) { await store.markMaterialFailed(materialId, "stored text missing"); return { status: "failed" }; }
   const now = new Date().toISOString();
-  const model = deps.model ?? modelCall(env, store, deps.fetcher ?? fetch, now.slice(0, 10));
+  const model = deps.model ?? modelCall(env, store, deps.fetcher ?? fetch, now.slice(0, 10), { ticker: input.ticker, runId: deps.runId });
   try {
     const result = await extractGuidance({ ticker: input.ticker, companyName: input.companyName, kind: row.kind, publishedAt: row.published_at, reportedQuarter: input.reportedQuarter, text }, model);
     await store.saveExtraction(row, input.eventDate, GUIDANCE_EXTRACTOR_VERSION, { model: env.SEC_ANALYSIS_MODEL || "deepseek-flash", ...result }, now);

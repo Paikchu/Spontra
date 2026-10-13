@@ -2,6 +2,7 @@ import { reasoningFor } from "../ai-config.ts";
 import type { ExplainerSource } from "../../../../shared/analysis-contract/business-explainer.ts";
 import { issuerNames } from "../../../../shared/analysis-runtime/business-tree.ts";
 import { readFindingFundamentals, readFindingsPublication, type FindingData } from "../../../../shared/analysis-runtime/findings.ts";
+import type { FindingRecordEntry, FindingsPublication } from "../../../../shared/analysis-contract/findings.ts";
 import { sha256 } from "../company-analysis/api.ts";
 import { D1CompanyAnalysisRepository } from "../company-analysis/repository.ts";
 import { findSecurity } from "../catalog/security-directory.ts";
@@ -74,6 +75,20 @@ export async function findingsFingerprint(env: SecPipelineEnv, ticker: string): 
   return (await readInput(env, ticker))?.fingerprint ?? null;
 }
 
+/**
+ * The watches of every finding published before this one for the company (stored versions plus what served until now),
+ * each stamped with its report and publication time; at most the newest 24, and never a watch of this publication.
+ */
+export async function priorWatches(store: AiRunStore, ticker: string, previous: FindingsPublication | null, current: FindingsPublication): Promise<FindingRecordEntry[]> {
+  const entries = new Map<string, FindingRecordEntry>();
+  const add = (p: FindingsPublication | null) => { for (const f of p?.findings ?? []) if (f.watch && p && p.generatedAt !== current.generatedAt) entries.set(`${p.periodEnd}:${f.id}`, { findingId: f.id, title: f.title, kind: f.kind, periodEnd: p.periodEnd, publishedAt: p.generatedAt, watch: f.watch }); };
+  for (const e of previous?.record ?? []) entries.set(`${e.periodEnd}:${e.findingId}`, e);
+  add(previous);
+  const versions = await store.versions("findings", ticker).catch(() => []);
+  for (const v of versions.slice(0, 12)) { const stored = await store.version("findings", ticker, v.id).catch(() => null); add(stored ? readFindingsPublication(stored.publication, ticker) : null); }
+  return [...entries.values()].sort((a, b) => a.publishedAt.localeCompare(b.publishedAt)).slice(-24);
+}
+
 export async function executeFindingsWorkflow(params: FindingsWorkflowParams, step: WorkflowStepLike, env: SecPipelineEnv, deps: FindingsDeps = {}) {
   assertTrackedTicker(env, params.ticker);
   const fetcher = deps.fetcher ?? fetch;
@@ -82,7 +97,7 @@ export async function executeFindingsWorkflow(params: FindingsWorkflowParams, st
   const input = await step.do("findings-input", () => readInput(env, params.ticker));
   // The report, guidance or narrative moved on after scheduling; the next sweep starts a run for the new state.
   if (!input || input.fingerprint !== params.fingerprint) return { status: "superseded" as const };
-  const model: FindingsModel = deps.model ?? ((stage, system, payload) => callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, MODEL_BUDGET_MS, true, { reasoning: reasoningFor(env, "findings") }));
+  const model: FindingsModel = deps.model ?? ((stage, system, payload) => callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, MODEL_BUDGET_MS, true, { reasoning: reasoningFor(env, "findings"), ticker: params.ticker }));
   const companyName = issuerNames(findSecurity(params.ticker)?.name ?? params.ticker)[0]!;
   const stage = <T>(name: string, callback: () => Promise<T>) => step.do(`findings-${name}`, callback);
   const draft = await writeFindings({
@@ -91,7 +106,7 @@ export async function executeFindingsWorkflow(params: FindingsWorkflowParams, st
   });
   // Each verified finding's lens document, composed by the agent at low reasoning; a reply that is not JSON is its turn gone wrong, not a failed step.
   const lensModel: FindingsModel = deps.model ?? (async (stage, system, payload) => {
-    try { return await callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, 3 * 60_000, true, { reasoning: reasoningFor(env, "lens") }); }
+    try { return await callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, 3 * 60_000, true, { reasoning: reasoningFor(env, "lens"), ticker: params.ticker }); }
     catch (error) { if (error instanceof SecModelOutputError) return { action: "invalid" }; throw error; }
   });
   const lensed = draft.publication ? await writeLensDocuments({ publication: draft.publication, ledger: input.ledger, data: input.data, model: lensModel, version: LENS_VERSION, now, stage }).catch(() => null) : null;
@@ -117,8 +132,9 @@ export async function executeFindingsWorkflow(params: FindingsWorkflowParams, st
       : { schemaVersion: "findings.v1", ticker: params.ticker, periodEnd, generatedAt: now, model: modelVersion, fingerprint: params.fingerprint, findings: [], sources: input.ledger.sources });
     const publication = readFindingsPublication({ ...base, highlights }, params.ticker);
     if (!publication) return false;
-    // The operator's trace of the lens agent rides in the same record; readers get the publication through the contract, which drops it.
-    const record = { ...publication, ...(lensTrace ? { lensTrace } : {}) };
+    // Earlier publications' watches, oldest first, so the page can score each against the data as it stands now.
+    const store = new AiRunStore(db);
+    const record = { ...publication, record: await priorWatches(store, params.ticker, previous, publication), ...(lensTrace ? { lensTrace } : {}) };
     // The publication and its event commit together.
     await db.batch([
       db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at")

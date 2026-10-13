@@ -47,6 +47,7 @@ function elapsed(run: AiRun) {
   const seconds = Math.max(0, Math.round((Date.parse(run.finishedAt ?? run.updatedAt) - Date.parse(run.startedAt)) / 1000));
   return seconds < 60 ? `${seconds} 秒` : seconds < 3600 ? `${Math.round(seconds / 60)} 分钟` : `${(seconds / 3600).toFixed(1)} 小时`;
 }
+const count = (value: number) => value.toLocaleString("zh-CN");
 function storage() { try { return window.sessionStorage; } catch { return undefined; } }
 function initial(name: "ticker" | "kind") { try { return new URLSearchParams(window.location.search).get(name) ?? ""; } catch { return ""; } }
 
@@ -141,6 +142,11 @@ function KindDetail({ detail, onChanged, onError }: { detail: AiCompanyDetail; o
     {notice && <p className="ra-notice" role="status">{notice}</p>}{error && <p className="ra-error" role="alert">{error}</p>}
     <h3>运行记录</h3>
     {!detail.runs.length ? <p className="ai-muted">无运行记录</p> : <ol className="ai-runs">{detail.runs.map(run => <RunItem key={run.runId} run={run} />)}</ol>}
+    <h3>模型用量</h3>
+    {!detail.usage?.length ? <p className="ai-muted">无用量记录</p> : <div className="ai-table-wrap"><table className="ai-table ai-usage">
+      <thead><tr><th>日期</th><th>调用</th><th>输入</th><th>缓存</th><th>输出</th><th>搜索</th></tr></thead>
+      <tbody>{detail.usage.map(u => <tr key={u.day}><td>{u.day}</td><td>{count(u.calls)}</td><td>{count(u.inputTokens)}</td><td>{count(u.cachedTokens)}</td><td>{count(u.outputTokens)}</td><td>{count(u.searchCalls)}</td></tr>)}</tbody>
+    </table></div>}
     <Versions detail={detail} onError={onError} />
   </div>;
 }

@@ -13,10 +13,13 @@ import type {BusinessTree} from "@/shared/analysis-contract/business-tree";
 import {readGuidancePublication} from "@/shared/analysis-runtime/guidance";
 import type {GuidancePublication} from "@/shared/analysis-contract/guidance";
 import {readFindingFundamentals,readFindingsPublication,type FindingFundamentals} from "@/shared/analysis-runtime/findings";
-import type {FindingsPublication} from "@/shared/analysis-contract/findings";
+import type {FindingPassage,FindingsPublication} from "@/shared/analysis-contract/findings";
+import {readPeersPublication} from "@/shared/analysis-runtime/peers";
+import type {PeersPublication} from "@/shared/analysis-contract/peers";
 import {readEventsPublication} from "@/shared/analysis-runtime/events";
 import type {EventsPublication} from "@/shared/analysis-contract/events";
 import type {PublicFilingDetail,PublicFilingDigest,PublicFilingDigestPage,PublicFilingPage,PublicSecFiling} from "@/shared/analysis-contract/filings";
+import type {LibraryTable,PublicPassage} from "@/shared/analysis-contract/filing-library";
 import {formatFilingPeriodLabel} from "@/packages/web/src/model/filing-period-label";
 import {formatSecMetricLabel,formatSecMetricValue} from "@/packages/web/src/model/sec-metric-format";
 /** The analysis pipeline is reached over its Service Binding; the host is a label the binding ignores. */
@@ -96,13 +99,30 @@ export async function loadGuidance(ticker:string,fetcher:typeof fetch=fetch):Pro
  }catch{return null;}
 }
 
-/** Analyst findings, re-validated like the explainer; the page withholds any the statements do not support. */
-export async function loadFindings(ticker:string,fetcher:typeof fetch=fetch):Promise<FindingsPublication|null>{
+/** The findings with what their lens documents rest on: the quoted passages as the library serves them now, and the peers projection. */
+export type FindingsBundle={findings:FindingsPublication;passages:FindingPassage[];peers:PeersPublication|null};
+const asText=(v:unknown)=>typeof v==="string"?v:null;
+/** A served passage, rebuilt field by field; a malformed one is left out, and a malformed table drops the table alone. */
+function readFindingPassage(value:unknown):FindingPassage|null{
+ const p=value as Record<string,unknown>|null;
+ const passageId=asText(p?.passageId),documentId=asText(p?.documentId),title=asText(p?.title),form=asText(p?.form),filedAt=asText(p?.filedAt),url=asText(p?.url),text=asText(p?.text);
+ if(!p||!passageId||!/^p[0-9a-f]{14}$/.test(passageId)||!documentId||!title||!form||!filedAt||!url||!text||text.length>20000)return null;
+ const path=Array.isArray(p.path)?p.path.filter((x):x is string=>typeof x==="string").slice(0,12):[];
+ const t=p.table as Record<string,unknown>|null;
+ const rows=t&&Array.isArray(t.rows)?t.rows.map(r=>{const row=r as Record<string,unknown>;const label=asText(row?.label);const cells=Array.isArray(row?.cells)?row.cells.map(c=>{const cell=c as Record<string,unknown>;const text=asText(cell?.text);return text==null?null:{text,value:typeof cell.value==="number"&&Number.isFinite(cell.value)?cell.value:null};}):null;return label==null||!cells||cells.some(c=>c==null)?null:{label,cells:cells as Array<{text:string;value:number|null}>};}):null;
+ const columns=t&&Array.isArray(t.columns)?t.columns.filter((x):x is string=>typeof x==="string"):null;
+ const table=t&&rows&&columns&&!rows.some(r=>r==null)?{unit:asText(t.unit),columns,rows:rows as Array<{label:string;cells:Array<{text:string;value:number|null}>}>}:null;
+ return {passageId,documentId,title,form,filedAt,url,path,text,table};
+}
+export async function loadFindings(ticker:string,fetcher:typeof fetch=fetch):Promise<FindingsBundle|null>{
  try{
   const response=await fetcher(ANALYSIS_ORIGIN+`/api/v1/companies/${ticker}/findings`,{signal:AbortSignal.timeout(8000),headers:{accept:"application/json"}});
   if(!response.ok)return null;
-  const body=await response.json() as {schemaVersion?:string;status?:string;findings?:unknown};
-  return body.schemaVersion==="findings-response.v1"&&body.status==="ready"?readFindingsPublication(body.findings,ticker):null;
+  const body=await response.json() as {schemaVersion?:string;status?:string;findings?:unknown;passages?:unknown;peers?:unknown};
+  const findings=body.schemaVersion==="findings-response.v1"&&body.status==="ready"?readFindingsPublication(body.findings,ticker):null;
+  if(!findings)return null;
+  const passages=(Array.isArray(body.passages)?body.passages:[]).map(readFindingPassage).filter((p):p is FindingPassage=>p!=null).slice(0,60);
+  return {findings,passages,peers:readPeersPublication(body.peers)};
  }catch{return null;}
 }
 
@@ -171,6 +191,48 @@ export async function loadFilingDetail(ticker:string,accession:string,snapshot:{
  }catch{return null;}
 }
 
+/** A passage id is `p` and fourteen hex digits; the page links a quote to nothing else. */
+const PASSAGE_ID=/^p[0-9a-f]{14}$/;
+const str=(v:unknown):v is string=>typeof v==="string";
+const strings=(v:unknown):string[]=>Array.isArray(v)?v.filter(str):[];
+const neighbours=(v:unknown):Array<{passageId:string;text:string}>=>Array.isArray(v)?v.flatMap(n=>n&&typeof n==="object"&&PASSAGE_ID.test(String((n as {passageId?:unknown}).passageId))&&str((n as {text?:unknown}).text)?[{passageId:(n as {passageId:string}).passageId,text:(n as {text:string}).text}]:[]):[];
+/** A passage table rebuilt cell by cell; a row or cell of the wrong shape drops the whole table rather than passing through. */
+function readTable(v:unknown):LibraryTable|null{
+ if(!v||typeof v!=="object")return null;
+ const t=v as {unit?:unknown;columns?:unknown;rows?:unknown;notes?:unknown;xbrlBlock?:unknown};
+ if(!Array.isArray(t.columns)||!t.columns.every(str)||!Array.isArray(t.rows))return null;
+ const rows:LibraryTable["rows"]=[];
+ for(const r of t.rows as unknown[]){
+  if(!r||typeof r!=="object")return null;
+  const row=r as {label?:unknown;path?:unknown;cells?:unknown};
+  if(!str(row.label)||!Array.isArray(row.cells))return null;
+  const cells:LibraryTable["rows"][number]["cells"]=[];
+  for(const c of row.cells as unknown[]){
+   if(!c||typeof c!=="object")return null;
+   const cell=c as {text?:unknown;value?:unknown};
+   if(!str(cell.text)||!(cell.value===null||typeof cell.value==="number"&&Number.isFinite(cell.value)))return null;
+   cells.push({text:cell.text,value:cell.value});
+  }
+  rows.push({label:row.label,path:strings(row.path),cells});
+ }
+ return {unit:str(t.unit)?t.unit:null,columns:t.columns,rows,notes:strings(t.notes),xbrlBlock:str(t.xbrlBlock)?t.xbrlBlock:null};
+}
+/** One filing-library passage with its neighbours, for a quote that links to the filing's own words; only the typed fields pass through. */
+export async function loadPassage(ticker:string,passageId:string,fetcher:typeof fetch=fetch):Promise<PublicPassage|null>{
+ if(!PASSAGE_ID.test(passageId))return null;
+ try{
+  const response=await fetcher(ANALYSIS_ORIGIN+`/api/v1/companies/${ticker}/passages/${passageId}`,{signal:AbortSignal.timeout(8000),headers:{accept:"application/json"}});
+  if(!response.ok)return null;
+  const body=await response.json() as {schemaVersion?:unknown;status?:unknown;passage?:unknown};
+  if(body.schemaVersion!=="passage-response.v1"||body.status!=="ready"||!body.passage||typeof body.passage!=="object")return null;
+  const p=body.passage as {passageId?:unknown;ticker?:unknown;document?:unknown;path?:unknown;text?:unknown;table?:unknown;before?:unknown;after?:unknown};
+  const d=(p.document&&typeof p.document==="object"?p.document:{}) as {documentId?:unknown;form?:unknown;docType?:unknown;filedAt?:unknown;reportDate?:unknown;url?:unknown};
+  if(p.passageId!==passageId||p.ticker!==ticker||!str(p.text)||!str(d.documentId)||!str(d.form)||!str(d.docType)||!str(d.filedAt)||!str(d.reportDate)||!str(d.url))return null;
+  return {passageId,ticker,document:{documentId:d.documentId,form:d.form,docType:d.docType,filedAt:d.filedAt,reportDate:d.reportDate,url:d.url},
+   path:strings(p.path),text:p.text,table:p.table==null?null:readTable(p.table),before:neighbours(p.before),after:neighbours(p.after)};
+ }catch{return null;}
+}
+
 /** SEC fundamentals series, stripped to the fields findings resolve against; provider and refresh state never pass through. */
 export async function loadFundamentals(ticker:string,fetcher:typeof fetch=fetch):Promise<FindingFundamentals|null>{
  try{
@@ -185,7 +247,7 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
  if(url.pathname.startsWith("/api/")){
   const fetcher=upstream??analysisFetcher(env);
   if(!fetcher)return json({error:"Read service unavailable"},503);
-  const match=url.pathname.match(/^\/api\/business\/v1\/companies\/([A-Z][A-Z0-9.-]{0,11})(\/capital|\/findings|\/fundamentals|\/events|\/filings|\/filings\/\d{10}-\d{2}-\d{6})?$/);
+  const match=url.pathname.match(/^\/api\/business\/v1\/companies\/([A-Z][A-Z0-9.-]{0,11})(\/capital|\/findings|\/fundamentals|\/events|\/filings|\/filings\/\d{10}-\d{2}-\d{6}|\/passages\/p[0-9a-f]{14})?$/);
   const detail=match?.[2]?.startsWith("/filings/")?match[2].slice("/filings/".length):null;
   // The reader pins a report to its published revision; nothing else takes a query.
   const allowed=detail?new Set(["reportDate","reportVersion"]):new Set<string>();
@@ -197,9 +259,10 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
    // Supplementary resources answer on their own and are cached only when they have something to say.
    const supplementary=async<T>(name:string,version:string,load:()=>Promise<T|null>)=>{const body=await load();const response=json({schemaVersion:version,status:body?"ready":"unavailable",[name]:body});if(!body)response.headers.set("cache-control","no-store");if(cache&&body)ctx.waitUntil(cache.put(key,response.clone()));return response;};
    if(match[2]==="/capital")return supplementary("capital","capital-response.v1",()=>loadCapital(match[1],fetcher));
-   if(match[2]==="/findings")return supplementary("findings","findings-response.v1",()=>loadFindings(match[1],fetcher));
+   if(match[2]==="/findings"){const bundle=await loadFindings(match[1],fetcher);const response=json({schemaVersion:"findings-response.v1",status:bundle?"ready":"unavailable",findings:bundle?.findings??null,passages:bundle?.passages??[],peers:bundle?.peers??null});if(!bundle)response.headers.set("cache-control","no-store");if(cache&&bundle)ctx.waitUntil(cache.put(key,response.clone()));return response;}
    if(match[2]==="/events")return supplementary("events","events-response.v1",()=>loadEvents(match[1],fetcher));
    if(match[2]==="/filings")return supplementary("filings","filing-digests-response.v1",()=>loadFilings(match[1],fetcher));
+   if(match[2].startsWith("/passages/"))return supplementary("passage","passage-response.v1",()=>loadPassage(match[1],match[2]!.slice("/passages/".length),fetcher));
    if(detail){const reportDate=url.searchParams.get("reportDate"),reportVersion=url.searchParams.get("reportVersion");
     const body=await loadFilingDetail(match[1],detail,reportDate&&reportVersion?{reportDate,reportVersion}:null,fetcher);
     if(!body)return json({error:"Not found"},404);

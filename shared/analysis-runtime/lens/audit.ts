@@ -15,6 +15,8 @@ export type AuditInput = {
   /** Numbers the finding's evidence can produce, for the paragraphs the agent adds. */
   candidates: number[];
   watch: FindingWatch | undefined;
+  /** What `verifyLensDocument` took out of this document (quotes not found, tables that resolve nothing); each is an error. */
+  verifyReasons?: string[];
 };
 
 function cellHeight(block: LensBlock, width: number, compiled: Map<string, CompileResult>, judgmentChars: number, figures: number): number | null {
@@ -26,6 +28,9 @@ function cellHeight(block: LensBlock, width: number, compiled: Map<string, Compi
     case "figures": return figures * 44 + 16;
     case "watch": return 72;
     case "sources": return 48;
+    case "quote": return prose(block.text.length) + 28;
+    case "table": return block.table.rows.length * 30 + 44;
+    case "record": return 96;
   }
 }
 
@@ -48,6 +53,10 @@ export function auditDocument(input: AuditInput & { judgmentChars: number; figur
   if (!input.watch && count("watch") > 0) error("document", "the finding has no watch item; remove the watch block");
   const charts = blocks.flatMap(b => b.kind === "chart" ? [b.chart] : []);
   if (charts.length > LENS_LIMITS.charts) error("document", `at most ${LENS_LIMITS.charts} charts`);
+  if (count("quote") > LENS_LIMITS.quotes) error("document", `at most ${LENS_LIMITS.quotes} quotes`);
+  if (count("table") > LENS_LIMITS.tables) error("document", `at most ${LENS_LIMITS.tables} tables`);
+  if (count("record") > 1) error("document", "at most one record block");
+  for (const [i, w] of input.verifyReasons?.entries() ?? []) error(`verify ${i + 1}`, w);
   if (!charts.length) warn("document", "no chart: a finding reads better with one");
   const chartIds = new Set<string>();
   for (const c of charts) { if (chartIds.has(c.id)) error(`chart ${c.id}`, "chart id used twice"); chartIds.add(c.id); }

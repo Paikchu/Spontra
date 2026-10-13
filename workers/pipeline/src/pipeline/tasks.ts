@@ -11,6 +11,7 @@ import { FINANCIAL_TASKS } from "./financial-tasks.ts";
 import { SEC_TASKS } from "./sec-tasks.ts";
 import { AI_TASKS } from "./ai-tasks.ts";
 import { LIBRARY_TASKS } from "./library-tasks.ts";
+import { PEERS_VERSION, publishPeers } from "../peers/projection.ts";
 
 /** `later`: the run is not finished (budget spent, input not ready); it runs again after `afterMs`. */
 export type TaskOutcome = { status: "done"; detail?: unknown } | { status: "later"; afterMs: number; detail?: unknown };
@@ -73,6 +74,15 @@ export const TASK_IMPLEMENTATIONS: Record<TaskName, TaskImplementation> = {
       // More than a batch was ripe, or the rest is still inside its grace period.
       const oldest = Date.parse(waiting[0]!.superseded_at);
       return { status: "later", afterMs: Math.max(1000, oldest + PRUNE_GRACE_MS - now.getTime()), detail };
+    },
+  },
+
+  // Every data company's comparable figures in one record, rebuilt from stored projections whenever a map snapshot
+  // or the SEC fundamentals change; the debounce folds a burst of companies into one rebuild.
+  "peers": {
+    version: PEERS_VERSION,
+    async run(env, _ticker, { now }) {
+      return { status: "done", detail: await publishPeers(env, now) };
     },
   },
 

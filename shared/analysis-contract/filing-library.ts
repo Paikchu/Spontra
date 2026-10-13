@@ -68,6 +68,19 @@ export type LibraryCard = {
 export type LibraryDocumentDetail = { document: LibraryDocumentSummary; outline: LibrarySectionView[]; cards: LibraryCard[] };
 export type LibrarySectionDetail = { section: LibrarySectionView; passages: LibraryPassageView[]; card: LibraryCard | null };
 
+/**
+ * One passage read by its id for a quote on the public page, with the filing it comes from and the two passages on
+ * either side in the same section (text only, shortened) so the quote links to the filing's own words in context.
+ * `unavailable` covers a passage that does not exist, belongs to another company, or whose document is not ready.
+ */
+export type PublicPassage = {
+  passageId: string; ticker: string;
+  document: { documentId: string; form: string; docType: string; filedAt: string; reportDate: string; url: string };
+  path: string[]; text: string; table: LibraryTable | null;
+  before: Array<{ passageId: string; text: string }>; after: Array<{ passageId: string; text: string }>;
+};
+export type PublicPassageResponse = { schemaVersion: "passage-response.v1"; status: "ready" | "unavailable"; passage: PublicPassage | null };
+
 /** The fixed topic taxonomy an index card picks from; only code changes it. */
 export const LIBRARY_TOPICS = {
   business: ["overview", "segment", "product_line", "customers", "competition", "go_to_market", "seasonality", "supply_chain", "research", "ip", "human_capital", "regulation"],

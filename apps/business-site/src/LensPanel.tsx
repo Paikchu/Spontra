@@ -1,12 +1,12 @@
 import { Button } from "@/packages/web/src/ui/button";
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 import type { ExplainerSource } from "@/shared/analysis-contract/business-explainer";
-import type { FindingRef } from "@/shared/analysis-contract/findings";
+import type { FindingMaterial, FindingRecordEntry, FindingRef } from "@/shared/analysis-contract/findings";
 import type { LensBlock } from "@/shared/analysis-contract/lens";
-import { spanLabel, watchPeriod, type FindingData, type ResolvedEvidence, type ResolvedValue } from "@/shared/analysis-runtime/findings";
+import { spanLabel, watchPeriod, watchVerdict, type FindingData, type ResolvedEvidence, type ResolvedValue } from "@/shared/analysis-runtime/findings";
 import { formatResolved } from "@/shared/analysis-runtime/lens/format";
 import { documentFromEvidence, lensDocumentOf } from "@/shared/analysis-runtime/lens/legacy";
-import { verifyLensDocument, type VerifiedLens } from "@/shared/analysis-runtime/lens/verify";
+import { tableKey, verifyLensDocument, type VerifiedLens } from "@/shared/analysis-runtime/lens/verify";
 import { KIND_LABEL, VIEW_LABEL, type VerifiedFinding } from "./findings-model";
 import { LensFrame } from "./LensFrame";
 
@@ -27,10 +27,14 @@ const near = (a: string, b: string) => Math.abs(Date.parse(a) - Date.parse(b)) <
  * the figures, what to watch, the sources) as the agent laid it out, verified against the same data
  * the stage draws. Findings written before the agent are laid out the standard way from their chart.
  */
-export function LensPanel({ finding, data, sources, nodeColor, pair, story, index, count, onPair, onStep, onClose, split = false, compact = false, onFocusThis }: {
+export function LensPanel({ finding, data, sources, materials, record, ticker, nodeColor, pair, story, index, count, onPair, onStep, onClose, split = false, compact = false, onFocusThis }: {
   finding: VerifiedFinding;
   data: FindingData;
   sources: ExplainerSource[];
+  /** The publication's quoted materials and its earlier watches. */
+  materials?: FindingMaterial[];
+  record?: FindingRecordEntry[];
+  ticker: string;
   nodeColor: (id: string) => string;
   pair: VerifiedFinding | null;
   story: boolean;
@@ -60,18 +64,20 @@ export function LensPanel({ finding, data, sources, nodeColor, pair, story, inde
         </>}
       </div>
     </header>
-    <LensDocument finding={finding} data={data} sources={sources} nodeColor={nodeColor} compact={compact} />
+    <LensDocument finding={finding} data={data} sources={sources} materials={materials} record={record} ticker={ticker} nodeColor={nodeColor} compact={compact} />
   </section>;
 }
 
 /** The document as rows of cells; a chart's hover lights the evidence rows of the same period. */
-function LensDocument({ finding, data, sources, nodeColor, compact }: { finding: VerifiedFinding; data: FindingData; sources: ExplainerSource[]; nodeColor: (id: string) => string; compact: boolean }) {
+function LensDocument({ finding, data, sources, materials, record, ticker, nodeColor, compact }: { finding: VerifiedFinding; data: FindingData; sources: ExplainerSource[]; materials?: FindingMaterial[]; record?: FindingRecordEntry[]; ticker: string; nodeColor: (id: string) => string; compact: boolean }) {
   const colorOf = useCallback((ref: FindingRef) => "nodeId" in ref ? nodeColor(ref.nodeId) : "ratio" in ref && "nodeId" in ref.ratio.numerator ? nodeColor(ref.ratio.numerator.nodeId) : null, [nodeColor]);
+  // Earlier watches other than this finding's own, scored against the data as it stands; only those that can be read.
+  const scored = useMemo(() => (record ?? []).filter(e => e.findingId !== finding.id || e.periodEnd !== finding.periodEnd).map(e => ({ entry: e, result: watchVerdict(data, e.watch, e.periodEnd) })), [record, data, finding]);
   const lens = useMemo<VerifiedLens | null>(() => {
-    const options = { colorOf };
-    return verifyLensDocument(lensDocumentOf(finding, data, finding.periodEnd), finding, finding.resolved, data, finding.periodEnd, options)
-      ?? verifyLensDocument(documentFromEvidence(finding), finding, finding.resolved, data, finding.periodEnd, options);
-  }, [finding, data, colorOf]);
+    const options = { colorOf }, context = { ticker, materials, record: scored };
+    return verifyLensDocument(lensDocumentOf(finding, data, finding.periodEnd), finding, finding.resolved, data, finding.periodEnd, options, context)
+      ?? verifyLensDocument(documentFromEvidence(finding), finding, finding.resolved, data, finding.periodEnd, options, context);
+  }, [finding, data, colorOf, ticker, materials, scored]);
   // Sources numbered in the order the document cites them, so every citation mark points at one list.
   const cited = useMemo(() => {
     const ids = [...finding.judgment.sourceIds, ...(lens?.document.rows ?? []).flatMap(r => r.cells.flat()).flatMap(b => b.kind === "prose" ? b.paragraphs.flatMap(p => p.sourceIds) : [])];
@@ -94,13 +100,36 @@ function LensDocument({ finding, data, sources, nodeColor, compact }: { finding:
           : <p className="lens-outcome lens-outcome--pending">Pending · {shortPeriod(watchPeriod(finding.periodEnd, watch))} report</p>}
       </div> : null;
       case "sources": return cited.length > 0 ? <ol key={key} className="sources sources--numbered">{cited.map(s => <li key={s.id}><a href={s.url} target="_blank" rel="noopener noreferrer">{s.title}<span aria-hidden="true"> ↗</span></a></li>)}</ol> : null;
+      case "quote": {
+        const q = lens.quotes[b.materialId];
+        if (!q) return null;
+        const p = q.passage;
+        return <figure key={key} className="lens-quote">
+          <blockquote>{b.text}</blockquote>
+          <figcaption>{b.said && <span className="lens-quote-said">{b.said.speaker}{b.said.role ? ` · ${b.said.role}` : ""}</span>}<a href={`/api/business/v1/companies/${encodeURIComponent(ticker)}/passages/${encodeURIComponent(p.passageId)}`} target="_blank" rel="noopener noreferrer">{p.title} · {p.form} · {p.filedAt}</a>{p.path.length > 0 && <small>{p.path.slice(1).join(" › ")}</small>}</figcaption>
+        </figure>;
+      }
+      case "table": {
+        const t = lens.tables[tableKey(b.table)];
+        if (!t) return null;
+        return <table key={key} className="lens-table">
+          {t.title && <caption>{t.title}</caption>}
+          <thead><tr><th scope="col" />{t.columns.map(c => <th key={c.key} scope="col">{c.label}{c.sub && <small>{c.sub}</small>}</th>)}</tr></thead>
+          <tbody>{t.rows.map((r, i) => <tr key={i}><th scope="row">{r.label}</th>{r.cells.map((c, j) => <td key={j}>{c ? <>{c.text}{c.change && <em data-trend={c.change.startsWith("+") ? "up" : c.change.startsWith("−") ? "down" : undefined}>{c.change}</em>}</> : null}</td>)}</tr>)}</tbody>
+        </table>;
+      }
+      case "record": return scored.length ? <dl key={key} className="lens-record">{scored.map(({ entry, result }) => <div key={`${entry.periodEnd}:${entry.findingId}`} className="lens-record-row" data-verdict={result?.verdict}>
+        <dt><span>{shortPeriod(entry.periodEnd)} · {KIND_LABEL[entry.kind]}</span>{entry.title}</dt>
+        <dd>{result ? <><b>{result.verdict}</b><span>{result.outcome.resolved.label} {formatValue(result.outcome.resolved.current, result.outcome.resolved.evidence.ref)}</span></> : <b data-pending="">{shortPeriod(watchPeriod(entry.periodEnd, entry.watch))}</b>}</dd>
+      </div>)}</dl> : null;
     }
   };
   return <div className="lens-doc">
     {lens.document.rows.map((row, i) => {
       const chartIn = (cell: LensBlock[]) => cell.some(b => b.kind === "chart");
       const lead = row.cells.length === 2 ? chartIn(row.cells[0]!) && !chartIn(row.cells[1]!) ? "first" : chartIn(row.cells[1]!) && !chartIn(row.cells[0]!) ? "second" : undefined : undefined;
-      return <div key={i} className="lens-doc-row" data-cells={row.cells.length} data-lead={lead}>
+      return <div key={i} className="lens-doc-row" data-cells={row.cells.length} data-lead={lead} data-titled={row.title ? "" : undefined}>
+        {row.title && <h3 className="lens-row-title">{row.title}</h3>}
         {row.cells.map((cell, j) => <div key={j} className="lens-doc-cell">{cell.map((b, k) => block(b, k))}</div>)}
       </div>;
     })}

@@ -1,5 +1,6 @@
 import type { BusinessFlowQuarter, PublicBusinessFlow } from "@/shared/analysis-contract/business-flow";
-import type { CapitalMetric, FindingsPublication } from "@/shared/analysis-contract/findings";
+import type { CapitalMetric, FindingPassage, FindingsPublication } from "@/shared/analysis-contract/findings";
+import type { PeersPublication } from "@/shared/analysis-contract/peers";
 import type { PublicCapitalStructure } from "@/shared/analysis-contract/capital-structure";
 import type { GuidancePublication } from "@/shared/analysis-contract/guidance";
 import type { RevenueHistory } from "@/shared/analysis-contract/revenue-history";
@@ -10,8 +11,8 @@ export type { VerifiedFinding };
 export const KIND_LABEL: Record<VerifiedFinding["kind"], string> = { risk: "Risk", strength: "Strength", shift: "Shift", watch: "Watch" };
 export const VIEW_LABEL = { profit: "Profit", cash: "Cash flow", balance: "Balance sheet" } as const;
 
-export function findingData(flow: PublicBusinessFlow, history: RevenueHistory | null, capital: PublicCapitalStructure | null, fundamentals: FindingFundamentals | null, guidance: GuidancePublication | null): FindingData {
-  return { quarters: flow.quarters, history, capital, fundamentals, guidance };
+export function findingData(flow: PublicBusinessFlow, history: RevenueHistory | null, capital: PublicCapitalStructure | null, fundamentals: FindingFundamentals | null, guidance: GuidancePublication | null, peers: PeersPublication | null = null, passages: FindingPassage[] | null = null): FindingData {
+  return { quarters: flow.quarters, history, capital, fundamentals, guidance, peers, passages };
 }
 
 /** Findings the page can stand behind, most severe first. */
@@ -53,6 +54,17 @@ export function anchorPoolKeys(f: VerifiedFinding): Set<string> {
       case "cash": add("cash", "cash-added", "cash-used"); break;
       case "equity": add("paid-in", "retained", "equity-other"); break;
       case "totalAssets": add("productive", "lease-assets", "cash", "receivables", "inventory", "intangibles", "investments", "assets-other"); break;
+      case "leases": add("leases"); break;
+      case "customerAdvances": add("customer"); break;
+      case "payables": add("payables"); break;
+      case "productive": add("productive"); break;
+      case "leaseAssets": add("lease-assets"); break;
+      case "receivables": add("receivables"); break;
+      case "inventory": add("inventory"); break;
+      case "intangibles": add("intangibles"); break;
+      case "investments": add("investments"); break;
+      case "leasePrincipal": add("lease", "lease-out"); break;
+      default: break;
     }
   }
   return keys;

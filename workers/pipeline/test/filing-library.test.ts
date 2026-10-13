@@ -65,6 +65,54 @@ test("splits a 10-K by its items, heading levels and XBRL notes", () => {
   assert.ok(doc.passages.some(x => x.sectionId === leases.sectionId && x.text.startsWith("leasemore")));
 });
 
+test("statements and notes filed under the exhibits item are read as under Item 8; the exhibit index stays an exhibit list", () => {
+  // Oracle's 10-K: Item 8 points at Item 15, where the statements sit under "(b) Exhibits" and the tagged notes follow them.
+  const exhibitsHtml = `<html><body>
+<div style="display:none"><ix:header><ix:hidden><ix:nonNumeric name="dei:DocumentType">10-K</ix:nonNumeric></ix:hidden></ix:header></div>
+${p("FORM 10-K")}
+<p id="i1"><span style="font-weight:bold">ITEM 1. BUSINESS</span></p>${p(filler(60, "general"))}
+<p id="i8"><span style="font-weight:bold">ITEM 8. FINANCIAL STATEMENTS AND SUPPLEMENTARY DATA</span></p>${p("The financial statements are set forth under Item 15.")}
+<p id="i15"><span style="font-weight:bold">ITEM 15. EXHIBITS AND FINANCIAL STATEMENT SCHEDULES</span></p>
+${p("(a) 1. Financial Statements: the following are filed as part of this report.")}
+${top("INDEX OF EXHIBITS")}
+<table><tr><td>Exhibit No.</td><td>Description</td></tr><tr><td>3.01</td><td>Restated Certificate of Incorporation</td></tr><tr><td>10.01</td><td>Credit Agreement dated as of March 1, 2026</td></tr><tr><td>31.01</td><td>Certification of Chief Executive Officer</td></tr></table>
+${top("(b) Exhibits")}${p("The exhibits listed in the Index of Exhibits are filed as part of this report.")}
+${bold("CONSOLIDATED BALANCE SHEETS")}
+<table><tr><td>(In millions)</td><td colspan="3">May 31, 2026</td></tr>
+<tr><td>Cash</td><td>$</td><td><ix:nonFraction name="us-gaap:Cash" contextRef="c1" scale="6">11,000</ix:nonFraction></td><td></td></tr>
+<tr><td>Total assets</td><td>$</td><td>170,000</td><td></td></tr></table>
+${bold("NOTES TO CONSOLIDATED FINANCIAL STATEMENTS")}
+${bold("7.")}<ix:nonNumeric name="us-gaap:DebtDisclosureTextBlock" contextRef="c1">${bold("NOTES PAYABLE AND OTHER BORROWINGS")}${p(`Notes payable and other borrowings consisted of the following. ${filler(40, "debt")}`)}
+<table><tr><td>(In millions)</td><td colspan="3">May 31, 2026</td></tr><tr><td>Senior notes</td><td>$</td><td><ix:nonFraction name="us-gaap:SeniorNotes" contextRef="c1" scale="6">95,000</ix:nonFraction></td><td></td></tr><tr><td>Commercial paper</td><td>$</td><td>2,000</td><td></td></tr></table></ix:nonNumeric>
+<p id="i16"><span style="font-weight:bold">ITEM 16. FORM 10-K SUMMARY</span></p>${p("None.")}
+${p("SIGNATURES")}
+</body></html>`;
+  const doc = parseFilingDocument(exhibitsHtml, meta);
+  assert.equal(doc.structure, "items");
+  const item15 = doc.sections.find(s => s.itemKey === "15" && s.depth === 0)!;
+  assert.equal(item15.canonical, "exhibits");
+  const note = doc.sections.find(s => s.xbrlBlock === "us-gaap:DebtDisclosureTextBlock")!;
+  assert.equal(note.canonical, "note");
+  assert.equal(note.role, "core");
+  assert.equal(note.parentId, item15.sectionId);
+  assert.equal(note.title, "NOTES PAYABLE AND OTHER BORROWINGS");
+  const noteTable = doc.passages.find(x => x.sectionId === note.sectionId && x.kind === "table")!;
+  assert.deepEqual(noteTable.factRefs.map(f => f.concept), ["us-gaap:SeniorNotes"]);
+  assert.ok(doc.passages.some(x => x.sectionId === note.sectionId && x.text.startsWith("Notes payable and other borrowings")));
+  // The statements, and the heading they sit under, read as financial statements, as they would under Item 8.
+  const balance = doc.sections.find(s => s.title === "CONSOLIDATED BALANCE SHEETS")!;
+  assert.equal(balance.canonical, "financial_statements");
+  assert.equal(balance.role, "core");
+  assert.equal(doc.sections.find(s => s.title === "(b) Exhibits")?.canonical, "financial_statements");
+  // The exhibit index and the item's own text keep the exhibits canonical and stay boilerplate.
+  const index = doc.sections.find(s => s.title === "INDEX OF EXHIBITS")!;
+  assert.equal(index.canonical, "exhibits");
+  assert.equal(index.role, "boilerplate");
+  assert.ok(doc.passages.some(x => x.sectionId === index.sectionId && x.kind === "table" && x.text.includes("Restated Certificate of Incorporation")));
+  assert.equal(item15.role, "boilerplate");
+  assert.equal(doc.sections.find(s => s.itemKey === "16" && s.depth === 0)?.canonical, "summary");
+});
+
 test("drops page furniture, the table of contents and injected scripts", () => {
   const doc = parseFilingDocument(html, meta);
   const texts = doc.passages.map(x => x.text);

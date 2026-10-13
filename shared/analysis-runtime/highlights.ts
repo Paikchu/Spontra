@@ -12,7 +12,7 @@ export const HIGHLIGHT_VIEWS = ["profit", "cash", "balance"] as const satisfies 
 /** Tiles per view the writer is asked for; a view with fewer than `MIN_HIGHLIGHTS` verified keeps its fixed tiles. */
 export const HIGHLIGHT_COUNT = 3, MIN_HIGHLIGHTS = 2;
 
-const CASH_FLOWS: CapitalMetric[] = ["operatingCashFlow", "capex", "freeCashFlow", "financing", "debtIssued", "debtRepaid", "equityIssued", "buybacks", "dividends"];
+const CASH_FLOWS: CapitalMetric[] = ["operatingCashFlow", "capex", "freeCashFlow", "financing", "debtIssued", "debtRepaid", "equityIssued", "buybacks", "dividends", "acquisitions", "investmentsNet", "leasePrincipal", "depreciation", "stockCompensation", "interestPaid", "taxesPaid", "unpaidCapex", "leaseAssetsObtained"];
 const FUNDAMENTAL_VIEW: Record<string, FindingView> = { income_statement: "profit", per_share: "profit", cash_flow: "cash", balance_sheet: "balance" };
 
 /** The statement a figure belongs to; a ratio belongs to its numerator's. Guidance belongs to none. */
@@ -21,6 +21,7 @@ export function refView(ref: FindingRef): FindingView | null {
   if ("metric" in ref || "nodeId" in ref) return "profit";
   if ("capital" in ref) return CASH_FLOWS.includes(ref.capital) ? "cash" : "balance";
   if ("fundamental" in ref) return FUNDAMENTAL_VIEW[(FUNDAMENTAL_METRIC_CATALOG as Record<string, { category: string }>)[ref.fundamental]?.category ?? ""] ?? null;
+  if ("peer" in ref) return refView(ref.peer.ref);
   return null;
 }
 

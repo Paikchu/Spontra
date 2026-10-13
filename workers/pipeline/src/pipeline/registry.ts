@@ -11,6 +11,7 @@ export const EVENT_TYPES = [
   "task.version_changed",
   "transcript.stored", "explainer.published", "tree.published", "findings.published", "events.published",
   "library.requested", "library.prepared", "library.cards.published", "library.links.requested",
+  "peers.published",
 ] as const;
 export type EventType = typeof EVENT_TYPES[number];
 
@@ -20,11 +21,12 @@ export const TASK_NAMES = [
   "sec-report", "guidance", "events",
   "memory", "company-analysis", "explainer", "tree", "findings",
   "library", "library-cards", "library-links", "library-search", "storage-sweep",
+  "peers",
 ] as const;
 export type TaskName = typeof TASK_NAMES[number];
 
 /** What a filing event says about the filing, for subscribers that only want some forms. */
-export type EventDetail = { form?: string; items?: string; accession?: string };
+export type EventDetail = { form?: string; items?: string; accession?: string; /** Comma-separated event classes an events.published carries for its new rows. */ classes?: string };
 export type PipelineEvent = { type: EventType; ticker: string; cik?: string | null; task?: TaskName | null; detail?: EventDetail | null };
 
 /** Which companies a task runs for when its version changes: every data company, the AI list, or once globally. */
@@ -81,6 +83,8 @@ export const TASKS: Record<TaskName, TaskMeta> = {
   "library-search": { emits: [], debounceMs: 2 * MINUTE, maxWaitMs: 30 * MINUTE, scope: "data" },
   // Deletes stored data no code reads any more, at most once a day; no model.
   "storage-sweep": { emits: [], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "global" },
+  // One global projection of every data company's comparable figures, for peers tables resolved at read time; no model.
+  "peers": { emits: ["peers.published"], debounceMs: 2 * MINUTE, maxWaitMs: 30 * MINUTE, scope: "global" },
 };
 
 const form = (event: PipelineEvent) => event.detail?.form ?? "";
@@ -110,9 +114,9 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
     { task: "memory", when: e => PERIODIC.test(form(e)) },
     { task: "company-analysis", when: e => PERIODIC.test(form(e)) },
   ],
-  "map.derived": [{ task: "findings" }],
+  "map.derived": [{ task: "findings" }, { task: "peers" }],
   "guidance.published": [{ task: "findings" }],
-  "fundamentals.updated": [{ task: "findings" }],
+  "fundamentals.updated": [{ task: "findings" }, { task: "peers" }],
   "analysis.published": [{ task: "findings" }],
 };
 

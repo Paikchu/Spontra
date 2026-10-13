@@ -6,6 +6,7 @@ import { readBusinessTreeResponse } from "../business-tree/workflow.ts";
 import { readGuidanceResponse } from "../guidance/workflow.ts";
 import { readFindingsResponse } from "../findings/read.ts";
 import { readEventsResponse } from "../events/read.ts";
+import { readPublicPassage } from "../filing-library/passage-read.ts";
 import { parseFundamentalApiQuery } from "../fundamentals/fundamentals-api.ts";
 import { getSecFundamentals } from "../fundamentals/sec-fundamentals.ts";
 import { getPublicFiling, getPublicFilingPage } from "../sec/public-api.ts";
@@ -43,6 +44,7 @@ type RouteMatch =
   | { kind: "guidance"; ticker: string }
   | { kind: "findings"; ticker: string }
   | { kind: "events"; ticker: string }
+  | { kind: "passage"; ticker: string; passageId: string }
   | { kind: "fundamentals"; ticker: string };
 
 
@@ -126,6 +128,10 @@ async function handleRoute(request: Request, database: D1Database, route: RouteM
       const payload = await readEventsResponse(database, route.ticker);
       return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
     }
+    case "passage": {
+      const payload = await readPublicPassage(database, route.ticker, route.passageId);
+      return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
+    }
     case "fundamentals": {
       const query = parseFundamentalApiQuery(route.ticker, url.searchParams);
       const payload = await getSecFundamentals(database, query);
@@ -140,7 +146,7 @@ async function handleRoute(request: Request, database: D1Database, route: RouteM
 }
 
 function matchRoute(pathname: string): RouteMatch | null {
-  const company = /^\/api\/v1\/companies\/([^/]+)\/(filings|fundamentals|business-flow|capital|business-explainer|business-tree|guidance|findings|events)(?:\/([^/]+))?\/?$/.exec(pathname);
+  const company = /^\/api\/v1\/companies\/([^/]+)\/(filings|fundamentals|business-flow|capital|business-explainer|business-tree|guidance|findings|events|passages)(?:\/([^/]+))?\/?$/.exec(pathname);
   if (!company) return null;
   const ticker = safeDecode(company[1]!);
   const resource = company[2]!;
@@ -150,6 +156,11 @@ function matchRoute(pathname: string): RouteMatch | null {
     if (tail === undefined) return { kind: "filings", ticker };
     const accession = safeDecode(tail);
     return accession === null ? null : { kind: "filing", ticker, accession };
+  }
+  if (resource === "passages") {
+    if (tail === undefined) return null;
+    const passageId = safeDecode(tail);
+    return passageId === null ? null : { kind: "passage", ticker, passageId };
   }
   if (tail !== undefined) return null;
   if(resource === "business-flow") return {kind:"business-flow",ticker};

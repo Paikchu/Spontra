@@ -62,7 +62,7 @@ export async function businessTreeFingerprint(env: SecPipelineEnv, ticker: strin
   return (await readInput(env, ticker)).fingerprint;
 }
 
-export async function executeBusinessTreeWorkflow(params: BusinessTreeParams, step: WorkflowStepLike, env: SecPipelineEnv, fetcher: typeof fetch = fetch) {
+export async function executeBusinessTreeWorkflow(params: BusinessTreeParams, step: WorkflowStepLike, env: SecPipelineEnv, fetcher: typeof fetch = fetch, runId?: string) {
   if (!treeTickersFor(env).includes(params.ticker)) throw new Error("Ticker is not listed for business trees");
   const modelVersion = env.SEC_REASONING_MODEL || env.SEC_ANALYSIS_MODEL || "deepseek-flash";
   const now = await step.do("tree-time", async () => new Date().toISOString());
@@ -76,7 +76,7 @@ export async function executeBusinessTreeWorkflow(params: BusinessTreeParams, st
     filingLibrary: treeLibrary(requireDb(env), params.ticker, input.filings),
     // A reply that is not JSON is the model's turn gone wrong, answered in the next observation; transport errors still retry the step.
     model: async (stage, system, payload) => {
-      try { return await callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, 5 * 60_000, true, { reasoning: reasoningFor(env, "tree") }); }
+      try { return await callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, 5 * 60_000, true, { reasoning: reasoningFor(env, "tree"), ticker: params.ticker, runId }); }
       catch (error) { if (error instanceof SecModelOutputError) return { action: "invalid" }; throw error; }
     },
     stage: (name, callback) => step.do(`tree-${name}`, callback),

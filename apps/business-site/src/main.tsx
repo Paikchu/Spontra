@@ -12,7 +12,7 @@ import "./style.css";
 import { BusinessMap } from "./BusinessMap";
 import { Rail, RailActions } from "./Sidebar";
 import { SearchDialog } from "./SearchDialog";
-import { fetchCompany, fetchSupplement, publicationFlow, type CompanyPublication } from "./company-data";
+import { fetchCompany, fetchFindings, fetchSupplement, publicationFlow, type CompanyPublication, type FindingsBundle } from "./company-data";
 import { Home } from "./Home";
 
 const RECENT_KEY = "business-map-recent";
@@ -75,7 +75,7 @@ function Company({ ticker, tools, onSeen }: { ticker: string; tools: ReactNode; 
     [publication, setPublication] = useState<CompanyPublication | null>(null),
     [failed, setFailed] = useState(false),
     [capital, setCapital] = useState<PublicCapitalStructure | null>(null),
-    [findings, setFindings] = useState<FindingsPublication | null>(null),
+    [findings, setFindings] = useState<FindingsBundle | null>(null),
     [events, setEvents] = useState<EventsPublication | null>(null),
     [filings, setFilings] = useState<PublicFilingDigestPage | null>(null),
     [fundamentals, setFundamentals] = useState<FindingFundamentals | null>(null),
@@ -102,7 +102,7 @@ function Company({ ticker, tools, onSeen }: { ticker: string; tools: ReactNode; 
         .then(value => { if (!controller.signal.aborted && value) set(value); })
         .catch(() => { /* Supplementary: the map stands on its own. */ });
     void load<PublicCapitalStructure>("capital", setCapital);
-    void load<FindingsPublication>("findings", setFindings);
+    fetchFindings(ticker, controller.signal).then(bundle => { if (!controller.signal.aborted && bundle) setFindings(bundle); }).catch(() => { /* Supplementary. */ });
     void load<FindingFundamentals>("fundamentals", setFundamentals);
     void load<EventsPublication>("events", setEvents);
     void load<PublicFilingDigestPage>("filings", setFilings);
@@ -120,7 +120,7 @@ function Company({ ticker, tools, onSeen }: { ticker: string; tools: ReactNode; 
           tree={publication?.tree ?? null}
           guidance={publication?.guidance ?? null}
           capital={capital}
-          findings={findings}
+          findings={findings?.findings ?? null} peers={findings?.peers ?? null} passages={findings?.passages ?? null}
           fundamentals={fundamentals}
           events={events}
           filings={filings}

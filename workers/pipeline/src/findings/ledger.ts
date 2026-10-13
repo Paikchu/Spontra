@@ -1,7 +1,7 @@
 import type { BusinessFlowQuarter, FlowMetric } from "../../../../shared/analysis-contract/business-flow.ts";
 import type { CapitalMetric, FindingBaseRef, FindingRef, FindingSpan, FindingView } from "../../../../shared/analysis-contract/findings.ts";
 import type { ExplainerSource } from "../../../../shared/analysis-contract/business-explainer.ts";
-import { CAPITAL_METRICS, refLabel, resolveEvidence, shiftPeriod, type FindingData, type ResolvedEvidence } from "../../../../shared/analysis-runtime/findings.ts";
+import { CAPITAL_INSTANTS, CAPITAL_METRICS, refLabel, resolveEvidence, shiftPeriod, type FindingData, type ResolvedEvidence } from "../../../../shared/analysis-runtime/findings.ts";
 import { ratioForm, refView } from "../../../../shared/analysis-runtime/highlights.ts";
 
 /**
@@ -46,6 +46,14 @@ const RATIOS: Array<[RatioForm, FindingBaseRef, FindingBaseRef]> = [
   ["multiple", { capital: "debt" }, { capital: "equity" }],
   ["multiple", { capital: "cash" }, { capital: "debt" }],
   ["multiple", { capital: "rpo" }, { metric: "revenue" }],
+  // Capital intensity, funding and obligations: what the analyst lines of inquiry read first (docs/analyst-agent-design.md).
+  ["multiple", { capital: "capex" }, { capital: "depreciation" }],
+  ["percent", { capital: "stockCompensation" }, { metric: "revenue" }],
+  ["percent", { capital: "interestPaid" }, { capital: "operatingCashFlow" }],
+  ["multiple", { capital: "currentAssets" }, { capital: "currentLiabilities" }],
+  ["multiple", { capital: "leases" }, { capital: "debt" }],
+  ["percent", { capital: "customerAdvances" }, { metric: "revenue" }],
+  ["multiple", { capital: "productive" }, { metric: "revenue" }],
 ];
 
 /** Up to two decimals under ten, one under a hundred (none for millions), trailing zeros dropped: "1.23", "55.7", "638.2", "350". */
@@ -108,7 +116,7 @@ export function buildLedger(data: FindingData, periodEnd: string, sources: Expla
   for (const node of nodes.slice(0, 12)) series({ nodeId: node.nodeId });
   for (const [form, numerator, denominator] of RATIOS) series({ ratio: { numerator, denominator } }, ["quarter", "fiscal_year"], form);
   for (const capital of CAPITAL_METRICS as readonly CapitalMetric[]) {
-    const instant = ["totalAssets", "debt", "cash", "equity", "rpo", "rpoNext12MonthsShare"].includes(capital);
+    const instant = (CAPITAL_INSTANTS as readonly CapitalMetric[]).includes(capital);
     // Instants have no span; flows are shown as the quarter and the fiscal year.
     if (instant) for (const end of quarterEnds.slice(0, 2)) push({ capital }, end, "quarter");
     else series({ capital });

@@ -26,6 +26,14 @@ export const SEC_CANONICAL_SERIES_IDS = [
   "debt",
   "shares",
   "rpo",
+  "depreciation",
+  "stock_compensation",
+  "total_assets",
+  "total_liabilities",
+  "equity",
+  "receivables",
+  "inventory",
+  "long_term_debt",
 ] as const;
 
 export type SecCanonicalSeriesId = typeof SEC_CANONICAL_SERIES_IDS[number];

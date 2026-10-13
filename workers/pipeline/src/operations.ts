@@ -1,5 +1,6 @@
 import { reasoningFor, type ReasoningEffort } from "./ai-config.ts";
 import { boundedModelIO } from "./model-io.ts";
+import { aiUsageFromMetrics, recordAiUsage } from "./ai-runs/usage.ts";
 import { readModelContent, parseModelJson, SecModelOutputError } from "./model-stream.ts";
 import { recoverModelJson, SecModelHttpError, type ModelRequestOptions, type ModelCheckpoint, type ModelCheckpointStore } from "./model-recovery.ts";
 export { readModelContent } from "./model-stream.ts";
@@ -164,7 +165,7 @@ export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof
         },
         log: (event) => console.log(JSON.stringify({ ...event, workflowInstanceId })),
         request: (options) => requestWorkerSecModelContent(env, fetcher, stage, system, payload, options.model,
-          Math.max(1, deadline - Date.now()), options.jsonMode, { ...options, workflowInstanceId, reasoning: reasoningFor(env, "sec-analysis") }),
+          Math.max(1, deadline - Date.now()), options.jsonMode, { ...options, workflowInstanceId, reasoning: reasoningFor(env, "sec-analysis"), kind: "sec-analysis" }),
       });
     };
   };
@@ -628,8 +629,15 @@ export async function callWorkerSecModel(
   return parseModelJson(await requestWorkerSecModelContent(env, fetcher, stage, system, payload, modelOverride, executionBudgetMs, jsonMode, tuning));
 }
 
-/** Per-call limits for narrow extraction stages, the AI tool's reasoning level, and the provider-reported usage when the call ends. */
-export type ModelCallTuning = { maxTokens?: number; reasoning?: ReasoningEffort; onMetrics?: (metrics: Readonly<Record<string, unknown>>) => void };
+/**
+ * Per-call limits for narrow extraction stages, the AI tool's reasoning level, and the provider-reported usage when the
+ * call ends. `ticker`, `runId` and `kind` only label the row in the `ai_usage` ledger; the kind is read from the stage
+ * name when a caller leaves it out.
+ */
+export type ModelCallTuning = {
+  maxTokens?: number; reasoning?: ReasoningEffort; onMetrics?: (metrics: Readonly<Record<string, unknown>>) => void;
+  ticker?: string; runId?: string; kind?: string;
+};
 
 async function requestWorkerSecModelContent(
   env: SecPipelineEnv,
@@ -640,7 +648,7 @@ async function requestWorkerSecModelContent(
   modelOverride?: string,
   executionBudgetMs = SEC_MODEL_EXECUTION_BUDGET_MS,
   jsonMode = true,
-  options?: Partial<ModelRequestOptions> & Pick<ModelCallTuning, "onMetrics" | "reasoning">,
+  options?: Partial<ModelRequestOptions> & Pick<ModelCallTuning, "onMetrics" | "reasoning" | "ticker" | "runId" | "kind">,
 ): Promise<string> {
   const apiKey = await resolveWorkerModelKey(env, fetcher);
   const started = Date.now();
@@ -718,6 +726,12 @@ async function requestWorkerSecModelContent(
     clearTimeout(budgetTimer);
     console.log(JSON.stringify({ event: "sec-model-request", ...metrics, elapsedMs: Date.now() - started }));
     try { options?.onMetrics?.(metrics); } catch { /* Usage accounting never fails a model call. */ }
+    // Every call, however it ended, is a row in the cost ledger; the write is bounded and never throws.
+    await recordAiUsage(env, aiUsageFromMetrics(metrics, {
+      at: new Date(started).toISOString(), durationMs: Date.now() - started, provider: "deepseek",
+      ticker: options?.ticker, kind: options?.kind,
+      runId: options?.runId ?? (options?.workflowInstanceId && options.workflowInstanceId !== "standalone" ? options.workflowInstanceId : undefined),
+    }));
   }
 }
 

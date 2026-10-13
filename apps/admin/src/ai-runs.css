@@ -48,6 +48,8 @@
 .ai-table th, .ai-table td { padding: var(--space-2); border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
 .ai-table th { color: var(--ink-muted); font-weight: 600; }
 .ai-table td small { display: block; color: var(--ink-muted); }
+.ai-usage { min-width: 0; max-width: 560px; }
+.ai-usage th:not(:first-child), .ai-usage td:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
 .ai-raw { margin-top: var(--space-4); font-size: 12px; }
 .ai-raw summary { color: var(--ink-muted); cursor: pointer; }
 .ai-raw pre { max-height: 420px; margin: var(--space-2) 0 0; padding: var(--space-3); overflow: auto; border-radius: var(--sp-radius-sm); background: var(--surface-sunken); color: var(--ink-soft); font-family: var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }

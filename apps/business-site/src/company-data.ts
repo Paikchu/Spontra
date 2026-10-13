@@ -5,7 +5,8 @@ import type { BusinessExplainer } from "@/shared/analysis-contract/business-expl
 import type { BusinessTree } from "@/shared/analysis-contract/business-tree";
 import type { GuidancePublication } from "@/shared/analysis-contract/guidance";
 import type { PublicCapitalStructure } from "@/shared/analysis-contract/capital-structure";
-import type { FindingsPublication } from "@/shared/analysis-contract/findings";
+import type { FindingPassage, FindingsPublication } from "@/shared/analysis-contract/findings";
+import type { PeersPublication } from "@/shared/analysis-contract/peers";
 import type { FindingFundamentals } from "@/shared/analysis-runtime/findings";
 import { findingData, verifiedFindings, type VerifiedFinding } from "./findings-model";
 
@@ -27,6 +28,15 @@ export async function fetchSupplement<T>(ticker: string, resource: "capital" | "
   return body.status === "ready" ? body[resource] as T : null;
 }
 
+/** The findings with the passages their quotes rest on and the peers projection, as the site serves them together. */
+export type FindingsBundle = { findings: FindingsPublication; passages: FindingPassage[]; peers: PeersPublication | null };
+export async function fetchFindings(ticker: string, signal: AbortSignal): Promise<FindingsBundle | null> {
+  const response = await fetch(companyPath(ticker, "/findings"), { signal });
+  if (!response.ok) return null;
+  const body = await response.json() as { status?: string; findings?: FindingsPublication | null; passages?: FindingPassage[]; peers?: PeersPublication | null };
+  return body.status === "ready" && body.findings ? { findings: body.findings, passages: body.passages ?? [], peers: body.peers ?? null } : null;
+}
+
 /** The drawable flow: the published pair plus the archived report quarters, or null while the statement is incomplete. */
 export function publicationFlow(data: CompanyPublication, ticker: string): PublicBusinessFlow | null {
   if (data.status !== "ready" || !data.flow) return null;
@@ -43,7 +53,8 @@ export type CompanyDigest = { ticker: string; periodEnd: string; findings: Verif
  * The statement is only read once the company has published findings.
  */
 export async function loadDigest(ticker: string, signal: AbortSignal): Promise<CompanyDigest | null> {
-  const findings = await fetchSupplement<FindingsPublication>(ticker, "findings", signal);
+  const bundle = await fetchFindings(ticker, signal);
+  const findings = bundle?.findings ?? null;
   if (!findings?.findings.length) return null;
   const [company, capital, fundamentals] = await Promise.all([
     fetchCompany(ticker, signal),
@@ -52,6 +63,6 @@ export async function loadDigest(ticker: string, signal: AbortSignal): Promise<C
   ]);
   const flow = publicationFlow(company, ticker);
   if (!flow) return null;
-  const verified = verifiedFindings(findings, findingData(flow, company.history ?? null, capital, fundamentals, company.guidance ?? null));
+  const verified = verifiedFindings(findings, findingData(flow, company.history ?? null, capital, fundamentals, company.guidance ?? null, bundle?.peers ?? null, bundle?.passages ?? null));
   return verified.length ? { ticker, periodEnd: findings.periodEnd, findings: verified, partial: company.outdated === true } : null;
 }

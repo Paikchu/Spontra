@@ -1,4 +1,4 @@
-import { AI_RUN_KINDS, type AiCompanies, type AiCompanyDetail, type AiKindState, type AiRun, type AiRunKind, type AiRunStarted, type AiVersion, type AiVersionDetail } from "../../../../shared/analysis-contract/ai-runs-admin.ts";
+import { AI_RUN_KINDS, type AiCompanies, type AiCompanyDetail, type AiKindState, type AiRun, type AiRunKind, type AiRunStarted, type AiUsageDay, type AiVersion, type AiVersionDetail } from "../../../../shared/analysis-contract/ai-runs-admin.ts";
 import { AiRunStore, publishedAt, summarize, TERMINAL } from "../ai-runs/store.ts";
 import { businessExplainerFingerprint, readBusinessExplainerResponse } from "../business-explainer/workflow.ts";
 import { businessTreeFingerprint, readBusinessTreeResponse, treeTickersFor } from "../business-tree/workflow.ts";
@@ -93,6 +93,21 @@ async function guidanceEvents(db: D1Database, env: SecPipelineEnv, ticker: strin
     .map(e => ({ ...e, status: known.get(e.accession)?.status ?? null, transcriptStatus: known.get(e.accession)?.transcript_status ?? null }));
 }
 
+/** The ledger kinds one admin kind spends: the lens agent's calls belong to the findings run. */
+const USAGE_KINDS: Record<AiRunKind, string[]> = { findings: ["findings", "lens"], explainer: ["explainer"], tree: ["tree"], guidance: ["guidance"] };
+/** The last 30 days of the `ai_usage` ledger (migration 0023) by day; undefined when the table cannot be read. */
+async function usage(db: D1Database, kind: AiRunKind, ticker: string, now: number): Promise<AiUsageDay[] | undefined> {
+  const kinds = USAGE_KINDS[kind], since = new Date(now - 30 * 86_400_000).toISOString();
+  try {
+    const { results } = await db.prepare(`SELECT substr(at, 1, 10) AS day, COUNT(*) AS calls, SUM(input_tokens) AS inputTokens, SUM(cached_tokens) AS cachedTokens, SUM(output_tokens) AS outputTokens, SUM(search_calls) AS searchCalls
+      FROM ai_usage WHERE ticker = ? AND kind IN (${kinds.map(() => "?").join(", ")}) AND at >= ? GROUP BY day ORDER BY day DESC LIMIT 30`).bind(ticker, ...kinds, since).all<AiUsageDay>();
+    return results;
+  } catch (error) {
+    console.warn(JSON.stringify({ event: "ai-usage-admin", outcome: "unavailable", error: error instanceof Error ? error.message : String(error) }));
+    return undefined;
+  }
+}
+
 async function state(env: SecPipelineEnv, db: D1Database, kind: AiRunKind, ticker: string, latestRun: AiKindState["latestRun"]): Promise<AiKindState> {
   return { blocked: blocked(env, kind, ticker), automatic: automatic(env, kind, ticker), current: currentVersion(kind, await currentPublication(db, kind, ticker).catch(() => null)), latestRun };
 }
@@ -165,7 +180,7 @@ export async function handleAiRunsAdminRequest(request: Request, env: SecPipelin
       if (!stored) return json({ error: "版本不存在。" }, 404);
       return json({ kind, ticker: ticker!, version: { id: versionId, savedAt: stored.savedAt, summary: stored.summary, current: false }, publication: stored.publication } satisfies AiVersionDetail);
     }
-    const runs = await settle(env, store, await store.runs(kind, ticker!), now);
+    const [runs, spent] = await Promise.all([settle(env, store, await store.runs(kind, ticker!), now), usage(db, kind, ticker!, now)]);
     const head = currentVersion(kind, current);
     // History starts with the first publication saved after versions were kept; the one served now is always listed.
     const versions = [...(head ? [head] : []), ...(await store.versions(kind, ticker!)).filter(v => v.id !== head?.id)];
@@ -174,6 +189,7 @@ export async function handleAiRunsAdminRequest(request: Request, env: SecPipelin
       ticker: ticker!, name: findSecurity(ticker!)?.name ?? ticker!, kind,
       state: { blocked: blocked(env, kind, ticker!), automatic: automatic(env, kind, ticker!), current: head, latestRun },
       runs, versions, events: kind === "guidance" ? await guidanceEvents(db, env, ticker!, now) : [],
+      ...(spent ? { usage: spent } : {}),
     } satisfies AiCompanyDetail);
   } catch (error) {
     if (error instanceof SyntaxError || error instanceof URIError) return json({ error: "操作参数无效。" }, 400);

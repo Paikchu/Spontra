@@ -24,6 +24,13 @@ export const ORCL_FINDINGS: FindingsPublication = {
     { id: "8k-q3-fy26", title: "Oracle Q3 FY2026 earnings release", url: "https://www.sec.gov/Archives/edgar/data/1341439/000119312526100148/orcl-ex99_1.htm", kind: "sec", publishedAt: "2026-03-10" },
     { id: "8k-q1-fy26", title: "Oracle Q1 FY2026 earnings release", url: "https://www.sec.gov/Archives/edgar/data/1341439/000119312525199175/orcl-ex99_1.htm", kind: "sec", publishedAt: "2025-09-09" },
   ],
+  materials: [
+    { id: "m1", kind: "sec", title: "Oracle 10-Q Q1 FY2027", url: "https://www.sec.gov/Archives/edgar/data/1341439/000119312526389274/orcl-20260831.htm", publishedAt: "2026-09-11", passageId: "p183a809e4b72a712861219fb859b", documentId: "f456b72311131dd5c90d54157e7885a665f29b738e1178b2d49c00a84032c3e4", form: "10-Q", path: ["Item 1. Financial Statements (Unaudited)", "LEASES AND OTHER COMMITMENTS", "August 31, 2026"] },
+    { id: "m2", kind: "sec", title: "Oracle 10-Q Q1 FY2027", url: "https://www.sec.gov/Archives/edgar/data/1341439/000119312526389274/orcl-20260831.htm", publishedAt: "2026-09-11", passageId: "p183c02747874c203f2471d7bd7a3", documentId: "f456b72311131dd5c90d54157e7885a665f29b738e1178b2d49c00a84032c3e4", form: "10-Q", path: ["Item 1. Financial Statements (Unaudited)", "LEASES AND OTHER COMMITMENTS", "August 31, 2026", "Unconditional Obligations"] },
+    { id: "m2t", kind: "sec", title: "Oracle 10-Q Q1 FY2027", url: "https://www.sec.gov/Archives/edgar/data/1341439/000119312526389274/orcl-20260831.htm", publishedAt: "2026-09-11", passageId: "p0b76d7dc904f3a06b1500cd4641d", documentId: "f456b72311131dd5c90d54157e7885a665f29b738e1178b2d49c00a84032c3e4", form: "10-Q", path: ["Item 1. Financial Statements (Unaudited)", "LEASES AND OTHER COMMITMENTS", "August 31, 2026", "Unconditional Obligations"] },
+    { id: "m3", kind: "sec", title: "Oracle 10-Q Q1 FY2027", url: "https://www.sec.gov/Archives/edgar/data/1341439/000119312526389274/orcl-20260831.htm", publishedAt: "2026-09-11", passageId: "p0f2af94a9b5f7d1a3d96b8bb5899", documentId: "f456b72311131dd5c90d54157e7885a665f29b738e1178b2d49c00a84032c3e4", form: "10-Q", path: ["Item 1. Financial Statements (Unaudited)", "PROPERTY, PLANT AND EQUIPMENT", "August 31, 2026"] },
+    { id: "m4", kind: "sec", title: "Oracle 10-Q Q1 FY2027", url: "https://www.sec.gov/Archives/edgar/data/1341439/000119312526389274/orcl-20260831.htm", publishedAt: "2026-09-11", passageId: "p078d8f4453584c1171ccae148f3f", documentId: "f456b72311131dd5c90d54157e7885a665f29b738e1178b2d49c00a84032c3e4", form: "10-Q", path: ["Item 1. Financial Statements (Unaudited)", "STOCKHOLDERS’ EQUITY", "Common Stock"] },
+  ],
   findings: [
     {
       id: "capex-fcf",
@@ -44,9 +51,21 @@ export const ORCL_FINDINGS: FindingsPublication = {
         ev({ ratio: { numerator: { nodeId: "cloud" }, denominator: { capital: "capex" } } }, FY26, "fiscal_year", "yoy", "Cloud revenue per dollar of capex"),
       ],
       anchors: { view: "cash", nodeIds: [], metrics: [], capital: ["capex", "operatingCashFlow", "freeCashFlow", "debtIssued"] },
-      lens: { type: "compare_bars", refs: [{ capital: "operatingCashFlow" }, { capital: "capex" }, { capital: "freeCashFlow" }], span: "fiscal_year" },
+      // A dossier laid out by hand the way the analyst agent will (docs/analyst-agent-design.md): the chart beside the
+      // judgment, the funding table, the filing's own words on commitments not yet on the balance sheet, peers, record.
+      lens: { type: "document", document: {
+        rows: [
+          { cells: [[{ kind: "chart", chart: { id: "compare", aspect: "square", span: "fiscal_year", periods: 4, series: [{ id: "ocf", ref: { capital: "operatingCashFlow" } }, { id: "capex", ref: { capital: "capex" } }, { id: "fcf", ref: { capital: "freeCashFlow" } }], marks: [{ type: "bar", series: ["ocf", "capex", "fcf"] }], annotations: [{ series: "fcf", period: "latest", text: "{value} free cash flow" }] } }], [{ kind: "judgment" }, { kind: "figures" }, { kind: "watch" }]] },
+          { title: "How the spending was funded", cells: [[{ kind: "table", table: { columns: "periods", span: "fiscal_year", periods: 3, rows: [{ ref: { capital: "capex" } }, { ref: { capital: "operatingCashFlow" } }, { ref: { capital: "freeCashFlow" } }, { ref: { capital: "debtIssued" } }, { ref: { capital: "equityIssued" } }] } }], [{ kind: "prose", paragraphs: [{ text: "Capex of $55.7 billion against operating cash flow of $32.0 billion leaves a gap the business cannot close from its own cash; the table shows the gap widening and the borrowing and share issuance that filled it.", sourceIds: ["10k-fy26"] }] }]] },
+          { title: "Commitments not yet on the balance sheet", cells: [[{ kind: "quote", materialId: "m1", text: "As of August 31, 2026, we had $288 billion of additional lease commitments, substantially all related to data center arrangements, that are generally expected to commence between the second quarter of fiscal 2027 and fiscal 2029 and for terms of fifteen to nineteen years that were not reflected on our condensed consolidated balance sheets" }], [{ kind: "quote", materialId: "m2", text: "our unconditional purchase and certain other obligations with terms of one year or greater, which were primarily related to long-term supply arrangements for purchasing components for cloud infrastructure assets and power supply arrangements for data centers" }, { kind: "table", table: { title: "Unconditional obligations as filed", columns: "periods", span: "quarter", periods: 2, rows: [{ ref: { passageCell: { passageId: "p0b76d7dc904f3a06b1500cd4641d", row: 7, col: 0 } }, label: "Purchase obligations, total" }, { ref: { passageCell: { passageId: "p0b76d7dc904f3a06b1500cd4641d", row: 0, col: 0 } }, label: "Due within the current fiscal year" }] } }]] },
+          { title: "What the capital buys, and who pays for it", cells: [[{ kind: "quote", materialId: "m3", text: "Comprised primarily of servers, networking equipment and leasehold improvements to be deployed at our data centers." }], [{ kind: "quote", materialId: "m4", text: "we fully utilized the ATM Program and issued 141 million shares of common stock under the ATM Program for net proceeds of $19.9 billion" }]] },
+          { title: "Against tracked peers", cells: [[{ kind: "table", table: { columns: "peers", span: "quarter", rows: [{ ref: { capital: "capex" }, compare: "yoy" }, { ref: { capital: "operatingCashFlow" } }, { ref: { capital: "debt" } }] } }]] },
+          { title: "Earlier calls", cells: [[{ kind: "record" }]] },
+          { cells: [[{ kind: "sources" }]] },
+        ],
+      } },
       pairWith: "cloud-engine",
-      watch: { ref: { ratio: { numerator: { nodeId: "cloud" }, denominator: { capital: "capex" } } }, condition: "Whether cloud revenue per dollar of capex stops falling in FY2027, and whether the roughly $40 billion of debt and equity financing management plans proceeds on schedule", horizon: "fiscal_year", compare: "yoy" },
+      watch: { ref: { ratio: { numerator: { nodeId: "cloud" }, denominator: { capital: "capex" } } }, test: { expect: "above", against: "yoy" }, condition: "Whether cloud revenue per dollar of capex stops falling in FY2027, and whether the roughly $40 billion of debt and equity financing management plans proceeds on schedule", horizon: "fiscal_year", compare: "yoy" },
     },
     {
       id: "cloud-engine",

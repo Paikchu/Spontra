@@ -59,7 +59,7 @@ export async function businessExplainerFingerprint(env: SecPipelineEnv, ticker: 
   return (await readInput(env, ticker)).fingerprint;
 }
 
-export async function executeBusinessExplainerWorkflow(params: BusinessExplainerParams, step: WorkflowStepLike, env: SecPipelineEnv, fetcher: typeof fetch = fetch) {
+export async function executeBusinessExplainerWorkflow(params: BusinessExplainerParams, step: WorkflowStepLike, env: SecPipelineEnv, fetcher: typeof fetch = fetch, runId?: string) {
   assertTrackedTicker(env, params.ticker);
   const modelVersion = env.SEC_REASONING_MODEL || env.SEC_ANALYSIS_MODEL || "deepseek-flash";
   const now = await step.do("explainer-time", async () => new Date().toISOString());
@@ -70,7 +70,7 @@ export async function executeBusinessExplainerWorkflow(params: BusinessExplainer
     ticker: params.ticker, companyName: issuerNames(findSecurity(params.ticker)?.name ?? params.ticker)[0]!, nodes: input.nodes,
     filings: input.filings, search: researchSearch(env), modelVersion, fingerprint: params.fingerprint, now,
     filingLibrary: treeLibrary(requireDb(env), params.ticker, input.filings),
-    model: (stage, system, payload) => callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, 5 * 60_000, true, { reasoning: reasoningFor(env, "explainer") }),
+    model: (stage, system, payload) => callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, 5 * 60_000, true, { reasoning: reasoningFor(env, "explainer"), ticker: params.ticker, runId }),
     stage: (name, callback) => step.do(`explainer-${name}`, callback),
   });
   if (!readBusinessExplainer(explainer, params.ticker)) throw new Error("Business explainer failed its public contract.");

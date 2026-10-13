@@ -6,7 +6,7 @@ import { decodeEntities, descendants, nodeText, parseMarkup, type Element } from
 import { tableGrid } from "../financial-data/table-grid.ts";
 
 /** Changing how documents are split re-parses every document; ids of unchanged text survive it. */
-export const LIBRARY_PARSER_VERSION = "filing-library.v1";
+export const LIBRARY_PARSER_VERSION = "filing-library.v2";
 /**
  * A leaf longer than this is split again. A headed section is a unit however short (a one-line product still names a product);
  * only a heading with next to no text under it folds into its parent. A split chunk starts at a bold lead-in once it holds a few hundred characters.
@@ -38,6 +38,8 @@ type Span = { concept: string; start: number; end: number };
 type Draft = {
   title: string; canonical: LibraryCanonical; itemKey: string | null; xbrlBlock: string | null; level: number;
   parent: Draft | null; children: Draft[]; blocks: Array<TextBlock | TableBlock>; container: boolean;
+  /** The index of the block that opened the draft: its heading, or the first block of a range or note. */
+  at: number;
 };
 
 const BLOCK_TAGS = new Set(["p", "div", "li", "ul", "ol", "h1", "h2", "h3", "h4", "h5", "h6", "tr", "td", "th", "tbody", "thead", "tfoot", "section", "article", "center", "blockquote", "pre", "dl", "dt", "dd", "body", "html", "caption", "form"]);
@@ -67,6 +69,8 @@ const TWENTY_F: Record<string, LibraryCanonical> = {
   "8": "other", "9": "market", "10": "other", "11": "market_risk", "15": "controls", "16k": "cybersecurity", "17": "financial_statements",
   "18": "financial_statements", "19": "exhibits",
 };
+/** Items whose range is the financial statements, where XBRL note spans split the text into notes. */
+const STATEMENT_RANGES = new Set<LibraryCanonical>(["financial_statements", "other"]);
 const PERIODIC_BOILERPLATE = new Set<LibraryCanonical>(["front", "unresolved_comments", "mine_safety", "reserved", "foreign_inspection", "governance", "compensation", "ownership", "relationships", "accountant_fees", "exhibits", "summary", "back"]);
 const SIGNAL = new Set<LibraryCanonical>(["risk_factors", "controls", "legal", "accountant_changes", "cybersecurity"]);
 
@@ -438,7 +442,7 @@ export function parseFilingDocument(html: string, meta: LibraryDocumentMeta): Pa
 
   const roots: Draft[] = [];
   const draft = (title: string, canonical: LibraryCanonical, parent: Draft | null, level: number, extra: Partial<Draft> = {}): Draft => {
-    const d: Draft = { title, canonical, itemKey: null, xbrlBlock: null, level, parent, children: [], blocks: [], container: false, ...extra };
+    const d: Draft = { title, canonical, itemKey: null, xbrlBlock: null, level, parent, children: [], blocks: [], container: false, at: -1, ...extra };
     if (parent) parent.children.push(d); else roots.push(d);
     return d;
   };
@@ -450,29 +454,33 @@ export function parseFilingDocument(html: string, meta: LibraryDocumentMeta): Pa
       const front = blocks.slice(0, items[0].index).reduce((n, b) => n + (b.kind === "text" ? b.text.length : b.kind === "table" ? 400 : 0), 0);
       const main = front > 30_000;
       if (main) issues.push("CONTENT_BEFORE_ITEMS");
-      ranges.push({ container: draft(main ? "Report" : "Front matter", main ? "other" : "front", null, -2, { container: true }), from: 0, to: items[0].index });
+      ranges.push({ container: draft(main ? "Report" : "Front matter", main ? "other" : "front", null, -2, { container: true, at: 0 }), from: 0, to: items[0].index });
     }
     items.forEach((item, k) => {
       const label = `Item ${item.number.toUpperCase()}${item.title ? `. ${item.title}` : ""}`;
       const canonical = canonicalFor(meta.form, item.key, docType);
-      ranges.push({ container: draft(label, canonical, null, -2, { itemKey: item.key.toUpperCase(), container: true }), from: item.index, to: items[k + 1]?.index ?? blocks.length });
+      ranges.push({ container: draft(label, canonical, null, -2, { itemKey: item.key.toUpperCase(), container: true, at: item.index }), from: item.index, to: items[k + 1]?.index ?? blocks.length });
     });
   } else {
     const firstHeading = blocks.find((b): b is TextBlock => b.kind === "text" && isHeading(b));
     const canonical: LibraryCanonical = docType === "primary" ? (/^(?:8-K|6-K)/.test(meta.form) ? "event" : "other") : "press_release";
-    ranges.push({ container: draft(firstHeading?.text ?? (docType === "primary" ? meta.form : "Press release"), canonical, null, -2, { container: true }), from: 0, to: blocks.length });
+    ranges.push({ container: draft(firstHeading?.text ?? (docType === "primary" ? meta.form : "Press release"), canonical, null, -2, { container: true, at: 0 }), from: 0, to: blocks.length });
   }
 
   let headingCount = 0;
   for (const range of ranges) {
     const inRange = blocks.slice(range.from, range.to).filter(b => b.kind !== "break" && !consumed.has(b.index)) as Array<TextBlock | TableBlock>;
     const levelOf = headingLevels(inRange.filter((b): b is TextBlock => b.kind === "text" && isHeading(b) && !PART.test(b.text) && !(structured && ITEM.test(b.text))));
-    const statements = range.container.canonical === "financial_statements" || range.container.canonical === "other";
+    const noteAround = (block: TextBlock | TableBlock) => notes.find(n => block.start >= n.start && block.start < n.end) ?? null;
+    // A filer may put the statements and their notes under another item (Oracle: Item 15); the tagged notes give the range away.
+    // Statements filed under the exhibits item (10-K Item 15, 20-F Item 19) read as under Item 8; a dei or cybersecurity text block elsewhere is not a note.
+    const borrowed = (range.container.canonical === "exhibits" || range.container.canonical === "summary") && inRange.some(b => { const n = noteAround(b); return n !== null && /^(?:us-gaap|ifrs(?:-full)?):/.test(n.concept); });
+    const statements = borrowed || STATEMENT_RANGES.has(range.container.canonical);
     let stack: Draft[] = [range.container], note: Span | null = null, noteDraft: Draft | null = null;
     let usedTitle = range.from > 0 || !structured ? false : true;
     for (const block of inRange) {
       if (statements) {
-        const inside = notes.find(n => block.start >= n.start && block.start < n.end) ?? null;
+        const inside = noteAround(block);
         if (inside !== note) {
           const top = stack.at(-1)!;
           note = inside;
@@ -486,7 +494,7 @@ export function parseFilingDocument(html: string, meta: LibraryDocumentMeta): Pa
               stack.push(top);
             } else {
               const titled = block.kind === "text" && block.text.length <= 160;
-              noteDraft = draft(titled ? block.text : humanConcept(inside.concept), "note", range.container, -1, { xbrlBlock: inside.concept, container: true });
+              noteDraft = draft(titled ? block.text : humanConcept(inside.concept), "note", range.container, -1, { xbrlBlock: inside.concept, container: true, at: block.index });
               stack.push(noteDraft);
               if (titled) continue;
             }
@@ -497,11 +505,22 @@ export function parseFilingDocument(html: string, meta: LibraryDocumentMeta): Pa
       if (block.kind === "text" && isHeading(block) && !PART.test(block.text) && !(structured && ITEM.test(block.text))) {
         const level = levelOf(block);
         while (stack.length > 1 && !stack.at(-1)!.container && stack.at(-1)!.level >= level) stack.pop();
-        stack.push(draft(block.text, stack.at(-1)!.canonical === "note" ? "note" : range.container.canonical, stack.at(-1)!, level, { xbrlBlock: stack.at(-1)!.canonical === "note" ? stack.at(-1)!.xbrlBlock : null }));
+        stack.push(draft(block.text, stack.at(-1)!.canonical === "note" ? "note" : range.container.canonical, stack.at(-1)!, level, { xbrlBlock: stack.at(-1)!.canonical === "note" ? stack.at(-1)!.xbrlBlock : null, at: block.index }));
         headingCount++;
         continue;
       }
       stack.at(-1)!.blocks.push(block);
+    }
+    if (borrowed) {
+      // The statements are the stretch of the range that shows XBRL: from the first tagged block to the last, the notes among them.
+      // The sections that stretch covers are the financial statements; the item's own text before and after it (the exhibit index) keeps its canonical.
+      let from = Infinity, to = -Infinity;
+      for (const b of inRange) {
+        if (noteAround(b) === null && !factsIn(facts, b.start, b.end).length && !tableBlocks.some(t => b.start >= t.start && b.end <= t.end)) continue;
+        from = Math.min(from, b.index); to = Math.max(to, b.index);
+      }
+      const last = (d: Draft): number => d.children.reduce((n, c) => Math.max(n, last(c)), d.blocks.reduce((n, b) => Math.max(n, b.index), d.at));
+      for (const d of walk(range.container.children)) if (d.canonical === range.container.canonical && d.at <= to && last(d) >= from) d.canonical = "financial_statements";
     }
   }
   const structure: LibraryStructure = structured ? "items" : headingCount ? "outline" : "flat";
@@ -605,9 +624,10 @@ export function parseFilingDocument(html: string, meta: LibraryDocumentMeta): Pa
       chars: joined.length, textHash: libraryHash(joined),
     });
   });
-  // Under a boilerplate or signal parent, a plain section takes the parent's role; one its own title marks (a critical audit matter) keeps it.
+  // Under a boilerplate or signal parent, a plain section of the same canonical takes the parent's role; one its own title marks
+  // (a critical audit matter) keeps it, and so does one of another canonical (a note or statement under the exhibits item).
   const byId = new Map(sections.map(s => [s.sectionId, s]));
-  for (const s of sections) { const parent = s.parentId ? byId.get(s.parentId) : null; if (parent && parent.role !== "core" && s.role === "core") s.role = parent.role; }
+  for (const s of sections) { const parent = s.parentId ? byId.get(s.parentId) : null; if (parent && parent.role !== "core" && s.role === "core" && s.canonical === parent.canonical) s.role = parent.role; }
   if (!passages.length) issues.push("NO_READABLE_TEXT");
   return { docType, structure, sections, passages, issues };
 }

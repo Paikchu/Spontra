@@ -83,7 +83,7 @@ export class MapReads extends WorkerEntrypoint<SecPipelineEnv> {
 export class BusinessExplainerWorkflow extends WorkflowEntrypoint<SecPipelineEnv, BusinessExplainerParams> {
   async run(event: WorkflowEvent<BusinessExplainerParams>, step: WorkflowStep) {
     const run = { env: this.env, kind: "explainer" as const, ticker: event.payload.ticker, runId: event.instanceId };
-    return trackRun(run, () => executeBusinessExplainerWorkflow(event.payload, trackSteps(durableSteps(step, this.env, event.instanceId), run), this.env));
+    return trackRun(run, () => executeBusinessExplainerWorkflow(event.payload, trackSteps(durableSteps(step, this.env, event.instanceId), run), this.env, fetch, event.instanceId));
   }
 }
 
@@ -91,7 +91,7 @@ export class BusinessExplainerWorkflow extends WorkflowEntrypoint<SecPipelineEnv
 export class BusinessTreeWorkflow extends WorkflowEntrypoint<SecPipelineEnv, BusinessTreeParams> {
   async run(event: WorkflowEvent<BusinessTreeParams>, step: WorkflowStep) {
     const run = { env: this.env, kind: "tree" as const, ticker: event.payload.ticker, runId: event.instanceId };
-    return trackRun(run, () => executeBusinessTreeWorkflow(event.payload, trackSteps(durableSteps(step, this.env, event.instanceId), run), this.env));
+    return trackRun(run, () => executeBusinessTreeWorkflow(event.payload, trackSteps(durableSteps(step, this.env, event.instanceId), run), this.env, fetch, event.instanceId));
   }
 }
 
@@ -122,7 +122,7 @@ export class GuidanceWorkflow extends WorkflowEntrypoint<SecPipelineEnv, Guidanc
     const durable = trackSteps(durableSteps(step, this.env, event.instanceId), run);
     // Waiting for a transcript sleeps the instance; a sleeping Workflow uses no CPU.
     const sleep = trackSleep((name, ms) => step.sleep(name, Math.max(1000, Math.round(ms))), run);
-    return trackRun(run, () => executeGuidanceWorkflow(event.payload, { do: durable.do, sleep }, this.env));
+    return trackRun(run, () => executeGuidanceWorkflow(event.payload, { do: durable.do, sleep }, this.env, { runId: event.instanceId }));
   }
 }
 

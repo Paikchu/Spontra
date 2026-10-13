@@ -23,7 +23,8 @@ import type { CapitalQuarter, PublicCapitalStructure } from "@/shared/analysis-c
 import { balanceMetrics, balancePool, cashMetrics, cashPool, type Pool } from "./capital-model";
 import { PoolChart, TONE_LABEL, toneColor } from "./PoolChart";
 import { Rail } from "./Sidebar";
-import type { FindingsPublication } from "@/shared/analysis-contract/findings";
+import type { FindingPassage, FindingsPublication } from "@/shared/analysis-contract/findings";
+import type { PeersPublication } from "@/shared/analysis-contract/peers";
 import type { FindingFundamentals, ResolvedEvidence, ResolvedValue } from "@/shared/analysis-runtime/findings";
 import { formatChange, higherIsBetter, highlightChange, highlightsFor, ratioForm, type VerifiedHighlight } from "@/shared/analysis-runtime/highlights";
 import { anchorNodeNames, anchorPoolKeys, findingData, verifiedFindings } from "./findings-model";
@@ -167,7 +168,7 @@ function Sources({ sources, ids }: { sources: FlowSource[]; ids?: string[] }) {
   return <ul className="sources">{list.map(s => <li key={s.id}><a href={s.url} target="_blank" rel="noopener noreferrer">{s.title}<span aria-hidden="true"> ↗</span></a></li>)}</ul>;
 }
 
-export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, explainer = null, tree = null, guidance = null, capital = null, findings = null, fundamentals = null, events = null, filings = null }: { ticker: string; tools: ReactNode; flow: PublicBusinessFlow; notice: string | null; revenueHistory: RevenueHistory | null; explainer?: BusinessExplainer | null; tree?: BusinessTree | null; guidance?: GuidancePublication | null; capital?: PublicCapitalStructure | null; findings?: FindingsPublication | null; fundamentals?: FindingFundamentals | null; events?: EventsPublication | null; filings?: PublicFilingDigestPage | null }) {
+export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, explainer = null, tree = null, guidance = null, capital = null, findings = null, peers = null, passages = null, fundamentals = null, events = null, filings = null }: { ticker: string; tools: ReactNode; flow: PublicBusinessFlow; notice: string | null; revenueHistory: RevenueHistory | null; explainer?: BusinessExplainer | null; tree?: BusinessTree | null; guidance?: GuidancePublication | null; capital?: PublicCapitalStructure | null; findings?: FindingsPublication | null; peers?: PeersPublication | null; passages?: FindingPassage[] | null; fundamentals?: FindingFundamentals | null; events?: EventsPublication | null; filings?: PublicFilingDigestPage | null }) {
   const quarters = useMemo(() => [...flow.quarters].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd)), [flow]);
   const [period, setPeriod] = useState<string | null>(null);
   const quarter = quarters.find(q => q.id === period) ?? quarters[0];
@@ -181,7 +182,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
   const { items, quantified } = useMemo(() => businessItems(quarter, slots), [quarter, slots]);
   const [selected, setSelected] = useState<string | null>(() => new URLSearchParams(location.search).get("business"));
   // Findings are verified against the same data the stage draws; a finding in focus reshapes the stage around its figures.
-  const data = useMemo(() => findingData(flow, revenueHistory, capital, fundamentals, guidance), [flow, revenueHistory, capital, fundamentals, guidance]);
+  const data = useMemo(() => findingData(flow, revenueHistory, capital, fundamentals, guidance, peers, passages), [flow, revenueHistory, capital, fundamentals, guidance, peers, passages]);
   const verified = useMemo(() => verifiedFindings(findings, data), [findings, data]);
   const [focusId, setFocusId] = useState<string | null>(() => new URLSearchParams(location.search).get("finding"));
   const [story, setStory] = useState(false);
@@ -436,10 +437,10 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
 
     <section className="stage" data-focus={focused && findings ? "finding" : undefined} data-trend={hasRevenueTrend || metricGroups.length ? "" : undefined} data-finding={focused?.kind} data-timeline={points.length ? "" : undefined} aria-label={focused ? `${ticker} finding: ${focused.title}` : `${ticker} revenue to profit flow`}>
       {focused && findings ? <div className="lens-stage" data-split={split && pair ? "" : undefined}>
-        <LensPanel finding={focused} data={data} sources={findings.sources} nodeColor={nodeColor} pair={pair} split={split && !!pair}
+        <LensPanel finding={focused} data={data} sources={findings.sources} materials={findings.materials} record={findings.record} ticker={ticker} nodeColor={nodeColor} pair={pair} split={split && !!pair}
           story={story} index={focusIndex} count={verified.length} onPair={() => setSplit(v => !v)}
           onStep={delta => { const next = verified[focusIndex + delta]; if (next) focusFinding(next.id); }} onClose={() => focusFinding(null)} />
-        {split && pair && <LensPanel finding={pair} data={data} sources={findings.sources} nodeColor={nodeColor} pair={null} compact
+        {split && pair && <LensPanel finding={pair} data={data} sources={findings.sources} materials={findings.materials} record={findings.record} ticker={ticker} nodeColor={nodeColor} pair={null} compact
           story={false} index={-1} count={verified.length} onPair={() => {}} onStep={() => {}} onClose={() => setSplit(false)} onFocusThis={() => setFocusId(pair.id)} />}
       </div> : <>
       <header className="stage-head stage-head--summary">

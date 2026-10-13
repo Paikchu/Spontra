@@ -38,6 +38,8 @@ export type AiKindState = {
 
 export type AiCompanies = { companies: Array<{ ticker: string; name: string; kinds: Record<AiRunKind, AiKindState> }> };
 
+/** One day of the model-call ledger for a company and kind, tokens as the provider reported them. */
+export type AiUsageDay = { day: string; calls: number; inputTokens: number; cachedTokens: number; outputTokens: number; searchCalls: number };
 export type AiEarningsEvent = { accession: string; eventDate: string; status: string | null; transcriptStatus: string | null };
 export type AiCompanyDetail = {
   ticker: string;
@@ -48,6 +50,8 @@ export type AiCompanyDetail = {
   versions: AiVersion[];
   /** Guidance only: earnings releases a run can read, newest first. */
   events: AiEarningsEvent[];
+  /** The last 30 days of model calls, newest day first; absent when the ledger cannot be read. */
+  usage?: AiUsageDay[];
 };
 export type AiVersionDetail = { kind: AiRunKind; ticker: string; version: AiVersion; publication: unknown };
 export type AiRunStarted = { runId: string; reused: boolean };

@@ -23,7 +23,7 @@ export function describeChart(id: string, result: CompileResult | undefined): st
 /** The whole document as the harness reports it back: rows, charts, and every warning left. */
 export function describeDocument(doc: LensDocument, compiled: Map<string, CompileResult>, warnings: LensWarning[]): string {
   const lines: string[] = [];
-  doc.rows.forEach((row, i) => lines.push(`row ${i + 1}: [${row.cells.map(cell => cell.map(c => c.kind === "chart" ? `chart ${c.chart.id}` : c.kind === "prose" ? `prose ×${c.paragraphs.length}` : c.kind).join(" + ")).join(" | ")}]`));
+  doc.rows.forEach((row, i) => lines.push(`row ${i + 1}${row.title ? ` "${row.title}"` : ""}: [${row.cells.map(cell => cell.map(c => c.kind === "chart" ? `chart ${c.chart.id}` : c.kind === "prose" ? `prose ×${c.paragraphs.length}` : c.kind === "quote" ? `quote ${c.materialId}` : c.kind === "table" ? `table(${c.table.columns}, ${c.table.rows.length} rows)` : c.kind).join(" + ")).join(" | ")}]`));
   for (const c of doc.rows.flatMap(r => r.cells.flat()).flatMap(c => c.kind === "chart" ? [c.chart] : [])) lines.push(describeChart(c.id, compiled.get(c.id)));
   const errors = warnings.filter(w => w.level === "error"), warns = warnings.filter(w => w.level === "warning");
   lines.push(errors.length ? `errors (${errors.length}):\n  ${errors.map(w => `${w.where}: ${w.message}`).join("\n  ")}` : "errors: none");

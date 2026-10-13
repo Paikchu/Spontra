@@ -1,6 +1,6 @@
 import { hashString, type HistoricalObservation, type SecCanonicalSeriesId, type SecHistorySnapshot } from "./analysis.ts";
 
-export const COMPANY_FACTS_REGISTRY_VERSION = "sec-canonical-series.v3";
+export const COMPANY_FACTS_REGISTRY_VERSION = "sec-canonical-series.v4";
 
 type RegistryEntry = {
   seriesId: SecCanonicalSeriesId;
@@ -22,6 +22,15 @@ export const SEC_CANONICAL_SERIES_REGISTRY: RegistryEntry[] = [
   { seriesId: "shares", concepts: ["CommonStockSharesOutstanding", "WeightedAverageNumberOfDilutedSharesOutstanding"] },
   // Remaining performance obligations: contracted revenue not yet recognised, an instant disclosed in the revenue note.
   { seriesId: "rpo", concepts: ["RevenueRemainingPerformanceObligation"] },
+  // Non-cash charges and balance-sheet lines the analyst ledger reads as ratios (capex / D&A, SBC / revenue, AR / revenue).
+  { seriesId: "depreciation", concepts: ["DepreciationDepletionAndAmortization", "DepreciationAndAmortization", "DepreciationAmortizationAndAccretionNet", "Depreciation"] },
+  { seriesId: "stock_compensation", concepts: ["ShareBasedCompensation", "AllocatedShareBasedCompensationExpense"] },
+  { seriesId: "total_assets", concepts: ["Assets"] },
+  { seriesId: "total_liabilities", concepts: ["Liabilities"] },
+  { seriesId: "equity", concepts: ["StockholdersEquity", "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest"] },
+  { seriesId: "receivables", concepts: ["AccountsReceivableNetCurrent", "ReceivablesNetCurrent"] },
+  { seriesId: "inventory", concepts: ["InventoryNet"] },
+  { seriesId: "long_term_debt", concepts: ["LongTermDebtNoncurrent", "LongTermDebt"] },
 ];
 
 /** A duration fact that covers more than one quarter, kept only long enough to be differenced. */

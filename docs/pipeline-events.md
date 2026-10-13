@@ -86,6 +86,7 @@ Cron 和两个队列消费者的入口各做两次主键查询：补发发件箱
 | 业务解读 `runBusinessExplainerSweep` 🤖 | `*/10`，指纹比对，失败每周重试 | `financials.published`、`task.version_changed` | Workflow；指纹没变不启动；失败 `step.sleep` 后重试 | `explainer.published` |
 | 业务脑图 `runBusinessTreeSweep` 🤖 | `*/10`，指纹比对，失败每周重试 | 同上 | 同上 | `tree.published` |
 | 指引 `runGuidanceSweep` 🤖 | `*/10`，读缓存的申报列表 | `filing.discovered`（8-K Item 2.02） | Workflow；当日模型额度用完睡到下一个 UTC 日 | `guidance.published` |
+| 同业投影 `peers`（2026-10-14 新增） | 无 | `map.derived`、`fundamentals.updated`（全局任务，去抖 2 分钟、最长 30 分钟） | 无模型：每家数据公司最近 8 季的可比数字（资本结构与现金流分组、SEC 序列）与业务类别写入单一键 `peers:v1`，随 `/findings` 响应下发，供要点页的同业表与分析师任务读取 | `peers.published`（ticker `*`） |
 | 要点 `runFindingsSweep` 🤖 | `*/10`，指纹比对 | `map.derived`、`guidance.published`、`fundamentals.updated`、`analysis.published`、`task.version_changed` | Workflow；先过防抖和就绪检查（见下） | `findings.published` |
 | 事件 `runEventsSweep` | `*/10`，每家 6 小时自己读 EDGAR | `filing.discovered`（8-K、Form 4）、`report.published`（8-K 简析就绪） | 队列任务；不再自己读 submissions | `events.published` |
 
