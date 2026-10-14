@@ -128,3 +128,11 @@ test("a watch test scores pass or fail from the data once its period exists, and
   assert.equal(watchVerdict(data, below, PERIOD), null);
   assert.equal(watchVerdict(data, { ...below, test: undefined }, written), null);
 });
+
+test("a dossier version is summarised by its documents and materials", async () => {
+  const { summarize } = await import("../src/ai-runs/store.ts");
+  const summary = summarize("analyst", { documents: { a: { rows: [] }, b: { rows: [] } }, materials: [{ id: "a:m1" }], model: "test" });
+  assert.equal(summary.items, 2);
+  assert.equal(summary.sources, 1);
+  assert.equal(summarize("findings", { findings: [{}, {}, {}], sources: [] }).items, 3);
+});
