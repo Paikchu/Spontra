@@ -20,8 +20,8 @@
 .bm-admin-row:hover td, tbody[data-open] .bm-admin-row td { background: var(--fill); }
 .bm-admin-row td:first-child { min-width: 180px; padding-left: var(--space-3); }
 .bm-admin-company-cell { display: flex; align-items: center; gap: var(--space-2); }
-.bm-admin-row td:nth-child(n+3):nth-child(-n+5) { white-space: normal; overflow-wrap: anywhere; }
-.bm-admin-row td:nth-child(3) { max-width: 120px; } .bm-admin-row td:nth-child(4) { max-width: 190px; } .bm-admin-row td:nth-child(5) { max-width: 150px; }
+/* A row stays one line at any width: cells never wrap, the table scrolls sideways inside its wrap instead. */
+.bm-admin-row td { white-space: nowrap; }
 .bm-admin-name { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; }
 .bm-admin-name strong { color: var(--ink); font-size: 14px; font-weight: 600; }
 .bm-admin-name small { color: var(--ink-muted); font-size: 12px; white-space: nowrap; }
