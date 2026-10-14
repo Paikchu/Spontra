@@ -3,6 +3,7 @@ import { readFindingsPublication } from "../../../../shared/analysis-runtime/fin
 import { mergeDossier, readDossierPublication } from "../../../../shared/analysis-runtime/dossier.ts";
 import { libraryPassages, readLibraryDocument } from "../filing-library/store.ts";
 import { dossierCacheKey } from "../analyst/workflow.ts";
+import { webPassages } from "../analyst/web.ts";
 import { readPeersResponse } from "../peers/read.ts";
 import { AnalysisRequestError } from "../read-api/contract-support/errors.ts";
 import { D1SecRepository } from "../sec/d1.ts";
@@ -13,11 +14,13 @@ import { ORCL_FINDINGS } from "./authored/ORCL.ts";
  * (the parser re-split the document) is simply absent, and the page withdraws what rested on it.
  */
 export async function findingPassages(db: D1Database, ticker: string, publication: FindingsPublication | null): Promise<FindingPassage[]> {
-  const ids = [...new Set((publication?.materials ?? []).flatMap(m => m.passageId ? [m.passageId] : []))];
-  if (!ids.length) return [];
+  const materials = publication?.materials ?? [];
+  const web = await webPassages(db, ticker, materials.flatMap(m => m.kind === "web" && m.passageId ? [m.passageId] : []));
+  const ids = [...new Set(materials.flatMap(m => m.kind === "sec" && m.passageId ? [m.passageId] : []))];
+  if (!ids.length) return web;
   const passages = await libraryPassages(db, ids.slice(0, 60));
   const documents = new Map(await Promise.all([...new Set(passages.map(p => p.documentId))].map(async id => [id, await readLibraryDocument(db, id)] as const)));
-  const out: FindingPassage[] = [];
+  const out: FindingPassage[] = [...web];
   for (const p of passages) {
     const d = documents.get(p.documentId);
     if (!d || d.ticker !== ticker || d.status !== "ready") continue;

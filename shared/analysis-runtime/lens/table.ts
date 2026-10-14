@@ -53,7 +53,7 @@ export function compileTable(spec: LensTable, data: FindingData, ticker: string,
   const tickers = [ticker, ...peers];
   const rows = spec.rows.map(row => ({
     label: row.label ?? refLabel(data, ownRef(row.ref), locale),
-    cells: tickers.map(t => t === ticker ? cell(ownRef(row.ref), periodEnd, row.compare) : ("nodeId" in row.ref || "guidanceId" in row.ref || "ratio" in row.ref || "rpoBucket" in row.ref || "peer" in row.ref || "passageCell" in row.ref) ? null : cell({ peer: { ticker: t, ref: row.ref } }, periodEnd, row.compare)),
+    cells: tickers.map(t => t === ticker ? cell(ownRef(row.ref), periodEnd, row.compare) : ("capital" in row.ref || "metric" in row.ref || "fundamental" in row.ref) ? cell({ peer: { ticker: t, ref: row.ref } }, periodEnd, row.compare) : null),
   })).filter(r => r.cells.some(c => c));
   if (!rows.length) return { table: null, errors: ["no row resolves for the company or any peer"], dropped };
   // Columns with nothing to show are dropped; fewer than two peers left means the comparison is not one.

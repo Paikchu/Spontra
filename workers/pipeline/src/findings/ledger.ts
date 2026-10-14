@@ -122,6 +122,8 @@ export function buildLedger(data: FindingData, periodEnd: string, sources: Expla
     else series({ capital });
   }
   for (const key of ["diluted_eps", "free_cash_flow", "stock_based_compensation", "depreciation_and_amortization", "cash_and_cash_equivalents", "long_term_debt"] as const) series({ fundamental: key }, ["quarter"]);
+  // Tagged schedules at the report: each rung of the debt, lease and purchase-obligation ladders, and their totals.
+  for (const kind of ["debtMaturities", "leasePaymentsDue", "purchaseObligations"] as const) { for (const bucket of [0, 1, 2, 3, 4, 5, "total"] as const) push({ schedule: { kind, bucket } }, periodEnd, "quarter"); }
   if (rows.some(r => "nodeId" in r.ref && r.ref.nodeId === nodes[0]?.nodeId) && rows.some(r => "capital" in r.ref && r.ref.capital === "capex")) {
     for (const node of nodes.filter(n => !n.parentId).slice(0, 4)) push({ ratio: { numerator: { nodeId: node.nodeId }, denominator: { capital: "capex" } } }, periodEnd, "fiscal_year");
   }

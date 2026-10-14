@@ -91,7 +91,7 @@ test("the analyst accepts only a document that compiles, applies the review's re
     return { thought: "done", action: "finish", input: {} };
   };
   const ledger = buildLedger(data, PERIOD, publication.sources);
-  const outcome = await runAnalyst({ env: { DB: undefined } as unknown as SecPipelineEnv, ticker: "TEST", finding: f, plan, data, catalogue: lensCatalogue(ledger, data, PERIOD), categories: [], documents: [], record: [], model, stage: (_, cb) => cb(), reserveTurn: async () => true });
+  const outcome = await runAnalyst({ env: { DB: undefined } as unknown as SecPipelineEnv, ticker: "TEST", finding: f, plan, data, catalogue: lensCatalogue(ledger, data, PERIOD), categories: [], documents: [], record: [], model, stage: (_, cb) => cb(), reserveTurn: async () => true, now: "2026-08-01T00:00:00Z" });
   assert.match(seen[1]!, /PEER1/);
   assert.match(seen[2]!, /watch block/);
   assert.match(seen[3]!, /Not accepted/);

@@ -115,14 +115,14 @@ function LensDocument({ finding, data, sources, materials, record, ticker, nodeC
         {outcome ? <p className="lens-outcome"><b>{m.reported(shortPeriod(outcome.periodEnd))}</b><Outcome r={outcome.resolved} /></p>
           : <p className="lens-outcome lens-outcome--pending">{m.pending(shortPeriod(watchPeriod(finding.periodEnd, watch)))}</p>}
       </div> : null;
-      case "sources": return cited.length > 0 ? <ol key={key} className="sources sources--numbered">{cited.map(s => <li key={s.id}><a href={s.url} target="_blank" rel="noopener noreferrer">{s.title}<span aria-hidden="true"> ↗</span></a></li>)}</ol> : null;
+      case "sources": return cited.length > 0 ? <ol key={key} className="sources sources--numbered">{cited.map(s => <li key={s.id} data-kind={s.kind}><a href={s.url} target="_blank" rel="noopener noreferrer">{s.title}<span aria-hidden="true"> ↗</span></a>{s.kind === "web" && s.publishedAt && <small>{s.publishedAt.slice(0, 10)}</small>}</li>)}</ol> : null;
       case "quote": {
         const q = lens.quotes[b.materialId];
         if (!q) return null;
         const p = q.passage;
         return <figure key={key} className="lens-quote">
           <blockquote lang="en">{b.text}</blockquote>
-          <figcaption>{b.said && <span className="lens-quote-said">{b.said.speaker}{b.said.role ? ` · ${b.said.role}` : ""}</span>}<a href={`/api/business/v1/companies/${encodeURIComponent(ticker)}/passages/${encodeURIComponent(p.passageId)}`} target="_blank" rel="noopener noreferrer">{p.title} · {p.form} · {p.filedAt}</a>{p.path.length > 0 && <small>{p.path.slice(1).join(" › ")}</small>}</figcaption>
+          <figcaption data-kind={p.form === "web" ? "web" : "sec"}>{b.said && <span className="lens-quote-said">{b.said.speaker}{b.said.role ? ` · ${b.said.role}` : ""}</span>}<a href={p.form === "web" ? p.url : `/api/business/v1/companies/${encodeURIComponent(ticker)}/passages/${encodeURIComponent(p.passageId)}`} target="_blank" rel="noopener noreferrer">{p.title} · {p.form === "web" ? p.path[0] ?? "web" : p.form} · {p.filedAt}</a>{p.form !== "web" && p.path.length > 0 && <small>{p.path.slice(1).join(" › ")}</small>}</figcaption>
         </figure>;
       }
       case "table": {

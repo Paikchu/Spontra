@@ -25,9 +25,13 @@ export function mergeDossier(findings: FindingsPublication, dossier: DossierPubl
   if (!dossier || !findings.fingerprint || dossier.findingsFingerprint !== findings.fingerprint) return findings;
   const materials = new Map((findings.materials ?? []).map(m => [m.id, m]));
   for (const m of dossier.materials) materials.set(m.id, m);
+  // A web page the dossier quotes is also a source the paragraphs may cite, listed with its date among the filings.
+  const sources = new Map(findings.sources.map(s => [s.id, s]));
+  for (const m of dossier.materials) if (m.kind === "web" && !sources.has(m.id)) sources.set(m.id, { id: m.id, title: m.title, url: m.url, kind: "web", publishedAt: m.publishedAt });
   return {
     ...findings,
     findings: findings.findings.map(f => dossier.documents[f.id] ? { ...f, lens: { type: "document" as const, document: dossier.documents[f.id]! } } : f),
     materials: [...materials.values()],
+    sources: [...sources.values()].slice(0, 40),
   };
 }

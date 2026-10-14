@@ -6,12 +6,12 @@ import { resolveEvidence, resolveRef, type FindingData, type VerifiedFinding } f
  * fires on a numeric relation in the data (a capital-intensity step, a cash/earnings divergence, a funding gap)
  * or on the finding's own anchors. Severity only caps the budget. Nothing here names a company or a case.
  */
-export type LineKey = "capital_intensity" | "cash_earnings" | "funding_commitments" | "demand_conversion" | "guidance_delivery" | "margin_mix" | "peers";
+export type LineKey = "capital_intensity" | "cash_earnings" | "funding_commitments" | "demand_conversion" | "guidance_delivery" | "margin_mix" | "peers" | "event";
 export type PlannedLine = { key: LineKey; why: string; questions: string[]; evidence: string };
 export type Tier = "deep" | "standard" | "light";
-export type Plan = { tier: Tier; lines: PlannedLine[]; budget: { turns: number; reads: number; finds: number } };
+export type Plan = { tier: Tier; lines: PlannedLine[]; budget: { turns: number; reads: number; finds: number; searches: number; webReads: number } };
 
-const BUDGETS: Record<Tier, Plan["budget"]> = { deep: { turns: 14, reads: 8, finds: 6 }, standard: { turns: 9, reads: 5, finds: 4 }, light: { turns: 0, reads: 0, finds: 0 } };
+const BUDGETS: Record<Tier, Plan["budget"]> = { deep: { turns: 16, reads: 8, finds: 6, searches: 4, webReads: 3 }, standard: { turns: 10, reads: 5, finds: 4, searches: 2, webReads: 1 }, light: { turns: 0, reads: 0, finds: 0, searches: 0, webReads: 0 } };
 const MAX_LINES = 5;
 
 const LINES: Record<LineKey, Omit<PlannedLine, "why">> = {
@@ -46,6 +46,11 @@ const LINES: Record<LineKey, Omit<PlannedLine, "why">> = {
     "Does the new mix carry a structurally different margin?",
     "What did management attribute it to, in its own words?",
   ], evidence: "expense ratio rows, node shares, segment margins where disclosed; the results-of-operations section of MD&A" },
+  event: { key: "event", questions: [
+    "What are the terms in the filing's own words: who, what, how much, under what plan or agreement?",
+    "How does the event change the figures it touches: shares outstanding, holdings, debt, buyback capacity?",
+    "What is the base rate: how often has this insider or this company done this before, and under a plan or not?",
+  ], evidence: "the event's own figures ({event} references), the filed exhibit's text through find_sections and read_section, the company's earlier events of the same class" },
   peers: { key: "peers", questions: [
     "How does the same ratio look at each tracked peer over the same span, and is the company's move company-specific or industry-wide?",
     "What do peers say in their own filings about the same mechanism: who owns, who leases, who borrows, who is paid in advance?",
@@ -63,6 +68,8 @@ export function planFinding(f: VerifiedFinding, data: FindingData, peers: string
   const tier: Tier = f.kind === "watch" || f.severity <= 1 ? "light" : f.severity === 3 ? "deep" : "standard";
   const lines: PlannedLine[] = [];
   const fire = (key: LineKey, why: string) => { if (!lines.some(l => l.key === key)) lines.push({ ...LINES[key], why }); };
+  // An event finding opens the event line first: its terms, the figures it touches, and its base rate.
+  if (cites(f, r => "event" in r)) fire("event", "the finding rests on a filed event");
   // Capital intensity: capex cited, or capex running far ahead of depreciation or of its own year-ago level.
   const capexYoy = yoy(data, { capital: "capex" }, end, "fiscal_year"), capexDa = num(data, { ratio: { numerator: { capital: "capex" }, denominator: { capital: "depreciation" } } }, end, "fiscal_year");
   if (cites(f, capital("capex")) || (capexYoy != null && Math.abs(capexYoy) > 40) || (capexDa != null && capexDa > 2)) fire("capital_intensity", cites(f, capital("capex")) ? "the finding rests on capex" : capexDa != null && capexDa > 2 ? "capex runs at more than twice depreciation" : "capex moved more than 40% on the year");

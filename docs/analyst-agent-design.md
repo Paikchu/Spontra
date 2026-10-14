@@ -149,6 +149,13 @@ P1：lens 文档新增 `quote`/`table`/`record` 块与 `LensRow.title`；`{peer}
 
 `analyst` 任务（scope ai，订阅 `findings.published` 与 10-K/10-Q 的 `filing.archived`，去抖 10 分钟）与 `AnalystWorkflow`（`spontra-analyst`，并发 1，`ANALYST_ENABLED`）。流程：`plan.ts` 从账本差值确定性地开线（资本强度、现金/利润背离、资金与承诺、需求转化、指引兑现、利润率/结构、同业；至多 5 条，严重度只定 tier 与预算：深 14 轮 / 标准 9 轮 / 轻 0 轮）→ `agent.ts` ReAct（动作 `find_sections`、`read_section`（含 `previous`）、`peers`（divergence 表 + 各同业可解析 ref）、`compile`、`finish`；读过的段落成为 `m<n>` 材料，引文只能指向它们）→ 每次 `compile` 跑 `verifyLensDocument` + `auditDocument`（引文逐字、表格解析、数字对照证据）→ 只接受零错误 → 一次只删不改的 review → 发布 `dossier:v1:<ticker>`（绑定 findings 指纹；`analystTrace` 同记录）。读路由 `readFindingsResponse` 在指纹匹配时用案卷文档替换要点的 lens 并合并材料。每日模型轮次上限 `ANALYST_DAILY_TURNS`（默认 300，`feature_budget`）。Admin「公司要点」新增「要点分析师」页签：每条要点的 tier、开的线、轮次、警告、审校移除与完整研究过程。未做：按 subject 哈希的案卷缓存（当前绑定 findings 指纹，findings 重写即重研究）。
 
+### P3–P5（2026-10-14 实现）
+
+- **Web 证据**：分析师新增 `search`（Tavily，报告期前 12 个月，排除论坛与数据聚合站）与 `read_web`（只能读本轮搜索命中的页面）。读过的页面以 `w<hash>` 为 id 存入 D1（`research:v1:<ticker>:<id>`：url、标题、发布日、抓取日、摘录 sha256、摘录），指令式文本行先被剥离；页面是 `kind: "web"` 的材料，引文按同一条逐字规则校验，读路由按 id 重读摘录，页面上引文标注发布者与日期（无日期则不标），web 来源在来源列表带日期。网页数字只能出现在引文里（段落数字仍只能来自证据）。预算：深 4 次搜索 / 3 次阅读，标准 2 / 1。
+- **XBRL schedules**：`CAPITAL_VERSION` v5 在投影时提取债务到期、租赁付款、采购义务三种阶梯（`CapitalQuarter.schedules`），`{ schedule: { kind, bucket } }` 引用可解析（bucket 0–5 或 total），账本列出全部档位。部署后 `refreshStaleProjections` 重投影。
+- **P4 记录与跨期**：分析师 payload 带 `background`（公司叙述、上一版发布物对同一组数字的判断 `priorCall`、每个证据 ref 自上次以来的变化 `sinceLast`），提示词规定只作上下文、不得把其中数字写进段落，变化用 periods 表格或图表表达；`record` 块（P1）在第二份发布物后渲染；rail 中已打分的 watch 显示 ✓/✗。
+- **P5 事件域**：`{ event: { id, field } }` 引用（Form 4 的卖出股数、金额、均价、买入、行权、交易后持股）从事件发布物解析；planner 对引用事件的要点先开"事件"线（条款原文、触及的数字、基准率）；分析师 payload 列出最近一年的事件及其 `{event}` 引用，附件文本在文件库里可被 `find_sections`/`read_section` 读到。事件要点本身仍需 findings 写作者产出（其提示词尚未允许 `event` 引用）；新闻 subject 要等新闻源。AI 名单仍只有 ORCL。
+
 ## 需要你决定的事
 
 1. 是否把 AMZN、GOOGL、META 加入数据名单（否则 ORCL 的同业行在数字上为空，只能引文）。

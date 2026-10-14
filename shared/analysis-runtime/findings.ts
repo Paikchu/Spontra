@@ -2,7 +2,8 @@ import { z } from "zod";
 import { FLOW_METRICS, type BusinessFlowQuarter, type FlowMetric } from "../analysis-contract/business-flow.ts";
 import { FUNDAMENTAL_METRIC_CATALOG, FUNDAMENTAL_METRIC_LABEL_ZH } from "../analysis-contract/fundamental-metric-catalog.ts";
 import type { FundamentalMetricKey, PublicFundamentalPoint, PublicFundamentalSeries } from "../analysis-contract/fundamentals.ts";
-import type { AnalysisFinding, CapitalMetric, FindingEvidence, FindingPassage, FindingRef, FindingSpan, FindingWatch, FindingsPublication } from "../analysis-contract/findings.ts";
+import { EVENT_FIELDS, type AnalysisFinding, type CapitalMetric, type EventField, type FindingEvidence, type FindingPassage, type FindingRef, type FindingSpan, type FindingWatch, type FindingsPublication } from "../analysis-contract/findings.ts";
+import type { EventsPublication } from "../analysis-contract/events.ts";
 import type { PeersPublication } from "../analysis-contract/peers.ts";
 import { alignedPeerQuarter } from "./peers.ts";
 import type { BalanceSheet, CashFlowStatement, PublicCapitalStructure, RpoDisclosure } from "../analysis-contract/capital-structure.ts";
@@ -10,6 +11,7 @@ import type { GuidanceItem, GuidancePublication } from "../analysis-contract/gui
 import type { RevenueHistory, RevenueHistoryNode } from "../analysis-contract/revenue-history.ts";
 import type { LensDocument } from "../analysis-contract/lens.ts";
 import { lensDocumentSchemaFor } from "./lens/schema.ts";
+import { scheduleBucketAt, scheduleBucketLabel, scheduleTotalAt } from "./schedules.ts";
 import type { Locale } from "./locale.ts";
 
 /* ---------- Schema ---------- */
@@ -38,6 +40,8 @@ const baseRef = z.union([
   z.object({ rpoBucket: z.number().int().min(0).max(11) }),
   z.object({ peer: z.object({ ticker: z.string().regex(/^[A-Z][A-Z0-9.-]{0,11}$/), ref: z.union([z.object({ capital: z.enum(CAPITAL_METRICS) }), z.object({ fundamental: z.enum(FUNDAMENTAL_KEYS) }), z.object({ metric: z.enum(FLOW_METRICS) })]) }) }),
   z.object({ passageCell: z.object({ passageId: z.string().regex(/^[a-z0-9]{8,64}$/), row: z.number().int().min(0).max(200), col: z.number().int().min(0).max(40) }) }),
+  z.object({ event: z.object({ id: z.string().regex(/^\d{10}-\d{2}-\d{6}$/), field: z.enum(EVENT_FIELDS) }) }),
+  z.object({ schedule: z.object({ kind: z.enum(["debtMaturities", "leasePaymentsDue", "purchaseObligations"]), bucket: z.union([z.number().int().min(0).max(5), z.literal("total")]) }) }),
 ]);
 const ref = z.union([baseRef, z.object({ ratio: z.object({ numerator: baseRef, denominator: baseRef }) })]);
 export const findingRefSchema = ref;
@@ -125,6 +129,8 @@ export type FindingData = {
   peers?: PeersPublication | null;
   /** Library passages the publication quotes or reads cells from, as served now; absent when not loaded. */
   passages?: FindingPassage[] | null;
+  /** The company's filed events, for `{ event }` references; absent when not loaded. */
+  events?: EventsPublication | null;
 };
 
 /** `points`: a change in a rate, in percentage points, as a transformed lens series carries it. */
@@ -331,6 +337,19 @@ function passageCellAt(data: FindingData, cell: { passageId: string; row: number
   return { value: c.value * scale, unit: "USD", currency: "USD", periodStart: null, periodEnd, span, accessions: [] };
 }
 
+/** One figure of a filed event: an insider's shares sold, proceeds, price, purchases, exercises or holdings after, dated at the event. */
+function eventAt(data: FindingData, id: string, field: EventField, span: FindingSpan): ResolvedValue | null {
+  const event = data.events?.events.find(e => e.id === id);
+  const t = event?.insider;
+  if (!event || !t) return null;
+  const pick: Record<EventField, [number | null | undefined, ValueUnit]> = {
+    sharesSold: [t.sold?.shares, "shares"], proceeds: [t.sold?.proceeds, "USD"], averagePrice: [t.sold?.averagePrice ?? t.bought?.averagePrice, "per_share"],
+    sharesBought: [t.bought?.shares, "shares"], cost: [t.bought?.cost, "USD"], exercised: [t.exercised, "shares"], heldAfter: [t.heldAfter, "shares"],
+  };
+  const [value, unit] = pick[field];
+  return value == null || !Number.isFinite(value) ? null : { value, unit, currency: unit === "USD" || unit === "per_share" ? "USD" : null, periodStart: null, periodEnd: event.eventDate, span, accessions: [event.id] };
+}
+
 /** The rungs of a filing's RPO schedule, nearest first, each as the months after the period end it covers and the amount expected in it. */
 export function rpoBuckets(rpo: RpoDisclosure): Array<{ from: number; to: number | null; amount: number | null; share: number | null }> {
   const total = Number(rpo.total);
@@ -389,6 +408,11 @@ export function resolveRef(data: FindingData, ref: FindingRef, periodEnd: string
   if ("rpoBucket" in ref) return amount(rpoBucketAt(data, ref.rpoBucket, periodEnd));
   if ("peer" in ref) return peerAt(data, ref.peer.ticker, ref.peer.ref, periodEnd, span);
   if ("passageCell" in ref) return passageCellAt(data, ref.passageCell, periodEnd, span);
+  if ("event" in ref) return eventAt(data, ref.event.id, ref.event.field, span);
+  if ("schedule" in ref) {
+    const hit = ref.schedule.bucket === "total" ? scheduleTotalAt(data.capital, ref.schedule.kind, periodEnd) : scheduleBucketAt(data.capital, ref.schedule.kind, ref.schedule.bucket, periodEnd);
+    return hit ? { value: hit.value, unit: "USD", currency: hit.currency, periodStart: null, periodEnd: hit.periodEnd, span, accessions: hit.accessions } : null;
+  }
   const item = data.guidance?.items.find(i => i.id === ref.guidanceId);
   return item ? guidanceValue(item, span) : null;
 }
@@ -434,6 +458,17 @@ export function refLabel(data: FindingData, ref: FindingRef, locale: Locale = "e
     return zhLabel ?? data.fundamentals?.series.find(s => s.metricKey === ref.fundamental)?.label ?? FUNDAMENTAL_METRIC_CATALOG[ref.fundamental as keyof typeof FUNDAMENTAL_METRIC_CATALOG]?.label ?? ref.fundamental;
   }
   if ("peer" in ref) return `${ref.peer.ticker} · ${refLabel(data, ref.peer.ref, locale)}`;
+  if ("schedule" in ref) {
+    const kindLabel: Record<string, [string, string]> = { debtMaturities: ["Debt maturities", "债务到期"], leasePaymentsDue: ["Lease payments due", "应付租赁款"], purchaseObligations: ["Purchase obligations", "采购义务"] };
+    if (ref.schedule.bucket === "total") return `${kindLabel[ref.schedule.kind]![zh ? 1 : 0]}${zh ? "合计" : ", total"}`;
+    return scheduleBucketLabel(ref.schedule.kind, { from: ref.schedule.bucket * 12, to: ref.schedule.bucket === 5 ? null : (ref.schedule.bucket + 1) * 12, amount: "0" }, locale);
+  }
+  if ("event" in ref) {
+    const event = data.events?.events.find(e => e.id === ref.event.id);
+    const owner = event?.insider?.ownerName ?? (zh ? "内部人" : "Insider");
+    const field: Record<EventField, [string, string]> = { sharesSold: ["shares sold", "卖出股数"], proceeds: ["sale proceeds", "卖出金额"], averagePrice: ["average price", "成交均价"], sharesBought: ["shares bought", "买入股数"], cost: ["purchase cost", "买入金额"], exercised: ["shares exercised", "行权股数"], heldAfter: ["shares held after", "交易后持股"] };
+    return `${owner} · ${field[ref.event.field][zh ? 1 : 0]}`;
+  }
   if ("passageCell" in ref) { const p = data.passages?.find(p => p.passageId === ref.passageCell.passageId); const row = p?.table?.rows[ref.passageCell.row]; return row ? `${row.label}${p?.table?.columns[ref.passageCell.col] ? ` · ${p.table.columns[ref.passageCell.col]}` : ""}` : (zh ? "表格数字" : "Table figure"); }
   if ("rpoBucket" in ref) {
     const rpo = [...(data.capital?.quarters ?? [])].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd)).find(q => q.rpo)?.rpo;

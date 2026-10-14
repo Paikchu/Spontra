@@ -2,7 +2,9 @@ import { reasoningFor } from "../ai-config.ts";
 import type { DossierPublication, DossierResponse } from "../../../../shared/analysis-contract/dossier.ts";
 import type { FindingsPublication } from "../../../../shared/analysis-contract/findings.ts";
 import { readDossierPublication } from "../../../../shared/analysis-runtime/dossier.ts";
-import { verifyFindings } from "../../../../shared/analysis-runtime/findings.ts";
+import { readFindingsPublication, refLabel, resolveRef, spanLabel, verifyFindings, type FindingData, type VerifiedFinding } from "../../../../shared/analysis-runtime/findings.ts";
+import { formatDelta, formatResolved } from "../../../../shared/analysis-runtime/lens/format.ts";
+import { readEventsResponse } from "../events/read.ts";
 import { peersOf } from "../../../../shared/analysis-runtime/lens/table.ts";
 import { AiRunStore } from "../ai-runs/store.ts";
 import { sha256 } from "../company-analysis/api.ts";
@@ -18,11 +20,11 @@ import { readPeersResponse } from "../peers/read.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import type { WorkflowStepLike } from "../workflow-core.ts";
-import { runAnalyst, type AnalystModel, type AnalystOutcome } from "./agent.ts";
+import { runAnalyst, type AnalystModel, type AnalystOutcome, type AnalystRunInput } from "./agent.ts";
 import { planFinding } from "./plan.ts";
 
 /** Changing the analyst's prompt, lines, harness or grammar re-researches every company once. */
-export const ANALYST_VERSION = "analyst.react.v1";
+export const ANALYST_VERSION = "analyst.react.v2";
 export const dossierCacheKey = (ticker: string) => `dossier:v1:${ticker}`;
 export type AnalystWorkflowParams = { ticker: string; fingerprint: string };
 export type AnalystDeps = { model?: AnalystModel; fetcher?: typeof fetch };
@@ -33,7 +35,7 @@ const MODEL_BUDGET_MS = 5 * 60_000;
 export type AnalystTrace = { version: string; generatedAt: string; findings: AnalystOutcome[] };
 
 type Prepared = NonNullable<Awaited<ReturnType<typeof findingsInput>>>;
-type Input = { findings: FindingsPublication; data: Prepared["data"]; ledger: Prepared["ledger"]; documents: Awaited<ReturnType<typeof libraryToc>>; fingerprint: string } | null;
+type Input = { findings: FindingsPublication; data: Prepared["data"]; ledger: Prepared["ledger"]; context: string | null; documents: Awaited<ReturnType<typeof libraryToc>>; fingerprint: string } | null;
 
 /** What a run would research now: the served findings, the prepared data, and the newest periodic filings in the library. */
 async function readInput(env: SecPipelineEnv, ticker: string): Promise<Input> {
@@ -43,11 +45,25 @@ async function readInput(env: SecPipelineEnv, ticker: string): Promise<Input> {
   if (!findings?.fingerprint || !base) return null;
   const documents = await libraryToc(db, ticker, { forms: ["10-K", "10-Q", "20-F"], limit: 3 });
   const fingerprint = await sha256(JSON.stringify({ version: ANALYST_VERSION, ticker, findings: findings.fingerprint, documents: documents.map(d => d.documentId).sort() }));
-  return { findings, data: base.data, ledger: base.ledger, documents, fingerprint };
+  return { findings, data: base.data, ledger: base.ledger, context: base.context, documents, fingerprint };
 }
 
 export async function analystFingerprint(env: SecPipelineEnv, ticker: string): Promise<string | null> {
   return (await readInput(env, ticker))?.fingerprint ?? null;
+}
+
+/** What the previous publication said about this finding's figures, and how each has moved since; context for the model, never a source. */
+function background(f: VerifiedFinding, previous: FindingsPublication | null, data: FindingData, narrative: string | null): NonNullable<AnalystRunInput["background"]> {
+  const refs = [...new Map(f.evidence.map(e => [JSON.stringify(e.ref), e])).values()];
+  const sinceLast = previous ? refs.flatMap(e => {
+    const then = resolveRef(data, e.ref, previous.periodEnd, e.span), now = resolveRef(data, e.ref, f.periodEnd, e.span);
+    if (!then || !now) return [];
+    const change = then.unit === "USD" && then.value > 0 && now.value > 0 ? formatDelta((now.value - then.value) / then.value * 100, "USD", e.ref) : null;
+    return [{ label: refLabel(data, e.ref), then: `${formatResolved(then, e.ref)} (${spanLabel(then)})`, now: `${formatResolved(now, e.ref)} (${spanLabel(now)})`, change }];
+  }) : [];
+  const mine = new Set(refs.map(e => JSON.stringify(e.ref)));
+  const prior = previous?.findings.map(p => ({ p, shared: p.evidence.filter(e => mine.has(JSON.stringify(e.ref))).length })).filter(x => x.shared > 0).sort((a, b) => b.shared - a.shared)[0]?.p ?? null;
+  return { narrative: narrative?.slice(0, 4000) ?? null, sinceLast, priorCall: prior && previous ? { periodEnd: previous.periodEnd, title: prior.title, judgment: prior.judgment.text } : null };
 }
 
 /** Atomic daily counter on the feature_budget table; false once the cap is reached. */
@@ -67,7 +83,11 @@ export async function executeAnalystWorkflow(params: AnalystWorkflowParams, step
   if (!input || input.fingerprint !== params.fingerprint) return { status: "superseded" as const };
   const db = requireDb(env);
   const peers = await readPeersResponse(db).then(r => r.peers).catch(() => null);
-  const data = { ...input.data, peers };
+  const events = await readEventsResponse(db, params.ticker).then(r => r.events).catch(() => null);
+  const data = { ...input.data, peers, events };
+  // The publication before this one, for what it said about the same figures and how they moved since.
+  const store = new AiRunStore(db);
+  const previous = await store.versions("findings", params.ticker).then(async v => { for (const item of v) { const stored = await store.version("findings", params.ticker, item.id).catch(() => null); const p = stored ? readFindingsPublication(stored.publication, params.ticker) : null; if (p && p.generatedAt !== input.findings.generatedAt && p.periodEnd < input.findings.periodEnd) return p; } return null; }).catch(() => null);
   const { verified } = verifyFindings(input.findings, data);
   const categories = [...new Set((await readLinks(db, { ticker: params.ticker }).catch(() => [])).filter(l => (l.status === "verified" || l.status === "confirmed") && l.industryCategory).map(l => l.industryCategory!))];
   const catalogue = lensCatalogue(input.ledger, data, input.findings.periodEnd);
@@ -81,7 +101,7 @@ export async function executeAnalystWorkflow(params: AnalystWorkflowParams, step
   const settled = await Promise.allSettled(verified.map(async f => {
     const plan = planFinding(f, data, peerTickers);
     if (plan.tier === "light") return { id: f.id, tier: plan.tier, lines: [], document: null, materials: [], turns: [], warnings: ["light tier: not researched"], review: [] } satisfies AnalystOutcome;
-    return runAnalyst({ env, ticker: params.ticker, finding: f, plan, data, catalogue, categories, documents: input.documents, record: input.findings.record ?? [], model, stage: (name, cb) => step.do(`analyst-${name}`, cb), reserveTurn: () => reserveTurn(env, now) });
+    return runAnalyst({ env, ticker: params.ticker, finding: f, plan, data, catalogue, categories, documents: input.documents, record: input.findings.record ?? [], model, stage: (name, cb) => step.do(`analyst-${name}`, cb), reserveTurn: () => reserveTurn(env, now), now, background: background(f, previous, data, input.context) });
   }));
   settled.forEach((s, i) => outcomes.push(s.status === "fulfilled" ? s.value : { id: verified[i]!.id, tier: "standard", lines: [], document: null, materials: [], turns: [], warnings: [`failed: ${s.reason instanceof Error ? s.reason.message : String(s.reason)}`], review: [] }));
   const documents: DossierPublication["documents"] = {};

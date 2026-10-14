@@ -791,6 +791,8 @@ button { cursor: pointer; }
 .lens-outcome-body em[data-verdict="within"] { color: var(--up); font-weight: 600; }
 .lens-outcome-body em[data-verdict="above"], .lens-outcome-body em[data-verdict="below"] { color: var(--loss); font-weight: 600; }
 .finding-settled { display: inline-grid; place-items: center; width: 16px; height: 16px; margin-left: -2px; border-radius: 50%; font-size: 10px; font-style: normal; color: var(--kind); background: color-mix(in srgb, var(--kind) 14%, transparent); }
+.finding-settled[data-verdict="pass"] { color: var(--background); background: var(--up); }
+.finding-settled[data-verdict="fail"] { color: var(--background); background: var(--loss); }
 
 /* Side by side: the finding and its counterpart share the trend's row, each with its own chart and figures. */
 .lens-stage { display: grid; grid-template-columns: minmax(0, 1fr); min-height: 0; }
@@ -836,6 +838,8 @@ button { cursor: pointer; }
 .lens-quote figcaption a:hover { color: var(--foreground); }
 .lens-quote figcaption small { font-size: 10.5px; }
 .lens-quote-said { font-weight: 600; color: var(--muted-foreground); }
+.lens-quote figcaption[data-kind="web"] a { border-bottom-style: dashed; }
+.sources li[data-kind="web"] small { margin-left: 8px; font-size: 10.5px; color: var(--faint); font-variant-numeric: tabular-nums; }
 /* Figures as a table: references resolved at read time, a peer or a period per column. */
 .lens-table { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
 .lens-table caption { text-align: left; padding: 0 0 6px; font-size: 12px; font-weight: 620; color: var(--foreground); }

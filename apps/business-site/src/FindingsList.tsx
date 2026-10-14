@@ -22,8 +22,10 @@ const DIGEST = 3;
  * severity. Closed, it shows the top few (and the one in focus). One row in focus reshapes the stage; play walks them in order.
  * Nothing here is a summary: each row is a claim the data supports.
  */
-export function FindingsList({ findings, focus, story, periodEnd, expanded, onFocus, onStory, onExpand }: {
+export function FindingsList({ findings, verdicts, focus, story, periodEnd, expanded, onFocus, onStory, onExpand }: {
   findings: VerifiedFinding[];
+  /** Pass or fail of each finding's scored watch, by finding id, once its period reported. */
+  verdicts?: Record<string, "pass" | "fail">;
   focus: string | null;
   story: boolean;
   /** The report the findings were written from. */
@@ -44,7 +46,7 @@ export function FindingsList({ findings, focus, story, periodEnd, expanded, onFo
       {findings.map((f, i) => <Button variant="unstyled" type="button" key={f.id} role="radio" aria-checked={focus === f.id} className="finding-row" data-kind={f.kind}
         data-extra={extra(f, i) ? "" : undefined} onClick={() => onFocus(focus === f.id ? null : f.id)} title={m.severity(KIND_LABEL[f.kind], f.severity)}>
         <i className="finding-mark" aria-label={m.severity(KIND_LABEL[f.kind], f.severity)}>{f.severity}</i>
-        <span className="finding-title"><span lang="en">{f.title}</span>{f.watchOutcome && <i className="finding-settled" title={m.watchOutcome} aria-label={m.watchOutcome}>↻</i>}</span>
+        <span className="finding-title"><span lang="en">{f.title}</span>{f.watchOutcome && <i className="finding-settled" data-verdict={verdicts?.[f.id]} title={m.watchOutcome} aria-label={m.watchOutcome}>{verdicts?.[f.id] === "pass" ? "✓" : verdicts?.[f.id] === "fail" ? "✗" : "↻"}</i>}</span>
       </Button>)}
     </div>
   </RailSection>;

@@ -2,6 +2,7 @@ import type { FlowMetric } from "./business-flow.ts";
 import type { ExplainerClaim, ExplainerSource } from "./business-explainer.ts";
 import type { FundamentalMetricKey } from "./fundamentals.ts";
 import type { LensDocument } from "./lens.ts";
+import type { ScheduleKind } from "./capital-structure.ts";
 import type { PeersPublication } from "./peers.ts";
 
 /**
@@ -38,7 +39,13 @@ export type FindingBaseRef =
   /** The same figure at a tracked peer, from the peers projection (docs/analyst-agent-design.md), aligned to the period asked for. */
   | { peer: { ticker: string; ref: PeerBaseRef } }
   /** A cell of a filing-library table, by passage and position; resolvable only when the table's unit parses to a scale. */
-  | { passageCell: { passageId: string; row: number; col: number } };
+  | { passageCell: { passageId: string; row: number; col: number } }
+  /** A figure of one filed event (a Form 4's shares sold, proceeds, holdings after), read from the events publication by accession. */
+  | { event: { id: string; field: EventField } }
+  /** One rung of a tagged schedule (debt maturities, lease payments due, purchase obligations): year `bucket` 0–5 (5 = thereafter), or the total when `bucket` is "total". */
+  | { schedule: { kind: ScheduleKind; bucket: number | "total" } };
+export type EventField = "sharesSold" | "proceeds" | "averagePrice" | "sharesBought" | "cost" | "exercised" | "heldAfter";
+export const EVENT_FIELDS = ["sharesSold", "proceeds", "averagePrice", "sharesBought", "cost", "exercised", "heldAfter"] as const;
 /** What a peer reference may point at: a capital figure or a fundamental series; never another peer, a node or guidance. */
 export type PeerBaseRef = { capital: CapitalMetric } | { fundamental: FundamentalMetricKey } | { metric: FlowMetric };
 /** A base figure, or one figure over another at the same period and span (cloud revenue per dollar of capex). */
