@@ -48,6 +48,11 @@ export const findingRefSchema = ref;
 const lensDocument = lensDocumentSchemaFor(ref);
 /** A lens document as the agent wrote it, through the contract; null when its shape is wrong. */
 export function readLensDocument(value: unknown): LensDocument | null { const parsed = lensDocument.safeParse(value); return parsed.success ? parsed.data : null; }
+/** Why a lens document does not read: the first few contract violations, each with its path, for the model to fix. */
+export function lensDocumentIssues(value: unknown): string[] {
+  const parsed = lensDocument.safeParse(value);
+  return parsed.success ? [] : parsed.error.issues.slice(0, 8).map(i => `${i.path.join(".") || "document"}: ${i.message}`);
+}
 const span = z.enum(["quarter", "fiscal_year"]);
 const compare = z.union([z.literal("yoy"), z.literal("qoq"), z.object({ guidanceId: text(200) })]);
 const evidence = z.object({ ref, periodEnd: date, span, compare: compare.optional(), label: text(100).optional() });

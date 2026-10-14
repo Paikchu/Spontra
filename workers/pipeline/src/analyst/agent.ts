@@ -2,7 +2,7 @@ import type { FindingMaterial, FindingPassage, FindingRecordEntry, FindingRef } 
 import type { IndustryCategory } from "../../../../shared/analysis-contract/filing-library.ts";
 import { LENS_LIMITS, type LensDocument } from "../../../../shared/analysis-contract/lens.ts";
 import type { PeersPublication } from "../../../../shared/analysis-contract/peers.ts";
-import { evidenceCandidates, readLensDocument, resolveEvidence, resolveRef, type FindingData, type VerifiedFinding } from "../../../../shared/analysis-runtime/findings.ts";
+import { evidenceCandidates, lensDocumentIssues, readLensDocument, resolveEvidence, resolveRef, type FindingData, type VerifiedFinding } from "../../../../shared/analysis-runtime/findings.ts";
 import { auditDocument } from "../../../../shared/analysis-runtime/lens/audit.ts";
 import { describeDocument } from "../../../../shared/analysis-runtime/lens/describe.ts";
 import { formatDelta, formatResolved } from "../../../../shared/analysis-runtime/lens/format.ts";
@@ -198,12 +198,13 @@ export async function runAnalyst(input: AnalystRunInput): Promise<AnalystOutcome
       history: turns.map(t => ({ turn: t.turn, thought: t.thought, action: t.action, input: t.input, observation: t.observation.length > 2400 && t.turn < turns.length - 1 ? t.observation.slice(0, 2400) + "…" : t.observation })),
       budget: { turnsLeft: plan.budget.turns - turn + 1, readsLeft: plan.budget.reads - used.reads, findsLeft: plan.budget.finds - used.finds, searchesLeft: search ? plan.budget.searches - used.searches : 0, webReadsLeft: search ? plan.budget.webReads - used.webReads : 0 },
       hits: hits.map((h, i) => ({ id: `h${i + 1}`, title: h.title.slice(0, 120), host: hostOf(h.url), publishedAt: h.publishedAt })),
-      ...(turn >= plan.budget.turns - 1 ? { notice: "The budget is almost spent: compile and finish with the best document." } : {}),
+      ...(turn >= plan.budget.turns - 1 ? { notice: "The budget is almost spent: compile and finish with the best document." }
+        : !state.last && turn > Math.ceil(plan.budget.turns / 2) ? { notice: "Half the turns are gone and nothing has compiled: compile a first document now, then refine it." } : {}),
     };
     const decision = readDecision(await input.stage(`${finding.id}-t${turn}`, () => input.model(`analyst-${finding.id}-${turn}`, SYSTEM, payload)));
     let observation: string;
     const proposed = decision.input.document !== undefined ? readLensDocument(decision.input.document) : null;
-    if (decision.input.document !== undefined && !proposed) observation = "The document does not match the contract: check block kinds and fields, ids ([a-z][a-z0-9-]*), quote length 20–600, table rows, and that titles and labels contain no digits.";
+    if (decision.input.document !== undefined && !proposed) observation = `The document does not match the contract:\n  ${lensDocumentIssues(decision.input.document).join("\n  ") || "input.document is not an object"}\nIf the document was cut off, send a shorter one: fewer rows, shorter paragraphs, no more than three charts.`;
     else switch (decision.action) {
       case "find_sections": {
         if (used.finds >= plan.budget.finds) { observation = "No searches left; read what you have found or compile."; break; }

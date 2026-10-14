@@ -87,6 +87,11 @@ export function auditDocument(input: AuditInput & { judgmentChars: number; figur
     if (lines > 4) warn(`chart ${c.id}`, `${lines} lines are hard to tell apart; keep at most four`);
   }
   input.document.rows.forEach((row, i) => {
+    for (const b of row.cells.flat()) if (b.kind === "table") {
+      const columns = b.table.columns === "periods" ? (b.table.periods ?? (b.table.span === "quarter" ? 4 : 3)) : (b.table.peers?.length ?? 3) + 1;
+      if (row.cells.length === 2 && columns > 4) warn(`row ${i + 1}`, `a table with ${columns} figure columns shares the row with another cell; give it a row of its own or draw fewer periods`);
+      if (columns > 8) warn(`row ${i + 1}`, `a table with ${columns} figure columns is wider than the page; draw at most eight`);
+    }
     if (row.cells.length === 2 && row.cells.every(c => c.some(b => b.kind === "chart"))) warn(`row ${i + 1}`, "two charts side by side each get half the width; one chart per row reads larger");
     if (row.cells.length !== 2) return;
     const name = (cell: LensBlock[]) => cell.map(b => b.kind === "chart" ? `chart ${b.chart.id}` : b.kind).join(" + ");

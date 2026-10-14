@@ -24,13 +24,14 @@ import { runAnalyst, type AnalystModel, type AnalystOutcome, type AnalystRunInpu
 import { planFinding } from "./plan.ts";
 
 /** Changing the analyst's prompt, lines, harness or grammar re-researches every company once. */
-export const ANALYST_VERSION = "analyst.react.v2";
+export const ANALYST_VERSION = "analyst.react.v3";
 export const dossierCacheKey = (ticker: string) => `dossier:v1:${ticker}`;
 export type AnalystWorkflowParams = { ticker: string; fingerprint: string };
 export type AnalystDeps = { model?: AnalystModel; fetcher?: typeof fetch };
 /** Model turns per UTC day across all companies; a cap, not a target. */
 const DEFAULT_DAILY_TURNS = 300;
-const MODEL_BUDGET_MS = 5 * 60_000;
+/** A composing turn reasons at length and then writes a long document; the first runs lost documents mid-chart to a shorter budget. */
+const MODEL_BUDGET_MS = 10 * 60_000;
 
 export type AnalystTrace = { version: string; generatedAt: string; findings: AnalystOutcome[] };
 
