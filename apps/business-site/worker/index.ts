@@ -1,6 +1,7 @@
 
 import { selectFlow } from "@/packages/web/src/model/business-flow-model";
 import { checkCompleteFlow, newestPair } from "@/shared/analysis-runtime/financial-data/completeness";
+import { canonicalTicker } from "@/shared/analysis-runtime/financial-data/policy";
 import type { CompleteFlowPublication } from "@/shared/analysis-contract/complete-business-flow";
 import {readReportHistory} from "@/shared/analysis-runtime/financial-data/report-history";
 import {readHistory} from "@/shared/analysis-runtime/financial-data/history";
@@ -252,6 +253,8 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
   // The reader pins a report to its published revision; nothing else takes a query.
   const allowed=detail?new Set(["reportDate","reportVersion"]):new Set<string>();
   if(!match||[...url.searchParams.keys()].some(k=>!allowed.has(k)))return json({error:"Not found"},404);
+  // A second share class reads as the class the data is kept under.
+  match[1]=canonicalTicker(match[1]);
   if(request.method!=="GET")return json({error:"Method not allowed"},405);
   try{if(!env.PUBLIC_READ_LIMIT||!(await env.PUBLIC_READ_LIMIT.limit({key:request.headers.get("cf-connecting-ip")??"anonymous"})).success)return json({error:"Too many requests"},429);}catch{return json({error:"Read service unavailable"},503);}
   const key=new Request(url.href,{method:"GET"});const cached=await cache?.match(key);if(cached)return cached;

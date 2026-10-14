@@ -165,7 +165,7 @@ P1：lens 文档新增 `quote`/`table`/`record` 块与 `LensRow.title`；`{peer}
 
 ## 需要你决定的事
 
-1. 是否把 AMZN、GOOGL、META 加入数据名单（否则 ORCL 的同业行在数字上为空，只能引文）。
+1. ~~是否把 AMZN、GOOGL、META 加入数据名单~~ 已于 2026-10-14 加入 `SEC_DATA_TICKERS`（GOOG 折算为 GOOGL）；申报发现 Cron 为从未采集的公司解析 CIK 并请求首次采集，之后 financials → links → `peers:v1` 自动把它们纳入 ORCL 的同业。
 2. 电话会与新闻引文上公开页面的边界（长度、是否只对财报引文开放链接）。
 3. 是否接受"算术 ref"作为原则的扩展，以支持情景句。
 4. P2 完成前是否把 Admin 的"未披露/覆盖"保持在后台不上页面（方案默认是）。

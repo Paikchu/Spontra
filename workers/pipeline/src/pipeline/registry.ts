@@ -126,7 +126,7 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
 /** Emitters that are not tasks. `task.version_changed` is routed to the one task it names, never subscribed. */
 export const SOURCES: Record<string, readonly EventType[]> = {
   // The only Cron: polls EDGAR, which pushes nothing.
-  "sec-discovery": ["filing.discovered"],
+  "sec-discovery": ["filing.discovered", "collection.requested"],
   "admin": ["collection.requested", "maintenance.requested", "archive.prune.requested", "library.requested", "library.links.requested"],
   "invocation": ["task.version_changed"],
 };

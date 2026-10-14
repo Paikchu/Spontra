@@ -8,6 +8,7 @@ import type { FindingsPublication } from "@/shared/analysis-contract/findings";
 import type { EventsPublication } from "@/shared/analysis-contract/events";
 import type { PublicFilingDigestPage } from "@/shared/analysis-contract/filings";
 import type { FindingFundamentals } from "@/shared/analysis-runtime/findings";
+import { canonicalTicker } from "@/shared/analysis-runtime/financial-data/policy";
 import "@/packages/web/src/business-flow/business-flow.css";
 import "./style.css";
 import { BusinessMap } from "./BusinessMap";
@@ -50,7 +51,11 @@ function tickerFromUrl() {
   const match = location.pathname.match(
     /^\/companies\/([A-Za-z0-9.-]{1,12})\/?$/,
   );
-  return match ? match[1].toUpperCase() : null;
+  if (!match) return null;
+  const ticker = canonicalTicker(match[1]);
+  // The address shows the class the data is kept under.
+  if (ticker !== match[1]) history.replaceState(history.state, "", `/companies/${ticker}${location.search}${location.hash}`);
+  return ticker;
 }
 class ChartBoundary extends Component<
   { ticker: string; tools: ReactNode; children: ReactNode },
@@ -265,7 +270,7 @@ function App() {
     if (href !== location.pathname + location.search) history.pushState(null, "", href);
     setTicker(tickerFromUrl());
   }, []);
-  const openCompany = (next: string) => navigate(`/companies/${next}`);
+  const openCompany = (next: string) => navigate(`/companies/${canonicalTicker(next)}`);
   useEffect(() => {
     const follow = (e: MouseEvent) => {
       const link = (e.target as HTMLElement).closest<HTMLAnchorElement>("a[data-nav]");

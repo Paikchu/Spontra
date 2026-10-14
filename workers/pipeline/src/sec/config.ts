@@ -1,3 +1,5 @@
+import { canonicalTicker } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
+
 const TRACKED_TICKER_PATTERN = /^[A-Z][A-Z0-9.-]{0,9}$/;
 
 export class SecTrackedTickerConfigError extends Error {
@@ -27,7 +29,7 @@ export function isTrackedTicker(value: string, trackedTickers: string[]): boolea
 }
 
 export function normalizeTrackedTicker(value: string | null | undefined): string {
-  const ticker = String(value ?? "").trim().toUpperCase();
+  const ticker = canonicalTicker(String(value ?? ""));
   return TRACKED_TICKER_PATTERN.test(ticker) ? ticker : "";
 }
 
