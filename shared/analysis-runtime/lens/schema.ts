@@ -6,7 +6,10 @@ const DIGIT = /\d/;
 const plain = (max: number) => z.string().trim().min(1).max(max).refine(v => !DIGIT.test(v), { message: "states a figure" });
 const id = z.string().regex(/^[a-z][a-z0-9-]*$/).max(LENS_LIMITS.idChars);
 const period = z.union([z.literal("first"), z.literal("latest"), z.string().regex(/^\d{4}-\d{2}-\d{2}$/)]);
-const claim = z.object({ text: z.string().trim().min(1).max(LENS_LIMITS.paragraphChars), sourceIds: z.array(z.string().max(40)).max(6) });
+/** A paragraph may cite up to six sources; more are kept to the first six, none is an uncited paragraph (the verifier still checks its figures). */
+const claim = z.object({ text: z.string().trim().min(1).max(LENS_LIMITS.paragraphChars), sourceIds: z.array(z.string().max(40)).optional().default([]).transform(ids => ids.slice(0, 6)) });
+/** The two spans, read from the words a model reaches for: "quarterly", "Q", "annual", "FY", "year". */
+const span = z.preprocess(v => typeof v === "string" ? (/^q/i.test(v.trim()) ? "quarter" : /^(fy|fiscal|annual|year|ttm)/i.test(v.trim()) ? "fiscal_year" : v) : v, z.enum(["quarter", "fiscal_year"]));
 
 /**
  * The lens document as the model writes it, read through the same reference schema the findings use
@@ -19,7 +22,7 @@ export function lensDocumentSchemaFor(ref: z.ZodTypeAny): z.ZodType<LensDocument
   const annotation = z.object({ series: id, period, text: z.string().trim().min(1).max(LENS_LIMITS.annotationChars) });
   const band = z.object({ from: period, to: period, label: plain(LENS_LIMITS.labelChars).optional() });
   const chart = z.object({
-    id, title: plain(LENS_LIMITS.titleChars).optional(), aspect: z.enum(["wide", "square", "tall"]), span: z.enum(["quarter", "fiscal_year"]),
+    id, title: plain(LENS_LIMITS.titleChars).optional(), aspect: z.enum(["wide", "square", "tall"]), span,
     periods: z.number().int().min(2).max(LENS_LIMITS.periods),
     series: z.array(series).min(1).max(LENS_LIMITS.series), marks: z.array(mark).min(1).max(LENS_LIMITS.marks),
     annotations: z.array(annotation).max(LENS_LIMITS.annotations).optional(), bands: z.array(band).max(LENS_LIMITS.bands).optional(),
@@ -28,7 +31,7 @@ export function lensDocumentSchemaFor(ref: z.ZodTypeAny): z.ZodType<LensDocument
   const peerRef = z.union([z.object({ capital: z.string().max(40) }), z.object({ fundamental: z.string().max(60) }), z.object({ metric: z.string().max(40) })]);
   const tableRow = z.object({ ref: z.union([ref, peerRef]), label: plain(LENS_LIMITS.labelChars).optional(), compare: z.enum(["yoy", "qoq"]).optional() });
   const table = z.object({
-    title: plain(LENS_LIMITS.titleChars).optional(), columns: z.enum(["periods", "peers"]), span: z.enum(["quarter", "fiscal_year"]),
+    title: plain(LENS_LIMITS.titleChars).optional(), columns: z.enum(["periods", "peers"]), span,
     periods: z.number().int().min(2).max(LENS_LIMITS.tablePeriods).optional(), peers: z.array(z.string().regex(/^[A-Z][A-Z0-9.-]{0,11}$/)).max(LENS_LIMITS.tablePeers).optional(),
     rows: z.array(tableRow).min(1).max(LENS_LIMITS.tableRows),
   });

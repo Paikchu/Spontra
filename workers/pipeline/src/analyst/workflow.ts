@@ -20,11 +20,11 @@ import { readPeersResponse } from "../peers/read.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import type { WorkflowStepLike } from "../workflow-core.ts";
-import { runAnalyst, type AnalystModel, type AnalystOutcome, type AnalystRunInput } from "./agent.ts";
+import { runAnalyst, salvageDecision, type AnalystModel, type AnalystOutcome, type AnalystRunInput } from "./agent.ts";
 import { planFinding } from "./plan.ts";
 
 /** Changing the analyst's prompt, lines, harness or grammar re-researches every company once. */
-export const ANALYST_VERSION = "analyst.react.v3";
+export const ANALYST_VERSION = "analyst.react.v4";
 export const dossierCacheKey = (ticker: string) => `dossier:v1:${ticker}`;
 export type AnalystWorkflowParams = { ticker: string; fingerprint: string };
 export type AnalystDeps = { model?: AnalystModel; fetcher?: typeof fetch };
@@ -94,7 +94,7 @@ export async function executeAnalystWorkflow(params: AnalystWorkflowParams, step
   const catalogue = lensCatalogue(input.ledger, data, input.findings.periodEnd);
   const model: AnalystModel = deps.model ?? (async (stage, system, payload) => {
     try { return await callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, MODEL_BUDGET_MS, true, { reasoning: reasoningFor(env, "analyst"), ticker: params.ticker, kind: "analyst" }); }
-    catch (error) { if (error instanceof SecModelOutputError) return { action: "invalid" }; throw error; }
+    catch (error) { if (error instanceof SecModelOutputError) return salvageDecision(error.partialContent); throw error; }
   });
   const peerTickers = peersOf(data, params.ticker);
   const outcomes: AnalystOutcome[] = [];

@@ -7,7 +7,7 @@ import type { LensDocument } from "../../../shared/analysis-contract/lens.ts";
 import type { PeersPublication } from "../../../shared/analysis-contract/peers.ts";
 import { mergeDossier, readDossierPublication } from "../../../shared/analysis-runtime/dossier.ts";
 import { verifyFindings, type FindingData } from "../../../shared/analysis-runtime/findings.ts";
-import { divergence, runAnalyst } from "../src/analyst/agent.ts";
+import { divergence, readDecision, renderTable, runAnalyst, salvageDecision } from "../src/analyst/agent.ts";
 import { planFinding } from "../src/analyst/plan.ts";
 import { buildLedger } from "../src/findings/ledger.ts";
 import { lensCatalogue } from "../src/lens/agent.ts";
@@ -108,4 +108,38 @@ test("the analyst accepts only a document that compiles, applies the review's re
   const merged = mergeDossier(publication, dossier);
   assert.equal(merged.findings[0]!.lens.type, "document");
   assert.equal(mergeDossier({ ...publication, fingerprint: "fp-2" }, dossier).findings[0]!.lens.type, "compare_bars");
+});
+
+test("a turn is read as the model meant it: stringified input, arguments beside the action, a nested action, or a JSON object inside prose", () => {
+  const stringified = readDecision({ thought: "t", action: "read_section", input: JSON.stringify({ documentId: "d1", focus: ["capex"] }) });
+  assert.equal(stringified.input.documentId, "d1");
+  assert.match(stringified.note!, /JSON string/);
+  const beside = readDecision({ thought: "t", action: "read_section", documentId: "d1", sectionId: "s1" });
+  assert.deepEqual(beside.input, { documentId: "d1", sectionId: "s1" });
+  assert.match(beside.note!, /beside the action/);
+  const named = readDecision({ thought: "t", action: "Compile", arguments: { document: { rows: [] } } });
+  assert.equal(named.action, "compile");
+  assert.ok(named.input.document);
+  const nested = readDecision({ thought: "t", action: { name: "peers", input: {} } });
+  assert.equal(nested.action, "peers");
+  const clean = readDecision({ thought: "t", action: "finish", input: {} });
+  assert.equal(clean.note, null);
+  const salvaged = salvageDecision('Here is my turn:\n```json\n{"thought":"x","action":"peers","input":{}}\n```');
+  assert.equal(salvaged.action, "peers");
+  const hopeless = salvageDecision("I cannot decide");
+  assert.equal(hopeless.action, "invalid");
+  assert.match(readDecision(hopeless).note!, /began: I cannot decide/);
+});
+
+test("a filing table is rendered with row indexes, and focus terms keep the matching rows in full", () => {
+  const table = { unit: "in millions", columns: ["", "2026", "2025"], rows: Array.from({ length: 40 }, (_, i) => ({ label: i === 30 ? "Capital expenditures" : i === 35 ? "Net cash provided by financing activities" : `Line ${i}`, cells: [{ text: String(i * 10), value: i * 10 }, { text: String(i), value: i }] })) };
+  const focused = renderTable(table, ["capital expenditures", "financing activities"]);
+  assert.match(focused, /2 matching focus/);
+  assert.match(focused, /row 30: Capital expenditures \| 300 \| 30/);
+  assert.match(focused, /row 35: Net cash provided by financing activities/);
+  assert.match(focused, /other rows: 0:Line 0/);
+  assert.ok(!/row 3: Line 3/.test(focused));
+  const whole = renderTable(table, []);
+  assert.match(whole, /row 39: Line 39/);
+  assert.ok(!/other rows/.test(whole));
 });
