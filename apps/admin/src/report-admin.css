@@ -83,7 +83,7 @@ html body:has(.report-admin) { padding: 0; }
 .ra-tabbar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-4); }
 .ra-tabbar [role="tablist"], .ra-segmented { display: inline-flex; gap: 2px; padding: 4px; border-radius: var(--sp-radius-pill); background: var(--fill); box-shadow: inset 0 0 0 1px var(--line); }
 .ra-tabbar [role="tab"], .ra-segmented > button { height: var(--control-sm); padding: 0 14px; border: 0; border-radius: var(--sp-radius-pill); background: transparent; color: var(--ink-muted); font-size: 13px; font-weight: 600; transition: background-color 160ms var(--sp-ease), color 160ms var(--sp-ease); }
-.ra-tabbar [role="tab"]:hover, .ra-segmented > button:hover { color: var(--ink); }
+.ra-tabbar [role="tab"]:not([aria-selected="true"]):hover, .ra-segmented > button:not([aria-pressed="true"]):hover { color: var(--ink); }
 .ra-tabbar [aria-selected="true"], .ra-segmented > button[aria-pressed="true"] { background: var(--ink); color: var(--canvas); }
 .ra-segmented > button small { margin-left: 6px; font-weight: 500; opacity: .6; }
 
