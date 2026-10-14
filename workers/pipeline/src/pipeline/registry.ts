@@ -9,7 +9,7 @@ export const EVENT_TYPES = [
   "financials.published", "filing.archived", "archive.superseded", "archive.prune.requested",
   "map.derived", "filings.indexed", "report.published", "analysis.published", "fundamentals.updated", "guidance.published",
   "task.version_changed",
-  "transcript.stored", "explainer.published", "tree.published", "findings.published", "events.published",
+  "transcript.stored", "explainer.published", "tree.published", "findings.published", "events.published", "dossier.published",
   "library.requested", "library.prepared", "library.cards.published", "library.links.requested",
   "peers.published",
 ] as const;
@@ -19,7 +19,7 @@ export const TASK_NAMES = [
   "collect", "history", "reproject", "maintenance", "transcript",
   "map-derive", "archive-prune", "archive-prune-scan",
   "sec-report", "guidance", "events",
-  "memory", "company-analysis", "explainer", "tree", "findings",
+  "memory", "company-analysis", "explainer", "tree", "findings", "analyst",
   "library", "library-cards", "library-links", "library-search", "storage-sweep",
   "peers",
 ] as const;
@@ -73,6 +73,8 @@ export const TASKS: Record<TaskName, TaskMeta> = {
   "tree": { emits: ["tree.published"], debounceMs: 10 * MINUTE, maxWaitMs: 2 * HOUR, scope: "tree" },
   // Report findings written from the map snapshot, guidance, SEC fundamentals and the company analysis (Workflow).
   "findings": { emits: ["findings.published"], debounceMs: 10 * MINUTE, maxWaitMs: 2 * HOUR, scope: "ai" },
+  // The analyst agent: a research dossier per verified finding, from the filings, figures and peers (Workflow).
+  "analyst": { emits: ["dossier.published"], debounceMs: 10 * MINUTE, maxWaitMs: 2 * HOUR, scope: "ai" },
   // Splits the company's archived documents into the filing library's sections and passages; no model.
   "library": { emits: ["library.prepared"], debounceMs: 30 * SECOND, maxWaitMs: 5 * MINUTE, scope: "data" },
   // Index cards for the sections of the company's recent documents (Workflow; model at low reasoning).
@@ -101,7 +103,7 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
   "collection.requested": [{ task: "collect" }, { task: "history" }],
   "maintenance.requested": [{ task: "maintenance" }],
   "financials.published": [{ task: "map-derive" }, { task: "history" }, { task: "explainer" }, { task: "tree" }, { task: "library-links" }],
-  "filing.archived": [{ task: "map-derive" }, { task: "transcript", when: e => /^10-[QK](?:\/A)?$/.test(form(e)) }, { task: "library" }, { task: "storage-sweep" }],
+  "filing.archived": [{ task: "map-derive" }, { task: "analyst", when: e => /^10-[QK](?:\/A)?$/.test(form(e)) }, { task: "transcript", when: e => /^10-[QK](?:\/A)?$/.test(form(e)) }, { task: "library" }, { task: "storage-sweep" }],
   "library.requested": [{ task: "library" }],
   "library.prepared": [{ task: "library-cards" }],
   "library.cards.published": [{ task: "library-links" }, { task: "library-search" }, { task: "storage-sweep" }],
@@ -118,6 +120,7 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
   "guidance.published": [{ task: "findings" }],
   "fundamentals.updated": [{ task: "findings" }, { task: "peers" }],
   "analysis.published": [{ task: "findings" }],
+  "findings.published": [{ task: "analyst" }],
 };
 
 /** Emitters that are not tasks. `task.version_changed` is routed to the one task it names, never subscribed. */

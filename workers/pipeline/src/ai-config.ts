@@ -22,6 +22,8 @@ export const AI_TOOL_REASONING = {
   findings: "high",
   /** The lens agent chooses charts and layout from an already-computed observation. */
   lens: "low",
+  /** The analyst reads filings and composes the dossier; its harness verifies, so it reasons at the default depth. */
+  analyst: "high",
 } as const satisfies Record<string, ReasoningEffort>;
 export type AiTool = keyof typeof AI_TOOL_REASONING;
 

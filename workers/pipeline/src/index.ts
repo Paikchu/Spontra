@@ -16,6 +16,7 @@ import { executeBusinessTreeWorkflow, type BusinessTreeParams } from "./business
 import { maintenanceAnalysisEnvironment } from "./admin/financial-maintenance-runner.ts";
 import { executeGuidanceWorkflow, type GuidanceWorkflowParams } from "./guidance/workflow.ts";
 import { executeFindingsWorkflow, type FindingsWorkflowParams } from "./findings/workflow.ts";
+import { executeAnalystWorkflow, type AnalystWorkflowParams } from "./analyst/workflow.ts";
 import { trackRun, trackSleep, trackSteps } from "./ai-runs/tracking.ts";
 import { executeLibraryCardsWorkflow, type LibraryCardsParams } from "./filing-library/cards.ts";
 import { executeLibraryLinksWorkflow, type LibraryLinksParams } from "./filing-library/links.ts";
@@ -106,6 +107,13 @@ export class LibraryCardsWorkflow extends WorkflowEntrypoint<SecPipelineEnv, Lib
 export class LibraryLinksWorkflow extends WorkflowEntrypoint<SecPipelineEnv, LibraryLinksParams> {
   async run(event: WorkflowEvent<LibraryLinksParams>, step: WorkflowStep) {
     return executeLibraryLinksWorkflow(event.payload, durableSteps(step, this.env, event.instanceId), this.env);
+  }
+}
+
+export class AnalystWorkflow extends WorkflowEntrypoint<SecPipelineEnv, AnalystWorkflowParams> {
+  async run(event: WorkflowEvent<AnalystWorkflowParams>, step: WorkflowStep) {
+    const run = { env: this.env, kind: "analyst" as const, ticker: event.payload.ticker, runId: event.instanceId };
+    return trackRun(run, () => executeAnalystWorkflow(event.payload, trackSteps(durableSteps(step, this.env, event.instanceId), run), this.env));
   }
 }
 

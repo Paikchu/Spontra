@@ -11,7 +11,7 @@ import "./ai-runs.css";
 
 /** The BusinessView outputs this admin shows; guidance is not part of BusinessView. */
 export type ViewKind = Exclude<AiRunKind, "guidance">;
-const KINDS: Array<[ViewKind, string]> = [["findings", "公司要点"], ["explainer", "业务解读"], ["tree", "业务脑图"]];
+const KINDS: Array<[ViewKind, string]> = [["findings", "公司要点"], ["analyst", "要点分析师"], ["explainer", "业务解读"], ["tree", "业务脑图"]];
 const STATUS: Record<AiRunStatus, string> = { queued: "排队中", running: "运行中", waiting: "等待中", succeeded: "已完成", empty: "无可发布内容", superseded: "已跳过", failed: "失败" };
 const ACTIVE = new Set<AiRunStatus>(["queued", "running", "waiting"]);
 const badge = (status: AiRunStatus) => status === "failed" ? "failed" : status === "succeeded" ? "reviewed" : ACTIVE.has(status) ? "processing" : "";
@@ -152,7 +152,7 @@ function KindDetail({ detail, onChanged, onError }: { detail: AiCompanyDetail; o
 }
 
 function summaryText(kind: AiRunKind, s: { items: number; sources: number; periodEnd: string | null }) {
-  return `${s.items} ${kind === "findings" ? "条要点" : "项业务"} · ${s.sources} 个来源${s.periodEnd ? ` · 报告期 ${s.periodEnd}` : ""}`;
+  return kind === "analyst" ? `${s.items} 份案卷${s.periodEnd ? ` · 报告期 ${s.periodEnd}` : ""}` : `${s.items} ${kind === "findings" ? "条要点" : "项业务"} · ${s.sources} 个来源${s.periodEnd ? ` · 报告期 ${s.periodEnd}` : ""}`;
 }
 
 function RunItem({ run }: { run: AiRun }) {
@@ -186,12 +186,29 @@ function Versions({ detail, onError }: { detail: AiCompanyDetail; onError: (erro
     <div className="ai-versions-head"><h3>生成结果</h3>{detail.versions.length > 0 && <label>版本<select value={id} onChange={e => setId(e.target.value)}>{detail.versions.map((v, i) => <option key={v.id} value={v.id}>{v.current ? "当前 · " : `v${detail.versions.length - i} · `}{date(v.id)} · {summaryText(detail.kind, v.summary)}</option>)}</select></label>}</div>
     {!detail.versions.length ? <p className="ai-muted">无已发布结果</p> : error ? <p className="ra-error">{error}</p> : !version || version.version.id !== id ? <p className="ai-muted"><LoaderCircle size={15} className="ra-spin" /> 加载中</p>
       : <>{!version.version.current && <p className="ai-hint">历史版本</p>}
-        {detail.kind === "findings" ? <FindingsView publication={version.publication as FindingsPublication} /> : detail.kind === "explainer" ? <ExplainerView explainer={version.publication as BusinessExplainer} /> : <TreeView tree={version.publication as BusinessTree} />}
+        {detail.kind === "findings" ? <FindingsView publication={version.publication as FindingsPublication} /> : detail.kind === "analyst" ? <AnalystView dossier={version.publication as DossierRecord} /> : detail.kind === "explainer" ? <ExplainerView explainer={version.publication as BusinessExplainer} /> : <TreeView tree={version.publication as BusinessTree} />}
         <details className="ai-raw"><summary>原始 JSON</summary><pre>{JSON.stringify(version.publication, null, 2)}</pre></details></>}
   </section>;
 }
 
 const FINDING_KIND: Record<AnalysisFinding["kind"], string> = { risk: "风险", strength: "优势", shift: "变化", watch: "关注" };
+/** The analyst's dossier with its trace: per finding, the lines of inquiry the figures opened, every turn, and what the review took out. */
+type DossierRecord = { findingsFingerprint: string; fingerprint: string; generatedAt: string; model: string; documents: Record<string, { rows: Array<{ title?: string; cells: Array<Array<{ kind: string }>> }> }>; materials: Array<{ id: string; title: string; form?: string; path?: string[] }>;
+  analystTrace?: { version: string; findings: Array<{ id: string; tier: string; lines: string[]; document: unknown; turns: Array<{ turn: number; thought: string; action: string; input: string; observation: string }>; warnings: string[]; review: string[] }> } };
+const LINE_LABEL: Record<string, string> = { capital_intensity: "资本强度", cash_earnings: "现金与利润背离", funding_commitments: "资金与承诺", demand_conversion: "需求转化", guidance_delivery: "指引兑现", margin_mix: "利润率与结构", peers: "同业" };
+const TIER_LABEL: Record<string, string> = { deep: "深", standard: "标准", light: "轻" };
+function AnalystView({ dossier }: { dossier: DossierRecord }) {
+  const outcomes = dossier.analystTrace?.findings ?? [];
+  const blocks = (id: string) => dossier.documents[id]?.rows.flatMap(r => r.cells.flat()) ?? [];
+  return <div className="ai-cards"><p className="ai-muted">模型 {dossier.model} · 要点指纹 {dossier.findingsFingerprint.slice(0, 8)} · {Object.keys(dossier.documents).length} 份案卷 · {dossier.materials.length} 条引用材料</p>
+    {outcomes.map(o => <article key={o.id} className="ai-card" data-kind={o.document ? "strength" : "watch"}>
+      <header><span className="ra-badge" data-status={o.document ? "reviewed" : "processing"}>{o.document ? "已采用" : o.tier === "light" ? "轻量" : "未采用"}</span><strong>{o.id}</strong><small>{TIER_LABEL[o.tier] ?? o.tier} · {o.lines.map(l => LINE_LABEL[l] ?? l).join("、") || "无追问线"}</small></header>
+      {o.document ? <small>{dossier.documents[o.id]?.rows.length ?? 0} 行 · 引文 {blocks(o.id).filter(b => b.kind === "quote").length} · 表格 {blocks(o.id).filter(b => b.kind === "table").length} · 图 {blocks(o.id).filter(b => b.kind === "chart").length} · 段落 {blocks(o.id).filter(b => b.kind === "prose").length}</small> : null}
+      {o.warnings.length > 0 && <ul className="ai-lens-warnings">{o.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>}
+      {o.review.length > 0 && <ul className="ai-lens-warnings">{o.review.map((w, i) => <li key={i}>审校移除：{w}</li>)}</ul>}
+      {o.turns.length > 0 && <details className="ai-raw"><summary>研究过程 · {o.turns.length} 轮</summary><ol className="ai-tree-steps">{o.turns.map((s, i) => <li key={i}><p><b>{s.action}</b> {s.thought}</p><code>{s.input.slice(0, 1200)}</code><pre>{s.observation}</pre></li>)}</ol></details>}
+    </article>)}</div>;
+}
 /** The lens agent's trace rides beside the publication for the operator: every turn of every finding, and what was accepted. */
 type LensTrace = { version: string; generatedAt: string; findings: Array<{ id: string; document: unknown; turns: Array<{ turn: number; thought: string; action: string; input: string; observation: string }>; warnings: string[] }> };
 function FindingsView({ publication }: { publication: FindingsPublication & { lensTrace?: LensTrace } }) {

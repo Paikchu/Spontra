@@ -65,6 +65,9 @@ export type SecPipelineEnv = SecCronEnv & AnalysisReadEnv & {
   BUSINESS_EXPLAINER_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
   GUIDANCE_WORKFLOW?: AiWorkflowBinding<{ ticker: string; accession: string; eventDate: string; manual?: boolean }>;
   FINDINGS_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
+  ANALYST_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
+  ANALYST_ENABLED?: string;
+  ANALYST_DAILY_TURNS?: string;
   BUSINESS_TREE_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
   LIBRARY_CARDS_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
   LIBRARY_LINKS_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;

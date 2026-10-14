@@ -145,6 +145,10 @@ P0：解析器 `filing-library.v2`（Item 15 下的报表与附注按 Item 8 规
 
 P1：lens 文档新增 `quote`/`table`/`record` 块与 `LensRow.title`；`{peer}`、`{passageCell}` 引用；发布物携带 `materials`，读路由按 passageId 从 D1 重读原文并随响应下发 `passages` 与 `peers`，页面用 `verifyQuote` 逐字核对、`compileTable` 解析表格（同业表 ≥ 2 家才渲染，列头带各自期末）；`findings/authored/ORCL.ts` 的 capex 要点改为手写案卷（图 | 判断，资金表 | 段落，两条承诺引文 + 采购义务表格单元格，两条引文，同业表，记录，来源），本地在 1440 与 375 宽度核验无横向滚动、引文可点开原文。未做：`{schedule}` 引用（P3 的 XBRL 提取尚无数据）、Admin 的 Lens 轨迹之外的分析师轨迹（P2）。
 
+### P2（2026-10-14 实现）
+
+`analyst` 任务（scope ai，订阅 `findings.published` 与 10-K/10-Q 的 `filing.archived`，去抖 10 分钟）与 `AnalystWorkflow`（`spontra-analyst`，并发 1，`ANALYST_ENABLED`）。流程：`plan.ts` 从账本差值确定性地开线（资本强度、现金/利润背离、资金与承诺、需求转化、指引兑现、利润率/结构、同业；至多 5 条，严重度只定 tier 与预算：深 14 轮 / 标准 9 轮 / 轻 0 轮）→ `agent.ts` ReAct（动作 `find_sections`、`read_section`（含 `previous`）、`peers`（divergence 表 + 各同业可解析 ref）、`compile`、`finish`；读过的段落成为 `m<n>` 材料，引文只能指向它们）→ 每次 `compile` 跑 `verifyLensDocument` + `auditDocument`（引文逐字、表格解析、数字对照证据）→ 只接受零错误 → 一次只删不改的 review → 发布 `dossier:v1:<ticker>`（绑定 findings 指纹；`analystTrace` 同记录）。读路由 `readFindingsResponse` 在指纹匹配时用案卷文档替换要点的 lens 并合并材料。每日模型轮次上限 `ANALYST_DAILY_TURNS`（默认 300，`feature_budget`）。Admin「公司要点」新增「要点分析师」页签：每条要点的 tier、开的线、轮次、警告、审校移除与完整研究过程。未做：按 subject 哈希的案卷缓存（当前绑定 findings 指纹，findings 重写即重研究）。
+
 ## 需要你决定的事
 
 1. 是否把 AMZN、GOOGL、META 加入数据名单（否则 ORCL 的同业行在数字上为空，只能引文）。

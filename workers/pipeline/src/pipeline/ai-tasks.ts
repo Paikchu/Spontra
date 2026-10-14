@@ -4,6 +4,7 @@ import { BUSINESS_TREE_VERSION, businessTreeCacheKey, businessTreeFingerprint } 
 import { COMPANY_ANALYSIS_PROMPT_VERSION } from "../company-analysis/contracts.ts";
 import { recoverCompanyAnalysis, startCompanyMemory } from "../core.ts";
 import { FINDINGS_VERSION, findingsFingerprint } from "../findings/workflow.ts";
+import { ANALYST_VERSION, analystFingerprint, dossierCacheKey } from "../analyst/workflow.ts";
 import { findingsCacheKey } from "../findings/read.ts";
 import type { AiWorkflowBinding, SecPipelineEnv } from "../operations.ts";
 import type { AiRunKind } from "../../../../shared/analysis-contract/ai-runs-admin.ts";
@@ -19,7 +20,7 @@ const slug = (ticker: string) => ticker.replace(/[^A-Za-z0-9]/g, "-");
  * Runs a model Workflow when the inputs it would write from changed: `fingerprint` is the state a run would write now
  * (null while there is nothing to write from), compared with what is published. A failed run becomes a dead letter.
  */
-async function runWhenChanged(env: SecPipelineEnv, task: "findings" | "explainer" | "tree", kind: AiRunKind, ticker: string, causeId: string, now: Date,
+async function runWhenChanged(env: SecPipelineEnv, task: "findings" | "explainer" | "tree" | "analyst", kind: AiRunKind, ticker: string, causeId: string, now: Date,
   binding: AiWorkflowBinding<{ ticker: string; fingerprint: string }> | undefined, fingerprint: () => Promise<string | null>, published: () => Promise<string | null>): Promise<TaskOutcome> {
   return driveWorkflow(env, `${task}:${ticker}`, binding, async () => {
     const current = await fingerprint();
@@ -27,7 +28,7 @@ async function runWhenChanged(env: SecPipelineEnv, task: "findings" | "explainer
     // The last run failed on exactly this input; it runs again when the input changes or the dead letter is replayed.
     const failed = (await new D1SecRepository(env.DB!).getCache<{ fingerprint: string }>(failedInputKey(task, ticker)))?.payload?.fingerprint;
     if (failed === current) return { status: "done", detail: { skipped: "failed on this input before; replay the dead letter to retry" } };
-    const id = `${task === "findings" ? "findings" : task === "tree" ? "business-tree" : "business-explainer"}-${slug(ticker)}-${current.slice(0, 16)}-${now.getTime()}`;
+    const id = `${task === "findings" ? "findings" : task === "tree" ? "business-tree" : task === "analyst" ? "analyst" : "business-explainer"}-${slug(ticker)}-${current.slice(0, 16)}-${now.getTime()}`;
     await quietly(() => new AiRunStore(env.DB!).start({ kind, ticker, runId: id, trigger: "schedule" }, now.toISOString()));
     return { id, params: { ticker, fingerprint: current }, fingerprint: current };
   }, { deadLetter: { task, ticker, causeId } });
@@ -52,6 +53,15 @@ export const AI_TASKS = {
       }
       return runWhenChanged(env, "findings", "findings", ticker, causeId, now, env.FINDINGS_WORKFLOW,
         () => findingsFingerprint(env, ticker), storedFingerprint(env, findingsCacheKey(ticker)));
+    },
+  },
+
+  /** The analyst dossier for the served findings; reruns when the findings, the newest periodic filings or the prompt change. */
+  analyst: {
+    version: ANALYST_VERSION,
+    async run(env, ticker, { now, causeId }): Promise<TaskOutcome> {
+      if (env.ANALYST_ENABLED !== "true") return { status: "done", detail: { skipped: "analyst disabled" } };
+      return runWhenChanged(env, "analyst", "analyst", ticker, causeId, now, env.ANALYST_WORKFLOW, () => analystFingerprint(env, ticker), storedFingerprint(env, dossierCacheKey(ticker)));
     },
   },
 

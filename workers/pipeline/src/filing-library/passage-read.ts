@@ -9,7 +9,7 @@ import { AnalysisRequestError } from "../read-api/contract-support/errors.ts";
  */
 
 /** Passage ids are `p` and the 14 lowercase hex digits of `libraryHash` (parse.ts); anything else never names a passage. */
-const PASSAGE_ID = /^p[0-9a-f]{14}$/;
+const PASSAGE_ID = /^p[0-9a-f]{14,32}$/;
 const TICKER = /^[A-Z][A-Z0-9.-]{0,11}$/;
 /** How much of a neighbouring passage comes along: enough to place the quote, not a second copy of the section. */
 const NEIGHBOUR_CHARS = 600;

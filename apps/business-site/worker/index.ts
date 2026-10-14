@@ -106,7 +106,7 @@ const asText=(v:unknown)=>typeof v==="string"?v:null;
 function readFindingPassage(value:unknown):FindingPassage|null{
  const p=value as Record<string,unknown>|null;
  const passageId=asText(p?.passageId),documentId=asText(p?.documentId),title=asText(p?.title),form=asText(p?.form),filedAt=asText(p?.filedAt),url=asText(p?.url),text=asText(p?.text);
- if(!p||!passageId||!/^p[0-9a-f]{14}$/.test(passageId)||!documentId||!title||!form||!filedAt||!url||!text||text.length>20000)return null;
+ if(!p||!passageId||!/^p[0-9a-f]{14,32}$/.test(passageId)||!documentId||!title||!form||!filedAt||!url||!text||text.length>20000)return null;
  const path=Array.isArray(p.path)?p.path.filter((x):x is string=>typeof x==="string").slice(0,12):[];
  const t=p.table as Record<string,unknown>|null;
  const rows=t&&Array.isArray(t.rows)?t.rows.map(r=>{const row=r as Record<string,unknown>;const label=asText(row?.label);const cells=Array.isArray(row?.cells)?row.cells.map(c=>{const cell=c as Record<string,unknown>;const text=asText(cell?.text);return text==null?null:{text,value:typeof cell.value==="number"&&Number.isFinite(cell.value)?cell.value:null};}):null;return label==null||!cells||cells.some(c=>c==null)?null:{label,cells:cells as Array<{text:string;value:number|null}>};}):null;
@@ -192,7 +192,7 @@ export async function loadFilingDetail(ticker:string,accession:string,snapshot:{
 }
 
 /** A passage id is `p` and fourteen hex digits; the page links a quote to nothing else. */
-const PASSAGE_ID=/^p[0-9a-f]{14}$/;
+const PASSAGE_ID=/^p[0-9a-f]{14,32}$/;
 const str=(v:unknown):v is string=>typeof v==="string";
 const strings=(v:unknown):string[]=>Array.isArray(v)?v.filter(str):[];
 const neighbours=(v:unknown):Array<{passageId:string;text:string}>=>Array.isArray(v)?v.flatMap(n=>n&&typeof n==="object"&&PASSAGE_ID.test(String((n as {passageId?:unknown}).passageId))&&str((n as {text?:unknown}).text)?[{passageId:(n as {passageId:string}).passageId,text:(n as {text:string}).text}]:[]):[];
@@ -247,7 +247,7 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
  if(url.pathname.startsWith("/api/")){
   const fetcher=upstream??analysisFetcher(env);
   if(!fetcher)return json({error:"Read service unavailable"},503);
-  const match=url.pathname.match(/^\/api\/business\/v1\/companies\/([A-Z][A-Z0-9.-]{0,11})(\/capital|\/findings|\/fundamentals|\/events|\/filings|\/filings\/\d{10}-\d{2}-\d{6}|\/passages\/p[0-9a-f]{14})?$/);
+  const match=url.pathname.match(/^\/api\/business\/v1\/companies\/([A-Z][A-Z0-9.-]{0,11})(\/capital|\/findings|\/fundamentals|\/events|\/filings|\/filings\/\d{10}-\d{2}-\d{6}|\/passages\/p[0-9a-f]{14,32})?$/);
   const detail=match?.[2]?.startsWith("/filings/")?match[2].slice("/filings/".length):null;
   // The reader pins a report to its published revision; nothing else takes a query.
   const allowed=detail?new Set(["reportDate","reportVersion"]):new Set<string>();

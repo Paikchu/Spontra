@@ -1,6 +1,8 @@
 import type { FindingPassage, FindingsPublication, FindingsResponse } from "../../../../shared/analysis-contract/findings.ts";
 import { readFindingsPublication } from "../../../../shared/analysis-runtime/findings.ts";
+import { mergeDossier, readDossierPublication } from "../../../../shared/analysis-runtime/dossier.ts";
 import { libraryPassages, readLibraryDocument } from "../filing-library/store.ts";
+import { dossierCacheKey } from "../analyst/workflow.ts";
 import { readPeersResponse } from "../peers/read.ts";
 import { AnalysisRequestError } from "../read-api/contract-support/errors.ts";
 import { D1SecRepository } from "../sec/d1.ts";
@@ -35,12 +37,20 @@ const AUTHORED: Record<string, unknown> = { ORCL: ORCL_FINDINGS };
 /** The hand-written set for a ticker, validated; null where none exists. */
 export const authoredFindings = (ticker: string) => readFindingsPublication(AUTHORED[ticker], ticker);
 
-/** A stored publication wins over an authored one; both are re-validated and never repaired. */
-export async function readFindingsResponse(db: D1Database, rawTicker: string): Promise<FindingsResponse> {
+/** The findings as the writer published them (or the authored set), before the analyst's documents are laid over them. */
+export async function readStoredFindings(db: D1Database, rawTicker: string): Promise<FindingsPublication | null> {
   const ticker = rawTicker.trim().toUpperCase();
   if (!/^[A-Z][A-Z0-9.-]{0,11}$/.test(ticker)) throw new AnalysisRequestError("INVALID_TICKER", "Invalid company ticker.");
   const stored = await new D1SecRepository(db).getCache<unknown>(findingsCacheKey(ticker));
-  const findings = (stored ? readFindingsPublication(stored.payload, ticker) : null) ?? authoredFindings(ticker);
+  return (stored ? readFindingsPublication(stored.payload, ticker) : null) ?? authoredFindings(ticker);
+}
+
+/** A stored publication wins over an authored one; both are re-validated and never repaired. The analyst's dossier, when written for this very publication, supplies the documents. */
+export async function readFindingsResponse(db: D1Database, rawTicker: string): Promise<FindingsResponse> {
+  const ticker = rawTicker.trim().toUpperCase();
+  const base = await readStoredFindings(db, ticker);
+  const dossier = base ? await new D1SecRepository(db).getCache<unknown>(dossierCacheKey(ticker)).then(d => d ? readDossierPublication(d.payload, ticker) : null).catch(() => null) : null;
+  const findings = base ? mergeDossier(base, dossier) : null;
   if (!findings) return { schemaVersion: "findings-response.v1", status: "preparing", findings: null };
   // Quoted passages and the peers projection ride with the publication; neither is required for it to serve.
   const [passages, peers] = await Promise.all([findingPassages(db, ticker, findings).catch(() => []), readPeersResponse(db).then(r => r.peers).catch(() => null)]);

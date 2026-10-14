@@ -64,7 +64,7 @@ const finding = z.object({
   watch: watchSchema.optional(),
 });
 const recordEntry = z.object({ findingId: text(80), title: text(80), kind: z.enum(["risk", "strength", "shift", "watch"]), periodEnd: date, publishedAt: z.string().max(40), watch: watchSchema });
-const material = z.object({ id: text(40), kind: z.enum(["sec", "transcript", "web"]), title: text(300), url: https, publishedAt: z.string().max(40).nullable(), passageId: z.string().regex(/^[a-z0-9]{8,64}$/).optional(), documentId: z.string().max(80).optional(), form: z.string().max(20).optional(), path: z.array(z.string().max(200)).max(12).optional(), textSha256: z.string().regex(/^[a-f0-9]{64}$/).optional() });
+export const findingsMaterialSchema = z.object({ id: text(40), kind: z.enum(["sec", "transcript", "web"]), title: text(300), url: https, publishedAt: z.string().max(40).nullable(), passageId: z.string().regex(/^[a-z0-9]{8,64}$/).optional(), documentId: z.string().max(80).optional(), form: z.string().max(20).optional(), path: z.array(z.string().max(200)).max(12).optional(), textSha256: z.string().regex(/^[a-f0-9]{64}$/).optional() });
 const highlight = z.object({ title: text(40), ref, compare: z.enum(["yoy", "qoq"]).optional(), show: z.enum(["value", "change"]).optional() });
 export const reportHighlightsSchema = z.object({ periodEnd: date, profit: z.array(highlight).max(4), cash: z.array(highlight).max(4), balance: z.array(highlight).max(4) });
 export const findingsPublicationSchema = z.object({
@@ -75,7 +75,7 @@ export const findingsPublicationSchema = z.object({
   sources: z.array(z.object({ id: text(40), title: text(300), url: https, kind: z.enum(["sec", "web"]), publishedAt: z.string().max(40).nullable() })).min(1).max(40),
   highlights: z.array(reportHighlightsSchema).max(8).optional(),
   record: z.array(recordEntry).max(24).optional(),
-  materials: z.array(material).max(60).optional(),
+  materials: z.array(findingsMaterialSchema).max(120).optional(),
 });
 
 /**

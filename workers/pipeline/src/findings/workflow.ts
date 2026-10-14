@@ -34,14 +34,14 @@ export type FindingsDeps = { model?: FindingsModel; fetcher?: typeof fetch };
 /** The model reasons at length before it writes, and the provider counts that against the output limit; the default limit leaves room. */
 const MODEL_BUDGET_MS = 8 * 60_000, CONTEXT_CHARS = 12_000;
 
-type Input = { data: FindingData; ledger: Ledger; context: string | null; fingerprint: string } | null;
+export type Input = { data: FindingData; ledger: Ledger; context: string | null; fingerprint: string } | null;
 
 /**
  * Everything the writer sees, from stored projections only: no SEC fetch, no model call. The older quarters and the
  * capital structure come from the map's prepared snapshot, the same data the map verifies findings against; until
  * the snapshot matches the current publication there is nothing to write from.
  */
-async function readInput(env: SecPipelineEnv, ticker: string): Promise<Input> {
+export async function findingsInput(env: SecPipelineEnv, ticker: string): Promise<Input> {
   const db = requireDb(env);
   const publication = await readCompletePublicationForTicker(db, ticker);
   const flow = publication.status === "ready" ? publication.flow : null;
@@ -72,7 +72,7 @@ async function readInput(env: SecPipelineEnv, ticker: string): Promise<Input> {
 
 /** The state a run would write for now; null when the company has no complete report yet. */
 export async function findingsFingerprint(env: SecPipelineEnv, ticker: string): Promise<string | null> {
-  return (await readInput(env, ticker))?.fingerprint ?? null;
+  return (await findingsInput(env, ticker))?.fingerprint ?? null;
 }
 
 /**
@@ -94,7 +94,7 @@ export async function executeFindingsWorkflow(params: FindingsWorkflowParams, st
   const fetcher = deps.fetcher ?? fetch;
   const modelVersion = env.SEC_REASONING_MODEL || env.SEC_ANALYSIS_MODEL || "deepseek-flash";
   const now = await step.do("findings-time", async () => new Date().toISOString());
-  const input = await step.do("findings-input", () => readInput(env, params.ticker));
+  const input = await step.do("findings-input", () => findingsInput(env, params.ticker));
   // The report, guidance or narrative moved on after scheduling; the next sweep starts a run for the new state.
   if (!input || input.fingerprint !== params.fingerprint) return { status: "superseded" as const };
   const model: FindingsModel = deps.model ?? ((stage, system, payload) => callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, MODEL_BUDGET_MS, true, { reasoning: reasoningFor(env, "findings"), ticker: params.ticker }));
