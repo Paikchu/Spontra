@@ -12,6 +12,13 @@ import {
 } from "react";
 import type { PublicFundamentalsResponse } from "@/shared/analysis-contract/fundamentals.ts";
 import { FUNDAMENTAL_CHART_HEIGHT, FUNDAMENTAL_CHART_WIDTH, buildFundamentalChartGeometry, buildFundamentalChartModel, buildFundamentalChartTooltip, formatFundamentalAxisTick, getFundamentalSeriesVisual, linePath, selectFundamentalPeriodTickIndexes, type FundamentalChartAxis, type FundamentalChartModel, type FundamentalChartSeriesSpec, type FundamentalSeriesVisual } from "@/packages/web/src/model/fundamental-chart.ts";
+import { messages } from "@/packages/web/src/i18n";
+
+const m = messages({
+  syncing: "Syncing", unsupported: "Unsupported metrics", noData: "No data", legend: "Legend", leftAxis: "Left axis", rightAxis: "Right axis",
+}, {
+  syncing: "同步中", unsupported: "不支持的指标", noData: "无数据", legend: "图例", leftAxis: "左轴", rightAxis: "右轴",
+});
 
 export type FundamentalChartRendererProps = {
   title: string;
@@ -53,7 +60,7 @@ export function FundamentalChartRenderer({
   if (data.status === "pending") {
     return (
       <ChartFrame className={className} title={title} description={description}>
-        <ChartMessage title="Syncing" />
+        <ChartMessage title={m.syncing} />
       </ChartFrame>
     );
   }
@@ -61,7 +68,7 @@ export function FundamentalChartRenderer({
   if (!model) {
     return (
       <ChartFrame className={className} title={title} description={description}>
-        <ChartMessage title="Unsupported metrics" />
+        <ChartMessage title={m.unsupported} />
       </ChartFrame>
     );
   }
@@ -70,7 +77,7 @@ export function FundamentalChartRenderer({
   if (!hasValues) {
     return (
       <ChartFrame className={className} title={title} description={description}>
-        <ChartMessage title="No data" />
+        <ChartMessage title={m.noData} />
       </ChartFrame>
     );
   }
@@ -133,7 +140,7 @@ function ChartMessage({ title }: { title: string }) {
 
 function ChartLegend({ model }: { model: FundamentalChartModel }) {
   return (
-    <ul className="fundamental-chart__legend" aria-label="Legend" data-chart-role="legend">
+    <ul className="fundamental-chart__legend" aria-label={m.legend} data-chart-role="legend">
       {model.series.map((series, index) => {
         const visual = getFundamentalSeriesVisual(index);
         return (
@@ -148,7 +155,7 @@ function ChartLegend({ model }: { model: FundamentalChartModel }) {
               )}
             </svg>
             <span>{series.label}</span>
-            <small>{series.axis === "left" ? "Left axis" : "Right axis"}</small>
+            <small>{series.axis === "left" ? m.leftAxis : m.rightAxis}</small>
           </li>
         );
       })}

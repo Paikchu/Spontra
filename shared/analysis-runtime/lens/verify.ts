@@ -56,7 +56,7 @@ export function verifyLensDocument(doc: LensDocument, finding: Pick<AnalysisFind
   const quotes: Record<string, VerifiedQuote> = {};
   const keep = (block: LensBlock): LensBlock | null => {
     if (block.kind === "table") {
-      const result = compileTable(block.table, data, context.ticker, periodEnd);
+      const result = compileTable(block.table, data, context.ticker, periodEnd, options.locale);
       if (!result.table) { reasons.push(`table ${block.table.title ?? block.table.columns}: ${result.errors.join("; ")}`); return null; }
       tables[tableKey(block.table)] = result.table;
       return block;

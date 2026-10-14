@@ -1,6 +1,17 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { estimateTextWidth } from "@/packages/web/src/model/business-flow-layout";
 import type { Pool, PoolItem, PoolTone } from "./capital-model";
+import { labels, messages } from "@/packages/web/src/i18n";
+
+const m = messages({
+  folded: (n: number) => `${n} other items`, amount: "Amount",
+  shareOf: (title: string) => `Share of ${title.toLowerCase()}`,
+  itemTitle: (label: string, money: string, share: string, title: string) => `${label} ${money}, ${share} of ${title.toLowerCase()}`,
+}, {
+  folded: (n: number) => `其他 ${n} 项`, amount: "金额",
+  shareOf: (title: string) => `占${title}比例`,
+  itemTitle: (label: string, money: string, share: string, title: string) => `${label} ${money}，占${title} ${share}`,
+});
 
 const TONE: Record<PoolTone, string> = {
   own: "var(--flow-profit)", debt: "var(--flow-expense)", lease: "color-mix(in srgb, var(--flow-expense) 55%, var(--biz-0))",
@@ -9,10 +20,13 @@ const TONE: Record<PoolTone, string> = {
 };
 export const toneColor = (tone: PoolTone) => TONE[tone];
 /** Legend names describe the role, not one item, since several items share a tone. */
-export const TONE_LABEL: Record<PoolTone, string> = {
+export const TONE_LABEL: Record<PoolTone, string> = labels({
   own: "Operations and retained earnings", debt: "Borrowing", lease: "Leases", customer: "Customer prepayments", payable: "Payables and accruals", equity: "Shareholder capital", deficit: "Losses and burn",
   returned: "Returned to shareholders", productive: "Equipment and capital expenditures", cash: "Cash", invest: "Investments", other: "Other",
-};
+}, {
+  own: "经营与留存收益", debt: "借款", lease: "租赁", customer: "客户预付款", payable: "应付账款及预提费用", equity: "股东投入", deficit: "亏损与消耗",
+  returned: "股东回报", productive: "设备与资本开支", cash: "现金", invest: "投资", other: "其他",
+});
 const BAR = 16, SLOT = 40, GAP = 10, TOP = 44, BOTTOM = 12, NAME = 12.5, VALUE = 16;
 type Placed = PoolItem & { side: "source" | "use"; x: number; y: number; h: number; poolY: number };
 const r = (v: number) => Math.round(v * 10) / 10;
@@ -29,7 +43,7 @@ function fit(items: PoolItem[], room: number, total: number, side: Placed["side"
   const fold = new Set(foldable.slice(0, items.length - capacity + 1).map(i => i.key));
   if (fold.size < 2) return items;
   const folded = items.filter(i => fold.has(i.key));
-  const merged: PoolItem = { key: `folded-${side}`, label: `${folded.length} other items`, tone: "other", value: folded.reduce((s, i) => s + i.value, 0), lines: folded.map(i => ({ label: i.label, value: i.value })) };
+  const merged: PoolItem = { key: `folded-${side}`, label: m.folded(folded.length), tone: "other", value: folded.reduce((s, i) => s + i.value, 0), lines: folded.map(i => ({ label: i.label, value: i.value })) };
   return [...items.filter(i => !fold.has(i.key)), merged];
 }
 
@@ -114,7 +128,7 @@ export function PoolChart({ pool, money, label, spotlight = null }: { pool: Pool
           const mid = n.y + n.h / 2, x = n.side === "source" ? n.x - 10 : n.x + BAR + 10, anchor = n.side === "source" ? "end" : "start";
           return <g key={n.key} className="fc-node" data-tone={n.tone} data-lit={lit(n.key) ? "" : undefined} style={{ "--c": TONE[n.tone] } as CSSProperties}
             onMouseMove={e => { setActive(n.key); point(e, n); }} onMouseLeave={() => { setActive(null); setTip(null); }}>
-            <title>{`${n.label} ${money(n.value)}, ${share(n.value)} of ${pool.title.toLowerCase()}`}</title>
+            <title>{m.itemTitle(n.label, money(n.value), share(n.value), pool.title)}</title>
             <rect className="fc-hit" x={n.x - 6} y={Math.min(n.y, mid - SLOT / 2)} width={BAR + 12} height={Math.max(n.h, SLOT)} />
             <rect className="fc-bar" x={n.x} y={n.y} width={BAR} height={n.h} rx={Math.min(3, n.h / 2)} />
             <text className="fc-label" x={r(x)} y={r(mid - 4)} textAnchor={anchor}><tspan className="fc-name" style={{ fontSize: NAME }}>{n.label}</tspan></text>
@@ -126,8 +140,8 @@ export function PoolChart({ pool, money, label, spotlight = null }: { pool: Pool
       </svg>
       {tip && <div className="fc-tip" role="presentation" style={{ transform: `translate(${tip.x > size.w - 260 ? tip.x - 16 : tip.x + 16}px, ${tip.y + 16}px) translateX(${tip.x > size.w - 260 ? "-100%" : "0"})` }}>
         <div className="fc-tip-title"><i style={{ background: TONE[tip.item.tone] }} />{tip.item.label}</div>
-        <div className="fc-tip-row"><span>Amount</span><b>{money(tip.item.value)}</b></div>
-        <div className="fc-tip-row"><span>Share of {pool.title.toLowerCase()}</span><b>{share(tip.item.value)}</b></div>
+        <div className="fc-tip-row"><span>{m.amount}</span><b>{money(tip.item.value)}</b></div>
+        <div className="fc-tip-row"><span>{m.shareOf(pool.title)}</span><b>{share(tip.item.value)}</b></div>
         {tip.item.lines.length > 1 || (tip.item.lines.length === 1 && tip.item.lines[0].label !== tip.item.label)
           ? tip.item.lines.slice(0, 8).map((line, i) => <div className="fc-tip-row pool-tip-line" key={i}><span>{line.label}</span><b>{money(line.value)}</b></div>) : null}
       </div>}

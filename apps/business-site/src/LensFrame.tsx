@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { LENS_ASPECT } from "@/shared/analysis-contract/lens";
 import { LENS_FRAME_TOKENS, type CompiledChart, type LensFrameMessage, type LensFrameSize, type LensFrameTheme } from "@/shared/analysis-contract/lens-frame";
 import { renderChartSvg } from "@/shared/analysis-runtime/lens/render";
+import { getLocale } from "@/packages/web/src/i18n";
 import { applyHover, watchHover } from "./lens-frame/hover";
 
 /** How long the frame may take to say it is ready before the chart is drawn in place instead. */
@@ -68,7 +69,7 @@ export function LensFrame({ chart, onHover }: { chart: CompiledChart; onHover?: 
   useEffect(() => { if (ready && !fallback) post({ type: "lens:theme", theme }); }, [theme]); // eslint-disable-line react-hooks/exhaustive-deps
   return <div ref={box} className="lens-chart-cell" style={{ "--aspect": LENS_ASPECT[chart.aspect] } as React.CSSProperties} data-ready={rendered || fallback ? "" : undefined}
     data-frame={fallback ? "inline" : rendered ? "rendered" : ready ? "ready" : "loading"} data-size={size ? `${size.width}x${size.height}` : undefined}>
-    {fallback ? size && <InlineChart chart={chart} size={size} onHover={onHover} /> : <iframe ref={frame} src="/lens-frame" sandbox="allow-scripts allow-same-origin" title={chart.title ?? chart.summary} onLoad={() => setReady(true)} />}
+    {fallback ? size && <InlineChart chart={chart} size={size} onHover={onHover} /> : <iframe ref={frame} src={`/lens-frame?lang=${getLocale()}`} sandbox="allow-scripts allow-same-origin" title={chart.title ?? chart.summary} onLoad={() => setReady(true)} />}
     <p className="sr-only">{chart.summary}</p>
   </div>;
 }
@@ -77,7 +78,7 @@ export function LensFrame({ chart, onHover }: { chart: CompiledChart; onHover?: 
 function InlineChart({ chart, size, onHover }: { chart: CompiledChart; size: LensFrameSize; onHover?: (period: number | null) => void }) {
   const host = useRef<HTMLDivElement>(null);
   const drawn = useRef<string | null>(null);
-  const html = useMemo(() => renderChartSvg(chart, size), [chart, size]);
+  const html = useMemo(() => renderChartSvg(chart, size, { locale: getLocale() }), [chart, size]);
   // A redraw of the same chart at a new size keeps still, before the first paint, so resizing does not replay the entrance.
   useLayoutEffect(() => {
     const svg = host.current?.querySelector<SVGElement>("svg");

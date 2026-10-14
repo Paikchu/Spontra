@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { REVENUE_MODEL_TYPES, type BusinessTree, type TreeBranch, type TreeClaim, type TreeNode, type TreeRevenueModel } from "../analysis-contract/business-tree.ts";
 import { completeProductName, FIGURE } from "./business-explainer.ts";
+import type { Locale } from "./locale.ts";
 
 /**
  * Caps shared by the agent's harness and the reader, so a stored tree always reads back as it was written.
@@ -10,6 +11,11 @@ export const TREE_LIMITS = { branches: 8, children: 10, nodes: 40, depth: 3, rev
 export const REVENUE_LABEL: Record<TreeRevenueModel["type"], string> = {
   subscription: "Subscription", consumption: "Usage-based", license: "License", transaction: "Transaction fees", advertising: "Advertising", hardware: "Hardware sales", services: "Service fees", other: "Other revenue",
 };
+const REVENUE_LABEL_ZH: Record<TreeRevenueModel["type"], string> = {
+  subscription: "订阅", consumption: "按用量计费", license: "授权许可", transaction: "交易费", advertising: "广告", hardware: "硬件销售", services: "服务费", other: "其他收入",
+};
+/** A revenue model's type as the reader's locale names it; English is `REVENUE_LABEL`. */
+export const revenueLabel = (type: TreeRevenueModel["type"], locale: Locale = "en") => (locale === "zh-CN" ? REVENUE_LABEL_ZH : REVENUE_LABEL)[type];
 
 /** Letters and digits only, with `&` read as `and`, so `Compute & Networking` and `ComputeAndNetworking` are one name. */
 export const compactName = (value: string) => value.normalize("NFKC").toLowerCase().replace(/&/g, "and").replace(/[^\p{L}\p{N}]+/gu, "");

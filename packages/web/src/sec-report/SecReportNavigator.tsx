@@ -3,6 +3,9 @@
 import { cn } from "@/packages/web/src/utils";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useId, useRef, useState } from "react";
+import { messages } from "@/packages/web/src/i18n";
+
+const m = messages({ reportContents: "Report contents", contents: "Contents", onThisPage: "On this page" }, { reportContents: "报告目录", contents: "目录", onThisPage: "本页内容" });
 
 export type ReportSectionLink = {
   id: string;
@@ -146,7 +149,7 @@ export function SecReportNavigator({ initialSections }: { initialSections: Repor
       </div>
       <nav
         ref={mobileRef}
-        aria-label="Report contents"
+        aria-label={m.reportContents}
         className="relative z-30 mb-1 mt-5 min-[1360px]:hidden"
       >
         <motion.button
@@ -159,7 +162,7 @@ export function SecReportNavigator({ initialSections }: { initialSections: Repor
           className="flex min-h-12 w-full items-center justify-between gap-4 border-y border-[var(--paper-deep)] bg-[var(--paper)] px-1 py-3 text-left text-[var(--ink)]"
         >
           <span className="min-w-0">
-            <small className="mr-3 text-[10px] font-bold tracking-[.1em] text-primary">Contents</small>
+            <small className="mr-3 text-[10px] font-bold tracking-[.1em] text-primary">{m.contents}</small>
             <strong className="font-[family-name:var(--serif)] text-sm font-semibold">{activeSection?.title}</strong>
           </span>
           <motion.span
@@ -207,11 +210,11 @@ export function SecReportNavigator({ initialSections }: { initialSections: Repor
       </nav>
 
       <nav
-        aria-label="On this page"
+        aria-label={m.onThisPage}
         data-report-toc="right"
         className="fixed right-[max(24px,5vw)] top-24 hidden w-[200px] min-[1360px]:block"
       >
-        <h2 className="mb-4 text-sm font-medium text-muted-foreground">On this page</h2>
+        <h2 className="mb-4 text-sm font-medium text-muted-foreground">{m.onThisPage}</h2>
         <ul ref={railRef} className="relative m-0 flex max-h-[calc(100dvh-160px)] list-none flex-col gap-1 overflow-y-auto overscroll-contain p-0">
           {sections.map((section) => (
             <li key={section.id} data-report-nav-depth={section.depth === 1 ? "subsection" : "section"}>

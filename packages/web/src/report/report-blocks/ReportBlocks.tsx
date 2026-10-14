@@ -5,6 +5,17 @@ import { formatSecMetricLabel, formatSecMetricValue } from "@/packages/web/src/m
 import type { PublicFundamentalsResponse } from "@/shared/analysis-contract/fundamentals.ts";
 import type { PublishedSecReport } from "@/shared/analysis-contract/report.ts";
 import type { ReportBlock } from "@/shared/analysis-contract/report-blocks.ts";
+import { getLocale, messages } from "@/packages/web/src/i18n";
+
+const m = messages({
+  qoq: (value: string) => `QoQ ${value}`, yoy: (value: string) => `YoY ${value}`, none: "n/a",
+  noData: (title: string) => `${title}: No data`, excerpts: "Filing excerpts",
+  characters: (start: string, end: string) => `Characters ${start}–${end}`, relevance: (score: number) => `Relevance ${score}/100`,
+}, {
+  qoq: (value: string) => `环比 ${value}`, yoy: (value: string) => `同比 ${value}`, none: "无",
+  noData: (title: string) => `${title}：无数据`, excerpts: "文件摘录",
+  characters: (start: string, end: string) => `字符位置 ${start}–${end}`, relevance: (score: number) => `相关度 ${score}/100`,
+});
 
 /**
  * The renderer for a model-composed report: a registry keyed by block type, over a section list of
@@ -34,21 +45,21 @@ function Block({ block, context }: { block: ReportBlock; context: ReportBlockRen
   switch (block.type) {
     case "prose":
       return (
-        <div className="report-block report-block-prose sec-report-body" id={block.id}>
+        <div className="report-block report-block-prose sec-report-body" id={block.id} lang="en">
           {block.title && <h3 className="report-block-title">{block.title}</h3>}
           <RichText text={block.text} />
         </div>
       );
     case "callout":
       return (
-        <aside className="report-block report-block-callout" data-tone={block.tone} id={block.id}>
+        <aside className="report-block report-block-callout" data-tone={block.tone} id={block.id} lang="en">
           {block.title && <strong>{block.title}</strong>}
           <RichText text={block.text} />
         </aside>
       );
     case "key_points":
       return (
-        <div className="report-block report-block-points" id={block.id}>
+        <div className="report-block report-block-points" id={block.id} lang="en">
           {block.title && <h3 className="report-block-title">{block.title}</h3>}
           <ul className="report-block-points-list">
             {block.points.map((point, index) => (
@@ -66,13 +77,13 @@ function Block({ block, context }: { block: ReportBlock; context: ReportBlockRen
       if (metrics.length === 0) return null;
       return (
         <div className="report-block report-block-metrics" id={block.id}>
-          {block.title && <h3 className="report-block-title">{block.title}</h3>}
+          {block.title && <h3 className="report-block-title" lang="en">{block.title}</h3>}
           <div className="sec-report-metrics">
             {metrics.map((metric) => (
               <article key={metric.metricKey}>
-                <span>{formatSecMetricLabel(metric.metricKey)}</span>
-                    <strong>{formatSecMetricValue(metric.metricKey, metric.currentValue, metric.unit, metric.currency)}</strong>
-                <small>{metric.qoq ? `QoQ ${metric.qoq}` : "QoQ n/a"} · {metric.yoy ? `YoY ${metric.yoy}` : "YoY n/a"}</small>
+                <span>{formatSecMetricLabel(metric.metricKey, getLocale())}</span>
+                <strong>{formatSecMetricValue(metric.metricKey, metric.currentValue, metric.unit, metric.currency, getLocale())}</strong>
+                <small>{m.qoq(metric.qoq || m.none)} · {m.yoy(metric.yoy || m.none)}</small>
               </article>
             ))}
           </div>
@@ -83,7 +94,7 @@ function Block({ block, context }: { block: ReportBlock; context: ReportBlockRen
       // Validation already proved every series is available, but the data can go missing between
       // composing the report and rendering it, and a missing panel is worse than a stated absence.
       if (!context.fundamentals) {
-        return <p className="report-block report-block-empty" id={block.id}>{block.title}: No data</p>;
+        return <p className="report-block report-block-empty" id={block.id}>{m.noData(block.title)}</p>;
       }
       // Whether a metric is actually in this response is knowable only here — the Pipeline vets a
       // chart against the feature pack it reasoned over, which is a different read. A series the
@@ -93,7 +104,7 @@ function Block({ block, context }: { block: ReportBlock; context: ReportBlockRen
         (candidate) => candidate.metricKey === entry.metricKey && candidate.available,
       ));
       if (series.length === 0) {
-        return <p className="report-block report-block-empty" id={block.id}>{block.title}: No data</p>;
+        return <p className="report-block report-block-empty" id={block.id}>{m.noData(block.title)}</p>;
       }
       return (
         <figure className="report-block report-block-chart" id={block.id}>
@@ -111,11 +122,11 @@ function Block({ block, context }: { block: ReportBlock; context: ReportBlockRen
     case "evidence":
       return (
         <details className="report-block sec-report-evidence" id={block.id}>
-          <summary>{block.title ?? "Filing excerpts"} · {block.items.length}</summary>
+          <summary>{block.title ?? m.excerpts} · {block.items.length}</summary>
           {block.items.map((item, index) => (
             <blockquote key={`${item.start}-${index}`}>
-              <p>{item.excerpt}</p>
-              <footer>Characters {item.start.toLocaleString("en-US")}–{item.end.toLocaleString("en-US")} · Relevance {item.score}/100</footer>
+              <p lang="en">{item.excerpt}</p>
+              <footer>{m.characters(item.start.toLocaleString("en-US"), item.end.toLocaleString("en-US"))} · {m.relevance(item.score)}</footer>
             </blockquote>
           ))}
         </details>

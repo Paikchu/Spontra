@@ -2,6 +2,7 @@ import type { FindingRef, FindingSpan, PeerBaseRef } from "../../analysis-contra
 import type { LensTable } from "../../analysis-contract/lens.ts";
 import { refLabel, resolveEvidence, resolveRef, type FindingData } from "../findings.ts";
 import { chartPeriods } from "./compile.ts";
+import type { Locale } from "../locale.ts";
 import { formatDelta, formatResolved, periodLabel } from "./format.ts";
 
 /** A table with every figure resolved and written; rows and columns that nothing answers are gone. */
@@ -28,30 +29,30 @@ const ownRef = (ref: FindingRef | PeerBaseRef): FindingRef => ref as FindingRef;
  * table reads each row for the company and for each peer at that peer's aligned period. A row with no cell is
  * left out; a peers table needs two peer columns with a figure, a periods table one row.
  */
-export function compileTable(spec: LensTable, data: FindingData, ticker: string, periodEnd: string): TableResult {
+export function compileTable(spec: LensTable, data: FindingData, ticker: string, periodEnd: string, locale: Locale = "en"): TableResult {
   const errors: string[] = [];
   const dropped: string[] = [];
   const cell = (ref: FindingRef, end: string, compare?: "yoy" | "qoq") => {
     const r = compare ? resolveEvidence(data, { ref, periodEnd: end, span: spec.span, compare }) : null;
     const v = r?.current ?? resolveRef(data, ref, end, spec.span);
-    return v ? { text: formatResolved(v, ref), change: r && r.delta != null ? formatDelta(r.delta, r.current.unit, ref) : null } : null;
+    return v ? { text: formatResolved(v, ref, locale), change: r && r.delta != null ? formatDelta(r.delta, r.current.unit, ref, locale) : null } : null;
   };
   if (spec.columns === "periods") {
     const ends = chartPeriods(periodEnd, spec.span, spec.periods ?? (spec.span === "quarter" ? 4 : 3));
     // A table cell read from a filing passage is one figure as filed; it sits in the newest column only.
-    const rows = spec.rows.map(row => ({ label: row.label ?? refLabel(data, ownRef(row.ref)), cells: ends.map((end, i) => "passageCell" in row.ref && i < ends.length - 1 ? null : cell(ownRef(row.ref), end, row.compare)) })).filter(r => r.cells.some(c => c));
-    for (const row of spec.rows) if (!rows.some(r => r.label === (row.label ?? refLabel(data, ownRef(row.ref))))) errors.push(`row ${refLabel(data, ownRef(row.ref))} resolves at none of the periods`);
+    const rows = spec.rows.map(row => ({ label: row.label ?? refLabel(data, ownRef(row.ref), locale), cells: ends.map((end, i) => "passageCell" in row.ref && i < ends.length - 1 ? null : cell(ownRef(row.ref), end, row.compare)) })).filter(r => r.cells.some(c => c));
+    for (const row of spec.rows) if (!rows.some(r => r.label === (row.label ?? refLabel(data, ownRef(row.ref), locale)))) errors.push(`row ${refLabel(data, ownRef(row.ref))} resolves at none of the periods`);
     if (!rows.length) return { table: null, errors: ["no row resolves"], dropped };
     // Leading periods no row answers are left out, as a chart does.
     const lead = ends.findIndex((_, i) => rows.some(r => r.cells[i]));
-    const columns = ends.slice(lead).map(end => ({ key: end, label: periodLabel(end, spec.span), sub: null }));
+    const columns = ends.slice(lead).map(end => ({ key: end, label: periodLabel(end, spec.span, locale), sub: null }));
     return { table: { title: spec.title ?? null, columns, rows: rows.map(r => ({ ...r, cells: r.cells.slice(lead) })), dropped }, errors, dropped };
   }
   const peers = (spec.peers?.length ? spec.peers : peersOf(data, ticker)).filter(t => t !== ticker);
   if (!peers.length) return { table: null, errors: ["no tracked peer shares a category with the company"], dropped };
   const tickers = [ticker, ...peers];
   const rows = spec.rows.map(row => ({
-    label: row.label ?? refLabel(data, ownRef(row.ref)),
+    label: row.label ?? refLabel(data, ownRef(row.ref), locale),
     cells: tickers.map(t => t === ticker ? cell(ownRef(row.ref), periodEnd, row.compare) : ("nodeId" in row.ref || "guidanceId" in row.ref || "ratio" in row.ref || "rpoBucket" in row.ref || "peer" in row.ref || "passageCell" in row.ref) ? null : cell({ peer: { ticker: t, ref: row.ref } }, periodEnd, row.compare)),
   })).filter(r => r.cells.some(c => c));
   if (!rows.length) return { table: null, errors: ["no row resolves for the company or any peer"], dropped };

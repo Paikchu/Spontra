@@ -478,3 +478,14 @@ export const FUNDAMENTAL_METRIC_CATALOG = {
     }
   }
 } as const;
+
+/** Each metric's `label` in Chinese, for a reader's page; the catalog's English labels stay what the pipeline and the model read. */
+export const FUNDAMENTAL_METRIC_LABEL_ZH: Record<keyof typeof FUNDAMENTAL_METRIC_CATALOG, string> = {
+  total_revenue: "营收", gross_profit: "毛利", operating_income: "营业利润", net_income: "净利润", diluted_eps: "稀释每股收益",
+  operating_cash_flow: "经营现金流", capital_expenditure: "资本开支", free_cash_flow: "自由现金流", stock_based_compensation: "股权激励费用",
+  depreciation_and_amortization: "折旧与摊销", research_and_development: "研发费用", remaining_performance_obligation: "剩余履约义务",
+  cash_and_cash_equivalents: "现金及现金等价物", long_term_debt: "长期债务", total_assets: "总资产", total_liabilities: "总负债",
+  stockholders_equity: "股东权益", inventory: "存货", accounts_receivable: "应收账款", ordinary_shares: "流通股数", market_cap: "市值",
+  enterprise_value: "企业价值", pe_ratio: "市盈率（TTM）", forward_pe_ratio: "预期市盈率", peg_ratio: "PEG（5 年预期）", price_to_sales: "市销率",
+  price_to_book: "市净率", ev_to_revenue: "EV/营收", ev_to_ebitda: "EV/EBITDA", gross_margin: "毛利率", operating_margin: "营业利润率",
+};

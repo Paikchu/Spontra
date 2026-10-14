@@ -1,4 +1,31 @@
 import type { BalanceSheet, CapitalLine, CashFlowSection, CashFlowStatement } from "@/shared/analysis-contract/capital-structure";
+import { messages } from "@/packages/web/src/i18n";
+
+const m = messages({
+  debt: "Debt", leases: "Lease liabilities", customer: "Customer prepayments", payables: "Payables and accruals", liabilitiesOther: "Other liabilities",
+  paidIn: "Paid-in capital", retained: "Retained earnings", equityOther: "Other equity", productive: "Property and equipment", leaseAssets: "Right-of-use lease assets",
+  cash: "Cash and short-term investments", receivables: "Accounts receivable", inventory: "Inventory", intangibles: "Goodwill and intangibles",
+  investments: "Long-term investments", assetsOther: "Other assets", deficit: "Accumulated deficit", treasury: "Treasury stock", equityLoss: "Other equity losses",
+  cumulative: "Cumulative funding", period: "Funding this period", investing: "Investing", financing: "Financing",
+  otherInvestingIn: "Other investing inflows", otherInvestingOut: "Other investing outflows", otherFinancingIn: "Other financing inflows", otherFinancingOut: "Other financing outflows",
+  equipmentSales: "Equipment sales", capex: "Capital expenditures", businessSales: "Business sales", acquisitions: "Acquisitions",
+  investmentProceeds: "Investment proceeds", investmentsOut: "Financial and strategic investments", newBorrowing: "New borrowing", debtRepayment: "Debt repayment",
+  stockIssued: "Stock issued", stockPayments: "Stock-related payments", buybackIn: "Buyback inflows", buybacks: "Share buybacks", dividendIn: "Dividend inflows",
+  dividends: "Dividends", leaseIn: "Lease financing inflows", leaseOut: "Finance lease payments", operating: "Operating cash flow", fx: "Exchange rate effect",
+  cashUsed: "Drawn from cash reserves", burn: "Operating cash burn", cashAdded: "Cash added",
+}, {
+  debt: "债务", leases: "租赁负债", customer: "客户预付款", payables: "应付账款及预提费用", liabilitiesOther: "其他负债",
+  paidIn: "实收资本", retained: "留存收益", equityOther: "其他权益", productive: "固定资产", leaseAssets: "使用权资产",
+  cash: "现金及短期投资", receivables: "应收账款", inventory: "存货", intangibles: "商誉及无形资产",
+  investments: "长期投资", assetsOther: "其他资产", deficit: "累计亏损", treasury: "库存股", equityLoss: "其他权益损失",
+  cumulative: "累计资金来源", period: "本期资金来源", investing: "投资活动", financing: "筹资活动",
+  otherInvestingIn: "其他投资流入", otherInvestingOut: "其他投资流出", otherFinancingIn: "其他筹资流入", otherFinancingOut: "其他筹资流出",
+  equipmentSales: "设备出售", capex: "资本开支", businessSales: "业务出售", acquisitions: "收购",
+  investmentProceeds: "投资收回", investmentsOut: "金融及战略投资", newBorrowing: "新增借款", debtRepayment: "偿还债务",
+  stockIssued: "股权融资", stockPayments: "股票相关支出", buybackIn: "回购流入", buybacks: "回购", dividendIn: "分红流入",
+  dividends: "分红", leaseIn: "租赁融资流入", leaseOut: "融资租赁付款", operating: "经营现金流", fx: "汇率影响",
+  cashUsed: "动用现金储备", burn: "经营现金消耗", cashAdded: "现金增加",
+});
 
 /** What role money plays in the pool; each tone has one color across both views. */
 export type PoolTone = "own" | "debt" | "lease" | "customer" | "payable" | "equity" | "deficit" | "returned" | "productive" | "cash" | "invest" | "other";
@@ -29,33 +56,33 @@ export function balancePool(b: BalanceSheet): Pool {
   const L = b.liabilities, E = b.equity, A = b.assets;
   const positiveEquity = E.filter(line => Number(line.value) > 0), negativeEquity = E.filter(line => Number(line.value) < 0);
   const sources = present([
-    item("debt", "Debt", "debt", split(L, "debt").all),
-    item("leases", "Lease liabilities", "lease", split(L, "leases").all),
-    item("customer", "Customer prepayments", "customer", split(L, "customerAdvances").all),
-    item("payables", "Payables and accruals", "payable", split(L, "payables").all),
-    item("liabilities-other", "Other liabilities", "other", split(L, ["deferredTax", "other"]).all),
-    item("paid-in", "Paid-in capital", "equity", positiveEquity.filter(l => l.group === "paidIn")),
-    item("retained", "Retained earnings", "own", positiveEquity.filter(l => l.group === "retained")),
-    item("equity-other", "Other equity", "equity", positiveEquity.filter(l => !["paidIn", "retained"].includes(l.group))),
+    item("debt", m.debt, "debt", split(L, "debt").all),
+    item("leases", m.leases, "lease", split(L, "leases").all),
+    item("customer", m.customer, "customer", split(L, "customerAdvances").all),
+    item("payables", m.payables, "payable", split(L, "payables").all),
+    item("liabilities-other", m.liabilitiesOther, "other", split(L, ["deferredTax", "other"]).all),
+    item("paid-in", m.paidIn, "equity", positiveEquity.filter(l => l.group === "paidIn")),
+    item("retained", m.retained, "own", positiveEquity.filter(l => l.group === "retained")),
+    item("equity-other", m.equityOther, "equity", positiveEquity.filter(l => !["paidIn", "retained"].includes(l.group))),
   ]);
   const uses = present([
-    item("productive", "Property and equipment", "productive", split(A, "productive").all),
-    item("lease-assets", "Right-of-use lease assets", "productive", split(A, "leaseAssets").all),
-    item("cash", "Cash and short-term investments", "cash", split(A, "cash").all),
-    item("receivables", "Accounts receivable", "other", split(A, "receivables").all),
-    item("inventory", "Inventory", "other", split(A, "inventory").all),
-    item("intangibles", "Goodwill and intangibles", "other", split(A, "intangibles").all),
-    item("investments", "Long-term investments", "invest", split(A, "investments").all),
-    item("assets-other", "Other assets", "other", split(A, "other").all),
-    item("deficit", "Accumulated deficit", "deficit", negativeEquity.filter(l => l.group === "retained")),
-    item("returned", "Treasury stock", "returned", negativeEquity.filter(l => l.group === "paidIn")),
-    item("equity-loss", "Other equity losses", "other", negativeEquity.filter(l => !["paidIn", "retained"].includes(l.group))),
+    item("productive", m.productive, "productive", split(A, "productive").all),
+    item("lease-assets", m.leaseAssets, "productive", split(A, "leaseAssets").all),
+    item("cash", m.cash, "cash", split(A, "cash").all),
+    item("receivables", m.receivables, "other", split(A, "receivables").all),
+    item("inventory", m.inventory, "other", split(A, "inventory").all),
+    item("intangibles", m.intangibles, "other", split(A, "intangibles").all),
+    item("investments", m.investments, "invest", split(A, "investments").all),
+    item("assets-other", m.assetsOther, "other", split(A, "other").all),
+    item("deficit", m.deficit, "deficit", negativeEquity.filter(l => l.group === "retained")),
+    item("returned", m.treasury, "returned", negativeEquity.filter(l => l.group === "paidIn")),
+    item("equity-loss", m.equityLoss, "other", negativeEquity.filter(l => !["paidIn", "retained"].includes(l.group))),
   ]);
-  return { title: "Cumulative funding", total: sum(sources), sources, uses };
+  return { title: m.cumulative, total: sum(sources), sources, uses };
 }
 
 /** A section without reconciled lines is shown as its net total, on whichever side its sign puts it. */
-function sectionItems<G extends string>(section: CashFlowSection<G>, key: string, label: string, groups: Array<[G | G[], string, string, PoolTone, string, PoolTone]>) {
+function sectionItems<G extends string>(section: CashFlowSection<G>, key: string, label: string, other: [string, string], groups: Array<[G | G[], string, string, PoolTone, string, PoolTone]>) {
   const sources: Array<PoolItem | null> = [], uses: Array<PoolItem | null> = [];
   if (!section.lines) {
     const total = Number(section.total);
@@ -72,39 +99,39 @@ function sectionItems<G extends string>(section: CashFlowSection<G>, key: string
     else uses.push(item(plusKey + "-out", minusLabel, minusTone, parts.all, net));
   }
   const rest = section.lines.filter(line => !covered.has(line.id)), net = sum(rest);
-  if (rest.length) (net > 0 ? sources : uses).push(item(key + "-other", net > 0 ? `Other ${label.toLowerCase()} inflows` : `Other ${label.toLowerCase()} outflows`, "other", rest, net));
+  if (rest.length) (net > 0 ? sources : uses).push(item(key + "-other", net > 0 ? other[0] : other[1], "other", rest, net));
   return { sources, uses };
 }
 
 /** One period's cash: what came in and where it went, with the change in cash closing the pool. */
 export function cashPool(c: CashFlowStatement): Pool {
   const operating = Number(c.operating.total), change = Number(c.netChange), fx = Number(c.fxEffect ?? 0);
-  const investing = sectionItems(c.investing, "investing", "Investing", [
-    ["capex", "Equipment sales", "capex", "invest", "Capital expenditures", "productive"],
-    ["acquisitions", "Business sales", "acquisitions", "invest", "Acquisitions", "invest"],
-    ["investments", "Investment proceeds", "investments", "invest", "Financial and strategic investments", "invest"],
+  const investing = sectionItems(c.investing, "investing", m.investing, [m.otherInvestingIn, m.otherInvestingOut], [
+    ["capex", m.equipmentSales, "capex", "invest", m.capex, "productive"],
+    ["acquisitions", m.businessSales, "acquisitions", "invest", m.acquisitions, "invest"],
+    ["investments", m.investmentProceeds, "investments", "invest", m.investmentsOut, "invest"],
   ]);
-  const financing = sectionItems(c.financing, "financing", "Financing", [
-    ["debtIssued", "New borrowing", "debt-issued", "debt", "Debt repayment", "debt"],
-    ["debtRepaid", "New borrowing", "debt-repaid", "debt", "Debt repayment", "debt"],
-    ["equityIssued", "Stock issued", "equity", "equity", "Stock-related payments", "returned"],
-    ["buybacks", "Buyback inflows", "buybacks", "equity", "Share buybacks", "returned"],
-    ["dividends", "Dividend inflows", "dividends", "equity", "Dividends", "returned"],
-    ["leasePrincipal", "Lease financing inflows", "lease", "lease", "Finance lease payments", "lease"],
+  const financing = sectionItems(c.financing, "financing", m.financing, [m.otherFinancingIn, m.otherFinancingOut], [
+    ["debtIssued", m.newBorrowing, "debt-issued", "debt", m.debtRepayment, "debt"],
+    ["debtRepaid", m.newBorrowing, "debt-repaid", "debt", m.debtRepayment, "debt"],
+    ["equityIssued", m.stockIssued, "equity", "equity", m.stockPayments, "returned"],
+    ["buybacks", m.buybackIn, "buybacks", "equity", m.buybacks, "returned"],
+    ["dividends", m.dividendIn, "dividends", "equity", m.dividends, "returned"],
+    ["leasePrincipal", m.leaseIn, "lease", "lease", m.leaseOut, "lease"],
   ]);
   const sources = present([
-    operating > 0 ? item("operating", "Operating cash flow", "own", [], operating) : null,
+    operating > 0 ? item("operating", m.operating, "own", [], operating) : null,
     ...financing.sources, ...investing.sources,
-    fx > 0 ? item("fx", "Exchange rate effect", "other", [], fx) : null,
-    change < 0 ? item("cash-used", "Drawn from cash reserves", "cash", [], change) : null,
+    fx > 0 ? item("fx", m.fx, "other", [], fx) : null,
+    change < 0 ? item("cash-used", m.cashUsed, "cash", [], change) : null,
   ]);
   const uses = present([
-    operating < 0 ? item("operating-burn", "Operating cash burn", "deficit", [], operating) : null,
+    operating < 0 ? item("operating-burn", m.burn, "deficit", [], operating) : null,
     ...investing.uses, ...financing.uses,
-    fx < 0 ? item("fx-out", "Exchange rate effect", "other", [], fx) : null,
-    change > 0 ? item("cash-added", "Cash added", "cash", [], change) : null,
+    fx < 0 ? item("fx-out", m.fx, "other", [], fx) : null,
+    change > 0 ? item("cash-added", m.cashAdded, "cash", [], change) : null,
   ]);
-  return { title: "Funding this period", total: sum(sources), sources, uses };
+  return { title: m.period, total: sum(sources), sources, uses };
 }
 
 export type CashMetrics = { operating: number; capex: number | null; free: number | null; selfFunding: number | null; financing: number; debtNet: number | null; equityIssued: number | null; returned: number | null };

@@ -1,5 +1,6 @@
 import type { CompiledAxis, CompiledChart, CompiledSeries, LensFrameSize } from "../../analysis-contract/lens-frame.ts";
 import { compactMoney } from "./format.ts";
+import type { Locale } from "../locale.ts";
 
 /**
  * Draws a compiled chart as an SVG document string: no DOM, no library, so the frame, the page's
@@ -9,6 +10,9 @@ import { compactMoney } from "./format.ts";
 const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 const CHAR = 6.2, PERIOD_H = 22, LEGEND_H = 18, TITLE_H = 20, VALUE_H = 16;
 const n2 = (v: number) => Number(v.toFixed(2));
+/** CJK characters run about one em wide, nearly twice a Latin character; widths are estimated per character. */
+const WIDE = /[\u3000-\u9fff\uac00-\ud7af\uff00-\uffef]/g, WIDE_EXTRA = 4.6;
+const textW = (s: string) => s.length * CHAR + (s.match(WIDE)?.length ?? 0) * WIDE_EXTRA;
 const LABELLED = new Set(["line", "step", "dot", "area", "stacked_area", "rule"]);
 
 type Scale = { y: (v: number) => number; zero: number; axis: CompiledAxis };
@@ -19,17 +23,17 @@ function scaleFor(axis: CompiledAxis | null, top: number, bottom: number): Scale
   return { y, zero: y(Math.max(axis.min, Math.min(axis.max, 0))), axis };
 }
 
-/** `still`: no entrance animation, for a redraw at a new size of a chart already on screen. */
-export function renderChartSvg(chart: CompiledChart, size: LensFrameSize, options: { still?: boolean } = {}): string {
+/** `still`: no entrance animation, for a redraw at a new size of a chart already on screen. `locale`: the number form of a stack's total, the one figure drawn here rather than compiled. */
+export function renderChartSvg(chart: CompiledChart, size: LensFrameSize, options: { still?: boolean; locale?: Locale } = {}): string {
   const W = Math.max(120, Math.floor(size.width)), H = Math.max(120, Math.floor(size.height));
   const n = chart.periods.length;
   const bySeries = new Map(chart.series.map(s => [s.id, s]));
   const labelledLeft = chart.marks.some(m => LABELLED.has(m.type) && m.series.some(id => bySeries.get(id)?.axis === "left"));
   const labelledRight = !!chart.axes.right;
-  const leftW = labelledLeft && chart.axes.left ? Math.max(...chart.axes.left.ticks.map(t => t.label.length)) * CHAR + 10 : 0;
-  const rightW = labelledRight && chart.axes.right ? Math.max(...chart.axes.right.ticks.map(t => t.label.length)) * CHAR + 10 : 0;
+  const leftW = labelledLeft && chart.axes.left ? Math.max(...chart.axes.left.ticks.map(t => textW(t.label))) + 10 : 0;
+  const rightW = labelledRight && chart.axes.right ? Math.max(...chart.axes.right.ticks.map(t => textW(t.label))) + 10 : 0;
   // Legend rows by estimated width, so a long set wraps instead of running off the edge.
-  const legendItems = chart.legend === "top" ? chart.series.map(s => ({ s, w: s.label.length * CHAR + 24 })) : [];
+  const legendItems = chart.legend === "top" ? chart.series.map(s => ({ s, w: textW(s.label) + 24 })) : [];
   const legendRows: Array<typeof legendItems> = [];
   for (const item of legendItems) { const row = legendRows.at(-1); if (row && row.reduce((w, i) => w + i.w, 0) + item.w <= W) row.push(item); else legendRows.push([item]); }
   const hasNegative = chart.series.some(s => s.values.some(v => v != null && v < 0));
@@ -77,7 +81,7 @@ export function renderChartSvg(chart: CompiledChart, size: LensFrameSize, option
   const placed: Array<{ col: number; x: number; y: number; w: number }> = [];
   const valueAt = (i: number, x: number, y: number, body: string, below: boolean) => {
     let ly = below ? y + 12 : y - 5;
-    const w = body.length * CHAR + 6;
+    const w = textW(body) + 6;
     for (const p of placed) if (p.col === i && Math.abs(p.x - x) < (p.w + w) / 2 && Math.abs(p.y - ly) < 12) ly = below ? p.y + 12 : p.y - 12;
     placed.push({ col: i, x, y: ly, w });
     valueLabels.push(`<text class="val" data-col="${i}"${show(i)} x="${n2(x)}" y="${n2(ly)}" text-anchor="middle">${esc(body)}</text>`);
@@ -109,7 +113,7 @@ export function renderChartSvg(chart: CompiledChart, size: LensFrameSize, option
       }
       const first = members[0]!, sc = scaleOf(first);
       const total = members.reduce((sum, s) => sum + (s.values[i] ?? 0), 0);
-      valueAt(i, gx + barW / 2, sc.y(up), members.length > 1 ? stackText(members, i, total) : first.text[i] ?? "", false);
+      valueAt(i, gx + barW / 2, sc.y(up), members.length > 1 ? stackText(members, total, options.locale) : first.text[i] ?? "", false);
       gx += barW + gap;
     }
     if (waterfall) {
@@ -189,7 +193,7 @@ export function renderChartSvg(chart: CompiledChart, size: LensFrameSize, option
     text(x, above ? p.y - 20 : p.y + 40, a.text, "ann", anchor);
   }
   // Period labels along the bottom; sparse (asked for, or forced when they would collide) keeps the newest and every other one before it.
-  const labelW = Math.max(...chart.periods.map(p => p.label.length)) * CHAR + 8;
+  const labelW = Math.max(...chart.periods.map(p => textW(p.label))) + 8;
   const every = chart.periodLabels === "sparse" || labelW > colW ? Math.max(2, Math.ceil(labelW / colW)) : 1;
   chart.periods.forEach((p, i) => { if ((n - 1 - i) % every === 0) text(cx(i), H - 7, p.label, p.current ? "period current" : "period"); });
   // Hit areas last, so the frame can tell which column the pointer is over.
@@ -199,10 +203,10 @@ export function renderChartSvg(chart: CompiledChart, size: LensFrameSize, option
   return `<svg class="lens-svg"${options.still ? ' data-still=""' : ""} xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(chart.summary)}"><style>${CSS}</style>${out.join("")}</svg>`;
 }
 
-function stackText(members: CompiledSeries[], i: number, total: number): string {
+function stackText(members: CompiledSeries[], total: number, locale: Locale = "en"): string {
   const first = members[0]!;
   // The stack's total in the unit its members use: a compact amount or a percentage.
-  if (first.unit === "USD") return compactMoney(total, first.currency);
+  if (first.unit === "USD") return compactMoney(total, first.currency, locale);
   if (first.unit === "percent") return `${Number(total.toFixed(1))}%`;
   return String(Number(total.toFixed(2)));
 }

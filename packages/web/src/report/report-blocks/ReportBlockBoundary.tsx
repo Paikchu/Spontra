@@ -1,6 +1,9 @@
 "use client";
 
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import { messages } from "@/packages/web/src/i18n";
+
+const m = messages({ unavailable: (label: string) => `${label}: Unavailable` }, { unavailable: (label: string) => `${label}：不可用` });
 
 /**
  * Keeps one failing block from taking the report with it.
@@ -24,6 +27,6 @@ export class ReportBlockBoundary extends Component<{ children: ReactNode; label:
 
   render(): ReactNode {
     if (!this.state.failed) return this.props.children;
-    return <p className="report-block report-block-empty">{this.props.label}: Unavailable</p>;
+    return <p className="report-block report-block-empty">{m.unavailable(this.props.label)}</p>;
   }
 }

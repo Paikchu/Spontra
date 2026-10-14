@@ -1,5 +1,6 @@
 import type { CompiledChart, LensFrameMessage, LensFrameSize, LensFrameTheme } from "@/shared/analysis-contract/lens-frame";
 import { renderChartSvg } from "@/shared/analysis-runtime/lens/render";
+import { isLocale, type Locale } from "@/shared/analysis-runtime/locale";
 import { applyHover, watchHover } from "./hover";
 import "./frame.css";
 
@@ -8,6 +9,10 @@ import "./frame.css";
  * own, fetches nothing, and speaks to its parent alone, through the lens-frame messages.
  */
 const state: { id: string | null; chart: CompiledChart | null; size: LensFrameSize | null; unwatch: (() => void) | null; drawn: string | null } = { id: null, chart: null, size: null, unwatch: null, drawn: null };
+/** The page's language, from the frame's address: it decides the number form of the one figure drawn here (a stack's total). */
+const lang = new URLSearchParams(location.search).get("lang");
+const locale: Locale = isLocale(lang) ? lang : "en";
+document.documentElement.lang = locale;
 /** The frame shares the page's origin (same-origin sandbox), so messages go to that origin alone. */
 const post = (message: LensFrameMessage) => window.parent.postMessage(message, location.origin);
 
@@ -22,7 +27,7 @@ function draw() {
   if (!state.chart || !state.size || !state.id) return;
   state.unwatch?.();
   // A chart already on screen redraws at its new size without replaying its entrance.
-  document.body.innerHTML = renderChartSvg(state.chart, state.size, { still: state.drawn === state.id });
+  document.body.innerHTML = renderChartSvg(state.chart, state.size, { still: state.drawn === state.id, locale });
   state.drawn = state.id;
   const svg = document.body.querySelector<SVGElement>("svg");
   if (svg) state.unwatch = watchHover(svg, period => { applyHover(svg, period); post({ type: "lens:hover", id: state.id!, period }); });

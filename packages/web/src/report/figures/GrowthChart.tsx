@@ -1,5 +1,12 @@
 import { yoyGrowth, type SecFigure } from "@/shared/analysis-runtime/sec-figures.ts";
+import { messages } from "@/packages/web/src/i18n";
 import { formatChange, formatValue, shortPeriod } from "./format.ts";
+
+const m = messages({
+  revenue: "Revenue", yoy: "YoY growth", none: "n/a", revenueAxis: "Revenue (left axis)", yoyAxis: "YoY growth (right axis)",
+}, {
+  revenue: "营收", yoy: "同比增长", none: "无", revenueAxis: "营收（左轴）", yoyAxis: "同比增长（右轴）",
+});
 import { niceTicks, scale } from "./primitives.tsx";
 
 /** Revenue bars (left axis) with year-over-year growth (right axis) where a year-ago period exists. */
@@ -15,9 +22,9 @@ export function GrowthChart({ figure }: { figure: Extract<SecFigure, { kind: "gr
   const growthTicks = rates.length ? niceTicks(Math.min(0, ...rates), Math.max(0, ...rates) * 1.15, 3) : [];
   const gy = growthTicks.length ? scale([growthTicks[0], growthTicks.at(-1)!], [bottom, top]) : () => bottom;
   const latest = points.at(-1)!;
-  const description = `Revenue: ${points.map((p) => `${p.date} ${formatValue(p.value, unit)}`).join("; ")}. YoY growth: ${growth.map((g) => `${g.date} ${formatChange(g.growth)}`).join("; ") || "n/a"}`;
+  const description = `${m.revenue}: ${points.map((p) => `${p.date} ${formatValue(p.value, unit)}`).join("; ")}. ${m.yoy}: ${growth.map((g) => `${g.date} ${formatChange(g.growth)}`).join("; ") || m.none}`;
   return <>
-    <div className="sec-figure-legend"><span data-role="total">Revenue (left axis)</span>{growth.length > 0 && <span data-role="rate">YoY growth (right axis)</span>}</div>
+    <div className="sec-figure-legend"><span data-role="total">{m.revenueAxis}</span>{growth.length > 0 && <span data-role="rate">{m.yoyAxis}</span>}</div>
     <svg className="sec-figure-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={description}>
       {valueTicks.map((t) => <g key={t} className="sec-figure-grid"><line x1={left} x2={width - right} y1={vy(t)} y2={vy(t)} data-zero={t === 0 || undefined} />
         <text x={left - 8} y={vy(t) + 4} textAnchor="end">{formatValue(t, unit, { withUnit: false })}</text></g>)}
