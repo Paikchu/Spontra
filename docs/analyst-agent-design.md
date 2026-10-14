@@ -1,6 +1,6 @@
 # 方案：要点分析师 Agent（Analyst）——让每条要点成为一份可审计的案卷
 
-**状态：** 提议；P0、P1 于 2026-10-14 实现（见文末"实现状态"） · **日期：** 2026-10-13 · **前置：** [finding-lens-agent](finding-lens-agent.md)（已上线）、[findings-events-design](findings-events-design.md)、[sec-filing-library](sec-filing-library.md)、[pipeline-events](pipeline-events.md)
+**状态：** P0–P5 于 2026-10-14 实现并上线，ORCL 六条要点全部成稿（见文末"实现状态"） · **日期：** 2026-10-13 · **前置：** [finding-lens-agent](finding-lens-agent.md)（已上线）、[findings-events-design](findings-events-design.md)、[sec-filing-library](sec-filing-library.md)、[pipeline-events](pipeline-events.md)
 
 本方案由一次多 Agent 工作流产出：六个读码 Agent 盘点仓库现有的数据与工具，三个设计 Agent 分别从分析师、系统、产品三个角度独立设计，两个评审 Agent 打分与嫁接，一个对抗评审 Agent 拿真实 D1 数据核对每个假设。下文是综合后的结论，"数据现实"一节全部来自对线上数据的核对，不是推测。
 
@@ -155,6 +155,13 @@ P1：lens 文档新增 `quote`/`table`/`record` 块与 `LensRow.title`；`{peer}
 - **XBRL schedules**：`CAPITAL_VERSION` v5 在投影时提取债务到期、租赁付款、采购义务三种阶梯（`CapitalQuarter.schedules`），`{ schedule: { kind, bucket } }` 引用可解析（bucket 0–5 或 total），账本列出全部档位。部署后 `refreshStaleProjections` 重投影。
 - **P4 记录与跨期**：分析师 payload 带 `background`（公司叙述、上一版发布物对同一组数字的判断 `priorCall`、每个证据 ref 自上次以来的变化 `sinceLast`），提示词规定只作上下文、不得把其中数字写进段落，变化用 periods 表格或图表表达；`record` 块（P1）在第二份发布物后渲染；rail 中已打分的 watch 显示 ✓/✗。
 - **P5 事件域**：`{ event: { id, field } }` 引用（Form 4 的卖出股数、金额、均价、买入、行权、交易后持股）从事件发布物解析；planner 对引用事件的要点先开"事件"线（条款原文、触及的数字、基准率）；分析师 payload 列出最近一年的事件及其 `{event}` 引用，附件文本在文件库里可被 `find_sections`/`read_section` 读到。事件要点本身仍需 findings 写作者产出（其提示词尚未允许 `event` 引用）；新闻 subject 要等新闻源。AI 名单仍只有 ORCL。
+
+### 首轮生产运行与 harness 修正（2026-10-14，v2→v4）
+
+- **v2**（c08084a）：ORCL 六条要点成稿 3 条。未成稿的 trace 只写"文档不符合合约"，模型自述输出被截断 → **v3**（4a2050b）：观察里逐条列出 zod 违规路径，作文回合预算 5→10 分钟，过半未编译即提示先编译，宽表格给布局警告。成稿 5 条。
+- **v3 trace** 显示约四成回合的 `input` 为空：DeepSeek 把 `input` 写成 JSON 字符串（偶尔把参数写在 action 旁或嵌套在 action 里），harness 只接受对象，整回合作废；现金流量表被 2,400 字截断在资本开支行之前，focus 不起作用；最后两处合约违规是段落缺 `sourceIds` 与 `span: "quarterly"`。→ **v4**（c67210b）：`readDecision` 读字符串化/旁置/改名/嵌套的参数并在观察里加注；非 JSON 回合先在文本里找 JSON 对象，找不到把开头回显给模型；表格按行渲染并带行号，focus 按行标签选行；schema 接受省略 `sourceIds`（截到 6 个）与 quarterly/annual 写法。成稿 6/6，capex-outruns-cash 为 3 引文、2 表、3 图；复核删除了同业段落与一张流量/存量混排表。
+- 成本：一轮 ORCL（6 要点，deep 16 回合 / standard 10 回合）约 80 次模型调用、每次输入约 26–36k tokens（约 85% 缓存命中）、输出 0.4–17k tokens，耗时 13 分钟；复核调用推理 7–19k tokens。
+- 已知：复核删得较重（rpo-long-dated 四段删三段，理由多为"引用材料不支持段落的断言"），说明模型常把证据表里的数字写成段落后引用了不相干材料；可考虑让 compile 把每段的 sourceIds 与段中数字的来源对账后提前提示。
 
 ## 需要你决定的事
 
