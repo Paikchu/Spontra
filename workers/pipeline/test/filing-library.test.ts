@@ -248,3 +248,37 @@ test("a link is verified only when an independent review agrees on its category,
   ]);
   assert.equal(settled[3]!.review.reviewedPresent, false);
 });
+
+test("an earnings release yields the next quarter only when every line reconciles, and segments are found by their names", async () => {
+  const { releaseQuarter } = await import("../../../shared/analysis-runtime/financial-data/earnings-release.ts");
+  const src = "https://www.sec.gov/Archives/edgar/data/1/000000000126000001/10q.htm";
+  const amount = (value: number, key: string) => ({ value: String(value), basis: "reported" as const, definition: key, comparabilityKey: `k:${key}`, sourceIds: ["A"], lineage: [{ accession: "A", url: src, concept: key, contextId: "c", periodStart: "2026-04-01", periodEnd: "2026-06-30", dimensions: {}, parserVersion: "v" }] });
+  const derived = (value: number, key: string) => ({ ...amount(value, key), basis: "derived" as const, formula: "f" });
+  const previous: any = {
+    id: "2026-06-30", incomeModel: "standard", label: "Q", periodStart: "2026-04-01", periodEnd: "2026-06-30", periodType: "3M", currency: "USD", scale: 1, basisLabel: "b", reportedAt: null,
+    figures: { revenue: amount(1000e6, "revenue"), cost: amount(400e6, "cost"), gross: amount(600e6, "gross"), operatingExpenses: derived(300e6, "operatingExpenses"), operating: amount(300e6, "operating"), other: derived(10e6, "other"), pretax: amount(310e6, "pretax"), tax: amount(60e6, "tax"), net: amount(250e6, "net"), research: amount(200e6, "research") },
+    expenseComponents: [{ id: "ResearchAndDevelopmentExpense", name: "Research and development", group: "research", amount: amount(200e6, "rd") }, { id: "SellingGeneralAndAdministrativeExpense", name: "Selling, general and administrative", group: "other", amount: amount(100e6, "sga") }],
+    otherComponents: [{ id: "reported-net-other", name: "Other income (expense), net", amount: derived(10e6, "other") }],
+    segments: [{ id: "x:CloudMember", name: "Cloud", revenue: amount(700e6, "seg"), description: "", products: [], customers: null, monetization: null, disclosure: "", sourceIds: ["A"] }, { id: "x:DevicesMember", name: "Devices", revenue: amount(300e6, "seg"), description: "", products: [], customers: null, monetization: null, disclosure: "", sourceIds: ["A"] }],
+    segmentsComplete: true, sources: [{ id: "A", title: "10-Q", url: src, publishedAt: "2026-08-01" }],
+  };
+  const row = (label: string, a: string, b: string) => `<tr><td>${label}</td><td>$</td><td>${a}</td><td>$</td><td>${b}</td></tr>`;
+  const html = (net: string) => `<p>CONDENSED CONSOLIDATED STATEMENTS OF OPERATIONS (In millions)</p><table>
+    <tr><td></td><td colspan="4">Three Months Ended September 30,</td></tr><tr><td></td><td colspan="2">2026</td><td colspan="2">2025</td></tr>
+    ${row("Total revenue", "1,200", "900")}${row("Cost of revenue", "450", "380")}${row("Gross margin", "750", "520")}${row("Research and development", "230", "190")}
+    ${row("Selling, general and administrative", "120", "100")}${row("Restructuring", "(5)", "—")}${row("Operating income", "405", "230")}${row("Other income (expense), net", "(15)", "5")}
+    ${row("Income before income taxes", "390", "235")}${row("Provision for income taxes", "(80)", "(50)")}${row("Net income", net, "185")}</table>
+    <p>Segment revenue (In millions)</p><table><tr><td></td><td colspan="4">Three Months Ended September 30,</td></tr><tr><td></td><td colspan="2">2026</td><td colspan="2">2025</td></tr>
+    ${row("Cloud segment", "850", "600")}${row("Devices", "350", "300")}${row("Total", "1,200", "900")}</table>`;
+  const source = { accession: "B", filedAt: "2026-10-20", parserVersion: "v" };
+  const read = releaseQuarter([{ url: "https://www.sec.gov/Archives/edgar/data/1/000000000126000002/ex99.htm", html: html("310") }], previous, source);
+  assert.deepEqual(read.issues, []);
+  const q = read.quarter!;
+  assert.equal(q.periodEnd, "2026-09-30");
+  assert.deepEqual(Object.fromEntries(Object.entries(q.figures).map(([k, v]: any) => [k, Number(v.value) / 1e6])), { revenue: 1200, cost: 450, gross: 750, operating: 405, pretax: 390, net: 310, tax: 80, operatingExpenses: 345, other: -15, research: 230 });
+  assert.deepEqual(q.expenseComponents!.map(c => [c.id, Number(c.amount.value) / 1e6]), [["ResearchAndDevelopmentExpense", 230], ["SellingGeneralAndAdministrativeExpense", 120], ["release-restructuring", -5]]);
+  assert.deepEqual(q.segments.map(s => [s.id, Number(s.revenue!.value) / 1e6]), [["x:CloudMember", 850], ["x:DevicesMember", 350]]);
+  assert.equal(q.figures.revenue!.comparabilityKey, "k:revenue");
+  // A net income that does not follow from its own statement leaves the quarter to the 10-Q.
+  assert.equal(releaseQuarter([{ url: "https://www.sec.gov/x.htm", html: html("311") }], previous, source).quarter, null);
+});
