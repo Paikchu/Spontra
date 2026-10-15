@@ -210,10 +210,10 @@ P1 升一次全局版本，13 家公司重采一次（从归档读，不重新�
 
 - 一张表里出现的同一轴成员是一种拆分；同一轴出现在两张表就是两种候选（ADSK：利润表上的订阅/其他、收入附注里的产品族）。多种拆分都精确算平时取成员最多的一种。代码里不再有 ADSK 的成员白名单。
 - 分部所用概念与合并收入概念不同时，沿计算链从分部概念走到合并收入概念，路径上的兄弟行就是调节项，带申报自己的标签与正负号（GOOGL：Revenues = RevenueFromContractWithCustomer + RevenueNotFromContractWithCustomer，后者即 "Hedging gains (losses)"，2026Q2 为 1.06 亿）。
-- 报在 `ConsolidationItemsAxis` 上的收入（公司层面、调节项）与原有的抵销一样作为调节项；抵销用申报自己的成员标签命名。
+- 抵销用申报自己的成员标签命名。银行按管理口径报告的分部（JPM）沿用已有规则：分部单独算不平时，加上 `ConsolidationItemsAxis` 上的 Corporate 与调节项。
 - 只有 Σ分部 + Σ调节项 = 合并收入精确成立时才发布拆分。
 
-回归（同一 harness，13 家）：ORCL、NVDA、MSFT、AAPL、ADSK、NET、AMZN、META、CRWV、NBIS 的 figures、分部、调节项逐数不变；BRK.B 数字不变，调节项名称由 "Intersegment eliminations" 改为申报标签 "Corporate, Eliminations and Other"；GOOGL 由"拆分待核验"变为三个分部 + 对冲收益；JPM 由"拆分待核验"变为三个分部 + Corporate + 调节项（FTE 调整），两期均精确算平。解析器升 v13，收入历史解析器升 v6。
+回归（同一 harness，13 家，对比 origin/main）：ORCL、NVDA、MSFT、AAPL、JPM、ADSK、NET、AMZN、META、CRWV、NBIS 的 figures、分部、调节项逐数不变；BRK.B 数字不变，调节项名称由 "Intersegment eliminations" 改为申报标签 "Corporate, Eliminations and Other"；GOOGL 由"拆分待核验"变为三个分部 + 对冲收益（2026Q2 +1.06 亿，Q1 −1.80 亿），两期均精确算平。解析器升 v15，收入历史解析器升 v6。
 
 ## 需要你决定的事
 

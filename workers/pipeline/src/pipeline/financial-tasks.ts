@@ -7,7 +7,7 @@ import { companyPolicyEnvironment } from "../financial-data/company-policy.ts";
 import { archiveFilingDisclosures, readArchivedDocument, refreshStaleProjections } from "../financial-data/disclosure-audit.ts";
 import { HISTORY_VERSION, runHistoryStep } from "../financial-data/history.ts";
 import { SEC_FLOW_PARSER_VERSION } from "../financial-data/parser.ts";
-import { discoverDataIssuer, readSecDocumentBatch, throttledSecReader, type SecReader } from "../financial-data/provider.ts";
+import { discoverDataIssuer, readReleaseQuarter, readSecDocumentBatch, throttledSecReader, type SecReader } from "../financial-data/provider.ts";
 import { degraded, withFilingStructure } from "../financial-data/presentation.ts";
 import { emit } from "./outbox.ts";
 import { claimJobFor, latestJob, startCollection } from "../financial-data/queue.ts";
@@ -61,7 +61,9 @@ export const FINANCIAL_TASKS = {
         job = await claimJobFor(db, ticker, now);
         if (!job) return { status: "done", detail: { skipped: "collection owned elsewhere" } };
       }
-      const { flow, ...result } = await collectComplete(job, policy, new D1CompleteStore(db, causeId), j => readSecDocumentBatch(j, archivingReader(env, ticker, causeId)));
+      const reader = archivingReader(env, ticker, causeId);
+      // A quarter whose earnings release is out is published from the release, ahead of its 10-Q.
+      const { flow, ...result } = await collectComplete(job, policy, new D1CompleteStore(db, causeId), j => readSecDocumentBatch(j, reader), (j, previous) => readReleaseQuarter(j, previous, reader));
       // A newest quarter no structure balanced asks for a judgement (presentation-task.ts); the publication stands meanwhile.
       if (result.published && degraded([...(flow?.quarters ?? [])].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd))[0])) await emit(env, [{ type: "presentation.unresolved", ticker, cik: job.cik, causeId }]);
       const after = await latestJob(db, ticker);

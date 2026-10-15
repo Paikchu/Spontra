@@ -48,8 +48,8 @@ const m = messages({
   lastYear: "last year", lastQuarter: "last quarter", yearAgo: "Year ago", lastQuarterPeriod: "Last quarter",
   companyBusinesses: "Company businesses", businesses: "Businesses", allBusinesses: "All businesses", totalRevenue: "Total revenue",
   topLevelCount: (n: number) => `Total revenue · ${n} top-level ${n === 1 ? "business" : "businesses"}`,
-  shareBeforeEliminations: "Share of segment revenue before reconciling items", share: "Share of revenue",
-  reconciliation: (currency: string) => `Revenue reconciliation · ${currency} millions`, segmentTotal: "Segment revenue (before reconciling items)", consolidated: "Consolidated revenue",
+  shareBeforeEliminations: "Share of segment revenue before adjustments", share: "Share of revenue",
+  reconciliation: (currency: string) => `Revenue reconciliation · ${currency} millions`, segmentTotal: "Segment revenue (before adjustments)", consolidated: "Consolidated revenue",
   findingStage: (ticker: string, title: string) => `${ticker} finding: ${title}`, flowStage: (ticker: string) => `${ticker} revenue to profit flow`,
   revenueThisQuarter: "Revenue this quarter", ofParent: (share: string, parent: string) => `${share} of ${parent}`, topLevel: "Top-level business",
   companyRevenue: "Total company revenue", gross: "Gross profit", operating: "Operating income", pretax: "Income before taxes", netLoss: "Net loss", net: "Net income",
@@ -202,7 +202,7 @@ function highlightValue(v: number | null, r: ResolvedValue, ref: ResolvedEvidenc
   if (r.unit === "USD") return compactFlowValue(v, { currency: r.currency ?? "USD", scale: 1 } as BusinessFlowQuarter);
   if (r.unit === "percent") return percent(v);
   const locale = getLocale();
-  if (r.unit === "per_share") return locale === "en" ? `$${v.toFixed(2)}` : perShare(v, r.currency ?? "USD", locale);
+  if (r.unit === "per_share") return locale === "en" && (r.currency ?? "USD") === "USD" ? `$${v.toFixed(2)}` : perShare(v, r.currency ?? "USD", locale);
   if (r.unit === "shares") return locale === "en" ? `${(v / 1e6).toFixed(0)}M` : compactShares(v, locale);
   return ratioForm(ref) === "percent" ? percent(v * 100) : multiple(v.toFixed(2), locale);
 }

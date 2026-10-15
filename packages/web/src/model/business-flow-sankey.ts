@@ -12,7 +12,7 @@ const m = messages({
  revenueReported: "Revenue (as reported)", totalExpenses: "Total expenses", allExpenses: "Operating expenses", direct: "Cost of products and services",
  adminOther: "G&A, amortization and restructuring", grossLoss: "Gross loss", operatingLoss: "Operating loss", pretaxLoss: "Loss before taxes", netLoss: "Net loss",
  taxBenefit: "Income tax benefit", reversal: (label: string) => `${label} reversal`, otherExpense: "Other expense, net", otherIncome: "Other income, net",
- segmentTotal: "Segment revenue (before reconciling items)", segmentTotalFormula: "Sum of disclosed segment revenue (before reconciling items)",
+ segmentTotal: "Segment revenue (before adjustments)", segmentTotalFormula: "Sum of disclosed segment revenue (before adjustments)",
 }, {
  revenueReported: "营收（披露值）", totalExpenses: "总费用", allExpenses: "营业费用", direct: "产品与服务成本",
  adminOther: "管理、摊销及重组费用", grossLoss: "毛亏损", operatingLoss: "营业亏损", pretaxLoss: "税前亏损", netLoss: "净亏损",

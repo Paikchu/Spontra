@@ -2,7 +2,7 @@ import type {RevenueHistory, RevenueHistoryQuarter} from '../../../../shared/ana
 import {historyQuarterFrom, mergeHistory, readHistory, revenueHistorySchema, validHistoryQuarter} from '../../../../shared/analysis-runtime/financial-data/history.ts';
 import {D1SecRepository} from '../sec/d1.ts';
 import {extractVerifiedCurrentQuarters, readReportedFacts, type DocumentSource, type Fact} from './parser.ts';
-import {readFilingDocuments, type SecReader} from './provider.ts';
+import {readFilingDocuments, reportsFinancials, type SecReader} from './provider.ts';
 import {extractRevenueHistory, REVENUE_PARSER_VERSION} from './revenue-parser.ts';
 
 /**
@@ -13,13 +13,13 @@ import {extractRevenueHistory, REVENUE_PARSER_VERSION} from './revenue-parser.ts
 export const HISTORY_VERSION = 'revenue-history.v6:' + REVENUE_PARSER_VERSION;
 export const historyKey = (cik: string) => `sec:revenue-history:v1:${cik}`;
 const cursorKey = (cik: string) => `sec:revenue-history-cursor:v1:${cik}`;
-const REFRESH_MS = 86400000, LOOKBACK_DAYS = 1185, MAX_DOCUMENTS = 32, MAX_DOCUMENT_ATTEMPTS = 3;
+const REFRESH_MS = 86400000, LOOKBACK_DAYS = 1185, MAX_DOCUMENTS = 32, MAX_LISTED = 400, NOTICES_PER_STEP = 12, MAX_DOCUMENT_ATTEMPTS = 3;
 
 type HistoryDocument = {url: string; accession: string; filedAt: string; periodEnd: string; form: string};
-type HistoryCursor = {version: string; ticker: string; industry: DocumentSource['industry']; documents: HistoryDocument[]; index: number; facts: Fact[]; issues: string[]; attempts?: Record<string, number>; partial?: boolean; startedAt: string; finishedAt?: string};
+type HistoryCursor = {version: string; ticker: string; industry: DocumentSource['industry']; documents: HistoryDocument[]; index: number; reports?: number; facts: Fact[]; issues: string[]; attempts?: Record<string, number>; partial?: boolean; startedAt: string; finishedAt?: string};
 export type HistoryStepResult = {ticker: string; documents: number; finished: boolean; quarters: number; issues: string[]; partial?: boolean; retry?: {accession: string; attempts: number; remaining: number}; resolvedIssues?: string[]};
 
-const REVENUE_TAGS = new Set(['RevenueFromContractWithCustomerExcludingAssessedTax', 'Revenues', 'SalesRevenueNet', 'RevenuesNetOfInterestExpense']);
+const REVENUE_TAGS = new Set(['RevenueFromContractWithCustomerExcludingAssessedTax', 'Revenues', 'SalesRevenueNet', 'RevenuesNetOfInterestExpense', 'Revenue', 'RevenueFromContractsWithCustomers']);
 const local = (tag: string) => tag.split(':').at(-1)!;
 const span = (f: {start: string; end: string}) => (Date.parse(f.end) - Date.parse(f.start)) / 86400000;
 const factKey = (f: Fact) => [f.tag, f.currency, JSON.stringify(Object.entries(f.dimensions).sort())].join('|');
@@ -49,14 +49,17 @@ async function listDocuments(cik: string, reader: SecReader, now: Date): Promise
   const recent = data.filings?.recent;
   if (!recent) throw new Error('Missing submissions');
   const sic = Number(data.sic), industry = sic >= 6300 && sic < 6500 ? 'insurance' : sic >= 6000 && sic < 6300 ? 'financial' : 'standard';
+  // 6-Ks are listed by date alone: most are notices, which the scan passes over without counting (reportsFinancials).
   const cutoff = now.getTime() - LOOKBACK_DAYS * 86400000, documents: HistoryDocument[] = [];
-  for (let i = 0; i < recent.form.length && documents.length < MAX_DOCUMENTS; i++) {
+  let counted = 0;
+  for (let i = 0; i < recent.form.length && counted < MAX_DOCUMENTS && documents.length < MAX_LISTED; i++) {
     const form = recent.form[i];
     if (!/^(?:10-[QK]|20-F|6-K)(?:\/A)?$/.test(form) && !(form === '8-K' && recent.items?.[i]?.includes('2.02'))) continue;
     if (Date.parse(recent.filingDate[i]) < cutoff) break;
     const accession = recent.accessionNumber[i], primary = recent.primaryDocument[i];
     if (!/^\d{10}-\d{2}-\d{6}$/.test(accession) || !/^[A-Za-z0-9_.-]+\.html?$/.test(primary)) continue;
     documents.push({url: `https://www.sec.gov/Archives/edgar/data/${Number(cik)}/${accession.replaceAll('-', '')}/${primary}`, accession, filedAt: recent.filingDate[i], periodEnd: recent.reportDate[i], form});
+    if (!/^6-K/.test(form)) counted++;
   }
   return {documents, industry};
 }
@@ -96,18 +99,28 @@ export async function runHistoryStep(db: D1Database, reader: SecReader, target: 
     cursor = {version: HISTORY_VERSION, ticker: target.ticker, industry: listing.industry, documents: listing.documents, index: 0, facts: [], issues: [], startedAt: now.toISOString()};
   }
   if(!cursor.documents.length&&!cursor.issues.includes('NO_SUPPORTED_FILINGS'))cursor.issues.push('NO_SUPPORTED_FILINGS');
-  const incoming: RevenueHistoryQuarter[] = [], selected = cursor.documents.slice(cursor.index, cursor.index + maxDocuments);
+  const incoming: RevenueHistoryQuarter[] = [];
   const resolvedIssues: string[] = [];
-  let attempted = 0, retry: HistoryStepResult['retry'];
+  let attempted = 0, notices = 0, retry: HistoryStepResult['retry'];
   cursor.attempts ??= {};
-  for (const document of selected) {
-    attempted++;
+  while (cursor.index < cursor.documents.length && (cursor.reports ?? 0) < MAX_DOCUMENTS && attempted < maxDocuments && notices < NOTICES_PER_STEP) {
+    const document = cursor.documents[cursor.index];
     const temporaryIssue = `${document.accession}:SOURCE_TEMPORARILY_UNAVAILABLE`;
+    let reading = false;
     try {
       // Commit a filing's facts only after all linked exhibits have been read and archived.
       // Otherwise a partial success followed by an R2 error would duplicate facts on retry.
       const documentQuarters: RevenueHistoryQuarter[] = [], documentFacts: Fact[] = [], documentIssues: string[] = [];
-      for (const content of await readFilingDocuments(document.url, reader, document.accession)) {
+      const contents = await readFilingDocuments(document.url, reader, document.accession, document.form);
+      // A 6-K notice (monthly revenue, board, dividend) is archived but neither parsed, counted nor reported as an issue.
+      if (!reportsFinancials(document.form, contents[0].html)) {
+        await reader.archive?.({url: contents[0].url, accession: document.accession, filedAt: document.filedAt, cik: target.cik, industry: cursor.industry}, contents[0].html, {form: document.form, reportDate: document.periodEnd});
+        delete cursor.attempts[document.accession];
+        cursor.index++; notices++;
+        continue;
+      }
+      attempted++; reading = true;
+      for (const content of contents) {
         const revenueStructure = /<ix:nonFraction/i.test(content.html) ? await reader.revenueStructure?.(content.url, document.accession) ?? null : null;
         const source: DocumentSource = {url: content.url, accession: document.accession, filedAt: document.filedAt, cik: target.cik, industry: cursor.industry, ...(content.memberLabels ? {memberLabels: content.memberLabels} : {}), ...(revenueStructure ? {revenueStructure} : {})};
         await reader.archive?.(source, content.html, {form: document.form, reportDate: document.periodEnd});
@@ -124,8 +137,10 @@ export async function runHistoryStep(db: D1Database, reader: SecReader, target: 
       if (cursor.issues.includes(temporaryIssue)) resolvedIssues.push(temporaryIssue);
       cursor.issues = [...new Set([...cursor.issues.filter(issue => issue !== temporaryIssue), ...(documentQuarters.length ? [] : documentIssues)])].slice(-40);
       delete cursor.attempts[document.accession];
+      cursor.reports = (cursor.reports ?? 0) + 1;
       cursor.index++;
     } catch {
+      if (!reading) attempted++;
       const attempts = (cursor.attempts[document.accession] ?? 0) + 1;
       cursor.attempts[document.accession] = attempts;
       if (attempts < MAX_DOCUMENT_ATTEMPTS) {
@@ -139,7 +154,7 @@ export async function runHistoryStep(db: D1Database, reader: SecReader, target: 
       cursor.index++;
     }
   }
-  const finished = cursor.index >= cursor.documents.length;
+  const finished = cursor.index >= cursor.documents.length || (cursor.reports ?? 0) >= MAX_DOCUMENTS;
   if (finished && !cursor.finishedAt) { incoming.push(...deriveFourthQuarters(cursor.facts, target.cik)); cursor.finishedAt = now.toISOString(); cursor.facts = []; }
   const existing = historyForIssuer((await repository.getCache<unknown>(historyKey(target.cik)))?.payload, target.cik, target.ticker);
   const obtainedData = incoming.some(validHistoryQuarter);

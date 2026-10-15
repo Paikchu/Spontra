@@ -1,3 +1,4 @@
+import { SEC_DOCUMENT_MAX_BYTES } from "../../../../shared/analysis-runtime/financial-data/limits.ts";
 import type { BusinessFlowQuarter, PublicBusinessFlow } from '../../../../shared/analysis-contract/business-flow.ts';
 import type { PublicCapitalStructure } from '../../../../shared/analysis-contract/capital-structure.ts';
 import { checkCompleteQuarter } from '../../../../shared/analysis-runtime/financial-data/completeness.ts';
@@ -71,7 +72,7 @@ function reportCandidates(audits: StoredAudit[], flow: PublicBusinessFlow): Stor
   const candidates = audits.filter(r => {
     try {
       const url = new URL(r.source.documentUrl), cik = url.pathname.match(/^\/Archives\/edgar\/data\/(\d+)\//)?.[1];
-      return r.rawKey?.startsWith('financial-disclosures/') && r.sourceBytes > 0 && r.sourceBytes <= 12_000_000
+      return r.rawKey?.startsWith('financial-disclosures/') && r.sourceBytes > 0 && r.sourceBytes <= SEC_DOCUMENT_MAX_BYTES
         && /^10-[QK](?:\/A)?$|^[86]-K$/.test(r.source.form) && /^\d{10}-\d{2}-\d{6}$/.test(r.source.accessionNumber)
         && Date.parse(r.source.filedAt) > cutoff.getTime() && url.protocol === 'https:' && url.hostname === 'www.sec.gov'
         && !url.username && !url.password && !!cik && Number(cik) === Number(issuer);
@@ -86,7 +87,7 @@ function reportCandidates(audits: StoredAudit[], flow: PublicBusinessFlow): Stor
 function thirdQuarterReport(audits: StoredAudit[], annual: StoredAudit): StoredAudit | null {
   if (!/^10-K/.test(annual.source.form)) return null;
   return audits.filter(r => /^10-Q/.test(r.source.form) && issuerOf(r) === issuerOf(annual) && r.rawKey?.startsWith('financial-disclosures/')
-    && r.sourceBytes > 0 && r.sourceBytes <= 12_000_000 && !/ex[-_]?99/i.test(r.source.documentUrl)
+    && r.sourceBytes > 0 && r.sourceBytes <= SEC_DOCUMENT_MAX_BYTES && !/ex[-_]?99/i.test(r.source.documentUrl)
     && daysBetween(r.source.reportDate, annual.source.reportDate) >= 70 && daysBetween(r.source.reportDate, annual.source.reportDate) <= 110)
     .sort((a, b) => b.source.filedAt.localeCompare(a.source.filedAt))[0] ?? null;
 }

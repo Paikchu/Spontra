@@ -1,3 +1,4 @@
+import {SEC_DOCUMENT_MAX_BYTES} from '../../../../shared/analysis-runtime/financial-data/limits.ts';
 import type {RevenueHistoryLeaf, RevenueHistoryLineage, RevenueHistoryQuarter} from '../../../../shared/analysis-contract/revenue-history.ts';
 import {historyQuarterFrom, mergeHistory, validHistoryQuarter} from '../../../../shared/analysis-runtime/financial-data/history.ts';
 import {parseSecBusinessFlow, type BusinessFact, type ParsedBusinessQuarter} from '../../../../shared/analysis-runtime/financial-data/business-flow-parser.ts';
@@ -111,10 +112,10 @@ export function parseOracleOfferingsHistory(html: string, source: HistorySource)
 
 /** Income-statement publication gates must not discard independently reconciled revenue disclosure. */
 export function extractRevenueHistory(html: string, source: DocumentSource, form: string): {quarters: RevenueHistoryQuarter[]; issues: string[]} {
-  if (html.length > 12000000) return {quarters: [], issues: ['DOCUMENT_TOO_LARGE']};
+  if (html.length > SEC_DOCUMENT_MAX_BYTES) return {quarters: [], issues: ['DOCUMENT_TOO_LARGE']};
   const historySource: HistorySource = {accession: source.accession, url: source.url, filedAt: source.filedAt, form};
   const generic = extractDisclosedQuarters(html, source);
-  const revenueConcepts = new Set(['RevenueFromContractWithCustomerExcludingAssessedTax', 'Revenues', 'SalesRevenueNet', 'RevenuesNetOfInterestExpense']);
+  const revenueConcepts = new Set(['RevenueFromContractWithCustomerExcludingAssessedTax', 'Revenues', 'SalesRevenueNet', 'RevenuesNetOfInterestExpense', 'Revenue', 'RevenueFromContractsWithCustomers']);
   // Read original direct-quarter revenue facts in isolation. A conflicting or unsupported
   // expense/net fact has no bearing on whether the revenue total and its split reconcile.
   const revenueFacts = readReportedFacts(html, source).facts.filter(fact => revenueConcepts.has(fact.tag.split(':').at(-1)!));

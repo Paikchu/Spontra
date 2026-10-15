@@ -57,11 +57,12 @@ test("a line the calculation subtracts enters with its sign", () => {
   assert.deepEqual(q.revenueAdjustments?.map(a => [a.name, Number(a.amount.value) / 1e6, a.amount.basis]), [["Sales incentives", -10, "derived"]]);
 });
 
-test("consolidation items reported against revenue (corporate, reconciling items) close the split as the filing reports them", () => {
+test("a bank's managed-basis segments reach reported revenue with its corporate line and reconciling items", () => {
   const consolidation = (member: string, value: number) => fact("us-gaap:Revenues", value, { "srt:ConsolidationItemsAxis": member });
   const q = split([fact("us-gaap:Revenues", 57347), segment("us-gaap:Revenues", "x:ConsumerMember", 20272), segment("us-gaap:Revenues", "x:CommercialMember", 24853), segment("us-gaap:Revenues", "x:WealthMember", 6851),
     consolidation("us-gaap:CorporateNonSegmentMember", 6046), consolidation("us-gaap:MaterialReconcilingItemsMember", -675)], null);
-  assert.deepEqual(q.revenueAdjustments?.map(a => [a.id, Number(a.amount.value) / 1e6]), [["CorporateNonSegmentMember", 6046], ["MaterialReconcilingItemsMember", -675]]);
+  assert.deepEqual(q.segments.map(s => [s.id, Number(s.revenue.value) / 1e6]), [["x:ConsumerMember", 20272], ["x:CommercialMember", 24853], ["x:WealthMember", 6851], ["corporate", 6046]]);
+  assert.deepEqual(q.revenueAdjustments?.map(a => [a.id, a.name, Number(a.amount.value) / 1e6]), [["reconciling-items", "Reconciling items", -675]]);
 });
 
 test("one axis shown in two tables is two splits; of two balanced splits the more detailed is taken, with no list of members", () => {

@@ -18,7 +18,7 @@ const m = messages({
   noYearAgo: "No comparable year-ago quarter", noPrior: "No comparable prior quarter", outlook: "Management outlook", guidanceIssued: (date: string) => `Guidance · ${date}`,
   pp: " pp", yearAgo: "Year ago", priorQuarter: "Prior quarter", thisQuarter: "This quarter",
   bridgeLabel: (subject: string, from: string, to: string) => `${subject} change, ${from} to ${to}`, changeHead: "Change", contribution: "Contribution",
-  otherCurrency: "Other reporting currency", notDisclosed: "Not disclosed", notReported: "Not reported", afterEliminations: "Consolidated revenue after reconciling items",
+  otherCurrency: "Other reporting currency", notDisclosed: "Not disclosed", notReported: "Not reported", afterEliminations: "Consolidated revenue after adjustments",
   segmentsAsReported: "Segments as reported", totalOnly: "Total revenue only", guidanceAria: (low: string, high: string) => `, guidance ${low}–${high}`,
   businessRevenue: "Business revenue", totalRevenue: "Total revenue", guidanceDerived: "Guidance (from growth rate)", guidance: "Guidance",
   aboveRange: "Above range", belowRange: "Below range", withinRange: "Within range", issued: (date: string) => `Issued ${date}`, derivedQ4: "Derived Q4 · ",

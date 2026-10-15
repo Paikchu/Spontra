@@ -10,7 +10,7 @@ import { qoqLabel } from "@/shared/analysis-runtime/locale";
 
 const m = messages({
   grossMargin: "Gross margin", operatingMargin: "Operating margin", pretaxMargin: "Pretax margin", netMargin: "Net margin",
-  shareBeforeEliminations: "Share of segment revenue before reconciling items", share: "Share of revenue", na: "n/a", pp: "pp",
+  shareBeforeEliminations: "Share of segment revenue before adjustments", share: "Share of revenue", na: "n/a", pp: "pp",
   netIncome: "Net income", flow: "Revenue and profit flow", chart: (period: string, currency: string) => `Revenue to net income, ${period}, ${currency}`,
   revenue: "Revenue", operating: "Operating income", millions: (currency: string) => `${currency} millions · `,
   other: "Other income (expense)", totalExpenses: "Total disclosed expenses", netRevenue: "Net revenue",

@@ -21,7 +21,7 @@ export function formatFigure(value: number, unit: ValueUnit, currency: string | 
   if (unit === "USD") return compactMoney(value, currency, locale);
   if (unit === "percent") return `${Number(value.toFixed(1))}%`;
   if (unit === "points") return `${value > 0 ? "+" : value < 0 ? "−" : ""}${Math.abs(value).toFixed(1)}${pp(locale)}`;
-  if (unit === "per_share") return locale === "en" ? `$${value.toFixed(2)}` : perShare(value, "USD", locale);
+  if (unit === "per_share") return locale === "en" && (currency ?? "USD") === "USD" ? `$${value.toFixed(2)}` : perShare(value, currency ?? "USD", locale);
   if (unit === "ratio") return ref && ratioForm(ref) === "percent" ? `${Number((value * 100).toFixed(1))}%` : multiple(String(Number(value.toFixed(2))), locale);
   return String(Number(value.toFixed(2)));
 }
