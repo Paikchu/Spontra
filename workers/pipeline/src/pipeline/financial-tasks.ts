@@ -7,7 +7,7 @@ import { companyPolicyEnvironment } from "../financial-data/company-policy.ts";
 import { archiveFilingDisclosures, readArchivedDocument, refreshStaleProjections } from "../financial-data/disclosure-audit.ts";
 import { HISTORY_VERSION, runHistoryStep } from "../financial-data/history.ts";
 import { SEC_FLOW_PARSER_VERSION } from "../financial-data/parser.ts";
-import { discoverDataIssuer, readSecDocumentBatch, throttledSecReader, type SecReader } from "../financial-data/provider.ts";
+import { discoverDataIssuer, readReleaseQuarter, readSecDocumentBatch, throttledSecReader, type SecReader } from "../financial-data/provider.ts";
 import { filingMemberLabels } from "../financial-data/member-labels.ts";
 import { claimJobFor, latestJob, startCollection } from "../financial-data/queue.ts";
 import { D1CompleteStore } from "../financial-data/store.ts";
@@ -61,7 +61,9 @@ export const FINANCIAL_TASKS = {
         job = await claimJobFor(db, ticker, now);
         if (!job) return { status: "done", detail: { skipped: "collection owned elsewhere" } };
       }
-      const result = await collectComplete(job, policy, new D1CompleteStore(db, causeId), j => readSecDocumentBatch(j, archivingReader(env, ticker, causeId)));
+      const reader = archivingReader(env, ticker, causeId);
+      // A quarter whose earnings release is out is published from the release, ahead of its 10-Q.
+      const result = await collectComplete(job, policy, new D1CompleteStore(db, causeId), j => readSecDocumentBatch(j, reader), (j, previous) => readReleaseQuarter(j, previous, reader));
       const after = await latestJob(db, ticker);
       if (after && ["queued", "retry"].includes(after.status)) return { status: "later", afterMs: until(after.next_attempt_at, now), detail: result };
       if (after?.status === "unavailable" && after.reasons_json?.includes("SOURCE_TEMPORARILY_UNAVAILABLE")) {

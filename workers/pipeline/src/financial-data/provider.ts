@@ -1,8 +1,11 @@
 import type {Job} from './store.ts';
 import type {DocumentBatch} from './collect.ts';
-import {extractDisclosedQuarters, readReportedFacts, SEC_FLOW_PARSER_VERSION, type Fact, type DocumentSource} from './parser.ts';
+import {extractDisclosedQuarters, hasDisclosureProfile, readReportedFacts, SEC_FLOW_PARSER_VERSION, type Fact, type DocumentSource} from './parser.ts';
 import {priorPresentationOnly,reviewedCurrentPair} from './period-review.ts';
 import {namesMembers} from './member-labels.ts';
+import {SEC_DOCUMENT_MAX_BYTES} from '../../../../shared/analysis-runtime/financial-data/limits.ts';
+import {releaseQuarter} from '../../../../shared/analysis-runtime/financial-data/earnings-release.ts';
+import type {BusinessFlowQuarter} from '../../../../shared/analysis-contract/business-flow.ts';
 export interface SecReader {
  read(url:string):Promise<Response>;
  /** Persist exact bytes and all encountered facts independently of the chart projection. */
@@ -24,14 +27,14 @@ export function throttledSecReader(userAgent:string,fetcher:typeof fetch=fetch,d
  return {read:async(url)=>{const parsed=new URL(url);if(parsed.protocol!=='https:'||!['www.sec.gov','data.sec.gov'].includes(parsed.hostname))throw new Error('Non-SEC source denied');const wait=Math.max(0,next-Date.now());next=Math.max(next,Date.now())+delayMs;if(wait)await new Promise(resolve=>setTimeout(resolve,wait));const response=await fetcher(url,{headers:{'user-agent':userAgent,accept:'application/json,text/html'},signal:AbortSignal.timeout(25000)});if([403,429].includes(response.status))throw new Error('SEC_ACCESS_PAUSED');if(!response.ok)throw new Error('SEC_SOURCE_UNAVAILABLE');return response;}};
 }
 async function readBoundedReport(response:Response):Promise<string>{
- if(Number(response.headers.get('content-length'))>12000000||!response.body)throw new Error('SEC_DOCUMENT_UNAVAILABLE');
+ if(Number(response.headers.get('content-length'))>SEC_DOCUMENT_MAX_BYTES||!response.body)throw new Error('SEC_DOCUMENT_UNAVAILABLE');
  const reader=response.body.getReader(),decoder=new TextDecoder(),parts:string[]=[];let bytes=0;
- try{while(true){const part=await reader.read();if(part.done)break;bytes+=part.value.byteLength;if(bytes>12000000){await reader.cancel();throw new Error('SEC_DOCUMENT_UNAVAILABLE');}parts.push(decoder.decode(part.value,{stream:true}));}parts.push(decoder.decode());}finally{reader.releaseLock();}
+ try{while(true){const part=await reader.read();if(part.done)break;bytes+=part.value.byteLength;if(bytes>SEC_DOCUMENT_MAX_BYTES){await reader.cancel();throw new Error('SEC_DOCUMENT_UNAVAILABLE');}parts.push(decoder.decode(part.value,{stream:true}));}parts.push(decoder.decode());}finally{reader.releaseLock();}
  const html=canonicalSecHtml(parts.join(''));if(!html.trim())throw new Error('SEC_DOCUMENT_UNAVAILABLE');return html;
 }
 async function readDocument(url:string,reader:SecReader):Promise<string>{
  const stored=await reader.archived?.(url);if(stored)return stored;
- const response=await reader.read(url);if(Number(response.headers.get('content-length'))>12000000)throw new Error('Document too large');
+ const response=await reader.read(url);if(Number(response.headers.get('content-length'))>SEC_DOCUMENT_MAX_BYTES)throw new Error('Document too large');
  return readBoundedReport(response);
 }
 /** A filing's primary document plus at most two same-filing Exhibit 99 documents, each size-bounded; archived ones are not downloaded again. */
@@ -46,20 +49,27 @@ export async function readFilingDocuments(primaryUrl:string,reader:SecReader,acc
  candidates.push(...[...html.matchAll(/href\s*=\s*["']([^"']+)["']/gi)].map(m=>m[1]).filter(path=>/ex[-_]?99/i.test(path)));
  const exhibits=[...new Set(candidates.map(path=>{try{return new URL(path,primaryUrl);}catch{return null;}})
   .filter((url):url is URL=>!!url&&url.href.startsWith(folder)&&url.href!==primaryUrl&&!url.search&&!url.hash&&/^[A-Za-z0-9_.-]+\.html?$/i.test(url.pathname.split('/').at(-1)!)).map(url=>url.href))].slice(0,2);
- for(const url of exhibits){const body=await readDocument(url,reader);if(documents.reduce((n,d)=>n+d.html.length,0)+body.length>16000000)throw new Error('SEC_DOCUMENT_UNAVAILABLE');documents.push({url,html:body});}
+ for(const url of exhibits){const body=await readDocument(url,reader);if(documents.reduce((n,d)=>n+d.html.length,0)+body.length>SEC_DOCUMENT_MAX_BYTES+4000000)throw new Error('SEC_DOCUMENT_UNAVAILABLE');documents.push({url,html:body});}
  // One label set covers the filing; only a document that names members needs it.
  if(accession&&reader.memberLabels&&documents.some(d=>namesMembers(d.html))){const labels=await reader.memberLabels(primaryUrl,accession);for(const d of documents)if(namesMembers(d.html))d.memberLabels=labels;}
  return documents;
 }
 export async function readSecDocumentBatch(job:Job,reader:SecReader,maxDocuments=2):Promise<DocumentBatch>{
- const cik=job.cik;if(!/^\d{10}$/.test(cik))throw new Error('Invalid CIK');const cursor=JSON.parse(job.cursor||'{}') as {documents?:Array<{url:string;accession:string;filedAt:string;periodEnd:string;form?:string}>;index?:number;industry?:DocumentSource['industry'];expectedPeriodEnd?:string;parserVersion?:string;reportedFacts?:Fact[];reviewDocuments?:Array<{source:DocumentSource;eligible:boolean}>;reviewRequired?:boolean;foreign?:boolean};
- if(cursor.parserVersion!==SEC_FLOW_PARSER_VERSION){cursor.index=0;cursor.parserVersion=SEC_FLOW_PARSER_VERSION;delete cursor.reportedFacts;delete cursor.reviewDocuments;delete cursor.reviewRequired;delete cursor.documents;}
+ const cik=job.cik;if(!/^\d{10}$/.test(cik))throw new Error('Invalid CIK');const cursor=JSON.parse(job.cursor||'{}') as {release?:{url:string;accession:string;filedAt:string};documents?:Array<{url:string;accession:string;filedAt:string;periodEnd:string;form?:string}>;index?:number;industry?:DocumentSource['industry'];expectedPeriodEnd?:string;parserVersion?:string;reportedFacts?:Fact[];reviewDocuments?:Array<{source:DocumentSource;eligible:boolean}>;reviewRequired?:boolean;foreign?:boolean};
+ if(cursor.parserVersion!==SEC_FLOW_PARSER_VERSION){cursor.index=0;cursor.parserVersion=SEC_FLOW_PARSER_VERSION;delete cursor.reportedFacts;delete cursor.reviewDocuments;delete cursor.reviewRequired;delete cursor.documents;delete cursor.release;}
  if(!cursor.documents){
   const response=await reader.read(`https://data.sec.gov/submissions/CIK${cik}.json`);const data=await response.json() as {cik:string|number;sic?:string;filings?:{recent?:{form:string[];accessionNumber:string[];primaryDocument:string[];filingDate:string[];reportDate:string[];items?:string[]}}};if(String(data.cik).padStart(10,'0')!==cik)throw new Error('Issuer identity mismatch');const recent=data.filings?.recent;if(!recent)throw new Error('Missing submissions');cursor.foreign=recent.form.some(form=>/^20-F/.test(form))&&!recent.form.some(form=>/^10-[QK]/.test(form));cursor.expectedPeriodEnd=cursor.foreign?undefined:recent.form.map((form,i)=>/^10-[QK](\/A)?$/.test(form)?recent.reportDate[i]:'').filter(v=>/^\d{4}-\d{2}-\d{2}$/.test(v)).sort().at(-1);const sic=Number(data.sic);cursor.industry=sic>=6300&&sic<6500?'insurance':sic>=6000&&sic<6300?'financial':'standard';cursor.documents=[];
   for(let i=0;i<recent.form.length&&cursor.documents.length<(cursor.foreign?32:10);i++){
    if(!/^(?:10-[QK]|20-F)(\/A)?$/.test(recent.form[i])&&!(cursor.foreign&&recent.form[i]==='6-K')&&!(recent.form[i]==='8-K'&&recent.items?.[i]?.includes('2.02')))continue;const accession=recent.accessionNumber[i],doc=recent.primaryDocument[i];if(!/^\d{10}-\d{2}-\d{6}$/.test(accession)||!/^[A-Za-z0-9_.-]+\.html?$/.test(doc))continue;
    const folder=`https://www.sec.gov/Archives/edgar/data/${Number(cik)}/${accession.replaceAll('-','')}/`;
    cursor.documents.push({url:folder+doc,accession,filedAt:recent.filingDate[i],periodEnd:recent.reportDate[i],form:recent.form[i]});
+  }
+  // An earnings release filed after the newest quarterly report reports a quarter no report covers yet. It is read on
+  // its own once the verified pair is known (readReleaseQuarter), never among the reports that verify that pair.
+  if(!cursor.foreign&&!hasDisclosureProfile(cik)){
+   const periodic=cursor.documents.filter(d=>d.form!=='8-K').map(d=>d.filedAt).sort().at(-1)??'';
+   const release=cursor.documents.filter(d=>d.form==='8-K'&&d.filedAt>periodic).sort((a,b)=>b.filedAt.localeCompare(a.filedAt))[0];
+   if(release){cursor.release={url:release.url,accession:release.accession,filedAt:release.filedAt};cursor.documents=cursor.documents.filter(d=>!(d.form==='8-K'&&d.filedAt>periodic));}
   }
   // The current statement and its adjacent filing provide the cumulative bridge.
   // Preserve Oracle's existing earnings-exhibit profile order.
@@ -86,6 +96,19 @@ export async function readSecDocumentBatch(job:Job,reader:SecReader,maxDocuments
  }
 
  cursor.index=index+selected.length;if(cursor.reviewRequired&&cursor.index>=cursor.documents.length)throw new Error('RESTATEMENT_REVIEW_REQUIRED');return {quarters,nextCursor:JSON.stringify(cursor),finished:cursor.index>=cursor.documents.length,expectedPeriodEnd:cursor.expectedPeriodEnd};
+}
+
+/**
+ * The quarter after `previous` from the earnings release the job found filed after the newest quarterly report, or
+ * null. The release is read the same way every time (an archived copy stands in for the download), so a retried
+ * publication reaches the same quarter.
+ */
+export async function readReleaseQuarter(job:Job,previous:BusinessFlowQuarter,reader:SecReader):Promise<{quarter:BusinessFlowQuarter|null;issues:string[]}>{
+ const release=(JSON.parse(job.cursor||'{}') as {release?:{url:string;accession:string;filedAt:string}}).release;
+ if(!release)return {quarter:null,issues:[]};
+ const documents=await readFilingDocuments(release.url,reader,release.accession);
+ const result=releaseQuarter(documents.map(d=>({url:d.url,html:d.html})),previous,{accession:release.accession,filedAt:release.filedAt,parserVersion:SEC_FLOW_PARSER_VERSION});
+ return result.quarter&&result.quarter.periodEnd>previous.periodEnd?result:{quarter:null,issues:result.issues};
 }
 
 export async function discoverDataIssuer(ticker:string,reader:SecReader):Promise<{cik:string;tickers:string[];name:string;industry:'unknown'}>{

@@ -1,3 +1,4 @@
+import { SEC_DOCUMENT_MAX_BYTES } from "../../../../shared/analysis-runtime/financial-data/limits.ts";
 import {extractFinancialStatements, STATEMENTS_VERSION, type FinancialStatements} from "../../../../shared/analysis-runtime/financial-data/financial-statements.ts";
 import { DISCLOSURE_EXTRACTION_VERSION, extractFilingDisclosures, type FilingDisclosures } from "../../../../shared/analysis-runtime/financial-data/disclosure-extraction.ts";
 import type { DisclosureAuditSummary, DisclosureAuditPage } from "../../../../shared/analysis-contract/disclosure-audit.ts";
@@ -33,7 +34,7 @@ export async function archiveFilingDisclosures(env: DisclosureArchiveEnv, ticker
   const url = new URL(source.url);
   if (url.protocol !== "https:" || url.hostname !== "www.sec.gov" || !url.pathname.startsWith("/Archives/edgar/data/")) throw new Error("INVALID_DISCLOSURE_SOURCE");
   const sourceBytes = new TextEncoder().encode(html).byteLength;
-  if (!sourceBytes || sourceBytes > 12_000_000) throw new Error("DISCLOSURE_DOCUMENT_TOO_LARGE");
+  if (!sourceBytes || sourceBytes > SEC_DOCUMENT_MAX_BYTES) throw new Error("DISCLOSURE_DOCUMENT_TOO_LARGE");
   const [contentSha256, documentId] = await Promise.all([digest(html), digest(source.url)]);
   const repository = new D1SecRepository(env.DB);
   const cacheKey = disclosureAuditPrefix(ticker) + documentId;

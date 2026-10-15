@@ -5,7 +5,21 @@ import { checkCompleteFlow, newestPair } from '../../../../shared/analysis-runti
 import type { CompleteStore, Job } from './store.ts';
 /** Explicit dependencies prevent model/analysis/memory dispatch from entering this task. */
 export interface DocumentBatch {quarters:BusinessFlowQuarter[];nextCursor:string;finished:boolean;expectedPeriodEnd?:string;}
-export async function collectComplete(job:Job,policy:FinancialPolicy,store:CompleteStore,readBatch:(job:Job)=>Promise<DocumentBatch>):Promise<{published:boolean;reasons:string[]}>{
+/** The quarter an earnings release reports after the verified pair's newest quarter, when there is one. */
+export type ReadRelease=(job:Job,previous:BusinessFlowQuarter)=>Promise<{quarter:BusinessFlowQuarter|null;issues:string[]}>;
+export async function collectComplete(job:Job,policy:FinancialPolicy,store:CompleteStore,readBatch:(job:Job)=>Promise<DocumentBatch>,readRelease?:ReadRelease):Promise<{published:boolean;reasons:string[];release?:{periodEnd:string|null;issues:string[]}}>{
+ // The verified pair publishes as it is unless a newer earnings release passes the same gate on top of its newest quarter;
+ // a release that cannot be read leaves the verified pair, and the 10-Q brings the quarter later.
+ const publish=async(at:Job,flow:PublicBusinessFlow)=>{
+  if(readRelease&&flow.quarters[0]){
+   try{const read=await readRelease(at,flow.quarters[0]);
+    const pair:PublicBusinessFlow={...flow,quarters:read.quarter?[read.quarter,flow.quarters[0]]:flow.quarters};
+    if(read.quarter&&checkCompleteFlow(pair).complete)return {published:await store.publish(at,pair),reasons:[],release:{periodEnd:read.quarter.periodEnd,issues:read.issues}};
+    if(read.issues.length)console.log(JSON.stringify({event:'earnings-release-not-used',ticker:at.ticker,issues:read.issues.slice(0,8)}));
+   }catch(error){console.log(JSON.stringify({event:'earnings-release-unreadable',ticker:at.ticker,error:error instanceof Error?error.message.slice(0,200):'unknown'}));}
+  }
+  return {published:await store.publish(at,flow),reasons:[]};
+ };
  if(!allowData(policy,job.ticker)){await store.defer({...job,attempt:3},['DATA_POLICY_DENIED'],job.cursor);return {published:false,reasons:['DATA_POLICY_DENIED']};}
  try{
   // Stop once the newest filing period and its comparable predecessor are fully verified;
@@ -13,13 +27,13 @@ export async function collectComplete(job:Job,policy:FinancialPolicy,store:Compl
   const stagedBefore=await store.staged(job);
   const expectedBefore=(JSON.parse(job.cursor||'{}') as {expectedPeriodEnd?:string}).expectedPeriodEnd;
   const existing:PublicBusinessFlow=newestPair({schemaVersion:'business-flow.v1',ticker:job.ticker,fetchedAt:new Date().toISOString(),quarters:stagedBefore});
-  if(expectedBefore&&existing.quarters[0]?.periodEnd===expectedBefore&&checkCompleteFlow(existing).complete)return {published:await store.publish(job,existing),reasons:[]};
+  if(expectedBefore&&existing.quarters[0]?.periodEnd===expectedBefore&&checkCompleteFlow(existing).complete)return publish(job,existing);
   const batch=await readBatch(job);for(const quarter of batch.quarters)await store.stage(job,quarter);
   const flow:PublicBusinessFlow=newestPair({schemaVersion:'business-flow.v1',ticker:job.ticker,fetchedAt:new Date().toISOString(),quarters:await store.staged(job)});
   const check=checkCompleteFlow(flow);
   if(!batch.finished&&!(batch.expectedPeriodEnd&&flow.quarters[0]?.periodEnd===batch.expectedPeriodEnd&&check.complete)){await store.defer(job,['PREPARING'],batch.nextCursor);return {published:false,reasons:['PREPARING']};}
   if(batch.expectedPeriodEnd&&flow.quarters[0]?.periodEnd!==batch.expectedPeriodEnd){await store.defer(job,['LATEST_PERIOD_NOT_COLLECTED'],batch.nextCursor);return {published:false,reasons:['LATEST_PERIOD_NOT_COLLECTED']};}
   if(!check.complete){await store.defer(job,check.reasons,batch.nextCursor);return {published:false,reasons:check.reasons};}
-  return {published:await store.publish({...job,cursor:batch.nextCursor},flow),reasons:[]};
+  return publish({...job,cursor:batch.nextCursor},flow);
  }catch(error){const code=error instanceof Error?error.message:'';const terminal=['RESTATEMENT_REVIEW_REQUIRED','SEC_FACT_FORMAT_UNSUPPORTED','NO_SUPPORTED_FILINGS'].includes(code);const reasons=[terminal||code==='SEC_ACCESS_PAUSED'?code:'SOURCE_TEMPORARILY_UNAVAILABLE'];await store.defer(terminal?{...job,attempt:3}:job,reasons,job.cursor);return {published:false,reasons};}
 }

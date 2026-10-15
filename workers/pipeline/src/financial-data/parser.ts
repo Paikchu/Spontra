@@ -1,3 +1,4 @@
+import {SEC_DOCUMENT_MAX_BYTES} from '../../../../shared/analysis-runtime/financial-data/limits.ts';
 import {readStatementTableFacts} from './statement-table.ts';
 import {parseSecBusinessFlow} from '../../../../shared/analysis-runtime/financial-data/business-flow-parser.ts';
 import {parseSecEarningsRelease} from '../../../../shared/analysis-runtime/financial-data/business-flow-release.ts';
@@ -11,7 +12,7 @@ import {readIncomeStatementCells} from '../../../../shared/analysis-runtime/fina
 export interface DocumentSource {url:string;accession:string;filedAt:string;cik:string;industry:'standard'|'financial'|'insurance'|'unknown';fiscalYear?:string;singleSegment?:boolean;
  /** The filing's labels for its dimension members (member-labels.ts); handed to each dimensional fact, not kept on its source. */
  memberLabels?:Record<string,string>;}
-export const SEC_FLOW_PARSER_VERSION='deterministic-sec.v11';
+export const SEC_FLOW_PARSER_VERSION='deterministic-sec.v12';
 /** Issuers read through a disclosure-specific profile; generic statement arithmetic would describe them in another scheme. */
 export const hasDisclosureProfile=(cik:string)=>cik==='0001341439';
 export interface Fact {source:DocumentSource;operands?:Fact[];formula?:string;precision:number;tag:string;value:number;currency:string;start:string;end:string;context:string;dimensions:Record<string,string>;
@@ -66,7 +67,7 @@ const expenseGroup=(f:Fact):'research'|'sales'|'administration'|'other'=>{const 
   :/^(?:SellingAndMarketingExpense|SellingExpense|MarketingExpense)$/.test(name)||/^(?:(?:sales|selling) and marketing|selling|marketing)$/i.test(label)?'sales'
   :name==='GeneralAndAdministrativeExpense'||/^general and administrative$/i.test(label)?'administration':'other';};
 function extractGenericQuarters(html:string,source:DocumentSource,supplemental:Fact[]=[],reviewVerified=false):{quarters:BusinessFlowQuarter[];issues:string[]}{
- const issues:string[]=[];if(html.length>12000000)return {quarters:[],issues:['DOCUMENT_TOO_LARGE']};
+ const issues:string[]=[];if(html.length>SEC_DOCUMENT_MAX_BYTES)return {quarters:[],issues:['DOCUMENT_TOO_LARGE']};
  if(!reviewVerified&&needsRestatementReview(html))issues.push('RESTATEMENT_REVIEW_REQUIRED');
  const reported=readReportedFacts(html,source);issues.push(...reported.issues);const buckets=new Map<string,Fact[]>();for(const fact of [...reported.facts,...supplemental]){const days=(Date.parse(fact.end)-Date.parse(fact.start))/86400000;if(days<70||days>110)continue;const key=[fact.start,fact.end,fact.currency].join('|');buckets.set(key,[...(buckets.get(key)??[]),fact]);}
  const fiscalFocus=source.fiscalYear??text(html.match(/<ix:nonNumeric[^>]*name=["']dei:DocumentFiscalYearFocus["'][^>]*>([\s\S]*?)<\/ix:nonNumeric>/i)?.[1]??'');
@@ -89,9 +90,24 @@ function extractGenericQuarters(html:string,source:DocumentSource,supplemental:F
   if(new Set(eliminationFacts.map(f=>f.value)).size>1)issues.push('CONFLICTING_REVENUE_ELIMINATIONS');
   const elimination=eliminationFacts.sort((a,b)=>b.precision-a.precision)[0];
   const revenueAdjustments:NonNullable<BusinessFlowQuarter['revenueAdjustments']>=elimination?[{id:'intersegment-eliminations',name:'Intersegment eliminations',amount:amount(elimination,'revenue-eliminations')}]:[];
+  // A bank reports its segments on a managed basis: they reach reported revenue only with its corporate line and the
+  // reconciling items, each a fact on the consolidation axis alone. Used only when the segments do not reconcile without them.
+  const consolidationOnly=(test:(member:string)=>boolean)=>facts.filter(f=>revenueNames.includes(local(f.tag))&&Object.entries(f.dimensions).length===1&&Object.entries(f.dimensions).some(([axis,member])=>local(axis)==='ConsolidationItemsAxis'&&test(local(member))));
+  const single=(list:Fact[],code:string)=>{if(new Set(list.map(f=>f.value)).size>1){issues.push(code);return undefined;}return list.sort((a,b)=>b.precision-a.precision)[0];};
+  const corporate=single(consolidationOnly(m=>m==='CorporateNonSegmentMember'),'CONFLICTING_CORPORATE_REVENUE');
+  const reconciling=single(consolidationOnly(m=>/ReconcilingItems?Member$/.test(m)&&!/eliminat/i.test(m)),'CONFLICTING_RECONCILING_ITEMS');
   const axes=new Map<string,Map<string,Fact>>();for(const f of facts){if(eliminationFacts.includes(f))continue;const entries=Object.entries(f.dimensions).filter(([axis,member])=>!(local(axis)==='ConsolidationItemsAxis'&&local(member)==='OperatingSegmentsMember'));if(!revenueNames.includes(local(f.tag))||entries.length!==1||!['StatementBusinessSegmentsAxis','ProductOrServiceAxis'].includes(local(entries[0][0])))continue;const [axis,member]=entries[0];if(source.cik==='0000769397'&&local(axis)==='ProductOrServiceAxis'&&!['ArchitectureEngineeringConstructionAndOperationsMember','AutoCADandAutoCADLTFamilyMember','ManufacturingMember','MediaAndEntertainmentMember','OtherMember'].includes(local(member)))continue;const axisKey=axis+'|'+Object.entries(f.dimensions).filter(([a])=>local(a)==='ConsolidationItemsAxis').map(([a,m])=>a+':'+m).join(',');const members=axes.get(axisKey)??new Map();const old=members.get(member);if(old&&old.precision>f.precision)continue;if(old&&old.precision===f.precision&&old.value!==f.value){issues.push('CONFLICTING_SEGMENT');continue;}members.set(member,f);axes.set(axisKey,members);}
-  let matching=[...axes.entries()].filter(([,group])=>figures.revenue&&near([...group.values()].reduce((sum,f)=>sum+f.value,0)+(elimination?.value??0),value('revenue')!)).map(([axis,group])=>({axis,group}));const detailed=matching.filter(m=>m.group.size>1);if(detailed.length)matching=detailed;const business=matching.filter(m=>local(m.axis.split('|')[0])==='StatementBusinessSegmentsAxis');if(business.length)matching=business;let segments:BusinessSegment[]=[];
-  if(matching.length>1)issues.push('AMBIGUOUS_REVENUE_AXIS');else if(matching.length===1)segments=[...matching[0].group].map(([member,f])=>({id:member,name:memberName(member,f.memberLabels),revenue:{...amount(f,'segment:'+member),comparabilityKey:f.tag.startsWith('table:')?'table-segment:'+source.accession+':'+member+':'+f.tag:/^\d{4}$/.test(fiscalFocus)?'deterministic-sec-segment:'+fiscalFocus+':'+member+':'+f.tag:null},description:'A segment or product and service category as the filing discloses it, named by the filing; products and customers are not inferred.',products:[],customers:null,monetization:null,disclosure:revenueAdjustments.length?'Segment revenue includes intersegment sales; eliminations are shown separately, and neither they nor consolidated expenses are allocated to segments.':'Revenue from the filing\'s segment disclosure; consolidated expenses are not allocated to segments.',sourceIds:[source.accession]}));// Non-reconciling department/management revenue is not substituted for GAAP consolidated revenue.
+  let matching=[...axes.entries()].filter(([,group])=>figures.revenue&&near([...group.values()].reduce((sum,f)=>sum+f.value,0)+(elimination?.value??0),value('revenue')!)).map(([axis,group])=>({axis,group}));
+  let managed=false;
+  if(!matching.length&&(corporate||reconciling)&&figures.revenue){
+   matching=[...axes.entries()].filter(([axis,group])=>local(axis.split('|')[0])==='StatementBusinessSegmentsAxis'&&group.size>1&&near([...group.values()].reduce((sum,f)=>sum+f.value,0)+(elimination?.value??0)+(corporate?.value??0)+(reconciling?.value??0),value('revenue')!)).map(([axis,group])=>({axis,group}));
+   if(matching.length===1){
+    managed=true;
+    if(corporate){if(corporate.value>=0)matching[0].group=new Map([...matching[0].group,['corporate',corporate]]);else revenueAdjustments.push({id:'corporate',name:'Corporate',amount:amount(corporate,'revenue-corporate')});}
+    if(reconciling)revenueAdjustments.push({id:'reconciling-items',name:'Reconciling items',amount:amount(reconciling,'revenue-reconciling-items')});
+   }
+  }const detailed=matching.filter(m=>m.group.size>1);if(detailed.length)matching=detailed;const business=matching.filter(m=>local(m.axis.split('|')[0])==='StatementBusinessSegmentsAxis');if(business.length)matching=business;let segments:BusinessSegment[]=[];
+  if(matching.length>1)issues.push('AMBIGUOUS_REVENUE_AXIS');else if(matching.length===1)segments=[...matching[0].group].map(([member,f])=>({id:member,name:member==='corporate'?'Corporate':memberName(member,f.memberLabels),revenue:{...amount(f,'segment:'+member),comparabilityKey:f.tag.startsWith('table:')?'table-segment:'+source.accession+':'+member+':'+f.tag:/^\d{4}$/.test(fiscalFocus)?'deterministic-sec-segment:'+fiscalFocus+':'+member+':'+f.tag:null},description:'A segment or product and service category as the filing discloses it, named by the filing; products and customers are not inferred.',products:[],customers:null,monetization:null,disclosure:managed?'Segment revenue as the filing manages it; the corporate line and the reconciling items to reported revenue are shown separately, and consolidated expenses are not allocated to segments.':revenueAdjustments.length?'Segment revenue includes intersegment sales; eliminations are shown separately, and neither they nor consolidated expenses are allocated to segments.':'Revenue from the filing\'s segment disclosure; consolidated expenses are not allocated to segments.',sourceIds:[source.accession]}));// Non-reconciling department/management revenue is not substituted for GAAP consolidated revenue.
 
   const expenses=financialExpenses;
   // Operating expense lines printed between cost of revenue (or gross profit) and operating income, used only when they add up to the operating expense total.

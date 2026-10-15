@@ -1,3 +1,4 @@
+import { SEC_DOCUMENT_MAX_BYTES } from "../../../../shared/analysis-runtime/financial-data/limits.ts";
 import { D1SecRepository } from '../sec/d1.ts';
 
 /**
@@ -60,7 +61,7 @@ export async function filingMemberLabels(db: D1Database, read: (url: string) => 
   let labels: Record<string, string>;
   try {
     const response = await read(folder + 'MetaLinks.json');
-    if (Number(response.headers.get('content-length')) > 12_000_000) return {};
+    if (Number(response.headers.get('content-length')) > SEC_DOCUMENT_MAX_BYTES) return {};
     labels = parseMemberLabels(await response.json());
   } catch (error) {
     if (error instanceof Error && error.message === 'SEC_ACCESS_PAUSED') throw error;
