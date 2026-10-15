@@ -1,7 +1,7 @@
 import type { PublicFilingPage } from "../../../../shared/analysis-contract/filings.ts";
 import { GLOSSARY_ZH } from "../../../../shared/analysis-runtime/glossary.ts";
 import type { Locale } from "../../../../shared/analysis-runtime/locale.ts";
-import { checkTranslation, collectProse, type TranslatedResource, type TranslationTable } from "../../../../shared/analysis-runtime/translation.ts";
+import { checkTranslation, collectProse, normalizeTranslation, type TranslatedResource, type TranslationTable } from "../../../../shared/analysis-runtime/translation.ts";
 import { reasoningFor } from "../ai-config.ts";
 import { readBusinessExplainerResponse } from "../business-explainer/workflow.ts";
 import { readBusinessTreeResponse } from "../business-tree/workflow.ts";
@@ -22,7 +22,8 @@ import { getPublicFiling, getPublicFilingPage } from "../sec/public-api.ts";
  * source, and writes one table per resource for the read API to apply. Strings are remembered across publications,
  * so a regenerated finding that kept a sentence costs nothing to translate again.
  */
-export const TRANSLATION_VERSION = "translate.v1";
+/** v2: the checker compares full values and accepts digits kept verbatim, so v1's false rejections are retried. */
+export const TRANSLATION_VERSION = "translate.v2";
 export const TRANSLATION_LOCALES: readonly Locale[] = ["zh-CN"];
 const LOCALE: Locale = "zh-CN";
 /** Model input per call; long report paragraphs travel alone. */
@@ -155,7 +156,7 @@ async function askModel(env: SecPipelineEnv, fetcher: typeof fetch, ticker: stri
   if (!Array.isArray(result.items)) throw new ModelUnavailable("no items in the answer");
   const out = new Map<number, string>();
   for (const row of Array.isArray(result.items) ? result.items as Array<Record<string, unknown>> : [])
-    if (typeof row?.i === "number" && typeof row.zh === "string") out.set(row.i, row.zh.trim());
+    if (typeof row?.i === "number" && typeof row.zh === "string") out.set(row.i, normalizeTranslation(row.zh));
   return out;
 }
 

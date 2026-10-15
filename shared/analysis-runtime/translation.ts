@@ -8,7 +8,7 @@
  * what the read API replaces. Identifiers, figures, filing names and verbatim quotes are never touched.
  * Pure and worker-safe.
  */
-import { proseNumbers, numberSupported } from "./findings.ts";
+import { proseFigures } from "./findings.ts";
 import type { Locale } from "./locale.ts";
 
 export type TranslatedResource = "flow" | "findings" | "explainer" | "tree" | "guidance" | "events" | "filings" | "filing";
@@ -63,7 +63,7 @@ const URL_LIKE = /^(?:https?:|\/|www\.)/i;
 /** A string the full-report rule treats as prose: at least two English words and no address. */
 const readsAsProse = (s: string) => s.length >= 8 && s.length <= MAX_UNIT && !URL_LIKE.test(s) && (s.match(/[A-Za-z]{3,}/g)?.length ?? 0) >= 2 && /\s/.test(s);
 /** Words to translate: a template made of placeholders alone (`{value}`), a dash or a figure has none. */
-const isText = (s: string, rule: Rule) => /[A-Za-z]/.test(s.replace(/\{(?:value|change|label|period)\}/g, "")) && s.length <= MAX_UNIT && (!rule.prose || readsAsProse(s));
+const isText = (s: string, rule: Rule) => /[A-Za-z]/.test(s.replace(/\{(?:value|change|label|period)\}/g, "")) && !/[\u3400-\u9fff]/.test(s) && s.length <= MAX_UNIT && (!rule.prose || readsAsProse(s));
 
 /**
  * Walks a payload and hands every prose string to `visit`; a string `visit` returns replaces it in a copy. The input
@@ -118,26 +118,45 @@ const outline = (s: string) => s.split("\n").map(line => {
   const t = line.trim();
   return !t ? "" : /^#{1,6}\s/.test(t) ? t.match(/^#+/)![0] : /^[-*+]\s|^\d+\.\s/.test(t) ? "li" : t.startsWith("|") ? "tr" : t.startsWith("$$") ? "math" : "p";
 }).join("/").replace(/(?:p\/)+p/g, "p");
-const latinWords = (s: string) => (s.match(/[A-Za-z][A-Za-z'’-]{2,}/g) ?? []).map(w => w.toLowerCase());
-const magnitudes = (s: string) => proseNumbers(s).map(Math.abs);
+/** A word for comparison: lower case, without a possessive or a plural s, so "Oracle's" and "CEOs" match "Oracle" and "CEO". */
+const stem = (w: string) => w.toLowerCase().replace(/['’]s$/, "").replace(/(?<=[a-z]{3})s$/, "");
+const latinWords = (s: string) => (s.match(/[A-Za-z][A-Za-z'’-]{2,}/g) ?? []).map(stem);
+/** Abbreviations Chinese financial writing keeps in Latin letters even where the English spelled the term out. */
+const STANDARD_TERMS = new Set(["rpo", "gaap", "non-gaap", "gpu", "cpu", "ai", "ceo", "cfo", "cto", "coo", "eps", "sec", "espp", "ssd", "hdd", "dimm", "saa", "iaa", "paa", "saas", "iaas", "paas", "capex", "ebitda", "fcf", "ttm", "arr", "api", "cdn", "it", "pc", "esg", "ipo", "m&a", "etf", "usd", "eur"]);
+const WORD_NUMBERS: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, half: 0.5 };
+type Figure = { value: number; tolerance: number; raw: string; scaled: boolean };
+const figures = (s: string): Figure[] => [...proseFigures(s), ...(s.toLowerCase().match(/\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b/g) ?? []).map(w => ({ value: WORD_NUMBERS[w]!, tolerance: 0, raw: String(WORD_NUMBERS[w]), scaled: false }))];
+const same = (a: Figure, b: Figure) => Math.abs(a.value - b.value) <= Math.max(a.tolerance, b.tolerance, Math.abs(a.value) * 0.005) + 1e-9;
+/**
+ * A figure is accounted for by an equal figure on the other side, or, for a plain number with no unit of amount,
+ * by its digits written there as they are (第 82 条, 第 13 至 36 个月). An amount must match by value: 28.5亿 is not $28.5 billion.
+ */
+const accounted = (f: Figure, other: Figure[], otherText: string) => other.some(o => same(f, o))
+  // i18n-allow: regular expression
+  || (!f.scaled && new RegExp(`(?<![\\d.])${f.raw.replace(".", "\\.")}(?![\\d.]|\\s?(?:万亿|亿|万|billion|million|thousand|trillion|bn|mn|[BMKT]\\b))`).test(otherText.replace(/,/g, "")));
+
+/** The translator's spacing, made to match the interface: no space between a figure and the unit after it (0.21个百分点, 28.5亿美元). */
+export function normalizeTranslation(text: string): string {
+  return text.trim().replace(/(\d)\s+(?=个百分点|万亿|亿|万|倍|美元|欧元|日元|英镑|元|股)/g, "$1");
+}
 
 /**
  * Why a translation cannot stand for its English source, or nothing when it can: every figure still there with the
- * same value (Chinese units read through), the template placeholders and markdown outline unchanged, Chinese
- * actually written, and no English left in it beyond the names and terms the source itself carries.
+ * same value (units read through), the template placeholders and markdown outline unchanged, Chinese actually
+ * written, and no English added beyond the source's own names and the standard abbreviations.
  */
 export function checkTranslation(source: string, target: string): string[] {
   const problems: string[] = [];
   if (!target.trim()) return ["empty"];
   if (placeholders(source) !== placeholders(target)) problems.push("placeholders changed");
-  const from = magnitudes(source), to = magnitudes(target);
-  const missing = from.filter(n => !numberSupported(n, to)), added = to.filter(n => !numberSupported(n, from));
-  if (missing.length) problems.push(`figures missing: ${missing.join(", ")}`);
-  if (added.length) problems.push(`figures added: ${added.join(", ")}`);
+  const from = figures(source), to = figures(target);
+  const missing = from.filter(f => !accounted(f, to, target)), added = proseFigures(target).filter(f => !accounted(f, from, source));
+  if (missing.length) problems.push(`figures missing: ${missing.map(f => f.raw).join(", ")}`);
+  if (added.length) problems.push(`figures added: ${added.map(f => f.raw).join(", ")}`);
   if (source.includes("\n") && outline(source) !== outline(target)) problems.push("markdown outline changed");
   const words = latinWords(source);
   if (words.length >= 2 && !CJK.test(target)) problems.push("not translated");
-  const kept = new Set(words), foreign = latinWords(target).filter(w => !kept.has(w));
+  const kept = new Set(words), foreign = latinWords(target).filter(w => !kept.has(w) && !STANDARD_TERMS.has(w));
   if (foreign.length) problems.push(`English not in the source: ${[...new Set(foreign)].slice(0, 5).join(", ")}`);
   if (/[!！]/.test(target) && !/!/.test(source)) problems.push("exclamation mark");
   if (target.length > source.length * 1.5 + 40) problems.push("longer than the source allows");

@@ -4,7 +4,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import type { FindingsPublication } from "../../../shared/analysis-contract/findings.ts";
 import { proseNumbers } from "../../../shared/analysis-runtime/findings.ts";
-import { checkTranslation, collectProse, langOf, localize } from "../../../shared/analysis-runtime/translation.ts";
+import { checkTranslation, collectProse, langOf, localize, normalizeTranslation } from "../../../shared/analysis-runtime/translation.ts";
 import type { SecPipelineEnv } from "../src/operations.ts";
 import { validateRegistry } from "../src/pipeline/registry.ts";
 import { translationsAdmin } from "../src/translation/admin.ts";
@@ -144,4 +144,19 @@ test("a model that gives no answer marks nothing: the strings stay pending, the 
   const omitted = await translateBatch(env, "TEST", "run", plan!.batches.flat(), async (_s, items) => new Map(items.filter(i => i.text === "Results beat guidance.").map(i => [i.i, "业绩超出指引。"])));
   assert.deepEqual(omitted, { ready: 1, rejected: 1 });
   assert.equal(await translationPlan(db, "TEST", "zh-CN", read) == null || (await translationPlan(db, "TEST", "zh-CN", read))!.batches.length === 0, true, "a string the model left out of a real answer is settled, not retried forever");
+});
+
+test("the checker compares figures at full value, so unit changes, ordinals, possessives and standard abbreviations pass, and a wrong scale does not", () => {
+  const ok: Array<[string, string]> = [
+    ["The restructuring table shows fiscal 2026 plan costs of $1,640 million, cash payments of $1,236 million.", "重组表显示 2026 财年计划成本为 16.40亿美元，现金支付为 12.36亿美元。"],
+    ["About 12% of the $638 billion RPO over the next twelve months, 34% over months 13-36, 34% over months 37-60.", "6380亿美元 RPO 中约 12% 在未来十二个月内确认，34% 在第 13 至 36 个月，34% 在第 37 至 60 个月。"],
+    ["A Rule 10b5-1 plan permits sales of up to 50 million shares, about 1.65% of shares outstanding; one of its CEOs is named.", "Rule 10b5-1 计划允许出售最多 5000万股，约占流通股的 1.65%；其一位 CEO 被点名。"],
+    ["Claimant TPC seeks €100 per user under article 82 GDPR.", "原告 TPC 依据 GDPR 第 82 条要求每位用户赔偿 100欧元。"],
+    ["Oracle's remaining performance obligations rose to $638 billion.", "Oracle 的剩余履约义务（RPO）增至 6380亿美元。"],
+    ["PP&E is depreciated over lives from one to 40 years.", "不动产、厂房和设备按 1 至 40 年的使用寿命计提折旧。"],
+  ];
+  for (const [en, zh] of ok) assert.deepEqual(checkTranslation(en, normalizeTranslation(zh)), [], en);
+  assert.match(checkTranslation("Capex was $28.5 billion.", "资本开支为 28.5亿美元。").join(), /figures missing: 28.5/);
+  assert.equal(normalizeTranslation("下降 0.21 个百分点，增至 28.5 亿美元，5000 万股"), "下降 0.21个百分点，增至 28.5亿美元，5000万股");
+  assert.deepEqual(collectProse("events", { summary: { headline: "公司预计营收增长。" } }), [], "text already in Chinese is not sent");
 });

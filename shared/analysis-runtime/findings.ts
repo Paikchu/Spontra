@@ -603,6 +603,29 @@ export function proseNumbers(prose: string): number[] {
   return out;
 }
 
+const ENGLISH_SCALE: Record<string, number> = { trillion: 1e12, t: 1e12, billion: 1e9, bn: 1e9, b: 1e9, million: 1e6, mn: 1e6, m: 1e6, thousand: 1e3, k: 1e3 };
+/**
+ * Every figure in prose at its full value, with the rounding its written digits allow: "$1,640 million" and
+ * "16.40亿美元" are both 1.64e9, "50 million shares" and "5000万股" both 5e7. Periods, years, ordinals and form names
+ * are skipped as in `proseNumbers`. For comparing a translation with its source, where both write the same figures
+ * in different units.
+ */
+export function proseFigures(prose: string): Array<{ value: number; tolerance: number; raw: string; scaled: boolean }> {
+  const out: Array<{ value: number; tolerance: number; raw: string; scaled: boolean }> = [];
+  for (const match of prose.matchAll(PROSE_NUMBER)) {
+    const [, prefix, raw, suffix, magnitude] = match;
+    if (prefix || suffix) continue;
+    const number = Number(raw!.replace("−", "-").replace(/,/g, ""));
+    if (!Number.isFinite(number)) continue;
+    const after = prose.slice(match.index! + match[0].length);
+    const scale = magnitude ? ZH_MAGNITUDE[magnitude.trim()]! : ENGLISH_SCALE[(/^\s?(trillion|billion|million|thousand|bn|mn|[tbmk])\b/i.exec(after)?.[1] ?? "").toLowerCase()] ?? 1;
+    if (scale === 1 && Number.isInteger(number) && number >= 1900 && number <= 2100) continue;
+    const digits = raw!.includes(".") ? raw!.length - raw!.indexOf(".") - 1 : 0;
+    out.push({ value: Math.abs(number * scale), tolerance: 0.5 * 10 ** -digits * scale, raw: raw!.replace(/,/g, "").replace("−", ""), scaled: scale !== 1 });
+  }
+  return out;
+}
+
 const decimals = (v: number) => { const s = String(v); const i = s.indexOf("."); return i < 0 ? 0 : s.length - i - 1; };
 /** A written number matches a candidate within rounding of the digits written, or two percent. */
 export function numberSupported(written: number, candidates: number[]): boolean {
