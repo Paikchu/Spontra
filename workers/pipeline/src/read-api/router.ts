@@ -14,6 +14,9 @@ import { D1SecRepository } from "../sec/d1.ts";
 import { findSecurity } from "../catalog/security-directory.ts";
 import { AnalysisRequestError, type AnalysisErrorCode } from "./contract-support/errors.ts";
 import { dataResponse, errorResponse } from "./http.ts";
+import { localize, type TranslatedResource } from "../../../../shared/analysis-runtime/translation.ts";
+import { isLocale, type Locale } from "../../../../shared/analysis-runtime/locale.ts";
+import { readTranslationTable } from "../translation/translate.ts";
 
 /**
  * The analysis backend's read surface, served only to the business map over the `MapReads`
@@ -78,6 +81,12 @@ export async function handleMapRead(request: Request, env: AnalysisReadEnv): Pro
 
 async function handleRoute(request: Request, database: D1Database, route: RouteMatch): Promise<Response> {
   const url = new URL(request.url);
+  // `?locale=zh-CN` serves a resource with its translated prose applied; the structure, figures and ids are the English
+  // publication's, and a string not yet translated stays English. Two lookups and a pure copy, never a model call.
+  const requested = url.searchParams.get("locale");
+  const locale: Locale | null = isLocale(requested) && requested !== "en" ? requested : null;
+  const translated = async <T>(resource: TranslatedResource, value: T, scope = ""): Promise<T> =>
+    locale && value ? localize(resource, value, await readTranslationTable(database, locale, resource, route.ticker.trim().toUpperCase(), scope)) : value;
   switch (route.kind) {
     case "filings": {
       const page = await getPublicFilingPage(
@@ -86,19 +95,21 @@ async function handleRoute(request: Request, database: D1Database, route: RouteM
         url.searchParams.get("cursor"),
         url.searchParams.get("limit"),
       );
-      return dataResponse(request, page);
+      return dataResponse(request, { ...page, filings: await translated("filings", page.filings) });
     }
     case "filing": {
       const detail = await getPublicFiling(new D1SecRepository(database), route.ticker, route.accession,
         url.searchParams.has("reportVersion") || url.searchParams.has("reportDate")
           ? { reportVersion: url.searchParams.get("reportVersion") ?? "", reportDate: url.searchParams.get("reportDate") ?? "" } : undefined);
       if (!detail) return errorResponse("FILING_NOT_FOUND", "SEC filing not found.");
-      return dataResponse(request, detail);
+      const report = await translated("filing", { summary: detail.filing.summary, analysis: detail.filing.analysis }, route.accession);
+      return dataResponse(request, { ...detail, filing: { ...detail.filing, summary: report.summary, analysis: report.analysis } });
     }
     case "business-flow": {
       const payload=await readCompletePublicationForTicker(database,route.ticker);
       // Older quarters are assembled on the schedule; until then the published pair stands alone.
       if(payload.flow)payload.reports=(await readMapDerived(database,payload.flow))?.reports??payload.flow;
+      if(payload.flow){const flow=await translated("flow",{flow:payload.flow,reports:payload.reports??null});payload.flow=flow.flow;payload.reports=flow.reports;}
       return dataResponse(request,payload,payload.status==="ready"?"cacheable":"no-store");
     }
     case "capital": {
@@ -110,22 +121,27 @@ async function handleRoute(request: Request, database: D1Database, route: RouteM
     }
     case "business-explainer": {
       const payload = await readBusinessExplainerResponse(database, route.ticker);
+      payload.explainer = await translated("explainer", payload.explainer);
       return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
     }
     case "business-tree": {
       const payload = await readBusinessTreeResponse(database, route.ticker);
+      payload.tree = await translated("tree", payload.tree);
       return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
     }
     case "guidance": {
       const payload = await readGuidanceResponse(database, route.ticker);
+      payload.guidance = await translated("guidance", payload.guidance);
       return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
     }
     case "findings": {
       const payload = await readFindingsResponse(database, route.ticker);
+      payload.findings = await translated("findings", payload.findings);
       return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
     }
     case "events": {
       const payload = await readEventsResponse(database, route.ticker);
+      payload.events = await translated("events", payload.events);
       return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
     }
     case "passage": {

@@ -26,6 +26,8 @@ export const AI_TOOL_REASONING = {
   analyst: "high",
   /** Which statement line is pretax income and which come after taxes; the harness checks the arithmetic. */
   presentation: "low",
+  /** Translating published English into Chinese; every translation is checked against its source. */
+  translate: "low",
 } as const satisfies Record<string, ReasoningEffort>;
 export type AiTool = keyof typeof AI_TOOL_REASONING;
 

@@ -3,7 +3,7 @@ import { useMemo, useState, type CSSProperties } from "react";
 import type { CompanyEvent, EventsPublication } from "@/shared/analysis-contract/events";
 import { INSIDER_RULES } from "@/shared/analysis-runtime/events";
 import { getLocale, labels, messages } from "@/packages/web/src/i18n";
-import { SourceLanguage } from "@/packages/web/src/i18n/SourceLanguage";
+import { SourceLanguage, langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import { perShare, shortPeriod } from "@/shared/analysis-runtime/locale";
 import { EVENT_CLASS_LABEL, dollars, eventTitle, eventTitleLang, insiderLens, shares, shortDate, type InsiderLensModel } from "./events-model";
 
@@ -69,7 +69,7 @@ export function EventLens({ event, publication, onClose, onStep, index, count }:
     <header className="lens-head">
       <div className="lens-title">
         <b className="lens-kind event-kind">{EVENT_CLASS_LABEL[event.class]}</b>
-        {(event.summary || eventTitleLang(event)) && <SourceLanguage />}
+        <SourceLanguage of={event.summary ? [event.summary.headline, event.summary.analystView, ...event.summary.bullets.flatMap(b => [b.label, b.detail])] : []} />
         <h2 lang={eventTitleLang(event)}>{eventTitle(event)}</h2>
         <span className="lens-basis">{event.form} · {m.filed} {event.filedAt}{event.eventDate !== event.filedAt ? ` · ${m.eventOn} ${event.eventDate}` : ""}</span>
       </div>
@@ -85,9 +85,9 @@ export function EventLens({ event, publication, onClose, onStep, index, count }:
       <div className="lens-text">
         {insider && <InsiderReading model={insider} event={event} />}
         {event.summary ? <>
-          <p className="lens-judgment" lang="en">{event.summary.headline}</p>
-          <ul className="event-bullets" lang="en">{event.summary.bullets.map((b, i) => <li key={i} data-importance={b.importance}><b>{b.label}</b>{b.detail}</li>)}</ul>
-          {event.summary.analystView && <p className="event-view"><b>{m.analystView}</b><span lang="en">{event.summary.analystView}</span></p>}
+          <p className="lens-judgment" lang={langOf(event.summary.headline)}>{event.summary.headline}</p>
+          <ul className="event-bullets">{event.summary.bullets.map((b, i) => <li key={i} data-importance={b.importance} lang={langOf(b.detail)}><b>{b.label}</b>{b.detail}</li>)}</ul>
+          {event.summary.analystView && <p className="event-view"><b>{m.analystView}</b><span lang={langOf(event.summary.analystView)}>{event.summary.analystView}</span></p>}
           <p className="event-generated">{m.aiSummary} · {event.summary.generatedAt.slice(0, 10)}</p>
         </> : !insider && <p className="lens-empty">{m.noSummary}</p>}
         {insider && insider.path.length > 0 && event.insider!.footnotes.length > 0 && <details className="event-footnotes" open={showQuiet} onToggle={e => setShowQuiet((e.target as HTMLDetailsElement).open)}>

@@ -1,6 +1,6 @@
 import { Button } from "@/packages/web/src/ui/button";
 import { getLocale, labels, messages } from "@/packages/web/src/i18n";
-import { SourceLanguage } from "@/packages/web/src/i18n/SourceLanguage";
+import { SourceLanguage, langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 import type { ExplainerSource } from "@/shared/analysis-contract/business-explainer";
 import type { FindingMaterial, FindingRecordEntry, FindingRef } from "@/shared/analysis-contract/findings";
@@ -69,8 +69,8 @@ export function LensPanel({ finding, data, sources, materials, record, ticker, n
     <header className="lens-head">
       <div className="lens-title">
         <b className="lens-kind" data-kind={finding.kind}>{KIND_LABEL[finding.kind]}<i aria-label={m.severity(finding.severity)}>{"●".repeat(finding.severity)}</i></b>
-        <h2 lang="en">{finding.title}</h2>
-        <span className="lens-basis">{m.report(shortPeriod(finding.periodEnd))} · {VIEW_LABEL[finding.anchors.view]}<SourceLanguage /></span>
+        <h2 lang={langOf(finding.title)}>{finding.title}</h2>
+        <span className="lens-basis">{m.report(shortPeriod(finding.periodEnd))} · {VIEW_LABEL[finding.anchors.view]}<SourceLanguage of={[finding.title, finding.judgment.text]} /></span>
       </div>
       <div className="lens-nav">
         {compact ? <Button variant="unstyled" type="button" className="lens-pair" onClick={onFocusThis}>{m.focusThis}</Button> : <>
@@ -106,12 +106,12 @@ function LensDocument({ finding, data, sources, materials, record, ticker, nodeC
   const watch = finding.watch, outcome = finding.watchOutcome;
   const block = (b: LensBlock, key: number): ReactNode => {
     switch (b.kind) {
-      case "judgment": return <p key={key} className="lens-judgment" lang="en">{compact ? firstSentence(finding.judgment.text) : finding.judgment.text}{cites(finding.judgment.sourceIds)}</p>;
-      case "prose": return b.paragraphs.map((p, i) => <p key={`${key}-${i}`} className="lens-prose" lang="en">{p.text}{cites(p.sourceIds)}</p>);
+      case "judgment": return <p key={key} className="lens-judgment" lang={langOf(finding.judgment.text)}>{compact ? firstSentence(finding.judgment.text) : finding.judgment.text}{cites(finding.judgment.sourceIds)}</p>;
+      case "prose": return b.paragraphs.map((p, i) => <p key={`${key}-${i}`} className="lens-prose" lang={langOf(p.text)}>{p.text}{cites(p.sourceIds)}</p>);
       case "chart": { const chart = lens.charts[b.chart.id]; return chart ? <LensFrame key={key} chart={chart} onHover={hoverOf(chart.id)} /> : null; }
       case "figures": return <dl key={key} className="lens-evidence">{finding.resolved.map((r, i) => <Evidence key={i} r={r} lit={hover != null && near(r.current.periodEnd, hover)} />)}</dl>;
       case "watch": return watch ? <div key={key} className="lens-watch" data-settled={outcome ? "" : undefined}>
-        <p><b>{watch.horizon === "next_quarter" ? m.nextQuarter : m.fullYear}</b><span lang="en">{watch.condition}</span></p>
+        <p><b>{watch.horizon === "next_quarter" ? m.nextQuarter : m.fullYear}</b><span lang={langOf(watch.condition)}>{watch.condition}</span></p>
         {outcome ? <p className="lens-outcome"><b>{m.reported(shortPeriod(outcome.periodEnd))}</b><Outcome r={outcome.resolved} /></p>
           : <p className="lens-outcome lens-outcome--pending">{m.pending(shortPeriod(watchPeriod(finding.periodEnd, watch)))}</p>}
       </div> : null;
@@ -129,13 +129,13 @@ function LensDocument({ finding, data, sources, materials, record, ticker, nodeC
         const t = lens.tables[tableKey(b.table)];
         if (!t) return null;
         return <table key={key} className="lens-table">
-          {t.title && <caption lang="en">{t.title}</caption>}
+          {t.title && <caption lang={langOf(t.title)}>{t.title}</caption>}
           <thead><tr><th scope="col" />{t.columns.map(c => <th key={c.key} scope="col">{c.label}{c.sub && <small>{c.sub}</small>}</th>)}</tr></thead>
           <tbody>{t.rows.map((r, i) => <tr key={i}><th scope="row">{r.label}</th>{r.cells.map((c, j) => <td key={j}>{c ? <>{c.text}{c.change && <em data-trend={c.change.startsWith("+") ? "up" : c.change.startsWith("−") ? "down" : undefined}>{c.change}</em>}</> : null}</td>)}</tr>)}</tbody>
         </table>;
       }
       case "record": return scored.length ? <dl key={key} className="lens-record">{scored.map(({ entry, result }) => <div key={`${entry.periodEnd}:${entry.findingId}`} className="lens-record-row" data-verdict={result?.verdict}>
-        <dt><span>{shortPeriod(entry.periodEnd)} · {KIND_LABEL[entry.kind]}</span><span lang="en">{entry.title}</span></dt>
+        <dt><span>{shortPeriod(entry.periodEnd)} · {KIND_LABEL[entry.kind]}</span><span lang={langOf(entry.title)}>{entry.title}</span></dt>
         <dd>{result ? <><b>{RECORD_VERDICT[result.verdict]}</b><span>{result.outcome.resolved.label} {formatValue(result.outcome.resolved.current, result.outcome.resolved.evidence.ref)}</span></> : <b data-pending="">{shortPeriod(watchPeriod(entry.periodEnd, entry.watch))}</b>}</dd>
       </div>)}</dl> : null;
     }
@@ -145,7 +145,7 @@ function LensDocument({ finding, data, sources, materials, record, ticker, nodeC
       const chartIn = (cell: LensBlock[]) => cell.some(b => b.kind === "chart");
       const lead = row.cells.length === 2 ? chartIn(row.cells[0]!) && !chartIn(row.cells[1]!) ? "first" : chartIn(row.cells[1]!) && !chartIn(row.cells[0]!) ? "second" : undefined : undefined;
       return <div key={i} className="lens-doc-row" data-cells={row.cells.length} data-lead={lead} data-titled={row.title ? "" : undefined}>
-        {row.title && <h3 className="lens-row-title" lang="en">{row.title}</h3>}
+        {row.title && <h3 className="lens-row-title" lang={langOf(row.title)}>{row.title}</h3>}
         {row.cells.map((cell, j) => <div key={j} className="lens-doc-cell">{cell.map((b, k) => block(b, k))}</div>)}
       </div>;
     })}

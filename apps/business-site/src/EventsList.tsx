@@ -49,7 +49,7 @@ export function EventsList({ rail, focus, pendingInsider, expanded, onFocus, onE
   const firstEarlier = rail.earlier.find(i => shown.includes(i))?.id;
   const thisYear = (rail.recent[0] ?? all[0])?.date.slice(0, 4);
   const notes = [rail.quiet > 0 ? m.nonTrade(rail.quiet) : null, pendingInsider > 0 ? m.pending(pendingInsider) : null].filter(Boolean).join(" · ");
-  return <RailSection name="events" title={m.title} tag={<SourceLanguage />} hint={notes || undefined} expandable={all.length > digest.size}
+  return <RailSection name="events" title={m.title} tag={<SourceLanguage of={(expanded ? shown : shown.filter(i => digest.has(i.id))).map(i => i.kind === "report" ? i.report.headline : i.event.summary?.headline)} />} hint={notes || undefined} expandable={all.length > digest.size}
     expanded={expanded} focused={focus != null} onExpand={open => { if (!open) setGroup(null); onExpand(open); }}>
     {expanded && groups.length > 1 && <div className="section-filters" role="radiogroup" aria-label={m.type}>
       {[[null, all.length] as const, ...groups].map(([key, count]) => <Button variant="unstyled" type="button" key={key ?? "all"} role="radio" aria-checked={group === key} className="section-filter"

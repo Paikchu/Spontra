@@ -6,6 +6,7 @@ import { ReportContentRenderer } from "./ReportContentRenderer.tsx";
 import { ReportMediaGroup } from "./ReportMediaGroup.tsx";
 import { readableTrend, SecTrendFigure, SecTrendSource } from "../figures/index.ts";
 import { getLocale, labels, messages } from "@/packages/web/src/i18n";
+import { langOf } from "@/packages/web/src/i18n/SourceLanguage";
 
 const m = messages({
   freeCashFlow: "Free cash flow", cashAndCapex: "Cash flow and capital expenditures", nonGaap: "Non-GAAP",
@@ -69,7 +70,7 @@ const changeLabel = labels({ new: "New", changed: "Changed", continuing: "Contin
   { new: "新增", changed: "变化", continuing: "延续", not_comparable: "无基准" });
 export function QuarterChanges({ reader }: { reader: SecReaderReport }) {
   const ui = getLocale();
-  return <div className="sec-reader-changes" lang="en">{reader.changes.map((c, i) => <article key={`${c.topic}-${i}`} data-change={c.kind}>
+  return <div className="sec-reader-changes" lang={langOf(reader.changes[0]?.implication)}>{reader.changes.map((c, i) => <article key={`${c.topic}-${i}`} data-change={c.kind}>
     <div><span className="sec-reader-change-kind" lang={ui}>{changeLabel[c.kind]}</span><h3>{c.topic}</h3></div>
     <dl><div><dt lang={ui}>{m.prior}</dt><dd>{c.prior}</dd></div><div><dt lang={ui}>{m.current}</dt><dd>{c.current}</dd></div></dl>
     <p>{c.implication}</p>
@@ -82,7 +83,7 @@ export function ReaderSection({ section, report, nodes }: { section: SecReaderRe
   const visual = section.visual;
   const trend = readableTrend(report.trends?.find((t) => t.metricKey === (visual?.chart?.metricKey ?? section.chartMetricKey)));
   const layout = visual?.layout === "chart_focus" && !trend ? "essay" : visual?.layout ?? "essay";
-  const paragraph = (p: string, i: number) => <div className="sec-reader-paragraph" key={i} lang="en">{layout === "comparison" && visual?.paragraphLabels?.[i] && <h3>{visual.paragraphLabels[i]}</h3>}<RichText text={p} /></div>;
+  const paragraph = (p: string, i: number) => <div className="sec-reader-paragraph" key={i} lang={langOf(p)}>{layout === "comparison" && visual?.paragraphLabels?.[i] && <h3>{visual.paragraphLabels[i]}</h3>}<RichText text={p} /></div>;
   const chartTitle = trend ? visual?.chart?.title || m.overTime(formatSecMetricLabel(trend.metricKey, getLocale())) : "";
   const paragraphLabels = layout === "comparison" && section.content && visual?.paragraphLabels
     ? Object.fromEntries(section.content.filter((block) => block.type === "markdown").map((block, i) => [block.blockId, visual.paragraphLabels?.[i] ?? ""])) : undefined;
@@ -97,7 +98,7 @@ export function ReaderSection({ section, report, nodes }: { section: SecReaderRe
           <div className="sec-reader-flow-prose">{section.paragraphs.slice(1).map((p, i) => paragraph(p, i + 1))}</div>
         </ReportMediaGroup>
       </div> : <div className="sec-report-body">{section.paragraphs.map(paragraph)}</div>}
-    <p className="sec-reader-takeaway" lang="en"><span lang={getLocale()}>{m.takeaway}</span>{section.takeaway}</p>
+    <p className="sec-reader-takeaway" lang={langOf(section.takeaway)}><span lang={getLocale()}>{m.takeaway}</span>{section.takeaway}</p>
     </div>
     {evidence.length > 0 && <details className="sec-report-evidence"><summary>{m.excerpts} · {evidence.length}</summary>{evidence.map((e, i) => <blockquote key={i}><p lang="en">{e.excerpt}</p><footer>{m.characters(e.start.toLocaleString("en-US"), e.end.toLocaleString("en-US"))}</footer></blockquote>)}</details>}
   </div>;
@@ -112,10 +113,10 @@ export function MarketContext({ report }: { report: PublishedSecReport }) {
     {market.trailingPE !== undefined && <div><dt>{m.pe(market.earningsPeriodEnd ?? "")}</dt><dd>{m.multiple(market.trailingPE.toFixed(1))}</dd></div>}
     {move && <div><dt>{move.from} → {move.to}</dt><dd>{move.changePercent > 0 ? "+" : ""}{move.changePercent.toFixed(1)}%</dd></div>}
   </dl><p className="sec-reader-caption">{move ? m.sessions(move.sessions) : ""}{m.asOf(market.asOf.slice(0, 10))} · <a href={market.sourceUrl} target="_blank" rel="noopener noreferrer">{market.source}</a></p>
-    <details><summary>{m.marketBasis}</summary><ul lang="en">{market.limitations.map((l) => <li key={l}>{l}</li>)}</ul></details>
+    <details><summary>{m.marketBasis}</summary><ul lang={langOf(market.limitations[0])}>{market.limitations.map((l) => <li key={l}>{l}</li>)}</ul></details>
   </aside>;
 }
 
 export function WatchConditions({ reader }: { reader: SecReaderReport }) {
-  return <ol className="sec-reader-watch" lang="en">{reader.watch.map((w, i) => <li key={i}><span>{w.deadline}</span><strong>{w.condition}</strong><p>{w.consequence}</p></li>)}</ol>;
+  return <ol className="sec-reader-watch" lang={langOf(reader.watch[0]?.condition)}>{reader.watch.map((w, i) => <li key={i}><span>{w.deadline}</span><strong>{w.condition}</strong><p>{w.consequence}</p></li>)}</ol>;
 }

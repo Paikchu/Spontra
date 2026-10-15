@@ -2,6 +2,7 @@ import { scaleLinear, scaleUtc } from "d3-scale";
 import type { SecTrend } from "@/shared/analysis-contract/sec-presentation.ts";
 import { compactNumber, MINUS } from "@/shared/analysis-runtime/locale.ts";
 import { getLocale, messages } from "@/packages/web/src/i18n";
+import { langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import { unitName } from "./format.ts";
 
 const m = messages({
@@ -73,7 +74,7 @@ export function SecTrendFigure({ id, title, trend: input, mark = "line", caption
         {points.map((p, index) => <span key={p.date} className="report-content-chart-label" data-sparse-hidden={points.length > 6 && index > 0 && index < points.length - 1 && (index % 2 !== 0 || index === points.length - 2) || undefined} data-compact-hidden={points.length > 4 && index > 0 && index < points.length - 1 || undefined} style={{ left: `${x(new Date(p.date)) / 580 * 100}%`, top: `${Math.max(0, y(p.value) - 24) / 220 * 100}%` }}>{valueText(p.value, trend)}</span>)}
         <div className="report-content-chart-dates"><span>{points[0].date}</span><span>{points.at(-1)!.date}</span></div>
       </div>}
-    {caption && <p className="report-content-caption" lang="en">{caption}</p>}
+    {caption && <p className="report-content-caption" lang={langOf(caption)}>{caption}</p>}
   </figure>;
 }
 

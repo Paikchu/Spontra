@@ -23,8 +23,11 @@ import type {PublicFilingDetail,PublicFilingDigest,PublicFilingDigestPage,Public
 import type {LibraryTable,PublicPassage} from "@/shared/analysis-contract/filing-library";
 import {formatFilingPeriodLabel} from "@/packages/web/src/model/filing-period-label";
 import {formatSecMetricLabel,formatSecMetricValue} from "@/packages/web/src/model/sec-metric-format";
+import {isLocale,type Locale} from "@/shared/analysis-runtime/locale";
 /** The analysis pipeline is reached over its Service Binding; the host is a label the binding ignores. */
 const ANALYSIS_ORIGIN="https://spontra-analysis.internal";
+/** A read in the reader's language: the pipeline applies its translations of the generated prose (docs/i18n-design.md). English needs no parameter. */
+const inLocale=(path:string,locale:Locale|null)=>locale&&locale!=="en"?`${path}${path.includes("?")?"&":"?"}locale=${locale}`:path;
 export type SiteEnv={ASSETS:{fetch(request:Request):Promise<Response>};PUBLIC_READ_LIMIT:{limit(options:{key:string}):Promise<{success:boolean}>};
  /** Service Binding to the pipeline's `MapReads` named entrypoint; the binding is the credential. Without it every data route answers 503. */
  EARNING_REPORT_PIPELINE?:{fetch(request:Request):Promise<Response>}};
@@ -49,8 +52,8 @@ export type SiteContext={waitUntil(promise:Promise<unknown>):void};
 const security={"x-content-type-options":"nosniff","referrer-policy":"strict-origin-when-cross-origin","content-security-policy":"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://images.financialmodelingprep.com; connect-src 'self'; font-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"};
 function json(body:unknown,status=200){return Response.json(body,{status,headers:{...security,"cache-control":status===200?"public, max-age=60":"no-store"}});}
 /** The only public output is schema-stripped SEC business flow, never the analysis envelope. */
-export async function loadPublicFlow(ticker:string,fetcher:typeof fetch=fetch):Promise<CompleteFlowPublication>{
- const response=await fetcher(ANALYSIS_ORIGIN+`/api/v1/companies/${ticker}/business-flow`,{signal:AbortSignal.timeout(12000),headers:{accept:"application/json"}});
+export async function loadPublicFlow(ticker:string,fetcher:typeof fetch=fetch,locale:Locale|null=null):Promise<CompleteFlowPublication>{
+ const response=await fetcher(ANALYSIS_ORIGIN+inLocale(`/api/v1/companies/${ticker}/business-flow`,locale),{signal:AbortSignal.timeout(12000),headers:{accept:"application/json"}});
  if(!response.ok)throw new Error("Public source unavailable");
  const publication=await response.json() as CompleteFlowPublication;
  if(publication.schemaVersion!=="complete-business-flow.v1"||!['ready','preparing','unavailable'].includes(publication.status))throw new Error('Invalid publication');
@@ -61,9 +64,9 @@ export async function loadPublicFlow(ticker:string,fetcher:typeof fetch=fetch):P
 }
 
 /** Supplementary: an unavailable or invalid explanation reads as null and never fails the flow. */
-export async function loadExplainer(ticker:string,fetcher:typeof fetch=fetch):Promise<BusinessExplainer|null>{
+export async function loadExplainer(ticker:string,fetcher:typeof fetch=fetch,locale:Locale|null=null):Promise<BusinessExplainer|null>{
  try{
-  const response=await fetcher(ANALYSIS_ORIGIN+`/api/v1/companies/${ticker}/business-explainer`,{signal:AbortSignal.timeout(8000),headers:{accept:"application/json"}});
+  const response=await fetcher(ANALYSIS_ORIGIN+inLocale(`/api/v1/companies/${ticker}/business-explainer`,locale),{signal:AbortSignal.timeout(8000),headers:{accept:"application/json"}});
   if(!response.ok)return null;
   const body=await response.json() as {schemaVersion?:string;status?:string;explainer?:unknown};
   return body.schemaVersion==="business-explainer-response.v1"&&body.status==="ready"?readBusinessExplainer(body.explainer,ticker):null;
@@ -71,9 +74,9 @@ export async function loadExplainer(ticker:string,fetcher:typeof fetch=fetch):Pr
 }
 
 /** The business breakdown the map draws as a mind map beside a picked business; re-validated, and without the agent's trace. */
-export async function loadTree(ticker:string,fetcher:typeof fetch=fetch):Promise<BusinessTree|null>{
+export async function loadTree(ticker:string,fetcher:typeof fetch=fetch,locale:Locale|null=null):Promise<BusinessTree|null>{
  try{
-  const response=await fetcher(ANALYSIS_ORIGIN+`/api/v1/companies/${ticker}/business-tree`,{signal:AbortSignal.timeout(8000),headers:{accept:"application/json"}});
+  const response=await fetcher(ANALYSIS_ORIGIN+inLocale(`/api/v1/companies/${ticker}/business-tree`,locale),{signal:AbortSignal.timeout(8000),headers:{accept:"application/json"}});
   if(!response.ok)return null;
   const body=await response.json() as {schemaVersion?:string;status?:string;tree?:unknown};
   return body.schemaVersion==="business-tree-response.v1"&&body.status==="ready"?readBusinessTree(body.tree,ticker):null;
@@ -91,9 +94,9 @@ export async function loadCapital(ticker:string,fetcher:typeof fetch=fetch):Prom
 }
 
 /** Supplementary, like the explainer: unavailable or invalid guidance reads as null. */
-export async function loadGuidance(ticker:string,fetcher:typeof fetch=fetch):Promise<GuidancePublication|null>{
+export async function loadGuidance(ticker:string,fetcher:typeof fetch=fetch,locale:Locale|null=null):Promise<GuidancePublication|null>{
  try{
-  const response=await fetcher(ANALYSIS_ORIGIN+`/api/v1/companies/${ticker}/guidance`,{signal:AbortSignal.timeout(8000),headers:{accept:"application/json"}});
+  const response=await fetcher(ANALYSIS_ORIGIN+inLocale(`/api/v1/companies/${ticker}/guidance`,locale),{signal:AbortSignal.timeout(8000),headers:{accept:"application/json"}});
   if(!response.ok)return null;
   const body=await response.json() as {schemaVersion?:string;status?:string;guidance?:unknown};
   return body.schemaVersion==="guidance-response.v1"&&body.status==="ready"?readGuidancePublication(body.guidance,ticker):null;
@@ -115,9 +118,9 @@ function readFindingPassage(value:unknown):FindingPassage|null{
  const table=t&&rows&&columns&&!rows.some(r=>r==null)?{unit:asText(t.unit),columns,rows:rows as Array<{label:string;cells:Array<{text:string;value:number|null}>}>}:null;
  return {passageId,documentId,title,form,filedAt,url,path,text,table};
 }
-export async function loadFindings(ticker:string,fetcher:typeof fetch=fetch):Promise<FindingsBundle|null>{
+export async function loadFindings(ticker:string,fetcher:typeof fetch=fetch,locale:Locale|null=null):Promise<FindingsBundle|null>{
  try{
-  const response=await fetcher(ANALYSIS_ORIGIN+`/api/v1/companies/${ticker}/findings`,{signal:AbortSignal.timeout(8000),headers:{accept:"application/json"}});
+  const response=await fetcher(ANALYSIS_ORIGIN+inLocale(`/api/v1/companies/${ticker}/findings`,locale),{signal:AbortSignal.timeout(8000),headers:{accept:"application/json"}});
   if(!response.ok)return null;
   const body=await response.json() as {schemaVersion?:string;status?:string;findings?:unknown;passages?:unknown;peers?:unknown};
   const findings=body.schemaVersion==="findings-response.v1"&&body.status==="ready"?readFindingsPublication(body.findings,ticker):null;
@@ -128,9 +131,9 @@ export async function loadFindings(ticker:string,fetcher:typeof fetch=fetch):Pro
 }
 
 /** Filed events (8-K and Form 4), re-validated; unavailable reads as null. */
-export async function loadEvents(ticker:string,fetcher:typeof fetch=fetch):Promise<EventsPublication|null>{
+export async function loadEvents(ticker:string,fetcher:typeof fetch=fetch,locale:Locale|null=null):Promise<EventsPublication|null>{
  try{
-  const response=await fetcher(ANALYSIS_ORIGIN+`/api/v1/companies/${ticker}/events`,{signal:AbortSignal.timeout(8000),headers:{accept:"application/json"}});
+  const response=await fetcher(ANALYSIS_ORIGIN+inLocale(`/api/v1/companies/${ticker}/events`,locale),{signal:AbortSignal.timeout(8000),headers:{accept:"application/json"}});
   if(!response.ok)return null;
   const body=await response.json() as {schemaVersion?:string;status?:string;events?:unknown};
   return body.schemaVersion==="events-response.v1"&&body.status==="ready"?readEventsPublication(body.events,ticker):null;
@@ -140,14 +143,14 @@ export async function loadEvents(ticker:string,fetcher:typeof fetch=fetch):Promi
 const ACCESSION=/^\d{10}-\d{2}-\d{6}$/;
 const isPeriodic=(form:string)=>/^(10-Q|10-K|20-F)(\/A)?$/.test(form);
 /** One filing as the map lists it: labels instead of metric keys, text instead of evidence ids, and never the analysis envelope. */
-export function digestFiling(filing:PublicSecFiling):PublicFilingDigest{
+export function digestFiling(filing:PublicSecFiling,locale:Locale="en"):PublicFilingDigest{
  const group=filing.earningsGroup,summary=filing.summary,analysis=filing.analysis;
  const periodic=!!group||isPeriodic(filing.form);
  const published=analysis?.publication;
  const text=(v:unknown)=>typeof v==="string"?v:"";
  return {
   accessionNumber:filing.accessionNumber,form:filing.form,filingDate:filing.filingDate,reportDate:filing.reportDate,
-  periodEnd:periodic?group?.periodEnd??filing.fiscalPeriod?.periodEnd??filing.reportDate:null,periodLabel:periodic?formatFilingPeriodLabel(filing):null,
+  periodEnd:periodic?group?.periodEnd??filing.fiscalPeriod?.periodEnd??filing.reportDate:null,periodLabel:periodic?formatFilingPeriodLabel(filing,locale):null,
   date:group?.earningsDate??filing.filingDate,
   sources:(group?.sources??[]).map(s=>({form:s.form,filingDate:s.filingDate,accessionNumber:s.accessionNumber,indexUrl:s.indexUrl})),
   headline:text(summary?.headline)||text(analysis?.headline),
@@ -155,7 +158,7 @@ export function digestFiling(filing:PublicSecFiling):PublicFilingDigest{
   analystView:text(summary?.analystView),report:text(summary?.report)||null,
   warnings:[...(summary?.discovery?.warnings??[]),...(analysis?.dataQuality.warnings??[])].filter(w=>typeof w==="string").slice(0,8),
   generatedAt:summary?.generatedAt??null,
-  keyMetrics:(analysis?.keyMetrics??[]).slice(0,8).map(m=>({key:m.metricKey,label:formatSecMetricLabel(m.metricKey),value:formatSecMetricValue(m.metricKey,m.currentValue,m.unit,m.currency),yoy:m.yoy??null,qoq:m.qoq??null,status:m.status})),
+  keyMetrics:(analysis?.keyMetrics??[]).slice(0,8).map(m=>({key:m.metricKey,label:formatSecMetricLabel(m.metricKey,locale),value:formatSecMetricValue(m.metricKey,m.currentValue,m.unit,m.currency,locale),yoy:m.yoy??null,qoq:m.qoq??null,status:m.status})),
   changes:[...(analysis?.changes.qoq??[]).map(c=>({compare:"QoQ" as const,...c})),...(analysis?.changes.yoy??[]).map(c=>({compare:"YoY" as const,...c}))]
    .filter(c=>c.changeType!=="not_mentioned"&&(c.currentStatement||c.priorStatement)).slice(0,8).map(c=>({compare:c.compare,topic:c.topicKey,statement:c.currentStatement??c.priorStatement??""})),
   risks:(analysis?.changes.risks??[]).map(c=>text(c.statement)).filter(Boolean).slice(0,6),
@@ -168,23 +171,23 @@ export function digestFiling(filing:PublicSecFiling):PublicFilingDigest{
 }
 
 /** The company's filings as digests: one upstream page of up to fifty, newest first. */
-export async function loadFilings(ticker:string,fetcher:typeof fetch=fetch):Promise<PublicFilingDigestPage|null>{
+export async function loadFilings(ticker:string,fetcher:typeof fetch=fetch,locale:Locale|null=null):Promise<PublicFilingDigestPage|null>{
  try{
-  const response=await fetcher(ANALYSIS_ORIGIN+`/api/v1/companies/${ticker}/filings?limit=50`,{signal:AbortSignal.timeout(12000),headers:{accept:"application/json"}});
+  const response=await fetcher(ANALYSIS_ORIGIN+inLocale(`/api/v1/companies/${ticker}/filings?limit=50`,locale),{signal:AbortSignal.timeout(12000),headers:{accept:"application/json"}});
   if(!response.ok)return null;
   const page=await response.json() as PublicFilingPage;
   if(page.ticker!==ticker||!Array.isArray(page.filings))return null;
-  const filings=page.filings.filter(f=>f&&f.ticker===ticker&&ACCESSION.test(f.accessionNumber)).map(digestFiling);
+  const filings=page.filings.filter(f=>f&&f.ticker===ticker&&ACCESSION.test(f.accessionNumber)).map(f=>digestFiling(f,locale??"en"));
   return {schemaVersion:"filing-digests.v1",ticker,filings,total:page.total??null,checkedAt:page.checkedAt??null};
  }catch{return null;}
 }
 
 /** One filing with its full published report, for the in-page reader; only the documented envelope passes through. */
-export async function loadFilingDetail(ticker:string,accession:string,snapshot:{reportDate:string;reportVersion:string}|null,fetcher:typeof fetch=fetch):Promise<PublicFilingDetail|null>{
+export async function loadFilingDetail(ticker:string,accession:string,snapshot:{reportDate:string;reportVersion:string}|null,fetcher:typeof fetch=fetch,locale:Locale|null=null):Promise<PublicFilingDetail|null>{
  if(!ACCESSION.test(accession))return null;
  try{
   const query=snapshot?"?"+new URLSearchParams(snapshot):"";
-  const response=await fetcher(ANALYSIS_ORIGIN+`/api/v1/companies/${ticker}/filings/${accession}${query}`,{signal:AbortSignal.timeout(12000),headers:{accept:"application/json"}});
+  const response=await fetcher(ANALYSIS_ORIGIN+inLocale(`/api/v1/companies/${ticker}/filings/${accession}${query}`,locale),{signal:AbortSignal.timeout(12000),headers:{accept:"application/json"}});
   if(!response.ok)return null;
   const detail=await response.json() as PublicFilingDetail;
   if(detail.ticker!==ticker||detail.filing?.ticker!==ticker)return null;
@@ -251,8 +254,12 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
   const match=url.pathname.match(/^\/api\/business\/v1\/companies\/([A-Z][A-Z0-9.-]{0,11})(\/capital|\/findings|\/fundamentals|\/events|\/filings|\/filings\/\d{10}-\d{2}-\d{6}|\/passages\/p[0-9a-f]{14,32})?$/);
   const detail=match?.[2]?.startsWith("/filings/")?match[2].slice("/filings/".length):null;
   // The reader pins a report to its published revision; nothing else takes a query.
-  const allowed=detail?new Set(["reportDate","reportVersion"]):new Set<string>();
+  const allowed=detail?new Set(["reportDate","reportVersion","lang"]):new Set<string>(["lang"]);
   if(!match||[...url.searchParams.keys()].some(k=>!allowed.has(k)))return json({error:"Not found"},404);
+  // `?lang=zh-CN` reads the generated prose in Chinese where it has been translated; the cache keys on the full URL.
+  const lang=url.searchParams.get("lang");
+  if(lang!=null&&!isLocale(lang))return json({error:"Not found"},404);
+  const locale:Locale|null=isLocale(lang)&&lang!=="en"?lang:null;
   // A second share class reads as the class the data is kept under.
   match[1]=canonicalTicker(match[1]);
   if(request.method!=="GET")return json({error:"Method not allowed"},405);
@@ -262,17 +269,17 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
    // Supplementary resources answer on their own and are cached only when they have something to say.
    const supplementary=async<T>(name:string,version:string,load:()=>Promise<T|null>)=>{const body=await load();const response=json({schemaVersion:version,status:body?"ready":"unavailable",[name]:body});if(!body)response.headers.set("cache-control","no-store");if(cache&&body)ctx.waitUntil(cache.put(key,response.clone()));return response;};
    if(match[2]==="/capital")return supplementary("capital","capital-response.v1",()=>loadCapital(match[1],fetcher));
-   if(match[2]==="/findings"){const bundle=await loadFindings(match[1],fetcher);const response=json({schemaVersion:"findings-response.v1",status:bundle?"ready":"unavailable",findings:bundle?.findings??null,passages:bundle?.passages??[],peers:bundle?.peers??null});if(!bundle)response.headers.set("cache-control","no-store");if(cache&&bundle)ctx.waitUntil(cache.put(key,response.clone()));return response;}
-   if(match[2]==="/events")return supplementary("events","events-response.v1",()=>loadEvents(match[1],fetcher));
-   if(match[2]==="/filings")return supplementary("filings","filing-digests-response.v1",()=>loadFilings(match[1],fetcher));
+   if(match[2]==="/findings"){const bundle=await loadFindings(match[1],fetcher,locale);const response=json({schemaVersion:"findings-response.v1",status:bundle?"ready":"unavailable",findings:bundle?.findings??null,passages:bundle?.passages??[],peers:bundle?.peers??null});if(!bundle)response.headers.set("cache-control","no-store");if(cache&&bundle)ctx.waitUntil(cache.put(key,response.clone()));return response;}
+   if(match[2]==="/events")return supplementary("events","events-response.v1",()=>loadEvents(match[1],fetcher,locale));
+   if(match[2]==="/filings")return supplementary("filings","filing-digests-response.v1",()=>loadFilings(match[1],fetcher,locale));
    if(match[2].startsWith("/passages/"))return supplementary("passage","passage-response.v1",()=>loadPassage(match[1],match[2]!.slice("/passages/".length),fetcher));
    if(detail){const reportDate=url.searchParams.get("reportDate"),reportVersion=url.searchParams.get("reportVersion");
-    const body=await loadFilingDetail(match[1],detail,reportDate&&reportVersion?{reportDate,reportVersion}:null,fetcher);
+    const body=await loadFilingDetail(match[1],detail,reportDate&&reportVersion?{reportDate,reportVersion}:null,fetcher,locale);
     if(!body)return json({error:"Not found"},404);
     const response=json(body);if(cache)ctx.waitUntil(cache.put(key,response.clone()));return response;}
    return supplementary("fundamentals","fundamentals-response.v1",()=>loadFundamentals(match[1],fetcher));
   }
-  try{const [flow,explainer,guidance,tree]=await Promise.all([loadPublicFlow(match[1],fetcher),loadExplainer(match[1],fetcher),loadGuidance(match[1],fetcher),loadTree(match[1],fetcher)]);const response=json({...flow,explainer,guidance,tree});
+  try{const [flow,explainer,guidance,tree]=await Promise.all([loadPublicFlow(match[1],fetcher,locale),loadExplainer(match[1],fetcher,locale),loadGuidance(match[1],fetcher,locale),loadTree(match[1],fetcher,locale)]);const response=json({...flow,explainer,guidance,tree});
    // An incomplete answer is never cached, so one slow upstream read cannot pin "preparing" for a minute.
    const cacheable=flow.status==="ready";
    if(!cacheable)response.headers.set("cache-control","no-store");

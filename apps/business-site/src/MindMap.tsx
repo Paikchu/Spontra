@@ -3,7 +3,7 @@ import type { CSSProperties, KeyboardEvent, MouseEvent, ReactNode } from "react"
 import type { TreeClaim, TreeNode, TreeRevenueModel, TreeSource } from "@/shared/analysis-contract/business-tree";
 import { revenueLabel } from "@/shared/analysis-runtime/business-tree";
 import { getLocale, labels, messages } from "@/packages/web/src/i18n";
-import { SourceLanguage } from "@/packages/web/src/i18n/SourceLanguage";
+import { SourceLanguage, langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import { mindEdgePath, mindType, type MindItem, type MindMapLayout } from "./mindmap-layout";
 
 /** One business the map hangs a breakdown from: the Sankey node, its name, and what the tree says about it. */
@@ -45,16 +45,16 @@ export function MindLayer({ mind, k, title, colorOf, picked, onPick, onTip, onLe
         onClick: () => onPick(item.id), onKeyDown: (e: KeyboardEvent) => key(e, item.id), onMouseMove: (e: MouseEvent) => onTip(e, item), onMouseLeave: onLeave };
       if (item.kind === "revenue") return <g key={item.id} className="fc-mind-item fc-mind-pill" data-picked={picked === item.id || undefined} {...common}>
         <rect x={item.x} y={item.y} width={item.w} height={item.h} rx={item.h / 2} />
-        <text x={item.x + t.padX} y={item.y + item.h / 2 + t.pill * 0.36} style={{ fontSize: t.pill }}><tspan className="fc-mind-coin">¥</tspan><tspan dx={t.pill * 0.35} lang="en">{item.revenue.label}</tspan></text>
+        <text x={item.x + t.padX} y={item.y + item.h / 2 + t.pill * 0.36} style={{ fontSize: t.pill }}><tspan className="fc-mind-coin">¥</tspan><tspan dx={t.pill * 0.35} lang={langOf(item.revenue.label)}>{item.revenue.label}</tspan></text>
       </g>;
       return <g key={item.id} className="fc-mind-item fc-mind-node" data-kind={item.node.kind} data-picked={picked === item.id || undefined} {...common}>
         <rect x={item.x} y={item.y} width={item.w} height={item.h} rx={7 * k} />
         {mind.stacked && item.gloss ? <text x={item.x + t.padX} y={item.y + t.name * 1.3} lang="en">
           <tspan className="fc-mind-name" style={{ fontSize: t.name }}>{item.name}</tspan>
-          <tspan className="fc-mind-gloss" x={item.x + t.padX} dy={t.gloss * 1.45} style={{ fontSize: t.gloss }}>{item.gloss}</tspan>
+          <tspan className="fc-mind-gloss" x={item.x + t.padX} dy={t.gloss * 1.45} style={{ fontSize: t.gloss }} lang={langOf(item.gloss)}>{item.gloss}</tspan>
         </text> : <text x={item.x + t.padX} y={item.y + item.h / 2 + t.name * 0.36} lang="en">
           <tspan className="fc-mind-name" style={{ fontSize: t.name }}>{item.name}</tspan>
-          {item.gloss && <tspan className="fc-mind-gloss" dx={t.inner} style={{ fontSize: t.gloss }}>{item.gloss}</tspan>}
+          {item.gloss && <tspan className="fc-mind-gloss" dx={t.inner} style={{ fontSize: t.gloss }} lang={langOf(item.gloss)}>{item.gloss}</tspan>}
         </text>}
       </g>;
     })}
@@ -82,18 +82,18 @@ export function MindLens({ item, branch, sources, onClose }: { item: MindItem; b
   return <section className="lens mind-lens" aria-label={m.details(name)} key={item.id}>
     <header className="lens-head">
       <div className="lens-title">
-        <b className="mind-lens-kind">{node ? KIND[node.kind] : m.business}</b><SourceLanguage />
+        <b className="mind-lens-kind">{node ? KIND[node.kind] : m.business}</b><SourceLanguage of={[node?.gloss, summary?.text, ...revenue.flatMap(r => [r.label, r.text])]} />
         <h2 lang={node ? "en" : undefined}>{name}</h2>
-        {node?.gloss && <span className="lens-basis" lang="en">{node.gloss}</span>}
+        {node?.gloss && <span className="lens-basis" lang={langOf(node.gloss)}>{node.gloss}</span>}
         {path && node && <span className="lens-basis">{path}</span>}
-        {highlight && <span className="lens-basis">{m.revenueModel} · <span lang="en">{highlight.label}</span></span>}
+        {highlight && <span className="lens-basis">{m.revenueModel} · <span lang={langOf(highlight.label)}>{highlight.label}</span></span>}
       </div>
       <div className="lens-nav"><Button variant="unstyled" type="button" className="lens-close" aria-label={m.close} onClick={onClose}>✕</Button></div>
     </header>
     <div className="lens-body">
       <div className="lens-text">
-        {summary ? <p className="mind-lens-summary" lang="en">{summary.text}{cite(summary)}</p> : <p className="mind-lens-empty">{m.noDescription}</p>}
-        {revenue.length > 0 ? <ul className="mind-lens-revenue">{revenue.map((r, i) => <li key={i} data-active={r === highlight || undefined}><b lang="en">{r.label}</b><small>{revenueLabel(r.type, getLocale())}</small><span lang="en">{r.text}{cite(r)}</span></li>)}</ul>
+        {summary ? <p className="mind-lens-summary" lang={langOf(summary.text)}>{summary.text}{cite(summary)}</p> : <p className="mind-lens-empty">{m.noDescription}</p>}
+        {revenue.length > 0 ? <ul className="mind-lens-revenue">{revenue.map((r, i) => <li key={i} data-active={r === highlight || undefined}><b lang={langOf(r.label)}>{r.label}</b><small>{revenueLabel(r.type, getLocale())}</small><span lang={langOf(r.text)}>{r.text}{cite(r)}</span></li>)}</ul>
           : !node?.children.length && <p className="mind-lens-empty">{m.noRevenue}</p>}
       </div>
       <div className="lens-text">

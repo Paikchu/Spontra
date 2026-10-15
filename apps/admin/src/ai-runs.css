@@ -66,3 +66,20 @@
 .ai-tree-steps pre { max-height: 220px; margin: 4px 0 0; }
 @media (max-width: 760px) { .ai-workspace { display: block; } .ai-workspace .ra-list { border-right: 0; border-bottom: 1px solid var(--line); } .ai-workspace .ra-list-scroll { max-height: 260px; } .ai-detail { max-height: none; } .ai-pad { padding: var(--space-4); } }
 .ai-lens-warnings { margin: 6px 0 10px; padding-left: 18px; color: var(--muted-foreground); font-size: 12px; }
+
+/* 中文译文: coverage per resource, then each English string beside its Chinese. */
+.tr-table td { padding: 8px 10px; border-bottom: 1px solid var(--line); color: var(--ink-soft); white-space: nowrap; }
+.tr-table td:first-child { padding-left: var(--space-5); }
+.tr-link { padding: 0; border: 0; background: none; color: var(--ink); font-size: 13px; font-weight: 600; text-align: left; cursor: pointer; }
+.tr-link[aria-pressed="true"] { color: var(--brand); }
+.tr-filters { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; margin: var(--space-6) 0 var(--space-4); }
+.tr-filters .ra-search { flex: 1 1 220px; max-width: 360px; }
+.tr-entries { display: grid; gap: var(--space-3); margin: 0; padding: 0; list-style: none; }
+.tr-entries > li { padding: var(--space-3) var(--space-4); border-radius: var(--sp-radius-sm); background: var(--surface-raised); box-shadow: 0 0 0 1px var(--line); }
+.tr-entries > li[data-status="rejected"] { box-shadow: 0 0 0 1px var(--danger-soft); }
+.tr-entries header { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; margin-bottom: var(--space-2); }
+.tr-entries header small { color: var(--ink-muted); font-size: 12px; }
+.tr-pair { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); }
+.tr-pair p { margin: 0; color: var(--ink-soft); font-size: 13px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+.tr-pair p[lang="zh-CN"] { color: var(--ink); }
+@media (max-width: 900px) { .tr-pair { grid-template-columns: 1fr; } }

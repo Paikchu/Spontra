@@ -6,6 +6,7 @@ import type { PublicFundamentalsResponse } from "@/shared/analysis-contract/fund
 import type { PublishedSecReport } from "@/shared/analysis-contract/report.ts";
 import type { ReportBlock } from "@/shared/analysis-contract/report-blocks.ts";
 import { getLocale, messages } from "@/packages/web/src/i18n";
+import { langOf } from "@/packages/web/src/i18n/SourceLanguage";
 
 const m = messages({
   qoq: (value: string) => `QoQ ${value}`, yoy: (value: string) => `YoY ${value}`, none: "n/a",
@@ -45,21 +46,21 @@ function Block({ block, context }: { block: ReportBlock; context: ReportBlockRen
   switch (block.type) {
     case "prose":
       return (
-        <div className="report-block report-block-prose sec-report-body" id={block.id} lang="en">
+        <div className="report-block report-block-prose sec-report-body" id={block.id} lang={langOf(block.text)}>
           {block.title && <h3 className="report-block-title">{block.title}</h3>}
           <RichText text={block.text} />
         </div>
       );
     case "callout":
       return (
-        <aside className="report-block report-block-callout" data-tone={block.tone} id={block.id} lang="en">
+        <aside className="report-block report-block-callout" data-tone={block.tone} id={block.id} lang={langOf(block.text)}>
           {block.title && <strong>{block.title}</strong>}
           <RichText text={block.text} />
         </aside>
       );
     case "key_points":
       return (
-        <div className="report-block report-block-points" id={block.id} lang="en">
+        <div className="report-block report-block-points" id={block.id} lang={langOf(block.points[0]?.detail ?? block.title)}>
           {block.title && <h3 className="report-block-title">{block.title}</h3>}
           <ul className="report-block-points-list">
             {block.points.map((point, index) => (
@@ -77,7 +78,7 @@ function Block({ block, context }: { block: ReportBlock; context: ReportBlockRen
       if (metrics.length === 0) return null;
       return (
         <div className="report-block report-block-metrics" id={block.id}>
-          {block.title && <h3 className="report-block-title" lang="en">{block.title}</h3>}
+          {block.title && <h3 className="report-block-title" lang={langOf(block.title)}>{block.title}</h3>}
           <div className="sec-report-metrics">
             {metrics.map((metric) => (
               <article key={metric.metricKey}>
