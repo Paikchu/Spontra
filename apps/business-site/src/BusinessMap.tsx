@@ -41,7 +41,7 @@ import { ReportLens } from "./ReportLens";
 import { Timeline } from "./Timeline";
 import { lazy, Suspense } from "react";
 import { getLocale, messages } from "@/packages/web/src/i18n";
-import { SourceLanguage } from "@/packages/web/src/i18n/SourceLanguage";
+import { SourceLanguage, langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import { compactShares, multiple, perShare, qoqLabel, yoyLabel } from "@/shared/analysis-runtime/locale";
 
 const m = messages({
@@ -673,7 +673,7 @@ function Dossier({ item, parent, sources, explainer }: { item: Item | null; pare
   const [description, basis] = (segment.description ?? "").split("\n");
   const english = (text: string | null | undefined) => text ? <span lang="en">{text}</span> : m.notDisclosed;
   return <section className="dossier" key={item.key} aria-label={m.profile(item.name)}>
-    <h3>{parent ? `${parent.name} / ` : ""}{item.name}{(segment.description || segment.customers || segment.monetization) && <SourceLanguage />}</h3>
+    <h3>{parent ? `${parent.name} / ` : ""}{item.name}<SourceLanguage of={[segment.description, segment.customers, segment.monetization]} /></h3>
     {description ? <p lang="en">{description}</p> : <p>{m.noDescription}</p>}
 
     <DossierTabs label={item.name} sections={[[m.customers, english(segment.customers)], [m.revenueModel, english(segment.monetization)]]} />
@@ -724,15 +724,15 @@ function ExplainedDossier({ item, parent, explainer, explained }: { item: Item; 
     return index < 0 ? null : <a key={id} href={cited[index].url} target="_blank" rel="noopener noreferrer" title={cited[index].title}>{index + 1}</a>;
   })}</span>;
   return <section className="dossier" aria-label={m.profile(item.name)}>
-    <h3>{parent ? `${parent.name} / ` : ""}{item.name}<SourceLanguage /></h3>
+    <h3>{parent ? `${parent.name} / ` : ""}{item.name}<SourceLanguage of={[explained.summary?.text, ...(explained.offerings ?? []).map(p => p.description.text), ...explained.sections.flatMap(s => [s.title, ...s.items.flatMap(i => [i.label, i.claim.text])])]} /></h3>
     {/* Without a verified summary, the filing's own one-line description still says what the business is. */}
-    {explained.summary ? <p className="dossier-lede" lang="en">{explained.summary.text}{cite(explained.summary)}</p>
+    {explained.summary ? <p className="dossier-lede" lang={langOf(explained.summary.text)}>{explained.summary.text}{cite(explained.summary)}</p>
       : item.segment.description && <p lang="en">{item.segment.description.split("\n")[0]}</p>}
 
     {/* Products come first when verified; the other tabs are the angles the model chose for this business. */}
     <DossierTabs label={item.name} sections={[
-      ...(explained.offerings?.length ? [[m.products, <ul className="dossier-products" lang="en">{explained.offerings.map(p => <li key={p.id}><b>{p.name}</b>{p.description.text}{cite(p.description)}</li>)}</ul>] as [string, ReactNode]] : []),
-      ...explained.sections.map((section): [string, ReactNode, string] => [section.title, <DossierSection section={section} cite={cite} />, "en"]),
+      ...(explained.offerings?.length ? [[m.products, <ul className="dossier-products">{explained.offerings.map(p => <li key={p.id} lang={langOf(p.description.text)}><b>{p.name}</b>{p.description.text}{cite(p.description)}</li>)}</ul>] as [string, ReactNode]] : []),
+      ...explained.sections.map((section): [string, ReactNode, string] => [section.title, <DossierSection section={section} cite={cite} />, langOf(section.title)]),
     ]} />
 
     <ol className="sources sources--numbered">{cited.map(s => <li key={s.id}><a href={s.url} target="_blank" rel="noopener noreferrer">{s.title}<span aria-hidden="true"> ↗</span></a></li>)}</ol>

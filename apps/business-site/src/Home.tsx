@@ -5,8 +5,8 @@ import { LanguageToggle, ThemeToggle } from "./Sidebar";
 import { loadDigest, type CompanyDigest } from "./company-data";
 import { KIND_LABEL, type VerifiedFinding } from "./findings-model";
 import { periodReport } from "./events-model";
-import { messages } from "@/packages/web/src/i18n";
-import { SourceLanguage } from "@/packages/web/src/i18n/SourceLanguage";
+import { getLocale, messages } from "@/packages/web/src/i18n";
+import { SourceLanguage, langOf } from "@/packages/web/src/i18n/SourceLanguage";
 
 const m = messages({
   title: "Business View", watchOutcome: "Watch outcome", recent: "Recently viewed", findings: "Findings", latest: "Latest reports", loading: "Loading findings",
@@ -29,12 +29,14 @@ function byReport(a: CompanyDigest, b: CompanyDigest) {
 /** Verified once per page load: returning home shows the same digests without reading every statement again. */
 const digestCache = new Map<string, Promise<CompanyDigest | null>>();
 function digestOf(ticker: string) {
-  let digest = digestCache.get(ticker);
+  // Digests are read in the page's language, so each language keeps its own.
+  const key = `${getLocale()}:${ticker}`;
+  let digest = digestCache.get(key);
   if (!digest) {
     digest = loadDigest(ticker, new AbortController().signal).catch(() => null);
-    digestCache.set(ticker, digest);
+    digestCache.set(key, digest);
     // Only a complete answer is kept; an empty or fallback one is read again next time home opens.
-    void digest.then(d => { if (!d || d.partial) digestCache.delete(ticker); });
+    void digest.then(d => { if (!d || d.partial) digestCache.delete(key); });
   }
   return digest;
 }
@@ -84,7 +86,7 @@ function Chip({ item, copy }: { item: Item; copy: boolean }) {
   return <a className="finding-chip marquee-chip" data-kind={f.kind} data-nav href={`/companies/${ticker}?finding=${encodeURIComponent(f.id)}`}
     tabIndex={copy ? -1 : undefined} title={`${ticker} · ${report(periodEnd)} · ${KIND_LABEL[f.kind]}`}>
     <CompanyLogo ticker={ticker} small />
-    <span lang="en">{f.title}</span>
+    <span lang={langOf(f.title)}>{f.title}</span>
     {f.watchOutcome && <i className="finding-settled" aria-label={m.watchOutcome}>↻</i>}
   </a>;
 }
@@ -130,7 +132,7 @@ export function Home({ light, onToggleTheme, recent, onPick }: { light: boolean;
       </nav>}
     </section>
     {(loading || items.length > 0) && <section className="home-findings" aria-label={m.findings} aria-busy={loading}>
-      <h2 className="home-findings-title">{m.findings}<small>{m.latest}</small><SourceLanguage /></h2>
+      <h2 className="home-findings-title">{m.findings}<small>{m.latest}</small><SourceLanguage of={items.map(item => item.finding.title)} /></h2>
       {items.length > 0 ? <div className="marquee">{rows(items).map((row, i) => <MarqueeRow key={i} items={row} index={i} />)}</div>
         : <div className="marquee" role="status" aria-label={m.loading}><div className="marquee-row"><div className="marquee-track">
           {[0, 1, 2, 3, 4, 5].map(i => <span key={i} className="finding-chip marquee-chip marquee-ghost" style={{ animationDelay: `${i * 90}ms` }} />)}

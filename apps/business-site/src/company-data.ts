@@ -8,11 +8,13 @@ import type { PublicCapitalStructure } from "@/shared/analysis-contract/capital-
 import type { FindingPassage, FindingsPublication } from "@/shared/analysis-contract/findings";
 import type { PeersPublication } from "@/shared/analysis-contract/peers";
 import type { FindingFundamentals } from "@/shared/analysis-runtime/findings";
+import { getLocale } from "@/packages/web/src/i18n";
 import { findingData, verifiedFindings, type VerifiedFinding } from "./findings-model";
 
 export type CompanyPublication = CompleteFlowPublication & { explainer?: BusinessExplainer | null; guidance?: GuidancePublication | null; tree?: BusinessTree | null };
 
-const companyPath = (ticker: string, resource = "") => `/api/business/v1/companies/${encodeURIComponent(ticker)}${resource}`;
+/** In Chinese the API serves the generated prose translated where the pipeline has translated it; the rest stays English. */
+const companyPath = (ticker: string, resource = "") => `/api/business/v1/companies/${encodeURIComponent(ticker)}${resource}${getLocale() === "en" ? "" : `?lang=${getLocale()}`}`;
 
 export async function fetchCompany(ticker: string, signal: AbortSignal): Promise<CompanyPublication> {
   const response = await fetch(companyPath(ticker), { signal });

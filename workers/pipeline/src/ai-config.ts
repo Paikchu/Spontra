@@ -24,6 +24,8 @@ export const AI_TOOL_REASONING = {
   lens: "low",
   /** The analyst reads filings and composes the dossier; its harness verifies, so it reasons at the default depth. */
   analyst: "high",
+  /** Translating published English into Chinese; every translation is checked against its source. */
+  translate: "low",
 } as const satisfies Record<string, ReasoningEffort>;
 export type AiTool = keyof typeof AI_TOOL_REASONING;
 

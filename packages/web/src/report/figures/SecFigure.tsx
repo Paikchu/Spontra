@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { readableSecFigure, secFigureLabel, type SecFigure, type SecFigureKind } from "@/shared/analysis-runtime/sec-figures.ts";
 import { getLocale, messages } from "@/packages/web/src/i18n";
+import { langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import { CashBridge } from "./CashBridge.tsx";
 import { GrowthChart } from "./GrowthChart.tsx";
 import { KpiStrip } from "./KpiStrip.tsx";
@@ -48,7 +49,7 @@ export function SecFigureView({ id, figure, title, caption }: { id: string; figu
   return <figure id={id} className="report-content-figure sec-figure" data-figure-kind={figure.kind}>
     <figcaption><strong>{title}</strong><small>{secFigureLabel(figure.kind, getLocale())} · {figure.periodScope === "annual" ? m.annual : m.quarterly} · {m.asOf(figure.periodEnd)} · {m.source}</small></figcaption>
     <Body figure={figure} />
-    {caption && <p className="report-content-caption" lang="en">{caption}</p>}
+    {caption && <p className="report-content-caption" lang={langOf(caption)}>{caption}</p>}
   </figure>;
 }
 

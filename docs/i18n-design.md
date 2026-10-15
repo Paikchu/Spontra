@@ -1,6 +1,6 @@
 # ADR-i18n: 业务地图的国际化（首个目标语言：中文）
 
-**Status:** 本期（前端）已实现 2026-10-13，未发布；下期（后端译文）待做
+**Status:** 本期（前端）2026-10-13 上线；下期（后端译文）2026-10-15 实现
 **Date:** 2026-10-13
 **Deciders:** Max
 
@@ -102,12 +102,26 @@ C3 细节：
 6. [x] 正文区域（findings、报告、业务树）显示内容语言标签（本期恒为 "English"），为下期译文到位做好位置。
 7. [x] 验证：`npm run check:i18n` 离线检查文案表、中文字面量、数字形式与渲染页面，并纳入 `npm run build`；用 fixture 离线预览核对过公司页、要点、事件与财报面板的中文版面。真实数据下的版面在上线后再看一次。
 
-下期（后端，另开 ADR 执行）：
+下期（后端）：2026-10-15 实现，设计与最初设想有三处不同，见下节。
 
-8. [ ] `ai-config.ts` 增 `locales`；发布流程末尾投递 `publication.translate` 事件。
-9. [ ] `shared/analysis-contract` 各类型声明 reader-facing 字段白名单；实现结构化翻译器 + `glossary.zh-CN.ts`。
-10. [ ] `sec_cache` 译文键与 `sourceSha256`；读 API `lang` 参数与字段级回退。
-11. [ ] 前端 `fetchCompany/fetchSupplement` 带上 locale，内容语言标签改为读响应的 `contentLanguage`。
+8. [x] 翻译任务 `translate`：订阅 `findings.published`、`dossier.published`、`explainer.published`、`tree.published`、`guidance.published`、`events.published`、`report.published`，Workflow `spontra-translate`，模型低推理档，每日调用上限 `TRANSLATION_DAILY_CALLS`（默认 300）。
+9. [x] 字段规则在 `shared/analysis-runtime/translation.ts`（每种资源一条规则），术语表在 `shared/analysis-runtime/glossary.ts`，译文检查 `checkTranslation`。
+10. [x] 译文记忆表 `i18n_strings`（迁移 0024），每个资源一张表写入 `sec_cache`（`i18n:v1:zh-CN:<resource>:<ticker>[:<accession>]`）；读 API 各路由接受 `?locale=zh-CN`。
+11. [x] 站点 Worker 接受 `?lang=zh-CN` 并转成 `locale`；页面按文字本身判断 `lang`，「英文原文」标签只在仍有英文时出现。
+
+### 下期实现记录（2026-10-15）
+
+**与最初设想的差异**
+
+1. **读 API 直接返回译后的同构 payload，而不是附带一份字段级 overlay。** 页面上的数字核验（要点判断、lens 正文）原来只认英文写法（`$28.5 billion`）。把 `proseNumbers` 扩展为同时识别中文数量级（`285亿美元` 读作 28.5，与证据候选值同一尺度；`123万股` 按整数比较），核验对中英文一视同仁，于是读 API 可以把译文直接替换进英文 payload，浏览器端零结构改动。
+2. **按字符串翻译，不按发布物翻译。** 每个英文字符串按 SHA-256 记入 `i18n_strings`，只翻译从未翻译过的字符串；要点重新生成时保留下来的句子不再付费。译文未通过检查记为 `rejected`，同一翻译器版本内不再重试。
+3. **采集与替换用同一个遍历器。** `collectProse`（流水线采集）与 `localize`（读 API 替换）共用一套规则，保证"翻译了什么"与"替换了什么"完全一致。逐字引用（lens 的 quote 块、业务脑图的 anchor、指引的 quote）、来源与材料标题、id、数字字段一律不碰。完整财报（`filing`）结构太深，规则改为"含两个以上英文单词的字符串"，并跳过证据、摘录、事实、数字与 id 类字段。
+
+**译文检查（`checkTranslation`，写入前逐条执行）**：数值一一对应（中文单位换算后比较）、`{value}` 等占位符不变、多行 Markdown 的行结构不变、确实写成中文、除原文已有的名称外不新增英文、无感叹号、长度不超限。未通过的译文带着问题清单回给模型改一次，仍不通过则保留英文。
+
+**读路径**：两次主键查询（英文 payload + 译文表）加一次纯函数替换，不调用模型。未翻译的字符串保持英文，页面据文字判断 `lang`，「英文原文」标签随之消失或保留。
+
+**离线检查**：`npm run check:i18n` 新增译后页面场景：用 fixture 的中文表渲染公司页，要求不再出现任何生成的英文、要点在中文下仍通过数字核验、标为 `lang="en"` 的元素里没有中文、「英文原文」标签不会在没有英文时出现；fixture 的中文表本身也必须逐条通过 `checkTranslation`。
 
 ## 延伸：AI 即时生成的文本与图片
 

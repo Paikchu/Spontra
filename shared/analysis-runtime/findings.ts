@@ -557,25 +557,45 @@ export function evidenceCandidates(r: ResolvedEvidence): number[] {
 
 const MONTH_NAME = String.raw`Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|June?|July?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?`;
 const PERIOD_UNIT = String.raw`months?|quarters?|years?|weeks?|days?|fiscal\s+(?:years?|quarters?)`;
+/** The same periods and counts written in Chinese: 12 个月, 8 个季度, 3 年, 第 2 季度. */
+const PERIOD_UNIT_ZH = String.raw`个?(?:月份?|季度|财季|季|财年|年|周|天|日)`;
+/** Chinese counts amounts in ten-thousands: 万, 亿 (10^8) and 万亿 (10^12). */
+const ZH_MAGNITUDE: Record<string, number> = { "万亿": 1e12, "亿": 1e8, "万": 1e4 };
 /**
  * A number in prose, with what may mark it as a period, a count or a name rather than a figure: a fiscal-period
- * prefix (FY2026, Q3, H1) or a month name (May 31); a period unit (12 months, 8 quarters, a 3-year plan), an ordinal
- * (4th), a quarter or half suffix (3Q, 2H) or a form name (10-K, 8-K). Digits inside an ISO date or a word are never read.
+ * prefix (FY2026, Q3, H1, 第) or a month name (May 31); a period unit (12 months, 8 quarters, a 3-year plan, 12 个月),
+ * an ordinal (4th), a quarter or half suffix (3Q, 2H) or a form name (10-K, 8-K). Digits inside an ISO date or a word
+ * are never read. A Chinese magnitude after the number (285亿) is captured so the amount can be read in full.
  */
 const PROSE_NUMBER = new RegExp(
-  String.raw`(?<![\w.])(?<!\d{4}-)(?<!\d{4}-\d{2}-)(FY\s?|[QH](?=\d)|(?:${MONTH_NAME})\.?\s)?` +
+  String.raw`(?<![\w.])(?<!\d{4}-)(?<!\d{4}-\d{2}-)(FY\s?|[QH](?=\d)|第\s?|(?:${MONTH_NAME})\.?\s)?` +
   String.raw`([-−]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?)` +
-  String.raw`(\s?-?(?:${PERIOD_UNIT})\b|(?:st|nd|rd|th)\b|[QH](?![a-z])|-[KQF]\b)?`,
+  String.raw`(\s?-?(?:${PERIOD_UNIT})\b|(?:st|nd|rd|th)\b|[QH](?![a-z])|-[KQF]\b|\s?${PERIOD_UNIT_ZH})?` +
+  String.raw`(\s?(?:万亿|亿|万))?`,
   "gi");
+
+/**
+ * An amount written with a Chinese magnitude, put in the scale English prose would use for it, so 285亿 reads as
+ * 28.5 (billions) and 3.5亿 as 350 (millions), the numbers the evidence candidates hold; below a million, and for a
+ * share count (123万股), it stays whole.
+ */
+function fromChineseMagnitude(value: number, magnitude: string, shares: boolean): number {
+  const absolute = value * ZH_MAGNITUDE[magnitude]!;
+  // Share counts are compared whole, as the evidence holds them.
+  if (shares) return absolute;
+  for (const scale of [1e12, 1e9, 1e6]) if (Math.abs(absolute) >= scale) return Number((absolute / scale).toPrecision(12));
+  return absolute;
+}
 
 /** Numeric statements in prose, skipping years, dates, fiscal periods, period counts, ordinals and form names. */
 export function proseNumbers(prose: string): number[] {
   const out: number[] = [];
   for (const match of prose.matchAll(PROSE_NUMBER)) {
-    const [, prefix, raw, suffix] = match;
+    const [, prefix, raw, suffix, magnitude] = match;
     if (prefix || suffix) continue;
     const value = Number(raw.replace("−", "-").replace(/,/g, ""));
     if (!Number.isFinite(value)) continue;
+    if (magnitude) { out.push(fromChineseMagnitude(value, magnitude.trim(), prose[match.index! + match[0].length] === "股")); continue; }
     // A year, alone or after "fiscal" or "calendar".
     if (Number.isInteger(value) && value >= 1900 && value <= 2100) continue;
     out.push(value);

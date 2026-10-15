@@ -66,6 +66,8 @@ async function checkLiterals(files: string[]): Promise<string[]> {
     const lines = source.split("\n");
     const ast = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
     const visit = (node: ts.Node) => {
+      // String.raw builds regular expressions, not copy a reader sees.
+      if (ts.isTaggedTemplateExpression(node) && node.tag.getText(ast) === "String.raw") return;
       let text: string | null = null;
       if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) text = node.text;
       else if (ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node)) text = node.text;

@@ -3,6 +3,7 @@ import type { CompanyEvent, EventsPublication } from "@/shared/analysis-contract
 import type { PublicFilingDigest, PublicFilingDigestPage } from "@/shared/analysis-contract/filings";
 import { DAY_MS } from "@/shared/analysis-runtime/events";
 import { messages } from "@/packages/web/src/i18n";
+import { langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import { eventTitle, isQuietInsider, periodReport, type TimelinePoint } from "./events-model";
 
 const m = messages({
@@ -89,8 +90,8 @@ export function reportTitle(r: PublicFilingDigest): string {
   return r.headline || m.pending(r.periodLabel ?? r.form);
 }
 
-/** "en" while the title is the generated headline, which stays in English. */
-export const reportTitleLang = (r: PublicFilingDigest): "en" | undefined => r.headline ? "en" : undefined;
+/** The language of the generated headline while it is the title (Chinese once translated); undefined while the title is composed in the reader's language. */
+export const reportTitleLang = (r: PublicFilingDigest): ReturnType<typeof langOf> | undefined => r.headline ? langOf(r.headline) : undefined;
 
 /**
  * The rail's digest while its full list is closed: the newest report and the latest `events` filings, newest first.

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/packages/web/src/ui/button";
-import { messages } from "@/packages/web/src/i18n";
+import { getLocale, messages } from "@/packages/web/src/i18n";
 import type { PublicFilingDetail } from "@/shared/analysis-contract/filings";
 import { filingPresentation } from "@/packages/web/src/report-client";
 import { SecReportDocument } from "@/packages/web/src/sec-report/SecReportDocument";
@@ -35,7 +35,8 @@ export default function ReportDialog({ ticker, accession, snapshot, onClose }: {
   }, []);
   useEffect(() => {
     const controller = new AbortController();
-    const query = snapshot ? "?" + new URLSearchParams(snapshot) : "";
+    const params = new URLSearchParams({ ...snapshot ?? {}, ...getLocale() === "en" ? {} : { lang: getLocale() } }).toString();
+    const query = params ? "?" + params : "";
     fetch(`/api/business/v1/companies/${encodeURIComponent(ticker)}/filings/${encodeURIComponent(accession)}${query}`, { signal: controller.signal })
       .then(r => r.ok ? r.json() as Promise<PublicFilingDetail> : Promise.reject(new Error(String(r.status))))
       .then(body => { if (!controller.signal.aborted) setDetail(body); })

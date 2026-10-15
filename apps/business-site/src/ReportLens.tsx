@@ -2,8 +2,8 @@ import { Button } from "@/packages/web/src/ui/button";
 import { useState } from "react";
 import type { PublicFilingDigest } from "@/shared/analysis-contract/filings";
 import { labels, messages } from "@/packages/web/src/i18n";
-import { SourceLanguage } from "@/packages/web/src/i18n/SourceLanguage";
-import { reportTitle } from "./reports-model";
+import { SourceLanguage, langOf } from "@/packages/web/src/i18n/SourceLanguage";
+import { reportTitle, reportTitleLang } from "./reports-model";
 
 const VERIFICATION = labels({ verified: "Figures verified", partial: "Partly verified", failed: "Verification failed" }, { verified: "数据已核验", partial: "部分核验", failed: "核验未通过" });
 const m = messages({
@@ -49,8 +49,8 @@ export function ReportLens({ report, ticker, index, count, onStep, onClose, onOp
     <header className="lens-head">
       <div className="lens-title">
         <b className="lens-kind report-kind">{report.periodLabel ?? report.form}</b>
-        <h2>{reportTitle(report)}</h2>
-        <span className="lens-basis">{report.sources.length ? m.release(report.date, report.periodEnd) : m.filed(report.form, report.filingDate)}{report.verification && ` · ${VERIFICATION[report.verification]}`}<SourceLanguage /></span>
+        <h2 lang={reportTitleLang(report)}>{reportTitle(report)}</h2>
+        <span className="lens-basis">{report.sources.length ? m.release(report.date, report.periodEnd) : m.filed(report.form, report.filingDate)}{report.verification && ` · ${VERIFICATION[report.verification]}`}<SourceLanguage of={[report.headline, report.analystView, ...report.bullets.flatMap(b => [b.label, b.detail])]} /></span>
       </div>
       <div className="lens-nav">
         {report.hasReport && <Button variant="unstyled" type="button" className="lens-pair report-open" onClick={onOpenReport}>{m.readFull}</Button>}
@@ -62,25 +62,25 @@ export function ReportLens({ report, ticker, index, count, onStep, onClose, onOp
       <div className="lens-chart report-figures">
         {report.keyMetrics.length > 0 ? <dl className="report-metrics" aria-label={m.keyFinancials}>
           {report.keyMetrics.map(k => <div key={k.key} className="report-metric" data-status={k.status}>
-            <dt><span lang="en">{k.label}</span>{k.status === "derived" ? <i> · {m.derived}</i> : k.status === "not_comparable" ? <i> · {m.notComparable}</i> : null}</dt>
+            <dt><span lang={langOf(k.label)}>{k.label}</span>{k.status === "derived" ? <i> · {m.derived}</i> : k.status === "not_comparable" ? <i> · {m.notComparable}</i> : null}</dt>
             <dd><b>{k.value}</b>{(k.yoy || k.qoq) && <small>{k.yoy && <em data-trend={trend(k.yoy)}>{m.yoy} {k.yoy}</em>}{k.qoq && <em data-trend={trend(k.qoq)}>{m.qoq} {k.qoq}</em>}</small>}</dd>
           </div>)}
         </dl> : report.changes.length > 0 ? <ul className="report-changes" aria-label={m.changes}>
-          {report.changes.map((c, i) => <li key={i}><b>{c.compare === "QoQ" ? m.qoq : m.yoy} · <span lang="en">{c.topic}</span></b><span lang="en">{c.statement}</span></li>)}
+          {report.changes.map((c, i) => <li key={i}><b>{c.compare === "QoQ" ? m.qoq : m.yoy} · <span lang={langOf(c.topic)}>{c.topic}</span></b><span lang={langOf(c.statement)}>{c.statement}</span></li>)}
         </ul> : <div className="lens-empty">{report.analysisStatus === "processing" ? m.processing : m.noFigures}</div>}
         {report.keyMetrics.length > 0 && report.changes.length > 0 && <ul className="report-changes report-changes--below" aria-label={m.changes}>
-          {report.changes.slice(0, more ? 8 : 3).map((c, i) => <li key={i}><b>{c.compare === "QoQ" ? m.qoq : m.yoy} · <span lang="en">{c.topic}</span></b><span lang="en">{c.statement}</span></li>)}
+          {report.changes.slice(0, more ? 8 : 3).map((c, i) => <li key={i}><b>{c.compare === "QoQ" ? m.qoq : m.yoy} · <span lang={langOf(c.topic)}>{c.topic}</span></b><span lang={langOf(c.statement)}>{c.statement}</span></li>)}
           {report.changes.length > 3 && <li><Button variant="unstyled" type="button" className="report-more" onClick={() => setMore(v => !v)}>{more ? m.showLess : m.more(report.changes.length - 3)}</Button></li>}
         </ul>}
       </div>
       <div className="lens-text">
-        {report.bullets.length > 0 ? <ul className="event-bullets" lang="en">{report.bullets.map((b, i) => <li key={i} data-importance={b.importance}><b>{b.label}</b>{b.detail}</li>)}</ul>
+        {report.bullets.length > 0 ? <ul className="event-bullets">{report.bullets.map((b, i) => <li key={i} data-importance={b.importance} lang={langOf(b.detail)}><b>{b.label}</b>{b.detail}</li>)}</ul>
           : report.analysisStatus === "processing" || report.analysisStatus === "not_collected" ? <p className="lens-judgment">{m.processing}</p>
-          : report.headline ? <p className="lens-judgment" lang="en">{report.headline}</p> : <p className="lens-judgment">{m.noAnalysis}</p>}
-        {report.analystView && <p className="event-view"><b>{m.analystView}</b><span lang="en">{report.analystView}</span></p>}
+          : report.headline ? <p className="lens-judgment" lang={langOf(report.headline)}>{report.headline}</p> : <p className="lens-judgment">{m.noAnalysis}</p>}
+        {report.analystView && <p className="event-view"><b>{m.analystView}</b><span lang={langOf(report.analystView)}>{report.analystView}</span></p>}
         {report.report && <details className="event-footnotes"><summary>{m.further}</summary><p lang="en">{report.report}</p></details>}
-        {report.guidance.length > 0 && <ul className="report-claims" data-kind="guidance">{report.guidance.map((g, i) => <li key={i}><b>{m.guidance}</b><span lang="en">{g}</span></li>)}</ul>}
-        {report.risks.length > 0 && <ul className="report-claims" data-kind="risk">{report.risks.map((r, i) => <li key={i}><b>{m.risk}</b><span lang="en">{r}</span></li>)}</ul>}
+        {report.guidance.length > 0 && <ul className="report-claims" data-kind="guidance">{report.guidance.map((g, i) => <li key={i}><b>{m.guidance}</b><span lang={langOf(g)}>{g}</span></li>)}</ul>}
+        {report.risks.length > 0 && <ul className="report-claims" data-kind="risk">{report.risks.map((r, i) => <li key={i}><b>{m.risk}</b><span lang={langOf(r)}>{r}</span></li>)}</ul>}
         {report.warnings.length > 0 && <ul className="report-warnings" lang="en">{report.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>}
         {report.generatedAt && <p className="event-generated">{m.generated(report.generatedAt.slice(0, 10))}</p>}
         <ol className="sources sources--numbered">

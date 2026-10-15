@@ -11,7 +11,7 @@ export const EVENT_TYPES = [
   "task.version_changed",
   "transcript.stored", "explainer.published", "tree.published", "findings.published", "events.published", "dossier.published",
   "library.requested", "library.prepared", "library.cards.published", "library.links.requested",
-  "peers.published",
+  "peers.published", "translations.published",
 ] as const;
 export type EventType = typeof EVENT_TYPES[number];
 
@@ -21,7 +21,7 @@ export const TASK_NAMES = [
   "sec-report", "guidance", "events",
   "memory", "company-analysis", "explainer", "tree", "findings", "analyst",
   "library", "library-cards", "library-links", "library-search", "storage-sweep",
-  "peers",
+  "peers", "translate",
 ] as const;
 export type TaskName = typeof TASK_NAMES[number];
 
@@ -87,6 +87,8 @@ export const TASKS: Record<TaskName, TaskMeta> = {
   "storage-sweep": { emits: [], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "global" },
   // One global projection of every data company's comparable figures, for peers tables resolved at read time; no model.
   "peers": { emits: ["peers.published"], debounceMs: 2 * MINUTE, maxWaitMs: 30 * MINUTE, scope: "global" },
+  // Translates the reader-facing prose of every publication the map reads into Chinese, string by string (Workflow; model at low reasoning).
+  "translate": { emits: ["translations.published"], debounceMs: 2 * MINUTE, maxWaitMs: 30 * MINUTE, scope: "data" },
 };
 
 const form = (event: PipelineEvent) => event.detail?.form ?? "";
@@ -112,15 +114,21 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
   "archive.prune.requested": [{ task: "archive-prune-scan" }],
   "filings.indexed": [{ task: "guidance" }],
   "report.published": [
+    { task: "translate" },
     { task: "events", when: e => /^(?:8|6)-K/.test(form(e)) },
     { task: "memory", when: e => PERIODIC.test(form(e)) },
     { task: "company-analysis", when: e => PERIODIC.test(form(e)) },
   ],
-  "map.derived": [{ task: "findings" }, { task: "peers" }],
-  "guidance.published": [{ task: "findings" }],
+  "map.derived": [{ task: "findings" }, { task: "peers" }, { task: "translate" }],
+  "guidance.published": [{ task: "findings" }, { task: "translate" }],
   "fundamentals.updated": [{ task: "findings" }, { task: "peers" }],
   "analysis.published": [{ task: "findings" }],
-  "findings.published": [{ task: "analyst" }],
+  "findings.published": [{ task: "analyst" }, { task: "translate" }],
+  // Every publication with reader-facing prose is translated once it lands (docs/i18n-design.md).
+  "dossier.published": [{ task: "translate" }],
+  "explainer.published": [{ task: "translate" }],
+  "tree.published": [{ task: "translate" }],
+  "events.published": [{ task: "translate" }],
 };
 
 /** Emitters that are not tasks. `task.version_changed` is routed to the one task it names, never subscribed. */

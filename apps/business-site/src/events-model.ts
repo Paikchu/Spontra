@@ -3,6 +3,7 @@ import type { CompanyEvent, EventClass, EventsPublication } from "@/shared/analy
 import { DAY_MS, EVENT_CLASS_LABEL as EVENT_CLASS_LABEL_EN, eventClassLabel, holdingPath, INSIDER_RULES, insiderCadence, insiderCluster, insiderVerdict, soldShareOfHolding, type InsiderVerdict } from "@/shared/analysis-runtime/events";
 import { compactMoney, compactShares, shortPeriod } from "@/shared/analysis-runtime/locale";
 import { getLocale, labels, messages } from "@/packages/web/src/i18n";
+import { langOf } from "@/packages/web/src/i18n/SourceLanguage";
 
 const m = messages({
   sale: (who: string, n: string) => `${who} · Sale ${n}`,
@@ -51,9 +52,9 @@ export function eventTitle(e: CompanyEvent): string {
   return `${EVENT_CLASS_LABEL[e.class]} · ${e.form}${e.items.length ? ` · Item ${e.items.filter(i => i !== "9.01").join(", ") || e.items.join(", ")}` : ""}`;
 }
 
-/** "en" when the event's title is generated or EDGAR text (left in English), undefined when it is composed in the reader's language. */
-export const eventTitleLang = (e: CompanyEvent): "en" | undefined =>
-  !e.insider && (!!e.summary?.headline || (!!e.description && !/^(8-K|6-K|FORM)\b/i.test(e.description))) ? "en" : undefined;
+/** The language of the event's title when it is generated (translated once the pipeline has) or EDGAR text (English); undefined when it is composed in the reader's language. */
+export const eventTitleLang = (e: CompanyEvent): ReturnType<typeof langOf> | undefined =>
+  !e.insider && (!!e.summary?.headline || (!!e.description && !/^(8-K|6-K|FORM)\b/i.test(e.description))) ? langOf(eventTitle(e)) : undefined;
 
 export type TimelinePoint = {
   id: string;

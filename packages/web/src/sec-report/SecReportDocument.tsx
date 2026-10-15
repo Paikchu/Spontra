@@ -9,7 +9,7 @@ import { FinancialBridge, QuarterChanges, ReaderSection, WatchConditions } from 
 import { formatSecMetricLabel, formatSecMetricValue } from "@/packages/web/src/model/sec-metric-format.ts";
 import { localizeReaderWarning, parseSecReaderReport } from "@/shared/analysis-runtime/sec-reader-schema.ts";
 import { getLocale, messages } from "@/packages/web/src/i18n";
-import { SourceLanguage } from "@/packages/web/src/i18n/SourceLanguage";
+import { langOf, SourceLanguage } from "@/packages/web/src/i18n/SourceLanguage";
 
 const m = messages({
   sourcesAndBasis: "Sources and analysis basis", keyTakeaways: "Key takeaways", investmentView: "Investment view", keyMetrics: "Key metrics",
@@ -50,10 +50,16 @@ const m = messages({
 type ReportSectionDefinition = ReportSectionLink & {
   className?: string;
   content: ReactNode;
-  /** Generated sections are English throughout; a generated title alone marks only the heading. */
-  lang?: "en";
-  titleLang?: "en";
+  /** A generated section carries the language its text is in; a generated title alone marks only the heading. */
+  lang?: string;
+  titleLang?: string;
+  /** The generated text the section's language tag speaks for: its title and main text. */
+  sourceTexts?: ReadonlyArray<string | null | undefined>;
 };
+
+/** The main text of a composed section: its first prose, callout or key point. */
+const presentationText = (block: NonNullable<PublishedSecReport["presentation"]>["sections"][number]["blocks"][number]) =>
+  block.type === "prose" || block.type === "callout" ? block.text : block.type === "key_points" ? block.points[0]?.detail : undefined;
 
 export function SecReportDocument({ companyName, filing, embedded = false }: { companyName: string; filing: SecFilingWithSummary; embedded?: boolean }) {
   const summary = filing.summary;
@@ -81,6 +87,7 @@ export function SecReportDocument({ companyName, filing, embedded = false }: { c
       id: "sec-report-conclusions",
       title: m.keyTakeaways,
       className: "sec-report-conclusions",
+      sourceTexts: [...(summary?.bullets ?? []).map((bullet) => bullet.detail), summary?.analystView],
       content: (
         <>
           <ConclusionList bullets={summary?.bullets ?? []} />
@@ -97,7 +104,7 @@ export function SecReportDocument({ companyName, filing, embedded = false }: { c
       id: "sec-report-body",
       title: m.overview,
       content: (
-        <div className="sec-report-body" lang="en">
+        <div className="sec-report-body" lang={langOf(summary?.report)}>
           <RichText text={summary?.report ?? ""} />
         </div>
       ),
@@ -106,7 +113,7 @@ export function SecReportDocument({ companyName, filing, embedded = false }: { c
       id: "sec-report-nodes",
       title: nodeSectionTitle,
       content: (
-        <div className="sec-report-node-list" lang="en">
+        <div className="sec-report-node-list" lang={langOf(summary?.nodes?.[0]?.title)}>
           {(summary?.nodes ?? []).map((node, index) => (
             <details
               id={nodeLinks[index].id}
@@ -143,14 +150,17 @@ export function SecReportDocument({ companyName, filing, embedded = false }: { c
       title: node.title,
       description: nodeLinks[index].description,
       content: <NodeContent node={node} />,
-      lang: "en" as const,
+      lang: langOf(node.narrative || node.findings[0]?.detail || node.title),
+      titleLang: langOf(node.title),
+      sourceTexts: [node.title, node.narrative || node.findings[0]?.detail],
     })));
   }
   if (reportReady && report?.presentation?.version === "sec-presentation.v1" && report.presentation.sections.length) {
     const evidenceSection = reportSections.find((section) => section.id === "sec-report-nodes")!;
     const qualitySection = reportSections.find((section) => section.id === "sec-report-quality")!;
     reportSections.splice(0, reportSections.length,
-      ...report.presentation.sections.map((section) => ({ id: section.id, title: section.title, titleLang: "en" as const, content: <SecComposedSection section={section} report={report} /> })),
+      ...report.presentation.sections.map((section) => ({ id: section.id, title: section.title, titleLang: langOf(section.title),
+        sourceTexts: [section.title, section.blocks.map(presentationText).find(Boolean)], content: <SecComposedSection section={section} report={report} /> })),
       { ...evidenceSection, title: m.sourcesAndBasis },
       qualitySection,
     );
@@ -159,10 +169,10 @@ export function SecReportDocument({ companyName, filing, embedded = false }: { c
     const qualitySection = reportSections.find((s) => s.id === "sec-report-quality")!;
     const evidenceSection = reportSections.find((s) => s.id === "sec-report-nodes")!;
     reportSections.splice(0, reportSections.length,
-      { id: "sec-report-conclusions", title: m.keyTakeaways, content: <><ConclusionList bullets={summary?.bullets ?? []} />{summary?.analystView && <InvestmentView text={summary.analystView} />}<FinancialBridge report={report} /></> },
+      { id: "sec-report-conclusions", title: m.keyTakeaways, sourceTexts: [...(summary?.bullets ?? []).map((bullet) => bullet.detail), summary?.analystView], content: <><ConclusionList bullets={summary?.bullets ?? []} />{summary?.analystView && <InvestmentView text={summary.analystView} />}<FinancialBridge report={report} /></> },
       { id: "sec-report-changes", title: m.changes, content: <QuarterChanges reader={reader} /> },
       { id: "sec-report-metrics", title: m.keyMetrics, content: <VerifiedMetrics report={report} /> },
-      ...reader.sections.map((section) => ({ id: section.id, title: section.title, titleLang: "en" as const, description: section.takeaway, className: `sec-reader-section sec-reader-role-${section.role}`, content: <ReaderSection section={section} report={report} nodes={summary?.nodes ?? []} /> })),
+      ...reader.sections.map((section) => ({ id: section.id, title: section.title, titleLang: langOf(section.title), sourceTexts: [section.title, section.takeaway], description: section.takeaway, className: `sec-reader-section sec-reader-role-${section.role}`, content: <ReaderSection section={section} report={report} nodes={summary?.nodes ?? []} /> })),
       { id: "sec-report-watch", title: m.watchList, content: <WatchConditions reader={reader} /> },
       { ...evidenceSection, content: <details className="sec-reader-workpapers"><summary>{m.workpapers}</summary>{evidenceSection.content}</details> },
       qualitySection,
@@ -174,15 +184,16 @@ export function SecReportDocument({ companyName, filing, embedded = false }: { c
   });
 
   const Container = embedded ? "article" : "main";
-  const headline = summary?.headline || report?.headline || filing.description;
+  const generatedHeadline = summary?.headline || report?.headline;
+  const headline = generatedHeadline || filing.description;
   return (
     <Container className="sec-report-shell">
       {!embedded && <ReportBackLink ticker={filing.ticker} />}
       {!embedded && <header className="sec-report-header">
         <div>
-          <span className="sec-report-kicker">{group ? m.earningsReport : m.filingAnalysis(filing.form)} <SourceLanguage /></span>
+          <span className="sec-report-kicker">{group ? m.earningsReport : m.filingAnalysis(filing.form)} <SourceLanguage of={[generatedHeadline, summary?.analystView]} /></span>
           <h1>{companyName}</h1>
-          {headline ? <p lang="en">{headline}</p> : <p>{m.inProgress}</p>}
+          {headline ? <p lang={langOf(headline)}>{headline}</p> : <p>{m.inProgress}</p>}
         </div>
         <dl className="sec-report-meta">
           <div><dt>{m.ticker}</dt><dd>{filing.ticker}</dd></div>
@@ -194,10 +205,10 @@ export function SecReportDocument({ companyName, filing, embedded = false }: { c
       {renderWarnings.length > 0 && <p role="status" className="sec-report-empty">{m.someUnavailable}</p>}
       {!reportReady ? (
         <section className="sec-report-pending" aria-labelledby="sec-report-pending-title">
-          <h2 id="sec-report-pending-title">{embedded ? summary ? m.keyTakeaways : m.noReport : m.reportInProgress}{embedded && summary && <> <SourceLanguage /></>}</h2>
-          {embedded && summary?.headline && <p lang="en">{summary.headline}</p>}
+          <h2 id="sec-report-pending-title">{embedded ? summary ? m.keyTakeaways : m.noReport : m.reportInProgress}{embedded && summary && <> <SourceLanguage of={[summary.headline, ...summary.bullets.map((bullet) => bullet.detail), summary.analystView]} /></>}</h2>
+          {embedded && summary?.headline && <p lang={langOf(summary.headline)}>{summary.headline}</p>}
           {summary?.bullets.length ? <ConclusionList bullets={summary.bullets} /> : null}
-          {embedded && summary?.analystView && <p lang="en">{summary.analystView}</p>}
+          {embedded && summary?.analystView && <p lang={langOf(summary.analystView)}>{summary.analystView}</p>}
         </section>
       ) : (
         <>
@@ -218,7 +229,7 @@ export function SecReportDocument({ companyName, filing, embedded = false }: { c
                 lang={section.lang}
                 aria-labelledby={`${section.id}-title`}
               >
-                <SectionHeading index={String(index + 1).padStart(2, "0")} title={section.title} id={`${section.id}-title`} sourceLanguage={embedded && index === 0} lang={section.titleLang} />
+                <SectionHeading index={String(index + 1).padStart(2, "0")} title={section.title} id={`${section.id}-title`} sourceLanguage={embedded && index === 0 ? section.sourceTexts ?? [] : undefined} lang={section.titleLang} />
                 {section.content}
               </section>
             ))}
@@ -242,13 +253,13 @@ export function SecReportDocument({ companyName, filing, embedded = false }: { c
   );
 }
 
-function SectionHeading({ id, index, title, sourceLanguage = false, lang }: { id: string; index: string; title: string; sourceLanguage?: boolean; lang?: string }) {
-  return <div className="sec-report-section-heading"><span>{index}</span><h2 id={id} lang={lang}>{title}{sourceLanguage && <> <SourceLanguage /></>}</h2></div>;
+function SectionHeading({ id, index, title, sourceLanguage, lang }: { id: string; index: string; title: string; sourceLanguage?: ReadonlyArray<string | null | undefined>; lang?: string }) {
+  return <div className="sec-report-section-heading"><span>{index}</span><h2 id={id} lang={lang}>{title}{sourceLanguage && <> <SourceLanguage of={sourceLanguage} /></>}</h2></div>;
 }
 
-/** The analyst's view is generated English; its label is in the reader's language. */
+/** The analyst's view is generated text in whichever language it arrived in; its label is in the reader's language. */
 function InvestmentView({ text }: { text: string }) {
-  return <p className="sec-report-investment-view" lang="en"><span lang={getLocale()}>{m.investmentView}</span>{text}</p>;
+  return <p className="sec-report-investment-view" lang={langOf(text)}><span lang={getLocale()}>{m.investmentView}</span>{text}</p>;
 }
 
 function NodeContent({ node }: { node: NonNullable<NonNullable<SecFilingWithSummary["summary"]>["nodes"]>[number] }) {
@@ -261,7 +272,7 @@ function NodeContent({ node }: { node: NonNullable<NonNullable<SecFilingWithSumm
         <summary lang={getLocale()}>{m.excerpts} · {node.evidence.length}</summary>
         {node.evidence.map((evidence, index) => (
           <blockquote key={`${evidence.start}-${index}`}>
-            <p>{evidence.excerpt}</p>
+            <p lang="en">{evidence.excerpt}</p>
             <footer lang={getLocale()}>{m.characters(evidence.start.toLocaleString("en-US"), evidence.end.toLocaleString("en-US"))}</footer>
           </blockquote>
         ))}
@@ -273,7 +284,7 @@ function NodeContent({ node }: { node: NonNullable<NonNullable<SecFilingWithSumm
 function ConclusionList({ bullets }: { bullets: NonNullable<SecFilingWithSummary["summary"]>["bullets"] }) {
   if (!bullets.length) return <p className="sec-report-empty">{m.noTakeaways}</p>;
   return (
-    <ul className="sec-report-conclusion-list" lang="en">
+    <ul className="sec-report-conclusion-list" lang={langOf(bullets[0].detail)}>
       {bullets.map((bullet, index) => (
         <li data-importance={bullet.importance} key={`${bullet.label}-${index}`}>
           <strong>{bullet.label}</strong><span>{bullet.detail}</span>
@@ -312,7 +323,7 @@ function DataQuality({ report }: { report: PublishedSecReport | null | undefined
   ];
   return (
     <div className="sec-report-quality">
-      {report.reader?.limitations.map((l, i) => <p key={i} lang="en"><strong>{l.issue}: </strong>{l.impact}</p>)}
+      {report.reader?.limitations.map((l, i) => <p key={i} lang={langOf(l.impact)}><strong>{l.issue}: </strong>{l.impact}</p>)}
       {report.financialLens?.limitations.map((l) => <p key={l} lang="en">{l}</p>)}
       <details><summary>{m.coverageLog}</summary>
       <dl>

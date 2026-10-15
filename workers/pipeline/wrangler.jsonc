@@ -22,7 +22,8 @@
     "GUIDANCE_DAILY_MODEL_CALLS": "40",
     "GUIDANCE_DAILY_TRANSCRIPT_CALLS": "25",
     "TRANSCRIPTS_ENABLED": "true",
-    "BUSINESS_TREE_TICKERS": "MSFT,ORCL,NVDA,ADSK,NET"
+    "BUSINESS_TREE_TICKERS": "MSFT,ORCL,NVDA,ADSK,NET",
+    "TRANSLATION_ENABLED": "true"
   },
   "workflows": [
     {
@@ -54,6 +55,12 @@
       "binding": "LIBRARY_LINKS_WORKFLOW",
       "class_name": "LibraryLinksWorkflow",
       "concurrency": { "limit": 2 }
+    },
+    {
+      "name": "spontra-translate",
+      "binding": "TRANSLATE_WORKFLOW",
+      "class_name": "TranslateWorkflow",
+      "concurrency": { "limit": 1 }
     },
     {
       "name": "spontra-analyst",

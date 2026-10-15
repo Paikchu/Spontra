@@ -20,6 +20,7 @@ import { executeAnalystWorkflow, type AnalystWorkflowParams } from "./analyst/wo
 import { trackRun, trackSleep, trackSteps } from "./ai-runs/tracking.ts";
 import { executeLibraryCardsWorkflow, type LibraryCardsParams } from "./filing-library/cards.ts";
 import { executeLibraryLinksWorkflow, type LibraryLinksParams } from "./filing-library/links.ts";
+import { executeTranslateWorkflow, type TranslateParams } from "./translation/translate.ts";
 
 const WORKFLOW_RETRY = {
   retries: {
@@ -97,6 +98,13 @@ export class BusinessTreeWorkflow extends WorkflowEntrypoint<SecPipelineEnv, Bus
 }
 
 /** Index cards for one company's recent library sections; each batch of sections is a durable step. */
+/** One company's translation run: the strings of its publications not yet translated, then every resource's table. */
+export class TranslateWorkflow extends WorkflowEntrypoint<SecPipelineEnv, TranslateParams> {
+  async run(event: WorkflowEvent<TranslateParams>, step: WorkflowStep) {
+    return executeTranslateWorkflow(event.payload, durableSteps(step, this.env, event.instanceId), this.env, event.instanceId);
+  }
+}
+
 export class LibraryCardsWorkflow extends WorkflowEntrypoint<SecPipelineEnv, LibraryCardsParams> {
   async run(event: WorkflowEvent<LibraryCardsParams>, step: WorkflowStep) {
     return executeLibraryCardsWorkflow(event.payload, durableSteps(step, this.env, event.instanceId), this.env);

@@ -125,7 +125,7 @@ const finding = (f: Partial<AnalysisFinding> & Pick<AnalysisFinding, "id" | "kin
 export const findings: FindingsPublication = {
   schemaVersion: "findings.v1", ticker: TICKER, periodEnd: PERIOD, generatedAt: "2026-08-01T00:00:00Z", model: "fixture",
   findings: [
-    finding({ id: "capex", kind: "risk", title: "Capex outruns operating cash flow",
+    finding({ id: "capex", kind: "risk", title: "Capex outruns operating cash flow", judgment: { text: "Capex reached $4.0 billion in the quarter, above operating cash flow.", sourceIds: ["s1"] },
       evidence: [{ ref: { capital: "capex" }, periodEnd: PERIOD, span: "quarter", compare: "yoy" }, { ref: { capital: "operatingCashFlow" }, periodEnd: PERIOD, span: "quarter" }, { ref: { capital: "freeCashFlow" }, periodEnd: PERIOD, span: "quarter" }],
       anchors: { view: "cash", nodeIds: [], metrics: [], capital: ["capex"] },
       lens: { type: "compare_bars", refs: [{ capital: "operatingCashFlow" }, { capital: "capex" }, { capital: "freeCashFlow" }], span: "quarter" },
@@ -209,6 +209,36 @@ export const filings: PublicFilingDigestPage = {
     digest({ accessionNumber: "0001-26-000001", date: "2026-04-30", periodEnd: "2026-03-31", reportDate: "2026-03-31", periodLabel: "FY2026 Q3", headline: "", analysisStatus: "processing", verification: null, hasReport: false, keyMetrics: [], changes: [], bullets: [] }),
   ],
 };
+
+/**
+ * The Chinese the pipeline would serve for the fixture's generated prose, per resource, as the translator writes it:
+ * figures in Chinese units, names kept. The page check renders the company with these applied.
+ */
+export const ZH_TABLES = {
+  flow: {
+    "Infrastructure and platform services sold by subscription and usage.": "按订阅和用量销售的基础设施与平台服务。",
+    "Enterprises and public sector": "企业与公共部门", "Subscription and consumption": "订阅与按用量计费", "Segment note": "分部附注",
+    "On-premise licenses and the support contracts attached to them.": "本地部署许可及配套支持合同。", "Consulting and education.": "咨询与培训。", "As reported": "按披露口径",
+  },
+  findings: {
+    "Generated judgment that stays in English this phase.": "生成的判断。",
+    "Capex reached $4.0 billion in the quarter, above operating cash flow.": "本季度资本开支达到 40亿美元，高于经营现金流。",
+    "Capex outruns operating cash flow": "资本开支超过经营现金流", "Capex below operating cash flow next quarter.": "下季度资本开支低于经营现金流。",
+    "Cloud carries growth": "云业务撑起增长", "Cloud growth above 25% next quarter.": "下季度云业务增速高于 25%。",
+    "Backlog lengthens": "订单储备拉长", "Gross margin dips": "毛利率小幅下滑", "Revenue": "营收", "Operating margin": "营业利润率", "Free cash flow": "自由现金流", "Debt": "债务",
+  },
+  explainer: { "Generated summary of the business.": "生成的业务概述。", "Generated offering.": "生成的产品说明。", "Generated charging.": "生成的收费说明。", "Who buys": "客户是谁", "Enterprises": "企业", "Generated.": "生成内容。" },
+  tree: { "Generated branch summary.": "生成的分支概述。", "Compute and storage": "计算与存储", "Generated line summary.": "生成的产品线概述。", "Pay per use": "按用量付费", "Generated revenue text.": "生成的收入说明。", "Annual commit": "年度承诺", "Generated.": "生成内容。", "Hourly": "按小时" },
+  guidance: { "Total revenue": "总营收", "Revenue is expected to grow 12% to 14%.": "营收预计增长 12% 至 14%。", "Gross margin": "毛利率", "Diluted EPS": "稀释每股收益", "Cloud Services revenue": "Cloud Services 营收", "Capital expenditures": "资本开支", "Operating margin": "营业利润率" },
+  events: { "Generated event headline.": "生成的事件标题。", "Revenue": "营收", "Generated detail.": "生成的细节。", "Generated analyst view.": "生成的分析观点。" },
+} satisfies Record<string, Record<string, string>>;
+
+/** The filing list as the site worker builds it from translated filings: the digests' generated fields in Chinese. */
+export const filingsZh: PublicFilingDigestPage = { ...filings, filings: filings.filings.map(f => ({ ...f,
+  headline: f.headline ? "生成的财报标题。" : "", analystView: "生成的分析观点。",
+  bullets: f.bullets.map(b => ({ ...b, label: "云业务", detail: "生成的要点。" })),
+  changes: f.changes.map(c => ({ ...c, topic: "资本开支", statement: "生成的变化说明。" })), risks: f.risks.map(() => "生成的风险。"), guidance: f.guidance.map(() => "生成的指引。"),
+  keyMetrics: f.keyMetrics.map(k => ({ ...k, label: k.key === "revenue" ? "营收" : "自由现金流", value: k.key === "revenue" ? "77亿美元" : "−9亿美元" })) })) };
 
 /** Every string the fixture carries: data the page may show as it is, so it never counts as untranslated text. */
 export function fixtureStrings(): Set<string> {
