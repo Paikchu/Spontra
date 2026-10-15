@@ -204,7 +204,7 @@ export function layoutInfographic(graph: FinancialGraph, labelWidth: (n: PlacedN
   return { width, height: Math.ceil(height), nodeWidth: g.nodeWidth, nodes, links };
 }
 
-const symbols: Record<string, string> = { USD: "$", EUR: "€", GBP: "£", JPY: "¥", CNY: "¥", HKD: "HK$" };
+const symbols: Record<string, string> = { USD: "$", EUR: "€", GBP: "£", JPY: "¥", CNY: "¥", HKD: "HK$", TWD: "NT$" };
 /** Short label for the diagram only; exact amounts stay in the ledger. Chinese counts in 万 and 亿 ("757亿美元"). */
 export function compactFlowValue(value: number | null, quarter: BusinessFlowQuarter): string {
   if (value == null || !Number.isFinite(value)) return flowWords.notDisclosed;

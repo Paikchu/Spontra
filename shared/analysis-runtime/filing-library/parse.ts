@@ -6,7 +6,7 @@ import { decodeEntities, descendants, nodeText, parseMarkup, type Element } from
 import { tableGrid } from "../financial-data/table-grid.ts";
 
 /** Changing how documents are split re-parses every document; ids of unchanged text survive it. */
-export const LIBRARY_PARSER_VERSION = "filing-library.v2";
+export const LIBRARY_PARSER_VERSION = "filing-library.v3";
 /**
  * A leaf longer than this is split again. A headed section is a unit however short (a one-line product still names a product);
  * only a heading with next to no text under it folds into its parent. A split chunk starts at a bold lead-in once it holds a few hundred characters.
@@ -437,8 +437,9 @@ export function parseFilingDocument(html: string, meta: LibraryDocumentMeta): Pa
   const docType = detectDocType(meta.form, meta.documentUrl, blocks);
   const periodic = docType === "primary";
   const items = periodic ? findItems(blocks, meta.form) : [];
-  const structured = items.length >= (/^(?:8-K|6-K)/.test(meta.form) ? 1 : 2);
-  if (periodic && !structured) issues.push("ITEMS_NOT_FOUND");
+  // A 6-K has no item structure: it is a cover page and the exhibits it furnishes.
+  const itemized = !/^6-K/.test(meta.form), structured = items.length >= (/^(?:8-K|6-K)/.test(meta.form) ? 1 : 2);
+  if (periodic && itemized && !structured) issues.push("ITEMS_NOT_FOUND");
 
   const roots: Draft[] = [];
   const draft = (title: string, canonical: LibraryCanonical, parent: Draft | null, level: number, extra: Partial<Draft> = {}): Draft => {

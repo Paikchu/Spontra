@@ -202,7 +202,7 @@ function highlightValue(v: number | null, r: ResolvedValue, ref: ResolvedEvidenc
   if (r.unit === "USD") return compactFlowValue(v, { currency: r.currency ?? "USD", scale: 1 } as BusinessFlowQuarter);
   if (r.unit === "percent") return percent(v);
   const locale = getLocale();
-  if (r.unit === "per_share") return locale === "en" ? `$${v.toFixed(2)}` : perShare(v, r.currency ?? "USD", locale);
+  if (r.unit === "per_share") return locale === "en" && (r.currency ?? "USD") === "USD" ? `$${v.toFixed(2)}` : perShare(v, r.currency ?? "USD", locale);
   if (r.unit === "shares") return locale === "en" ? `${(v / 1e6).toFixed(0)}M` : compactShares(v, locale);
   return ratioForm(ref) === "percent" ? percent(v * 100) : multiple(v.toFixed(2), locale);
 }

@@ -4,7 +4,7 @@ import {parseSecBusinessFlow, type BusinessFact, type ParsedBusinessQuarter} fro
 import {parseSecEarningsRelease} from '../../../../shared/analysis-runtime/financial-data/business-flow-release.ts';
 import {extractDisclosedQuarters, extractVerifiedCurrentQuarters, readReportedFacts, type DocumentSource} from './parser.ts';
 
-export const REVENUE_PARSER_VERSION = 'sec-revenue-history.v5';
+export const REVENUE_PARSER_VERSION = 'sec-revenue-history.v6';
 type HistorySource = RevenueHistoryQuarter['source'];
 const near = (a: number, b: number) => Math.abs(a - b) <= Math.max(1, Math.max(Math.abs(a), Math.abs(b)) * 1e-9);
 const clean = (html: string) => html.replace(/<[^>]*>/g, ' ').replace(/&#(?:x([\da-f]+)|(\d+));/gi, (_, hex, dec) => String.fromCodePoint(parseInt(hex ?? dec, hex ? 16 : 10))).replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/\s+/g, ' ').trim();
@@ -114,7 +114,7 @@ export function extractRevenueHistory(html: string, source: DocumentSource, form
   if (html.length > 12000000) return {quarters: [], issues: ['DOCUMENT_TOO_LARGE']};
   const historySource: HistorySource = {accession: source.accession, url: source.url, filedAt: source.filedAt, form};
   const generic = extractDisclosedQuarters(html, source);
-  const revenueConcepts = new Set(['RevenueFromContractWithCustomerExcludingAssessedTax', 'Revenues', 'SalesRevenueNet', 'RevenuesNetOfInterestExpense']);
+  const revenueConcepts = new Set(['RevenueFromContractWithCustomerExcludingAssessedTax', 'Revenues', 'SalesRevenueNet', 'RevenuesNetOfInterestExpense', 'Revenue', 'RevenueFromContractsWithCustomers']);
   // Read original direct-quarter revenue facts in isolation. A conflicting or unsupported
   // expense/net fact has no bearing on whether the revenue total and its split reconcile.
   const revenueFacts = readReportedFacts(html, source).facts.filter(fact => revenueConcepts.has(fact.tag.split(':').at(-1)!));

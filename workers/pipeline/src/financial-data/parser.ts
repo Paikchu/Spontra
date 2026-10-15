@@ -17,7 +17,7 @@ export interface DocumentSource {url:string;accession:string;filedAt:string;cik:
  calculation?:IncomeCalculation|null;
  /** A structure from operating income to net income that balanced on an earlier filing of this issuer (presentation profile). */
  presentation?:{structure:BridgeStructure;version:string}|null;}
-export const SEC_FLOW_PARSER_VERSION='deterministic-sec.v12';
+export const SEC_FLOW_PARSER_VERSION='deterministic-sec.v13';
 /** Issuers read through a disclosure-specific profile; generic statement arithmetic would describe them in another scheme. */
 export const hasDisclosureProfile=(cik:string)=>cik==='0001341439';
 export interface Fact {source:DocumentSource;operands?:Fact[];formula?:string;precision:number;tag:string;value:number;currency:string;start:string;end:string;context:string;dimensions:Record<string,string>;
@@ -28,7 +28,8 @@ export interface Fact {source:DocumentSource;operands?:Fact[];formula?:string;pr
 const text=(s:string)=>s.replace(/<[^>]*>/g,' ').replace(/&nbsp;|&#160;/g,' ').replace(/&amp;/g,'&').trim();
 const attrs=(s:string)=>Object.fromEntries([...s.matchAll(/([\w:-]+)\s*=\s*["']([^"']*)["']/g)].map(m=>[m[1].toLowerCase(),m[2]]));
 const local=(tag:string)=>tag.split(':').at(-1)!;
-const tags:Partial<Record<FlowMetric,string[]>>={revenue:['RevenueFromContractWithCustomerExcludingAssessedTax','Revenues','SalesRevenueNet'],cost:['CostOfRevenue','CostOfGoodsAndServicesSold'],gross:['GrossProfit'],operatingExpenses:['OperatingExpenses'],operating:['OperatingIncomeLoss'],other:['NonoperatingIncomeExpense','OtherNonoperatingIncomeExpense'],pretax:['IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest','IncomeLossFromContinuingOperationsIncludingNoncontrollingInterestBeforeIncomeTaxesExtraordinaryItems'],tax:['IncomeTaxExpenseBenefit'],net:['IncomeLossFromContinuingOperations','NetIncomeLoss','ProfitLoss'],research:['ResearchAndDevelopmentExpense'],sales:['SellingAndMarketingExpense','SellingExpense'],administration:['GeneralAndAdministrativeExpense']};
+/** US-GAAP local names first, then the IFRS (ifrs-full) ones foreign issuers file under; `local()` drops the prefix. */
+const tags:Partial<Record<FlowMetric,string[]>>={revenue:['RevenueFromContractWithCustomerExcludingAssessedTax','Revenues','SalesRevenueNet','Revenue','RevenueFromContractsWithCustomers'],cost:['CostOfRevenue','CostOfGoodsAndServicesSold','CostOfSales'],gross:['GrossProfit'],operatingExpenses:['OperatingExpenses'],operating:['OperatingIncomeLoss','ProfitLossFromOperatingActivities'],other:['NonoperatingIncomeExpense','OtherNonoperatingIncomeExpense'],pretax:['IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest','IncomeLossFromContinuingOperationsIncludingNoncontrollingInterestBeforeIncomeTaxesExtraordinaryItems','ProfitLossBeforeTax'],tax:['IncomeTaxExpenseBenefit','IncomeTaxExpenseContinuingOperations'],net:['IncomeLossFromContinuingOperations','NetIncomeLoss','ProfitLoss'],research:['ResearchAndDevelopmentExpense'],sales:['SellingAndMarketingExpense','SellingExpense','DistributionCosts'],administration:['GeneralAndAdministrativeExpense']};
 const flowConcepts=new Set([...Object.values(tags).flat(), 'RevenuesNetOfInterestExpense','NoninterestExpense','CostsAndExpenses','ProvisionForLoanLeaseAndOtherLosses','SellingGeneralAndAdministrativeExpense','GainLossOnInvestments','IncomeLossFromEquityMethodInvestments']);
 const needsRestatementReview=(html:string)=>text(html).replace(/\s+/g,' ').split(/\.(?: |$)/).some(p=>/\bas\s+restated\b|\b(?:prior[- ](?:period|year)|previously reported|comparative|historical)[^.]{0,180}\b(?:recast|restated|reclassified)\b|\b(?:recast|restated)[^.]{0,180}\b(?:income|segment|financial statement)/i.test(p)&&!/no impact on[^.]*consolidated (?:income|statements of income)/i.test(p));
 const near=(a:number,b:number)=>Math.abs(a-b)<=Math.max(1,Math.max(Math.abs(a),Math.abs(b))*1e-9);
@@ -57,6 +58,11 @@ export function readReportedFacts(html:string,source:DocumentSource):{facts:Fact
   if(!context||!currency||fact.numericValue===null||!Number.isFinite(value))continue;
   facts.push({precision:fact.decimals==='INF'?Number.MAX_SAFE_INTEGER:/^-?\d+$/.test(fact.decimals??'')?Number(fact.decimals):Number.MIN_SAFE_INTEGER,tag:cell.concept,value,currency,...context,context:contextRef,source,statementRow});
  }
+ // A filing presents its statements in one currency. Amounts it also gives in another (a 20-F's convenience translation
+ // of the latest year into USD) restate the same figures and are not a second set of periods.
+ const counts=new Map<string,number>();for(const f of facts)counts.set(f.currency,(counts.get(f.currency)??0)+1);
+ const presentation=[...counts].sort((a,b)=>b[1]-a[1])[0]?.[0];
+ if(counts.size>1)for(let i=facts.length-1;i>=0;i--)if(facts[i].currency!==presentation)facts.splice(i,1);
  if(memberLabels)for(const f of facts){const own=Object.fromEntries(Object.values(f.dimensions).flatMap(m=>memberLabels[m]?[[m,memberLabels[m]]]:[]));if(Object.keys(own).length)f.memberLabels=own;}
  return {facts,issues};
 }
@@ -69,7 +75,7 @@ function reconcile<T extends {value:number}>(items:T[],total:number):T[]|null{
 }
 const expenseGroup=(f:Fact):'research'|'sales'|'administration'|'other'=>{const name=local(f.tag),label=f.statementRow?.label??'';
  return /^ResearchAndDevelopmentExpense/.test(name)||/^research and development$/i.test(label)?'research'
-  :/^(?:SellingAndMarketingExpense|SellingExpense|MarketingExpense)$/.test(name)||/^(?:(?:sales|selling) and marketing|selling|marketing)$/i.test(label)?'sales'
+  :/^(?:SellingAndMarketingExpense|SellingExpense|MarketingExpense|DistributionCosts)$/.test(name)||/^(?:(?:sales|selling) and marketing|selling|marketing)$/i.test(label)?'sales'
   :name==='GeneralAndAdministrativeExpense'||/^general and administrative$/i.test(label)?'administration':'other';};
 /** One period's consolidated fact for a concept: the most precise, and only when the most precise facts agree. */
 const picker=(facts:Fact[])=>(concept:string)=>{const matches=facts.filter(f=>!Object.keys(f.dimensions).length&&local(f.tag)===local(concept));if(!matches.length)return undefined;const best=Math.max(...matches.map(f=>f.precision)),top=matches.filter(f=>f.precision===best);return new Set(top.map(f=>f.value)).size===1?top[0]:undefined;};
@@ -108,7 +114,11 @@ function extractGenericQuarters(html:string,source:DocumentSource,supplemental:F
   let model:BusinessFlowQuarter['incomeModel']='standard';
   const financialExpenses:NonNullable<BusinessFlowQuarter['expenseComponents']>=[];
   if(source.industry==='financial'||source.industry==='insurance'){model=source.industry;const revenue=select(['RevenuesNetOfInterestExpense','Revenues']);const expense=select(['NoninterestExpense','CostsAndExpenses']);if(source.industry==='insurance'){const profit=select(['ProfitLoss']);if(profit)figures.net=amount(profit,'consolidated-net-including-noncontrolling-interest');const gain=select(['GainLossOnInvestments']),equity=select(['IncomeLossFromEquityMethodInvestments']);if(gain&&equity)figures.other=derive('insurance-investment-and-equity-income',gain.value+equity.value,[amount(gain,'investment-gains'),amount(equity,'equity-method-income')],'Reported investment gains (losses) + reported equity-method income');}if(revenue)figures.revenue=amount(revenue,'net-financial-revenue');if(expense){figures.operatingExpenses=amount(expense,'reported-financial-expenses');financialExpenses.push({id:source.industry==='insurance'?'reported-costs-and-expenses':'noninterest-expense',name:source.industry==='insurance'?'Reported costs and expenses':'Noninterest expense',group:'other',amount:figures.operatingExpenses});const provision=select(['ProvisionForLoanLeaseAndOtherLosses']);if(source.industry==='financial'&&provision&&local(expense.tag)==='NoninterestExpense'){const loss=amount(provision,'credit-loss-provision');financialExpenses.push({id:'credit-loss-provision',name:'Provision for credit losses',group:'other',amount:loss});figures.operatingExpenses=derive('financial-expenses',expense.value+provision.value,[figures.operatingExpenses,loss],'Reported noninterest expense + reported provision for credit losses (net revenue is already net of interest expense)');}}}
-  else if(value('cost')!=null&&value('revenue')!=null){if(!figures.gross)figures.gross=derive('gross',value('revenue')!-value('cost')!,[figures.revenue!,figures.cost!],'Reported revenue − reported total cost of revenue');if(!figures.operatingExpenses&&figures.operating)figures.operatingExpenses=derive('operatingExpenses',value('gross')!-value('operating')!,[figures.gross!,figures.operating!],'Reported gross profit − reported operating income (total operating expenses)');}
+  else if(value('cost')!=null&&value('revenue')!=null){
+   // A printed operating-expense total that leaves other operating items outside it does not bridge gross profit to
+   // operating income; the bridge is derived, and the statement's lines, those items included, are its components.
+   if(figures.operatingExpenses&&figures.operating&&value('gross')!=null&&!near(value('gross')!-value('operatingExpenses')!,value('operating')!))delete figures.operatingExpenses;
+   if(!figures.gross)figures.gross=derive('gross',value('revenue')!-value('cost')!,[figures.revenue!,figures.cost!],'Reported revenue − reported total cost of revenue');if(!figures.operatingExpenses&&figures.operating)figures.operatingExpenses=derive('operatingExpenses',value('gross')!-value('operating')!,[figures.gross!,figures.operating!],'Reported gross profit − reported operating income (total operating expenses)');}
   else {model='direct_operating';const expense=select(['CostsAndExpenses']);if(expense)figures.operatingExpenses=amount(expense,'reported-costs-and-expenses');}
   let afterTaxComponents:NonNullable<BusinessFlowQuarter['afterTaxComponents']>=[],presentation:BusinessFlowQuarter['presentation'];
   if(model!=='financial'&&model!=='insurance'&&figures.tax&&figures.net){
@@ -144,11 +154,11 @@ function extractGenericQuarters(html:string,source:DocumentSource,supplemental:F
   // Operating expense lines printed between cost of revenue (or gross profit) and operating income, used only when they add up to the operating expense total.
   const statementExpenses=():typeof expenses=>{
    if(model!=='standard'||!figures.operatingExpenses)return [];
-   const operatingRow=facts.find(f=>f.statementRow&&local(f.tag)==='OperatingIncomeLoss'&&!Object.keys(f.dimensions).length);if(!operatingRow)return [];
+   const operatingRow=facts.find(f=>f.statementRow&&tags.operating!.includes(local(f.tag))&&!Object.keys(f.dimensions).length);if(!operatingRow)return [];
    const byOrder=new Map<number,Fact>();
    // Rows below operating income (the bridge to net income) play no part in the expense lines.
    for(const f of facts){if(!f.statementRow||f.source.url!==operatingRow.source.url||f.statementRow.order>operatingRow.statementRow!.order)continue;const old=byOrder.get(f.statementRow.order);if(old&&(old.tag!==f.tag||old.value!==f.value))return [];if(!old||f.precision>old.precision)byOrder.set(f.statementRow.order,f);}
-   const rows=[...byOrder].sort((a,b)=>a[0]-b[0]).map(([,f])=>f),end=rows.findIndex(f=>local(f.tag)==='OperatingIncomeLoss');
+   const rows=[...byOrder].sort((a,b)=>a[0]-b[0]).map(([,f])=>f),end=rows.findIndex(f=>tags.operating!.includes(local(f.tag)));
    const start=rows.slice(0,end).findLastIndex(f=>[...tags.cost!,...tags.gross!].includes(local(f.tag))&&!Object.keys(f.dimensions).length);if(start<0)return [];
    const lines=rows.slice(start+1,end).filter(f=>!['OperatingExpenses','CostsAndExpenses'].includes(local(f.tag))&&!/^total\b/i.test(f.statementRow!.label)).map(fact=>({fact,value:fact.statementRow!.flip?-fact.value:fact.value}));
    // Statements that print expenses as deductions reconcile with the opposite orientation.

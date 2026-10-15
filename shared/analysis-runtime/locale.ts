@@ -7,7 +7,7 @@ export type Locale = "en" | "zh-CN";
 export const LOCALES: readonly Locale[] = ["en", "zh-CN"];
 export const isLocale = (value: unknown): value is Locale => value === "en" || value === "zh-CN";
 
-const SYMBOL: Record<string, string> = { USD: "$", EUR: "€", GBP: "£", JPY: "¥", CNY: "¥" };
+const SYMBOL: Record<string, string> = { USD: "$", EUR: "€", GBP: "£", JPY: "¥", CNY: "¥", HKD: "HK$", TWD: "NT$" };
 const ZH_CURRENCY: Record<string, string> = {
   USD: "美元", EUR: "欧元", GBP: "英镑", JPY: "日元", CNY: "人民币", HKD: "港元", TWD: "新台币", CAD: "加元",
   AUD: "澳元", CHF: "瑞士法郎", KRW: "韩元", INR: "印度卢比", SEK: "瑞典克朗", DKK: "丹麦克朗", NOK: "挪威克朗",
