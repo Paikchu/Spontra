@@ -8,6 +8,7 @@
   "secrets": { "required": ["DEEPSEEK_API_KEY"] },
   "vars": {
     "SEC_DATA_TICKERS": "ORCL,NVDA,MSFT,AAPL,JPM,BRK.B,ADSK,NET,AMZN,GOOGL,META",
+    // The default AI list; the admin's AI switch (financial_ai_settings) overrides it per company.
     "SEC_AI_TICKERS": "ORCL",
     "SEC_AI_ENABLED": "true",
     "SEC_DATA_COLLECTION_ENABLED": "true",

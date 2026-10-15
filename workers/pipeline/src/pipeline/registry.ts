@@ -13,6 +13,7 @@ export const EVENT_TYPES = [
   "library.requested", "library.prepared", "library.cards.published", "library.links.requested",
   "peers.published", "translations.published",
   "presentation.unresolved",
+  "ai.enabled",
 ] as const;
 export type EventType = typeof EVENT_TYPES[number];
 
@@ -134,13 +135,16 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
   "tree.published": [{ task: "translate" }],
   "events.published": [{ task: "translate" }],
   "presentation.unresolved": [{ task: "presentation" }],
+  // A company switched on in the admin starts its AI work: the SEC reports (whose publications lead to guidance, the
+  // company analysis, findings and the analyst) and the business explanations.
+  "ai.enabled": [{ task: "sec-report" }, { task: "explainer" }],
 };
 
 /** Emitters that are not tasks. `task.version_changed` is routed to the one task it names, never subscribed. */
 export const SOURCES: Record<string, readonly EventType[]> = {
   // The only Cron: polls EDGAR, which pushes nothing.
   "sec-discovery": ["filing.discovered", "collection.requested"],
-  "admin": ["collection.requested", "maintenance.requested", "archive.prune.requested", "library.requested", "library.links.requested", "presentation.unresolved"],
+  "admin": ["collection.requested", "maintenance.requested", "archive.prune.requested", "library.requested", "library.links.requested", "presentation.unresolved", "ai.enabled"],
   "invocation": ["task.version_changed"],
 };
 

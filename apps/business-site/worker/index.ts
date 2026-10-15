@@ -118,6 +118,14 @@ function readFindingPassage(value:unknown):FindingPassage|null{
  const table=t&&rows&&columns&&!rows.some(r=>r==null)?{unit:asText(t.unit),columns,rows:rows as Array<{label:string;cells:Array<{text:string;value:number|null}>}>}:null;
  return {passageId,documentId,title,form,filedAt,url,path,text,table};
 }
+export async function loadFindingsIndex(fetcher:typeof fetch=fetch):Promise<string[]|null>{
+ try{
+  const response=await fetcher(ANALYSIS_ORIGIN+"/api/v1/findings",{signal:AbortSignal.timeout(8000),headers:{accept:"application/json"}});
+  if(!response.ok)return null;
+  const body=await response.json() as {schemaVersion?:string;tickers?:unknown};
+  return body.schemaVersion==="findings-index.v1"&&Array.isArray(body.tickers)?body.tickers.filter((t):t is string=>typeof t==="string"&&/^[A-Z][A-Z0-9.-]{0,11}$/.test(t)).slice(0,40):null;
+ }catch{return null;}
+}
 export async function loadFindings(ticker:string,fetcher:typeof fetch=fetch,locale:Locale|null=null):Promise<FindingsBundle|null>{
  try{
   const response=await fetcher(ANALYSIS_ORIGIN+inLocale(`/api/v1/companies/${ticker}/findings`,locale),{signal:AbortSignal.timeout(8000),headers:{accept:"application/json"}});
@@ -251,6 +259,16 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
  if(url.pathname.startsWith("/api/")){
   const fetcher=upstream??analysisFetcher(env);
   if(!fetcher)return json({error:"Read service unavailable"},503);
+  // The companies with published findings, for the home page; the list follows the admin's AI switch.
+  if(url.pathname==="/api/business/v1/findings"){
+   if(request.method!=="GET"||[...url.searchParams.keys()].length)return json({error:"Not found"},404);
+   try{if(!env.PUBLIC_READ_LIMIT||!(await env.PUBLIC_READ_LIMIT.limit({key:request.headers.get("cf-connecting-ip")??"anonymous"})).success)return json({error:"Too many requests"},429);}catch{return json({error:"Read service unavailable"},503);}
+   const key=new Request(url.href,{method:"GET"});const cached=await cache?.match(key);if(cached)return cached;
+   const tickers=await loadFindingsIndex(fetcher);
+   const response=json({schemaVersion:"findings-index.v1",status:tickers?"ready":"unavailable",tickers:tickers??[]});
+   if(tickers&&cache)ctx.waitUntil(cache.put(key,response.clone()));else response.headers.set("cache-control","no-store");
+   return response;
+  }
   const match=url.pathname.match(/^\/api\/business\/v1\/companies\/([A-Z][A-Z0-9.-]{0,11})(\/capital|\/findings|\/fundamentals|\/events|\/filings|\/filings\/\d{10}-\d{2}-\d{6}|\/passages\/p[0-9a-f]{14,32})?$/);
   const detail=match?.[2]?.startsWith("/filings/")?match[2].slice("/filings/".length):null;
   // The reader pins a report to its published revision; nothing else takes a query.

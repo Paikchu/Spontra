@@ -14,8 +14,20 @@ const m = messages({
   title: "Business View", watchOutcome: "跟踪结果", recent: "最近查看", findings: "要点", latest: "最新财报", loading: "正在加载要点",
 });
 
-/** Companies the pipeline writes findings for (its SEC_AI_TICKERS); recently opened companies join them. */
-const FINDINGS_TICKERS = ["ORCL", "ADSK", "NET"];
+/** Companies with published findings, as the read API lists them (the admin's AI switch decides which); read once per page load. */
+let findingsIndex: Promise<string[]> | null = null;
+function useFindingsTickers(): string[] {
+  const [tickers, setTickers] = useState<string[]>([]);
+  useEffect(() => {
+    findingsIndex ??= fetch("/api/business/v1/findings").then(r => r.ok ? r.json() as Promise<{ tickers?: unknown }> : null)
+      .then(b => Array.isArray(b?.tickers) ? b.tickers.filter((t): t is string => typeof t === "string") : [])
+      .catch(() => { findingsIndex = null; return []; });
+    let live = true;
+    void findingsIndex.then(list => { if (live) setTickers(list); });
+    return () => { live = false; };
+  }, []);
+  return tickers;
+}
 /** Each company costs four reads against a 60-per-minute public limit. */
 const MAX_COMPANIES = 12;
 
@@ -111,7 +123,8 @@ function MarqueeRow({ items, index }: { items: Item[]; index: number }) {
 
 /** Search in the middle of the page, recent companies under it, then two staggered rows of the latest findings drifting by; each opens its company at that finding. */
 export function Home({ light, onToggleTheme, recent, onPick }: { light: boolean; onToggleTheme: () => void; recent: string[]; onPick: (ticker: string) => void }) {
-  const tickers = [...new Set([...FINDINGS_TICKERS, ...recent])].slice(0, MAX_COMPANIES);
+  const findingsTickers = useFindingsTickers();
+  const tickers = [...new Set([...findingsTickers, ...recent])].slice(0, MAX_COMPANIES);
   const { digests, loading } = useDigests(tickers);
   const inputRef = useRef<HTMLInputElement>(null);
   // A touch keyboard would cover the findings, so only a pointer device starts in the field.

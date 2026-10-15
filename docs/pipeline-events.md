@@ -280,3 +280,5 @@ P4 的实现要点与差异：
 - 模拟 ORCL 业绩 8-K 被重新发现：采集 → 发布 → 地图快照 → `map.derived` → 要点；SEC 财报工作流 → `filings.indexed` → 指引；事件栏、业务解读、业务脑图都按事件运行，指纹未变的直接结束。每一步在 `pipeline_log` 里能沿 `cause_id` 追溯。
 - 全程无失败运行、发件箱无积压；唯一的死信是 NET 业务脑图（素材里找不到可锚定内容），与改造前同因失败。
 - 旧存档里带 sec.gov 随机脚本的副本，在补历史重读时一次性改存为规范内容，1,170 个被替换的对象 24 小时后由 `archive-prune` 删除。
+
+- **AI 名单在后台控制（2026-10-15）。** `financial_ai_settings` 覆盖 `SEC_AI_TICKERS`；后台开启一家公司时发出 `ai.enabled`（订阅者 `sec-report`、`explainer`），后续事件链不变。见 [businessview-admin](businessview-admin.md)。

@@ -48,8 +48,19 @@ type RouteMatch =
   | { kind: "findings"; ticker: string }
   | { kind: "events"; ticker: string }
   | { kind: "passage"; ticker: string; passageId: string }
-  | { kind: "fundamentals"; ticker: string };
+  | { kind: "fundamentals"; ticker: string }
+  | { kind: "findings-index" };
 
+
+/**
+ * The companies that have published findings, for the home page: whichever companies the admin's AI switch has had on,
+ * read from what is stored rather than from a list kept in the page.
+ */
+async function findingsIndex(request: Request, database: D1Database): Promise<Response> {
+  const rows = await database.prepare("SELECT substr(cache_key, 13) ticker FROM sec_cache WHERE cache_key LIKE 'findings:v2:%' ORDER BY fetched_at DESC LIMIT 40").all<{ ticker: string }>();
+  const tickers = rows.results.map(r => r.ticker).filter(t => /^[A-Z][A-Z0-9.-]{0,11}$/.test(t));
+  return dataResponse(request, { schemaVersion: "findings-index.v1", tickers }, "cacheable");
+}
 
 /** Serves one map read. */
 export async function handleMapRead(request: Request, env: AnalysisReadEnv): Promise<Response> {
@@ -73,13 +84,14 @@ export async function handleMapRead(request: Request, env: AnalysisReadEnv): Pro
   }
 
   try {
+    if (route.kind === "findings-index") return await findingsIndex(request, env.DB);
     return await handleRoute(request, env.DB, route);
   } catch (error) {
     return errorResponse(...describeFailure(error));
   }
 }
 
-async function handleRoute(request: Request, database: D1Database, route: RouteMatch): Promise<Response> {
+async function handleRoute(request: Request, database: D1Database, route: Exclude<RouteMatch, { kind: "findings-index" }>): Promise<Response> {
   const url = new URL(request.url);
   // `?locale=zh-CN` serves a resource with its translated prose applied; the structure, figures and ids are the English
   // publication's, and a string not yet translated stays English. Two lookups and a pure copy, never a model call.
@@ -162,6 +174,7 @@ async function handleRoute(request: Request, database: D1Database, route: RouteM
 }
 
 function matchRoute(pathname: string): RouteMatch | null {
+  if (/^\/api\/v1\/findings\/?$/.test(pathname)) return { kind: "findings-index" };
   const company = /^\/api\/v1\/companies\/([^/]+)\/(filings|fundamentals|business-flow|capital|business-explainer|business-tree|guidance|findings|events|passages)(?:\/([^/]+))?\/?$/.exec(pathname);
   if (!company) return null;
   const ticker = safeDecode(company[1]!);

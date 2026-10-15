@@ -1,4 +1,5 @@
 import { knownCik } from '../pipeline/identity.ts';
+import { dataTickersFor, trackedTickersFor } from '../core.ts';
 import type { BusinessMapCharts, BusinessMapCompanies } from '../../../../shared/analysis-contract/business-map-admin.ts';
 import type { SecPipelineEnv } from '../operations.ts';
 import { authenticateAdmin } from './auth.ts';
@@ -74,6 +75,20 @@ export async function handleBusinessMapAdminRequest(request: Request, env: SecPi
       const flow = publication.flow;
       const profit = flow ? {...flow, quarters: [...new Map([...(derived?.reports?.quarters ?? []), ...flow.quarters].map(q => [q.periodEnd, q])).values()].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd))} : null;
       return json({ticker, status: publication.status, reasons: publication.reasons, profit, capital: derived?.capital ?? null} satisfies BusinessMapCharts);
+    }
+    // The AI switch (company-policy.ts): a row overrides SEC_AI_TICKERS for its company. Switching a company on starts its
+    // AI work (`ai.enabled`); switching it off stops new runs, and what was published stays until the storage sweep.
+    const ai = /^\/admin\/business-map\/companies\/([^/]+)\/ai$/.exec(path);
+    if (ai && request.method === 'POST') {
+      const ticker = normalizeTrackedTicker(decodeURIComponent(ai[1]!));
+      const body = await request.json() as {enabled?:boolean};
+      if (!ticker || typeof body.enabled !== 'boolean') return json({error:'公司代码或操作参数无效。'},400);
+      if (body.enabled && !dataTickersFor(env).includes(ticker)) return json({error:'请先把该公司加入白名单。'},409);
+      const before = trackedTickersFor(env).includes(ticker);
+      await db.prepare('INSERT INTO financial_ai_settings(ticker,enabled,updated_at) VALUES(?,?,?) ON CONFLICT(ticker) DO UPDATE SET enabled=excluded.enabled,updated_at=excluded.updated_at')
+        .bind(ticker,body.enabled?1:0,new Date().toISOString()).run();
+      if (body.enabled && !before) await emit(env,[{type:'ai.enabled',ticker,cik:await knownCik(db,ticker)}]);
+      return json({ticker,aiEnabled:body.enabled},200);
     }
     // Judge the issuer's income statement again (presentation-task.ts): forget the filing it was judged on and ask.
     const judge = /^\/admin\/business-map\/companies\/([^/]+)\/presentation$/.exec(path);

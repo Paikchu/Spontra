@@ -1,3 +1,4 @@
+import { companyPolicyEnvironment } from "./financial-data/company-policy.ts";
 import {handleTranscriptAdminRequest} from './admin/transcripts.ts';
 import {handleBusinessMapAdminRequest} from './admin/business-map.ts';
 import {handleAiRunsAdminRequest} from './admin/ai-runs.ts';
@@ -49,6 +50,8 @@ const worker = {
     const path = new URL(request.url).pathname;
     if (path === "/health") return healthResponse();
     if (path === "/ready") return readyResponse(env);
+    // The admin's whitelist and AI switch override the deployment's company lists for everything below.
+    env = await companyPolicyEnvironment(env);
     if (path.startsWith("/admin/business-map/")) return handleBusinessMapAdminRequest(request, env);
     if (path.startsWith("/admin/ai/")) return handleAiRunsAdminRequest(request, env);
     if (path === "/admin/library" || path.startsWith("/admin/library/")) return handleLibraryAdminRequest(request, env);
@@ -71,6 +74,7 @@ const worker = {
    * Cloudflare's error notification watches.
    */
   async scheduled(_controller: ScheduledController, env: SecPipelineEnv) {
+    env = await companyPolicyEnvironment(env);
     await pipelineEntry(env);
     try {
       console.log(JSON.stringify({ event: "sec-discovery", ...await runSecDiscovery(env) }));
@@ -82,7 +86,7 @@ const worker = {
 
   /** The events, tasks and dead-letter queues of the event-driven pipeline (docs/pipeline-events.md). */
   async queue(batch: MessageBatch<unknown>, env: SecPipelineEnv) {
-    await handlePipelineQueue(batch, env);
+    await handlePipelineQueue(batch, await companyPolicyEnvironment(env));
   },
 } satisfies ExportedHandler<SecPipelineEnv>;
 

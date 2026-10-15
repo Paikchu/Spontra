@@ -57,6 +57,12 @@ export function BusinessMapCompanies({onUnauthorized,onAuthenticated}:{onUnautho
       if(err instanceof AdminApiError&&err.status>=400&&err.status<500)completeRequestId(key,storage());
     } finally {lock.current=false;setBusy('');}
   }
+  async function switchAi(symbol:string,enabled:boolean) {
+    if(lock.current)return;lock.current=true;setBusy(symbol);setError('');setNotice('');
+    try {await adminApi(`business-map/companies/${symbol}/ai`,{method:'POST',body:JSON.stringify({enabled})});setRefresh(n=>n+1);setNotice(`${symbol} AI 分析已${enabled?'开启':'关闭'}`);}
+    catch(err){if(err instanceof AdminApiError&&err.status===401)callbacks.current.onUnauthorized();else setError((err as Error).message);}
+    finally {lock.current=false;setBusy('');}
+  }
   async function judge(symbol:string) {
     if(lock.current)return;lock.current=true;setBusy(symbol);setError('');setNotice('');
     try {await adminApi(`business-map/companies/${symbol}/presentation`,{method:'POST',body:'{}'});setRefresh(n=>n+1);setNotice(`${symbol} 重新判定已提交`);}
@@ -74,8 +80,8 @@ export function BusinessMapCompanies({onUnauthorized,onAuthenticated}:{onUnautho
     {data&&!data.automaticCollection&&<p className="bm-admin-warning">自动采集已暂停</p>}
     {!data&&!loadError&&<p role="status">加载中</p>}
     {companies.length>0&&<div className="bm-admin-table-wrap ra-panel"><table className="bm-admin-table">
-      <thead><tr><th>公司</th><th>状态</th><th>可展示期间</th><th>收入构成</th><th>采集</th><th>问题</th><th>操作</th></tr></thead>
-      {companies.map(company=><Company key={company.ticker} company={company} busy={!!busy} onToggle={()=>void mutate(company.ticker,!company.dataEnabled)} onPrepare={()=>void mutate(company.ticker)} onJudge={()=>void judge(company.ticker)}/>)}
+      <thead><tr><th>公司</th><th>状态</th><th>可展示期间</th><th>收入构成</th><th>采集</th><th>问题</th><th>AI 分析</th><th>操作</th></tr></thead>
+      {companies.map(company=><Company key={company.ticker} company={company} busy={!!busy} onToggle={()=>void mutate(company.ticker,!company.dataEnabled)} onPrepare={()=>void mutate(company.ticker)} onJudge={()=>void judge(company.ticker)} onAi={()=>void switchAi(company.ticker,!company.tracked)}/>)}
     </table></div>}
     {data&&!companies.length&&<p>无匹配公司</p>}
   </section>;
@@ -85,7 +91,7 @@ const presentationSource:Record<string,string>={calculation:'申报计算链',st
 const taskStatus:Record<string,string>={succeeded:'已完成',partial:'部分完成',failed:'失败',cancelled:'已停止'};
 
 /** One company as a table row; the row opens to its quarters, task progress and collection problems. */
-function Company({company:c,busy,onToggle,onPrepare,onJudge}:{company:BusinessMapCompany;busy:boolean;onToggle:()=>void;onPrepare:()=>void;onJudge:()=>void}) {
+function Company({company:c,busy,onToggle,onPrepare,onJudge,onAi}:{company:BusinessMapCompany;busy:boolean;onToggle:()=>void;onPrepare:()=>void;onJudge:()=>void;onAi:()=>void}) {
   const running=!!c.task&&active.has(c.task.status),collecting=!!c.collection&&['queued','running','retry'].includes(c.collection.status);
   const ready=c.publication.status==='ready';
   const revenuePending=c.publication.revenueCoverage?.some(q=>q.status==='unverified');
@@ -101,9 +107,10 @@ function Company({company:c,busy,onToggle,onPrepare,onJudge}:{company:BusinessMa
       <td>{latest?coverage(latest):'—'}</td>
       <td>{running&&c.task?<>{stages[c.task.stage]??c.task.stage} · {c.task.progress.completed}/{c.task.progress.total}</>:scans||'—'}</td>
       <td>{issues.length?<button className="bm-admin-issue-count" onClick={()=>setOpen(true)}>{issues.length} 项</button>:<span className="bm-admin-muted">无</span>}</td>
+      <td><div className="bm-admin-actions"><span className="ra-badge" data-status={c.tracked?'reviewed':'idle'}>{c.tracked?'已开启':'未开启'}</span><button className="fm-button" disabled={busy||(!c.tracked&&!c.dataEnabled)} onClick={onAi}>{c.tracked?'关闭':'开启'}</button></div></td>
       <td><div className="bm-admin-actions"><button className="fm-button" disabled={busy} onClick={onToggle}>{c.dataEnabled?'移出':'加入'}</button><button className="fm-button" disabled={busy||running} onClick={onPrepare}>{running?'准备中':'重新准备'}</button><a href={`/admin/financials?ticker=${c.ticker}`}>财报</a>{ready&&<a href={`https://spontra-business-map.max-zhangyuchen.workers.dev/companies/${c.ticker}`} target="_blank" rel="noreferrer" aria-label={`${c.ticker} 业务地图`}>地图<ExternalLink size={12}/></a>}</div></td>
     </tr>
-    {open&&<tr className="bm-admin-detail"><td colSpan={7}><div>
+    {open&&<tr className="bm-admin-detail"><td colSpan={8}><div>
       <section><h4>收入构成</h4>{c.publication.revenueCoverage?.length?<ul>{c.publication.revenueCoverage.map(q=><li key={q.period}>{q.period}：{coverage(q)}</li>)}</ul>:<p>无</p>}</section>
       <section><h4>采集</h4>{c.task&&<div className="bm-admin-progress" data-status={c.task.status}><label>{stages[c.task.stage]??c.task.stage} · {c.task.progress.completed}/{c.task.progress.total} 个阶段{!running&&taskStatus[c.task.status]?` · ${taskStatus[c.task.status]}`:''}</label><progress aria-label={`${c.ticker} 准备进度`} value={c.task.progress.completed} max={c.task.progress.total}/><small>任务更新于 {financialDate(c.task.updatedAt)}</small></div>}
         {!!c.collection?.total&&<p>最新财报扫描：{c.collection.completed}/{c.collection.total} 份候选文件</p>}{c.history&&<p>历史披露扫描：{c.history.completed}/{c.history.total} 份文件</p>}{!c.task&&!c.collection?.total&&!c.history&&<p>无采集记录</p>}</section>

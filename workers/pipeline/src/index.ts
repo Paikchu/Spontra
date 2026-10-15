@@ -1,5 +1,6 @@
 import { NonRetryableError } from "cloudflare:workflows";
 import { SecModelHttpError } from "./operations.ts";
+import { companyPolicyEnvironment } from "./financial-data/company-policy.ts";
 import { WorkerEntrypoint, WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
 import { handleMapRead } from "./read-api/router.ts";
 
@@ -61,7 +62,7 @@ function durableSteps(step: WorkflowStep, env: SecPipelineEnv, instanceId: strin
 
 export class SecAnalysisWorkflow extends WorkflowEntrypoint<SecPipelineEnv, SecWorkflowParams> {
   async run(event: WorkflowEvent<SecWorkflowParams>, step: WorkflowStep) {
-    const env = await maintenanceAnalysisEnvironment(this.env, event.payload, event.instanceId);
+    const env = await maintenanceAnalysisEnvironment(await companyPolicyEnvironment(this.env), event.payload, event.instanceId);
     assertTrackedTicker(env,event.payload.ticker);
     const operations = createSecPipelineOperations(env, fetch, event.instanceId);
     // One-off reports do not enroll a company in recurring memory/company analysis.
@@ -84,16 +85,18 @@ export class MapReads extends WorkerEntrypoint<SecPipelineEnv> {
 
 export class BusinessExplainerWorkflow extends WorkflowEntrypoint<SecPipelineEnv, BusinessExplainerParams> {
   async run(event: WorkflowEvent<BusinessExplainerParams>, step: WorkflowStep) {
-    const run = { env: this.env, kind: "explainer" as const, ticker: event.payload.ticker, runId: event.instanceId };
-    return trackRun(run, () => executeBusinessExplainerWorkflow(event.payload, trackSteps(durableSteps(step, this.env, event.instanceId), run), this.env, fetch, event.instanceId));
+    const env = await companyPolicyEnvironment(this.env);
+    const run = { env, kind: "explainer" as const, ticker: event.payload.ticker, runId: event.instanceId };
+    return trackRun(run, () => executeBusinessExplainerWorkflow(event.payload, trackSteps(durableSteps(step, env, event.instanceId), run), env, fetch, event.instanceId));
   }
 }
 
 /** The ReAct business breakdown: one think → act loop per disclosed business, each turn a durable step. */
 export class BusinessTreeWorkflow extends WorkflowEntrypoint<SecPipelineEnv, BusinessTreeParams> {
   async run(event: WorkflowEvent<BusinessTreeParams>, step: WorkflowStep) {
-    const run = { env: this.env, kind: "tree" as const, ticker: event.payload.ticker, runId: event.instanceId };
-    return trackRun(run, () => executeBusinessTreeWorkflow(event.payload, trackSteps(durableSteps(step, this.env, event.instanceId), run), this.env, fetch, event.instanceId));
+    const env = await companyPolicyEnvironment(this.env);
+    const run = { env, kind: "tree" as const, ticker: event.payload.ticker, runId: event.instanceId };
+    return trackRun(run, () => executeBusinessTreeWorkflow(event.payload, trackSteps(durableSteps(step, env, event.instanceId), run), env, fetch, event.instanceId));
   }
 }
 
@@ -101,63 +104,71 @@ export class BusinessTreeWorkflow extends WorkflowEntrypoint<SecPipelineEnv, Bus
 /** One company's translation run: the strings of its publications not yet translated, then every resource's table. */
 export class TranslateWorkflow extends WorkflowEntrypoint<SecPipelineEnv, TranslateParams> {
   async run(event: WorkflowEvent<TranslateParams>, step: WorkflowStep) {
-    return executeTranslateWorkflow(event.payload, durableSteps(step, this.env, event.instanceId), this.env, event.instanceId);
+    const env = await companyPolicyEnvironment(this.env);
+    return executeTranslateWorkflow(event.payload, durableSteps(step, env, event.instanceId), env, event.instanceId);
   }
 }
 
 export class LibraryCardsWorkflow extends WorkflowEntrypoint<SecPipelineEnv, LibraryCardsParams> {
   async run(event: WorkflowEvent<LibraryCardsParams>, step: WorkflowStep) {
-    return executeLibraryCardsWorkflow(event.payload, durableSteps(step, this.env, event.instanceId), this.env);
+    const env = await companyPolicyEnvironment(this.env);
+    return executeLibraryCardsWorkflow(event.payload, durableSteps(step, env, event.instanceId), env);
   }
 }
 
 /** One company's business links: a single model call at high reasoning, checked and written in one durable step. */
 export class LibraryLinksWorkflow extends WorkflowEntrypoint<SecPipelineEnv, LibraryLinksParams> {
   async run(event: WorkflowEvent<LibraryLinksParams>, step: WorkflowStep) {
-    return executeLibraryLinksWorkflow(event.payload, durableSteps(step, this.env, event.instanceId), this.env);
+    const env = await companyPolicyEnvironment(this.env);
+    return executeLibraryLinksWorkflow(event.payload, durableSteps(step, env, event.instanceId), env);
   }
 }
 
 export class AnalystWorkflow extends WorkflowEntrypoint<SecPipelineEnv, AnalystWorkflowParams> {
   async run(event: WorkflowEvent<AnalystWorkflowParams>, step: WorkflowStep) {
-    const run = { env: this.env, kind: "analyst" as const, ticker: event.payload.ticker, runId: event.instanceId };
-    return trackRun(run, () => executeAnalystWorkflow(event.payload, trackSteps(durableSteps(step, this.env, event.instanceId), run), this.env));
+    const env = await companyPolicyEnvironment(this.env);
+    const run = { env, kind: "analyst" as const, ticker: event.payload.ticker, runId: event.instanceId };
+    return trackRun(run, () => executeAnalystWorkflow(event.payload, trackSteps(durableSteps(step, env, event.instanceId), run), env));
   }
 }
 
 export class FindingsWorkflow extends WorkflowEntrypoint<SecPipelineEnv, FindingsWorkflowParams> {
   async run(event: WorkflowEvent<FindingsWorkflowParams>, step: WorkflowStep) {
-    const run = { env: this.env, kind: "findings" as const, ticker: event.payload.ticker, runId: event.instanceId };
-    return trackRun(run, () => executeFindingsWorkflow(event.payload, trackSteps(durableSteps(step, this.env, event.instanceId), run), this.env));
+    const env = await companyPolicyEnvironment(this.env);
+    const run = { env, kind: "findings" as const, ticker: event.payload.ticker, runId: event.instanceId };
+    return trackRun(run, () => executeFindingsWorkflow(event.payload, trackSteps(durableSteps(step, env, event.instanceId), run), env));
   }
 }
 
 export class GuidanceWorkflow extends WorkflowEntrypoint<SecPipelineEnv, GuidanceWorkflowParams> {
   async run(event: WorkflowEvent<GuidanceWorkflowParams>, step: WorkflowStep) {
-    const run = { env: this.env, kind: "guidance" as const, ticker: event.payload.ticker, runId: event.instanceId };
-    const durable = trackSteps(durableSteps(step, this.env, event.instanceId), run);
+    const env = await companyPolicyEnvironment(this.env);
+    const run = { env, kind: "guidance" as const, ticker: event.payload.ticker, runId: event.instanceId };
+    const durable = trackSteps(durableSteps(step, env, event.instanceId), run);
     // Waiting for a transcript sleeps the instance; a sleeping Workflow uses no CPU.
     const sleep = trackSleep((name, ms) => step.sleep(name, Math.max(1000, Math.round(ms))), run);
-    return trackRun(run, () => executeGuidanceWorkflow(event.payload, { do: durable.do, sleep }, this.env, { runId: event.instanceId }));
+    return trackRun(run, () => executeGuidanceWorkflow(event.payload, { do: durable.do, sleep }, env, { runId: event.instanceId }));
   }
 }
 
 export class SecMemoryWorkflow extends WorkflowEntrypoint<SecPipelineEnv, SecMemoryWorkflowParams> {
   async run(event: WorkflowEvent<SecMemoryWorkflowParams>, step: WorkflowStep) {
-    assertTrackedTicker(this.env,event.payload.ticker);
-    return executeSecMemoryWorkflow(event.payload, event.instanceId, durableSteps(step, this.env, event.instanceId), this.env);
+    const env = await companyPolicyEnvironment(this.env);
+    assertTrackedTicker(env,event.payload.ticker);
+    return executeSecMemoryWorkflow(event.payload, event.instanceId, durableSteps(step, env, event.instanceId), env);
   }
 }
 
 export class CompanyAnalysisWorkflow extends WorkflowEntrypoint<SecPipelineEnv, CompanyAnalysisWorkflowParams> {
   async run(event: WorkflowEvent<CompanyAnalysisWorkflowParams>, step: WorkflowStep) {
-    assertTrackedTicker(this.env,event.payload.ticker);
+    const env = await companyPolicyEnvironment(this.env);
+    assertTrackedTicker(env,event.payload.ticker);
     return executeCompanyAnalysisWorkflow(
       event.payload,
       event.instanceId,
       event.timestamp,
       step as unknown as CompanyWorkflowStep,
-      this.env,
+      env,
     );
   }
 }
