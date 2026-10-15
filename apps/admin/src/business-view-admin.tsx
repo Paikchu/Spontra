@@ -92,7 +92,7 @@ export function BusinessViewAdmin({ mapOrigin = "" }: { mapOrigin?: string }) {
             : section === "financials" ? <FinancialMaintenance {...auth} />
             : section === "filings" ? <FilingLibrary {...auth} />
             : section === "business" ? <BusinessSegments {...auth} onOpenSection={openSection} />
-            : <AiRuns {...auth} kinds={["findings", "analyst"]} />}
+            : <AiRuns {...auth} kinds={["findings", "analyst"]} translations />}
         </>}
     </main>
   </div>;

@@ -7,6 +7,7 @@ import type { BusinessTree, TreeNode } from "@/shared/analysis-contract/business
 import { adminApi, AdminApiError } from "./admin-api";
 import { CompanyLogo } from "@/packages/web/src/company-logo";
 import { completeRequestId, pendingRequestId } from "./financial-maintenance-state";
+import { TranslationsPanel } from "./translations";
 import "./ai-runs.css";
 
 /** The BusinessView outputs this admin shows; guidance is not part of BusinessView. */
@@ -52,10 +53,12 @@ function storage() { try { return window.sessionStorage; } catch { return undefi
 function initial(name: "ticker" | "kind") { try { return new URLSearchParams(window.location.search).get(name) ?? ""; } catch { return ""; } }
 
 /** Companies on the left, the chosen kinds of one company on the right. The page keeps `?ticker=&kind=` in its URL. */
-export function AiRuns({ onUnauthorized, onAuthenticated, kinds }: { onUnauthorized: () => void; onAuthenticated: () => void; kinds: ViewKind[] }) {
-  const tabs = KINDS.filter(([k]) => kinds.includes(k));
+export function AiRuns({ onUnauthorized, onAuthenticated, kinds, translations = false }: { onUnauthorized: () => void; onAuthenticated: () => void; kinds: ViewKind[]; translations?: boolean }) {
+  const kindTabs = KINDS.filter(([k]) => kinds.includes(k));
+  /** The Chinese the pipeline wrote for the company's publications, as a last tab. */
+  const tabs: Array<[ViewKind | "translations", string]> = [...kindTabs, ...translations ? [["translations", "中文译文"] as [ViewKind | "translations", string]] : []];
   const [list, setList] = useState<AiCompanies | null>(null), [search, setSearch] = useState(""), [listError, setListError] = useState("");
-  const [ticker, setTicker] = useState(initial("ticker")), [kind, setKind] = useState<ViewKind>(() => tabs.find(([k]) => k === initial("kind"))?.[0] ?? tabs[0]![0]);
+  const [ticker, setTicker] = useState(initial("ticker")), [kind, setKind] = useState<ViewKind | "translations">(() => tabs.find(([k]) => k === initial("kind"))?.[0] ?? tabs[0]![0]);
   const [refresh, setRefresh] = useState(0);
   const callbacks = useRef({ onUnauthorized, onAuthenticated });
   useEffect(() => { callbacks.current = { onUnauthorized, onAuthenticated }; }, [onUnauthorized, onAuthenticated]);
@@ -79,14 +82,15 @@ export function AiRuns({ onUnauthorized, onAuthenticated, kinds }: { onUnauthori
       <div className="ra-list-caption"><span>{list ? `${list.companies.length} 家公司` : "加载中"}</span><button aria-label="刷新" onClick={() => setRefresh(n => n + 1)}><RefreshCw size={14} /></button></div>
       {listError && <p className="ra-error" role="alert">{listError}</p>}
       <div className="ra-list-scroll">{companies.map(c => <button key={c.ticker} className="ra-report-row" aria-pressed={ticker === c.ticker} onClick={() => setTicker(c.ticker)}>
-        <CompanyLogo symbol={c.ticker} /><span className="ra-row-info"><strong>{c.ticker}</strong>{tabs.map(([k]) => { const run = c.kinds[k].latestRun, note = run && ACTIVE.has(run.status) ? "生成中" : run?.status === "failed" ? "上次生成失败" : c.kinds[k].current ? "" : "尚未生成"; return note && <small key={k} data-note={run?.status === "failed" || undefined}>{note}</small>; })}
+        <CompanyLogo symbol={c.ticker} /><span className="ra-row-info"><strong>{c.ticker}</strong>{kindTabs.map(([k]) => { const run = c.kinds[k].latestRun, note = run && ACTIVE.has(run.status) ? "生成中" : run?.status === "failed" ? "上次生成失败" : c.kinds[k].current ? "" : "尚未生成"; return note && <small key={k} data-note={run?.status === "failed" || undefined}>{note}</small>; })}
         </span></button>)}
         {list && !companies.length && <p className="ai-empty">无匹配公司</p>}
       </div>
     </section>
     <section className="ra-detail ai-detail" aria-label="生成详情">
       {tabs.length > 1 && <div className="ra-tabbar"><div role="tablist" aria-label="生成内容">{tabs.map(([k, label]) => <button key={k} role="tab" aria-selected={kind === k} onClick={() => setKind(k)}>{label}</button>)}</div></div>}
-      {!ticker ? <p className="ai-empty">未选择公司</p> : <AiKindPanel key={`${ticker}:${kind}`} ticker={ticker} kind={kind} onUnauthorized={onUnauthorized} />}
+      {!ticker ? <p className="ai-empty">未选择公司</p> : kind === "translations" ? <TranslationsPanel key={ticker} ticker={ticker} onUnauthorized={onUnauthorized} />
+        : <AiKindPanel key={`${ticker}:${kind}`} ticker={ticker} kind={kind} onUnauthorized={onUnauthorized} />}
     </section>
   </div>;
 }

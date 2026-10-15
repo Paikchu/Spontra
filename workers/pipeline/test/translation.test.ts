@@ -7,6 +7,7 @@ import { proseNumbers } from "../../../shared/analysis-runtime/findings.ts";
 import { checkTranslation, collectProse, langOf, localize } from "../../../shared/analysis-runtime/translation.ts";
 import type { SecPipelineEnv } from "../src/operations.ts";
 import { validateRegistry } from "../src/pipeline/registry.ts";
+import { translationsAdmin } from "../src/translation/admin.ts";
 import { publishTables, readTranslationTable, sha256, translateBatch, translationPlan, type TranslationSource } from "../src/translation/translate.ts";
 
 /** D1 over node:sqlite with every migration applied, enough for the translator's statements. */
@@ -109,4 +110,21 @@ test("a run translates each new string once, rejects one that fails its checks, 
   assert.equal(row!.status, "rejected"); assert.match(row!.problems, /figures/);
   sources[0]!.strings.push("Margins narrowed.");
   assert.equal((await translationPlan(db, "TEST", "zh-CN", read))!.batches.flat().length, 1, "a new string is the only work");
+});
+
+test("the admin sees each resource's coverage, today's calls and every string with its translation or the reasons it failed", async () => {
+  const db = database();
+  const env = { DB: db, TRANSLATION_DAILY_CALLS: "10", DEEPSEEK_API_KEY: "k" } as unknown as SecPipelineEnv;
+  const sources: TranslationSource[] = [{ resource: "findings", scope: "", strings: ["Backlog lengthens", "Capex was $28.5 billion.", "Margins narrowed."] }];
+  const read = async () => sources;
+  const plan = await translationPlan(db, "TEST", "zh-CN", read);
+  const answers: Record<string, string> = { "Backlog lengthens": "订单储备拉长", "Capex was $28.5 billion.": "资本开支为 28.5亿美元。" };
+  await translateBatch(env, "TEST", "run", plan!.batches.flat().filter(i => i.text !== "Margins narrowed."), async (_s, items) => new Map(items.map(i => [i.i, answers[i.text]!])));
+  await publishTables(db, "TEST", "zh-CN", read);
+  const admin = await translationsAdmin(env, "TEST", new Date(), "zh-CN", read);
+  assert.deepEqual(admin.resources.map(r => [r.resource, r.total, r.translated, r.rejected, !!r.publishedAt]), [["findings", 3, 1, 1, true]]);
+  assert.deepEqual(admin.entries.map(e => e.status), ["rejected", "pending", "ready"]);
+  assert.match(admin.entries[0]!.problems.join(), /figures/);
+  assert.equal(admin.entries[2]!.text, "订单储备拉长");
+  assert.equal(admin.budget.used, 2); assert.equal(admin.budget.cap, 10); assert.equal(admin.enabled, true); assert.equal(admin.run, null);
 });

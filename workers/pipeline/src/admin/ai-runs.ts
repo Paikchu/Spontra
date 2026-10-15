@@ -1,4 +1,5 @@
 import { AI_RUN_KINDS, type AiCompanies, type AiCompanyDetail, type AiKindState, type AiRun, type AiRunKind, type AiRunStarted, type AiUsageDay, type AiVersion, type AiVersionDetail } from "../../../../shared/analysis-contract/ai-runs-admin.ts";
+import { translationsAdmin } from "../translation/admin.ts";
 import { AiRunStore, publishedAt, summarize, TERMINAL } from "../ai-runs/store.ts";
 import { businessExplainerFingerprint, readBusinessExplainerResponse } from "../business-explainer/workflow.ts";
 import { businessTreeFingerprint, readBusinessTreeResponse, treeTickersFor } from "../business-tree/workflow.ts";
@@ -164,6 +165,12 @@ export async function handleAiRunsAdminRequest(request: Request, env: SecPipelin
         kinds: Object.fromEntries(await Promise.all(AI_RUN_KINDS.map(async kind => [kind, await state(env, db, kind, ticker, latest.get(`${kind}:${ticker}`) ?? null)]))) as AiCompanies["companies"][number]["kinds"],
       })));
       return json({ companies } satisfies AiCompanies);
+    }
+    // The company's Chinese: coverage per resource, today's budget and every string with its translation.
+    const translations = /^\/admin\/ai\/companies\/([A-Z][A-Z0-9.-]{0,9})\/translations$/.exec(path);
+    if (translations && request.method === "GET") {
+      if (!tickers.includes(translations[1]!)) return json({ error: "该公司不在 AI 分析范围内。" }, 404);
+      return json(await translationsAdmin(env, translations[1]!, new Date(now)));
     }
     const match = /^\/admin\/ai\/companies\/([A-Z][A-Z0-9.-]{0,9})\/(findings|analyst|explainer|tree|guidance)(?:\/(runs|versions\/([0-9T:.Z-]{10,40})))?$/.exec(path);
     if (!match) return json({ error: "Not found" }, 404);
