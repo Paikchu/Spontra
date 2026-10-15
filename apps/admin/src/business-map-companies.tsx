@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { ChevronRight, ExternalLink, Plus, RefreshCw, Search } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronRight, ExternalLink, Layers, Plus, RefreshCw, Scale, ScanLine, Search, Trash2 } from 'lucide-react';
 import type { BusinessMapCompanies, BusinessMapCompany } from '@/shared/analysis-contract/business-map-admin';
 import { adminApi, AdminApiError } from './admin-api';
 import { normalizeCompanyTicker, pendingRequestId, completeRequestId } from './financial-maintenance-state';
@@ -80,7 +80,7 @@ export function BusinessMapCompanies({onUnauthorized,onAuthenticated}:{onUnautho
     {data&&!data.automaticCollection&&<p className="bm-admin-warning">自动采集已暂停</p>}
     {!data&&!loadError&&<p role="status">加载中</p>}
     {companies.length>0&&<div className="bm-admin-table-wrap ra-panel"><table className="bm-admin-table">
-      <thead><tr><th>公司</th><th>状态</th><th>可展示期间</th><th>收入构成</th><th>采集</th><th>问题</th><th>AI 分析</th><th>操作</th></tr></thead>
+      <thead><tr><th>公司</th><th>状态</th><th>AI 分析</th><th>操作</th></tr></thead>
       {companies.map(company=><Company key={company.ticker} company={company} busy={!!busy} onToggle={()=>void mutate(company.ticker,!company.dataEnabled)} onPrepare={()=>void mutate(company.ticker)} onJudge={()=>void judge(company.ticker)} onAi={()=>void switchAi(company.ticker,!company.tracked)}/>)}
     </table></div>}
     {data&&!companies.length&&<p>无匹配公司</p>}
@@ -88,40 +88,55 @@ export function BusinessMapCompanies({onUnauthorized,onAuthenticated}:{onUnautho
 }
 const coverage=(q:NonNullable<BusinessMapCompany['publication']['revenueCoverage']>[number])=>q.status==='verified'?`${q.segments} 个分部已核验${q.adjustments?` · ${q.adjustments} 项调节已对账`:''}`:q.status==='single_segment'?'单一报告部门':'仅合并收入 · 拆分待核验';
 const presentationSource:Record<string,string>={calculation:'申报计算链',statement:'报表行',profile:'模型判定（算术核验）',degraded:'未拆分（合计）'};
+const lineName:Record<string,string>={revenue:'营收',cost:'营业成本',gross:'毛利',research:'研发费用',sales:'销售费用',administration:'管理费用',operatingExpenses:'营业费用',operating:'营业利润',other:'营业外收支',pretax:'税前利润',tax:'所得税',net:'净利润'};
 const taskStatus:Record<string,string>={succeeded:'已完成',partial:'部分完成',failed:'失败',cancelled:'已停止'};
 
-/** One company as a table row; the row opens to its quarters, task progress and collection problems. */
+/** A scan's progress as a labelled bar. */
+function Meter({label,completed,total}:{label:string;completed:number;total:number}) {
+  return <div className="bm-meter"><span>{label}</span><b>{completed}/{total}</b><progress aria-label={label} value={completed} max={Math.max(total,1)}/></div>;
+}
+
+/** One company as a table row: its two states, the AI switch and the actions; the row opens to the details. */
 function Company({company:c,busy,onToggle,onPrepare,onJudge,onAi}:{company:BusinessMapCompany;busy:boolean;onToggle:()=>void;onPrepare:()=>void;onJudge:()=>void;onAi:()=>void}) {
   const running=!!c.task&&active.has(c.task.status),collecting=!!c.collection&&['queued','running','retry'].includes(c.collection.status);
   const ready=c.publication.status==='ready';
   const revenuePending=c.publication.revenueCoverage?.some(q=>q.status==='unverified');
   const issues=[...new Set([...(revenuePending?['REVENUE_BREAKDOWN_NOT_VERIFIED']:[]),...(c.task?.issues??[]),...(c.task?.errorCode?[c.task.errorCode]:[]),...(c.collection?.reasons??[]),...(!ready||c.publication.outdated?c.publication.reasons:[])])].filter(s=>s!=='PREPARING');
   const [open,setOpen]=useState(false);
-  const latest=c.publication.revenueCoverage?.[0];
-  const scans=[c.collection?.total?`最新 ${c.collection.completed}/${c.collection.total}`:'',c.history?`历史 ${c.history.completed}/${c.history.total}`:''].filter(Boolean).join(' · ');
+  const map=ready?{status:'reviewed',text:'财务地图已显示'}:running||collecting?{status:'processing',text:'财务地图准备中'}:{status:'idle',text:'财务地图未就绪'};
+  const remove=()=>{if(window.confirm(`移出 ${c.ticker}？`))onToggle();};
   return <tbody data-open={open||undefined}>
     <tr className="bm-admin-row" aria-label={`${c.ticker} 数据准备`}>
-      <td><div className="bm-admin-company-cell"><button className="bm-admin-toggle" aria-expanded={open} aria-label={`${c.ticker} 详情`} onClick={()=>setOpen(o=>!o)}><ChevronRight size={15}/></button><CompanyLogo symbol={c.ticker}/><span className="bm-admin-name"><strong className="ra-mono">{c.ticker}</strong><small>{c.dataEnabled?'已加入白名单':'未加入白名单'}{c.cik?` · CIK ${c.cik}`:''}</small></span></div></td>
-      <td><span className="ra-badge" data-status={ready?(revenuePending?'caution':'reviewed'):running||collecting?'processing':'idle'}>{ready?(revenuePending?'业务拆分待核验':c.publication.outdated||running?'已就绪 · 更新中':'地图已就绪'):running||collecting?'准备中':'未就绪'}</span></td>
-      <td>{ready?c.publication.periods.join('、'):'—'}</td>
-      <td>{latest?coverage(latest):'—'}</td>
-      <td>{running&&c.task?<>{stages[c.task.stage]??c.task.stage} · {c.task.progress.completed}/{c.task.progress.total}</>:scans||'—'}</td>
-      <td>{issues.length?<button className="bm-admin-issue-count" onClick={()=>setOpen(true)}>{issues.length} 项</button>:<span className="bm-admin-muted">无</span>}</td>
-      <td><div className="bm-admin-actions"><span className="ra-badge" data-status={c.tracked?'reviewed':'idle'}>{c.tracked?'已开启':'未开启'}</span><button className="fm-button" disabled={busy||(!c.tracked&&!c.dataEnabled)} onClick={onAi}>{c.tracked?'关闭':'开启'}</button></div></td>
-      <td><div className="bm-admin-actions"><button className="fm-button" disabled={busy} onClick={onToggle}>{c.dataEnabled?'移出':'加入'}</button><button className="fm-button" disabled={busy||running} onClick={onPrepare}>{running?'准备中':'重新准备'}</button><a href={`/admin/financials?ticker=${c.ticker}`}>财报</a>{ready&&<a href={`https://spontra-business-map.max-zhangyuchen.workers.dev/companies/${c.ticker}`} target="_blank" rel="noreferrer" aria-label={`${c.ticker} 业务地图`}>地图<ExternalLink size={12}/></a>}</div></td>
+      <td><div className="bm-admin-company-cell"><button className="bm-admin-toggle" aria-expanded={open} aria-label={`${c.ticker} 详情`} onClick={()=>setOpen(o=>!o)}><ChevronRight size={15}/></button><CompanyLogo symbol={c.ticker}/><span className="bm-admin-name"><strong className="ra-mono">{c.ticker}</strong>{c.name&&c.name!==c.ticker&&<small>{c.name}</small>}</span></div></td>
+      <td><div className="bm-admin-states"><span className="ra-badge" data-status={map.status}>{map.text}</span><span className="ra-badge" data-status={c.tracked?'reviewed':'idle'}>{c.tracked?'AI 分析已加入':'AI 分析未加入'}</span></div></td>
+      <td><button className="bm-switch" role="switch" aria-checked={c.tracked} aria-label={`${c.ticker} AI 分析`} disabled={busy||(!c.tracked&&!c.dataEnabled)} onClick={onAi}><span/></button></td>
+      <td><div className="bm-admin-actions"><button className="fm-button" disabled={busy||running||!c.dataEnabled} onClick={onPrepare}>{running?'准备中':'重新准备'}</button><a href={`/admin/financials?ticker=${c.ticker}`}>财报</a>{ready&&<a href={`https://spontra-business-map.max-zhangyuchen.workers.dev/companies/${c.ticker}`} target="_blank" rel="noreferrer" aria-label={`${c.ticker} 业务地图`}>地图<ExternalLink size={12}/></a>}
+        {c.dataEnabled?<button className="bm-admin-remove" disabled={busy} onClick={remove} aria-label={`移出 ${c.ticker}`} title="移出白名单"><Trash2 size={16}/></button>:<button className="fm-button" disabled={busy} onClick={onToggle}>加入</button>}</div></td>
     </tr>
-    {open&&<tr className="bm-admin-detail"><td colSpan={8}><div>
-      <section><h4>收入构成</h4>{c.publication.revenueCoverage?.length?<ul>{c.publication.revenueCoverage.map(q=><li key={q.period}>{q.period}：{coverage(q)}</li>)}</ul>:<p>无</p>}</section>
-      <section><h4>采集</h4>{c.task&&<div className="bm-admin-progress" data-status={c.task.status}><label>{stages[c.task.stage]??c.task.stage} · {c.task.progress.completed}/{c.task.progress.total} 个阶段{!running&&taskStatus[c.task.status]?` · ${taskStatus[c.task.status]}`:''}</label><progress aria-label={`${c.ticker} 准备进度`} value={c.task.progress.completed} max={c.task.progress.total}/><small>任务更新于 {financialDate(c.task.updatedAt)}</small></div>}
-        {!!c.collection?.total&&<p>最新财报扫描：{c.collection.completed}/{c.collection.total} 份候选文件</p>}{c.history&&<p>历史披露扫描：{c.history.completed}/{c.history.total} 份文件</p>}{!c.task&&!c.collection?.total&&!c.history&&<p>无采集记录</p>}</section>
-      <section><h4>税前至净利润</h4>{c.presentation?.source?<>
-        <p>{presentationSource[c.presentation.source]}</p>
-        {c.presentation.afterTax.length>0&&<ul>{c.presentation.afterTax.map(a=><li key={a.name}>{a.name}：{Number(a.value).toLocaleString('en-US')}</li>)}</ul>}
-        {c.presentation.basisChanges.length>0&&<p>重述行（不比较环比）：{c.presentation.basisChanges.join('、')}</p>}
-        {c.presentation.profile&&<p>模型判定：{c.presentation.profile.status==='verified'?'已核验':'未通过'} · {c.presentation.profile.attempts} 次 · {c.presentation.profile.accession||'待重判'}{c.presentation.profile.issues.length>0&&<small>{c.presentation.profile.issues.slice(0,3).join('；')}</small>}</p>}
-        {(c.presentation.source==='degraded'||c.presentation.profile)&&<button className="fm-button" disabled={busy} onClick={onJudge}>重新判定</button>}
-      </>:<p>无</p>}</section>
-      <section className="bm-admin-issues"><h4>采集问题（{issues.length}）</h4>{issues.length?<ul>{issues.map(code=><li key={code}>{issueText(code)}{errors[code]&&<small>{code}</small>}</li>)}</ul>:<p>无</p>}</section>
+    {open&&<tr className="bm-admin-detail"><td colSpan={4}><div className="bm-detail">
+      <header className="bm-detail-head">
+        <div><span>可展示期间</span>{ready&&c.publication.periods.length?<ul className="bm-chips">{c.publication.periods.map(p=><li key={p}>{p}</li>)}</ul>:<em>—</em>}</div>
+        {c.task&&<div><span>最近任务</span><em>{stages[c.task.stage]??c.task.stage}{taskStatus[c.task.status]?` · ${taskStatus[c.task.status]}`:''} · {financialDate(c.task.updatedAt)}</em></div>}
+      </header>
+      <div className="bm-detail-grid">
+        <article className="bm-card"><h4><Layers size={14}/>收入构成</h4>
+          {c.publication.revenueCoverage?.length?<dl data-kind="periods">{c.publication.revenueCoverage.map(q=><div key={q.period} data-status={q.status}><dt>{q.period}</dt><dd>{coverage(q)}</dd></div>)}</dl>:<p className="bm-empty">无</p>}</article>
+        <article className="bm-card"><h4><ScanLine size={14}/>采集</h4>
+          {running&&c.task&&<Meter label={stages[c.task.stage]??c.task.stage} completed={c.task.progress.completed} total={c.task.progress.total}/>}
+          {!!c.collection?.total&&<Meter label="最新财报扫描" completed={c.collection.completed} total={c.collection.total}/>}
+          {c.history&&<Meter label="历史披露扫描" completed={c.history.completed} total={c.history.total}/>}
+          {!running&&!c.collection?.total&&!c.history&&<p className="bm-empty">无采集记录</p>}</article>
+        <article className="bm-card"><h4><Scale size={14}/>税前至净利润</h4>
+          {c.presentation?.source?<>
+            <span className="ra-badge" data-status={c.presentation.source==='degraded'?'caution':'reviewed'}>{presentationSource[c.presentation.source]}</span>
+            {c.presentation.afterTax.length>0&&<dl>{c.presentation.afterTax.map(a=><div key={a.name}><dt>{a.name}</dt><dd className="ra-mono">{Number(a.value).toLocaleString('en-US')}</dd></div>)}</dl>}
+            {c.presentation.basisChanges.length>0&&<p>重述行（不比较环比）：{c.presentation.basisChanges.map(k=>lineName[k]??k).join('、')}</p>}
+            {c.presentation.profile&&<p>模型判定：{c.presentation.profile.status==='verified'?'已核验':'未通过'} · {c.presentation.profile.attempts} 次{c.presentation.profile.issues.length>0&&<small>{c.presentation.profile.issues.slice(0,3).join('；')}</small>}</p>}
+            {(c.presentation.source==='degraded'||c.presentation.profile)&&<button className="fm-button" disabled={busy} onClick={onJudge}>重新判定</button>}
+          </>:<p className="bm-empty">无</p>}</article>
+        <article className="bm-card" data-tone={issues.length?'caution':'ok'}><h4>{issues.length?<AlertTriangle size={14}/>:<CheckCircle2 size={14}/>}问题{issues.length?` · ${issues.length}`:''}</h4>
+          {issues.length?<ul>{issues.map(code=><li key={code}>{issueText(code)}{errors[code]&&<small>{code}</small>}</li>)}</ul>:<p className="bm-empty">无</p>}</article>
+      </div>
     </div></td></tr>}
   </tbody>;
 }
