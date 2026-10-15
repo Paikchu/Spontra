@@ -75,7 +75,7 @@ export function FinancialSankey({quarter,previous,onSegment,word=qoqLabel(getLoc
  const previousGraph=useMemo(()=>previous?financialGraph(previous):null,[previous]);
  const layout=useMemo(()=>{const revenue=graph.nodes.find(n=>n.name==="revenue")?.value??null;return layoutInfographic(graph,n=>labelWidth(n,nodeText(n,quarter,previous,previousGraph,revenue,word)));},[graph,quarter,previous,previousGraph,word]);
  const [active,setActive]=useState<string|null>(null);
- if((hasSignedFigures(quarter) && !layout)||quarter.incomeModel==="insurance"||quarter.incomeModel==="financial")return <SignedFinancialBridge quarter={quarter} previous={previous} word={word}/>;
+ if((hasSignedFigures(quarter) && !layout)||quarter.incomeModel==="insurance"||(quarter.incomeModel==="financial"&&!layout))return <SignedFinancialBridge quarter={quarter} previous={previous} word={word}/>;
  const revenue=graph.nodes.find(n=>n.name==="revenue")?.value??null;
  const adjacent=new Set(active?[active,...graph.links.filter(l=>l.source===active||l.target===active).flatMap(l=>[l.source,l.target])]:[]);
  const activate=(n:PlacedNode)=>n.segmentId?{role:"button",tabIndex:0,"aria-label":n.label,onClick:()=>onSegment(n.segmentId!),onKeyDown:(e:KeyboardEvent)=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();onSegment(n.segmentId!);}},onFocus:()=>setActive(n.name),onBlur:()=>setActive(null)}:{};

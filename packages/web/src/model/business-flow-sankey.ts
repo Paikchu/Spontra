@@ -67,9 +67,17 @@ export function financialGraph(q:BusinessFlowQuarter, compact=false):FinancialGr
  if(q.incomeModel==="financial"||q.incomeModel==="insurance"){
   const v=(key:FlowMetric)=>numeric(q.figures[key]);const r=v("revenue"),e=v("operatingExpenses"),p=v("pretax"),t=v("tax"),n=v("net");
   if([r,e,p,t,n].some(value=>value==null||value<0)||r!<=0||Math.abs(r!-e!-p!)>Math.max(1,r!*1e-9)||Math.abs(p!-t!-n!)>Math.max(1,p!*1e-9))return {nodes,links};
-  const defs=[['revenue',m.revenueReported,0,r,false],['operatingExpenses',m.totalExpenses,1,e,true],['pretax',metricLabels.pretax,1,p,false],['tax',metricLabels.tax,2,t,true],['net',metricLabels.net,2,n,false]] as const;
-  for(const[key,label,depth,value,expense]of defs)nodes.push({name:key,label,metric:key,depth,expense,value:value!});
-  for(const[source,target,value]of [['revenue','operatingExpenses',e],['revenue','pretax',p],['pretax','tax',t],['pretax','net',n]] as const)if(value!>0)links.push({source,target,value:value!});
+  // A bank's segments flow into net revenue as in any statement; its expense lines (noninterest expense, credit-loss
+  // provision) leave it beside pretax income.
+  const tree=q.incomeModel==="financial"?selectRevenueTree(q):null,offset=(tree?.depth??0)+(tree&&q.revenueAdjustments?.length?1:0);
+  const lines=q.incomeModel==="financial"?(q.expenseComponents??[]).map(c=>({c,value:numeric(c.amount)})):[];
+  const split=lines.length>1&&lines.every(l=>l.value!=null&&l.value>=0)&&Math.abs(lines.reduce((sum,l)=>sum+l.value!,0)-e!)<=Math.max(1,e!*1e-9);
+  type Def=[FlowMetric,string,number,number|null,boolean];
+  const defs:Def[]=[['revenue',q.incomeModel==="financial"?metricLabels.revenue:m.revenueReported,0,r,false],...(split?[]:[['operatingExpenses',m.totalExpenses,1,e,true] as Def]),['pretax',metricLabels.pretax,1,p,false],['tax',metricLabels.tax,2,t,true],['net',metricLabels.net,2,n,false]];
+  for(const[key,label,depth,value,expense]of defs)nodes.push({name:key,label,metric:key,depth:depth+offset,expense,value:value!});
+  if(split)for(const{c,value}of lines)if(value!>0){nodes.push({name:"expense:"+c.id,label:c.name,depth:1+offset,expense:true,value:value!,amount:c.amount});links.push({source:"revenue",target:"expense:"+c.id,value:value!});}
+  for(const[source,target,value]of [...(split?[]:[['revenue','operatingExpenses',e]]),['revenue','pretax',p],['pretax','tax',t],['pretax','net',n]] as Array<[string,string,number|null]>)if(value!>0)links.push({source,target,value:value!});
+  if(tree)appendRevenueTree(q,tree,nodes,links,offset);
   const connected=nodes.filter(node=>links.some(link=>link.source===node.name||link.target===node.name));return validateGraph(connected,links)?{nodes:connected,links}:{nodes:[],links:[]};
  }
  if (hasSignedFigures(q)) return signedFinancialGraph(q);
