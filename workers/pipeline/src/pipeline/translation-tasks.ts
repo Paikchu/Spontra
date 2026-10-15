@@ -32,9 +32,10 @@ export const TRANSLATION_TASKS = {
         if (failed === plan.fingerprint) return { status: "done", detail: { skipped: "failed on this input before; replay the dead letter to retry" } };
         return { id: `translate-${ticker.replace(/[^A-Za-z0-9]/g, "-")}-${plan.fingerprint.slice(0, 16)}-${now.getTime()}`, params: { ticker, fingerprint: plan.fingerprint }, fingerprint: plan.fingerprint };
       }, { deadLetter: { task: "translate", ticker, causeId }, pollMs: 2 * 60_000 });
-      // A finished run leaves work only when the budget stopped it or the publications changed while it ran.
+      // A finished run leaves work when the budget stopped it, the model was unavailable, or the publications changed
+      // while it ran: tomorrow for the budget, otherwise in half an hour (a new publication brings its own event sooner).
       if (outcome.status === "done" && (outcome.detail as { workflow?: string } | undefined)?.workflow === "complete" && await translationPlan(env.DB!, ticker)) {
-        return { status: "later", afterMs: await budgetSpent(env, now) ? untilTomorrow(now) : 60_000, detail: { remaining: true } };
+        return { status: "later", afterMs: await budgetSpent(env, now) ? untilTomorrow(now) : 30 * 60_000, detail: { remaining: true } };
       }
       return outcome;
     },

@@ -8,7 +8,7 @@ import { checkTranslation, collectProse, langOf, localize } from "../../../share
 import type { SecPipelineEnv } from "../src/operations.ts";
 import { validateRegistry } from "../src/pipeline/registry.ts";
 import { translationsAdmin } from "../src/translation/admin.ts";
-import { publishTables, readTranslationTable, sha256, translateBatch, translationPlan, type TranslationSource } from "../src/translation/translate.ts";
+import { ModelUnavailable, publishTables, readTranslationTable, sha256, translateBatch, translationPlan, type TranslationSource } from "../src/translation/translate.ts";
 
 /** D1 over node:sqlite with every migration applied, enough for the translator's statements. */
 function database(): D1Database {
@@ -127,4 +127,21 @@ test("the admin sees each resource's coverage, today's calls and every string wi
   assert.match(admin.entries[0]!.problems.join(), /figures/);
   assert.equal(admin.entries[2]!.text, "订单储备拉长");
   assert.equal(admin.budget.used, 2); assert.equal(admin.budget.cap, 10); assert.equal(admin.enabled, true); assert.equal(admin.run, null);
+});
+
+test("a model that gives no answer marks nothing: the strings stay pending, the run stops, and rows an earlier release wrongly rejected are retried", async () => {
+  const db = database();
+  const env = { DB: db, TRANSLATION_DAILY_CALLS: "10" } as unknown as SecPipelineEnv;
+  const read = async (): Promise<TranslationSource[]> => [{ resource: "events", scope: "", strings: ["Results beat guidance.", "Margins narrowed."] }];
+  const plan = await translationPlan(db, "TEST", "zh-CN", read);
+  const result = await translateBatch(env, "TEST", "run", plan!.batches.flat(), async () => { throw new ModelUnavailable("stream_stall"); });
+  assert.deepEqual(result, { ready: 0, rejected: 0, stopped: "unavailable" });
+  assert.equal((await db.prepare("SELECT COUNT(*) n FROM i18n_strings").first<{ n: number }>())!.n, 0);
+  assert.equal((await translationPlan(db, "TEST", "zh-CN", read))!.batches.flat().length, 2);
+  await db.prepare("INSERT INTO i18n_strings (locale, source_sha256, source, text, status, problems, version, model, created_at) VALUES ('zh-CN', ?, 'Results beat guidance.', NULL, 'rejected', ?, 'translate.v1', 'm', 'x')")
+    .bind(await sha256("Results beat guidance."), JSON.stringify(["no translation returned"])).run();
+  assert.equal((await translationPlan(db, "TEST", "zh-CN", read))!.batches.flat().length, 2, "an unanswered rejection is still pending");
+  const omitted = await translateBatch(env, "TEST", "run", plan!.batches.flat(), async (_s, items) => new Map(items.filter(i => i.text === "Results beat guidance.").map(i => [i.i, "业绩超出指引。"])));
+  assert.deepEqual(omitted, { ready: 1, rejected: 1 });
+  assert.equal(await translationPlan(db, "TEST", "zh-CN", read) == null || (await translationPlan(db, "TEST", "zh-CN", read))!.batches.length === 0, true, "a string the model left out of a real answer is settled, not retried forever");
 });

@@ -67,11 +67,13 @@ export async function readSources(db: D1Database, ticker: string): Promise<Trans
   return sources;
 }
 
-type MemoryRow = { source_sha256: string; text: string | null; status: "ready" | "rejected"; version: string };
+type MemoryRow = { source_sha256: string; text: string | null; status: "ready" | "rejected"; version: string; problems: string | null };
+/** Rows the first release wrote when the model gave no answer at all; they are pending, not rejected. */
+const UNANSWERED = JSON.stringify(["no translation returned"]);
 async function memory(db: D1Database, locale: Locale, hashes: string[]): Promise<Map<string, MemoryRow>> {
   const out = new Map<string, MemoryRow>();
   for (let i = 0; i < hashes.length; i += 500) {
-    const rows = (await db.prepare("SELECT source_sha256, text, status, version FROM i18n_strings WHERE locale = ? AND source_sha256 IN (SELECT value FROM json_each(?))")
+    const rows = (await db.prepare("SELECT source_sha256, text, status, version, problems FROM i18n_strings WHERE locale = ? AND source_sha256 IN (SELECT value FROM json_each(?))")
       .bind(locale, JSON.stringify(hashes.slice(i, i + 500))).all<MemoryRow>()).results;
     for (const row of rows) out.set(row.source_sha256, row);
   }
@@ -93,7 +95,7 @@ export async function translationPlan(db: D1Database, ticker: string, locale: Lo
   const known = await memory(db, locale, hashes);
   const pending = unique.map((text, i) => ({ sha: hashes[i]!, text })).filter(item => {
     const row = known.get(item.sha);
-    return !row || (row.status === "rejected" && row.version !== TRANSLATION_VERSION);
+    return !row || (row.status === "rejected" && (row.version !== TRANSLATION_VERSION || row.problems === UNANSWERED));
   });
   let stale = 0;
   const repository = new D1SecRepository(db);
@@ -133,15 +135,24 @@ async function reserveCall(env: SecPipelineEnv, now: string): Promise<boolean> {
   return !!row;
 }
 
-/** One model call: numbered English strings in (with what was wrong last time, on a retry), numbered translations out. */
+/**
+ * One model call: numbered English strings in (with what was wrong last time, on a retry), numbered translations out.
+ * Throws ModelUnavailable when the model gave no usable answer at all (a stalled or broken stream, unreadable JSON):
+ * that says nothing about the strings, so none of them is marked.
+ */
 export type AskTranslations = (stage: string, items: Array<{ i: number; text: string; problems?: string[] }>) => Promise<Map<number, string>>;
+export class ModelUnavailable extends Error { constructor(reason: string) { super(reason); this.name = "ModelUnavailable"; } }
 
 async function askModel(env: SecPipelineEnv, fetcher: typeof fetch, ticker: string, runId: string, stage: string, items: Array<{ i: number; text: string; problems?: string[] }>): Promise<Map<number, string>> {
   const model = env.SEC_ANALYSIS_MODEL || "deepseek-flash";
   const payload = { items: items.map(({ i, text, problems }) => ({ i, text, ...(problems ? { fix: `上一次译文的问题：${problems.join("；")}` } : {}) })) };
-  let result: Record<string, unknown> = {};
+  let result: Record<string, unknown>;
   try { result = await callWorkerSecModel(env, fetcher, stage, SYSTEM, payload, model, 3 * 60_000, true, { reasoning: reasoningFor(env, "translate"), ticker, runId, kind: "translate" }); }
-  catch (error) { if (!(error instanceof SecModelOutputError)) throw error; }
+  catch (error) {
+    if (error instanceof SecModelOutputError || /model-timeout/.test(String(error))) throw new ModelUnavailable(error instanceof SecModelOutputError ? error.code : "timeout");
+    throw error;
+  }
+  if (!Array.isArray(result.items)) throw new ModelUnavailable("no items in the answer");
   const out = new Map<number, string>();
   for (const row of Array.isArray(result.items) ? result.items as Array<Record<string, unknown>> : [])
     if (typeof row?.i === "number" && typeof row.zh === "string") out.set(row.i, row.zh.trim());
@@ -154,35 +165,40 @@ async function askModel(env: SecPipelineEnv, fetcher: typeof fetch, ticker: stri
  * the English. Returns null when the day's model calls are spent, so the run stops and the task comes back tomorrow.
  */
 export async function translateBatch(env: SecPipelineEnv, ticker: string, runId: string, batch: TranslationItem[],
-  ask: AskTranslations = (stage, items) => askModel(env, fetch, ticker, runId, stage, items), locale: Locale = LOCALE): Promise<{ ready: number; rejected: number } | null> {
+  ask: AskTranslations = (stage, items) => askModel(env, fetch, ticker, runId, stage, items), locale: Locale = LOCALE): Promise<{ ready: number; rejected: number; stopped?: "budget" | "unavailable" } | null> {
   const now = new Date().toISOString();
   const outcome = new Map<number, { text: string | null; problems: string[] }>();
   let pending = batch.map((item, i) => ({ i, text: item.text } as { i: number; text: string; problems?: string[] }));
+  let stopped: "budget" | "unavailable" | undefined;
   for (const attempt of [1, 2]) {
     if (!pending.length) break;
-    if (!await reserveCall(env, now)) { if (attempt === 1) return null; break; }
-    const answers = await ask(`translate-${attempt}`, pending);
+    if (!await reserveCall(env, now)) { if (attempt === 1) return null; stopped = "budget"; break; }
+    let answers: Map<number, string>;
+    try { answers = await ask(`translate-${attempt}`, pending); }
+    catch (error) { if (!(error instanceof ModelUnavailable)) throw error; stopped = "unavailable"; break; }
     const retry: typeof pending = [];
     for (const item of pending) {
       const zh = answers.get(item.i);
-      const problems = zh == null ? ["no translation returned"] : checkTranslation(item.text, zh);
+      const problems = zh == null ? ["omitted from the model's answer"] : checkTranslation(item.text, zh);
       outcome.set(item.i, { text: problems.length ? null : zh!, problems });
       if (problems.length) retry.push({ i: item.i, text: item.text, problems });
     }
     pending = retry;
   }
   const model = env.SEC_ANALYSIS_MODEL || "deepseek-flash";
-  const rows = batch.map((item, i) => {
-    const o = outcome.get(i) ?? { text: null, problems: ["not attempted"] };
-    return [locale, item.sha, item.text, o.text, o.text ? "ready" : "rejected", o.problems.length ? JSON.stringify(o.problems) : null, TRANSLATION_VERSION, model, now];
+  // Only strings the model answered are remembered; the rest stay pending for the next run.
+  const rows = batch.flatMap((item, i) => {
+    const o = outcome.get(i);
+    return o ? [[locale, item.sha, item.text, o.text, o.text ? "ready" : "rejected", o.problems.length ? JSON.stringify(o.problems) : null, TRANSLATION_VERSION, model, now]] : [];
   });
+  if (!rows.length) return { ready: 0, rejected: 0, ...(stopped ? { stopped } : {}) };
   await env.DB!.prepare(`INSERT INTO i18n_strings (locale, source_sha256, source, text, status, problems, version, model, created_at)
     SELECT json_extract(value,'$[0]'), json_extract(value,'$[1]'), json_extract(value,'$[2]'), json_extract(value,'$[3]'), json_extract(value,'$[4]'),
       json_extract(value,'$[5]'), json_extract(value,'$[6]'), json_extract(value,'$[7]'), json_extract(value,'$[8]') FROM json_each(?) WHERE true
     ON CONFLICT(locale, source_sha256) DO UPDATE SET text = excluded.text, status = excluded.status, problems = excluded.problems, version = excluded.version,
       model = excluded.model, created_at = excluded.created_at`).bind(JSON.stringify(rows)).run();
   const ready = rows.filter(r => r[4] === "ready").length;
-  return { ready, rejected: rows.length - ready };
+  return { ready, rejected: rows.length - ready, ...(stopped ? { stopped } : {}) };
 }
 
 /**
@@ -227,13 +243,17 @@ const PARALLEL = 3;
 /** One company's run: plan, translate the batches a few at a time as durable steps, then publish every table. */
 export async function executeTranslateWorkflow(params: TranslateParams, step: Step, env: SecPipelineEnv, runId: string, fetcher: typeof fetch = fetch): Promise<Record<string, unknown>> {
   const plan = await step.do("translate-plan", () => translationPlan(env.DB!, params.ticker));
-  let ready = 0, rejected = 0, spent = false;
+  let ready = 0, rejected = 0, spent = false, unavailable = false;
   const batches = plan?.batches ?? [];
-  for (let i = 0; i < batches.length && !spent; i += PARALLEL) {
+  for (let i = 0; i < batches.length && !spent && !unavailable; i += PARALLEL) {
     const ask: AskTranslations = (stage, items) => askModel(env, fetcher, params.ticker, runId, stage, items);
     const results = await Promise.all(batches.slice(i, i + PARALLEL).map((batch, k) => step.do(`translate-${i + k + 1}`, () => translateBatch(env, params.ticker, runId, batch, ask))));
-    for (const r of results) { if (!r) { spent = true; continue; } ready += r.ready; rejected += r.rejected; }
+    for (const r of results) {
+      if (!r || r.stopped === "budget") spent = true;
+      if (r?.stopped === "unavailable") unavailable = true;
+      if (r) { ready += r.ready; rejected += r.rejected; }
+    }
   }
   const published = await step.do("translate-publish", () => publishTables(env.DB!, params.ticker));
-  return { status: spent ? "budget" : "ready", batches: batches.length, ready, rejected, ...published };
+  return { status: spent ? "budget" : unavailable ? "model-unavailable" : "ready", batches: batches.length, ready, rejected, ...published };
 }
