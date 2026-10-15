@@ -10,6 +10,7 @@ import { fiscalFourthQuarters, priorPresentationOnly } from './period-review.ts'
 import { readCompletePublicationForTicker } from './publication.ts';
 import { outboxStatement } from '../pipeline/outbox.ts';
 import { namesMembers, storedMemberLabels } from './member-labels.ts';
+import { storedCalculation } from './calculation.ts';
 
 /**
  * Everything the business map reads beyond the published latest pair is prepared here, by the `map-derive` task
@@ -29,7 +30,7 @@ export const PARSE_BUDGET_BYTES = 32_000_000;
 type Industry = DocumentSource['industry'];
 /**
  * `contentSha256` covers every document read: an annual report's also names the third-quarter report its fourth quarters subtract.
- * `labels`: whether the filings' member labels named their businesses, so a filing parsed before they were stored is parsed again once they are.
+ * `labels`: whether the filings' member labels and revenue structure named and reconciled their businesses, so a filing parsed before they were stored is parsed again once they are.
  */
 type Labels = 'named' | 'missing' | 'unneeded';
 type StoredQuarters = { documentId: string; contentSha256: string; version: string; industry: Industry; labels?: Labels; quarters: BusinessFlowQuarter[] };
@@ -97,8 +98,9 @@ async function readFiling(env: DisclosureArchiveEnv, record: StoredAudit, indust
   if (new TextEncoder().encode(html).byteLength !== record.sourceBytes) return null;
   const cik = issuerOf(record)!.padStart(10, '0');
   const needed = namesMembers(html), memberLabels = needed ? await storedMemberLabels(env.DB, record.source.accessionNumber) : null;
-  return { html, labels: !needed ? 'unneeded' : memberLabels ? 'named' : 'missing',
-    source: { url: record.source.documentUrl, cik, accession: record.source.accessionNumber, filedAt: record.source.filedAt, industry, ...(memberLabels ? { memberLabels } : {}) } };
+  const structure = needed ? await storedCalculation(env.DB, record.source.accessionNumber) : null;
+  return { html, labels: !needed ? 'unneeded' : memberLabels && structure ? 'named' : 'missing',
+    source: { url: record.source.documentUrl, cik, accession: record.source.accessionNumber, filedAt: record.source.filedAt, industry, ...(memberLabels ? { memberLabels } : {}), ...(structure?.revenue ? { revenueStructure: structure.revenue } : {}) } };
 }
 
 /**
@@ -112,7 +114,7 @@ export function filingQuarters(filing: { html: string; source: DocumentSource },
   let quarters = extractDisclosedQuarters(filing.html, filing.source, [], reviewed).quarters;
   if (thirdQuarter && !hasDisclosureProfile(filing.source.cik) && reviewed && priorPresentationOnly(thirdQuarter.html)) {
     const annual = readReportedFacts(filing.html, filing.source), nineMonths = readReportedFacts(thirdQuarter.html, thirdQuarter.source);
-    if (!annual.issues.length && !nineMonths.issues.length) quarters = [...quarters, ...fiscalFourthQuarters(annual.facts, nineMonths.facts)];
+    if (!annual.issues.length && !nineMonths.issues.length) quarters = [...quarters, ...fiscalFourthQuarters(annual.facts, nineMonths.facts, filing.source.revenueStructure)];
   }
   return quarters.filter(q => checkCompleteQuarter(q).complete);
 }
@@ -156,7 +158,8 @@ export async function deriveCompany(env: DisclosureArchiveEnv, ticker: string, b
     let entry = stored.get(record.documentId);
     const partner = thirdQuarterReport(audits, record);
     const contentSha256 = partner ? `${record.contentSha256}+${partner.contentSha256}` : record.contentSha256;
-    const relabel = entry?.labels === 'missing' && (!!await storedMemberLabels(env.DB, record.source.accessionNumber) || (!!partner && !!await storedMemberLabels(env.DB, partner.source.accessionNumber)));
+    const named = async (accession: string) => !!await storedMemberLabels(env.DB, accession) && !!await storedCalculation(env.DB, accession);
+    const relabel = entry?.labels === 'missing' && (await named(record.source.accessionNumber) || (!!partner && await named(partner.source.accessionNumber)));
     if (!entry || relabel || entry.contentSha256 !== contentSha256 || entry.version !== REPORT_QUARTERS_VERSION || entry.industry !== industry) {
       const bytes = record.sourceBytes + (partner?.sourceBytes ?? 0);
       if (spent + bytes > budget) { pending++; continue; }

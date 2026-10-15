@@ -10,14 +10,14 @@ import { qoqLabel } from "@/shared/analysis-runtime/locale";
 
 const m = messages({
   grossMargin: "Gross margin", operatingMargin: "Operating margin", pretaxMargin: "Pretax margin", netMargin: "Net margin",
-  shareBeforeEliminations: "Share of revenue before eliminations", share: "Share of revenue", na: "n/a", pp: "pp",
+  shareBeforeEliminations: "Share of segment revenue before reconciling items", share: "Share of revenue", na: "n/a", pp: "pp",
   netIncome: "Net income", flow: "Revenue and profit flow", chart: (period: string, currency: string) => `Revenue to net income, ${period}, ${currency}`,
   revenue: "Revenue", operating: "Operating income", millions: (currency: string) => `${currency} millions · `,
   other: "Other income (expense)", totalExpenses: "Total disclosed expenses", netRevenue: "Net revenue",
   bankBridge: "Bank financial bridge", bridge: "Financial bridge", unit: (currency: string) => ` · ${currency} millions`, component: "Expense component", equals: "equals",
 }, {
   grossMargin: "毛利率", operatingMargin: "营业利润率", pretaxMargin: "税前利润率", netMargin: "净利率",
-  shareBeforeEliminations: "占抵销前营收", share: "占营收", na: "不可比", pp: "个百分点",
+  shareBeforeEliminations: "占调节前分部营收", share: "占营收", na: "不可比", pp: "个百分点",
   netIncome: "净利润", flow: "营收与利润流向", chart: (period: string, currency: string) => `营收至净利润，${period}，${currency}`,
   revenue: "营收", operating: "营业利润", millions: () => "",
   other: "营业外收支", totalExpenses: "已披露总费用", netRevenue: "净营收",

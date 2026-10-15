@@ -204,9 +204,16 @@ P1 升一次全局版本，13 家公司重采一次（从归档读，不重新�
 - **降级。** 都不平时：有税前利润则所得税之后合成一个派生行"Items after income taxes, net"（净利润 − (税前 − 所得税)，带公式）；没有税前利润则税前按"净利润 + 所得税"派生并注明未拆分。两种都标 `degraded`，并触发模型判定。
 - **重述。** 不再读措辞。`restatement.ts` 比较不同申报对同一概念、同一期间的数值，按精度容差判定改动；改动的行在上一季度的可比键上加后缀，当季列入 `basisChanges`，页面对这些行显示 n/a，其余行照常比较；发布门对 `basisChanges` 中的行不要求可比。通用解析器不再产生 `RESTATEMENT_REVIEW_REQUIRED`，`reviewedCurrentPair` 也不再要求措辞"仅重分类"。GOOGL 停住的原因是它写的是 "conform **with** current period presentation"，旧正则只认 "conform **to**"。
 - **模型判定与事件图。** `presentation` 任务（scope data）订阅 `presentation.unresolved`；接受的结构写 `financial_presentation_profiles`（migration 0025），再建一个"提取"维护任务重新采集。直接让采集重跑会形成 collect → presentation → collect 的环，事件图校验禁止；维护任务不发 `presentation.unresolved`，所以图仍无环。模型推理档 `low`，每日上限 60 次，每份申报最多 4 次提议。
-- **未做。** ORCL 的披露解析器与 ADSK 的产品轴白名单仍按 CIK 写在代码里，它们属于收入侧，不在这条桥上。
+- **未做。** ORCL 的披露解析器仍按 CIK 写在代码里，它属于收入侧，不在这条桥上。ADSK 的产品轴白名单已由下文的收入结构取代。
 
-**已知的收入侧缺口（不在本方案内）。** GOOGL 三个分部之和比合并收入少 1.06 亿（对冲收益只计入合并收入），现有分部校验正确地不拆分，页面显示"Total company (segment split not yet verified)"。同样的"申报即算法"可以用收入分解表的计算链解决。
+**收入侧：分部到合并收入（2026-10-15 补充）。** 分部拆分同样按"申报即算法"读：`calculation.ts` 从同一份 `MetaLinks.json` 读出收入结构（`sec:calculation:v2`）——任一 role 里收入总额（`Revenues`、`RevenueFromContractWithCustomer…` 等锚点）之下的加总关系，以及每个维度成员出现在哪些展示收入总额的表里。`parser.ts` 的 `splitRevenue` 据此判定：
+
+- 一张表里出现的同一轴成员是一种拆分；同一轴出现在两张表就是两种候选（ADSK：利润表上的订阅/其他、收入附注里的产品族）。多种拆分都精确算平时取成员最多的一种。代码里不再有 ADSK 的成员白名单。
+- 分部所用概念与合并收入概念不同时，沿计算链从分部概念走到合并收入概念，路径上的兄弟行就是调节项，带申报自己的标签与正负号（GOOGL：Revenues = RevenueFromContractWithCustomer + RevenueNotFromContractWithCustomer，后者即 "Hedging gains (losses)"，2026Q2 为 1.06 亿）。
+- 报在 `ConsolidationItemsAxis` 上的收入（公司层面、调节项）与原有的抵销一样作为调节项；抵销用申报自己的成员标签命名。
+- 只有 Σ分部 + Σ调节项 = 合并收入精确成立时才发布拆分。
+
+回归（同一 harness，13 家）：ORCL、NVDA、MSFT、AAPL、ADSK、NET、AMZN、META、CRWV、NBIS 的 figures、分部、调节项逐数不变；BRK.B 数字不变，调节项名称由 "Intersegment eliminations" 改为申报标签 "Corporate, Eliminations and Other"；GOOGL 由"拆分待核验"变为三个分部 + 对冲收益；JPM 由"拆分待核验"变为三个分部 + Corporate + 调节项（FTE 调整），两期均精确算平。解析器升 v13，收入历史解析器升 v6。
 
 ## 需要你决定的事
 

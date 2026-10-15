@@ -34,7 +34,7 @@ function profitRows(quarters: BusinessFlowQuarter[]): Row[] {
     [...new Map(quarters.flatMap(q => list(q) ?? []).map(x => [x.id, x.name])).entries()];
   rows.push({ key: 'h-seg', label: '分部收入', values: new Map(), kind: 'head' });
   for (const [id, name] of union(q => q.segments)) add(`seg-${id}`, name, q => amount(q.segments.find(s => s.id === id)?.revenue, q));
-  for (const [id, name] of union(q => q.revenueAdjustments)) add(`adj-${id}`, name, q => amount(q.revenueAdjustments?.find(a => a.id === id)?.amount, q), undefined, '抵销');
+  for (const [id, name] of union(q => q.revenueAdjustments)) add(`adj-${id}`, name, q => amount(q.revenueAdjustments?.find(a => a.id === id)?.amount, q), undefined, '调节');
   rows.push({ key: 'h-is', label: '利润表', values: new Map(), kind: 'head' });
   for (const metric of FLOW_METRICS) add(`m-${metric}`, METRICS[metric], q => amount(q.figures[metric], q), TOTALS.has(metric) ? 'total' : undefined,
     quarters.some(q => q.figures[metric]?.basis === 'derived') ? '含推导' : undefined);

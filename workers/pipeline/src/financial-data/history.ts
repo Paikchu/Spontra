@@ -108,7 +108,8 @@ export async function runHistoryStep(db: D1Database, reader: SecReader, target: 
       // Otherwise a partial success followed by an R2 error would duplicate facts on retry.
       const documentQuarters: RevenueHistoryQuarter[] = [], documentFacts: Fact[] = [], documentIssues: string[] = [];
       for (const content of await readFilingDocuments(document.url, reader, document.accession)) {
-        const source: DocumentSource = {url: content.url, accession: document.accession, filedAt: document.filedAt, cik: target.cik, industry: cursor.industry, ...(content.memberLabels ? {memberLabels: content.memberLabels} : {})};
+        const revenueStructure = /<ix:nonFraction/i.test(content.html) ? await reader.revenueStructure?.(content.url, document.accession) ?? null : null;
+        const source: DocumentSource = {url: content.url, accession: document.accession, filedAt: document.filedAt, cik: target.cik, industry: cursor.industry, ...(content.memberLabels ? {memberLabels: content.memberLabels} : {}), ...(revenueStructure ? {revenueStructure} : {})};
         await reader.archive?.(source, content.html, {form: document.form, reportDate: document.periodEnd});
         const parsed = extractRevenueHistory(content.html, source, document.form);
         documentQuarters.push(...parsed.quarters);

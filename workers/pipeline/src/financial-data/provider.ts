@@ -3,7 +3,7 @@ import type {DocumentBatch} from './collect.ts';
 import {extractDisclosedQuarters, readReportedFacts, SEC_FLOW_PARSER_VERSION, type Fact, type DocumentSource} from './parser.ts';
 import {reviewedCurrentPair} from './period-review.ts';
 import {restatedConcepts} from './restatement.ts';
-import type {IncomeCalculation} from './calculation.ts';
+import type {IncomeCalculation,RevenueStructure} from './calculation.ts';
 import type {BridgeStructure} from './bridge.ts';
 import {namesMembers} from './member-labels.ts';
 export interface SecReader {
@@ -16,6 +16,8 @@ export interface SecReader {
  memberLabels?(documentUrl:string,accession:string):Promise<Record<string,string>>;
  /** The filing's income statement calculation linkbase (calculation.ts); absent or null, the statement rows are read instead. */
  calculation?(documentUrl:string,accession:string):Promise<IncomeCalculation|null>;
+ /** How the filing reconciles segment revenue to consolidated revenue (calculation.ts); absent or null, a split must add up by itself. */
+ revenueStructure?(documentUrl:string,accession:string):Promise<RevenueStructure|null>;
  /** A structure from operating income to net income that balanced on an earlier filing of this issuer (presentation profile). */
  presentation?(cik:string):Promise<{structure:BridgeStructure;version:string}|null>;
 }
@@ -59,8 +61,8 @@ export async function readFilingDocuments(primaryUrl:string,reader:SecReader,acc
  return documents;
 }
 export async function readSecDocumentBatch(job:Job,reader:SecReader,maxDocuments=2):Promise<DocumentBatch>{
- const cik=job.cik;if(!/^\d{10}$/.test(cik))throw new Error('Invalid CIK');const cursor=JSON.parse(job.cursor||'{}') as {documents?:Array<{url:string;accession:string;filedAt:string;periodEnd:string;form?:string}>;index?:number;industry?:DocumentSource['industry'];expectedPeriodEnd?:string;parserVersion?:string;calculations?:Record<string,IncomeCalculation>;presentation?:{structure:BridgeStructure;version:string}|null;restated?:ReturnType<typeof restatedConcepts>;reportedFacts?:Fact[];reviewDocuments?:Array<{source:DocumentSource;eligible:boolean}>;reviewRequired?:boolean;foreign?:boolean};
- if(cursor.parserVersion!==SEC_FLOW_PARSER_VERSION){cursor.index=0;cursor.parserVersion=SEC_FLOW_PARSER_VERSION;delete cursor.reportedFacts;delete cursor.reviewDocuments;delete cursor.reviewRequired;delete cursor.documents;delete cursor.calculations;delete cursor.restated;delete cursor.presentation;}
+ const cik=job.cik;if(!/^\d{10}$/.test(cik))throw new Error('Invalid CIK');const cursor=JSON.parse(job.cursor||'{}') as {documents?:Array<{url:string;accession:string;filedAt:string;periodEnd:string;form?:string}>;index?:number;industry?:DocumentSource['industry'];expectedPeriodEnd?:string;parserVersion?:string;calculations?:Record<string,IncomeCalculation>;revenueStructures?:Record<string,RevenueStructure>;presentation?:{structure:BridgeStructure;version:string}|null;restated?:ReturnType<typeof restatedConcepts>;reportedFacts?:Fact[];reviewDocuments?:Array<{source:DocumentSource;eligible:boolean}>;reviewRequired?:boolean;foreign?:boolean};
+ if(cursor.parserVersion!==SEC_FLOW_PARSER_VERSION){cursor.index=0;cursor.parserVersion=SEC_FLOW_PARSER_VERSION;delete cursor.reportedFacts;delete cursor.reviewDocuments;delete cursor.reviewRequired;delete cursor.documents;delete cursor.calculations;delete cursor.revenueStructures;delete cursor.restated;delete cursor.presentation;}
  if(!cursor.documents){
   cursor.presentation=await reader.presentation?.(cik)??null;
   const response=await reader.read(`https://data.sec.gov/submissions/CIK${cik}.json`);const data=await response.json() as {cik:string|number;sic?:string;filings?:{recent?:{form:string[];accessionNumber:string[];primaryDocument:string[];filingDate:string[];reportDate:string[];items?:string[]}}};if(String(data.cik).padStart(10,'0')!==cik)throw new Error('Issuer identity mismatch');const recent=data.filings?.recent;if(!recent)throw new Error('Missing submissions');cursor.foreign=recent.form.some(form=>/^20-F/.test(form))&&!recent.form.some(form=>/^10-[QK]/.test(form));cursor.expectedPeriodEnd=cursor.foreign?undefined:recent.form.map((form,i)=>/^10-[QK](\/A)?$/.test(form)?recent.reportDate[i]:'').filter(v=>/^\d{4}-\d{2}-\d{2}$/.test(v)).sort().at(-1);const sic=Number(data.sic);cursor.industry=sic>=6300&&sic<6500?'insurance':sic>=6000&&sic<6300?'financial':'standard';cursor.documents=[];
@@ -84,7 +86,9 @@ export async function readSecDocumentBatch(job:Job,reader:SecReader,maxDocuments
    // The calculation belongs to the filing's XBRL instance, which only the inline XBRL document carries.
    const calculation=/<ix:nonFraction/i.test(content.html)?await reader.calculation?.(content.url,document.accession)??null:null;
    if(calculation)cursor.calculations={...(cursor.calculations??{}),[document.accession]:calculation};
-   const source:DocumentSource={...stored,calculation,presentation:cursor.presentation??null};
+   const revenueStructure=/<ix:nonFraction/i.test(content.html)?await reader.revenueStructure?.(content.url,document.accession)??null:null;
+   if(revenueStructure)cursor.revenueStructures={...(cursor.revenueStructures??{}),[document.accession]:revenueStructure};
+   const source:DocumentSource={...stored,calculation,revenueStructure,presentation:cursor.presentation??null};
    const parsed=extractDisclosedQuarters(content.html,source),reported=readReportedFacts(content.html,source);
    if(reported.issues.length)throw new Error('SEC_FACT_FORMAT_UNSUPPORTED');
    if(cursor.foreign&&parsed.quarters.length){const latest=parsed.quarters.map(q=>q.periodEnd).sort().at(-1)!;if(!cursor.expectedPeriodEnd||latest>cursor.expectedPeriodEnd)cursor.expectedPeriodEnd=latest;}
@@ -92,7 +96,7 @@ export async function readSecDocumentBatch(job:Job,reader:SecReader,maxDocuments
    const relevant=reported.facts.filter(f=>!expected||(f.end<=expected&&Date.parse(f.start)>=Date.parse(expected)-380*86400000));
    if(relevant.length){cursor.reportedFacts=[...(cursor.reportedFacts??[]),...relevant];cursor.reviewDocuments=[...(cursor.reviewDocuments??[]),{source:stored,eligible:true}];cursor.restated=restatedConcepts(cursor.reportedFacts);}
    quarters.push(...parsed.quarters);
-   if(expected&&cursor.reportedFacts?.length){const review=reviewedCurrentPair(cursor.reportedFacts,expected,cursor.reviewDocuments??[],cursor.calculations??{},cursor.presentation??null);if(review.reviewed){cursor.index=index+selected.length;return {quarters:review.quarters,nextCursor:JSON.stringify(cursor),finished:true,expectedPeriodEnd:expected};}}
+   if(expected&&cursor.reportedFacts?.length){const review=reviewedCurrentPair(cursor.reportedFacts,expected,cursor.reviewDocuments??[],cursor.calculations??{},cursor.presentation??null,cursor.revenueStructures??{});if(review.reviewed){cursor.index=index+selected.length;return {quarters:review.quarters,nextCursor:JSON.stringify(cursor),finished:true,expectedPeriodEnd:expected};}}
   }
  }
 

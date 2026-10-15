@@ -1,6 +1,6 @@
 import type { BusinessFlowQuarter } from '../../../../shared/analysis-contract/business-flow.ts';
 import { applyStructure, structureKey, type BridgeStructure } from './bridge.ts';
-import { filingCalculation } from './calculation.ts';
+import { filingCalculation, filingRevenueStructure } from './calculation.ts';
 import { filingMemberLabels } from './member-labels.ts';
 import { bridgePeriods, type BridgePeriod, type Fact } from './parser.ts';
 import type { SecReader } from './provider.ts';
@@ -23,10 +23,11 @@ export async function verifiedPresentation(db: D1Database, cik: string): Promise
 }
 export const presentationProfile = (db: D1Database, cik: string) => db.prepare('SELECT * FROM financial_presentation_profiles WHERE cik = ?').bind(cik).first<ProfileRow>().catch(() => null);
 
-/** Every collection reader learns a filing's member labels, its income statement calculation and the issuer's verified structure the same way. */
+/** Every collection reader learns a filing's member labels, its income statement calculation, its revenue structure and the issuer's verified structure the same way. */
 export function withFilingStructure(reader: SecReader, db: D1Database): SecReader {
   reader.memberLabels = (url, accession) => filingMemberLabels(db, reader.read, url, accession);
   reader.calculation = (url, accession) => filingCalculation(db, reader.read, url, accession);
+  reader.revenueStructure = (url, accession) => filingRevenueStructure(db, reader.read, url, accession);
   reader.presentation = cik => verifiedPresentation(db, cik);
   return reader;
 }

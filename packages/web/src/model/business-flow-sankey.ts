@@ -12,12 +12,12 @@ const m = messages({
  revenueReported: "Revenue (as reported)", totalExpenses: "Total expenses", allExpenses: "Operating expenses", direct: "Cost of products and services",
  adminOther: "G&A, amortization and restructuring", grossLoss: "Gross loss", operatingLoss: "Operating loss", pretaxLoss: "Loss before taxes", netLoss: "Net loss",
  taxBenefit: "Income tax benefit", reversal: (label: string) => `${label} reversal`, otherExpense: "Other expense, net", otherIncome: "Other income, net",
- segmentTotal: "Segment revenue (before eliminations)", segmentTotalFormula: "Sum of disclosed segment revenue (before eliminations)",
+ segmentTotal: "Segment revenue (before reconciling items)", segmentTotalFormula: "Sum of disclosed segment revenue (before reconciling items)",
 }, {
  revenueReported: "营收（披露值）", totalExpenses: "总费用", allExpenses: "营业费用", direct: "产品与服务成本",
  adminOther: "管理、摊销及重组费用", grossLoss: "毛亏损", operatingLoss: "营业亏损", pretaxLoss: "税前亏损", netLoss: "净亏损",
  taxBenefit: "所得税收益", reversal: (label: string) => `${label}冲回`, otherExpense: "营业外支出净额", otherIncome: "营业外收入净额",
- segmentTotal: "分部营收（抵销前）", segmentTotalFormula: "已披露分部营收之和（抵销前）",
+ segmentTotal: "分部营收（调节前）", segmentTotalFormula: "已披露分部营收之和（调节前）",
 });
 export type SankeyNode = { name:string; label:string; metric?:FlowMetric; segmentId?:string; depth:number; expense:boolean; loss?:boolean; credit?:boolean; offset?:boolean; value:number; amount?:FlowAmount };
 export type SankeyLink = { source:string; target:string; value:number };
