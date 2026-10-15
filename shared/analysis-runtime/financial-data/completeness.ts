@@ -40,13 +40,18 @@ function validateCompleteFlow(flow:PublicBusinessFlow,requirePair=true):Complete
    if(!amount!.sourceIds.length||!amount!.sourceIds.every(id=>q.sources.some(s=>s.id===id&&sourceUrl(s.url)))||!amount!.lineage?.length||!amount!.lineage.every(l=>sourceUrl(l.url)&&l.accession&&l.concept&&l.contextId&&amount!.sourceIds.includes(l.accession)&&((l.periodStart===q.periodStart&&l.periodEnd===q.periodEnd)||samePresentationBridge(amount!,q,l)||(amount!.basis==='derived'&&l.periodStart<q.periodStart!&&(l.periodEnd===q.periodEnd||Date.parse(l.periodEnd)+86400000===Date.parse(q.periodStart!))))))reasons.add('INVALID_SOURCE');
    if(amount!.basis==='derived'&&!amount!.formula)reasons.add('INVALID_SOURCE');
   };
-  keys.forEach(key=>{validAmount(q.figures[key]);if(requirePair&&(!q.figures[key]?.comparabilityKey||q.figures[key]?.comparabilityKey!==previous.figures[key]?.comparabilityKey))reasons.add('INCOMPARABLE_QUARTERS');});
+  // A line a later filing restated stays uncompared; it does not hold back the lines that still compare.
+  const restated=new Set(current.basisChanges??[]);
+  keys.forEach(key=>{validAmount(q.figures[key]);if(requirePair&&!restated.has(key)&&(!q.figures[key]?.comparabilityKey||q.figures[key]?.comparabilityKey!==previous.figures[key]?.comparabilityKey))reasons.add('INCOMPARABLE_QUARTERS');});
   const v=(key:FlowMetric)=>number(q.figures[key]);
   const check=(left: number|null,right:number|null)=>{if(left==null||right==null)return;if(!balanced(left,right))reasons.add('UNBALANCED_STATEMENT');};
   const sub=(a:number|null,b:number|null)=>a==null||b==null?null:a-b;
   if(q.incomeModel==='standard'){check(sub(v('revenue'),v('cost')),v('gross'));check(sub(v('gross'),v('operatingExpenses')),v('operating'));}
   else if(q.incomeModel==='insurance'){const subtotal=sub(v('revenue'),v('operatingExpenses'));check(subtotal==null||v('other')==null?null:subtotal+v('other')!,v('pretax'));}else check(sub(v('revenue'),v('operatingExpenses')),v(financial?'pretax':'operating'));
-  if(!financial)check(v('operating')==null||v('other')==null?null:v('operating')!+v('other')!,v('pretax'));check(sub(v('pretax'),v('tax')),v('net'));
+  if(!financial)check(v('operating')==null||v('other')==null?null:v('operating')!+v('other')!,v('pretax'));
+  // Lines after income taxes (equity-method results, noncontrolling interests) close the bridge to net income.
+  const after=q.afterTaxComponents??[];after.forEach(c=>validAmount(c.amount));if(new Set(after.map(c=>c.id)).size!==after.length)reasons.add('INVALID_PAYLOAD');
+  const afterTotal=after.reduce((sum,c)=>sum+(number(c.amount)??NaN),0);check(sub(v('pretax'),v('tax'))==null?null:sub(v('pretax'),v('tax'))!+afterTotal,v('net'));
   if(!q.segmentsComplete||!q.segments.length||new Set(q.segments.map(s=>s.id)).size!==q.segments.length)reasons.add('MISSING_DISCLOSURE');
   const adjustments=q.revenueAdjustments??[];
   adjustments.forEach(a=>validAmount(a.amount));

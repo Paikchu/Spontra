@@ -1,7 +1,7 @@
 import type { FinancialStatements, StatementCell, StatementTable } from "./financial-statements.ts";
 
 /**
- * Income statement rows down to operating income, read from the filing's own statement table.
+ * Income statement rows down to net income, read from the filing's own statement table.
  * Labels, order and concepts are the issuer's presentation; each amount is the XBRL fact tagged in the
  * printed cell, with whether the statement prints it with the opposite sign of the fact.
  */
@@ -12,6 +12,8 @@ const local = (concept: string) => concept.split(":").at(-1)!;
 const amountFact = (fact: Fact) => fact.status === "parsed" && fact.value !== null && /^-?\d+(?:\.\d+)?$/.test(fact.value)
   && /^iso4217:[A-Z]{3}$/.test(fact.unit ?? "") && fact.period?.kind === "duration" && !!fact.period.start && !!fact.period.end;
 const operatingIncome = (fact: Fact) => amountFact(fact) && !fact.dimensions.length && local(fact.concept) === "OperatingIncomeLoss";
+/** The statement's last line of interest: net income attributable to the company (rows below it are per-share data). */
+const netIncome = (fact: Fact) => amountFact(fact) && !fact.dimensions.length && ["NetIncomeLoss", "NetIncomeLossAvailableToCommonStockholdersBasic"].includes(local(fact.concept));
 const decoration = /^(?:[$€£¥()%]|US\$|\)|—|–|-)?$/;
 const labelCell = (row: StatementTable["rows"][number]) => row.cells.find(c => c.text.trim() && !decoration.test(c.text.trim()) && !/^\(?[\d,.\s]+\)?$/.test(c.text.trim()));
 const cleanLabel = (text: string) => text.replace(/\s*\((?:\d{1,2}|[a-z])\)\s*$/i, "").replace(/[:：]\s*$/, "").trim();
@@ -43,7 +45,8 @@ export function readIncomeStatementCells(statements: FinancialStatements): Incom
       const value = Number(fact.value);
       result.push({ order, label, factId: fact.id, concept: fact.concept, start: fact.period!.start!, end: fact.period!.end!, flip: value !== 0 && negative !== value < 0 });
     }
-    if (row.cells.some(cell => cell.facts.some(operatingIncome))) break;
+    // Rows below operating income carry the bridge to net income (bridge.ts): other income, taxes, equity-method results.
+    if (row.cells.some(cell => cell.facts.some(netIncome))) break;
   }
   return result;
 }

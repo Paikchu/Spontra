@@ -3,7 +3,7 @@ import type { SecWorkflowParams } from "../core.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import { aiIsEnabled, financialPolicy } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 import { throttledSecReader, discoverDataIssuer, readSecDocumentBatch, type SecReader } from "../financial-data/provider.ts";
-import { filingMemberLabels } from "../financial-data/member-labels.ts";
+import { withFilingStructure } from "../financial-data/presentation.ts";
 import { collectComplete } from "../financial-data/collect.ts";
 import { readCompletePublicationForTicker } from "../financial-data/publication.ts";
 import { D1CompleteStore, type Job } from "../financial-data/store.ts";
@@ -23,8 +23,7 @@ const dependencies: MaintenanceDependencies = {
     const archive = { DB: env.DB!, SEC_FILINGS: env.SEC_FILINGS };
     reader.archive = (source, html, metadata) => archiveFilingDisclosures(archive, ticker, source, html, metadata).then(() => undefined);
     reader.archived = url => readArchivedDocument(archive, ticker, url);
-    reader.memberLabels = (url, accession) => filingMemberLabels(env.DB!, reader.read, url, accession);
-    return reader;
+    return withFilingStructure(reader, env.DB!);
   },
   discover: discoverDataIssuer,
   collect: (env, job, reader) => collectComplete(job, financialPolicy({ SEC_DATA_TICKERS: job.ticker, SEC_AI_ENABLED: "false" }),

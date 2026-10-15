@@ -137,6 +137,8 @@ export function reconcileQuarter(q: BusinessFlowQuarter): Reconciliation[] {
     [flowWords.expenseCheck, [["research", 1], ["sales", 1], ["administration", 1], ["operatingExpenses", -1]]],
   ];
   const tolerance = Math.max(1e-6, Math.abs(numeric(q.figures.revenue) ?? 0) * 1e-9);
+  // Lines after income taxes (equity-method results, noncontrolling interests) close the net-income check.
+  const afterTax = (q.afterTaxComponents ?? []).reduce<number | null>((sum, c) => sum == null || numeric(c.amount) == null ? null : sum + numeric(c.amount)!, 0);
   const check = (label: string, values: Array<number | null>): Reconciliation => {
     if (values.some(v => v == null || !Number.isFinite(v))) return { label, status: "missing", difference: null };
     const difference = (values as number[]).reduce((a, b) => a + b, 0);
@@ -146,16 +148,16 @@ export function reconcileQuarter(q: BusinessFlowQuarter): Reconciliation[] {
     check(flowWords.businessCheck, q.segmentsComplete ? [...q.segments.map(s => numeric(s.revenue)), ...(q.revenueAdjustments ?? []).map(a => numeric(a.amount)), numeric(q.figures.revenue) == null ? null : -numeric(q.figures.revenue)!] : [null]),
     check(q.incomeModel==="insurance"?flowWords.insuranceCheck:flowWords.financialCheck, [q.incomeModel==="insurance"?(numeric(q.figures.revenue)==null||numeric(q.figures.other)==null?null:numeric(q.figures.revenue)!+numeric(q.figures.other)!):numeric(q.figures.revenue), numeric(q.figures.operatingExpenses) == null ? null : -numeric(q.figures.operatingExpenses)!, numeric(q.figures.pretax) == null ? null : -numeric(q.figures.pretax)!]),
     check(flowWords.categoriesCheck, q.expenseComponents?.length ? [...q.expenseComponents.map(c => numeric(c.amount)), numeric(q.figures.operatingExpenses) == null ? null : -numeric(q.figures.operatingExpenses)!] : [null]),
-    check(flowWords.netCheck, [numeric(q.figures.pretax), numeric(q.figures.tax) == null ? null : -numeric(q.figures.tax)!, numeric(q.figures.net) == null ? null : -numeric(q.figures.net)!]),
+    check(flowWords.netCheck, [numeric(q.figures.pretax), numeric(q.figures.tax) == null ? null : -numeric(q.figures.tax)!, afterTax, numeric(q.figures.net) == null ? null : -numeric(q.figures.net)!]),
   ];
   if (q.incomeModel === "direct_operating") return [
     check(flowWords.businessCheck, q.segmentsComplete ? [...q.segments.map(s => numeric(s.revenue)), ...(q.revenueAdjustments ?? []).map(a => numeric(a.amount)), numeric(q.figures.revenue) == null ? null : -numeric(q.figures.revenue)!] : [null]),
     check(flowWords.directCheck, [numeric(q.figures.revenue), numeric(q.figures.operatingExpenses) == null ? null : -numeric(q.figures.operatingExpenses)!, numeric(q.figures.operating) == null ? null : -numeric(q.figures.operating)!]),
     check(flowWords.directCategoriesCheck, q.expenseComponents?.length ? [...q.expenseComponents.map(c => numeric(c.amount)), numeric(q.figures.operatingExpenses) == null ? null : -numeric(q.figures.operatingExpenses)!] : [null]),
-    ...equations.slice(2, 4).map(([label, terms]) => check(label, terms.map(([key, sign]) => { const value = numeric(q.figures[key]); return value == null ? null : value * sign; }))),
+    ...equations.slice(2, 4).map(([label, terms]) => check(label, [...terms.map(([key, sign]) => { const value = numeric(q.figures[key]); return value == null ? null : value * sign; }), ...(label === flowWords.netCheck ? [afterTax] : [])])),
     check(flowWords.otherCheck, q.otherComponents?.length ? [...q.otherComponents.map(c => numeric(c.amount)), numeric(q.figures.other) == null ? null : -numeric(q.figures.other)!] : [null]),
   ];
-  return [check(flowWords.segmentsCheck, q.segmentsComplete && q.segments.length ? [...q.segments.map(s => numeric(s.revenue)), ...(q.revenueAdjustments ?? []).map(a => numeric(a.amount)), numeric(q.figures.revenue) == null ? null : -numeric(q.figures.revenue)!] : [null]), ...equations.slice(0, 4).map(([label, terms]) => check(label, terms.map(([key, sign]) => { const value = numeric(q.figures[key]); return value == null ? null : value * sign; }))), q.expenseComponents?.length ? check(flowWords.operatingCategoriesCheck, [...q.expenseComponents.map(c=>numeric(c.amount)), numeric(q.figures.operatingExpenses) == null ? null : -numeric(q.figures.operatingExpenses)!]) : check(equations[4][0], equations[4][1].map(([key, sign])=>{const value=numeric(q.figures[key]);return value==null?null:value*sign;}))];
+  return [check(flowWords.segmentsCheck, q.segmentsComplete && q.segments.length ? [...q.segments.map(s => numeric(s.revenue)), ...(q.revenueAdjustments ?? []).map(a => numeric(a.amount)), numeric(q.figures.revenue) == null ? null : -numeric(q.figures.revenue)!] : [null]), ...equations.slice(0, 4).map(([label, terms]) => check(label, [...terms.map(([key, sign]) => { const value = numeric(q.figures[key]); return value == null ? null : value * sign; }), ...(label === flowWords.netCheck ? [afterTax] : [])])), q.expenseComponents?.length ? check(flowWords.operatingCategoriesCheck, [...q.expenseComponents.map(c=>numeric(c.amount)), numeric(q.figures.operatingExpenses) == null ? null : -numeric(q.figures.operatingExpenses)!]) : check(equations[4][0], equations[4][1].map(([key, sign])=>{const value=numeric(q.figures[key]);return value==null?null:value*sign;}))];
 }
 
 /**

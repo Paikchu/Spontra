@@ -1,7 +1,10 @@
 import type {Job} from './store.ts';
 import type {DocumentBatch} from './collect.ts';
 import {extractDisclosedQuarters, readReportedFacts, SEC_FLOW_PARSER_VERSION, type Fact, type DocumentSource} from './parser.ts';
-import {priorPresentationOnly,reviewedCurrentPair} from './period-review.ts';
+import {reviewedCurrentPair} from './period-review.ts';
+import {restatedConcepts} from './restatement.ts';
+import type {IncomeCalculation} from './calculation.ts';
+import type {BridgeStructure} from './bridge.ts';
 import {namesMembers} from './member-labels.ts';
 export interface SecReader {
  read(url:string):Promise<Response>;
@@ -11,6 +14,10 @@ export interface SecReader {
  archived?(url:string):Promise<string|null>;
  /** The filing's own names for its dimension members, keyed by member QName; absent, members read by their local names. */
  memberLabels?(documentUrl:string,accession:string):Promise<Record<string,string>>;
+ /** The filing's income statement calculation linkbase (calculation.ts); absent or null, the statement rows are read instead. */
+ calculation?(documentUrl:string,accession:string):Promise<IncomeCalculation|null>;
+ /** A structure from operating income to net income that balanced on an earlier filing of this issuer (presentation profile). */
+ presentation?(cik:string):Promise<{structure:BridgeStructure;version:string}|null>;
 }
 /**
  * EDGAR accepts no script in a filing, yet sec.gov appends one with a random path to every page it serves, so the same
@@ -52,9 +59,10 @@ export async function readFilingDocuments(primaryUrl:string,reader:SecReader,acc
  return documents;
 }
 export async function readSecDocumentBatch(job:Job,reader:SecReader,maxDocuments=2):Promise<DocumentBatch>{
- const cik=job.cik;if(!/^\d{10}$/.test(cik))throw new Error('Invalid CIK');const cursor=JSON.parse(job.cursor||'{}') as {documents?:Array<{url:string;accession:string;filedAt:string;periodEnd:string;form?:string}>;index?:number;industry?:DocumentSource['industry'];expectedPeriodEnd?:string;parserVersion?:string;reportedFacts?:Fact[];reviewDocuments?:Array<{source:DocumentSource;eligible:boolean}>;reviewRequired?:boolean;foreign?:boolean};
- if(cursor.parserVersion!==SEC_FLOW_PARSER_VERSION){cursor.index=0;cursor.parserVersion=SEC_FLOW_PARSER_VERSION;delete cursor.reportedFacts;delete cursor.reviewDocuments;delete cursor.reviewRequired;delete cursor.documents;}
+ const cik=job.cik;if(!/^\d{10}$/.test(cik))throw new Error('Invalid CIK');const cursor=JSON.parse(job.cursor||'{}') as {documents?:Array<{url:string;accession:string;filedAt:string;periodEnd:string;form?:string}>;index?:number;industry?:DocumentSource['industry'];expectedPeriodEnd?:string;parserVersion?:string;calculations?:Record<string,IncomeCalculation>;presentation?:{structure:BridgeStructure;version:string}|null;restated?:ReturnType<typeof restatedConcepts>;reportedFacts?:Fact[];reviewDocuments?:Array<{source:DocumentSource;eligible:boolean}>;reviewRequired?:boolean;foreign?:boolean};
+ if(cursor.parserVersion!==SEC_FLOW_PARSER_VERSION){cursor.index=0;cursor.parserVersion=SEC_FLOW_PARSER_VERSION;delete cursor.reportedFacts;delete cursor.reviewDocuments;delete cursor.reviewRequired;delete cursor.documents;delete cursor.calculations;delete cursor.restated;delete cursor.presentation;}
  if(!cursor.documents){
+  cursor.presentation=await reader.presentation?.(cik)??null;
   const response=await reader.read(`https://data.sec.gov/submissions/CIK${cik}.json`);const data=await response.json() as {cik:string|number;sic?:string;filings?:{recent?:{form:string[];accessionNumber:string[];primaryDocument:string[];filingDate:string[];reportDate:string[];items?:string[]}}};if(String(data.cik).padStart(10,'0')!==cik)throw new Error('Issuer identity mismatch');const recent=data.filings?.recent;if(!recent)throw new Error('Missing submissions');cursor.foreign=recent.form.some(form=>/^20-F/.test(form))&&!recent.form.some(form=>/^10-[QK]/.test(form));cursor.expectedPeriodEnd=cursor.foreign?undefined:recent.form.map((form,i)=>/^10-[QK](\/A)?$/.test(form)?recent.reportDate[i]:'').filter(v=>/^\d{4}-\d{2}-\d{2}$/.test(v)).sort().at(-1);const sic=Number(data.sic);cursor.industry=sic>=6300&&sic<6500?'insurance':sic>=6000&&sic<6300?'financial':'standard';cursor.documents=[];
   for(let i=0;i<recent.form.length&&cursor.documents.length<(cursor.foreign?32:10);i++){
    if(!/^(?:10-[QK]|20-F)(\/A)?$/.test(recent.form[i])&&!(cursor.foreign&&recent.form[i]==='6-K')&&!(recent.form[i]==='8-K'&&recent.items?.[i]?.includes('2.02')))continue;const accession=recent.accessionNumber[i],doc=recent.primaryDocument[i];if(!/^\d{10}-\d{2}-\d{6}$/.test(accession)||!/^[A-Za-z0-9_.-]+\.html?$/.test(doc))continue;
@@ -71,21 +79,24 @@ export async function readSecDocumentBatch(job:Job,reader:SecReader,maxDocuments
  for(const document of selected){
   const documents=await readFilingDocuments(document.url,reader,document.accession);
   for(const content of documents){
-   const source:DocumentSource={...document,url:content.url,cik,industry:cursor.industry??'unknown',...(content.memberLabels?{memberLabels:content.memberLabels}:{})};
-   await reader.archive?.(source,content.html,{form:document.form,reportDate:document.periodEnd});
+   const stored:DocumentSource={...document,url:content.url,cik,industry:cursor.industry??'unknown',...(content.memberLabels?{memberLabels:content.memberLabels}:{})};
+   await reader.archive?.(stored,content.html,{form:document.form,reportDate:document.periodEnd});
+   // The calculation belongs to the filing's XBRL instance, which only the inline XBRL document carries.
+   const calculation=/<ix:nonFraction/i.test(content.html)?await reader.calculation?.(content.url,document.accession)??null:null;
+   if(calculation)cursor.calculations={...(cursor.calculations??{}),[document.accession]:calculation};
+   const source:DocumentSource={...stored,calculation,presentation:cursor.presentation??null};
    const parsed=extractDisclosedQuarters(content.html,source),reported=readReportedFacts(content.html,source);
    if(reported.issues.length)throw new Error('SEC_FACT_FORMAT_UNSUPPORTED');
    if(cursor.foreign&&parsed.quarters.length){const latest=parsed.quarters.map(q=>q.periodEnd).sort().at(-1)!;if(!cursor.expectedPeriodEnd||latest>cursor.expectedPeriodEnd)cursor.expectedPeriodEnd=latest;}
    const expected=cursor.expectedPeriodEnd;
    const relevant=reported.facts.filter(f=>!expected||(f.end<=expected&&Date.parse(f.start)>=Date.parse(expected)-380*86400000));
-   if(relevant.length){cursor.reportedFacts=[...(cursor.reportedFacts??[]),...relevant];cursor.reviewDocuments=[...(cursor.reviewDocuments??[]),{source,eligible:priorPresentationOnly(content.html)}];}
-   if(parsed.issues.includes('RESTATEMENT_REVIEW_REQUIRED')&&relevant.length){cursor.reviewRequired=true;if(!priorPresentationOnly(content.html))throw new Error('RESTATEMENT_REVIEW_REQUIRED');}
-   else quarters.push(...parsed.quarters);
-   if(expected&&cursor.reportedFacts?.length){const review=reviewedCurrentPair(cursor.reportedFacts,expected,cursor.reviewDocuments??[]);if(review.reviewed){cursor.index=index+selected.length;return {quarters:review.quarters,nextCursor:JSON.stringify(cursor),finished:true,expectedPeriodEnd:expected};}}
+   if(relevant.length){cursor.reportedFacts=[...(cursor.reportedFacts??[]),...relevant];cursor.reviewDocuments=[...(cursor.reviewDocuments??[]),{source:stored,eligible:true}];cursor.restated=restatedConcepts(cursor.reportedFacts);}
+   quarters.push(...parsed.quarters);
+   if(expected&&cursor.reportedFacts?.length){const review=reviewedCurrentPair(cursor.reportedFacts,expected,cursor.reviewDocuments??[],cursor.calculations??{},cursor.presentation??null);if(review.reviewed){cursor.index=index+selected.length;return {quarters:review.quarters,nextCursor:JSON.stringify(cursor),finished:true,expectedPeriodEnd:expected};}}
   }
  }
 
- cursor.index=index+selected.length;if(cursor.reviewRequired&&cursor.index>=cursor.documents.length)throw new Error('RESTATEMENT_REVIEW_REQUIRED');return {quarters,nextCursor:JSON.stringify(cursor),finished:cursor.index>=cursor.documents.length,expectedPeriodEnd:cursor.expectedPeriodEnd};
+ cursor.index=index+selected.length;return {quarters,nextCursor:JSON.stringify(cursor),finished:cursor.index>=cursor.documents.length,expectedPeriodEnd:cursor.expectedPeriodEnd};
 }
 
 export async function discoverDataIssuer(ticker:string,reader:SecReader):Promise<{cik:string;tickers:string[];name:string;industry:'unknown'}>{
