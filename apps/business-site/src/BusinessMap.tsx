@@ -350,7 +350,8 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
     return { name: shortName(n.label), value: money(amountOf(n)), ...(change.comparable ? { change: { label: change.label, trend: change.trend ?? undefined } } : {}) };
   }, [money, amountOf, changeOf]);
   const layout = useMemo(() => graph ? layoutFor(graph, copy) : null, [graph, copy]);
-  const proportional = Boolean(quarter && layout && quarter.incomeModel !== "financial" && quarter.incomeModel !== "insurance");
+  // A bank's statement draws in the main chart like any other once its graph reconciles; an insurer keeps the equation cards.
+  const proportional = Boolean(quarter && layout && quarter.incomeModel !== "insurance");
   const coverage = graph?.deficit && revenue ? revenueCoverage(graph, revenue) : null;
 
   const itemByNode = useMemo(() => new Map(items.map(item => ["segment:" + item.key, item])), [items]);
