@@ -150,7 +150,7 @@ export function digestFiling(filing:PublicSecFiling,locale:Locale="en"):PublicFi
  const text=(v:unknown)=>typeof v==="string"?v:"";
  return {
   accessionNumber:filing.accessionNumber,form:filing.form,filingDate:filing.filingDate,reportDate:filing.reportDate,
-  periodEnd:periodic?group?.periodEnd??filing.fiscalPeriod?.periodEnd??filing.reportDate:null,periodLabel:periodic?formatFilingPeriodLabel(filing):null,
+  periodEnd:periodic?group?.periodEnd??filing.fiscalPeriod?.periodEnd??filing.reportDate:null,periodLabel:periodic?formatFilingPeriodLabel(filing,locale):null,
   date:group?.earningsDate??filing.filingDate,
   sources:(group?.sources??[]).map(s=>({form:s.form,filingDate:s.filingDate,accessionNumber:s.accessionNumber,indexUrl:s.indexUrl})),
   headline:text(summary?.headline)||text(analysis?.headline),

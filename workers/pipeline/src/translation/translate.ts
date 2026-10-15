@@ -219,7 +219,7 @@ export async function publishTables(db: D1Database, ticker: string, locale: Loca
     const strings: Record<string, string> = {};
     for (const text of source.strings) {
       const row = known.get(hashOf.get(text)!);
-      if (row?.status === "ready" && row.text) strings[text] = row.text;
+      if (row?.status === "ready" && row.text) strings[text] = normalizeTranslation(row.text);
     }
     translated += Object.keys(strings).length; total += source.strings.length;
     const table: StoredTable = { locale, version: TRANSLATION_VERSION, sources: await sha256(source.strings.join("\u0000")), strings, at };
