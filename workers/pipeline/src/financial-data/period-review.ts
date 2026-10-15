@@ -1,5 +1,7 @@
 import {extractVerifiedCurrentQuarters,hasDisclosureProfile,type Fact,type DocumentSource} from './parser.ts';
 import {checkCompleteFlow} from '../../../../shared/analysis-runtime/financial-data/completeness.ts';
+import type {IncomeCalculation} from './calculation.ts';
+import type {BridgeStructure} from './bridge.ts';
 import type {BusinessFlowQuarter} from '../../../../shared/analysis-contract/business-flow.ts';
 const key=(f:Fact)=>[f.tag,f.currency,JSON.stringify(Object.entries(f.dimensions).sort())].join('|');
 const days=(start:string,end:string)=>(Date.parse(end)-Date.parse(start))/86400000;
@@ -41,7 +43,7 @@ export function fiscalFourthQuarters(annualReport:Fact[],thirdQuarterReport:Fact
  for(const f of fourthQuarterFacts(annuals,facts))byEnd.set(f.end,[...(byEnd.get(f.end)??[]),f]);
  return [...byEnd.values()].flatMap(q=>extractVerifiedCurrentQuarters(q[0].source,q).quarters).map(q=>({...q,basisLabel:q.basisLabel+' · fourth quarter = full year − first nine months, same basis'}));
 }
-export function reviewedCurrentPair(all:Fact[],expected:string,documents:Array<{source:DocumentSource;html?:string;eligible:boolean}>):{quarters:BusinessFlowQuarter[];reviewed:boolean}{
+export function reviewedCurrentPair(all:Fact[],expected:string,documents:Array<{source:DocumentSource;html?:string;eligible:boolean}>,calculations:Record<string,IncomeCalculation>={},presentation:{structure:BridgeStructure;version:string}|null=null):{quarters:BusinessFlowQuarter[];reviewed:boolean}{
  // An issuer with a disclosure-specific expense and revenue profile is not read by generic arithmetic.
  if(all[0]&&hasDisclosureProfile(all[0].source.cik))return {quarters:[],reviewed:false};
  const facts=precisionSelect(all);if(!facts)return {quarters:[],reviewed:false};
@@ -60,9 +62,10 @@ export function reviewedCurrentPair(all:Fact[],expected:string,documents:Array<{
   if(!cumulative||!prior){if(required([q]).length)return {quarters:[],reviewed:false};continue;}
   const rounding=10**(-Math.min(q.precision,cumulative.precision,prior.precision));if(Math.abs(cumulative.value-q.value-prior.value)>Math.max(1,rounding*1.5))return {quarters:[],reviewed:false};
  }
- if(!required(quarterFacts).length||documents.some(d=>!d.eligible))return {quarters:[],reviewed:false};
+ // Arithmetic is the review: a line whose earlier period moved fails the check above, whatever the filing's notes say.
+ if(!required(quarterFacts).length)return {quarters:[],reviewed:false};
  const latestSource=quarterFacts[0].source,previousSource=directPrevious[0].source;
- const extract=(source:DocumentSource,items:Fact[])=>extractVerifiedCurrentQuarters(source,items).quarters;
+ const extract=(source:DocumentSource,items:Fact[])=>extractVerifiedCurrentQuarters({...source,calculation:calculations[source.accession]??null,presentation},items).quarters;
  const quarters=[...extract(latestSource,quarterFacts),...extract(previousSource,directPrevious)].filter(q=>q.periodEnd===expected||q.periodEnd===previousEnd);
  for(const q of quarters){q.basisLabel=(q.incomeModel==='insurance'?'Insurance and diversified operations · investment gains shown separately · net income includes noncontrolling interests · ':'')+'As reported in the current fiscal year\'s SEC filings · verified against adjacent cumulative periods; a fourth quarter is derived only as the full year less nine months on the same basis';
   for(const document of documents)if(!q.sources.some(s=>s.id===document.source.accession))q.sources.push({id:document.source.accession,title:'SEC cumulative and reclassification check '+document.source.accession,url:document.source.url,publishedAt:document.source.filedAt});}

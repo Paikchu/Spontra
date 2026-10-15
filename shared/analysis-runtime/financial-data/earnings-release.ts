@@ -206,9 +206,17 @@ function build(statement: Table, tables: Table[], previous: BusinessFlowQuarter,
   const figures: BusinessFlowQuarter["figures"] = {};
   const take = (key: FlowMetric, bound: Bound | null) => { if (bound && previous.figures[key]) figures[key] = amountOf(bound, previous.figures[key]!, key); };
   for (const key of ["revenue", "cost", "gross", "operating", "pretax", "net"] as const) take(key, rows[key]);
-  // A tax line printed as a negative charge is the same expense: the sign that closes pretax − tax = net is the one.
+  // Lines the statement places after income taxes (equity-method results, noncontrolling interests), by their labels.
+  const afterTaxComponents: NonNullable<BusinessFlowQuarter["afterTaxComponents"]> = [];
+  for (const c of previous.afterTaxComponents ?? []) {
+    const bound = find(statement, [c.name], end, undefined, rows.tax?.row ?? rows.pretax?.row ?? 0, rows.net?.row ?? Infinity);
+    if (!bound) return { quarter: null, issues: [`RELEASE_LINE_MISSING:${c.name}`] };
+    afterTaxComponents.push({ ...c, amount: amountOf(bound, c.amount, `after-tax:${c.id}`) });
+  }
+  // A tax line printed as a negative charge is the same expense: the sign that closes pretax − tax + after-tax lines = net is the one.
   if (rows.tax && figures.pretax && figures.net && previous.figures.tax) {
-    const tax = amountOf(rows.tax, previous.figures.tax, "tax"), value = Number(tax.value), pretax = num(figures.pretax)!, net = num(figures.net)!;
+    const tax = amountOf(rows.tax, previous.figures.tax, "tax"), value = Number(tax.value), net = num(figures.net)!;
+    const pretax = num(figures.pretax)! + afterTaxComponents.reduce((n, c) => n + Number(c.amount.value), 0);
     figures.tax = Math.abs(pretax - value - net) <= Math.abs(pretax + value - net) ? tax : { ...tax, value: String(-value) };
   }
   if (previous.figures.gross && !figures.gross && num(figures.revenue) != null && num(figures.cost) != null)
@@ -287,6 +295,8 @@ function build(statement: Table, tables: Table[], previous: BusinessFlowQuarter,
     sources: [{ id: source.accession, title: `Earnings release (Form 8-K) ${source.accession}`, url: statement.url, publishedAt: source.filedAt }],
   };
   delete quarter.revenueBreakdowns; delete quarter.revenueAdjustments; delete quarter.expenseComponents; delete quarter.otherComponents; delete quarter.segmentDisclosure;
+  delete quarter.afterTaxComponents; delete quarter.basisChanges;
+  if (previous.afterTaxComponents) quarter.afterTaxComponents = afterTaxComponents;
   if (previous.segmentDisclosure && split.segments[0]?.id === previous.segments[0]?.id) quarter.segmentDisclosure = previous.segmentDisclosure;
   if (split.adjustments.length) quarter.revenueAdjustments = split.adjustments;
   if (previous.expenseComponents) quarter.expenseComponents = expenseComponents;

@@ -57,6 +57,12 @@ export function BusinessMapCompanies({onUnauthorized,onAuthenticated}:{onUnautho
       if(err instanceof AdminApiError&&err.status>=400&&err.status<500)completeRequestId(key,storage());
     } finally {lock.current=false;setBusy('');}
   }
+  async function judge(symbol:string) {
+    if(lock.current)return;lock.current=true;setBusy(symbol);setError('');setNotice('');
+    try {await adminApi(`business-map/companies/${symbol}/presentation`,{method:'POST',body:'{}'});setRefresh(n=>n+1);setNotice(`${symbol} 重新判定已提交`);}
+    catch(err){if(err instanceof AdminApiError&&err.status===401)callbacks.current.onUnauthorized();else setError((err as Error).message);}
+    finally {lock.current=false;setBusy('');}
+  }
   function add(event:FormEvent){event.preventDefault();const symbol=normalizeCompanyTicker(ticker);if(!symbol){setError('股票代码无效');return;}void mutate(symbol,true);}
   const companies=data?.companies.filter(c=>c.ticker.toLowerCase().includes(search.toLowerCase()))??[];
   return <section className="bm-admin" aria-label="白名单">
@@ -69,16 +75,17 @@ export function BusinessMapCompanies({onUnauthorized,onAuthenticated}:{onUnautho
     {!data&&!loadError&&<p role="status">加载中</p>}
     {companies.length>0&&<div className="bm-admin-table-wrap ra-panel"><table className="bm-admin-table">
       <thead><tr><th>公司</th><th>状态</th><th>可展示期间</th><th>收入构成</th><th>采集</th><th>问题</th><th>操作</th></tr></thead>
-      {companies.map(company=><Company key={company.ticker} company={company} busy={!!busy} onToggle={()=>void mutate(company.ticker,!company.dataEnabled)} onPrepare={()=>void mutate(company.ticker)}/>)}
+      {companies.map(company=><Company key={company.ticker} company={company} busy={!!busy} onToggle={()=>void mutate(company.ticker,!company.dataEnabled)} onPrepare={()=>void mutate(company.ticker)} onJudge={()=>void judge(company.ticker)}/>)}
     </table></div>}
     {data&&!companies.length&&<p>无匹配公司</p>}
   </section>;
 }
 const coverage=(q:NonNullable<BusinessMapCompany['publication']['revenueCoverage']>[number])=>q.status==='verified'?`${q.segments} 个分部已核验${q.adjustments?` · ${q.adjustments} 项抵销已对账`:''}`:q.status==='single_segment'?'单一报告部门':'仅合并收入 · 拆分待核验';
+const presentationSource:Record<string,string>={calculation:'申报计算链',statement:'报表行',profile:'模型判定（算术核验）',degraded:'未拆分（合计）'};
 const taskStatus:Record<string,string>={succeeded:'已完成',partial:'部分完成',failed:'失败',cancelled:'已停止'};
 
 /** One company as a table row; the row opens to its quarters, task progress and collection problems. */
-function Company({company:c,busy,onToggle,onPrepare}:{company:BusinessMapCompany;busy:boolean;onToggle:()=>void;onPrepare:()=>void}) {
+function Company({company:c,busy,onToggle,onPrepare,onJudge}:{company:BusinessMapCompany;busy:boolean;onToggle:()=>void;onPrepare:()=>void;onJudge:()=>void}) {
   const running=!!c.task&&active.has(c.task.status),collecting=!!c.collection&&['queued','running','retry'].includes(c.collection.status);
   const ready=c.publication.status==='ready';
   const revenuePending=c.publication.revenueCoverage?.some(q=>q.status==='unverified');
@@ -100,6 +107,13 @@ function Company({company:c,busy,onToggle,onPrepare}:{company:BusinessMapCompany
       <section><h4>收入构成</h4>{c.publication.revenueCoverage?.length?<ul>{c.publication.revenueCoverage.map(q=><li key={q.period}>{q.period}：{coverage(q)}</li>)}</ul>:<p>无</p>}</section>
       <section><h4>采集</h4>{c.task&&<div className="bm-admin-progress" data-status={c.task.status}><label>{stages[c.task.stage]??c.task.stage} · {c.task.progress.completed}/{c.task.progress.total} 个阶段{!running&&taskStatus[c.task.status]?` · ${taskStatus[c.task.status]}`:''}</label><progress aria-label={`${c.ticker} 准备进度`} value={c.task.progress.completed} max={c.task.progress.total}/><small>任务更新于 {financialDate(c.task.updatedAt)}</small></div>}
         {!!c.collection?.total&&<p>最新财报扫描：{c.collection.completed}/{c.collection.total} 份候选文件</p>}{c.history&&<p>历史披露扫描：{c.history.completed}/{c.history.total} 份文件</p>}{!c.task&&!c.collection?.total&&!c.history&&<p>无采集记录</p>}</section>
+      <section><h4>税前至净利润</h4>{c.presentation?.source?<>
+        <p>{presentationSource[c.presentation.source]}</p>
+        {c.presentation.afterTax.length>0&&<ul>{c.presentation.afterTax.map(a=><li key={a.name}>{a.name}：{Number(a.value).toLocaleString('en-US')}</li>)}</ul>}
+        {c.presentation.basisChanges.length>0&&<p>重述行（不比较环比）：{c.presentation.basisChanges.join('、')}</p>}
+        {c.presentation.profile&&<p>模型判定：{c.presentation.profile.status==='verified'?'已核验':'未通过'} · {c.presentation.profile.attempts} 次 · {c.presentation.profile.accession||'待重判'}{c.presentation.profile.issues.length>0&&<small>{c.presentation.profile.issues.slice(0,3).join('；')}</small>}</p>}
+        {(c.presentation.source==='degraded'||c.presentation.profile)&&<button className="fm-button" disabled={busy} onClick={onJudge}>重新判定</button>}
+      </>:<p>无</p>}</section>
       <section className="bm-admin-issues"><h4>采集问题（{issues.length}）</h4>{issues.length?<ul>{issues.map(code=><li key={code}>{issueText(code)}{errors[code]&&<small>{code}</small>}</li>)}</ul>:<p>无</p>}</section>
     </div></td></tr>}
   </tbody>;

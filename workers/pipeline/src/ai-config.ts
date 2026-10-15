@@ -24,6 +24,8 @@ export const AI_TOOL_REASONING = {
   lens: "low",
   /** The analyst reads filings and composes the dossier; its harness verifies, so it reasons at the default depth. */
   analyst: "high",
+  /** Which statement line is pretax income and which come after taxes; the harness checks the arithmetic. */
+  presentation: "low",
   /** Translating published English into Chinese; every translation is checked against its source. */
   translate: "low",
 } as const satisfies Record<string, ReasoningEffort>;

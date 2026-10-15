@@ -10,6 +10,7 @@ import type { TaskName } from "./registry.ts";
 import { FINANCIAL_TASKS } from "./financial-tasks.ts";
 import { SEC_TASKS } from "./sec-tasks.ts";
 import { AI_TASKS } from "./ai-tasks.ts";
+import { PRESENTATION_TASKS } from "./presentation-task.ts";
 import { LIBRARY_TASKS } from "./library-tasks.ts";
 import { TRANSLATION_TASKS } from "./translation-tasks.ts";
 import { PEERS_VERSION, publishPeers } from "../peers/projection.ts";
@@ -39,6 +40,7 @@ export const TASK_IMPLEMENTATIONS: Record<TaskName, TaskImplementation> = {
   ...AI_TASKS,
   ...LIBRARY_TASKS,
   ...TRANSLATION_TASKS,
+  ...PRESENTATION_TASKS,
 
   "map-derive": {
     version: REPORT_QUARTERS_VERSION,

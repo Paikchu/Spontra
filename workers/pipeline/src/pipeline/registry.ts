@@ -12,6 +12,7 @@ export const EVENT_TYPES = [
   "transcript.stored", "explainer.published", "tree.published", "findings.published", "events.published", "dossier.published",
   "library.requested", "library.prepared", "library.cards.published", "library.links.requested",
   "peers.published", "translations.published",
+  "presentation.unresolved",
 ] as const;
 export type EventType = typeof EVENT_TYPES[number];
 
@@ -21,7 +22,7 @@ export const TASK_NAMES = [
   "sec-report", "guidance", "events",
   "memory", "company-analysis", "explainer", "tree", "findings", "analyst",
   "library", "library-cards", "library-links", "library-search", "storage-sweep",
-  "peers", "translate",
+  "peers", "translate", "presentation",
 ] as const;
 export type TaskName = typeof TASK_NAMES[number];
 
@@ -42,7 +43,7 @@ export type TaskMeta = {
 const SECOND = 1000, MINUTE = 60 * SECOND, HOUR = 60 * MINUTE;
 export const TASKS: Record<TaskName, TaskMeta> = {
   // Collects a company's latest complete statements from EDGAR and publishes them.
-  "collect": { emits: ["financials.published", "filing.archived", "archive.superseded"], debounceMs: 30 * SECOND, maxWaitMs: 5 * MINUTE, scope: "data" },
+  "collect": { emits: ["financials.published", "filing.archived", "archive.superseded", "presentation.unresolved"], debounceMs: 30 * SECOND, maxWaitMs: 5 * MINUTE, scope: "data" },
   // Brings the company's quarterly revenue history up to date after a publication.
   "history": { emits: ["filing.archived", "archive.superseded"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "data" },
   // Re-projects archived filings whose capital projection predates the current version.
@@ -89,6 +90,9 @@ export const TASKS: Record<TaskName, TaskMeta> = {
   "peers": { emits: ["peers.published"], debounceMs: 2 * MINUTE, maxWaitMs: 30 * MINUTE, scope: "global" },
   // Translates the reader-facing prose of every publication the map reads into Chinese, string by string (Workflow; model at low reasoning).
   "translate": { emits: ["translations.published"], debounceMs: 2 * MINUTE, maxWaitMs: 30 * MINUTE, scope: "data" },
+  // Judges an income statement whose lines after operating income no calculation or statement row balances (model; the
+  // arithmetic decides), then collects the issuer again through a maintenance task.
+  "presentation": { emits: ["maintenance.requested"], debounceMs: 2 * MINUTE, maxWaitMs: 30 * MINUTE, scope: "data" },
 };
 
 const form = (event: PipelineEvent) => event.detail?.form ?? "";
@@ -129,13 +133,14 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
   "explainer.published": [{ task: "translate" }],
   "tree.published": [{ task: "translate" }],
   "events.published": [{ task: "translate" }],
+  "presentation.unresolved": [{ task: "presentation" }],
 };
 
 /** Emitters that are not tasks. `task.version_changed` is routed to the one task it names, never subscribed. */
 export const SOURCES: Record<string, readonly EventType[]> = {
   // The only Cron: polls EDGAR, which pushes nothing.
   "sec-discovery": ["filing.discovered", "collection.requested"],
-  "admin": ["collection.requested", "maintenance.requested", "archive.prune.requested", "library.requested", "library.links.requested"],
+  "admin": ["collection.requested", "maintenance.requested", "archive.prune.requested", "library.requested", "library.links.requested", "presentation.unresolved"],
   "invocation": ["task.version_changed"],
 };
 

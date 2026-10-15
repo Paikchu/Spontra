@@ -8,7 +8,8 @@ import { archiveFilingDisclosures, readArchivedDocument, refreshStaleProjections
 import { HISTORY_VERSION, runHistoryStep } from "../financial-data/history.ts";
 import { SEC_FLOW_PARSER_VERSION } from "../financial-data/parser.ts";
 import { discoverDataIssuer, readReleaseQuarter, readSecDocumentBatch, throttledSecReader, type SecReader } from "../financial-data/provider.ts";
-import { filingMemberLabels } from "../financial-data/member-labels.ts";
+import { degraded, withFilingStructure } from "../financial-data/presentation.ts";
+import { emit } from "./outbox.ts";
 import { claimJobFor, latestJob, startCollection } from "../financial-data/queue.ts";
 import { D1CompleteStore } from "../financial-data/store.ts";
 import type { SecPipelineEnv } from "../operations.ts";
@@ -31,8 +32,7 @@ function archivingReader(env: SecPipelineEnv, ticker: string, causeId: string): 
   const archive = { DB: env.DB!, SEC_FILINGS: env.SEC_FILINGS };
   reader.archive = (source, html, metadata) => archiveFilingDisclosures(archive, ticker, source, html, metadata, causeId).then(() => undefined);
   reader.archived = url => readArchivedDocument(archive, ticker, url);
-  reader.memberLabels = (url, accession) => filingMemberLabels(env.DB!, reader.read, url, accession);
-  return reader;
+  return withFilingStructure(reader, env.DB!);
 }
 
 export const FINANCIAL_TASKS = {
@@ -63,7 +63,9 @@ export const FINANCIAL_TASKS = {
       }
       const reader = archivingReader(env, ticker, causeId);
       // A quarter whose earnings release is out is published from the release, ahead of its 10-Q.
-      const result = await collectComplete(job, policy, new D1CompleteStore(db, causeId), j => readSecDocumentBatch(j, reader), (j, previous) => readReleaseQuarter(j, previous, reader));
+      const { flow, ...result } = await collectComplete(job, policy, new D1CompleteStore(db, causeId), j => readSecDocumentBatch(j, reader), (j, previous) => readReleaseQuarter(j, previous, reader));
+      // A newest quarter no structure balanced asks for a judgement (presentation-task.ts); the publication stands meanwhile.
+      if (result.published && degraded([...(flow?.quarters ?? [])].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd))[0])) await emit(env, [{ type: "presentation.unresolved", ticker, cik: job.cik, causeId }]);
       const after = await latestJob(db, ticker);
       if (after && ["queued", "retry"].includes(after.status)) return { status: "later", afterMs: until(after.next_attempt_at, now), detail: result };
       if (after?.status === "unavailable" && after.reasons_json?.includes("SOURCE_TEMPORARILY_UNAVAILABLE")) {

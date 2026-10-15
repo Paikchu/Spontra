@@ -42,6 +42,25 @@ export function validateGraph(nodes:SankeyNode[], links:SankeyLink[]): boolean {
   return nodes.every(n=>walk(n.name));
 }
 
+/**
+ * The last stage, pretax income to net income: taxes and every line the statement places after them. A loss after
+ * taxes leaves pretax income like the tax does; income after taxes joins net income from its own node.
+ */
+function afterTaxStage(q:BusinessFlowQuarter,nodes:SankeyNode[],links:SankeyLink[],depth:number,offset:number):boolean{
+ const v=(key:FlowMetric)=>numeric(q.figures[key]);const pretax=v("pretax"),tax=v("tax"),net=v("net");
+ if(pretax==null||tax==null||net==null||tax<0||net<0)return false;
+ const items=(q.afterTaxComponents??[]).map(c=>({c,value:numeric(c.amount)}));if(items.some(i=>i.value==null))return false;
+ const gains=items.filter(i=>i.value!>0),losses=items.filter(i=>i.value!<0);
+ const kept=net-gains.reduce((sum,i)=>sum+i.value!,0);if(kept<0)return false;
+ const add=(name:string,label:string,d:number,expense:boolean,value:number,amount?:FlowAmount,metric?:FlowMetric)=>{if(!nodes.some(n=>n.name===name))nodes.push({name,label,...(metric?{metric}:{}),depth:d+offset,expense,value,...(amount?{amount}:{})});};
+ add("pretax",metricLabels.pretax,depth-1,false,pretax,undefined,"pretax");add("net",metricLabels.net,depth,false,net,undefined,"net");
+ if(tax>0){add("tax",metricLabels.tax,depth,true,tax,undefined,"tax");links.push({source:"pretax",target:"tax",value:tax});}
+ for(const{c,value}of losses){const name="after-tax:"+c.id;add(name,c.name,depth,true,-value!,c.amount);links.push({source:"pretax",target:name,value:-value!});}
+ if(kept>0)links.push({source:"pretax",target:"net",value:kept});
+ for(const{c,value}of gains){const name="after-tax:"+c.id;add(name,c.name,depth-1,false,value!,c.amount);links.push({source:name,target:"net",value:value!});}
+ return true;
+}
+
 /** Signed statements use balanced deficit flows; incomplete statements never invent amounts. */
 export function financialGraph(q:BusinessFlowQuarter, compact=false):FinancialGraph {
  const nodes:SankeyNode[]=[],links:SankeyLink[]=[];
@@ -89,7 +108,7 @@ export function financialGraph(q:BusinessFlowQuarter, compact=false):FinancialGr
    if(signed<0){negative-=signed;links.push({source:"operating",target:name,value:-signed});}else links.push({source:name,target:"pretax",value:signed});
   }
   link("operating","pretax",v("operating")!-negative,2);
-  link("pretax","net",v("net"),3);link("pretax","tax",v("tax"),3,true);
+  if(!afterTaxStage(q,nodes,links,3,offset))return {nodes:[],links:[]};
   const connected=nodes.filter(n=>links.some(l=>l.source===n.name||l.target===n.name));
   return validateGraph(connected,links)?{nodes:connected,links}:{nodes:[],links:[]};
  }
@@ -110,7 +129,7 @@ export function financialGraph(q:BusinessFlowQuarter, compact=false):FinancialGr
    else {link("operating","pretax",v("pretax"),3);node("other",3,true);links.push({source:"operating",target:"other",value:-other});nodes.find(n=>n.name==="other")!.value=-other;}
    stage=3;
  }
- if(stage===3 && balanced(4) && (v("tax")??-1)>=0 && (v("net")??-1)>=0){link("pretax","net",v("net"),4);link("pretax","tax",v("tax"),4,true);stage=4;}
+ if(stage===3 && balanced(4) && afterTaxStage(q,nodes,links,4,offset))stage=4;
 
  if(compact && nodes.some(n=>n.name==="research"||n.name==="sales"||n.name==="administration")){
   const small=nodes.filter(n=>n.name==="research"||n.name==="sales"||n.name==="administration");const value=small.reduce((sum,n)=>sum+n.value,0);
@@ -185,10 +204,16 @@ function signedFinancialGraph(q: BusinessFlowQuarter): FinancialGraph {
  }
  const expenses = components("expense", "operatingExpenses"), other = components("other", "other");
  if (!expenses || !other) return unavailable();
+ const afterTax: Term[] = [];
+ for (const c of q.afterTaxComponents ?? []) {
+  const value = numeric(c.amount);
+  if (value == null) return unavailable();
+  if (value) afterTax.push({ value, node: { name: "after-tax:" + c.id, label: c.name, amount: c.amount, depth: 0, value: Math.abs(value), expense: value < 0 } });
+ }
  if (!direct) equation([metric("revenue")], [metric("gross"), metric("cost")]);
  equation([metric(direct ? "revenue" : "gross")], [metric("operating"), ...expenses]);
  equation([metric("operating"), ...other], [metric("pretax")]);
- equation([metric("pretax")], [metric("net"), metric("tax")]);
+ equation([metric("pretax"), ...afterTax], [metric("net"), metric("tax")]);
  const tree = selectRevenueTree(q);
  if (tree) {
   const branches:SankeyNode[]=[];
@@ -235,12 +260,16 @@ export function deficitFinancialGraph(q: BusinessFlowQuarter): FinancialGraph | 
  const other = figure("other"), tax = figure("tax"), cost = figure("cost");
  const expenses = parts("expense", "operatingExpenses", 1, metricLabels.operatingExpenses);
  const others = parts("other", "other", -1, (other ?? 0) < 0 ? m.otherExpense : m.otherIncome);
+ const afterTax = (q.afterTaxComponents ?? []).map(c => ({ c, value: numeric(c.amount) }));
+ if (afterTax.some(a => a.value == null)) return null;
+ // Lines after taxes act like other income: a gain is a credit, a loss a cost.
+ const afterTaxTerms: Term[] = afterTax.filter(a => a.value).map(({ c, value }) => ({ use: -value!, node: { name: `after-tax:${c.id}`, label: c.name, amount: c.amount, depth: 0, expense: value! < 0, credit: value! > 0, value: Math.abs(value!) } }));
  if (!expenses || !others || tax == null || (!direct && cost == null)) return null;
  const stages: Array<{ terms: Term[]; after: FlowMetric | null }> = [
   ...(direct ? [] : [{ terms: cost ? [metricTerm("cost", cost, metricLabels.cost)] : [], after: "gross" as const }]),
   { terms: expenses, after: "operating" },
   { terms: others, after: "pretax" },
-  { terms: tax ? [metricTerm("tax", tax, tax > 0 ? metricLabels.tax : m.taxBenefit)] : [], after: null },
+  { terms: [...(tax ? [metricTerm("tax", tax, tax > 0 ? metricLabels.tax : m.taxBenefit)] : []), ...afterTaxTerms], after: null },
  ];
  const nodes = new Map<string, SankeyNode>(), links: SankeyLink[] = [];
  const flow = (source: string, target: string, value: number) => { if (value > tolerance) links.push({ source, target, value }); };

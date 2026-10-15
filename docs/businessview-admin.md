@@ -88,3 +88,7 @@ Pipeline 对应路径为 `/admin/*`，管理接口需要签名会话。现有公
 - **进度**：每次运行（含定时任务启动的）记录触发方式、状态、当前步骤和逐步时间线，步骤在 Workflow 的持久化步骤内写入，重放不会回退。运行结束时记录结果摘要；要点会列出未通过核对的条目及原因。运行异常终止而未写入结果时，查看详情会向 Workflow 引擎核对并标记失败。
 - **结果与历史版本**：每次发布在 `sec_cache` 中另存一份版本（`ai-version:v1:<kind>:<ticker>:<时间>`），内容与上一版相同则不重复保存，每类每家公司保留最近 30 版；运行记录（`ai-run:v1:…`）保留最近 20 次。页面默认显示当前线上版本，可切换查看历史版本并展开原始 JSON。历史从本功能上线后开始积累，此前只保留当前版本。
 - 无新增迁移。接口：`GET /api/admin/ai/companies`、`GET /api/admin/ai/companies/:ticker/:kind`、`GET …/:kind/versions/:id`、`POST …/:kind/runs`（`kind` 为 `findings`、`explainer`、`tree`）。
+
+## 税前至净利润（2026-10-15）
+
+白名单详情的"税前至净利润"区显示最新季度这一段算术的来源：申报计算链、报表行、模型判定（算术核验）或未拆分（合计）；列出所得税之后的各行（权益法损益、少数股东损益等）、被后续申报重述而不比较环比的行，以及模型判定记录（状态、次数、判定的申报、未通过的原因）。"重新判定"只是再发一次 `presentation.unresolved`，流程不等它。见 [statement-bridge-design](statement-bridge-design.md)。
