@@ -25,7 +25,8 @@ export type BusinessTreeParams = { ticker: string; fingerprint: string };
 /** Companies whose businesses are broken down; separate from the AI list, since this needs no report analysis. */
 export function treeTickersFor(env: Pick<SecPipelineEnv, "BUSINESS_TREE_TICKERS" | "SEC_TRACKED_TICKERS" | "SEC_DATA_TICKERS" | "SEC_AI_TICKERS" | "SEC_AI_ENABLED">): string[] {
   const listed = env.BUSINESS_TREE_TICKERS?.split(",").map(t => t.trim().toUpperCase()).filter(t => /^[A-Z][A-Z0-9.-]{0,11}$/.test(t));
-  return listed?.length ? [...new Set(listed)] : trackedTickersFor(env);
+  // The mind-map list adds to the AI list (the admin's AI switch); a company switched on gets its mind map too.
+  return [...new Set([...(listed ?? []), ...trackedTickersFor(env)])];
 }
 
 /** A region is where a business sells, not what it sells: breaking it into products would repeat the product lines once per region. */

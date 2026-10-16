@@ -42,7 +42,9 @@ export function BusinessMapCompanies({onUnauthorized,onAuthenticated}:{onUnautho
     }).catch(err=>{if(controller.signal.aborted)return;if(err instanceof AdminApiError&&err.status===401)callbacks.current.onUnauthorized();else setLoadError(err.message);});
     return ()=>controller.abort();
   },[refresh]);
-  useEffect(()=>{const timer=setInterval(()=>{if(!document.hidden&&!lock.current)setRefresh(n=>n+1);},5000);return()=>clearInterval(timer);},[]);
+  // Every five seconds while a company is being prepared, every thirty otherwise: the list is a heavy read.
+  const working=!!data?.companies.some(c=>(c.task&&active.has(c.task.status))||(c.collection&&['queued','running','retry'].includes(c.collection.status)));
+  useEffect(()=>{const timer=setInterval(()=>{if(!document.hidden&&!lock.current)setRefresh(n=>n+1);},working?5000:30000);return()=>clearInterval(timer);},[working]);
   async function mutate(symbol:string,enabled?:boolean) {
     if(lock.current)return;lock.current=true;setBusy(symbol);setError('');setNotice('');
     const key=`business-map:${symbol}:${enabled??'prepare'}`,requestId=pendingRequestId(key,storage());
@@ -92,16 +94,24 @@ const lineName:Record<string,string>={revenue:'营收',cost:'营业成本',gross
 const taskStatus:Record<string,string>={succeeded:'已完成',partial:'部分完成',failed:'失败',cancelled:'已停止'};
 
 /** A scan's progress as a labelled bar. */
-function Meter({label,completed,total}:{label:string;completed:number;total:number}) {
-  return <div className="bm-meter"><span>{label}</span><b>{completed}/{total}</b><progress aria-label={label} value={completed} max={Math.max(total,1)}/></div>;
+function Meter({label,completed,total,done=false}:{label:string;completed:number;total:number;done?:boolean}) {
+  // A scan that stopped once the newest pair verified is finished, not two tenths done.
+  return <div className="bm-meter" data-done={done||undefined}><span>{label}</span><b>{done?`已完成 · 读取 ${completed} 份`:`${completed}/${total}`}</b><progress aria-label={label} value={done?1:completed} max={done?1:Math.max(total,1)}/></div>;
 }
+/** Per-document notes from a scan (a filing without a quarter, a fact format the reader skips): not problems with the data. */
+const NOTE=/^(?:\d{10}-\d{2}-\d{6}:)?(?:NO_DIRECT_COMPARABLE_QUARTER|RESTATEMENT_REVIEW_REQUIRED)$|^UNSUPPORTED_SOURCE_FACTS:/;
 
 /** One company as a table row: its two states, the AI switch and the actions; the row opens to the details. */
 function Company({company:c,busy,onToggle,onPrepare,onJudge,onAi}:{company:BusinessMapCompany;busy:boolean;onToggle:()=>void;onPrepare:()=>void;onJudge:()=>void;onAi:()=>void}) {
   const running=!!c.task&&active.has(c.task.status),collecting=!!c.collection&&['queued','running','retry'].includes(c.collection.status);
   const ready=c.publication.status==='ready';
   const revenuePending=c.publication.revenueCoverage?.some(q=>q.status==='unverified');
-  const issues=[...new Set([...(revenuePending?['REVENUE_BREAKDOWN_NOT_VERIFIED']:[]),...(c.task?.issues??[]),...(c.task?.errorCode?[c.task.errorCode]:[]),...(c.collection?.reasons??[]),...(!ready||c.publication.outdated?c.publication.reasons:[])])].filter(s=>s!=='PREPARING');
+  // A maintenance task's findings count while it is the latest work on the company; a later collection supersedes them.
+  const taskCurrent=!!c.task&&(active.has(c.task.status)||!c.collection||c.task.updatedAt>=c.collection.updatedAt);
+  const taskIssues=taskCurrent?[...(c.task?.issues??[]),...(c.task?.errorCode?[c.task.errorCode]:[])]:[];
+  const notes=taskIssues.filter(code=>NOTE.test(code));
+  const issues=[...new Set([...(revenuePending?['REVENUE_BREAKDOWN_NOT_VERIFIED']:[]),...taskIssues.filter(code=>!NOTE.test(code)),...(c.collection?.status==='succeeded'?[]:c.collection?.reasons??[]),...(!ready||c.publication.outdated?c.publication.reasons:[])])].filter(s=>s!=='PREPARING');
+  const skipped=notes.filter(code=>!code.startsWith('UNSUPPORTED_SOURCE_FACTS:')).length,unsupported=notes.filter(code=>code.startsWith('UNSUPPORTED_SOURCE_FACTS:')).reduce((n,code)=>n+Number(code.split(':')[1]??0),0);
   const [open,setOpen]=useState(false);
   const map=ready?{status:'reviewed',text:'财务地图已显示'}:running||collecting?{status:'processing',text:'财务地图准备中'}:{status:'idle',text:'财务地图未就绪'};
   const remove=()=>{if(window.confirm(`移出 ${c.ticker}？`))onToggle();};
@@ -123,9 +133,10 @@ function Company({company:c,busy,onToggle,onPrepare,onJudge,onAi}:{company:Busin
           {c.publication.revenueCoverage?.length?<dl data-kind="periods">{c.publication.revenueCoverage.map(q=><div key={q.period} data-status={q.status}><dt>{q.period}</dt><dd>{coverage(q)}</dd></div>)}</dl>:<p className="bm-empty">无</p>}</article>
         <article className="bm-card"><h4><ScanLine size={14}/>采集</h4>
           {running&&c.task&&<Meter label={stages[c.task.stage]??c.task.stage} completed={c.task.progress.completed} total={c.task.progress.total}/>}
-          {!!c.collection?.total&&<Meter label="最新财报扫描" completed={c.collection.completed} total={c.collection.total}/>}
+          {!!c.collection?.total&&<Meter label="最新财报扫描" completed={c.collection.completed} total={c.collection.total} done={c.collection.status==='succeeded'}/>}
           {c.history&&<Meter label="历史披露扫描" completed={c.history.completed} total={c.history.total}/>}
-          {!running&&!c.collection?.total&&!c.history&&<p className="bm-empty">无采集记录</p>}</article>
+          {!running&&!c.collection?.total&&!c.history&&<p className="bm-empty">无采集记录</p>}
+          {(skipped>0||unsupported>0)&&<p className="bm-empty">{[skipped?`${skipped} 份文件无可提取的季度`:'',unsupported?`${unsupported} 项事实格式未读取`:''].filter(Boolean).join(' · ')}</p>}</article>
         <article className="bm-card"><h4><Scale size={14}/>税前至净利润</h4>
           {c.presentation?.source?<>
             <span className="ra-badge" data-status={c.presentation.source==='degraded'?'caution':'reviewed'}>{presentationSource[c.presentation.source]}</span>
@@ -133,7 +144,7 @@ function Company({company:c,busy,onToggle,onPrepare,onJudge,onAi}:{company:Busin
             {c.presentation.basisChanges.length>0&&<p>重述行（不比较环比）：{c.presentation.basisChanges.map(k=>lineName[k]??k).join('、')}</p>}
             {c.presentation.profile&&<p>模型判定：{c.presentation.profile.status==='verified'?'已核验':'未通过'} · {c.presentation.profile.attempts} 次{c.presentation.profile.issues.length>0&&<small>{c.presentation.profile.issues.slice(0,3).join('；')}</small>}</p>}
             {(c.presentation.source==='degraded'||c.presentation.profile)&&<button className="fm-button" disabled={busy} onClick={onJudge}>重新判定</button>}
-          </>:<p className="bm-empty">无</p>}</article>
+          </>:<p className="bm-empty">{c.presentation&&['financial','insurance'].includes(c.presentation.model??'')?'金融/保险报表 · 税前 − 所得税 = 净利润':c.presentation?.model?'直接读取 · 税前 − 所得税 = 净利润':'无'}</p>}</article>
         <article className="bm-card" data-tone={issues.length?'caution':'ok'}><h4>{issues.length?<AlertTriangle size={14}/>:<CheckCircle2 size={14}/>}问题{issues.length?` · ${issues.length}`:''}</h4>
           {issues.length?<ul>{issues.map(code=><li key={code}>{issueText(code)}{errors[code]&&<small>{code}</small>}</li>)}</ul>:<p className="bm-empty">无</p>}</article>
       </div>

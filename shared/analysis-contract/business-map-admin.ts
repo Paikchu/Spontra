@@ -13,6 +13,8 @@ export type BusinessMapCompany = FinancialMaintenanceCompany & {
    * for the issuer when neither the calculation nor the statement rows balanced.
    */
   presentation?: {
+    /** The newest quarter's income statement model; financial and insurance statements are read without this bridge. */
+    model?: "standard" | "direct_operating" | "financial" | "insurance" | "unknown" | null;
     source: "calculation" | "statement" | "profile" | "degraded" | null;
     afterTax: Array<{ name: string; value: string }>;
     basisChanges: string[];

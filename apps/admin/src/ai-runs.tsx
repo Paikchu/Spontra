@@ -75,11 +75,13 @@ export function AiRuns({ onUnauthorized, onAuthenticated, kinds, translations = 
     try { window.history.replaceState(null, "", `${window.location.pathname}?${new URLSearchParams(tabs.length > 1 ? { ticker, kind } : { ticker })}`); } catch { /* Sandboxed preview. */ }
   }, [ticker, kind, tabs.length]);
 
-  const companies = list?.companies.filter(c => c.ticker.toLowerCase().includes(search.toLowerCase())) ?? [];
+  // A page lists the companies at least one of its tasks runs for; a company switched off leaves the list.
+  const listed = list?.companies.filter(c => tabs.some(([k]) => k !== "translations" && (c.kinds as Partial<Record<string, { enabled?: boolean }>>)[k]?.enabled !== false)) ?? [];
+  const companies = listed.filter(c => c.ticker.toLowerCase().includes(search.toLowerCase()));
   return <div className="ra-workspace ai-workspace">
     <section className="ra-list" aria-label="公司">
       <div className="ra-filters"><label className="ra-search"><Search size={17} /><input aria-label="搜索公司" placeholder="代码" value={search} onChange={e => setSearch(e.target.value)} /></label></div>
-      <div className="ra-list-caption"><span>{list ? `${list.companies.length} 家公司` : "加载中"}</span><button aria-label="刷新" onClick={() => setRefresh(n => n + 1)}><RefreshCw size={14} /></button></div>
+      <div className="ra-list-caption"><span>{list ? `${listed.length} 家公司` : "加载中"}</span><button aria-label="刷新" onClick={() => setRefresh(n => n + 1)}><RefreshCw size={14} /></button></div>
       {listError && <p className="ra-error" role="alert">{listError}</p>}
       <div className="ra-list-scroll">{companies.map(c => <button key={c.ticker} className="ra-report-row" aria-pressed={ticker === c.ticker} onClick={() => setTicker(c.ticker)}>
         <CompanyLogo symbol={c.ticker} /><span className="ra-row-info"><strong>{c.ticker}</strong>{kindTabs.map(([k]) => { const run = c.kinds[k].latestRun, note = run && ACTIVE.has(run.status) ? "生成中" : run?.status === "failed" ? "上次生成失败" : c.kinds[k].current ? "" : "尚未生成"; return note && <small key={k} data-note={run?.status === "failed" || undefined}>{note}</small>; })}

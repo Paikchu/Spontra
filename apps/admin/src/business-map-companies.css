@@ -53,7 +53,7 @@
 .bm-card[data-tone=ok] h4 svg { color: var(--brand); }
 .bm-card dl { display: grid; gap: 6px; width: 100%; margin: 0; }
 .bm-card dl > div { display: flex; justify-content: space-between; gap: var(--space-3); font-size: 13px; }
-.bm-card dt { color: var(--ink-muted); font-size: 12.5px; }
+.bm-card dt { flex: none; color: var(--ink-muted); font-size: 12.5px; white-space: nowrap; }
 .bm-card dl[data-kind=periods] dt { font-family: var(--mono); font-size: 12px; }
 .bm-card dd { margin: 0; color: var(--ink-soft); text-align: right; }
 .bm-card dl > div[data-status=unverified] dd { color: var(--caution); }
@@ -68,6 +68,7 @@
 .bm-meter progress::-webkit-progress-bar { border-radius: 3px; background: var(--fill-strong); }
 .bm-meter progress::-webkit-progress-value { border-radius: 3px; background: var(--brand); }
 .bm-meter progress::-moz-progress-bar { border-radius: 3px; background: var(--brand); }
+.bm-meter[data-done] b { color: var(--ink-soft); font-family: var(--sans); font-weight: 500; }
 
 /* Row: the two states side by side, the AI switch, the delete at the end. */
 .bm-admin-states { display: flex; gap: 6px; }

@@ -143,3 +143,12 @@ test("a filing table is rendered with row indexes, and focus terms keep the matc
   assert.match(whole, /row 39: Line 39/);
   assert.ok(!/other rows/.test(whole));
 });
+
+test("a run in which no researched finding got an answer is a provider outage; one real answer is not", async () => {
+  const { providerOutage } = await import("../src/analyst/workflow.ts");
+  const outcome = (turns: Array<{ action: string; thought: string }>, document: unknown = null) => ({ status: "fulfilled" as const, value: { id: "f", tier: "standard" as const, lines: [], document: document as never, materials: [], warnings: [], review: [], turns: turns.map((t, i) => ({ turn: i + 1, input: "{}", observation: "", ...t })) } });
+  const silent = outcome([{ action: "invalid", thought: "" }, { action: "invalid", thought: "" }]);
+  assert.equal(providerOutage([silent, { status: "rejected", reason: new Error("HTTP 503") }]), true);
+  assert.equal(providerOutage([silent, outcome([{ action: "invalid", thought: "" }, { action: "compile", thought: "draft" }])]), false);
+  assert.equal(providerOutage([]), false);
+});

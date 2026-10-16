@@ -27,7 +27,10 @@ import { planFinding } from "./plan.ts";
 export const ANALYST_VERSION = "analyst.react.v4";
 export const dossierCacheKey = (ticker: string) => `dossier:v1:${ticker}`;
 export type AnalystWorkflowParams = { ticker: string; fingerprint: string };
-export type AnalystDeps = { model?: AnalystModel; fetcher?: typeof fetch };
+/** `sleep` waits durably (Workflow step.sleep); without it a run whose every model call failed ends empty at once. */
+export type AnalystDeps = { model?: AnalystModel; fetcher?: typeof fetch; sleep?: (name: string, ms: number) => Promise<void> };
+/** A model provider outage: no researched finding got an answer. The run waits and tries again, longer each time. */
+const OUTAGE_WAITS_MS = [30 * 60_000, 60 * 60_000, 2 * 60 * 60_000];
 /** Model turns per UTC day across all companies; a cap, not a target. */
 const DEFAULT_DAILY_TURNS = 300;
 /** A composing turn reasons at length and then writes a long document; the first runs lost documents mid-chart to a shorter budget. */
@@ -75,6 +78,17 @@ async function reserveTurn(env: SecPipelineEnv, now: string): Promise<boolean> {
   return !!row;
 }
 
+/**
+ * Whether a run met a model provider outage rather than a content problem: no researched finding got an answer. A
+ * finding is unanswered when it failed, or when every one of its turns came back without a word (an empty stream reads
+ * as an invalid turn with no thought). Decided from the settled outcomes, so a replayed instance decides the same way.
+ */
+export function providerOutage(researched: PromiseSettledResult<AnalystOutcome>[]): boolean {
+  const unanswered = (r: PromiseSettledResult<AnalystOutcome>) => r.status === "rejected"
+    || (!r.value.document && r.value.turns.length > 0 && r.value.turns.every(t => t.action === "invalid" && !t.thought));
+  return researched.length > 0 && researched.every(unanswered);
+}
+
 export async function executeAnalystWorkflow(params: AnalystWorkflowParams, step: WorkflowStepLike, env: SecPipelineEnv, deps: AnalystDeps = {}) {
   assertTrackedTicker(env, params.ticker);
   const fetcher = deps.fetcher ?? fetch;
@@ -99,11 +113,21 @@ export async function executeAnalystWorkflow(params: AnalystWorkflowParams, step
   const peerTickers = peersOf(data, params.ticker);
   const outcomes: AnalystOutcome[] = [];
   // Light findings keep their own document; the others are researched at once, each with its own step names.
-  const settled = await Promise.allSettled(verified.map(async f => {
-    const plan = planFinding(f, data, peerTickers);
-    if (plan.tier === "light") return { id: f.id, tier: plan.tier, lines: [], document: null, materials: [], turns: [], warnings: ["light tier: not researched"], review: [] } satisfies AnalystOutcome;
-    return runAnalyst({ env, ticker: params.ticker, finding: f, plan, data, catalogue, categories, documents: input.documents, record: input.findings.record ?? [], model, stage: (name, cb) => step.do(`analyst-${name}`, cb), reserveTurn: () => reserveTurn(env, now), now, background: background(f, previous, data, input.context) });
-  }));
+  // A run in which no researched finding got an answer met a provider outage, not a content problem: it waits and runs
+  // again (step names carry the attempt), so an outage does not leave the findings without a dossier until they change.
+  let settled: PromiseSettledResult<AnalystOutcome>[] = [];
+  for (let attempt = 0; ; attempt++) {
+    const prefix = attempt ? `r${attempt}-` : "";
+    settled = await Promise.allSettled(verified.map(async f => {
+      const plan = planFinding(f, data, peerTickers);
+      if (plan.tier === "light") return { id: f.id, tier: plan.tier, lines: [], document: null, materials: [], turns: [], warnings: ["light tier: not researched"], review: [] } satisfies AnalystOutcome;
+      return runAnalyst({ env, ticker: params.ticker, finding: f, plan, data, catalogue, categories, documents: input.documents, record: input.findings.record ?? [], model, stage: (name, cb) => step.do(`analyst-${prefix}${name}`, cb), reserveTurn: () => reserveTurn(env, now), now, background: background(f, previous, data, input.context) });
+    }));
+    const researched = settled.filter((_, k) => planFinding(verified[k]!, data, peerTickers).tier !== "light");
+    const outage = providerOutage(researched);
+    if (!outage || !deps.sleep || attempt >= OUTAGE_WAITS_MS.length) break;
+    await deps.sleep(`analyst-model-wait-${attempt + 1}`, OUTAGE_WAITS_MS[attempt]!);
+  }
   settled.forEach((s, i) => outcomes.push(s.status === "fulfilled" ? s.value : { id: verified[i]!.id, tier: "standard", lines: [], document: null, materials: [], turns: [], warnings: [`failed: ${s.reason instanceof Error ? s.reason.message : String(s.reason)}`], review: [] }));
   const documents: DossierPublication["documents"] = {};
   const materials = new Map<string, DossierPublication["materials"][number]>();

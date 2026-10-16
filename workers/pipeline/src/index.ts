@@ -128,7 +128,9 @@ export class AnalystWorkflow extends WorkflowEntrypoint<SecPipelineEnv, AnalystW
   async run(event: WorkflowEvent<AnalystWorkflowParams>, step: WorkflowStep) {
     const env = await companyPolicyEnvironment(this.env);
     const run = { env, kind: "analyst" as const, ticker: event.payload.ticker, runId: event.instanceId };
-    return trackRun(run, () => executeAnalystWorkflow(event.payload, trackSteps(durableSteps(step, env, event.instanceId), run), env));
+    // A provider outage makes the run wait (analyst/workflow.ts); a sleeping Workflow uses no CPU.
+    const sleep = trackSleep((name, ms) => step.sleep(name, Math.max(1000, Math.round(ms))), run);
+    return trackRun(run, () => executeAnalystWorkflow(event.payload, trackSteps(durableSteps(step, env, event.instanceId), run), env, { sleep }));
   }
 }
 
