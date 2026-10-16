@@ -3,9 +3,10 @@ import type { PublicBusinessFlow } from "@/shared/analysis-contract/business-flo
 import type { PublicCapitalStructure } from "@/shared/analysis-contract/capital-structure";
 import type { EventsPublication } from "@/shared/analysis-contract/events";
 import type { PublicFilingDigestPage } from "@/shared/analysis-contract/filings";
-import { MAP_RESOURCES, type MapResource, type MapRevisions } from "@/shared/analysis-contract/revisions";
+import type { MapResource, MapRevisions } from "@/shared/analysis-contract/revisions";
 import type { FindingFundamentals } from "@/shared/analysis-runtime/findings";
 import { fetchCompany, fetchFindings, fetchRevisions, fetchSupplement, publicationFlow, type CompanyPublication, type FindingsBundle } from "./company-data";
+import { nextPending, readRevisions, resourcesToRead } from "./revision-reads";
 
 /** Everything the company page draws from, as one value so a newer read can replace parts of it at once. */
 export type CompanyData = {
@@ -29,10 +30,6 @@ const CHECK_EVERY = 3 * 60_000;
 const MIN_GAP = 30_000;
 
 type Supplement = "capital" | "fundamentals" | "events" | "filings";
-
-/** Times that say when something was last looked at, not what it says; a change in them alone is not news. */
-const BOOKKEEPING = new Set(["checkedAt", "lastAttemptAt", "generatedAt"]);
-const comparable = (value: unknown) => JSON.stringify(value, (key, v: unknown) => BOOKKEEPING.has(key) ? undefined : v);
 
 /** The resource's part of the page's data, read at the given revision; null where the resource has nothing to show. */
 async function readResource(ticker: string, resource: MapResource, rev: string | undefined, signal: AbortSignal): Promise<Partial<CompanyData> | null> {
@@ -64,7 +61,8 @@ function newsOf(patch: Partial<CompanyData>, now: CompanyData): UpdateNews[] {
  * The company page's data, read at the revisions current when it opens, then kept watch over: while the page is visible
  * it asks for the revisions every few minutes and whenever the reader returns to it. A newer revision is read in the
  * background and offered as a pending update; the page changes only when the reader takes it. A revision whose read
- * shows nothing new is taken silently.
+ * shows nothing new, or fills a part the page has nothing for, is taken silently. Only a read that answered moves a
+ * resource's revision on, so a failed read is tried again at the next check.
  */
 export function useLiveCompany(ticker: string, onSeen: (ticker: string) => void) {
   const [data, setData] = useState<CompanyData>(EMPTY);
@@ -74,7 +72,7 @@ export function useLiveCompany(ticker: string, onSeen: (ticker: string) => void)
   const [dismissed, setDismissed] = useState<string | null>(null);
   /** How many updates the reader took, so lists can tell rows an update brought from rows that loaded late. */
   const [updates, setUpdates] = useState(0);
-  /** The revisions of what is on screen; null until the first read has started. */
+  /** The revisions of what is on screen, per resource that was read; null until the first read has started. */
   const shown = useRef<MapRevisions | null>(null);
   const current = useRef(data);
   const staged = useRef<PendingUpdate | null>(null);
@@ -87,18 +85,21 @@ export function useLiveCompany(ticker: string, onSeen: (ticker: string) => void)
       const revisions = await fetchRevisions(ticker, signal).catch(() => null);
       if (signal.aborted) return;
       // Without revisions the page still loads; the first check then reads everything and keeps what differs.
-      shown.current = revisions ?? {};
+      shown.current = {};
+      const seen = (resource: MapResource) => { const rev = revisions?.[resource]; if (rev) shown.current = { ...shown.current, [resource]: rev }; };
       fetchCompany(ticker, signal, revisions?.company)
         .then(publication => {
           if (signal.aborted) return;
           onSeen(ticker);
-          setData(d => ({ ...d, publication, flow: publicationFlow(publication, ticker) }));
+          const flow = publicationFlow(publication, ticker);
+          if (flow) seen("company");
+          setData(d => ({ ...d, publication, flow }));
         })
         .catch(() => { if (!signal.aborted) setFailed(true); });
       // Balance sheet, cash flow, findings and the SEC series they resolve against load on their own; the map is drawn without waiting for them.
       for (const resource of ["capital", "findings", "fundamentals", "events", "filings"] as const)
         readResource(ticker, resource, revisions?.[resource], signal)
-          .then(part => { if (!signal.aborted && part) setData(d => ({ ...d, ...part })); })
+          .then(part => { if (!signal.aborted && part) { seen(resource); setData(d => ({ ...d, ...part })); } })
           .catch(() => { /* Supplementary: the map stands on its own. */ });
     })();
     return () => controller.abort();
@@ -117,17 +118,15 @@ export function useLiveCompany(ticker: string, onSeen: (ticker: string) => void)
       try {
         const latest = await fetchRevisions(ticker, signal);
         if (!latest || signal.aborted) return;
-        const changed = MAP_RESOURCES.filter(r => latest[r] && latest[r] !== base[r]);
-        const key = JSON.stringify(latest);
-        if (!changed.length || (staged.current && JSON.stringify(staged.current.revisions) === key)) return;
-        const parts = await Promise.all(changed.map(r => readResource(ticker, r, latest[r], signal).catch(() => null)));
+        const resources = resourcesToRead(base, latest, staged.current?.revisions);
+        if (!resources.length) return;
+        const read = await readRevisions(resources, latest, current.current, (r, rev) => readResource(ticker, r, rev, signal));
         if (signal.aborted) return;
-        const now = current.current;
-        const patch: Partial<CompanyData> = {};
-        for (const part of parts) for (const [name, value] of Object.entries(part ?? {}) as Array<[keyof CompanyData, unknown]>)
-          if (name !== "flow" && comparable(value) !== comparable(now[name])) Object.assign(patch, part);
-        if (!Object.keys(patch).length) { shown.current = { ...base, ...latest }; return; }
-        setPending({ revisions: latest, patch, news: newsOf(patch, now) });
+        shown.current = { ...shown.current, ...read.same, ...read.filled.revisions };
+        if (Object.keys(read.filled.patch).length) setData(d => ({ ...d, ...read.filled.patch }));
+        const next = nextPending(staged.current, read);
+        if (JSON.stringify(next?.revisions ?? null) !== JSON.stringify(staged.current?.revisions ?? null))
+          setPending(next && { ...next, news: newsOf(next.patch, { ...current.current, ...read.filled.patch }) });
       } catch { /* The next check tries again. */ } finally { checking = false; }
     };
     const run = () => { void check(); };
