@@ -24,6 +24,7 @@ import type {LibraryTable,PublicPassage} from "@/shared/analysis-contract/filing
 import {formatFilingPeriodLabel} from "@/packages/web/src/model/filing-period-label";
 import {formatSecMetricLabel,formatSecMetricValue} from "@/packages/web/src/model/sec-metric-format";
 import {isLocale,type Locale} from "@/shared/analysis-runtime/locale";
+import {MAP_RESOURCES,REVISION,type MapRevisions} from "@/shared/analysis-contract/revisions";
 /** The analysis pipeline is reached over its Service Binding; the host is a label the binding ignores. */
 const ANALYSIS_ORIGIN="https://spontra-analysis.internal";
 /** A read in the reader's language: the pipeline applies its translations of the generated prose (docs/i18n-design.md). English needs no parameter. */
@@ -254,6 +255,19 @@ export async function loadFundamentals(ticker:string,fetcher:typeof fetch=fetch)
  }catch{return null;}
 }
 
+/** The company's publication revisions; only known resources at well-formed times pass through. */
+export async function loadRevisions(ticker:string,fetcher:typeof fetch=fetch):Promise<MapRevisions|null>{
+ try{
+  const response=await fetcher(ANALYSIS_ORIGIN+`/api/v1/companies/${ticker}/revisions`,{signal:AbortSignal.timeout(5000),headers:{accept:"application/json"}});
+  if(!response.ok)return null;
+  const body=await response.json() as {schemaVersion?:unknown;revisions?:unknown};
+  if(body.schemaVersion!=="revisions.v1"||!body.revisions||typeof body.revisions!=="object")return null;
+  const source=body.revisions as Record<string,unknown>,revisions:MapRevisions={};
+  for(const resource of MAP_RESOURCES){const value=source[resource];if(typeof value==="string"&&REVISION.test(value))revisions[resource]=value;}
+  return revisions;
+ }catch{return null;}
+}
+
 export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstream?:typeof fetch,cache?:Cache):Promise<Response>{
  const url=new URL(request.url);
  if(url.pathname.startsWith("/api/")){
@@ -269,11 +283,14 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
    if(tickers&&cache)ctx.waitUntil(cache.put(key,response.clone()));else response.headers.set("cache-control","no-store");
    return response;
   }
-  const match=url.pathname.match(/^\/api\/business\/v1\/companies\/([A-Z][A-Z0-9.-]{0,11})(\/capital|\/findings|\/fundamentals|\/events|\/filings|\/filings\/\d{10}-\d{2}-\d{6}|\/passages\/p[0-9a-f]{14,32})?$/);
+  const match=url.pathname.match(/^\/api\/business\/v1\/companies\/([A-Z][A-Z0-9.-]{0,11})(\/revision|\/capital|\/findings|\/fundamentals|\/events|\/filings|\/filings\/\d{10}-\d{2}-\d{6}|\/passages\/p[0-9a-f]{14,32})?$/);
   const detail=match?.[2]?.startsWith("/filings/")?match[2].slice("/filings/".length):null;
-  // The reader pins a report to its published revision; nothing else takes a query.
-  const allowed=detail?new Set(["reportDate","reportVersion","lang"]):new Set<string>(["lang"]);
+  // The reader pins a report to its published revision; a resource is asked for at its publication revision (`rev`), which
+  // only keys the cache: a newer revision is a new address, so no cached copy can answer it with older data.
+  const allowed=match?.[2]==="/revision"?new Set<string>():detail?new Set(["reportDate","reportVersion","lang"]):new Set<string>(["lang","rev"]);
   if(!match||[...url.searchParams.keys()].some(k=>!allowed.has(k)))return json({error:"Not found"},404);
+  const rev=url.searchParams.get("rev");
+  if(rev!=null&&!REVISION.test(rev))return json({error:"Not found"},404);
   // `?lang=zh-CN` reads the generated prose in Chinese where it has been translated; the cache keys on the full URL.
   const lang=url.searchParams.get("lang");
   if(lang!=null&&!isLocale(lang))return json({error:"Not found"},404);
@@ -282,6 +299,8 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
   match[1]=canonicalTicker(match[1]);
   if(request.method!=="GET")return json({error:"Method not allowed"},405);
   try{if(!env.PUBLIC_READ_LIMIT||!(await env.PUBLIC_READ_LIMIT.limit({key:request.headers.get("cf-connecting-ip")??"anonymous"})).success)return json({error:"Too many requests"},429);}catch{return json({error:"Read service unavailable"},503);}
+  // What changed since the page loaded: answered fresh every time, never from a cache.
+  if(match[2]==="/revision"){const revisions=await loadRevisions(match[1],fetcher);const response=json({schemaVersion:"revisions.v1",ticker:match[1],revisions:revisions??{}},revisions?200:503);response.headers.set("cache-control","no-store");return response;}
   const key=new Request(url.href,{method:"GET"});const cached=await cache?.match(key);if(cached)return cached;
   if(match[2]){
    // Supplementary resources answer on their own and are cached only when they have something to say.

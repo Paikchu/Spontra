@@ -8,23 +8,41 @@ import type { PublicCapitalStructure } from "@/shared/analysis-contract/capital-
 import type { FindingPassage, FindingsPublication } from "@/shared/analysis-contract/findings";
 import type { PeersPublication } from "@/shared/analysis-contract/peers";
 import type { FindingFundamentals } from "@/shared/analysis-runtime/findings";
+import type { MapRevisions } from "@/shared/analysis-contract/revisions";
 import { getLocale } from "@/packages/web/src/i18n";
 import { findingData, verifiedFindings, type VerifiedFinding } from "./findings-model";
 
 export type CompanyPublication = CompleteFlowPublication & { explainer?: BusinessExplainer | null; guidance?: GuidancePublication | null; tree?: BusinessTree | null };
 
-/** In Chinese the API serves the generated prose translated where the pipeline has translated it; the rest stays English. */
-const companyPath = (ticker: string, resource = "") => `/api/business/v1/companies/${encodeURIComponent(ticker)}${resource}${getLocale() === "en" ? "" : `?lang=${getLocale()}`}`;
+/**
+ * In Chinese the API serves the generated prose translated where the pipeline has translated it; the rest stays English.
+ * `rev` asks for the resource at its publication revision, so no cache answers with a copy older than it.
+ */
+const companyPath = (ticker: string, resource = "", rev?: string) => {
+  const query = new URLSearchParams();
+  if (getLocale() !== "en") query.set("lang", getLocale());
+  if (rev) query.set("rev", rev);
+  const search = query.toString();
+  return `/api/business/v1/companies/${encodeURIComponent(ticker)}${resource}${search ? `?${search}` : ""}`;
+};
 
-export async function fetchCompany(ticker: string, signal: AbortSignal): Promise<CompanyPublication> {
-  const response = await fetch(companyPath(ticker), { signal });
+/** The revision of each resource the page reads; null when the answer is unavailable. */
+export async function fetchRevisions(ticker: string, signal: AbortSignal): Promise<MapRevisions | null> {
+  const response = await fetch(`/api/business/v1/companies/${encodeURIComponent(ticker)}/revision`, { signal, cache: "no-store" });
+  if (!response.ok) return null;
+  const body = await response.json() as { revisions?: MapRevisions };
+  return body.revisions && typeof body.revisions === "object" ? body.revisions : null;
+}
+
+export async function fetchCompany(ticker: string, signal: AbortSignal, rev?: string): Promise<CompanyPublication> {
+  const response = await fetch(companyPath(ticker, "", rev), { signal });
   if (!response.ok) throw new Error("unavailable");
   return await response.json() as CompanyPublication;
 }
 
 /** A supplementary resource answers on its own; anything but "ready" reads as null. */
-export async function fetchSupplement<T>(ticker: string, resource: "capital" | "findings" | "fundamentals" | "events" | "filings", signal: AbortSignal): Promise<T | null> {
-  const response = await fetch(companyPath(ticker, "/" + resource), { signal });
+export async function fetchSupplement<T>(ticker: string, resource: "capital" | "findings" | "fundamentals" | "events" | "filings", signal: AbortSignal, rev?: string): Promise<T | null> {
+  const response = await fetch(companyPath(ticker, "/" + resource, rev), { signal });
   if (!response.ok) return null;
   const body = await response.json() as { status?: string } & Record<string, unknown>;
   return body.status === "ready" ? body[resource] as T : null;
@@ -32,8 +50,8 @@ export async function fetchSupplement<T>(ticker: string, resource: "capital" | "
 
 /** The findings with the passages their quotes rest on and the peers projection, as the site serves them together. */
 export type FindingsBundle = { findings: FindingsPublication; passages: FindingPassage[]; peers: PeersPublication | null };
-export async function fetchFindings(ticker: string, signal: AbortSignal): Promise<FindingsBundle | null> {
-  const response = await fetch(companyPath(ticker, "/findings"), { signal });
+export async function fetchFindings(ticker: string, signal: AbortSignal, rev?: string): Promise<FindingsBundle | null> {
+  const response = await fetch(companyPath(ticker, "/findings", rev), { signal });
   if (!response.ok) return null;
   const body = await response.json() as { status?: string; findings?: FindingsPublication | null; passages?: FindingPassage[]; peers?: PeersPublication | null };
   return body.status === "ready" && body.findings ? { findings: body.findings, passages: body.passages ?? [], peers: body.peers ?? null } : null;

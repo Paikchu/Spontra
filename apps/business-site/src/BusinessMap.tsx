@@ -233,7 +233,7 @@ function Sources({ sources, ids }: { sources: FlowSource[]; ids?: string[] }) {
   return <ul className="sources">{list.map(s => <li key={s.id}><a href={s.url} target="_blank" rel="noopener noreferrer">{s.title}<span aria-hidden="true"> ↗</span></a></li>)}</ul>;
 }
 
-export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, explainer = null, tree = null, guidance = null, capital = null, findings = null, peers = null, passages = null, fundamentals = null, events = null, filings = null }: { ticker: string; tools: ReactNode; flow: PublicBusinessFlow; notice: string | null; revenueHistory: RevenueHistory | null; explainer?: BusinessExplainer | null; tree?: BusinessTree | null; guidance?: GuidancePublication | null; capital?: PublicCapitalStructure | null; findings?: FindingsPublication | null; peers?: PeersPublication | null; passages?: FindingPassage[] | null; fundamentals?: FindingFundamentals | null; events?: EventsPublication | null; filings?: PublicFilingDigestPage | null }) {
+export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, explainer = null, tree = null, guidance = null, capital = null, findings = null, peers = null, passages = null, fundamentals = null, events = null, filings = null, updates = 0 }: { ticker: string; tools: ReactNode; flow: PublicBusinessFlow; notice: string | null; revenueHistory: RevenueHistory | null; explainer?: BusinessExplainer | null; tree?: BusinessTree | null; guidance?: GuidancePublication | null; capital?: PublicCapitalStructure | null; findings?: FindingsPublication | null; peers?: PeersPublication | null; passages?: FindingPassage[] | null; fundamentals?: FindingFundamentals | null; events?: EventsPublication | null; filings?: PublicFilingDigestPage | null; /** Updates the reader took; rows they brought enter animated. */ updates?: number }) {
   const quarters = useMemo(() => [...flow.quarters].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd)), [flow]);
   const [period, setPeriod] = useState<string | null>(null);
   const quarter = quarters.find(q => q.id === period) ?? quarters[0];
@@ -498,8 +498,8 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
           })}
         </div>
       </RailSection>
-      {showFindings && <FindingsList findings={verified} verdicts={verdicts} focus={focused?.id ?? null} story={story} periodEnd={findings.periodEnd} {...sectionFocus("findings")} onFocus={focusFinding} onStory={() => { if (story) { setStory(false); setFocusId(null); } else { setStory(true); setEventId(null); setFocusId(focused?.id ?? verified[0].id); } }} />}
-      {rail && <EventsList rail={rail} focus={focusedReport?.accessionNumber ?? focusedEvent?.id ?? null} pendingInsider={events?.pendingInsider ?? 0} {...sectionFocus("events")} onFocus={focusItem} />}
+      {showFindings && <FindingsList findings={verified} updates={updates} verdicts={verdicts} focus={focused?.id ?? null} story={story} periodEnd={findings.periodEnd} {...sectionFocus("findings")} onFocus={focusFinding} onStory={() => { if (story) { setStory(false); setFocusId(null); } else { setStory(true); setEventId(null); setFocusId(focused?.id ?? verified[0].id); } }} />}
+      {rail && <EventsList rail={rail} updates={updates} focus={focusedReport?.accessionNumber ?? focusedEvent?.id ?? null} pendingInsider={events?.pendingInsider ?? 0} {...sectionFocus("events")} onFocus={focusItem} />}
       {!!quarter?.revenueAdjustments?.length&&<p className="revenue-reconciliation">{m.reconciliation(quarter.currency)}<br/>{m.segmentTotal} {formatFlowValue(segmentRevenue,quarter)}<br/>{quarter.revenueAdjustments.map(a=><span key={a.id}>{a.name} {formatFlowValue(numeric(a.amount),quarter)}<br/></span>)}{m.consolidated} {formatFlowValue(revenue,quarter)}</p>}
     </Rail>
 

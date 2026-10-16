@@ -6,6 +6,7 @@ import type { SecPipelineEnv } from "../operations.ts";
 import { logStatements } from "./log.ts";
 import type { EventMessage, TaskMessage } from "./messages.ts";
 import { SUBSCRIPTIONS, TASKS, type TaskName, type TaskScope } from "./registry.ts";
+import { revisionStatements } from "./revisions.ts";
 
 /** The companies a task covers, for a version change that re-runs it everywhere. */
 export async function scopeTickers(env: SecPipelineEnv, scope: TaskScope): Promise<string[]> {
@@ -48,7 +49,8 @@ export const delaySeconds = (dueAt: string, now: number) => Math.min(86_400, Mat
 
 /**
  * Turns a batch of events into one pending run per company and task: records each in `pipeline_due`, then sends
- * one delayed task message per run. Events for the same company and task inside the batch collapse into one.
+ * one delayed task message per run. Events for the same company and task inside the batch collapse into one. The
+ * map's publication revisions move in the same batches.
  * Throws when anything fails, so the queue redelivers the whole batch; re-recording a due run is harmless.
  */
 export async function routeEvents(env: SecPipelineEnv, events: EventMessage[], now = Date.now()): Promise<{ events: number; runs: number }> {
@@ -77,6 +79,8 @@ export async function routeEvents(env: SecPipelineEnv, events: EventMessage[], n
       messages.push({ v: 1, kind: "task", id: crypto.randomUUID(), causeId: target.causeId, task: target.task, ticker: target.ticker, dueAt });
     }
   }
+  // The map's revisions move with the events that publish into it, so a reader learns of newer data without polling a table.
+  statements.push(...revisionStatements(db, events));
   for (const event of events) {
     statements.push(...logStatements(db, { messageId: event.id, causeId: event.causeId, kind: "event", name: event.type, ticker: event.ticker,
       outcome: `routed:${fanout.get(event.id) ?? 0}`, detail: event.task ? { task: event.task, ...event.detail } : event.detail ?? undefined }, at));
