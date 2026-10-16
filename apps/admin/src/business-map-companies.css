@@ -68,6 +68,7 @@
 .bm-meter progress::-webkit-progress-bar { border-radius: 3px; background: var(--fill-strong); }
 .bm-meter progress::-webkit-progress-value { border-radius: 3px; background: var(--brand); }
 .bm-meter progress::-moz-progress-bar { border-radius: 3px; background: var(--brand); }
+.bm-meter[data-done] b { color: var(--ink-soft); font-family: var(--sans); font-weight: 500; }
 
 /* Row: the two states side by side, the AI switch, the delete at the end. */
 .bm-admin-states { display: flex; gap: 6px; }

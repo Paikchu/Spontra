@@ -24,6 +24,17 @@ test("the admin's AI switch overrides SEC_AI_TICKERS per company, removals inclu
 });
 
 test("switching a company on starts its SEC reports and business explanations, and the event graph stays acyclic", () => {
-  assert.deepEqual(SUBSCRIPTIONS["ai.enabled"]?.map(s => s.task), ["sec-report", "explainer"]);
+  assert.deepEqual(SUBSCRIPTIONS["ai.enabled"]?.map(s => s.task), ["sec-report", "explainer", "tree"]);
   assert.deepEqual(validateRegistry(), []);
+});
+
+test("company names drop their listing's share-class wording", async () => {
+  const { companyName } = await import("../src/catalog/security-directory.ts");
+  assert.equal(companyName("GOOGL"), "Alphabet Inc.");
+  assert.equal(companyName("NET"), "Cloudflare, Inc.");
+  assert.equal(companyName("BRK.B"), "Berkshire Hathaway Inc.");
+  assert.equal(companyName("JPM"), "JP Morgan Chase & Co.");
+  assert.equal(companyName("ORCL"), "Oracle Corporation");
+  assert.equal(companyName("TSM"), "Taiwan Semiconductor Manufacturing Company Ltd.");
+  assert.equal(companyName("ZZZZZZ"), null);
 });

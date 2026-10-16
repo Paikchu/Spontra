@@ -171,7 +171,7 @@
 @container (max-width: 640px) {
   .fl-header { flex-direction: column; gap: var(--space-2); }
   .fl-views button small { display: none; }
-  .fl-columns { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 34%) minmax(0, 1fr); gap: var(--space-3); }
+  .fl-columns { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 45%) minmax(0, 1fr); gap: var(--space-3); }
   .fl-outline { padding-right: 0; border-right: 0; border-bottom: 1px solid var(--line); }
 }
 @media (max-width: 1180px) { .fl-cols { grid-template-columns: 188px 240px minmax(0, 1fr); } .fl-content { padding: var(--space-4) var(--space-4) 0; } }

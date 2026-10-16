@@ -25,7 +25,7 @@ export function TranslationsPanel({ ticker, onUnauthorized }: { ticker: string; 
       .catch(e => { if (c.signal.aborted) return; if (e instanceof AdminApiError && e.status === 401) unauthorized.current(); else setError((e as Error).message); });
     return () => c.abort();
   }, [ticker, refresh]);
-  useEffect(() => { const timer = setInterval(() => { if (!document.hidden) setRefresh(n => n + 1); }, data?.run ? 10000 : 30000); return () => clearInterval(timer); }, [data?.run]);
+  useEffect(() => { const timer = setInterval(() => { if (!document.hidden) setRefresh(n => n + 1); }, data?.run ? 10000 : 300000); return () => clearInterval(timer); }, [data?.run]);
   const entries = useMemo(() => (data?.entries ?? []).filter(e => (filter === "all" || e.status === filter) && (!resource || `${e.resource}:${e.scope}` === resource)
     && (!search || e.source.toLowerCase().includes(search.toLowerCase()) || (e.text ?? "").includes(search))), [data, filter, resource, search]);
 

@@ -28,6 +28,8 @@ export type AiVersionSummary = { items: number; sources: number; periodEnd: stri
 export type AiVersion = { id: string; savedAt: string; summary: AiVersionSummary; current: boolean };
 
 export type AiKindState = {
+  /** The company is in this task's list (the admin's AI switch, or the mind-map list for `tree`). */
+  enabled: boolean;
   /** Configuration that stops a manual run from starting; null when it can run. */
   blocked: string | null;
   /** The sweep starts runs on its own only when this is true. */

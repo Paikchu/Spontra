@@ -136,8 +136,8 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
   "events.published": [{ task: "translate" }],
   "presentation.unresolved": [{ task: "presentation" }],
   // A company switched on in the admin starts its AI work: the SEC reports (whose publications lead to guidance, the
-  // company analysis, findings and the analyst) and the business explanations.
-  "ai.enabled": [{ task: "sec-report" }, { task: "explainer" }],
+  // company analysis, findings and the analyst), the business explanations and the mind map.
+  "ai.enabled": [{ task: "sec-report" }, { task: "explainer" }, { task: "tree" }],
 };
 
 /** Emitters that are not tasks. `task.version_changed` is routed to the one task it names, never subscribed. */

@@ -1,3 +1,4 @@
+import { companyName } from "../catalog/security-directory.ts";
 import type { FinancialMaintenanceCompany, FinancialMaintenanceCompanyDetail, FinancialMaintenanceCompanyList, FinancialMaintenanceMetric, FinancialMaintenancePeriod } from "../../../../shared/analysis-contract/financial-maintenance.ts";
 import { FLOW_METRICS, type BusinessFlowQuarter } from "../../../../shared/analysis-contract/business-flow.ts";
 import { aiIsEnabled } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
@@ -75,7 +76,7 @@ async function financialCompanyRows(env: SecPipelineEnv, selectedTicker?: string
     const periods = [publication.latestPeriodEnd, row.statementPeriodEnd].filter((value): value is string => value !== null).sort();
     const updates = [publication.lastUpdatedAt, row.statementUpdatedAt].filter((value): value is string => value !== null)
       .sort((a, b) => Date.parse(a) - Date.parse(b));
-    return { ticker: row.ticker, name: row.name, cik: row.cik, latestPeriodEnd: periods.at(-1) ?? null,
+    return { ticker: row.ticker, name: companyName(row.ticker) ?? row.name, cik: row.cik, latestPeriodEnd: periods.at(-1) ?? null,
       lastUpdatedAt: updates.at(-1) ?? null, tracked: tracked.includes(row.ticker), dataEnabled: row.settingEnabled === null ? dataEnabled.includes(row.ticker) : row.settingEnabled === 1 };
   });
 }
