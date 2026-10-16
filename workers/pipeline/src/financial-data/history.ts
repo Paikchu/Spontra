@@ -22,9 +22,9 @@ export type HistoryStepResult = {ticker: string; documents: number; finished: bo
 const REVENUE_TAGS = new Set(['RevenueFromContractWithCustomerExcludingAssessedTax', 'Revenues', 'SalesRevenueNet', 'RevenuesNetOfInterestExpense', 'Revenue', 'RevenueFromContractsWithCustomers']);
 const local = (tag: string) => tag.split(':').at(-1)!;
 const span = (f: {start: string; end: string}) => (Date.parse(f.end) - Date.parse(f.start)) / 86400000;
-/** Dimensions as compared across filings: a filing that tags a segment with the operating-segments consolidation item
- * names the same amount as one that does not. */
-const dimensionKey = (dimensions: Record<string, string>) => JSON.stringify(Object.entries(dimensions).filter(([axis, member]) => !(local(axis) === 'ConsolidationItemsAxis' && local(member) === 'OperatingSegmentsMember')).sort());
+/** Dimensions compared exactly: an operating-segments total (ConsolidationItemsAxis = OperatingSegmentsMember) is not the
+ * consolidated amount (BRK.B nine months 2025: 274,998 against 277,212 USD millions), so no axis is dropped. */
+const dimensionKey = (dimensions: Record<string, string>) => JSON.stringify(Object.entries(dimensions).sort());
 const factKey = (f: Fact) => [f.tag, f.currency, dimensionKey(f.dimensions)].join('|');
 const near = (a: number, b: number, tolerance = 1) => Math.abs(a - b) <= tolerance;
 const nextDay = (date: string) => new Date(Date.parse(date) + 86400000).toISOString().slice(0, 10);
@@ -47,23 +47,41 @@ export function historyForIssuer(raw: unknown, cik: string, ticker: string): Rev
   return {...parsed.data, ticker};
 }
 
+type SubmissionColumns = {form: string[]; accessionNumber: string[]; primaryDocument: string[]; filingDate: string[]; reportDate: string[]; items?: string[]};
+/** At most this many older EDGAR submission pages are read per listing: an issuer that files thousands of prospectuses
+ * a year (JPM: ~2,000 a month) pushes its periodic reports out of the `recent` block within a year. */
+const MAX_SUBMISSION_PAGES = 48;
+
 async function listDocuments(cik: string, reader: SecReader, now: Date): Promise<{documents: HistoryDocument[]; industry: DocumentSource['industry']}> {
-  const data = await (await reader.read(`https://data.sec.gov/submissions/CIK${cik}.json`)).json() as {cik: string | number; sic?: string; filings?: {recent?: {form: string[]; accessionNumber: string[]; primaryDocument: string[]; filingDate: string[]; reportDate: string[]; items?: string[]}}};
+  const data = await (await reader.read(`https://data.sec.gov/submissions/CIK${cik}.json`)).json() as {cik: string | number; sic?: string; filings?: {recent?: SubmissionColumns; files?: Array<{name?: string; filingFrom?: string; filingTo?: string}>}};
   if (String(data.cik).padStart(10, '0') !== cik) throw new Error('Issuer identity mismatch');
   const recent = data.filings?.recent;
   if (!recent) throw new Error('Missing submissions');
   const sic = Number(data.sic), industry = sic >= 6300 && sic < 6500 ? 'insurance' : sic >= 6000 && sic < 6300 ? 'financial' : 'standard';
   // 6-Ks are listed by date alone: most are notices, which the scan passes over without counting (reportsFinancials).
   const cutoff = now.getTime() - LOOKBACK_DAYS * 86400000, documents: HistoryDocument[] = [];
-  let counted = 0;
-  for (let i = 0; i < recent.form.length && counted < MAX_DOCUMENTS && documents.length < MAX_LISTED; i++) {
-    const form = recent.form[i];
-    if (!/^(?:10-[QK]|20-F|6-K)(?:\/A)?$/.test(form) && !(form === '8-K' && recent.items?.[i]?.includes('2.02'))) continue;
-    if (Date.parse(recent.filingDate[i]) < cutoff) break;
-    const accession = recent.accessionNumber[i], primary = recent.primaryDocument[i];
-    if (!/^\d{10}-\d{2}-\d{6}$/.test(accession) || !/^[A-Za-z0-9_.-]+\.html?$/.test(primary)) continue;
-    documents.push({url: `https://www.sec.gov/Archives/edgar/data/${Number(cik)}/${accession.replaceAll('-', '')}/${primary}`, accession, filedAt: recent.filingDate[i], periodEnd: recent.reportDate[i], form});
-    if (!/^6-K/.test(form)) counted++;
+  let counted = 0, reachedCutoff = false;
+  const full = () => counted >= MAX_DOCUMENTS || documents.length >= MAX_LISTED;
+  const scan = (block: SubmissionColumns) => {
+    for (let i = 0; i < block.form.length && !full(); i++) {
+      if (Date.parse(block.filingDate[i]) < cutoff) { reachedCutoff = true; return; }
+      const form = block.form[i];
+      if (!/^(?:10-[QK]|20-F|6-K)(?:\/A)?$/.test(form) && !(form === '8-K' && block.items?.[i]?.includes('2.02'))) continue;
+      const accession = block.accessionNumber[i], primary = block.primaryDocument[i];
+      if (!/^\d{10}-\d{2}-\d{6}$/.test(accession) || !/^[A-Za-z0-9_.-]+\.html?$/.test(primary)) continue;
+      documents.push({url: `https://www.sec.gov/Archives/edgar/data/${Number(cik)}/${accession.replaceAll('-', '')}/${primary}`, accession, filedAt: block.filingDate[i], periodEnd: block.reportDate[i], form});
+      if (!/^6-K/.test(form)) counted++;
+    }
+  };
+  scan(recent);
+  // The lookback reaches past `recent`: continue through the older pages EDGAR lists, newest first, until the cutoff.
+  const pages = (data.filings?.files ?? []).filter(page => new RegExp(`^CIK${cik}-submissions-\\d{3}\\.json$`).test(page.name ?? '') && Date.parse(page.filingTo ?? '') >= cutoff)
+    .sort((a, b) => (b.filingTo ?? '').localeCompare(a.filingTo ?? '')).slice(0, MAX_SUBMISSION_PAGES);
+  for (const page of pages) {
+    if (reachedCutoff || full()) break;
+    const block = await (await reader.read(`https://data.sec.gov/submissions/${page.name}`)).json() as SubmissionColumns;
+    if (!Array.isArray(block.form)) throw new Error('Missing submissions');
+    scan(block);
   }
   return {documents, industry};
 }
@@ -103,8 +121,9 @@ export function deriveFourthQuarters(facts: Fact[], cik: string, history: Revenu
   const annuals = facts.filter(f => span(f) >= 330 && span(f) <= 380);
   const nineMonths = (f: Fact, annual: Fact) => f.start === annual.start && factKey(f) === factKey(annual) && span(f) >= 230 && span(f) <= 310 && span({start: f.end, end: annual.end}) >= 70 && span({start: f.end, end: annual.end}) <= 110;
   const single = (candidates: Fact[]) => new Set(candidates.map(f => f.value)).size === 1 ? candidates[0] : undefined;
-  // A filing whose amounts another filing reports differently for the same concept, dimensions and period was recast.
-  const consistent = (accession: string) => facts.filter(f => f.source.accession === accession).every(f => facts.every(g => factKey(g) !== factKey(f) || g.start !== f.start || g.end !== f.end || near(g.value, f.value)));
+  // A line was recast when another filing reports it (same concept and dimensions) differently for a period this filing
+  // also reports. Only the bridged line counts: a prior year's regrouped sub-line elsewhere in the filing does not change it.
+  const consistent = (line: Fact) => facts.filter(f => f.source.accession === line.source.accession && factKey(f) === factKey(line)).every(f => facts.every(g => g.source.accession === f.source.accession || factKey(g) !== factKey(f) || g.start !== f.start || g.end !== f.end || near(g.value, f.value)));
   for (const end of new Set(annuals.map(f => f.end))) {
     const derived: Fact[] = [];
     for (const annual of annuals.filter(f => f.end === end)) {
@@ -114,7 +133,7 @@ export function deriveFourthQuarters(facts: Fact[], cik: string, history: Revenu
         const candidate = single(facts.filter(f => f.source.accession !== annual.source.accession && f.source.filedAt <= annual.source.filedAt && nineMonths(f, annual)));
         const chain = candidate && firstThreeQuarters(history, candidate.start, candidate.end);
         const amounts = chain?.map(q => historyAmount(q, candidate!.tag, candidate!.dimensions));
-        if (candidate && amounts?.every(a => a !== undefined) && near(amounts.reduce((sum, a) => sum + a!, 0), candidate.value, Math.max(1, 10 ** -candidate.precision)) && consistent(annual.source.accession) && consistent(candidate.source.accession)) {
+        if (candidate && amounts?.every(a => a !== undefined) && near(amounts.reduce((sum, a) => sum + a!, 0), candidate.value, Math.max(1, 10 ** -candidate.precision)) && consistent(annual) && consistent(candidate)) {
           prior = candidate;
           bridge = `same fiscal year, currency, concept and dimensions across the annual report and the third-quarter report (${candidate.source.accession}), whose nine months equal the three quarters already reported`;
         }

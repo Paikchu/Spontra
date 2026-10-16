@@ -79,3 +79,18 @@ test("the cross-filing bridge is refused unless it is shown to hold", () => {
   // A 10-Q filed after the 10-K is not the third-quarter report the year was closed against.
   assert.deepEqual(deriveFourthQuarters([annual, { ...nine, source: { ...tenQ, filedAt: "2026-03-03" } }], BRK, history), []);
 });
+
+test("an operating-segments total beside the consolidated total, or a recast of another line, leaves the bridge standing", () => {
+  // BRK.B tags the segments' sum with ConsolidationItemsAxis = OperatingSegmentsMember; it is a different amount.
+  const segments = { "srt:ConsolidationItemsAxis": "us-gaap:OperatingSegmentsMember" };
+  const segmentYear = { ...fact(tenK, "2025-01-01", "2025-12-31", millions(368_372), "FY2025-segments"), dimensions: segments };
+  const segmentNine = { ...fact(tenQ, "2025-01-01", "2025-09-30", millions(274_998), "9M2025-segments"), dimensions: segments };
+  // A prior year's product grouping regrouped in a later filing is another line.
+  const product = { "srt:ProductOrServiceAxis": "brka:InsuranceAndOtherMember" };
+  const regrouped = [
+    { ...fact(tenQ, "2024-01-01", "2024-09-30", millions(239_104), "9M2024-product"), dimensions: product },
+    { ...fact(filing("0000950170-24-120241", "2024-11-04"), "2024-01-01", "2024-09-30", millions(203_004), "9M2024-product-old"), dimensions: product },
+  ];
+  const quarters = deriveFourthQuarters([annual, nine, segmentYear, segmentNine, ...regrouped], BRK, history);
+  assert.deepEqual(quarters.map(q => [q.periodEnd, Number(q.revenue)]), [["2025-12-31", millions(94_232)]]);
+});
