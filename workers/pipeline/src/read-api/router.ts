@@ -17,6 +17,8 @@ import { dataResponse, errorResponse } from "./http.ts";
 import { localize, type TranslatedResource } from "../../../../shared/analysis-runtime/translation.ts";
 import { isLocale, type Locale } from "../../../../shared/analysis-runtime/locale.ts";
 import { readTranslationTable } from "../translation/translate.ts";
+import { readRevisions } from "../pipeline/revisions.ts";
+import type { RevisionsResponse } from "../../../../shared/analysis-contract/revisions.ts";
 
 /**
  * The analysis backend's read surface, served only to the business map over the `MapReads`
@@ -49,6 +51,7 @@ type RouteMatch =
   | { kind: "events"; ticker: string }
   | { kind: "passage"; ticker: string; passageId: string }
   | { kind: "fundamentals"; ticker: string }
+  | { kind: "revisions"; ticker: string }
   | { kind: "findings-index" };
 
 
@@ -100,6 +103,11 @@ async function handleRoute(request: Request, database: D1Database, route: Exclud
   const translated = async <T>(resource: TranslatedResource, value: T, scope = ""): Promise<T> =>
     locale && value ? localize(resource, value, await readTranslationTable(database, locale, resource, route.ticker.trim().toUpperCase(), scope)) : value;
   switch (route.kind) {
+    // What changed since a reader loaded: one indexed read, never cached, so the answer is as current as the events routed.
+    case "revisions": {
+      const ticker = route.ticker.trim().toUpperCase();
+      return dataResponse(request, { schemaVersion: "revisions.v1", ticker, revisions: await readRevisions(database, ticker) } satisfies RevisionsResponse, "no-store");
+    }
     case "filings": {
       const page = await getPublicFilingPage(
         new D1SecRepository(database),
@@ -175,7 +183,7 @@ async function handleRoute(request: Request, database: D1Database, route: Exclud
 
 function matchRoute(pathname: string): RouteMatch | null {
   if (/^\/api\/v1\/findings\/?$/.test(pathname)) return { kind: "findings-index" };
-  const company = /^\/api\/v1\/companies\/([^/]+)\/(filings|fundamentals|business-flow|capital|business-explainer|business-tree|guidance|findings|events|passages)(?:\/([^/]+))?\/?$/.exec(pathname);
+  const company = /^\/api\/v1\/companies\/([^/]+)\/(filings|fundamentals|business-flow|capital|business-explainer|business-tree|guidance|findings|events|passages|revisions)(?:\/([^/]+))?\/?$/.exec(pathname);
   if (!company) return null;
   const ticker = safeDecode(company[1]!);
   const resource = company[2]!;
@@ -199,6 +207,7 @@ function matchRoute(pathname: string): RouteMatch | null {
   if (resource === "guidance") return { kind: "guidance", ticker };
   if (resource === "findings") return { kind: "findings", ticker };
   if (resource === "events") return { kind: "events", ticker };
+  if (resource === "revisions") return { kind: "revisions", ticker };
   return { kind: "fundamentals", ticker };
 }
 

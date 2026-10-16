@@ -2,19 +2,14 @@ import { SidebarProvider } from "@/packages/web/src/ui/sidebar";
 import { Fragment, StrictMode, useCallback, useEffect, useState, Component, type ReactNode } from "react";
 import { messages, useLocale } from "@/packages/web/src/i18n";
 import { createRoot } from "react-dom/client";
-import type { PublicBusinessFlow } from "@/shared/analysis-contract/business-flow";
-import type { PublicCapitalStructure } from "@/shared/analysis-contract/capital-structure";
-import type { FindingsPublication } from "@/shared/analysis-contract/findings";
-import type { EventsPublication } from "@/shared/analysis-contract/events";
-import type { PublicFilingDigestPage } from "@/shared/analysis-contract/filings";
-import type { FindingFundamentals } from "@/shared/analysis-runtime/findings";
 import { canonicalTicker } from "@/shared/analysis-runtime/financial-data/policy";
 import "@/packages/web/src/business-flow/business-flow.css";
 import "./style.css";
 import { BusinessMap } from "./BusinessMap";
 import { Rail, RailActions } from "./Sidebar";
 import { SearchDialog } from "./SearchDialog";
-import { fetchCompany, fetchFindings, fetchSupplement, publicationFlow, type CompanyPublication, type FindingsBundle } from "./company-data";
+import { useLiveCompany } from "./live-company";
+import { UpdateNotice } from "./UpdateNotice";
 import { Home } from "./Home";
 
 const m = messages({
@@ -87,43 +82,8 @@ function StateShell({ ticker, tools, role, children }: { ticker: string; tools: 
   );
 }
 function Company({ ticker, tools, onSeen }: { ticker: string; tools: ReactNode; onSeen: (ticker: string) => void }) {
-  const [flow, setFlow] = useState<PublicBusinessFlow | null>(null),
-    [publication, setPublication] = useState<CompanyPublication | null>(null),
-    [failed, setFailed] = useState(false),
-    [capital, setCapital] = useState<PublicCapitalStructure | null>(null),
-    [findings, setFindings] = useState<FindingsBundle | null>(null),
-    [events, setEvents] = useState<EventsPublication | null>(null),
-    [filings, setFilings] = useState<PublicFilingDigestPage | null>(null),
-    [fundamentals, setFundamentals] = useState<FindingFundamentals | null>(null),
-    [retry, setRetry] = useState(0);
-  useEffect(() => {
-    const controller = new AbortController();
-    fetchCompany(ticker, controller.signal)
-      .then((data) => {
-        if (controller.signal.aborted) return;
-        onSeen(ticker);
-        setPublication(data);
-        setFlow(publicationFlow(data, ticker));
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) setFailed(true);
-      });
-    return () => controller.abort();
-  }, [ticker, retry, onSeen]);
-  // Balance sheet, cash flow, findings and the SEC series they resolve against load on their own; the map is drawn without waiting for them.
-  useEffect(() => {
-    const controller = new AbortController();
-    const load = <T,>(resource: "capital" | "findings" | "fundamentals" | "events" | "filings", set: (value: T | null) => void) =>
-      fetchSupplement<T>(ticker, resource, controller.signal)
-        .then(value => { if (!controller.signal.aborted && value) set(value); })
-        .catch(() => { /* Supplementary: the map stands on its own. */ });
-    void load<PublicCapitalStructure>("capital", setCapital);
-    fetchFindings(ticker, controller.signal).then(bundle => { if (!controller.signal.aborted && bundle) setFindings(bundle); }).catch(() => { /* Supplementary. */ });
-    void load<FindingFundamentals>("fundamentals", setFundamentals);
-    void load<EventsPublication>("events", setEvents);
-    void load<PublicFilingDigestPage>("filings", setFilings);
-    return () => controller.abort();
-  }, [ticker, retry]);
+  const { data, updates, failed, retry, update, apply, dismiss } = useLiveCompany(ticker, onSeen);
+  const { flow, publication, capital, findings, fundamentals, events, filings } = data;
   if (flow)
     return (
       <ChartBoundary ticker={ticker} tools={tools}>
@@ -141,20 +101,16 @@ function Company({ ticker, tools, onSeen }: { ticker: string; tools: ReactNode; 
           events={events}
           filings={filings}
           notice={publication?.outdated ? m.lastSnapshot : null}
+          updates={updates}
         />
+        <UpdateNotice update={update} onApply={apply} onDismiss={dismiss} />
       </ChartBoundary>
     );
   if (failed)
     return (
       <StateShell ticker={ticker} tools={tools} role="alert">
         <h2>{m.loadFailed}</h2>
-        <button
-          type="button"
-          onClick={() => {
-            setFailed(false);
-            setRetry((n) => n + 1);
-          }}
-        >
+        <button type="button" onClick={retry}>
           {m.retry}
         </button>
       </StateShell>

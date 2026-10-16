@@ -171,6 +171,13 @@ D1 表 `pipeline_due(cik, task, due_at, first_requested_at, cause_id)`，主键 
 | `pipeline_dead` | 死信，供后台查看和重放 | 重放成功或手动关闭时删除 |
 | `pipeline_log` | 因果链：消息 ID、`cause_id`、类型、CIK、结果 | 每次写入时顺带删除同一 CIK 30 天前的记录 |
 | `pipeline_versions` | 各任务版本号的哈希 | 单行，覆盖写 |
+| `publication_revisions` | 地图各资源（company、capital、findings、fundamentals、events、filings）按公司的版本号：最近一次发布事件的时间 | 每公司每资源一行，覆盖写 |
+
+### 前台自动刷新（2026-10-16）
+
+`routeEvents` 在路由事件的同一批写入里，按 `pipeline/revisions.ts` 的 `REVISES` 表把发布事件映射到地图资源，并把对应版本号推进到事件时间（取较大值，重投不回退；`peers.published` 记在 `*` 下，对所有公司生效）。读 API `/api/v1/companies/:ticker/revisions` 不缓存；地图 Worker 以 `/api/business/v1/companies/:ticker/revision` 转出。
+
+公司页打开时先取版本号，各资源请求带 `?rev=`，所以边缘与浏览器缓存不会拿旧副本应答新版本。页面可见时每 3 分钟、回到标签页时（至少间隔 30 秒）比较一次版本号；有变化就在后台读取变化的资源。内容与当前一致（只差 `checkedAt` 之类）时静默采用；有差异时显示更新提示，用户点“更新”后才替换，新增的要点和事件行从上方插入、带一次高亮，原有行平滑下移。前台轮询的是浏览器，不是 Cron。
 
 所有消息带 `id` 和 `cause_id`，链路可追溯到最初的 `filing.discovered`：`filing.discovered → financials.published → map.derived → findings`。后台 AI 任务页可以直接显示“由哪份申报触发”。
 

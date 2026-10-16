@@ -52,6 +52,9 @@ function browser(search: string) {
   g.getComputedStyle = () => ({ getPropertyValue: () => "" });
   g.document ??= { documentElement: { lang: "zh-CN", style: {}, classList: { contains: () => false } }, querySelector: () => null, querySelectorAll: () => [] };
   g.window ??= globalThis;
+  // Motion's layout rows listen for window resizes as they mount.
+  g.addEventListener ??= () => {};
+  g.removeEventListener ??= () => {};
 }
 
 const VOID = new Set(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"]);
