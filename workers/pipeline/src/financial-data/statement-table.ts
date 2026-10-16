@@ -4,7 +4,10 @@ const clean = (value:string) => value.replace(/<[^>]*>/g,' ').replace(/&#(?:x([\
 const months:Record<string,number>={january:1,february:2,march:3,april:4,may:5,june:6,july:7,august:8,september:9,october:10,november:11,december:12};
 const labels:Record<string,string>={
   revenues:'Revenues','total revenues':'Revenues','revenue':'Revenues','net revenue':'Revenues','net revenues':'Revenues',
-  'cost of revenue':'CostOfRevenue','gross profit':'GrossProfit','total operating expenses':'OperatingExpenses',
+  'total revenue':'Revenues','total net revenue':'Revenues','total net revenues':'Revenues','net sales':'Revenues','total net sales':'Revenues',
+  'cost of revenue':'CostOfRevenue','cost of revenues':'CostOfRevenue','total cost of revenue':'CostOfRevenue','total cost of revenues':'CostOfRevenue',
+  'cost of sales':'CostOfRevenue','total cost of sales':'CostOfRevenue',
+  'gross profit':'GrossProfit','gross margin':'GrossProfit','total operating expenses':'OperatingExpenses',
   'research and development':'ResearchAndDevelopmentExpense','general and administrative':'GeneralAndAdministrativeExpense','marketing':'SellingAndMarketingExpense',
   'total operating costs and expenses':'CostsAndExpenses',
   'total costs and expenses':'CostsAndExpenses',
@@ -19,19 +22,25 @@ const labels:Record<string,string>={
   'net income / (loss) from continuing operations':'IncomeLossFromContinuingOperations',
   'net income (loss) from continuing operations':'IncomeLossFromContinuingOperations',
   'net income / (loss)':'NetIncomeLoss','net income (loss)':'NetIncomeLoss','net income':'NetIncomeLoss','net loss':'NetIncomeLoss',
+  'net income and comprehensive income':'NetIncomeLoss','net loss and comprehensive loss':'NetIncomeLoss',
 };
+/** A label's concept, also when it prints its alternative in parentheses: "Operating income (loss)",
+ * "Provision for (benefit from) income taxes" read as "operating income", "provision for income taxes". */
+const conceptOf=(label:string)=>{const key=label.toLowerCase();return labels[key]??labels[key.replace(/\s*\((?:loss|income|benefit(?:\s+from)?|expense|provision(?:\s+for)?|gain|profit)\)\s*/g,' ').replace(/\s+/g,' ').trim()];};
 /** A row's printed label without its footnote or note references: "NET REVENUE (Notes 20, 31 and 37)" → "NET REVENUE". */
-const rowLabel=(row:Cell[])=>(row.find(c=>c.text)?.text??'').replace(/\s*\((?:Notes?\s[^)]*|\d+)\)\s*$/i,'').trim();
+const rowLabel=(row:Cell[])=>(row.find(c=>c.text)?.text??'').replace(/(?:\s*\((?:Notes?\s[^)]*|\d+|[a-z])\))+\s*$/i,'').replace(/\s*:$/,'').trim();
 /** ISO codes for the currencies a statement title names; a title naming any other currency is not read. */
 const currencies:Array<[RegExp,string]>=[[/^new\s+taiwan\s+dollars?$/i,'TWD'],[/^(?:u\.?s\.?\s+)?dollars?$/i,'USD'],[/^hong\s+kong\s+dollars?$/i,'HKD'],[/^canadian\s+dollars?$/i,'CAD'],[/^australian\s+dollars?$/i,'AUD'],[/^singapore\s+dollars?$/i,'SGD'],[/^(?:japanese\s+)?yen$/i,'JPY'],[/^(?:korean\s+)?won$/i,'KRW'],[/^euros?$/i,'EUR'],[/^(?:renminbi|chinese\s+yuan|yuan)$/i,'CNY'],[/^(?:pounds?\s+sterling|british\s+pounds?)$/i,'GBP'],[/^swiss\s+francs?$/i,'CHF'],[/^(?:indian\s+)?rupees?$/i,'INR']];
 /** Scale and currency from the statement title: "(In Thousands of New Taiwan Dollars, …)" → thousands of TWD.
- * A title without a named currency is USD only under the "$ in millions" convention; anything unrecognised is null, never USD. */
-function statementUnit(preceding:string):{scale:number;currency:string}|null {
+ * A title without a named currency is USD only under the "$ in millions" convention, or when the table's own amounts
+ * are printed with a bare "$" ("(in millions, except per share data)"); anything unrecognised is null, never USD. */
+function statementUnit(preceding:string,table:string):{scale:number;currency:string}|null {
   const scaleOf=(word:string)=>word.toLowerCase()==='millions'?1e6:1e3;
   const named=preceding.match(/\bin\s+(millions|thousands)\s+of\s+((?:[A-Za-z.]+\s+){0,2}(?:dollars?|yen|won|euros?|renminbi|yuan|pounds?(?:\s+sterling)?|francs?|rupees?|reais|real|pesos?|rand|kronor|kroner|krona|rupiah|baht|ringgit|shekels?|lira|zloty|forint))\b/i);
   if(named){const code=currencies.find(([pattern])=>pattern.test(named[2].trim()))?.[1];return code?{scale:scaleOf(named[1]),currency:code}:null;}
-  const scaleMatch=preceding.match(/(?:in|\$\s*in)\s+(millions|thousands)\s+(?:of\s+(?:U\.?S\.?\s+)?dollars)?/i);
-  return scaleMatch&&/(?:U\.?S\.?\s+dollars|USD|\$)/i.test(preceding)?{scale:scaleOf(scaleMatch[1]),currency:'USD'}:null;
+  const scaleMatch=preceding.match(/\bin\s+(millions|thousands)\b(?:\s+of\s+(?:U\.?S\.?\s+)?dollars)?/i);
+  const dollarCells=[...table.matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi)].some(cell=>/^\$(?:\s*[\d(].*)?$/.test(clean(cell[1])));
+  return scaleMatch&&(/(?:U\.?S\.?\s+dollars|USD|\$)/i.test(preceding)||dollarCells)?{scale:scaleOf(scaleMatch[1]),currency:'USD'}:null;
 }
 type Cell={text:string;column:number;span:number};
 function rows(table:string):Cell[][] {
@@ -42,22 +51,44 @@ function rows(table:string):Cell[][] {
     });
   });
 }
+/** A row holding an amount (not a year) ends the header block. */
+const amountRow=(row:Cell[])=>row.some(c=>!/^(?:19|20)\d{2}$/.test(c.text)&&/^\(?[+-]?\d[\d,]*(?:\.\d+)?\)?$/.test(c.text.replace(/[$\s]/g,'')));
+const isoDay=(t:number)=>new Date(t).toISOString().slice(0,10);
+/** The period each column reports, read from all header cells that cover it, so a duration, a date and a year
+ * printed in separate rows or cells ("Three Months Ended" / "July 26," / "2026") read as one header.
+ * A table that prints any date other than a month end keeps a 52/53-week calendar: each of its periods runs
+ * 13 weeks per quarter back from its end, even one that happens to end on a month end. */
 function periodColumns(headers:Cell[][]) {
+ const width=Math.max(0,...headers.flatMap(row=>row.map(c=>c.column+c.span)));
+ // A printed header reaches to the next printed header in its row: filings often draw a group heading
+ // ("Three Months Ended March 31,") narrower than the year columns beneath it.
+ const reach=headers.map(row=>{const printed=row.filter(c=>c.text);return printed.map((c,i)=>({text:c.text,from:c.column,to:Math.max(c.column+c.span,printed[i+1]?.column??width)}));});
+ const read:Array<{column:number;months:number;weeks:number;year:number;month:number;day:number;monthEnd:boolean}>=[];
+ for(let column=0;column<width;column++){
+  const text=reach.map(row=>row.find(c=>c.from<=column&&column<c.to)?.text??'').filter(Boolean).join(' ');
+  if(/%|\bchange\b|constant\s+currency|non-gaap|as\s+adjusted/i.test(text))continue;
+  const kind=text.match(/\b(three|six|nine|twelve)\s+months?\b|\b(quarter)s?\s+ended\b|\b(13|26|39|52|53)\s+weeks?\b|\b(?:fiscal\s+)?(year)\s+ended\b/i);
+  const dates=[...text.matchAll(/\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2}),?\s+(20\d{2})\b/gi)];
+  if(!kind||dates.length!==1)continue;
+  const months3=kind[1]?{three:3,six:6,nine:9,twelve:12}[kind[1].toLowerCase()]!:kind[2]?3:kind[3]?Math.round(Number(kind[3])/13)*3:12;
+  const [,name,dayText,yearText]=dates[0],month=months[name.toLowerCase()],day=Number(dayText),year=Number(yearText);
+  const lastDay=new Date(Date.UTC(year,month,0)).getUTCDate();
+  if(day<1||day>lastDay)continue;
+  read.push({column,months:months3,weeks:kind[3]?Number(kind[3]):months3/3*13,year,month,day,monthEnd:day===lastDay});
+ }
+ const weekly=read.some(r=>!r.monthEnd);
  const periods=new Map<number,{start:string;end:string}>();
-    for(const row of headers) for(const group of row) {
-      const date=group.text.match(/^(?:For\s+the\s+)?(Three|Six|Nine)\s+months\s+ended\s+(\w+)\s+(\d{1,2}),?$/i);
-      if(!date)continue;
-      const month=months[date[2].toLowerCase()],day=Number(date[3]),duration={three:3,six:6,nine:9}[date[1].toLowerCase()]!;
-      if(!month)continue;
-      for(const yearRow of headers) for(const cell of yearRow) {
-        if(cell.column<group.column||cell.column>=group.column+group.span||!/^20\d{2}$/.test(cell.text))continue;
-        const year=Number(cell.text);
-        if(new Date(Date.UTC(year,month,0)).getUTCDate()!==day)continue;
-        periods.set(cell.column,{start:new Date(Date.UTC(year,month-duration,1)).toISOString().slice(0,10),end:new Date(Date.UTC(year,month-1,day)).toISOString().slice(0,10)});
-      }
-    }
+ for(const r of read){
+  const end=Date.UTC(r.year,r.month-1,r.day);
+  periods.set(r.column,{start:weekly?isoDay(end-(r.weeks*7-1)*86400000):isoDay(Date.UTC(r.year,r.month-r.months,1)),end:isoDay(end)});
+ }
  return periods;
 }
+/** The first amount a row prints under one period, wherever the header's span puts it. */
+function amountAt(row:Cell[],periods:Map<number,{start:string;end:string}>,period:{start:string;end:string}):Cell|undefined {
+ return row.find(c=>{const p=periods.get(c.column);return p?.start===period.start&&p.end===period.end&&/^\(?[+-]?\d+(?:\.\d+)?\)?$/.test(c.text.replace(/[$,\s]/g,''));});
+}
+const uniquePeriods=(periods:Map<number,{start:string;end:string}>)=>[...new Map([...periods.values()].map(p=>[p.start+'|'+p.end,p])).values()];
 function cellValue(cell:Cell,row:Cell[],scale:number):number|null {
  const raw=cell.text.replace(/[$,\s]/g,'');
  if(!/^\(?[+-]?\d+(?:\.\d+)?\)?$/.test(raw))return null;
@@ -75,10 +106,11 @@ function segmentFacts(html:string,source:DocumentSource,statement:Fact[],scale:n
   const total=grid.findIndex(row=>/^total revenues?$/i.test(label(row)));
   if(begin<0||subtotal<=begin||total<=subtotal)continue;
   const periods=periodColumns(grid.slice(0,begin));
-  for(const [column,period] of periods){
+  for(const period of uniquePeriods(periods)){
    const reference=statement.find(f=>f.tag==='table:Revenues'&&f.start===period.start&&f.end===period.end);
    if(!reference)continue;
-   const at=(row:Cell[])=>{const cell=row.find(c=>c.column===column);return cell?cellValue(cell,row,scale):null;};
+   const column=[...periods].find(([,p])=>p.start===period.start&&p.end===period.end)![0];
+   const at=(row:Cell[])=>{const cell=amountAt(row,periods,period);return cell?cellValue(cell,row,scale):null;};
    const businesses=grid.slice(begin+1,subtotal).map((row,i)=>({row,index:begin+1+i,name:label(row),value:at(row)})).filter(r=>r.name);
    const adjustments=grid.slice(subtotal+1,total).map((row,i)=>({row,index:subtotal+1+i,name:label(row),value:at(row)})).filter(r=>r.name);
    const sum=at(grid[subtotal]),consolidated=at(grid[total]);
@@ -133,35 +165,46 @@ function creditLines(facts:Fact[],lineRows:number[]):Set<number> {
 /** Non-XBRL SEC statements: bind amounts to explicit header columns, never flattened
  * numeric positions (which can mistake note numbers for amounts). No company-specific rules.
  * Full statements of operations, income or comprehensive income qualify, in the currency and scale their title names
- * (a title naming no currency is read as USD only under the "$ in millions" convention), with dated 3M/6M/9M columns. */
+ * (a title naming no currency is USD under the "$ in millions" convention or when its amounts print a bare "$"),
+ * with dated three-, six-, nine- or twelve-month (or "quarter ended") columns; year-to-date columns are not read. */
 export function readStatementTableFacts(html:string,source:DocumentSource):Fact[] {
   const output:Fact[]=[];
-  for(const [tableIndex,match] of [...html.matchAll(/<table\b[^>]*>[\s\S]*?<\/table>/gi)].entries()) {
-    const preceding=clean(html.slice(Math.max(0,match.index!-2500),match.index));
-    if(!/consolidated\s+statements?\s+of\s+(?:comprehensive\s+)?(?:operations|income|loss|profit\s+or\s+loss)/i.test(preceding)||/non-gaap/i.test(preceding.slice(-500)))continue;
-    const unit=statementUnit(preceding);if(!unit)continue;
-    const {scale,currency}=unit;
+  const tables=[...html.matchAll(/<table\b[^>]*>[\s\S]*?<\/table>/gi)];
+  let boundary=0;
+  for(const [tableIndex,match] of tables.entries()) {
     const grid=rows(match[0]);
-    const printed=grid.map(rowLabel),tags=printed.map(label=>labels[label.toLowerCase()]);
-    const firstData=tags.indexOf('Revenues');
-    if(firstData<0)continue;
+    const firstAmount=grid.findIndex(amountRow);
+    // The title is read from the text after the last table of amounts (a title set in its own table still counts)
+    // and from the statement's own header rows.
+    const preceding=clean(html.slice(Math.max(boundary,match.index!-2500),match.index))+' '+grid.slice(0,firstAmount<0?0:firstAmount).flat().map(c=>c.text).join(' ');
+    if(firstAmount>=0)boundary=match.index!+match[0].length;
+    if(firstAmount<0)continue;
+    const title=[...preceding.matchAll(/consolidated\s+statements?\s+of\s+(?:comprehensive\s+)?(?:operations|income|loss|earnings|profit\s+or\s+loss)|\bincome\s+statements?\b/gi)].at(-1);
+    if(!title)continue;
+    // Only the statement's own heading decides non-GAAP: a release's GAAP statement often follows a paragraph about non-GAAP measures.
+    const heading=preceding.slice(0,title.index).split(/[.:;]\s/).at(-1)+preceding.slice(title.index);
+    if(/non-gaap/i.test(heading))continue;
+    const unit=statementUnit(heading,match[0]);if(!unit)continue;
+    const {scale,currency}=unit;
+    const printed=grid.map(rowLabel),tags=printed.map(conceptOf);
+    if(!tags.includes('Revenues'))continue;
     const operatingAt=tags.indexOf('OperatingIncomeLoss'),openAt=operatingAt<0?-1:tags.slice(0,operatingAt).findLastIndex(tag=>tag==='GrossProfit'||tag==='CostOfRevenue');
     const lineRows:number[]=[];
     if(openAt>=0)for(let i=openAt+1;i<operatingAt;i++){
       if(!tags[i]&&printed[i]&&!/^total\b/i.test(printed[i]))tags[i]=lineTag(printed[i]);
       if(tags[i]&&!OPERATING_TOTALS.has(tags[i]))lineRows.push(i);
     }
-    const periods=periodColumns(grid.slice(0,firstData));
+    const periods=periodColumns(grid.slice(0,firstAmount));
     const facts:Fact[]=[];
     for(const [rowIndex,row] of grid.entries()) {
       const tag=tags[rowIndex];if(!tag)continue;
       // An all-capitals heading reads in sentence case; the words are the statement's own.
       const label=printed[rowIndex]===printed[rowIndex].toUpperCase()?printed[rowIndex][0]+printed[rowIndex].slice(1).toLowerCase():printed[rowIndex];
-      for(const cell of row) {
-        const period=periods.get(cell.column);if(!period)continue;
+      // One amount per period: the first a row prints under that period's header span.
+      // A dash or blank remains unknown; it is never silently converted to zero.
+      for(const period of uniquePeriods(periods)) {
+        const cell=amountAt(row,periods,period);if(!cell)continue;
         const raw=cell.text.replace(/[$,\s]/g,'');
-        // A dash or blank remains unknown; it is never silently converted to zero.
-        if(!/^\(?[+-]?\d+(?:\.\d+)?\)?$/.test(raw))continue;
         const next=row.find(c=>c.column===cell.column+cell.span);
         const value=Number(raw.replace(/[()]/g,''))*scale*(raw.startsWith('(')||next?.text===')'?-1:1);
         facts.push({source,tag:`table:${tag}`,value,currency,...period,context:`table-${tableIndex}:row-${rowIndex}:column-${cell.column}`,dimensions:{},precision:(raw.split('.')[1]?.replace(/\)/g,'').length??0)-Math.log10(scale),statementRow:{order:rowIndex,label,flip:false}});
