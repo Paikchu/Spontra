@@ -22,7 +22,11 @@ export type HistoryStepResult = {ticker: string; documents: number; finished: bo
 const REVENUE_TAGS = new Set(['RevenueFromContractWithCustomerExcludingAssessedTax', 'Revenues', 'SalesRevenueNet', 'RevenuesNetOfInterestExpense', 'Revenue', 'RevenueFromContractsWithCustomers']);
 const local = (tag: string) => tag.split(':').at(-1)!;
 const span = (f: {start: string; end: string}) => (Date.parse(f.end) - Date.parse(f.start)) / 86400000;
-const factKey = (f: Fact) => [f.tag, f.currency, JSON.stringify(Object.entries(f.dimensions).sort())].join('|');
+/** Dimensions as compared across filings: a filing that tags a segment with the operating-segments consolidation item
+ * names the same amount as one that does not. */
+const dimensionKey = (dimensions: Record<string, string>) => JSON.stringify(Object.entries(dimensions).filter(([axis, member]) => !(local(axis) === 'ConsolidationItemsAxis' && local(member) === 'OperatingSegmentsMember')).sort());
+const factKey = (f: Fact) => [f.tag, f.currency, dimensionKey(f.dimensions)].join('|');
+const near = (a: number, b: number, tolerance = 1) => Math.abs(a - b) <= tolerance;
 const nextDay = (date: string) => new Date(Date.parse(date) + 86400000).toISOString().slice(0, 10);
 const validCik = (cik: string) => /^\d{10}$/.test(cik) && Number(cik) > 0;
 
@@ -64,18 +68,58 @@ async function listDocuments(cik: string, reader: SecReader, now: Date): Promise
   return {documents, industry};
 }
 
-/** Fourth quarter = same-concept/dimension FY minus 9M only within one filing presentation.
- * Cross-filing subtraction requires a separate verified bridge; identical tags alone do not prove
- * comparability after a recast. Direct disclosed Q4 columns take priority over this fallback. */
-export function deriveFourthQuarters(facts: Fact[], cik: string): RevenueHistoryQuarter[] {
+/** The amount the history holds for one concept and dimensions in one quarter: the revenue total, a segment or a
+ * child whose every lineage entry names that concept and those dimensions. */
+function historyAmount(quarter: RevenueHistoryQuarter, tag: string, dimensions: Fact['dimensions']): number | undefined {
+  const key = dimensionKey(dimensions);
+  const nodes = [{value: quarter.revenue, lineage: quarter.lineage}, ...quarter.segments.flatMap(s => [s, ...(s.children ?? [])])];
+  const match = nodes.find(node => node.lineage?.length && node.lineage.every(l => l.concept === tag && dimensionKey(l.dimensions) === key));
+  return match ? Number(match.value) : undefined;
+}
+
+/** The three quarters the history holds from `start` through `end`, back to back, or undefined. */
+function firstThreeQuarters(history: RevenueHistoryQuarter[], start: string, end: string): RevenueHistoryQuarter[] | undefined {
+  const chain: RevenueHistoryQuarter[] = [];
+  for (let from = start; chain.length < 3;) {
+    const next = history.find(q => q.periodStart === from && span({start: q.periodStart, end: q.periodEnd}) >= 80 && span({start: q.periodStart, end: q.periodEnd}) <= 100);
+    if (!next) return undefined;
+    chain.push(next); from = nextDay(next.periodEnd);
+  }
+  return chain[2].periodEnd === end ? chain : undefined;
+}
+
+/**
+ * Fourth quarter = same-concept/dimension FY minus 9M. Within one filing presentation the subtraction stands as printed.
+ * Across filings (a 10-K never prints the nine months; the same fiscal year's 10-Q does), the bridge must be shown to hold:
+ * - the 10-Q's nine months and the 10-K's year share concept, currency and dimensions, and come from filings without a
+ *   restatement flag (only those reach `facts`);
+ * - every filing that reports either period, or any period the 10-K or 10-Q also report, reports the same amount, so
+ *   neither presentation was recast after the other;
+ * - the nine months equal the sum of the first three quarters already in the history, same concept and dimensions.
+ * Identical tags alone do not prove comparability. Direct disclosed Q4 columns take priority over this fallback.
+ */
+export function deriveFourthQuarters(facts: Fact[], cik: string, history: RevenueHistoryQuarter[] = []): RevenueHistoryQuarter[] {
   const quarters: RevenueHistoryQuarter[] = [];
   const annuals = facts.filter(f => span(f) >= 330 && span(f) <= 380);
+  const nineMonths = (f: Fact, annual: Fact) => f.start === annual.start && factKey(f) === factKey(annual) && span(f) >= 230 && span(f) <= 310 && span({start: f.end, end: annual.end}) >= 70 && span({start: f.end, end: annual.end}) <= 110;
+  const single = (candidates: Fact[]) => new Set(candidates.map(f => f.value)).size === 1 ? candidates[0] : undefined;
+  // A filing whose amounts another filing reports differently for the same concept, dimensions and period was recast.
+  const consistent = (accession: string) => facts.filter(f => f.source.accession === accession).every(f => facts.every(g => factKey(g) !== factKey(f) || g.start !== f.start || g.end !== f.end || near(g.value, f.value)));
   for (const end of new Set(annuals.map(f => f.end))) {
     const derived: Fact[] = [];
     for (const annual of annuals.filter(f => f.end === end)) {
-      const candidates = facts.filter(f => f.source.accession === annual.source.accession && f.start === annual.start && factKey(f) === factKey(annual) && span(f) >= 230 && span(f) <= 310 && span({start: f.end, end: annual.end}) >= 70 && span({start: f.end, end: annual.end}) <= 110);
-      const prior = new Set(candidates.map(f => f.value)).size === 1 ? candidates[0] : undefined;
-      if (prior) derived.push({...annual, start: nextDay(prior.end), context: `derived:${annual.context}-${prior.context}`, value: annual.value - prior.value, precision: Math.min(annual.precision, prior.precision), operands: [annual, prior], formula: `Fourth quarter ${annual.value - prior.value} = full fiscal year ${annual.value} − first nine months ${prior.value}, same fiscal year, currency, concept and dimensions`});
+      let prior = single(facts.filter(f => f.source.accession === annual.source.accession && nineMonths(f, annual)));
+      let bridge = 'same fiscal year, currency, concept and dimensions';
+      if (!prior) {
+        const candidate = single(facts.filter(f => f.source.accession !== annual.source.accession && f.source.filedAt <= annual.source.filedAt && nineMonths(f, annual)));
+        const chain = candidate && firstThreeQuarters(history, candidate.start, candidate.end);
+        const amounts = chain?.map(q => historyAmount(q, candidate!.tag, candidate!.dimensions));
+        if (candidate && amounts?.every(a => a !== undefined) && near(amounts.reduce((sum, a) => sum + a!, 0), candidate.value, Math.max(1, 10 ** -candidate.precision)) && consistent(annual.source.accession) && consistent(candidate.source.accession)) {
+          prior = candidate;
+          bridge = `same fiscal year, currency, concept and dimensions across the annual report and the third-quarter report (${candidate.source.accession}), whose nine months equal the three quarters already reported`;
+        }
+      }
+      if (prior) derived.push({...annual, start: nextDay(prior.end), context: `derived:${annual.context}-${prior.context}`, value: annual.value - prior.value, precision: Math.min(annual.precision, prior.precision), operands: [annual, prior], formula: `Fourth quarter ${annual.value - prior.value} = full fiscal year ${annual.value} − first nine months ${prior.value}, ${bridge}`});
     }
     if (!derived.length) continue;
     const source = derived[0].source;
@@ -155,8 +199,9 @@ export async function runHistoryStep(db: D1Database, reader: SecReader, target: 
     }
   }
   const finished = cursor.index >= cursor.documents.length || (cursor.reports ?? 0) >= MAX_DOCUMENTS;
-  if (finished && !cursor.finishedAt) { incoming.push(...deriveFourthQuarters(cursor.facts, target.cik)); cursor.finishedAt = now.toISOString(); cursor.facts = []; }
   const existing = historyForIssuer((await repository.getCache<unknown>(historyKey(target.cik)))?.payload, target.cik, target.ticker);
+  // The cross-filing fourth-quarter bridge checks each nine months against the three quarters the history already holds.
+  if (finished && !cursor.finishedAt) { incoming.push(...deriveFourthQuarters(cursor.facts, target.cik, mergeHistory(target.ticker, existing?.quarters ?? [], incoming, now.toISOString()).quarters)); cursor.finishedAt = now.toISOString(); cursor.facts = []; }
   const obtainedData = incoming.some(validHistoryQuarter);
   const history = mergeHistory(target.ticker, existing?.quarters ?? [], incoming, obtainedData ? now.toISOString() : existing?.updatedAt ?? now.toISOString());
   // Retry progress belongs to the cursor. A failed/empty step must not date old data as new.

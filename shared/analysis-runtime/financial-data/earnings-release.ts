@@ -51,12 +51,18 @@ function grid(table: string): Cell[][] {
   });
 }
 
+/** A quarter code ("3Q26", "Q2 FY27") as a running quarter number, fiscal year × 4 + quarter; consecutive quarters differ by one. */
+export function quarterCode(text: string): number | null {
+  const code = text.match(/\b([1-4])Q\s?(\d{2})\b/i) ?? text.match(/\bQ([1-4])\s*(?:FY\s?)?['’]?(\d{4}|\d{2})\b/i);
+  return code ? Number(code[2]!.length === 2 ? `20${code[2]}` : code[2]) * 4 + Number(code[1]) : null;
+}
+
 /** A column's period from every header cell above it. Change and ratio columns are not periods. */
 function period(text: string): Column | null {
   const lower = text.toLowerCase();
   if (/\bchange\b|%|\bvs\.?\b|\byoy\b|\bq\/q\b|\by\/y\b/.test(lower)) return null;
-  const code = text.match(/\b([1-4])Q\s?(\d{2})\b/i) ?? text.match(/\bQ([1-4])\s*(?:FY\s?)?['’]?(\d{4}|\d{2})\b/i);
-  if (code) { const year = Number(code[2]!.length === 2 ? `20${code[2]}` : code[2]); return { months: 3, code: year * 4 + Number(code[1]) }; }
+  const code = quarterCode(text);
+  if (code !== null) return { months: 3, code };
   const months = /\bthree months\b|\bquarters? ended\b|\b13 weeks\b/.test(lower) ? 3 : /\bsix months\b/.test(lower) ? 6 : /\bnine months\b/.test(lower) ? 9 : /\b(?:twelve months|year ended|fiscal year)\b/.test(lower) ? 12 : 0;
   const date = [...text.matchAll(/\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2}),?\s*(?:\S+\s+){0,3}?(20\d{2})\b/gi)].at(-1);
   if (!months || !date) return null;
