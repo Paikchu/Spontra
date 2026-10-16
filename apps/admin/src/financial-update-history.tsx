@@ -19,8 +19,10 @@ const stageLabels: Record<string, string> = {
   backup: "准备更新", history: "补充历史报表", audit: "整理报表",
   analysis_dispatch: "准备分析", analysis_wait: "生成财报分析", finalize: "保存结果",
   discover: "查找最新财报", discovery: "查找最新财报", extract: "读取表格",
-  collect: "获取财报", analyze: "分析财报", analysis: "分析财报",
+  collect: "获取财报", analyze: "分析财报", analysis: "分析财报", reread: "重新读取报告",
 };
+const actionNames: Record<FinancialMaintenanceTask["action"], string> = { extract: "财报数据", analyze: "财报分析", reread: "重新读取报告" };
+const periods = (values: string[]) => values.length ? values.join("、") : "无";
 const activeStatuses = new Set(["queued", "running", "cancel_requested"]);
 
 export function FinancialUpdateHistory({ open, onClose, tasks, ticker, busy, hasActiveTask, onRetry, onCancel }: {
@@ -37,8 +39,10 @@ export function FinancialUpdateHistory({ open, onClose, tasks, ticker, busy, has
       const needsAttention = task.status === "failed" || task.status === "partial";
       return <li key={task.id} data-state={active ? "active" : needsAttention ? "attention" : "complete"}>
         <div className="fm-history-icon">{active ? <LoaderCircle className="ra-spin" size={19} /> : task.status === "succeeded" ? <Check size={19} /> : <Clock3 size={19} />}</div>
-        <div className="fm-history-item"><div className="fm-history-top"><strong>{task.action === "analyze" ? "财报分析" : "财报数据"}</strong><span>{statusLabels[task.status]}</span></div>
+        <div className="fm-history-item"><div className="fm-history-top"><strong>{actionNames[task.action]}</strong><span>{statusLabels[task.status]}</span></div>
           <time dateTime={task.updatedAt}>{financialDate(task.updatedAt)}</time>
+          {task.accessionNumber && <p className="fm-history-filing">{task.reread ? `${task.reread.form} · ${task.reread.filedAt} · ` : ""}{task.accessionNumber}</p>}
+          {task.reread && <dl className="fm-history-reread"><dt>替换季度</dt><dd>{periods(task.reread.replaced)}</dd><dt>现取自此报告</dt><dd>{periods(task.reread.quarters)}</dd></dl>}
           {active && <p>{stageLabels[task.stage] || "处理中"}</p>}
           {active && task.progress.total > 0 && <progress max={task.progress.total} value={task.progress.completed} aria-label="财报更新进度" />}
           {(task.errorCode || task.issues.length > 0) && <details><summary>采集问题</summary><ul>{[...new Set([...(task.errorCode ? [task.errorCode] : []), ...task.issues])].map(issue => <li key={issue}>{issue}</li>)}</ul></details>}

@@ -150,6 +150,25 @@ export function deriveFourthQuarters(facts: Fact[], cik: string, history: Revenu
   return quarters;
 }
 
+/** One filing's documents read for the history: the quarters it discloses, the cumulative facts that feed
+ * fourth-quarter derivation, and its issues. Each document is archived before it is read. */
+async function readHistoryContents(contents: Awaited<ReturnType<typeof readFilingDocuments>>, document: HistoryDocument, reader: SecReader, cik: string, industry: DocumentSource['industry']) {
+  const quarters: RevenueHistoryQuarter[] = [], facts: Fact[] = [], issues: string[] = [];
+  for (const content of contents) {
+    const revenueStructure = /<ix:nonFraction/i.test(content.html) ? await reader.revenueStructure?.(content.url, document.accession) ?? null : null;
+    const source: DocumentSource = {url: content.url, accession: document.accession, filedAt: document.filedAt, cik, industry, ...(content.memberLabels ? {memberLabels: content.memberLabels} : {}), ...(revenueStructure ? {revenueStructure} : {})};
+    await reader.archive?.(source, content.html, {form: document.form, reportDate: document.periodEnd});
+    const parsed = extractRevenueHistory(content.html, source, document.form);
+    quarters.push(...parsed.quarters);
+    // Cumulative facts feed fourth-quarter derivation only from filings without a restatement flag.
+    if (document.form !== '8-K' && !parsed.issues.includes('RESTATEMENT_REVIEW_REQUIRED')) {
+      facts.push(...readReportedFacts(content.html, source).facts.filter(f => REVENUE_TAGS.has(local(f.tag)) && span(f) >= 230 && Object.keys(f.dimensions).every(axis => ['StatementBusinessSegmentsAxis', 'ProductOrServiceAxis', 'ConsolidationItemsAxis'].includes(local(axis)))).map(f => ({...f, source: {...f.source, url: content.url}})));
+    }
+    if (!parsed.quarters.length) issues.push(...parsed.issues.map(issue => `${document.accession}:${issue}`));
+  }
+  return {quarters, facts, issues};
+}
+
 /** One bounded step. A failed filing stays at its checkpoint for up to three attempts;
  * exhausted documents are explicitly partial. A manual rescan deletes only the cursor, never good history.
  * `restartFinished`: a finished scan starts over now (a new publication), rather than after a day. */
@@ -173,7 +192,6 @@ export async function runHistoryStep(db: D1Database, reader: SecReader, target: 
     try {
       // Commit a filing's facts only after all linked exhibits have been read and archived.
       // Otherwise a partial success followed by an R2 error would duplicate facts on retry.
-      const documentQuarters: RevenueHistoryQuarter[] = [], documentFacts: Fact[] = [], documentIssues: string[] = [];
       const contents = await readFilingDocuments(document.url, reader, document.accession, document.form);
       // A 6-K notice (monthly revenue, board, dividend) is archived but neither parsed, counted nor reported as an issue.
       if (!reportsFinancials(document.form, contents[0].html)) {
@@ -183,18 +201,7 @@ export async function runHistoryStep(db: D1Database, reader: SecReader, target: 
         continue;
       }
       attempted++; reading = true;
-      for (const content of contents) {
-        const revenueStructure = /<ix:nonFraction/i.test(content.html) ? await reader.revenueStructure?.(content.url, document.accession) ?? null : null;
-        const source: DocumentSource = {url: content.url, accession: document.accession, filedAt: document.filedAt, cik: target.cik, industry: cursor.industry, ...(content.memberLabels ? {memberLabels: content.memberLabels} : {}), ...(revenueStructure ? {revenueStructure} : {})};
-        await reader.archive?.(source, content.html, {form: document.form, reportDate: document.periodEnd});
-        const parsed = extractRevenueHistory(content.html, source, document.form);
-        documentQuarters.push(...parsed.quarters);
-        // Cumulative facts feed fourth-quarter derivation only from filings without a restatement flag.
-        if (document.form !== '8-K' && !parsed.issues.includes('RESTATEMENT_REVIEW_REQUIRED')) {
-          documentFacts.push(...readReportedFacts(content.html, source).facts.filter(f => REVENUE_TAGS.has(local(f.tag)) && span(f) >= 230 && Object.keys(f.dimensions).every(axis => ['StatementBusinessSegmentsAxis', 'ProductOrServiceAxis', 'ConsolidationItemsAxis'].includes(local(axis)))).map(f => ({...f, source: {...f.source, url: content.url}})));
-        }
-        if (!parsed.quarters.length) documentIssues.push(...parsed.issues.map(issue => `${document.accession}:${issue}`));
-      }
+      const {quarters: documentQuarters, facts: documentFacts, issues: documentIssues} = await readHistoryContents(contents, document, reader, target.cik, cursor.industry);
       incoming.push(...documentQuarters);
       cursor.facts.push(...documentFacts);
       if (cursor.issues.includes(temporaryIssue)) resolvedIssues.push(temporaryIssue);
@@ -234,4 +241,42 @@ export async function readRevenueHistory(db: D1Database, cik: string, ticker: st
   const record = await new D1SecRepository(db).getCache<unknown>(historyKey(cik));
   const history = record && historyForIssuer(record.payload, cik, ticker);
   return history ? readHistory(history, ticker) : null;
+}
+
+export type FilingRereadResult = {accession: string; form: string; filedAt: string; replaced: string[]; quarters: string[]; issues: string[]};
+
+/**
+ * Reads one filing again (admin "重新读取此报告") and replaces the history quarters that filing is the source of with what
+ * it reads now. The filing is found in the issuer's EDGAR listing within the history lookback and read from its archived
+ * copy when there is one. An annual report also re-derives its fourth quarter, read against the same fiscal year's
+ * quarterly reports. A reading that yields no quarter replaces nothing: good history is never erased.
+ */
+export async function rereadHistoryFiling(db: D1Database, reader: SecReader, target: {ticker: string; cik: string}, accession: string, now = new Date()): Promise<FilingRereadResult> {
+  if (!validCik(target.cik) || !/^[A-Z][A-Z0-9.-]{0,11}$/.test(target.ticker) || !/^\d{10}-\d{2}-\d{6}$/.test(accession)) throw new Error('Invalid issuer identity');
+  const listing = await listDocuments(target.cik, reader, now);
+  const document = listing.documents.find(d => d.accession === accession);
+  if (!document) throw new Error('FILING_NOT_IN_HISTORY_WINDOW');
+  const contents = await readFilingDocuments(document.url, reader, document.accession, document.form);
+  const result = {accession, form: document.form, filedAt: document.filedAt};
+  if (!reportsFinancials(document.form, contents[0].html)) return {...result, replaced: [], quarters: [], issues: [`${accession}:NOT_A_FINANCIAL_REPORT`]};
+  const read = await readHistoryContents(contents, document, reader, target.cik, listing.industry);
+  const facts = [...read.facts];
+  const annual = /^(?:10-K|20-F)(?:\/A)?$/.test(document.form);
+  if (annual) {
+    // The nine months of the same fiscal year come from the quarterly reports filed in the year before this one.
+    const from = Date.parse(document.filedAt) - 400 * 86400000;
+    for (const quarterly of listing.documents.filter(d => /^10-Q(?:\/A)?$/.test(d.form) && Date.parse(d.filedAt) >= from && d.filedAt <= document.filedAt)) {
+      facts.push(...(await readHistoryContents(await readFilingDocuments(quarterly.url, reader, quarterly.accession, quarterly.form), quarterly, reader, target.cik, listing.industry)).facts);
+    }
+  }
+  const repository = new D1SecRepository(db);
+  const existing = historyForIssuer((await repository.getCache<unknown>(historyKey(target.cik)))?.payload, target.cik, target.ticker)?.quarters ?? [];
+  const kept = existing.filter(q => q.source.accession !== accession);
+  const derived = annual ? deriveFourthQuarters(facts, target.cik, mergeHistory(target.ticker, kept, read.quarters, now.toISOString()).quarters).filter(q => q.source.accession === accession) : [];
+  const incoming = [...read.quarters, ...derived].filter(validHistoryQuarter);
+  if (!incoming.length) return {...result, replaced: [], quarters: [], issues: read.issues.length ? read.issues : [`${accession}:NO_DIRECT_COMPARABLE_QUARTER`]};
+  const history = mergeHistory(target.ticker, kept, incoming, now.toISOString());
+  await repository.setCache(historyKey(target.cik), history, now.toISOString());
+  const held = new Set(history.quarters.filter(q => q.source.accession === accession).map(q => q.periodEnd));
+  return {...result, replaced: existing.filter(q => q.source.accession === accession).map(q => q.periodEnd).sort(), quarters: [...held].sort(), issues: read.issues};
 }

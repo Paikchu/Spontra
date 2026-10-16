@@ -7,7 +7,7 @@ import { withFilingStructure } from "../financial-data/presentation.ts";
 import { collectComplete } from "../financial-data/collect.ts";
 import { readCompletePublicationForTicker } from "../financial-data/publication.ts";
 import { D1CompleteStore, type Job } from "../financial-data/store.ts";
-import { runHistoryStep } from "../financial-data/history.ts";
+import { rereadHistoryFiling, runHistoryStep } from "../financial-data/history.ts";
 import { archiveFilingDisclosures, listFilingDisclosureAudits, readArchivedDocument } from "../financial-data/disclosure-audit.ts";
 import { FinancialMaintenanceStore, type MaintenanceRow, type MaintenanceState } from "./financial-maintenance-store.ts";
 
@@ -16,6 +16,7 @@ export interface MaintenanceDependencies {
   discover: typeof discoverDataIssuer;
   collect(env: SecPipelineEnv, job: Job, reader: SecReader): Promise<{ published: boolean; reasons: string[] }>;
   history: typeof runHistoryStep;
+  reread: typeof rereadHistoryFiling;
 }
 const dependencies: MaintenanceDependencies = {
   reader(env, ticker) {
@@ -29,6 +30,7 @@ const dependencies: MaintenanceDependencies = {
   collect: (env, job, reader) => collectComplete(job, financialPolicy({ SEC_DATA_TICKERS: job.ticker, SEC_AI_ENABLED: "false" }),
     new D1CompleteStore(env.DB!), j => readSecDocumentBatch(j, reader, 1)),
   history: runHistoryStep,
+  reread: rereadHistoryFiling,
 };
 
 /** One bounded step per Cron invocation; state is D1-backed, so browser refreshes cannot interrupt it. */
@@ -67,9 +69,22 @@ export async function runFinancialMaintenanceTick(env: SecPipelineEnv, deps = de
       state.backupKey = `financial-maintenance-backups/${row.task_id}.json`;
       await backupMaintenanceTarget(env, row, state);
       await new D1SecRepository(env.DB).setCache(`admin:financial-issuer:${row.ticker}`, issuer, new Date().toISOString());
+      // A single-filing re-read touches only that filing's quarters; the scan cursor stays as it is.
+      if (row.action === "reread") { await finish("reread", { completedSteps: 1 }); return outcome(); }
       // Force an explicit historical rescan, retaining the last good public history itself.
       await env.DB.prepare("DELETE FROM sec_cache WHERE cache_key=?").bind(`sec:revenue-history-cursor:v1:${state.cik}`).run();
       await finish("collect", { completedSteps: 1 });
+    } else if (row.stage === "reread") {
+      try {
+        const result = await deps.reread(env.DB, reader, { ticker: row.ticker, cik: state.cik! }, row.accession_number!, new Date());
+        state.reread = { form: result.form, filedAt: result.filedAt, replaced: result.replaced, quarters: result.quarters };
+        issues.push(...result.issues);
+        await finish("complete", { status: result.quarters.length ? (issues.length ? "partial" : "succeeded") : "failed", completedSteps: 2,
+          issues: [...new Set(issues)].slice(-100), ...(result.quarters.length ? {} : { errorCode: "NO_QUARTER_READ" }) });
+      } catch (error) {
+        if (error instanceof Error && error.message === "FILING_NOT_IN_HISTORY_WINDOW") await finish("reread", { status: "failed", errorCode: error.message });
+        else throw error;
+      }
     } else if (row.stage === "collect") {
       await collectStep(env, deps, row, state, reader);
       const result = await env.DB.prepare("SELECT status,reasons_json FROM financial_collection_jobs WHERE job_id=?").bind(state.collectionJobId).first<{ status: string; reasons_json: string }>();

@@ -12,9 +12,17 @@ import { FinancialUpdateHistory, financialDate } from "./financial-update-histor
 import { completeRequestId, normalizeCompanyTicker, pendingRequestId } from "./financial-maintenance-state";
 import "./financial-maintenance.css";
 
-type Action = "extract" | "analyze" | "retry";
-type Operation = { ticker: string; action: Action; retryTaskId?: string };
-const actionLabels: Record<Action, string> = { extract: "更新财报数据", analyze: "生成财报分析", retry: "重试更新" };
+type Action = "extract" | "analyze" | "reread" | "retry";
+type Operation = { ticker: string; action: Action; retryTaskId?: string; accessionNumber?: string };
+const actionLabels: Record<Action, string> = { extract: "更新财报数据", analyze: "生成财报分析", reread: "重新读取报告", retry: "重试更新" };
+type Filing = { accession: string; form: string; filedAt: string; reportDate: string };
+/** One entry per filing (a filing archives its primary document and exhibits separately), newest filing first. */
+function filingsOf(detail: FinancialMaintenanceCompanyDetail): Filing[] {
+  const byAccession = new Map<string, Filing>();
+  for (const { source } of detail.documents) if (!byAccession.has(source.accessionNumber)) byAccession.set(source.accessionNumber, { accession: source.accessionNumber, form: source.form, filedAt: source.filedAt, reportDate: source.reportDate });
+  return [...byAccession.values()].sort((a, b) => b.filedAt.localeCompare(a.filedAt) || b.accession.localeCompare(a.accession));
+}
+const filingLabel = (filing: Filing) => `${filing.filedAt} · ${filing.form}${filing.reportDate && filing.reportDate !== filing.filedAt ? ` · 期末 ${filing.reportDate}` : ""} · ${filing.accession}`;
 const activeStatuses = new Set(["queued", "running", "cancel_requested"]);
 const initialTicker = () => typeof window === "undefined" ? "" : normalizeCompanyTicker(new URL(window.location.href).searchParams.get("ticker") ?? "");
 function storage(): Storage | undefined { try { return window.sessionStorage; } catch { return undefined; } }
@@ -35,6 +43,7 @@ export function FinancialMaintenance({ onUnauthorized, onAuthenticated }: { onUn
   const [notice, setNotice] = useState("");
   const [mutation, setMutation] = useState("");
   const [operation, setOperation] = useState<Operation | null>(null);
+  const [rereadAccession, setRereadAccession] = useState("");
   const dialog = useRef<HTMLDialogElement>(null);
   const addDialog = useRef<HTMLDialogElement>(null);
   const mutationLock = useRef(false);
@@ -93,7 +102,7 @@ export function FinancialMaintenance({ onUnauthorized, onAuthenticated }: { onUn
   function chooseCompany(value: string) {
     if (value === selectedTicker.current) return;
     selectedTicker.current = value;
-    setTicker(value); setLoading(true); setDetail(null); setHistoryOpen(false); setError(""); setNotice("");
+    setTicker(value); setLoading(true); setDetail(null); setHistoryOpen(false); setError(""); setNotice(""); setRereadAccession("");
   }
   function addCompany(event: FormEvent) {
     event.preventDefault();
@@ -107,7 +116,7 @@ export function FinancialMaintenance({ onUnauthorized, onAuthenticated }: { onUn
   async function performOperation() {
     if (!operation || mutationLock.current) return;
     const current = operation;
-    const key = `${current.ticker}:${current.action}:${current.retryTaskId ?? ""}`;
+    const key = `${current.ticker}:${current.action}:${current.retryTaskId ?? ""}:${current.accessionNumber ?? ""}`;
     const requestId = pendingRequestId(key, storage());
     mutationLock.current = true; setMutation(key); setError("");
     try {
@@ -155,6 +164,9 @@ export function FinancialMaintenance({ onUnauthorized, onAuthenticated }: { onUn
   const companies = (list?.companies ?? []).filter(company => `${company.ticker} ${company.name}`.toLowerCase().includes(search.toLowerCase()));
   const activeTask = detail?.tasks.find(task => activeStatuses.has(task.status));
   const canAnalyze = Boolean(list?.environment.aiEnabled && list.environment.workflowAvailable);
+  const filings = detail ? filingsOf(detail) : [];
+  const rereadFiling = filings.find(filing => filing.accession === rereadAccession) ?? filings[0];
+  const operationFiling = operation?.accessionNumber ? filings.find(filing => filing.accession === operation.accessionNumber) : undefined;
 
   return <div className="fm-workspace">
     <div className="fm-columns">
@@ -174,6 +186,7 @@ export function FinancialMaintenance({ onUnauthorized, onAuthenticated }: { onUn
           <header className="fm-company-header"><div><h2>{detail.company.name || ticker}<span>{ticker}</span></h2><p>{detail.company.lastUpdatedAt ? `最近更新 ${financialDate(detail.company.lastUpdatedAt)}` : "无数据"}</p></div><div className="fm-actions"><button className="ra-primary" disabled={!!mutation || !!activeTask || !list} onClick={() => setOperation({ ticker, action: "extract" })}>{activeTask ? <LoaderCircle className="ra-spin" size={16} /> : <RefreshCw size={16} />}{activeTask ? "更新中" : "更新数据"}</button><button className="fm-button" onClick={() => setHistoryOpen(true)}><History size={16} />更新记录</button></div></header>
           {activeTask && <div className="fm-update-status" role="status"><LoaderCircle className="ra-spin" size={15} /><span>更新中</span><button onClick={() => setHistoryOpen(true)}>查看进度</button></div>}
           <FinancialStatementsInspector key={`statements:${ticker}`} ticker={ticker} documents={detail.documents} onUnauthorized={() => unauthorized.current()} onRequestUpdate={activeTask || mutation ? undefined : () => setOperation({ ticker, action: "extract" })} />
+          {filings.length > 0 && <div className="fm-reread"><label htmlFor="fm-reread-filing">重新读取单份报告</label><select id="fm-reread-filing" value={rereadFiling?.accession ?? ""} onChange={event => setRereadAccession(event.target.value)}>{filings.map(filing => <option key={filing.accession} value={filing.accession}>{filingLabel(filing)}</option>)}</select><button className="fm-button" disabled={!!mutation || !!activeTask || !rereadFiling} onClick={() => rereadFiling && setOperation({ ticker, action: "reread", accessionNumber: rereadFiling.accession })}><RefreshCw size={15} />重新读取</button></div>}
           <details className="fm-summary" key={`summary:${ticker}`}><summary><span>季度摘要</span><ChevronDown size={16} /></summary><FinancialQuarterSummary periods={detail.periods} /></details>
           {canAnalyze && <div className="fm-analysis-action"><button className="ra-text-button" disabled={!!mutation || !!activeTask} onClick={() => setOperation({ ticker, action: "analyze" })}><FileSearch size={15} />生成财报分析</button></div>}
           <FinancialUpdateHistory open={historyOpen} onClose={() => setHistoryOpen(false)} tasks={detail.tasks} ticker={ticker} busy={!!mutation} hasActiveTask={!!activeTask} onRetry={task => setOperation({ ticker, action: "retry", retryTaskId: task.id })} onCancel={task => void cancelTask(task)} />
@@ -181,6 +194,6 @@ export function FinancialMaintenance({ onUnauthorized, onAuthenticated }: { onUn
       </div>
     </div>
     <dialog ref={addDialog} className="ra-dialog fm-add-dialog" onCancel={() => setAdding(false)} onClose={() => setAdding(false)} aria-labelledby="fm-add-title"><div className="fm-dialog-heading"><h2 id="fm-add-title">添加公司</h2><button className="fm-icon-button" aria-label="关闭" onClick={() => setAdding(false)}><X size={19} /></button></div><form onSubmit={addCompany}><label htmlFor="fm-new-ticker">股票代码</label><input id="fm-new-ticker" value={newTicker} maxLength={10} onChange={event => setNewTicker(event.target.value.toUpperCase())} placeholder="MSFT" autoComplete="off" required />{canAnalyze && <label className="fm-add-action">获取内容<select aria-label="新增公司操作" value={newAction} onChange={event => setNewAction(event.target.value as "extract" | "analyze")}><option value="extract">财报数据</option><option value="analyze">财报数据与分析</option></select></label>}{error && <p role="alert" className="ra-error">{error}</p>}<div className="ra-dialog-actions"><button type="button" onClick={() => setAdding(false)}>取消</button><button className="ra-primary" disabled={!newTicker || !!mutation}>添加</button></div></form></dialog>
-    <dialog ref={dialog} className="ra-dialog" onCancel={event => { if (mutation) event.preventDefault(); else setOperation(null); }} onClose={() => { if (!mutation) setOperation(null); }} aria-labelledby="fm-confirm-title"><h2 id="fm-confirm-title">{operation && actionLabels[operation.action]} · {operation?.ticker}？</h2>{error && <p className="ra-error" role="alert">{error}</p>}<div className="ra-dialog-actions"><button disabled={!!mutation} onClick={() => setOperation(null)}>取消</button><button className="ra-primary" disabled={!!mutation} onClick={() => void performOperation()}>{mutation && <LoaderCircle className="ra-spin" size={15} />}{mutation ? "提交中" : "确认"}</button></div></dialog>
+    <dialog ref={dialog} className="ra-dialog" onCancel={event => { if (mutation) event.preventDefault(); else setOperation(null); }} onClose={() => { if (!mutation) setOperation(null); }} aria-labelledby="fm-confirm-title"><h2 id="fm-confirm-title">{operation && actionLabels[operation.action]} · {operation?.ticker}？</h2>{operation?.accessionNumber && <p className="fm-confirm-filing">{operationFiling ? filingLabel(operationFiling) : operation.accessionNumber}</p>}{error && <p className="ra-error" role="alert">{error}</p>}<div className="ra-dialog-actions"><button disabled={!!mutation} onClick={() => setOperation(null)}>取消</button><button className="ra-primary" disabled={!!mutation} onClick={() => void performOperation()}>{mutation && <LoaderCircle className="ra-spin" size={15} />}{mutation ? "提交中" : "确认"}</button></div></dialog>
   </div>;
 }

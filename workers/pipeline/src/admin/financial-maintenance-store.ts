@@ -5,9 +5,11 @@ export type MaintenanceState = {
   cik?: string; name?: string; collectionJobId?: string; generation?: number;
   waitingCik?: string;
   workflowId?: string; backupKey?: string;
+  /** What a single-filing re-read found: the quarters it replaced and the quarters the history now takes from it. */
+  reread?: { form: string; filedAt: string; replaced: string[]; quarters: string[] };
 };
 export type MaintenanceRow = {
-  task_id: string; request_id: string; ticker: string; cik: string | null; action: "extract" | "analyze";
+  task_id: string; request_id: string; ticker: string; cik: string | null; action: "extract" | "analyze" | "reread";
   accession_number: string | null; retry_of: string | null; status: FinancialMaintenanceTaskStatus;
   stage: string; state_json: string; issues_json: string; error_code: string | null;
   completed_steps: number; total_steps: number; attempt: number; lease_token: string | null; lease_until: string | null;
@@ -16,7 +18,8 @@ export type MaintenanceRow = {
 export const MAINTENANCE_LEASE_MS = 5 * 60_000;
 export const ACTIVE_MAINTENANCE = ["queued", "running", "cancel_requested"];
 export function taskView(row: MaintenanceRow): FinancialMaintenanceTask {
-  return { id: row.task_id, ticker: row.ticker, action: row.action, accessionNumber: row.accession_number,
+  const reread = (JSON.parse(row.state_json) as MaintenanceState).reread;
+  return { id: row.task_id, ticker: row.ticker, action: row.action, accessionNumber: row.accession_number, ...(reread ? { reread } : {}),
     status: row.status, stage: row.stage, createdAt: row.created_at, updatedAt: row.updated_at, completedAt: row.completed_at,
     errorCode: row.error_code, issues: JSON.parse(row.issues_json), progress: { completed: row.completed_steps, total: row.total_steps },
     canRetry: ["failed", "partial", "cancelled"].includes(row.status), canCancel: ["queued", "running"].includes(row.status) && !["analysis_dispatch", "analysis_wait"].includes(row.stage) };
@@ -43,12 +46,12 @@ export class FinancialMaintenanceStore {
       WHERE task_id=? AND lease_token=? AND status='running' AND lease_until>? RETURNING task_id`)
       .bind(cik,row.task_id,row.lease_token,now.toISOString()).first());
   }
-  async create(input: { requestId: string; ticker: string; action: "extract" | "analyze"; accessionNumber?: string; retryOf?: string }, now: Date) {
+  async create(input: { requestId: string; ticker: string; action: "extract" | "analyze" | "reread"; accessionNumber?: string; retryOf?: string }, now: Date) {
     return this.db.prepare(`INSERT INTO financial_maintenance_tasks
       (task_id,request_id,ticker,action,accession_number,retry_of,status,total_steps,next_attempt_at,created_at,updated_at)
       VALUES (?,?,?,?,?,?,'queued',?,?,?,?) ON CONFLICT DO NOTHING RETURNING *`)
       .bind(input.requestId, input.requestId, input.ticker, input.action, input.accessionNumber ?? null, input.retryOf ?? null,
-        input.action === "analyze" ? 5 : 4, now.toISOString(), now.toISOString(), now.toISOString()).first<MaintenanceRow>();
+        input.action === "analyze" ? 5 : input.action === "reread" ? 2 : 4, now.toISOString(), now.toISOString(), now.toISOString()).first<MaintenanceRow>();
   }
   async cancel(id: string, now: Date) {
     // An active call completes at its next checkpoint. A request cannot erase a completed result.
