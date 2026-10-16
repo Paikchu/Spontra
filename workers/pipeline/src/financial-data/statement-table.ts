@@ -1,4 +1,5 @@
 import type { DocumentSource, Fact } from './parser.ts';
+import { quarterCode } from '../../../../shared/analysis-runtime/financial-data/earnings-release.ts';
 
 const clean = (value:string) => value.replace(/<[^>]*>/g,' ').replace(/&#(?:x([\da-f]+)|(\d+));/gi,(_,hex,dec)=>String.fromCodePoint(parseInt(hex??dec,hex?16:10))).replace(/&nbsp;/gi,' ').replace(/&amp;/gi,'&').replace(/[\u200b-\u200d\ufeff]/g,'').replace(/\s+/g,' ').trim();
 const months:Record<string,number>={january:1,february:2,march:3,april:4,may:5,june:6,july:7,august:8,september:9,october:10,november:11,december:12};
@@ -57,18 +58,24 @@ const isoDay=(t:number)=>new Date(t).toISOString().slice(0,10);
 /** The period each column reports, read from all header cells that cover it, so a duration, a date and a year
  * printed in separate rows or cells ("Three Months Ended" / "July 26," / "2026") read as one header.
  * A table that prints any date other than a month end keeps a 52/53-week calendar: each of its periods runs
- * 13 weeks per quarter back from its end, even one that happens to end on a month end. */
-function periodColumns(headers:Cell[][]) {
+ * 13 weeks per quarter back from its end, even one that happens to end on a month end.
+ * Quarter-code columns ("4Q25 3Q25 2Q25") are dated from `latestQuarterEnd`, the newest quarter the document dates
+ * itself: the newest code ends there and each earlier code three months before. The codes must then name that
+ * quarter's own fiscal year: the year its fourth quarter ends in. */
+function periodColumns(headers:Cell[][],latestQuarterEnd?:string) {
  const width=Math.max(0,...headers.flatMap(row=>row.map(c=>c.column+c.span)));
  // A printed header reaches to the next printed header in its row: filings often draw a group heading
  // ("Three Months Ended March 31,") narrower than the year columns beneath it.
  const reach=headers.map(row=>{const printed=row.filter(c=>c.text);return printed.map((c,i)=>({text:c.text,from:c.column,to:Math.max(c.column+c.span,printed[i+1]?.column??width)}));});
  const read:Array<{column:number;months:number;weeks:number;year:number;month:number;day:number;monthEnd:boolean}>=[];
+ const coded:Array<{column:number;code:number}>=[];
  for(let column=0;column<width;column++){
   const text=reach.map(row=>row.find(c=>c.from<=column&&column<c.to)?.text??'').filter(Boolean).join(' ');
   if(/%|\bchange\b|constant\s+currency|non-gaap|as\s+adjusted/i.test(text))continue;
   const kind=text.match(/\b(three|six|nine|twelve)\s+months?\b|\b(quarter)s?\s+ended\b|\b(13|26|39|52|53)\s+weeks?\b|\b(?:fiscal\s+)?(year)\s+ended\b/i);
   const dates=[...text.matchAll(/\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2}),?\s+(20\d{2})\b/gi)];
+  const code=quarterCode(text);
+  if(!kind&&!dates.length&&code!==null){coded.push({column,code});continue;}
   if(!kind||dates.length!==1)continue;
   const months3=kind[1]?{three:3,six:6,nine:9,twelve:12}[kind[1].toLowerCase()]!:kind[2]?3:kind[3]?Math.round(Number(kind[3])/13)*3:12;
   const [,name,dayText,yearText]=dates[0],month=months[name.toLowerCase()],day=Number(dayText),year=Number(yearText);
@@ -82,7 +89,25 @@ function periodColumns(headers:Cell[][]) {
   const end=Date.UTC(r.year,r.month-1,r.day);
   periods.set(r.column,{start:weekly?isoDay(end-(r.weeks*7-1)*86400000):isoDay(Date.UTC(r.year,r.month-r.months,1)),end:isoDay(end)});
  }
+ const anchor=latestQuarterEnd?.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+ if(coded.length&&anchor&&!weekly){
+  const year=Number(anchor[1]),month=Number(anchor[2]),newest=Math.max(...coded.map(c=>c.code));
+  const fiscalYearEnd=new Date(Date.UTC(year,month-1+(4-(newest%4||4))*3,1));
+  if(isoDay(Date.UTC(year,month,0))===latestQuarterEnd&&fiscalYearEnd.getUTCFullYear()===Math.floor((newest-1)/4))
+   for(const c of coded){
+    const back=(newest-c.code)*3;
+    periods.set(c.column,{start:isoDay(Date.UTC(year,month-3-back,1)),end:isoDay(Date.UTC(year,month-back,0))});
+   }
+ }
  return periods;
+}
+/** The newest quarter end the document dates in its own words ("three months ended December 31, 2025"), filed at most
+ * 120 days after it: the quarter a release reports. Coded columns are dated from it; nothing else is. */
+function latestQuarterEnd(html:string,filedAt:string):string|undefined {
+ const filed=Date.parse(filedAt);
+ return clean(html).match(/\b(?:three\s+months|quarters?)\s+ended\s+(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2},?\s+20\d{2}/gi)
+  ?.map(text=>{const [,name,day,year]=text.match(/(\w+)\s+(\d{1,2}),?\s+(20\d{2})$/)!;return isoDay(Date.UTC(Number(year),months[name.toLowerCase()]-1,Number(day)));})
+  .filter(end=>Date.parse(end)<=filed&&filed-Date.parse(end)<=120*86400000).sort().at(-1);
 }
 /** The first amount a row prints under one period, wherever the header's span puts it. */
 function amountAt(row:Cell[],periods:Map<number,{start:string;end:string}>,period:{start:string;end:string}):Cell|undefined {
@@ -170,6 +195,7 @@ function creditLines(facts:Fact[],lineRows:number[]):Set<number> {
 export function readStatementTableFacts(html:string,source:DocumentSource):Fact[] {
   const output:Fact[]=[];
   const tables=[...html.matchAll(/<table\b[^>]*>[\s\S]*?<\/table>/gi)];
+  const quarterEnd=latestQuarterEnd(html,source.filedAt);
   let boundary=0;
   for(const [tableIndex,match] of tables.entries()) {
     const grid=rows(match[0]);
@@ -179,7 +205,7 @@ export function readStatementTableFacts(html:string,source:DocumentSource):Fact[
     const preceding=clean(html.slice(Math.max(boundary,match.index!-2500),match.index))+' '+grid.slice(0,firstAmount<0?0:firstAmount).flat().map(c=>c.text).join(' ');
     if(firstAmount>=0)boundary=match.index!+match[0].length;
     if(firstAmount<0)continue;
-    const title=[...preceding.matchAll(/consolidated\s+statements?\s+of\s+(?:comprehensive\s+)?(?:operations|income|loss|earnings|profit\s+or\s+loss)|\bincome\s+statements?\b/gi)].at(-1);
+    const title=[...preceding.matchAll(/consolidated\s+statements?\s+of\s+(?:comprehensive\s+)?(?:operations|income|loss|earnings|profit\s+or\s+loss)|\bincome\s+statements?\b(?!\s+data)/gi)].at(-1);
     if(!title)continue;
     // Only the statement's own heading decides non-GAAP: a release's GAAP statement often follows a paragraph about non-GAAP measures.
     const heading=preceding.slice(0,title.index).split(/[.:;]\s/).at(-1)+preceding.slice(title.index);
@@ -194,7 +220,7 @@ export function readStatementTableFacts(html:string,source:DocumentSource):Fact[
       if(!tags[i]&&printed[i]&&!/^total\b/i.test(printed[i]))tags[i]=lineTag(printed[i]);
       if(tags[i]&&!OPERATING_TOTALS.has(tags[i]))lineRows.push(i);
     }
-    const periods=periodColumns(grid.slice(0,firstAmount));
+    const periods=periodColumns(grid.slice(0,firstAmount),quarterEnd);
     const facts:Fact[]=[];
     for(const [rowIndex,row] of grid.entries()) {
       const tag=tags[rowIndex];if(!tag)continue;
@@ -214,6 +240,9 @@ export function readStatementTableFacts(html:string,source:DocumentSource):Fact[
     // management tables or another filing to manufacture completeness.
     const concepts=new Set(facts.map(f=>f.tag));
     if(!concepts.has('table:Revenues'))continue;
+    // A statement prints its revenue total once per period; two different totals (reported and managed basis) are a summary.
+    const revenues=facts.filter(f=>f.tag==='table:Revenues');
+    if(revenues.some(f=>revenues.some(g=>g.start===f.start&&g.end===f.end&&g.value!==f.value)))continue;
     const credits=creditLines(facts,lineRows.filter(r=>facts.some(f=>f.statementRow!.order===r)));
     for(const f of facts)if(credits.has(f.statementRow!.order))f.statementRow={...f.statementRow!,flip:true};
     return withFirstQuarters([...facts,...segmentFacts(html,source,facts,scale)]);
