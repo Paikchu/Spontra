@@ -35,6 +35,13 @@
 .fm-update-status button { margin-left: auto; background: transparent; border: 0; color: var(--brand); white-space: nowrap; }
 .fm-muted { font-size: 13px; color: var(--fm-muted); line-height: 1.7; padding: 0 12px; }
 .fm-summary { margin-top: 23px; }
+.fm-reread { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-top: 18px; font-size: 13px; }
+.fm-reread label { color: var(--fm-muted); }
+.fm-reread select { flex: 1 1 260px; min-width: 0; max-width: 100%; font: inherit; font-variant-numeric: tabular-nums; }
+.fm-confirm-filing, .fm-history-filing { color: var(--fm-muted); font-size: 12px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.fm-history-reread { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 6px 0 0; font-size: 12px; }
+.fm-history-reread dt { color: var(--fm-muted); }
+.fm-history-reread dd { margin: 0; font-variant-numeric: tabular-nums; }
 .fm-summary > summary { list-style: none; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; color: var(--fm-accent); font-size: 14px; padding-block: 7px; }
 .fm-summary > summary::-webkit-details-marker { display: none; }
 .fm-summary > summary svg { transition: transform .15s ease; }

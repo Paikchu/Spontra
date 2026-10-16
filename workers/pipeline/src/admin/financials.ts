@@ -159,9 +159,10 @@ export async function handleFinancialAdminRequest(request: Request, env: SecPipe
     const text = await request.text(); if (text.length > 4096) return json({ error: "Request too large" }, 413);
     let body: { action?: string; requestId?: string; accessionNumber?: string; retryTaskId?: string };
     try { body = JSON.parse(text); } catch { return json({ error: "操作参数无效。" }, 400); }
-    if (!body || !["extract","analyze","retry"].includes(body.action ?? "") || !UUID.test(body.requestId ?? "")) return json({ error: "操作参数或幂等标识无效。" }, 400);
-    let action = body.action as "extract" | "analyze" | "retry", accessionNumber = body.accessionNumber;
+    if (!body || !["extract","analyze","reread","retry"].includes(body.action ?? "") || !UUID.test(body.requestId ?? "")) return json({ error: "操作参数或幂等标识无效。" }, 400);
+    let action = body.action as "extract" | "analyze" | "reread" | "retry", accessionNumber = body.accessionNumber;
     if (accessionNumber && cleanSecAccession(accessionNumber) !== accessionNumber) return json({ error: "财报编号无效。" }, 400);
+    if (action === "reread" && !/^\d{10}-\d{2}-\d{6}$/.test(accessionNumber ?? "")) return json({ error: "请选择要重新读取的报告。" }, 400);
     if (action === "retry") {
       const original = body.retryTaskId && UUID.test(body.retryTaskId) ? await store.get(body.retryTaskId) : null;
       if (!original || original.ticker !== ticker || !taskView(original).canRetry) return json({ error: "请选择已失败、部分完成或已取消的任务重试。" }, 409);
