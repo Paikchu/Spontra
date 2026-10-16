@@ -76,7 +76,7 @@ export function AiRuns({ onUnauthorized, onAuthenticated, kinds, translations = 
   }, [ticker, kind, tabs.length]);
 
   // A page lists the companies at least one of its tasks runs for; a company switched off leaves the list.
-  const listed = list?.companies.filter(c => tabs.some(([k]) => c.kinds[k]?.enabled !== false)) ?? [];
+  const listed = list?.companies.filter(c => tabs.some(([k]) => k !== "translations" && (c.kinds as Partial<Record<string, { enabled?: boolean }>>)[k]?.enabled !== false)) ?? [];
   const companies = listed.filter(c => c.ticker.toLowerCase().includes(search.toLowerCase()));
   return <div className="ra-workspace ai-workspace">
     <section className="ra-list" aria-label="公司">
