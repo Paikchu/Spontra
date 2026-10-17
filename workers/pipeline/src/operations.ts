@@ -92,8 +92,10 @@ export type SecPipelineEnv = SecCronEnv & AnalysisReadEnv & {
   AI_REASONING?: string;
   /** Companies whose businesses the ReAct agent breaks down; unset falls back to the AI list. */
   BUSINESS_TREE_TICKERS?: string;
-  /** "false" pauses the business-tree sweep; unset or anything else runs it. */
+  /** "false" pauses the business-tree sweep; unset or anything else runs it. The admin's global switch overrides it. */
   BUSINESS_TREE_ENABLED?: string;
+  /** The mind-map list after the admin's per-company switches, set only by `companyPolicyEnvironment`. */
+  BUSINESS_TREE_RESOLVED?: string;
   /** "true" lets the sweep start findings runs for AI-enabled companies; anything else leaves it off. */
   FINDINGS_ENABLED?: string;
   /** "false" pauses the deterministic events sweep (8-K and Form 4); unset or anything else runs it. */

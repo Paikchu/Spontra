@@ -289,3 +289,4 @@ P4 的实现要点与差异：
 - 旧存档里带 sec.gov 随机脚本的副本，在补历史重读时一次性改存为规范内容，1,170 个被替换的对象 24 小时后由 `archive-prune` 删除。
 
 - **AI 名单在后台控制（2026-10-15）。** `financial_ai_settings` 覆盖 `SEC_AI_TICKERS`；后台开启一家公司时发出 `ai.enabled`（订阅者 `sec-report`、`explainer`），后续事件链不变。见 [businessview-admin](businessview-admin.md)。
+- **业务脑图开关在后台控制（2026-10-17）。** `business_tree_settings` 的 `*` 行覆盖 `BUSINESS_TREE_ENABLED`，公司行覆盖脑图名单与地图显示；每次切换发出 `tree.settings`（订阅者 `tree`，并更新地图 company 版本号）。见 [business-tree](business-tree.md)。

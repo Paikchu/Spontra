@@ -29,7 +29,8 @@ function enabled(env: SecPipelineEnv, kind: AiRunKind, ticker: string): boolean 
   return (kind === "tree" ? treeTickersFor(env) : trackedTickersFor(env)).includes(ticker);
 }
 function blocked(env: SecPipelineEnv, kind: AiRunKind, ticker: string): string | null {
-  if (!enabled(env, kind, ticker)) return "该公司未纳入此任务。";
+  if (!enabled(env, kind, ticker)) return kind === "tree" ? "该公司的业务脑图生成已关闭。" : "该公司未纳入此任务。";
+  if (kind === "tree" && env.BUSINESS_TREE_ENABLED === "false") return "业务脑图生成已全局暂停。";
   if (!binding(env, kind)) return "该任务的工作流未配置。";
   if (!env.DEEPSEEK_API_KEY) return "模型密钥未配置。";
   if ((kind === "explainer" || kind === "tree") && !env.TAVILY_API_KEY) return kind === "tree" ? "资料检索未配置，无法拆解业务。" : "资料检索未配置，无法撰写业务解读。";

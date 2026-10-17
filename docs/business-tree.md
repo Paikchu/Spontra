@@ -48,7 +48,11 @@ SEC 文件全部来自文件库（`docs/sec-filing-library.md`）：开始前从
 ## 存储、触发与读取
 
 - 结果存 `sec_cache` 的 `business-tree:v1:{ticker}`，版本记录走 `AiRunStore`（kind `tree`）。研究过程（每轮 thought / action / observation）存在同一文档的 `research` 字段，仅后台可见。
-- 扫描：`*/10` Cron 的 `runBusinessTreeSweep`，每次最多启动一家；只处理 `BUSINESS_TREE_TICKERS`（默认 `MSFT,ORCL,NVDA,ADSK,NET`，未设置时退回 AI 名单）中业务列表指纹变化的公司；实例 ID 含周数，失败的每周重试一次。`BUSINESS_TREE_ENABLED=false` 暂停。需要 `TAVILY_API_KEY` 与 `DEEPSEEK_API_KEY`。
+- 触发：事件驱动（docs/pipeline-events.md）。`financials.published`、`ai.enabled` 和后台开关发出的 `tree.settings` 会排一次 `tree` 任务；业务列表指纹与已发布的不同时才启动 Workflow。名单为 `BUSINESS_TREE_TICKERS` 加 AI 名单，再按后台的公司开关增删。需要 `TAVILY_API_KEY` 与 `DEEPSEEK_API_KEY`。
+- 开关（2026-10-17，后台「业务地图 → 白名单」）：
+  - 全局「业务脑图生成」：存在 `business_tree_settings` 的 `*` 行，覆盖 `BUSINESS_TREE_ENABLED`。关闭后不再启动新运行，已排队的运行以 superseded 结束，已发布的树照常显示；重新打开时为名单内每家公司检查一次是否需要生成。
+  - 每家公司「生成」：覆盖该公司是否在名单内（含显式移出）。打开需先在白名单中，打开后立即检查生成。
+  - 每家公司「显示」：关闭后公开读取接口返回 `status: "hidden"`，地图退回文字说明，存储的树不删；后台仍可查看。每次切换都发出 `tree.settings`，地图的 company 版本号随之更新，读者马上看到变化。
 - 后台：AI 任务页新增“业务脑图”，可手动重跑，查看每轮步骤、树和研究过程。
 - 读取：Pipeline `GET /api/v1/companies/:t/business-tree`（只读 D1），地图 Worker 与 flow、解读、指引一起取回并复核，去掉 `research` 后作为 `tree` 返回。
 
