@@ -39,6 +39,38 @@ export function anchors(name: string, ancestors: string[], passage: string): boo
   return ancestors.some(a => { const key = compactName(a); return key.length >= 2 && key !== own && quote.includes(key); });
 }
 
+/** An anchor may join up to three verbatim fragments of one passage with an ellipsis, e.g. a segment's heading and one item of the list under it. */
+export const ANCHOR_FRAGMENTS = 3;
+const ELLIPSIS = /\s*(?:…|\.{3})\s*/;
+
+/**
+ * Whether a quote stands in a source: every fragment verbatim (letters and digits compared), in order, the whole quote
+ * within `span` characters of the source, so fragments of one passage join and fragments of different pages do not.
+ */
+export function quotedIn(quote: string, source: string, span = 2_400): boolean {
+  const fragments = quote.split(ELLIPSIS).map(compactName).filter(Boolean);
+  if (!fragments.length || fragments.length > ANCHOR_FRAGMENTS || (fragments.length > 1 && fragments.some(f => f.length < 10))) return false;
+  const text = compactName(source);
+  for (let start = text.indexOf(fragments[0]!); start >= 0; start = text.indexOf(fragments[0]!, start + 1)) {
+    let end = start + fragments[0]!.length, ok = true;
+    for (const fragment of fragments.slice(1)) {
+      const at = text.indexOf(fragment, end);
+      if (at < 0 || at + fragment.length - start > span) { ok = false; break; }
+      end = at + fragment.length;
+    }
+    if (ok) return true;
+  }
+  return false;
+}
+
+/** Source ids a model wrote into prose ("(Source: s1, s6)", "[b1-s2]") belong in sourceIds, not in the text a reader sees. */
+export function withoutCitations(text: string): string {
+  return text
+    .replace(/\s*[(（[]?\s*(?:sources?|cited|来源)\s*[:：]?\s*(?:b\d+-)?s\d+(?:\s*(?:[,，、;；]|and)\s*(?:b\d+-)?s\d+)*\s*[)）\]]?/gi, "")
+    .replace(/\s*[[(（]\s*(?:b\d+-)?s\d+(?:\s*[,，、]\s*(?:b\d+-)?s\d+)*\s*[\])）]/g, "")
+    .replace(/\s+([.,;:。，；：])/g, "$1").replace(/([.。])[.。]+/g, "$1").replace(/\s{2,}/g, " ").trim();
+}
+
 /** A short line of prose a reader sees on the map: no amounts or shares, within its cap. */
 export const plainText = (value: string, max: number) => length(value) <= max && !FIGURE.test(value);
 
@@ -74,13 +106,14 @@ export function harnessNode(raw: unknown, ancestors: AncestorChain, depth: numbe
   if (!parsed.success || depth > TREE_LIMITS.depth || budget.nodes <= 0 || budget.ids.has(parsed.data.id)) return null;
   const node = parsed.data;
   const cited = (c: TreeClaim | null) => c && c.sourceIds.every(id => sourceIds.has(id)) ? { text: c.text, sourceIds: [...new Set(c.sourceIds)] } : null;
+  const prose = (c: TreeClaim | null) => c && withoutCitations(c.text) ? { ...c, text: withoutCitations(c.text) } : null;
   const anchor = cited(node.anchor);
   if (!node.flowNodeId && !(anchor && length(anchor.text) <= TREE_LIMITS.anchor && anchors(node.name, ancestors, anchor.text))) return null;
   budget.nodes--; budget.ids.add(node.id);
-  const summary = cited(node.summary);
+  const summary = prose(cited(node.summary));
   const seen = new Set<string>();
   const models = node.revenue.filter(r => r.sourceIds.every(id => sourceIds.has(id)) && plainText(r.label, TREE_LIMITS.label) && plainText(r.text, TREE_LIMITS.revenueText) && !seen.has(r.type + r.label) && seen.add(r.type + r.label))
-    .slice(0, TREE_LIMITS.revenue).map(r => ({ type: r.type, label: r.label, text: r.text, sourceIds: [...new Set(r.sourceIds)] }));
+    .slice(0, TREE_LIMITS.revenue).map(r => ({ type: r.type, label: r.label, text: withoutCitations(r.text) || r.text, sourceIds: [...new Set(r.sourceIds)] }));
   const names = new Set<string>();
   const children = node.children.flatMap(child => {
     const kept = harnessNode(child, [node.name, ...ancestors], depth + 1, sourceIds, budget);
@@ -139,7 +172,8 @@ export function readBusinessTree(value: unknown, ticker: string, options: { rese
       names.add(compactName(kept.name));
       return [kept];
     }).slice(0, TREE_LIMITS.children);
-    const summary = branch.summary && branch.summary.sourceIds.every(id => ids.has(id)) && plainText(branch.summary.text, TREE_LIMITS.summary) ? branch.summary : null;
+    const text = branch.summary ? withoutCitations(branch.summary.text) : "";
+    const summary = branch.summary && text && branch.summary.sourceIds.every(id => ids.has(id)) && plainText(text, TREE_LIMITS.summary) ? { ...branch.summary, text } : null;
     return children.some(hasContent) ? [{ flowNodeId: branch.flowNodeId, name: branch.name, summary, children }] : [];
   });
   if (!branches.length) return null;

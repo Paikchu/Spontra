@@ -27,7 +27,15 @@ export function treeLibrary(db: D1Database, ticker: string, flowFilings: TreeFil
       if (!id) return null;
       const outline = await libraryOutline(db, id);
       const passages = await librarySectionPassages(db, id, outline.filter(s => s.role !== "boilerplate").map(s => s.sectionId));
-      return rankPassages(passages, terms, maxChars).map(p => p.text).join("\n\n");
+      // A listed item reads with its lead-in: the short passage before it in the same section ("This segment primarily comprises:").
+      const at = new Map(passages.map((p, i) => [p.passageId, i]));
+      const kept = new Set<number>();
+      for (const p of rankPassages(passages, terms, maxChars)) {
+        const i = at.get(p.passageId)!, before = passages[i - 1];
+        if (before && before.sectionId === p.sectionId && before.kind === "paragraph" && before.text.length < 240) kept.add(i - 1);
+        kept.add(i);
+      }
+      return [...kept].sort((a, b) => a - b).map(i => passages[i]!.text).join("\n\n");
     },
     async businessSection(names, maxChars) {
       const latest = await annual();
