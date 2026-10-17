@@ -1,3 +1,4 @@
+import { reasoningFor } from "./ai-config.ts";
 import {
   COMPANY_ANALYSIS_PROMPT_VERSION,
   COMPANY_ANALYSIS_SCHEMA_VERSION,
@@ -10,11 +11,15 @@ import { hashString } from "./sec/analysis.ts";
 import { assertTrackedTicker, requireDb, type CompanyAnalysisWorkflowParams } from "./core.ts";
 import { runBusinessModelAgent } from "./company-analysis/business-agent.ts";
 import { createBusinessResearchTools } from "./company-analysis/business-tools.ts";
+import { issuerNames } from "../../../shared/analysis-runtime/business-tree.ts";
 import { findSecurity } from "./catalog/security-directory.ts";
 import { researchSearch } from "./web-search/research-search.ts";
 import { callWorkerSecModel } from "./operations.ts";
 import type { SecPipelineEnv } from "./operations.ts";
 import { SEC_WORKFLOW_STEP_TIMEOUT } from "./retry-policy.ts";
+import { FUNDAMENTALS_STALE_AFTER_MS } from "../../../shared/analysis-contract/fundamentals.ts";
+import { D1FundamentalsRepository } from "./fundamentals/fundamentals-d1.ts";
+import { syncFundamentals } from "./fundamentals.ts";
 
 export type CompanyWorkflowStep = {
   do<T>(name: string, callback: () => Promise<T>): Promise<T>;
@@ -40,6 +45,13 @@ export const COMPANY_AGENT_MODEL_STEP_CONFIG = {
   },
   timeout: SEC_WORKFLOW_STEP_TIMEOUT,
 } as const satisfies CompanyWorkflowStepConfig;
+
+async function refreshFundamentalsIfStale(env: SecPipelineEnv, ticker: string): Promise<{ refreshed: boolean; error?: string }> {
+  const [freshness] = await new D1FundamentalsRepository(requireDb(env)).listFundamentalsFreshness([ticker]);
+  if (freshness?.fetchedAt && Date.now() - Date.parse(freshness.fetchedAt) < FUNDAMENTALS_STALE_AFTER_MS) return { refreshed: false };
+  try { await syncFundamentals(requireDb(env), ticker); return { refreshed: true }; }
+  catch (error) { return { refreshed: false, error: error instanceof Error ? error.message.slice(0, 200) : "sync failed" }; }
+}
 
 export async function executeCompanyAnalysisWorkflow(
   params: CompanyAnalysisWorkflowParams,
@@ -69,8 +81,9 @@ export async function executeCompanyAnalysisWorkflow(
       }, params.recoveryAttempt ?? 0, params.expectedUpdatedAt);
     });
     if (!claimed) return { status: "superseded", analysisId };
-    // A business explanation is possible before Yahoo has ingested a matching quarter. SEC reports
-    // and public business evidence are its inputs; the fundamentals sync has its own Cron sweep.
+    // The Yahoo fundamentals in the packet are refreshed here, when an analysis needs them, rather than on a
+    // schedule. A failed refresh keeps the last good snapshot: SEC reports and business evidence are the main inputs.
+    await step.do("fundamentals-refresh", () => refreshFundamentalsIfStale(env, params.ticker));
     const packet = await step.do("business-packet", () => readPacket(env, params, "cross_period"));
     const generatedAt = await step.do("company-generation-time", async () => new Date().toISOString());
     const tools = createBusinessResearchTools({
@@ -98,9 +111,9 @@ export async function executeCompanyAnalysisWorkflow(
       status: "analyzing",
     }));
     const output = await runBusinessModelAgent({
-      ticker: params.ticker, companyName: findSecurity(params.ticker)?.name ?? params.ticker,
+      ticker: params.ticker, companyName: issuerNames(findSecurity(params.ticker)?.name ?? params.ticker)[0]!,
       reportDate: packet.reportDate, now: generatedAt, tools,
-      model: (stage, system, payload) => callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, 5 * 60_000),
+      model: (stage, system, payload) => callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, 5 * 60_000, true, { reasoning: reasoningFor(env, "company-analysis") }),
       runStage: (name, callback) => step.do(`business-agent-${name}`, COMPANY_AGENT_MODEL_STEP_CONFIG, callback),
     });
     await step.do("company-run-validating", () => updateStatus(env, {
@@ -179,6 +192,6 @@ function updateStatus(env: SecPipelineEnv, value: Omit<CompanyAnalysisRunUpdate,
 }
 
 function formatReportLabel(periodEnd: string): string {
-  const [year, month, day] = periodEnd.split("-");
-  return `截至 ${year}年${Number(month)}月${Number(day)}日`;
+  const date = new Date(`${periodEnd}T00:00:00Z`);
+  return Number.isNaN(date.getTime()) ? `As of ${periodEnd}` : `As of ${new Intl.DateTimeFormat("en-US", { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" }).format(date)}`;
 }

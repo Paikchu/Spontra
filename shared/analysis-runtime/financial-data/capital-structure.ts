@@ -2,8 +2,8 @@ import { z } from "zod";
 import type { FinancialStatements, StatementCell, StatementTable } from "./financial-statements.ts";
 import type { DisclosureFact, FilingDisclosures } from "./disclosure-extraction.ts";
 import type {
-  AssetGroup, BalanceSheet, CapitalFiling, CapitalLine, CapitalQuarter, CapitalSource, CashFlowSection, CashFlowStatement,
-  EquityGroup, FinancingGroup, InvestingGroup, LiabilityGroup, OperatingGroup, PublicCapitalStructure, RpoBucket, RpoDisclosure, SupplementalGroup,
+  AssetGroup, BalanceSheet, CapitalFiling, CapitalLine, CapitalQuarter, CapitalSchedule, CapitalSource, CashFlowSection, CashFlowStatement,
+  EquityGroup, FinancingGroup, InvestingGroup, LiabilityGroup, OperatingGroup, PublicCapitalStructure, RpoBucket, RpoDisclosure, ScheduleBucket, ScheduleKind, SupplementalGroup,
 } from "../../analysis-contract/capital-structure.ts";
 
 /**
@@ -12,7 +12,7 @@ import type {
  * those cells, signed as the statement shows them. A statement is published only when its lines add up
  * to the totals the issuer reports; anything else is dropped, never estimated.
  */
-export const CAPITAL_VERSION = "sec-capital-structure.v3";
+export const CAPITAL_VERSION = "sec-capital-structure.v5";
 
 type Fact = StatementCell["facts"][number];
 /** `dimensional`: the amount is a member-tagged fact, as a segment subtotal printed on the face statement is. */
@@ -422,12 +422,128 @@ export function extractRpo(disclosures: FilingDisclosures, source: CapitalSource
   return { asOf, currency: factCurrency(total)!, total: total.numericValue!, buckets, source };
 }
 
+/* ---------- Payment schedules by year ---------- */
+
+/** Year buckets as the taxonomy tags them: six concepts per series, from the next twelve months to "thereafter". */
+const YEARS = 6;
+type Series = { buckets: string[]; totals: string[] };
+const series = (buckets: string[], totals: string[]): Series => ({ buckets, totals });
+const debtSeries = series(
+  ["LongTermDebtMaturitiesRepaymentsOfPrincipalInNextTwelveMonths", "LongTermDebtMaturitiesRepaymentsOfPrincipalInYearTwo", "LongTermDebtMaturitiesRepaymentsOfPrincipalInYearThree",
+    "LongTermDebtMaturitiesRepaymentsOfPrincipalInYearFour", "LongTermDebtMaturitiesRepaymentsOfPrincipalInYearFive", "LongTermDebtMaturitiesRepaymentsOfPrincipalAfterYearFive"],
+  ["LongTermDebt", "LongTermDebtAndFinanceLeaseObligations"],
+);
+const operatingLeaseSeries = series(
+  ["LesseeOperatingLeaseLiabilityPaymentsDueNextTwelveMonths", "LesseeOperatingLeaseLiabilityPaymentsDueYearTwo", "LesseeOperatingLeaseLiabilityPaymentsDueYearThree",
+    "LesseeOperatingLeaseLiabilityPaymentsDueYearFour", "LesseeOperatingLeaseLiabilityPaymentsDueYearFive", "LesseeOperatingLeaseLiabilityPaymentsDueAfterYearFive"],
+  ["LesseeOperatingLeaseLiabilityPaymentsDue"],
+);
+const financeLeaseSeries = series(
+  ["FinanceLeaseLiabilityPaymentsDueNextTwelveMonths", "FinanceLeaseLiabilityPaymentsDueYearTwo", "FinanceLeaseLiabilityPaymentsDueYearThree",
+    "FinanceLeaseLiabilityPaymentsDueYearFour", "FinanceLeaseLiabilityPaymentsDueYearFive", "FinanceLeaseLiabilityPaymentsDueAfterYearFive"],
+  ["FinanceLeaseLiabilityPaymentsDue"],
+);
+const purchaseSeries = series(
+  ["PurchaseObligationDueInNextTwelveMonths", "PurchaseObligationDueInSecondYear", "PurchaseObligationDueInThirdYear",
+    "PurchaseObligationDueInFourthYear", "PurchaseObligationDueInFifthYear", "PurchaseObligationDueAfterFifthYear"],
+  ["PurchaseObligation"],
+);
+const unrecordedPurchaseSeries = series(
+  ["UnrecordedUnconditionalPurchaseObligationDueWithinOneYear", "UnrecordedUnconditionalPurchaseObligationDueInSecondYear", "UnrecordedUnconditionalPurchaseObligationDueInThirdYear",
+    "UnrecordedUnconditionalPurchaseObligationDueInFourthYear", "UnrecordedUnconditionalPurchaseObligationDueInFifthYear", "UnrecordedUnconditionalPurchaseObligationDueAfterFiveYears"],
+  ["UnrecordedUnconditionalPurchaseObligation", "UnrecordedUnconditionalPurchaseObligationBalanceSheetAmount"],
+);
+
+/** Exact decimal strings added without floating point: the inventory's values are already scaled and signed. */
+function addDecimals(a: string, b: string): string {
+  const parse = (s: string) => { const [int, frac = ""] = s.replace("-", "").split("."); return { negative: s.startsWith("-"), int, frac }; };
+  const x = parse(a), y = parse(b), places = Math.max(x.frac.length, y.frac.length);
+  const digits = (v: ReturnType<typeof parse>) => BigInt(v.int + v.frac.padEnd(places, "0")) * BigInt(v.negative ? -1 : 1);
+  const total = digits(x) + digits(y), negative = total < BigInt(0), text = (negative ? -total : total).toString().padStart(places + 1, "0");
+  const out = places ? `${text.slice(0, -places)}.${text.slice(-places)}` : text;
+  return negative ? `-${out}` : out;
+}
+
+/** Undimensioned, parsed, currency-denominated instants: the only facts a schedule is read from. */
+function scheduleFacts(disclosures: FilingDisclosures): DisclosureFact[] {
+  return disclosures.facts.filter(f => f.status === "parsed" && f.kind === "numeric" && f.numericValue != null
+    && f.context?.period.kind === "instant" && f.context.period.end && !f.context.dimensions.length && /^[A-Z]{3}$/.test(factCurrency(f) ?? ""));
+}
+
+/** The first fact tagging `concept` at `asOf`; a value tagged twice (in the table and the text) is the same amount. */
+const factAt = (facts: DisclosureFact[], concept: string, asOf: string) => facts.find(f => usGaap(f, concept) && f.context!.period.end === asOf);
+
+/**
+ * One series at one instant: the year buckets tagged there (0–12, 12–24, … months, then "thereafter") and its total.
+ * Only buckets the issuer tags appear; a missing year stays missing rather than being read as zero.
+ */
+function readSeries(facts: DisclosureFact[], s: Series, asOf: string): { buckets: Map<number, string>; total: string | null; currency: string | null } {
+  const buckets = new Map<number, string>();
+  let currency: string | null = null;
+  s.buckets.forEach((concept, year) => { const f = factAt(facts, concept, asOf); if (f) { buckets.set(year, f.numericValue!); currency ??= factCurrency(f); } });
+  const total = s.totals.map(concept => factAt(facts, concept, asOf)).find(Boolean)?.numericValue ?? null;
+  return { buckets, total, currency };
+}
+
+/**
+ * The instant a series is tagged at: the filing's period end is the instant carrying the most buckets, and when
+ * two instants tie (a 10-K that restates last year's ladder in full) the later one is the current period's.
+ */
+function seriesInstant(facts: DisclosureFact[], candidates: Series[]): string | null {
+  const count = new Map<string, number>();
+  for (const f of facts) if (candidates.some(s => s.buckets.some(concept => usGaap(f, concept)))) count.set(f.context!.period.end!, (count.get(f.context!.period.end!) ?? 0) + 1);
+  return [...count.entries()].sort((a, b) => b[1] - a[1] || b[0].localeCompare(a[0]))[0]?.[0] ?? null;
+}
+
+const bucketList = (buckets: Map<number, string>): ScheduleBucket[] => [...buckets.entries()].sort((a, b) => a[0] - b[0])
+  .map(([year, amount]) => ({ from: year * 12, to: year === YEARS - 1 ? null : (year + 1) * 12, amount }));
+
+/**
+ * Payment schedules from the notes, read from the year-bucket concepts the taxonomy defines: long-term debt principal
+ * by maturity year, lease payments due, and purchase obligations. Every amount is an undimensioned fact at the one
+ * instant the series shares (the filing's period end); a schedule stating fewer than two buckets is not a ladder and
+ * is left out. Nothing is derived: the total is published only when the issuer tags it at that same instant.
+ */
+export function extractSchedules(disclosures: FilingDisclosures, source: CapitalSource): CapitalSchedule[] {
+  const facts = scheduleFacts(disclosures);
+  const schedules: CapitalSchedule[] = [];
+  const publish = (kind: ScheduleKind, asOf: string | null, read: ReturnType<typeof readSeries>) => {
+    if (asOf && read.buckets.size >= 2 && read.currency) schedules.push({ kind, asOf, currency: read.currency, total: read.total, buckets: bucketList(read.buckets), source });
+  };
+  const debtAsOf = seriesInstant(facts, [debtSeries]);
+  if (debtAsOf) publish("debtMaturities", debtAsOf, readSeries(facts, debtSeries, debtAsOf));
+
+  // One lease schedule: operating and finance lease payments are the same cash commitment by year, so a filing
+  // that tags both series at the instant is published as their per-bucket sum. The total follows the same rule:
+  // both totals added when finance buckets were included, the operating total alone when there were none, and
+  // null when finance buckets were summed in but their total is not tagged (a partial total would not foot).
+  const leaseAsOf = seriesInstant(facts, [operatingLeaseSeries, financeLeaseSeries]);
+  if (leaseAsOf) {
+    const operating = readSeries(facts, operatingLeaseSeries, leaseAsOf), finance = readSeries(facts, financeLeaseSeries, leaseAsOf);
+    const buckets = new Map(operating.buckets);
+    for (const [year, amount] of finance.buckets) buckets.set(year, buckets.has(year) ? addDecimals(buckets.get(year)!, amount) : amount);
+    const total = !finance.buckets.size ? operating.total : operating.total != null && finance.total != null ? addDecimals(operating.total, finance.total) : null;
+    const currency = operating.currency ?? finance.currency;
+    publish("leasePaymentsDue", leaseAsOf, { buckets, total, currency: finance.currency && currency !== finance.currency ? null : currency });
+  }
+
+  // Purchase obligations are tagged under one of two series; the recorded-obligation series wins when it is a
+  // ladder, the unrecorded (off-balance-sheet) series otherwise. They are never added: both describe the same commitments.
+  const purchaseAsOf = seriesInstant(facts, [purchaseSeries]), recorded = purchaseAsOf && readSeries(facts, purchaseSeries, purchaseAsOf);
+  if (recorded && recorded.buckets.size >= 2) publish("purchaseObligations", purchaseAsOf, recorded);
+  else {
+    const unrecordedAsOf = seriesInstant(facts, [unrecordedPurchaseSeries]);
+    if (unrecordedAsOf) publish("purchaseObligations", unrecordedAsOf, readSeries(facts, unrecordedPurchaseSeries, unrecordedAsOf));
+  }
+  return schedules;
+}
+
 export function extractCapitalFiling(statements: FinancialStatements, source: CapitalSource, disclosures: FilingDisclosures | null = null): CapitalFiling {
   const issues: string[] = [];
-  const rpo = disclosures ? extractRpo(disclosures, source) : null;
-  if (statements.status !== "extracted") return { version: CAPITAL_VERSION, source, rpo, balanceSheet: null, cashFlow: null, issues: ["FINANCIAL_STATEMENTS_NOT_LOCATED"] };
+  const rpo = disclosures ? extractRpo(disclosures, source) : null, schedules = disclosures ? extractSchedules(disclosures, source) : [];
+  if (statements.status !== "extracted") return { version: CAPITAL_VERSION, source, rpo, schedules, balanceSheet: null, cashFlow: null, issues: ["FINANCIAL_STATEMENTS_NOT_LOCATED"] };
   const balanceSheet = extractBalanceSheet(statements, source, issues), cashFlow = extractCashFlow(statements, source, issues);
-  return { version: CAPITAL_VERSION, source, rpo, balanceSheet, cashFlow, issues };
+  return { version: CAPITAL_VERSION, source, rpo, schedules, balanceSheet, cashFlow, issues };
 }
 
 /**
@@ -459,7 +575,7 @@ export function quarterCashFlow(current: CashFlowStatement, prior: CashFlowState
   const sources = [...new Map([...current.sources, ...prior.sources].map(s => [s.accession, s])).values()];
   return {
     periodStart: nextDay(prior.periodEnd), periodEnd: current.periodEnd, currency: current.currency, basis: "derived",
-    formula: `截至 ${current.periodEnd} 的年初至今累计 − 截至 ${prior.periodEnd} 的年初至今累计（财年起点 ${current.periodStart}；前期未列示的行按 0 计）`,
+    formula: `Year to date through ${current.periodEnd} − year to date through ${prior.periodEnd} (fiscal year from ${current.periodStart}; a line the earlier period does not show counts as 0)`,
     operating: section(current.operating, prior.operating), investing: section(current.investing, prior.investing), financing: section(current.financing, prior.financing),
     fxEffect: current.fxEffect === null && prior.fxEffect === null ? null : minus(current.fxEffect, prior.fxEffect),
     netChange: minus(current.netChange, prior.netChange),
@@ -469,7 +585,7 @@ export function quarterCashFlow(current: CashFlowStatement, prior: CashFlowState
   };
 }
 
-const periodEndOf = (filing: CapitalFiling) => filing.cashFlow?.periodEnd ?? filing.balanceSheet?.asOf ?? filing.rpo?.asOf ?? null;
+const periodEndOf = (filing: CapitalFiling) => filing.cashFlow?.periodEnd ?? filing.balanceSheet?.asOf ?? filing.rpo?.asOf ?? filing.schedules?.map(s => s.asOf).sort().at(-1) ?? null;
 
 /** Newest quarters first. Per period, the latest filing with a reconciled statement wins (amendments supersede). */
 export function buildCapitalQuarters(filings: CapitalFiling[], limit = 8): CapitalQuarter[] {
@@ -482,7 +598,9 @@ export function buildCapitalQuarters(filings: CapitalFiling[], limit = 8): Capit
   return [...byEnd.keys()].sort().reverse().slice(0, limit).map(periodEnd => {
     const filing = byEnd.get(periodEnd)!, yearToDate = filing.cashFlow;
     const prior = yearToDate && cumulative.find(c => c.periodStart === yearToDate.periodStart && c.periodEnd < yearToDate.periodEnd && days(c.periodEnd, yearToDate.periodEnd) >= 70 && days(c.periodEnd, yearToDate.periodEnd) <= 110);
-    return { periodEnd, rpo: filing.rpo?.asOf === periodEnd ? filing.rpo : null, balanceSheet: filing.balanceSheet, cashFlow: yearToDate && quarterCashFlow(yearToDate, prior ?? null), yearToDate };
+    // A schedule belongs to the quarter it is stated at; a ladder restated for an earlier instant is not this quarter's.
+    const schedules = (filing.schedules ?? []).filter(s => s.asOf === periodEnd);
+    return { periodEnd, rpo: filing.rpo?.asOf === periodEnd ? filing.rpo : null, schedules, balanceSheet: filing.balanceSheet, cashFlow: yearToDate && quarterCashFlow(yearToDate, prior ?? null), yearToDate };
   });
 }
 
@@ -537,19 +655,40 @@ const rpoSchema = z.object({
   source: z.object({ accession: z.string().max(40), url: z.string().url(), filedAt: z.string().max(40), form: z.string().max(20) }),
 });
 
+const scheduleSchema = z.object({
+  kind: z.enum(["debtMaturities", "leasePaymentsDue", "purchaseObligations"]), asOf: date, currency: z.string().regex(/^[A-Z]{3}$/), total: decimal.nullable(),
+  buckets: z.array(z.object({ from: z.number().int().min(0).max(600), to: z.number().int().min(1).max(600).nullable(), amount: decimal })).min(2).max(12),
+  source: z.object({ accession: z.string().max(40), url: z.string().url(), filedAt: z.string().max(40), form: z.string().max(20) }),
+});
+/** Buckets run forward without overlap and only the last is open-ended; one schedule per kind. */
+function validSchedules(raw: unknown, periodEnd: string): CapitalSchedule[] {
+  const items = z.array(z.unknown()).max(6).safeParse(raw);
+  if (!items.success) return [];
+  const kinds = new Set<string>(), schedules: CapitalSchedule[] = [];
+  for (const item of items.data) {
+    const s = scheduleSchema.safeParse(item);
+    if (!s.success || s.data.asOf !== periodEnd || kinds.has(s.data.kind)) continue;
+    const ordered = s.data.buckets.every((b, i, all) => (b.to === null ? i === all.length - 1 : b.from < b.to) && (i === 0 || b.from >= (all[i - 1].to ?? Infinity)));
+    if (!ordered) continue;
+    kinds.add(s.data.kind);
+    schedules.push(s.data);
+  }
+  return schedules;
+}
+
 export function readCapitalStructure(raw: unknown, ticker: string): PublicCapitalStructure | null {
   const parsed = z.object({ schemaVersion: z.literal("capital-structure.v1"), ticker: z.literal(ticker), quarters: z.array(z.unknown()).max(12) }).safeParse(raw);
   if (!parsed.success) return null;
   const seen = new Set<string>(), quarters: CapitalQuarter[] = [];
   for (const item of parsed.data.quarters) {
-    const q = z.object({ periodEnd: date, rpo: z.unknown().optional(), balanceSheet: z.unknown(), cashFlow: z.unknown(), yearToDate: z.unknown() }).safeParse(item);
+    const q = z.object({ periodEnd: date, rpo: z.unknown().optional(), schedules: z.unknown().optional(), balanceSheet: z.unknown(), cashFlow: z.unknown(), yearToDate: z.unknown() }).safeParse(item);
     if (!q.success || seen.has(q.data.periodEnd)) continue;
     const rpo = rpoSchema.safeParse(q.data.rpo);
-    const quarter: CapitalQuarter = { periodEnd: q.data.periodEnd, rpo: rpo.success && rpo.data.asOf === q.data.periodEnd ? rpo.data : null, balanceSheet: validBalance(q.data.balanceSheet), cashFlow: validCashFlow(q.data.cashFlow), yearToDate: validCashFlow(q.data.yearToDate) };
+    const quarter: CapitalQuarter = { periodEnd: q.data.periodEnd, rpo: rpo.success && rpo.data.asOf === q.data.periodEnd ? rpo.data : null, schedules: validSchedules(q.data.schedules, q.data.periodEnd), balanceSheet: validBalance(q.data.balanceSheet), cashFlow: validCashFlow(q.data.cashFlow), yearToDate: validCashFlow(q.data.yearToDate) };
     if (quarter.balanceSheet && quarter.balanceSheet.asOf !== quarter.periodEnd) quarter.balanceSheet = null;
     if (quarter.cashFlow && (quarter.cashFlow.periodEnd !== quarter.periodEnd || days(quarter.cashFlow.periodStart, quarter.cashFlow.periodEnd) > 110)) quarter.cashFlow = null;
     if (quarter.yearToDate?.periodEnd !== quarter.periodEnd) quarter.yearToDate = null;
-    if (!quarter.balanceSheet && !quarter.cashFlow && !quarter.yearToDate && !quarter.rpo) continue;
+    if (!quarter.balanceSheet && !quarter.cashFlow && !quarter.yearToDate && !quarter.rpo && !quarter.schedules!.length) continue;
     seen.add(quarter.periodEnd);
     quarters.push(quarter);
   }

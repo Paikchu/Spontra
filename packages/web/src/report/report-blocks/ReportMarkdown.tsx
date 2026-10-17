@@ -6,6 +6,15 @@ import type { PluggableList } from "unified";
 import katex from "katex";
 import { cjk } from "@streamdown/cjk";
 import type { ReactNode } from "react";
+import { messages } from "@/packages/web/src/i18n";
+
+const m = messages({
+  image: (alt: string) => `Image: ${alt}`, imageUnavailable: "Image unavailable", table: "Report table",
+  formulaUnavailable: "Formula unavailable", assumption: (text: string) => `Assumption: ${text}`,
+}, {
+  image: (alt: string) => `图片：${alt}`, imageUnavailable: "图片不可用", table: "报告表格",
+  formulaUnavailable: "公式不可用", assumption: (text: string) => `假设：${text}`,
+});
 
 /** Browser URL parsing, rather than a prefix regex, defines the same-origin boundary. */
 export function safeReportUrl(value: string): string | undefined {
@@ -28,12 +37,12 @@ export const REPORT_MARKDOWN_COMPONENTS: Components = {
     return safe ? <a href={safe} {...(safe.startsWith("https://") ? { target: "_blank", rel: "noopener noreferrer" } : {})}>{children}</a> : <span>{children}</span>;
   },
   // Asset IDs are resolved by image blocks. Model-written Markdown must not initiate remote loads.
-  img: ({ alt }) => <span className="report-content-inline-fallback">{alt ? `图片：${alt}` : "图片暂不可用"}</span>,
+  img: ({ alt }) => <span className="report-content-inline-fallback">{alt ? m.image(alt) : m.imageUnavailable}</span>,
   h1: ({ children }) => <h3>{children}</h3>,
   h2: ({ children }) => <h3>{children}</h3>,
   h3: ({ children }) => <h3>{children}</h3>,
   h4: ({ children }) => <h4>{children}</h4>,
-  table: ({ children }) => <div className="report-content-table-scroll" tabIndex={0} role="region" aria-label="报告表格"><table>{children}</table></div>,
+  table: ({ children }) => <div className="report-content-table-scroll" tabIndex={0} role="region" aria-label={m.table}><table>{children}</table></div>,
 };
 
 /** The synchronous parser is evaluated inside the guard; server errors stay within this block. */
@@ -56,8 +65,8 @@ export function ReportFormula({ latex, displayMode, explanation, assumption }: {
     html = katex.renderToString(latex, { displayMode, throwOnError: true, trust: false, strict: "error", maxExpand: 100, maxSize: 10, macros: {}, output: "htmlAndMathml" });
   } catch { /* Preserve the source and surrounding explanation when a formula cannot be rendered. */ }
   return <figure className="report-content-formula">
-    {html ? <div className="report-content-math-scroll" dangerouslySetInnerHTML={{ __html: html }} /> : <div className="report-content-fallback"><span>公式暂无法排版</span><code>{latex}</code></div>}
+    {html ? <div className="report-content-math-scroll" dangerouslySetInnerHTML={{ __html: html }} /> : <div className="report-content-fallback"><span>{m.formulaUnavailable}</span><code>{latex}</code></div>}
     {explanation && <figcaption>{explanation}</figcaption>}
-    {assumption && <p className="report-content-caption">分析假设：{assumption}</p>}
+    {assumption && <p className="report-content-caption">{m.assumption(assumption)}</p>}
   </figure>;
 }

@@ -14,6 +14,8 @@ const SERIES: Partial<Record<HistoricalObservation["seriesId"], FundamentalMetri
   net_income: "net_income", diluted_eps: "diluted_eps", operating_cash_flow: "operating_cash_flow",
   capex: "capital_expenditure", free_cash_flow: "free_cash_flow", cash: "cash_and_cash_equivalents",
   gross_margin: "gross_margin", operating_margin: "operating_margin", rpo: "remaining_performance_obligation",
+  depreciation: "depreciation_and_amortization", stock_compensation: "stock_based_compensation", total_assets: "total_assets", total_liabilities: "total_liabilities",
+  equity: "stockholders_equity", receivables: "accounts_receivable", inventory: "inventory", long_term_debt: "long_term_debt", shares: "ordinary_shares",
 };
 
 export async function getSecFundamentals(database: D1Like, query: FundamentalApiQuery): Promise<PublicFundamentalsResponse> {

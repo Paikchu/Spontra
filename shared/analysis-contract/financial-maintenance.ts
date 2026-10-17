@@ -6,10 +6,12 @@ export type FinancialMaintenanceCompany = {
 };
 export type FinancialMaintenanceTaskStatus = "queued" | "running" | "succeeded" | "partial" | "failed" | "cancel_requested" | "cancelled";
 export type FinancialMaintenanceTask = {
-  id: string; ticker: string; action: "extract" | "analyze"; status: FinancialMaintenanceTaskStatus;
+  id: string; ticker: string; action: "extract" | "analyze" | "reread"; status: FinancialMaintenanceTaskStatus;
   stage: string; createdAt: string; updatedAt: string; completedAt: string | null;
   errorCode: string | null; issues: string[]; progress: { completed: number; total: number };
   canRetry: boolean; canCancel: boolean; accessionNumber: string | null;
+  /** A single-filing re-read: the quarters (period ends) it replaced and the quarters the history now takes from it. */
+  reread?: { form: string; filedAt: string; replaced: string[]; quarters: string[] };
 };
 export type FinancialMaintenanceMetric = {
   id: string; label: string; value: string | null; unit: string; scale: number;

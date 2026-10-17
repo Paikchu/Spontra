@@ -58,10 +58,24 @@ export type RpoBucket = { start: string | null; months: number | null; share: st
 /** Remaining performance obligations at a period end: contracted revenue not yet recognised, and when it is expected. */
 export type RpoDisclosure = { asOf: string; currency: string; total: string; buckets: RpoBucket[]; source: CapitalSource };
 
+/** A payment schedule the notes tag by year: when borrowed principal, lease payments or purchase commitments fall due. */
+export type ScheduleKind = "debtMaturities" | "leasePaymentsDue" | "purchaseObligations";
+
+/**
+ * One year of a schedule: amounts due between `from` and `to` months after the period end. `from` is 0 for the
+ * first year; `to` is null for the open-ended "thereafter" bucket. `amount` is a decimal string in base currency units.
+ */
+export type ScheduleBucket = { from: number; to: number | null; amount: string };
+
+/** A schedule at a period end, as the issuer tags it: the buckets it states and, when tagged at the same instant, the total. */
+export type CapitalSchedule = { kind: ScheduleKind; asOf: string; currency: string; total: string | null; buckets: ScheduleBucket[]; source: CapitalSource };
+
 export type CapitalQuarter = {
   periodEnd: string;
   /** Absent for quarters archived before RPO was read; null when the filing tags no total. */
   rpo?: RpoDisclosure | null;
+  /** Absent for quarters archived before schedules were read; otherwise every schedule the filing tags at this period end. */
+  schedules?: CapitalSchedule[];
   balanceSheet: BalanceSheet | null;
   /** Exactly three months: reported directly, or derived from adjacent cumulative statements. */
   cashFlow: CashFlowStatement | null;
@@ -80,6 +94,7 @@ export type CapitalFiling = {
   version: string;
   source: CapitalSource;
   rpo?: RpoDisclosure | null;
+  schedules?: CapitalSchedule[];
   balanceSheet: BalanceSheet | null;
   cashFlow: CashFlowStatement | null;
   issues: string[];

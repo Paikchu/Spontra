@@ -150,7 +150,6 @@
 }
 
 .earning-report .fundamental-chart__message strong { color: var(--ink); font: 600 18px/1.2 var(--serif); }
-.earning-report .fundamental-chart__message p { max-width: 520px; margin: 0; font-size: 12px; line-height: 1.5; }
 
 @media (max-width: 540px) {
   .earning-report .fundamental-chart { padding-top: 16px; }
@@ -309,7 +308,7 @@
    card list and still has to hang off the same body indent.
    The date reads left-aligned so it starts on the section heading's margin
    rather than floating off the rail, and the track is sized to the widest date
-   it can hold (12月31日 measures ~55px at 13px, plus a few px so a fallback
+   it can hold ("Dec 31" in the original Chinese layout measured ~55px at 13px, plus a few px so a fallback
    font cannot ellipsize it) rather than to a round number: past that the track
    only pushes the rail into the headline, which is the column's real content. */
 /* Sits after the date rules on purpose: the compact size has to outrank the
@@ -507,7 +506,7 @@
    fixed-height frame instead of competing for space on the page. */
 /* The first cell names the group, so it reads as a heading rather than a
    column label like the three beside it. */
-/* 「—」（缺数据）和「NM」（基数非正、增速无意义）都不是涨跌，不该穿绿或红。 */
+/* "—" (no data) and "NM" (non-positive base, growth undefined) are not gains or losses, so they get neither green nor red. */
 
 /* Disclosure timeline. The rail is one continuous 1px line placed in the gap
    between the date column and the entry, so the date can never collide with it
@@ -533,7 +532,7 @@
 
 /* Below 620px the heading stacks into a column, where the baseline-matching
    flex-end above stops meaning "share the h2's baseline" and starts meaning
-   "right-align" — which would push 披露时间线 off the margin the dates align to. */
+   "right-align" — which would push the disclosure timeline heading off the margin the dates align to. */
 
 @media (prefers-reduced-motion: no-preference) {
   @keyframes fundamentals-pulse { to { opacity: .42; } }

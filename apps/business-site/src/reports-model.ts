@@ -2,7 +2,15 @@ import type { BusinessFlowQuarter } from "@/shared/analysis-contract/business-fl
 import type { CompanyEvent, EventsPublication } from "@/shared/analysis-contract/events";
 import type { PublicFilingDigest, PublicFilingDigestPage } from "@/shared/analysis-contract/filings";
 import { DAY_MS } from "@/shared/analysis-runtime/events";
-import { eventTitle, isQuietInsider, type TimelinePoint } from "./events-model";
+import { messages } from "@/packages/web/src/i18n";
+import { langOf } from "@/packages/web/src/i18n/SourceLanguage";
+import { eventTitle, isQuietInsider, periodReport, type TimelinePoint } from "./events-model";
+
+const m = messages({
+  pending: (period: string) => `${period} report · Analysis in progress`,
+}, {
+  pending: (period: string) => `${period} 财报 · 分析中`,
+});
 
 /** A report the rail lists: a 10-Q/10-K/20-F or an earnings group, never a standalone current report. */
 export const isReport = (f: PublicFilingDigest) => f.periodEnd != null;
@@ -68,7 +76,7 @@ export function timelineFromFilings(filings: PublicFilingDigestPage | null, even
   const covered = new Set(points.map(p => p.periodEnd));
   for (const q of quarters) {
     const date = q.reportedAt ?? q.periodEnd;
-    if (!covered.has(q.periodEnd) && date >= floor) { covered.add(q.periodEnd); points.push({ id: "report:" + q.id, date, kind: "report", periodEnd: q.periodEnd, title: `${q.periodEnd.slice(0, 7).replace("-", ".")} 财报`, weight: 3 }); }
+    if (!covered.has(q.periodEnd) && date >= floor) { covered.add(q.periodEnd); points.push({ id: "report:" + q.id, date, kind: "report", periodEnd: q.periodEnd, title: periodReport(q.periodEnd), weight: 3 }); }
   }
   for (const e of events?.events ?? []) {
     if (e.filedAt < floor || merged.has(e.id)) continue;
@@ -79,8 +87,11 @@ export function timelineFromFilings(filings: PublicFilingDigestPage | null, even
 
 /** The rail's one-line title for a report: its headline, or its period and form while the analysis is still running. */
 export function reportTitle(r: PublicFilingDigest): string {
-  return r.headline || `${r.periodLabel ?? r.form} 报告 · 解读生成中`;
+  return r.headline || m.pending(r.periodLabel ?? r.form);
 }
+
+/** The language of the generated headline while it is the title (Chinese once translated); undefined while the title is composed in the reader's language. */
+export const reportTitleLang = (r: PublicFilingDigest): ReturnType<typeof langOf> | undefined => r.headline ? langOf(r.headline) : undefined;
 
 /**
  * The rail's digest while its full list is closed: the newest report and the latest `events` filings, newest first.

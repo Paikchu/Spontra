@@ -16,8 +16,8 @@ const financialTags: Record<string,string[]> = {
  pretaxIncome:['IncomeLossFromContinuingOperationsIncludingNoncontrollingInterestBeforeIncomeTaxesExtraordinaryItems','IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest'],
  taxExpense:['IncomeTaxExpenseBenefit'], netIncome:['NetIncomeLoss','ProfitLoss'], grossProfit:['GrossProfit'], costOfRevenue:['CostOfRevenue','CostOfGoodsAndServicesSold'],
 };
-const expenseTags: Record<string,string> = {CloudAndSoftwareExpenses:'云与软件费用',HardwareExpenses:'硬件费用',ServicesExpense:'服务费用',SellingAndMarketingExpense:'销售与营销',ResearchAndDevelopmentExpense:'研发',GeneralAndAdministrativeExpense:'一般及行政',AmortizationOfIntangibleAssets:'无形资产摊销',RestructuringAndOtherExpenses:'重组及其他'};
-const revenueMembers: Record<string,string> = {CloudApplications:'云应用',CloudInfrastructure:'云基础设施',SoftwareLicense:'软件许可',SoftwareSupport:'软件支持'};
+const expenseTags: Record<string,string> = {CloudAndSoftwareExpenses:'Cloud and software',HardwareExpenses:'Hardware',ServicesExpense:'Services',SellingAndMarketingExpense:'Sales and marketing',ResearchAndDevelopmentExpense:'Research and development',GeneralAndAdministrativeExpense:'General and administrative',AmortizationOfIntangibleAssets:'Amortization of intangible assets',RestructuringAndOtherExpenses:'Restructuring and other',BusinessCombinationAcquisitionRelatedCosts:'Acquisition related and other',RestructuringCharges:'Restructuring'};
+const revenueMembers: Record<string,string> = {CloudApplications:'Cloud applications',CloudInfrastructure:'Cloud infrastructure',SoftwareLicense:'Software license',SoftwareSupport:'Software support'};
 /** No inferred zeroes, no YTD subtraction, no arbitrary conflicting-fact selection. */
 export function parseSecBusinessFlow(html: string, source: ParserSource): ParsedBusinessQuarter[] {
  const contexts = new Map<string,{start:string;end:string;dimensions:Record<string,string>}>();
@@ -47,9 +47,11 @@ export function parseSecBusinessFlow(html: string, source: ParserSource): Parsed
   const consolidated=facts.filter(f=>Object.keys(f.lineage.dimensions).length===0);
   for(const [field,tags]of Object.entries(financialTags)) for(const tag of tags){const matches=consolidated.filter(f=>local(f.lineage.tag)===tag);if(matches.length){const fact=select(matches,field);if(fact)financials[field]=fact;break;}}
   const expenses:BusinessLeaf[]=[];for(const[tag,label]of Object.entries(expenseTags)){const fact=select(consolidated.filter(f=>local(f.lineage.tag)===tag),tag);if(fact)expenses.push({id:tag,label,fact});}
+  // A statement prints either the combined restructuring line or its narrower parts; a note may tag the parts of the combined line too.
+  if(expenses.some(e=>e.id==='RestructuringAndOtherExpenses'))expenses.splice(0,expenses.length,...expenses.filter(e=>!['RestructuringCharges','BusinessCombinationAcquisitionRelatedCosts'].includes(e.id)));
   const revenues:BusinessLeaf[]=[];
   for(const[member,label]of Object.entries(revenueMembers)){const fact=select(facts.filter(f=>local(f.lineage.tag)==='RevenueFromContractWithCustomerExcludingAssessedTax'&&Object.entries(f.lineage.dimensions).length===1&&Object.entries(f.lineage.dimensions).some(([axis,value])=>local(axis)==='ProductOrServiceAxis'&&local(value).replace(/Member$/,'')===member)),member);if(fact)revenues.push({id:member,label,fact});}
-  for(const[tag,label]of [['HardwareRevenues','硬件'],['SalesRevenueServicesNet','服务']] as const){const fact=select(consolidated.filter(f=>[tag,tag+'1'].includes(local(f.lineage.tag))),tag);if(fact)revenues.push({id:tag,label,fact});}
+  for(const[tag,label]of [['HardwareRevenues','Hardware'],['SalesRevenueServicesNet','Services']] as const){const fact=select(consolidated.filter(f=>[tag,tag+'1'].includes(local(f.lineage.tag))),tag);if(fact)revenues.push({id:tag,label,fact});}
   const balanced=(sum:number,total:number)=>Math.abs(sum-total)<=Math.max(1,Math.abs(total)*1e-9);
   if(revenues.length&&financials.revenue&&!balanced(revenues.reduce((s,n)=>s+n.fact.value,0),financials.revenue.value))issues.push('Revenue leaves do not reconcile; do not render as a complete split');
   if(expenses.length&&financials.totalOperatingExpenses&&!balanced(expenses.reduce((s,n)=>s+n.fact.value,0),financials.totalOperatingExpenses.value))issues.push('Expense leaves do not reconcile; do not render as a complete split');

@@ -1,4 +1,5 @@
-import {parseMarkup, normalizedText, nodeText, descendants, type Element, type FilingDisclosures, type DisclosureLocator} from './disclosure-extraction.ts';
+import {parseMarkup, normalizedText, nodeText, type Element, type FilingDisclosures, type DisclosureLocator} from './disclosure-extraction.ts';
+import {tableGrid} from './table-grid.ts';
 
 export const STATEMENTS_VERSION='sec-financial-statements.v4';
 export interface StatementCell {
@@ -60,17 +61,11 @@ export function extractFinancialStatements(html:string,inventory:FilingDisclosur
  const tableNodes=inside.filter(n=>n.local==='table');
  const tables:StatementTable[]=tableNodes.map((table,i)=>{
   const heading=headings.filter(h=>h.locator.start<=table.start).at(-1)?.title??root.title;
-  const rows=descendants(table).filter(n=>n.local==='tr'&&ancestor(n,'table')===table);
-  const occupied=new Map<number,number>(),tableIssues:string[]=[];let columns=0;
-  const result=rows.map((row,r)=>{let column=0;return {cells:descendants(row).filter(n=>['td','th'].includes(n.local)&&ancestor(n,'tr')===row&&ancestor(n,'table')===table).map(cell=>{
-   while((occupied.get(column)??0)>r)column++;
-   const span=(name:string)=>{const raw=cell.attributes[name];if(!raw)return 1;const v=Number(raw);if(!Number.isSafeInteger(v)||v<1||v>1000){tableIssues.push(`INVALID_${name.toUpperCase()}:${cell.start}`);return 1;}return v;};
-   const colSpan=span('colspan'),rowSpan=span('rowspan'),at=column;
-   for(let c=at;c<at+colSpan;c++)occupied.set(c,r+rowSpan);column+=colSpan;columns=Math.max(columns,column);
+  const grid=tableGrid(table),tableIssues=grid.issues,columns=grid.columns;
+  const result=grid.rows.map(row=>({cells:row.cells.map(({node:cell,column:at,colSpan,rowSpan,header,text})=>{
    const facts=sectionFacts.filter(f=>f.source.locator.start>=cell.start&&f.source.locator.end<=cell.end).map(f=>{linked.add(f.id);return {id:f.id,concept:f.concept.name,value:f.normalizedValue,status:f.status,period:f.context?.period??null,unit:f.unit?[f.unit.numerator.map(u=>u.name).join('*'),f.unit.denominator.map(u=>u.name).join('*')].filter(Boolean).join('/'):f.unitRef,scale:f.scale,dimensions:f.context?.dimensions.map(d=>({axis:d.axis.name,value:d.member?.name??d.value}))??[]};});
-   return {column:at,colSpan,rowSpan,header:cell.local==='th',text:nodeText(cell,{blocks:true,documentTextMode:true}).replace(/\s+/g,' ').trim(),locator:loc(cell),facts};
-  })};});
-  if(!table.closed)tableIssues.push('UNCLOSED_TABLE');
+   return {column:at,colSpan,rowSpan,header,text,locator:loc(cell),facts};
+  })}));
   const beforeStart=i?tableNodes[i-1].end:start;
   const precedingText=beforeStart<table.start?nodeText(parseMarkup(html.slice(beforeStart,table.start)).root,{blocks:true,documentTextMode:true}).replace(/\s+/g,' ').trim():'';
   return {precedingText,id:`table-${i+1}`,title:`${heading} · Table ${i+1}`,section:heading,locator:loc(table),rows:result,columns,issues:tableIssues};

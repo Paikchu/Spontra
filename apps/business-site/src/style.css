@@ -157,6 +157,12 @@ button { cursor: pointer; }
 }
 .icon-button:hover { background: color-mix(in srgb, var(--foreground) 9%, transparent); color: var(--foreground); }
 .icon-button svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+.lang-toggle span { font-size: 12px; font-weight: 600; line-height: 1; letter-spacing: 0; }
+/* Names the language of generated text that is not in the reader's language yet. */
+.source-lang {
+  display: inline-flex; align-items: center; height: 18px; padding: 0 6px; border: 1px solid var(--border); border-radius: 5px;
+  font-size: 10.5px; font-weight: 500; line-height: 1; color: var(--faint); white-space: nowrap; vertical-align: middle;
+}
 .rail-list { display: flex; flex-direction: column; gap: 1px; }
 
 /* Flat list: a hue indicator and a soft left wash mark the selection; no boxed rows. */
@@ -183,7 +189,7 @@ button { cursor: pointer; }
 .row-bar { grid-column: 2; height: 3px; border-radius: 2px; background: var(--hairline); overflow: hidden; }
 .row-bar b { display: block; height: 100%; border-radius: 2px; background: var(--c); transition: width .7s var(--ease); }
 .row-meta { grid-column: 3; font-size: 12px; font-weight: 500; line-height: 1.3; color: var(--muted-foreground); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
-/* Rows without a share bar (全部业务, qualitative attribution) give the meta the whole line. */
+/* Rows without a share bar (All businesses, qualitative attribution) give the meta the whole line. */
 .row:not(:has(.row-bar)) .row-meta { grid-column: 2 / 4; text-align: left; }
 .row-meta em, .stat-note { font-style: normal; }
 .row-meta em { margin-left: 8px; }
@@ -227,8 +233,6 @@ button { cursor: pointer; }
 .stage--state { display: block; overflow-y: auto; }
 .stage-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px 24px; flex-wrap: wrap; }
 .stage-head--summary { align-items: flex-start; }
-.report-current { display: inline-flex; align-items: center; gap: 10px; margin-left: auto; padding: 9px 14px; border: 1px solid var(--hairline); border-radius: 12px; background: var(--surface); color: var(--muted-foreground); font-size: 12px; }
-.report-current b { font-weight: 600; color: var(--foreground); font-variant-numeric: tabular-nums; }
 .periods { display: inline-flex; margin-left: auto; padding: 3px; gap: 2px; border-radius: 999px; background: var(--surface); border: 1px solid var(--hairline); }
 .periods button { border: 0; background: transparent; padding: 6px 13px; border-radius: 999px; font-size: 12.5px; font-variant-numeric: tabular-nums; color: var(--muted-foreground); transition: background .2s, color .2s; }
 .periods button:hover { color: var(--foreground); }
@@ -249,9 +253,8 @@ button { cursor: pointer; }
 .legend span { display: inline-flex; align-items: center; gap: 7px; }
 .legend i { width: 10px; height: 10px; border-radius: 3px; }
 .legend .legend-biz { background: linear-gradient(135deg, var(--biz-1), var(--biz-2) 35%, var(--biz-3) 65%, var(--biz-4)); }
-.legend-note { color: var(--faint); }
 .provenance { display: flex; flex-wrap: wrap; justify-content: flex-end; margin: 0; color: var(--faint); }
-.provenance span + span::before { content: "·"; margin: 0 8px; }
+.provenance > * + *::before { content: "·"; margin: 0 8px; color: var(--faint); display: inline-block; }
 
 /* ---------- Chart ---------- */
 .fc { position: absolute; inset: 0; display: grid; grid-template-columns: minmax(0, 1fr); }
@@ -281,11 +284,18 @@ button { cursor: pointer; }
 
 .fc-hit { fill: transparent; }
 .fc-bar { fill: var(--c); transition: opacity .3s, filter .3s; }
-/* The prior quarter's amount as a dashed frame around the bar: the gap between frame and bar is the change. */
-.fc-ghost { fill: none; stroke: var(--c); stroke-width: 1.2; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; opacity: .75; pointer-events: none; animation: fade-in .6s var(--ease) both; animation-delay: var(--d); }
-.light .fc-ghost { stroke: color-mix(in srgb, var(--c) 80%, var(--foreground)); }
-.fc-svg[data-focus] .fc-node:not([data-lit]) .fc-ghost { opacity: .35; }
-.fc-period { position: absolute; left: 12px; bottom: 10px; z-index: 2; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--muted-foreground); font-size: 12px; pointer-events: none; }
+/* The comparison quarter's amount as a tick across the bar: the striped part is what the bar gained past it, a hollow striped frame what it no longer reaches. */
+.fc-prior { pointer-events: none; animation: fade-in .6s var(--ease) both; animation-delay: var(--d); }
+.fc-prior-tick, .fc-prior-halo { fill: none; vector-effect: non-scaling-stroke; }
+.fc-prior-tick { stroke: var(--foreground); stroke-width: 2; }
+.fc-prior-halo { stroke: var(--background); stroke-width: 4; }
+.fc-hatch-gain { fill: var(--background); fill-opacity: .5; }
+.fc-hatch-short { fill: var(--loss); fill-opacity: .55; }
+.fc-hatch-short.fc-hatch-neutral { fill: var(--muted-foreground); }
+.fc-prior-short { stroke: var(--loss); stroke-width: 1.2; stroke-dasharray: 3 2; vector-effect: non-scaling-stroke; }
+/* A cost that shrank is not a loss: its shortfall stays neutral, as its change label does. */
+.fc-node[data-tone="expense"] .fc-prior-short { stroke: var(--muted-foreground); }
+.fc-prior-label { fill: var(--muted-foreground); font-weight: 500; font-variant-numeric: tabular-nums lining-nums; animation: fade-in .3s ease both; }
 /* Guidance on the bars: a bracket is the range guided for this quarter, coloured by where the bar landed; a pill is next quarter's. */
 .fc-guide path { fill: none; stroke: var(--foreground); stroke-width: 2; vector-effect: non-scaling-stroke; opacity: .85; animation: fade-in .6s var(--ease) both; animation-delay: var(--d); }
 .fc-guide[data-derived] path { stroke-dasharray: 4 3; }
@@ -303,7 +313,6 @@ button { cursor: pointer; }
 .fc-guide-pill:focus { outline: none; }
 .fc-tip-note { margin: 8px 0 0; max-width: 260px; font-size: 12px; line-height: 1.5; color: var(--muted-foreground); font-style: italic; }
 .fc-tip-link { margin: 6px 0 0; font-size: 11px; color: var(--muted-foreground); }
-.fc-controls button[data-on], .fc-controls button[data-on]:hover { background: var(--foreground); color: var(--background); border-color: var(--foreground); }
 .fc-node { transition: opacity .35s var(--ease); }
 .fc-svg[data-focus] .fc-node:not([data-lit]) { opacity: .34; }
 .fc-node[data-active] .fc-bar { filter: drop-shadow(0 0 8px var(--c)); }
@@ -345,7 +354,6 @@ button { cursor: pointer; }
 .fc-mind-item[data-picked] rect { stroke: var(--foreground); stroke-width: 2; }
 .fc-mind-caption { pointer-events: none; animation: fade-in .4s ease both; }
 .fc-mind-title { font-weight: 600; fill: var(--foreground); }
-.fc-mind-hint { fill: var(--faint); }
 @media (max-width: 960px) { .mind-lens .lens-body { grid-template-columns: minmax(0, 1fr); } }
 .mind-lens-kind { font-size: 12px; font-weight: 600; color: var(--muted-foreground); }
 .mind-lens .lens-body { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
@@ -532,7 +540,7 @@ button { cursor: pointer; }
 .state, .empty { max-width: 520px; margin: 12vh auto 0; padding: 0 24px; text-align: center; line-height: 1.7; }
 .empty { margin-top: 18%; }
 .state h2, .empty h2 { margin: 0 0 8px; font-size: 20px; font-weight: 620; letter-spacing: -.02em; }
-.state p, .empty p { margin: 0 0 6px; color: var(--muted-foreground); font-size: 14px; }
+.state p { margin: 0 0 6px; color: var(--muted-foreground); font-size: 14px; }
 .state-reasons { font-size: 12px !important; color: var(--faint) !important; }
 .state button { margin-top: 14px; padding: 9px 18px; border-radius: 10px; background: var(--surface); border: 1px solid var(--border); }
 .row--ghost { height: 48px; background: linear-gradient(90deg, var(--hairline), color-mix(in srgb, var(--foreground) 7%, transparent), var(--hairline)) 0 0 / 200% 100%; animation: shimmer 1.6s ease-in-out infinite both; }
@@ -553,12 +561,6 @@ button { cursor: pointer; }
 .stage-controls { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 10px 12px; margin-left: auto; }
 .stage-views { padding: 3px; }
 .stage-views button { padding: 5px 13px; font-size: 12.5px; }
-.stage-controls .report-current { margin-left: 0; }
-.stage-verdict { flex-basis: 100%; margin: -4px 0 0; font-size: 13px; line-height: 1.6; color: var(--muted-foreground); animation: rise .45s var(--ease) both; }
-.stage-verdict b { display: inline-block; margin-right: 10px; padding: 1px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600; color: var(--foreground); background: var(--surface); border: 1px solid var(--hairline); }
-.stage-verdict[data-kind="survival"] b { color: var(--loss); border-color: color-mix(in srgb, var(--loss) 35%, transparent); }
-.stage-verdict[data-kind="expansion"] b { color: var(--flow-expense); border-color: color-mix(in srgb, var(--flow-expense) 35%, transparent); }
-.stage-verdict[data-kind="self"] b { color: var(--up); border-color: color-mix(in srgb, var(--up) 35%, transparent); }
 .pool { position: absolute; inset: 0; display: grid; }
 .pool-canvas { position: relative; min-width: 0; min-height: 0; }
 .pool-svg .fc-band[data-lit="on"] { fill-opacity: .55; }
@@ -567,7 +569,6 @@ button { cursor: pointer; }
 .pool-tip-line span { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .provenance a { color: var(--faint); text-decoration: underline; text-decoration-color: var(--hairline); text-underline-offset: 3px; }
 .provenance a:hover { color: var(--foreground); }
-.provenance span + a::before, .provenance a + a::before { content: "·"; margin: 0 8px; color: var(--faint); display: inline-block; }
 
 /* ---------- Narrow screens: stack, keep the diagram legible with horizontal scroll ---------- */
 @media (max-width: 960px) {
@@ -661,14 +662,10 @@ button { cursor: pointer; }
 }
 
 /* Product relationships are qualitative: constant strokes carry no financial amount. */
-.fc-controls { position: absolute; right: 8px; top: 8px; display: flex; gap: 4px; z-index: 2; }
 .fc-svg { touch-action: none; cursor: grab; }
 @keyframes product-enter { from { opacity: 0; } to { opacity: 1; } }
 
 .fc-svg { overflow: hidden; }
-.fc-controls button { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--foreground); padding: 5px 9px; font: inherit; font-size: 12px; cursor: pointer; }
-.fc-controls button:hover { background: var(--surface-raised); }
-.fc-controls button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 
 /* Business copy sits beside the canvas at page scale; the Sankey refits to the remaining width and the stage keeps its height. */
 .fc[data-products] { grid-template-columns: clamp(300px, 31%, 390px) minmax(0, 1fr); gap: clamp(12px, 1.4vw, 20px); }
@@ -710,8 +707,6 @@ button { cursor: pointer; }
 }
 
 @media (max-width: 960px) {
-  .chart:has(.fc)::before { content: "左右滑动查看完整桑基图"; display: block; position: sticky; left: 0; width: fit-content; margin-bottom: 8px; font-size: 12px; color: var(--muted-foreground); }
-  .fc-controls { left: 8px; right: auto; }
   .fc-svg { touch-action: pan-x pan-y; cursor: auto; }
 }
 
@@ -774,10 +769,6 @@ button { cursor: pointer; }
 .lens-steps { display: inline-flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
 .lens-steps button { width: 28px; padding: 4px 0 !important; }
 .lens-close { width: 28px; padding: 4px 0 !important; }
-.lens-body { display: grid; grid-template-columns: minmax(0, 11fr) minmax(280px, 9fr); gap: 0 clamp(18px, 3vw, 40px); min-height: 0; }
-.lens-chart { position: relative; min-width: 0; min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr); }
-.lens-chart > * { min-height: 0; }
-.lens-text { min-width: 0; min-height: 0; overflow-y: auto; padding-right: 4px; font-size: 13px; line-height: 1.65; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 .lens-judgment { margin: 0 0 10px; color: var(--foreground); }
 .lens-evidence { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 14px; margin: 0 0 10px; padding: 8px 0; border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline); }
 .lens-row { display: contents; }
@@ -800,13 +791,14 @@ button { cursor: pointer; }
 .lens-outcome-body em[data-verdict="within"] { color: var(--up); font-weight: 600; }
 .lens-outcome-body em[data-verdict="above"], .lens-outcome-body em[data-verdict="below"] { color: var(--loss); font-weight: 600; }
 .finding-settled { display: inline-grid; place-items: center; width: 16px; height: 16px; margin-left: -2px; border-radius: 50%; font-size: 10px; font-style: normal; color: var(--kind); background: color-mix(in srgb, var(--kind) 14%, transparent); }
+.finding-settled[data-verdict="pass"] { color: var(--background); background: var(--up); }
+.finding-settled[data-verdict="fail"] { color: var(--background); background: var(--loss); }
 
 /* Side by side: the finding and its counterpart share the trend's row, each with its own chart and figures. */
 .lens-stage { display: grid; grid-template-columns: minmax(0, 1fr); min-height: 0; }
 .lens-stage[data-split] { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 clamp(16px, 2.5vw, 36px); }
 .lens-stage[data-split] .lens { height: clamp(260px, 38vh, 380px); }
 .lens-stage[data-split] .lens + .lens { padding-left: clamp(16px, 2.5vw, 36px); border-left: 1px solid var(--hairline); }
-.lens-stage[data-split] .lens-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 11fr) minmax(0, 9fr); gap: 8px 0; }
 .lens-stage[data-split] .lens-title h2 { font-size: 14px; }
 .lens[data-compact] .lens-basis { display: none; }
 @media (max-width: 1100px) { .lens-stage[data-split] { grid-template-columns: minmax(0, 1fr); } .lens-stage[data-split] .lens + .lens { padding-left: 0; border-left: 0; } }
@@ -817,55 +809,66 @@ button { cursor: pointer; }
 .lens-legend-rate { color: var(--faint); }
 .lens-empty { display: grid; place-items: center; height: 100%; color: var(--faint); font-size: 12px; }
 
-/* Grouped bars standing on a shared zero line; a negative figure hangs below it in the loss colour. */
-.lens-bars { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 6px; min-height: 0; }
-.lens-plot { position: relative; display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); gap: clamp(6px, 1.2vw, 18px); min-height: 0; padding: 20px 0 24px; }
-.lens-zero { position: absolute; left: 0; right: 0; border-top: 1px solid var(--border); margin-bottom: 24px; pointer-events: none; }
-.lens-col { position: relative; min-width: 0; }
-.lens-group { position: absolute; inset: 0; display: flex; justify-content: center; gap: 3px; }
-.lens-slot { position: relative; flex: 0 1 34px; min-width: 6px; height: 100%; }
-.lens-bar { position: absolute; left: 0; right: 0; border-radius: 3px 3px 0 0; transform-origin: bottom; animation: grow .7s var(--ease) both; animation-delay: calc(var(--i) * 60ms); transition: height .6s var(--ease), bottom .6s var(--ease), opacity .25s; }
-.lens-bar[data-negative] { transform-origin: top; border-radius: 0 0 3px 3px; }
-.lens-bar[data-missing] { background: var(--hairline); }
-.lens-col:not([data-current]) .lens-bar { opacity: .55; }
-.lens-col:hover .lens-bar { opacity: 1; }
-.lens-value { position: absolute; left: 50%; bottom: calc(100% + 4px); transform: translateX(-50%); font-size: 11px; font-weight: 600; color: var(--foreground); white-space: nowrap; font-variant-numeric: tabular-nums; text-shadow: 0 0 4px var(--background), 0 0 2px var(--background); animation: fade-in .3s ease both; }
-/* A negative bar hangs from the zero line, so its label sits above that line, clear of the period labels. */
-.lens-bar[data-negative] .lens-value { bottom: calc(100% + 4px); }
-.lens-period { position: absolute; top: calc(100% + 6px); left: -10px; right: -10px; display: flex; flex-direction: column; align-items: center; gap: 1px; font-size: 11px; color: var(--faint); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.lens-col[data-current] .lens-period { color: var(--foreground); }
-.lens-period b { font-size: 10.5px; font-weight: 600; }
-
-/* RPO ladder: the balance over quarters above, and the rungs of its expected conversion below. */
-.lens-ladder { display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: 8px; min-height: 0; }
-.lens-ladder .lens-bars { min-height: 0; }
-.lens-rungs { display: grid; gap: 5px; font-size: 11.5px; color: var(--muted-foreground); }
-.lens-rungs-title { font-weight: 600; color: var(--foreground); }
-.lens-rungs-bar { display: flex; height: 10px; gap: 2px; border-radius: 5px; overflow: hidden; }
-.lens-rungs-bar i { display: block; flex-basis: 0; background: color-mix(in srgb, var(--flow-profit) calc(100% - var(--i) * 22%), var(--background)); animation: grow-x .6s var(--ease) both; animation-delay: calc(var(--i) * 80ms); }
-.lens-rungs-bar i.lens-rung--rest, .lens-rungs-legend i.lens-rung--rest { background: repeating-linear-gradient(135deg, var(--hairline) 0 3px, transparent 3px 6px); border: 1px solid var(--hairline); }
-.lens-rungs-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-variant-numeric: tabular-nums; }
-.lens-rungs-legend span { display: inline-flex; align-items: center; gap: 6px; }
-.lens-rungs-legend i { width: 8px; height: 8px; border-radius: 2px; background: color-mix(in srgb, var(--flow-profit) calc(100% - var(--i) * 22%), var(--background)); }
-.lens-rungs-legend b { font-weight: 600; color: var(--foreground); }
-@keyframes grow-x { from { flex-grow: 0.001; } }
-
-/* Stacked shares: one area per business, the newest column's shares in the legend. */
-.lens-shares { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 6px; min-height: 0; }
-.lens-shares svg { width: 100%; height: 100%; min-height: 0; overflow: visible; }
-.lens-shares path { fill-opacity: .78; stroke: var(--background); stroke-width: 1; vector-effect: non-scaling-stroke; animation: fade-in .6s ease both; animation-delay: calc(var(--i) * 90ms); transition: fill-opacity .2s; }
-.lens-shares path:hover { fill-opacity: 1; }
-.lens-shares line { stroke: var(--background); stroke-opacity: .35; stroke-dasharray: 3 4; }
-.lens-axis { position: relative; height: 14px; font-size: 10.5px; color: var(--faint); font-variant-numeric: tabular-nums; }
-.lens-axis span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
-.lens-axis span[data-edge="start"] { transform: none; } .lens-axis span[data-edge="end"] { transform: translateX(-100%); }
-.lens-axis span:not([data-edge]):nth-child(even) { display: none; }
-
+/* A finding in focus holds the whole stage: tiles, chart, time axis and legend step aside, the document scrolls in their place. */
+.stage[data-focus="finding"] { grid-template-rows: minmax(0, 1fr); padding-bottom: 12px; }
+.stage[data-focus] .lens, .stage[data-focus] .lens-stage[data-split] .lens { height: auto; min-height: 0; margin-top: 0; padding-top: 2px; border-top: 0; }
+.stage[data-focus] .lens-stage[data-split] .lens + .lens { padding-left: clamp(16px, 2.5vw, 36px); border-left: 1px solid var(--hairline); }
+.lens-doc { container: lens-doc / inline-size; display: grid; align-content: start; gap: 18px 0; min-height: 0; overflow-y: auto; padding: 4px 6px 8px 0; font-size: 13px; line-height: 1.65; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.lens-doc-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px clamp(18px, 3vw, 40px); align-items: start; }
+.lens-doc-row[data-cells="2"] { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.lens-doc-row[data-cells="2"][data-lead="first"] { grid-template-columns: minmax(0, 11fr) minmax(280px, 9fr); }
+.lens-doc-row[data-cells="2"][data-lead="second"] { grid-template-columns: minmax(280px, 9fr) minmax(0, 11fr); }
+.lens-doc-cell { display: flex; flex-direction: column; gap: 12px; min-width: 0; container-type: inline-size; }
+.lens-doc-cell > * { margin: 0; }
+.lens-prose { color: var(--foreground); }
+/* The chart cell's height follows its width through the chart's aspect; the frame fills it exactly and never sizes itself. */
+.lens-chart-cell { position: relative; height: clamp(200px, calc(100cqw * var(--aspect, .42)), min(420px, 52vh)); animation: rise .5s var(--ease) both; }
+.lens-chart-cell iframe, .lens-inline { display: block; width: 100%; height: 100%; border: 0; background: transparent; color-scheme: normal; opacity: 0; transition: opacity .3s ease; }
+.lens-chart-cell[data-ready] iframe, .lens-chart-cell[data-ready] .lens-inline { opacity: 1; }
+.lens-inline svg { width: 100%; height: 100%; }
+.lens-chart-cell .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+/* A row's heading, written by the agent; the cells below share it. */
+.lens-doc-row[data-titled] { grid-template-rows: auto auto; }
+.lens-row-title { grid-column: 1 / -1; margin: 0 0 -4px; font-size: 12px; font-weight: 620; letter-spacing: .02em; text-transform: uppercase; color: var(--muted-foreground); }
+/* The filing's own words, with where they were said. */
+.lens-quote { margin: 0; padding: 10px 14px; border-left: 2px solid color-mix(in srgb, var(--kind) 55%, transparent); background: color-mix(in srgb, var(--kind) 5%, transparent); border-radius: 0 10px 10px 0; }
+.lens-quote blockquote { margin: 0; font-size: 13px; line-height: 1.6; color: var(--foreground); }
+.lens-quote figcaption { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; margin-top: 6px; font-size: 11px; color: var(--faint); }
+.lens-quote figcaption a { color: var(--muted-foreground); text-decoration: none; border-bottom: 1px dotted var(--border); }
+.lens-quote figcaption a:hover { color: var(--foreground); }
+.lens-quote figcaption small { font-size: 10.5px; }
+.lens-quote-said { font-weight: 600; color: var(--muted-foreground); }
+.lens-quote figcaption[data-kind="web"] a { border-bottom-style: dashed; }
+.sources li[data-kind="web"] small { margin-left: 8px; font-size: 10.5px; color: var(--faint); font-variant-numeric: tabular-nums; }
+/* Figures as a table: references resolved at read time, a peer or a period per column. */
+.lens-table { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.lens-table caption { text-align: left; padding: 0 0 6px; font-size: 12px; font-weight: 620; color: var(--foreground); }
+.lens-table th, .lens-table td { padding: 5px 8px; border-top: 1px solid var(--hairline); text-align: right; vertical-align: top; }
+.lens-table th[scope="row"] { text-align: left; font-weight: 500; color: var(--muted-foreground); }
+.lens-table thead th { border-top: 0; font-weight: 600; color: var(--foreground); }
+.lens-table thead th small { display: block; font-size: 10.5px; font-weight: 400; color: var(--faint); }
+.lens-table td { color: var(--foreground); font-weight: 600; }
+.lens-table td em { display: block; font-size: 10.5px; font-style: normal; font-weight: 400; color: var(--faint); }
+.lens-table td em[data-trend="up"] { color: var(--up); } .lens-table td em[data-trend="down"] { color: var(--loss); }
+/* Earlier watches of this company, each scored once its period reported. */
+.lens-record { display: grid; gap: 6px; margin: 0; font-size: 12px; }
+.lens-record-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--hairline); }
+.lens-record-row dt { display: flex; flex-direction: column; gap: 1px; color: var(--foreground); }
+.lens-record-row dt span { font-size: 10.5px; color: var(--faint); }
+.lens-record-row dd { display: flex; flex-direction: column; align-items: flex-end; margin: 0; text-align: right; font-variant-numeric: tabular-nums; color: var(--muted-foreground); }
+.lens-record-row dd b { padding: 1px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--background); background: var(--muted-foreground); }
+.lens-record-row[data-verdict="pass"] dd b { background: var(--up); } .lens-record-row[data-verdict="fail"] dd b { background: var(--loss); }
+.lens-record-row dd b[data-pending] { color: var(--faint); background: transparent; border: 1px dashed var(--hairline); }
+.lens-row[data-lit] dt, .lens-row[data-lit] dd b { color: var(--foreground); }
+.lens-row[data-lit] dt { font-weight: 600; }
+.lens-row dt, .lens-row dd b { transition: color .2s; }
+/* Two cells need room for both; in a narrow document (a phone, or one side of a comparison) they stack. */
+@container lens-doc (max-width: 680px) {
+  .lens-doc-row[data-cells="2"], .lens-doc-row[data-cells="2"][data-lead] { grid-template-columns: minmax(0, 1fr); }
+}
 @media (max-width: 960px) {
   .lens { height: auto; }
-  .lens-body { grid-template-columns: minmax(0, 1fr); gap: 12px; }
-  .lens-chart { height: 200px; }
-  .lens-text { max-height: 260px; }
+  .lens-doc { max-height: none; }
 }
 
 /* ---------- Home: search in the middle, the latest findings drifting beneath ---------- */
@@ -877,15 +880,14 @@ button { cursor: pointer; }
     radial-gradient(1100px 520px at 50% 30%, color-mix(in srgb, var(--brand) 6%, transparent), transparent 70%),
     radial-gradient(circle at 1px 1px, var(--hairline) 1px, transparent 1.5px) 0 0 / 22px 22px;
 }
-.home-top { display: flex; justify-content: flex-end; padding: 0 max(24px, env(safe-area-inset-right)) 0 max(24px, env(safe-area-inset-left)); }
+.home-top { display: flex; justify-content: flex-end; gap: 4px; padding: 0 max(24px, env(safe-area-inset-right)) 0 max(24px, env(safe-area-inset-left)); }
 /* Search, recent companies and findings form one block centred in the free space. */
 .home-center { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 44px; min-width: 0; padding-bottom: 6vh; }
 .home-hero {
   position: relative; z-index: 2; display: flex; flex-direction: column; align-items: center; width: min(720px, 100% - 48px);
   text-align: center; animation: rise .5s var(--ease) both;
 }
-.home-hero h1 { margin: 0; font-size: clamp(32px, 5vw, 48px); font-weight: 650; letter-spacing: -.03em; line-height: 1.1; }
-.home-hero > p { margin: 12px 0 32px; font-size: 15px; color: var(--muted-foreground); }
+.home-hero h1 { margin: 0 0 32px; font-size: clamp(32px, 5vw, 48px); font-weight: 650; letter-spacing: -.03em; line-height: 1.1; }
 
 /* The inline search is the dialog's panel resting on the page; its list floats beneath the field. */
 .search-panel[data-inline] { position: relative; z-index: 5; width: 100%; overflow: visible; text-align: left; border-radius: 22px; box-shadow: var(--rail-shadow); transition: border-color .2s, box-shadow .2s; }
@@ -938,7 +940,7 @@ button { cursor: pointer; }
 }
 @media (max-width: 620px) {
   .home-hero { width: calc(100% - 32px); }
-  .home-hero > p { margin-bottom: 24px; }
+  .home-hero h1 { margin-bottom: 24px; }
   .search-panel[data-inline] .search-field { height: 58px; padding: 0 18px; }
   .search-panel[data-inline] .search-field input { font-size: 17px; }
   .search-panel[data-inline] .search-foot { display: none; }
@@ -967,7 +969,7 @@ button { cursor: pointer; }
 .section-action[aria-pressed="true"]:hover { color: var(--background); background: var(--foreground); }
 .section-expand svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; transition: transform .3s var(--ease); }
 .section-expand:hover svg { transform: translateX(1px); }
-/* The business drawer's head is 全部业务 itself: its name centred across the row, the company's change under its revenue. */
+/* The business drawer's head is All businesses itself: its name centred across the row, the company's change under its revenue. */
 .row.row--all .row-meta { grid-column: 3; text-align: right; }
 .row.row--all .row-chip, .row.row--all .row-name { grid-row: 1 / 3; align-self: center; }
 .findings[data-open] [data-extra] { animation: rise .3s var(--ease) both; }
@@ -1061,11 +1063,9 @@ button { cursor: pointer; }
 .event-footnotes summary { cursor: pointer; color: var(--faint); }
 .event-footnotes ol { margin: 6px 0 0; padding-left: 18px; }
 .event-verdict b { display: inline-block; margin-right: 8px; padding: 1px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600; color: var(--background); background: var(--muted-foreground); }
-.event-verdict[data-verdict="需要留意"] b { background: var(--loss); }
-.event-verdict[data-verdict="按计划"] b { background: var(--up); }
-.event-verdict[data-verdict="常规"] b { background: var(--muted-foreground); }
-.event-rules { margin: 0 0 8px; padding-left: 16px; font-size: 12px; color: var(--muted-foreground); }
-.event-rules li { margin: 2px 0; }
+.event-verdict[data-verdict="attention"] b { background: var(--loss); }
+.event-verdict[data-verdict="planned"] b { background: var(--up); }
+.event-verdict[data-verdict="routine"] b { background: var(--muted-foreground); }
 .event-cluster { margin: 0 0 10px; padding: 0; list-style: none; font-size: 12px; color: var(--muted-foreground); }
 .event-cluster li { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; border-bottom: 1px solid var(--hairline); font-variant-numeric: tabular-nums; }
 
@@ -1099,8 +1099,7 @@ button { cursor: pointer; }
 .report-metric dd small { display: flex; flex-wrap: wrap; gap: 2px 10px; font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; }
 .report-metric dd em { font-style: normal; }
 .report-metric dd em[data-trend="up"] { color: var(--up); } .report-metric dd em[data-trend="down"] { color: var(--loss); }
-.report-metric[data-status="derived"] dt::after { content: " · 推算"; color: var(--faint); }
-.report-metric[data-status="not_comparable"] dt::after { content: " · 不可比"; color: var(--faint); }
+.report-metric dt i { font-style: normal; color: var(--faint); }
 .report-changes { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; font-size: 12.5px; color: var(--muted-foreground); }
 .report-changes li b { display: block; font-size: 11.5px; font-weight: 600; color: var(--foreground); }
 .report-changes--below { padding-top: 8px; border-top: 1px solid var(--hairline); }
@@ -1118,3 +1117,32 @@ button { cursor: pointer; }
 .report-dialog-bar .lens-close { width: 28px; padding: 4px 0; border-radius: 999px; background: var(--surface); border: 1px solid var(--hairline); color: var(--muted-foreground); }
 .report-dialog-body { padding: 8px 24px 32px; }
 .report-dialog-body .lens-empty { padding: 60px 0; }
+
+/* ---------- Live updates ---------- */
+/* A newer read is waiting: a pill over the stage's top edge, centred on the stage beside the rail. */
+.update-notice {
+  position: fixed; top: max(14px, env(safe-area-inset-top)); left: calc((100vw + var(--rail-w) + var(--inset)) / 2); z-index: 30; translate: -50% 0;
+  display: flex; align-items: center; gap: 10px; padding: 5px 5px 5px 14px; border: 1px solid var(--border); border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-raised) 92%, transparent); backdrop-filter: blur(12px); box-shadow: var(--shadow-overlay);
+  font-size: 12.5px; font-weight: 560; color: var(--foreground); white-space: nowrap;
+}
+main[data-rail="collapsed"] .update-notice { left: calc((100vw + var(--rail-collapsed-w) + var(--inset)) / 2); }
+.update-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--brand); box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 22%, transparent); animation: pulse 1.6s ease-in-out infinite; }
+.update-apply { padding: 5px 12px; border: 0; border-radius: 999px; font-size: 12px; font-weight: 650; color: var(--background); background: var(--foreground); transition: opacity .16s; }
+.update-apply:hover { opacity: .86; }
+.update-dismiss { width: 26px; height: 26px; background: transparent; }
+.update-dismiss svg { width: 14px; height: 14px; }
+@media (max-width: 960px) {
+  .update-notice, main[data-rail="collapsed"] .update-notice { top: auto; bottom: max(16px, env(safe-area-inset-bottom)); left: 50%; }
+}
+
+/* Rows an update brought drop in from above, one after another, with a glow in their colour that fades; the rest slide down. */
+.findings-rows { position: relative; }
+.finding-row[data-arrived] { animation: row-arrive .55s var(--ease) backwards; animation-delay: calc(var(--arrive, 0) * 70ms); }
+.finding-row[data-arrived]::before {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background: color-mix(in srgb, var(--kind, var(--brand)) 18%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--kind, var(--brand)) 30%, transparent);
+  animation: row-glow 2.4s ease-out both; animation-delay: calc(var(--arrive, 0) * 70ms);
+}
+@keyframes row-arrive { from { opacity: 0; transform: translateY(-10px) scale(.98); } }
+@keyframes row-glow { 0%, 40% { opacity: 1; } 100% { opacity: 0; } }

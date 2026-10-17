@@ -51,10 +51,11 @@ export function historyQuarterFrom(q: BusinessFlowQuarter, source: RevenueHistor
   return validHistoryQuarter(candidate) ? candidate : null;
 }
 
-/** Reported beats derived; prefer the newest disclosure, retaining a verified split over an equal-revenue total-only fallback. */
+/** Reported beats derived, and a periodic report (10-Q, 10-K, 20-F, 6-K) beats the earnings release it supersedes;
+ * then prefer the newest disclosure, retaining a verified split over an equal-revenue total-only fallback. */
 export function mergeHistory(ticker: string, existing: RevenueHistoryQuarter[], incoming: RevenueHistoryQuarter[], updatedAt: string): RevenueHistory {
   const byPeriod = new Map<string, RevenueHistoryQuarter>();
-  const rank = (q: RevenueHistoryQuarter) => [q.basis === "reported" ? 1 : 0, q.source.filedAt] as const;
+  const rank = (q: RevenueHistoryQuarter) => [(q.basis === "reported" ? 2 : 0) + (q.source.form === "8-K" ? 0 : 1), q.source.filedAt] as const;
   for (const q of [...existing, ...incoming]) {
     if (!validHistoryQuarter(q)) continue;
     const old = byPeriod.get(q.periodEnd);

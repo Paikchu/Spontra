@@ -1,7 +1,6 @@
 .business-flow { --flow-accent: var(--sp-accent); --flow-profit: var(--chart-2); --flow-expense: var(--chart-3); --flow-segment-0: var(--chart-1); --flow-segment-1: var(--chart-2); --flow-segment-2: var(--chart-4); width: 100%; min-width: 0; color: var(--foreground); font-family: var(--sans); }
 .business-flow button, .business-flow select { font: inherit; }
 .business-flow button:focus-visible, .business-flow select:focus-visible, .business-flow summary:focus-visible, .business-flow a:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
-.business-flow__notice { margin: 8px 0; font-size: 13px; color: var(--muted-foreground); }
 .business-flow a { color: var(--brand); text-decoration: none; overflow-wrap: anywhere; }
 .business-flow a:hover { text-decoration: underline; }
 .business-flow summary { cursor: pointer; font-weight: 600; }
@@ -38,8 +37,6 @@
 .business-flow__signed-expenses{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:16px 0;}
 .business-flow__chart-scroll{max-width:100%;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;}
 .business-flow__chart-scroll:focus-visible{outline:2px solid var(--focus-ring);outline-offset:2px;}
-.business-flow__scroll-hint{display:none;font-size:12px;color:var(--muted-foreground);}
-@media(max-width:1000px){.business-flow__scroll-hint{display:block;}}
 
 /* Editorial Sankey: profit rises, costs sink, labels sit outside the bars. */
 .flow-infographic{display:block;max-width:100%;height:auto;margin:8px auto 0;font-family:var(--sans);overflow:visible;--flow-source:var(--foreground);--flow-profit:var(--chart-2);--flow-expense:var(--chart-3);}
@@ -66,7 +63,6 @@
 .flow-infographic__node[data-tone="expense"] .flow-infographic__name,.flow-infographic__node[data-tone="expense"] .flow-infographic__value{fill:var(--flow-expense);}
 .flow-infographic__node[data-net] .flow-infographic__value{font-size:28px;}
 .flow-infographic__node[data-segment]:hover .flow-infographic__name{text-decoration:underline;}
-.flow-infographic__caption{margin:4px 0 12px;font-size:12px;color:var(--muted-foreground);text-align:right;}
 @media (prefers-reduced-motion: reduce){.flow-infographic__band,.flow-infographic__bar,.flow-infographic__label{transition:none;}}
 
 .flow-infographic__band[data-tone="loss"]{fill:var(--loss);fill-opacity:.24;}

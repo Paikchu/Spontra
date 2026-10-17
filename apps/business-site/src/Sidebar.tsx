@@ -1,10 +1,28 @@
 import { useEffect, useRef, useState, type ReactNode, type UIEvent } from "react";
 import { Button } from "@/packages/web/src/ui/button";
 import { Sidebar, SidebarHeader, SidebarContent, SidebarTrigger } from "@/packages/web/src/ui/sidebar";
+import { messages, setLocale, useLocale } from "@/packages/web/src/i18n";
 import { CompanyMark } from "./CompanyMark";
 
+const m = messages({
+  lightTheme: "Light theme", home: "Home", search: "Search companies", searchShortcut: "Search companies (⌘K)",
+  expand: "Expand sidebar", collapse: "Collapse sidebar", switchTo: "切换到中文", other: "中",
+}, {
+  lightTheme: "浅色主题", home: "首页", search: "搜索公司", searchShortcut: "搜索公司（⌘K）",
+  expand: "展开侧栏", collapse: "收起侧栏", switchTo: "Switch to English", other: "EN",
+});
+
+/** Switches the interface between English and Chinese; the button names the language it switches to. */
+export function LanguageToggle() {
+  const locale = useLocale();
+  const next = locale === "zh-CN" ? "en" : "zh-CN";
+  return <Button variant="unstyled" type="button" className="icon-button lang-toggle" aria-label={m.switchTo} title={m.switchTo} lang={next} onClick={() => setLocale(next)}>
+    <span aria-hidden="true">{m.other}</span>
+  </Button>;
+}
+
 export function ThemeToggle({ light, onToggle }: { light: boolean; onToggle: () => void }) {
-  return <Button variant="unstyled" type="button" className="icon-button" aria-label={light ? "切换深色主题" : "切换浅色主题"} aria-pressed={light} onClick={onToggle}>
+  return <Button variant="unstyled" type="button" className="icon-button" aria-label={m.lightTheme} aria-pressed={light} onClick={onToggle}>
     <svg viewBox="0 0 24 24" aria-hidden="true">
       {light ? <path d="M20 15a8 8 0 0 1-11-11A8.5 8.5 0 1 0 20 15Z" /> : <>
         <circle cx="12" cy="12" r="4" />
@@ -19,20 +37,21 @@ export function RailActions({ light, onToggleTheme, onSearch, collapsed }: {
   light: boolean; onToggleTheme: () => void; onSearch: () => void; collapsed: boolean;
 }) {
   return <div className="rail-actions">
-    <a href="/" data-nav className="icon-button" aria-label="首页" title="首页">
+    <a href="/" data-nav className="icon-button" aria-label={m.home} title={m.home}>
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <path d="M4 10.5 12 4l8 6.5V19a1 1 0 0 1-1 1h-4.5v-5.5h-5V20H5a1 1 0 0 1-1-1Z" />
       </svg>
     </a>
-    <Button variant="unstyled" type="button" className="icon-button" aria-label="搜索公司" aria-haspopup="dialog" aria-keyshortcuts="Meta+K Control+K /" title="搜索公司 (⌘K)" onClick={onSearch}>
+    <Button variant="unstyled" type="button" className="icon-button" aria-label={m.search} aria-haspopup="dialog" aria-keyshortcuts="Meta+K Control+K /" title={m.searchShortcut} onClick={onSearch}>
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <circle cx="11" cy="11" r="6.5" />
         <path d="m16 16 4 4" />
       </svg>
     </Button>
     <ThemeToggle light={light} onToggle={onToggleTheme} />
-    <SidebarTrigger variant="unstyled" type="button" className="icon-button rail-toggle" aria-label={collapsed ? "展开侧边栏" : "收起侧边栏"} aria-expanded={!collapsed} aria-controls="rail-body"
-      title={collapsed ? "展开侧边栏" : "收起侧边栏"}>
+    <LanguageToggle />
+    <SidebarTrigger variant="unstyled" type="button" className="icon-button rail-toggle" aria-label={collapsed ? m.expand : m.collapse} aria-expanded={!collapsed} aria-controls="rail-body"
+      title={collapsed ? m.expand : m.collapse}>
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <rect x="3" y="4" width="18" height="16" rx="3" />
         <path d="M9 4v16" />

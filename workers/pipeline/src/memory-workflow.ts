@@ -1,3 +1,4 @@
+import { reasoningFor } from "./ai-config.ts";
 import { D1SecRepository } from "./sec/d1.ts";
 import { hashString } from "./sec/analysis.ts";
 import { normalizeMemoryExtraction } from "./sec/memory.ts";
@@ -31,7 +32,7 @@ export async function executeSecMemoryWorkflow(
     if (execution.attempt > 1 && !await repository.claimMemoryJob(params.jobId, ownerToken, new Date(), SEC_MEMORY_MODEL_LEASE_MS, trackedTickersFor(env))) {
       throw new Error("Memory lease ownership changed before model retry");
     }
-    const value = await callWorkerSecModel(env, fetcher, "memory-extract", memoryExtractionSystemPrompt(), compactMemorySource(source), execution.model);
+    const value = await callWorkerSecModel(env, fetcher, "memory-extract", memoryExtractionSystemPrompt(), compactMemorySource(source), execution.model, undefined, true, { reasoning: reasoningFor(env, "memory") });
     return normalizeMemoryExtraction(value, validEvidenceIds, priorMemoryIds);
   });
   const committed = await step.do(`memory-commit:${params.jobId}`, async () => {

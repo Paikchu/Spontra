@@ -1,8 +1,9 @@
 import {companyPolicyEnvironment} from '../financial-data/company-policy.ts';
 import {assertDataTicker, requireDb} from '../core.ts';
-import {normalizeTrackedTicker, parseTrackedTickers} from './config.ts';
+import {normalizeTrackedTicker} from './config.ts';
 import type {SecPipelineEnv} from '../operations.ts';
 import {requestFinancialCollection} from '../financial-data/requests.ts';
+import {emit} from '../pipeline/outbox.ts';
 
 const collectionEnv=(env:SecPipelineEnv)=>({DB:requireDb(env),SEC_USER_AGENT:env.SEC_USER_AGENT,SEC_DATA_TICKERS:env.SEC_DATA_TICKERS,SEC_TRACKED_TICKERS:env.SEC_TRACKED_TICKERS});
 
@@ -19,15 +20,9 @@ export async function handleBusinessFlowRefresh(request:Request,env:SecPipelineE
  env=await companyPolicyEnvironment(env);
  try{assertDataTicker(env,ticker);}catch{return Response.json({error:'Ticker is not tracked'},{status:403});}
  if(env.SEC_DATA_COLLECTION_ENABLED!=='true')return Response.json({error:'Financial data collector is paused; use authenticated admin maintenance for a one-off task.'},{status:409});
- try{const result=await refreshSecBusinessFlow(env,ticker);return Response.json(result,{status:result.status==='maintenance'?409:202});}
+ try{const result=await refreshSecBusinessFlow(env,ticker);
+  // The queued job is run by the collect task; ask for it now.
+  if(result.status==='queued'||result.status==='pending')await emit(env,[{type:'collection.requested',ticker}]);
+  return Response.json(result,{status:result.status==='maintenance'?409:202});}
  catch{return Response.json({error:'SEC financial collection request failed; previous disclosure retained'},{status:503});}
-}
-/** Preserve the old opt-in target and cadence, but share freshness, pending jobs and issuer locks. */
-export async function runBusinessFlowBootstrap(env:SecPipelineEnv,fetcher:typeof fetch=fetch):Promise<{results:unknown[]}>{
- if(env.SEC_DATA_COLLECTION_ENABLED!=='true')return {results:[]};
- const targets=parseTrackedTickers((env as SecPipelineEnv & {SEC_BUSINESS_FLOW_BOOTSTRAP_TICKERS?:string}).SEC_BUSINESS_FLOW_BOOTSTRAP_TICKERS).slice(0,1);
- const results:unknown[]=[];
- env=await companyPolicyEnvironment(env);
- for(const ticker of targets){if(!env.SEC_DATA_TICKERS?.split(',').includes(ticker))continue;results.push(await requestFinancialCollection(collectionEnv(env),ticker,{maxAgeMs:86400000,fetcher}));}
- return {results};
 }

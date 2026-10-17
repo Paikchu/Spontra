@@ -12,6 +12,8 @@ import type {
   PublicFundamentalPeriod,
   PublicFundamentalSeries,
 } from "../../../../shared/analysis-contract/fundamentals.ts";
+import { compactMoney, compactNumber, compactShares, currencyName, MINUS } from "../../../../shared/analysis-runtime/locale.ts";
+import { getLocale, labels, messages } from "../i18n/index.ts";
 // Defined in the contract so the Pipeline enforces the same ceilings; re-exported so every
 // existing consumer keeps its import path.
 export { FUNDAMENTAL_CHART_MAX_AXES, FUNDAMENTAL_CHART_MAX_SERIES };
@@ -19,11 +21,24 @@ export const FUNDAMENTAL_CHART_WIDTH = 760;
 export const FUNDAMENTAL_CHART_HEIGHT = 280;
 
 /**
- * 无意义增速的标注，以及展开说明它的那句话。基数为零或为负时增速在数学上无定义，
- * 业内惯例记作 NM（not meaningful），而不是把它和「这期没有数据」写成同一个破折号。
+ * Marker for a meaningless growth rate, and its spoken form. Growth is undefined
+ * when the base is zero or negative; the convention is NM (not meaningful), not the same dash
+ * used for "no data this period".
  */
 export const FUNDAMENTAL_NOT_MEANINGFUL_LABEL = "NM";
-export const FUNDAMENTAL_NOT_MEANINGFUL_HINT = "not meaningful：基数为零或为负，增速没有数学意义";
+export const FUNDAMENTAL_NOT_MEANINGFUL_HINT = "Not meaningful";
+
+const m = messages({
+  notMeaningfulLabel: FUNDAMENTAL_NOT_MEANINGFUL_LABEL, notMeaningfulHint: FUNDAMENTAL_NOT_MEANINGFUL_HINT, noData: "No data",
+}, {
+  notMeaningfulLabel: "不适用", notMeaningfulHint: "不适用", noData: "无数据",
+});
+const TRANSFORM_SUFFIX = labels<FundamentalTransform>({
+  value: "", qoq_growth: " · QoQ growth", yoy_growth: " · YoY growth", qoq_change: " · QoQ change", yoy_change: " · YoY change",
+}, {
+  value: "", qoq_growth: " · 环比增长", yoy_growth: " · 同比增长", qoq_change: " · 环比变动", yoy_change: " · 同比变动",
+});
+const zh = () => getLocale() === "zh-CN";
 
 export type FundamentalChartAxisSide = "left" | "right";
 
@@ -35,16 +50,17 @@ export type FundamentalChartSeriesSpec = {
 };
 
 /**
- * 一个点为什么空着。"missing" 是这一期没有数据；"not_meaningful" 是数据齐全，
- * 但基数为零或为负，增速没有数学意义（扭亏为盈、亏损扩大等）。两者都以 value:
- * null 出现，只有这个字段能把它们分开，页面据此决定显示「—」还是「NM」。
+ * Why a point is empty. "missing" means no data for the period; "not_meaningful" means the data
+ * is complete but the base is zero or negative, so growth is undefined (a swing to profit, a
+ * widening loss). Both arrive as value: null; only this field tells them apart, and the page uses
+ * it to show "—" or "NM".
  */
 export type FundamentalChartUnavailableReason = "missing" | "not_meaningful";
 
 export type FundamentalChartPoint = {
   periodEnd: string;
   value: number | null;
-  // value 为数时是 null，为 null 时必有原因。
+  // Null when value is a number; always set when value is null.
   unavailableReason: FundamentalChartUnavailableReason | null;
   sourceValueDecimal: string | null;
 };
@@ -179,12 +195,12 @@ export function buildFundamentalChartModel(
   specs: readonly FundamentalChartSeriesSpec[],
 ): FundamentalChartModel {
   if (specs.length === 0) {
-    throw new FundamentalChartSpecError("EMPTY_SERIES", "至少选择一个指标。");
+    throw new FundamentalChartSpecError("EMPTY_SERIES", "Select at least one metric.");
   }
   if (specs.length > FUNDAMENTAL_CHART_MAX_SERIES) {
     throw new FundamentalChartSpecError(
       "TOO_MANY_SERIES",
-      `同一图表最多展示 ${FUNDAMENTAL_CHART_MAX_SERIES} 个指标。`,
+      `A chart shows at most ${FUNDAMENTAL_CHART_MAX_SERIES} metrics.`,
     );
   }
 
@@ -193,18 +209,18 @@ export function buildFundamentalChartModel(
   const preparedWithoutAxes = specs.map((spec) => {
     const source = availableByKey.get(spec.metricKey);
     if (!source) {
-      throw new FundamentalChartSpecError("UNKNOWN_METRIC", `未知指标：${spec.metricKey}`);
+      throw new FundamentalChartSpecError("UNKNOWN_METRIC", `Unknown metric: ${spec.metricKey}`);
     }
     const transform = spec.transform ?? "value";
     if (!source.allowedTransforms.includes(transform)) {
       throw new FundamentalChartSpecError(
         "UNAVAILABLE_TRANSFORM",
-        `${source.label} 不支持 ${transform} 变换。`,
+        `${source.label} does not support the ${transform} transform.`,
       );
     }
     const id = `${spec.metricKey}:${transform}`;
     if (seenIds.has(id)) {
-      throw new FundamentalChartSpecError("DUPLICATE_SERIES", `重复图表序列：${id}`);
+      throw new FundamentalChartSpecError("DUPLICATE_SERIES", `Duplicate chart series: ${id}`);
     }
     seenIds.add(id);
     return prepareSeries(source, periods, transform, spec.mark ?? source.defaultMark);
@@ -214,7 +230,7 @@ export function buildFundamentalChartModel(
   if (axisKeys.length > FUNDAMENTAL_CHART_MAX_AXES) {
     throw new FundamentalChartSpecError(
       "TOO_MANY_AXES",
-      "所选指标包含超过两种不可共用的单位，请拆分为多张图表。",
+      "The selected metrics use more than two incompatible units. Split them into separate charts.",
     );
   }
 
@@ -305,31 +321,31 @@ export function buildFundamentalChartTooltip(
       seriesId: series.id,
       label: series.label,
       value: point?.value ?? null,
-      // ?? 会把"有值"的 null 也当成缺失，所以这里显式区分"没有这个点"和"点上没有原因"。
+      // ?? would treat a null reason on a present point as missing, so tell "no point" apart from "point with no reason".
       unavailableReason: point === null ? "missing" : point.unavailableReason,
       formattedValue: formatFundamentalChartPoint(point, series),
     };
   });
   const periodLabel = formatFundamentalPeriod(period.periodEnd);
-  // 读屏把 "NM" 念成两个字母，所以朗读的那份把它展开成整句；视觉上的窄列仍然只放缩写。
+  // Screen readers spell "NM" letter by letter, so the spoken text expands it; the narrow visual column keeps the abbreviation.
   const spoken = (row: FundamentalChartTooltipRow) =>
-    (row.unavailableReason === "not_meaningful" ? FUNDAMENTAL_NOT_MEANINGFUL_HINT : row.formattedValue);
+    (row.unavailableReason === "not_meaningful" ? m.notMeaningfulHint : row.formattedValue);
   return {
     periodEnd: period.periodEnd,
     periodLabel,
     rows,
-    accessibleLabel: `${periodLabel}，${rows.map((row) => `${row.label} ${spoken(row)}`).join("，")}`,
+    accessibleLabel: `${periodLabel}: ${rows.map((row) => `${row.label} ${spoken(row)}`).join(", ")}`,
   };
 }
 
 /**
- * 和 formatFundamentalChartValue 的区别只在空值：拿得到整个点，就能说出它为什么空。
+ * Differs from formatFundamentalChartValue only for empty values: with the whole point, it can say why it is empty.
  */
 export function formatFundamentalChartPoint(
   point: Pick<FundamentalChartPoint, "value" | "unavailableReason"> | null | undefined,
   seriesOrAxis: Pick<PreparedFundamentalSeries | FundamentalChartAxis, "unitFamily" | "unit" | "currency">,
 ): string {
-  if (point?.unavailableReason === "not_meaningful") return FUNDAMENTAL_NOT_MEANINGFUL_LABEL;
+  if (point?.unavailableReason === "not_meaningful") return m.notMeaningfulLabel;
   return formatFundamentalChartValue(point?.value ?? null, seriesOrAxis);
 }
 
@@ -337,32 +353,59 @@ export function formatFundamentalChartValue(
   value: number | null,
   seriesOrAxis: Pick<PreparedFundamentalSeries | FundamentalChartAxis, "unitFamily" | "unit" | "currency">,
 ): string {
-  if (value === null || !Number.isFinite(value)) return "暂无数据";
+  if (value === null || !Number.isFinite(value)) return m.noData;
   if (seriesOrAxis.unit === "percentage_point") {
-    return `${formatDecimal(value, 1)} 个百分点`;
+    return `${formatDecimal(value, 1)}${zh() ? "个百分点" : " pp"}`;
   }
   if (seriesOrAxis.unitFamily === "percent") return `${formatDecimal(value, 1)}%`;
   // A multiple reads as "42.6x"; compact notation would round it to nothing.
-  if (seriesOrAxis.unitFamily === "multiple") return `${formatDecimal(value, 2)}x`;
+  if (seriesOrAxis.unitFamily === "multiple") return `${formatDecimal(value, 2)}${zh() ? "倍" : "x"}`;
+  if (zh()) return chineseValue(value, seriesOrAxis);
   if (seriesOrAxis.unitFamily === "per_share") {
-    return `${seriesOrAxis.currency || seriesOrAxis.unit} ${formatDecimal(value, 2)}`.trim();
+    const code = seriesOrAxis.currency || seriesOrAxis.unit;
+    return formatCurrency(value, code, { maximumFractionDigits: 2, minimumFractionDigits: 2 })
+      ?? `${code} ${formatDecimal(value, 2)}`.trim();
   }
-  const compact = new Intl.NumberFormat("zh-CN", {
-    notation: "compact",
-    maximumFractionDigits: 1,
-  }).format(value);
-  if (seriesOrAxis.unitFamily === "shares") return `${compact} 股`;
-  return `${compact} ${seriesOrAxis.currency || seriesOrAxis.unit}`.trim();
+  const compact = { notation: "compact", maximumFractionDigits: 1 } as const;
+  if (seriesOrAxis.unitFamily === "shares") return `${new Intl.NumberFormat("en-US", compact).format(value)} shares`;
+  const code = seriesOrAxis.currency || seriesOrAxis.unit;
+  return formatCurrency(value, code, compact)
+    ?? `${new Intl.NumberFormat("en-US", compact).format(value)} ${code}`.trim();
+}
+
+/** "393亿美元", "1.24美元", "123万股": Chinese counting units, the currency named after the amount. */
+function chineseValue(value: number, seriesOrAxis: Pick<PreparedFundamentalSeries | FundamentalChartAxis, "unitFamily" | "unit" | "currency">): string {
+  const code = seriesOrAxis.currency || seriesOrAxis.unit;
+  const iso = /^[A-Z]{3}$/.test(code);
+  const sign = value < 0 ? MINUS : "";
+  if (seriesOrAxis.unitFamily === "per_share") {
+    return iso ? sign + Math.abs(value).toFixed(2) + currencyName(code, "zh-CN") : `${code} ${formatDecimal(value, 2)}`.trim();
+  }
+  if (seriesOrAxis.unitFamily === "shares") return compactShares(value, "zh-CN");
+  if (iso) return compactMoney(value, code, "zh-CN");
+  return `${sign}${compactNumber(Math.abs(value), "zh-CN")} ${code}`.trim();
+}
+
+/** "$39.3B" for an ISO currency code; null when the unit is not one. */
+function formatCurrency(value: number, code: string, options: Intl.NumberFormatOptions): string | null {
+  if (!/^[A-Z]{3}$/.test(code)) return null;
+  try {
+    return new Intl.NumberFormat("en-US", { ...options, style: "currency", currency: code }).format(value);
+  } catch {
+    return null;
+  }
 }
 
 export function formatFundamentalAxisTick(value: number, axis: FundamentalChartAxis): string {
-  return formatFundamentalChartValue(value, axis).replace(" 个百分点", "pp");
+  return formatFundamentalChartValue(value, axis);
 }
 
 export function formatFundamentalPeriod(periodEnd: string): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(periodEnd);
   if (!match) return periodEnd;
-  return `${match[1]}年${Number(match[2])}月`;
+  if (zh()) return `${match[1]}年${Number(match[2])}月`;
+  return new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric", timeZone: "UTC" })
+    .format(new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, 1)));
 }
 
 export function linePath(points: readonly Pick<FundamentalChartLinePoint, "x" | "y">[]): string {
@@ -409,7 +452,7 @@ function prepareSeries(
     return {
       periodEnd: period.periodEnd,
       value,
-      // 未经变换的原值只会因为缺数据而为空。
+      // An untransformed value is empty only because data is missing.
       unavailableReason: value === null ? ("missing" as const) : null,
       sourceValueDecimal: sourcePoint?.valueDecimal ?? null,
     };
@@ -448,8 +491,8 @@ function findYearAgoComparison(
   const dateMs = parsePeriodEndDate(points[index]!.periodEnd);
   if (dateMs === null) return undefined;
   const date = new Date(dateMs);
-  // 目标日期为"一年前的同一月日"。闰年 2/29 会被 Date 归一化到 3/1，
-  // ±7 天容差同时覆盖数据源季度末日期的漂移。
+  // The target is the same month and day one year earlier. Date normalizes a leap-day 2/29 to 3/1;
+  // the ±7-day tolerance also covers drift in the source's quarter-end dates.
   const targetMs = Date.UTC(date.getUTCFullYear() - 1, date.getUTCMonth(), date.getUTCDate());
   let best: FundamentalChartPoint | undefined;
   let bestDiff = Number.POSITIVE_INFINITY;
@@ -472,31 +515,30 @@ function transformPoints(
 ): FundamentalChartPoint[] {
   if (transform === "value") return points.map((point) => ({ ...point }));
   return points.map((point, index) => {
-    // QoQ 用相邻条目（index-1）是安全的：points 继承 periods 按 periodEnd 的升序，
-    // 而 normalization 剔除缺营收季度后，相邻条目恰好就是排序意义上的前一个"可用"季度，
-    // 因此相邻条目语义与"前一个实际季度"一致，无需按日期匹配。
-    // YoY 不能沿用固定索引偏移（index-4）：剔除季度会在数组中留下"空洞"，
-    // 使 index-4 指向相隔 5+ 个季度的期间并静默产生错误增长率。因此改为按
-    // periodEnd 日期匹配一年前的同季度末；找不到（例如序列不足一年）则值为 null，
-    // 与"宁可显示空也不显示错值"的既有语义一致。
+    // QoQ can use the adjacent entry (index-1): points inherit the periods' ascending periodEnd
+    // order, and after normalization drops quarters without revenue the adjacent entry is the
+    // previous available quarter, so no date matching is needed.
+    // YoY cannot use a fixed offset (index-4): dropped quarters leave gaps, so index-4 could point
+    // 5+ quarters back and silently produce a wrong growth rate. It matches the quarter end one
+    // year earlier by periodEnd instead; when none exists (e.g. under a year of data) the value is
+    // null, keeping the rule that an empty value beats a wrong one.
     const comparison = transform === "yoy_growth" || transform === "yoy_change"
       ? findYearAgoComparison(points, index)
       : index > 0
         ? points[index - 1]
         : undefined;
     let value: number | null = null;
-    // 缺了当期或缺了比较期都是「没有数据」；只有算得出比较、结果却没有意义的情况
-    // 才改写成 not_meaningful。
+    // A missing current or comparison value is "missing"; only a comparison that can be computed
+    // but has no meaning becomes not_meaningful.
     let unavailableReason: FundamentalChartUnavailableReason | null = "missing";
     if (point.value !== null && comparison?.value !== null && comparison?.value !== undefined) {
       if (transform === "qoq_growth" || transform === "yoy_growth") {
-        // 分母为 0 时增长率无定义；分母为负时同样无定义——(cur / base - 1) 会把符号
-        // 整体翻转：净利润 -100 → 50（扭亏为盈）算成 -150%，
-        // -100 → -150（亏损扩大）反而算成 +50%，-100 → -50（亏损收窄）算成 -50%。
-        // 三个方向都是页面上直接可见的错数字，因此统一不出数字。但这不是"没有数据"：
-        // 数据齐全，只是这个比值没有意义，页面据 not_meaningful 标 NM 而不是「—」。
-        // base > 0 时保持原公式不变，因此正基数转亏（100 → -50 = -150%）这类有定义
-        // 的结果仍照常输出。
+        // Growth is undefined for a zero base, and for a negative base (cur / base - 1) flips the
+        // sign: net income -100 → 50 (swing to profit) reads -150%, -100 → -150 (wider loss) reads
+        // +50%, and -100 → -50 (narrower loss) reads -50%. All three would show wrong numbers,
+        // so none is shown. This is not "missing": the data is complete but the ratio has no
+        // meaning, so the page shows NM instead of "—". With base > 0 the formula is unchanged,
+        // so a defined result such as a positive base turning to a loss (100 → -50 = -150%) still shows.
         if (comparison.value > 0) {
           value = normalizeComputedValue(((point.value / comparison.value) - 1) * 100);
           unavailableReason = null;
@@ -504,7 +546,7 @@ function transformPoints(
           unavailableReason = "not_meaningful";
         }
       } else {
-        // 差值型变换（百分点）与基数符号无关，跨零仍然成立。
+        // Difference transforms (percentage points) do not depend on the base sign and hold across zero.
         value = normalizeComputedValue(point.value - comparison.value);
         unavailableReason = null;
       }
@@ -549,7 +591,7 @@ function assignAxisSides(
     const key = series[index]!.axisKey;
     const requested = requestedByKey.get(key);
     if (requested && requested !== spec.axis) {
-      throw new FundamentalChartSpecError("AXIS_CONFLICT", `同单位序列 ${key} 不能分配到不同坐标轴。`);
+      throw new FundamentalChartSpecError("AXIS_CONFLICT", `Series with the same unit (${key}) cannot use different axes.`);
     }
     requestedByKey.set(key, spec.axis);
   });
@@ -562,7 +604,7 @@ function assignAxisSides(
     if (usedSides.has(requested)) {
       const otherKey = [...result.entries()].find(([, side]) => side === requested)?.[0];
       if (otherKey !== key) {
-        throw new FundamentalChartSpecError("AXIS_CONFLICT", "不同单位不能共用同一条指定坐标轴。");
+        throw new FundamentalChartSpecError("AXIS_CONFLICT", "Different units cannot share the same assigned axis.");
       }
     }
     result.set(key, requested);
@@ -679,18 +721,11 @@ function parseChartNumber(value: string | null): number | null {
 }
 
 function labelForTransform(label: string, transform: FundamentalTransform): string {
-  const suffix: Record<FundamentalTransform, string> = {
-    value: "",
-    qoq_growth: " · 环比增速",
-    yoy_growth: " · 同比增速",
-    qoq_change: " · 环比变化",
-    yoy_change: " · 同比变化",
-  };
-  return `${label}${suffix[transform]}`;
+  return `${label}${TRANSFORM_SUFFIX[transform]}`;
 }
 
 function formatDecimal(value: number, maximumFractionDigits: number): string {
-  return new Intl.NumberFormat("zh-CN", {
+  return new Intl.NumberFormat("en-US", {
     maximumFractionDigits,
     minimumFractionDigits: 0,
   }).format(value);

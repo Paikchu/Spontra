@@ -84,8 +84,8 @@ export function FinancialQuarterSummary({ periods }: { periods: FinancialMainten
   const commonCurrency = firstUnit && currencies[firstUnit] && shownMetrics.every(metric => metric.unit === firstUnit && scaleExponent(metric.scale) !== null && decimalPattern.test(metric.value!)) ? firstUnit : null;
 
   return <section className="fqs-summary" aria-labelledby={headingId}>
-    <div className="fqs-heading"><div><h3 id={headingId}>季度摘要</h3><p>比较已整理的季度收入、费用与利润。</p></div></div>
-    {!current ? <p className="fqs-empty">暂无季度摘要。获取数据后，可在这里比较不同季度。</p> : <>
+    <div className="fqs-heading"><div><h3 id={headingId}>季度摘要</h3></div></div>
+    {!current ? <p className="fqs-empty">无季度数据</p> : <>
       <div className="fqs-controls">
         <label><span>查看季度</span><select aria-label="季度摘要查看季度" value={current.periodEnd} onChange={event => {
           setChosenPeriod(event.target.value);
@@ -99,16 +99,15 @@ export function FinancialQuarterSummary({ periods }: { periods: FinancialMainten
         <label className="fqs-search"><Search size={15} aria-hidden="true" /><input aria-label="搜索季度摘要项目" value={search} onChange={event => setSearch(event.target.value)} placeholder="搜索项目" /></label>
       </div>
       <div className="fqs-table-meta"><span>{group === "income" ? "利润与费用" : "业务收入"}</span><span>{commonCurrency ? `单位：${millions ? "百万" : ""}${currencies[commonCurrency]}` : "单位随金额列示"}</span></div>
-      <div className="fqs-table-scroll" tabIndex={0} role="region" aria-label="季度摘要比较表，可横向滚动">
+      <div className="fqs-table-scroll" tabIndex={0} role="region" aria-label="季度摘要比较表">
         <table><thead><tr><th scope="col">项目</th>{visiblePeriods.map(period => <th scope="col" key={period.periodEnd}><strong>{period.fiscalLabel || period.periodEnd}</strong><span>{period.periodStart ? `${period.periodStart} — ${period.periodEnd}` : `截至 ${period.periodEnd}`}</span></th>)}</tr></thead>
           <tbody>{rows.map(row => <tr key={row.id} data-total={totals.has(row.id)}><th scope="row">{row.label}</th>{metricMaps.map((metrics, index) => {
             const metric = metrics.get(row.id);
             const display = metricDisplay(metric, commonCurrency, millions);
             return <td key={visiblePeriods[index]!.periodEnd} data-missing={!metric || metric.value === null} title={display.exact} aria-label={display.exact}><span>{display.value}</span>{display.unit && <small>{display.unit}</small>}</td>;
           })}</tr>)}</tbody></table>
-        {!rows.length && <p className="fqs-empty" role="status">{search ? "没有匹配的项目，试试其他名称。" : group === "business" ? "所选季度暂无业务收入明细。" : "所选季度暂无利润与费用数据。"}</p>}
+        {!rows.length && <p className="fqs-empty" role="status">{search ? "无匹配项目" : group === "business" ? "无业务收入明细" : "无利润与费用数据"}</p>}
       </div>
-      <p className="fqs-footnote">— 表示暂无数据；括号表示负数。</p>
     </>}
   </section>;
 }

@@ -40,13 +40,18 @@ function validateCompleteFlow(flow:PublicBusinessFlow,requirePair=true):Complete
    if(!amount!.sourceIds.length||!amount!.sourceIds.every(id=>q.sources.some(s=>s.id===id&&sourceUrl(s.url)))||!amount!.lineage?.length||!amount!.lineage.every(l=>sourceUrl(l.url)&&l.accession&&l.concept&&l.contextId&&amount!.sourceIds.includes(l.accession)&&((l.periodStart===q.periodStart&&l.periodEnd===q.periodEnd)||samePresentationBridge(amount!,q,l)||(amount!.basis==='derived'&&l.periodStart<q.periodStart!&&(l.periodEnd===q.periodEnd||Date.parse(l.periodEnd)+86400000===Date.parse(q.periodStart!))))))reasons.add('INVALID_SOURCE');
    if(amount!.basis==='derived'&&!amount!.formula)reasons.add('INVALID_SOURCE');
   };
-  keys.forEach(key=>{validAmount(q.figures[key]);if(requirePair&&(!q.figures[key]?.comparabilityKey||q.figures[key]?.comparabilityKey!==previous.figures[key]?.comparabilityKey))reasons.add('INCOMPARABLE_QUARTERS');});
+  // A line a later filing restated stays uncompared; it does not hold back the lines that still compare.
+  const restated=new Set(current.basisChanges??[]);
+  keys.forEach(key=>{validAmount(q.figures[key]);if(requirePair&&!restated.has(key)&&(!q.figures[key]?.comparabilityKey||q.figures[key]?.comparabilityKey!==previous.figures[key]?.comparabilityKey))reasons.add('INCOMPARABLE_QUARTERS');});
   const v=(key:FlowMetric)=>number(q.figures[key]);
   const check=(left: number|null,right:number|null)=>{if(left==null||right==null)return;if(!balanced(left,right))reasons.add('UNBALANCED_STATEMENT');};
   const sub=(a:number|null,b:number|null)=>a==null||b==null?null:a-b;
   if(q.incomeModel==='standard'){check(sub(v('revenue'),v('cost')),v('gross'));check(sub(v('gross'),v('operatingExpenses')),v('operating'));}
   else if(q.incomeModel==='insurance'){const subtotal=sub(v('revenue'),v('operatingExpenses'));check(subtotal==null||v('other')==null?null:subtotal+v('other')!,v('pretax'));}else check(sub(v('revenue'),v('operatingExpenses')),v(financial?'pretax':'operating'));
-  if(!financial)check(v('operating')==null||v('other')==null?null:v('operating')!+v('other')!,v('pretax'));check(sub(v('pretax'),v('tax')),v('net'));
+  if(!financial)check(v('operating')==null||v('other')==null?null:v('operating')!+v('other')!,v('pretax'));
+  // Lines after income taxes (equity-method results, noncontrolling interests) close the bridge to net income.
+  const after=q.afterTaxComponents??[];after.forEach(c=>validAmount(c.amount));if(new Set(after.map(c=>c.id)).size!==after.length)reasons.add('INVALID_PAYLOAD');
+  const afterTotal=after.reduce((sum,c)=>sum+(number(c.amount)??NaN),0);check(sub(v('pretax'),v('tax'))==null?null:sub(v('pretax'),v('tax'))!+afterTotal,v('net'));
   if(!q.segmentsComplete||!q.segments.length||new Set(q.segments.map(s=>s.id)).size!==q.segments.length)reasons.add('MISSING_DISCLOSURE');
   const adjustments=q.revenueAdjustments??[];
   adjustments.forEach(a=>validAmount(a.amount));
@@ -70,5 +75,5 @@ function validateCompleteFlow(flow:PublicBusinessFlow,requirePair=true):Complete
 export function newestPair(flow:PublicBusinessFlow):PublicBusinessFlow{return {...flow,quarters:[...flow.quarters].sort((a,b)=>b.periodEnd.localeCompare(a.periodEnd)).slice(0,2)};}
 export function disclosedWholeCompany(q:BusinessFlowQuarter):BusinessFlowQuarter{
  if(q.segments.length||number(q.figures.revenue)==null)return q;
- return {...q,segmentsComplete:true,segments:[{id:'reported-company-total',name:q.segmentDisclosure==='single_reportable_segment'?'公司整体收入（单一报告部门）':'公司整体收入（部门拆分尚未核验）',revenue:q.figures.revenue!,description:q.segmentDisclosure==='single_reportable_segment'?'财报明确披露公司按单一经营及报告部门管理，使用已披露的合并收入。':'使用财报披露的公司合并金额；当前部门映射尚未核验，不宣称原财报未披露部门。',products:[],customers:null,monetization:null,disclosure:q.segmentDisclosure==='single_reportable_segment'?'单一报告部门，不推定未披露的产品收入比例。':'部门拆分尚未核验；当前仅展示已披露合并金额，不分配部门比例。',sourceIds:q.figures.revenue!.sourceIds}]};
+ return {...q,segmentsComplete:true,segments:[{id:'reported-company-total',name:q.segmentDisclosure==='single_reportable_segment'?'Total company (single reportable segment)':'Total company (segment split not yet verified)',revenue:q.figures.revenue!,description:q.segmentDisclosure==='single_reportable_segment'?'The filing states the company is managed as a single operating and reportable segment; consolidated revenue is used.':'Consolidated amounts as filed; the segment mapping is not yet verified, which does not mean the filing lacks segments.',products:[],customers:null,monetization:null,disclosure:q.segmentDisclosure==='single_reportable_segment'?'Single reportable segment; undisclosed product revenue shares are not inferred.':'Segment split not yet verified; only consolidated amounts are shown, with no segment shares allocated.',sourceIds:q.figures.revenue!.sourceIds}]};
 }

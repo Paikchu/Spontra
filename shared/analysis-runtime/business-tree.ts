@@ -1,12 +1,21 @@
 import { z } from "zod";
 import { REVENUE_MODEL_TYPES, type BusinessTree, type TreeBranch, type TreeClaim, type TreeNode, type TreeRevenueModel } from "../analysis-contract/business-tree.ts";
 import { completeProductName, FIGURE } from "./business-explainer.ts";
+import type { Locale } from "./locale.ts";
 
-/** Caps shared by the agent's harness and the reader, so a stored tree always reads back as it was written. */
-export const TREE_LIMITS = { branches: 8, children: 10, nodes: 40, depth: 3, revenue: 3, name: 80, gloss: 14, summary: 160, label: 10, revenueText: 100, anchor: 600 } as const;
+/**
+ * Caps shared by the agent's harness and the reader, so a stored tree always reads back as it was written.
+ * Text caps are characters of English prose: `gloss` and `label` are a few words, the rest a sentence or two.
+ */
+export const TREE_LIMITS = { branches: 8, children: 10, nodes: 40, depth: 3, revenue: 3, name: 80, gloss: 40, summary: 400, label: 32, revenueText: 240, anchor: 600 } as const;
 export const REVENUE_LABEL: Record<TreeRevenueModel["type"], string> = {
-  subscription: "订阅", consumption: "按用量计费", license: "授权许可", transaction: "交易抽成", advertising: "广告", hardware: "硬件销售", services: "服务收费", other: "其他收入",
+  subscription: "Subscription", consumption: "Usage-based", license: "License", transaction: "Transaction fees", advertising: "Advertising", hardware: "Hardware sales", services: "Service fees", other: "Other revenue",
 };
+const REVENUE_LABEL_ZH: Record<TreeRevenueModel["type"], string> = {
+  subscription: "订阅", consumption: "按用量计费", license: "授权许可", transaction: "交易费", advertising: "广告", hardware: "硬件销售", services: "服务费", other: "其他收入",
+};
+/** A revenue model's type as the reader's locale names it; English is `REVENUE_LABEL`. */
+export const revenueLabel = (type: TreeRevenueModel["type"], locale: Locale = "en") => (locale === "zh-CN" ? REVENUE_LABEL_ZH : REVENUE_LABEL)[type];
 
 /** Letters and digits only, with `&` read as `and`, so `Compute & Networking` and `ComputeAndNetworking` are one name. */
 export const compactName = (value: string) => value.normalize("NFKC").toLowerCase().replace(/&/g, "and").replace(/[^\p{L}\p{N}]+/gu, "");
@@ -36,9 +45,9 @@ export const plainText = (value: string, max: number) => length(value) <= max &&
 const https = z.string().max(2000).refine(v => { try { const u = new URL(v); return u.protocol === "https:" && !u.username && !u.password; } catch { return false; } });
 const text = (max: number) => z.string().trim().min(1).max(max);
 const claim = z.object({ text: text(600), sourceIds: z.array(z.string().max(40)).min(1).max(6) });
-const revenue = z.object({ type: z.enum(REVENUE_MODEL_TYPES), label: text(40), text: text(300), sourceIds: z.array(z.string().max(40)).min(1).max(6) });
+const revenue = z.object({ type: z.enum(REVENUE_MODEL_TYPES), label: text(TREE_LIMITS.label * 2), text: text(TREE_LIMITS.revenueText * 2), sourceIds: z.array(z.string().max(40)).min(1).max(6) });
 const nodeShape = z.object({
-  id: text(60), name: text(TREE_LIMITS.name), gloss: z.string().trim().max(40).nullable(), kind: z.enum(["line", "product"]),
+  id: text(60), name: text(TREE_LIMITS.name), gloss: z.string().trim().max(TREE_LIMITS.gloss * 2).nullable(), kind: z.enum(["line", "product"]),
   flowNodeId: z.string().max(200).nullable(), summary: claim.nullable(), anchor: claim.nullable(),
   revenue: z.array(revenue).max(6), children: z.array(z.unknown()).max(TREE_LIMITS.children * 2),
 });
@@ -89,7 +98,24 @@ export function harnessNode(raw: unknown, ancestors: AncestorChain, depth: numbe
 
 /** The names a branch's top-level nodes may cite as their parent. */
 export function branchAncestors(branch: { flowNodeId: string; name: string }, companyName: string, single: boolean): AncestorChain {
-  return [...new Set([branch.name, businessHint(branch.flowNodeId, branch.name), ...(single ? [companyName, companyName.replace(/\b(Inc|Corp|Corporation|Ltd|Holdings|Co|Company|PLC|N\.V)\.?$/i, "").trim()] : [])])];
+  return [...new Set([branch.name, businessHint(branch.flowNodeId, branch.name), ...(single ? issuerNames(companyName) : [])])];
+}
+
+const SHARE_CLASS = /\s*(?:[-–—,]\s*)?(?:Class [A-Z]\b.*|(?:New )?(?:Common|Ordinary|Capital) (?:Stock|Shares)\b.*|American Depositary.*)$/i;
+const LEGAL_FORM = /[,\s&]+(?:Inc|Incorporated|Corp|Corporation|Ltd|Limited|Holdings|Co|Company|PLC|N\.?V|S\.?A|AG|SE|LLC|L\.?P|Group)\.?$/i;
+/**
+ * The names filings use for the issuer, from its listing title: `Cloudflare, Inc. Class A Common Stock` gives
+ * `Cloudflare, Inc.` and `Cloudflare`. A listing title itself never appears in a filing's prose.
+ */
+export function issuerNames(listing: string): string[] {
+  const issuer = listing.replace(SHARE_CLASS, "").trim() || listing.trim();
+  const names = [issuer];
+  for (let name = issuer, previous = ""; name !== previous;) {
+    previous = name;
+    name = name.replace(LEGAL_FORM, "").replace(/[,\s&]+$/, "").trim();
+    if (name && compactName(name).length >= 2 && !names.includes(name)) names.push(name);
+  }
+  return names;
 }
 
 /**

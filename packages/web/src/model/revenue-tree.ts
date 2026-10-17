@@ -1,5 +1,5 @@
 import type { BusinessFlowQuarter, RevenueBreakdown, RevenueBreakdownNode } from "@/shared/analysis-contract/business-flow";
-import { numeric } from "./business-flow-model";
+import { flowWords, numeric, type FlowChange } from "./business-flow-model";
 
 export type RevenueTree = { dimension: RevenueBreakdown; nodes: RevenueBreakdownNode[]; depth: number; legacy: boolean };
 const priorities: Record<RevenueBreakdown["kind"], number> = { business: 0, product_service: 0, end_market: 0, segment: 1, customer: 2, geography: 3 };
@@ -56,7 +56,7 @@ export function availableRevenueTrees(q: BusinessFlowQuarter): RevenueTree[] {
   dimensions.forEach(d => counts.set(d.id, (counts.get(d.id) ?? 0) + 1));
   const candidates = dimensions.filter(d => counts.get(d.id) === 1).map(d => usableTree(q, d)).filter((t): t is RevenueTree => t !== null);
   // Existing segment payloads remain usable; no company-specific rendering rules.
-  const legacy = usableTree(q, { id: "financial-segments", label: "财务分部", kind: "segment", definitionKey: "legacy-segments",
+  const legacy = usableTree(q, { id: "financial-segments", label: "Financial segments", kind: "segment", definitionKey: "legacy-segments",
     periodStart: q.periodStart ?? "", periodEnd: q.periodEnd, currency: q.currency, scale: q.scale, complete: q.segmentsComplete,
     nodes: q.segments.flatMap(s => [
       { ...s, parentId: null, childrenComplete: Boolean(s.children?.length) },
@@ -71,7 +71,7 @@ export function selectRevenueTree(q: BusinessFlowQuarter): RevenueTree | null {
   return availableRevenueTrees(q)[0] ?? null;
 }
 
-export function compareRevenueNode(q: BusinessFlowQuarter, previous: BusinessFlowQuarter | null, id: string) {
+export function compareRevenueNode(q: BusinessFlowQuarter, previous: BusinessFlowQuarter | null, id: string): FlowChange {
   const tree = selectRevenueTree(q), old = previous ? selectRevenueTree(previous) : null;
   const node = tree?.nodes.find(n => revenueNodeKey(tree, n.id) === id);
   const prior = old?.nodes.find(n => revenueNodeKey(old, n.id) === id);
@@ -79,8 +79,9 @@ export function compareRevenueNode(q: BusinessFlowQuarter, previous: BusinessFlo
   const av = numeric(a), bv = numeric(b);
   if (!tree || !old || !previous || tree.dimension.id !== old.dimension.id || tree.dimension.kind !== old.dimension.kind ||
       tree.dimension.definitionKey !== old.dimension.definitionKey || q.currency !== previous.currency || q.scale !== previous.scale ||
-      !a?.comparabilityKey || a.comparabilityKey !== b?.comparabilityKey || a.definition !== b.definition || av == null || bv == null) return { label: "不可比", previous: null, percent: null };
-  if (bv === 0) return { label: av === 0 ? "持平" : "上季为零", previous: bv, percent: null };
-  const percent = (av - bv) / bv * 100;
-  return { label: `${percent > 0 ? "+" : ""}${percent.toFixed(1)}%`, previous: bv, percent };
+      !a?.comparabilityKey || a.comparabilityKey !== b?.comparabilityKey || a.definition !== b.definition || av == null || bv == null) return { label: flowWords.na, comparable: false, trend: null, delta: null, previous: null, percent: null };
+  const delta = av - bv;
+  if (bv === 0) return { label: av === 0 ? flowWords.flat : flowWords.new, comparable: true, trend: av > 0 ? "up" : null, delta, previous: bv, percent: null };
+  const percent = delta / bv * 100;
+  return { label: `${percent > 0 ? "+" : ""}${percent.toFixed(1)}%`, comparable: true, trend: percent > 0 ? "up" : percent < 0 ? "down" : null, delta, previous: bv, percent };
 }

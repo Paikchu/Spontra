@@ -2,6 +2,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { dirname, posix } from "node:path";
 import { pathToFileURL } from "node:url";
 import ts from "typescript";
+import { validateRegistry } from "../workers/pipeline/src/pipeline/registry.ts";
 
 export function checkSourceBoundary(file: string, source: string): string[] {
   const contract = file.startsWith("shared/analysis-contract/");
@@ -35,7 +36,8 @@ export function checkSourceBoundary(file: string, source: string): string[] {
       if (argument && ts.isStringLiteral(argument)) dependency(argument.text);
       else errors.push(`${file}: nonliteral module loading bypasses ownership checks`);
     }
-    if (runtime && ts.isIdentifier(node) && /^(?:globalThis|window|document|navigator|localStorage|sessionStorage|indexedDB|fetch|XMLHttpRequest|WebSocket|Worker|D1Database|D1PreparedStatement|Workflow|R2Bucket|process|Deno|Bun|Buffer|crypto|setTimeout|setInterval|requestAnimationFrame)$/.test(node.text)) {
+    const propertyName = ts.isIdentifier(node) && node.parent && ((ts.isPropertyAccessExpression(node.parent) && node.parent.name === node) || ((ts.isPropertyAssignment(node.parent) || ts.isPropertySignature(node.parent) || ts.isPropertyDeclaration(node.parent)) && node.parent.name === node));
+    if (runtime && !propertyName && ts.isIdentifier(node) && /^(?:globalThis|window|document|navigator|localStorage|sessionStorage|indexedDB|fetch|XMLHttpRequest|WebSocket|Worker|D1Database|D1PreparedStatement|Workflow|R2Bucket|process|Deno|Bun|Buffer|crypto|setTimeout|setInterval|requestAnimationFrame)$/.test(node.text)) {
       errors.push(`${file}: shared runtime uses platform API ${node.text}`);
     }
     if (contract && (ts.isFunctionDeclaration(node) || ts.isClassDeclaration(node) || ts.isCallExpression(node) || ts.isNewExpression(node) || ts.isArrowFunction(node))) errors.push(`${file}: contract contains implementation code`);
@@ -62,7 +64,9 @@ export async function checkArchitecture(): Promise<string[]> {
   return (await Promise.all(paths.map(async (file) => checkSourceBoundary(file, await readFile(file, "utf8"))))).flat();
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const errors = await checkArchitecture();
+  // The event graph (docs/pipeline-events.md) is checked here too, because this script runs in the Pipeline build:
+  // every subscribed event has an emitter, every name is known, and no task can trigger itself through others.
+  const errors = [...await checkArchitecture(), ...validateRegistry().map(error => `pipeline events: ${error}`)];
   if (errors.length) { console.error(errors.join("\n")); process.exitCode = 1; }
-  else console.log("Architecture boundaries passed: Pipeline depends only on its own code, declarative shared contracts and pure shared runtime; no Web callbacks or imports.");
+  else console.log("Architecture boundaries passed: Pipeline depends only on its own code, declarative shared contracts and pure shared runtime; no Web callbacks or imports. Pipeline event graph is complete and acyclic.");
 }

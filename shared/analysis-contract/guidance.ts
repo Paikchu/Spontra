@@ -52,7 +52,7 @@ export type GuidanceItem = {
   derived: { low: number; high: number; basePeriodEnd: string; base: number } | null;
   /** Reported revenue for the target quarter, once published. */
   actual: { value: number; periodEnd: string } | null;
-  /** One sentence in Simplified Chinese. */
+  /** One sentence in English. */
   text: string;
   /** Verbatim from the source, at most 200 characters. */
   quote: string;

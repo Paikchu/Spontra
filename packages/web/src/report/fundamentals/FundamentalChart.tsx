@@ -12,6 +12,13 @@ import {
 } from "react";
 import type { PublicFundamentalsResponse } from "@/shared/analysis-contract/fundamentals.ts";
 import { FUNDAMENTAL_CHART_HEIGHT, FUNDAMENTAL_CHART_WIDTH, buildFundamentalChartGeometry, buildFundamentalChartModel, buildFundamentalChartTooltip, formatFundamentalAxisTick, getFundamentalSeriesVisual, linePath, selectFundamentalPeriodTickIndexes, type FundamentalChartAxis, type FundamentalChartModel, type FundamentalChartSeriesSpec, type FundamentalSeriesVisual } from "@/packages/web/src/model/fundamental-chart.ts";
+import { messages } from "@/packages/web/src/i18n";
+
+const m = messages({
+  syncing: "Syncing", unsupported: "Unsupported metrics", noData: "No data", legend: "Legend", leftAxis: "Left axis", rightAxis: "Right axis",
+}, {
+  syncing: "同步中", unsupported: "不支持的指标", noData: "无数据", legend: "图例", leftAxis: "左轴", rightAxis: "右轴",
+});
 
 export type FundamentalChartRendererProps = {
   title: string;
@@ -41,29 +48,19 @@ export function FundamentalChartRenderer({
   const rawPatternId = useId();
   const patternId = rawPatternId.replace(/[^a-zA-Z0-9_-]/g, "");
   const [activePeriodIndex, setActivePeriodIndex] = useState<number | null>(null);
-  const modelResult = useMemo(() => {
-    if (data.status !== "ready") return { model: null, error: null };
+  const model = useMemo(() => {
+    if (data.status !== "ready") return null;
     try {
-      return {
-        model: buildFundamentalChartModel(data.periods, data.series, series),
-        error: null,
-      };
-    } catch (error) {
-      return {
-        model: null,
-        error: error instanceof Error ? error.message : "图表配置无法解析。",
-      };
+      return buildFundamentalChartModel(data.periods, data.series, series);
+    } catch {
+      return null;
     }
   }, [data, series]);
-  const model = modelResult.model;
 
   if (data.status === "pending") {
     return (
       <ChartFrame className={className} title={title} description={description}>
-        <ChartMessage
-          title="财报趋势正在准备"
-          detail="正在同步季度数据。数据可用后，图表会自动更新。"
-        />
+        <ChartMessage title={m.syncing} />
       </ChartFrame>
     );
   }
@@ -71,7 +68,7 @@ export function FundamentalChartRenderer({
   if (!model) {
     return (
       <ChartFrame className={className} title={title} description={description}>
-        <ChartMessage title="这组指标暂时不能叠加" detail={modelResult.error ?? "请调整指标组合。"} />
+        <ChartMessage title={m.unsupported} />
       </ChartFrame>
     );
   }
@@ -80,7 +77,7 @@ export function FundamentalChartRenderer({
   if (!hasValues) {
     return (
       <ChartFrame className={className} title={title} description={description}>
-        <ChartMessage title="暂无可绘制数据" detail="所选指标在这些报告期内均为空。可更换指标或扩大报告期范围。" />
+        <ChartMessage title={m.noData} />
       </ChartFrame>
     );
   }
@@ -105,9 +102,7 @@ export function FundamentalChartRenderer({
       />
 
       <p className="sr-only" aria-live="polite" data-chart-role="live-region">
-        {activePeriodIndex === null
-          ? "可使用 Tab 键依次查看每个报告期的数据。"
-          : buildFundamentalChartTooltip(model, activePeriodIndex).accessibleLabel}
+        {activePeriodIndex === null ? null : buildFundamentalChartTooltip(model, activePeriodIndex).accessibleLabel}
       </p>
     </figure>
   );
@@ -135,18 +130,17 @@ function ChartFrame({
   );
 }
 
-function ChartMessage({ title, detail }: { title: string; detail: string }) {
+function ChartMessage({ title }: { title: string }) {
   return (
     <div className="fundamental-chart__message" role="status" data-chart-role="message">
       <strong>{title}</strong>
-      <p>{detail}</p>
     </div>
   );
 }
 
 function ChartLegend({ model }: { model: FundamentalChartModel }) {
   return (
-    <ul className="fundamental-chart__legend" aria-label="图例" data-chart-role="legend">
+    <ul className="fundamental-chart__legend" aria-label={m.legend} data-chart-role="legend">
       {model.series.map((series, index) => {
         const visual = getFundamentalSeriesVisual(index);
         return (
@@ -161,7 +155,7 @@ function ChartLegend({ model }: { model: FundamentalChartModel }) {
               )}
             </svg>
             <span>{series.label}</span>
-            <small>{series.axis === "left" ? "左轴" : "右轴"}</small>
+            <small>{series.axis === "left" ? m.leftAxis : m.rightAxis}</small>
           </li>
         );
       })}
@@ -505,7 +499,7 @@ function ChartTooltip({
         return (
           <g key={row.seriesId} transform={`translate(0 ${38 + index * rowHeight})`}>
             <PointShape shape={visual.pointShape} x={15} y={0} color={visual.color} size={3.5} />
-            <text x="27" y="4">{truncate(series.shortLabel, 12)}</text>
+            <text x="27" y="4">{truncate(series.shortLabel, 18)}</text>
             <text x={width - 12} y="4" textAnchor="end">{row.formattedValue}</text>
           </g>
         );

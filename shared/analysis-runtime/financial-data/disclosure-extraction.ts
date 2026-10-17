@@ -144,7 +144,7 @@ const isInline = (node: Element) => IX_NAMESPACES.has(node.namespaceUri ?? "") |
 const isInstance = (node: Element, local: string) => node.local === local && (node.namespaceUri === XBRLI || !node.namespaceUri && /^xbrli:/i.test(node.name));
 const isDimension = (node: Element) => node.namespaceUri === XBRLDI || !node.namespaceUri && /^xbrldi:/i.test(node.name);
 
-function decodeEntities(value: string): string {
+export function decodeEntities(value: string): string {
   const named: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: "\u00a0", ndash: "–", mdash: "—", minus: "−", hellip: "…", bull: "•", reg: "®", copy: "©", trade: "™", rsquo: "’", lsquo: "‘", rdquo: "”", ldquo: "“", thinsp: "\u2009", ensp: "\u2002", emsp: "\u2003" };
   return value.replace(/&(#x[\da-f]+|#\d+|[a-z][a-z\d]+);/gi, (match, entity: string) => {
     if (!entity.startsWith("#")) return named[entity] ?? match;

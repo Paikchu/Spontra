@@ -1,6 +1,6 @@
 # Transcript 全文库
 
-Admin `/admin/transcripts` 提供公司筛选、财报期间列表、采集状态和全文阅读。所有接口沿用 Admin 登录认证，响应为 `private, no-store`。全文不经过模型摘要或截断，按供应商的发言顺序保留。
+Pipeline 的 `/admin/transcripts` 接口提供公司筛选、财报期间列表、采集状态和全文。后台改为只服务 BusinessView 后（2026-10-12）已移除 Transcript 页面，Admin 代理也不再转发该接口。接口沿用 Admin 登录认证，响应为 `private, no-store`。全文不经过模型摘要或截断，按供应商的发言顺序保留。
 
 生产每 2 分钟从有效数据白名单公司的已归档 SEC 10-Q/10-K 中发现财报期间，并处理一条采集任务。使用已有的 `*/2 * * * *` 定时器，在财报维护任务前运行，维护队列不会跳过 Transcript 采集。包含历史归档；同公司同期间只建一条记录。原始 SEC 文档的 DEI 确定财年、财季，年度报告对应 Q4。无法确认财期时保留 `needs_period`，不猜测自然季度。供应商为 Alpha Vantage `EARNINGS_CALL_TRANSCRIPT`；接口未提供真实会议日期，列表显示关联财报期末。
 

@@ -4,17 +4,20 @@ import type { AiCompanies, AiCompanyDetail, AiRun, AiRunKind, AiRunStarted, AiRu
 import type { AnalysisFinding, FindingsPublication } from "@/shared/analysis-contract/findings";
 import type { BusinessExplainer } from "@/shared/analysis-contract/business-explainer";
 import type { BusinessTree, TreeNode } from "@/shared/analysis-contract/business-tree";
-import type { GuidancePublication } from "@/shared/analysis-contract/guidance";
 import { adminApi, AdminApiError } from "./admin-api";
+import { CompanyLogo } from "@/packages/web/src/company-logo";
 import { completeRequestId, pendingRequestId } from "./financial-maintenance-state";
+import { TranslationsPanel } from "./translations";
 import "./ai-runs.css";
 
-const KINDS: Array<[AiRunKind, string]> = [["findings", "财报发现"], ["explainer", "业务解读"], ["tree", "业务脑图"], ["guidance", "业绩指引"]];
-const STATUS: Record<AiRunStatus, string> = { queued: "排队中", running: "运行中", waiting: "等待中", succeeded: "已完成", empty: "无可发布内容", superseded: "数据已更新，已跳过", failed: "失败" };
+/** The BusinessView outputs this admin shows; guidance is not part of BusinessView. */
+export type ViewKind = Exclude<AiRunKind, "guidance">;
+const KINDS: Array<[ViewKind, string]> = [["findings", "公司要点"], ["analyst", "要点分析师"], ["explainer", "业务解读"], ["tree", "业务脑图"]];
+const STATUS: Record<AiRunStatus, string> = { queued: "排队中", running: "运行中", waiting: "等待中", succeeded: "已完成", empty: "无可发布内容", superseded: "已跳过", failed: "失败" };
 const ACTIVE = new Set<AiRunStatus>(["queued", "running", "waiting"]);
 const badge = (status: AiRunStatus) => status === "failed" ? "failed" : status === "succeeded" ? "reviewed" : ACTIVE.has(status) ? "processing" : "";
 const STAGES: Array<[RegExp, (m: RegExpExecArray) => string]> = [
-  [/^(findings|explainer|tree)-time$|^guidance-time-/, () => "记录开始时间"],
+  [/^(findings|explainer|tree)-time$/, () => "记录开始时间"],
   [/^tree-input$/, () => "读取业务列表"],
   [/^tree-filings$/, () => "列出财报与年报"],
   [/^tree-b(\d+)-t(\d+)-think$/, m => `第 ${m[1]} 项业务 · 第 ${m[2]} 轮思考`],
@@ -23,8 +26,8 @@ const STAGES: Array<[RegExp, (m: RegExpExecArray) => string]> = [
   [/^tree-b(\d+)-review/, m => `第 ${m[1]} 项业务 · 审校`],
   [/^tree-publish$/, () => "发布"],
   [/^findings-input$/, () => "读取财报、指引与公司综述"],
-  [/^findings-write$/, () => "模型撰写发现"],
-  [/^findings-repair$/, () => "修正未通过核对的发现"],
+  [/^findings-write$/, () => "撰写要点"],
+  [/^findings-repair$/, () => "修正未通过项"],
   [/^findings-publish$/, () => "核对并发布"],
   [/^explainer-input$/, () => "读取业务列表"],
   [/^explainer-evidence-filing$/, () => "读取财报原文"],
@@ -34,19 +37,9 @@ const STAGES: Array<[RegExp, (m: RegExpExecArray) => string]> = [
   [/^explainer-write-(\d+)$/, m => `撰写业务解读 · 第 ${Number(m[1]) + 1} 组`],
   [/^explainer-review-(\d+)$/, m => `审校 · 第 ${Number(m[1]) + 1} 组`],
   [/^explainer-publish$/, () => "发布"],
-  [/^guidance-context$/, () => "识别财季"],
-  [/^guidance-sec$/, () => "读取 SEC 附件"],
-  [/^guidance-transcript-wait-(\d+)$/, m => `等待电话会文字稿 · 第 ${m[1]} 次`],
-  [/^guidance-transcript-(\d+)$/, m => `获取电话会文字稿 · 第 ${Number(m[1]) + 1} 次`],
-  [/^guidance-deck$/, () => "搜索 IR 演示文稿"],
-  [/^guidance-extract-/, () => "模型提取指引"],
-  [/^guidance-budget-wait/, () => "等待次日模型额度"],
-  [/^guidance-publish-/, () => "发布指引"],
-  [/^guidance-event-extracted$/, () => "标记已提取"],
-  [/^guidance-event-complete$/, () => "记录完成状态"],
 ];
 function stageLabel(stage: string | null | undefined) {
-  if (!stage) return "等待开始";
+  if (!stage) return "待开始";
   for (const [pattern, label] of STAGES) { const m = pattern.exec(stage); if (m) return label(m); }
   return stage;
 }
@@ -55,30 +48,64 @@ function elapsed(run: AiRun) {
   const seconds = Math.max(0, Math.round((Date.parse(run.finishedAt ?? run.updatedAt) - Date.parse(run.startedAt)) / 1000));
   return seconds < 60 ? `${seconds} 秒` : seconds < 3600 ? `${Math.round(seconds / 60)} 分钟` : `${(seconds / 3600).toFixed(1)} 小时`;
 }
+const count = (value: number) => value.toLocaleString("zh-CN");
 function storage() { try { return window.sessionStorage; } catch { return undefined; } }
 function initial(name: "ticker" | "kind") { try { return new URLSearchParams(window.location.search).get(name) ?? ""; } catch { return ""; } }
 
-export function AiRuns({ onUnauthorized, onAuthenticated }: { onUnauthorized: () => void; onAuthenticated: () => void }) {
+/** Companies on the left, the chosen kinds of one company on the right. The page keeps `?ticker=&kind=` in its URL. */
+export function AiRuns({ onUnauthorized, onAuthenticated, kinds, translations = false }: { onUnauthorized: () => void; onAuthenticated: () => void; kinds: ViewKind[]; translations?: boolean }) {
+  const kindTabs = KINDS.filter(([k]) => kinds.includes(k));
+  /** The Chinese the pipeline wrote for the company's publications, as a last tab. */
+  const tabs: Array<[ViewKind | "translations", string]> = [...kindTabs, ...translations ? [["translations", "中文译文"] as [ViewKind | "translations", string]] : []];
   const [list, setList] = useState<AiCompanies | null>(null), [search, setSearch] = useState(""), [listError, setListError] = useState("");
-  const [ticker, setTicker] = useState(initial("ticker")), [kind, setKind] = useState<AiRunKind>(() => (KINDS.find(([k]) => k === initial("kind"))?.[0]) ?? "findings");
-  const [detail, setDetail] = useState<AiCompanyDetail | null>(null), [detailError, setDetailError] = useState("");
+  const [ticker, setTicker] = useState(initial("ticker")), [kind, setKind] = useState<ViewKind | "translations">(() => tabs.find(([k]) => k === initial("kind"))?.[0] ?? tabs[0]![0]);
   const [refresh, setRefresh] = useState(0);
   const callbacks = useRef({ onUnauthorized, onAuthenticated });
   useEffect(() => { callbacks.current = { onUnauthorized, onAuthenticated }; }, [onUnauthorized, onAuthenticated]);
-  const fail = (error: unknown, set: (message: string) => void) => { if (error instanceof AdminApiError && error.status === 401) callbacks.current.onUnauthorized(); else set((error as Error).message); };
 
   useEffect(() => {
     const c = new AbortController();
     void adminApi<AiCompanies>("ai/companies", { signal: c.signal }).then(r => { setList(r); setListError(""); callbacks.current.onAuthenticated(); setTicker(t => r.companies.some(x => x.ticker === t) ? t : r.companies[0]?.ticker ?? ""); })
-      .catch(e => { if (!c.signal.aborted) fail(e, setListError); });
+      .catch(e => { if (c.signal.aborted) return; if (e instanceof AdminApiError && e.status === 401) callbacks.current.onUnauthorized(); else setListError((e as Error).message); });
     return () => c.abort();
   }, [refresh]);
+  useEffect(() => { const timer = setInterval(() => { if (!document.hidden) setRefresh(n => n + 1); }, 20000); return () => clearInterval(timer); }, []);
   useEffect(() => {
     if (!ticker) return;
+    try { window.history.replaceState(null, "", `${window.location.pathname}?${new URLSearchParams(tabs.length > 1 ? { ticker, kind } : { ticker })}`); } catch { /* Sandboxed preview. */ }
+  }, [ticker, kind, tabs.length]);
+
+  // A page lists the companies at least one of its tasks runs for; a company switched off leaves the list.
+  const listed = list?.companies.filter(c => tabs.some(([k]) => k !== "translations" && (c.kinds as Partial<Record<string, { enabled?: boolean }>>)[k]?.enabled !== false)) ?? [];
+  const companies = listed.filter(c => c.ticker.toLowerCase().includes(search.toLowerCase()));
+  return <div className="ra-workspace ai-workspace">
+    <section className="ra-list" aria-label="公司">
+      <div className="ra-filters"><label className="ra-search"><Search size={17} /><input aria-label="搜索公司" placeholder="代码" value={search} onChange={e => setSearch(e.target.value)} /></label></div>
+      <div className="ra-list-caption"><span>{list ? `${listed.length} 家公司` : "加载中"}</span><button aria-label="刷新" onClick={() => setRefresh(n => n + 1)}><RefreshCw size={14} /></button></div>
+      {listError && <p className="ra-error" role="alert">{listError}</p>}
+      <div className="ra-list-scroll">{companies.map(c => <button key={c.ticker} className="ra-report-row" aria-pressed={ticker === c.ticker} onClick={() => setTicker(c.ticker)}>
+        <CompanyLogo symbol={c.ticker} /><span className="ra-row-info"><strong>{c.ticker}</strong>{kindTabs.map(([k]) => { const run = c.kinds[k].latestRun, note = run && ACTIVE.has(run.status) ? "生成中" : run?.status === "failed" ? "上次生成失败" : c.kinds[k].current ? "" : "尚未生成"; return note && <small key={k} data-note={run?.status === "failed" || undefined}>{note}</small>; })}
+        </span></button>)}
+        {list && !companies.length && <p className="ai-empty">无匹配公司</p>}
+      </div>
+    </section>
+    <section className="ra-detail ai-detail" aria-label="生成详情">
+      {tabs.length > 1 && <div className="ra-tabbar"><div role="tablist" aria-label="生成内容">{tabs.map(([k, label]) => <button key={k} role="tab" aria-selected={kind === k} onClick={() => setKind(k)}>{label}</button>)}</div></div>}
+      {!ticker ? <p className="ai-empty">未选择公司</p> : kind === "translations" ? <TranslationsPanel key={ticker} ticker={ticker} onUnauthorized={onUnauthorized} />
+        : <AiKindPanel key={`${ticker}:${kind}`} ticker={ticker} kind={kind} onUnauthorized={onUnauthorized} />}
+    </section>
+  </div>;
+}
+
+/** One company's runs and published versions of one kind, polled faster while a run is in progress. */
+export function AiKindPanel({ ticker, kind, onUnauthorized }: { ticker: string; kind: ViewKind; onUnauthorized: () => void }) {
+  const [detail, setDetail] = useState<AiCompanyDetail | null>(null), [error, setError] = useState<{ message: string; missing: boolean } | null>(null), [refresh, setRefresh] = useState(0);
+  const unauthorized = useRef(onUnauthorized);
+  useEffect(() => { unauthorized.current = onUnauthorized; }, [onUnauthorized]);
+  const fail = (e: unknown) => { if (e instanceof AdminApiError && e.status === 401) unauthorized.current(); else setError({ message: (e as Error).message, missing: e instanceof AdminApiError && e.status === 404 }); };
+  useEffect(() => {
     const c = new AbortController();
-    void adminApi<AiCompanyDetail>(`ai/companies/${ticker}/${kind}`, { signal: c.signal }).then(r => { setDetail(r); setDetailError(""); })
-      .catch(e => { if (!c.signal.aborted) fail(e, setDetailError); });
-    try { window.history.replaceState(null, "", `/admin/ai?${new URLSearchParams({ ticker, kind })}`); } catch { /* Sandboxed preview. */ }
+    void adminApi<AiCompanyDetail>(`ai/companies/${ticker}/${kind}`, { signal: c.signal }).then(r => { setDetail(r); setError(null); }).catch(e => { if (!c.signal.aborted) fail(e); });
     return () => c.abort();
   }, [ticker, kind, refresh]);
   const active = !!detail?.runs.some(r => ACTIVE.has(r.status));
@@ -86,83 +113,62 @@ export function AiRuns({ onUnauthorized, onAuthenticated }: { onUnauthorized: ()
     const timer = setInterval(() => { if (!document.hidden) setRefresh(n => n + 1); }, active ? 4000 : 20000);
     return () => clearInterval(timer);
   }, [active]);
-
-  const shown = detail?.ticker === ticker && detail.kind === kind ? detail : null;
-  const companies = list?.companies.filter(c => `${c.ticker} ${c.name}`.toLowerCase().includes(search.toLowerCase())) ?? [];
-  return <div className="ra-workspace ai-workspace">
-    <section className="ra-list" aria-label="AI 分析公司">
-      <div className="ra-filters"><label className="ra-search"><Search size={17} /><input aria-label="搜索公司" placeholder="搜索代码或名称" value={search} onChange={e => setSearch(e.target.value)} /></label></div>
-      <div className="ra-list-caption"><span>{list ? `${list.companies.length} 家 AI 分析公司` : "正在加载…"}</span><button aria-label="刷新" onClick={() => setRefresh(n => n + 1)}><RefreshCw size={14} /></button></div>
-      {listError && <p className="ra-error" role="alert">{listError}</p>}
-      <div className="ra-list-scroll">{companies.map(c => <button key={c.ticker} className="ra-report-row" aria-pressed={ticker === c.ticker} onClick={() => setTicker(c.ticker)}>
-        <span className="ra-row-info"><strong>{c.ticker}</strong><small>{c.name !== c.ticker ? c.name : ""}</small>
-          <span className="ai-kind-chips">{KINDS.map(([k, label]) => { const run = c.kinds[k].latestRun; return <span key={k} className="ra-badge" data-status={run ? badge(run.status) : ""} title={run ? `${label}：${STATUS[run.status]} · ${date(run.startedAt)}` : `${label}：无运行记录`}>{label}{run && ACTIVE.has(run.status) ? " · 运行中" : run?.status === "failed" ? " · 失败" : c.kinds[k].current ? "" : " · 未生成"}</span>; })}</span>
-        </span></button>)}
-        {list && !companies.length && <p className="ai-empty">没有匹配的公司。AI 分析范围由 Pipeline 的 SEC_AI_TICKERS 配置。</p>}
-      </div>
-    </section>
-    <section className="ra-detail ai-detail" aria-label="AI 生成详情" aria-busy={!shown && !detailError}>
-      <div className="ra-tabbar"><div role="tablist" aria-label="生成内容">{KINDS.map(([k, label]) => <button key={k} role="tab" aria-selected={kind === k} onClick={() => setKind(k)}>{label}</button>)}</div></div>
-      {detailError ? <p className="ra-error ai-pad" role="alert">{detailError}</p> : !ticker ? <p className="ai-empty">选择一家公司。</p> : !shown ? <p className="ai-empty" role="status"><LoaderCircle size={15} className="ra-spin" /> 正在读取…</p>
-        : <KindDetail key={`${ticker}:${kind}`} detail={shown} onChanged={() => setRefresh(n => n + 1)} onError={e => fail(e, setDetailError)} />}
-    </section>
-  </div>;
+  if (error) return error.missing ? <p className="ai-empty">{error.message}</p> : <p className="ra-error ai-pad" role="alert">{error.message}</p>;
+  if (!detail) return <p className="ai-empty" role="status"><LoaderCircle size={15} className="ra-spin" /> 加载中</p>;
+  return <KindDetail detail={detail} onChanged={() => setRefresh(n => n + 1)} onError={fail} />;
 }
 
 function KindDetail({ detail, onChanged, onError }: { detail: AiCompanyDetail; onChanged: () => void; onError: (error: unknown) => void }) {
   const [confirming, setConfirming] = useState(false), [busy, setBusy] = useState(false), [notice, setNotice] = useState(""), [error, setError] = useState("");
-  const [accession, setAccession] = useState(detail.events[0]?.accession ?? "");
   const label = KINDS.find(([k]) => k === detail.kind)![1];
-  const running = detail.runs.find(r => ACTIVE.has(r.status) && (detail.kind !== "guidance" || r.accession === accession));
+  const running = detail.runs.find(r => ACTIVE.has(r.status));
   async function start() {
-    const key = `ai:${detail.kind}:${detail.ticker}:${accession}`, requestId = pendingRequestId(key, storage());
+    const key = `ai:${detail.kind}:${detail.ticker}:`, requestId = pendingRequestId(key, storage());
     setBusy(true); setError(""); setNotice("");
     try {
-      const r = await adminApi<AiRunStarted>(`ai/companies/${detail.ticker}/${detail.kind}/runs`, { method: "POST", body: JSON.stringify({ requestId, ...(detail.kind === "guidance" ? { accession } : {}) }) });
+      const r = await adminApi<AiRunStarted>(`ai/companies/${detail.ticker}/${detail.kind}/runs`, { method: "POST", body: JSON.stringify({ requestId }) });
       completeRequestId(key, storage()); setConfirming(false);
-      setNotice(r.reused ? "该请求已提交过，正在显示原任务。" : "已提交，任务在后台运行，关闭页面不影响。");
+      setNotice(r.reused ? "任务已存在" : "已提交");
       onChanged();
     } catch (e) {
       if (e instanceof AdminApiError && e.status === 401) onError(e); else setError((e as Error).message);
       if (e instanceof AdminApiError && e.status >= 400 && e.status < 500) completeRequestId(key, storage());
     } finally { setBusy(false); }
   }
-  const hint = detail.kind === "findings" ? "按最新财报、指引和综述重新撰写发现，即使数据没有变化。通过核对的内容会替换当前版本。"
-    : detail.kind === "explainer" ? "重新检索资料并撰写每项业务的解读，替换当前版本。"
-    : detail.kind === "tree" ? "让 ReAct 研究员逐项业务重新搜索、阅读并拆解到产品线、产品和赚钱方式，替换当前版本。"
-    : "重新读取所选业绩发布的材料并用模型再次提取，不等待尚未发布的电话会文字稿。";
   return <div className="ai-pad">
     <header className="ai-head">
       <div><h2>{detail.ticker} · {label}</h2>
-        <p>{detail.state.current ? `当前版本 ${date(detail.state.current.id)} · ${summaryText(detail.kind, detail.state.current.summary)}` : "尚未发布"}{" · "}{detail.state.automatic ? "自动生成已开启" : "自动生成未开启"}</p></div>
+        <p>{detail.state.current ? `当前版本 ${date(detail.state.current.id)} · ${summaryText(detail.kind, detail.state.current.summary)}` : "未发布"}{" · "}{detail.state.automatic ? "自动生成已开启" : "自动生成未开启"}</p></div>
       <div className="ai-trigger">
-        {detail.kind === "guidance" && !detail.events.length && <span className="ai-muted">尚无可读取的业绩发布 8-K</span>}
-        {detail.kind === "guidance" && detail.events.length > 0 && <label>业绩发布<select value={accession} onChange={e => { setAccession(e.target.value); setConfirming(false); }}>{detail.events.map(e => <option key={e.accession} value={e.accession}>{e.eventDate} · {e.accession}{e.status ? ` · ${e.status}` : ""}</option>)}</select></label>}
-        {!confirming ? <button className="ra-primary" disabled={!!detail.state.blocked || !!running || busy || (detail.kind === "guidance" && !accession)} onClick={() => setConfirming(true)} title={detail.state.blocked ?? undefined}><RefreshCw size={15} />{running ? "运行中" : "重新生成"}</button>
-          : <span className="ai-confirm"><button className="ra-primary" disabled={busy} onClick={() => void start()}>{busy && <LoaderCircle size={15} className="ra-spin" />}确认，调用模型</button><button className="fm-button" disabled={busy} onClick={() => setConfirming(false)}>取消</button></span>}
+        {!confirming ? <button className="ra-primary" disabled={!!detail.state.blocked || !!running || busy} onClick={() => setConfirming(true)} title={detail.state.blocked ?? undefined}><RefreshCw size={15} />{running ? "运行中" : "重新生成"}</button>
+          : <span className="ai-confirm"><button className="ra-primary" disabled={busy} onClick={() => void start()}>{busy && <LoaderCircle size={15} className="ra-spin" />}确认生成</button><button className="fm-button" disabled={busy} onClick={() => setConfirming(false)}>取消</button></span>}
       </div>
     </header>
-    <p className="ai-hint">{detail.state.blocked ?? hint}</p>
+    {detail.state.blocked && <p className="ai-hint">{detail.state.blocked}</p>}
     {notice && <p className="ra-notice" role="status">{notice}</p>}{error && <p className="ra-error" role="alert">{error}</p>}
     <h3>运行记录</h3>
-    {!detail.runs.length ? <p className="ai-muted">暂无运行记录。记录从本功能上线后开始保存。</p> : <ol className="ai-runs">{detail.runs.map((run, i) => <RunItem key={run.runId} run={run} open={i === 0} />)}</ol>}
+    {!detail.runs.length ? <p className="ai-muted">无运行记录</p> : <ol className="ai-runs">{detail.runs.map(run => <RunItem key={run.runId} run={run} />)}</ol>}
+    <h3>模型用量</h3>
+    {!detail.usage?.length ? <p className="ai-muted">无用量记录</p> : <div className="ai-table-wrap"><table className="ai-table ai-usage">
+      <thead><tr><th>日期</th><th>调用</th><th>输入</th><th>缓存</th><th>输出</th><th>搜索</th></tr></thead>
+      <tbody>{detail.usage.map(u => <tr key={u.day}><td>{u.day}</td><td>{count(u.calls)}</td><td>{count(u.inputTokens)}</td><td>{count(u.cachedTokens)}</td><td>{count(u.outputTokens)}</td><td>{count(u.searchCalls)}</td></tr>)}</tbody>
+    </table></div>}
     <Versions detail={detail} onError={onError} />
   </div>;
 }
 
 function summaryText(kind: AiRunKind, s: { items: number; sources: number; periodEnd: string | null }) {
-  return `${s.items} ${kind === "findings" ? "条发现" : kind === "explainer" || kind === "tree" ? "项业务" : "条指引"} · ${s.sources} 个来源${s.periodEnd ? ` · 报告期 ${s.periodEnd}` : ""}`;
+  return kind === "analyst" ? `${s.items} 份案卷${s.periodEnd ? ` · 报告期 ${s.periodEnd}` : ""}` : `${s.items} ${kind === "findings" ? "条要点" : "项业务"} · ${s.sources} 个来源${s.periodEnd ? ` · 报告期 ${s.periodEnd}` : ""}`;
 }
 
-function RunItem({ run, open }: { run: AiRun; open: boolean }) {
-  const result = run.result as { findings?: number; businesses?: number; nodes?: number; materials?: number; transcript?: string; withheld?: Array<{ id: string; reasons: string[] }> } | null;
-  return <li><details open={open}>
+function RunItem({ run }: { run: AiRun }) {
+  const result = run.result as { findings?: number; businesses?: number; nodes?: number; withheld?: Array<{ id: string; reasons: string[] }> } | null;
+  return <li><details>
     <summary><span className="ra-badge" data-status={badge(run.status)}>{STATUS[run.status]}</span><strong>{ACTIVE.has(run.status) ? stageLabel(run.stage) : date(run.startedAt)}</strong>
-      <small>{run.trigger === "manual" ? "手动" : "自动"} · 开始 {date(run.startedAt)} · 用时 {elapsed(run)}{run.accession ? ` · ${run.accession}` : ""}</small></summary>
+      <small>{run.trigger === "manual" ? "手动" : "自动"} · 开始 {date(run.startedAt)} · 用时 {elapsed(run)}</small></summary>
     {run.error && <p className="ra-error">{run.error}</p>}
     {result && <p className="ai-result">{[
-      result.findings !== undefined && `发布 ${result.findings} 条发现`, result.businesses !== undefined && `${result.businesses} 项业务`, result.nodes !== undefined && `${result.nodes} 个节点`,
-      result.materials !== undefined && `${result.materials} 份材料`, result.transcript && `文字稿：${result.transcript === "extracted" ? "已提取" : result.transcript === "unavailable" ? "未取得" : "未配置"}`,
+      result.findings !== undefined && `发布 ${result.findings} 条要点`, result.businesses !== undefined && `${result.businesses} 项业务`, result.nodes !== undefined && `${result.nodes} 个节点`,
       result.withheld?.length ? `${result.withheld.length} 条未通过核对` : null,
     ].filter(Boolean).join(" · ")}</p>}
     {!!result?.withheld?.length && <ul className="ai-withheld">{result.withheld.map(w => <li key={w.id}><code>{w.id}</code>{w.reasons.join("；")}</li>)}</ul>}
@@ -184,25 +190,49 @@ function Versions({ detail, onError }: { detail: AiCompanyDetail; onError: (erro
   }, [detail.ticker, detail.kind, id]); // eslint-disable-line react-hooks/exhaustive-deps
   return <section className="ai-versions">
     <div className="ai-versions-head"><h3>生成结果</h3>{detail.versions.length > 0 && <label>版本<select value={id} onChange={e => setId(e.target.value)}>{detail.versions.map((v, i) => <option key={v.id} value={v.id}>{v.current ? "当前 · " : `v${detail.versions.length - i} · `}{date(v.id)} · {summaryText(detail.kind, v.summary)}</option>)}</select></label>}</div>
-    {!detail.versions.length ? <p className="ai-muted">尚无已发布的结果。</p> : error ? <p className="ra-error">{error}</p> : !version || version.version.id !== id ? <p className="ai-muted"><LoaderCircle size={15} className="ra-spin" /> 正在读取版本…</p>
-      : <>{!version.version.current && <p className="ai-hint">这是历史版本，线上展示的是当前版本。</p>}
-        {detail.kind === "findings" ? <FindingsView publication={version.publication as FindingsPublication} /> : detail.kind === "explainer" ? <ExplainerView explainer={version.publication as BusinessExplainer} /> : detail.kind === "tree" ? <TreeView tree={version.publication as BusinessTree} /> : <GuidanceView guidance={version.publication as GuidancePublication} />}
+    {!detail.versions.length ? <p className="ai-muted">无已发布结果</p> : error ? <p className="ra-error">{error}</p> : !version || version.version.id !== id ? <p className="ai-muted"><LoaderCircle size={15} className="ra-spin" /> 加载中</p>
+      : <>{!version.version.current && <p className="ai-hint">历史版本</p>}
+        {detail.kind === "findings" ? <FindingsView publication={version.publication as FindingsPublication} /> : detail.kind === "analyst" ? <AnalystView dossier={version.publication as DossierRecord} /> : detail.kind === "explainer" ? <ExplainerView explainer={version.publication as BusinessExplainer} /> : <TreeView tree={version.publication as BusinessTree} />}
         <details className="ai-raw"><summary>原始 JSON</summary><pre>{JSON.stringify(version.publication, null, 2)}</pre></details></>}
   </section>;
 }
 
 const FINDING_KIND: Record<AnalysisFinding["kind"], string> = { risk: "风险", strength: "优势", shift: "变化", watch: "关注" };
-function FindingsView({ publication }: { publication: FindingsPublication }) {
-  return <div className="ai-cards"><p className="ai-muted">报告期 {publication.periodEnd} · 模型 {publication.model}</p>{publication.findings.map(f => <article key={f.id} className="ai-card" data-kind={f.kind}>
-    <header><span className="ra-badge" data-status={f.kind === "risk" ? "failed" : f.kind === "strength" ? "reviewed" : "processing"}>{FINDING_KIND[f.kind]}</span><span className="ai-severity">{"●".repeat(f.severity)}{"○".repeat(3 - f.severity)}</span><strong>{f.title}</strong></header>
+/** The analyst's dossier with its trace: per finding, the lines of inquiry the figures opened, every turn, and what the review took out. */
+type DossierRecord = { findingsFingerprint: string; fingerprint: string; generatedAt: string; model: string; documents: Record<string, { rows: Array<{ title?: string; cells: Array<Array<{ kind: string }>> }> }>; materials: Array<{ id: string; title: string; form?: string; path?: string[] }>;
+  analystTrace?: { version: string; findings: Array<{ id: string; tier: string; lines: string[]; document: unknown; turns: Array<{ turn: number; thought: string; action: string; input: string; observation: string }>; warnings: string[]; review: string[] }> } };
+const LINE_LABEL: Record<string, string> = { capital_intensity: "资本强度", cash_earnings: "现金与利润背离", funding_commitments: "资金与承诺", demand_conversion: "需求转化", guidance_delivery: "指引兑现", margin_mix: "利润率与结构", peers: "同业" };
+const TIER_LABEL: Record<string, string> = { deep: "深", standard: "标准", light: "轻" };
+function AnalystView({ dossier }: { dossier: DossierRecord }) {
+  const outcomes = dossier.analystTrace?.findings ?? [];
+  const blocks = (id: string) => dossier.documents[id]?.rows.flatMap(r => r.cells.flat()) ?? [];
+  return <div className="ai-cards"><p className="ai-muted">模型 {dossier.model} · 要点指纹 {dossier.findingsFingerprint.slice(0, 8)} · {Object.keys(dossier.documents).length} 份案卷 · {dossier.materials.length} 条引用材料</p>
+    {outcomes.map(o => <article key={o.id} className="ai-card" data-kind={o.document ? "strength" : "watch"}>
+      <header><span className="ra-badge" data-status={o.document ? "reviewed" : "processing"}>{o.document ? "已采用" : o.tier === "light" ? "轻量" : "未采用"}</span><strong>{o.id}</strong><small>{TIER_LABEL[o.tier] ?? o.tier} · {o.lines.map(l => LINE_LABEL[l] ?? l).join("、") || "无追问线"}</small></header>
+      {o.document ? <small>{dossier.documents[o.id]?.rows.length ?? 0} 行 · 引文 {blocks(o.id).filter(b => b.kind === "quote").length} · 表格 {blocks(o.id).filter(b => b.kind === "table").length} · 图 {blocks(o.id).filter(b => b.kind === "chart").length} · 段落 {blocks(o.id).filter(b => b.kind === "prose").length}</small> : null}
+      {o.warnings.length > 0 && <ul className="ai-lens-warnings">{o.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>}
+      {o.review.length > 0 && <ul className="ai-lens-warnings">{o.review.map((w, i) => <li key={i}>审校移除：{w}</li>)}</ul>}
+      {o.turns.length > 0 && <details className="ai-raw"><summary>研究过程 · {o.turns.length} 轮</summary><ol className="ai-tree-steps">{o.turns.map((s, i) => <li key={i}><p><b>{s.action}</b> {s.thought}</p><code>{s.input.slice(0, 1200)}</code><pre>{s.observation}</pre></li>)}</ol></details>}
+    </article>)}</div>;
+}
+/** The lens agent's trace rides beside the publication for the operator: every turn of every finding, and what was accepted. */
+type LensTrace = { version: string; generatedAt: string; findings: Array<{ id: string; document: unknown; turns: Array<{ turn: number; thought: string; action: string; input: string; observation: string }>; warnings: string[] }> };
+function FindingsView({ publication }: { publication: FindingsPublication & { lensTrace?: LensTrace } }) {
+  const trace = (id: string) => publication.lensTrace?.findings.find(f => f.id === id);
+  return <div className="ai-cards"><p className="ai-muted">报告期 {publication.periodEnd} · 模型 {publication.model}{publication.lensTrace ? ` · Lens ${publication.lensTrace.version}` : ""}</p>{publication.findings.map(f => { const t = trace(f.id); return <article key={f.id} className="ai-card" data-kind={f.kind}>
+    <header><span className="ra-badge" data-status={f.kind === "risk" ? "caution" : f.kind === "strength" ? "reviewed" : "processing"}>{FINDING_KIND[f.kind]}</span><span className="ai-severity">{"●".repeat(f.severity)}{"○".repeat(3 - f.severity)}</span><strong>{f.title}</strong></header>
     <p>{f.judgment.text}</p>
-    <small>{f.evidence.length} 项证据{f.pairWith ? ` · 对照 ${f.pairWith}` : ""} · 视图 {f.anchors.view}{f.watch ? ` · 下期验证：${f.watch.condition}` : ""}</small>
-  </article>)}</div>;
+    <small>{f.evidence.length} 项证据{f.pairWith ? ` · 对照 ${f.pairWith}` : ""} · 视图 {f.anchors.view} · 版面 {f.lens.type === "document" ? `${f.lens.document.rows.length} 行 · ${f.lens.document.rows.flatMap(r => r.cells.flat()).filter(b => b.kind === "chart").length} 张图` : f.lens.type}{f.watch ? ` · 下期验证：${f.watch.condition}` : ""}</small>
+    {t && <details className="ai-raw"><summary>Lens 生成过程 · {t.turns.length} 轮{t.document ? "" : " · 未采用，沿用原图"}{t.warnings.length ? ` · ${t.warnings.length} 条提示` : ""}</summary>
+      {t.warnings.length > 0 && <ul className="ai-lens-warnings">{t.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>}
+      <ol className="ai-tree-steps">{t.turns.map((s, i) => <li key={i}><p><b>{s.action}</b> {s.thought}</p><code>{s.input}</code><pre>{s.observation}</pre></li>)}</ol>
+    </details>}
+  </article>; })}</div>;
 }
 function ExplainerView({ explainer }: { explainer: BusinessExplainer }) {
   return <div className="ai-cards"><p className="ai-muted">模型 {explainer.model} · {explainer.sources.length} 个来源</p>{explainer.businesses.map(b => <article key={b.nodeId} className="ai-card">
     <header><strong>{b.name}</strong><small>{b.nodeId}</small></header>
-    {b.summary ? <p>{b.summary.text}</p> : <p className="ai-muted">概述未通过审校。</p>}
+    {b.summary ? <p>{b.summary.text}</p> : <p className="ai-muted">概述未通过审校</p>}
     {b.products.length > 0 && <small>产品：{b.products.join("、")}</small>}
     {b.sections.map(s => <div key={s.id} className="ai-section"><h4>{s.title}</h4><ul>{s.items.map((item, i) => <li key={i}>{item.label && <strong>{item.label}：</strong>}{item.claim.text}</li>)}</ul></div>)}
   </article>)}</div>;
@@ -227,10 +257,4 @@ function TreeView({ tree }: { tree: BusinessTree }) {
       </li>)}</ol></details>}
     </article>;
   })}</div>;
-}
-function GuidanceView({ guidance }: { guidance: GuidancePublication }) {
-  const range = (i: GuidancePublication["items"][number]) => i.low === null && i.high === null ? (i.direction ?? "—") : i.low === i.high || i.high === null ? `${i.low}` : `${i.low ?? "—"} ~ ${i.high}`;
-  return <div className="ai-table-wrap"><table className="ai-table"><thead><tr><th>发布</th><th>指标</th><th>期间</th><th>指引</th><th>说明</th></tr></thead><tbody>
-    {guidance.items.map(i => <tr key={i.id}><td>{i.issuedAt}{i.action ? ` · ${i.action}` : ""}</td><td>{i.label}{i.segment ? `（${i.segment}）` : ""}<small>{i.basis}</small></td><td>{i.fiscalYear ? `FY${i.fiscalYear}${i.fiscalQuarter ? ` Q${i.fiscalQuarter}` : ""}` : i.horizon}</td><td>{range(i)}{i.unit === "percent" ? "%" : i.unit === "USD_per_share" ? " $/股" : i.unit === "USD" ? " $" : ""}</td><td>{i.text}</td></tr>)}
-  </tbody></table>{!guidance.items.length && <p className="ai-muted">该版本没有指引条目。</p>}</div>;
 }

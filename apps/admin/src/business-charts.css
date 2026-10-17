@@ -1,0 +1,15 @@
+/* Statements behind BusinessView's three charts: quarters as columns, line items as rows. */
+.bc { display: flex; flex-direction: column; gap: var(--space-3); min-height: 0; }
+.bc-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.bc-wrap { overflow: auto; border-radius: var(--sp-radius-sm); box-shadow: 0 0 0 1px var(--line); }
+.bc-table { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums lining-nums; }
+.bc-table th, .bc-table td { padding: 4px 10px; text-transform: none; letter-spacing: 0; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.bc-table thead th { position: sticky; top: 0; z-index: 1; background: var(--surface); color: var(--ink-muted); font-family: var(--mono); font-size: 11.5px; font-weight: 600; text-align: right; }
+.bc-table thead th:first-child { left: 0; z-index: 2; font-family: var(--sans); text-align: left; }
+.bc-table tbody th { position: sticky; left: 0; min-width: 200px; max-width: 320px; background: var(--surface); color: var(--ink-soft); font-weight: 450; text-align: left; white-space: normal; }
+.bc-table tbody th small { margin-left: var(--space-2); color: var(--ink-muted); font-size: 11px; }
+.bc-table td { color: var(--ink-soft); text-align: right; }
+.bc-table td[data-negative] { color: var(--ink-muted); }
+.bc-table tr[data-kind=total] th, .bc-table tr[data-kind=total] td { color: var(--ink); font-weight: 650; }
+.bc-table tbody tr:hover th, .bc-table tbody tr:hover td { background: var(--fill); }
+.bc-head th { padding-top: var(--space-3); background: var(--surface); color: var(--ink) !important; font-size: 12px; font-weight: 650 !important; }

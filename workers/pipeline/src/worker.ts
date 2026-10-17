@@ -1,33 +1,18 @@
+import { companyPolicyEnvironment } from "./financial-data/company-policy.ts";
 import {handleTranscriptAdminRequest} from './admin/transcripts.ts';
-import {syncTranscript} from './transcripts/library.ts';
 import {handleBusinessMapAdminRequest} from './admin/business-map.ts';
 import {handleAiRunsAdminRequest} from './admin/ai-runs.ts';
-import {runDataOnlySweep} from './financial-data/queue.ts';
-import {runMapDerivationTick} from './financial-data/derived.ts';
-import { handleCompanyAnalysisRequest, handleSecAnalysisRequest, runCompanyAnalysisSweep, runSecMemorySweep, runSecRefresh } from "./core.ts";
-import { handleBusinessFlowRefresh, runBusinessFlowBootstrap } from "./sec/business-flow-refresh.ts";
+import {handleLibraryAdminRequest} from './admin/library.ts';
+import {handlePipelineAdminRequest} from './admin/pipeline.ts';
+import {flushOutbox} from './pipeline/outbox.ts';
+import {handlePipelineQueue, pipelineEntry} from './pipeline/consumer.ts';
+import { handleCompanyAnalysisRequest, handleSecAnalysisRequest } from "./core.ts";
+import { runSecDiscovery } from "./pipeline/discovery.ts";
+import { handleBusinessFlowRefresh } from "./sec/business-flow-refresh.ts";
 import { handleFundamentalsRefreshRequest } from "./fundamentals.ts";
-import { runFundamentalsStalenessSweep } from "./fundamentals-sweep.ts";
 import type { SecPipelineEnv } from "./operations.ts";
-import { runBusinessExplainerSweep } from "./business-explainer/workflow.ts";
-import { runBusinessTreeSweep } from "./business-tree/workflow.ts";
-import { runGuidanceSweep } from "./guidance/workflow.ts";
-import { runFindingsSweep } from "./findings/workflow.ts";
-import { runEventsSweep } from "./events/workflow.ts";
 import { handleReportAdminRequest } from "./admin/reports.ts";
 import { handleFinancialAdminRequest } from "./admin/financials.ts";
-import { runFinancialMaintenanceTick } from "./admin/financial-maintenance-runner.ts";
-
-/**
- * `JSON.stringify` renders an Error as `{}`, so a rejection reason has to be read off it before it
- * reaches the log. The old handler logged the raw settled results and every failure it did report
- * arrived as `"reason":{}` — the one line meant to explain a broken run explained nothing.
- */
-function describeSettled(result: PromiseSettledResult<unknown>) {
-  return result.status === "fulfilled"
-    ? { status: result.status, value: result.value }
-    : { status: result.status, reason: result.reason instanceof Error ? result.reason.message : String(result.reason) };
-}
 
 /**
  * Liveness only: is this Worker running. It deliberately reports no dependency state, so a probe
@@ -65,8 +50,12 @@ const worker = {
     const path = new URL(request.url).pathname;
     if (path === "/health") return healthResponse();
     if (path === "/ready") return readyResponse(env);
+    // The admin's whitelist and AI switch override the deployment's company lists for everything below.
+    env = await companyPolicyEnvironment(env);
     if (path.startsWith("/admin/business-map/")) return handleBusinessMapAdminRequest(request, env);
     if (path.startsWith("/admin/ai/")) return handleAiRunsAdminRequest(request, env);
+    if (path === "/admin/library" || path.startsWith("/admin/library/")) return handleLibraryAdminRequest(request, env);
+    if (path === "/admin/pipeline" || path.startsWith("/admin/pipeline/")) return handlePipelineAdminRequest(request, env);
     if (path === "/admin/financials" || path.startsWith("/admin/financials/")) return handleFinancialAdminRequest(request, env);
     if (path === "/admin/transcripts" || path.startsWith("/admin/transcripts/")) return handleTranscriptAdminRequest(request, env);
     if (path === "/admin" || path.startsWith("/admin/")) return handleReportAdminRequest(request, env);
@@ -79,57 +68,25 @@ const worker = {
     return handleSecAnalysisRequest(request, env);
   },
 
+  /**
+   * The only schedule: discover new SEC filings, because EDGAR pushes nothing (docs/pipeline-events.md). Everything a
+   * filing leads to runs on the events and tasks queues. A failed discovery fails the invocation, which is what
+   * Cloudflare's error notification watches.
+   */
   async scheduled(_controller: ScheduledController, env: SecPipelineEnv) {
-    if (_controller.cron === "*/2 * * * *") {
-      console.log(JSON.stringify({ event: "transcript-library", ...await syncTranscript(env) }));
-      const maintenance = await runFinancialMaintenanceTick(env);
-      if (maintenance.processed) {
-        console.log(JSON.stringify({event:"financial-maintenance",...maintenance}));
-      }
-      // Waiting for a model Workflow never mutates the data-only history cursor. Keep that
-      // request's issuer/idempotency lock without starving ordinary deterministic collection.
-      if (!maintenance.processed || maintenance.blocksDataSweep === false) {
-        const result = env.DB ? await runDataOnlySweep({DB:env.DB,SEC_FILINGS:env.SEC_FILINGS,SEC_USER_AGENT:env.SEC_USER_AGENT,SEC_DATA_TICKERS:env.SEC_DATA_TICKERS,SEC_TRACKED_TICKERS:env.SEC_TRACKED_TICKERS,SEC_DATA_COLLECTION_ENABLED:env.SEC_DATA_COLLECTION_ENABLED}) : {enabled:false,published:false,reasons:[],modelCalls:0};
-        console.log(JSON.stringify({event:"financial-data",...result}));
-      }
-      // Whatever collection did this tick, the map's prepared data catches up with the archive. It runs even while
-      // maintenance holds the collection lock: it only reads what is already archived.
-      if (env.DB && env.SEC_FILINGS) {
-        const derived = await runMapDerivationTick({DB:env.DB,SEC_FILINGS:env.SEC_FILINGS,SEC_DATA_TICKERS:env.SEC_DATA_TICKERS,SEC_TRACKED_TICKERS:env.SEC_TRACKED_TICKERS}).catch((error:unknown)=>({error:error instanceof Error?error.message:String(error)}));
-        console.log(JSON.stringify({event:"map-derivation",...derived}));
-      }
-      return;
+    env = await companyPolicyEnvironment(env);
+    await pipelineEntry(env);
+    try {
+      console.log(JSON.stringify({ event: "sec-discovery", ...await runSecDiscovery(env) }));
+    } finally {
+      // Filings just discovered go out now rather than at the next invocation.
+      await flushOutbox(env).catch((error:unknown)=>console.error(JSON.stringify({event:"pipeline-outbox",error:error instanceof Error?error.message:String(error)})));
     }
-    const results = await Promise.allSettled([
-      runSecRefresh(env),
-      runSecMemorySweep(env),
-      runCompanyAnalysisSweep(env),
-      // Took over from the refresh a public read used to trigger. Bounded per tick; the Cron
-      // schedule above it is unchanged.
-      runFundamentalsStalenessSweep(env),
-      runBusinessFlowBootstrap(env),
-      runBusinessExplainerSweep(env),
-      runBusinessTreeSweep(env),
-      runGuidanceSweep(env),
-      runFindingsSweep(env),
-      // Deterministic: EDGAR's current reports and Form 4 filings for the map's event rail, no model.
-      runEventsSweep(env),
-    ]);
-    const [analysis, memory, companyAnalysis, fundamentals, businessFlow, businessExplainer, businessTree, guidance, findings, events] = results.map(describeSettled);
-    const payload = JSON.stringify({ event: "sec-workflows", analysis, memory, companyAnalysis, fundamentals, businessFlow, businessExplainer, businessTree, guidance, findings, events });
-    const rejected = results.filter((result): result is PromiseRejectedResult => result.status === "rejected");
-    if (!rejected.length) {
-      console.log(payload);
-      return;
-    }
-    /**
-     * `allSettled` never rejects, so a broken run used to finish as `outcome: ok` with nothing but
-     * this one log line to show for it — the whole refresh sat dead for days behind that. The work
-     * is awaited rather than handed to `waitUntil` so a rethrow lands on the invocation record,
-     * which is the only part of a Cron run anything can alert on.
-     */
-    console.error(payload);
-    throw new AggregateError(rejected.map((result) => result.reason), "SEC scheduled run failed");
+  },
+
+  /** The events, tasks and dead-letter queues of the event-driven pipeline (docs/pipeline-events.md). */
+  async queue(batch: MessageBatch<unknown>, env: SecPipelineEnv) {
+    await handlePipelineQueue(batch, await companyPolicyEnvironment(env));
   },
 } satisfies ExportedHandler<SecPipelineEnv>;
 

@@ -1,21 +1,26 @@
 import { SidebarProvider } from "@/packages/web/src/ui/sidebar";
-import { StrictMode, useCallback, useEffect, useState, Component, type ReactNode } from "react";
+import { Fragment, StrictMode, useCallback, useEffect, useState, Component, type ReactNode } from "react";
+import { messages, useLocale } from "@/packages/web/src/i18n";
 import { createRoot } from "react-dom/client";
-import { resolveCompanyBusiness } from "@/packages/web/src/model/company-business-content";
-import type { PublicBusinessFlow } from "@/shared/analysis-contract/business-flow";
-import type { PublicCapitalStructure } from "@/shared/analysis-contract/capital-structure";
-import type { FindingsPublication } from "@/shared/analysis-contract/findings";
-import type { EventsPublication } from "@/shared/analysis-contract/events";
-import type { PublicFilingDigestPage } from "@/shared/analysis-contract/filings";
-import type { FindingFundamentals } from "@/shared/analysis-runtime/findings";
+import { canonicalTicker } from "@/shared/analysis-runtime/financial-data/policy";
 import "@/packages/web/src/business-flow/business-flow.css";
 import "./style.css";
-import { withBusinessDescriptions } from "./business-description";
 import { BusinessMap } from "./BusinessMap";
 import { Rail, RailActions } from "./Sidebar";
 import { SearchDialog } from "./SearchDialog";
-import { fetchCompany, fetchSupplement, publicationFlow, type CompanyPublication } from "./company-data";
+import { useLiveCompany } from "./live-company";
+import { UpdateNotice } from "./UpdateNotice";
 import { Home } from "./Home";
+
+const m = messages({
+  chartUnavailable: "Chart unavailable", companyBusinesses: "Company businesses", lastSnapshot: "Last complete snapshot",
+  loadFailed: "Load failed", retry: "Retry", unavailable: "Unavailable", processing: "Processing", loading: "Loading",
+  title: "Business View", description: "Business map · Businesses, revenue, costs and net income from SEC filings",
+}, {
+  chartUnavailable: "图表无法显示", companyBusinesses: "公司业务", lastSnapshot: "最近一次完整快照",
+  loadFailed: "加载失败", retry: "重试", unavailable: "暂无数据", processing: "处理中", loading: "加载中",
+  title: "Business View", description: "业务地图 · 从 SEC 文件看公司的业务、营收、成本费用与净利润",
+});
 
 const RECENT_KEY = "business-map-recent";
 function readRecent(): string[] {
@@ -41,7 +46,11 @@ function tickerFromUrl() {
   const match = location.pathname.match(
     /^\/companies\/([A-Za-z0-9.-]{1,12})\/?$/,
   );
-  return match ? match[1].toUpperCase() : null;
+  if (!match) return null;
+  const ticker = canonicalTicker(match[1]);
+  // The address shows the class the data is kept under.
+  if (ticker !== match[1]) history.replaceState(history.state, "", `/companies/${ticker}${location.search}${location.hash}`);
+  return ticker;
 }
 class ChartBoundary extends Component<
   { ticker: string; tools: ReactNode; children: ReactNode },
@@ -54,8 +63,7 @@ class ChartBoundary extends Component<
   render() {
     return this.state.failed ? (
       <StateShell ticker={this.props.ticker} tools={this.props.tools} role="alert">
-        <h2>图表暂时无法显示</h2>
-        <p>请重新加载；不会以示例数据替代真实披露。</p>
+        <h2>{m.chartUnavailable}</h2>
       </StateShell>
     ) : (
       this.props.children
@@ -66,7 +74,7 @@ class ChartBoundary extends Component<
 function StateShell({ ticker, tools, role, children }: { ticker: string; tools: ReactNode; role: "alert" | "status"; children: ReactNode }) {
   return (
     <div className="map">
-      <Rail ticker={ticker} actions={tools} label="公司业务" />
+      <Rail ticker={ticker} actions={tools} label={m.companyBusinesses} />
       <section className="stage stage--state">
         <div className="state" role={role}>{children}</div>
       </section>
@@ -74,94 +82,43 @@ function StateShell({ ticker, tools, role, children }: { ticker: string; tools: 
   );
 }
 function Company({ ticker, tools, onSeen }: { ticker: string; tools: ReactNode; onSeen: (ticker: string) => void }) {
-  const [flow, setFlow] = useState<PublicBusinessFlow | null>(null),
-    [publication, setPublication] = useState<CompanyPublication | null>(null),
-    [failed, setFailed] = useState(false),
-    [capital, setCapital] = useState<PublicCapitalStructure | null>(null),
-    [findings, setFindings] = useState<FindingsPublication | null>(null),
-    [events, setEvents] = useState<EventsPublication | null>(null),
-    [filings, setFilings] = useState<PublicFilingDigestPage | null>(null),
-    [fundamentals, setFundamentals] = useState<FindingFundamentals | null>(null),
-    [retry, setRetry] = useState(0);
-  useEffect(() => {
-    const controller = new AbortController();
-    fetchCompany(ticker, controller.signal)
-      .then((data) => {
-        if (controller.signal.aborted) return;
-        onSeen(ticker);
-        setPublication(data);
-        setFlow(publicationFlow(data, ticker));
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) setFailed(true);
-      });
-    return () => controller.abort();
-  }, [ticker, retry, onSeen]);
-  // Balance sheet, cash flow, findings and the SEC series they resolve against load on their own; the map is drawn without waiting for them.
-  useEffect(() => {
-    const controller = new AbortController();
-    const load = <T,>(resource: "capital" | "findings" | "fundamentals" | "events" | "filings", set: (value: T | null) => void) =>
-      fetchSupplement<T>(ticker, resource, controller.signal)
-        .then(value => { if (!controller.signal.aborted && value) set(value); })
-        .catch(() => { /* Supplementary: the map stands on its own. */ });
-    void load<PublicCapitalStructure>("capital", setCapital);
-    void load<FindingsPublication>("findings", setFindings);
-    void load<FindingFundamentals>("fundamentals", setFundamentals);
-    void load<EventsPublication>("events", setEvents);
-    void load<PublicFilingDigestPage>("filings", setFilings);
-    return () => controller.abort();
-  }, [ticker, retry]);
-  const business = resolveCompanyBusiness(ticker);
+  const { data, updates, failed, retry, update, apply, dismiss } = useLiveCompany(ticker, onSeen);
+  const { flow, publication, capital, findings, fundamentals, events, filings } = data;
   if (flow)
     return (
       <ChartBoundary ticker={ticker} tools={tools}>
         <BusinessMap
           ticker={ticker}
           tools={tools}
-          flow={withBusinessDescriptions(flow, business)}
-          business={business}
+          flow={flow}
           revenueHistory={publication?.history ?? null}
           explainer={publication?.explainer ?? null}
           tree={publication?.tree ?? null}
           guidance={publication?.guidance ?? null}
           capital={capital}
-          findings={findings}
+          findings={findings?.findings ?? null} peers={findings?.peers ?? null} passages={findings?.passages ?? null}
           fundamentals={fundamentals}
           events={events}
           filings={filings}
-          notice={
-            publication?.outdated
-              ? publication.reasons.includes("SIGNED_LAYOUT_UNSUPPORTED")
-                ? "新一期含负值，比例图暂不支持；当前显示上次完整快照"
-                : "更新尚未完成，当前显示上次完整快照"
-              : !flow.quarters.length
-                ? "尚无可用季度财务流"
-                : null
-          }
+          notice={publication?.outdated ? m.lastSnapshot : null}
+          updates={updates}
         />
+        <UpdateNotice update={update} onApply={apply} onDismiss={dismiss} />
       </ChartBoundary>
     );
   if (failed)
     return (
       <StateShell ticker={ticker} tools={tools} role="alert">
-        <h2>数据暂时无法读取</h2>
-        <p>请稍后重试。未披露数据不会视为零。</p>
-        <button
-          type="button"
-          onClick={() => {
-            setFailed(false);
-            setRetry((n) => n + 1);
-          }}
-        >
-          重试
+        <h2>{m.loadFailed}</h2>
+        <button type="button" onClick={retry}>
+          {m.retry}
         </button>
       </StateShell>
     );
   if (publication)
     return (
       <StateShell ticker={ticker} tools={tools} role="status">
-        <h2>{publication.status === "unavailable" ? "当前披露无法完整绘图" : "完整财务图准备中"}</h2>
-        <p>不会以缺失值或半图替代完整披露。</p>
+        <h2>{publication.status === "unavailable" ? m.unavailable : m.processing}</h2>
         <p className="state-reasons">{publication.reasons.join(" · ")}</p>
       </StateShell>
     );
@@ -169,7 +126,7 @@ function Company({ ticker, tools, onSeen }: { ticker: string; tools: ReactNode; 
 }
 function Skeleton({ ticker, tools }: { ticker: string; tools: ReactNode }) {
   return (
-    <div className="map map--loading" role="status" aria-label="正在读取公开财报">
+    <div className="map map--loading" role="status" aria-label={m.loading}>
       <Rail ticker={ticker} actions={tools}>
         <div className="rail-list">
           {[0, 1, 2, 3, 4, 5].map((i) => (
@@ -184,6 +141,7 @@ function Skeleton({ ticker, tools }: { ticker: string; tools: ReactNode }) {
   );
 }
 function App() {
+  const locale = useLocale();
   const [ticker, setTicker] = useState(tickerFromUrl),
     [searching, setSearching] = useState(false),
     [recent, setRecent] = useState(readRecent),
@@ -248,8 +206,9 @@ function App() {
     return () => window.removeEventListener("keydown", shortcut);
   }, []);
   useEffect(() => {
-    document.title = ticker ? `${ticker} · 业务地图` : "Business View";
-  }, [ticker]);
+    document.title = ticker ? `${ticker} · ${m.title}` : m.title;
+    document.querySelector('meta[name="description"]')?.setAttribute("content", m.description);
+  }, [ticker, locale]);
   /** Only companies the API answered for are remembered, so typos never become suggestions. */
   const remember = useCallback((seen: string) => {
     setRecent((list) => {
@@ -267,7 +226,7 @@ function App() {
     if (href !== location.pathname + location.search) history.pushState(null, "", href);
     setTicker(tickerFromUrl());
   }, []);
-  const openCompany = (next: string) => navigate(`/companies/${next}`);
+  const openCompany = (next: string) => navigate(`/companies/${canonicalTicker(next)}`);
   useEffect(() => {
     const follow = (e: MouseEvent) => {
       const link = (e.target as HTMLElement).closest<HTMLAnchorElement>("a[data-nav]");
@@ -285,8 +244,9 @@ function App() {
     else setCollapsed(!open);
   }
   const toggleTheme = () => setLight((v) => !v);
+  // Text and number forms are produced in the locale current when they render, so a switch remounts the page under the new one.
   if (!ticker)
-    return <Home light={light} onToggleTheme={toggleTheme} recent={recent} onPick={openCompany} />;
+    return <Home key={locale} light={light} onToggleTheme={toggleTheme} recent={recent} onPick={openCompany} />;
   const actions = (
     <RailActions
       light={light}
@@ -296,14 +256,14 @@ function App() {
     />
   );
   return (
-    <>
+    <Fragment key={locale}>
       <SidebarProvider asChild open={!railCollapsed} onOpenChange={setRailOpen} keyboardShortcut={null} persistState={false}>
         <main data-rail={railCollapsed ? "collapsed" : undefined}>
           <Company key={ticker} ticker={ticker} tools={actions} onSeen={remember} />
         </main>
       </SidebarProvider>
       <SearchDialog open={searching} current={ticker} recent={recent} onClose={() => setSearching(false)} onPick={openCompany} />
-    </>
+    </Fragment>
   );
 }
 createRoot(document.getElementById("root")!).render(

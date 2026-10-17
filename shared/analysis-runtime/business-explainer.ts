@@ -17,12 +17,13 @@ export function completeProductName(name: string, passage: string): boolean {
   return false;
 }
 
-export const SECTION_LIMITS = { sections: 6, items: 5, title: 10, label: 24, text: 300 } as const;
+/** Caps in characters of English: a title is a short heading, a label a few words, an item one sentence. */
+export const SECTION_LIMITS = { sections: 6, items: 5, title: 32, label: 40, text: 400 } as const;
 const DEFAULT_TITLE: Record<ExplainerSectionKind, string> = {
-  delivery: "怎么交付", customers: "客户", monetization: "收费方式", lifecycle: "客户周期", channel: "销售渠道", economics: "成本结构", relation: "关联业务", other: "运营要点",
+  delivery: "How it is delivered", customers: "Customers", monetization: "How it charges", lifecycle: "Customer lifecycle", channel: "Sales channels", economics: "Cost structure", relation: "Related businesses", other: "How it operates",
 };
 /** Amounts, shares and growth rates belong to the SEC flow, never to model prose. */
-export const FIGURE = /[$¥€£]\s?\d|\d[\d,.]*\s?(%|％|percent|亿|万|千|百万|billion|million|bn\b|美元|元)/i;
+export const FIGURE = /[$¥€£]\s?\d|\d[\d,.]*\s?(%|％|percent|basis points?\b|bps\b|trillion|billion|million|thousand|bn\b|亿|万|千|百万|美元|元)/i;
 const compact = (value: string) => value.normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
 const length = (value: string) => [...value].length;
 
@@ -52,7 +53,7 @@ export function harnessSections(candidates: SectionCandidate[]): ExplainerSectio
     const requested: ExplainerSectionLayout = candidate.layout === "steps" || candidate.layout === "list" ? candidate.layout : "prose";
     // A chain needs at least two steps; named entries need names.
     const layout = requested === "steps" && items.length < 2 ? "prose" : requested === "list" && !items.every(i => i.label) ? "prose" : requested;
-    const raw = typeof candidate.title === "string" ? candidate.title.trim().replace(/[：:。.，,、！!？?\s]+$/u, "") : "";
+    const raw = typeof candidate.title === "string" ? candidate.title.trim().replace(/[\s.,:;!?]+$/u, "") : "";
     const title = [raw, DEFAULT_TITLE[kind]].find(t => length(t) >= 2 && length(t) <= SECTION_LIMITS.title && !FIGURE.test(t) && !titles.has(compact(t)));
     if (!title) continue;
     kinds.add(kind); titles.add(compact(title));
@@ -62,7 +63,7 @@ export function harnessSections(candidates: SectionCandidate[]): ExplainerSectio
 }
 
 const sectionInput = z.object({
-  kind: z.string().max(40), title: z.string().max(40), layout: z.string().max(20),
+  kind: z.string().max(40), title: z.string().max(SECTION_LIMITS.title * 2), layout: z.string().max(20),
   items: z.array(z.object({ label: z.string().max(80).nullable(), claim })).max(10),
 });
 const explanation = z.object({
@@ -93,10 +94,10 @@ export function readBusinessExplainer(value: unknown, ticker: string): BusinessE
   const businesses = parsed.data.businesses.flatMap(({ howItWorks, customers, monetization, relation, sections, ...b }) => {
     const offerings = b.offerings?.filter(p => valid(p.description) && valid(p.membership ?? null) && completeProductName(p.name, p.membership!.text) && p.sourceIds.every(id => ids.has(id))).map(p => ({ ...p, line: p.line?.toLowerCase() === p.name.toLowerCase() ? null : p.line, charging: valid(p.charging) }));
     const legacy: SectionCandidate[] = [
-      ...(offerings?.length ? [] : [{ kind: "delivery", title: "产品介绍", layout: "prose", items: [{ label: null, claim: howItWorks ?? null }] }]),
-      { kind: "customers", title: "客户", layout: "prose", items: [{ label: null, claim: customers ?? null }] },
-      { kind: "monetization", title: "收费方式", layout: "prose", items: [{ label: null, claim: monetization ?? null }] },
-      { kind: "relation", title: "关联业务", layout: "prose", items: [{ label: null, claim: relation ?? null }] },
+      ...(offerings?.length ? [] : [{ kind: "delivery", title: "What it offers", layout: "prose", items: [{ label: null, claim: howItWorks ?? null }] }]),
+      { kind: "customers", title: "Customers", layout: "prose", items: [{ label: null, claim: customers ?? null }] },
+      { kind: "monetization", title: "How it charges", layout: "prose", items: [{ label: null, claim: monetization ?? null }] },
+      { kind: "relation", title: "Related businesses", layout: "prose", items: [{ label: null, claim: relation ?? null }] },
     ];
     const candidates: SectionCandidate[] = sections ?? legacy;
     const kept = harnessSections(candidates.map(s => ({ ...s, items: s.items.map(i => ({ label: i.label, claim: valid(i.claim) })) })));

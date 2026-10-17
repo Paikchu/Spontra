@@ -1,4 +1,5 @@
-import { FUNDAMENTAL_METRIC_CATALOG } from "@/shared/analysis-contract/fundamental-metric-catalog";
+import { FUNDAMENTAL_METRIC_CATALOG, FUNDAMENTAL_METRIC_LABEL_ZH } from "@/shared/analysis-contract/fundamental-metric-catalog";
+import { getLocale, labels } from "@/packages/web/src/i18n";
 import type { FundamentalMetricCategory, FundamentalUnitFamily } from "@/shared/analysis-contract/fundamentals";
 import type { FindingFundamentals, FindingFundamentalSeries } from "@/shared/analysis-runtime/findings";
 import { SLOTS, growth, monthEnd, monthIndex, rateTicks } from "./trend-model";
@@ -6,9 +7,10 @@ import { SLOTS, growth, monthEnd, monthIndex, rateTicks } from "./trend-model";
 /** The trend's own revenue view, stacked by business from the disclosure history; every other metric is a company-level SEC series. */
 export const REVENUE_METRIC = "revenue";
 
-const GROUPS: Array<[FundamentalMetricCategory, string]> = [
-  ["income_statement", "利润表"], ["per_share", "每股"], ["ratio", "比率"], ["cash_flow", "现金流"], ["balance_sheet", "资产负债"], ["valuation", "估值"],
-];
+const GROUP_LABEL = labels<FundamentalMetricCategory>(
+  { income_statement: "Income statement", per_share: "Per share", ratio: "Ratios", cash_flow: "Cash flow", balance_sheet: "Balance sheet", valuation: "Valuation" },
+  { income_statement: "利润表", per_share: "每股数据", ratio: "比率", cash_flow: "现金流", balance_sheet: "资产负债表", valuation: "估值" });
+const GROUPS: FundamentalMetricCategory[] = ["income_statement", "per_share", "ratio", "cash_flow", "balance_sheet", "valuation"];
 
 export type MetricOption = { key: string; label: string };
 export type MetricPoint = { periodEnd: string; value: number | null; accession: string | null };
@@ -21,6 +23,9 @@ export type MetricTrend = {
 };
 
 const catalog = FUNDAMENTAL_METRIC_CATALOG as Record<string, { displaySign: string } | undefined>;
+/** A series' name in the reader's language: the catalog's own Chinese label, or the name the series carries. */
+const seriesLabel = (series: Pick<FindingFundamentalSeries, "metricKey" | "label">) =>
+  getLocale() === "zh-CN" ? (FUNDAMENTAL_METRIC_LABEL_ZH as Record<string, string | undefined>)[series.metricKey] ?? series.label : series.label;
 
 /** Outflows the catalog shows as magnitudes (capex) are drawn as positive amounts, as the original metrics table does. */
 function pointValue(series: FindingFundamentalSeries, raw: string | null): number | null {
@@ -50,14 +55,14 @@ export function metricTrend(series: FindingFundamentalSeries, visible = SLOTS): 
   const first = tail.findIndex(p => p.value != null);
   const points = tail.slice(first);
   if (points.filter(p => p.value != null).length < 2) return null;
-  return { key: series.metricKey, label: series.label, unitFamily: series.unitFamily, currency: series.currency, points, history: history.slice(history.length - points.length - 4) };
+  return { key: series.metricKey, label: seriesLabel(series), unitFamily: series.unitFamily, currency: series.currency, points, history: history.slice(history.length - points.length - 4) };
 }
 
 /** Metrics with at least two reported quarters to compare, grouped as the statements present them. Revenue is the trend's own view. */
 export function metricOptions(fundamentals: FindingFundamentals | null): Array<{ group: string; options: MetricOption[] }> {
   const series = (fundamentals?.series ?? []).filter(s => s.available && s.metricKey !== "total_revenue" && metricTrend(s));
   return GROUPS
-    .map(([category, group]) => ({ group, options: series.filter(s => s.category === category).map(s => ({ key: s.metricKey, label: s.label })) }))
+    .map(category => ({ group: GROUP_LABEL[category], options: series.filter(s => s.category === category).map(s => ({ key: s.metricKey, label: seriesLabel(s) })) }))
     .filter(g => g.options.length);
 }
 

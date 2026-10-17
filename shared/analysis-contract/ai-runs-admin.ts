@@ -1,5 +1,5 @@
 /** Admin view of the model-written business-map outputs: who ran them, how far a run got, and every version published. */
-export const AI_RUN_KINDS = ["findings", "explainer", "tree", "guidance"] as const;
+export const AI_RUN_KINDS = ["findings", "analyst", "explainer", "tree", "guidance"] as const;
 export type AiRunKind = typeof AI_RUN_KINDS[number];
 export type AiRunStatus = "queued" | "running" | "waiting" | "succeeded" | "empty" | "superseded" | "failed";
 export type AiRunTrigger = "manual" | "schedule";
@@ -28,6 +28,8 @@ export type AiVersionSummary = { items: number; sources: number; periodEnd: stri
 export type AiVersion = { id: string; savedAt: string; summary: AiVersionSummary; current: boolean };
 
 export type AiKindState = {
+  /** The company is in this task's list (the admin's AI switch, or the mind-map list for `tree`). */
+  enabled: boolean;
   /** Configuration that stops a manual run from starting; null when it can run. */
   blocked: string | null;
   /** The sweep starts runs on its own only when this is true. */
@@ -38,6 +40,8 @@ export type AiKindState = {
 
 export type AiCompanies = { companies: Array<{ ticker: string; name: string; kinds: Record<AiRunKind, AiKindState> }> };
 
+/** One day of the model-call ledger for a company and kind, tokens as the provider reported them. */
+export type AiUsageDay = { day: string; calls: number; inputTokens: number; cachedTokens: number; outputTokens: number; searchCalls: number };
 export type AiEarningsEvent = { accession: string; eventDate: string; status: string | null; transcriptStatus: string | null };
 export type AiCompanyDetail = {
   ticker: string;
@@ -48,6 +52,8 @@ export type AiCompanyDetail = {
   versions: AiVersion[];
   /** Guidance only: earnings releases a run can read, newest first. */
   events: AiEarningsEvent[];
+  /** The last 30 days of model calls, newest day first; absent when the ledger cannot be read. */
+  usage?: AiUsageDay[];
 };
 export type AiVersionDetail = { kind: AiRunKind; ticker: string; version: AiVersion; publication: unknown };
 export type AiRunStarted = { runId: string; reused: boolean };

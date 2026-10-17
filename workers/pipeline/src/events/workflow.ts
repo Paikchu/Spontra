@@ -1,6 +1,8 @@
 import type { CompanyEvent, EventExhibit, EventForm, EventsPublication, EventSummary, InsiderTransaction } from "../../../../shared/analysis-contract/events.ts";
 import { classifyEvent, parseItems, readEventsPublication } from "../../../../shared/analysis-runtime/events.ts";
-import { dataTickersFor, trackedTickersFor, type SecCronEnv } from "../core.ts";
+import type { SecCronEnv } from "../core.ts";
+import { knownCik } from "../pipeline/identity.ts";
+import { outboxStatement } from "../pipeline/outbox.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import type { SecFilingFeed, SecFilingSummary } from "../sec/sec.ts";
 import { form4XmlUrl, parseForm4 } from "./form4.ts";
@@ -8,11 +10,11 @@ import { eventsCacheKey, exhibitsCacheKey, insiderCacheKey } from "./read.ts";
 
 export type EventsSweepEnv = Pick<SecCronEnv, "DB" | "SEC_DATA_TICKERS" | "SEC_TRACKED_TICKERS" | "SEC_AI_TICKERS" | "SEC_AI_ENABLED"> & { SEC_USER_AGENT: string; EVENTS_ENABLED?: string };
 
-/** How often EDGAR's submission list is re-read per company; Form 4 and exhibit reads continue every tick until none are pending. */
+/** How old a stored submission list may be before a run re-reads it anyway; a discovered filing always re-reads it. */
 const REFRESH_MS = 6 * 60 * 60_000;
 const WINDOW_MONTHS = 24;
-/** Bounds per tick, so one company with a long insider history never monopolises the SEC request budget. */
-const LIMITS = { tickers: 2, insiderReads: 8, exhibitReads: 6, currentReports: 80, insiderFilings: 160 };
+/** Bounds per run, so one company with a long insider history never monopolises the SEC request budget. */
+const LIMITS = { insiderReads: 8, exhibitReads: 6, currentReports: 80, insiderFilings: 160 };
 const EVENT_FORMS = new Set<EventForm>(["8-K", "8-K/A", "6-K", "6-K/A", "4", "4/A"]);
 
 export type RawEventFiling = {
@@ -77,17 +79,23 @@ type Fetcher = typeof fetch;
 const secHeaders = (userAgent: string, accept: string) => ({ accept, "user-agent": userAgent });
 
 /** Reads one company's events: EDGAR's list when it is due, otherwise the stored list, then fills summaries, exhibits and Form 4 figures within the tick's budget. */
-export async function refreshCompanyEvents(env: EventsSweepEnv, ticker: string, fetcher: Fetcher, now: Date): Promise<{ published: boolean; insiderReads: number; exhibitReads: number }> {
+/**
+ * Rebuilds the company's event rail. `forceList` re-reads EDGAR's submission list (a new filing was discovered);
+ * otherwise the stored list is kept and only pending Form 4 and exhibit reads advance, a bounded number per call.
+ * `pending` counts reads still outstanding and `progressed` whether this call stored any, so a caller continues
+ * only while it is getting somewhere.
+ */
+export async function refreshCompanyEvents(env: EventsSweepEnv, ticker: string, fetcher: Fetcher, now: Date, options: { forceList?: boolean; causeId?: string | null } = {}): Promise<{ published: boolean; insiderReads: number; exhibitReads: number; pending: number; progressed: boolean }> {
   const db = env.DB;
   if (!db) throw new Error("No D1 binding");
   const repository = new D1SecRepository(db);
   const stored = await repository.getCache<unknown>(eventsCacheKey(ticker));
   const publication = stored ? readEventsPublication(stored.payload, ticker) : null;
   const feed = await repository.getCache<SecFilingFeed>(`sec:filings:${ticker}`);
-  const cik = feed?.payload.company?.cik ?? feed?.payload.filings[0]?.cik;
-  if (!cik) return { published: false, insiderReads: 0, exhibitReads: 0 };
+  const cik = feed?.payload.company?.cik ?? feed?.payload.filings[0]?.cik ?? await knownCik(db, ticker);
+  if (!cik) return { published: false, insiderReads: 0, exhibitReads: 0, pending: 0, progressed: false };
   const cikNumber = Number(cik);
-  const listDue = !publication || now.getTime() - Date.parse(publication.checkedAt) >= REFRESH_MS;
+  const listDue = options.forceList || !publication || now.getTime() - Date.parse(publication.checkedAt) >= REFRESH_MS;
   let raw: RawEventFiling[];
   let checkedAt = publication?.checkedAt ?? now.toISOString();
   if (listDue) {
@@ -102,7 +110,7 @@ export async function refreshCompanyEvents(env: EventsSweepEnv, ticker: string, 
     }));
   }
   const previous = new Map((publication?.events ?? []).map(e => [e.id, e]));
-  let insiderReads = 0, exhibitReads = 0, pendingInsider = 0;
+  let insiderReads = 0, exhibitReads = 0, pendingInsider = 0, pendingExhibits = 0, saved = 0;
   const events: CompanyEvent[] = [];
   for (const filing of raw) {
     const prior = previous.get(filing.accessionNumber);
@@ -120,6 +128,7 @@ export async function refreshCompanyEvents(env: EventsSweepEnv, ticker: string, 
           const parsed = response.ok ? parseForm4(await response.text()) : null;
           await repository.setCache(insiderCacheKey(ticker, filing.accessionNumber), parsed ?? { unreadable: true }, now.toISOString());
           insider = parsed;
+          saved++;
         } catch { /* Left pending; the next tick reads it again. */ }
       }
       if (!insider) { pendingInsider++; continue; }
@@ -133,9 +142,10 @@ export async function refreshCompanyEvents(env: EventsSweepEnv, ticker: string, 
         try {
           const response = await fetcher(`${archiveRoot}/${filing.accessionNumber}-index.htm`, { cache: "no-store", headers: secHeaders(env.SEC_USER_AGENT, "text/html"), signal: AbortSignal.timeout(20_000) });
           exhibits = response.ok ? parseExhibitIndex(await response.text(), archiveRoot) : [];
-          if (response.ok) await repository.setCache(exhibitsCacheKey(ticker, filing.accessionNumber), exhibits, now.toISOString());
-        } catch { exhibits = []; }
-      }
+          if (response.ok) { await repository.setCache(exhibitsCacheKey(ticker, filing.accessionNumber), exhibits, now.toISOString()); saved++; }
+          else pendingExhibits++;
+        } catch { exhibits = []; pendingExhibits++; }
+      } else pendingExhibits++;
     }
     const summary = isInsider ? null : toSummary(await repository.getSummary(ticker, filing.accessionNumber)) ?? prior?.summary ?? null;
     const items = parseItems(filing.items);
@@ -147,35 +157,11 @@ export async function refreshCompanyEvents(env: EventsSweepEnv, ticker: string, 
     });
   }
   const next: EventsPublication = { schemaVersion: "events.v1", ticker, checkedAt, events, pendingInsider };
-  await repository.setCache(eventsCacheKey(ticker), next, now.toISOString());
-  return { published: true, insiderReads, exhibitReads };
-}
-
-/** Which companies the sweep serves: every data company, with the AI companies first so the map's findings pages fill first. */
-export function eventTickersFor(env: EventsSweepEnv): string[] {
-  return [...new Set([...trackedTickersFor(env), ...dataTickersFor(env)])];
-}
-
-/** Deterministic and bounded: no model call, at most two companies per tick, and a company is only re-read when its list is due or has pending Form 4 reads. */
-export async function runEventsSweep(env: EventsSweepEnv, fetcher: Fetcher = fetch, now = new Date()): Promise<{ checked: number; refreshed: string[]; skipped: string[]; failed: string[]; insiderReads: number }> {
-  const result = { checked: 0, refreshed: [] as string[], skipped: [] as string[], failed: [] as string[], insiderReads: 0 };
-  if (!env.DB || env.EVENTS_ENABLED === "false") return result;
-  const repository = new D1SecRepository(env.DB);
-  for (const ticker of eventTickersFor(env)) {
-    if (result.refreshed.length >= LIMITS.tickers) break;
-    result.checked++;
-    try {
-      const stored = await repository.getCache<unknown>(eventsCacheKey(ticker));
-      const publication = stored ? readEventsPublication(stored.payload, ticker) : null;
-      const due = !publication || publication.pendingInsider > 0 || now.getTime() - Date.parse(publication.checkedAt) >= REFRESH_MS;
-      if (!due) { result.skipped.push(ticker); continue; }
-      const outcome = await refreshCompanyEvents(env, ticker, fetcher, now);
-      result.insiderReads += outcome.insiderReads;
-      if (outcome.published) result.refreshed.push(ticker); else result.skipped.push(ticker);
-    } catch (error) {
-      console.warn("events sweep failed", { ticker, error: error instanceof Error ? error.message : String(error) });
-      result.failed.push(ticker);
-    }
-  }
-  return result;
+  await db.batch([
+    db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at")
+      .bind(eventsCacheKey(ticker), JSON.stringify(next), now.toISOString()),
+    // The classes filed since the last publication ride in the event, so a subscriber can take only financing or deal news.
+    outboxStatement(db, { type: "events.published", ticker, causeId: options.causeId ?? null, detail: { classes: [...new Set(events.filter(e => !previous.has(e.id)).map(e => e.class))].join(",") } }, now.toISOString()),
+  ]);
+  return { published: true, insiderReads, exhibitReads, pending: pendingInsider + pendingExhibits, progressed: saved > 0 };
 }

@@ -79,102 +79,52 @@ export function requireDb(env: Pick<SecCronEnv, "DB">): D1Database {
   return env.DB;
 }
 
-export async function runCompanyAnalysisSweep(
-  env: SecCronEnv,
-  options: { forceIncomplete?: boolean } = {},
-): Promise<{ candidates: number; started: string[]; failed: string[] }> {
-  if (!env.COMPANY_ANALYSIS_WORKFLOW) return { candidates: 0, started: [], failed: [] };
-  const tickers = trackedTickersFor(env);
-  if (!tickers.length) return { candidates: 0, started: [], failed: [] };
+/**
+ * One company's analysis recovery, run by the `company-analysis` task: settles executions whose Workflow ended without
+ * saying so, then starts the analysis the company is missing (a new memory version, a failed run whose back-off has
+ * passed, an older prompt version). Reports a run still in progress and when a failed run may next be retried.
+ */
+export async function recoverCompanyAnalysis(env: SecCronEnv, ticker: string, now = Date.now()): Promise<{ started: string | null; running: boolean; nextRecoveryAt: string | null }> {
+  if (!env.COMPANY_ANALYSIS_WORKFLOW) return { started: null, running: false, nextRecoveryAt: null };
   const repository = new D1CompanyAnalysisRepository(requireDb(env));
   if (env.COMPANY_ANALYSIS_WORKFLOW.get) {
-    const executions = await repository.listActiveExecutions(tickers, new Date(Date.now() - 60 * 60_000).toISOString());
-    for (const execution of executions) {
+    for (const execution of await repository.listActiveExecutions([ticker], new Date(now - 60 * 60_000).toISOString())) {
       try {
-        const instance = await env.COMPANY_ANALYSIS_WORKFLOW.get(execution.workflowInstanceId);
-        const state = (await instance.status()).status;
-        if (["errored", "terminated", "complete"].includes(state)) {
-          await repository.markStoppedExecution(execution.analysisId, execution.workflowInstanceId, new Date().toISOString());
-        }
+        const state = (await (await env.COMPANY_ANALYSIS_WORKFLOW.get(execution.workflowInstanceId)).status()).status;
+        if (["errored", "terminated", "complete"].includes(state)) await repository.markStoppedExecution(execution.analysisId, execution.workflowInstanceId, new Date(now).toISOString());
       } catch {
         // Unknown platform state is not permission to launch a duplicate running Agent.
         console.warn(JSON.stringify({ event: "company-analysis-status-unavailable", analysisId: execution.analysisId }));
       }
     }
   }
-  // Deep research fetches several sources per company; pace older-version backfills over Cron ticks.
-  const candidates = await repository.listBackfillCandidates(tickers, 2, options.forceIncomplete === true);
-  const started: string[] = [];
-  const failed: string[] = [];
-  for (const candidate of candidates) {
-    const ticker = normalizeTrackedTicker(candidate.ticker);
-    if (!ticker || !candidate.triggerRef) continue;
-    try {
-      // The business-model Agent can use published SEC reports even when Yahoo has no matching quarter.
-      await env.COMPANY_ANALYSIS_WORKFLOW.create({
-        // A terminal run version has exactly one recovery id, even across concurrent Cron ticks
-        // or an ambiguous create response. The id changes only after that attempt actually ends.
-        id: candidate.analysisId
-          ? `company-recovery-${await sha256(`${candidate.analysisId}:${candidate.expectedUpdatedAt}`)}`
-          : `company-${hashString(candidate.triggerRef)}`,
-        params: { ...candidate, ticker },
-      });
-      started.push(ticker);
-    } catch (error) {
-      if (/already exists|duplicate/i.test(String(error))) {
-        started.push(ticker);
-      } else {
-        failed.push(ticker);
-      }
-    }
+  const running = Boolean(await requireDb(env).prepare("SELECT 1 FROM company_analysis_runs WHERE ticker = ? AND status IN ('waiting_fundamentals', 'calculating', 'analyzing', 'validating') LIMIT 1").bind(ticker).first());
+  if (running) return { started: null, running: true, nextRecoveryAt: null };
+  const [candidate] = await repository.listBackfillCandidates([ticker], 1, false, now);
+  if (candidate?.triggerRef) {
+    // A terminal run version has exactly one recovery id, even across concurrent runs or an ambiguous create
+    // response. The id changes only after that attempt actually ends.
+    const id = candidate.analysisId
+      ? `company-recovery-${await sha256(`${candidate.analysisId}:${candidate.expectedUpdatedAt}`)}`
+      : `company-${hashString(candidate.triggerRef)}`;
+    try { await env.COMPANY_ANALYSIS_WORKFLOW.create({ id, params: { ...candidate, ticker } }); }
+    catch (error) { if (!/already exists|duplicate/i.test(String(error))) throw error; }
+    return { started: id, running: true, nextRecoveryAt: null };
   }
-  return { candidates: candidates.length, started, failed };
+  return { started: null, running: false, nextRecoveryAt: await repository.nextRecoveryAt(ticker) };
 }
 
-export async function runSecRefresh(env: SecCronEnv, now = Date.now()) {
-  if (!trackedTickersFor(env).length) return { started: [], failed: [], skipped: [] };
-  if (!env.SEC_REFRESH_KEY || !env.SEC_ANALYSIS_WORKFLOW) {
-    throw new Error("SEC cron environment is incomplete");
-  }
-  const tickers = [...new Set(trackedTickersFor(env))];
-  const started: string[] = [];
-  const failed: string[] = [];
-  const skipped: string[] = [];
-  for (const ticker of tickers) {
-    try {
-      // A complex report can outlive many Cron ticks. Progress renews these jobs; avoid
-      // filling the Workflow queue with identical sweeps while a ticker is being analyzed.
-      if (env.DB) {
-        const active = await env.DB.prepare("SELECT job_id FROM sec_analysis_jobs WHERE ticker = ? AND status IN ('running', 'queued') AND updated_at >= ? LIMIT 1")
-          .bind(ticker, new Date(now - 2 * 60 * 60_000).toISOString()).first();
-        if (active) { skipped.push(ticker); continue; }
-      }
-      await startWorkflow(env.SEC_ANALYSIS_WORKFLOW, ticker, "scheduled", now, false);
-      started.push(ticker);
-    } catch {
-      failed.push(ticker);
-    }
-  }
-  /**
-   * A watchlist that yielded tickers but started nothing is a failure, not an empty success: it
-   * used to return the same shape a healthy run returns, so the Cron handler — the only reader
-   * there is — could not tell it apart from "there was nothing to do". An empty watchlist stays a
-   * no-op, because turning generation off entirely is a supported configuration.
-   */
-  if (tickers.length && !started.length && !skipped.length) throw new Error(`SEC refresh started no workflows (watchlist: ${tickers.length}, failed: ${failed.length})`);
-  return { started, failed, ...(skipped.length ? { skipped } : {}) };
-}
-
-export async function runSecMemorySweep(env: SecCronEnv): Promise<{ started: string[] }> {
-  if (!env.SEC_MEMORY_WORKFLOW || !trackedTickersFor(env).length) return { started: [] };
+/** Starts report memory for the company's oldest pending (or abandoned) memory job, if there is one. */
+export async function startCompanyMemory(env: SecCronEnv, ticker: string): Promise<{ started: string | null; leasedUntil: string | null }> {
+  if (!env.SEC_MEMORY_WORKFLOW) return { started: null, leasedUntil: null };
   const ownerToken = `sweeper:${crypto.randomUUID()}`;
-  const claim = await new D1SecRepository(requireDb(env)).claimMemoryJob(null, ownerToken, new Date(), undefined, trackedTickersFor(env));
-  if (!claim) return { started: [] };
-  await env.SEC_MEMORY_WORKFLOW.create({
-    id: `memory-${crypto.randomUUID()}`,
-    params: { jobId: claim.jobId, ticker: claim.ticker, ownerToken },
-  });
-  return { started: [claim.jobId] };
+  const claim = await new D1SecRepository(requireDb(env)).claimMemoryJob(null, ownerToken, new Date(), undefined, [ticker]);
+  if (claim) {
+    await env.SEC_MEMORY_WORKFLOW.create({ id: `memory-${crypto.randomUUID()}`, params: { jobId: claim.jobId, ticker: claim.ticker, ownerToken } });
+    return { started: claim.jobId, leasedUntil: null };
+  }
+  const leased = await requireDb(env).prepare("SELECT MAX(lease_until) AS until FROM sec_memory_jobs WHERE ticker = ? AND status = 'running'").bind(ticker).first<{ until: string | null }>();
+  return { started: null, leasedUntil: leased?.until ?? null };
 }
 
 export async function handleSecAnalysisRequest(request: Request, env: SecCronEnv, now = Date.now()): Promise<Response> {

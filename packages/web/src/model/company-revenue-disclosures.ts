@@ -1,7 +1,7 @@
 import type { BusinessFlowQuarter, FlowAmount, FlowMetric, RevenueBreakdownNode } from "@/shared/analysis-contract/business-flow";
 
 const sourceId = "nvda-fy2027-q2-10q";
-const source = { id: sourceId, title: "NVIDIA FY2027 Q2 10-Q · 收入、财务分部与市场平台（第 3、22–24 页）", url: "https://investor.nvidia.com/files/doc_financials/2027/NVDA-2027-Q2-10Q-Final-including-exhibits.pdf", publishedAt: "2026-08-27" };
+const source = { id: sourceId, title: "NVIDIA FY2027 Q2 10-Q · Revenue, segments and market platforms (pages 3, 22–24)", url: "https://investor.nvidia.com/files/doc_financials/2027/NVDA-2027-Q2-10Q-Final-including-exhibits.pdf", publishedAt: "2026-08-27" };
 // Reviewed public filing values, in USD millions. Never a ticker-wide default or an estimate.
 const figures: Partial<Record<FlowMetric, number>> = { revenue: 96221, cost: 24079, gross: 72142, research: 7054, operatingExpenses: 8408, operating: 63734, other: 7773, pretax: 71507, tax: 11819, net: 59688 };
 
@@ -19,24 +19,24 @@ export function enrichDisclosedRevenue(ticker: string, q: BusinessFlowQuarter): 
     comparabilityKey: null, sourceIds: [sourceId] });
   const node = (id: string, name: string, value: number, parentId: string | null, description: string, products: string[], childrenComplete = false): RevenueBreakdownNode => ({
     id, name, revenue: amount(value, `market-platform:${id}`), parentId, childrenComplete, description, products, customers: null, monetization: null,
-    disclosure: "FY2027 Q2 市场平台收入口径；不与财务分部建立金额父子关系。产品单独营收未披露。", sourceIds: [sourceId],
+    disclosure: "FY2027 Q2 revenue by market platform; not a parent or child of the financial segments. Product-level revenue is not disclosed.", sourceIds: [sourceId],
   });
-  const breakdown = { id: "nvda-market-platform-fy27", label: "市场平台", kind: "end_market" as const,
+  const breakdown = { id: "nvda-market-platform-fy27", label: "Market platforms", kind: "end_market" as const,
     definitionKey: "NVDA:market-platform:FY27-Q2-recast", periodStart: "2026-04-27", periodEnd: q.periodEnd, currency: q.currency, scale: q.scale, complete: true,
-    nodes: [node("data-center", "数据中心", 89023, null, "数据中心加速计算、网络与 AI 基础设施。", ["计算与网络平台", "AI 基础设施"], true),
-      node("hyperscale", "超大规模云客户", 48710, "data-center", "市场平台披露中的 Hyperscale 类别。", []),
-      node("acie", "AI 云、工业与企业", 40313, "data-center", "市场平台披露中的 AI Clouds, Industrial, & Enterprise 类别。", []),
-      node("edge", "边缘计算", 7198, null, "市场平台披露中的 Edge Computing 类别。", [])] };
+    nodes: [node("data-center", "Data Center", 89023, null, "Accelerated computing, networking and AI infrastructure for data centers.", ["Compute and networking platforms", "AI infrastructure"], true),
+      node("hyperscale", "Hyperscale", 48710, "data-center", "The Hyperscale category in the market platform disclosure.", []),
+      node("acie", "AI Clouds, Industrial, & Enterprise", 40313, "data-center", "The AI Clouds, Industrial, & Enterprise category in the market platform disclosure.", []),
+      node("edge", "Edge Computing", 7198, null, "The Edge Computing category in the market platform disclosure.", [])] };
   const disclosedFigures = { ...q.figures };
   for (const [key, value] of Object.entries(figures)) {
     if (disclosedFigures[key as FlowMetric]?.value == null) disclosedFigures[key as FlowMetric] = amount(value, `consolidated:${key}`);
   }
   // SG&A is combined in this filing; never manufacture separate sales/admin amounts.
   const segments = q.segments.length ? q.segments : [
-    { ...node("compute", "计算与网络", 88299, null, "财务分部：数据中心计算、网络及汽车平台。", ["计算与网络平台", "汽车平台"]), revenue: amount(88299, "financial-segment:compute"), disclosure: "财务分部收入；不是数据中心市场平台的父节点。" },
-    { ...node("graphics", "图形", 7922, null, "财务分部：游戏与工作站图形。", ["游戏显卡", "专业工作站图形"]), revenue: amount(7922, "financial-segment:graphics"), disclosure: "财务分部收入，与市场平台属于不同分类。" },
+    { ...node("compute", "Compute & Networking", 88299, null, "Financial segment: data center compute, networking and automotive platforms.", ["Compute and networking platforms", "Automotive platforms"]), revenue: amount(88299, "financial-segment:compute"), disclosure: "Financial segment revenue; not the parent of the Data Center market platform." },
+    { ...node("graphics", "Graphics", 7922, null, "Financial segment: gaming and workstation graphics.", ["Gaming GPUs", "Professional workstation graphics"]), revenue: amount(7922, "financial-segment:graphics"), disclosure: "Financial segment revenue, a different classification from the market platforms." },
   ];
-  return { ...q, basisLabel: q.basisLabel.includes("NVIDIA FY2027 Q2 10-Q") ? q.basisLabel : `${q.basisLabel} · 收入细分及缺失财务项补充自 NVIDIA FY2027 Q2 10-Q`, periodStart: "2026-04-27", reportedAt: q.reportedAt ?? source.publishedAt, figures: disclosedFigures,
+  return { ...q, basisLabel: q.basisLabel.includes("NVIDIA FY2027 Q2 10-Q") ? q.basisLabel : `${q.basisLabel} · Revenue breakdown and missing items supplemented from the NVIDIA FY2027 Q2 10-Q`, periodStart: "2026-04-27", reportedAt: q.reportedAt ?? source.publishedAt, figures: disclosedFigures,
     segments, segmentsComplete: q.segments.length ? q.segmentsComplete : true,
     sources: q.sources.some(s => s.id === sourceId) ? q.sources : [...q.sources, source],
     revenueBreakdowns: q.revenueBreakdowns?.some(d => d.id === breakdown.id) ? q.revenueBreakdowns : [...q.revenueBreakdowns ?? [], breakdown] };

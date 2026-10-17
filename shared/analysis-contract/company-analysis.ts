@@ -10,7 +10,7 @@ export type CompanyAnalysisCoverageStatus = "complete" | "partial";
  * prose that reads so. The section's subject is a product decision — where this business and its
  * industry are heading — so the name is not the model's to move.
  */
-export const COMPANY_ANALYSIS_OVERVIEW_LABEL = "业务前瞻 · AI 综述";
+export const COMPANY_ANALYSIS_OVERVIEW_LABEL = "Business outlook · AI overview";
 
 /** A sourced, long-form explanation of how the company actually operates. */
 export type BusinessDeepDive = {

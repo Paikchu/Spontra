@@ -65,6 +65,22 @@ export type BusinessFlowQuarter = {
   revenueBreakdowns?: RevenueBreakdown[];
   expenseComponents?: Array<{ id: string; name: string; group: "direct" | "research" | "sales" | "administration" | "other"; amount: FlowAmount }>;
   otherComponents?: Array<{ id: string; name: string; amount: FlowAmount }>;
+  /**
+   * Signed lines the statement places between income taxes and net income (equity-method results, noncontrolling
+   * interests, discontinued operations), read from the filing's own calculation: net = pretax − tax + Σ amounts.
+   */
+  afterTaxComponents?: Array<{ id: string; name: string; amount: FlowAmount }>;
+  /**
+   * How the arithmetic from operating income to net income was established: the filing's calculation linkbase, its
+   * statement rows, a structure verified on an earlier filing (`profile`), or `degraded` when none balanced and the
+   * lines between operating and net income are shown as one derived total.
+   */
+  presentation?: { source: "calculation" | "statement" | "profile" | "degraded"; structure?: string };
+  /**
+   * Lines a later filing presents differently for an earlier period (a restatement or reclassification): this quarter
+   * and the previous one are not compared on them, and every other line still is.
+   */
+  basisChanges?: FlowMetric[];
 
   sources: FlowSource[];
 };

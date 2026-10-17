@@ -6,6 +6,24 @@ import { ReportMarkdown, ReportFormula, safeReportUrl } from "./ReportMarkdown.t
 import { ReportAssetImage } from "./ReportAssetImage.tsx";
 import { ReportMediaGroup } from "./ReportMediaGroup.tsx";
 import { findSecFigure, readableTrend, SecFigureSource, SecFigureView, SecTrendFigure, SecTrendSource } from "../figures/index.ts";
+import { getLocale, messages } from "@/packages/web/src/i18n";
+import { langOf } from "@/packages/web/src/i18n/SourceLanguage";
+
+const m = messages({
+  unavailable: "Unavailable", noData: "No data", imageUnavailable: (alt: string) => `Image unavailable: ${alt}`,
+  generated: "Generated illustration", fromFiling: "Image from filing", tableUnavailable: "Table unavailable",
+  excerpts: "Related research excerpts", characters: (start: string, end: string) => `Characters ${start}–${end}`, noExcerpts: "No excerpts",
+}, {
+  unavailable: "不可用", noData: "无数据", imageUnavailable: (alt: string) => `图片不可用：${alt}`,
+  generated: "AI 生成插图", fromFiling: "文件中的图片", tableUnavailable: "表格不可用",
+  excerpts: "相关研究摘录", characters: (start: string, end: string) => `字符位置 ${start}–${end}`, noExcerpts: "无摘录",
+});
+
+/** Blocks made only of generated prose; they carry the language they were written in. */
+const GENERATED_TEXT = new Set<SecReaderContentBlock["type"]>(["markdown", "callout", "math", "table"]);
+/** The main text of a generated block, whose language the block carries. */
+const mainText = (block: SecReaderContentBlock) =>
+  block.type === "markdown" ? block.markdown : block.type === "callout" ? block.text : block.type === "math" ? block.explanation : block.type === "table" ? block.caption : undefined;
 
 export type ReportContentContext = { report?: PublishedSecReport; nodes?: SecNodeResult[]; assets?: SecReaderAsset[]; paragraphLabels?: Record<string, string> };
 type RenderProps = { content: readonly SecReaderContentBlock[]; context: ReportContentContext; surface?: "article" | "chat"; phase?: "draft" | "final"; activeBlockId?: string };
@@ -17,7 +35,7 @@ export function ReportContentRenderer({ content, context, surface = "article", p
   const blocks = Array.isArray(content) ? content : [];
   for (let index = 0; index < blocks.length; index++) {
     const parsed = SEC_READER_CONTENT_BLOCK_SCHEMA.safeParse(blocks[index]);
-    if (!parsed.success) { rendered.push(<p className="report-content-fallback" key={`invalid-${index}`}>此内容块暂无法显示，其他正文已保留。</p>); continue; }
+    if (!parsed.success) { rendered.push(<p className="report-content-fallback" key={`invalid-${index}`}>{m.unavailable}</p>); continue; }
     const block = parsed.data;
     const group = [block];
     if (block.groupId) {
@@ -31,7 +49,7 @@ export function ReportContentRenderer({ content, context, surface = "article", p
     const eligible = group.length > 1 && media.length === 1 && group.every((item) => ["markdown", "chart", "image", "callout"].includes(item.type));
     const render = (item: SecReaderContentBlock, includeSource = true) => {
       const domId = `${instanceId}-report-content-block-${item.blockId}`;
-      return <div key={item.blockId} id={domId} data-block-id={item.blockId} data-report-block={item.type}><ContentBlock block={item} domId={domId} context={context} active={phase === "draft" && activeBlockId === item.blockId} />{includeSource && <BlockSource block={item} context={context} />}</div>;
+      return <div key={item.blockId} id={domId} data-block-id={item.blockId} data-report-block={item.type} lang={GENERATED_TEXT.has(item.type) ? langOf(mainText(item)) : undefined}><ContentBlock block={item} domId={domId} context={context} active={phase === "draft" && activeBlockId === item.blockId} />{includeSource && <BlockSource block={item} context={context} />}</div>;
     };
     if (eligible) {
       const position = group.indexOf(media[0]);
@@ -52,11 +70,11 @@ function ContentBlock({ block, domId, context, active }: { block: SecReaderConte
     case "markdown": return <>{context.paragraphLabels?.[block.blockId] && <h3 className="report-content-paragraph-label">{context.paragraphLabels[block.blockId]}</h3>}{active ? <StreamingReportText text={block.markdown} /> : <ReportMarkdown markdown={block.markdown} />}</>;
     case "chart": {
       const trend = readableTrend(context.report?.trends?.find((t) => t.metricKey === block.metricKey));
-      return trend ? <SecTrendFigure id={`${domId}-figure`} title={block.title} trend={trend} mark={block.mark} caption={block.caption} /> : <div className="report-content-fallback"><strong>{block.title}</strong><p>暂无可绘制的可比数据。</p><p>{block.caption}</p></div>;
+      return trend ? <SecTrendFigure id={`${domId}-figure`} title={block.title} trend={trend} mark={block.mark} caption={block.caption} /> : <div className="report-content-fallback"><strong>{block.title}</strong><p>{m.noData}</p><p lang={langOf(block.caption)}>{block.caption}</p></div>;
     }
     case "figure": {
       const figure = findSecFigure(context.report?.figures, block.figureKey);
-      return figure ? <SecFigureView id={`${domId}-figure`} figure={figure} title={block.title} caption={block.caption} /> : <div className="report-content-fallback"><strong>{block.title}</strong><p>该图所需的已核验数据暂不可用。</p><p>{block.caption}</p></div>;
+      return figure ? <SecFigureView id={`${domId}-figure`} figure={figure} title={block.title} caption={block.caption} /> : <div className="report-content-fallback"><strong>{block.title}</strong><p>{m.noData}</p><p lang={langOf(block.caption)}>{block.caption}</p></div>;
     }
     case "image": {
       const candidate = (context.assets ?? context.report?.reader?.assets)?.find((asset) => asset.assetId === block.assetId);
@@ -64,20 +82,20 @@ function ContentBlock({ block, domId, context, active }: { block: SecReaderConte
       const asset = parsed.success ? parsed.data : undefined;
       const src = asset && safeReportUrl(asset.src);
       return <figure className="report-content-image">
-        {asset && src && !src.startsWith("#") ? <ReportAssetImage key={src} src={src} width={asset.width} height={asset.height} alt={block.alt} /> : <div className="report-content-fallback">图片暂不可用：{block.alt}</div>}
-        <figcaption>{block.caption}{asset && <><br /><span>{asset.source.kind === "generated" ? "生成插图" : "申报材料图片"} · {safeReportUrl(asset.source.url ?? "") ? <a href={safeReportUrl(asset.source.url!)} target="_blank" rel="noopener noreferrer">{asset.source.label}</a> : asset.source.label}</span></>}</figcaption>
+        {asset && src && !src.startsWith("#") ? <ReportAssetImage key={src} src={src} width={asset.width} height={asset.height} alt={block.alt} /> : <div className="report-content-fallback">{m.imageUnavailable(block.alt)}</div>}
+        <figcaption lang={langOf(block.caption)}>{block.caption}{asset && <><br /><span lang={getLocale()}>{asset.source.kind === "generated" ? m.generated : m.fromFiling} · {safeReportUrl(asset.source.url ?? "") ? <a href={safeReportUrl(asset.source.url!)} target="_blank" rel="noopener noreferrer">{asset.source.label}</a> : asset.source.label}</span></>}</figcaption>
       </figure>;
     }
     case "math": return <ReportFormula latex={block.latex} displayMode={block.displayMode} explanation={block.explanation} assumption={block.assumption} />;
     case "table": return block.rows.some((row) => row.length !== block.headers.length) || block.columnKinds && block.columnKinds.length !== block.headers.length
-      ? <p className="report-content-fallback">表格列数不一致，暂无法显示。</p>
+      ? <p className="report-content-fallback">{m.tableUnavailable}</p>
       : <figure className="report-content-data-table" data-density={block.density ?? "comfortable"}><figcaption>{block.caption}</figcaption><div className="report-content-table-scroll" tabIndex={0} role="region" aria-label={block.caption}><table><thead><tr>{block.headers.map((header, i) => <th scope="col" data-column-kind={block.columnKinds?.[i] ?? (i === 0 ? "label" : "text")} key={i}>{header}</th>)}</tr></thead><tbody>{block.rows.map((row, i) => <tr key={i}>{row.map((cell, j) => j === 0 && (block.columnKinds?.[j] ?? "label") === "label" ? <th scope="row" data-column-kind="label" key={j}>{cell}</th> : <td data-column-kind={block.columnKinds?.[j] ?? "text"} key={j}>{cell}</td>)}</tr>)}</tbody></table></div></figure>;
     case "callout": return <aside className="report-content-callout" data-tone={block.tone}>{block.title && <strong>{block.title}</strong>}<ReportMarkdown markdown={block.text} /></aside>;
     case "evidence": {
       const nodes = context.nodes ?? context.report?.publication?.summary.nodes ?? [];
       const evidence = nodes.filter((node) => node.evidenceIds?.some((id) => block.evidenceIds.includes(id))).flatMap((node) => node.evidence)
         .filter((item, index, all) => all.findIndex((other) => other.excerpt === item.excerpt) === index);
-      return <details className="report-content-source report-content-evidence"><summary>{block.title ?? "相关研究摘录"} · {evidence.length} 段</summary>{evidence.length ? <><p className="report-content-caption">以下摘录来自包含所引证据的研究主题，尚未逐条对应本段论述。</p>{evidence.map((item, i) => <blockquote key={i}><p>{item.excerpt}</p><footer>字符位置 {item.start}–{item.end}</footer></blockquote>)}</> : <p>该内容块暂无可展开的原文摘录。</p>}</details>;
+      return <details className="report-content-source report-content-evidence"><summary>{block.title ?? m.excerpts} · {evidence.length}</summary>{evidence.length ? <>{evidence.map((item, i) => <blockquote key={i}><p lang="en">{item.excerpt}</p><footer>{m.characters(item.start.toLocaleString("en-US"), item.end.toLocaleString("en-US"))}</footer></blockquote>)}</> : <p>{m.noExcerpts}</p>}</details>;
     }
   }
 }

@@ -1,16 +1,37 @@
 import { useEffect, useRef, useState } from "react";
 import { CompanyLogo } from "./CompanyMark";
 import { SearchPanel } from "./SearchDialog";
-import { ThemeToggle } from "./Sidebar";
+import { LanguageToggle, ThemeToggle } from "./Sidebar";
 import { loadDigest, type CompanyDigest } from "./company-data";
 import { KIND_LABEL, type VerifiedFinding } from "./findings-model";
+import { periodReport } from "./events-model";
+import { getLocale, messages } from "@/packages/web/src/i18n";
+import { SourceLanguage, langOf } from "@/packages/web/src/i18n/SourceLanguage";
 
-/** Companies the pipeline writes findings for (its SEC_AI_TICKERS); recently opened companies join them. */
-const FINDINGS_TICKERS = ["ORCL", "ADSK", "NET"];
+const m = messages({
+  title: "Business View", watchOutcome: "Watch outcome", recent: "Recently viewed", findings: "Findings", latest: "Latest reports", loading: "Loading findings",
+}, {
+  title: "Business View", watchOutcome: "跟踪结果", recent: "最近查看", findings: "要点", latest: "最新财报", loading: "正在加载要点",
+});
+
+/** Companies with published findings, as the read API lists them (the admin's AI switch decides which); read once per page load. */
+let findingsIndex: Promise<string[]> | null = null;
+function useFindingsTickers(): string[] {
+  const [tickers, setTickers] = useState<string[]>([]);
+  useEffect(() => {
+    findingsIndex ??= fetch("/api/business/v1/findings").then(r => r.ok ? r.json() as Promise<{ tickers?: unknown }> : null)
+      .then(b => Array.isArray(b?.tickers) ? b.tickers.filter((t): t is string => typeof t === "string") : [])
+      .catch(() => { findingsIndex = null; return []; });
+    let live = true;
+    void findingsIndex.then(list => { if (live) setTickers(list); });
+    return () => { live = false; };
+  }, []);
+  return tickers;
+}
 /** Each company costs four reads against a 60-per-minute public limit. */
 const MAX_COMPANIES = 12;
 
-const report = (periodEnd: string) => `${periodEnd.slice(0, 7).replace("-", ".")} 财报`;
+const report = periodReport;
 
 /** Newest report first; within a report, the company with the most severe finding. */
 function byReport(a: CompanyDigest, b: CompanyDigest) {
@@ -20,12 +41,14 @@ function byReport(a: CompanyDigest, b: CompanyDigest) {
 /** Verified once per page load: returning home shows the same digests without reading every statement again. */
 const digestCache = new Map<string, Promise<CompanyDigest | null>>();
 function digestOf(ticker: string) {
-  let digest = digestCache.get(ticker);
+  // Digests are read in the page's language, so each language keeps its own.
+  const key = `${getLocale()}:${ticker}`;
+  let digest = digestCache.get(key);
   if (!digest) {
     digest = loadDigest(ticker, new AbortController().signal).catch(() => null);
-    digestCache.set(ticker, digest);
+    digestCache.set(key, digest);
     // Only a complete answer is kept; an empty or fallback one is read again next time home opens.
-    void digest.then(d => { if (!d || d.partial) digestCache.delete(ticker); });
+    void digest.then(d => { if (!d || d.partial) digestCache.delete(key); });
   }
   return digest;
 }
@@ -75,8 +98,8 @@ function Chip({ item, copy }: { item: Item; copy: boolean }) {
   return <a className="finding-chip marquee-chip" data-kind={f.kind} data-nav href={`/companies/${ticker}?finding=${encodeURIComponent(f.id)}`}
     tabIndex={copy ? -1 : undefined} title={`${ticker} · ${report(periodEnd)} · ${KIND_LABEL[f.kind]}`}>
     <CompanyLogo ticker={ticker} small />
-    <span>{f.title}</span>
-    {f.watchOutcome && <i className="finding-settled" aria-label="跟踪项已有新披露">↻</i>}
+    <span lang={langOf(f.title)}>{f.title}</span>
+    {f.watchOutcome && <i className="finding-settled" aria-label={m.watchOutcome}>↻</i>}
   </a>;
 }
 
@@ -100,7 +123,8 @@ function MarqueeRow({ items, index }: { items: Item[]; index: number }) {
 
 /** Search in the middle of the page, recent companies under it, then two staggered rows of the latest findings drifting by; each opens its company at that finding. */
 export function Home({ light, onToggleTheme, recent, onPick }: { light: boolean; onToggleTheme: () => void; recent: string[]; onPick: (ticker: string) => void }) {
-  const tickers = [...new Set([...FINDINGS_TICKERS, ...recent])].slice(0, MAX_COMPANIES);
+  const findingsTickers = useFindingsTickers();
+  const tickers = [...new Set([...findingsTickers, ...recent])].slice(0, MAX_COMPANIES);
   const { digests, loading } = useDigests(tickers);
   const inputRef = useRef<HTMLInputElement>(null);
   // A touch keyboard would cover the findings, so only a pointer device starts in the field.
@@ -109,21 +133,21 @@ export function Home({ light, onToggleTheme, recent, onPick }: { light: boolean;
   return <main className="home">
     <header className="home-top">
       <ThemeToggle light={light} onToggle={onToggleTheme} />
+      <LanguageToggle />
     </header>
     <div className="home-center">
     <section className="home-hero" aria-labelledby="home-title">
-      <h1 id="home-title">Business View</h1>
-      <p>从业务、产品到净利润，基于公开财报。</p>
+      <h1 id="home-title">{m.title}</h1>
       <SearchPanel inline current={null} recent={recent} onPick={onPick} inputRef={inputRef} />
-      {recent.length > 0 && <nav className="home-recent" aria-label="最近查看">
-        <span>最近查看</span>
+      {recent.length > 0 && <nav className="home-recent" aria-label={m.recent}>
+        <span>{m.recent}</span>
         {recent.slice(0, 5).map(t => <a key={t} href={`/companies/${t}`} data-nav><CompanyLogo ticker={t} small />{t}</a>)}
       </nav>}
     </section>
-    {(loading || items.length > 0) && <section className="home-findings" aria-label="要点" aria-busy={loading}>
-      <h2 className="home-findings-title">要点<small>最新财报</small></h2>
+    {(loading || items.length > 0) && <section className="home-findings" aria-label={m.findings} aria-busy={loading}>
+      <h2 className="home-findings-title">{m.findings}<small>{m.latest}</small><SourceLanguage of={items.map(item => item.finding.title)} /></h2>
       {items.length > 0 ? <div className="marquee">{rows(items).map((row, i) => <MarqueeRow key={i} items={row} index={i} />)}</div>
-        : <div className="marquee" role="status" aria-label="正在读取要点"><div className="marquee-row"><div className="marquee-track">
+        : <div className="marquee" role="status" aria-label={m.loading}><div className="marquee-row"><div className="marquee-track">
           {[0, 1, 2, 3, 4, 5].map(i => <span key={i} className="finding-chip marquee-chip marquee-ghost" style={{ animationDelay: `${i * 90}ms` }} />)}
         </div></div><div className="marquee-row" data-offset><div className="marquee-track">
           {[0, 1, 2, 3, 4, 5].map(i => <span key={i} className="finding-chip marquee-chip marquee-ghost" style={{ animationDelay: `${i * 90 + 45}ms` }} />)}

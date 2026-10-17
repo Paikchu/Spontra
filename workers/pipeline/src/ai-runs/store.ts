@@ -18,9 +18,11 @@ type VersionRecord = { savedAt: string; hash: string; summary: AiVersionSummary;
 export function summarize(kind: AiRunKind, publication: unknown): AiVersionSummary {
   const p = (publication ?? {}) as Record<string, unknown>;
   const list = (key: string) => Array.isArray(p[key]) ? (p[key] as unknown[]).length : 0;
+  // A dossier keeps one document per finding under its id, and its sources are the materials the quotes rest on.
+  const documents = p.documents && typeof p.documents === "object" ? Object.keys(p.documents as object).length : 0;
   return {
-    items: list(kind === "findings" ? "findings" : kind === "explainer" ? "businesses" : kind === "tree" ? "branches" : "items"),
-    sources: list("sources"),
+    items: kind === "analyst" ? documents : list(kind === "findings" ? "findings" : kind === "explainer" ? "businesses" : kind === "tree" ? "branches" : "items"),
+    sources: kind === "analyst" ? list("materials") : list("sources"),
     periodEnd: typeof p.periodEnd === "string" ? p.periodEnd : null,
     model: typeof p.model === "string" ? p.model : null,
   };
