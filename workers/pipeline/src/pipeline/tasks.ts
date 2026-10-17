@@ -43,7 +43,8 @@ export const TASK_IMPLEMENTATIONS: Record<TaskName, TaskImplementation> = {
   ...PRESENTATION_TASKS,
 
   "map-derive": {
-    version: REPORT_QUARTERS_VERSION,
+    // Which archived filings are read changes without the parsed quarters changing: v2 selects them by filing date.
+    version: `map-derive.v2:${REPORT_QUARTERS_VERSION}`,
     async run(env, ticker, { causeId }) {
       if (!await isDataCompany(env, ticker)) return { status: "done", detail: { skipped: "not a data company" } };
       const result = await deriveCompany({ DB: env.DB!, SEC_FILINGS: env.SEC_FILINGS }, ticker, undefined, causeId);

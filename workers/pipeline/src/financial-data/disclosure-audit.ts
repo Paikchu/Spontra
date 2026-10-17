@@ -156,8 +156,12 @@ export async function pruneSupersededArchives(env: { DB: D1Database; SEC_FILINGS
 }
 
 /** The archive index for one company, newest first. Malformed rows are skipped, never repaired here. */
+/**
+ * The company's newest archived documents by filing date. Archive time says nothing about recency: a history backfill
+ * archives years-old filings after the newest ones, and must not push those out of the map's window.
+ */
 export async function readStoredAudits(db: D1Database, ticker: string): Promise<StoredAudit[]> {
-  const rows = await db.prepare("SELECT payload FROM sec_cache WHERE cache_key LIKE ? ORDER BY fetched_at DESC LIMIT 100")
+  const rows = await db.prepare("SELECT payload FROM sec_cache WHERE cache_key LIKE ? ORDER BY json_extract(payload, '$.source.filedAt') DESC, fetched_at DESC LIMIT 200")
     .bind(disclosureAuditPrefix(ticker) + "%").all<{ payload: string }>();
   const audits: StoredAudit[] = [];
   for (const row of rows.results) { try { const r = JSON.parse(row.payload) as StoredAudit; if (r.ticker === ticker && r.source?.ticker === ticker) audits.push(r); } catch { /* skipped */ } }

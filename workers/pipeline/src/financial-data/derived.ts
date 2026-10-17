@@ -23,7 +23,7 @@ export const REPORT_QUARTERS_VERSION = `report-quarters.v2:${SEC_FLOW_PARSER_VER
 const quartersPrefix = (ticker: string) => `sec:report-quarters:v1:${ticker}:`;
 const snapshotKey = (ticker: string) => `sec:map-derived:v1:${ticker}`;
 
-/** Two years of quarters behind the latest report, from at most this many filings. */
+/** Two years of quarters behind the latest report, from at most this many filings that carry quarters; notices that carry none do not count. */
 const REPORT_QUARTERS = 8, REPORT_FILINGS = 24;
 /** Source bytes parsed per run; filings beyond it wait for the next run, which the task schedules at once. */
 export const PARSE_BUDGET_BYTES = 32_000_000;
@@ -63,7 +63,7 @@ const daysBetween = (a: string, b: string) => (Date.parse(b) - Date.parse(a)) / 
  * A period is taken from the newest filing that presents it, so it is shown on that filing's basis, recast or
  * reclassified as the filing presents it, the same basis as the newer quarter it is the year-ago period of.
  */
-function reportCandidates(audits: StoredAudit[], flow: PublicBusinessFlow): StoredAudit[] {
+export function reportCandidates(audits: StoredAudit[], flow: PublicBusinessFlow): StoredAudit[] {
   const latest = latestOf(flow);
   const issuer = latest?.sources.map(s => s.url.match(/\/Archives\/edgar\/data\/(\d+)\//)?.[1]).find(Boolean);
   if (!latest || !issuer) return [];
@@ -80,7 +80,7 @@ function reportCandidates(audits: StoredAudit[], flow: PublicBusinessFlow): Stor
   });
   // On the same day, earnings exhibits carry the cleanest quarter-only tables, then 10-Qs, then 10-Ks, then other current reports.
   const priority = (r: StoredAudit) => /ex[-_]?99/i.test(r.source.documentUrl) ? 0 : /^10-Q/.test(r.source.form) ? 1 : /^10-K/.test(r.source.form) ? 2 : 3;
-  return candidates.sort((a, b) => b.source.filedAt.localeCompare(a.source.filedAt) || priority(a) - priority(b)).slice(0, REPORT_FILINGS);
+  return candidates.sort((a, b) => b.source.filedAt.localeCompare(a.source.filedAt) || priority(a) - priority(b));
 }
 
 /** The third-quarter report of the fiscal year an annual report closes: the issuer's 10-Q ending one quarter before it. */
@@ -152,10 +152,10 @@ export async function deriveCompany(env: DisclosureArchiveEnv, ticker: string, b
   for (const row of storedRows.results) { try { const s = JSON.parse(row.payload) as StoredQuarters; stored.set(s.documentId, s); } catch { /* re-parsed below */ } }
 
   const byPeriod = new Map(flow.quarters.map(q => [q.periodEnd, q]));
-  let spent = 0, pending = 0;
+  let spent = 0, pending = 0, reports = 0;
   const used: string[] = [];
   for (const record of reportCandidates(audits, flow)) {
-    if (byPeriod.size >= REPORT_QUARTERS) break;
+    if (byPeriod.size >= REPORT_QUARTERS || reports >= REPORT_FILINGS) break;
     let entry = stored.get(record.documentId);
     const partner = thirdQuarterReport(audits, record);
     const contentSha256 = partner ? `${record.contentSha256}+${partner.contentSha256}` : record.contentSha256;
@@ -171,6 +171,7 @@ export async function deriveCompany(env: DisclosureArchiveEnv, ticker: string, b
       entry = parsed;
     }
     used.push(`${record.documentId}:${contentSha256}:${entry.labels ?? ''}`);
+    if (entry.quarters.length) reports++;
     for (const q of entry.quarters) {
       if (q.periodEnd > latest.periodEnd || Date.parse(q.periodEnd) <= cutoff.getTime() || byPeriod.has(q.periodEnd)) continue;
       byPeriod.set(q.periodEnd, q);
