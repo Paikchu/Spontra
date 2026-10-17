@@ -419,7 +419,7 @@ export async function summarizePreparedSecEvent(
       report: "string",
     },
   });
-  const summary = normalizeSecSummary({ ...value, source: "deepseek", version: SEC_SUMMARY_VERSION }, prepared.filing, now);
+  const summary = normalizeSecSummary({ ...value, source: "claude", version: SEC_SUMMARY_VERSION }, prepared.filing, now);
   summary.discovery = prepared.discovery;
   if (!summary.headline || !summary.bullets.length || !summary.analystView || !summary.eventCategory) {
     throw new Error("Event summary returned incomplete analysis");
@@ -596,7 +596,7 @@ export async function summarizePreparedSecFiling(
     validEvidenceIds,
   };
   const normalizedSummary = {
-    ...normalizeSecSummary({ ...summaryValue, source: "deepseek", version: SEC_SUMMARY_VERSION }, prepared.filing, now),
+    ...normalizeSecSummary({ ...summaryValue, source: "claude", version: SEC_SUMMARY_VERSION }, prepared.filing, now),
     ...(readerSummary ?? {}),
   };
   if (!normalizedSummary.report) {

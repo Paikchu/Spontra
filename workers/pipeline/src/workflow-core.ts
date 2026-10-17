@@ -20,7 +20,7 @@ import type {
 import { SEC_SUMMARY_VERSION } from "./sec/sec.ts";
 import type { SecAnalysisArtifact, SecAnalysisContext } from "./sec/types.ts";
 import type { SecWorkflowParams } from "./core.ts";
-import { modelExecutionForAttempt, type SecModelExecution } from "./retry-policy.ts";
+import { modelExecutionForAttempt, type SecModelExecution, SEC_FALLBACK_MODEL } from "./retry-policy.ts";
 import { SecModelOutputError } from "./model-stream.ts";
 import { SecModelHttpError } from "./model-recovery.ts";
 
@@ -312,7 +312,7 @@ export async function executeSecAnalysisWorkflow(
           stage = "editorial-revision";
           const revisionRound = round + 1;
           result = await step.do(`editorial-revision:${accession}:${revisionRound}`, (stepContext) => operations.reviseReport!(filing, prepared, context, plan, loop.nodes, brief, managerReview, audit.issues,
-            revisionRound >= 2 ? { ...executionFor(stepContext), model: "deepseek-flash" } : executionFor(stepContext), { draft, round: revisionRound, findings: audit.findings }));
+            revisionRound >= 2 ? { ...executionFor(stepContext), model: SEC_FALLBACK_MODEL } : executionFor(stepContext), { draft, round: revisionRound, findings: audit.findings }));
           previousIssues = audit.findings ?? [];
         }
       }

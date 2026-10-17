@@ -1,4 +1,4 @@
-import { reasoningFor } from "../ai-config.ts";
+import { modelFor, reasoningFor } from "../ai-config.ts";
 import type { BusinessTree, BusinessTreeResponse } from "../../../../shared/analysis-contract/business-tree.ts";
 import type { PublicBusinessFlow } from "../../../../shared/analysis-contract/business-flow.ts";
 import { issuerNames, readBusinessTree } from "../../../../shared/analysis-runtime/business-tree.ts";
@@ -65,7 +65,7 @@ export async function businessTreeFingerprint(env: SecPipelineEnv, ticker: strin
 export async function executeBusinessTreeWorkflow(params: BusinessTreeParams, step: WorkflowStepLike, env: SecPipelineEnv, fetcher: typeof fetch = fetch, runId?: string) {
   // Switched off in the admin after the run was scheduled: nothing to write, and nothing that failed.
   if (!treeTickersFor(env).includes(params.ticker) || env.BUSINESS_TREE_ENABLED === "false") return { status: "superseded" };
-  const modelVersion = env.SEC_REASONING_MODEL || env.SEC_ANALYSIS_MODEL || "deepseek-flash";
+  const modelVersion = modelFor(env, "tree");
   const now = await step.do("tree-time", async () => new Date().toISOString());
   const input = await step.do("tree-input", () => readInput(env, params.ticker));
   // The business list changed after scheduling; the next sweep starts a run for the new list.

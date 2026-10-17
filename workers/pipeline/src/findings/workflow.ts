@@ -1,4 +1,4 @@
-import { reasoningFor } from "../ai-config.ts";
+import { modelFor, reasoningFor } from "../ai-config.ts";
 import type { ExplainerSource } from "../../../../shared/analysis-contract/business-explainer.ts";
 import { issuerNames } from "../../../../shared/analysis-runtime/business-tree.ts";
 import { readFindingFundamentals, readFindingsPublication, type FindingData } from "../../../../shared/analysis-runtime/findings.ts";
@@ -92,7 +92,7 @@ export async function priorWatches(store: AiRunStore, ticker: string, previous: 
 export async function executeFindingsWorkflow(params: FindingsWorkflowParams, step: WorkflowStepLike, env: SecPipelineEnv, deps: FindingsDeps = {}) {
   assertTrackedTicker(env, params.ticker);
   const fetcher = deps.fetcher ?? fetch;
-  const modelVersion = env.SEC_REASONING_MODEL || env.SEC_ANALYSIS_MODEL || "deepseek-flash";
+  const modelVersion = modelFor(env, "findings");
   const now = await step.do("findings-time", async () => new Date().toISOString());
   const input = await step.do("findings-input", () => findingsInput(env, params.ticker));
   // The report, guidance or narrative moved on after scheduling; the next sweep starts a run for the new state.
@@ -106,7 +106,7 @@ export async function executeFindingsWorkflow(params: FindingsWorkflowParams, st
   });
   // Each verified finding's lens document, composed by the agent at low reasoning; a reply that is not JSON is its turn gone wrong, not a failed step.
   const lensModel: FindingsModel = deps.model ?? (async (stage, system, payload) => {
-    try { return await callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, 3 * 60_000, true, { reasoning: reasoningFor(env, "lens"), ticker: params.ticker }); }
+    try { return await callWorkerSecModel(env, fetcher, stage, system, payload, modelFor(env, "lens"), 3 * 60_000, true, { reasoning: reasoningFor(env, "lens"), ticker: params.ticker }); }
     catch (error) { if (error instanceof SecModelOutputError) return { action: "invalid" }; throw error; }
   });
   const lensed = draft.publication ? await writeLensDocuments({ publication: draft.publication, ledger: input.ledger, data: input.data, model: lensModel, version: LENS_VERSION, now, stage }).catch(() => null) : null;

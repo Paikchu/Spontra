@@ -2,7 +2,7 @@ import type { PublicFilingPage } from "../../../../shared/analysis-contract/fili
 import { GLOSSARY_ZH } from "../../../../shared/analysis-runtime/glossary.ts";
 import type { Locale } from "../../../../shared/analysis-runtime/locale.ts";
 import { checkTranslation, collectProse, normalizeTranslation, type TranslatedResource, type TranslationTable } from "../../../../shared/analysis-runtime/translation.ts";
-import { reasoningFor } from "../ai-config.ts";
+import { modelFor, reasoningFor } from "../ai-config.ts";
 import { readBusinessExplainerResponse } from "../business-explainer/workflow.ts";
 import { readBusinessTreeResponse } from "../business-tree/workflow.ts";
 import { readEventsResponse } from "../events/read.ts";
@@ -145,7 +145,7 @@ export type AskTranslations = (stage: string, items: Array<{ i: number; text: st
 export class ModelUnavailable extends Error { constructor(reason: string) { super(reason); this.name = "ModelUnavailable"; } }
 
 async function askModel(env: SecPipelineEnv, fetcher: typeof fetch, ticker: string, runId: string, stage: string, items: Array<{ i: number; text: string; problems?: string[] }>): Promise<Map<number, string>> {
-  const model = env.SEC_ANALYSIS_MODEL || "deepseek-flash";
+  const model = modelFor(env, "translate");
   const payload = { items: items.map(({ i, text, problems }) => ({ i, text, ...(problems ? { fix: `上一次译文的问题：${problems.join("；")}` } : {}) })) };
   let result: Record<string, unknown>;
   try { result = await callWorkerSecModel(env, fetcher, stage, SYSTEM, payload, model, 3 * 60_000, true, { reasoning: reasoningFor(env, "translate"), ticker, runId, kind: "translate" }); }
@@ -186,7 +186,7 @@ export async function translateBatch(env: SecPipelineEnv, ticker: string, runId:
     }
     pending = retry;
   }
-  const model = env.SEC_ANALYSIS_MODEL || "deepseek-flash";
+  const model = modelFor(env, "translate");
   // Only strings the model answered are remembered; the rest stay pending for the next run.
   const rows = batch.flatMap((item, i) => {
     const o = outcome.get(i);

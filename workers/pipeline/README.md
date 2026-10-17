@@ -9,7 +9,7 @@
 - `shared/analysis-contract/`（仓库根目录）：供分析后端使用的共享类型。
 - 业务地图通过 `EARNING_REPORT_PIPELINE` Service Binding 的 `MapReads` 命名入口读取结果；admin 绑定默认入口。
 
-个股「业务拆解」由公司分析 Workflow 在 SEC Memory 更新后生成。它读取最多四期已发布 SEC 报告、复用 Web Search 的 Tavily 检索与网页提取，最多执行九次取证工具调用，完成逐段引用核查后发布到原公司分析读取 API；旧版「业务前瞻」仍可读取。生成需配置 `TAVILY_API_KEY` 和现有模型密钥，不依赖 Yahoo 目标季度就绪。旧版报告每次 Cron 最多自动升级两家公司；也可经授权的 `POST /company-analysis/{ticker}` 手动排队。公开 GET 只读，不触发生成。
+个股「业务拆解」由公司分析 Workflow 在 SEC Memory 更新后生成。它读取最多四期已发布 SEC 报告、复用 Web Search 的 Claude 网页检索与网页读取，最多执行九次取证工具调用，完成逐段引用核查后发布到原公司分析读取 API；旧版「业务前瞻」仍可读取。生成只需模型密钥 `ANTHROPIC_API_KEY`，不依赖 Yahoo 目标季度就绪。旧版报告每次 Cron 最多自动升级两家公司；也可经授权的 `POST /company-analysis/{ticker}` 手动排队。公开 GET 只读，不触发生成。
 
 业务脑图由 `BusinessTreeWorkflow`（`src/business-tree/`）生成：每项财报披露业务一轮 ReAct（think → search / read / add / revise / remove / finish），每个节点须引用把它归入上级的原文，再经独立审校后存入 `business-tree:v1:{ticker}`，读取接口 `/api/v1/companies/:t/business-tree` 只读 D1。公司名单为 `BUSINESS_TREE_TICKERS`，`BUSINESS_TREE_ENABLED=false` 暂停扫描。设计见 `docs/business-tree.md`。
 

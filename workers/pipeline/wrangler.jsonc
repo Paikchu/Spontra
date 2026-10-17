@@ -5,7 +5,7 @@
   "compatibility_date": "2026-08-26",
   "compatibility_flags": ["nodejs_compat"],
   "limits": { "cpu_ms": 300000 },
-  "secrets": { "required": ["DEEPSEEK_API_KEY"] },
+  "secrets": { "required": ["ANTHROPIC_API_KEY"] },
   "vars": {
     "SEC_DATA_TICKERS": "ORCL,NVDA,MSFT,AAPL,JPM,BRK.B,ADSK,NET,AMZN,GOOGL,META",
     // The default AI list; the admin's AI switch (financial_ai_settings) overrides it per company.
@@ -13,8 +13,8 @@
     "SEC_AI_ENABLED": "true",
     "SEC_DATA_COLLECTION_ENABLED": "true",
     "SEC_USER_AGENT": "earning-report-analysis/1.0 max.zhangyuchen@gmail.com",
-    "SEC_ANALYSIS_MODEL": "deepseek-flash",
-    "SEC_REASONING_MODEL": "deepseek-flash",
+    "SEC_ANALYSIS_MODEL": "claude-opus-5-5",
+    "SEC_REASONING_MODEL": "claude-opus-5-5",
     // Management guidance is enabled; ALPHA_VANTAGE_API_KEY (transcripts) is an optional secret.
     "GUIDANCE_ENABLED": "true",
     "FINDINGS_ENABLED": "true",

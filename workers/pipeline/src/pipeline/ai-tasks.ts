@@ -11,6 +11,7 @@ import type { AiRunKind } from "../../../../shared/analysis-contract/ai-runs-adm
 import { D1SecRepository } from "../sec/d1.ts";
 import type { TaskContext, TaskImplementation, TaskOutcome } from "./tasks.ts";
 import { driveWorkflow, failedInputOutcome } from "./workflow-task.ts";
+import { researchSearchConfigured } from "../web-search/research-search.ts";
 
 const MINUTE = 60_000;
 /** Earnings releases this recent may still have guidance on the way; a run silent this long is not waited for. */
@@ -76,7 +77,7 @@ export const AI_TASKS = {
   explainer: {
     version: BUSINESS_EXPLAINER_VERSION,
     async run(env, ticker, context): Promise<TaskOutcome> {
-      if (!env.TAVILY_API_KEY) return { status: "done", detail: { skipped: "research search not configured" } };
+      if (!researchSearchConfigured(env)) return { status: "done", detail: { skipped: "research search not configured" } };
       return runWhenChanged(env, "explainer", "explainer", ticker, context, env.BUSINESS_EXPLAINER_WORKFLOW,
         () => businessExplainerFingerprint(env, ticker), storedFingerprint(env, businessExplainerCacheKey(ticker)));
     },
@@ -86,7 +87,7 @@ export const AI_TASKS = {
   tree: {
     version: BUSINESS_TREE_VERSION,
     async run(env, ticker, context): Promise<TaskOutcome> {
-      if (!env.TAVILY_API_KEY || env.BUSINESS_TREE_ENABLED === "false") return { status: "done", detail: { skipped: "business tree disabled" } };
+      if (!researchSearchConfigured(env) || env.BUSINESS_TREE_ENABLED === "false") return { status: "done", detail: { skipped: "business tree disabled" } };
       return runWhenChanged(env, "tree", "tree", ticker, context, env.BUSINESS_TREE_WORKFLOW,
         () => businessTreeFingerprint(env, ticker), storedFingerprint(env, businessTreeCacheKey(ticker)));
     },

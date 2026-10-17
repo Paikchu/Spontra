@@ -46,7 +46,7 @@ export const LIBRARY_TASKS = {
   "library-cards": {
     version: LIBRARY_CARD_VERSION,
     async run(env, ticker, { now, causeId, trigger }): Promise<TaskOutcome> {
-      if (env.LIBRARY_CARDS_ENABLED === "false" || !env.DEEPSEEK_API_KEY) return { status: "done", detail: { skipped: "index cards disabled" } };
+      if (env.LIBRARY_CARDS_ENABLED === "false" || !env.ANTHROPIC_API_KEY) return { status: "done", detail: { skipped: "index cards disabled" } };
       return driveWorkflow(env, `library-cards:${ticker}`, env.LIBRARY_CARDS_WORKFLOW, async () => {
         const plan = await pendingCardPlan(env.DB!, ticker);
         if (!plan) return null;
@@ -65,7 +65,7 @@ export const LIBRARY_TASKS = {
   "library-links": {
     version: LIBRARY_LINKS_VERSION,
     async run(env, ticker, { now, causeId, trigger }): Promise<TaskOutcome> {
-      if (env.LIBRARY_CARDS_ENABLED === "false" || !env.DEEPSEEK_API_KEY) return { status: "done", detail: { skipped: "index cards disabled" } };
+      if (env.LIBRARY_CARDS_ENABLED === "false" || !env.ANTHROPIC_API_KEY) return { status: "done", detail: { skipped: "index cards disabled" } };
       return driveWorkflow(env, `library-links:${ticker}`, env.LIBRARY_LINKS_WORKFLOW, async () => {
         const input = await linkInput(env.DB!, ticker);
         if (!input) return null;

@@ -46,7 +46,7 @@ export async function translationsAdmin(env: SecPipelineEnv, ticker: string, now
   const order = { rejected: 0, pending: 1, ready: 2 } as const;
   entries.sort((a, b) => order[a.status] - order[b.status]);
   return {
-    ticker, locale, version: TRANSLATION_VERSION, enabled: env.TRANSLATION_ENABLED !== "false" && !!env.DEEPSEEK_API_KEY,
+    ticker, locale, version: TRANSLATION_VERSION, enabled: env.TRANSLATION_ENABLED !== "false" && !!env.ANTHROPIC_API_KEY,
     budget: { day, used: budget?.units ?? 0, cap: Number(env.TRANSLATION_DAILY_CALLS) || DEFAULT_DAILY_CALLS },
     run: started?.payload ?? null,
     resources: resources.filter(r => r.total > 0 || r.publishedAt),

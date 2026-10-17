@@ -16,6 +16,7 @@ import type { AiWorkflowBinding, SecPipelineEnv } from "../operations.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import type { SecFilingFeed } from "../sec/sec.ts";
 import { authenticateAdmin } from "./auth.ts";
+import { researchSearchConfigured } from "../web-search/research-search.ts";
 
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "cache-control": "private, no-store" } });
 const UUID = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
@@ -35,16 +36,15 @@ function blocked(env: SecPipelineEnv, kind: AiRunKind, ticker: string): string |
   if (!featureEnabled(env, featureOf(kind))) return `${FEATURE_NAME[featureOf(kind)]}生成已全局暂停。`;
   if (!enabled(env, kind, ticker)) return `该公司的${FEATURE_NAME[featureOf(kind)]}生成已关闭。`;
   if (!binding(env, kind)) return "该任务的工作流未配置。";
-  if (!env.DEEPSEEK_API_KEY) return "模型密钥未配置。";
-  if ((kind === "explainer" || kind === "tree") && !env.TAVILY_API_KEY) return kind === "tree" ? "资料检索未配置，无法拆解业务。" : "资料检索未配置，无法撰写业务解读。";
+  if (!env.ANTHROPIC_API_KEY) return "模型密钥未配置。";
   return null;
 }
 function automatic(env: SecPipelineEnv, kind: AiRunKind, ticker: string): boolean {
   if (!enabled(env, kind, ticker)) return false;
   return kind === "findings" ? env.FINDINGS_ENABLED === "true" && !!env.FINDINGS_WORKFLOW
     : kind === "analyst" ? env.ANALYST_ENABLED === "true" && !!env.ANALYST_WORKFLOW
-    : kind === "explainer" ? !!env.BUSINESS_EXPLAINER_WORKFLOW && !!env.TAVILY_API_KEY
-    : kind === "tree" ? !!env.BUSINESS_TREE_WORKFLOW && !!env.TAVILY_API_KEY
+    : kind === "explainer" ? !!env.BUSINESS_EXPLAINER_WORKFLOW && researchSearchConfigured(env)
+    : kind === "tree" ? !!env.BUSINESS_TREE_WORKFLOW && researchSearchConfigured(env)
     : env.GUIDANCE_ENABLED === "true" && !!env.GUIDANCE_WORKFLOW;
 }
 /** The publication readers are served now, validated the same way the public read API does. */

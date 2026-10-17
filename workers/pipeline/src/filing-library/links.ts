@@ -1,7 +1,7 @@
 import { INDUSTRY_CATEGORIES, type IndustryCategory, type LibraryBusinessLink, type LibraryLinkReview, type LibraryLinksView, type LibraryLinkStatus } from "../../../../shared/analysis-contract/filing-library.ts";
 import { checkLinks, LIBRARY_LINKS_VERSION, readReviews, settleLinks, type LinkDraft, type LinkFlowNode, type LinkReview, type SettledLink } from "../../../../shared/analysis-runtime/filing-library/links.ts";
 import { libraryHash } from "../../../../shared/analysis-runtime/filing-library/parse.ts";
-import { reasoningFor } from "../ai-config.ts";
+import { modelFor, reasoningFor } from "../ai-config.ts";
 import { issuerNames } from "../../../../shared/analysis-runtime/business-tree.ts";
 import { findSecurity } from "../catalog/security-directory.ts";
 import { readCompletePublicationForTicker } from "../financial-data/publication.ts";
@@ -68,7 +68,7 @@ export async function proposeLinks(env: SecPipelineEnv, ticker: string, fetcher:
     company: issuerNames(findSecurity(ticker)?.name ?? ticker)[0], ticker, flow: input.flow, categories: INDUSTRY_CATEGORIES,
     sections: input.candidates.map(c => ({ id: c.sectionId, path: c.path.join(" › "), gist: c.gist, entities: c.entities.slice(0, 12), excerpt: (texts.get(c.sectionId) ?? "").slice(0, SECTION_TEXT) })),
   };
-  const model = env.SEC_REASONING_MODEL || env.SEC_ANALYSIS_MODEL || "deepseek-flash";
+  const model = modelFor(env, "library-links");
   let raw: unknown = null;
   for (const attempt of [1, 2]) {
     try { raw = await callWorkerSecModel(env, fetcher, `library-links-${attempt}`, SYSTEM, payload, model, 5 * 60_000, true, { reasoning: reasoningFor(env, "library-links") }); break; }
@@ -102,7 +102,7 @@ export async function reviewLinks(env: SecPipelineEnv, ticker: string, drafts: L
     businesses: drafts.map(d => ({ key: d.businessKey, name: d.name, onBusinessMap: !!d.flowNodeId,
       sections: d.sectionIds.flatMap(id => { const s = sections.get(id); return s ? [{ id, path: s.path, excerpt: s.text.slice(0, REVIEW_TEXT) }] : []; }) })),
   };
-  const model = env.SEC_REASONING_MODEL || env.SEC_ANALYSIS_MODEL || "deepseek-flash";
+  const model = modelFor(env, "library-links-review");
   let raw: unknown = null;
   for (const attempt of [1, 2]) {
     try { raw = await callWorkerSecModel(env, fetcher, `library-links-review-${attempt}`, REVIEW_SYSTEM, payload, model, 5 * 60_000, true, { reasoning: reasoningFor(env, "library-links-review") }); break; }
@@ -152,8 +152,7 @@ export async function executeLibraryLinksWorkflow(params: LibraryLinksParams, st
   if (!proposal) return { status: "skipped" };
   const reviews = await step.do("links-review", () => reviewLinks(env, params.ticker, proposal.links));
   const settled = settleLinks(proposal.links, new Map(Object.entries(reviews)));
-  const model = env.SEC_REASONING_MODEL || env.SEC_ANALYSIS_MODEL || "deepseek-flash";
-  const written = await step.do("links-write", () => writeLinks(env.DB!, params.ticker, settled, proposal.fingerprint, `${model} · ${reasoningFor(env, "library-links")} + review ${reasoningFor(env, "library-links-review")}`));
+  const written = await step.do("links-write", () => writeLinks(env.DB!, params.ticker, settled, proposal.fingerprint, `${modelFor(env, "library-links")} · ${reasoningFor(env, "library-links")} + review ${modelFor(env, "library-links-review")} · ${reasoningFor(env, "library-links-review")}`));
   console.log(JSON.stringify({ event: "library-links", ticker: params.ticker, ...written, notes: proposal.notes.slice(0, 20) }));
   return { status: "ready", ...written, notes: proposal.notes.length };
 }

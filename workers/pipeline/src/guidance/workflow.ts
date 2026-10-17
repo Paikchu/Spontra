@@ -1,4 +1,4 @@
-import { reasoningFor } from "../ai-config.ts";
+import { modelFor, reasoningFor } from "../ai-config.ts";
 import type { GuidanceCoverage, GuidancePublication, GuidanceResponse, GuidanceSource } from "../../../../shared/analysis-contract/guidance.ts";
 import type { SecFiscalPeriod } from "../../../../shared/analysis-contract/report.ts";
 import {
@@ -11,7 +11,7 @@ import { assertTrackedTicker, requireDb } from "../core.ts";
 import { readCompletePublicationForTicker } from "../financial-data/publication.ts";
 import { callWorkerSecModel, SecModelHttpError, type SecPipelineEnv } from "../operations.ts";
 import { AnalysisRequestError } from "../read-api/contract-support/errors.ts";
-import { researchSearch } from "../web-search/research-search.ts";
+import { researchSearch, researchSearchConfigured } from "../web-search/research-search.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
 import { fiscalPeriodKey, readFiscalPeriod } from "../sec/fiscal-period.ts";
@@ -73,7 +73,7 @@ async function fiscalAnchors(repository: D1SecRepository, feed: SecFilingFeed | 
 }
 
 function modelCall(env: SecPipelineEnv, store: GuidanceStore, fetcher: typeof fetch, day: string, call: { ticker: string; runId?: string }): GuidanceModelCall {
-  const model = env.SEC_ANALYSIS_MODEL || "deepseek-flash";
+  const model = modelFor(env, "guidance");
   const cap = Number(env.GUIDANCE_DAILY_MODEL_CALLS) > 0 ? Number(env.GUIDANCE_DAILY_MODEL_CALLS) : DEFAULT_DAILY_MODEL_CALLS;
   return async (stage, system, payload) => {
     if (!await store.reserve("guidance-model", day, cap)) throw new BudgetExhausted("guidance model budget exhausted");
@@ -94,7 +94,7 @@ async function extractStored(env: SecPipelineEnv, deps: GuidanceDeps, materialId
   const model = deps.model ?? modelCall(env, store, deps.fetcher ?? fetch, now.slice(0, 10), { ticker: input.ticker, runId: deps.runId });
   try {
     const result = await extractGuidance({ ticker: input.ticker, companyName: input.companyName, kind: row.kind, publishedAt: row.published_at, reportedQuarter: input.reportedQuarter, text }, model);
-    await store.saveExtraction(row, input.eventDate, GUIDANCE_EXTRACTOR_VERSION, { model: env.SEC_ANALYSIS_MODEL || "deepseek-flash", ...result }, now);
+    await store.saveExtraction(row, input.eventDate, GUIDANCE_EXTRACTOR_VERSION, { model: modelFor(env, "guidance"), ...result }, now);
     return { status: "extracted" };
   } catch (error) {
     if (error instanceof BudgetExhausted) return { status: "deferred" };
@@ -208,7 +208,7 @@ export async function executeGuidanceWorkflow(params: GuidanceWorkflowParams, st
     : transcripts ? await probe(0) : { ref, material: null, denied: false, quota: false };
 
   const materials = [...sec, ...(transcript.material && transcript.material !== storedTranscript ? [transcript.material] : [])];
-  const deckSearch = deps.deckSearch !== undefined ? deps.deckSearch : env.GUIDANCE_DECK_SEARCH !== "false" && env.TAVILY_API_KEY ? researchSearch(env) : null;
+  const deckSearch = deps.deckSearch !== undefined ? deps.deckSearch : env.GUIDANCE_DECK_SEARCH !== "false" && researchSearchConfigured(env) ? researchSearch(env) : null;
   if (deckSearch && transcript.ref && !sec.some(m => m.kind === "deck")) {
     const deck = await step.do("guidance-deck", async () => {
       const db = requireDb(env);

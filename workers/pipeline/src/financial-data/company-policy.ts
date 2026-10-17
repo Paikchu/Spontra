@@ -1,9 +1,10 @@
 import { financialPolicy, aiIsEnabled } from '../../../../shared/analysis-runtime/financial-data/policy.ts';
 import { FEATURES, type Feature } from '../../../../shared/analysis-contract/business-features.ts';
 import { parseTrackedTickers } from '../sec/config.ts';
+import { aiToolEnvironment } from '../ai-config.ts';
 
 type PolicyEnv = { DB?: D1Database; SEC_DATA_TICKERS?: string; SEC_TRACKED_TICKERS?: string; SEC_AI_TICKERS?: string; SEC_AI_ENABLED?: string;
-  BUSINESS_TREE_TICKERS?: string; BUSINESS_TREE_ENABLED?: string; FEATURE_RESOLVED?: string };
+  BUSINESS_TREE_TICKERS?: string; BUSINESS_TREE_ENABLED?: string; FEATURE_RESOLVED?: string; AI_TOOL_SETTINGS?: string };
 type Row = { ticker: string; enabled: number };
 type FeatureRow = { ticker: string; feature: Feature; generate: number | null };
 
@@ -38,7 +39,8 @@ export function defaultFeatureResolution(env: Omit<PolicyEnv, 'DB'>): FeatureRes
  * over each feature's default list and global switch (docs/whitelist-feature-switches-design.md). The result is carried
  * as `FEATURE_RESOLVED`; `SEC_AI_TICKERS` is set to the reports list so code reading it as "the AI list" keeps working.
  * Applying it twice gives the same lists, so every entry point applies it once and code below reads the environment as
- * before. A table not yet migrated leaves its defaults in force.
+ * before. A table not yet migrated leaves its defaults in force. The admin's model settings ride along as
+ * `AI_TOOL_SETTINGS` (ai-config.ts).
  */
 export async function companyPolicyEnvironment<T extends PolicyEnv>(env: T): Promise<T> {
   if (!env.DB) return env;
@@ -60,14 +62,14 @@ export async function companyPolicyEnvironment<T extends PolicyEnv>(env: T): Pro
     else sets[row.feature].delete(row.ticker);
   }
   const resolved: FeatureResolution = { enabled, tickers: Object.fromEntries(FEATURES.map(f => [f, [...sets[f]].sort()])) as Record<Feature, string[]> };
-  return {
+  return aiToolEnvironment({
     ...env,
     SEC_DATA_TICKERS: [...policy.dataTickers].join(','),
     SEC_AI_TICKERS: resolved.tickers.reports.join(','),
     SEC_AI_ENABLED: resolved.enabled.reports ? 'true' : 'false',
     BUSINESS_TREE_ENABLED: resolved.enabled.tree ? 'true' : 'false',
     FEATURE_RESOLVED: JSON.stringify(resolved),
-  };
+  });
 }
 
 /**

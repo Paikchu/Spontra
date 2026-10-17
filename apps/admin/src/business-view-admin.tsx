@@ -1,14 +1,15 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { ArrowUpRight, FileStack, ListChecks, LoaderCircle, LogOut, Moon, Network, ShieldCheck, Sparkles, Sun } from "lucide-react";
+import { ArrowUpRight, Cpu, FileStack, ListChecks, LoaderCircle, LogOut, Moon, Network, ShieldCheck, Sparkles, Sun } from "lucide-react";
 import Link from "@/packages/web/src/navigation";
 import { adminApi } from "./admin-api";
 import { BusinessMapCompanies } from "./business-map-companies";
 import { FilingLibrary } from "./filing-library";
 import { BusinessSegments } from "./business-segments";
 import { AiRuns } from "./ai-runs";
+import { AiModels } from "./ai-models";
 import { FinancialMaintenance } from "./financial-maintenance";
 
-type Section = "whitelist" | "financials" | "filings" | "business" | "findings";
+type Section = "whitelist" | "financials" | "filings" | "business" | "findings" | "models";
 type Page = { path: string; title: string; nav?: Section };
 
 /** Every page of the BusinessView admin. Financials is a drill-down from the whitelist, so it has no entry of its own. */
@@ -18,8 +19,9 @@ const PAGES: Record<Section, Page> = {
   filings: { path: "/admin/filings", title: "SEC 文件拆分" },
   business: { path: "/admin/business", title: "公司业务板块" },
   findings: { path: "/admin/findings", title: "公司要点" },
+  models: { path: "/admin/models", title: "模型配置" },
 };
-const NAV: Array<[Section, typeof ListChecks]> = [["whitelist", ListChecks], ["filings", FileStack], ["business", Network], ["findings", Sparkles]];
+const NAV: Array<[Section, typeof ListChecks]> = [["whitelist", ListChecks], ["filings", FileStack], ["business", Network], ["findings", Sparkles], ["models", Cpu]];
 /** Ink is the default, as on BusinessView; paper is a per-viewer choice. main.tsx applies it before the first paint. */
 export const THEME_KEY = "businessview-admin-theme";
 /** Paths of the earlier admin, kept so bookmarks land on the page that replaced them. */
@@ -92,6 +94,7 @@ export function BusinessViewAdmin({ mapOrigin = "" }: { mapOrigin?: string }) {
             : section === "financials" ? <FinancialMaintenance {...auth} />
             : section === "filings" ? <FilingLibrary {...auth} />
             : section === "business" ? <BusinessSegments {...auth} onOpenSection={openSection} />
+            : section === "models" ? <AiModels {...auth} />
             : <AiRuns {...auth} kinds={["findings", "analyst"]} translations />}
         </>}
     </main>

@@ -184,7 +184,8 @@ export type SecFilingSummary = {
   version?: number;
   nodes?: SecNodeResult[];
   repairRounds?: number;
-  source: "deepseek" | "error";
+  /** Who wrote the summary: summaries before the Claude migration keep "deepseek"; "error" marks a failed run. */
+  source: "claude" | "deepseek" | "error";
   generatedAt: string;
   error?: string;
 };

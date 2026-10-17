@@ -1,7 +1,7 @@
 import { LIBRARY_TOPICS, type LibraryCanonical, type LibraryFactRef } from "../../../../shared/analysis-contract/filing-library.ts";
 import { checkCard, LIBRARY_CARD_VERSION, metricsFor, noteTopic, topicFamily } from "../../../../shared/analysis-runtime/filing-library/cards.ts";
 import { libraryHash } from "../../../../shared/analysis-runtime/filing-library/parse.ts";
-import { reasoningFor } from "../ai-config.ts";
+import { modelFor, reasoningFor } from "../ai-config.ts";
 import { findSecurity } from "../catalog/security-directory.ts";
 import { SecModelOutputError } from "../model-stream.ts";
 import { callWorkerSecModel, type SecPipelineEnv } from "../operations.ts";
@@ -113,7 +113,7 @@ export async function writeCardBatch(env: SecPipelineEnv, ticker: string, sectio
     textOf.set(p.section_id, `${textOf.get(p.section_id) ?? ""}${textOf.has(p.section_id) ? "\n\n" : ""}${p.text}`);
     factsOf.set(p.section_id, [...factsOf.get(p.section_id) ?? [], JSON.parse(p.fact_refs) as LibraryFactRef[]]);
   }
-  const model = env.SEC_ANALYSIS_MODEL || "deepseek-flash", reasoning = reasoningFor(env, "library-cards");
+  const model = modelFor(env, "library-cards"), reasoning = reasoningFor(env, "library-cards");
   const payload = {
     company: findSecurity(ticker)?.name ?? ticker, ticker,
     sections: sections.map(s => {

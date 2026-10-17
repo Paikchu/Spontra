@@ -22,7 +22,7 @@ export const TRANSLATION_TASKS = {
   translate: {
     version: TRANSLATION_VERSION,
     async run(env, ticker, { now, causeId, trigger }): Promise<TaskOutcome> {
-      if (env.TRANSLATION_ENABLED === "false" || !env.DEEPSEEK_API_KEY) return { status: "done", detail: { skipped: "translation disabled" } };
+      if (env.TRANSLATION_ENABLED === "false" || !env.ANTHROPIC_API_KEY) return { status: "done", detail: { skipped: "translation disabled" } };
       const outcome = await driveWorkflow(env, `translate:${ticker}`, env.TRANSLATE_WORKFLOW, async () => {
         if (await budgetSpent(env, now)) return { status: "later", afterMs: untilTomorrow(now), detail: { waiting: "daily translation budget" } };
         const plan = await translationPlan(env.DB!, ticker);

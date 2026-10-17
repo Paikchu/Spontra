@@ -29,9 +29,9 @@ export type RecoveryOptions = {
   maxCalls?: number;
 };
 
-// Official DeepSeek Flash output limit; unknown models negotiate a smaller cap on HTTP 400.
+// Current Claude models stream up to 128K output tokens; unknown models negotiate a smaller cap on HTTP 400.
 export function modelOutputCeiling(model: string): number {
-  return model === "deepseek-flash" ? 393_216 : SEC_MODEL_OUTPUT_TOKENS;
+  return model.startsWith("claude-") ? 128_000 : SEC_MODEL_OUTPUT_TOKENS;
 }
 
 /** Repair format, continue truncated output, or switch a failing model. Never accept incomplete JSON. */
@@ -72,12 +72,12 @@ export async function recoverModelJson(options: RecoveryOptions): Promise<Record
       lastError = error;
       let action: string;
       if (error instanceof SecModelOutputError) {
-        const resumable = ["output_token_limit", "stream_incomplete", "stream_stall", "wire_limit", "reasoning_limit", "frame_limit"].includes(error.code);
+        const resumable = ["output_token_limit", "stream_incomplete", "stream_stall"].includes(error.code);
         if (resumable) {
           if (error.partialContent) await hold(combine(error.partialContent), "continue");
           maxTokens = Math.min(Math.max(maxTokens * 2, SEC_MODEL_OUTPUT_TOKENS), modelOutputCeiling(model));
           action = state?.content ? "continue" : "switch_model";
-          if (!state?.content || error.code === "reasoning_limit") model = model === options.model ? options.fallbackModel : options.model;
+          if (!state?.content) model = model === options.model ? options.fallbackModel : options.model;
         } else if (error.code === "invalid_json") {
           if (!state) await hold(error.partialContent, "repair");
           jsonMode = false;

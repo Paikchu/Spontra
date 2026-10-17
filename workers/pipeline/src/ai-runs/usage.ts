@@ -34,21 +34,24 @@ export function aiUsageKind(stage: string): string {
   return stage.split(/[-:]/, 1)[0] || stage;
 }
 
-/** OpenAI-style usage as DeepSeek streams it in the final chunk; cache fields differ by provider, so both spellings are read. */
-type ProviderUsage = {
-  prompt_tokens?: unknown;
-  completion_tokens?: unknown;
-  prompt_cache_hit_tokens?: unknown;
-  prompt_tokens_details?: { cached_tokens?: unknown } | null;
-  completion_tokens_details?: { reasoning_tokens?: unknown } | null;
-};
+/** Messages API usage. After a server-side fallback, `iterations` lists every attempt and the top level only the last. */
+type TokenUsage = { input_tokens?: unknown; output_tokens?: unknown; cache_read_input_tokens?: unknown; cache_creation_input_tokens?: unknown };
+type ProviderUsage = TokenUsage & { iterations?: unknown };
 const count = (value: unknown): number | null => typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.round(value) : null;
+/** Input is everything the model read, cached or not; cached is the part read from the prompt cache. */
+const tokens = (usage: TokenUsage) => ({
+  input: (count(usage.input_tokens) ?? 0) + (count(usage.cache_read_input_tokens) ?? 0) + (count(usage.cache_creation_input_tokens) ?? 0),
+  cached: count(usage.cache_read_input_tokens) ?? 0,
+  output: count(usage.output_tokens) ?? 0,
+});
 
 /** Shapes the ledger row from the metrics `requestWorkerSecModelContent` collects: stage, model, reasoning, usage, error. */
 export function aiUsageFromMetrics(metrics: Readonly<Record<string, unknown>>, call: AiUsageCall): AiUsageRow {
   const stage = typeof metrics.stage === "string" ? metrics.stage : "unknown";
   const usage = (metrics.usage && typeof metrics.usage === "object" ? metrics.usage : {}) as ProviderUsage;
   const error = typeof metrics.error === "string" ? metrics.error : null;
+  const attempts = Array.isArray(usage.iterations) && usage.iterations.length ? usage.iterations as TokenUsage[] : [usage];
+  const total = attempts.map(tokens).reduce((sum, t) => ({ input: sum.input + t.input, cached: sum.cached + t.cached, output: sum.output + t.output }));
   return {
     at: call.at,
     ticker: call.ticker ?? null,
@@ -58,10 +61,11 @@ export function aiUsageFromMetrics(metrics: Readonly<Record<string, unknown>>, c
     provider: call.provider,
     model: typeof metrics.model === "string" ? metrics.model : "unknown",
     reasoning: typeof metrics.reasoning === "string" ? metrics.reasoning : null,
-    inputTokens: count(usage.prompt_tokens) ?? 0,
-    cachedTokens: count(usage.prompt_tokens_details?.cached_tokens) ?? count(usage.prompt_cache_hit_tokens) ?? 0,
-    outputTokens: count(usage.completion_tokens) ?? 0,
-    reasoningTokens: count(usage.completion_tokens_details?.reasoning_tokens),
+    inputTokens: total.input,
+    cachedTokens: total.cached,
+    outputTokens: total.output,
+    // Claude bills thinking as output and does not report it separately.
+    reasoningTokens: null,
     durationMs: Math.max(0, Math.round(call.durationMs)),
     outcome: error === null ? "ok" : error.startsWith("model-timeout:") ? "timeout" : "error",
     searchCalls: call.searchCalls ?? 0,

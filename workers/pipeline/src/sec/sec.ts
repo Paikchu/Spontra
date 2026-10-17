@@ -134,7 +134,8 @@ export type SecFilingSummary = {
   plan?: SecNodePlan;
   managerReview?: ManagerReview;
   repairRounds?: number;
-  source: "deepseek" | "error";
+  /** Who wrote the summary: summaries before the Claude migration keep "deepseek"; "error" marks a failed run. */
+  source: "claude" | "deepseek" | "error";
   generatedAt: string;
   error?: string;
 };
@@ -392,7 +393,7 @@ export function normalizeSecSummary(
     ...(eventCategory ? { eventCategory } : {}),
     ...(useful(report) ? { report } : {}),
     ...(Number.isInteger(input.version) ? { version: Number(input.version) } : {}),
-    source: input.source === "error" ? "error" : "deepseek",
+    source: input.source === "error" ? "error" : input.source === "deepseek" ? "deepseek" : "claude",
     generatedAt: typeof input.generatedAt === "string" ? input.generatedAt : now.toISOString(),
     ...(typeof input.error === "string" && input.error ? { error: clean(input.error, SEC_SUMMARY_LIMITS.error) } : {}),
   };

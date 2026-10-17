@@ -1,4 +1,4 @@
-import { reasoningFor } from "../ai-config.ts";
+import { modelFor, reasoningFor } from "../ai-config.ts";
 import type { DossierPublication, DossierResponse } from "../../../../shared/analysis-contract/dossier.ts";
 import type { FindingsPublication } from "../../../../shared/analysis-contract/findings.ts";
 import { readDossierPublication } from "../../../../shared/analysis-runtime/dossier.ts";
@@ -92,7 +92,7 @@ export function providerOutage(researched: PromiseSettledResult<AnalystOutcome>[
 export async function executeAnalystWorkflow(params: AnalystWorkflowParams, step: WorkflowStepLike, env: SecPipelineEnv, deps: AnalystDeps = {}) {
   assertTrackedTicker(env, params.ticker);
   const fetcher = deps.fetcher ?? fetch;
-  const modelVersion = env.SEC_REASONING_MODEL || env.SEC_ANALYSIS_MODEL || "deepseek-flash";
+  const modelVersion = modelFor(env, "analyst");
   const now = await step.do("analyst-time", async () => new Date().toISOString());
   const input = await step.do("analyst-input", () => readInput(env, params.ticker));
   if (!input || input.fingerprint !== params.fingerprint) return { status: "superseded" as const };

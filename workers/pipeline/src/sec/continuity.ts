@@ -52,7 +52,7 @@ export function selectReportContinuity(filing: SecFiling, rows: ReportRow[]): Re
     try {
       const summary = JSON.parse(row.payload) as SecFilingSummary;
       // A later regenerated report may already contain later evidence. Do not backdate it.
-      if (summary.source !== "deepseek" || summary.ticker !== filing.ticker
+      if (summary.source === "error" || summary.ticker !== filing.ticker
         || summary.accessionNumber !== row.accessionNumber || !summary.generatedAt
         || !Number.isFinite(Date.parse(summary.generatedAt)) || summary.generatedAt.slice(0, 10) > filing.filingDate) return [];
       const text = [summary.headline, ...(summary.bullets ?? []).map((b) => `${b.label}: ${b.detail}`), summary.analystView, summary.report,

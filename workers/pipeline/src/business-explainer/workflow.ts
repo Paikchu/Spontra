@@ -1,4 +1,4 @@
-import { reasoningFor } from "../ai-config.ts";
+import { modelFor, reasoningFor } from "../ai-config.ts";
 import { treeLibrary } from "../filing-library/tree-source.ts";
 import type { BusinessExplainerResponse } from "../../../../shared/analysis-contract/business-explainer.ts";
 import type { PublicBusinessFlow } from "../../../../shared/analysis-contract/business-flow.ts";
@@ -61,7 +61,7 @@ export async function businessExplainerFingerprint(env: SecPipelineEnv, ticker: 
 
 export async function executeBusinessExplainerWorkflow(params: BusinessExplainerParams, step: WorkflowStepLike, env: SecPipelineEnv, fetcher: typeof fetch = fetch, runId?: string) {
   assertTrackedTicker(env, params.ticker);
-  const modelVersion = env.SEC_REASONING_MODEL || env.SEC_ANALYSIS_MODEL || "deepseek-flash";
+  const modelVersion = modelFor(env, "explainer");
   const now = await step.do("explainer-time", async () => new Date().toISOString());
   const input = await step.do("explainer-input", () => readInput(env, params.ticker));
   // The business list changed after scheduling; the next sweep starts a run for the new list.

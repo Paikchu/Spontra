@@ -1,4 +1,5 @@
-import { reasoningFor, type ReasoningEffort } from "./ai-config.ts";
+import Anthropic from "@anthropic-ai/sdk";
+import { aiToolSetting, reasoningFor, type ReasoningEffort } from "./ai-config.ts";
 import { boundedModelIO } from "./model-io.ts";
 import { aiUsageFromMetrics, recordAiUsage } from "./ai-runs/usage.ts";
 import { readModelContent, parseModelJson, SecModelOutputError } from "./model-stream.ts";
@@ -42,7 +43,7 @@ import { assertTrackedTicker, requireDb, type SecCronEnv } from "./core.ts";
 import type { AnalysisReadEnv } from "./read-api/router.ts";
 import type { EventMessage, TaskMessage } from "./pipeline/messages.ts";
 import { outboxStatement } from "./pipeline/outbox.ts";
-import { SEC_MODEL_EXECUTION_BUDGET_MS, SEC_MODEL_FIRST_RESPONSE_MS, SEC_MODEL_OUTPUT_TOKENS, type SecModelExecution } from "./retry-policy.ts";
+import { SEC_MODEL_EXECUTION_BUDGET_MS, SEC_MODEL_FIRST_RESPONSE_MS, SEC_MODEL_OUTPUT_TOKENS, type SecModelExecution, SEC_FALLBACK_MODEL } from "./retry-policy.ts";
 import type { PreparedFilingReference, SecPipelineOperations, WorkflowJobUpdate } from "./workflow-core.ts";
 import { jobAnalysisVersionFor } from "./workflow-core.ts";
 
@@ -61,7 +62,6 @@ export type AiWorkflowBinding<P> = {
 };
 
 export type SecPipelineEnv = SecCronEnv & AnalysisReadEnv & {
-  TAVILY_API_KEY?: string;
   BUSINESS_EXPLAINER_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
   GUIDANCE_WORKFLOW?: AiWorkflowBinding<{ ticker: string; accession: string; eventDate: string; manual?: boolean }>;
   FINDINGS_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
@@ -90,6 +90,8 @@ export type SecPipelineEnv = SecCronEnv & AnalysisReadEnv & {
   LIBRARY_CARDS_ENABLED?: string;
   /** JSON overriding an AI tool's reasoning level, e.g. {"library-cards":"high"}; see `ai-config.ts`. */
   AI_REASONING?: string;
+  /** The admin's model and effort per AI tool (JSON), set only by `aiToolEnvironment`. */
+  AI_TOOL_SETTINGS?: string;
   /** Companies whose businesses the ReAct agent breaks down; unset falls back to the AI list. */
   BUSINESS_TREE_TICKERS?: string;
   /** "false" pauses the business-tree sweep; unset or anything else runs it. The admin's global switch overrides it. */
@@ -112,7 +114,7 @@ export type SecPipelineEnv = SecCronEnv & AnalysisReadEnv & {
   GUIDANCE_DAILY_TRANSCRIPT_CALLS?: string;
   SEC_FILINGS: R2BucketLike;
   SEC_USER_AGENT: string;
-  DEEPSEEK_API_KEY?: string;
+  ANTHROPIC_API_KEY?: string;
   SEC_ANALYSIS_MODEL?: string;
   /** Optional stronger model for planning, review and synthesis. Unset means one model everywhere. */
   SEC_REASONING_MODEL?: string;
@@ -138,8 +140,9 @@ export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof
     const deadline = Date.now() + SEC_MODEL_EXECUTION_BUDGET_MS;
     return async (stage, system, payload) => {
       if (Date.now() >= deadline) throw new Error("Editorial step execution budget exhausted; resume from saved draft");
-      const selectedModel = modelForStage(env, stage, execution?.model) || env.SEC_ANALYSIS_MODEL || "deepseek-flash";
-      const fallbackModel = "deepseek-flash";
+      // A retry pins the fallback model; otherwise the admin's choice for the SEC analysis, then the stage's deployment model.
+      const selectedModel = execution?.model || aiToolSetting(env, "sec-analysis").model || modelForStage(env, stage) || env.SEC_ANALYSIS_MODEL || SEC_FALLBACK_MODEL;
+      const fallbackModel = SEC_FALLBACK_MODEL;
       const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify({ stage, system, payload }))));
       const fingerprint = Array.from(digest, (b) => b.toString(16).padStart(2, "0")).join("");
       const key = `model-recovery/v1/${encodeURIComponent(workflowInstanceId)}/${fingerprint}.json`;
@@ -519,7 +522,7 @@ export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof
       const eventAccession = cleanSecAccession(identity.accessionNumber);
       const validEvent = /^(8-K|6-K)(\/A)?$/.test(identity.form)
         && Boolean(eventTicker)
-        && summary.source === "deepseek"
+        && summary.source !== "error"
         && summary.ticker === eventTicker
         && summary.form === identity.form
         && summary.accessionNumber === eventAccession;
@@ -668,13 +671,24 @@ async function requestWorkerSecModelContent(
   let timeoutKind = "execution-budget";
   const budgetTimer = setTimeout(() => { timeoutKind = "execution-budget"; controller.abort(); }, executionBudgetMs);
   const firstTimer = setTimeout(() => { timeoutKind = "first-response"; controller.abort(); }, SEC_MODEL_FIRST_RESPONSE_MS);
-  const metrics: Record<string, unknown> = { stage, model: modelOverride || env.SEC_ANALYSIS_MODEL || "deepseek-flash", inputCharacters: JSON.stringify(payload).length };
+  const model = modelOverride || env.SEC_ANALYSIS_MODEL || SEC_FALLBACK_MODEL;
+  const metrics: Record<string, unknown> = { stage, model, inputCharacters: JSON.stringify(payload).length };
   if (options?.workflowInstanceId) metrics.workflowInstanceId = options.workflowInstanceId;
+  // Pings count as liveness: an adaptive-thinking model can think for minutes without emitting a visible delta.
+  let liveAt = Date.now();
+  const client = new Anthropic({
+    apiKey, maxRetries: 0, timeout: executionBudgetMs,
+    fetch: async (input, init) => {
+      const response = await fetcher(input, init);
+      if (!response.body) return response;
+      const observed = response.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+        transform(chunk, controller) { liveAt = Date.now(); metrics.wireBytes = Number(metrics.wireBytes ?? 0) + chunk.byteLength; controller.enqueue(chunk); },
+      }));
+      return new Response(observed, { status: response.status, statusText: response.statusText, headers: response.headers });
+    },
+  });
   try {
-  const messages: Array<{ role: string; content: string }> = [
-    { role: "system", content: `${system}\nReturn one valid JSON object only.` },
-    { role: "user", content: JSON.stringify(payload) },
-  ];
+  const messages: Anthropic.Beta.BetaMessageParam[] = [{ role: "user", content: JSON.stringify(payload) }];
   if (options?.continuation) messages.push(
     { role: "assistant", content: options.continuation },
     { role: "user", content: "The response was interrupted. Continue this exact JSON at the next character, including inside an unfinished string. Output only the missing suffix: no prefix repetition, no markdown. Preserve all completed content and evidence references. Finish the entire required object." },
@@ -686,49 +700,43 @@ async function requestWorkerSecModelContent(
   metrics.maxTokens = options?.maxTokens ?? SEC_MODEL_OUTPUT_TOKENS;
   metrics.reasoning = options?.reasoning ?? "high";
   metrics.mode = options?.continuation ? "continuation" : options?.repair ? "repair" : "initial";
-  const response = await fetcher("https://api.deepseek.com/chat/completions", {
-    method: "POST",
-    headers: { "content-type": "application/json", accept: "text/event-stream", authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model: modelOverride || env.SEC_ANALYSIS_MODEL || "deepseek-flash",
+  // Claude has no JSON response mode short of a schema; the system prompt asks for one object and `parseModelJson` holds it to that.
+  void jsonMode;
+  let stream: AsyncIterable<Anthropic.Beta.BetaRawMessageStreamEvent> & { controller: AbortController };
+  try {
+    stream = await client.beta.messages.create({
+      model,
+      // A stable system block lets repeated calls of the same stage read it from the prompt cache.
+      system: [{ type: "text", text: `${system}\nReturn one valid JSON object only.`, cache_control: { type: "ephemeral" } }],
       messages,
-      ...(jsonMode ? { response_format: { type: "json_object" } } : {}),
-      reasoning_effort: options?.reasoning ?? "high",
+      // Adaptive thinking is the default; effort sets how deep it goes.
+      output_config: { effort: options?.reasoning ?? "high" },
       max_tokens: options?.maxTokens ?? SEC_MODEL_OUTPUT_TOKENS,
-      stream_options: { include_usage: true },
-      // Streaming keeps bytes flowing so the provider's proxy cannot time the request out at ~100s.
+      // A safety-classifier decline is re-run on Anthropic's recommended model inside the same call.
+      ...(SERVER_FALLBACK_MODELS.test(model) ? { fallbacks: "default" as const, betas: ["server-side-fallback-2026-07-01"] } : {}),
+      // Streaming keeps bytes flowing on long generations and lets a stalled connection be detected.
       stream: true,
-    }),
-    signal: controller.signal,
-  });
+    }, { signal: controller.signal }) as typeof stream;
+  } catch (error) {
+    if (!(error instanceof Anthropic.APIError) || error instanceof Anthropic.APIUserAbortError) throw error;
+    // Transport failures carry no status; the recovery loop retries them as it retries a failed fetch.
+    if (error instanceof Anthropic.APIConnectionError || error.status === undefined) throw new TypeError(`Model ${model} ${stage} transport: ${error.message}`);
+    const retryAfter = error.headers?.get("retry-after");
+    const retryAfterMs = retryAfter ? (/^\d+$/.test(retryAfter) ? Number(retryAfter) * 1000 : Math.max(0, Date.parse(retryAfter) - Date.now())) : 0;
+    const code = (error.error as { error?: { type?: unknown } } | undefined)?.error?.type;
+    const providerCode = typeof code === "string" && /^[a-zA-Z0-9_.-]{1,100}$/.test(code) ? code : undefined;
+    metrics.providerCode = providerCode;
+    throw new SecModelHttpError(error.status, `Model ${model} ${stage} HTTP ${error.status}: ${error.message.replaceAll(apiKey, "[redacted]").slice(0, 1000)}`, retryAfterMs, providerCode);
+  }
   clearTimeout(firstTimer);
   metrics.headersMs = Date.now() - started;
-  if (!response.ok) {
-    const errorReader = response.body?.getReader();
-    let detail = "";
-    if (errorReader) {
-      try {
-        const first = await boundedModelIO(errorReader.read(), "http-error-body", 5000);
-        detail = first.value ? new TextDecoder().decode(first.value.slice(0, 4096)) : "";
-      } catch { detail = "Error response body unavailable"; }
-      void errorReader.cancel().catch(() => {});
-      errorReader.releaseLock();
-    }
-    const retryAfter = response.headers.get("retry-after");
-    const retryAfterMs = retryAfter ? (/^\d+$/.test(retryAfter) ? Number(retryAfter) * 1000 : Math.max(0, Date.parse(retryAfter) - Date.now())) : 0;
-    let providerCode: string | undefined;
-    try {
-      const error = JSON.parse(detail)?.error;
-      const code = error?.code || error?.type;
-      if (typeof code === "string" && /^[a-zA-Z0-9_.-]{1,100}$/.test(code)) providerCode = code;
-    } catch { /* A non-JSON provider response still retains its HTTP status. */ }
-    metrics.providerCode = providerCode;
-    throw new SecModelHttpError(response.status, `Model ${metrics.model} ${stage} HTTP ${response.status}: ${detail.replaceAll(apiKey, "[redacted]").slice(0, 1000)}`, retryAfterMs, providerCode);
-  }
-  return await readModelContent(response, stage, () => {
+  return await readModelContent(stream, stage, () => {
     metrics.firstTokenMs ??= Date.now() - started;
     metrics.lastTokenMs = Date.now() - started;
-  }, metrics, undefined, { signal: controller.signal, checkpoint: options?.checkpoint, heartbeat: options?.heartbeat });
+  }, metrics, undefined, {
+    signal: controller.signal, liveAt: () => liveAt, cancel: () => stream.controller.abort(),
+    checkpoint: options?.checkpoint, heartbeat: options?.heartbeat,
+  });
   } catch (error) {
     metrics.error = controller.signal.aborted ? `model-timeout:${timeoutKind}` : error instanceof SecModelHttpError ? `http:${error.status}` : error instanceof SecModelOutputError ? error.code : error instanceof Error ? error.name : "unknown";
     if (controller.signal.aborted) throw new Error(`model-timeout:${timeoutKind} stage=${stage} elapsedMs=${Date.now() - started}`);
@@ -740,15 +748,18 @@ async function requestWorkerSecModelContent(
     try { options?.onMetrics?.(metrics); } catch { /* Usage accounting never fails a model call. */ }
     // Every call, however it ended, is a row in the cost ledger; the write is bounded and never throws.
     await recordAiUsage(env, aiUsageFromMetrics(metrics, {
-      at: new Date(started).toISOString(), durationMs: Date.now() - started, provider: "deepseek",
+      at: new Date(started).toISOString(), durationMs: Date.now() - started, provider: "anthropic",
       ticker: options?.ticker, kind: options?.kind,
       runId: options?.runId ?? (options?.workflowInstanceId && options.workflowInstanceId !== "standalone" ? options.workflowInstanceId : undefined),
     }));
   }
 }
 
+/** The models that accept server-side `fallbacks` on the Claude API; Haiku has none. */
+const SERVER_FALLBACK_MODELS = /^claude-(fable-5-1|opus-5-5|opus-5|sonnet-5-5)$/;
+
 export async function resolveWorkerModelKey(env: SecPipelineEnv, fetcher: typeof fetch = fetch): Promise<string> {
   void fetcher;
-  if (!env.DEEPSEEK_API_KEY) throw new Error("SEC pipeline DEEPSEEK_API_KEY is not configured");
-  return env.DEEPSEEK_API_KEY;
+  if (!env.ANTHROPIC_API_KEY) throw new Error("SEC pipeline ANTHROPIC_API_KEY is not configured");
+  return env.ANTHROPIC_API_KEY;
 }

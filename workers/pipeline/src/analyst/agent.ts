@@ -15,7 +15,7 @@ import { lensCatalogue, lensEvidence, type LensCatalogueRow } from "../lens/agen
 import type { SecPipelineEnv } from "../operations.ts";
 import type { Plan } from "./plan.ts";
 import { EXCLUDED_HOSTS, PAGE_CACHE_MS, WEB_SCOPE, hostOf, readWebPage } from "./web.ts";
-import { researchSearch } from "../web-search/research-search.ts";
+import { researchSearch, researchSearchConfigured } from "../web-search/research-search.ts";
 import type { SearchHit } from "../web-search/types.ts";
 
 export type AnalystModel = (stage: string, system: string, payload: unknown) => Promise<Record<string, unknown>>;
@@ -210,7 +210,7 @@ export async function runAnalyst(input: AnalystRunInput): Promise<AnalystOutcome
   const turns: AnalystTurn[] = [];
   const used = { reads: 0, finds: 0, searches: 0, webReads: 0 };
   const hits: SearchHit[] = [];
-  const search = env.TAVILY_API_KEY && env.DB ? researchSearch(env) : null;
+  const search = researchSearchConfigured(env) ? researchSearch(env) : null;
   const yearBefore = finding.periodEnd.replace(/^(\d{4})/, (_, y: string) => String(Number(y) - 1));
   const state: { last: { document: LensDocument; errors: number; warnings: string[] } | null; accepted: LensDocument | null } = { last: null, accepted: null };
   const dataWith = (): FindingData => ({ ...input.data, passages: [...(input.data.passages ?? []), ...materials.passages] });

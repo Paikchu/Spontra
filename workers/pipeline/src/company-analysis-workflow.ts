@@ -1,4 +1,4 @@
-import { reasoningFor } from "./ai-config.ts";
+import { modelFor, reasoningFor } from "./ai-config.ts";
 import {
   COMPANY_ANALYSIS_PROMPT_VERSION,
   COMPANY_ANALYSIS_SCHEMA_VERSION,
@@ -62,7 +62,7 @@ export async function executeCompanyAnalysisWorkflow(
   fetcher: typeof fetch = fetch,
 ) {
   const analysisId = params.analysisId || `company:${params.ticker}:${hashString(`${params.triggerRef}:${workflowInstanceId}`)}`;
-  const modelVersion = env.SEC_REASONING_MODEL || env.SEC_ANALYSIS_MODEL || "deepseek-flash";
+  const modelVersion = modelFor(env, "company-analysis");
   const statusBase = {
     analysisId,
     ticker: params.ticker,

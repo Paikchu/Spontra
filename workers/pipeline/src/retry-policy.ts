@@ -1,15 +1,13 @@
-export const SEC_FALLBACK_MODEL = "deepseek-flash";
+/** The model every AI tool uses unless `SEC_ANALYSIS_MODEL` / `SEC_REASONING_MODEL` name another, and the retry model. */
+export const SEC_FALLBACK_MODEL = "claude-opus-5-5";
 // Network generation is governed by progress. These are only runaway safeguards;
 // leave one minute for validation and persistence before the enclosing step expires.
 export const SEC_MODEL_EXECUTION_BUDGET_MS = 59 * 60_000;
 export const SEC_WORKFLOW_STEP_TIMEOUT = "60 minutes";
 export const SEC_MODEL_FIRST_RESPONSE_MS = 90_000;
 export const SEC_MODEL_STALL_MS = 60_000;
-// Wire bytes include repeated SSE envelopes. Only bounded content is retained in memory.
-export const SEC_MODEL_MAX_RESPONSE_BYTES = 256 * 1024 * 1024;
+// Only bounded content is retained in memory.
 export const SEC_MODEL_MAX_CONTENT_BYTES = 8 * 1024 * 1024;
-export const SEC_MODEL_MAX_REASONING_BYTES = 64 * 1024 * 1024;
-export const SEC_MODEL_MAX_FRAME_BYTES = 1024 * 1024;
 export const SEC_MODEL_OUTPUT_TOKENS = 65_536;
 export const SEC_MODEL_RECOVERY_CALLS = 6;
 // Covers one model attempt, maximum retry backoff, and commit overhead.

@@ -1,3 +1,4 @@
+import { handleAiModelsAdminRequest } from "./admin/ai-models.ts";
 import { companyPolicyEnvironment } from "./financial-data/company-policy.ts";
 import {handleTranscriptAdminRequest} from './admin/transcripts.ts';
 import {handleBusinessMapAdminRequest} from './admin/business-map.ts';
@@ -34,7 +35,7 @@ function readyResponse(env: SecPipelineEnv): Response {
     watchlist: Boolean(env.SEC_TRACKED_TICKERS?.trim()),
     analysisWorkflow: Boolean(env.SEC_ANALYSIS_WORKFLOW),
     // Generation needs a model; reads never do, which is why this is not part of `ready`.
-    modelConfigured: Boolean(env.DEEPSEEK_API_KEY),
+    modelConfigured: Boolean(env.ANTHROPIC_API_KEY),
   };
   // Readiness is about the map's read path. A missing model key leaves published data readable
   // and must not fail the probe.
@@ -53,6 +54,7 @@ const worker = {
     // The admin's whitelist and AI switch override the deployment's company lists for everything below.
     env = await companyPolicyEnvironment(env);
     if (path.startsWith("/admin/business-map/")) return handleBusinessMapAdminRequest(request, env);
+    if (path === "/admin/ai/models" || path.startsWith("/admin/ai/models/")) return handleAiModelsAdminRequest(request, env);
     if (path.startsWith("/admin/ai/")) return handleAiRunsAdminRequest(request, env);
     if (path === "/admin/library" || path.startsWith("/admin/library/")) return handleLibraryAdminRequest(request, env);
     if (path === "/admin/pipeline" || path.startsWith("/admin/pipeline/")) return handlePipelineAdminRequest(request, env);

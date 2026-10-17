@@ -1,6 +1,6 @@
 import { aiIsEnabled } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 import { FinancialMaintenanceStore } from "../admin/financial-maintenance-store.ts";
-import { reasoningFor } from "../ai-config.ts";
+import { modelFor, reasoningFor } from "../ai-config.ts";
 import { readArchivedDocument } from "../financial-data/disclosure-audit.ts";
 import { readReportedFacts } from "../financial-data/parser.ts";
 import { degraded, judgeStructure, presentationProfile, saveJudgement, type JudgeModel } from "../financial-data/presentation.ts";
@@ -51,7 +51,7 @@ export const PRESENTATION_TASKS = {
       const [document] = await readFilingDocuments(line.url, reader, line.accession);
       const source = newest!.sources.find(s => s.id === line.accession);
       const { facts } = readReportedFacts(document.html, { url: line.url, accession: line.accession, filedAt: source?.publishedAt ?? newest!.reportedAt ?? "", cik, industry: "standard" });
-      const modelVersion = env.SEC_REASONING_MODEL || env.SEC_ANALYSIS_MODEL || "deepseek-flash";
+      const modelVersion = modelFor(env, "presentation");
       const model: JudgeModel = async (stage, system, payload) => {
         try { return await callWorkerSecModel(env, fetch, stage, system, payload, modelVersion, MODEL_BUDGET_MS, true, { reasoning: reasoningFor(env, "presentation"), ticker, kind: "presentation" }); }
         catch (error) { if (error instanceof SecModelOutputError) return {}; throw error; }
