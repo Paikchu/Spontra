@@ -14,9 +14,13 @@ export const HISTORY_VERSION = 'revenue-history.v6:' + REVENUE_PARSER_VERSION;
 export const historyKey = (cik: string) => `sec:revenue-history:v1:${cik}`;
 const cursorKey = (cik: string) => `sec:revenue-history-cursor:v1:${cik}`;
 const REFRESH_MS = 86400000, LOOKBACK_DAYS = 1185, MAX_DOCUMENTS = 32, MAX_LISTED = 400, NOTICES_PER_STEP = 12, MAX_DOCUMENT_ATTEMPTS = 3;
+/** Cumulative facts kept across scans for the fourth-quarter bridge: a 10-K's nine months come from the same fiscal
+ * year's third-quarter report, filed up to about a year earlier. */
+const FACT_RETENTION_DAYS = 450;
 
 type HistoryDocument = {url: string; accession: string; filedAt: string; periodEnd: string; form: string};
-type HistoryCursor = {version: string; ticker: string; industry: DocumentSource['industry']; documents: HistoryDocument[]; index: number; reports?: number; facts: Fact[]; issues: string[]; attempts?: Record<string, number>; partial?: boolean; startedAt: string; finishedAt?: string};
+/** `read`: accessions this history already read (or passed over as notices); a later scan reads only what is new. */
+type HistoryCursor = {version: string; ticker: string; industry: DocumentSource['industry']; documents: HistoryDocument[]; index: number; reports?: number; facts: Fact[]; issues: string[]; attempts?: Record<string, number>; partial?: boolean; startedAt: string; finishedAt?: string; read?: string[]};
 export type HistoryStepResult = {ticker: string; documents: number; finished: boolean; quarters: number; issues: string[]; partial?: boolean; retry?: {accession: string; attempts: number; remaining: number}; resolvedIssues?: string[]};
 
 const REVENUE_TAGS = new Set(['RevenueFromContractWithCustomerExcludingAssessedTax', 'Revenues', 'SalesRevenueNet', 'RevenuesNetOfInterestExpense', 'Revenue', 'RevenueFromContractsWithCustomers']);
@@ -171,16 +175,25 @@ async function readHistoryContents(contents: Awaited<ReturnType<typeof readFilin
 
 /** One bounded step. A failed filing stays at its checkpoint for up to three attempts;
  * exhausted documents are explicitly partial. A manual rescan deletes only the cursor, never good history.
- * `restartFinished`: a finished scan starts over now (a new publication), rather than after a day. */
+ * `restartFinished`: a finished scan continues now (a new publication), rather than after a day. A scan after a
+ * finished one lists EDGAR again but reads only the filings the history has not read yet (a new 10-Q, an amendment,
+ * a filing whose reads were exhausted); a new parser version or a deleted cursor reads everything again. */
 export async function runHistoryStep(db: D1Database, reader: SecReader, target: {ticker: string; cik: string}, now = new Date(), maxDocuments = 3, options: {restartFinished?: boolean} = {}): Promise<HistoryStepResult> {
   if (!validCik(target.cik) || !/^[A-Z][A-Z0-9.-]{0,11}$/.test(target.ticker)) throw new Error('Invalid issuer identity');
   const repository = new D1SecRepository(db);
-  let cursor = (await repository.getCache<HistoryCursor>(cursorKey(target.cik)))?.payload;
-  if (!cursor || cursor.version !== HISTORY_VERSION || cursor.ticker !== target.ticker || (cursor.finishedAt && (options.restartFinished || now.getTime() - Date.parse(cursor.finishedAt) >= REFRESH_MS))) {
+  const stored = (await repository.getCache<HistoryCursor>(cursorKey(target.cik)))?.payload;
+  const current = stored && stored.version === HISTORY_VERSION && stored.ticker === target.ticker ? stored : undefined;
+  let cursor: HistoryCursor;
+  if (!current || (current.finishedAt && (options.restartFinished || now.getTime() - Date.parse(current.finishedAt) >= REFRESH_MS))) {
     const listing = await listDocuments(target.cik, reader, now);
-    cursor = {version: HISTORY_VERSION, ticker: target.ticker, industry: listing.industry, documents: listing.documents, index: 0, facts: [], issues: [], startedAt: now.toISOString()};
-  }
-  if(!cursor.documents.length&&!cursor.issues.includes('NO_SUPPORTED_FILINGS'))cursor.issues.push('NO_SUPPORTED_FILINGS');
+    const previous = current?.finishedAt && current.read ? current : null;
+    const listed = new Set(listing.documents.map(d => d.accession));
+    const read = new Set((previous?.read ?? []).filter(accession => listed.has(accession)));
+    const retained = (previous?.facts ?? []).filter(f => Date.parse(f.source.filedAt) >= now.getTime() - FACT_RETENTION_DAYS * 86400000);
+    cursor = {version: HISTORY_VERSION, ticker: target.ticker, industry: listing.industry, documents: listing.documents.filter(d => !read.has(d.accession)), index: 0, facts: retained, issues: [], startedAt: now.toISOString(), read: [...read]};
+  } else cursor = current;
+  if(!cursor.documents.length&&!cursor.read?.length&&!cursor.issues.includes('NO_SUPPORTED_FILINGS'))cursor.issues.push('NO_SUPPORTED_FILINGS');
+  cursor.read ??= [];
   const incoming: RevenueHistoryQuarter[] = [];
   const resolvedIssues: string[] = [];
   let attempted = 0, notices = 0, retry: HistoryStepResult['retry'];
@@ -197,6 +210,7 @@ export async function runHistoryStep(db: D1Database, reader: SecReader, target: 
       if (!reportsFinancials(document.form, contents[0].html)) {
         await reader.archive?.({url: contents[0].url, accession: document.accession, filedAt: document.filedAt, cik: target.cik, industry: cursor.industry}, contents[0].html, {form: document.form, reportDate: document.periodEnd});
         delete cursor.attempts[document.accession];
+        cursor.read.push(document.accession);
         cursor.index++; notices++;
         continue;
       }
@@ -207,6 +221,7 @@ export async function runHistoryStep(db: D1Database, reader: SecReader, target: 
       if (cursor.issues.includes(temporaryIssue)) resolvedIssues.push(temporaryIssue);
       cursor.issues = [...new Set([...cursor.issues.filter(issue => issue !== temporaryIssue), ...(documentQuarters.length ? [] : documentIssues)])].slice(-40);
       delete cursor.attempts[document.accession];
+      cursor.read.push(document.accession);
       cursor.reports = (cursor.reports ?? 0) + 1;
       cursor.index++;
     } catch {
@@ -227,7 +242,8 @@ export async function runHistoryStep(db: D1Database, reader: SecReader, target: 
   const finished = cursor.index >= cursor.documents.length || (cursor.reports ?? 0) >= MAX_DOCUMENTS;
   const existing = historyForIssuer((await repository.getCache<unknown>(historyKey(target.cik)))?.payload, target.cik, target.ticker);
   // The cross-filing fourth-quarter bridge checks each nine months against the three quarters the history already holds.
-  if (finished && !cursor.finishedAt) { incoming.push(...deriveFourthQuarters(cursor.facts, target.cik, mergeHistory(target.ticker, existing?.quarters ?? [], incoming, now.toISOString()).quarters)); cursor.finishedAt = now.toISOString(); cursor.facts = []; }
+  // The facts stay with the cursor (within retention) so the next scan, reading only a new 10-K, can still bridge its fourth quarter.
+  if (finished && !cursor.finishedAt) { incoming.push(...deriveFourthQuarters(cursor.facts, target.cik, mergeHistory(target.ticker, existing?.quarters ?? [], incoming, now.toISOString()).quarters)); cursor.finishedAt = now.toISOString(); cursor.facts = cursor.facts.filter(f => Date.parse(f.source.filedAt) >= now.getTime() - FACT_RETENTION_DAYS * 86400000); }
   const obtainedData = incoming.some(validHistoryQuarter);
   const history = mergeHistory(target.ticker, existing?.quarters ?? [], incoming, obtainedData ? now.toISOString() : existing?.updatedAt ?? now.toISOString());
   // Retry progress belongs to the cursor. A failed/empty step must not date old data as new.

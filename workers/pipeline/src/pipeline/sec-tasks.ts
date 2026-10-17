@@ -1,6 +1,6 @@
 import { readEventsPublication } from "../../../../shared/analysis-runtime/events.ts";
 import { AiRunStore, quietly } from "../ai-runs/store.ts";
-import { refreshCompanyEvents } from "../events/workflow.ts";
+import { refreshCompanyEvents, secAccessPaused } from "../events/workflow.ts";
 import { eventsCacheKey } from "../events/read.ts";
 import { guidanceWorkflowSuffix } from "../guidance/extract.ts";
 import { GuidanceStore } from "../guidance/store.ts";
@@ -75,7 +75,10 @@ export const SEC_TASKS = {
       // A run moments after the last one is a continuation; anything later was triggered by a new filing. Form 4
       // filings still unread are not in the stored rail, so while any are pending the list is read again too.
       const forceList = !publication || publication.pendingInsider > 0 || now.getTime() - Date.parse(publication.checkedAt) > MINUTE;
-      const result = await refreshCompanyEvents(env, ticker, fetch, now, { forceList, causeId });
+      let result: Awaited<ReturnType<typeof refreshCompanyEvents>>;
+      // SEC paused this client (403/429): a wait, not a failure to retry at once and dead-letter.
+      try { result = await refreshCompanyEvents(env, ticker, fetch, now, { forceList, causeId }); }
+      catch (error) { if (secAccessPaused(error)) return { status: "later", afterMs: 15 * MINUTE, detail: { waiting: "SEC access paused" } }; throw error; }
       return result.pending && result.progressed ? { status: "later", afterMs: 2 * SECOND, detail: result } : { status: "done", detail: result };
     },
   },
