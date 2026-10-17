@@ -114,7 +114,7 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
   ],
   // A company new to the pipeline (admin whitelist, or a data ticker seen by discovery for the first time): its event
   // rail is built now, not at its next current report; collection comes with the maintenance or collection request.
-  "company.added": [{ task: "events" }],
+  "company.added": [{ task: "events" }, { task: "presentation" }],
   "collection.requested": [{ task: "collect" }, { task: "history" }],
   "maintenance.requested": [{ task: "maintenance" }],
   "financials.published": [{ task: "map-derive" }, { task: "history" }, { task: "explainer" }, { task: "tree" }, { task: "library-links" }],

@@ -135,12 +135,13 @@ export async function runTaskMessage(env: SecPipelineEnv, message: TaskMessage, 
     return { outcome: "done", detail: outcome.detail };
   }
   const dueAt = new Date(Date.now() + outcome.afterMs).toISOString();
-  const [moved] = await db.batch([
+  // The continuation is sent before the due row moves to it. Sent first, a failed send leaves the row where this message
+  // can run again on the queue's retry; moved first, the retry would find the row moved, call itself superseded, and the
+  // task would never run again. A message whose row did not move (a newer trigger did) arrives superseded: harmless.
+  await env.PIPELINE_TASKS!.send({ ...message, id: crypto.randomUUID(), causeId: message.id, dueAt }, { contentType: "json", delaySeconds: delaySeconds(dueAt, Date.now()) });
+  await db.batch([
     db.prepare("UPDATE pipeline_due SET due_at = ?, first_requested_at = ? WHERE ticker = ? AND task = ? AND due_at = ?").bind(dueAt, at, message.ticker, message.task, row.due_at),
     ...log,
   ]);
-  if ((moved!.meta.changes ?? 0) > 0) {
-    await env.PIPELINE_TASKS!.send({ ...message, id: crypto.randomUUID(), causeId: message.id, dueAt }, { contentType: "json", delaySeconds: delaySeconds(dueAt, Date.now()) });
-  }
   return { outcome: "later", detail: outcome.detail };
 }

@@ -62,7 +62,8 @@ export async function syncTranscript(env: SecPipelineEnv, now = new Date(), fetc
     if (!await budget.reserve('guidance-transcript',stamp.slice(0,10),cap)) return await finish('retry','DAILY_BUDGET',tomorrow.toISOString());
     await env.DB.prepare('UPDATE company_transcripts SET attempts=attempts+1 WHERE id=? AND lease_until=?').bind(row.id,lease).run();
     const material = await new AlphaVantageTranscriptProvider(env.ALPHA_VANTAGE_API_KEY,fetcher).fetch(row.ticker,{fiscalYear:period.fiscalYear,quarter:q as 1|2|3|4,date:row.filedAt});
-    if (!material || !('text' in material)) return await finish('unavailable','PROVIDER_NO_TRANSCRIPT');
+    // The provider often has the call a day or two after the filing: try again tomorrow, three tries in all.
+    if (!material || !('text' in material)) return await finish(row.attempts>=2?'unavailable':'retry','PROVIDER_NO_TRANSCRIPT',tomorrow.toISOString());
     await env.DB.batch([
       env.DB.prepare(`UPDATE company_transcripts SET status='ready',title=?,source_url=?,content=?,characters=?,error_code=NULL,fetched_at=?,updated_at=?,lease_until=NULL WHERE id=? AND lease_until=?`)
         .bind(material.title,material.url,material.text,material.text.length,stamp,stamp,row.id,lease),
@@ -78,7 +79,7 @@ export async function syncTranscript(env: SecPipelineEnv, now = new Date(), fetc
       await env.DB.prepare("INSERT INTO feature_budget(day,feature,units) VALUES(?,'guidance-transcript',?) ON CONFLICT(day,feature) DO UPDATE SET units=MAX(units,excluded.units)").bind(stamp.slice(0,10),cap).run();
       return finish('retry','PROVIDER_QUOTA',tomorrow.toISOString());
     }
-    if(error instanceof TranscriptAccessError) return finish('unavailable','PROVIDER_ACCESS');
+    if(error instanceof TranscriptAccessError) return finish(row.attempts>=2?'unavailable':'retry','PROVIDER_ACCESS',tomorrow.toISOString());
     return finish(row.attempts>=2?'unavailable':'retry','PROVIDER_ERROR',tomorrow.toISOString());
   }
 }

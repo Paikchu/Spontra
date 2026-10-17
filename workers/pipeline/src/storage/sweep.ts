@@ -59,7 +59,9 @@ type Cursor = { rule: number; cursor?: string };
 async function context(env: SecPipelineEnv, now: number): Promise<SweepContext> {
   const policy = await companyPolicyEnvironment(env).catch(() => env);
   // Prepared filings and analysis artifacts serve the reports and findings features; both lists, before and after the admin's switches.
-  const aiTickers = new Set([env, policy].flatMap(e => [...featureTickersFor(e, "reports"), ...featureTickersFor(e, "findings")]));
+  // An admin "analyze" task runs the SEC report Workflow for a company outside those lists; its prepared filings stay too.
+  const analyzing = (await env.DB!.prepare("SELECT DISTINCT ticker FROM financial_maintenance_tasks WHERE action = 'analyze' AND status IN ('queued','running','cancel_requested')").all<{ ticker: string }>().catch(() => ({ results: [] as Array<{ ticker: string }> }))).results;
+  const aiTickers = new Set([...[env, policy].flatMap(e => [...featureTickersFor(e, "reports"), ...featureTickersFor(e, "findings")]), ...analyzing.map(r => r.ticker)]);
   const live = (await env.DB!.prepare("SELECT object_key FROM web_search_cache WHERE object_key IS NOT NULL").all<{ object_key: string }>()).results;
   return { now, aiTickers, liveSearchObjects: new Set(live.map(r => r.object_key)), analysisSchema: SEC_ANALYSIS_SCHEMA_VERSION };
 }

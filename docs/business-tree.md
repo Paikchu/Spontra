@@ -18,7 +18,7 @@ GitHub Copilot ─ GitHub ────────┘
 
 ## 拆解层级
 
-1. 公司 → 财报业务：直接来自已发布的 SEC flow（`quarter.segments` 及其披露的 children），不让模型猜。地区分部（Americas、Europe…）和银行、保险口径不拆。
+1. 公司 → 财报业务：直接来自已发布的 SEC flow（`quarter.segments` 及其披露的 children），不让模型猜。只有某一层的分部全是地区时才不拆（AAPL 这种按地理组织的公司，各地区卖的是同一套产品线）；地区分部和产品分部混在一起时（AMZN 的 North America、International、AWS）每个都拆。
 2. 财报业务 → 产品线 → 产品：ReAct 研究员负责，最多 3 层、每个节点最多 10 个下级、每项业务最多 40 个节点。财报自己披露的下级业务（如 ORCL cloud 下的两项）预先放进树里（`flowNodeId`），产品挂在它们下面。
 3. 赚钱方式：挂在材料能证明的那一层（多在产品线），`type` 为 subscription / consumption / license / transaction / advertising / hardware / services / other，`label` 是地图上的短标签（≤10 字），`text` 一句话说明谁付钱、按什么付。
 
@@ -40,8 +40,8 @@ SEC 文件全部来自文件库（`docs/sec-filing-library.md`）：开始前从
 
 ## 核对（写入和读取用同一套规则）
 
-- anchor：必须是模型本次运行读到的某个来源中的原文（压缩空白和标点后逐字匹配），≤600 字符，并且同时写出节点名（完整词，不是前缀）和某个上级的名称（父节点、更上层节点或这项业务；公司只披露一项业务时，公司名也算；公司名取发行人在申报文件里的写法，如 “Cloudflare, Inc.” 和 “Cloudflare”，不用交易所的证券名称 “Cloudflare, Inc. Class A Common Stock”）。原文用 “this segment” 指代上级时，要把点出上级名称的前一句一并引用。
-- gloss / summary / revenue：引用已出现的来源，不含金额、比例、增速等数字；revenue 的来源还必须提到该节点或其上级。
+- anchor：必须是模型本次运行读到的某个来源中的原文（压缩空白和标点后逐字匹配），≤600 字符，并且同时写出节点名（完整词，不是前缀）和某个上级的名称（父节点、更上层节点或这项业务；公司只披露一项业务时，公司名也算；公司名取发行人在申报文件里的写法，如 “Cloudflare, Inc.” 和 “Cloudflare”，不用交易所的证券名称 “Cloudflare, Inc. Class A Common Stock”）。原文用 “this segment” 指代上级时，要把点出上级名称的前一句一并引用。 财报常先用一句点出板块（"This segment primarily comprises:"），再把产品线分条列出：此时 anchor 可以用 " … " 连接同一段落里最多 3 个原文片段，每段逐字存在、顺序一致、整体跨度不超过约 2,400 个字母数字（`quotedIn`）。
+- gloss / summary / revenue：引用已出现的来源，不含金额、比例、增速等数字，文字里写的来源编号会被去掉（`withoutCitations`）；revenue 的来源还必须提到该节点或其上级。
 - 独立审校：每项业务结束后，审校模型拿到每个节点及其来源中提到它的句子，只能删除整个节点或单个字段；两次都拿不到合法结果时，保留已通过 harness 的内容。
 - 读取：`shared/analysis-runtime/business-tree.ts` 的 `readBusinessTree` 用同一套 `harnessNode` 重新核对，失败的节点连同下级删除，没有内容的业务不展示。
 
@@ -64,7 +64,7 @@ SEC 文件全部来自文件库（`docs/sec-filing-library.md`）：开始前从
 
 ## 已知限制
 
-- 地区分部的公司（如 AAPL）和只按银行、保险口径绘图的公司暂不拆。
+- 全部按地区划分分部的公司（如 AAPL）和只按银行、保险口径绘图的公司暂不拆。
 - 产品名保留材料原文（多为英文），中文靠 gloss。
 - 首轮线上运行后需要看后台的研究过程，调整提示词和预算；改动后提升 `BUSINESS_TREE_VERSION` 会让每家公司重跑一次。
 

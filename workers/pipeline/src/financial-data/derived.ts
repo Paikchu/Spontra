@@ -150,7 +150,7 @@ async function parseFiling(env: DisclosureArchiveEnv, record: StoredAudit, partn
  * Quarters are taken in candidate order, newest-preferred, until eight periods are covered. A rebuilt snapshot is
  * committed together with its `map.derived` event; an unchanged one emits nothing.
  */
-export async function deriveCompany(env: DisclosureArchiveEnv, ticker: string, budget = PARSE_BUDGET_BYTES, causeId: string | null = null): Promise<{ spent: number; built: boolean; pending: number; unarchived?: string[] }> {
+export async function deriveCompany(env: DisclosureArchiveEnv, ticker: string, budget = PARSE_BUDGET_BYTES, causeId: string | null = null): Promise<{ spent: number; built: boolean; pending: number; unarchived?: string[]; oversized?: string[] }> {
   const repository = new D1SecRepository(env.DB);
   const publication = await readCompletePublicationForTicker(env.DB, ticker);
   const flow = publication.status === 'ready' ? publication.flow : null;
@@ -168,7 +168,7 @@ export async function deriveCompany(env: DisclosureArchiveEnv, ticker: string, b
 
   const byPeriod = new Map(flow.quarters.map(q => [q.periodEnd, q]));
   let spent = 0, pending = 0, reports = 0;
-  const used: string[] = [];
+  const used: string[] = [], oversized: string[] = [];
   for (const record of reportCandidates(audits, flow)) {
     if (byPeriod.size >= REPORT_QUARTERS || reports >= REPORT_FILINGS) break;
     let entry = stored.get(record.documentId);
@@ -178,6 +178,9 @@ export async function deriveCompany(env: DisclosureArchiveEnv, ticker: string, b
     const relabel = entry?.labels === 'missing' && (await named(record.source.accessionNumber) || (!!partner && await named(partner.source.accessionNumber)));
     if (!entry || relabel || entry.contentSha256 !== contentSha256 || entry.version !== REPORT_QUARTERS_VERSION || entry.industry !== industry) {
       const bytes = record.sourceBytes + (partner?.sourceBytes ?? 0);
+      // A filing (with its third-quarter partner) larger than a whole run's budget never fits a later run either: it is
+      // left out and named, not counted as pending, or the task would run again every second for ever.
+      if (bytes > budget) { oversized.push(record.documentId); continue; }
       if (spent + bytes > budget) { pending++; continue; }
       spent += bytes;
       const parsed = await parseFiling(env, record, partner, contentSha256, industry).catch(() => null);
@@ -196,7 +199,7 @@ export async function deriveCompany(env: DisclosureArchiveEnv, ticker: string, b
   const capitalInputs = audits.filter(r => r.capital).map(r => `${r.documentId}:${r.contentSha256}:${r.capital!.version}`);
   const inputs = JSON.stringify([REPORT_QUARTERS_VERSION, flowKey(flow), used, pending, capitalInputs]);
   const previous = await repository.getCache<MapDerived>(snapshotKey(ticker));
-  const gap = unarchived.length ? { unarchived } : {};
+  const gap = { ...(unarchived.length ? { unarchived } : {}), ...(oversized.length ? { oversized } : {}) };
   if (previous?.payload.inputs === inputs) return { spent, built: false, pending, ...gap };
   const snapshot: MapDerived = {
     ticker, flowKey: flowKey(flow), inputs, builtAt: new Date().toISOString(),

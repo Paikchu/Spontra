@@ -12,7 +12,10 @@ const stateKey = (ticker: string) => `sec:discovery:v1:${ticker}`;
 const ANNOUNCED = /^(?:10-[QK]|20-F|40-F|6-K|8-K|4)(?:\/A)?$/;
 const REMEMBERED = 200;
 
-type DiscoveryState = { cik: string; accessions: string[]; checkedAt: string };
+/** `collectable`: accessions of the filings collection reads (periodic reports, 6-Ks, earnings 8-Ks), newest first. */
+type DiscoveryState = { cik: string; accessions: string[]; checkedAt: string; collectable?: string[] };
+/** The forms a collection job lists (provider.ts `readSecDocumentBatch`). */
+const COLLECTED = (f: { form: string; items: string }) => /^(?:10-[QK]|20-F)(?:\/A)?$/.test(f.form) || f.form === "6-K" || (f.form === "8-K" && f.items.includes("2.02"));
 
 /**
  * EDGAR's issuer directory, read once per run and only when a company's CIK is not yet known: every listed symbol
@@ -80,7 +83,7 @@ export async function runSecDiscovery(env: SecPipelineEnv, now = new Date(), fet
       const fresh = previous ? filings.filter(f => !known.has(f.accession) && ANNOUNCED.test(f.form)) : [];
       await db.batch([
         db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at")
-          .bind(stateKey(ticker), JSON.stringify({ cik, accessions: filings.map(f => f.accession), checkedAt: at } satisfies DiscoveryState), at),
+          .bind(stateKey(ticker), JSON.stringify({ cik, accessions: filings.map(f => f.accession), checkedAt: at, collectable: filings.filter(COLLECTED).map(f => f.accession).slice(0, 20) } satisfies DiscoveryState), at),
         // Oldest first, so subscribers that read the newest state see the filings in the order they were made.
         ...fresh.reverse().map(f => outboxStatement(db, { type: "filing.discovered", ticker, cik, detail: { form: f.form, items: f.items, accession: f.accession } }, at)),
         ...(bootstrap ? [outboxStatement(db, { type: "company.added", ticker, cik }, at), outboxStatement(db, { type: "collection.requested", ticker, cik }, at)] : []),
