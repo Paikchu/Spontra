@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { createPortal } from 'react-dom';
 import { AlertTriangle, CheckCircle2, ChevronRight, ExternalLink, Layers, Plus, RefreshCw, Scale, ScanLine, Search, Trash2 } from 'lucide-react';
 import type { BusinessMapCompanies, BusinessMapCompany } from '@/shared/analysis-contract/business-map-admin';
 import { FEATURES, type Feature } from '@/shared/analysis-contract/business-features';
@@ -36,18 +37,22 @@ export function BusinessMapCompanies({onUnauthorized,onAuthenticated}:{onUnautho
   const [data,setData]=useState<BusinessMapCompanies|null>(null),[ticker,setTicker]=useState(''),[search,setSearch]=useState('');
   const [loadError,setLoadError]=useState('');
   const [error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState(''),[refresh,setRefresh]=useState(0);
-  const lock=useRef(false),callbacks=useRef({onUnauthorized,onAuthenticated});
+  const lock=useRef(false),pending=useRef(new Set<string>()),switched=useRef(0),callbacks=useRef({onUnauthorized,onAuthenticated});
+  // Messages float over the page and leave on their own, so nothing below them moves.
+  useEffect(()=>{if(!notice)return;const timer=setTimeout(()=>setNotice(''),2500);return()=>clearTimeout(timer);},[notice]);
+  useEffect(()=>{if(!error)return;const timer=setTimeout(()=>setError(''),6000);return()=>clearTimeout(timer);},[error]);
   useEffect(()=>{callbacks.current={onUnauthorized,onAuthenticated};},[onUnauthorized,onAuthenticated]);
   useEffect(()=>{
-    const controller=new AbortController();
+    const controller=new AbortController(),started=switched.current;
     void adminApi<BusinessMapCompanies>('business-map/companies',{signal:controller.signal}).then(result=>{
-      if(controller.signal.aborted)return;setData(result);setLoadError('');callbacks.current.onAuthenticated();
+      // A read that started before a switch moved would flip it back; the next read picks the switch up.
+      if(controller.signal.aborted||pending.current.size||switched.current!==started)return;setData(result);setLoadError('');callbacks.current.onAuthenticated();
     }).catch(err=>{if(controller.signal.aborted)return;if(err instanceof AdminApiError&&err.status===401)callbacks.current.onUnauthorized();else setLoadError(err.message);});
     return ()=>controller.abort();
   },[refresh]);
   // Every five seconds while a company is being prepared, every thirty otherwise: the list is a heavy read.
   const working=!!data?.companies.some(c=>(c.task&&active.has(c.task.status))||(c.collection&&['queued','running','retry'].includes(c.collection.status)));
-  useEffect(()=>{const timer=setInterval(()=>{if(!document.hidden&&!lock.current)setRefresh(n=>n+1);},working?5000:30000);return()=>clearInterval(timer);},[working]);
+  useEffect(()=>{const timer=setInterval(()=>{if(!document.hidden&&!lock.current&&!pending.current.size)setRefresh(n=>n+1);},working?5000:30000);return()=>clearInterval(timer);},[working]);
   async function mutate(symbol:string,enabled?:boolean) {
     if(lock.current)return;lock.current=true;setBusy(symbol);setError('');setNotice('');
     const key=`business-map:${symbol}:${enabled??'prepare'}`,requestId=pendingRequestId(key,storage());
@@ -62,15 +67,24 @@ export function BusinessMapCompanies({onUnauthorized,onAuthenticated}:{onUnautho
       if(err instanceof AdminApiError&&err.status>=400&&err.status<500)completeRequestId(key,storage());
     } finally {lock.current=false;setBusy('');}
   }
-  /** One feature's switch for one company, or its global generation switch (symbol null). */
+  /**
+   * One feature's switch for one company, or its global generation switch (symbol null). The switch moves at once and
+   * the rest of the page stays as it is; a refused request puts it back and says why. The list is not read again: the
+   * regular refresh brings the run states.
+   */
   async function switchFeature(symbol:string|null,feature:Feature,on:boolean) {
-    if(lock.current)return;lock.current=true;setBusy(symbol??'*');setError('');setNotice('');
-    try {
-      await adminApi(symbol?`business-map/companies/${symbol}/features/${feature}`:`business-map/features/${feature}`,{method:'POST',body:JSON.stringify({on})});
-      setRefresh(n=>n+1);setNotice(`${symbol??'全部公司'} ${FEATURE_LABEL[feature]}已${on?'开启':'关闭'}`);
+    const key=`${symbol??'*'}:${feature}`;
+    if(!data||pending.current.has(key))return;
+    if(symbol&&feature==='findings'&&on&&!data.companies.find(c=>c.ticker===symbol)?.features.reports.on){setError('请先开启该公司的财报摘要');return;}
+    const before=data;
+    pending.current.add(key);switched.current++;setError('');
+    setData(d=>d&&applySwitch(d,symbol,feature,on));
+    try {await adminApi(symbol?`business-map/companies/${symbol}/features/${feature}`:`business-map/features/${feature}`,{method:'POST',body:JSON.stringify({on})});}
+    catch(err){
+      setData(d=>d&&restoreSwitch(d,before,symbol,feature));
+      if(err instanceof AdminApiError&&err.status===401)callbacks.current.onUnauthorized();else setError((err as Error).message);
     }
-    catch(err){if(err instanceof AdminApiError&&err.status===401)callbacks.current.onUnauthorized();else setError((err as Error).message);}
-    finally {lock.current=false;setBusy('');}
+    finally {pending.current.delete(key);}
   }
   async function judge(symbol:string) {
     if(lock.current)return;lock.current=true;setBusy(symbol);setError('');setNotice('');
@@ -85,13 +99,14 @@ export function BusinessMapCompanies({onUnauthorized,onAuthenticated}:{onUnautho
       <form className="bm-admin-add" onSubmit={add}><label htmlFor="bm-ticker" className="bm-admin-sr">股票代码</label><input id="bm-ticker" placeholder="股票代码" value={ticker} maxLength={10} onChange={e=>setTicker(e.target.value.toUpperCase())} required/><button className="ra-primary" disabled={!data||!!busy}><Plus size={16}/>加入白名单</button></form>
       <div className="bm-admin-filter"><span>白名单 · {data?.companies.filter(c=>c.dataEnabled).length??0} 家</span><label className="ra-search"><Search size={16}/><input aria-label="筛选公司" placeholder="代码" value={search} onChange={e=>setSearch(e.target.value)}/></label><button className="ra-icon-button" onClick={()=>setRefresh(n=>n+1)} disabled={!!busy} aria-label="刷新"><RefreshCw size={16}/></button></div>
     </div>
-    {notice&&<p className="ra-notice" role="status">{notice}</p>}{(error||loadError)&&<p className="ra-error ra-error-banner" role="alert">{error||loadError}</p>}
+    {/* In the body: the section's enter animation leaves a transform that would pin a fixed child to the section. */}
+    {createPortal(<div className="bm-toasts" aria-live="polite">{notice&&<p className="bm-toast" role="status">{notice}</p>}{(error||loadError)&&<p className="bm-toast" data-tone="error" role="alert">{error||loadError}</p>}</div>,document.body)}
     {data&&!data.automaticCollection&&<p className="bm-admin-warning">自动采集已暂停</p>}
     {data&&FEATURES.some(f=>!data.generation[f])&&<p className="bm-admin-warning">{FEATURES.filter(f=>!data.generation[f]).map(f=>FEATURE_LABEL[f]).join('、')}生成已全局暂停</p>}
     {!data&&!loadError&&<p role="status">加载中</p>}
     {companies.length>0&&<div className="bm-admin-table-wrap ra-panel"><table className="bm-admin-table">
       <thead><tr><th>公司</th><th>状态</th>
-        {FEATURES.map(f=><th key={f} className="bm-admin-feature-col"><span className="bm-admin-feature-head">{FEATURE_LABEL[f]}<button className="bm-switch bm-switch-sm" role="switch" aria-checked={!!data?.generation[f]} aria-label={`${FEATURE_LABEL[f]}（全部公司）`} title={data?.generation[f]?'全部公司生成中 · 点击暂停':'已全局暂停 · 点击恢复'} disabled={!data||!!busy} onClick={()=>void switchFeature(null,f,!data?.generation[f])}><span/></button></span></th>)}
+        {FEATURES.map(f=><th key={f} className="bm-admin-feature-col"><span className="bm-admin-feature-head">{FEATURE_LABEL[f]}<button className="bm-switch bm-switch-sm" role="switch" aria-checked={!!data?.generation[f]} aria-label={`${FEATURE_LABEL[f]}（全部公司）`} title={data?.generation[f]?'全部公司生成中 · 点击暂停':'已全局暂停 · 点击恢复'} disabled={!data} onClick={()=>void switchFeature(null,f,!data?.generation[f])}><span/></button></span></th>)}
         <th>操作</th></tr></thead>
       {companies.map(company=><Company key={company.ticker} company={company} generation={data!.generation} busy={!!busy} onToggle={()=>void mutate(company.ticker,!company.dataEnabled)} onPrepare={()=>void mutate(company.ticker)} onJudge={()=>void judge(company.ticker)} onFeature={(feature,on)=>void switchFeature(company.ticker,feature,on)}/>)}
     </table></div>}
@@ -110,6 +125,22 @@ function Meter({label,completed,total,done=false}:{label:string;completed:number
 }
 /** Per-document notes from a scan (a filing without a quarter, a fact format the reader skips): not problems with the data. */
 const NOTE=/^(?:\d{10}-\d{2}-\d{6}:)?(?:NO_DIRECT_COMPARABLE_QUARTER|RESTATEMENT_REVIEW_REQUIRED)$|^UNSUPPORTED_SOURCE_FACTS:/;
+
+/** The list with one switch moved: a company's feature (switching the reports off takes the findings with them) or a global one. */
+function applySwitch(d:BusinessMapCompanies,symbol:string|null,feature:Feature,on:boolean):BusinessMapCompanies {
+  if(!symbol)return {...d,generation:{...d.generation,[feature]:on}};
+  // Switched on, the feature's first task is queued; switched off, nothing of it runs.
+  const moved=(f:BusinessMapCompany['features'][Feature],value:boolean)=>({...f,on:value,run:value?(f.run??'queued'):null});
+  return {...d,companies:d.companies.map(c=>c.ticker!==symbol?c:{...c,features:{...c.features,[feature]:moved(c.features[feature],on),
+    ...(feature==='reports'&&!on?{findings:moved(c.features.findings,false)}:{})}})};
+}
+/** Puts back what one switch moved, from the list as it was before the click; other switches keep their own changes. */
+function restoreSwitch(d:BusinessMapCompanies,before:BusinessMapCompanies,symbol:string|null,feature:Feature):BusinessMapCompanies {
+  if(!symbol)return {...d,generation:{...d.generation,[feature]:before.generation[feature]}};
+  const old=before.companies.find(c=>c.ticker===symbol);
+  if(!old)return d;
+  return {...d,companies:d.companies.map(c=>c.ticker!==symbol?c:{...c,features:{...c.features,[feature]:old.features[feature],...(feature==='reports'?{findings:old.features.findings}:{})}})};
+}
 
 /** What a feature is doing for the company right now, for the detail: a badge and a line on what it last wrote. */
 function featureState(f:BusinessMapCompany['features'][Feature],paused:boolean):{status:string;text:string;note:string} {
@@ -140,7 +171,7 @@ function Company({company:c,generation,busy,onToggle,onPrepare,onJudge,onFeature
     <tr className="bm-admin-row" aria-label={`${c.ticker} 数据准备`}>
       <td><div className="bm-admin-company-cell"><button className="bm-admin-toggle" aria-expanded={open} aria-label={`${c.ticker} 详情`} onClick={()=>setOpen(o=>!o)}><ChevronRight size={15}/></button><CompanyLogo symbol={c.ticker}/><span className="bm-admin-name"><strong className="ra-mono">{c.ticker}</strong>{c.name&&c.name!==c.ticker&&<small>{c.name}</small>}</span></div></td>
       <td><div className="bm-admin-states"><span className="ra-badge" data-status={map.status}>{map.text}</span></div></td>
-      {FEATURES.map(f=><td key={f} className="bm-admin-feature-col"><button className="bm-switch" role="switch" aria-checked={c.features[f].on} aria-label={`${c.ticker} ${FEATURE_LABEL[f]}`} title={featureState(c.features[f],!generation[f]).text} disabled={busy||(!c.dataEnabled&&!c.features[f].on)} onClick={()=>onFeature(f,!c.features[f].on)}><span/></button></td>)}
+      {FEATURES.map(f=><td key={f} className="bm-admin-feature-col"><button className="bm-switch" role="switch" aria-checked={c.features[f].on} aria-label={`${c.ticker} ${FEATURE_LABEL[f]}`} title={featureState(c.features[f],!generation[f]).text} disabled={!c.dataEnabled&&!c.features[f].on} onClick={()=>onFeature(f,!c.features[f].on)}><span/></button></td>)}
       <td><div className="bm-admin-actions"><button className="fm-button" disabled={busy||running||!c.dataEnabled} onClick={onPrepare}>{running?'准备中':'重新准备'}</button><a href={`/admin/financials?ticker=${c.ticker}`}>财报</a>{ready&&<a href={`https://spontra-business-map.max-zhangyuchen.workers.dev/companies/${c.ticker}`} target="_blank" rel="noreferrer" aria-label={`${c.ticker} 业务地图`}>地图<ExternalLink size={12}/></a>}
         {c.dataEnabled?<button className="bm-admin-remove" disabled={busy} onClick={remove} aria-label={`移出 ${c.ticker}`} title="移出白名单"><Trash2 size={16}/></button>:<button className="fm-button" disabled={busy} onClick={onToggle}>加入</button>}</div></td>
     </tr>

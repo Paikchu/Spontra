@@ -99,3 +99,10 @@
 .bm-features small { color: var(--ink-muted); font-size: 12px; }
 .bm-features li[data-status=failed] { border-color: color-mix(in srgb, var(--danger) 30%, var(--line)); }
 @media (max-width: 900px) { .bm-features { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* Messages float at the bottom of the window and leave on their own: nothing in the page moves when one appears. */
+.bm-toasts { position: fixed; left: 50%; bottom: var(--space-5); z-index: 50; display: grid; gap: var(--space-2); justify-items: center; transform: translateX(-50%); pointer-events: none; }
+.bm-toast { margin: 0; padding: 10px 16px; border-radius: var(--sp-radius-pill); background: var(--ink); color: var(--canvas); font-size: 13px; font-weight: 550; box-shadow: 0 8px 24px rgb(0 0 0 / .18); animation: bm-toast-in 180ms var(--sp-ease); }
+.bm-toast[data-tone=error] { background: var(--danger); color: #fff; }
+@keyframes bm-toast-in { from { opacity: 0; transform: translateY(6px); } }
+@media (prefers-reduced-motion: reduce) { .bm-toast { animation: none; } }
