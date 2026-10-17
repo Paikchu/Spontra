@@ -90,7 +90,7 @@ export async function readModelContent(events: AsyncIterable<BetaRawMessageStrea
     metrics.finishReason = stopReason;
     if (!done && !stopReason) throw new SecModelOutputError("stream_incomplete", `Model ${stage} stream ended before completion after ${content.length} characters`);
     if (stopReason === "max_tokens") throw new SecModelOutputError("output_token_limit", `Model ${stage} stream hit the output token limit after ${content.length} characters`);
-    if (stopReason && stopReason !== "end_turn") throw new SecModelOutputError("invalid_stream", `Model ${stage} ended with ${stopReason}`);
+    if (stopReason && stopReason !== "end_turn") throw new SecModelOutputError("invalid_stream", `Model ${stage} ended with ${stopReason}${metrics.refusalCategory ? ` (${String(metrics.refusalCategory)})` : ""}`);
     if (!content) throw new SecModelOutputError("stream_incomplete", `Model ${stage} returned empty content`);
     return content;
   } catch (error) {

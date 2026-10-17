@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readDecision, pageExcerpt, runBusinessTree, type TreeModel, type TreeSearch } from "../src/business-tree/agent.ts";
+import { exchange, readDecision, pageExcerpt, runBusinessTree, type TreeMessage, type TreeModel, type TreeSearch } from "../src/business-tree/agent.ts";
 import { treeBusinesses } from "../src/business-tree/workflow.ts";
 import { quotedIn, readBusinessTree, withoutCitations } from "../../../shared/analysis-runtime/business-tree.ts";
 import type { PublicBusinessFlow } from "../../../shared/analysis-contract/business-flow.ts";
@@ -98,4 +98,30 @@ test("replies that keep failing stop the run with the provider's words instead o
   const failing: TreeModel = async () => { calls++; return { action: "invalid", error: "stream_incomplete: Model business-tree-1-1 stream interrupted: Overloaded" }; };
   await assert.rejects(run([{ flowNodeId: "msft:IntelligentCloudMember", name: "IntelligentCloud" }], failing), /3 model replies in a row failed; last: stream_incomplete: .*Overloaded/);
   assert.equal(calls, 3);
+});
+
+test("the loop reaches the model as a real conversation: its replies as assistant turns, results as user turns", async () => {
+  const seen: TreeMessage[][] = [];
+  const model: TreeModel = async (stage, _system, _payload, conversation) => {
+    if (stage.startsWith("business-tree-review")) return { issues: [] };
+    if (conversation) seen.push(conversation);
+    return ({ "business-tree-1-1": { thought: "read the 10-K", action: "read", input: { source: "b1-s1", focus: "XBOX" } },
+      "business-tree-1-2": { action: "invalid", error: "invalid_stream: refusal" } } as Record<string, Record<string, unknown>>)[stage] ?? { action: "finish", input: {} };
+  };
+  await run([{ flowNodeId: "msft:MorePersonalComputingMember", name: "MorePersonalComputing" }], model).catch(() => null);
+  const third = seen[2]!;
+  // Turn 1 replied, turn 2 had no usable reply: user, assistant, user (turn 1's result, turn 2's result and the state).
+  assert.deepEqual(third.map(m => m.role), ["user", "assistant", "user"]);
+  assert.match(third[0]!.content, /"company":"Microsoft Corp"/);
+  assert.match(third[1]!.content, /"action":"read"/);
+  assert.ok(third.every(m => m.role === "assistant" || !/"thought"|"history"/.test(m.content)), "no earlier reasoning is written into a user turn");
+  assert.match(third[2]!.content, /"budget"/);
+});
+
+test("an exchange always alternates and ends with the user", () => {
+  const turns = [{ turn: 0, action: "read", full: "section", reply: null }, { turn: 1, action: "search", full: "found", reply: '{"action":"search"}' },
+    { turn: 2, action: "invalid", full: "no reply", reply: null }, { turn: 3, action: "add", full: "added", reply: '{"action":"add"}' }];
+  const messages = exchange({ company: "X" }, turns, { budget: 1 });
+  assert.deepEqual(messages.map(m => m.role), ["user", "assistant", "user", "assistant", "user"]);
+  assert.match(messages[2]!.content, /found[\s\S]*no reply/);
 });

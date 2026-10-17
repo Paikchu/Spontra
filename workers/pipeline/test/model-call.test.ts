@@ -50,6 +50,13 @@ test("a key that is not scoped to a workspace names the configured workspace on 
   assert.equal(none[0]!.headers.get("anthropic-workspace-id"), null);
 });
 
+test("a conversation is sent as its own turns, in place of the payload's single message", async () => {
+  const { fetcher, requests } = fakeFetch(sse([start(), ...text(0, "{}"), ...end("end_turn")]));
+  const conversation = [{ role: "user" as const, content: "task" }, { role: "assistant" as const, content: '{"action":"read"}' }, { role: "user" as const, content: "result" }];
+  await callWorkerSecModel(env, fetcher, "business-tree-1-2", "Agent.", { state: 1 }, undefined, undefined, true, { conversation });
+  assert.deepEqual(requests[0]!.body.messages, conversation);
+});
+
 test("Haiku has no server-side fallback, so its requests carry none", async () => {
   const { fetcher, requests } = fakeFetch(sse([start("claude-haiku-5-5"), ...text(0, "{}"), ...end("end_turn")]));
   await callWorkerSecModel(env, fetcher, "library-cards", "Cards.", {}, "claude-haiku-5-5");

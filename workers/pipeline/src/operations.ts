@@ -654,6 +654,12 @@ export async function callWorkerSecModel(
 export type ModelCallTuning = {
   maxTokens?: number; reasoning?: ReasoningEffort; onMetrics?: (metrics: Readonly<Record<string, unknown>>) => void;
   ticker?: string; runId?: string; kind?: string;
+  /**
+   * A multi-turn exchange, oldest first, ending with a user message: the agent's own earlier replies as assistant turns
+   * and what came back as user turns. It replaces the single user message built from `payload`. An agent loop must send
+   * its past turns this way: written into one user message they read as a fabricated transcript, which Claude declines.
+   */
+  conversation?: Array<{ role: "user" | "assistant"; content: string }>;
 };
 
 async function requestWorkerSecModelContent(
@@ -665,7 +671,7 @@ async function requestWorkerSecModelContent(
   modelOverride?: string,
   executionBudgetMs = SEC_MODEL_EXECUTION_BUDGET_MS,
   jsonMode = true,
-  options?: Partial<ModelRequestOptions> & Pick<ModelCallTuning, "onMetrics" | "reasoning" | "ticker" | "runId" | "kind">,
+  options?: Partial<ModelRequestOptions> & Pick<ModelCallTuning, "onMetrics" | "reasoning" | "ticker" | "runId" | "kind" | "conversation">,
 ): Promise<string> {
   const apiKey = await resolveWorkerModelKey(env, fetcher);
   const started = Date.now();
@@ -690,7 +696,9 @@ async function requestWorkerSecModelContent(
     },
   });
   try {
-  const messages: Anthropic.Beta.BetaMessageParam[] = [{ role: "user", content: JSON.stringify(payload) }];
+  const messages: Anthropic.Beta.BetaMessageParam[] = options?.conversation?.length
+    ? options.conversation.map(m => ({ role: m.role, content: m.content }))
+    : [{ role: "user", content: JSON.stringify(payload) }];
   if (options?.continuation) messages.push(
     { role: "assistant", content: options.continuation },
     { role: "user", content: "The response was interrupted. Continue this exact JSON at the next character, including inside an unfinished string. Output only the missing suffix: no prefix repetition, no markdown. Preserve all completed content and evidence references. Finish the entire required object." },

@@ -19,8 +19,8 @@ import { treeLibrary } from "../filing-library/tree-source.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
 
 /** Changing the prompt, the harness or the output contract researches every company once more. */
-/** v7 is v6's rules again: every v6 run failed before its first model reply (no workspace named), so each company runs once more. */
-export const BUSINESS_TREE_VERSION = "business-tree.react.v7";
+/** v8 sends the loop as a real conversation: v7 packed past turns into one user message, which Claude declined as a fabricated transcript. */
+export const BUSINESS_TREE_VERSION = "business-tree.react.v8";
 export const businessTreeCacheKey = (ticker: string) => `business-tree:v1:${ticker}`;
 export type BusinessTreeParams = { ticker: string; fingerprint: string };
 
@@ -79,8 +79,8 @@ export async function executeBusinessTreeWorkflow(params: BusinessTreeParams, st
     // SEC filings are read from the filing library; the web search is left for vendor pages.
     filingLibrary: treeLibrary(requireDb(env), params.ticker, input.filings),
     // A reply that is not JSON is the model's turn gone wrong, answered in the next observation; transport errors still retry the step.
-    model: async (stage, system, payload) => {
-      try { return await callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, 5 * 60_000, true, { reasoning: reasoningFor(env, "tree"), ticker: params.ticker, runId }); }
+    model: async (stage, system, payload, conversation) => {
+      try { return await callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, 5 * 60_000, true, { reasoning: reasoningFor(env, "tree"), ticker: params.ticker, runId, conversation }); }
       catch (error) { if (error instanceof SecModelOutputError) return { action: "invalid", error: `${error.code}: ${error.message}`.slice(0, 300) }; throw error; }
     },
     stage: (name, callback) => step.do(`tree-${name}`, callback),
