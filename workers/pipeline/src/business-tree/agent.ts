@@ -21,12 +21,17 @@ export type TreeLibrary = {
   /** The annual report's own section on one disclosed business, verbatim. */
   businessSection(names: string[], maxChars: number): Promise<{ url: string; title: string; text: string } | null>;
 };
-/** One model turn. A reply that is not a JSON object comes back as `{ action: "invalid" }` rather than failing the run. */
+/**
+ * One model turn. A reply that is not a JSON object comes back as `{ action: "invalid", error }` rather than failing the
+ * run; `error` says what the provider or the parser returned.
+ */
 export type TreeModel = (stage: string, system: string, payload: unknown) => Promise<Record<string, unknown>>;
 type Stage = <T>(name: string, callback: () => Promise<T>) => Promise<T>;
 
 /** Per business: turns of think → act, and how many of them may reach the network. */
 export const TREE_BUDGET = { turns: 16, searches: 6, reads: 6 } as const;
+/** Replies in a row that are not a decision before the run stops: then the provider is failing, not the model's turn. */
+const FAILED_REPLIES = 3;
 const READ_CHARS = 6_000, SNIPPET_CHARS = 400, FULL_OBSERVATIONS = 3, CLIPPED_OBSERVATION = 500;
 /** Forums, video and quote aggregators describe nothing a filing or vendor page would not. */
 const EXCLUDED = ["reddit.com", "youtube.com", "quora.com", "x.com", "twitter.com", "facebook.com", "tiktok.com", "ycharts.com", "macrotrends.net", "stocktwits.com"];
@@ -170,7 +175,7 @@ async function researchBranch(ctx: BranchContext): Promise<{ branch: TreeBranch;
   const turns: Turn[] = [];
   const used = { searches: 0, reads: 0 };
   const queries = new Set<string>();
-  let refusedFinish = false, askedDepth = false;
+  let refusedFinish = false, askedDepth = false, failedReplies = 0;
   // The annual report's own section on this business, read once from the library before the first turn; it costs no read.
   if (ctx.filingLibrary) {
     // A company with one disclosed business is that business: its annual report describes it under the company's name.
@@ -197,7 +202,12 @@ async function researchBranch(ctx: BranchContext): Promise<{ branch: TreeBranch;
       tree: outline(label, rootSummary, drafts), sources: sourceList(library), history: history(turns), budget: left,
       ...(left.turnsLeft <= 2 ? { notice: "The budget is almost spent: add what you have verified to the tree, then finish." } : {}),
     };
-    const decision = readDecision(await stage(`${prefix}-t${turn}-think`, () => ctx.model(`business-tree-${index + 1}-${turn}`, SYSTEM, payload)));
+    const reply = await stage(`${prefix}-t${turn}-think`, () => ctx.model(`business-tree-${index + 1}-${turn}`, SYSTEM, payload));
+    const decision = readDecision(reply);
+    // Empty or cut-off replies in a row are the provider failing (overload, a refusal, a broken stream): stop with its
+    // own words, so the run is retried later and the cause is on record, instead of spending the budget on nothing.
+    failedReplies = decision.action === "invalid" ? failedReplies + 1 : 0;
+    if (failedReplies >= FAILED_REPLIES) throw new Error(`Business tree for ${label}: ${FAILED_REPLIES} model replies in a row failed; last: ${typeof reply.error === "string" ? reply.error : "not a JSON object"}`);
     let observation: string;
     let done = false;
     switch (decision.action) {
