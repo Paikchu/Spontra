@@ -41,6 +41,15 @@ test("a model call streams one JSON object from the Messages API with effort, ca
   assert.deepEqual(request!.body.messages, [{ role: "user", content: '{"ticker":"MSFT"}' }]);
 });
 
+test("a key that is not scoped to a workspace names the configured workspace on every request", async () => {
+  const { fetcher, requests } = fakeFetch(sse([start(), ...text(0, "{}"), ...end("end_turn")]));
+  await callWorkerSecModel({ ...env, ANTHROPIC_WORKSPACE_ID: "wrkspc_test" } as SecPipelineEnv, fetcher, "findings-write", "W.", {});
+  assert.equal(requests[0]!.headers.get("anthropic-workspace-id"), "wrkspc_test");
+  const { fetcher: plain, requests: none } = fakeFetch(sse([start(), ...text(0, "{}"), ...end("end_turn")]));
+  await callWorkerSecModel(env, plain, "findings-write", "W.", {});
+  assert.equal(none[0]!.headers.get("anthropic-workspace-id"), null);
+});
+
 test("Haiku has no server-side fallback, so its requests carry none", async () => {
   const { fetcher, requests } = fakeFetch(sse([start("claude-haiku-5-5"), ...text(0, "{}"), ...end("end_turn")]));
   await callWorkerSecModel(env, fetcher, "library-cards", "Cards.", {}, "claude-haiku-5-5");

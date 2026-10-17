@@ -15,6 +15,7 @@
     "SEC_USER_AGENT": "earning-report-analysis/1.0 max.zhangyuchen@gmail.com",
     "SEC_ANALYSIS_MODEL": "claude-opus-5-5",
     "SEC_REASONING_MODEL": "claude-opus-5-5",
+    "ANTHROPIC_WORKSPACE_ID": "wrkspc_01MuPDZhtXL2crDR9yxgSCqg",
     // Management guidance is enabled; ALPHA_VANTAGE_API_KEY (transcripts) is an optional secret.
     "GUIDANCE_ENABLED": "true",
     "FINDINGS_ENABLED": "true",

@@ -115,6 +115,8 @@ export type SecPipelineEnv = SecCronEnv & AnalysisReadEnv & {
   SEC_FILINGS: R2BucketLike;
   SEC_USER_AGENT: string;
   ANTHROPIC_API_KEY?: string;
+  /** The Claude workspace the key belongs to; a key not scoped to a workspace must name one on every request. */
+  ANTHROPIC_WORKSPACE_ID?: string;
   SEC_ANALYSIS_MODEL?: string;
   /** Optional stronger model for planning, review and synthesis. Unset means one model everywhere. */
   SEC_REASONING_MODEL?: string;
@@ -677,7 +679,7 @@ async function requestWorkerSecModelContent(
   // Pings count as liveness: an adaptive-thinking model can think for minutes without emitting a visible delta.
   let liveAt = Date.now();
   const client = new Anthropic({
-    apiKey, maxRetries: 0, timeout: executionBudgetMs,
+    apiKey, maxRetries: 0, timeout: executionBudgetMs, defaultHeaders: anthropicWorkspaceHeaders(env.ANTHROPIC_WORKSPACE_ID),
     fetch: async (input, init) => {
       const response = await fetcher(input, init);
       if (!response.body) return response;
@@ -757,6 +759,12 @@ async function requestWorkerSecModelContent(
 
 /** The models that accept server-side `fallbacks` on the Claude API; Haiku has none. */
 const SERVER_FALLBACK_MODELS = /^claude-(fable-5-1|opus-5-5|opus-5|sonnet-5-5)$/;
+
+/** `anthropic-workspace-id` when a workspace is configured; an API key that is not scoped to one is refused without it. */
+export function anthropicWorkspaceHeaders(workspaceId: string | undefined): Record<string, string> {
+  const id = workspaceId?.trim();
+  return id ? { "anthropic-workspace-id": id } : {};
+}
 
 export async function resolveWorkerModelKey(env: SecPipelineEnv, fetcher: typeof fetch = fetch): Promise<string> {
   void fetcher;

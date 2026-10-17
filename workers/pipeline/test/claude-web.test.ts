@@ -69,3 +69,14 @@ test("tool errors and HTTP errors become web search errors the callers already h
   await assert.rejects(denied.web.search({ query: "q" }), (e) => e instanceof WebSearchError && e.httpStatus === 400 && !e.retryable);
   assert.equal(denied.records[0]!.error, "http:400");
 });
+
+test("web search names the configured workspace, which a key not scoped to one requires", async () => {
+  const headers: Headers[] = [];
+  const fetcher = (async (_: RequestInfo | URL, init?: RequestInit) => {
+    headers.push(new Headers(init?.headers));
+    return new Response(JSON.stringify(message([{ type: "text", text: "done" }])), { status: 200, headers: { "content-type": "application/json" } });
+  }) as typeof fetch;
+  const web = new ClaudeWebProvider({ apiKey: "sk-test", workspaceId: "wrkspc_test", model: "claude-haiku-5-5", effort: "low", fetcher });
+  await web.search({ query: "Oracle OCI revenue" }).catch(() => null);
+  assert.equal(headers[0]?.get("anthropic-workspace-id"), "wrkspc_test");
+});

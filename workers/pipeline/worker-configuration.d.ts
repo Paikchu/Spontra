@@ -14,6 +14,7 @@ interface __BaseEnv_Env {
 	SEC_USER_AGENT: "earning-report-analysis/1.0 max.zhangyuchen@gmail.com";
 	SEC_ANALYSIS_MODEL: "claude-opus-5-5";
 	SEC_REASONING_MODEL: "claude-opus-5-5";
+	ANTHROPIC_WORKSPACE_ID: "wrkspc_01MuPDZhtXL2crDR9yxgSCqg";
 	GUIDANCE_ENABLED: "true";
 	FINDINGS_ENABLED: "true";
 	GUIDANCE_DECK_SEARCH: "true";
@@ -44,5 +45,5 @@ type StringifyValues<EnvType extends Record<string, unknown>> = {
 	[Binding in keyof EnvType]: EnvType[Binding] extends string ? EnvType[Binding] : string;
 };
 declare namespace NodeJS {
-	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "SEC_DATA_TICKERS" | "SEC_AI_TICKERS" | "SEC_AI_ENABLED" | "SEC_DATA_COLLECTION_ENABLED" | "SEC_USER_AGENT" | "SEC_ANALYSIS_MODEL" | "SEC_REASONING_MODEL" | "GUIDANCE_ENABLED" | "FINDINGS_ENABLED" | "GUIDANCE_DECK_SEARCH" | "GUIDANCE_DAILY_MODEL_CALLS" | "GUIDANCE_DAILY_TRANSCRIPT_CALLS" | "TRANSCRIPTS_ENABLED" | "BUSINESS_TREE_TICKERS" | "ANTHROPIC_API_KEY">> {}
+	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "SEC_DATA_TICKERS" | "SEC_AI_TICKERS" | "SEC_AI_ENABLED" | "SEC_DATA_COLLECTION_ENABLED" | "SEC_USER_AGENT" | "SEC_ANALYSIS_MODEL" | "SEC_REASONING_MODEL" | "ANTHROPIC_WORKSPACE_ID" | "GUIDANCE_ENABLED" | "FINDINGS_ENABLED" | "GUIDANCE_DECK_SEARCH" | "GUIDANCE_DAILY_MODEL_CALLS" | "GUIDANCE_DAILY_TRANSCRIPT_CALLS" | "TRANSCRIPTS_ENABLED" | "BUSINESS_TREE_TICKERS" | "ANTHROPIC_API_KEY">> {}
 }

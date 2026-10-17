@@ -7,6 +7,8 @@ import { normalizeContent, normalizeSearch, publicUrl } from "./validation.ts";
 export type WebCallRecord = { stage: "web-search" | "web-fetch"; model: string; reasoning: string; usage: unknown; error?: string; durationMs: number; searchCalls: number };
 export type ClaudeWebOptions = {
   apiKey: string; model: string; effort: Anthropic.OutputConfig["effort"];
+  /** Sent as `anthropic-workspace-id`; required when the key is not scoped to a workspace. */
+  workspaceId?: string;
   fetcher?: typeof fetch; record?: (call: WebCallRecord) => Promise<void>;
 };
 
@@ -37,7 +39,9 @@ export class ClaudeWebProvider implements SearchProvider {
   constructor(options: ClaudeWebOptions) {
     this.options = options;
     const fetcher = options.fetcher ?? fetch;
-    this.client = new Anthropic({ apiKey: options.apiKey, maxRetries: 2, timeout: 120_000, fetch: (input, init) => fetcher(input, init) });
+    const workspace = options.workspaceId?.trim();
+    this.client = new Anthropic({ apiKey: options.apiKey, maxRetries: 2, timeout: 120_000, fetch: (input, init) => fetcher(input, init),
+      defaultHeaders: workspace ? { "anthropic-workspace-id": workspace } : {} });
   }
 
   private async call(stage: WebCallRecord["stage"], params: Omit<Anthropic.MessageCreateParamsNonStreaming, "model" | "output_config">): Promise<Anthropic.Message> {

@@ -12,7 +12,7 @@ export function researchSearchConfigured(env: Pick<SecPipelineEnv, "DB" | "ANTHR
 export function researchSearch(env: SecPipelineEnv) {
   if (!env.DB || !env.ANTHROPIC_API_KEY) throw new Error("research_search_not_configured");
   const provider = new ClaudeWebProvider({
-    apiKey: env.ANTHROPIC_API_KEY, model: modelFor(env, "web"), effort: reasoningFor(env, "web"),
+    apiKey: env.ANTHROPIC_API_KEY, workspaceId: env.ANTHROPIC_WORKSPACE_ID, model: modelFor(env, "web"), effort: reasoningFor(env, "web"),
     // Every call, cache misses only, is a row in the cost ledger beside the model calls.
     record: call => recordAiUsage(env, aiUsageFromMetrics({ stage: call.stage, model: call.model, reasoning: call.reasoning, usage: call.usage, ...(call.error ? { error: call.error } : {}) },
       { at: new Date(Date.now() - call.durationMs).toISOString(), durationMs: call.durationMs, provider: "anthropic", kind: "web", searchCalls: call.searchCalls })),
