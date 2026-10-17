@@ -79,7 +79,11 @@ export async function archiveFilingDisclosures(env: DisclosureArchiveEnv, ticker
  * older history; the read API projects whatever is still stale on demand until this catches up.
  */
 export async function refreshStaleProjections(env: DisclosureArchiveEnv, limit = 3, causeId: string | null = null): Promise<Array<{ ticker: string; accession: string }>> {
-  const rows = await env.DB.prepare("SELECT payload FROM sec_cache WHERE cache_key LIKE 'sec:disclosure-audit:v1:%' ORDER BY fetched_at DESC LIMIT 400").bind().all<{ payload: string }>();
+  // Stale is decided in SQL, so a refreshed filing leaves the result and no row cap can hide one still waiting.
+  const rows = await env.DB.prepare(`SELECT json_remove(payload, '$.coverage') AS payload FROM sec_cache
+    WHERE cache_key LIKE 'sec:disclosure-audit:v1:%' AND ifnull(json_extract(payload, '$.capital.version'), '') <> ?
+      AND json_extract(payload, '$.rawKey') LIKE 'financial-disclosures/%'
+    ORDER BY json_extract(payload, '$.source.filedAt') DESC`).bind(CAPITAL_VERSION).all<{ payload: string }>();
   const stale: StoredAudit[] = [];
   for (const row of rows.results) {
     try {
@@ -155,21 +159,24 @@ export async function pruneSupersededArchives(env: { DB: D1Database; SEC_FILINGS
   return { scanned, deleted, finished };
 }
 
-/** The archive index for one company, newest first. Malformed rows are skipped, never repaired here. */
 /**
- * The company's newest archived documents by filing date. Archive time says nothing about recency: a history backfill
- * archives years-old filings after the newest ones, and must not push those out of the map's window.
+ * Every archived document of one company filed on or after `since`, newest filing first; malformed rows are skipped.
+ * The window is set by filing date and has no row cap: archive time says nothing about recency (a history backfill
+ * archives years-old filings after the newest ones), and a fixed count is exhausted by a foreign issuer's notices.
+ * The coverage inventory is left out, since no reader of the map needs it.
  */
-export async function readStoredAudits(db: D1Database, ticker: string): Promise<StoredAudit[]> {
-  const rows = await db.prepare("SELECT payload FROM sec_cache WHERE cache_key LIKE ? ORDER BY json_extract(payload, '$.source.filedAt') DESC, fetched_at DESC LIMIT 200")
-    .bind(disclosureAuditPrefix(ticker) + "%").all<{ payload: string }>();
+export async function readStoredAudits(db: D1Database, ticker: string, since: string): Promise<StoredAudit[]> {
+  const rows = await db.prepare(`SELECT json_remove(payload, '$.coverage') AS payload FROM sec_cache
+    WHERE cache_key LIKE ? AND json_extract(payload, '$.source.filedAt') >= ? ORDER BY json_extract(payload, '$.source.filedAt') DESC, fetched_at DESC`)
+    .bind(disclosureAuditPrefix(ticker) + "%", since).all<{ payload: string }>();
   const audits: StoredAudit[] = [];
   for (const row of rows.results) { try { const r = JSON.parse(row.payload) as StoredAudit; if (r.ticker === ticker && r.source?.ticker === ticker) audits.push(r); } catch { /* skipped */ } }
   return audits;
 }
 
+/** The company's 200 newest archived documents by filing date, for the admin and the maintenance audit. */
 export async function listFilingDisclosureAudits(db: D1Database, ticker: string): Promise<DisclosureAuditSummary[]> {
-  const rows = await db.prepare("SELECT payload FROM sec_cache WHERE cache_key LIKE ? ORDER BY fetched_at DESC LIMIT 200")
+  const rows = await db.prepare("SELECT payload FROM sec_cache WHERE cache_key LIKE ? ORDER BY json_extract(payload, '$.source.filedAt') DESC, fetched_at DESC LIMIT 200")
     .bind(disclosureAuditPrefix(ticker) + "%").all<{payload: string}>();
   return rows.results.map(row => JSON.parse(row.payload) as StoredAudit).filter(row => row.ticker === ticker).map(summary);
 }

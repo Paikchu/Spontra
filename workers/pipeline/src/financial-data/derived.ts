@@ -55,6 +55,19 @@ const industryOf = (flow: PublicBusinessFlow): Industry => {
   return model === 'financial' || model === 'insurance' ? model : 'standard';
 };
 
+/** The oldest filing date any reader of the snapshot looks at: capital reaches three years behind the latest quarter. */
+export function auditWindowStart(latestPeriodEnd: string): string {
+  const start = new Date(latestPeriodEnd);
+  start.setUTCFullYear(start.getUTCFullYear() - 3);
+  return start.toISOString().slice(0, 10);
+}
+
+/** Accessions the published flow cites that the archive read did not return. */
+export function unarchivedSources(flow: PublicBusinessFlow, audits: StoredAudit[]): string[] {
+  const read = new Set(audits.map(r => r.source.accessionNumber));
+  return [...new Set(flow.quarters.flatMap(q => q.sources.map(s => s.id)).filter(id => /^\d{10}-\d{2}-\d{6}$/.test(id) && !read.has(id)))];
+}
+
 const issuerOf = (r: StoredAudit) => r.source.documentUrl.match(/\/Archives\/edgar\/data\/(\d+)\//)?.[1];
 const daysBetween = (a: string, b: string) => (Date.parse(b) - Date.parse(a)) / 86400000;
 
@@ -137,13 +150,15 @@ async function parseFiling(env: DisclosureArchiveEnv, record: StoredAudit, partn
  * Quarters are taken in candidate order, newest-preferred, until eight periods are covered. A rebuilt snapshot is
  * committed together with its `map.derived` event; an unchanged one emits nothing.
  */
-export async function deriveCompany(env: DisclosureArchiveEnv, ticker: string, budget = PARSE_BUDGET_BYTES, causeId: string | null = null): Promise<{ spent: number; built: boolean; pending: number }> {
+export async function deriveCompany(env: DisclosureArchiveEnv, ticker: string, budget = PARSE_BUDGET_BYTES, causeId: string | null = null): Promise<{ spent: number; built: boolean; pending: number; unarchived?: string[] }> {
   const repository = new D1SecRepository(env.DB);
   const publication = await readCompletePublicationForTicker(env.DB, ticker);
   const flow = publication.status === 'ready' ? publication.flow : null;
   if (!flow) return { spent: 0, built: false, pending: 0 };
-  const audits = await readStoredAudits(env.DB, ticker);
   const industry = industryOf(flow), latest = latestOf(flow)!;
+  const audits = await readStoredAudits(env.DB, ticker, auditWindowStart(latest.periodEnd));
+  // The filings the published pair rests on must be among those read; any missing one is reported with the run.
+  const unarchived = unarchivedSources(flow, audits);
   const cutoff = new Date(latest.periodEnd);
   cutoff.setUTCFullYear(cutoff.getUTCFullYear() - 2);
 
@@ -181,7 +196,8 @@ export async function deriveCompany(env: DisclosureArchiveEnv, ticker: string, b
   const capitalInputs = audits.filter(r => r.capital).map(r => `${r.documentId}:${r.contentSha256}:${r.capital!.version}`);
   const inputs = JSON.stringify([REPORT_QUARTERS_VERSION, flowKey(flow), used, pending, capitalInputs]);
   const previous = await repository.getCache<MapDerived>(snapshotKey(ticker));
-  if (previous?.payload.inputs === inputs) return { spent, built: false, pending };
+  const gap = unarchived.length ? { unarchived } : {};
+  if (previous?.payload.inputs === inputs) return { spent, built: false, pending, ...gap };
   const snapshot: MapDerived = {
     ticker, flowKey: flowKey(flow), inputs, builtAt: new Date().toISOString(),
     reports: readReportHistory({ ...flow, quarters: [...byPeriod.values()] }, ticker) ?? flow,
@@ -193,7 +209,7 @@ export async function deriveCompany(env: DisclosureArchiveEnv, ticker: string, b
       .bind(snapshotKey(ticker), JSON.stringify(snapshot), snapshot.builtAt),
     outboxStatement(env.DB, { type: 'map.derived', ticker, causeId }, snapshot.builtAt),
   ]);
-  return { spent, built: true, pending };
+  return { spent, built: true, pending, ...gap };
 }
 
 /** The prepared snapshot for this publication, or null until the `map-derive` task has assembled it. */
