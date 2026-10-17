@@ -33,7 +33,9 @@ function resolve(column: PlacedNode[], ideal: Map<string, number>, recentre: boo
   if (!recentre) return;
   const finite = column.filter(n => Number.isFinite(ideal.get(n.name) ?? NaN));
   if (!finite.length) return;
-  const shift = finite.reduce((sum, n) => sum + ideal.get(n.name)! - n.y, 0) / finite.length;
+  // Weighted by height: the wide bands stay level and the thin ones take the bend that label spacing forces.
+  const weight = finite.reduce((sum, n) => sum + n.h, 0);
+  const shift = finite.reduce((sum, n) => sum + (ideal.get(n.name)! - n.y) * n.h, 0) / weight;
   for (const n of column) n.y += shift;
 }
 
@@ -83,7 +85,8 @@ export function layoutInfographic(graph: FinancialGraph, labelWidth: (n: PlacedN
   const columnOf = new Map(depths.map((d, i) => [d, i]));
   const last = depths.length - 1;
   const revenue = graph.nodes.find(n => n.name === "revenue");
-  const revenueColumn = graph.signed ? -1 : revenue ? columnOf.get(revenue.depth)! : 0;
+  // The business tree always hangs left of revenue, in signed statements too; only a statement without revenue has none.
+  const revenueColumn = revenue ? columnOf.get(revenue.depth)! : graph.signed ? -1 : 0;
   const scale = g.revenueHeight / Math.max(revenue?.value ?? 0, ...graph.nodes.map(n => n.value), 1e-9);
 
   const nodes: PlacedNode[] = graph.nodes.map(n => {
@@ -102,19 +105,25 @@ export function layoutInfographic(graph: FinancialGraph, labelWidth: (n: PlacedN
 
   // Revenue and the business tree to its left: each child sits beside its slot in the parent.
   if (revenue) byName.get("revenue")!.y = 0;
-  // A deficit that pays costs revenue cannot reach at all starts beside revenue, below it.
+  // Below revenue: first what the business tree feeds besides revenue (eliminations, the rest of the segment total),
+  // so their thin bands run beside revenue's; then a deficit that pays costs revenue cannot reach at all.
   if (revenue && revenueColumn >= 0) {
+    const fromTree = (n: PlacedNode) => incoming(n.name).some(l => byName.get(l.source)!.column < revenueColumn) ? 0 : 1;
     let below = byName.get("revenue")!;
-    for (const n of columns[revenueColumn].filter(n => n.name !== "revenue")) { n.y = below.y + below.h + gapBetween(below, n, g); below = n; }
+    for (const n of columns[revenueColumn].filter(n => n.name !== "revenue").sort((a, b) => fromTree(a) - fromTree(b))) { n.y = below.y + below.h + gapBetween(below, n, g); below = n; }
   }
   for (let c = revenueColumn - 1; c >= 0; c--) {
     const ideal = new Map<string, number>();
     for (const n of columns[c]) {
-      const link = outgoing(n.name)[0];
+      // A node lines up with its widest band, so the main path runs level; a small elimination never sets its place.
+      const leaving = outgoing(n.name);
+      const link = leaving.reduce<typeof leaving[number] | undefined>((widest, l) => !widest || l.value > widest.value ? l : widest, undefined);
       const target = link && byName.get(link.target);
-      if (!target) continue;
+      if (!link || !target) continue;
       const before = incoming(target.name).slice(0, incoming(target.name).indexOf(link)).reduce((sum, l) => sum + linkHeight(l.value), 0);
-      ideal.set(n.name, target.y + before);
+      // Bands leave a node in the order of their targets, so those above this one's target leave above it.
+      const above = leaving.filter(l => l !== link && byName.get(l.target)!.y < target.y).reduce((sum, l) => sum + linkHeight(l.value), 0);
+      ideal.set(n.name, target.y + before - above);
     }
     columns[c].sort((a, b) => (ideal.get(a.name) ?? 0) - (ideal.get(b.name) ?? 0));
     resolve(columns[c], ideal, true, g);
