@@ -65,7 +65,9 @@ export async function findingsInput(env: SecPipelineEnv, ticker: string): Promis
   const context = overview ? [overview.headline, overview.introduction, ...overview.highlights.map(h => `${h.title}: ${h.body}`), ...(overview.deepDive?.sections ?? []).flatMap(s => [s.title, ...s.paragraphs.map(p => p.text)])].join("\n").slice(0, CONTEXT_CHARS) : null;
   // The periods the snapshot covers and the newest backlog, not when the snapshot was rebuilt: a daily re-collection
   // that changes nothing must not rewrite the findings.
-  const fingerprint = await sha256(JSON.stringify({ version: FINDINGS_VERSION, lens: LENS_VERSION, ticker, periodEnd: newest.periodEnd, guidance: guidance?.updatedAt ?? null, analysis: analysis?.generatedAt ?? null,
+  // Guidance by what it says: a republish that only stamps a new time or moves a transcript's coverage status is not new input.
+  const guidanceContent = guidance ? await sha256(JSON.stringify([guidance.items, guidance.sources])) : null;
+  const fingerprint = await sha256(JSON.stringify({ version: FINDINGS_VERSION, lens: LENS_VERSION, ticker, periodEnd: newest.periodEnd, guidance: guidanceContent, analysis: analysis?.generatedAt ?? null,
     quarters: quarters.map(q => q.periodEnd).sort(), capital: capital?.quarters.map(q => q.periodEnd).sort() ?? [], rpo: capital?.quarters.find(q => q.periodEnd === newest.periodEnd)?.rpo?.total ?? null }));
   return { data, ledger, context, fingerprint };
 }

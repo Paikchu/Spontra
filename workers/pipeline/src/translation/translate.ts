@@ -214,7 +214,8 @@ export async function publishTables(db: D1Database, ticker: string, locale: Loca
   const known = await memory(db, locale, hashes);
   const at = new Date().toISOString();
   const statements: D1PreparedStatement[] = [];
-  let translated = 0, total = 0;
+  let translated = 0, total = 0, changed = false;
+  const repository = new D1SecRepository(db);
   for (const source of sources) {
     const strings: Record<string, string> = {};
     for (const text of source.strings) {
@@ -223,9 +224,14 @@ export async function publishTables(db: D1Database, ticker: string, locale: Loca
     }
     translated += Object.keys(strings).length; total += source.strings.length;
     const table: StoredTable = { locale, version: TRANSLATION_VERSION, sources: await sha256(source.strings.join("\u0000")), strings, at };
+    const stored = (await repository.getCache<StoredTable>(tableKey(locale, source.resource, ticker, source.scope)).catch(() => null))?.payload;
+    if (stored && stored.version === table.version && stored.sources === table.sources && JSON.stringify(stored.strings) === JSON.stringify(table.strings)) continue;
+    changed = true;
     statements.push(db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at")
       .bind(tableKey(locale, source.resource, ticker, source.scope), JSON.stringify(table), at));
   }
+  // Readers refetch on this event: a run that changed no table says nothing.
+  if (!changed) return { tables: sources.length, translated, total };
   statements.push(outboxStatement(db, { type: "translations.published", ticker }, at));
   await db.batch(statements);
   return { tables: sources.length, translated, total };

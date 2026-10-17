@@ -92,9 +92,11 @@ export async function recoverCompanyAnalysis(env: SecCronEnv, ticker: string, no
       try {
         const state = (await (await env.COMPANY_ANALYSIS_WORKFLOW.get(execution.workflowInstanceId)).status()).status;
         if (["errored", "terminated", "complete"].includes(state)) await repository.markStoppedExecution(execution.analysisId, execution.workflowInstanceId, new Date(now).toISOString());
-      } catch {
-        // Unknown platform state is not permission to launch a duplicate running Agent.
-        console.warn(JSON.stringify({ event: "company-analysis-status-unavailable", analysisId: execution.analysisId }));
+      } catch (error) {
+        // An instance the platform says does not exist cannot be running; any other unknown state is not permission
+        // to launch a duplicate running Agent.
+        if (/not.?found|does not exist|no such instance/i.test(String(error))) await repository.markStoppedExecution(execution.analysisId, execution.workflowInstanceId, new Date(now).toISOString());
+        else console.warn(JSON.stringify({ event: "company-analysis-status-unavailable", analysisId: execution.analysisId }));
       }
     }
   }

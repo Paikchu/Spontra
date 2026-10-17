@@ -348,7 +348,8 @@ button { cursor: pointer; }
 .fc-mind-gloss { fill: var(--muted-foreground); }
 .fc-mind-pill rect { fill: color-mix(in srgb, var(--flow-profit) 14%, var(--surface)); stroke: color-mix(in srgb, var(--flow-profit) 70%, var(--border)); stroke-width: 1.1; vector-effect: non-scaling-stroke; }
 .fc-mind-pill text { font-weight: 600; fill: color-mix(in srgb, var(--flow-profit) 55%, var(--foreground)); }
-.fc-mind-coin { fill: var(--flow-profit); }
+/* A neutral marker: a pill is a way of earning, not an amount, so it carries no currency sign. */
+.fc-mind-coin { fill: var(--flow-profit); font-size: .72em; }
 .fc-mind-item:hover rect { stroke: var(--foreground); }
 .fc-mind-item:focus-visible rect { stroke: var(--focus-ring); stroke-width: 2.5; }
 .fc-mind-item[data-picked] rect { stroke: var(--foreground); stroke-width: 2; }

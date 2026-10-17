@@ -1,6 +1,18 @@
 import { parseModelJson, SecModelOutputError } from "./model-stream.ts";
 import { SEC_MODEL_MAX_CONTENT_BYTES, SEC_MODEL_OUTPUT_TOKENS, SEC_MODEL_RECOVERY_CALLS } from "./retry-policy.ts";
 
+/**
+ * "This model's maximum context length is 131072 tokens. However, you requested 140000 tokens (120000 in the messages,
+ * 20000 in the completion)": the window and the prompt's share, or null for any other 400. Without the prompt's share
+ * the completion cannot be sized, and the error reads as an overflow of unknown size.
+ */
+export function contextOverflow(message: string): { window: number; prompt: number } | null {
+  if (!/context.{0,10}length|context window/i.test(message)) return null;
+  const window = Number(message.match(/context.{0,10}(?:length|window)[^\d]{0,20}([\d,]{4,8})/i)?.[1]?.replaceAll(",", ""));
+  const prompt = Number(message.match(/([\d,]{3,8})\s*(?:tokens\s*)?in (?:the )?messages/i)?.[1]?.replaceAll(",", ""));
+  return Number.isFinite(window) && window > 0 ? { window, prompt: Number.isFinite(prompt) ? prompt : window } : null;
+}
+
 export class SecModelHttpError extends Error {
   readonly status: number;
   readonly retryAfterMs: number;
@@ -93,7 +105,15 @@ export async function recoverModelJson(options: RecoveryOptions): Promise<Record
         }
       } else if (error instanceof SecModelHttpError) {
         if ([401, 403, 404].includes(error.status)) throw error;
-        if (error.status === 400 && /max.?tokens|output.{0,20}(limit|tokens)|maximum.{0,30}tokens/i.test(error.message)) {
+        const context = error.status === 400 ? contextOverflow(error.message) : null;
+        if (context) {
+          // The prompt and the completion together exceed the model's window. Only the completion can shrink here:
+          // ask for what the window leaves, or stop now when the prompt alone nearly fills it.
+          const room = context.window - context.prompt - 256;
+          if (room < 1024 || room >= maxTokens) throw error;
+          maxTokens = room;
+          action = "fit_context_window";
+        } else if (error.status === 400 && /max.?tokens|output.{0,20}(limit|tokens)|maximum.{0,30}tokens/i.test(error.message)) {
           const limit = error.message.match(/(?:at most|maximum|max(?:imum)?(?:_tokens)?|limit)[^\d]{0,40}([\d,]{4,7})/i)?.[1];
           const supported = limit ? Number(limit.replaceAll(",", "")) : Math.floor(maxTokens / 2);
           maxTokens = Math.max(1024, Math.min(maxTokens - 1, supported));

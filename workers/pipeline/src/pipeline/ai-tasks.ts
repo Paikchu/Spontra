@@ -4,7 +4,7 @@ import { BUSINESS_TREE_VERSION, businessTreeCacheKey, businessTreeFingerprint } 
 import { COMPANY_ANALYSIS_PROMPT_VERSION } from "../company-analysis/contracts.ts";
 import { recoverCompanyAnalysis, startCompanyMemory } from "../core.ts";
 import { FINDINGS_VERSION, findingsFingerprint } from "../findings/workflow.ts";
-import { ANALYST_VERSION, analystFingerprint, dossierCacheKey } from "../analyst/workflow.ts";
+import { ANALYST_VERSION, analystFingerprint, dossierCacheKey, emptyDossierKey } from "../analyst/workflow.ts";
 import { findingsCacheKey } from "../findings/read.ts";
 import type { AiWorkflowBinding, SecPipelineEnv } from "../operations.ts";
 import type { AiRunKind } from "../../../../shared/analysis-contract/ai-runs-admin.ts";
@@ -69,7 +69,9 @@ export const AI_TASKS = {
     version: ANALYST_VERSION,
     async run(env, ticker, context): Promise<TaskOutcome> {
       if (env.ANALYST_ENABLED !== "true") return { status: "done", detail: { skipped: "analyst disabled" } };
-      return runWhenChanged(env, "analyst", "analyst", ticker, context, env.ANALYST_WORKFLOW, () => analystFingerprint(env, ticker), storedFingerprint(env, dossierCacheKey(ticker)));
+      // A run that composed nothing counts as written for its input; a published dossier clears that record.
+      const published = async () => await storedFingerprint(env, emptyDossierKey(ticker))() ?? await storedFingerprint(env, dossierCacheKey(ticker))();
+      return runWhenChanged(env, "analyst", "analyst", ticker, context, env.ANALYST_WORKFLOW, () => analystFingerprint(env, ticker), published);
     },
   },
 

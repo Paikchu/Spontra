@@ -19,7 +19,7 @@ import { treeLibrary } from "../filing-library/tree-source.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
 
 /** Changing the prompt, the harness or the output contract researches every company once more. */
-export const BUSINESS_TREE_VERSION = "business-tree.react.v4";
+export const BUSINESS_TREE_VERSION = "business-tree.react.v6";
 export const businessTreeCacheKey = (ticker: string) => `business-tree:v1:${ticker}`;
 export type BusinessTreeParams = { ticker: string; fingerprint: string };
 
@@ -32,15 +32,17 @@ export function treeTickersFor(env: Pick<SecPipelineEnv, "BUSINESS_TREE_TICKERS"
 const REGION = /americas|europe|emea|asia|pacific|china|japan|international|domestic|united\s?states|north\s?america|latin\s?america|geograph|region/i;
 
 /**
- * The businesses the map draws for the newest quarter: its top-level segments with the children the
- * statement discloses under them. Regions are left out, and statements drawn as a bank or an insurer
- * are not broken down here.
+ * The businesses the map draws for the newest quarter: its top-level segments with the children the statement discloses
+ * under them. Regions are left out only when every segment at that level is one (a company organised purely by geography
+ * sells the same lines everywhere); a company mixing regional and product segments (AMZN: North America, International,
+ * AWS) has each broken down. Statements drawn as a bank or an insurer are not broken down here.
  */
 export function treeBusinesses(flow: PublicBusinessFlow | null): { periodEnd: string; businesses: TreeBusiness[] } | null {
   const quarter = [...flow?.quarters ?? []].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd))[0];
   if (!quarter || quarter.incomeModel === "financial" || quarter.incomeModel === "insurance") return null;
-  const businesses = quarter.segments.filter(s => !REGION.test(`${s.id} ${s.name}`))
-    .map(s => ({ flowNodeId: s.id, name: s.name, children: (s.children ?? []).filter(c => !REGION.test(`${c.id} ${c.name}`)).map(c => ({ flowNodeId: c.id, name: c.name })) }));
+  const notAllRegions = <T extends { id: string; name: string }>(list: T[]) => list.every(s => REGION.test(`${s.id} ${s.name}`)) ? [] : list;
+  const businesses = notAllRegions(quarter.segments)
+    .map(s => ({ flowNodeId: s.id, name: s.name, children: notAllRegions(s.children ?? []).map(c => ({ flowNodeId: c.id, name: c.name })) }));
   return businesses.length ? { periodEnd: quarter.periodEnd, businesses: businesses.slice(0, 8) } : null;
 }
 

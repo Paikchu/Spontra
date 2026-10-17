@@ -29,7 +29,8 @@
     "admin:dev": "npm run dev --workspace @spontra/admin",
     "admin:build": "npm run build --workspace @spontra/admin",
     "admin:typecheck": "npm run typecheck --workspace @spontra/admin",
-    "admin:check": "wrangler deploy --config apps/admin/wrangler.jsonc --dry-run"
+    "admin:check": "wrangler deploy --config apps/admin/wrangler.jsonc --dry-run",
+    "test:admin": "node --experimental-strip-types --no-warnings --test apps/admin/test/*.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.135.0",

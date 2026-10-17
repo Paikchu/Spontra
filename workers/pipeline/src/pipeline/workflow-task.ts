@@ -24,6 +24,18 @@ export const failedInputKey = (task: string, ticker: string) => `pipeline:workfl
 export type FailedInput = { fingerprint: string; instanceId: string; failure: string; attempts: number; retryAt: string | null };
 /** Waits before each automatic retry of a run that failed on the same input; after the last one the run is a dead letter. */
 export const FAILED_INPUT_RETRY_WAITS_MS = [60 * 60_000, 6 * 60 * 60_000, 24 * 60 * 60_000] as const;
+/**
+ * A failure the Workflow declared final is retried anyway when the cause is the account, not the request: a model
+ * provider refusing for balance or billing (HTTP 402) is fixed by a top-up, after which the run must go again.
+ */
+const ACCOUNT_FAILURE = /\bHTTP 402\b|insufficient|balance|billing|payment required|quota/i;
+
+/** A retry the last failure scheduled and has not reached: the outcome to wait for it, whatever the input now is. */
+export async function pendingRetryOutcome(env: SecPipelineEnv, task: string, ticker: string, now: Date): Promise<TaskOutcome | null> {
+  const failed = (await new D1SecRepository(env.DB!).getCache<FailedInput>(failedInputKey(task, ticker)))?.payload;
+  const wait = failed?.retryAt ? Date.parse(failed.retryAt) - now.getTime() : 0;
+  return wait > 0 ? { status: "later", afterMs: wait, detail: { waiting: "retry of a failed run", retryAt: failed!.retryAt, attempts: failed!.attempts } } : null;
+}
 
 /**
  * Whether a run on this input may start now: null when it may (it never failed on this input, or its retry time has
@@ -51,7 +63,9 @@ export async function failedInputOutcome(env: SecPipelineEnv, task: string, tick
  */
 export async function driveWorkflow(env: SecPipelineEnv, key: string, binding: WorkflowBindingLike | undefined,
   start: () => Promise<{ id: string; params: unknown; fingerprint?: string } | TaskOutcome | null>,
-  options: { pollMs?: number; deadLetter?: DeadLetterTarget; trigger?: string | null } = {}): Promise<TaskOutcome> {
+  options: { pollMs?: number; deadLetter?: DeadLetterTarget; trigger?: string | null;
+    /** A completed instance can still have failed at its work (it records failures instead of throwing): the failure and the input it failed on, or null. */
+    verify?: (instanceId: string) => Promise<{ failure: string; fingerprint: string } | null> } = {}): Promise<TaskOutcome> {
   const pollMs = options.pollMs ?? 5 * 60_000;
   if (!binding) return { status: "done", detail: { skipped: "workflow not configured" } };
   const repository = new D1SecRepository(env.DB!);
@@ -65,22 +79,27 @@ export async function driveWorkflow(env: SecPipelineEnv, key: string, binding: W
       return { status: "later", afterMs: pollMs, detail: { instanceId: started.instanceId, workflow: state.status } };
     }
     await env.DB!.prepare("DELETE FROM sec_cache WHERE cache_key = ?").bind(cacheKey).run();
-    if (state.status === "complete") {
+    const verdict = state.status === "complete" && options.verify ? await options.verify(started.instanceId) : null;
+    if (state.status === "complete" && !verdict) {
+      // A verified success clears the failure it recovered from, so the next failure starts its retries afresh.
+      if (options.verify && options.deadLetter) await env.DB!.prepare("DELETE FROM sec_cache WHERE cache_key = ?").bind(failedInputKey(options.deadLetter.task, options.deadLetter.ticker)).run();
       // A run started from an older trigger: whatever arrived since is checked now, not at the next unrelated event.
       const retriggered = started.trigger !== undefined && started.trigger !== (options.trigger ?? null);
       if (!retriggered) return { status: "done", detail: { instanceId: started.instanceId, workflow: "complete" } };
     } else {
-      const failure = `Workflow ${started.instanceId} ${state.status}${errorText(state.error) ? `: ${errorText(state.error).slice(0, 300)}` : ""}`;
+      const failure = verdict ? `Workflow ${started.instanceId} complete with failures: ${verdict.failure.slice(0, 300)}`
+        : `Workflow ${started.instanceId} ${state.status}${errorText(state.error) ? `: ${errorText(state.error).slice(0, 300)}` : ""}`;
       if (!options.deadLetter) throw new Error(failure);
+      const fingerprint = verdict?.fingerprint ?? started.fingerprint;
       const { task, ticker, causeId } = options.deadLetter, at = new Date().toISOString();
-      const previous = started.fingerprint ? (await repository.getCache<FailedInput>(failedInputKey(task, ticker)))?.payload : undefined;
-      const attempts = previous?.fingerprint === started.fingerprint ? (previous?.attempts ?? 1) + 1 : 1;
-      const final = state.status === "terminated" || errorName(state.error) === "NonRetryableError";
-      const wait = !final && started.fingerprint ? FAILED_INPUT_RETRY_WAITS_MS[attempts - 1] : undefined;
+      const previous = fingerprint ? (await repository.getCache<FailedInput>(failedInputKey(task, ticker)))?.payload : undefined;
+      const attempts = previous?.fingerprint === fingerprint ? (previous?.attempts ?? 1) + 1 : 1;
+      const final = !verdict && (state.status === "terminated" || (errorName(state.error) === "NonRetryableError" && !ACCOUNT_FAILURE.test(errorText(state.error))));
+      const wait = !final && fingerprint ? FAILED_INPUT_RETRY_WAITS_MS[attempts - 1] : undefined;
       if (wait !== undefined) {
         const retryAt = new Date(Date.now() + wait).toISOString();
         console.warn(JSON.stringify({ event: "pipeline-retry", task, ticker, attempts, retryAt, failure }));
-        await repository.setCache(failedInputKey(task, ticker), { fingerprint: started.fingerprint!, instanceId: started.instanceId, failure, attempts, retryAt } satisfies FailedInput, at);
+        await repository.setCache(failedInputKey(task, ticker), { fingerprint: fingerprint!, instanceId: started.instanceId, failure, attempts, retryAt } satisfies FailedInput, at);
         return { status: "later", afterMs: wait, detail: { instanceId: started.instanceId, workflow: state.status, retry: attempts, retryAt } };
       }
       const id = crypto.randomUUID();
@@ -89,8 +108,8 @@ export async function driveWorkflow(env: SecPipelineEnv, key: string, binding: W
       await env.DB!.batch([
         env.DB!.prepare("INSERT INTO pipeline_dead (id, kind, name, ticker, body, attempts, created_at) VALUES (?, 'task', ?, ?, ?, ?, ?)")
           .bind(id, task, ticker, JSON.stringify(body), attempts - 1, at),
-        ...(started.fingerprint ? [env.DB!.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at")
-          .bind(failedInputKey(task, ticker), JSON.stringify({ fingerprint: started.fingerprint, instanceId: started.instanceId, failure, attempts, retryAt: null } satisfies FailedInput), at)] : []),
+        ...(fingerprint ? [env.DB!.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at")
+          .bind(failedInputKey(task, ticker), JSON.stringify({ fingerprint, instanceId: started.instanceId, failure, attempts, retryAt: null } satisfies FailedInput), at)] : []),
       ]);
       return { status: "done", detail: { instanceId: started.instanceId, workflow: state.status, deadLetter: id, attempts } };
     }

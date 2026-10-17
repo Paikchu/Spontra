@@ -45,7 +45,7 @@ export function MindLayer({ mind, k, title, colorOf, picked, onPick, onTip, onLe
         onClick: () => onPick(item.id), onKeyDown: (e: KeyboardEvent) => key(e, item.id), onMouseMove: (e: MouseEvent) => onTip(e, item), onMouseLeave: onLeave };
       if (item.kind === "revenue") return <g key={item.id} className="fc-mind-item fc-mind-pill" data-picked={picked === item.id || undefined} {...common}>
         <rect x={item.x} y={item.y} width={item.w} height={item.h} rx={item.h / 2} />
-        <text x={item.x + t.padX} y={item.y + item.h / 2 + t.pill * 0.36} style={{ fontSize: t.pill }}><tspan className="fc-mind-coin">¥</tspan><tspan dx={t.pill * 0.35} lang={langOf(item.revenue.label)}>{item.revenue.label}</tspan></text>
+        <text x={item.x + t.padX} y={item.y + item.h / 2 + t.pill * 0.36} style={{ fontSize: t.pill }}><tspan className="fc-mind-coin" aria-hidden="true">●</tspan><tspan dx={t.pill * 0.35} lang={langOf(item.revenue.label)}>{item.revenue.label}</tspan></text>
       </g>;
       return <g key={item.id} className="fc-mind-item fc-mind-node" data-kind={item.node.kind} data-picked={picked === item.id || undefined} {...common}>
         <rect x={item.x} y={item.y} width={item.w} height={item.h} rx={7 * k} />

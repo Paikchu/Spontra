@@ -26,6 +26,8 @@ import { planFinding } from "./plan.ts";
 /** Changing the analyst's prompt, lines, harness or grammar re-researches every company once. */
 export const ANALYST_VERSION = "analyst.react.v4";
 export const dossierCacheKey = (ticker: string) => `dossier:v1:${ticker}`;
+/** The input of the last run that composed nothing; the same input is not researched again until it changes. */
+export const emptyDossierKey = (ticker: string) => `dossier:empty:v1:${ticker}`;
 export type AnalystWorkflowParams = { ticker: string; fingerprint: string };
 /** `sleep` waits durably (Workflow step.sleep); without it a run whose every model call failed ends empty at once. */
 export type AnalystDeps = { model?: AnalystModel; fetcher?: typeof fetch; sleep?: (name: string, ms: number) => Promise<void> };
@@ -139,7 +141,11 @@ export async function executeAnalystWorkflow(params: AnalystWorkflowParams, step
   }
   const trace: AnalystTrace = { version: ANALYST_VERSION, generatedAt: now, findings: outcomes };
   if (!Object.keys(documents).length) {
-    await step.do("analyst-trace", async () => { await new AiRunStore(db).saveVersion("analyst", params.ticker, { schemaVersion: "dossier.v1", ticker: params.ticker, findingsFingerprint: input.findings.fingerprint, fingerprint: params.fingerprint, generatedAt: now, model: modelVersion, documents: {}, materials: [], analystTrace: trace }, now); });
+    await step.do("analyst-trace", async () => {
+      await new AiRunStore(db).saveVersion("analyst", params.ticker, { schemaVersion: "dossier.v1", ticker: params.ticker, findingsFingerprint: input.findings.fingerprint, fingerprint: params.fingerprint, generatedAt: now, model: modelVersion, documents: {}, materials: [], analystTrace: trace }, now);
+      // Every finding light, or none answered after the outage waits: the same input would end the same way.
+      await new D1SecRepository(db).setCache(emptyDossierKey(params.ticker), { fingerprint: params.fingerprint }, now);
+    });
     return { status: "empty" as const, findings: outcomes.map(o => ({ id: o.id, tier: o.tier, turns: o.turns.length, warnings: o.warnings })) };
   }
   const dossier: DossierPublication = { schemaVersion: "dossier.v1", ticker: params.ticker, findingsFingerprint: input.findings.fingerprint!, fingerprint: params.fingerprint, generatedAt: now, model: modelVersion, documents, materials: [...materials.values()] };
@@ -149,6 +155,7 @@ export async function executeAnalystWorkflow(params: AnalystWorkflowParams, step
     await db.batch([
       db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at").bind(dossierCacheKey(params.ticker), JSON.stringify(record), now),
       outboxStatement(db, { type: "dossier.published", ticker: params.ticker }, now),
+      db.prepare("DELETE FROM sec_cache WHERE cache_key = ?").bind(emptyDossierKey(params.ticker)),
     ]);
     await new AiRunStore(db).saveVersion("analyst", params.ticker, record, now);
   });

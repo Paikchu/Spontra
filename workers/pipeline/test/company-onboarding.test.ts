@@ -65,8 +65,8 @@ test("a ticker the issuer directory does not list is recorded where the admin's 
   assert.deepEqual(JSON.parse(failure!.payload), { reason: "SEC_ISSUER_NOT_FOUND" });
 });
 
-test("a new company's event rail is built from company.added, and the event graph stays complete and acyclic", () => {
-  assert.deepEqual(SUBSCRIPTIONS["company.added"]?.map(s => s.task), ["events"]);
+test("a new company's event rail and income-statement check start from company.added, and the event graph stays complete and acyclic", () => {
+  assert.deepEqual(SUBSCRIPTIONS["company.added"]?.map(s => s.task), ["events", "presentation"]);
   assert.deepEqual(validateRegistry(), []);
 });
 

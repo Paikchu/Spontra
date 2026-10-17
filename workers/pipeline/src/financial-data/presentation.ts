@@ -14,7 +14,7 @@ import type { SecReader } from './provider.ts';
  * collection; a filing that failed is not judged twice.
  */
 export type PresentationProfile = { structure: BridgeStructure; version: string };
-export type ProfileRow = { cik: string; ticker: string; status: 'verified' | 'unresolved'; structure_json: string | null; structure_key: string | null; accession: string; attempts: number; issues_json: string; updated_at: string };
+export type ProfileRow = { cik: string; ticker: string; status: 'verified' | 'unresolved'; structure_json: string | null; structure_key: string | null; accession: string; attempts: number; issues_json: string; updated_at: string; judge_version?: string | null };
 
 export async function verifiedPresentation(db: D1Database, cik: string): Promise<PresentationProfile | null> {
   const row = await db.prepare("SELECT structure_json, structure_key FROM financial_presentation_profiles WHERE cik = ? AND status = 'verified'").bind(cik).first<{ structure_json: string | null; structure_key: string | null }>().catch(() => null);
@@ -94,7 +94,9 @@ export async function judgeStructure(facts: Fact[], context: { ticker: string; f
       anchors: { incomeTaxes: periods[0].anchors.tax.tag, netIncome: periods[0].anchors.net.tag, operatingIncome: periods[0].anchors.operating?.tag ?? null },
       rows: lines, previousAnswers: history,
     };
-    const raw = await model(`presentation-${context.ticker}-${turn}`, JUDGE_SYSTEM, payload).catch((error: unknown) => ({ error: error instanceof Error ? error.message : String(error) }));
+    // A reply that is not JSON reaches here as {} (the caller's model wrapper) and counts as a wrong answer; a provider
+    // outage or timeout throws on, so the caller tries again later instead of recording the filing as judged.
+    const raw = await model(`presentation-${context.ticker}-${turn}`, JUDGE_SYSTEM, payload);
     const proposal = readProposal(raw as Record<string, unknown>);
     const problems = proposal ? checkProposal(proposal, periods, lines) : ['the answer is not {"pretax", "afterTax", "reason"} JSON'];
     if (proposal && !problems.length) return { structure: proposal, attempts: turn, issues };
@@ -104,15 +106,23 @@ export async function judgeStructure(facts: Fact[], context: { ticker: string; f
   return { structure: null, attempts: turns, issues: [...new Set(issues)].slice(-12) };
 }
 
-/** Keeps a judgement; a verified structure replaces any earlier one for the issuer. */
-export async function saveJudgement(db: D1Database, row: { cik: string; ticker: string; accession: string }, judgement: Judgement, now: Date): Promise<void> {
+/**
+ * Keeps a judgement, as one statement for the caller's batch. A verified structure replaces any earlier one for the
+ * issuer. A failed judgement records the filing (so it is not judged again under this version) but never withdraws a
+ * structure verified on an earlier filing: that one keeps being applied to every later collection.
+ */
+export function judgementStatement(db: D1Database, row: { cik: string; ticker: string; accession: string }, judgement: Judgement, now: Date, version: string): D1PreparedStatement {
   const structure = judgement.structure;
-  await db.prepare(`INSERT INTO financial_presentation_profiles (cik, ticker, status, structure_json, structure_key, accession, attempts, issues_json, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT (cik) DO UPDATE SET ticker = excluded.ticker, status = excluded.status, accession = excluded.accession, attempts = excluded.attempts,
-      issues_json = excluded.issues_json, updated_at = excluded.updated_at,
+  return db.prepare(`INSERT INTO financial_presentation_profiles (cik, ticker, status, structure_json, structure_key, accession, attempts, issues_json, updated_at, judge_version)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT (cik) DO UPDATE SET ticker = excluded.ticker, accession = excluded.accession, attempts = excluded.attempts,
+      issues_json = excluded.issues_json, updated_at = excluded.updated_at, judge_version = excluded.judge_version,
+      status = CASE WHEN excluded.status = 'verified' OR financial_presentation_profiles.structure_json IS NULL THEN excluded.status ELSE financial_presentation_profiles.status END,
       structure_json = CASE WHEN excluded.status = 'verified' THEN excluded.structure_json ELSE financial_presentation_profiles.structure_json END,
       structure_key = CASE WHEN excluded.status = 'verified' THEN excluded.structure_key ELSE financial_presentation_profiles.structure_key END`)
     .bind(row.cik, row.ticker, structure ? 'verified' : 'unresolved', structure ? JSON.stringify(structure) : null, structure ? structureKey(structure) : null,
-      row.accession, judgement.attempts, JSON.stringify(judgement.issues), now.toISOString()).run();
+      row.accession, judgement.attempts, JSON.stringify(judgement.issues), now.toISOString(), version);
+}
+export async function saveJudgement(db: D1Database, row: { cik: string; ticker: string; accession: string }, judgement: Judgement, now: Date, version = ''): Promise<void> {
+  await judgementStatement(db, row, judgement, now, version).run();
 }

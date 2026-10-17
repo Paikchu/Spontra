@@ -19,7 +19,11 @@ export async function collectComplete(job:Job,policy:FinancialPolicy,store:Compl
     if(read.issues.length)console.log(JSON.stringify({event:'earnings-release-not-used',ticker:at.ticker,issues:read.issues.slice(0,8)}));
    }catch(error){console.log(JSON.stringify({event:'earnings-release-unreadable',ticker:at.ticker,error:error instanceof Error?error.message.slice(0,200):'unknown'}));}
   }
-  return {published:await store.publish(at,flow),reasons:[],flow};
+  // A job whose publication did not become current (an admin collection published a newer generation meanwhile) ends
+  // here instead of staying running: it would otherwise hold the issuer and block every later collection.
+  const published=await store.publish(at,flow);
+  if(!published)await store.defer({...at,attempt:3},['NEWER_PUBLICATION_CURRENT'],at.cursor);
+  return {published,reasons:published?[]:['NEWER_PUBLICATION_CURRENT'],flow};
  };
  if(!allowData(policy,job.ticker)){await store.defer({...job,attempt:3},['DATA_POLICY_DENIED'],job.cursor);return {published:false,reasons:['DATA_POLICY_DENIED']};}
  try{
@@ -30,13 +34,13 @@ export async function collectComplete(job:Job,policy:FinancialPolicy,store:Compl
   // Lines a later filing restated are marked uncompared (restatement.ts); the rest of the pair still compares.
   const restated=(cursor:string)=>{try{return (JSON.parse(cursor||'{}') as {restated?:Restated[]}).restated;}catch{return undefined;}};
   const existing:PublicBusinessFlow=markBasisChanges(newestPair({schemaVersion:'business-flow.v1',ticker:job.ticker,fetchedAt:new Date().toISOString(),quarters:stagedBefore}),restated(job.cursor));
-  if(expectedBefore&&existing.quarters[0]?.periodEnd===expectedBefore&&checkCompleteFlow(existing).complete)return publish(job,existing);
+  if(expectedBefore&&existing.quarters[0]?.periodEnd===expectedBefore&&checkCompleteFlow(existing).complete)return await publish(job,existing);
   const batch=await readBatch(job);for(const quarter of batch.quarters)await store.stage(job,quarter);
   const flow:PublicBusinessFlow=markBasisChanges(newestPair({schemaVersion:'business-flow.v1',ticker:job.ticker,fetchedAt:new Date().toISOString(),quarters:await store.staged(job)}),restated(batch.nextCursor));
   const check=checkCompleteFlow(flow);
   if(!batch.finished&&!(batch.expectedPeriodEnd&&flow.quarters[0]?.periodEnd===batch.expectedPeriodEnd&&check.complete)){await store.defer(job,['PREPARING'],batch.nextCursor);return {published:false,reasons:['PREPARING']};}
   if(batch.expectedPeriodEnd&&flow.quarters[0]?.periodEnd!==batch.expectedPeriodEnd){await store.defer(job,['LATEST_PERIOD_NOT_COLLECTED'],batch.nextCursor);return {published:false,reasons:['LATEST_PERIOD_NOT_COLLECTED']};}
   if(!check.complete){await store.defer(job,check.reasons,batch.nextCursor);return {published:false,reasons:check.reasons};}
-  return publish({...job,cursor:batch.nextCursor},flow);
- }catch(error){const code=error instanceof Error?error.message:'';const terminal=['RESTATEMENT_REVIEW_REQUIRED','SEC_FACT_FORMAT_UNSUPPORTED','NO_SUPPORTED_FILINGS'].includes(code);const reasons=[terminal||code==='SEC_ACCESS_PAUSED'?code:'SOURCE_TEMPORARILY_UNAVAILABLE'];await store.defer(terminal?{...job,attempt:3}:job,reasons,job.cursor);return {published:false,reasons};}
+  return await publish({...job,cursor:batch.nextCursor},flow);
+ }catch(error){const code=error instanceof Error?error.message:'';const terminal=['RESTATEMENT_REVIEW_REQUIRED','SEC_FACT_FORMAT_UNSUPPORTED','NO_SUPPORTED_FILINGS','SEC_DOCUMENT_TOO_LARGE'].includes(code);const reasons=[terminal||code==='SEC_ACCESS_PAUSED'?code:'SOURCE_TEMPORARILY_UNAVAILABLE'];await store.defer(terminal?{...job,attempt:3}:job,reasons,job.cursor);return {published:false,reasons};}
 }

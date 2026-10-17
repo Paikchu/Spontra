@@ -29,8 +29,9 @@ export async function executeSecMemoryWorkflow(
   const extraction = await step.do(`memory-extract:${params.jobId}`, async (context) => {
     const execution = modelExecutionForAttempt(context?.attempt ?? 1);
     // Durable retries can outlive the original lease. Renew ownership before
-    // another long model call so the sweeper cannot launch a competing writer.
-    if (execution.attempt > 1 && !await repository.claimMemoryJob(params.jobId, ownerToken, new Date(), SEC_MEMORY_MODEL_LEASE_MS, featureTickersFor(env, "findings"))) {
+    // another long model call so the sweeper cannot launch a competing writer. The token is the one the claim step
+    // recorded: `ownerToken` above is minted again whenever the engine replays `run()`, so it cannot prove ownership.
+    if (execution.attempt > 1 && !await repository.claimMemoryJob(params.jobId, claim.ownerToken, new Date(), SEC_MEMORY_MODEL_LEASE_MS, featureTickersFor(env, "findings"))) {
       throw new Error("Memory lease ownership changed before model retry");
     }
     const value = await callWorkerSecModel(env, fetcher, "memory-extract", memoryExtractionSystemPrompt(), compactMemorySource(source), execution.model || modelFor(env, "memory"), undefined, true, { reasoning: reasoningFor(env, "memory") });
