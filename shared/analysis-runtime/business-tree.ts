@@ -43,14 +43,19 @@ export function anchors(name: string, ancestors: string[], passage: string): boo
 export const ANCHOR_FRAGMENTS = 3;
 const ELLIPSIS = /\s*(?:…|\.{3})\s*/;
 
+/** A Markdown table row, as the filing library and page extracts write tables. */
+const TABLE_ROW = /\|.*\|/;
+
 /**
  * Whether a quote stands in a source: every fragment verbatim (letters and digits compared), in order, the whole quote
  * within `span` characters of the source, so fragments of one passage join and fragments of different pages do not.
+ * Joined fragments stand for one passage of prose: a table (a company-wide revenue table, say) cannot supply one, since a
+ * row of it says nothing about which segment the line sits in.
  */
 export function quotedIn(quote: string, source: string, span = 2_400): boolean {
   const fragments = quote.split(ELLIPSIS).map(compactName).filter(Boolean);
   if (!fragments.length || fragments.length > ANCHOR_FRAGMENTS || (fragments.length > 1 && fragments.some(f => f.length < 10))) return false;
-  const text = compactName(source);
+  const text = compactName(fragments.length > 1 ? source.split("\n").filter(line => !TABLE_ROW.test(line)).join("\n") : source);
   for (let start = text.indexOf(fragments[0]!); start >= 0; start = text.indexOf(fragments[0]!, start + 1)) {
     let end = start + fragments[0]!.length, ok = true;
     for (const fragment of fragments.slice(1)) {

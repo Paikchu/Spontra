@@ -30,6 +30,7 @@ GitHub Copilot ─ GitHub ────────┘
 
 - think：模型收到这项业务、公司其他业务、当前树（带节点 ID）、来源列表、历史（最近 3 轮和最近 2 次读页全文，更早的截断）和剩余预算，返回 `{thought, action, input}`。
 - act：`search {query}`、`read {source, focus}`、`add {parent, nodes}`、`revise {id, …}`、`remove {id}`、`finish {}`。
+- 深度：10-K 往往只写类目（compute、storage、online stores）。模型调用 finish 时，若还有一级节点既没有下级产品也没有赚钱方式，且搜索预算未用完，harness 会提醒一次去公司产品页和定价页补上具名产品和收费方式。
 - observe：harness 把执行结果写成下一轮的 observation。`add` 逐个核对节点，通过的给 ID，未通过的写明原因（例如“anchor 没有同时写出 Azure 和它的上级”），模型下一轮可以改。
 
 搜索和读页是 durable step（`tree-b{n}-t{k}-search/read`），模型调用也是（`tree-b{n}-t{k}-think`）；增删改节点是纯函数，Workflow 重放时按 step 结果重建同一棵树，来源编号也一致。模型返回非 JSON 时记为一轮无效动作，不让整个运行失败；网络和 HTTP 错误仍由 step 重试。
@@ -40,7 +41,7 @@ SEC 文件全部来自文件库（`docs/sec-filing-library.md`）：开始前从
 
 ## 核对（写入和读取用同一套规则）
 
-- anchor：必须是模型本次运行读到的某个来源中的原文（压缩空白和标点后逐字匹配），≤600 字符，并且同时写出节点名（完整词，不是前缀）和某个上级的名称（父节点、更上层节点或这项业务；公司只披露一项业务时，公司名也算；公司名取发行人在申报文件里的写法，如 “Cloudflare, Inc.” 和 “Cloudflare”，不用交易所的证券名称 “Cloudflare, Inc. Class A Common Stock”）。原文用 “this segment” 指代上级时，要把点出上级名称的前一句一并引用。 财报常先用一句点出板块（"This segment primarily comprises:"），再把产品线分条列出：此时 anchor 可以用 " … " 连接同一段落里最多 3 个原文片段，每段逐字存在、顺序一致、整体跨度不超过约 2,400 个字母数字（`quotedIn`）。
+- anchor：必须是模型本次运行读到的某个来源中的原文（压缩空白和标点后逐字匹配），≤600 字符，并且同时写出节点名（完整词，不是前缀）和某个上级的名称（父节点、更上层节点或这项业务；公司只披露一项业务时，公司名也算；公司名取发行人在申报文件里的写法，如 “Cloudflare, Inc.” 和 “Cloudflare”，不用交易所的证券名称 “Cloudflare, Inc. Class A Common Stock”）。原文用 “this segment” 指代上级时，要把点出上级名称的前一句一并引用。 财报常先用一句点出板块（"This segment primarily comprises:"），再把产品线分条列出：此时 anchor 可以用 " … " 连接同一段落里最多 3 个原文片段，每段逐字存在、顺序一致、整体跨度不超过约 2,400 个字母数字（`quotedIn`）。多段引用只取正文：表格行（如全公司收入表）不能当片段，因为它说明不了某条产品线属于哪个板块。
 - gloss / summary / revenue：引用已出现的来源，不含金额、比例、增速等数字，文字里写的来源编号会被去掉（`withoutCitations`）；revenue 的来源还必须提到该节点或其上级。
 - 独立审校：每项业务结束后，审校模型拿到每个节点及其来源中提到它的句子，只能删除整个节点或单个字段；两次都拿不到合法结果时，保留已通过 harness 的内容。
 - 读取：`shared/analysis-runtime/business-tree.ts` 的 `readBusinessTree` 用同一套 `harnessNode` 重新核对，失败的节点连同下级删除，没有内容的业务不展示。

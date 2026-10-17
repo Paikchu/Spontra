@@ -19,7 +19,7 @@ import { treeLibrary } from "../filing-library/tree-source.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
 
 /** Changing the prompt, the harness or the output contract researches every company once more. */
-export const BUSINESS_TREE_VERSION = "business-tree.react.v5";
+export const BUSINESS_TREE_VERSION = "business-tree.react.v6";
 export const businessTreeCacheKey = (ticker: string) => `business-tree:v1:${ticker}`;
 export type BusinessTreeParams = { ticker: string; fingerprint: string };
 
