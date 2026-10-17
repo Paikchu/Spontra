@@ -17,7 +17,8 @@ import { PEERS_VERSION, publishPeers } from "../peers/projection.ts";
 
 /** `later`: the run is not finished (budget spent, input not ready); it runs again after `afterMs`. */
 export type TaskOutcome = { status: "done"; detail?: unknown } | { status: "later"; afterMs: number; detail?: unknown };
-export type TaskContext = { causeId: string; now: Date };
+/** `trigger`: the cause of the newest trigger behind this run (the due row's `cause_id`), null for a replay without one. */
+export type TaskContext = { causeId: string; now: Date; trigger: string | null };
 export type TaskImplementation = {
   /** Changing it re-runs the task for every company in its scope once, on the first invocation of the new code. */
   version: string;
@@ -100,7 +101,7 @@ export const TASK_IMPLEMENTATIONS: Record<TaskName, TaskImplementation> = {
   },
 };
 
-type DueRow = { due_at: string; first_requested_at: string };
+type DueRow = { due_at: string; first_requested_at: string; cause_id: string | null };
 
 /**
  * Runs one task message if it is still the current one for its company and task. A message is stale when
@@ -110,7 +111,7 @@ type DueRow = { due_at: string; first_requested_at: string };
  */
 export async function runTaskMessage(env: SecPipelineEnv, message: TaskMessage, now = new Date()): Promise<{ outcome: string; detail?: unknown }> {
   const db = env.DB!;
-  const row = await db.prepare("SELECT due_at, first_requested_at FROM pipeline_due WHERE ticker = ? AND task = ?").bind(message.ticker, message.task).first<DueRow>();
+  const row = await db.prepare("SELECT due_at, first_requested_at, cause_id FROM pipeline_due WHERE ticker = ? AND task = ?").bind(message.ticker, message.task).first<DueRow>();
   if (!row || row.due_at !== message.dueAt) return { outcome: "superseded" };
   if (Date.parse(row.due_at) > now.getTime() + 1000) {
     await env.PIPELINE_TASKS!.send(message, { contentType: "json", delaySeconds: delaySeconds(row.due_at, now.getTime()) });
@@ -119,7 +120,7 @@ export async function runTaskMessage(env: SecPipelineEnv, message: TaskMessage, 
   const started = Date.now();
   let outcome: TaskOutcome;
   try {
-    outcome = await TASK_IMPLEMENTATIONS[message.task].run(env, message.ticker, { causeId: message.id, now });
+    outcome = await TASK_IMPLEMENTATIONS[message.task].run(env, message.ticker, { causeId: message.id, now, trigger: row.cause_id ?? null });
   } catch (error) {
     await db.batch(logStatements(db, { messageId: message.id, causeId: message.causeId, kind: "task", name: message.task, ticker: message.ticker,
       outcome: "failed", detail: { error: error instanceof Error ? error.message : String(error) } }));

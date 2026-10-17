@@ -9,8 +9,8 @@ import { findingsCacheKey } from "../findings/read.ts";
 import type { AiWorkflowBinding, SecPipelineEnv } from "../operations.ts";
 import type { AiRunKind } from "../../../../shared/analysis-contract/ai-runs-admin.ts";
 import { D1SecRepository } from "../sec/d1.ts";
-import type { TaskImplementation, TaskOutcome } from "./tasks.ts";
-import { driveWorkflow, failedInputKey } from "./workflow-task.ts";
+import type { TaskContext, TaskImplementation, TaskOutcome } from "./tasks.ts";
+import { driveWorkflow, failedInputOutcome } from "./workflow-task.ts";
 
 const MINUTE = 60_000;
 const until = (at: string, now: Date) => Math.max(MINUTE, Date.parse(at) - now.getTime());
@@ -18,20 +18,21 @@ const slug = (ticker: string) => ticker.replace(/[^A-Za-z0-9]/g, "-");
 
 /**
  * Runs a model Workflow when the inputs it would write from changed: `fingerprint` is the state a run would write now
- * (null while there is nothing to write from), compared with what is published. A failed run becomes a dead letter.
+ * (null while there is nothing to write from), compared with what is published. A failed run is retried on the same
+ * input after a growing wait, then becomes a dead letter (workflow-task.ts).
  */
-async function runWhenChanged(env: SecPipelineEnv, task: "findings" | "explainer" | "tree" | "analyst", kind: AiRunKind, ticker: string, causeId: string, now: Date,
+async function runWhenChanged(env: SecPipelineEnv, task: "findings" | "explainer" | "tree" | "analyst", kind: AiRunKind, ticker: string, { causeId, now, trigger }: TaskContext,
   binding: AiWorkflowBinding<{ ticker: string; fingerprint: string }> | undefined, fingerprint: () => Promise<string | null>, published: () => Promise<string | null>): Promise<TaskOutcome> {
   return driveWorkflow(env, `${task}:${ticker}`, binding, async () => {
     const current = await fingerprint();
     if (!current || current === await published()) return null;
-    // The last run failed on exactly this input; it runs again when the input changes or the dead letter is replayed.
-    const failed = (await new D1SecRepository(env.DB!).getCache<{ fingerprint: string }>(failedInputKey(task, ticker)))?.payload?.fingerprint;
-    if (failed === current) return { status: "done", detail: { skipped: "failed on this input before; replay the dead letter to retry" } };
+    // The last run failed on exactly this input: wait for its retry time, or stay until the dead letter is replayed.
+    const failed = await failedInputOutcome(env, task, ticker, current, now);
+    if (failed) return failed;
     const id = `${task === "findings" ? "findings" : task === "tree" ? "business-tree" : task === "analyst" ? "analyst" : "business-explainer"}-${slug(ticker)}-${current.slice(0, 16)}-${now.getTime()}`;
     await quietly(() => new AiRunStore(env.DB!).start({ kind, ticker, runId: id, trigger: "schedule" }, now.toISOString()));
     return { id, params: { ticker, fingerprint: current }, fingerprint: current };
-  }, { deadLetter: { task, ticker, causeId } });
+  }, { deadLetter: { task, ticker, causeId }, trigger });
 }
 
 const storedFingerprint = (env: SecPipelineEnv, key: string) => async () =>
@@ -44,14 +45,15 @@ export const AI_TASKS = {
    */
   findings: {
     version: FINDINGS_VERSION,
-    async run(env, ticker, { now, causeId }): Promise<TaskOutcome> {
+    async run(env, ticker, context): Promise<TaskOutcome> {
+      const { now } = context;
       if (env.FINDINGS_ENABLED !== "true") return { status: "done", detail: { skipped: "findings disabled" } };
       if (env.GUIDANCE_ENABLED === "true") {
         const since = new Date(now.getTime() - 24 * 60 * MINUTE).toISOString().slice(0, 10);
         const pending = await env.DB!.prepare("SELECT accession FROM earnings_events WHERE ticker = ? AND status IN ('queued', 'started') AND event_date >= ? LIMIT 1").bind(ticker, since).first<{ accession: string }>();
         if (pending) return { status: "later", afterMs: 30 * MINUTE, detail: { waiting: "guidance", accession: pending.accession } };
       }
-      return runWhenChanged(env, "findings", "findings", ticker, causeId, now, env.FINDINGS_WORKFLOW,
+      return runWhenChanged(env, "findings", "findings", ticker, context, env.FINDINGS_WORKFLOW,
         () => findingsFingerprint(env, ticker), storedFingerprint(env, findingsCacheKey(ticker)));
     },
   },
@@ -59,18 +61,18 @@ export const AI_TASKS = {
   /** The analyst dossier for the served findings; reruns when the findings, the newest periodic filings or the prompt change. */
   analyst: {
     version: ANALYST_VERSION,
-    async run(env, ticker, { now, causeId }): Promise<TaskOutcome> {
+    async run(env, ticker, context): Promise<TaskOutcome> {
       if (env.ANALYST_ENABLED !== "true") return { status: "done", detail: { skipped: "analyst disabled" } };
-      return runWhenChanged(env, "analyst", "analyst", ticker, causeId, now, env.ANALYST_WORKFLOW, () => analystFingerprint(env, ticker), storedFingerprint(env, dossierCacheKey(ticker)));
+      return runWhenChanged(env, "analyst", "analyst", ticker, context, env.ANALYST_WORKFLOW, () => analystFingerprint(env, ticker), storedFingerprint(env, dossierCacheKey(ticker)));
     },
   },
 
   /** Explanations of each disclosed business, rewritten when the business list changes. */
   explainer: {
     version: BUSINESS_EXPLAINER_VERSION,
-    async run(env, ticker, { now, causeId }): Promise<TaskOutcome> {
+    async run(env, ticker, context): Promise<TaskOutcome> {
       if (!env.TAVILY_API_KEY) return { status: "done", detail: { skipped: "research search not configured" } };
-      return runWhenChanged(env, "explainer", "explainer", ticker, causeId, now, env.BUSINESS_EXPLAINER_WORKFLOW,
+      return runWhenChanged(env, "explainer", "explainer", ticker, context, env.BUSINESS_EXPLAINER_WORKFLOW,
         () => businessExplainerFingerprint(env, ticker), storedFingerprint(env, businessExplainerCacheKey(ticker)));
     },
   },
@@ -78,9 +80,9 @@ export const AI_TASKS = {
   /** The business mind map, rebuilt when the business list changes. */
   tree: {
     version: BUSINESS_TREE_VERSION,
-    async run(env, ticker, { now, causeId }): Promise<TaskOutcome> {
+    async run(env, ticker, context): Promise<TaskOutcome> {
       if (!env.TAVILY_API_KEY || env.BUSINESS_TREE_ENABLED === "false") return { status: "done", detail: { skipped: "business tree disabled" } };
-      return runWhenChanged(env, "tree", "tree", ticker, causeId, now, env.BUSINESS_TREE_WORKFLOW,
+      return runWhenChanged(env, "tree", "tree", ticker, context, env.BUSINESS_TREE_WORKFLOW,
         () => businessTreeFingerprint(env, ticker), storedFingerprint(env, businessTreeCacheKey(ticker)));
     },
   },

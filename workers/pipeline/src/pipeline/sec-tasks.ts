@@ -16,17 +16,18 @@ export const SEC_TASKS = {
   /**
    * Runs the SEC report Workflow for an AI company with a new filing: it indexes the filing list (`filings.indexed`),
    * writes reports and 8-K summaries (`report.published`) and the SEC fundamentals (`fundamentals.updated`). A run
-   * already in progress started before this filing, so the task waits for it and then starts its own.
+   * already in progress started before this filing, so the task waits for it and then starts its own (driveWorkflow
+   * evaluates `start` again when the trigger moved during the run).
    */
   "sec-report": {
     version: "sec-report.v2-english",
-    async run(env, ticker, { now }): Promise<TaskOutcome> {
+    async run(env, ticker, { now, trigger }): Promise<TaskOutcome> {
       return driveWorkflow(env, `sec-report:${ticker}`, env.SEC_ANALYSIS_WORKFLOW as WorkflowBindingLike, async () => {
         const active = await env.DB!.prepare("SELECT job_id FROM sec_analysis_jobs WHERE ticker = ? AND status IN ('running', 'queued') AND updated_at >= ? LIMIT 1")
           .bind(ticker, new Date(now.getTime() - 2 * 60 * MINUTE).toISOString()).first();
         if (active) return { status: "later", afterMs: 10 * MINUTE, detail: { waiting: "an analysis is already running" } };
         return { id: `scheduled-${ticker}-${now.getTime()}`, params: { ticker, requestedBy: "scheduled", backfill: false } };
-      });
+      }, { trigger });
     },
   },
 

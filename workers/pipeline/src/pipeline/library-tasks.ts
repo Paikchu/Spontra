@@ -8,7 +8,7 @@ import { STORAGE_SWEEP_VERSION, sweepStorage } from "../storage/sweep.ts";
 import { prepareLibraryDocument } from "../filing-library/prepare.ts";
 import { pendingLibraryDocuments } from "../filing-library/store.ts";
 import type { TaskImplementation, TaskOutcome } from "./tasks.ts";
-import { driveWorkflow, failedInputKey } from "./workflow-task.ts";
+import { driveWorkflow, failedInputOutcome } from "./workflow-task.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 
 /** Source bytes and wall time one run spends; what is left is split by the next run, right away. */
@@ -41,19 +41,19 @@ export const LIBRARY_TASKS = {
 
   /**
    * Index cards for the sections of the company's recent documents: one Workflow per change of what needs a card,
-   * so a document split again with the same text starts nothing. A failed run is a dead letter, not retried on the same input.
+   * so a document split again with the same text starts nothing. A failed run is retried after a growing wait, then dead-lettered.
    */
   "library-cards": {
     version: LIBRARY_CARD_VERSION,
-    async run(env, ticker, { now, causeId }): Promise<TaskOutcome> {
+    async run(env, ticker, { now, causeId, trigger }): Promise<TaskOutcome> {
       if (env.LIBRARY_CARDS_ENABLED === "false" || !env.DEEPSEEK_API_KEY) return { status: "done", detail: { skipped: "index cards disabled" } };
       return driveWorkflow(env, `library-cards:${ticker}`, env.LIBRARY_CARDS_WORKFLOW, async () => {
         const plan = await pendingCardPlan(env.DB!, ticker);
         if (!plan) return null;
-        const failed = (await new D1SecRepository(env.DB!).getCache<{ fingerprint: string }>(failedInputKey("library-cards", ticker)))?.payload?.fingerprint;
-        if (failed === plan.fingerprint) return { status: "done", detail: { skipped: "failed on this input before; replay the dead letter to retry" } };
+        const failed = await failedInputOutcome(env, "library-cards", ticker, plan.fingerprint, now);
+        if (failed) return failed;
         return { id: `library-cards-${ticker.replace(/[^A-Za-z0-9]/g, "-")}-${plan.fingerprint.slice(0, 16)}-${now.getTime()}`, params: { ticker, fingerprint: plan.fingerprint }, fingerprint: plan.fingerprint };
-      }, { deadLetter: { task: "library-cards", ticker, causeId } });
+      }, { deadLetter: { task: "library-cards", ticker, causeId }, trigger });
     },
   },
 
@@ -64,17 +64,16 @@ export const LIBRARY_TASKS = {
    */
   "library-links": {
     version: LIBRARY_LINKS_VERSION,
-    async run(env, ticker, { now, causeId }): Promise<TaskOutcome> {
+    async run(env, ticker, { now, causeId, trigger }): Promise<TaskOutcome> {
       if (env.LIBRARY_CARDS_ENABLED === "false" || !env.DEEPSEEK_API_KEY) return { status: "done", detail: { skipped: "index cards disabled" } };
       return driveWorkflow(env, `library-links:${ticker}`, env.LIBRARY_LINKS_WORKFLOW, async () => {
         const input = await linkInput(env.DB!, ticker);
         if (!input) return null;
-        const repository = new D1SecRepository(env.DB!);
-        if ((await repository.getCache<{ fingerprint: string }>(linksCacheKey(ticker)))?.payload?.fingerprint === input.fingerprint) return null;
-        const failed = (await repository.getCache<{ fingerprint: string }>(failedInputKey("library-links", ticker)))?.payload?.fingerprint;
-        if (failed === input.fingerprint) return { status: "done", detail: { skipped: "failed on this input before; replay the dead letter to retry" } };
+        if ((await new D1SecRepository(env.DB!).getCache<{ fingerprint: string }>(linksCacheKey(ticker)))?.payload?.fingerprint === input.fingerprint) return null;
+        const failed = await failedInputOutcome(env, "library-links", ticker, input.fingerprint, now);
+        if (failed) return failed;
         return { id: `library-links-${ticker.replace(/[^A-Za-z0-9]/g, "-")}-${input.fingerprint.slice(0, 16)}-${now.getTime()}`, params: { ticker, fingerprint: input.fingerprint }, fingerprint: input.fingerprint };
-      }, { deadLetter: { task: "library-links", ticker, causeId } });
+      }, { deadLetter: { task: "library-links", ticker, causeId }, trigger });
     },
   },
 

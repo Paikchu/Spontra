@@ -45,7 +45,8 @@ export const FINANCIAL_TASKS = {
     version: SEC_FLOW_PARSER_VERSION,
     async run(env, ticker, { causeId, now }): Promise<TaskOutcome> {
       const db = env.DB!;
-      if (env.SEC_DATA_COLLECTION_ENABLED !== "true") return { status: "done", detail: { skipped: "collection paused" } };
+      // Paused, not finished: the filing that asked for this run is collected when collection is switched back on.
+      if (env.SEC_DATA_COLLECTION_ENABLED !== "true") return { status: "later", afterMs: HOUR, detail: { waiting: "collection paused" } };
       const policy = await dataPolicy(env);
       if (!allowData(policy, ticker)) return { status: "done", detail: { skipped: "not a data company" } };
       // An admin maintenance task owns the issuer's data while it runs.
@@ -80,7 +81,7 @@ export const FINANCIAL_TASKS = {
   history: {
     version: HISTORY_VERSION,
     async run(env, ticker, { causeId, now }): Promise<TaskOutcome> {
-      if (env.SEC_DATA_COLLECTION_ENABLED !== "true") return { status: "done", detail: { skipped: "collection paused" } };
+      if (env.SEC_DATA_COLLECTION_ENABLED !== "true") return { status: "later", afterMs: HOUR, detail: { waiting: "collection paused" } };
       if (!allowData(await dataPolicy(env), ticker)) return { status: "done", detail: { skipped: "not a data company" } };
       const job = await latestJob(env.DB!, ticker);
       if (!job || !/^\d{10}$/.test(job.cik)) return { status: "done", detail: { skipped: "issuer not collected yet" } };

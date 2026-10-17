@@ -1,8 +1,7 @@
 import { TRANSLATION_VERSION, translationPlan } from "../translation/translate.ts";
-import { D1SecRepository } from "../sec/d1.ts";
 import type { SecPipelineEnv } from "../operations.ts";
 import type { TaskImplementation, TaskOutcome } from "./tasks.ts";
-import { driveWorkflow, failedInputKey } from "./workflow-task.ts";
+import { driveWorkflow, failedInputOutcome } from "./workflow-task.ts";
 
 const DEFAULT_DAILY_CALLS = 300;
 /** Whether the translator has used up today's model calls across all companies. */
@@ -18,20 +17,20 @@ export const TRANSLATION_TASKS = {
   /**
    * Translates the reader-facing prose of the company's publications into Chinese: one Workflow per change of what
    * is untranslated or of the strings a resource carries. A run that stops on the day's budget comes back the next
-   * UTC day; a failed run is a dead letter, not retried on the same input.
+   * UTC day; a failed run is retried after a growing wait, then dead-lettered (workflow-task.ts).
    */
   translate: {
     version: TRANSLATION_VERSION,
-    async run(env, ticker, { now, causeId }): Promise<TaskOutcome> {
+    async run(env, ticker, { now, causeId, trigger }): Promise<TaskOutcome> {
       if (env.TRANSLATION_ENABLED === "false" || !env.DEEPSEEK_API_KEY) return { status: "done", detail: { skipped: "translation disabled" } };
       const outcome = await driveWorkflow(env, `translate:${ticker}`, env.TRANSLATE_WORKFLOW, async () => {
         if (await budgetSpent(env, now)) return { status: "later", afterMs: untilTomorrow(now), detail: { waiting: "daily translation budget" } };
         const plan = await translationPlan(env.DB!, ticker);
         if (!plan) return null;
-        const failed = (await new D1SecRepository(env.DB!).getCache<{ fingerprint: string }>(failedInputKey("translate", ticker)))?.payload?.fingerprint;
-        if (failed === plan.fingerprint) return { status: "done", detail: { skipped: "failed on this input before; replay the dead letter to retry" } };
+        const failed = await failedInputOutcome(env, "translate", ticker, plan.fingerprint, now);
+        if (failed) return failed;
         return { id: `translate-${ticker.replace(/[^A-Za-z0-9]/g, "-")}-${plan.fingerprint.slice(0, 16)}-${now.getTime()}`, params: { ticker, fingerprint: plan.fingerprint }, fingerprint: plan.fingerprint };
-      }, { deadLetter: { task: "translate", ticker, causeId }, pollMs: 2 * 60_000 });
+      }, { deadLetter: { task: "translate", ticker, causeId }, pollMs: 2 * 60_000, trigger });
       // A finished run leaves work when the budget stopped it, the model was unavailable, or the publications changed
       // while it ran: tomorrow for the budget, otherwise in half an hour (a new publication brings its own event sooner).
       if (outcome.status === "done" && (outcome.detail as { workflow?: string } | undefined)?.workflow === "complete" && await translationPlan(env.DB!, ticker)) {
