@@ -265,7 +265,9 @@ P2、P3 的实现要点与差异：
 
 - **两期合并上线。** `*/2` 原本承担“每天重采一次”的作用，相当于财报发现；删除它之前必须先有 `filing.discovered`。
 - **长流程没有改成 Workflow。** 财务采集、补历史、刷新投影、财务维护、Transcript 都是队列任务：每次运行推进一步，没做完返回“稍后继续”，由 `pipeline_due` 记下下次时间；超过 24 小时的等待由任务消息到期后再续发剩余时间。每一步都短且幂等，Workflow 的持久化步骤在这里没有额外收益，反而要为每个流程新增一个 Workflow 类。
-- **`company.added` 改为 `collection.requested`。** 后台新增公司本来就会创建一个“提取”维护任务，所以发的是 `maintenance.requested`；`collection.requested` 用于后台手动“重新采集财报”和 `/sec-financials/refresh/` 接口。
+- **`company.added` 改为 `collection.requested`。** 后台新增公司本来就会创建一个“提取”维护任务，所以发的是 `maintenance.requested`；`collection.requested` 用于后台手动“重新采集财报”和 `/sec-financials/refresh/` 接口。2026-10-17 起 `company.added` 重新加入，只表示“这家公司是新的”：后台加入白名单与申报发现首次引导时各发一次，目前只有事件栏（`events`）订阅，否则数据公司的事件栏要等到下一份 8-K 或 Form 4 才会出现。
+- **加入白名单先查 SEC 发行人目录。** 后台加入时读一次 `company_tickers_exchange.json`，目录里没有的代码直接拒绝（404），有的把发行人记录写进 `admin:financial-issuer:<代码>`，申报发现下一轮就知道其 CIK；申报发现自己查目录查不到的代码写入 `sec:financial-discovery-failure:v1:<代码>`，后台公司列表显示为不可用。股份类别统一写成点号（`BRK.B`），`canonicalTicker` 把 `BRK-B` 归一化。
+- **维护任务只锁自己的发行人。** `collect` 只在同一代码或同一 CIK 有进行中的维护任务时让路，一家新公司的提取不再推迟其他公司的采集。
 - **新增 `filings.indexed`。** 指引工作流要求业绩 8-K 已在缓存的申报列表里，这个列表由 SEC 财报工作流写入；指引因此订阅列表写入事件，而不是直接订阅 `filing.discovered`。
 - **Yahoo 基本面不再定时同步。** 它只被公司分析读取，改为公司分析工作流开始时检查，超过 24 小时才同步；失败沿用上次的快照。要点读的是 SEC 基本面（`sec:fundamentals:*`），由 SEC 财报工作流写入并发 `fundamentals.updated`。
 - **SEC 财报工作流仍在运行时读取 EDGAR。** 轮询取消了，它只在有新申报时启动；启动后照旧自己读一次申报列表并写入缓存。任务每 5 分钟检查一次实例状态，失败的实例让任务失败、由队列重试，最后进入死信。

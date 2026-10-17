@@ -25,7 +25,7 @@ export function parseIssuerDirectory(payload: unknown): Record<string, string> {
   const out: Record<string, string> = {};
   if (symbol < 0 || cik < 0 || !Array.isArray(root?.data)) return out;
   for (const row of root!.data as unknown[][]) {
-    const ticker = canonicalTicker(String(row[symbol] ?? "").replaceAll("-", "."));
+    const ticker = canonicalTicker(String(row[symbol] ?? ""));
     const id = String(row[cik] ?? "").padStart(10, "0");
     if (ticker && /^\d{10}$/.test(id) && Number(id) > 0 && !out[ticker]) out[ticker] = id;
   }
@@ -50,7 +50,7 @@ function recentFilings(payload: unknown): Filing[] {
  * The pipeline's only Cron. EDGAR pushes nothing, so every data company's submission list is read and compared with
  * the accessions seen last time; each new filing becomes a `filing.discovered` event, written in the same batch as
  * the new state. A company seen for the first time only records its baseline; one the pipeline has never collected
- * also has its first collection requested. Writes a heartbeat when done, and
+ * also has its first collection requested (`company.added`, `collection.requested`). Writes a heartbeat when done, and
  * fails the invocation when no company could be read, so an outage raises the Worker's error notification.
  */
 export async function runSecDiscovery(env: SecPipelineEnv, now = new Date(), fetcher: typeof fetch = fetch) {
@@ -64,7 +64,12 @@ export async function runSecDiscovery(env: SecPipelineEnv, now = new Date(), fet
     let bootstrap = false;
     // A company on the data list the pipeline has never collected: its CIK comes from EDGAR's issuer directory, and
     // its first collection is asked for in the same batch as its baseline.
-    if (!cik) { cik = await directory().then(d => d[ticker] ?? null).catch(() => null); bootstrap = cik !== null; }
+    if (!cik) {
+      const listed = await directory().then(d => ({ cik: d[ticker] ?? null, read: true })).catch(() => ({ cik: null, read: false }));
+      cik = listed.cik; bootstrap = cik !== null;
+      // The directory was read and does not list the ticker: say so where the admin's company list looks.
+      if (!cik && listed.read) await repository.setCache(`sec:financial-discovery-failure:v1:${ticker}`, { reason: "SEC_ISSUER_NOT_FOUND" }, now.toISOString()).catch(() => undefined);
+    }
     if (!cik) { result.unknown.push(ticker); continue; }
     try {
       const filings = recentFilings(await (await reader.read(`https://data.sec.gov/submissions/CIK${cik}.json`)).json());
@@ -78,7 +83,7 @@ export async function runSecDiscovery(env: SecPipelineEnv, now = new Date(), fet
           .bind(stateKey(ticker), JSON.stringify({ cik, accessions: filings.map(f => f.accession), checkedAt: at } satisfies DiscoveryState), at),
         // Oldest first, so subscribers that read the newest state see the filings in the order they were made.
         ...fresh.reverse().map(f => outboxStatement(db, { type: "filing.discovered", ticker, cik, detail: { form: f.form, items: f.items, accession: f.accession } }, at)),
-        ...(bootstrap ? [outboxStatement(db, { type: "collection.requested", ticker, cik }, at)] : []),
+        ...(bootstrap ? [outboxStatement(db, { type: "company.added", ticker, cik }, at), outboxStatement(db, { type: "collection.requested", ticker, cik }, at)] : []),
       ]);
       if (bootstrap) result.bootstrapped.push(ticker);
       if (!previous) result.baseline.push(ticker);

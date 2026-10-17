@@ -17,7 +17,7 @@ export function parseTrackedTickers(value: string | undefined | null): string[] 
     .split(/[,\n]+/)
     .map((entry) => entry.trim())
     .filter(Boolean);
-  const normalized = entries.map((entry) => entry.toUpperCase());
+  const normalized = entries.map((entry) => canonicalTicker(entry));
   const invalidEntries = normalized.filter((ticker) => !TRACKED_TICKER_PATTERN.test(ticker));
   if (invalidEntries.length) throw new SecTrackedTickerConfigError([...new Set(invalidEntries)]);
   return [...new Set(normalized)].sort();

@@ -14,6 +14,8 @@ import { emit } from '../pipeline/outbox.ts';
 import { readCompletePublicationForTicker } from '../financial-data/publication.ts';
 import { readMapDerived } from '../financial-data/derived.ts';
 import { treeTickersFor } from '../business-tree/workflow.ts';
+import { discoverDataIssuer, throttledSecReader } from '../financial-data/provider.ts';
+import { D1SecRepository } from '../sec/d1.ts';
 
 const json = (body: unknown, status = 200) => Response.json(body, {status, headers: {'cache-control':'private, no-store'}});
 export async function handleBusinessMapAdminRequest(request: Request, env: SecPipelineEnv): Promise<Response> {
@@ -142,6 +144,17 @@ export async function handleBusinessMapAdminRequest(request: Request, env: SecPi
     const now = new Date().toISOString();
     const existing = await new FinancialMaintenanceStore(db).byRequest(body.requestId!);
     if (existing && existing.ticker !== ticker) return json({error:'操作标识已用于其他公司。'},409);
+    // A company joins only if EDGAR's issuer directory lists it: a typo is refused here, not found hours later by the
+    // maintenance task; the issuer record saved now lets discovery and collection know its CIK at once.
+    if (body.enabled) {
+      try {
+        const issuer = await discoverDataIssuer(ticker, throttledSecReader(env.SEC_USER_AGENT, fetch, 0));
+        await new D1SecRepository(db).setCache(`admin:financial-issuer:${ticker}`, issuer, now);
+      } catch (error) {
+        if (error instanceof Error && error.message === 'SEC_ISSUER_NOT_FOUND') return json({error:'SEC 发行人目录中没有这个代码。'},404);
+        return json({error:'暂时无法访问 SEC 发行人目录，请稍后重试。'},503);
+      }
+    }
     // One D1 transaction saves the choice and its durable initial job. A retried add never
     // creates another job, and repeated enable of a default company does not restart collection.
     const defaultEnabled = financialPolicy({...env,SEC_AI_ENABLED:'false'}).dataTickers.has(ticker);
@@ -157,8 +170,11 @@ export async function handleBusinessMapAdminRequest(request: Request, env: SecPi
     ]);
     const saved=await db.prepare('SELECT ticker,enabled FROM financial_company_setting_requests WHERE request_id=?').bind(body.requestId).first<{ticker:string;enabled:number}>();
     if(saved?.ticker!==ticker||saved.enabled!==Number(body.enabled))return json({error:'操作标识已用于不同请求。'},409);
-    // A newly added company starts with an extract task; the maintenance task picks it up.
-    if(await db.prepare('SELECT 1 FROM financial_maintenance_tasks WHERE request_id=?').bind(body.requestId).first())await emit(env,[{type:'maintenance.requested',ticker}]);
+    // A newly added company starts with an extract task; the maintenance task picks it up, and its event rail is built.
+    if(await db.prepare('SELECT 1 FROM financial_maintenance_tasks WHERE request_id=?').bind(body.requestId).first()){
+      const cik=await knownCik(db,ticker);
+      await emit(env,[{type:'company.added',ticker,cik},{type:'maintenance.requested',ticker,cik}]);
+    }
     return json({ticker,enabled:body.enabled},200);
   } catch (error) {
     if (error instanceof SyntaxError) return json({error:'操作参数无效。'},400);

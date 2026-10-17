@@ -38,6 +38,12 @@ export class FinancialMaintenanceStore {
       WHERE status IN ('queued','running','cancel_requested') AND stage NOT IN ('analysis_dispatch','analysis_wait')
         AND NOT (stage='waiting_issuer' AND status='queued') LIMIT 1`).bind().first());
   }
+  /** Whether a maintenance task owns this issuer's data right now: by its ticker, or by CIK once the task has identified it. */
+  async hasActiveDataTasksFor(ticker: string, cik: string | null) {
+    return Boolean(await this.db.prepare(`SELECT task_id FROM financial_maintenance_tasks
+      WHERE status IN ('queued','running','cancel_requested') AND stage NOT IN ('analysis_dispatch','analysis_wait')
+        AND NOT (stage='waiting_issuer' AND status='queued') AND (ticker=? OR (cik IS NOT NULL AND cik=?)) LIMIT 1`).bind(ticker, cik).first());
+  }
   async claimIssuer(row: MaintenanceRow, cik: string, now: Date): Promise<boolean> {
     if (!/^\d{10}$/.test(cik)) throw new Error("ISSUER_IDENTITY_MISMATCH");
     // OR IGNORE and the partial unique index make this atomic across isolates. Ordinary share

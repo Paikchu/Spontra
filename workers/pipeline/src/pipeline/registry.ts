@@ -5,7 +5,7 @@
  * `tasks.ts`; no queue, marker or Cron.
  */
 export const EVENT_TYPES = [
-  "filing.discovered", "collection.requested", "maintenance.requested",
+  "company.added", "filing.discovered", "collection.requested", "maintenance.requested",
   "financials.published", "filing.archived", "archive.superseded", "archive.prune.requested",
   "map.derived", "filings.indexed", "report.published", "analysis.published", "fundamentals.updated", "guidance.published",
   "task.version_changed",
@@ -107,6 +107,9 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
     { task: "sec-report", when: e => PERIODIC.test(form(e)) || /^(?:8|6)-K/.test(form(e)) },
     { task: "events", when: e => /^(?:8-K|6-K|4)(?:\/A)?$/.test(form(e)) },
   ],
+  // A company new to the pipeline (admin whitelist, or a data ticker seen by discovery for the first time): its event
+  // rail is built now, not at its next current report; collection comes with the maintenance or collection request.
+  "company.added": [{ task: "events" }],
   "collection.requested": [{ task: "collect" }, { task: "history" }],
   "maintenance.requested": [{ task: "maintenance" }],
   "financials.published": [{ task: "map-derive" }, { task: "history" }, { task: "explainer" }, { task: "tree" }, { task: "library-links" }],
@@ -146,8 +149,8 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
 /** Emitters that are not tasks. `task.version_changed` is routed to the one task it names, never subscribed. */
 export const SOURCES: Record<string, readonly EventType[]> = {
   // The only Cron: polls EDGAR, which pushes nothing.
-  "sec-discovery": ["filing.discovered", "collection.requested"],
-  "admin": ["collection.requested", "maintenance.requested", "archive.prune.requested", "library.requested", "library.links.requested", "presentation.unresolved", "ai.enabled", "tree.settings"],
+  "sec-discovery": ["company.added", "filing.discovered", "collection.requested"],
+  "admin": ["company.added", "collection.requested", "maintenance.requested", "archive.prune.requested", "library.requested", "library.links.requested", "presentation.unresolved", "ai.enabled", "tree.settings"],
   "invocation": ["task.version_changed"],
 };
 

@@ -49,16 +49,16 @@ export const FINANCIAL_TASKS = {
       if (env.SEC_DATA_COLLECTION_ENABLED !== "true") return { status: "later", afterMs: HOUR, detail: { waiting: "collection paused" } };
       const policy = await dataPolicy(env);
       if (!allowData(policy, ticker)) return { status: "done", detail: { skipped: "not a data company" } };
-      // An admin maintenance task owns the issuer's data while it runs.
-      if (await new FinancialMaintenanceStore(db).hasActiveDataTasks()) return { status: "later", afterMs: 5 * MINUTE, detail: { waiting: "maintenance" } };
+      // An admin maintenance task owns this issuer's data while it runs; other issuers' tasks do not hold this one up.
+      const cik = await knownCik(db, ticker);
+      if (await new FinancialMaintenanceStore(db).hasActiveDataTasksFor(ticker, cik)) return { status: "later", afterMs: 5 * MINUTE, detail: { waiting: "maintenance" } };
       let job = await claimJobFor(db, ticker, now);
       if (!job) {
         const latest = await latestJob(db, ticker);
         if (latest && ["queued", "retry", "running"].includes(latest.status)) {
           return { status: "later", afterMs: until(latest.status === "running" ? latest.lease_until : latest.next_attempt_at, now), detail: { waiting: latest.status } };
         }
-        const cik = await knownCik(db, ticker) ?? (await discoverDataIssuer(ticker, throttledSecReader(env.SEC_USER_AGENT, fetch, 1000))).cik;
-        await startCollection(db, ticker, cik, now);
+        await startCollection(db, ticker, cik ?? (await discoverDataIssuer(ticker, throttledSecReader(env.SEC_USER_AGENT, fetch, 1000))).cik, now);
         job = await claimJobFor(db, ticker, now);
         if (!job) return { status: "done", detail: { skipped: "collection owned elsewhere" } };
       }
