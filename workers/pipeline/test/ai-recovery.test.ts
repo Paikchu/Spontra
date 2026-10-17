@@ -76,6 +76,29 @@ test("a model provider refusing for balance (HTTP 402) is retried even though th
   assert.equal((await db.prepare("SELECT COUNT(*) AS n FROM pipeline_dead").first<{ n: number }>())!.n, 0);
 });
 
+test("a provider refusing the key (no workspace named) is retried once the configuration is fixed, not dead-lettered", async () => {
+  const db = database();
+  const workflows = binding({ "run-w": { status: "errored", error: { name: "NonRetryableError", message: "[invalid_request_error] Model claude-opus-5-5 business-tree-2-1 HTTP 400: 400 {\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\",\"message\":\"This API key is not scoped to a workspace, so this request must include the anthropic-workspace-id header\"}}" } } });
+  const env = { DB: db } as unknown as SecPipelineEnv;
+  const deadLetter = { task: "tree" as const, ticker: "AMZN", causeId: "c" };
+  const start = async () => ({ id: "run-w", params: {}, fingerprint: "w" });
+  await driveWorkflow(env, "tree:AMZN", workflows, start, { deadLetter, trigger: "e1" });
+  const outcome = await driveWorkflow(env, "tree:AMZN", workflows, start, { deadLetter, trigger: "e1" });
+  assert.equal(outcome.status, "later");
+  assert.equal((await db.prepare("SELECT COUNT(*) AS n FROM pipeline_dead").first<{ n: number }>())!.n, 0);
+});
+
+test("a request the provider rejects on its own merits stays final", async () => {
+  const db = database();
+  const workflows = binding({ "run-r": { status: "errored", error: { name: "NonRetryableError", message: "[invalid_request_error] Model claude-opus-5-5 x HTTP 400: prompt is too long" } } });
+  const env = { DB: db } as unknown as SecPipelineEnv;
+  const deadLetter = { task: "tree" as const, ticker: "AMZN", causeId: "c" };
+  const start = async () => ({ id: "run-r", params: {}, fingerprint: "r" });
+  await driveWorkflow(env, "tree:AMZN", workflows, start, { deadLetter, trigger: "e1" });
+  await driveWorkflow(env, "tree:AMZN", workflows, start, { deadLetter, trigger: "e1" });
+  assert.equal((await db.prepare("SELECT COUNT(*) AS n FROM pipeline_dead").first<{ n: number }>())!.n, 1);
+});
+
 test("a guidance run that errored leaves no event stuck: it is marked failed and retried under a new instance id", async () => {
   const db = database();
   const statuses: Record<string, { status: string; error?: unknown }> = {};

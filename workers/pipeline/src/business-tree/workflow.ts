@@ -19,7 +19,8 @@ import { treeLibrary } from "../filing-library/tree-source.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
 
 /** Changing the prompt, the harness or the output contract researches every company once more. */
-export const BUSINESS_TREE_VERSION = "business-tree.react.v6";
+/** v7 is v6's rules again: every v6 run failed before its first model reply (no workspace named), so each company runs once more. */
+export const BUSINESS_TREE_VERSION = "business-tree.react.v7";
 export const businessTreeCacheKey = (ticker: string) => `business-tree:v1:${ticker}`;
 export type BusinessTreeParams = { ticker: string; fingerprint: string };
 

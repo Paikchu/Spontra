@@ -26,9 +26,10 @@ export type FailedInput = { fingerprint: string; instanceId: string; failure: st
 export const FAILED_INPUT_RETRY_WAITS_MS = [60 * 60_000, 6 * 60 * 60_000, 24 * 60 * 60_000] as const;
 /**
  * A failure the Workflow declared final is retried anyway when the cause is the account, not the request: a model
- * provider refusing for balance or billing (HTTP 402) is fixed by a top-up, after which the run must go again.
+ * provider refusing for balance or billing (HTTP 402) is fixed by a top-up, and one refusing the key itself (no
+ * workspace named, authentication, permission) by a configuration change; after either the run must go again.
  */
-const ACCOUNT_FAILURE = /\bHTTP 402\b|insufficient|balance|billing|payment required|quota/i;
+const ACCOUNT_FAILURE = /\bHTTP 40[013]\b.*(?:workspace|authentication_error|permission_error|invalid x-api-key|api key)|\bHTTP 402\b|insufficient|balance|billing|payment required|quota/i;
 
 /** A retry the last failure scheduled and has not reached: the outcome to wait for it, whatever the input now is. */
 export async function pendingRetryOutcome(env: SecPipelineEnv, task: string, ticker: string, now: Date): Promise<TaskOutcome | null> {
