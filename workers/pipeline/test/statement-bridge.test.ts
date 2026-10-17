@@ -139,6 +139,8 @@ test("the judge accepts only a proposal the reported facts balance, after showin
   assert.equal(refused.structure, null);
   assert.equal(refused.attempts, 2);
   const broke = await judgeStructure(facts, { ticker: "AMZN", form: "10-Q", accession: "a-new", reportDate: "2026-06-30" }, async () => ({ pretax, afterTax: [] }), 3, async () => false);
+  // A provider outage is not a wrong answer: it propagates and nothing is recorded as judged.
+  await assert.rejects(judgeStructure(facts, { ticker: "AMZN", form: "10-Q", accession: "a-new", reportDate: "2026-06-30" }, async () => { throw new Error("Model deepseek-flash presentation HTTP 503"); }, 2), /HTTP 503/);
   assert.deepEqual(broke.issues, ["daily model budget spent"]);
 });
 

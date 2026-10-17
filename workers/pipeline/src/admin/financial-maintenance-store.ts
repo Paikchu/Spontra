@@ -25,6 +25,9 @@ export function taskView(row: MaintenanceRow): FinancialMaintenanceTask {
     canRetry: ["failed", "partial", "cancelled"].includes(row.status), canCancel: ["queued", "running"].includes(row.status) && !["analysis_dispatch", "analysis_wait"].includes(row.stage) };
 }
 
+/** Failed status checks in a row (two minutes apart) after which an analysis-stage task gives up: about a day. */
+const ANALYSIS_STATUS_ATTEMPTS = 720;
+
 export class FinancialMaintenanceStore {
   readonly db: D1Like;
   constructor(db: D1Like) { this.db = db; }
@@ -97,10 +100,11 @@ export class FinancialMaintenanceStore {
   async failStep(row: MaintenanceRow, now: Date) {
     if (["analysis_dispatch", "analysis_wait"].includes(row.stage)) {
       // A provider timeout is not proof that a Workflow did not start. Keep its id and lock until
-      // the same instance is observable; a new retry task would risk duplicate model runs.
-      await this.db.prepare(`UPDATE financial_maintenance_tasks SET status='queued',error_code='WORKFLOW_STATUS_UNAVAILABLE',
-        next_attempt_at=?,updated_at=?,lease_token=NULL,lease_until=NULL WHERE task_id=? AND lease_token=? AND lease_until>?`)
-        .bind(new Date(now.getTime()+120_000).toISOString(),now.toISOString(),row.task_id,row.lease_token,now.toISOString()).run();
+      // the same instance is observable; a new retry task would risk duplicate model runs. An instance that stays
+      // unobservable for about a day (ANALYSIS_STATUS_ATTEMPTS checks two minutes apart) ends the task as failed.
+      await this.db.prepare(`UPDATE financial_maintenance_tasks SET status=CASE WHEN attempt>=? THEN 'failed' ELSE 'queued' END,error_code='WORKFLOW_STATUS_UNAVAILABLE',
+        completed_at=CASE WHEN attempt>=? THEN ? ELSE NULL END,next_attempt_at=?,updated_at=?,lease_token=NULL,lease_until=NULL WHERE task_id=? AND lease_token=? AND lease_until>?`)
+        .bind(ANALYSIS_STATUS_ATTEMPTS,ANALYSIS_STATUS_ATTEMPTS,now.toISOString(),new Date(now.getTime()+120_000).toISOString(),now.toISOString(),row.task_id,row.lease_token,now.toISOString()).run();
       return;
     }
     await this.db.prepare(`UPDATE financial_maintenance_tasks SET status=CASE WHEN status='cancel_requested' THEN 'cancelled' WHEN attempt>=3 THEN 'failed' ELSE 'queued' END,

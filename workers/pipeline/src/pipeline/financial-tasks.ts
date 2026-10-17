@@ -8,8 +8,7 @@ import { archiveFilingDisclosures, readArchivedDocument, refreshStaleProjections
 import { HISTORY_VERSION, runHistoryStep } from "../financial-data/history.ts";
 import { SEC_FLOW_PARSER_VERSION } from "../financial-data/parser.ts";
 import { discoverDataIssuer, readReleaseQuarter, readSecDocumentBatch, throttledSecReader, type SecReader } from "../financial-data/provider.ts";
-import { degraded, withFilingStructure } from "../financial-data/presentation.ts";
-import { emit } from "./outbox.ts";
+import { withFilingStructure } from "../financial-data/presentation.ts";
 import { claimJobFor, latestJob, startCollection } from "../financial-data/queue.ts";
 import { D1CompleteStore } from "../financial-data/store.ts";
 import type { SecPipelineEnv } from "../operations.ts";
@@ -20,6 +19,31 @@ import type { TaskImplementation, TaskOutcome } from "./tasks.ts";
 
 const SECOND = 1000, MINUTE = 60 * SECOND, HOUR = 60 * MINUTE;
 const until = (at: string | null | undefined, now: Date, floor = SECOND) => Math.max(floor, (at ? Date.parse(at) : now.getTime()) - now.getTime());
+
+/**
+ * A collection job lists the issuer's filings once, when it starts. A filing discovered while the job was active (it
+ * was waiting to retry, or a run was claimed from the old listing) is therefore not in that job: when the job ends, the
+ * newest filing collection reads (discovery's `collectable`) is compared with the job's listing, and a missing one
+ * starts a new collection. Each accession restarts at most once, so a filing a job cannot list never loops.
+ */
+export async function missedFiling(db: D1Database, ticker: string, jobId: string): Promise<string | null> {
+  const state = await db.prepare("SELECT json_extract(payload, '$.collectable[0]') newest FROM sec_cache WHERE cache_key = ?").bind(`sec:discovery:v1:${ticker}`).first<{ newest: string | null }>();
+  if (!state?.newest) return null;
+  const job = await db.prepare("SELECT cursor_json FROM financial_collection_jobs WHERE job_id = ?").bind(jobId).first<{ cursor_json: string | null }>();
+  let listed: string[] = [];
+  try {
+    const cursor = JSON.parse(job?.cursor_json || "{}") as { documents?: Array<{ accession: string }>; release?: { accession: string } };
+    if (!cursor.documents) return null;
+    listed = [...cursor.documents.map(d => d.accession), ...(cursor.release ? [cursor.release.accession] : [])];
+  } catch { return null; }
+  if (listed.includes(state.newest)) return null;
+  const marker = `pipeline:collect-restarted:${ticker}`;
+  const restarted = await db.prepare("SELECT json_extract(payload, '$.accession') accession FROM sec_cache WHERE cache_key = ?").bind(marker).first<{ accession: string | null }>();
+  if (restarted?.accession === state.newest) return null;
+  await db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at")
+    .bind(marker, JSON.stringify({ accession: state.newest, jobId }), new Date().toISOString()).run();
+  return state.newest;
+}
 
 async function dataPolicy(env: SecPipelineEnv) {
   const policyEnv = await companyPolicyEnvironment(env);
@@ -60,15 +84,21 @@ export const FINANCIAL_TASKS = {
         }
         await startCollection(db, ticker, cik ?? (await discoverDataIssuer(ticker, throttledSecReader(env.SEC_USER_AGENT, fetch, 1000))).cik, now);
         job = await claimJobFor(db, ticker, now);
-        if (!job) return { status: "done", detail: { skipped: "collection owned elsewhere" } };
+        // Another owner (a collection or maintenance task the checks above did not see) has the issuer: wait, never drop the filing.
+        if (!job) return { status: "later", afterMs: 5 * MINUTE, detail: { waiting: "collection owned elsewhere" } };
       }
       const reader = archivingReader(env, ticker, causeId);
       // A quarter whose earnings release is out is published from the release, ahead of its 10-Q.
-      const { flow, ...result } = await collectComplete(job, policy, new D1CompleteStore(db, causeId), j => readSecDocumentBatch(j, reader), (j, previous) => readReleaseQuarter(j, previous, reader));
-      // A newest quarter no structure balanced asks for a judgement (presentation-task.ts); the publication stands meanwhile.
-      if (result.published && degraded([...(flow?.quarters ?? [])].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd))[0])) await emit(env, [{ type: "presentation.unresolved", ticker, cik: job.cik, causeId }]);
+      // A newest quarter no structure balanced asks for a judgement (presentation-task.ts) in the publication's own
+      // transaction; the publication stands meanwhile.
+      const collected = await collectComplete(job, policy, new D1CompleteStore(db, causeId, { announceDegraded: true }), j => readSecDocumentBatch(j, reader), (j, previous) => readReleaseQuarter(j, previous, reader));
+      const result = { published: collected.published, reasons: collected.reasons };
       const after = await latestJob(db, ticker);
       if (after && ["queued", "retry"].includes(after.status)) return { status: "later", afterMs: until(after.next_attempt_at, now), detail: result };
+      // Still running: this run's lease ran out mid-batch (its writes did not take), or another run holds it. Claim again when it frees.
+      if (after?.status === "running") return { status: "later", afterMs: until(after.lease_until, now), detail: { ...result, waiting: "running" } };
+      const missed = after ? await missedFiling(db, ticker, after.job_id) : null;
+      if (missed && await startCollection(db, ticker, after!.cik, new Date())) return { status: "later", afterMs: SECOND, detail: { ...result, restarted: missed } };
       if (after?.status === "unavailable" && after.reasons_json?.includes("SOURCE_TEMPORARILY_UNAVAILABLE")) {
         const recent = await db.prepare("SELECT status FROM financial_collection_jobs WHERE ticker = ? AND job_id NOT LIKE 'admin:%' ORDER BY generation DESC LIMIT 3").bind(ticker).all<{ status: string }>();
         if (recent.results.length < 3 || recent.results.some(r => r.status !== "unavailable")) return { status: "later", afterMs: 6 * HOUR, detail: { ...result, retry: "source unavailable" } };

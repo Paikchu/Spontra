@@ -38,7 +38,11 @@ export function financialPublicationMetadata(ticker: string, source: {
 export async function readCompletePublication(db:D1Database,cik:string):Promise<CompleteFlowPublication>{
  const row=await db.prepare(`SELECT v.payload_json FROM financial_complete_current c JOIN financial_complete_versions v ON v.version_id=c.version_id WHERE c.cik=?`).bind(cik).first<{payload_json:string}>();
  const attempt=await db.prepare(`SELECT status,reasons_json,updated_at FROM financial_collection_jobs WHERE cik=? ORDER BY generation DESC LIMIT 1`).bind(cik).first<{status:string;reasons_json:string;updated_at:string}>();
- const flow=row?publicFlowSchema.parse(JSON.parse(row.payload_json)):null;if(flow&&!checkCompleteFlow(flow).complete)throw new Error('Published snapshot failed validation');
+ // A stored version the current validator rejects (a stricter check shipped after it was published) reads as unavailable,
+ // not as a storage outage: the map answers for the company, and the next collection publishes a version that passes.
+ let flow:PublicBusinessFlow|null=null,invalid=false;
+ if(row){try{const parsed=publicFlowSchema.safeParse(JSON.parse(row.payload_json));if(parsed.success&&checkCompleteFlow(parsed.data).complete)flow=parsed.data;else invalid=true;}catch{invalid=true;}}
+ if(invalid){console.error(JSON.stringify({event:'published-snapshot-invalid',cik}));return {schemaVersion:'complete-business-flow.v1',status:'unavailable',flow:null,reasons:['INVALID_PAYLOAD'],outdated:false,lastAttemptAt:attempt?.updated_at??null};}
  return {schemaVersion:'complete-business-flow.v1',status:flow?'ready':attempt?.status==='unavailable'?'unavailable':'preparing',flow,reasons:attempt&&attempt.status!=='succeeded'?JSON.parse(attempt.reasons_json):flow?[]:['MISSING_TWO_QUARTERS'],outdated:!!flow&&!!attempt&&attempt.status!=='succeeded',lastAttemptAt:attempt?.updated_at??null};
 }
 

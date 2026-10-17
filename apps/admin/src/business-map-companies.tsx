@@ -24,6 +24,11 @@ const errors: Record<string,string> = {
   INCOMPARABLE_QUARTERS:'相邻季度口径可比性未核验',
   UNBALANCED_STATEMENT:'报表勾稽未通过',
   NO_DIRECT_COMPARABLE_QUARTER:'无可直接提取的季度数据',
+  SEC_DOCUMENT_TOO_LARGE:'申报文件超过 20 MB',
+  NEWER_PUBLICATION_CURRENT:'已有更新的发布',
+  INVALID_PAYLOAD:'已发布数据未通过当前校验',
+  MAINTENANCE_STOPPED:'维护任务已停止',
+  WORKFLOW_STATUS_UNAVAILABLE:'分析状态不可读',
 };
 const active = new Set(['queued','running','cancel_requested']);
 function issueText(code:string) { const parts=code.split(':'); if(parts[0]==='UNSUPPORTED_SOURCE_FACTS')return `${parts[1]} 项事实格式不受支持`; return errors[code] ?? (parts.length>1&&errors[parts.at(-1)!]?`${parts[0]}：${errors[parts.at(-1)!]}`:code); }

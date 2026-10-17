@@ -2,7 +2,7 @@ import type { SecPipelineEnv } from "../operations.ts";
 import type { SecWorkflowParams } from "../core.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import { aiIsEnabled, financialPolicy } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
-import { throttledSecReader, discoverDataIssuer, readSecDocumentBatch, type SecReader } from "../financial-data/provider.ts";
+import { throttledSecReader, discoverDataIssuer, readReleaseQuarter, readSecDocumentBatch, type SecReader } from "../financial-data/provider.ts";
 import { withFilingStructure } from "../financial-data/presentation.ts";
 import { collectComplete } from "../financial-data/collect.ts";
 import { readCompletePublicationForTicker } from "../financial-data/publication.ts";
@@ -27,8 +27,10 @@ const dependencies: MaintenanceDependencies = {
     return withFilingStructure(reader, env.DB!);
   },
   discover: discoverDataIssuer,
+  // The earnings release is read as the collect task reads it, so an admin collection never publishes an older pair
+  // than the one the release already put on the map.
   collect: (env, job, reader) => collectComplete(job, financialPolicy({ SEC_DATA_TICKERS: job.ticker, SEC_AI_ENABLED: "false" }),
-    new D1CompleteStore(env.DB!), j => readSecDocumentBatch(j, reader, 1)),
+    new D1CompleteStore(env.DB!), j => readSecDocumentBatch(j, reader, 1), (j, previous) => readReleaseQuarter(j, previous, reader)),
   history: runHistoryStep,
   reread: rereadHistoryFiling,
 };
@@ -159,7 +161,8 @@ async function backupMaintenanceTarget(env: SecPipelineEnv, row: MaintenanceRow,
   const caches = await env.DB!.prepare(`SELECT * FROM sec_cache WHERE cache_key LIKE ? OR cache_key LIKE ? OR cache_key=? OR cache_key=?`)
     .bind(`%:${row.ticker}`, `%:${row.ticker}:%`, `sec:revenue-history:v1:${state.cik}`, `sec:revenue-history-cursor:v1:${state.cik}`).all();
   const current = await env.DB!.prepare("SELECT * FROM financial_complete_current WHERE cik=?").bind(state.cik).all();
-  const versions = await env.DB!.prepare("SELECT * FROM financial_complete_versions WHERE cik=? ORDER BY generation DESC").bind(state.cik).all();
+  // The newest versions only: every version is immutable and stays in D1, and a long-tracked issuer has one per collection.
+  const versions = await env.DB!.prepare("SELECT * FROM financial_complete_versions WHERE cik=? ORDER BY generation DESC LIMIT 10").bind(state.cik).all();
   await env.SEC_FILINGS.put(state.backupKey!, JSON.stringify({ schemaVersion: "financial-maintenance-backup.v1", taskId: row.task_id, ticker: row.ticker,
     cik: state.cik, createdAt: new Date().toISOString(), caches: caches.results, current: current.results, versions: versions.results }), { httpMetadata: { contentType: "application/json" } });
 }

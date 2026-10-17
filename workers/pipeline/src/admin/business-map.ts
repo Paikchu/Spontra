@@ -130,7 +130,7 @@ export async function handleBusinessMapAdminRequest(request: Request, env: SecPi
       const ticker = normalizeTrackedTicker(decodeURIComponent(judge[1]!));
       if (!ticker) return json({error:'公司代码无效。'},400);
       const cik = await knownCik(db, ticker);
-      if (cik) await db.prepare("UPDATE financial_presentation_profiles SET accession='' WHERE cik=? AND status='unresolved'").bind(cik).run();
+      if (cik) await db.prepare("UPDATE financial_presentation_profiles SET accession='' WHERE cik=?").bind(cik).run();
       await emit(env,[{type:'presentation.unresolved',ticker,cik}]);
       return json({ticker,requested:true},202);
     }

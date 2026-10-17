@@ -35,15 +35,17 @@ export function throttledSecReader(userAgent:string,fetcher:typeof fetch=fetch,d
  if(!userAgent.trim())throw new Error('SEC contact user-agent is required');let next=0;
  return {read:async(url)=>{const parsed=new URL(url);if(parsed.protocol!=='https:'||!['www.sec.gov','data.sec.gov'].includes(parsed.hostname))throw new Error('Non-SEC source denied');const wait=Math.max(0,next-Date.now());next=Math.max(next,Date.now())+delayMs;if(wait)await new Promise(resolve=>setTimeout(resolve,wait));const response=await fetcher(url,{headers:{'user-agent':userAgent,accept:'application/json,text/html'},signal:AbortSignal.timeout(25000)});if([403,429].includes(response.status))throw new Error('SEC_ACCESS_PAUSED');if(!response.ok)throw new Error('SEC_SOURCE_UNAVAILABLE');return response;}};
 }
+/** A filed document never changes size: one over the cap is a final reason (`SEC_DOCUMENT_TOO_LARGE`), never retried as a source outage. */
 async function readBoundedReport(response:Response):Promise<string>{
- if(Number(response.headers.get('content-length'))>SEC_DOCUMENT_MAX_BYTES||!response.body)throw new Error('SEC_DOCUMENT_UNAVAILABLE');
+ if(Number(response.headers.get('content-length'))>SEC_DOCUMENT_MAX_BYTES)throw new Error('SEC_DOCUMENT_TOO_LARGE');
+ if(!response.body)throw new Error('SEC_DOCUMENT_UNAVAILABLE');
  const reader=response.body.getReader(),decoder=new TextDecoder(),parts:string[]=[];let bytes=0;
- try{while(true){const part=await reader.read();if(part.done)break;bytes+=part.value.byteLength;if(bytes>SEC_DOCUMENT_MAX_BYTES){await reader.cancel();throw new Error('SEC_DOCUMENT_UNAVAILABLE');}parts.push(decoder.decode(part.value,{stream:true}));}parts.push(decoder.decode());}finally{reader.releaseLock();}
+ try{while(true){const part=await reader.read();if(part.done)break;bytes+=part.value.byteLength;if(bytes>SEC_DOCUMENT_MAX_BYTES){await reader.cancel();throw new Error('SEC_DOCUMENT_TOO_LARGE');}parts.push(decoder.decode(part.value,{stream:true}));}parts.push(decoder.decode());}finally{reader.releaseLock();}
  const html=canonicalSecHtml(parts.join(''));if(!html.trim())throw new Error('SEC_DOCUMENT_UNAVAILABLE');return html;
 }
 async function readDocument(url:string,reader:SecReader):Promise<string>{
  const stored=await reader.archived?.(url);if(stored)return stored;
- const response=await reader.read(url);if(Number(response.headers.get('content-length'))>SEC_DOCUMENT_MAX_BYTES)throw new Error('Document too large');
+ const response=await reader.read(url);if(Number(response.headers.get('content-length'))>SEC_DOCUMENT_MAX_BYTES)throw new Error('SEC_DOCUMENT_TOO_LARGE');
  return readBoundedReport(response);
 }
 const plain=(html:string)=>html.replace(/<[^>]*>/g,' ').replace(/&nbsp;|&#160;/gi,' ').replace(/&amp;/gi,'&').replace(/\s+/g,' ');
@@ -72,7 +74,7 @@ export async function readFilingDocuments(primaryUrl:string,reader:SecReader,acc
  candidates.push(...[...html.matchAll(/href\s*=\s*["']([^"']+)["']/gi)].map(m=>m[1]).filter(path=>/ex[-_]?99/i.test(path)));
  const exhibits=[...new Set(candidates.map(path=>{try{return new URL(path,primaryUrl);}catch{return null;}})
   .filter((url):url is URL=>!!url&&url.href.startsWith(folder)&&url.href!==primaryUrl&&!url.search&&!url.hash&&/^[A-Za-z0-9_.-]+\.html?$/i.test(url.pathname.split('/').at(-1)!)).map(url=>url.href))].slice(0,2);
- for(const url of exhibits){const body=await readDocument(url,reader);if(documents.reduce((n,d)=>n+d.html.length,0)+body.length>SEC_DOCUMENT_MAX_BYTES+4000000)throw new Error('SEC_DOCUMENT_UNAVAILABLE');documents.push({url,html:body});}
+ for(const url of exhibits){const body=await readDocument(url,reader);if(documents.reduce((n,d)=>n+d.html.length,0)+body.length>SEC_DOCUMENT_MAX_BYTES+4000000)throw new Error('SEC_DOCUMENT_TOO_LARGE');documents.push({url,html:body});}
  // One label set covers the filing; only a document that names members needs it.
  if(accession&&reader.memberLabels&&documents.some(d=>namesMembers(d.html))){const labels=await reader.memberLabels(primaryUrl,accession);for(const d of documents)if(namesMembers(d.html))d.memberLabels=labels;}
  return documents;
