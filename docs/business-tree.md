@@ -26,18 +26,18 @@ GitHub Copilot ─ GitHub ────────┘
 
 代码：`workers/pipeline/src/business-tree/agent.ts`（纯逻辑，可注入模型、搜索和 step），`workflow.ts`（Workflow、扫描、读取）。
 
-每项业务一轮循环，预算 16 轮、6 次搜索、6 次读页。每轮：
+每项业务一轮循环，预算 16 轮（模型回复次数）、6 次搜索、6 次读页。每轮：
 
-- think：模型收到这项业务、公司其他业务、当前树（带节点 ID）、来源列表、历史（最近 3 轮和最近 2 次读页全文，更早的截断）和剩余预算，返回 `{thought, action, input}`。
-- act：`search {query}`、`read {source, focus}`、`add {parent, nodes}`、`revise {id, …}`、`remove {id}`、`finish {}`。
+- think + act（v10，2026-10-18）：动作是 Claude 的客户端工具 `search {query}`、`read {source, focus}`、`add {parent, nodes}`、`revise {id, …}`、`remove {id}`、`finish {}`，schema 均为 `strict: true`，参数必定符合 schema。Sonnet 5.5 不接受强制 `tool_choice`，所以用默认 auto，系统提示要求每次回复都调用工具；一次回复里的多个调用按顺序执行（每轮最多 4 个）。
+- 对话只追加：开头一条 user 消息是任务、当前树、来源列表、预算和年报业务段；之后每次回复原样（含 thinking 块和签名）作为 assistant 消息回传，每个调用的结果作为对应的 `tool_result` 跟在后面，结果末尾附剩余预算。之前的轮次从不裁剪或改写：Claude 的 thinking 块只在系统提示、工具和历史都不变时有效，改了历史会被丢弃或报 400。整段对话走 prompt cache（系统提示一个断点，加顶层自动缓存）。
 - 深度：10-K 往往只写类目（compute、storage、online stores）。模型调用 finish 时，若还有一级节点既没有下级产品也没有赚钱方式，且搜索预算未用完，harness 会提醒一次去公司产品页和定价页补上具名产品和收费方式。
-- 对话形式（v8，2026-10-18）：每轮发给模型的是真实的多轮对话——开头一条 user 消息是任务和年报业务段，之后模型自己的每次决定作为 assistant 消息，harness 的结果作为 user 消息，最新一条 user 消息附带当前的树、来源和预算。v7 把历次 thought/action/observation 写进同一条 user 消息里的 history，Claude 当作伪造的对话记录而拒答（`stop_reason: refusal`）。v9 起每轮只要求返回 `{action, input}`，不再要求写出 thought：要模型逐轮写出推理会被判为套取推理过程（`refusal`，类别 `reasoning_extraction`），模型的推理交给 Claude 自己的思考。
-- 连续 3 次拿不到可用回复（拒答、空回复、流中断）时，运行带着原因结束，由管道稍后自动重试。
+- 之前的做法及失败原因：v7 把历次 thought/action/observation 塞进一条 user 消息，被当作伪造对话记录拒答；v8 要求逐轮写出 thought，被判为套取推理（`refusal`，`reasoning_extraction`）；v9 要求以文本返回 JSON 决定，Claude 会在 JSON 外加说明文字（`invalid_json`）或直接发起工具调用（`ended with tool_use`）。
+- 拿不到可用回复（拒答、在输出上限被截断、流中断）的一轮不进对话，下一轮原样重发；连续 3 次时运行带着原因结束，由管道稍后自动重试。回复里没有工具调用时提醒一次，连续两次则以现有结果结束这项业务。服务端 fallback 在回复中途换模型时，换模型前的 thinking 和工具调用不回传、不执行。
 - observe：harness 把执行结果写成下一轮的 observation。`add` 逐个核对节点，通过的给 ID，未通过的写明原因（例如“anchor 没有同时写出 Azure 和它的上级”），模型下一轮可以改。
 
-搜索和读页是 durable step（`tree-b{n}-t{k}-search/read`），模型调用也是（`tree-b{n}-t{k}-think`）；增删改节点是纯函数，Workflow 重放时按 step 结果重建同一棵树，来源编号也一致。模型返回非 JSON 时记为一轮无效动作，不让整个运行失败；网络和 HTTP 错误仍由 step 重试。
+搜索和读页是 durable step（`tree-b{n}-t{k}-{i}-search/read`，i 是这轮第几个调用），模型调用也是（`tree-b{n}-t{k}-act`，结果是回复的原始内容块）；增删改节点是纯函数，Workflow 重放时按 step 结果重建同一棵树和同一段对话，来源编号也一致。HTTP 错误和超时仍由 step 重试。
 
-SEC 文件全部来自文件库（`docs/sec-filing-library.md`）：开始前从文件库列出最近一份 10-K 和 flow 自身的文件，不再用网络搜索找年报；对 SEC 来源的 read 是 D1 查询，返回按 focus 排序的原文段落；网络搜索只用于厂商页面。每项业务开始前，文件库把年报里这项业务自己的章节（标题点名该业务的小节及其下级，否则按业务名排序的 Item 1 段落）作为第 0 轮“已读”材料放进历史，不占读页预算。
+SEC 文件全部来自文件库（`docs/sec-filing-library.md`）：开始前从文件库列出最近一份 10-K 和 flow 自身的文件，不再用网络搜索找年报；对 SEC 来源的 read 是 D1 查询，返回按 focus 排序的原文段落；网络搜索只用于厂商页面。每项业务开始前，文件库把年报里这项业务自己的章节（标题点名该业务的小节及其下级，否则按业务名排序的 Item 1 段落）作为“已读”材料放进开头消息，不占读页预算。
 
 各项业务并行研究：每项业务有自己的来源编号（`b1-s1`、`b2-s1`…）和步骤名，结束后按 URL 合并、按业务顺序重新编号为 `s1…sN`，`sources` 只含被引用的来源。关键路径上的顺序模型调用从“各业务轮数之和”降为“最长的一项业务”。
 

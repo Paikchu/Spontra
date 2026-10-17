@@ -8,7 +8,8 @@ import { requireDb } from "../core.ts";
 import { featureTickersFor } from "../financial-data/company-policy.ts";
 import { readCompletePublicationForTicker } from "../financial-data/publication.ts";
 import { SecModelOutputError } from "../model-stream.ts";
-import { callWorkerSecModel, type SecPipelineEnv } from "../operations.ts";
+import type Anthropic from "@anthropic-ai/sdk";
+import { callWorkerSecModel, callWorkerToolModel, type SecPipelineEnv } from "../operations.ts";
 import { AnalysisRequestError } from "../read-api/contract-support/errors.ts";
 import { researchSearch } from "../web-search/research-search.ts";
 import { D1SecRepository } from "../sec/d1.ts";
@@ -20,10 +21,11 @@ import { outboxStatement } from "../pipeline/outbox.ts";
 
 /** Changing the prompt, the harness or the output contract researches every company once more. */
 /**
- * v9: the loop is a real conversation (v8) and asks for decisions only. v7 and v8 asked each turn for a written "thought",
- * which Claude declined as extracting its reasoning (refusal, reasoning_extraction).
+ * v10: the loop acts through Claude tools, its exchange only growing. v9 asked for a JSON decision in text, which Claude
+ * wrapped in prose or answered with a tool call (invalid_json, ended with tool_use); v7 and v8 asked for a written
+ * "thought", which it declined as extracting its reasoning (refusal, reasoning_extraction).
  */
-export const BUSINESS_TREE_VERSION = "business-tree.react.v9";
+export const BUSINESS_TREE_VERSION = "business-tree.react.v10";
 export const businessTreeCacheKey = (ticker: string) => `business-tree:v1:${ticker}`;
 export type BusinessTreeParams = { ticker: string; fingerprint: string };
 
@@ -72,6 +74,7 @@ export async function executeBusinessTreeWorkflow(params: BusinessTreeParams, st
   // Switched off in the admin after the run was scheduled: nothing to write, and nothing that failed.
   if (!treeTickersFor(env).includes(params.ticker) || env.BUSINESS_TREE_ENABLED === "false") return { status: "superseded" };
   const modelVersion = modelFor(env, "tree");
+  const tuning = { reasoning: reasoningFor(env, "tree"), ticker: params.ticker, runId };
   const now = await step.do("tree-time", async () => new Date().toISOString());
   const input = await step.do("tree-input", () => readInput(env, params.ticker));
   // The business list changed after scheduling; the next sweep starts a run for the new list.
@@ -81,10 +84,16 @@ export async function executeBusinessTreeWorkflow(params: BusinessTreeParams, st
     filings: input.filings, search: researchSearch(env), modelVersion, fingerprint: params.fingerprint, now,
     // SEC filings are read from the filing library; the web search is left for vendor pages.
     filingLibrary: treeLibrary(requireDb(env), params.ticker, input.filings),
-    // A reply that is not JSON is the model's turn gone wrong, answered in the next observation; transport errors still retry the step.
-    model: async (stage, system, payload, conversation) => {
-      try { return await callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, 5 * 60_000, true, { reasoning: reasoningFor(env, "tree"), ticker: params.ticker, runId, conversation }); }
-      catch (error) { if (error instanceof SecModelOutputError) return { action: "invalid", error: `${error.code}: ${error.message}`.slice(0, 300) }; throw error; }
+    // A broken or stalled reply is the turn gone wrong, which the loop answers; HTTP failures and timeouts still retry the step.
+    model: {
+      act: async (stage, system, tools, messages) => {
+        try { return await callWorkerToolModel(env, fetcher, stage, { system, tools: tools as Anthropic.Beta.BetaTool[], messages: messages as Anthropic.Beta.BetaMessageParam[] }, modelVersion, 5 * 60_000, tuning); }
+        catch (error) { if (error instanceof SecModelOutputError) return { error: `${error.code}: ${error.message}`.slice(0, 300) }; throw error; }
+      },
+      judge: async (stage, system, payload) => {
+        try { return await callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, 5 * 60_000, true, tuning); }
+        catch (error) { if (error instanceof SecModelOutputError) return {}; throw error; }
+      },
     },
     stage: (name, callback) => step.do(`tree-${name}`, callback),
   });

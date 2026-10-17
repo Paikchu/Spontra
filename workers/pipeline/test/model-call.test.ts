@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { callWorkerSecModel, SecModelHttpError, type SecPipelineEnv } from "../src/operations.ts";
+import { callWorkerSecModel, callWorkerToolModel, SecModelHttpError, type SecPipelineEnv } from "../src/operations.ts";
 import { SecModelOutputError } from "../src/model-stream.ts";
 
 const env = { ANTHROPIC_API_KEY: "sk-test" } as unknown as SecPipelineEnv;
@@ -50,11 +50,48 @@ test("a key that is not scoped to a workspace names the configured workspace on 
   assert.equal(none[0]!.headers.get("anthropic-workspace-id"), null);
 });
 
-test("a conversation is sent as its own turns, in place of the payload's single message", async () => {
-  const { fetcher, requests } = fakeFetch(sse([start(), ...text(0, "{}"), ...end("end_turn")]));
-  const conversation = [{ role: "user" as const, content: "task" }, { role: "assistant" as const, content: '{"action":"read"}' }, { role: "user" as const, content: "result" }];
-  await callWorkerSecModel(env, fetcher, "business-tree-1-2", "Agent.", { state: 1 }, undefined, undefined, true, { conversation });
-  assert.deepEqual(requests[0]!.body.messages, conversation);
+const thinking = (index: number, signature: string) => [
+  { type: "content_block_start", index, content_block: { type: "thinking", thinking: "", signature: "" } },
+  { type: "content_block_delta", index, delta: { type: "signature_delta", signature } },
+  { type: "content_block_stop", index },
+];
+const toolUse = (index: number, id: string, name: string, json: string) => [
+  { type: "content_block_start", index, content_block: { type: "tool_use", id, name, input: {} } },
+  { type: "content_block_delta", index, delta: { type: "input_json_delta", partial_json: json.slice(0, 5) } },
+  { type: "content_block_delta", index, delta: { type: "input_json_delta", partial_json: json.slice(5) } },
+  { type: "content_block_stop", index },
+];
+const tools = [{ name: "read", description: "Read.", strict: true, input_schema: { type: "object" as const, properties: { source: { type: "string" } }, required: ["source"], additionalProperties: false } }];
+
+test("a tool turn sends the tools and the exchange as given, and returns the reply's blocks as they are to be sent back", async () => {
+  const { fetcher, requests } = fakeFetch(sse([start("claude-sonnet-5-5"), ...thinking(0, "sig"), ...toolUse(1, "toolu_1", "read", '{"source":"b1-s1"}'), ...end("tool_use")]));
+  const messages = [{ role: "user" as const, content: "task" }];
+  const reply = await callWorkerToolModel(env, fetcher, "business-tree-1-1", { system: "Agent.", tools, messages }, "claude-sonnet-5-5", undefined, { reasoning: "medium" });
+  assert.deepEqual(reply, { stopReason: "tool_use", refusalCategory: null, content: [{ type: "thinking", thinking: "", signature: "sig" }, { type: "tool_use", id: "toolu_1", name: "read", input: { source: "b1-s1" } }] });
+  const body = requests[0]!.body;
+  assert.deepEqual(body.tools, tools);
+  assert.deepEqual(body.messages, messages);
+  assert.equal(body.tool_choice, undefined, "Sonnet 5.5 refuses a forced tool choice");
+  assert.equal(body.thinking, undefined);
+  assert.deepEqual(body.cache_control, { type: "ephemeral" });
+  assert.equal((body.system as Array<Record<string, unknown>>)[0]!.text, "Agent.");
+  assert.equal(body.fallbacks, "default");
+});
+
+test("after a fallback mid-reply, only what may be echoed comes back, and a refusal keeps its category", async () => {
+  const fallback = [{ type: "content_block_start", index: 2, content_block: { type: "fallback", from: { model: "claude-sonnet-5-5" }, to: { model: "claude-opus-5" } } }, { type: "content_block_stop", index: 2 }];
+  const { fetcher } = fakeFetch(sse([start("claude-sonnet-5-5"), ...thinking(0, "declined"), ...toolUse(1, "toolu_1", "read", '{"source":"b1-s1"}'), ...fallback, ...toolUse(3, "toolu_2", "read", '{"source":"b1-s2"}'), ...end("tool_use")]));
+  const reply = await callWorkerToolModel(env, fetcher, "business-tree-1-1", { system: "A.", tools, messages: [{ role: "user", content: "t" }] }, "claude-sonnet-5-5");
+  assert.deepEqual(reply.content.map(b => b.id ?? b.type), ["toolu_2"]);
+  const { fetcher: refusing } = fakeFetch(sse([start("claude-sonnet-5-5"), { type: "message_delta", delta: { stop_reason: "refusal", stop_sequence: null, stop_details: { type: "refusal", category: "cyber", explanation: null } }, usage: { output_tokens: 0 } }, { type: "message_stop" }]));
+  const refused = await callWorkerToolModel(env, refusing, "business-tree-1-1", { system: "A.", tools, messages: [{ role: "user", content: "t" }] }, "claude-sonnet-5-5");
+  assert.deepEqual([refused.stopReason, refused.refusalCategory], ["refusal", "cyber"]);
+});
+
+test("a tool turn keeps HTTP failures typed for the step's retry", async () => {
+  const { fetcher } = fakeFetch(JSON.stringify({ type: "error", error: { type: "overloaded_error", message: "busy" } }), 529);
+  await assert.rejects(callWorkerToolModel(env, fetcher, "business-tree-1-1", { system: "A.", tools, messages: [{ role: "user", content: "t" }] }), (error) =>
+    error instanceof SecModelHttpError && error.status === 529 && error.providerCode === "overloaded_error");
 });
 
 test("Haiku has no server-side fallback, so its requests carry none", async () => {

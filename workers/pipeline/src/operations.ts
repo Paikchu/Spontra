@@ -43,7 +43,7 @@ import { assertTrackedTicker, requireDb, type SecCronEnv } from "./core.ts";
 import type { AnalysisReadEnv } from "./read-api/router.ts";
 import type { EventMessage, TaskMessage } from "./pipeline/messages.ts";
 import { outboxStatement } from "./pipeline/outbox.ts";
-import { SEC_MODEL_EXECUTION_BUDGET_MS, SEC_MODEL_FIRST_RESPONSE_MS, SEC_MODEL_OUTPUT_TOKENS, type SecModelExecution, SEC_FALLBACK_MODEL } from "./retry-policy.ts";
+import { SEC_MODEL_EXECUTION_BUDGET_MS, SEC_MODEL_FIRST_RESPONSE_MS, SEC_MODEL_OUTPUT_TOKENS, SEC_MODEL_STALL_MS, type SecModelExecution, SEC_FALLBACK_MODEL } from "./retry-policy.ts";
 import type { PreparedFilingReference, SecPipelineOperations, WorkflowJobUpdate } from "./workflow-core.ts";
 import { jobAnalysisVersionFor } from "./workflow-core.ts";
 
@@ -654,12 +654,6 @@ export async function callWorkerSecModel(
 export type ModelCallTuning = {
   maxTokens?: number; reasoning?: ReasoningEffort; onMetrics?: (metrics: Readonly<Record<string, unknown>>) => void;
   ticker?: string; runId?: string; kind?: string;
-  /**
-   * A multi-turn exchange, oldest first, ending with a user message: the agent's own earlier replies as assistant turns
-   * and what came back as user turns. It replaces the single user message built from `payload`. An agent loop must send
-   * its past turns this way: written into one user message they read as a fabricated transcript, which Claude declines.
-   */
-  conversation?: Array<{ role: "user" | "assistant"; content: string }>;
 };
 
 async function requestWorkerSecModelContent(
@@ -671,7 +665,7 @@ async function requestWorkerSecModelContent(
   modelOverride?: string,
   executionBudgetMs = SEC_MODEL_EXECUTION_BUDGET_MS,
   jsonMode = true,
-  options?: Partial<ModelRequestOptions> & Pick<ModelCallTuning, "onMetrics" | "reasoning" | "ticker" | "runId" | "kind" | "conversation">,
+  options?: Partial<ModelRequestOptions> & Pick<ModelCallTuning, "onMetrics" | "reasoning" | "ticker" | "runId" | "kind">,
 ): Promise<string> {
   const apiKey = await resolveWorkerModelKey(env, fetcher);
   const started = Date.now();
@@ -684,21 +678,9 @@ async function requestWorkerSecModelContent(
   if (options?.workflowInstanceId) metrics.workflowInstanceId = options.workflowInstanceId;
   // Pings count as liveness: an adaptive-thinking model can think for minutes without emitting a visible delta.
   let liveAt = Date.now();
-  const client = new Anthropic({
-    apiKey, maxRetries: 0, timeout: executionBudgetMs, defaultHeaders: anthropicWorkspaceHeaders(env.ANTHROPIC_WORKSPACE_ID),
-    fetch: async (input, init) => {
-      const response = await fetcher(input, init);
-      if (!response.body) return response;
-      const observed = response.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
-        transform(chunk, controller) { liveAt = Date.now(); metrics.wireBytes = Number(metrics.wireBytes ?? 0) + chunk.byteLength; controller.enqueue(chunk); },
-      }));
-      return new Response(observed, { status: response.status, statusText: response.statusText, headers: response.headers });
-    },
-  });
+  const client = modelClient(env, apiKey, executionBudgetMs, fetcher, metrics, () => { liveAt = Date.now(); });
   try {
-  const messages: Anthropic.Beta.BetaMessageParam[] = options?.conversation?.length
-    ? options.conversation.map(m => ({ role: m.role, content: m.content }))
-    : [{ role: "user", content: JSON.stringify(payload) }];
+  const messages: Anthropic.Beta.BetaMessageParam[] = [{ role: "user", content: JSON.stringify(payload) }];
   if (options?.continuation) messages.push(
     { role: "assistant", content: options.continuation },
     { role: "user", content: "The response was interrupted. Continue this exact JSON at the next character, including inside an unfinished string. Output only the missing suffix: no prefix repetition, no markdown. Preserve all completed content and evidence references. Finish the entire required object." },
@@ -722,8 +704,7 @@ async function requestWorkerSecModelContent(
       // Adaptive thinking is the default; effort sets how deep it goes.
       output_config: { effort: options?.reasoning ?? "high" },
       max_tokens: options?.maxTokens ?? SEC_MODEL_OUTPUT_TOKENS,
-      // A safety-classifier decline is re-run on Anthropic's recommended model inside the same call.
-      ...(SERVER_FALLBACK_MODELS.test(model) ? { fallbacks: "default" as const, betas: ["server-side-fallback-2026-07-01"] } : {}),
+      ...serverFallback(model),
       // Streaming keeps bytes flowing on long generations and lets a stalled connection be detected.
       stream: true,
     }, { signal: controller.signal }) as typeof stream;
@@ -731,12 +712,9 @@ async function requestWorkerSecModelContent(
     if (!(error instanceof Anthropic.APIError) || error instanceof Anthropic.APIUserAbortError) throw error;
     // Transport failures carry no status; the recovery loop retries them as it retries a failed fetch.
     if (error instanceof Anthropic.APIConnectionError || error.status === undefined) throw new TypeError(`Model ${model} ${stage} transport: ${error.message}`);
-    const retryAfter = error.headers?.get("retry-after");
-    const retryAfterMs = retryAfter ? (/^\d+$/.test(retryAfter) ? Number(retryAfter) * 1000 : Math.max(0, Date.parse(retryAfter) - Date.now())) : 0;
-    const code = (error.error as { error?: { type?: unknown } } | undefined)?.error?.type;
-    const providerCode = typeof code === "string" && /^[a-zA-Z0-9_.-]{1,100}$/.test(code) ? code : undefined;
-    metrics.providerCode = providerCode;
-    throw new SecModelHttpError(error.status, `Model ${model} ${stage} HTTP ${error.status}: ${error.message.replaceAll(apiKey, "[redacted]").slice(0, 1000)}`, retryAfterMs, providerCode);
+    const failure = httpFailure(error, model, stage, apiKey);
+    metrics.providerCode = failure.providerCode;
+    throw failure;
   }
   clearTimeout(firstTimer);
   metrics.headersMs = Date.now() - started;
@@ -754,15 +732,130 @@ async function requestWorkerSecModelContent(
   } finally {
     clearTimeout(firstTimer);
     clearTimeout(budgetTimer);
-    console.log(JSON.stringify({ event: "sec-model-request", ...metrics, elapsedMs: Date.now() - started }));
-    try { options?.onMetrics?.(metrics); } catch { /* Usage accounting never fails a model call. */ }
-    // Every call, however it ended, is a row in the cost ledger; the write is bounded and never throws.
-    await recordAiUsage(env, aiUsageFromMetrics(metrics, {
-      at: new Date(started).toISOString(), durationMs: Date.now() - started, provider: "anthropic",
-      ticker: options?.ticker, kind: options?.kind,
-      runId: options?.runId ?? (options?.workflowInstanceId && options.workflowInstanceId !== "standalone" ? options.workflowInstanceId : undefined),
-    }));
+    await recordModelCall(env, metrics, started, { ...options, runId: options?.runId ?? (options?.workflowInstanceId && options.workflowInstanceId !== "standalone" ? options.workflowInstanceId : undefined) });
   }
+}
+
+/** One agent turn taken through client tools: the reply's content blocks as they are to be sent back, and why it stopped. */
+export type ToolTurnReply = { content: ContentBlock[]; stopReason: string | null; refusalCategory: string | null };
+type ContentBlock = { type: string } & Record<string, unknown>;
+/** A tool turn's thinking plus its calls; an `add` of eight nodes with anchors and revenue entries fits well inside. */
+const TOOL_TURN_TOKENS = 32_000;
+
+/**
+ * One turn of an agent loop that acts through client tools. Claude Sonnet 5.5 and Opus 5.5 refuse a forced `tool_choice`,
+ * so the tools are strict (arguments always match their schema) and the prompt asks for a call. `messages` must only ever
+ * grow: a thinking block stays valid only while the system prompt, the tools and every earlier turn are sent unchanged.
+ * HTTP failures throw as in `callWorkerSecModel`; a broken or stalled stream throws `SecModelOutputError`; a refusal or a
+ * reply cut off at the token limit comes back with its stop reason, for the loop to decide.
+ */
+export async function callWorkerToolModel(
+  env: SecPipelineEnv, fetcher: typeof fetch, stage: string,
+  request: { system: string; tools: Anthropic.Beta.BetaTool[]; messages: Anthropic.Beta.BetaMessageParam[] },
+  modelOverride?: string, executionBudgetMs = SEC_MODEL_EXECUTION_BUDGET_MS, tuning?: ModelCallTuning,
+): Promise<ToolTurnReply> {
+  const apiKey = await resolveWorkerModelKey(env, fetcher);
+  const started = Date.now();
+  const model = modelOverride || env.SEC_ANALYSIS_MODEL || SEC_FALLBACK_MODEL;
+  const maxTokens = tuning?.maxTokens ?? TOOL_TURN_TOKENS;
+  const metrics: Record<string, unknown> = { stage, model, inputCharacters: JSON.stringify(request.messages).length, maxTokens, reasoning: tuning?.reasoning ?? "high", mode: "tool-turn" };
+  const controller = new AbortController();
+  let timeoutKind = "execution-budget", liveAt = Date.now();
+  let watchdog: ReturnType<typeof setInterval> | undefined;
+  const budgetTimer = setTimeout(() => { timeoutKind = "execution-budget"; controller.abort(); }, executionBudgetMs);
+  const firstTimer = setTimeout(() => { timeoutKind = "first-response"; controller.abort(); }, SEC_MODEL_FIRST_RESPONSE_MS);
+  const client = modelClient(env, apiKey, executionBudgetMs, fetcher, metrics, () => { liveAt = Date.now(); }, () => {
+    // Headers are in: from here a connection silent for the stall window, pings included, has stalled.
+    clearTimeout(firstTimer);
+    metrics.headersMs ??= Date.now() - started;
+    watchdog ??= setInterval(() => { if (Date.now() - liveAt >= SEC_MODEL_STALL_MS) { timeoutKind = "stream-stall"; controller.abort(); } }, 1_000);
+  });
+  try {
+    const message = await client.beta.messages.stream({
+      model,
+      system: [{ type: "text", text: request.system, cache_control: { type: "ephemeral" } }],
+      tools: request.tools,
+      messages: request.messages,
+      // The exchange is cached up to its newest turn, so each turn reads every earlier one from the cache.
+      cache_control: { type: "ephemeral" },
+      output_config: { effort: tuning?.reasoning ?? "high" },
+      max_tokens: maxTokens,
+      ...serverFallback(model),
+    }, { signal: controller.signal }).finalMessage();
+    const refusalCategory = typeof message.stop_details?.category === "string" ? message.stop_details.category : null;
+    Object.assign(metrics, { servedModel: message.model, usage: message.usage, finishReason: message.stop_reason, refusalCategory, outputCharacters: JSON.stringify(message.content).length });
+    const fallbacks = message.content.filter(b => b.type === "fallback").length;
+    if (fallbacks) metrics.fallbacks = fallbacks;
+    return { content: echoable(JSON.parse(JSON.stringify(message.content)) as ContentBlock[]), stopReason: message.stop_reason, refusalCategory };
+  } catch (error) {
+    if (controller.signal.aborted) {
+      metrics.error = `model-timeout:${timeoutKind}`;
+      if (timeoutKind === "stream-stall") throw new SecModelOutputError("stream_stall", `Model ${stage} stream stalled: no bytes for ${SEC_MODEL_STALL_MS / 1000}s`);
+      throw new Error(`model-timeout:${timeoutKind} stage=${stage} elapsedMs=${Date.now() - started}`);
+    }
+    if (error instanceof Anthropic.APIError && error.status !== undefined) {
+      const failure = httpFailure(error, model, stage, apiKey);
+      Object.assign(metrics, { error: `http:${error.status}`, providerCode: failure.providerCode });
+      throw failure;
+    }
+    // An error event inside the stream (overloaded mid-reply) or a dropped connection: this turn has no reply.
+    metrics.error = "stream_incomplete";
+    throw new SecModelOutputError("stream_incomplete", `Model ${stage} stream interrupted: ${error instanceof Error ? error.message.replaceAll(apiKey, "[redacted]").slice(0, 300) : "transport error"}`);
+  } finally {
+    clearTimeout(firstTimer);
+    clearTimeout(budgetTimer);
+    clearInterval(watchdog);
+    await recordModelCall(env, metrics, started, tuning ?? {});
+  }
+}
+
+/**
+ * The reply as it may go back: after a fallback mid-reply, the declined model's thinking and tool calls before the last
+ * switch point are not the served reply and cannot be echoed; its text, and everything after the switch, can.
+ */
+function echoable(content: ContentBlock[]): ContentBlock[] {
+  const boundary = content.findLastIndex(b => b.type === "fallback");
+  return boundary < 0 ? content : content.filter((b, i) => i > boundary || b.type === "text");
+}
+
+/** The client every model call uses: the workspace header, no SDK retries, and a body watcher for liveness. */
+function modelClient(env: SecPipelineEnv, apiKey: string, timeout: number, fetcher: typeof fetch, metrics: Record<string, unknown>, onBytes: () => void, onHeaders?: () => void): Anthropic {
+  return new Anthropic({
+    apiKey, maxRetries: 0, timeout, defaultHeaders: anthropicWorkspaceHeaders(env.ANTHROPIC_WORKSPACE_ID),
+    fetch: async (input, init) => {
+      const response = await fetcher(input, init);
+      onHeaders?.();
+      if (!response.body) return response;
+      const observed = response.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+        transform(chunk, controller) { onBytes(); metrics.wireBytes = Number(metrics.wireBytes ?? 0) + chunk.byteLength; controller.enqueue(chunk); },
+      }));
+      return new Response(observed, { status: response.status, statusText: response.statusText, headers: response.headers });
+    },
+  });
+}
+
+/** A safety-classifier decline is re-run on Anthropic's recommended model inside the same call. */
+function serverFallback(model: string) {
+  return SERVER_FALLBACK_MODELS.test(model) ? { fallbacks: "default" as const, betas: ["server-side-fallback-2026-07-01"] } : {};
+}
+
+/** An HTTP failure with its status, provider code and retry-after, for the recovery loop; the key never reaches the message. */
+function httpFailure(error: InstanceType<typeof Anthropic.APIError>, model: string, stage: string, apiKey: string): SecModelHttpError {
+  const retryAfter = error.headers?.get("retry-after");
+  const retryAfterMs = retryAfter ? (/^\d+$/.test(retryAfter) ? Number(retryAfter) * 1000 : Math.max(0, Date.parse(retryAfter) - Date.now())) : 0;
+  const code = (error.error as { error?: { type?: unknown } } | undefined)?.error?.type;
+  const providerCode = typeof code === "string" && /^[a-zA-Z0-9_.-]{1,100}$/.test(code) ? code : undefined;
+  return new SecModelHttpError(error.status!, `Model ${model} ${stage} HTTP ${error.status}: ${error.message.replaceAll(apiKey, "[redacted]").slice(0, 1000)}`, retryAfterMs, providerCode);
+}
+
+/** Every call, however it ended, is logged and is a row in the cost ledger; the write is bounded and never throws. */
+async function recordModelCall(env: SecPipelineEnv, metrics: Record<string, unknown>, started: number, tuning: Pick<ModelCallTuning, "onMetrics" | "ticker" | "runId" | "kind">): Promise<void> {
+  console.log(JSON.stringify({ event: "sec-model-request", ...metrics, elapsedMs: Date.now() - started }));
+  try { tuning.onMetrics?.(metrics); } catch { /* Usage accounting never fails a model call. */ }
+  await recordAiUsage(env, aiUsageFromMetrics(metrics, {
+    at: new Date(started).toISOString(), durationMs: Date.now() - started, provider: "anthropic",
+    ticker: tuning.ticker, kind: tuning.kind, runId: tuning.runId,
+  }));
 }
 
 /** The models that accept server-side `fallbacks` on the Claude API; Haiku has none. */
