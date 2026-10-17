@@ -31,7 +31,7 @@ GitHub Copilot ─ GitHub ────────┘
 - think：模型收到这项业务、公司其他业务、当前树（带节点 ID）、来源列表、历史（最近 3 轮和最近 2 次读页全文，更早的截断）和剩余预算，返回 `{thought, action, input}`。
 - act：`search {query}`、`read {source, focus}`、`add {parent, nodes}`、`revise {id, …}`、`remove {id}`、`finish {}`。
 - 深度：10-K 往往只写类目（compute、storage、online stores）。模型调用 finish 时，若还有一级节点既没有下级产品也没有赚钱方式，且搜索预算未用完，harness 会提醒一次去公司产品页和定价页补上具名产品和收费方式。
-- 对话形式（v8，2026-10-18）：每轮发给模型的是真实的多轮对话——开头一条 user 消息是任务和年报业务段，之后模型自己的每次决定作为 assistant 消息，harness 的结果作为 user 消息，最新一条 user 消息附带当前的树、来源和预算。v7 把历次 thought/action/observation 写进同一条 user 消息里的 history，Claude 当作伪造的对话记录而拒答（`stop_reason: refusal`）。
+- 对话形式（v8，2026-10-18）：每轮发给模型的是真实的多轮对话——开头一条 user 消息是任务和年报业务段，之后模型自己的每次决定作为 assistant 消息，harness 的结果作为 user 消息，最新一条 user 消息附带当前的树、来源和预算。v7 把历次 thought/action/observation 写进同一条 user 消息里的 history，Claude 当作伪造的对话记录而拒答（`stop_reason: refusal`）。v9 起每轮只要求返回 `{action, input}`，不再要求写出 thought：要模型逐轮写出推理会被判为套取推理过程（`refusal`，类别 `reasoning_extraction`），模型的推理交给 Claude 自己的思考。
 - 连续 3 次拿不到可用回复（拒答、空回复、流中断）时，运行带着原因结束，由管道稍后自动重试。
 - observe：harness 把执行结果写成下一轮的 observation。`add` 逐个核对节点，通过的给 ID，未通过的写明原因（例如“anchor 没有同时写出 Azure 和它的上级”），模型下一轮可以改。
 

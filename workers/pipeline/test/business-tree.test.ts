@@ -114,8 +114,15 @@ test("the loop reaches the model as a real conversation: its replies as assistan
   assert.deepEqual(third.map(m => m.role), ["user", "assistant", "user"]);
   assert.match(third[0]!.content, /"company":"Microsoft Corp"/);
   assert.match(third[1]!.content, /"action":"read"/);
-  assert.ok(third.every(m => m.role === "assistant" || !/"thought"|"history"/.test(m.content)), "no earlier reasoning is written into a user turn");
+  assert.ok(third.every(m => !/"thought"|"history"/.test(m.content)), "no turn carries written-out reasoning or a packed history");
   assert.match(third[2]!.content, /"budget"/);
+});
+
+test("the prompt asks for decisions only, never for written-out reasoning", async () => {
+  let system = "";
+  await run([{ flowNodeId: "msft:IntelligentCloudMember", name: "IntelligentCloud" }], async (stage, prompt) => { if (!stage.includes("review")) system = prompt; return { action: "finish", input: {} }; }).catch(() => null);
+  assert.match(system, /\{"action":"\.\.\.","input"/);
+  assert.doesNotMatch(system, /thought/i);
 });
 
 test("an exchange always alternates and ends with the user", () => {

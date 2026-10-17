@@ -19,8 +19,11 @@ import { treeLibrary } from "../filing-library/tree-source.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
 
 /** Changing the prompt, the harness or the output contract researches every company once more. */
-/** v8 sends the loop as a real conversation: v7 packed past turns into one user message, which Claude declined as a fabricated transcript. */
-export const BUSINESS_TREE_VERSION = "business-tree.react.v8";
+/**
+ * v9: the loop is a real conversation (v8) and asks for decisions only. v7 and v8 asked each turn for a written "thought",
+ * which Claude declined as extracting its reasoning (refusal, reasoning_extraction).
+ */
+export const BUSINESS_TREE_VERSION = "business-tree.react.v9";
 export const businessTreeCacheKey = (ticker: string) => `business-tree:v1:${ticker}`;
 export type BusinessTreeParams = { ticker: string; fingerprint: string };
 
