@@ -12,7 +12,9 @@ export async function handleReportAdminProxy(request: Request, path: string[], e
   if (!path.length || !/^(session|financials|business-map|ai|library)$/.test(path[0]!) || path.length > (path[0] === "financials" || path[0] === "ai" || path[0] === "library" ? 6 : 4)) return json({ error: "Not found" }, 404);
   if (path[0] === "business-map") {
     const route = path.slice(1).join("/");
-    if (!(request.method === "GET" && /^companies(?:\/[A-Z][A-Z0-9.-]{0,9}\/charts)?$/.test(route)) && !(request.method === "POST" && /^companies\/[A-Z][A-Z0-9.-]{0,9}(?:\/presentation|\/ai)?$/.test(route))) return json({ error: "Not found" }, 404);
+    const read = request.method === "GET" && /^companies(?:\/[A-Z][A-Z0-9.-]{0,9}\/charts)?$/.test(route);
+    const write = request.method === "POST" && (/^companies\/[A-Z][A-Z0-9.-]{0,9}(?:\/presentation|\/features\/(?:reports|findings|explainer|tree))?$/.test(route) || /^features\/(?:reports|findings|explainer|tree)$/.test(route));
+    if (!read && !write) return json({ error: "Not found" }, 404);
   }
   if (path[0] === "ai") {
     const route = path.slice(1).join("/");

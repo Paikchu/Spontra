@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { AlertTriangle, CheckCircle2, ChevronRight, ExternalLink, Layers, Plus, RefreshCw, Scale, ScanLine, Search, Trash2 } from 'lucide-react';
 import type { BusinessMapCompanies, BusinessMapCompany } from '@/shared/analysis-contract/business-map-admin';
+import { FEATURES, type Feature } from '@/shared/analysis-contract/business-features';
 import { adminApi, AdminApiError } from './admin-api';
 import { normalizeCompanyTicker, pendingRequestId, completeRequestId } from './financial-maintenance-state';
 import { financialDate } from './financial-update-history';
@@ -26,6 +27,15 @@ const errors: Record<string,string> = {
   NO_DIRECT_COMPARABLE_QUARTER:'无可直接提取的季度数据',
 };
 const active = new Set(['queued','running','cancel_requested']);
+/** The reader-facing features, as the map labels them (docs/whitelist-feature-switches-design.md). */
+const FEATURE_LABEL: Record<Feature,string> = {reports:'财报摘要',findings:'要点',explainer:'业务解读',tree:'业务脑图'};
+type Level = 'off'|'generate'|'display';
+const LEVELS: Level[] = ['off','generate','display'];
+const LEVEL_LABEL: Record<Level,string> = {off:'关',generate:'生成',display:'显示'};
+/** What each level writes: off stops generating and hides; generate runs without showing; display runs and shows. */
+const LEVEL_BITS: Record<Level,{generate:boolean;display:boolean}> = {off:{generate:false,display:false},generate:{generate:true,display:false},display:{generate:true,display:true}};
+/** Shown content reads as shown even when generation stopped after it was written; the cell says so under the control. */
+const levelOf = (f:{generate:boolean;display:boolean}):Level => f.display?'display':f.generate?'generate':'off';
 function issueText(code:string) { const parts=code.split(':'); if(parts[0]==='UNSUPPORTED_SOURCE_FACTS')return `${parts[1]} 项事实格式不受支持`; return errors[code] ?? (parts.length>1&&errors[parts.at(-1)!]?`${parts[0]}：${errors[parts.at(-1)!]}`:code); }
 function storage() { try { return window.sessionStorage; } catch { return undefined; } }
 
@@ -59,18 +69,12 @@ export function BusinessMapCompanies({onUnauthorized,onAuthenticated}:{onUnautho
       if(err instanceof AdminApiError&&err.status>=400&&err.status<500)completeRequestId(key,storage());
     } finally {lock.current=false;setBusy('');}
   }
-  async function switchAi(symbol:string,enabled:boolean) {
-    if(lock.current)return;lock.current=true;setBusy(symbol);setError('');setNotice('');
-    try {await adminApi(`business-map/companies/${symbol}/ai`,{method:'POST',body:JSON.stringify({enabled})});setRefresh(n=>n+1);setNotice(`${symbol} AI 分析已${enabled?'开启':'关闭'}`);}
-    catch(err){if(err instanceof AdminApiError&&err.status===401)callbacks.current.onUnauthorized();else setError((err as Error).message);}
-    finally {lock.current=false;setBusy('');}
-  }
-  /** The mind map switches: one company's generation or display, or (no symbol) generation for every company. */
-  async function switchTree(symbol:string|null,change:{generate?:boolean;display?:boolean}) {
+  /** One feature's switch for one company, or its global generation switch (symbol null): off, generate only, or shown. */
+  async function switchFeature(symbol:string|null,feature:Feature,level:Level) {
     if(lock.current)return;lock.current=true;setBusy(symbol??'*');setError('');setNotice('');
     try {
-      await adminApi(symbol?`business-map/companies/${symbol}/tree`:'business-map/tree',{method:'POST',body:JSON.stringify(change)});setRefresh(n=>n+1);
-      setNotice(`${symbol??'全部公司'} 业务脑图${change.display===undefined?'生成':'显示'}已${(change.display??change.generate)?'开启':'关闭'}`);
+      await adminApi(symbol?`business-map/companies/${symbol}/features/${feature}`:`business-map/features/${feature}`,{method:'POST',body:JSON.stringify(symbol?LEVEL_BITS[level]:{generate:level!=='off'})});
+      setRefresh(n=>n+1);setNotice(`${symbol??'全部公司'} ${FEATURE_LABEL[feature]}${symbol?`已${LEVEL_LABEL[level]}`:`生成已${level==='off'?'暂停':'恢复'}`}`);
     }
     catch(err){if(err instanceof AdminApiError&&err.status===401)callbacks.current.onUnauthorized();else setError((err as Error).message);}
     finally {lock.current=false;setBusy('');}
@@ -86,15 +90,17 @@ export function BusinessMapCompanies({onUnauthorized,onAuthenticated}:{onUnautho
   return <section className="bm-admin" aria-label="白名单">
     <div className="bm-admin-toolbar">
       <form className="bm-admin-add" onSubmit={add}><label htmlFor="bm-ticker" className="bm-admin-sr">股票代码</label><input id="bm-ticker" placeholder="股票代码" value={ticker} maxLength={10} onChange={e=>setTicker(e.target.value.toUpperCase())} required/><button className="ra-primary" disabled={!data||!!busy}><Plus size={16}/>加入白名单</button></form>
-      <div className="bm-admin-filter">{data&&<label className="bm-admin-global"><span>业务脑图生成</span><button className="bm-switch" role="switch" aria-checked={data.treeGeneration!==false} aria-label="业务脑图生成（全部公司）" disabled={!!busy} onClick={()=>void switchTree(null,{generate:data.treeGeneration===false})}><span/></button></label>}<span>白名单 · {data?.companies.filter(c=>c.dataEnabled).length??0} 家</span><label className="ra-search"><Search size={16}/><input aria-label="筛选公司" placeholder="代码" value={search} onChange={e=>setSearch(e.target.value)}/></label><button className="ra-icon-button" onClick={()=>setRefresh(n=>n+1)} disabled={!!busy} aria-label="刷新"><RefreshCw size={16}/></button></div>
+      <div className="bm-admin-filter"><span>白名单 · {data?.companies.filter(c=>c.dataEnabled).length??0} 家</span><label className="ra-search"><Search size={16}/><input aria-label="筛选公司" placeholder="代码" value={search} onChange={e=>setSearch(e.target.value)}/></label><button className="ra-icon-button" onClick={()=>setRefresh(n=>n+1)} disabled={!!busy} aria-label="刷新"><RefreshCw size={16}/></button></div>
     </div>
     {notice&&<p className="ra-notice" role="status">{notice}</p>}{(error||loadError)&&<p className="ra-error ra-error-banner" role="alert">{error||loadError}</p>}
     {data&&!data.automaticCollection&&<p className="bm-admin-warning">自动采集已暂停</p>}
-    {data&&data.treeGeneration===false&&<p className="bm-admin-warning">业务脑图生成已暂停</p>}
+    {data&&FEATURES.some(f=>!data.generation[f])&&<p className="bm-admin-warning">{FEATURES.filter(f=>!data.generation[f]).map(f=>FEATURE_LABEL[f]).join('、')}生成已全局暂停</p>}
     {!data&&!loadError&&<p role="status">加载中</p>}
     {companies.length>0&&<div className="bm-admin-table-wrap ra-panel"><table className="bm-admin-table">
-      <thead><tr><th>公司</th><th>状态</th><th>AI 分析</th><th>业务脑图</th><th>操作</th></tr></thead>
-      {companies.map(company=><Company key={company.ticker} company={company} busy={!!busy} onToggle={()=>void mutate(company.ticker,!company.dataEnabled)} onPrepare={()=>void mutate(company.ticker)} onJudge={()=>void judge(company.ticker)} onAi={()=>void switchAi(company.ticker,!company.tracked)} onTree={change=>void switchTree(company.ticker,change)}/>)}
+      <thead><tr><th>公司</th><th>状态</th>
+        {FEATURES.map(f=><th key={f}><span className="bm-admin-feature-head">{FEATURE_LABEL[f]}<button className="bm-switch" role="switch" aria-checked={!!data?.generation[f]} aria-label={`${FEATURE_LABEL[f]}生成（全部公司）`} title={data?.generation[f]?'生成中 · 点击全局暂停':'已全局暂停 · 点击恢复'} disabled={!data||!!busy} onClick={()=>void switchFeature(null,f,data?.generation[f]?'off':'generate')}><span/></button></span></th>)}
+        <th>操作</th></tr></thead>
+      {companies.map(company=><Company key={company.ticker} company={company} generation={data!.generation} busy={!!busy} onToggle={()=>void mutate(company.ticker,!company.dataEnabled)} onPrepare={()=>void mutate(company.ticker)} onJudge={()=>void judge(company.ticker)} onFeature={(feature,level)=>void switchFeature(company.ticker,feature,level)}/>)}
     </table></div>}
     {data&&!companies.length&&<p>无匹配公司</p>}
   </section>;
@@ -112,8 +118,19 @@ function Meter({label,completed,total,done=false}:{label:string;completed:number
 /** Per-document notes from a scan (a filing without a quarter, a fact format the reader skips): not problems with the data. */
 const NOTE=/^(?:\d{10}-\d{2}-\d{6}:)?(?:NO_DIRECT_COMPARABLE_QUARTER|RESTATEMENT_REVIEW_REQUIRED)$|^UNSUPPORTED_SOURCE_FACTS:/;
 
-/** One company as a table row: its two states, the AI switch and the actions; the row opens to the details. */
-function Company({company:c,busy,onToggle,onPrepare,onJudge,onAi,onTree}:{company:BusinessMapCompany;busy:boolean;onToggle:()=>void;onPrepare:()=>void;onJudge:()=>void;onAi:()=>void;onTree:(change:{generate?:boolean;display?:boolean})=>void}) {
+/** One feature's switch as a three-way control (off, generate only, shown), with what the feature has published under it. */
+function FeatureCell({ticker,feature,switches,paused,disabled,onPick}:{ticker:string;feature:Feature;switches:BusinessMapCompany['features'][Feature];paused:boolean;disabled:boolean;onPick:(level:Level)=>void}) {
+  const level=levelOf(switches);
+  return <div className="bm-admin-feature" data-paused={paused||undefined}>
+    <div className="ra-segmented bm-admin-level" role="radiogroup" aria-label={`${ticker} ${FEATURE_LABEL[feature]}`}>
+      {LEVELS.map(l=><button key={l} type="button" role="radio" aria-checked={level===l} aria-pressed={level===l} disabled={disabled||(l!=='off'&&paused)} onClick={()=>{if(l!==level)onPick(l);}}>{LEVEL_LABEL[l]}</button>)}
+    </div>
+    <small>{paused?'已全局暂停':switches.display&&!switches.generate?'已停止生成':switches.publishedAt?`已生成 · ${financialDate(switches.publishedAt)}`:'未生成'}</small>
+  </div>;
+}
+
+/** One company as a table row: its map state, the four feature switches and the actions; the row opens to the details. */
+function Company({company:c,generation,busy,onToggle,onPrepare,onJudge,onFeature}:{company:BusinessMapCompany;generation:Record<Feature,boolean>;busy:boolean;onToggle:()=>void;onPrepare:()=>void;onJudge:()=>void;onFeature:(feature:Feature,level:Level)=>void}) {
   const running=!!c.task&&active.has(c.task.status),collecting=!!c.collection&&['queued','running','retry'].includes(c.collection.status);
   const ready=c.publication.status==='ready';
   const revenuePending=c.publication.revenueCoverage?.some(q=>q.status==='unverified');
@@ -129,17 +146,12 @@ function Company({company:c,busy,onToggle,onPrepare,onJudge,onAi,onTree}:{compan
   return <tbody data-open={open||undefined}>
     <tr className="bm-admin-row" aria-label={`${c.ticker} 数据准备`}>
       <td><div className="bm-admin-company-cell"><button className="bm-admin-toggle" aria-expanded={open} aria-label={`${c.ticker} 详情`} onClick={()=>setOpen(o=>!o)}><ChevronRight size={15}/></button><CompanyLogo symbol={c.ticker}/><span className="bm-admin-name"><strong className="ra-mono">{c.ticker}</strong>{c.name&&c.name!==c.ticker&&<small>{c.name}</small>}</span></div></td>
-      <td><div className="bm-admin-states"><span className="ra-badge" data-status={map.status}>{map.text}</span><span className="ra-badge" data-status={c.tracked?'reviewed':'idle'}>{c.tracked?'AI 分析已加入':'AI 分析未加入'}</span></div></td>
-      <td><button className="bm-switch" role="switch" aria-checked={c.tracked} aria-label={`${c.ticker} AI 分析`} disabled={busy||(!c.tracked&&!c.dataEnabled)} onClick={onAi}><span/></button></td>
-      <td>{c.tree&&<div className="bm-admin-tree">
-        <label><span>生成</span><button className="bm-switch" role="switch" aria-checked={c.tree.generate} aria-label={`${c.ticker} 业务脑图生成`} disabled={busy||(!c.tree.generate&&!c.dataEnabled)} onClick={()=>onTree({generate:!c.tree!.generate})}><span/></button></label>
-        <label><span>显示</span><button className="bm-switch" role="switch" aria-checked={c.tree.display} aria-label={`${c.ticker} 业务脑图显示`} disabled={busy} onClick={()=>onTree({display:!c.tree!.display})}><span/></button></label>
-        <small>{c.tree.published?'已生成':'未生成'}</small>
-      </div>}</td>
+      <td><div className="bm-admin-states"><span className="ra-badge" data-status={map.status}>{map.text}</span></div></td>
+      {FEATURES.map(f=><td key={f}><FeatureCell ticker={c.ticker} feature={f} switches={c.features[f]} paused={!generation[f]} disabled={busy||!c.dataEnabled} onPick={level=>onFeature(f,level)}/></td>)}
       <td><div className="bm-admin-actions"><button className="fm-button" disabled={busy||running||!c.dataEnabled} onClick={onPrepare}>{running?'准备中':'重新准备'}</button><a href={`/admin/financials?ticker=${c.ticker}`}>财报</a>{ready&&<a href={`https://spontra-business-map.max-zhangyuchen.workers.dev/companies/${c.ticker}`} target="_blank" rel="noreferrer" aria-label={`${c.ticker} 业务地图`}>地图<ExternalLink size={12}/></a>}
         {c.dataEnabled?<button className="bm-admin-remove" disabled={busy} onClick={remove} aria-label={`移出 ${c.ticker}`} title="移出白名单"><Trash2 size={16}/></button>:<button className="fm-button" disabled={busy} onClick={onToggle}>加入</button>}</div></td>
     </tr>
-    {open&&<tr className="bm-admin-detail"><td colSpan={5}><div className="bm-detail">
+    {open&&<tr className="bm-admin-detail"><td colSpan={7}><div className="bm-detail">
       <header className="bm-detail-head">
         <div><span>可展示期间</span>{ready&&c.publication.periods.length?<ul className="bm-chips">{c.publication.periods.map(p=><li key={p}>{p}</li>)}</ul>:<em>—</em>}</div>
         {c.task&&<div><span>最近任务</span><em>{stages[c.task.stage]??c.task.stage}{taskStatus[c.task.status]?` · ${taskStatus[c.task.status]}`:''} · {financialDate(c.task.updatedAt)}</em></div>}

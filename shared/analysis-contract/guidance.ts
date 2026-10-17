@@ -79,6 +79,7 @@ export type GuidancePublication = {
 
 export type GuidanceResponse = {
   schemaVersion: "guidance-response.v1";
-  status: "ready" | "preparing";
+  /** `hidden`: the admin switched the company's report summaries (guidance with them) off for readers. */
+  status: "ready" | "preparing" | "hidden";
   guidance: GuidancePublication | null;
 };

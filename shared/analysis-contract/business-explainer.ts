@@ -47,6 +47,7 @@ export type BusinessExplainer = {
 };
 export type BusinessExplainerResponse = {
   schemaVersion: "business-explainer-response.v1";
-  status: "ready" | "preparing";
+  /** `hidden`: the admin switched the company's business explanations off for readers; what is stored stays. */
+  status: "ready" | "preparing" | "hidden";
   explainer: BusinessExplainer | null;
 };

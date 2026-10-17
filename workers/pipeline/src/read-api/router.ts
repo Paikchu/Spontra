@@ -1,3 +1,4 @@
+import { featureDisplayed, hiddenTickers } from "../admin/feature-settings.ts";
 import { readMapDerived } from '../financial-data/derived.ts';
 import type { CapitalResponse } from '../../../../shared/analysis-contract/capital-structure.ts';
 import {readCompletePublicationForTicker} from '../financial-data/publication.ts';
@@ -19,6 +20,7 @@ import { isLocale, type Locale } from "../../../../shared/analysis-runtime/local
 import { readTranslationTable } from "../translation/translate.ts";
 import { readRevisions } from "../pipeline/revisions.ts";
 import type { RevisionsResponse } from "../../../../shared/analysis-contract/revisions.ts";
+import type { PublicSecFiling } from "../../../../shared/analysis-contract/filings.ts";
 
 /**
  * The analysis backend's read surface, served only to the business map over the `MapReads`
@@ -55,13 +57,22 @@ type RouteMatch =
   | { kind: "findings-index" };
 
 
+/** A filing as the reports feature's display switch leaves it for readers: the filing itself, none of the model's writing. */
+function withoutSummary(filing: PublicSecFiling): PublicSecFiling {
+  return { ...filing, summary: null, analysis: null, analysisStatus: "not_collected", reportVersion: null, periodId: null, analysisSchemaVersion: null, contentRevision: null };
+}
+
 /**
  * The companies that have published findings, for the home page: whichever companies the admin's AI switch has had on,
  * read from what is stored rather than from a list kept in the page.
  */
 async function findingsIndex(request: Request, database: D1Database): Promise<Response> {
-  const rows = await database.prepare("SELECT substr(cache_key, 13) ticker FROM sec_cache WHERE cache_key LIKE 'findings:v2:%' ORDER BY fetched_at DESC LIMIT 40").all<{ ticker: string }>();
-  const tickers = rows.results.map(r => r.ticker).filter(t => /^[A-Z][A-Z0-9.-]{0,11}$/.test(t));
+  const [rows, hidden] = await Promise.all([
+    database.prepare("SELECT substr(cache_key, 13) ticker FROM sec_cache WHERE cache_key LIKE 'findings:v2:%' ORDER BY fetched_at DESC LIMIT 40").all<{ ticker: string }>(),
+    hiddenTickers(database, "findings"),
+  ]);
+  // A company whose findings the admin hid is left off the home page as well as its own.
+  const tickers = rows.results.map(r => r.ticker).filter(t => /^[A-Z][A-Z0-9.-]{0,11}$/.test(t) && !hidden.has(t));
   return dataResponse(request, { schemaVersion: "findings-index.v1", tickers }, "cacheable");
 }
 
@@ -115,13 +126,16 @@ async function handleRoute(request: Request, database: D1Database, route: Exclud
         url.searchParams.get("cursor"),
         url.searchParams.get("limit"),
       );
-      return dataResponse(request, { ...page, filings: await translated("filings", page.filings) });
+      // Report summaries hidden by the admin: the filings are still listed, as filings, without what the model wrote.
+      const filings = await featureDisplayed(database, page.ticker, "reports") ? page.filings : page.filings.map(withoutSummary);
+      return dataResponse(request, { ...page, filings: await translated("filings", filings) });
     }
     case "filing": {
       const detail = await getPublicFiling(new D1SecRepository(database), route.ticker, route.accession,
         url.searchParams.has("reportVersion") || url.searchParams.has("reportDate")
           ? { reportVersion: url.searchParams.get("reportVersion") ?? "", reportDate: url.searchParams.get("reportDate") ?? "" } : undefined);
       if (!detail) return errorResponse("FILING_NOT_FOUND", "SEC filing not found.");
+      if (!await featureDisplayed(database, detail.ticker, "reports")) return dataResponse(request, { ...detail, filing: withoutSummary(detail.filing) }, "no-store");
       const report = await translated("filing", { summary: detail.filing.summary, analysis: detail.filing.analysis }, route.accession);
       return dataResponse(request, { ...detail, filing: { ...detail.filing, summary: report.summary, analysis: report.analysis } });
     }
@@ -140,7 +154,7 @@ async function handleRoute(request: Request, database: D1Database, route: Exclud
       return dataResponse(request, payload, capital ? "cacheable" : "no-store");
     }
     case "business-explainer": {
-      const payload = await readBusinessExplainerResponse(database, route.ticker);
+      const payload = await readBusinessExplainerResponse(database, route.ticker, { public: true });
       payload.explainer = await translated("explainer", payload.explainer);
       return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
     }
@@ -150,12 +164,12 @@ async function handleRoute(request: Request, database: D1Database, route: Exclud
       return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
     }
     case "guidance": {
-      const payload = await readGuidanceResponse(database, route.ticker);
+      const payload = await readGuidanceResponse(database, route.ticker, { public: true });
       payload.guidance = await translated("guidance", payload.guidance);
       return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
     }
     case "findings": {
-      const payload = await readFindingsResponse(database, route.ticker);
+      const payload = await readFindingsResponse(database, route.ticker, { public: true });
       payload.findings = await translated("findings", payload.findings);
       return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
     }

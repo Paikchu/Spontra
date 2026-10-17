@@ -4,7 +4,8 @@ import type { PublicBusinessFlow } from "../../../../shared/analysis-contract/bu
 import { issuerNames, readBusinessTree } from "../../../../shared/analysis-runtime/business-tree.ts";
 import { sha256 } from "../company-analysis/api.ts";
 import { findSecurity } from "../catalog/security-directory.ts";
-import { requireDb, trackedTickersFor } from "../core.ts";
+import { requireDb } from "../core.ts";
+import { featureTickersFor } from "../financial-data/company-policy.ts";
 import { readCompletePublicationForTicker } from "../financial-data/publication.ts";
 import { SecModelOutputError } from "../model-stream.ts";
 import { callWorkerSecModel, type SecPipelineEnv } from "../operations.ts";
@@ -16,19 +17,16 @@ import { AiRunStore } from "../ai-runs/store.ts";
 import { runBusinessTree, type TreeBusiness } from "./agent.ts";
 import { treeLibrary } from "../filing-library/tree-source.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
+import { featureDisplayed } from "../admin/feature-settings.ts";
 
 /** Changing the prompt, the harness or the output contract researches every company once more. */
 export const BUSINESS_TREE_VERSION = "business-tree.react.v4";
 export const businessTreeCacheKey = (ticker: string) => `business-tree:v1:${ticker}`;
 export type BusinessTreeParams = { ticker: string; fingerprint: string };
 
-/** Companies whose businesses are broken down; separate from the AI list, since this needs no report analysis. */
-export function treeTickersFor(env: Pick<SecPipelineEnv, "BUSINESS_TREE_TICKERS" | "BUSINESS_TREE_RESOLVED" | "SEC_TRACKED_TICKERS" | "SEC_DATA_TICKERS" | "SEC_AI_TICKERS" | "SEC_AI_ENABLED">): string[] {
-  // The admin's per-company switches, already applied by companyPolicyEnvironment.
-  if (env.BUSINESS_TREE_RESOLVED !== undefined) return env.BUSINESS_TREE_RESOLVED.split(",").filter(Boolean);
-  const listed = env.BUSINESS_TREE_TICKERS?.split(",").map(t => t.trim().toUpperCase()).filter(t => /^[A-Z][A-Z0-9.-]{0,11}$/.test(t));
-  // The mind-map list adds to the AI list (the admin's AI switch); a company switched on gets its mind map too.
-  return [...new Set([...(listed ?? []), ...trackedTickersFor(env)])];
+/** Companies whose businesses are broken down: the `tree` feature's list after the admin's switches (company-policy.ts). */
+export function treeTickersFor(env: Pick<SecPipelineEnv, "BUSINESS_TREE_TICKERS" | "BUSINESS_TREE_ENABLED" | "FEATURE_RESOLVED" | "SEC_TRACKED_TICKERS" | "SEC_DATA_TICKERS" | "SEC_AI_TICKERS" | "SEC_AI_ENABLED">): string[] {
+  return featureTickersFor(env, "tree");
 }
 
 /** A region is where a business sells, not what it sells: breaking it into products would repeat the product lines once per region. */
@@ -101,10 +99,7 @@ export async function executeBusinessTreeWorkflow(params: BusinessTreeParams, st
 }
 
 /** Whether the map shows the company's tree: the admin's display switch, shown unless switched off. */
-export async function treeDisplayed(db: D1Database, ticker: string): Promise<boolean> {
-  const row = await db.prepare("SELECT display FROM business_tree_settings WHERE ticker = ?").bind(ticker).first<{ display: number | null }>().catch(() => null);
-  return row?.display !== 0;
-}
+export const treeDisplayed = (db: D1Database, ticker: string) => featureDisplayed(db, ticker, "tree");
 
 /**
  * Read-only: never starts research. A stored tree that fails validation reads as preparing. The operator's trace is left

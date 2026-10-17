@@ -1,6 +1,10 @@
 import { knownCik } from '../pipeline/identity.ts';
-import { dataTickersFor, trackedTickersFor } from '../core.ts';
-import type { BusinessMapCharts, BusinessMapCompanies } from '../../../../shared/analysis-contract/business-map-admin.ts';
+import { dataTickersFor } from '../core.ts';
+import type { BusinessMapCharts, BusinessMapCompanies, BusinessMapCompany } from '../../../../shared/analysis-contract/business-map-admin.ts';
+import { FEATURES, type Feature } from '../../../../shared/analysis-contract/business-features.ts';
+import { isFeature } from '../../../../shared/analysis-runtime/business-features.ts';
+import { companyPolicyEnvironment, featureEnabled, featureTickersFor } from '../financial-data/company-policy.ts';
+import { readFeatureSettings, writeFeatureSetting } from './feature-settings.ts';
 import type { SecPipelineEnv } from '../operations.ts';
 import { authenticateAdmin } from './auth.ts';
 import { listFinancialCompanies } from './financials.ts';
@@ -13,11 +17,17 @@ import { normalizeTrackedTicker } from '../sec/config.ts';
 import { emit } from '../pipeline/outbox.ts';
 import { readCompletePublicationForTicker } from '../financial-data/publication.ts';
 import { readMapDerived } from '../financial-data/derived.ts';
-import { treeTickersFor } from '../business-tree/workflow.ts';
 import { discoverDataIssuer, throttledSecReader } from '../financial-data/provider.ts';
 import { D1SecRepository } from '../sec/d1.ts';
 
 const json = (body: unknown, status = 200) => Response.json(body, {status, headers: {'cache-control':'private, no-store'}});
+/** The newest publication of each feature per company, from where the feature stores it. */
+const PUBLISHED: Record<Feature,string> = {
+  reports: "SELECT ticker, max(generated_at) at FROM sec_published_reports GROUP BY ticker",
+  findings: "SELECT substr(cache_key,13) ticker, fetched_at at FROM sec_cache WHERE cache_key >= 'findings:v2:' AND cache_key < 'findings:v2;'",
+  explainer: "SELECT substr(cache_key,23) ticker, fetched_at at FROM sec_cache WHERE cache_key >= 'business-explainer:v1:' AND cache_key < 'business-explainer:v1;'",
+  tree: "SELECT substr(cache_key,18) ticker, fetched_at at FROM sec_cache WHERE cache_key >= 'business-tree:v1:' AND cache_key < 'business-tree:v1;'",
+};
 export async function handleBusinessMapAdminRequest(request: Request, env: SecPipelineEnv): Promise<Response> {
   if (!await authenticateAdmin(request, env.REPORT_ADMIN_PASSWORD, Date.now())) return json({error:'请登录管理后台。'},401);
   if (!env.DB) return json({error:'数据服务尚未连接。'},503);
@@ -44,8 +54,10 @@ export async function handleBusinessMapAdminRequest(request: Request, env: SecPi
           profileStatus:'verified'|'unresolved'|null;profileAccession:string|null;profileAttempts:number|null;profileIssues:string|null;profileUpdatedAt:string|null;
         }>();
       const byTicker = new Map(rows.results.map(row=>[row.companyTicker,row]));
-      const treeSettings = new Map(((await db.prepare('SELECT ticker,display FROM business_tree_settings').bind().all<{ticker:string;display:number|null}>().catch(()=>null))?.results??[]).map(r=>[r.ticker,r]));
-      const publishedTrees = new Set((await db.prepare("SELECT substr(cache_key,18) ticker FROM sec_cache WHERE cache_key LIKE 'business-tree:v1:%'").bind().all<{ticker:string}>()).results.map(r=>r.ticker));
+      const settings = await readFeatureSettings(db);
+      // What each feature has published, by company: the newest publication's time, read once per feature.
+      const published = Object.fromEntries(await Promise.all(FEATURES.map(async feature=>[feature,new Map((await db.prepare(PUBLISHED[feature]).bind().all<{ticker:string;at:string}>().catch(()=>({results:[]}))).results.map(r=>[r.ticker,r.at]))]))) as Record<Feature,Map<string,string>>;
+      const lists = Object.fromEntries(FEATURES.map(feature=>[feature,featureTickersFor(env,feature)])) as Record<Feature,string[]>;
       const companies: BusinessMapCompanies['companies'] = list.companies.map(company=>{
         const row=byTicker.get(company.ticker)!;
         const reasons:string[]=JSON.parse(row.collectionReasons??'[]');
@@ -59,16 +71,16 @@ export async function handleBusinessMapAdminRequest(request: Request, env: SecPi
         const newest=flow?.quarters[0];
         const presentation={model:newest?.incomeModel??null,source:newest?.presentation?.source??null,afterTax:(newest?.afterTaxComponents??[]).map(c=>({name:c.name,value:c.amount.value??''})),basisChanges:newest?.basisChanges??[],
           profile:row.profileStatus?{status:row.profileStatus,accession:row.profileAccession??'',attempts:row.profileAttempts??0,issues:JSON.parse(row.profileIssues??'[]') as string[],updatedAt:row.profileUpdatedAt??''}:null};
-        const settings=treeSettings.get(company.ticker);
-        const tree={generate:treeTickersFor(env).includes(company.ticker),display:settings?.display!==0,published:publishedTrees.has(company.ticker)};
-        return {...company,presentation,tree,task:row.task_id?taskView(row):null,history:row.historyTotal!==null?{completed:row.historyCompleted??0,total:row.historyTotal}:null,
+        const features=Object.fromEntries(FEATURES.map(feature=>[feature,{generate:lists[feature].includes(company.ticker),display:settings.get(company.ticker)?.[feature]?.display??true,publishedAt:published[feature].get(company.ticker)??null}])) as BusinessMapCompany['features'];
+        return {...company,presentation,features,task:row.task_id?taskView(row):null,history:row.historyTotal!==null?{completed:row.historyCompleted??0,total:row.historyTotal}:null,
           collection:row.collectionStatus?{status:row.collectionStatus,reasons,updatedAt:row.collectionUpdatedAt!,completed:row.collectionCompleted??0,total:row.collectionTotal??0}
             :row.discovery?{status:'unavailable',reasons:[JSON.parse(row.discovery).reason],updatedAt:row.discoveryAt!,completed:0,total:0}:null,
           publication:{status:flow?'ready':invalid||row.collectionStatus==='unavailable'?'unavailable':'preparing',
             outdated:!!flow&&!!row.collectionStatus&&row.collectionStatus!=='succeeded',
             reasons:invalid?['INVALID_PAYLOAD']:reasons.length?reasons:flow?[]:['MISSING_TWO_QUARTERS'],periods:flow?.quarters.map(q=>q.periodEnd)??[],revenueCoverage:flow?.quarters.map(q=>({period:q.periodEnd,status:q.segmentDisclosure==='single_reportable_segment'?'single_segment' as const:q.segments.some(s=>s.id==='reported-company-total')?'unverified' as const:'verified' as const,segments:q.segments.length,adjustments:q.revenueAdjustments?.length??0}))??[]}};
       });
-      return json({companies,automaticCollection:list.environment.dataCollectionEnabled,treeGeneration:env.BUSINESS_TREE_ENABLED!=='false'} satisfies BusinessMapCompanies);
+      const generation=Object.fromEntries(FEATURES.map(feature=>[feature,featureEnabled(env,feature)])) as Record<Feature,boolean>;
+      return json({companies,automaticCollection:list.environment.dataCollectionEnabled,generation} satisfies BusinessMapCompanies);
     }
     // The three BusinessView charts as the map reads them: profit from the published flow and its archived quarters,
     // cash flow and balance sheet from the derived capital structure. Read only, like the map's own routes.
@@ -83,46 +95,35 @@ export async function handleBusinessMapAdminRequest(request: Request, env: SecPi
       const profit = flow ? {...flow, quarters: [...new Map([...(derived?.reports?.quarters ?? []), ...flow.quarters].map(q => [q.periodEnd, q])).values()].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd))} : null;
       return json({ticker, status: publication.status, reasons: publication.reasons, profit, capital: derived?.capital ?? null} satisfies BusinessMapCharts);
     }
-    // The AI switch (company-policy.ts): a row overrides SEC_AI_TICKERS for its company. Switching a company on starts its
-    // AI work (`ai.enabled`); switching it off stops new runs, and what was published stays until the storage sweep.
-    const ai = /^\/admin\/business-map\/companies\/([^/]+)\/ai$/.exec(path);
-    if (ai && request.method === 'POST') {
-      const ticker = normalizeTrackedTicker(decodeURIComponent(ai[1]!));
-      const body = await request.json() as {enabled?:boolean};
-      if (!ticker || typeof body.enabled !== 'boolean') return json({error:'公司代码或操作参数无效。'},400);
-      if (body.enabled && !dataTickersFor(env).includes(ticker)) return json({error:'请先把该公司加入白名单。'},409);
-      const before = trackedTickersFor(env).includes(ticker);
-      await db.prepare('INSERT INTO financial_ai_settings(ticker,enabled,updated_at) VALUES(?,?,?) ON CONFLICT(ticker) DO UPDATE SET enabled=excluded.enabled,updated_at=excluded.updated_at')
-        .bind(ticker,body.enabled?1:0,new Date().toISOString()).run();
-      if (body.enabled && !before) await emit(env,[{type:'ai.enabled',ticker,cik:await knownCik(db,ticker)}]);
-      return json({ticker,aiEnabled:body.enabled},200);
-    }
-    // The mind map switches (business_tree_settings, applied by company-policy.ts). Global: whether any tree is generated.
-    // Per company: whether its tree is generated, and whether the map shows it; a hidden tree stays stored. Each change
-    // emits `tree.settings`, which checks for a tree to write and moves the map's revision.
-    if (path === '/admin/business-map/tree' && request.method === 'POST') {
+    // The feature switches (docs/whitelist-feature-switches-design.md), applied by company-policy.ts. Global: whether the
+    // feature is generated for anyone. Per company: whether it is generated and whether the map shows it; hidden content
+    // stays stored. Each change emits `feature.settings`, which checks for something to write and moves the map's revisions.
+    const globalSwitch = /^\/admin\/business-map\/features\/([a-z]+)$/.exec(path);
+    if (globalSwitch && request.method === 'POST') {
+      const feature = globalSwitch[1];
       const body = await request.json() as {generate?:boolean};
-      if (typeof body.generate !== 'boolean') return json({error:'操作参数无效。'},400);
-      const now = new Date().toISOString();
-      await db.prepare("INSERT INTO business_tree_settings(ticker,generate,display,updated_at) VALUES('*',?,NULL,?) ON CONFLICT(ticker) DO UPDATE SET generate=excluded.generate,updated_at=excluded.updated_at")
-        .bind(body.generate?1:0,now).run();
-      if (body.generate) await emit(env,treeTickersFor(env).map(ticker=>({type:'tree.settings' as const,ticker})));
-      return json({treeGeneration:body.generate},200);
+      if (!isFeature(feature) || typeof body.generate !== 'boolean') return json({error:'操作参数无效。'},400);
+      await writeFeatureSetting(db,'*',feature,{generate:body.generate},new Date().toISOString());
+      // Generation resumed: every company on the list is checked once for something to write.
+      if (body.generate) await emit(env,featureTickersFor(await companyPolicyEnvironment(env),feature).map(ticker=>({type:'feature.settings' as const,ticker,detail:{feature}})));
+      return json({feature,generate:body.generate},200);
     }
-    const tree = /^\/admin\/business-map\/companies\/([^/]+)\/tree$/.exec(path);
-    if (tree && request.method === 'POST') {
-      const ticker = normalizeTrackedTicker(decodeURIComponent(tree[1]!));
+    const companySwitch = /^\/admin\/business-map\/companies\/([^/]+)\/features\/([a-z]+)$/.exec(path);
+    if (companySwitch && request.method === 'POST') {
+      const ticker = normalizeTrackedTicker(decodeURIComponent(companySwitch[1]!)), feature = companySwitch[2];
       const body = await request.json() as {generate?:boolean;display?:boolean};
-      if (!ticker || (typeof body.generate !== 'boolean' && typeof body.display !== 'boolean')) return json({error:'公司代码或操作参数无效。'},400);
-      if (body.generate && !dataTickersFor(env).includes(ticker)) return json({error:'请先把该公司加入白名单。'},409);
-      const now = new Date().toISOString(), generate = typeof body.generate === 'boolean' ? (body.generate?1:0) : null, display = typeof body.display === 'boolean' ? (body.display?1:0) : null;
-      // Only the named switch changes; the other keeps its stored value.
-      await db.prepare(`INSERT INTO business_tree_settings(ticker,generate,display,updated_at) VALUES(?,?,?,?)
-        ON CONFLICT(ticker) DO UPDATE SET generate=COALESCE(excluded.generate,business_tree_settings.generate),display=COALESCE(excluded.display,business_tree_settings.display),updated_at=excluded.updated_at`)
-        .bind(ticker,generate,display,now).run();
-      await emit(env,[{type:'tree.settings',ticker,cik:await knownCik(db,ticker)}]);
-      const row = await db.prepare('SELECT generate,display FROM business_tree_settings WHERE ticker=?').bind(ticker).first<{generate:number|null;display:number|null}>();
-      return json({ticker,generate:row?.generate??null,display:row?.display!==0},200);
+      if (!ticker || !isFeature(feature) || (typeof body.generate !== 'boolean' && typeof body.display !== 'boolean')) return json({error:'公司代码或操作参数无效。'},400);
+      if ((body.generate || body.display) && !dataTickersFor(env).includes(ticker)) return json({error:'请先把该公司加入白名单。'},409);
+      // Findings are written from the report summaries' publications: generating them needs the reports generated.
+      if (feature === 'findings' && body.generate && !featureTickersFor(await companyPolicyEnvironment(env),'reports').includes(ticker)) return json({error:'请先开启该公司的财报摘要。'},409);
+      const now = new Date().toISOString();
+      await writeFeatureSetting(db,ticker,feature,body,now);
+      // Switching the reports off leaves the findings without a trigger: they are switched off with them.
+      if (feature === 'reports' && body.generate === false) await writeFeatureSetting(db,ticker,'findings',{generate:false},now);
+      const cik = await knownCik(db,ticker);
+      await emit(env,[{type:'feature.settings',ticker,cik,detail:{feature}},...(feature === 'reports' && body.generate === false ? [{type:'feature.settings' as const,ticker,cik,detail:{feature:'findings' as const}}] : [])]);
+      const settings = (await readFeatureSettings(db)).get(ticker)?.[feature];
+      return json({ticker,feature,generate:settings?.generate??null,display:settings?.display??true},200);
     }
     // Judge the issuer's income statement again (presentation-task.ts): forget the filing it was judged on and ask.
     const judge = /^\/admin\/business-map\/companies\/([^/]+)\/presentation$/.exec(path);

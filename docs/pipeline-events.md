@@ -120,6 +120,7 @@ Cron 和两个队列消费者的入口各做两次主键查询：补发发件箱
 | `guidance.published` | 指引 Workflow | 要点 |
 | `task.version_changed` | Cron 或队列消费者入口检测到某个任务的版本变了 | 只路由给版本变化的那个任务，对所有公司各登记一次 |
 | `explainer.published`、`tree.published`、`findings.published`、`events.published`、`dossier.published` | 各自任务 | 翻译（`findings.published` 另有要点分析师） |
+| `feature.settings`（`detail.feature`） | 后台功能开关 | 该功能的首个任务：财报摘要 → `sec-report`，要点 → `findings`、`company-analysis`，业务解读 → `explainer`，业务脑图 → `tree`；并推进地图版本号 |
 | `transcript.stored`、`translations.published` | 各自任务 | 暂无订阅者，先发出，供以后的任务订阅 |
 
 ## 防抖与就绪
@@ -292,5 +293,5 @@ P4 的实现要点与差异：
 - 全程无失败运行、发件箱无积压；唯一的死信是 NET 业务脑图（素材里找不到可锚定内容），与改造前同因失败。
 - 旧存档里带 sec.gov 随机脚本的副本，在补历史重读时一次性改存为规范内容，1,170 个被替换的对象 24 小时后由 `archive-prune` 删除。
 
-- **AI 名单在后台控制（2026-10-15）。** `financial_ai_settings` 覆盖 `SEC_AI_TICKERS`；后台开启一家公司时发出 `ai.enabled`（订阅者 `sec-report`、`explainer`），后续事件链不变。见 [businessview-admin](businessview-admin.md)。
-- **业务脑图开关在后台控制（2026-10-17）。** `business_tree_settings` 的 `*` 行覆盖 `BUSINESS_TREE_ENABLED`，公司行覆盖脑图名单与地图显示；每次切换发出 `tree.settings`（订阅者 `tree`，并更新地图 company 版本号）。见 [business-tree](business-tree.md)。
+- **AI 名单在后台控制（2026-10-15）。** `financial_ai_settings` 覆盖 `SEC_AI_TICKERS`；后台开启一家公司时发出 `ai.enabled`（订阅者 `sec-report`、`explainer`），后续事件链不变。2026-10-17 并入功能开关（下一条）。
+- **功能开关在后台控制（2026-10-17）。** 任务的 scope 从 `ai` 拆成 `reports`（`sec-report`、`guidance`）、`findings`（`memory`、`company-analysis`、`findings`、`analyst`）、`explainer`、`tree`，各读 `business_feature_settings` 解析出的名单；`ai.enabled` 与 `tree.settings` 合并为 `feature.settings`（`detail.feature`），订阅者是该功能的首个任务，并推进地图 company、filings、findings 版本号。见 [businessview-admin](businessview-admin.md)、[whitelist-feature-switches-design](whitelist-feature-switches-design.md)。

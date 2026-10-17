@@ -1,19 +1,44 @@
-import { financialPolicy } from '../../../../shared/analysis-runtime/financial-data/policy.ts';
-import { trackedTickersFor } from '../core.ts';
+import { financialPolicy, aiIsEnabled } from '../../../../shared/analysis-runtime/financial-data/policy.ts';
+import { FEATURES, type Feature } from '../../../../shared/analysis-contract/business-features.ts';
 import { parseTrackedTickers } from '../sec/config.ts';
 
 type PolicyEnv = { DB?: D1Database; SEC_DATA_TICKERS?: string; SEC_TRACKED_TICKERS?: string; SEC_AI_TICKERS?: string; SEC_AI_ENABLED?: string;
-  BUSINESS_TREE_TICKERS?: string; BUSINESS_TREE_ENABLED?: string; BUSINESS_TREE_RESOLVED?: string };
+  BUSINESS_TREE_TICKERS?: string; BUSINESS_TREE_ENABLED?: string; FEATURE_RESOLVED?: string };
 type Row = { ticker: string; enabled: number };
-type TreeRow = { ticker: string; generate: number | null };
+type FeatureRow = { ticker: string; feature: Feature; generate: number | null };
+
+/** The resolved feature lists and global switches, carried in the environment as `FEATURE_RESOLVED` (JSON). */
+export type FeatureResolution = { enabled: Record<Feature, boolean>; tickers: Record<Feature, string[]> };
+
+export function parseFeatureResolution(value: string | undefined): FeatureResolution | null {
+  if (value === undefined) return null;
+  try {
+    const parsed = JSON.parse(value) as FeatureResolution;
+    return FEATURES.every(f => typeof parsed.enabled?.[f] === 'boolean' && Array.isArray(parsed.tickers?.[f])) ? parsed : null;
+  } catch { return null; }
+}
+
+/**
+ * The deployment's defaults for each feature, before the admin's switches: SEC_AI_TICKERS (over SEC_AI_ENABLED) for the
+ * reports, findings and explainer; BUSINESS_TREE_TICKERS plus the AI list (over BUSINESS_TREE_ENABLED) for the tree.
+ */
+export function defaultFeatureResolution(env: Omit<PolicyEnv, 'DB'>): FeatureResolution {
+  const ai = parseTrackedTickers(env.SEC_AI_TICKERS ?? env.SEC_TRACKED_TICKERS);
+  const aiOn = aiIsEnabled(env);
+  const tree = [...new Set([...parseTrackedTickers(env.BUSINESS_TREE_TICKERS ?? ''), ...ai])];
+  return {
+    enabled: { reports: aiOn, findings: aiOn, explainer: aiOn, tree: env.BUSINESS_TREE_ENABLED !== 'false' },
+    tickers: { reports: [...ai], findings: [...ai], explainer: [...ai], tree },
+  };
+}
 
 /**
  * Persisted per-company choices override deployment defaults, including explicit removals: the admin whitelist
- * (`financial_company_settings`) over SEC_DATA_TICKERS, and the admin's AI switch (`financial_ai_settings`) over
- * SEC_AI_TICKERS, and the mind map switches (`business_tree_settings`): ticker '*' over BUSINESS_TREE_ENABLED, a company
- * row over the mind-map list (BUSINESS_TREE_TICKERS plus the AI list), resolved into BUSINESS_TREE_RESOLVED. Applying
- * it twice gives the same lists, so every entry point applies it once and code below reads the environment as before.
- * A table not yet migrated leaves its defaults in force.
+ * (`financial_company_settings`) over SEC_DATA_TICKERS, and the admin's feature switches (`business_feature_settings`)
+ * over each feature's default list and global switch (docs/whitelist-feature-switches-design.md). The result is carried
+ * as `FEATURE_RESOLVED`; `SEC_AI_TICKERS` is set to the reports list so code reading it as "the AI list" keeps working.
+ * Applying it twice gives the same lists, so every entry point applies it once and code below reads the environment as
+ * before. A table not yet migrated leaves its defaults in force.
  */
 export async function companyPolicyEnvironment<T extends PolicyEnv>(env: T): Promise<T> {
   if (!env.DB) return env;
@@ -23,21 +48,38 @@ export async function companyPolicyEnvironment<T extends PolicyEnv>(env: T): Pro
     if (row.enabled) policy.dataTickers.add(row.ticker);
     else policy.dataTickers.delete(row.ticker);
   }
-  const ai = await env.DB.prepare('SELECT ticker,enabled FROM financial_ai_settings').bind().all<Row>().catch(() => null);
-  for (const row of ai?.results ?? []) {
-    if (row.enabled) policy.aiTickers.add(row.ticker);
-    else policy.aiTickers.delete(row.ticker);
-  }
-  const resolved = { ...env, SEC_DATA_TICKERS: [...policy.dataTickers].join(','), SEC_AI_TICKERS: [...policy.aiTickers].join(',') };
-  // A second application starts from the resolved list, so its explicit removals stay removed.
-  const tree = new Set(env.BUSINESS_TREE_RESOLVED !== undefined ? parseTrackedTickers(env.BUSINESS_TREE_RESOLVED)
-    : [...parseTrackedTickers(env.BUSINESS_TREE_TICKERS ?? ''), ...trackedTickersFor(resolved)]);
-  let enabled = env.BUSINESS_TREE_ENABLED;
-  const rows = await env.DB.prepare('SELECT ticker,generate FROM business_tree_settings WHERE generate IS NOT NULL').bind().all<TreeRow>().catch(() => null);
+  // A second application starts from the resolved lists, so its explicit removals stay removed.
+  const resolution = parseFeatureResolution(env.FEATURE_RESOLVED) ?? defaultFeatureResolution(env);
+  const sets = Object.fromEntries(FEATURES.map(f => [f, new Set(resolution.tickers[f])])) as Record<Feature, Set<string>>;
+  const enabled = { ...resolution.enabled };
+  const rows = await env.DB.prepare('SELECT ticker,feature,generate FROM business_feature_settings WHERE generate IS NOT NULL').bind().all<FeatureRow>().catch(() => null);
   for (const row of rows?.results ?? []) {
-    if (row.ticker === '*') enabled = row.generate ? 'true' : 'false';
-    else if (row.generate) tree.add(row.ticker);
-    else tree.delete(row.ticker);
+    if (!(row.feature in sets)) continue;
+    if (row.ticker === '*') enabled[row.feature] = !!row.generate;
+    else if (row.generate) sets[row.feature].add(row.ticker);
+    else sets[row.feature].delete(row.ticker);
   }
-  return { ...resolved, BUSINESS_TREE_ENABLED: enabled, BUSINESS_TREE_RESOLVED: [...tree].sort().join(',') };
+  const resolved: FeatureResolution = { enabled, tickers: Object.fromEntries(FEATURES.map(f => [f, [...sets[f]].sort()])) as Record<Feature, string[]> };
+  return {
+    ...env,
+    SEC_DATA_TICKERS: [...policy.dataTickers].join(','),
+    SEC_AI_TICKERS: resolved.tickers.reports.join(','),
+    SEC_AI_ENABLED: resolved.enabled.reports ? 'true' : 'false',
+    BUSINESS_TREE_ENABLED: resolved.enabled.tree ? 'true' : 'false',
+    FEATURE_RESOLVED: JSON.stringify(resolved),
+  };
+}
+
+/**
+ * The companies a feature runs for, after the admin's switches; empty while the feature is globally off. Before
+ * `companyPolicyEnvironment` ran, the deployment defaults.
+ */
+export function featureTickersFor(env: Omit<PolicyEnv, 'DB'>, feature: Feature): string[] {
+  const resolution = parseFeatureResolution(env.FEATURE_RESOLVED) ?? defaultFeatureResolution(env);
+  return resolution.enabled[feature] ? [...resolution.tickers[feature]].sort() : [];
+}
+
+/** Whether the feature is generated at all (the admin's global switch over the deployment flag). */
+export function featureEnabled(env: Omit<PolicyEnv, 'DB'>, feature: Feature): boolean {
+  return (parseFeatureResolution(env.FEATURE_RESOLVED) ?? defaultFeatureResolution(env)).enabled[feature];
 }

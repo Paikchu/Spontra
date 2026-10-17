@@ -2,6 +2,7 @@ import type { FinancialMaintenanceCompany, FinancialMaintenanceTask } from './fi
 import type { CompleteFlowPublication } from './complete-business-flow.ts';
 import type { PublicBusinessFlow } from './business-flow.ts';
 import type { PublicCapitalStructure } from './capital-structure.ts';
+import type { Feature } from './business-features.ts';
 export type BusinessMapCompany = FinancialMaintenanceCompany & {
   task: FinancialMaintenanceTask | null;
   collection: { status: string; reasons: string[]; updatedAt: string; completed: number; total: number } | null;
@@ -20,11 +21,15 @@ export type BusinessMapCompany = FinancialMaintenanceCompany & {
     basisChanges: string[];
     profile: { status: "verified" | "unresolved"; accession: string; attempts: number; issues: string[]; updatedAt: string } | null;
   };
-  /** The mind map switches as they apply now: generated (deployment list, AI list and the admin's switch), shown on the map, and whether one is stored. */
-  tree?: { generate: boolean; display: boolean; published: boolean };
+  /**
+   * The feature switches as they apply now (docs/whitelist-feature-switches-design.md): whether the pipeline generates the
+   * feature for this company (its list after the admin's switches, empty while the feature is globally off), whether the
+   * map shows it, and when its newest publication was written (null for none).
+   */
+  features: Record<Feature, { generate: boolean; display: boolean; publishedAt: string | null }>;
 };
-/** `treeGeneration`: whether mind maps are generated at all (the admin's global switch over BUSINESS_TREE_ENABLED). */
-export type BusinessMapCompanies = { companies: BusinessMapCompany[]; automaticCollection: boolean; treeGeneration?: boolean };
+/** `generation`: whether each feature is generated at all (the admin's global switches over the deployment flags). */
+export type BusinessMapCompanies = { companies: BusinessMapCompany[]; automaticCollection: boolean; generation: Record<Feature, boolean> };
 
 /**
  * The data behind BusinessView's three charts for one company: the profit view's quarters (published pair plus the

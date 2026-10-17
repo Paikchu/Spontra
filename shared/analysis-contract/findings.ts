@@ -156,7 +156,8 @@ export type FindingPassage = { passageId: string; documentId: string; title: str
 
 export type FindingsResponse = {
   schemaVersion: "findings-response.v1";
-  status: "ready" | "preparing";
+  /** `hidden`: the admin switched the company's findings off for readers; what is stored stays. */
+  status: "ready" | "preparing" | "hidden";
   findings: FindingsPublication | null;
   /** The passages the publication's materials point at, as they stand in the library now (absent ones are left out). */
   passages?: FindingPassage[];

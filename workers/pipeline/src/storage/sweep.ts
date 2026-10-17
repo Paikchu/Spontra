@@ -1,4 +1,4 @@
-import { trackedTickersFor } from "../core.ts";
+import { featureTickersFor } from "../financial-data/company-policy.ts";
 import { companyPolicyEnvironment } from "../financial-data/company-policy.ts";
 import type { SecPipelineEnv } from "../operations.ts";
 import { SEC_ANALYSIS_SCHEMA_VERSION } from "../sec/analysis.ts";
@@ -58,7 +58,8 @@ type Cursor = { rule: number; cursor?: string };
 
 async function context(env: SecPipelineEnv, now: number): Promise<SweepContext> {
   const policy = await companyPolicyEnvironment(env).catch(() => env);
-  const aiTickers = new Set([...trackedTickersFor(env), ...trackedTickersFor(policy)]);
+  // Prepared filings and analysis artifacts serve the reports and findings features; both lists, before and after the admin's switches.
+  const aiTickers = new Set([env, policy].flatMap(e => [...featureTickersFor(e, "reports"), ...featureTickersFor(e, "findings")]));
   const live = (await env.DB!.prepare("SELECT object_key FROM web_search_cache WHERE object_key IS NOT NULL").all<{ object_key: string }>()).results;
   return { now, aiTickers, liveSearchObjects: new Set(live.map(r => r.object_key)), analysisSchema: SEC_ANALYSIS_SCHEMA_VERSION };
 }

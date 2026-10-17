@@ -93,6 +93,12 @@ Pipeline 对应路径为 `/admin/*`，管理接口需要签名会话。现有公
 
 白名单详情的"税前至净利润"区显示最新季度这一段算术的来源：申报计算链、报表行、模型判定（算术核验）或未拆分（合计）；列出所得税之后的各行（权益法损益、少数股东损益等）、被后续申报重述而不比较环比的行，以及模型判定记录（状态、次数、判定的申报、未通过的原因）。"重新判定"只是再发一次 `presentation.unresolved`，流程不等它。见 [statement-bridge-design](statement-bridge-design.md)。
 
-## AI 分析开关（2026-10-15）
+## 功能开关（2026-10-17）
 
-白名单表新增"AI 分析"一列，逐家开启或关闭 AI 分析（SEC 报告、业绩指引、公司分析、要点、要点分析师、业务解读及其翻译）。选择存于 `financial_ai_settings`（migration 0026），覆盖部署默认值 `SEC_AI_TICKERS`，显式关闭同样生效，与白名单覆盖 `SEC_DATA_TICKERS` 的方式一致。Pipeline 在每个入口（请求、Cron、队列、Workflow）读一次这两张表，下游代码照旧读环境变量。只有已在白名单中的公司可以开启。开启时发出 `ai.enabled`，由 `sec-report` 与 `explainer` 接手，其后的指引、公司分析、要点与分析师按原有事件链跟上；关闭后不再有新的运行，已发布的内容由存储清理按原规则处理。首页的要点轮播改为读取已发布要点的公司列表（`/api/business/v1/findings`），不再写死在页面里。
+白名单表按读者页面上的功能设四列开关：**财报摘要**（SEC 报告摘要、8-K 摘要、业绩指引）、**要点**（公司分析、要点、要点分析师）、**业务解读**、**业务脑图**；财务地图就是白名单本身。每列是一个三档控件：「关」不再生成且对读者隐藏，「生成」运行但不展示（先在后台核对），「显示」运行并展示；生成停止后仍在展示的内容显示为「显示」并标注「已停止生成」。表头每列旁是该功能的全局生成开关，关闭后整列变灰。设计与取舍见 [whitelist-feature-switches-design](whitelist-feature-switches-design.md)。
+
+选择存于 `business_feature_settings`（migration 0030，按公司与功能一行，`*` 行为全局开关），覆盖部署默认值：`SEC_AI_TICKERS` / `SEC_AI_ENABLED` 是财报摘要、要点、业务解读的默认，`BUSINESS_TREE_TICKERS` 加 AI 名单 / `BUSINESS_TREE_ENABLED` 是业务脑图的默认；显式关闭同样生效。旧表 `financial_ai_settings`、`business_tree_settings` 已回填并保留一个发布周期。Pipeline 在每个入口读一次设置表，解析成 `FEATURE_RESOLVED`；`SEC_AI_TICKERS` 随之设为财报摘要名单，读它的旧代码含义不变。要点的生成要求财报摘要处于生成或显示；把财报摘要切到「关」会同时关掉要点。四个功能都要求公司在白名单内。
+
+每次切换发出 `feature.settings`（`detail.feature` 标明功能），由该功能的首个任务检查是否有东西要写（财报摘要 → `sec-report`，要点 → `findings` 与 `company-analysis`，业务解读 → `explainer`，业务脑图 → `tree`），并推进地图的 company、filings、findings 版本号，读者立刻看到变化。显示关闭时公开读取接口返回 `status: "hidden"`（要点、业务解读、指引）或只列申报不带摘要（`filings`）；首页要点轮播（`/api/business/v1/findings`）不列隐藏的公司；后台读取不受影响，存储不删。
+
+接口：`POST /api/admin/business-map/companies/:ticker/features/:feature`（`{generate?, display?}`，只改给定的位）、`POST /api/admin/business-map/features/:feature`（`{generate}`）。

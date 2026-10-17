@@ -1,3 +1,4 @@
+import { featureDisplayed } from "../admin/feature-settings.ts";
 import { reasoningFor } from "../ai-config.ts";
 import type { GuidanceCoverage, GuidancePublication, GuidanceResponse, GuidanceSource } from "../../../../shared/analysis-contract/guidance.ts";
 import type { SecFiscalPeriod } from "../../../../shared/analysis-contract/report.ts";
@@ -276,9 +277,11 @@ export async function executeGuidanceWorkflow(params: GuidanceWorkflowParams, st
 }
 
 /** Read-only: never starts extraction. A stored document that fails validation reads as preparing. */
-export async function readGuidanceResponse(db: D1Database, rawTicker: string): Promise<GuidanceResponse> {
+export async function readGuidanceResponse(db: D1Database, rawTicker: string, options: { public?: boolean } = {}): Promise<GuidanceResponse> {
   const ticker = rawTicker.trim().toUpperCase();
   if (!/^[A-Z][A-Z0-9.-]{0,11}$/.test(ticker)) throw new AnalysisRequestError("INVALID_TICKER", "Invalid company ticker.");
+  // Guidance is read from the reports feature; the admin's display switch hides it with the summaries.
+  if (options.public && !await featureDisplayed(db, ticker, "reports")) return { schemaVersion: "guidance-response.v1", status: "hidden", guidance: null };
   const stored = await new D1SecRepository(db).getCache<unknown>(guidanceCacheKey(ticker));
   const guidance = stored ? readGuidancePublication(stored.payload, ticker) : null;
   return { schemaVersion: "guidance-response.v1", status: guidance ? "ready" : "preparing", guidance };

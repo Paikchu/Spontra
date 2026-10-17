@@ -2,9 +2,11 @@ import { AI_RUN_KINDS, type AiCompanies, type AiCompanyDetail, type AiKindState,
 import { translationsAdmin } from "../translation/admin.ts";
 import { AiRunStore, publishedAt, summarize, TERMINAL } from "../ai-runs/store.ts";
 import { businessExplainerFingerprint, readBusinessExplainerResponse } from "../business-explainer/workflow.ts";
-import { businessTreeFingerprint, readBusinessTreeResponse, treeTickersFor } from "../business-tree/workflow.ts";
+import { FEATURES, type Feature } from "../../../../shared/analysis-contract/business-features.ts";
+import { featureEnabled, featureTickersFor } from "../financial-data/company-policy.ts";
+const FEATURE_NAME: Record<Feature, string> = { reports: "财报摘要", findings: "要点", explainer: "业务解读", tree: "业务脑图" };
+import { businessTreeFingerprint, readBusinessTreeResponse } from "../business-tree/workflow.ts";
 import { companyName } from "../catalog/security-directory.ts";
-import { trackedTickersFor } from "../core.ts";
 import { findingsFingerprint } from "../findings/workflow.ts";
 import { analystFingerprint, dossierCacheKey } from "../analyst/workflow.ts";
 import { findingsCacheKey, readFindingsResponse } from "../findings/read.ts";
@@ -24,13 +26,14 @@ type Binding = AiWorkflowBinding<Record<string, unknown>>;
 function binding(env: SecPipelineEnv, kind: AiRunKind): Binding | undefined {
   return (kind === "findings" ? env.FINDINGS_WORKFLOW : kind === "analyst" ? env.ANALYST_WORKFLOW : kind === "explainer" ? env.BUSINESS_EXPLAINER_WORKFLOW : kind === "tree" ? env.BUSINESS_TREE_WORKFLOW : env.GUIDANCE_WORKFLOW) as Binding | undefined;
 }
-/** The business tree has its own company list; the other kinds run for the AI-enabled companies. */
+/** Each kind runs for the companies its feature is switched on for (docs/whitelist-feature-switches-design.md). */
+const featureOf = (kind: AiRunKind): Feature => kind === "guidance" ? "reports" : kind === "analyst" ? "findings" : kind;
 function enabled(env: SecPipelineEnv, kind: AiRunKind, ticker: string): boolean {
-  return (kind === "tree" ? treeTickersFor(env) : trackedTickersFor(env)).includes(ticker);
+  return featureTickersFor(env, featureOf(kind)).includes(ticker);
 }
 function blocked(env: SecPipelineEnv, kind: AiRunKind, ticker: string): string | null {
-  if (!enabled(env, kind, ticker)) return kind === "tree" ? "该公司的业务脑图生成已关闭。" : "该公司未纳入此任务。";
-  if (kind === "tree" && env.BUSINESS_TREE_ENABLED === "false") return "业务脑图生成已全局暂停。";
+  if (!featureEnabled(env, featureOf(kind))) return `${FEATURE_NAME[featureOf(kind)]}生成已全局暂停。`;
+  if (!enabled(env, kind, ticker)) return `该公司的${FEATURE_NAME[featureOf(kind)]}生成已关闭。`;
   if (!binding(env, kind)) return "该任务的工作流未配置。";
   if (!env.DEEPSEEK_API_KEY) return "模型密钥未配置。";
   if ((kind === "explainer" || kind === "tree") && !env.TAVILY_API_KEY) return kind === "tree" ? "资料检索未配置，无法拆解业务。" : "资料检索未配置，无法撰写业务解读。";
@@ -41,7 +44,7 @@ function automatic(env: SecPipelineEnv, kind: AiRunKind, ticker: string): boolea
   return kind === "findings" ? env.FINDINGS_ENABLED === "true" && !!env.FINDINGS_WORKFLOW
     : kind === "analyst" ? env.ANALYST_ENABLED === "true" && !!env.ANALYST_WORKFLOW
     : kind === "explainer" ? !!env.BUSINESS_EXPLAINER_WORKFLOW && !!env.TAVILY_API_KEY
-    : kind === "tree" ? !!env.BUSINESS_TREE_WORKFLOW && !!env.TAVILY_API_KEY && env.BUSINESS_TREE_ENABLED !== "false"
+    : kind === "tree" ? !!env.BUSINESS_TREE_WORKFLOW && !!env.TAVILY_API_KEY
     : env.GUIDANCE_ENABLED === "true" && !!env.GUIDANCE_WORKFLOW;
 }
 /** The publication readers are served now, validated the same way the public read API does. */
@@ -155,7 +158,7 @@ async function start(env: SecPipelineEnv, db: D1Database, kind: AiRunKind, ticke
 export async function handleAiRunsAdminRequest(request: Request, env: SecPipelineEnv, now = Date.now()): Promise<Response> {
   if (!await authenticateAdmin(request, env.REPORT_ADMIN_PASSWORD, now)) return json({ error: "请登录管理后台。" }, 401);
   if (!env.DB) return json({ error: "数据服务尚未连接。" }, 503);
-  const db = env.DB, tickers = [...new Set([...trackedTickersFor(env), ...treeTickersFor(env)])];
+  const db = env.DB, tickers = [...new Set(FEATURES.flatMap(feature => featureTickersFor(env, feature)))].sort();
   try {
     // Version ids are timestamps; the admin proxy percent-encodes their colons.
     const path = decodeURIComponent(new URL(request.url).pathname);
