@@ -16,6 +16,7 @@ export const REVISES: Partial<Record<EventType, readonly MapResource[]>> = {
   "guidance.published": ["company"],
   "explainer.published": ["company"],
   "tree.published": ["company"],
+  "tree.settings": ["company"],
   "findings.published": ["findings"],
   "dossier.published": ["findings"],
   "peers.published": ["findings"],

@@ -49,6 +49,7 @@ export type BusinessTree = {
 };
 export type BusinessTreeResponse = {
   schemaVersion: "business-tree-response.v1";
-  status: "ready" | "preparing";
+  /** `hidden`: switched off for the map in the admin; the tree is kept. */
+  status: "ready" | "preparing" | "hidden";
   tree: BusinessTree | null;
 };

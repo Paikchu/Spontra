@@ -86,3 +86,7 @@
 @media (max-width: 650px) { .bm-admin-add { width: 100%; } .bm-admin-add input { flex: 1; width: auto; min-width: 0; } .bm-admin-filter { width: 100%; } .bm-admin-filter .ra-search { flex: 1; width: auto; } }
 .bm-admin-table .fm-button { height: 26px; padding: 0 10px; font-size: 12px; }
 .bm-admin-table .ra-badge { height: 20px; }
+.bm-admin-global { display: inline-flex; align-items: center; gap: 8px; margin-right: 6px; font-size: 13px; color: var(--ink-muted); }
+.bm-admin-tree { display: grid; grid-template-columns: auto auto; align-items: center; gap: 6px 8px; font-size: 12px; color: var(--ink-muted); }
+.bm-admin-tree label { display: contents; }
+.bm-admin-tree small { grid-column: 1 / -1; color: var(--ink-soft); }

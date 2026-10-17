@@ -23,7 +23,9 @@ export const businessTreeCacheKey = (ticker: string) => `business-tree:v1:${tick
 export type BusinessTreeParams = { ticker: string; fingerprint: string };
 
 /** Companies whose businesses are broken down; separate from the AI list, since this needs no report analysis. */
-export function treeTickersFor(env: Pick<SecPipelineEnv, "BUSINESS_TREE_TICKERS" | "SEC_TRACKED_TICKERS" | "SEC_DATA_TICKERS" | "SEC_AI_TICKERS" | "SEC_AI_ENABLED">): string[] {
+export function treeTickersFor(env: Pick<SecPipelineEnv, "BUSINESS_TREE_TICKERS" | "BUSINESS_TREE_RESOLVED" | "SEC_TRACKED_TICKERS" | "SEC_DATA_TICKERS" | "SEC_AI_TICKERS" | "SEC_AI_ENABLED">): string[] {
+  // The admin's per-company switches, already applied by companyPolicyEnvironment.
+  if (env.BUSINESS_TREE_RESOLVED !== undefined) return env.BUSINESS_TREE_RESOLVED.split(",").filter(Boolean);
   const listed = env.BUSINESS_TREE_TICKERS?.split(",").map(t => t.trim().toUpperCase()).filter(t => /^[A-Z][A-Z0-9.-]{0,11}$/.test(t));
   // The mind-map list adds to the AI list (the admin's AI switch); a company switched on gets its mind map too.
   return [...new Set([...(listed ?? []), ...trackedTickersFor(env)])];
@@ -64,7 +66,8 @@ export async function businessTreeFingerprint(env: SecPipelineEnv, ticker: strin
 }
 
 export async function executeBusinessTreeWorkflow(params: BusinessTreeParams, step: WorkflowStepLike, env: SecPipelineEnv, fetcher: typeof fetch = fetch, runId?: string) {
-  if (!treeTickersFor(env).includes(params.ticker)) throw new Error("Ticker is not listed for business trees");
+  // Switched off in the admin after the run was scheduled: nothing to write, and nothing that failed.
+  if (!treeTickersFor(env).includes(params.ticker) || env.BUSINESS_TREE_ENABLED === "false") return { status: "superseded" };
   const modelVersion = env.SEC_REASONING_MODEL || env.SEC_ANALYSIS_MODEL || "deepseek-flash";
   const now = await step.do("tree-time", async () => new Date().toISOString());
   const input = await step.do("tree-input", () => readInput(env, params.ticker));
@@ -97,10 +100,20 @@ export async function executeBusinessTreeWorkflow(params: BusinessTreeParams, st
   return { status: "ready", businesses: tree.branches.length, nodes: tree.branches.reduce((sum, b) => sum + nodes(b.children), 0), sources: tree.sources.length };
 }
 
-/** Read-only: never starts research. A stored tree that fails validation reads as preparing. The operator's trace is left out. */
-export async function readBusinessTreeResponse(db: D1Database, rawTicker: string, options: { research?: boolean } = {}): Promise<BusinessTreeResponse> {
+/** Whether the map shows the company's tree: the admin's display switch, shown unless switched off. */
+export async function treeDisplayed(db: D1Database, ticker: string): Promise<boolean> {
+  const row = await db.prepare("SELECT display FROM business_tree_settings WHERE ticker = ?").bind(ticker).first<{ display: number | null }>().catch(() => null);
+  return row?.display !== 0;
+}
+
+/**
+ * Read-only: never starts research. A stored tree that fails validation reads as preparing. The operator's trace is left
+ * out. `public` reads honour the admin's display switch: a hidden tree reads as hidden and stays stored.
+ */
+export async function readBusinessTreeResponse(db: D1Database, rawTicker: string, options: { research?: boolean; public?: boolean } = {}): Promise<BusinessTreeResponse> {
   const ticker = rawTicker.trim().toUpperCase();
   if (!/^[A-Z][A-Z0-9.-]{0,11}$/.test(ticker)) throw new AnalysisRequestError("INVALID_TICKER", "Invalid company ticker.");
+  if (options.public && !await treeDisplayed(db, ticker)) return { schemaVersion: "business-tree-response.v1", status: "hidden", tree: null };
   const stored = await new D1SecRepository(db).getCache<unknown>(businessTreeCacheKey(ticker));
   const tree = stored ? readBusinessTree(stored.payload, ticker, options) : null;
   return { schemaVersion: "business-tree-response.v1", status: tree ? "ready" : "preparing", tree };

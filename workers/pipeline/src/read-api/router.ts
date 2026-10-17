@@ -145,7 +145,7 @@ async function handleRoute(request: Request, database: D1Database, route: Exclud
       return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
     }
     case "business-tree": {
-      const payload = await readBusinessTreeResponse(database, route.ticker);
+      const payload = await readBusinessTreeResponse(database, route.ticker, { public: true });
       payload.tree = await translated("tree", payload.tree);
       return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
     }

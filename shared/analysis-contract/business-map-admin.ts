@@ -20,8 +20,11 @@ export type BusinessMapCompany = FinancialMaintenanceCompany & {
     basisChanges: string[];
     profile: { status: "verified" | "unresolved"; accession: string; attempts: number; issues: string[]; updatedAt: string } | null;
   };
+  /** The mind map switches as they apply now: generated (deployment list, AI list and the admin's switch), shown on the map, and whether one is stored. */
+  tree?: { generate: boolean; display: boolean; published: boolean };
 };
-export type BusinessMapCompanies = { companies: BusinessMapCompany[]; automaticCollection: boolean };
+/** `treeGeneration`: whether mind maps are generated at all (the admin's global switch over BUSINESS_TREE_ENABLED). */
+export type BusinessMapCompanies = { companies: BusinessMapCompany[]; automaticCollection: boolean; treeGeneration?: boolean };
 
 /**
  * The data behind BusinessView's three charts for one company: the profit view's quarters (published pair plus the
