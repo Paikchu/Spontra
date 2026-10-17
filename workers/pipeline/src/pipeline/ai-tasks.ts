@@ -13,6 +13,8 @@ import type { TaskContext, TaskImplementation, TaskOutcome } from "./tasks.ts";
 import { driveWorkflow, failedInputOutcome } from "./workflow-task.ts";
 
 const MINUTE = 60_000;
+/** Earnings releases this recent may still have guidance on the way; a run silent this long is not waited for. */
+const GUIDANCE_WAIT_WINDOW_MS = 45 * 24 * 60 * MINUTE, GUIDANCE_SILENT_MS = 2 * 24 * 60 * MINUTE;
 const until = (at: string, now: Date) => Math.max(MINUTE, Date.parse(at) - now.getTime());
 const slug = (ticker: string) => ticker.replace(/[^A-Za-z0-9]/g, "-");
 
@@ -41,7 +43,9 @@ const storedFingerprint = (env: SecPipelineEnv, key: string) => async () =>
 export const AI_TASKS = {
   /**
    * Findings for the newest report, written from the map snapshot, guidance, SEC fundamentals and the company analysis.
-   * Within a day of an earnings release whose guidance is still being extracted, it waits for that guidance.
+   * While a recent earnings release's guidance is still queued or being extracted, it waits for that guidance: a
+   * guidance run can take more than a day (the daily model budget), and writing first without it would write twice.
+   * A run silent for two days is not waited for; a published guidance (`extracted`, `complete`) is not pending.
    */
   findings: {
     version: FINDINGS_VERSION,
@@ -49,9 +53,10 @@ export const AI_TASKS = {
       const { now } = context;
       if (env.FINDINGS_ENABLED !== "true") return { status: "done", detail: { skipped: "findings disabled" } };
       if (env.GUIDANCE_ENABLED === "true") {
-        const since = new Date(now.getTime() - 24 * 60 * MINUTE).toISOString().slice(0, 10);
-        const pending = await env.DB!.prepare("SELECT accession FROM earnings_events WHERE ticker = ? AND status IN ('queued', 'started') AND event_date >= ? LIMIT 1").bind(ticker, since).first<{ accession: string }>();
-        if (pending) return { status: "later", afterMs: 30 * MINUTE, detail: { waiting: "guidance", accession: pending.accession } };
+        const since = new Date(now.getTime() - GUIDANCE_WAIT_WINDOW_MS).toISOString().slice(0, 10), silent = new Date(now.getTime() - GUIDANCE_SILENT_MS).toISOString();
+        const pending = await env.DB!.prepare("SELECT accession, status FROM earnings_events WHERE ticker = ? AND event_date >= ? AND (status = 'queued' OR (status = 'started' AND updated_at >= ?)) LIMIT 1")
+          .bind(ticker, since, silent).first<{ accession: string; status: string }>();
+        if (pending) return { status: "later", afterMs: 30 * MINUTE, detail: { waiting: "guidance", accession: pending.accession, guidance: pending.status } };
       }
       return runWhenChanged(env, "findings", "findings", ticker, context, env.FINDINGS_WORKFLOW,
         () => findingsFingerprint(env, ticker), storedFingerprint(env, findingsCacheKey(ticker)));

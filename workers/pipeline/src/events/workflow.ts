@@ -4,6 +4,7 @@ import type { SecCronEnv } from "../core.ts";
 import { knownCik } from "../pipeline/identity.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
 import { D1SecRepository } from "../sec/d1.ts";
+import { throttledSecReader } from "../financial-data/provider.ts";
 import type { SecFilingFeed, SecFilingSummary } from "../sec/sec.ts";
 import { form4XmlUrl, parseForm4 } from "./form4.ts";
 import { eventsCacheKey, exhibitsCacheKey, insiderCacheKey } from "./read.ts";
@@ -76,14 +77,15 @@ function toSummary(summary: SecFilingSummary | null): EventSummary | null {
 }
 
 type Fetcher = typeof fetch;
-const secHeaders = (userAgent: string, accept: string) => ({ accept, "user-agent": userAgent });
+/** A 403 or 429 from SEC: the caller stops for a while instead of trying the next read (provider.ts). */
+export const secAccessPaused = (error: unknown) => error instanceof Error && error.message === "SEC_ACCESS_PAUSED";
 
-/** Reads one company's events: EDGAR's list when it is due, otherwise the stored list, then fills summaries, exhibits and Form 4 figures within the tick's budget. */
 /**
  * Rebuilds the company's event rail. `forceList` re-reads EDGAR's submission list (a new filing was discovered);
  * otherwise the stored list is kept and only pending Form 4 and exhibit reads advance, a bounded number per call.
  * `pending` counts reads still outstanding and `progressed` whether this call stored any, so a caller continues
- * only while it is getting somewhere.
+ * only while it is getting somewhere. Every SEC read goes through the throttled reader; SEC pausing access
+ * (`SEC_ACCESS_PAUSED`) ends the call at once so the caller can back off.
  */
 export async function refreshCompanyEvents(env: EventsSweepEnv, ticker: string, fetcher: Fetcher, now: Date, options: { forceList?: boolean; causeId?: string | null } = {}): Promise<{ published: boolean; insiderReads: number; exhibitReads: number; pending: number; progressed: boolean }> {
   const db = env.DB;
@@ -95,13 +97,12 @@ export async function refreshCompanyEvents(env: EventsSweepEnv, ticker: string, 
   const cik = feed?.payload.company?.cik ?? feed?.payload.filings[0]?.cik ?? await knownCik(db, ticker);
   if (!cik) return { published: false, insiderReads: 0, exhibitReads: 0, pending: 0, progressed: false };
   const cikNumber = Number(cik);
+  const reader = throttledSecReader(env.SEC_USER_AGENT, fetcher, 200);
   const listDue = options.forceList || !publication || now.getTime() - Date.parse(publication.checkedAt) >= REFRESH_MS;
   let raw: RawEventFiling[];
   let checkedAt = publication?.checkedAt ?? now.toISOString();
   if (listDue) {
-    const response = await fetcher(`https://data.sec.gov/submissions/CIK${cik}.json`, { cache: "no-store", headers: secHeaders(env.SEC_USER_AGENT, "application/json"), signal: AbortSignal.timeout(20_000) });
-    if (!response.ok) throw new Error(`SEC HTTP ${response.status}`);
-    raw = parseEventSubmissions(await response.json(), cikNumber, now);
+    raw = parseEventSubmissions(await (await reader.read(`https://data.sec.gov/submissions/CIK${cik}.json`)).json(), cikNumber, now);
     checkedAt = now.toISOString();
   } else {
     raw = publication!.events.map(e => ({
@@ -124,12 +125,13 @@ export async function refreshCompanyEvents(env: EventsSweepEnv, ticker: string, 
       else if (!cached && insiderReads < LIMITS.insiderReads) {
         insiderReads++;
         try {
-          const response = await fetcher(form4XmlUrl(archiveRoot, filing.primaryDocument), { cache: "no-store", headers: secHeaders(env.SEC_USER_AGENT, "application/xml,text/xml,*/*"), signal: AbortSignal.timeout(20_000) });
-          const parsed = response.ok ? parseForm4(await response.text()) : null;
+          let parsed: InsiderTransaction | null = null;
+          try { parsed = parseForm4(await (await reader.read(form4XmlUrl(archiveRoot, filing.primaryDocument))).text()); }
+          catch (error) { if (secAccessPaused(error)) throw error; /* A document SEC does not serve is unreadable, as before. */ }
           await repository.setCache(insiderCacheKey(ticker, filing.accessionNumber), parsed ?? { unreadable: true }, now.toISOString());
           insider = parsed;
           saved++;
-        } catch { /* Left pending; the next tick reads it again. */ }
+        } catch (error) { if (secAccessPaused(error)) throw error; /* Left pending; the next tick reads it again. */ }
       }
       if (!insider) { pendingInsider++; continue; }
     }
@@ -140,11 +142,9 @@ export async function refreshCompanyEvents(env: EventsSweepEnv, ticker: string, 
       else if (exhibitReads < LIMITS.exhibitReads) {
         exhibitReads++;
         try {
-          const response = await fetcher(`${archiveRoot}/${filing.accessionNumber}-index.htm`, { cache: "no-store", headers: secHeaders(env.SEC_USER_AGENT, "text/html"), signal: AbortSignal.timeout(20_000) });
-          exhibits = response.ok ? parseExhibitIndex(await response.text(), archiveRoot) : [];
-          if (response.ok) { await repository.setCache(exhibitsCacheKey(ticker, filing.accessionNumber), exhibits, now.toISOString()); saved++; }
-          else pendingExhibits++;
-        } catch { exhibits = []; pendingExhibits++; }
+          exhibits = parseExhibitIndex(await (await reader.read(`${archiveRoot}/${filing.accessionNumber}-index.htm`)).text(), archiveRoot);
+          await repository.setCache(exhibitsCacheKey(ticker, filing.accessionNumber), exhibits, now.toISOString()); saved++;
+        } catch (error) { if (secAccessPaused(error)) throw error; exhibits = []; pendingExhibits++; }
       } else pendingExhibits++;
     }
     const summary = isInsider ? null : toSummary(await repository.getSummary(ticker, filing.accessionNumber)) ?? prior?.summary ?? null;

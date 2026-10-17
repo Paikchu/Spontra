@@ -1,3 +1,4 @@
+import { throttledSecReader } from "../financial-data/provider.ts";
 import { validateAiFiscalPeriod, FISCAL_PERIOD_INSTRUCTION } from "./fiscal-period-ai.ts";
 import { enforceDiscoveryCoverage } from "./discovery.ts";
 import type { SecSourceMaterial } from "../../../../shared/analysis-contract/sec-presentation.ts";
@@ -90,16 +91,9 @@ export type PreparedSecFiling = PreparedSecFilingMeta & {
 export async function discoverSecTicker(rawTicker: string, runtime: SecDiscoveryRuntime): Promise<{ feed: SecFilingFeed; filings: SecFiling[] }> {
   const ticker = cleanSecTicker(rawTicker);
   const now = (runtime.now ?? (() => new Date()))();
-  const fetcher = runtime.fetcher ?? fetch;
-  const request = async (url: string) => {
-    const response = await fetcher(url, {
-      cache: "no-store",
-      headers: { accept: "application/json", "user-agent": runtime.userAgent },
-      signal: AbortSignal.timeout(20_000),
-    });
-    if (!response.ok) throw new Error(`SEC HTTP ${response.status}`);
-    return response;
-  };
+  // The same paced reader as collection: SEC's fair-access limit is per client, not per task.
+  const reader = throttledSecReader(runtime.userAgent, runtime.fetcher ?? fetch, 200);
+  const request = (url: string) => reader.read(url);
   const tickerMap = parseTickerMap(await (await request("https://www.sec.gov/files/company_tickers_exchange.json")).json());
   const company = tickerMap[ticker];
   if (!company) {
