@@ -120,6 +120,7 @@ Cron 和两个队列消费者的入口各做两次主键查询：补发发件箱
 | `guidance.published` | 指引 Workflow | 要点 |
 | `task.version_changed` | Cron 或队列消费者入口检测到某个任务的版本变了 | 只路由给版本变化的那个任务，对所有公司各登记一次 |
 | `explainer.published`、`tree.published`、`findings.published`、`events.published`、`dossier.published` | 各自任务 | 翻译（`findings.published` 另有要点分析师） |
+| `feature.settings`（`detail.feature`） | 后台功能开关 | 该功能的首个任务：财报摘要 → `sec-report`，要点 → `findings`、`company-analysis`，业务解读 → `explainer`，业务脑图 → `tree`；并推进地图版本号 |
 | `transcript.stored`、`translations.published` | 各自任务 | 暂无订阅者，先发出，供以后的任务订阅 |
 
 ## 防抖与就绪
@@ -276,7 +277,7 @@ P2、P3 的实现要点与差异：
 - **账户类失败照常重试。** 模型 4xx 在 Workflow 步骤里是最终失败，但 HTTP 402（余额、计费、额度）由充值解决，任务层仍按退避重试，而不是立刻死信。
 - **采集触发不再丢失（2026-10-17）。** `startCollection` 与 `collect` 用同一口径判断维护任务是否占有数据（分析阶段不占）；被别处占有时等待而非结束。采集 job 结束时，若申报发现记录的最新可采集申报（`collectable`）不在该 job 的列表里，再启动一次采集（每份申报至多一次）。任务的“稍后继续”先发消息再移动 `pipeline_due`，发送失败时队列重试仍能运行。
 - **采集 job 不再卡在 running。** 租约延长到 14 分钟；运行后仍是 running 时等租约到期再认领；发布没有成为当前版本（后台更高代际已发布）的 job 以 `NEWER_PUBLICATION_CURRENT` 结束；超过 20 MB 的申报文件是最终原因 `SEC_DOCUMENT_TOO_LARGE`，不再按来源故障重试。地图推导跳过单份超出预算的申报（`oversized`），不再每秒重跑。已发布快照不符合当前校验时读作 `unavailable`（`INVALID_PAYLOAD`），不再 503。
-- **利润表判定。** 模型故障不算判定，一小时后再试；失败的判定记录申报但不撤销此前验证过的结构；判定按 `judge_version`（迁移 0030）去重，版本变化会重判；判定、维护任务与事件同一批次提交；`presentation.unresolved` 随发布同一事务写入。新公司由 `company.added` 触发一次检查，等首个发布完成后判定；后台采集也读取业绩 8-K。
+- **利润表判定。** 模型故障不算判定，一小时后再试；失败的判定记录申报但不撤销此前验证过的结构；判定按 `judge_version`（迁移 0031）去重，版本变化会重判；判定、维护任务与事件同一批次提交；`presentation.unresolved` 随发布同一事务写入。新公司由 `company.added` 触发一次检查，等首个发布完成后判定；后台采集也读取业绩 8-K。
 - **其他。** 翻译三次完整运行后仍剩同一批字符串即停止，直到内容变化；翻译表无变化时不发 `translations.published`。维护任务分析阶段状态持续不可读约一天后失败。维护备份只取最近 10 个版本。存储清理保留后台分析中公司的 prepared filing。文字稿空结果或拒绝访问次日重试，共三次。
 - **新增 `filings.indexed`。** 指引工作流要求业绩 8-K 已在缓存的申报列表里，这个列表由 SEC 财报工作流写入；指引因此订阅列表写入事件，而不是直接订阅 `filing.discovered`。
 - **Yahoo 基本面不再定时同步。** 它只被公司分析读取，改为公司分析工作流开始时检查，超过 24 小时才同步；失败沿用上次的快照。要点读的是 SEC 基本面（`sec:fundamentals:*`），由 SEC 财报工作流写入并发 `fundamentals.updated`。
@@ -302,5 +303,5 @@ P4 的实现要点与差异：
 - 全程无失败运行、发件箱无积压；唯一的死信是 NET 业务脑图（素材里找不到可锚定内容），与改造前同因失败。
 - 旧存档里带 sec.gov 随机脚本的副本，在补历史重读时一次性改存为规范内容，1,170 个被替换的对象 24 小时后由 `archive-prune` 删除。
 
-- **AI 名单在后台控制（2026-10-15）。** `financial_ai_settings` 覆盖 `SEC_AI_TICKERS`；后台开启一家公司时发出 `ai.enabled`（订阅者 `sec-report`、`explainer`），后续事件链不变。见 [businessview-admin](businessview-admin.md)。
-- **业务脑图开关在后台控制（2026-10-17）。** `business_tree_settings` 的 `*` 行覆盖 `BUSINESS_TREE_ENABLED`，公司行覆盖脑图名单与地图显示；每次切换发出 `tree.settings`（订阅者 `tree`，并更新地图 company 版本号）。见 [business-tree](business-tree.md)。
+- **AI 名单在后台控制（2026-10-15）。** `financial_ai_settings` 覆盖 `SEC_AI_TICKERS`；后台开启一家公司时发出 `ai.enabled`（订阅者 `sec-report`、`explainer`），后续事件链不变。2026-10-17 并入功能开关（下一条）。
+- **功能开关在后台控制（2026-10-17）。** 任务的 scope 从 `ai` 拆成 `reports`（`sec-report`、`guidance`）、`findings`（`memory`、`company-analysis`、`findings`、`analyst`）、`explainer`、`tree`，各读 `business_feature_settings` 解析出的名单；`ai.enabled` 与 `tree.settings` 合并为 `feature.settings`（`detail.feature`），订阅者是该功能的首个任务，并推进地图 company、filings、findings 版本号。见 [businessview-admin](businessview-admin.md)、[whitelist-feature-switches-design](whitelist-feature-switches-design.md)。

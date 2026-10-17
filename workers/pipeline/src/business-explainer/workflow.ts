@@ -88,9 +88,11 @@ export async function executeBusinessExplainerWorkflow(params: BusinessExplainer
 }
 
 /** Read-only: never starts research. A stored document that fails validation reads as preparing. */
-export async function readBusinessExplainerResponse(db: D1Database, rawTicker: string): Promise<BusinessExplainerResponse> {
+export async function readBusinessExplainerResponse(db: D1Database, rawTicker: string, options: { hidden?: boolean } = {}): Promise<BusinessExplainerResponse> {
   const ticker = rawTicker.trim().toUpperCase();
   if (!/^[A-Z][A-Z0-9.-]{0,11}$/.test(ticker)) throw new AnalysisRequestError("INVALID_TICKER", "Invalid company ticker.");
+  // The admin's display switch: hidden explanations read as hidden for readers and stay stored.
+  if (options.hidden) return { schemaVersion: "business-explainer-response.v1", status: "hidden", explainer: null };
   const stored = await new D1SecRepository(db).getCache<unknown>(businessExplainerCacheKey(ticker));
   const explainer = stored ? readBusinessExplainer(stored.payload, ticker) : null;
   return { schemaVersion: "business-explainer-response.v1", status: explainer ? "ready" : "preparing", explainer };

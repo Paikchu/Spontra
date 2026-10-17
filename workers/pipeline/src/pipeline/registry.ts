@@ -1,3 +1,4 @@
+import type { Feature } from "../../../../shared/analysis-contract/business-features.ts";
 /**
  * The pipeline's event graph (docs/pipeline-events.md): the events that exist, which tasks subscribe to each, and
  * what every task and source emits. Pure data, so the build checks it without the Workers runtime
@@ -13,7 +14,7 @@ export const EVENT_TYPES = [
   "library.requested", "library.prepared", "library.cards.published", "library.links.requested",
   "peers.published", "translations.published",
   "presentation.unresolved",
-  "ai.enabled", "tree.settings",
+  "feature.settings",
 ] as const;
 export type EventType = typeof EVENT_TYPES[number];
 
@@ -28,11 +29,15 @@ export const TASK_NAMES = [
 export type TaskName = typeof TASK_NAMES[number];
 
 /** What a filing event says about the filing, for subscribers that only want some forms. */
-export type EventDetail = { form?: string; items?: string; accession?: string; /** Comma-separated event classes an events.published carries for its new rows. */ classes?: string };
+export type EventDetail = { form?: string; items?: string; accession?: string; /** Comma-separated event classes an events.published carries for its new rows. */ classes?: string;
+  /** The feature a `feature.settings` event is about. */ feature?: Feature };
 export type PipelineEvent = { type: EventType; ticker: string; cik?: string | null; task?: TaskName | null; detail?: EventDetail | null };
 
-/** Which companies a task runs for when its version changes: every data company, the AI list, or once globally. */
-export type TaskScope = "data" | "ai" | "tree" | "global";
+/**
+ * Which companies a task runs for when its version changes: every data company, the companies one reader-facing feature
+ * is switched on for (docs/whitelist-feature-switches-design.md), or once globally.
+ */
+export type TaskScope = "data" | Feature | "global";
 export type TaskMeta = {
   emits: readonly EventType[];
   /** Triggers inside this window push the run back, never beyond `maxWaitMs` after the first. */
@@ -60,23 +65,23 @@ export const TASKS: Record<TaskName, TaskMeta> = {
   // A full pass over the archive for copies left behind before replacements were recorded; admin-requested.
   "archive-prune-scan": { emits: [], debounceMs: 0, maxWaitMs: 0, scope: "global" },
   // Runs the SEC report Workflow, which indexes the filing list, writes reports and 8-K summaries.
-  "sec-report": { emits: ["filings.indexed", "report.published", "fundamentals.updated"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "ai" },
+  "sec-report": { emits: ["filings.indexed", "report.published", "fundamentals.updated"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "reports" },
   // Extracts management guidance from earnings releases (Workflow).
-  "guidance": { emits: ["guidance.published"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "ai" },
+  "guidance": { emits: ["guidance.published"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "reports" },
   // Current reports and Form 4 filings for the map's event rail; no model.
   "events": { emits: ["events.published"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "data" },
   // Starts report memory for a published periodic report; the memory Workflow starts the company analysis itself.
-  "memory": { emits: [], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "ai" },
+  "memory": { emits: [], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "findings" },
   // Recovers company analyses that stopped, failed or are behind the prompt version.
-  "company-analysis": { emits: ["analysis.published"], debounceMs: 30 * MINUTE, maxWaitMs: 2 * HOUR, scope: "ai" },
+  "company-analysis": { emits: ["analysis.published"], debounceMs: 30 * MINUTE, maxWaitMs: 2 * HOUR, scope: "findings" },
   // Model-written explanations of each disclosed business (Workflow).
-  "explainer": { emits: ["explainer.published"], debounceMs: 10 * MINUTE, maxWaitMs: 2 * HOUR, scope: "ai" },
+  "explainer": { emits: ["explainer.published"], debounceMs: 10 * MINUTE, maxWaitMs: 2 * HOUR, scope: "explainer" },
   // The ReAct business mind map (Workflow).
   "tree": { emits: ["tree.published"], debounceMs: 10 * MINUTE, maxWaitMs: 2 * HOUR, scope: "tree" },
   // Report findings written from the map snapshot, guidance, SEC fundamentals and the company analysis (Workflow).
-  "findings": { emits: ["findings.published"], debounceMs: 10 * MINUTE, maxWaitMs: 2 * HOUR, scope: "ai" },
+  "findings": { emits: ["findings.published"], debounceMs: 10 * MINUTE, maxWaitMs: 2 * HOUR, scope: "findings" },
   // The analyst agent: a research dossier per verified finding, from the filings, figures and peers (Workflow).
-  "analyst": { emits: ["dossier.published"], debounceMs: 10 * MINUTE, maxWaitMs: 2 * HOUR, scope: "ai" },
+  "analyst": { emits: ["dossier.published"], debounceMs: 10 * MINUTE, maxWaitMs: 2 * HOUR, scope: "findings" },
   // Splits the company's archived documents into the filing library's sections and passages; no model.
   "library": { emits: ["library.prepared"], debounceMs: 30 * SECOND, maxWaitMs: 5 * MINUTE, scope: "data" },
   // Index cards for the sections of the company's recent documents (Workflow; model at low reasoning).
@@ -138,19 +143,23 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
   "tree.published": [{ task: "translate" }],
   "events.published": [{ task: "translate" }],
   "presentation.unresolved": [{ task: "presentation" }],
-  // A company switched on in the admin starts its AI work: the SEC reports (whose publications lead to guidance, the
-  // company analysis, findings and the analyst), the business explanations and the mind map.
-  "ai.enabled": [{ task: "sec-report" }, { task: "explainer" }, { task: "tree" }],
-  // A mind map switch changed in the admin: a company switched on (or generation resumed) is checked for a tree to write;
-  // the map's revision moves so a shown or hidden tree reaches readers at once.
-  "tree.settings": [{ task: "tree" }],
+  // A feature switch changed in the admin: the feature's first task checks whether there is something to write (the SEC
+  // reports lead on to guidance; the findings chain starts from the company analysis already published); the map's
+  // revisions move so shown or hidden content reaches readers at once.
+  "feature.settings": [
+    { task: "sec-report", when: e => e.detail?.feature === "reports" },
+    { task: "findings", when: e => e.detail?.feature === "findings" },
+    { task: "company-analysis", when: e => e.detail?.feature === "findings" },
+    { task: "explainer", when: e => e.detail?.feature === "explainer" },
+    { task: "tree", when: e => e.detail?.feature === "tree" },
+  ],
 };
 
 /** Emitters that are not tasks. `task.version_changed` is routed to the one task it names, never subscribed. */
 export const SOURCES: Record<string, readonly EventType[]> = {
   // The only Cron: polls EDGAR, which pushes nothing.
   "sec-discovery": ["company.added", "filing.discovered", "collection.requested"],
-  "admin": ["company.added", "collection.requested", "maintenance.requested", "archive.prune.requested", "library.requested", "library.links.requested", "presentation.unresolved", "ai.enabled", "tree.settings"],
+  "admin": ["company.added", "collection.requested", "maintenance.requested", "archive.prune.requested", "library.requested", "library.links.requested", "presentation.unresolved", "feature.settings"],
   "invocation": ["task.version_changed"],
 };
 

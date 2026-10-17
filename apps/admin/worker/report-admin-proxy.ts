@@ -9,11 +9,12 @@ function cookie(value: string, request: Request, clear = false): string {
   return `${COOKIE}=${value}; Path=/api/admin; HttpOnly; SameSite=Strict; Max-Age=${clear ? 0 : 8 * 3600}${new URL(request.url).protocol === "https:" ? "; Secure" : ""}`;
 }
 export async function handleReportAdminProxy(request: Request, path: string[], env: ProxyEnv): Promise<Response> {
-  if (!path.length || !/^(session|financials|business-map|ai|library)$/.test(path[0]!) || path.length > (path[0] === "financials" || path[0] === "ai" || path[0] === "library" ? 6 : 4)) return json({ error: "Not found" }, 404);
+  if (!path.length || !/^(session|financials|business-map|ai|library)$/.test(path[0]!) || path.length > (path[0] === "financials" || path[0] === "ai" || path[0] === "library" ? 6 : path[0] === "business-map" ? 5 : 4)) return json({ error: "Not found" }, 404);
   if (path[0] === "business-map") {
     const route = path.slice(1).join("/");
-    // Writes: the whitelist, the AI switch, a presentation judgement, and the mind map switches (global and per company).
-    if (!(request.method === "GET" && /^companies(?:\/[A-Z][A-Z0-9.-]{0,9}\/charts)?$/.test(route)) && !(request.method === "POST" && /^(?:tree|companies\/[A-Z][A-Z0-9.-]{0,9}(?:\/presentation|\/ai|\/tree)?)$/.test(route))) return json({ error: "Not found" }, 404);
+    const read = request.method === "GET" && /^companies(?:\/[A-Z][A-Z0-9.-]{0,9}\/charts)?$/.test(route);
+    const write = request.method === "POST" && (/^companies\/[A-Z][A-Z0-9.-]{0,9}(?:\/presentation|\/features\/(?:reports|findings|explainer|tree))?$/.test(route) || /^features\/(?:reports|findings|explainer|tree)$/.test(route));
+    if (!read && !write) return json({ error: "Not found" }, 404);
   }
   if (path[0] === "ai") {
     const route = path.slice(1).join("/");

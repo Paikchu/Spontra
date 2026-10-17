@@ -49,8 +49,10 @@ export async function readStoredFindings(db: D1Database, rawTicker: string): Pro
 }
 
 /** A stored publication wins over an authored one; both are re-validated and never repaired. The analyst's dossier, when written for this very publication, supplies the documents. */
-export async function readFindingsResponse(db: D1Database, rawTicker: string): Promise<FindingsResponse> {
+export async function readFindingsResponse(db: D1Database, rawTicker: string, options: { hidden?: boolean } = {}): Promise<FindingsResponse> {
   const ticker = rawTicker.trim().toUpperCase();
+  // Switched off in the admin: readers see it as hidden, and what is stored stays.
+  if (options.hidden) return { schemaVersion: "findings-response.v1", status: "hidden", findings: null };
   const base = await readStoredFindings(db, ticker);
   const dossier = base ? await new D1SecRepository(db).getCache<unknown>(dossierCacheKey(ticker)).then(d => d ? readDossierPublication(d.payload, ticker) : null).catch(() => null) : null;
   const findings = base ? mergeDossier(base, dossier) : null;

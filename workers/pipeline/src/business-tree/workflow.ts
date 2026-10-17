@@ -4,7 +4,8 @@ import type { PublicBusinessFlow } from "../../../../shared/analysis-contract/bu
 import { issuerNames, readBusinessTree } from "../../../../shared/analysis-runtime/business-tree.ts";
 import { sha256 } from "../company-analysis/api.ts";
 import { findSecurity } from "../catalog/security-directory.ts";
-import { requireDb, trackedTickersFor } from "../core.ts";
+import { requireDb } from "../core.ts";
+import { featureTickersFor } from "../financial-data/company-policy.ts";
 import { readCompletePublicationForTicker } from "../financial-data/publication.ts";
 import { SecModelOutputError } from "../model-stream.ts";
 import { callWorkerSecModel, type SecPipelineEnv } from "../operations.ts";
@@ -18,32 +19,30 @@ import { treeLibrary } from "../filing-library/tree-source.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
 
 /** Changing the prompt, the harness or the output contract researches every company once more. */
-export const BUSINESS_TREE_VERSION = "business-tree.react.v4";
+export const BUSINESS_TREE_VERSION = "business-tree.react.v5";
 export const businessTreeCacheKey = (ticker: string) => `business-tree:v1:${ticker}`;
 export type BusinessTreeParams = { ticker: string; fingerprint: string };
 
-/** Companies whose businesses are broken down; separate from the AI list, since this needs no report analysis. */
-export function treeTickersFor(env: Pick<SecPipelineEnv, "BUSINESS_TREE_TICKERS" | "BUSINESS_TREE_RESOLVED" | "SEC_TRACKED_TICKERS" | "SEC_DATA_TICKERS" | "SEC_AI_TICKERS" | "SEC_AI_ENABLED">): string[] {
-  // The admin's per-company switches, already applied by companyPolicyEnvironment.
-  if (env.BUSINESS_TREE_RESOLVED !== undefined) return env.BUSINESS_TREE_RESOLVED.split(",").filter(Boolean);
-  const listed = env.BUSINESS_TREE_TICKERS?.split(",").map(t => t.trim().toUpperCase()).filter(t => /^[A-Z][A-Z0-9.-]{0,11}$/.test(t));
-  // The mind-map list adds to the AI list (the admin's AI switch); a company switched on gets its mind map too.
-  return [...new Set([...(listed ?? []), ...trackedTickersFor(env)])];
+/** Companies whose businesses are broken down: the `tree` feature's list after the admin's switches (company-policy.ts). */
+export function treeTickersFor(env: Pick<SecPipelineEnv, "BUSINESS_TREE_TICKERS" | "BUSINESS_TREE_ENABLED" | "FEATURE_RESOLVED" | "SEC_TRACKED_TICKERS" | "SEC_DATA_TICKERS" | "SEC_AI_TICKERS" | "SEC_AI_ENABLED">): string[] {
+  return featureTickersFor(env, "tree");
 }
 
 /** A region is where a business sells, not what it sells: breaking it into products would repeat the product lines once per region. */
 const REGION = /americas|europe|emea|asia|pacific|china|japan|international|domestic|united\s?states|north\s?america|latin\s?america|geograph|region/i;
 
 /**
- * The businesses the map draws for the newest quarter: its top-level segments with the children the
- * statement discloses under them. Regions are left out, and statements drawn as a bank or an insurer
- * are not broken down here.
+ * The businesses the map draws for the newest quarter: its top-level segments with the children the statement discloses
+ * under them. Regions are left out only when every segment at that level is one (a company organised purely by geography
+ * sells the same lines everywhere); a company mixing regional and product segments (AMZN: North America, International,
+ * AWS) has each broken down. Statements drawn as a bank or an insurer are not broken down here.
  */
 export function treeBusinesses(flow: PublicBusinessFlow | null): { periodEnd: string; businesses: TreeBusiness[] } | null {
   const quarter = [...flow?.quarters ?? []].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd))[0];
   if (!quarter || quarter.incomeModel === "financial" || quarter.incomeModel === "insurance") return null;
-  const businesses = quarter.segments.filter(s => !REGION.test(`${s.id} ${s.name}`))
-    .map(s => ({ flowNodeId: s.id, name: s.name, children: (s.children ?? []).filter(c => !REGION.test(`${c.id} ${c.name}`)).map(c => ({ flowNodeId: c.id, name: c.name })) }));
+  const notAllRegions = <T extends { id: string; name: string }>(list: T[]) => list.every(s => REGION.test(`${s.id} ${s.name}`)) ? [] : list;
+  const businesses = notAllRegions(quarter.segments)
+    .map(s => ({ flowNodeId: s.id, name: s.name, children: notAllRegions(s.children ?? []).map(c => ({ flowNodeId: c.id, name: c.name })) }));
   return businesses.length ? { periodEnd: quarter.periodEnd, businesses: businesses.slice(0, 8) } : null;
 }
 
@@ -100,20 +99,15 @@ export async function executeBusinessTreeWorkflow(params: BusinessTreeParams, st
   return { status: "ready", businesses: tree.branches.length, nodes: tree.branches.reduce((sum, b) => sum + nodes(b.children), 0), sources: tree.sources.length };
 }
 
-/** Whether the map shows the company's tree: the admin's display switch, shown unless switched off. */
-export async function treeDisplayed(db: D1Database, ticker: string): Promise<boolean> {
-  const row = await db.prepare("SELECT display FROM business_tree_settings WHERE ticker = ?").bind(ticker).first<{ display: number | null }>().catch(() => null);
-  return row?.display !== 0;
-}
 
 /**
  * Read-only: never starts research. A stored tree that fails validation reads as preparing. The operator's trace is left
- * out. `public` reads honour the admin's display switch: a hidden tree reads as hidden and stays stored.
+ * out. `hidden` (the admin's switch is off, decided by the read route) answers hidden; the tree stays stored.
  */
-export async function readBusinessTreeResponse(db: D1Database, rawTicker: string, options: { research?: boolean; public?: boolean } = {}): Promise<BusinessTreeResponse> {
+export async function readBusinessTreeResponse(db: D1Database, rawTicker: string, options: { research?: boolean; hidden?: boolean } = {}): Promise<BusinessTreeResponse> {
   const ticker = rawTicker.trim().toUpperCase();
   if (!/^[A-Z][A-Z0-9.-]{0,11}$/.test(ticker)) throw new AnalysisRequestError("INVALID_TICKER", "Invalid company ticker.");
-  if (options.public && !await treeDisplayed(db, ticker)) return { schemaVersion: "business-tree-response.v1", status: "hidden", tree: null };
+  if (options.hidden) return { schemaVersion: "business-tree-response.v1", status: "hidden", tree: null };
   const stored = await new D1SecRepository(db).getCache<unknown>(businessTreeCacheKey(ticker));
   const tree = stored ? readBusinessTree(stored.payload, ticker, options) : null;
   return { schemaVersion: "business-tree-response.v1", status: tree ? "ready" : "preparing", tree };

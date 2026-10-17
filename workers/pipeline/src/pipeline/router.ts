@@ -1,7 +1,5 @@
 import { financialPolicy } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
-import { treeTickersFor } from "../business-tree/workflow.ts";
-import { trackedTickersFor } from "../core.ts";
-import { companyPolicyEnvironment } from "../financial-data/company-policy.ts";
+import { companyPolicyEnvironment, featureTickersFor } from "../financial-data/company-policy.ts";
 import type { SecPipelineEnv } from "../operations.ts";
 import { logStatements } from "./log.ts";
 import type { EventMessage, TaskMessage } from "./messages.ts";
@@ -11,9 +9,8 @@ import { revisionStatements } from "./revisions.ts";
 /** The companies a task covers, for a version change that re-runs it everywhere. */
 export async function scopeTickers(env: SecPipelineEnv, scope: TaskScope): Promise<string[]> {
   if (scope === "global") return ["*"];
-  if (scope === "ai") return trackedTickersFor(env);
-  if (scope === "tree") return treeTickersFor(env);
   const policyEnv = await companyPolicyEnvironment(env);
+  if (scope !== "data") return featureTickersFor(policyEnv, scope);
   return [...financialPolicy({ SEC_DATA_TICKERS: policyEnv.SEC_DATA_TICKERS, SEC_TRACKED_TICKERS: policyEnv.SEC_TRACKED_TICKERS, SEC_AI_ENABLED: "false" }).dataTickers].sort();
 }
 
@@ -29,7 +26,7 @@ async function targets(env: SecPipelineEnv, event: EventMessage, scopes: (scope:
   for (const subscription of SUBSCRIPTIONS[event.type] ?? []) {
     if (subscription.when && !subscription.when(event)) continue;
     const scope = TASKS[subscription.task].scope;
-    // A company task runs only for companies in its scope: the SEC report and guidance only for the AI list.
+    // A company task runs only for companies in its scope: the SEC report and guidance only where the reports feature is on.
     if (scope !== "global" && !(await scopes(scope)).includes(event.ticker)) continue;
     list.push({ task: subscription.task, ticker: scope === "global" ? "*" : event.ticker, causeId: event.id });
   }

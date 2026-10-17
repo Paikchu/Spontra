@@ -18,7 +18,7 @@ GitHub Copilot ─ GitHub ────────┘
 
 ## 拆解层级
 
-1. 公司 → 财报业务：直接来自已发布的 SEC flow（`quarter.segments` 及其披露的 children），不让模型猜。地区分部（Americas、Europe…）和银行、保险口径不拆。
+1. 公司 → 财报业务：直接来自已发布的 SEC flow（`quarter.segments` 及其披露的 children），不让模型猜。只有某一层的分部全是地区时才不拆（AAPL 这种按地理组织的公司，各地区卖的是同一套产品线）；地区分部和产品分部混在一起时（AMZN 的 North America、International、AWS）每个都拆。
 2. 财报业务 → 产品线 → 产品：ReAct 研究员负责，最多 3 层、每个节点最多 10 个下级、每项业务最多 40 个节点。财报自己披露的下级业务（如 ORCL cloud 下的两项）预先放进树里（`flowNodeId`），产品挂在它们下面。
 3. 赚钱方式：挂在材料能证明的那一层（多在产品线），`type` 为 subscription / consumption / license / transaction / advertising / hardware / services / other，`label` 是地图上的短标签（≤10 字），`text` 一句话说明谁付钱、按什么付。
 
@@ -40,19 +40,18 @@ SEC 文件全部来自文件库（`docs/sec-filing-library.md`）：开始前从
 
 ## 核对（写入和读取用同一套规则）
 
-- anchor：必须是模型本次运行读到的某个来源中的原文（压缩空白和标点后逐字匹配），≤600 字符，并且同时写出节点名（完整词，不是前缀）和某个上级的名称（父节点、更上层节点或这项业务；公司只披露一项业务时，公司名也算；公司名取发行人在申报文件里的写法，如 “Cloudflare, Inc.” 和 “Cloudflare”，不用交易所的证券名称 “Cloudflare, Inc. Class A Common Stock”）。原文用 “this segment” 指代上级时，要把点出上级名称的前一句一并引用。
-- gloss / summary / revenue：引用已出现的来源，不含金额、比例、增速等数字；revenue 的来源还必须提到该节点或其上级。
+- anchor：必须是模型本次运行读到的某个来源中的原文（压缩空白和标点后逐字匹配），≤600 字符，并且同时写出节点名（完整词，不是前缀）和某个上级的名称（父节点、更上层节点或这项业务；公司只披露一项业务时，公司名也算；公司名取发行人在申报文件里的写法，如 “Cloudflare, Inc.” 和 “Cloudflare”，不用交易所的证券名称 “Cloudflare, Inc. Class A Common Stock”）。原文用 “this segment” 指代上级时，要把点出上级名称的前一句一并引用。 财报常先用一句点出板块（"This segment primarily comprises:"），再把产品线分条列出：此时 anchor 可以用 " … " 连接同一段落里最多 3 个原文片段，每段逐字存在、顺序一致、整体跨度不超过约 2,400 个字母数字（`quotedIn`）。
+- gloss / summary / revenue：引用已出现的来源，不含金额、比例、增速等数字，文字里写的来源编号会被去掉（`withoutCitations`）；revenue 的来源还必须提到该节点或其上级。
 - 独立审校：每项业务结束后，审校模型拿到每个节点及其来源中提到它的句子，只能删除整个节点或单个字段；两次都拿不到合法结果时，保留已通过 harness 的内容。
 - 读取：`shared/analysis-runtime/business-tree.ts` 的 `readBusinessTree` 用同一套 `harnessNode` 重新核对，失败的节点连同下级删除，没有内容的业务不展示。
 
 ## 存储、触发与读取
 
 - 结果存 `sec_cache` 的 `business-tree:v1:{ticker}`，版本记录走 `AiRunStore`（kind `tree`）。研究过程（每轮 thought / action / observation）存在同一文档的 `research` 字段，仅后台可见。
-- 触发：事件驱动（docs/pipeline-events.md）。`financials.published`、`ai.enabled` 和后台开关发出的 `tree.settings` 会排一次 `tree` 任务；业务列表指纹与已发布的不同时才启动 Workflow。名单为 `BUSINESS_TREE_TICKERS` 加 AI 名单，再按后台的公司开关增删。需要 `TAVILY_API_KEY` 与 `DEEPSEEK_API_KEY`。
-- 开关（2026-10-17，后台「业务地图 → 白名单」）：
-  - 全局「业务脑图生成」：存在 `business_tree_settings` 的 `*` 行，覆盖 `BUSINESS_TREE_ENABLED`。关闭后不再启动新运行，已排队的运行以 superseded 结束，已发布的树照常显示；重新打开时为名单内每家公司检查一次是否需要生成。
-  - 每家公司「生成」：覆盖该公司是否在名单内（含显式移出）。打开需先在白名单中，打开后立即检查生成。
-  - 每家公司「显示」：关闭后公开读取接口返回 `status: "hidden"`，地图退回文字说明，存储的树不删；后台仍可查看。每次切换都发出 `tree.settings`，地图的 company 版本号随之更新，读者马上看到变化。
+- 触发：事件驱动（docs/pipeline-events.md）。`financials.published` 和后台开关发出的 `feature.settings`（`feature: "tree"`）会排一次 `tree` 任务；业务列表指纹与已发布的不同时才启动 Workflow。名单为 `BUSINESS_TREE_TICKERS` 加 AI 名单，再按后台的公司开关增删。需要 `TAVILY_API_KEY` 与 `DEEPSEEK_API_KEY`。
+- 开关（2026-10-17，后台「白名单」的「业务脑图」列，与其余功能同一套，见 [businessview-admin](businessview-admin.md) 的功能开关）：存于 `business_feature_settings` 的 `tree` 行。
+  - 全局生成：`*` 行覆盖 `BUSINESS_TREE_ENABLED`。关闭后不再启动新运行，已排队的运行以 superseded 结束，已发布的树照常显示；重新打开时为名单内每家公司检查一次是否需要生成。
+  - 每家公司一个开关：开 = 在名单内并展示，打开需先在白名单中，打开后立即检查生成；关 = 移出名单，公开读取接口返回 `status: "hidden"`，地图退回文字说明，存储的树不删，后台仍可查看。没有存储选择的公司按 `BUSINESS_TREE_TICKERS` 加 AI 名单决定。每次切换都发出 `feature.settings`，地图的 company 版本号随之更新，读者马上看到变化。
 - 后台：AI 任务页新增“业务脑图”，可手动重跑，查看每轮步骤、树和研究过程。
 - 读取：Pipeline `GET /api/v1/companies/:t/business-tree`（只读 D1），地图 Worker 与 flow、解读、指引一起取回并复核，去掉 `research` 后作为 `tree` 返回。
 
@@ -65,7 +64,7 @@ SEC 文件全部来自文件库（`docs/sec-filing-library.md`）：开始前从
 
 ## 已知限制
 
-- 地区分部的公司（如 AAPL）和只按银行、保险口径绘图的公司暂不拆。
+- 全部按地区划分分部的公司（如 AAPL）和只按银行、保险口径绘图的公司暂不拆。
 - 产品名保留材料原文（多为英文），中文靠 gloss。
 - 首轮线上运行后需要看后台的研究过程，调整提示词和预算；改动后提升 `BUSINESS_TREE_VERSION` 会让每家公司重跑一次。
 
