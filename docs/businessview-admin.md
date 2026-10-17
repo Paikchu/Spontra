@@ -95,10 +95,10 @@ Pipeline 对应路径为 `/admin/*`，管理接口需要签名会话。现有公
 
 ## 功能开关（2026-10-17）
 
-白名单表按读者页面上的功能设四列开关：**财报摘要**（SEC 报告摘要、8-K 摘要、业绩指引）、**要点**（公司分析、要点、要点分析师）、**业务解读**、**业务脑图**；财务地图就是白名单本身。每列是一个三档控件：「关」不再生成且对读者隐藏，「生成」运行但不展示（先在后台核对），「显示」运行并展示；生成停止后仍在展示的内容显示为「显示」并标注「已停止生成」。表头每列旁是该功能的全局生成开关，关闭后整列变灰。设计与取舍见 [whitelist-feature-switches-design](whitelist-feature-switches-design.md)。
+白名单表按读者页面上的功能设四列开关：**财报摘要**（SEC 报告摘要、8-K 摘要、业绩指引）、**要点**（公司分析、要点、要点分析师）、**业务解读**、**业务脑图**；财务地图就是白名单本身。每家公司每个功能一个开关：开 = 生成并展示，关 = 不再生成且对读者隐藏（已生成的内容保留在库里）。表头每列旁是该功能的全局生成开关，只暂停生成，不影响展示。生成进度不放在行里：展开一行，顶部四块显示各功能的状态（正在生成、排队中、上次生成失败、已生成及时间、等待生成、已关闭、已全局暂停），状态取自 SEC 报告任务、AI 运行记录与 `pipeline_due` 中的待办。设计与取舍见 [whitelist-feature-switches-design](whitelist-feature-switches-design.md)。
 
-选择存于 `business_feature_settings`（migration 0030，按公司与功能一行，`*` 行为全局开关），覆盖部署默认值：`SEC_AI_TICKERS` / `SEC_AI_ENABLED` 是财报摘要、要点、业务解读的默认，`BUSINESS_TREE_TICKERS` 加 AI 名单 / `BUSINESS_TREE_ENABLED` 是业务脑图的默认；显式关闭同样生效。旧表 `financial_ai_settings`、`business_tree_settings` 已回填并保留一个发布周期。Pipeline 在每个入口读一次设置表，解析成 `FEATURE_RESOLVED`；`SEC_AI_TICKERS` 随之设为财报摘要名单，读它的旧代码含义不变。要点的生成要求财报摘要处于生成或显示；把财报摘要切到「关」会同时关掉要点。四个功能都要求公司在白名单内。
+选择存于 `business_feature_settings`（migration 0030，按公司与功能一行，`*` 行为全局开关），覆盖部署默认值：`SEC_AI_TICKERS` / `SEC_AI_ENABLED` 是财报摘要、要点、业务解读的默认，`BUSINESS_TREE_TICKERS` 加 AI 名单 / `BUSINESS_TREE_ENABLED` 是业务脑图的默认；显式关闭同样生效。旧表 `financial_ai_settings`、`business_tree_settings` 已回填并保留一个发布周期。Pipeline 在每个入口读一次设置表，解析成 `FEATURE_RESOLVED`；`SEC_AI_TICKERS` 随之设为财报摘要名单，读它的旧代码含义不变。要点要求财报摘要开着；关掉财报摘要会同时关掉要点。四个功能都要求公司在白名单内。
 
-每次切换发出 `feature.settings`（`detail.feature` 标明功能），由该功能的首个任务检查是否有东西要写（财报摘要 → `sec-report`，要点 → `findings` 与 `company-analysis`，业务解读 → `explainer`，业务脑图 → `tree`），并推进地图的 company、filings、findings 版本号，读者立刻看到变化。显示关闭时公开读取接口返回 `status: "hidden"`（要点、业务解读、指引）或只列申报不带摘要（`filings`）；首页要点轮播（`/api/business/v1/findings`）不列隐藏的公司；后台读取不受影响，存储不删。
+每次切换发出 `feature.settings`（`detail.feature` 标明功能），由该功能的首个任务检查是否有东西要写（财报摘要 → `sec-report`，要点 → `findings` 与 `company-analysis`，业务解读 → `explainer`，业务脑图 → `tree`），并推进地图的 company、filings、findings 版本号，读者立刻看到变化。读者能否看到只看这个开关：公司有存储的选择就用它，没有就用部署默认名单（`SEC_AI_TICKERS`、`BUSINESS_TREE_TICKERS`）；从未开过的公司即使库里有旧内容也不展示。关着时公开读取接口返回 `status: "hidden"`（要点、业务解读、业务脑图、指引）或只列申报不带摘要（`filings`）；首页要点轮播（`/api/business/v1/findings`）不列这些公司；后台读取不受影响，存储不删。
 
-接口：`POST /api/admin/business-map/companies/:ticker/features/:feature`（`{generate?, display?}`，只改给定的位）、`POST /api/admin/business-map/features/:feature`（`{generate}`）。
+接口：`POST /api/admin/business-map/companies/:ticker/features/:feature`（`{on}`）、`POST /api/admin/business-map/features/:feature`（`{on}`，全局生成）。

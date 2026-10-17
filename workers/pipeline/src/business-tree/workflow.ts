@@ -17,7 +17,6 @@ import { AiRunStore } from "../ai-runs/store.ts";
 import { runBusinessTree, type TreeBusiness } from "./agent.ts";
 import { treeLibrary } from "../filing-library/tree-source.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
-import { featureDisplayed } from "../admin/feature-settings.ts";
 
 /** Changing the prompt, the harness or the output contract researches every company once more. */
 export const BUSINESS_TREE_VERSION = "business-tree.react.v4";
@@ -98,17 +97,15 @@ export async function executeBusinessTreeWorkflow(params: BusinessTreeParams, st
   return { status: "ready", businesses: tree.branches.length, nodes: tree.branches.reduce((sum, b) => sum + nodes(b.children), 0), sources: tree.sources.length };
 }
 
-/** Whether the map shows the company's tree: the admin's display switch, shown unless switched off. */
-export const treeDisplayed = (db: D1Database, ticker: string) => featureDisplayed(db, ticker, "tree");
 
 /**
  * Read-only: never starts research. A stored tree that fails validation reads as preparing. The operator's trace is left
- * out. `public` reads honour the admin's display switch: a hidden tree reads as hidden and stays stored.
+ * out. `hidden` (the admin's switch is off, decided by the read route) answers hidden; the tree stays stored.
  */
-export async function readBusinessTreeResponse(db: D1Database, rawTicker: string, options: { research?: boolean; public?: boolean } = {}): Promise<BusinessTreeResponse> {
+export async function readBusinessTreeResponse(db: D1Database, rawTicker: string, options: { research?: boolean; hidden?: boolean } = {}): Promise<BusinessTreeResponse> {
   const ticker = rawTicker.trim().toUpperCase();
   if (!/^[A-Z][A-Z0-9.-]{0,11}$/.test(ticker)) throw new AnalysisRequestError("INVALID_TICKER", "Invalid company ticker.");
-  if (options.public && !await treeDisplayed(db, ticker)) return { schemaVersion: "business-tree-response.v1", status: "hidden", tree: null };
+  if (options.hidden) return { schemaVersion: "business-tree-response.v1", status: "hidden", tree: null };
   const stored = await new D1SecRepository(db).getCache<unknown>(businessTreeCacheKey(ticker));
   const tree = stored ? readBusinessTree(stored.payload, ticker, options) : null;
   return { schemaVersion: "business-tree-response.v1", status: tree ? "ready" : "preparing", tree };

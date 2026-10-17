@@ -29,13 +29,6 @@ const errors: Record<string,string> = {
 const active = new Set(['queued','running','cancel_requested']);
 /** The reader-facing features, as the map labels them (docs/whitelist-feature-switches-design.md). */
 const FEATURE_LABEL: Record<Feature,string> = {reports:'财报摘要',findings:'要点',explainer:'业务解读',tree:'业务脑图'};
-type Level = 'off'|'generate'|'display';
-const LEVELS: Level[] = ['off','generate','display'];
-const LEVEL_LABEL: Record<Level,string> = {off:'关',generate:'生成',display:'显示'};
-/** What each level writes: off stops generating and hides; generate runs without showing; display runs and shows. */
-const LEVEL_BITS: Record<Level,{generate:boolean;display:boolean}> = {off:{generate:false,display:false},generate:{generate:true,display:false},display:{generate:true,display:true}};
-/** Shown content reads as shown even when generation stopped after it was written; the cell says so under the control. */
-const levelOf = (f:{generate:boolean;display:boolean}):Level => f.display?'display':f.generate?'generate':'off';
 function issueText(code:string) { const parts=code.split(':'); if(parts[0]==='UNSUPPORTED_SOURCE_FACTS')return `${parts[1]} 项事实格式不受支持`; return errors[code] ?? (parts.length>1&&errors[parts.at(-1)!]?`${parts[0]}：${errors[parts.at(-1)!]}`:code); }
 function storage() { try { return window.sessionStorage; } catch { return undefined; } }
 
@@ -69,12 +62,12 @@ export function BusinessMapCompanies({onUnauthorized,onAuthenticated}:{onUnautho
       if(err instanceof AdminApiError&&err.status>=400&&err.status<500)completeRequestId(key,storage());
     } finally {lock.current=false;setBusy('');}
   }
-  /** One feature's switch for one company, or its global generation switch (symbol null): off, generate only, or shown. */
-  async function switchFeature(symbol:string|null,feature:Feature,level:Level) {
+  /** One feature's switch for one company, or its global generation switch (symbol null). */
+  async function switchFeature(symbol:string|null,feature:Feature,on:boolean) {
     if(lock.current)return;lock.current=true;setBusy(symbol??'*');setError('');setNotice('');
     try {
-      await adminApi(symbol?`business-map/companies/${symbol}/features/${feature}`:`business-map/features/${feature}`,{method:'POST',body:JSON.stringify(symbol?LEVEL_BITS[level]:{generate:level!=='off'})});
-      setRefresh(n=>n+1);setNotice(`${symbol??'全部公司'} ${FEATURE_LABEL[feature]}${symbol?`已${LEVEL_LABEL[level]}`:`生成已${level==='off'?'暂停':'恢复'}`}`);
+      await adminApi(symbol?`business-map/companies/${symbol}/features/${feature}`:`business-map/features/${feature}`,{method:'POST',body:JSON.stringify({on})});
+      setRefresh(n=>n+1);setNotice(`${symbol??'全部公司'} ${FEATURE_LABEL[feature]}已${on?'开启':'关闭'}`);
     }
     catch(err){if(err instanceof AdminApiError&&err.status===401)callbacks.current.onUnauthorized();else setError((err as Error).message);}
     finally {lock.current=false;setBusy('');}
@@ -98,9 +91,9 @@ export function BusinessMapCompanies({onUnauthorized,onAuthenticated}:{onUnautho
     {!data&&!loadError&&<p role="status">加载中</p>}
     {companies.length>0&&<div className="bm-admin-table-wrap ra-panel"><table className="bm-admin-table">
       <thead><tr><th>公司</th><th>状态</th>
-        {FEATURES.map(f=><th key={f}><span className="bm-admin-feature-head">{FEATURE_LABEL[f]}<button className="bm-switch" role="switch" aria-checked={!!data?.generation[f]} aria-label={`${FEATURE_LABEL[f]}生成（全部公司）`} title={data?.generation[f]?'生成中 · 点击全局暂停':'已全局暂停 · 点击恢复'} disabled={!data||!!busy} onClick={()=>void switchFeature(null,f,data?.generation[f]?'off':'generate')}><span/></button></span></th>)}
+        {FEATURES.map(f=><th key={f} className="bm-admin-feature-col"><span className="bm-admin-feature-head">{FEATURE_LABEL[f]}<button className="bm-switch bm-switch-sm" role="switch" aria-checked={!!data?.generation[f]} aria-label={`${FEATURE_LABEL[f]}（全部公司）`} title={data?.generation[f]?'全部公司生成中 · 点击暂停':'已全局暂停 · 点击恢复'} disabled={!data||!!busy} onClick={()=>void switchFeature(null,f,!data?.generation[f])}><span/></button></span></th>)}
         <th>操作</th></tr></thead>
-      {companies.map(company=><Company key={company.ticker} company={company} generation={data!.generation} busy={!!busy} onToggle={()=>void mutate(company.ticker,!company.dataEnabled)} onPrepare={()=>void mutate(company.ticker)} onJudge={()=>void judge(company.ticker)} onFeature={(feature,level)=>void switchFeature(company.ticker,feature,level)}/>)}
+      {companies.map(company=><Company key={company.ticker} company={company} generation={data!.generation} busy={!!busy} onToggle={()=>void mutate(company.ticker,!company.dataEnabled)} onPrepare={()=>void mutate(company.ticker)} onJudge={()=>void judge(company.ticker)} onFeature={(feature,on)=>void switchFeature(company.ticker,feature,on)}/>)}
     </table></div>}
     {data&&!companies.length&&<p>无匹配公司</p>}
   </section>;
@@ -118,19 +111,19 @@ function Meter({label,completed,total,done=false}:{label:string;completed:number
 /** Per-document notes from a scan (a filing without a quarter, a fact format the reader skips): not problems with the data. */
 const NOTE=/^(?:\d{10}-\d{2}-\d{6}:)?(?:NO_DIRECT_COMPARABLE_QUARTER|RESTATEMENT_REVIEW_REQUIRED)$|^UNSUPPORTED_SOURCE_FACTS:/;
 
-/** One feature's switch as a three-way control (off, generate only, shown), with what the feature has published under it. */
-function FeatureCell({ticker,feature,switches,paused,disabled,onPick}:{ticker:string;feature:Feature;switches:BusinessMapCompany['features'][Feature];paused:boolean;disabled:boolean;onPick:(level:Level)=>void}) {
-  const level=levelOf(switches);
-  return <div className="bm-admin-feature" data-paused={paused||undefined}>
-    <div className="ra-segmented bm-admin-level" role="radiogroup" aria-label={`${ticker} ${FEATURE_LABEL[feature]}`}>
-      {LEVELS.map(l=><button key={l} type="button" role="radio" aria-checked={level===l} aria-pressed={level===l} disabled={disabled||(l!=='off'&&paused)} onClick={()=>{if(l!==level)onPick(l);}}>{LEVEL_LABEL[l]}</button>)}
-    </div>
-    <small>{paused?'已全局暂停':switches.display&&!switches.generate?'已停止生成':switches.publishedAt?`已生成 · ${financialDate(switches.publishedAt)}`:'未生成'}</small>
-  </div>;
+/** What a feature is doing for the company right now, for the detail: a badge and a line on what it last wrote. */
+function featureState(f:BusinessMapCompany['features'][Feature],paused:boolean):{status:string;text:string;note:string} {
+  const written=f.publishedAt?`上次生成 ${financialDate(f.publishedAt)}`:'尚无内容';
+  if(!f.on)return {status:'idle',text:'已关闭',note:f.publishedAt?'已生成的内容不展示':'尚无内容'};
+  if(paused)return {status:'caution',text:'已全局暂停',note:written};
+  if(f.run==='running')return {status:'processing',text:'正在生成',note:written};
+  if(f.run==='queued')return {status:'processing',text:'排队中',note:written};
+  if(f.run==='failed')return {status:'failed',text:'上次生成失败',note:written};
+  return f.publishedAt?{status:'reviewed',text:'已生成',note:written}:{status:'unreviewed',text:'等待生成',note:'有新数据时开始'};
 }
 
 /** One company as a table row: its map state, the four feature switches and the actions; the row opens to the details. */
-function Company({company:c,generation,busy,onToggle,onPrepare,onJudge,onFeature}:{company:BusinessMapCompany;generation:Record<Feature,boolean>;busy:boolean;onToggle:()=>void;onPrepare:()=>void;onJudge:()=>void;onFeature:(feature:Feature,level:Level)=>void}) {
+function Company({company:c,generation,busy,onToggle,onPrepare,onJudge,onFeature}:{company:BusinessMapCompany;generation:Record<Feature,boolean>;busy:boolean;onToggle:()=>void;onPrepare:()=>void;onJudge:()=>void;onFeature:(feature:Feature,on:boolean)=>void}) {
   const running=!!c.task&&active.has(c.task.status),collecting=!!c.collection&&['queued','running','retry'].includes(c.collection.status);
   const ready=c.publication.status==='ready';
   const revenuePending=c.publication.revenueCoverage?.some(q=>q.status==='unverified');
@@ -147,7 +140,7 @@ function Company({company:c,generation,busy,onToggle,onPrepare,onJudge,onFeature
     <tr className="bm-admin-row" aria-label={`${c.ticker} 数据准备`}>
       <td><div className="bm-admin-company-cell"><button className="bm-admin-toggle" aria-expanded={open} aria-label={`${c.ticker} 详情`} onClick={()=>setOpen(o=>!o)}><ChevronRight size={15}/></button><CompanyLogo symbol={c.ticker}/><span className="bm-admin-name"><strong className="ra-mono">{c.ticker}</strong>{c.name&&c.name!==c.ticker&&<small>{c.name}</small>}</span></div></td>
       <td><div className="bm-admin-states"><span className="ra-badge" data-status={map.status}>{map.text}</span></div></td>
-      {FEATURES.map(f=><td key={f}><FeatureCell ticker={c.ticker} feature={f} switches={c.features[f]} paused={!generation[f]} disabled={busy||!c.dataEnabled} onPick={level=>onFeature(f,level)}/></td>)}
+      {FEATURES.map(f=><td key={f} className="bm-admin-feature-col"><button className="bm-switch" role="switch" aria-checked={c.features[f].on} aria-label={`${c.ticker} ${FEATURE_LABEL[f]}`} title={featureState(c.features[f],!generation[f]).text} disabled={busy||(!c.dataEnabled&&!c.features[f].on)} onClick={()=>onFeature(f,!c.features[f].on)}><span/></button></td>)}
       <td><div className="bm-admin-actions"><button className="fm-button" disabled={busy||running||!c.dataEnabled} onClick={onPrepare}>{running?'准备中':'重新准备'}</button><a href={`/admin/financials?ticker=${c.ticker}`}>财报</a>{ready&&<a href={`https://spontra-business-map.max-zhangyuchen.workers.dev/companies/${c.ticker}`} target="_blank" rel="noreferrer" aria-label={`${c.ticker} 业务地图`}>地图<ExternalLink size={12}/></a>}
         {c.dataEnabled?<button className="bm-admin-remove" disabled={busy} onClick={remove} aria-label={`移出 ${c.ticker}`} title="移出白名单"><Trash2 size={16}/></button>:<button className="fm-button" disabled={busy} onClick={onToggle}>加入</button>}</div></td>
     </tr>
@@ -156,6 +149,8 @@ function Company({company:c,generation,busy,onToggle,onPrepare,onJudge,onFeature
         <div><span>可展示期间</span>{ready&&c.publication.periods.length?<ul className="bm-chips">{c.publication.periods.map(p=><li key={p}>{p}</li>)}</ul>:<em>—</em>}</div>
         {c.task&&<div><span>最近任务</span><em>{stages[c.task.stage]??c.task.stage}{taskStatus[c.task.status]?` · ${taskStatus[c.task.status]}`:''} · {financialDate(c.task.updatedAt)}</em></div>}
       </header>
+      <ul className="bm-features" aria-label="生成状态">{FEATURES.map(f=>{const state=featureState(c.features[f],!generation[f]);return <li key={f} data-status={state.status}>
+        <span>{FEATURE_LABEL[f]}</span><span className="ra-badge" data-status={state.status}>{state.text}</span><small>{state.note}</small></li>;})}</ul>
       <div className="bm-detail-grid">
         <article className="bm-card"><h4><Layers size={14}/>收入构成</h4>
           {c.publication.revenueCoverage?.length?<dl data-kind="periods">{c.publication.revenueCoverage.map(q=><div key={q.period} data-status={q.status}><dt>{q.period}</dt><dd>{coverage(q)}</dd></div>)}</dl>:<p className="bm-empty">无</p>}</article>

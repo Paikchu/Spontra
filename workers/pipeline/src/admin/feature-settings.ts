@@ -1,43 +1,33 @@
-import { FEATURES, type Feature, type FeatureSwitches } from "../../../../shared/analysis-contract/business-features.ts";
+import type { Feature } from "../../../../shared/analysis-contract/business-features.ts";
+import { defaultFeatureResolution } from "../financial-data/company-policy.ts";
 
 /**
- * The admin's feature switches as stored (`business_feature_settings`, docs/whitelist-feature-switches-design.md).
- * Reads here are the display side: whether the map shows a company's published content. Generation is resolved into
- * the environment by company-policy.ts. A table not yet migrated reads as everything shown.
+ * The admin's feature switches as stored (`business_feature_settings`, docs/whitelist-feature-switches-design.md). One
+ * switch per company and feature: on generates the feature and shows it, off stops generating and hides what was written
+ * (it stays stored). Generation is resolved into the environment by company-policy.ts; reads here are the display side.
+ * A company without a row follows the deployment's default list; a table not yet migrated reads as no rows.
  */
-type Row = { ticker: string; feature: Feature; generate: number | null; display: number | null };
+/** The deployment lists the read path knows (the MapReads binding sees the vars, never the resolved environment). */
+export type FeatureDefaultsEnv = { SEC_AI_TICKERS?: string; SEC_TRACKED_TICKERS?: string; SEC_AI_ENABLED?: string; BUSINESS_TREE_TICKERS?: string; BUSINESS_TREE_ENABLED?: string };
 
-/** Whether the public read of a feature shows the company's content: shown unless the admin switched its display off. */
-export async function featureDisplayed(db: D1Database, ticker: string, feature: Feature): Promise<boolean> {
-  const row = await db.prepare("SELECT display FROM business_feature_settings WHERE ticker = ? AND feature = ?").bind(ticker, feature).first<{ display: number | null }>().catch(() => null);
-  return row?.display !== 0;
+/** Whether readers see the company's feature: its switch, or the deployment default when the admin never set one. */
+export async function featureShown(db: D1Database, env: FeatureDefaultsEnv, ticker: string, feature: Feature): Promise<boolean> {
+  return (await shownFilter(db, env, feature, ticker))(ticker);
 }
 
-/** Every company whose display of the feature is switched off. */
-export async function hiddenTickers(db: D1Database, feature: Feature): Promise<Set<string>> {
-  const rows = await db.prepare("SELECT ticker FROM business_feature_settings WHERE feature = ? AND display = 0").bind(feature).all<{ ticker: string }>().catch(() => null);
-  return new Set((rows?.results ?? []).map(r => r.ticker));
+/** A test for every company at once, from one read: the switches stored for the feature over its default list. */
+export async function shownFilter(db: D1Database, env: FeatureDefaultsEnv, feature: Feature, ticker?: string): Promise<(ticker: string) => boolean> {
+  const rows = await db.prepare(`SELECT ticker, generate FROM business_feature_settings WHERE feature = ? AND ticker <> '*' AND generate IS NOT NULL${ticker ? " AND ticker = ?" : ""}`)
+    .bind(...(ticker ? [feature, ticker] : [feature])).all<{ ticker: string; generate: number }>().catch(() => null);
+  const stored = new Map((rows?.results ?? []).map(r => [r.ticker, !!r.generate]));
+  const defaults = new Set(defaultFeatureResolution(env).tickers[feature]);
+  return t => stored.get(t) ?? defaults.has(t);
 }
 
-/** Every stored switch, by company and feature; the '*' rows carry the global generation switches. */
-export async function readFeatureSettings(db: D1Database): Promise<Map<string, Partial<Record<Feature, { generate: boolean | null; display: boolean }>>>> {
-  const rows = await db.prepare("SELECT ticker, feature, generate, display FROM business_feature_settings").bind().all<Row>().catch(() => null);
-  const map = new Map<string, Partial<Record<Feature, { generate: boolean | null; display: boolean }>>>();
-  for (const row of rows?.results ?? []) {
-    if (!(FEATURES as readonly string[]).includes(row.feature)) continue;
-    const entry = map.get(row.ticker) ?? {};
-    entry[row.feature] = { generate: row.generate === null ? null : !!row.generate, display: row.display !== 0 };
-    map.set(row.ticker, entry);
-  }
-  return map;
-}
-
-/** Writes the given bits of one switch; a bit left out keeps its stored value. */
-export async function writeFeatureSetting(db: D1Database, ticker: string, feature: Feature, change: Partial<FeatureSwitches>, now: string): Promise<void> {
-  const generate = typeof change.generate === "boolean" ? (change.generate ? 1 : 0) : null;
-  const display = typeof change.display === "boolean" ? (change.display ? 1 : 0) : null;
+/** Turns one switch on or off; both stored bits follow it, so a row never says generated-but-hidden. */
+export async function writeFeatureSetting(db: D1Database, ticker: string, feature: Feature, on: boolean, now: string): Promise<void> {
+  const bit = on ? 1 : 0;
   await db.prepare(`INSERT INTO business_feature_settings (ticker, feature, generate, display, updated_at) VALUES (?, ?, ?, ?, ?)
-    ON CONFLICT (ticker, feature) DO UPDATE SET generate = COALESCE(excluded.generate, business_feature_settings.generate),
-      display = COALESCE(excluded.display, business_feature_settings.display), updated_at = excluded.updated_at`)
-    .bind(ticker, feature, generate, display, now).run();
+    ON CONFLICT (ticker, feature) DO UPDATE SET generate = excluded.generate, display = excluded.display, updated_at = excluded.updated_at`)
+    .bind(ticker, feature, bit, ticker === "*" ? null : bit, now).run();
 }

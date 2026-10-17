@@ -22,11 +22,12 @@ export type BusinessMapCompany = FinancialMaintenanceCompany & {
     profile: { status: "verified" | "unresolved"; accession: string; attempts: number; issues: string[]; updatedAt: string } | null;
   };
   /**
-   * The feature switches as they apply now (docs/whitelist-feature-switches-design.md): whether the pipeline generates the
-   * feature for this company (its list after the admin's switches, empty while the feature is globally off), whether the
-   * map shows it, and when its newest publication was written (null for none).
+   * The feature switches as they apply now (docs/whitelist-feature-switches-design.md): whether the company's switch is on
+   * (generated and shown; off stops generating and hides) and when the newest publication was written (null for none).
    */
-  features: Record<Feature, { generate: boolean; display: boolean; publishedAt: string | null }>;
+  features: Record<Feature, { on: boolean; publishedAt: string | null;
+    /** The feature's work in flight for this company: a run executing, a run waiting its turn, or the last run failed with nothing newer published. */
+    run: "running" | "queued" | "failed" | null }>;
 };
 /** `generation`: whether each feature is generated at all (the admin's global switches over the deployment flags). */
 export type BusinessMapCompanies = { companies: BusinessMapCompany[]; automaticCollection: boolean; generation: Record<Feature, boolean> };

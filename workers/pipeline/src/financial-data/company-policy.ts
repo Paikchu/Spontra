@@ -79,6 +79,11 @@ export function featureTickersFor(env: Omit<PolicyEnv, 'DB'>, feature: Feature):
   return resolution.enabled[feature] ? [...resolution.tickers[feature]].sort() : [];
 }
 
+/** The companies a feature is switched on for, whatever its global switch says: what the admin's per-company switch shows. */
+export function featureCompaniesFor(env: Omit<PolicyEnv, 'DB'>, feature: Feature): string[] {
+  return [...(parseFeatureResolution(env.FEATURE_RESOLVED) ?? defaultFeatureResolution(env)).tickers[feature]].sort();
+}
+
 /** Whether the feature is generated at all (the admin's global switch over the deployment flag). */
 export function featureEnabled(env: Omit<PolicyEnv, 'DB'>, feature: Feature): boolean {
   return (parseFeatureResolution(env.FEATURE_RESOLVED) ?? defaultFeatureResolution(env)).enabled[feature];

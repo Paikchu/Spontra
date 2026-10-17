@@ -1,4 +1,3 @@
-import { featureDisplayed } from "../admin/feature-settings.ts";
 import type { FindingPassage, FindingsPublication, FindingsResponse } from "../../../../shared/analysis-contract/findings.ts";
 import { readFindingsPublication } from "../../../../shared/analysis-runtime/findings.ts";
 import { mergeDossier, readDossierPublication } from "../../../../shared/analysis-runtime/dossier.ts";
@@ -50,10 +49,10 @@ export async function readStoredFindings(db: D1Database, rawTicker: string): Pro
 }
 
 /** A stored publication wins over an authored one; both are re-validated and never repaired. The analyst's dossier, when written for this very publication, supplies the documents. */
-export async function readFindingsResponse(db: D1Database, rawTicker: string, options: { public?: boolean } = {}): Promise<FindingsResponse> {
+export async function readFindingsResponse(db: D1Database, rawTicker: string, options: { hidden?: boolean } = {}): Promise<FindingsResponse> {
   const ticker = rawTicker.trim().toUpperCase();
-  // The admin's display switch: a hidden publication reads as hidden for readers and stays stored.
-  if (options.public && !await featureDisplayed(db, ticker, "findings")) return { schemaVersion: "findings-response.v1", status: "hidden", findings: null };
+  // Switched off in the admin: readers see it as hidden, and what is stored stays.
+  if (options.hidden) return { schemaVersion: "findings-response.v1", status: "hidden", findings: null };
   const base = await readStoredFindings(db, ticker);
   const dossier = base ? await new D1SecRepository(db).getCache<unknown>(dossierCacheKey(ticker)).then(d => d ? readDossierPublication(d.payload, ticker) : null).catch(() => null) : null;
   const findings = base ? mergeDossier(base, dossier) : null;
