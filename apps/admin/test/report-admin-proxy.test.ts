@@ -20,3 +20,17 @@ test("the admin proxy refuses routes the admin does not use", async () => {
     assert.equal((await handleReportAdminProxy(request, path.split("/"), env)).status, 404, path);
   }
 });
+
+test("the admin proxy passes the business-tag reads and writes through", async () => {
+  const env = { EARNING_REPORT_PIPELINE: { fetch: async () => Response.json({ ok: true }) } };
+  const headers = { cookie: "spontra_report_admin=report-admin.v1.1.x", origin: "https://admin.example" };
+  for (const path of ["library/tags", "library/tags/CRWV", "library/tags/BRK.B", "library/tags/sectors/cloud_infrastructure"]) {
+    assert.equal((await handleReportAdminProxy(new Request(`https://admin.example/api/admin/${path}`, { headers }), path.split("/"), env)).status, 200, path);
+  }
+  for (const path of ["library/tags/CRWV/run", "library/tags/CRWV/pair", `library/tags/CRWV/tag/t${"a".repeat(24)}`]) {
+    assert.equal((await handleReportAdminProxy(new Request(`https://admin.example/api/admin/${path}`, { method: "POST", body: "{}", headers }), path.split("/"), env)).status, 200, path);
+  }
+  for (const path of ["library/tags/CRWV/delete", "library/tags/sectors/Cloud"]) {
+    assert.equal((await handleReportAdminProxy(new Request(`https://admin.example/api/admin/${path}`, { method: "POST", body: "{}", headers }), path.split("/"), env)).status, 404, path);
+  }
+});

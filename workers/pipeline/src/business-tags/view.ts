@@ -1,4 +1,4 @@
-import type { BusinessTag, BusinessTagsView, PeerPairRecord, PeerTier, SectorTagView, TagFacet } from "../../../../shared/analysis-contract/business-tags.ts";
+import type { BusinessTag, BusinessTagCompanies, BusinessTagsView, PeerPairRecord, PeerTier, SectorTagView, TagFacet } from "../../../../shared/analysis-contract/business-tags.ts";
 import type { IndustryCategory } from "../../../../shared/analysis-contract/filing-library.ts";
 import { basisOf, BUSINESS_TAGS_VERSION, readThresholds, TIER_ORDER } from "../../../../shared/analysis-runtime/business-tags.ts";
 import { readLinks } from "../filing-library/links.ts";
@@ -57,6 +57,13 @@ export async function readTagsView(env: SecPipelineEnv, ticker: string): Promise
     tags: Object.fromEntries(shownTags.map(t => [t.tagId, { tagId: t.tagId, label: t.label, labelZh: t.labelZh, facet: t.facet, passageIds: t.passageIds }])),
     passages, thresholds: readThresholds(env.PEER_TAG_THRESHOLDS), matching: matchingEnabled(env),
   };
+}
+
+/** The companies that have units, with how many units and verified tags each; one grouped D1 read. */
+export async function readTagCompanies(db: D1Database): Promise<BusinessTagCompanies> {
+  const rows = (await db.prepare(`SELECT u.ticker, COUNT(*) units, (SELECT COUNT(*) FROM sec_business_tags t WHERE t.ticker = u.ticker AND t.status = 'verified') tags
+    FROM sec_business_units u GROUP BY u.ticker ORDER BY u.ticker`).bind().all<{ ticker: string; units: number; tags: number }>()).results;
+  return { companies: rows.map(r => ({ ticker: r.ticker, units: r.units, tags: r.tags })) };
 }
 
 /** Every unit carrying one sector tag and the offering tags it has under it. */

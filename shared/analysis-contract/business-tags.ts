@@ -91,6 +91,9 @@ export type BusinessTagsView = {
   matching: boolean;
 };
 
+/** Companies that have comparable units, for the admin's company list in the tags view. */
+export type BusinessTagCompanies = { companies: Array<{ ticker: string; units: number; tags: number }> };
+
 /** The admin's view of one sector tag: every unit carrying it and what each sells. */
 export type SectorTagView = {
   sector: IndustryCategory;

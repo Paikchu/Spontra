@@ -8,7 +8,7 @@ import { libraryWiki } from "../filing-library/wiki.ts";
 import type { SecPipelineEnv } from "../operations.ts";
 import { flushOutbox, outboxStatement } from "../pipeline/outbox.ts";
 import { authenticateAdmin } from "./auth.ts";
-import { readSectorView, readTagsView, requestTags, setPairTier, setTagStatus } from "../business-tags/view.ts";
+import { readSectorView, readTagCompanies, readTagsView, requestTags, setPairTier, setTagStatus } from "../business-tags/view.ts";
 import { TIER_ORDER } from "../../../../shared/analysis-runtime/business-tags.ts";
 import type { PeerTier } from "../../../../shared/analysis-contract/business-tags.ts";
 
@@ -115,6 +115,7 @@ export async function handleLibraryAdminRequest(request: Request, env: SecPipeli
   }
   // Business tags (docs/peer-similarity-design.md): a company's units, tags and pairs; one sector's units; optional overrides.
   if (parts[0] === "tags") {
+    if (request.method === "GET" && parts.length === 1) return json(await readTagCompanies(env.DB));
     if (request.method === "GET" && parts.length === 3 && parts[1] === "sectors") {
       const sector = category(parts[2]!);
       return sector ? json(await readSectorView(env.DB, sector)) : json({ error: "未知的行业类别。" }, 404);
