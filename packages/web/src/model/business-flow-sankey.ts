@@ -340,6 +340,50 @@ export function deficitFinancialGraph(q: BusinessFlowQuarter): FinancialGraph | 
  return { nodes: connected, links, deficit: true };
 }
 
+/**
+ * The statement's trunk: top-level businesses only, and the expense lines that leave the same stage folded into one
+ * node. Every kept amount is unchanged, so the trunk balances wherever the full statement does. `folded` maps each
+ * node left out to the node that now carries its amount.
+ */
+export function trunkGraph(graph:FinancialGraph,q:BusinessFlowQuarter):{graph:FinancialGraph;folded:Map<string,string>}{
+ const folded=new Map<string,string>();
+ const byName=new Map(graph.nodes.map(n=>[n.name,n]));
+ const parentOf=(name:string)=>{const l=graph.links.find(l=>l.source===name);return l&&byName.get(l.target)?.segmentId?l.target:null;};
+ // A sub-business folds into the top-level business it rolls up to.
+ for(const n of graph.nodes)if(n.segmentId){let top=n.name;for(let up=parentOf(top);up;up=parentOf(top))top=up;if(top!==n.name)folded.set(n.name,top);}
+ // Expense lines that only receive, from the same stages, fold into one node per set of stages.
+ const sources=(name:string)=>[...new Set(graph.links.filter(l=>l.target===name).map(l=>l.source))].sort().join("|");
+ const groups=new Map<string,SankeyNode[]>();
+ for(const n of graph.nodes){
+  const line=n.name.startsWith("expense:")||n.name==="research"||n.name==="sales"||n.name==="administration";
+  if(!line||!n.expense||n.credit||n.offset||graph.links.some(l=>l.source===n.name))continue;
+  const key=sources(n.name);groups.set(key,[...(groups.get(key)??[]),n]);
+ }
+ const merged:SankeyNode[]=[];
+ for(const [key,members] of groups){
+  if(members.length<2)continue;
+  const name=groups.size>1?"expense:trunk:"+key:"expense:trunk";
+  const amounts=members.map(n=>n.amount??(n.metric?q.figures[n.metric]:undefined)??null);
+  const keys=amounts.map(a=>a?.comparabilityKey??null);
+  const value=members.reduce((sum,n)=>sum+n.value,0);
+  const amount:FlowAmount={value:String(amounts.every(a=>numeric(a)!=null)?amounts.reduce((sum,a)=>sum+numeric(a)!,0):value),basis:"derived",definition:"expense-trunk",
+   comparabilityKey:keys.every(Boolean)?"expense-trunk:"+keys.sort().join("+"):null,sourceIds:[...new Set(amounts.flatMap(a=>a?.sourceIds??[]))],formula:members.map(n=>n.label).join(" + "),lineage:amounts.flatMap(a=>a?.lineage??[])};
+  merged.push({name,label:key.split("|").includes("gross")?metricLabels.operatingExpenses:m.totalExpenses,depth:Math.min(...members.map(n=>n.depth)),expense:true,value,amount});
+  for(const n of members)folded.set(n.name,name);
+ }
+ if(!folded.size)return {graph,folded};
+ // Sub-businesses fold to their top-level business's own node: their links into it go, the top-level link stays.
+ const links=new Map<string,SankeyLink>();
+ for(const l of graph.links){
+  if(folded.has(l.source)&&byName.get(l.source)?.segmentId)continue;
+  const target=folded.get(l.target)??l.target,k=l.source+">"+target,had=links.get(k);
+  links.set(k,{source:l.source,target,value:(had?.value??0)+l.value});
+ }
+ const nodes=[...graph.nodes.filter(n=>!folded.has(n.name)),...merged];
+ const trunk={...graph,nodes,links:[...links.values()]};
+ return validateGraph(trunk.nodes,trunk.links)?{graph:trunk,folded}:{graph,folded:new Map()};
+}
+
 /** Gross segment revenue is reconciled through explicit signed consolidation items.
  * Never allocate eliminations back to companies or present gross shares as net shares. */
 function appendRevenueTree(q:BusinessFlowQuarter,tree:NonNullable<ReturnType<typeof selectRevenueTree>>,nodes:SankeyNode[],links:SankeyLink[],revenueDepth:number) {
