@@ -6,7 +6,8 @@
  * a product cannot be hung under a business the material does not put it in. No amounts: revenue
  * and its changes stay in the SEC flow the tree is attached to.
  */
-export type TreeSource = { id: string; title: string; url: string; kind: "sec" | "web"; publishedAt: string | null };
+/** `own`: the company's own filing, as the filing library holds it. */
+export type TreeSource = { id: string; title: string; url: string; kind: "sec" | "web"; publishedAt: string | null; own?: boolean };
 /** One statement and the fetched sources that support it. */
 export type TreeClaim = { text: string; sourceIds: string[] };
 export const REVENUE_MODEL_TYPES = ["subscription", "consumption", "license", "transaction", "advertising", "hardware", "services", "other"] as const;

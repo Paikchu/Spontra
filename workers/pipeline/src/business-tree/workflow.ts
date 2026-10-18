@@ -21,11 +21,15 @@ import { outboxStatement } from "../pipeline/outbox.ts";
 
 /** Changing the prompt, the harness or the output contract researches every company once more. */
 /**
- * v10: the loop acts through Claude tools, its exchange only growing. v9 asked for a JSON decision in text, which Claude
+ * v13: names match word for word with punctuation ignored (`("SASE") platform`), and a name loses a leading "Our".
+ * v12: a product's passage may name its category line by the line's own words, a name refused twice is told to be left
+ * out, up to eight calls run per turn, and lines with fewer than two products are asked once for more. v11: a list sharing its last word names each member ("online and physical stores"), the company's own filing names the
+ * company, products carry proper names, rejections say which check failed, and lines that charge are still asked for
+ * products. v10: the loop acts through Claude tools, its exchange only growing. v9 asked for a JSON decision in text, which Claude
  * wrapped in prose or answered with a tool call (invalid_json, ended with tool_use); v7 and v8 asked for a written
  * "thought", which it declined as extracting its reasoning (refusal, reasoning_extraction).
  */
-export const BUSINESS_TREE_VERSION = "business-tree.react.v10";
+export const BUSINESS_TREE_VERSION = "business-tree.react.v13";
 export const businessTreeCacheKey = (ticker: string) => `business-tree:v1:${ticker}`;
 export type BusinessTreeParams = { ticker: string; fingerprint: string };
 
