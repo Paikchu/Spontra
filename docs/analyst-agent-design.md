@@ -163,6 +163,15 @@ P1：lens 文档新增 `quote`/`table`/`record` 块与 `LensRow.title`；`{peer}
 - 成本：一轮 ORCL（6 要点，deep 16 回合 / standard 10 回合）约 80 次模型调用、每次输入约 26–36k tokens（约 85% 缓存命中）、输出 0.4–17k tokens，耗时 13 分钟；复核调用推理 7–19k tokens。
 - 已知：复核删得较重（rpo-long-dated 四段删三段，理由多为"引用材料不支持段落的断言"），说明模型常把证据表里的数字写成段落后引用了不相干材料；可考虑让 compile 把每段的 sourceIds 与段中数字的来源对账后提前提示。
 
+### 迁到 Claude API 后的对话形式（2026-10-18，v5）
+
+管道改走 Claude API 后（e3ad7ea），业务脑图被拒答（`stop_reason: refusal`，`reasoning_extraction`），原因见 [business-tree](business-tree.md) → 对话形式。分析师用同一模型、同样的写法（每轮要求 JSON `{thought, action, input}`，历次轮次塞进 payload 的 `history`），会以同样方式失败，所以改成脑图 v10 的形式：
+
+- 动作是 Claude 客户端工具：`find_sections`、`read_section`、`peers`、`search`、`read_web` 为 `strict: true`（参数必定符合 schema）；`compile`、`finish` 携带整份 lens 文档，文档语法超出 strict schema 的上限，故不设 strict，由 harness 的 `readLensDocument` + `lensDocumentIssues` 校验（文档若以 JSON 字符串传来也照读，观察里加注）。`tool_choice` 用 auto，系统提示要求每次回复都调用工具，一次回复最多执行 4 个调用。不再要求写出 thought，模型在自己的 adaptive thinking 里推理；轨迹的 thought 记回复里的文字，通常为空。
+- 对话只追加：开头一条 user 消息携带要点、调查线、证据、目录、同业 ref、文件列表、记录、背景、事件、起始文档、图表语法和预算；之后每次回复原样（含 thinking 块）作为 assistant 消息回传，每个调用的结果作为对应 `tool_result` 跟在后面，末尾附剩余预算和提醒。拿不到可用回复（拒答、截断、流中断）的一轮不进对话，下一轮原样重发；连续 3 次该要点以现有结果结束（全部要点如此即视为服务方故障，按原逻辑等待后重跑）。不调用工具的回复提醒一次，连续两次结束。
+- 复核仍是一次 JSON 调用（只删不改），没有对话，不涉及推理外露。
+- 模型轮的 durable step 改名为 `analyst-<id>-t<n>-act`（结果是回复的原始内容块），工具步骤带调用序号（`-t<n>-<i>-find/read/search/web`）；`ANALYST_VERSION` 升 `analyst.react.v5`，每家公司重研究一次。
+
 ## 需要你决定的事
 
 1. ~~是否把 AMZN、GOOGL、META 加入数据名单~~ 已于 2026-10-14 加入 `SEC_DATA_TICKERS`（GOOG 折算为 GOOGL）；申报发现 Cron 为从未采集的公司解析 CIK 并请求首次采集，之后 financials → links → `peers:v1` 自动把它们纳入 ORCL 的同业。

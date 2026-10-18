@@ -7,11 +7,12 @@ import type { LensDocument } from "../../../shared/analysis-contract/lens.ts";
 import type { PeersPublication } from "../../../shared/analysis-contract/peers.ts";
 import { mergeDossier, readDossierPublication } from "../../../shared/analysis-runtime/dossier.ts";
 import { verifyFindings, type FindingData } from "../../../shared/analysis-runtime/findings.ts";
-import { divergence, readDecision, renderTable, runAnalyst, salvageDecision } from "../src/analyst/agent.ts";
+import { ANALYST_TOOLS, divergence, renderTable, runAnalyst, type AnalystModel } from "../src/analyst/agent.ts";
 import { planFinding } from "../src/analyst/plan.ts";
 import { buildLedger } from "../src/findings/ledger.ts";
 import { lensCatalogue } from "../src/lens/agent.ts";
 import type { SecPipelineEnv } from "../src/operations.ts";
+import type { AgentBlock, AgentMessage, AgentReply } from "../src/tool-loop.ts";
 
 const ENDS = ["2024-09-30", "2024-12-31", "2025-03-31", "2025-06-30", "2025-09-30", "2025-12-31", "2026-03-31", "2026-06-30"];
 const amount = (v: number) => ({ value: String(v), basis: "reported" as const, definition: "", comparabilityKey: null, sourceIds: ["s1"] });
@@ -50,6 +51,26 @@ const finding: AnalysisFinding = {
 };
 const publication: FindingsPublication = { schemaVersion: "findings.v1", ticker: "TEST", periodEnd: PERIOD, generatedAt: "2026-07-31T00:00:00Z", model: "test", fingerprint: "fp-1", findings: [finding], sources: [{ id: "s1", title: "10-Q", url: "https://www.sec.gov/x", kind: "sec", publishedAt: null }] };
 
+let ids = 0;
+/** A reply calling the given tools, as the Messages API returns it. */
+const calls = (...list: Array<[string, unknown]>): AgentReply => ({ stopReason: "tool_use", content: list.map(([name, input]) => ({ type: "tool_use", id: `toolu_${++ids}`, name, input })) });
+const call = (name: string, input: unknown = {}) => calls([name, input]);
+/** The last tool result the harness sent, or "" for the opening. */
+const lastResult = (messages: AgentMessage[]) => { const content = messages.at(-1)!.content; return Array.isArray(content) ? String(content.at(-1)?.content ?? "") : ""; };
+/**
+ * What every request of the loop must be: the exchange extends the one before it, user and assistant turns alternate from
+ * a user opening to a user turn, no turn carries a written thought or a packed history, and the prompt never asks for reasoning.
+ */
+function assertConversation(sent: AgentMessage[][], systems: string[]) {
+  for (const [i, messages] of sent.entries()) {
+    if (i) assert.deepEqual(messages.slice(0, sent[i - 1]!.length), sent[i - 1], `request ${i + 1} rewrote the exchange`);
+    messages.forEach((m, k) => assert.equal(m.role, k % 2 ? "assistant" : "user", `request ${i + 1}, turn ${k + 1}`));
+    assert.equal(messages.at(-1)!.role, "user");
+    for (const m of messages) assert.doesNotMatch(typeof m.content === "string" ? m.content : JSON.stringify(m.content), /"thought"|"history"/);
+  }
+  for (const system of systems) assert.doesNotMatch(system, /thought|think|reasoning|explain your|Return only JSON|history/i);
+}
+
 test("the planner opens the lines the figures justify, deep for a severity-3 finding, and nothing for a watch item", () => {
   const f = verifyFindings(publication, data).verified[0]!;
   const plan = planFinding(f, data, ["PEER1", "PEER2"]);
@@ -78,17 +99,15 @@ test("the analyst accepts only a document that compiles, applies the review's re
     { title: "Against tracked peers", cells: [[{ kind: "table", table: { columns: "peers", span: "fiscal_year", rows: [{ ref: { capital: "capex" } }, { ref: { capital: "debt" } }] } }], [{ kind: "prose", paragraphs: [{ text: "Both peers spend less than the company does; the gap is funded with $100.0 billion of debt issued.", sourceIds: ["s1"] }, { text: "A sentence the reviewer will take out.", sourceIds: ["s1"] }] }]] },
     { cells: [[{ kind: "sources" }]] },
   ] };
-  const seen: string[] = [];
-  const model = async (stage: string, _system: string, payload: unknown) => {
-    const p = payload as { history?: Array<{ observation: string }> };
-    if (stage.endsWith("-review")) return { remove: [{ row: 1, cell: 1, block: 0, reason: "two paragraphs, one claim" }, { row: 0, cell: 1, block: 0, reason: "not allowed" }] };
-    seen.push(p.history?.at(-1)?.observation ?? "");
-    const n = p.history?.length ?? 0;
-    if (n === 0) return { thought: "peers first", action: "peers", input: {} };
-    if (n === 1) return { thought: "draft", action: "compile", input: { document: bad } };
-    if (n === 2) return { thought: "finish anyway", action: "finish", input: {} };
-    if (n === 3) return { thought: "fix", action: "compile", input: { document: good } };
-    return { thought: "done", action: "finish", input: {} };
+  const seen: string[] = [], sent: AgentMessage[][] = [], systems: string[] = [];
+  const replies = [call("peers"), call("compile", { document: bad }), call("finish"), call("compile", { document: good }), call("finish")];
+  const model: AnalystModel = {
+    act: async (_stage, system, tools, messages) => {
+      assert.equal(tools, ANALYST_TOOLS);
+      sent.push(structuredClone(messages)); systems.push(system); seen.push(lastResult(messages));
+      return replies[sent.length - 1] ?? call("finish");
+    },
+    judge: async () => ({ remove: [{ row: 1, cell: 1, block: 0, reason: "two paragraphs, one claim" }, { row: 0, cell: 1, block: 0, reason: "not allowed" }] }),
   };
   const ledger = buildLedger(data, PERIOD, publication.sources);
   const outcome = await runAnalyst({ env: { DB: undefined } as unknown as SecPipelineEnv, ticker: "TEST", finding: f, plan, data, catalogue: lensCatalogue(ledger, data, PERIOD), categories: [], documents: [], record: [], model, stage: (_, cb) => cb(), reserveTurn: async () => true, now: "2026-08-01T00:00:00Z" });
@@ -102,6 +121,9 @@ test("the analyst accepts only a document that compiles, applies the review's re
   assert.equal(outcome.document!.rows[0]!.cells[1]![0]!.kind, "judgment");
   assert.equal(outcome.review.length, 1);
   assert.equal(outcome.turns.length, 5);
+  assertConversation(sent, systems);
+  assert.match(sent[0]![0]!.content as string, /"subject":\{"id":"capex-gap"/);
+  assert.match(seen[1]!, /Budget left: \d+ turns/);
 
   const dossier = { schemaVersion: "dossier.v1" as const, ticker: "TEST", findingsFingerprint: "fp-1", fingerprint: "a-1", generatedAt: "2026-08-01T00:00:00Z", model: "test", documents: { "capex-gap": outcome.document! }, materials: [] };
   assert.ok(readDossierPublication(dossier, "TEST"));
@@ -110,25 +132,57 @@ test("the analyst accepts only a document that compiles, applies the review's re
   assert.equal(mergeDossier({ ...publication, fingerprint: "fp-2" }, dossier).findings[0]!.lens.type, "compare_bars");
 });
 
-test("a turn is read as the model meant it: stringified input, arguments beside the action, a nested action, or a JSON object inside prose", () => {
-  const stringified = readDecision({ thought: "t", action: "read_section", input: JSON.stringify({ documentId: "d1", focus: ["capex"] }) });
-  assert.equal(stringified.input.documentId, "d1");
-  assert.match(stringified.note!, /JSON string/);
-  const beside = readDecision({ thought: "t", action: "read_section", documentId: "d1", sectionId: "s1" });
-  assert.deepEqual(beside.input, { documentId: "d1", sectionId: "s1" });
-  assert.match(beside.note!, /beside the action/);
-  const named = readDecision({ thought: "t", action: "Compile", arguments: { document: { rows: [] } } });
-  assert.equal(named.action, "compile");
-  assert.ok(named.input.document);
-  const nested = readDecision({ thought: "t", action: { name: "peers", input: {} } });
-  assert.equal(nested.action, "peers");
-  const clean = readDecision({ thought: "t", action: "finish", input: {} });
-  assert.equal(clean.note, null);
-  const salvaged = salvageDecision('Here is my turn:\n```json\n{"thought":"x","action":"peers","input":{}}\n```');
-  assert.equal(salvaged.action, "peers");
-  const hopeless = salvageDecision("I cannot decide");
-  assert.equal(hopeless.action, "invalid");
-  assert.match(readDecision(hopeless).note!, /began: I cannot decide/);
+test("the research tools are strict and closed; compile and finish take an open document the harness checks", () => {
+  assert.deepEqual(ANALYST_TOOLS.map(t => t.name), ["find_sections", "read_section", "peers", "search", "read_web", "compile", "finish"]);
+  const closed = (schema: unknown): boolean => {
+    if (!schema || typeof schema !== "object") return true;
+    const s = schema as Record<string, unknown>;
+    if (s.type === "object" && s.additionalProperties !== false) return false;
+    return Object.values(s).every(v => Array.isArray(v) ? v.every(closed) : closed(v));
+  };
+  for (const tool of ANALYST_TOOLS.filter(t => t.name !== "compile" && t.name !== "finish")) { assert.equal(tool.strict, true, tool.name); assert.ok(closed(tool.input_schema), tool.name); }
+  for (const name of ["compile", "finish"]) assert.equal(ANALYST_TOOLS.find(t => t.name === name)!.strict, undefined);
+  assert.deepEqual(ANALYST_TOOLS.find(t => t.name === "compile")!.input_schema.required, ["document"]);
+});
+
+test("a turn without a usable reply joins nothing, the next asks again, and failures in a row end the finding as an outage", async () => {
+  const f = verifyFindings(publication, data).verified[0]!;
+  const plan = planFinding(f, data, ["PEER1", "PEER2"]);
+  const ledger = buildLedger(data, PERIOD, publication.sources);
+  const runWith = (act: AnalystModel["act"]) => runAnalyst({ env: { DB: undefined } as unknown as SecPipelineEnv, ticker: "TEST", finding: f, plan, data, catalogue: lensCatalogue(ledger, data, PERIOD), categories: [], documents: [], record: [], model: { act, judge: async () => ({ remove: [] }) }, stage: (_, cb) => cb(), reserveTurn: async () => true, now: "2026-08-01T00:00:00Z" });
+  const sent: AgentMessage[][] = [], systems: string[] = [];
+  const thinking: AgentBlock = { type: "thinking", thinking: "", signature: "sig-1" };
+  const replies: AgentReply[] = [
+    { stopReason: "tool_use", content: [thinking, { type: "tool_use", id: "toolu_peers", name: "peers", input: {} }] },
+    { content: [], stopReason: "refusal", refusalCategory: "reasoning_extraction" },
+    { error: "stream_incomplete: interrupted" },
+    calls(["compile", { document: JSON.stringify({ rows: [] }) }], ["Peers", {}]),
+    { stopReason: "end_turn", content: [{ type: "text", text: "Done." }] },
+    { stopReason: "end_turn", content: [{ type: "text", text: "Still done." }] },
+  ];
+  const outcome = await runWith(async (_stage, system, _tools, messages) => { sent.push(structuredClone(messages)); systems.push(system); return replies[sent.length - 1] ?? call("finish"); });
+  assertConversation(sent, systems);
+  // The reply goes back exactly as returned, thinking included; the failed turns send the same exchange again.
+  assert.deepEqual(sent[1]![1], { role: "assistant", content: replies[0]!.content });
+  assert.deepEqual(sent[2], sent[1]);
+  assert.deepEqual(sent[3], sent[1]);
+  assert.deepEqual(outcome.turns.slice(1, 3).map(t => [t.action, t.observation]), [["invalid", "refusal (reasoning_extraction)"], ["invalid", "stream_incomplete: interrupted"]]);
+  // Two calls in one reply each get their result: a document sent as a string is read, and a tool named in another case runs.
+  const both = sent[4]!.at(-1)!.content as AgentBlock[];
+  assert.deepEqual(both.map(b => b.tool_use_id), [replies[3]!.content[0]!.id, replies[3]!.content[1]!.id]);
+  assert.match(String(both[0]!.content), /arrived as a JSON string[\s\S]*does not match the contract/);
+  assert.equal(both[0]!.is_error, true);
+  assert.match(String(both[1]!.content), /PEER1/);
+  // A reply calling no tool is asked once to go on; the second ends the finding.
+  assert.match(sent[5]!.at(-1)!.content as string, /^Continue by calling the tools/);
+  assert.equal(sent.length, 6);
+  assert.equal(outcome.document, null);
+
+  const { providerOutage } = await import("../src/analyst/workflow.ts");
+  let asked = 0;
+  const declined = await runWith(async () => { asked++; return { content: [], stopReason: "refusal", refusalCategory: "reasoning_extraction" }; });
+  assert.equal(asked, 3);
+  assert.equal(providerOutage([{ status: "fulfilled", value: declined }]), true);
 });
 
 test("a filing table is rendered with row indexes, and focus terms keep the matching rows in full", () => {

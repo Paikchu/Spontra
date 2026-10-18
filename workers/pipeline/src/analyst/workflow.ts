@@ -1,3 +1,4 @@
+import type Anthropic from "@anthropic-ai/sdk";
 import { modelFor, reasoningFor } from "../ai-config.ts";
 import type { DossierPublication, DossierResponse } from "../../../../shared/analysis-contract/dossier.ts";
 import type { FindingsPublication } from "../../../../shared/analysis-contract/findings.ts";
@@ -15,16 +16,17 @@ import { findingsInput } from "../findings/workflow.ts";
 import { readStoredFindings } from "../findings/read.ts";
 import { lensCatalogue } from "../lens/agent.ts";
 import { SecModelOutputError } from "../model-stream.ts";
-import { callWorkerSecModel, type SecPipelineEnv } from "../operations.ts";
+import { callWorkerSecModel, callWorkerToolModel, type SecPipelineEnv } from "../operations.ts";
 import { readPeersResponse } from "../peers/read.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import type { WorkflowStepLike } from "../workflow-core.ts";
-import { runAnalyst, salvageDecision, type AnalystModel, type AnalystOutcome, type AnalystRunInput } from "./agent.ts";
+import { SEC_MODEL_OUTPUT_TOKENS } from "../retry-policy.ts";
+import { runAnalyst, type AnalystModel, type AnalystOutcome, type AnalystRunInput } from "./agent.ts";
 import { planFinding } from "./plan.ts";
 
 /** Changing the analyst's prompt, lines, harness or grammar re-researches every company once. */
-export const ANALYST_VERSION = "analyst.react.v4";
+export const ANALYST_VERSION = "analyst.react.v5";
 export const dossierCacheKey = (ticker: string) => `dossier:v1:${ticker}`;
 /** The input of the last run that composed nothing; the same input is not researched again until it changes. */
 export const emptyDossierKey = (ticker: string) => `dossier:empty:v1:${ticker}`;
@@ -82,8 +84,8 @@ async function reserveTurn(env: SecPipelineEnv, now: string): Promise<boolean> {
 
 /**
  * Whether a run met a model provider outage rather than a content problem: no researched finding got an answer. A
- * finding is unanswered when it failed, or when every one of its turns came back without a word (an empty stream reads
- * as an invalid turn with no thought). Decided from the settled outcomes, so a replayed instance decides the same way.
+ * finding is unanswered when it failed, or when none of its turns got a usable reply (each reads as an invalid turn
+ * with nothing said). Decided from the settled outcomes, so a replayed instance decides the same way.
  */
 export function providerOutage(researched: PromiseSettledResult<AnalystOutcome>[]): boolean {
   const unanswered = (r: PromiseSettledResult<AnalystOutcome>) => r.status === "rejected"
@@ -108,10 +110,18 @@ export async function executeAnalystWorkflow(params: AnalystWorkflowParams, step
   const { verified } = verifyFindings(input.findings, data);
   const categories = [...new Set((await readLinks(db, { ticker: params.ticker }).catch(() => [])).filter(l => (l.status === "verified" || l.status === "confirmed") && l.industryCategory).map(l => l.industryCategory!))];
   const catalogue = lensCatalogue(input.ledger, data, input.findings.periodEnd);
-  const model: AnalystModel = deps.model ?? (async (stage, system, payload) => {
-    try { return await callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, MODEL_BUDGET_MS, true, { reasoning: reasoningFor(env, "analyst"), ticker: params.ticker, kind: "analyst" }); }
-    catch (error) { if (error instanceof SecModelOutputError) return salvageDecision(error.partialContent); throw error; }
-  });
+  const tuning = { reasoning: reasoningFor(env, "analyst"), ticker: params.ticker, kind: "analyst" };
+  // A broken or stalled reply is the turn gone wrong, which the loop answers; HTTP failures and timeouts still retry the step.
+  const model: AnalystModel = deps.model ?? {
+    act: async (stage, system, tools, messages) => {
+      try { return await callWorkerToolModel(env, fetcher, stage, { system, tools: tools as Anthropic.Beta.BetaTool[], messages: messages as Anthropic.Beta.BetaMessageParam[] }, modelVersion, MODEL_BUDGET_MS, { ...tuning, maxTokens: SEC_MODEL_OUTPUT_TOKENS }); }
+      catch (error) { if (error instanceof SecModelOutputError) return { error: `${error.code}: ${error.message}`.slice(0, 300) }; throw error; }
+    },
+    judge: async (stage, system, payload) => {
+      try { return await callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, MODEL_BUDGET_MS, true, tuning); }
+      catch (error) { if (error instanceof SecModelOutputError) return {}; throw error; }
+    },
+  };
   const peerTickers = peersOf(data, params.ticker);
   const outcomes: AnalystOutcome[] = [];
   // Light findings keep their own document; the others are researched at once, each with its own step names.

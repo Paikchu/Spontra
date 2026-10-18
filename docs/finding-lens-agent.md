@@ -149,6 +149,7 @@ export type LensColorToken = "revenue" | "profit" | "expense" | "loss" | "up" | 
 - **系统提示只讲方法，不讲案例**：先决定这条要点"该让读者看见什么对比"（水平、变化、构成、路径、落点），再选 series 和 mark；优先少而清楚；每张图必须对应 judgment 里的一个句子；把 observation 里的 warning 清零再 finish。提示词不提任何公司、科目或行业。
 - 模型推理档：`AI_TOOL_REASONING` 加 `lens: "low"`（observation 已经把计算做完，模型只做选择）；每轮 `maxTokens` 小；6 条要点并行，`Promise.allSettled`，单条失败保留 writer 给的旧 lens（经 `legacyLens` 转换）。
 - **阶段位置**：`executeFindingsWorkflow` 在 `writeFindings` 校验之后、`writeHighlights` 之前增加 `findings-lens-<id>-t<n>` 步骤；`FINDINGS_VERSION` 升 v9 并把 `LENS_VERSION` 写进指纹。不新增 task、队列或 Workflow 绑定（理由与 statement-highlights ADR 选 C 相同：输入相同、触发相同）。
+- **对话形式（2026-10-18，`lens.agent.v2`）**：与业务脑图 v10、分析师 v5 相同（见 [business-tree](business-tree.md) → 对话形式）。`compile {document}`、`finish {document?}` 是 Claude 客户端工具（文档语法超出 strict schema 上限，不设 strict，由 harness 校验）；不要求写出 thought；开头一条 user 消息携带 subject、evidence、catalogue、starting 和预算，之后每次回复原样回传、每个调用的结果作为 `tool_result` 跟在后面，对话只追加。拿不到可用回复的一轮不进对话、下一轮重发，连续 3 次保留 writer 的图；模型轮步骤名 `findings-lens-<id>-t<n>-act`。
 - **轨迹**：每条要点的 turns（thought/action/input/observation 截断）存 `sec_cache` 键 `findings-lens-trace:v1:<ticker>`，不进公开发布物；Admin「公司要点」页在版本下展开"Lens 生成过程"，与业务脑图的 research steps 同一组件。
 
 ## 前端

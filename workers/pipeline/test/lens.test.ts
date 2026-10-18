@@ -12,7 +12,14 @@ import { documentFromEvidence, lensDocumentOf } from "../../../shared/analysis-r
 import { renderChartSvg } from "../../../shared/analysis-runtime/lens/render.ts";
 import { compileDocument, verifyLensDocument } from "../../../shared/analysis-runtime/lens/verify.ts";
 import { buildLedger } from "../src/findings/ledger.ts";
-import { lensCatalogue, runLensAgent, writeLensDocuments, LENS_BUDGET } from "../src/lens/agent.ts";
+import { lensCatalogue, runLensAgent, writeLensDocuments, LENS_BUDGET, LENS_TOOLS, type LensModel } from "../src/lens/agent.ts";
+import type { AgentBlock, AgentMessage, AgentReply } from "../src/tool-loop.ts";
+
+let ids = 0;
+/** A reply calling one tool, as the Messages API returns it. */
+const call = (name: string, input: unknown = {}): AgentReply => ({ stopReason: "tool_use", content: [{ type: "tool_use", id: `toolu_${++ids}`, name, input }] });
+/** The last tool result the harness sent, or "" for the opening. */
+const lastResult = (messages: AgentMessage[]) => { const content = messages.at(-1)!.content; return Array.isArray(content) ? String(content.at(-1)?.content ?? "") : ""; };
 
 const ENDS = ["2024-09-30", "2024-12-31", "2025-03-31", "2025-06-30", "2025-09-30", "2025-12-31", "2026-03-31", "2026-06-30"];
 const amount = (v: number) => ({ value: String(v), basis: "reported" as const, definition: "", comparabilityKey: null, sourceIds: ["s1"] });
@@ -141,14 +148,13 @@ test("the agent compiles, reads its errors back, and finishes only with a docume
   assert.ok(catalogue.some(r => "rpoBucket" in r.ref));
   const bad: LensDocument = { rows: [{ cells: [[{ kind: "chart", chart: { ...chart, annotations: [{ series: "capex", period: "latest", text: "40 billion" }] } }], [{ kind: "judgment" }, { kind: "figures" }, { kind: "watch" }]] }, { cells: [[{ kind: "sources" }]] }] };
   const good: LensDocument = { rows: [{ cells: [[{ kind: "chart", chart: { ...chart, aspect: "square" } }], [{ kind: "judgment" }, { kind: "figures" }, { kind: "watch" }]] }, { cells: [[{ kind: "sources" }]] }] };
-  const seen: string[] = [];
-  const model = async (_stage: string, _system: string, payload: unknown) => {
-    const p = payload as { history: Array<{ observation: string }> };
-    seen.push(p.history.at(-1)?.observation ?? "");
-    if (p.history.length === 0) return { thought: "try", action: "compile", input: { document: bad } };
-    if (p.history.length === 1) return { thought: "finish anyway", action: "finish", input: {} };
-    if (p.history.length === 2) return { thought: "fix", action: "compile", input: { document: good } };
-    return { thought: "done", action: "finish", input: {} };
+  const seen: string[] = [], sent: AgentMessage[][] = [], systems: string[] = [];
+  const replies = [call("compile", { document: bad }), call("finish"), call("compile", { document: good }), call("finish")];
+  // Replies by the finding's turn, so the same script serves the publication's run below.
+  const model: LensModel = async (stage, system, tools, messages) => {
+    assert.equal(tools, LENS_TOOLS);
+    sent.push(structuredClone(messages)); systems.push(system); seen.push(lastResult(messages));
+    return replies[Number(stage.split("-").at(-1)) - 1] ?? call("finish");
   };
   const outcome = await runLensAgent({ finding: f, resolved: f.resolved, periodEnd: PERIOD, catalogue, data, model, stage: (_, cb) => cb() });
   assert.match(seen[1]!, /states a figure/);
@@ -157,10 +163,39 @@ test("the agent compiles, reads its errors back, and finishes only with a docume
   assert.equal(outcome.turns.length, 4);
   assert.deepEqual(outcome.document, good);
   assert.ok(outcome.turns.length <= LENS_BUDGET.turns);
+  // The loop is a conversation that only grows, with no written thought, no packed history, and no request for reasoning.
+  for (const [i, messages] of sent.entries()) {
+    if (i) assert.deepEqual(messages.slice(0, sent[i - 1]!.length), sent[i - 1]);
+    messages.forEach((m, k) => assert.equal(m.role, k % 2 ? "assistant" : "user"));
+    for (const m of messages) assert.doesNotMatch(typeof m.content === "string" ? m.content : JSON.stringify(m.content), /"thought"|"history"/);
+  }
+  assert.deepEqual(sent[1]![1], { role: "assistant", content: replies[0]!.content });
+  for (const system of systems) assert.doesNotMatch(system, /thought|think|reasoning|explain your|Return only JSON|history/i);
+  assert.match(seen[1]!, /Budget left: 5 turns\.$/);
 
   const written = await writeLensDocuments({ publication, ledger, data, model, version: "test", now: "2026-07-31T00:00:00Z", stage: (_, cb) => cb() });
   const lens = written.publication.findings[0]!.lens;
   assert.ok(lens.type === "document" && lens.document.rows.length === 2);
   assert.ok(readFindingsPublication(written.publication, "TEST"));
   assert.equal(written.trace.findings[0]!.turns.length, 4);
+});
+
+test("a lens turn without a usable reply joins nothing; failures in a row keep the original chart", async () => {
+  const f = verified();
+  const catalogue = lensCatalogue(buildLedger(data, PERIOD, publication.sources), data, PERIOD);
+  const sent: AgentMessage[][] = [];
+  const replies: AgentReply[] = [{ error: "stream_incomplete: interrupted" }, { content: [], stopReason: "max_tokens" }, { content: [], stopReason: "refusal", refusalCategory: "reasoning_extraction" }];
+  const outcome = await runLensAgent({ finding: f, resolved: f.resolved, periodEnd: PERIOD, catalogue, data, stage: (_, cb) => cb(),
+    model: async (_stage, _system, _tools, messages) => { sent.push(structuredClone(messages)); return replies[sent.length - 1] ?? call("finish"); } });
+  assert.equal(sent.length, 3);
+  assert.ok(sent.every(messages => messages.length === 1 && messages[0]!.role === "user"));
+  assert.deepEqual(outcome.turns.map(t => t.action), ["invalid", "invalid", "invalid"]);
+  assert.match(outcome.turns[2]!.observation, /refusal \(reasoning_extraction\)/);
+  assert.equal(outcome.document, null);
+  const unknown = await runLensAgent({ finding: f, resolved: f.resolved, periodEnd: PERIOD, catalogue, data, stage: (_, cb) => cb(),
+    model: async (stage, _system, _tools, messages) => { if (stage.endsWith("-2")) sent.push(structuredClone(messages)); return stage.endsWith("-1") ? call("draw", {}) : call("finish"); } });
+  const answer = (sent.at(-1)!.at(-1)!.content as AgentBlock[])[0]!;
+  assert.equal(answer.is_error, true);
+  assert.match(String(answer.content), /There is no tool "draw"/);
+  assert.equal(unknown.document, null);
 });
