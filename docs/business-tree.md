@@ -30,7 +30,7 @@ GitHub Copilot ─ GitHub ────────┘
 
 - think + act（v10，2026-10-18）：动作是 Claude 的客户端工具 `search {query}`、`read {source, focus}`、`add {parent, nodes}`、`revise {id, …}`、`remove {id}`、`finish {}`，schema 均为 `strict: true`，参数必定符合 schema。Sonnet 5.5 不接受强制 `tool_choice`，所以用默认 auto，系统提示要求每次回复都调用工具；一次回复里的多个调用按顺序执行（每轮最多 4 个）。
 - 对话只追加：开头一条 user 消息是任务、当前树、来源列表、预算和年报业务段；之后每次回复原样（含 thinking 块和签名）作为 assistant 消息回传，每个调用的结果作为对应的 `tool_result` 跟在后面，结果末尾附剩余预算。之前的轮次从不裁剪或改写：Claude 的 thinking 块只在系统提示、工具和历史都不变时有效，改了历史会被丢弃或报 400。整段对话走 prompt cache（系统提示一个断点，加顶层自动缓存）。
-- 深度：10-K 往往只写类目（compute、storage、online stores）。模型调用 finish 时，若还有一级节点既没有下级产品也没有赚钱方式，且搜索预算未用完，harness 会提醒一次去公司产品页和定价页补上具名产品和收费方式。
+- 深度：10-K 往往只写类目（compute、storage、online stores）。模型调用 finish 时，若还有一级节点下面没有具名产品（无论是否已写收费方式），且搜索预算未用完，harness 会提醒一次去公司产品页和定价页补上具名产品，没写收费方式的一并补上。
 - 之前的做法及失败原因：v7 把历次 thought/action/observation 塞进一条 user 消息，被当作伪造对话记录拒答；v8 要求逐轮写出 thought，被判为套取推理（`refusal`，`reasoning_extraction`）；v9 要求以文本返回 JSON 决定，Claude 会在 JSON 外加说明文字（`invalid_json`）或直接发起工具调用（`ended with tool_use`）。
 - 拿不到可用回复（拒答、在输出上限被截断、流中断）的一轮不进对话，下一轮原样重发；连续 3 次时运行带着原因结束，由管道稍后自动重试。回复里没有工具调用时提醒一次，连续两次则以现有结果结束这项业务。服务端 fallback 在回复中途换模型时，换模型前的 thinking 和工具调用不回传、不执行。
 - observe：harness 把执行结果写成下一轮的 observation。`add` 逐个核对节点，通过的给 ID，未通过的写明原因（例如“anchor 没有同时写出 Azure 和它的上级”），模型下一轮可以改。
@@ -44,6 +44,10 @@ SEC 文件全部来自文件库（`docs/sec-filing-library.md`）：开始前从
 ## 核对（写入和读取用同一套规则）
 
 - anchor：必须是模型本次运行读到的某个来源中的原文（压缩空白和标点后逐字匹配），≤600 字符，并且同时写出节点名（完整词，不是前缀）和某个上级的名称（父节点、更上层节点或这项业务；公司只披露一项业务时，公司名也算；公司名取发行人在申报文件里的写法，如 “Cloudflare, Inc.” 和 “Cloudflare”，不用交易所的证券名称 “Cloudflare, Inc. Class A Common Stock”）。原文用 “this segment” 指代上级时，要把点出上级名称的前一句一并引用。 财报常先用一句点出板块（"This segment primarily comprises:"），再把产品线分条列出：此时 anchor 可以用 " … " 连接同一段落里最多 3 个原文片段，每段逐字存在、顺序一致、整体跨度不超过约 2,400 个字母数字（`quotedIn`）。多段引用只取正文：表格行（如全公司收入表）不能当片段，因为它说明不了某条产品线属于哪个板块。
+- 名称匹配（v11，`namedIn`）：共用末词的并列短语分别写出每个成员——“online and physical stores” 写出了 Online stores 和 Physical stores，“advertising and subscription services” 写出了 Advertising services。v10 不认这种写法，AMZN North America 只好把全公司的句子拼到板块句上，被复核删掉了广告线。
+- 公司自己的申报文件（`TreeSource.own`：文件库持有的、或 flow 读取的本公司文件）通篇讲的就是这家公司：公司只披露一项业务时，引用它的段落只需写出节点名（“Our SASE platform combines …” 足以把 SASE platform 挂在 Cloudflare 下）。网页仍须写出公司名。读取时按同一规则复核。
+- 产品（kind product）必须是专有名称，含大写字母或数字（Sponsored Products、iPhone、S3）；“sponsored ads” 这类描述被拒，读取时也会剔除。产品线可以是申报文件里的类目，写入时首字母大写（online stores → Online stores）。
+- 拒绝原因分开写：引文不在来源中（指出哪一段不是原文，或片段不在同一段落），引文没有按原样写出节点名，或写出了节点名但没写上级。v10 只有一句笼统的原因，NET 为此在同一条线上重试了 5 轮。
 - gloss / summary / revenue：引用已出现的来源，不含金额、比例、增速等数字，文字里写的来源编号会被去掉（`withoutCitations`）；revenue 的来源还必须提到该节点或其上级。
 - 独立审校：每项业务结束后，审校模型拿到每个节点及其来源中提到它的句子，只能删除整个节点或单个字段；两次都拿不到合法结果时，保留已通过 harness 的内容。
 - 读取：`shared/analysis-runtime/business-tree.ts` 的 `readBusinessTree` 用同一套 `harnessNode` 重新核对，失败的节点连同下级删除，没有内容的业务不展示。

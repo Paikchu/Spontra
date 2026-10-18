@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { pageExcerpt, runBusinessTree, TREE_TOOLS, type TreeBlock, type TreeMessage, type TreeModel, type TreeReply, type TreeSearch } from "../src/business-tree/agent.ts";
 import { treeBusinesses } from "../src/business-tree/workflow.ts";
-import { quotedIn, readBusinessTree, withoutCitations } from "../../../shared/analysis-runtime/business-tree.ts";
+import { namedIn, quotedIn, quoteProblem, readBusinessTree, withoutCitations } from "../../../shared/analysis-runtime/business-tree.ts";
 import type { PublicBusinessFlow } from "../../../shared/analysis-contract/business-flow.ts";
 
 const TENK = `More Personal Computing
@@ -158,4 +158,77 @@ test("a tool the harness does not know is answered as an error the model can cor
   }).catch(() => null);
   assert.equal(answer?.is_error, true);
   assert.match(String(answer?.content), /There is no tool "browse"/);
+});
+
+const AMZN_SEGMENT = "The North America segment primarily consists of amounts earned from retail sales of consumer products (including from sellers) and advertising and subscription services through North America-focused online and physical stores.";
+
+test("a list whose members share their last word names each member, and nothing else", () => {
+  assert.ok(namedIn("Advertising services", AMZN_SEGMENT));
+  assert.ok(namedIn("Online stores", AMZN_SEGMENT));
+  assert.ok(namedIn("Physical stores", AMZN_SEGMENT));
+  assert.ok(namedIn("Storage services", "We offer compute, storage, and database services."));
+  assert.ok(namedIn("Compute services", "We offer compute, storage, and database services."));
+  assert.ok(!namedIn("Retail services", AMZN_SEGMENT), "retail heads another phrase");
+  assert.ok(!namedIn("Online services", AMZN_SEGMENT), "online belongs to stores, not services");
+  assert.ok(!namedIn("Subscription stores", "subscription services and physical stores"));
+});
+
+test("a quote that does not stand in its source says why", () => {
+  assert.match(quoteProblem("XBOX hardware and the moon", TENK)!, /"XBOX hardware and the moon" is not in the source word for word/);
+  assert.match(quoteProblem(JOINED, TENK.replace("comprises:", "comprises:" + " filler".repeat(500)))!, /not one passage/);
+  assert.equal(quoteProblem(JOINED, TENK), null);
+});
+
+test("the segment's own sentence anchors its lines, which read capitalised; a described product is refused", async () => {
+  const tree = await runBusinessTree({ ticker: "AMZN", companyName: "Amazon.com, Inc.", periodEnd: "2026-06-30", now: "2026-10-17T00:00:00.000Z", fingerprint: "f", modelVersion: "test",
+    businesses: [{ flowNodeId: "amzn:NorthAmericaSegmentMember", name: "North America", children: [] }, { flowNodeId: "amzn:AmazonWebServicesSegmentMember", name: "AWS", children: [] }],
+    filings: [FILING], search: search(`${AMZN_SEGMENT}\n\nWe provide advertising services to sellers, vendors, publishers, authors, and others, through programs such as sponsored ads, display, and video advertising.`),
+    model: scripted({
+      "1-1": call("read", { source: "b1-s1", focus: "North America" }),
+      "1-2": call("add", { parent: "root", nodes: [
+        { name: "advertising services", gloss: "ads sold to sellers and brands", kind: "line", anchor: { text: AMZN_SEGMENT, sourceIds: ["b1-s1"] }, summary: null, revenue: [] },
+        { name: "Online stores", gloss: "first-party e-commerce", kind: "line", anchor: { text: AMZN_SEGMENT, sourceIds: ["b1-s1"] }, summary: null, revenue: [] }] }),
+      "1-3": call("add", { parent: "b1-n1", nodes: [{ name: "sponsored ads", gloss: "search ads", kind: "product", anchor: { text: "We provide advertising services to sellers, vendors, publishers, authors, and others, through programs such as sponsored ads, display, and video advertising.", sourceIds: ["b1-s1"] }, summary: null, revenue: [] }] }),
+    }) });
+  const lines = tree.branches[0]!.children;
+  assert.deepEqual(lines.map(n => n.name), ["Advertising services", "Online stores"]);
+  assert.match(tree.research![0]!.steps[2]!.observation, /"sponsored ads" describes a product rather than naming it/);
+});
+
+test("a company with one business anchors its lines in its own filing without naming itself; a web page still must", async () => {
+  const filing = "Our SASE platform combines network services and Zero Trust and workplace security products to provide a cloud-based network and security-as-a-service offering.";
+  const vendor = "The SASE platform helps teams secure remote work.";
+  const own = (id: string) => ({ flowNodeId: "cloud:ReportableSegmentMember", name: "Reportable Segment", children: [] as Array<{ flowNodeId: string; name: string }>, id });
+  const tree = await runBusinessTree({ ticker: "NET", companyName: "Cloudflare, Inc. Class A Common Stock", periodEnd: "2026-06-30", now: "2026-10-17T00:00:00.000Z", fingerprint: "f", modelVersion: "test",
+    businesses: [own("x")], filings: [FILING],
+    search: { ...search(filing, [{ title: "SASE", url: "https://example.com/sase", snippet: vendor }]),
+      async fetchContent(request: { url: string }) { return { data: { kind: "content", url: request.url, text: request.url.includes("example.com") ? vendor : filing, format: "markdown", completeness: "unverified" } }; } } as unknown as TreeSearch,
+    model: scripted({
+      "1-1": call("read", { source: "b1-s1", focus: "SASE" }),
+      "1-2": call("search", { query: "Cloudflare SASE platform" }),
+      "1-3": call("add", { parent: "root", nodes: [{ name: "SASE platform", gloss: "Zero Trust and network services", kind: "line", anchor: { text: vendor, sourceIds: ["b1-s2"] }, summary: null, revenue: [] }] }),
+      "1-4": call("add", { parent: "root", nodes: [{ name: "SASE platform", gloss: "Zero Trust and network services", kind: "line", anchor: { text: filing, sourceIds: ["b1-s1"] }, summary: null, revenue: [] }] }),
+    }) });
+  assert.match(tree.research![0]!.steps[2]!.observation, /names "SASE platform" but not its parent/);
+  assert.equal(tree.sources.find(x => x.url === FILING.url)?.own, true);
+  // The reader applies the same rule from the stored sources.
+  const read = readBusinessTree(JSON.parse(JSON.stringify(tree)), "NET");
+  assert.equal(read?.branches[0]?.children[0]?.name, "SASE platform");
+  const stripped = { ...tree, sources: tree.sources.map(source => ({ ...source, own: false })) };
+  assert.equal(readBusinessTree(JSON.parse(JSON.stringify(stripped)), "NET"), null, "without the company's own filing the line names no parent");
+});
+
+test("a line that already says how it charges is still asked once for its named products", async () => {
+  const filing = "We serve developers and enterprises of all sizes through AWS, which offers a broad set of on-demand technology services, including compute, storage, database, analytics, and other services. Customers pay for compute as they use it.";
+  const tree = await runBusinessTree({ ticker: "AMZN", companyName: "Amazon.com, Inc.", periodEnd: "2026-06-30", now: "2026-10-17T00:00:00.000Z", fingerprint: "f", modelVersion: "test",
+    businesses: [{ flowNodeId: "amzn:AmazonWebServicesSegmentMember", name: "AWS", children: [] }, { flowNodeId: "amzn:NorthAmericaSegmentMember", name: "North America", children: [] }],
+    filings: [FILING], search: search(filing),
+    model: scripted({
+      "1-1": call("read", { source: "b1-s1", focus: "compute" }),
+      "1-2": call("add", { parent: "root", nodes: [{ name: "compute", gloss: "cloud compute", kind: "line", anchor: { text: filing.split(". ")[0] + ".", sourceIds: ["b1-s1"] }, summary: null,
+        revenue: [{ type: "consumption", label: "Pay as you go", text: "Customers pay for compute as they use it.", sourceIds: ["b1-s1"] }] }] }),
+    }) });
+  const finish = tree.research![0]!.steps.find(x => x.action === "finish")!;
+  assert.match(finish.observation, /no named product under them: b1-n1 Compute\. /);
+  assert.doesNotMatch(finish.observation, /charged/);
 });

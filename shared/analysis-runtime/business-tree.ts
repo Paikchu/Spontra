@@ -31,13 +31,40 @@ export function businessHint(id: string, name: string): string {
 /**
  * The membership rule every node passes, when the agent adds it and whenever the tree is read: its
  * anchor passage names the node in full and names its parent or another ancestor. A passage that only
- * proves the product exists does not put it in this business.
+ * proves the product exists does not put it in this business. `issuer` lists the company's names when
+ * the passage comes from the company's own filing, which is about the company throughout: there "Our
+ * SASE platform" puts the line in the company, which is the business when it discloses only one.
  */
-export function anchors(name: string, ancestors: string[], passage: string): boolean {
-  if (!completeProductName(name, passage)) return false;
-  const quote = compactName(passage), own = compactName(name);
-  return ancestors.some(a => { const key = compactName(a); return key.length >= 2 && key !== own && quote.includes(key); });
+export function anchors(name: string, ancestors: string[], passage: string, issuer: string[] = []): boolean {
+  return namedIn(name, passage) && namesAncestor(name, ancestors, passage, issuer);
 }
+
+/** Whether the passage names the node's parent or another ancestor, as `anchors` reads it. */
+export function namesAncestor(name: string, ancestors: string[], passage: string, issuer: string[] = []): boolean {
+  const quote = compactName(passage), own = compactName(name);
+  return ancestors.some(a => { const key = compactName(a); return key.length >= 2 && key !== own && (quote.includes(key) || issuer.includes(a)); });
+}
+
+/**
+ * Whether a passage names `name` in full: as written, or as one member of a phrase whose members share their last word,
+ * as filings list lines ("online and physical stores" names Online stores; "advertising and subscription services" names
+ * Advertising services; "compute, storage, and database services" names Storage services).
+ */
+export function namedIn(name: string, passage: string): boolean {
+  if (completeProductName(name, passage)) return true;
+  const words = name.normalize("NFKC").toLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length < 2) return false;
+  const escape = (w: string) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const lead = words.slice(0, -1).map(escape).join("\\s+"), head = escape(words.at(-1)!);
+  const member = "[\\p{L}\\p{N}'-]+(?:\\s+[\\p{L}\\p{N}'-]+){0,2}";
+  const edge = "(?<![\\p{L}\\p{N}])", end = "(?![\\p{L}\\p{N}])";
+  // The node's own words open a list (or sit inside one) whose last member carries the shared word.
+  const listed = new RegExp(`${edge}${lead}(?:\\s*,\\s*${member})*\\s*,?\\s+(?:and|or)\\s+${member}\\s+${head}${end}`, "u");
+  return listed.test(passage.normalize("NFKC").toLowerCase().replace(/\s+/g, " "));
+}
+
+/** A product is named as the company sells it, with a capital or a digit (Sponsored Products, iPhone, S3); "sponsored ads" describes one. */
+export const properName = (name: string) => /[\p{Lu}\p{N}]/u.test(name);
 
 /** An anchor may join up to three verbatim fragments of one passage with an ellipsis, e.g. a segment's heading and one item of the list under it. */
 export const ANCHOR_FRAGMENTS = 3;
@@ -53,9 +80,19 @@ const TABLE_ROW = /\|.*\|/;
  * row of it says nothing about which segment the line sits in.
  */
 export function quotedIn(quote: string, source: string, span = 2_400): boolean {
-  const fragments = quote.split(ELLIPSIS).map(compactName).filter(Boolean);
-  if (!fragments.length || fragments.length > ANCHOR_FRAGMENTS || (fragments.length > 1 && fragments.some(f => f.length < 10))) return false;
+  return quoteProblem(quote, source, span) === null;
+}
+
+/** Why a quote does not stand in a source, in words the agent can act on; null when it does. */
+export function quoteProblem(quote: string, source: string, span = 2_400): string | null {
+  const parts = quote.split(ELLIPSIS).map(p => p.trim()).filter(p => compactName(p));
+  const fragments = parts.map(compactName);
+  if (!fragments.length) return "the quote is empty";
+  if (fragments.length > ANCHOR_FRAGMENTS) return `it joins more than ${ANCHOR_FRAGMENTS} fragments`;
+  if (fragments.length > 1 && fragments.some(f => f.length < 10)) return "a joined fragment is too short to place in the source";
   const text = compactName(fragments.length > 1 ? source.split("\n").filter(line => !TABLE_ROW.test(line)).join("\n") : source);
+  const missing = parts.findIndex((_, i) => !text.includes(fragments[i]!));
+  if (missing >= 0) return `"${parts[missing]!.slice(0, 80)}" is not in the source word for word${fragments.length > 1 ? " (outside its tables)" : ""}`;
   for (let start = text.indexOf(fragments[0]!); start >= 0; start = text.indexOf(fragments[0]!, start + 1)) {
     let end = start + fragments[0]!.length, ok = true;
     for (const fragment of fragments.slice(1)) {
@@ -63,9 +100,9 @@ export function quotedIn(quote: string, source: string, span = 2_400): boolean {
       if (at < 0 || at + fragment.length - start > span) { ok = false; break; }
       end = at + fragment.length;
     }
-    if (ok) return true;
+    if (ok) return null;
   }
-  return false;
+  return "its fragments are not one passage: they must appear in this order, close together";
 }
 
 /** Source ids a model wrote into prose ("(Source: s1, s6)", "[b1-s2]") belong in sourceIds, not in the text a reader sees. */
@@ -94,26 +131,29 @@ const treeShape = z.object({
   ticker: z.string().regex(/^[A-Z][A-Z0-9.-]{0,11}$/),
   companyName: text(200), generatedAt: z.string().max(40), model: text(80), fingerprint: text(128), periodEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   branches: z.array(z.object({ flowNodeId: text(200), name: text(200), summary: claim.nullable(), children: z.array(z.unknown()).max(TREE_LIMITS.children * 2) })).min(1).max(TREE_LIMITS.branches),
-  sources: z.array(z.object({ id: text(40), title: text(300), url: https, kind: z.enum(["sec", "web"]), publishedAt: z.string().max(40).nullable() })).min(1).max(120),
+  sources: z.array(z.object({ id: text(40), title: text(300), url: https, kind: z.enum(["sec", "web"]), publishedAt: z.string().max(40).nullable(), own: z.boolean().optional() })).min(1).max(120),
   research: z.array(z.object({ flowNodeId: text(200), steps: z.array(step).max(60) })).max(TREE_LIMITS.branches).optional(),
 });
 
 /** Names a node may cite as its parent: the chain up to the business, and the company when it discloses only one business. */
 export type AncestorChain = string[];
+/** The company's names, and the sources that are its own filings, whose passages name it throughout. */
+export type Issuer = { names: string[]; sources: Set<string> };
 
 /**
  * Keeps what a node may show: cited prose without figures, revenue models with a known type, and the
  * anchor rule. A node that fails is removed with everything under it; one that passes keeps only
  * children that pass. Ids stay unique and the per-branch node cap holds.
  */
-export function harnessNode(raw: unknown, ancestors: AncestorChain, depth: number, sourceIds: Set<string>, budget: { nodes: number; ids: Set<string> }): TreeNode | null {
+export function harnessNode(raw: unknown, ancestors: AncestorChain, depth: number, sourceIds: Set<string>, budget: { nodes: number; ids: Set<string> }, issuer: Issuer = { names: [], sources: new Set() }): TreeNode | null {
   const parsed = nodeShape.safeParse(raw);
   if (!parsed.success || depth > TREE_LIMITS.depth || budget.nodes <= 0 || budget.ids.has(parsed.data.id)) return null;
   const node = parsed.data;
   const cited = (c: TreeClaim | null) => c && c.sourceIds.every(id => sourceIds.has(id)) ? { text: c.text, sourceIds: [...new Set(c.sourceIds)] } : null;
   const prose = (c: TreeClaim | null) => c && withoutCitations(c.text) ? { ...c, text: withoutCitations(c.text) } : null;
   const anchor = cited(node.anchor);
-  if (!node.flowNodeId && !(anchor && length(anchor.text) <= TREE_LIMITS.anchor && anchors(node.name, ancestors, anchor.text))) return null;
+  if (!node.flowNodeId && !(anchor && length(anchor.text) <= TREE_LIMITS.anchor && anchors(node.name, ancestors, anchor.text, anchor.sourceIds.some(id => issuer.sources.has(id)) ? issuer.names : []))) return null;
+  if (!node.flowNodeId && node.kind === "product" && !properName(node.name)) return null;
   budget.nodes--; budget.ids.add(node.id);
   const summary = prose(cited(node.summary));
   const seen = new Set<string>();
@@ -121,7 +161,7 @@ export function harnessNode(raw: unknown, ancestors: AncestorChain, depth: numbe
     .slice(0, TREE_LIMITS.revenue).map(r => ({ type: r.type, label: r.label, text: withoutCitations(r.text) || r.text, sourceIds: [...new Set(r.sourceIds)] }));
   const names = new Set<string>();
   const children = node.children.flatMap(child => {
-    const kept = harnessNode(child, [node.name, ...ancestors], depth + 1, sourceIds, budget);
+    const kept = harnessNode(child, [node.name, ...ancestors], depth + 1, sourceIds, budget, issuer);
     if (!kept || names.has(compactName(kept.name))) return [];
     names.add(compactName(kept.name));
     return [kept];
@@ -166,13 +206,14 @@ export function readBusinessTree(value: unknown, ticker: string, options: { rese
   if (!parsed.success || parsed.data.ticker !== ticker) return null;
   const tree = parsed.data;
   const ids = new Set(tree.sources.map(s => s.id));
+  const issuer: Issuer = { names: issuerNames(tree.companyName), sources: new Set(tree.sources.filter(s => s.own).map(s => s.id)) };
   const single = tree.branches.length === 1;
   const branches: TreeBranch[] = tree.branches.flatMap(branch => {
     const budget = { nodes: TREE_LIMITS.nodes, ids: new Set<string>() };
     const ancestors = branchAncestors(branch, tree.companyName, single);
     const names = new Set<string>();
     const children = branch.children.flatMap(child => {
-      const kept = harnessNode(child, ancestors, 1, ids, budget);
+      const kept = harnessNode(child, ancestors, 1, ids, budget, issuer);
       if (!kept || names.has(compactName(kept.name))) return [];
       names.add(compactName(kept.name));
       return [kept];

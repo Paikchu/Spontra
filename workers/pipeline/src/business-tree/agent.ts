@@ -1,5 +1,5 @@
 import { REVENUE_MODEL_TYPES, type BusinessTree, type TreeBranch, type TreeClaim, type TreeNode, type TreeRevenueModel, type TreeSource, type TreeStep } from "../../../../shared/analysis-contract/business-tree.ts";
-import { ANCHOR_FRAGMENTS, anchors, branchAncestors, businessHint, compactName, hasContent, issuerNames, plainText, quotedIn, REVENUE_LABEL, TREE_LIMITS, withoutCitations } from "../../../../shared/analysis-runtime/business-tree.ts";
+import { ANCHOR_FRAGMENTS, branchAncestors, businessHint, compactName, hasContent, issuerNames, namedIn, namesAncestor, plainText, properName, quotedIn, quoteProblem, REVENUE_LABEL, TREE_LIMITS, withoutCitations } from "../../../../shared/analysis-runtime/business-tree.ts";
 import { excerpt } from "../business-explainer/agent.ts";
 import type { WebSearchService } from "../web-search/service.ts";
 import type { SearchHit } from "../web-search/types.ts";
@@ -60,8 +60,8 @@ Write every field in English.
 Rules:
 - Break down this business only. otherBusinesses are the company's other disclosed businesses; products that belong to them do not go here.
 - Nodes marked disclosed in tree are sub-businesses the filing itself discloses. Hang product lines and products under them; do not create another node with the same name.
-- name is written exactly as the material writes it (usually the English product name): do not translate it, invent it, or write a feature description or customer group instead. gloss is a short plain-English descriptor of what it is, at most ${TREE_LIMITS.gloss} characters (2–5 words, e.g. "public cloud platform", "office productivity suite").
-- Every node must have an anchor: a passage of at most ${TREE_LIMITS.anchor} characters copied verbatim from a source you have already read (one sentence or two adjacent sentences, no rewording). The passage must name both this node and its parent (the parent node, a node further up, or this business itself). A passage that only proves the product exists, without saying where it belongs, does not count. anchor.sourceIds is the ID of the source the passage comes from.
+- name is written exactly as the material writes it (usually the English product name): do not translate it, invent it, or write a feature description or customer group instead. A product (kind product) is a proper name the company sells under, such as "Sponsored Products" or "Amazon EC2", never a description such as "sponsored ads"; a line may be a category the filing names, such as "Online stores". gloss is a short plain-English descriptor of what it is, at most ${TREE_LIMITS.gloss} characters (2–5 words, e.g. "public cloud platform", "office productivity suite").
+- Every node must have an anchor: a passage of at most ${TREE_LIMITS.anchor} characters copied verbatim from a source you have already read (one sentence or two adjacent sentences, no rewording). The passage must name both this node and its parent (the parent node, a node further up, or this business itself). A passage that only proves the product exists, without saying where it belongs, does not count. A list whose members share their last word names each member: "online and physical stores" names Online stores. When this business is the whole company (the company discloses no other business), a passage of the company's own filing is about the company throughout, so it only has to name the node. anchor.sourceIds is the ID of the source the passage comes from.
 - Filings often name the parent once and list what belongs to it below (e.g. "Our More Personal Computing segment consists of … This segment primarily comprises:" followed by one paragraph per line). Then join up to ${ANCHOR_FRAGMENTS} verbatim fragments of that same passage with " … " — the sentence naming the parent, then the item naming the node — each fragment copied exactly, in the order they appear. Fragments come from prose only: a row of a table (such as a company-wide revenue table) does not say which business a line belongs to.
 - Put source IDs only in sourceIds, never in the text of a summary or a revenue entry.
 - revenue goes on the level where the material proves how it is charged for (often the product line). type is one of ${REVENUE_MODEL_TYPES.map(t => `${t} (${REVENUE_LABEL[t]})`).join(", ")}; label is a map label of at most ${TREE_LIMITS.label} characters, such as "Per-seat subscription", "Usage-based", "Device sales"; text is one sentence saying who pays and on what basis, at most ${TREE_LIMITS.revenueText} characters. Without evidence, leave it out; never copy the parent's or the whole company's charging model onto every product.
@@ -100,7 +100,8 @@ const REVIEW = `You independently check a tree breaking down a company's busines
 - whether each revenue entry's charging model is supported by the cited material, and whether the parent's or the whole company's charging model was copied onto this node.
 Do not fill gaps from outside knowledge.`;
 
-type Material = { id: string; url: string; title: string; publishedAt: string | null; kind: "sec" | "web"; snippet: string; text: string; read: boolean };
+/** `own`: one of the company's own filings, as the filing library (or the flow it was read from) holds it. */
+type Material = { id: string; url: string; title: string; publishedAt: string | null; kind: "sec" | "web"; snippet: string; text: string; read: boolean; own: boolean };
 type Draft = { id: string; parentId: string | null; name: string; gloss: string | null; kind: "line" | "product"; flowNodeId: string | null; summary: TreeClaim | null; anchor: TreeClaim | null; revenue: TreeRevenueModel[] };
 type ToolCall = TreeBlock & { id: string; name: string; input: unknown };
 type Outcome = { observation: string; done?: boolean; error?: boolean };
@@ -117,14 +118,15 @@ class Library {
   readonly list: Material[] = [];
   private readonly prefix: string;
   constructor(prefix: string) { this.prefix = prefix; }
-  register(hit: { url: string; title: string; snippet: string; publishedAt: string | null }): Material | null {
+  register(hit: { url: string; title: string; snippet: string; publishedAt: string | null; own?: boolean }): Material | null {
     const url = canonical(hit.url);
     if (!url) return null;
     let material = this.list.find(m => m.url === url);
     if (!material) {
-      material = { id: `${this.prefix}-s${this.list.length + 1}`, url, title: hit.title.slice(0, 300) || hostname(url), publishedAt: validDate(hit.publishedAt), kind: isSec(url) ? "sec" : "web", snippet: "", text: "", read: false };
+      material = { id: `${this.prefix}-s${this.list.length + 1}`, url, title: hit.title.slice(0, 300) || hostname(url), publishedAt: validDate(hit.publishedAt), kind: isSec(url) ? "sec" : "web", snippet: "", text: "", read: false, own: false };
       this.list.push(material);
     }
+    if (hit.own && material.kind === "sec") material.own = true;
     if (hit.snippet && !material.snippet.includes(hit.snippet.slice(0, 200))) material.snippet = `${material.snippet}\n${hit.snippet}`.trim().slice(0, 3_000);
     return material;
   }
@@ -164,7 +166,8 @@ export async function runBusinessTree(input: TreeRunInput): Promise<BusinessTree
     const cited = new Set([...r.branch.summary?.sourceIds ?? [], ...r.branch.children.flatMap(citedIds)]);
     for (const m of r.library.list.filter(m => cited.has(m.id))) {
       let id = ids.get(m.url);
-      if (!id) { id = `s${ids.size + 1}`; ids.set(m.url, id); sources.push({ id, title: m.title, url: m.url, kind: m.kind, publishedAt: m.publishedAt }); }
+      if (!id) { id = `s${ids.size + 1}`; ids.set(m.url, id); sources.push({ id, title: m.title, url: m.url, kind: m.kind, publishedAt: m.publishedAt, ...(m.own ? { own: true } : {}) }); }
+      else if (m.own) sources.find(x => x.id === id)!.own = true;
       rename.set(m.id, id);
     }
   }
@@ -206,7 +209,7 @@ async function researchBranch(ctx: BranchContext): Promise<{ branch: TreeBranch;
     // A company with one disclosed business is that business: its annual report describes it under the company's name.
     const names = [label, business.name, ...business.children.map(c => businessHint(c.flowNodeId, c.name)), ...(ctx.single ? issuerNames(ctx.companyName) : [])];
     const section = await stage(`${prefix}-library`, () => ctx.filingLibrary!.businessSection(names, READ_CHARS));
-    const material = section ? library.register({ url: section.url, title: section.title, snippet: "", publishedAt: null }) : null;
+    const material = section ? library.register({ url: section.url, title: section.title, snippet: "", publishedAt: null, own: true }) : null;
     if (section && material) {
       material.text = section.text; material.read = true;
       annualReport = `[${material.id}] ${material.title}\n${section.text}`;
@@ -310,8 +313,10 @@ async function researchBranch(ctx: BranchContext): Promise<{ branch: TreeBranch;
         // An SEC document the library holds is read from its passages; anything else from the web.
         const page = await stage(`${step}-read`, async () => {
           const stored = material.kind === "sec" && ctx.filingLibrary ? await ctx.filingLibrary.read(material.url, terms, READ_CHARS) : null;
-          return stored !== null ? { text: stored } : readPage(ctx, material.url, terms);
+          return stored !== null ? { text: stored, own: true } : readPage(ctx, material.url, terms);
         });
+        // The library holds only this company's documents: what it returns is the company's own filing.
+        if ("own" in page && page.own) material.own = true;
         if ("error" in page) return { observation: `Reading ${material.id} failed (${page.error}); try another source.`, error: true };
         const fresh = page.text.split(/\n{2,}/).filter(p => !material.text.includes(p.slice(0, 160))).join("\n\n");
         material.text = `${material.text}\n\n${fresh}`.trim();
@@ -337,10 +342,12 @@ async function researchBranch(ctx: BranchContext): Promise<{ branch: TreeBranch;
         }
         // Lines named only as categories, with no named product under them and no way of charging found, are the shallow
         // end of a tree: while searches remain, ask once for the products and pricing behind them.
-        const bare = drafts.filter(d => d.parentId === null && !childrenOf(d.id).length && !d.revenue.length);
+        // A line that already says how it charges still names no product a reader would recognise.
+        const bare = drafts.filter(d => d.parentId === null && !childrenOf(d.id).length);
         if (bare.length && !askedDepth && turn < TREE_BUDGET.turns - 3 && used.searches < TREE_BUDGET.searches) {
           askedDepth = true;
-          return { observation: `These lines have no named product under them and no revenue model yet: ${bare.map(d => `${d.id} ${d.name}`).join(", ")}. Search the company's own product and pricing pages (e.g. "${ctx.companyName} ${bare[0]!.name} products pricing"), then add the representative named products under each line and how each line is charged. Finish only if nothing can be found.` };
+          const unpriced = bare.filter(d => !d.revenue.length);
+          return { observation: `These lines have no named product under them: ${bare.map(d => `${d.id} ${d.name}`).join(", ")}. Search the company's own product and pricing pages (e.g. "${ctx.companyName} ${bare[0]!.name} products pricing"), then add the representative named products under each line${unpriced.length ? `, and how ${unpriced.map(d => d.name).join(", ")} ${unpriced.length > 1 ? "are" : "is"} charged` : ""}. Finish only if nothing can be found.` };
         }
         return { observation: "Finished.", done: true };
       }
@@ -360,15 +367,19 @@ async function researchBranch(ctx: BranchContext): Promise<{ branch: TreeBranch;
     const accepted: string[] = [], rejected: string[] = [], notes: string[] = [];
     for (const item of nodes) {
       const node = (item && typeof item === "object" ? item : {}) as Record<string, unknown>;
-      const name = typeof node.name === "string" ? node.name.replace(/\s+/g, " ").trim() : "";
+      const kind = node.kind === "line" || node.kind === "product" ? node.kind : depth === 1 ? "line" : "product";
+      const written = typeof node.name === "string" ? node.name.replace(/\s+/g, " ").trim() : "";
+      // A category line reads as a label on the map: "online stores" as the filing writes it, "Online stores" as shown.
+      const name = kind === "line" ? written.charAt(0).toUpperCase() + written.slice(1) : written;
       const why = (reason: string) => { rejected.push(`${name || "(no name)"} — ${reason}`); };
       if (!name || [...name].length > TREE_LIMITS.name) { why("name is missing or too long"); continue; }
+      if (kind === "product" && !properName(name)) { why(`"${name}" describes a product rather than naming it; use the name the company sells it under (e.g. "Sponsored Products"), found on its own pages, or leave it out`); continue; }
       if (childrenOf(parentId).some(d => compactName(d.name) === compactName(name)) || compactName(name) === compactName(ancestors[0] ?? "")) { why("the parent already has a node with this name, or it has the same name as its parent"); continue; }
       if (childrenOf(parentId).length >= TREE_LIMITS.children) { why(`a node has at most ${TREE_LIMITS.children} children`); continue; }
       if (drafts.length >= TREE_LIMITS.nodes) { why(`this business has at most ${TREE_LIMITS.nodes} nodes`); continue; }
       const anchor = anchorOf(node.anchor, name, ancestors);
       if (typeof anchor === "string") { why(anchor); continue; }
-      const draft: Draft = { id: nextId(), parentId, name, kind: node.kind === "line" || node.kind === "product" ? node.kind : depth === 1 ? "line" : "product", flowNodeId: null, anchor, gloss: null, summary: null, revenue: [] };
+      const draft: Draft = { id: nextId(), parentId, name, kind, flowNodeId: null, anchor, gloss: null, summary: null, revenue: [] };
       notes.push(...fill(draft, node, ancestors));
       drafts.push(draft);
       accepted.push(`${draft.id} ${name}`);
@@ -430,8 +441,10 @@ async function researchBranch(ctx: BranchContext): Promise<{ branch: TreeBranch;
     const claim = claimOf(value, TREE_LIMITS.anchor, false);
     if (typeof claim === "string") return `anchor ${claim}`;
     const source = claim.sourceIds.find(id => quotedIn(claim.text, library.seen(id)));
-    if (!source) return `anchor is not text from the cited source (copy what you read verbatim; to skip text between the sentence naming the parent and the item naming the node, join at most ${ANCHOR_FRAGMENTS} exact fragments of the same passage with " … ")`;
-    if (!anchors(name, ancestors, claim.text)) return `anchor does not name both "${name}" and its parent (one of ${ancestors.slice(0, 3).join(" / ")}); when the source refers to the parent as "this segment" or similar, also quote the preceding sentence that names it`;
+    if (!source) return `anchor is not text from ${claim.sourceIds[0]}: ${quoteProblem(claim.text, library.seen(claim.sourceIds[0]!))}. Copy what you read word for word; to skip text between the sentence naming the parent and the item naming the node, join at most ${ANCHOR_FRAGMENTS} exact fragments of the same passage with " … "`;
+    if (!namedIn(name, claim.text)) return `anchor does not contain the name "${name}" as written; name the node as the passage names it, or quote a passage that names it`;
+    const issuer = library.get(source)?.own ? issuerNames(ctx.companyName) : [];
+    if (!namesAncestor(name, ancestors, claim.text, issuer)) return `anchor names "${name}" but not its parent (one of ${ancestors.slice(0, 3).join(" / ")}); when the source refers to the parent as "this segment" or similar, also quote the preceding sentence that names it`;
     return { text: claim.text, sourceIds: [source] };
   }
 
@@ -570,11 +583,12 @@ export function pageExcerpt(text: string, terms: string[], budget: number): stri
 }
 
 /** The filings every business starts from, as the filing library holds them; a web search finds the annual report only when the library has none. */
-async function libraryFilings(input: TreeRunInput, scope: { scope: string; maxAgeMs: number }): Promise<Array<{ url: string; title: string; snippet: string; publishedAt: string | null }>> {
+async function libraryFilings(input: TreeRunInput, scope: { scope: string; maxAgeMs: number }): Promise<Array<{ url: string; title: string; snippet: string; publishedAt: string | null; own?: boolean }>> {
   const documents = await input.filingLibrary!.documents();
-  if (documents.some(d => /10-K|20-F|annual/i.test(d.title))) return documents.map(d => ({ ...d, snippet: "" }));
+  // The library holds only this company's documents.
+  if (documents.some(d => /10-K|20-F|annual/i.test(d.title))) return documents.map(d => ({ ...d, snippet: "", own: true }));
   const searched = await collectFilings(input, scope);
-  return [...documents.map(d => ({ ...d, snippet: "" })), ...searched.filter(f => !documents.some(d => d.url === f.url))];
+  return [...documents.map(d => ({ ...d, snippet: "", own: true })), ...searched.filter(f => !documents.some(d => d.url === f.url))];
 }
 
 /**
@@ -582,8 +596,9 @@ async function libraryFilings(input: TreeRunInput, scope: { scope: string; maxAg
  * report, whose business section names what each segment sells. They are listed, not read: the model
  * decides what to read.
  */
-async function collectFilings(input: TreeRunInput, scope: { scope: string; maxAgeMs: number }): Promise<Array<{ url: string; title: string; snippet: string; publishedAt: string | null }>> {
-  const filings = (input.filings ?? []).filter(f => isSec(f.url)).slice(0, 2).map(f => ({ url: f.url, title: f.title, snippet: "", publishedAt: f.publishedAt }));
+async function collectFilings(input: TreeRunInput, scope: { scope: string; maxAgeMs: number }): Promise<Array<{ url: string; title: string; snippet: string; publishedAt: string | null; own?: boolean }>> {
+  // The flow's own filings are the company's; an annual report found by search is only listed.
+  const filings: Array<{ url: string; title: string; snippet: string; publishedAt: string | null; own?: boolean }> = (input.filings ?? []).filter(f => isSec(f.url)).slice(0, 2).map(f => ({ url: f.url, title: f.title, snippet: "", publishedAt: f.publishedAt, own: true }));
   const year = Number(input.now.slice(0, 4));
   try {
     const result = await input.search.search({ query: `${input.companyName} form 10-K annual report fiscal ${year} ${year - 1} business segments products`, maxResults: 10, depth: "advanced", includeDomains: ["sec.gov"] }, scope);
