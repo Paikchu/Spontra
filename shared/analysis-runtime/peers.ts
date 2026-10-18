@@ -24,6 +24,32 @@ export function readPeersPublication(value: unknown): PeersPublication | null {
   return parsed.success ? parsed.data : null;
 }
 
+/* ---------- What a company's page reads ---------- */
+
+/** The tickers a publication names in `{ peer }` references, wherever they sit (evidence, ratios, lenses, documents). */
+export function citedPeers(value: unknown, into = new Set<string>()): Set<string> {
+  if (Array.isArray(value)) for (const item of value) citedPeers(item, into);
+  else if (value && typeof value === "object") {
+    const peer = (value as { peer?: unknown }).peer;
+    if (peer && typeof peer === "object" && typeof (peer as { ticker?: unknown }).ticker === "string") into.add((peer as { ticker: string }).ticker);
+    for (const item of Object.values(value)) citedPeers(item, into);
+  }
+  return into;
+}
+
+/** The projection cut to the companies a page cites, so what the page reads moves only with them; null when it cites none. */
+export function peersFor(peers: PeersPublication | null, cited: Set<string>): PeersPublication | null {
+  if (!peers || !cited.size) return null;
+  return { ...peers, companies: peers.companies.filter(c => cited.has(c.ticker)) };
+}
+
+/** The companies whose row differs between two projections, a company added or left out counting as changed. */
+export function changedPeers(before: PeersPublication | null, after: PeersPublication): Set<string> {
+  const rows = (p: PeersPublication | null) => new Map((p?.companies ?? []).map(c => [c.ticker, JSON.stringify(c)]));
+  const old = rows(before), next = rows(after);
+  return new Set([...old.keys(), ...next.keys()].filter(t => old.get(t) !== next.get(t)));
+}
+
 /* ---------- Alignment ---------- */
 
 const DAY = 86_400_000;

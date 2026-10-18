@@ -1,7 +1,9 @@
 import type { PeersResponse } from "../../../../shared/analysis-contract/peers.ts";
 import { readPeersPublication } from "../../../../shared/analysis-runtime/peers.ts";
 import { D1SecRepository } from "../sec/d1.ts";
-import { PEERS_CACHE_KEY } from "./projection.ts";
+
+/** One global record: a per-company key would go stale, because events route by their own ticker (docs/analyst-agent-design.md). */
+export const PEERS_CACHE_KEY = "peers:v1";
 
 /** The stored projection, re-validated and never repaired; "preparing" until the peers task has published once. */
 export async function readPeersResponse(db: D1Database): Promise<PeersResponse> {

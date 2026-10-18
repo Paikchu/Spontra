@@ -86,7 +86,7 @@ Cron 和两个队列消费者的入口各做两次主键查询：补发发件箱
 | 业务解读 `runBusinessExplainerSweep` 🤖 | `*/10`，指纹比对，失败每周重试 | `financials.published`、`task.version_changed` | Workflow；指纹没变不启动；失败 `step.sleep` 后重试 | `explainer.published` |
 | 业务脑图 `runBusinessTreeSweep` 🤖 | `*/10`，指纹比对，失败每周重试 | 同上 | 同上 | `tree.published` |
 | 指引 `runGuidanceSweep` 🤖 | `*/10`，读缓存的申报列表 | `filing.discovered`（8-K Item 2.02） | Workflow；当日模型额度用完睡到下一个 UTC 日 | `guidance.published` |
-| 同业投影 `peers`（2026-10-14 新增） | 无 | `map.derived`、`fundamentals.updated`（全局任务，去抖 2 分钟、最长 30 分钟） | 无模型：每家数据公司最近 8 季的可比数字（资本结构与现金流分组、SEC 序列）与业务类别写入单一键 `peers:v1`，随 `/findings` 响应下发，供要点页的同业表与分析师任务读取 | `peers.published`（ticker `*`） |
+| 同业投影 `peers`（2026-10-14 新增） | 无 | `map.derived`、`fundamentals.updated`（全局任务，去抖 2 分钟、最长 30 分钟） | 无模型：每家数据公司最近 8 季的可比数字（资本结构与现金流分组、SEC 序列）与业务类别写入单一键 `peers:v1`；`/findings` 响应只带该公司要点引用到的同业行，分析师任务读全量 | `peers.published`（每家引用了变动同业的公司各一条；无公司受影响时不发） |
 | 要点分析师 `analyst` 🤖（2026-10-14 新增） | 无 | `findings.published`、10-K/10-Q 的 `filing.archived`（去抖 10 分钟） | Workflow `spontra-analyst`：每条通过校验的要点一个 ReAct 循环，读文件库原文与同业投影，产出带引文/表格的 lens 文档；指纹 = 分析师版本 + 要点指纹 + 最新定期申报 | `dossier.published` |
 | 利润表判定 `presentation` 🤖（2026-10-15 新增） | `maintenance.requested` | `presentation.unresolved`（采集发出：最新季度的"税前至净利润"没有任何结构能算平；后台"重新判定"也可发出） | 模型只提出哪一行是税前利润、哪些行在所得税之后，同一套算术在该申报的每个季度精确算平才接受（`financial-data/presentation.ts`），每日上限 `PRESENTATION_DAILY_CALLS`（默认 60）。接受的结构存 `financial_presentation_profiles`，再建一个"提取"维护任务重新采集；维护任务不发 `presentation.unresolved`，所以事件图无环。同一份申报只判定一次。见 [statement-bridge-design](statement-bridge-design.md) |
 | 翻译 `translate` 🤖（2026-10-15 新增） | 无 | `findings.published`、`dossier.published`、`explainer.published`、`tree.published`、`guidance.published`、`events.published`、`report.published`（去抖 2 分钟、最长 30 分钟） | Workflow `spontra-translate`：读出各发布物里给读者看的英文字符串，只翻译译文记忆表 `i18n_strings` 里没有的，逐条检查后写入；最后为每个资源写一张译文表供读 API 的 `?locale=zh-CN` 使用（docs/i18n-design.md）。当日额度用完则次日再跑 | `translations.published` |
@@ -176,9 +176,9 @@ D1 表 `pipeline_due(cik, task, due_at, first_requested_at, cause_id)`，主键 
 
 ### 前台自动刷新（2026-10-16）
 
-`routeEvents` 在路由事件的同一批写入里，按 `pipeline/revisions.ts` 的 `REVISES` 表把发布事件映射到地图资源，并把对应版本号推进到事件时间（取较大值，重投不回退；`peers.published` 记在 `*` 下，对所有公司生效）。读 API `/api/v1/companies/:ticker/revisions` 不缓存；地图 Worker 以 `/api/business/v1/companies/:ticker/revision` 转出。
+`routeEvents` 在路由事件的同一批写入里，按 `pipeline/revisions.ts` 的 `REVISES` 表把发布事件映射到地图资源，并把对应版本号推进到事件时间（取较大值，重投不回退）。版本号只随该公司页面实际读到的内容移动：另一家公司发新季度时，只有要点引用了它的公司收到 `peers.published`（2026-10-18 起；此前记在 `*` 下，任何公司更新都会让所有公司页弹出提示）。读 API `/api/v1/companies/:ticker/revisions` 不缓存；地图 Worker 以 `/api/business/v1/companies/:ticker/revision` 转出。
 
-公司页打开时先取版本号，各资源请求带 `?rev=`，所以边缘与浏览器缓存不会拿旧副本应答新版本。页面可见时每 3 分钟、回到标签页时（至少间隔 30 秒）比较一次版本号；有变化就在后台读取变化的资源。内容与当前一致（只差 `checkedAt` 之类）时静默采用；有差异时显示更新提示，用户点“更新”后才替换，新增的要点和事件行从上方插入、带一次高亮，原有行平滑下移。前台轮询的是浏览器，不是 Cron。
+公司页打开时先取版本号，各资源请求带 `?rev=`，所以边缘与浏览器缓存不会拿旧副本应答新版本。页面可见时每 3 分钟、回到标签页时（至少间隔 30 秒）比较一次版本号；有变化就在后台读取变化的资源。内容与当前一致（只差 `checkedAt` 之类）时静默采用；有差异时显示更新提示，用户点“更新”后才替换。提示每次打开页面只弹一次：显示期间到来的更新并入同一条提示，用户点过“更新”或关闭后不再弹出，之后的更新留待下次打开页面；新增的要点和事件行从上方插入、带一次高亮，原有行平滑下移。前台轮询的是浏览器，不是 Cron。
 
 所有消息带 `id` 和 `cause_id`，链路可追溯到最初的 `filing.discovered`：`filing.discovered → financials.published → map.derived → findings`。后台 AI 任务页可以直接显示“由哪份申报触发”。
 
