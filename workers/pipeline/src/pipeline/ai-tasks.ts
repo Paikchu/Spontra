@@ -3,7 +3,7 @@ import { BUSINESS_EXPLAINER_VERSION, businessExplainerCacheKey, businessExplaine
 import { BUSINESS_TREE_VERSION, businessTreeCacheKey, businessTreeFingerprint } from "../business-tree/workflow.ts";
 import { COMPANY_ANALYSIS_PROMPT_VERSION } from "../company-analysis/contracts.ts";
 import { recoverCompanyAnalysis, startCompanyMemory } from "../core.ts";
-import { FINDINGS_VERSION, findingsFingerprint } from "../findings/workflow.ts";
+import { FINDINGS_VERSION, findingsFingerprint, LENS_VERSION } from "../findings/workflow.ts";
 import { ANALYST_VERSION, analystFingerprint, dossierCacheKey, emptyDossierKey } from "../analyst/workflow.ts";
 import { findingsCacheKey } from "../findings/read.ts";
 import type { AiWorkflowBinding, SecPipelineEnv } from "../operations.ts";
@@ -49,7 +49,8 @@ export const AI_TASKS = {
    * A run silent for two days is not waited for; a published guidance (`extracted`, `complete`) is not pending.
    */
   findings: {
-    version: FINDINGS_VERSION,
+    // The lens agent runs inside the findings workflow: a new lens version rewrites every company's findings once.
+    version: `${FINDINGS_VERSION}:${LENS_VERSION}`,
     async run(env, ticker, context): Promise<TaskOutcome> {
       const { now } = context;
       if (env.FINDINGS_ENABLED !== "true") return { status: "done", detail: { skipped: "findings disabled" } };
