@@ -21,6 +21,7 @@ import { executeAnalystWorkflow, type AnalystWorkflowParams } from "./analyst/wo
 import { trackRun, trackSleep, trackSteps } from "./ai-runs/tracking.ts";
 import { executeLibraryCardsWorkflow, type LibraryCardsParams } from "./filing-library/cards.ts";
 import { executeLibraryLinksWorkflow, type LibraryLinksParams } from "./filing-library/links.ts";
+import { executeBusinessTagsWorkflow, type BusinessTagsParams } from "./business-tags/workflow.ts";
 import { executeTranslateWorkflow, type TranslateParams } from "./translation/translate.ts";
 
 const WORKFLOW_RETRY = {
@@ -121,6 +122,14 @@ export class LibraryLinksWorkflow extends WorkflowEntrypoint<SecPipelineEnv, Lib
   async run(event: WorkflowEvent<LibraryLinksParams>, step: WorkflowStep) {
     const env = await companyPolicyEnvironment(this.env);
     return executeLibraryLinksWorkflow(event.payload, durableSteps(step, env, event.instanceId), env);
+  }
+}
+
+/** One company's units, business tags and pairs: two model calls at high reasoning, then embedding and matching. */
+export class BusinessTagsWorkflow extends WorkflowEntrypoint<SecPipelineEnv, BusinessTagsParams> {
+  async run(event: WorkflowEvent<BusinessTagsParams>, step: WorkflowStep) {
+    const env = await companyPolicyEnvironment(this.env);
+    return executeBusinessTagsWorkflow(event.payload, durableSteps(step, env, event.instanceId), env);
   }
 }
 

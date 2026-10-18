@@ -11,7 +11,8 @@ export const EVENT_TYPES = [
   "map.derived", "filings.indexed", "report.published", "analysis.published", "fundamentals.updated", "guidance.published",
   "task.version_changed",
   "transcript.stored", "explainer.published", "tree.published", "findings.published", "events.published", "dossier.published",
-  "library.requested", "library.prepared", "library.cards.published", "library.links.requested",
+  "library.requested", "library.prepared", "library.cards.published", "library.links.requested", "library.links.published",
+  "business.tags.requested", "business.tags.published",
   "peers.published", "translations.published",
   "presentation.unresolved",
   "feature.settings",
@@ -23,7 +24,7 @@ export const TASK_NAMES = [
   "map-derive", "archive-prune", "archive-prune-scan",
   "sec-report", "guidance", "events",
   "memory", "company-analysis", "explainer", "tree", "findings", "analyst",
-  "library", "library-cards", "library-links", "library-search", "storage-sweep",
+  "library", "library-cards", "library-links", "library-search", "storage-sweep", "business-tags",
   "peers", "translate", "presentation",
 ] as const;
 export type TaskName = typeof TASK_NAMES[number];
@@ -87,7 +88,9 @@ export const TASKS: Record<TaskName, TaskMeta> = {
   // Index cards for the sections of the company's recent documents (Workflow; model at low reasoning).
   "library-cards": { emits: ["library.cards.published"], debounceMs: 10 * MINUTE, maxWaitMs: 2 * HOUR, scope: "data" },
   // Proposes each business's map node, filing sections and cross-company category (Workflow; model at high reasoning).
-  "library-links": { emits: [], debounceMs: 10 * MINUTE, maxWaitMs: 2 * HOUR, scope: "data" },
+  "library-links": { emits: ["library.links.published"], debounceMs: 10 * MINUTE, maxWaitMs: 2 * HOUR, scope: "data" },
+  // Comparable units and their two levels of business tags, embedded and matched against other companies' (Workflow; model at high reasoning).
+  "business-tags": { emits: ["business.tags.published"], debounceMs: 5 * MINUTE, maxWaitMs: HOUR, scope: "data" },
   // Uploads carded sections to the AI Search recall layer and removes the ones that left it; no model.
   "library-search": { emits: [], debounceMs: 2 * MINUTE, maxWaitMs: 30 * MINUTE, scope: "data" },
   // Deletes stored data no code reads any more, at most once a day; no model.
@@ -123,6 +126,10 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
   "library.prepared": [{ task: "library-cards" }],
   "library.cards.published": [{ task: "library-links" }, { task: "library-search" }, { task: "storage-sweep" }],
   "library.links.requested": [{ task: "library-links" }],
+  // The business links are the units' and sector tags' source; their tags and pairs are written right after them.
+  "library.links.published": [{ task: "business-tags" }],
+  "business.tags.requested": [{ task: "business-tags" }],
+  "business.tags.published": [{ task: "peers" }],
   "archive.superseded": [{ task: "archive-prune" }],
   "archive.prune.requested": [{ task: "archive-prune-scan" }],
   "filings.indexed": [{ task: "guidance" }],
@@ -159,7 +166,7 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
 export const SOURCES: Record<string, readonly EventType[]> = {
   // The only Cron: polls EDGAR, which pushes nothing.
   "sec-discovery": ["company.added", "filing.discovered", "collection.requested"],
-  "admin": ["company.added", "collection.requested", "maintenance.requested", "archive.prune.requested", "library.requested", "library.links.requested", "presentation.unresolved", "feature.settings"],
+  "admin": ["company.added", "collection.requested", "maintenance.requested", "archive.prune.requested", "library.requested", "library.links.requested", "business.tags.requested", "business.tags.published", "presentation.unresolved", "feature.settings"],
   "invocation": ["task.version_changed"],
 };
 

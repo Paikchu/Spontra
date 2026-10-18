@@ -17,6 +17,10 @@ export const AI_TOOLS = {
   "library-links": { label: "业务归类", reasoning: "high", model: "reasoning" },
   /** The independent second judgment that settles a proposal's category and sections instead of a person. */
   "library-links-review": { label: "业务归类复核", reasoning: "high", model: "reasoning" },
+  /** Level-two business tags for each comparable unit, each citing the passages that support it. */
+  "business-tags": { label: "业务标签", reasoning: "high", model: "reasoning" },
+  /** The independent check that each business tag is supported by the passages it cites. */
+  "business-tags-review": { label: "业务标签复核", reasoning: "high", model: "reasoning" },
   "sec-analysis": { label: "财报摘要", reasoning: "high", model: "analysis" },
   memory: { label: "公司记忆", reasoning: "high", model: "analysis" },
   "company-analysis": { label: "公司分析", reasoning: "high", model: "reasoning" },

@@ -7,6 +7,7 @@ import { readFindingsPublication, refLabel, resolveRef, spanLabel, verifyFinding
 import { formatDelta, formatResolved } from "../../../../shared/analysis-runtime/lens/format.ts";
 import { readEventsResponse } from "../events/read.ts";
 import { peersOf } from "../../../../shared/analysis-runtime/lens/table.ts";
+import { comparablePeers } from "../../../../shared/analysis-runtime/peers.ts";
 import { AiRunStore } from "../ai-runs/store.ts";
 import { sha256 } from "../company-analysis/api.ts";
 import { assertTrackedTicker, requireDb } from "../core.ts";
@@ -140,7 +141,10 @@ export async function executeAnalystWorkflow(params: AnalystWorkflowParams, step
       catch (error) { if (error instanceof SecModelOutputError) return {}; throw error; }
     },
   };
-  const peerTickers = peersOf(data, params.ticker);
+  // Peers by business tags when the tags have paired the company, else by shared category.
+  const comparable = comparablePeers(peers, params.ticker)?.filter(c => c.pair.tier !== "adjacent") ?? null;
+  const peerTickers = comparable ? comparable.map(c => c.ticker) : peersOf(data, params.ticker);
+  const peerUnits = comparable?.map(c => c.unit.unitKey);
   const outcomes: AnalystOutcome[] = [];
   // Light findings keep their own document; the others are researched at once, each with its own step names.
   // A run in which no researched finding got an answer met a provider outage, not a content problem: it waits and runs
@@ -151,7 +155,7 @@ export async function executeAnalystWorkflow(params: AnalystWorkflowParams, step
     settled = await Promise.allSettled(verified.map(async f => {
       const plan = planFinding(f, data, peerTickers);
       if (plan.tier === "light") return { id: f.id, tier: plan.tier, lines: [], document: null, materials: [], turns: [], warnings: ["light tier: not researched"], review: [] } satisfies AnalystOutcome;
-      return runAnalyst({ env, ticker: params.ticker, finding: f, plan, data, catalogue, categories, documents: input.documents, record: input.findings.record ?? [], model, stage: (name, cb) => step.do(`analyst-${prefix}${name}`, cb), reserveTurn: () => reserveTurn(env, now), now, background: background(f, previous, data, input.context) });
+      return runAnalyst({ env, ticker: params.ticker, finding: f, plan, data, catalogue, categories, documents: input.documents, record: input.findings.record ?? [], peerUnits, model, stage: (name, cb) => step.do(`analyst-${prefix}${name}`, cb), reserveTurn: () => reserveTurn(env, now), now, background: background(f, previous, data, input.context) });
     }));
     const researched = settled.filter((_, k) => planFinding(verified[k]!, data, peerTickers).tier !== "light");
     const outage = providerOutage(researched);

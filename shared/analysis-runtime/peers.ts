@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { BalanceSheet, CashFlowStatement } from "../analysis-contract/capital-structure.ts";
 import type { FindingRef } from "../analysis-contract/findings.ts";
-import { PEER_FIGURES, type PeerCompany, type PeerFigure, type PeerQuarter, type PeersPublication } from "../analysis-contract/peers.ts";
+import { PEER_FIGURES, type PeerCompany, type PeerFigure, type PeerPair, type PeerQuarter, type PeersPublication, type PeerUnit } from "../analysis-contract/peers.ts";
 import { resolveRef, type FindingData } from "./findings.ts";
 
 /* ---------- Schema ---------- */
@@ -16,7 +16,21 @@ const company = z.object({
   newestQuarter: date.nullable(),
   quarters: z.array(quarter).max(8),
 });
-export const peersPublicationSchema = z.object({ schemaVersion: z.literal("peers.v1"), generatedAt: z.string().max(40), companies: z.array(company).max(400) });
+const unitKey = z.string().min(3).max(200);
+const unit = z.object({
+  ticker: z.string().regex(/^[A-Z][A-Z0-9.-]{0,11}$/), unitKey, name: z.string().max(200), flowNodeId: z.string().max(160),
+  sectors: z.array(z.string().max(60)).max(16), periodEnd: date.nullable(), revenue: decimal.nullable(), exposure: z.number().min(0).max(2).nullable(),
+});
+const facetValue = z.enum(["same", "partial", "different", "unknown"]);
+const facet = z.object({ value: facetValue, score: z.number().min(-1).max(1).nullable(), leftTag: z.string().max(80).nullable(), rightTag: z.string().max(80).nullable() });
+const pair = z.object({
+  left: unitKey, right: unitKey, tier: z.enum(["direct", "partial", "adjacent"]), sector: z.string().max(60), basis: z.enum(["company", "unit", "quote"]),
+  facets: z.object({ offering: facet, customers: facet, contract: facet, cost: facet }),
+});
+export const peersPublicationSchema = z.object({
+  schemaVersion: z.literal("peers.v1"), generatedAt: z.string().max(40), companies: z.array(company).max(400),
+  units: z.array(unit).max(4000).optional(), pairs: z.array(pair).max(20000).optional(),
+});
 
 /** A stored peers publication through the contract, unknown fields stripped; null when its shape is wrong. */
 export function readPeersPublication(value: unknown): PeersPublication | null {
@@ -37,10 +51,46 @@ export function citedPeers(value: unknown, into = new Set<string>()): Set<string
   return into;
 }
 
-/** The projection cut to the companies a page cites, so what the page reads moves only with them; null when it cites none. */
+/** The ticker a unit key names (`MSFT|msft:IntelligentCloudMember`). */
+export const unitTicker = (unitKey: string) => unitKey.slice(0, unitKey.indexOf("|"));
+
+/**
+ * The projection cut to the companies a page cites, so what the page reads moves only with them; null when it cites
+ * none. A pair stays when it names a cited company, with the units it compares.
+ */
 export function peersFor(peers: PeersPublication | null, cited: Set<string>): PeersPublication | null {
   if (!peers || !cited.size) return null;
-  return { ...peers, companies: peers.companies.filter(c => cited.has(c.ticker)) };
+  const pairs = peers.pairs?.filter(p => cited.has(unitTicker(p.left)) || cited.has(unitTicker(p.right)));
+  const keys = new Set(pairs?.flatMap(p => [p.left, p.right]) ?? []);
+  return {
+    ...peers, companies: peers.companies.filter(c => cited.has(c.ticker)),
+    ...(peers.units ? { units: peers.units.filter(u => keys.has(u.unitKey)) } : {}), ...(pairs ? { pairs } : {}),
+  };
+}
+
+export type ComparablePeer = { ticker: string; unit: PeerUnit; own: PeerUnit; pair: PeerPair };
+const TIER_RANK: Record<PeerPair["tier"], number> = { direct: 0, partial: 1, adjacent: 2 };
+
+/**
+ * The company's comparable peers from the business-tag pairs (docs/peer-similarity-design.md): one entry per peer
+ * company, its closest pair, ordered by tier and then by how much of each company the compared units are. Null when
+ * the projection carries no pairs for the company, so callers fall back to shared categories.
+ */
+export function comparablePeers(peers: PeersPublication | null | undefined, ticker: string): ComparablePeer[] | null {
+  const units = new Map((peers?.units ?? []).map(u => [u.unitKey, u]));
+  const mine = (peers?.pairs ?? []).filter(p => unitTicker(p.left) === ticker || unitTicker(p.right) === ticker);
+  if (!mine.length || !(peers?.units ?? []).some(u => u.ticker === ticker)) return null;
+  const best = new Map<string, ComparablePeer>();
+  const weight = (c: ComparablePeer) => (c.unit.exposure ?? 0) + (c.own.exposure ?? 0);
+  for (const pair of mine) {
+    const ownKey = unitTicker(pair.left) === ticker ? pair.left : pair.right, peerKey = ownKey === pair.left ? pair.right : pair.left;
+    const own = units.get(ownKey), unit = units.get(peerKey);
+    if (!own || !unit || unit.ticker === ticker) continue;
+    const entry = { ticker: unit.ticker, unit, own, pair };
+    const seen = best.get(unit.ticker);
+    if (!seen || TIER_RANK[pair.tier] < TIER_RANK[seen.pair.tier] || (TIER_RANK[pair.tier] === TIER_RANK[seen.pair.tier] && weight(entry) > weight(seen))) best.set(unit.ticker, entry);
+  }
+  return [...best.values()].sort((a, b) => TIER_RANK[a.pair.tier] - TIER_RANK[b.pair.tier] || weight(b) - weight(a) || a.ticker.localeCompare(b.ticker));
 }
 
 /** The companies whose row differs between two projections, a company added or left out counting as changed. */

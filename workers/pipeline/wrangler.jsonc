@@ -59,6 +59,12 @@
       "concurrency": { "limit": 2 }
     },
     {
+      "name": "spontra-business-tags",
+      "binding": "BUSINESS_TAGS_WORKFLOW",
+      "class_name": "BusinessTagsWorkflow",
+      "concurrency": { "limit": 1 }
+    },
+    {
       "name": "spontra-translate",
       "binding": "TRANSLATE_WORKFLOW",
       "class_name": "TranslateWorkflow",
@@ -109,6 +115,13 @@
   // sections for semantic search only; D1 stays the source of every text and number.
   "ai_search_namespaces": [
     { "binding": "AI_SEARCH", "namespace": "default" }
+  ],
+  // Business tags (docs/peer-similarity-design.md): Workers AI embeds each tag with @cf/baai/bge-m3, and the Vectorize
+  // index holds the vectors, one namespace per sector and facet. The index was created once by hand (1024 dimensions,
+  // cosine); D1 stays the source of every tag and pair.
+  "ai": { "binding": "AI" },
+  "vectorize": [
+    { "binding": "TAGS_INDEX", "index_name": "business-tags" }
   ],
   // This Worker owns the analysis data model: it is the only writer, and since the read API landed
   // it is also the only reader — the Web Worker no longer binds this database at all. The id is an

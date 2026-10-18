@@ -7,6 +7,7 @@ import { findSecurity } from "../catalog/security-directory.ts";
 import { readCompletePublicationForTicker } from "../financial-data/publication.ts";
 import { SecModelOutputError } from "../model-stream.ts";
 import { callWorkerSecModel, type SecPipelineEnv } from "../operations.ts";
+import { outboxStatement } from "../pipeline/outbox.ts";
 import { cardDocuments, cardsPublished } from "./cards.ts";
 
 const REGION = /americas|europe|emea|asia|pacific|china|japan|international|domestic|united\s?states|north\s?america|latin\s?america|geograph|region/i;
@@ -139,6 +140,7 @@ export async function writeLinks(db: D1Database, ticker: string, links: SettledL
   if (stale.length) statements.push(db.prepare("DELETE FROM sec_business_links WHERE ticker = ? AND status != 'confirmed' AND business_key IN (SELECT value FROM json_each(?))").bind(ticker, JSON.stringify(stale)));
   statements.push(db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at")
     .bind(linksCacheKey(ticker), JSON.stringify({ fingerprint, version: LIBRARY_LINKS_VERSION, at }), at));
+  statements.push(outboxStatement(db, { type: "library.links.published", ticker }, at));
   await db.batch(statements);
   return counts;
 }

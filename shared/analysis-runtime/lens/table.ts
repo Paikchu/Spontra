@@ -1,3 +1,4 @@
+import { comparablePeers } from "../peers.ts";
 import type { FindingRef, FindingSpan, PeerBaseRef } from "../../analysis-contract/findings.ts";
 import type { LensTable } from "../../analysis-contract/lens.ts";
 import { refLabel, resolveEvidence, resolveRef, type FindingData } from "../findings.ts";
@@ -15,8 +16,11 @@ export type CompiledTable = {
 };
 export type TableResult = { table: CompiledTable | null; errors: string[]; dropped: string[] };
 
-/** Peers of the company: those sharing an industry category with it, as the projection lists them. */
+/** Peers of the company for company-wide figures: its business-tag pairs of basis company, else those sharing an industry category with it. */
 export function peersOf(data: FindingData, ticker: string): string[] {
+  // Business-tag pairs, when the company has them, decide: company-wide figures stand only for peers of basis company.
+  const comparable = comparablePeers(data.peers, ticker);
+  if (comparable) return comparable.filter(c => c.pair.basis === "company").map(c => c.ticker);
   const companies = data.peers?.companies ?? [];
   const mine = new Set(companies.find(c => c.ticker === ticker)?.categories ?? []);
   return companies.filter(c => c.ticker !== ticker && c.categories.some(cat => mine.has(cat))).map(c => c.ticker);
@@ -48,19 +52,28 @@ export function compileTable(spec: LensTable, data: FindingData, ticker: string,
     const columns = ends.slice(lead).map(end => ({ key: end, label: periodLabel(end, spec.span, locale), sub: null }));
     return { table: { title: spec.title ?? null, columns, rows: rows.map(r => ({ ...r, cells: r.cells.slice(lead) })), dropped }, errors, dropped };
   }
-  const peers = (spec.peers?.length ? spec.peers : peersOf(data, ticker)).filter(t => t !== ticker);
-  if (!peers.length) return { table: null, errors: ["no tracked peer shares a category with the company"], dropped };
+  const comparable = comparablePeers(data.peers, ticker);
+  const asked = (spec.peers?.length ? spec.peers : peersOf(data, ticker)).filter(t => t !== ticker);
+  // A named peer whose comparable unit is only part of it is not compared on company-wide figures.
+  const narrow = comparable ? asked.filter(t => comparable.find(c => c.ticker === t)?.pair.basis !== "company") : [];
+  for (const t of narrow) {
+    const c = comparable!.find(x => x.ticker === t);
+    errors.push(c ? `${t} is comparable only through ${c.unit.name} (basis ${c.pair.basis}); company-wide figures do not stand for it` : `${t} is not a comparable peer of ${ticker}`);
+  }
+  dropped.push(...narrow);
+  const peers = asked.filter(t => !narrow.includes(t));
+  if (!peers.length) return { table: null, errors: [...errors, comparable ? "no peer is comparable on company-wide figures" : "no tracked peer shares a category with the company"], dropped };
   const tickers = [ticker, ...peers];
   const rows = spec.rows.map(row => ({
     label: row.label ?? refLabel(data, ownRef(row.ref), locale),
     cells: tickers.map(t => t === ticker ? cell(ownRef(row.ref), periodEnd, row.compare) : ("capital" in row.ref || "metric" in row.ref || "fundamental" in row.ref) ? cell({ peer: { ticker: t, ref: row.ref } }, periodEnd, row.compare) : null),
   })).filter(r => r.cells.some(c => c));
-  if (!rows.length) return { table: null, errors: ["no row resolves for the company or any peer"], dropped };
+  if (!rows.length) return { table: null, errors: [...errors, "no row resolves for the company or any peer"], dropped };
   // Columns with nothing to show are dropped; fewer than two peers left means the comparison is not one.
   const keep = tickers.map((t, i) => rows.some(r => r.cells[i]) ? i : -1).filter(i => i >= 0);
   dropped.push(...tickers.filter((_, i) => !keep.includes(i)));
   const peerColumns = keep.filter(i => i > 0);
-  if (peerColumns.length < 2) return { table: null, errors: [`only ${peerColumns.length} peer${peerColumns.length === 1 ? "" : "s"} with a figure (${tickers.slice(1).join(", ")} asked); a peers table needs two`], dropped };
+  if (peerColumns.length < 2) return { table: null, errors: [...errors, `only ${peerColumns.length} peer${peerColumns.length === 1 ? "" : "s"} with a figure (${tickers.slice(1).join(", ")} asked); a peers table needs two`], dropped };
   const columns = keep.map(i => { const t = tickers[i]!; const company = data.peers?.companies.find(c => c.ticker === t); const end = i === 0 ? periodEnd : company?.quarters.find(q => q.periodEnd <= periodEnd)?.periodEnd ?? null; return { key: t, label: t, sub: end ? periodLabel(end, "quarter").replace("FY to ", "") : null }; });
   return { table: { title: spec.title ?? null, columns, rows: rows.map(r => ({ ...r, cells: keep.map(i => r.cells[i] ?? null) })), dropped }, errors, dropped };
 }

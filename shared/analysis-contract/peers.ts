@@ -1,3 +1,5 @@
+import type { FacetMatch, PeerBasis, TagFacet } from "./business-tags.ts";
+
 /**
  * One global projection of comparable figures for every tracked company (docs/analyst-agent-design.md, 前置数据工作 3):
  * deterministic, no model, rebuilt whenever a company's map snapshot or SEC fundamentals change. A peers table on a
@@ -35,10 +37,40 @@ export type PeerCompany = {
   quarters: PeerQuarter[];
 };
 
+/** A comparable unit (docs/peer-similarity-design.md): one disclosed revenue node and its share of the company's revenue. */
+export type PeerUnit = {
+  ticker: string;
+  unitKey: string;
+  name: string;
+  /** The revenue node; `reported-company-total` for a single-segment company. */
+  flowNodeId: string;
+  /** Level-one sector tags (`IndustryCategory` keys). */
+  sectors: string[];
+  periodEnd: string | null;
+  /** Decimal string in USD base units; null when the node's revenue is not disclosed. */
+  revenue: string | null;
+  /** Unit revenue over company revenue at the same quarter; null when either is missing. */
+  exposure: number | null;
+};
+
+/** Two comparable units and how far they can be compared: the tier from their business tags, the basis from it and their exposures. */
+export type PeerPair = {
+  left: string;
+  right: string;
+  tier: "direct" | "partial" | "adjacent";
+  /** The sector the tier was found under. */
+  sector: string;
+  basis: PeerBasis;
+  facets: Record<TagFacet, FacetMatch>;
+};
+
 export type PeersPublication = {
   schemaVersion: "peers.v1";
   generatedAt: string;
   companies: PeerCompany[];
+  /** Absent before the business tags exist; readers then fall back to shared categories. */
+  units?: PeerUnit[];
+  pairs?: PeerPair[];
 };
 
 export type PeersResponse = {

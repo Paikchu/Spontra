@@ -10,6 +10,8 @@ import { pendingLibraryDocuments } from "../filing-library/store.ts";
 import type { TaskImplementation, TaskOutcome } from "./tasks.ts";
 import { driveWorkflow, failedInputOutcome } from "./workflow-task.ts";
 import { D1SecRepository } from "../sec/d1.ts";
+import { BUSINESS_TAGS_VERSION } from "../../../../shared/analysis-runtime/business-tags.ts";
+import { tagsCacheKey, tagsPlan } from "../business-tags/input.ts";
 
 /** Source bytes and wall time one run spends; what is left is split by the next run, right away. */
 const BYTE_BUDGET = 24_000_000, TIME_BUDGET_MS = 60_000, BATCH = 60;
@@ -74,6 +76,25 @@ export const LIBRARY_TASKS = {
         if (failed) return failed;
         return { id: `library-links-${ticker.replace(/[^A-Za-z0-9]/g, "-")}-${input.fingerprint.slice(0, 16)}-${now.getTime()}`, params: { ticker, fingerprint: input.fingerprint }, fingerprint: input.fingerprint };
       }, { deadLetter: { task: "library-links", ticker, causeId }, trigger });
+    },
+  },
+
+  /**
+   * Comparable units, their sector tags and business tags, and the pairs they make with other companies'
+   * (docs/peer-similarity-design.md): one Workflow per change of the company's links or map businesses.
+   */
+  "business-tags": {
+    version: BUSINESS_TAGS_VERSION,
+    async run(env, ticker, { now, causeId, trigger }): Promise<TaskOutcome> {
+      if (env.BUSINESS_TAGS_ENABLED === "false" || !env.ANTHROPIC_API_KEY) return { status: "done", detail: { skipped: "business tags disabled" } };
+      return driveWorkflow(env, `business-tags:${ticker}`, env.BUSINESS_TAGS_WORKFLOW, async () => {
+        const plan = await tagsPlan(env.DB!, ticker);
+        if (!plan) return null;
+        if ((await new D1SecRepository(env.DB!).getCache<{ fingerprint: string }>(tagsCacheKey(ticker)))?.payload?.fingerprint === plan.fingerprint) return null;
+        const failed = await failedInputOutcome(env, "business-tags", ticker, plan.fingerprint, now);
+        if (failed) return failed;
+        return { id: `business-tags-${ticker.replace(/[^A-Za-z0-9]/g, "-")}-${plan.fingerprint.slice(0, 16)}-${now.getTime()}`, params: { ticker, fingerprint: plan.fingerprint }, fingerprint: plan.fingerprint };
+      }, { deadLetter: { task: "business-tags", ticker, causeId }, trigger });
     },
   },
 

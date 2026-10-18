@@ -61,6 +61,15 @@ export type AiWorkflowBinding<P> = {
   get?(id: string): Promise<{ status(): Promise<{ status: string; error?: unknown }> }>;
 };
 
+/** The slice of the Workers AI binding the tags use. */
+export type TagEmbedder = { run(model: string, input: { text: string[] }): Promise<unknown> };
+/** The slice of a Vectorize index the tags use. */
+export type TagIndex = {
+  upsert(vectors: Array<{ id: string; values: number[]; namespace?: string; metadata?: Record<string, string> }>): Promise<unknown>;
+  deleteByIds(ids: string[]): Promise<unknown>;
+  query(vector: number[], options: { topK: number; namespace?: string; returnValues?: boolean; returnMetadata?: "none" | "indexed" | "all" }): Promise<{ matches: Array<{ id: string; score: number; namespace?: string }> }>;
+};
+
 export type SecPipelineEnv = SecCronEnv & AnalysisReadEnv & {
   BUSINESS_EXPLAINER_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
   GUIDANCE_WORKFLOW?: AiWorkflowBinding<{ ticker: string; accession: string; eventDate: string; manual?: boolean }>;
@@ -88,6 +97,15 @@ export type SecPipelineEnv = SecCronEnv & AnalysisReadEnv & {
   FILING_LIBRARY_ENABLED?: string;
   /** "false" pauses writing index cards for library sections; unset or anything else runs it. */
   LIBRARY_CARDS_ENABLED?: string;
+  BUSINESS_TAGS_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
+  /** "false" pauses writing business tags; unset or anything else runs it. */
+  BUSINESS_TAGS_ENABLED?: string;
+  /** Workers AI, for embedding business tags (docs/peer-similarity-design.md). */
+  AI?: TagEmbedder;
+  /** The Vectorize index of business tags, one namespace per sector and facet. */
+  TAGS_INDEX?: TagIndex;
+  /** JSON such as {"same":0.8,"near":0.68}: the cosine scores at which two tags count as the same or a near business. */
+  PEER_TAG_THRESHOLDS?: string;
   /** JSON overriding an AI tool's reasoning level, e.g. {"library-cards":"high"}; see `ai-config.ts`. */
   AI_REASONING?: string;
   /** The admin's model and effort per AI tool (JSON), set only by `aiToolEnvironment`. */

@@ -1,6 +1,8 @@
-import type { PeerCompany, PeersPublication } from "../../../../shared/analysis-contract/peers.ts";
+import type { PeerCompany, PeerPair, PeersPublication, PeerUnit } from "../../../../shared/analysis-contract/peers.ts";
+import { basisOf } from "../../../../shared/analysis-runtime/business-tags.ts";
+import { exposureOf, unitRevenues } from "../business-tags/input.ts";
 import { readFindingFundamentals, type FindingData } from "../../../../shared/analysis-runtime/findings.ts";
-import { changedPeers, citedPeers, peerQuartersFrom, readPeersPublication } from "../../../../shared/analysis-runtime/peers.ts";
+import { changedPeers, citedPeers, peerQuartersFrom, readPeersPublication, unitTicker } from "../../../../shared/analysis-runtime/peers.ts";
 import { requireDb } from "../core.ts";
 import { readLinks } from "../filing-library/links.ts";
 import { readServedFindings } from "../findings/read.ts";
@@ -14,7 +16,7 @@ import { scopeTickers } from "../pipeline/router.ts";
 import { PEERS_CACHE_KEY, readPeersResponse } from "./read.ts";
 
 /** Changing what the projection reads or how a figure is computed republishes it once (`task.version_changed`). */
-export const PEERS_VERSION = "peers.v1";
+export const PEERS_VERSION = "peers.v2";
 
 /**
  * The same stored projections the findings writer reads (`readInput` in findings/workflow.ts), without the ledger:
@@ -48,14 +50,43 @@ export async function buildPeerCompany(env: SecPipelineEnv, ticker: string): Pro
   return { ticker, categories: await companyCategories(env, ticker), newestQuarter: quarters[0]?.periodEnd ?? null, quarters };
 }
 
+/**
+ * The comparable units of the data companies with their revenue share, and the pairs their business tags made
+ * (docs/peer-similarity-design.md), each with the basis it can be compared on. A pair only of shared sector stays in
+ * the admin. Empty lists when no company has tags yet.
+ */
+export async function buildPeerPairs(db: D1Database, tickers: string[]): Promise<{ units: PeerUnit[]; pairs: PeerPair[] }> {
+  const rows = (await db.prepare("SELECT unit_key, ticker, flow_node_id, name, sectors FROM sec_business_units WHERE ticker IN (SELECT value FROM json_each(?))").bind(JSON.stringify(tickers))
+    .all<{ unit_key: string; ticker: string; flow_node_id: string; name: string; sectors: string }>().catch(() => ({ results: [] }))).results;
+  const revenues = new Map<string, Awaited<ReturnType<typeof unitRevenues>>>();
+  for (const ticker of new Set(rows.map(r => r.ticker))) revenues.set(ticker, await unitRevenues(db, ticker));
+  const units: PeerUnit[] = rows.map(r => {
+    const company = revenues.get(r.ticker)!, revenue = company.nodes.get(r.flow_node_id) ?? null;
+    return { ticker: r.ticker, unitKey: r.unit_key, name: r.name, flowNodeId: r.flow_node_id, sectors: JSON.parse(r.sectors) as string[], periodEnd: company.periodEnd, revenue, exposure: exposureOf(revenue, company.company) };
+  });
+  const byKey = new Map(units.map(u => [u.unitKey, u]));
+  const pairRows = (await db.prepare("SELECT left_unit, right_unit, sectors, tier, tier_sector FROM sec_peer_pairs WHERE tier IN ('direct','partial','adjacent')").bind()
+    .all<{ left_unit: string; right_unit: string; sectors: string; tier: PeerPair["tier"]; tier_sector: string }>().catch(() => ({ results: [] }))).results;
+  const pairs: PeerPair[] = [];
+  for (const r of pairRows) {
+    const left = byKey.get(r.left_unit), right = byKey.get(r.right_unit);
+    const facets = (JSON.parse(r.sectors) as Record<string, PeerPair["facets"]>)[r.tier_sector];
+    if (!left || !right || !facets) continue;
+    pairs.push({ left: r.left_unit, right: r.right_unit, tier: r.tier, sector: r.tier_sector, basis: basisOf(r.tier, left, right), facets });
+  }
+  return { units: units.sort((a, b) => a.unitKey.localeCompare(b.unitKey)), pairs: pairs.sort((a, b) => `${a.left}~${a.right}`.localeCompare(`${b.left}~${b.right}`)) };
+}
+
 /** The projection for every data company, in ticker order; companies without a publication are left out. */
 export async function buildPeersPublication(env: SecPipelineEnv, now: Date): Promise<PeersPublication> {
   const companies: PeerCompany[] = [];
-  for (const ticker of await scopeTickers(env, "data")) {
+  const tickers = await scopeTickers(env, "data");
+  for (const ticker of tickers) {
     const company = await buildPeerCompany(env, ticker);
     if (company) companies.push(company);
   }
-  return { schemaVersion: "peers.v1", generatedAt: now.toISOString(), companies };
+  const { units, pairs } = await buildPeerPairs(requireDb(env), tickers);
+  return { schemaVersion: "peers.v1", generatedAt: now.toISOString(), companies, ...(units.length ? { units, pairs } : {}) };
 }
 
 /**
@@ -66,9 +97,14 @@ export async function publishPeers(env: SecPipelineEnv, now: Date): Promise<{ co
   const db = requireDb(env);
   const publication = readPeersPublication(await buildPeersPublication(env, now));
   if (!publication) throw new Error("peers projection does not satisfy its own contract");
-  const changed = changedPeers(await readPeersResponse(db).then(r => r.peers).catch(() => null), publication);
+  const before = await readPeersResponse(db).then(r => r.peers).catch(() => null);
+  const changed = changedPeers(before, publication);
+  // A company whose own pairs moved reads different peers on its page, cited or not.
+  const pairsOf = (p: PeersPublication | null, ticker: string) => JSON.stringify([(p?.pairs ?? []).filter(x => unitTicker(x.left) === ticker || unitTicker(x.right) === ticker), (p?.units ?? []).filter(u => u.ticker === ticker)]);
   const revised: string[] = [];
-  if (changed.size) for (const ticker of await scopeTickers(env, "data")) {
+  for (const ticker of await scopeTickers(env, "data")) {
+    if (pairsOf(before, ticker) !== pairsOf(publication, ticker)) { revised.push(ticker); continue; }
+    if (!changed.size) continue;
     const findings = await readServedFindings(db, ticker).catch(() => null);
     if ([...citedPeers(findings)].some(t => changed.has(t))) revised.push(ticker);
   }

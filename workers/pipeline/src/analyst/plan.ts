@@ -54,7 +54,7 @@ const LINES: Record<LineKey, Omit<PlannedLine, "why">> = {
   peers: { key: "peers", questions: [
     "How does the same ratio look at each tracked peer over the same span, and is the company's move company-specific or industry-wide?",
     "What do peers say in their own filings about the same mechanism: who owns, who leases, who borrows, who is paid in advance?",
-  ], evidence: "the peers table (peer references), peers' filings through find_sections with the shared category; the divergence table" },
+  ], evidence: "the comparable peers and their basis (peers), the peers table (peer references) for peers of basis company, peers' filings through find_sections with peers; the divergence table" },
 };
 
 const refs = (f: VerifiedFinding): FindingRef[] => f.evidence.map(e => e.ref);
@@ -90,7 +90,7 @@ export function planFinding(f: VerifiedFinding, data: FindingData, peers: string
   // Guidance: any evidence compared against a guided range.
   if (f.evidence.some(e => typeof e.compare === "object")) fire("guidance_delivery", "the evidence is measured against guidance");
   // Peers: the finding matters enough and the company has tracked peers in its category; placed before margins so the cap keeps it.
-  if (peers.length >= 2 && (f.severity === 3 || f.anchors.view !== "profit")) fire("peers", `${peers.length} tracked peers share a category`);
+  if (peers.length >= 2 && (f.severity === 3 || f.anchors.view !== "profit")) fire("peers", `${peers.length} comparable tracked peers`);
   // Margin or mix: a margin ratio in the evidence or a margin moving more than two points.
   const marginMove = (m: "gross" | "operating" | "net") => yoy(data, { ratio: { numerator: { metric: m }, denominator: { metric: "revenue" } } }, end, span);
   if (cites(f, r => "ratio" in r && "metric" in r.ratio.denominator && r.ratio.denominator.metric === "revenue") || [marginMove("gross"), marginMove("operating"), marginMove("net")].some(d => d != null && Math.abs(d * 100) > 2)) fire("margin_mix", "a margin or expense ratio moved or is in the evidence");

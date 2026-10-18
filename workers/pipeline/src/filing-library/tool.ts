@@ -99,10 +99,24 @@ export function alternate(found: FoundSection[]): FoundSection[] {
 export async function libraryFindAcross(env: SecPipelineEnv, request: {
   tickers?: string[]; topic?: string; entity?: string; keywords?: string; canonical?: LibraryCanonical; question?: string;
   category?: IndustryCategory; businessKey?: string; limit?: number;
+  /** Comparable units (docs/peer-similarity-design.md): only the sections of the businesses under them. */
+  units?: string[];
+  /** Several categories at once: the sections of every verified link in any of them. */
+  categories?: IndustryCategory[];
 }): Promise<LibraryFindResult> {
   const db = env.DB!, limit = request.limit ?? 20;
   let tickers = request.tickers, sectionIds: string[] | undefined;
-  if (request.category || request.businessKey) {
+  if (request.units?.length) {
+    const rows = (await db.prepare("SELECT ticker, section_ids FROM sec_business_units WHERE unit_key IN (SELECT value FROM json_each(?))").bind(JSON.stringify(request.units)).all<{ ticker: string; section_ids: string }>()).results;
+    sectionIds = [...new Set(rows.flatMap(r => JSON.parse(r.section_ids) as string[]))];
+    tickers = [...new Set(rows.map(r => r.ticker))];
+    if (!sectionIds.length) return { found: [], recall: request.question ? "empty" : "off" };
+  } else if (request.categories?.length) {
+    const links = (await Promise.all(request.categories.map(category => readLinks(db, { category })))).flat().filter(l => !tickers?.length || tickers.includes(l.ticker));
+    sectionIds = [...new Set(links.flatMap(l => l.sectionIds))];
+    tickers = [...new Set(links.map(l => l.ticker))];
+    if (!tickers.length) return { found: [], recall: request.question ? "empty" : "off" };
+  } else if (request.category || request.businessKey) {
     const links = (await readLinks(db, { category: request.category }))
       .filter(l => (!request.businessKey || l.businessKey === request.businessKey) && (!tickers?.length || tickers.includes(l.ticker)));
     sectionIds = links.flatMap(l => l.sectionIds);

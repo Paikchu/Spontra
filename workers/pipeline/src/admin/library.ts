@@ -8,6 +8,9 @@ import { libraryWiki } from "../filing-library/wiki.ts";
 import type { SecPipelineEnv } from "../operations.ts";
 import { flushOutbox, outboxStatement } from "../pipeline/outbox.ts";
 import { authenticateAdmin } from "./auth.ts";
+import { readSectorView, readTagsView, requestTags, setPairTier, setTagStatus } from "../business-tags/view.ts";
+import { TIER_ORDER } from "../../../../shared/analysis-runtime/business-tags.ts";
+import type { PeerTier } from "../../../../shared/analysis-contract/business-tags.ts";
 
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "cache-control": "private, no-store" } });
 const DOCUMENT = /^[a-f0-9]{64}$/, SECTION = /^s[a-f0-9]{28}$/, TICKER = /^[A-Z][A-Z0-9.-]{0,11}$/, SLUG = /^[\p{L}\p{N}-]{1,60}$/u;
@@ -105,7 +108,34 @@ export async function handleLibraryAdminRequest(request: Request, env: SecPipeli
       try { body = await request.json() as typeof body; } catch { return json({ error: "请求格式无效。" }, 400); }
       if (body.automatic !== true && (body.industryCategory === undefined || (body.industryCategory !== null && !category(String(body.industryCategory))))) return json({ error: "未知的行业类别。" }, 400);
       const changed = await overrideLink(env.DB, parts[1]!, `${parts[1]}:${parts[2]}`, body.automatic === true ? { automatic: true } : { industryCategory: body.industryCategory as string | null });
+      // A link's category is a sector tag of its unit: the company's tags are written again.
+      if (changed) await requestTags(env, parts[1]!).catch(() => undefined);
       return changed ? json({ status: "saved" }) : json({ error: "未找到该业务。" }, 404);
+    }
+  }
+  // Business tags (docs/peer-similarity-design.md): a company's units, tags and pairs; one sector's units; optional overrides.
+  if (parts[0] === "tags") {
+    if (request.method === "GET" && parts.length === 3 && parts[1] === "sectors") {
+      const sector = category(parts[2]!);
+      return sector ? json(await readSectorView(env.DB, sector)) : json({ error: "未知的行业类别。" }, 404);
+    }
+    if (request.method === "GET" && parts.length === 2 && TICKER.test(parts[1]!)) return json(await readTagsView(env, parts[1]!));
+    if (request.method === "POST" && parts.length === 3 && TICKER.test(parts[1]!) && parts[2] === "run") {
+      await requestTags(env, parts[1]!);
+      return json({ status: "requested" }, 202);
+    }
+    if (request.method === "POST" && parts.length === 4 && TICKER.test(parts[1]!) && parts[2] === "tag" && /^t[a-f0-9]{24}$/.test(parts[3]!)) {
+      let body: { status?: unknown };
+      try { body = await request.json() as typeof body; } catch { return json({ error: "请求格式无效。" }, 400); }
+      if (body.status !== "verified" && body.status !== "rejected") return json({ error: "未知的状态。" }, 400);
+      return await setTagStatus(env, parts[1]!, parts[3]!, body.status) ? json({ status: "saved" }) : json({ error: "未找到该标签。" }, 404);
+    }
+    if (request.method === "POST" && parts.length === 3 && TICKER.test(parts[1]!) && parts[2] === "pair") {
+      let body: { pairKey?: unknown; tier?: unknown; automatic?: unknown };
+      try { body = await request.json() as typeof body; } catch { return json({ error: "请求格式无效。" }, 400); }
+      if (typeof body.pairKey !== "string" || (body.automatic !== true && !(TIER_ORDER as readonly unknown[]).includes(body.tier))) return json({ error: "请求格式无效。" }, 400);
+      const saved = await setPairTier(env, parts[1]!, body.pairKey, body.automatic === true ? { automatic: true } : { tier: body.tier as PeerTier });
+      return saved ? json({ status: "saved" }) : json({ error: "未找到该配对。" }, 404);
     }
   }
   if (parts[0] === "documents" && DOCUMENT.test(parts[1] ?? "")) {
