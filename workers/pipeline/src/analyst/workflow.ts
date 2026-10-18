@@ -74,6 +74,24 @@ function background(f: VerifiedFinding, previous: FindingsPublication | null, da
   return { narrative: narrative?.slice(0, 4000) ?? null, sinceLast, priorCall: prior && previous ? { periodEnd: previous.periodEnd, title: prior.title, judgment: prior.judgment.text } : null };
 }
 
+/**
+ * The accepted documents and the materials their quotes rest on, under ids unique across the dossier. A filing
+ * material's id (m<n>) counts within one finding, so it takes the finding's id as a prefix; a web material's id is
+ * drawn from its URL, already unique and within the contract's length, and stays as read so a paragraph citing it
+ * through sourceIds still finds it.
+ */
+export function dossierContent(outcomes: AnalystOutcome[]): Pick<DossierPublication, "documents" | "materials"> {
+  const documents: DossierPublication["documents"] = {};
+  const materials = new Map<string, DossierPublication["materials"][number]>();
+  for (const o of outcomes) if (o.document) {
+    const web = new Set(o.materials.filter(m => m.kind === "web").map(m => m.id));
+    const idOf = (id: string) => web.has(id) ? id : `${o.id}:${id}`;
+    documents[o.id] = { rows: o.document.rows.map(r => ({ ...r, cells: r.cells.map(c => c.map(b => b.kind === "quote" ? { ...b, materialId: idOf(b.materialId) } : b)) })) };
+    for (const m of o.materials) materials.set(idOf(m.id), { ...m, id: idOf(m.id) });
+  }
+  return { documents, materials: [...materials.values()] };
+}
+
 /** Atomic daily counter on the feature_budget table; false once the cap is reached. */
 async function reserveTurn(env: SecPipelineEnv, now: string): Promise<boolean> {
   const cap = Number(env.ANALYST_DAILY_TURNS) || DEFAULT_DAILY_TURNS;
@@ -141,14 +159,7 @@ export async function executeAnalystWorkflow(params: AnalystWorkflowParams, step
     await deps.sleep(`analyst-model-wait-${attempt + 1}`, OUTAGE_WAITS_MS[attempt]!);
   }
   settled.forEach((s, i) => outcomes.push(s.status === "fulfilled" ? s.value : { id: verified[i]!.id, tier: "standard", lines: [], document: null, materials: [], turns: [], warnings: [`failed: ${s.reason instanceof Error ? s.reason.message : String(s.reason)}`], review: [] }));
-  const documents: DossierPublication["documents"] = {};
-  const materials = new Map<string, DossierPublication["materials"][number]>();
-  for (const o of outcomes) if (o.document) {
-    // Material ids are per finding; the dossier prefixes them so two findings' quotes never collide.
-    const prefix = `${o.id}:`;
-    documents[o.id] = { rows: o.document.rows.map(r => ({ ...r, cells: r.cells.map(c => c.map(b => b.kind === "quote" ? { ...b, materialId: prefix + b.materialId } : b)) })) };
-    for (const m of o.materials) materials.set(prefix + m.id, { ...m, id: prefix + m.id });
-  }
+  const { documents, materials } = dossierContent(outcomes);
   const trace: AnalystTrace = { version: ANALYST_VERSION, generatedAt: now, findings: outcomes };
   if (!Object.keys(documents).length) {
     await step.do("analyst-trace", async () => {
@@ -158,7 +169,7 @@ export async function executeAnalystWorkflow(params: AnalystWorkflowParams, step
     });
     return { status: "empty" as const, findings: outcomes.map(o => ({ id: o.id, tier: o.tier, turns: o.turns.length, warnings: o.warnings })) };
   }
-  const dossier: DossierPublication = { schemaVersion: "dossier.v1", ticker: params.ticker, findingsFingerprint: input.findings.fingerprint!, fingerprint: params.fingerprint, generatedAt: now, model: modelVersion, documents, materials: [...materials.values()] };
+  const dossier: DossierPublication = { schemaVersion: "dossier.v1", ticker: params.ticker, findingsFingerprint: input.findings.fingerprint!, fingerprint: params.fingerprint, generatedAt: now, model: modelVersion, documents, materials };
   if (!readDossierPublication(dossier, params.ticker)) throw new Error("The dossier failed its own contract.");
   await step.do("analyst-publish", async () => {
     const record = { ...dossier, analystTrace: trace };

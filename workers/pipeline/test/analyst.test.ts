@@ -206,3 +206,17 @@ test("a run in which no researched finding got an answer is a provider outage; o
   assert.equal(providerOutage([silent, outcome([{ action: "invalid", thought: "" }, { action: "compile", thought: "draft" }])]), false);
   assert.equal(providerOutage([]), false);
 });
+
+test("a dossier prefixes filing materials by finding and keeps web materials as read, so a long finding id stays within the contract", async () => {
+  const { dossierContent } = await import("../src/analyst/workflow.ts");
+  const web = "w" + "a".repeat(27);
+  const document: LensDocument = { rows: [{ cells: [[{ kind: "judgment" }, { kind: "figures" }], [{ kind: "quote", materialId: web, text: "a quote from the page long enough" }, { kind: "quote", materialId: "m1", text: "a quote from the filing long enough" }]] }] };
+  const materials = [
+    { id: web, kind: "web" as const, title: "Press release", url: "https://example.com/news", publishedAt: "2026-06-01", passageId: web },
+    { id: "m1", kind: "sec" as const, title: "TEST 10-Q", url: "https://www.sec.gov/x", publishedAt: "2026-07-30", passageId: "abcdef0123456789" },
+  ];
+  const content = dossierContent([{ id: "ocf-customer-advances", tier: "deep", lines: [], document, materials, turns: [], warnings: [], review: [] }]);
+  assert.deepEqual(content.materials.map(m => m.id), [web, "ocf-customer-advances:m1"]);
+  assert.deepEqual(content.documents["ocf-customer-advances"]!.rows[0]!.cells[1]!.map(b => b.kind === "quote" ? b.materialId : ""), [web, "ocf-customer-advances:m1"]);
+  assert.ok(readDossierPublication({ schemaVersion: "dossier.v1", ticker: "TEST", findingsFingerprint: "fp-1", fingerprint: "a-1", generatedAt: "2026-08-01T00:00:00Z", model: "test", ...content }, "TEST"));
+});
