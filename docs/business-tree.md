@@ -44,7 +44,7 @@ SEC 文件全部来自文件库（`docs/sec-filing-library.md`）：开始前从
 ## 核对（写入和读取用同一套规则）
 
 - anchor：必须是模型本次运行读到的某个来源中的原文（压缩空白和标点后逐字匹配），≤600 字符，并且同时写出节点名（完整词，不是前缀）和某个上级的名称（父节点、更上层节点或这项业务；公司只披露一项业务时，公司名也算；公司名取发行人在申报文件里的写法，如 “Cloudflare, Inc.” 和 “Cloudflare”，不用交易所的证券名称 “Cloudflare, Inc. Class A Common Stock”）。原文用 “this segment” 指代上级时，要把点出上级名称的前一句一并引用。 财报常先用一句点出板块（"This segment primarily comprises:"），再把产品线分条列出：此时 anchor 可以用 " … " 连接同一段落里最多 3 个原文片段，每段逐字存在、顺序一致、整体跨度不超过约 2,400 个字母数字（`quotedIn`）。多段引用只取正文：表格行（如全公司收入表）不能当片段，因为它说明不了某条产品线属于哪个板块。
-- 名称匹配（v11，`namedIn`）：共用末词的并列短语分别写出每个成员——“online and physical stores” 写出了 Online stores 和 Physical stores，“advertising and subscription services” 写出了 Advertising services。v10 不认这种写法，AMZN North America 只好把全公司的句子拼到板块句上，被复核删掉了广告线。
+- 名称匹配（v11，`namedIn`；v13 起按词比对、忽略标点，`("SASE") platform` 写出了 SASE platform；名称开头的 Our/The 在写入时去掉）：共用末词的并列短语分别写出每个成员——“online and physical stores” 写出了 Online stores 和 Physical stores，“advertising and subscription services” 写出了 Advertising services。v10 不认这种写法，AMZN North America 只好把全公司的句子拼到板块句上，被复核删掉了广告线。
 - 公司自己的申报文件（`TreeSource.own`：文件库持有的、或 flow 读取的本公司文件）通篇讲的就是这家公司：公司只披露一项业务时，引用它的段落只需写出节点名（“Our SASE platform combines …” 足以把 SASE platform 挂在 Cloudflare 下）。网页仍须写出公司名。读取时按同一规则复核。
 - 产品（kind product）必须是专有名称，含大写字母或数字（Sponsored Products、iPhone、S3）；“sponsored ads” 这类描述被拒，读取时也会剔除。产品线可以是申报文件里的类目，写入时首字母大写（online stores → Online stores）。
 - 上级的简称（v12，`lineAliases`）：模型按类目起名的产品线，产品的原文可以用它自己的词指代它——“advertising” 指 Advertising services，“machine learning” 指 Artificial intelligence and machine learning；去掉的只是末尾的泛称（services、solutions、products、offerings、platform、business），财报披露的业务只认全名。读取时同样处理。

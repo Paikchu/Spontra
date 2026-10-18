@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { REVENUE_MODEL_TYPES, type BusinessTree, type TreeBranch, type TreeClaim, type TreeNode, type TreeRevenueModel } from "../analysis-contract/business-tree.ts";
-import { completeProductName, FIGURE } from "./business-explainer.ts";
+import { FIGURE } from "./business-explainer.ts";
 import type { Locale } from "./locale.ts";
 
 /**
@@ -46,21 +46,23 @@ export function namesAncestor(name: string, ancestors: string[], passage: string
 }
 
 /**
- * Whether a passage names `name` in full: as written, or as one member of a phrase whose members share their last word,
- * as filings list lines ("online and physical stores" names Online stores; "advertising and subscription services" names
- * Advertising services; "compute, storage, and database services" names Storage services).
+ * Whether a passage names `name` in full, word for word with punctuation ignored (`Secure Access Service Edge ("SASE")
+ * platform` names SASE platform), or as one member of a phrase whose members share their last word, as filings list lines
+ * ("online and physical stores" names Online stores; "advertising and subscription services" names Advertising services;
+ * "compute, storage, and database services" names Storage services).
  */
 export function namedIn(name: string, passage: string): boolean {
-  if (completeProductName(name, passage)) return true;
-  const words = name.normalize("NFKC").toLowerCase().split(/\s+/).filter(Boolean);
+  const plain = (value: string, keep = "") => value.normalize("NFKC").toLowerCase().replace(/&/g, " and ").replace(new RegExp(`[^\\p{L}\\p{N}${keep}]+`, "gu"), " ").trim();
+  const words = plain(name).split(" ").filter(Boolean);
+  if (!words.length) return false;
+  if (` ${plain(passage)} `.includes(` ${words.join(" ")} `)) return true;
   if (words.length < 2) return false;
   const escape = (w: string) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const lead = words.slice(0, -1).map(escape).join("\\s+"), head = escape(words.at(-1)!);
-  const member = "[\\p{L}\\p{N}'-]+(?:\\s+[\\p{L}\\p{N}'-]+){0,2}";
-  const edge = "(?<![\\p{L}\\p{N}])", end = "(?![\\p{L}\\p{N}])";
+  const lead = words.slice(0, -1).map(escape).join(" "), head = escape(words.at(-1)!);
+  const member = "[\\p{L}\\p{N}]+(?: [\\p{L}\\p{N}]+){0,2}";
   // The node's own words open a list (or sit inside one) whose last member carries the shared word.
-  const listed = new RegExp(`${edge}${lead}(?:\\s*,\\s*${member})*\\s*,?\\s+(?:and|or)\\s+${member}\\s+${head}${end}`, "u");
-  return listed.test(passage.normalize("NFKC").toLowerCase().replace(/\s+/g, " "));
+  const listed = new RegExp(`(?:^| )${lead}(?: ?, ?${member})* ?,? (?:and|or) ${member} ${head}(?: |,|$)`, "u");
+  return listed.test(plain(passage, ",").replace(/\s*,\s*/g, " , "));
 }
 
 const GENERIC_HEAD = /\s+(?:services|solutions|products|offerings|businesses|business|platforms|platform)$/i;

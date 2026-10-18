@@ -373,7 +373,8 @@ async function researchBranch(ctx: BranchContext): Promise<{ branch: TreeBranch;
     for (const item of nodes) {
       const node = (item && typeof item === "object" ? item : {}) as Record<string, unknown>;
       const kind = node.kind === "line" || node.kind === "product" ? node.kind : depth === 1 ? "line" : "product";
-      const written = typeof node.name === "string" ? node.name.replace(/\s+/g, " ").trim() : "";
+      // A name never opens with the filing's own voice: "Our SASE platform" is the SASE platform.
+      const written = typeof node.name === "string" ? node.name.replace(/\s+/g, " ").trim().replace(/^(?:our|the|its|their)\s+(?=\S)/i, "") : "";
       // A category line reads as a label on the map: "online stores" as the filing writes it, "Online stores" as shown.
       const name = kind === "line" ? written.charAt(0).toUpperCase() + written.slice(1) : written;
       const why = (reason: string) => {

@@ -171,6 +171,9 @@ test("a list whose members share their last word names each member, and nothing 
   assert.ok(!namedIn("Retail services", AMZN_SEGMENT), "retail heads another phrase");
   assert.ok(!namedIn("Online services", AMZN_SEGMENT), "online belongs to stores, not services");
   assert.ok(!namedIn("Subscription stores", "subscription services and physical stores"));
+  assert.ok(namedIn("SASE platform", 'Our Secure Access Service Edge ("SASE") platform combines network services.'), "punctuation is not a word");
+  assert.ok(namedIn("Third-party seller services", "Third party seller services - We offer programs"));
+  assert.ok(!namedIn("Azure", "services from AzureStack"), "a name is a whole word");
 });
 
 test("a quote that does not stand in its source says why", () => {
@@ -187,7 +190,7 @@ test("the segment's own sentence anchors its lines, which read capitalised; a de
       "1-1": call("read", { source: "b1-s1", focus: "North America" }),
       "1-2": call("add", { parent: "root", nodes: [
         { name: "advertising services", gloss: "ads sold to sellers and brands", kind: "line", anchor: { text: AMZN_SEGMENT, sourceIds: ["b1-s1"] }, summary: null, revenue: [] },
-        { name: "Online stores", gloss: "first-party e-commerce", kind: "line", anchor: { text: AMZN_SEGMENT, sourceIds: ["b1-s1"] }, summary: null, revenue: [] }] }),
+        { name: "Our online stores", gloss: "first-party e-commerce", kind: "line", anchor: { text: AMZN_SEGMENT, sourceIds: ["b1-s1"] }, summary: null, revenue: [] }] }),
       "1-3": call("add", { parent: "b1-n1", nodes: [{ name: "sponsored ads", gloss: "search ads", kind: "product", anchor: { text: "We provide advertising services to sellers, vendors, publishers, authors, and others, through programs such as sponsored ads, display, and video advertising.", sourceIds: ["b1-s1"] }, summary: null, revenue: [] }] }),
     }) });
   const lines = tree.branches[0]!.children;
