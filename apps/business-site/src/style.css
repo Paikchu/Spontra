@@ -752,7 +752,15 @@ button { cursor: pointer; }
 .fc-svg[data-focus="spotlight"] .fc-node:not([data-lit]) { opacity: .28; }
 .fc-svg[data-focus="spotlight"] .fc-band[data-lit="on"] { fill-opacity: .46; }
 .fc-svg[data-focus="spotlight"] .fc-node[data-lit] .fc-bar { filter: drop-shadow(0 0 7px color-mix(in srgb, var(--c) 70%, transparent)); }
-.stage[data-finding] .fc-svg[data-focus="spotlight"] .fc-node[data-lit] .fc-name { fill: var(--foreground); }
+.fc-svg[data-focus="spotlight"] .fc-node[data-lit] .fc-name { fill: var(--foreground); }
+/* The finding the chart opens on, above the statement it lights. */
+.lead-finding { position: absolute; z-index: 2; top: 0; left: 0; max-width: min(560px, 100%); display: flex; align-items: flex-start; gap: 4px; padding: 6px 6px 6px 10px; border-radius: 10px; background: color-mix(in srgb, var(--background) 82%, transparent); border: 1px solid color-mix(in srgb, var(--kind) 35%, var(--hairline)); backdrop-filter: blur(6px); }
+.lead-finding-open { display: flex; align-items: flex-start; gap: 8px; text-align: left; font-size: 13px; font-weight: 520; line-height: 1.45; color: var(--foreground); }
+.lead-finding-open > span[aria-hidden] { color: var(--kind); transition: transform .2s var(--ease); }
+.lead-finding-open:hover > span[aria-hidden] { transform: translateX(3px); }
+.lead-finding-hide { flex: none; width: 22px; height: 22px; }
+.lead-finding-hide svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+@media (max-width: 960px) { .lead-finding { position: sticky; left: 0; margin-bottom: 8px; } }
 
 /* The lens: the finding's chart on the left, its judgment and evidence on the right, in the trend's place. */
 .lens { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 10px; height: clamp(236px, 34vh, 340px); margin-top: 6px; padding-top: 12px; border-top: 1px solid var(--hairline); animation: rise .5s var(--ease) both; }

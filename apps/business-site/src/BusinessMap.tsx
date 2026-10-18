@@ -1,7 +1,7 @@
 import { Button } from "@/packages/web/src/ui/button";
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 import type { BusinessFlowQuarter, BusinessSegment, FlowMetric, FlowSource, PublicBusinessFlow } from "@/shared/analysis-contract/business-flow";
-import { deficitFinancialGraph, financialGraph, type FinancialGraph } from "@/packages/web/src/model/business-flow-sankey";
+import { deficitFinancialGraph, financialGraph, trunkGraph, type FinancialGraph } from "@/packages/web/src/model/business-flow-sankey";
 import { compactFlowValue, truncateToWidth, type PlacedNode } from "@/packages/web/src/model/business-flow-layout";
 import { availableRevenueTrees, compareRevenueNode, revenueNodeKey } from "@/packages/web/src/model/revenue-tree";
 import { formatFlowValue, compareAmount, compareFlowAmounts, flowWords, numeric, previousQuarter, yearAgoQuarter, type FlowChange } from "@/packages/web/src/model/business-flow-model";
@@ -72,6 +72,7 @@ const m = messages({
   derived: (to: number, from: number) => `Derived · ${to}M − ${from}M year to date`,
   profile: (name: string) => `${name} business profile`, noDescription: "No description", customers: "Customers", revenueModel: "Revenue model", notDisclosed: "Not disclosed",
   details: (label: string) => `${label} business details`, products: "Products",
+  statementDepth: "Statement depth", trunk: "Summary", detail: "Detail", openFinding: (title: string) => `Open finding: ${title}`, hideFinding: "Hide",
 }, {
   lastYear: "上年同期", lastQuarter: "上季度", yearAgo: "上年同期", lastQuarterPeriod: "上季度",
   companyBusinesses: "公司业务", businesses: "业务", allBusinesses: "全部业务", totalRevenue: "总营收",
@@ -100,6 +101,7 @@ const m = messages({
   derived: (to: number, from: number) => `推算 · 年初至今 ${to} 个月 − ${from} 个月`,
   profile: (name: string) => `${name} 业务概况`, noDescription: "无描述", customers: "客户", revenueModel: "收入模式", notDisclosed: "未披露",
   details: (label: string) => `${label} 业务详情`, products: "产品",
+  statementDepth: "报表层级", trunk: "概要", detail: "明细", openFinding: (title: string) => `打开要点：${title}`, hideFinding: "隐藏",
 });
 
 const ReportDialog = lazy(() => import("./ReportDialog"));
@@ -251,6 +253,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
   const verified = useMemo(() => verifiedFindings(findings, data), [findings, data]);
   // Scored watches: pass or fail once the watched period reported, from the same data the stage draws.
   const verdicts = useMemo(() => Object.fromEntries(verified.flatMap(f => { const v = f.watch?.test ? watchVerdict(data, f.watch, f.periodEnd) : null; return v ? [[f.id, v.verdict]] : []; })) as Record<string, "pass" | "fail">, [verified, data]);
+  const [detail, setDetail] = useState(() => new URLSearchParams(location.search).has("detail"));
   const [focusId, setFocusId] = useState<string | null>(() => new URLSearchParams(location.search).get("finding"));
   const [story, setStory] = useState(false);
   const [split, setSplit] = useState(false);
@@ -297,8 +300,9 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
     if (focusedEvent) url.searchParams.set("event", focusedEvent.id); else url.searchParams.delete("event");
     if (focusedReport) url.searchParams.set("report", focusedReport.accessionNumber); else url.searchParams.delete("report");
     if (metric) url.searchParams.set("metric", metric.key); else url.searchParams.delete("metric");
+    if (detail) url.searchParams.set("detail", ""); else url.searchParams.delete("detail");
     if (url.href !== location.href) history.replaceState(history.state, "", url);
-  }, [current, focused, focusedEvent, focusedReport, metric]);
+  }, [current, focused, focusedEvent, focusedReport, metric, detail]);
   // A business picked in the chart is brought into view in the list, scrolling only the list (a column or, on narrow screens, a chip row).
   useEffect(() => {
     const option = listRef.current?.querySelector<HTMLElement>('[role=option][aria-selected="true"]');
@@ -321,8 +325,13 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
     return () => removeEventListener("keydown", step);
   }, [story, verified]);
 
-  const graph = useMemo(() => quarter ? statementGraph(quarter) : null, [quarter]);
-  const previousGraph = useMemo(() => previous ? statementGraph(previous) : null, [previous]);
+  // The statement opens as its trunk; the detail shows every disclosed line. A picked business always reads in detail, beside its breakdown.
+  const trunk = !detail && !current;
+  const fullGraph = useMemo(() => quarter ? statementGraph(quarter) : null, [quarter]);
+  const trunked = useMemo(() => quarter && fullGraph ? trunkGraph(fullGraph, quarter) : null, [quarter, fullGraph]);
+  const graph = trunk && trunked ? trunked.graph : fullGraph;
+  const folded = useMemo(() => trunk && trunked ? trunked.folded : new Map<string, string>(), [trunk, trunked]);
+  const previousGraph = useMemo(() => { const g = previous ? statementGraph(previous) : null; return g && previous && trunk ? trunkGraph(g, previous).graph : g; }, [previous, trunk]);
   const funding = capital?.quarters.find(q => q.periodEnd === quarter?.periodEnd) ?? null;
   const [chosenView, setView] = useState<View>("profit");
   const cash = funding?.cashFlow ?? funding?.yearToDate ?? null;
@@ -397,8 +406,17 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
           link: p.source ? m.source(p.source.title) : undefined } })),
     };
   }, [quarter, graph, guidance, itemByNode, colorOf, money]);
-  const spotlight = useMemo(() => focused && view === "profit" ? anchorNodeNames(focused, quarter, items) : null, [focused, view, quarter, items]);
-  const poolSpotlight = useMemo(() => focused && view !== "profit" ? anchorPoolKeys(focused) : null, [focused, view]);
+  // With nothing in focus, the quarter's first finding about this view leads: the chart lights what it names.
+  const [leadHidden, setLeadHidden] = useState(false);
+  const lead = useMemo(() => focused || current || leadHidden || !quarter ? null : verified.find(f => f.periodEnd === quarter.periodEnd && f.anchors.view === view) ?? null, [focused, current, leadHidden, quarter, verified, view]);
+  const spotlit = focused ?? lead;
+  const spotlight = useMemo(() => {
+    if (!spotlit || view !== "profit") return null;
+    const names = new Set([...anchorNodeNames(spotlit, quarter, items)].map(name => folded.get(name) ?? name));
+    return graph && graph.nodes.some(n => names.has(n.name)) ? names : null;
+  }, [spotlit, view, quarter, items, folded, graph]);
+  const poolSpotlight = useMemo(() => spotlit && view !== "profit" ? anchorPoolKeys(spotlit) : null, [spotlit, view]);
+  const leadShown = lead && (view === "profit" ? spotlight : poolSpotlight?.size) ? lead : null;
   const nodeColor = useCallback((id: string) => { const item = items.find(i => i.id === id); return item ? hue(item.slot) : "var(--biz-0)"; }, [items]);
   const focusFinding = (id: string | null) => { setFocusId(id); if (id) { setEventId(null); setReportId(null); } else { setStory(false); setSplit(false); } };
   const focusEvent = (id: string | null) => { setEventId(id); if (id) { setSelected(null); setFocusId(null); setReportId(null); setStory(false); setSplit(false); } };
@@ -535,6 +553,12 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
             <ToggleGroupItem value="qoq" role="radio" aria-checked={basis === "qoq"}>{qoqLabel(getLocale())}</ToggleGroupItem>
           </span>
         </ToggleGroup>}
+        {view === "profit" && !current && (trunked?.folded.size ?? 0) > 0 && <ToggleGroup type="single" variant="unstyled" rovingFocus={false} value={detail ? "detail" : "trunk"} onValueChange={next => { if (next) setDetail(next === "detail"); }} asChild>
+          <span className="trend-views stage-views" role="radiogroup" aria-label={m.statementDepth}>
+            <ToggleGroupItem value="trunk" role="radio" aria-checked={!detail}>{m.trunk}</ToggleGroupItem>
+            <ToggleGroupItem value="detail" role="radio" aria-checked={detail}>{m.detail}</ToggleGroupItem>
+          </span>
+        </ToggleGroup>}
         {funding && (cash || funding.balanceSheet) && <ToggleGroup type="single" variant="unstyled" rovingFocus={false} value={view} onValueChange={next => { if (next) setView(next as View); }} asChild>
           <span className="trend-views stage-views" role="radiogroup" aria-label={m.financialView}>
             <ToggleGroupItem value="profit" role="radio" aria-checked={view === "profit"}>{VIEW_LABEL.profit}</ToggleGroupItem>
@@ -546,6 +570,14 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
       </header>
 
       <div className="chart">
+        {leadShown && <div className="lead-finding" data-kind={leadShown.kind}>
+          <Button variant="unstyled" type="button" className="lead-finding-open" aria-label={m.openFinding(leadShown.title)} onClick={() => focusFinding(leadShown.id)}>
+            <i className="finding-mark" aria-hidden="true">{leadShown.severity}</i><span lang={langOf(leadShown.title)}>{leadShown.title}</span><span aria-hidden="true">→</span>
+          </Button>
+          <Button variant="unstyled" type="button" className="icon-button lead-finding-hide" aria-label={m.hideFinding} title={m.hideFinding} onClick={() => setLeadHidden(true)}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17" /></svg>
+          </Button>
+        </div>}
         {view !== "profit" && funding ? <CapitalChart view={view} funding={funding} ticker={ticker} spotlight={poolSpotlight} />
           : !quarter ? <div className="empty"><h2>{m.noFinancials}</h2></div>
           : proportional && layout ? <FlowChart graph={graph!} copy={copy} money={v => money(v)} colorOf={colorOf} active={active} revealKey={quarter.id} productBusiness={current ? "segment:" + current.key : null} mindMap={mindMap} mindPick={mindItem?.id ?? null} onMindPick={setMindItem} businessDetails={<Dossier item={current} parent={parent ?? null} sources={quarter.sources} explainer={explainer} />}

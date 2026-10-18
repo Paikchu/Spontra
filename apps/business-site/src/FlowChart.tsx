@@ -477,8 +477,8 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
         {layout.nodes.map(n => {
           const text = copy(n), vs = valueSize(n, k), side = Math.max(n.h, geometryFor(k).sideLabelHeight), gap = geometryFor(k).labelOffset;
           const mark = markOf.get(n.name);
-          // Guidance rests while a hover, a pick or a finding has the stage.
-          const marksShown = !lit;
+          // Guidance rests while a hover or a pick has the stage; under a finding it stays on the lines the finding names.
+          const marksShown = !focus && (!lit || lit.has(n.name));
           const bracket = marksShown ? bracketOf.get(n.name) : undefined, pill = marksShown ? pillOf.get(n.name) : undefined;
           const unitScale = n.value > 0 ? n.h / n.value : 0;
           const span = bracket && unitScale ? (n.side === "bottom" ? [n.y + n.h - bracket.high * unitScale, n.y + n.h - bracket.low * unitScale] : [n.y + bracket.low * unitScale, n.y + bracket.high * unitScale]) : null;
