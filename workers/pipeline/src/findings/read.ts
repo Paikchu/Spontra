@@ -1,5 +1,6 @@
 import type { FindingPassage, FindingsPublication, FindingsResponse } from "../../../../shared/analysis-contract/findings.ts";
 import { readFindingsPublication } from "../../../../shared/analysis-runtime/findings.ts";
+import { citedPeers, peersFor } from "../../../../shared/analysis-runtime/peers.ts";
 import { mergeDossier, readDossierPublication } from "../../../../shared/analysis-runtime/dossier.ts";
 import { libraryPassages, readLibraryDocument } from "../filing-library/store.ts";
 import { dossierCacheKey } from "../analyst/workflow.ts";
@@ -48,16 +49,23 @@ export async function readStoredFindings(db: D1Database, rawTicker: string): Pro
   return (stored ? readFindingsPublication(stored.payload, ticker) : null) ?? authoredFindings(ticker);
 }
 
-/** A stored publication wins over an authored one; both are re-validated and never repaired. The analyst's dossier, when written for this very publication, supplies the documents. */
+/** The publication as served: the stored (or authored) set, with the analyst's documents when written for this very publication. */
+export async function readServedFindings(db: D1Database, rawTicker: string): Promise<FindingsPublication | null> {
+  const ticker = rawTicker.trim().toUpperCase();
+  const base = await readStoredFindings(db, ticker);
+  const dossier = base ? await new D1SecRepository(db).getCache<unknown>(dossierCacheKey(ticker)).then(d => d ? readDossierPublication(d.payload, ticker) : null).catch(() => null) : null;
+  return base ? mergeDossier(base, dossier) : null;
+}
+
+/** A stored publication wins over an authored one; both are re-validated and never repaired. */
 export async function readFindingsResponse(db: D1Database, rawTicker: string, options: { hidden?: boolean } = {}): Promise<FindingsResponse> {
   const ticker = rawTicker.trim().toUpperCase();
   // Switched off in the admin: readers see it as hidden, and what is stored stays.
   if (options.hidden) return { schemaVersion: "findings-response.v1", status: "hidden", findings: null };
-  const base = await readStoredFindings(db, ticker);
-  const dossier = base ? await new D1SecRepository(db).getCache<unknown>(dossierCacheKey(ticker)).then(d => d ? readDossierPublication(d.payload, ticker) : null).catch(() => null) : null;
-  const findings = base ? mergeDossier(base, dossier) : null;
+  const findings = await readServedFindings(db, ticker);
   if (!findings) return { schemaVersion: "findings-response.v1", status: "preparing", findings: null };
-  // Quoted passages and the peers projection ride with the publication; neither is required for it to serve.
-  const [passages, peers] = await Promise.all([findingPassages(db, ticker, findings).catch(() => []), readPeersResponse(db).then(r => r.peers).catch(() => null)]);
+  // Quoted passages and the peers the publication cites ride with it; neither is required for it to serve. Only the cited
+  // peers, so another company's new quarter leaves this answer, and this company's revision, as they were.
+  const [passages, peers] = await Promise.all([findingPassages(db, ticker, findings).catch(() => []), readPeersResponse(db).then(r => peersFor(r.peers, citedPeers(findings))).catch(() => null)]);
   return { schemaVersion: "findings-response.v1", status: "ready", findings, passages, peers };
 }

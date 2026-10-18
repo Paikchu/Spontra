@@ -1,8 +1,9 @@
 import type { PeerCompany, PeersPublication } from "../../../../shared/analysis-contract/peers.ts";
 import { readFindingFundamentals, type FindingData } from "../../../../shared/analysis-runtime/findings.ts";
-import { peerQuartersFrom, readPeersPublication } from "../../../../shared/analysis-runtime/peers.ts";
+import { changedPeers, citedPeers, peerQuartersFrom, readPeersPublication } from "../../../../shared/analysis-runtime/peers.ts";
 import { requireDb } from "../core.ts";
 import { readLinks } from "../filing-library/links.ts";
+import { readServedFindings } from "../findings/read.ts";
 import { readMapDerived } from "../financial-data/derived.ts";
 import { readCompletePublicationForTicker } from "../financial-data/publication.ts";
 import { parseFundamentalApiQuery } from "../fundamentals/fundamentals-api.ts";
@@ -10,11 +11,10 @@ import { getSecFundamentals } from "../fundamentals/sec-fundamentals.ts";
 import type { SecPipelineEnv } from "../operations.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
 import { scopeTickers } from "../pipeline/router.ts";
+import { PEERS_CACHE_KEY, readPeersResponse } from "./read.ts";
 
 /** Changing what the projection reads or how a figure is computed republishes it once (`task.version_changed`). */
 export const PEERS_VERSION = "peers.v1";
-/** One global record: a per-company key would go stale, because events route by their own ticker (docs/analyst-agent-design.md). */
-export const PEERS_CACHE_KEY = "peers:v1";
 
 /**
  * The same stored projections the findings writer reads (`readInput` in findings/workflow.ts), without the ledger:
@@ -58,16 +58,26 @@ export async function buildPeersPublication(env: SecPipelineEnv, now: Date): Pro
   return { schemaVersion: "peers.v1", generatedAt: now.toISOString(), companies };
 }
 
-/** Builds and stores the projection under its single key; the publication and its event commit together. */
-export async function publishPeers(env: SecPipelineEnv, now: Date): Promise<{ companies: number; quarters: number; linked: number }> {
+/**
+ * Builds and stores the projection under its single key; the publication and its events commit together. One
+ * `peers.published` per company whose findings cite a peer whose row changed, so only those pages are told of newer data.
+ */
+export async function publishPeers(env: SecPipelineEnv, now: Date): Promise<{ companies: number; quarters: number; linked: number; changed: string[]; revised: string[] }> {
   const db = requireDb(env);
   const publication = readPeersPublication(await buildPeersPublication(env, now));
   if (!publication) throw new Error("peers projection does not satisfy its own contract");
+  const changed = changedPeers(await readPeersResponse(db).then(r => r.peers).catch(() => null), publication);
+  const revised: string[] = [];
+  if (changed.size) for (const ticker of await scopeTickers(env, "data")) {
+    const findings = await readServedFindings(db, ticker).catch(() => null);
+    if ([...citedPeers(findings)].some(t => changed.has(t))) revised.push(ticker);
+  }
   const at = now.toISOString();
   await db.batch([
     db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at")
       .bind(PEERS_CACHE_KEY, JSON.stringify(publication), at),
-    outboxStatement(db, { type: "peers.published", ticker: "*" }, at),
+    ...revised.map(ticker => outboxStatement(db, { type: "peers.published", ticker }, at)),
   ]);
-  return { companies: publication.companies.length, quarters: publication.companies.reduce((n, c) => n + c.quarters.length, 0), linked: publication.companies.filter(c => c.categories.length).length };
+  return { companies: publication.companies.length, quarters: publication.companies.reduce((n, c) => n + c.quarters.length, 0), linked: publication.companies.filter(c => c.categories.length).length,
+    changed: [...changed].sort(), revised };
 }

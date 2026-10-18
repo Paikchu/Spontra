@@ -4,7 +4,7 @@ import type { BusinessFlowQuarter } from "../../../shared/analysis-contract/busi
 import type { CapitalQuarter, CashFlowStatement } from "../../../shared/analysis-contract/capital-structure.ts";
 import { PEER_FIGURES, type PeerCompany } from "../../../shared/analysis-contract/peers.ts";
 import type { FindingData } from "../../../shared/analysis-runtime/findings.ts";
-import { alignedPeerQuarter, depreciationOf, liabilityGroupTotal, peerQuartersFrom, readPeersPublication } from "../../../shared/analysis-runtime/peers.ts";
+import { alignedPeerQuarter, changedPeers, citedPeers, depreciationOf, peersFor, liabilityGroupTotal, peerQuartersFrom, readPeersPublication } from "../../../shared/analysis-runtime/peers.ts";
 import { EVENT_TYPES, SUBSCRIPTIONS, TASKS, validateRegistry } from "../src/pipeline/registry.ts";
 
 const ENDS = ["2024-03-31", "2024-06-30", "2024-09-30", "2024-12-31", "2025-03-31", "2025-06-30", "2025-09-30", "2025-12-31", "2026-03-31", "2026-06-30"];
@@ -154,4 +154,21 @@ test("the peers task is a global subscriber of map.derived and fundamentals.upda
   assert.ok(SUBSCRIPTIONS["map.derived"]!.some(s => s.task === "peers"));
   assert.ok(SUBSCRIPTIONS["fundamentals.updated"]!.some(s => s.task === "peers"));
   assert.deepEqual(validateRegistry(), []);
+});
+
+test("a company's page carries only the peers it cites, so another company's quarter leaves it unchanged", () => {
+  const row = (ticker: string, revenue: string): PeerCompany => ({ ticker, categories: [], newestQuarter: "2026-06-30", quarters: [{ periodEnd: "2026-06-30", accessions: ["a"], figures: { revenue } }] });
+  const before = { schemaVersion: "peers.v1" as const, generatedAt: "2026-10-17T00:00:00.000Z", companies: [row("AMZN", "1"), row("ORCL", "2"), row("NBIS", "3")] };
+  const after = { ...before, generatedAt: "2026-10-18T00:00:00.000Z", companies: [row("AMZN", "9"), row("ORCL", "2"), row("NBIS", "3"), row("META", "4")] };
+  const findings = { findings: [{ evidence: [{ ref: { ratio: { numerator: { peer: { ticker: "ORCL", ref: { capital: "debt" } } }, denominator: { metric: "revenue" } } } }] }] };
+  assert.deepEqual([...citedPeers(findings)], ["ORCL"]);
+  assert.deepEqual([...citedPeers({ findings: [] })], []);
+  assert.deepEqual([...changedPeers(before, after)].sort(), ["AMZN", "META"]);
+  assert.deepEqual([...changedPeers(null, before)].sort(), ["AMZN", "NBIS", "ORCL"]);
+  assert.deepEqual(peersFor(after, citedPeers(findings))?.companies.map(c => c.ticker), ["ORCL"]);
+  assert.equal(peersFor(after, new Set()), null);
+  // What NBIS's page reads compares equal across AMZN's new quarter (generatedAt is bookkeeping the page ignores).
+  const { generatedAt: _a, ...cutBefore } = peersFor(before, citedPeers(findings))!;
+  const { generatedAt: _b, ...cutAfter } = peersFor(after, citedPeers(findings))!;
+  assert.deepEqual(cutBefore, cutAfter);
 });

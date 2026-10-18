@@ -60,7 +60,8 @@ function newsOf(patch: Partial<CompanyData>, now: CompanyData): UpdateNews[] {
 /**
  * The company page's data, read at the revisions current when it opens, then kept watch over: while the page is visible
  * it asks for the revisions every few minutes and whenever the reader returns to it. A newer revision is read in the
- * background and offered as a pending update; the page changes only when the reader takes it. A revision whose read
+ * background and offered as a pending update; the page changes only when the reader takes it. The offer is made once
+ * per page view: updates arriving while it is up join it, and after it is taken or dismissed none is offered again. A revision whose read
  * shows nothing new, or fills a part the page has nothing for, is taken silently. Only a read that answered moves a
  * resource's revision on, so a failed read is tried again at the next check.
  */
@@ -69,7 +70,8 @@ export function useLiveCompany(ticker: string, onSeen: (ticker: string) => void)
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [pending, setPending] = useState<PendingUpdate | null>(null);
-  const [dismissed, setDismissed] = useState<string | null>(null);
+  /** The notice comes up once per page view: once the reader takes or dismisses it, later updates wait for the next load. */
+  const [closed, setClosed] = useState(false);
   /** How many updates the reader took, so lists can tell rows an update brought from rows that loaded late. */
   const [updates, setUpdates] = useState(0);
   /** The revisions of what is on screen, per resource that was read; null until the first read has started. */
@@ -148,9 +150,10 @@ export function useLiveCompany(ticker: string, onSeen: (ticker: string) => void)
     setUpdates(n => n + 1);
     shown.current = { ...shown.current, ...update.revisions };
     setPending(null);
+    setClosed(true);
   }, []);
-  const dismiss = useCallback(() => { if (staged.current) setDismissed(JSON.stringify(staged.current.revisions)); }, []);
+  const dismiss = useCallback(() => setClosed(true), []);
   const retry = useCallback(() => { setFailed(false); setAttempt(n => n + 1); }, []);
-  const update = pending && JSON.stringify(pending.revisions) !== dismissed ? pending : null;
+  const update = closed ? null : pending;
   return { data, updates, failed, retry, update, apply, dismiss };
 }
