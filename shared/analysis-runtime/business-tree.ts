@@ -63,6 +63,18 @@ export function namedIn(name: string, passage: string): boolean {
   return listed.test(passage.normalize("NFKC").toLowerCase().replace(/\s+/g, " "));
 }
 
+const GENERIC_HEAD = /\s+(?:services|solutions|products|offerings|businesses|business|platforms|platform)$/i;
+/**
+ * The words a product's passage may use for a line the agent named after a category: "advertising" for Advertising
+ * services, either side of "Artificial intelligence and machine learning". A business the filing discloses keeps its
+ * full name, and a line whose last word carries the meaning ("Online stores") has no shorter form.
+ */
+export function lineAliases(name: string): string[] {
+  const core = name.replace(GENERIC_HEAD, "").trim();
+  const parts = [core, ...core.split(/\s*(?:,|&|\band\b)\s*/i)].map(p => p.trim()).filter(p => compactName(p).length >= 4 && compactName(p) !== compactName(name));
+  return [...new Set(parts)];
+}
+
 /** A product is named as the company sells it, with a capital or a digit (Sponsored Products, iPhone, S3); "sponsored ads" describes one. */
 export const properName = (name: string) => /[\p{Lu}\p{N}]/u.test(name);
 
@@ -161,7 +173,7 @@ export function harnessNode(raw: unknown, ancestors: AncestorChain, depth: numbe
     .slice(0, TREE_LIMITS.revenue).map(r => ({ type: r.type, label: r.label, text: withoutCitations(r.text) || r.text, sourceIds: [...new Set(r.sourceIds)] }));
   const names = new Set<string>();
   const children = node.children.flatMap(child => {
-    const kept = harnessNode(child, [node.name, ...ancestors], depth + 1, sourceIds, budget, issuer);
+    const kept = harnessNode(child, [node.name, ...(node.flowNodeId ? [] : lineAliases(node.name)), ...ancestors], depth + 1, sourceIds, budget, issuer);
     if (!kept || names.has(compactName(kept.name))) return [];
     names.add(compactName(kept.name));
     return [kept];

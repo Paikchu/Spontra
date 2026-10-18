@@ -1,5 +1,5 @@
 import { REVENUE_MODEL_TYPES, type BusinessTree, type TreeBranch, type TreeClaim, type TreeNode, type TreeRevenueModel, type TreeSource, type TreeStep } from "../../../../shared/analysis-contract/business-tree.ts";
-import { ANCHOR_FRAGMENTS, branchAncestors, businessHint, compactName, hasContent, issuerNames, namedIn, namesAncestor, plainText, properName, quotedIn, quoteProblem, REVENUE_LABEL, TREE_LIMITS, withoutCitations } from "../../../../shared/analysis-runtime/business-tree.ts";
+import { ANCHOR_FRAGMENTS, branchAncestors, businessHint, compactName, hasContent, issuerNames, lineAliases, namedIn, namesAncestor, plainText, properName, quotedIn, quoteProblem, REVENUE_LABEL, TREE_LIMITS, withoutCitations } from "../../../../shared/analysis-runtime/business-tree.ts";
 import { excerpt } from "../business-explainer/agent.ts";
 import type { WebSearchService } from "../web-search/service.ts";
 import type { SearchHit } from "../web-search/types.ts";
@@ -42,7 +42,7 @@ export const TREE_BUDGET = { turns: 16, searches: 6, reads: 6 } as const;
 /** Turns in a row with no usable reply before the run stops: then the provider is failing, not the model's turn. */
 const FAILED_REPLIES = 3;
 /** Tool calls one reply may make that the harness runs; the rest are answered "not run". */
-const CALLS_PER_TURN = 4;
+const CALLS_PER_TURN = 8;
 const READ_CHARS = 6_000, SNIPPET_CHARS = 400;
 /** Forums, video and quote aggregators describe nothing a filing or vendor page would not. */
 const EXCLUDED = ["reddit.com", "youtube.com", "quora.com", "x.com", "twitter.com", "facebook.com", "tiktok.com", "ycharts.com", "macrotrends.net", "stocktwits.com"];
@@ -70,7 +70,8 @@ Rules:
 - Read the filings first (the Business section of the 10-K is the most authoritative), then search to fill in products and how they are charged for; prefer the company's own website, investor relations pages and SEC filings.
 - The 10-K usually names lines only as categories ("compute", "storage", "online stores"). A category is not the end of a branch: hang the company's own named products under it (e.g. "Amazon EC2" under compute, "Amazon S3" under storage), found on its product pages, and find the pricing or terms page that says how the line is charged. Search for both.
 - The first message carries the task, the tree so far, the sources and the budget. When it carries annualReport, the harness has already read the annual report's section on this business for you: quote from it directly instead of reading it again. Each tool result says what happened; add, revise and remove return the current tree, and every result ends with the budget left.
-- A good tree: 2–8 product lines, at most 8 representative products under each line, no more than ${TREE_LIMITS.depth} levels deep; fewer, well-supported nodes beat many weak ones. Call finish before the budget runs out.`;
+- A product's passage may name its line by the line's own words: "advertising" names Advertising services, "machine learning" names Artificial intelligence and machine learning.
+- A good tree: 2–8 product lines, each with its main named products (usually 2–6, at most 8) and how it charges, no more than ${TREE_LIMITS.depth} levels deep, every node anchored. While budget remains, fill the lines that name fewer than two products before you finish; leave out what no passage can place. Call finish before the budget runs out.`;
 
 const object = (properties: Record<string, unknown>, required = Object.keys(properties)): Schema => ({ type: "object", properties, required, additionalProperties: false });
 const SOURCE_IDS = { type: "array", items: { type: "string" } };
@@ -219,7 +220,10 @@ async function researchBranch(ctx: BranchContext): Promise<{ branch: TreeBranch;
 
   const childrenOf = (id: string | null) => drafts.filter(d => d.parentId === id);
   const depthOf = (id: string | null): number => { let depth = 0; for (let d = drafts.find(x => x.id === id); d; d = drafts.find(x => x.id === d!.parentId)) depth++; return depth; };
-  const ancestorsOf = (id: string | null): string[] => { const names: string[] = []; for (let d = drafts.find(x => x.id === id); d; d = drafts.find(x => x.id === d!.parentId)) names.push(d.name); return [...names, ...rootAncestors]; };
+  // A line the model named after a category is also named by its own words (lineAliases); a disclosed one only in full.
+  const ancestorsOf = (id: string | null): string[] => { const names: string[] = []; for (let d = drafts.find(x => x.id === id); d; d = drafts.find(x => x.id === d!.parentId)) names.push(d.name, ...(d.flowNodeId ? [] : lineAliases(d.name))); return [...names, ...rootAncestors]; };
+  // How often a name was refused under a parent: after the second time the model is told to leave it out.
+  const refused = new Map<string, number>();
   const researched = () => drafts.filter(d => !d.flowNodeId || d.revenue.length || d.summary).length;
   const budget = () => {
     const turnsLeft = TREE_BUDGET.turns - turn;
@@ -342,12 +346,13 @@ async function researchBranch(ctx: BranchContext): Promise<{ branch: TreeBranch;
         }
         // Lines named only as categories, with no named product under them and no way of charging found, are the shallow
         // end of a tree: while searches remain, ask once for the products and pricing behind them.
-        // A line that already says how it charges still names no product a reader would recognise.
-        const bare = drafts.filter(d => d.parentId === null && !childrenOf(d.id).length);
-        if (bare.length && !askedDepth && turn < TREE_BUDGET.turns - 3 && used.searches < TREE_BUDGET.searches) {
+        // A line that already says how it charges, or names one product, still shows a reader little of what it sells.
+        const thin = drafts.filter(d => d.parentId === null && childrenOf(d.id).length < 2);
+        if (thin.length && !askedDepth && turn < TREE_BUDGET.turns - 3 && used.searches < TREE_BUDGET.searches) {
           askedDepth = true;
-          const unpriced = bare.filter(d => !d.revenue.length);
-          return { observation: `These lines have no named product under them: ${bare.map(d => `${d.id} ${d.name}`).join(", ")}. Search the company's own product and pricing pages (e.g. "${ctx.companyName} ${bare[0]!.name} products pricing"), then add the representative named products under each line${unpriced.length ? `, and how ${unpriced.map(d => d.name).join(", ")} ${unpriced.length > 1 ? "are" : "is"} charged` : ""}. Finish only if nothing can be found.` };
+          const unpriced = thin.filter(d => !d.revenue.length);
+          const named = (d: Draft) => childrenOf(d.id).map(c => c.name).join(", ") || "none";
+          return { observation: `These lines name fewer than two products: ${thin.map(d => `${d.id} ${d.name} (${named(d)})`).join("; ")}. Search the company's own product and pricing pages (e.g. "${ctx.companyName} ${thin[0]!.name} products pricing"), then add each line's main named products${unpriced.length ? `, and how ${unpriced.map(d => d.name).join(", ")} ${unpriced.length > 1 ? "are" : "is"} charged` : ""}. Finish only if nothing more can be found.` };
         }
         return { observation: "Finished.", done: true };
       }
@@ -371,7 +376,11 @@ async function researchBranch(ctx: BranchContext): Promise<{ branch: TreeBranch;
       const written = typeof node.name === "string" ? node.name.replace(/\s+/g, " ").trim() : "";
       // A category line reads as a label on the map: "online stores" as the filing writes it, "Online stores" as shown.
       const name = kind === "line" ? written.charAt(0).toUpperCase() + written.slice(1) : written;
-      const why = (reason: string) => { rejected.push(`${name || "(no name)"} — ${reason}`); };
+      const why = (reason: string) => {
+        const key = `${parentKey}:${compactName(name)}`, times = (refused.get(key) ?? 0) + 1;
+        refused.set(key, times);
+        rejected.push(`${name || "(no name)"} — ${reason}${times >= 2 ? ` (refused ${times} times: leave it out unless a passage names both it and its parent)` : ""}`);
+      };
       if (!name || [...name].length > TREE_LIMITS.name) { why("name is missing or too long"); continue; }
       if (kind === "product" && !properName(name)) { why(`"${name}" describes a product rather than naming it; use the name the company sells it under (e.g. "Sponsored Products"), found on its own pages, or leave it out`); continue; }
       if (childrenOf(parentId).some(d => compactName(d.name) === compactName(name)) || compactName(name) === compactName(ancestors[0] ?? "")) { why("the parent already has a node with this name, or it has the same name as its parent"); continue; }

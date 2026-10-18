@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { pageExcerpt, runBusinessTree, TREE_TOOLS, type TreeBlock, type TreeMessage, type TreeModel, type TreeReply, type TreeSearch } from "../src/business-tree/agent.ts";
 import { treeBusinesses } from "../src/business-tree/workflow.ts";
-import { namedIn, quotedIn, quoteProblem, readBusinessTree, withoutCitations } from "../../../shared/analysis-runtime/business-tree.ts";
+import { lineAliases, namedIn, quotedIn, quoteProblem, readBusinessTree, withoutCitations } from "../../../shared/analysis-runtime/business-tree.ts";
 import type { PublicBusinessFlow } from "../../../shared/analysis-contract/business-flow.ts";
 
 const TENK = `More Personal Computing
@@ -98,7 +98,7 @@ test("finishing with a bare category line is answered once with a request for na
       "1-6": call("finish"),
     }) });
   const steps = tree.research![0]!.steps;
-  assert.match(steps[2]!.observation, /no named product under them/);
+  assert.match(steps[2]!.observation, /name fewer than two products: b1-n1 Compute \(none\)/);
   assert.equal(steps.at(-1)!.observation, "Finished.");
   const compute = tree.branches[0]!.children[0]!;
   assert.equal(compute.children[0]!.name, "Amazon EC2");
@@ -229,6 +229,35 @@ test("a line that already says how it charges is still asked once for its named 
         revenue: [{ type: "consumption", label: "Pay as you go", text: "Customers pay for compute as they use it.", sourceIds: ["b1-s1"] }] }] }),
     }) });
   const finish = tree.research![0]!.steps.find(x => x.action === "finish")!;
-  assert.match(finish.observation, /no named product under them: b1-n1 Compute\. /);
+  assert.match(finish.observation, /name fewer than two products: b1-n1 Compute \(none\)\. /);
   assert.doesNotMatch(finish.observation, /charged/);
+});
+
+test("a category line is named by its own words; a disclosed business only in full", async () => {
+  assert.deepEqual(lineAliases("Advertising services"), ["Advertising"]);
+  assert.deepEqual(lineAliases("Artificial intelligence and machine learning"), ["Artificial intelligence", "machine learning"]);
+  assert.deepEqual(lineAliases("Online stores"), []);
+  const ads = "Sponsored Products are cost-per-click ads that promote individual product listings; Amazon advertising reaches shoppers where they browse.";
+  const tree = await runBusinessTree({ ticker: "AMZN", companyName: "Amazon.com, Inc.", periodEnd: "2026-06-30", now: "2026-10-17T00:00:00.000Z", fingerprint: "f", modelVersion: "test",
+    businesses: [{ flowNodeId: "amzn:NorthAmericaSegmentMember", name: "North America", children: [] }, { flowNodeId: "amzn:AmazonWebServicesSegmentMember", name: "AWS", children: [] }],
+    filings: [FILING], search: { ...search(AMZN_SEGMENT, [{ title: "Sponsored Products", url: "https://advertising.amazon.com/sponsored-products", snippet: ads }]),
+      async fetchContent(request: { url: string }) { return { data: { kind: "content", url: request.url, text: request.url.includes("advertising") ? ads : AMZN_SEGMENT, format: "markdown", completeness: "unverified" } }; } } as unknown as TreeSearch,
+    model: scripted({
+      "1-1": calls(["read", { source: "b1-s1", focus: "North America" }], ["search", { query: "Amazon Sponsored Products" }]),
+      "1-2": call("add", { parent: "root", nodes: [{ name: "Advertising services", gloss: "ads", kind: "line", anchor: { text: AMZN_SEGMENT, sourceIds: ["b1-s1"] }, summary: null, revenue: [] }] }),
+      "1-3": call("add", { parent: "b1-n1", nodes: [{ name: "Sponsored Products", gloss: "cost-per-click listing ads", kind: "product", anchor: { text: ads, sourceIds: ["b1-s2"] }, summary: null, revenue: [] }] }),
+    }) });
+  assert.equal(tree.branches[0]!.children[0]!.children[0]?.name, "Sponsored Products");
+  assert.equal(readBusinessTree(JSON.parse(JSON.stringify(tree)), "AMZN")?.branches[0]?.children[0]?.children[0]?.name, "Sponsored Products", "the reader reads the line the same way");
+});
+
+test("a node refused twice under one parent is told to be left out", async () => {
+  const add = call("add", { parent: "root", nodes: [{ name: "Third-party seller services", gloss: "marketplace", kind: "line", anchor: { text: "Third-party seller services", sourceIds: ["b1-s1"] }, summary: null, revenue: [] }] });
+  const steps: string[] = [];
+  await run([{ flowNodeId: "msft:IntelligentCloudMember", name: "IntelligentCloud" }], {
+    act: async (stage, _s, _t, messages) => { const last = messages.at(-1)!; if (Array.isArray(last.content)) steps.push(String(last.content[0]!.content)); return stage.endsWith("-1") || stage.endsWith("-2") ? { ...add, content: add.content.map(b => ({ ...b, id: `toolu_${stage}` })) } : call("finish"); },
+    judge: async () => ({ issues: [] }),
+  }).catch(() => null);
+  assert.doesNotMatch(steps[0]!, /refused/);
+  assert.match(steps[1]!, /refused 2 times: leave it out/);
 });
