@@ -4,6 +4,7 @@ import { citedPeers, peersFor } from "../../../../shared/analysis-runtime/peers.
 import { mergeDossier, readDossierPublication } from "../../../../shared/analysis-runtime/dossier.ts";
 import { libraryPassages, readLibraryDocument } from "../filing-library/store.ts";
 import { dossierCacheKey } from "../analyst/workflow.ts";
+import { mergeCheckup, readCheckupRecord } from "../checkup/read.ts";
 import { webPassages } from "../analyst/web.ts";
 import { readPeersResponse } from "../peers/read.ts";
 import { AnalysisRequestError } from "../read-api/contract-support/errors.ts";
@@ -49,12 +50,20 @@ export async function readStoredFindings(db: D1Database, rawTicker: string): Pro
   return (stored ? readFindingsPublication(stored.payload, ticker) : null) ?? authoredFindings(ticker);
 }
 
-/** The publication as served: the stored (or authored) set, with the analyst's documents when written for this very publication. */
+/**
+ * The publication as served: the stored (or authored) set, with the analyst's documents when written for this very
+ * publication, and the checkup notes when written for the same report.
+ */
 export async function readServedFindings(db: D1Database, rawTicker: string): Promise<FindingsPublication | null> {
   const ticker = rawTicker.trim().toUpperCase();
   const base = await readStoredFindings(db, ticker);
-  const dossier = base ? await new D1SecRepository(db).getCache<unknown>(dossierCacheKey(ticker)).then(d => d ? readDossierPublication(d.payload, ticker) : null).catch(() => null) : null;
-  return base ? mergeDossier(base, dossier) : null;
+  if (!base) return null;
+  const [dossier, checkup] = await Promise.all([
+    new D1SecRepository(db).getCache<unknown>(dossierCacheKey(ticker)).then(d => d ? readDossierPublication(d.payload, ticker) : null).catch(() => null),
+    readCheckupRecord(db, ticker).catch(() => null),
+  ]);
+  // Through the contract once merged, so a malformed record cannot reach a reader.
+  return readFindingsPublication(mergeCheckup(mergeDossier(base, dossier), checkup), ticker) ?? mergeDossier(base, dossier);
 }
 
 /** A stored publication wins over an authored one; both are re-validated and never repaired. */

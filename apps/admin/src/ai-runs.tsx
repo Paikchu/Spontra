@@ -12,7 +12,7 @@ import "./ai-runs.css";
 
 /** The BusinessView outputs this admin shows; guidance is not part of BusinessView. */
 export type ViewKind = Exclude<AiRunKind, "guidance">;
-const KINDS: Array<[ViewKind, string]> = [["findings", "公司要点"], ["analyst", "要点分析师"], ["explainer", "业务解读"], ["tree", "业务脑图"]];
+const KINDS: Array<[ViewKind, string]> = [["findings", "公司要点"], ["analyst", "要点分析师"], ["checkup", "三表分析"], ["explainer", "业务解读"], ["tree", "业务脑图"]];
 const STATUS: Record<AiRunStatus, string> = { queued: "排队中", running: "运行中", waiting: "等待中", succeeded: "已完成", empty: "无可发布内容", superseded: "已跳过", failed: "失败" };
 const ACTIVE = new Set<AiRunStatus>(["queued", "running", "waiting"]);
 const badge = (status: AiRunStatus) => status === "failed" ? "failed" : status === "succeeded" ? "reviewed" : ACTIVE.has(status) ? "processing" : "";
@@ -158,6 +158,7 @@ function KindDetail({ detail, onChanged, onError }: { detail: AiCompanyDetail; o
 }
 
 function summaryText(kind: AiRunKind, s: { items: number; sources: number; periodEnd: string | null }) {
+  if (kind === "checkup") return `${s.items} 条分析 · ${s.sources} 段引用${s.periodEnd ? ` · 报告期 ${s.periodEnd}` : ""}`;
   return kind === "analyst" ? `${s.items} 份案卷${s.periodEnd ? ` · 报告期 ${s.periodEnd}` : ""}` : `${s.items} ${kind === "findings" ? "条要点" : "项业务"} · ${s.sources} 个来源${s.periodEnd ? ` · 报告期 ${s.periodEnd}` : ""}`;
 }
 
@@ -192,7 +193,7 @@ function Versions({ detail, onError }: { detail: AiCompanyDetail; onError: (erro
     <div className="ai-versions-head"><h3>生成结果</h3>{detail.versions.length > 0 && <label>版本<select value={id} onChange={e => setId(e.target.value)}>{detail.versions.map((v, i) => <option key={v.id} value={v.id}>{v.current ? "当前 · " : `v${detail.versions.length - i} · `}{date(v.id)} · {summaryText(detail.kind, v.summary)}</option>)}</select></label>}</div>
     {!detail.versions.length ? <p className="ai-muted">无已发布结果</p> : error ? <p className="ra-error">{error}</p> : !version || version.version.id !== id ? <p className="ai-muted"><LoaderCircle size={15} className="ra-spin" /> 加载中</p>
       : <>{!version.version.current && <p className="ai-hint">历史版本</p>}
-        {detail.kind === "findings" ? <FindingsView publication={version.publication as FindingsPublication} /> : detail.kind === "analyst" ? <AnalystView dossier={version.publication as DossierRecord} /> : detail.kind === "explainer" ? <ExplainerView explainer={version.publication as BusinessExplainer} /> : <TreeView tree={version.publication as BusinessTree} />}
+        {detail.kind === "findings" ? <FindingsView publication={version.publication as FindingsPublication} /> : detail.kind === "analyst" ? <AnalystView dossier={version.publication as DossierRecord} /> : detail.kind === "checkup" ? <CheckupView record={version.publication as CheckupRecordView} /> : detail.kind === "explainer" ? <ExplainerView explainer={version.publication as BusinessExplainer} /> : <TreeView tree={version.publication as BusinessTree} />}
         <details className="ai-raw"><summary>原始 JSON</summary><pre>{JSON.stringify(version.publication, null, 2)}</pre></details></>}
   </section>;
 }
@@ -203,6 +204,21 @@ type DossierRecord = { findingsFingerprint: string; fingerprint: string; generat
   analystTrace?: { version: string; findings: Array<{ id: string; tier: string; lines: string[]; document: unknown; turns: Array<{ turn: number; thought: string; action: string; input: string; observation: string }>; warnings: string[]; review: string[] }> } };
 const LINE_LABEL: Record<string, string> = { capital_intensity: "资本强度", cash_earnings: "现金与利润背离", funding_commitments: "资金与承诺", demand_conversion: "需求转化", guidance_delivery: "指引兑现", margin_mix: "利润率与结构", peers: "同业" };
 const TIER_LABEL: Record<string, string> = { deep: "深", standard: "标准", light: "轻" };
+/** The checkup notes record as stored: each flagged metric's analysis, its quotes, and the writer's turns. */
+type CheckupRecordView = { periodEnd: string; model: string; notes: Array<{ metricId: string; ruleIds: string[]; paragraphs: Array<{ text: string; sourceIds: string[] }>; quotes: Array<{ materialId: string; text: string }> }>;
+  materials: Array<{ id: string; title: string; publishedAt: string | null }>; trace?: Array<{ metricId: string; issues: string[]; turns: Array<{ turn: number; thought: string; action: string; input: string; observation: string }> }> };
+function CheckupView({ record }: { record: CheckupRecordView }) {
+  const material = (id: string) => record.materials.find(m => m.id === id);
+  return <div className="ai-cards"><p className="ai-muted">报告期 {record.periodEnd} · 模型 {record.model} · {record.notes.length} 条分析 · {record.materials.length} 段引用材料</p>
+    {(record.trace ?? record.notes.map(n => ({ metricId: n.metricId, issues: [], turns: [] }))).map(t => { const note = record.notes.find(n => n.metricId === t.metricId); return <article key={t.metricId} className="ai-card" data-kind={note ? "strength" : "watch"}>
+      <header><span className="ra-badge" data-status={note ? "reviewed" : "processing"}>{note ? "已采用" : "未采用"}</span><strong>{t.metricId}</strong>{note && <small>{note.ruleIds.join("、")}</small>}</header>
+      {note?.paragraphs.map((p, i) => <p key={i}>{p.text}</p>)}
+      {note?.quotes.map((q, i) => <blockquote key={i}><small>{material(q.materialId)?.title ?? q.materialId}</small> {q.text}</blockquote>)}
+      {t.issues.length > 0 && <ul className="ai-lens-warnings">{t.issues.map((w, i) => <li key={i}>{w}</li>)}</ul>}
+      {t.turns.length > 0 && <details className="ai-raw"><summary>写作过程 · {t.turns.length} 轮</summary><ol className="ai-tree-steps">{t.turns.map((s, i) => <li key={i}><p><b>{s.action}</b> {s.thought}</p><code>{s.input.slice(0, 1200)}</code><pre>{s.observation}</pre></li>)}</ol></details>}
+    </article>; })}</div>;
+}
+
 function AnalystView({ dossier }: { dossier: DossierRecord }) {
   const outcomes = dossier.analystTrace?.findings ?? [];
   const blocks = (id: string) => dossier.documents[id]?.rows.flatMap(r => r.cells.flat()) ?? [];

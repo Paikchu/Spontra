@@ -78,6 +78,10 @@ export type SecPipelineEnv = SecCronEnv & AnalysisReadEnv & {
   ANALYST_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
   ANALYST_ENABLED?: string;
   ANALYST_DAILY_TURNS?: string;
+  /** The checkup notes Workflow (docs/three-statement-analysis-design.md); runs with the analyst switch. */
+  CHECKUP_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
+  /** Model turns per UTC day for checkup notes across all companies (default 240). */
+  CHECKUP_DAILY_TURNS?: string;
   /** Model calls per UTC day for judging income statements no calculation or statement row balances (default 60). */
   PRESENTATION_DAILY_CALLS?: string;
   BUSINESS_TREE_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;

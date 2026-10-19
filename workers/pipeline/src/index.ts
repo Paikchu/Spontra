@@ -18,6 +18,7 @@ import { maintenanceAnalysisEnvironment } from "./admin/financial-maintenance-ru
 import { executeGuidanceWorkflow, type GuidanceWorkflowParams } from "./guidance/workflow.ts";
 import { executeFindingsWorkflow, type FindingsWorkflowParams } from "./findings/workflow.ts";
 import { executeAnalystWorkflow, type AnalystWorkflowParams } from "./analyst/workflow.ts";
+import { executeCheckupWorkflow, type CheckupWorkflowParams } from "./checkup/workflow.ts";
 import { trackRun, trackSleep, trackSteps } from "./ai-runs/tracking.ts";
 import { executeLibraryCardsWorkflow, type LibraryCardsParams } from "./filing-library/cards.ts";
 import { executeLibraryLinksWorkflow, type LibraryLinksParams } from "./filing-library/links.ts";
@@ -140,6 +141,15 @@ export class AnalystWorkflow extends WorkflowEntrypoint<SecPipelineEnv, AnalystW
     // A provider outage makes the run wait (analyst/workflow.ts); a sleeping Workflow uses no CPU.
     const sleep = trackSleep((name, ms) => step.sleep(name, Math.max(1000, Math.round(ms))), run);
     return trackRun(run, () => executeAnalystWorkflow(event.payload, trackSteps(durableSteps(step, env, event.instanceId), run), env, { sleep }));
+  }
+}
+
+/** Checkup notes: a written analysis of each flagged metric, read against the current and earlier filings. */
+export class CheckupWorkflow extends WorkflowEntrypoint<SecPipelineEnv, CheckupWorkflowParams> {
+  async run(event: WorkflowEvent<CheckupWorkflowParams>, step: WorkflowStep) {
+    const env = await companyPolicyEnvironment(this.env);
+    const run = { env, kind: "checkup" as const, ticker: event.payload.ticker, runId: event.instanceId };
+    return trackRun(run, () => executeCheckupWorkflow(event.payload, trackSteps(durableSteps(step, env, event.instanceId), run), env));
   }
 }
 

@@ -9,6 +9,8 @@ import { refView } from "@/shared/analysis-runtime/highlights";
 import { flagFigures, formatMetric, formatMetricChange, METRIC_DEFS, thresholdsOf } from "@/shared/analysis-runtime/statement-analysis";
 import { compactMoney, qoqLabel, shortPeriod, yoyLabel } from "@/shared/analysis-runtime/locale";
 import { KIND_LABEL, type VerifiedFinding } from "./findings-model";
+import type { VerifiedNote } from "@/shared/analysis-runtime/checkup-notes";
+import { SourceLanguage, langOf } from "@/packages/web/src/i18n/SourceLanguage";
 
 /**
  * The three-statement analysis, shown inside the statements it reads (docs/three-statement-analysis-design.md): each
@@ -24,6 +26,7 @@ const m = messages({
   trend: "Trend", parts: "Components", figures: "Figures", related: "Findings", peerTable: "Peers", sources: "Sources",
   current: "Latest", threshold: "Threshold", open: (title: string) => `Open ${title}`,
   chartLabel: (name: string) => `${name}, last quarters`, metrics: "Metrics", panel: "Panel", flags: "Rules tripped",
+  analysis: "Analysis", earlier: "Earlier report", currentReport: "Current report", filed: (form: string, period: string) => `${form} · ${period}`,
 }, {
   report: (period: string) => `${period} 财报`, since: (period: string) => `自 ${period}`,
   bridge: "利润到现金", chain: "资本链路", quarter: "本季度", trailing: "近四季", span: "口径",
@@ -33,6 +36,7 @@ const m = messages({
   trend: "走势", parts: "构成", figures: "数据", related: "要点", peerTable: "同业", sources: "来源",
   current: "最新", threshold: "阈值", open: (title: string) => `打开${title}`,
   chartLabel: (name: string) => `${name}，最近若干季度`, metrics: "指标", panel: "面板", flags: "命中规则",
+  analysis: "分析", earlier: "往期财报", currentReport: "本期财报", filed: (form: string, period: string) => `${form} · ${period}`,
 });
 export const LEVEL_LABEL = labels({ alert: "Alert", watch: "Watch", note: "Note" }, { alert: "警示", watch: "留意", note: "提示" });
 export const DIMENSION_LABEL = labels<StatementDimension>({
@@ -195,8 +199,8 @@ export const viewFlags = (flags: Flag[], view: StatementView) => flags.filter(f 
  * The view's tripped rules as one row under its tiles: each names the metric, its value and the rule, in the level's
  * colour and shape. Hovering one lights what it is about on the chart; a click opens it.
  */
-export function ViewFlags({ flags, metrics, focus, onOpen, onHover }: {
-  flags: Flag[]; metrics: Map<string, AssessedMetric>; focus: string | null; onOpen: (metricId: string) => void; onHover: (flag: Flag | null) => void;
+export function ViewFlags({ flags, metrics, noted, focus, onOpen, onHover }: {
+  flags: Flag[]; metrics: Map<string, AssessedMetric>; /** Metrics with a written analysis. */ noted: Set<string>; focus: string | null; onOpen: (metricId: string) => void; onHover: (flag: Flag | null) => void;
 }) {
   if (!flags.length) return null;
   return <ul className="view-flags" aria-label={m.flags} onMouseLeave={() => onHover(null)}>
@@ -207,6 +211,7 @@ export function ViewFlags({ flags, metrics, focus, onOpen, onHover }: {
         <span className="view-flag-name">{metricLabel(f.metricId)}</span>
         {metric && <b>{metricValue(metric, f.value)}</b>}
         <small>{f.threshold}</small>
+        {noted.has(f.metricId) && <i className="view-flag-noted">{m.analysis}</i>}
       </Button>
     </li>; })}
   </ul>;
@@ -221,17 +226,17 @@ export function PanelSwitch({ value, onChange }: { value: "trend" | "metrics"; o
 }
 
 /** The view's metrics in the panel under its chart: one cell each, flagged ones first; any cell opens. */
-export function ViewMetrics({ metrics, flagged, ranks, onOpen, switcher }: {
-  metrics: AssessedMetric[]; flagged: Map<string, Flag>; ranks: Record<string, PeerRank>; onOpen: (metricId: string) => void; switcher?: React.ReactNode;
+export function ViewMetrics({ metrics, flagged, ranks, noted, onOpen, switcher }: {
+  metrics: AssessedMetric[]; flagged: Map<string, Flag>; ranks: Record<string, PeerRank>; /** Metrics with a written analysis. */ noted: Set<string>; onOpen: (metricId: string) => void; switcher?: React.ReactNode;
 }) {
   const flags = metrics.flatMap(metric => flagged.get(metric.id) ?? []);
   return <section className="trend view-metrics" aria-label={m.metrics}>
     <header className="trend-head"><div className="trend-heading"><div className="trend-title"><h2>{m.metrics}</h2></div><LevelCounts flags={flags} />{switcher}</div></header>
-    <div className="view-metrics-row">{metrics.map(metric => <MetricCell key={metric.id} metric={metric} flag={flagged.get(metric.id) ?? null} rank={ranks[metric.id] ?? null} onOpen={onOpen} />)}</div>
+    <div className="view-metrics-row">{metrics.map(metric => <MetricCell key={metric.id} metric={metric} flag={flagged.get(metric.id) ?? null} rank={ranks[metric.id] ?? null} noted={noted.has(metric.id)} onOpen={onOpen} />)}</div>
   </section>;
 }
 
-function MetricCell({ metric, flag, rank, onOpen }: { metric: AssessedMetric; flag: Flag | null; rank: PeerRank | null; onOpen: (metricId: string) => void }) {
+function MetricCell({ metric, flag, rank, noted, onOpen }: { metric: AssessedMetric; flag: Flag | null; rank: PeerRank | null; noted: boolean; onOpen: (metricId: string) => void }) {
   const thresholds = flag ? thresholdsOf(flag) : [];
   const change = metric.measure === "value" && metric.yoy != null ? `${yoyLabel(getLocale())} ${formatMetricChange(metric.yoy, metric.form, getLocale())}` : null;
   return <Button variant="unstyled" type="button" className="checkup-cell" data-level={flag?.level} onClick={() => onOpen(metric.id)} aria-label={m.open(metric.label)}>
@@ -241,6 +246,7 @@ function MetricCell({ metric, flag, rank, onOpen }: { metric: AssessedMetric; fl
     <span className="checkup-cell-note">
       {change && <span>{change}</span>}
       {flag && <span className="checkup-cell-rule">{flag.threshold}</span>}
+      {noted && <span className="checkup-cell-noted">{m.analysis}</span>}
       {rank && <span title={m.peerTitle(rank.rows.map(r => `${r.ticker} ${formatMetric(r.value, metric.form, getLocale())}`).join(" · "))}>{m.peers(rank.rank, rank.of)}</span>}
     </span>
   </Button>;
@@ -289,8 +295,9 @@ const CHAIN_METRICS = new Set(["capex-to-depreciation", "capex-intensity", "asse
  * peers when they rank it, the profit-to-cash bridge or the capital chain when that is its story, the findings that
  * cite it, and the filings it was read from.
  */
-export function MetricLens({ metric, flags, rank, data, findings, sources, bridge, chain, onClose, onFinding }: {
+export function MetricLens({ metric, flags, rank, data, findings, sources, bridge, chain, note, onClose, onFinding }: {
   metric: AssessedMetric; flags: Flag[]; rank: PeerRank | null; data: FindingData; findings: VerifiedFinding[]; sources: FlowSource[];
+  /** The written analysis, verified against the figures and the filings as served now. */ note: VerifiedNote | null;
   bridge: { quarter: CashBridge | null; year: CashBridge | null }; chain: CapitalChain | null; onClose: () => void; onFinding: (id: string) => void;
 }) {
   const title = metric.label, top = flags[0] ?? null;
@@ -320,6 +327,16 @@ export function MetricLens({ metric, flags, rank, data, findings, sources, bridg
           <dl className="lens-evidence">{figures.map(([label, value]) => <div key={label} className="lens-row"><dt>{label}</dt><dd><b>{value}</b></dd></div>)}</dl>
         </div>
       </div>
+      {note && <div className="lens-doc-row" data-cells={note.quotes.length ? 2 : 1} data-titled="">
+        <h3 className="lens-row-title">{m.analysis}<SourceLanguage of={note.paragraphs.map(p => p.text)} /></h3>
+        <div className="lens-doc-cell">{note.paragraphs.map((p, i) => <p key={i} className="lens-prose" lang={langOf(p.text)}>{p.text}</p>)}</div>
+        {note.quotes.length > 0 && <div className="lens-doc-cell">{note.quotes.map((q, i) => <figure key={i} className="lens-quote" data-earlier={q.earlier || undefined}>
+          <blockquote lang="en">{q.text}</blockquote>
+          <figcaption data-kind="sec"><span className="lens-quote-said">{q.earlier ? m.earlier : m.currentReport}</span>
+            <a href={q.passage.url} target="_blank" rel="noopener noreferrer">{m.filed(q.passage.form, (/(\d{4}-\d{2}-\d{2})\s*$/.exec(q.material.title)?.[1] ?? q.passage.filedAt).slice(0, 7).replace("-", "."))}</a>
+            {q.passage.path.length > 0 && <small>{q.passage.path.slice(1).join(" › ")}</small>}</figcaption>
+        </figure>)}</div>}
+      </div>}
       {(parts || rank) && <div className="lens-doc-row" data-cells={parts && rank ? 2 : 1} data-lead={parts && rank ? "first" : undefined}>
         {parts && <div className="lens-doc-cell"><h3 className="lens-row-title">{m.parts}</h3>
           <ul className="chain-legend">{parts.series.map(s => <li key={s.id}><i style={{ background: s.color }} />{s.label}</li>)}</ul>

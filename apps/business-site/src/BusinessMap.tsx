@@ -44,6 +44,7 @@ import { getLocale, messages } from "@/packages/web/src/i18n";
 import { SourceLanguage, langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import { compactShares, multiple, perShare, qoqLabel, yoyLabel } from "@/shared/analysis-runtime/locale";
 import { assessStatements, peerRanks } from "@/shared/analysis-runtime/statement-analysis";
+import { verifyNote } from "@/shared/analysis-runtime/checkup-notes";
 import type { Flag, FlagLevel } from "@/shared/analysis-contract/statement-analysis";
 import type { FindingRef } from "@/shared/analysis-contract/findings";
 import { checkupSources, figureLevel, LEVEL_LABEL, LevelMark, MetricLens, PanelSwitch, ViewFlags, viewFlags, ViewMetrics, viewMetrics } from "./Checkup";
@@ -360,6 +361,9 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
   // What the analysis says about the view on the stage: its tripped rules under the tiles, its metrics under the chart.
   const shownFlags = useMemo(() => viewFlags(flags, view), [flags, view]);
   const shownMetrics = useMemo(() => viewMetrics(assessment, view, flagged), [assessment, view, flagged]);
+  // The written analysis of each flagged metric, when written for the quarter on the stage.
+  const notes = useMemo(() => findings?.checkup && assessment && findings.checkup.periodEnd === assessment.periodEnd ? findings.checkup.notes : [], [findings, assessment]);
+  const noted = useMemo(() => new Set(notes.map(n => n.metricId)), [notes]);
   useEffect(() => {
     const url = new URL(location.href);
     if (current) url.searchParams.set("business", current.id); else url.searchParams.delete("business");
@@ -572,7 +576,8 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
     <section className="stage" data-focus={focused && findings || focusedCheck ? "finding" : undefined} data-view={view} data-trend={hasRevenueTrend || metricGroups.length ? "" : undefined} data-finding={focused?.kind} data-timeline={points.length ? "" : undefined} aria-label={focused ? m.findingStage(ticker, focused.title) : m.flowStage(ticker)}>
       {focusedCheck && assessment ? <div className="lens-stage">
         <MetricLens metric={focusedCheck} flags={flags.filter(f => f.metricId === focusedCheck.id)} rank={ranks[focusedCheck.id] ?? null} data={data} findings={verified} sources={checkupSources(data, focusedCheck.evidence.periodEnd)}
-          bridge={assessment.bridge} chain={assessment.chain} onClose={() => focusCheck(null)} onFinding={id => focusFinding(id)} />
+          bridge={assessment.bridge} chain={assessment.chain} onClose={() => focusCheck(null)} onFinding={id => focusFinding(id)}
+          note={(note => note ? verifyNote(note, data, focusedCheck, flags.filter(f => f.metricId === focusedCheck.id), findings?.materials) : null)(notes.find(n => n.metricId === focusedCheck.id))} />
       </div> : focused && findings ? <div className="lens-stage" data-split={split && pair ? "" : undefined}>
         <LensPanel finding={focused} data={data} sources={findings.sources} materials={findings.materials} record={findings.record} ticker={ticker} nodeColor={nodeColor} pair={pair} split={split && !!pair}
           story={story} index={story ? storyIndex : focusIndex} count={story ? storyItems.length : verified.length} onPair={() => setSplit(v => !v)}
@@ -618,7 +623,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
           </span>
         </ToggleGroup>}
         </div>
-        {!current && <ViewFlags flags={shownFlags} metrics={assessedMetrics} focus={null} onOpen={id => focusCheck(id)} onHover={setHoverFlag} />}
+        {!current && <ViewFlags flags={shownFlags} metrics={assessedMetrics} noted={noted} focus={null} onOpen={id => focusCheck(id)} onHover={setHoverFlag} />}
       </header>
 
       <div className="chart">
@@ -650,7 +655,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
       : focusedEvent && events ? <div className="lens-stage"><EventLens event={focusedEvent} publication={events} index={railIndex} count={railList.length}
         onStep={delta => { const next = railList[railIndex + delta]; if (next) focusItem(next); }} onClose={() => focusEvent(null)} /></div>
       : mindItem && mindMap ? <div className="lens-stage"><MindLens item={mindItem} branch={mindMap.branches.find(b => b.node === mindItem.anchor)} sources={mindMap.sources} onClose={() => setMindItem(null)} /></div>
-      : panel === "metrics" && shownMetrics.length > 0 ? <ViewMetrics metrics={shownMetrics} flagged={flagged} ranks={ranks} onOpen={id => focusCheck(id)} switcher={hasTrend ? switcher : null} />
+      : panel === "metrics" && shownMetrics.length > 0 ? <ViewMetrics metrics={shownMetrics} flagged={flagged} ranks={ranks} noted={noted} onOpen={id => focusCheck(id)} switcher={hasTrend ? switcher : null} />
       : shownMetric ? <MetricTrendPanel trend={shownMetric} currentPeriod={quarter?.periodEnd ?? null} periods={new Set(quarters.map(q => q.periodEnd))}
         onPickPeriod={end => setPeriod(quarters.find(q => q.periodEnd === end)?.id ?? null)}
         picker={<><MetricPicker value={shownMetric.key} groups={metricGroups} revenue={hasRevenueTrend} onChange={setMetricKey} />{shownMetrics.length > 0 && switcher}</>} />

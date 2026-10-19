@@ -148,6 +148,24 @@ export type StatementHighlight = {
 /** One report's headline figures per statement view, most notable first. */
 export type ReportHighlights = { periodEnd: string; profit: StatementHighlight[]; cash: StatementHighlight[]; balance: StatementHighlight[] };
 
+/**
+ * A written analysis of one metric the three-statement checkup flags (docs/three-statement-analysis-design.md), read
+ * against the filings: what drives it, how it has moved across earlier reports and what management said then and now,
+ * whether it is structural or one-off, and what would settle it. Every number in a paragraph is one of the metric's own
+ * figures; the quotes are the filings' words, at least one from an earlier report than the current one.
+ */
+export type CheckupNoteQuote = { kind: "quote"; materialId: string; text: string };
+export type CheckupNote = {
+  metricId: string;
+  /** The checkup rules the note answers. */
+  ruleIds: string[];
+  /** One to three paragraphs; `sourceIds` are the material ids each rests on. */
+  paragraphs: ExplainerClaim[];
+  quotes: CheckupNoteQuote[];
+};
+/** The notes written for a report's checkup; served with the findings, their materials among the findings' materials. */
+export type CheckupNotes = { periodEnd: string; generatedAt: string; model: string; notes: CheckupNote[] };
+
 export type FindingsPublication = {
   schemaVersion: "findings.v1";
   ticker: string;
@@ -164,8 +182,10 @@ export type FindingsPublication = {
   highlights?: ReportHighlights[];
   /** Watches from earlier publications of this company, oldest first; scored on the page against current data. */
   record?: FindingRecordEntry[];
-  /** Sources the lens documents quote, by material id. */
+  /** Sources the lens documents and the checkup notes quote, by material id. */
   materials?: FindingMaterial[];
+  /** The checkup notes of the report, when written for it. */
+  checkup?: CheckupNotes;
 };
 
 /** A passage as the read route re-reads it for a publication's quotes and table cells. */

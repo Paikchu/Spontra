@@ -21,7 +21,10 @@ function resources(): Record<string, unknown> {
     "": company,
     "/revision": { schemaVersion: "revisions.v1", ticker: TICKER, revisions: { company: rev, capital: rev, findings: rev, fundamentals: rev, events: rev, filings: rev } },
     "/capital": { status: "ready", capital },
-    "/findings": { status: "ready", findings: { ...findings, findings: [...later.map(l => l.finding).reverse(), ...findings.findings] } },
+    "/findings": { status: "ready", findings: { ...findings, findings: [...later.map(l => l.finding).reverse(), ...findings.findings] }, passages: [
+      { passageId: "pfixturenote01", documentId: "d1", title: `${TICKER} 10-Q`, form: "10-Q", filedAt: "2026-08-05", url: "https://www.sec.gov/", path: ["MD&A", "Cash flows"], text: "Depreciation and amortization increased as new capacity was placed in service.", table: null },
+      { passageId: "pfixturenote02", documentId: "d0", title: `${TICKER} 10-K`, form: "10-K", filedAt: "2026-02-20", url: "https://www.sec.gov/", path: ["MD&A", "Liquidity"], text: "We expect depreciation to rise as we place additional capacity in service.", table: null },
+    ] },
     "/events": { status: "ready", events: { ...events, events: [...later.map(l => l.event).reverse(), ...events.events] } },
     "/filings": { status: "ready", filings },
     "/fundamentals": { status: "unavailable" },

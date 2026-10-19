@@ -417,3 +417,62 @@ test("depreciation and stock compensation fall back to the SEC series where the 
   assert.ok(Math.abs(capexDa.current.value - 600 / 160) < 1e-9);
   assert.equal(resolveRef(unlined, { derived: "stockCompensationExpense" }, PERIOD, "quarter")!.value, 15e6);
 });
+
+/* ---------- Checkup notes: what a written analysis may state ---------- */
+
+import { earlierMaterial, noteFigures, noteIssues, verifyNote } from "../../../shared/analysis-runtime/checkup-notes.ts";
+import type { FindingMaterial, FindingPassage } from "../../../shared/analysis-contract/findings.ts";
+import { runNote, NOTE_TOOLS } from "../src/checkup/agent.ts";
+import type { SecPipelineEnv } from "../src/operations.ts";
+
+const capexMetric = () => assessStatements(standard, PERIOD).dimensions.flatMap(d => d.metrics).find(m => m.id === "capex-to-depreciation")!;
+const capexFlags = () => assessStatements(standard, PERIOD).flags.filter(f => f.metricId === "capex-to-depreciation");
+const passage = (id: string, report: string, text: string): FindingPassage => ({ passageId: id, documentId: `d-${report}`, title: `TEST 10-Q ${report}`, form: "10-Q", filedAt: report, url: "https://www.sec.gov/x", path: ["MD&A", "Liquidity"], text, table: null });
+const material = (id: string, p: FindingPassage): FindingMaterial => ({ id, kind: "sec", title: p.title, url: p.url, publishedAt: p.filedAt, passageId: p.passageId, documentId: p.documentId, form: p.form, path: p.path });
+const now = passage("p1", PERIOD, "We expect capital expenditures to remain elevated as we add data center capacity for contracted demand.");
+const before = passage("p2", "2025-12-31", "We plan to increase capital expenditures over the next several quarters to expand capacity.");
+const materials = [material("m1", now), material("m2", before)];
+const goodText = "Capex has run at 3x depreciation over the trailing four quarters, up from 2.1x a year earlier, because the company is adding capacity faster than its existing assets wear out. The earlier report already said spending would rise over the next several quarters; the current one ties the build to contracted demand, so the step-up is a plan being executed rather than a surprise.";
+
+test("a note may state the metric's figures, its parts and its thresholds, and nothing else", () => {
+  const figures = noteFigures(standard, capexMetric(), capexFlags());
+  assert.ok(figures.lines.some(l => l.startsWith("Capex over depreciation (trailing four quarters), by quarter:")));
+  assert.ok(figures.lines.some(l => l.startsWith("rule capex-cycle (watch): > 2×")));
+  assert.ok(figures.lines.some(l => /^Capex \(/.test(l)), "the numerator is listed");
+  const ok = noteIssues({ paragraphs: [{ text: goodText, sourceIds: ["m1", "m2"] }], quotes: [{ kind: "quote", materialId: "m1", text: "capital expenditures to remain elevated as we add data center capacity" }, { kind: "quote", materialId: "m2", text: "increase capital expenditures over the next several quarters" }] }, figures, materials, [now, before], PERIOD, true);
+  assert.deepEqual(ok, []);
+  const bad = noteIssues({ paragraphs: [{ text: goodText.replace("3x", "4.7x"), sourceIds: ["m9"] }], quotes: [{ kind: "quote", materialId: "m1", text: "capital expenditures will double next year" }] }, figures, materials, [now, before], PERIOD, true);
+  assert.ok(bad.some(i => i.includes("numbers 4.7")));
+  assert.ok(bad.some(i => i.includes("sourceIds")));
+  assert.ok(bad.some(i => i.includes("not found verbatim")));
+  assert.ok(bad.some(i => i.includes("no quote from an earlier report")));
+  const onlyCurrent = noteIssues({ paragraphs: [{ text: goodText, sourceIds: ["m1"] }], quotes: [{ kind: "quote", materialId: "m1", text: "capital expenditures to remain elevated as we add data center capacity" }] }, figures, materials, [now, before], PERIOD, false);
+  assert.deepEqual(onlyCurrent, [], "without an earlier report in the library, a current quote is enough");
+  assert.ok(earlierMaterial(materials[1]!, PERIOD));
+  assert.ok(!earlierMaterial(materials[0]!, PERIOD));
+});
+
+test("the page shows only the paragraphs whose numbers hold and the quotes found in their passages", () => {
+  const note = { metricId: "capex-to-depreciation", ruleIds: ["capex-cycle"], paragraphs: [{ text: goodText, sourceIds: ["c:m1"] }, { text: "Capex reached 9.9x depreciation, a level the figures do not show.", sourceIds: ["c:m1"] }],
+    quotes: [{ kind: "quote" as const, materialId: "c:m2", text: "increase capital expenditures over the next several quarters" }, { kind: "quote" as const, materialId: "c:m1", text: "words the filing never said at all" }] };
+  const served = [{ ...materials[0]!, id: "c:m1" }, { ...materials[1]!, id: "c:m2" }];
+  const verified = verifyNote(note, { ...standard, passages: [now, before] }, capexMetric(), capexFlags(), served)!;
+  assert.equal(verified.paragraphs.length, 1);
+  assert.equal(verified.quotes.length, 1);
+  assert.ok(verified.quotes[0]!.earlier, "the quote from the December report is marked as an earlier report's");
+  assert.equal(verifyNote({ ...note, paragraphs: [note.paragraphs[1]!] }, { ...standard, passages: [now, before] }, capexMetric(), capexFlags(), served), null);
+});
+
+test("the writer's finish is held to the same check, and a model that never reads gets no note", async () => {
+  assert.deepEqual(NOTE_TOOLS.map(t => t.name), ["find_sections", "read_section", "finish"]);
+  let calls = 0;
+  const outcome = await runNote({
+    env: { DB: undefined } as unknown as SecPipelineEnv, ticker: "TEST", metric: capexMetric(), flags: capexFlags(), data: standard, documents: [],
+    act: async () => ({ content: [{ type: "tool_use", id: `t${++calls}`, name: "finish", input: { paragraphs: [{ text: goodText, sourceIds: ["m1"] }], quotes: [] } }], stopReason: "tool_use" }),
+    stage: (_, cb) => cb(), reserveTurn: async () => true, budget: { turns: 3, reads: 1, finds: 1 },
+  });
+  assert.equal(outcome.note, null);
+  assert.equal(calls, 3);
+  assert.ok(outcome.issues.some(i => i.includes("sourceIds")), "citing a material it never read is refused");
+  assert.ok(outcome.issues.some(i => i.includes("at least two quotes")));
+});

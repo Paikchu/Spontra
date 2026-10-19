@@ -10,7 +10,7 @@ export const EVENT_TYPES = [
   "financials.published", "filing.archived", "archive.superseded", "archive.prune.requested",
   "map.derived", "filings.indexed", "report.published", "analysis.published", "fundamentals.updated", "guidance.published",
   "task.version_changed",
-  "transcript.stored", "explainer.published", "tree.published", "findings.published", "events.published", "dossier.published",
+  "transcript.stored", "explainer.published", "tree.published", "findings.published", "events.published", "dossier.published", "checkup.published",
   "library.requested", "library.prepared", "library.cards.published", "library.links.requested", "library.links.published",
   "business.tags.requested", "business.tags.published",
   "peers.published", "translations.published",
@@ -23,7 +23,7 @@ export const TASK_NAMES = [
   "collect", "history", "reproject", "maintenance", "transcript",
   "map-derive", "archive-prune", "archive-prune-scan",
   "sec-report", "guidance", "events",
-  "memory", "company-analysis", "explainer", "tree", "findings", "analyst",
+  "memory", "company-analysis", "explainer", "tree", "findings", "analyst", "checkup",
   "library", "library-cards", "library-links", "library-search", "storage-sweep", "business-tags",
   "peers", "translate", "presentation",
 ] as const;
@@ -84,6 +84,8 @@ export const TASKS: Record<TaskName, TaskMeta> = {
   "findings": { emits: ["findings.published"], debounceMs: 10 * MINUTE, maxWaitMs: 2 * HOUR, scope: "findings" },
   // The analyst agent: a research dossier per verified finding, from the filings, figures and peers (Workflow).
   "analyst": { emits: ["dossier.published"], debounceMs: 10 * MINUTE, maxWaitMs: 2 * HOUR, scope: "findings" },
+  // A written analysis of each metric the three-statement checkup flags, read against the current and earlier filings (Workflow).
+  "checkup": { emits: ["checkup.published"], debounceMs: 10 * MINUTE, maxWaitMs: 2 * HOUR, scope: "findings" },
   // Splits the company's archived documents into the filing library's sections and passages; no model.
   "library": { emits: ["library.prepared"], debounceMs: 30 * SECOND, maxWaitMs: 5 * MINUTE, scope: "data" },
   // Index cards for the sections of the company's recent documents (Workflow; model at low reasoning).
@@ -124,7 +126,8 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
   "financials.published": [{ task: "map-derive" }, { task: "history" }, { task: "explainer" }, { task: "tree" }, { task: "library-links" }],
   "filing.archived": [{ task: "map-derive" }, { task: "analyst", when: e => /^10-[QK](?:\/A)?$/.test(form(e)) }, { task: "transcript", when: e => /^(?:10-[QK]|20-F|6-K)(?:\/A)?$/.test(form(e)) }, { task: "library" }, { task: "storage-sweep" }],
   "library.requested": [{ task: "library" }],
-  "library.prepared": [{ task: "library-cards" }],
+  // A filing newly split into the library is text the checkup notes can now read against the earlier ones.
+  "library.prepared": [{ task: "library-cards" }, { task: "checkup" }],
   "library.cards.published": [{ task: "library-links" }, { task: "library-search" }, { task: "storage-sweep" }],
   "library.links.requested": [{ task: "library-links" }],
   // The business links are the units' and sector tags' source; their tags and pairs are written right after them.
@@ -146,9 +149,10 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
   "guidance.published": [{ task: "findings" }, { task: "translate" }],
   "fundamentals.updated": [{ task: "findings" }, { task: "peers" }],
   "analysis.published": [{ task: "findings" }],
-  "findings.published": [{ task: "analyst" }, { task: "translate" }],
+  "findings.published": [{ task: "analyst" }, { task: "checkup" }, { task: "translate" }],
   // Every publication with reader-facing prose is translated once it lands (docs/i18n-design.md).
   "dossier.published": [{ task: "translate" }],
+  "checkup.published": [{ task: "translate" }],
   "explainer.published": [{ task: "translate" }],
   "tree.published": [{ task: "translate" }],
   "events.published": [{ task: "translate" }],

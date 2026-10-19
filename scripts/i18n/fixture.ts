@@ -147,6 +147,19 @@ export const findings: FindingsPublication = {
       lens: { type: "trend", refs: [{ ratio: { numerator: { metric: "gross" }, denominator: { metric: "revenue" } } }], span: "quarter", rate: "qoq" } }),
   ],
   sources: [{ id: "s1", title: "10-Q", url: SRC, kind: "sec", publishedAt: null }],
+  // A checkup note (docs/three-statement-analysis-design.md): generated text, with quotes from this and an earlier report.
+  materials: [
+    { id: "c:cash-conversion:m1", kind: "sec", title: `${TICKER} 10-Q ${PERIOD}`, url: SRC, publishedAt: "2026-08-05", passageId: "pfixturenote01", documentId: "d1", form: "10-Q", path: ["MD&A", "Cash flows"] },
+    { id: "c:cash-conversion:m2", kind: "sec", title: `${TICKER} 10-K 2025-12-31`, url: SRC, publishedAt: "2026-02-20", passageId: "pfixturenote02", documentId: "d0", form: "10-K", path: ["MD&A", "Liquidity"] },
+  ],
+  checkup: { periodEnd: PERIOD, generatedAt: "2026-08-01T00:00:00Z", model: "fixture", notes: [{
+    metricId: "cash-conversion", ruleIds: ["cash-above-profit"],
+    paragraphs: [{ text: "Generated analysis that stays in English this phase: operating cash ran at 2.07x net income over the trailing four quarters, carried by non-cash charges that the earlier annual report already described as rising with the capacity build.", sourceIds: ["c:cash-conversion:m1", "c:cash-conversion:m2"] }],
+    quotes: [
+      { kind: "quote", materialId: "c:cash-conversion:m1", text: "Depreciation and amortization increased as new capacity was placed in service." },
+      { kind: "quote", materialId: "c:cash-conversion:m2", text: "We expect depreciation to rise as we place additional capacity in service." },
+    ],
+  }] },
   highlights: [{ periodEnd: PERIOD,
     profit: [{ title: "Revenue", ref: { metric: "revenue" }, compare: "yoy" }, { title: "Operating margin", ref: { ratio: { numerator: { metric: "operating" }, denominator: { metric: "revenue" } } }, compare: "yoy", show: "change" }],
     cash: [{ title: "Free cash flow", ref: { capital: "freeCashFlow" }, compare: "yoy" }],
@@ -222,6 +235,7 @@ export const ZH_TABLES = {
   },
   findings: {
     "Generated judgment that stays in English this phase.": "生成的判断。",
+    "Generated analysis that stays in English this phase: operating cash ran at 2.07x net income over the trailing four quarters, carried by non-cash charges that the earlier annual report already described as rising with the capacity build.": "生成的分析：近 4 个季度经营现金流为净利润的 2.07 倍，主要来自非现金费用；上一份年报已说明这类费用会随产能扩建而上升。",
     "Capex reached $4.0 billion in the quarter, above operating cash flow.": "本季度资本开支达到 40亿美元，高于经营现金流。",
     "Capex outruns operating cash flow": "资本开支超过经营现金流", "Capex below operating cash flow next quarter.": "下季度资本开支低于经营现金流。",
     "Cloud carries growth": "云业务撑起增长", "Cloud growth above 25% next quarter.": "下季度云业务增速高于 25%。",
