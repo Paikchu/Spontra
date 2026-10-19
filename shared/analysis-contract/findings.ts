@@ -43,7 +43,20 @@ export type FindingBaseRef =
   /** A figure of one filed event (a Form 4's shares sold, proceeds, holdings after), read from the events publication by accession. */
   | { event: { id: string; field: EventField } }
   /** One rung of a tagged schedule (debt maturities, lease payments due, purchase obligations): year `bucket` 0–5 (5 = thereafter), or the total when `bucket` is "total". */
-  | { schedule: { kind: ScheduleKind; bucket: number | "total" } };
+  | { schedule: { kind: ScheduleKind; bucket: number | "total" } }
+  /** A figure the runtime computes from the statements by a fixed formula (docs/three-statement-analysis-design.md); the formula travels with the value. */
+  | { derived: DerivedMetric };
+/**
+ * Figures no statement states but every analyst computes, each by one formula in the shared runtime: EBITDA, net
+ * debt, invested capital, NOPAT, accruals, the operating section's non-cash and working-capital groups, year-average
+ * balances, the return on added capital, interest expense, net external funding, cash runway and debt-due coverage.
+ */
+export const DERIVED_METRICS = [
+  "ebitda", "netDebt", "investedCapital", "nopat", "accruals", "nonCashCharges", "workingCapitalChange",
+  "averageEquity", "averageAssets", "averageInvestedCapital", "incrementalReturn", "interestExpense",
+  "netExternalFunding", "cashRunwayMonths", "debtDueCoverage",
+] as const;
+export type DerivedMetric = (typeof DERIVED_METRICS)[number];
 export type EventField = "sharesSold" | "proceeds" | "averagePrice" | "sharesBought" | "cost" | "exercised" | "heldAfter";
 export const EVENT_FIELDS = ["sharesSold", "proceeds", "averagePrice", "sharesBought", "cost", "exercised", "heldAfter"] as const;
 /** What a peer reference may point at: a capital figure or a fundamental series; never another peer, a node or guidance. */

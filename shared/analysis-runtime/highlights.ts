@@ -1,6 +1,6 @@
 import { FUNDAMENTAL_METRIC_CATALOG } from "../analysis-contract/fundamental-metric-catalog.ts";
 import type { FlowMetric } from "../analysis-contract/business-flow.ts";
-import type { CapitalMetric, FindingBaseRef, FindingRef, FindingView, FindingsPublication, ReportHighlights, StatementHighlight } from "../analysis-contract/findings.ts";
+import type { CapitalMetric, DerivedMetric, FindingBaseRef, FindingRef, FindingView, FindingsPublication, ReportHighlights, StatementHighlight } from "../analysis-contract/findings.ts";
 import { proseNumbers, resolveEvidence, type FindingData, type ResolvedEvidence } from "./findings.ts";
 import { multiple, type Locale } from "./locale.ts";
 
@@ -15,6 +15,11 @@ export const HIGHLIGHT_COUNT = 3, MIN_HIGHLIGHTS = 2;
 
 const CASH_FLOWS: CapitalMetric[] = ["operatingCashFlow", "capex", "freeCashFlow", "financing", "debtIssued", "debtRepaid", "equityIssued", "buybacks", "dividends", "acquisitions", "investmentsNet", "leasePrincipal", "depreciation", "stockCompensation", "interestPaid", "taxesPaid", "unpaidCapex", "leaseAssetsObtained"];
 const FUNDAMENTAL_VIEW: Record<string, FindingView> = { income_statement: "profit", per_share: "profit", cash_flow: "cash", balance_sheet: "balance" };
+const DERIVED_VIEW: Record<DerivedMetric, FindingView> = {
+  ebitda: "profit", nopat: "profit", interestExpense: "profit",
+  accruals: "cash", nonCashCharges: "cash", workingCapitalChange: "cash", netExternalFunding: "cash", cashRunwayMonths: "cash",
+  netDebt: "balance", investedCapital: "balance", averageEquity: "balance", averageAssets: "balance", averageInvestedCapital: "balance", incrementalReturn: "balance", debtDueCoverage: "balance",
+};
 
 /** The statement a figure belongs to; a ratio belongs to its numerator's. Guidance belongs to none. */
 export function refView(ref: FindingRef): FindingView | null {
@@ -22,26 +27,31 @@ export function refView(ref: FindingRef): FindingView | null {
   if ("metric" in ref || "nodeId" in ref) return "profit";
   if ("capital" in ref) return CASH_FLOWS.includes(ref.capital) ? "cash" : "balance";
   if ("fundamental" in ref) return FUNDAMENTAL_VIEW[(FUNDAMENTAL_METRIC_CATALOG as Record<string, { category: string }>)[ref.fundamental]?.category ?? ""] ?? null;
+  if ("derived" in ref) return DERIVED_VIEW[ref.derived];
   if ("peer" in ref) return refView(ref.peer.ref);
   return null;
 }
 
 /** A margin or an intensity reads as a percentage; coverage, leverage and backlog multiples read as "2.6x". */
 export function ratioForm(ref: FindingRef): "percent" | "multiple" {
-  if (!("ratio" in ref)) return "multiple";
+  if (!("ratio" in ref)) return "derived" in ref && (ref.derived === "accruals" || ref.derived === "incrementalReturn") ? "percent" : "multiple";
   const { numerator, denominator } = ref.ratio;
+  // A return on a year-average balance (ROE, ROIC) is a rate.
+  if ("derived" in denominator && (denominator.derived === "averageEquity" || denominator.derived === "averageInvestedCapital")) return "percent";
   return "metric" in denominator && (denominator.metric === "revenue" || denominator.metric === "pretax") && !("capital" in numerator && numerator.capital === "rpo") ? "percent" : "multiple";
 }
 
 const HIGHER_METRICS: FlowMetric[] = ["revenue", "gross", "operating", "pretax", "net"];
 const HIGHER_CAPITAL: CapitalMetric[] = ["operatingCashFlow", "freeCashFlow", "cash", "equity", "rpo", "rpoNext12MonthsShare"];
-const higherBase = (ref: FindingBaseRef) => "nodeId" in ref || "metric" in ref && HIGHER_METRICS.includes(ref.metric) || "capital" in ref && HIGHER_CAPITAL.includes(ref.capital)
+const HIGHER_DERIVED: DerivedMetric[] = ["ebitda", "nopat", "incrementalReturn", "cashRunwayMonths", "debtDueCoverage"];
+const higherBase = (ref: FindingBaseRef) => "nodeId" in ref || "metric" in ref && HIGHER_METRICS.includes(ref.metric) || "capital" in ref && HIGHER_CAPITAL.includes(ref.capital) || "derived" in ref && HIGHER_DERIVED.includes(ref.derived)
   || "fundamental" in ref && ["total_revenue", "gross_profit", "operating_income", "net_income", "diluted_eps", "operating_cash_flow", "free_cash_flow", "cash_and_cash_equivalents", "stockholders_equity", "remaining_performance_obligation"].includes(ref.fundamental);
 /** Figures whose rise reads as good news without a judgment: revenue, profit, margins, cash generated, cash held. Costs, capex and debt read neither way. */
 export function higherIsBetter(ref: FindingRef): boolean {
   if (!("ratio" in ref)) return higherBase(ref);
   const { numerator, denominator } = ref.ratio;
   if ("metric" in denominator && denominator.metric === "revenue") return "metric" in numerator && ["gross", "operating", "net"].includes(numerator.metric) || "capital" in numerator && numerator.capital === "rpo";
+  if ("derived" in denominator && ["averageEquity", "averageInvestedCapital", "averageAssets"].includes(denominator.derived)) return "metric" in numerator && ["net", "operating", "revenue"].includes(numerator.metric) || "derived" in numerator && numerator.derived === "nopat";
   return "capital" in numerator && (numerator.capital === "operatingCashFlow" && "metric" in denominator && denominator.metric === "net" || numerator.capital === "cash" && "capital" in denominator && denominator.capital === "debt");
 }
 
