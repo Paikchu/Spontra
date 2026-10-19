@@ -72,8 +72,11 @@ export type NoteRunInput = {
   budget?: NoteBudget;
 };
 
-/** A model sometimes writes "×" as the escape "\u00d7" inside its text; it is read as the character it names. */
-export const unescaped = (text: string) => text.replace(/\\u([0-9a-fA-F]{4})/g, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)));
+/**
+ * A model sometimes writes "×" as the escape "\u00d7" inside its text, or leaves a run of quote marks where a quote was
+ * cut; the escape is read as the character it names and the run is dropped.
+ */
+export const unescaped = (text: string) => text.replace(/\\u([0-9a-fA-F]{4})/g, (_, hex: string) => String.fromCharCode(parseInt(hex, 16))).replace(/"{2,}/g, "");
 
 /** How the metric is computed, in words, so the analysis explains the figure rather than wondering how it was made. */
 function definition(data: FindingData, metricId: string): string {

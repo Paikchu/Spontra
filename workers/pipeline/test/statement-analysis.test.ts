@@ -481,4 +481,5 @@ test("an escaped character in a note's text is read as the character it names", 
   const { unescaped } = await import("../src/checkup/agent.ts");
   assert.equal(unescaped("fell to 3.59\\u00d7 from 4.28\\u00d7"), "fell to 3.59× from 4.28×");
   assert.equal(unescaped("plain 3.59× stays"), "plain 3.59× stays");
+  assert.equal(unescaped('a loss of """−$176M'), "a loss of −$176M");
 });

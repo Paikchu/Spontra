@@ -41,7 +41,8 @@ async function readInput(env: SecPipelineEnv, ticker: string) {
   // One note per flagged metric, its rules together; the most pressing metrics first.
   const metrics = [...new Map(assessment.flags.map(f => [f.metricId, f])).keys()].slice(0, MAX_NOTES);
   if (!metrics.length) return null;
-  const documents = await libraryToc(db, ticker, { forms: ["10-K", "10-Q", "20-F", "40-F"], limit: 4 });
+  // A foreign issuer reports its quarters in 6-K exhibits; without them its notes could read only the annual report.
+  const documents = await libraryToc(db, ticker, { forms: ["10-K", "10-Q", "20-F", "40-F", "6-K"], limit: 5 });
   const fingerprint = await sha256(JSON.stringify({
     version: CHECKUP_NOTES_VERSION, checkup: STATEMENT_ANALYSIS_VERSION, ticker, periodEnd: assessment.periodEnd,
     flags: assessment.flags.filter(f => metrics.includes(f.metricId)).map(f => [f.ruleId, f.metricId, Number(f.value.toPrecision(3)), f.since]),
