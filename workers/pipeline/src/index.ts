@@ -156,7 +156,7 @@ export class GuidanceWorkflow extends WorkflowEntrypoint<SecPipelineEnv, Guidanc
     const env = await companyPolicyEnvironment(this.env);
     const run = { env, kind: "guidance" as const, ticker: event.payload.ticker, runId: event.instanceId };
     const durable = trackSteps(durableSteps(step, env, event.instanceId), run);
-    // Waiting for a transcript sleeps the instance; a sleeping Workflow uses no CPU.
+    // Waiting for the daily model budget sleeps the instance; a sleeping Workflow uses no CPU.
     const sleep = trackSleep((name, ms) => step.sleep(name, Math.max(1000, Math.round(ms))), run);
     return trackRun(run, () => executeGuidanceWorkflow(event.payload, { do: durable.do, sleep }, env, { runId: event.instanceId }));
   }

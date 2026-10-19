@@ -78,14 +78,14 @@ Cron 和两个队列消费者的入口各做两次主键查询：补发发件箱
 | 财务维护 `runFinancialMaintenanceTick` | `*/2`，每轮推进一步 | `maintenance.requested`（后台发起） | Workflow；取消在每步开头检查 | `financials.published`、`filing.archived` |
 | 地图推导 `runMapDerivationTick` | `*/2`，逐家全量比对 | `financials.published`、`filing.archived`、`task.version_changed` | 队列任务；解析预算用完时重新登记一次到期 | `map.derived`（仅在快照确实重建时） |
 | 存档清理 `pruneSupersededArchives` | `*/2`，扫完后隔天再扫 R2 | `archive.superseded`（带旧对象 key） | 队列任务，到期时间设为 24 小时后；仍无引用就删除，不再扫描 R2 | — |
-| Transcript `syncTranscript` | `*/2`，每轮 1 份 | `filing.archived`（10-Q、10-K） | Workflow：文字稿未出时 `step.sleep` 一天再试，3 次后标记不可用；当日额度用完睡到下一个 UTC 日 | `transcript.stored` |
+| Transcript `syncTranscript` | `*/2`，每轮 1 份 | `filing.archived`（10-Q、10-K、20-F、6-K） | 队列任务，唯一调用 Alpha Vantage 的地方：每轮 1 份，指引公司优先；文字稿未出时次日再试，3 次后标记不可用；突发限流 65 秒后重试，不占当天；当日额度用完睡到下一个 UTC 日 | `transcript.stored` |
 | SEC 财报 `runSecRefresh` 🤖 | `*/10`，工作流内 12 小时发现一次 | `filing.discovered`（只处理 AI 公司） | Workflow；不再自己发现，读统一写入的申报列表；实例 ID 含 accession | `report.published` |
 | 财报记忆 `runSecMemorySweep` 🤖 | `*/10` 认领任务 | 财报 Workflow 发布后直接排队（保留） | Workflow；卡住的租约由 Workflow 自身重试处理 | 直接启动公司分析（保留） |
 | 公司分析 `runCompanyAnalysisSweep` 🤖 | `*/10`，并清理卡住的执行 | 记忆 Workflow 直接启动（保留） | Workflow；失败由 Workflow 重试，最终失败进 `pipeline_dead` | `analysis.published` |
 | 基本面 `runFundamentalsStalenessSweep` | `*/10`，过期就刷新 | `filing.discovered`（10-Q、10-K） | 队列任务；companyfacts 尚未包含新申报时重新登记 6 小时后到期，最多 4 次 | `fundamentals.updated` |
 | 业务解读 `runBusinessExplainerSweep` 🤖 | `*/10`，指纹比对，失败每周重试 | `financials.published`、`task.version_changed` | Workflow；指纹没变不启动；失败 `step.sleep` 后重试 | `explainer.published` |
 | 业务脑图 `runBusinessTreeSweep` 🤖 | `*/10`，指纹比对，失败每周重试 | 同上 | 同上 | `tree.published` |
-| 指引 `runGuidanceSweep` 🤖 | `*/10`，读缓存的申报列表 | `filing.discovered`（8-K Item 2.02） | Workflow；当日模型额度用完睡到下一个 UTC 日 | `guidance.published` |
+| 指引 `runGuidanceSweep` 🤖 | `*/10`，读缓存的申报列表 | `filings.indexed`、`transcript.stored` | Workflow；电话会文字稿只读 Transcript 库已存的；当日模型额度用完睡到下一个 UTC 日 | `guidance.published` |
 | 同业投影 `peers`（2026-10-14 新增） | 无 | `map.derived`、`fundamentals.updated`（全局任务，去抖 2 分钟、最长 30 分钟） | 无模型：每家数据公司最近 8 季的可比数字（资本结构与现金流分组、SEC 序列）与业务类别写入单一键 `peers:v1`；`/findings` 响应只带该公司要点引用到的同业行，分析师任务读全量 | `peers.published`（每家引用了变动同业的公司各一条；无公司受影响时不发） |
 | 要点分析师 `analyst` 🤖（2026-10-14 新增） | 无 | `findings.published`、10-K/10-Q 的 `filing.archived`（去抖 10 分钟） | Workflow `spontra-analyst`：每条通过校验的要点一个 ReAct 循环，读文件库原文与同业投影，产出带引文/表格的 lens 文档；指纹 = 分析师版本 + 要点指纹 + 最新定期申报 | `dossier.published` |
 | 利润表判定 `presentation` 🤖（2026-10-15 新增） | `maintenance.requested` | `presentation.unresolved`（采集发出：最新季度的"税前至净利润"没有任何结构能算平；后台"重新判定"也可发出） | 模型只提出哪一行是税前利润、哪些行在所得税之后，同一套算术在该申报的每个季度精确算平才接受（`financial-data/presentation.ts`），每日上限 `PRESENTATION_DAILY_CALLS`（默认 60）。接受的结构存 `financial_presentation_profiles`，再建一个"提取"维护任务重新采集；维护任务不发 `presentation.unresolved`，所以事件图无环。同一份申报只判定一次。见 [statement-bridge-design](statement-bridge-design.md) |
@@ -121,7 +121,8 @@ Cron 和两个队列消费者的入口各做两次主键查询：补发发件箱
 | `task.version_changed` | Cron 或队列消费者入口检测到某个任务的版本变了 | 只路由给版本变化的那个任务，对所有公司各登记一次 |
 | `explainer.published`、`tree.published`、`findings.published`、`events.published`、`dossier.published` | 各自任务 | 翻译（`findings.published` 另有要点分析师） |
 | `feature.settings`（`detail.feature`） | 后台功能开关 | 该功能的首个任务：财报摘要 → `sec-report`，要点 → `findings`、`company-analysis`，业务解读 → `explainer`，业务脑图 → `tree`；并推进地图版本号 |
-| `transcript.stored`、`translations.published` | 各自任务 | 暂无订阅者，先发出，供以后的任务订阅 |
+| `transcript.stored` | Transcript | 指引（仅财报摘要开启的公司） |
+| `translations.published` | 翻译 | 暂无订阅者，先发出，供以后的任务订阅 |
 
 ## 防抖与就绪
 

@@ -57,7 +57,8 @@ export const TASKS: Record<TaskName, TaskMeta> = {
   "reproject": { emits: ["filing.archived", "archive.superseded"], debounceMs: 0, maxWaitMs: 0, scope: "global" },
   // Advances the admin's financial maintenance tasks, one step per run.
   "maintenance": { emits: ["financials.published", "filing.archived", "archive.superseded"], debounceMs: 0, maxWaitMs: 0, scope: "global" },
-  // Fetches earnings-call transcripts for archived periodic reports, within the daily budget.
+  // Fetches earnings-call transcripts for archived periodic reports and 6-K results, within the daily budget; the only
+  // caller of the transcript provider.
   "transcript": { emits: ["transcript.stored"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "global" },
   // Rebuilds the map's older quarters and capital snapshot from archived filings.
   "map-derive": { emits: ["map.derived"], debounceMs: 30 * SECOND, maxWaitMs: 5 * MINUTE, scope: "data" },
@@ -67,7 +68,7 @@ export const TASKS: Record<TaskName, TaskMeta> = {
   "archive-prune-scan": { emits: [], debounceMs: 0, maxWaitMs: 0, scope: "global" },
   // Runs the SEC report Workflow, which indexes the filing list, writes reports and 8-K summaries.
   "sec-report": { emits: ["filings.indexed", "report.published", "fundamentals.updated"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "reports" },
-  // Extracts management guidance from earnings releases (Workflow).
+  // Extracts management guidance from earnings releases and the calls the transcript library stored (Workflow).
   "guidance": { emits: ["guidance.published"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "reports" },
   // Current reports and Form 4 filings for the map's event rail; no model.
   "events": { emits: ["events.published"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "data" },
@@ -121,7 +122,7 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
   "collection.requested": [{ task: "collect" }, { task: "history" }],
   "maintenance.requested": [{ task: "maintenance" }],
   "financials.published": [{ task: "map-derive" }, { task: "history" }, { task: "explainer" }, { task: "tree" }, { task: "library-links" }],
-  "filing.archived": [{ task: "map-derive" }, { task: "analyst", when: e => /^10-[QK](?:\/A)?$/.test(form(e)) }, { task: "transcript", when: e => /^10-[QK](?:\/A)?$/.test(form(e)) }, { task: "library" }, { task: "storage-sweep" }],
+  "filing.archived": [{ task: "map-derive" }, { task: "analyst", when: e => /^10-[QK](?:\/A)?$/.test(form(e)) }, { task: "transcript", when: e => /^(?:10-[QK]|20-F|6-K)(?:\/A)?$/.test(form(e)) }, { task: "library" }, { task: "storage-sweep" }],
   "library.requested": [{ task: "library" }],
   "library.prepared": [{ task: "library-cards" }],
   "library.cards.published": [{ task: "library-links" }, { task: "library-search" }, { task: "storage-sweep" }],
@@ -133,6 +134,8 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
   "archive.superseded": [{ task: "archive-prune" }],
   "archive.prune.requested": [{ task: "archive-prune-scan" }],
   "filings.indexed": [{ task: "guidance" }],
+  // A stored call is guidance material for the company's earnings event; only where the reports feature is on.
+  "transcript.stored": [{ task: "guidance" }],
   "report.published": [
     { task: "translate" },
     { task: "events", when: e => /^(?:8|6)-K/.test(form(e)) },
