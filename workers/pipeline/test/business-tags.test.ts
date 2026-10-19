@@ -4,7 +4,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import type { BusinessUnit } from "../../../shared/analysis-contract/business-tags.ts";
 import type { PeersPublication } from "../../../shared/analysis-contract/peers.ts";
-import { basisOf, buildUnits, checkTags, COMPANY_TOTAL, nameGuard, pairsFromHits, readAssignments, readTagReview, readThresholds, tagIdOf, tierOf, type MatchTag } from "../../../shared/analysis-runtime/business-tags.ts";
+import { basisOf, buildUnits, checkTags, COMPANY_TOTAL, coverage, nameGuard, pairsFromHits, readAssignments, readTagReview, readThresholds, tagIdOf, tierOf, type MatchTag } from "../../../shared/analysis-runtime/business-tags.ts";
 import type { FindingData } from "../../../shared/analysis-runtime/findings.ts";
 import { compileTable, peersOf } from "../../../shared/analysis-runtime/lens/table.ts";
 import { comparablePeers, peersFor, readPeersPublication } from "../../../shared/analysis-runtime/peers.ts";
@@ -58,6 +58,7 @@ test("tags: the unit's sector and passages only, no digits, no company names; ti
 test("tiers: what is sold decides whether units are peers, the other facets how close; the basis follows from tier and exposure", () => {
   assert.equal(tierOf({ offering: "same", customers: "same", contract: "partial", cost: "same" }), "direct");
   assert.equal(tierOf({ offering: "same", customers: "partial", contract: "unknown", cost: "different" }), "partial");
+  assert.equal(tierOf({ offering: "same", customers: "same", contract: "same", cost: "different" }), "partial", "a known facet that differs keeps a pair from direct");
   assert.equal(tierOf({ offering: "partial", customers: "partial", contract: "different", cost: "different" }), "partial");
   assert.equal(tierOf({ offering: "partial", customers: "different", contract: "unknown", cost: "different" }), "adjacent");
   assert.equal(tierOf({ offering: "different", customers: "same", contract: "same", cost: "same" }), "sector");
@@ -69,7 +70,9 @@ test("tiers: what is sold decides whether units are peers, the other facets how 
   assert.equal(exposureOf("7388000000", "19345000000"), 0.382);
   assert.equal(exposureOf(null, "1"), null);
   assert.deepEqual(readThresholds('{"same":0.9,"near":0.7}'), { same: 0.9, near: 0.7 });
-  assert.deepEqual(readThresholds('{"same":0.5,"near":0.7}'), { same: 0.8, near: 0.68 }, "an inverted pair keeps the defaults");
+  assert.deepEqual(readThresholds('{"same":0.5,"near":0.7}'), { same: 0.77, near: 0.7 }, "an inverted pair keeps the defaults");
+  assert.equal(tierOf({ offering: "same", customers: "same", contract: "unknown", cost: "partial" }), "direct", "a facet one side has no tag in says nothing");
+  assert.equal(tierOf({ offering: "same", customers: "unknown", contract: "unknown", cost: "unknown" }), "partial", "the offering alone is not enough for direct");
 });
 
 const unit = (ticker: string, node: string, sectors: string[]): BusinessUnit => ({ ticker, unitKey: `${ticker}|${node}`, flowNodeId: node, name: node, linkKeys: [], sectors: sectors as never, sectionIds: [] });
@@ -94,6 +97,21 @@ test("pairs: each shared sector's facets from the best hits, the best tier any s
   assert.equal(back[0]!.pairKey, withNbis.pairKey);
   assert.equal(back[0]!.left, withNbis.left);
   assert.equal(back[0]!.sectors.cloud_infrastructure!.offering.leftTag, "c1");
+});
+
+test("coverage: one shared tag does not make a broad business the same as a narrow one; both sides must be covered", () => {
+  const table: Record<string, number> = { "gpu~gpu2": 0.9, "gpu~ai": 0.85, "gpu~iaas": 0.6, "gpu~db": 0.5, "gpu~sec": 0.45, "k8s~gpu2": 0.8, "k8s~ai": 0.7, "k8s~iaas": 0.72, "k8s~db": 0.55, "k8s~sec": 0.5 };
+  const score = (a: string, b: string) => table[`${a}~${b}`] ?? null;
+  const narrow = coverage(["gpu", "k8s"], ["gpu2"], score)!;
+  const broad = coverage(["gpu", "k8s"], ["ai", "iaas", "db", "sec"], score)!;
+  assert.ok(narrow.score > 0.84, `narrow ${narrow.score}`);
+  assert.ok(broad.score < 0.77 && broad.score < narrow.score - 0.1, `broad ${broad.score}: its database and security tags are not covered`);
+  assert.deepEqual([broad.own, broad.peer], ["gpu", "ai"], "the closest pair is kept for display");
+  assert.equal(coverage(["gpu"], ["x"], () => null), null);
+  // A search cut off at its top-k scores the tags it did not reach at its lowest returned score.
+  const units = [unit("A", "total", ["cloud_infrastructure"]), unit("B", "total", ["cloud_infrastructure"])];
+  const pairs = pairsFromHits([units[0]!], [units[1]!], [mtag("a1", units[0]!.unitKey, "offering")], [mtag("b1", units[1]!.unitKey, "offering"), mtag("b2", units[1]!.unitKey, "offering")], [{ own: "a1", peer: "b1", score: 0.9 }], { same: 0.77, near: 0.7 }, new Map([["a1", 0.5]]));
+  assert.equal(pairs[0]!.sectors.cloud_infrastructure!.offering.score, Math.round(2 * 0.9 * 0.7 / 1.6 * 1000) / 1000);
 });
 
 const publication: PeersPublication = {

@@ -1,12 +1,13 @@
 import type { BusinessUnit, PeerTier, TagFacet } from "../../../../shared/analysis-contract/business-tags.ts";
 import type { IndustryCategory } from "../../../../shared/analysis-contract/filing-library.ts";
-import { BUSINESS_TAGS_VERSION, pairsFromHits, readThresholds, tagEmbeddingText, tagNamespace, type MatchTag, type TagHit } from "../../../../shared/analysis-runtime/business-tags.ts";
+import { PEER_MATCH_VERSION, pairsFromHits, readThresholds, tagEmbeddingText, tagNamespace, type MatchTag, type TagHit } from "../../../../shared/analysis-runtime/business-tags.ts";
 import type { SecPipelineEnv } from "../operations.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
 
 /** Multilingual, 1024 dimensions; the index `business-tags` is created with the same size and cosine distance. */
 export const EMBEDDING_MODEL = "@cf/baai/bge-m3";
-const EMBED_BATCH = 50, TOP_K = 50;
+/** The most a query returns without metadata; a namespace this large is searched only as far as its nearest tags. */
+const EMBED_BATCH = 50, TOP_K = 100;
 
 export const matchingEnabled = (env: SecPipelineEnv) => !!env.AI && !!env.TAGS_INDEX;
 
@@ -56,15 +57,17 @@ export async function matchCompany(env: SecPipelineEnv, ticker: string, now = ne
     .bind(ticker, JSON.stringify(sectors)).all<UnitRow>()).results.map(unitOf) : [];
   const peerTags = peerUnits.length ? (await db.prepare("SELECT tag_id, ticker, unit_key, sector, facet, label, definition FROM sec_business_tags WHERE ticker != ? AND status = 'verified' AND sector IN (SELECT value FROM json_each(?))")
     .bind(ticker, JSON.stringify(sectors)).all<TagRow>()).results : [];
-  const hits: TagHit[] = [];
+  const hits: TagHit[] = [], floors = new Map<string, number>();
   if (ownTags.length && peerTags.length && matchingEnabled(env)) {
     const vectors = await embed(env, ownTags.map(t => tagEmbeddingText(t)));
     for (const [i, tag] of ownTags.entries()) {
       const found = await env.TAGS_INDEX!.query(vectors[i]!, { topK: TOP_K, namespace: tagNamespace(tag.sector, tag.facet), returnMetadata: "none" });
-      for (const m of found.matches ?? []) hits.push({ own: tag.tag_id, peer: m.id, score: m.score });
+      const matches = found.matches ?? [];
+      for (const m of matches) hits.push({ own: tag.tag_id, peer: m.id, score: m.score });
+      if (matches.length >= TOP_K) floors.set(tag.tag_id, Math.min(...matches.map(m => m.score)));
     }
   }
-  const pairs = pairsFromHits(ownUnits, peerUnits, ownTags.map(matchTag), peerTags.map(matchTag), hits, thresholds);
+  const pairs = pairsFromHits(ownUnits, peerUnits, ownTags.map(matchTag), peerTags.map(matchTag), hits, thresholds, floors);
   const existing = new Map((await db.prepare("SELECT pair_key, tier, status FROM sec_peer_pairs WHERE left_ticker = ? OR right_ticker = ?").bind(ticker, ticker).all<{ pair_key: string; tier: string; status: string }>()).results.map(r => [r.pair_key, r]));
   const at = now.toISOString(), statements: D1PreparedStatement[] = [];
   const tiers: Partial<Record<PeerTier, number>> = {};
@@ -74,7 +77,7 @@ export async function matchCompany(env: SecPipelineEnv, ticker: string, now = ne
     statements.push(db.prepare(`INSERT INTO sec_peer_pairs (pair_key, left_unit, right_unit, left_ticker, right_ticker, sectors, tier, tier_sector, matched_tier, status, version, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(pair_key) DO UPDATE SET sectors = excluded.sectors, tier = excluded.tier, tier_sector = excluded.tier_sector,
       matched_tier = excluded.matched_tier, status = excluded.status, version = excluded.version, updated_at = excluded.updated_at`)
-      .bind(p.pairKey, p.left, p.right, p.left.split("|")[0], p.right.split("|")[0], JSON.stringify(p.sectors), confirmed ? seen!.tier : p.tier, p.tierSector, p.tier, confirmed ? "confirmed" : "matched", BUSINESS_TAGS_VERSION, at));
+      .bind(p.pairKey, p.left, p.right, p.left.split("|")[0], p.right.split("|")[0], JSON.stringify(p.sectors), confirmed ? seen!.tier : p.tier, p.tierSector, p.tier, confirmed ? "confirmed" : "matched", PEER_MATCH_VERSION, at));
   }
   const gone = [...existing.keys()].filter(k => !pairs.some(p => p.pairKey === k));
   if (gone.length) statements.push(db.prepare("DELETE FROM sec_peer_pairs WHERE pair_key IN (SELECT value FROM json_each(?))").bind(JSON.stringify(gone)));

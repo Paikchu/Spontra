@@ -10,7 +10,8 @@ import { pendingLibraryDocuments } from "../filing-library/store.ts";
 import type { TaskImplementation, TaskOutcome } from "./tasks.ts";
 import { driveWorkflow, failedInputOutcome } from "./workflow-task.ts";
 import { D1SecRepository } from "../sec/d1.ts";
-import { BUSINESS_TAGS_VERSION } from "../../../../shared/analysis-runtime/business-tags.ts";
+import { BUSINESS_TAGS_VERSION, PEER_MATCH_VERSION } from "../../../../shared/analysis-runtime/business-tags.ts";
+import { matchCompany } from "../business-tags/match.ts";
 import { tagsCacheKey, tagsPlan } from "../business-tags/input.ts";
 
 /** Source bytes and wall time one run spends; what is left is split by the next run, right away. */
@@ -84,13 +85,21 @@ export const LIBRARY_TASKS = {
    * (docs/peer-similarity-design.md): one Workflow per change of the company's links or map businesses.
    */
   "business-tags": {
-    version: BUSINESS_TAGS_VERSION,
+    version: `${BUSINESS_TAGS_VERSION}+${PEER_MATCH_VERSION}`,
     async run(env, ticker, { now, causeId, trigger }): Promise<TaskOutcome> {
       if (env.BUSINESS_TAGS_ENABLED === "false" || !env.ANTHROPIC_API_KEY) return { status: "done", detail: { skipped: "business tags disabled" } };
       return driveWorkflow(env, `business-tags:${ticker}`, env.BUSINESS_TAGS_WORKFLOW, async () => {
         const plan = await tagsPlan(env.DB!, ticker);
         if (!plan) return null;
-        if ((await new D1SecRepository(env.DB!).getCache<{ fingerprint: string }>(tagsCacheKey(ticker)))?.payload?.fingerprint === plan.fingerprint) return null;
+        const repository = new D1SecRepository(env.DB!);
+        const stored = (await repository.getCache<{ fingerprint: string; matchVersion?: string }>(tagsCacheKey(ticker)))?.payload;
+        if (stored?.fingerprint === plan.fingerprint) {
+          // The tags stand; only how they are compared changed: match again from the stored tags, no model.
+          if (stored.matchVersion === PEER_MATCH_VERSION) return null;
+          const matched = await matchCompany(env, ticker, now);
+          await repository.setCache(tagsCacheKey(ticker), { ...stored, matchVersion: PEER_MATCH_VERSION }, now.toISOString());
+          return { status: "done", detail: { rematched: matched } };
+        }
         const failed = await failedInputOutcome(env, "business-tags", ticker, plan.fingerprint, now);
         if (failed) return failed;
         return { id: `business-tags-${ticker.replace(/[^A-Za-z0-9]/g, "-")}-${plan.fingerprint.slice(0, 16)}-${now.getTime()}`, params: { ticker, fingerprint: plan.fingerprint }, fingerprint: plan.fingerprint };

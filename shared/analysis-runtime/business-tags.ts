@@ -11,8 +11,17 @@ import { libraryHash } from "./filing-library/parse.ts";
 /** Bumping this writes every company's business tags again. */
 export const BUSINESS_TAGS_VERSION = "business-tags.v1";
 export const TAG_LIMITS = { perSector: 10, units: 16, sectionsPerUnit: 8, labelWords: [2, 6], labelChars: 60, labelZhChars: 24, definitionChars: 240 } as const;
-/** Cosine scores of the embedded tags: at or above `same` one facet is the same business, at or above `near` close to it. */
-export const DEFAULT_TAG_THRESHOLDS = { same: 0.8, near: 0.68 } as const;
+/**
+ * Changing how tags are compared re-matches every company from its stored tags; no model runs. v2: a facet's score is
+ * how much of each side's tags the other covers, not its single best tag pair.
+ */
+export const PEER_MATCH_VERSION = "peer-match.v2";
+/**
+ * Coverage scores of the embedded tags: at or above `same` a facet is the same business, at or above `near` close to it.
+ * Calibrated on the first production tags (2026-10-19): CRWV's offering covers NBIS at 0.78, ORCL's OCI at 0.76, the
+ * hyperscalers at 0.71–0.73 and Cloudflare at 0.68; the hyperscalers cover one another at 0.79–0.81.
+ */
+export const DEFAULT_TAG_THRESHOLDS = { same: 0.77, near: 0.7 } as const;
 /** Both units must be at least this much of their companies before company-wide figures stand for the compared business. */
 export const COMPANY_BASIS_EXPOSURE = 0.8;
 /** The revenue node of a single-segment company. */
@@ -144,11 +153,13 @@ export function facetValue(score: number | null, has: boolean, thresholds: TagTh
 
 /**
  * The tier of two units under one sector, from their four facets: what they sell decides whether they are peers at
- * all, the other three how close.
+ * all, the other three how close. A facet a side has no tag in says nothing either way: direct needs the same offering,
+ * no other known facet different and at least half of them the same.
  */
 export function tierOf(facets: Record<TagFacet, FacetValue>): PeerTier {
   const others = (["customers", "contract", "cost"] as const).map(f => facets[f]);
-  if (facets.offering === "same") return others.filter(v => v === "same").length >= 2 ? "direct" : "partial";
+  const known = others.filter(v => v !== "unknown");
+  if (facets.offering === "same") return known.length && !known.includes("different") && known.filter(v => v === "same").length * 2 >= known.length ? "direct" : "partial";
   if (facets.offering === "partial") return others.some(v => v === "same" || v === "partial") ? "partial" : "adjacent";
   return "sector";
 }
@@ -159,23 +170,51 @@ export const TIER_ORDER: readonly PeerTier[] = ["direct", "partial", "adjacent",
 export type MatchTag = { tagId: string; unitKey: string; sector: IndustryCategory; facet: TagFacet };
 /** One vector-search result: an own tag, a peer tag in the same namespace, and their cosine score. */
 export type TagHit = { own: string; peer: string; score: number };
+/**
+ * For an own tag whose search was cut off at its top-k, the lowest score it returned: a peer tag it did not reach scores
+ * no higher. An own tag absent here was answered in full, so a peer tag it did not reach is not yet in the index.
+ */
+export type HitFloors = Map<string, number>;
 export type MatchedPair = { pairKey: string; left: string; right: string; sectors: Partial<Record<IndustryCategory, Record<TagFacet, FacetMatch>>>; tier: PeerTier; tierSector: IndustryCategory };
+
+const mean = (values: number[]) => values.reduce((s, v) => s + v, 0) / values.length;
+
+/**
+ * How much two sets of tags describe the same business: each side's tags are matched to their nearest tag on the
+ * other side and averaged, and the two averages are combined as a harmonic mean. One shared tag among many does not
+ * make a broad business the same as a narrow one; both sides must be covered. Null when no tag pair has a score.
+ */
+export function coverage(own: string[], peer: string[], score: (own: string, peer: string) => number | null): { score: number; own: string; peer: string } | null {
+  const forward = new Map<string, number>(), backward = new Map<string, number>();
+  let top: { score: number; own: string; peer: string } | null = null;
+  for (const o of own) for (const p of peer) {
+    const v = score(o, p);
+    if (v == null) continue;
+    forward.set(o, Math.max(forward.get(o) ?? -2, v));
+    backward.set(p, Math.max(backward.get(p) ?? -2, v));
+    if (!top || v > top.score) top = { score: v, own: o, peer: p };
+  }
+  if (!top || !forward.size || !backward.size) return null;
+  const f = mean([...forward.values()]), b = mean([...backward.values()]);
+  return { score: f + b > 0 ? (2 * f * b) / (f + b) : 0, own: top.own, peer: top.peer };
+}
 
 /**
  * Every pair of one company's units with another company's units that share a sector: per shared sector, each facet's
- * best tag pair among the search hits (a facet a side has no tag in is unknown; tags both sides have that never met
- * in a search are different), and the best tier any shared sector gives.
+ * coverage over the search hits (a facet a side has no tag in is unknown), and the best tier any shared sector gives.
+ * The facet keeps its closest tag pair for display.
  */
-export function pairsFromHits(ownUnits: BusinessUnit[], peerUnits: BusinessUnit[], ownTags: MatchTag[], peerTags: MatchTag[], hits: TagHit[], thresholds: TagThresholds): MatchedPair[] {
+export function pairsFromHits(ownUnits: BusinessUnit[], peerUnits: BusinessUnit[], ownTags: MatchTag[], peerTags: MatchTag[], hits: TagHit[], thresholds: TagThresholds, floors: HitFloors = new Map()): MatchedPair[] {
   const ownById = new Map(ownTags.map(t => [t.tagId, t])), peerById = new Map(peerTags.map(t => [t.tagId, t]));
-  const best = new Map<string, { score: number; own: string; peer: string }>();
+  const scores = new Map<string, number>();
   for (const hit of hits) {
     const o = ownById.get(hit.own), p = peerById.get(hit.peer);
     if (!o || !p || o.sector !== p.sector || o.facet !== p.facet || o.unitKey.split("|")[0] === p.unitKey.split("|")[0]) continue;
-    const key = `${o.unitKey}~${p.unitKey}|${o.sector}|${o.facet}`;
-    if ((best.get(key)?.score ?? -2) < hit.score) best.set(key, { score: hit.score, own: o.tagId, peer: p.tagId });
+    const key = `${hit.own}~${hit.peer}`;
+    if ((scores.get(key) ?? -2) < hit.score) scores.set(key, hit.score);
   }
-  const has = (tags: MatchTag[], unitKey: string, sector: string, facet: string) => tags.some(t => t.unitKey === unitKey && t.sector === sector && t.facet === facet);
+  const score = (own: string, peer: string) => scores.get(`${own}~${peer}`) ?? floors.get(own) ?? null;
+  const tagsOf = (tags: MatchTag[], unitKey: string, sector: string, facet: string) => tags.filter(t => t.unitKey === unitKey && t.sector === sector && t.facet === facet).map(t => t.tagId);
   const pairs: MatchedPair[] = [];
   for (const own of ownUnits) for (const peer of peerUnits) {
     if (own.ticker === peer.ticker) continue;
@@ -186,9 +225,9 @@ export function pairsFromHits(ownUnits: BusinessUnit[], peerUnits: BusinessUnit[
     for (const sector of shared) {
       const facets = {} as Record<TagFacet, FacetMatch>;
       for (const facet of TAG_FACETS) {
-        const found = best.get(`${own.unitKey}~${peer.unitKey}|${sector}|${facet}`);
-        const both = has(ownTags, own.unitKey, sector, facet) && has(peerTags, peer.unitKey, sector, facet);
-        facets[facet] = { value: facetValue(found?.score ?? null, both, thresholds), score: found ? Math.round(found.score * 1000) / 1000 : null, leftTag: found?.own ?? null, rightTag: found?.peer ?? null };
+        const mine = tagsOf(ownTags, own.unitKey, sector, facet), theirs = tagsOf(peerTags, peer.unitKey, sector, facet);
+        const found = mine.length && theirs.length ? coverage(mine, theirs, score) : null;
+        facets[facet] = { value: facetValue(found?.score ?? null, mine.length > 0 && theirs.length > 0, thresholds), score: found ? Math.round(found.score * 1000) / 1000 : null, leftTag: found?.own ?? null, rightTag: found?.peer ?? null };
       }
       sectors[sector] = facets;
       const t = tierOf({ offering: facets.offering.value, customers: facets.customers.value, contract: facets.contract.value, cost: facets.cost.value });

@@ -1,4 +1,4 @@
-import { BUSINESS_TAGS_VERSION, buildUnits, type TagDraft } from "../../../../shared/analysis-runtime/business-tags.ts";
+import { BUSINESS_TAGS_VERSION, buildUnits, PEER_MATCH_VERSION, type TagDraft } from "../../../../shared/analysis-runtime/business-tags.ts";
 import { modelFor, reasoningFor } from "../ai-config.ts";
 import type { SecPipelineEnv } from "../operations.ts";
 import { tagsCacheKey, tagsPlan } from "./input.ts";
@@ -34,7 +34,7 @@ export async function writeTags(db: D1Database, ticker: string, assignments: Rec
   const stale = [...existing].filter(([id, status]) => !keep.has(id) && status !== "rejected").map(([id]) => id);
   if (stale.length) statements.push(db.prepare("DELETE FROM sec_business_tags WHERE tag_id IN (SELECT value FROM json_each(?))").bind(JSON.stringify(stale)));
   statements.push(db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at")
-    .bind(tagsCacheKey(ticker), JSON.stringify({ fingerprint, version: BUSINESS_TAGS_VERSION, at: now }), now));
+    .bind(tagsCacheKey(ticker), JSON.stringify({ fingerprint, version: BUSINESS_TAGS_VERSION, matchVersion: PEER_MATCH_VERSION, at: now }), now));
   for (let i = 0; i < statements.length; i += 90) await db.batch(statements.slice(i, i + 90));
   return { units: units.length, tags: written.length, kept: written.filter(t => existing.get(t.tagId) !== "rejected").length, removed: [...stale, ...written.filter(t => existing.get(t.tagId) === "rejected").map(t => t.tagId)] };
 }

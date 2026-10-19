@@ -397,6 +397,6 @@ P2 先只记得分，不发布档位。在后台"业务标签"视图看完验收
 - 代码：契约 `shared/analysis-contract/business-tags.ts`；纯规则 `shared/analysis-runtime/business-tags.ts`（单元、标签校验、档位、口径、配对）；Pipeline `workers/pipeline/src/business-tags/`（input、model、match、workflow、view）；迁移 `0033_business_tags.sql`；任务 `business-tags` 与 Workflow `spontra-business-tags`；后台 公司业务板块 › 业务标签（`apps/admin/src/business-tags.tsx`）。
 - 事件：`library-links` 写完发出 `library.links.published` → `business-tags` → `business.tags.published` → `peers`。后台修改业务类别、删除或恢复标签、设定档位都会重新匹配或重建投影。
 - 发布物：`peers:v1` 的形状不变，增加可选的 `units` 与 `pairs`（`PEERS_VERSION` 升到 `peers.v2`），网站与旧读者不受影响；没有配对的公司仍按共享类别找同行。
-- 阈值：默认 `same ≥ 0.8`、`near ≥ 0.68`，可用变量 `PEER_TAG_THRESHOLDS` 覆盖；需在首批数据上按"校准"一节核对后再定。
+- 阈值：按首批生产标签校准为 `same ≥ 0.77`、`near ≥ 0.70`（覆盖度），可用变量 `PEER_TAG_THRESHOLDS` 覆盖。CRWV 的"卖什么"覆盖 NBIS 0.78、ORCL OCI 0.76、MSFT/GOOGL/AMZN 0.71–0.73、NET 0.68；结果：CRWV × NBIS 直接同行，与 ORCL/MSFT/GOOGL/AMZN 部分可比，与 NET 只同大类。direct 的条件里，一方没有标签的方面不计入。
 - 读者：分析师 `peers` 工具按配对输出，`find_sections peers:true` 查配对单元的小节（不再只取第一个类别），新增 `similar_businesses`；lens 同行表只放口径为 `company` 的同行，点名其他同行会编译报错。单元级 ref（`peerUnit`）尚未实现，`unit` 口径的同行目前只能在分析师的观察里看到单元收入。
 - 发布前置：在 Cloudflare 账户里创建 Vectorize 索引 `business-tags`（1024 维、cosine），否则 Worker 部署会因绑定不存在而失败。
