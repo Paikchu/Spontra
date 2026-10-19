@@ -330,11 +330,16 @@ test("a metric reads in its own units in either language", () => {
 
 test("peers rank the company on the ratios they can answer, best first by the metric's direction", () => {
   const peer = (ticker: string, o: Options) => ({ ticker, categories: ["cloud"], newestQuarter: PERIOD, quarters: peerQuartersFrom(company(o)) });
+  const unit = (ticker: string) => ({ ticker, unitKey: `${ticker}|all`, name: ticker, flowNodeId: "reported-company-total", sectors: ["cloud"], periodEnd: PERIOD, revenue: null, exposure: 1 });
+  const facet = { value: "same" as const, score: 1, leftTag: null, rightTag: null };
+  const pair = (other: string, basis: "company" | "unit") => ({ left: "TEST|all", right: `${other}|all`, tier: "direct" as const, sector: "cloud", basis, facets: { offering: facet, customers: facet, contract: facet, cost: facet } });
   const peers = { schemaVersion: "peers.v1" as const, generatedAt: "now", companies: [
     { ...peer("TEST", { shape: "standard" }), categories: ["cloud"] },
     peer("HEAVY", { shape: "standard", capexLate: 600, debtIssuedLate: 500 }),
     peer("LIGHT", { shape: "standard", capexLate: 60 }),
-  ] };
+    peer("PART", { shape: "standard", capexLate: 30 }),
+    peer("SAMECAT", { shape: "standard", capexLate: 30 }),
+  ], units: ["TEST", "HEAVY", "LIGHT", "PART"].map(unit), pairs: [pair("HEAVY", "company"), pair("LIGHT", "company"), pair("PART", "unit")] };
   const a = assessStatements(standard, PERIOD);
   const ranks = peerRanks({ ...standard, peers }, a, "TEST");
   const self = ranks["self-funding"]!;
@@ -345,6 +350,8 @@ test("peers rank the company on the ratios they can answer, best first by the me
   assert.equal(ranks["roe"], undefined, "a derived figure has no peer reading");
   assert.ok(ranks["current-ratio"], "current assets and liabilities travel in the projection");
   assert.deepEqual(peerRanks({ ...standard, peers: null }, a, "TEST"), {});
+  assert.ok(!self.rows.some(r => r.ticker === "PART" || r.ticker === "SAMECAT"), "a unit-basis pair or a shared category alone is not ranked against");
+  assert.deepEqual(peerRanks({ ...standard, peers: { ...peers, units: undefined, pairs: undefined } }, a, "TEST"), {}, "categories alone rank nothing");
 });
 
 test("the ledger carries derived rows and the checkup's flags for the findings writer", () => {

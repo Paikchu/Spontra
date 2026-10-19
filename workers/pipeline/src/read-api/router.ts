@@ -8,7 +8,7 @@ import { readGuidanceResponse } from "../guidance/workflow.ts";
 import { readFindingsResponse } from "../findings/read.ts";
 import { readPeersResponse } from "../peers/read.ts";
 import { peersFor } from "../../../../shared/analysis-runtime/peers.ts";
-import { peersOf } from "../../../../shared/analysis-runtime/lens/table.ts";
+import { rankingPeers } from "../../../../shared/analysis-runtime/statement-analysis.ts";
 import { readEventsResponse } from "../events/read.ts";
 import { readPublicPassage } from "../filing-library/passage-read.ts";
 import { parseFundamentalApiQuery } from "../fundamentals/fundamentals-api.ts";
@@ -159,7 +159,7 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
       // The company and its comparable peers only, so another company's new quarter moves this answer only when it is a peer.
       const ticker = route.ticker.trim().toUpperCase();
       const peers = capital ? await readPeersResponse(database).then(r => {
-        const comparable = peersOf({ quarters: [], history: null, capital: null, fundamentals: null, guidance: null, peers: r.peers }, ticker);
+        const comparable = rankingPeers(r.peers, ticker);
         return comparable.length ? peersFor(r.peers, new Set([ticker, ...comparable])) : null;
       }).catch(() => null) : null;
       const payload: CapitalResponse = { schemaVersion: "capital-response.v1", status: capital ? "ready" : "unavailable", capital, peers };

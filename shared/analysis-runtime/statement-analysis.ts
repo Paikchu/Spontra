@@ -7,7 +7,8 @@ import {
 } from "../analysis-contract/statement-analysis.ts";
 import { cashFlowSpan, operatingGroup, resolveEvidence, resolveRef, shiftPeriod, type FindingData, type ResolvedValue } from "./findings.ts";
 import { refView } from "./highlights.ts";
-import { peersOf } from "./lens/table.ts";
+import { comparablePeers } from "./peers.ts";
+import type { PeersPublication } from "../analysis-contract/peers.ts";
 import { compactMoney, multiple, perShare, points, type Locale } from "./locale.ts";
 
 /**
@@ -340,12 +341,18 @@ function atPeer(ref: FindingRef, ticker: string): FindingRef | null {
 }
 
 /**
- * Where the company stands on each ratio its comparable peers can answer (`peersOf`: business-tag peers of basis
- * company, else shared categories): only level metrics with a direction, each peer at its aligned quarter, and only
- * when at least two peers answer. Amounts and months are not ranked; size is not a ratio.
+ * The peers a company's whole-company ratios may be ranked against: business-tag pairs of basis company only. A shared
+ * category alone (a bank beside a phone maker) or a pair comparable on one unit is not a basis for ranking.
+ */
+export const rankingPeers = (peers: PeersPublication | null | undefined, ticker: string): string[] =>
+  (comparablePeers(peers, ticker) ?? []).filter(c => c.pair.basis === "company").map(c => c.ticker);
+
+/**
+ * Where the company stands on each ratio its ranking peers can answer: only level metrics with a direction, each peer
+ * at its aligned quarter, and only when at least two peers answer. Amounts and months are not ranked; size is not a ratio.
  */
 export function peerRanks(data: FindingData, assessment: StatementAssessment, ticker: string): Record<string, PeerRank> {
-  const peers = data.peers ? peersOf(data, ticker) : [];
+  const peers = rankingPeers(data.peers, ticker);
   const out: Record<string, PeerRank> = {};
   if (peers.length < 2) return out;
   for (const metric of assessment.dimensions.flatMap(d => d.metrics)) {
