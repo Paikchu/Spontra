@@ -17,7 +17,7 @@ export const REVISES: Partial<Record<EventType, readonly MapResource[]>> = {
   "explainer.published": ["company"],
   "tree.published": ["company"],
   // A feature switched shown or hidden: every resource a feature publishes into, so the reader reloads what changed.
-  "feature.settings": ["company", "filings", "findings"],
+  "feature.settings": ["company", "filings", "findings", "events"],
   "findings.published": ["findings"],
   "dossier.published": ["findings"],
   "peers.published": ["findings"],

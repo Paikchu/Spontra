@@ -99,6 +99,6 @@ Pipeline 对应路径为 `/admin/*`，管理接口需要签名会话。现有公
 
 选择存于 `business_feature_settings`（migration 0030，按公司与功能一行，`*` 行为全局开关），覆盖部署默认值：`SEC_AI_TICKERS` / `SEC_AI_ENABLED` 是财报摘要、要点、业务解读的默认，`BUSINESS_TREE_TICKERS` 加 AI 名单 / `BUSINESS_TREE_ENABLED` 是业务脑图的默认；显式关闭同样生效。旧表 `financial_ai_settings`、`business_tree_settings` 已回填并保留一个发布周期。Pipeline 在每个入口读一次设置表，解析成 `FEATURE_RESOLVED`；`SEC_AI_TICKERS` 随之设为财报摘要名单，读它的旧代码含义不变。要点要求财报摘要开着；关掉财报摘要会同时关掉要点。四个功能都要求公司在白名单内。
 
-每次切换发出 `feature.settings`（`detail.feature` 标明功能），由该功能的首个任务检查是否有东西要写（财报摘要 → `sec-report`，要点 → `findings` 与 `company-analysis`，业务解读 → `explainer`，业务脑图 → `tree`），并推进地图的 company、filings、findings 版本号，读者立刻看到变化。读者能否看到只看这个开关：公司有存储的选择就用它，没有就用部署默认名单（`SEC_AI_TICKERS`、`BUSINESS_TREE_TICKERS`）；从未开过的公司即使库里有旧内容也不展示。关着时公开读取接口返回 `status: "hidden"`（要点、业务解读、业务脑图、指引）或只列申报不带摘要（`filings`）；首页要点轮播（`/api/business/v1/findings`）不列这些公司；后台读取不受影响，存储不删。
+每次切换发出 `feature.settings`（`detail.feature` 标明功能），由该功能的首个任务检查是否有东西要写（财报摘要 → `sec-report`，要点 → `findings` 与 `company-analysis`，业务解读 → `explainer`，业务脑图 → `tree`），并推进地图的 company、filings、findings、events 版本号，读者立刻看到变化。读者能否看到只看这个开关：公司有存储的选择就用它，没有就用部署默认名单（`SEC_AI_TICKERS`、`BUSINESS_TREE_TICKERS`）；从未开过的公司即使库里有旧内容也不展示。关着时公开读取接口返回 `status: "hidden"`（要点、业务解读、业务脑图、指引）或只列申报不带摘要（`filings`、`events`）；首页要点轮播（`/api/business/v1/findings`）不列这些公司；后台读取不受影响，存储不删。
 
 接口：`POST /api/admin/business-map/companies/:ticker/features/:feature`（`{on}`）、`POST /api/admin/business-map/features/:feature`（`{on}`，全局生成）。

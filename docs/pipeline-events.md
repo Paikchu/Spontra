@@ -304,4 +304,4 @@ P4 的实现要点与差异：
 - 旧存档里带 sec.gov 随机脚本的副本，在补历史重读时一次性改存为规范内容，1,170 个被替换的对象 24 小时后由 `archive-prune` 删除。
 
 - **AI 名单在后台控制（2026-10-15）。** `financial_ai_settings` 覆盖 `SEC_AI_TICKERS`；后台开启一家公司时发出 `ai.enabled`（订阅者 `sec-report`、`explainer`），后续事件链不变。2026-10-17 并入功能开关（下一条）。
-- **功能开关在后台控制（2026-10-17）。** 任务的 scope 从 `ai` 拆成 `reports`（`sec-report`、`guidance`）、`findings`（`memory`、`company-analysis`、`findings`、`analyst`）、`explainer`、`tree`，各读 `business_feature_settings` 解析出的名单；`ai.enabled` 与 `tree.settings` 合并为 `feature.settings`（`detail.feature`），订阅者是该功能的首个任务，并推进地图 company、filings、findings 版本号。见 [businessview-admin](businessview-admin.md)、[whitelist-feature-switches-design](whitelist-feature-switches-design.md)。
+- **功能开关在后台控制（2026-10-17）。** 任务的 scope 从 `ai` 拆成 `reports`（`sec-report`、`guidance`）、`findings`（`memory`、`company-analysis`、`findings`、`analyst`）、`explainer`、`tree`，各读 `business_feature_settings` 解析出的名单；`ai.enabled` 与 `tree.settings` 合并为 `feature.settings`（`detail.feature`），订阅者是该功能的首个任务，并推进地图 company、filings、findings、events 版本号。见 [businessview-admin](businessview-admin.md)、[whitelist-feature-switches-design](whitelist-feature-switches-design.md)。
