@@ -177,7 +177,7 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
       return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
     }
     case "events": {
-      const payload = await readEventsResponse(database, route.ticker);
+      const payload = await readEventsResponse(database, route.ticker, { hidden: await hidden("reports") });
       payload.events = await translated("events", payload.events);
       return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
     }
