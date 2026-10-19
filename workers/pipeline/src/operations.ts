@@ -11,6 +11,7 @@ import { fetchSecMarketSnapshot } from "./sec/market.ts";
 import { normalizeEditorialIssues, editorialRequirements } from "./sec/editorial.ts";
 import { EDITORIAL_REVIEW_PROMPT, identifyReaderMarketSnapshot } from "./sec/reader.ts";
 import { fiscalPeriodKey, fiscalPeriodsFromCompanyFacts, readFiscalPeriod } from "./sec/fiscal-period.ts";
+import { fiscalPeriodsInSequence } from "./sec/fiscal-sequence.ts";
 import { attachDiscovery, auditDisclosureCoverage, discoveryChunkCount, scanDisclosureChunk, type DiscoveryChunk } from "./sec/discovery.ts";
 import { buildEarningsGroups, classificationKey, combineEarningsDocuments, earningsKey, identifyEarningsPeriod, isPeriodic } from "./sec/earnings.ts";
 import type { SecEarningsGroup } from "../../../shared/analysis-contract/report.ts";
@@ -293,7 +294,8 @@ export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof
         console.warn("SEC Company Facts read failed", { ticker, error: error instanceof Error ? error.message : String(error) });
         return null;
       }) : null;
-      const periods = facts ? fiscalPeriodsFromCompanyFacts(facts, normalizedFeed.filings) : [];
+      // An issuer's DEI can repeat last year's fiscal year (Oracle's 2026-08-31 10-Q says FY2026 Q1); the stored label is the one in sequence.
+      const periods = facts ? fiscalPeriodsInSequence(fiscalPeriodsFromCompanyFacts(facts, normalizedFeed.filings)) : [];
       // The indexed list, the fiscal periods guidance dates its items by, and their event commit together.
       await db.batch([
         db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at")

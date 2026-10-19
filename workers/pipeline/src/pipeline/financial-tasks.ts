@@ -144,11 +144,12 @@ export const FINANCIAL_TASKS = {
   },
 
   /**
-   * Fetches one transcript within the shared daily budget, then sleeps until the next one is due: the next queued
-   * period, a failed one's retry the next day, or the next UTC day when the budget is spent.
+   * Fetches one transcript within the daily budget, then sleeps until the next one is due: the next queued period, a
+   * throttled one a minute later, a failed one's retry the next day, or the next UTC day when the budget is spent.
    */
   transcript: {
-    version: "transcript.v1",
+    // v2: labels in fiscal sequence (a mislabelled call is fetched again), 6-K and 20-F periods, burst throttling apart.
+    version: "transcript.v2-sequence",
     async run(env, _ticker, { now, causeId }): Promise<TaskOutcome> {
       const result = await syncTranscript(env, now, fetch, causeId);
       if (result.status === "disabled") return { status: "done", detail: result };
