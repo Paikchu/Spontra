@@ -1,3 +1,5 @@
+import type { SecFiscalPeriod } from "../../../../shared/analysis-contract/report.ts";
+
 /** A reported quarter of one company: the fourth quarter is the fiscal year (a 10-K or 20-F). */
 export type FiscalLabel = { fiscalYear: number; quarter: 1 | 2 | 3 | 4; periodEnd: string };
 
@@ -46,4 +48,12 @@ export function quarterOf(fiscalPeriod: string): FiscalLabel["quarter"] | null {
   if (fiscalPeriod === "FY") return 4;
   const match = /^Q([1-4])$/.exec(fiscalPeriod);
   return match ? Number(match[1]) as FiscalLabel["quarter"] : null;
+}
+
+/** SEC fiscal periods with their years put in sequence; half-year and nine-month foci pass through unchanged. */
+export function fiscalPeriodsInSequence(periods: SecFiscalPeriod[]): SecFiscalPeriod[] {
+  const labelled = periods.flatMap((period, index) => { const quarter = quarterOf(period.fiscalPeriod); return quarter ? [{ fiscalYear: period.fiscalYear, quarter, periodEnd: period.periodEnd, index }] : []; });
+  const out = [...periods];
+  for (const label of inFiscalSequence(labelled)) out[label.index] = { ...periods[label.index]!, fiscalYear: label.fiscalYear };
+  return out;
 }

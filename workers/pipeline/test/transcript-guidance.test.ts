@@ -7,7 +7,7 @@ import { guidanceWorkflowSuffix } from "../src/guidance/extract.ts";
 import { executeGuidanceWorkflow, guidanceCacheKey } from "../src/guidance/workflow.ts";
 import type { SecPipelineEnv } from "../src/operations.ts";
 import { SEC_TASKS } from "../src/pipeline/sec-tasks.ts";
-import { inFiscalSequence, quarterAfterYearEnd } from "../src/sec/fiscal-sequence.ts";
+import { fiscalPeriodsInSequence, inFiscalSequence, quarterAfterYearEnd } from "../src/sec/fiscal-sequence.ts";
 import { syncTranscript } from "../src/transcripts/library.ts";
 
 /** D1 over node:sqlite with every migration applied. */
@@ -95,6 +95,9 @@ test("a fiscal label that repeats or runs behind last year's takes the year its 
   // A 6-K quarter counts on from the 20-F's fiscal year.
   assert.deepEqual(quarterAfterYearEnd([{ fiscalYear: 2025, quarter: 4, periodEnd: "2025-12-31" }], "2026-06-30"), { fiscalYear: 2026, quarter: 2, periodEnd: "2026-06-30" });
   assert.equal(quarterAfterYearEnd([{ fiscalYear: 2024, quarter: 4, periodEnd: "2024-12-31" }], "2026-06-30"), null);
+  // The fiscal periods the SEC report run stores are written corrected.
+  const period = (fiscalYear: number, fiscalPeriod: "Q1" | "FY", periodEnd: string) => ({ fiscalYear, fiscalPeriod, periodEnd, source: "sec_dei" as const, sourceAccession: periodEnd, sourceUrl: "https://www.sec.gov/" });
+  assert.deepEqual(fiscalPeriodsInSequence([period(2026, "Q1", "2026-08-31"), period(2026, "FY", "2026-05-31")]).map(p => p.fiscalYear), [2027, 2026]);
 });
 
 test("a burst refusal retries the period a minute later and leaves the day's budget open; the daily limit closes the day", async () => {
