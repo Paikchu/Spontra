@@ -476,3 +476,9 @@ test("the writer's finish is held to the same check, and a model that never read
   assert.ok(outcome.issues.some(i => i.includes("sourceIds")), "citing a material it never read is refused");
   assert.ok(outcome.issues.some(i => i.includes("at least two quotes")));
 });
+
+test("an escaped character in a note's text is read as the character it names", async () => {
+  const { unescaped } = await import("../src/checkup/agent.ts");
+  assert.equal(unescaped("fell to 3.59\\u00d7 from 4.28\\u00d7"), "fell to 3.59× from 4.28×");
+  assert.equal(unescaped("plain 3.59× stays"), "plain 3.59× stays");
+});
