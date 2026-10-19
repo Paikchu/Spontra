@@ -2,12 +2,13 @@ import type { FlowMetric } from "../analysis-contract/business-flow.ts";
 import type { AnalysisFinding, CapitalMetric, DerivedMetric, FindingEvidence, FindingRef, FindingSpan } from "../analysis-contract/findings.ts";
 import {
   STATEMENT_ANALYSIS_VERSION, STATEMENT_DIMENSIONS, STATEMENT_METRICS, STATEMENT_RULES,
-  type AssessedDimension, type AssessedMetric, type CapitalChain, type CashBridge, type BridgeStep, type Flag, type FlagLevel, type IncomeModel,
+  type AssessedDimension, type AssessedMetric, type CapitalChain, type CashBridge, type BridgeStep, type Flag, type FlagLevel, type IncomeModel, type PeerRank,
   type MetricForm, type RuleCondition, type StatementAssessment, type StatementMetricDef, type StatementRuleDef,
 } from "../analysis-contract/statement-analysis.ts";
 import { cashFlowSpan, operatingGroup, resolveEvidence, resolveRef, shiftPeriod, type FindingData, type ResolvedValue } from "./findings.ts";
 import { refView } from "./highlights.ts";
-import { compactMoney, multiple, type Locale } from "./locale.ts";
+import { peersOf } from "./lens/table.ts";
+import { compactMoney, multiple, perShare, points, type Locale } from "./locale.ts";
 
 /**
  * The three-statement checkup over the data a page already holds (docs/three-statement-analysis-design.md). Pure:
@@ -266,3 +267,92 @@ export function assessStatements(data: FindingData, periodEnd: string, locale: L
     chain: standard ? capitalChain(data, periodEnd, locale) : null,
   };
 }
+
+/* ---------- Reading the checkup ---------- */
+
+export const METRIC_DEFS: ReadonlyMap<string, StatementMetricDef> = new Map(STATEMENT_METRICS.map(d => [d.id, d]));
+export const RULE_DEFS: ReadonlyMap<string, StatementRuleDef> = new Map(STATEMENT_RULES.map(r => [r.id, r]));
+
+/** A metric's value as the page and the ledger write it: "12.3%", "+15.2 pp", "2.60×", "$75.7B", "18 months". */
+export function formatMetric(value: number, form: MetricForm, locale: Locale = "en", currency: string | null = "USD"): string {
+  if (!Number.isFinite(value)) return "—";
+  const sign = value < 0 ? "−" : "";
+  switch (form) {
+    case "percent": return `${sign}${Math.abs(value).toFixed(1)}%`;
+    case "points": return points(value, locale);
+    case "multiple": return multiple(`${sign}${Math.abs(value).toFixed(2)}`, locale);
+    case "money": return compactMoney(value, currency, locale);
+    case "per_share": return perShare(value, currency, locale);
+    case "months": return zh(locale) ? `${Math.abs(value).toFixed(1)} 个月` : `${Math.abs(value).toFixed(1)} months`;
+  }
+}
+/** A change of a metric in its own terms: points for a rate, turns for a multiple, percent for an amount or a count of months. */
+export function formatMetricChange(delta: number, form: MetricForm, locale: Locale = "en"): string {
+  if (!Number.isFinite(delta)) return "—";
+  const sign = delta > 0 ? "+" : delta < 0 ? "−" : "";
+  if (form === "percent" || form === "points") return points(delta, locale);
+  if (form === "multiple") return multiple(`${sign}${Math.abs(delta).toFixed(2)}`, locale);
+  return `${sign}${Math.abs(delta).toFixed(1)}%`;
+}
+
+/** The levels a flagged metric is tested against, in its display units, for a chart's threshold lines. */
+export function thresholdsOf(flag: Pick<Flag, "ruleId" | "metricId">): number[] {
+  const rule = RULE_DEFS.get(flag.ruleId);
+  return rule ? rule.all.flatMap(c => c.metric === flag.metricId && "on" in c && c.on === "value" ? [c.value] : []) : [];
+}
+
+/**
+ * The statement figures a flag is about, for marking the tiles that show them: a ratio's numerator, a spread's own
+ * figure, a derived figure's leading input. The denominator is context, not the subject.
+ */
+export function flagFigures(flag: Pick<Flag, "metricId">): { metrics: FlowMetric[]; capital: CapitalMetric[] } {
+  const def = METRIC_DEFS.get(flag.metricId);
+  const metrics = new Set<FlowMetric>(), capital = new Set<CapitalMetric>();
+  const lead = (ref: FindingRef) => {
+    if ("ratio" in ref) { lead(ref.ratio.numerator); return; }
+    if ("metric" in ref) metrics.add(ref.metric);
+    else if ("capital" in ref) capital.add(ref.capital);
+    else if ("derived" in ref) { const inputs = DERIVED_INPUTS[ref.derived]; if (inputs.capital?.[0]) capital.add(inputs.capital[0]); else if (inputs.metrics?.[0]) metrics.add(inputs.metrics[0]); }
+  };
+  if (def) lead(def.ref);
+  return { metrics: [...metrics], capital: [...capital] };
+}
+
+/** A reference read at a peer: the same figure or ratio through the peers projection; null when a side has no peer figure. */
+function atPeer(ref: FindingRef, ticker: string): FindingRef | null {
+  if ("ratio" in ref) {
+    const n = atPeer(ref.ratio.numerator, ticker), d = atPeer(ref.ratio.denominator, ticker);
+    return n && d && !("ratio" in n) && !("ratio" in d) ? { ratio: { numerator: n as never, denominator: d as never } } : null;
+  }
+  if ("metric" in ref) return { peer: { ticker, ref: { metric: ref.metric } } };
+  if ("capital" in ref) return { peer: { ticker, ref: { capital: ref.capital } } };
+  if ("fundamental" in ref) return { peer: { ticker, ref: { fundamental: ref.fundamental } } };
+  return null;
+}
+
+/**
+ * Where the company stands on each ratio its comparable peers can answer (`peersOf`: business-tag peers of basis
+ * company, else shared categories): only level metrics with a direction, each peer at its aligned quarter, and only
+ * when at least two peers answer. Amounts and months are not ranked; size is not a ratio.
+ */
+export function peerRanks(data: FindingData, assessment: StatementAssessment, ticker: string): Record<string, PeerRank> {
+  const peers = data.peers ? peersOf(data, ticker) : [];
+  const out: Record<string, PeerRank> = {};
+  if (peers.length < 2) return out;
+  for (const metric of assessment.dimensions.flatMap(d => d.metrics)) {
+    if (metric.measure !== "value" || metric.better === "none" || metric.form === "money" || metric.form === "months") continue;
+    const rows: PeerRank["rows"] = [{ ticker, value: metric.current.value, periodEnd: metric.current.resolved.periodEnd, own: true }];
+    for (const peer of peers) {
+      const ref = atPeer(metric.ref, peer);
+      const r = ref ? resolveRef(data, ref, assessment.periodEnd, metric.span) : null;
+      if (r && !r.range && Number.isFinite(r.value)) rows.push({ ticker: peer, value: display(metric.form, r), periodEnd: r.periodEnd, own: false });
+    }
+    if (rows.length < 3) continue;
+    rows.sort((a, b) => metric.better === "high" ? b.value - a.value : a.value - b.value);
+    out[metric.id] = { rank: rows.findIndex(r => r.own) + 1, of: rows.length, rows };
+  }
+  return out;
+}
+
+/** Counts of the flags at each level, for a company's line on the home page. */
+export const flagCounts = (flags: Flag[]): Record<FlagLevel, number> => ({ alert: flags.filter(f => f.level === "alert").length, watch: flags.filter(f => f.level === "watch").length, note: flags.filter(f => f.level === "note").length });

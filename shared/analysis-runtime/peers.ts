@@ -128,6 +128,7 @@ const REF_OF: Partial<Record<PeerFigure, FindingRef>> = {
   debtIssued: { capital: "debtIssued" }, equityIssued: { capital: "equityIssued" }, buybacks: { capital: "buybacks" }, dividends: { capital: "dividends" },
   totalAssets: { capital: "totalAssets" }, debt: { capital: "debt" }, cash: { capital: "cash" }, equity: { capital: "equity" }, rpo: { capital: "rpo" },
   stockBasedCompensation: { fundamental: "stock_based_compensation" },
+  receivables: { capital: "receivables" }, currentAssets: { capital: "currentAssets" }, currentLiabilities: { capital: "currentLiabilities" },
 };
 
 const near = (a: string, b: string) => Math.abs(Date.parse(a) - Date.parse(b)) <= 20 * DAY;

@@ -1,10 +1,12 @@
 import type { FindingRef, FindingSpan } from "../../../../shared/analysis-contract/findings.ts";
-import { resolveEvidence, resolveRef, type FindingData, type VerifiedFinding } from "../../../../shared/analysis-runtime/findings.ts";
+import { resolveEvidence, type FindingData, type VerifiedFinding } from "../../../../shared/analysis-runtime/findings.ts";
+import { assessStatements, formatMetric, METRIC_DEFS } from "../../../../shared/analysis-runtime/statement-analysis.ts";
+import type { Flag } from "../../../../shared/analysis-contract/statement-analysis.ts";
 
 /**
  * What a finding deserves to be asked, decided by the figures rather than by the model: each line of inquiry
- * fires on a numeric relation in the data (a capital-intensity step, a cash/earnings divergence, a funding gap)
- * or on the finding's own anchors. Severity only caps the budget. Nothing here names a company or a case.
+ * fires on a rule of the three-statement checkup the report trips (a capital-intensity step, a cash/earnings
+ * divergence, a funding gap) or on the finding's own anchors and citations. Severity only caps the budget. Nothing here names a company or a case.
  */
 export type LineKey = "capital_intensity" | "cash_earnings" | "funding_commitments" | "demand_conversion" | "guidance_delivery" | "margin_mix" | "peers" | "event";
 export type PlannedLine = { key: LineKey; why: string; questions: string[]; evidence: string };
@@ -60,40 +62,47 @@ const LINES: Record<LineKey, Omit<PlannedLine, "why">> = {
 const refs = (f: VerifiedFinding): FindingRef[] => f.evidence.map(e => e.ref);
 const cites = (f: VerifiedFinding, test: (r: FindingRef) => boolean) => refs(f).some(r => test(r) || ("ratio" in r && (test(r.ratio.numerator) || test(r.ratio.denominator))));
 const capital = (name: string) => (r: FindingRef) => "capital" in r && r.capital === name;
-const num = (data: FindingData, ref: FindingRef, end: string, span: FindingSpan) => resolveRef(data, ref, end, span)?.value ?? null;
 const yoy = (data: FindingData, ref: FindingRef, end: string, span: FindingSpan) => resolveEvidence(data, { ref, periodEnd: end, span, compare: "yoy" })?.delta ?? null;
+
+/**
+ * The checkup's rules that open each line (docs/three-statement-analysis-design.md): the same thresholds the page flags
+ * on, so the analyst asks about what the reader is shown. Anchors and citations still open a line on their own.
+ */
+const LINE_RULES: Partial<Record<LineKey, string[]>> = {
+  capital_intensity: ["capex-cycle", "capex-unmatched", "returns-below-cost"],
+  cash_earnings: ["cash-below-profit", "cash-above-profit", "fcf-turned-negative", "fcf-turned-positive", "receivables-outrun", "inventory-outrun"],
+  funding_commitments: ["external-funding", "leverage-high", "leverage-rising", "maturity-wall", "liquidity-thin", "interest-burden", "runway-short"],
+  demand_conversion: ["backlog-large", "growth-decelerating", "revenue-decline"],
+  margin_mix: ["margin-compression", "gross-margin-compression", "margin-expansion", "operating-leverage"],
+};
+/** The flags at the finding's report that open a line, as "rule (value against threshold)"; empty when none trips. */
+function tripped(flags: Flag[], line: LineKey): string[] {
+  const rules = LINE_RULES[line] ?? [];
+  return flags.filter(f => rules.includes(f.ruleId)).map(f => `${f.ruleId} (${formatMetric(f.value, METRIC_DEFS.get(f.metricId)!.form)} against ${f.threshold})`);
+}
 
 export function planFinding(f: VerifiedFinding, data: FindingData, peers: string[]): Plan {
   const end = f.periodEnd, span: FindingSpan = f.evidence[0]?.span ?? "quarter";
   const tier: Tier = f.kind === "watch" || f.severity <= 1 ? "light" : f.severity === 3 ? "deep" : "standard";
+  const flags = assessStatements(data, end).flags;
   const lines: PlannedLine[] = [];
   const fire = (key: LineKey, why: string) => { if (!lines.some(l => l.key === key)) lines.push({ ...LINES[key], why }); };
+  const byRule = (key: LineKey, cited: boolean, citedWhy: string) => { const hits = tripped(flags, key); if (cited || hits.length) fire(key, cited ? citedWhy : `checkup flags ${hits.join("; ")}`); };
   // An event finding opens the event line first: its terms, the figures it touches, and its base rate.
   if (cites(f, r => "event" in r)) fire("event", "the finding rests on a filed event");
-  // Capital intensity: capex cited, or capex running far ahead of depreciation or of its own year-ago level.
-  const capexYoy = yoy(data, { capital: "capex" }, end, "fiscal_year"), capexDa = num(data, { ratio: { numerator: { capital: "capex" }, denominator: { capital: "depreciation" } } }, end, "fiscal_year");
-  if (cites(f, capital("capex")) || (capexYoy != null && Math.abs(capexYoy) > 40) || (capexDa != null && capexDa > 2)) fire("capital_intensity", cites(f, capital("capex")) ? "the finding rests on capex" : capexDa != null && capexDa > 2 ? "capex runs at more than twice depreciation" : "capex moved more than 40% on the year");
-  // Cash against earnings: operating cash far from net income, or free cash flow changing sign on the year.
-  const ocfNet = num(data, { ratio: { numerator: { capital: "operatingCashFlow" }, denominator: { metric: "net" } } }, end, "fiscal_year");
-  const fcf = num(data, { capital: "freeCashFlow" }, end, "fiscal_year"), fcfAgo = num(data, { capital: "freeCashFlow" }, end.replace(/^(\d{4})/, (_, y) => String(Number(y) - 1)), "fiscal_year");
-  if ((ocfNet != null && (ocfNet < 1 || ocfNet > 1.5)) || (fcf != null && fcfAgo != null && Math.sign(fcf) !== Math.sign(fcfAgo)) || cites(f, capital("freeCashFlow")) || cites(f, capital("operatingCashFlow"))) fire("cash_earnings", ocfNet != null && (ocfNet < 1 || ocfNet > 1.5) ? `operating cash is ${ocfNet.toFixed(2)}× net income` : "free cash flow or operating cash is in the evidence");
-  // Funding and obligations: large issuance against revenue, leverage moving, or a balance-sheet finding.
-  const revenue = num(data, { metric: "revenue" }, end, "fiscal_year");
-  const debtIssued = num(data, { capital: "debtIssued" }, end, "fiscal_year"), equityIssued = num(data, { capital: "equityIssued" }, end, "fiscal_year");
-  const leverageMove = yoy(data, { ratio: { numerator: { capital: "debt" }, denominator: { capital: "equity" } } }, end, "quarter");
-  if (f.anchors.view === "balance" || (revenue && ((debtIssued ?? 0) > 0.2 * revenue || (equityIssued ?? 0) > 0.2 * revenue)) || (leverageMove != null && Math.abs(leverageMove) > 0.3) || cites(f, capital("debtIssued")) || cites(f, capital("leases")) || cites(f, capital("customerAdvances")) || cites(f, capital("debt")))
-    fire("funding_commitments", f.anchors.view === "balance" ? "a balance-sheet finding" : "borrowing or issuance above a fifth of revenue, or leverage moving");
-  // Demand conversion: a growth claim on a business, or a large backlog against revenue.
-  const rpoRev = num(data, { ratio: { numerator: { capital: "rpo" }, denominator: { metric: "revenue" } } }, end, "quarter");
+  byRule("capital_intensity", cites(f, capital("capex")), "the finding rests on capex");
+  byRule("cash_earnings", cites(f, capital("freeCashFlow")) || cites(f, capital("operatingCashFlow")), "free cash flow or operating cash is in the evidence");
+  byRule("funding_commitments", f.anchors.view === "balance" || cites(f, capital("debtIssued")) || cites(f, capital("leases")) || cites(f, capital("customerAdvances")) || cites(f, capital("debt")),
+    f.anchors.view === "balance" ? "a balance-sheet finding" : "borrowing, leases or customer advances are in the evidence");
+  // Demand conversion: a growth claim on an anchored business is the finding's own, not a company-wide rule.
   const nodeGrowth = f.anchors.nodeIds.some(id => (yoy(data, { nodeId: id }, end, span) ?? 0) > 25);
-  if (nodeGrowth || (rpoRev != null && rpoRev > 2) || cites(f, r => "capital" in r && (r.capital === "rpo" || r.capital === "rpoNext12MonthsShare")) || f.pairWith) fire("demand_conversion", nodeGrowth ? "an anchored business grows more than 25% on the year" : "backlog or a paired growth finding");
+  byRule("demand_conversion", nodeGrowth || cites(f, r => "capital" in r && (r.capital === "rpo" || r.capital === "rpoNext12MonthsShare")) || !!f.pairWith,
+    nodeGrowth ? "an anchored business grows more than 25% on the year" : "backlog or a paired growth finding");
   // Guidance: any evidence compared against a guided range.
   if (f.evidence.some(e => typeof e.compare === "object")) fire("guidance_delivery", "the evidence is measured against guidance");
   // Peers: the finding matters enough and the company has tracked peers in its category; placed before margins so the cap keeps it.
   if (peers.length >= 2 && (f.severity === 3 || f.anchors.view !== "profit")) fire("peers", `${peers.length} comparable tracked peers`);
-  // Margin or mix: a margin ratio in the evidence or a margin moving more than two points.
-  const marginMove = (m: "gross" | "operating" | "net") => yoy(data, { ratio: { numerator: { metric: m }, denominator: { metric: "revenue" } } }, end, span);
-  if (cites(f, r => "ratio" in r && "metric" in r.ratio.denominator && r.ratio.denominator.metric === "revenue") || [marginMove("gross"), marginMove("operating"), marginMove("net")].some(d => d != null && Math.abs(d * 100) > 2)) fire("margin_mix", "a margin or expense ratio moved or is in the evidence");
+  byRule("margin_mix", cites(f, r => "ratio" in r && "metric" in r.ratio.denominator && r.ratio.denominator.metric === "revenue"), "a margin or expense ratio is in the evidence");
   const budget = BUDGETS[tier];
   return { tier, lines: lines.slice(0, MAX_LINES), budget };
 }

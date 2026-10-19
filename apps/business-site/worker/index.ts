@@ -84,13 +84,17 @@ export async function loadTree(ticker:string,fetcher:typeof fetch=fetch,locale:L
  }catch{return null;}
 }
 
-/** Supplementary and loaded on its own, so the map never waits for it; anything that fails re-validation reads as null. */
-export async function loadCapital(ticker:string,fetcher:typeof fetch=fetch):Promise<PublicCapitalStructure|null>{
+/**
+ * Supplementary and loaded on its own, so the map never waits for it; anything that fails re-validation reads as null.
+ * The comparable peers ride along for the three-statement checkup's ranks; a malformed projection drops the peers alone.
+ */
+export async function loadCapital(ticker:string,fetcher:typeof fetch=fetch):Promise<{capital:PublicCapitalStructure;peers:PeersPublication|null}|null>{
  try{
   const response=await fetcher(ANALYSIS_ORIGIN+`/api/v1/companies/${ticker}/capital`,{signal:AbortSignal.timeout(25000),headers:{accept:"application/json"}});
   if(!response.ok)return null;
-  const body=await response.json() as {schemaVersion?:string;status?:string;capital?:unknown};
-  return body.schemaVersion==="capital-response.v1"&&body.status==="ready"?readCapitalStructure(body.capital,ticker):null;
+  const body=await response.json() as {schemaVersion?:string;status?:string;capital?:unknown;peers?:unknown};
+  const capital=body.schemaVersion==="capital-response.v1"&&body.status==="ready"?readCapitalStructure(body.capital,ticker):null;
+  return capital?{capital,peers:readPeersPublication(body.peers)}:null;
  }catch{return null;}
 }
 
@@ -305,7 +309,7 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
   if(match[2]){
    // Supplementary resources answer on their own and are cached only when they have something to say.
    const supplementary=async<T>(name:string,version:string,load:()=>Promise<T|null>)=>{const body=await load();const response=json({schemaVersion:version,status:body?"ready":"unavailable",[name]:body});if(!body)response.headers.set("cache-control","no-store");if(cache&&body)ctx.waitUntil(cache.put(key,response.clone()));return response;};
-   if(match[2]==="/capital")return supplementary("capital","capital-response.v1",()=>loadCapital(match[1],fetcher));
+   if(match[2]==="/capital"){const body=await loadCapital(match[1],fetcher);const response=json({schemaVersion:"capital-response.v1",status:body?"ready":"unavailable",capital:body?.capital??null,peers:body?.peers??null});if(!body)response.headers.set("cache-control","no-store");if(cache&&body)ctx.waitUntil(cache.put(key,response.clone()));return response;}
    if(match[2]==="/findings"){const bundle=await loadFindings(match[1],fetcher,locale);const response=json({schemaVersion:"findings-response.v1",status:bundle?"ready":"unavailable",findings:bundle?.findings??null,passages:bundle?.passages??[],peers:bundle?.peers??null});if(!bundle)response.headers.set("cache-control","no-store");if(cache&&bundle)ctx.waitUntil(cache.put(key,response.clone()));return response;}
    if(match[2]==="/events")return supplementary("events","events-response.v1",()=>loadEvents(match[1],fetcher,locale));
    if(match[2]==="/filings")return supplementary("filings","filing-digests-response.v1",()=>loadFilings(match[1],fetcher,locale));

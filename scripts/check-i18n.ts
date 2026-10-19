@@ -24,6 +24,8 @@ const CJK = /[㐀-鿿豈-﫿]/;
 const LATIN_TERMS = new Set([
   "SEC", "XBRL", "EDGAR", "GAAP", "Non-GAAP", "Form", "Item", "Reg", "FD", "RPO", "EPS", "PEG", "EV", "EBITDA", "EV/EBITDA",
   "TTM", "AI", "ID", "EN", "Esc", "esc", "Business", "View", "USD", "K", "Q",
+  // Return and valuation ratios Chinese finance writing names by their abbreviation.
+  "ROE", "ROA", "ROIC", "NOPAT", "P/E", "P/S", "P/B",
   // Industry abbreviations Chinese finance writing keeps in Latin letters.
   "IaaS", "PaaS", "SaaS", "GPU", "CPU", "CDN", "PC", "IT", "AI",
 ]);

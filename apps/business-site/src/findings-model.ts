@@ -11,7 +11,7 @@ import { getLocale, labels, type Locale } from "@/packages/web/src/i18n";
 export type { VerifiedFinding };
 
 export const KIND_LABEL: Record<VerifiedFinding["kind"], string> = labels({ risk: "Risk", strength: "Strength", shift: "Shift", watch: "Watch" }, { risk: "风险", strength: "优势", shift: "变化", watch: "跟踪" });
-export const VIEW_LABEL = labels({ profit: "Profit", cash: "Cash flow", balance: "Balance sheet" }, { profit: "利润", cash: "现金流", balance: "资产负债表" });
+export const VIEW_LABEL = labels({ profit: "Profit", cash: "Cash flow", balance: "Balance sheet", checkup: "Checkup" }, { profit: "利润", cash: "现金流", balance: "资产负债表", checkup: "三表体检" });
 
 export function findingData(flow: PublicBusinessFlow, history: RevenueHistory | null, capital: PublicCapitalStructure | null, fundamentals: FindingFundamentals | null, guidance: GuidancePublication | null, peers: PeersPublication | null = null, passages: FindingPassage[] | null = null, events: EventsPublication | null = null): FindingData {
   return { quarters: flow.quarters, history, capital, fundamentals, guidance, peers, passages, events };
@@ -23,7 +23,7 @@ export function verifiedFindings(publication: FindingsPublication | null, data: 
 }
 
 /** Sankey node names a finding lights on the profit statement: its businesses, and the statement lines it names. */
-export function anchorNodeNames(f: VerifiedFinding, quarter: BusinessFlowQuarter | undefined, items: Array<{ id: string; key: string }>): Set<string> {
+export function anchorNodeNames(f: Pick<VerifiedFinding, "anchors">, quarter: BusinessFlowQuarter | undefined, items: Array<{ id: string; key: string }>): Set<string> {
   const names = new Set<string>();
   for (const id of f.anchors.nodeIds) { const item = items.find(i => i.id === id); if (item) names.add("segment:" + item.key); }
   for (const metric of f.anchors.metrics) {
@@ -38,7 +38,7 @@ export function anchorNodeNames(f: VerifiedFinding, quarter: BusinessFlowQuarter
 }
 
 /** Pool item keys a finding lights on the cash-flow or balance-sheet pool (see capital-model's item keys). */
-export function anchorPoolKeys(f: VerifiedFinding): Set<string> {
+export function anchorPoolKeys(f: Pick<VerifiedFinding, "anchors">): Set<string> {
   const keys = new Set<string>();
   const add = (...list: string[]) => list.forEach(k => keys.add(k));
   for (const metric of f.anchors.capital ?? []) {

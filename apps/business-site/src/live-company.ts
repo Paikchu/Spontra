@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { PublicBusinessFlow } from "@/shared/analysis-contract/business-flow";
 import type { PublicCapitalStructure } from "@/shared/analysis-contract/capital-structure";
+import type { PeersPublication } from "@/shared/analysis-contract/peers";
 import type { EventsPublication } from "@/shared/analysis-contract/events";
 import type { PublicFilingDigestPage } from "@/shared/analysis-contract/filings";
 import type { MapResource, MapRevisions } from "@/shared/analysis-contract/revisions";
 import type { FindingFundamentals } from "@/shared/analysis-runtime/findings";
-import { fetchCompany, fetchFindings, fetchRevisions, fetchSupplement, publicationFlow, type CompanyPublication, type FindingsBundle } from "./company-data";
+import { fetchCapital, fetchCompany, fetchFindings, fetchRevisions, fetchSupplement, publicationFlow, type CompanyPublication, type FindingsBundle } from "./company-data";
 import { nextPending, readRevisions, resourcesToRead } from "./revision-reads";
 
 /** Everything the company page draws from, as one value so a newer read can replace parts of it at once. */
@@ -13,12 +14,14 @@ export type CompanyData = {
   publication: CompanyPublication | null;
   flow: PublicBusinessFlow | null;
   capital: PublicCapitalStructure | null;
+  /** The company and its comparable peers, read with the capital structure, for the checkup's ranks. */
+  peers: PeersPublication | null;
   findings: FindingsBundle | null;
   fundamentals: FindingFundamentals | null;
   events: EventsPublication | null;
   filings: PublicFilingDigestPage | null;
 };
-const EMPTY: CompanyData = { publication: null, flow: null, capital: null, findings: null, fundamentals: null, events: null, filings: null };
+const EMPTY: CompanyData = { publication: null, flow: null, capital: null, peers: null, findings: null, fundamentals: null, events: null, filings: null };
 
 /** What a newer revision brings that the reader can see: kinds of new rows, or none when only figures or prose moved. */
 export type UpdateNews = "findings" | "reports" | "events";
@@ -29,7 +32,7 @@ export type PendingUpdate = { revisions: MapRevisions; patch: Partial<CompanyDat
 const CHECK_EVERY = 3 * 60_000;
 const MIN_GAP = 30_000;
 
-type Supplement = "capital" | "fundamentals" | "events" | "filings";
+type Supplement = "fundamentals" | "events" | "filings";
 
 /** The resource's part of the page's data, read at the given revision; null where the resource has nothing to show. */
 async function readResource(ticker: string, resource: MapResource, rev: string | undefined, signal: AbortSignal): Promise<Partial<CompanyData> | null> {
@@ -41,6 +44,10 @@ async function readResource(ticker: string, resource: MapResource, rev: string |
   if (resource === "findings") {
     const findings = await fetchFindings(ticker, signal, rev);
     return findings ? { findings } : null;
+  }
+  if (resource === "capital") {
+    const read = await fetchCapital(ticker, signal, rev);
+    return read ? { capital: read.capital, peers: read.peers } : null;
   }
   const value = await fetchSupplement<CompanyData[Supplement]>(ticker, resource, signal, rev);
   return value ? { [resource]: value } : null;

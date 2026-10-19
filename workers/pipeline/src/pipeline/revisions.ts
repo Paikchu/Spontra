@@ -20,7 +20,8 @@ export const REVISES: Partial<Record<EventType, readonly MapResource[]>> = {
   "feature.settings": ["company", "filings", "findings", "events"],
   "findings.published": ["findings"],
   "dossier.published": ["findings"],
-  "peers.published": ["findings"],
+  // Cited peers ride with the findings; comparable peers ride with the capital structure for the checkup's ranks.
+  "peers.published": ["findings", "capital"],
   "events.published": ["events"],
   "translations.published": ["company", "findings", "events", "filings"],
 };

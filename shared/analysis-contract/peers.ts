@@ -17,6 +17,8 @@ export const PEER_FIGURES = [
   "depreciation",
   /** The SEC stock-based compensation series, when the company's fundamentals carry it. */
   "stockBasedCompensation",
+  /** Balance-sheet groups and totals the three-statement checkup ranks on (receivable growth, current ratio). */
+  "receivables", "currentAssets", "currentLiabilities",
 ] as const;
 export type PeerFigure = (typeof PEER_FIGURES)[number];
 

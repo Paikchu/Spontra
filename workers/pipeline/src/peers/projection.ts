@@ -3,6 +3,7 @@ import { basisOf } from "../../../../shared/analysis-runtime/business-tags.ts";
 import { exposureOf, unitRevenues } from "../business-tags/input.ts";
 import { readFindingFundamentals, type FindingData } from "../../../../shared/analysis-runtime/findings.ts";
 import { changedPeers, citedPeers, peerQuartersFrom, readPeersPublication, unitTicker } from "../../../../shared/analysis-runtime/peers.ts";
+import { peersOf } from "../../../../shared/analysis-runtime/lens/table.ts";
 import { requireDb } from "../core.ts";
 import { readLinks } from "../filing-library/links.ts";
 import { readServedFindings } from "../findings/read.ts";
@@ -16,7 +17,7 @@ import { scopeTickers } from "../pipeline/router.ts";
 import { PEERS_CACHE_KEY, readPeersResponse } from "./read.ts";
 
 /** Changing what the projection reads or how a figure is computed republishes it once (`task.version_changed`). */
-export const PEERS_VERSION = "peers.v2";
+export const PEERS_VERSION = "peers.v3";
 
 /**
  * The same stored projections the findings writer reads (`readInput` in findings/workflow.ts), without the ledger:
@@ -91,7 +92,8 @@ export async function buildPeersPublication(env: SecPipelineEnv, now: Date): Pro
 
 /**
  * Builds and stores the projection under its single key; the publication and its events commit together. One
- * `peers.published` per company whose findings cite a peer whose row changed, so only those pages are told of newer data.
+ * `peers.published` per company whose own pairs moved, whose comparable peers' rows changed (its checkup ranks them,
+ * docs/three-statement-analysis-design.md), or whose findings cite a peer whose row changed; only those pages are told.
  */
 export async function publishPeers(env: SecPipelineEnv, now: Date): Promise<{ companies: number; quarters: number; linked: number; changed: string[]; revised: string[] }> {
   const db = requireDb(env);
@@ -105,6 +107,7 @@ export async function publishPeers(env: SecPipelineEnv, now: Date): Promise<{ co
   for (const ticker of await scopeTickers(env, "data")) {
     if (pairsOf(before, ticker) !== pairsOf(publication, ticker)) { revised.push(ticker); continue; }
     if (!changed.size) continue;
+    if (peersOf({ quarters: [], history: null, capital: null, fundamentals: null, guidance: null, peers: publication }, ticker).some(t => changed.has(t))) { revised.push(ticker); continue; }
     const findings = await readServedFindings(db, ticker).catch(() => null);
     if ([...citedPeers(findings)].some(t => changed.has(t))) revised.push(ticker);
   }

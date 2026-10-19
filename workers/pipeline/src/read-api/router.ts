@@ -6,6 +6,9 @@ import { readBusinessExplainerResponse } from "../business-explainer/workflow.ts
 import { readBusinessTreeResponse } from "../business-tree/workflow.ts";
 import { readGuidanceResponse } from "../guidance/workflow.ts";
 import { readFindingsResponse } from "../findings/read.ts";
+import { readPeersResponse } from "../peers/read.ts";
+import { peersFor } from "../../../../shared/analysis-runtime/peers.ts";
+import { peersOf } from "../../../../shared/analysis-runtime/lens/table.ts";
 import { readEventsResponse } from "../events/read.ts";
 import { readPublicPassage } from "../filing-library/passage-read.ts";
 import { parseFundamentalApiQuery } from "../fundamentals/fundamentals-api.ts";
@@ -153,7 +156,13 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
       // Assembled on the schedule from the projections each filing received at ingestion; a read never parses.
       const publication = await readCompletePublicationForTicker(database, route.ticker);
       const capital = publication.flow ? (await readMapDerived(database, publication.flow))?.capital ?? null : null;
-      const payload: CapitalResponse = { schemaVersion: "capital-response.v1", status: capital ? "ready" : "unavailable", capital };
+      // The company and its comparable peers only, so another company's new quarter moves this answer only when it is a peer.
+      const ticker = route.ticker.trim().toUpperCase();
+      const peers = capital ? await readPeersResponse(database).then(r => {
+        const comparable = peersOf({ quarters: [], history: null, capital: null, fundamentals: null, guidance: null, peers: r.peers }, ticker);
+        return comparable.length ? peersFor(r.peers, new Set([ticker, ...comparable])) : null;
+      }).catch(() => null) : null;
+      const payload: CapitalResponse = { schemaVersion: "capital-response.v1", status: capital ? "ready" : "unavailable", capital, peers };
       return dataResponse(request, payload, capital ? "cacheable" : "no-store");
     }
     case "business-explainer": {

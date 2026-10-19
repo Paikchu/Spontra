@@ -141,6 +141,7 @@ export const STATEMENT_RULES: readonly StatementRuleDef[] = [
   { id: "capex-cycle", dimension: "capitalEfficiency", metric: "capex-to-depreciation", all: [{ metric: "capex-to-depreciation", on: "value", op: ">", value: 2 }], persist: 1, level: "watch" },
   { id: "capex-unmatched", dimension: "capitalEfficiency", metric: "asset-formation", all: [{ metric: "capex-to-depreciation", on: "value", op: ">", value: 2 }, { metric: "asset-formation", on: "yoy", op: ">", value: 0 }, { metric: "revenue-growth", on: "yoy", op: "<", value: 0 }], persist: 2, level: "alert" },
   { id: "returns-below-cost", dimension: "capitalEfficiency", metric: "roic", all: [{ metric: "roic", on: "value", op: "<", value: 8 }, { metric: "capex-to-depreciation", on: "value", op: ">", value: 1.5 }], persist: 1, level: "alert" },
+  { id: "backlog-large", dimension: "growth", metric: "rpo-to-revenue", all: [{ metric: "rpo-to-revenue", on: "value", op: ">", value: 1 }], persist: 1, level: "note" },
   { id: "returns-strong", dimension: "capitalEfficiency", metric: "roic", all: [{ metric: "roic", on: "value", op: ">", value: 20 }], persist: 1, level: "note" },
   { id: "fcf-negative", dimension: "safety", metric: "free-cash-flow", all: [{ metric: "free-cash-flow", on: "value", op: "<", value: 0 }], persist: 1, level: "watch" },
   { id: "fcf-turned-positive", dimension: "safety", metric: "free-cash-flow", all: [{ metric: "free-cash-flow", flipped: "toPositive" }], persist: 1, level: "note" },
@@ -160,6 +161,14 @@ export type MetricPoint = { periodEnd: string; value: number };
 
 /** A figure as the findings runtime resolves it (the runtime's `ResolvedValue`, stated here so the contract stays declarative). */
 export type ResolvedFigure = { value: number; unit: "USD" | "percent" | "per_share" | "shares" | "ratio" | "points"; currency: string | null; periodStart: string | null; periodEnd: string; span: FindingSpan; accessions: string[] };
+
+/** Where the company's figure stands among its comparable peers at the same span, each peer at its aligned quarter. */
+export type PeerRank = {
+  /** 1 is best by the metric's direction. */
+  rank: number;
+  of: number;
+  rows: Array<{ ticker: string; value: number; periodEnd: string; own: boolean }>;
+};
 
 export type AssessedMetric = {
   id: string;

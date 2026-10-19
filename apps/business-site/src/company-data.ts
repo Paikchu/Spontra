@@ -11,6 +11,8 @@ import type { FindingFundamentals } from "@/shared/analysis-runtime/findings";
 import type { MapRevisions } from "@/shared/analysis-contract/revisions";
 import { getLocale } from "@/packages/web/src/i18n";
 import { findingData, verifiedFindings, type VerifiedFinding } from "./findings-model";
+import { assessStatements } from "@/shared/analysis-runtime/statement-analysis";
+import type { Flag } from "@/shared/analysis-contract/statement-analysis";
 
 export type CompanyPublication = CompleteFlowPublication & { explainer?: BusinessExplainer | null; guidance?: GuidancePublication | null; tree?: BusinessTree | null };
 
@@ -41,11 +43,19 @@ export async function fetchCompany(ticker: string, signal: AbortSignal, rev?: st
 }
 
 /** A supplementary resource answers on its own; anything but "ready" reads as null. */
-export async function fetchSupplement<T>(ticker: string, resource: "capital" | "findings" | "fundamentals" | "events" | "filings", signal: AbortSignal, rev?: string): Promise<T | null> {
+export async function fetchSupplement<T>(ticker: string, resource: "findings" | "fundamentals" | "events" | "filings", signal: AbortSignal, rev?: string): Promise<T | null> {
   const response = await fetch(companyPath(ticker, "/" + resource, rev), { signal });
   if (!response.ok) return null;
   const body = await response.json() as { status?: string } & Record<string, unknown>;
   return body.status === "ready" ? body[resource] as T : null;
+}
+
+/** The capital structure with the company's comparable peers, as the site serves them together. */
+export async function fetchCapital(ticker: string, signal: AbortSignal, rev?: string): Promise<{ capital: PublicCapitalStructure; peers: PeersPublication | null } | null> {
+  const response = await fetch(companyPath(ticker, "/capital", rev), { signal });
+  if (!response.ok) return null;
+  const body = await response.json() as { status?: string; capital?: PublicCapitalStructure | null; peers?: PeersPublication | null };
+  return body.status === "ready" && body.capital ? { capital: body.capital, peers: body.peers ?? null } : null;
 }
 
 /** The findings with the passages their quotes rest on and the peers projection, as the site serves them together. */
@@ -65,7 +75,7 @@ export function publicationFlow(data: CompanyPublication, ticker: string): Publi
 }
 
 /** `partial`: verified against a fallback snapshot (no history), so findings may be missing that a fresh read would show. */
-export type CompanyDigest = { ticker: string; periodEnd: string; findings: VerifiedFinding[]; partial: boolean };
+export type CompanyDigest = { ticker: string; periodEnd: string; findings: VerifiedFinding[]; partial: boolean; /** The three-statement checkup's flags at the newest quarter. */ flags: Flag[] };
 
 /**
  * A company's findings as its page would show them: verified against the same flow, history, capital,
@@ -78,11 +88,14 @@ export async function loadDigest(ticker: string, signal: AbortSignal): Promise<C
   if (!findings?.findings.length) return null;
   const [company, capital, fundamentals] = await Promise.all([
     fetchCompany(ticker, signal),
-    fetchSupplement<PublicCapitalStructure>(ticker, "capital", signal).catch(() => null),
+    fetchCapital(ticker, signal).then(r => r?.capital ?? null).catch(() => null),
     fetchSupplement<FindingFundamentals>(ticker, "fundamentals", signal).catch(() => null),
   ]);
   const flow = publicationFlow(company, ticker);
   if (!flow) return null;
-  const verified = verifiedFindings(findings, findingData(flow, company.history ?? null, capital, fundamentals, company.guidance ?? null, bundle?.peers ?? null, bundle?.passages ?? null));
-  return verified.length ? { ticker, periodEnd: findings.periodEnd, findings: verified, partial: company.outdated === true } : null;
+  const data = findingData(flow, company.history ?? null, capital, fundamentals, company.guidance ?? null, bundle?.peers ?? null, bundle?.passages ?? null);
+  const verified = verifiedFindings(findings, data);
+  const newest = [...flow.quarters].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd))[0];
+  const flags = newest ? assessStatements(data, newest.periodEnd, getLocale()).flags : [];
+  return verified.length ? { ticker, periodEnd: findings.periodEnd, findings: verified, partial: company.outdated === true, flags } : null;
 }

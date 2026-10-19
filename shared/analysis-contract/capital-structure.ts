@@ -1,3 +1,5 @@
+import type { PeersPublication } from "./peers.ts";
+
 /** Where a statement came from. Every amount in a statement shares this filing's presentation. */
 export type CapitalSource = { accession: string; url: string; filedAt: string; form: string };
 
@@ -86,8 +88,11 @@ export type CapitalQuarter = {
 /** Supplementary to the business flow: quarters without a reconciled statement are omitted, never estimated. */
 export type PublicCapitalStructure = { schemaVersion: "capital-structure.v1"; ticker: string; quarters: CapitalQuarter[] };
 
-/** Served on its own route so the business flow never waits for statement projection. */
-export type CapitalResponse = { schemaVersion: "capital-response.v1"; status: "ready" | "unavailable"; capital: PublicCapitalStructure | null };
+/**
+ * Served on its own route so the business flow never waits for statement projection. `peers` is the peers projection
+ * cut to the company and its comparable peers, so the three-statement checkup can rank it without reading findings.
+ */
+export type CapitalResponse = { schemaVersion: "capital-response.v1"; status: "ready" | "unavailable"; capital: PublicCapitalStructure | null; peers?: PeersPublication | null };
 
 /** Per-filing projection, stored beside the archived statements. */
 export type CapitalFiling = {

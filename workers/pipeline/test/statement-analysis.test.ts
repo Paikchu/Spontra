@@ -5,7 +5,12 @@ import type { BalanceSheet, CapitalQuarter, CashFlowStatement } from "../../../s
 import { STATEMENT_METRICS, STATEMENT_RULES } from "../../../shared/analysis-contract/statement-analysis.ts";
 import { findingRefSchema, refLabel, resolveRef, shiftPeriod, type FindingData } from "../../../shared/analysis-runtime/findings.ts";
 import { higherIsBetter, ratioForm, refView } from "../../../shared/analysis-runtime/highlights.ts";
-import { assessStatements, cashBridge, capitalChain, ruleThreshold } from "../../../shared/analysis-runtime/statement-analysis.ts";
+import { assessStatements, cashBridge, capitalChain, flagFigures, formatMetric, formatMetricChange, peerRanks, ruleThreshold, thresholdsOf } from "../../../shared/analysis-runtime/statement-analysis.ts";
+import { peerQuartersFrom } from "../../../shared/analysis-runtime/peers.ts";
+import { verifyFindings } from "../../../shared/analysis-runtime/findings.ts";
+import type { FindingsPublication } from "../../../shared/analysis-contract/findings.ts";
+import { buildLedger } from "../src/findings/ledger.ts";
+import { planFinding } from "../src/analyst/plan.ts";
 
 /* ---------- Fixtures: sixteen quarters of a made-up company, in three presentations ---------- */
 
@@ -300,4 +305,81 @@ test("the capital chain indexes capex, assets, revenue and cash to the oldest qu
   const capex = chain.series.find(s => s.id === "capex")!;
   assert.ok(capex.points.at(-1)!.index > capex.points[0]!.index, "late capex lifts the index");
   assert.equal(capitalChain({ ...standard, capital: null }, PERIOD), null);
+});
+
+/* ---------- Reading the checkup: formatting, ranks, the ledger and the analyst ---------- */
+
+test("a metric reads in its own units in either language", () => {
+  assert.equal(formatMetric(12.345, "percent"), "12.3%");
+  assert.equal(formatMetric(-0.5, "percent"), "−0.5%");
+  assert.equal(formatMetric(15.2, "points"), "+15.2 pp");
+  assert.equal(formatMetric(15.2, "points", "zh-CN"), "+15.2个百分点");
+  assert.equal(formatMetric(2.6, "multiple"), "2.60×");
+  assert.equal(formatMetric(2.6, "multiple", "zh-CN"), "2.60倍");
+  assert.equal(formatMetric(75.7e9, "money"), "$75.7B");
+  assert.equal(formatMetric(12.04, "months", "zh-CN"), "12.0 个月");
+  assert.equal(formatMetricChange(-1.25, "percent"), "−1.3 pp");
+  assert.equal(formatMetricChange(0.4, "multiple"), "+0.40×");
+  assert.equal(formatMetricChange(25, "money"), "+25.0%");
+  assert.deepEqual(thresholdsOf({ ruleId: "capex-cycle", metricId: "capex-to-depreciation" }), [2]);
+  assert.deepEqual(thresholdsOf({ ruleId: "capex-unmatched", metricId: "asset-formation" }), [], "a rule testing only the metric's change draws no level");
+  assert.deepEqual(flagFigures({ metricId: "capex-to-depreciation" }), { metrics: [], capital: ["capex"] });
+  assert.deepEqual(flagFigures({ metricId: "operating-margin" }), { metrics: ["operating"], capital: [] });
+  assert.deepEqual(flagFigures({ metricId: "net-debt-to-ebitda" }), { metrics: [], capital: ["debt"] });
+});
+
+test("peers rank the company on the ratios they can answer, best first by the metric's direction", () => {
+  const peer = (ticker: string, o: Options) => ({ ticker, categories: ["cloud"], newestQuarter: PERIOD, quarters: peerQuartersFrom(company(o)) });
+  const peers = { schemaVersion: "peers.v1" as const, generatedAt: "now", companies: [
+    { ...peer("TEST", { shape: "standard" }), categories: ["cloud"] },
+    peer("HEAVY", { shape: "standard", capexLate: 600, debtIssuedLate: 500 }),
+    peer("LIGHT", { shape: "standard", capexLate: 60 }),
+  ] };
+  const a = assessStatements(standard, PERIOD);
+  const ranks = peerRanks({ ...standard, peers }, a, "TEST");
+  const self = ranks["self-funding"]!;
+  assert.deepEqual(self.rows.map(r => r.ticker), ["LIGHT", "TEST", "HEAVY"], "operating cash over capex: the lightest spender funds itself best");
+  assert.equal(self.rank, 2);
+  assert.equal(self.of, 3);
+  assert.equal(ranks["free-cash-flow"], undefined, "amounts are not ranked");
+  assert.equal(ranks["roe"], undefined, "a derived figure has no peer reading");
+  assert.ok(ranks["current-ratio"], "current assets and liabilities travel in the projection");
+  assert.deepEqual(peerRanks({ ...standard, peers: null }, a, "TEST"), {});
+});
+
+test("the ledger carries derived rows and the checkup's flags for the findings writer", () => {
+  const ledger = buildLedger(standard, PERIOD, []);
+  const row = (ref: object, span = "fiscal_year") => ledger.rows.find(r => JSON.stringify(r.ref) === JSON.stringify(ref) && r.periodEnd === PERIOD && r.span === span);
+  assert.ok(row({ derived: "ebitda" }), "EBITDA over the four quarters");
+  assert.ok(row({ derived: "netDebt" }, "quarter"), "net debt at the report");
+  assert.ok(row({ ratio: { numerator: { derived: "nopat" }, denominator: { derived: "averageInvestedCapital" } } }), "ROIC");
+  assert.match(row({ ratio: { numerator: { derived: "nopat" }, denominator: { derived: "averageInvestedCapital" } } })!.value, /^\d+(\.\d)?%$/, "a return reads as a percentage");
+  assert.ok(!ledger.rows.some(r => "derived" in r.ref && r.ref.derived === "cashRunwayMonths"), "months have no ledger form");
+  const capex = ledger.flags.find(f => f.rule === "capex-cycle")!;
+  assert.deepEqual(capex, { rule: "capex-cycle", level: "watch", metric: "Capex over depreciation", value: "3.00×", threshold: "> 2×", since: shiftPeriod(PERIOD, -12), ref: { ratio: { numerator: { capital: "capex" }, denominator: { capital: "depreciation" } } }, span: "fiscal_year" });
+  assert.equal(ledger.flags[0]!.level, "alert");
+  // A finding may cite the flag's ref: the verifier resolves it like any ledger row.
+  const publication: FindingsPublication = { schemaVersion: "findings.v1", ticker: "TEST", periodEnd: PERIOD, generatedAt: "now", model: "test", sources: [{ id: "s1", title: "10-Q", url: "https://www.sec.gov/x", kind: "sec", publishedAt: null }], findings: [{
+    id: "capex", kind: "risk", severity: 3, title: "Capex runs at 3x depreciation",
+    judgment: { text: "Capex over the trailing four quarters ran at 3x depreciation and amortization, so the asset base is being rebuilt far faster than it wears out. The next report should show whether revenue follows the assets.", sourceIds: ["s1"] },
+    evidence: [{ ref: capex.ref, periodEnd: PERIOD, span: "fiscal_year", compare: "yoy" }], anchors: { view: "cash", nodeIds: [], metrics: [], capital: ["capex"] }, lens: { type: "trend", refs: [capex.ref], span: "fiscal_year" },
+  }] };
+  assert.equal(verifyFindings(publication, standard).verified.length, 1);
+});
+
+test("the analyst opens its lines from the same flags the page shows", () => {
+  const publication: FindingsPublication = { schemaVersion: "findings.v1", ticker: "TEST", periodEnd: PERIOD, generatedAt: "now", model: "test", sources: [{ id: "s1", title: "10-Q", url: "https://www.sec.gov/x", kind: "sec", publishedAt: null }], findings: [{
+    id: "margin", kind: "shift", severity: 2, title: "Operating income keeps pace with revenue",
+    judgment: { text: "Operating income grew in step with revenue on the year, so the margin did not move while the business kept growing. The next report should confirm that the margin holds as the asset base grows.", sourceIds: ["s1"] },
+    evidence: [{ ref: { metric: "operating" }, periodEnd: PERIOD, span: "quarter", compare: "yoy" }], anchors: { view: "profit", nodeIds: [], metrics: ["operating"] }, lens: { type: "trend", refs: [{ metric: "operating" }], span: "quarter" },
+  }] };
+  const f = verifyFindings(publication, standard).verified[0];
+  assert.ok(f, "the finding verifies");
+  const plan = planFinding(f, standard, []);
+  const capital = plan.lines.find(l => l.key === "capital_intensity")!;
+  assert.match(capital.why, /^checkup flags capex-cycle \(3\.00× against > 2×\)/, "a profit finding still opens capital intensity when the checkup flags capex");
+  assert.ok(plan.lines.find(l => l.key === "funding_commitments")?.why.includes("maturity-wall"));
+  assert.ok(!plan.lines.some(l => l.key === "margin_mix"), "no margin rule trips and the finding cites no margin ratio");
+  const quiet = planFinding(f, { ...standard, capital: null }, []);
+  assert.ok(!quiet.lines.some(l => l.key === "capital_intensity"), "without the statements no capital rule trips");
 });

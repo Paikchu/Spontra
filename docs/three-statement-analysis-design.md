@@ -1,6 +1,6 @@
 # 方案：三表体检——利润表、资产负债表、现金流量表的联动分析与提示
 
-**状态：** P0 已实现（2026-10-19，见文末"实现状态"），P1–P3 待做 · **日期：** 2026-10-19 · **前置：** [statement-bridge-design](statement-bridge-design.md)（利润表桥）、[statement-highlights](statement-highlights.md)（亮点数字条）、[findings-events-design](findings-events-design.md)（要点）、[finding-lens-agent](finding-lens-agent.md)（lens 文档）、[analyst-agent-design](analyst-agent-design.md)（触发规则、同业投影）、[peer-similarity-design](peer-similarity-design.md)
+**状态：** P0–P3 已实现（2026-10-19，见文末"实现状态"）；P3 的发现信号源未做（主动发现尚未实现） · **日期：** 2026-10-19 · **前置：** [statement-bridge-design](statement-bridge-design.md)（利润表桥）、[statement-highlights](statement-highlights.md)（亮点数字条）、[findings-events-design](findings-events-design.md)（要点）、[finding-lens-agent](finding-lens-agent.md)（lens 文档）、[analyst-agent-design](analyst-agent-design.md)（触发规则、同业投影）、[peer-similarity-design](peer-similarity-design.md)
 
 ## 一句话
 
@@ -318,3 +318,16 @@ type Flag = { ruleId: string; level: "alert" | "watch" | "note"; metricId: strin
 - `workers/pipeline/test/statement-analysis.test.ts`：标准、金融、保险三种列报的合成公司，16 季；覆盖 derived 公式、目录/规则一致性、阈值文本双语、资本开支周期/应收/到期墙/高回报的命中与不命中、烧钱公司的融资与 FCF 规则、银行不启用 capex 指标、保险隔季缺表的覆盖计数、桥合拢、链路指数化。
 
 未做（P1 起）：页面、账本接入、分析师 `plan` 改读 flags、同业排名。
+
+**P1–P3（2026-10-19）：**
+
+- **P1 三表视图**：舞台第四个视图"三表体检"（`apps/business-site/src/Checkup.tsx`）：头部六维度条（命中数按级别、覆盖 n/m，点击滚到该维度）；"利润到现金"瀑布（季度 / 近四季切换，期初期末现金，未合拢时标出）；"资本链路"四条指数线；按维度的指标板（值、同比、迷你图、阈值虚线、同业名次）。rail 新增"三表体检"区（警示在前，行 = 级别形状 + 指标 + 值 + 规则公式）。聚焦一条为 `FlagLens`：走势图带阈值线与命中区间、数据表、构成图（比率的分子分母 / 差值的两条增速）、同业表、相关要点、来源。逐条浏览先走体检项再走要点。`?view=checkup`、`?flag=<rule>` 可分享。
+- **P2 点亮与 AI 接入**：利润 / 现金流 / 资产负债表视图在没有本视图要点时，由本视图前三条体检项领起并点亮其锚点；数字条中被体检项指向的数字带级别标记与下划线。账本加入 derived 行、ROE / ROIC / 净债务÷EBITDA / 外部融资依赖 / FCF 率与 `flags`；写作者提示词要求每条警示被一条要点解释或反驳；`FINDINGS_VERSION` 升到 v10，指纹含 `STATEMENT_ANALYSIS_VERSION`。分析师 `planFinding` 的数值阈值删除，改由体检规则开线（`LINE_RULES`）。`PEER_FIGURES` 加 `receivables`、`currentAssets`、`currentLiabilities`，`PEERS_VERSION` 升到 v3；`/capital` 读路由带上公司与其可比同业的投影切片，`peers.published` 同时修订 `capital`，可比同业的行变化也会通知该公司。
+- **P3 首页**：要点公司的体检命中数一行（警示多的在前），点开即该公司的三表体检。
+
+与设计的出入：
+
+- 留意级别用成本色（琥珀），不用要点的 watch 灰色：三级要一眼分得开。级别同时用形状区分（三角 / 实心圆 / 空心圆）。
+- 新增规则 `backlog-large`（RPO ÷ 近四季营收 > 1×，提示级），替代分析师原来"RPO/季度营收 > 2"的需求转化触发。
+- 首页没有公司卡片，改为一条公司胶囊带；只覆盖已有要点的公司，避免为首页多读每家公司的报表（公共读取限速 60 次/分钟）。
+- 未做：规则命中作为主动发现的信号源（主动发现本身尚未实现）；指标的术语解释（开放问题 1，需要决定）。

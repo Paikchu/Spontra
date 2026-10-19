@@ -3,6 +3,8 @@ import type { CapitalMetric, FindingBaseRef, FindingRef, FindingSpan, FindingVie
 import type { ExplainerSource } from "../../../../shared/analysis-contract/business-explainer.ts";
 import { CAPITAL_INSTANTS, CAPITAL_METRICS, refLabel, resolveEvidence, shiftPeriod, type FindingData, type ResolvedEvidence } from "../../../../shared/analysis-runtime/findings.ts";
 import { ratioForm, refView } from "../../../../shared/analysis-runtime/highlights.ts";
+import { assessStatements, formatMetric, METRIC_DEFS } from "../../../../shared/analysis-runtime/statement-analysis.ts";
+import type { DerivedMetric } from "../../../../shared/analysis-contract/findings.ts";
 
 /**
  * The figures a findings writer may speak about: every reference the verifier can resolve, already
@@ -11,6 +13,12 @@ import { ratioForm, refView } from "../../../../shared/analysis-runtime/highligh
  * verification, so the ledger is also the budget.
  */
 export type LedgerRow = { ref: FindingRef; periodEnd: string; span: FindingSpan; label: string; value: string; yoy: string | null; qoq: string | null };
+/**
+ * A rule of the three-statement checkup (docs/three-statement-analysis-design.md) the report trips, as the page shows it
+ * beside the findings: the metric, its value written as the page writes it, the rule as a formula, and the quarter the
+ * run began. `ref` is the metric's reference, whose ledger rows carry the numbers a finding may quote.
+ */
+export type LedgerFlag = { rule: string; level: "alert" | "watch" | "note"; metric: string; value: string; threshold: string; since: string; ref: FindingRef; span: FindingSpan };
 export type Ledger = {
   periodEnd: string;
   rows: LedgerRow[];
@@ -18,6 +26,8 @@ export type Ledger = {
   nodes: Array<{ nodeId: string; name: string; parentId: string | null }>;
   guidance: Array<{ guidanceId: string; text: string; periodEnd: string | null; horizon: string }>;
   sources: ExplainerSource[];
+  /** The checkup's flags at the report, alerts first. */
+  flags: LedgerFlag[];
 };
 
 const FLOW: FlowMetric[] = ["revenue", "cost", "gross", "operating", "other", "pretax", "tax", "net", "operatingExpenses", "research", "sales", "administration"];
@@ -54,7 +64,21 @@ const RATIOS: Array<[RatioForm, FindingBaseRef, FindingBaseRef]> = [
   ["multiple", { capital: "leases" }, { capital: "debt" }],
   ["percent", { capital: "customerAdvances" }, { metric: "revenue" }],
   ["multiple", { capital: "productive" }, { metric: "revenue" }],
+  // The checkup's returns, leverage and funding (docs/three-statement-analysis-design.md), over its derived figures.
+  ["percent", { metric: "net" }, { derived: "averageEquity" }],
+  ["percent", { derived: "nopat" }, { derived: "averageInvestedCapital" }],
+  ["multiple", { metric: "revenue" }, { derived: "averageAssets" }],
+  ["multiple", { derived: "netDebt" }, { derived: "ebitda" }],
+  ["percent", { derived: "netExternalFunding" }, { capital: "capex" }],
+  ["percent", { capital: "freeCashFlow" }, { metric: "revenue" }],
 ];
+/**
+ * Derived figures the writer may cite: flows over the quarter and the four quarters, instants at the report and the
+ * quarter before. Cash runway is left out: it is a count of months, which the ledger has no way to write.
+ */
+const DERIVED_FLOWS: DerivedMetric[] = ["ebitda", "nopat", "nonCashCharges", "workingCapitalChange", "interestExpense", "netExternalFunding"];
+const DERIVED_INSTANTS: DerivedMetric[] = ["netDebt", "investedCapital", "debtDueCoverage"];
+const DERIVED_YEARLY: Array<[RatioForm, DerivedMetric]> = [["percent", "accruals"], ["percent", "incrementalReturn"]];
 
 /** Up to two decimals under ten, one under a hundred (none for millions), trailing zeros dropped: "1.23", "55.7", "638.2", "350". */
 const figure = (x: number, million: boolean) => String(Number(x.toFixed(x < 10 ? 2 : x < 100 || !million ? 1 : 0)));
@@ -122,6 +146,9 @@ export function buildLedger(data: FindingData, periodEnd: string, sources: Expla
     else series({ capital });
   }
   for (const key of ["diluted_eps", "free_cash_flow", "stock_based_compensation", "depreciation_and_amortization", "cash_and_cash_equivalents", "long_term_debt"] as const) series({ fundamental: key }, ["quarter"]);
+  for (const derived of DERIVED_FLOWS) series({ derived });
+  for (const derived of DERIVED_INSTANTS) for (const end of quarterEnds.slice(0, 2)) push({ derived }, end, "quarter");
+  for (const [form, derived] of DERIVED_YEARLY) series({ derived }, ["fiscal_year"], form);
   // Tagged schedules at the report: each rung of the debt, lease and purchase-obligation ladders, and their totals.
   for (const kind of ["debtMaturities", "leasePaymentsDue", "purchaseObligations"] as const) { for (const bucket of [0, 1, 2, 3, 4, 5, "total"] as const) push({ schedule: { kind, bucket } }, periodEnd, "quarter"); }
   if (rows.some(r => "nodeId" in r.ref && r.ref.nodeId === nodes[0]?.nodeId) && rows.some(r => "capital" in r.ref && r.ref.capital === "capex")) {
@@ -129,7 +156,12 @@ export function buildLedger(data: FindingData, periodEnd: string, sources: Expla
   }
   const guidance = (data.guidance?.items ?? []).filter(i => !i.periodEnd || i.periodEnd >= shiftPeriod(periodEnd, -12)).slice(0, 40)
     .map(i => ({ guidanceId: i.id, text: i.text, periodEnd: i.periodEnd, horizon: i.horizon }));
-  return { periodEnd, rows: rows.slice(0, 640), nodes, guidance, sources };
+  const assessment = assessStatements(data, periodEnd);
+  const flags: LedgerFlag[] = assessment.flags.map(f => {
+    const def = METRIC_DEFS.get(f.metricId)!;
+    return { rule: f.ruleId, level: f.level, metric: def.label[0], value: formatMetric(f.value, def.form), threshold: f.threshold, since: f.since, ref: def.ref, span: def.span };
+  });
+  return { periodEnd, rows: rows.slice(0, 760), nodes, guidance, sources, flags };
 }
 
 /**
