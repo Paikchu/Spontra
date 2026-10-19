@@ -12,7 +12,7 @@ const m = messages({
 });
 
 /** The rail sections; each can open over the whole rail. */
-export type RailSectionKey = "business" | "flags" | "findings" | "events";
+export type RailSectionKey = "business" | "findings" | "events";
 
 /**
  * Swaps the rail between its digest and one section's full list. Where the browser has view

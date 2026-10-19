@@ -11,8 +11,6 @@ import type { FindingFundamentals } from "@/shared/analysis-runtime/findings";
 import type { MapRevisions } from "@/shared/analysis-contract/revisions";
 import { getLocale } from "@/packages/web/src/i18n";
 import { findingData, verifiedFindings, type VerifiedFinding } from "./findings-model";
-import { assessStatements } from "@/shared/analysis-runtime/statement-analysis";
-import type { Flag } from "@/shared/analysis-contract/statement-analysis";
 
 export type CompanyPublication = CompleteFlowPublication & { explainer?: BusinessExplainer | null; guidance?: GuidancePublication | null; tree?: BusinessTree | null };
 
@@ -75,7 +73,7 @@ export function publicationFlow(data: CompanyPublication, ticker: string): Publi
 }
 
 /** `partial`: verified against a fallback snapshot (no history), so findings may be missing that a fresh read would show. */
-export type CompanyDigest = { ticker: string; periodEnd: string; findings: VerifiedFinding[]; partial: boolean; /** The three-statement checkup's flags at the newest quarter. */ flags: Flag[] };
+export type CompanyDigest = { ticker: string; periodEnd: string; findings: VerifiedFinding[]; partial: boolean };
 
 /**
  * A company's findings as its page would show them: verified against the same flow, history, capital,
@@ -93,9 +91,6 @@ export async function loadDigest(ticker: string, signal: AbortSignal): Promise<C
   ]);
   const flow = publicationFlow(company, ticker);
   if (!flow) return null;
-  const data = findingData(flow, company.history ?? null, capital, fundamentals, company.guidance ?? null, bundle?.peers ?? null, bundle?.passages ?? null);
-  const verified = verifiedFindings(findings, data);
-  const newest = [...flow.quarters].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd))[0];
-  const flags = newest ? assessStatements(data, newest.periodEnd, getLocale()).flags : [];
-  return verified.length ? { ticker, periodEnd: findings.periodEnd, findings: verified, partial: company.outdated === true, flags } : null;
+  const verified = verifiedFindings(findings, findingData(flow, company.history ?? null, capital, fundamentals, company.guidance ?? null, bundle?.peers ?? null, bundle?.passages ?? null));
+  return verified.length ? { ticker, periodEnd: findings.periodEnd, findings: verified, partial: company.outdated === true } : null;
 }

@@ -3,25 +3,16 @@ import { CompanyLogo } from "./CompanyMark";
 import { SearchPanel } from "./SearchDialog";
 import { LanguageToggle, ThemeToggle } from "./Sidebar";
 import { loadDigest, type CompanyDigest } from "./company-data";
-import { KIND_LABEL, VIEW_LABEL, type VerifiedFinding } from "./findings-model";
-import { LevelCounts } from "./Checkup";
+import { KIND_LABEL, type VerifiedFinding } from "./findings-model";
 import { periodReport } from "./events-model";
 import { getLocale, messages } from "@/packages/web/src/i18n";
 import { SourceLanguage, langOf } from "@/packages/web/src/i18n/SourceLanguage";
 
 const m = messages({
   title: "Business View", watchOutcome: "Watch outcome", recent: "Recently viewed", findings: "Findings", latest: "Latest reports", loading: "Loading findings",
-  checkup: (ticker: string) => `${ticker} checkup`,
 }, {
   title: "Business View", watchOutcome: "跟踪结果", recent: "最近查看", findings: "要点", latest: "最新财报", loading: "正在加载要点",
-  checkup: (ticker: string) => `${ticker} 三表体检`,
 });
-const LEVEL_ORDER = (d: CompanyDigest) => [d.flags.filter(f => f.level === "alert").length, d.flags.filter(f => f.level === "watch").length, d.flags.filter(f => f.level === "note").length];
-/** Most alerts first, then most watches, then the ticker. */
-function byFlags(a: CompanyDigest, b: CompanyDigest) {
-  const x = LEVEL_ORDER(a), y = LEVEL_ORDER(b);
-  return y[0]! - x[0]! || y[1]! - x[1]! || y[2]! - x[2]! || a.ticker.localeCompare(b.ticker);
-}
 
 /** Companies with published findings, as the read API lists them (the admin's AI switch decides which); read once per page load. */
 let findingsIndex: Promise<string[]> | null = null;
@@ -153,12 +144,6 @@ export function Home({ light, onToggleTheme, recent, onPick }: { light: boolean;
         {recent.slice(0, 5).map(t => <a key={t} href={`/companies/${t}`} data-nav><CompanyLogo ticker={t} small />{t}</a>)}
       </nav>}
     </section>
-    {digests.some(d => d.flags.length) && <section className="home-checkup" aria-label={VIEW_LABEL.checkup}>
-      <h2 className="home-findings-title">{VIEW_LABEL.checkup}</h2>
-      <ul>{[...digests].sort(byFlags).map(d => <li key={d.ticker}><a href={`/companies/${d.ticker}?view=checkup`} data-nav title={m.checkup(d.ticker)}>
-        <CompanyLogo ticker={d.ticker} small /><span>{d.ticker}</span><LevelCounts flags={d.flags} />
-      </a></li>)}</ul>
-    </section>}
     {(loading || items.length > 0) && <section className="home-findings" aria-label={m.findings} aria-busy={loading}>
       <h2 className="home-findings-title">{m.findings}<small>{m.latest}</small><SourceLanguage of={items.map(item => item.finding.title)} /></h2>
       {items.length > 0 ? <div className="marquee">{rows(items).map((row, i) => <MarqueeRow key={i} items={row} index={i} />)}</div>

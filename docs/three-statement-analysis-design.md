@@ -1,6 +1,6 @@
 # 方案：三表体检——利润表、资产负债表、现金流量表的联动分析与提示
 
-**状态：** P0–P3 已实现（2026-10-19，见文末"实现状态"）；P3 的发现信号源未做（主动发现尚未实现） · **日期：** 2026-10-19 · **前置：** [statement-bridge-design](statement-bridge-design.md)（利润表桥）、[statement-highlights](statement-highlights.md)（亮点数字条）、[findings-events-design](findings-events-design.md)（要点）、[finding-lens-agent](finding-lens-agent.md)（lens 文档）、[analyst-agent-design](analyst-agent-design.md)（触发规则、同业投影）、[peer-similarity-design](peer-similarity-design.md)
+**状态：** 已上线（2026-10-19）；前端于同日改为"放进三张表里"，不再有单独的三表体检视图（见文末"实现状态"） · **日期：** 2026-10-19 · **前置：** [statement-bridge-design](statement-bridge-design.md)（利润表桥）、[statement-highlights](statement-highlights.md)（亮点数字条）、[findings-events-design](findings-events-design.md)（要点）、[finding-lens-agent](finding-lens-agent.md)（lens 文档）、[analyst-agent-design](analyst-agent-design.md)（触发规则、同业投影）、[peer-similarity-design](peer-similarity-design.md)
 
 ## 一句话
 
@@ -334,3 +334,11 @@ type Flag = { ruleId: string; level: "alert" | "watch" | "note"; metricId: strin
 - 比率的分母不大于零时不取值（经营现金流 ÷ 净亏损不是"现金低于利润"）；折旧摊销与股权激励在报表行不能对账的季度用 SEC 序列补齐（`depreciationAmortization`、`stockCompensationExpense`）。
 - 估值维度在 SEC 数据源下没有倍数序列，维度条不显示无任何可解析指标的维度。
 - 未做：规则命中作为主动发现的信号源（主动发现本身尚未实现）；指标的术语解释（开放问题 1，需要决定）。
+
+**2026-10-19 前端改版：分析放进现有三张表里。** 用户不要单独的"三表体检"板块，改为：
+
+- 去掉舞台第四个视图、rail 的"三表体检"区、首页的体检胶囊带；逐条浏览只走要点。
+- 每个指标按其引用归入一张表（`refView`：利润表——增长、利润率、费用率、税率、ROE、ROIC、资产周转；现金流量表——现金转化、应计项、营运资本、SBC、资本开支强度、FCF、自给率、外部融资、利息负担、现金跑道；资产负债表——RPO、应收与存货增速、固定资产形成、净债务÷EBITDA、现金÷债务、流动比率、到期覆盖、增量资本回报）。
+- 每张表在数字条下方一行列出本表命中的规则（级别形状与颜色、指标、值、规则公式）；悬停点亮图上对应节点或色带，点击打开该指标。没有本表要点时，本表规则一起点亮。
+- 图下方面板：利润表默认是原来的营收走势，旁边"走势 | 指标"切换；现金流量表与资产负债表默认显示本表指标（命中的排在前面），也可切回走势。
+- 点开任一指标（`?check=<metricId>`）：走势与全部阈值、数据、构成、同业、相关要点、来源；盈利质量与自由现金流类指标附"利润到现金"瀑布，资本效率类附"资本链路"。

@@ -1,39 +1,38 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
-import { AnimatePresence, useReducedMotion } from "motion/react";
 import { Button } from "@/packages/web/src/ui/button";
 import { getLocale, labels, messages } from "@/packages/web/src/i18n";
 import type { AssessedMetric, BridgeStep, CapitalChain, CashBridge, Flag, FlagLevel, MetricForm, MetricPoint, PeerRank, StatementAssessment, StatementDimension } from "@/shared/analysis-contract/statement-analysis";
-import type { FindingRef, FindingSpan } from "@/shared/analysis-contract/findings";
+import type { FindingRef, FindingSpan, FindingView } from "@/shared/analysis-contract/findings";
 import type { FlowSource } from "@/shared/analysis-contract/business-flow";
 import { refLabel, resolveEvidence, resolveRef, type FindingData } from "@/shared/analysis-runtime/findings";
+import { refView } from "@/shared/analysis-runtime/highlights";
 import { flagFigures, formatMetric, formatMetricChange, METRIC_DEFS, thresholdsOf } from "@/shared/analysis-runtime/statement-analysis";
 import { compactMoney, qoqLabel, shortPeriod, yoyLabel } from "@/shared/analysis-runtime/locale";
-import { RailSection } from "./RailSection";
-import { arrivalStyle, RailRow, rowExit, useArrivals } from "./arrivals";
 import { KIND_LABEL, type VerifiedFinding } from "./findings-model";
 
+/**
+ * The three-statement analysis, shown inside the statements it reads (docs/three-statement-analysis-design.md): each
+ * view carries its own tripped rules under its tiles and its own metrics in the panel under its chart; a rule or a
+ * metric opens in the stage like a finding. Nothing here is a sentence: names, figures, thresholds and dates.
+ */
 const m = messages({
-  flags: "Checkup", report: (period: string) => `${period} report`, walk: "Walk through", stop: "Stop walk-through", walkKeys: "Walk through (← →)",
-  none: "No rule tripped", covered: (n: number, of: number) => `${n}/${of}`, coverage: (n: number, of: number) => `${n} of ${of} metrics resolved`,
-  since: (period: string) => `Since ${period}`, dimensions: "Dimensions",
+  report: (period: string) => `${period} report`, since: (period: string) => `Since ${period}`,
   bridge: "Profit to cash", chain: "Capital chain", quarter: "Quarter", trailing: "Trailing 4 quarters", span: "Span",
   openingCash: "Cash and short-term investments at start", closingCash: "at end", unreconciled: "Not reconciled", base: (period: string) => `Base ${period}`,
   peers: (rank: number, of: number) => `Peers ${rank}/${of}`, peerTitle: (rows: string) => `Peers: ${rows}`,
-  flag: (title: string) => `Checkup: ${title}`, previous: "Previous", next: "Next", close: "Close",
+  metric: (title: string) => `Metric: ${title}`, close: "Close",
   trend: "Trend", parts: "Components", figures: "Figures", related: "Findings", peerTable: "Peers", sources: "Sources",
-  current: "Latest", threshold: "Threshold", openFlag: (title: string) => `Open checkup: ${title}`, hide: "Hide", level: "Level",
-  chartLabel: (name: string) => `${name}, last quarters`,
+  current: "Latest", threshold: "Threshold", open: (title: string) => `Open ${title}`,
+  chartLabel: (name: string) => `${name}, last quarters`, metrics: "Metrics", panel: "Panel", flags: "Rules tripped",
 }, {
-  flags: "三表体检", report: (period: string) => `${period} 财报`, walk: "逐条浏览", stop: "停止逐条浏览", walkKeys: "逐条浏览（← →）",
-  none: "无命中规则", covered: (n: number, of: number) => `${n}/${of}`, coverage: (n: number, of: number) => `${of} 项指标中 ${n} 项可解析`,
-  since: (period: string) => `自 ${period}`, dimensions: "维度",
+  report: (period: string) => `${period} 财报`, since: (period: string) => `自 ${period}`,
   bridge: "利润到现金", chain: "资本链路", quarter: "本季度", trailing: "近四季", span: "口径",
   openingCash: "期初现金及短期投资", closingCash: "期末", unreconciled: "未合拢", base: (period: string) => `基期 ${period}`,
   peers: (rank: number, of: number) => `同业 ${rank}/${of}`, peerTitle: (rows: string) => `同业：${rows}`,
-  flag: (title: string) => `体检：${title}`, previous: "上一条", next: "下一条", close: "关闭",
+  metric: (title: string) => `指标：${title}`, close: "关闭",
   trend: "走势", parts: "构成", figures: "数据", related: "要点", peerTable: "同业", sources: "来源",
-  current: "最新", threshold: "阈值", openFlag: (title: string) => `打开体检项：${title}`, hide: "隐藏", level: "级别",
-  chartLabel: (name: string) => `${name}，最近若干季度`,
+  current: "最新", threshold: "阈值", open: (title: string) => `打开${title}`,
+  chartLabel: (name: string) => `${name}，最近若干季度`, metrics: "指标", panel: "面板", flags: "命中规则",
 });
 export const LEVEL_LABEL = labels({ alert: "Alert", watch: "Watch", note: "Note" }, { alert: "警示", watch: "留意", note: "提示" });
 export const DIMENSION_LABEL = labels<StatementDimension>({
@@ -42,10 +41,11 @@ export const DIMENSION_LABEL = labels<StatementDimension>({
   growth: "成长", profitability: "盈利", earningsQuality: "盈利质量", capitalEfficiency: "资本效率", safety: "财务安全", valuation: "估值",
 });
 const LEVELS: FlagLevel[] = ["alert", "watch", "note"];
+const RANK: Record<FlagLevel, number> = { alert: 0, watch: 1, note: 2 };
 const zh = () => getLocale() === "zh-CN";
-export const flagLabel = (flag: Pick<Flag, "metricId">) => METRIC_DEFS.get(flag.metricId)?.label[zh() ? 1 : 0] ?? flag.metricId;
-export const flagKey = (flag: Pick<Flag, "ruleId">) => flag.ruleId;
+export const metricLabel = (id: string) => METRIC_DEFS.get(id)?.label[zh() ? 1 : 0] ?? id;
 const metricValue = (metric: Pick<AssessedMetric, "form" | "current">, value = metric.current.value) => formatMetric(value, metric.form, getLocale(), metric.current.resolved.currency ?? "USD");
+type StatementView = FindingView;
 
 /** The level as a shape as well as a colour: a triangle warns, a dot asks to watch, a ring notes. */
 export function LevelMark({ level, label }: { level: FlagLevel; label?: string }) {
@@ -58,20 +58,6 @@ export function LevelMark({ level, label }: { level: FlagLevel; label?: string }
 export function LevelCounts({ flags }: { flags: Flag[] }) {
   return <span className="level-counts">{LEVELS.map(level => { const n = flags.filter(f => f.level === level).length; return n ? <span key={level} data-level={level} title={LEVEL_LABEL[level]}><LevelMark level={level} />{n}</span> : null; })}</span>;
 }
-
-/** The six dimensions as one strip: each with its flags by level and how many of its metrics resolved. */
-export function CheckupHead({ assessment, onDimension }: { assessment: StatementAssessment; onDimension: (id: StatementDimension) => void }) {
-  return <nav className="checkup-dims" aria-label={m.dimensions}>
-    {assessment.dimensions.filter(d => d.covered > 0).map(d => {
-      const top = LEVELS.find(level => d.flags.some(f => f.level === level));
-      return <Button key={d.id} variant="unstyled" type="button" className="checkup-dim" data-level={top} onClick={() => onDimension(d.id)} title={m.coverage(d.covered, d.total)}>
-        <span className="checkup-dim-name">{DIMENSION_LABEL[d.id]}</span>
-        <span className="checkup-dim-meta">{d.flags.length ? <LevelCounts flags={d.flags} /> : <span className="checkup-dim-clear" aria-hidden="true">—</span>}<small>{m.covered(d.covered, d.total)}</small></span>
-      </Button>;
-    })}
-  </nav>;
-}
-
 /** The width an element is given, kept current, for charts that draw text at its real size. */
 function useWidth<T extends HTMLElement>(): [React.RefObject<T | null>, number] {
   const ref = useRef<T>(null);
@@ -189,102 +175,78 @@ function Chain({ chain }: { chain: CapitalChain }) {
   </div>;
 }
 
-/* ---------- The stage ---------- */
 
-/** The checkup's stage: how profit became cash, how capital became revenue, and every metric by dimension. */
-export function CheckupStage({ assessment, ranks, flagged, onFlag, sectionRef }: {
-  assessment: StatementAssessment; ranks: Record<string, PeerRank>;
-  /** The highest flag of each metric, for its cell's mark and its click. */
-  flagged: Map<string, Flag>;
-  onFlag: (flag: Flag) => void;
-  sectionRef: (id: StatementDimension) => (el: HTMLElement | null) => void;
-}) {
-  const [span, setSpan] = useState<"quarter" | "year">("year");
-  const bridge = span === "year" ? assessment.bridge.year ?? assessment.bridge.quarter : assessment.bridge.quarter ?? assessment.bridge.year;
-  const shownSpan = bridge === assessment.bridge.year ? "year" : "quarter";
-  return <div className="checkup">
-    {(bridge || assessment.chain) && <div className="checkup-links">
-      {bridge && <section className="checkup-card" aria-label={m.bridge}>
-        <header><h3>{m.bridge}</h3>
-          {assessment.bridge.year && assessment.bridge.quarter && <span className="periods periods--small" role="radiogroup" aria-label={m.span}>
-            <Button variant="unstyled" type="button" role="radio" aria-checked={shownSpan === "quarter"} onClick={() => setSpan("quarter")}>{m.quarter}</Button>
-            <Button variant="unstyled" type="button" role="radio" aria-checked={shownSpan === "year"} onClick={() => setSpan("year")}>{m.trailing}</Button>
-          </span>}
-        </header>
-        <Bridge bridge={bridge} />
-      </section>}
-      {assessment.chain && <section className="checkup-card" aria-label={m.chain}><header><h3>{m.chain}</h3></header><Chain chain={assessment.chain} /></section>}
-    </div>}
-    {assessment.dimensions.filter(d => d.metrics.length).map(d => <section key={d.id} className="checkup-dimension" ref={sectionRef(d.id)} aria-label={DIMENSION_LABEL[d.id]}>
-      <header><h3>{DIMENSION_LABEL[d.id]}</h3><LevelCounts flags={d.flags} /><small title={m.coverage(d.covered, d.total)}>{m.covered(d.covered, d.total)}</small></header>
-      <div className="checkup-grid">{d.metrics.map(metric => <MetricCell key={metric.id} metric={metric} flag={flagged.get(metric.id) ?? null} rank={ranks[metric.id] ?? null} onFlag={onFlag} />)}</div>
-    </section>)}
-  </div>;
+/* ---------- What each statement view carries ---------- */
+
+/** The statement a metric is read from; a valuation multiple belongs to none. */
+export const metricView = (metric: Pick<AssessedMetric, "ref">): StatementView | null => refView(metric.ref);
+
+/** A view's metrics, the flagged ones first by level, then in the catalogue's order. */
+export function viewMetrics(assessment: StatementAssessment | null, view: StatementView, flagged: Map<string, Flag>): AssessedMetric[] {
+  const all = (assessment?.dimensions.flatMap(d => d.metrics) ?? []).filter(metric => metricView(metric) === view);
+  const level = (metric: AssessedMetric) => { const f = flagged.get(metric.id); return f ? RANK[f.level] : 3; };
+  return all.map((metric, i) => ({ metric, i })).sort((a, b) => level(a.metric) - level(b.metric) || a.i - b.i).map(x => x.metric);
 }
 
-function MetricCell({ metric, flag, rank, onFlag }: { metric: AssessedMetric; flag: Flag | null; rank: PeerRank | null; onFlag: (flag: Flag) => void }) {
+/** A view's tripped rules, the most pressing first. */
+export const viewFlags = (flags: Flag[], view: StatementView) => flags.filter(f => f.anchors.view === view);
+
+/**
+ * The view's tripped rules as one row under its tiles: each names the metric, its value and the rule, in the level's
+ * colour and shape. Hovering one lights what it is about on the chart; a click opens it.
+ */
+export function ViewFlags({ flags, metrics, focus, onOpen, onHover }: {
+  flags: Flag[]; metrics: Map<string, AssessedMetric>; focus: string | null; onOpen: (metricId: string) => void; onHover: (flag: Flag | null) => void;
+}) {
+  if (!flags.length) return null;
+  return <ul className="view-flags" aria-label={m.flags} onMouseLeave={() => onHover(null)}>
+    {flags.map(f => { const metric = metrics.get(f.metricId); return <li key={f.ruleId}>
+      <Button variant="unstyled" type="button" className="view-flag" data-level={f.level} aria-pressed={focus === f.metricId} title={`${LEVEL_LABEL[f.level]} · ${DIMENSION_LABEL[f.dimension]} · ${m.since(shortPeriod(f.since))}`}
+        onClick={() => onOpen(f.metricId)} onMouseEnter={() => onHover(f)} onFocus={() => onHover(f)} onBlur={() => onHover(null)}>
+        <LevelMark level={f.level} label={LEVEL_LABEL[f.level]} />
+        <span className="view-flag-name">{metricLabel(f.metricId)}</span>
+        {metric && <b>{metricValue(metric, f.value)}</b>}
+        <small>{f.threshold}</small>
+      </Button>
+    </li>; })}
+  </ul>;
+}
+
+/** Switches the panel under the chart between its trend and the view's metrics. */
+export function PanelSwitch({ value, onChange }: { value: "trend" | "metrics"; onChange: (next: "trend" | "metrics") => void }) {
+  return <span className="periods periods--small panel-switch" role="radiogroup" aria-label={m.panel}>
+    <Button variant="unstyled" type="button" role="radio" aria-checked={value === "trend"} onClick={() => onChange("trend")}>{m.trend}</Button>
+    <Button variant="unstyled" type="button" role="radio" aria-checked={value === "metrics"} onClick={() => onChange("metrics")}>{m.metrics}</Button>
+  </span>;
+}
+
+/** The view's metrics in the panel under its chart: one cell each, flagged ones first; any cell opens. */
+export function ViewMetrics({ metrics, flagged, ranks, onOpen, switcher }: {
+  metrics: AssessedMetric[]; flagged: Map<string, Flag>; ranks: Record<string, PeerRank>; onOpen: (metricId: string) => void; switcher?: React.ReactNode;
+}) {
+  const flags = metrics.flatMap(metric => flagged.get(metric.id) ?? []);
+  return <section className="trend view-metrics" aria-label={m.metrics}>
+    <header className="trend-head"><div className="trend-heading"><div className="trend-title"><h2>{m.metrics}</h2></div><LevelCounts flags={flags} />{switcher}</div></header>
+    <div className="view-metrics-row">{metrics.map(metric => <MetricCell key={metric.id} metric={metric} flag={flagged.get(metric.id) ?? null} rank={ranks[metric.id] ?? null} onOpen={onOpen} />)}</div>
+  </section>;
+}
+
+function MetricCell({ metric, flag, rank, onOpen }: { metric: AssessedMetric; flag: Flag | null; rank: PeerRank | null; onOpen: (metricId: string) => void }) {
   const thresholds = flag ? thresholdsOf(flag) : [];
   const change = metric.measure === "value" && metric.yoy != null ? `${yoyLabel(getLocale())} ${formatMetricChange(metric.yoy, metric.form, getLocale())}` : null;
-  const body = <>
+  return <Button variant="unstyled" type="button" className="checkup-cell" data-level={flag?.level} onClick={() => onOpen(metric.id)} aria-label={m.open(metric.label)}>
     <span className="checkup-cell-label">{flag && <LevelMark level={flag.level} label={LEVEL_LABEL[flag.level]} />}{metric.label}</span>
     <strong className="checkup-cell-value">{metricValue(metric)}</strong>
     <Spark metric={metric} thresholds={thresholds} level={flag?.level} />
     <span className="checkup-cell-note">
       {change && <span>{change}</span>}
+      {flag && <span className="checkup-cell-rule">{flag.threshold}</span>}
       {rank && <span title={m.peerTitle(rank.rows.map(r => `${r.ticker} ${formatMetric(r.value, metric.form, getLocale())}`).join(" · "))}>{m.peers(rank.rank, rank.of)}</span>}
     </span>
-  </>;
-  return flag ? <Button variant="unstyled" type="button" className="checkup-cell" data-level={flag.level} onClick={() => onFlag(flag)} aria-label={m.openFlag(metric.label)}>{body}</Button>
-    : <div className="checkup-cell">{body}</div>;
+  </Button>;
 }
 
-/* ---------- Rail ---------- */
-
-/** How many flags the rail shows before the section is opened. */
-const DIGEST = 3;
-
-/** The checkup's flags as a rail section, alerts first: the metric, its value and the rule it trips. */
-export function FlagsList({ flags, metrics, updates, focus, story, periodEnd, expanded, onFocus, onStory, onExpand }: {
-  flags: Flag[]; metrics: Map<string, AssessedMetric>; updates: number; focus: string | null; story: boolean; periodEnd: string; expanded: boolean;
-  onFocus: (key: string | null) => void; onStory: () => void; onExpand: (open: boolean) => void;
-}) {
-  const ids = flags.map(flagKey);
-  const arrived = useArrivals(ids, updates);
-  const still = useReducedMotion();
-  const extra = (f: Flag, i: number) => i >= DIGEST && flagKey(f) !== focus;
-  return <RailSection name="flags" title={m.flags} hint={m.report(shortPeriod(periodEnd))} expandable={flags.some(extra)} expanded={expanded} focused={focus != null} onExpand={onExpand}
-    actions={flags.length > 0 && <Button variant="unstyled" type="button" className="icon-button section-action" aria-pressed={story} aria-label={story ? m.stop : m.walk} title={story ? m.stop : m.walkKeys} onClick={onStory}>
-      <svg viewBox="0 0 24 24" aria-hidden="true">{story ? <rect x="7" y="7" width="10" height="10" rx="2" /> : <path d="M8 6.5v11l9-5.5Z" />}</svg>
-    </Button>}>
-    <div className="findings-rows section-body" id="rail-flags" role="radiogroup" aria-label={m.flags}>
-      {flags.length === 0 && <p className="flag-none">{m.none}</p>}
-      <AnimatePresence initial={false} mode="popLayout">
-        {flags.map((f, i) => {
-          const metric = metrics.get(f.metricId), key = flagKey(f);
-          return <RailRow variant="unstyled" type="button" key={key} role="radio" aria-checked={focus === key} className="finding-row flag-row" data-level={f.level}
-            layout={still ? false : "position"} layoutDependency={ids.join()} exit={rowExit} data-arrived={arrived.has(key) ? "" : undefined} style={arrivalStyle(arrived.get(key))}
-            data-extra={extra(f, i) ? "" : undefined} onClick={() => onFocus(focus === key ? null : key)} title={`${LEVEL_LABEL[f.level]} · ${DIMENSION_LABEL[f.dimension]}`}>
-            <LevelMark level={f.level} label={LEVEL_LABEL[f.level]} />
-            <span className="finding-title flag-title"><span>{flagLabel(f)}</span>{metric && <b>{metricValue(metric, f.value)}</b>}</span>
-            <span className="flag-rule">{f.threshold}</span>
-          </RailRow>;
-        })}
-      </AnimatePresence>
-    </div>
-  </RailSection>;
-}
-
-/** Up to three flags of the view in place of a lead finding, above the statement they light. */
-export function LeadFlags({ flags, onOpen, onHide }: { flags: Flag[]; onOpen: (flag: Flag) => void; onHide: () => void }) {
-  return <div className="lead-finding lead-flags" data-level={flags[0]!.level}>
-    <div className="lead-flags-list">{flags.map(f => <Button key={flagKey(f)} variant="unstyled" type="button" className="lead-finding-open" data-level={f.level} aria-label={m.openFlag(flagLabel(f))} onClick={() => onOpen(f)}>
-      <LevelMark level={f.level} /><span>{flagLabel(f)}<small>{f.threshold}</small></span><span aria-hidden="true">→</span>
-    </Button>)}</div>
-    <Button variant="unstyled" type="button" className="icon-button lead-finding-hide" aria-label={m.hide} title={m.hide} onClick={onHide}>
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17" /></svg>
-    </Button>
-  </div>;
-}
+/* ---------- One metric holding the stage ---------- */
 
 /* ---------- One flag holding the stage ---------- */
 
@@ -309,43 +271,50 @@ function partsOf(data: FindingData, metric: AssessedMetric): { series: Series[];
   return null;
 }
 
-/** Findings whose evidence cites the figure the flag is about, so the reader can go from the rule to the explanation. */
-export function relatedFindings(flag: Flag, findings: VerifiedFinding[]): VerifiedFinding[] {
-  const { metrics, capital } = flagFigures(flag);
+/** Findings of the report whose evidence cites the figure the metric is about, so the reader can go from the rule to the explanation. */
+export function relatedFindings(metricId: string, periodEnd: string, findings: VerifiedFinding[]): VerifiedFinding[] {
+  const { metrics, capital } = flagFigures({ metricId });
   const hits = (ref: FindingRef): boolean => "ratio" in ref ? hits(ref.ratio.numerator) || hits(ref.ratio.denominator)
     : "metric" in ref ? metrics.includes(ref.metric) : "capital" in ref ? capital.includes(ref.capital) : false;
-  return findings.filter(f => f.periodEnd === flag.evidence[0]?.periodEnd && f.evidence.some(e => hits(e.ref)));
+  return findings.filter(f => f.periodEnd === periodEnd && f.evidence.some(e => hits(e.ref)));
 }
 
-export function FlagLens({ flag, metric, rank, data, findings, sources, story, index, count, onStep, onClose, onFinding }: {
-  flag: Flag; metric: AssessedMetric; rank: PeerRank | null; data: FindingData; findings: VerifiedFinding[]; sources: FlowSource[];
-  story: boolean; index: number; count: number; onStep: (delta: 1 | -1) => void; onClose: () => void; onFinding: (id: string) => void;
+
+/** Metrics whose story is how profit became cash, and those whose story is what the capital bought. */
+const BRIDGE_METRICS = new Set(["cash-conversion", "accruals", "working-capital-share", "free-cash-flow", "fcf-margin", "self-funding", "external-funding", "cash-runway"]);
+const CHAIN_METRICS = new Set(["capex-to-depreciation", "capex-intensity", "asset-formation", "incremental-return", "roic", "asset-turnover"]);
+
+/**
+ * One metric holding the stage: its trend against every threshold its rules test, its figures, what it is made of, the
+ * peers when they rank it, the profit-to-cash bridge or the capital chain when that is its story, the findings that
+ * cite it, and the filings it was read from.
+ */
+export function MetricLens({ metric, flags, rank, data, findings, sources, bridge, chain, onClose, onFinding }: {
+  metric: AssessedMetric; flags: Flag[]; rank: PeerRank | null; data: FindingData; findings: VerifiedFinding[]; sources: FlowSource[];
+  bridge: { quarter: CashBridge | null; year: CashBridge | null }; chain: CapitalChain | null; onClose: () => void; onFinding: (id: string) => void;
 }) {
-  const title = flagLabel(flag);
+  const title = metric.label, top = flags[0] ?? null;
   const parts = useMemo(() => partsOf(data, metric), [data, metric]);
-  const related = useMemo(() => relatedFindings(flag, findings), [flag, findings]);
-  const thresholds = thresholdsOf(flag);
-  const form = metric.form === "points" ? "points" : metric.form;
-  const figures: Array<[string, string]> = [[m.current, metricValue(metric)], [m.threshold, flag.threshold]];
+  const related = useMemo(() => relatedFindings(metric.id, metric.evidence.periodEnd, findings), [metric, findings]);
+  const thresholds = [...new Set(flags.flatMap(thresholdsOf))];
+  const figures: Array<[string, string]> = [[m.current, metricValue(metric)], ...flags.map(f => [`${LEVEL_LABEL[f.level]} · ${m.threshold}`, f.threshold] as [string, string])];
   if (metric.measure === "value" && metric.yoy != null) figures.push([yoyLabel(getLocale()), formatMetricChange(metric.yoy, metric.form, getLocale())]);
   if (metric.measure === "value" && metric.qoq != null) figures.push([qoqLabel(getLocale()), formatMetricChange(metric.qoq, metric.form, getLocale())]);
   for (const s of parts?.series ?? []) { const last = s.points.at(-1); if (last) figures.push([s.label, parts!.form === "money" ? compactMoney(last.value, "USD", getLocale()) : formatMetric(last.value, parts!.form, getLocale())]); }
-  return <section className="lens flag-lens" data-level={flag.level} aria-label={m.flag(title)} key={flagKey(flag)}>
+  const story = BRIDGE_METRICS.has(metric.id) && (bridge.year ?? bridge.quarter) ? "bridge" : CHAIN_METRICS.has(metric.id) && chain ? "chain" : null;
+  return <section className="lens flag-lens" data-level={top?.level} aria-label={m.metric(title)} key={metric.id}>
     <header className="lens-head">
       <div className="lens-title">
-        <b className="lens-kind"><LevelMark level={flag.level} />{LEVEL_LABEL[flag.level]}</b>
+        {top && <b className="lens-kind"><LevelMark level={top.level} />{LEVEL_LABEL[top.level]}</b>}
         <h2>{title}</h2>
-        <span className="lens-basis">{m.report(shortPeriod(flag.evidence[0]?.periodEnd ?? flag.since))} · {DIMENSION_LABEL[flag.dimension]} · {m.since(shortPeriod(flag.since))}</span>
+        <span className="lens-basis">{m.report(shortPeriod(metric.evidence.periodEnd))} · {DIMENSION_LABEL[metric.dimension]}{top ? ` · ${m.since(shortPeriod(top.since))}` : ""}</span>
       </div>
-      <div className="lens-nav">
-        {story && <span className="lens-steps"><Button variant="unstyled" type="button" aria-label={m.previous} disabled={index <= 0} onClick={() => onStep(-1)}>‹</Button><span>{index + 1} / {count}</span><Button variant="unstyled" type="button" aria-label={m.next} disabled={index >= count - 1} onClick={() => onStep(1)}>›</Button></span>}
-        <Button variant="unstyled" type="button" className="lens-close" aria-label={m.close} onClick={onClose}>✕</Button>
-      </div>
+      <div className="lens-nav"><Button variant="unstyled" type="button" className="lens-close" aria-label={m.close} onClick={onClose}>✕</Button></div>
     </header>
     <div className="lens-doc">
       <div className="lens-doc-row" data-cells="2" data-lead="first">
         <div className="lens-doc-cell"><h3 className="lens-row-title">{m.trend}</h3>
-          <SeriesChart series={[{ id: "metric", label: title, color: "var(--kind)", points: metric.series }]} form={form} kind={metric.form === "money" ? "bar" : "line"} height={230} thresholds={thresholds} since={flag.since} level={flag.level} label={m.chartLabel(title)} />
+          <SeriesChart series={[{ id: "metric", label: title, color: top ? "var(--kind)" : "var(--foreground)", points: metric.series }]} form={metric.form} kind={metric.form === "money" ? "bar" : "line"} height={230} thresholds={thresholds} since={top?.since ?? null} level={top?.level} label={m.chartLabel(title)} />
         </div>
         <div className="lens-doc-cell"><h3 className="lens-row-title">{m.figures}</h3>
           <dl className="lens-evidence">{figures.map(([label, value]) => <div key={label} className="lens-row"><dt>{label}</dt><dd><b>{value}</b></dd></div>)}</dl>
@@ -360,6 +329,8 @@ export function FlagLens({ flag, metric, rank, data, findings, sources, story, i
           <table className="lens-table"><tbody>{rank.rows.map((r, i) => <tr key={r.ticker} data-own={r.own || undefined}><th scope="row">{i + 1}. {r.ticker}</th><td>{formatMetric(r.value, metric.form, getLocale())}<em>{shortPeriod(r.periodEnd)}</em></td></tr>)}</tbody></table>
         </div>}
       </div>}
+      {story === "bridge" && <div className="lens-doc-row"><div className="lens-doc-cell"><BridgeCard bridge={bridge} /></div></div>}
+      {story === "chain" && chain && <div className="lens-doc-row"><div className="lens-doc-cell"><h3 className="lens-row-title">{m.chain}</h3><Chain chain={chain} /></div></div>}
       {(related.length > 0 || sources.length > 0) && <div className="lens-doc-row" data-cells={related.length && sources.length ? 2 : 1}>
         {related.length > 0 && <div className="lens-doc-cell"><h3 className="lens-row-title">{m.related}</h3>
           <ul className="flag-related">{related.map(f => <li key={f.id}><Button variant="unstyled" type="button" className="finding-row" data-kind={f.kind} onClick={() => onFinding(f.id)} title={KIND_LABEL[f.kind]}>
@@ -374,7 +345,23 @@ export function FlagLens({ flag, metric, rank, data, findings, sources, story, i
   </section>;
 }
 
-/** The statements behind the report's quarter: the flow's filings and the balance sheet's and cash flow's, each once. */
+/** The profit-to-cash bridge with its span switch: the quarter, or the four quarters ending at it. */
+function BridgeCard({ bridge }: { bridge: { quarter: CashBridge | null; year: CashBridge | null } }) {
+  const [span, setSpan] = useState<"quarter" | "year">("year");
+  const shown = span === "year" ? bridge.year ?? bridge.quarter : bridge.quarter ?? bridge.year;
+  if (!shown) return null;
+  const which = shown === bridge.year ? "year" : "quarter";
+  return <>
+    <h3 className="lens-row-title lens-row-title--with">{m.bridge}
+      {bridge.year && bridge.quarter && <span className="periods periods--small" role="radiogroup" aria-label={m.span}>
+        <Button variant="unstyled" type="button" role="radio" aria-checked={which === "quarter"} onClick={() => setSpan("quarter")}>{m.quarter}</Button>
+        <Button variant="unstyled" type="button" role="radio" aria-checked={which === "year"} onClick={() => setSpan("year")}>{m.trailing}</Button>
+      </span>}
+    </h3>
+    <Bridge bridge={shown} />
+  </>;
+}
+
 export function checkupSources(data: FindingData, periodEnd: string): FlowSource[] {
   const near = (a: string) => Math.abs(Date.parse(a) - Date.parse(periodEnd)) <= 20 * 86_400_000;
   const out = new Map<string, FlowSource>();
@@ -384,8 +371,6 @@ export function checkupSources(data: FindingData, periodEnd: string): FlowSource
   return [...out.values()].slice(0, 6);
 }
 
-/** Flags of one view, the most pressing first: the view's own metrics only, three at most. */
-export const viewFlags = (flags: Flag[], view: "profit" | "cash" | "balance") => flags.filter(f => f.anchors.view === view).slice(0, 3);
 
 /** The level a statement figure carries on the stage's tiles: the most pressing flag that is about it. */
 export function figureLevel(flags: Flag[], figure: { metric?: string; capital?: string }): FlagLevel | undefined {

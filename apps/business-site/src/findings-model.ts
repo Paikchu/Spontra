@@ -11,7 +11,7 @@ import { getLocale, labels, type Locale } from "@/packages/web/src/i18n";
 export type { VerifiedFinding };
 
 export const KIND_LABEL: Record<VerifiedFinding["kind"], string> = labels({ risk: "Risk", strength: "Strength", shift: "Shift", watch: "Watch" }, { risk: "风险", strength: "优势", shift: "变化", watch: "跟踪" });
-export const VIEW_LABEL = labels({ profit: "Profit", cash: "Cash flow", balance: "Balance sheet", checkup: "Checkup" }, { profit: "利润", cash: "现金流", balance: "资产负债表", checkup: "三表体检" });
+export const VIEW_LABEL = labels({ profit: "Profit", cash: "Cash flow", balance: "Balance sheet" }, { profit: "利润", cash: "现金流", balance: "资产负债表" });
 
 export function findingData(flow: PublicBusinessFlow, history: RevenueHistory | null, capital: PublicCapitalStructure | null, fundamentals: FindingFundamentals | null, guidance: GuidancePublication | null, peers: PeersPublication | null = null, passages: FindingPassage[] | null = null, events: EventsPublication | null = null): FindingData {
   return { quarters: flow.quarters, history, capital, fundamentals, guidance, peers, passages, events };
