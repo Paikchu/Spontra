@@ -105,8 +105,12 @@ async function extractStored(env: SecPipelineEnv, deps: GuidanceDeps, materialId
   }
 }
 
-/** Rebuilds the public view from every verified item of the company. Reads only stored data. */
-export async function publishGuidance(env: SecPipelineEnv, ticker: string, now: string): Promise<{ items: number }> {
+/**
+ * Rebuilds the public view from every verified item of the company. Reads only stored data. `onlyIfChanged` leaves the
+ * stored view (and its event) alone when the rebuild would read the same, which it does unless an input such as the
+ * fiscal periods the items are dated by has changed since.
+ */
+export async function publishGuidance(env: SecPipelineEnv, ticker: string, now: string, options: { onlyIfChanged?: boolean } = {}): Promise<{ items: number; published: boolean }> {
   const db = requireDb(env);
   const store = new GuidanceStore(db, env.SEC_FILINGS);
   const repository = new D1SecRepository(db);
@@ -139,6 +143,11 @@ export async function publishGuidance(env: SecPipelineEnv, ticker: string, now: 
   });
   const publication: GuidancePublication = { schemaVersion: "guidance.v1", ticker, updatedAt: now, items, sources, coverage };
   if (!readGuidancePublication(publication, ticker)) throw new Error("Guidance publication failed its public contract.");
+  if (options.onlyIfChanged) {
+    const stored = (await repository.getCache<GuidancePublication>(guidanceCacheKey(ticker)))?.payload;
+    const unchanged = stored ? JSON.stringify({ ...stored, updatedAt: "" }) === JSON.stringify({ ...publication, updatedAt: "" }) : !items.length;
+    if (unchanged) return { items: items.length, published: false };
+  }
   // Findings read guidance; the publication and its event commit together.
   await db.batch([
     db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at")
@@ -146,7 +155,7 @@ export async function publishGuidance(env: SecPipelineEnv, ticker: string, now: 
     outboxStatement(db, { type: "guidance.published", ticker }, now),
   ]);
   await new AiRunStore(db).saveVersion("guidance", ticker, publication, now);
-  return { items: items.length };
+  return { items: items.length, published: true };
 }
 
 export async function executeGuidanceWorkflow(params: GuidanceWorkflowParams, step: GuidanceStep, env: SecPipelineEnv, deps: GuidanceDeps = {}) {

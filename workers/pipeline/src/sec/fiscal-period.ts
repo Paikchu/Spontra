@@ -51,23 +51,43 @@ export function parseFiscalPeriod(html: string, filing: Pick<SecFiling, "form" |
   return found[0];
 }
 
-/** Bounded background backfill. Reads remain cache-only and do not trigger SEC requests. */
-export async function refreshFiscalPeriods(repository: Pick<SecRepository, 'getCache' | 'setCache'>, filings: SecFiling[], userAgent: string, fetcher: typeof fetch = fetch, now = new Date()): Promise<void> {
-  let attempted = 0;
-  for (const filing of filings) {
-    if (!periodic(filing.form)) continue;
-    const cached = await repository.getCache<SecFiscalPeriod | null>(fiscalPeriodKey(filing));
-    if (cached && (cached.payload || now.getTime() - Date.parse(cached.fetchedAt) < 86400000)) continue;
-    if (attempted++ >= 4) break;
-    try {
-      const url = new URL(filing.documentUrl);
-      if (url.origin !== 'https://www.sec.gov' || !url.pathname.startsWith('/Archives/edgar/data/')) continue;
-      const response = await fetcher(url.toString(), { headers: { 'user-agent': userAgent, accept: 'text/html' }, signal: AbortSignal.timeout(10000), redirect: 'error' });
-      if (!response.ok) break; // Respect SEC throttling; keep existing successful metadata.
-      const period = parseFiscalPeriod(await response.text(), filing);
-      await repository.setCache(fiscalPeriodKey(filing), period, now.toISOString());
-    } catch { break; } // A metadata failure must not interrupt discovery/publication.
+/**
+ * The fiscal focus of every periodic filing in the list, from the SEC Company Facts payload the pipeline already reads
+ * for fundamentals. Each fact carries its filing's accession and the DEI focus that filing declared (`fy` is
+ * DocumentFiscalYearFocus, `fp` DocumentFiscalPeriodFocus), so no filing document is fetched. A filing is labelled
+ * only when all of its facts agree on the focus and one of them ends on the filing's report date.
+ */
+export function fiscalPeriodsFromCompanyFacts(payload: unknown, filings: SecFiling[]): SecFiscalPeriod[] {
+  const wanted = new Map(filings.filter(f => periodic(f.form) && /^\d{4}-\d{2}-\d{2}$/.test(f.reportDate)).map(f => [f.accessionNumber, f]));
+  const seen = new Map<string, { years: Set<unknown>; periods: Set<unknown>; endsOnReportDate: boolean }>();
+  const facts = (payload as { facts?: unknown } | null)?.facts;
+  for (const concepts of Object.values(facts && typeof facts === 'object' ? facts : {})) {
+    for (const concept of Object.values(concepts && typeof concepts === 'object' ? concepts : {})) {
+      for (const values of Object.values((concept as { units?: object } | null)?.units ?? {})) {
+        if (!Array.isArray(values)) continue;
+        for (const fact of values as Array<{ accn?: unknown; fy?: unknown; fp?: unknown; end?: unknown } | null>) {
+          const filing = wanted.get(String(fact?.accn ?? ''));
+          if (!filing || !fact) continue;
+          const entry = seen.get(filing.accessionNumber) ?? { years: new Set(), periods: new Set(), endsOnReportDate: false };
+          entry.years.add(fact.fy); entry.periods.add(fact.fp);
+          entry.endsOnReportDate ||= fact.end === filing.reportDate;
+          seen.set(filing.accessionNumber, entry);
+        }
+      }
+    }
   }
+  const found: SecFiscalPeriod[] = [];
+  for (const [accession, filing] of wanted) {
+    const entry = seen.get(accession);
+    if (!entry) continue;
+    const [year] = entry.years, [period] = entry.periods;
+    if (entry.years.size !== 1 || entry.periods.size !== 1 || !entry.endsOnReportDate) continue;
+    if (!Number.isInteger(year) || (year as number) < 2000 || (year as number) > 2100 || typeof period !== 'string' || !/^(FY|Q[1-4]|H[12]|M9)$/.test(period)) continue;
+    if (/^(10-K|20-F)/.test(filing.form) && period !== 'FY') continue;
+    if (/^10-Q/.test(filing.form) && !/^Q[1-3]$/.test(period)) continue;
+    found.push({ fiscalYear: year as number, fiscalPeriod: period as SecFiscalPeriod['fiscalPeriod'], periodEnd: filing.reportDate, source: 'sec_dei', sourceAccession: accession, sourceUrl: filing.documentUrl });
+  }
+  return found;
 }
 
 export async function readFiscalPeriod(repository: Pick<SecRepository, 'getCache'>, filing: SecFiling): Promise<SecFiscalPeriod | null> {

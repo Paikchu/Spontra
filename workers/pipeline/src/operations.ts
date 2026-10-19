@@ -10,7 +10,7 @@ import { fiscalPeriodInput } from "./sec/fiscal-period-ai.ts";
 import { fetchSecMarketSnapshot } from "./sec/market.ts";
 import { normalizeEditorialIssues, editorialRequirements } from "./sec/editorial.ts";
 import { EDITORIAL_REVIEW_PROMPT, identifyReaderMarketSnapshot } from "./sec/reader.ts";
-import { refreshFiscalPeriods, readFiscalPeriod } from "./sec/fiscal-period.ts";
+import { fiscalPeriodKey, fiscalPeriodsFromCompanyFacts, readFiscalPeriod } from "./sec/fiscal-period.ts";
 import { attachDiscovery, auditDisclosureCoverage, discoveryChunkCount, scanDisclosureChunk, type DiscoveryChunk } from "./sec/discovery.ts";
 import { buildEarningsGroups, classificationKey, combineEarningsDocuments, earningsKey, identifyEarningsPeriod, isPeriodic } from "./sec/earnings.ts";
 import type { SecEarningsGroup } from "../../../shared/analysis-contract/report.ts";
@@ -286,20 +286,27 @@ export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof
       const normalizedFeed = { ...typedFeed, ticker, filings: typedFeed.filings.map(toStoredFiling) };
       const store = repository();
       const db = requireDb(env), indexedAt = typedFeed.fetchedAt ?? new Date().toISOString();
-      // The indexed list and its event commit together; guidance reads this list for the filings it extracts from.
+      // One Company Facts read gives each periodic filing's fiscal focus and the fundamentals. Retried on every
+      // discovery sweep: Company Facts can arrive after the filing index.
+      const cik = normalizedFeed.company?.cik ?? normalizedFeed.filings[0]?.cik;
+      const facts = cik ? await fetchCompanyFacts(cik, env.SEC_USER_AGENT, fetcher).catch((error) => {
+        console.warn("SEC Company Facts read failed", { ticker, error: error instanceof Error ? error.message : String(error) });
+        return null;
+      }) : null;
+      const periods = facts ? fiscalPeriodsFromCompanyFacts(facts, normalizedFeed.filings) : [];
+      // The indexed list, the fiscal periods guidance dates its items by, and their event commit together.
       await db.batch([
         db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at")
           .bind(`sec:filings:${ticker}`, JSON.stringify(normalizedFeed), indexedAt),
+        ...periods.map((period) => db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at WHERE sec_cache.payload IS NOT excluded.payload")
+          .bind(fiscalPeriodKey({ ticker, accessionNumber: period.sourceAccession }), JSON.stringify(period), indexedAt)),
         outboxStatement(db, { type: "filings.indexed", ticker, cik: normalizedFeed.company?.cik ?? null, causeId: null }, indexedAt),
       ]);
       await Promise.all(normalizedFeed.filings.map((filing) => store.upsertFilingIndex(filing)));
-      await refreshFiscalPeriods(store, normalizedFeed.filings, env.SEC_USER_AGENT, fetcher);
-      // Retry on every discovery sweep: Company Facts can arrive after the filing index.
       // Publish one complete snapshot atomically; failures leave the last good snapshot intact.
-      const cik = normalizedFeed.company?.cik ?? normalizedFeed.filings[0]?.cik;
-      if (cik) {
+      if (cik && facts) {
         try {
-          const history = await fetchCompanyHistory(cik, ticker, env.SEC_USER_AGENT, fetcher);
+          const history = normalizeCompanyFacts(ticker, facts);
           if (history.series.some((series) => series.seriesId === "revenue" && series.quarters.length)) {
             const at = new Date().toISOString();
             await db.batch([
@@ -627,6 +634,10 @@ function summaryIdentity(summary: SecFilingSummary) {
 }
 
 async function fetchCompanyHistory(cik: string, ticker: string, userAgent: string, fetcher: typeof fetch) {
+  return normalizeCompanyFacts(ticker, await fetchCompanyFacts(cik, userAgent, fetcher));
+}
+
+async function fetchCompanyFacts(cik: string, userAgent: string, fetcher: typeof fetch): Promise<unknown> {
   const normalizedCik = String(cik).replace(/\D/g, "").padStart(10, "0");
   const response = await fetcher(`https://data.sec.gov/api/xbrl/companyfacts/CIK${normalizedCik}.json`, {
     cache: "no-store",
@@ -636,7 +647,7 @@ async function fetchCompanyHistory(cik: string, ticker: string, userAgent: strin
   if (!response.ok) throw new Error(`SEC Company Facts HTTP ${response.status}`);
   const contentLength = Number(response.headers.get("content-length") ?? 0);
   if (contentLength > 20_000_000) throw new Error("SEC Company Facts payload exceeds 20 MB");
-  return normalizeCompanyFacts(ticker, await response.json());
+  return response.json();
 }
 
 async function putArtifact(bucket: R2BucketLike, reference: PreparedFilingReference, name: string, value: unknown): Promise<string> {
