@@ -4,7 +4,7 @@ import { refreshCompanyEvents, secAccessPaused } from "../events/workflow.ts";
 import { eventsCacheKey } from "../events/read.ts";
 import { guidanceWorkflowSuffix } from "../guidance/extract.ts";
 import { GuidanceStore } from "../guidance/store.ts";
-import { earningsEvents } from "../guidance/workflow.ts";
+import { earningsEvents, publishGuidance } from "../guidance/workflow.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import type { SecFilingFeed } from "../sec/sec.ts";
 import type { TaskImplementation, TaskOutcome } from "./tasks.ts";
@@ -84,7 +84,8 @@ export const SEC_TASKS = {
    * 1, 6 and 24 hours (the next run analyses the failed filings again), then becomes a dead letter.
    */
   "sec-report": {
-    version: "sec-report.v2-english",
+    // v3: the run writes each periodic filing's fiscal period from Company Facts, which guidance dates its items by.
+    version: "sec-report.v3-fiscal-periods",
     async run(env, ticker, { now, trigger, causeId }): Promise<TaskOutcome> {
       return driveWorkflow(env, `sec-report:${ticker}`, env.SEC_ANALYSIS_WORKFLOW as WorkflowBindingLike, async () => {
         const waiting = await pendingRetryOutcome(env, "sec-report", ticker, now);
@@ -99,7 +100,8 @@ export const SEC_TASKS = {
 
   /**
    * Records the company's earnings 8-Ks from the indexed filing list and starts guidance extraction for those not yet
-   * processed, two at a time; each Workflow publishes on its own (`guidance.published`).
+   * processed, two at a time; each Workflow publishes on its own (`guidance.published`). With every event settled, the
+   * view is published again only if a rebuild reads differently.
    */
   guidance: {
     version: "guidance.v2",
@@ -127,10 +129,13 @@ export const SEC_TASKS = {
         await store.updateEvent(event.ticker, event.accession, { status: "started", workflowInstanceId: id }, stamp);
         started.push(event.accession);
       }
-      const detail = { recorded: events.length, started, retried: reconciled.retry.length };
-      if (queued.length >= 2) return { status: "later", afterMs: SECOND, detail };
+      if (queued.length >= 2) return { status: "later", afterMs: SECOND, detail: { recorded: events.length, started, retried: reconciled.retry.length } };
       // A run still going may yet fail, and a failed one has a retry due: come back for both.
       const running = await db.prepare("SELECT 1 FROM earnings_events WHERE ticker = ? AND status = 'started' LIMIT 1").bind(ticker).first();
+      // Every event settled: the view is rebuilt when an input it reads moved since it was published, such as the
+      // fiscal periods a new filing list brings, which date the items.
+      const republished = !started.length && !running && (await publishGuidance(env, ticker, stamp, { onlyIfChanged: true })).published;
+      const detail = { recorded: events.length, started, retried: reconciled.retry.length, republished };
       const untilRetry = reconciled.nextAt === null ? null : Math.max(SECOND, reconciled.nextAt - now.getTime());
       const afterMs = running ? Math.min(untilRetry ?? Infinity, 30 * MINUTE) : untilRetry;
       return afterMs === null ? { status: "done", detail } : { status: "later", afterMs, detail };
