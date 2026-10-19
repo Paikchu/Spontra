@@ -73,6 +73,9 @@ test("a translation must keep every figure, placeholder and markdown line, be Ch
   assert.deepEqual(checkTranslation("{value}, {change} on the year", "{value}，同比 {change}"), []);
   assert.deepEqual(checkTranslation("Oracle Cloud Infrastructure grew 55%.", "Oracle Cloud Infrastructure 增长 55%。"), []);
   assert.match(checkTranslation("Capex was $28.5 billion.", "资本开支为 28.5亿美元。").join(), /figures missing/);
+  // A number the English spells as a word may be a Chinese numeral; a real amount still has to match.
+  assert.deepEqual(checkTranslation("Over the trailing four quarters the gap was one-off, not twelve months long.", "近四个季度的缺口是一次性的，而非持续十二个月。"), []);
+  assert.match(checkTranslation("Over the trailing four quarters capex was $75.7 billion.", "近四个季度资本开支为 75.7亿美元。").join(), /figures missing/);
   assert.match(checkTranslation("{value} on the year", "同比").join(), /placeholders/);
   assert.match(checkTranslation("Capex keeps rising fast.", "Capex keeps rising fast.").join(), /not translated/);
   assert.match(checkTranslation("Spending keeps rising.", "支出持续上升，driven by AI。").join(), /English not in the source/);

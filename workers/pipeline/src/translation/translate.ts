@@ -23,7 +23,7 @@ import { getPublicFiling, getPublicFilingPage } from "../sec/public-api.ts";
  * so a regenerated finding that kept a sentence costs nothing to translate again.
  */
 /** v2: the checker compares full values and accepts digits kept verbatim, so v1's false rejections are retried. */
-export const TRANSLATION_VERSION = "translate.v2";
+export const TRANSLATION_VERSION = "translate.v3";
 export const TRANSLATION_LOCALES: readonly Locale[] = ["zh-CN"];
 const LOCALE: Locale = "zh-CN";
 /** Model input per call; long report paragraphs travel alone. */

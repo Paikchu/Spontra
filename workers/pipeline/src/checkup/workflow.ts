@@ -25,7 +25,7 @@ export { checkupCacheKey, emptyCheckupKey, readCheckupRecord } from "./read.ts";
  * analysis read against the current and the earlier filings. Runs when the flags, the filings in the library or the
  * prompt change; publishes one record per company that the findings read route serves with the findings.
  */
-export const CHECKUP_NOTES_VERSION = "checkup.notes.v2";
+export const CHECKUP_NOTES_VERSION = "checkup.notes.v3";
 export type CheckupWorkflowParams = { ticker: string; fingerprint: string };
 /** Metrics a run writes about, the most pressing first. */
 const MAX_NOTES = 8;
