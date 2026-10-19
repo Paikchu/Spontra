@@ -44,6 +44,8 @@ function displayDelta(form: MetricForm, r: { current: ResolvedValue; delta: numb
 /** The metric's number at one quarter end, or null when the data cannot answer it there. */
 function measureAt(data: FindingData, def: StatementMetricDef, end: string): { value: number; resolved: ResolvedValue } | null {
   if (def.measure === "value") {
+    // A ratio over a loss, a deficit or a negative base reads backwards (cash over a net loss, net debt over negative EBITDA): no value.
+    if ("ratio" in def.ref) { const base = resolveRef(data, def.ref.ratio.denominator, end, def.span); if (!base || base.value <= 0) return null; }
     const r = resolveRef(data, def.ref, end, def.span);
     return r && !r.range ? { value: display(def.form, r), resolved: r } : null;
   }
@@ -71,6 +73,7 @@ const DERIVED_INPUTS: Record<DerivedMetric, { metrics?: FlowMetric[]; capital?: 
   averageEquity: { capital: ["equity"] }, averageAssets: { capital: ["totalAssets"] }, averageInvestedCapital: { capital: ["debt", "leases", "equity", "cash"] },
   incrementalReturn: { metrics: ["operating"], capital: ["debt", "leases", "equity", "cash"] }, interestExpense: { metrics: ["other"] },
   netExternalFunding: { capital: ["debtIssued", "debtRepaid", "equityIssued"] }, cashRunwayMonths: { capital: ["cash", "freeCashFlow"] }, debtDueCoverage: { capital: ["cash", "freeCashFlow", "debt"] },
+  depreciationAmortization: { capital: ["depreciation"] }, stockCompensationExpense: { capital: ["stockCompensation"] },
 };
 function collect(ref: FindingRef, metrics: Set<FlowMetric>, capital: Set<CapitalMetric>) {
   if ("ratio" in ref) { collect(ref.ratio.numerator, metrics, capital); collect(ref.ratio.denominator, metrics, capital); return; }
@@ -192,13 +195,14 @@ export function cashBridge(data: FindingData, periodEnd: string, span: FindingSp
   const steps: BridgeStep[] = [];
   const step = (id: string, value: number | null, ref: FindingRef | null = null) => { if (value != null && Number.isFinite(value) && value !== 0) steps.push({ id, label: name(id), value, ref }); };
   const mark = (id: string, value: number, ref: FindingRef | null) => steps.push({ id, label: name(id), value, ref, total: true });
+  // Without reconciled operating lines in every quarter of the span, operating cash flow stands as one total from zero.
   const operatingLines = read(c => operatingGroup(c, "netIncome"));
   if (operatingLines) {
     step("netIncome", operatingLines.value, { metric: "net" });
     step("nonCash", read(c => operatingGroup(c, "nonCash"))?.value ?? null, { derived: "nonCashCharges" });
     step("workingCapital", read(c => operatingGroup(c, "workingCapital"))?.value ?? null, { derived: "workingCapitalChange" });
     step("otherOperating", read(c => operatingGroup(c, "other"))?.value ?? null);
-  } else step("operating", total.value, { capital: "operatingCashFlow" });
+  }
   mark("operating", total.value, { capital: "operatingCashFlow" });
   const investingTotal = read(c => Number(c.investing.total)), capex = read(c => section(c.investing.lines, "capex"));
   if (capex) {
@@ -217,7 +221,9 @@ export function cashBridge(data: FindingData, periodEnd: string, span: FindingSp
   const netChange = read(c => Number(c.netChange));
   if (!netChange) return null;
   mark("netChange", netChange.value, null);
-  const moved = steps.filter(s => !s.total).reduce((t, s) => t + s.value, 0);
+  // Movements after operating cash flow, added to it, must reach the net change; the operating lines themselves sum to it by contract.
+  const after = steps.slice(steps.findIndex(s => s.id === "operating") + 1).filter(s => !s.total);
+  const moved = total.value + after.reduce((t, s) => t + s.value, 0);
   const tolerance = Math.max(2e6, 0.01 * Math.max(...steps.map(s => Math.abs(s.value))));
   const cash = (end: string) => resolveRef(data, { capital: "cash" }, end, "quarter")?.value ?? null;
   return { span, periodEnd: total.periodEnd, currency: total.currency ?? "USD", steps, openingCash: cash(shiftPeriod(periodEnd, span === "quarter" ? -3 : -12)), closingCash: cash(periodEnd), closes: Math.abs(moved - netChange.value) <= tolerance };
@@ -327,6 +333,9 @@ function atPeer(ref: FindingRef, ticker: string): FindingRef | null {
   if ("metric" in ref) return { peer: { ticker, ref: { metric: ref.metric } } };
   if ("capital" in ref) return { peer: { ticker, ref: { capital: ref.capital } } };
   if ("fundamental" in ref) return { peer: { ticker, ref: { fundamental: ref.fundamental } } };
+  // The projection's own figures already fall back to the SEC series the same way.
+  if ("derived" in ref && ref.derived === "depreciationAmortization") return { peer: { ticker, ref: { capital: "depreciation" } } };
+  if ("derived" in ref && ref.derived === "stockCompensationExpense") return { peer: { ticker, ref: { capital: "stockCompensation" } } };
   return null;
 }
 

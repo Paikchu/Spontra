@@ -55,6 +55,10 @@ export const DERIVED_METRICS = [
   "ebitda", "netDebt", "investedCapital", "nopat", "accruals", "nonCashCharges", "workingCapitalChange",
   "averageEquity", "averageAssets", "averageInvestedCapital", "incrementalReturn", "interestExpense",
   "netExternalFunding", "cashRunwayMonths", "debtDueCoverage",
+  /** The statement's depreciation and amortization lines, or the SEC series in a quarter whose operating lines do not reconcile. */
+  "depreciationAmortization",
+  /** The statement's stock-based compensation lines, or the SEC series in a quarter whose operating lines do not reconcile. */
+  "stockCompensationExpense",
 ] as const;
 export type DerivedMetric = (typeof DERIVED_METRICS)[number];
 export type EventField = "sharesSold" | "proceeds" | "averagePrice" | "sharesBought" | "cost" | "exercised" | "heldAfter";

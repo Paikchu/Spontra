@@ -210,8 +210,8 @@ test("the capex cycle, the fast receivables and the maturity wall are flagged; t
   // Capex of 150 began six quarters ago; the four-quarter multiple passed 2× a year before the report (2.1× then), not five quarters before (1.65×).
   assert.equal(capex.since, shiftPeriod(PERIOD, -12));
   assert.equal(capex.anchors.view, "cash");
-  assert.deepEqual(capex.anchors.capital, ["capex", "depreciation"]);
-  assert.deepEqual(capex.evidence, [{ ref: { ratio: { numerator: { capital: "capex" }, denominator: { capital: "depreciation" } } }, periodEnd: PERIOD, span: "fiscal_year", compare: "yoy" }]);
+  assert.deepEqual(capex.anchors.capital, ["capex", "depreciation"], "the derived figure lights the statement lines it stands for");
+  assert.deepEqual(capex.evidence, [{ ref: { ratio: { numerator: { capital: "capex" }, denominator: { derived: "depreciationAmortization" } } }, periodEnd: PERIOD, span: "fiscal_year", compare: "yoy" }]);
   assert.equal(flag("receivables-outrun")!.level, "watch");
   assert.equal(flag("maturity-wall")!.level, "alert");
   assert.equal(flag("returns-strong")!.level, "note");
@@ -356,7 +356,7 @@ test("the ledger carries derived rows and the checkup's flags for the findings w
   assert.match(row({ ratio: { numerator: { derived: "nopat" }, denominator: { derived: "averageInvestedCapital" } } })!.value, /^\d+(\.\d)?%$/, "a return reads as a percentage");
   assert.ok(!ledger.rows.some(r => "derived" in r.ref && r.ref.derived === "cashRunwayMonths"), "months have no ledger form");
   const capex = ledger.flags.find(f => f.rule === "capex-cycle")!;
-  assert.deepEqual(capex, { rule: "capex-cycle", level: "watch", metric: "Capex over depreciation", value: "3.00×", threshold: "> 2×", since: shiftPeriod(PERIOD, -12), ref: { ratio: { numerator: { capital: "capex" }, denominator: { capital: "depreciation" } } }, span: "fiscal_year" });
+  assert.deepEqual(capex, { rule: "capex-cycle", level: "watch", metric: "Capex over depreciation", value: "3.00×", threshold: "> 2×", since: shiftPeriod(PERIOD, -12), ref: { ratio: { numerator: { capital: "capex" }, denominator: { derived: "depreciationAmortization" } } }, span: "fiscal_year" });
   assert.equal(ledger.flags[0]!.level, "alert");
   // A finding may cite the flag's ref: the verifier resolves it like any ledger row.
   const publication: FindingsPublication = { schemaVersion: "findings.v1", ticker: "TEST", periodEnd: PERIOD, generatedAt: "now", model: "test", sources: [{ id: "s1", title: "10-Q", url: "https://www.sec.gov/x", kind: "sec", publishedAt: null }], findings: [{
@@ -382,4 +382,31 @@ test("the analyst opens its lines from the same flags the page shows", () => {
   assert.ok(!plan.lines.some(l => l.key === "margin_mix"), "no margin rule trips and the finding cites no margin ratio");
   const quiet = planFinding(f, { ...standard, capital: null }, []);
   assert.ok(!quiet.lines.some(l => l.key === "capital_intensity"), "without the statements no capital rule trips");
+});
+
+test("a span whose operating lines do not reconcile stands operating cash flow as one total, and still closes", () => {
+  const unlined: FindingData = { ...standard, capital: { ...standard.capital!, quarters: standard.capital!.quarters.map(q => ({ ...q, cashFlow: q.cashFlow && { ...q.cashFlow, operating: { ...q.cashFlow.operating, lines: null } } })) } };
+  const bridge = cashBridge(unlined, PERIOD, "fiscal_year")!;
+  assert.equal(bridge.steps.filter(s => s.id === "operating").length, 1);
+  assert.ok(bridge.steps[0]!.total && bridge.steps[0]!.id === "operating");
+  assert.ok(bridge.closes);
+});
+
+test("a ratio over a loss has no value, so a loss-making company never reads as cash below profit", () => {
+  const losing: FindingData = { ...standard, quarters: standard.quarters.map(q => ({ ...q, figures: { ...q.figures, net: { ...q.figures.net!, value: String(-50) } } })) };
+  const a = assessStatements(losing, PERIOD);
+  assert.equal(a.dimensions.flatMap(d => d.metrics).find(m => m.id === "cash-conversion"), undefined);
+  assert.ok(!a.flags.some(f => f.ruleId === "cash-below-profit" || f.ruleId === "cash-above-profit"));
+});
+
+test("depreciation and stock compensation fall back to the SEC series where the statement's lines do not reconcile", () => {
+  const series = (metricKey: string, value: number) => ({ metricKey, label: metricKey, category: "cash_flow", unitFamily: "currency", currency: "USD", available: true, points: ENDS.map(end => ({ periodEnd: end, valueDecimal: String(value) })) });
+  const unlined: FindingData = { ...standard, fundamentals: { series: [series("depreciation_and_amortization", 40e6), series("stock_based_compensation", 15e6)] as never },
+    capital: { ...standard.capital!, quarters: standard.capital!.quarters.map(q => ({ ...q, cashFlow: q.cashFlow && { ...q.cashFlow, operating: { ...q.cashFlow.operating, lines: null } } })) } };
+  assert.equal(resolveRef(unlined, { capital: "depreciation" }, PERIOD, "fiscal_year"), null, "the statement alone cannot answer");
+  assert.equal(resolveRef(unlined, { derived: "depreciationAmortization" }, PERIOD, "fiscal_year")!.value, 160e6);
+  assert.equal(resolveRef(standard, { derived: "depreciationAmortization" }, PERIOD, "fiscal_year")!.value, 200e6, "the statement's own lines come first");
+  const capexDa = assessStatements(unlined, PERIOD).dimensions.flatMap(d => d.metrics).find(m => m.id === "capex-to-depreciation")!;
+  assert.ok(Math.abs(capexDa.current.value - 600 / 160) < 1e-9);
+  assert.equal(resolveRef(unlined, { derived: "stockCompensationExpense" }, PERIOD, "quarter")!.value, 15e6);
 });

@@ -17,7 +17,7 @@ const m = messages({
   none: "No rule tripped", covered: (n: number, of: number) => `${n}/${of}`, coverage: (n: number, of: number) => `${n} of ${of} metrics resolved`,
   since: (period: string) => `Since ${period}`, dimensions: "Dimensions",
   bridge: "Profit to cash", chain: "Capital chain", quarter: "Quarter", trailing: "Trailing 4 quarters", span: "Span",
-  openingCash: "Cash at start", closingCash: "Cash at end", unreconciled: "Not reconciled", base: (period: string) => `Base ${period}`,
+  openingCash: "Cash and short-term investments at start", closingCash: "at end", unreconciled: "Not reconciled", base: (period: string) => `Base ${period}`,
   peers: (rank: number, of: number) => `Peers ${rank}/${of}`, peerTitle: (rows: string) => `Peers: ${rows}`,
   flag: (title: string) => `Checkup: ${title}`, previous: "Previous", next: "Next", close: "Close",
   trend: "Trend", parts: "Components", figures: "Figures", related: "Findings", peerTable: "Peers", sources: "Sources",
@@ -28,7 +28,7 @@ const m = messages({
   none: "无命中规则", covered: (n: number, of: number) => `${n}/${of}`, coverage: (n: number, of: number) => `${of} 项指标中 ${n} 项可解析`,
   since: (period: string) => `自 ${period}`, dimensions: "维度",
   bridge: "利润到现金", chain: "资本链路", quarter: "本季度", trailing: "近四季", span: "口径",
-  openingCash: "期初现金", closingCash: "期末现金", unreconciled: "未合拢", base: (period: string) => `基期 ${period}`,
+  openingCash: "期初现金及短期投资", closingCash: "期末", unreconciled: "未合拢", base: (period: string) => `基期 ${period}`,
   peers: (rank: number, of: number) => `同业 ${rank}/${of}`, peerTitle: (rows: string) => `同业：${rows}`,
   flag: (title: string) => `体检：${title}`, previous: "上一条", next: "下一条", close: "关闭",
   trend: "走势", parts: "构成", figures: "数据", related: "要点", peerTable: "同业", sources: "来源",
@@ -62,9 +62,9 @@ export function LevelCounts({ flags }: { flags: Flag[] }) {
 /** The six dimensions as one strip: each with its flags by level and how many of its metrics resolved. */
 export function CheckupHead({ assessment, onDimension }: { assessment: StatementAssessment; onDimension: (id: StatementDimension) => void }) {
   return <nav className="checkup-dims" aria-label={m.dimensions}>
-    {assessment.dimensions.filter(d => d.total > 0).map(d => {
+    {assessment.dimensions.filter(d => d.covered > 0).map(d => {
       const top = LEVELS.find(level => d.flags.some(f => f.level === level));
-      return <Button key={d.id} variant="unstyled" type="button" className="checkup-dim" data-level={top} disabled={!d.covered} onClick={() => onDimension(d.id)} title={m.coverage(d.covered, d.total)}>
+      return <Button key={d.id} variant="unstyled" type="button" className="checkup-dim" data-level={top} onClick={() => onDimension(d.id)} title={m.coverage(d.covered, d.total)}>
         <span className="checkup-dim-name">{DIMENSION_LABEL[d.id]}</span>
         <span className="checkup-dim-meta">{d.flags.length ? <LevelCounts flags={d.flags} /> : <span className="checkup-dim-clear" aria-hidden="true">—</span>}<small>{m.covered(d.covered, d.total)}</small></span>
       </Button>;

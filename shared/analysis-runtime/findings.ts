@@ -333,8 +333,20 @@ function derivedAt(data: FindingData, metric: DerivedMetric, periodEnd: string, 
   const v = (r: ResolvedValue | null) => r?.value ?? NaN;
   const average = (ref: FindingRef) => { const now = at(ref), then = at(ref, yearAgo); return join((v(now) + v(then)) / 2, "USD", [now, then]); };
   const group = (g: "nonCash" | "workingCapital") => { const p = cashFlowSpan(data, periodEnd, span, c => operatingGroup(c, g)); return p ? { ...p, unit: "USD" as const, span } : null; };
+  // Quarter by quarter, the statement's own lines where they reconcile and the SEC series of the same concept where they do not.
+  const statementOrSeries = (capital: CapitalMetric, series: string) => {
+    const p = overSpan(span, periodEnd, end => {
+      const own = resolveRef(data, { capital }, end, "quarter");
+      if (own) return { value: own.value, periodStart: own.periodStart, periodEnd: own.periodEnd, currency: own.currency, accessions: own.accessions };
+      const sec = fundamentalAt(data, series, end, "quarter");
+      return sec && sec.unit === "USD" ? sec.point : null;
+    });
+    return p ? { ...p, unit: "USD" as const, span } : null;
+  };
   switch (metric) {
-    case "ebitda": { const o = at({ metric: "operating" }), d = at({ capital: "depreciation" }); return join(v(o) + v(d), "USD", [o, d]); }
+    case "depreciationAmortization": return statementOrSeries("depreciation", "depreciation_and_amortization");
+    case "stockCompensationExpense": return statementOrSeries("stockCompensation", "stock_based_compensation");
+    case "ebitda": { const o = at({ metric: "operating" }), d = at({ derived: "depreciationAmortization" }); return join(v(o) + v(d), "USD", [o, d]); }
     case "netDebt": { const debt = at({ capital: "debt" }), leases = at({ capital: "leases" }), cash = at({ capital: "cash" }); return join(v(debt) + v(leases) - v(cash), "USD", [debt, leases, cash]); }
     case "investedCapital": { const debt = at({ capital: "debt" }), leases = at({ capital: "leases" }), equity = at({ capital: "equity" }), cash = at({ capital: "cash" }); return join(v(debt) + v(leases) + v(equity) - v(cash), "USD", [debt, leases, equity, cash]); }
     case "nopat": {
@@ -518,10 +530,13 @@ const DERIVED_LABEL: Record<DerivedMetric, [string, string]> = {
   averageEquity: ["Average shareholders' equity", "平均股东权益"], averageAssets: ["Average total assets", "平均总资产"], averageInvestedCapital: ["Average invested capital", "平均投入资本"],
   incrementalReturn: ["Return on added capital", "增量资本回报"], interestExpense: ["Interest expense", "利息费用"], netExternalFunding: ["Net external funding", "净外部融资"],
   cashRunwayMonths: ["Cash runway (months)", "现金跑道（月）"], debtDueCoverage: ["Coverage of debt due within 12 months", "12 个月内到期债务覆盖倍数"],
+  depreciationAmortization: ["Depreciation and amortization", "折旧与摊销"], stockCompensationExpense: ["Stock-based compensation", "股权激励费用"],
 };
 /** The formula behind a derived figure, in the names its inputs carry; for the page's lineage line and the ledger. */
 export const DERIVED_FORMULA: Record<DerivedMetric, string> = {
-  ebitda: "operating income + depreciation and amortization", netDebt: "debt + lease liabilities − cash", investedCapital: "debt + lease liabilities + equity − cash",
+  ebitda: "operating income + depreciation and amortization",
+  depreciationAmortization: "the cash-flow statement's depreciation and amortization lines, or the SEC series where those lines do not reconcile",
+  stockCompensationExpense: "the cash-flow statement's stock-based compensation lines, or the SEC series where those lines do not reconcile", netDebt: "debt + lease liabilities − cash", investedCapital: "debt + lease liabilities + equity − cash",
   nopat: "operating income × (1 − income tax ÷ pretax income), rate held between 0 and 35%", accruals: "(net income − operating cash flow) ÷ average total assets",
   nonCashCharges: "operating-section non-cash lines", workingCapitalChange: "operating-section working-capital lines",
   averageEquity: "(equity + equity a year earlier) ÷ 2", averageAssets: "(total assets + total assets a year earlier) ÷ 2", averageInvestedCapital: "(invested capital + invested capital a year earlier) ÷ 2",

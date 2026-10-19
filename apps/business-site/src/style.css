@@ -1177,7 +1177,7 @@ main[data-rail="collapsed"] .update-notice { left: calc((100vw + var(--rail-coll
 .stage-views button[data-level][aria-checked="true"] .level-mark { stroke: var(--background); }
 
 /* The six dimensions in the head. */
-.checkup-dims { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; flex: 1 1 560px; min-width: 0; }
+.checkup-dims { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 6px; flex: 1 1 560px; min-width: 0; }
 .checkup-dim { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; padding: 9px 11px; border-radius: 12px; text-align: left; background: var(--surface); border: 1px solid var(--hairline); transition: border-color .2s, background .2s; }
 .checkup-dim[data-level] { border-color: color-mix(in srgb, var(--level) 45%, var(--hairline)); background: color-mix(in srgb, var(--level) 6%, var(--surface)); }
 .checkup-dim:hover:not(:disabled) { border-color: color-mix(in srgb, var(--level, var(--foreground)) 70%, transparent); }

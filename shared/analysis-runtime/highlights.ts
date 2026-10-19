@@ -17,6 +17,7 @@ const CASH_FLOWS: CapitalMetric[] = ["operatingCashFlow", "capex", "freeCashFlow
 const FUNDAMENTAL_VIEW: Record<string, FindingView> = { income_statement: "profit", per_share: "profit", cash_flow: "cash", balance_sheet: "balance" };
 const DERIVED_VIEW: Record<DerivedMetric, FindingView> = {
   ebitda: "profit", nopat: "profit", interestExpense: "profit",
+  depreciationAmortization: "cash", stockCompensationExpense: "cash",
   accruals: "cash", nonCashCharges: "cash", workingCapitalChange: "cash", netExternalFunding: "cash", cashRunwayMonths: "cash",
   netDebt: "balance", investedCapital: "balance", averageEquity: "balance", averageAssets: "balance", averageInvestedCapital: "balance", incrementalReturn: "balance", debtDueCoverage: "balance",
 };
