@@ -1,5 +1,5 @@
 /**
- * The revision of each resource the business map reads for a company: the time of the latest pipeline event that
+ * The revision of each resource the business map reads for a company: the time of the latest Spontra Analysis event that
  * published into it, as an ISO string. A reader compares revisions to learn newer data is out, and asks for each
  * resource at its revision so no cache in between answers with an older copy. An absent resource has never been
  * published through an event.

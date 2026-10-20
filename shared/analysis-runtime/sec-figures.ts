@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { Locale } from "./locale.ts";
 
 /**
- * Report figures the application draws from validated XBRL. The Pipeline builds every instance
+ * Report figures the application draws from validated XBRL. Spontra Analysis builds every instance
  * before writing; the model only places an existing `figureKey` beside its argument and writes the
  * title and caption. Values never come from the model.
  */
@@ -27,7 +27,7 @@ export const SEC_FIGURE_METRIC_LABELS: Record<string, string> = {
   free_cash_flow: "Free cash flow", cash: "Cash and equivalents", debt: "Long-term debt", shares: "Shares outstanding",
 };
 
-/** Reader-facing names in Chinese, beside the English the Pipeline shows the writer. */
+/** Reader-facing names in Chinese, beside the English Spontra Analysis shows the writer. */
 const SEC_FIGURE_LABELS_ZH: Record<SecFigureKind, string> = {
   kpi_strip: "关键数据", growth: "营收与同比增长", margin_ladder: "利润率阶梯", profit_flow: "营收到净利润",
   per_hundred: "每 100 美元营收的去向", cash_bridge: "净利润到自由现金流", cash_debt: "现金与长期债务", share_count: "股数",

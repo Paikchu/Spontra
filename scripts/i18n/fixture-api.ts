@@ -1,7 +1,7 @@
 /**
  * Serves the fixture company as the read API in the business site's dev server, so the pages can be opened in
  * either language with no network: BUSINESS_SITE_FIXTURES=1 npm run dev, then /companies/ACME?lang=zh-CN.
- * `POST /__fixture/publish` stands in for the pipeline publishing: every revision moves, and the findings and events
+ * `POST /__fixture/publish` stands in for Spontra Analysis publishing: every revision moves, and the findings and events
  * each gain a row, so an open page's update notice and entrance can be seen.
  */
 import type { Plugin } from "vite";

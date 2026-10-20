@@ -15,5 +15,5 @@ delete env.WRANGLER_CI_OVERRIDE_NAME;
 delete env.WRANGLER_CI_MATCH_TAG;
 const wrangler = 'node_modules/wrangler/bin/wrangler.js';
 run(process.execPath, [wrangler, 'deploy', '--config', 'apps/admin/wrangler.jsonc', '--keep-vars'], env);
-// The map reads the pipeline over a named-entrypoint binding; the binding is its credential, so no secret is written here.
+// The map reads Spontra Analysis over a named-entrypoint binding; the binding is its credential, so no secret is written here.
 run(process.execPath, [wrangler, 'deploy', '--config', 'apps/business-site/wrangler.jsonc', '--keep-vars'], env);

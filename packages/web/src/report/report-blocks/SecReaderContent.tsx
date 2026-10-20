@@ -39,7 +39,7 @@ const m = messages({
 const amount = (v: number, currency: string) => formatSecMetricValue("amount", String(v), currency, currency, getLocale());
 /**
  * Limitations about a missing current-period metric (debt, cash, company-wide gross margin) are
- * stated elsewhere, so the cash panel hides them. Matches the Pipeline's English wording and the
+ * stated elsewhere, so the cash panel hides them. Matches Spontra Analysis's English wording and the
  * Chinese wording of reports stored before the switch.
  */
 const MISSING_METRIC_LIMITATION = /缺少本期|缺少可核验的公司|^No verifiable (current-period|company-wide)\b/i;

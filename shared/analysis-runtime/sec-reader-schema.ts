@@ -82,7 +82,7 @@ export function readerContentText(content: SecReaderContentBlock[]): string[] {
 }
 
 /**
- * Reader warnings. The parser always writes English, because the Pipeline stores them with the report
+ * Reader warnings. The parser always writes English, because Spontra Analysis stores them with the report
  * and the page merges stored and fresh ones by text; `localizeReaderWarning` translates at display time.
  */
 const READER_WARNINGS = {

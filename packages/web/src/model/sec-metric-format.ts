@@ -1,7 +1,7 @@
 /**
  * Presentation helpers for the structured-report metrics the timeline shows.
  *
- * The analysis pipeline stores `metricKey`/`currentValue` exactly as the model
+ * Spontra Analysis stores `metricKey`/`currentValue` exactly as the model
  * emitted them: snake_case English keys and raw magnitudes ("96221000000",
  * "0.7497531724"). That is the right storage shape — it stays comparable across
  * runs — but the disclosure timeline is a reading surface, so it needs a readable

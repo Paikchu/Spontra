@@ -67,7 +67,7 @@ NBIS 的财报摘要在 10-19 失败两次（09:22、10:32），错误相同：`
 
 - **W1：Worker 自己抓取。** `fetch(url)`，`Accept` 依次为 `text/markdown`、`text/html`、`application/pdf`。
   - 很多站点开了 Cloudflare 的 Markdown for Agents，会直接返回 Markdown。
-  - HTML 交给 Workers AI 的 `env.AI.toMarkdown()` 转换（pipeline 已绑定 `AI`；HTML、PDF 的转换不按 token 计费）。
+  - HTML 交给 Workers AI 的 `env.AI.toMarkdown()` 转换（Spontra Analysis 已绑定 `AI`；HTML、PDF 的转换不按 token 计费）。
   - PDF 沿用现有的 `unpdf`。
   - 重定向设为 `manual`，每一跳都用 `publicUrl()` 校验，避免访问内网地址。响应体上限 8 MiB，超时 20 秒。
 - **W2：Claude `web_fetch` 降为兜底。** 只在 401/403/429、挑战页，或抽出的正文少于约 500 字（页面靠 JS 渲染）时使用。`max_content_tokens` 从 10 万/4 万降到 2.5 万/1 万。
@@ -163,7 +163,7 @@ P0 的实现：
 
 - **成本：** 每项上线前后，对比 `ai_usage` 同一阶段的平均输入、缓存和输出。payload 日志从只记总字符数（`inputCharacters`，`operations.ts:706`）扩展为按字段记录，确认每项压缩落在预期的字段上。
 - **质量：** 固定样本为 ORCL、AMZN、NBIS，对比发布结果，包括发现数、被拒数、editorial-review 的问题数、脑图节点数。逐字引用和证据 id 的代码校验全部保留，压缩不放宽任何校验。
-- **发布：** 按 AGENTS.md 推送 `main`，由自动构建部署，并分别核验 pipeline 的构建结果。
+- **发布：** 按 AGENTS.md 推送 `main`，由自动构建部署，并分别核验 Spontra Analysis 的构建结果。
 
 ## 实施顺序
 

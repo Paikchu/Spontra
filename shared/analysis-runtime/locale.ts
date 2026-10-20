@@ -1,6 +1,6 @@
 /**
  * Reader locales and the number forms each one writes. Pure and worker-safe: nothing here reads a global,
- * so a caller states the locale on every call, and leaving it out keeps the English form the pipeline
+ * so a caller states the locale on every call, and leaving it out keeps the English form Spontra Analysis
  * has always written.
  */
 export type Locale = "en" | "zh-CN";

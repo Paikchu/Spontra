@@ -4,7 +4,7 @@
 
 ## 一句话
 
-在已发布的三张表之上加一层**确定性的"体检"**：固定的指标目录（六个维度、约 30 个指标，每个都是现有 `FindingRef` 能解析的引用）、固定的信号规则（阈值写在契约里，不由模型决定）、一张"利润到现金"的联动图。体检在共享运行时里由一个纯函数算出，页面和 pipeline 用同一份代码：页面直接从已加载的数据画出来，覆盖数据名单里的**全部**公司；pipeline 把同一份结果喂给要点写作者和分析师，让 AI 的叙述建立在同一套数字和同一套触发条件上。页面上出现的每个数字仍然来自已发布数据，每条提示都是"指标 + 规则 + 数值"，不是模型写的句子。
+在已发布的三张表之上加一层**确定性的"体检"**：固定的指标目录（六个维度、约 30 个指标，每个都是现有 `FindingRef` 能解析的引用）、固定的信号规则（阈值写在契约里，不由模型决定）、一张"利润到现金"的联动图。体检在共享运行时里由一个纯函数算出，页面和 Spontra Analysis 用同一份代码：页面直接从已加载的数据画出来，覆盖数据名单里的**全部**公司；Spontra Analysis 把同一份结果喂给要点写作者和分析师，让 AI 的叙述建立在同一套数字和同一套触发条件上。页面上出现的每个数字仍然来自已发布数据，每条提示都是"指标 + 规则 + 数值"，不是模型写的句子。
 
 ## 现状：三张表已经在，缺的是"看表的方法"
 
@@ -32,11 +32,11 @@
 
 ## 原则
 
-- **页面不写数字，也不写句子。** 指标值由 `resolveRef` 解析；提示是 `指标 · 规则 · 值`，规则用公式表达（`经营现金流 ÷ 净利润 < 1×，连续 2 季`），不是"利润没有变成现金"这样的叙述。解释性的话只能来自 AI（要点、案卷），或者是经 pipeline 生成并存储的术语解释（见"开放问题"）。
+- **页面不写数字，也不写句子。** 指标值由 `resolveRef` 解析；提示是 `指标 · 规则 · 值`，规则用公式表达（`经营现金流 ÷ 净利润 < 1×，连续 2 季`），不是"利润没有变成现金"这样的叙述。解释性的话只能来自 AI（要点、案卷），或者是经 Spontra Analysis 生成并存储的术语解释（见"开放问题"）。
 - **一套阈值，三处使用。** 页面提示、要点写作者的触发、分析师 `plan` 的追问线，读同一份 `STATEMENT_RULES`。今天分析师方案里的触发表（capex/D&A > 2×、OCF/净利 < 1× 等）迁进来，不再各写一份。
 - **按列报选指标，缺的说缺。** 银行没有毛利率和资本开支，保险没有营业利润；`incomeModel` 决定每个维度启用哪些指标；解析不到的指标不显示 0，也不显示破折号占位，而是不出现在板上并在"覆盖"里计数。
 - **不做综合评分。** 一个 0–100 的分数会把"流动比率 1.1"和"capex 是 D&A 的 3 倍"折成一个没有依据的数字；体检只给每个维度的指标与命中规则数。
-- **不加 Cron、不加表、不加任务。** 体检是纯函数，输入是页面已加载的资源；pipeline 在已有的 findings/analyst 流程里调用它。
+- **不加 Cron、不加表、不加任务。** 体检是纯函数，输入是页面已加载的资源；Spontra Analysis 在已有的 findings/analyst 流程里调用它。
 
 ## 分析框架
 
@@ -165,13 +165,13 @@ shared/analysis-runtime/statement-analysis.ts      assessStatements(data: Findin
 shared/analysis-runtime/findings.ts                resolveRef 增加 derived 分支；refLabel 增加 derived 标签
         │                                   │
         ▼                                   ▼
-apps/business-site                    workers/pipeline
+apps/business-site                    workers/analysis
   BusinessMap：第四个视图"三表"           findings/ledger.ts：账本加入 derived 行与命中规则（给写作者与亮点）
   rail："关注"区（命中规则列表）           analyst/plan.ts：追问线改为从命中规则推导
   LensPanel：规则聚焦的确定性 lens 文档     （后续）proactive-discovery：规则命中作为信号源
 ```
 
-**计算位置：页面。** 体检的输入（flow、capital、fundamentals、peers）页面本来就全部加载了（`live-company.ts`），`verifyFindings` 已经在浏览器里解析几十个引用；再算 30 个指标 × 9 季是毫秒级。好处：不需要新的发布物、读路由、revision 资源，也没有"pipeline 版本与页面版本不一致"的问题——数据一更新，体检随之更新（live updates 已按资源推送）。pipeline 用同一函数，所以模型看到的命中规则就是页面显示的命中规则。
+**计算位置：页面。** 体检的输入（flow、capital、fundamentals、peers）页面本来就全部加载了（`live-company.ts`），`verifyFindings` 已经在浏览器里解析几十个引用；再算 30 个指标 × 9 季是毫秒级。好处：不需要新的发布物、读路由、revision 资源，也没有"Spontra Analysis 版本与页面版本不一致"的问题——数据一更新，体检随之更新（live updates 已按资源推送）。Spontra Analysis 用同一函数，所以模型看到的命中规则就是页面显示的命中规则。
 
 **版本。** `STATEMENT_ANALYSIS_VERSION` 进入 findings 指纹（规则变了要点可以重写），不进入任何数据库。
 
@@ -281,7 +281,7 @@ type Flag = { ruleId: string; level: "alert" | "watch" | "note"; metricId: strin
 
 ## 备选方案
 
-**A：pipeline 任务发布 `statement-analysis:v1:<ticker>`，页面只读。** 多一个任务、一个读路由、一个 revision 资源、一次迁移；收益是"页面不算"。但页面已经在算几十个引用，而且亮点、要点校验都在页面做；发布物反而引入版本错位（capital 更新了、体检还是旧的）。不采纳。
+**A：Spontra Analysis 任务发布 `statement-analysis:v1:<ticker>`，页面只读。** 多一个任务、一个读路由、一个 revision 资源、一次迁移；收益是"页面不算"。但页面已经在算几十个引用，而且亮点、要点校验都在页面做；发布物反而引入版本错位（capital 更新了、体检还是旧的）。不采纳。
 
 **B：由模型为每家公司写"健康度"段落。** 覆盖面受 AI 名单限制（今天 5 家），且与要点重复。叙述留给要点；体检只做确定性的部分。不采纳。
 
@@ -298,11 +298,11 @@ type Flag = { ruleId: string; level: "alert" | "watch" | "note"; metricId: strin
 | P2 点亮与 AI 接入 | 三个视图的锚点点亮、数字条标记；账本加入 derived 行与命中规则；分析师 `plan` 改读 flags 并删除自有阈值；`PEER_FIGURES` 扩展、同业投影对无要点公司可读、同业排名 | 要点写作者对 ORCL 的下一次运行引用了 derived 行；分析师触发线与页面命中一致；同业排名至少在 OCF/净利、capex/D&A 上对云服务组可用 |
 | P3 首页与发现 | 首页命中数；规则命中作为 proactive-discovery 的信号源 | 首页按 alert 数排序；发现管线能订阅"新季度首次命中 alert" |
 
-每阶段都走现有发布流程（P1 起涉及地图构建，P2 起同时涉及 Pipeline 构建）。
+每阶段都走现有发布流程（P1 起涉及地图构建，P2 起同时涉及 Spontra Analysis 构建）。
 
 ## 开放问题
 
-1. **术语解释放哪里。** 读者需要知道"应计项""ROIC"是什么。前端不写句子的规则下，可行的做法是：pipeline 用翻译/解释流程为每个指标生成一段中英解释，存为 `i18n_strings` 风格的 AI 内容，页面以"AI 解释"标出来展示。需要你决定是否接受这个例外。
+1. **术语解释放哪里。** 读者需要知道"应计项""ROIC"是什么。前端不写句子的规则下，可行的做法是：Spontra Analysis 用翻译/解释流程为每个指标生成一段中英解释，存为 `i18n_strings` 风格的 AI 内容，页面以"AI 解释"标出来展示。需要你决定是否接受这个例外。
 2. **ROIC 的资本成本常数。** 8% 是行业无关的粗值；可以改为按 `incomeModel` 或大标签（同行相似度的第一层）各设一个常数。先用一个。
 3. **TTM 的口径。** 四季相加要求四个季度在同一列报档案下可比（`comparabilityKey`）；跨重述的 TTM 不计算，指标板那格留空并计入"未覆盖"。这会让 GOOGL 之类刚改列报的公司短期缺几个 TTM 指标，是正确的行为。
 4. **银行与保险。** 本方案只给它们最小集合。NIM、拨备、CET1、综合成本率要专门的概念映射，另开方案。
@@ -315,7 +315,7 @@ type Flag = { ruleId: string; level: "alert" | "watch" | "note"; metricId: strin
 - `shared/analysis-runtime/findings.ts`：`derivedAt` 按上表公式解析，每个输入都必须解析到，不把缺失当零；`DERIVED_FORMULA` 给出公式文本；`cashFlowSpan`、`operatingGroup`、`Point` 导出供体检与桥使用。`highlights.ts` 的 `refView` / `ratioForm` / `higherIsBetter` 与 `lens/compile.ts` 的默认配色认识 derived。
 - `shared/analysis-contract/statement-analysis.ts`：`STATEMENT_METRICS` 41 个指标（六维度，含银行/保险的 ROA 与估值五项）、`STATEMENT_RULES` 25 条（设计表之外拆出 `gross-margin-compression`，`fcf-turned` 拆成转正/转负两条）、输出类型。契约里只有数据，没有函数（边界检查要求）。
 - `shared/analysis-runtime/statement-analysis.ts`：`assessStatements(data, periodEnd, locale)`、`cashBridge`、`capitalChain`、`ruleThreshold`、`metricAnchors`。规则比较带 1e-6 的容差，避免浮点噪声把"增速不变"读成"放缓"。每个指标读 13 季（显示 9 季，后面 4 季供同比）。
-- `workers/pipeline/test/statement-analysis.test.ts`：标准、金融、保险三种列报的合成公司，16 季；覆盖 derived 公式、目录/规则一致性、阈值文本双语、资本开支周期/应收/到期墙/高回报的命中与不命中、烧钱公司的融资与 FCF 规则、银行不启用 capex 指标、保险隔季缺表的覆盖计数、桥合拢、链路指数化。
+- `workers/analysis/test/statement-analysis.test.ts`：标准、金融、保险三种列报的合成公司，16 季；覆盖 derived 公式、目录/规则一致性、阈值文本双语、资本开支周期/应收/到期墙/高回报的命中与不命中、烧钱公司的融资与 FCF 规则、银行不启用 capex 指标、保险隔季缺表的覆盖计数、桥合拢、链路指数化。
 
 未做（P1 起）：页面、账本接入、分析师 `plan` 改读 flags、同业排名。
 
@@ -345,7 +345,7 @@ type Flag = { ruleId: string; level: "alert" | "watch" | "note"; metricId: strin
 
 **2026-10-19 三表分析的文字分析（checkup notes）。** 用户要求：每条分析除了图，还要有结合之前财报的文字分析；任何分析都要结合之前财报中的信息。
 
-- 新任务 `checkup`（`workers/pipeline/src/checkup/`，Workflow `spontra-checkup`，scope findings，随分析师开关）：对本期每个命中规则的指标（最多 8 个）跑一个工具循环，用文件库读本期与往期财报（`read_section` 的 `previous: true` 读往期同一节），写 1–3 段分析与 2–4 段原文引用。由 `findings.published` 与 `library.prepared` 触发，指纹 = 命中规则 + 文件库中的定期报告 + 版本；发布 `checkup.published`（修订 findings 资源，触发翻译）。
+- 新任务 `checkup`（`workers/analysis/src/checkup/`，Workflow `spontra-checkup`，scope findings，随分析师开关）：对本期每个命中规则的指标（最多 8 个）跑一个工具循环，用文件库读本期与往期财报（`read_section` 的 `previous: true` 读往期同一节），写 1–3 段分析与 2–4 段原文引用。由 `findings.published` 与 `library.prepared` 触发，指纹 = 命中规则 + 文件库中的定期报告 + 版本；发布 `checkup.published`（修订 findings 资源，触发翻译）。
 - 放行条件（`shared/analysis-runtime/checkup-notes.ts` 的 `noteIssues`，写作时与页面上用同一套）：段落里的数字只能来自该指标的数值表（各季值、同比环比、阈值、分子分母及其历史）；引文须逐字出自本轮读过的段落；文件库里有往期报告时，至少一段引文来自往期报告（报告期早于本期 45 天以上）。不通过就把问题回给模型，不放行。
 - 存为 `checkup:v1:<ticker>`，读取时并入要点发布物（`FindingsPublication.checkup`，引用材料并入 `materials`，读路由按 passageId 重新读原文）。页面打开指标时显示"分析"：段落 + 引文，引文标"本期财报 / 往期财报"与报告期；指标格与规则签上标"分析"。
 - 同一规则用到分析师：案卷在文件库有往期报告时必须引用往期报告，否则不放行（`analyst.react.v6`）。

@@ -14,7 +14,7 @@ export const FUNDAMENTALS_STALE_AFTER_MS = 24 * 60 * 60 * 1_000;
 
 /**
  * What one chart can hold. Shared because both services enforce them: the Web service refuses to
- * build a model that breaks them, and the Pipeline has to know that before it publishes a chart
+ * build a model that breaks them, and Spontra Analysis has to know that before it publishes a chart
  * the page would then have to replace with an error.
  */
 export const FUNDAMENTAL_CHART_MAX_SERIES = 4;

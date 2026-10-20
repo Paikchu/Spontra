@@ -17,8 +17,8 @@
 约束（沿用仓库既有原则，不新增例外）：
 
 - 页面上的每个数字都来自已发布数据，模型不写数字（`findings.ts` 顶部注释，`verifyFindings`）。
-- 读路由只做查找，模型只在 pipeline 内调用（[sec-data-prepared-before-read](sec-filing-library.md)）。
-- 事件驱动，不加 Cron（[pipeline-events](pipeline-events.md)）。
+- 读路由只做查找，模型只在 Spontra Analysis 内调用（[sec-data-prepared-before-read](sec-filing-library.md)）。
+- 事件驱动，不加 Cron（[analysis-events](analysis-events.md)）。
 - 前端不出现模板化的人类语气文字；AI 生成内容例外。
 - 站点 CSP 为 `script-src 'self'`、`frame-ancestors 'none'`（`apps/business-site/public/_headers`、`worker/index.ts` `security`）：浏览器不执行任何内联或模型生成的脚本。
 
@@ -27,7 +27,7 @@
 **要点的 lens 从"一个枚举"变成"一份 Lens 文档"：由 Lens Agent 在 ReAct harness 里用一套通用图表语法（lens grammar）和版面语法写成；harness 用与前端完全相同的编译器把文档编译成可画的结果，把编译结果（数据解析、尺度、标签、版面审计）作为 observation 回给模型，直到模型 finish。前端舞台在要点聚焦时只渲染这份文档；图表由固定的、同源的 iframe 渲染器（`/lens-frame.html`）按 host 下发的编译结果绘制。模型从不产出可执行代码，也从不写数字。**
 
 ```
-                      pipeline（FindingsWorkflow）                                  business-site
+                      Spontra Analysis（FindingsWorkflow）                                  business-site
 ┌─────────────┐   ┌──────────────────────────────────────┐   ┌──────────────┐   ┌──────────────────────────┐
 │ findings 写 │──▶│ Lens Agent（每条要点一个 ReAct 循环）   │──▶│ findings.v2  │──▶│ BusinessMap  stage[focus] │
 │ 作 + 校验   │   │  model: think → action                 │   │ lens: 文档    │   │  ┌ LensDocument（grid）   │
@@ -51,7 +51,7 @@ shared/analysis-runtime/lens/
 ```
 
 1. **模型只写声明，不写代码。** `LensChart` 是声明式语法（见"合同"）：series 绑定 `FindingRef`，mark 绑定 series id，annotation 的文字是模板（`{value}`、`{change}`、`{period}`），由编译器从解析出的值格式化。模型没有任何通道把数字或脚本送进页面。
-2. **harness 的 observation 就是前端将要画的东西。** 模型每轮提交整份文档，harness 调 `compileLens` + `auditLayout` + `verifyNumbers`，把结果用 `describe` 写成文字回给模型（示例见下）。因为前端 `LensFrame` 组件调用的是同一个 `compileLens`，模型在 harness 里看到的尺度、点数、标签和审计结论，就是用户看到的图。没有"pipeline 里通过、页面上画坏"的缝隙。
+2. **harness 的 observation 就是前端将要画的东西。** 模型每轮提交整份文档，harness 调 `compileLens` + `auditLayout` + `verifyNumbers`，把结果用 `describe` 写成文字回给模型（示例见下）。因为前端 `LensFrame` 组件调用的是同一个 `compileLens`，模型在 harness 里看到的尺度、点数、标签和审计结论，就是用户看到的图。没有"Spontra Analysis 里通过、页面上画坏"的缝隙。
 3. **iframe 只是画笔。** host（BusinessMap）持有 `FindingData`，在读时编译，把 `CompiledChart`（纯 JSON，值已解析、标签已格式化）连同主题 token 和尺寸经 `postMessage` 发给 `/lens-frame.html`；frame 里只有 `renderSvg`，不含解析器、不含任何数据获取。frame 用 `sandbox="allow-scripts"`（不给 `allow-same-origin`，起源为 opaque），只能通过 postMessage 回话。
 4. **harness 的硬约束在语法层而不是提示词层。** 可用的 ref 来自 ledger（模型拿到的 catalogue 就是 `buildLedger` 的行），mark 类型、颜色只能用 token 名（`profit`、`expense`、`revenue`、`biz-n`、`loss`、`up`），周期数、series 数、图表数都有上限（`LENS_LIMITS`）。不合法的文档在 `readLensDocument`（zod）就被拒绝，observation 指出哪一项违规。
 
@@ -124,16 +124,16 @@ export type LensColorToken = "revenue" | "profit" | "expense" | "loss" | "up" | 
 
 限制常量 `LENS_LIMITS`（rows ≤ 6、charts ≤ 3、series ≤ 6、periods ≤ 12、annotations ≤ 6、prose 段 ≤ 1,400 字符）放在合同，harness 与前端同用。
 
-读时校验 `verifyLensDocument(doc, finding, data)`（`shared/analysis-runtime/lens/verify.ts`，pipeline 与页面同一函数）：
+读时校验 `verifyLensDocument(doc, finding, data)`（`shared/analysis-runtime/lens/verify.ts`，Spontra Analysis 与页面同一函数）：
 
 - 每条 series 的 ref 在 `data` 可解析（复用 `resolveRef`），至少 2 个周期有值；否则该图整张撤下，所在行的另一格占满整行。
 - prose 的数字用现有 `proseNumbers` / `numberSupported` 对照该要点 evidence 的 `evidenceCandidates`；不支持的段落撤下。
 - annotation 的 `text` 去掉模板占位符后不得含数字（`plainText`）。
 - 图全撤或行全撤时退到 `documentFromEvidence(finding)`：一行 `chart|prose`，图是 evidence refs 的 bar；这是唯一的确定性兜底，对任何要点都适用，因此不存在 hard code 的案例分支。
 
-## Agent 流程（pipeline）
+## Agent 流程（Spontra Analysis）
 
-位置 `workers/pipeline/src/lens/`，形式与 `business-tree/agent.ts` 相同（think → action → observation，durable steps）。
+位置 `workers/analysis/src/lens/`，形式与 `business-tree/agent.ts` 相同（think → action → observation，durable steps）。
 
 ```
 输入（LensSubject）             harness 动作                       observation
@@ -181,7 +181,7 @@ host 只接受 `event.source === iframe.contentWindow` 的消息；frame 只接�
 | 维度 | 评估 |
 |---|---|
 | 表达力 | 最高 |
-| 数字原则 | 破：模型代码里必然有数值；pipeline 无法执行它（Workers 不能 `eval`），也就无法校验它会显示什么 |
+| 数字原则 | 破：模型代码里必然有数值；Spontra Analysis 无法执行它（Workers 不能 `eval`），也就无法校验它会显示什么 |
 | CSP | 需开 `unsafe-inline` 或把模型代码作为同源资源分发，等于把模型输出当脚本发布 |
 | 视觉一致 | 差：每条要点一套样式 |
 
@@ -220,8 +220,8 @@ host 只接受 `event.source === iframe.contentWindow` 的消息；frame 只接�
 ## 实施项
 
 1. [x] 合同：`shared/analysis-contract/lens.ts`、`lens-frame.ts`；`AnalysisFinding.lens` 的 `document` 分支（schemaVersion 仍为 `findings.v1`，联合类型向后兼容，不改版本号）；`FindingBaseRef` 增加 `{ rpoBucket: n }`
-2. [x] 共享运行时：`shared/analysis-runtime/lens/{schema,format,compile,audit,describe,render,verify,legacy}.ts`；`workers/pipeline/test/lens.test.ts`
-3. [x] Pipeline：`workers/pipeline/src/lens/agent.ts`（ReAct，budget 6，动作 compile/finish；`read` 留待接入文件库）；`ai-config.ts` 的 `lens: "low"`；`findings/workflow.ts` 在 findings 校验后、亮点之前运行，轨迹以 `lensTrace` 字段与发布物存在同一条 `sec_cache` 记录里（公开读取经契约剥离）；`FINDINGS_VERSION` v9 + `LENS_VERSION` 进指纹
+2. [x] 共享运行时：`shared/analysis-runtime/lens/{schema,format,compile,audit,describe,render,verify,legacy}.ts`；`workers/analysis/test/lens.test.ts`
+3. [x] Spontra Analysis：`workers/analysis/src/lens/agent.ts`（ReAct，budget 6，动作 compile/finish；`read` 留待接入文件库）；`ai-config.ts` 的 `lens: "low"`；`findings/workflow.ts` 在 findings 校验后、亮点之前运行，轨迹以 `lensTrace` 字段与发布物存在同一条 `sec_cache` 记录里（公开读取经契约剥离）；`FINDINGS_VERSION` v9 + `LENS_VERSION` 进指纹
 4. [x] 站点：`_headers` 为 `/lens-frame`（静态资源把 `.html` 重定向到无后缀路径）覆盖 `frame-ancestors 'self'`；Vite 第二入口 `lens-frame.html`；`LensFrame.tsx`、`LensPanel.tsx`（文档渲染）、`lens-frame/{main.ts,hover.ts,frame.css}`；`BusinessMap.tsx` 聚焦态只渲染 lens；`style.css` 的 `.stage[data-focus]`、`.lens-doc` 网格、容器查询高度与窄容器堆叠
 5. [x] Admin：公司要点页每条要点可展开「Lens 生成过程」
 6. [ ] 上线后：抽查 ORCL 全部要点的 turns、warnings 与读时撤图率；在 1280 / 1024 / 720 宽度核对无横向滚动、无留白；深色与纸色主题各核一次

@@ -1,6 +1,6 @@
 # BusinessView 后台
 
-入口：`https://spontra-admin.max-zhangyuchen.workers.dev/admin/whitelist`。后台只服务 BusinessView（业务地图），所有数据来自 `EARNING_REPORT_PIPELINE` 的分析数据库；Admin Worker 不直接读取分析 D1，数据服务异常时显示错误，不用示例数据兜底。
+入口：`https://spontra-admin.max-zhangyuchen.workers.dev/admin/whitelist`。后台只服务 BusinessView（业务地图），所有数据来自 `SPONTRA_ANALYSIS` 的分析数据库；Admin Worker 不直接读取分析 D1，数据服务异常时显示错误，不用示例数据兜底。
 
 ## 视觉
 
@@ -17,7 +17,7 @@
 
 旧路径 `/admin/business-map`、`/admin/library`、`/admin/ai`（`kind=findings` 进入公司要点，其余进入公司业务板块）打开对应的新页面并改写地址；其他路径进入白名单管理。业务板块、要点页面的 URL 保留 `?ticker=`，从业务板块打开的原文小节以 `/admin/filings?ticker=&document=&section=` 定位。
 
-报告管理、生成任务、Transcript、业绩指引不属于 BusinessView，事件流水线（运行状态）由 Cloudflare 控制台替代，后台已移除这些页面，Admin 代理也不再转发 `reports`、`transcripts`、`guidance` 与 `pipeline` 接口；Pipeline 自身的这些接口和数据未改动。
+报告管理、生成任务、Transcript、业绩指引不属于 BusinessView，事件流水线（运行状态）由 Cloudflare 控制台替代，后台已移除这些页面，Admin 代理也不再转发 `reports`、`transcripts`、`guidance` 与 `pipeline` 接口；Spontra Analysis 自身的这些接口和数据未改动。
 
 运行状况在 Cloudflare 控制台查看：Cron 在 `spontra-analysis` 的 Settings → Trigger Events；队列积压与重试在 Queues 的三条 `spontra-pipeline-*` 队列；Workflow 实例在 Workflows；报错与重试在 `spontra-analysis` 的 Workers Logs（按 `pipeline-task`、`pipeline-route`、`pipeline-dead` 筛选）。死信仍写入 D1 `pipeline_dead`，后台不再提供重放、关闭和手动发送事件的入口。
 
@@ -25,19 +25,19 @@
 
 `REPORT_ADMIN_PASSWORD` 必须在 `spontra-analysis` 配置为 Secret，建议随机生成至少 32 个字符。后台不再接受内部 `SEC_REFRESH_KEY`，没有专用密码时拒绝登录，不回退到内部密钥。`spontra-admin` 不保存这个密码；HTTP 登录凭证使用 `x-report-admin-password`。内部财报鉴权及定时任务保持独立。
 
-使用 **财报 Pipeline Worker** 专用的 `REPORT_ADMIN_PASSWORD` 登录。密钥在登录时经同源 Admin Worker 代理交给 Pipeline 核验，浏览器只获得 8 小时有效的签名会话 Cookie（HttpOnly、SameSite=Strict，线上启用 Secure）。密钥不写入 localStorage、sessionStorage 或前端构建。
+使用 **Spontra Analysis Worker** 专用的 `REPORT_ADMIN_PASSWORD` 登录。密钥在登录时经同源 Admin Worker 代理交给 Spontra Analysis 核验，浏览器只获得 8 小时有效的签名会话 Cookie（HttpOnly、SameSite=Strict，线上启用 Secure）。密钥不写入 localStorage、sessionStorage 或前端构建。
 
-会话由 Pipeline 自己的密钥签名并验证，无需给 Admin Worker 新增管理密钥。轮换 `REPORT_ADMIN_PASSWORD` 会同时使现有会话失效。Pipeline 的 `REPORT_ADMIN_RATE_LIMIT` 限制登录尝试。
+会话由 Spontra Analysis 自己的密钥签名并验证，无需给 Admin Worker 新增管理密钥。轮换 `REPORT_ADMIN_PASSWORD` 会同时使现有会话失效。Spontra Analysis 的 `REPORT_ADMIN_RATE_LIMIT` 限制登录尝试。
 
 ## 接口与发布
 
 Admin Worker：`/api/admin/session`（POST 登录、DELETE 退出），其余为 `financials`、`business-map`、`ai`、`library` 的白名单路径。写操作要求同源 Origin；全部响应为 `private, no-store`。
 
-Pipeline 对应路径为 `/admin/*`，管理接口需要签名会话。现有公开只读凭证不能访问管理接口。报告管理本身使用已有表；财报数据维护任务使用下述新增迁移。
+Spontra Analysis 对应路径为 `/admin/*`，管理接口需要签名会话。现有公开只读凭证不能访问管理接口。报告管理本身使用已有表；财报数据维护任务使用下述新增迁移。
 
-后台代码位于 `apps/admin/`，部署为 `spontra-admin`，仅绑定 `ASSETS` 和 `EARNING_REPORT_PIPELINE`（`spontra-analysis`）。继续使用 HTTP Service Binding，生产配置缺少绑定时返回 503，不回退到公网 fetch。页面、样式和报告阅读组件保持原有设计，返回主站链接指向 `spontra-app`。
+后台代码位于 `apps/admin/`，部署为 `spontra-admin`，仅绑定 `ASSETS` 和 `SPONTRA_ANALYSIS`（`spontra-analysis`）。继续使用 HTTP Service Binding，生产配置缺少绑定时返回 503，不回退到公网 fetch。页面、样式和报告阅读组件保持原有设计，返回主站链接指向 `spontra-app`。
 
-推送 `origin/main` 后，地图与后台的自动构建会先验证、构建后台，并在 CI 中发布独立 admin Worker。若未来要求只改后台就独立发布，再配置单独的 Workers Builds 项目和 watch paths。首次发布无需复制数据库、迁移表或新增密钥。Pipeline 管理接口仍要求签名会话。
+推送 `origin/main` 后，地图与后台的自动构建会先验证、构建后台，并在 CI 中发布独立 admin Worker。若未来要求只改后台就独立发布，再配置单独的 Workers Builds 项目和 watch paths。首次发布无需复制数据库、迁移表或新增密钥。Spontra Analysis 管理接口仍要求签名会话。
 
 本次保留原有密钥登录，尚未启用 Cloudflare Access；之后可以在整个 admin Worker 上配置 Access，保持主站公开。仅推送成功不能证明线上部署成功。
 
@@ -56,15 +56,15 @@ Pipeline 对应路径为 `/admin/*`，管理接口需要签名会话。现有公
 
 新增代理资源：`/api/admin/financials/companies`、`/companies/:ticker`、`/companies/:ticker/documents/:documentId`、`/companies/:ticker/actions`、`/tasks/:taskId` 和 `/tasks/:taskId/cancel`。公司、文档、任务查询只读，操作与取消使用 POST。代理白名单与原有签名会话限制保持独立。
 
-发布前需应用 Pipeline 迁移 `0014_financial_maintenance.sql`，并同时发布 Pipeline 与独立 admin 构建。任务在写入前保留可恢复的数据备份；实际修复与备份范围见当次任务记录。仅前端页面构建成功不代表后台迁移或生产任务已验证。
+发布前需应用 Spontra Analysis 迁移 `0014_financial_maintenance.sql`，并同时发布 Spontra Analysis 与独立 admin 构建。任务在写入前保留可恢复的数据备份；实际修复与备份范围见当次任务记录。仅前端页面构建成功不代表后台迁移或生产任务已验证。
 
 ## 本地验证
 
-`npm run admin:typecheck`、`npm run admin:build`、`npm run admin:check`、`npm run typecheck`、`npm run typecheck:pipeline`、`npm run check:pipeline:boundary`、`npm run build`、`npm run worker:pipeline:check`。
+`npm run admin:typecheck`、`npm run admin:build`、`npm run admin:check`、`npm run typecheck`、`npm run analysis:typecheck`、`npm run check:analysis:boundary`、`npm run build`、`npm run analysis:check`。
 
 ## 业务地图公司管理
 
-导航「白名单管理」进入 `/admin/whitelist`。输入股票代码并加入白名单后，Pipeline 在同一个 D1 事务中保存公司配置和首次数据准备任务。配置存于 `financial_company_settings`，覆盖 `SEC_DATA_TICKERS` 的部署默认值（部署默认值新增的公司由申报发现 Cron 在下一次运行时解析 CIK 并请求首次采集；第二股份类别如 GOOG 统一折算为 GOOGL）；显式移出也不会被后续部署重新加入。操作回执独立保存，网络重试不重复建任务，旧请求重放不会覆盖后来的移出操作。此配置不扩展 AI 分析白名单。
+导航「白名单管理」进入 `/admin/whitelist`。输入股票代码并加入白名单后，Spontra Analysis 在同一个 D1 事务中保存公司配置和首次数据准备任务。配置存于 `financial_company_settings`，覆盖 `SEC_DATA_TICKERS` 的部署默认值（部署默认值新增的公司由申报发现 Cron 在下一次运行时解析 CIK 并请求首次采集；第二股份类别如 GOOG 统一折算为 GOOGL）；显式移出也不会被后续部署重新加入。操作回执独立保存，网络重试不重复建任务，旧请求重放不会覆盖后来的移出操作。此配置不扩展 AI 分析白名单。
 
 - 管理页自动刷新公司识别、最新财报采集、历史扫描、披露检查的进度，显示文件扫描数量、最近更新时间、具体问题以及重新准备入口。
 - 收入构成逐季区分「分部及抵销已核验」「财报明确单一报告部门」「仅合并收入、拆分待核验」。最后一种显示警示，并将维护结果保留为部分完成，不能被合并收入占位标记为地图完整。
@@ -77,7 +77,7 @@ Pipeline 对应路径为 `/admin/*`，管理接口需要签名会话。现有公
 
 私有接口：`GET /api/admin/business-map/companies`、`POST /api/admin/business-map/companies/:ticker`（`enabled`、UUID `requestId`）。继承签名会话、同源写入限制与服务绑定；状态列表合并读取，查询次数不随公司数增长。
 
-新增迁移：`0016_business_map_companies.sql`。当前 `worker:pipeline:deploy` 的 CI 入口先执行 `worker:pipeline:migrate:ci` 再核对迁移，随后发布；必须同时发布 Pipeline、Admin 与业务地图（共享完整性校验更新），依旧只通过推送 `origin/main` 触发自动部署。
+新增迁移：`0016_business_map_companies.sql`。当前 `analysis:deploy` 的 CI 入口先执行 `analysis:migrate:ci` 再核对迁移，随后发布；必须同时发布 Spontra Analysis、Admin 与业务地图（共享完整性校验更新），依旧只通过推送 `origin/main` 触发自动部署。
 
 ## 模型生成（公司要点、业务脑图、业务解读）
 
@@ -97,7 +97,7 @@ Pipeline 对应路径为 `/admin/*`，管理接口需要签名会话。现有公
 
 白名单表按读者页面上的功能设四列开关：**财报摘要**（SEC 报告摘要、8-K 摘要、业绩指引）、**要点**（公司分析、要点、要点分析师）、**业务解读**、**业务脑图**；财务地图就是白名单本身。每家公司每个功能一个开关：开 = 生成并展示，关 = 不再生成且对读者隐藏（已生成的内容保留在库里）。表头每列旁是该功能的全局生成开关，只暂停生成，不影响展示。生成进度不放在行里：展开一行，顶部四块显示各功能的状态（正在生成、排队中、上次生成失败、已生成及时间、等待生成、已关闭、已全局暂停），状态取自 SEC 报告任务、AI 运行记录与 `pipeline_due` 中的待办。设计与取舍见 [whitelist-feature-switches-design](whitelist-feature-switches-design.md)。
 
-选择存于 `business_feature_settings`（migration 0030，按公司与功能一行，`*` 行为全局开关），覆盖部署默认值：`SEC_AI_TICKERS` / `SEC_AI_ENABLED` 是财报摘要、要点、业务解读的默认，`BUSINESS_TREE_TICKERS` 加 AI 名单 / `BUSINESS_TREE_ENABLED` 是业务脑图的默认；显式关闭同样生效。旧表 `financial_ai_settings`、`business_tree_settings` 已回填并保留一个发布周期。Pipeline 在每个入口读一次设置表，解析成 `FEATURE_RESOLVED`；`SEC_AI_TICKERS` 随之设为财报摘要名单，读它的旧代码含义不变。要点要求财报摘要开着；关掉财报摘要会同时关掉要点。四个功能都要求公司在白名单内。
+选择存于 `business_feature_settings`（migration 0030，按公司与功能一行，`*` 行为全局开关），覆盖部署默认值：`SEC_AI_TICKERS` / `SEC_AI_ENABLED` 是财报摘要、要点、业务解读的默认，`BUSINESS_TREE_TICKERS` 加 AI 名单 / `BUSINESS_TREE_ENABLED` 是业务脑图的默认；显式关闭同样生效。旧表 `financial_ai_settings`、`business_tree_settings` 已回填并保留一个发布周期。Spontra Analysis 在每个入口读一次设置表，解析成 `FEATURE_RESOLVED`；`SEC_AI_TICKERS` 随之设为财报摘要名单，读它的旧代码含义不变。要点要求财报摘要开着；关掉财报摘要会同时关掉要点。四个功能都要求公司在白名单内。
 
 每次切换发出 `feature.settings`（`detail.feature` 标明功能），由该功能的首个任务检查是否有东西要写（财报摘要 → `sec-report`，要点 → `findings` 与 `company-analysis`，业务解读 → `explainer`，业务脑图 → `tree`），并推进地图的 company、filings、findings、events 版本号，读者立刻看到变化。读者能否看到只看这个开关：公司有存储的选择就用它，没有就用部署默认名单（`SEC_AI_TICKERS`、`BUSINESS_TREE_TICKERS`）；从未开过的公司即使库里有旧内容也不展示。关着时公开读取接口返回 `status: "hidden"`（要点、业务解读、业务脑图、指引）或只列申报不带摘要（`filings`、`events`）；首页要点轮播（`/api/business/v1/findings`）不列这些公司；后台读取不受影响，存储不删。
 

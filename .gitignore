@@ -34,7 +34,7 @@ yarn-error.log*
 /outputs/
 /work/
 
-!workers/pipeline/.dev.vars.example
+!workers/analysis/.dev.vars.example
 
 **/node_modules/
 

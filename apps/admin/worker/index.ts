@@ -2,7 +2,7 @@ import { handleReportAdminProxy } from "./report-admin-proxy.ts";
 
 export type AdminEnv = {
   ASSETS: { fetch: typeof fetch };
-  EARNING_REPORT_PIPELINE?: { fetch: typeof fetch };
+  SPONTRA_ANALYSIS?: { fetch: typeof fetch };
 };
 
 export async function handleAdminRequest(request: Request, env: AdminEnv): Promise<Response> {

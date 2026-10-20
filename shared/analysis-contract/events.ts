@@ -84,7 +84,7 @@ export type CompanyEvent = {
   edgarUrl: string;
   documentUrl: string;
   exhibits: EventExhibit[];
-  /** The event summary the pipeline already wrote for this filing, if it has one. */
+  /** The event summary Spontra Analysis already wrote for this filing, if it has one. */
   summary: EventSummary | null;
   /** Form 4 only. */
   insider: InsiderTransaction | null;

@@ -11,7 +11,7 @@
 | 文字层 | 来源 | 体量 | 现状 |
 |---|---|---|---|
 | **UI 骨架**：导航、标签、空状态、按钮、单位、图表轴 | 前端源码里的字面量 | 约 150 条短字符串 | 全部英文硬编码 |
-| **分析内容**：findings 的 label/detail/narrative、报告 headline/bullets/analystView、业务树节点名、filing 索引卡、业绩指引句子、lens 文档 | Pipeline Worker 的 Agent 生成，评审后写入 D1（`sec_cache` 的 `findings:v2:`、`business-tree:v1:`、`library-cards:v1:` 等键） | 一家公司一个季度几千到上万字 | 所有 prompt 明确要求 "write in English"；读路由只做 D1 查询 |
+| **分析内容**：findings 的 label/detail/narrative、报告 headline/bullets/analystView、业务树节点名、filing 索引卡、业绩指引句子、lens 文档 | Spontra Analysis Worker 的 Agent 生成，评审后写入 D1（`sec_cache` 的 `findings:v2:`、`business-tree:v1:`、`library-cards:v1:` 等键） | 一家公司一个季度几千到上万字 | 所有 prompt 明确要求 "write in English"；读路由只做 D1 查询 |
 | **数字与日期** | 前端格式化（`Intl.NumberFormat("en-US")`、`$1.2B`、`3.4M shares`） | 遍布 model 层 | 英文计数习惯（K/M/B） |
 
 约束（来自仓库规则与既有决定）：
@@ -69,7 +69,7 @@ C3 细节：
 - **触发**：现有发布流程末尾（findings/business-tree/explainer/library-cards/guidance/lens 写入 `sec_cache` 之后）投递 `publication.translate {kind, ticker, periodEnd, locale}` 事件；`locales` 配置在 `ai-config.ts`。
 - **字段白名单**：每个 `shared/analysis-contract/*` 类型旁边声明 `readerFacing: ["label","detail","narrative","headline","bullets[].label", …]`，翻译器只走白名单，id、sourceIds、数字、periodEnd、ticker 原样复制。这样译文结构与英文完全同构，前端零改动。
 - **缓存键**：`findings:v2:${ticker}:${periodEnd}:zh-CN`，payload 内记 `sourceSha256`；英文重发布时哈希变化才重译。
-- **术语表**：`workers/pipeline/src/i18n/glossary.zh-CN.ts`，Revenue→营业收入、Operating income→营业利润、Guidance→业绩指引、Segment→业务分部、Basis→口径……随 prompt 一起送入；分部名（来自 SEC MetaLinks 的英文标签）译文后保留英文原名，如 "智能云 Intelligent Cloud"。
+- **术语表**：`workers/analysis/src/i18n/glossary.zh-CN.ts`，Revenue→营业收入、Operating income→营业利润、Guidance→业绩指引、Segment→业务分部、Basis→口径……随 prompt 一起送入；分部名（来自 SEC MetaLinks 的英文标签）译文后保留英文原名，如 "智能云 Intelligent Cloud"。
 - **读 API**：`GET /api/business/v1/companies/:ticker/findings?lang=zh-CN`；命中返回译文并带 `contentLanguage: "zh-CN"`，未命中返回英文并带 `contentLanguage: "en"`，前端据此在正文角落标注 "English"（这是一个标签，不是旁白）。
 - **模型**：低推理档（与 index cards 同档），一次翻译整份 JSON；超长 narrative 按段落分块。
 

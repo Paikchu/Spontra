@@ -52,7 +52,7 @@ export function eventTitle(e: CompanyEvent): string {
   return `${EVENT_CLASS_LABEL[e.class]} · ${e.form}${e.items.length ? ` · Item ${e.items.filter(i => i !== "9.01").join(", ") || e.items.join(", ")}` : ""}`;
 }
 
-/** The language of the event's title when it is generated (translated once the pipeline has) or EDGAR text (English); undefined when it is composed in the reader's language. */
+/** The language of the event's title when it is generated (translated once Spontra Analysis has) or EDGAR text (English); undefined when it is composed in the reader's language. */
 export const eventTitleLang = (e: CompanyEvent): ReturnType<typeof langOf> | undefined =>
   !e.insider && (!!e.summary?.headline || (!!e.description && !/^(8-K|6-K|FORM)\b/i.test(e.description))) ? langOf(eventTitle(e)) : undefined;
 

@@ -4,7 +4,7 @@
 
 ## 一句话
 
-用户在业务地图上点中某个业务（如 MSFT 的智能云）后，原来的文字档案换成一棵脑图：它从桑基图上这个业务的节点向左长出，依次是产品线 → 具体产品 → 赚钱方式。树由 Pipeline 里的 ReAct 研究员（DeepSeek + Tavily）逐项业务一步一步拆出来，每个节点都要有一段把它归入上级的原文。
+用户在业务地图上点中某个业务（如 MSFT 的智能云）后，原来的文字档案换成一棵脑图：它从桑基图上这个业务的节点向左长出，依次是产品线 → 具体产品 → 赚钱方式。树由 Spontra Analysis 里的 ReAct 研究员（DeepSeek + Tavily）逐项业务一步一步拆出来，每个节点都要有一段把它归入上级的原文。
 
 ```
 赚钱方式      产品                   产品线          财报业务（桑基图）
@@ -24,7 +24,7 @@ GitHub Copilot ─ GitHub ────────┘
 
 ## ReAct 循环
 
-代码：`workers/pipeline/src/business-tree/agent.ts`（纯逻辑，可注入模型、搜索和 step），`workflow.ts`（Workflow、扫描、读取）。
+代码：`workers/analysis/src/business-tree/agent.ts`（纯逻辑，可注入模型、搜索和 step），`workflow.ts`（Workflow、扫描、读取）。
 
 每项业务一轮循环，预算 16 轮（模型回复次数）、6 次搜索、6 次读页。每轮：
 
@@ -56,12 +56,12 @@ SEC 文件全部来自文件库（`docs/sec-filing-library.md`）：开始前从
 ## 存储、触发与读取
 
 - 结果存 `sec_cache` 的 `business-tree:v1:{ticker}`，版本记录走 `AiRunStore`（kind `tree`）。研究过程（每轮 thought / action / observation）存在同一文档的 `research` 字段，仅后台可见。
-- 触发：事件驱动（docs/pipeline-events.md）。`financials.published` 和后台开关发出的 `feature.settings`（`feature: "tree"`）会排一次 `tree` 任务；业务列表指纹与已发布的不同时才启动 Workflow。名单为 `BUSINESS_TREE_TICKERS` 加 AI 名单，再按后台的公司开关增删。需要 `TAVILY_API_KEY` 与 `DEEPSEEK_API_KEY`。
+- 触发：事件驱动（docs/analysis-events.md）。`financials.published` 和后台开关发出的 `feature.settings`（`feature: "tree"`）会排一次 `tree` 任务；业务列表指纹与已发布的不同时才启动 Workflow。名单为 `BUSINESS_TREE_TICKERS` 加 AI 名单，再按后台的公司开关增删。需要 `TAVILY_API_KEY` 与 `DEEPSEEK_API_KEY`。
 - 开关（2026-10-17，后台「白名单」的「业务脑图」列，与其余功能同一套，见 [businessview-admin](businessview-admin.md) 的功能开关）：存于 `business_feature_settings` 的 `tree` 行。
   - 全局生成：`*` 行覆盖 `BUSINESS_TREE_ENABLED`。关闭后不再启动新运行，已排队的运行以 superseded 结束，已发布的树照常显示；重新打开时为名单内每家公司检查一次是否需要生成。
   - 每家公司一个开关：开 = 在名单内并展示，打开需先在白名单中，打开后立即检查生成；关 = 移出名单，公开读取接口返回 `status: "hidden"`，地图退回文字说明，存储的树不删，后台仍可查看。没有存储选择的公司按 `BUSINESS_TREE_TICKERS` 加 AI 名单决定。每次切换都发出 `feature.settings`，地图的 company 版本号随之更新，读者马上看到变化。
 - 后台：AI 任务页新增“业务脑图”，可手动重跑，查看每轮步骤、树和研究过程。
-- 读取：Pipeline `GET /api/v1/companies/:t/business-tree`（只读 D1），地图 Worker 与 flow、解读、指引一起取回并复核，去掉 `research` 后作为 `tree` 返回。
+- 读取：Spontra Analysis `GET /api/v1/companies/:t/business-tree`（只读 D1），地图 Worker 与 flow、解读、指引一起取回并复核，去掉 `research` 后作为 `tree` 返回。
 
 ## 地图上的画法
 

@@ -7,7 +7,7 @@ import { formatMetric, formatMetricChange, METRIC_DEFS, thresholdsOf } from "./s
 
 /**
  * The written side of the three-statement checkup (docs/three-statement-analysis-design.md): the figures a note about
- * one metric may state, and the check a note must pass before the page shows it. The pipeline's writer is held to the
+ * one metric may state, and the check a note must pass before the page shows it. Spontra Analysis's writer is held to the
  * same check before it may finish, so the reader never sees a number or a quote the data and the filings do not hold.
  */
 

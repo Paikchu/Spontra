@@ -12,7 +12,7 @@
   },
   "services": [
     {
-      "binding": "EARNING_REPORT_PIPELINE",
+      "binding": "SPONTRA_ANALYSIS",
       "service": "spontra-analysis"
     }
   ],

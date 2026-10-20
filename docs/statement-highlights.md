@@ -11,17 +11,17 @@
 约束：
 
 - 页面上的每个数字必须来自已发布数据，模型不得写数字（与 findings 相同的原则，见 `shared/analysis-contract/findings.ts`）。
-- 读路由只做查找，模型调用只在 pipeline 内（[SEC data prepared before read](sec-filing-library.md)）。
-- 除 SEC 发现外不加 Cron，任务由事件驱动（[pipeline-events](pipeline-events.md)）。
+- 读路由只做查找，模型调用只在 Spontra Analysis 内（[SEC data prepared before read](sec-filing-library.md)）。
+- 除 SEC 发现外不加 Cron，任务由事件驱动（[analysis-events](analysis-events.md)）。
 
 ## 决策
 
 **亮点作为 findings Workflow 的一个独立模型阶段生成，随 findings 发布物一起存储；页面在读时解析数值并校验，校验不过的视图回退到原来的固定数字条。**
 
-1. **数据表**（`workers/pipeline/src/findings/ledger.ts` · `buildHighlightTable`）：对每个可解析的引用（利润表科目、业务节点、利润率等比率、现金流与资产负债表科目、SEC fundamentals），给出最新季度及前 5 个季度的已格式化数值，以及最新季度的 YoY/QoQ。每行标注所属视图（`refView`）。模型只看这张表，不做计算。
-2. **生成**（`workers/pipeline/src/findings/highlights.ts`）：findings 写完并校验后，再做一次模型调用。输入是数据表加上已通过校验的 findings 标题（作为参考，使亮点和 findings 不互相矛盾）。输出每个视图 3 个 `{ ref, compare, title }`，按显著程度排序。
+1. **数据表**（`workers/analysis/src/findings/ledger.ts` · `buildHighlightTable`）：对每个可解析的引用（利润表科目、业务节点、利润率等比率、现金流与资产负债表科目、SEC fundamentals），给出最新季度及前 5 个季度的已格式化数值，以及最新季度的 YoY/QoQ。每行标注所属视图（`refView`）。模型只看这张表，不做计算。
+2. **生成**（`workers/analysis/src/findings/highlights.ts`）：findings 写完并校验后，再做一次模型调用。输入是数据表加上已通过校验的 findings 标题（作为参考，使亮点和 findings 不互相矛盾）。输出每个视图 3 个 `{ ref, compare, title }`，按显著程度排序。
    每个数字由模型决定大数显示什么（`show`）：增速本身是重点时（某业务收入翻倍、利润率变动几个点）显示变化（+121%、+6.1 pp），水平值下移到注释；水平值本身是重点时（正负翻转、积压订单规模、锚定科目）显示数值。标题只写数字的名称（"Cloud infrastructure revenue growth"），不用 climbs、jumps、surges 这类表示变动或强调的词。
-3. **校验**（`shared/analysis-runtime/highlights.ts` · `verifyHighlights`，pipeline 和页面共用同一函数）：引用必须属于该视图，在该季度可以解析出数值；比较期也必须存在；标题不得含数字；同一视图内引用不得重复；显示变化时变化必须能算出来。标题含数字或命中强调词表（`EMPHASIS`）时，替换成该科目本身的名称，不丢弃这个数字。只存储通过校验的数字条目。
+3. **校验**（`shared/analysis-runtime/highlights.ts` · `verifyHighlights`，Spontra Analysis 和页面共用同一函数）：引用必须属于该视图，在该季度可以解析出数值；比较期也必须存在；标题不得含数字；同一视图内引用不得重复；显示变化时变化必须能算出来。标题含数字或命中强调词表（`EMPHASIS`）时，替换成该科目本身的名称，不丢弃这个数字。只存储通过校验的数字条目。
 4. **存储**：`FindingsPublication.highlights: ReportHighlights[]`，按 `periodEnd` 区分。新的报告发布时，保留之前报告的亮点（最多 8 期），因此每个季度展示的都是该季度财报解析时写下的亮点。
 5. **展示**（`BusinessMap.tsx`）：所选季度、所选视图有 ≥2 个通过校验的亮点时，数字条显示亮点：标签是模型标题，大数是解析出的数值，注释是 `科目名 · YoY +32%`（确定性生成）。否则显示原来的固定数字条。选中某个业务时，利润视图仍显示该业务的固定数字条（亮点是公司层面的）。
 
@@ -73,6 +73,6 @@
 
 1. [x] 契约：`StatementHighlight`、`ReportHighlights`，`FindingsPublication.highlights`
 2. [x] 共享：`refView`、`verifyHighlights`、`highlightChange`
-3. [x] Pipeline：`buildHighlightTable`、`writeHighlights`、Workflow 阶段、跨期保留
+3. [x] Spontra Analysis：`buildHighlightTable`、`writeHighlights`、Workflow 阶段、跨期保留
 4. [x] 前端：亮点数字条与回退
 5. [ ] 上线后：抽查 MSFT、ORCL、NVDA 最新季度的亮点；统计各视图回退率

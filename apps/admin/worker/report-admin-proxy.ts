@@ -48,8 +48,8 @@ export async function handleReportAdminProxy(request: Request, path: string[], e
   if (!login && !token) return json({ error: "未登录" }, 401);
   if (request.url.length > 2048 || Number(request.headers.get("content-length") ?? 0) > MAX_BODY) return json({ error: "请求过大" }, 413);
   try {
-    const binding = asServiceBinding(env.EARNING_REPORT_PIPELINE);
-    const origin = "https://earning-report-pipeline.internal";
+    const binding = asServiceBinding(env.SPONTRA_ANALYSIS);
+    const origin = "https://spontra-analysis.internal";
     if (!binding) return json({ error: "财报服务未连接" }, 503);
     const headers = new Headers({ accept: "application/json" });
     const ip = request.headers.get("cf-connecting-ip");

@@ -13,7 +13,7 @@ import { compactMoney, multiple, perShare, points, type Locale } from "./locale.
 
 /**
  * The three-statement checkup over the data a page already holds (docs/three-statement-analysis-design.md). Pure:
- * the same call in the pipeline and in the browser gives the same metrics, the same flags and the same bridge, so
+ * the same call in Spontra Analysis and in the browser gives the same metrics, the same flags and the same bridge, so
  * what a model is told matches what the reader sees. Every figure is resolved through the findings runtime and
  * nothing is assumed zero; a metric the data cannot answer is left out and counted as uncovered.
  */
@@ -373,7 +373,7 @@ export function peerRanks(data: FindingData, assessment: StatementAssessment, ti
 /** Counts of the flags at each level, for a company's line on the home page. */
 export const flagCounts = (flags: Flag[]): Record<FlagLevel, number> => ({ alert: flags.filter(f => f.level === "alert").length, watch: flags.filter(f => f.level === "watch").length, note: flags.filter(f => f.level === "note").length });
 
-/** The dimensions' names as the pipeline writes them for a model. */
+/** The dimensions' names as Spontra Analysis writes them for a model. */
 export const DIMENSION_NAMES: Record<import("../analysis-contract/statement-analysis.ts").StatementDimension, string> = {
   growth: "growth", profitability: "profitability", earningsQuality: "earnings quality", capitalEfficiency: "capital efficiency", safety: "financial safety", valuation: "valuation",
 };

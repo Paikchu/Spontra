@@ -89,7 +89,7 @@ export const ANALYSIS_FILING_PAGE_MAX_LIMIT = 50;
  * A filing as a reading surface lists it: the period it reports, what the analysis concluded, the
  * verified key figures with their comparisons, and where the original is. Built by a consumer from
  * `PublicSecFiling`; it carries labels, not raw metric keys, so a page renders it without the
- * pipeline's formatting rules.
+ * Spontra Analysis's formatting rules.
  */
 export type PublicFilingDigest = {
   accessionNumber: string;

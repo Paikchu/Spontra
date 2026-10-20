@@ -8,7 +8,7 @@
  *
  * No block carries a rendered value. `metrics` and `chart` name what to show and the page resolves
  * the numbers from data that already passed verification, so a block can never put a figure on the
- * page that the Pipeline did not verify — the same split `FundamentalChartSpec` already uses.
+ * page that Spontra Analysis did not verify — the same split `FundamentalChartSpec` already uses.
  *
  * A chart series reuses the fundamentals vocabulary rather than restating it, so a metric retired
  * there stops type-checking here. SEC metric keys are a separate, open vocabulary and stay strings.

@@ -14,7 +14,7 @@ import type {
 } from "../../../../shared/analysis-contract/fundamentals.ts";
 import { compactMoney, compactNumber, compactShares, currencyName, MINUS } from "../../../../shared/analysis-runtime/locale.ts";
 import { getLocale, labels, messages } from "../i18n/index.ts";
-// Defined in the contract so the Pipeline enforces the same ceilings; re-exported so every
+// Defined in the contract so Spontra Analysis enforces the same ceilings; re-exported so every
 // existing consumer keeps its import path.
 export { FUNDAMENTAL_CHART_MAX_AXES, FUNDAMENTAL_CHART_MAX_SERIES };
 export const FUNDAMENTAL_CHART_WIDTH = 760;

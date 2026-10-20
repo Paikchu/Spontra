@@ -2,11 +2,16 @@
 
 从第一性原理出发解决问题，直击根源，主动完善需求。验证应聚焦本次要验证的问题。
 
+# 架构与命名
+
+- 后端统一称 **Spontra Analysis**（目录 `workers/analysis/`，Worker `spontra-analysis`，npm 脚本前缀 `analysis:`，Service Binding `SPONTRA_ANALYSIS`，提交 scope `analysis`）。不再使用“Pipeline”称呼后端；队列 `spontra-pipeline-*`、D1 表 `pipeline_*` 与 `src/pipeline/`（事件与任务路由）是内部机制与已有资源名，保持不变。
+- 前端是基于 DeepSeek Harness 的应用，源码在 `deepseek-harness` 仓库（`investment` 组合包），不放入本仓库。
+
 # Git 与上线规则
 
 - 本仓库唯一远程为 `origin`，fetch 和 push 均指向 `https://github.com/Paikchu/Spontra.git`。所有分支与 worktree 共用此远程，不添加其他发布远程。
 - 唯一生产发布入口是 GitHub 的 `main` 分支。用户要求“上线”或“部署”时，将已验证的本次修改提交并合并到本地 `main`，执行 `git push origin main`，由 Cloudflare 自动部署。
-- 禁止本地手动部署，包括 `wrangler deploy`、`wrangler versions upload/deploy`、`wrangler pages deploy`、直接调用部署 API，以及本地运行 `deploy:cloudflare`、`worker:pipeline:deploy` 等发布脚本。这些部署脚本仅供自动构建执行。自动部署失败时，修复后再次推送，不绕过自动部署。
+- 禁止本地手动部署，包括 `wrangler deploy`、`wrangler versions upload/deploy`、`wrangler pages deploy`、直接调用部署 API，以及本地运行 `deploy:cloudflare`、`analysis:deploy` 等发布脚本。这些部署脚本仅供自动构建执行。自动部署失败时，修复后再次推送，不绕过自动部署。
 - 用户只要求提交或合并时，不自动推送。用户要求上线时，推送已获授权，不重复请求确认。
 
 ## 发布步骤
@@ -22,6 +27,6 @@
 推送 `origin/main` 触发两个独立构建，根目录均为 `/`：
 
 - 业务地图 `spontra-business-map` 与运维后台 `spontra-admin`：构建 `npm run build`，CI 执行 `npm run deploy:cloudflare`。该构建挂在 `spontra-business-map` Worker 的 Builds 设置下（原 `spontra-app` Worker 已删除）。
-- 财报 Pipeline：构建 `npm run check:pipeline:boundary && npm run typecheck:pipeline && npm run worker:pipeline:check`，CI 执行 `npm run worker:pipeline:deploy`。
+- Spontra Analysis：构建 `npm run check:analysis:boundary && npm run analysis:typecheck && npm run analysis:check`，CI 执行 `npm run analysis:deploy`。
 
-涉及两个目标的修改须分别核验结果。地图与后台的自动发布不涉及数据库迁移；Pipeline 自动发布先应用（`worker:pipeline:migrate:ci`）并核对分析数据库迁移，再发布 Worker。
+涉及两个目标的修改须分别核验结果。地图与后台的自动发布不涉及数据库迁移；Spontra Analysis 自动发布先应用（`analysis:migrate:ci`）并核对分析数据库迁移，再发布 Worker。
