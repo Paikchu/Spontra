@@ -2,6 +2,7 @@ import type { FindingWatch } from "../../analysis-contract/findings.ts";
 import { LENS_LIMITS, type LensBlock, type LensDocument } from "../../analysis-contract/lens.ts";
 import { numberSupported, proseNumbers } from "../findings.ts";
 import { chartHeight, type CompileResult } from "./compile.ts";
+import { htmlProblems } from "./html.ts";
 
 export type LensWarning = { level: "error" | "warning"; where: string; message: string };
 /** Cell widths the audit lays the document out at: a phone, a two-cell row on a laptop, a one-cell row on a wide screen. */
@@ -25,6 +26,7 @@ function cellHeight(block: LensBlock, width: number, compiled: Map<string, Compi
     case "judgment": return prose(judgmentChars);
     case "prose": return block.paragraphs.reduce((sum, p) => sum + prose(p.text.length), 0);
     case "chart": return compiled.get(block.chart.id)?.chart ? chartHeight(width, block.chart.aspect) + 18 : null;
+    case "html": return chartHeight(width, block.html.aspect) + 18;
     case "figures": return figures * 44 + 16;
     case "watch": return 72;
     case "sources": return 48;
@@ -52,14 +54,16 @@ export function auditDocument(input: AuditInput & { judgmentChars: number; figur
   if (input.watch && count("watch") === 0) error("document", "the finding has a watch item; add a watch block");
   if (!input.watch && count("watch") > 0) error("document", "the finding has no watch item; remove the watch block");
   const charts = blocks.flatMap(b => b.kind === "chart" ? [b.chart] : []);
-  if (charts.length > LENS_LIMITS.charts) error("document", `at most ${LENS_LIMITS.charts} charts`);
+  const pictures = blocks.flatMap(b => b.kind === "html" ? [b.html] : []);
+  if (charts.length + pictures.length > LENS_LIMITS.charts) error("document", `at most ${LENS_LIMITS.charts} charts and html pictures together`);
   if (count("quote") > LENS_LIMITS.quotes) error("document", `at most ${LENS_LIMITS.quotes} quotes`);
   if (count("table") > LENS_LIMITS.tables) error("document", `at most ${LENS_LIMITS.tables} tables`);
   if (count("record") > 1) error("document", "at most one record block");
   for (const [i, w] of input.verifyReasons?.entries() ?? []) error(`verify ${i + 1}`, w);
-  if (!charts.length) warn("document", "no chart: a finding reads better with one");
+  if (!charts.length && !pictures.length) warn("document", "no chart: a finding reads better with one");
   const chartIds = new Set<string>();
-  for (const c of charts) { if (chartIds.has(c.id)) error(`chart ${c.id}`, "chart id used twice"); chartIds.add(c.id); }
+  for (const c of [...charts, ...pictures]) { if (chartIds.has(c.id)) error(`chart ${c.id}`, "chart id used twice"); chartIds.add(c.id); }
+  for (const p of pictures) for (const problem of htmlProblems(p.html)) error(`html ${p.id}`, problem);
   const seen = new Map<string, string>();
   for (const c of charts) {
     const key = JSON.stringify(c.series.map(s => [s.ref, s.transform ?? "value"]).sort());
@@ -92,9 +96,9 @@ export function auditDocument(input: AuditInput & { judgmentChars: number; figur
       if (row.cells.length === 2 && columns > 4) warn(`row ${i + 1}`, `a table with ${columns} figure columns shares the row with another cell; give it a row of its own or draw fewer periods`);
       if (columns > 8) warn(`row ${i + 1}`, `a table with ${columns} figure columns is wider than the page; draw at most eight`);
     }
-    if (row.cells.length === 2 && row.cells.every(c => c.some(b => b.kind === "chart"))) warn(`row ${i + 1}`, "two charts side by side each get half the width; one chart per row reads larger");
+    if (row.cells.length === 2 && row.cells.every(c => c.some(b => b.kind === "chart" || b.kind === "html"))) warn(`row ${i + 1}`, "two charts side by side each get half the width; one chart per row reads larger");
     if (row.cells.length !== 2) return;
-    const name = (cell: LensBlock[]) => cell.map(b => b.kind === "chart" ? `chart ${b.chart.id}` : b.kind).join(" + ");
+    const name = (cell: LensBlock[]) => cell.map(b => b.kind === "chart" ? `chart ${b.chart.id}` : b.kind === "html" ? `html ${b.html.id}` : b.kind).join(" + ");
     for (const [cls, width] of Object.entries(WIDTH_CLASSES) as Array<[string, number]>) {
       if (cls === "narrow") continue; // Cells stack on a phone.
       const heights = row.cells.map(cell => cell.reduce<number | null>((sum, b) => { const h = cellHeight(b, width, input.compiled, input.judgmentChars, input.figures); return sum == null || h == null ? null : sum + h; }, 0));

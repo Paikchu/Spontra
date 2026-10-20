@@ -84,6 +84,18 @@ iframe 最容易出的问题是"一个固定尺寸的盒子"：内部滚动条�
 6. **CSP。** `_headers` 对 `/lens-frame.html` 单独覆盖 `frame-ancestors 'self'`（其余路径保持 `'none'`）；frame 文档自身的脚本来自同源 bundle，`script-src 'self'` 不变。opaque origin 下 `'self'` 按文档 URL 匹配，仍然成立；实施时在本地 wrangler 环境核验。
 7. **图要表达观点，而不只是画数据（2026-10-20）。** 图表声明可写 `title`（结论，而非指标名）、`subtitle`（怎么读：单位、彩色代表什么、第二行标签是什么）、`focus {periods, series}`（论点所依赖的期与序列：彩色并标数；其余期与序列画成灰色背景，默认最新一期）、`periodNote`（一条序列写成期标签下的第二行，例如柱下的利润率，不画成 mark）。单序列图标出每一期数值，重点期加粗。渲染器只认这几个声明，颜色与字号仍全部来自页面 token；模型依旧不写数字和样式。
 
+## 修订（2026-10-21）：模型自己写 HTML 图
+
+决定改为采用方案 A 的一个受控版本：Lens 文档新增 `{"kind":"html","html":{id,title,aspect,html}}` 块，由 Lens Agent 写一段 HTML 片段（标记、内联 SVG、`<style>`、`<script>`，脚本可从 cdnjs / jsdelivr / unpkg 按固定版本加载）。语法图（`chart`）保留，作为 Agent 未写出合格 HTML 时的兜底和旧发布物的显示方式。
+
+- **数字不核对**：这是产品决定。HTML 里的数字由模型从 `series` 工具读到的值写入，Spontra Analysis 不校验图上显示的数字；prose 段落仍按原规则校验。
+- **隔离**：页面用 `<iframe src="/html-frame.html" sandbox="allow-scripts">` 加载（不给 `allow-same-origin`，opaque origin），frame 有自己的 CSP（`public/_headers`）：只允许内联脚本和三个 CDN 的脚本，`connect-src 'none'`、无表单、无嵌套 frame、图片只允许 `data:`/`blob:`。模型脚本既接触不到页面，也发不出网络请求。harness 在 compile 时就拒绝整页文档标签、外部脚本主机、未固定版本、`fetch` 等调用（`lens/html.ts`），让模型在生成阶段修正。
+- **样式一致**：frame 注入页面的设计变量（`LENS_FRAME_TOKENS`）和 Geist 字体（`/assets/*` 加 `Access-Control-Allow-Origin: *`，供 opaque origin 跨源加载）；提示词规定只能用这些变量、字号、"标题写结论、只给论点着色、其余灰色背景"等表达规则。主题切换时 frame 原地替换变量（`html:theme`），不重跑脚本。
+- **高度**：格子先按 `aspect` 占位，frame 用 ResizeObserver 回报 body 高度（`html:size`），宿主按内容定高，上限 1400px。
+- **一份文档只写一次**：`document.open` 不会重置窗口的全局作用域，再次写入会让模型脚本里的 `const` 重复声明；因此换图时宿主会换一个新的 iframe。
+- **Agent**：新增 `series` 工具（按 catalogue 的 ref 返回每期的标签、页面格式的文字和原始值），预算从 6 轮增到 8 轮；`LENS_VERSION` 升为 `lens.agent.v3`，所有公司会重写一次。
+- **已知缺口**：HTML 里的文字是英文，中文界面不会翻译它（翻译流水线不处理带脚本的标记）；模型看不到渲染结果，没有截图反馈。
+
 ## 合同
 
 `shared/analysis-contract/lens.ts`，发布物 `findings.v2`（`FindingsPublication.schemaVersion`），`AnalysisFinding.lens` 允许 `{ type: "document"; document: LensDocument }`；旧的四种枚举保留读取能力，由 `legacyLens.ts` 确定性转换成 `LensDocument`，前端不再有专用渲染器。

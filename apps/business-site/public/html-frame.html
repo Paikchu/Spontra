@@ -1,0 +1,55 @@
+<!doctype html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Picture</title>
+<style>html,body{margin:0;padding:0;background:transparent}</style>
+<script>
+/*
+ * The html picture frame. The page loads it with sandbox="allow-scripts" (no allow-same-origin), so it runs at
+ * an opaque origin under its own CSP: inline scripts and pinned CDN scripts run, nothing reaches the network or
+ * the page. The first html:render writes a document of the page's tokens, the agent's fragment and this same
+ * script, which reports the content's height and takes theme changes in place. A document is written once: the
+ * window's globals outlive document.open, so a second fragment would collide with the first; a new picture gets
+ * a new frame.
+ */
+(function boot(rendered) {
+  var current = null;
+  function post(message) { window.parent.postMessage(message, "*"); }
+  function vars(theme) {
+    return ":root{" + Object.keys(theme.tokens).map(function (k) { return k + ":" + theme.tokens[k]; }).join(";") + ";color-scheme:" + theme.scheme + "}";
+  }
+  function css(font) {
+    return (font ? '@font-face{font-family:"Geist";src:url("' + font + '") format("woff2");font-weight:100 900;font-display:swap}' : "")
+      + "html,body{margin:0;padding:0;background:transparent;overflow:hidden}"
+      + "body{display:flow-root;color:var(--foreground);font-family:var(--sans,system-ui,sans-serif);font-size:13px;line-height:1.5;font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}"
+      + "svg{display:block;max-width:100%;overflow:visible}";
+  }
+  function render(m) {
+    var doc = "<!doctype html><html lang=\"" + String(m.lang).replace(/[^a-zA-Z-]/g, "") + "\" class=\"" + m.theme.scheme + "\"><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><style id=\"tokens\">"
+      + vars(m.theme) + "</style><style>" + css(m.font) + "</style><script>(" + boot.toString() + ")(" + JSON.stringify(m.id) + ")<\/script></head><body>" + m.html + "</body></html>";
+    document.open(); document.write(doc); document.close();
+  }
+  window.addEventListener("message", function (event) {
+    if (event.source !== window.parent || !event.data) return;
+    // A host that attached its listener after the first announcement asks again; a drawn picture stays quiet.
+    if (event.data.type === "html:ping" && !rendered) post({ type: "html:ready" });
+    if (event.data.type === "html:render" && !rendered) render(event.data);
+    if (event.data.type === "html:theme" && rendered) {
+      var style = document.getElementById("tokens");
+      if (style) style.textContent = vars(event.data.theme);
+      document.documentElement.className = event.data.theme.scheme;
+    }
+  });
+  if (!rendered) { post({ type: "html:ready" }); return; }
+  current = rendered;
+  var last = 0;
+  function report() {
+    // The body's own height: the frame's viewport is whatever the host last gave it, so the document's height never shrinks below it.
+    var h = document.body ? Math.ceil(Math.max(document.body.scrollHeight, document.body.getBoundingClientRect().height)) : 0;
+    if (h && h !== last) { last = h; post({ type: "html:size", id: current, height: h }); }
+  }
+  addEventListener("load", report);
+  document.addEventListener("DOMContentLoaded", function () {
+    report();
+    if (window.ResizeObserver) new ResizeObserver(report).observe(document.body);
+  });
+  setTimeout(report, 300); setTimeout(report, 1200);
+})(null);
+</script></head><body></body></html>

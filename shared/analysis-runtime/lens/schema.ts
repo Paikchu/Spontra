@@ -41,6 +41,7 @@ export function lensDocumentSchemaFor(ref: z.ZodTypeAny): z.ZodType<LensDocument
     z.object({ kind: z.literal("judgment") }),
     z.object({ kind: z.literal("prose"), paragraphs: z.array(claim).min(1).max(LENS_LIMITS.paragraphs) }),
     z.object({ kind: z.literal("chart"), chart }),
+    z.object({ kind: z.literal("html"), html: z.object({ id, title: z.string().trim().min(1).max(LENS_LIMITS.titleChars * 2), aspect: z.enum(["wide", "square", "tall"]), html: z.string().trim().min(40).max(LENS_LIMITS.htmlChars) }) }),
     z.object({ kind: z.literal("figures") }),
     z.object({ kind: z.literal("watch") }),
     z.object({ kind: z.literal("sources") }),

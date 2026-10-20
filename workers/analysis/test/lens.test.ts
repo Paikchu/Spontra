@@ -191,13 +191,35 @@ test("the agent compiles, reads its errors back, and finishes only with a docume
   }
   assert.deepEqual(sent[1]![1], { role: "assistant", content: replies[0]!.content });
   for (const system of systems) assert.doesNotMatch(system, /thought|think|reasoning|explain your|Return only JSON|history/i);
-  assert.match(seen[1]!, /Budget left: 5 turns\.$/);
+  assert.match(seen[1]!, new RegExp(`Budget left: ${LENS_BUDGET.turns - 1} turns\\.$`));
 
   const written = await writeLensDocuments({ publication, ledger, data, model, version: "test", now: "2026-07-31T00:00:00Z", stage: (_, cb) => cb() });
   const lens = written.publication.findings[0]!.lens;
   assert.ok(lens.type === "document" && lens.document.rows.length === 2);
   assert.ok(readFindingsPublication(written.publication, "TEST"));
   assert.equal(written.trace.findings[0]!.turns.length, 4);
+});
+
+test("the agent reads series, writes an html picture the frame can run, and the document carries it whole", async () => {
+  const f = verified();
+  const catalogue = lensCatalogue(buildLedger(data, PERIOD, publication.sources), data, PERIOD);
+  const fragment = `<svg viewBox="0 0 600 240" width="100%"><rect x="10" y="40" width="40" height="200" fill="var(--flow-expense)"/><text x="10" y="30">$40.0B</text></svg><script>document.querySelector("svg").dataset.ok = "1"</script>`;
+  const picture = (html: string): LensDocument => ({ rows: [{ cells: [[{ kind: "html", html: { id: "p1", title: "Capex against operating cash flow", aspect: "square", html } }], [{ kind: "judgment" }, { kind: "figures" }, { kind: "watch" }]] }, { cells: [[{ kind: "sources" }]] }] });
+  const bad = picture(`<html><body>${fragment}<script src="https://evil.example/x.js"></script><script>fetch("/api")</script></body></html>`);
+  const seen: string[] = [];
+  const replies = [call("series", { span: "quarter", periods: 4, refs: [{ ref: { capital: "capex" } }, { ref: { capital: "capex" }, transform: "yoy" }] }), call("compile", { document: bad }), call("compile", { document: picture(fragment) }), call("finish")];
+  const outcome = await runLensAgent({ finding: f, resolved: f.resolved, periodEnd: PERIOD, catalogue, data, stage: (_, cb) => cb(),
+    model: async (stage, system, _tools, messages) => { assert.match(system, /--muted-foreground/); seen.push(lastResult(messages)); return replies[Number(stage.split("-").at(-1)) - 1] ?? call("finish"); } });
+  assert.match(seen[1]!, /\$40\.0B \[40000000000\]/);
+  assert.match(seen[1]!, /2\. .* \(percent\)/);
+  assert.match(seen[2]!, /<html> is not allowed/);
+  assert.match(seen[2]!, /evil\.example.*https from cdnjs/);
+  assert.match(seen[2]!, /fetch is not available/);
+  assert.match(seen[3]!, /html p1 \(square, "Capex against operating cash flow"\): \d+ characters; 1 inline svg; 1 inline script/);
+  assert.deepEqual(outcome.document, picture(fragment));
+  assert.ok(readLensDocument(picture(fragment)));
+  const lens = verifyLensDocument(picture(fragment), f, f.resolved, data, PERIOD)!;
+  assert.equal((lens.document.rows[0]!.cells[0]![0] as { kind: "html"; html: { html: string } }).html.html, fragment);
 });
 
 test("a lens turn without a usable reply joins nothing; failures in a row keep the original chart", async () => {

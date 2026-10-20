@@ -74,6 +74,11 @@ export type LensBlock =
   /** Further paragraphs the agent writes; every number must be one the finding's evidence produces. */
   | { kind: "prose"; paragraphs: ExplainerClaim[] }
   | { kind: "chart"; chart: LensChart }
+  /**
+   * A picture the agent writes itself: an HTML fragment (markup, inline SVG, <style>, <script>) shown in an
+   * isolated frame that may run scripts but reach nothing. Its figures are the agent's own and are not checked.
+   */
+  | { kind: "html"; html: LensHtml }
   /** The finding's evidence as resolved figures with their comparisons; exactly one per document. */
   | { kind: "figures" }
   /** The watch item and, once published, its outcome. */
@@ -100,6 +105,11 @@ export type LensTable = {
 /** For a peers table the reference must be one a peer can answer (`PeerBaseRef`); the company's own cell uses it directly. */
 export type LensTableRow = { ref: FindingRef | PeerBaseRef; label?: string; compare?: "yoy" | "qoq" };
 
+/** `title` names the picture for readers without it; `aspect` is the height the page reserves before the frame reports its own. */
+export type LensHtml = { id: string; title: string; aspect: LensAspect; html: string };
+/** Hosts a picture may load scripts from; the frame's CSP allows these and nothing else. */
+export const LENS_HTML_SCRIPT_HOSTS = ["cdnjs.cloudflare.com", "cdn.jsdelivr.net", "unpkg.com"] as const;
+
 /** A cell stacks one to four blocks; a row holds one or two cells, side by side, that stack on a narrow screen. */
 export type LensCell = LensBlock[];
 /** `title`: an AI-written heading for the row, at most 60 characters and no figure. */
@@ -109,5 +119,5 @@ export type LensDocument = { rows: LensRow[] };
 export const LENS_LIMITS = {
   rows: 9, cells: 2, blocksPerCell: 4, charts: 4, series: 6, marks: 6, periods: 12, annotations: 6, bands: 3,
   paragraphs: 3, paragraphChars: 1400, titleChars: 60, subtitleChars: 90, focusPeriods: 4, labelChars: 40, annotationChars: 60, idChars: 24,
-  quotes: 8, quoteChars: 600, tables: 3, tableRows: 8, tablePeriods: 8, tablePeers: 6,
+  quotes: 8, quoteChars: 600, htmlChars: 40000, tables: 3, tableRows: 8, tablePeriods: 8, tablePeers: 6,
 } as const;
