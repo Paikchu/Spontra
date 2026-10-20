@@ -7,13 +7,16 @@ export function describeChart(id: string, result: CompileResult | undefined): st
   if (!result) return `chart ${id}: not compiled`;
   if (!result.chart) return `chart ${id}: FAILED\n  ${result.errors.join("\n  ")}`;
   const c = result.chart;
-  const lines = [`chart ${c.id} (${c.marks.map(m => m.type).join("+")}, ${c.aspect}${c.title ? `, "${c.title}"` : ""}): ${c.series.length} series × ${c.periods.length} ${c.span} periods, ${c.periods[0]!.label} … ${c.periods.at(-1)!.label}`];
+  const lines = [`chart ${c.id} (${c.marks.map(m => m.type).join("+")}, ${c.aspect}${c.title ? `, "${c.title}"` : ""}): ${c.series.length - (c.periodNote ? 1 : 0)} series × ${c.periods.length} ${c.span} periods, ${c.periods[0]!.label} … ${c.periods.at(-1)!.label}`];
   for (const s of c.series) {
-    const marks = c.marks.filter(m => m.series.includes(s.id)).map(m => m.type).join("/");
+    const marks = s.id === c.periodNote ? "note under the periods" : c.marks.filter(m => m.series.includes(s.id)).map(m => m.type).join("/");
     lines.push(`  ${s.id} "${s.label}" [${marks}, ${s.axis}] ${s.text.map(t => t ?? "—").join(" → ")}`);
   }
   const axis = (side: "left" | "right") => { const a = c.axes[side]; return a ? `${side} axis ${a.unit}: ${a.ticks[0]!.label} … ${a.ticks.at(-1)!.label}${a.zero ? ", zero line" : ""}` : null; };
   lines.push(`  ${[axis("left"), axis("right")].filter(Boolean).join("; ")}`);
+  if (c.subtitle) lines.push(`  subtitle "${c.subtitle}"`);
+  const context = c.series.filter(s => s.id !== c.periodNote && !c.focus.series.includes(s.id)).map(s => s.id);
+  lines.push(`  focus: ${c.focus.periods.map(i => c.periods[i]!.label).join(", ")} in colour with their figures${context.length ? `; ${context.join(", ")} drawn grey as context` : ""}; other periods muted`);
   for (const a of c.annotations) lines.push(`  annotation on ${a.series} at ${c.periods[a.period]!.label}: "${a.text}"`);
   for (const b of c.bands) lines.push(`  band ${c.periods[b.from]!.label} – ${c.periods[b.to]!.label}${b.label ? ` "${b.label}"` : ""}`);
   for (const n of result.notes) lines.push(`  note: ${n}`);

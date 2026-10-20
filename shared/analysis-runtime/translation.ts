@@ -33,7 +33,7 @@ const RULES: Record<TranslatedResource, Rule> = {
   flow: { keys: set("description", "customers", "monetization", "disclosure", "basisLabel"), skip: set("sources", "figures", "name", "products", "lineage", "amount", "revenue", "expenseComponents", "otherComponents", "revenueAdjustments") },
   // Findings with their lens documents (the analyst dossier is merged in): titles, judgments, watches, prose,
   // chart and table words, highlight titles. Materials, sources and quote blocks are the filings' own words.
-  findings: { keys: set("title", "text", "condition", "label"), skip: set("sources", "materials", "anchors", "ref", "refs", "fingerprint", "model", "said"), skipWhen: v => v.kind === "quote" },
+  findings: { keys: set("title", "subtitle", "text", "condition", "label"), skip: set("sources", "materials", "anchors", "ref", "refs", "fingerprint", "model", "said"), skipWhen: v => v.kind === "quote" },
   // Business explanations: summaries, offerings, section titles and items. Business and product names are data.
   explainer: { keys: set("text", "title", "label"), skip: set("sources", "name", "products", "line", "companyName", "model", "fingerprint") },
   // The business mind map: summaries, glosses and revenue models; the anchor is a verbatim filing passage.

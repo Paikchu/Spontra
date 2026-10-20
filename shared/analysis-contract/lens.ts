@@ -42,10 +42,19 @@ export type LensAnnotation = { series: string; period: "first" | "latest" | stri
 /** A shaded stretch of periods, e.g. the quarters a programme ran. */
 export type LensBand = { from: "first" | "latest" | string; to: "first" | "latest" | string; label?: string };
 
+/** What the chart is about: the periods and series its point rests on. Everything else is drawn as quiet context. */
+export type LensFocus = { periods?: Array<"first" | "latest" | string>; series?: string[] };
+
 export type LensChart = {
   id: string;
-  /** At most 60 characters, no figure. */
+  /** At most 60 characters, no figure: the claim the chart makes, not the name of what it draws. */
   title?: string;
+  /** How to read it: the unit, what is highlighted, what a second label row holds. At most 90 characters, no figure. */
+  subtitle?: string;
+  /** Defaults to the latest period and every series. */
+  focus?: LensFocus;
+  /** A series written as a row of labels under the period labels instead of drawn, e.g. a margin under amount bars; no mark draws it. */
+  periodNote?: string;
   aspect: LensAspect;
   span: FindingSpan;
   /** Periods drawn, ending at the finding's report: 2–12. */
@@ -99,6 +108,6 @@ export type LensDocument = { rows: LensRow[] };
 
 export const LENS_LIMITS = {
   rows: 9, cells: 2, blocksPerCell: 4, charts: 4, series: 6, marks: 6, periods: 12, annotations: 6, bands: 3,
-  paragraphs: 3, paragraphChars: 1400, titleChars: 60, labelChars: 40, annotationChars: 60, idChars: 24,
+  paragraphs: 3, paragraphChars: 1400, titleChars: 60, subtitleChars: 90, focusPeriods: 4, labelChars: 40, annotationChars: 60, idChars: 24,
   quotes: 8, quoteChars: 600, tables: 3, tableRows: 8, tablePeriods: 8, tablePeers: 6,
 } as const;

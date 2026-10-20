@@ -82,6 +82,7 @@ iframe 最容易出的问题是"一个固定尺寸的盒子"：内部滚动条�
 4. **首帧与动效。** 格子先以正确高度占位（高度来自 CSS，不等 frame），frame 收到 `lens:render` 画完回 `lens:rendered`，host 再把格子 `opacity` 从 0 过渡到 1；lens 整体仍用现有的 `rise` 动画。frame 1.5 秒内没有 ready，host 用同一个 `renderSvg` 行内画出来（同样的图），iframe 是隔离手段而非依赖。
 5. **交互联动。** frame 发 `lens:hover {period}`，host 把 figures 块里同周期的行高亮；host 发 `lens:focus {period}`（用户点证据行）frame 高亮该列。这样图和表是一体的，而不是并排的两个东西。
 6. **CSP。** `_headers` 对 `/lens-frame.html` 单独覆盖 `frame-ancestors 'self'`（其余路径保持 `'none'`）；frame 文档自身的脚本来自同源 bundle，`script-src 'self'` 不变。opaque origin 下 `'self'` 按文档 URL 匹配，仍然成立；实施时在本地 wrangler 环境核验。
+7. **图要表达观点，而不只是画数据（2026-10-20）。** 图表声明可写 `title`（结论，而非指标名）、`subtitle`（怎么读：单位、彩色代表什么、第二行标签是什么）、`focus {periods, series}`（论点所依赖的期与序列：彩色并标数；其余期与序列画成灰色背景，默认最新一期）、`periodNote`（一条序列写成期标签下的第二行，例如柱下的利润率，不画成 mark）。单序列图标出每一期数值，重点期加粗。渲染器只认这几个声明，颜色与字号仍全部来自页面 token；模型依旧不写数字和样式。
 
 ## 合同
 

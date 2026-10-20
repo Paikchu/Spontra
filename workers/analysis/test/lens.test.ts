@@ -7,7 +7,7 @@ import type { LensChart, LensDocument } from "../../../shared/analysis-contract/
 import { evidenceCandidates, readFindingsPublication, readLensDocument, verifyFindings, type FindingData } from "../../../shared/analysis-runtime/findings.ts";
 import { auditDocument } from "../../../shared/analysis-runtime/lens/audit.ts";
 import { compileChart } from "../../../shared/analysis-runtime/lens/compile.ts";
-import { describeDocument } from "../../../shared/analysis-runtime/lens/describe.ts";
+import { describeChart, describeDocument } from "../../../shared/analysis-runtime/lens/describe.ts";
 import { documentFromEvidence, lensDocumentOf } from "../../../shared/analysis-runtime/lens/legacy.ts";
 import { renderChartSvg } from "../../../shared/analysis-runtime/lens/render.ts";
 import { compileDocument, verifyLensDocument } from "../../../shared/analysis-runtime/lens/verify.ts";
@@ -135,9 +135,29 @@ test("the renderer writes every label into the SVG and keeps its style free of a
   const svg = renderChartSvg(c, { width: 600, height: 260 });
   assert.match(svg, /^<svg class="lens-svg"/);
   assert.ok(svg.includes("$40.0B") && svg.includes("Operating cash flow") && svg.includes("2026.06"));
-  assert.ok(svg.includes('data-col="7" data-show=""'));
+  assert.ok(svg.includes('data-col="7" data-focus="" data-show=""'));
   assert.ok(!/data-hover="\d/.test(svg.slice(0, svg.indexOf("</style>"))));
   assert.ok(svg.includes("on the year"));
+});
+
+test("a chart says what it is about: focused periods and series in colour, the rest grey, a note row under the periods", () => {
+  const focused: LensChart = { ...chart, title: "Capex outran operating cash flow", subtitle: "Coloured columns are the quarter the judgment is about", focus: { periods: ["2025-12-31"], series: ["capex"] } };
+  const c = compileChart(focused, data, PERIOD).chart!;
+  assert.deepEqual(c.focus.periods, [c.periods.findIndex(p => p.end === "2025-12-31")]);
+  assert.deepEqual(c.focus.series, ["capex"]);
+  const svg = renderChartSvg(c, { width: 600, height: 300 });
+  assert.ok(svg.includes("Coloured columns are the quarter"));
+  assert.ok(svg.includes(`data-col="${c.focus.periods[0]}" data-focus=""`) && !svg.includes('data-col="7" data-focus'));
+  assert.ok(svg.includes('class="bar context"'));
+  assert.match(compileChart({ ...chart, focus: { series: ["nope"] } }, data, PERIOD).errors.join(), /focus names series nope/);
+  assert.match(compileChart({ ...chart, focus: { periods: ["2019-03-31"] } }, data, PERIOD).errors.join(), /focus period 2019-03-31/);
+  const noted: LensChart = { ...chart, series: [...chart.series, { id: "debt", ref: { capital: "debt" } }], periodNote: "debt" };
+  const n = compileChart(noted, data, PERIOD).chart!;
+  assert.equal(n.periodNote, "debt");
+  assert.ok(!n.focus.series.includes("debt"));
+  assert.ok(renderChartSvg(n, { width: 600, height: 300 }).includes('class="note'));
+  assert.match(compileChart({ ...noted, marks: [...chart.marks, { type: "line", series: ["debt"] }] }, data, PERIOD).errors.join(), /also drawn by a mark/);
+  assert.match(describeChart("c1", compileChart(focused, data, PERIOD)), /focus: .* drawn grey as context/);
 });
 
 test("the agent compiles, reads its errors back, and finishes only with a document that compiled; the publication carries it", async () => {
