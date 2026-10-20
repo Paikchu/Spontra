@@ -43,7 +43,24 @@ export type FindingBaseRef =
   /** A figure of one filed event (a Form 4's shares sold, proceeds, holdings after), read from the events publication by accession. */
   | { event: { id: string; field: EventField } }
   /** One rung of a tagged schedule (debt maturities, lease payments due, purchase obligations): year `bucket` 0–5 (5 = thereafter), or the total when `bucket` is "total". */
-  | { schedule: { kind: ScheduleKind; bucket: number | "total" } };
+  | { schedule: { kind: ScheduleKind; bucket: number | "total" } }
+  /** A figure the runtime computes from the statements by a fixed formula (docs/three-statement-analysis-design.md); the formula travels with the value. */
+  | { derived: DerivedMetric };
+/**
+ * Figures no statement states but every analyst computes, each by one formula in the shared runtime: EBITDA, net
+ * debt, invested capital, NOPAT, accruals, the operating section's non-cash and working-capital groups, year-average
+ * balances, the return on added capital, interest expense, net external funding, cash runway and debt-due coverage.
+ */
+export const DERIVED_METRICS = [
+  "ebitda", "netDebt", "investedCapital", "nopat", "accruals", "nonCashCharges", "workingCapitalChange",
+  "averageEquity", "averageAssets", "averageInvestedCapital", "incrementalReturn", "interestExpense",
+  "netExternalFunding", "cashRunwayMonths", "debtDueCoverage",
+  /** The statement's depreciation and amortization lines, or the SEC series in a quarter whose operating lines do not reconcile. */
+  "depreciationAmortization",
+  /** The statement's stock-based compensation lines, or the SEC series in a quarter whose operating lines do not reconcile. */
+  "stockCompensationExpense",
+] as const;
+export type DerivedMetric = (typeof DERIVED_METRICS)[number];
 export type EventField = "sharesSold" | "proceeds" | "averagePrice" | "sharesBought" | "cost" | "exercised" | "heldAfter";
 export const EVENT_FIELDS = ["sharesSold", "proceeds", "averagePrice", "sharesBought", "cost", "exercised", "heldAfter"] as const;
 /** What a peer reference may point at: a capital figure or a fundamental series; never another peer, a node or guidance. */
@@ -131,6 +148,24 @@ export type StatementHighlight = {
 /** One report's headline figures per statement view, most notable first. */
 export type ReportHighlights = { periodEnd: string; profit: StatementHighlight[]; cash: StatementHighlight[]; balance: StatementHighlight[] };
 
+/**
+ * A written analysis of one metric the three-statement checkup flags (docs/three-statement-analysis-design.md), read
+ * against the filings: what drives it, how it has moved across earlier reports and what management said then and now,
+ * whether it is structural or one-off, and what would settle it. Every number in a paragraph is one of the metric's own
+ * figures; the quotes are the filings' words, at least one from an earlier report than the current one.
+ */
+export type CheckupNoteQuote = { kind: "quote"; materialId: string; text: string };
+export type CheckupNote = {
+  metricId: string;
+  /** The checkup rules the note answers. */
+  ruleIds: string[];
+  /** One to three paragraphs; `sourceIds` are the material ids each rests on. */
+  paragraphs: ExplainerClaim[];
+  quotes: CheckupNoteQuote[];
+};
+/** The notes written for a report's checkup; served with the findings, their materials among the findings' materials. */
+export type CheckupNotes = { periodEnd: string; generatedAt: string; model: string; notes: CheckupNote[] };
+
 export type FindingsPublication = {
   schemaVersion: "findings.v1";
   ticker: string;
@@ -147,8 +182,10 @@ export type FindingsPublication = {
   highlights?: ReportHighlights[];
   /** Watches from earlier publications of this company, oldest first; scored on the page against current data. */
   record?: FindingRecordEntry[];
-  /** Sources the lens documents quote, by material id. */
+  /** Sources the lens documents and the checkup notes quote, by material id. */
   materials?: FindingMaterial[];
+  /** The checkup notes of the report, when written for it. */
+  checkup?: CheckupNotes;
 };
 
 /** A passage as the read route re-reads it for a publication's quotes and table cells. */

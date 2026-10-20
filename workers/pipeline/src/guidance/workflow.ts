@@ -15,25 +15,24 @@ import { researchSearch, researchSearchConfigured } from "../web-search/research
 import { D1SecRepository } from "../sec/d1.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
 import { fiscalPeriodKey, readFiscalPeriod } from "../sec/fiscal-period.ts";
+import { inFiscalSequence, quarterOf } from "../sec/fiscal-sequence.ts";
 import type { SecFilingFeed } from "../sec/sec.ts";
 import type { WorkflowStepContextLike, WorkflowStepLike } from "../workflow-core.ts";
 import { extractGuidance, GUIDANCE_EXTRACTOR_VERSION, GUIDANCE_MAX_OUTPUT_TOKENS, type GuidanceModelCall } from "./extract.ts";
 import { libraryExhibits } from "../filing-library/exhibits.ts";
-import { findIrDeck, AlphaVantageTranscriptProvider, readSecExhibits, reportedTranscriptRef, TranscriptAccessError, TranscriptQuotaError, type FoundMaterial, type TranscriptRef } from "./sources.ts";
+import { findIrDeck, readSecExhibits, reportedTranscriptRef, type FoundMaterial, type TranscriptRef } from "./sources.ts";
 import { GuidanceStore, type StoredMaterial } from "./store.ts";
 import { AiRunStore } from "../ai-runs/store.ts";
+import { transcriptForEvent } from "../transcripts/library.ts";
 
 export const guidanceCacheKey = (ticker: string) => `guidance:v1:${ticker}`;
 const irHostsKey = (ticker: string) => `guidance-ir-hosts:v1:${ticker}`;
 /**
- * `manual` is an operator's re-run: it extracts every material again under the current extractor
- * version and reads the transcript once instead of waiting days for it.
+ * `manual` is an operator's re-run: it extracts every material again under the current extractor version.
  */
 export type GuidanceWorkflowParams = { ticker: string; accession: string; eventDate: string; manual?: boolean };
 export type GuidanceStep = WorkflowStepLike & { sleep(name: string, durationMs: number): Promise<void> };
 
-/** Transcripts usually appear hours to a day after the call; four bounded re-checks, then give up. */
-export const TRANSCRIPT_WAIT_HOURS = [0, 3, 12, 36, 72];
 const EVENT_LOOKBACK_DAYS = 400;
 const DEFAULT_DAILY_MODEL_CALLS = 40;
 const DAILY_DECK_SEARCHES = 6;
@@ -41,13 +40,11 @@ const MODEL_BUDGET_MS = 3 * 60_000;
 /** Days a material waits for the daily model budget before the event goes on without it: a version change re-extracts the whole history. */
 const BUDGET_ROUNDS = 4;
 
-type TranscriptSource = { fetch(ticker: string, ref: TranscriptRef): Promise<FoundMaterial | null> };
 export type GuidanceDeps = {
   fetcher?: typeof fetch;
   /** The Workflow instance, so the cost ledger can name the run. */
   runId?: string;
   model?: GuidanceModelCall;
-  transcripts?: TranscriptSource | null;
   deckSearch?: Parameters<typeof findIrDeck>[0] | null;
   secExhibits?: typeof readSecExhibits;
 };
@@ -69,7 +66,9 @@ async function fiscalAnchors(repository: D1SecRepository, feed: SecFilingFeed | 
     if (period) anchors.push({ fiscalYear: period.fiscalYear, fiscalPeriod: period.fiscalPeriod, periodEnd: period.periodEnd });
     if (anchors.length >= 8 || period?.fiscalPeriod === "FY") break;
   }
-  return anchors;
+  // A quarter whose DEI repeats last year's label (Oracle, 2026-08-31) would date the guidance a year early.
+  const labelled = anchors.flatMap(a => { const quarter = quarterOf(a.fiscalPeriod); return quarter ? [{ ...a, quarter }] : []; });
+  return inFiscalSequence(labelled).map(({ quarter: _, ...anchor }) => anchor);
 }
 
 function modelCall(env: SecPipelineEnv, store: GuidanceStore, fetcher: typeof fetch, day: string, call: { ticker: string; runId?: string }): GuidanceModelCall {
@@ -158,6 +157,11 @@ export async function publishGuidance(env: SecPipelineEnv, ticker: string, now: 
   return { items: items.length, published: true };
 }
 
+/**
+ * One earnings event: its release's exhibits, the call the transcript library stored for it (attached by the guidance
+ * task; this Workflow never calls the transcript provider), and an IR deck when the SEC has none. An event of a company
+ * with no earnings 8-K stands under the filing the library found its period in, and reads only the stored call.
+ */
 export async function executeGuidanceWorkflow(params: GuidanceWorkflowParams, step: GuidanceStep, env: SecPipelineEnv, deps: GuidanceDeps = {}) {
   assertTrackedTicker(env, params.ticker);
   const fetcher = deps.fetcher ?? fetch;
@@ -167,14 +171,22 @@ export async function executeGuidanceWorkflow(params: GuidanceWorkflowParams, st
   const context = await step.do("guidance-context", async () => {
     const feed = (await new D1SecRepository(requireDb(env)).getCache<SecFilingFeed>(`sec:filings:${params.ticker}`))?.payload ?? null;
     const filing = feed?.filings.find(f => f.accessionNumber === params.accession);
-    if (!filing) throw new Error("Earnings filing is not in the cached SEC feed");
     // Started outside the sweep (a manual run): the event row still has to exist for coverage and status.
     await store().recordEvents(params.ticker, [{ accession: params.accession, eventDate: params.eventDate }], new Date().toISOString());
-    const period = await readFiscalPeriod(new D1SecRepository(requireDb(env)), filing);
+    const call = await transcriptForEvent(requireDb(env), params.ticker, params.accession, params.eventDate);
+    if (!filing && !(await store().eventMaterials(params.ticker, params.accession)).length) throw new Error("Earnings filing is not in the cached SEC feed");
+    const period = filing ? await readFiscalPeriod(new D1SecRepository(requireDb(env)), filing) : null;
     const quarter = period?.fiscalPeriod === "FY" ? 4 : Number(period?.fiscalPeriod.slice(1));
-    const ref: TranscriptRef | null = period && [1, 2, 3, 4].includes(quarter)
-      ? { fiscalYear: period.fiscalYear, quarter: quarter as TranscriptRef["quarter"], date: params.eventDate } : null;
-    return { cikNumber: filing.cikNumber, companyName: issuerNames(findSecurity(params.ticker)?.name ?? feed?.company?.name ?? params.ticker)[0]!, ref };
+    // The library's label is in fiscal sequence (a DEI that repeats last year's is corrected there); the filing's own next.
+    const ref: TranscriptRef | null = call?.fiscalYear && [1, 2, 3, 4].includes(call.fiscalQuarter ?? 0)
+      ? { fiscalYear: call.fiscalYear, quarter: call.fiscalQuarter as TranscriptRef["quarter"], date: params.eventDate }
+      : period && [1, 2, 3, 4].includes(quarter) ? { fiscalYear: period.fiscalYear, quarter: quarter as TranscriptRef["quarter"], date: params.eventDate } : null;
+    return {
+      cikNumber: filing?.cikNumber ?? null,
+      // A periodic report's exhibits are not a release; an event standing under one reads only its stored call.
+      exhibits: !!filing && /^(?:8-K|6-K)(?:\/A)?$/.test(filing.form),
+      companyName: issuerNames(findSecurity(params.ticker)?.name ?? feed?.company?.name ?? params.ticker)[0]!, ref,
+    };
   });
 
   const saveAll = async (found: FoundMaterial[]) => {
@@ -187,44 +199,23 @@ export async function executeGuidanceWorkflow(params: GuidanceWorkflowParams, st
   // event (a transcript, an IR deck), so nothing is fetched or searched for again.
   const { materials: sec, ref } = await step.do("guidance-sec", async () => {
     // The filing library already holds the release as text; EDGAR is read only when it does not.
-    const found = (!deps.secExhibits && env.DB ? await libraryExhibits(env.DB, params.ticker, params.accession, params.eventDate) : null)
-      ?? await (deps.secExhibits ?? readSecExhibits)({ cikNumber: context.cikNumber, accessionNumber: params.accession, filingDate: params.eventDate }, fetcher, env.SEC_USER_AGENT);
+    const found = !context.exhibits || context.cikNumber === null ? []
+      : (!deps.secExhibits && env.DB ? await libraryExhibits(env.DB, params.ticker, params.accession, params.eventDate) : null)
+        ?? await (deps.secExhibits ?? readSecExhibits)({ cikNumber: context.cikNumber, accessionNumber: params.accession, filingDate: params.eventDate }, fetcher, env.SEC_USER_AGENT);
     const saved = await saveAll(found);
     const stored = (await store().eventMaterials(params.ticker, params.accession)).filter(m => !saved.some(s => s.id === m.id));
     return { materials: [...saved, ...stored], ref: context.ref ?? reportedTranscriptRef(found, params.eventDate) };
   });
 
-  const transcripts = deps.transcripts !== undefined ? deps.transcripts
-    : env.ALPHA_VANTAGE_API_KEY ? new AlphaVantageTranscriptProvider(env.ALPHA_VANTAGE_API_KEY, fetcher) : null;
-  const dailyLimit = Number(env.GUIDANCE_DAILY_TRANSCRIPT_CALLS) > 0 ? Number(env.GUIDANCE_DAILY_TRANSCRIPT_CALLS) : 25;
-  type Probe = { ref: TranscriptRef | null; material: StoredMaterial | null; denied: boolean; quota: boolean };
-  const probe = (attempt: number) => step.do(`guidance-transcript-${attempt}`, async (): Promise<Probe> => {
-    if (!ref) return { ref, material: null, denied: true, quota: false };
-    if (!await store().reserve("guidance-transcript", new Date().toISOString().slice(0, 10), dailyLimit)) {
-      return { ref, material: null, denied: false, quota: true };
-    }
-    try {
-      const found = await transcripts!.fetch(params.ticker, ref);
-      return { ref, material: found ? (await saveAll([found]))[0] : null, denied: false, quota: false };
-    } catch (error) {
-      if (error instanceof TranscriptAccessError) return { ref, material: null, denied: true, quota: false };
-      if (error instanceof TranscriptQuotaError) return { ref, material: null, denied: false, quota: true };
-      throw error;
-    }
-  });
-  const storedTranscript = sec.find(m => m.kind === "transcript") ?? null;
-  let transcript: Probe = storedTranscript ? { ref, material: storedTranscript, denied: false, quota: false }
-    : transcripts ? await probe(0) : { ref, material: null, denied: false, quota: false };
-
-  const materials = [...sec, ...(transcript.material && transcript.material !== storedTranscript ? [transcript.material] : [])];
+  const materials = [...sec];
   const deckSearch = deps.deckSearch !== undefined ? deps.deckSearch : env.GUIDANCE_DECK_SEARCH !== "false" && researchSearchConfigured(env) ? researchSearch(env) : null;
-  if (deckSearch && transcript.ref && !sec.some(m => m.kind === "deck")) {
+  if (deckSearch && ref && context.exhibits && !sec.some(m => m.kind === "deck")) {
     const deck = await step.do("guidance-deck", async () => {
       const db = requireDb(env);
       if (!await store().reserve("guidance-search", new Date().toISOString().slice(0, 10), DAILY_DECK_SEARCHES)) return null;
       const repository = new D1SecRepository(db);
       const hosts = (await repository.getCache<string[]>(irHostsKey(params.ticker)))?.payload ?? [];
-      const found = await findIrDeck(deckSearch, { ticker: params.ticker, companyName: context.companyName, ref: transcript.ref!, hosts });
+      const found = await findIrDeck(deckSearch, { ticker: params.ticker, companyName: context.companyName, ref, hosts });
       if (!found) return null;
       if (!hosts.includes(found.host)) await repository.setCache(irHostsKey(params.ticker), [...hosts, found.host].slice(-3), new Date().toISOString());
       return (await saveAll([found.material]))[0];
@@ -232,14 +223,14 @@ export async function executeGuidanceWorkflow(params: GuidanceWorkflowParams, st
     if (deck) materials.push(deck);
   }
 
-  const reportedQuarter = () => transcript.ref ? `Q${transcript.ref.quarter} FY${transcript.ref.fiscalYear}` : null;
+  const reportedQuarter = ref ? `Q${ref.quarter} FY${ref.fiscalYear}` : null;
   const extract = async (list: StoredMaterial[], label: string) => {
     let pending = list.filter(m => m.status !== "unsupported");
     for (let round = 0; round < BUDGET_ROUNDS && pending.length; round++) {
       const deferred: StoredMaterial[] = [];
       for (const material of pending) {
         const outcome = await step.do(`guidance-extract-${material.id.slice(0, 16)}${round ? `-r${round}` : ""}`, (ctx) => extractStored(env, deps, material.id,
-          { ticker: params.ticker, companyName: context.companyName, eventDate: params.eventDate, reportedQuarter: reportedQuarter(), force: params.manual }, ctx));
+          { ticker: params.ticker, companyName: context.companyName, eventDate: params.eventDate, reportedQuarter, force: params.manual }, ctx));
         if (outcome.status === "deferred") deferred.push(material);
       }
       pending = deferred;
@@ -257,31 +248,25 @@ export async function executeGuidanceWorkflow(params: GuidanceWorkflowParams, st
   await publish("initial");
   await step.do("guidance-event-extracted", async () => store().updateEvent(params.ticker, params.accession, { status: "extracted" }, new Date().toISOString()));
 
-  if (transcripts && !transcript.material && !transcript.denied && !params.manual) {
-    const callTime = Date.parse(`${params.eventDate}T21:00:00Z`);
-    for (let attempt = 1; attempt < TRANSCRIPT_WAIT_HOURS.length && !transcript.material && !transcript.denied; attempt++) {
-      const now = Date.parse(await time(`transcript-${attempt}`));
-      // Past the last re-check (an event re-extracted long after its call), a missing transcript will not appear;
-      // only a spent quota is worth waiting for.
-      if (!transcript.quota && now >= callTime + TRANSCRIPT_WAIT_HOURS.at(-1)! * 3_600_000) break;
-      // A shared daily quota is different from a missing transcript: wait for the next UTC day.
-      const nextDay = new Date(now); nextDay.setUTCHours(24, 10, 0, 0);
-      const wait = transcript.quota ? nextDay.getTime() - now : callTime + TRANSCRIPT_WAIT_HOURS[attempt] * 3_600_000 - now;
-      if (wait > 0) await step.sleep(`guidance-transcript-wait-${attempt}`, wait);
-      transcript = await probe(attempt);
-    }
-    if (transcript.material) {
-      await extract([transcript.material], "transcript");
-      await publish("transcript");
-    }
+  // A call the library stored while this run read the release is extracted now rather than by another run.
+  const late = await step.do("guidance-late-materials", async () => (await store().eventMaterials(params.ticker, params.accession)).filter(m => !materials.some(x => x.id === m.id)));
+  if (late.length) {
+    await extract(late, "late");
+    await publish("late");
   }
-  const transcriptStatus = transcript.material ? "extracted" : !transcripts ? "not_configured" : "unavailable";
-  await step.do("guidance-event-complete", async () => {
-    await store().updateEvent(params.ticker, params.accession, { status: "complete", transcriptStatus }, new Date().toISOString());
-    // Coverage reflects the final transcript status.
-    if (transcriptStatus !== "extracted") await publishGuidance(env, params.ticker, new Date().toISOString());
+  const transcriptStatus = await step.do("guidance-event-complete", async () => {
+    const db = requireDb(env);
+    const own = (await store().eventMaterials(params.ticker, params.accession)).filter(m => m.kind === "transcript");
+    const call = await transcriptForEvent(db, params.ticker, params.accession, params.eventDate);
+    const status = own.some(m => m.status === "extracted") ? "extracted"
+      : env.TRANSCRIPTS_ENABLED !== "true" || !env.ALPHA_VANTAGE_API_KEY ? "not_configured"
+      : call && ["unavailable", "needs_period"].includes(call.status) ? "unavailable" : "pending";
+    await store().updateEvent(params.ticker, params.accession, { status: "complete", transcriptStatus: status }, new Date().toISOString());
+    // Coverage reflects the final transcript status; an extracted call is in the view already.
+    if (status !== "extracted") await publishGuidance(env, params.ticker, new Date().toISOString());
+    return status;
   });
-  return { status: "complete", materials: materials.length, transcript: transcriptStatus };
+  return { status: "complete", materials: materials.length + late.length, transcript: transcriptStatus };
 }
 
 /** Read-only: never starts extraction. A stored document that fails validation reads as preparing. */

@@ -5,6 +5,7 @@ import { COMPANY_ANALYSIS_PROMPT_VERSION } from "../company-analysis/contracts.t
 import { recoverCompanyAnalysis, startCompanyMemory } from "../core.ts";
 import { FINDINGS_VERSION, findingsFingerprint, LENS_VERSION } from "../findings/workflow.ts";
 import { ANALYST_VERSION, analystFingerprint, dossierCacheKey, emptyDossierKey } from "../analyst/workflow.ts";
+import { CHECKUP_NOTES_VERSION, checkupCacheKey, checkupFingerprint, emptyCheckupKey } from "../checkup/workflow.ts";
 import { findingsCacheKey } from "../findings/read.ts";
 import type { AiWorkflowBinding, SecPipelineEnv } from "../operations.ts";
 import type { AiRunKind } from "../../../../shared/analysis-contract/ai-runs-admin.ts";
@@ -24,7 +25,7 @@ const slug = (ticker: string) => ticker.replace(/[^A-Za-z0-9]/g, "-");
  * (null while there is nothing to write from), compared with what is published. A failed run is retried on the same
  * input after a growing wait, then becomes a dead letter (workflow-task.ts).
  */
-async function runWhenChanged(env: SecPipelineEnv, task: "findings" | "explainer" | "tree" | "analyst", kind: AiRunKind, ticker: string, { causeId, now, trigger }: TaskContext,
+async function runWhenChanged(env: SecPipelineEnv, task: "findings" | "explainer" | "tree" | "analyst" | "checkup", kind: AiRunKind, ticker: string, { causeId, now, trigger }: TaskContext,
   binding: AiWorkflowBinding<{ ticker: string; fingerprint: string }> | undefined, fingerprint: () => Promise<string | null>, published: () => Promise<string | null>): Promise<TaskOutcome> {
   return driveWorkflow(env, `${task}:${ticker}`, binding, async () => {
     const current = await fingerprint();
@@ -32,7 +33,7 @@ async function runWhenChanged(env: SecPipelineEnv, task: "findings" | "explainer
     // The last run failed on exactly this input: wait for its retry time, or stay until the dead letter is replayed.
     const failed = await failedInputOutcome(env, task, ticker, current, now);
     if (failed) return failed;
-    const id = `${task === "findings" ? "findings" : task === "tree" ? "business-tree" : task === "analyst" ? "analyst" : "business-explainer"}-${slug(ticker)}-${current.slice(0, 16)}-${now.getTime()}`;
+    const id = `${task === "findings" ? "findings" : task === "tree" ? "business-tree" : task === "analyst" ? "analyst" : task === "checkup" ? "checkup" : "business-explainer"}-${slug(ticker)}-${current.slice(0, 16)}-${now.getTime()}`;
     await quietly(() => new AiRunStore(env.DB!).start({ kind, ticker, runId: id, trigger: "schedule" }, now.toISOString()));
     return { id, params: { ticker, fingerprint: current }, fingerprint: current };
   }, { deadLetter: { task, ticker, causeId }, trigger });
@@ -73,6 +74,16 @@ export const AI_TASKS = {
       // A run that composed nothing counts as written for its input; a published dossier clears that record.
       const published = async () => await storedFingerprint(env, emptyDossierKey(ticker))() ?? await storedFingerprint(env, dossierCacheKey(ticker))();
       return runWhenChanged(env, "analyst", "analyst", ticker, context, env.ANALYST_WORKFLOW, () => analystFingerprint(env, ticker), published);
+    },
+  },
+
+  /** Checkup notes: rewritten when the flags, the periodic filings in the library or the prompt change; with the analyst switch. */
+  checkup: {
+    version: CHECKUP_NOTES_VERSION,
+    async run(env, ticker, context): Promise<TaskOutcome> {
+      if (env.ANALYST_ENABLED !== "true") return { status: "done", detail: { skipped: "analyst disabled" } };
+      const published = async () => await storedFingerprint(env, emptyCheckupKey(ticker))() ?? await storedFingerprint(env, checkupCacheKey(ticker))();
+      return runWhenChanged(env, "checkup", "checkup", ticker, context, env.CHECKUP_WORKFLOW, () => checkupFingerprint(env, ticker), published);
     },
   },
 

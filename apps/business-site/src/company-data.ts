@@ -41,11 +41,19 @@ export async function fetchCompany(ticker: string, signal: AbortSignal, rev?: st
 }
 
 /** A supplementary resource answers on its own; anything but "ready" reads as null. */
-export async function fetchSupplement<T>(ticker: string, resource: "capital" | "findings" | "fundamentals" | "events" | "filings", signal: AbortSignal, rev?: string): Promise<T | null> {
+export async function fetchSupplement<T>(ticker: string, resource: "findings" | "fundamentals" | "events" | "filings", signal: AbortSignal, rev?: string): Promise<T | null> {
   const response = await fetch(companyPath(ticker, "/" + resource, rev), { signal });
   if (!response.ok) return null;
   const body = await response.json() as { status?: string } & Record<string, unknown>;
   return body.status === "ready" ? body[resource] as T : null;
+}
+
+/** The capital structure with the company's comparable peers, as the site serves them together. */
+export async function fetchCapital(ticker: string, signal: AbortSignal, rev?: string): Promise<{ capital: PublicCapitalStructure; peers: PeersPublication | null } | null> {
+  const response = await fetch(companyPath(ticker, "/capital", rev), { signal });
+  if (!response.ok) return null;
+  const body = await response.json() as { status?: string; capital?: PublicCapitalStructure | null; peers?: PeersPublication | null };
+  return body.status === "ready" && body.capital ? { capital: body.capital, peers: body.peers ?? null } : null;
 }
 
 /** The findings with the passages their quotes rest on and the peers projection, as the site serves them together. */
@@ -78,7 +86,7 @@ export async function loadDigest(ticker: string, signal: AbortSignal): Promise<C
   if (!findings?.findings.length) return null;
   const [company, capital, fundamentals] = await Promise.all([
     fetchCompany(ticker, signal),
-    fetchSupplement<PublicCapitalStructure>(ticker, "capital", signal).catch(() => null),
+    fetchCapital(ticker, signal).then(r => r?.capital ?? null).catch(() => null),
     fetchSupplement<FindingFundamentals>(ticker, "fundamentals", signal).catch(() => null),
   ]);
   const flow = publicationFlow(company, ticker);

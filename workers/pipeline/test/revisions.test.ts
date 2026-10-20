@@ -44,8 +44,9 @@ test("a global publication counts for every company; another company's does not"
     { type: "peers.published", ticker: "*", at: "2026-10-16T04:00:00.000Z" },
     { type: "events.published", ticker: "ORCL", at: "2026-10-16T05:00:00.000Z" },
   ]));
-  assert.deepEqual(await readRevisions(db, "MSFT"), { findings: "2026-10-16T04:00:00.000Z" });
-  assert.deepEqual(await readRevisions(db, "ORCL"), { findings: "2026-10-16T04:00:00.000Z", events: "2026-10-16T05:00:00.000Z" });
+  // Peers ride with the findings (cited peers) and with the capital structure (the checkup's comparable peers).
+  assert.deepEqual(await readRevisions(db, "MSFT"), { findings: "2026-10-16T04:00:00.000Z", capital: "2026-10-16T04:00:00.000Z" });
+  assert.deepEqual(await readRevisions(db, "ORCL"), { findings: "2026-10-16T04:00:00.000Z", capital: "2026-10-16T04:00:00.000Z", events: "2026-10-16T05:00:00.000Z" });
 });
 
 test("the read API answers a company's revisions uncached", async () => {

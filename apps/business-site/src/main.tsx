@@ -83,7 +83,7 @@ function StateShell({ ticker, tools, role, children }: { ticker: string; tools: 
 }
 function Company({ ticker, tools, onSeen }: { ticker: string; tools: ReactNode; onSeen: (ticker: string) => void }) {
   const { data, updates, failed, retry, update, apply, dismiss } = useLiveCompany(ticker, onSeen);
-  const { flow, publication, capital, findings, fundamentals, events, filings } = data;
+  const { flow, publication, capital, peers, findings, fundamentals, events, filings } = data;
   if (flow)
     return (
       <ChartBoundary ticker={ticker} tools={tools}>
@@ -96,7 +96,7 @@ function Company({ ticker, tools, onSeen }: { ticker: string; tools: ReactNode; 
           tree={publication?.tree ?? null}
           guidance={publication?.guidance ?? null}
           capital={capital}
-          findings={findings?.findings ?? null} peers={findings?.peers ?? null} passages={findings?.passages ?? null}
+          findings={findings?.findings ?? null} peers={findings?.peers ?? null} rankPeers={peers} passages={findings?.passages ?? null}
           fundamentals={fundamentals}
           events={events}
           filings={filings}

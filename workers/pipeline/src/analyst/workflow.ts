@@ -27,7 +27,7 @@ import { runAnalyst, type AnalystModel, type AnalystOutcome, type AnalystRunInpu
 import { planFinding } from "./plan.ts";
 
 /** Changing the analyst's prompt, lines, harness or grammar re-researches every company once. */
-export const ANALYST_VERSION = "analyst.react.v5";
+export const ANALYST_VERSION = "analyst.react.v6";
 export const dossierCacheKey = (ticker: string) => `dossier:v1:${ticker}`;
 /** The input of the last run that composed nothing; the same input is not researched again until it changes. */
 export const emptyDossierKey = (ticker: string) => `dossier:empty:v1:${ticker}`;

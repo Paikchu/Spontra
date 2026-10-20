@@ -23,7 +23,7 @@ export function verifiedFindings(publication: FindingsPublication | null, data: 
 }
 
 /** Sankey node names a finding lights on the profit statement: its businesses, and the statement lines it names. */
-export function anchorNodeNames(f: VerifiedFinding, quarter: BusinessFlowQuarter | undefined, items: Array<{ id: string; key: string }>): Set<string> {
+export function anchorNodeNames(f: Pick<VerifiedFinding, "anchors">, quarter: BusinessFlowQuarter | undefined, items: Array<{ id: string; key: string }>): Set<string> {
   const names = new Set<string>();
   for (const id of f.anchors.nodeIds) { const item = items.find(i => i.id === id); if (item) names.add("segment:" + item.key); }
   for (const metric of f.anchors.metrics) {
@@ -38,7 +38,7 @@ export function anchorNodeNames(f: VerifiedFinding, quarter: BusinessFlowQuarter
 }
 
 /** Pool item keys a finding lights on the cash-flow or balance-sheet pool (see capital-model's item keys). */
-export function anchorPoolKeys(f: VerifiedFinding): Set<string> {
+export function anchorPoolKeys(f: Pick<VerifiedFinding, "anchors">): Set<string> {
   const keys = new Set<string>();
   const add = (...list: string[]) => list.forEach(k => keys.add(k));
   for (const metric of f.anchors.capital ?? []) {

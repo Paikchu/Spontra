@@ -48,7 +48,7 @@ function capitalQuarter(end: string, i: number): CapitalQuarter {
         { id: "l", label: "Lease liabilities", concept: "x", group: "leases", value: "7000000000" },
         { id: "ca", label: "Deferred revenue", concept: "x", group: "customerAdvances", value: "9000000000" },
       ],
-      equity: [], totals: { assets: "200000000000", liabilities: "80000000000", equity: "120000000000", currentAssets: null, currentLiabilities: null }, source: source(i),
+      equity: [], totals: { assets: "200000000000", liabilities: "80000000000", equity: "120000000000", currentAssets: "90000000000", currentLiabilities: "60000000000" }, source: source(i),
     } };
 }
 const data: FindingData = {
@@ -85,6 +85,9 @@ test("every figure reads with the findings runtime's quarter semantics, newest f
   assert.equal(f.rpo, "140000000000");
   assert.equal(f.depreciation, "7000000000", "depreciation and amortization non-cash lines, not SBC");
   assert.equal(f.stockBasedCompensation, "3000000000");
+  assert.equal(f.receivables, "0", "a reconciled sheet with no receivable line reads as zero, as the findings runtime reads it");
+  assert.equal(f.currentAssets, "90000000000");
+  assert.equal(f.currentLiabilities, "60000000000");
   assert.deepEqual(quarters[0].accessions, ["0009", "s1", "sbc-1"], "statement, flow source and series filings, each once");
   assert.ok(PEER_FIGURES.every(figure => figure in f));
 });

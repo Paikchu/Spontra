@@ -1,6 +1,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { modelFor, reasoningFor } from "../ai-config.ts";
 import type { ExplainerSource } from "../../../../shared/analysis-contract/business-explainer.ts";
+import { STATEMENT_ANALYSIS_VERSION } from "../../../../shared/analysis-contract/statement-analysis.ts";
 import { issuerNames } from "../../../../shared/analysis-runtime/business-tree.ts";
 import { readFindingFundamentals, readFindingsPublication, type FindingData } from "../../../../shared/analysis-runtime/findings.ts";
 import type { FindingRecordEntry, FindingsPublication } from "../../../../shared/analysis-contract/findings.ts";
@@ -26,7 +27,7 @@ import { outboxStatement } from "../pipeline/outbox.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 
 /** Changing the prompt or the ledger regenerates every company once. */
-export const FINDINGS_VERSION = "findings.writer.v9";
+export const FINDINGS_VERSION = "findings.writer.v10";
 /** Changing the lens agent's prompt, grammar or harness redraws every company's findings once (through the findings fingerprint). */
 export const LENS_VERSION = "lens.agent.v2";
 export type FindingsWorkflowParams = { ticker: string; fingerprint: string };
@@ -68,7 +69,7 @@ export async function findingsInput(env: SecPipelineEnv, ticker: string): Promis
   // that changes nothing must not rewrite the findings.
   // Guidance by what it says: a republish that only stamps a new time or moves a transcript's coverage status is not new input.
   const guidanceContent = guidance ? await sha256(JSON.stringify([guidance.items, guidance.sources])) : null;
-  const fingerprint = await sha256(JSON.stringify({ version: FINDINGS_VERSION, lens: LENS_VERSION, ticker, periodEnd: newest.periodEnd, guidance: guidanceContent, analysis: analysis?.generatedAt ?? null,
+  const fingerprint = await sha256(JSON.stringify({ version: FINDINGS_VERSION, lens: LENS_VERSION, checkup: STATEMENT_ANALYSIS_VERSION, ticker, periodEnd: newest.periodEnd, guidance: guidanceContent, analysis: analysis?.generatedAt ?? null,
     quarters: quarters.map(q => q.periodEnd).sort(), capital: capital?.quarters.map(q => q.periodEnd).sort() ?? [], rpo: capital?.quarters.find(q => q.periodEnd === newest.periodEnd)?.rpo?.total ?? null }));
   return { data, ledger, context, fingerprint };
 }

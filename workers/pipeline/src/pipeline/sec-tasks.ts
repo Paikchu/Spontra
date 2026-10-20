@@ -4,6 +4,7 @@ import { refreshCompanyEvents, secAccessPaused } from "../events/workflow.ts";
 import { eventsCacheKey } from "../events/read.ts";
 import { guidanceWorkflowSuffix } from "../guidance/extract.ts";
 import { GuidanceStore } from "../guidance/store.ts";
+import { attachLibraryTranscripts } from "../guidance/transcripts.ts";
 import { earningsEvents, publishGuidance } from "../guidance/workflow.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import type { SecFilingFeed } from "../sec/sec.ts";
@@ -99,12 +100,14 @@ export const SEC_TASKS = {
   },
 
   /**
-   * Records the company's earnings 8-Ks from the indexed filing list and starts guidance extraction for those not yet
-   * processed, two at a time; each Workflow publishes on its own (`guidance.published`). With every event settled, the
-   * view is published again only if a rebuild reads differently.
+   * Records the company's earnings 8-Ks from the indexed filing list, gives each call the transcript library stored
+   * (`transcript.stored`) to its event, and starts guidance extraction for the events not yet processed, two at a time;
+   * each Workflow publishes on its own (`guidance.published`). With every event settled, the view is published again
+   * only if a rebuild reads differently.
    */
   guidance: {
-    version: "guidance.v2",
+    // v3: calls come from the transcript library, including for companies with no earnings 8-K.
+    version: "guidance.v3-library-transcripts",
     async run(env, ticker, { now, causeId }): Promise<TaskOutcome> {
       if (env.GUIDANCE_ENABLED !== "true" || !env.GUIDANCE_WORKFLOW) return { status: "done", detail: { skipped: "guidance disabled" } };
       const db = env.DB!, stamp = now.toISOString();
@@ -112,10 +115,13 @@ export const SEC_TASKS = {
       const feed = (await new D1SecRepository(db).getCache<SecFilingFeed>(`sec:filings:${ticker}`))?.payload ?? null;
       const events = earningsEvents(feed, now.getTime());
       await store.recordEvents(ticker, events, stamp);
+      const transcripts = await attachLibraryTranscripts(env, ticker, events, now);
       const reconciled = await reconcileGuidance(env, ticker, causeId, now);
+      // An event queued again after a run under this version (a transcript arrived) needs a new instance id.
+      const rerun = (id: string | null) => id?.endsWith(`-${guidanceWorkflowSuffix()}`) ? Math.floor(now.getTime() / 1000) : 0;
       const queued = [
         ...reconciled.retry.slice(0, 2).map(r => ({ ticker, accession: r.accession, event_date: r.eventDate, attempt: r.attempt })),
-        ...(await store.queuedEvents([ticker], 2)).map(e => ({ ...e, attempt: 0 })),
+        ...(await store.queuedEvents([ticker], 2)).map(e => ({ ...e, attempt: rerun(e.workflow_instance_id) })),
       ].slice(0, 2);
       const started: string[] = [];
       for (const event of queued) {
@@ -129,13 +135,13 @@ export const SEC_TASKS = {
         await store.updateEvent(event.ticker, event.accession, { status: "started", workflowInstanceId: id }, stamp);
         started.push(event.accession);
       }
-      if (queued.length >= 2) return { status: "later", afterMs: SECOND, detail: { recorded: events.length, started, retried: reconciled.retry.length } };
+      if (queued.length >= 2) return { status: "later", afterMs: SECOND, detail: { recorded: events.length, transcripts, started, retried: reconciled.retry.length } };
       // A run still going may yet fail, and a failed one has a retry due: come back for both.
       const running = await db.prepare("SELECT 1 FROM earnings_events WHERE ticker = ? AND status = 'started' LIMIT 1").bind(ticker).first();
       // Every event settled: the view is rebuilt when an input it reads moved since it was published, such as the
       // fiscal periods a new filing list brings, which date the items.
       const republished = !started.length && !running && (await publishGuidance(env, ticker, stamp, { onlyIfChanged: true })).published;
-      const detail = { recorded: events.length, started, retried: reconciled.retry.length, republished };
+      const detail = { recorded: events.length, transcripts, started, retried: reconciled.retry.length, republished };
       const untilRetry = reconciled.nextAt === null ? null : Math.max(SECOND, reconciled.nextAt - now.getTime());
       const afterMs = running ? Math.min(untilRetry ?? Infinity, 30 * MINUTE) : untilRetry;
       return afterMs === null ? { status: "done", detail } : { status: "later", afterMs, detail };

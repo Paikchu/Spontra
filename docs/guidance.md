@@ -4,15 +4,15 @@
 
 ## 流程
 
-每个 8-K Item 2.02 业绩发布对应一个 `GuidanceWorkflow` 实例（`workers/pipeline/src/guidance/`）：
+每个业绩事件对应一个 `GuidanceWorkflow` 实例（`workers/pipeline/src/guidance/`）。业绩事件是 8-K Item 2.02 业绩发布；没有这类 8-K 的公司（以 6-K 报季度的外国发行人、随 10-Q 发布业绩的公司），[Transcript 全文库](transcripts.md) 存下的每份电话会文字稿自成一个事件，键为 Transcript 库发现该期所用申报的 accession，日期为其申报日：
 
 1. **事件**：`*/10` Cron 的 `runGuidanceSweep` 只读取已缓存的 SEC filings feed（不发 SEC 请求），登记 400 天内的业绩 8-K 到 `earnings_events`，每次最多启动 2 个实例（新的优先）。实例 id 含 accession 与提取器版本，同一事件同一版本只处理一次。
-2. **材料**：读取同 accession 的 EX-99.x（`<TYPE>` 为准）；二进制附件（uuencode PDF/PPT）记为 `unsupported`，不当文本解析。Alpha Vantage 转录按公司财年财季请求：优先使用该业绩分组关联的 SEC DEI 财期，否则从财报新闻稿标题确定已报告季度；不根据发布日期猜自然季度，也不从前瞻指引取季度。未知财季时跳过转录请求。接口返回的全部发言按顺序保存，包含分析师问答；不截断。接口不提供会议日期，材料日期沿用 SEC 业绩事件日期。SEC 无 deck 且已知季度时，Tavily 搜一次公司自有域名的 deck，正文必须写明同一财季，否则丢弃；命中的域名记入 `guidance-ir-hosts:v1:{ticker}`，以后限定在这些域名内搜索。
+2. **材料**：8-K/6-K 事件读取同 accession 的 EX-99.x（`<TYPE>` 为准）；二进制附件（uuencode PDF/PPT）记为 `unsupported`，不当文本解析。以 10-Q/10-K/20-F 为键的事件不读附件。电话会文字稿只来自 Transcript 库，指引不调用 Alpha Vantage：库存下一份（`transcript.stored`）时，指引任务把它挂到报告该季度的业绩发布（期末后 100 天内的第一份 8-K Item 2.02），没有则另建事件；已处理过的事件重新排队，新实例只提取未提取过的材料。标签与财期顺序不符的库记录不挂，等库按纠正后的季度重取。已报告季度优先取 Transcript 库按财期顺序纠正后的标签，其次业绩分组关联的 SEC DEI 财期，再次新闻稿标题；不根据发布日期猜自然季度，也不从前瞻指引取季度。全部发言按顺序保存，包含分析师问答；不截断。材料日期沿用业绩事件日期。SEC 无 deck 且已知季度时，Tavily 搜一次公司自有域名的 deck，正文必须写明同一财季，否则丢弃；命中的域名记入 `guidance-ir-hosts:v1:{ticker}`，以后限定在这些域名内搜索。
 3. **预筛**（`locate.ts`）：只保留前瞻词 + 数字/方向词的段落；Outlook/Guidance 标题下的表格整段保留；safe harbor 等样板剔除；电话会与 deck 带前后各一段上下文。6,000 字符以内的短文档整篇发送。
 4. **提取**（`extract.ts`）：每份文档一次 DeepSeek 调用（JSON、`max_tokens` 8192），system prompt 字节固定以命中前缀缓存。
 5. **核验**（`shared/analysis-runtime/guidance.ts`）：quote 必须逐字出现在原文（忽略大小写、空白、引号与破折号差异）；每个数值必须出现在 quote 中（支持区间共用量级词、basis points）；单位须与 measure 一致；季度/年度必须有财年。失败项只发一次 repair 调用，仍失败则丢弃。
 6. **归并与发布**：同一事件内多份材料重复的同一指引合并引用（新闻稿 > 股东信 > deck > 电话会；数值冲突时保留优先来源）；跨事件按中值、区间宽度判定上调/下调/维持/收窄/放宽；增速指引用上年同期实际收入换算为金额（`derived`）；季度实际收入到达后附上 `actual`。财年→日期由同公司任一 10-Q/10-K 的 DEI 财期锚定推算。结果写入 `sec_cache` 的 `guidance:v1:{ticker}`。
-7. **等待电话会**：新闻稿先发布；转录未出现时在电话会后 3/12/36/72 小时各查一次（`step.sleep`，休眠不计费），之后标记 `unavailable`。
+7. **电话会状态**：实例不等待文字稿。结束时有已提取的文字稿为 `extracted`；Transcript 库该期为不可用（或无法确认财期）为 `unavailable`；未配置 Transcript 库为 `not_configured`；否则 `pending`，库存下后由 `transcript.stored` 再跑。运行中挂上的文字稿在实例结束前补提取。
 
 ## 存储
 
@@ -34,7 +34,7 @@
 - 内容哈希去重 + 提取缓存：重跑、重试、重复发现都不会再次调用模型。
 - 预筛压缩输入；一文档一调用；确定性核验替代模型复核；repair 最多一次且只带失败条目。
 - 每日模型调用上限 `GUIDANCE_DAILY_MODEL_CALLS`（默认 40），用尽后实例休眠到次日 UTC 继续。
-- 转录请求通过 D1 共享预算 `guidance-transcript` 控制，`GUIDANCE_DAILY_TRANSCRIPT_CALLS` 默认 25。每次请求（含失败）占一次额度；额度用尽或供应商限流时，先发布 SEC 材料，重查延迟至次日 UTC，仍最多重查四次。该预算只覆盖本 Pipeline，其他程序共用密钥的请求也会消耗供应商额度。
+- 转录请求只由 Transcript 库发出，预算 `guidance-transcript`（`GUIDANCE_DAILY_TRANSCRIPT_CALLS` 默认 25）见 [Transcript 全文库](transcripts.md)。该预算只覆盖本 Pipeline，其他程序共用密钥的请求也会消耗供应商额度。
 - 只处理 `SEC_AI_TICKERS`。
 
 ## 启用

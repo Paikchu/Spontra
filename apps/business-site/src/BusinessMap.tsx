@@ -1,5 +1,5 @@
 import { Button } from "@/packages/web/src/ui/button";
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 import type { BusinessFlowQuarter, BusinessSegment, FlowMetric, FlowSource, PublicBusinessFlow } from "@/shared/analysis-contract/business-flow";
 import { deficitFinancialGraph, financialGraph, trunkGraph, type FinancialGraph } from "@/packages/web/src/model/business-flow-sankey";
 import { compactFlowValue, truncateToWidth, type PlacedNode } from "@/packages/web/src/model/business-flow-layout";
@@ -43,6 +43,11 @@ import { lazy, Suspense } from "react";
 import { getLocale, messages } from "@/packages/web/src/i18n";
 import { SourceLanguage, langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import { compactShares, multiple, perShare, qoqLabel, yoyLabel } from "@/shared/analysis-runtime/locale";
+import { assessStatements, peerRanks } from "@/shared/analysis-runtime/statement-analysis";
+import { verifyNote } from "@/shared/analysis-runtime/checkup-notes";
+import type { Flag, FlagLevel } from "@/shared/analysis-contract/statement-analysis";
+import type { FindingRef } from "@/shared/analysis-contract/findings";
+import { checkupSources, figureLevel, LEVEL_LABEL, LevelMark, MetricLens, PanelSwitch, ViewFlags, viewFlags, ViewMetrics, viewMetrics } from "./Checkup";
 
 const m = messages({
   lastYear: "last year", lastQuarter: "last quarter", yearAgo: "Year ago", lastQuarterPeriod: "Last quarter",
@@ -118,6 +123,8 @@ const none = (): FlowChange => ({ label: flowWords.na, comparable: false, trend:
 const shortName = (name: string) => truncateToWidth(name, 13);
 const shortPeriod = (end: string) => end.slice(0, 7).replace("-", ".");
 type View = "profit" | "cash" | "balance";
+type StatementView = View;
+const VIEWS: readonly View[] = ["profit", "cash", "balance"];
 /** Every change on the stage is against one base: the same quarter a year earlier (YoY) or the quarter before (QoQ). */
 type Basis = "yoy" | "qoq";
 const basisWords = (basis: Basis): CompareBasis & { period: string } => basis === "yoy"
@@ -189,10 +196,10 @@ function useTween(target: number | null, ms = 650) {
   return value;
 }
 
-function Stat({ label, value, format, note, tone }: { label: string; value: number | null; format: (v: number | null) => string; note?: string; tone?: "up" | "down" }) {
+function Stat({ label, value, format, note, tone, level }: { label: string; value: number | null; format: (v: number | null) => string; note?: string; tone?: "up" | "down"; /** The most pressing checkup flag about this figure. */ level?: FlagLevel }) {
   const shown = useTween(value);
-  return <div className="stat">
-    <span className="stat-label">{label}</span>
+  return <div className="stat" data-level={level}>
+    <span className="stat-label">{level && <LevelMark level={level} label={LEVEL_LABEL[level]} />}{label}</span>
     <strong className="stat-value">{format(shown)}</strong>
     {note && <span className="stat-note" data-trend={tone}>{note}</span>}
   </div>;
@@ -214,19 +221,26 @@ function highlightValue(v: number | null, r: ResolvedValue, ref: ResolvedEvidenc
  * figure, or its change when the rate is the news; the note carries the other, and the label is left out of the note
  * when the title already names it.
  */
-function HighlightStats({ tiles }: { tiles: VerifiedHighlight[] }) {
+function HighlightStats({ tiles, flags = [] }: { tiles: VerifiedHighlight[]; flags?: Flag[] }) {
   return <div className="stats" aria-live="polite">{tiles.map(tile => {
+    const flagLevel = figureLevel(flags, refFigure(tile.ref));
     const r = tile.resolved, change = highlightChange(r, getLocale()), basis = r.evidence.compare === "qoq" ? qoqLabel(getLocale()) : yoyLabel(getLocale());
     const level = (v: ResolvedValue | null) => v ? highlightValue(v.value, v, tile.ref) : "";
     const tone = change && r.delta && higherIsBetter(tile.ref) ? r.delta > 0 ? "up" : "down" : undefined;
     if (tile.show === "change" && r.delta != null) {
       const note = `${level(r.current)}${r.compare ? ` · ${r.compareLabel} ${level(r.compare)}` : ""}`;
-      return <Stat key={JSON.stringify(tile.ref)} label={`${tile.title} · ${basis}`} value={r.delta} format={v => v == null ? "—" : formatChange(v, r, getLocale())} note={note} tone={tone} />;
+      return <Stat key={JSON.stringify(tile.ref)} label={`${tile.title} · ${basis}`} value={r.delta} format={v => v == null ? "—" : formatChange(v, r, getLocale())} note={note} tone={tone} level={flagLevel} />;
     }
     const named = tile.title.toLowerCase() === r.label.toLowerCase() ? "" : `${r.label} · `;
     const note = change ? `${named}${basis} ${change}` : r.compare ? `${named}${r.compareLabel} ${level(r.compare)}` : named.slice(0, -3) || undefined;
-    return <Stat key={JSON.stringify(tile.ref)} label={tile.title} value={r.current.value} format={v => highlightValue(v, r.current, tile.ref)} note={note} tone={tone} />;
+    return <Stat key={JSON.stringify(tile.ref)} label={tile.title} value={r.current.value} format={v => highlightValue(v, r.current, tile.ref)} note={note} tone={tone} level={flagLevel} />;
   })}</div>;
+}
+
+/** The statement figure a tile shows: a ratio's numerator, or the figure itself. */
+function refFigure(ref: FindingRef): { metric?: string; capital?: string } {
+  if ("ratio" in ref) return refFigure(ref.ratio.numerator);
+  return "metric" in ref ? { metric: ref.metric } : "capital" in ref ? { capital: ref.capital } : {};
 }
 
 function Sources({ sources, ids }: { sources: FlowSource[]; ids?: string[] }) {
@@ -235,7 +249,7 @@ function Sources({ sources, ids }: { sources: FlowSource[]; ids?: string[] }) {
   return <ul className="sources">{list.map(s => <li key={s.id}><a href={s.url} target="_blank" rel="noopener noreferrer">{s.title}<span aria-hidden="true"> ↗</span></a></li>)}</ul>;
 }
 
-export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, explainer = null, tree = null, guidance = null, capital = null, findings = null, peers = null, passages = null, fundamentals = null, events = null, filings = null, updates = 0 }: { ticker: string; tools: ReactNode; flow: PublicBusinessFlow; notice: string | null; revenueHistory: RevenueHistory | null; explainer?: BusinessExplainer | null; tree?: BusinessTree | null; guidance?: GuidancePublication | null; capital?: PublicCapitalStructure | null; findings?: FindingsPublication | null; peers?: PeersPublication | null; passages?: FindingPassage[] | null; fundamentals?: FindingFundamentals | null; events?: EventsPublication | null; filings?: PublicFilingDigestPage | null; /** Updates the reader took; rows they brought enter animated. */ updates?: number }) {
+export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, explainer = null, tree = null, guidance = null, capital = null, findings = null, peers = null, rankPeers = null, passages = null, fundamentals = null, events = null, filings = null, updates = 0 }: { ticker: string; tools: ReactNode; flow: PublicBusinessFlow; notice: string | null; revenueHistory: RevenueHistory | null; explainer?: BusinessExplainer | null; tree?: BusinessTree | null; guidance?: GuidancePublication | null; capital?: PublicCapitalStructure | null; findings?: FindingsPublication | null; peers?: PeersPublication | null; /** The company and its comparable peers, for the checkup's ranks. */ rankPeers?: PeersPublication | null; passages?: FindingPassage[] | null; fundamentals?: FindingFundamentals | null; events?: EventsPublication | null; filings?: PublicFilingDigestPage | null; /** Updates the reader took; rows they brought enter animated. */ updates?: number }) {
   const quarters = useMemo(() => [...flow.quarters].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd)), [flow]);
   const [period, setPeriod] = useState<string | null>(null);
   const quarter = quarters.find(q => q.id === period) ?? quarters[0];
@@ -253,6 +267,17 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
   const verified = useMemo(() => verifiedFindings(findings, data), [findings, data]);
   // Scored watches: pass or fail once the watched period reported, from the same data the stage draws.
   const verdicts = useMemo(() => Object.fromEntries(verified.flatMap(f => { const v = f.watch?.test ? watchVerdict(data, f.watch, f.periodEnd) : null; return v ? [[f.id, v.verdict]] : []; })) as Record<string, "pass" | "fail">, [verified, data]);
+  // The three-statement checkup of the quarter on the stage, from the same data; its flags come alerts first.
+  const assessment = useMemo(() => quarter ? assessStatements(data, quarter.periodEnd, getLocale()) : null, [data, quarter]);
+  const ranks = useMemo(() => assessment ? peerRanks({ ...data, peers: rankPeers ?? data.peers }, assessment, ticker) : {}, [assessment, data, rankPeers, ticker]);
+  const flags = useMemo(() => assessment?.flags ?? [], [assessment]);
+  const assessedMetrics = useMemo(() => new Map(assessment?.dimensions.flatMap(d => d.metrics).map(metric => [metric.id, metric]) ?? []), [assessment]);
+  // A metric's cell carries its most pressing flag.
+  const flagged = useMemo(() => { const out = new Map<string, Flag>(); for (const f of flags) if (!out.has(f.metricId)) out.set(f.metricId, f); return out; }, [flags]);
+  // A metric of the analysis can hold the stage, as a finding does; `?check=` keeps it in the address.
+  const [checkId, setCheckId] = useState<string | null>(() => new URLSearchParams(location.search).get("check"));
+  // The panel under the chart shows the trend or the view's metrics; the profit view opens on its trend, the others on their metrics.
+  const [panels, setPanels] = useState<Partial<Record<View, "trend" | "metrics">>>({});
   const [detail, setDetail] = useState(() => new URLSearchParams(location.search).has("detail"));
   const [focusId, setFocusId] = useState<string | null>(() => new URLSearchParams(location.search).get("finding"));
   const [story, setStory] = useState(false);
@@ -267,6 +292,8 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
   const railList = useMemo(() => rail ? [...rail.recent, ...rail.earlier] : [], [rail]);
   const focusedEvent = focusId || reportId ? null : events?.events.find(e => e.id === eventId) ?? null;
   const focusedReport = focusId ? null : filings?.filings.find(f => f.accessionNumber === reportId) ?? null;
+  // A flag holds the stage only when no finding, report or event does.
+  const focusedCheck = focused || focusedReport || focusedEvent || !checkId ? null : assessedMetrics.get(checkId) ?? null;
   const railIndex = railList.findIndex(i => i.id === (focusedReport?.accessionNumber ?? focusedEvent?.id));
   // Reports come from the filings when they have loaded; until then the flow quarters stand in for them on the axis.
   const points = useMemo(() => filings ? timelineFromFilings(filings, events, 24, now, quarters) : timelinePoints(quarters, events, 24, now), [filings, quarters, events, now]);
@@ -293,37 +320,30 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
     ? quarter.revenueAdjustments?.length ? previous.segments.reduce((sum, s) => sum + (numeric(s.revenue) ?? 0), 0) || null : numeric(previous.figures.revenue) : null;
   const money = useCallback((v: number | null) => quarter ? compactFlowValue(v, quarter) : "—", [quarter]);
 
-  useEffect(() => {
-    const url = new URL(location.href);
-    if (current) url.searchParams.set("business", current.id); else url.searchParams.delete("business");
-    if (focused) url.searchParams.set("finding", focused.id); else url.searchParams.delete("finding");
-    if (focusedEvent) url.searchParams.set("event", focusedEvent.id); else url.searchParams.delete("event");
-    if (focusedReport) url.searchParams.set("report", focusedReport.accessionNumber); else url.searchParams.delete("report");
-    if (metric) url.searchParams.set("metric", metric.key); else url.searchParams.delete("metric");
-    if (detail) url.searchParams.set("detail", ""); else url.searchParams.delete("detail");
-    if (url.href !== location.href) history.replaceState(history.state, "", url);
-  }, [current, focused, focusedEvent, focusedReport, metric, detail]);
   // A business picked in the chart is brought into view in the list, scrolling only the list (a column or, on narrow screens, a chip row).
   useEffect(() => {
     const option = listRef.current?.querySelector<HTMLElement>('[role=option][aria-selected="true"]');
     if (option) revealInList(option, behavior());
   }, [current?.key]);
   useEffect(() => {
-    const escape = (e: globalThis.KeyboardEvent) => { if (e.key === "Escape" && !(e.target as HTMLElement).closest("input,select,dialog")) { setSelected(null); setFocusId(null); setEventId(null); setReportId(null); setStory(false); } };
+    const escape = (e: globalThis.KeyboardEvent) => { if (e.key === "Escape" && !(e.target as HTMLElement).closest("input,select,dialog")) { setSelected(null); setFocusId(null); setCheckId(null); setEventId(null); setReportId(null); setStory(false); } };
     addEventListener("keydown", escape);
     return () => removeEventListener("keydown", escape);
   }, []);
-  // Walking the findings: arrow keys step through them in order while the walk-through is on.
+  // The walk-through steps through the findings in order.
+  const storyItems = useMemo(() => verified.map(f => f.id), [verified]);
+  const storyIndex = focused ? storyItems.indexOf(focused.id) : -1;
+  const stepStory = useRef<(delta: 1 | -1) => void>(() => {});
   useEffect(() => {
     if (!story) return;
     const step = (e: globalThis.KeyboardEvent) => {
       if ((e.target as HTMLElement).closest("input,select,textarea") || (e.key !== "ArrowLeft" && e.key !== "ArrowRight")) return;
       e.preventDefault();
-      setFocusId(id => { const i = Math.max(0, verified.findIndex(f => f.id === id)); return verified[Math.max(0, Math.min(verified.length - 1, i + (e.key === "ArrowRight" ? 1 : -1)))]?.id ?? id; });
+      stepStory.current(e.key === "ArrowRight" ? 1 : -1);
     };
     addEventListener("keydown", step);
     return () => removeEventListener("keydown", step);
-  }, [story, verified]);
+  }, [story]);
 
   // The statement opens as its trunk; the detail shows every disclosed line. A picked business always reads in detail, beside its breakdown.
   const trunk = !detail && !current;
@@ -333,11 +353,29 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
   const folded = useMemo(() => trunk && trunked ? trunked.folded : new Map<string, string>(), [trunk, trunked]);
   const previousGraph = useMemo(() => { const g = previous ? statementGraph(previous) : null; return g && previous && trunk ? trunkGraph(g, previous).graph : g; }, [previous, trunk]);
   const funding = capital?.quarters.find(q => q.periodEnd === quarter?.periodEnd) ?? null;
-  const [chosenView, setView] = useState<View>("profit");
+  const [chosenView, setView] = useState<View>(() => { const v = new URLSearchParams(location.search).get("view"); return VIEWS.includes(v as View) ? v as View : "profit"; });
   const cash = funding?.cashFlow ?? funding?.yearToDate ?? null;
   const view: View = chosenView === "cash" && cash ? "cash" : chosenView === "balance" && funding?.balanceSheet ? "balance" : "profit";
   // The company's headline figures for the report and view, as the findings run picked them; too few verified keeps the fixed tiles.
   const highlights = useMemo(() => quarter ? highlightsFor(findings, data, quarter.periodEnd, view, getLocale()) : null, [findings, data, quarter, view]);
+  // What the analysis says about the view on the stage: its tripped rules under the tiles, its metrics under the chart.
+  const shownFlags = useMemo(() => viewFlags(flags, view), [flags, view]);
+  const shownMetrics = useMemo(() => viewMetrics(assessment, view, flagged), [assessment, view, flagged]);
+  // The written analysis of each flagged metric, when written for the quarter on the stage.
+  const notes = useMemo(() => findings?.checkup && assessment && findings.checkup.periodEnd === assessment.periodEnd ? findings.checkup.notes : [], [findings, assessment]);
+  const noted = useMemo(() => new Set(notes.map(n => n.metricId)), [notes]);
+  useEffect(() => {
+    const url = new URL(location.href);
+    if (current) url.searchParams.set("business", current.id); else url.searchParams.delete("business");
+    if (focused) url.searchParams.set("finding", focused.id); else url.searchParams.delete("finding");
+    if (focusedEvent) url.searchParams.set("event", focusedEvent.id); else url.searchParams.delete("event");
+    if (focusedReport) url.searchParams.set("report", focusedReport.accessionNumber); else url.searchParams.delete("report");
+    if (metric) url.searchParams.set("metric", metric.key); else url.searchParams.delete("metric");
+    if (detail) url.searchParams.set("detail", ""); else url.searchParams.delete("detail");
+    if (focusedCheck) url.searchParams.set("check", focusedCheck.id); else url.searchParams.delete("check");
+    if (view !== "profit") url.searchParams.set("view", view); else url.searchParams.delete("view");
+    if (url.href !== location.href) history.replaceState(history.state, "", url);
+  }, [current, focused, focusedEvent, focusedReport, metric, detail, focusedCheck, view]);
   // A finding in focus brings the stage to its report and statement view, and clears any business pick so the whole statement reads.
   useEffect(() => {
     if (!focused) return;
@@ -409,24 +447,34 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
   // With nothing in focus, the quarter's first finding about this view leads: the chart lights what it names.
   const [leadHidden, setLeadHidden] = useState(false);
   const lead = useMemo(() => focused || current || leadHidden || !quarter ? null : verified.find(f => f.periodEnd === quarter.periodEnd && f.anchors.view === view) ?? null, [focused, current, leadHidden, quarter, verified, view]);
-  const spotlit = focused ?? lead;
+  // A rule under the tiles lights what it is about while the pointer is on it; without a finding about the view, all its rules do.
+  const [hoverFlag, setHoverFlag] = useState<Flag | null>(null);
+  const spotlit = useMemo(() => hoverFlag ? [hoverFlag] : focused ? [focused] : lead ? [lead] : current ? [] : shownFlags, [hoverFlag, focused, lead, current, shownFlags]);
   const spotlight = useMemo(() => {
-    if (!spotlit || view !== "profit") return null;
-    const names = new Set([...anchorNodeNames(spotlit, quarter, items)].map(name => folded.get(name) ?? name));
+    if (!spotlit.length || view !== "profit") return null;
+    const names = new Set(spotlit.flatMap(a => [...anchorNodeNames(a, quarter, items)]).map(name => folded.get(name) ?? name));
     return graph && graph.nodes.some(n => names.has(n.name)) ? names : null;
   }, [spotlit, view, quarter, items, folded, graph]);
-  const poolSpotlight = useMemo(() => spotlit && view !== "profit" ? anchorPoolKeys(spotlit) : null, [spotlit, view]);
-  const leadShown = lead && (view === "profit" ? spotlight : poolSpotlight?.size) ? lead : null;
+  const poolSpotlight = useMemo(() => spotlit.length && (view === "cash" || view === "balance") ? new Set(spotlit.flatMap(a => [...anchorPoolKeys(a)])) : null, [spotlit, view]);
+  const lit = view === "profit" ? spotlight != null : !!poolSpotlight?.size;
+  const leadShown = lead && lit && !hoverFlag ? lead : null;
   const nodeColor = useCallback((id: string) => { const item = items.find(i => i.id === id); return item ? hue(item.slot) : "var(--biz-0)"; }, [items]);
-  const focusFinding = (id: string | null) => { setFocusId(id); if (id) { setEventId(null); setReportId(null); } else { setStory(false); setSplit(false); } };
-  const focusEvent = (id: string | null) => { setEventId(id); if (id) { setSelected(null); setFocusId(null); setReportId(null); setStory(false); setSplit(false); } };
-  // The rail holds one pick at a time: a business, a finding, or a report/event.
-  const pickBusiness = (id: string | null) => { setSelected(id); if (id) { setFocusId(null); setEventId(null); setReportId(null); setStory(false); setSplit(false); } };
+  const focusFinding = (id: string | null) => { setFocusId(id); if (id) { setCheckId(null); setEventId(null); setReportId(null); } else { setStory(false); setSplit(false); } };
+  const focusCheck = (id: string | null) => { setCheckId(id); setHoverFlag(null); if (id) { setSelected(null); setFocusId(null); setEventId(null); setReportId(null); setStory(false); setSplit(false); } };
+  const focusEvent = (id: string | null) => { setEventId(id); if (id) { setSelected(null); setFocusId(null); setCheckId(null); setReportId(null); setStory(false); setSplit(false); } };
+  // The rail holds one pick at a time: a business, a flag, a finding, or a report/event.
+  const pickBusiness = (id: string | null) => { setSelected(id); if (id) { setFocusId(null); setCheckId(null); setEventId(null); setReportId(null); setStory(false); setSplit(false); } };
+  useLayoutEffect(() => {
+    stepStory.current = (delta: 1 | -1) => {
+      const next = storyItems[Math.max(0, Math.min(storyItems.length - 1, storyIndex + delta))];
+      if (next) focusFinding(next);
+    };
+  });
   // A report in focus also brings the stage to its quarter when the flow has it.
   const focusReport = (id: string | null) => {
     setReportId(id); setReader(false);
     if (!id) return;
-    setSelected(null); setFocusId(null); setEventId(null); setStory(false); setSplit(false);
+    setSelected(null); setFocusId(null); setCheckId(null); setEventId(null); setStory(false); setSplit(false);
     const end = filings?.filings.find(f => f.accessionNumber === id)?.periodEnd;
     const match = end ? quarters.find(q => q.periodEnd === end) : null;
     if (match) setPeriod(match.id);
@@ -466,6 +514,10 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
   }
 
   // A picked business is broken down from the businesses the chart draws at its left edge: itself, or the disclosed businesses it is made of.
+  const hasTrend = shownMetric != null || hasRevenueTrend;
+  const panel = panels[view] ?? (view === "profit" && hasTrend || !shownMetrics.length ? "trend" : "metrics");
+  const switcher = <PanelSwitch value={panel} onChange={next => setPanels(p => ({ ...p, [view]: next }))} />;
+
   const mindMap = useMemo((): MindMapInput | null => {
     if (!tree || !current) return null;
     const leaves = (item: Item): Item[] => { const children = items.filter(i => i.parent === item.key); return children.length ? children.flatMap(leaves) : [item]; };
@@ -516,34 +568,38 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
           })}
         </div>
       </RailSection>
-      {showFindings && <FindingsList findings={verified} updates={updates} verdicts={verdicts} focus={focused?.id ?? null} story={story} periodEnd={findings.periodEnd} {...sectionFocus("findings")} onFocus={focusFinding} onStory={() => { if (story) { setStory(false); setFocusId(null); } else { setStory(true); setEventId(null); setFocusId(focused?.id ?? verified[0].id); } }} />}
+      {showFindings && <FindingsList findings={verified} updates={updates} verdicts={verdicts} focus={focused?.id ?? null} story={story} periodEnd={findings.periodEnd} {...sectionFocus("findings")} onFocus={focusFinding} onStory={() => { if (story) { setStory(false); setFocusId(null); } else { setStory(true); setEventId(null); focusFinding(focused?.id ?? verified[0].id); } }} />}
       {rail && <EventsList rail={rail} updates={updates} focus={focusedReport?.accessionNumber ?? focusedEvent?.id ?? null} pendingInsider={events?.pendingInsider ?? 0} {...sectionFocus("events")} onFocus={focusItem} />}
       {!!quarter?.revenueAdjustments?.length&&<p className="revenue-reconciliation">{m.reconciliation(quarter.currency)}<br/>{m.segmentTotal} {formatFlowValue(segmentRevenue,quarter)}<br/>{quarter.revenueAdjustments.map(a=><span key={a.id}>{a.name} {formatFlowValue(numeric(a.amount),quarter)}<br/></span>)}{m.consolidated} {formatFlowValue(revenue,quarter)}</p>}
     </Rail>
 
-    <section className="stage" data-focus={focused && findings ? "finding" : undefined} data-trend={hasRevenueTrend || metricGroups.length ? "" : undefined} data-finding={focused?.kind} data-timeline={points.length ? "" : undefined} aria-label={focused ? m.findingStage(ticker, focused.title) : m.flowStage(ticker)}>
-      {focused && findings ? <div className="lens-stage" data-split={split && pair ? "" : undefined}>
+    <section className="stage" data-focus={focused && findings || focusedCheck ? "finding" : undefined} data-view={view} data-trend={hasRevenueTrend || metricGroups.length ? "" : undefined} data-finding={focused?.kind} data-timeline={points.length ? "" : undefined} aria-label={focused ? m.findingStage(ticker, focused.title) : m.flowStage(ticker)}>
+      {focusedCheck && assessment ? <div className="lens-stage">
+        <MetricLens metric={focusedCheck} flags={flags.filter(f => f.metricId === focusedCheck.id)} rank={ranks[focusedCheck.id] ?? null} data={data} findings={verified} sources={checkupSources(data, focusedCheck.evidence.periodEnd)}
+          bridge={assessment.bridge} chain={assessment.chain} onClose={() => focusCheck(null)} onFinding={id => focusFinding(id)}
+          note={(note => note ? verifyNote(note, data, focusedCheck, flags.filter(f => f.metricId === focusedCheck.id), findings?.materials) : null)(notes.find(n => n.metricId === focusedCheck.id))} />
+      </div> : focused && findings ? <div className="lens-stage" data-split={split && pair ? "" : undefined}>
         <LensPanel finding={focused} data={data} sources={findings.sources} materials={findings.materials} record={findings.record} ticker={ticker} nodeColor={nodeColor} pair={pair} split={split && !!pair}
-          story={story} index={focusIndex} count={verified.length} onPair={() => setSplit(v => !v)}
-          onStep={delta => { const next = verified[focusIndex + delta]; if (next) focusFinding(next.id); }} onClose={() => focusFinding(null)} />
+          story={story} index={story ? storyIndex : focusIndex} count={story ? storyItems.length : verified.length} onPair={() => setSplit(v => !v)}
+          onStep={delta => { if (story) { stepStory.current(delta); return; } const next = verified[focusIndex + delta]; if (next) focusFinding(next.id); }} onClose={() => focusFinding(null)} />
         {split && pair && <LensPanel finding={pair} data={data} sources={findings.sources} materials={findings.materials} record={findings.record} ticker={ticker} nodeColor={nodeColor} pair={null} compact
           story={false} index={-1} count={verified.length} onPair={() => {}} onStep={() => {}} onClose={() => setSplit(false)} onFocusThis={() => setFocusId(pair.id)} />}
       </div> : <>
       <header className="stage-head stage-head--summary">
-        {quarter && view !== "profit" && funding ? <CapitalStats view={view} funding={funding} tiles={highlights} />
-          : quarter && !current && highlights ? <HighlightStats tiles={highlights} />
+        {quarter && (view === "cash" || view === "balance") && funding ? <CapitalStats view={view} funding={funding} tiles={highlights} flags={flags} />
+          : quarter && !current && highlights ? <HighlightStats tiles={highlights} flags={flags} />
           : quarter && <div className="stats" aria-live="polite">
           {current && current.value != null ? <>
             <Stat label={m.revenueThisQuarter} value={current.value} format={money} note={`${word.change} ${itemChange.label}`} tone={itemChange.trend ?? undefined} />
             <Stat label={shareLabel} value={segmentRevenue ? current.value / segmentRevenue * 100 : null} format={percent} note={parent?.value ? m.ofParent(percent(current.value / parent.value * 100), parent.name) : m.topLevel} />
             <Stat label={m.companyRevenue} value={revenue} format={money} />
           </> : <>
-            <Stat label={m.totalRevenue} value={revenue} format={money} note={`${word.change} ${change("revenue").label}`} tone={change("revenue").trend ?? undefined} />
-            {quarter.incomeModel !== "direct_operating" && figure("gross") != null && <Stat label={m.gross} value={figure("gross")} format={money} note={margin("gross")} />}
+            <Stat label={m.totalRevenue} value={revenue} format={money} note={`${word.change} ${change("revenue").label}`} tone={change("revenue").trend ?? undefined} level={figureLevel(flags, { metric: "revenue" })} />
+            {quarter.incomeModel !== "direct_operating" && figure("gross") != null && <Stat label={m.gross} value={figure("gross")} format={money} note={margin("gross")} level={figureLevel(flags, { metric: "gross" })} />}
             {figure("operating") != null || figure("pretax") == null
-              ? <Stat label={m.operating} value={figure("operating")} format={money} note={margin("operating")} />
-              : <Stat label={m.pretax} value={figure("pretax")} format={money} note={margin("pretax")} />}
-            <Stat label={graph?.deficit ? m.netLoss : m.net} value={figure("net")} format={money} note={coverage != null ? `${margin("net")} · ${m.coverage(percent(coverage * 100))}` : margin("net")} />
+              ? <Stat label={m.operating} value={figure("operating")} format={money} note={margin("operating")} level={figureLevel(flags, { metric: "operating" })} />
+              : <Stat label={m.pretax} value={figure("pretax")} format={money} note={margin("pretax")} level={figureLevel(flags, { metric: "pretax" })} />}
+            <Stat label={graph?.deficit ? m.netLoss : m.net} value={figure("net")} format={money} note={coverage != null ? `${margin("net")} · ${m.coverage(percent(coverage * 100))}` : margin("net")} level={figureLevel(flags, { metric: "net" })} />
           </>}
         </div>}
         <div className="stage-controls">
@@ -567,6 +623,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
           </span>
         </ToggleGroup>}
         </div>
+        {!current && <ViewFlags flags={shownFlags} metrics={assessedMetrics} noted={noted} focus={null} onOpen={id => focusCheck(id)} onHover={setHoverFlag} />}
       </header>
 
       <div className="chart">
@@ -578,7 +635,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17" /></svg>
           </Button>
         </div>}
-        {view !== "profit" && funding ? <CapitalChart view={view} funding={funding} ticker={ticker} spotlight={poolSpotlight} />
+        {(view === "cash" || view === "balance") && funding ? <CapitalChart view={view} funding={funding} ticker={ticker} spotlight={poolSpotlight} />
           : !quarter ? <div className="empty"><h2>{m.noFinancials}</h2></div>
           : proportional && layout ? <FlowChart graph={graph!} copy={copy} money={v => money(v)} colorOf={colorOf} active={active} revealKey={quarter.id} productBusiness={current ? "segment:" + current.key : null} mindMap={mindMap} mindPick={mindItem?.id ?? null} onMindPick={setMindItem} businessDetails={<Dossier item={current} parent={parent ?? null} sources={quarter.sources} explainer={explainer} />}
               focusSlot={n => { const prior = priorOf(n); return segmentRevenue ? `${shareLabel} ${percent(n.value / segmentRevenue * 100)}${prior != null && priorShareBase ? ` · ${word.period} ${percent(prior / priorShareBase * 100)}` : ""}` : null; }}
@@ -598,15 +655,16 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
       : focusedEvent && events ? <div className="lens-stage"><EventLens event={focusedEvent} publication={events} index={railIndex} count={railList.length}
         onStep={delta => { const next = railList[railIndex + delta]; if (next) focusItem(next); }} onClose={() => focusEvent(null)} /></div>
       : mindItem && mindMap ? <div className="lens-stage"><MindLens item={mindItem} branch={mindMap.branches.find(b => b.node === mindItem.anchor)} sources={mindMap.sources} onClose={() => setMindItem(null)} /></div>
+      : panel === "metrics" && shownMetrics.length > 0 ? <ViewMetrics metrics={shownMetrics} flagged={flagged} ranks={ranks} noted={noted} onOpen={id => focusCheck(id)} switcher={hasTrend ? switcher : null} />
       : shownMetric ? <MetricTrendPanel trend={shownMetric} currentPeriod={quarter?.periodEnd ?? null} periods={new Set(quarters.map(q => q.periodEnd))}
         onPickPeriod={end => setPeriod(quarters.find(q => q.periodEnd === end)?.id ?? null)}
-        picker={<MetricPicker value={shownMetric.key} groups={metricGroups} revenue={hasRevenueTrend} onChange={setMetricKey} />} />
+        picker={<><MetricPicker value={shownMetric.key} groups={metricGroups} revenue={hasRevenueTrend} onChange={setMetricKey} />{shownMetrics.length > 0 && switcher}</>} />
       : hasRevenueTrend && <TrendPanel history={revenueHistory!} items={items} selected={current} currentPeriod={quarter?.periodEnd ?? null}
         periods={new Set(quarters.map(q => q.periodEnd))} onPickPeriod={end => setPeriod(quarters.find(q => q.periodEnd === end)?.id ?? null)} hue={hue} guidance={guidance}
-        picker={<MetricPicker value={REVENUE_METRIC} groups={metricGroups} revenue onChange={setMetricKey} />} />}
+        picker={<><MetricPicker value={REVENUE_METRIC} groups={metricGroups} revenue onChange={setMetricKey} />{shownMetrics.length > 0 && switcher}</>} />}
 
       <footer className="stage-foot">
-        {view !== "profit" && funding ? <CapitalLegend view={view} funding={funding} /> : proportional ? <div className="legend" aria-label={m.legend}>
+        {(view === "cash" || view === "balance") && funding ? <CapitalLegend view={view} funding={funding} /> : proportional ? <div className="legend" aria-label={m.legend}>
           <span><i className="legend-biz" />{m.businessRevenue}</span>
           <span><i style={{ background: "var(--flow-profit)" }} />{m.profit}</span>
           {(graph?.signed || graph?.deficit) && <span><i style={{ background: "var(--loss)" }} />{graph?.deficit ? m.netLoss : m.loss}</span>}
@@ -614,7 +672,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
         </div> : null}
         <p className="provenance">
           {notice && <span>{notice}</span>}
-          {view !== "profit" && funding && <CapitalProvenance view={view} funding={funding} />}
+          {(view === "cash" || view === "balance") && funding && <CapitalProvenance view={view} funding={funding} />}
           {flow.fetchedAt && <span>{m.data(flow.fetchedAt.slice(0, 10))}</span>}
         </p>
       </footer>
@@ -634,41 +692,43 @@ const months = (start: string, end: string) => Math.round((Date.parse(end) - Dat
 const cashPeriod = (funding: CapitalQuarter) => funding.cashFlow ? m.thisQuarter : m.yearToDate(months(funding.yearToDate!.periodStart, funding.yearToDate!.periodEnd));
 const pct = (v: number | null) => v == null || !Number.isFinite(v) ? "—" : `${Math.round(v * 100)}%`;
 
-function CapitalStats({ view, funding, tiles }: { view: View; funding: CapitalQuarter; tiles: VerifiedHighlight[] | null }) {
-  if (tiles) return <HighlightStats tiles={tiles} />;
+type PoolView = Exclude<StatementView, "profit">;
+function CapitalStats({ view, funding, tiles, flags }: { view: PoolView; funding: CapitalQuarter; tiles: VerifiedHighlight[] | null; flags: Flag[] }) {
+  if (tiles) return <HighlightStats tiles={tiles} flags={flags} />;
+  const level = (capital: string) => figureLevel(flags, { capital });
   const money = capitalMoney(funding);
   if (view === "balance") {
     const b = funding.balanceSheet!, b2 = balanceMetrics(b);
     return <div className="stats" aria-live="polite">
-      <Stat label={m.totalAssets} value={b2.assets} format={money} note={m.asOf(b.asOf)} />
-      <Stat label={m.debt} value={b2.debt} format={money} note={m.leverage(pct(b2.leverage))} />
+      <Stat label={m.totalAssets} value={b2.assets} format={money} note={m.asOf(b.asOf)} level={level("totalAssets")} />
+      <Stat label={m.debt} value={b2.debt} format={money} note={m.leverage(pct(b2.leverage))} level={level("debt")} />
       {b2.customer > 0 ? <Stat label={m.customer} value={b2.customer} format={money} note={m.ofAssets(pct(b2.customer / b2.assets))} />
-        : <Stat label={m.cash} value={b.assets.filter(l => l.group === "cash").reduce((s, l) => s + Number(l.value), 0)} format={money} />}
-      <Stat label={m.equity} value={b2.equity} format={money} note={b2.deficit > 0 ? m.paidIn(money(b2.paidIn), money(b2.deficit)) : m.ofAssets(pct(b2.equity / b2.assets))} tone={b2.equity < 0 ? "down" : undefined} />
+        : <Stat label={m.cash} value={b.assets.filter(l => l.group === "cash").reduce((s, l) => s + Number(l.value), 0)} format={money} level={level("cash")} />}
+      <Stat label={m.equity} value={b2.equity} format={money} note={b2.deficit > 0 ? m.paidIn(money(b2.paidIn), money(b2.deficit)) : m.ofAssets(pct(b2.equity / b2.assets))} tone={b2.equity < 0 ? "down" : undefined} level={level("equity")} />
     </div>;
   }
   const c = cashOf(funding), k = cashMetrics(c), period = cashPeriod(funding);
   const outside = [k.debtNet != null ? m.netBorrowing(money(k.debtNet)) : null, k.equityIssued ? m.sharesIssued(money(k.equityIssued)) : null].filter(Boolean).join(" · ");
   return <div className="stats" aria-live="polite">
-    <Stat label={m.operatingCash(period)} value={k.operating} format={money} note={k.selfFunding == null ? undefined : m.capexCoverage(k.selfFunding >= 2 ? multiple(k.selfFunding.toFixed(1), getLocale()) : pct(k.selfFunding))} tone={k.operating < 0 ? "down" : undefined} />
-    {k.capex != null && <Stat label={m.capex} value={k.capex} format={money} note={k.free != null ? m.free(money(k.free)) : undefined} />}
-    <Stat label={m.financing} value={k.financing} format={money} note={outside || undefined} />
+    <Stat label={m.operatingCash(period)} value={k.operating} format={money} note={k.selfFunding == null ? undefined : m.capexCoverage(k.selfFunding >= 2 ? multiple(k.selfFunding.toFixed(1), getLocale()) : pct(k.selfFunding))} tone={k.operating < 0 ? "down" : undefined} level={level("operatingCashFlow")} />
+    {k.capex != null && <Stat label={m.capex} value={k.capex} format={money} note={k.free != null ? m.free(money(k.free)) : undefined} level={level("capex") ?? level("freeCashFlow")} />}
+    <Stat label={m.financing} value={k.financing} format={money} note={outside || undefined} level={level("debtIssued") ?? level("financing")} />
     <Stat label={m.cashChange} value={Number(c.netChange)} format={money} note={funding.balanceSheet ? m.endingCash(money(funding.balanceSheet.assets.filter(l => l.group === "cash").reduce((s, l) => s + Number(l.value), 0))) : undefined} />
   </div>;
 }
 
-function poolOf(view: View, funding: CapitalQuarter): Pool {
+function poolOf(view: PoolView, funding: CapitalQuarter): Pool {
   return view === "balance" ? balancePool(funding.balanceSheet!) : cashPool(cashOf(funding));
 }
 
-function CapitalChart({ view, funding, ticker, spotlight = null }: { view: View; funding: CapitalQuarter; ticker: string; spotlight?: Set<string> | null }) {
+function CapitalChart({ view, funding, ticker, spotlight = null }: { view: PoolView; funding: CapitalQuarter; ticker: string; spotlight?: Set<string> | null }) {
   const pool = useMemo(() => poolOf(view, funding), [view, funding]);
   const money = useMemo(() => { const format = capitalMoney(funding); return (v: number) => format(v); }, [funding]);
   return <PoolChart key={view + funding.periodEnd} pool={pool} money={money} spotlight={spotlight}
     label={view === "balance" ? m.balanceChart(ticker, funding.periodEnd) : m.cashChart(ticker, cashPeriod(funding))} />;
 }
 
-function CapitalLegend({ view, funding }: { view: View; funding: CapitalQuarter }) {
+function CapitalLegend({ view, funding }: { view: PoolView; funding: CapitalQuarter }) {
   const pool = poolOf(view, funding);
   // Tones whose items are too small to see are left out of the legend.
   const tones = [...new Set([...pool.sources, ...pool.uses].filter(item => item.value >= pool.total * 0.01).map(item => item.tone))];
@@ -677,7 +737,7 @@ function CapitalLegend({ view, funding }: { view: View; funding: CapitalQuarter 
   </div>;
 }
 
-function CapitalProvenance({ view, funding }: { view: View; funding: CapitalQuarter }) {
+function CapitalProvenance({ view, funding }: { view: PoolView; funding: CapitalQuarter }) {
   if (view === "balance") return <a href={funding.balanceSheet!.source.url} target="_blank" rel="noopener noreferrer">{funding.balanceSheet!.source.form} {funding.balanceSheet!.source.accession}</a>;
   const c = cashOf(funding);
   return <>

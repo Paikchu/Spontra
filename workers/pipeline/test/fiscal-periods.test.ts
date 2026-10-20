@@ -143,7 +143,7 @@ test("guidance published before its fiscal periods were known is dated once they
   const workflows = { create: async () => { throw new Error("no extraction expected"); }, get: async () => { throw new Error("no instance expected"); } };
   const task = () => SEC_TASKS.guidance.run({ ...e, GUIDANCE_ENABLED: "true", GUIDANCE_WORKFLOW: workflows } as unknown as SecPipelineEnv, "AMZN",
     { causeId: "c1", now: new Date("2026-10-19T10:10:00.000Z"), trigger: null });
-  assert.deepEqual(await task(), { status: "done", detail: { recorded: 1, started: [], retried: 0, republished: true } });
+  assert.deepEqual(await task(), { status: "done", detail: { recorded: 1, transcripts: [], started: [], retried: 0, republished: true } });
   const publication = await cached<GuidancePublication>(db, guidanceCacheKey("AMZN"));
   assert.equal(publication?.items[0]?.periodEnd, "2026-09-30");
   assert.equal(publication?.updatedAt, "2026-10-19T10:10:00.000Z");

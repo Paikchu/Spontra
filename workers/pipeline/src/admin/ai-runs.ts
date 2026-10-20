@@ -9,6 +9,8 @@ import { businessTreeFingerprint, readBusinessTreeResponse } from "../business-t
 import { companyName } from "../catalog/security-directory.ts";
 import { findingsFingerprint } from "../findings/workflow.ts";
 import { analystFingerprint, dossierCacheKey } from "../analyst/workflow.ts";
+import { checkupFingerprint } from "../checkup/workflow.ts";
+import { readCheckupRecord } from "../checkup/read.ts";
 import { findingsCacheKey, readFindingsResponse } from "../findings/read.ts";
 import { GuidanceStore } from "../guidance/store.ts";
 import { earningsEvents, readGuidanceResponse } from "../guidance/workflow.ts";
@@ -25,10 +27,10 @@ const SETTLE_AFTER_MS = 60_000, MISSING_AFTER_MS = 10 * 60_000;
 
 type Binding = AiWorkflowBinding<Record<string, unknown>>;
 function binding(env: SecPipelineEnv, kind: AiRunKind): Binding | undefined {
-  return (kind === "findings" ? env.FINDINGS_WORKFLOW : kind === "analyst" ? env.ANALYST_WORKFLOW : kind === "explainer" ? env.BUSINESS_EXPLAINER_WORKFLOW : kind === "tree" ? env.BUSINESS_TREE_WORKFLOW : env.GUIDANCE_WORKFLOW) as Binding | undefined;
+  return (kind === "findings" ? env.FINDINGS_WORKFLOW : kind === "analyst" ? env.ANALYST_WORKFLOW : kind === "checkup" ? env.CHECKUP_WORKFLOW : kind === "explainer" ? env.BUSINESS_EXPLAINER_WORKFLOW : kind === "tree" ? env.BUSINESS_TREE_WORKFLOW : env.GUIDANCE_WORKFLOW) as Binding | undefined;
 }
 /** Each kind runs for the companies its feature is switched on for (docs/whitelist-feature-switches-design.md). */
-const featureOf = (kind: AiRunKind): Feature => kind === "guidance" ? "reports" : kind === "analyst" ? "findings" : kind;
+const featureOf = (kind: AiRunKind): Feature => kind === "guidance" ? "reports" : kind === "analyst" || kind === "checkup" ? "findings" : kind;
 function enabled(env: SecPipelineEnv, kind: AiRunKind, ticker: string): boolean {
   return featureTickersFor(env, featureOf(kind)).includes(ticker);
 }
@@ -43,6 +45,7 @@ function automatic(env: SecPipelineEnv, kind: AiRunKind, ticker: string): boolea
   if (!enabled(env, kind, ticker)) return false;
   return kind === "findings" ? env.FINDINGS_ENABLED === "true" && !!env.FINDINGS_WORKFLOW
     : kind === "analyst" ? env.ANALYST_ENABLED === "true" && !!env.ANALYST_WORKFLOW
+    : kind === "checkup" ? env.ANALYST_ENABLED === "true" && !!env.CHECKUP_WORKFLOW
     : kind === "explainer" ? !!env.BUSINESS_EXPLAINER_WORKFLOW && researchSearchConfigured(env)
     : kind === "tree" ? !!env.BUSINESS_TREE_WORKFLOW && researchSearchConfigured(env)
     : env.GUIDANCE_ENABLED === "true" && !!env.GUIDANCE_WORKFLOW;
@@ -50,6 +53,7 @@ function automatic(env: SecPipelineEnv, kind: AiRunKind, ticker: string): boolea
 /** The publication readers are served now, validated the same way the public read API does. */
 async function currentPublication(db: D1Database, kind: AiRunKind, ticker: string): Promise<unknown> {
   if (kind === "analyst") return (await new D1SecRepository(db).getCache<unknown>(dossierCacheKey(ticker)))?.payload ?? null;
+  if (kind === "checkup") return await readCheckupRecord(db, ticker);
   if (kind === "findings") {
     // The lens agent's trace is stored beside the publication and shown only here.
     const [publication, stored] = await Promise.all([readFindingsResponse(db, ticker), new D1SecRepository(db).getCache<{ lensTrace?: unknown }>(findingsCacheKey(ticker))]);
@@ -102,7 +106,7 @@ async function guidanceEvents(db: D1Database, env: SecPipelineEnv, ticker: strin
 }
 
 /** The ledger kinds one admin kind spends: the lens agent's calls belong to the findings run. */
-const USAGE_KINDS: Record<AiRunKind, string[]> = { findings: ["findings", "lens"], analyst: ["analyst"], explainer: ["explainer"], tree: ["tree"], guidance: ["guidance"] };
+const USAGE_KINDS: Record<AiRunKind, string[]> = { findings: ["findings", "lens"], analyst: ["analyst"], checkup: ["checkup"], explainer: ["explainer"], tree: ["tree"], guidance: ["guidance"] };
 /** The last 30 days of the `ai_usage` ledger (migration 0023) by day; undefined when the table cannot be read. */
 async function usage(db: D1Database, kind: AiRunKind, ticker: string, now: number): Promise<AiUsageDay[] | undefined> {
   const kinds = USAGE_KINDS[kind], since = new Date(now - 30 * 86_400_000).toISOString();
@@ -136,7 +140,7 @@ async function start(env: SecPipelineEnv, db: D1Database, kind: AiRunKind, ticke
     accession = event.accession;
     params = { ticker, accession: event.accession, eventDate: event.eventDate, manual: true };
   } else {
-    const fingerprint = kind === "findings" ? await findingsFingerprint(env, ticker) : kind === "analyst" ? await analystFingerprint(env, ticker) : kind === "tree" ? await businessTreeFingerprint(env, ticker) : await businessExplainerFingerprint(env, ticker);
+    const fingerprint = kind === "findings" ? await findingsFingerprint(env, ticker) : kind === "analyst" ? await analystFingerprint(env, ticker) : kind === "checkup" ? await checkupFingerprint(env, ticker) : kind === "tree" ? await businessTreeFingerprint(env, ticker) : await businessExplainerFingerprint(env, ticker);
     if (!fingerprint) return json({ error: kind === "analyst" ? "该公司尚无已发布的要点，分析师无从写起。" : "业务地图尚无完整财报，暂时无法生成。" }, 409);
     params = { ticker, fingerprint };
   }
@@ -176,7 +180,7 @@ export async function handleAiRunsAdminRequest(request: Request, env: SecPipelin
       if (!tickers.includes(translations[1]!)) return json({ error: "该公司不在 AI 分析范围内。" }, 404);
       return json(await translationsAdmin(env, translations[1]!, new Date(now)));
     }
-    const match = /^\/admin\/ai\/companies\/([A-Z][A-Z0-9.-]{0,9})\/(findings|analyst|explainer|tree|guidance)(?:\/(runs|versions\/([0-9T:.Z-]{10,40})))?$/.exec(path);
+    const match = /^\/admin\/ai\/companies\/([A-Z][A-Z0-9.-]{0,9})\/(findings|analyst|checkup|explainer|tree|guidance)(?:\/(runs|versions\/([0-9T:.Z-]{10,40})))?$/.exec(path);
     if (!match) return json({ error: "Not found" }, 404);
     const [, ticker, kindName, action, versionId] = match;
     const kind = kindName as AiRunKind;

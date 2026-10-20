@@ -14,4 +14,6 @@ export const GLOSSARY_ZH: ReadonlyArray<readonly [string, string]> = [
   ["year over year (YoY)", "同比"], ["quarter over quarter (QoQ)", "环比"], ["fiscal year", "财年"], ["quarter", "季度"],
   ["segment", "业务分部"], ["insider", "内部人"], ["10b5-1 plan", "10b5-1 交易计划"], ["basis", "口径"],
   ["percentage points", "个百分点"], ["not disclosed", "未披露"],
+  ["accruals", "应计项"], ["invested capital", "投入资本"], ["net debt", "净债务"], ["return on invested capital (ROIC)", "投入资本回报率（ROIC）"],
+  ["return on equity (ROE)", "净资产收益率（ROE）"], ["cash runway", "现金跑道"], ["return on added capital", "增量资本回报"], ["operating leverage", "经营杠杆"],
 ];

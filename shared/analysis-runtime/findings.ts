@@ -2,7 +2,7 @@ import { z } from "zod";
 import { FLOW_METRICS, type BusinessFlowQuarter, type FlowMetric } from "../analysis-contract/business-flow.ts";
 import { FUNDAMENTAL_METRIC_CATALOG, FUNDAMENTAL_METRIC_LABEL_ZH } from "../analysis-contract/fundamental-metric-catalog.ts";
 import type { FundamentalMetricKey, PublicFundamentalPoint, PublicFundamentalSeries } from "../analysis-contract/fundamentals.ts";
-import { EVENT_FIELDS, type AnalysisFinding, type CapitalMetric, type EventField, type FindingEvidence, type FindingPassage, type FindingRef, type FindingSpan, type FindingWatch, type FindingsPublication } from "../analysis-contract/findings.ts";
+import { DERIVED_METRICS, EVENT_FIELDS, type AnalysisFinding, type CapitalMetric, type DerivedMetric, type EventField, type FindingEvidence, type FindingPassage, type FindingRef, type FindingSpan, type FindingWatch, type FindingsPublication } from "../analysis-contract/findings.ts";
 import type { EventsPublication } from "../analysis-contract/events.ts";
 import type { PeersPublication } from "../analysis-contract/peers.ts";
 import { alignedPeerQuarter } from "./peers.ts";
@@ -42,6 +42,7 @@ const baseRef = z.union([
   z.object({ passageCell: z.object({ passageId: z.string().regex(/^[a-z0-9]{8,64}$/), row: z.number().int().min(0).max(200), col: z.number().int().min(0).max(40) }) }),
   z.object({ event: z.object({ id: z.string().regex(/^\d{10}-\d{2}-\d{6}$/), field: z.enum(EVENT_FIELDS) }) }),
   z.object({ schedule: z.object({ kind: z.enum(["debtMaturities", "leasePaymentsDue", "purchaseObligations"]), bucket: z.union([z.number().int().min(0).max(5), z.literal("total")]) }) }),
+  z.object({ derived: z.enum(DERIVED_METRICS) }),
 ]);
 const ref = z.union([baseRef, z.object({ ratio: z.object({ numerator: baseRef, denominator: baseRef }) })]);
 export const findingRefSchema = ref;
@@ -84,7 +85,14 @@ export const findingsPublicationSchema = z.object({
   sources: z.array(z.object({ id: text(40), title: text(300), url: https, kind: z.enum(["sec", "web"]), publishedAt: z.string().max(40).nullable() })).min(1).max(40),
   highlights: z.array(reportHighlightsSchema).max(8).optional(),
   record: z.array(recordEntry).max(24).optional(),
-  materials: z.array(findingsMaterialSchema).max(120).optional(),
+  materials: z.array(findingsMaterialSchema).max(200).optional(),
+  checkup: z.object({
+    periodEnd: date, generatedAt: z.string().max(40), model: text(80),
+    notes: z.array(z.object({
+      metricId: text(60), ruleIds: z.array(text(60)).max(8), paragraphs: z.array(claim).min(1).max(3),
+      quotes: z.array(z.object({ kind: z.literal("quote"), materialId: text(40), text: text(600) })).max(6),
+    })).max(12),
+  }).optional(),
 });
 
 /**
@@ -175,7 +183,7 @@ export const shiftPeriod = (periodEnd: string, months: number) => monthEnd(month
 const finite = (v: unknown): number | null => { const n = typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : NaN; return Number.isFinite(n) ? n : null; };
 const sum = (lines: Array<{ value: string | number }>) => lines.reduce((total, line) => total + Number(line.value), 0);
 
-type Point = { value: number; periodStart: string | null; periodEnd: string; currency: string | null; accessions: string[] };
+export type Point = { value: number; periodStart: string | null; periodEnd: string; currency: string | null; accessions: string[] };
 
 /** The four quarterly points ending at `periodEnd`, summed; any gap leaves the span unresolved. */
 function overSpan(span: FindingSpan, periodEnd: string, at: (end: string) => Point | null): Point | null {
@@ -292,13 +300,91 @@ function capitalAt(data: FindingData, metric: CapitalMetric, periodEnd: string, 
     const value = balanceMetric(b, metric);
     return value == null ? null : { value, periodStart: null, periodEnd: b.asOf, currency: b.currency, accessions: [b.source.accession] };
   }
-  const point = (c: CashFlowStatement | null | undefined): Point | null => { const v = c ? cashMetric(c, metric) : null; return c && v != null ? { value: v, periodStart: c.periodStart, periodEnd: c.periodEnd, currency: c.currency, accessions: c.sources.map(s => s.accession) } : null; };
+  return cashFlowSpan(data, periodEnd, span, c => cashMetric(c, metric));
+}
+/** A cash-flow figure over a span: the twelve-month statement as filed for a fiscal year, otherwise the quarterly statements summed. */
+export function cashFlowSpan(data: FindingData, periodEnd: string, span: FindingSpan, pick: (c: CashFlowStatement) => number | null): Point | null {
+  const quarters = data.capital?.quarters ?? [];
+  const point = (c: CashFlowStatement | null | undefined): Point | null => { const v = c ? pick(c) : null; return c && v != null ? { value: v, periodStart: c.periodStart, periodEnd: c.periodEnd, currency: c.currency, accessions: c.sources.map(s => s.accession) } : null; };
   if (span === "fiscal_year") {
-    // A twelve-month statement as filed is the fiscal year itself; otherwise four quarterly statements.
     const ytd = quarters.find(q => near(q.periodEnd, periodEnd))?.yearToDate;
     if (ytd && monthIndex(ytd.periodEnd) - monthIndex(ytd.periodStart) >= 11) return point(ytd);
   }
   return overSpan(span, periodEnd, end => point(quarters.find(q => near(q.periodEnd, end))?.cashFlow));
+}
+/** The sum of one economic group of the operating section, when the section's lines reconcile. */
+export const operatingGroup = (c: CashFlowStatement, group: "netIncome" | "nonCash" | "workingCapital" | "other") => c.operating.lines ? sum(c.operating.lines.filter(l => l.group === group)) : null;
+
+/** Lines the statement places between operating income and pretax income whose name says interest expense, as a positive charge. */
+function interestExpenseAt(data: FindingData, periodEnd: string): Point | null {
+  const q = flowQuarter(data, periodEnd);
+  const hits = (q?.otherComponents ?? []).filter(c => /\binterest\b/i.test(c.name) && !/\bincome\b/i.test(c.name.replace(/\(expense\)|expense/gi, "")));
+  const values = hits.map(c => finite(c.amount.value));
+  if (!q || !hits.length || values.some(v => v == null)) return null;
+  return flowPoint(q, -values.reduce<number>((t, v) => t + (v ?? 0), 0));
+}
+
+/**
+ * A figure no statement states, by one fixed formula over figures the statements do state. Every input must resolve;
+ * nothing is assumed zero. Instants are read at the period end whatever the span; flows follow the span asked for.
+ */
+function derivedAt(data: FindingData, metric: DerivedMetric, periodEnd: string, span: FindingSpan): ResolvedValue | null {
+  const at = (ref: FindingRef, end = periodEnd, s: FindingSpan = span) => resolveRef(data, ref, end, s);
+  const yearAgo = shiftPeriod(periodEnd, -12);
+  const join = (value: number, unit: ValueUnit, parts: Array<ResolvedValue | null>): ResolvedValue | null => {
+    if (parts.some(p => p == null) || !Number.isFinite(value)) return null;
+    const all = parts as ResolvedValue[], currencies = new Set(all.map(p => p.currency).filter(Boolean));
+    if (currencies.size > 1) return null;
+    return { value, unit, currency: unit === "USD" ? [...currencies][0] ?? null : null, periodStart: all.find(p => p.periodStart)?.periodStart ?? null, periodEnd: all[0]!.periodEnd, span, accessions: [...new Set(all.flatMap(p => p.accessions))] };
+  };
+  const v = (r: ResolvedValue | null) => r?.value ?? NaN;
+  const average = (ref: FindingRef) => { const now = at(ref), then = at(ref, yearAgo); return join((v(now) + v(then)) / 2, "USD", [now, then]); };
+  const group = (g: "nonCash" | "workingCapital") => { const p = cashFlowSpan(data, periodEnd, span, c => operatingGroup(c, g)); return p ? { ...p, unit: "USD" as const, span } : null; };
+  // Quarter by quarter, the statement's own lines where they reconcile and the SEC series of the same concept where they do not.
+  const statementOrSeries = (capital: CapitalMetric, series: string) => {
+    const p = overSpan(span, periodEnd, end => {
+      const own = resolveRef(data, { capital }, end, "quarter");
+      if (own) return { value: own.value, periodStart: own.periodStart, periodEnd: own.periodEnd, currency: own.currency, accessions: own.accessions };
+      const sec = fundamentalAt(data, series, end, "quarter");
+      return sec && sec.unit === "USD" ? sec.point : null;
+    });
+    return p ? { ...p, unit: "USD" as const, span } : null;
+  };
+  switch (metric) {
+    case "depreciationAmortization": return statementOrSeries("depreciation", "depreciation_and_amortization");
+    case "stockCompensationExpense": return statementOrSeries("stockCompensation", "stock_based_compensation");
+    case "ebitda": { const o = at({ metric: "operating" }), d = at({ derived: "depreciationAmortization" }); return join(v(o) + v(d), "USD", [o, d]); }
+    case "netDebt": { const debt = at({ capital: "debt" }), leases = at({ capital: "leases" }), cash = at({ capital: "cash" }); return join(v(debt) + v(leases) - v(cash), "USD", [debt, leases, cash]); }
+    case "investedCapital": { const debt = at({ capital: "debt" }), leases = at({ capital: "leases" }), equity = at({ capital: "equity" }), cash = at({ capital: "cash" }); return join(v(debt) + v(leases) + v(equity) - v(cash), "USD", [debt, leases, equity, cash]); }
+    case "nopat": {
+      // The effective rate of the same span, held between zero and 35%; a pretax loss shields nothing.
+      const o = at({ metric: "operating" }), tax = at({ metric: "tax" }), pretax = at({ metric: "pretax" });
+      const rate = v(pretax) > 0 ? Math.min(0.35, Math.max(0, v(tax) / v(pretax))) : 0;
+      return join(v(o) * (1 - rate), "USD", [o, tax, pretax]);
+    }
+    case "averageEquity": return average({ capital: "equity" });
+    case "averageAssets": return average({ capital: "totalAssets" });
+    case "averageInvestedCapital": return average({ derived: "investedCapital" });
+    case "accruals": { const net = at({ metric: "net" }), ocf = at({ capital: "operatingCashFlow" }), assets = at({ derived: "averageAssets" }); return v(assets) > 0 ? join((v(net) - v(ocf)) / v(assets), "ratio", [net, ocf, assets]) : null; }
+    case "nonCashCharges": return group("nonCash");
+    case "workingCapitalChange": return group("workingCapital");
+    case "incrementalReturn": {
+      const now = at({ metric: "operating" }), then = at({ metric: "operating" }, yearAgo), ic = at({ derived: "investedCapital" }), icThen = at({ derived: "investedCapital" }, yearAgo);
+      const added = v(ic) - v(icThen);
+      return added > 0 ? join((v(now) - v(then)) / added, "ratio", [now, then, ic, icThen]) : null;
+    }
+    case "interestExpense": { const p = overSpan(span, periodEnd, end => interestExpenseAt(data, end)); return p ? { ...p, unit: "USD", span } : null; }
+    case "netExternalFunding": { const issued = at({ capital: "debtIssued" }), repaid = at({ capital: "debtRepaid" }), equity = at({ capital: "equityIssued" }); return join(v(issued) - v(repaid) + v(equity), "USD", [issued, repaid, equity]); }
+    case "cashRunwayMonths": {
+      // Months of cash at the past year's burn; a company generating cash has no runway to count.
+      const cash = at({ capital: "cash" }), fcf = at({ capital: "freeCashFlow" }, periodEnd, "fiscal_year");
+      return v(fcf) < 0 && v(cash) >= 0 ? join(v(cash) / (-v(fcf) / 12), "ratio", [cash, fcf]) : null;
+    }
+    case "debtDueCoverage": {
+      const cash = at({ capital: "cash" }), fcf = at({ capital: "freeCashFlow" }, periodEnd, "fiscal_year"), due = at({ schedule: { kind: "debtMaturities", bucket: 0 } });
+      return v(due) > 0 ? join((v(cash) + v(fcf)) / v(due), "ratio", [cash, fcf, due]) : null;
+    }
+  }
 }
 
 /**
@@ -306,7 +392,7 @@ function capitalAt(data: FindingData, metric: CapitalMetric, periodEnd: string, 
  * 120 days), or the four such quarters summed for a four-quarter span of a flow. Instants and rates never sum.
  */
 const PEER_FLOWS: readonly string[] = ["revenue", "grossProfit", "operatingIncome", "netIncome", "operatingCashFlow", "capex", "freeCashFlow", "debtIssued", "equityIssued", "buybacks", "dividends", "depreciation", "stockBasedCompensation"];
-const PEER_FIGURE: Partial<Record<string, string>> = { revenue: "revenue", gross: "grossProfit", operating: "operatingIncome", net: "netIncome", operatingCashFlow: "operatingCashFlow", capex: "capex", freeCashFlow: "freeCashFlow", debtIssued: "debtIssued", equityIssued: "equityIssued", buybacks: "buybacks", dividends: "dividends", totalAssets: "totalAssets", debt: "debt", cash: "cash", equity: "equity", leases: "leases", customerAdvances: "customerAdvances", rpo: "rpo", depreciation: "depreciation", stockCompensation: "stockBasedCompensation", stock_based_compensation: "stockBasedCompensation", depreciation_and_amortization: "depreciation", total_revenue: "revenue", operating_cash_flow: "operatingCashFlow", capital_expenditure: "capex", free_cash_flow: "freeCashFlow", net_income: "netIncome", operating_income: "operatingIncome", gross_profit: "grossProfit", total_assets: "totalAssets", long_term_debt: "debt", cash_and_cash_equivalents: "cash", stockholders_equity: "equity", remaining_performance_obligation: "rpo" };
+const PEER_FIGURE: Partial<Record<string, string>> = { revenue: "revenue", gross: "grossProfit", operating: "operatingIncome", net: "netIncome", operatingCashFlow: "operatingCashFlow", capex: "capex", freeCashFlow: "freeCashFlow", debtIssued: "debtIssued", equityIssued: "equityIssued", buybacks: "buybacks", dividends: "dividends", totalAssets: "totalAssets", debt: "debt", cash: "cash", equity: "equity", leases: "leases", customerAdvances: "customerAdvances", rpo: "rpo", depreciation: "depreciation", receivables: "receivables", currentAssets: "currentAssets", currentLiabilities: "currentLiabilities", stockCompensation: "stockBasedCompensation", stock_based_compensation: "stockBasedCompensation", depreciation_and_amortization: "depreciation", total_revenue: "revenue", operating_cash_flow: "operatingCashFlow", capital_expenditure: "capex", free_cash_flow: "freeCashFlow", net_income: "netIncome", operating_income: "operatingIncome", gross_profit: "grossProfit", total_assets: "totalAssets", long_term_debt: "debt", cash_and_cash_equivalents: "cash", stockholders_equity: "equity", remaining_performance_obligation: "rpo" };
 function peerAt(data: FindingData, ticker: string, ref: { capital: CapitalMetric } | { fundamental: string } | { metric: string }, periodEnd: string, span: FindingSpan): ResolvedValue | null {
   const company = data.peers?.companies.find(c => c.ticker === ticker);
   const key = PEER_FIGURE["capital" in ref ? ref.capital : "fundamental" in ref ? ref.fundamental : ref.metric];
@@ -411,6 +497,7 @@ export function resolveRef(data: FindingData, ref: FindingRef, periodEnd: string
   if ("capital" in ref) return amount(capitalAt(data, ref.capital, periodEnd, span), ref.capital === "rpoNext12MonthsShare" ? "percent" : "USD");
   if ("fundamental" in ref) { const r = fundamentalAt(data, ref.fundamental, periodEnd, span); return r && amount(r.point, r.unit); }
   if ("rpoBucket" in ref) return amount(rpoBucketAt(data, ref.rpoBucket, periodEnd));
+  if ("derived" in ref) return derivedAt(data, ref.derived, periodEnd, span);
   if ("peer" in ref) return peerAt(data, ref.peer.ticker, ref.peer.ref, periodEnd, span);
   if ("passageCell" in ref) return passageCellAt(data, ref.passageCell, periodEnd, span);
   if ("event" in ref) return eventAt(data, ref.event.id, ref.event.field, span);
@@ -444,6 +531,26 @@ const CAPITAL_LABEL_ZH: Record<CapitalMetric, string> = {
   receivables: "应收账款", inventory: "存货", productive: "固定资产", leaseAssets: "租赁使用权资产", intangibles: "商誉及无形资产", investments: "投资", leases: "租赁负债", customerAdvances: "递延收入及客户预付款", payables: "应付账款及应计负债", deferredTax: "递延所得税负债",
   rpo: "剩余履约义务（RPO）", rpoNext12MonthsShare: "12 个月内确认的 RPO",
 };
+const DERIVED_LABEL: Record<DerivedMetric, [string, string]> = {
+  ebitda: ["EBITDA", "EBITDA"], netDebt: ["Net debt", "净债务"], investedCapital: ["Invested capital", "投入资本"], nopat: ["After-tax operating income (NOPAT)", "税后经营利润（NOPAT）"],
+  accruals: ["Accruals ratio", "应计项比率"], nonCashCharges: ["Non-cash charges", "非现金项目"], workingCapitalChange: ["Working-capital change", "营运资本变动"],
+  averageEquity: ["Average shareholders' equity", "平均股东权益"], averageAssets: ["Average total assets", "平均总资产"], averageInvestedCapital: ["Average invested capital", "平均投入资本"],
+  incrementalReturn: ["Return on added capital", "增量资本回报"], interestExpense: ["Interest expense", "利息费用"], netExternalFunding: ["Net external funding", "净外部融资"],
+  cashRunwayMonths: ["Cash runway (months)", "现金跑道（月）"], debtDueCoverage: ["Coverage of debt due within 12 months", "12 个月内到期债务覆盖倍数"],
+  depreciationAmortization: ["Depreciation and amortization", "折旧与摊销"], stockCompensationExpense: ["Stock-based compensation", "股权激励费用"],
+};
+/** The formula behind a derived figure, in the names its inputs carry; for the page's lineage line and the ledger. */
+export const DERIVED_FORMULA: Record<DerivedMetric, string> = {
+  ebitda: "operating income + depreciation and amortization",
+  depreciationAmortization: "the cash-flow statement's depreciation and amortization lines, or the SEC series where those lines do not reconcile",
+  stockCompensationExpense: "the cash-flow statement's stock-based compensation lines, or the SEC series where those lines do not reconcile", netDebt: "debt + lease liabilities − cash", investedCapital: "debt + lease liabilities + equity − cash",
+  nopat: "operating income × (1 − income tax ÷ pretax income), rate held between 0 and 35%", accruals: "(net income − operating cash flow) ÷ average total assets",
+  nonCashCharges: "operating-section non-cash lines", workingCapitalChange: "operating-section working-capital lines",
+  averageEquity: "(equity + equity a year earlier) ÷ 2", averageAssets: "(total assets + total assets a year earlier) ÷ 2", averageInvestedCapital: "(invested capital + invested capital a year earlier) ÷ 2",
+  incrementalReturn: "(operating income − operating income a year earlier) ÷ (invested capital − invested capital a year earlier)", interestExpense: "non-operating lines named interest expense, as a charge",
+  netExternalFunding: "debt issued − debt repaid + stock issued", cashRunwayMonths: "cash ÷ (−free cash flow of the past four quarters ÷ 12), when free cash flow is negative",
+  debtDueCoverage: "(cash + free cash flow of the past four quarters) ÷ debt maturing within 12 months",
+};
 const MARGIN_LABEL: Partial<Record<FlowMetric, string>> = { gross: "Gross margin", operating: "Operating margin", net: "Net margin", research: "R&D % of revenue", sales: "S&M % of revenue", administration: "G&A % of revenue" };
 const MARGIN_LABEL_ZH: Partial<Record<FlowMetric, string>> = { gross: "毛利率", operating: "营业利润率", net: "净利率", research: "研发费用率", sales: "销售及市场费用率", administration: "管理费用率" };
 
@@ -458,6 +565,7 @@ export function refLabel(data: FindingData, ref: FindingRef, locale: Locale = "e
   }
   if ("metric" in ref) return (zh ? METRIC_LABEL_ZH : METRIC_LABEL)[ref.metric];
   if ("capital" in ref) return (zh ? CAPITAL_LABEL_ZH : CAPITAL_LABEL)[ref.capital];
+  if ("derived" in ref) return DERIVED_LABEL[ref.derived][zh ? 1 : 0];
   if ("fundamental" in ref) {
     const zhLabel = zh ? (FUNDAMENTAL_METRIC_LABEL_ZH as Record<string, string | undefined>)[ref.fundamental] : undefined;
     return zhLabel ?? data.fundamentals?.series.find(s => s.metricKey === ref.fundamental)?.label ?? FUNDAMENTAL_METRIC_CATALOG[ref.fundamental as keyof typeof FUNDAMENTAL_METRIC_CATALOG]?.label ?? ref.fundamental;

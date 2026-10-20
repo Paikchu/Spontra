@@ -34,15 +34,16 @@ export class GuidanceStore {
   /**
    * Events to start a Workflow for: new ones first, then every event last run under an older extractor version,
    * so raising the version re-extracts the whole history with no migration. The Workflow id ends with the version
-   * it ran under. A `started` event is left to its Workflow unless that has been silent long enough to be dead.
+   * it ran under. A `started` event is left to its Workflow unless that has been silent long enough to be dead. An event
+   * queued again (a transcript arrived after its run) still names its last instance, so its next one needs a new id.
    */
-  async queuedEvents(tickers: string[], limit: number, version = GUIDANCE_EXTRACTOR_VERSION, now = Date.now()): Promise<EarningsEventRow[]> {
+  async queuedEvents(tickers: string[], limit: number, version = GUIDANCE_EXTRACTOR_VERSION, now = Date.now()): Promise<Array<EarningsEventRow & { workflow_instance_id: string | null }>> {
     if (!tickers.length) return [];
     const stalled = new Date(now - STALLED_EVENT_MS).toISOString();
-    const { results } = await this.db.prepare(`SELECT ticker,accession,event_date,status,transcript_status FROM earnings_events
+    const { results } = await this.db.prepare(`SELECT ticker,accession,event_date,status,transcript_status,workflow_instance_id FROM earnings_events
       WHERE ticker IN (${tickers.map(() => "?").join(",")}) AND (status='queued'
         OR ((status IN ('extracted','complete','failed') OR (status='started' AND updated_at < ?)) AND (workflow_instance_id IS NULL OR workflow_instance_id NOT LIKE ?)))
-      ORDER BY status='queued' DESC, event_date DESC LIMIT ?`).bind(...tickers, stalled, `%-${guidanceWorkflowSuffix(version)}`, limit).all<EarningsEventRow>();
+      ORDER BY status='queued' DESC, event_date DESC LIMIT ?`).bind(...tickers, stalled, `%-${guidanceWorkflowSuffix(version)}`, limit).all<EarningsEventRow & { workflow_instance_id: string | null }>();
     return results;
   }
 
