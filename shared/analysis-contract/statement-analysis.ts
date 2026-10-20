@@ -3,7 +3,7 @@ import type { AnalysisFinding, FindingEvidence, FindingRef, FindingSpan } from "
 
 /**
  * The three-statement checkup (docs/three-statement-analysis-design.md): a fixed catalogue of metrics, each a
- * reference the findings runtime resolves, and fixed rules with thresholds. The page and the pipeline run the same
+ * reference the findings runtime resolves, and fixed rules with thresholds. The page and Spontra Analysis run the same
  * pure function over the same data, so a flag the reader sees is the flag the findings writer and the analyst were
  * told about. Nothing here is written by a model; nothing here is a sentence.
  */

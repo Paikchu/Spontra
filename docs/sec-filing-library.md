@@ -119,7 +119,7 @@ Item 1 的标题树就是业务结构：分部（Productivity and Business Proce
 
 ### 触发与隔离
 
-文件库是事件流水线（`docs/pipeline-events.md`）里的一个队列任务 `library`，没有自己的定时任务：
+文件库是事件流水线（`docs/analysis-events.md`）里的一个队列任务 `library`，没有自己的定时任务：
 
 - **触发**：订阅 `filing.archived`（归档写入或替换一份文件时，与指针同一事务发出），以及后台“重新拆解”发出的 `library.requested`。按公司防抖 30 秒、最长 5 分钟。
 - **执行**：任务消息独占一次队列调用（每批 1 条），与采集、地图推导不共享 CPU 和内存。一次运行处理该公司“有归档指针、但没有当前解析版本结果或来源已变化”的文档，按申报日期从旧到新，每次最多约 24 MB 源文件或 60 秒；剩下的立即排下一次运行。
@@ -393,7 +393,7 @@ Agent 的模型只负责选择读什么和作答；取原文、取数字、计�
 
 ## AI 工具的推理配置
 
-每个调用模型的 AI 工具在 `workers/pipeline/src/ai-config.ts` 中声明自己的推理档位，模型调用层（`callWorkerSecModel` 的 `reasoning` 参数）把它作为 DeepSeek 的 `reasoning_effort` 发送，并记入每次调用的日志。DeepSeek 接受 `low`、`high`（默认）、`max`。
+每个调用模型的 AI 工具在 `workers/analysis/src/ai-config.ts` 中声明自己的推理档位，模型调用层（`callWorkerSecModel` 的 `reasoning` 参数）把它作为 DeepSeek 的 `reasoning_effort` 发送，并记入每次调用的日志。DeepSeek 接受 `low`、`high`（默认）、`max`。
 
 | AI 工具 | 档位 | 理由 |
 | --- | --- | --- |
@@ -504,11 +504,11 @@ XBRL 标准概念（`Revenues`、`OperatingIncomeLoss`）各家通用，但分�
 
 如果 P3 中发现单家公司的任务靠实体和主题查找也找不准，AI Search 可以提前到 P3。
 
-代码位置：纯解析在 `shared/analysis-runtime/filing-library/`（结构、表格、类别、ID，可单测），存储与准备在 `workers/pipeline/src/filing-library/`，流水线任务在 `workers/pipeline/src/pipeline/library-tasks.ts`。
+代码位置：纯解析在 `shared/analysis-runtime/filing-library/`（结构、表格、类别、ID，可单测），存储与准备在 `workers/analysis/src/filing-library/`，流水线任务在 `workers/analysis/src/pipeline/library-tasks.ts`。
 
 ## 验证
 
-- **自动测试**：L1 的纯函数用 `node:test` 和固定样本测试，接入 Pipeline 的自动构建命令（需要在 Cloudflare 构建设置里加上，或并入现有的检查脚本），每次推送都跑。
+- **自动测试**：L1 的纯函数用 `node:test` 和固定样本测试，接入 Spontra Analysis 的自动构建命令（需要在 Cloudflare 构建设置里加上，或并入现有的检查脚本），每次推送都跑。
 - **固定样本**：MSFT 10-K、ORCL 10-K、NVDA 10-Q、CRWV 10-Q、AAPL 财报 8-K 的 EX-99.1、NBIS 20-F、JPM 10-Q、BRK.B 10-K。每份写下期望：识别出的 Item、Item 1 的分部和产品线节点、某张表的列名和单元格、某个事实挂到的单元格。
 - **ID 稳定性**：同一份样本用两个只差一处切分规则的解析器版本跑，原文没变的段落 ID 必须相同。
 - **全量回填后的统计**：每个文档的 `structure`、`structure_check`、各 Item 字符数、退化为 outline/flat 的比例、`unreadable` 的原因。

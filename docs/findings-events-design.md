@@ -10,19 +10,19 @@
 
 | 已有能力 | 位置 | 可直接复用 |
 | --- | --- | --- |
-| SEC 申报抓取：每家公司最近 40 份 submissions，含 8-K 的 `items` 字段，12 小时刷新 | `workers/pipeline/src/sec/pipeline.ts` `fetchSecFeed`、`sec.ts` `parseSecSubmissions` | 是，需补 Form 4 |
+| SEC 申报抓取：每家公司最近 40 份 submissions，含 8-K 的 `items` 字段，12 小时刷新 | `workers/analysis/src/sec/pipeline.ts` `fetchSecFeed`、`sec.ts` `parseSecSubmissions` | 是，需补 Form 4 |
 | 8-K/6-K 事件简析：headline、3–5 条 bullets、analystView、`eventCategory`（earnings_update/guidance/m&a/executive/legal/other） | `pipeline.ts` `summarizePreparedSecEvent` | 是，作为事件要点的文字层 |
 | 10-Q/10-K 结构化报告、XBRL 事实、同比环比 | `sec/analysis.ts`、`report.ts` | 是 |
 | 要点合同与校验：要点不带数字，数字在读取时从已发布数据解析，解析不到就不展示 | `shared/analysis-contract/findings.ts`、`shared/analysis-runtime/findings.ts` | 是，要扩一种 ref |
-| 要点写作流程：ledger → DeepSeek → verify → 发布，`*/10` cron 扫描，admin 可手动触发 | `workers/pipeline/src/findings/*`、`admin/ai-runs.ts` | 是 |
+| 要点写作流程：ledger → DeepSeek → verify → 发布，`*/10` cron 扫描，admin 可手动触发 | `workers/analysis/src/findings/*`、`admin/ai-runs.ts` | 是 |
 | 画布：Sankey（利润）、资金池（现金流/资产负债）、lens（trend/compare_bars/share_area/ladder）、逐条看、对照拆分、watch 回看 | `apps/business-site/src/BusinessMap.tsx`、`LensPanel.tsx` | 是 |
 | 指引合同：每条指引带原文引用、修订动作、实际值 | `shared/analysis-contract/guidance.ts` | 是 |
 | 老的财报与事件 tab：按申报日分页的 accordion，每份 summary、keyMetrics、EDGAR 链接 | `app/analysis/stocks/[ticker]/SecFilingsSection.tsx`、`StockDetail.tsx` 的 `sec-filings` tab | 降级为“全部申报”归档 |
-| web 搜索服务（Tavily，带缓存） | `workers/pipeline/src/web-search` | 用于内幕交易背景 |
+| web 搜索服务（Tavily，带缓存） | `workers/analysis/src/web-search` | 用于内幕交易背景 |
 
 缺口：Form 4 未抓取（仓库里只剩 `earning-report.css` 的 `.sec-form-badge[data-form="4"]` 死样式）；8-K 的 `items` 只在 `sec:filings` 缓存里，`sec_filings` 表没有该列，`hydratePublicFiling` 写死 `items: ""`，前端拿不到；item 编码只有 2.02 被三处用到（guidance 的 `earnings_events` 表、financial-data 两处）；事件没有进入要点合同；画布没有时间轴；事件没有专属图。
 
-另外两点影响方案：要点目前是“每家公司只写最新一期”，不是按申报；业务地图站 `apps/business-site` 是独立 Worker，经 Service Binding 读 pipeline。
+另外两点影响方案：要点目前是“每家公司只写最新一期”，不是按申报；业务地图站 `apps/business-site` 是独立 Worker，经 Service Binding 读 Spontra Analysis。
 
 ## 数据层
 
@@ -194,14 +194,14 @@ type CompanyEvent = {
 - Form 4 由申报人提交，issuer submissions 里偶有延迟或缺失，页面标“截至 EDGAR 最近同步”。
 - 事件要点数量会远多于季度要点，rail 默认只显示上期至今，避免淹没本期要点。
 - 搜索背景是唯一的非确定性来源，必须和数字层分区显示，并保留来源链接。
-- 迁移：`insider_transactions` 表属于 Pipeline 数据库，按 AGENTS.md 要先完善自动发布的迁移流程再上线；P1 用 `sec_cache` 键过渡。
+- 迁移：`insider_transactions` 表属于 Spontra Analysis 数据库，按 AGENTS.md 要先完善自动发布的迁移流程再上线；P1 用 `sec_cache` 键过渡。
 
 ## 已实现（2026-10-09）
 
 - 合同 `shared/analysis-contract/events.ts`（`events.v1`）与运行时 `shared/analysis-runtime/events.ts`：按 8-K item 编码分类、zod 校验、内幕交易派生指标（占比、节奏、集群、规则标签、持股路径）。
-- Pipeline `workers/pipeline/src/events/`：`form4.ts` 解析 ownershipDocument XML；`workflow.ts` 的 `runEventsSweep` 挂在 `*/10` cron 的 allSettled 列表里，读 EDGAR submissions（6 小时一次）、Form 4 XML（每 tick 每公司 8 份）、申报索引页附件（6 份），复用 `sec_filing_summaries` 里已有的事件简析；一切写入 `sec_cache`（`events:v1:`、`insider:v1:`、`exhibits:v1:`），无迁移、无模型调用。`EVENTS_ENABLED=false` 可暂停。
-- 读取 `GET /api/v1/companies/:t/events`（Pipeline `MapReads` 入口），地图站对外为 `/api/business/v1/companies/:t/events`。
+- Spontra Analysis `workers/analysis/src/events/`：`form4.ts` 解析 ownershipDocument XML；`workflow.ts` 的 `runEventsSweep` 挂在 `*/10` cron 的 allSettled 列表里，读 EDGAR submissions（6 小时一次）、Form 4 XML（每 tick 每公司 8 份）、申报索引页附件（6 份），复用 `sec_filing_summaries` 里已有的事件简析；一切写入 `sec_cache`（`events:v1:`、`insider:v1:`、`exhibits:v1:`），无迁移、无模型调用。`EVENTS_ENABLED=false` 可暂停。
+- 读取 `GET /api/v1/companies/:t/events`（Spontra Analysis `MapReads` 入口），地图站对外为 `/api/business/v1/companies/:t/events`。
 - 地图站：rail 在要点下新增“期间事件”段（上期财报申报日起，不足三条放宽到 90 天 / 最近五条；更早折叠；授予代扣赠与只计数）；stage 底部新增时间轴（报告为方点、8-K 为圆点、Form 4 为小点，按类别着色，点报告切期，点事件开 lens）；事件 lens：Form 4 画持股阶梯（台阶 = 申报后持股，圆点面积 = 金额，空心 = 10b5-1，聚焦项发光）并给出规则标签与触发规则；8-K 列条款、附件、摘要与 EDGAR 链接。`?event=` 深链；与要点聚焦互斥。
 - 财报内容迁入地图（2026-10-09 第二次提交）：地图站 worker 新增 `/filings`（上游 `PublicFilingPage` 压成 `PublicFilingDigest`：财季标签、标题、要点、投资含义、补充分析、关键数据带同比环比、叙述变化、指引与风险、核验状态、来源文件与 EDGAR 链接）和 `/filings/:accession?reportDate&reportVersion`（完整报告原样透传）。rail 的"期间事件"改为"财报与事件"：财报与事件按时间混排，业绩期合并进财报的 8-K 只列一次；时间轴的报告点改由申报列表提供；财报 lens 左侧关键数据卡与叙述变化，右侧结论与来源；"阅读完整报告"在地图内用 `SecReportDocument` 以模态方式渲染（lazy chunk，带 earning-report 样式与 KaTeX）。`?report=` 深链。主应用的 `/positions/:ticker` 旧 tab 未改动。
 - 未做：业绩 8-K 预读要点、搜索背景层、高管任期条、并购/融资/回购叠加、逐条看跨事件、30 日均量。
-- 地图站已直连 pipeline 读 API（2026-10-09 第三、四次提交）：pipeline 新增命名入口 `MapReads`（`workers/pipeline/src/index.ts`），只暴露读 API，固定身份 `business-map`；`apps/business-site/wrangler.jsonc` 的 `EARNING_REPORT_PIPELINE` 绑定到该入口。命名入口公网不可达，绑定即凭证，不需要 key 或 secret，不再经过 spontra-app。
+- 地图站已直连 Spontra Analysis 读 API（2026-10-09 第三、四次提交）：Spontra Analysis 新增命名入口 `MapReads`（`workers/analysis/src/index.ts`），只暴露读 API，固定身份 `business-map`；`apps/business-site/wrangler.jsonc` 的 `SPONTRA_ANALYSIS` 绑定到该入口。命名入口公网不可达，绑定即凭证，不需要 key 或 secret，不再经过 spontra-app。

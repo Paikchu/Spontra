@@ -23,7 +23,7 @@ Your previous response violated the JSON schema. Return one valid JSON object on
 ## 1 财报期识别
 
 - 调用阶段：`earnings-period`
-- 来源：[workers/pipeline/src/sec/earnings.ts:15](/Users/max/Developer/Spontra/workers/pipeline/src/sec/earnings.ts:15)
+- 来源：[workers/analysis/src/sec/earnings.ts:15](/Users/max/Developer/Spontra/workers/analysis/src/sec/earnings.ts:15)
 - 输入：8-K/6-K 原文节选、表单类型、申报日。定期报告直接取报告期末，不调用此模型。
 - 输出／执行约束：isEarnings、periodEnd、dateQuote；程序继续验证日期及逐字引用。
 
@@ -37,7 +37,7 @@ dateQuote must be an exact source excerpt containing the complete period-end dat
 ## 2 重要披露扫描
 
 - 调用阶段：`discovery:{index}`
-- 来源：[workers/pipeline/src/sec/discovery.ts:13](/Users/max/Developer/Spontra/workers/pipeline/src/sec/discovery.ts:13)
+- 来源：[workers/analysis/src/sec/discovery.ts:13](/Users/max/Developer/Spontra/workers/analysis/src/sec/discovery.ts:13)
 - 输入：当前文本块、起始位置、公司／财报期、材料清单。
 - 输出／执行约束：disclosures；每项含 title、quote、whyItMatters、question、materiality、polarity。
 
@@ -54,7 +54,7 @@ dateQuote must be an exact source excerpt containing the complete period-end dat
 ## 3 主题规划
 
 - 调用阶段：`manager`
-- 来源：[workers/pipeline/src/sec/pipeline.ts:575](/Users/max/Developer/Spontra/workers/pipeline/src/sec/pipeline.ts:575)
+- 来源：[workers/analysis/src/sec/pipeline.ts:575](/Users/max/Developer/Spontra/workers/analysis/src/sec/pipeline.ts:575)
 - 输入：发现清单、章节索引、财报期来源、分析简报。
 - 输出／执行约束：nodes；高重要性发现还会被程序强制纳入。
 
@@ -78,7 +78,7 @@ title 和 question 使用简体中文；id 使用小写英文短横线 slug；ke
 ## 4 节点分析与修复
 
 - 调用阶段：`node:{id}`
-- 来源：[workers/pipeline/src/sec/pipeline.ts:605](/Users/max/Developer/Spontra/workers/pipeline/src/sec/pipeline.ts:605)
+- 来源：[workers/analysis/src/sec/pipeline.ts:605](/Users/max/Developer/Spontra/workers/analysis/src/sec/pipeline.ts:605)
 - 输入：动态任务 spec：question、sectionIds、keywords、验收标准；对应原文／证据、可信 XBRL 与历史序列。
 - 输出／执行约束：findings、narrative、facts。初始分析、遗漏补查、Manager 修复复用此提示词。
 
@@ -100,7 +100,7 @@ metricKey 优先使用 allowedMetricKeys 中的值；属于管理层自定义 KP
 ## 5 独立遗漏审校
 
 - 调用阶段：`discovery-audit`
-- 来源：[workers/pipeline/src/sec/discovery.ts:91](/Users/max/Developer/Spontra/workers/pipeline/src/sec/discovery.ts:91)
+- 来源：[workers/analysis/src/sec/discovery.ts:91](/Users/max/Developer/Spontra/workers/analysis/src/sec/discovery.ts:91)
 - 输入：已验证发现清单、原计划、实际节点正文及状态。
 - 输出／执行约束：missingDisclosureIds；程序只接受真实发现 ID，最多补查 3 项。
 
@@ -113,7 +113,7 @@ metricKey 优先使用 allowedMetricKeys 中的值；属于管理层自定义 KP
 ## 6 Manager 复核
 
 - 调用阶段：`manager-review:{round}`
-- 来源：[workers/pipeline/src/sec/pipeline.ts:594](/Users/max/Developer/Spontra/workers/pipeline/src/sec/pipeline.ts:594)
+- 来源：[workers/analysis/src/sec/pipeline.ts:594](/Users/max/Developer/Spontra/workers/analysis/src/sec/pipeline.ts:594)
 - 输入：brief、plan、disclosures、sections、round、节点正文与状态、outputSchema。
 - 输出／执行约束：status、questions、repairTasks、unresolvedQuestions、coverageScore、stopReason。
 
@@ -129,7 +129,7 @@ answered要求准确披露、原文证据、重要性、推断边界与验证条
 ## 7 报告合成（含历史判断复核）
 
 - 调用阶段：`synthesis`
-- 来源：[workers/pipeline/src/sec/pipeline.ts:641](/Users/max/Developer/Spontra/workers/pipeline/src/sec/pipeline.ts:641)
+- 来源：[workers/analysis/src/sec/pipeline.ts:641](/Users/max/Developer/Spontra/workers/analysis/src/sec/pipeline.ts:641)
 - 输入：最终简报、节点分析、Manager Review、发现及扫描覆盖、可信比较数据、输出 schema。
 - 输出／执行约束：headline、bullets、analystView、report、keyMetrics、changes、dataQuality、presentation，以及历史 reviews。
 
@@ -157,7 +157,7 @@ Manager Review为partial或discoveryCoverage存在警告时，report必须说明
 ## 8 事件简析／业绩初报
 
 - 调用阶段：`event-summary`
-- 来源：[workers/pipeline/src/sec/pipeline.ts:622](/Users/max/Developer/Spontra/workers/pipeline/src/sec/pipeline.ts:622)
+- 来源：[workers/analysis/src/sec/pipeline.ts:622](/Users/max/Developer/Spontra/workers/analysis/src/sec/pipeline.ts:622)
 - 输入：8-K/6-K 正文与附件片段、发现清单、历史财务值、outputSchema。
 - 输出／执行约束：headline、bullets、analystView、eventCategory、report。
 
@@ -181,7 +181,7 @@ headline 是一句有证据支持的方向性结论；bullets 输出 3 至 5 条
 ## 9 独立阅读编排（按需）
 
 - 调用阶段：`presentation`
-- 来源：[workers/pipeline/src/operations.ts:262](/Users/max/Developer/Spontra/workers/pipeline/src/operations.ts:262)
+- 来源：[workers/analysis/src/operations.ts:262](/Users/max/Developer/Spontra/workers/analysis/src/operations.ts:262)
 - 输入：schema、requiredNodeIds、可用节点与块类型、指标与可信趋势。
 - 输出／执行约束：density、sections。仅在合成结果缺少有效 presentation 时执行；失败保留标准报告。
 
@@ -192,7 +192,7 @@ headline 是一句有证据支持的方向性结论；bullets 输出 3 至 5 条
 ## 10 Memory 提取
 
 - 调用阶段：`memory-extract`
-- 来源：[workers/pipeline/src/memory-workflow.ts:135](/Users/max/Developer/Spontra/workers/pipeline/src/memory-workflow.ts:135)
+- 来源：[workers/analysis/src/memory-workflow.ts:135](/Users/max/Developer/Spontra/workers/analysis/src/memory-workflow.ts:135)
 - 输入：已发布财报的紧凑底稿、既有 Memory、候选 schema 与有效证据范围。
 - 输出／执行约束：结构化记忆候选；判断需要 horizon、nextTest、falsifier，延续条目保留原 memoryId。
 
@@ -207,7 +207,7 @@ Return one JSON object using the exact outputSchema.
 ## 11 业务前瞻：本季度独立诊断
 
 - 调用阶段：`company-current-quarter`
-- 来源：[workers/pipeline/src/company-analysis-agent.ts:203](/Users/max/Developer/Spontra/workers/pipeline/src/company-analysis-agent.ts:203)
+- 来源：[workers/analysis/src/company-analysis-agent.ts:203](/Users/max/Developer/Spontra/workers/analysis/src/company-analysis-agent.ts:203)
 - 输入：Yahoo 财务特征、本期 Memory；不提供历史结论。
 - 输出／执行约束：summary、drivers、risks、unresolved。
 
@@ -221,7 +221,7 @@ Separate reported fact, management explanation, and analytical inference. Return
 ## 12 业务前瞻：跨期推理
 
 - 调用阶段：`company-cross-period-round-{round}`
-- 来源：[workers/pipeline/src/company-analysis-agent.ts:212](/Users/max/Developer/Spontra/workers/pipeline/src/company-analysis-agent.ts:212)
+- 来源：[workers/analysis/src/company-analysis-agent.ts:212](/Users/max/Developer/Spontra/workers/analysis/src/company-analysis-agent.ts:212)
 - 输入：独立诊断、跨期特征、Memory 索引、已查阅 Memory、旧结论。
 - 输出／执行约束：inspect_memory 或 finalize；最多 4 轮。
 
@@ -249,7 +249,7 @@ This is the last round. You must finalize or fail.
 ## 13 业务前瞻：编辑成文
 
 - 调用阶段：`company-editorial-report-v1`
-- 来源：[workers/pipeline/src/company-analysis-agent.ts:229](/Users/max/Developer/Spontra/workers/pipeline/src/company-analysis-agent.ts:229)
+- 来源：[workers/analysis/src/company-analysis-agent.ts:229](/Users/max/Developer/Spontra/workers/analysis/src/company-analysis-agent.ts:229)
 - 输入：锁定的 decision、获准证据、可绘图指标、输出 schema。
 - 输出／执行约束：headline、introduction、2–6 个 highlights 及可选展示块。
 

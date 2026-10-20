@@ -26,7 +26,7 @@ const m = messages({
 
 type FigureBody<K extends SecFigureKind> = (props: { figure: Extract<SecFigure, { kind: K }> }) => ReactNode;
 
-/** The closed registry: one drawing component per figure kind the Pipeline can build. */
+/** The closed registry: one drawing component per figure kind Spontra Analysis can build. */
 const FIGURE_COMPONENTS: { [K in SecFigureKind]: FigureBody<K> } = {
   kpi_strip: KpiStrip,
   growth: GrowthChart,

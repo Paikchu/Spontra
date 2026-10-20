@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { measureReportReliability, type GenerationJob } from "../workers/pipeline/src/report-reliability.ts";
+import { measureReportReliability, type GenerationJob } from "../workers/analysis/src/report-reliability.ts";
 
 const args = process.argv.slice(2);
 const value = (name: string) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined; };

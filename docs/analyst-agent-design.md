@@ -1,6 +1,6 @@
 # 方案：要点分析师 Agent（Analyst）——让每条要点成为一份可审计的案卷
 
-**状态：** P0–P5 于 2026-10-14 实现并上线，ORCL 六条要点全部成稿（见文末"实现状态"） · **日期：** 2026-10-13 · **前置：** [finding-lens-agent](finding-lens-agent.md)（已上线）、[findings-events-design](findings-events-design.md)、[sec-filing-library](sec-filing-library.md)、[pipeline-events](pipeline-events.md)
+**状态：** P0–P5 于 2026-10-14 实现并上线，ORCL 六条要点全部成稿（见文末"实现状态"） · **日期：** 2026-10-13 · **前置：** [finding-lens-agent](finding-lens-agent.md)（已上线）、[findings-events-design](findings-events-design.md)、[sec-filing-library](sec-filing-library.md)、[analysis-events](analysis-events.md)
 
 本方案由一次多 Agent 工作流产出：六个读码 Agent 盘点仓库现有的数据与工具，三个设计 Agent 分别从分析师、系统、产品三个角度独立设计，两个评审 Agent 打分与嫁接，一个对抗评审 Agent 拿真实 D1 数据核对每个假设。下文是综合后的结论，"数据现实"一节全部来自对线上数据的核对，不是推测。
 
@@ -97,7 +97,7 @@ filing.archived(10-K/10-Q) / transcript.stored / peers.published ─────
 三份设计与两位评审一致，Agents SDK 自己的文档也这么说（"长流程、需要自动重试的用 Workflows"）：
 
 - 这个任务是**批处理、队列触发、无客户端会话**：没有 WebSocket、没有每用户状态、没有定时唤醒（alarm 在本仓库规则下就是换了名字的轮询）。Agents SDK 多出来的三样东西——有状态 actor、客户端状态同步、调度——一样都用不到。
-- 多步推理需要的持久性**已经有了**：`workers/pipeline/src/index.ts` 的 `durableSteps` 把每一轮模型调用和每次工具调用做成命名 `step.do`（结果 > 512 KiB 溢写 R2，重放跳过已完成步，5xx 步内重试，4xx 转 `NonRetryableError`，`SecModelOutputError` 变成一轮 `{action:"invalid"}`），死信进 `pipeline_dead`，`trackRun/trackSteps` 给 Admin 轨迹。业务脑图与 lens agent 已经这样跑 ReAct。
+- 多步推理需要的持久性**已经有了**：`workers/analysis/src/index.ts` 的 `durableSteps` 把每一轮模型调用和每次工具调用做成命名 `step.do`（结果 > 512 KiB 溢写 R2，重放跳过已完成步，5xx 步内重试，4xx 转 `NonRetryableError`，`SecModelOutputError` 变成一轮 `{action:"invalid"}`），死信进 `pipeline_dead`，`trackRun/trackSteps` 给 Admin 轨迹。业务脑图与 lens agent 已经这样跑 ReAct。
 - 引入 Durable Object 会带来第二套持久化模型与 migrations，且 DO 在一次 2–5 分钟的 DeepSeek 调用期间按墙钟计费（Workflow 步等待 fetch 不计）。
 - `runFiber`/`stash` 没有自动重试，lambda 不恢复，只能在 `onFiberRecovered` 里重新推断——对一个 30 步的调查循环，这比 `step.do` 差。
 

@@ -39,7 +39,7 @@
 线上使用 `sec_analysis_jobs` 中新发布之后创建的请求统计。`complete + published` 才计成功；最终 `failed` 或超过 24 小时仍未完成计失败；尚未到期限的运行请求单列，不以排队/重试状态掩盖失败。按 job ID 去重，不按尝试次数计算。
 
 ```sh
-npx wrangler d1 execute earning-report-analysis-sec-web --remote --config workers/pipeline/wrangler.jsonc --command "SELECT job_id,status,current_stage,error_code,created_at,updated_at FROM sec_analysis_jobs WHERE created_at >= 'RELEASE_UTC_SQL_TIMESTAMP'" --json > /tmp/sec-generation-jobs.json
+npx wrangler d1 execute earning-report-analysis-sec-web --remote --config workers/analysis/wrangler.jsonc --command "SELECT job_id,status,current_stage,error_code,created_at,updated_at FROM sec_analysis_jobs WHERE created_at >= 'RELEASE_UTC_SQL_TIMESTAMP'" --json > /tmp/sec-generation-jobs.json
 node --experimental-strip-types scripts/sec-report-reliability.ts --input /tmp/sec-generation-jobs.json --since RELEASE_ISO_TIMESTAMP
 ```
 

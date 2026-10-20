@@ -1,4 +1,4 @@
-// Shared display and derivation metadata. Provider field mappings remain in Pipeline.
+// Shared display and derivation metadata. Provider field mappings remain in Spontra Analysis.
 export const FUNDAMENTAL_METRIC_CATALOG = {
   "total_revenue": {
     "basis": "reported",
@@ -479,7 +479,7 @@ export const FUNDAMENTAL_METRIC_CATALOG = {
   }
 } as const;
 
-/** Each metric's `label` in Chinese, for a reader's page; the catalog's English labels stay what the pipeline and the model read. */
+/** Each metric's `label` in Chinese, for a reader's page; the catalog's English labels stay what Spontra Analysis and the model read. */
 export const FUNDAMENTAL_METRIC_LABEL_ZH: Record<keyof typeof FUNDAMENTAL_METRIC_CATALOG, string> = {
   total_revenue: "营收", gross_profit: "毛利", operating_income: "营业利润", net_income: "净利润", diluted_eps: "稀释每股收益",
   operating_cash_flow: "经营现金流", capital_expenditure: "资本开支", free_cash_flow: "自由现金流", stock_based_compensation: "股权激励费用",

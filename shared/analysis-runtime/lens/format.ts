@@ -5,7 +5,7 @@ import { compactMoney as moneyIn, fiscalYearTo, multiple, perShare, shortPeriod 
 
 /**
  * Every figure a lens chart writes. `locale` picks the reader's number forms; left out, the English forms
- * the pipeline has always written, which the harness shows the model.
+ * Spontra Analysis has always written, which the harness shows the model.
  */
 
 /** Percentage points after a signed figure: " pp" / "个百分点". */

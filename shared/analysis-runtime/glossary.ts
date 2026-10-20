@@ -1,6 +1,6 @@
 /**
  * The fixed Chinese for recurring financial terms (docs/i18n-conventions.md). The interface tables use these words,
- * and the pipeline's translator is told to use them, so a term reads the same in a label and in a sentence.
+ * and Spontra Analysis's translator is told to use them, so a term reads the same in a label and in a sentence.
  */
 export const GLOSSARY_ZH: ReadonlyArray<readonly [string, string]> = [
   ["revenue", "营收"], ["cost of revenue", "营业成本"], ["gross profit", "毛利"], ["gross margin", "毛利率"],

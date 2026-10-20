@@ -3,7 +3,7 @@ import type { Locale } from "./locale.ts";
 
 /**
  * Payment schedules resolved for a finding: a debt maturity, lease or purchase-obligation figure read from the
- * capital projection at a period end. Pure and worker-safe, so the pipeline and the page resolve the same way.
+ * capital projection at a period end. Pure and worker-safe, so Spontra Analysis and the page resolve the same way.
  */
 
 /** A resolved schedule figure: the amount, the instant it is stated at, and the filing it comes from. */

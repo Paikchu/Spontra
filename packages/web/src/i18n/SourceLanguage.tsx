@@ -9,7 +9,7 @@ export { langOf };
 /**
  * A tag beside generated analysis that is not in the reader's language yet: it names the language the text is in.
  * `of` is the block's generated text; the tag shows while any of it is still in another language than the page, so it
- * disappears by itself once the pipeline's translation of that text arrives. Without `of`, `lang` states it directly.
+ * disappears by itself once Spontra Analysis's translation of that text arrives. Without `of`, `lang` states it directly.
  */
 export function SourceLanguage({ of, lang, className = "source-lang" }: { of?: string | null | ReadonlyArray<string | null | undefined>; lang?: Locale; className?: string }) {
   const locale = useLocale();

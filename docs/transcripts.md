@@ -1,6 +1,6 @@
 # Transcript 全文库
 
-Pipeline 的 `/admin/transcripts` 接口提供公司筛选、财报期间列表、采集状态和全文。后台改为只服务 BusinessView 后（2026-10-12）已移除 Transcript 页面，Admin 代理也不再转发该接口。接口沿用 Admin 登录认证，响应为 `private, no-store`。全文不经过模型摘要或截断，按供应商的发言顺序保留。
+Spontra Analysis 的 `/admin/transcripts` 接口提供公司筛选、财报期间列表、采集状态和全文。后台改为只服务 BusinessView 后（2026-10-12）已移除 Transcript 页面，Admin 代理也不再转发该接口。接口沿用 Admin 登录认证，响应为 `private, no-store`。全文不经过模型摘要或截断，按供应商的发言顺序保留。
 
 `transcript` 任务（10-Q/10-K/20-F/6-K 的 `filing.archived` 触发，每轮 1 份）从有效数据白名单公司的已归档 SEC 10-Q/10-K/20-F 中发现财报期间；外国发行人（6-K 报季度）的季度取自收入历史里首次报告该季的 6-K（期末后 120 天内，次年作为对比期的不算），同期先登记 6-K，所以以 6-K 发布第四季度时按 6-K 日期。包含历史归档；同公司同期间只建一条记录。财报指引公司（财报摘要开启）的期间优先。
 
@@ -17,6 +17,6 @@ Pipeline 的 `/admin/transcripts` 接口提供公司筛选、财报期间列表�
 - 供应商限流分两种：每日额度（`PROVIDER_DAILY_LIMIT`）当天停止请求，下一 UTC 日继续；突发限流（每秒 1 次，`PROVIDER_THROTTLED`）该期 65 秒后重试，不占当天，也不计入该期的尝试次数。日志 `transcript-library-error` 的 `provider` 字段保留供应商原话（已去掉密钥和链接）。
 - 请求失败次日重试，三次失败后显示不可用；供应商明确没有文字稿或拒绝访问时保留相应状态。
 
-上线通过 `origin/main` 自动构建。现有 `worker:pipeline:deploy` 在 CI 中先应用 D1 迁移再检查迁移并发布。`0017_company_transcripts.sql` 是新增表，不修改已有财报。Admin 与 Pipeline 两个自动构建均须成功。
+上线通过 `origin/main` 自动构建。现有 `analysis:deploy` 在 CI 中先应用 D1 迁移再检查迁移并发布。`0017_company_transcripts.sql` 是新增表，不修改已有财报。Admin 与 Spontra Analysis 两个自动构建均须成功。
 
 核验：生产需确认队列、实际全文及自动部署结果。

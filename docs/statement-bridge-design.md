@@ -1,6 +1,6 @@
 # 方案：利润表计算链与列报档案——新公司不再需要改代码
 
-**状态：** 已实现（2026-10-15，见文末"实现状态"） · **日期：** 2026-10-15 · **前置：** [revenue-flow](revenue-flow.md)、[pipeline-events](pipeline-events.md)、[businessview-admin](businessview-admin.md) · **起因：** AMZN 加入数据名单后采集完成却"未就绪"（缺 `pretax`），GOOGL 停在"重述须复核"
+**状态：** 已实现（2026-10-15，见文末"实现状态"） · **日期：** 2026-10-15 · **前置：** [revenue-flow](revenue-flow.md)、[analysis-events](analysis-events.md)、[businessview-admin](businessview-admin.md) · **起因：** AMZN 加入数据名单后采集完成却"未就绪"（缺 `pretax`），GOOGL 停在"重述须复核"
 
 ## 一句话
 
@@ -8,7 +8,7 @@
 
 ## 今天为什么每家公司都要改代码
 
-采集器（`workers/pipeline/src/financial-data/parser.ts`）把三件事写死了：
+采集器（`workers/analysis/src/financial-data/parser.ts`）把三件事写死了：
 
 1. **概念名清单。** `tags` 把每个指标对应到两三个 us-gaap 概念名。`pretax` 只认 `…BeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest` 和 `…IncludingNoncontrollingInterest…`；Amazon 用的是第三个 `IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments`。缺一个名字，整家公司就"未就绪"。
 2. **固定公式。** 完整性检查（`shared/analysis-runtime/financial-data/completeness.ts`）要求 `税前 − 所得税 = 净利润` 精确相等（容差 1e-9）。Amazon 在所得税之后还有一行"权益法投资损益（税后）"，2026Q2 为 −1,100 万，所以即便认出了税前，这条公式也会报 `UNBALANCED_STATEMENT`。四种 `incomeModel`（standard / direct_operating / financial / insurance）各一套公式，第五种列报没有位置。
@@ -154,7 +154,7 @@ bridge?: {
 - `presentation.unresolved`（ticker、accession、问题清单），发自 collect；订阅者 `presentation`。
 - `presentation.changed`（ticker，detail：旧/新版本、状态），发自 collect 与 presentation；订阅者 `collect`（这一家重采）、`map-derive`。
 
-`presentation` 不订阅 `presentation.changed`，collect 对同一份申报的同一组问题只发一次 `presentation.unresolved`，事件图无环，由 `check:pipeline:boundary` 校验。后台的"重新判定"走 `admin` 发件人。
+`presentation` 不订阅 `presentation.changed`，collect 对同一份申报的同一组问题只发一次 `presentation.unresolved`，事件图无环，由 `check:analysis:boundary` 校验。后台的"重新判定"走 `admin` 发件人。
 
 ## 分期
 

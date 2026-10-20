@@ -55,7 +55,7 @@ function initial(name: "ticker" | "kind") { try { return new URLSearchParams(win
 /** Companies on the left, the chosen kinds of one company on the right. The page keeps `?ticker=&kind=` in its URL. */
 export function AiRuns({ onUnauthorized, onAuthenticated, kinds, translations = false }: { onUnauthorized: () => void; onAuthenticated: () => void; kinds: ViewKind[]; translations?: boolean }) {
   const kindTabs = KINDS.filter(([k]) => kinds.includes(k));
-  /** The Chinese the pipeline wrote for the company's publications, as a last tab. */
+  /** The Chinese Spontra Analysis wrote for the company's publications, as a last tab. */
   const tabs: Array<[ViewKind | "translations", string]> = [...kindTabs, ...translations ? [["translations", "中文译文"] as [ViewKind | "translations", string]] : []];
   const [list, setList] = useState<AiCompanies | null>(null), [search, setSearch] = useState(""), [listError, setListError] = useState("");
   const [ticker, setTicker] = useState(initial("ticker")), [kind, setKind] = useState<ViewKind | "translations">(() => tabs.find(([k]) => k === initial("kind"))?.[0] ?? tabs[0]![0]);

@@ -1,6 +1,6 @@
 # TSM 后端数据错误调查与解决方案
 
-调查时间：2026-10-15 07:00–07:10 UTC。数据来源：生产 D1 `earning-report-analysis-sec-web`、SEC EDGAR 原文件，以及在本地用仓库内解析器（`workers/pipeline/src/financial-data/*`）对 TSMC 实际文件的复现。
+调查时间：2026-10-15 07:00–07:10 UTC。数据来源：生产 D1 `earning-report-analysis-sec-web`、SEC EDGAR 原文件，以及在本地用仓库内解析器（`workers/analysis/src/financial-data/*`）对 TSMC 实际文件的复现。
 
 ## 结论
 
@@ -31,7 +31,7 @@ Sankey 至少需要两个可比季度（`shared/analysis-runtime/financial-data/
 
 ### E1a：6-K 季度合并报告（非 XBRL HTML 表格）被 4 道关卡拦下
 
-季度财报位于 6-K 附件，例如 Q2 的 `0001046179-26-000541/a2026q2consolidatedreport-.htm`（4.8 MB，**没有 iXBRL**）和 Q1 的 `…-26-000278/a2026q1consolidatedreport-.htm`。这类文件走 `readStatementTableFacts`（`workers/pipeline/src/financial-data/statement-table.ts`）。本地复现结果为 `facts 0 → NO_DIRECT_COMPARABLE_QUARTER`，逐关检查如下：
+季度财报位于 6-K 附件，例如 Q2 的 `0001046179-26-000541/a2026q2consolidatedreport-.htm`（4.8 MB，**没有 iXBRL**）和 Q1 的 `…-26-000278/a2026q1consolidatedreport-.htm`。这类文件走 `readStatementTableFacts`（`workers/analysis/src/financial-data/statement-table.ts`）。本地复现结果为 `facts 0 → NO_DIRECT_COMPARABLE_QUARTER`，逐关检查如下：
 
 | 关卡 | 代码期望 | TSMC 实际 | 结果 |
 |---|---|---|---|
@@ -76,7 +76,7 @@ Sankey 至少需要两个可比季度（`shared/analysis-runtime/financial-data/
 
 ## E2 32 条 `<accession>:NO_DIRECT_COMPARABLE_QUARTER`
 
-来源是历史步骤 `runHistoryStep`（`workers/pipeline/src/financial-data/history.ts`）：凡是没有解析出季度的文件，都会记一条 `${accession}:${issue}`。32 份候选文件中：
+来源是历史步骤 `runHistoryStep`（`workers/analysis/src/financial-data/history.ts`）：凡是没有解析出季度的文件，都会记一条 `${accession}:${issue}`。32 份候选文件中：
 
 - 4 份是季度财报（Q1、Q2 的 earnings 6-K 和 consolidated report 6-K），修好 E1 后会消失。
 - 1 份是 20-F，修好 E1b 后仍然只有年度数据，会继续报，这是正常结果。
@@ -119,7 +119,7 @@ Sankey 至少需要两个可比季度（`shared/analysis-runtime/financial-data/
 
 验证方法：
 
-- 单测：用 `a2026q2consolidatedreport-.htm` 的报表片段作为 fixture，断言得到 2026Q2/2025Q2 的 3M 期间，`currency=TWD`，revenue=1,270,380,250×10³，cost=410,069,555×10³，并且 Q1 可由 6M−3M 推出。另加一个 20-F 片段，断言读到 `ifrs-full:Revenue`，且 USD 便利换算不进入结果。原有 US 公司的 fixture 必须全部保持不变（`npm run test:pipeline`）。
+- 单测：用 `a2026q2consolidatedreport-.htm` 的报表片段作为 fixture，断言得到 2026Q2/2025Q2 的 3M 期间，`currency=TWD`，revenue=1,270,380,250×10³，cost=410,069,555×10³，并且 Q1 可由 6M−3M 推出。另加一个 20-F 片段，断言读到 `ifrs-full:Revenue`，且 USD 便利换算不进入结果。原有 US 公司的 fixture 必须全部保持不变（`npm run test:analysis`）。
 - 上线后在后台对 TSM 重新执行 extract，核对：`financial_collection_jobs.status=succeeded`、`financial_complete_current` 出现 CIK 0001046179、issues 中不再有 `MISSING_TWO_QUARTERS` 和 27 条非财报 6-K 记录，地图上 TSM 的 Sankey 以 NT$ 显示。
 
 ## 复现脚本
@@ -137,6 +137,6 @@ Sankey 至少需要两个可比季度（`shared/analysis-runtime/financial-data/
 - **版本**：期间 origin/main 已把 `SEC_FLOW_PARSER_VERSION` 用到 v12（71c9f32），本次升到 `deterministic-sec.v13`；`sec-revenue-history.v6`、`filing-library.v3`。
 - **前端**：`TWD → NT$`（`locale.ts`、`business-flow-layout.ts`）。每股金额在非美元时不再写死 `$`。
 
-验证：`workers/pipeline/test/foreign-filer.test.ts`，fixture 取自 TSMC 原件，共 9 项。本地用真实 SEC 数据跑 TSM 采集：第一步跳过 5 份通知类 6-K，由 Q2 合并报告得到 2026-06-30 / 2026-03-31 两个 NT$ 季度，`checkCompleteFlow` 通过。MSFT、NVDA、ADSK、NET、AMZN、GOOGL、META、ORCL 的最新 10-Q/10-K 及 8-K 附件，解析结果与 origin/main 逐字节相同。
+验证：`workers/analysis/test/foreign-filer.test.ts`，fixture 取自 TSMC 原件，共 9 项。本地用真实 SEC 数据跑 TSM 采集：第一步跳过 5 份通知类 6-K，由 Q2 合并报告得到 2026-06-30 / 2026-03-31 两个 NT$ 季度，`checkCompleteFlow` 通过。MSFT、NVDA、ADSK、NET、AMZN、GOOGL、META、ORCL 的最新 10-Q/10-K 及 8-K 附件，解析结果与 origin/main 逐字节相同。
 
 仍未覆盖：Q4 季度。TSMC 的年度合并报告只给全年数据，Q4 只能从 1 月的 earnings release 获得；该新闻稿当前不能解析。如果 1 月以后最新季度是 Q4，需要另行处理。

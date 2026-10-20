@@ -1,10 +1,10 @@
 /**
  * Translated publications (docs/i18n-design.md, phase 2). Every publication is generated and verified in English;
- * a pipeline task then translates its reader-facing strings once, string by string, into a table keyed by the English
+ * a Spontra Analysis task then translates its reader-facing strings once, string by string, into a table keyed by the English
  * text. The read API applies that table to the English payload, so the page receives the same structure with the
  * prose in the reader's language, and any string not yet translated stays English.
  *
- * One walker decides which strings are prose for both sides: what the pipeline collects for translation is exactly
+ * One walker decides which strings are prose for both sides: what Spontra Analysis collects for translation is exactly
  * what the read API replaces. Identifiers, figures, filing names and verbatim quotes are never touched.
  * Pure and worker-safe.
  */

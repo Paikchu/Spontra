@@ -224,7 +224,7 @@ export const filings: PublicFilingDigestPage = {
 };
 
 /**
- * The Chinese the pipeline would serve for the fixture's generated prose, per resource, as the translator writes it:
+ * The Chinese Spontra Analysis would serve for the fixture's generated prose, per resource, as the translator writes it:
  * figures in Chinese units, names kept. The page check renders the company with these applied.
  */
 export const ZH_TABLES = {

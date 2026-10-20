@@ -520,7 +520,7 @@ const CAPITAL_LABEL: Record<CapitalMetric, string> = {
   rpo: "Remaining performance obligations (RPO)", rpoNext12MonthsShare: "RPO recognized within 12 months",
 };
 
-/** The same names in Chinese, for a reader's page; the pipeline and the model read the English ones. */
+/** The same names in Chinese, for a reader's page; Spontra Analysis and the model read the English ones. */
 const METRIC_LABEL_ZH: Record<FlowMetric, string> = { revenue: "总营收", cost: "营业成本", gross: "毛利", research: "研发费用", sales: "销售及市场费用", administration: "管理费用", operatingExpenses: "营业费用", operating: "营业利润", other: "营业外收支", pretax: "税前利润", tax: "所得税", net: "净利润" };
 const GUIDANCE_LABEL_ZH: Record<GuidanceItem["metric"], string> = { revenue: "营收", segment_revenue: "营收", gross_margin: "毛利率", operating_margin: "营业利润率", operating_income: "营业利润", eps: "每股收益", free_cash_flow: "自由现金流", operating_cash_flow: "经营现金流", capex: "资本开支", rpo: "剩余履约义务", billings: "开票额", other: "" };
 const CAPITAL_LABEL_ZH: Record<CapitalMetric, string> = {

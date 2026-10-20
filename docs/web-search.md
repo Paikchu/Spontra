@@ -1,6 +1,6 @@
 # Web Search 模块
 
-服务端入口：`workers/pipeline/src/web-search/index.ts`。这是供财报 Pipeline 后续调用的 TypeScript 模块，本次不增加浏览器可调用的付费搜索 HTTP API，也不自动改变 SEC 分析流程。
+服务端入口：`workers/analysis/src/web-search/index.ts`。这是供Spontra Analysis 后续调用的 TypeScript 模块，本次不增加浏览器可调用的付费搜索 HTTP API，也不自动改变 SEC 分析流程。
 
 ## 接入
 
@@ -69,15 +69,15 @@ R2 对象不直接公开；旧版本或失败发布产生的孤立对象目前�
 
 ## 数据库与启用
 
-新增分析数据库迁移 `workers/pipeline/migrations/0011_web_search_cache.sql`，Drizzle schema、snapshot、journal 同步。仅新增一张表，无已有数据变更。使用现有 `DB` 和 `SEC_FILINGS`，不需要新 Worker、Queue、KV 或 Durable Object。
+新增分析数据库迁移 `workers/analysis/migrations/0011_web_search_cache.sql`，Drizzle schema、snapshot、journal 同步。仅新增一张表，无已有数据变更。使用现有 `DB` 和 `SEC_FILINGS`，不需要新 Worker、Queue、KV 或 Durable Object。
 
-Pipeline 的自动发布脚本现已按“应用分析数据库迁移 → 核对迁移 → 发布 Worker”执行。`worker:pipeline:migrate:ci` 与发布脚本仅供 main 触发的 Cloudflare CI 执行，不在本地手动运行。线上在财报 Pipeline 配置 TAVILY_API_KEY Secret；没有调用方引用这个模块时不发起搜索请求。
+Spontra Analysis 的自动发布脚本现已按“应用分析数据库迁移 → 核对迁移 → 发布 Worker”执行。`analysis:migrate:ci` 与发布脚本仅供 main 触发的 Cloudflare CI 执行，不在本地手动运行。线上在Spontra Analysis 配置 TAVILY_API_KEY Secret；没有调用方引用这个模块时不发起搜索请求。
 
 本地验证：
 
 ```sh
-npm run typecheck:pipeline
-npm run check:pipeline:boundary
+npm run analysis:typecheck
+npm run check:analysis:boundary
 ```
 
 测试使用真实 SQLite 执行迁移及条件 SQL、内存 R2 和合成供应商响应，不消耗 API 配额。真实搜索覆盖率与 transcript 完整性需另用关注公司样本评估。

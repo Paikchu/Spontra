@@ -11,7 +11,7 @@
                      { loadFailed: "加载失败",    severity: (n: number) => `重要度 ${n}` });
   ```
 - 数字：`shared/analysis-runtime/locale.ts` 里的纯函数（`compactMoney`、`compactShares`、`points`、`multiple`、`fiscalYearTo`、`yoyLabel`…），每个都显式接收 `locale`，默认 `"en"`。站点代码传 `getLocale()`。
-- `shared/analysis-runtime/*` 同时被 pipeline Worker 使用：只能加**可选的、默认 `"en"` 的** `locale` 参数，Worker 的输出必须逐字不变；不得在 shared 代码里读全局语言。
+- `shared/analysis-runtime/*` 同时被 Spontra Analysis Worker 使用：只能加**可选的、默认 `"en"` 的** `locale` 参数，Worker 的输出必须逐字不变；不得在 shared 代码里读全局语言。
 - AI 生成的正文（要点标题与判断、报告 headline/bullets、事件摘要、业务树节点名、lens 的 prose/标题/标注）本期保持英文：所在元素加 `lang="en"`，在该内容块的标题处放 `<SourceLanguage />`（中文界面下显示「英文原文」，英文界面下不渲染）。
 - SEC 披露的名称（业务分部名、公司名、表单号 10-K/8-K/Form 4、人名）不翻译。
 - 文案只翻标签，不新增解说或旁白（见 memory「Frontend has no narration」）。

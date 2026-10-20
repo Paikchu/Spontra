@@ -4,7 +4,7 @@
 
 ## 问题
 
-白名单页每家公司现在有三组开关：加入/移出白名单、「AI 分析」一个总开关、「业务脑图」生成与显示。「AI 分析」对应的是 Pipeline 的 `scope: "ai"` 名单（`SEC_AI_TICKERS` 加 `financial_ai_settings`），一个开关同时控制财报摘要、业绩指引、公司分析、要点、分析师档案和业务解读六条任务。管理员看到的是「AI / 非 AI」这条实现上的分界，而不是读者页面上的功能；想只开一家公司的要点、或只关业务解读，做不到。
+白名单页每家公司现在有三组开关：加入/移出白名单、「AI 分析」一个总开关、「业务脑图」生成与显示。「AI 分析」对应的是 Spontra Analysis 的 `scope: "ai"` 名单（`SEC_AI_TICKERS` 加 `financial_ai_settings`），一个开关同时控制财报摘要、业绩指引、公司分析、要点、分析师档案和业务解读六条任务。管理员看到的是「AI / 非 AI」这条实现上的分界，而不是读者页面上的功能；想只开一家公司的要点、或只关业务解读，做不到。
 
 ## 页面上的功能与它们的数据来源
 
@@ -97,7 +97,7 @@ registry 的 `TaskScope` 从 `"data" | "ai" | "tree" | "global"` 改成 `"data" 
 - `findings` 隐藏：`findings` 返回 `status: "hidden"`；首页的 `findings-index` 过滤掉隐藏的公司（现在是 `LIKE 'findings:v2:%'` 的存储扫描，改为与设置表联查）。
 - `explainer` 隐藏：`business-explainer` 返回 `status: "hidden"`。
 
-后台读取不受显示开关影响。公开读取接口保持只读 D1、不挂钩子（docs/pipeline-events.md 原则 2）。
+后台读取不受显示开关影响。公开读取接口保持只读 D1、不挂钩子（docs/analysis-events.md 原则 2）。
 
 ### 其他调用点
 
@@ -122,10 +122,10 @@ registry 的 `TaskScope` 从 `"data" | "ai" | "tree" | "global"` 改成 `"data" 
 ### 实施顺序与验证
 
 1. 迁移 `0030_business_feature_settings.sql`（建表、回填）；`company-policy.ts` 解析四个名单，`trackedTickersFor`/`treeTickersFor` 改读新字段；现有测试 `company-policy.test.ts` 扩成四个功能。
-2. registry scope 拆分、`feature.settings` 事件、router；`check:pipeline:boundary` 与 registry 测试通过。
+2. registry scope 拆分、`feature.settings` 事件、router；`check:analysis:boundary` 与 registry 测试通过。
 3. 读取侧隐藏：`filings`、`guidance`、`findings`、`business-explainer`、`findings-index`；读取测试补隐藏用例。
 4. 后台接口与页面、admin 代理白名单；`admin:typecheck`、`admin:build`。
-5. 文档：`docs/businessview-admin.md` 的白名单段、`docs/business-tree.md` 的开关段、`docs/pipeline-events.md` 的事件表。
+5. 文档：`docs/businessview-admin.md` 的白名单段、`docs/business-tree.md` 的开关段、`docs/analysis-events.md` 的事件表。
 6. 上线后在后台把一家公司的要点切到「生成」，核对公司页与首页不再列出它、后台仍能看到；再切回「显示」，核对版本号前进、页面即时恢复。
 
 ### 实施记录（2026-10-17）

@@ -4,7 +4,7 @@ import { INDUSTRY_CATEGORIES, type IndustryCategory, type LibraryBusinessLink } 
 import { libraryHash } from "./filing-library/parse.ts";
 
 /**
- * Two-level business tags and the peers they lead to (docs/peer-similarity-design.md). Pure: the pipeline reads the
+ * Two-level business tags and the peers they lead to (docs/peer-similarity-design.md). Pure: Spontra Analysis reads the
  * links, flow nodes and passages, calls the model and the vector index, and hands the results to these checks.
  */
 

@@ -1,7 +1,7 @@
 /**
  * Minimal rich-text parser for model-written prose.
  *
- * The Pipeline stores narrative as plain text and the report page rendered one paragraph per line,
+ * Spontra Analysis stores narrative as plain text and the report page rendered one paragraph per line,
  * so prose that arrived with light markup reached the reader as literal asterisks. This parses the
  * small subset the analysis prompt can produce and leaves everything else as text: plain prose
  * still renders exactly one paragraph per line, as before.
@@ -76,7 +76,7 @@ export function parseInline(source: string): InlineNode[] {
   const nodes: InlineNode[] = [];
   let cursor = 0;
   // An unterminated marker matches nothing and survives as text, so prose truncated mid-`**` by the
-  // Pipeline's length cap degrades to plain text instead of swallowing the rest of the line.
+  // Spontra Analysis's length cap degrades to plain text instead of swallowing the rest of the line.
   for (const match of source.matchAll(/\*\*(.+?)\*\*|`([^`]+)`|\[([^\]\n]+)\]\(([^)\s]+)\)/g)) {
     const index = match.index;
     if (index > cursor) nodes.push({ type: "text", value: source.slice(cursor, index) });

@@ -4,7 +4,7 @@
 
 ## 流程
 
-每个业绩事件对应一个 `GuidanceWorkflow` 实例（`workers/pipeline/src/guidance/`）。业绩事件是 8-K Item 2.02 业绩发布；没有这类 8-K 的公司（以 6-K 报季度的外国发行人、随 10-Q 发布业绩的公司），[Transcript 全文库](transcripts.md) 存下的每份电话会文字稿自成一个事件，键为 Transcript 库发现该期所用申报的 accession，日期为其申报日：
+每个业绩事件对应一个 `GuidanceWorkflow` 实例（`workers/analysis/src/guidance/`）。业绩事件是 8-K Item 2.02 业绩发布；没有这类 8-K 的公司（以 6-K 报季度的外国发行人、随 10-Q 发布业绩的公司），[Transcript 全文库](transcripts.md) 存下的每份电话会文字稿自成一个事件，键为 Transcript 库发现该期所用申报的 accession，日期为其申报日：
 
 1. **事件**：`*/10` Cron 的 `runGuidanceSweep` 只读取已缓存的 SEC filings feed（不发 SEC 请求），登记 400 天内的业绩 8-K 到 `earnings_events`，每次最多启动 2 个实例（新的优先）。实例 id 含 accession 与提取器版本，同一事件同一版本只处理一次。
 2. **材料**：8-K/6-K 事件读取同 accession 的 EX-99.x（`<TYPE>` 为准）；二进制附件（uuencode PDF/PPT）记为 `unsupported`，不当文本解析。以 10-Q/10-K/20-F 为键的事件不读附件。电话会文字稿只来自 Transcript 库，指引不调用 Alpha Vantage：库存下一份（`transcript.stored`）时，指引任务把它挂到报告该季度的业绩发布（期末后 100 天内的第一份 8-K Item 2.02），没有则另建事件；已处理过的事件重新排队，新实例只提取未提取过的材料。标签与财期顺序不符的库记录不挂，等库按纠正后的季度重取。已报告季度优先取 Transcript 库按财期顺序纠正后的标签，其次业绩分组关联的 SEC DEI 财期，再次新闻稿标题；不根据发布日期猜自然季度，也不从前瞻指引取季度。全部发言按顺序保存，包含分析师问答；不截断。材料日期沿用业绩事件日期。SEC 无 deck 且已知季度时，Tavily 搜一次公司自有域名的 deck，正文必须写明同一财季，否则丢弃；命中的域名记入 `guidance-ir-hosts:v1:{ticker}`，以后限定在这些域名内搜索。
@@ -34,13 +34,13 @@
 - 内容哈希去重 + 提取缓存：重跑、重试、重复发现都不会再次调用模型。
 - 预筛压缩输入；一文档一调用；确定性核验替代模型复核；repair 最多一次且只带失败条目。
 - 每日模型调用上限 `GUIDANCE_DAILY_MODEL_CALLS`（默认 40），用尽后实例休眠到次日 UTC 继续。
-- 转录请求只由 Transcript 库发出，预算 `guidance-transcript`（`GUIDANCE_DAILY_TRANSCRIPT_CALLS` 默认 25）见 [Transcript 全文库](transcripts.md)。该预算只覆盖本 Pipeline，其他程序共用密钥的请求也会消耗供应商额度。
+- 转录请求只由 Transcript 库发出，预算 `guidance-transcript`（`GUIDANCE_DAILY_TRANSCRIPT_CALLS` 默认 25）见 [Transcript 全文库](transcripts.md)。该预算只覆盖本 Spontra Analysis，其他程序共用密钥的请求也会消耗供应商额度。
 - 只处理 `SEC_AI_TICKERS`。
 
 ## 启用
 
-1. 在 Cloudflare 为 Pipeline Worker（`spontra-analysis`）设置 Secret `ALPHA_VANTAGE_API_KEY`（可选；未设置时只处理 SEC 材料，覆盖信息标记转录不可用）。
-本地开发将 `ALPHA_VANTAGE_API_KEY` 放入 `workers/pipeline/.dev.vars`（Git 忽略），不要写入 wrangler vars 或提交到仓库。
+1. 在 Cloudflare 为 Spontra Analysis Worker（`spontra-analysis`）设置 Secret `ALPHA_VANTAGE_API_KEY`（可选；未设置时只处理 SEC 材料，覆盖信息标记转录不可用）。
+本地开发将 `ALPHA_VANTAGE_API_KEY` 放入 `workers/analysis/.dev.vars`（Git 忽略），不要写入 wrangler vars 或提交到仓库。
 
 2. 推送 main 由 CI 应用迁移 0015 并发布。
 3. 用 ORCL/ADSK/NET 近几个季度人工核对提取结果后，将 `GUIDANCE_ENABLED` 改为 `"true"`。默认 `"false"`，不产生任何调用。
@@ -48,7 +48,7 @@
 
 ## 读取
 
-Pipeline `MapReads` 入口的 `/api/v1/companies/{ticker}/guidance` → 业务地图 Worker 二次校验后并入 `/api/business/v1/companies/{ticker}` 的 `guidance` 字段（失败为 null，不影响流向图）。读取从不触发提取。
+Spontra Analysis `MapReads` 入口的 `/api/v1/companies/{ticker}/guidance` → 业务地图 Worker 二次校验后并入 `/api/business/v1/companies/{ticker}` 的 `guidance` 字段（失败为 null，不影响流向图）。读取从不触发提取。
 
 业务地图趋势图：已报告季度显示该季最后一次收入指引的区间（I 形标记，虚线表示由增速换算）；下一季度新增虚线指引列；选中分部时按成员 id 匹配分部指引；年度与长期指引列在图下一行（只取最近一次发布）。
 
@@ -61,7 +61,7 @@ Pipeline `MapReads` 入口的 `/api/v1/companies/{ticker}/guidance` → 业务�
 ## 验证
 
 ```sh
-npm run typecheck:pipeline && npm run check:pipeline:boundary && npm run worker:pipeline:check
+npm run analysis:typecheck && npm run check:analysis:boundary && npm run analysis:check
 npm run business-site:typecheck
 ```
 

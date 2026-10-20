@@ -15,7 +15,7 @@ import { findingData, verifiedFindings, type VerifiedFinding } from "./findings-
 export type CompanyPublication = CompleteFlowPublication & { explainer?: BusinessExplainer | null; guidance?: GuidancePublication | null; tree?: BusinessTree | null };
 
 /**
- * In Chinese the API serves the generated prose translated where the pipeline has translated it; the rest stays English.
+ * In Chinese the API serves the generated prose translated where Spontra Analysis has translated it; the rest stays English.
  * `rev` asks for the resource at its publication revision, so no cache answers with a copy older than it.
  */
 const companyPath = (ticker: string, resource = "", rev?: string) => {

@@ -11,7 +11,7 @@ const MODEL_LABEL: Record<AiModel, string> = {
 const EFFORT_LABEL: Record<AiEffort, string> = { low: "低", medium: "中", high: "高", xhigh: "很高", max: "最高" };
 const modelName = (model: string) => MODEL_LABEL[model as AiModel] ?? model;
 
-/** The model and effort of every AI tool in the pipeline; an empty choice follows the deployment default. */
+/** The model and effort of every AI tool in Spontra Analysis; an empty choice follows the deployment default. */
 export function AiModels({ onUnauthorized, onAuthenticated }: { onUnauthorized: () => void; onAuthenticated: () => void }) {
   const [data, setData] = useState<AiModelSettings | null>(null), [error, setError] = useState(""), [busy, setBusy] = useState(""), [refresh, setRefresh] = useState(0);
   const callbacks = useRef({ onUnauthorized, onAuthenticated });

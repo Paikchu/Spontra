@@ -1,6 +1,6 @@
 # 方案：同行相似度——两层业务标签，先按大标签圈定、再按业务与运行逻辑区分
 
-**状态：** P0–P3 已实现（分支 `claude/model-read-sec-data-b2bed8`，未发布；发布前需先建 Vectorize 索引，见文末"实现状态"） · **日期：** 2026-10-18 · **前置：** [sec-filing-library](sec-filing-library.md)（业务主线 `library-links`）、[analyst-agent-design](analyst-agent-design.md)（`peers:v1`、分析师 `peers` 工具）、[pipeline-events](pipeline-events.md)、[businessview-admin](businessview-admin.md)
+**状态：** P0–P3 已实现（分支 `claude/model-read-sec-data-b2bed8`，未发布；发布前需先建 Vectorize 索引，见文末"实现状态"） · **日期：** 2026-10-18 · **前置：** [sec-filing-library](sec-filing-library.md)（业务主线 `library-links`）、[analyst-agent-design](analyst-agent-design.md)（`peers:v1`、分析师 `peers` 工具）、[analysis-events](analysis-events.md)、[businessview-admin](businessview-admin.md)
 
 ## 一句话
 
@@ -18,7 +18,7 @@
 
 ## 问题
 
-现在的规则（`peers:v1`，[peers/projection.ts](../workers/pipeline/src/peers/projection.ts)、[`peersOf`](../shared/analysis-runtime/lens/table.ts)）：公司的类别 = 它所有 verified/confirmed 业务链接的类别并集；与本公司共有任一类别的公司都是同行。以 CRWV 为例，线上 D1（2026-10-18）给出的同行是 AMZN、GOOGL、MSFT、ORCL、NBIS、NET，一视同仁地进同一张比率表。
+现在的规则（`peers:v1`，[peers/projection.ts](../workers/analysis/src/peers/projection.ts)、[`peersOf`](../shared/analysis-runtime/lens/table.ts)）：公司的类别 = 它所有 verified/confirmed 业务链接的类别并集；与本公司共有任一类别的公司都是同行。以 CRWV 为例，线上 D1（2026-10-18）给出的同行是 AMZN、GOOGL、MSFT、ORCL、NBIS、NET，一视同仁地进同一张比率表。
 
 真实情况是分层的：
 
@@ -37,7 +37,7 @@
 1. **类别太粗、只有一层**：`cloud_infrastructure` 同时装下纯 GPU 云和超大规模云，没有下一层来区分。
 2. **共有任一类别就算同行**：次要业务也会拉来同行。例如 NBIS 的 Avride 让它和 GOOGL 的 Waymo 同类。
 3. **没有可比口径**：CRWV 的 capex/revenue 和 ORCL 的 capex/revenue 被并排比较，而后者的分母有 60% 是软件收入。
-4. **分析师的跨公司查找只用第一个类别**：`find_sections peers:true` 取的是 `input.categories[0]`（[analyst/agent.ts:332](../workers/pipeline/src/analyst/agent.ts)），类别按字母排序。CRWV 恰好取到 `cloud_infrastructure` 只是巧合。
+4. **分析师的跨公司查找只用第一个类别**：`find_sections peers:true` 取的是 `input.categories[0]`（[analyst/agent.ts:332](../workers/analysis/src/analyst/agent.ts)），类别按字母排序。CRWV 恰好取到 `cloud_infrastructure` 只是巧合。
 
 另有两个数据事实：
 - CRWV 的 12 条业务链接都没有 `flow_node_id`。它是单一分部公司，业务地图上只有 `reported-company-total` 一个节点。
@@ -394,7 +394,7 @@ P2 先只记得分，不发布档位。在后台"业务标签"视图看完验收
 
 ## 实现状态（2026-10-19）
 
-- 代码：契约 `shared/analysis-contract/business-tags.ts`；纯规则 `shared/analysis-runtime/business-tags.ts`（单元、标签校验、档位、口径、配对）；Pipeline `workers/pipeline/src/business-tags/`（input、model、match、workflow、view）；迁移 `0033_business_tags.sql`；任务 `business-tags` 与 Workflow `spontra-business-tags`；后台 公司业务板块 › 业务标签（`apps/admin/src/business-tags.tsx`）。
+- 代码：契约 `shared/analysis-contract/business-tags.ts`；纯规则 `shared/analysis-runtime/business-tags.ts`（单元、标签校验、档位、口径、配对）；Spontra Analysis `workers/analysis/src/business-tags/`（input、model、match、workflow、view）；迁移 `0033_business_tags.sql`；任务 `business-tags` 与 Workflow `spontra-business-tags`；后台 公司业务板块 › 业务标签（`apps/admin/src/business-tags.tsx`）。
 - 事件：`library-links` 写完发出 `library.links.published` → `business-tags` → `business.tags.published` → `peers`。后台修改业务类别、删除或恢复标签、设定档位都会重新匹配或重建投影。
 - 发布物：`peers:v1` 的形状不变，增加可选的 `units` 与 `pairs`（`PEERS_VERSION` 升到 `peers.v2`），网站与旧读者不受影响；没有配对的公司仍按共享类别找同行。
 - 阈值：按首批生产标签校准为 `same ≥ 0.77`、`near ≥ 0.70`（覆盖度），可用变量 `PEER_TAG_THRESHOLDS` 覆盖。CRWV 的"卖什么"覆盖 NBIS 0.78、ORCL OCI 0.76、MSFT/GOOGL/AMZN 0.71–0.73、NET 0.68；结果：CRWV × NBIS 直接同行，与 ORCL/MSFT/GOOGL/AMZN 部分可比，与 NET 只同大类。direct 的条件里，一方没有标签的方面不计入。

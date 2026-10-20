@@ -1,6 +1,6 @@
 # SEC Agent 分析流程
 
-按 2026-09-14 当前实现绘制。核心流程在 `workers/pipeline/src/workflow-core.ts`，披露发现与遗漏补查在 `workers/pipeline/src/sec/discovery.ts`。
+按 2026-09-14 当前实现绘制。核心流程在 `workers/analysis/src/workflow-core.ts`，披露发现与遗漏补查在 `workers/analysis/src/sec/discovery.ts`。
 
 ```mermaid
 flowchart TD

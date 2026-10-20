@@ -24,7 +24,7 @@ const m = messages({
  * this decides what any of that is allowed to look like.
  *
  * Values are resolved here, not carried by the block. `metrics` reads the verified figures the
- * Pipeline published and `chart` reads the fundamentals response, so a block can name a number to
+ * Spontra Analysis published and `chart` reads the fundamentals response, so a block can name a number to
  * show but never supply one.
  */
 export type ReportBlockRenderContext = {
@@ -97,7 +97,7 @@ function Block({ block, context }: { block: ReportBlock; context: ReportBlockRen
       if (!context.fundamentals) {
         return <p className="report-block report-block-empty" id={block.id}>{m.noData(block.title)}</p>;
       }
-      // Whether a metric is actually in this response is knowable only here — the Pipeline vets a
+      // Whether a metric is actually in this response is knowable only here — Spontra Analysis vets a
       // chart against the feature pack it reasoned over, which is a different read. A series the
       // response does not carry makes the builder throw, and the reader gets "Unsupported metrics",
       // a status meant for someone choosing metrics by hand. Drop it here instead.

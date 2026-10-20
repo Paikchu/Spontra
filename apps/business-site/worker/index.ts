@@ -25,16 +25,16 @@ import {formatFilingPeriodLabel} from "@/packages/web/src/model/filing-period-la
 import {formatSecMetricLabel,formatSecMetricValue} from "@/packages/web/src/model/sec-metric-format";
 import {isLocale,type Locale} from "@/shared/analysis-runtime/locale";
 import {MAP_RESOURCES,REVISION,type MapRevisions} from "@/shared/analysis-contract/revisions";
-/** The analysis pipeline is reached over its Service Binding; the host is a label the binding ignores. */
+/** Spontra Analysis is reached over its Service Binding; the host is a label the binding ignores. */
 const ANALYSIS_ORIGIN="https://spontra-analysis.internal";
-/** A read in the reader's language: the pipeline applies its translations of the generated prose (docs/i18n-design.md). English needs no parameter. */
+/** A read in the reader's language: Spontra Analysis applies its translations of the generated prose (docs/i18n-design.md). English needs no parameter. */
 const inLocale=(path:string,locale:Locale|null)=>locale&&locale!=="en"?`${path}${path.includes("?")?"&":"?"}locale=${locale}`:path;
 export type SiteEnv={ASSETS:{fetch(request:Request):Promise<Response>};PUBLIC_READ_LIMIT:{limit(options:{key:string}):Promise<{success:boolean}>};
- /** Service Binding to the pipeline's `MapReads` named entrypoint; the binding is the credential. Without it every data route answers 503. */
- EARNING_REPORT_PIPELINE?:{fetch(request:Request):Promise<Response>}};
-/** Reads go straight to the pipeline's read API over the binding; each call is a fresh request, so nothing from the browser's request is forwarded. */
-export function analysisFetcher(env:Pick<SiteEnv,"EARNING_REPORT_PIPELINE">):typeof fetch|null{
- const binding=env.EARNING_REPORT_PIPELINE;
+ /** Service Binding to Spontra Analysis's `MapReads` named entrypoint; the binding is the credential. Without it every data route answers 503. */
+ SPONTRA_ANALYSIS?:{fetch(request:Request):Promise<Response>}};
+/** Reads go straight to Spontra Analysis's read API over the binding; each call is a fresh request, so nothing from the browser's request is forwarded. */
+export function analysisFetcher(env:Pick<SiteEnv,"SPONTRA_ANALYSIS">):typeof fetch|null{
+ const binding=env.SPONTRA_ANALYSIS;
  if(!binding||typeof binding.fetch!=="function")return null;
  return async(input,init)=>{
   const request=new Request(input,init);

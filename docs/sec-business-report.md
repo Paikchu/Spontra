@@ -54,7 +54,7 @@ Synthesis 可输出 `presentation`，指定 1–12 个章节、章节顺序、fl
 快照包含完整摘要正文、节点证据及结构化报告，存放在现有 `sec_published_reports.payload`，同版本发布不覆盖，不需要数据库迁移。
 评估可以直接记录完整 `reportVersion`、分享地址与 `periodId`，分别关联某次文章和同一期财报。
 
-首次上线使用 `node --experimental-strip-types workers/pipeline/scripts/snapshot-current-reports.ts --apply`，仅为每只股票目前最新的已生成报告保存快照；不重跑模型、不补历史期。省略 `--apply` 只预览候选。写入会核对原报告和摘要未变，保留原始记录和生成时间；再次执行跳过已保存的快照。更早的旧记录不提供固定版本分享按钮。
+首次上线使用 `node --experimental-strip-types workers/analysis/scripts/snapshot-current-reports.ts --apply`，仅为每只股票目前最新的已生成报告保存快照；不重跑模型、不补历史期。省略 `--apply` 只预览候选。写入会核对原报告和摘要未变，保留原始记录和生成时间；再次执行跳过已保存的快照。更早的旧记录不提供固定版本分享按钮。
 本次不增加评分、反馈或评估执行器。快照固定内容数据；页面渲染样式仍随应用版本变化。
 
 ## 按财报期聚合业绩材料
