@@ -27,7 +27,7 @@ const clean = (value: string) => value.replace(/<[^>]*>/g, " ").replace(/&#(?:x(
   .replace(/[​-‍﻿]/g, "").replace(/\s+/g, " ").trim();
 /** A printed label as compared: case, footnote markers, quotes, punctuation and "&" against "and" do not matter. */
 export const labelKey = (label: string) => label.normalize("NFKC").toLowerCase().replace(/[“”"’']/g, "")
-  .replace(/(?:\s*\((?:\d{1,2}|[a-z]{1,2})\))+\s*$/g, "").replace(/&/g, " and ").replace(/[^a-z0-9()/]+/g, " ").replace(/\s+/g, " ").trim();
+  .replace(/(?:\s*\((?:\d{1,2}|[a-z]{1,2})\))+\s*$/g, "").replace(/&/g, " and ").replace(/[^a-z0-9()/]+/g, " ").replace(/\s*\/\s*/g, "/").replace(/\s+/g, " ").trim();
 /** A business name without the words that only classify it ("segment", "family", "total"). */
 const loose = (label: string) => labelKey(label).replace(/\b(?:and|the|total|segments?|family|families|group|business|net revenues?|revenues?)\b/g, "").replace(/[^a-z0-9]+/g, "");
 const numeric = (text: string): number | null => {
@@ -131,7 +131,7 @@ const FIGURE_LABELS = {
   gross: ["gross margin", "gross profit"],
   operatingTotal: ["total operating expenses", "total costs and expenses", "costs and expenses", "total costs and operating expenses"],
   operating: ["operating income", "operating income (loss)", "operating loss", "income from operations", "income (loss) from operations", "loss from operations", "operating profit"],
-  pretax: ["income before income taxes", "income (loss) before income taxes", "loss before income taxes", "income before provision for income taxes", "income before income tax", "income before income tax expense", "income before taxes", "income (loss) before provision for income taxes", "loss before provision for income taxes"],
+  pretax: ["income before income taxes", "income (loss) before income taxes", "loss before income taxes", "income before provision for income taxes", "income before income tax", "income before income tax expense", "income before taxes", "income (loss) before provision for income taxes", "loss before provision for income taxes", "income/(loss) before income taxes", "net income/(loss) before income taxes"],
   tax: ["provision for income taxes", "income tax expense", "provision (benefit) for income taxes", "income tax expense (benefit)", "provision for (benefit from) income taxes", "benefit from income taxes", "income taxes", "(provision) benefit for income taxes", "income tax (expense) benefit", "income tax benefit"],
   net: ["net income", "net loss", "net income (loss)", "net (loss) income", "net income/(loss)"],
   noninterest: ["total noninterest expense", "noninterest expense"],

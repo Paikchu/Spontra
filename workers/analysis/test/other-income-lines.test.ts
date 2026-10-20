@@ -122,9 +122,7 @@ test("a fiscal fourth quarter subtracts each line of the nine months from the sa
 
 test("an earnings release reads its own lines between operating income and pretax income, and keeps the filings' ids", () => {
   const previous = at(nbis(), "2026-03-31")!;
-  // The release reader knows the conventional labels for pretax and net income; the statement is otherwise as filed.
-  const html = nbisHtml.replace("Net income / (loss) before income taxes", "Income (loss) before income taxes").replace(/Net income \/ \(loss\)(?! from)(?! per)/g, "Net income (loss)");
-  const { quarter, issues } = releaseQuarter([{ url: nbisSource.url, html }], previous, { accession: "0001104659-26-099999", filedAt: "2026-08-12", parserVersion: SEC_FLOW_PARSER_VERSION });
+  const { quarter, issues } = releaseQuarter([{ url: nbisSource.url, html: nbisHtml }], previous, { accession: "0001104659-26-099999", filedAt: "2026-08-12", parserVersion: SEC_FLOW_PARSER_VERSION });
   assert.deepEqual(issues, []);
   assert.deepEqual(lines(quarter!), [["Interest income", 24.1], ["Interest expense", -119.1], ["Income / (loss) from equity method investments", 12.7], ["Other income, net", 81.5]]);
   assert.deepEqual(quarter!.otherComponents!.map(c => c.id), previous.otherComponents!.filter(c => !/Revaluation/.test(c.id)).map(c => c.id));
