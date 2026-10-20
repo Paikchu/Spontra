@@ -13,7 +13,7 @@ import "./ai-runs.css";
 /** The BusinessView outputs this admin shows; guidance is not part of BusinessView. */
 export type ViewKind = Exclude<AiRunKind, "guidance">;
 const KINDS: Array<[ViewKind, string]> = [["findings", "公司要点"], ["analyst", "要点分析师"], ["checkup", "三表分析"], ["explainer", "业务解读"], ["tree", "业务脑图"]];
-const STATUS: Record<AiRunStatus, string> = { queued: "排队中", running: "运行中", waiting: "等待中", succeeded: "已完成", empty: "无可发布内容", superseded: "已跳过", failed: "失败" };
+const STATUS: Record<AiRunStatus, string> = { queued: "排队中", running: "运行中", waiting: "等待中", succeeded: "已完成", empty: "无可发布内容", superseded: "已跳过", cancelled: "已停止", failed: "失败" };
 const ACTIVE = new Set<AiRunStatus>(["queued", "running", "waiting"]);
 const badge = (status: AiRunStatus) => status === "failed" ? "failed" : status === "succeeded" ? "reviewed" : ACTIVE.has(status) ? "processing" : "";
 const STAGES: Array<[RegExp, (m: RegExpExecArray) => string]> = [

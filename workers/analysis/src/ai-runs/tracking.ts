@@ -2,6 +2,7 @@ import type { AiRunKind, AiRunStatus } from "../../../../shared/analysis-contrac
 import type { AnalysisEnv } from "../operations.ts";
 import type { WorkflowStepLike } from "../workflow-core.ts";
 import { AiRunStore, quietly } from "./store.ts";
+import { NOT_TRACKED } from "../core.ts";
 
 type Run = { env: AnalysisEnv; kind: AiRunKind; ticker: string; runId: string };
 const store = (env: AnalysisEnv) => env.DB ? new AiRunStore(env.DB) : null;
@@ -37,7 +38,10 @@ export async function trackRun<T extends { status: string }>(run: Run, work: () 
     await quietly(async () => store(run.env)?.finish(run.kind, run.ticker, run.runId, { status: OUTCOME[result.status] ?? "succeeded", result }, now()));
     return result;
   } catch (error) {
-    await quietly(async () => store(run.env)?.finish(run.kind, run.ticker, run.runId, { status: "failed", error: error instanceof Error ? error.message : String(error) }, now()));
+    const message = error instanceof Error ? error.message : String(error);
+    // The company's feature was switched off while the run waited: the run stopped, it did not fail.
+    const status: AiRunStatus = message === NOT_TRACKED ? "cancelled" : "failed";
+    await quietly(async () => store(run.env)?.finish(run.kind, run.ticker, run.runId, { status, error: message }, now()));
     throw error;
   }
 }

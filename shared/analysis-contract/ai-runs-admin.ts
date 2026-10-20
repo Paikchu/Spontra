@@ -1,7 +1,7 @@
 /** Admin view of the model-written business-map outputs: who ran them, how far a run got, and every version published. */
 export const AI_RUN_KINDS = ["findings", "analyst", "checkup", "explainer", "tree", "guidance"] as const;
 export type AiRunKind = typeof AI_RUN_KINDS[number];
-export type AiRunStatus = "queued" | "running" | "waiting" | "succeeded" | "empty" | "superseded" | "failed";
+export type AiRunStatus = "queued" | "running" | "waiting" | "succeeded" | "empty" | "superseded" | "cancelled" | "failed";
 export type AiRunTrigger = "manual" | "schedule";
 
 export type AiRunStep = { stage: string; at: string; attempt?: number };

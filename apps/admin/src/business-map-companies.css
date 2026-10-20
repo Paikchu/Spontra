@@ -77,6 +77,7 @@
 .bm-switch[aria-checked=true] { background: var(--brand); }
 .bm-switch[aria-checked=true] span { transform: translateX(16px); background: var(--canvas); }
 .bm-switch:disabled { opacity: .4; cursor: not-allowed; }
+.bm-switch[data-failed] { box-shadow: 0 0 0 1.5px var(--danger); }
 .bm-switch:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--brand-soft); }
 .bm-admin-remove { display: grid; place-items: center; width: 28px; height: 28px; margin-left: var(--space-1); border: 0; border-radius: 50%; background: transparent; color: var(--danger); cursor: pointer; }
 .bm-admin-remove:hover { background: var(--danger-soft); }

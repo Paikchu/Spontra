@@ -5,6 +5,7 @@ import { logStatements } from "./log.ts";
 import type { EventMessage, TaskMessage } from "./messages.ts";
 import { SUBSCRIPTIONS, TASKS, type TaskName, type TaskScope } from "./registry.ts";
 import { revisionStatements } from "./revisions.ts";
+import { messageStatements } from "../admin/messages.ts";
 
 /** The companies a task covers, for a version change that re-runs it everywhere. */
 export async function scopeTickers(env: AnalysisEnv, scope: TaskScope): Promise<string[]> {
@@ -78,6 +79,8 @@ export async function routeEvents(env: AnalysisEnv, events: EventMessage[], now 
   }
   // The map's revisions move with the events that publish into it, so a reader learns of newer data without polling a table.
   statements.push(...revisionStatements(db, events));
+  // A feature's publication is a success in the admin's inbox.
+  statements.push(...messageStatements(db, events, at));
   for (const event of events) {
     statements.push(...logStatements(db, { messageId: event.id, causeId: event.causeId, kind: "event", name: event.type, ticker: event.ticker,
       outcome: `routed:${fanout.get(event.id) ?? 0}`, detail: event.task ? { task: event.task, ...event.detail } : event.detail ?? undefined }, at));
