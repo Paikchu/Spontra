@@ -11,7 +11,7 @@ import { fetchSecMarketSnapshot } from "./sec/market.ts";
 import { normalizeEditorialIssues, editorialRequirements } from "./sec/editorial.ts";
 import { EDITORIAL_REVIEW_PROMPT, identifyReaderMarketSnapshot } from "./sec/reader.ts";
 import { fiscalPeriodKey, fiscalPeriodsFromCompanyFacts, readFiscalPeriod } from "./sec/fiscal-period.ts";
-import { attachDiscovery, auditDisclosureCoverage, discoveryChunkCount, scanDisclosureChunk, type DiscoveryChunk } from "./sec/discovery.ts";
+import { attachDiscovery, auditDisclosureCoverage, DISCOVERY_VERSION, discoveryChunkCount, discoveryChunkRequest, scanDisclosureChunk, type DiscoveryChunk } from "./sec/discovery.ts";
 import { buildEarningsGroups, classificationKey, combineEarningsDocuments, earningsKey, identifyEarningsPeriod, isPeriodic } from "./sec/earnings.ts";
 import type { SecEarningsGroup } from "../../../shared/analysis-contract/report.ts";
 import { buildSecOutline } from "./sec/report.ts";
@@ -46,6 +46,7 @@ import { outboxStatement } from "./pipeline/outbox.ts";
 import { SEC_MODEL_EXECUTION_BUDGET_MS, SEC_MODEL_FIRST_RESPONSE_MS, SEC_MODEL_OUTPUT_TOKENS, SEC_MODEL_STALL_MS, type SecModelExecution, SEC_FALLBACK_MODEL } from "./retry-policy.ts";
 import type { PreparedFilingReference, SecPipelineOperations, WorkflowJobUpdate } from "./workflow-core.ts";
 import { jobAnalysisVersionFor } from "./workflow-core.ts";
+import type { MarkdownConverter } from "./web-search/page.ts";
 
 type R2ObjectLike = { etag?: string; text(): Promise<string> };
 type R2BucketLike = {
@@ -100,8 +101,8 @@ export type SecPipelineEnv = SecCronEnv & AnalysisReadEnv & {
   BUSINESS_TAGS_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
   /** "false" pauses writing business tags; unset or anything else runs it. */
   BUSINESS_TAGS_ENABLED?: string;
-  /** Workers AI, for embedding business tags (docs/peer-similarity-design.md). */
-  AI?: TagEmbedder;
+  /** Workers AI, for embedding business tags (docs/peer-similarity-design.md) and turning fetched pages into Markdown. */
+  AI?: TagEmbedder & Partial<MarkdownConverter>;
   /** The Vectorize index of business tags, one namespace per sector and facet. */
   TAGS_INDEX?: TagIndex;
   /** JSON such as {"same":0.8,"near":0.68}: the cosine scores at which two tags count as the same or a near business. */
@@ -154,14 +155,30 @@ export function modelForStage(env: SecPipelineEnv, stage: string, override?: str
   return REASONING_STAGE.test(stage) ? env.SEC_REASONING_MODEL || undefined : undefined;
 }
 
+/** A retry pins the fallback model; otherwise the admin's choice for the SEC analysis, then the stage's deployment model. */
+function secModelFor(env: SecPipelineEnv, stage: string, execution?: SecModelExecution): string {
+  return execution?.model || aiToolSetting(env, "sec-analysis").model || modelForStage(env, stage) || env.SEC_ANALYSIS_MODEL || SEC_FALLBACK_MODEL;
+}
+
+const sha256Hex = async (value: unknown): Promise<string> => Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(value)))),
+  (b) => b.toString(16).padStart(2, "0")).join("");
+
+/**
+ * A completed discovery chunk, stored under the filing by everything its model call depends on (prompt, chunk text,
+ * model, effort), so a later Workflow run of the same filing reads it instead of asking again.
+ */
+async function discoveryCacheKey(env: SecPipelineEnv, reference: PreparedFilingReference, request: { stage: string; system: string; payload: unknown }, execution?: SecModelExecution): Promise<string> {
+  const fingerprint = await sha256Hex({ version: DISCOVERY_VERSION, model: secModelFor(env, request.stage, execution), effort: reasoningFor(env, "sec-analysis"), system: request.system, payload: request.payload });
+  return `${reference.key}/discovery-cache/${DISCOVERY_VERSION}/${fingerprint}.json`;
+}
+
 export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof fetch = fetch, workflowInstanceId = "standalone"): SecPipelineOperations {
   const repository = () => new D1SecRepository(requireDb(env));
   const modelFor = (execution?: SecModelExecution): SecModelCall => {
     const deadline = Date.now() + SEC_MODEL_EXECUTION_BUDGET_MS;
     return async (stage, system, payload) => {
       if (Date.now() >= deadline) throw new Error("Editorial step execution budget exhausted; resume from saved draft");
-      // A retry pins the fallback model; otherwise the admin's choice for the SEC analysis, then the stage's deployment model.
-      const selectedModel = execution?.model || aiToolSetting(env, "sec-analysis").model || modelForStage(env, stage) || env.SEC_ANALYSIS_MODEL || SEC_FALLBACK_MODEL;
+      const selectedModel = secModelFor(env, stage, execution);
       const fallbackModel = SEC_FALLBACK_MODEL;
       const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify({ stage, system, payload }))));
       const fingerprint = Array.from(digest, (b) => b.toString(16).padStart(2, "0")).join("");
@@ -377,11 +394,19 @@ export function createSecPipelineOperations(env: SecPipelineEnv, fetcher: typeof
     },
     scanDisclosures: async (_filing, reference, index, execution) => {
       const prepared = await readPrepared(env.SEC_FILINGS, reference);
+      // An invalid index has no request; the scan below reports it as before.
+      const cacheKey = await Promise.resolve().then(() => discoveryCacheKey(env, reference, discoveryChunkRequest(prepared, index), execution)).catch(() => null);
+      const stored = cacheKey ? await env.SEC_FILINGS.get(cacheKey).then(o => o ? o.text() : null).then(t => t ? JSON.parse(t) as DiscoveryChunk : null).catch(() => null) : null;
       let chunk: DiscoveryChunk;
-      try { chunk = await scanDisclosureChunk(prepared, index, modelFor(execution)); }
-      catch (error) {
-        if (!execution?.finalAttempt) throw error;
-        chunk = {index,start:0,end:0,status:"failed",disclosures:[],rejected:0};
+      if (stored?.status === "complete" && stored.index === index) chunk = stored;
+      else {
+        try { chunk = await scanDisclosureChunk(prepared, index, modelFor(execution)); }
+        catch (error) {
+          if (!execution?.finalAttempt) throw error;
+          chunk = {index,start:0,end:0,status:"failed",disclosures:[],rejected:0};
+        }
+        // Only a chunk that passed validation is reused; a failed one is asked again next run.
+        if (cacheKey && chunk.status === "complete") await putJson(env.SEC_FILINGS, cacheKey, chunk).catch(() => undefined);
       }
       await putArtifact(env.SEC_FILINGS, reference, `discovery/chunk-${index}`, chunk);
       return chunk;

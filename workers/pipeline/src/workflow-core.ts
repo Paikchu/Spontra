@@ -212,6 +212,19 @@ export async function executeSecAnalysisWorkflow(
       const prepared = await step.do(`prepare:${accession}`, () => operations.prepare(filing));
       const restored = params.regenerateReport && !eventFiling && operations.restoreAnalysis
         ? await step.do(`restore-analysis:${accession}`, () => operations.restoreAnalysis!(filing, prepared)) : null;
+      // The brief comes from stored history alone, so a filing whose history cannot be used fails here, before any
+      // model call; only the check that needs discovery's grounded disclosures waits for it.
+      let periodic: { context: SecAnalysisContext; brief: SecAnalysisBrief } | null = null;
+      if (!eventFiling) {
+        stage = "context";
+        const context = await step.do(`context:${accession}`, () => operations.getContext(filing, prepared));
+        stage = "brief";
+        const brief = await step.do(`brief:${accession}`, async () => operations.buildBrief
+          ? operations.buildBrief(filing, prepared, context)
+          : buildFallbackBrief(filing, context));
+        assertHistoryUnits(brief);
+        periodic = { context, brief };
+      }
       let discoveryResult: { groundedDisclosures: number } | undefined;
       if (!restored && operations.scanDisclosures && operations.finishDiscovery && prepared.discoveryChunks) {
         stage = "discovery";
@@ -228,12 +241,8 @@ export async function executeSecAnalysisWorkflow(
         analyzed.push(accession);
         continue;
       }
-      stage = "context";
-      const context = await step.do(`context:${accession}`, () => operations.getContext(filing, prepared));
+      const { context, brief } = periodic!;
       stage = "brief";
-      const brief = await step.do(`brief:${accession}`, async () => operations.buildBrief
-        ? operations.buildBrief(filing, prepared, context)
-        : buildFallbackBrief(filing, context));
       assertBriefCanProceed(brief, Boolean(restored || discoveryResult?.groundedDisclosures));
       stage = "manager";
       const plan = restored?.plan ?? await step.do(`manager:${accession}`, async (stepContext) => {
@@ -399,6 +408,10 @@ function buildFallbackBrief(filing: SecFiling, context: SecAnalysisContext): Sec
 
 function assertBriefCanProceed(brief: SecAnalysisBrief, groundedDisclosures = false): void {
   if (!brief.history.series.length && !groundedDisclosures) throw new Error("No core facts passed factual verification");
+}
+
+/** One period of a series in one basis has one unit; mixed units mean the history cannot be compared. */
+function assertHistoryUnits(brief: SecAnalysisBrief): void {
   const identities = new Map<string, string>();
   for (const series of brief.history.series) {
     for (const observation of [...series.quarters, ...series.annual]) {

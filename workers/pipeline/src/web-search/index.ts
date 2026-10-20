@@ -3,6 +3,7 @@ export * from "./types.ts";
 export * from "./store.ts";
 export * from "./service.ts";
 export * from "./claude.ts";
+export * from "./page.ts";
 
 import type { D1Like } from "../sec/d1-support.ts";
 import { D1R2SearchStore, type SearchBucket } from "./store.ts";

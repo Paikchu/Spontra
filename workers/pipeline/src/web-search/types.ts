@@ -30,6 +30,8 @@ export type RetrievalData = SearchData | ContentData;
 export interface SearchProvider {
   /** Include adapter version; changing parsing or provider options must invalidate old cache keys. */
   id: string;
+  /** The version page reads are cached under when they are read differently from searches; `id` otherwise. */
+  contentId?: string;
   search(request: SearchRequest): Promise<SearchData>;
   fetchContent(request: ContentRequest): Promise<ContentData>;
 }

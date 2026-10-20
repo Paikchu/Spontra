@@ -25,9 +25,10 @@ export class WebSearchService {
     const maxAge = policy.maxAgeMs ?? (kind === "search" ? 60 * MINUTE : 24 * 60 * MINUTE);
     if (!Number.isFinite(maxAge) || maxAge < 0 || maxAge > 30 * 24 * 60 * MINUTE)
       throw new WebSearchError("invalid_request");
-    const key = await digest({ version: 1, provider: this.provider.id, scope: policy.scope, kind, request });
+    const provider = kind === "content" ? this.provider.contentId ?? this.provider.id : this.provider.id;
+    const key = await digest({ version: 1, provider, scope: policy.scope, kind, request });
     const wrap = (stored: StoredResult, cache: "hit" | "miss"): Retrieval<T> => ({
-      data: stored.data as T, provider: this.provider.id, fetchedAt: new Date(stored.fetchedAt).toISOString(),
+      data: stored.data as T, provider, fetchedAt: new Date(stored.fetchedAt).toISOString(),
       expiresAt: new Date(stored.expiresAt).toISOString(), cacheKey: key, cache,
     });
     const usable = (stored: StoredResult | null): stored is StoredResult => maxAge > 0 && !!stored &&

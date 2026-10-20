@@ -102,7 +102,8 @@ export class ClaudeWebProvider implements SearchProvider {
     const r = normalizeContent(input);
     const message = await this.call("web-fetch", {
       max_tokens: 1024, system: FETCH_SYSTEM,
-      tools: [{ type: "web_fetch_20250910", name: "web_fetch", max_uses: 1, max_content_tokens: r.depth === "advanced" ? 100_000 : 40_000 }],
+      // Every fetched token is billed as input; the agents keep at most a 20,000-character excerpt of a page.
+      tools: [{ type: "web_fetch_20250910", name: "web_fetch", max_uses: 1, max_content_tokens: r.depth === "advanced" ? 25_000 : 10_000 }],
       messages: [{ role: "user", content: r.url }],
     });
     const block = message.content.find((b): b is Anthropic.WebFetchToolResultBlock => b.type === "web_fetch_tool_result");

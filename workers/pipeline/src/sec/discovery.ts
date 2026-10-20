@@ -23,12 +23,18 @@ export const DISCOVERY_PROMPT = [
 /** Recorded on the plan when discovery found more topics than the node budget; the workflow marks such a report partial. */
 export const DISCOVERY_BUDGET_WARNING = 'This period has more important items than the 24-node analysis budget, so some findings were not developed; this is not complete coverage.';
 
-export async function scanDisclosureChunk(prepared: PreparedSecFiling, index: number, model: SecModelCall): Promise<DiscoveryChunk> {
+/** Exactly what one chunk's model call sends; the same request always yields a reusable result. */
+export function discoveryChunkRequest(prepared: PreparedSecFiling, index: number) {
   const start = index * (CHUNK_SIZE - OVERLAP);
   const text = prepared.document.text.slice(start, start + CHUNK_SIZE);
   if (!Number.isInteger(index) || index < 0 || index >= discoveryChunkCount(prepared.document.text.length) || !text) throw new Error('Invalid disclosure chunk');
-  const value = await model(`discovery:${index}`, DISCOVERY_PROMPT, { ticker: prepared.filing.ticker, reportDate: prepared.filing.earningsGroup?.periodEnd ?? prepared.filing.reportDate,
-    filingDate: prepared.filing.filingDate, sourceMaterials: prepared.sourceMaterials, start, text });
+  return { stage: `discovery:${index}`, system: DISCOVERY_PROMPT, start, text, payload: { ticker: prepared.filing.ticker, reportDate: prepared.filing.earningsGroup?.periodEnd ?? prepared.filing.reportDate,
+    filingDate: prepared.filing.filingDate, sourceMaterials: prepared.sourceMaterials, start, text } };
+}
+
+export async function scanDisclosureChunk(prepared: PreparedSecFiling, index: number, model: SecModelCall): Promise<DiscoveryChunk> {
+  const { stage, system, start, text, payload } = discoveryChunkRequest(prepared, index);
+  const value = await model(stage, system, payload);
   if (!Array.isArray(value.disclosures)) throw new Error('Discovery response must contain disclosures');
   const disclosures: SecDisclosure[] = [];
   let rejected = Math.max(0, value.disclosures.length - 10);

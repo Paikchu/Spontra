@@ -54,7 +54,7 @@ test("a fetched page is the text the web_fetch tool returned", async () => {
   ]));
   const page = await web.fetchContent({ url: "https://investor.example.com/q3", depth: "advanced" });
   assert.equal(page.text, "Third quarter revenue rose.");
-  assert.equal((requests[0]!.tools as Array<Record<string, unknown>>)[0]!.max_content_tokens, 100_000);
+  assert.equal((requests[0]!.tools as Array<Record<string, unknown>>)[0]!.max_content_tokens, 25_000);
   assert.deepEqual(requests[0]!.messages, [{ role: "user", content: "https://investor.example.com/q3" }]);
 });
 
