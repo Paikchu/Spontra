@@ -161,6 +161,7 @@ function withFirstQuarters(facts:Fact[]):Fact[] {
  * operating bridge keeps every line, including ones the label map does not name. */
 const lineTag=(label:string)=>label.replace(/[^A-Za-z0-9]+/g,' ').trim().split(' ').map(w=>w[0].toUpperCase()+w.slice(1).toLowerCase()).join('');
 const OPERATING_TOTALS=new Set(['OperatingExpenses','CostsAndExpenses']);
+const PRETAX='IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest';
 /**
  * Statements print expenses as positive amounts; a line of other operating income printed beside them is a credit.
  * Which line that is follows from the statement's own arithmetic, not its wording: the operating lines must sum to
@@ -220,6 +221,14 @@ export function readStatementTableFacts(html:string,source:DocumentSource):Fact[
       if(!tags[i]&&printed[i]&&!/^total\b/i.test(printed[i]))tags[i]=lineTag(printed[i]);
       if(tags[i]&&!OPERATING_TOTALS.has(tags[i]))lineRows.push(i);
     }
+    // Rows between operating income and income before taxes (interest, investment gains, equity-method results) are
+    // read under their own labels too; a dash among them reads as zero, which the bridge accepts only where it balances.
+    const pretaxAt=operatingAt<0?-1:tags.findIndex((tag,i)=>i>operatingAt&&tag===PRETAX);
+    const otherRows=new Set<number>();
+    if(pretaxAt>=0)for(let i=operatingAt+1;i<pretaxAt;i++){
+      if(!tags[i]&&printed[i]&&!/^total\b/i.test(printed[i]))tags[i]=lineTag(printed[i]);
+      if(tags[i])otherRows.add(i);
+    }
     const periods=periodColumns(grid.slice(0,firstAmount),quarterEnd);
     const facts:Fact[]=[];
     for(const [rowIndex,row] of grid.entries()) {
@@ -227,9 +236,14 @@ export function readStatementTableFacts(html:string,source:DocumentSource):Fact[
       // An all-capitals heading reads in sentence case; the words are the statement's own.
       const label=printed[rowIndex]===printed[rowIndex].toUpperCase()?printed[rowIndex][0]+printed[rowIndex].slice(1).toLowerCase():printed[rowIndex];
       // One amount per period: the first a row prints under that period's header span.
-      // A dash or blank remains unknown; it is never silently converted to zero.
+      // A dash or blank elsewhere remains unknown; it is never silently converted to zero.
       for(const period of uniquePeriods(periods)) {
-        const cell=amountAt(row,periods,period);if(!cell)continue;
+        const cell=amountAt(row,periods,period);
+        if(!cell){
+          if(otherRows.has(rowIndex)&&row.some(c=>{const p=periods.get(c.column);return p?.start===period.start&&p.end===period.end&&/^[—–-]+$/.test(c.text.replace(/[$\s]/g,''));}))
+            facts.push({source,tag:`table:${tag}`,value:0,currency,...period,context:`table-${tableIndex}:row-${rowIndex}:dash`,dimensions:{},precision:-Math.log10(scale),statementRow:{order:rowIndex,label,flip:false}});
+          continue;
+        }
         const raw=cell.text.replace(/[$,\s]/g,'');
         const next=row.find(c=>c.column===cell.column+cell.span);
         const value=Number(raw.replace(/[()]/g,''))*scale*(raw.startsWith('(')||next?.text===')'?-1:1);
