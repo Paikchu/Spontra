@@ -30,6 +30,8 @@ export const AI_TOOLS = {
   findings: { label: "公司要点", reasoning: "high", model: "reasoning" },
   /** The lens agent chooses charts and layout from an already-computed observation. */
   lens: { label: "要点图表", reasoning: "low", model: "reasoning" },
+  /** The analysis of one filing on the rail: reads the filing and composes a finding-shaped analysis the harness verifies. */
+  items: { label: "文件分析", reasoning: "high", model: "reasoning" },
   /** The analyst reads filings and composes the dossier; its harness verifies, so it reasons at the default depth. */
   analyst: { label: "分析师", reasoning: "high", model: "reasoning" },
   /** Which statement line is pretax income and which come after taxes; the harness checks the arithmetic. */
@@ -38,7 +40,12 @@ export const AI_TOOLS = {
   translate: { label: "中文翻译", reasoning: "low", model: "analysis" },
   /** Runs one web search or reads one page for the research agents; the agents do the reading. */
   web: { label: "网页检索", reasoning: "low", model: "analysis" },
-} as const satisfies Record<string, { label: string; reasoning: ReasoningEffort; model: "analysis" | "reasoning" }>;
+  /**
+   * The stage: one reader's turn, reading stored data and laying out a scene (docs/stage-agent-design.md). Readers
+   * wait on it, so it runs on Sonnet whatever the deployment's analysis model is, unless the admin chooses otherwise.
+   */
+  stage: { label: "舞台对话", reasoning: "low", model: "analysis", pinned: "claude-sonnet-5-5" },
+} as const satisfies Record<string, { label: string; reasoning: ReasoningEffort; model: "analysis" | "reasoning"; pinned?: AiModel }>;
 export type AiTool = keyof typeof AI_TOOLS;
 export const AI_TOOL_NAMES = Object.keys(AI_TOOLS) as AiTool[];
 
@@ -60,6 +67,8 @@ export function aiToolSetting(env: SettingsEnv, tool: AiTool): AiToolSetting {
 
 /** The deployment's model for a tool, before the admin's choice. */
 export function defaultModelFor(env: ModelEnv, tool: AiTool): string {
+  const entry = AI_TOOLS[tool] as { pinned?: AiModel };
+  if (entry.pinned) return entry.pinned;
   return (AI_TOOLS[tool].model === "reasoning" ? env.SEC_REASONING_MODEL || env.SEC_ANALYSIS_MODEL : env.SEC_ANALYSIS_MODEL) || SEC_FALLBACK_MODEL;
 }
 

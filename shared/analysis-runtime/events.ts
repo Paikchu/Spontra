@@ -203,6 +203,22 @@ export function insiderVerdict(t: InsiderTransaction, cadence: InsiderCadence, c
   return { label: w.label.Routine, rules: [share != null ? w.soldBelow(share.toFixed(1), INSIDER_RULES.attentionShare) : w.holdingUnknown, w.noCluster] };
 }
 
+/** A Form 4 that reports no sale, purchase or exercise: grants, withholding, gifts. Kept, but folded. */
+export const isQuietInsider = (e: CompanyEvent) => e.class === "insider" && !!e.insider && !e.insider.sold && !e.insider.bought && !e.insider.exercised;
+
+/** A stable key for the verdict, for styling and for which filings get an analysis; the verdict's label is display text. */
+export type InsiderTone = "attention" | "planned" | "routine" | "none";
+
+/** The verdict's tone, by the same order of rules `insiderVerdict` applies: no sale, then any attention rule, then a plan or steady cadence. */
+export function insiderTone(events: CompanyEvent[], event: CompanyEvent): InsiderTone {
+  const t = event.insider;
+  if (!t?.sold) return "none";
+  const cadence = insiderCadence(events, t.ownerCik, event.eventDate);
+  const share = soldShareOfHolding(t);
+  if ((share != null && share >= INSIDER_RULES.attentionShare) || insiderCluster(events, event.id).length + 1 >= INSIDER_RULES.clusterSellers || (cadence.sales.length <= 1 && t.rule10b51 !== true)) return "attention";
+  return t.rule10b51 === true || cadence.regular ? "planned" : "routine";
+}
+
 /** The holding path one owner's filings trace, oldest first: each filing's held-after figure, for the ladder. */
 export function holdingPath(events: CompanyEvent[], ownerCik: string, months = 24, until?: string): Array<{ id: string; date: string; held: number; sold: number; bought: number; exercised: number; planned: boolean | null }> {
   const end = until ? Date.parse(until) : Infinity, start = (Number.isFinite(end) ? end : Date.now()) - months * 30.4 * DAY_MS;

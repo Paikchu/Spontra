@@ -172,7 +172,7 @@ test("the agent compiles, reads its errors back, and finishes only with a docume
   const replies = [call("compile", { document: bad }), call("finish"), call("compile", { document: good }), call("finish")];
   // Replies by the finding's turn, so the same script serves the publication's run below.
   const model: LensModel = async (stage, system, tools, messages) => {
-    assert.equal(tools, LENS_TOOLS);
+    assert.deepEqual(tools, LENS_TOOLS);
     sent.push(structuredClone(messages)); systems.push(system); seen.push(lastResult(messages));
     return replies[Number(stage.split("-").at(-1)) - 1] ?? call("finish");
   };

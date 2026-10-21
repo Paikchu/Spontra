@@ -76,6 +76,7 @@ export type AnalysisEnv = SecCronEnv & AnalysisReadEnv & {
   BUSINESS_EXPLAINER_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
   GUIDANCE_WORKFLOW?: AiWorkflowBinding<{ ticker: string; accession: string; eventDate: string; manual?: boolean }>;
   FINDINGS_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
+  ITEMS_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
   ANALYST_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
   ANALYST_ENABLED?: string;
   ANALYST_DAILY_TURNS?: string;
@@ -714,6 +715,8 @@ export async function callWorkerSecModel(
 export type ModelCallTuning = {
   maxTokens?: number; reasoning?: ReasoningEffort; onMetrics?: (metrics: Readonly<Record<string, unknown>>) => void;
   ticker?: string; runId?: string; kind?: string;
+  /** The reader and conversation a stage call served, for the ledger. */
+  userHash?: string; conversationId?: string;
 };
 
 async function requestWorkerSecModelContent(
@@ -909,12 +912,12 @@ function httpFailure(error: InstanceType<typeof Anthropic.APIError>, model: stri
 }
 
 /** Every call, however it ended, is logged and is a row in the cost ledger; the write is bounded and never throws. */
-async function recordModelCall(env: AnalysisEnv, metrics: Record<string, unknown>, started: number, tuning: Pick<ModelCallTuning, "onMetrics" | "ticker" | "runId" | "kind">): Promise<void> {
+async function recordModelCall(env: AnalysisEnv, metrics: Record<string, unknown>, started: number, tuning: Pick<ModelCallTuning, "onMetrics" | "ticker" | "runId" | "kind" | "userHash" | "conversationId">): Promise<void> {
   console.log(JSON.stringify({ event: "sec-model-request", ...metrics, elapsedMs: Date.now() - started }));
   try { tuning.onMetrics?.(metrics); } catch { /* Usage accounting never fails a model call. */ }
   await recordAiUsage(env, aiUsageFromMetrics(metrics, {
     at: new Date(started).toISOString(), durationMs: Date.now() - started, provider: "anthropic",
-    ticker: tuning.ticker, kind: tuning.kind, runId: tuning.runId,
+    ticker: tuning.ticker, kind: tuning.kind, runId: tuning.runId, userHash: tuning.userHash, conversationId: tuning.conversationId,
   }));
 }
 

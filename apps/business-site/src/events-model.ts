@@ -1,6 +1,6 @@
 import type { BusinessFlowQuarter } from "@/shared/analysis-contract/business-flow";
 import type { CompanyEvent, EventClass, EventsPublication } from "@/shared/analysis-contract/events";
-import { DAY_MS, EVENT_CLASS_LABEL as EVENT_CLASS_LABEL_EN, eventClassLabel, holdingPath, INSIDER_RULES, insiderCadence, insiderCluster, insiderVerdict, soldShareOfHolding, type InsiderVerdict } from "@/shared/analysis-runtime/events";
+import { DAY_MS, EVENT_CLASS_LABEL as EVENT_CLASS_LABEL_EN, eventClassLabel, holdingPath, insiderCadence, insiderCluster, insiderTone, insiderVerdict, isQuietInsider, soldShareOfHolding, type InsiderTone, type InsiderVerdict } from "@/shared/analysis-runtime/events";
 import { compactMoney, compactShares, shortPeriod } from "@/shared/analysis-runtime/locale";
 import { getLocale, labels, messages } from "@/packages/web/src/i18n";
 import { langOf } from "@/packages/web/src/i18n/SourceLanguage";
@@ -34,8 +34,7 @@ export const periodReport = (periodEnd: string) => m.report(shortPeriod(periodEn
 
 export const shortDate = (d: string) => d.slice(5).replace("-", ".");
 
-/** A Form 4 that reports no sale, purchase or exercise: grants, withholding, gifts. Kept, but folded. */
-export const isQuietInsider = (e: CompanyEvent) => e.class === "insider" && !!e.insider && !e.insider.sold && !e.insider.bought && !e.insider.exercised;
+export { isQuietInsider };
 
 /** The rail's one-line title: what happened, from the figures for Form 4 and from the summary (or EDGAR's description) for a current report. */
 export function eventTitle(e: CompanyEvent): string {
@@ -85,8 +84,7 @@ export function timelinePoints(quarters: BusinessFlowQuarter[], publication: Eve
 
 /* ---------- Insider lens ---------- */
 
-/** A stable key for the verdict, for styling; the verdict's label is display text and may change wording. */
-export type InsiderTone = "attention" | "planned" | "routine" | "none";
+export type { InsiderTone };
 export type InsiderLensModel = {
   verdict: InsiderVerdict;
   tone: InsiderTone;
@@ -102,10 +100,7 @@ export function insiderLens(publication: EventsPublication, event: CompanyEvent)
   const cadence = insiderCadence(publication.events, t.ownerCik, event.eventDate);
   const cluster = insiderCluster(publication.events, event.id);
   const share = soldShareOfHolding(t);
-  // The same order of rules insiderVerdict applies: no sale, then any attention rule, then a plan or steady cadence.
-  const tone: InsiderTone = !t.sold ? "none"
-    : (share != null && share >= INSIDER_RULES.attentionShare) || cluster.length + 1 >= INSIDER_RULES.clusterSellers || (cadence.sales.length <= 1 && t.rule10b51 !== true) ? "attention"
-    : t.rule10b51 === true || cadence.regular ? "planned" : "routine";
+  const tone = insiderTone(publication.events, event);
   return { verdict: insiderVerdict(t, cadence, cluster, getLocale()), tone, share, cadence, cluster, path: holdingPath(publication.events, t.ownerCik, 24, event.eventDate) };
 }
 

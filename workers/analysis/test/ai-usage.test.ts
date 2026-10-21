@@ -43,6 +43,7 @@ test("recording is a no-op without a database and swallows a failed write", asyn
   const failing = { prepare: () => ({ bind: (...values: unknown[]) => { bound.push(values); return { run: () => Promise.reject(new Error("no such table: ai_usage")) }; } }) } as unknown as D1Database;
   await recordAiUsage({ DB: failing }, row);
   assert.equal(bound.length, 1);
-  assert.equal(bound[0]!.length, 15);
+  assert.equal(bound[0]!.length, 17);
+  assert.deepEqual(bound[0]!.slice(15), [null, null]);
   assert.equal(bound[0]![4], "findings-write");
 });

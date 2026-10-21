@@ -9,7 +9,8 @@
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
     "run_worker_first": [
-      "/api/*"
+      "/api/*",
+      "/agents/*"
     ]
   },
   "ratelimits": [
@@ -20,10 +21,20 @@
         "limit": 60,
         "period": 60
       }
+    },
+    // The stage's door: identities, conversations and socket handshakes per address (docs/stage-agent-design.md §3.3).
+    {
+      "name": "AGENT_LIMIT",
+      "namespace_id": "1005",
+      "simple": {
+        "limit": 30,
+        "period": 60
+      }
     }
   ],
   "observability": {
-    "enabled": true
+    "enabled": true,
+    "traces": { "enabled": true, "head_sampling_rate": 0.05 }
   },
   // Reads go to Spontra Analysis's MapReads named entrypoint over a Service Binding. A named
   // entrypoint cannot be reached from the public internet, so the binding is the credential: no
@@ -33,6 +44,12 @@
       "binding": "SPONTRA_ANALYSIS",
       "service": "spontra-analysis",
       "entrypoint": "MapReads"
+    },
+    // The stage's door (docs/stage-agent-design.md §3.1): a second binding to the same Worker's StageGateway entrypoint.
+    {
+      "binding": "SPONTRA_STAGE",
+      "service": "spontra-analysis",
+      "entrypoint": "StageGateway"
     }
   ],
   "compatibility_flags": [

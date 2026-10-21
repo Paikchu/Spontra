@@ -3,6 +3,8 @@ import { SecModelHttpError } from "./operations.ts";
 import { companyPolicyEnvironment } from "./financial-data/company-policy.ts";
 import { WorkerEntrypoint, WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
 import { handleMapRead } from "./read-api/router.ts";
+import { handleStageRequest } from "./stage/gateway.ts";
+import { executeReportWorkflow, type ReportParams } from "./stage/report-workflow.ts";
 
 import { assertTrackedTicker, type CompanyAnalysisWorkflowParams, type SecMemoryWorkflowParams, type SecWorkflowParams } from "./core.ts";
 import { executeCompanyAnalysisWorkflow, type CompanyWorkflowStep } from "./company-analysis-workflow.ts";
@@ -17,6 +19,7 @@ import { executeBusinessTreeWorkflow, type BusinessTreeParams } from "./business
 import { maintenanceAnalysisEnvironment } from "./admin/financial-maintenance-runner.ts";
 import { executeGuidanceWorkflow, type GuidanceWorkflowParams } from "./guidance/workflow.ts";
 import { executeFindingsWorkflow, type FindingsWorkflowParams } from "./findings/workflow.ts";
+import { executeItemsWorkflow, type ItemsParams } from "./items/workflow.ts";
 import { executeAnalystWorkflow, type AnalystWorkflowParams } from "./analyst/workflow.ts";
 import { executeCheckupWorkflow, type CheckupWorkflowParams } from "./checkup/workflow.ts";
 import { trackRun, trackSleep, trackSteps } from "./ai-runs/tracking.ts";
@@ -161,6 +164,14 @@ export class FindingsWorkflow extends WorkflowEntrypoint<AnalysisEnv, FindingsWo
   }
 }
 
+/** The analysis of each due row of one company's filings rail; every model turn and outside read is a durable step. */
+export class ItemsWorkflow extends WorkflowEntrypoint<AnalysisEnv, ItemsParams> {
+  async run(event: WorkflowEvent<ItemsParams>, step: WorkflowStep) {
+    const env = await companyPolicyEnvironment(this.env);
+    return executeItemsWorkflow(event.payload, durableSteps(step, env, event.instanceId), env, event.instanceId);
+  }
+}
+
 export class GuidanceWorkflow extends WorkflowEntrypoint<AnalysisEnv, GuidanceWorkflowParams> {
   async run(event: WorkflowEvent<GuidanceWorkflowParams>, step: WorkflowStep) {
     const env = await companyPolicyEnvironment(this.env);
@@ -200,4 +211,28 @@ export class CompanyAnalysisWorkflow extends WorkflowEntrypoint<AnalysisEnv, Com
  * entrypoints above genuinely need that module, so they stay here, and this file remains the one
  * Wrangler points `main` at.
  */
+export { StageAgent } from "./stage/agent.ts";
+
+/** A report a reader of the stage asked for (docs/stage-agent-design.md §6.3), started by their StageAgent. */
+export class ReportWorkflow extends WorkflowEntrypoint<AnalysisEnv, ReportParams> {
+  async run(event: WorkflowEvent<ReportParams>, step: WorkflowStep) {
+    const env = await companyPolicyEnvironment(this.env);
+    return executeReportWorkflow(event.payload, durableSteps(step, env, event.instanceId), env as AnalysisEnv & { StageAgent?: DurableObjectNamespace }, event.instanceId);
+  }
+}
+
+/**
+ * The stage's door (docs/stage-agent-design.md §3.1): the business map reaches it over its own Service Binding to
+ * this named entrypoint, never from the public internet.
+ */
+export class StageGateway extends WorkerEntrypoint<AnalysisEnv> {
+  async fetch(request: Request) {
+    try { return await handleStageRequest(request, this.env as AnalysisEnv & { StageAgent?: DurableObjectNamespace }); }
+    catch (error) {
+      console.error(JSON.stringify({ event: "stage-gateway", outcome: "error", path: new URL(request.url).pathname, error: error instanceof Error ? error.message : String(error) }));
+      return Response.json({ error: "unavailable" }, { status: 503, headers: { "cache-control": "no-store" } });
+    }
+  }
+}
+
 export default worker;

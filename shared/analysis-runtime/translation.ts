@@ -11,8 +11,8 @@
 import { proseFigures } from "./findings.ts";
 import type { Locale } from "./locale.ts";
 
-export type TranslatedResource = "flow" | "findings" | "explainer" | "tree" | "guidance" | "events" | "filings" | "filing";
-export const TRANSLATED_RESOURCES: readonly TranslatedResource[] = ["flow", "findings", "explainer", "tree", "guidance", "events", "filings", "filing"];
+export type TranslatedResource = "flow" | "findings" | "explainer" | "tree" | "guidance" | "events" | "filings" | "filing" | "item";
+export const TRANSLATED_RESOURCES: readonly TranslatedResource[] = ["flow", "findings", "explainer", "tree", "guidance", "events", "filings", "filing", "item"];
 /** English text → translated text, for one resource of one company in one locale. */
 export type TranslationTable = Readonly<Record<string, string>>;
 
@@ -34,6 +34,8 @@ const RULES: Record<TranslatedResource, Rule> = {
   // Findings with their lens documents (the analyst dossier is merged in): titles, judgments, watches, prose,
   // chart and table words, highlight titles. Materials, sources and quote blocks are the filings' own words.
   findings: { keys: set("title", "subtitle", "text", "condition", "label"), skip: set("sources", "materials", "anchors", "ref", "refs", "fingerprint", "model", "said"), skipWhen: v => v.kind === "quote" },
+  // One rail row's analysis, a finding in shape: the same words as a finding; its quoted passages are the filings' own.
+  item: { keys: set("title", "subtitle", "text", "condition", "label"), skip: set("sources", "materials", "passages", "anchors", "ref", "refs", "said"), skipWhen: v => v.kind === "quote" },
   // Business explanations: summaries, offerings, section titles and items. Business and product names are data.
   explainer: { keys: set("text", "title", "label"), skip: set("sources", "name", "products", "line", "companyName", "model", "fingerprint") },
   // The business mind map: summaries, glosses and revenue models; the anchor is a verbatim filing passage.

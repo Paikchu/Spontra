@@ -6,6 +6,7 @@ import type { BusinessTree } from "@/shared/analysis-contract/business-tree";
 import type { GuidancePublication } from "@/shared/analysis-contract/guidance";
 import type { PublicCapitalStructure } from "@/shared/analysis-contract/capital-structure";
 import type { FindingPassage, FindingsPublication } from "@/shared/analysis-contract/findings";
+import type { ItemAnalysis } from "@/shared/analysis-contract/item-analysis";
 import type { PeersPublication } from "@/shared/analysis-contract/peers";
 import type { FindingFundamentals } from "@/shared/analysis-runtime/findings";
 import type { MapRevisions } from "@/shared/analysis-contract/revisions";
@@ -63,6 +64,14 @@ export async function fetchFindings(ticker: string, signal: AbortSignal, rev?: s
   if (!response.ok) return null;
   const body = await response.json() as { status?: string; findings?: FindingsPublication | null; passages?: FindingPassage[]; peers?: PeersPublication | null };
   return body.status === "ready" && body.findings ? { findings: body.findings, passages: body.passages ?? [], peers: body.peers ?? null } : null;
+}
+
+/** One filing rail row's analysis, or null when the row has none and the filing digest stands for it. */
+export async function fetchItemAnalysis(ticker: string, id: string, signal: AbortSignal): Promise<ItemAnalysis | null> {
+  const response = await fetch(companyPath(ticker, `/items/${encodeURIComponent(id)}`), { signal });
+  if (!response.ok) return null;
+  const body = await response.json() as { status?: string; analysis?: ItemAnalysis | null };
+  return body.status === "ready" && body.analysis ? body.analysis : null;
 }
 
 /** The drawable flow: the published pair plus the archived report quarters, or null while the statement is incomplete. */

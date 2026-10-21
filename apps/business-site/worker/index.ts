@@ -19,6 +19,7 @@ import {readPeersPublication} from "@/shared/analysis-runtime/peers";
 import type {PeersPublication} from "@/shared/analysis-contract/peers";
 import {readEventsPublication} from "@/shared/analysis-runtime/events";
 import type {EventsPublication} from "@/shared/analysis-contract/events";
+import type {ItemAnalysis} from "@/shared/analysis-contract/item-analysis";
 import type {PublicFilingDetail,PublicFilingDigest,PublicFilingDigestPage,PublicFilingPage,PublicSecFiling} from "@/shared/analysis-contract/filings";
 import type {LibraryTable,PublicPassage} from "@/shared/analysis-contract/filing-library";
 import {formatFilingPeriodLabel} from "@/packages/web/src/model/filing-period-label";
@@ -31,7 +32,11 @@ const ANALYSIS_ORIGIN="https://spontra-analysis.internal";
 const inLocale=(path:string,locale:Locale|null)=>locale&&locale!=="en"?`${path}${path.includes("?")?"&":"?"}locale=${locale}`:path;
 export type SiteEnv={ASSETS:{fetch(request:Request):Promise<Response>};PUBLIC_READ_LIMIT:{limit(options:{key:string}):Promise<{success:boolean}>};
  /** Service Binding to Spontra Analysis's `MapReads` named entrypoint; the binding is the credential. Without it every data route answers 503. */
- SPONTRA_ANALYSIS?:{fetch(request:Request):Promise<Response>}};
+ SPONTRA_ANALYSIS?:{fetch(request:Request):Promise<Response>};
+ /** Service Binding to Spontra Analysis's `StageGateway` named entrypoint: the stage's only door (docs/stage-agent-design.md §3.1). */
+ SPONTRA_STAGE?:{fetch(request:Request):Promise<Response>};
+ /** Requests to the stage per address per minute: identities, conversations and socket handshakes. */
+ AGENT_LIMIT?:{limit(options:{key:string}):Promise<{success:boolean}>}};
 /** Reads go straight to Spontra Analysis's read API over the binding; each call is a fresh request, so nothing from the browser's request is forwarded. */
 export function analysisFetcher(env:Pick<SiteEnv,"SPONTRA_ANALYSIS">):typeof fetch|null{
  const binding=env.SPONTRA_ANALYSIS;
@@ -235,6 +240,18 @@ function readTable(v:unknown):LibraryTable|null{
  return {unit:str(t.unit)?t.unit:null,columns:t.columns,rows,notes:strings(t.notes),xbrlBlock:str(t.xbrlBlock)?t.xbrlBlock:null};
 }
 /** One filing-library passage with its neighbours, for a quote that links to the filing's own words; only the typed fields pass through. */
+/** One filing rail row's analysis, re-checked for shape; null when the row has none (the map shows the filing digest). */
+export async function loadItemAnalysis(ticker:string,id:string,fetcher:typeof fetch=fetch,locale:Locale|null=null):Promise<ItemAnalysis|null>{
+ if(!ACCESSION.test(id))return null;
+ try{
+  const response=await fetcher(ANALYSIS_ORIGIN+inLocale(`/api/v1/companies/${ticker}/items/${id}`,locale),{signal:AbortSignal.timeout(8000),headers:{accept:"application/json"}});
+  if(!response.ok)return null;
+  const body=await response.json() as {schemaVersion?:string;status?:string;analysis?:ItemAnalysis|null};
+  const a=body.analysis;
+  return body.schemaVersion==="item-analysis-response.v1"&&body.status==="ready"&&a&&a.schemaVersion==="item-analysis.v1"&&a.ticker===ticker&&a.itemId===id&&a.finding?.lens?.type==="document"?a:null;
+ }catch{return null;}
+}
+
 export async function loadPassage(ticker:string,passageId:string,fetcher:typeof fetch=fetch):Promise<PublicPassage|null>{
  if(!PASSAGE_ID.test(passageId))return null;
  try{
@@ -272,8 +289,47 @@ export async function loadRevisions(ticker:string,fetcher:typeof fetch=fetch):Pr
  }catch{return null;}
 }
 
+/** The reader's signed id lives in an HttpOnly cookie scoped to the stage, so page scripts never hold it and sockets carry it. */
+const READER_COOKIE="spontra_reader";
+const readerCookie=(token:string,secure:boolean)=>`${READER_COOKIE}=${token}; Path=/agents; HttpOnly; SameSite=Strict; Max-Age=31536000${secure?"; Secure":""}`;
+const sha256Hex=async(value:string)=>Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(value))),b=>b.toString(16).padStart(2,"0")).join("");
+/**
+ * The stage's public door (docs/stage-agent-design.md §3.1): same-origin requests only, limited per address, passed
+ * to Spontra Analysis's StageGateway with the reader's token from its cookie and a hash of the address; the address
+ * itself never leaves this Worker. Socket upgrades pass through untouched so the 101 reaches the browser.
+ */
+export async function stageDoor(request:Request,env:SiteEnv):Promise<Response>{
+ const url=new URL(request.url);
+ const plain=(body:unknown,status:number)=>Response.json(body,{status,headers:{...security,"cache-control":"no-store"}});
+ if(!env.SPONTRA_STAGE)return plain({error:"unavailable"},503);
+ const origin=request.headers.get("origin");
+ const upgrade=request.headers.get("upgrade")?.toLowerCase()==="websocket";
+ if((upgrade||request.method!=="GET")&&origin!==url.origin)return plain({error:"forbidden"},403);
+ const ip=request.headers.get("cf-connecting-ip")??"unknown";
+ if(request.method!=="GET"||upgrade){try{if(env.AGENT_LIMIT&&!(await env.AGENT_LIMIT.limit({key:ip})).success)return plain({error:"rate"},429);}catch(error){console.error(JSON.stringify({event:"stage-limit-failed",message:error instanceof Error?error.message:String(error)}));return plain({error:"unavailable"},503);}}
+ const token=request.headers.get("cookie")?.split(";").map(v=>v.trim()).find(v=>v.startsWith(`${READER_COOKIE}=`))?.slice(READER_COOKIE.length+1)??null;
+ const headers=new Headers(request.headers);
+ headers.delete("cookie");headers.delete("x-spontra-token");headers.delete("x-spontra-address");headers.delete("x-spontra-reader");
+ if(token)headers.set("x-spontra-token",token);
+ headers.set("x-spontra-address",await sha256Hex(`spontra-stage\n${ip}`));
+ const forwarded=new Request(`https://spontra-stage.internal${url.pathname}${url.search}`,{method:request.method,headers,body:request.method==="GET"||request.method==="HEAD"?undefined:request.body});
+ const response=await env.SPONTRA_STAGE.fetch(forwarded);
+ if(upgrade||response.status===101)return response;
+ if(url.pathname==="/agents/identity"&&response.ok){
+  const body=await response.json() as {reader?:boolean;token?:string};
+  const out=plain({reader:!!body.reader},200);
+  if(body.token)out.headers.append("set-cookie",readerCookie(body.token,url.protocol==="https:"));
+  return out;
+ }
+ const out=new Response(response.body,{status:response.status,headers:response.headers});
+ for(const [name,value] of Object.entries(security))out.headers.set(name,value);
+ out.headers.set("cache-control","no-store");
+ return out;
+}
+
 export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstream?:typeof fetch,cache?:Cache):Promise<Response>{
  const url=new URL(request.url);
+ if(url.pathname.startsWith("/agents/"))return stageDoor(request,env);
  if(url.pathname.startsWith("/api/")){
   const fetcher=upstream??analysisFetcher(env);
   if(!fetcher)return json({error:"Read service unavailable"},503);
@@ -287,7 +343,7 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
    if(tickers&&cache)ctx.waitUntil(cache.put(key,response.clone()));else response.headers.set("cache-control","no-store");
    return response;
   }
-  const match=url.pathname.match(/^\/api\/business\/v1\/companies\/([A-Z][A-Z0-9.-]{0,11})(\/revision|\/capital|\/findings|\/fundamentals|\/events|\/filings|\/filings\/\d{10}-\d{2}-\d{6}|\/passages\/p[0-9a-f]{14,32})?$/);
+  const match=url.pathname.match(/^\/api\/business\/v1\/companies\/([A-Z][A-Z0-9.-]{0,11})(\/revision|\/capital|\/findings|\/fundamentals|\/events|\/filings|\/filings\/\d{10}-\d{2}-\d{6}|\/items\/\d{10}-\d{2}-\d{6}|\/passages\/p[0-9a-f]{14,32})?$/);
   const detail=match?.[2]?.startsWith("/filings/")?match[2].slice("/filings/".length):null;
   // The reader pins a report to its published revision; a resource is asked for at its publication revision (`rev`), which
   // only keys the cache: a newer revision is a new address, so no cached copy can answer it with older data.
@@ -313,6 +369,7 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
    if(match[2]==="/findings"){const bundle=await loadFindings(match[1],fetcher,locale);const response=json({schemaVersion:"findings-response.v1",status:bundle?"ready":"unavailable",findings:bundle?.findings??null,passages:bundle?.passages??[],peers:bundle?.peers??null});if(!bundle)response.headers.set("cache-control","no-store");if(cache&&bundle)ctx.waitUntil(cache.put(key,response.clone()));return response;}
    if(match[2]==="/events")return supplementary("events","events-response.v1",()=>loadEvents(match[1],fetcher,locale));
    if(match[2]==="/filings")return supplementary("filings","filing-digests-response.v1",()=>loadFilings(match[1],fetcher,locale));
+   if(match[2].startsWith("/items/"))return supplementary("analysis","item-analysis-response.v1",()=>loadItemAnalysis(match[1],match[2]!.slice("/items/".length),fetcher,locale));
    if(match[2].startsWith("/passages/"))return supplementary("passage","passage-response.v1",()=>loadPassage(match[1],match[2]!.slice("/passages/".length),fetcher));
    if(detail){const reportDate=url.searchParams.get("reportDate"),reportVersion=url.searchParams.get("reportVersion");
     const body=await loadFilingDetail(match[1],detail,reportDate&&reportVersion?{reportDate,reportVersion}:null,fetcher,locale);

@@ -34,3 +34,12 @@ test("the admin proxy passes the business-tag reads and writes through", async (
     assert.equal((await handleReportAdminProxy(new Request(`https://admin.example/api/admin/${path}`, { method: "POST", body: "{}", headers }), path.split("/"), env)).status, 404, path);
   }
 });
+
+test("the admin proxy passes the inbox read and its mark-read through", async () => {
+  const seen: string[] = [];
+  const env = { SPONTRA_ANALYSIS: { fetch: async (url: URL | string) => { seen.push(new URL(String(url)).pathname); return Response.json({ ok: true }); } } };
+  const headers = { cookie: "spontra_report_admin=report-admin.v1.1.x", origin: "https://admin.example" };
+  assert.equal((await handleReportAdminProxy(new Request("https://admin.example/api/admin/business-map/messages", { headers }), ["business-map", "messages"], env)).status, 200);
+  assert.equal((await handleReportAdminProxy(new Request("https://admin.example/api/admin/business-map/messages/read", { method: "POST", body: "{}", headers }), ["business-map", "messages", "read"], env)).status, 200);
+  assert.deepEqual(seen, ["/admin/business-map/messages", "/admin/business-map/messages/read"]);
+});

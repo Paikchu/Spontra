@@ -1,5 +1,6 @@
 import type { AiRun, AiRunKind, AiRunStatus, AiRunTrigger, AiVersion, AiVersionSummary } from "../../../../shared/analysis-contract/ai-runs-admin.ts";
 import { sha256 } from "../company-analysis/api.ts";
+import { KIND_FEATURE, recordFeatureFailure } from "../admin/messages.ts";
 
 /**
  * Run records and published versions of the findings, explainer, business-tree and guidance workflows, kept in
@@ -11,7 +12,7 @@ const runPrefix = (kind: AiRunKind, ticker: string) => `ai-run:v1:${kind}:${tick
 const versionPrefix = (kind: AiRunKind, ticker: string) => `ai-version:v1:${kind}:${ticker}:`;
 /** Keys use letters, digits and `-:.`; `~` sorts after all of them and closes the range. */
 const range = (prefix: string) => [prefix, `${prefix}~`] as const;
-export const TERMINAL: ReadonlySet<AiRunStatus> = new Set(["succeeded", "empty", "superseded", "failed"]);
+export const TERMINAL: ReadonlySet<AiRunStatus> = new Set(["succeeded", "empty", "superseded", "cancelled", "failed"]);
 
 type VersionRecord = { savedAt: string; hash: string; summary: AiVersionSummary; publication: unknown };
 
@@ -77,6 +78,7 @@ export class AiRunStore {
     await this.update(kind, ticker, runId, { status: outcome.status, finishedAt: now }, now);
     await this.db.prepare("UPDATE sec_cache SET payload=json_set(payload,'$.result',json(?2),'$.error',?3) WHERE cache_key=?1")
       .bind(runPrefix(kind, ticker) + runId, JSON.stringify(outcome.result ?? null), outcome.error?.slice(0, 1000) ?? null).run();
+    if (outcome.status === "failed") await recordFeatureFailure(this.db, ticker, KIND_FEATURE[kind], `${kind} ${runId}: ${outcome.error ?? "failed"}`, now);
   }
 
   async get(kind: AiRunKind, ticker: string, runId: string): Promise<AiRun | null> {

@@ -11,6 +11,7 @@ import { SearchDialog } from "./SearchDialog";
 import { useLiveCompany } from "./live-company";
 import { UpdateNotice } from "./UpdateNotice";
 import { Home } from "./Home";
+import { useStageHost } from "./stage/StageHost";
 
 const m = messages({
   chartUnavailable: "Chart unavailable", companyBusinesses: "Company businesses", lastSnapshot: "Last complete snapshot",
@@ -84,6 +85,7 @@ function StateShell({ ticker, tools, role, children }: { ticker: string; tools: 
 function Company({ ticker, tools, onSeen }: { ticker: string; tools: ReactNode; onSeen: (ticker: string) => void }) {
   const { data, updates, failed, retry, update, apply, dismiss } = useLiveCompany(ticker, onSeen);
   const { flow, publication, capital, peers, findings, fundamentals, events, filings } = data;
+  const stage = useStageHost(ticker, data);
   if (flow)
     return (
       <ChartBoundary ticker={ticker} tools={tools}>
@@ -102,8 +104,14 @@ function Company({ ticker, tools, onSeen }: { ticker: string; tools: ReactNode; 
           filings={filings}
           notice={publication?.outdated ? m.lastSnapshot : null}
           updates={updates}
+          stageOverride={stage.stageOverride}
+          onNavigate={stage.onNavigate}
+          onView={stage.onView}
+          railFoot={stage.railFoot}
+          focusRequest={stage.focusRequest}
         />
         <UpdateNotice update={update} onApply={apply} onDismiss={dismiss} />
+        {stage.layer}
       </ChartBoundary>
     );
   if (failed)

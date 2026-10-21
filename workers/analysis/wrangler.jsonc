@@ -89,6 +89,12 @@
       "concurrency": { "limit": 1 }
     },
     {
+      "name": "spontra-items",
+      "binding": "ITEMS_WORKFLOW",
+      "class_name": "ItemsWorkflow",
+      "concurrency": { "limit": 1 }
+    },
+    {
       "name": "earning-report-analysis-sec-analysis",
       "binding": "SEC_ANALYSIS_WORKFLOW",
       "class_name": "SecAnalysisWorkflow",
@@ -105,6 +111,15 @@
       "name": "earning-report-analysis-company-analysis",
       "binding": "COMPANY_ANALYSIS_WORKFLOW",
       "class_name": "CompanyAnalysisWorkflow",
+      "concurrency": {
+        "limit": 2
+      }
+    },
+    // Reports readers ask the stage for (docs/stage-agent-design.md §6.3), started by their StageAgent.
+    {
+      "name": "spontra-report",
+      "binding": "REPORT_WORKFLOW",
+      "class_name": "ReportWorkflow",
       "concurrency": {
         "limit": 2
       }
@@ -168,6 +183,13 @@
       { "queue": "spontra-pipeline-dlq", "max_batch_size": 10, "max_batch_timeout": 30, "max_concurrency": 1, "max_retries": 3 }
     ]
   },
+  // The stage (docs/stage-agent-design.md): one StageAgent per reader conversation, an Agents SDK Agent and so a
+  // SQLite-backed Durable Object. A class migration cannot be rolled back; the class is never renamed or deleted, and
+  // turning the stage off is the feature switch, not a revert.
+  "durable_objects": {
+    "bindings": [{ "name": "StageAgent", "class_name": "StageAgent" }]
+  },
+  "migrations": [{ "tag": "stage-v1", "new_sqlite_classes": ["StageAgent"] }],
   "version_metadata": { "binding": "CF_VERSION_METADATA" },
   // The only schedule: SEC filing discovery, because EDGAR pushes nothing (docs/analysis-events.md). Everything a
   // filing leads to runs on the queues above.

@@ -10,7 +10,7 @@ export const EVENT_TYPES = [
   "financials.published", "filing.archived", "archive.superseded", "archive.prune.requested",
   "map.derived", "filings.indexed", "report.published", "analysis.published", "fundamentals.updated", "guidance.published",
   "task.version_changed",
-  "transcript.stored", "explainer.published", "tree.published", "findings.published", "events.published", "dossier.published", "checkup.published",
+  "transcript.stored", "explainer.published", "tree.published", "findings.published", "events.published", "dossier.published", "checkup.published", "items.published",
   "library.requested", "library.prepared", "library.cards.published", "library.links.requested", "library.links.published",
   "business.tags.requested", "business.tags.published",
   "peers.published", "translations.published",
@@ -23,7 +23,7 @@ export const TASK_NAMES = [
   "collect", "history", "reproject", "maintenance", "transcript",
   "map-derive", "archive-prune", "archive-prune-scan",
   "sec-report", "guidance", "events",
-  "memory", "company-analysis", "explainer", "tree", "findings", "analyst", "checkup",
+  "memory", "company-analysis", "explainer", "tree", "findings", "analyst", "checkup", "items",
   "library", "library-cards", "library-links", "library-search", "storage-sweep", "business-tags",
   "peers", "translate", "presentation",
 ] as const;
@@ -86,6 +86,9 @@ export const TASKS: Record<TaskName, TaskMeta> = {
   "analyst": { emits: ["dossier.published"], debounceMs: 10 * MINUTE, maxWaitMs: 2 * HOUR, scope: "findings" },
   // A written analysis of each metric the three-statement checkup flags, read against the current and earlier filings (Workflow).
   "checkup": { emits: ["checkup.published"], debounceMs: 10 * MINUTE, maxWaitMs: 2 * HOUR, scope: "findings" },
+  // The analysis of each row of the filings rail: reports, current reports and flagged Form 4s, each by the shared agent
+  // loop with the tools every analysis is composed with (Workflow; model at the reasoning tier).
+  "items": { emits: ["items.published"], debounceMs: 10 * MINUTE, maxWaitMs: 2 * HOUR, scope: "findings" },
   // Splits the company's archived documents into the filing library's sections and passages; no model.
   "library": { emits: ["library.prepared"], debounceMs: 30 * SECOND, maxWaitMs: 5 * MINUTE, scope: "data" },
   // Index cards for the sections of the company's recent documents (Workflow; model at low reasoning).
@@ -127,7 +130,7 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
   "filing.archived": [{ task: "map-derive" }, { task: "analyst", when: e => /^10-[QK](?:\/A)?$/.test(form(e)) }, { task: "transcript", when: e => /^(?:10-[QK]|20-F|6-K)(?:\/A)?$/.test(form(e)) }, { task: "library" }, { task: "storage-sweep" }],
   "library.requested": [{ task: "library" }],
   // A filing newly split into the library is text the checkup notes can now read against the earlier ones.
-  "library.prepared": [{ task: "library-cards" }, { task: "checkup" }],
+  "library.prepared": [{ task: "library-cards" }, { task: "checkup" }, { task: "items" }],
   "library.cards.published": [{ task: "library-links" }, { task: "library-search" }, { task: "storage-sweep" }],
   "library.links.requested": [{ task: "library-links" }],
   // The business links are the units' and sector tags' source; their tags and pairs are written right after them.
@@ -144,6 +147,7 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
     { task: "events", when: e => /^(?:8|6)-K/.test(form(e)) },
     { task: "memory", when: e => PERIODIC.test(form(e)) },
     { task: "company-analysis", when: e => PERIODIC.test(form(e)) },
+    { task: "items", when: e => PERIODIC.test(form(e)) },
   ],
   "map.derived": [{ task: "findings" }, { task: "peers" }, { task: "translate" }],
   "guidance.published": [{ task: "findings" }, { task: "translate" }],
@@ -155,7 +159,9 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
   "checkup.published": [{ task: "translate" }],
   "explainer.published": [{ task: "translate" }],
   "tree.published": [{ task: "translate" }],
-  "events.published": [{ task: "translate" }],
+  // New rows on the rail are filings to analyse.
+  "events.published": [{ task: "translate" }, { task: "items" }],
+  "items.published": [{ task: "translate" }],
   "presentation.unresolved": [{ task: "presentation" }],
   // A feature switch changed in the admin: the feature's first task checks whether there is something to write (the SEC
   // reports lead on to guidance; the findings chain starts from the company analysis already published); the map's
@@ -164,6 +170,7 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
     { task: "sec-report", when: e => e.detail?.feature === "reports" },
     { task: "findings", when: e => e.detail?.feature === "findings" },
     { task: "company-analysis", when: e => e.detail?.feature === "findings" },
+    { task: "items", when: e => e.detail?.feature === "findings" },
     { task: "explainer", when: e => e.detail?.feature === "explainer" },
     { task: "tree", when: e => e.detail?.feature === "tree" },
   ],

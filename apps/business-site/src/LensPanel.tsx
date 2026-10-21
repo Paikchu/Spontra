@@ -4,7 +4,7 @@ import { SourceLanguage, langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 import type { ExplainerSource } from "@/shared/analysis-contract/business-explainer";
 import type { FindingMaterial, FindingRecordEntry, FindingRef } from "@/shared/analysis-contract/findings";
-import type { LensBlock } from "@/shared/analysis-contract/lens";
+import type { LensBlock, LensDocument as LensDocumentShape } from "@/shared/analysis-contract/lens";
 import { spanLabel, watchPeriod, watchVerdict, type FindingData, type ResolvedEvidence, type ResolvedValue } from "@/shared/analysis-runtime/findings";
 import { formatResolved } from "@/shared/analysis-runtime/lens/format";
 import { multiple, yoyLabel } from "@/shared/analysis-runtime/locale";
@@ -37,6 +37,8 @@ const signed = (v: number, digits: number) => `${v > 0 ? "+" : v < 0 ? "−" : "
 /** A ratio's change: percentage points for a rate-like ratio (below 1.5), turns for a multiple. */
 const ratioChange = (r: ResolvedEvidence) => r.delta == null ? "—" : Math.abs(r.compare?.value ?? 0) < 1.5 && Math.abs(r.current.value) < 1.5 ? `${signed(r.delta * 100, 1)}${m.pp}` : getLocale() === "en" ? `${signed(r.delta, 2)}x` : multiple(signed(r.delta, 2), getLocale());
 export const formatValue = (v: ResolvedValue, ref?: FindingRef): string => formatResolved(v, ref, getLocale());
+/** A passage the filing library serves by id; a filing's own words read for one analysis link to the filing itself. */
+const LIBRARY_PASSAGE = /^p[0-9a-f]{14,32}$/;
 const near = (a: string, b: string) => Math.abs(Date.parse(a) - Date.parse(b)) <= 20 * 86_400_000;
 
 /**
@@ -81,20 +83,23 @@ export function LensPanel({ finding, data, sources, materials, record, ticker, n
         </>}
       </div>
     </header>
-    <LensDocument finding={finding} data={data} sources={sources} materials={materials} record={record} ticker={ticker} nodeColor={nodeColor} compact={compact} />
+    <LensBlocks finding={finding} data={data} sources={sources} materials={materials} record={record} ticker={ticker} nodeColor={nodeColor} compact={compact} />
   </section>;
 }
 
-/** The document as rows of cells; a chart's hover lights the evidence rows of the same period. */
-function LensDocument({ finding, data, sources, materials, record, ticker, nodeColor, compact }: { finding: VerifiedFinding; data: FindingData; sources: ExplainerSource[]; materials?: FindingMaterial[]; record?: FindingRecordEntry[]; ticker: string; nodeColor: (id: string) => string; compact: boolean }) {
+/**
+ * A finding's lens document as rows of cells; a chart's hover lights the evidence rows of the same period. The finding
+ * page and the stage both draw a finding through it. `layout` overrides the finding's own (a stage scene's layout).
+ */
+export function LensBlocks({ finding, data, sources, materials, record, ticker, nodeColor, compact, layout }: { finding: VerifiedFinding; data: FindingData; sources: ExplainerSource[]; materials?: FindingMaterial[]; record?: FindingRecordEntry[]; ticker: string; nodeColor: (id: string) => string; compact: boolean; layout?: LensDocumentShape }) {
   const colorOf = useCallback((ref: FindingRef) => "nodeId" in ref ? nodeColor(ref.nodeId) : "ratio" in ref && "nodeId" in ref.ratio.numerator ? nodeColor(ref.ratio.numerator.nodeId) : null, [nodeColor]);
   // Earlier watches other than this finding's own, scored against the data as it stands; only those that can be read.
   const scored = useMemo(() => (record ?? []).filter(e => e.findingId !== finding.id || e.periodEnd !== finding.periodEnd).map(e => ({ entry: e, result: watchVerdict(data, e.watch, e.periodEnd) })), [record, data, finding]);
   const lens = useMemo<VerifiedLens | null>(() => {
     const options = { colorOf, locale: getLocale() }, context = { ticker, materials, record: scored };
-    return verifyLensDocument(lensDocumentOf(finding, data, finding.periodEnd, options.locale), finding, finding.resolved, data, finding.periodEnd, options, context)
+    return verifyLensDocument(layout ?? lensDocumentOf(finding, data, finding.periodEnd, options.locale), finding, finding.resolved, data, finding.periodEnd, options, context)
       ?? verifyLensDocument(documentFromEvidence(finding), finding, finding.resolved, data, finding.periodEnd, options, context);
-  }, [finding, data, colorOf, ticker, materials, scored]);
+  }, [finding, data, colorOf, ticker, materials, scored, layout]);
   // Sources numbered in the order the document cites them, so every citation mark points at one list.
   const cited = useMemo(() => {
     const ids = [...finding.judgment.sourceIds, ...(lens?.document.rows ?? []).flatMap(r => r.cells.flat()).flatMap(b => b.kind === "prose" ? b.paragraphs.flatMap(p => p.sourceIds) : [])];
@@ -124,7 +129,7 @@ function LensDocument({ finding, data, sources, materials, record, ticker, nodeC
         const p = q.passage;
         return <figure key={key} className="lens-quote">
           <blockquote lang="en">{b.text}</blockquote>
-          <figcaption data-kind={p.form === "web" ? "web" : "sec"}>{b.said && <span className="lens-quote-said">{b.said.speaker}{b.said.role ? ` · ${b.said.role}` : ""}</span>}<a href={p.form === "web" ? p.url : `/api/business/v1/companies/${encodeURIComponent(ticker)}/passages/${encodeURIComponent(p.passageId)}`} target="_blank" rel="noopener noreferrer">{p.title} · {p.form === "web" ? p.path[0] ?? "web" : p.form} · {p.filedAt}</a>{p.form !== "web" && p.path.length > 0 && <small>{p.path.slice(1).join(" › ")}</small>}</figcaption>
+          <figcaption data-kind={p.form === "web" ? "web" : "sec"}>{b.said && <span className="lens-quote-said">{b.said.speaker}{b.said.role ? ` · ${b.said.role}` : ""}</span>}<a href={p.form === "web" || !LIBRARY_PASSAGE.test(p.passageId) ? p.url : `/api/business/v1/companies/${encodeURIComponent(ticker)}/passages/${encodeURIComponent(p.passageId)}`} target="_blank" rel="noopener noreferrer">{p.title} · {p.form === "web" ? p.path[0] ?? "web" : p.form} · {p.filedAt}</a>{p.form !== "web" && p.path.length > 0 && <small>{p.path.slice(1).join(" › ")}</small>}</figcaption>
         </figure>;
       }
       case "table": {
