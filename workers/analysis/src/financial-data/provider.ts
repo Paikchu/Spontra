@@ -133,7 +133,8 @@ export async function readSecDocumentBatch(job:Job,reader:SecReader,maxDocuments
    const relevant=reported.facts.filter(f=>!expected||(f.end<=expected&&Date.parse(f.start)>=Date.parse(expected)-380*86400000));
    if(relevant.length){cursor.reportedFacts=[...(cursor.reportedFacts??[]),...relevant];cursor.reviewDocuments=[...(cursor.reviewDocuments??[]),{source:stored,eligible:true}];cursor.restated=restatedConcepts(cursor.reportedFacts);}
    quarters.push(...parsed.quarters);
-   if(expected&&cursor.reportedFacts?.length){const review=reviewedCurrentPair(cursor.reportedFacts,expected,cursor.reviewDocuments??[],cursor.calculations??{},cursor.presentation??null,cursor.revenueStructures??{});if(review.reviewed){cursor.index++;return {quarters:review.quarters,nextCursor:JSON.stringify(cursor),finished:true,expectedPeriodEnd:expected};}}
+   if(expected&&cursor.reportedFacts?.length){const firstReport=!cursor.documents.some(d=>d.form!=='8-K'&&d.periodEnd<expected);
+    const review=reviewedCurrentPair(cursor.reportedFacts,expected,cursor.reviewDocuments??[],cursor.calculations??{},cursor.presentation??null,cursor.revenueStructures??{},firstReport);if(review.reviewed){cursor.index++;return {quarters:review.quarters,nextCursor:JSON.stringify(cursor),finished:true,expectedPeriodEnd:expected};}}
   }
   cursor.index++;
  }

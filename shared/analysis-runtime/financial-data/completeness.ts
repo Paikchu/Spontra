@@ -4,10 +4,10 @@ import type { CompleteFlowCheck, CompleteFlowReason } from '../../analysis-contr
 const number=(amount:FlowAmount|undefined|null):number|null=>typeof amount?.value==='string'&&amount.value.trim()!==''&&Number.isFinite(Number(amount.value))?Number(amount.value):null;
 const balanced=(a:number,b:number)=>Math.abs(a-b)<=Math.max(1e-6,Math.max(Math.abs(a),Math.abs(b))*1e-9);
 const sourceUrl=(text:string)=>{try{const u=new URL(text);return u.protocol==='https:'&&(u.hostname==='www.sec.gov'||u.hostname==='sec.gov'||u.hostname==='data.sec.gov');}catch{return false;}};
-/** A same-filing 6M minus Q2 bridge uses a later operand period. Both sides must have
- * identical concepts/dimensions and end dates, and bracket exactly the derived quarter. */
+/** A same-filing 6M minus Q2 bridge uses a later operand period, whether the filing prints a statement table or tags
+ * inline XBRL. Both sides must have identical concepts/dimensions and end dates, and bracket exactly the derived quarter. */
 function samePresentationBridge(amount:FlowAmount,q:BusinessFlowQuarter,line:NonNullable<FlowAmount['lineage']>[number]):boolean {
- if(amount.basis!=='derived'||!q.periodStart||!line.contextId.startsWith('table-'))return false;
+ if(amount.basis!=='derived'||!q.periodStart)return false;
  const following=new Date(Date.parse(q.periodEnd)+86400000).toISOString().slice(0,10);
  const remaining=(Date.parse(line.periodEnd)-Date.parse(q.periodEnd))/86400000;
  if(remaining<70||remaining>110||![q.periodStart,following].includes(line.periodStart))return false;
