@@ -144,16 +144,16 @@ function Layer({ state, send, entries, turn, connected, onSubmit, onCancel, scen
   return createPortal(<div ref={root} className="ask" data-state={state} role="dialog" aria-label={m.stage} onKeyDown={onKey}>
     <div className="ask-scroll" ref={scroll} aria-live="polite">
       {!mini && entries.length === 0 && <p className="ask-note">{m.retention}</p>}
-      {shownEntries.map(e => <Entry key={e.id} entry={e} sceneShown={sceneShown} onShowScene={onShowScene} />)}
+      {shownEntries.map(e => <Entry key={e.id} entry={e} sceneShown={sceneShown} onShowScene={() => { onShowScene(); input.current?.focus(); }} />)}
       {busy && !mini && <p className="ask-typing" aria-hidden="true"><i /><i /><i /></p>}
     </div>
+    {status && <p className="ask-status" role="status">{status}</p>}
     <form className="ask-bar" onSubmit={submit} onFocus={() => { if (mini) send({ type: "focus" }); }}>
       <textarea ref={input} rows={1} value={text} maxLength={600} aria-label={m.input} placeholder={m.input} disabled={!connected} onChange={e => setText(e.target.value)} />
       {busy ? <Button variant="unstyled" type="button" className="ask-send" onClick={onCancel}>{m.cancel}</Button>
         : <Button variant="unstyled" type="submit" className="ask-send" disabled={!text.trim() || !connected}>{m.send}</Button>}
       <Button variant="unstyled" type="button" className="ask-close icon-button" aria-label={m.close} onClick={() => send({ type: "toggle" })}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17" /></svg></Button>
     </form>
-    {status && <p className="ask-status" role="status">{status}</p>}
     {busy && <span className="ask-progress" aria-hidden="true" />}
   </div>, document.body);
 }

@@ -49,8 +49,7 @@ main[data-rail="collapsed"] ~ .ask, body:has(main[data-rail="collapsed"]) .ask {
 .ask-send:disabled { opacity: .35; }
 .ask-close { width: 32px; height: 32px; }
 .ask-close svg { width: 15px; height: 15px; }
-.ask-status { position: absolute; bottom: calc(100% - 44px); left: 18px; margin: 0; font-size: 11.5px; font-weight: 600; letter-spacing: .02em; color: var(--muted-foreground); }
-.ask[data-state="busy"] .ask-status, .ask[data-state="disconnected"] .ask-status { position: static; padding: 0 18px; }
+.ask-status { margin: 0; padding: 0 18px; font-size: 11.5px; font-weight: 600; letter-spacing: .02em; color: var(--muted-foreground); }
 .ask-progress { position: absolute; left: 22px; right: 22px; bottom: -6px; height: 2px; border-radius: 2px; overflow: hidden; background: color-mix(in srgb, var(--brand) 18%, transparent); }
 .ask-progress::after { content: ""; position: absolute; inset: 0; width: 30%; background: var(--brand); animation: ask-progress 1.2s ease-in-out infinite; }
 @keyframes ask-in { from { opacity: 0; transform: translateY(10px); } }
