@@ -173,4 +173,3 @@ export async function executeItemsWorkflow(params: ItemsParams, step: WorkflowSt
   });
   return { status: "ready", due: plan.subjects.length, written: outcomes.filter(o => o.written).length, failed: outcomes.filter(o => !o.written).map(o => `${o.id}:${o.reason}`), kept: written.length };
 }
-
