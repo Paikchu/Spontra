@@ -22,10 +22,13 @@ export type AiUsageRow = {
   durationMs: number;
   outcome: AiUsageOutcome;
   searchCalls: number;
+  /** sha256 of the reader a stage call served, and its conversation; null for the pipeline's own calls. */
+  userHash?: string | null;
+  conversationId?: string | null;
 };
 
 /** What a call knows about itself beyond the request metrics. */
-export type AiUsageCall = { at: string; durationMs: number; provider: string; ticker?: string; runId?: string; kind?: string; searchCalls?: number };
+export type AiUsageCall = { at: string; durationMs: number; provider: string; ticker?: string; runId?: string; kind?: string; searchCalls?: number; userHash?: string; conversationId?: string };
 
 /** Stage names start with the feature that made the call; the two business agents share a `business-` prefix. */
 export function aiUsageKind(stage: string): string {
@@ -69,11 +72,13 @@ export function aiUsageFromMetrics(metrics: Readonly<Record<string, unknown>>, c
     durationMs: Math.max(0, Math.round(call.durationMs)),
     outcome: error === null ? "ok" : error.startsWith("model-timeout:") ? "timeout" : "error",
     searchCalls: call.searchCalls ?? 0,
+    ...(call.userHash ? { userHash: call.userHash } : {}),
+    ...(call.conversationId ? { conversationId: call.conversationId } : {}),
   };
 }
 
-const INSERT = `INSERT INTO ai_usage (at, ticker, kind, run_id, stage, provider, model, reasoning, input_tokens, cached_tokens, output_tokens, reasoning_tokens, duration_ms, outcome, search_calls)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+const INSERT = `INSERT INTO ai_usage (at, ticker, kind, run_id, stage, provider, model, reasoning, input_tokens, cached_tokens, output_tokens, reasoning_tokens, duration_ms, outcome, search_calls, user_hash, conversation_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
 /** Writes one ledger row. Never throws; without a database it does nothing. */
 export async function recordAiUsage(env: { DB?: D1Database }, row: AiUsageRow): Promise<void> {
@@ -81,7 +86,7 @@ export async function recordAiUsage(env: { DB?: D1Database }, row: AiUsageRow): 
   try {
     await boundedModelIO(env.DB.prepare(INSERT).bind(
       row.at, row.ticker, row.kind, row.runId, row.stage, row.provider, row.model, row.reasoning,
-      row.inputTokens, row.cachedTokens, row.outputTokens, row.reasoningTokens, row.durationMs, row.outcome, row.searchCalls,
+      row.inputTokens, row.cachedTokens, row.outputTokens, row.reasoningTokens, row.durationMs, row.outcome, row.searchCalls, row.userHash ?? null, row.conversationId ?? null,
     ).run(), "ai-usage", 5000);
   } catch (error) {
     console.warn(JSON.stringify({ event: "ai-usage", outcome: "unavailable", kind: row.kind, stage: row.stage, error: error instanceof Error ? error.message : String(error) }));

@@ -24,6 +24,9 @@ export type ToolDefinition<A, R, S> = {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type AnyTool<S> = ToolDefinition<any, any, S>;
 
+/** Declares a tool with its parameter and result types inferred, then widens it for a recipe's list. */
+export const defineTool = <S>() => <A, R>(tool: ToolDefinition<A, R, S>): AnyTool<S> => tool as AnyTool<S>;
+
 export type ToolContext<S> = { state: S; signal: AbortSignal; recipe: string };
 export type PreToolDecision = { kind: "allow" } | { kind: "deny"; reason: string } | { kind: "ask"; question: string };
 export type PostToolDecision = { kind: "accept" } | { kind: "block"; feedback: string };

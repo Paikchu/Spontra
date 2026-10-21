@@ -3,6 +3,7 @@ import { SecModelHttpError } from "./operations.ts";
 import { companyPolicyEnvironment } from "./financial-data/company-policy.ts";
 import { WorkerEntrypoint, WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
 import { handleMapRead } from "./read-api/router.ts";
+import { handleStageRequest } from "./stage/gateway.ts";
 
 import { assertTrackedTicker, type CompanyAnalysisWorkflowParams, type SecMemoryWorkflowParams, type SecWorkflowParams } from "./core.ts";
 import { executeCompanyAnalysisWorkflow, type CompanyWorkflowStep } from "./company-analysis-workflow.ts";
@@ -201,5 +202,15 @@ export class CompanyAnalysisWorkflow extends WorkflowEntrypoint<AnalysisEnv, Com
  * Wrangler points `main` at.
  */
 export { StageAgent } from "./stage/agent.ts";
+
+/**
+ * The stage's door (docs/stage-agent-design.md §3.1): the business map reaches it over its own Service Binding to
+ * this named entrypoint, never from the public internet.
+ */
+export class StageGateway extends WorkerEntrypoint<AnalysisEnv> {
+  fetch(request: Request) {
+    return handleStageRequest(request, this.env as AnalysisEnv & { StageAgent?: DurableObjectNamespace });
+  }
+}
 
 export default worker;
