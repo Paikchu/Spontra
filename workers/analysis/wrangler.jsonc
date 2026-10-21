@@ -89,6 +89,12 @@
       "concurrency": { "limit": 1 }
     },
     {
+      "name": "spontra-items",
+      "binding": "ITEMS_WORKFLOW",
+      "class_name": "ItemsWorkflow",
+      "concurrency": { "limit": 1 }
+    },
+    {
       "name": "earning-report-analysis-sec-analysis",
       "binding": "SEC_ANALYSIS_WORKFLOW",
       "class_name": "SecAnalysisWorkflow",

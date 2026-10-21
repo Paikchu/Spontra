@@ -355,9 +355,7 @@ button { cursor: pointer; }
 .fc-mind-item[data-picked] rect { stroke: var(--foreground); stroke-width: 2; }
 .fc-mind-caption { pointer-events: none; animation: fade-in .4s ease both; }
 .fc-mind-title { font-weight: 600; fill: var(--foreground); }
-@media (max-width: 960px) { .mind-lens .lens-body { grid-template-columns: minmax(0, 1fr); } }
 .mind-lens-kind { font-size: 12px; font-weight: 600; color: var(--muted-foreground); }
-.mind-lens .lens-body { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 .mind-lens-summary { margin: 0 0 10px; font-size: 13.5px; }
 .mind-lens-empty { margin: 0 0 10px; color: var(--faint); }
 .mind-lens-revenue { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
@@ -818,8 +816,14 @@ button { cursor: pointer; }
 .lens-legend-rate { color: var(--faint); }
 .lens-empty { display: grid; place-items: center; height: 100%; color: var(--faint); font-size: 12px; }
 
-/* A finding in focus holds the whole stage: tiles, chart, time axis and legend step aside, the document scrolls in their place. */
-.stage[data-focus="finding"] { grid-template-rows: minmax(0, 1fr); padding-bottom: 12px; }
+/* A finding, flag, report or filed event in focus holds the whole stage: tiles, chart, time axis and legend step aside, the document scrolls in their place. */
+.stage[data-focus="lens"] { grid-template-rows: minmax(0, 1fr); padding-bottom: 12px; }
+.stage[data-focus] .lens-stage > .lens { grid-template-rows: auto minmax(0, 1fr); }
+/* A digest's chart in a document cell: the ladder takes the height a lens chart would. */
+/* While a row's analysis is read: a thin bar where the document will be. */
+.lens-loading { display: block; height: 2px; margin-top: 18px; border-radius: 2px; background: color-mix(in srgb, var(--brand) 18%, transparent); overflow: hidden; position: relative; }
+.lens-loading::after { content: ""; position: absolute; inset: 0; width: 30%; background: var(--brand); animation: ask-progress 1.2s ease-in-out infinite; }
+.lens-doc-cell > .insider-ladder { height: clamp(220px, calc(100cqw * .62), min(420px, 52vh)); }
 .stage[data-focus] .lens, .stage[data-focus] .lens-stage[data-split] .lens { height: auto; min-height: 0; margin-top: 0; padding-top: 2px; border-top: 0; }
 .stage[data-focus] .lens-stage[data-split] .lens + .lens { padding-left: clamp(16px, 2.5vw, 36px); border-left: 1px solid var(--hairline); }
 .lens-doc { container: lens-doc / inline-size; display: grid; align-content: start; gap: 18px 0; min-height: 0; overflow-y: auto; padding: 4px 6px 8px 0; font-size: 13px; line-height: 1.65; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
@@ -1090,6 +1094,9 @@ button { cursor: pointer; }
 .ladder-dot[data-focus] { box-shadow: 0 0 0 3px color-mix(in srgb, var(--class-insider) 30%, transparent), 0 0 12px var(--class-insider); z-index: 1; }
 .ladder-step { width: 12px !important; height: 2px !important; border-radius: 1px !important; background: var(--class-insider); }
 .insider-ladder .lens-legend { grid-row: 1; }
+.lens-axis { position: relative; height: 14px; font-size: 10.5px; color: var(--faint); font-variant-numeric: tabular-nums; }
+.lens-axis span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+.lens-axis span[data-edge="start"] { transform: none; } .lens-axis span[data-edge="end"] { transform: translateX(-100%); }
 .insider-ladder .lens-axis { grid-row: 3; }
 .ladder-scale { position: absolute; left: 0; top: 24px; bottom: 20px; display: flex; flex-direction: column; justify-content: space-between; font-size: 10px; color: var(--faint); font-variant-numeric: tabular-nums; pointer-events: none; }
 @media (max-width: 960px) { .event-row { display: inline-flex; } .event-date { font-size: 10.5px; } .timeline-track { margin: 0 2px; } }

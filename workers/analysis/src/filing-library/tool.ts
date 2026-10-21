@@ -18,8 +18,8 @@ export type FoundSection = LibraryFoundSection;
 const terms = (text: string) => [...new Set(text.toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length >= 3))];
 
 /** The company's recent documents with their outlines and cards; boilerplate is left out unless asked for. */
-export async function libraryToc(db: D1Database, ticker: string, options: { forms?: string[]; limit?: number; includeBoilerplate?: boolean } = {}): Promise<TocDocument[]> {
-  const documents = (await listLibraryDocuments(db, { ticker, forms: options.forms, limit: options.limit ?? 6 })).filter(d => d.status === "ready");
+export async function libraryToc(db: D1Database, ticker: string, options: { forms?: string[]; accessions?: string[]; limit?: number; includeBoilerplate?: boolean } = {}): Promise<TocDocument[]> {
+  const documents = (await listLibraryDocuments(db, { ticker, forms: options.forms, accessions: options.accessions, limit: options.limit ?? 6 })).filter(d => d.status === "ready");
   return Promise.all(documents.map(async d => {
     const outline = (await libraryOutline(db, d.documentId)).filter(s => options.includeBoilerplate || s.role !== "boilerplate");
     const cards = new Map((await db.prepare("SELECT section_id, gist, topic, entities FROM sec_section_cards WHERE document_id = ?").bind(d.documentId)

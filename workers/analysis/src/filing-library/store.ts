@@ -120,9 +120,10 @@ const summaryOf = (r: DocumentRecord): LibraryDocumentSummary => ({
   chars: r.chars, passages: r.passages, sections: r.sections, preparedAt: r.prepared_at,
 });
 
-export async function listLibraryDocuments(db: D1Database, filter: { ticker?: string; forms?: string[]; limit?: number } = {}): Promise<LibraryDocumentSummary[]> {
+export async function listLibraryDocuments(db: D1Database, filter: { ticker?: string; forms?: string[]; accessions?: string[]; limit?: number } = {}): Promise<LibraryDocumentSummary[]> {
   const where: string[] = [], binds: unknown[] = [];
   if (filter.ticker) { where.push("ticker = ?"); binds.push(filter.ticker); }
+  if (filter.accessions) { where.push("accession_number IN (SELECT value FROM json_each(?))"); binds.push(JSON.stringify(filter.accessions)); }
   if (filter.forms?.length) { where.push("form IN (SELECT value FROM json_each(?))"); binds.push(JSON.stringify(filter.forms)); }
   const rows = await db.prepare(`SELECT * FROM sec_documents ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY filed_at DESC, document_id LIMIT ?`)
     .bind(...binds, Math.min(500, filter.limit ?? 100)).all<DocumentRecord>();

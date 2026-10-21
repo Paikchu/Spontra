@@ -10,14 +10,13 @@ const DAY = 86_400_000;
 /**
  * The time axis under the chart: every report filing and every event on one line, so a run of
  * insider sales or an 8-K between two reports reads where it happened. A report tick moves the
- * stage to that quarter; an event tick opens its lens.
+ * stage to that quarter; an event tick opens its analysis on the whole stage, where the axis steps aside.
  */
-export function Timeline({ points, currentPeriod, focus, now, onReport, onEvent }: {
+export function Timeline({ points, currentPeriod, now, onReport, onEvent }: {
   points: TimelinePoint[];
   /** The reference date the axis extends to, fixed by the page so a re-render never shifts the track. */
   now: number;
   currentPeriod: string | null;
-  focus: string | null;
   onReport: (id: string, periodEnd: string) => void;
   onEvent: (id: string) => void;
 }) {
@@ -36,14 +35,13 @@ export function Timeline({ points, currentPeriod, focus, now, onReport, onEvent 
   }, [points, now]);
   if (!points.length) return null;
   const x = (d: string) => (Date.parse(d) - start) / (end - start) * 100;
-  // A report in focus is the lit report; otherwise the lit report is the quarter the stage shows.
-  const reportFocused = points.some(p => p.kind === "report" && p.id === focus);
   return <div className="timeline" role="group" aria-label={m.label}>
     <div className="timeline-track">
       {ticks.map(t => <span key={t.label} className="timeline-tick" style={{ left: `${t.at}%` }}>{t.label}</span>)}
       {points.map(p => {
         const report = p.kind === "report";
-        const active = report ? (reportFocused ? p.id === focus : p.periodEnd === currentPeriod) : p.id === focus;
+        // The lit report is the quarter the stage shows.
+        const active = report && p.periodEnd === currentPeriod;
         return <Button variant="unstyled" type="button" key={p.id} className="timeline-point" data-kind={p.kind} data-weight={p.weight} data-class={p.cls} aria-pressed={active}
           style={{ left: `${x(p.date)}%`, "--tone": report ? "var(--foreground)" : CLASS_TONE[p.cls!] } as CSSProperties}
           title={`${p.date} · ${report ? p.title : `${EVENT_CLASS_LABEL[p.cls!]} · ${p.title}`}`} aria-label={`${p.date} ${p.title}`}

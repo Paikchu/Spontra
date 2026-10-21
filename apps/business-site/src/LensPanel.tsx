@@ -36,6 +36,8 @@ const signed = (v: number, digits: number) => `${v > 0 ? "+" : v < 0 ? "−" : "
 /** A ratio's change: percentage points for a rate-like ratio (below 1.5), turns for a multiple. */
 const ratioChange = (r: ResolvedEvidence) => r.delta == null ? "—" : Math.abs(r.compare?.value ?? 0) < 1.5 && Math.abs(r.current.value) < 1.5 ? `${signed(r.delta * 100, 1)}${m.pp}` : getLocale() === "en" ? `${signed(r.delta, 2)}x` : multiple(signed(r.delta, 2), getLocale());
 export const formatValue = (v: ResolvedValue, ref?: FindingRef): string => formatResolved(v, ref, getLocale());
+/** A passage the filing library serves by id; a filing's own words read for one analysis link to the filing itself. */
+const LIBRARY_PASSAGE = /^p[0-9a-f]{14,32}$/;
 const near = (a: string, b: string) => Math.abs(Date.parse(a) - Date.parse(b)) <= 20 * 86_400_000;
 
 /**
@@ -125,7 +127,7 @@ export function LensBlocks({ finding, data, sources, materials, record, ticker, 
         const p = q.passage;
         return <figure key={key} className="lens-quote">
           <blockquote lang="en">{b.text}</blockquote>
-          <figcaption data-kind={p.form === "web" ? "web" : "sec"}>{b.said && <span className="lens-quote-said">{b.said.speaker}{b.said.role ? ` · ${b.said.role}` : ""}</span>}<a href={p.form === "web" ? p.url : `/api/business/v1/companies/${encodeURIComponent(ticker)}/passages/${encodeURIComponent(p.passageId)}`} target="_blank" rel="noopener noreferrer">{p.title} · {p.form === "web" ? p.path[0] ?? "web" : p.form} · {p.filedAt}</a>{p.form !== "web" && p.path.length > 0 && <small>{p.path.slice(1).join(" › ")}</small>}</figcaption>
+          <figcaption data-kind={p.form === "web" ? "web" : "sec"}>{b.said && <span className="lens-quote-said">{b.said.speaker}{b.said.role ? ` · ${b.said.role}` : ""}</span>}<a href={p.form === "web" || !LIBRARY_PASSAGE.test(p.passageId) ? p.url : `/api/business/v1/companies/${encodeURIComponent(ticker)}/passages/${encodeURIComponent(p.passageId)}`} target="_blank" rel="noopener noreferrer">{p.title} · {p.form === "web" ? p.path[0] ?? "web" : p.form} · {p.filedAt}</a>{p.form !== "web" && p.path.length > 0 && <small>{p.path.slice(1).join(" › ")}</small>}</figcaption>
         </figure>;
       }
       case "table": {

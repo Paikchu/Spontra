@@ -19,6 +19,7 @@ import { executeBusinessTreeWorkflow, type BusinessTreeParams } from "./business
 import { maintenanceAnalysisEnvironment } from "./admin/financial-maintenance-runner.ts";
 import { executeGuidanceWorkflow, type GuidanceWorkflowParams } from "./guidance/workflow.ts";
 import { executeFindingsWorkflow, type FindingsWorkflowParams } from "./findings/workflow.ts";
+import { executeItemsWorkflow, type ItemsParams } from "./items/workflow.ts";
 import { executeAnalystWorkflow, type AnalystWorkflowParams } from "./analyst/workflow.ts";
 import { executeCheckupWorkflow, type CheckupWorkflowParams } from "./checkup/workflow.ts";
 import { trackRun, trackSleep, trackSteps } from "./ai-runs/tracking.ts";
@@ -160,6 +161,14 @@ export class FindingsWorkflow extends WorkflowEntrypoint<AnalysisEnv, FindingsWo
     const env = await companyPolicyEnvironment(this.env);
     const run = { env, kind: "findings" as const, ticker: event.payload.ticker, runId: event.instanceId };
     return trackRun(run, () => executeFindingsWorkflow(event.payload, trackSteps(durableSteps(step, env, event.instanceId), run), env));
+  }
+}
+
+/** The analysis of each due row of one company's filings rail; every model turn and outside read is a durable step. */
+export class ItemsWorkflow extends WorkflowEntrypoint<AnalysisEnv, ItemsParams> {
+  async run(event: WorkflowEvent<ItemsParams>, step: WorkflowStep) {
+    const env = await companyPolicyEnvironment(this.env);
+    return executeItemsWorkflow(event.payload, durableSteps(step, env, event.instanceId), env, event.instanceId);
   }
 }
 
