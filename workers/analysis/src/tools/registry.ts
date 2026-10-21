@@ -27,7 +27,12 @@ export type AnyTool<S> = ToolDefinition<any, any, S>;
 /** Declares a tool with its parameter and result types inferred, then widens it for a recipe's list. */
 export const defineTool = <S>() => <A, R>(tool: ToolDefinition<A, R, S>): AnyTool<S> => tool as AnyTool<S>;
 
-export type ToolContext<S> = { state: S; signal: AbortSignal; recipe: string };
+/**
+ * `stage` runs one piece of outside work durably: in a Workflow a named step whose result is replayed after a restart,
+ * in the stage a plain call. A tool fetches inside it and updates the run's state from what it returns, so a replay
+ * rebuilds the same state without fetching again.
+ */
+export type ToolContext<S> = { state: S; signal: AbortSignal; recipe: string; stage: <T>(name: string, work: () => Promise<T>) => Promise<T> };
 export type PreToolDecision = { kind: "allow" } | { kind: "deny"; reason: string } | { kind: "ask"; question: string };
 export type PostToolDecision = { kind: "accept" } | { kind: "block"; feedback: string };
 export type ToolExecution = { name: string; args: unknown };

@@ -81,6 +81,10 @@ export function verifyScene(scene: Pick<SceneDocument, "scope" | "rows">, ctx: S
       }
       case "business-flow":
       case "notice":
+      case "progress":
+        return block;
+      // A report's own checks ran when it was written; whether this reader may read it is the gateway's.
+      case "report":
         return block;
     }
   };
@@ -94,7 +98,7 @@ export function verifyScene(scene: Pick<SceneDocument, "scope" | "rows">, ctx: S
 export function describeScene(verified: VerifiedScene): string {
   const lines: string[] = [];
   const label = (b: SceneBlock) => b.kind === "lens" ? `lens ${b.findingId}` : b.kind === "chart" ? `chart ${b.chart.id}` : b.kind === "prose" ? `prose ×${b.paragraphs.length}`
-    : b.kind === "metric-trend" ? `metric-trend ${JSON.stringify(b.ref)} ${b.span}×${b.periods}` : b.kind === "findings" ? `findings ${(b.ids ?? ["all"]).join(",")}` : b.kind === "business-flow" ? `business-flow${b.focus ? ` ${b.focus}` : ""}` : `notice ${b.code}`;
+    : b.kind === "metric-trend" ? `metric-trend ${JSON.stringify(b.ref)} ${b.span}×${b.periods}` : b.kind === "findings" ? `findings ${(b.ids ?? ["all"]).join(",")}` : b.kind === "business-flow" ? `business-flow${b.focus ? ` ${b.focus}` : ""}` : b.kind === "report" ? `report ${b.reportId}` : b.kind === "progress" ? `progress ${b.runId}` : `notice ${b.code}`;
   verified.rows.forEach((row, i) => lines.push(`row ${i + 1}${row.title ? ` "${row.title}"` : ""}: [${row.cells.map(cell => cell.map(label).join(" + ")).join(" | ")}]`));
   for (const [id, chart] of Object.entries(verified.charts)) lines.push(describeChart(id, { chart, errors: [], notes: [] }));
   lines.push(verified.reasons.length ? `taken out (${verified.reasons.length}):\n  ${verified.reasons.join("\n  ")}` : "taken out: nothing");

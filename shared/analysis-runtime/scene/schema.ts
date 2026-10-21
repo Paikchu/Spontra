@@ -26,6 +26,7 @@ const body = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("metric-trend"), ref: findingRefSchema, span, periods: z.number().int().min(2).max(LENS_LIMITS.periods) }),
   z.object({ kind: z.literal("findings"), ids: z.array(z.string().max(80)).max(12).optional() }),
   z.object({ kind: z.literal("notice"), code: z.enum(NOTICE_CODES), params: z.record(z.string(), z.string().max(200)).optional() }),
+  z.object({ kind: z.literal("report"), reportId: z.string().regex(/^[0-9a-f]{32}$/) }),
 ]);
 const cell = z.array(body).min(1).max(SCENE_LIMITS.blocksPerCell);
 const row = z.object({ title: plain(SCENE_LIMITS.titleChars).optional(), cells: z.array(cell).min(1).max(SCENE_LIMITS.cells) });
@@ -55,6 +56,8 @@ function identity(block: SceneBlockBody): string {
     case "findings": return `findings:${(block.ids ?? []).join(",")}`;
     case "notice": return `notice:${block.code}`;
     case "prose": return "prose";
+    case "report": return `report:${block.reportId}`;
+    case "progress": return `progress:${block.runId}`;
   }
 }
 

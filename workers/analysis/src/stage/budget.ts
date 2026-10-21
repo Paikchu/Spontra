@@ -7,6 +7,8 @@ export const STAGE_LIMITS = {
   "stage-conversations": { reader: 5, address: 20, global: 200 },
   "stage-says": { reader: 20, address: 60, global: null },
   "stage-calls": { reader: 120, address: 400, global: 300 },
+  "stage-reports": { reader: 1, address: 3, global: 10 },
+  "stage-report-calls": { reader: 20, address: 60, global: 200 },
 } as const;
 export type StageFeature = keyof typeof STAGE_LIMITS;
 

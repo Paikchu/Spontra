@@ -1,5 +1,7 @@
 import type { StageAdmin, StageSwitchUpdate } from "../../../../shared/analysis-contract/stage-admin.ts";
+import { getAgentByName } from "agents";
 import type { AnalysisEnv } from "../operations.ts";
+import type { StageAgent } from "../stage/agent.ts";
 import { STAGE_LIMITS } from "../stage/budget.ts";
 import { sha256 } from "../stage/identity.ts";
 import { readStageSwitch, writeStageSwitch } from "../stage/settings.ts";
@@ -35,6 +37,17 @@ export async function handleStageAdminRequest(request: Request, env: AnalysisEnv
     if (typeof body.on !== "boolean" || !(body.ticker === null || (typeof body.ticker === "string" && TICKER.test(body.ticker)))) return json({ error: "请求格式无效。" }, 400);
     await writeStageSwitch(env.DB, body.ticker, body.on, new Date(now).toISOString());
     return json(await stageAdmin(env.DB, env));
+  }
+  const detail = /^\/admin\/ai\/stage\/conversations\/([0-9a-f]{32})$/.exec(path);
+  const namespace = (env as AnalysisEnv & { StageAgent?: DurableObjectNamespace }).StageAgent;
+  if (detail && request.method === "GET" && namespace) {
+    const row = await env.DB.prepare("SELECT id FROM stage_conversations WHERE id = ?").bind(detail[1]).first();
+    if (!row) return json({ error: "Not found" }, 404);
+    const runs = (await env.DB.prepare("SELECT id, kind, status, started_at, finished_at, result, error FROM user_runs WHERE conversation_id = ? ORDER BY started_at DESC LIMIT 50").bind(detail[1]).all()).results;
+    const usage = (await env.DB.prepare("SELECT at, stage, model, outcome, input_tokens, cached_tokens, output_tokens FROM ai_usage WHERE conversation_id = ? ORDER BY at DESC LIMIT 200").bind(detail[1]).all()).results;
+    const agent = await getAgentByName(namespace as unknown as DurableObjectNamespace<StageAgent>, detail[1]);
+    const inspected = await agent.inspect() as unknown as Record<string, unknown>;
+    return json({ ...inspected, runs, usage });
   }
   return json({ error: "Not found" }, 404);
 }

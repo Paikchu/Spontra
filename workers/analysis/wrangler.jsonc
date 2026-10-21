@@ -108,6 +108,15 @@
       "concurrency": {
         "limit": 2
       }
+    },
+    // Reports readers ask the stage for (docs/stage-agent-design.md §6.3), started by their StageAgent.
+    {
+      "name": "spontra-report",
+      "binding": "REPORT_WORKFLOW",
+      "class_name": "ReportWorkflow",
+      "concurrency": {
+        "limit": 2
+      }
     }
   ],
   "r2_buckets": [

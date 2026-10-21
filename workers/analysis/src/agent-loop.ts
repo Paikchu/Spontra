@@ -33,6 +33,8 @@ export type LoopHost<S> = {
   onToolStart?(name: string): void;
   signal: AbortSignal;
   now(): number;
+  /** Durable steps for outside work; unset runs the work directly. */
+  stage?<T>(name: string, work: () => Promise<T>): Promise<T>;
 };
 
 export type LoopOutcome<O> = { output: O; reason: "finished" | "budget" | "failed" | "interrupted" | "cancelled"; turns: number; asked: string | null };
@@ -75,7 +77,11 @@ export async function runAgentLoop<I, O, S>(recipe: Recipe<I, O, S>, input: I, s
     const left = recipe.budget.turns - turn;
     const budgetLine = `Budget left: ${left} turn${left === 1 ? "" : "s"}.${left <= 1 ? " Finish now with what you have." : ""}`;
     const runnable = calls.slice(0, CALLS_PER_TURN);
-    const outcomes = await host.execute(turn, runnable, call => runTool(tools, recipe.policy, call, { state, signal: host.signal, recipe: recipe.id }));
+    const outcomes = await host.execute(turn, runnable, call => {
+      const index = runnable.indexOf(call);
+      const stage = <T>(name: string, work: () => Promise<T>) => host.stage ? host.stage(`${recipe.id}-t${turn}-c${index}-${name}`, work) : work();
+      return runTool(tools, recipe.policy, call, { state, signal: host.signal, recipe: recipe.id, stage });
+    });
     const results: AgentBlock[] = [];
     let asked: string | null = null;
     calls.forEach((call, i) => {

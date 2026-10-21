@@ -70,6 +70,13 @@ export async function handleStageRequest(request: Request, env: AnalysisEnv & { 
     return json({ id }, 201);
   }
 
+  // One of the reader's own reports, as written; never cached, never anyone else's.
+  const report = /^\/agents\/reports\/([0-9a-f]{32})$/.exec(url.pathname);
+  if (report && request.method === "GET") {
+    const row = await db.prepare("SELECT body FROM user_reports WHERE user_id = ? AND id = ?").bind(reader, report[1]).first<{ body: string }>();
+    return row ? new Response(row.body, { headers: { "content-type": "application/json; charset=utf-8", "cache-control": "private, no-store" } }) : json({ error: "not-found" }, 404);
+  }
+
   const agent = /^\/agents\/stage-agent\/([^/]+)(?:\/.*)?$/.exec(url.pathname);
   if (agent && env.StageAgent) {
     const id = agent[1]!;

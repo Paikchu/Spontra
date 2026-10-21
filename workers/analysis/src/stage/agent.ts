@@ -30,7 +30,9 @@ export type TranscriptEntry =
   | { id: string; at: string; role: "user"; text: string }
   | { id: string; at: string; role: "assistant"; kind: "answer"; paragraphs: Array<{ text: string; sourceIds: string[] }>; contentLanguage: Locale }
   | { id: string; at: string; role: "assistant"; kind: "stage"; revision: number }
-  | { id: string; at: string; role: "assistant"; kind: "notice"; code: NoticeCode };
+  | { id: string; at: string; role: "assistant"; kind: "notice"; code: NoticeCode }
+  /** A report the turn proposes; the reader confirms or declines it. */
+  | { id: string; at: string; role: "assistant"; kind: "question"; questionId: string; question: string; settled?: "yes" | "no" };
 export type TurnPhase = "thinking" | "answering" | "staging";
 /** What the page receives besides the synced state. */
 export type StageEvent =
@@ -43,6 +45,7 @@ export type StageCommand =
   | { type: "applied"; revision: number }
   | { type: "observe"; view: StageView }
   | { type: "cancel" }
+  | { type: "answer"; questionId: string; value: "yes" | "no" }
   | { type: "delete" };
 
 type Owner = { user_id: string; ticker: string; locale: string };
@@ -66,6 +69,7 @@ export class StageAgent extends Agent<StageEnv, StageState> {
     this.sql`CREATE TABLE IF NOT EXISTS scenes (revision INTEGER PRIMARY KEY, at TEXT NOT NULL, by TEXT NOT NULL, scene TEXT NOT NULL)`;
     this.sql`CREATE TABLE IF NOT EXISTS log (seq INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, turn TEXT NOT NULL, entry TEXT NOT NULL)`;
     this.sql`CREATE TABLE IF NOT EXISTS turns (id TEXT PRIMARY KEY, at TEXT NOT NULL, status TEXT NOT NULL, calls INTEGER NOT NULL DEFAULT 0)`;
+    this.sql`CREATE TABLE IF NOT EXISTS questions (id TEXT PRIMARY KEY, question TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'open')`;
     if (props && !this.owner()) this.sql`INSERT INTO owner (user_id, ticker, locale) VALUES (${props.userId}, ${props.ticker}, ${props.locale})`;
     // A turn the object was evicted in the middle of is marked, not run again: its model calls are already paid.
     for (const t of this.sql<{ id: string }>`SELECT id FROM turns WHERE status = 'running'`) {
@@ -97,6 +101,7 @@ export class StageAgent extends Agent<StageEnv, StageState> {
       case "applied": if (Number.isInteger(command.revision) && command.revision > this.state.applied && command.revision <= this.state.revision) this.setState({ ...this.state, applied: command.revision }); return;
       case "observe": this.view = command.view; return;
       case "cancel": this.running?.abort(); return;
+      case "answer": if (typeof command.questionId === "string") await this.settleQuestion(command.questionId, command.value === "yes", address); return;
       case "delete": await this.purge(); return;
     }
   }
@@ -196,12 +201,20 @@ export class StageAgent extends Agent<StageEnv, StageState> {
       };
       const outcome = await runAgentLoop({ ...recipe, tools: () => tools }, input, state, messages, act, host);
       this.saveMessages(messages, start);
-      const result = outcome.output;
+      // A report the turn proposed stops the loop before it runs; the reader decides.
+      const result: typeof outcome.output = outcome.asked ? { kind: "report", question: outcome.asked } : outcome.output;
       reason = `${outcome.reason}:${result.kind}:${outcome.turns}`;
       if (result.kind === "scene") {
-        const committed = this.commit(result.rows, { periodEnd: result.periodEnd, ...(result.findingId ? { findingId: result.findingId } : {}) }, data.basis, "finish", before);
+        // A report that finished during the turn keeps its place: its block joins the turn's scene.
+        const kept = this.state.revision === before ? [] : this.state.scene.rows.filter(r => r.cells.flat().some(b => b.kind === "report" || b.kind === "progress"));
+        const committed = this.commit([...kept, ...result.rows].slice(0, 8), { periodEnd: result.periodEnd, ...(result.findingId ? { findingId: result.findingId } : {}) }, data.basis, "finish", this.state.revision);
         if (committed) this.addTranscript({ id: uid(), at: new Date().toISOString(), role: "assistant", kind: "stage", revision: this.state.revision });
         status = "done";
+      } else if (result.kind === "report") {
+        const questionId = uid();
+        this.sql`INSERT INTO questions (id, question) VALUES (${questionId}, ${result.question})`;
+        this.addTranscript({ id: uid(), at: new Date().toISOString(), role: "assistant", kind: "question", questionId, question: result.question });
+        status = "asked";
       } else if (result.kind === "answer") {
         this.addTranscript({ id: uid(), at: new Date().toISOString(), role: "assistant", kind: "answer", paragraphs: result.paragraphs, contentLanguage: locale });
         status = "done";
@@ -230,12 +243,90 @@ export class StageAgent extends Agent<StageEnv, StageState> {
     }
   }
 
+  /** The reader confirmed or declined a proposed report; a confirmed one starts its Workflow under a key that repeats for the same question the same day. */
+  private async settleQuestion(questionId: string, yes: boolean, address: string | null): Promise<void> {
+    const owner = this.owner();
+    const row = this.sql<{ question: string; status: string }>`SELECT question, status FROM questions WHERE id = ${questionId}`[0];
+    if (!owner || !row || row.status !== "open") return;
+    this.sql`UPDATE questions SET status = ${yes ? "yes" : "no"} WHERE id = ${questionId}`;
+    const entries = this.sql<{ seq: number; entry: string }>`SELECT seq, entry FROM transcript ORDER BY seq DESC LIMIT 40`;
+    for (const e of entries) {
+      const entry = JSON.parse(e.entry) as TranscriptEntry;
+      if (entry.role === "assistant" && entry.kind === "question" && entry.questionId === questionId) {
+        const settled = { ...entry, settled: yes ? "yes" as const : "no" as const };
+        this.sql`UPDATE transcript SET entry = ${JSON.stringify(settled)} WHERE seq = ${e.seq}`;
+        this.emit({ type: "stage:transcript", entries: [settled] });
+      }
+    }
+    if (!yes) return;
+    const env = this.env as StageEnv & { REPORT_WORKFLOW?: Workflow };
+    const db = env.DB!;
+    if (!env.REPORT_WORKFLOW || !stageOpenFor(await readStageSwitch(env), owner.ticker)) { this.notice("stage-off"); return; }
+    const day = new Date().toISOString().slice(0, 10);
+    const runId = (await sha256(`report-v1\n${owner.user_id}\n${owner.ticker}\n${day}\n${row.question.trim().toLowerCase()}`)).slice(0, 32);
+    const existing = await db.prepare("SELECT status FROM user_runs WHERE user_id = ? AND id = ?").bind(owner.user_id, runId).first<{ status: string }>();
+    if (!existing) {
+      const spent = await reserve(db, "stage-reports", { reader: owner.user_id, address });
+      if (!spent.ok) { this.notice(spent.which === "global" ? "global-cap-reached" : "quota-reached"); return; }
+      await db.prepare("INSERT INTO user_runs (user_id, id, kind, ticker, conversation_id, business_key, status, started_at) VALUES (?, ?, 'report', ?, ?, ?, 'queued', ?)").bind(owner.user_id, runId, owner.ticker, this.name, runId, new Date().toISOString()).run();
+      try { await env.REPORT_WORKFLOW.create({ id: runId, params: { userId: owner.user_id, address, conversationId: this.name, ticker: owner.ticker, question: row.question, locale: owner.locale === "zh-CN" ? "zh-CN" : "en" } }); }
+      catch (error) {
+        await refund(db, "stage-reports", { reader: owner.user_id, address }, 1);
+        await db.prepare("UPDATE user_runs SET status = 'failed', error = ? WHERE user_id = ? AND id = ?").bind(String(error).slice(0, 300), owner.user_id, runId).run();
+        this.notice("report-failed");
+        return;
+      }
+    } else if (existing.status === "done") {
+      this.placeReport(runId, runId);
+      return;
+    }
+    this.notice("report-started");
+    const rows = this.state.scene.rows.filter(r => !r.cells.flat().some(b => b.kind === "progress" && b.runId === runId));
+    this.commit([{ cells: [[{ id: `p${runId.slice(0, 8)}`, kind: "progress" as const, runId, phase: "queued" as const }]] }, ...rows].slice(0, 8), this.state.scene.scope, this.state.scene.basis, "report", this.state.revision);
+  }
+
+  /** The report's Workflow began writing. */
+  async reportPhase(runId: string, phase: "running"): Promise<void> {
+    const rows = this.state.scene.rows.map(r => ({ ...r, cells: r.cells.map(c => c.map(b => b.kind === "progress" && b.runId === runId ? { ...b, phase } : b)) }));
+    this.commit(rows, this.state.scene.scope, this.state.scene.basis, "report", this.state.revision);
+  }
+
+  /** The report's Workflow finished: the progress block becomes the report, or a notice when none came out. */
+  async reportDone(outcome: { runId: string; reportId: string | null; reason: string }): Promise<void> {
+    if (outcome.reportId) this.placeReport(outcome.runId, outcome.reportId);
+    else {
+      const rows = this.state.scene.rows.map(r => ({ ...r, cells: r.cells.map(c => c.map(b => b.kind === "progress" && b.runId === outcome.runId ? { id: b.id, kind: "notice" as const, code: "report-failed" as const } : b)) }));
+      this.commit(rows, this.state.scene.scope, this.state.scene.basis, "report", this.state.revision);
+      this.notice("report-failed");
+    }
+  }
+
+  private placeReport(runId: string, reportId: string) {
+    let placed = false;
+    const rows = this.state.scene.rows.map(r => ({ ...r, cells: r.cells.map(c => c.map(b => { if (b.kind === "progress" && b.runId === runId) { placed = true; return { id: b.id, kind: "report" as const, reportId }; } return b; })) }));
+    const next = placed ? rows : [{ cells: [[{ id: `r${reportId.slice(0, 8)}`, kind: "report" as const, reportId }]] }, ...rows].slice(0, 8);
+    this.commit(next, this.state.scene.scope, this.state.scene.basis, "report", this.state.revision);
+    this.notice("report-ready");
+  }
+
+  /** For the operator (admin only): the transcript, every turn's trail, and the scene revisions, without the reader's id. */
+  async inspect(): Promise<{ ticker: string | null; transcript: unknown[]; turns: unknown[]; log: unknown[]; scenes: unknown[] }> {
+    return {
+      ticker: this.owner()?.ticker ?? null,
+      transcript: this.sql<{ entry: string }>`SELECT entry FROM transcript ORDER BY seq DESC LIMIT 100`.map(r => JSON.parse(r.entry)).reverse(),
+      turns: this.sql`SELECT id, at, status, calls FROM turns ORDER BY at DESC LIMIT 50`,
+      log: this.sql<{ at: string; turn: string; entry: string }>`SELECT at, turn, entry FROM log ORDER BY seq DESC LIMIT 200`.map(r => ({ at: r.at, turn: r.turn, ...JSON.parse(r.entry) })).reverse(),
+      scenes: this.sql<{ revision: number; at: string; by: string; scene: string }>`SELECT revision, at, by, scene FROM scenes ORDER BY revision DESC LIMIT 20`.map(r => ({ revision: r.revision, at: r.at, by: r.by, scene: JSON.parse(r.scene) })),
+    };
+  }
+
   private phaseOf(tool: string): TurnPhase { return tool === "reply" ? "answering" : tool === "compile" || tool === "finish" ? "staging" : "thinking"; }
 
   /** The reader deleted the conversation, or it expired: everything the object holds goes, and the registry marks it. */
   async purge(): Promise<void> {
     this.running?.abort();
     await this.env.DB?.prepare("UPDATE stage_conversations SET status = 'deleted' WHERE id = ?").bind(this.name).run().catch(() => {});
+    await this.env.DB?.prepare("DELETE FROM user_reports WHERE conversation_id = ?").bind(this.name).run().catch(() => {});
     for (const c of this.getConnections()) c.close(4410, "deleted");
     await this.destroy();
   }

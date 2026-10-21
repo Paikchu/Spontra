@@ -43,7 +43,11 @@ export type SceneBlockBody =
   | { kind: "metric-trend"; ref: FindingRef; span: FindingSpan; periods: number }
   /** The findings list, or some of it. */
   | { kind: "findings"; ids?: string[] }
-  | { kind: "notice"; code: NoticeCode; params?: Record<string, string> };
+  | { kind: "notice"; code: NoticeCode; params?: Record<string, string> }
+  /** A report the reader asked for, by id; the page reads it from the reader's own reports. */
+  | { kind: "report"; reportId: string }
+  /** A report being written; the stage replaces it with the report when the run finishes. */
+  | { kind: "progress"; runId: string; phase: "queued" | "running" };
 
 /** Every block carries an id the server assigns, so the page keeps a block mounted while the scene around it changes. */
 export type SceneBlock = { id: string } & SceneBlockBody;

@@ -22,10 +22,12 @@ export type StageTurn = {
   last: { rows: SceneRow[]; periodEnd: string; findingId?: string; verified: VerifiedScene } | null;
   accepted: { rows: SceneRow[]; periodEnd: string; findingId?: string } | null;
   answer: Array<{ text: string; sourceIds: string[] }> | null;
+  /** A report the turn asked the reader to confirm. */
+  report: { question: string } | null;
   /** Compiled drafts, for the page's skeleton while the turn runs. */
   onDraft?: (rows: SceneRow[]) => void;
 };
-export type StageOutcome = { kind: "scene"; rows: SceneRow[]; periodEnd: string; findingId?: string } | { kind: "answer"; paragraphs: Array<{ text: string; sourceIds: string[] }> } | { kind: "none" };
+export type StageOutcome = { kind: "scene"; rows: SceneRow[]; periodEnd: string; findingId?: string } | { kind: "answer"; paragraphs: Array<{ text: string; sourceIds: string[] }> } | { kind: "report"; question: string } | { kind: "none" };
 
 export const STAGE_BUDGET = { turns: 6, wallMs: 120_000 } as const;
 const LANGUAGE: Record<Locale, string> = { en: "English", "zh-CN": "Simplified Chinese" };
@@ -34,7 +36,7 @@ const system = (input: StageInput) => `You run the stage of a financial map for 
 
 How a turn goes:
 1. Read what you need: company_overview (the report's statement figures, businesses and every reference a chart may use), findings (the published findings and their evidence), read_series (a reference's values over periods). scene_read shows what the stage holds now and what the reader is looking at on the map.
-2. If the request asks to see, compare, chart, list, lay out, or change what the page shows: write a scene and call compile; read the result, fix what was taken out, then call finish. If the request is a question a short answer settles (a figure, a definition, what a finding means), call reply instead and leave the stage as it is.
+2. If the request asks to see, compare, chart, list, lay out, or change what the page shows: write a scene and call compile; read the result, fix what was taken out, then call finish. If the request is a question a short answer settles (a figure, a definition, what a finding means), call reply instead and leave the stage as it is. If the reader asks for a report, an in-depth analysis, or something only the filings' text or the web can answer, call write_report with the question as the reader would want it answered; the reader confirms before it starts, and it takes a few minutes.
 3. Finish within the budget. Each tool result ends with the turns left.
 
 A scene: {"rows":[{"title":"optional, no digits","cells":[[block,...],[block,...]]}], "periodEnd":"YYYY-MM-DD optional", "findingId":"optional"}. A row has one or two cells side by side; a cell stacks one to four blocks; at most eight rows. Blocks:
@@ -102,6 +104,8 @@ export function stageTools(input: StageInput): AnyTool<StageTurn>[] {
         ctx.state.accepted = { rows: ctx.state.last.rows, periodEnd: ctx.state.last.periodEnd, ...(ctx.state.last.findingId ? { findingId: ctx.state.last.findingId } : {}) };
         return "On the stage.";
       }, observe: (_a, v) => v }),
+    tool({ name: "write_report", description: "Start a written report on a question, read from the filings and the web; the reader confirms first.", parameters: z.object({ question: z.string().trim().min(8).max(300) }),
+      execute: ({ question }, ctx) => { ctx.state.report = { question }; return "Started."; }, observe: (_a, v) => v }),
     tool({ name: "reply", description: "Answer in words and leave the stage as it is. Every number must be one a read in this turn produced.", parameters: z.object({ paragraphs: z.array(z.object({ text: z.string().min(1).max(900) })).min(1).max(3) }),
       execute: ({ paragraphs }, ctx) => {
         const bad = paragraphs.flatMap(p => proseNumbers(p.text).filter(n => !numberSupported(n, ctx.state.candidates)));
@@ -112,17 +116,21 @@ export function stageTools(input: StageInput): AnyTool<StageTurn>[] {
   ];
 }
 
-export const STAGE_POLICY: ToolPolicy = { allow: ["scene_read", "company_overview", "findings", "read_series", "compile", "finish", "reply"] };
+/** A report spends the reader's one report of the day, so the reader confirms it first; nothing in the turn can start one alone. */
+export const STAGE_POLICY: ToolPolicy = {
+  allow: ["scene_read", "company_overview", "findings", "read_series", "compile", "finish", "reply", "write_report"],
+  pre: exec => exec.name === "write_report" ? { kind: "ask", question: (exec.args as { question: string }).question } : { kind: "allow" },
+};
 
 export const stageRecipe: Recipe<StageInput, StageOutcome, StageTurn> = {
   id: "stage",
   budget: STAGE_BUDGET,
   system,
-  open: () => ({ candidates: [], last: null, accepted: null, answer: null }),
+  open: () => ({ candidates: [], last: null, accepted: null, answer: null, report: null }),
   tools: () => { throw new Error("stage tools are built per turn"); },
   policy: STAGE_POLICY,
   settled: s => s.accepted != null || s.answer != null,
-  settle: (s, reason) => s.answer ? { kind: "answer", paragraphs: s.answer }
+  settle: (s, reason) => s.report ? { kind: "report", question: s.report.question } : s.answer ? { kind: "answer", paragraphs: s.answer }
     : s.accepted ? { kind: "scene", ...s.accepted }
     // Out of turns with a whole scene compiled: it stands.
     : reason === "budget" && s.last && !s.last.verified.reasons.length ? { kind: "scene", rows: s.last.rows, periodEnd: s.last.periodEnd }

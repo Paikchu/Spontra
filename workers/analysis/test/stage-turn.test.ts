@@ -62,3 +62,9 @@ test("a scene that does not match the grammar comes back with its violations, an
   assert.match(records[1]!, /Nothing compiled yet/);
   assert.equal(outcome.output.kind, "answer");
 });
+
+test("a turn that proposes a report stops for the reader before anything starts", async () => {
+  const { outcome, state } = await turn([call("findings"), call("write_report", { question: "Is the capex surge funded by operating cash?" })]);
+  assert.equal(outcome.asked, "Is the capex surge funded by operating cash?");
+  assert.equal(state.report, null);
+});
