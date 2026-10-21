@@ -47,12 +47,22 @@ export function toolSchema<S>(tool: AnyTool<S>): AgentTool {
   return { name: tool.name, description: tool.description, ...(tool.strict === false ? {} : { strict: true as const }), input_schema };
 }
 
-/** A strict tool's arguments always match its schema, so every object in the schema is closed. */
+/** Keywords a strict tool schema cannot carry; the parameters' zod schema still enforces them when the call runs. */
+const UNSUPPORTED_IN_STRICT = new Set(["minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf", "minLength", "maxLength", "pattern", "format", "maxItems", "default"]);
+
+/**
+ * A strict tool's arguments always match its schema, so every object in the schema is closed, and the bounds strict
+ * schemas do not support (numeric ranges, string lengths and patterns, array sizes beyond "at least one") are left
+ * to the harness's own check of the arguments.
+ */
 function closed(node: unknown): Record<string, unknown> {
   if (Array.isArray(node)) return node.map(closed) as unknown as Record<string, unknown>;
   if (!node || typeof node !== "object") return node as Record<string, unknown>;
   const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(node)) out[k] = typeof v === "object" ? closed(v) : v;
+  for (const [k, v] of Object.entries(node)) {
+    if (UNSUPPORTED_IN_STRICT.has(k) || (k === "minItems" && typeof v === "number" && v > 1)) continue;
+    out[k] = typeof v === "object" ? closed(v) : v;
+  }
   if (out.type === "object" && out.properties) out.additionalProperties = false;
   return out;
 }

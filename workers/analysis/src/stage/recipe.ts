@@ -84,6 +84,8 @@ export function stageTools(input: StageInput): AnyTool<StageTurn>[] {
       execute: (_a, ctx) => { register(ctx.state, d.findings.flatMap(f => f.resolved)); return d.findings.map(f => ({ id: f.id, kind: f.kind, severity: f.severity, title: f.title, judgment: f.judgment.text, view: f.anchors.view, evidence: lensEvidence(f.resolved) })); },
       observe: (_a, v) => JSON.stringify(v).slice(0, 12_000) }),
     tool({ name: "read_series", description: "Values of up to six references over the periods ending at the report, each with its year-over-year change.", parameters: z.object({ refs: z.array(findingRefSchema).min(1).max(6), span: z.enum(["quarter", "fiscal_year"]), periods: z.number().int().min(1).max(12) }), concurrencySafe: true,
+      // The reference grammar is larger than a strict schema may be; the harness checks each reference.
+      strict: false,
       execute: ({ refs, span, periods }, ctx) => refs.map(ref => {
         const step = span === "quarter" ? -3 : -12;
         const points = Array.from({ length: periods }, (_, i) => shiftPeriod(d.periodEnd, step * (periods - 1 - i))).map(end => readRef(input, ref as FindingRef, span, end));

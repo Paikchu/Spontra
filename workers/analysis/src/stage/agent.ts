@@ -144,7 +144,8 @@ export class StageAgent extends Agent<StageEnv, StageState> {
     this.running = controller;
     this.sql`INSERT INTO turns (id, at, status) VALUES (${turnId}, ${new Date().toISOString()}, 'running')`;
     this.emit({ type: "stage:turn", turn: { id: turnId, phase: "thinking", status: null } });
-    let calls = 0, status = "failed", capHit: "reader" | "address" | "global" | null = null;
+    let calls = 0, status = "failed", capHit: "reader" | "address" | "global" | null = null, firstError: string | null = null, reason: string | null = null;
+    const startedAt = new Date().toISOString();
     try {
       const data = await loadStageData(env, owner.ticker);
       if (!data) { this.notice("turn-failed"); return; }
@@ -179,7 +180,10 @@ export class StageAgent extends Agent<StageEnv, StageState> {
           calls++;
           return true;
         },
-        record: entry => { this.sql`INSERT INTO log (at, turn, entry) VALUES (${new Date().toISOString()}, ${turnId}, ${JSON.stringify(entry)})`; },
+        record: entry => {
+          if (entry.action === "invalid" && !firstError) firstError = entry.observation.slice(0, 500);
+          this.sql`INSERT INTO log (at, turn, entry) VALUES (${new Date().toISOString()}, ${turnId}, ${JSON.stringify(entry)})`;
+        },
         execute: async (_turn, list, run) => {
           const safe = new Set(tools.filter(t => t.concurrencySafe).map(t => t.name));
           const status = (call: ToolCall) => this.emit({ type: "stage:turn", turn: { id: turnId, phase: this.phaseOf(call.name), status: { tool: call.name, ...(argOf(call) ? { arg: argOf(call) } : {}) } } });
@@ -193,6 +197,7 @@ export class StageAgent extends Agent<StageEnv, StageState> {
       const outcome = await runAgentLoop({ ...recipe, tools: () => tools }, input, state, messages, act, host);
       this.saveMessages(messages, start);
       const result = outcome.output;
+      reason = `${outcome.reason}:${result.kind}:${outcome.turns}`;
       if (result.kind === "scene") {
         const committed = this.commit(result.rows, { periodEnd: result.periodEnd, ...(result.findingId ? { findingId: result.findingId } : {}) }, data.basis, "finish", before);
         if (committed) this.addTranscript({ id: uid(), at: new Date().toISOString(), role: "assistant", kind: "stage", revision: this.state.revision });
@@ -208,7 +213,8 @@ export class StageAgent extends Agent<StageEnv, StageState> {
         status = outcome.reason;
       }
     } catch (error) {
-      console.error(JSON.stringify({ event: "stage-turn", outcome: "error", conversation: this.name, error: error instanceof Error ? error.message : String(error) }));
+      firstError ??= (error instanceof Error ? error.message : String(error)).slice(0, 500);
+      console.error(JSON.stringify({ event: "stage-turn", outcome: "error", conversation: this.name, error: firstError }));
       this.notice("turn-failed");
     } finally {
       this.running = null;
@@ -218,6 +224,9 @@ export class StageAgent extends Agent<StageEnv, StageState> {
       // A turn that spent nothing on the model gives its say back.
       if (calls === 0) await refund(db, "stage-says", who, 1).catch(() => {});
       await db.prepare("UPDATE stage_conversations SET last_at = ?, turns = turns + 1 WHERE id = ?").bind(new Date().toISOString(), this.name).run().catch(() => {});
+      // The turn's record for the operator: how it ended and the first model failure, never the reader's words.
+      await db.prepare("INSERT OR IGNORE INTO user_runs (user_id, id, kind, ticker, conversation_id, business_key, status, started_at, finished_at, result, error) VALUES (?, ?, 'stage-turn', ?, ?, ?, ?, ?, ?, ?, ?)")
+        .bind(owner.user_id, turnId, owner.ticker, this.name, turnId, status, startedAt, new Date().toISOString(), JSON.stringify({ calls, reason }), firstError).run().catch(() => {});
     }
   }
 
