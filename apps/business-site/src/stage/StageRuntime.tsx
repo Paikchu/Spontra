@@ -126,18 +126,53 @@ function Layer({ state, send, entries, turn, connected, onSubmit, onCancel, onAn
   const busy = state === "busy" || turn != null;
   useEffect(() => { if (state === "open") input.current?.focus(); }, [state]);
   useEffect(() => { const el = scroll.current; if (el) el.scrollTop = el.scrollHeight; }, [entries.length, turn?.phase]);
+  // When the input grows the transcript gives up height; it keeps its latest entry in view while it does, unless the
+  // reader has scrolled back through it.
+  useEffect(() => {
+    const el = scroll.current;
+    if (!el) return;
+    let pinned = true;
+    const onScroll = () => { pinned = el.scrollHeight - el.scrollTop - el.clientHeight < 24; };
+    const observer = new ResizeObserver(() => { if (pinned) el.scrollTop = el.scrollHeight; });
+    el.addEventListener("scroll", onScroll, { passive: true });
+    observer.observe(el);
+    return () => { observer.disconnect(); el.removeEventListener("scroll", onScroll); };
+  }, []);
   const mini = state === "mini";
   // Folded to its bar, the overlay sits at the stage's foot, and the stage keeps that height free so nothing it shows
-  // sits under it. Open, it floats over the veiled page and takes no room.
+  // sits under it. Open, it floats over the page and takes no room; the blur around it is centred on the bar.
   const root = useRef<HTMLDivElement>(null);
+  const bar = useRef<HTMLFormElement>(null);
   useEffect(() => {
-    const el = root.current;
-    if (!el) return;
-    const sync = () => document.documentElement.style.setProperty("--ask-h", mini ? `${el.offsetHeight}px` : "0px");
+    const el = root.current, form = bar.current;
+    if (!el || !form) return;
+    const style = document.documentElement.style;
+    const sync = () => {
+      style.setProperty("--ask-h", mini ? `${el.offsetHeight}px` : "0px");
+      const box = form.getBoundingClientRect(), top = el.getBoundingClientRect().top;
+      const cy = box.top + box.height / 2;
+      style.setProperty("--ask-cx", `${box.left + box.width / 2}px`);
+      style.setProperty("--ask-cy", `${cy}px`);
+      style.setProperty("--ask-bw", `${box.width}px`);
+      style.setProperty("--ask-up", `${Math.max(box.height / 2, cy - top)}px`);
+    };
     const observer = new ResizeObserver(sync);
-    observer.observe(el); sync();
-    return () => { observer.disconnect(); document.documentElement.style.removeProperty("--ask-h"); };
+    observer.observe(el); observer.observe(form); sync();
+    addEventListener("resize", sync);
+    // The bar moves with a transition when the overlay folds or opens; measure again once it lands.
+    el.addEventListener("transitionend", sync);
+    return () => {
+      observer.disconnect(); removeEventListener("resize", sync); el.removeEventListener("transitionend", sync);
+      for (const name of ["--ask-h", "--ask-cx", "--ask-cy", "--ask-bw", "--ask-up"]) style.removeProperty(name);
+    };
   }, [mini]);
+  // Browsers without `field-sizing: content` grow the input by hand, up to the height the stylesheet allows.
+  useEffect(() => {
+    const el = input.current;
+    if (!el || CSS.supports("field-sizing", "content")) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [text, mini]);
   const submit = (e?: FormEvent) => { e?.preventDefault(); const value = text.trim(); if (!value || busy || !connected) return; onSubmit(value); setText(""); };
   const onKey = (e: KeyboardEvent<HTMLElement>) => {
     if (e.key === "Escape") { e.stopPropagation(); e.preventDefault(); send({ type: "escape" }); input.current?.blur(); }
@@ -146,7 +181,7 @@ function Layer({ state, send, entries, turn, connected, onSubmit, onCancel, onAn
   const shownEntries = mini ? entries.filter(e => e.role === "assistant").slice(-1) : entries;
   const status = !connected ? m.connecting : turn ? turn.phase === "staging" ? m.laying : turn.phase === "answering" ? m.answering : m.reading : null;
   return createPortal(<>
-    {!mini && <div className="ask-veil" aria-hidden="true" onClick={() => send({ type: "stage-click" })} />}
+    {!mini && <div className="ask-veil" aria-hidden="true" onClick={() => send({ type: "stage-click" })}><i /><i /><i /></div>}
     <div ref={root} className="ask" data-state={state} role="dialog" aria-label={m.stage} onKeyDown={onKey}>
     <div className="ask-scroll" ref={scroll} aria-live="polite">
       {!mini && entries.length === 0 && <p className="ask-note">{m.retention}</p>}
@@ -154,7 +189,8 @@ function Layer({ state, send, entries, turn, connected, onSubmit, onCancel, onAn
       {busy && !mini && <p className="ask-typing" aria-hidden="true"><i /><i /><i /></p>}
     </div>
     {status && <p className="ask-status" role="status">{status}</p>}
-    <form className="ask-bar" onSubmit={submit} onFocus={() => { if (mini) send({ type: "focus" }); }}>
+    <form ref={bar} className="ask-bar" onSubmit={submit} onFocus={() => { if (mini) send({ type: "focus" }); }}>
+      <span className="ask-ring" aria-hidden="true" />
       <textarea ref={input} rows={1} value={text} maxLength={600} aria-label={m.input} placeholder={m.input} disabled={!connected} onChange={e => setText(e.target.value)} />
       {busy ? <Button variant="unstyled" type="button" className="ask-send" onClick={onCancel}>{m.cancel}</Button>
         : <Button variant="unstyled" type="submit" className="ask-send" disabled={!text.trim() || !connected}>{m.send}</Button>}

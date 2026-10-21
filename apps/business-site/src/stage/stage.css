@@ -11,35 +11,49 @@
 .ask-open[aria-expanded="true"] { background: var(--foreground); color: var(--background); border-color: transparent; }
 .ask-open svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
 
-/* The overlay. While it is open the page behind it is veiled and blurred, and the input rises to the lower quarter of
-   the viewport so the question holds the eye; once the stage takes over (mini) the veil lifts and the bar settles at
-   the foot, over a gradient, out of the scene's way. */
+/* The overlay. While it is open the input rises to the lower quarter of the viewport and the page around it is
+   blurred in rings that fan out from the input: heaviest at the bar, clearing toward the edges, so the eye rests on the
+   question. Once the stage takes over (mini) the blur lifts and the bar settles at the foot, out of the scene's way.
+   The page measures the bar into --ask-cx / --ask-cy (its centre), --ask-bw (its width) and --ask-up (from its centre
+   to the top of the transcript). */
 @property --ask-turn { syntax: "<angle>"; inherits: true; initial-value: 0deg; }
-.ask-veil {
-  position: fixed; inset: 0; z-index: 24; cursor: default;
-  background: color-mix(in srgb, var(--background) 58%, transparent);
-  backdrop-filter: blur(28px) saturate(.7);
-  animation: ask-veil .32s var(--ease) both;
+.ask-veil { position: fixed; inset: 0; z-index: 24; cursor: default; }
+.ask-veil i {
+  position: absolute; inset: 0; pointer-events: none; animation: ask-veil .36s var(--ease) both;
+  mask-image: radial-gradient(ellipse var(--rx) var(--ry) at var(--ask-cx, 50%) var(--ask-cy, 75%), #000 var(--core), transparent);
+}
+.ask-veil i:nth-child(1) {
+  --rx: calc(var(--ask-bw, 60vw) * .5 + 900px); --ry: calc(var(--ask-up, 30vh) + 760px); --core: 35%; backdrop-filter: blur(5px);
+  background: color-mix(in srgb, var(--background) 22%, transparent);
+}
+.ask-veil i:nth-child(2) { --rx: calc(var(--ask-bw, 60vw) * .5 + 520px); --ry: calc(var(--ask-up, 30vh) + 420px); --core: 42%; backdrop-filter: blur(14px); }
+.ask-veil i:nth-child(3) {
+  --rx: calc(var(--ask-bw, 60vw) * .5 + 260px); --ry: calc(var(--ask-up, 30vh) + 200px); --core: 55%;
+  backdrop-filter: blur(30px) saturate(.7); background: color-mix(in srgb, var(--background) 62%, transparent);
 }
 .ask {
-  --ask-glow: conic-gradient(from var(--ask-turn), var(--brand), var(--chart-2), var(--chart-4), var(--chart-3), var(--brand));
   position: fixed; bottom: 25vh; left: calc((100vw + var(--rail-w) + var(--inset)) / 2); z-index: 25; translate: -50% 0;
-  width: min(760px, calc(100vw - var(--rail-w) - var(--inset) - 64px)); display: flex; flex-direction: column; gap: 10px;
-  padding-top: 24px; pointer-events: none; animation: ask-in .32s var(--ease) both, ask-turn 9s linear infinite;
-  transition: bottom .42s var(--ease);
+  width: min(760px, calc(100vw - var(--rail-w) - var(--inset) - 64px)); max-height: calc(75dvh - 16px);
+  display: flex; flex-direction: column; gap: 10px; padding-top: 24px; pointer-events: none;
+  animation: ask-in .32s var(--ease) both, ask-turn 6s linear infinite; transition: bottom .42s var(--ease);
 }
 main[data-rail="collapsed"] ~ .ask, body:has(main[data-rail="collapsed"]) .ask { left: calc((100vw + var(--rail-collapsed-w) + var(--inset)) / 2); width: min(760px, calc(100vw - var(--rail-collapsed-w) - var(--inset) - 64px)); }
+.ask > * { flex: none; }
 .ask[data-state="mini"] { bottom: max(16px, env(safe-area-inset-bottom)); }
 .ask[data-state="mini"]::before {
   content: ""; position: absolute; inset: 0 -24px -16px; z-index: -1; pointer-events: none;
   background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--background) 82%, transparent) 38%, var(--background) 72%);
 }
-.ask[data-state="busy"] { animation-duration: .32s, 2.4s; }
+.ask[data-state="busy"] { animation-duration: .32s, 1.8s; }
 .ask > * { pointer-events: auto; }
-.ask-scroll {
-  max-height: 40vh; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 0 4px;
-  mask-image: linear-gradient(to bottom, transparent, #000 48px); scrollbar-width: thin; transition: max-height .24s var(--ease);
+/* The transcript gives up height first when the input grows, so the bar never pushes it off the top. Its scrollbar
+   shows only while the pointer is over it. */
+.ask .ask-scroll {
+  flex: 0 1 auto; min-height: 0; max-height: 40vh; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 0 4px;
+  mask-image: linear-gradient(to bottom, transparent, #000 48px); scrollbar-width: none; transition: max-height .24s var(--ease);
 }
+.ask-scroll::-webkit-scrollbar, .ask-bar textarea::-webkit-scrollbar { display: none; }
+.ask .ask-scroll:hover { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--foreground) 22%, transparent) transparent; }
 .ask[data-state="mini"] .ask-scroll { max-height: 64px; }
 .ask-entry-user { align-self: flex-end; max-width: 80%; margin: 0; padding: 8px 13px; border-radius: 16px 16px 4px 16px; background: var(--surface-raised); border: 1px solid var(--hairline); font-size: 14px; line-height: 1.55; animation: ask-entry .16s var(--ease) both; }
 .ask-entry-answer { margin: 0; font-size: 14px; line-height: 1.65; animation: ask-entry .2s var(--ease) both; }
@@ -55,22 +69,19 @@ main[data-rail="collapsed"] ~ .ask, body:has(main[data-rail="collapsed"]) .ask {
   position: relative; display: flex; align-items: flex-end; gap: 8px; padding: 12px 12px 12px 22px; border-radius: 30px;
   border: 1px solid transparent; background: var(--surface-raised); box-shadow: var(--shadow-overlay);
 }
-/* The light: a ring of the chart colours turning around the bar, and the same colours as a soft aura behind it.
-   It turns slowly while the reader writes and quickens while a turn runs. */
-.ask-bar::before {
-  content: ""; position: absolute; inset: -1px; border-radius: inherit; padding: 2px; pointer-events: none;
-  background: var(--ask-glow); opacity: .9; transition: opacity .3s;
+/* The light runs around the bar's edge only: a faint ring, a bright arc travelling along it, and the arc's own glow
+   held tight to the edge. It turns slowly while the reader writes and quickens while a turn runs. */
+.ask-bar::before, .ask-ring::before {
+  content: ""; position: absolute; inset: -1px; border-radius: inherit; padding: 1.5px; pointer-events: none;
+  background: conic-gradient(from var(--ask-turn), transparent 0 52%, var(--chart-2) 68%, var(--brand) 80%, var(--chart-4) 90%, transparent 100%),
+    linear-gradient(color-mix(in srgb, var(--foreground) 16%, transparent) 0 0);
   mask-image: linear-gradient(#000 0 0), linear-gradient(#000 0 0); mask-clip: content-box, border-box; mask-composite: exclude;
 }
-.ask-bar::after {
-  content: ""; position: absolute; inset: -16px; z-index: -1; border-radius: inherit; pointer-events: none;
-  background: var(--ask-glow); filter: blur(34px); opacity: .55; animation: ask-breathe 4.8s ease-in-out infinite;
-}
-.ask-bar:focus-within::before { opacity: 1; }
-.ask[data-state="busy"] .ask-bar::after { opacity: .75; animation-duration: 1.6s; }
+.ask-ring { position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none; filter: blur(6px); opacity: .9; }
+.ask-ring::before { inset: -3px; padding: 4px; background: conic-gradient(from var(--ask-turn), transparent 0 55%, var(--chart-2) 70%, var(--brand) 80%, var(--chart-4) 89%, transparent 100%); }
+.ask[data-state="mini"] .ask-ring { opacity: .45; }
 .ask[data-state="mini"] .ask-bar { padding: 8px 8px 8px 18px; }
-.ask[data-state="mini"] .ask-bar::after { opacity: .16; animation: none; }
-.ask-bar textarea { flex: 1; min-height: 44px; max-height: 160px; padding: 10px 0; border: 0; outline: 0; resize: none; background: transparent; color: var(--foreground); font: inherit; font-size: 16px; line-height: 1.5; field-sizing: content; }
+.ask-bar textarea { flex: 1; min-width: 0; min-height: 44px; max-height: min(160px, 28dvh); padding: 10px 0; scrollbar-width: none; overflow-wrap: anywhere; border: 0; outline: 0; resize: none; background: transparent; color: var(--foreground); font: inherit; font-size: 16px; line-height: 1.5; field-sizing: content; }
 .ask[data-state="mini"] .ask-bar textarea { min-height: 30px; padding: 5px 0; font-size: 14.5px; }
 .ask-send { height: 40px; padding: 0 18px; border-radius: 999px; background: var(--foreground); color: var(--background); font-size: 13.5px; font-weight: 650; }
 .ask[data-state="mini"] .ask-send { height: 32px; padding: 0 14px; font-size: 13px; }
@@ -84,7 +95,6 @@ main[data-rail="collapsed"] ~ .ask, body:has(main[data-rail="collapsed"]) .ask {
 @keyframes ask-in { from { opacity: 0; transform: translateY(14px) scale(.98); } }
 @keyframes ask-veil { from { opacity: 0; } }
 @keyframes ask-turn { to { --ask-turn: 360deg; } }
-@keyframes ask-breathe { 50% { opacity: .85; transform: scale(1.04); } }
 @keyframes ask-entry { from { opacity: 0; transform: translateY(6px); } }
 @keyframes ask-progress { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
 
@@ -128,5 +138,5 @@ main[data-rail="collapsed"] ~ .ask, body:has(main[data-rail="collapsed"]) .ask {
   .update-notice { bottom: calc(max(16px, env(safe-area-inset-bottom)) + var(--ask-h, 0px)); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .ask, .ask-veil, .ask-bar::after, .ask-scroll, .scene-block, .ask-entry-user, .ask-entry-answer, .stage { animation: none !important; transition: none !important; }
+  .ask, .ask-veil i, .ask-scroll, .scene-block, .ask-entry-user, .ask-entry-answer, .stage { animation: none !important; transition: none !important; }
 }
