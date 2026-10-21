@@ -18,7 +18,7 @@
 .ask-veil {
   position: fixed; inset: 0; z-index: 24; cursor: default;
   background: color-mix(in srgb, var(--background) 58%, transparent);
-  backdrop-filter: blur(28px) saturate(.7); -webkit-backdrop-filter: blur(28px) saturate(.7);
+  backdrop-filter: blur(28px) saturate(.7);
   animation: ask-veil .32s var(--ease) both;
 }
 .ask {
@@ -60,8 +60,7 @@ main[data-rail="collapsed"] ~ .ask, body:has(main[data-rail="collapsed"]) .ask {
 .ask-bar::before {
   content: ""; position: absolute; inset: -1px; border-radius: inherit; padding: 2px; pointer-events: none;
   background: var(--ask-glow); opacity: .9; transition: opacity .3s;
-  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
+  mask-image: linear-gradient(#000 0 0), linear-gradient(#000 0 0); mask-clip: content-box, border-box; mask-composite: exclude;
 }
 .ask-bar::after {
   content: ""; position: absolute; inset: -16px; z-index: -1; border-radius: inherit; pointer-events: none;
