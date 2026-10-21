@@ -111,6 +111,9 @@ const m = messages({
 
 const ReportDialog = lazy(() => import("./ReportDialog"));
 
+/** What the reader has on the map: its own URL-held view, read by the stage agent. */
+export type CompanyView = { periodEnd: string | null; view: "profit" | "cash" | "balance"; business: string | null; finding: string | null; check: string | null; event: string | null; report: string | null; metric: string | null };
+
 type Item = { key: string; id: string; parent: string | null; depth: number; name: string; value: number | null; slot: number; segment: BusinessSegment };
 
 /** Validated categorical slots (light and dark); a fifth top-level business folds into neutral rather than a generated hue. */
@@ -249,7 +252,15 @@ function Sources({ sources, ids }: { sources: FlowSource[]; ids?: string[] }) {
   return <ul className="sources">{list.map(s => <li key={s.id}><a href={s.url} target="_blank" rel="noopener noreferrer">{s.title}<span aria-hidden="true"> ↗</span></a></li>)}</ul>;
 }
 
-export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, explainer = null, tree = null, guidance = null, capital = null, findings = null, peers = null, rankPeers = null, passages = null, fundamentals = null, events = null, filings = null, updates = 0 }: { ticker: string; tools: ReactNode; flow: PublicBusinessFlow; notice: string | null; revenueHistory: RevenueHistory | null; explainer?: BusinessExplainer | null; tree?: BusinessTree | null; guidance?: GuidancePublication | null; capital?: PublicCapitalStructure | null; findings?: FindingsPublication | null; peers?: PeersPublication | null; /** The company and its comparable peers, for the checkup's ranks. */ rankPeers?: PeersPublication | null; passages?: FindingPassage[] | null; fundamentals?: FindingFundamentals | null; events?: EventsPublication | null; filings?: PublicFilingDigestPage | null; /** Updates the reader took; rows they brought enter animated. */ updates?: number }) {
+export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, explainer = null, tree = null, guidance = null, capital = null, findings = null, peers = null, rankPeers = null, passages = null, fundamentals = null, events = null, filings = null, updates = 0, stageOverride = null, onNavigate, onView, railFoot = null }: { ticker: string; tools: ReactNode; flow: PublicBusinessFlow; notice: string | null; revenueHistory: RevenueHistory | null; explainer?: BusinessExplainer | null; tree?: BusinessTree | null; guidance?: GuidancePublication | null; capital?: PublicCapitalStructure | null; findings?: FindingsPublication | null; peers?: PeersPublication | null; /** The company and its comparable peers, for the checkup's ranks. */ rankPeers?: PeersPublication | null; passages?: FindingPassage[] | null; fundamentals?: FindingFundamentals | null; events?: EventsPublication | null; filings?: PublicFilingDigestPage | null; /** Updates the reader took; rows they brought enter animated. */ updates?: number;
+  /** A scene the stage agent built; while set it holds the stage in place of the map's own view (docs/stage-agent-design.md §5.2). */
+  stageOverride?: ReactNode | null;
+  /** The reader picked something in the rail or on the chart: the map's own view takes the stage back. */
+  onNavigate?: () => void;
+  /** What the reader is looking at, for the stage agent to read. */
+  onView?: (view: CompanyView) => void;
+  /** Pinned under the rail's sections (the stage's entry button). */
+  railFoot?: ReactNode }) {
   const quarters = useMemo(() => [...flow.quarters].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd)), [flow]);
   const [period, setPeriod] = useState<string | null>(null);
   const quarter = quarters.find(q => q.id === period) ?? quarters[0];
@@ -376,6 +387,9 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
     if (view !== "profit") url.searchParams.set("view", view); else url.searchParams.delete("view");
     if (url.href !== location.href) history.replaceState(history.state, "", url);
   }, [current, focused, focusedEvent, focusedReport, metric, detail, focusedCheck, view]);
+  useEffect(() => {
+    onView?.({ periodEnd: quarter?.periodEnd ?? null, view, business: current?.id ?? null, finding: focused?.id ?? null, check: focusedCheck?.id ?? null, event: focusedEvent?.id ?? null, report: focusedReport?.accessionNumber ?? null, metric: metric?.key ?? null });
+  }, [onView, quarter?.periodEnd, view, current?.id, focused?.id, focusedCheck?.id, focusedEvent?.id, focusedReport?.accessionNumber, metric?.key]);
   // A finding in focus brings the stage to its report and statement view, and clears any business pick so the whole statement reads.
   useEffect(() => {
     if (!focused) return;
@@ -459,11 +473,11 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
   const lit = view === "profit" ? spotlight != null : !!poolSpotlight?.size;
   const leadShown = lead && lit && !hoverFlag ? lead : null;
   const nodeColor = useCallback((id: string) => { const item = items.find(i => i.id === id); return item ? hue(item.slot) : "var(--biz-0)"; }, [items]);
-  const focusFinding = (id: string | null) => { setFocusId(id); if (id) { setCheckId(null); setEventId(null); setReportId(null); } else { setStory(false); setSplit(false); } };
-  const focusCheck = (id: string | null) => { setCheckId(id); setHoverFlag(null); if (id) { setSelected(null); setFocusId(null); setEventId(null); setReportId(null); setStory(false); setSplit(false); } };
-  const focusEvent = (id: string | null) => { setEventId(id); if (id) { setSelected(null); setFocusId(null); setCheckId(null); setReportId(null); setStory(false); setSplit(false); } };
+  const focusFinding = (id: string | null) => { onNavigate?.(); setFocusId(id); if (id) { setCheckId(null); setEventId(null); setReportId(null); } else { setStory(false); setSplit(false); } };
+  const focusCheck = (id: string | null) => { onNavigate?.(); setCheckId(id); setHoverFlag(null); if (id) { setSelected(null); setFocusId(null); setEventId(null); setReportId(null); setStory(false); setSplit(false); } };
+  const focusEvent = (id: string | null) => { onNavigate?.(); setEventId(id); if (id) { setSelected(null); setFocusId(null); setCheckId(null); setReportId(null); setStory(false); setSplit(false); } };
   // The rail holds one pick at a time: a business, a flag, a finding, or a report/event.
-  const pickBusiness = (id: string | null) => { setSelected(id); if (id) { setFocusId(null); setCheckId(null); setEventId(null); setReportId(null); setStory(false); setSplit(false); } };
+  const pickBusiness = (id: string | null) => { onNavigate?.(); setSelected(id); if (id) { setFocusId(null); setCheckId(null); setEventId(null); setReportId(null); setStory(false); setSplit(false); } };
   useLayoutEffect(() => {
     stepStory.current = (delta: 1 | -1) => {
       const next = storyItems[Math.max(0, Math.min(storyItems.length - 1, storyIndex + delta))];
@@ -472,7 +486,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
   });
   // A report in focus also brings the stage to its quarter when the flow has it.
   const focusReport = (id: string | null) => {
-    setReportId(id); setReader(false);
+    onNavigate?.(); setReportId(id); setReader(false);
     if (!id) return;
     setSelected(null); setFocusId(null); setCheckId(null); setEventId(null); setStory(false); setSplit(false);
     const end = filings?.filings.find(f => f.accessionNumber === id)?.periodEnd;
@@ -571,10 +585,11 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
       {showFindings && <FindingsList findings={verified} updates={updates} verdicts={verdicts} focus={focused?.id ?? null} story={story} periodEnd={findings.periodEnd} {...sectionFocus("findings")} onFocus={focusFinding} onStory={() => { if (story) { setStory(false); setFocusId(null); } else { setStory(true); setEventId(null); focusFinding(focused?.id ?? verified[0].id); } }} />}
       {rail && <EventsList rail={rail} updates={updates} focus={focusedReport?.accessionNumber ?? focusedEvent?.id ?? null} pendingInsider={events?.pendingInsider ?? 0} {...sectionFocus("events")} onFocus={focusItem} />}
       {!!quarter?.revenueAdjustments?.length&&<p className="revenue-reconciliation">{m.reconciliation(quarter.currency)}<br/>{m.segmentTotal} {formatFlowValue(segmentRevenue,quarter)}<br/>{quarter.revenueAdjustments.map(a=><span key={a.id}>{a.name} {formatFlowValue(numeric(a.amount),quarter)}<br/></span>)}{m.consolidated} {formatFlowValue(revenue,quarter)}</p>}
+      {railFoot}
     </Rail>
 
-    <section className="stage" data-focus={focused && findings || focusedCheck ? "finding" : undefined} data-view={view} data-trend={hasRevenueTrend || metricGroups.length ? "" : undefined} data-finding={focused?.kind} data-timeline={points.length ? "" : undefined} aria-label={focused ? m.findingStage(ticker, focused.title) : m.flowStage(ticker)}>
-      {focusedCheck && assessment ? <div className="lens-stage">
+    <section className="stage" data-focus={focused && findings || focusedCheck ? "finding" : undefined} data-view={view} data-trend={hasRevenueTrend || metricGroups.length ? "" : undefined} data-finding={focused?.kind} data-timeline={points.length ? "" : undefined} aria-label={focused ? m.findingStage(ticker, focused.title) : m.flowStage(ticker)} data-agent={stageOverride ? "" : undefined}>
+      {stageOverride ? stageOverride : focusedCheck && assessment ? <div className="lens-stage">
         <MetricLens metric={focusedCheck} flags={flags.filter(f => f.metricId === focusedCheck.id)} rank={ranks[focusedCheck.id] ?? null} data={data} findings={verified} sources={checkupSources(data, focusedCheck.evidence.periodEnd)}
           bridge={assessment.bridge} chain={assessment.chain} onClose={() => focusCheck(null)} onFinding={id => focusFinding(id)}
           note={(note => note ? verifyNote(note, data, focusedCheck, flags.filter(f => f.metricId === focusedCheck.id), findings?.materials) : null)(notes.find(n => n.metricId === focusedCheck.id))} />

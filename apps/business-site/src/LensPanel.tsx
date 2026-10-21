@@ -4,7 +4,7 @@ import { SourceLanguage, langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 import type { ExplainerSource } from "@/shared/analysis-contract/business-explainer";
 import type { FindingMaterial, FindingRecordEntry, FindingRef } from "@/shared/analysis-contract/findings";
-import type { LensBlock } from "@/shared/analysis-contract/lens";
+import type { LensBlock, LensDocument as LensDocumentShape } from "@/shared/analysis-contract/lens";
 import { spanLabel, watchPeriod, watchVerdict, type FindingData, type ResolvedEvidence, type ResolvedValue } from "@/shared/analysis-runtime/findings";
 import { formatResolved } from "@/shared/analysis-runtime/lens/format";
 import { multiple, yoyLabel } from "@/shared/analysis-runtime/locale";
@@ -80,20 +80,23 @@ export function LensPanel({ finding, data, sources, materials, record, ticker, n
         </>}
       </div>
     </header>
-    <LensDocument finding={finding} data={data} sources={sources} materials={materials} record={record} ticker={ticker} nodeColor={nodeColor} compact={compact} />
+    <LensBlocks finding={finding} data={data} sources={sources} materials={materials} record={record} ticker={ticker} nodeColor={nodeColor} compact={compact} />
   </section>;
 }
 
-/** The document as rows of cells; a chart's hover lights the evidence rows of the same period. */
-function LensDocument({ finding, data, sources, materials, record, ticker, nodeColor, compact }: { finding: VerifiedFinding; data: FindingData; sources: ExplainerSource[]; materials?: FindingMaterial[]; record?: FindingRecordEntry[]; ticker: string; nodeColor: (id: string) => string; compact: boolean }) {
+/**
+ * A finding's lens document as rows of cells; a chart's hover lights the evidence rows of the same period. The finding
+ * page and the stage both draw a finding through it. `layout` overrides the finding's own (a stage scene's layout).
+ */
+export function LensBlocks({ finding, data, sources, materials, record, ticker, nodeColor, compact, layout }: { finding: VerifiedFinding; data: FindingData; sources: ExplainerSource[]; materials?: FindingMaterial[]; record?: FindingRecordEntry[]; ticker: string; nodeColor: (id: string) => string; compact: boolean; layout?: LensDocumentShape }) {
   const colorOf = useCallback((ref: FindingRef) => "nodeId" in ref ? nodeColor(ref.nodeId) : "ratio" in ref && "nodeId" in ref.ratio.numerator ? nodeColor(ref.ratio.numerator.nodeId) : null, [nodeColor]);
   // Earlier watches other than this finding's own, scored against the data as it stands; only those that can be read.
   const scored = useMemo(() => (record ?? []).filter(e => e.findingId !== finding.id || e.periodEnd !== finding.periodEnd).map(e => ({ entry: e, result: watchVerdict(data, e.watch, e.periodEnd) })), [record, data, finding]);
   const lens = useMemo<VerifiedLens | null>(() => {
     const options = { colorOf, locale: getLocale() }, context = { ticker, materials, record: scored };
-    return verifyLensDocument(lensDocumentOf(finding, data, finding.periodEnd, options.locale), finding, finding.resolved, data, finding.periodEnd, options, context)
+    return verifyLensDocument(layout ?? lensDocumentOf(finding, data, finding.periodEnd, options.locale), finding, finding.resolved, data, finding.periodEnd, options, context)
       ?? verifyLensDocument(documentFromEvidence(finding), finding, finding.resolved, data, finding.periodEnd, options, context);
-  }, [finding, data, colorOf, ticker, materials, scored]);
+  }, [finding, data, colorOf, ticker, materials, scored, layout]);
   // Sources numbered in the order the document cites them, so every citation mark points at one list.
   const cited = useMemo(() => {
     const ids = [...finding.judgment.sourceIds, ...(lens?.document.rows ?? []).flatMap(r => r.cells.flat()).flatMap(b => b.kind === "prose" ? b.paragraphs.flatMap(p => p.sourceIds) : [])];
