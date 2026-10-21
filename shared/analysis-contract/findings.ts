@@ -113,6 +113,19 @@ export type FindingRecordEntry = { findingId: string; title: string; kind: Findi
 /** A filing passage, transcript excerpt or web page a lens document quotes; the text itself is re-read at serve time, never trusted from here. */
 export type FindingMaterial = { id: string; kind: "sec" | "transcript" | "web"; title: string; url: string; publishedAt: string | null; passageId?: string; documentId?: string; form?: string; path?: string[]; textSha256?: string };
 
+/**
+ * A finding-shaped analysis an agent wrote, with the passages it quotes as read when it was written: a judgment whose
+ * every number its evidence produces and a lens document of charts, quotes and prose. The page verifies it with the
+ * finding page's own verifiers whichever agent wrote it — a reader's report, or the analysis of one filing on the rail.
+ */
+export type ComposedAnalysis = {
+  /** Its `lens` is always a document. */
+  finding: AnalysisFinding;
+  materials: FindingMaterial[];
+  passages: FindingPassage[];
+  sources: ExplainerSource[];
+};
+
 export type AnalysisFinding = {
   id: string;
   kind: FindingKind;

@@ -10,6 +10,7 @@ import { readPeersResponse } from "../peers/read.ts";
 import { peersFor } from "../../../../shared/analysis-runtime/peers.ts";
 import { rankingPeers } from "../../../../shared/analysis-runtime/statement-analysis.ts";
 import { readEventsResponse } from "../events/read.ts";
+import { readItemAnalysisResponse } from "../items/read.ts";
 import { readPublicPassage } from "../filing-library/passage-read.ts";
 import { parseFundamentalApiQuery } from "../fundamentals/fundamentals-api.ts";
 import { getSecFundamentals } from "../fundamentals/sec-fundamentals.ts";
@@ -55,6 +56,7 @@ type RouteMatch =
   | { kind: "guidance"; ticker: string }
   | { kind: "findings"; ticker: string }
   | { kind: "events"; ticker: string }
+  | { kind: "item"; ticker: string; id: string }
   | { kind: "passage"; ticker: string; passageId: string }
   | { kind: "fundamentals"; ticker: string }
   | { kind: "revisions"; ticker: string }
@@ -190,6 +192,12 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
       payload.events = await translated("events", payload.events);
       return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
     }
+    // One rail row's analysis, under the AI analysis switch; the analysis is applied in the reader's language like a finding.
+    case "item": {
+      const payload = await readItemAnalysisResponse(database, route.ticker, route.id, { hidden: await hidden("findings") });
+      if (payload.analysis) payload.analysis = await translated("item", payload.analysis, route.id);
+      return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
+    }
     case "passage": {
       const payload = await readPublicPassage(database, route.ticker, route.passageId);
       return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
@@ -209,7 +217,7 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
 
 function matchRoute(pathname: string): RouteMatch | null {
   if (/^\/api\/v1\/findings\/?$/.test(pathname)) return { kind: "findings-index" };
-  const company = /^\/api\/v1\/companies\/([^/]+)\/(filings|fundamentals|business-flow|capital|business-explainer|business-tree|guidance|findings|events|passages|revisions)(?:\/([^/]+))?\/?$/.exec(pathname);
+  const company = /^\/api\/v1\/companies\/([^/]+)\/(filings|fundamentals|business-flow|capital|business-explainer|business-tree|guidance|findings|events|items|passages|revisions)(?:\/([^/]+))?\/?$/.exec(pathname);
   if (!company) return null;
   const ticker = safeDecode(company[1]!);
   const resource = company[2]!;
@@ -219,6 +227,10 @@ function matchRoute(pathname: string): RouteMatch | null {
     if (tail === undefined) return { kind: "filings", ticker };
     const accession = safeDecode(tail);
     return accession === null ? null : { kind: "filing", ticker, accession };
+  }
+  if (resource === "items") {
+    const id = tail === undefined ? null : safeDecode(tail);
+    return id === null ? null : { kind: "item", ticker, id };
   }
   if (resource === "passages") {
     if (tail === undefined) return null;

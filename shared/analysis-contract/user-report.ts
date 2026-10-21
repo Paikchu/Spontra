@@ -1,5 +1,4 @@
-import type { ExplainerSource } from "./business-explainer.ts";
-import type { AnalysisFinding, FindingMaterial, FindingPassage } from "./findings.ts";
+import type { ComposedAnalysis } from "./findings.ts";
 
 /**
  * A report a reader asked the stage for (docs/stage-agent-design.md §6). It has the shape of a finding — a judgment
@@ -7,7 +6,7 @@ import type { AnalysisFinding, FindingMaterial, FindingPassage } from "./finding
  * verifies it with the finding page's own verifiers. The passages it quotes travel with it, as read when it was
  * written: a reader's report does not change when the library does.
  */
-export type UserReport = {
+export type UserReport = ComposedAnalysis & {
   schemaVersion: "user-report.v1";
   id: string;
   ticker: string;
@@ -16,9 +15,4 @@ export type UserReport = {
   periodEnd: string;
   createdAt: string;
   locale: "en" | "zh-CN";
-  /** The finding-shaped body: its `lens` is always a document. */
-  finding: AnalysisFinding;
-  materials: FindingMaterial[];
-  passages: FindingPassage[];
-  sources: ExplainerSource[];
 };

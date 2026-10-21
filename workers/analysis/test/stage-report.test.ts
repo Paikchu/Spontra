@@ -43,8 +43,8 @@ test("a report must quote a filing, quote an earlier one when it exists, and sta
   const tools = reportTools(input(true));
   const done = await runTool(tools, { allow: ["finish"] }, { name: "finish", input: {} }, { state: s, signal: new AbortController().signal, recipe: "t", stage: (_n, w) => w() });
   assert.equal(done.observation, "Published.");
-  assert.equal(s.written?.materials.length, 2);
-  assert.equal(s.written?.passages.length, 2);
+  assert.equal(s.composed?.materials.length, 2);
+  assert.equal(s.composed?.passages.length, 2);
 });
 
 test("a report is only proposed: starting one waits for the reader", () => {

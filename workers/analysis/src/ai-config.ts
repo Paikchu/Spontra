@@ -30,6 +30,8 @@ export const AI_TOOLS = {
   findings: { label: "公司要点", reasoning: "high", model: "reasoning" },
   /** The lens agent chooses charts and layout from an already-computed observation. */
   lens: { label: "要点图表", reasoning: "low", model: "reasoning" },
+  /** The analysis of one filing on the rail: reads the filing and composes a finding-shaped analysis the harness verifies. */
+  items: { label: "文件分析", reasoning: "high", model: "reasoning" },
   /** The analyst reads filings and composes the dossier; its harness verifies, so it reasons at the default depth. */
   analyst: { label: "分析师", reasoning: "high", model: "reasoning" },
   /** Which statement line is pretax income and which come after taxes; the harness checks the arithmetic. */
