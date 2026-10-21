@@ -2,7 +2,6 @@ import { getAgentByName, routeAgentRequest } from "agents";
 import type { AnalysisEnv } from "../operations.ts";
 import { reserve } from "./budget.ts";
 import { issueReader, readerOf } from "./identity.ts";
-import { readStageSwitch, stageOpenFor } from "./settings.ts";
 import type { StageAgent, StageProps } from "./agent.ts";
 
 /**
@@ -24,10 +23,10 @@ export async function handleStageRequest(request: Request, env: AnalysisEnv & { 
   const address = /^[0-9a-f]{64}$/.test(request.headers.get("x-spontra-address") ?? "") ? `ip:${request.headers.get("x-spontra-address")}` : null;
   const reader = await readerOf(env.REPORT_ADMIN_PASSWORD, request.headers.get("x-spontra-token"));
 
-  // Whether the stage is open for a company: the page asks before it shows the entry button.
+  // The stage is open on every company page; the page asks only whether this browser already has a reader id.
   if (url.pathname === "/agents/status" && request.method === "GET") {
     const ticker = url.searchParams.get("ticker") ?? "";
-    const open = TICKER.test(ticker) && stageOpenFor(await readStageSwitch(env), ticker);
+    const open = TICKER.test(ticker);
     return json({ open, reader: reader != null });
   }
 
@@ -55,7 +54,6 @@ export async function handleStageRequest(request: Request, env: AnalysisEnv & { 
     const ticker = typeof body?.ticker === "string" ? body.ticker : "";
     const locale = typeof body?.locale === "string" && LOCALES.has(body.locale) ? body.locale : "en";
     if (!TICKER.test(ticker)) return json({ error: "bad-request" }, 400);
-    if (!stageOpenFor(await readStageSwitch(env), ticker)) return json({ error: "stage-off" }, 503);
     const spent = await reserve(db, "stage-conversations", { reader, address });
     if (!spent.ok) return json({ error: "quota", which: spent.which }, 429);
     const now = new Date().toISOString();

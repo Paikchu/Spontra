@@ -13,7 +13,6 @@ import { refund, reserve, type Spender } from "./budget.ts";
 import { loadStageData } from "./data.ts";
 import { sha256 } from "./identity.ts";
 import { STAGE_BUDGET, stageRecipeFor, stageTools, type StageView } from "./recipe.ts";
-import { readStageSwitch, stageOpenFor } from "./settings.ts";
 
 /**
  * One reader's conversation with the stage (docs/stage-agent-design.md §5.3), an Agents SDK Agent and so a Durable
@@ -142,7 +141,6 @@ export class StageAgent extends Agent<StageEnv, StageState> {
     const who: Spender = { reader: owner.user_id, address };
     const db = env.DB!;
     this.addTranscript({ id: uid(), at: new Date().toISOString(), role: "user", text });
-    if (!stageOpenFor(await readStageSwitch(env), owner.ticker)) { this.notice("stage-off"); return; }
     const says = await reserve(db, "stage-says", who).catch(() => ({ ok: false as const, which: "global" as const }));
     if (!says.ok) { this.notice(says.which === "global" ? "global-cap-reached" : "quota-reached"); return; }
     const controller = new AbortController();
@@ -261,7 +259,7 @@ export class StageAgent extends Agent<StageEnv, StageState> {
     if (!yes) return;
     const env = this.env as StageEnv & { REPORT_WORKFLOW?: Workflow };
     const db = env.DB!;
-    if (!env.REPORT_WORKFLOW || !stageOpenFor(await readStageSwitch(env), owner.ticker)) { this.notice("stage-off"); return; }
+    if (!env.REPORT_WORKFLOW) { this.notice("report-failed"); return; }
     const day = new Date().toISOString().slice(0, 10);
     const runId = (await sha256(`report-v1\n${owner.user_id}\n${owner.ticker}\n${day}\n${row.question.trim().toLowerCase()}`)).slice(0, 32);
     const existing = await db.prepare("SELECT status FROM user_runs WHERE user_id = ? AND id = ?").bind(owner.user_id, runId).first<{ status: string }>();

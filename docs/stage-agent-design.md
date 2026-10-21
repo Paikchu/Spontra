@@ -537,7 +537,8 @@ P0a 到 P2 已上线。P3、P4 仍按第 10 节后置，未开工。
 - `BusinessMap` 没有拆分，改为接收 `stageOverride` 等属性；默认视图渲染因此不变。
 - 报告用普通 `WorkflowEntrypoint`，结束时经 RPC 通知 `StageAgent`，未用 `AgentWorkflow`。
 - 没有单独的 ResearchWorkflow；深度研究由报告配方承担。材料随报告存入 `user_reports.body`，没有 `user_documents` 表。
-- 迁移编号为 0035（舞台）、0036（`stage_settings`）、0037（`user_reports`）。舞台开关在 `stage_settings`，不复用带 CHECK 约束的 `business_feature_settings`；开关经 `/agents/status` 下发。
+- 迁移编号为 0035（舞台）、0036（`stage_settings`）、0037（`user_reports`）。
+- 2026-10-22 起舞台对所有公司默认开放，不设开关：`/agents/status` 对任何合法代码返回 open，后台舞台页只看花费与对话。`stage_settings` 表保留但不再读取。滥用由三层配额限制。
 - 消息协议用 JSON，未用 `@callable`（测试运行器的类型剥离不支持装饰器）。
 - 严格工具 schema 不接受 minimum / maximum、长度、pattern、format、default 等关键字，注册表统一剥离；`read_series` 为非严格。
 - 主包增加约 1.4 KB gzip，超过 1 KB 目标。

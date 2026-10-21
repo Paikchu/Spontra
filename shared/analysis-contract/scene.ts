@@ -25,7 +25,7 @@ export type SceneCell = SceneBlock[];
 
 /** Notices are codes the page words in its own language; the server never sends reader-facing text of its own. */
 export const NOTICE_CODES = [
-  "stage-off", "quota-reached", "global-cap-reached", "turn-interrupted", "turn-failed", "conversation-unavailable",
+  "quota-reached", "global-cap-reached", "turn-interrupted", "turn-failed", "conversation-unavailable",
   "report-started", "report-ready", "report-failed", "retention",
 ] as const;
 export type NoticeCode = typeof NOTICE_CODES[number];

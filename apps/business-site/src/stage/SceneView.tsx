@@ -16,11 +16,11 @@ import { LensFrame } from "../LensFrame";
 import { trendChart, type StageState } from "./stage-model";
 
 const NOTICE: Record<NoticeCode, string> = labels({
-  "stage-off": "Stage off", "quota-reached": "Daily limit reached", "global-cap-reached": "Paused for today", "turn-interrupted": "Interrupted",
+  "quota-reached": "Daily limit reached", "global-cap-reached": "Paused for today", "turn-interrupted": "Interrupted",
   "turn-failed": "No result", "conversation-unavailable": "Conversation unavailable", "report-started": "Report started", "report-ready": "Report ready",
   "report-failed": "Report failed", retention: "Kept 30 days",
 }, {
-  "stage-off": "舞台已关闭", "quota-reached": "已达今日上限", "global-cap-reached": "今日已暂停", "turn-interrupted": "已中断",
+  "quota-reached": "已达今日上限", "global-cap-reached": "今日已暂停", "turn-interrupted": "已中断",
   "turn-failed": "无结果", "conversation-unavailable": "对话不可用", "report-started": "报告已开始", "report-ready": "报告已完成",
   "report-failed": "报告失败", retention: "保留 30 天",
 });
