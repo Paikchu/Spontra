@@ -7,7 +7,7 @@ import type { LensChart, LensDocument } from "../../../shared/analysis-contract/
 import { evidenceCandidates, readFindingsPublication, readLensDocument, verifyFindings, type FindingData } from "../../../shared/analysis-runtime/findings.ts";
 import { auditDocument } from "../../../shared/analysis-runtime/lens/audit.ts";
 import { compileChart } from "../../../shared/analysis-runtime/lens/compile.ts";
-import { describeDocument } from "../../../shared/analysis-runtime/lens/describe.ts";
+import { describeChart, describeDocument } from "../../../shared/analysis-runtime/lens/describe.ts";
 import { documentFromEvidence, lensDocumentOf } from "../../../shared/analysis-runtime/lens/legacy.ts";
 import { renderChartSvg } from "../../../shared/analysis-runtime/lens/render.ts";
 import { compileDocument, verifyLensDocument } from "../../../shared/analysis-runtime/lens/verify.ts";
@@ -135,9 +135,29 @@ test("the renderer writes every label into the SVG and keeps its style free of a
   const svg = renderChartSvg(c, { width: 600, height: 260 });
   assert.match(svg, /^<svg class="lens-svg"/);
   assert.ok(svg.includes("$40.0B") && svg.includes("Operating cash flow") && svg.includes("2026.06"));
-  assert.ok(svg.includes('data-col="7" data-show=""'));
+  assert.ok(svg.includes('data-col="7" data-focus="" data-show=""'));
   assert.ok(!/data-hover="\d/.test(svg.slice(0, svg.indexOf("</style>"))));
   assert.ok(svg.includes("on the year"));
+});
+
+test("a chart says what it is about: focused periods and series in colour, the rest grey, a note row under the periods", () => {
+  const focused: LensChart = { ...chart, title: "Capex outran operating cash flow", subtitle: "Coloured columns are the quarter the judgment is about", focus: { periods: ["2025-12-31"], series: ["capex"] } };
+  const c = compileChart(focused, data, PERIOD).chart!;
+  assert.deepEqual(c.focus.periods, [c.periods.findIndex(p => p.end === "2025-12-31")]);
+  assert.deepEqual(c.focus.series, ["capex"]);
+  const svg = renderChartSvg(c, { width: 600, height: 300 });
+  assert.ok(svg.includes("Coloured columns are the quarter"));
+  assert.ok(svg.includes(`data-col="${c.focus.periods[0]}" data-focus=""`) && !svg.includes('data-col="7" data-focus'));
+  assert.ok(svg.includes('class="bar context"'));
+  assert.match(compileChart({ ...chart, focus: { series: ["nope"] } }, data, PERIOD).errors.join(), /focus names series nope/);
+  assert.match(compileChart({ ...chart, focus: { periods: ["2019-03-31"] } }, data, PERIOD).errors.join(), /focus period 2019-03-31/);
+  const noted: LensChart = { ...chart, series: [...chart.series, { id: "debt", ref: { capital: "debt" } }], periodNote: "debt" };
+  const n = compileChart(noted, data, PERIOD).chart!;
+  assert.equal(n.periodNote, "debt");
+  assert.ok(!n.focus.series.includes("debt"));
+  assert.ok(renderChartSvg(n, { width: 600, height: 300 }).includes('class="note'));
+  assert.match(compileChart({ ...noted, marks: [...chart.marks, { type: "line", series: ["debt"] }] }, data, PERIOD).errors.join(), /also drawn by a mark/);
+  assert.match(describeChart("c1", compileChart(focused, data, PERIOD)), /focus: .* drawn grey as context/);
 });
 
 test("the agent compiles, reads its errors back, and finishes only with a document that compiled; the publication carries it", async () => {
@@ -147,7 +167,7 @@ test("the agent compiles, reads its errors back, and finishes only with a docume
   assert.ok(catalogue.some(r => "capital" in r.ref && r.ref.capital === "capex" && r.yoy));
   assert.ok(catalogue.some(r => "rpoBucket" in r.ref));
   const bad: LensDocument = { rows: [{ cells: [[{ kind: "chart", chart: { ...chart, annotations: [{ series: "capex", period: "latest", text: "40 billion" }] } }], [{ kind: "judgment" }, { kind: "figures" }, { kind: "watch" }]] }, { cells: [[{ kind: "sources" }]] }] };
-  const good: LensDocument = { rows: [{ cells: [[{ kind: "chart", chart: { ...chart, aspect: "square" } }], [{ kind: "judgment" }, { kind: "figures" }, { kind: "watch" }]] }, { cells: [[{ kind: "sources" }]] }] };
+  const good: LensDocument = { rows: [{ cells: [[{ kind: "html", html: { id: "p1", title: "Capex against operating cash flow", aspect: "square", html: `<svg viewBox="0 0 400 300" width="100%"><rect x="20" y="40" width="60" height="260" fill="var(--flow-expense)"/></svg>` } }], [{ kind: "judgment" }, { kind: "figures" }, { kind: "watch" }]] }, { cells: [[{ kind: "sources" }]] }] };
   const seen: string[] = [], sent: AgentMessage[][] = [], systems: string[] = [];
   const replies = [call("compile", { document: bad }), call("finish"), call("compile", { document: good }), call("finish")];
   // Replies by the finding's turn, so the same script serves the publication's run below.
@@ -158,6 +178,7 @@ test("the agent compiles, reads its errors back, and finishes only with a docume
   };
   const outcome = await runLensAgent({ finding: f, resolved: f.resolved, periodEnd: PERIOD, catalogue, data, model, stage: (_, cb) => cb() });
   assert.match(seen[1]!, /states a figure/);
+  assert.match(seen[1]!, /draw this chart as an html picture/);
   assert.match(seen[2]!, /Not accepted/);
   assert.match(seen[3]!, /This document compiles/);
   assert.equal(outcome.turns.length, 4);
@@ -171,13 +192,35 @@ test("the agent compiles, reads its errors back, and finishes only with a docume
   }
   assert.deepEqual(sent[1]![1], { role: "assistant", content: replies[0]!.content });
   for (const system of systems) assert.doesNotMatch(system, /thought|think|reasoning|explain your|Return only JSON|history/i);
-  assert.match(seen[1]!, /Budget left: 5 turns\.$/);
+  assert.match(seen[1]!, new RegExp(`Budget left: ${LENS_BUDGET.turns - 1} turns\\.$`));
 
   const written = await writeLensDocuments({ publication, ledger, data, model, version: "test", now: "2026-07-31T00:00:00Z", stage: (_, cb) => cb() });
   const lens = written.publication.findings[0]!.lens;
   assert.ok(lens.type === "document" && lens.document.rows.length === 2);
   assert.ok(readFindingsPublication(written.publication, "TEST"));
   assert.equal(written.trace.findings[0]!.turns.length, 4);
+});
+
+test("the agent reads series, writes an html picture the frame can run, and the document carries it whole", async () => {
+  const f = verified();
+  const catalogue = lensCatalogue(buildLedger(data, PERIOD, publication.sources), data, PERIOD);
+  const fragment = `<svg viewBox="0 0 600 240" width="100%"><rect x="10" y="40" width="40" height="200" fill="var(--flow-expense)"/><text x="10" y="30">$40.0B</text></svg><script>document.querySelector("svg").dataset.ok = "1"</script>`;
+  const picture = (html: string): LensDocument => ({ rows: [{ cells: [[{ kind: "html", html: { id: "p1", title: "Capex against operating cash flow", aspect: "square", html } }], [{ kind: "judgment" }, { kind: "figures" }, { kind: "watch" }]] }, { cells: [[{ kind: "sources" }]] }] });
+  const bad = picture(`<html><body>${fragment}<script src="https://evil.example/x.js"></script><script>fetch("/api")</script></body></html>`);
+  const seen: string[] = [];
+  const replies = [call("series", { span: "quarter", periods: 4, refs: [{ ref: { capital: "capex" } }, { ref: { capital: "capex" }, transform: "yoy" }] }), call("compile", { document: bad }), call("compile", { document: picture(fragment) }), call("finish")];
+  const outcome = await runLensAgent({ finding: f, resolved: f.resolved, periodEnd: PERIOD, catalogue, data, stage: (_, cb) => cb(),
+    model: async (stage, system, _tools, messages) => { assert.match(system, /--muted-foreground/); seen.push(lastResult(messages)); return replies[Number(stage.split("-").at(-1)) - 1] ?? call("finish"); } });
+  assert.match(seen[1]!, /\$40\.0B \[40000000000\]/);
+  assert.match(seen[1]!, /2\. .* \(percent\)/);
+  assert.match(seen[2]!, /<html> is not allowed/);
+  assert.match(seen[2]!, /evil\.example.*https from cdnjs/);
+  assert.match(seen[2]!, /fetch is not available/);
+  assert.match(seen[3]!, /html p1 \(square, "Capex against operating cash flow"\): \d+ characters; 1 inline svg; 1 inline script/);
+  assert.deepEqual(outcome.document, picture(fragment));
+  assert.ok(readLensDocument(picture(fragment)));
+  const lens = verifyLensDocument(picture(fragment), f, f.resolved, data, PERIOD)!;
+  assert.equal((lens.document.rows[0]!.cells[0]![0] as { kind: "html"; html: { html: string } }).html.html, fragment);
 });
 
 test("a lens turn without a usable reply joins nothing; failures in a row keep the original chart", async () => {

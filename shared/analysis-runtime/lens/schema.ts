@@ -22,7 +22,9 @@ export function lensDocumentSchemaFor(ref: z.ZodTypeAny): z.ZodType<LensDocument
   const annotation = z.object({ series: id, period, text: z.string().trim().min(1).max(LENS_LIMITS.annotationChars) });
   const band = z.object({ from: period, to: period, label: plain(LENS_LIMITS.labelChars).optional() });
   const chart = z.object({
-    id, title: plain(LENS_LIMITS.titleChars).optional(), aspect: z.enum(["wide", "square", "tall"]), span,
+    id, title: plain(LENS_LIMITS.titleChars).optional(), subtitle: plain(LENS_LIMITS.subtitleChars).optional(),
+    focus: z.object({ periods: z.array(period).min(1).max(LENS_LIMITS.focusPeriods).optional(), series: z.array(id).min(1).max(LENS_LIMITS.series).optional() }).optional(),
+    periodNote: id.optional(), aspect: z.enum(["wide", "square", "tall"]), span,
     periods: z.number().int().min(2).max(LENS_LIMITS.periods),
     series: z.array(series).min(1).max(LENS_LIMITS.series), marks: z.array(mark).min(1).max(LENS_LIMITS.marks),
     annotations: z.array(annotation).max(LENS_LIMITS.annotations).optional(), bands: z.array(band).max(LENS_LIMITS.bands).optional(),
@@ -39,6 +41,7 @@ export function lensDocumentSchemaFor(ref: z.ZodTypeAny): z.ZodType<LensDocument
     z.object({ kind: z.literal("judgment") }),
     z.object({ kind: z.literal("prose"), paragraphs: z.array(claim).min(1).max(LENS_LIMITS.paragraphs) }),
     z.object({ kind: z.literal("chart"), chart }),
+    z.object({ kind: z.literal("html"), html: z.object({ id, title: z.string().trim().min(1).max(LENS_LIMITS.titleChars * 2), aspect: z.enum(["wide", "square", "tall"]), html: z.string().trim().min(40).max(LENS_LIMITS.htmlChars) }) }),
     z.object({ kind: z.literal("figures") }),
     z.object({ kind: z.literal("watch") }),
     z.object({ kind: z.literal("sources") }),

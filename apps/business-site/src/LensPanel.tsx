@@ -12,6 +12,7 @@ import { documentFromEvidence, lensDocumentOf } from "@/shared/analysis-runtime/
 import { tableKey, verifyLensDocument, type VerifiedLens } from "@/shared/analysis-runtime/lens/verify";
 import { KIND_LABEL, VIEW_LABEL, type VerifiedFinding } from "./findings-model";
 import { LensFrame } from "./LensFrame";
+import { HtmlFrame } from "./HtmlFrame";
 
 const m = messages({
   finding: (title: string) => `Finding: ${title}`, severity: (n: number) => `Severity ${n}`, report: (period: string) => `${period} report`,
@@ -114,6 +115,7 @@ export function LensBlocks({ finding, data, sources, materials, record, ticker, 
       case "judgment": return <p key={key} className="lens-judgment" lang={langOf(finding.judgment.text)}>{compact ? firstSentence(finding.judgment.text) : finding.judgment.text}{cites(finding.judgment.sourceIds)}</p>;
       case "prose": return b.paragraphs.map((p, i) => <p key={`${key}-${i}`} className="lens-prose" lang={langOf(p.text)}>{p.text}{cites(p.sourceIds)}</p>);
       case "chart": { const chart = lens.charts[b.chart.id]; return chart ? <LensFrame key={key} chart={chart} onHover={hoverOf(chart.id)} /> : null; }
+      case "html": return <HtmlFrame key={key} picture={b.html} />;
       case "figures": return <dl key={key} className="lens-evidence">{finding.resolved.map((r, i) => <Evidence key={i} r={r} lit={hover != null && near(r.current.periodEnd, hover)} />)}</dl>;
       case "watch": return watch ? <div key={key} className="lens-watch" data-settled={outcome ? "" : undefined}>
         <p><b>{watch.horizon === "next_quarter" ? m.nextQuarter : m.fullYear}</b><span lang={langOf(watch.condition)}>{watch.condition}</span></p>
@@ -147,7 +149,7 @@ export function LensBlocks({ finding, data, sources, materials, record, ticker, 
   };
   return <div className="lens-doc">
     {lens.document.rows.map((row, i) => {
-      const chartIn = (cell: LensBlock[]) => cell.some(b => b.kind === "chart");
+      const chartIn = (cell: LensBlock[]) => cell.some(b => b.kind === "chart" || b.kind === "html");
       const lead = row.cells.length === 2 ? chartIn(row.cells[0]!) && !chartIn(row.cells[1]!) ? "first" : chartIn(row.cells[1]!) && !chartIn(row.cells[0]!) ? "second" : undefined : undefined;
       return <div key={i} className="lens-doc-row" data-cells={row.cells.length} data-lead={lead} data-titled={row.title ? "" : undefined}>
         {row.title && <h3 className="lens-row-title" lang={langOf(row.title)}>{row.title}</h3>}

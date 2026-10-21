@@ -13,7 +13,7 @@ function readTheme(): LensFrameTheme {
   const style = getComputedStyle(document.documentElement);
   return { scheme: document.documentElement.classList.contains("light") ? "light" : "dark", tokens: Object.fromEntries(LENS_FRAME_TOKENS.map(t => [t, style.getPropertyValue(t).trim()])) };
 }
-function useTheme(): LensFrameTheme {
+export function useTheme(): LensFrameTheme {
   const [theme, setTheme] = useState(readTheme);
   useEffect(() => {
     const observer = new MutationObserver(() => setTheme(readTheme()));

@@ -29,7 +29,7 @@ import { D1SecRepository } from "../sec/d1.ts";
 /** Changing the prompt or the ledger regenerates every company once. */
 export const FINDINGS_VERSION = "findings.writer.v10";
 /** Changing the lens agent's prompt, grammar or harness redraws every company's findings once (through the findings fingerprint). */
-export const LENS_VERSION = "lens.agent.v2";
+export const LENS_VERSION = "lens.agent.v4";
 export type FindingsWorkflowParams = { ticker: string; fingerprint: string };
 export type FindingsDeps = { model?: FindingsModel; lens?: LensModel; fetcher?: typeof fetch };
 

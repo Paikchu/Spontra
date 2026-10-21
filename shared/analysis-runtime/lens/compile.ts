@@ -121,7 +121,10 @@ export function compileChart(chart: LensChart, data: FindingData, periodEnd: str
     for (const id of m.series) if (!ids.has(id)) errors.push(`mark ${m.type} names unknown series ${id}`);
     if (m.type === "waterfall" && m.series.length !== 1) errors.push("a waterfall draws exactly one series");
   }
-  for (const s of chart.series) if (!chart.marks.some(m => m.series.includes(s.id))) errors.push(`series ${s.id} is not drawn by any mark`);
+  if (chart.periodNote && !ids.has(chart.periodNote)) errors.push(`periodNote names unknown series ${chart.periodNote}`);
+  if (chart.periodNote && chart.marks.some(m => m.series.includes(chart.periodNote!))) errors.push(`periodNote ${chart.periodNote} is also drawn by a mark; a note series is written under the periods only`);
+  for (const s of chart.series) if (s.id !== chart.periodNote && !chart.marks.some(m => m.series.includes(s.id))) errors.push(`series ${s.id} is not drawn by any mark`);
+  for (const id of chart.focus?.series ?? []) if (!ids.has(id) || id === chart.periodNote) errors.push(`focus names series ${id}, which no mark draws`);
   if (errors.length) return { chart: null, errors, notes };
 
   const resolved = chart.series.map(s => ends.map(end => resolveSeries(data, s, end, chart.span, locale)));
@@ -134,7 +137,7 @@ export function compileChart(chart: LensChart, data: FindingData, periodEnd: str
     const count = rows.filter(r => r.value != null).length;
     if (count === 0) errors.push(`series ${s.id} (${refLabel(data, s.ref)}) resolves nothing at ${chart.span} periods ending ${periodEnd}`);
     else if (count === 1 && periods.length > 1) notes.push(`series ${s.id} has one value in ${periods.length} periods`);
-    const mark = chart.marks.find(m => m.series.includes(s.id))!;
+    const mark = chart.marks.find(m => m.series.includes(s.id)) ?? { type: "bar", series: [s.id] } as LensMark;
     const unit = rows.find(r => r.unit)?.unit ?? "USD";
     const named = s.label ?? refLabel(data, s.ref, locale);
     // Chinese joins 同比/环比 straight onto a Chinese label and after a space when the label ends in Latin text.
@@ -150,7 +153,8 @@ export function compileChart(chart: LensChart, data: FindingData, periodEnd: str
     const units = new Set(m.series.map(id => series.find(s => s.id === id)!.unit));
     if (units.size > 1) errors.push(`${m.type} stacks series in different units (${[...units].join(", ")})`);
   }
-  const left = axisFor(series.filter(s => s.axis === "left"), chart.marks, refs, locale), right = axisFor(series.filter(s => s.axis === "right"), chart.marks, refs, locale);
+  const drawn = series.filter(s => s.id !== chart.periodNote);
+  const left = axisFor(drawn.filter(s => s.axis === "left"), chart.marks, refs, locale), right = axisFor(drawn.filter(s => s.axis === "right"), chart.marks, refs, locale);
   if (left.error) errors.push(`left ${left.error}`);
   if (right.error) errors.push(`right ${right.error}`);
   const annotations = (chart.annotations ?? []).flatMap(a => {
@@ -170,6 +174,11 @@ export function compileChart(chart: LensChart, data: FindingData, periodEnd: str
     if (from < 0 || to < 0 || from > to) { errors.push(`band ${b.from}–${b.to} does not fit the drawn periods`); return []; }
     return [{ from, to, label: b.label ?? null }];
   });
+  const focusPeriods = [...new Set((chart.focus?.periods ?? ["latest"]).map(at => {
+    const i = periodIndex(periods.map(p => p.end), at);
+    if (i < 0) errors.push(`focus period ${at} is not among the drawn periods`);
+    return i;
+  }))].filter(i => i >= 0).sort((a, b) => a - b);
   if (errors.length) return { chart: null, errors, notes };
   const latest = periods.length - 1;
   const summary = zh
@@ -177,8 +186,9 @@ export function compileChart(chart: LensChart, data: FindingData, periodEnd: str
     : `${chart.title ?? series.map(s => s.label).join(", ")} over ${periods.length} ${chart.span === "quarter" ? "quarters" : "fiscal years"} to ${periods[latest]!.label}: ${series.map(s => `${s.label} ${s.text[latest] ?? "not disclosed"}`).join("; ")}.`;
   return {
     chart: {
-      id: chart.id, title: chart.title ?? null, aspect: chart.aspect, span: chart.span, periods, series, marks: chart.marks.map(m => ({ type: m.type, series: m.series })),
-      axes: { left: left.axis, right: right.axis }, annotations, bands, periodLabels: chart.periodLabels ?? "all", legend: chart.legend ?? (series.length > 1 ? "top" : "none"), summary,
+      id: chart.id, title: chart.title ?? null, subtitle: chart.subtitle ?? null,
+      focus: { periods: focusPeriods, series: chart.focus?.series ?? drawn.map(s => s.id) }, periodNote: chart.periodNote ?? null, aspect: chart.aspect, span: chart.span, periods, series, marks: chart.marks.map(m => ({ type: m.type, series: m.series })),
+      axes: { left: left.axis, right: right.axis }, annotations, bands, periodLabels: chart.periodLabels ?? "all", legend: chart.legend ?? (drawn.length > 1 ? "top" : "none"), summary,
     }, errors, notes,
   };
 }

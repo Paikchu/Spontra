@@ -29,6 +29,11 @@ export type CompiledBand = { from: number; to: number; label: string | null };
 export type CompiledChart = {
   id: string;
   title: string | null;
+  subtitle: string | null;
+  /** Period indexes and series ids the chart's point rests on; the rest is drawn as context. */
+  focus: { periods: number[]; series: string[] };
+  /** A series written under the period labels, not drawn; it appears in `series` but in no mark. */
+  periodNote: string | null;
   aspect: LensAspect;
   span: FindingSpan;
   periods: CompiledPeriod[];
@@ -61,3 +66,17 @@ export const LENS_FRAME_TOKENS = [
   "--background", "--surface", "--border", "--hairline", "--foreground", "--muted-foreground", "--faint",
   "--up", "--loss", "--flow-revenue", "--flow-profit", "--flow-expense", "--biz-0", "--biz-1", "--biz-2", "--biz-3", "--biz-4", "--sans", "--ease",
 ] as const;
+
+/**
+ * The html picture frame (`/html-frame`): a sandboxed page with an opaque origin that runs the agent's
+ * fragment. The host hands it the fragment with the page's tokens and font; the frame answers with the
+ * height its content takes. Neither side trusts the other's origin string: the host checks the source window,
+ * the frame checks that the message came from its parent.
+ */
+export type HtmlFrameMessage =
+  | { type: "html:ready" }
+  | { type: "html:ping" }
+  | { type: "html:render"; id: string; html: string; theme: LensFrameTheme; font: string | null; lang: string }
+  /** The page's theme changed: the frame swaps its colour variables in place, without rerunning the picture. */
+  | { type: "html:theme"; theme: LensFrameTheme }
+  | { type: "html:size"; id: string; height: number };
