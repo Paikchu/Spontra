@@ -11,7 +11,8 @@ export type TranscriptEntry =
   | { id: string; at: string; role: "user"; text: string }
   | { id: string; at: string; role: "assistant"; kind: "answer"; paragraphs: Array<{ text: string; sourceIds: string[] }>; contentLanguage: Locale }
   | { id: string; at: string; role: "assistant"; kind: "stage"; revision: number }
-  | { id: string; at: string; role: "assistant"; kind: "notice"; code: NoticeCode };
+  | { id: string; at: string; role: "assistant"; kind: "notice"; code: NoticeCode }
+  | { id: string; at: string; role: "assistant"; kind: "question"; questionId: string; question: string; settled?: "yes" | "no" };
 export type TurnPhase = "thinking" | "answering" | "staging";
 export type Turn = { id: string; phase: TurnPhase; status: { tool: string; arg?: string } | null };
 export type StageEvent =
@@ -28,8 +29,10 @@ export function readEvent(data: unknown): StageEvent | null {
 /** The transcript after an event: replaced on (re)connection, appended otherwise, never twice the same entry. */
 export function nextTranscript(current: TranscriptEntry[], event: Extract<StageEvent, { type: "stage:transcript" }>, keep = 40): TranscriptEntry[] {
   const base = event.replace ? [] : current;
-  const seen = new Set(base.map(e => e.id));
-  return [...base, ...event.entries.filter(e => !seen.has(e.id))].slice(-keep);
+  const updated = new Map(event.entries.map(e => [e.id, e]));
+  const merged = base.map(e => updated.get(e.id) ?? e);
+  const seen = new Set(merged.map(e => e.id));
+  return [...merged, ...event.entries.filter(e => !seen.has(e.id))].slice(-keep);
 }
 
 /**

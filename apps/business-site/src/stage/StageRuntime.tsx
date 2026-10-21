@@ -11,9 +11,11 @@ import { nextTranscript, readEvent, type OverlayEvent, type OverlayState, type S
 const m = messages({
   input: "Ask about this company", send: "Send", cancel: "Stop", close: "Close", show: "Show", shown: "On the stage", stage: "Stage",
   reading: "Reading", laying: "Laying out", answering: "Answering", connecting: "Connecting", retention: "Kept 30 days",
+  report: "Report", start: "Start", skip: "Skip", started: "Started", skipped: "Skipped",
 }, {
   input: "向这家公司提问", send: "发送", cancel: "停止", close: "关闭", show: "显示", shown: "已在舞台", stage: "舞台",
   reading: "读取中", laying: "排版中", answering: "回答中", connecting: "连接中", retention: "保留 30 天",
+  report: "报告", start: "开始", skip: "不用了", started: "已开始", skipped: "已跳过",
 });
 const NOTICE: Record<NoticeCode, string> = labels({
   "stage-off": "Stage off", "quota-reached": "Daily limit reached", "global-cap-reached": "Paused for today", "turn-interrupted": "Interrupted",
@@ -110,12 +112,13 @@ function Connected({ conversation, state, send, view, onScene, onSay, onRefused,
   useEffect(() => { if (connected && view) agent.send(JSON.stringify({ type: "observe", view })); }, [agent, connected, view]);
   useEffect(() => { socket.current = agent; }, [agent]);
   const submit = (text: string) => { onSay(); agent.send(JSON.stringify({ type: "say", text })); };
-  return <Layer state={state} send={send} entries={entries} turn={turn} connected={connected} onSubmit={submit} onCancel={() => agent.send(JSON.stringify({ type: "cancel" }))} sceneShown={sceneShown} onShowScene={onShowScene} />;
+  const answer = (questionId: string, yes: boolean) => agent.send(JSON.stringify({ type: "answer", questionId, value: yes ? "yes" : "no" }));
+  return <Layer state={state} send={send} entries={entries} turn={turn} connected={connected} onSubmit={submit} onCancel={() => agent.send(JSON.stringify({ type: "cancel" }))} onAnswer={answer} sceneShown={sceneShown} onShowScene={onShowScene} />;
 }
 
-function Layer({ state, send, entries, turn, connected, onSubmit, onCancel, sceneShown, onShowScene }: {
+function Layer({ state, send, entries, turn, connected, onSubmit, onCancel, onAnswer = () => {}, sceneShown, onShowScene }: {
   state: OverlayState; send: (event: OverlayEvent) => void; entries: TranscriptEntry[]; turn: Turn | null; connected: boolean;
-  onSubmit: (text: string) => void; onCancel: () => void; sceneShown: boolean; onShowScene: () => void;
+  onSubmit: (text: string) => void; onCancel: () => void; onAnswer?: (questionId: string, yes: boolean) => void; sceneShown: boolean; onShowScene: () => void;
 }) {
   const [text, setText] = useState("");
   const input = useRef<HTMLTextAreaElement>(null);
@@ -144,7 +147,7 @@ function Layer({ state, send, entries, turn, connected, onSubmit, onCancel, scen
   return createPortal(<div ref={root} className="ask" data-state={state} role="dialog" aria-label={m.stage} onKeyDown={onKey}>
     <div className="ask-scroll" ref={scroll} aria-live="polite">
       {!mini && entries.length === 0 && <p className="ask-note">{m.retention}</p>}
-      {shownEntries.map(e => <Entry key={e.id} entry={e} sceneShown={sceneShown} onShowScene={() => { onShowScene(); input.current?.focus(); }} />)}
+      {shownEntries.map(e => <Entry key={e.id} entry={e} sceneShown={sceneShown} onShowScene={() => { onShowScene(); input.current?.focus(); }} onAnswer={onAnswer} />)}
       {busy && !mini && <p className="ask-typing" aria-hidden="true"><i /><i /><i /></p>}
     </div>
     {status && <p className="ask-status" role="status">{status}</p>}
@@ -158,8 +161,13 @@ function Layer({ state, send, entries, turn, connected, onSubmit, onCancel, scen
   </div>, document.body);
 }
 
-function Entry({ entry, sceneShown, onShowScene }: { entry: TranscriptEntry; sceneShown: boolean; onShowScene: () => void }) {
+function Entry({ entry, sceneShown, onShowScene, onAnswer }: { entry: TranscriptEntry; sceneShown: boolean; onShowScene: () => void; onAnswer: (questionId: string, yes: boolean) => void }) {
   if (entry.role === "user") return <p className="ask-entry-user" lang={langOf(entry.text)}>{entry.text}</p>;
+  if (entry.kind === "question") return <div className="ask-entry-question">
+    <p><b>{m.report}</b><span lang={langOf(entry.question)}>{entry.question}</span></p>
+    {entry.settled ? <em>{entry.settled === "yes" ? m.started : m.skipped}</em>
+      : <span><Button variant="unstyled" type="button" className="ask-yes" onClick={() => onAnswer(entry.questionId, true)}>{m.start}</Button><Button variant="unstyled" type="button" onClick={() => onAnswer(entry.questionId, false)}>{m.skip}</Button></span>}
+  </div>;
   if (entry.kind === "answer") return <div className="ask-entry-answer" lang={entry.contentLanguage === "zh-CN" ? "zh-CN" : "en"}>{entry.paragraphs.map((p, i) => <p key={i}>{p.text}</p>)}</div>;
   if (entry.kind === "notice") return <p className="ask-entry-notice">{NOTICE[entry.code]}</p>;
   return <p className="ask-entry-stage"><span>{m.stage}</span>{sceneShown ? <em>{m.shown}</em> : <Button variant="unstyled" type="button" onClick={onShowScene}>{m.show}</Button>}</p>;
