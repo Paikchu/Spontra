@@ -521,6 +521,35 @@ P0a 到 P2 约 5.5 周。每阶段单独合并上线；D1 迁移只增表不改�
 | `agents` 包两周内多次发版 | 精确版本；升级单独 PR 附体积与启动时间对比 |
 | 匿名数据无限增长 | 30 天保留；R2 生命周期；惰性清理 + 后台动作；`delete()` |
 
+## 13. 实施记录（2026-10-21）
+
+P0a 到 P2 已上线。P3、P4 仍按第 10 节后置，未开工。
+
+| 阶段 | 提交 | 上线验收 |
+|---|---|---|
+| P0a | 393642b | 两个 Workers Builds 通过；地图读取无变化 |
+| P0b | fa1c907 | 迁移 0035 在生产应用；lens / analyst / checkup 测试不变 |
+| P1 | 29d3bb4、6dc0e9f，修复 88599ff、611cdfd | 20 句 stage 问句 19 句上台；10 句 answer 问句全部只回复不改舞台；回合 4–13 s；超配额显示 notice 且无模型调用；rail 优先、显示恢复、刷新恢复、手机布局在浏览器验证 |
+| P2 | 64c4001、5c8cdcc | 报告请求先提议、读者点"开始"后才启动；Workflow 约 2 分钟、10 次模型调用完成，进度块换成报告块；报告在页面复核通过，引用本季 10-Q 与更早的 2026-02 10-Q；同日同问题再次开始复用同一 run（`user_runs` 只有 1 条 report） |
+
+与正文的出入：
+
+- `BusinessMap` 没有拆分，改为接收 `stageOverride` 等属性；默认视图渲染因此不变。
+- 报告用普通 `WorkflowEntrypoint`，结束时经 RPC 通知 `StageAgent`，未用 `AgentWorkflow`。
+- 没有单独的 ResearchWorkflow；深度研究由报告配方承担。材料随报告存入 `user_reports.body`，没有 `user_documents` 表。
+- 迁移编号为 0035（舞台）、0036（`stage_settings`）、0037（`user_reports`）。舞台开关在 `stage_settings`，不复用带 CHECK 约束的 `business_feature_settings`；开关经 `/agents/status` 下发。
+- 消息协议用 JSON，未用 `@callable`（测试运行器的类型剥离不支持装饰器）。
+- 严格工具 schema 不接受 minimum / maximum、长度、pattern、format、default 等关键字，注册表统一剥离；`read_series` 为非严格。
+- 主包增加约 1.4 KB gzip，超过 1 KB 目标。
+
+未完成或未验证：
+
+- Turnstile 未接入；身份签发限为每地址每天 10 个。
+- Safari、Firefox 的 WebSocket 未验证，只验证了 Chromium。
+- 后台舞台页需要管理员密码，未在浏览器验证；对应数据已经由 D1 核对。
+- 保留期只有惰性清理与 `purge`，R2 生命周期规则未配置。
+- 报告的数字校验只查阿拉伯数字。2026-10-21 的样例报告把引文中的 $288 billion 租赁承诺写成"约千亿级别"，未被拦下；中文数量词的校验另行处理。
+
 ## 附录：评审意见处理
 
 采纳（已反映在正文）：R0.0–R0.7、R1.0–R1.7、R2.0–R2.7、R3.0–R3.7、R4.0–R4.7、R5.0–R5.7、R6.0–R6.7、R7.0–R7.7 中除下列条目外的全部。
