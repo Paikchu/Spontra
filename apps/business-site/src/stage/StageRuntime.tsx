@@ -126,25 +126,28 @@ function Layer({ state, send, entries, turn, connected, onSubmit, onCancel, onAn
   const busy = state === "busy" || turn != null;
   useEffect(() => { if (state === "open") input.current?.focus(); }, [state]);
   useEffect(() => { const el = scroll.current; if (el) el.scrollTop = el.scrollHeight; }, [entries.length, turn?.phase]);
-  // The stage keeps the overlay's height free at its foot, so nothing it shows sits under the overlay.
+  const mini = state === "mini";
+  // Folded to its bar, the overlay sits at the stage's foot, and the stage keeps that height free so nothing it shows
+  // sits under it. Open, it floats over the veiled page and takes no room.
   const root = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = root.current;
     if (!el) return;
-    const sync = () => document.documentElement.style.setProperty("--ask-h", `${el.offsetHeight}px`);
+    const sync = () => document.documentElement.style.setProperty("--ask-h", mini ? `${el.offsetHeight}px` : "0px");
     const observer = new ResizeObserver(sync);
     observer.observe(el); sync();
     return () => { observer.disconnect(); document.documentElement.style.removeProperty("--ask-h"); };
-  }, []);
+  }, [mini]);
   const submit = (e?: FormEvent) => { e?.preventDefault(); const value = text.trim(); if (!value || busy || !connected) return; onSubmit(value); setText(""); };
   const onKey = (e: KeyboardEvent<HTMLElement>) => {
     if (e.key === "Escape") { e.stopPropagation(); e.preventDefault(); send({ type: "escape" }); input.current?.blur(); }
     else if (e.key === "Enter" && !e.shiftKey && e.target === input.current) { e.preventDefault(); submit(); }
   };
-  const mini = state === "mini";
   const shownEntries = mini ? entries.filter(e => e.role === "assistant").slice(-1) : entries;
   const status = !connected ? m.connecting : turn ? turn.phase === "staging" ? m.laying : turn.phase === "answering" ? m.answering : m.reading : null;
-  return createPortal(<div ref={root} className="ask" data-state={state} role="dialog" aria-label={m.stage} onKeyDown={onKey}>
+  return createPortal(<>
+    {!mini && <div className="ask-veil" aria-hidden="true" onClick={() => send({ type: "stage-click" })} />}
+    <div ref={root} className="ask" data-state={state} role="dialog" aria-label={m.stage} onKeyDown={onKey}>
     <div className="ask-scroll" ref={scroll} aria-live="polite">
       {!mini && entries.length === 0 && <p className="ask-note">{m.retention}</p>}
       {shownEntries.map(e => <Entry key={e.id} entry={e} sceneShown={sceneShown} onShowScene={() => { onShowScene(); input.current?.focus(); }} onAnswer={onAnswer} />)}
@@ -158,7 +161,7 @@ function Layer({ state, send, entries, turn, connected, onSubmit, onCancel, onAn
       <Button variant="unstyled" type="button" className="ask-close icon-button" aria-label={m.close} onClick={() => send({ type: "toggle" })}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17" /></svg></Button>
     </form>
     {busy && <span className="ask-progress" aria-hidden="true" />}
-  </div>, document.body);
+  </div></>, document.body);
 }
 
 function Entry({ entry, sceneShown, onShowScene, onAnswer }: { entry: TranscriptEntry; sceneShown: boolean; onShowScene: () => void; onAnswer: (questionId: string, yes: boolean) => void }) {
