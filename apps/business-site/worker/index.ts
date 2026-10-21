@@ -31,7 +31,11 @@ const ANALYSIS_ORIGIN="https://spontra-analysis.internal";
 const inLocale=(path:string,locale:Locale|null)=>locale&&locale!=="en"?`${path}${path.includes("?")?"&":"?"}locale=${locale}`:path;
 export type SiteEnv={ASSETS:{fetch(request:Request):Promise<Response>};PUBLIC_READ_LIMIT:{limit(options:{key:string}):Promise<{success:boolean}>};
  /** Service Binding to Spontra Analysis's `MapReads` named entrypoint; the binding is the credential. Without it every data route answers 503. */
- SPONTRA_ANALYSIS?:{fetch(request:Request):Promise<Response>}};
+ SPONTRA_ANALYSIS?:{fetch(request:Request):Promise<Response>};
+ /** Service Binding to Spontra Analysis's `StageGateway` named entrypoint: the stage's only door (docs/stage-agent-design.md §3.1). */
+ SPONTRA_STAGE?:{fetch(request:Request):Promise<Response>};
+ /** Requests to the stage per address per minute: identities, conversations and socket handshakes. */
+ AGENT_LIMIT?:{limit(options:{key:string}):Promise<{success:boolean}>}};
 /** Reads go straight to Spontra Analysis's read API over the binding; each call is a fresh request, so nothing from the browser's request is forwarded. */
 export function analysisFetcher(env:Pick<SiteEnv,"SPONTRA_ANALYSIS">):typeof fetch|null{
  const binding=env.SPONTRA_ANALYSIS;
@@ -272,8 +276,47 @@ export async function loadRevisions(ticker:string,fetcher:typeof fetch=fetch):Pr
  }catch{return null;}
 }
 
+/** The reader's signed id lives in an HttpOnly cookie scoped to the stage, so page scripts never hold it and sockets carry it. */
+const READER_COOKIE="spontra_reader";
+const readerCookie=(token:string,secure:boolean)=>`${READER_COOKIE}=${token}; Path=/agents; HttpOnly; SameSite=Strict; Max-Age=31536000${secure?"; Secure":""}`;
+const sha256Hex=async(value:string)=>Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(value))),b=>b.toString(16).padStart(2,"0")).join("");
+/**
+ * The stage's public door (docs/stage-agent-design.md §3.1): same-origin requests only, limited per address, passed
+ * to Spontra Analysis's StageGateway with the reader's token from its cookie and a hash of the address; the address
+ * itself never leaves this Worker. Socket upgrades pass through untouched so the 101 reaches the browser.
+ */
+export async function stageDoor(request:Request,env:SiteEnv):Promise<Response>{
+ const url=new URL(request.url);
+ const plain=(body:unknown,status:number)=>Response.json(body,{status,headers:{...security,"cache-control":"no-store"}});
+ if(!env.SPONTRA_STAGE)return plain({error:"unavailable"},503);
+ const origin=request.headers.get("origin");
+ const upgrade=request.headers.get("upgrade")?.toLowerCase()==="websocket";
+ if((upgrade||request.method!=="GET")&&origin!==url.origin)return plain({error:"forbidden"},403);
+ const ip=request.headers.get("cf-connecting-ip")??"unknown";
+ if(request.method!=="GET"||upgrade){try{if(env.AGENT_LIMIT&&!(await env.AGENT_LIMIT.limit({key:ip})).success)return plain({error:"rate"},429);}catch(error){console.error(JSON.stringify({event:"stage-limit-failed",message:error instanceof Error?error.message:String(error)}));return plain({error:"unavailable"},503);}}
+ const token=request.headers.get("cookie")?.split(";").map(v=>v.trim()).find(v=>v.startsWith(`${READER_COOKIE}=`))?.slice(READER_COOKIE.length+1)??null;
+ const headers=new Headers(request.headers);
+ headers.delete("cookie");headers.delete("x-spontra-token");headers.delete("x-spontra-address");headers.delete("x-spontra-reader");
+ if(token)headers.set("x-spontra-token",token);
+ headers.set("x-spontra-address",await sha256Hex(`spontra-stage\n${ip}`));
+ const forwarded=new Request(`https://spontra-stage.internal${url.pathname}${url.search}`,{method:request.method,headers,body:request.method==="GET"||request.method==="HEAD"?undefined:request.body});
+ const response=await env.SPONTRA_STAGE.fetch(forwarded);
+ if(upgrade||response.status===101)return response;
+ if(url.pathname==="/agents/identity"&&response.ok){
+  const body=await response.json() as {reader?:boolean;token?:string};
+  const out=plain({reader:!!body.reader},200);
+  if(body.token)out.headers.append("set-cookie",readerCookie(body.token,url.protocol==="https:"));
+  return out;
+ }
+ const out=new Response(response.body,{status:response.status,headers:response.headers});
+ for(const [name,value] of Object.entries(security))out.headers.set(name,value);
+ out.headers.set("cache-control","no-store");
+ return out;
+}
+
 export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstream?:typeof fetch,cache?:Cache):Promise<Response>{
  const url=new URL(request.url);
+ if(url.pathname.startsWith("/agents/"))return stageDoor(request,env);
  if(url.pathname.startsWith("/api/")){
   const fetcher=upstream??analysisFetcher(env);
   if(!fetcher)return json({error:"Read service unavailable"},503);

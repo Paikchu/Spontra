@@ -7,6 +7,7 @@ import { FilingLibrary } from "./filing-library";
 import { BusinessSegments } from "./business-segments";
 import { AiRuns } from "./ai-runs";
 import { AiModels } from "./ai-models";
+import { StageAdminPanel } from "./stage-admin";
 import { FinancialMaintenance } from "./financial-maintenance";
 import { AdminInbox, useInbox } from "./admin-messages";
 
@@ -97,7 +98,7 @@ export function BusinessViewAdmin({ mapOrigin = "" }: { mapOrigin?: string }) {
             : section === "financials" ? <FinancialMaintenance {...auth} />
             : section === "filings" ? <FilingLibrary {...auth} />
             : section === "business" ? <BusinessSegments {...auth} onOpenSection={openSection} />
-            : section === "models" ? <AiModels {...auth} />
+            : section === "models" ? <><StageAdminPanel onUnauthorized={auth.onUnauthorized} /><AiModels {...auth} /></>
             : section === "messages" ? <AdminInbox inbox={inbox} read={read} onOpen={ticker => navigate("whitelist", `?${new URLSearchParams({ ticker })}`)} />
             : <AiRuns {...auth} kinds={["findings", "analyst", "checkup"]} translations />}
         </>}

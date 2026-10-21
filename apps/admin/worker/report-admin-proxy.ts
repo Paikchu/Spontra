@@ -18,8 +18,8 @@ export async function handleReportAdminProxy(request: Request, path: string[], e
   }
   if (path[0] === "ai") {
     const route = path.slice(1).join("/");
-    const read = request.method === "GET" && (route === "models" || /^companies(?:\/[A-Z][A-Z0-9.-]{0,9}\/(?:findings|analyst|checkup|explainer|tree)(?:\/versions\/[0-9T:.Z-]{10,40})?)?$/.test(route) || /^companies\/[A-Z][A-Z0-9.-]{0,9}\/translations$/.test(route));
-    const write = request.method === "POST" && (/^companies\/[A-Z][A-Z0-9.-]{0,9}\/(?:findings|analyst|checkup|explainer|tree)\/runs$/.test(route) || /^models\/[a-z-]{2,40}$/.test(route));
+    const read = request.method === "GET" && (route === "models" || route === "stage" || /^companies(?:\/[A-Z][A-Z0-9.-]{0,9}\/(?:findings|analyst|checkup|explainer|tree)(?:\/versions\/[0-9T:.Z-]{10,40})?)?$/.test(route) || /^companies\/[A-Z][A-Z0-9.-]{0,9}\/translations$/.test(route));
+    const write = request.method === "POST" && (/^companies\/[A-Z][A-Z0-9.-]{0,9}\/(?:findings|analyst|checkup|explainer|tree)\/runs$/.test(route) || /^models\/[a-z-]{2,40}$/.test(route) || route === "stage/switch");
     if (!read && !write) return json({ error: "Not found" }, 404);
   }
   if (path[0] === "library") {

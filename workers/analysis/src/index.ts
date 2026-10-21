@@ -208,8 +208,12 @@ export { StageAgent } from "./stage/agent.ts";
  * this named entrypoint, never from the public internet.
  */
 export class StageGateway extends WorkerEntrypoint<AnalysisEnv> {
-  fetch(request: Request) {
-    return handleStageRequest(request, this.env as AnalysisEnv & { StageAgent?: DurableObjectNamespace });
+  async fetch(request: Request) {
+    try { return await handleStageRequest(request, this.env as AnalysisEnv & { StageAgent?: DurableObjectNamespace }); }
+    catch (error) {
+      console.error(JSON.stringify({ event: "stage-gateway", outcome: "error", path: new URL(request.url).pathname, error: error instanceof Error ? error.message : String(error) }));
+      return Response.json({ error: "unavailable" }, { status: 503, headers: { "cache-control": "no-store" } });
+    }
   }
 }
 

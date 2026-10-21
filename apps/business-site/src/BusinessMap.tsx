@@ -252,7 +252,7 @@ function Sources({ sources, ids }: { sources: FlowSource[]; ids?: string[] }) {
   return <ul className="sources">{list.map(s => <li key={s.id}><a href={s.url} target="_blank" rel="noopener noreferrer">{s.title}<span aria-hidden="true"> ↗</span></a></li>)}</ul>;
 }
 
-export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, explainer = null, tree = null, guidance = null, capital = null, findings = null, peers = null, rankPeers = null, passages = null, fundamentals = null, events = null, filings = null, updates = 0, stageOverride = null, onNavigate, onView, railFoot = null }: { ticker: string; tools: ReactNode; flow: PublicBusinessFlow; notice: string | null; revenueHistory: RevenueHistory | null; explainer?: BusinessExplainer | null; tree?: BusinessTree | null; guidance?: GuidancePublication | null; capital?: PublicCapitalStructure | null; findings?: FindingsPublication | null; peers?: PeersPublication | null; /** The company and its comparable peers, for the checkup's ranks. */ rankPeers?: PeersPublication | null; passages?: FindingPassage[] | null; fundamentals?: FindingFundamentals | null; events?: EventsPublication | null; filings?: PublicFilingDigestPage | null; /** Updates the reader took; rows they brought enter animated. */ updates?: number;
+export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, explainer = null, tree = null, guidance = null, capital = null, findings = null, peers = null, rankPeers = null, passages = null, fundamentals = null, events = null, filings = null, updates = 0, stageOverride = null, onNavigate, onView, railFoot = null, focusRequest = null }: { ticker: string; tools: ReactNode; flow: PublicBusinessFlow; notice: string | null; revenueHistory: RevenueHistory | null; explainer?: BusinessExplainer | null; tree?: BusinessTree | null; guidance?: GuidancePublication | null; capital?: PublicCapitalStructure | null; findings?: FindingsPublication | null; peers?: PeersPublication | null; /** The company and its comparable peers, for the checkup's ranks. */ rankPeers?: PeersPublication | null; passages?: FindingPassage[] | null; fundamentals?: FindingFundamentals | null; events?: EventsPublication | null; filings?: PublicFilingDigestPage | null; /** Updates the reader took; rows they brought enter animated. */ updates?: number;
   /** A scene the stage agent built; while set it holds the stage in place of the map's own view (docs/stage-agent-design.md §5.2). */
   stageOverride?: ReactNode | null;
   /** The reader picked something in the rail or on the chart: the map's own view takes the stage back. */
@@ -260,7 +260,9 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
   /** What the reader is looking at, for the stage agent to read. */
   onView?: (view: CompanyView) => void;
   /** Pinned under the rail's sections (the stage's entry button). */
-  railFoot?: ReactNode }) {
+  railFoot?: ReactNode;
+  /** A finding the stage asked to open on the map; a new nonce asks again. */
+  focusRequest?: { finding: string; nonce: number } | null }) {
   const quarters = useMemo(() => [...flow.quarters].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd)), [flow]);
   const [period, setPeriod] = useState<string | null>(null);
   const quarter = quarters.find(q => q.id === period) ?? quarters[0];
@@ -478,6 +480,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
   const focusEvent = (id: string | null) => { onNavigate?.(); setEventId(id); if (id) { setSelected(null); setFocusId(null); setCheckId(null); setReportId(null); setStory(false); setSplit(false); } };
   // The rail holds one pick at a time: a business, a flag, a finding, or a report/event.
   const pickBusiness = (id: string | null) => { onNavigate?.(); setSelected(id); if (id) { setFocusId(null); setCheckId(null); setEventId(null); setReportId(null); setStory(false); setSplit(false); } };
+  useEffect(() => { if (focusRequest) focusFinding(focusRequest.finding); }, [focusRequest?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
   useLayoutEffect(() => {
     stepStory.current = (delta: 1 | -1) => {
       const next = storyItems[Math.max(0, Math.min(storyItems.length - 1, storyIndex + delta))];

@@ -1,0 +1,91 @@
+/* ---------- The stage (docs/stage-agent-design.md §5.5) ---------- */
+
+/* The entry sits at the foot of the rail, under its sections. */
+.ask-entry { position: sticky; bottom: -20px; margin: 12px -12px -20px; padding: 10px 12px 14px; background: linear-gradient(to bottom, transparent, var(--surface) 30%); }
+.ask-open {
+  display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 38px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--surface-raised); color: var(--foreground); font-size: 13.5px; font-weight: 600;
+  transition: background .16s, border-color .16s;
+}
+.ask-open:hover { border-color: var(--muted-foreground); }
+.ask-open[aria-expanded="true"] { background: var(--foreground); color: var(--background); border-color: transparent; }
+.ask-open svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
+
+/* The overlay: the transcript fades in from the stage above it; the input bar sits on the solid foot of the gradient. */
+.ask {
+  position: fixed; bottom: max(16px, env(safe-area-inset-bottom)); left: calc((100vw + var(--rail-w) + var(--inset)) / 2); z-index: 25; translate: -50% 0;
+  width: min(720px, calc(100vw - var(--rail-w) - var(--inset) - 64px)); display: flex; flex-direction: column; gap: 8px;
+  padding-top: 48px; pointer-events: none; animation: ask-in .22s var(--ease) both;
+}
+main[data-rail="collapsed"] ~ .ask, body:has(main[data-rail="collapsed"]) .ask { left: calc((100vw + var(--rail-collapsed-w) + var(--inset)) / 2); width: min(720px, calc(100vw - var(--rail-collapsed-w) - var(--inset) - 64px)); }
+.ask::before {
+  content: ""; position: absolute; inset: 0 -24px -16px; z-index: -1; pointer-events: none;
+  background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--background) 82%, transparent) 38%, var(--background) 72%);
+}
+.ask > * { pointer-events: auto; }
+.ask-scroll {
+  max-height: 40vh; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 0 4px;
+  mask-image: linear-gradient(to bottom, transparent, #000 48px); scrollbar-width: thin; transition: max-height .24s var(--ease);
+}
+.ask[data-state="mini"] .ask-scroll { max-height: 64px; }
+.ask[data-state="mini"] { padding-top: 24px; }
+.ask-entry-user { align-self: flex-end; max-width: 80%; margin: 0; padding: 8px 13px; border-radius: 16px 16px 4px 16px; background: var(--surface-raised); border: 1px solid var(--hairline); font-size: 14px; line-height: 1.55; animation: ask-entry .16s var(--ease) both; }
+.ask-entry-answer { margin: 0; font-size: 14px; line-height: 1.65; animation: ask-entry .2s var(--ease) both; }
+.ask-entry-answer p { margin: 0 0 6px; }
+.ask-entry-notice, .ask-note { margin: 0; font-size: 12px; color: var(--muted-foreground); }
+.ask-entry-stage { display: flex; align-items: center; gap: 10px; margin: 0; font-size: 12.5px; color: var(--muted-foreground); }
+.ask-entry-stage span { font-weight: 650; color: var(--foreground); }
+.ask-entry-stage button { padding: 2px 10px; border-radius: 999px; border: 1px solid var(--border); font-size: 12px; }
+.ask-typing { display: flex; gap: 4px; margin: 0; }
+.ask-typing i { width: 5px; height: 5px; border-radius: 50%; background: var(--muted-foreground); animation: pulse 1.2s ease-in-out infinite; }
+.ask-typing i:nth-child(2) { animation-delay: .15s; } .ask-typing i:nth-child(3) { animation-delay: .3s; }
+.ask-bar {
+  position: relative; display: flex; align-items: flex-end; gap: 6px; padding: 6px 6px 6px 16px; border-radius: 22px;
+  border: 1px solid var(--border); background: var(--surface-raised); box-shadow: var(--shadow-overlay);
+}
+.ask-bar:focus-within { border-color: var(--muted-foreground); }
+.ask-bar textarea { flex: 1; min-height: 30px; max-height: 120px; padding: 6px 0; border: 0; outline: 0; resize: none; background: transparent; color: var(--foreground); font: inherit; font-size: 14.5px; line-height: 1.4; field-sizing: content; }
+.ask-send { height: 32px; padding: 0 14px; border-radius: 999px; background: var(--foreground); color: var(--background); font-size: 13px; font-weight: 650; }
+.ask-send:disabled { opacity: .35; }
+.ask-close { width: 32px; height: 32px; }
+.ask-close svg { width: 15px; height: 15px; }
+.ask-status { position: absolute; bottom: calc(100% - 44px); left: 18px; margin: 0; font-size: 11.5px; font-weight: 600; letter-spacing: .02em; color: var(--muted-foreground); }
+.ask[data-state="busy"] .ask-status, .ask[data-state="disconnected"] .ask-status { position: static; padding: 0 18px; }
+.ask-progress { position: absolute; left: 22px; right: 22px; bottom: -6px; height: 2px; border-radius: 2px; overflow: hidden; background: color-mix(in srgb, var(--brand) 18%, transparent); }
+.ask-progress::after { content: ""; position: absolute; inset: 0; width: 30%; background: var(--brand); animation: ask-progress 1.2s ease-in-out infinite; }
+@keyframes ask-in { from { opacity: 0; transform: translateY(10px); } }
+@keyframes ask-entry { from { opacity: 0; transform: translateY(6px); } }
+@keyframes ask-progress { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+
+/* The stage keeps the overlay's height free at its foot. */
+.stage { padding-bottom: max(4px, var(--ask-h, 0px)); transition: padding-bottom .24s var(--ease); }
+
+/* The agent's scene: a marked mode with the way back to the map, then rows of one or two cells. */
+.scene-stage { display: flex; flex-direction: column; gap: 14px; min-height: 0; grid-row: 1 / -1; overflow-y: auto; padding-bottom: 24px; }
+.scene-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.scene-mark { font-size: 11.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--brand); }
+.scene-back { height: 30px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--border); font-size: 12.5px; font-weight: 600; }
+.scene-grid { display: flex; flex-direction: column; gap: 22px; min-height: 120px; }
+.scene-row { display: grid; gap: 18px 24px; grid-template-columns: minmax(0, 1fr); }
+.scene-row[data-cells="2"] { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.scene-row > .lens-row-title { grid-column: 1 / -1; margin: 0; }
+.scene-cell { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.scene-block { min-width: 0; animation: rise .5s var(--ease) both; }
+.scene-row:nth-child(2) .scene-block { animation-delay: 60ms; } .scene-row:nth-child(3) .scene-block { animation-delay: 120ms; } .scene-row:nth-child(n+4) .scene-block { animation-delay: 180ms; }
+.scene-cell + .scene-cell .scene-block { animation-delay: 60ms; }
+.scene-prose p { margin: 0 0 8px; font-size: 14px; line-height: 1.7; }
+.scene-lens h2 button { text-align: left; font: inherit; color: inherit; }
+.scene-findings { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.scene-findings button { display: flex; align-items: flex-start; gap: 10px; width: 100%; padding: 8px 10px; border-radius: 10px; text-align: left; font-size: 14px; line-height: 1.5; }
+.scene-findings button:hover { background: var(--fill); }
+.scene-notice { margin: 0; font-size: 13px; color: var(--muted-foreground); }
+
+@media (max-width: 960px) {
+  .ask, main[data-rail="collapsed"] ~ .ask { left: 50%; width: calc(100vw - 32px); }
+  .ask-entry { position: static; margin: 12px 0 0; padding: 0; background: none; }
+  .scene-row[data-cells="2"] { grid-template-columns: minmax(0, 1fr); }
+  .update-notice { bottom: calc(max(16px, env(safe-area-inset-bottom)) + var(--ask-h, 0px)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ask, .ask-scroll, .scene-block, .ask-entry-user, .ask-entry-answer, .stage { animation: none !important; transition: none !important; }
+}
