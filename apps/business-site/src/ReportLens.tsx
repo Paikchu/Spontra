@@ -3,6 +3,8 @@ import { useState } from "react";
 import type { PublicFilingDigest } from "@/shared/analysis-contract/filings";
 import { labels, messages } from "@/packages/web/src/i18n";
 import { SourceLanguage, langOf } from "@/packages/web/src/i18n/SourceLanguage";
+import type { FindingData } from "@/shared/analysis-runtime/findings";
+import { ItemAnalysisBody, useItemAnalysis, useVerifiedAnalysis } from "./ItemAnalysis";
 import { reportTitle, reportTitleLang } from "./reports-model";
 
 const VERIFICATION = labels({ verified: "Figures verified", partial: "Partly verified", failed: "Verification failed" }, { verified: "数据已核验", partial: "部分核验", failed: "核验未通过" });
@@ -31,13 +33,16 @@ const trend = (v: string | null) => !v ? undefined
   : /\b(?:down|decrease[ds]?|lower|declin\w*|fell|contract\w*|narrow\w*)\b|降|减|缩|收窄/i.test(v) ? "down" as const : undefined;
 
 /**
- * A report in focus: the verified key figures with their comparisons on the left, the conclusions,
- * investment view and sources on the right, and the full report one click away. This is the
- * content the filing timeline used to show, in the lens's place.
+ * A report in focus, holding the whole stage the way a finding does: its analysis, written by the agent every analysis
+ * is written by and verified here as a finding is, with the full report one click away. Until the report has one, the
+ * filing digest stands in — the verified key figures beside the conclusions, investment view and sources.
  */
-export function ReportLens({ report, ticker, index, count, onStep, onClose, onOpenReport }: {
+export function ReportLens({ report, ticker, data, updates, nodeColor, index, count, onStep, onClose, onOpenReport }: {
   report: PublicFilingDigest;
   ticker: string;
+  data: FindingData;
+  updates: number;
+  nodeColor: (id: string) => string;
   index: number;
   count: number;
   onStep: (delta: 1 | -1) => void;
@@ -45,12 +50,14 @@ export function ReportLens({ report, ticker, index, count, onStep, onClose, onOp
   onOpenReport: () => void;
 }) {
   const [more, setMore] = useState(false);
+  const analysis = useItemAnalysis(ticker, report.accessionNumber, updates);
+  const verified = useVerifiedAnalysis(analysis, data, ticker);
   return <section className="lens report-lens" aria-label={m.report(reportTitle(report))} key={report.accessionNumber}>
     <header className="lens-head">
       <div className="lens-title">
         <b className="lens-kind report-kind">{report.periodLabel ?? report.form}</b>
-        <h2 lang={reportTitleLang(report)}>{reportTitle(report)}</h2>
-        <span className="lens-basis">{report.sources.length ? m.release(report.date, report.periodEnd) : m.filed(report.form, report.filingDate)}{report.verification && ` · ${VERIFICATION[report.verification]}`}<SourceLanguage of={[report.headline, report.analystView, ...report.bullets.flatMap(b => [b.label, b.detail])]} /></span>
+        <h2 lang={verified ? langOf(verified.finding.title) : reportTitleLang(report)}>{verified?.finding.title ?? reportTitle(report)}</h2>
+        <span className="lens-basis">{report.sources.length ? m.release(report.date, report.periodEnd) : m.filed(report.form, report.filingDate)}{!verified && report.verification && ` · ${VERIFICATION[report.verification]}`}<SourceLanguage of={verified ? [verified.finding.title, verified.finding.judgment.text] : [report.headline, report.analystView, ...report.bullets.flatMap(b => [b.label, b.detail])]} /></span>
       </div>
       <div className="lens-nav">
         {report.hasReport && <Button variant="unstyled" type="button" className="lens-pair report-open" onClick={onOpenReport}>{m.readFull}</Button>}
@@ -58,8 +65,8 @@ export function ReportLens({ report, ticker, index, count, onStep, onClose, onOp
         <Button variant="unstyled" type="button" className="lens-close" aria-label={m.close} onClick={onClose}>✕</Button>
       </div>
     </header>
-    <div className="lens-body">
-      <div className="lens-chart report-figures">
+    <ItemAnalysisBody analysis={analysis} verified={verified} ticker={ticker} nodeColor={nodeColor} fallback={<div className="lens-doc"><div className="lens-doc-row" data-cells="2" data-lead="first">
+      <div className="lens-doc-cell report-figures">
         {report.keyMetrics.length > 0 ? <dl className="report-metrics" aria-label={m.keyFinancials}>
           {report.keyMetrics.map(k => <div key={k.key} className="report-metric" data-status={k.status}>
             <dt><span lang={langOf(k.label)}>{k.label}</span>{k.status === "derived" ? <i> · {m.derived}</i> : k.status === "not_comparable" ? <i> · {m.notComparable}</i> : null}</dt>
@@ -73,7 +80,7 @@ export function ReportLens({ report, ticker, index, count, onStep, onClose, onOp
           {report.changes.length > 3 && <li><Button variant="unstyled" type="button" className="report-more" onClick={() => setMore(v => !v)}>{more ? m.showLess : m.more(report.changes.length - 3)}</Button></li>}
         </ul>}
       </div>
-      <div className="lens-text">
+      <div className="lens-doc-cell">
         {report.bullets.length > 0 ? <ul className="event-bullets">{report.bullets.map((b, i) => <li key={i} data-importance={b.importance} lang={langOf(b.detail)}><b>{b.label}</b>{b.detail}</li>)}</ul>
           : report.analysisStatus === "processing" || report.analysisStatus === "not_collected" ? <p className="lens-judgment">{m.processing}</p>
           : report.headline ? <p className="lens-judgment" lang={langOf(report.headline)}>{report.headline}</p> : <p className="lens-judgment">{m.noAnalysis}</p>}
@@ -89,6 +96,6 @@ export function ReportLens({ report, ticker, index, count, onStep, onClose, onOp
           <li><a href={report.edgarUrl} target="_blank" rel="noopener noreferrer">{m.edgar(ticker)}<span aria-hidden="true"> ↗</span></a></li>
         </ol>
       </div>
-    </div>
+    </div></div>} />
   </section>;
 }

@@ -5,7 +5,9 @@ import { INSIDER_RULES } from "@/shared/analysis-runtime/events";
 import { getLocale, labels, messages } from "@/packages/web/src/i18n";
 import { SourceLanguage, langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import { perShare, shortPeriod } from "@/shared/analysis-runtime/locale";
+import type { FindingData } from "@/shared/analysis-runtime/findings";
 import { EVENT_CLASS_LABEL, dollars, eventTitle, eventTitleLang, insiderLens, shares, shortDate, type InsiderLensModel } from "./events-model";
+import { ItemAnalysisBody, useItemAnalysis, useVerifiedAnalysis } from "./ItemAnalysis";
 
 const ITEM_LABEL = labels({
   "1.01": "Material agreement", "1.02": "Agreement terminated", "1.05": "Cybersecurity incident", "2.01": "Acquisition or disposition completed", "2.02": "Results of operations", "2.03": "New financial obligation", "2.04": "Acceleration triggered", "2.05": "Exit costs",
@@ -51,13 +53,18 @@ const m = messages({
 });
 
 /**
- * The event in focus, in the lens's place: its figures or chart on the left, what it says and
- * where it was filed on the right. Nothing here is written by a model except the filing's own
- * summary, which is labelled as such; the tag on an insider sale is rule-based.
+ * The event in focus, holding the whole stage the way a finding does: its analysis, written by the agent every
+ * analysis is written by and verified here as a finding is, drawn by the finding's own blocks. Until a filing has one
+ * (a routine Form 4, a company without AI analysis), its figures or chart and the filing's own summary stand in, in
+ * the same two-column document; the tag on an insider sale is rule-based.
  */
-export function EventLens({ event, publication, onClose, onStep, index, count }: {
+export function EventLens({ event, publication, ticker, data, updates, nodeColor, onClose, onStep, index, count }: {
   event: CompanyEvent;
   publication: EventsPublication;
+  ticker: string;
+  data: FindingData;
+  updates: number;
+  nodeColor: (id: string) => string;
   onClose: () => void;
   onStep: (delta: 1 | -1) => void;
   index: number;
@@ -65,12 +72,15 @@ export function EventLens({ event, publication, onClose, onStep, index, count }:
 }) {
   const insider = useMemo(() => insiderLens(publication, event), [publication, event]);
   const [showQuiet, setShowQuiet] = useState(false);
+  const analysis = useItemAnalysis(ticker, event.id, updates);
+  const verified = useVerifiedAnalysis(analysis, data, ticker);
+  const title = verified?.finding.title ?? eventTitle(event);
   return <section className="lens event-lens" data-class={event.class} aria-label={m.event(eventTitle(event))} key={event.id}>
     <header className="lens-head">
       <div className="lens-title">
         <b className="lens-kind event-kind">{EVENT_CLASS_LABEL[event.class]}</b>
-        <SourceLanguage of={event.summary ? [event.summary.headline, event.summary.analystView, ...event.summary.bullets.flatMap(b => [b.label, b.detail])] : []} />
-        <h2 lang={eventTitleLang(event)}>{eventTitle(event)}</h2>
+        <SourceLanguage of={verified ? [verified.finding.title, verified.finding.judgment.text] : event.summary ? [event.summary.headline, event.summary.analystView, ...event.summary.bullets.flatMap(b => [b.label, b.detail])] : []} />
+        <h2 lang={verified ? langOf(title) : eventTitleLang(event)}>{title}</h2>
         <span className="lens-basis">{event.form} · {m.filed} {event.filedAt}{event.eventDate !== event.filedAt ? ` · ${m.eventOn} ${event.eventDate}` : ""}</span>
       </div>
       <div className="lens-nav">
@@ -78,11 +88,11 @@ export function EventLens({ event, publication, onClose, onStep, index, count }:
         <Button variant="unstyled" type="button" className="lens-close" aria-label={m.close} onClick={onClose}>✕</Button>
       </div>
     </header>
-    <div className="lens-body">
-      <div className="lens-chart">
+    <ItemAnalysisBody analysis={analysis} verified={verified} ticker={ticker} nodeColor={nodeColor} fallback={<div className="lens-doc"><div className="lens-doc-row" data-cells="2" data-lead="first">
+      <div className="lens-doc-cell">
         {insider ? <InsiderLadder model={insider} event={event} /> : <Facts event={event} />}
       </div>
-      <div className="lens-text">
+      <div className="lens-doc-cell">
         {insider && <InsiderReading model={insider} event={event} />}
         {event.summary ? <>
           <p className="lens-judgment" lang={langOf(event.summary.headline)}>{event.summary.headline}</p>
@@ -100,7 +110,7 @@ export function EventLens({ event, publication, onClose, onStep, index, count }:
           {event.exhibits.map(x => <li key={x.url}><a href={x.url} target="_blank" rel="noopener noreferrer">{x.type} · {x.title}<span aria-hidden="true"> ↗</span></a></li>)}
         </ol>
       </div>
-    </div>
+    </div></div>} />
   </section>;
 }
 

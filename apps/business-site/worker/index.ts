@@ -19,6 +19,7 @@ import {readPeersPublication} from "@/shared/analysis-runtime/peers";
 import type {PeersPublication} from "@/shared/analysis-contract/peers";
 import {readEventsPublication} from "@/shared/analysis-runtime/events";
 import type {EventsPublication} from "@/shared/analysis-contract/events";
+import type {ItemAnalysis} from "@/shared/analysis-contract/item-analysis";
 import type {PublicFilingDetail,PublicFilingDigest,PublicFilingDigestPage,PublicFilingPage,PublicSecFiling} from "@/shared/analysis-contract/filings";
 import type {LibraryTable,PublicPassage} from "@/shared/analysis-contract/filing-library";
 import {formatFilingPeriodLabel} from "@/packages/web/src/model/filing-period-label";
@@ -239,6 +240,18 @@ function readTable(v:unknown):LibraryTable|null{
  return {unit:str(t.unit)?t.unit:null,columns:t.columns,rows,notes:strings(t.notes),xbrlBlock:str(t.xbrlBlock)?t.xbrlBlock:null};
 }
 /** One filing-library passage with its neighbours, for a quote that links to the filing's own words; only the typed fields pass through. */
+/** One filing rail row's analysis, re-checked for shape; null when the row has none (the map shows the filing digest). */
+export async function loadItemAnalysis(ticker:string,id:string,fetcher:typeof fetch=fetch,locale:Locale|null=null):Promise<ItemAnalysis|null>{
+ if(!ACCESSION.test(id))return null;
+ try{
+  const response=await fetcher(ANALYSIS_ORIGIN+inLocale(`/api/v1/companies/${ticker}/items/${id}`,locale),{signal:AbortSignal.timeout(8000),headers:{accept:"application/json"}});
+  if(!response.ok)return null;
+  const body=await response.json() as {schemaVersion?:string;status?:string;analysis?:ItemAnalysis|null};
+  const a=body.analysis;
+  return body.schemaVersion==="item-analysis-response.v1"&&body.status==="ready"&&a&&a.schemaVersion==="item-analysis.v1"&&a.ticker===ticker&&a.itemId===id&&a.finding?.lens?.type==="document"?a:null;
+ }catch{return null;}
+}
+
 export async function loadPassage(ticker:string,passageId:string,fetcher:typeof fetch=fetch):Promise<PublicPassage|null>{
  if(!PASSAGE_ID.test(passageId))return null;
  try{
@@ -330,7 +343,7 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
    if(tickers&&cache)ctx.waitUntil(cache.put(key,response.clone()));else response.headers.set("cache-control","no-store");
    return response;
   }
-  const match=url.pathname.match(/^\/api\/business\/v1\/companies\/([A-Z][A-Z0-9.-]{0,11})(\/revision|\/capital|\/findings|\/fundamentals|\/events|\/filings|\/filings\/\d{10}-\d{2}-\d{6}|\/passages\/p[0-9a-f]{14,32})?$/);
+  const match=url.pathname.match(/^\/api\/business\/v1\/companies\/([A-Z][A-Z0-9.-]{0,11})(\/revision|\/capital|\/findings|\/fundamentals|\/events|\/filings|\/filings\/\d{10}-\d{2}-\d{6}|\/items\/\d{10}-\d{2}-\d{6}|\/passages\/p[0-9a-f]{14,32})?$/);
   const detail=match?.[2]?.startsWith("/filings/")?match[2].slice("/filings/".length):null;
   // The reader pins a report to its published revision; a resource is asked for at its publication revision (`rev`), which
   // only keys the cache: a newer revision is a new address, so no cached copy can answer it with older data.
@@ -356,6 +369,7 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
    if(match[2]==="/findings"){const bundle=await loadFindings(match[1],fetcher,locale);const response=json({schemaVersion:"findings-response.v1",status:bundle?"ready":"unavailable",findings:bundle?.findings??null,passages:bundle?.passages??[],peers:bundle?.peers??null});if(!bundle)response.headers.set("cache-control","no-store");if(cache&&bundle)ctx.waitUntil(cache.put(key,response.clone()));return response;}
    if(match[2]==="/events")return supplementary("events","events-response.v1",()=>loadEvents(match[1],fetcher,locale));
    if(match[2]==="/filings")return supplementary("filings","filing-digests-response.v1",()=>loadFilings(match[1],fetcher,locale));
+   if(match[2].startsWith("/items/"))return supplementary("analysis","item-analysis-response.v1",()=>loadItemAnalysis(match[1],match[2]!.slice("/items/".length),fetcher,locale));
    if(match[2].startsWith("/passages/"))return supplementary("passage","passage-response.v1",()=>loadPassage(match[1],match[2]!.slice("/passages/".length),fetcher));
    if(detail){const reportDate=url.searchParams.get("reportDate"),reportVersion=url.searchParams.get("reportVersion");
     const body=await loadFilingDetail(match[1],detail,reportDate&&reportVersion?{reportDate,reportVersion}:null,fetcher,locale);

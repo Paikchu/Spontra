@@ -90,16 +90,16 @@ export function MindLens({ item, branch, sources, onClose }: { item: MindItem; b
       </div>
       <div className="lens-nav"><Button variant="unstyled" type="button" className="lens-close" aria-label={m.close} onClick={onClose}>✕</Button></div>
     </header>
-    <div className="lens-body">
-      <div className="lens-text">
+    <div className="lens-doc"><div className="lens-doc-row" data-cells="2">
+      <div className="lens-doc-cell">
         {summary ? <p className="mind-lens-summary" lang={langOf(summary.text)}>{summary.text}{cite(summary)}</p> : <p className="mind-lens-empty">{m.noDescription}</p>}
         {revenue.length > 0 ? <ul className="mind-lens-revenue">{revenue.map((r, i) => <li key={i} data-active={r === highlight || undefined}><b lang={langOf(r.label)}>{r.label}</b><small>{revenueLabel(r.type, getLocale())}</small><span lang={langOf(r.text)}>{r.text}{cite(r)}</span></li>)}</ul>
           : !node?.children.length && <p className="mind-lens-empty">{m.noRevenue}</p>}
       </div>
-      <div className="lens-text">
+      <div className="lens-doc-cell">
         {node?.anchor && <blockquote className="mind-lens-anchor"><small>{m.placement}</small><span lang="en">{node.anchor.text}</span>{cite(node.anchor)}</blockquote>}
         {cited.length > 0 && <ol className="sources sources--numbered">{cited.map(s => <li key={s.id}><a href={s.url} target="_blank" rel="noopener noreferrer">{s.title}<span aria-hidden="true"> ↗</span></a></li>)}</ol>}
       </div>
-    </div>
+    </div></div>
   </section>;
 }

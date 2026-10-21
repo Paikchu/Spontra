@@ -1,7 +1,8 @@
 import type { BusinessFlowQuarter } from "@/shared/analysis-contract/business-flow";
-import type { CompanyEvent, EventsPublication } from "@/shared/analysis-contract/events";
+import type { EventsPublication } from "@/shared/analysis-contract/events";
 import type { PublicFilingDigest, PublicFilingDigestPage } from "@/shared/analysis-contract/filings";
 import { DAY_MS } from "@/shared/analysis-runtime/events";
+import { isReport, mergedAccessions, railEntries, type RailEntry } from "@/shared/analysis-runtime/rail";
 import { messages } from "@/packages/web/src/i18n";
 import { langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import { eventTitle, isQuietInsider, periodReport, type TimelinePoint } from "./events-model";
@@ -12,12 +13,8 @@ const m = messages({
   pending: (period: string) => `${period} 财报 · 分析中`,
 });
 
-/** A report the rail lists: a 10-Q/10-K/20-F or an earnings group, never a standalone current report. */
-export const isReport = (f: PublicFilingDigest) => f.periodEnd != null;
-
-export type RailItem =
-  | { kind: "report"; id: string; date: string; report: PublicFilingDigest }
-  | { kind: "event"; id: string; date: string; event: CompanyEvent };
+export { isReport };
+export type RailItem = RailEntry;
 
 export type RailItems = {
   /** From the newest report onward (or the one before it when that leaves too few), newest first. */
@@ -30,15 +27,6 @@ export type RailItems = {
   since: string;
 };
 
-/** Current reports an earnings group already merged are listed once, as the report. */
-function mergedAccessions(filings: PublicFilingDigest[]): Set<string> {
-  const merged = new Set<string>();
-  for (const f of filings) { merged.add(f.accessionNumber); for (const s of f.sources) merged.add(s.accessionNumber); }
-  return merged;
-}
-
-const byDate = (a: RailItem, b: RailItem) => b.date.localeCompare(a.date) || (a.kind === "report" ? -1 : b.kind === "report" ? 1 : 0);
-
 /**
  * Reports and events in one chronological list. The recent section opens at the newest report so the
  * period reads as "the report, then what was filed after it"; with fewer than three rows it opens at
@@ -46,13 +34,8 @@ const byDate = (a: RailItem, b: RailItem) => b.date.localeCompare(a.date) || (a.
  */
 export function railItems(filings: PublicFilingDigestPage | null, events: EventsPublication | null, now = new Date()): RailItems | null {
   const reports = (filings?.filings ?? []).filter(isReport);
-  const merged = mergedAccessions(reports);
   const all = events?.events ?? [];
-  const loud = all.filter(e => !isQuietInsider(e) && !merged.has(e.id));
-  const items: RailItem[] = [
-    ...reports.map((r): RailItem => ({ kind: "report", id: r.accessionNumber, date: r.date, report: r })),
-    ...loud.map((e): RailItem => ({ kind: "event", id: e.id, date: e.filedAt, event: e })),
-  ].sort(byDate);
+  const items = railEntries(filings, events);
   if (!items.length) return null;
   const today = now.toISOString().slice(0, 10);
   const reportDates = reports.map(r => r.date).filter(d => d <= today).sort((a, b) => b.localeCompare(a));
