@@ -7,8 +7,8 @@ import { normalizeContent, normalizeSearch, publicUrl } from "./validation.ts";
 export type WebCallRecord = { stage: "web-search" | "web-fetch"; model: string; reasoning: string; usage: unknown; error?: string; durationMs: number; searchCalls: number };
 export type ClaudeWebOptions = {
   apiKey: string; model: string; effort: Anthropic.OutputConfig["effort"];
-  /** Sent as `anthropic-workspace-id`; required when the key is not scoped to a workspace. */
-  workspaceId?: string;
+  /** The Anthropic-format endpoint; the SDK's default when unset. */
+  baseURL?: string;
   fetcher?: typeof fetch; record?: (call: WebCallRecord) => Promise<void>;
 };
 
@@ -28,8 +28,8 @@ const dateOf = (pageAge: string | null | undefined): string | null => {
 };
 
 /**
- * Search and page reading through Claude's server tools (`web_search`, `web_fetch`): evidence only, never a generated
- * answer. A result's snippet is the passages Claude cites from it, which the API quotes verbatim; a page is the text
+ * Search and page reading through the Messages API's server tools (`web_search`, `web_fetch`): evidence only, never a
+ * generated answer. A result's snippet is the passages the model cites from it, which the API quotes verbatim; a page is the text
  * the fetch returned, a PDF's text extracted here.
  */
 export class ClaudeWebProvider implements SearchProvider {
@@ -39,9 +39,7 @@ export class ClaudeWebProvider implements SearchProvider {
   constructor(options: ClaudeWebOptions) {
     this.options = options;
     const fetcher = options.fetcher ?? fetch;
-    const workspace = options.workspaceId?.trim();
-    this.client = new Anthropic({ apiKey: options.apiKey, maxRetries: 2, timeout: 120_000, fetch: (input, init) => fetcher(input, init),
-      defaultHeaders: workspace ? { "anthropic-workspace-id": workspace } : {} });
+    this.client = new Anthropic({ apiKey: options.apiKey, baseURL: options.baseURL, maxRetries: 2, timeout: 120_000, fetch: (input, init) => fetcher(input, init) });
   }
 
   private async call(stage: WebCallRecord["stage"], params: Omit<Anthropic.MessageCreateParamsNonStreaming, "model" | "output_config">): Promise<Anthropic.Message> {

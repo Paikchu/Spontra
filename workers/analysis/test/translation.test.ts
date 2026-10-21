@@ -117,7 +117,7 @@ test("a run translates each new string once, rejects one that fails its checks, 
 
 test("the admin sees each resource's coverage, today's calls and every string with its translation or the reasons it failed", async () => {
   const db = database();
-  const env = { DB: db, TRANSLATION_DAILY_CALLS: "10", ANTHROPIC_API_KEY: "k" } as unknown as AnalysisEnv;
+  const env = { DB: db, TRANSLATION_DAILY_CALLS: "10", DEEPSEEK_API_KEY: "k" } as unknown as AnalysisEnv;
   const sources: TranslationSource[] = [{ resource: "findings", scope: "", strings: ["Backlog lengthens", "Capex was $28.5 billion.", "Margins narrowed."] }];
   const read = async () => sources;
   const plan = await translationPlan(db, "TEST", "zh-CN", read);

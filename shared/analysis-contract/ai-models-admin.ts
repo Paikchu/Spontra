@@ -1,10 +1,10 @@
 /**
- * The admin's model settings: which Claude model and effort each AI tool of Spontra Analysis uses. A tool without a stored
+ * The admin's model settings: which DeepSeek model and effort each AI tool of Spontra Analysis uses. A tool without a stored
  * choice follows the deployment default (`SEC_ANALYSIS_MODEL` / `SEC_REASONING_MODEL` and the tool's built-in effort).
  */
-export const AI_MODELS = ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", "claude-fable-5-1"] as const;
+export const AI_MODELS = ["deepseek-flash", "deepseek-v4-pro"] as const;
 export type AiModel = typeof AI_MODELS[number];
-/** Claude `output_config.effort`; thinking is adaptive and effort sets how deep it goes. */
+/** `output_config.effort`; DeepSeek thinks at low, high or max and maps medium and xhigh to high. */
 export const AI_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 export type AiEffort = typeof AI_EFFORTS[number];
 

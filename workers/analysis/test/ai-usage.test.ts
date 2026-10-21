@@ -17,11 +17,11 @@ test("the ledger kind is the feature at the front of the stage name", () => {
 test("a row reads the provider usage and the call outcome from the request metrics", () => {
   const call = { at: "2026-10-14T08:00:00.000Z", durationMs: 1234.6, provider: "anthropic", ticker: "MSFT", runId: "run-1" };
   const ok = aiUsageFromMetrics({
-    stage: "lens-capex-1", model: "claude-opus-5-5", reasoning: "medium",
+    stage: "lens-capex-1", model: "deepseek-v4-pro", reasoning: "medium",
     usage: { input_tokens: 150, cache_read_input_tokens: 1000, cache_creation_input_tokens: 50, output_tokens: 300 },
   }, call);
   assert.deepEqual(ok, {
-    at: call.at, ticker: "MSFT", kind: "lens", runId: "run-1", stage: "lens-capex-1", provider: "anthropic", model: "claude-opus-5-5", reasoning: "medium",
+    at: call.at, ticker: "MSFT", kind: "lens", runId: "run-1", stage: "lens-capex-1", provider: "anthropic", model: "deepseek-v4-pro", reasoning: "medium",
     inputTokens: 1200, cachedTokens: 1000, outputTokens: 300, reasoningTokens: null, durationMs: 1235, outcome: "ok", searchCalls: 0,
   });
   // A server-side fallback bills every attempt; `iterations` lists them all.

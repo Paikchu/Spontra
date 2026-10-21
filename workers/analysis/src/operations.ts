@@ -139,9 +139,8 @@ export type AnalysisEnv = SecCronEnv & AnalysisReadEnv & {
   GUIDANCE_DAILY_TRANSCRIPT_CALLS?: string;
   SEC_FILINGS: R2BucketLike;
   SEC_USER_AGENT: string;
-  ANTHROPIC_API_KEY?: string;
-  /** The Claude workspace the key belongs to; a key not scoped to a workspace must name one on every request. */
-  ANTHROPIC_WORKSPACE_ID?: string;
+  /** Every model call and web search goes to DeepSeek's Anthropic-format API with this key. */
+  DEEPSEEK_API_KEY?: string;
   SEC_ANALYSIS_MODEL?: string;
   /** Optional stronger model for planning, review and synthesis. Unset means one model everywhere. */
   SEC_REASONING_MODEL?: string;
@@ -741,7 +740,7 @@ async function requestWorkerSecModelContent(
   if (options?.workflowInstanceId) metrics.workflowInstanceId = options.workflowInstanceId;
   // Pings count as liveness: an adaptive-thinking model can think for minutes without emitting a visible delta.
   let liveAt = Date.now();
-  const client = modelClient(env, apiKey, executionBudgetMs, fetcher, metrics, () => { liveAt = Date.now(); });
+  const client = modelClient(apiKey, executionBudgetMs, fetcher, metrics, () => { liveAt = Date.now(); });
   try {
   const messages: Anthropic.Beta.BetaMessageParam[] = [{ role: "user", content: JSON.stringify(payload) }];
   if (options?.continuation) messages.push(
@@ -755,7 +754,7 @@ async function requestWorkerSecModelContent(
   metrics.maxTokens = options?.maxTokens ?? SEC_MODEL_OUTPUT_TOKENS;
   metrics.reasoning = options?.reasoning ?? "high";
   metrics.mode = options?.continuation ? "continuation" : options?.repair ? "repair" : "initial";
-  // Claude has no JSON response mode short of a schema; the system prompt asks for one object and `parseModelJson` holds it to that.
+  // The Anthropic format has no JSON response mode short of a schema; the system prompt asks for one object and `parseModelJson` holds it to that.
   void jsonMode;
   let stream: AsyncIterable<Anthropic.Beta.BetaRawMessageStreamEvent> & { controller: AbortController };
   try {
@@ -767,7 +766,6 @@ async function requestWorkerSecModelContent(
       // Adaptive thinking is the default; effort sets how deep it goes.
       output_config: { effort: options?.reasoning ?? "high" },
       max_tokens: options?.maxTokens ?? SEC_MODEL_OUTPUT_TOKENS,
-      ...serverFallback(model),
       // Streaming keeps bytes flowing on long generations and lets a stalled connection be detected.
       stream: true,
     }, { signal: controller.signal }) as typeof stream;
@@ -827,7 +825,7 @@ export async function callWorkerToolModel(
   let watchdog: ReturnType<typeof setInterval> | undefined;
   const budgetTimer = setTimeout(() => { timeoutKind = "execution-budget"; controller.abort(); }, executionBudgetMs);
   const firstTimer = setTimeout(() => { timeoutKind = "first-response"; controller.abort(); }, SEC_MODEL_FIRST_RESPONSE_MS);
-  const client = modelClient(env, apiKey, executionBudgetMs, fetcher, metrics, () => { liveAt = Date.now(); }, () => {
+  const client = modelClient(apiKey, executionBudgetMs, fetcher, metrics, () => { liveAt = Date.now(); }, () => {
     // Headers are in: from here a connection silent for the stall window, pings included, has stalled.
     clearTimeout(firstTimer);
     metrics.headersMs ??= Date.now() - started;
@@ -843,13 +841,12 @@ export async function callWorkerToolModel(
       cache_control: { type: "ephemeral" },
       output_config: { effort: tuning?.reasoning ?? "high" },
       max_tokens: maxTokens,
-      ...serverFallback(model),
     }, { signal: controller.signal }).finalMessage();
     const refusalCategory = typeof message.stop_details?.category === "string" ? message.stop_details.category : null;
     Object.assign(metrics, { servedModel: message.model, usage: message.usage, finishReason: message.stop_reason, refusalCategory, outputCharacters: JSON.stringify(message.content).length });
     const fallbacks = message.content.filter(b => b.type === "fallback").length;
     if (fallbacks) metrics.fallbacks = fallbacks;
-    return { content: echoable(JSON.parse(JSON.stringify(message.content)) as ContentBlock[]), stopReason: message.stop_reason, refusalCategory };
+    return { content: echoable(objectInputs(JSON.parse(JSON.stringify(message.content)) as ContentBlock[])), stopReason: message.stop_reason, refusalCategory };
   } catch (error) {
     if (controller.signal.aborted) {
       metrics.error = `model-timeout:${timeoutKind}`;
@@ -881,10 +878,24 @@ function echoable(content: ContentBlock[]): ContentBlock[] {
   return boundary < 0 ? content : content.filter((b, i) => i > boundary || b.type === "text");
 }
 
-/** The client every model call uses: the workspace header, no SDK retries, and a body watcher for liveness. */
-function modelClient(env: AnalysisEnv, apiKey: string, timeout: number, fetcher: typeof fetch, metrics: Record<string, unknown>, onBytes: () => void, onHeaders?: () => void): Anthropic {
+/** DeepSeek may stream a tool call's arguments as one JSON string; agents read, and the next turn echoes, an object. */
+function objectInputs(content: ContentBlock[]): ContentBlock[] {
+  return content.map(b => {
+    if (b.type !== "tool_use" || typeof b.input !== "string") return b;
+    try {
+      const input: unknown = JSON.parse(b.input);
+      return input && typeof input === "object" && !Array.isArray(input) ? { ...b, input } : b;
+    } catch { return b; }
+  });
+}
+
+/** DeepSeek's Anthropic-format endpoint, which the SDK speaks unchanged. */
+export const DEEPSEEK_ANTHROPIC_BASE_URL = "https://api.deepseek.com/anthropic";
+
+/** The client every model call uses: DeepSeek's endpoint, no SDK retries, and a body watcher for liveness. */
+function modelClient(apiKey: string, timeout: number, fetcher: typeof fetch, metrics: Record<string, unknown>, onBytes: () => void, onHeaders?: () => void): Anthropic {
   return new Anthropic({
-    apiKey, maxRetries: 0, timeout, defaultHeaders: anthropicWorkspaceHeaders(env.ANTHROPIC_WORKSPACE_ID),
+    apiKey, baseURL: DEEPSEEK_ANTHROPIC_BASE_URL, maxRetries: 0, timeout,
     fetch: async (input, init) => {
       const response = await fetcher(input, init);
       onHeaders?.();
@@ -895,11 +906,6 @@ function modelClient(env: AnalysisEnv, apiKey: string, timeout: number, fetcher:
       return new Response(observed, { status: response.status, statusText: response.statusText, headers: response.headers });
     },
   });
-}
-
-/** A safety-classifier decline is re-run on Anthropic's recommended model inside the same call. */
-function serverFallback(model: string) {
-  return SERVER_FALLBACK_MODELS.test(model) ? { fallbacks: "default" as const, betas: ["server-side-fallback-2026-07-01"] } : {};
 }
 
 /** An HTTP failure with its status, provider code and retry-after, for the recovery loop; the key never reaches the message. */
@@ -916,22 +922,13 @@ async function recordModelCall(env: AnalysisEnv, metrics: Record<string, unknown
   console.log(JSON.stringify({ event: "sec-model-request", ...metrics, elapsedMs: Date.now() - started }));
   try { tuning.onMetrics?.(metrics); } catch { /* Usage accounting never fails a model call. */ }
   await recordAiUsage(env, aiUsageFromMetrics(metrics, {
-    at: new Date(started).toISOString(), durationMs: Date.now() - started, provider: "anthropic",
+    at: new Date(started).toISOString(), durationMs: Date.now() - started, provider: "deepseek",
     ticker: tuning.ticker, kind: tuning.kind, runId: tuning.runId, userHash: tuning.userHash, conversationId: tuning.conversationId,
   }));
 }
 
-/** The models that accept server-side `fallbacks` on the Claude API; Haiku has none. */
-const SERVER_FALLBACK_MODELS = /^claude-(fable-5-1|opus-5-5|opus-5|sonnet-5-5)$/;
-
-/** `anthropic-workspace-id` when a workspace is configured; an API key that is not scoped to one is refused without it. */
-export function anthropicWorkspaceHeaders(workspaceId: string | undefined): Record<string, string> {
-  const id = workspaceId?.trim();
-  return id ? { "anthropic-workspace-id": id } : {};
-}
-
 export async function resolveWorkerModelKey(env: AnalysisEnv, fetcher: typeof fetch = fetch): Promise<string> {
   void fetcher;
-  if (!env.ANTHROPIC_API_KEY) throw new Error("SEC pipeline ANTHROPIC_API_KEY is not configured");
-  return env.ANTHROPIC_API_KEY;
+  if (!env.DEEPSEEK_API_KEY) throw new Error("SEC pipeline DEEPSEEK_API_KEY is not configured");
+  return env.DEEPSEEK_API_KEY;
 }

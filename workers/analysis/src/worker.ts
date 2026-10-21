@@ -36,7 +36,7 @@ function readyResponse(env: AnalysisEnv): Response {
     watchlist: Boolean(env.SEC_TRACKED_TICKERS?.trim()),
     analysisWorkflow: Boolean(env.SEC_ANALYSIS_WORKFLOW),
     // Generation needs a model; reads never do, which is why this is not part of `ready`.
-    modelConfigured: Boolean(env.ANTHROPIC_API_KEY),
+    modelConfigured: Boolean(env.DEEPSEEK_API_KEY),
   };
   // Readiness is about the map's read path. A missing model key leaves published data readable
   // and must not fail the probe.
