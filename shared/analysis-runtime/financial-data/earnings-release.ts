@@ -27,7 +27,7 @@ const clean = (value: string) => value.replace(/<[^>]*>/g, " ").replace(/&#(?:x(
   .replace(/[​-‍﻿]/g, "").replace(/\s+/g, " ").trim();
 /** A printed label as compared: case, footnote markers, quotes, punctuation and "&" against "and" do not matter. */
 export const labelKey = (label: string) => label.normalize("NFKC").toLowerCase().replace(/[“”"’']/g, "")
-  .replace(/(?:\s*\((?:\d{1,2}|[a-z]{1,2})\))+\s*$/g, "").replace(/&/g, " and ").replace(/[^a-z0-9()/]+/g, " ").replace(/\s+/g, " ").trim();
+  .replace(/(?:\s*\((?:\d{1,2}|[a-z]{1,2})\))+\s*$/g, "").replace(/&/g, " and ").replace(/[^a-z0-9()/]+/g, " ").replace(/\s*\/\s*/g, "/").replace(/\s+/g, " ").trim();
 /** A business name without the words that only classify it ("segment", "family", "total"). */
 const loose = (label: string) => labelKey(label).replace(/\b(?:and|the|total|segments?|family|families|group|business|net revenues?|revenues?)\b/g, "").replace(/[^a-z0-9]+/g, "");
 const numeric = (text: string): number | null => {
@@ -131,7 +131,7 @@ const FIGURE_LABELS = {
   gross: ["gross margin", "gross profit"],
   operatingTotal: ["total operating expenses", "total costs and expenses", "costs and expenses", "total costs and operating expenses"],
   operating: ["operating income", "operating income (loss)", "operating loss", "income from operations", "income (loss) from operations", "loss from operations", "operating profit"],
-  pretax: ["income before income taxes", "income (loss) before income taxes", "loss before income taxes", "income before provision for income taxes", "income before income tax", "income before income tax expense", "income before taxes", "income (loss) before provision for income taxes", "loss before provision for income taxes"],
+  pretax: ["income before income taxes", "income (loss) before income taxes", "loss before income taxes", "income before provision for income taxes", "income before income tax", "income before income tax expense", "income before taxes", "income (loss) before provision for income taxes", "loss before provision for income taxes", "income/(loss) before income taxes", "net income/(loss) before income taxes"],
   tax: ["provision for income taxes", "income tax expense", "provision (benefit) for income taxes", "income tax expense (benefit)", "provision for (benefit from) income taxes", "benefit from income taxes", "income taxes", "(provision) benefit for income taxes", "income tax (expense) benefit", "income tax benefit"],
   net: ["net income", "net loss", "net income (loss)", "net (loss) income", "net income/(loss)"],
   noninterest: ["total noninterest expense", "noninterest expense"],
@@ -152,6 +152,31 @@ function find(table: Table, labels: readonly string[], end: string, same: (a: st
     if (at) return { value: at.value, table, row: i, column: at.column };
   }
   return null;
+}
+/**
+ * The rows printed between operating income and income before taxes in the release quarter's column, a dash read as
+ * zero, each signed so all of them sum to `total` (pretax − operating, in the table's units): as printed when that
+ * balances, else the one combination of signs that does. Several combinations, or none, give null. Zero rows are left out.
+ */
+function otherLines(statement: Table, operating: Bound | null, pretax: Bound | null, end: string, total: number): Array<{ value: number; row: number; column: number }> | null {
+  if (!operating || !pretax || pretax.row <= operating.row) return null;
+  const rows: Array<{ value: number; row: number; column: number }> = [];
+  for (let i = operating.row + 1; i < pretax.row; i++) {
+    const label = labelKey(labelled(statement.rows[i]!));
+    if (!label || /^total\b/.test(label)) continue;
+    const at = valueAt(statement, statement.rows[i]!, end);
+    if (at) rows.push({ value: at.value, row: i, column: at.column });
+  }
+  const lines = rows.filter(r => r.value !== 0);
+  if (!lines.length || lines.length > 8) return null;
+  const tolerance = Math.max(1e-6, Math.abs(total) * 1e-9);
+  const fits: number[][] = [];
+  for (let mask = 0; mask < 1 << lines.length; mask++) {
+    const signs = lines.map((_, i) => (mask >> i & 1 ? -1 : 1));
+    if (Math.abs(lines.reduce((n, l, i) => n + signs[i]! * l.value, 0) - total) <= tolerance) fits.push(signs);
+  }
+  const chosen = fits.find(f => f.every(x => x === 1)) ?? (fits.length === 1 ? fits[0] : null);
+  return chosen ? lines.map((l, i) => ({ ...l, value: chosen[i]! * l.value })) : null;
 }
 const group = (label: string): Line["group"] => /research and development/.test(label) ? "research"
   : /^(?:sales and marketing|marketing and sales|selling and marketing|selling|marketing)$/.test(label) ? "sales" : /^general and administrative$/.test(label) ? "administration" : "other";
@@ -269,12 +294,24 @@ function build(statement: Table, tables: Table[], previous: BusinessFlowQuarter,
   }
   if (previous.figures.other && num(figures.pretax) != null && num(figures.operating) != null)
     figures.other = derived(num(figures.pretax)! - num(figures.operating)!, previous.figures.other, [figures.pretax!, figures.operating!], "Release income before income taxes − release operating income (signed other income, net)");
-  const otherComponents: NonNullable<BusinessFlowQuarter["otherComponents"]> = [];
-  for (const c of previous.otherComponents ?? []) {
-    if (c.id === "reported-net-other" && figures.other) { otherComponents.push({ ...c, amount: { ...figures.other, definition: c.amount.definition, comparabilityKey: c.amount.comparabilityKey } }); continue; }
-    const bound = find(statement, [c.name], end);
-    if (!bound) return { quarter: null, issues: [`RELEASE_LINE_MISSING:${c.name}`] };
-    otherComponents.push({ ...c, amount: amountOf(bound, c.amount, `other:${c.id}`) });
+  // Lines between operating income and income before taxes: the statement's own rows, signed so they close
+  // pretax = operating + Σ line, the way the filings' arithmetic signs them; else one derived total.
+  let otherComponents: NonNullable<BusinessFlowQuarter["otherComponents"]> = [];
+  if (previous.otherComponents && figures.other) {
+    const lines = previous.incomeModel === "standard" || previous.incomeModel === "direct_operating" ? otherLines(statement, rows.operating, rows.pretax, end, Number(figures.other.value) * scale / statement.scale) : null;
+    if (lines?.length) {
+      const known = new Map(previous.otherComponents.map(c => [labelKey(c.name), c]));
+      const seen = new Map<string, number>();
+      otherComponents = lines.map(l => {
+        const label = labelKey(labelled(statement.rows[l.row]!)), like = known.get(label), base = like?.id ?? `release-${label.replace(/[^a-z0-9]+/g, "-")}`, count = (seen.get(base) ?? 0) + 1;
+        seen.set(base, count);
+        const amount = amountOf({ value: l.value, table: statement, row: l.row, column: l.column }, like?.amount ?? previous.figures.other!, `other:${label}`);
+        return { id: count > 1 ? `${base}~${count}` : base, name: like?.name ?? labelled(statement.rows[l.row]!).replace(/\s*(?:\(\d{1,2}\))+\s*$/, ""), amount: like ? amount : { ...amount, comparabilityKey: null } };
+      });
+    } else {
+      const lump = previous.otherComponents.find(c => c.id === "reported-net-other");
+      otherComponents = [{ id: "reported-net-other", name: "Other income (expense), net", amount: { ...figures.other, definition: lump?.amount.definition ?? figures.other.definition, comparabilityKey: lump?.amount.comparabilityKey ?? figures.other.comparabilityKey } }];
+    }
   }
   for (const key of ["research", "sales", "administration"] as const) {
     if (!previous.figures[key]) continue;

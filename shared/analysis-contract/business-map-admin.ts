@@ -23,11 +23,13 @@ export type BusinessMapCompany = FinancialMaintenanceCompany & {
   };
   /**
    * The feature switches as they apply now (docs/whitelist-feature-switches-design.md): whether the company's switch is on
-   * (generated and shown; off stops generating and hides) and when the newest publication was written (null for none).
+   * (generated and shown; off stops generating and hides, except after a failed run, which stops generation only) and when the newest publication was written (null for none).
    */
   features: Record<Feature, { on: boolean; publishedAt: string | null;
-    /** The feature's work in flight for this company: a run executing, a run waiting its turn, or the last run failed with nothing newer published. */
-    run: "running" | "queued" | "failed" | null }>;
+    /** The feature's work in flight for this company: a run executing or a run waiting its turn. */
+    run: "running" | "queued" | null;
+    /** The failed run that switched the feature off (messages.ts); null once it is switched on again. */
+    failure: { at: string; detail: string | null } | null }>;
 };
 /** `generation`: whether each feature is generated at all (the admin's global switches over the deployment flags). */
 export type BusinessMapCompanies = { companies: BusinessMapCompany[]; automaticCollection: boolean; generation: Record<Feature, boolean> };

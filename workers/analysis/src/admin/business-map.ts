@@ -6,6 +6,8 @@ import { isFeature } from '../../../../shared/analysis-runtime/business-features
 import { companyPolicyEnvironment, featureCompaniesFor, featureEnabled } from '../financial-data/company-policy.ts';
 import { writeFeatureSetting } from './feature-settings.ts';
 import { AiRunStore } from '../ai-runs/store.ts';
+import { FEATURE_TASKS, KIND_FEATURE, latestOutcomes, listMessages, markRead, TASK_FEATURE } from './messages.ts';
+import { failedInputKey } from '../pipeline/workflow-task.ts';
 import type { AnalysisEnv } from '../operations.ts';
 import { authenticateAdmin } from './auth.ts';
 import { listFinancialCompanies } from './financials.ts';
@@ -21,34 +23,35 @@ import { readMapDerived } from '../financial-data/derived.ts';
 import { discoverDataIssuer, throttledSecReader } from '../financial-data/provider.ts';
 import { D1SecRepository } from '../sec/d1.ts';
 
+/** Forgets the failed inputs of a feature's tasks for a company, so a retry is not made to wait or refused. */
+async function clearFailures(db: D1Database, ticker: string, feature: Feature): Promise<void> {
+  await db.prepare("DELETE FROM sec_cache WHERE cache_key IN (SELECT value FROM json_each(?))").bind(JSON.stringify(FEATURE_TASKS(feature).map(task=>failedInputKey(task,ticker)))).run();
+}
 const json = (body: unknown, status = 200) => Response.json(body, {status, headers: {'cache-control':'private, no-store'}});
-/** Which feature each run kind and queued task belongs to. */
-const KIND_FEATURE: Record<string,Feature> = { guidance:'reports', findings:'findings', analyst:'findings', explainer:'explainer', tree:'tree' };
-const TASK_FEATURE: Record<string,Feature> = { 'sec-report':'reports', guidance:'reports', memory:'findings', 'company-analysis':'findings', findings:'findings', analyst:'findings', explainer:'explainer', tree:'tree' };
 /**
  * Each feature's work in flight per company (`feature:ticker`): the SEC report jobs for the reports, the AI run store
- * for the model Workflows, and the due table for runs waiting their turn. Running beats queued beats failed.
+ * for the model Workflows, and the due table for runs waiting their turn. Running beats queued. How the last run ended
+ * is the inbox's (messages.ts).
  */
-async function featureRuns(db: D1Database, now = Date.now()): Promise<Map<string,{state:'running'|'queued'|'failed';at:string}>> {
-  const rank = { running:3, queued:2, failed:1 } as const;
-  const found = new Map<string,{state:'running'|'queued'|'failed';at:string}>();
-  const note = (feature: Feature, ticker: string, state: 'running'|'queued'|'failed', at: string) => {
+async function featureRuns(db: D1Database, now = Date.now()): Promise<Map<string,{state:'running'|'queued';at:string}>> {
+  const rank = { running:2, queued:1 } as const;
+  const found = new Map<string,{state:'running'|'queued';at:string}>();
+  const note = (feature: Feature, ticker: string, state: 'running'|'queued', at: string) => {
     const key=`${feature}:${ticker}`, seen=found.get(key);
     if (!seen || rank[state] > rank[seen.state] || (rank[state] === rank[seen.state] && at > seen.at)) found.set(key,{state,at});
   };
   const [jobs, runs, due] = await Promise.all([
-    db.prepare("SELECT ticker, status, max(updated_at) at FROM sec_analysis_jobs WHERE status IN ('queued','running','failed') AND updated_at >= ? GROUP BY ticker, status").bind(new Date(now-7*24*3600_000).toISOString()).all<{ticker:string;status:string;at:string}>().catch(()=>({results:[]})),
+    db.prepare("SELECT ticker, status, max(updated_at) at FROM sec_analysis_jobs WHERE status IN ('queued','running') AND updated_at >= ? GROUP BY ticker, status").bind(new Date(now-2*3600_000).toISOString()).all<{ticker:string;status:string;at:string}>().catch(()=>({results:[]})),
     new AiRunStore(db).latestRuns().catch(()=>new Map<string,{status:string;updatedAt:string}>()),
     db.prepare("SELECT ticker, task, due_at FROM pipeline_due WHERE due_at > ?").bind(new Date(now).toISOString()).all<{ticker:string;task:string;due_at:string}>().catch(()=>({results:[]})),
   ]);
-  for (const job of jobs.results) note('reports', job.ticker, job.status === 'failed' ? 'failed' : job.status === 'running' ? 'running' : 'queued', job.at);
+  for (const job of jobs.results) note('reports', job.ticker, job.status === 'running' ? 'running' : 'queued', job.at);
   for (const [key, run] of runs) {
     const [kind, ticker] = key.split(':') as [string, string];
     const feature = KIND_FEATURE[kind];
     if (!feature) continue;
     if (run.status === 'running' || run.status === 'waiting') note(feature, ticker, 'running', run.updatedAt);
     else if (run.status === 'queued') note(feature, ticker, 'queued', run.updatedAt);
-    else if (run.status === 'failed') note(feature, ticker, 'failed', run.updatedAt);
   }
   for (const row of due.results) { const feature = TASK_FEATURE[row.task]; if (feature && row.ticker !== '*') note(feature, row.ticker, 'queued', row.due_at); }
   return found;
@@ -89,7 +92,7 @@ export async function handleBusinessMapAdminRequest(request: Request, env: Analy
       // What each feature has published, by company: the newest publication's time, read once per feature.
       const published = Object.fromEntries(await Promise.all(FEATURES.map(async feature=>[feature,new Map((await db.prepare(PUBLISHED[feature]).bind().all<{ticker:string;at:string}>().catch(()=>({results:[]}))).results.map(r=>[r.ticker,r.at]))]))) as Record<Feature,Map<string,string>>;
       const lists = Object.fromEntries(FEATURES.map(feature=>[feature,featureCompaniesFor(env,feature)])) as Record<Feature,string[]>;
-      const runs = await featureRuns(db);
+      const [runs, outcomes] = await Promise.all([featureRuns(db), latestOutcomes(db)]);
       const companies: BusinessMapCompanies['companies'] = list.companies.map(company=>{
         const row=byTicker.get(company.ticker)!;
         const reasons:string[]=JSON.parse(row.collectionReasons??'[]');
@@ -104,9 +107,9 @@ export async function handleBusinessMapAdminRequest(request: Request, env: Analy
         const presentation={model:newest?.incomeModel??null,source:newest?.presentation?.source??null,afterTax:(newest?.afterTaxComponents??[]).map(c=>({name:c.name,value:c.amount.value??''})),basisChanges:newest?.basisChanges??[],
           profile:row.profileStatus?{status:row.profileStatus,accession:row.profileAccession??'',attempts:row.profileAttempts??0,issues:JSON.parse(row.profileIssues??'[]') as string[],updatedAt:row.profileUpdatedAt??''}:null};
         const features=Object.fromEntries(FEATURES.map(feature=>{
-          const publishedAt=published[feature].get(company.ticker)??null, run=runs.get(`${feature}:${company.ticker}`)??null;
-          // A failure older than what was published since is history, not the feature's state.
-          return [feature,{on:lists[feature].includes(company.ticker),publishedAt,run:run?.state==='failed'&&publishedAt&&publishedAt>=run.at?null:run?.state??null}];
+          const key=`${feature}:${company.ticker}`, on=lists[feature].includes(company.ticker), last=outcomes.get(key);
+          // A failure switched the feature off; switched on again, it is being retried and no longer the state.
+          return [feature,{on,publishedAt:published[feature].get(company.ticker)??null,run:runs.get(key)?.state??null,failure:!on&&last?.outcome==='failed'?{at:last.updatedAt,detail:last.detail}:null}];
         })) as BusinessMapCompany['features'];
         return {...company,presentation,features,task:row.task_id?taskView(row):null,history:row.historyTotal!==null?{completed:row.historyCompleted??0,total:row.historyTotal}:null,
           collection:row.collectionStatus?{status:row.collectionStatus,reasons,updatedAt:row.collectionUpdatedAt!,completed:row.collectionCompleted??0,total:row.collectionTotal??0}
@@ -155,12 +158,21 @@ export async function handleBusinessMapAdminRequest(request: Request, env: Analy
       if (feature === 'findings' && body.on && !featureCompaniesFor(await companyPolicyEnvironment(env),'reports').includes(ticker)) return json({error:'请先开启该公司的财报摘要。'},409);
       const now = new Date().toISOString();
       await writeFeatureSetting(db,ticker,feature,body.on,now);
+      // Switched on again after a failure: the failed input no longer holds the feature's tasks back, it runs at once.
+      if (body.on) await clearFailures(db,ticker,feature);
       // Switching the reports off leaves the findings without a trigger: they are switched off with them.
       const cascade = feature === 'reports' && !body.on;
       if (cascade) await writeFeatureSetting(db,ticker,'findings',false,now);
       const cik = await knownCik(db,ticker);
       await emit(env,[{type:'feature.settings',ticker,cik,detail:{feature}},...(cascade ? [{type:'feature.settings' as const,ticker,cik,detail:{feature:'findings' as const}}] : [])]);
       return json({ticker,feature,on:body.on},200);
+    }
+    if (path === '/admin/business-map/messages' && request.method === 'GET') return json(await listMessages(db));
+    if (path === '/admin/business-map/messages/read' && request.method === 'POST') {
+      const body = await request.json().catch(()=>({})) as {ids?:unknown};
+      const ids = Array.isArray(body.ids) ? body.ids.filter((id):id is string=>typeof id==='string').slice(0,500) : null;
+      await markRead(db, ids);
+      return json(await listMessages(db));
     }
     // Judge the issuer's income statement again (presentation-task.ts): forget the filing it was judged on and ask.
     const judge = /^\/admin\/business-map\/companies\/([^/]+)\/presentation$/.exec(path);

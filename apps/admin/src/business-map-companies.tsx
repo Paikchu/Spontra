@@ -135,7 +135,7 @@ const NOTE=/^(?:\d{10}-\d{2}-\d{6}:)?(?:NO_DIRECT_COMPARABLE_QUARTER|RESTATEMENT
 function applySwitch(d:BusinessMapCompanies,symbol:string|null,feature:Feature,on:boolean):BusinessMapCompanies {
   if(!symbol)return {...d,generation:{...d.generation,[feature]:on}};
   // Switched on, the feature's first task is queued; switched off, nothing of it runs.
-  const moved=(f:BusinessMapCompany['features'][Feature],value:boolean)=>({...f,on:value,run:value?(f.run??'queued'):null});
+  const moved=(f:BusinessMapCompany['features'][Feature],value:boolean)=>({...f,on:value,run:value?(f.run??'queued'):null,failure:value?null:f.failure});
   return {...d,companies:d.companies.map(c=>c.ticker!==symbol?c:{...c,features:{...c.features,[feature]:moved(c.features[feature],on),
     ...(feature==='reports'&&!on?{findings:moved(c.features.findings,false)}:{})}})};
 }
@@ -150,11 +150,12 @@ function restoreSwitch(d:BusinessMapCompanies,before:BusinessMapCompanies,symbol
 /** What a feature is doing for the company right now, for the detail: a badge and a line on what it last wrote. */
 function featureState(f:BusinessMapCompany['features'][Feature],paused:boolean):{status:string;text:string;note:string} {
   const written=f.publishedAt?`上次生成 ${financialDate(f.publishedAt)}`:'尚无内容';
+  // A failed run switched the feature off and left what was written shown; switching it on again is the retry.
+  if(!f.on&&f.failure)return {status:'failed',text:'生成失败 · 已关闭',note:`${financialDate(f.failure.at)} · ${f.failure.detail??''}`};
   if(!f.on)return {status:'idle',text:'已关闭',note:f.publishedAt?'已生成的内容不展示':'尚无内容'};
   if(paused)return {status:'caution',text:'已全局暂停',note:written};
   if(f.run==='running')return {status:'processing',text:'正在生成',note:written};
   if(f.run==='queued')return {status:'processing',text:'排队中',note:written};
-  if(f.run==='failed')return {status:'failed',text:'上次生成失败',note:written};
   return f.publishedAt?{status:'reviewed',text:'已生成',note:written}:{status:'unreviewed',text:'等待生成',note:'有新数据时开始'};
 }
 
@@ -176,7 +177,7 @@ function Company({company:c,generation,busy,onToggle,onPrepare,onJudge,onFeature
     <tr className="bm-admin-row" aria-label={`${c.ticker} 数据准备`}>
       <td><div className="bm-admin-company-cell"><button className="bm-admin-toggle" aria-expanded={open} aria-label={`${c.ticker} 详情`} onClick={()=>setOpen(o=>!o)}><ChevronRight size={15}/></button><CompanyLogo symbol={c.ticker}/><span className="bm-admin-name"><strong className="ra-mono">{c.ticker}</strong>{c.name&&c.name!==c.ticker&&<small>{c.name}</small>}</span></div></td>
       <td><div className="bm-admin-states"><span className="ra-badge" data-status={map.status}>{map.text}</span></div></td>
-      {FEATURES.map(f=><td key={f} className="bm-admin-feature-col"><button className="bm-switch" role="switch" aria-checked={c.features[f].on} aria-label={`${c.ticker} ${FEATURE_LABEL[f]}`} title={featureState(c.features[f],!generation[f]).text} disabled={!c.dataEnabled&&!c.features[f].on} onClick={()=>onFeature(f,!c.features[f].on)}><span/></button></td>)}
+      {FEATURES.map(f=><td key={f} className="bm-admin-feature-col"><button className="bm-switch" role="switch" data-failed={!!c.features[f].failure||undefined} aria-checked={c.features[f].on} aria-label={`${c.ticker} ${FEATURE_LABEL[f]}`} title={featureState(c.features[f],!generation[f]).text} disabled={!c.dataEnabled&&!c.features[f].on} onClick={()=>onFeature(f,!c.features[f].on)}><span/></button></td>)}
       <td><div className="bm-admin-actions"><button className="fm-button" disabled={busy||running||!c.dataEnabled} onClick={onPrepare}>{running?'准备中':'重新准备'}</button><a href={`/admin/financials?ticker=${c.ticker}`}>财报</a>{ready&&<a href={`https://spontra-business-map.max-zhangyuchen.workers.dev/companies/${c.ticker}`} target="_blank" rel="noreferrer" aria-label={`${c.ticker} 业务地图`}>地图<ExternalLink size={12}/></a>}
         {c.dataEnabled?<button className="bm-admin-remove" disabled={busy} onClick={remove} aria-label={`移出 ${c.ticker}`} title="移出白名单"><Trash2 size={16}/></button>:<button className="fm-button" disabled={busy} onClick={onToggle}>加入</button>}</div></td>
     </tr>

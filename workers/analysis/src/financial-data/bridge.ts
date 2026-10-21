@@ -83,10 +83,10 @@ export function pretaxOperands(calculation: IncomeCalculation | null | undefined
 }
 
 /** Statement rows of one document, in printed order, one fact per row. */
-function statementRows(facts: Fact[], net: Fact): Fact[] {
+function statementRows(facts: Fact[], anchor: Fact): Fact[] {
   const byOrder = new Map<number, Fact>();
   for (const f of facts) {
-    if (!f.statementRow || Object.keys(f.dimensions).length || f.source.url !== net.source.url) continue;
+    if (!f.statementRow || Object.keys(f.dimensions).length || f.source.url !== anchor.source.url) continue;
     const old = byOrder.get(f.statementRow.order);
     if (!old || f.precision > old.precision) byOrder.set(f.statementRow.order, f);
   }
@@ -137,4 +137,82 @@ export function applyStructure(structure: BridgeStructure, source: BridgeSource,
   }
   const total = pretax.value - anchors.tax.value + afterTax.reduce((sum, a) => sum + a.value, 0);
   return near(total, anchors.net.value) ? { source, structure, pretax, afterTax } : null;
+}
+
+/**
+ * From operating income to income before taxes, in the filing's own arithmetic: the signed lines (interest, investment
+ * gains, equity-method results, other income) that close pretax = operating + Σ weight × line. Like the after-tax
+ * structure, it comes from the calculation linkbase or from the statement rows and is used only where the reported facts
+ * balance it exactly; a line a period does not report counts as zero.
+ */
+export type OtherStructure = { source: 'calculation' | 'statement'; lines: Array<{ concept: string; weight: 1 | -1 }> };
+export type OtherLine = { fact: Fact; weight: 1 | -1; value: number };
+/** One period as the other-income lines are checked against it. */
+export type OtherPeriod = { pick: (concept: string) => Fact | undefined; operating: Fact; pretax: Fact };
+
+/**
+ * The lines the calculation hangs beside operating income on its way up to the pretax total, each signed toward it:
+ * the subtotals among them opened into their own lines first, then as the subtotals themselves.
+ */
+export function otherFromCalculation(calculation: IncomeCalculation | null | undefined, pretax: string, operating: string): OtherStructure[] {
+  if (!calculation) return [];
+  const children = (node: string) => calculation.arcs.filter(a => a.parent === node).sort((a, b) => a.order - b.order);
+  const top = [calculation.root, ...calculation.arcs.map(a => a.parent)].find(c => same(c, pretax));
+  if (!top) return [];
+  // The path from the pretax total down to operating income, with each node's sign toward the total.
+  const path = (node: string, guard = 0): Array<{ node: string; weight: 1 | -1 }> | null => {
+    if (same(node, operating)) return [];
+    if (guard > 20) return null;
+    for (const arc of children(node)) { const rest = path(arc.child, guard + 1); if (rest) return [{ node: arc.child, weight: arc.weight }, ...rest]; }
+    return null;
+  };
+  const steps = path(top);
+  if (!steps?.length) return [];
+  const shallow: OtherStructure['lines'] = [];
+  let parent = top, sign: 1 | -1 = 1;
+  for (const step of steps) {
+    for (const arc of children(parent)) if (arc.child !== step.node) shallow.push({ concept: arc.child, weight: (sign * arc.weight) as 1 | -1 });
+    sign = (sign * step.weight) as 1 | -1;
+    parent = step.node;
+  }
+  if (sign !== 1 || !shallow.length) return [];
+  const open = (line: OtherStructure['lines'][number], guard = 0): OtherStructure['lines'] => {
+    const below = children(line.concept);
+    return !below.length || guard > 10 ? [line] : below.flatMap(a => open({ concept: a.child, weight: (line.weight * a.weight) as 1 | -1 }, guard + 1));
+  };
+  const deep = shallow.flatMap(l => open(l));
+  return deep.length !== shallow.length ? [{ source: 'calculation', lines: deep }, { source: 'calculation', lines: shallow }] : [{ source: 'calculation', lines: shallow }];
+}
+
+/**
+ * The rows the statement prints between operating income and income before taxes (subtotals excluded). A row's printed
+ * sign is not reliable, so every combination of signs is tried against every period; the one combination that balances
+ * all of them is kept, and none or several gives null. A row that is zero in every period takes no sign.
+ */
+export function otherFromStatement(facts: Fact[], periods: OtherPeriod[]): OtherStructure | null {
+  if (!periods.length) return null;
+  const { operating, pretax } = periods[0];
+  const rows = statementRows(facts, operating);
+  const from = rows.findIndex(f => same(f.tag, operating.tag)), to = rows.findIndex((f, i) => i > from && same(f.tag, pretax.tag));
+  if (from < 0 || to < 0) return null;
+  let lines = rows.slice(from + 1, to).filter(f => !/^total\b/i.test(f.statementRow!.label));
+  // A printed net nonoperating total beside its own lines is their subtotal.
+  if (lines.length > 1) lines = lines.filter(f => local(f.tag) !== 'NonoperatingIncomeExpense');
+  if (!lines.length || lines.length > 8) return null;
+  const values = periods.map(p => lines.map(f => p.pick(f.tag)?.value ?? 0));
+  const silent = lines.map((_, i) => values.every(v => v[i] === 0));
+  const fits = new Map<string, OtherStructure>();
+  for (let mask = 0; mask < 1 << lines.length; mask++) {
+    const weights = lines.map((_, i) => (silent[i] || !(mask >> i & 1) ? 1 : -1) as 1 | -1);
+    if (!periods.every((p, k) => near(p.operating.value + values[k].reduce((sum, v, i) => sum + weights[i] * v, 0), p.pretax.value))) continue;
+    fits.set(weights.join(), { source: 'statement', lines: lines.map((f, i) => ({ concept: f.tag, weight: weights[i] })) });
+  }
+  return fits.size === 1 ? [...fits.values()][0] : null;
+}
+
+/** A structure's lines in one period, when they balance operating income to income before taxes exactly. */
+export function applyOther(structure: OtherStructure, period: OtherPeriod): OtherLine[] | null {
+  const lines = structure.lines.flatMap(l => { const fact = period.pick(l.concept); return fact ? [{ fact, weight: l.weight, value: l.weight * fact.value }] : []; });
+  if (!lines.length) return null;
+  return near(period.operating.value + lines.reduce((sum, l) => sum + l.value, 0), period.pretax.value) ? lines : null;
 }

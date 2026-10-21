@@ -7,7 +7,7 @@ import { readBusinessExplainerResponse } from "../src/business-explainer/workflo
 import { readFindingsResponse } from "../src/findings/read.ts";
 import { handleMapRead } from "../src/read-api/router.ts";
 
-type Row = { ticker: string; feature: string; generate: number | null };
+type Row = { ticker: string; feature: string; generate: number | null; display?: number | null };
 
 /** A D1 stand-in holding the feature settings and the given `sec_cache` rows; every other read is empty. */
 function fakeDb(rows: Row[], migrated = true, cache: Record<string, unknown> = {}) {
@@ -26,7 +26,7 @@ function fakeDb(rows: Row[], migrated = true, cache: Record<string, unknown> = {
           if (!migrated) throw new Error("no such table: business_feature_settings");
           if (!sql.includes("WHERE feature = ?")) return { results: rows };
           const [feature, ticker] = binds as [string, string | undefined];
-          return { results: rows.filter(r => r.feature === feature && r.ticker !== "*" && r.generate !== null && (ticker === undefined || r.ticker === ticker)) };
+          return { results: rows.map(r => ({ ...r, shown: r.display ?? r.generate })).filter(r => r.feature === feature && r.ticker !== "*" && r.shown !== null && (ticker === undefined || r.ticker === ticker)) };
         },
         async run() { writes.push({ sql, binds }); return { meta: { changes: 1 } }; },
       };
@@ -43,7 +43,10 @@ test("readers see a feature exactly when its switch is on: the stored choice, el
     { ticker: "ORCL", feature: "findings", generate: 0 },
     { ticker: "AAPL", feature: "reports", generate: 1 },
     { ticker: "*", feature: "tree", generate: 0 },
+    { ticker: "NET", feature: "explainer", generate: 0, display: 1 },
   ]);
+  // A failed run stopped generation only: what was written stays shown.
+  assert.equal(await featureShown(db, deployment, "NET", "explainer"), true, "stopped by a failure");
   assert.equal(await featureShown(db, deployment, "ORCL", "findings"), false, "switched off");
   assert.equal(await featureShown(db, deployment, "ORCL", "reports"), true, "default list");
   assert.equal(await featureShown(db, deployment, "AAPL", "reports"), true, "switched on");

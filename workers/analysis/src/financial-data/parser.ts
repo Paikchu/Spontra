@@ -10,7 +10,7 @@ import {extractFinancialStatements} from '../../../../shared/analysis-runtime/fi
 import {memberName} from './member-labels.ts';
 import {readIncomeStatementCells} from '../../../../shared/analysis-runtime/financial-data/income-statement.ts';
 import type {IncomeCalculation,RevenueStructure} from './calculation.ts';
-import {applyStructure,structureFromCalculation,structureFromStatement,structureKey,type BridgeAnchors,type BridgeStructure,type ResolvedBridge} from './bridge.ts';
+import {applyOther,applyStructure,otherFromCalculation,otherFromStatement,structureFromCalculation,structureFromStatement,structureKey,type BridgeAnchors,type BridgeStructure,type OtherPeriod,type ResolvedBridge} from './bridge.ts';
 export interface DocumentSource {url:string;accession:string;filedAt:string;cik:string;industry:'standard'|'financial'|'insurance'|'unknown';fiscalYear?:string;singleSegment?:boolean;
  /** The filing's labels for its dimension members (member-labels.ts); handed to each dimensional fact, not kept on its source. */
  memberLabels?:Record<string,string>;
@@ -20,7 +20,7 @@ export interface DocumentSource {url:string;accession:string;filedAt:string;cik:
  revenueStructure?:RevenueStructure|null;
  /** A structure from operating income to net income that balanced on an earlier filing of this issuer (presentation profile). */
  presentation?:{structure:BridgeStructure;version:string}|null;}
-export const SEC_FLOW_PARSER_VERSION='deterministic-sec.v15';
+export const SEC_FLOW_PARSER_VERSION='deterministic-sec.v16';
 /** Issuers read through a disclosure-specific profile; generic statement arithmetic would describe them in another scheme. */
 export const hasDisclosureProfile=(cik:string)=>cik==='0001341439';
 export interface Fact {source:DocumentSource;operands?:Fact[];formula?:string;precision:number;tag:string;value:number;currency:string;start:string;end:string;context:string;dimensions:Record<string,string>;
@@ -173,6 +173,13 @@ function extractGenericQuarters(html:string,source:DocumentSource,supplemental:F
   return (calculated&&applyStructure(calculated,'calculation',p.anchors,p.pick,source.calculation))
    ||(statementStructure&&applyStructure(statementStructure,'statement',p.anchors,p.pick,source.calculation))
    ||(profileStructure&&applyStructure(profileStructure,'profile',p.anchors,p.pick,source.calculation))||null;};
+ // Operating income to income before taxes (bridge.ts): the calculation's lines, else the statement rows whose signs
+ // balance every period of the document; where neither balances a period, one derived total.
+ const otherPeriod=(facts:Fact[]):OtherPeriod|null=>{const pick=picker(facts),first=(names:string[])=>names.map(pick).find(Boolean),operating=first(tags.operating!),pretax=first(tags.pretax!)??bridge(facts)?.pretax.fact??undefined;return operating&&pretax?{pick,operating,pretax}:null;};
+ const otherStatement=otherFromStatement([...buckets.values()].flat(),[...buckets.values()].map(otherPeriod).filter((p):p is OtherPeriod=>!!p));
+ const otherLines=(facts:Fact[],operating:number,pretax:number)=>{const p=otherPeriod(facts);if(!p||p.operating.value!==operating||p.pretax.value!==pretax)return null;
+  for(const structure of [...otherFromCalculation(source.calculation,p.pretax.tag,p.operating.tag),...(otherStatement?[otherStatement]:[])]){const lines=applyOther(structure,p);if(lines)return lines;}
+  return null;};
  for(const [key,facts]of buckets){const[start,end,currency]=key.split('|');const consolidated=facts.filter(f=>Object.keys(f.dimensions).length===0);
   const select=(names:string[])=>{for(const name of names){const matches=consolidated.filter(f=>local(f.tag)===name);if(matches.length){const bestPrecision=Math.max(...matches.map(f=>f.precision));const precise=matches.filter(f=>f.precision===bestPrecision);if(new Set(precise.map(f=>f.value)).size!==1){issues.push('CONFLICTING_FACT:'+name);return undefined;}return precise[0];}}return undefined;};
   const factLineage=(f:Fact):NonNullable<FlowAmount['lineage']>=>[{accession:f.source.accession,url:f.source.url,concept:f.tag,contextId:f.context,periodStart:f.start,periodEnd:f.end,dimensions:f.dimensions,parserVersion:SEC_FLOW_PARSER_VERSION}];
@@ -210,6 +217,13 @@ function extractGenericQuarters(html:string,source:DocumentSource,supplemental:F
    }
   }
   if(figures.operating&&figures.pretax)figures.other=derive('other',value('pretax')!-value('operating')!,[figures.pretax!,figures.operating!],'Reported income before income taxes − reported operating income (signed other income, net)');
+  let otherComponents:NonNullable<BusinessFlowQuarter['otherComponents']>=figures.other?[{id:'reported-net-other',name:'Other income (expense), net',amount:figures.other}]:[];
+  // Each line only when the pretax and operating figures are the facts the lines were balanced against.
+  const lines=figures.other&&model!=='financial'&&model!=='insurance'?otherLines(facts,value('operating')!,value('pretax')!)?.filter(l=>l.value!==0):null;
+  if(lines?.length){const seen=new Map<string,number>();
+   otherComponents=lines.map(l=>{const base=local(l.fact.tag),count=(seen.get(base)??0)+1;seen.set(base,count);const id=count>1?`${base}~${count}`:base;
+    const name=l.fact.statementRow?.label||source.calculation?.labels[l.fact.tag]||Object.entries(source.calculation?.labels??{}).find(([c])=>local(c)===base)?.[1]||base.replace(/([a-z0-9])([A-Z])/g,'$1 $2');
+    const reported=amount(l.fact,'other:'+id);return {id,name,amount:l.weight===1?reported:{...reported,basis:'derived' as const,value:String(l.value),formula:'− reported '+name}};});}
   const revenueNames=source.industry==='financial'?['RevenuesNetOfInterestExpense','Revenues']:source.industry==='insurance'?['Revenues']:tags.revenue!;
   const revenueSplit=splitRevenue(facts,revenueNames,figures.revenue?select([local(figures.revenue.lineage![0].concept)]):undefined,source.revenueStructure,issues);
   const revenueAdjustments:NonNullable<BusinessFlowQuarter['revenueAdjustments']>=(revenueSplit?.adjustments??[]).map(a=>{const reported=amount(a.fact,a.definition);return {id:a.id,name:a.name,amount:a.weight===1?reported:{...reported,basis:'derived' as const,value:String(-a.fact.value),formula:'− reported '+a.name}};});
@@ -234,7 +248,7 @@ function extractGenericQuarters(html:string,source:DocumentSource,supplemental:F
   };
   if(!expenses.length){const lines=statementExpenses();if(lines.length){expenses.push(...lines);for(const key of ['research','sales','administration'] as const){const matches=lines.filter(c=>c.group===key);if(matches.length===1)figures[key]=matches[0].amount;else delete figures[key];}}}
   const combinedSalesAdministration=select(['SellingGeneralAndAdministrativeExpense','GainLossOnInvestments','IncomeLossFromEquityMethodInvestments']);const disclosedOperating=['research','sales','administration'].map(k=>({id:k,name:k==='research'?'Research and development':k==='sales'?'Sales and marketing':'General and administrative',group:k as 'research'|'sales'|'administration',amount:figures[k as FlowMetric]})).filter((c):c is typeof c & {amount:FlowAmount}=>!!c.amount);if(!expenses.length&&figures.research&&combinedSalesAdministration&&figures.operatingExpenses&&near(Number(figures.research.value)+combinedSalesAdministration.value,Number(figures.operatingExpenses.value))){expenses.push({id:'research',name:'Research and development',group:'research',amount:figures.research},{id:'sales-general-administration',name:'Selling, general and administrative',group:'other',amount:amount(combinedSalesAdministration,'sales-general-administration')});}if(!expenses.length&&disclosedOperating.length===3&&figures.operatingExpenses&&near(disclosedOperating.reduce((sum,c)=>sum+Number(c.amount.value),0),Number(figures.operatingExpenses.value)))expenses.push(...disclosedOperating);if(!expenses.length&&figures.operatingExpenses)expenses.push({id:'reported-expense-total',name:'Total costs and expenses',group:'other' as const,amount:figures.operatingExpenses});
-  let q:BusinessFlowQuarter={id:end,label:`Three months ended ${end}`,periodStart:start,periodEnd:end,periodType:'3M',currency,scale:1,basisLabel:source.industry==='insurance'?'As reported to the SEC · investment and equity-method income shown separately · net income includes noncontrolling interests':'As reported in each SEC filing · deterministic extraction · segment comparisons across fiscal years not verified',reportedAt:source.filedAt,figures,segments,segmentsComplete:segments.length>0,...(facts.some(f=>f.source.singleSegment)?{segmentDisclosure:'single_reportable_segment' as const}:{}),...(segments.length&&revenueAdjustments.length?{revenueAdjustments}:{}),expenseComponents:expenses,otherComponents:figures.other?[{id:'reported-net-other',name:'Other income (expense), net',amount:figures.other}]:[],...(afterTaxComponents.length?{afterTaxComponents}:{}),...(presentation?{presentation}:{}),incomeModel:model,sources:[...new Map(facts.flatMap(f=>f.operands??[f]).map(f=>[f.source.accession,{id:f.source.accession,title:'SEC filing '+f.source.accession,url:f.source.url,publishedAt:f.source.filedAt}])).values()]};
+  let q:BusinessFlowQuarter={id:end,label:`Three months ended ${end}`,periodStart:start,periodEnd:end,periodType:'3M',currency,scale:1,basisLabel:source.industry==='insurance'?'As reported to the SEC · investment and equity-method income shown separately · net income includes noncontrolling interests':'As reported in each SEC filing · deterministic extraction · segment comparisons across fiscal years not verified',reportedAt:source.filedAt,figures,segments,segmentsComplete:segments.length>0,...(facts.some(f=>f.source.singleSegment)?{segmentDisclosure:'single_reportable_segment' as const}:{}),...(segments.length&&revenueAdjustments.length?{revenueAdjustments}:{}),expenseComponents:expenses,otherComponents,...(afterTaxComponents.length?{afterTaxComponents}:{}),...(presentation?{presentation}:{}),incomeModel:model,sources:[...new Map(facts.flatMap(f=>f.operands??[f]).map(f=>[f.source.accession,{id:f.source.accession,title:'SEC filing '+f.source.accession,url:f.source.url,publishedAt:f.source.filedAt}])).values()]};
   if(figures.net?.lineage?.every(l=>local(l.concept)==='IncomeLossFromContinuingOperations'))q.basisLabel+=' · income from continuing operations (excludes discontinued operations)';
   if(!figures.revenue)continue;
   if(!segments.length)q=disclosedWholeCompany(q);quarters.push(q);

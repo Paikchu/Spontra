@@ -43,7 +43,20 @@ export function fiscalFourthQuarters(annualReport:Fact[],thirdQuarterReport:Fact
  for(const f of fourthQuarterFacts(annuals,facts))byEnd.set(f.end,[...(byEnd.get(f.end)??[]),f]);
  return [...byEnd.values()].flatMap(q=>extractVerifiedCurrentQuarters({...q[0].source,revenueStructure},q).quarters).map(q=>({...q,basisLabel:q.basisLabel+' · fourth quarter = full year − first nine months, same basis'}));
 }
-export function reviewedCurrentPair(all:Fact[],expected:string,documents:Array<{source:DocumentSource;html?:string;eligible:boolean}>,calculations:Record<string,IncomeCalculation>={},presentation:{structure:BridgeStructure;version:string}|null=null,revenueStructures:Record<string,RevenueStructure>={}):{quarters:BusinessFlowQuarter[];reviewed:boolean}{
+/** The quarter before each current quarter as the same filing's two-quarter cumulative period less that quarter, same concept, currency and dimensions. */
+function earlierQuarterFacts(current:Fact[],facts:Fact[],previousEnd:string):Fact[]{
+ const derived:Fact[]=[];
+ for(const q of current){
+  const cumulative=facts.find(f=>f.end===q.end&&f.start<q.start&&key(f)===key(q)&&f.source.accession===q.source.accession&&days(f.start,previousEnd)>=70&&days(f.start,previousEnd)<=110);
+  if(cumulative)derived.push({...cumulative,end:previousEnd,context:`derived:${cumulative.context}-${q.context}`,value:Math.round((cumulative.value-q.value)*1e6)/1e6,precision:Math.min(cumulative.precision,q.precision),operands:[cumulative,q],formula:`First quarter = six months to date ${cumulative.value} − second quarter ${q.value}, same filing, concept and dimensions`});
+ }
+ return derived;
+}
+/**
+ * The verified newest quarter and the quarter before it. `firstReport` says no earlier periodic report is listed for the
+ * issuer (a newly listed company's first 10-Q): the quarter before then comes from that report's own cumulative period.
+ */
+export function reviewedCurrentPair(all:Fact[],expected:string,documents:Array<{source:DocumentSource;html?:string;eligible:boolean}>,calculations:Record<string,IncomeCalculation>={},presentation:{structure:BridgeStructure;version:string}|null=null,revenueStructures:Record<string,RevenueStructure>={},firstReport=false):{quarters:BusinessFlowQuarter[];reviewed:boolean}{
  // An issuer with a disclosure-specific expense and revenue profile is not read by generic arithmetic.
  if(all[0]&&hasDisclosureProfile(all[0].source.cik))return {quarters:[],reviewed:false};
  const facts=precisionSelect(all);if(!facts)return {quarters:[],reviewed:false};
@@ -53,12 +66,14 @@ export function reviewedCurrentPair(all:Fact[],expected:string,documents:Array<{
  if(!quarterFacts.length)quarterFacts=fourthQuarterFacts(usable.filter(f=>f.end===expected&&days(f.start,f.end)>330),facts);
  if(!quarterFacts.length)return {quarters:[],reviewed:false};
  const start=quarterFacts[0].start,previousEnd=new Date(Date.parse(start)-86400000).toISOString().slice(0,10);
- const directPrevious=usable.filter(f=>f.end===previousEnd&&days(f.start,f.end)>=70&&days(f.start,f.end)<=110);
+ let directPrevious=usable.filter(f=>f.end===previousEnd&&days(f.start,f.end)>=70&&days(f.start,f.end)<=110);
+ if(!directPrevious.length&&firstReport)directPrevious=earlierQuarterFacts(quarterFacts.filter(f=>!f.operands),usable,previousEnd);
  if(!directPrevious.length)return {quarters:[],reviewed:false};
+ const pool=[...facts,...directPrevious.filter(f=>f.operands)];
  const required=(items:Fact[])=>items.filter(f=>Object.keys(f.dimensions).length===0&&/^(?:RevenueFromContractWithCustomerExcludingAssessedTax|Revenues|SalesRevenueNet|CostOfRevenue|CostOfGoodsAndServicesSold|GrossProfit|OperatingExpenses|OperatingIncomeLoss|IncomeTaxExpenseBenefit|NetIncomeLoss|ProfitLoss|ResearchAndDevelopmentExpense|SellingAndMarketingExpense|GeneralAndAdministrativeExpense|IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest|Revenue|RevenueFromContractsWithCustomers|CostOfSales|ProfitLossFromOperatingActivities|ProfitLossBeforeTax|IncomeTaxExpenseContinuingOperations)$/.test(f.tag.split(':').at(-1)!));
  // Current cumulative minus the disclosed current quarter must equal the prior filing cumulative.
  // This checks the prior-period presentation in every used statement and segment concept, not a note keyword alone.
- for(const q of quarterFacts){if(q.operands)continue;const cumulative=facts.find(f=>f.end===expected&&f.start<q.start&&key(f)===key(q));const prior=cumulative&&facts.find(f=>f.start===cumulative.start&&f.end===previousEnd&&key(f)===key(q));
+ for(const q of quarterFacts){if(q.operands)continue;const cumulative=facts.find(f=>f.end===expected&&f.start<q.start&&key(f)===key(q));const prior=cumulative&&pool.find(f=>f.start===cumulative.start&&f.end===previousEnd&&key(f)===key(q));
   if(!cumulative||!prior){if(required([q]).length)return {quarters:[],reviewed:false};continue;}
   const rounding=10**(-Math.min(q.precision,cumulative.precision,prior.precision));if(Math.abs(cumulative.value-q.value-prior.value)>Math.max(1,rounding*1.5))return {quarters:[],reviewed:false};
  }

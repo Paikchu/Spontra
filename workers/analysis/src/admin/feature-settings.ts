@@ -17,14 +17,15 @@ export async function featureShown(db: D1Database, env: FeatureDefaultsEnv, tick
 
 /** A test for every company at once, from one read: the switches stored for the feature over its default list. */
 export async function shownFilter(db: D1Database, env: FeatureDefaultsEnv, feature: Feature, ticker?: string): Promise<(ticker: string) => boolean> {
-  const rows = await db.prepare(`SELECT ticker, generate FROM business_feature_settings WHERE feature = ? AND ticker <> '*' AND generate IS NOT NULL${ticker ? " AND ticker = ?" : ""}`)
-    .bind(...(ticker ? [feature, ticker] : [feature])).all<{ ticker: string; generate: number }>().catch(() => null);
-  const stored = new Map((rows?.results ?? []).map(r => [r.ticker, !!r.generate]));
+  // `display` decides where set: a failed run stops generation (messages.ts) and leaves what was written shown.
+  const rows = await db.prepare(`SELECT ticker, coalesce(display, generate) shown FROM business_feature_settings WHERE feature = ? AND ticker <> '*' AND coalesce(display, generate) IS NOT NULL${ticker ? " AND ticker = ?" : ""}`)
+    .bind(...(ticker ? [feature, ticker] : [feature])).all<{ ticker: string; shown: number }>().catch(() => null);
+  const stored = new Map((rows?.results ?? []).map(r => [r.ticker, !!r.shown]));
   const defaults = new Set(defaultFeatureResolution(env).tickers[feature]);
   return t => stored.get(t) ?? defaults.has(t);
 }
 
-/** Turns one switch on or off; both stored bits follow it, so a row never says generated-but-hidden. */
+/** Turns one switch on or off; both stored bits follow it, so a row never says generated-but-hidden. Only a failed run sets them apart. */
 export async function writeFeatureSetting(db: D1Database, ticker: string, feature: Feature, on: boolean, now: string): Promise<void> {
   const bit = on ? 1 : 0;
   await db.prepare(`INSERT INTO business_feature_settings (ticker, feature, generate, display, updated_at) VALUES (?, ?, ?, ?, ?)

@@ -67,8 +67,10 @@ export function trackedTickersFor(env: Pick<SecCronEnv, "SEC_TRACKED_TICKERS" | 
   return parseTrackedTickers(env.SEC_AI_TICKERS??env.SEC_TRACKED_TICKERS);
 }
 
+/** The error a run raises when its company's feature is no longer switched on. */
+export const NOT_TRACKED = "Ticker is not tracked";
 export function assertTrackedTicker(env: Pick<SecCronEnv, "SEC_TRACKED_TICKERS" | "SEC_DATA_TICKERS" | "SEC_AI_TICKERS" | "SEC_AI_ENABLED">, ticker: string): void {
-  if (!isTrackedTicker(ticker, trackedTickersFor(env))) throw new Error("Ticker is not tracked");
+  if (!isTrackedTicker(ticker, trackedTickersFor(env))) throw new Error(NOT_TRACKED);
 }
 
 export function dataTickersFor(env:Pick<SecCronEnv,"SEC_TRACKED_TICKERS"|"SEC_DATA_TICKERS"|"SEC_AI_TICKERS"|"SEC_AI_ENABLED">):string[]{return [...financialPolicy({SEC_DATA_TICKERS:env.SEC_DATA_TICKERS,SEC_TRACKED_TICKERS:env.SEC_TRACKED_TICKERS,SEC_AI_ENABLED:"false"}).dataTickers].sort();}

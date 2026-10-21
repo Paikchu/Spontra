@@ -133,7 +133,17 @@ export function financialGraph(q:BusinessFlowQuarter, compact=false):FinancialGr
  }
  if(stage===2 && balanced(3) && (v("pretax")??-1)>=0 && v("other")!=null){
    const other=v("other")!;
-   if(other>=0){link("operating","pretax",v("operating"),3);if(other>0){node("other",2);node("pretax",3);links.push({source:"other",target:"pretax",value:other});}}
+   // The statement's own lines between operating and pretax income, when they sum to the total: a gain joins pretax
+   // income from its own node, a charge leaves operating income.
+   const items=(q.otherComponents??[]).map(c=>({c,value:numeric(c.amount)})).filter(i=>i.value!==0);
+   const negative=items.reduce((sum,i)=>sum+Math.min(0,i.value??0),0);
+   const itemized=!compact&&items.length>1&&items.every(i=>i.value!=null)&&Math.abs(items.reduce((sum,i)=>sum+i.value!,0)-other)<=Math.max(1e-6,Math.abs(v("revenue")!)*1e-9)&&v("operating")!+negative>=0;
+   if(itemized){
+    link("operating","pretax",v("operating")!+negative,3);node("pretax",3);
+    for(const{c,value}of items){const name="other:"+c.id;nodes.push({name,label:c.name,depth:(value!<0?3:2)+offset,expense:value!<0,value:Math.abs(value!),amount:c.amount});
+     links.push(value!<0?{source:"operating",target:name,value:-value!}:{source:name,target:"pretax",value:value!});}
+   }
+   else if(other>=0){link("operating","pretax",v("operating"),3);if(other>0){node("other",2);node("pretax",3);links.push({source:"other",target:"pretax",value:other});}}
    else {link("operating","pretax",v("pretax"),3);node("other",3,true);links.push({source:"operating",target:"other",value:-other});nodes.find(n=>n.name==="other")!.value=-other;}
    stage=3;
  }

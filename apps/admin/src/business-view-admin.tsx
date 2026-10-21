@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { ArrowUpRight, Cpu, FileStack, ListChecks, LoaderCircle, LogOut, Moon, Network, ShieldCheck, Sparkles, Sun } from "lucide-react";
+import { ArrowUpRight, Bell, Cpu, FileStack, ListChecks, LoaderCircle, LogOut, Moon, Network, ShieldCheck, Sparkles, Sun } from "lucide-react";
 import Link from "@/packages/web/src/navigation";
 import { adminApi } from "./admin-api";
 import { BusinessMapCompanies } from "./business-map-companies";
@@ -8,8 +8,9 @@ import { BusinessSegments } from "./business-segments";
 import { AiRuns } from "./ai-runs";
 import { AiModels } from "./ai-models";
 import { FinancialMaintenance } from "./financial-maintenance";
+import { AdminInbox, useInbox } from "./admin-messages";
 
-type Section = "whitelist" | "financials" | "filings" | "business" | "findings" | "models";
+type Section = "whitelist" | "financials" | "filings" | "business" | "findings" | "models" | "messages";
 type Page = { path: string; title: string; nav?: Section };
 
 /** Every page of the BusinessView admin. Financials is a drill-down from the whitelist, so it has no entry of its own. */
@@ -20,8 +21,9 @@ const PAGES: Record<Section, Page> = {
   business: { path: "/admin/business", title: "公司业务板块" },
   findings: { path: "/admin/findings", title: "公司要点" },
   models: { path: "/admin/models", title: "模型配置" },
+  messages: { path: "/admin/messages", title: "消息" },
 };
-const NAV: Array<[Section, typeof ListChecks]> = [["whitelist", ListChecks], ["filings", FileStack], ["business", Network], ["findings", Sparkles], ["models", Cpu]];
+const NAV: Array<[Section, typeof ListChecks]> = [["whitelist", ListChecks], ["filings", FileStack], ["business", Network], ["findings", Sparkles], ["models", Cpu], ["messages", Bell]];
 /** Ink is the default, as on BusinessView; paper is a per-viewer choice. main.tsx applies it before the first paint. */
 export const THEME_KEY = "businessview-admin-theme";
 /** Paths of the earlier admin, kept so bookmarks land on the page that replaced them. */
@@ -43,6 +45,7 @@ export function BusinessViewAdmin({ mapOrigin = "" }: { mapOrigin?: string }) {
   const [loginBusy, setLoginBusy] = useState(false);
   const [error, setError] = useState("");
   const page = PAGES[section];
+  const { inbox, read } = useInbox(authenticated === true);
   const [light, setLight] = useState(() => typeof document !== "undefined" && !document.documentElement.classList.contains("dark"));
   function toggleTheme() {
     const next = !light;
@@ -79,7 +82,7 @@ export function BusinessViewAdmin({ mapOrigin = "" }: { mapOrigin?: string }) {
   return <div className="report-admin">
     <aside className="ra-sidebar">
       <a className="ra-brand" href={PAGES.whitelist.path}><span className="ra-brand-dot" aria-hidden="true" />BusinessView<small>后台</small></a>
-      <nav aria-label="后台导航">{NAV.map(([key, Icon]) => <button key={key} aria-current={(page.nav ?? section) === key ? "page" : undefined} onClick={() => navigate(key)}><Icon size={19} />{PAGES[key].title}</button>)}</nav>
+      <nav aria-label="后台导航">{NAV.map(([key, Icon]) => <button key={key} aria-current={(page.nav ?? section) === key ? "page" : undefined} onClick={() => navigate(key)}><Icon size={19} />{PAGES[key].title}{key === "messages" && !!inbox?.unread && <span className="ra-nav-count" aria-label={`${inbox.unread} 条未读`}>{inbox.unread > 99 ? "99+" : inbox.unread}</span>}</button>)}</nav>
       <div className="ra-sidebar-bottom">
         <button onClick={toggleTheme} aria-pressed={light}>{light ? <Moon size={16} /> : <Sun size={16} />}{light ? "深色" : "浅色"}</button>
         <Link href={`${mapOrigin}/`}><ArrowUpRight size={16} />打开 BusinessView</Link>
@@ -95,6 +98,7 @@ export function BusinessViewAdmin({ mapOrigin = "" }: { mapOrigin?: string }) {
             : section === "filings" ? <FilingLibrary {...auth} />
             : section === "business" ? <BusinessSegments {...auth} onOpenSection={openSection} />
             : section === "models" ? <AiModels {...auth} />
+            : section === "messages" ? <AdminInbox inbox={inbox} read={read} onOpen={ticker => navigate("whitelist", `?${new URLSearchParams({ ticker })}`)} />
             : <AiRuns {...auth} kinds={["findings", "analyst", "checkup"]} translations />}
         </>}
     </main>
