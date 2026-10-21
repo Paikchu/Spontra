@@ -168,6 +168,13 @@
       { "queue": "spontra-pipeline-dlq", "max_batch_size": 10, "max_batch_timeout": 30, "max_concurrency": 1, "max_retries": 3 }
     ]
   },
+  // The stage (docs/stage-agent-design.md): one StageAgent per reader conversation, an Agents SDK Agent and so a
+  // SQLite-backed Durable Object. A class migration cannot be rolled back; the class is never renamed or deleted, and
+  // turning the stage off is the feature switch, not a revert.
+  "durable_objects": {
+    "bindings": [{ "name": "StageAgent", "class_name": "StageAgent" }]
+  },
+  "migrations": [{ "tag": "stage-v1", "new_sqlite_classes": ["StageAgent"] }],
   "version_metadata": { "binding": "CF_VERSION_METADATA" },
   // The only schedule: SEC filing discovery, because EDGAR pushes nothing (docs/analysis-events.md). Everything a
   // filing leads to runs on the queues above.

@@ -200,4 +200,6 @@ export class CompanyAnalysisWorkflow extends WorkflowEntrypoint<AnalysisEnv, Com
  * entrypoints above genuinely need that module, so they stay here, and this file remains the one
  * Wrangler points `main` at.
  */
+export { StageAgent } from "./stage/agent.ts";
+
 export default worker;
