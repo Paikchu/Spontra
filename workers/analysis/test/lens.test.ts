@@ -167,7 +167,7 @@ test("the agent compiles, reads its errors back, and finishes only with a docume
   assert.ok(catalogue.some(r => "capital" in r.ref && r.ref.capital === "capex" && r.yoy));
   assert.ok(catalogue.some(r => "rpoBucket" in r.ref));
   const bad: LensDocument = { rows: [{ cells: [[{ kind: "chart", chart: { ...chart, annotations: [{ series: "capex", period: "latest", text: "40 billion" }] } }], [{ kind: "judgment" }, { kind: "figures" }, { kind: "watch" }]] }, { cells: [[{ kind: "sources" }]] }] };
-  const good: LensDocument = { rows: [{ cells: [[{ kind: "chart", chart: { ...chart, aspect: "square" } }], [{ kind: "judgment" }, { kind: "figures" }, { kind: "watch" }]] }, { cells: [[{ kind: "sources" }]] }] };
+  const good: LensDocument = { rows: [{ cells: [[{ kind: "html", html: { id: "p1", title: "Capex against operating cash flow", aspect: "square", html: `<svg viewBox="0 0 400 300" width="100%"><rect x="20" y="40" width="60" height="260" fill="var(--flow-expense)"/></svg>` } }], [{ kind: "judgment" }, { kind: "figures" }, { kind: "watch" }]] }, { cells: [[{ kind: "sources" }]] }] };
   const seen: string[] = [], sent: AgentMessage[][] = [], systems: string[] = [];
   const replies = [call("compile", { document: bad }), call("finish"), call("compile", { document: good }), call("finish")];
   // Replies by the finding's turn, so the same script serves the publication's run below.
@@ -178,6 +178,7 @@ test("the agent compiles, reads its errors back, and finishes only with a docume
   };
   const outcome = await runLensAgent({ finding: f, resolved: f.resolved, periodEnd: PERIOD, catalogue, data, model, stage: (_, cb) => cb() });
   assert.match(seen[1]!, /states a figure/);
+  assert.match(seen[1]!, /draw this chart as an html picture/);
   assert.match(seen[2]!, /Not accepted/);
   assert.match(seen[3]!, /This document compiles/);
   assert.equal(outcome.turns.length, 4);

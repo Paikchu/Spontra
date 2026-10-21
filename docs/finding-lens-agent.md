@@ -93,7 +93,7 @@ iframe 最容易出的问题是"一个固定尺寸的盒子"：内部滚动条�
 - **样式一致**：frame 注入页面的设计变量（`LENS_FRAME_TOKENS`）和 Geist 字体（`/assets/*` 加 `Access-Control-Allow-Origin: *`，供 opaque origin 跨源加载）；提示词规定只能用这些变量、字号、"标题写结论、只给论点着色、其余灰色背景"等表达规则。主题切换时 frame 原地替换变量（`html:theme`），不重跑脚本。
 - **高度**：格子先按 `aspect` 占位，frame 用 ResizeObserver 回报 body 高度（`html:size`），宿主按内容定高，上限 1400px。
 - **一份文档只写一次**：`document.open` 不会重置窗口的全局作用域，再次写入会让模型脚本里的 `const` 重复声明；因此换图时宿主会换一个新的 iframe。
-- **Agent**：新增 `series` 工具（按 catalogue 的 ref 返回每期的标签、页面格式的文字和原始值），预算从 6 轮增到 8 轮；`LENS_VERSION` 升为 `lens.agent.v3`，所有公司会重写一次。
+- **Agent**：新增 `series` 工具（按 catalogue 的 ref 返回每期的标签、页面格式的文字和原始值），预算从 6 轮增到 8 轮；`LENS_VERSION` 升为 `lens.agent.v3`，所有公司会重写一次。v3 上线后模型五条要点全部选了语法图（只说"优先 HTML"不够），v4 起 Lens Agent 的审计把语法图记为错误，图必须写成 HTML；写不出时保留原有语法图。
 - **已知缺口**：HTML 里的文字是英文，中文界面不会翻译它（翻译流水线不处理带脚本的标记）；模型看不到渲染结果，没有截图反馈。
 
 ## 合同

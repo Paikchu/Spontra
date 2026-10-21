@@ -18,6 +18,8 @@ export type AuditInput = {
   watch: FindingWatch | undefined;
   /** What `verifyLensDocument` took out of this document (quotes not found, tables that resolve nothing); each is an error. */
   verifyReasons?: string[];
+  /** "html": charts must be html pictures, as the lens agent writes them; grammar charts are errors. Unset accepts both. */
+  pictures?: "html";
 };
 
 function cellHeight(block: LensBlock, width: number, compiled: Map<string, CompileResult>, judgmentChars: number, figures: number): number | null {
@@ -64,6 +66,7 @@ export function auditDocument(input: AuditInput & { judgmentChars: number; figur
   const chartIds = new Set<string>();
   for (const c of [...charts, ...pictures]) { if (chartIds.has(c.id)) error(`chart ${c.id}`, "chart id used twice"); chartIds.add(c.id); }
   for (const p of pictures) for (const problem of htmlProblems(p.html)) error(`html ${p.id}`, problem);
+  if (input.pictures === "html") for (const c of charts) error(`chart ${c.id}`, "draw this chart as an html picture ({\"kind\":\"html\",...}); chart blocks are not accepted here");
   const seen = new Map<string, string>();
   for (const c of charts) {
     const key = JSON.stringify(c.series.map(s => [s.ref, s.transform ?? "value"]).sort());

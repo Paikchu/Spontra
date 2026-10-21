@@ -39,9 +39,8 @@ What you produce: a document {rows:[{cells:[[block,...],[block,...]]}]}. A row h
 - {"kind":"watch"} — what to check next report; exactly one when subject.watch exists, none otherwise.
 - {"kind":"sources"} — the cited filings; at most one, last.
 - {"kind":"prose","paragraphs":[{"text":"...","sourceIds":["s1"]}]} — optional extra paragraphs (at most ${LENS_LIMITS.paragraphs}, each at most ${LENS_LIMITS.paragraphChars} characters) that explain what a chart shows or what the mechanism is. Every number in them must be a figure from evidence written as it appears there (e.g. "$75.7B" or "$75.7 billion", "+176%", "14.8%"); any other number gets the paragraph removed. Do not restate the judgment.
-- {"kind":"html","html":{"id":"p1","title":"what the picture shows, for screen readers","aspect":"wide|square|tall","html":"<fragment>"}} — a chart or diagram you write yourself as HTML. This is how charts are drawn: prefer it.
-- {"kind":"chart","chart":{...}} — a chart in the declarative grammar below, drawn by the page. Use it only when an html picture keeps failing.
-At most ${LENS_LIMITS.charts} html pictures and charts in total.
+- {"kind":"html","html":{"id":"p1","title":"what the picture shows, for screen readers","aspect":"wide|square|tall","html":"<fragment>"}} — a chart or diagram you write yourself as HTML. Every chart in your document is an html picture; at most ${LENS_LIMITS.charts}.
+- {"kind":"chart","chart":{...}} — the page's built-in chart grammar, described below only so you can read the starting document. Your document may not contain chart blocks: compile reports each one as an error. If you cannot get an html picture to compile, the page keeps the finding's original chart on its own.
 
 A chart: {"id":"c1","title":"the chart's claim, no digits","subtitle":"how to read it, no digits","focus":{"periods":["latest"],"series":["s1"]},"periodNote":"s2","aspect":"wide|square|tall","span":"quarter|fiscal_year","periods":2–${LENS_LIMITS.periods},"series":[{"id":"s1","ref":<ref>,"transform":"value|yoy|qoq","label":"optional short label, no digits"}],"marks":[{"type":"bar|line|area|step|dot|stacked_bar|stacked_area|waterfall|rule","series":["s1"],"color":"revenue|profit|expense|loss|up|muted|biz-0..biz-4","axis":"left|right"}],"annotations":[{"series":"s1","period":"latest|first|YYYY-MM-DD","text":"{value} — words with {change}"}],"bands":[{"from":"YYYY-MM-DD","to":"latest","label":"no digits"}],"periodLabels":"all|sparse","legend":"top|none"}.
 - ref must be copied exactly from catalogue (the ref object as written). periods counts spans back from the finding's report. "fiscal_year" means the four quarters ending at each period.
@@ -67,7 +66,7 @@ Method:
 2. Prefer one clear chart per idea; two charts when the judgment has two ideas (e.g. the level and its funding). Only series the catalogue has; prefer series with the yoy/qoq the judgment relies on.
 3. Lay out: first row is the main chart beside the judgment column (stack judgment + figures, and watch when present, in the text cell so the two cells end near each other; a chart beside a short text reads as empty space — use aspect "square" or "tall" beside a tall text column, "wide" on a row of its own). Further charts take rows of their own or sit beside prose. Sources last.
 4. Read each compile result: fix every error, then every warning (label collisions, imbalanced rows, thin bars, long legends), then call finish. Do not finish with errors.
-starting is a plain document built from the finding's original chart; improve on it rather than starting from nothing when it already fits.`;
+starting is a plain document built from the finding's original chart: keep what fits in its layout, and redraw its chart blocks as html pictures.`;
 
 /** Open: the lens grammar is larger than a strict schema may be, and the harness checks every document against it. */
 const DOCUMENT = z.unknown().describe("The whole document, {rows:[...]}, in the grammar the system prompt describes.");
@@ -158,7 +157,7 @@ export function lensRecipe(input: LensRunInput): Recipe<LensRunInput, LensDocume
     open: () => {
       const state: LensState = { accepted: null, last: null, audit: document => {
         const compiled = compileDocument(document, input.data, input.periodEnd);
-        const warnings = auditDocument({ document, compiled, candidates, watch: finding.watch, judgmentChars: finding.judgment.text.length, figures: input.resolved.length });
+        const warnings = auditDocument({ document, compiled, candidates, watch: finding.watch, judgmentChars: finding.judgment.text.length, figures: input.resolved.length, pictures: "html" });
         const errors = warnings.filter(w => w.level === "error").length;
         state.last = { document, errors, warnings: list(warnings.filter(w => w.level === "warning")) };
         return describeDocument(document, compiled, warnings) + (errors ? "" : "\nThis document compiles; finish when the warnings are addressed or deliberate.");
