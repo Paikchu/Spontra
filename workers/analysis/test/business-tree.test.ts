@@ -159,6 +159,35 @@ test("a product described in a section headed by its line is placed by that head
   assert.match(tree.research![0]!.steps[2]!.observation, /Grace — anchor does not contain the name "Grace"/);
 });
 
+test("a placement verdict on a node its own lead-in places is overruled, and the verdict is logged", async () => {
+  const tree = await run([{ flowNodeId: "msft:MorePersonalComputingMember", name: "MorePersonalComputing" }, { flowNodeId: "msft:IntelligentCloudMember", name: "IntelligentCloud" }], scripted({
+    "1-1": call("read", { source: "b1-s1", focus: "XBOX" }),
+    "1-2": call("add", { parent: "root", nodes: [{ name: "XBOX", gloss: "gaming", kind: "line", anchor: { text: JOINED, sourceIds: ["b1-s1"] }, summary: null, revenue: [] }] }),
+  }, { "business-tree-review-b1": { issues: [{ id: "b1-n1", field: "node", kind: "placement", problem: "company-wide list of segments" }] } }));
+  assert.deepEqual(tree.branches[0]!.children.map(n => n.name), ["XBOX"]);
+  const review = tree.research![0]!.steps.find(s => s.action === "review")!;
+  assert.equal(review.observation, "b1-n1 XBOX · node placement: company-wide list of segments\nPlaced: b1-n1 XBOX stays: its lead-in names its parent");
+});
+
+test("a misplaced node moves where the review says it belongs when a passage places it there, and is removed when none does", async () => {
+  const page = "Family of Apps (FoA) includes Facebook, Instagram and WhatsApp.\n\nFamily of Apps advertising services let marketers reach people on Facebook, Instagram and Threads.";
+  const ads = "Family of Apps advertising services let marketers reach people on Facebook, Instagram and Threads.";
+  const product = (name: string) => ({ name, gloss: "app", kind: "product", anchor: { text: ads, sourceIds: ["b1-s1"] }, summary: null, revenue: [] });
+  const tree = await run([{ flowNodeId: "meta:FamilyOfAppsMember", name: "Family of Apps" }, { flowNodeId: "meta:RealityLabsMember", name: "Reality Labs" }], scripted({
+    "1-1": call("read", { source: "b1-s1", focus: "Facebook advertising" }),
+    "1-2": call("add", { parent: "root", nodes: [{ name: "Advertising services", gloss: "ads", kind: "line", anchor: { text: ads, sourceIds: ["b1-s1"] }, summary: null, revenue: [] }] }),
+    "1-3": call("add", { parent: "b1-n1", nodes: [product("Facebook"), product("Threads"), product("Reels")] }),
+  }, { "business-tree-review-b1": { issues: [
+    { id: "b1-n2", field: "node", kind: "placement", parent: "root", problem: "an app of FoA, not an ad product" },
+    { id: "b1-n3", field: "node", kind: "placement", problem: "not placed anywhere in this business" },
+    { id: "b1-n4", field: "node", kind: "name", problem: "a feature" },
+  ] } }), page);
+  const top = tree.branches[0]!.children;
+  assert.deepEqual(top.map(n => [n.name, n.children.map(c => c.name)]), [["Advertising services", []], ["Facebook", []]], "Threads names no parent to move to; Reels is not a product");
+  assert.equal(top[1]!.anchor!.text, "Family of Apps (FoA) includes Facebook, Instagram and WhatsApp.");
+  assert.match(tree.research![0]!.steps.find(s => s.action === "review")!.observation, /Placed: b1-n2 Facebook → root$/);
+});
+
 test("finishing with a bare category line is answered once with a request for named products and pricing", async () => {
   const filing = "We serve developers and enterprises of all sizes through AWS, which offers a broad set of on-demand technology services, including compute, storage, database, analytics, and other services.";
   const ec2 = "Amazon EC2 provides secure and resizable compute capacity in the cloud, the compute service of AWS. With On-Demand Instances you pay for compute capacity by the second with no long-term commitments.";
