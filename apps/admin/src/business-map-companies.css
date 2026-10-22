@@ -81,7 +81,8 @@
 .bm-meter[data-done] b { color: var(--ink-soft); font-family: var(--sans); font-weight: 500; }
 
 /* Row: the two states side by side, the AI switch, the delete at the end. */
-.bm-admin-states { display: flex; gap: 6px; }
+.bm-admin-states { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.bm-admin-now { max-width: 240px; overflow: hidden; color: var(--ink-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .bm-switch { position: relative; width: 36px; height: 20px; padding: 0; border: 0; border-radius: var(--sp-radius-pill); background: var(--fill-strong); transition: background-color 160ms var(--sp-ease); cursor: pointer; }
 .bm-switch span { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--ink-soft); transition: transform 160ms var(--sp-ease), background-color 160ms var(--sp-ease); }
 .bm-switch[aria-checked=true] { background: var(--brand); }
@@ -105,10 +106,22 @@
 .bm-switch-sm[aria-checked=true] span { transform: translateX(12px); }
 /* Detail: what each feature is doing, four even tiles above the cards. */
 .bm-features { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-3); margin: 0; padding: 0; list-style: none; }
-.bm-features li { display: grid; gap: 6px; justify-items: start; padding: 12px 16px; border: 1px solid var(--line); border-radius: var(--sp-radius-md); background: var(--surface); }
-.bm-features li > span:first-child { color: var(--ink); font-size: 13px; font-weight: 650; }
+.bm-features > li { display: grid; align-content: start; gap: 6px; justify-items: start; padding: 12px 16px; border: 1px solid var(--line); border-radius: var(--sp-radius-md); background: var(--surface); }
+.bm-features > li > span:first-child { color: var(--ink); font-size: 13px; font-weight: 650; }
 .bm-features small { color: var(--ink-muted); font-size: 12px; }
-.bm-features li[data-status=failed] { border-color: color-mix(in srgb, var(--danger) 30%, var(--line)); }
+.bm-features > li[data-status=failed] { border-color: color-mix(in srgb, var(--danger) 30%, var(--line)); }
+/* A run in flight: its phases as one segmented bar, then the phase and step it is on. */
+.bm-run { display: grid; gap: 6px; justify-self: stretch; min-width: 0; }
+.bm-run p { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; margin: 0; color: var(--ink-soft); font-size: 12px; }
+.bm-run b { color: var(--ink); font-weight: 600; }
+.bm-task-run { padding: 12px 16px; border: 1px solid var(--line); border-radius: var(--sp-radius-md); background: var(--surface); }
+.bm-task-run small { color: var(--ink-muted); font-size: 12px; }
+.bm-phases { display: grid; gap: 3px; margin: 0; padding: 0; list-style: none; }
+.bm-phases li { height: 6px; border-radius: 3px; background: var(--fill-strong); }
+.bm-phases li[data-state=done] { background: var(--brand); }
+.bm-phases li[data-state=current] { background: color-mix(in srgb, var(--brand) 55%, var(--fill-strong)); animation: bm-phase 1.6s var(--sp-ease) infinite alternate; }
+@keyframes bm-phase { to { background: var(--brand); } }
+@media (prefers-reduced-motion: reduce) { .bm-phases li[data-state=current] { animation: none; } }
 @media (max-width: 900px) { .bm-features { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 /* Messages float at the bottom of the window and leave on their own: nothing in the page moves when one appears. */

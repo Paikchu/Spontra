@@ -1,6 +1,7 @@
 import { knownCik } from '../pipeline/identity.ts';
 import { dataTickersFor } from '../core.ts';
-import type { BusinessMapCharts, BusinessMapCompanies, BusinessMapCompany } from '../../../../shared/analysis-contract/business-map-admin.ts';
+import type { BusinessMapCharts, BusinessMapCompanies, BusinessMapCompany, FeatureRunProgress } from '../../../../shared/analysis-contract/business-map-admin.ts';
+import type { AiRunKind } from '../../../../shared/analysis-contract/ai-runs-admin.ts';
 import { FEATURES, type Feature } from '../../../../shared/analysis-contract/business-features.ts';
 import { isFeature } from '../../../../shared/analysis-runtime/business-features.ts';
 import { companyPolicyEnvironment, featureCompaniesFor, featureEnabled } from '../financial-data/company-policy.ts';
@@ -31,29 +32,40 @@ async function clearFailures(db: D1Database, ticker: string, feature: Feature): 
 const json = (body: unknown, status = 200) => Response.json(body, {status, headers: {'cache-control':'private, no-store'}});
 /**
  * Each feature's work in flight per company (`feature:ticker`): the SEC report jobs for the reports, the AI run store
- * for the model Workflows, and the due table for runs waiting their turn. Running beats queued. How the last run ended
+ * for the model Workflows, and the due table for runs waiting their turn. Running beats queued. A running job or run
+ * also brings how far it got: the report job's stage, or the steps a model Workflow has entered. How the last run ended
  * is the inbox's (messages.ts).
  */
-async function featureRuns(db: D1Database, now = Date.now()): Promise<Map<string,{state:'running'|'queued';at:string}>> {
+async function featureRuns(db: D1Database, now = Date.now()): Promise<Map<string,{state:'running'|'queued';at:string;progress:FeatureRunProgress[]}>> {
   const rank = { running:2, queued:1 } as const;
-  const found = new Map<string,{state:'running'|'queued';at:string}>();
-  const note = (feature: Feature, ticker: string, state: 'running'|'queued', at: string) => {
-    const key=`${feature}:${ticker}`, seen=found.get(key);
-    if (!seen || rank[state] > rank[seen.state] || (rank[state] === rank[seen.state] && at > seen.at)) found.set(key,{state,at});
+  const found = new Map<string,{state:'running'|'queued';at:string;progress:FeatureRunProgress[]}>();
+  const note = (feature: Feature, ticker: string, state: 'running'|'queued', at: string, progress?: FeatureRunProgress) => {
+    const key=`${feature}:${ticker}`, seen=found.get(key) ?? {state, at, progress:[]};
+    if (rank[state] > rank[seen.state] || (rank[state] === rank[seen.state] && at > seen.at)) { seen.state = state; seen.at = at; }
+    if (progress) seen.progress.push(progress);
+    found.set(key, seen);
   };
+  const store = new AiRunStore(db);
   const [jobs, runs, due] = await Promise.all([
-    db.prepare("SELECT ticker, status, max(updated_at) at FROM sec_analysis_jobs WHERE status IN ('queued','running') AND updated_at >= ? GROUP BY ticker, status").bind(new Date(now-2*3600_000).toISOString()).all<{ticker:string;status:string;at:string}>().catch(()=>({results:[]})),
-    new AiRunStore(db).latestRuns().catch(()=>new Map<string,{status:string;updatedAt:string}>()),
+    db.prepare("SELECT ticker, status, current_stage stage, created_at startedAt, updated_at at FROM sec_analysis_jobs WHERE status IN ('queued','running') AND updated_at >= ?").bind(new Date(now-2*3600_000).toISOString()).all<{ticker:string;status:string;stage:string;startedAt:string;at:string}>().catch(()=>({results:[]})),
+    store.latestRuns().catch(()=>new Map<string,{runId:string;status:string;stage:string|null;startedAt:string;updatedAt:string}>()),
     db.prepare("SELECT ticker, task, due_at FROM pipeline_due WHERE due_at > ?").bind(new Date(now).toISOString()).all<{ticker:string;task:string;due_at:string}>().catch(()=>({results:[]})),
   ]);
-  for (const job of jobs.results) note('reports', job.ticker, job.status === 'running' ? 'running' : 'queued', job.at);
-  for (const [key, run] of runs) {
-    const [kind, ticker] = key.split(':') as [string, string];
-    const feature = KIND_FEATURE[kind];
-    if (!feature) continue;
-    if (run.status === 'running' || run.status === 'waiting') note(feature, ticker, 'running', run.updatedAt);
-    else if (run.status === 'queued') note(feature, ticker, 'queued', run.updatedAt);
+  for (const job of jobs.results) {
+    const running = job.status === 'running';
+    note('reports', job.ticker, running ? 'running' : 'queued', job.at, running ? {kind:'report', status:'running', stage:job.stage, steps:[], startedAt:job.startedAt, updatedAt:job.at} : undefined);
   }
+  // Only runs in flight read their step log: a few rows, not every company's history.
+  await Promise.all([...runs].map(async ([key, run]) => {
+    const [kind, ticker] = key.split(':') as [AiRunKind, string];
+    const feature = KIND_FEATURE[kind];
+    if (!feature) return;
+    if (run.status === 'running' || run.status === 'waiting') {
+      const full = await store.get(kind, ticker, run.runId).catch(() => null);
+      note(feature, ticker, 'running', run.updatedAt, {kind, status:run.status, stage:run.stage, steps:full?.log ?? [], startedAt:run.startedAt, updatedAt:run.updatedAt});
+    }
+    else if (run.status === 'queued') note(feature, ticker, 'queued', run.updatedAt);
+  }));
   for (const row of due.results) { const feature = TASK_FEATURE[row.task]; if (feature && row.ticker !== '*') note(feature, row.ticker, 'queued', row.due_at); }
   return found;
 }
@@ -110,7 +122,7 @@ export async function handleBusinessMapAdminRequest(request: Request, env: Analy
         const features=Object.fromEntries(FEATURES.map(feature=>{
           const key=`${feature}:${company.ticker}`, on=lists[feature].includes(company.ticker), last=outcomes.get(key);
           // A failure switched the feature off; switched on again, it is being retried and no longer the state.
-          return [feature,{on,publishedAt:published[feature].get(company.ticker)??null,run:runs.get(key)?.state??null,failure:!on&&last?.outcome==='failed'?{at:last.updatedAt,detail:last.detail}:null}];
+          return [feature,{on,publishedAt:published[feature].get(company.ticker)??null,run:runs.get(key)?.state??null,progress:runs.get(key)?.progress??[],failure:!on&&last?.outcome==='failed'?{at:last.updatedAt,detail:last.detail}:null}];
         })) as BusinessMapCompany['features'];
         return {...company,presentation,features,task:row.task_id?taskView(row):null,history:row.historyTotal!==null?{completed:row.historyCompleted??0,total:row.historyTotal}:null,
           collection:row.collectionStatus?{status:row.collectionStatus,reasons,updatedAt:row.collectionUpdatedAt!,completed:row.collectionCompleted??0,total:row.collectionTotal??0}
