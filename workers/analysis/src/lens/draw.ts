@@ -101,7 +101,8 @@ export const MEASURE_PICTURE = `(() => {
     var own = area(t.box);
     if (marks.some(function (m) { var shared = area(meet(t.box, m)); return shared > 0.25 * own && shared < 0.95 * own; })) across.push('"' + t.text + '" sits partly across a mark');
   });
-  var outside = texts.filter(function (t) { return t.box.left < -1 || t.box.right > W + 1 || t.box.top < -1; }).map(function (t) { return '"' + t.text + '" runs past the frame edge'; });
+  // A tight line height lifts a glyph box a little above the top; a part of the font size is slack, not overflow.
+  var outside = texts.filter(function (t) { var slack = Math.max(2, 0.3 * t.size); return t.box.left < -slack || t.box.right > W + slack || t.box.top < -slack; }).map(function (t) { return '"' + t.text + '" runs past the frame edge'; });
   problems = problems.concat(collide.slice(0, 8), across.slice(0, 8), outside.slice(0, 6));
   var small = texts.filter(function (t) { return t.size > 0 && t.size < 10.5; });
   if (small.length) notes.push(small.length + " text item" + (small.length === 1 ? "" : "s") + ' under 10.5px, e.g. "' + small[0].text + '"');
