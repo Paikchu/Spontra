@@ -7,7 +7,7 @@ import { releaseQuarter } from "../../../shared/analysis-runtime/financial-data/
 import { otherFromStatement, type OtherPeriod } from "../src/financial-data/bridge.ts";
 import type { IncomeCalculation } from "../src/financial-data/calculation.ts";
 import { extractDisclosedQuarters, extractVerifiedCurrentQuarters, SEC_FLOW_PARSER_VERSION, type DocumentSource, type Fact } from "../src/financial-data/parser.ts";
-import { fiscalFourthQuarters } from "../src/financial-data/period-review.ts";
+import { fiscalFourthQuarters, priorYearsUnchanged } from "../src/financial-data/period-review.ts";
 
 // Nebius's statement of operations from its 8-K of August 12, 2026 (Exhibit 99.2): five lines between the loss from
 // operations and income before taxes, the revaluation gain on its ClickHouse stake among them, printed "—" in the second quarter.
@@ -126,4 +126,22 @@ test("an earnings release reads its own lines between operating income and preta
   assert.deepEqual(issues, []);
   assert.deepEqual(lines(quarter!), [["Interest income", 24.1], ["Interest expense", -119.1], ["Income / (loss) from equity method investments", 12.7], ["Other income, net", 81.5]]);
   assert.deepEqual(quarter!.otherComponents!.map(c => c.id), previous.otherComponents!.filter(c => !/Revaluation/.test(c.id)).map(c => c.id));
+});
+
+test("fourth quarters stand when the previous annual report shows the earlier year with every line they use unchanged", () => {
+  // The annual report for fiscal 2026 presents 2026 and 2025; the third-quarter report both nine-month periods; the
+  // annual report for fiscal 2025 presents 2025 as first filed.
+  const k = "0000000001-26-000003", q = "0000000001-26-000001", earlier = "0000000001-25-000003";
+  const annual = [...statement(4e6, "2025-07-01", "2026-06-30", k, "2026-08-20"), ...statement(3.6e6, "2024-07-01", "2025-06-30", k, "2026-08-20")];
+  const nine = [...statement(3e6, "2025-07-01", "2026-03-31", q, "2026-04-30"), ...statement(2.7e6, "2024-07-01", "2025-03-31", q, "2026-04-30")];
+  const fourth = fiscalFourthQuarters(annual, nine);
+  assert.deepEqual(fourth.map(x => x.periodEnd).sort(), ["2025-06-30", "2026-06-30"]);
+  const prior = statement(3.6e6, "2024-07-01", "2025-06-30", earlier, "2025-08-20");
+  assert.equal(priorYearsUnchanged(fourth, annual, prior), true);
+  // A line the fourth quarters use that the new annual report moved for 2025 leaves the basis unproven.
+  assert.equal(priorYearsUnchanged(fourth, annual, prior.map(f => f.tag === "us-gaap:OperatingExpenses" ? { ...f, value: f.value + 10e6 } : f)), false);
+  // A line they do not use may move; and with no year in common nothing is proven.
+  const accrued = (value: number, accession: string) => usd("IncreaseDecreaseInAccruedLiabilities", value, 99, "Accrued expenses", "2024-07-01", "2025-06-30", accession, "2025-08-20");
+  assert.equal(priorYearsUnchanged(fourth, [...annual, accrued(5e6, k)], [...prior, accrued(9e6, earlier)]), true);
+  assert.equal(priorYearsUnchanged(fourth, annual, statement(3.2e6, "2023-07-01", "2024-06-30", earlier, "2025-08-20")), false);
 });

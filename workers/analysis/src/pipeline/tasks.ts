@@ -44,8 +44,9 @@ export const TASK_IMPLEMENTATIONS: Record<TaskName, TaskImplementation> = {
   ...PRESENTATION_TASKS,
 
   "map-derive": {
-    // Which archived filings are read changes without the parsed quarters changing: v3 reads every filing in a filing-date window.
-    version: `map-derive.v3:${REPORT_QUARTERS_VERSION}:${REPORT_SELECTION_VERSION}`,
+    // Which archived filings are read changes without the parsed quarters changing: v3 reads every filing in a filing-date window;
+    // v4 reads an annual report with the previous one when either it or its third-quarter report notes reclassified prior periods.
+    version: `map-derive.v4:${REPORT_QUARTERS_VERSION}:${REPORT_SELECTION_VERSION}`,
     async run(env, ticker, { causeId }) {
       if (!await isDataCompany(env, ticker)) return { status: "done", detail: { skipped: "not a data company" } };
       const result = await deriveCompany({ DB: env.DB!, SEC_FILINGS: env.SEC_FILINGS }, ticker, undefined, causeId);

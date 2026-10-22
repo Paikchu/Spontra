@@ -43,6 +43,31 @@ export function fiscalFourthQuarters(annualReport:Fact[],thirdQuarterReport:Fact
  for(const f of fourthQuarterFacts(annuals,facts))byEnd.set(f.end,[...(byEnd.get(f.end)??[]),f]);
  return [...byEnd.values()].flatMap(q=>extractVerifiedCurrentQuarters({...q[0].source,revenueStructure},q).quarters).map(q=>({...q,basisLabel:q.basisLabel+' · fourth quarter = full year − first nine months, same basis'}));
 }
+/** Every source line an amount of the quarters rests on, as concept and dimensions. */
+const usedLines=(value:unknown,found=new Set<string>()):Set<string>=>{
+ if(Array.isArray(value))for(const v of value)usedLines(v,found);
+ else if(value&&typeof value==='object'){const o=value as Record<string,unknown>;if(typeof o.concept==='string'&&o.dimensions&&typeof o.dimensions==='object')found.add([o.concept,JSON.stringify(Object.entries(o.dimensions as Record<string,string>).sort())].join('|'));for(const v of Object.values(o))usedLines(v,found);}
+ return found;
+};
+/**
+ * Whether an annual report left every line its fourth quarters use as the previous annual report presented it, for the
+ * fiscal years both present. A note that prior periods were reclassified or recast then moved none of those lines (a
+ * cash-flow line, a geographic attribution), so the third-quarter report's nine months are on the annual report's basis.
+ * Lines are compared by concept and dimensions, never by the note's wording; with no shared year nothing is proven.
+ */
+export function priorYearsUnchanged(quarters:BusinessFlowQuarter[],annualReport:Fact[],priorAnnualReport:Fact[]):boolean{
+ const used=usedLines(quarters),line=(f:Fact)=>[f.tag,JSON.stringify(Object.entries(f.dimensions).sort())].join('|'),at=(f:Fact)=>[line(f),f.currency,f.start,f.end].join('|');
+ const prior=new Map<string,Fact>();
+ for(const f of priorAnnualReport){if(f.operands||days(f.start,f.end)<=330)continue;const old=prior.get(at(f));if(!old||f.precision>old.precision)prior.set(at(f),f);}
+ let compared=0;
+ for(const f of annualReport){
+  if(f.operands||days(f.start,f.end)<=330||!used.has(line(f)))continue;
+  const p=prior.get(at(f));if(!p)continue;compared++;
+  const rounding=10**-Math.min(f.precision,p.precision);
+  if(Math.abs(f.value-p.value)>Math.max(1,Number.isFinite(rounding)?rounding*1.5:1))return false;
+ }
+ return compared>0;
+}
 /** The quarter before each current quarter as the same filing's two-quarter cumulative period less that quarter, same concept, currency and dimensions. */
 function earlierQuarterFacts(current:Fact[],facts:Fact[],previousEnd:string):Fact[]{
  const derived:Fact[]=[];

@@ -7,7 +7,7 @@ import { D1SecRepository } from '../sec/d1.ts';
 import { assembleCapital } from './capital-history.ts';
 import { readStoredAudits, type DisclosureArchiveEnv, type StoredAudit } from './disclosure-audit.ts';
 import { extractDisclosedQuarters, hasDisclosureProfile, readReportedFacts, SEC_FLOW_PARSER_VERSION, type DocumentSource } from './parser.ts';
-import { fiscalFourthQuarters, priorPresentationOnly } from './period-review.ts';
+import { fiscalFourthQuarters, priorPresentationOnly, priorYearsUnchanged } from './period-review.ts';
 import { readCompletePublicationForTicker } from './publication.ts';
 import { outboxStatement } from '../pipeline/outbox.ts';
 import { namesMembers, storedMemberLabels } from './member-labels.ts';
@@ -128,6 +128,15 @@ function thirdQuarterReport(audits: StoredAudit[], annual: StoredAudit): StoredA
     .sort((a, b) => b.source.filedAt.localeCompare(a.source.filedAt))[0] ?? null;
 }
 
+/** The annual report before it: the issuer's 10-K for the fiscal year one year earlier, which presents the same earlier years. */
+function priorAnnualReport(audits: StoredAudit[], annual: StoredAudit): StoredAudit | null {
+  if (!/^10-K/.test(annual.source.form)) return null;
+  return audits.filter(r => /^10-K/.test(r.source.form) && issuerOf(r) === issuerOf(annual) && r.rawKey?.startsWith('financial-disclosures/')
+    && r.sourceBytes > 0 && r.sourceBytes <= SEC_DOCUMENT_MAX_BYTES && !/ex[-_]?99/i.test(r.source.documentUrl)
+    && daysBetween(r.source.reportDate, annual.source.reportDate) >= 330 && daysBetween(r.source.reportDate, annual.source.reportDate) <= 400)
+    .sort((a, b) => b.source.filedAt.localeCompare(a.source.filedAt))[0] ?? null;
+}
+
 async function readFiling(env: DisclosureArchiveEnv, record: StoredAudit, industry: Industry): Promise<ReadFiling | null> {
   const raw = await env.SEC_FILINGS.get(record.rawKey);
   if (!raw) return null;
@@ -145,24 +154,34 @@ async function readFiling(env: DisclosureArchiveEnv, record: StoredAudit, indust
  * presentation is read as presented: its comparative columns are then on the current basis, which is what a
  * year-over-year comparison needs. An annual report adds the fourth quarters it and its third-quarter report establish,
  * unless the issuer is read through a disclosure profile, whose fourth quarters come from its own earnings releases.
+ * Where either report notes that prior periods were reclassified or recast, the fourth quarters are kept only when the
+ * previous annual report presents the same earlier years with every line they use unchanged (`priorYearsUnchanged`): a
+ * change made during the year, or at its end, moves those years in the new annual report.
  */
-export function filingQuarters(filing: { html: string; source: DocumentSource }, thirdQuarter: { html: string; source: DocumentSource } | null): BusinessFlowQuarter[] {
+export function filingQuarters(filing: { html: string; source: DocumentSource }, thirdQuarter: { html: string; source: DocumentSource } | null, priorAnnual: { html: string; source: DocumentSource } | null = null): BusinessFlowQuarter[] {
   const reviewed = priorPresentationOnly(filing.html);
   let quarters = extractDisclosedQuarters(filing.html, filing.source, [], reviewed).quarters;
-  if (thirdQuarter && !hasDisclosureProfile(filing.source.cik) && reviewed && priorPresentationOnly(thirdQuarter.html)) {
+  const worded = !!thirdQuarter && reviewed && priorPresentationOnly(thirdQuarter.html);
+  if (thirdQuarter && !hasDisclosureProfile(filing.source.cik) && (worded || priorAnnual)) {
     const annual = readReportedFacts(filing.html, filing.source), nineMonths = readReportedFacts(thirdQuarter.html, thirdQuarter.source);
-    if (!annual.issues.length && !nineMonths.issues.length) quarters = [...quarters, ...fiscalFourthQuarters(annual.facts, nineMonths.facts, filing.source.revenueStructure)];
+    if (!annual.issues.length && !nineMonths.issues.length) {
+      const fourth = fiscalFourthQuarters(annual.facts, nineMonths.facts, filing.source.revenueStructure);
+      const prior = worded ? null : readReportedFacts(priorAnnual!.html, priorAnnual!.source);
+      if (worded || (!prior!.issues.length && priorYearsUnchanged(fourth, annual.facts, prior!.facts))) quarters = [...quarters, ...fourth];
+    }
   }
   return quarters.filter(q => checkCompleteQuarter(q).complete);
 }
 
-async function parseFiling(env: DisclosureArchiveEnv, record: StoredAudit, partner: StoredAudit | null, contentSha256: string, industry: Industry): Promise<StoredQuarters | null> {
+async function parseFiling(env: DisclosureArchiveEnv, record: StoredAudit, partner: StoredAudit | null, earlier: StoredAudit | null, contentSha256: string, industry: Industry): Promise<StoredQuarters | null> {
   const filing = await readFiling(env, record, industry);
   if (!filing) return null;
   const thirdQuarter = partner ? await readFiling(env, partner, industry) : null;
   if (partner && !thirdQuarter) return null;
+  // The previous annual report is read only when either report notes reclassified or recast prior periods.
+  const priorAnnual = thirdQuarter && earlier && !(priorPresentationOnly(filing.html) && priorPresentationOnly(thirdQuarter.html)) ? await readFiling(env, earlier, industry) : null;
   let quarters: BusinessFlowQuarter[] = [];
-  try { quarters = filingQuarters(filing, thirdQuarter); }
+  try { quarters = filingQuarters(filing, thirdQuarter, priorAnnual); }
   catch { /* An unsupported layout yields no quarters, and is recorded so it is not parsed again. */ }
   const read = [filing.labels, thirdQuarter?.labels], labels: Labels = read.includes('missing') ? 'missing' : read.includes('named') ? 'named' : 'unneeded';
   return { documentId: record.documentId, contentSha256, version: REPORT_QUARTERS_VERSION, industry, labels, quarters };
@@ -196,18 +215,18 @@ export async function deriveCompany(env: DisclosureArchiveEnv, ticker: string, b
   for (const record of reportCandidates(audits, flow)) {
     if (reports >= REPORT_FILINGS || (byPeriod.size >= REPORT_QUARTERS && ![...byPeriod.values()].some(q => !published.has(q.periodEnd) && wholeCompany(q)))) break;
     let entry = stored.get(record.documentId);
-    const partner = thirdQuarterReport(audits, record);
-    const contentSha256 = partner ? `${record.contentSha256}+${partner.contentSha256}` : record.contentSha256;
+    const partner = thirdQuarterReport(audits, record), earlier = partner ? priorAnnualReport(audits, record) : null;
+    const contentSha256 = [record, partner, earlier].filter(r => !!r).map(r => r!.contentSha256).join('+');
     const named = async (accession: string) => !!await storedMemberLabels(env.DB, accession) && !!await storedCalculation(env.DB, accession);
     const relabel = entry?.labels === 'missing' && (await named(record.source.accessionNumber) || (!!partner && await named(partner.source.accessionNumber)));
     if (!entry || relabel || entry.contentSha256 !== contentSha256 || entry.version !== REPORT_QUARTERS_VERSION || entry.industry !== industry) {
-      const bytes = record.sourceBytes + (partner?.sourceBytes ?? 0);
-      // A filing (with its third-quarter partner) larger than a whole run's budget never fits a later run either: it is
+      const bytes = record.sourceBytes + (partner?.sourceBytes ?? 0) + (earlier?.sourceBytes ?? 0);
+      // A filing (with the reports it is read with) larger than a whole run's budget never fits a later run either: it is
       // left out and named, not counted as pending, or the task would run again every second for ever.
       if (bytes > budget) { oversized.push(record.documentId); continue; }
       if (spent + bytes > budget) { pending++; continue; }
       spent += bytes;
-      const parsed = await parseFiling(env, record, partner, contentSha256, industry).catch(() => null);
+      const parsed = await parseFiling(env, record, partner, earlier, contentSha256, industry).catch(() => null);
       if (!parsed) continue;
       await repository.setCache(quartersPrefix(ticker) + record.documentId, parsed, new Date().toISOString());
       entry = parsed;
