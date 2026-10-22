@@ -85,12 +85,16 @@ export const MEASURE_PICTURE = `(() => {
     var range = document.createRange(); range.selectNodeContents(node);
     var r = range.getBoundingClientRect();
     if (r.width < 1 || r.height < 1) continue;
-    texts.push({ text: text.slice(0, 32), box: box(r), size: parseFloat(getComputedStyle(el).fontSize) || 0 });
+    texts.push({ text: text.slice(0, 32), box: box(r), size: parseFloat(getComputedStyle(el).fontSize) || 0, label: !!el.closest("svg") });
   }
   var collide = [];
   for (var i = 0; i < texts.length; i++) for (var j = i + 1; j < texts.length; j++) {
     var a = texts[i], b = texts[j];
-    if (area(meet(a.box, b.box)) > 0.2 * Math.min(area(a.box), area(b.box))) collide.push('"' + a.text + '" overlaps "' + b.text + '"');
+    if (area(meet(a.box, b.box)) > 0.2 * Math.min(area(a.box), area(b.box))) { collide.push('"' + a.text + '" overlaps "' + b.text + '"'); continue; }
+    // Two chart labels on one line with no gap read as one word ("Sep 24Dec 24"); flowing text is split by inline tags and is left alone.
+    if (!a.label || !b.label) continue;
+    var rows = Math.min(a.box.bottom, b.box.bottom) - Math.max(a.box.top, b.box.top), gap = Math.max(a.box.left, b.box.left) - Math.min(a.box.right, b.box.right);
+    if (rows > 0.5 * Math.min(a.box.bottom - a.box.top, b.box.bottom - b.box.top) && gap < 3) collide.push('"' + a.text + '" and "' + b.text + '" touch with no space between them');
   }
   var marks = Array.prototype.slice.call(document.querySelectorAll("svg rect, svg path, svg circle, svg ellipse, svg polygon")).filter(function (el) {
     var s = getComputedStyle(el);
