@@ -30,9 +30,11 @@ export function railTransition(update: () => void) {
  * As a drawer the section has no header: its first row is the head and toggles it, and the rows unfold under it in place.
  * The body must carry `id="rail-<name>"`.
  */
-export function RailSection({ name, title, tag, hint, expandable, expanded, focused, drawer = false, onExpand, actions, children }: {
+export function RailSection({ name, title, count, tag, hint, expandable, expanded, focused, drawer = false, onExpand, actions, children }: {
   name: RailSectionKey;
   title: string;
+  /** How many rows the section holds in all, shown after the title. */
+  count?: number;
   /** Shown beside the title, such as the source-language tag over generated rows. */
   tag?: ReactNode;
   /** Context for the chevron's tooltip, such as the report the rows come from. */
@@ -68,7 +70,7 @@ export function RailSection({ name, title, tag, hint, expandable, expanded, focu
       {expanded && <Button variant="unstyled" type="button" ref={back} className="icon-button section-back" aria-label={m.collapse(title)} title={m.back} onClick={() => toggle(false)}>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14.5 6-6 6 6 6" /></svg>
       </Button>}
-      <span className="findings-title">{title}{tag}</span>
+      <span className="findings-title">{title}{count != null && <small>{count}</small>}{tag}</span>
       {actions}
       {expandable && !expanded && <Button variant="unstyled" type="button" ref={more} className="icon-button section-action section-expand" aria-expanded={false} aria-controls={`rail-${name}`}
         aria-label={m.showAllOf(title)} title={hint ? m.showAllHint(hint) : m.showAll} onClick={() => toggle(true)}>

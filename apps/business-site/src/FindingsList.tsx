@@ -44,7 +44,7 @@ export function FindingsList({ findings, updates, verdicts, focus, story, period
   const still = useReducedMotion();
   if (!findings.length) return null;
   const extra = (f: VerifiedFinding, i: number) => i >= DIGEST && f.id !== focus;
-  return <RailSection name="findings" title={m.findings} tag={<SourceLanguage of={findings.map(f => f.title)} />} hint={m.report(periodEnd.slice(0, 7))} expandable={findings.some(extra)}
+  return <RailSection name="findings" title={m.findings} count={findings.length} tag={<SourceLanguage of={findings.map(f => f.title)} />} hint={m.report(periodEnd.slice(0, 7))} expandable={findings.some(extra)}
     expanded={expanded} focused={focus != null} onExpand={onExpand}
     actions={<Button variant="unstyled" type="button" className="icon-button section-action" aria-pressed={story} aria-label={story ? m.stop : m.walk} title={story ? m.stop : m.walkKeys} onClick={onStory}>
       <svg viewBox="0 0 24 24" aria-hidden="true">{story ? <rect x="7" y="7" width="10" height="10" rx="2" /> : <path d="M8 6.5v11l9-5.5Z" />}</svg>

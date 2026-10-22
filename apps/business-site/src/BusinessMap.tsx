@@ -567,7 +567,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
             <i className="row-chip row-chip--all" aria-hidden="true" />
             <span className="row-name">{m.allBusinesses}</span>
             <span className="row-value">{revenue != null ? money(revenue) : ""}</span>
-            {quarter && <span className="row-meta"><Delta change={change("revenue")} word={word.change} /></span>}
+            {quarter && change("revenue").comparable && <span className="row-delta"><Delta change={change("revenue")} word={word.change} /></span>}
           </Button>
           {items.map(item => {
             const share = item.value != null && segmentRevenue ? item.value / segmentRevenue * 100 : null;
@@ -575,12 +575,12 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
             return <Button variant="unstyled" type="button" role="option" key={item.key} data-id={item.id} aria-selected={current?.key === item.key} tabIndex={current?.key === item.key ? 0 : -1}
               className="row" data-depth={item.depth} data-hover={hovered === item.key || undefined} data-extra={businessDigest.has(item.key) ? undefined : ""} style={{ "--c": hue(item.slot) } as CSSProperties}
               onClick={() => pickBusiness(current?.key === item.key ? null : item.id)} onMouseEnter={() => setPreview(item.key)}
-              title={share != null ? `${shareLabel} ${percent(share)}` : undefined}>
+              title={share != null ? `${item.name} · ${shareLabel} ${percent(share)}` : item.name}>
               <i className="row-chip" aria-hidden="true" />
               <span className="row-name">{item.name}</span>
+              {share != null && <span className="row-share">{percent(share)}</span>}
               <span className="row-value">{item.value != null ? money(item.value) : ""}</span>
-              {share != null && <span className="row-bar" aria-hidden="true"><b style={{ width: `${Math.max(0.6, share)}%` }} /></span>}
-              <span className="row-meta">{share != null ? <>{percent(share)}<Delta change={delta} word={word.change} /></> : "—"}</span>
+              {share != null && delta.comparable && <span className="row-delta"><Delta change={delta} word={word.change} /></span>}
             </Button>;
           })}
         </div>

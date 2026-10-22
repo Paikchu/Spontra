@@ -57,7 +57,7 @@ export function EventsList({ rail, updates, focus, pendingInsider, expanded, onF
   const firstEarlier = rail.earlier.find(i => shown.includes(i))?.id;
   const thisYear = (rail.recent[0] ?? all[0])?.date.slice(0, 4);
   const notes = [rail.quiet > 0 ? m.nonTrade(rail.quiet) : null, pendingInsider > 0 ? m.pending(pendingInsider) : null].filter(Boolean).join(" · ");
-  return <RailSection name="events" title={m.title} tag={<SourceLanguage of={(expanded ? shown : shown.filter(i => digest.has(i.id))).map(i => i.kind === "report" ? i.report.headline : i.event.summary?.headline)} />} hint={notes || undefined} expandable={all.length > digest.size}
+  return <RailSection name="events" title={m.title} count={all.length} tag={<SourceLanguage of={(expanded ? shown : shown.filter(i => digest.has(i.id))).map(i => i.kind === "report" ? i.report.headline : i.event.summary?.headline)} />} hint={notes || undefined} expandable={all.length > digest.size}
     expanded={expanded} focused={focus != null} onExpand={open => { if (!open) setGroup(null); onExpand(open); }}>
     {expanded && groups.length > 1 && <div className="section-filters" role="radiogroup" aria-label={m.type}>
       {[[null, all.length] as const, ...groups].map(([key, count]) => <Button variant="unstyled" type="button" key={key ?? "all"} role="radio" aria-checked={group === key} className="section-filter"
@@ -92,23 +92,21 @@ function ReportRow({ report, checked, extra, onClick, arrive, motion }: RowProps
   const forms = report.sources.length ? report.sources.map(s => s.form).join(" + ") : report.form;
   return <RailRow variant="unstyled" type="button" role="radio" aria-checked={checked} className="finding-row event-row report-row" data-class="report" data-extra={extra} onClick={onClick}
     {...motion} data-arrived={arrive != null ? "" : undefined} style={arrivalStyle(arrive)}
-    title={`${m.report} · ${forms} · ${m.periodEnded(String(report.periodEnd))} · ${report.filingDate}`} aria-label={`${m.report} ${shortDate(report.date)} ${reportTitle(report)}`}>
+    title={[m.report, forms, report.periodLabel, m.periodEnded(String(report.periodEnd)), report.filingDate].filter(Boolean).join(" · ")} aria-label={`${m.report} ${shortDate(report.date)} ${reportTitle(report)}`}>
     <time className="event-date" dateTime={report.date}>{shortDate(report.date)}</time>
     <span className="finding-title" lang={reportTitleLang(report)}>{reportTitle(report)}</span>
-    {report.periodLabel && <span className="finding-kind"><small>{report.periodLabel}</small></span>}
   </RailRow>;
 }
 
 function EventRow({ event, checked, extra, onClick, arrive, motion }: RowProps & { event: CompanyEvent }) {
   const t = event.insider;
-  // The class reads from the mark; only an insider's role is worth a line of its own.
+  // The class reads from the mark; an insider's role goes into the tooltip and the accessible name.
   const meta = t ? [t.title ?? (t.isDirector ? m.director : t.isTenPercentOwner ? m.tenPercent : null), t.sold && t.rule10b51 === true ? "10b5-1" : null].filter(Boolean).join(" · ") : "";
   const items = event.items.filter(i => i !== "9.01").map(i => `Item ${i}`).join(", ");
   return <RailRow variant="unstyled" type="button" role="radio" aria-checked={checked} className="finding-row event-row" data-class={event.class} data-extra={extra} onClick={onClick}
     {...motion} data-arrived={arrive != null ? "" : undefined} style={arrivalStyle(arrive)}
-    title={[EVENT_CLASS_LABEL[event.class], event.form, items, event.filedAt].filter(Boolean).join(" · ")} aria-label={`${EVENT_CLASS_LABEL[event.class]} ${shortDate(event.filedAt)} ${eventTitle(event)}${meta ? ` ${meta}` : ""}`}>
+    title={[EVENT_CLASS_LABEL[event.class], event.form, items, meta, event.filedAt].filter(Boolean).join(" · ")} aria-label={`${EVENT_CLASS_LABEL[event.class]} ${shortDate(event.filedAt)} ${eventTitle(event)}${meta ? ` ${meta}` : ""}`}>
     <time className="event-date" dateTime={event.filedAt}>{shortDate(event.filedAt)}</time>
     <span className="finding-title" lang={eventTitleLang(event)}>{eventTitle(event)}</span>
-    {meta && <span className="finding-kind"><small>{meta}</small></span>}
   </RailRow>;
 }
