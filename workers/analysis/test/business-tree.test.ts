@@ -81,29 +81,34 @@ test("a line the filing lists under a heading is kept through a joined anchor, i
   assert.equal(node?.summary?.text, "Consoles, games and subscriptions.");
 });
 
-test("nodes the loop left undescribed are described from the passages naming them, and the review still judges each", async () => {
+test("descriptions the loop left out or the review struck are written from the passages naming each node, then judged again", async () => {
   const asked: Array<{ id: string; evidence: Array<{ sourceId: string }> }> = [];
+  const judged: string[] = [];
   const tree = await run([{ flowNodeId: "msft:MorePersonalComputingMember", name: "MorePersonalComputing" }], {
     act: async stage => ({
       "business-tree-1-1": call("read", { source: "b1-s1", focus: "XBOX" }),
-      "business-tree-1-2": call("add", { parent: "root", nodes: [{ name: "XBOX", gloss: "gaming console and content", kind: "line", anchor: { text: JOINED, sourceIds: ["b1-s1"] }, summary: null, revenue: [] }] }),
+      "business-tree-1-2": call("add", { parent: "root", nodes: [{ name: "XBOX", gloss: "gaming console and content", kind: "line", anchor: { text: JOINED, sourceIds: ["b1-s1"] }, summary: { text: "The best-selling console of the decade.", sourceIds: ["b1-s1"] }, revenue: [] }] }),
     } as Record<string, TreeReply>)[stage] ?? call("finish"),
     judge: async (stage, _system, payload) => {
-      if (stage.startsWith("business-tree-describe")) {
+      judged.push(stage);
+      if (stage === "business-tree-review-b1") return { issues: [{ id: "b1-n1", field: "summary", problem: "not in the material" }] };
+      if (stage === "business-tree-describe-b1") {
         asked.push(...(payload as { nodes: typeof asked }).nodes);
         return { summaries: [
           { id: "b1-n1", text: "XBOX consoles, games and content services for players.", sourceIds: ["b1-s1", "b1-s9"] },
-          { id: "root", text: "Windows, devices and gaming for consumers and businesses.", sourceIds: ["b1-s1"] },
+          { id: "root", text: "The passages do not say who buys these products.", sourceIds: ["b1-s1"] },
         ] };
       }
-      return { issues: [{ id: "root", field: "summary", problem: "not supported" }] };
+      return { issues: [] };
     },
   });
+  assert.deepEqual(judged, ["business-tree-review-b1", "business-tree-describe-b1", "business-tree-describe-review-b1"]);
   assert.deepEqual(asked.map(n => n.id), ["root", "b1-n1"]);
   assert.ok(asked.every(n => n.evidence.length && n.evidence.every(e => e.sourceId === "b1-s1")), "only passages of what was read");
   const branch = readBusinessTree(JSON.parse(JSON.stringify(tree)), "MSFT")!.branches[0]!;
   assert.deepEqual(branch.children[0]!.summary, { text: "XBOX consoles, games and content services for players.", sourceIds: ["s1"] });
-  assert.equal(branch.summary, null, "the review struck the business's description");
+  assert.equal(branch.summary, null, "a sentence about the passages is refused");
+  assert.match(tree.research![0]!.steps.at(-1)!.observation, /Described 1 of 2: b1-n1\. Refused: root writes about the passages/);
 });
 
 test("finishing with a bare category line is answered once with a request for named products and pricing", async () => {
