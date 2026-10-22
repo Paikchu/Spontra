@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, CheckCircle2, ChevronRight, ExternalLink, Layers, Plus, RefreshCw, Scale, ScanLine, Search, Trash2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronRight, ExternalLink, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
 import type { BusinessMapCompanies, BusinessMapCompany, IssuerSuggestion } from '@/shared/analysis-contract/business-map-admin';
 import { FEATURES, type Feature } from '@/shared/analysis-contract/business-features';
 import { adminApi, AdminApiError } from './admin-api';
@@ -37,11 +37,28 @@ const errors: Record<string,string> = {
   INVALID_PAYLOAD:'已发布数据未通过当前校验',
   MAINTENANCE_STOPPED:'维护任务已停止',
   WORKFLOW_STATUS_UNAVAILABLE:'分析状态不可读',
+  CONFLICTING_REVENUE_ELIMINATIONS:'收入抵销数值互相矛盾',
+  CONFLICTING_SEGMENT:'分部数值互相矛盾',
+  CONFLICTING_CORPORATE_REVENUE:'公司层面收入互相矛盾',
+  CONFLICTING_RECONCILING_ITEMS:'调节项互相矛盾',
+  AMBIGUOUS_REVENUE_AXIS:'收入拆分维度不明确',
+  UNSUPPORTED_NUMBER_FORMAT:'数字格式不受支持',
+  DOCUMENT_TOO_LARGE:'文件过大',
 };
 const active = new Set(['queued','running','cancel_requested']);
 /** The reader-facing features, as the map labels them (docs/whitelist-feature-switches-design.md). */
 const FEATURE_LABEL: Record<Feature,string> = {reports:'财报摘要',findings:'要点',explainer:'业务解读',tree:'业务脑图'};
-function issueText(code:string) { const parts=code.split(':'); if(parts[0]==='UNSUPPORTED_SOURCE_FACTS')return `${parts[1]} 项事实格式不受支持`; return errors[code] ?? (parts.length>1&&errors[parts.at(-1)!]?`${parts[0]}：${errors[parts.at(-1)!]}`:code); }
+/** One problem per code: a filing's code (`<accession>:<code>`) joins the others of the same code, with its filing listed. */
+function groupIssues(codes:string[]):Array<{code:string;label:string;filings:string[]}> {
+  const groups=new Map<string,{code:string;label:string;filings:string[]}>();
+  for(const raw of codes){
+    const m=/^(\d{10}-\d{2}-\d{6}):(.+)$/.exec(raw),code=m?m[2]!:raw,group=groups.get(code)??{code,label:issueText(code),filings:[]};
+    if(m)group.filings.push(m[1]!);
+    groups.set(code,group);
+  }
+  return [...groups.values()];
+}
+function issueText(code:string) { const parts=code.split(':'); if(parts[0]==='UNSUPPORTED_SOURCE_FACTS')return `${parts[1]} 项事实格式不受支持`; if(parts[0]==='CONFLICTING_FACT'&&parts[1])return `${parts[1]} 数值互相矛盾`; return errors[code] ?? (parts.length>1&&errors[parts.at(-1)!]?`${parts[0]}：${errors[parts.at(-1)!]}`:code); }
 function storage() { try { return window.sessionStorage; } catch { return undefined; } }
 
 export function BusinessMapCompanies({onUnauthorized,onAuthenticated}:{onUnauthorized:()=>void;onAuthenticated:()=>void}) {
@@ -208,7 +225,7 @@ function Company({company:c,generation,busy,onToggle,onPrepare,onJudge,onFeature
   const skipped=notes.filter(code=>!code.startsWith('UNSUPPORTED_SOURCE_FACTS:')).length,unsupported=notes.filter(code=>code.startsWith('UNSUPPORTED_SOURCE_FACTS:')).reduce((n,code)=>n+Number(code.split(':')[1]??0),0);
   const [open,setOpen]=useState(false);
   const map=ready?{status:'reviewed',text:'财务地图已显示'}:running||collecting?{status:'processing',text:'财务地图准备中'}:{status:'idle',text:'财务地图未就绪'};
-  const now=nowLine(c,running);
+  const now=nowLine(c,running),problems=groupIssues(issues);
   const remove=()=>{if(window.confirm(`移出 ${c.ticker}？`))onToggle();};
   return <tbody data-open={open||undefined}>
     <tr className="bm-admin-row" aria-label={`${c.ticker} 数据准备`}>
@@ -222,30 +239,30 @@ function Company({company:c,generation,busy,onToggle,onPrepare,onJudge,onFeature
       <header className="bm-detail-head">
         <div><span>可展示期间</span>{ready&&c.publication.periods.length?<ul className="bm-chips">{c.publication.periods.map(p=><li key={p}>{p}</li>)}</ul>:<em>—</em>}</div>
         {c.task&&!running&&<div><span>最近任务</span><em>{stages[c.task.stage]??c.task.stage}{taskStatus[c.task.status]?` · ${taskStatus[c.task.status]}`:''} · {financialDate(c.task.updatedAt)}</em></div>}
+        {running&&c.task&&<TaskProgress task={c.task}/>}
       </header>
-      {running&&c.task&&<TaskProgress task={c.task}/>}
-      <ul className="bm-features" aria-label="生成状态">{FEATURES.map(f=>{const state=featureState(c.features[f],!generation[f]);return <li key={f} data-status={state.status}>
-        <span>{FEATURE_LABEL[f]}</span><span className="ra-badge" data-status={state.status}>{state.text}</span><small>{state.note}</small>
-        {(c.features[f].progress??[]).map(run=><RunProgress key={`${run.kind}:${run.startedAt}`} run={run} named={(c.features[f].progress?.length??0)>1||RUN_LABEL[run.kind]!==FEATURE_LABEL[f]}/>)}</li>;})}</ul>
-      <div className="bm-detail-grid">
-        <article className="bm-card"><h4><Layers size={14}/>收入构成</h4>
-          {c.publication.revenueCoverage?.length?<dl data-kind="periods">{c.publication.revenueCoverage.map(q=><div key={q.period} data-status={q.status}><dt>{q.period}</dt><dd>{coverage(q)}</dd></div>)}</dl>:<p className="bm-empty">无</p>}</article>
-        <article className="bm-card"><h4><ScanLine size={14}/>采集</h4>
+      <div className="bm-strip" role="list" aria-label="生成状态与数据">
+        {FEATURES.map(f=>{const state=featureState(c.features[f],!generation[f]);return <section key={f} role="listitem" className="bm-col" data-status={state.status}>
+          <h4>{FEATURE_LABEL[f]}</h4><span className="ra-badge" data-status={state.status}>{state.text}</span><small>{state.note}</small>
+          {(c.features[f].progress??[]).map(run=><RunProgress key={`${run.kind}:${run.startedAt}`} run={run} named={(c.features[f].progress?.length??0)>1||RUN_LABEL[run.kind]!==FEATURE_LABEL[f]}/>)}</section>;})}
+        <section role="listitem" className="bm-col"><h4>收入构成</h4>
+          {c.publication.revenueCoverage?.length?<dl data-kind="periods">{c.publication.revenueCoverage.map(q=><div key={q.period} data-status={q.status}><dt>{q.period}</dt><dd>{coverage(q)}</dd></div>)}</dl>:<p className="bm-empty">无</p>}</section>
+        <section role="listitem" className="bm-col"><h4>采集</h4>
           {running&&c.task&&<Meter label={stages[c.task.stage]??c.task.stage} completed={c.task.progress.completed} total={c.task.progress.total}/>}
           {!!c.collection?.total&&<Meter label="最新财报扫描" completed={c.collection.completed} total={c.collection.total} done={c.collection.status==='succeeded'}/>}
           {c.history&&<Meter label="历史披露扫描" completed={c.history.completed} total={c.history.total}/>}
           {!running&&!c.collection?.total&&!c.history&&<p className="bm-empty">无采集记录</p>}
-          {(skipped>0||unsupported>0)&&<p className="bm-empty">{[skipped?`${skipped} 份文件无可提取的季度`:'',unsupported?`${unsupported} 项事实格式未读取`:''].filter(Boolean).join(' · ')}</p>}</article>
-        <article className="bm-card"><h4><Scale size={14}/>税前至净利润</h4>
+          {(skipped>0||unsupported>0)&&<p className="bm-empty">{[skipped?`${skipped} 份文件无可提取的季度`:'',unsupported?`${unsupported} 项事实格式未读取`:''].filter(Boolean).join(' · ')}</p>}</section>
+        <section role="listitem" className="bm-col"><h4>税前至净利润</h4>
           {c.presentation?.source?<>
             <span className="ra-badge" data-status={c.presentation.source==='degraded'?'caution':'reviewed'}>{presentationSource[c.presentation.source]}</span>
             {c.presentation.afterTax.length>0&&<dl>{c.presentation.afterTax.map(a=><div key={a.name}><dt>{a.name}</dt><dd className="ra-mono">{Number(a.value).toLocaleString('en-US')}</dd></div>)}</dl>}
             {c.presentation.basisChanges.length>0&&<p>重述行（不比较环比）：{c.presentation.basisChanges.map(k=>lineName[k]??k).join('、')}</p>}
             {c.presentation.profile&&<p>模型判定：{c.presentation.profile.status==='verified'?'已核验':'未通过'} · {c.presentation.profile.attempts} 次{c.presentation.profile.issues.length>0&&<small>{c.presentation.profile.issues.slice(0,3).join('；')}</small>}</p>}
             {(c.presentation.source==='degraded'||c.presentation.profile)&&<button className="fm-button" disabled={busy} onClick={onJudge}>重新判定</button>}
-          </>:<p className="bm-empty">{c.presentation&&['financial','insurance'].includes(c.presentation.model??'')?'金融/保险报表 · 税前 − 所得税 = 净利润':c.presentation?.model?'直接读取 · 税前 − 所得税 = 净利润':'无'}</p>}</article>
-        <article className="bm-card" data-tone={issues.length?'caution':'ok'}><h4>{issues.length?<AlertTriangle size={14}/>:<CheckCircle2 size={14}/>}问题{issues.length?` · ${issues.length}`:''}</h4>
-          {issues.length?<ul>{issues.map(code=><li key={code}>{issueText(code)}{errors[code]&&<small>{code}</small>}</li>)}</ul>:<p className="bm-empty">无</p>}</article>
+          </>:<p className="bm-empty">{c.presentation&&['financial','insurance'].includes(c.presentation.model??'')?'金融/保险报表 · 税前 − 所得税 = 净利润':c.presentation?.model?'直接读取 · 税前 − 所得税 = 净利润':'无'}</p>}</section>
+        <section role="listitem" className="bm-col" data-tone={problems.length?'caution':'ok'}><h4>{problems.length?<AlertTriangle size={13}/>:<CheckCircle2 size={13}/>}问题{problems.length?` · ${problems.length}`:''}</h4>
+          {problems.length?<ul>{problems.map(p=><li key={p.code} title={p.code}>{p.label}{p.filings.length>0&&<small>{p.filings.length} 份文件 · {p.filings.join(', ')}</small>}</li>)}</ul>:<p className="bm-empty">无</p>}</section>
       </div>
     </div></td></tr>}
   </tbody>;

@@ -45,7 +45,7 @@
 .bm-admin-actions a { display: inline-flex; align-items: center; gap: 3px; font-size: 13px; font-weight: 600; white-space: nowrap; text-decoration: none; }
 .bm-admin-actions a:hover { text-decoration: underline; }
 
-/* Details: the displayable periods across the top, then four cards. */
+/* Details: the periods and the map's own preparation across the top, then one row of eight columns split by rules. */
 .bm-admin-detail td { padding: var(--space-4) var(--space-5) var(--space-5) 48px; background: var(--surface-sunken); white-space: normal; }
 .bm-detail { display: grid; gap: var(--space-4); }
 .bm-detail-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3) var(--space-6); }
@@ -54,25 +54,28 @@
 .bm-detail-head em { color: var(--ink-soft); font-size: 13px; font-style: normal; }
 .bm-chips { display: flex; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .bm-chips li { padding: 2px 10px; border-radius: var(--sp-radius-pill); background: var(--fill); color: var(--ink); font-family: var(--mono); font-size: 12px; }
-.bm-detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--space-3); }
-.bm-card { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); min-width: 0; padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--sp-radius-md); background: var(--surface); }
-.bm-card h4 { display: flex; align-items: center; gap: 6px; margin: 0 0 2px; color: var(--ink); font-size: 13px; font-weight: 650; }
-.bm-card h4 svg { color: var(--ink-muted); }
-.bm-card[data-tone=caution] { border-color: color-mix(in srgb, var(--caution) 35%, var(--line)); }
-.bm-card[data-tone=caution] h4 svg { color: var(--caution); }
-.bm-card[data-tone=ok] h4 svg { color: var(--brand); }
-.bm-card dl { display: grid; gap: 6px; width: 100%; margin: 0; }
-.bm-card dl > div { display: flex; justify-content: space-between; gap: var(--space-3); font-size: 13px; }
-.bm-card dt { flex: none; color: var(--ink-muted); font-size: 12.5px; white-space: nowrap; }
-.bm-card dl[data-kind=periods] dt { font-family: var(--mono); font-size: 12px; }
-.bm-card dd { margin: 0; color: var(--ink-soft); text-align: right; }
-.bm-card dl > div[data-status=unverified] dd { color: var(--caution); }
-.bm-card p { margin: 0; color: var(--ink-soft); font-size: 13px; }
-.bm-card p small { display: block; color: var(--ink-muted); font-size: 12px; }
-.bm-card ul { margin: 0; padding-left: 18px; color: var(--caution); font-size: 13px; line-height: 1.7; }
-.bm-card ul small { display: block; color: var(--ink-muted); font-family: var(--mono); font-size: 11px; }
+/* Inline-size containment keeps the row from widening the table; narrower than its columns, the row scrolls. The problems
+   column, the longest, is the widest. */
+.bm-strip { display: grid; grid-template-columns: repeat(7, minmax(132px, 1fr)) minmax(220px, 1.6fr); overflow-x: auto; contain: inline-size; }
+.bm-col { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; padding: 2px var(--space-4); border-left: 1px solid var(--line); overflow-wrap: anywhere; }
+.bm-col:first-child { padding-left: 0; border-left: 0; }
+.bm-col:last-child { padding-right: 0; }
+.bm-col h4 { display: flex; align-items: center; gap: 5px; margin: 0 0 2px; color: var(--ink); font-size: 13px; font-weight: 650; }
+.bm-col[data-tone=caution] h4 { color: var(--caution); }
+.bm-col[data-tone=ok] h4 svg { color: var(--brand); }
+.bm-col > small { color: var(--ink-muted); font-size: 12px; }
+.bm-col dl { display: grid; gap: 6px; width: 100%; margin: 0; }
+.bm-col dl > div { display: grid; gap: 1px; font-size: 12.5px; }
+.bm-col dt { color: var(--ink-muted); font-size: 12px; }
+.bm-col dl[data-kind=periods] dt { font-family: var(--mono); }
+.bm-col dd { margin: 0; color: var(--ink-soft); }
+.bm-col dl > div[data-status=unverified] dd { color: var(--caution); }
+.bm-col p { margin: 0; color: var(--ink-soft); font-size: 12.5px; }
+.bm-col p small { display: block; color: var(--ink-muted); font-size: 12px; }
+.bm-col ul { display: grid; gap: 8px; width: 100%; margin: 0; padding: 0; list-style: none; color: var(--caution); font-size: 12.5px; line-height: 1.45; }
+.bm-col ul small { display: block; color: var(--ink-muted); font-family: var(--mono); font-size: 11px; }
 .bm-empty { color: var(--ink-muted) !important; }
-.bm-meter { display: grid; grid-template-columns: 1fr auto; gap: 4px var(--space-2); width: 100%; font-size: 13px; color: var(--ink-soft); }
+.bm-meter { display: grid; grid-template-columns: 1fr auto; gap: 4px var(--space-2); width: 100%; font-size: 12.5px; color: var(--ink-soft); }
 .bm-meter b { color: var(--ink); font-family: var(--mono); font-size: 12px; font-weight: 600; }
 .bm-meter progress { grid-column: 1 / -1; width: 100%; height: 6px; border: 0; border-radius: 3px; background: var(--fill-strong); appearance: none; }
 .bm-meter progress::-webkit-progress-bar { border-radius: 3px; background: var(--fill-strong); }
@@ -105,24 +108,19 @@
 .bm-switch-sm span { width: 12px; height: 12px; }
 .bm-switch-sm[aria-checked=true] span { transform: translateX(12px); }
 /* Detail: what each feature is doing, four even tiles above the cards. */
-.bm-features { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-3); margin: 0; padding: 0; list-style: none; }
-.bm-features > li { display: grid; align-content: start; gap: 6px; justify-items: start; padding: 12px 16px; border: 1px solid var(--line); border-radius: var(--sp-radius-md); background: var(--surface); }
-.bm-features > li > span:first-child { color: var(--ink); font-size: 13px; font-weight: 650; }
-.bm-features small { color: var(--ink-muted); font-size: 12px; }
-.bm-features > li[data-status=failed] { border-color: color-mix(in srgb, var(--danger) 30%, var(--line)); }
 /* A run in flight: its phases as one segmented bar, then the phase and step it is on. */
 .bm-run { display: grid; gap: 6px; justify-self: stretch; min-width: 0; }
 .bm-run p { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; margin: 0; color: var(--ink-soft); font-size: 12px; }
 .bm-run b { color: var(--ink); font-weight: 600; }
-.bm-task-run { padding: 12px 16px; border: 1px solid var(--line); border-radius: var(--sp-radius-md); background: var(--surface); }
+.bm-task-run { grid-template-columns: 200px auto auto; align-items: center; gap: var(--space-3); justify-self: auto; }
 .bm-task-run small { color: var(--ink-muted); font-size: 12px; }
+.bm-run small { color: var(--ink-muted); font-size: 12px; }
 .bm-phases { display: grid; gap: 3px; margin: 0; padding: 0; list-style: none; }
 .bm-phases li { height: 6px; border-radius: 3px; background: var(--fill-strong); }
 .bm-phases li[data-state=done] { background: var(--brand); }
 .bm-phases li[data-state=current] { background: color-mix(in srgb, var(--brand) 55%, var(--fill-strong)); animation: bm-phase 1.6s var(--sp-ease) infinite alternate; }
 @keyframes bm-phase { to { background: var(--brand); } }
 @media (prefers-reduced-motion: reduce) { .bm-phases li[data-state=current] { animation: none; } }
-@media (max-width: 900px) { .bm-features { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 /* Messages float at the bottom of the window and leave on their own: nothing in the page moves when one appears. */
 .bm-toasts { position: fixed; left: 50%; bottom: var(--space-5); z-index: 50; display: grid; gap: var(--space-2); justify-items: center; transform: translateX(-50%); pointer-events: none; }
