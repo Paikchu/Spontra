@@ -128,5 +128,10 @@ export function extractRevenueHistory(html: string, source: DocumentSource, form
     // mentions a recast. No cross-filing arithmetic or unreported reclassification is applied.
     quarters.push(...profiles.map(profile => fromRevenueProfile(profile, historySource)).filter((quarter): quarter is RevenueHistoryQuarter => !!quarter), ...parseOracleOfferingsHistory(html, historySource));
   }
-  return {quarters: mergeHistory('X', [], quarters, source.filedAt).quarters, issues: quarters.length ? generic.issues.filter(issue => issue === 'RESTATEMENT_REVIEW_REQUIRED') : generic.issues};
+  // A report that never prints a quarter (an annual 20-F, a half-year 6-K, a pro forma, a cover amendment) is not a
+  // quarter the parser failed to read. One that prints "three months ended" and still yields nothing is.
+  const printsQuarter = /(?:three|3)\s+months\s+ended/i.test(clean(html));
+  const issues = (quarters.length ? generic.issues.filter(issue => issue === 'RESTATEMENT_REVIEW_REQUIRED') : generic.issues)
+    .map(issue => issue === 'NO_DIRECT_COMPARABLE_QUARTER' && !printsQuarter ? 'NO_QUARTERLY_PERIOD' : issue);
+  return {quarters: mergeHistory('X', [], quarters, source.filedAt).quarters, issues};
 }

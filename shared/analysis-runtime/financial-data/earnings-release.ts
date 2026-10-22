@@ -10,7 +10,8 @@ import { checkCompleteFlow } from "./completeness.ts";
  * adjustments are found together in one release table by the names the filings use, and must add up to revenue. The
  * pair is then held to the same completeness gate as any publication: every subtotal reconciles and every figure's
  * definition matches the previous quarter's. Where the release also shows the previous quarter, each line must repeat
- * its verified amount. A release that cannot be read this way yields no quarter, and the quarter waits for the 10-Q.
+ * its verified amount. A segment row whose name changed is bound by that same prior-quarter amount. A release that
+ * cannot be read this way yields no quarter, and the quarter waits for the 10-Q.
  */
 export type ReleaseDocument = { url: string; html: string };
 export type ReleaseSource = { accession: string; filedAt: string; parserVersion: string };
@@ -349,10 +350,13 @@ function build(statement: Table, tables: Table[], previous: BusinessFlowQuarter,
 }
 
 /**
- * The previous quarter's segments and adjustments, found together in one release table by the names the filings
- * use (or the abbreviations the release defines for them) and summing to the release's revenue. A managed-basis
- * reconciling line the release does not print is the difference to reported revenue, stated as such. Segments that
- * cannot be found leave the quarter at whole-company level.
+ * The previous quarter's segments and adjustments, found together in one release table and summing to the release's
+ * revenue. Rows are bound by the names the filings use (or the abbreviations the release defines). When a name is
+ * gone, the prior-quarter column of one contiguous block binds each row back to the verified segment it still equals,
+ * within half a printed unit. That block must have one row per segment, the pairing must be the only one, and its
+ * current amounts must add up to revenue. An ambiguous pairing, a split or a merge, or a block that does not add up
+ * is left unbound and named. A managed-basis reconciling line the release does not print is the difference to reported
+ * revenue, stated as such. Segments that cannot be found leave the quarter at whole-company level.
  */
 function releaseSegments(tables: Table[], previous: BusinessFlowQuarter, revenue: FlowAmount, end: string, source: ReleaseSource,
   amountOf: (b: Bound, like: FlowAmount, concept: string) => FlowAmount, derived: (v: number, like: FlowAmount, terms: FlowAmount[], f: string) => FlowAmount, defined: Map<string, string>):
@@ -365,12 +369,11 @@ function releaseSegments(tables: Table[], previous: BusinessFlowQuarter, revenue
   const whole = (issue: string) => ({ issue, adjustments: [], segments: [{ id: "reported-company-total", name: "Total company (segment split not yet verified)", revenue, description: "Consolidated amounts from the earnings release; the segment split follows with the quarterly report.", products: [], customers: null, monetization: null, disclosure: "Segment split not yet verified; only consolidated amounts are shown, with no segment shares allocated.", sourceIds: [source.accession] }] });
   const named = (a: string, b: string) => a === b || loose(a) === loose(b) || (!!defined.get(a) && loose(defined.get(a)!) === loose(b));
   const total = Number(revenue.value);
-  for (const table of tables) {
-    const found = previous.segments.map(s => find(table, [s.name], end, named));
-    if (found.some(f => !f) || new Set(found.map(f => f!.row)).size !== found.length) continue;
-    // A segment's parts are the rows printed between its neighbouring segments, and must add up to the segment's row;
-    // parts the release does not print that way leave the segment whole until the quarterly report.
-    const rows = found.map(f => f!.row).sort((a, b) => a - b);
+  const foots = (added: number) => Math.abs(added - total) <= Math.max(1, Math.abs(total) * 1e-9);
+  // Names and prior-quarter amounts share one assembly: parts stay between the bound rows, and a reconciling line
+  // the release omits is still the residual. `sum` means the rows were identified and do not add up to revenue.
+  const assemble = (table: Table, found: Bound[]): { segments: BusinessSegment[]; adjustments: NonNullable<BusinessFlowQuarter["revenueAdjustments"]> } | "incomplete" | "sum" => {
+    const rows = found.map(f => f.row).sort((a, b) => a - b);
     const parts = (s: BusinessSegment, at: Bound) => {
       if (!s.children?.length) return undefined;
       const from = (rows.filter(r => r < at.row).at(-1) ?? -1) + 1, to = rows.find(r => r > at.row) ?? Infinity;
@@ -390,10 +393,107 @@ function releaseSegments(tables: Table[], previous: BusinessFlowQuarter, revenue
       else if (a.id === "reconciling-items" && !missing) missing = a;
       else complete = false;
     }
-    if (!complete) continue;
+    if (!complete) return "incomplete";
     const added = () => segments.reduce((n, s) => n + Number(s.revenue.value), 0) + adjustments.reduce((n, a) => n + Number(a.amount.value), 0);
     if (missing) adjustments.push({ ...missing, amount: derived(total - added(), missing.amount, [revenue, ...segments.map(s => s.revenue)], "Release reported revenue − the segments' managed revenue the release prints (reconciling items)") });
-    if (Math.abs(added() - total) <= Math.max(1, Math.abs(total) * 1e-9)) return { segments, adjustments };
+    return foots(added()) ? { segments, adjustments } : "sum";
+  };
+  const failures = ["RELEASE_SEGMENT_MATCH_AMBIGUOUS", "RELEASE_SEGMENT_COUNT_CHANGED", "RELEASE_SEGMENT_SUM_MISMATCH"];
+  let failure: string | undefined;
+  const note = (issue: string) => { if (!failure || failures.indexOf(issue) < failures.indexOf(failure)) failure = issue; };
+  const successes: Array<{ segments: BusinessSegment[]; adjustments: NonNullable<BusinessFlowQuarter["revenueAdjustments"]> }> = [];
+  const signature = (built: (typeof successes)[number]) => JSON.stringify({
+    segments: built.segments.map(s => [s.id, s.revenue?.value, (s.children ?? []).map(c => [c.id, c.revenue.value])]),
+    adjustments: built.adjustments.map(a => [a.id, a.amount.value]),
+  });
+  for (const table of tables) {
+    const found = previous.segments.map(s => find(table, [s.name], end, named));
+    if (!found.some(f => !f) && new Set(found.map(f => f!.row)).size === found.length) {
+      const built = assemble(table, found as Bound[]);
+      // Names that add up to revenue are the filing's own split. Old names reprinted under another section
+      // (operating income below the revenue block) do not add up, so the prior-quarter block is still tried.
+      if (typeof built !== "string") return built;
+    }
+    for (const outcome of priorQuarterBlocks(table, previous, end, named, total)) {
+      if (outcome.kind === "bind") {
+        const built = assemble(table, outcome.bounds);
+        if (typeof built !== "string") successes.push(built);
+        else if (built === "sum") note("RELEASE_SEGMENT_SUM_MISMATCH");
+      } else note(outcome.issue);
+    }
   }
-  return whole("RELEASE_SEGMENTS_NOT_FOUND");
+  const distinct = [...new Map(successes.map(built => [signature(built), built])).values()];
+  if (distinct.length === 1) return distinct[0]!;
+  if (distinct.length > 1) return whole("RELEASE_SEGMENT_MATCH_AMBIGUOUS");
+  return whole(failure ?? "RELEASE_SEGMENTS_NOT_FOUND");
+}
+
+/**
+ * Contiguous blocks in one table whose prior-quarter column still adds up to the verified segments. A block is a
+ * bind only when it has one row per segment and exactly one pairing within half a printed unit. A different row
+ * count that still adds up, this quarter and last, is a split or a merge. The same count with no single pairing
+ * is ambiguous. Consolidated total rows break a block; they are not segments.
+ */
+function priorQuarterBlocks(table: Table, previous: BusinessFlowQuarter, end: string, named: (a: string, b: string) => boolean, total: number):
+  Array<{ kind: "bind"; bounds: Bound[] } | { kind: "issue"; issue: string }> {
+  const priorEnd = previous.periodEnd;
+  if (![...table.columns.values()].some(c => c.months === 3 && c.end === priorEnd)) return [];
+  const known = previous.segments.map(s => Number(s.revenue?.value));
+  if (known.some(n => !Number.isFinite(n))) return [];
+  const segmentSum = known.reduce((sum, n) => sum + n, 0);
+  const scaled = (printed: number) => Math.round(printed * table.scale / previous.scale);
+  const tolerance = table.scale / previous.scale / 2 + 1;
+  const revenueLabels = new Set(FIGURE_LABELS.revenue.map(labelKey));
+  type Item = { row: number; current: number; prior: number; column: number };
+  const runs: Item[][] = [];
+  let run: Item[] = [];
+  const flush = () => { if (run.length) runs.push(run); run = []; };
+  for (let i = table.headerEnd; i < table.rows.length; i++) {
+    const row = table.rows[i]!, label = labelKey(labelled(row));
+    const current = valueAt(table, row, end), prior = valueAt(table, row, priorEnd);
+    const namesSegment = !!label && previous.segments.some(s => named(labelKey(s.name), label));
+    const consolidated = !label || (!namesSegment && (/^total\b/.test(label) || revenueLabels.has(label)));
+    if (consolidated || !current || !prior) { flush(); continue; }
+    run.push({ row: i, current: current.value, prior: prior.value, column: current.column });
+  }
+  flush();
+  const outcomes: Array<{ kind: "bind"; bounds: Bound[] } | { kind: "issue"; issue: string }> = [];
+  for (const items of runs) {
+    for (let from = 0; from < items.length; from++) for (let to = from + 1; to <= items.length; to++) {
+      const block = items.slice(from, to);
+      const priorSum = block.reduce((sum, item) => sum + scaled(item.prior), 0);
+      if (Math.abs(priorSum - segmentSum) > block.length * tolerance) continue;
+      const currentSum = block.reduce((sum, item) => sum + scaled(item.current), 0);
+      const currentFoots = Math.abs(currentSum - total) <= Math.max(1, Math.abs(total) * 1e-9);
+      if (block.length !== known.length) {
+        if (currentFoots) outcomes.push({ kind: "issue", issue: "RELEASE_SEGMENT_COUNT_CHANGED" });
+        continue;
+      }
+      const assigned = uniqueAmountAssignment(known, block.map(item => scaled(item.prior)), tolerance);
+      if (assigned === "none" || assigned === "many") {
+        if (currentFoots) outcomes.push({ kind: "issue", issue: "RELEASE_SEGMENT_MATCH_AMBIGUOUS" });
+        continue;
+      }
+      outcomes.push({ kind: "bind", bounds: assigned.map(index => ({ value: block[index]!.current, table, row: block[index]!.row, column: block[index]!.column })) });
+    }
+  }
+  return outcomes;
+}
+
+/** The only pairing of verified amounts to printed amounts within `tolerance`, or why there is not exactly one. */
+function uniqueAmountAssignment(known: number[], shown: number[], tolerance: number): number[] | "none" | "many" {
+  const edges = known.map(amount => shown.flatMap((value, index) => Math.abs(value - amount) <= tolerance ? [index] : []));
+  const used = shown.map(() => false), match: number[] = [], first: number[] = [];
+  let found = 0;
+  const walk = (segment: number) => {
+    if (found > 1) return;
+    if (segment === known.length) { found++; if (found === 1) first.push(...match); return; }
+    for (const row of edges[segment]!) {
+      if (used[row]) continue;
+      used[row] = true; match[segment] = row; walk(segment + 1); used[row] = false;
+      if (found > 1) return;
+    }
+  };
+  walk(0);
+  return found === 1 ? first : found === 0 ? "none" : "many";
 }

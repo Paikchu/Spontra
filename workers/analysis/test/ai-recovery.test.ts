@@ -36,7 +36,7 @@ test("a finished SEC report run that failed on a filing is retried after a wait,
   const db = database();
   const statuses: Record<string, { status: string }> = {};
   const workflows = binding(statuses);
-  const env = { DB: db, SEC_ANALYSIS_WORKFLOW: workflows } as unknown as AnalysisEnv;
+  const env = { DB: db, SEC_ANALYSIS_WORKFLOW: workflows, SEC_AI_TICKERS: "NBIS", SEC_AI_ENABLED: "true" } as unknown as AnalysisEnv;
   const context = (now: Date) => ({ causeId: "m1", now, trigger: "e1" });
   const t0 = new Date();
 
