@@ -358,6 +358,7 @@ button { cursor: pointer; }
 .mind-lens-kind { font-size: 12px; font-weight: 600; color: var(--muted-foreground); }
 .mind-lens-summary { margin: 0 0 10px; font-size: 13.5px; }
 .mind-lens-empty { margin: 0 0 10px; color: var(--faint); }
+.mind-lens-inherited { display: block; margin-bottom: 4px; color: var(--faint); }
 .mind-lens-revenue { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .mind-lens-revenue li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 10px; padding: 8px 10px; border-radius: 8px; border: 1px solid color-mix(in srgb, var(--flow-profit) 35%, var(--border)); background: color-mix(in srgb, var(--flow-profit) 6%, transparent); }
 .mind-lens-revenue li[data-active] { border-color: var(--flow-profit); background: color-mix(in srgb, var(--flow-profit) 15%, transparent); }

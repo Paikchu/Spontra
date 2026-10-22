@@ -15,9 +15,11 @@ const KIND = labels({ line: "Product line", product: "Product" }, { line: "产�
 const m = messages({
   revenueModel: "Revenue model", breakdown: "Business breakdown", business: "Business", details: (name: string) => `${name} details`,
   close: "Close details", noDescription: "No description", noRevenue: "Revenue model not disclosed", placement: "Basis for placement",
+  inheritedFrom: (name: string) => `Revenue model of ${name}`,
 }, {
   revenueModel: "收入模式", breakdown: "业务拆解", business: "业务", details: (name: string) => `${name} 详情`,
   close: "关闭详情", noDescription: "无描述", noRevenue: "收入模式未披露", placement: "归属依据",
+  inheritedFrom: (name: string) => `${name} 的收入模式`,
 });
 const describe = (item: MindItem) => item.kind === "revenue"
   ? `${m.revenueModel} ${item.revenue.label}`
@@ -61,6 +63,16 @@ export function MindLayer({ mind, k, title, colorOf, picked, onPick, onTip, onLe
   </g>;
 }
 
+/** The nodes from the business down to `id`, outermost first; empty when the branch does not hold it. */
+function lineage(nodes: TreeNode[], id: string): TreeNode[] {
+  for (const node of nodes) {
+    if (node.id === id) return [node];
+    const below = lineage(node.children, id);
+    if (below.length) return [node, ...below];
+  }
+  return [];
+}
+
 /**
  * The picked node below the chart, where findings and reports open: what it is, how it earns, and the
  * passage that puts it in its business, each numbered against the tree's sources.
@@ -71,7 +83,11 @@ export function MindLens({ item, branch, sources, onClose }: { item: MindItem; b
   const revenue = node ? node.revenue : branch?.revenue ?? [];
   const highlight = item.kind === "revenue" ? item.revenue : null;
   const summary = node ? node.summary : branch?.summary ?? null;
-  const claims: TreeClaim[] = [...(summary ? [summary] : []), ...revenue, ...(node?.anchor ? [node.anchor] : [])];
+  // A product the material prices only at its line earns as the nearest priced level above it.
+  const inherited = node && !revenue.length && !node.children.length && branch
+    ? [{ name: branch.label, revenue: branch.revenue }, ...lineage(branch.nodes, node.id).slice(0, -1)].reverse().find(n => n.revenue.length) ?? null : null;
+  const shown = inherited?.revenue ?? revenue;
+  const claims: TreeClaim[] = [...(summary ? [summary] : []), ...shown, ...(node?.anchor ? [node.anchor] : [])];
   const cited = [...new Set(claims.flatMap(c => c.sourceIds))].map(id => sources.find(s => s.id === id)).filter(s => s != null);
   const cite = (claim: TreeClaim): ReactNode => <span className="cites">{claim.sourceIds.map(id => {
     const index = cited.findIndex(s => s.id === id);
@@ -82,7 +98,7 @@ export function MindLens({ item, branch, sources, onClose }: { item: MindItem; b
   return <section className="lens mind-lens" aria-label={m.details(name)} key={item.id}>
     <header className="lens-head">
       <div className="lens-title">
-        <b className="mind-lens-kind">{node ? KIND[node.kind] : m.business}</b><SourceLanguage of={[node?.gloss, summary?.text, ...revenue.flatMap(r => [r.label, r.text])]} />
+        <b className="mind-lens-kind">{node ? KIND[node.kind] : m.business}</b><SourceLanguage of={[node?.gloss, summary?.text, ...shown.flatMap(r => [r.label, r.text])]} />
         <h2 lang={node ? "en" : undefined}>{name}</h2>
         {node?.gloss && <span className="lens-basis" lang={langOf(node.gloss)}>{node.gloss}</span>}
         {path && node && <span className="lens-basis">{path}</span>}
@@ -93,7 +109,8 @@ export function MindLens({ item, branch, sources, onClose }: { item: MindItem; b
     <div className="lens-doc"><div className="lens-doc-row" data-cells="2">
       <div className="lens-doc-cell">
         {summary ? <p className="mind-lens-summary" lang={langOf(summary.text)}>{summary.text}{cite(summary)}</p> : <p className="mind-lens-empty">{m.noDescription}</p>}
-        {revenue.length > 0 ? <ul className="mind-lens-revenue">{revenue.map((r, i) => <li key={i} data-active={r === highlight || undefined}><b lang={langOf(r.label)}>{r.label}</b><small>{revenueLabel(r.type, getLocale())}</small><span lang={langOf(r.text)}>{r.text}{cite(r)}</span></li>)}</ul>
+        {inherited && <small className="mind-lens-inherited">{m.inheritedFrom(inherited.name)}</small>}
+        {shown.length > 0 ? <ul className="mind-lens-revenue">{shown.map((r, i) => <li key={i} data-active={r === highlight || undefined}><b lang={langOf(r.label)}>{r.label}</b><small>{revenueLabel(r.type, getLocale())}</small><span lang={langOf(r.text)}>{r.text}{cite(r)}</span></li>)}</ul>
           : !node?.children.length && <p className="mind-lens-empty">{m.noRevenue}</p>}
       </div>
       <div className="lens-doc-cell">

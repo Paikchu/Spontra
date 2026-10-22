@@ -81,6 +81,31 @@ test("a line the filing lists under a heading is kept through a joined anchor, i
   assert.equal(node?.summary?.text, "Consoles, games and subscriptions.");
 });
 
+test("nodes the loop left undescribed are described from the passages naming them, and the review still judges each", async () => {
+  const asked: Array<{ id: string; evidence: Array<{ sourceId: string }> }> = [];
+  const tree = await run([{ flowNodeId: "msft:MorePersonalComputingMember", name: "MorePersonalComputing" }], {
+    act: async stage => ({
+      "business-tree-1-1": call("read", { source: "b1-s1", focus: "XBOX" }),
+      "business-tree-1-2": call("add", { parent: "root", nodes: [{ name: "XBOX", gloss: "gaming console and content", kind: "line", anchor: { text: JOINED, sourceIds: ["b1-s1"] }, summary: null, revenue: [] }] }),
+    } as Record<string, TreeReply>)[stage] ?? call("finish"),
+    judge: async (stage, _system, payload) => {
+      if (stage.startsWith("business-tree-describe")) {
+        asked.push(...(payload as { nodes: typeof asked }).nodes);
+        return { summaries: [
+          { id: "b1-n1", text: "XBOX consoles, games and content services for players.", sourceIds: ["b1-s1", "b1-s9"] },
+          { id: "root", text: "Windows, devices and gaming for consumers and businesses.", sourceIds: ["b1-s1"] },
+        ] };
+      }
+      return { issues: [{ id: "root", field: "summary", problem: "not supported" }] };
+    },
+  });
+  assert.deepEqual(asked.map(n => n.id), ["root", "b1-n1"]);
+  assert.ok(asked.every(n => n.evidence.length && n.evidence.every(e => e.sourceId === "b1-s1")), "only passages of what was read");
+  const branch = readBusinessTree(JSON.parse(JSON.stringify(tree)), "MSFT")!.branches[0]!;
+  assert.deepEqual(branch.children[0]!.summary, { text: "XBOX consoles, games and content services for players.", sourceIds: ["s1"] });
+  assert.equal(branch.summary, null, "the review struck the business's description");
+});
+
 test("finishing with a bare category line is answered once with a request for named products and pricing", async () => {
   const filing = "We serve developers and enterprises of all sizes through AWS, which offers a broad set of on-demand technology services, including compute, storage, database, analytics, and other services.";
   const ec2 = "Amazon EC2 provides secure and resizable compute capacity in the cloud, the compute service of AWS. With On-Demand Instances you pay for compute capacity by the second with no long-term commitments.";
@@ -99,7 +124,8 @@ test("finishing with a bare category line is answered once with a request for na
     }) });
   const steps = tree.research![0]!.steps;
   assert.match(steps[2]!.observation, /name fewer than two products: b1-n1 Compute \(none\)/);
-  assert.equal(steps.at(-1)!.observation, "Finished.");
+  assert.equal(steps.at(-2)!.observation, "Finished.");
+  assert.equal(steps.at(-1)!.action, "describe");
   const compute = tree.branches[0]!.children[0]!;
   assert.equal(compute.children[0]!.name, "Amazon EC2");
   assert.equal(compute.children[0]!.revenue[0]!.type, "consumption");
