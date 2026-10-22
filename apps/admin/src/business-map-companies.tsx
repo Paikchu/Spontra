@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertTriangle, CheckCircle2, ChevronRight, ExternalLink, Layers, Plus, RefreshCw, Scale, ScanLine, Search, Trash2 } from 'lucide-react';
-import type { BusinessMapCompanies, BusinessMapCompany } from '@/shared/analysis-contract/business-map-admin';
+import type { BusinessMapCompanies, BusinessMapCompany, IssuerSuggestion } from '@/shared/analysis-contract/business-map-admin';
 import { FEATURES, type Feature } from '@/shared/analysis-contract/business-features';
 import { adminApi, AdminApiError } from './admin-api';
 import { normalizeCompanyTicker, pendingRequestId, completeRequestId } from './financial-maintenance-state';
@@ -98,11 +98,11 @@ export function BusinessMapCompanies({onUnauthorized,onAuthenticated}:{onUnautho
     catch(err){if(err instanceof AdminApiError&&err.status===401)callbacks.current.onUnauthorized();else setError((err as Error).message);}
     finally {lock.current=false;setBusy('');}
   }
-  function add(event:FormEvent){event.preventDefault();const symbol=normalizeCompanyTicker(ticker);if(!symbol){setError('股票代码无效');return;}void mutate(symbol,true);}
+  function add(event:FormEvent){event.preventDefault();const symbol=normalizeCompanyTicker(ticker);if(!symbol){setError('请输入股票代码，或从列表中选择公司');return;}void mutate(symbol,true);}
   const companies=data?.companies.filter(c=>c.ticker.toLowerCase().includes(search.toLowerCase()))??[];
   return <section className="bm-admin" aria-label="白名单">
     <div className="bm-admin-toolbar">
-      <form className="bm-admin-add" onSubmit={add}><label htmlFor="bm-ticker" className="bm-admin-sr">股票代码</label><input id="bm-ticker" placeholder="股票代码" value={ticker} maxLength={10} onChange={e=>setTicker(e.target.value.toUpperCase())} required/><button className="ra-primary" disabled={!data||!!busy}><Plus size={16}/>加入白名单</button></form>
+      <form className="bm-admin-add" onSubmit={add}><TickerField value={ticker} onChange={setTicker} listed={new Set(data?.companies.filter(c=>c.dataEnabled).map(c=>c.ticker))} onUnauthorized={()=>callbacks.current.onUnauthorized()}/><button className="ra-primary" disabled={!data||!!busy}><Plus size={16}/>加入白名单</button></form>
       <div className="bm-admin-filter"><span>白名单 · {data?.companies.filter(c=>c.dataEnabled).length??0} 家</span><label className="ra-search"><Search size={16}/><input aria-label="筛选公司" placeholder="代码" value={search} onChange={e=>setSearch(e.target.value)}/></label><button className="ra-icon-button" onClick={()=>setRefresh(n=>n+1)} disabled={!!busy} aria-label="刷新"><RefreshCw size={16}/></button></div>
     </div>
     {/* In the body: the section's enter animation leaves a transform that would pin a fixed child to the section. */}
@@ -211,4 +211,49 @@ function Company({company:c,generation,busy,onToggle,onPrepare,onJudge,onFeature
       </div>
     </div></td></tr>}
   </tbody>;
+}
+
+/**
+ * The ticker field with its suggestions: as the admin types a ticker or a company name, EDGAR's exchange directory
+ * lists the issuers it names (business-map/issuers), and picking one fills the field; the form's button still adds.
+ * Companies already on the whitelist are marked, not hidden, so a second add is a visible choice.
+ */
+function TickerField({value,onChange,listed,onUnauthorized}:{value:string;onChange:(value:string)=>void;listed:Set<string>;onUnauthorized:()=>void}) {
+  const [issuers,setIssuers]=useState<IssuerSuggestion[]>([]),[open,setOpen]=useState(false),[active,setActive]=useState(-1);
+  // The value a pick wrote: the list stays closed for it, and opens again once the admin types.
+  const picked=useRef(''),unauthorized=useRef(onUnauthorized);
+  useEffect(()=>{unauthorized.current=onUnauthorized;},[onUnauthorized]);
+  useEffect(()=>{
+    const query=value.trim();
+    if(!query||query===picked.current){setIssuers([]);setActive(-1);return;}
+    const controller=new AbortController();
+    const timer=setTimeout(()=>{
+      void adminApi<{issuers:IssuerSuggestion[]}>(`business-map/issuers?q=${encodeURIComponent(query)}`,{signal:controller.signal}).then(result=>{
+        if(controller.signal.aborted)return;setIssuers(result.issuers);setActive(result.issuers.length?0:-1);setOpen(true);
+      }).catch(err=>{if(controller.signal.aborted)return;if(err instanceof AdminApiError&&err.status===401)unauthorized.current();setIssuers([]);setActive(-1);});
+    },150);
+    return()=>{clearTimeout(timer);controller.abort();};
+  },[value]);
+  function pick(issuer:IssuerSuggestion){picked.current=issuer.ticker;onChange(issuer.ticker);setIssuers([]);setActive(-1);setOpen(false);}
+  const shown=open&&issuers.length>0;
+  return <div className="bm-ticker-field">
+    <label htmlFor="bm-ticker" className="bm-admin-sr">股票代码或公司名</label>
+    <input id="bm-ticker" placeholder="股票代码或公司名" value={value} maxLength={40} autoComplete="off" spellCheck={false} required
+      role="combobox" aria-expanded={shown} aria-controls="bm-ticker-options" aria-autocomplete="list" aria-activedescendant={shown&&active>=0?`bm-ticker-option-${active}`:undefined}
+      onChange={e=>{picked.current='';onChange(e.target.value.toUpperCase());}}
+      onFocus={()=>setOpen(true)} onBlur={()=>setOpen(false)}
+      onKeyDown={e=>{
+        if(!shown){if(e.key==='ArrowDown'&&issuers.length)setOpen(true);return;}
+        if(e.key==='ArrowDown'){e.preventDefault();setActive(i=>(i+1)%issuers.length);}
+        else if(e.key==='ArrowUp'){e.preventDefault();setActive(i=>(i-1+issuers.length)%issuers.length);}
+        else if(e.key==='Enter'&&active>=0){e.preventDefault();pick(issuers[active]!);}
+        else if(e.key==='Escape'){e.preventDefault();setOpen(false);}
+      }}/>
+    <ul id="bm-ticker-options" role="listbox" aria-label="匹配的公司" className="bm-ticker-options" hidden={!shown}>
+      {issuers.map((issuer,i)=><li key={issuer.ticker} id={`bm-ticker-option-${i}`} role="option" aria-selected={i===active} data-active={i===active||undefined}
+        onMouseDown={e=>e.preventDefault()} onMouseEnter={()=>setActive(i)} onClick={()=>pick(issuer)}>
+        <strong>{issuer.ticker}</strong><span>{issuer.name}</span>{listed.has(issuer.ticker)?<em>已在白名单</em>:issuer.exchange&&<small>{issuer.exchange}</small>}
+      </li>)}
+    </ul>
+  </div>;
 }

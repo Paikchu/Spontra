@@ -33,6 +33,8 @@ export type BusinessMapCompany = FinancialMaintenanceCompany & {
 };
 /** `generation`: whether each feature is generated at all (the admin's global switches over the deployment flags). */
 export type BusinessMapCompanies = { companies: BusinessMapCompany[]; automaticCollection: boolean; generation: Record<Feature, boolean> };
+/** One issuer of EDGAR's exchange directory, as the whitelist's ticker field suggests them. */
+export type IssuerSuggestion = { ticker: string; name: string; exchange: string };
 
 /**
  * The data behind BusinessView's three charts for one company: the profit view's quarters (published pair plus the

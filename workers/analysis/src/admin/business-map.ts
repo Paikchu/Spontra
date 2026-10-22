@@ -22,6 +22,7 @@ import { readCompletePublicationForTicker } from '../financial-data/publication.
 import { readMapDerived } from '../financial-data/derived.ts';
 import { discoverDataIssuer, throttledSecReader } from '../financial-data/provider.ts';
 import { D1SecRepository } from '../sec/d1.ts';
+import { issuerDirectory, searchIssuers } from './issuer-search.ts';
 
 /** Forgets the failed inputs of a feature's tasks for a company, so a retry is not made to wait or refused. */
 async function clearFailures(db: D1Database, ticker: string, feature: Feature): Promise<void> {
@@ -168,6 +169,13 @@ export async function handleBusinessMapAdminRequest(request: Request, env: Analy
       return json({ticker,feature,on:body.on},200);
     }
     if (path === '/admin/business-map/messages' && request.method === 'GET') return json(await listMessages(db));
+    // The ticker field's suggestions: EDGAR's exchange directory, searched by ticker or name.
+    if (path === '/admin/business-map/issuers' && request.method === 'GET') {
+      const query = new URL(request.url).searchParams.get('q') ?? '';
+      if (!query.trim()) return json({issuers:[]});
+      try { return json({issuers: searchIssuers(await issuerDirectory(db, throttledSecReader(env.SEC_USER_AGENT, fetch, 0)), query)}); }
+      catch { return json({error:'暂时无法访问 SEC 发行人目录，请稍后重试。'},503); }
+    }
     if (path === '/admin/business-map/messages/read' && request.method === 'POST') {
       const body = await request.json().catch(()=>({})) as {ids?:unknown};
       const ids = Array.isArray(body.ids) ? body.ids.filter((id):id is string=>typeof id==='string').slice(0,500) : null;
