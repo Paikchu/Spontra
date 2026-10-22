@@ -309,7 +309,8 @@ function derivedObservation(
   formula: string,
 ): HistoricalObservation {
   return {
-    observationId: `derived:${hashString(`${ticker}:${seriesId}:${periodScope}:${endDate}:${formula}`)}`,
+    // The unit is part of the identity: a period derived once in RUB and again in USD is two facts, not one.
+    observationId: `derived:${hashString(`${ticker}:${seriesId}:${periodScope}:${endDate}:${unit}:${formula}`)}`,
     seriesId,
     metricKey: seriesId,
     value,

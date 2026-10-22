@@ -23,3 +23,15 @@ test("a series keeps only the currency its newest filing reports in, so restated
     ["2025-12-31", "USD", "4066000000"], ["2024-12-31", "USD", "807500000"], ["2023-12-31", "USD", "82900000"], ["2022-12-31", "USD", "14600000"],
   ]);
 });
+
+test("a derived value's id carries its unit, so one derived in RUB and later in USD are stored as two facts", () => {
+  const year = (unit: string, ocf: number, capex: number, accn: string, filed: string) => ({ facts: { "us-gaap": {
+    NetCashProvidedByUsedInOperatingActivities: { units: { [unit]: [fact("2023-01-01", "2023-12-31", ocf, accn, filed)] } },
+    PaymentsToAcquirePropertyPlantAndEquipment: { units: { [unit]: [fact("2023-01-01", "2023-12-31", capex, accn, filed)] } },
+  } } });
+  const fcf = (facts: unknown) => normalizeCompanyFacts("NBIS", facts).series.find(s => s.seriesId === "free_cash_flow")!.annual[0]!;
+  const rub = fcf(year("RUB", 200000000000, 90641000000, "0001558370-24-005891", "2024-04-26"));
+  const usd = fcf(year("USD", 300000000, 82900000, "0001104659-26-052948", "2026-04-30"));
+  assert.equal(rub.endDate, usd.endDate);
+  assert.notEqual(rub.observationId, usd.observationId);
+});
