@@ -3,6 +3,7 @@ import { LoaderCircle, RefreshCw, Search } from "lucide-react";
 import type { TranslationEntry, TranslationsAdmin } from "@/shared/analysis-contract/translations-admin";
 import type { TranslatedResource } from "@/shared/analysis-runtime/translation";
 import { adminApi, AdminApiError } from "./admin-api";
+import { usePageActive } from "./admin-page";
 
 const RESOURCE: Record<TranslatedResource, string> = {
   flow: "业务地图说明", findings: "要点与分析师", explainer: "业务解读", tree: "业务脑图", guidance: "业绩指引",
@@ -25,7 +26,8 @@ export function TranslationsPanel({ ticker, onUnauthorized }: { ticker: string; 
       .catch(e => { if (c.signal.aborted) return; if (e instanceof AdminApiError && e.status === 401) unauthorized.current(); else setError((e as Error).message); });
     return () => c.abort();
   }, [ticker, refresh]);
-  useEffect(() => { const timer = setInterval(() => { if (!document.hidden) setRefresh(n => n + 1); }, data?.run ? 10000 : 300000); return () => clearInterval(timer); }, [data?.run]);
+  const shown = usePageActive();
+  useEffect(() => { const timer = setInterval(() => { if (!document.hidden && shown.current) setRefresh(n => n + 1); }, data?.run ? 10000 : 300000); return () => clearInterval(timer); }, [data?.run, shown]);
   const entries = useMemo(() => (data?.entries ?? []).filter(e => (filter === "all" || e.status === filter) && (!resource || `${e.resource}:${e.scope}` === resource)
     && (!search || e.source.toLowerCase().includes(search.toLowerCase()) || (e.text ?? "").includes(search))), [data, filter, resource, search]);
 

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronLeft, RefreshCw, RotateCcw, Search } from 'lucide-react';
+import { usePageActive } from './admin-page';
 import type { LibraryDocumentDetail, LibraryDocumentSummary, LibraryOverview, LibrarySectionDetail, LibraryTable } from '@/shared/analysis-contract/filing-library';
 import { adminApi, AdminApiError } from './admin-api';
 import { FindPanel } from './filing-library-cross';
@@ -108,7 +109,9 @@ export function FilingLibrary({ onAuthenticated, onUnauthorized }: { onAuthentic
   useEffect(() => { const c = new AbortController(); void adminApi<LibraryOverview>('library', { signal: c.signal }).then(r => { setOverview(r); setError(''); callbacks.current.onAuthenticated(); }).catch(e => { if (!c.signal.aborted) failRef.current(e); }); return () => c.abort(); }, [refresh]);
   useEffect(() => { if (!place.ticker) return; const c = new AbortController(); void adminApi<{ documents: LibraryDocumentSummary[] }>(`library/companies/${encodeURIComponent(place.ticker)}`, { signal: c.signal }).then(r => setDocuments({ ticker: place.ticker, list: r.documents })).catch(e => { if (!c.signal.aborted) failRef.current(e); }); return () => c.abort(); }, [place.ticker, refresh]);
   // Browser back and forward move through the levels.
-  useEffect(() => { const onPop = () => setPlace(placeFromUrl()); window.addEventListener('popstate', onPop); return () => window.removeEventListener('popstate', onPop); }, []);
+  // Hidden behind another page, the history is that page's.
+  const shown = usePageActive();
+  useEffect(() => { const onPop = () => { if (shown.current) setPlace(placeFromUrl()); }; window.addEventListener('popstate', onPop); return () => window.removeEventListener('popstate', onPop); }, [shown]);
 
   function go(next: Place) {
     setPlace(next); setError('');

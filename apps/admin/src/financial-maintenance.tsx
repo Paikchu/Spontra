@@ -10,6 +10,7 @@ import { CompanyLogo } from "@/packages/web/src/company-logo";
 import { FinancialQuarterSummary } from "./financial-quarter-summary";
 import { FinancialUpdateHistory, financialDate } from "./financial-update-history";
 import { completeRequestId, normalizeCompanyTicker, pendingRequestId } from "./financial-maintenance-state";
+import { useOnReturn, usePageActive } from "./admin-page";
 import "./financial-maintenance.css";
 
 type Action = "extract" | "analyze" | "reread" | "retry";
@@ -71,12 +72,15 @@ export function FinancialMaintenance({ onUnauthorized, onAuthenticated }: { onUn
     return () => controller.abort();
   }, [listRefresh]);
 
+  const shown = usePageActive();
   useEffect(() => {
     if (!ticker) return;
     const controller = new AbortController();
-    const url = new URL(window.location.href);
-    url.searchParams.set("ticker", ticker);
-    window.history.replaceState(null, "", url.pathname + url.search);
+    if (shown.current) {
+      const url = new URL(window.location.href);
+      url.searchParams.set("ticker", ticker);
+      window.history.replaceState(null, "", url.pathname + url.search);
+    }
     void adminApi<FinancialMaintenanceCompanyDetail>(`financials/companies/${ticker}`, { signal: controller.signal }).then(result => {
       if (controller.signal.aborted) return;
       setDetail(result);
@@ -88,14 +92,15 @@ export function FinancialMaintenance({ onUnauthorized, onAuthenticated }: { onUn
       else setError(err.message);
     }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [ticker, refresh]);
+  }, [ticker, refresh, shown]);
 
   useEffect(() => {
     const timer = setInterval(() => {
-      if (!document.hidden && !mutationLock.current) setRefresh(value => value + 1);
+      if (!document.hidden && shown.current && !mutationLock.current) setRefresh(value => value + 1);
     }, 10_000);
     return () => clearInterval(timer);
-  }, []);
+  }, [shown]);
+  useOnReturn(() => { if (!mutationLock.current) setRefresh(value => value + 1); });
   useEffect(() => { if (operation) dialog.current?.showModal(); else dialog.current?.close(); }, [operation]);
   useEffect(() => { if (adding) addDialog.current?.showModal(); else addDialog.current?.close(); }, [adding]);
 
