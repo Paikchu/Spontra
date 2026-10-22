@@ -166,10 +166,11 @@ function chooseCanonicalConcept(observations: CumulativeObservation[]): Cumulati
  * One currency per series: the one its newest filing reports in. An issuer that changed reporting currency restates its
  * comparatives (Nebius, formerly Yandex, filed capex in RUB until 2023 and in USD since), so companyfacts holds the same
  * periods in both; values in the old currency are dropped, which also keeps growth from being read across currencies.
+ * The facts a report has stored are read under the same rule, so rows stored before a change of currency drop out too.
  */
-function inReportingCurrency(observations: CumulativeObservation[]): CumulativeObservation[] {
+export function inReportingCurrency<T extends { seriesId: string; unit: string; sourceFiledAt: string }>(observations: T[]): T[] {
   // `currency` names only the currencies the report renders; any ISO code in the unit (RUB, USD/shares) is money here.
-  const money = (observation: CumulativeObservation) => /^([A-Z]{3})(?:\/shares)?$/.exec(observation.unit)?.[1];
+  const money = (observation: T) => /^([A-Z]{3})(?:\/shares)?$/.exec(observation.unit)?.[1];
   const current = new Map<string, { currency: string; filedAt: string }>();
   for (const observation of observations) {
     const currency = money(observation);

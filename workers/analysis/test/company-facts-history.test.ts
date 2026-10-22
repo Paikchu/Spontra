@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { normalizeCompanyFacts } from "../src/sec/history.ts";
+import { historyFromRows } from "../src/sec/d1.ts";
 
 const fact = (start: string, end: string, val: number, accn: string, filed: string) => ({ start, end, val, accn, form: "20-F", filed, fp: "FY" });
 
@@ -34,4 +35,12 @@ test("a derived value's id carries its unit, so one derived in RUB and later in 
   const usd = fcf(year("USD", 300000000, 82900000, "0001104659-26-052948", "2026-04-30"));
   assert.equal(rub.endDate, usd.endDate);
   assert.notEqual(rub.observationId, usd.observationId);
+});
+
+test("facts a report stored before the currency changed are read under the same rule", () => {
+  const row = (unit: string, value: string, end: string, filed: string) => ({ observationId: `${unit}:${end}`, seriesId: "capex" as const, metricKey: "capex", value, unit, currency: unit === "USD" ? "USD" : "",
+    basis: "gaap" as const, startDate: `${end.slice(0, 4)}-01-01`, endDate: end, sourceAccession: "a", sourceFiledAt: filed, sourceVersion: "sec-canonical-series.v4", xbrlConcept: "", derivationFormula: "",
+    dimensions: JSON.stringify({ periodScope: "annual" }) });
+  const history = historyFromRows([row("USD", "82900000", "2023-12-31", "2026-04-30"), row("RUB", "90641000000", "2023-12-31", "2024-04-26"), row("RUB", "50544000000", "2022-12-31", "2024-04-26")]);
+  assert.deepEqual(history.series[0]!.annual.map(o => [o.endDate, o.unit]), [["2023-12-31", "USD"]]);
 });

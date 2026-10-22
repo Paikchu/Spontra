@@ -3,6 +3,7 @@ import { earningsKey } from "./earnings.ts";
 import type { SecEarningsGroup } from "../../../../shared/analysis-contract/report.ts";
 import { SecAnalysisJobRepository } from "./d1-jobs.ts";
 import { loadReportContinuity } from "./continuity.ts";
+import { inReportingCurrency } from "./history.ts";
 import { SecMemoryRepository } from "./d1-memory.ts";
 import { parseJson, hashJson, type D1Like } from "./d1-support.ts";
 import { outboxInsert } from "../pipeline/outbox.ts";
@@ -621,7 +622,7 @@ export function historyFromRows(rows: Array<{
   basis: "gaap" | "derived"; startDate: string | null; endDate: string; sourceAccession: string; sourceFiledAt: string; sourceVersion: string;
   xbrlConcept: string; derivationFormula: string; dimensions: string;
 }>): SecHistorySnapshot {
-  const observations: HistoricalObservation[] = rows.flatMap((row) => {
+  const observations: HistoricalObservation[] = inReportingCurrency(rows).flatMap((row) => {
     const dimensions = parseJson<{ periodScope?: "quarter" | "annual" }>(row.dimensions);
     const periodScope = dimensions?.periodScope;
     if (periodScope !== "quarter" && periodScope !== "annual") return [];
