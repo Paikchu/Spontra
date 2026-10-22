@@ -3,6 +3,12 @@ import type { CompleteFlowPublication } from './complete-business-flow.ts';
 import type { PublicBusinessFlow } from './business-flow.ts';
 import type { PublicCapitalStructure } from './capital-structure.ts';
 import type { Feature } from './business-features.ts';
+import type { AiRunKind, AiRunStep } from './ai-runs-admin.ts';
+/**
+ * How far one run in flight got: a report job's stage (`report`, no step log), or the steps a model run entered,
+ * oldest first, as the run names them.
+ */
+export type FeatureRunProgress = { kind: AiRunKind | "report"; status: string; stage: string | null; steps: AiRunStep[]; startedAt: string; updatedAt: string };
 export type BusinessMapCompany = FinancialMaintenanceCompany & {
   task: FinancialMaintenanceTask | null;
   collection: { status: string; reasons: string[]; updatedAt: string; completed: number; total: number } | null;
@@ -28,6 +34,8 @@ export type BusinessMapCompany = FinancialMaintenanceCompany & {
   features: Record<Feature, { on: boolean; publishedAt: string | null;
     /** The feature's work in flight for this company: a run executing or a run waiting its turn. */
     run: "running" | "queued" | null;
+    /** The feature's runs executing now, with the step each has reached. */
+    progress: FeatureRunProgress[];
     /** The failed run that switched the feature off (messages.ts); null once it is switched on again. */
     failure: { at: string; detail: string | null } | null }>;
 };

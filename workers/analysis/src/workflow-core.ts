@@ -157,7 +157,28 @@ export type AnalysisOperations = {
   enqueueMemory?(jobId: string, ticker: string): Promise<void>;
   publishEvent(summary: SecFilingSummary): Promise<void>;
   updateJob(job: WorkflowJobUpdate): Promise<void>;
+  /** Moves a running job's `current_stage` to the step it is entering, so the admin shows how far the report got. */
+  markJobStage?(jobId: string, stage: string): Promise<void>;
 };
+
+/**
+ * Steps for one filing's job: each step named `<stage>:<accession>[:<detail>]` records `<stage>[:<detail>]` as the job's
+ * stage when it starts. The record is written inside the durable step, so a replay, which skips finished steps, never
+ * moves the shown stage backwards; a failed record never fails the step.
+ */
+function jobStageSteps(step: WorkflowStepLike, accession: string, jobId: string, operations: AnalysisOperations): WorkflowStepLike {
+  if (!operations.markJobStage) return step;
+  const marker = `:${accession}`;
+  return {
+    do: (name, callback) => step.do(name, async (context) => {
+      const at = name.indexOf(marker), stage = at > 0 ? name.slice(0, at) : "";
+      if (stage && stage !== "status" && stage !== "job" && stage !== "memory-enqueue") {
+        try { await operations.markJobStage!(jobId, `${stage}${name.slice(at + marker.length)}`.slice(0, 120)); } catch { /* bookkeeping only */ }
+      }
+      return callback(context);
+    }),
+  };
+}
 
 export async function executeSecAnalysisWorkflow(
   params: SecWorkflowParams,
@@ -204,36 +225,37 @@ export async function executeSecAnalysisWorkflow(
       workflowInstanceId,
     } as const;
     let stage = "context";
+    const jobStep = jobStageSteps(step, accession, jobId, operations);
     try {
-      const shouldAnalyze = await step.do(`status:${accession}`, () => operations.shouldAnalyze(filing, params.requestedBy));
+      const shouldAnalyze = await jobStep.do(`status:${accession}`, () => operations.shouldAnalyze(filing, params.requestedBy));
       if (!shouldAnalyze) {
         skipped.push(accession);
         continue;
       }
       const eventFiling = /^(8-K|6-K)(\/A)?$/.test(filing.form);
       stage = "prepare";
-      await step.do(`job:${accession}:start`, () => operations.updateJob({ ...baseJob, status: "running", currentStage: "prepare", updatedAt: new Date().toISOString() }));
+      await jobStep.do(`job:${accession}:start`, () => operations.updateJob({ ...baseJob, status: "running", currentStage: "prepare", updatedAt: new Date().toISOString() }));
       console.log(JSON.stringify({ event: "sec-report-generation", policy: "reliability.v1", jobId, workflowInstanceId, ticker: filing.ticker, accession, status: "started" }));
-      const prepared = await step.do(`prepare:${accession}`, () => operations.prepare(filing));
+      const prepared = await jobStep.do(`prepare:${accession}`, () => operations.prepare(filing));
       // A cover page that only adds an exhibit has no statements to analyze. Publishing that limitation
       // is the result; sending it through the reader report fails the same way on every retry.
       if (!eventFiling && prepared.coverAmendment && operations.publishAmendment) {
         stage = "amendment-note";
-        await step.do(`amendment-note:${accession}`, () => operations.publishAmendment!(filing, prepared.coverAmendment!));
-        await step.do(`job:${accession}:complete`, () => operations.updateJob({ ...baseJob, status: "complete", currentStage: "published", updatedAt: new Date().toISOString(), completedAt: new Date().toISOString() }));
+        await jobStep.do(`amendment-note:${accession}`, () => operations.publishAmendment!(filing, prepared.coverAmendment!));
+        await jobStep.do(`job:${accession}:complete`, () => operations.updateJob({ ...baseJob, status: "complete", currentStage: "published", updatedAt: new Date().toISOString(), completedAt: new Date().toISOString() }));
         analyzed.push(accession);
         continue;
       }
       const restored = params.regenerateReport && !eventFiling && operations.restoreAnalysis
-        ? await step.do(`restore-analysis:${accession}`, () => operations.restoreAnalysis!(filing, prepared)) : null;
+        ? await jobStep.do(`restore-analysis:${accession}`, () => operations.restoreAnalysis!(filing, prepared)) : null;
       // The brief comes from stored history alone, so a filing whose history cannot be used fails here, before any
       // model call; only the check that needs discovery's grounded disclosures waits for it.
       let periodic: { context: SecAnalysisContext; brief: SecAnalysisBrief } | null = null;
       if (!eventFiling) {
         stage = "context";
-        const context = await step.do(`context:${accession}`, () => operations.getContext(filing, prepared));
+        const context = await jobStep.do(`context:${accession}`, () => operations.getContext(filing, prepared));
         stage = "brief";
-        const brief = await step.do(`brief:${accession}`, async () => operations.buildBrief
+        const brief = await jobStep.do(`brief:${accession}`, async () => operations.buildBrief
           ? operations.buildBrief(filing, prepared, context)
           : buildFallbackBrief(filing, context));
         assertHistoryUnits(brief);
@@ -243,15 +265,15 @@ export async function executeSecAnalysisWorkflow(
       if (!restored && operations.scanDisclosures && operations.finishDiscovery && prepared.discoveryChunks) {
         stage = "discovery";
         const chunks = await mapWithConcurrency(Array.from({length:prepared.discoveryChunks}, (_,index) => index), SEC_NODE_CONCURRENCY,
-          (index) => step.do(`discovery:${accession}:${index}`, (stepContext) => operations.scanDisclosures!(filing, prepared, index, executionFor(stepContext))));
-        discoveryResult = await step.do(`discovery-finish:${accession}`, () => operations.finishDiscovery!(filing, prepared, chunks));
+          (index) => jobStep.do(`discovery:${accession}:${index}`, (stepContext) => operations.scanDisclosures!(filing, prepared, index, executionFor(stepContext))));
+        discoveryResult = await jobStep.do(`discovery-finish:${accession}`, () => operations.finishDiscovery!(filing, prepared, chunks));
       }
       if (eventFiling) {
         stage = "event-summary";
-        const summary = await step.do(`event-summary:${accession}`, (context) => operations.summarizeEvent(filing, prepared, executionFor(context)));
+        const summary = await jobStep.do(`event-summary:${accession}`, (context) => operations.summarizeEvent(filing, prepared, executionFor(context)));
         stage = "publish";
-        await step.do(`publish-event:${accession}`, () => operations.publishEvent(summary));
-        await step.do(`job:${accession}:complete`, () => operations.updateJob({ ...baseJob, status: "complete", currentStage: "published", updatedAt: new Date().toISOString(), completedAt: new Date().toISOString() }));
+        await jobStep.do(`publish-event:${accession}`, () => operations.publishEvent(summary));
+        await jobStep.do(`job:${accession}:complete`, () => operations.updateJob({ ...baseJob, status: "complete", currentStage: "published", updatedAt: new Date().toISOString(), completedAt: new Date().toISOString() }));
         analyzed.push(accession);
         continue;
       }
@@ -259,29 +281,29 @@ export async function executeSecAnalysisWorkflow(
       stage = "brief";
       assertBriefCanProceed(brief, Boolean(restored || discoveryResult?.groundedDisclosures));
       stage = "manager";
-      const plan = restored?.plan ?? await step.do(`manager:${accession}`, async (stepContext) => {
+      const plan = restored?.plan ?? await jobStep.do(`manager:${accession}`, async (stepContext) => {
         const planned = await operations.plan(filing, prepared, brief, executionFor(stepContext));
         if (!planned.nodes.length) throw new Error("Manager planned no analysis nodes");
         return planned;
       });
       stage = "nodes-round-0";
-      const nodes = restored?.nodes ?? await mapWithConcurrency(plan.nodes, SEC_NODE_CONCURRENCY, (spec, index) => step.do(
+      const nodes = restored?.nodes ?? await mapWithConcurrency(plan.nodes, SEC_NODE_CONCURRENCY, (spec, index) => jobStep.do(
         `node:${accession}:round:0:${index}:${spec.id}`,
         (stepContext) => operations.analyzeNode(spec, filing, prepared, brief, 0, executionFor(stepContext)),
       ));
       if (!restored && operations.auditDisclosures) {
         stage = "discovery-audit";
-        const tasks = await step.do(`discovery-audit:${accession}`, (stepContext) => operations.auditDisclosures!(filing, prepared, plan, nodes, executionFor(stepContext)));
+        const tasks = await jobStep.do(`discovery-audit:${accession}`, (stepContext) => operations.auditDisclosures!(filing, prepared, plan, nodes, executionFor(stepContext)));
         for (const task of tasks) {
           const plannedIndex = plan.nodes.findIndex((node) => node.id === task.id);
           if (plannedIndex < 0) plan.nodes.push(task); else plan.nodes[plannedIndex] = task;
-          const result = await step.do(`discovery-repair:${accession}:${task.id}`, (stepContext) => operations.analyzeNode(task, filing, prepared, brief, 2, executionFor(stepContext)));
+          const result = await jobStep.do(`discovery-repair:${accession}:${task.id}`, (stepContext) => operations.analyzeNode(task, filing, prepared, brief, 2, executionFor(stepContext)));
           const resultIndex = nodes.findIndex((node) => node.id === result.id);
           if (resultIndex < 0) nodes.push(result); else nodes[resultIndex] = result;
         }
       }
       stage = "manager-review";
-      const loop = restored ?? await runManagerRepairLoop(accession, step, plan, nodes, {
+      const loop = restored ?? await runManagerRepairLoop(accession, jobStep, plan, nodes, {
         review: (round, currentNodes, execution) => operations.review
           ? operations.review(filing, prepared, brief, plan, currentNodes, round, execution)
           : Promise.resolve(fallbackManagerReview(plan, currentNodes)),
@@ -289,7 +311,7 @@ export async function executeSecAnalysisWorkflow(
       });
       const managerReview: ManagerReview = loop.review;
       stage = "synthesis";
-      let result = await step.do(`synthesis:${accession}`, (stepContext) => operations.summarize(filing, prepared, context, plan, loop.nodes, brief, managerReview, executionFor(stepContext)));
+      let result = await jobStep.do(`synthesis:${accession}`, (stepContext) => operations.summarize(filing, prepared, context, plan, loop.nodes, brief, managerReview, executionFor(stepContext)));
       const discoveryWarnings = [
         ...(result.artifact.report.discovery?.warnings ?? []),
         // The Chinese match covers plans restored from reports written before the English prompts.
@@ -309,7 +331,7 @@ export async function executeSecAnalysisWorkflow(
         managerCoverageScore: managerReview.coverageScore,
       };
       if (result.artifact.report.dataQuality.verificationStatus === "failed") {
-        await step.do(`job:${accession}:failed`, () => operations.updateJob({
+        await jobStep.do(`job:${accession}:failed`, () => operations.updateJob({
           ...baseJob,
           status: "failed",
           currentStage: "verification",
@@ -326,7 +348,7 @@ export async function executeSecAnalysisWorkflow(
         for (let round = 0; round <= 4; round += 1) {
           stage = "editorial-review";
           const draft = result;
-          const audit = await step.do(`editorial-review:${accession}:${round}`, (stepContext) => operations.auditReport!(prepared, loop.nodes, brief, draft, round, executionFor(stepContext), { plan, previousIssues }));
+          const audit = await jobStep.do(`editorial-review:${accession}:${round}`, (stepContext) => operations.auditReport!(prepared, loop.nodes, brief, draft, round, executionFor(stepContext), { plan, previousIssues }));
           if (!audit.issues.length) {
             result.artifact.report.editorialReview = { status: "passed", reviewedAt: audit.reviewedAt, ...(audit.notes?.length ? { notes: audit.notes } : {}) };
             break;
@@ -334,14 +356,14 @@ export async function executeSecAnalysisWorkflow(
           if (round === 4 || !operations.reviseReport) throw new Error(`Reader report failed editorial review: ${audit.issues.join("; ").slice(0, 1000)}`);
           stage = "editorial-revision";
           const revisionRound = round + 1;
-          result = await step.do(`editorial-revision:${accession}:${revisionRound}`, (stepContext) => operations.reviseReport!(filing, prepared, context, plan, loop.nodes, brief, managerReview, audit.issues,
+          result = await jobStep.do(`editorial-revision:${accession}:${revisionRound}`, (stepContext) => operations.reviseReport!(filing, prepared, context, plan, loop.nodes, brief, managerReview, audit.issues,
             revisionRound >= 2 ? { ...executionFor(stepContext), model: SEC_FALLBACK_MODEL } : executionFor(stepContext), { draft, round: revisionRound, findings: audit.findings }));
           previousIssues = audit.findings ?? [];
         }
       }
       if (!result.artifact.report.reader && !result.artifact.report.presentation && operations.composePresentation) {
         stage = "presentation";
-        result.artifact.report = await step.do(`presentation:${accession}`, (stepContext) => operations.composePresentation!(filing, prepared, result.artifact.report, loop.nodes, brief, executionFor(stepContext)));
+        result.artifact.report = await jobStep.do(`presentation:${accession}`, (stepContext) => operations.composePresentation!(filing, prepared, result.artifact.report, loop.nodes, brief, executionFor(stepContext)));
       }
       const summary = result.summary ? {
         ...result.summary,
@@ -351,11 +373,11 @@ export async function executeSecAnalysisWorkflow(
         repairRounds: loop.rounds,
       } : null;
       stage = "publish";
-      const publication = await step.do(`publish:${accession}`, () => operations.publish(result.artifact, summary));
-      await step.do(`job:${accession}:complete`, () => operations.updateJob({ ...baseJob, status: "complete", currentStage: "published", updatedAt: new Date().toISOString(), completedAt: new Date().toISOString() }));
+      const publication = await jobStep.do(`publish:${accession}`, () => operations.publish(result.artifact, summary));
+      await jobStep.do(`job:${accession}:complete`, () => operations.updateJob({ ...baseJob, status: "complete", currentStage: "published", updatedAt: new Date().toISOString(), completedAt: new Date().toISOString() }));
       console.log(JSON.stringify({ event: "sec-report-generation", policy: "reliability.v1", jobId, workflowInstanceId, ticker: filing.ticker, accession, status: "published", reportVersion: result.artifact.report.reportVersion }));
       if (publication && publication.memoryJobId && operations.enqueueMemory) {
-        await step.do(`memory-enqueue:${accession}`, async () => {
+        await jobStep.do(`memory-enqueue:${accession}`, async () => {
           try {
             await operations.enqueueMemory!(publication.memoryJobId!, filing.ticker);
           } catch {
@@ -369,7 +391,7 @@ export async function executeSecAnalysisWorkflow(
       const hardFailure = /No core facts|illegal evidence|Conflicting (fact|history) units|Manager[- ](Review|planned)|Synthesis|final publish|R2 memory source/i.test(detail);
       const failureCode = error instanceof SecModelOutputError ? error.code : error instanceof SecModelHttpError ? `provider_http_${error.status}`
         : /failed editorial review/i.test(detail) ? "editorial_quality_failed" : /Reader report|Reader section|Editorial patch/i.test(detail) ? "reader_structure_failed" : hardFailure ? "hard_failure" : "pipeline_error";
-      await step.do(`job:${accession}:error`, () => operations.updateJob({
+      await jobStep.do(`job:${accession}:error`, () => operations.updateJob({
         ...baseJob,
         status: "failed",
         currentStage: stage,

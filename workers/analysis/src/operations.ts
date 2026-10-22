@@ -619,6 +619,11 @@ export function createAnalysisOperations(env: AnalysisEnv, fetcher: typeof fetch
       assertTrackedTicker(env, ticker);
       await repository().upsertAnalysisJob({ ...job, ticker });
     },
+    markJobStage: async (jobId: string, stage: string) => {
+      if (!env.DB) return;
+      await env.DB.prepare("UPDATE sec_analysis_jobs SET current_stage = ?, updated_at = ? WHERE job_id = ? AND status = 'running'")
+        .bind(stage, new Date().toISOString(), jobId).run();
+    },
   };
 }
 
