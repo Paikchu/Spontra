@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { pageExcerpt, runBusinessTree, TREE_TOOLS, type TreeBlock, type TreeMessage, type TreeModel, type TreeReply, type TreeSearch } from "../src/business-tree/agent.ts";
+import { leadIn, pageExcerpt, runBusinessTree, TREE_TOOLS, type TreeBlock, type TreeMessage, type TreeModel, type TreeReply, type TreeSearch } from "../src/business-tree/agent.ts";
 import { treeBusinesses } from "../src/business-tree/workflow.ts";
 import { lineAliases, namedIn, quotedIn, quoteProblem, readBusinessTree, withoutCitations } from "../../../shared/analysis-runtime/business-tree.ts";
 import type { PublicBusinessFlow } from "../../../shared/analysis-contract/business-flow.ts";
@@ -27,9 +27,9 @@ let ids = 0;
 const calls = (...list: Array<[string, Record<string, unknown>]>): TreeReply => ({ stopReason: "tool_use", content: list.map(([name, input]) => ({ type: "tool_use", id: `toolu_${++ids}`, name, input })) });
 const call = (name: string, input: Record<string, unknown> = {}) => calls([name, input]);
 /** Replies by `business-turn`; the review approves everything; anything unscripted finishes. */
-const scripted = (script: Record<string, TreeReply>): TreeModel => ({
+const scripted = (script: Record<string, TreeReply>, verdicts: Record<string, Record<string, unknown>> = {}): TreeModel => ({
   act: async stage => script[stage.replace("business-tree-", "")] ?? call("finish"),
-  judge: async () => ({ issues: [] }),
+  judge: async stage => verdicts[stage] ?? { issues: [] },
 });
 const run = (businesses: Array<{ flowNodeId: string; name: string }>, model: TreeModel, page = TENK, hits: Array<{ title: string; url: string; snippet: string }> = []) =>
   runBusinessTree({ ticker: "MSFT", companyName: "Microsoft Corp", periodEnd: "2026-06-30", now: "2026-10-17T00:00:00.000Z", fingerprint: "f", modelVersion: "test",
@@ -108,7 +108,34 @@ test("descriptions the loop left out or the review struck are written from the p
   const branch = readBusinessTree(JSON.parse(JSON.stringify(tree)), "MSFT")!.branches[0]!;
   assert.deepEqual(branch.children[0]!.summary, { text: "XBOX consoles, games and content services for players.", sourceIds: ["s1"] });
   assert.equal(branch.summary, null, "a sentence about the passages is refused");
-  assert.match(tree.research![0]!.steps.at(-1)!.observation, /Described 1 of 2: b1-n1\. Refused: root writes about the passages/);
+  const steps = tree.research![0]!.steps;
+  assert.deepEqual(steps.slice(-3).map(s => s.action), ["review", "describe", "describe-review"]);
+  assert.equal(steps.at(-3)!.observation, "b1-n1 XBOX · summary: not in the material");
+  assert.match(steps.at(-2)!.observation, /Described 1 of 2: b1-n1\. Refused: root writes about the passages/);
+});
+
+test("a lead-in is the sentence or heading that introduces the listed paragraph a quote comes from", () => {
+  const page = "Application Services\n\nCloudflare offers a suite of application services products:\n\n•DNS: Resolves names fast.\n\n•Bot Management: Detects and manages undesired traffic.";
+  assert.equal(leadIn(page, "•Bot Management: Detects and manages undesired traffic."), "Cloudflare offers a suite of application services products:");
+  assert.equal(leadIn(TENK, JOINED), "More Personal Computing");
+  assert.equal(leadIn(page, "Not in the page"), null);
+});
+
+test("what hangs under a node the review strikes moves up where its own passage names the new parent, and the verdicts are logged", async () => {
+  const filing = "Our Intelligent Cloud segment primarily comprises server products and cloud services, including Azure and other cloud services, GitHub and Nuance. Azure is a comprehensive set of cloud services of Intelligent Cloud. Azure AI Foundry is offered within Azure and other cloud services.";
+  // Two businesses, so the company's own filing does not place everything under the company.
+  const tree = await run([{ flowNodeId: "msft:IntelligentCloudMember", name: "IntelligentCloud" }, { flowNodeId: "msft:MorePersonalComputingMember", name: "MorePersonalComputing" }], scripted({
+    "1-1": call("read", { source: "b1-s1", focus: "Azure" }),
+    "1-2": call("add", { parent: "root", nodes: [{ name: "Azure and other cloud services", gloss: "public cloud", kind: "line", anchor: { text: filing.split(". ")[0] + ".", sourceIds: ["b1-s1"] }, summary: null, revenue: [] }] }),
+    "1-3": call("add", { parent: "b1-n1", nodes: [
+      { name: "Azure", gloss: "cloud platform", kind: "product", anchor: { text: "Azure is a comprehensive set of cloud services of Intelligent Cloud.", sourceIds: ["b1-s1"] }, summary: null, revenue: [] },
+      { name: "GitHub", gloss: "code hosting", kind: "product", anchor: { text: filing.split(". ")[0] + ".", sourceIds: ["b1-s1"] }, summary: null, revenue: [] },
+      { name: "Azure AI Foundry", gloss: "AI app platform", kind: "product", anchor: { text: "Azure AI Foundry is offered within Azure and other cloud services.", sourceIds: ["b1-s1"] }, summary: null, revenue: [] }] }),
+  }, { "business-tree-review-b1": { issues: [{ id: "b1-n1", field: "node", problem: "generic name" }] } }), filing);
+  const line = tree.branches[0]!.children;
+  assert.deepEqual(line.map(n => n.name), ["Azure", "GitHub"], "products whose passage names the segment move up; one placed only by the struck line goes");
+  const review = tree.research![0]!.steps.find(s => s.action === "review")!;
+  assert.match(review.observation, /^b1-n1 Azure and other cloud services · node: generic name\nMoved up: b1-n2 Azure → root; b1-n3 GitHub → root$/);
 });
 
 test("finishing with a bare category line is answered once with a request for named products and pricing", async () => {
@@ -129,8 +156,8 @@ test("finishing with a bare category line is answered once with a request for na
     }) });
   const steps = tree.research![0]!.steps;
   assert.match(steps[2]!.observation, /name fewer than two products: b1-n1 Compute \(none\)/);
-  assert.equal(steps.at(-2)!.observation, "Finished.");
-  assert.equal(steps.at(-1)!.action, "describe");
+  assert.equal(steps.at(-3)!.observation, "Finished.");
+  assert.deepEqual(steps.slice(-2).map(s => [s.action, s.observation]), [["review", "No issues."], ["describe", steps.at(-1)!.observation]]);
   const compute = tree.branches[0]!.children[0]!;
   assert.equal(compute.children[0]!.name, "Amazon EC2");
   assert.equal(compute.children[0]!.revenue[0]!.type, "consumption");
