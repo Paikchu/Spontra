@@ -15,7 +15,7 @@ import { LensBlocks } from "../LensPanel";
 import { LensFrame } from "../LensFrame";
 import { trendChart, type StageState } from "./stage-model";
 
-const NOTICE: Record<NoticeCode, string> = labels({
+export const NOTICE: Record<NoticeCode, string> = labels({
   "quota-reached": "Daily limit reached", "global-cap-reached": "Paused for today", "turn-interrupted": "Interrupted",
   "turn-failed": "No result", "conversation-unavailable": "Conversation unavailable", "report-started": "Report started", "report-ready": "Report ready",
   "report-failed": "Report failed", retention: "Kept 30 days",
@@ -56,7 +56,8 @@ export default function SceneView({ ticker, scene, data, onOpenFinding }: { tick
       case "findings": return <FindingList findings={(b.ids ?? findings.map(f => f.id)).map(id => byId.get(id)).filter((f): f is VerifiedFinding => f != null)} onOpen={onOpenFinding} />;
       case "business-flow": return latest[0] ? <div className="business-flow chart-fallback"><FinancialSankey quarter={latest[0]} previous={latest[4] ?? null} onSegment={() => {}} /></div> : null;
       case "notice": return <p className="scene-notice">{NOTICE[b.code]}</p>;
-      case "progress": return <div className="scene-progress" role="status"><span>{b.phase === "running" ? m.running : m.queued}</span><i aria-hidden="true" /></div>;
+      case "progress": return <div className="scene-progress" role="status"><span>{b.phase === "running" ? m.running : m.queued}</span><i aria-hidden="true" />
+        <div className="board-skeleton" aria-hidden="true"><span /><span /><span /><span /></div></div>;
       case "report": return <ReportBlock ticker={ticker} reportId={b.reportId} data={facts} />;
     }
   };

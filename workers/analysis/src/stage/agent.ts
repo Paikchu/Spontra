@@ -279,8 +279,8 @@ export class StageAgent extends Agent<StageEnv, StageState> {
       return;
     }
     this.notice("report-started");
-    const rows = this.state.scene.rows.filter(r => !r.cells.flat().some(b => b.kind === "progress" && b.runId === runId));
-    this.commit([{ cells: [[{ id: `p${runId.slice(0, 8)}`, kind: "progress" as const, runId, phase: "queued" as const }]] }, ...rows].slice(0, 8), this.state.scene.scope, this.state.scene.basis, "report", this.state.revision);
+    // The report the reader started takes the whole stage: its progress now, the report itself when it lands.
+    this.commit([{ cells: [[{ id: `p${runId.slice(0, 8)}`, kind: "progress" as const, runId, phase: "queued" as const }]] }], this.state.scene.scope, this.state.scene.basis, "report", this.state.revision);
   }
 
   /** The report's Workflow began writing. */
@@ -302,7 +302,7 @@ export class StageAgent extends Agent<StageEnv, StageState> {
   private placeReport(runId: string, reportId: string) {
     let placed = false;
     const rows = this.state.scene.rows.map(r => ({ ...r, cells: r.cells.map(c => c.map(b => { if (b.kind === "progress" && b.runId === runId) { placed = true; return { id: b.id, kind: "report" as const, reportId }; } return b; })) }));
-    const next = placed ? rows : [{ cells: [[{ id: `r${reportId.slice(0, 8)}`, kind: "report" as const, reportId }]] }, ...rows].slice(0, 8);
+    const next = placed ? rows : [{ cells: [[{ id: `r${reportId.slice(0, 8)}`, kind: "report" as const, reportId }]] }];
     this.commit(next, this.state.scene.scope, this.state.scene.basis, "report", this.state.revision);
     this.notice("report-ready");
   }
