@@ -5,6 +5,7 @@ import { SourceLanguage, langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import { KIND_LABEL, type VerifiedFinding } from "./findings-model";
 import { RailSection } from "./RailSection";
 import { arrivalStyle, RailRow, rowExit, useArrivals } from "./arrivals";
+import { useRailTip } from "./RailTip";
 
 const m = messages({
   findings: "Findings", report: (period: string) => `${period} report`,
@@ -42,6 +43,7 @@ export function FindingsList({ findings, updates, verdicts, focus, story, period
   const ids = findings.map(f => f.id);
   const arrived = useArrivals(ids, updates);
   const still = useReducedMotion();
+  const tip = useRailTip();
   if (!findings.length) return null;
   const extra = (f: VerifiedFinding, i: number) => i >= DIGEST && f.id !== focus;
   return <RailSection name="findings" title={m.findings} count={findings.length} tag={<SourceLanguage of={findings.map(f => f.title)} />} hint={m.report(periodEnd.slice(0, 7))} expandable={findings.some(extra)}
@@ -53,11 +55,12 @@ export function FindingsList({ findings, updates, verdicts, focus, story, period
       <AnimatePresence initial={false} mode="popLayout">
       {findings.map((f, i) => <RailRow variant="unstyled" type="button" key={f.id} role="radio" aria-checked={focus === f.id} className="finding-row" data-kind={f.kind}
         layout={still ? false : "position"} layoutDependency={ids.join()} exit={rowExit} data-arrived={arrived.has(f.id) ? "" : undefined} style={arrivalStyle(arrived.get(f.id))}
-        data-extra={extra(f, i) ? "" : undefined} onClick={() => onFocus(focus === f.id ? null : f.id)} title={m.severity(KIND_LABEL[f.kind], f.severity)}>
+        data-extra={extra(f, i) ? "" : undefined} onClick={() => onFocus(focus === f.id ? null : f.id)} {...tip.bind(f.title, langOf(f.title), m.severity(KIND_LABEL[f.kind], f.severity))}>
         <i className="finding-mark" aria-label={m.severity(KIND_LABEL[f.kind], f.severity)}>{f.severity}</i>
         <span className="finding-title"><span lang={langOf(f.title)}>{f.title}</span>{f.watchOutcome && <i className="finding-settled" data-verdict={verdicts?.[f.id]} title={m.watchOutcome} aria-label={m.watchOutcome}>{verdicts?.[f.id] === "pass" ? "✓" : verdicts?.[f.id] === "fail" ? "✗" : "↻"}</i>}</span>
       </RailRow>)}
       </AnimatePresence>
+      {tip.node}
     </div>
   </RailSection>;
 }
