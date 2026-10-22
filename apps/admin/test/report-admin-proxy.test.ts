@@ -59,3 +59,11 @@ test("the admin proxy needs no credential and has no session route", async () =>
   assert.equal(seen[0]!.get("authorization"), null);
   assert.equal((await handleReportAdminProxy(new Request("https://admin.example/api/admin/session", { method: "POST", body: "{}", headers: { origin: "https://admin.example" } }), ["session"], env)).status, 404);
 });
+
+test("the admin proxy lets one company's flow graph through, and nothing beside it", async () => {
+  const seen: string[] = [];
+  const env = { SPONTRA_ANALYSIS: { fetch: async (url: URL | string) => { seen.push(new URL(url).pathname); return Response.json({ ok: true }); } } };
+  assert.equal((await handleReportAdminProxy(new Request("https://admin.example/api/admin/business-map/companies/TTMI/flow"), ["business-map", "companies", "TTMI", "flow"], env)).status, 200);
+  assert.equal((await handleReportAdminProxy(new Request("https://admin.example/api/admin/business-map/companies/TTMI/flow", { method: "POST", body: "{}", headers: { origin: "https://admin.example" } }), ["business-map", "companies", "TTMI", "flow"], env)).status, 404);
+  assert.deepEqual(seen, ["/admin/business-map/companies/TTMI/flow"]);
+});

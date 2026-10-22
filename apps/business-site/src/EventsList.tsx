@@ -9,6 +9,7 @@ import { EVENT_CLASS_LABEL, eventTitle, eventTitleLang, shortDate } from "./even
 import { railDigest, reportTitle, reportTitleLang, type RailItem, type RailItems } from "./reports-model";
 import { RailSection } from "./RailSection";
 import { arrivalStyle, RailRow, rowExit, useArrivals } from "./arrivals";
+import { useRailTip } from "./RailTip";
 
 const m = messages({
   reports: "Reports", nonTrade: (n: number) => `Form 4 non-trade ${n}`, pending: (n: number) => `Form 4 pending ${n}`,
@@ -46,6 +47,7 @@ export function EventsList({ rail, updates, focus, pendingInsider, expanded, onF
   const ids = all.map(i => i.id);
   const arrived = useArrivals(ids, updates);
   const still = useReducedMotion();
+  const tip = useRailTip();
   const rowMotion: RowMotion = { layout: still ? false : "position", layoutDependency: ids.join(), exit: rowExit };
   const groups = useMemo(() => {
     const counts = new Map<string, number>();
@@ -73,7 +75,7 @@ export function EventsList({ rail, updates, focus, pendingInsider, expanded, onF
         const turn = year !== (i ? shown[i - 1].date.slice(0, 4) : thisYear);
         const extra = digest.has(item.id) ? undefined : "";
         const pick = () => onFocus(focus === item.id ? null : item);
-        const row = { checked: focus === item.id, extra, onClick: pick, arrive: arrived.get(item.id), motion: rowMotion };
+        const row = { checked: focus === item.id, extra, onClick: pick, arrive: arrived.get(item.id), motion: rowMotion, tip: tip.bind };
         const nodes: ReactNode[] = [];
         if (item.id === firstEarlier && i > 0) nodes.push(<motion.hr key="rule" className="section-rule" data-extra="" {...rowMotion} />);
         if (turn) nodes.push(<motion.p key={`year-${year}`} className="section-group" data-extra="" aria-hidden="true" {...rowMotion}>{year}</motion.p>);
@@ -81,31 +83,34 @@ export function EventsList({ rail, updates, focus, pendingInsider, expanded, onF
         return nodes;
       })}
       </AnimatePresence>
+      {tip.node}
     </div>
   </RailSection>;
 }
 
 type RowMotion = { layout: false | "position"; layoutDependency: string; exit: typeof rowExit };
-type RowProps = { checked: boolean; extra?: string; onClick: () => void; arrive?: number; motion: RowMotion };
+type RowProps = { checked: boolean; extra?: string; onClick: () => void; arrive?: number; motion: RowMotion; tip: ReturnType<typeof useRailTip>["bind"] };
 
-function ReportRow({ report, checked, extra, onClick, arrive, motion }: RowProps & { report: PublicFilingDigest }) {
+function ReportRow({ report, checked, extra, onClick, arrive, motion, tip }: RowProps & { report: PublicFilingDigest }) {
   const forms = report.sources.length ? report.sources.map(s => s.form).join(" + ") : report.form;
+  const meta = [m.report, forms, report.periodLabel, m.periodEnded(String(report.periodEnd)), report.filingDate].filter(Boolean).join(" · ");
   return <RailRow variant="unstyled" type="button" role="radio" aria-checked={checked} className="finding-row event-row report-row" data-class="report" data-extra={extra} onClick={onClick}
     {...motion} data-arrived={arrive != null ? "" : undefined} style={arrivalStyle(arrive)}
-    title={[m.report, forms, report.periodLabel, m.periodEnded(String(report.periodEnd)), report.filingDate].filter(Boolean).join(" · ")} aria-label={`${m.report} ${shortDate(report.date)} ${reportTitle(report)}`}>
+    {...tip(reportTitle(report), reportTitleLang(report), meta)} aria-label={`${m.report} ${shortDate(report.date)} ${reportTitle(report)}`}>
     <time className="event-date" dateTime={report.date}>{shortDate(report.date)}</time>
     <span className="finding-title" lang={reportTitleLang(report)}>{reportTitle(report)}</span>
   </RailRow>;
 }
 
-function EventRow({ event, checked, extra, onClick, arrive, motion }: RowProps & { event: CompanyEvent }) {
+function EventRow({ event, checked, extra, onClick, arrive, motion, tip }: RowProps & { event: CompanyEvent }) {
   const t = event.insider;
-  // The class reads from the mark; an insider's role goes into the tooltip and the accessible name.
+  // The class reads from the mark; an insider's role goes into the hover card and the accessible name.
   const meta = t ? [t.title ?? (t.isDirector ? m.director : t.isTenPercentOwner ? m.tenPercent : null), t.sold && t.rule10b51 === true ? "10b5-1" : null].filter(Boolean).join(" · ") : "";
   const items = event.items.filter(i => i !== "9.01").map(i => `Item ${i}`).join(", ");
   return <RailRow variant="unstyled" type="button" role="radio" aria-checked={checked} className="finding-row event-row" data-class={event.class} data-extra={extra} onClick={onClick}
     {...motion} data-arrived={arrive != null ? "" : undefined} style={arrivalStyle(arrive)}
-    title={[EVENT_CLASS_LABEL[event.class], event.form, items, meta, event.filedAt].filter(Boolean).join(" · ")} aria-label={`${EVENT_CLASS_LABEL[event.class]} ${shortDate(event.filedAt)} ${eventTitle(event)}${meta ? ` ${meta}` : ""}`}>
+    {...tip(eventTitle(event), eventTitleLang(event), [EVENT_CLASS_LABEL[event.class], event.form, items, meta, event.filedAt].filter(Boolean).join(" · "))}
+    aria-label={`${EVENT_CLASS_LABEL[event.class]} ${shortDate(event.filedAt)} ${eventTitle(event)}${meta ? ` ${meta}` : ""}`}>
     <time className="event-date" dateTime={event.filedAt}>{shortDate(event.filedAt)}</time>
     <span className="finding-title" lang={eventTitleLang(event)}>{eventTitle(event)}</span>
   </RailRow>;

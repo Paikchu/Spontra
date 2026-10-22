@@ -5,6 +5,7 @@ import type { LibraryOverview } from '@/shared/analysis-contract/filing-library'
 import type { BusinessTagCompanies } from '@/shared/analysis-contract/business-tags';
 import { adminApi, AdminApiError } from './admin-api';
 import { AiKindPanel } from './ai-runs';
+import { usePageActive } from './admin-page';
 import { BusinessCharts } from './business-charts';
 import './business-charts.css';
 import { CompanyLogo } from '@/packages/web/src/company-logo';
@@ -40,10 +41,11 @@ export function BusinessSegments({ onAuthenticated, onUnauthorized, onOpenSectio
     }).catch(e => { if (!c.signal.aborted) fail(e); });
     return () => c.abort();
   }, [refresh]);
+  const visible = usePageActive();
   useEffect(() => {
-    if (!ticker) return;
+    if (!ticker || !visible.current) return;
     try { window.history.replaceState(null, '', `${window.location.pathname}?${new URLSearchParams({ ticker, view })}`); } catch { /* Sandboxed preview. */ }
-  }, [ticker, view]);
+  }, [ticker, view, visible]);
 
   // The tags view lists only companies whose business units exist.
   const listed = view === 'tags' ? companies && tagged ? companies.filter(c => tagged.has(c.ticker)) : null : companies;

@@ -1,12 +1,13 @@
 import { knownCik } from '../pipeline/identity.ts';
 import { dataTickersFor } from '../core.ts';
-import type { BusinessMapCharts, BusinessMapCompanies, BusinessMapCompany, FeatureRunProgress } from '../../../../shared/analysis-contract/business-map-admin.ts';
+import type { BusinessMapCharts, BusinessMapCompanies, BusinessMapCompany, BusinessMapFlow, FeatureRunProgress } from '../../../../shared/analysis-contract/business-map-admin.ts';
 import type { AiRunKind } from '../../../../shared/analysis-contract/ai-runs-admin.ts';
 import { FEATURES, type Feature } from '../../../../shared/analysis-contract/business-features.ts';
 import { isFeature } from '../../../../shared/analysis-runtime/business-features.ts';
 import { companyPolicyEnvironment, featureCompaniesFor, featureEnabled } from '../financial-data/company-policy.ts';
 import { writeFeatureSetting } from './feature-settings.ts';
 import { AiRunStore } from '../ai-runs/store.ts';
+import { readFlow } from './flow.ts';
 import { FEATURE_TASKS, KIND_FEATURE, latestOutcomes, listMessages, markRead, TASK_FEATURE } from './messages.ts';
 import { failedInputKey } from '../pipeline/workflow-task.ts';
 import type { AnalysisEnv } from '../operations.ts';
@@ -133,6 +134,13 @@ export async function handleBusinessMapAdminRequest(request: Request, env: Analy
       });
       const generation=Object.fromEntries(FEATURES.map(feature=>[feature,featureEnabled(env,feature)])) as Record<Feature,boolean>;
       return json({companies,automaticCollection:list.environment.dataCollectionEnabled,generation} satisfies BusinessMapCompanies);
+    }
+    // One company's analysis as a graph: the registry's tasks for the map and its features, and where each stands now.
+    const flow = /^\/admin\/business-map\/companies\/([^/]+)\/flow$/.exec(path);
+    if (flow && request.method === 'GET') {
+      const ticker = normalizeTrackedTicker(decodeURIComponent(flow[1]!));
+      if (!ticker) return json({error:'公司代码无效。'},400);
+      return json(await readFlow(db, ticker) satisfies BusinessMapFlow);
     }
     // The three BusinessView charts as the map reads them: profit from the published flow and its archived quarters,
     // cash flow and balance sheet from the derived capital structure. Read only, like the map's own routes.

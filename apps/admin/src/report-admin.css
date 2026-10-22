@@ -106,7 +106,11 @@ html body:has(.report-admin) { padding: 0; }
 .ra-spin { animation: ra-spin 1s linear infinite; }
 @keyframes ra-spin { to { transform: rotate(360deg); } }
 @keyframes ra-rise { from { opacity: 0; transform: translateY(14px); } }
-.ra-main > * { animation: ra-rise 620ms var(--sp-ease) both; }
+/* A page is a box-less wrapper; hidden, it keeps its state out of view. */
+.ra-page { display: contents; }
+.ra-page[hidden] { display: none; }
+.ra-main > *, .ra-page > * { animation: ra-rise 620ms var(--sp-ease) both; }
+.ra-main > .ra-page { animation: none; }
 
 @media (max-width: 1050px) { .report-admin { grid-template-columns: 196px minmax(0, 1fr); } .ra-workspace { grid-template-columns: 260px minmax(0, 1fr); } .ra-detail { padding: var(--space-5) var(--space-4); } }
 @media (max-width: 760px) {
@@ -123,4 +127,4 @@ html body:has(.report-admin) { padding: 0; }
   .ra-list-scroll { max-height: 280px; }
   .ra-detail { padding: var(--space-4); }
 }
-@media (prefers-reduced-motion: reduce) { .ra-spin, .ra-main > * { animation: none; } .ra-primary:hover:not(:disabled) { transform: none; } }
+@media (prefers-reduced-motion: reduce) { .ra-spin, .ra-main > *, .ra-page > * { animation: none; } .ra-primary:hover:not(:disabled) { transform: none; } }

@@ -55,3 +55,25 @@ export type BusinessMapCharts = {
   profit: PublicBusinessFlow | null;
   capital: PublicCapitalStructure | null;
 };
+
+/**
+ * One company's analysis as the pipeline runs it (docs/analysis-events.md), for the admin's flow graph: the tasks of the
+ * financial map and its features, the events that carry information between them, and where each task stands now.
+ */
+export type FlowNodeState = "running" | "queued" | "done" | "failed" | "idle";
+export type FlowNode = {
+  /** A task name from the event registry, or a source (`sec-discovery`, `admin`). */
+  id: string;
+  source: boolean;
+  /** The column: the longest chain of tasks before this one. */
+  depth: number;
+  state: FlowNodeState;
+  /** When the state began: the last run's end, or when a waiting run was requested. */
+  at: string | null;
+  /** The node and event that started the current or last run, when the pipeline log still has them. */
+  via: { from: string; event: string } | null;
+  /** A model run in flight: its steps so far. */
+  progress: FeatureRunProgress | null;
+};
+export type FlowEdge = { from: string; to: string; events: string[] };
+export type BusinessMapFlow = { ticker: string; nodes: FlowNode[]; edges: FlowEdge[] };

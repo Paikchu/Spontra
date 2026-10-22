@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowUpRight, Bell, Cpu, FileStack, ListChecks, Moon, Network, Sparkles, Sun } from "lucide-react";
 import Link from "@/packages/web/src/navigation";
 import { BusinessMapCompanies } from "./business-map-companies";
@@ -9,6 +9,7 @@ import { AiModels } from "./ai-models";
 import { StageAdminPanel } from "./stage-admin";
 import { FinancialMaintenance } from "./financial-maintenance";
 import { AdminInbox, useInbox } from "./admin-messages";
+import { PageActive } from "./admin-page";
 
 type Section = "whitelist" | "financials" | "filings" | "business" | "findings" | "models" | "messages";
 type Page = { path: string; title: string; nav?: Section };
@@ -26,6 +27,8 @@ const PAGES: Record<Section, Page> = {
 const NAV: Array<[Section, typeof ListChecks]> = [["whitelist", ListChecks], ["filings", FileStack], ["business", Network], ["findings", Sparkles], ["models", Cpu], ["messages", Bell]];
 /** Ink is the default, as on BusinessView; paper is a per-viewer choice. main.tsx applies it before the first paint. */
 export const THEME_KEY = "businessview-admin-theme";
+/** Pages that read what they show from the address on mount: opened with a new address, they start again from it. */
+const FROM_ADDRESS = new Set<Section>(["financials", "filings", "business", "findings"]);
 /** Paths of the earlier admin, kept so bookmarks land on the page that replaced them. */
 const LEGACY: Record<string, Section> = { "/admin/business-map": "whitelist", "/admin/library": "filings" };
 
@@ -38,8 +41,16 @@ function initialSection(): Section {
   return LEGACY[pathname] ?? "whitelist";
 }
 
+/**
+ * The admin shell. A page opened once stays mounted behind the others, so switching back shows it as it was, its data,
+ * place and scroll included, and brings it up to date behind what it shows (admin-page.ts).
+ */
 export function BusinessViewAdmin({ mapOrigin = "" }: { mapOrigin?: string }) {
   const [section, setSection] = useState<Section>(initialSection);
+  const [opened, setOpened] = useState<Section[]>(() => [initialSection()]);
+  const [generation, setGeneration] = useState<Partial<Record<Section, number>>>({});
+  // Each page's own address and scroll, kept when it is left and given back when it is shown again.
+  const kept = useRef<Partial<Record<Section, { search: string; scroll: number }>>>({});
   const [error, setError] = useState("");
   const page = PAGES[section];
   const { inbox, read } = useInbox(true);
@@ -57,11 +68,22 @@ export function BusinessViewAdmin({ mapOrigin = "" }: { mapOrigin?: string }) {
     try { window.history.replaceState(null, "", `${PAGES[section].path}${ticker ? `?${new URLSearchParams({ ticker })}` : ""}`); } catch { /* Sandboxed preview. */ }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   // Pages push their own levels into history; back and forward also move between pages.
-  useEffect(() => { const onPop = () => setSection(initialSection()); window.addEventListener("popstate", onPop); return () => window.removeEventListener("popstate", onPop); }, []);
+  useEffect(() => { const onPop = () => show(initialSection()); window.addEventListener("popstate", onPop); return () => window.removeEventListener("popstate", onPop); });
+  // The page shown again goes back to where it was scrolled.
+  useLayoutEffect(() => { window.scrollTo({ top: kept.current[section]?.scroll ?? 0, behavior: "instant" }); }, [section]);
 
-  function navigate(next: Section, search = "") {
-    setSection(next); setError("");
-    try { window.history.replaceState(null, "", `${PAGES[next].path}${search}`); } catch { /* Sandboxed preview. */ }
+  function show(next: Section) {
+    setSection(next);
+    setOpened(list => list.includes(next) ? list : [...list, next]);
+  }
+  /** Opens a page: with `search`, at that address (a page that reads it starts again); without, where it was left. */
+  function navigate(next: Section, search?: string) {
+    kept.current[section] = { search: window.location.search, scroll: window.scrollY };
+    const address = search ?? kept.current[next]?.search ?? "";
+    if (search !== undefined && FROM_ADDRESS.has(next) && opened.includes(next)) setGeneration(g => ({ ...g, [next]: (g[next] ?? 0) + 1 }));
+    if (search !== undefined && kept.current[next]) kept.current[next]!.scroll = 0;
+    try { window.history.replaceState(null, "", `${PAGES[next].path}${address}`); } catch { /* Sandboxed preview. */ }
+    show(next); setError("");
   }
   // The admin site has no sign-in: a 401 means Spontra Analysis refused the binding, which only a banner can report.
   const auth = { onUnauthorized: () => setError("管理接口拒绝访问"), onAuthenticated: () => setError("") };
@@ -78,13 +100,16 @@ export function BusinessViewAdmin({ mapOrigin = "" }: { mapOrigin?: string }) {
     </aside>
     <main className="ra-main">
       {error && <div className="ra-error ra-error-banner" role="alert">{error}</div>}
-      {section === "whitelist" ? <BusinessMapCompanies {...auth} />
-        : section === "financials" ? <FinancialMaintenance {...auth} />
-        : section === "filings" ? <FilingLibrary {...auth} />
-        : section === "business" ? <BusinessSegments {...auth} onOpenSection={openSection} />
-        : section === "models" ? <><StageAdminPanel onUnauthorized={auth.onUnauthorized} /><AiModels {...auth} /></>
-        : section === "messages" ? <AdminInbox inbox={inbox} read={read} onOpen={ticker => navigate("whitelist", `?${new URLSearchParams({ ticker })}`)} />
-        : <AiRuns {...auth} kinds={["findings", "analyst", "checkup"]} translations />}
+      {opened.map(key => {
+        const content: ReactNode = key === "whitelist" ? <BusinessMapCompanies {...auth} onOpenFinancials={ticker => navigate("financials", `?${new URLSearchParams({ ticker })}`)} />
+          : key === "financials" ? <FinancialMaintenance {...auth} />
+          : key === "filings" ? <FilingLibrary {...auth} />
+          : key === "business" ? <BusinessSegments {...auth} onOpenSection={openSection} />
+          : key === "models" ? <><StageAdminPanel onUnauthorized={auth.onUnauthorized} /><AiModels {...auth} /></>
+          : key === "messages" ? <AdminInbox inbox={inbox} read={read} onOpen={ticker => navigate("whitelist", `?${new URLSearchParams({ ticker })}`)} />
+          : <AiRuns {...auth} kinds={["findings", "analyst", "checkup"]} translations />;
+        return <div key={`${key}:${generation[key] ?? 0}`} className="ra-page" hidden={key !== section}><PageActive.Provider value={key === section}>{content}</PageActive.Provider></div>;
+      })}
     </main>
   </div>;
 }
