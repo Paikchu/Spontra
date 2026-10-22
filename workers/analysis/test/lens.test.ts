@@ -209,14 +209,23 @@ test("the agent reads series, writes an html picture the frame can run, and the 
   const bad = picture(`<html><body>${fragment}<script src="https://evil.example/x.js"></script><script>fetch("/api")</script></body></html>`);
   const seen: string[] = [];
   const replies = [call("series", { span: "quarter", periods: 4, refs: [{ ref: { capital: "capex" } }, { ref: { capital: "capex" }, transform: "yoy" }] }), call("compile", { document: bad }), call("compile", { document: picture(fragment) }), call("finish")];
-  const outcome = await runLensAgent({ finding: f, resolved: f.resolved, periodEnd: PERIOD, catalogue, data, stage: (_, cb) => cb(),
-    model: async (stage, system, _tools, messages) => { assert.match(system, /--muted-foreground/); seen.push(lastResult(messages)); return replies[Number(stage.split("-").at(-1)) - 1] ?? call("finish"); } });
+  // The browser: a label collides at phone width; each fragment and width is drawn once, in a named durable step.
+  const drawn: string[] = [], steps: string[] = [];
+  const render = async (html: string, width: number) => { drawn.push(`${html.length}@${width}`); return width === 340 ? { width, height: 300, problems: ['"$40.0B" sits partly across a mark'], notes: [] } : { width, height: 410, problems: [], notes: ["2 text items under 10.5px"] }; };
+  const outcome = await runLensAgent({ finding: f, resolved: f.resolved, periodEnd: PERIOD, catalogue, data, render, stage: (name, cb) => { steps.push(name); return cb(); },
+    model: async (stage, system, _tools, messages) => { assert.match(system, /--muted-foreground/); assert.match(system, /real browser/); seen.push(lastResult(messages)); return replies[Number(stage.split("-").at(-1)) - 1] ?? call("finish"); } });
   assert.match(seen[1]!, /\$40\.0B \[40000000000\]/);
   assert.match(seen[1]!, /2\. .* \(percent\)/);
   assert.match(seen[2]!, /<html> is not allowed/);
   assert.match(seen[2]!, /evil\.example.*https from cdnjs/);
   assert.match(seen[2]!, /fetch is not available/);
   assert.match(seen[3]!, /html p1 \(square, "Capex against operating cash flow"\): \d+ characters; 1 inline svg; 1 inline script/);
+  assert.match(seen[3]!, /drawn at 340px: 300px tall, 1 problem/);
+  assert.match(seen[3]!, /drawn at 500px: 410px tall, nothing overlaps or overflows; 2 text items under 10\.5px/);
+  assert.match(seen[3]!, /html p1 at 340px: "\$40\.0B" sits partly across a mark/);
+  // The bad document is drawn too; finish redraws nothing it has seen.
+  assert.equal(drawn.length, 4);
+  assert.ok(steps.some(s => /-t3-c0-draw-[a-z0-9]+-340$/.test(s)));
   assert.deepEqual(outcome.document, picture(fragment));
   assert.ok(readLensDocument(picture(fragment)));
   const lens = verifyLensDocument(picture(fragment), f, f.resolved, data, PERIOD)!;

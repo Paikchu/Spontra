@@ -1,4 +1,4 @@
-import type { LensDocument } from "../../analysis-contract/lens.ts";
+import type { LensDocument, LensPictureRender } from "../../analysis-contract/lens.ts";
 import type { LensWarning } from "./audit.ts";
 import type { CompileResult } from "./compile.ts";
 import { htmlSummary } from "./html.ts";
@@ -25,11 +25,15 @@ export function describeChart(id: string, result: CompileResult | undefined): st
 }
 
 /** The whole document as the harness reports it back: rows, charts, and every warning left. */
-export function describeDocument(doc: LensDocument, compiled: Map<string, CompileResult>, warnings: LensWarning[]): string {
+export function describeDocument(doc: LensDocument, compiled: Map<string, CompileResult>, warnings: LensWarning[], renders?: Map<string, LensPictureRender[]>): string {
   const lines: string[] = [];
   doc.rows.forEach((row, i) => lines.push(`row ${i + 1}${row.title ? ` "${row.title}"` : ""}: [${row.cells.map(cell => cell.map(c => c.kind === "chart" ? `chart ${c.chart.id}` : c.kind === "html" ? `html ${c.html.id}` : c.kind === "prose" ? `prose ×${c.paragraphs.length}` : c.kind === "quote" ? `quote ${c.materialId}` : c.kind === "table" ? `table(${c.table.columns}, ${c.table.rows.length} rows)` : c.kind).join(" + ")).join(" | ")}]`));
   for (const c of doc.rows.flatMap(r => r.cells.flat()).flatMap(c => c.kind === "chart" ? [c.chart] : [])) lines.push(describeChart(c.id, compiled.get(c.id)));
-  for (const h of doc.rows.flatMap(r => r.cells.flat()).flatMap(c => c.kind === "html" ? [c.html] : [])) lines.push(`html ${h.id} (${h.aspect}, "${h.title}"): ${htmlSummary(h.html)}`);
+  for (const h of doc.rows.flatMap(r => r.cells.flat()).flatMap(c => c.kind === "html" ? [c.html] : [])) {
+    lines.push(`html ${h.id} (${h.aspect}, "${h.title}"): ${htmlSummary(h.html)}`);
+    // The browser's view, width by width; its problems are listed with the warnings below.
+    for (const r of renders?.get(h.id) ?? []) lines.push("failed" in r ? `  drawn at ${r.width}px: not drawn (${r.failed})` : `  drawn at ${r.width}px: ${r.height}px tall, ${r.problems.length ? `${r.problems.length} problem${r.problems.length === 1 ? "" : "s"}` : "nothing overlaps or overflows"}${r.notes.length ? `; ${r.notes.join("; ")}` : ""}`);
+  }
   const errors = warnings.filter(w => w.level === "error"), warns = warnings.filter(w => w.level === "warning");
   lines.push(errors.length ? `errors (${errors.length}):\n  ${errors.map(w => `${w.where}: ${w.message}`).join("\n  ")}` : "errors: none");
   lines.push(warns.length ? `warnings (${warns.length}):\n  ${warns.map(w => `${w.where}: ${w.message}`).join("\n  ")}` : "warnings: none");
