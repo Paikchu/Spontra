@@ -48,18 +48,20 @@ export async function issuerDirectory(db: D1Database, reader: SecReader, now = n
 }
 
 /**
- * The issuers a typed fragment names, best first: the ticker itself, then tickers starting with it, then names whose
- * word starts with it, then names containing it, then tickers containing it. Ties go to the shorter ticker, so a
- * common prefix lists the plain share class before its units and warrants.
+ * The issuers a typed fragment names, best first: the ticker itself, then tickers and names starting with it, then
+ * names with a later word starting with it, then names containing it, then tickers containing it. A name's start
+ * ranks with a ticker prefix because the directory holds ten thousand issuers: "app" must still reach Apple past
+ * AppLovin and AppFolio. Ties go to the shorter ticker, so a common prefix lists the plain share class before its
+ * units and warrants.
  */
-export function searchIssuers(entries: IssuerEntry[], query: string, limit = 8): IssuerSuggestion[] {
+export function searchIssuers(entries: IssuerEntry[], query: string, limit = 10): IssuerSuggestion[] {
   const text = query.trim().toUpperCase().replaceAll('-', '.');
   if (!text) return [];
   const words = new RegExp(`(^|[^A-Z0-9])${text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
   const ranked: Array<{ rank: number; entry: IssuerEntry }> = [];
   for (const entry of entries) {
     const [ticker, name] = entry, upper = name.toUpperCase();
-    const rank = ticker === text ? 0 : ticker.startsWith(text) ? 1 : words.test(upper) ? 2 : upper.includes(text) ? 3 : ticker.includes(text) ? 4 : -1;
+    const rank = ticker === text ? 0 : ticker.startsWith(text) || upper.startsWith(text) ? 1 : words.test(upper) ? 2 : upper.includes(text) ? 3 : ticker.includes(text) ? 4 : -1;
     if (rank >= 0) ranked.push({ rank, entry });
   }
   ranked.sort((a, b) => a.rank - b.rank || a.entry[0].length - b.entry[0].length || a.entry[0].localeCompare(b.entry[0]));
