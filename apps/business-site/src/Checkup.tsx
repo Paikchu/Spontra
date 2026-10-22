@@ -1,3 +1,4 @@
+import { Table, TableBody, TableCell, TableHead, TableRow } from "@/packages/web/src/ui/table";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/packages/web/src/ui/button";
 import { getLocale, labels, messages } from "@/packages/web/src/i18n";
@@ -319,15 +320,15 @@ export function MetricLens({ metric, flags, rank, data, findings, sources, bridg
       <div className="lens-nav"><Button variant="unstyled" type="button" className="lens-close" aria-label={m.close} onClick={onClose}>✕</Button></div>
     </header>
     <div className="lens-doc">
-      <div className="lens-doc-row" data-cells="2" data-lead="first">
+      <div className="lens-doc-row">
         <div className="lens-doc-cell"><h3 className="lens-row-title">{m.trend}</h3>
           <SeriesChart series={[{ id: "metric", label: title, color: top ? "var(--kind)" : "var(--foreground)", points: metric.series }]} form={metric.form} kind={metric.form === "money" ? "bar" : "line"} height={230} thresholds={thresholds} since={top?.since ?? null} level={top?.level} label={m.chartLabel(title)} />
         </div>
         <div className="lens-doc-cell"><h3 className="lens-row-title">{m.figures}</h3>
-          <dl className="lens-evidence">{figures.map(([label, value]) => <div key={label} className="lens-row"><dt>{label}</dt><dd><b>{value}</b></dd></div>)}</dl>
+          <Table className="lens-table lens-pairs"><TableBody>{figures.map(([label, value]) => <TableRow key={label}><TableHead scope="row">{label}</TableHead><TableCell><b>{value}</b></TableCell></TableRow>)}</TableBody></Table>
         </div>
       </div>
-      {note && <div className="lens-doc-row" data-cells={note.quotes.length ? 2 : 1} data-titled="">
+      {note && <div className="lens-doc-row">
         <h3 className="lens-row-title">{m.analysis}<SourceLanguage of={note.paragraphs.map(p => p.text)} /></h3>
         <div className="lens-doc-cell">{note.paragraphs.map((p, i) => <p key={i} className="lens-prose" lang={langOf(p.text)}>{p.text}</p>)}</div>
         {note.quotes.length > 0 && <div className="lens-doc-cell">{note.quotes.map((q, i) => <figure key={i} className="lens-quote" data-earlier={q.earlier || undefined}>
@@ -337,7 +338,7 @@ export function MetricLens({ metric, flags, rank, data, findings, sources, bridg
             {q.passage.path.length > 0 && <small>{q.passage.path.slice(1).join(" › ")}</small>}</figcaption>
         </figure>)}</div>}
       </div>}
-      {(parts || rank) && <div className="lens-doc-row" data-cells={parts && rank ? 2 : 1} data-lead={parts && rank ? "first" : undefined}>
+      {(parts || rank) && <div className="lens-doc-row">
         {parts && <div className="lens-doc-cell"><h3 className="lens-row-title">{m.parts}</h3>
           <ul className="chain-legend">{parts.series.map(s => <li key={s.id}><i style={{ background: s.color }} />{s.label}</li>)}</ul>
           <SeriesChart series={parts.series} form={parts.form} kind={parts.form === "money" ? "bar" : "line"} height={190} label={parts.series.map(s => s.label).join(" · ")} />
@@ -348,7 +349,7 @@ export function MetricLens({ metric, flags, rank, data, findings, sources, bridg
       </div>}
       {story === "bridge" && <div className="lens-doc-row"><div className="lens-doc-cell"><BridgeCard bridge={bridge} /></div></div>}
       {story === "chain" && chain && <div className="lens-doc-row"><div className="lens-doc-cell"><h3 className="lens-row-title">{m.chain}</h3><Chain chain={chain} /></div></div>}
-      {(related.length > 0 || sources.length > 0) && <div className="lens-doc-row" data-cells={related.length && sources.length ? 2 : 1}>
+      {(related.length > 0 || sources.length > 0) && <div className="lens-doc-row">
         {related.length > 0 && <div className="lens-doc-cell"><h3 className="lens-row-title">{m.related}</h3>
           <ul className="flag-related">{related.map(f => <li key={f.id}><Button variant="unstyled" type="button" className="finding-row" data-kind={f.kind} onClick={() => onFinding(f.id)} title={KIND_LABEL[f.kind]}>
             <i className="finding-mark" aria-hidden="true">{f.severity}</i><span className="finding-title">{f.title}</span>

@@ -1,4 +1,5 @@
 import { Button } from "@/packages/web/src/ui/button";
+import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/packages/web/src/ui/table";
 import { getLocale, labels, messages } from "@/packages/web/src/i18n";
 import { SourceLanguage, langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import { useCallback, useMemo, useState, type ReactNode } from "react";
@@ -19,11 +20,13 @@ const m = messages({
   focusThis: "Focus this", exitComparison: "Exit comparison", compare: (kind: string) => `Compare · ${kind}`,
   previous: "Previous finding", next: "Next finding", close: "Close finding", nextQuarter: "Next quarter", fullYear: "Full year",
   reported: (period: string) => `${period} reported`, pending: (period: string) => `Pending · ${period} report`, pp: " pp",
+  metric: "Metric", current: "Current", compared: "Compared with", change: "Change",
 }, {
   finding: (title: string) => `要点：${title}`, severity: (n: number) => `重要度 ${n}`, report: (period: string) => `${period} 财报`,
   focusThis: "聚焦此条", exitComparison: "退出对比", compare: (kind: string) => `对比 · ${kind}`,
   previous: "上一条要点", next: "下一条要点", close: "关闭要点", nextQuarter: "下季度", fullYear: "全年",
   reported: (period: string) => `${period} 已公布`, pending: (period: string) => `待公布 · ${period} 财报`, pp: "个百分点",
+  metric: "指标", current: "本期", compared: "对比", change: "变化",
 });
 const VERDICT = labels({ above: "Above guidance", within: "Within guidance", below: "Below guidance" }, { above: "高于指引", within: "处于指引区间", below: "低于指引" });
 const RECORD_VERDICT = labels({ pass: "Pass", fail: "Fail" }, { pass: "达成", fail: "未达成" });
@@ -116,7 +119,10 @@ export function LensBlocks({ finding, data, sources, materials, record, ticker, 
       case "prose": return b.paragraphs.map((p, i) => <p key={`${key}-${i}`} className="lens-prose" lang={langOf(p.text)}>{p.text}{cites(p.sourceIds)}</p>);
       case "chart": { const chart = lens.charts[b.chart.id]; return chart ? <LensFrame key={key} chart={chart} onHover={hoverOf(chart.id)} /> : null; }
       case "html": return <HtmlFrame key={key} picture={b.html} />;
-      case "figures": return <dl key={key} className="lens-evidence">{finding.resolved.map((r, i) => <Evidence key={i} r={r} lit={hover != null && near(r.current.periodEnd, hover)} />)}</dl>;
+      case "figures": return <Table key={key} className="lens-table lens-evidence">
+        <TableHeader><TableRow><TableHead>{m.metric}</TableHead><TableHead>{m.current}</TableHead><TableHead>{m.compared}</TableHead><TableHead>{m.change}</TableHead></TableRow></TableHeader>
+        <TableBody>{finding.resolved.map((r, i) => <Evidence key={i} r={r} lit={hover != null && near(r.current.periodEnd, hover)} />)}</TableBody>
+      </Table>;
       case "watch": return watch ? <div key={key} className="lens-watch" data-settled={outcome ? "" : undefined}>
         <p><b>{watch.horizon === "next_quarter" ? m.nextQuarter : m.fullYear}</b><span lang={langOf(watch.condition)}>{watch.condition}</span></p>
         {outcome ? <p className="lens-outcome"><b>{m.reported(shortPeriod(outcome.periodEnd))}</b><Outcome r={outcome.resolved} /></p>
@@ -135,11 +141,11 @@ export function LensBlocks({ finding, data, sources, materials, record, ticker, 
       case "table": {
         const t = lens.tables[tableKey(b.table)];
         if (!t) return null;
-        return <table key={key} className="lens-table">
-          {t.title && <caption lang={langOf(t.title)}>{t.title}</caption>}
-          <thead><tr><th scope="col" />{t.columns.map(c => <th key={c.key} scope="col">{c.label}{c.sub && <small>{c.sub}</small>}</th>)}</tr></thead>
-          <tbody>{t.rows.map((r, i) => <tr key={i}><th scope="row">{r.label}</th>{r.cells.map((c, j) => <td key={j}>{c ? <>{c.text}{c.change && <em data-trend={c.change.startsWith("+") ? "up" : c.change.startsWith("−") ? "down" : undefined}>{c.change}</em>}</> : null}</td>)}</tr>)}</tbody>
-        </table>;
+        return <Table key={key} className="lens-table">
+          {t.title && <TableCaption lang={langOf(t.title)}>{t.title}</TableCaption>}
+          <TableHeader><TableRow><TableHead />{t.columns.map(c => <TableHead key={c.key}>{c.label}{c.sub && <small>{c.sub}</small>}</TableHead>)}</TableRow></TableHeader>
+          <TableBody>{t.rows.map((r, i) => <TableRow key={i}><TableHead scope="row">{r.label}</TableHead>{r.cells.map((c, j) => <TableCell key={j}>{c ? <>{c.text}{c.change && <em data-trend={c.change.startsWith("+") ? "up" : c.change.startsWith("−") ? "down" : undefined}>{c.change}</em>}</> : null}</TableCell>)}</TableRow>)}</TableBody>
+        </Table>;
       }
       case "record": return scored.length ? <dl key={key} className="lens-record">{scored.map(({ entry, result }) => <div key={`${entry.periodEnd}:${entry.findingId}`} className="lens-record-row" data-verdict={result?.verdict}>
         <dt><span>{shortPeriod(entry.periodEnd)} · {KIND_LABEL[entry.kind]}</span><span lang={langOf(entry.title)}>{entry.title}</span></dt>
@@ -147,15 +153,12 @@ export function LensBlocks({ finding, data, sources, materials, record, ticker, 
       </div>)}</dl> : null;
     }
   };
+  // One centred column: a row's cells read one after another, in the order the agent wrote them.
   return <div className="lens-doc">
-    {lens.document.rows.map((row, i) => {
-      const chartIn = (cell: LensBlock[]) => cell.some(b => b.kind === "chart" || b.kind === "html");
-      const lead = row.cells.length === 2 ? chartIn(row.cells[0]!) && !chartIn(row.cells[1]!) ? "first" : chartIn(row.cells[1]!) && !chartIn(row.cells[0]!) ? "second" : undefined : undefined;
-      return <div key={i} className="lens-doc-row" data-cells={row.cells.length} data-lead={lead} data-titled={row.title ? "" : undefined}>
-        {row.title && <h3 className="lens-row-title" lang={langOf(row.title)}>{row.title}</h3>}
-        {row.cells.map((cell, j) => <div key={j} className="lens-doc-cell">{cell.map((b, k) => block(b, k))}</div>)}
-      </div>;
-    })}
+    {lens.document.rows.map((row, i) => <div key={i} className="lens-doc-row">
+      {row.title && <h3 className="lens-row-title" lang={langOf(row.title)}>{row.title}</h3>}
+      {row.cells.map((cell, j) => <div key={j} className="lens-doc-cell">{cell.map((b, k) => block(b, k))}</div>)}
+    </div>)}
   </div>;
 }
 
@@ -168,11 +171,14 @@ function Outcome({ r }: { r: ResolvedEvidence }) {
   </span>;
 }
 
+/** One figure as a table row: the value for its period, what it is compared with, and the change or the verdict against guidance. */
 function Evidence({ r, lit }: { r: ResolvedEvidence; lit: boolean }) {
-  const note = r.guidance ? <em data-verdict={r.guidance.verdict}>{VERDICT[r.guidance.verdict]}{r.compare ? ` ${formatValue(r.compare, r.evidence.ref)}` : ""}</em>
-    : r.compare ? <em data-trend={trend(r.delta)}>{r.compareLabel} {formatValue(r.compare, r.evidence.ref)} · {r.current.unit === "percent" ? `${percent(r.delta).replace("%", "")}${m.pp}` : r.current.unit === "ratio" ? ratioChange(r) : percent(r.delta)}</em> : null;
-  return <div className="lens-row" data-lit={lit || undefined}>
-    <dt>{r.label}<small>{spanLabel(r.current, getLocale())}</small></dt>
-    <dd><b data-trend={r.current.value < 0 && r.current.unit === "USD" ? "down" : undefined}>{formatValue(r.current, r.evidence.ref)}</b>{note}</dd>
-  </div>;
+  const change = r.guidance ? <em data-verdict={r.guidance.verdict}>{VERDICT[r.guidance.verdict]}</em>
+    : r.compare ? <em data-trend={trend(r.delta)}>{r.current.unit === "percent" ? `${percent(r.delta).replace("%", "")}${m.pp}` : r.current.unit === "ratio" ? ratioChange(r) : percent(r.delta)}</em> : null;
+  return <TableRow data-lit={lit || undefined}>
+    <TableHead scope="row">{r.label}<small>{spanLabel(r.current, getLocale())}</small></TableHead>
+    <TableCell><b data-trend={r.current.value < 0 && r.current.unit === "USD" ? "down" : undefined}>{formatValue(r.current, r.evidence.ref)}</b></TableCell>
+    <TableCell>{r.compare ? <>{formatValue(r.compare, r.evidence.ref)}{r.compareLabel && <small>{r.compareLabel}</small>}</> : "—"}</TableCell>
+    <TableCell>{change ?? "—"}</TableCell>
+  </TableRow>;
 }

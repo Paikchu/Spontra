@@ -106,7 +106,7 @@ export function MindLens({ item, branch, sources, onClose }: { item: MindItem; b
       </div>
       <div className="lens-nav"><Button variant="unstyled" type="button" className="lens-close" aria-label={m.close} onClick={onClose}>✕</Button></div>
     </header>
-    <div className="lens-doc"><div className="lens-doc-row" data-cells="2">
+    <div className="lens-doc"><div className="lens-doc-row">
       <div className="lens-doc-cell">
         {summary ? <p className="mind-lens-summary" lang={langOf(summary.text)}>{summary.text}{cite(summary)}</p> : <p className="mind-lens-empty">{m.noDescription}</p>}
         {inherited && <small className="mind-lens-inherited">{m.inheritedFrom(inherited.name)}</small>}

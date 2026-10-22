@@ -1,4 +1,5 @@
 import { Button } from "@/packages/web/src/ui/button";
+import { Table, TableBody, TableCell, TableHead, TableRow } from "@/packages/web/src/ui/table";
 import { useMemo, useState, type CSSProperties } from "react";
 import type { CompanyEvent, EventsPublication } from "@/shared/analysis-contract/events";
 import { INSIDER_RULES } from "@/shared/analysis-runtime/events";
@@ -55,8 +56,9 @@ const m = messages({
 /**
  * The event in focus, holding the whole stage the way a finding does: its analysis, written by the agent every
  * analysis is written by and verified here as a finding is, drawn by the finding's own blocks. Until a filing has one
- * (a routine Form 4, a company without AI analysis), its figures or chart and the filing's own summary stand in, in
- * the same two-column document; the tag on an insider sale is rule-based.
+ * (a routine Form 4, a company without AI analysis), its chart and figures and the filing's own summary stand in, in
+ * the same single-column document; the summary's headline is the title, so it is not repeated. The tag on an insider
+ * sale is rule-based.
  */
 export function EventLens({ event, publication, ticker, data, updates, nodeColor, onClose, onStep, index, count }: {
   event: CompanyEvent;
@@ -88,42 +90,38 @@ export function EventLens({ event, publication, ticker, data, updates, nodeColor
         <Button variant="unstyled" type="button" className="lens-close" aria-label={m.close} onClick={onClose}>✕</Button>
       </div>
     </header>
-    <ItemAnalysisBody analysis={analysis} verified={verified} ticker={ticker} nodeColor={nodeColor} fallback={<div className="lens-doc"><div className="lens-doc-row" data-cells="2" data-lead="first">
-      <div className="lens-doc-cell">
-        {insider ? <InsiderLadder model={insider} event={event} /> : <Facts event={event} />}
-      </div>
-      <div className="lens-doc-cell">
-        {insider && <InsiderReading model={insider} event={event} />}
-        {event.summary ? <>
-          <p className="lens-judgment" lang={langOf(event.summary.headline)}>{event.summary.headline}</p>
-          <ul className="event-bullets">{event.summary.bullets.map((b, i) => <li key={i} data-importance={b.importance} lang={langOf(b.detail)}><b>{b.label}</b>{b.detail}</li>)}</ul>
-          {event.summary.analystView && <p className="event-view"><b>{m.analystView}</b><span lang={langOf(event.summary.analystView)}>{event.summary.analystView}</span></p>}
-          <p className="event-generated">{m.aiSummary} · {event.summary.generatedAt.slice(0, 10)}</p>
-        </> : !insider && <p className="lens-empty">{m.noSummary}</p>}
-        {insider && insider.path.length > 0 && event.insider!.footnotes.length > 0 && <details className="event-footnotes" open={showQuiet} onToggle={e => setShowQuiet((e.target as HTMLDetailsElement).open)}>
-          <summary>{m.footnotes(event.insider!.footnotes.length)}</summary>
-          <ol lang="en">{event.insider!.footnotes.map((f, i) => <li key={i}>{f}</li>)}</ol>
-        </details>}
-        <ol className="sources sources--numbered">
-          <li><a href={event.edgarUrl} target="_blank" rel="noopener noreferrer">{m.edgarIndex}<span aria-hidden="true"> ↗</span></a></li>
-          <li><a href={event.documentUrl} target="_blank" rel="noopener noreferrer">{m.filing(event.form)}<span aria-hidden="true"> ↗</span></a></li>
-          {event.exhibits.map(x => <li key={x.url}><a href={x.url} target="_blank" rel="noopener noreferrer">{x.type} · {x.title}<span aria-hidden="true"> ↗</span></a></li>)}
-        </ol>
-      </div>
-    </div></div>} />
+    <ItemAnalysisBody analysis={analysis} verified={verified} ticker={ticker} nodeColor={nodeColor} fallback={<div className="lens-doc"><div className="lens-doc-row"><div className="lens-doc-cell">
+      {insider && <InsiderLadder model={insider} event={event} />}
+      {insider && <InsiderReading model={insider} event={event} />}
+      {event.summary ? <>
+        <ul className="event-bullets">{event.summary.bullets.map((b, i) => <li key={i} data-importance={b.importance} lang={langOf(b.detail)}><b>{b.label}</b>{b.detail}</li>)}</ul>
+        {event.summary.analystView && <p className="event-view"><b>{m.analystView}</b><span lang={langOf(event.summary.analystView)}>{event.summary.analystView}</span></p>}
+      </> : !insider && <p className="lens-empty">{m.noSummary}</p>}
+      {!insider && <Facts event={event} />}
+      {event.summary && <p className="event-generated">{m.aiSummary} · {event.summary.generatedAt.slice(0, 10)}</p>}
+      {insider && insider.path.length > 0 && event.insider!.footnotes.length > 0 && <details className="event-footnotes" open={showQuiet} onToggle={e => setShowQuiet((e.target as HTMLDetailsElement).open)}>
+        <summary>{m.footnotes(event.insider!.footnotes.length)}</summary>
+        <ol lang="en">{event.insider!.footnotes.map((f, i) => <li key={i}>{f}</li>)}</ol>
+      </details>}
+      <ol className="sources sources--numbered">
+        <li><a href={event.edgarUrl} target="_blank" rel="noopener noreferrer">{m.edgarIndex}<span aria-hidden="true"> ↗</span></a></li>
+        <li><a href={event.documentUrl} target="_blank" rel="noopener noreferrer">{m.filing(event.form)}<span aria-hidden="true"> ↗</span></a></li>
+        {event.exhibits.map(x => <li key={x.url}><a href={x.url} target="_blank" rel="noopener noreferrer">{x.type} · {x.title}<span aria-hidden="true"> ↗</span></a></li>)}
+      </ol>
+    </div></div></div>} />
   </section>;
 }
 
 /** A current report's facts: the item codes it was filed under, in words, and what the primary document is. */
 function Facts({ event }: { event: CompanyEvent }) {
-  return <dl className="event-facts">
-    <div><dt>{m.form}</dt><dd>{event.form}</dd></div>
-    <div><dt>{m.eventDate}</dt><dd>{event.eventDate}</dd></div>
-    {event.items.length > 0 && <div><dt>{m.items}</dt><dd>{event.items.map(i => <span key={i} className="event-item">{m.item(i)}<small>{ITEM_LABEL[i] ?? ""}</small></span>)}</dd></div>}
-    {event.description && <div><dt>{m.document}</dt><dd lang="en">{event.description}</dd></div>}
-    {event.exhibits.length > 0 && <div><dt>{m.exhibits}</dt><dd>{event.exhibits.map(x => x.type).join(", ")}</dd></div>}
-    {event.summary?.eventCategory && <div><dt>{m.summaryCategory}</dt><dd>{CATEGORY[event.summary.eventCategory]}</dd></div>}
-  </dl>;
+  return <Table className="lens-table lens-pairs event-facts"><TableBody>
+    <TableRow><TableHead scope="row">{m.form}</TableHead><TableCell>{event.form}</TableCell></TableRow>
+    <TableRow><TableHead scope="row">{m.eventDate}</TableHead><TableCell>{event.eventDate}</TableCell></TableRow>
+    {event.items.length > 0 && <TableRow><TableHead scope="row">{m.items}</TableHead><TableCell>{event.items.map(i => <span key={i} className="event-item">{m.item(i)}<small>{ITEM_LABEL[i] ?? ""}</small></span>)}</TableCell></TableRow>}
+    {event.description && <TableRow><TableHead scope="row">{m.document}</TableHead><TableCell lang="en">{event.description}</TableCell></TableRow>}
+    {event.exhibits.length > 0 && <TableRow><TableHead scope="row">{m.exhibits}</TableHead><TableCell>{event.exhibits.map(x => x.type).join(", ")}</TableCell></TableRow>}
+    {event.summary?.eventCategory && <TableRow><TableHead scope="row">{m.summaryCategory}</TableHead><TableCell>{CATEGORY[event.summary.eventCategory]}</TableCell></TableRow>}
+  </TableBody></Table>;
 }
 
 /** One Form 4 as figures: its rule-based tag, the trade, and the owner's history against the other insiders. */
@@ -132,24 +130,24 @@ function InsiderReading({ model, event }: { model: InsiderLensModel; event: Comp
   const role = [t.title, t.isDirector ? m.director : null, t.isTenPercentOwner ? m.tenPercent : null].filter(Boolean).join(" · ") || m.filer;
   return <>
     <p className="lens-judgment event-verdict" data-verdict={model.tone}><b>{model.verdict.label}</b></p>
-    <dl className="lens-evidence">
-      <div className="lens-row"><dt>{m.role}</dt><dd><b>{role}</b></dd></div>
+    <Table className="lens-table lens-pairs"><TableBody>
+      <TableRow><TableHead scope="row">{m.role}</TableHead><TableCell><b>{role}</b></TableCell></TableRow>
       {t.sold && <>
-        <div className="lens-row"><dt>{m.sharesSold}</dt><dd><b>{shares(t.sold.shares)}</b></dd></div>
-        <div className="lens-row"><dt>{m.avgPrice}</dt><dd><b>{perShare(t.sold.averagePrice, "USD", getLocale())}</b></dd></div>
-        <div className="lens-row"><dt>{m.proceeds}</dt><dd><b>{dollars(t.sold.proceeds)}</b></dd></div>
+        <TableRow><TableHead scope="row">{m.sharesSold}</TableHead><TableCell><b>{shares(t.sold.shares)}</b></TableCell></TableRow>
+        <TableRow><TableHead scope="row">{m.avgPrice}</TableHead><TableCell><b>{perShare(t.sold.averagePrice, "USD", getLocale())}</b></TableCell></TableRow>
+        <TableRow><TableHead scope="row">{m.proceeds}</TableHead><TableCell><b>{dollars(t.sold.proceeds)}</b></TableCell></TableRow>
       </>}
       {!t.sold && t.bought && <>
-        <div className="lens-row"><dt>{m.sharesBought}</dt><dd><b>{shares(t.bought.shares)}</b></dd></div>
-        <div className="lens-row"><dt>{m.cost}</dt><dd><b>{dollars(t.bought.cost)}</b></dd></div>
+        <TableRow><TableHead scope="row">{m.sharesBought}</TableHead><TableCell><b>{shares(t.bought.shares)}</b></TableCell></TableRow>
+        <TableRow><TableHead scope="row">{m.cost}</TableHead><TableCell><b>{dollars(t.bought.cost)}</b></TableCell></TableRow>
       </>}
-      {!t.sold && !t.bought && t.exercised && <div className="lens-row"><dt>{m.sharesExercised}</dt><dd><b>{shares(t.exercised)}</b></dd></div>}
-      {t.sold && <div className="lens-row"><dt>{m.priorShare}</dt><dd><b>{model.share != null ? `${model.share.toFixed(1)}%` : "—"}</b><em>{m.threshold(INSIDER_RULES.attentionShare)}</em></dd></div>}
-      <div className="lens-row"><dt>{m.heldAfter}</dt><dd><b>{t.heldAfter != null ? shares(t.heldAfter) : m.notDisclosed}</b></dd></div>
-      <div className="lens-row"><dt>{m.plan}</dt><dd><b>{t.rule10b51 === true ? m.yes : t.rule10b51 === false ? m.no : m.notMarked}</b>{t.planAdoptedOn && <em>{m.adopted(t.planAdoptedOn)}</em>}</dd></div>
-      <div className="lens-row"><dt>{m.salesYear}</dt><dd><b>{m.sales(model.cadence.sales.length)} · {shares(model.cadence.totalShares)}</b><em>{model.cadence.intervalDays != null ? `${m.interval(Math.round(model.cadence.intervalDays))}${model.cadence.regular ? m.steady : ""}` : m.noInterval} · {m.total(dollars(model.cadence.totalProceeds))}</em></dd></div>
-      <div className="lens-row"><dt>{m.otherSellers}</dt><dd><b>{m.people(model.cluster.length)}</b><em>{m.window(INSIDER_RULES.clusterDays)}</em></dd></div>
-    </dl>
+      {!t.sold && !t.bought && t.exercised && <TableRow><TableHead scope="row">{m.sharesExercised}</TableHead><TableCell><b>{shares(t.exercised)}</b></TableCell></TableRow>}
+      {t.sold && <TableRow><TableHead scope="row">{m.priorShare}</TableHead><TableCell><b>{model.share != null ? `${model.share.toFixed(1)}%` : "—"}</b><em>{m.threshold(INSIDER_RULES.attentionShare)}</em></TableCell></TableRow>}
+      <TableRow><TableHead scope="row">{m.heldAfter}</TableHead><TableCell><b>{t.heldAfter != null ? shares(t.heldAfter) : m.notDisclosed}</b></TableCell></TableRow>
+      <TableRow><TableHead scope="row">{m.plan}</TableHead><TableCell><b>{t.rule10b51 === true ? m.yes : t.rule10b51 === false ? m.no : m.notMarked}</b>{t.planAdoptedOn && <em>{m.adopted(t.planAdoptedOn)}</em>}</TableCell></TableRow>
+      <TableRow><TableHead scope="row">{m.salesYear}</TableHead><TableCell><b>{m.sales(model.cadence.sales.length)} · {shares(model.cadence.totalShares)}</b><em>{model.cadence.intervalDays != null ? `${m.interval(Math.round(model.cadence.intervalDays))}${model.cadence.regular ? m.steady : ""}` : m.noInterval} · {m.total(dollars(model.cadence.totalProceeds))}</em></TableCell></TableRow>
+      <TableRow><TableHead scope="row">{m.otherSellers}</TableHead><TableCell><b>{m.people(model.cluster.length)}</b><em>{m.window(INSIDER_RULES.clusterDays)}</em></TableCell></TableRow>
+    </TableBody></Table>
     {model.cluster.length > 0 && <ul className="event-cluster">{model.cluster.map(c => <li key={c.id}><span>{c.ownerName}{c.title ? ` · ${c.title}` : ""}</span><span>{shortDate(c.date)} · {dollars(c.proceeds)}</span></li>)}</ul>}
   </>;
 }

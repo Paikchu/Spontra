@@ -1,4 +1,5 @@
 import { Button } from "@/packages/web/src/ui/button";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/packages/web/src/ui/table";
 import { useState } from "react";
 import type { PublicFilingDigest } from "@/shared/analysis-contract/filings";
 import { labels, messages } from "@/packages/web/src/i18n";
@@ -11,7 +12,7 @@ const VERIFICATION = labels({ verified: "Figures verified", partial: "Partly ver
 const m = messages({
   report: (title: string) => `Report: ${title}`, release: (date: string, end: string | null) => `Earnings release ${date} · Period ended ${end}`,
   filed: (form: string, date: string) => `${form} · Filed ${date}`, readFull: "Read full report", newer: "Newer", older: "Older", close: "Close report",
-  keyFinancials: "Key financials", yoy: "YoY", qoq: "QoQ", changes: "Narrative changes", processing: "Analysis in progress", noFigures: "No verified key figures",
+  keyFinancials: "Key financials", metric: "Metric", value: "Value", yoy: "YoY", qoq: "QoQ", changes: "Narrative changes", processing: "Analysis in progress", noFigures: "No verified key figures",
   showLess: "Show less", more: (n: number) => `${n} more`, noAnalysis: "No analysis", analystView: "Analyst view", further: "Further analysis",
   guidance: "Guidance", risk: "Risk", generated: (date: string) => `AI analysis · ${date}`, filing: (form: string) => `${form} filing`,
   edgar: (ticker: string) => `EDGAR filing index · ${ticker}`,
@@ -19,7 +20,7 @@ const m = messages({
 }, {
   report: (title: string) => `财报：${title}`, release: (date: string, end: string | null) => `业绩公告 ${date} · 截至 ${end}`,
   filed: (form: string, date: string) => `${form} · 提交于 ${date}`, readFull: "阅读完整财报", newer: "较新", older: "较早", close: "关闭财报",
-  keyFinancials: "关键财务数据", yoy: "同比", qoq: "环比", changes: "表述变化", processing: "分析中", noFigures: "无已核验的关键数据",
+  keyFinancials: "关键财务数据", metric: "指标", value: "数值", yoy: "同比", qoq: "环比", changes: "表述变化", processing: "分析中", noFigures: "无已核验的关键数据",
   showLess: "收起", more: (n: number) => `另有 ${n} 条`, noAnalysis: "暂无分析", analystView: "分析观点", further: "延伸分析",
   guidance: "业绩指引", risk: "风险", generated: (date: string) => `AI 分析 · ${date}`, filing: (form: string) => `${form} 文件`,
   edgar: (ticker: string) => `EDGAR 文件索引 · ${ticker}`,
@@ -65,14 +66,17 @@ export function ReportLens({ report, ticker, data, updates, nodeColor, index, co
         <Button variant="unstyled" type="button" className="lens-close" aria-label={m.close} onClick={onClose}>✕</Button>
       </div>
     </header>
-    <ItemAnalysisBody analysis={analysis} verified={verified} ticker={ticker} nodeColor={nodeColor} fallback={<div className="lens-doc"><div className="lens-doc-row" data-cells="2" data-lead="first">
-      <div className="lens-doc-cell report-figures">
-        {report.keyMetrics.length > 0 ? <dl className="report-metrics" aria-label={m.keyFinancials}>
-          {report.keyMetrics.map(k => <div key={k.key} className="report-metric" data-status={k.status}>
-            <dt><span lang={langOf(k.label)}>{k.label}</span>{k.status === "derived" ? <i> · {m.derived}</i> : k.status === "not_comparable" ? <i> · {m.notComparable}</i> : null}</dt>
-            <dd><b>{k.value}</b>{(k.yoy || k.qoq) && <small>{k.yoy && <em data-trend={trend(k.yoy)}>{m.yoy} {k.yoy}</em>}{k.qoq && <em data-trend={trend(k.qoq)}>{m.qoq} {k.qoq}</em>}</small>}</dd>
-          </div>)}
-        </dl> : report.changes.length > 0 ? <ul className="report-changes" aria-label={m.changes}>
+    <ItemAnalysisBody analysis={analysis} verified={verified} ticker={ticker} nodeColor={nodeColor} fallback={<div className="lens-doc"><div className="lens-doc-row">
+      <div className="lens-doc-cell">
+        {report.keyMetrics.length > 0 ? <Table className="lens-table report-metrics" aria-label={m.keyFinancials}>
+          <TableHeader><TableRow><TableHead>{m.metric}</TableHead><TableHead>{m.value}</TableHead><TableHead>{m.yoy}</TableHead><TableHead>{m.qoq}</TableHead></TableRow></TableHeader>
+          <TableBody>{report.keyMetrics.map(k => <TableRow key={k.key} data-status={k.status}>
+            <TableHead scope="row"><span lang={langOf(k.label)}>{k.label}</span>{k.status === "derived" ? <small>{m.derived}</small> : k.status === "not_comparable" ? <small>{m.notComparable}</small> : null}</TableHead>
+            <TableCell><b>{k.value}</b></TableCell>
+            <TableCell>{k.yoy ? <em data-trend={trend(k.yoy)}>{k.yoy}</em> : "—"}</TableCell>
+            <TableCell>{k.qoq ? <em data-trend={trend(k.qoq)}>{k.qoq}</em> : "—"}</TableCell>
+          </TableRow>)}</TableBody>
+        </Table> : report.changes.length > 0 ? <ul className="report-changes" aria-label={m.changes}>
           {report.changes.map((c, i) => <li key={i}><b>{c.compare === "QoQ" ? m.qoq : m.yoy} · <span lang={langOf(c.topic)}>{c.topic}</span></b><span lang={langOf(c.statement)}>{c.statement}</span></li>)}
         </ul> : <div className="lens-empty">{report.analysisStatus === "processing" ? m.processing : m.noFigures}</div>}
         {report.keyMetrics.length > 0 && report.changes.length > 0 && <ul className="report-changes report-changes--below" aria-label={m.changes}>
