@@ -44,10 +44,26 @@ test("the admin proxy passes the inbox read and its mark-read through", async ()
   assert.deepEqual(seen, ["/admin/business-map/messages", "/admin/business-map/messages/read"]);
 });
 
+test("the admin proxy passes the ticker field's issuer search through with its query", async () => {
+  const seen: string[] = [];
+  const env = { SPONTRA_ANALYSIS: { fetch: async (url: URL | string) => { const u = new URL(String(url)); seen.push(u.pathname + u.search); return Response.json({ issuers: [] }); } } };
+  assert.equal((await handleReportAdminProxy(new Request("https://admin.example/api/admin/business-map/issuers?q=berkshire"), ["business-map", "issuers"], env)).status, 200);
+  assert.equal((await handleReportAdminProxy(new Request("https://admin.example/api/admin/business-map/issuers/AAPL"), ["business-map", "issuers", "AAPL"], env)).status, 404);
+  assert.deepEqual(seen, ["/admin/business-map/issuers?q=berkshire"]);
+});
+
 test("the admin proxy needs no credential and has no session route", async () => {
   const seen: Headers[] = [];
   const env = { SPONTRA_ANALYSIS: { fetch: async (_url: URL | string, init?: RequestInit) => { seen.push(new Headers(init?.headers)); return Response.json({ ok: true }); } } };
   assert.equal((await handleReportAdminProxy(new Request("https://admin.example/api/admin/business-map/companies"), ["business-map", "companies"], env)).status, 200);
   assert.equal(seen[0]!.get("authorization"), null);
   assert.equal((await handleReportAdminProxy(new Request("https://admin.example/api/admin/session", { method: "POST", body: "{}", headers: { origin: "https://admin.example" } }), ["session"], env)).status, 404);
+});
+
+test("the admin proxy lets one company's flow graph through, and nothing beside it", async () => {
+  const seen: string[] = [];
+  const env = { SPONTRA_ANALYSIS: { fetch: async (url: URL | string) => { seen.push(new URL(url).pathname); return Response.json({ ok: true }); } } };
+  assert.equal((await handleReportAdminProxy(new Request("https://admin.example/api/admin/business-map/companies/TTMI/flow"), ["business-map", "companies", "TTMI", "flow"], env)).status, 200);
+  assert.equal((await handleReportAdminProxy(new Request("https://admin.example/api/admin/business-map/companies/TTMI/flow", { method: "POST", body: "{}", headers: { origin: "https://admin.example" } }), ["business-map", "companies", "TTMI", "flow"], env)).status, 404);
+  assert.deepEqual(seen, ["/admin/business-map/companies/TTMI/flow"]);
 });

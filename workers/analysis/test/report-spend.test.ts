@@ -48,6 +48,26 @@ test("a usable brief is built before discovery, and the run goes on to the manag
   assert.deepEqual(calls, ["prepare", "context", "brief", "discovery:0", "discovery:1", "discovery-finish", "manager"]);
 });
 
+test("each step a filing's job enters is recorded as the job's stage, with its detail and without the bookkeeping steps", async () => {
+  const stages: string[] = [];
+  const target = filing("20-F");
+  const operations = {
+    discover: async () => ({ feed: {}, filings: [target] }),
+    publishFeed: async () => undefined,
+    shouldAnalyze: async () => true,
+    updateJob: async () => undefined,
+    markJobStage: async (jobId: string, stage: string) => { assert.match(jobId, /^NBIS:0001104659-26-065681:/); stages.push(stage); },
+    prepare: async () => ({ key: "filings/NBIS/x", filing: target, discoveryChunks: 2 }),
+    getContext: async () => ({}),
+    buildBrief: async () => ({ history: { series: [] } }),
+    scanDisclosures: async (_f: SecFiling, _r: unknown, index: number) => ({ index, start: 0, end: 1, status: "complete", disclosures: [], rejected: 0 }),
+    finishDiscovery: async () => ({ groundedDisclosures: 1 }),
+    plan: async () => { throw new Error("stop after discovery"); },
+  } as unknown as AnalysisOperations;
+  await executeSecAnalysisWorkflow({ ticker: "NBIS", requestedBy: "scheduled", accessionNumber: target.accessionNumber }, "scheduled-NBIS-stages", step, operations);
+  assert.deepEqual(stages, ["prepare", "context", "brief", "discovery:0", "discovery:1", "discovery-finish", "manager"]);
+});
+
 test("an exhibit-only amendment is published from the filing and does not enter the reader report", async () => {
   const calls: string[] = [], jobs: WorkflowJobUpdate[] = [];
   const target = filing("20-F/A");
