@@ -1045,6 +1045,29 @@ button { cursor: pointer; }
 ::view-transition-old(rail-events), ::view-transition-new(rail-events) { height: 100%; object-fit: none; object-position: top left; }
 ::view-transition-old(root), ::view-transition-new(root) { animation-duration: .24s; }
 
+/* Home ⇄ company: the search card becomes the rail, the field its company row, the magnifier the logo and the typed ticker the ticker.
+   Each page's remaining content crossfades behind; the old page leaves first so the new one arrives as the card lands. */
+:root[data-vt="page"] .home .search-panel, :root[data-vt="page"] .rail { view-transition-name: page-card; }
+:root[data-vt="page"] .home .search-field, :root[data-vt="page"] .rail-top { view-transition-name: page-head; }
+:root[data-vt="page"] .home .search-field svg, :root[data-vt="page"] .rail-top .company-logo { view-transition-name: page-logo; }
+:root[data-vt="page"] .home .search-field input, :root[data-vt="page"] .rail-top .company-ticker { view-transition-name: page-ticker; }
+:root[data-vt="page"] .findings[data-section] { view-transition-name: none; }
+:root[data-vt="page"] .home-hero { animation: none; }
+::view-transition-group(page-card), ::view-transition-group(page-head), ::view-transition-group(page-logo), ::view-transition-group(page-ticker) { animation-duration: .56s; animation-timing-function: var(--ease); }
+/* Card and row contents keep their size and are revealed by the morphing box rather than stretched with it. */
+::view-transition-old(page-card), ::view-transition-new(page-card) { height: 100%; object-fit: none; object-position: top left; }
+::view-transition-old(page-head), ::view-transition-new(page-head) { height: 100%; object-fit: none; object-position: right center; }
+::view-transition-old(page-ticker), ::view-transition-new(page-ticker) { height: 100%; object-fit: none; object-position: left center; }
+::view-transition-old(page-card) { animation: .2s ease both page-out; }
+::view-transition-new(page-card) { animation: .3s ease .2s both fade-in; }
+:root[data-vt="page"]::view-transition-old(root) { animation: .22s ease both page-out; }
+:root[data-vt="page"]::view-transition-new(root) { animation: .36s ease .16s both fade-in; }
+/* The box itself is drawn by the group while both faces are faded; narrow screens dissolve the rail, so only the card fades there. */
+@media (min-width: 961px) {
+  ::view-transition-group(page-card) { overflow: clip; border-radius: var(--rail-radius); background: var(--surface); box-shadow: var(--rail-shadow); }
+}
+@keyframes page-out { to { opacity: 0; } }
+
 /* The time axis under the chart: quarter ticks along the track, one marker per filing, the current report and the focused event lit. */
 .stage[data-timeline] { grid-template-rows: auto minmax(0, 1fr) auto auto auto; }
 .stage:has(.findings)[data-timeline] { grid-template-rows: auto auto minmax(0, 1fr) auto auto auto; }

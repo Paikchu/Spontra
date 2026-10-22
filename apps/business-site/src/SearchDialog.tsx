@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useId, useRef, useState, type RefObject } from "react";
+import { flushSync } from "react-dom";
 import { messages } from "@/packages/web/src/i18n";
 import { CompanyLogo } from "./CompanyMark";
 
@@ -39,12 +40,20 @@ export function SearchPanel({ current, recent, onPick, inputRef, inline = false 
   const typed = options.length > 0 && options[0].typed === true;
   const selected = Math.min(active, options.length - 1);
   const open = expanded && (!inline || options.length > 0 || invalid);
+  /** Inline, the field shows the chosen ticker as the page leaves, so that is what flies into the company's rail. */
+  function pick(ticker: string) {
+    if (inline) {
+      flushSync(() => { setInput(ticker); setExpanded(false); });
+      inputRef?.current?.blur();
+    }
+    onPick(ticker);
+  }
 
   return <div className="search-panel" data-inline={inline || undefined} data-open={open || undefined}
     onBlur={e => { if (inline && !e.currentTarget.contains(e.relatedTarget)) setExpanded(false); }}>
     <form className="search-field" role="search" onSubmit={e => {
       e.preventDefault();
-      if (options[selected]) onPick(options[selected].ticker);
+      if (options[selected]) pick(options[selected].ticker);
     }}>
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <circle cx="11" cy="11" r="6.5" />
@@ -71,7 +80,7 @@ export function SearchPanel({ current, recent, onPick, inputRef, inline = false 
           {options.map((option, i) => <Fragment key={option.ticker}>
             {i === (typed ? 1 : 0) && matches.length > 0 && <li role="presentation" className="search-group">{m.recent}</li>}
             <li id={`${listId}-${i}`} role="option" aria-selected={i === selected}
-              className="search-option" onMouseMove={() => setActive(i)} onMouseDown={e => e.preventDefault()} onClick={() => onPick(option.ticker)}>
+              className="search-option" onMouseMove={() => setActive(i)} onMouseDown={e => e.preventDefault()} onClick={() => pick(option.ticker)}>
               <CompanyLogo ticker={option.ticker} small />
               <strong>{option.ticker}</strong>
               {option.hint && <span className="search-hint">{option.hint}</span>}

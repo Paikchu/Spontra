@@ -12,6 +12,7 @@ import { useLiveCompany } from "./live-company";
 import { UpdateNotice } from "./UpdateNotice";
 import { Home } from "./Home";
 import { useStageHost } from "./stage/StageHost";
+import { turnPage, usePageTurning } from "./page-turn";
 
 const m = messages({
   chartUnavailable: "Chart unavailable", companyBusinesses: "Company businesses", lastSnapshot: "Last complete snapshot",
@@ -53,6 +54,11 @@ function tickerFromUrl() {
   if (ticker !== match[1]) history.replaceState(history.state, "", `/companies/${ticker}${location.search}${location.hash}`);
   return ticker;
 }
+/** Only crossing between home and a company turns the page; one company to another swaps in place. */
+function showTicker(next: string | null, set: (ticker: string | null) => void) {
+  if ((document.querySelector("main.home") !== null) === (next === null)) set(next);
+  else turnPage(() => set(next));
+}
 class ChartBoundary extends Component<
   { ticker: string; tools: ReactNode; children: ReactNode },
   { failed: boolean }
@@ -86,7 +92,11 @@ function Company({ ticker, tools, onSeen }: { ticker: string; tools: ReactNode; 
   const { data, updates, failed, retry, update, apply, dismiss } = useLiveCompany(ticker, onSeen);
   const { flow, publication, capital, peers, findings, fundamentals, events, filings } = data;
   const stage = useStageHost(ticker, data);
-  if (flow)
+  // The page keeps the face it turned in with until the turn lands, since replacing its rail mid-flight cuts the turn short.
+  const face = flow ? "map" : failed ? "failed" : publication ? "state" : "loading";
+  const [arrival] = useState(face);
+  const shown = usePageTurning() ? arrival : face;
+  if (shown === "map" && flow)
     return (
       <ChartBoundary ticker={ticker} tools={tools}>
         <BusinessMap
@@ -114,7 +124,7 @@ function Company({ ticker, tools, onSeen }: { ticker: string; tools: ReactNode; 
         {stage.layer}
       </ChartBoundary>
     );
-  if (failed)
+  if (shown === "failed")
     return (
       <StateShell ticker={ticker} tools={tools} role="alert">
         <h2>{m.loadFailed}</h2>
@@ -123,7 +133,7 @@ function Company({ ticker, tools, onSeen }: { ticker: string; tools: ReactNode; 
         </button>
       </StateShell>
     );
-  if (publication)
+  if (shown === "state" && publication)
     return (
       <StateShell ticker={ticker} tools={tools} role="status">
         <h2>{publication.status === "unavailable" ? m.unavailable : m.processing}</h2>
@@ -195,7 +205,11 @@ function App() {
     return () => query.removeEventListener("change", changed);
   }, []);
   useEffect(() => {
-    const changed = () => setTicker(tickerFromUrl());
+    // A browser that already animated the swipe back or forward gets no second animation.
+    const changed = (e: PopStateEvent) => {
+      if ((e as PopStateEvent & { hasUAVisualTransition?: boolean }).hasUAVisualTransition) setTicker(tickerFromUrl());
+      else showTicker(tickerFromUrl(), setTicker);
+    };
     window.addEventListener("popstate", changed);
     return () => window.removeEventListener("popstate", changed);
   }, []);
@@ -232,7 +246,7 @@ function App() {
   /** In-app links: a company, optionally opened at a finding, or home. */
   const navigate = useCallback((href: string) => {
     if (href !== location.pathname + location.search) history.pushState(null, "", href);
-    setTicker(tickerFromUrl());
+    showTicker(tickerFromUrl(), setTicker);
   }, []);
   const openCompany = (next: string) => navigate(`/companies/${canonicalTicker(next)}`);
   useEffect(() => {
