@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { leadIn, pageExcerpt, runBusinessTree, TREE_TOOLS, type TreeBlock, type TreeMessage, type TreeModel, type TreeReply, type TreeSearch } from "../src/business-tree/agent.ts";
+import { leadIn, pageExcerpt, runBusinessTree, sectionHeading, TREE_TOOLS, type TreeBlock, type TreeMessage, type TreeModel, type TreeReply, type TreeSearch } from "../src/business-tree/agent.ts";
 import { treeBusinesses } from "../src/business-tree/workflow.ts";
 import { lineAliases, namedIn, quotedIn, quoteProblem, readBusinessTree, withoutCitations } from "../../../shared/analysis-runtime/business-tree.ts";
 import type { PublicBusinessFlow } from "../../../shared/analysis-contract/business-flow.ts";
@@ -99,7 +99,8 @@ test("descriptions the loop left out or the review struck are written from the p
           { id: "root", text: "The passages do not say who buys these products.", sourceIds: ["b1-s1"] },
         ] };
       }
-      return { issues: [] };
+      // The second round may only strike summaries: whatever else it reports is not applied or logged.
+      return { issues: [{ id: "b1-n1", field: "node", problem: "not a product" }, { id: "b1-n1", field: "gloss", problem: "unsupported" }] };
     },
   });
   assert.deepEqual(judged, ["business-tree-review-b1", "business-tree-describe-b1", "business-tree-describe-review-b1"]);
@@ -112,6 +113,8 @@ test("descriptions the loop left out or the review struck are written from the p
   assert.deepEqual(steps.slice(-3).map(s => s.action), ["review", "describe", "describe-review"]);
   assert.equal(steps.at(-3)!.observation, "b1-n1 XBOX · summary: not in the material");
   assert.match(steps.at(-2)!.observation, /Described 1 of 2: b1-n1\. Refused: root writes about the passages/);
+  assert.equal(steps.at(-1)!.observation, "No issues.");
+  assert.equal(branch.children[0]!.gloss, "gaming console and content");
 });
 
 test("a lead-in is the sentence or heading that introduces the listed paragraph a quote comes from", () => {
@@ -136,6 +139,24 @@ test("what hangs under a node the review strikes moves up where its own passage 
   assert.deepEqual(line.map(n => n.name), ["Azure", "GitHub"], "products whose passage names the segment move up; one placed only by the struck line goes");
   const review = tree.research![0]!.steps.find(s => s.action === "review")!;
   assert.match(review.observation, /^b1-n1 Azure and other cloud services · node: generic name\nMoved up: b1-n2 Azure → root; b1-n3 GitHub → root$/);
+});
+
+test("a product described in a section headed by its line is placed by that heading, which the anchor carries", async () => {
+  const segment = "The Compute & Networking segment includes our Data Center accelerated computing and networking platforms and AI solutions and software.";
+  const blackwell = "In fiscal year 2025, we launched the NVIDIA Blackwell architecture, a full set of rack-scale infrastructure that includes GPUs, CPUs and networking adapters.";
+  const page = `## Our Businesses\n\n${segment}\n\n## Data Center\n\nThe NVIDIA Data Center platform is focused on accelerating compute-intensive workloads such as AI and scientific computing.\n\n${blackwell}`;
+  assert.equal(sectionHeading(page, blackwell), "Data Center");
+  assert.equal(sectionHeading(page, "Not in the page"), null);
+  const tree = await run([{ flowNodeId: "nvda:ComputeAndNetworkingSegmentMember", name: "Compute & Networking" }, { flowNodeId: "nvda:GraphicsSegmentMember", name: "Graphics" }], scripted({
+    "1-1": call("read", { source: "b1-s1", focus: "Data Center Blackwell networking" }),
+    "1-2": call("add", { parent: "root", nodes: [{ name: "Data Center", gloss: "AI computing platforms", kind: "line", anchor: { text: segment, sourceIds: ["b1-s1"] }, summary: null, revenue: [] }] }),
+    "1-3": call("add", { parent: "b1-n1", nodes: [
+      { name: "NVIDIA Blackwell", gloss: "AI GPU architecture", kind: "product", anchor: { text: blackwell, sourceIds: ["b1-s1"] }, summary: null, revenue: [] },
+      { name: "Grace", gloss: "data center CPU", kind: "product", anchor: { text: segment, sourceIds: ["b1-s1"] }, summary: null, revenue: [] }] }),
+  }), page);
+  const line = readBusinessTree(JSON.parse(JSON.stringify(tree)), "MSFT")!.branches[0]!.children[0]!;
+  assert.deepEqual(line.children.map(n => [n.name, n.anchor?.text]), [["NVIDIA Blackwell", `Data Center … ${blackwell}`]], "the reader keeps the joined anchor");
+  assert.match(tree.research![0]!.steps[2]!.observation, /Grace — anchor does not contain the name "Grace"/);
 });
 
 test("finishing with a bare category line is answered once with a request for named products and pricing", async () => {

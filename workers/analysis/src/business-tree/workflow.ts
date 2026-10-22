@@ -88,7 +88,7 @@ export async function executeBusinessTreeWorkflow(params: BusinessTreeParams, st
     ticker: params.ticker, companyName: issuerNames(findSecurity(params.ticker)?.name ?? params.ticker)[0]!, periodEnd: input.periodEnd, businesses: input.businesses,
     filings: input.filings, search: researchSearch(env), modelVersion, fingerprint: params.fingerprint, now,
     // SEC filings are read from the filing library; the web search is left for vendor pages.
-    filingLibrary: treeLibrary(requireDb(env), params.ticker, input.filings),
+    filingLibrary: treeLibrary(requireDb(env), params.ticker, input.filings, { headings: true }),
     // A broken or stalled reply is the turn gone wrong, which the loop answers; HTTP failures and timeouts still retry the step.
     model: {
       act: async (stage, system, tools, messages) => {
