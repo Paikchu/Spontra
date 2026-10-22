@@ -246,7 +246,8 @@ export type PublishedSecReport = {
   reader?: import("../../../../shared/analysis-contract/sec-reader.ts").SecReaderReport;
   financialLens?: import("../../../../shared/analysis-contract/sec-reader.ts").SecFinancialLens;
   marketSnapshot?: import("../../../../shared/analysis-contract/sec-reader.ts").SecMarketSnapshot;
-  editorialReview?: { status: "passed"; reviewedAt: string };
+  /** notes: findings the review raised that did not hold publication back (editorialGate). */
+  editorialReview?: { status: "passed"; reviewedAt: string; notes?: string[] };
   fiscalPeriod?: import("../../../../shared/analysis-contract/report.ts").SecFiscalPeriod | null;
   discovery?: import("../../../../shared/analysis-contract/report.ts").SecDiscovery;
   publication?: { filing: import("./sec.ts").SecFiling; summary: import("./sec.ts").SecFilingSummary };

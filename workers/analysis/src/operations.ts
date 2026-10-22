@@ -8,7 +8,7 @@ export { readModelContent } from "./model-stream.ts";
 export { SecModelHttpError } from "./model-recovery.ts";
 import { fiscalPeriodInput } from "./sec/fiscal-period-ai.ts";
 import { fetchSecMarketSnapshot } from "./sec/market.ts";
-import { normalizeEditorialIssues, editorialRequirements } from "./sec/editorial.ts";
+import { normalizeEditorialIssues, editorialRequirements, editorialGate } from "./sec/editorial.ts";
 import { EDITORIAL_REVIEW_PROMPT, identifyReaderMarketSnapshot } from "./sec/reader.ts";
 import { fiscalPeriodKey, fiscalPeriodsFromCompanyFacts, readFiscalPeriod } from "./sec/fiscal-period.ts";
 import { fiscalPeriodsInSequence } from "./sec/fiscal-sequence.ts";
@@ -509,8 +509,10 @@ export function createAnalysisOperations(env: AnalysisEnv, fetcher: typeof fetch
       });
       await putArtifact(env.SEC_FILINGS, reference, `editorial-review/${round}`, audit);
       const allowed = new Set([...brief.currentFacts.flatMap((f) => f.evidenceIds), ...nodes.flatMap((n) => n.evidenceIds ?? []), ...(marketSnapshot?.evidenceId ? [marketSnapshot.evidenceId] : [])]);
-      const findings = normalizeEditorialIssues(audit, allowed);
-      return { findings, issues: findings.filter((i) => i.severity !== "minor" && i.category !== "presentation").map((i) => `${i.id}: ${i.detail} Acceptance: ${i.acceptance}`), reviewedAt: new Date().toISOString() };
+      const previousIssues = context?.previousIssues ?? [];
+      const findings = normalizeEditorialIssues(audit, allowed, new Set(previousIssues.map((i) => i.id)));
+      const { blocking, notes } = editorialGate(findings, round, previousIssues);
+      return { findings, issues: blocking.map((i) => `${i.id}: ${i.detail} Acceptance: ${i.acceptance}`), notes: notes.map((i) => `${i.id}: ${i.detail}`.slice(0, 600)), reviewedAt: new Date().toISOString() };
     },
     reviseReport: async (filing, reference, context, plan, nodes, brief, review, issues, execution, revision) => {
       if (!revision?.draft.summary || !revision.draft.artifact.report.reader) throw new Error("Editorial revision requires the reviewed draft");

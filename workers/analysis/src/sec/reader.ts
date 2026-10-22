@@ -67,6 +67,23 @@ export function normalizeReaderSummaryText(value: unknown): Pick<SecFilingSummar
   return { headline, bullets, analystView };
 }
 
+/**
+ * One row of the change table. Its prior position stands only on evidence of an earlier period: earlier periods' source
+ * data, or a passage of this filing that states it ("three material weaknesses as of December 31, 2024"); this period's
+ * figures and market data never are. Without such evidence the row is not comparable, whatever the model wrote.
+ */
+export function readerChange(raw: unknown, evidence: { currentEvidence: Set<string>; priorEvidence: Set<string> }): SecReaderReport["changes"][number] {
+  const row = object(raw);
+  const priorEvidenceIds = refs(row.priorEvidenceIds, new Set([...evidence.priorEvidence, ...[...evidence.currentEvidence].filter((id) => id.startsWith("ev:"))]));
+  const evidenceIds = refs(row.evidenceIds, evidence.currentEvidence);
+  const requested = string(row.kind);
+  // Old model prose is not evidence that an event is new or that a metric changed.
+  const kind = priorEvidenceIds.length && string(row.prior) && ["new", "changed", "continuing"].includes(requested)
+    ? requested as "new" | "changed" | "continuing" : "not_comparable";
+  return { topic: string(row.topic, 200), kind, prior: kind === "not_comparable" ? "No verified comparable baseline" : string(row.prior, 900),
+    current: string(row.current, 1200), implication: string(row.implication, 1200), evidenceIds, priorEvidenceIds };
+}
+
 /** Identity, completeness and comparison gates. Semantic accuracy is checked separately. */
 export function normalizeReaderReport(value: unknown, args: {
   nodes: SecNodeResult[]; plan: SecNodePlan; currentEvidence: Set<string>; priorEvidence: Set<string>; chartKeys: Set<string>; figureKeys?: Set<string>; requireVisual?: boolean; assets?: SecReaderAsset[];
@@ -162,17 +179,7 @@ export function normalizeReaderReport(value: unknown, args: {
   if (missing.length) throw new Error(`Reader report omitted a material analysis topic: ${missing.map((n) => `${n.id} (${n.title}: ${n.question})`).join("; ")}. Add substantive coverage and its nodeId, preserving existing sections.`);
   const paragraphs = sections.flatMap((s) => s.paragraphs);
   if (new Set(paragraphs.map((p) => p.replace(/\s/g, ""))).size !== paragraphs.length) throw new Error("Reader report repeats paragraphs");
-  const changes = list(root.changes).slice(0, 5).map((raw): SecReaderReport["changes"][number] => {
-    const row = object(raw);
-    const priorEvidenceIds = refs(row.priorEvidenceIds, args.priorEvidence);
-    const evidenceIds = refs(row.evidenceIds, args.currentEvidence);
-    const requested = string(row.kind);
-    // Old model prose is not evidence that an event is new or that a metric changed.
-    const kind = priorEvidenceIds.length && string(row.prior) && ["new", "changed", "continuing"].includes(requested)
-      ? requested as "new" | "changed" | "continuing" : "not_comparable";
-    return { topic: string(row.topic, 200), kind, prior: kind === "not_comparable" ? "No verified comparable baseline" : string(row.prior, 900),
-      current: string(row.current, 1200), implication: string(row.implication, 1200), evidenceIds, priorEvidenceIds };
-  });
+  const changes = list(root.changes).slice(0, 5).map((raw) => readerChange(raw, args));
   if (!changes.length || changes.some((c) => !c.topic || !c.current || !c.implication || !c.evidenceIds.length)) throw new Error("Reader report needs grounded quarter changes");
   const watch = list(root.watch).slice(0, 4).map((raw) => {
     const row = object(raw);
@@ -290,7 +297,7 @@ export const EDITORIAL_REVIEW_PROMPT = [
   "Every factual correction must cite specific source evidenceIds and a quote from the draft, and list an acceptance condition. Explanations the reviewer proposes also need evidence; do not demand rewrites based on usual accounting treatment or guesses about customer identity. When evidence is insufficient, require more checking or a narrower claim instead of filling in missing information. A clearly labeled information gap with correspondingly limited conclusions may pass.",
   "sectionIds must use the input reader.sections[].id verbatim; never regenerate sec-reader-N from section order. requiredTopics must be covered in substance; a nodeId only locates content and does not replace the prose. Keep previously resolved issues resolved; new issues still need evidence.",
   "Check the input facts, the current evidence excerpts and the calculation boxes item by item. Having an evidence ID does not mean the evidence supports the causal claim; numbers must not mix periods or bases. Use financialLens to check the direction of both FCFs, the debt gap and the depreciation assumptions. Market data may only cite marketSnapshot; marketSnapshot.evidenceId supports only the market fields of that frozen snapshot and is not SEC operating or financial evidence; an ID from a different snapshot is invalid. Without a price, the report must not call the stock cheap or expensive or invent a price target.",
-  "Check the prior baselines in changes and any \"first\" or \"new\" wording in the body; without comparable prior source evidence the report may only say \"disclosed this period\" or \"not comparable\". Check that there is a standalone bear case with specific falsification conditions, and that customer concentration and similar issues are covered according to their importance.",
+  "Check the prior baselines in changes and any \"first\" or \"new\" wording in the body; a prior baseline needs earlier periods' source data or a passage of this filing that states the prior-period position, and without either the report may only say \"disclosed this period\" or \"not comparable\". Check that there is a standalone bear case with specific falsification conditions, and that customer concentration and similar issues are covered according to their importance.",
   "Check whether a general reader could explain how the judgment changed from this text, and whether there is repetition, unexplained jargon or machine log text; return revise for any material error or gap. A material causal claim that cannot be verified also requires revise.",
-  'Output JSON only: {"verdict":"pass|revise","issues":[{"id":"stable rule identifier","category":"fact|consistency|coverage|evidence|presentation","severity":"critical|major|minor","sectionIds":["sec-reader-1"],"quote":"the exact sentence from the draft","evidenceIds":["source ID"],"detail":"the specific problem","acceptance":"a verifiable acceptance condition"}]}. Write detail and acceptance in English. pass cannot coexist with critical or major issues.',
+  'Output JSON only: {"verdict":"pass|revise","issues":[{"id":"stable rule identifier","previousIssueId":"the id from previousIssues this finding continues while that issue is still unresolved; omit for a new finding","category":"fact|consistency|coverage|evidence|presentation","severity":"critical|major|minor","sectionIds":["sec-reader-1"],"quote":"the exact sentence from the draft","evidenceIds":["source ID"],"detail":"the specific problem","acceptance":"a verifiable acceptance condition"}]}. Write detail and acceptance in English. pass cannot coexist with critical or major issues.',
 ].join("\n");

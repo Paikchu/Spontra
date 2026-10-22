@@ -72,7 +72,8 @@ export type PublishedSecReport = {
   reader?: import("./sec-reader.ts").SecReaderReport;
   financialLens?: import("./sec-reader.ts").SecFinancialLens;
   marketSnapshot?: import("./sec-reader.ts").SecMarketSnapshot;
-  editorialReview?: { status: "passed"; reviewedAt: string };
+  /** notes: findings the review raised that did not hold publication back (editorialGate). */
+  editorialReview?: { status: "passed"; reviewedAt: string; notes?: string[] };
   fiscalPeriod?: import("./report.ts").SecFiscalPeriod | null;
   discovery?: SecDiscovery;
   publication?: { filing: SecFiling; summary: SecFilingSummary };

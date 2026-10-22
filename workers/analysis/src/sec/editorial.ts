@@ -55,7 +55,24 @@ export type EditorialIssue = {
   evidenceIds: string[];
   detail: string;
   acceptance: string;
+  /** The earlier finding this one says is still unresolved; only ids the previous round reported count. */
+  previousIssueId?: string;
 };
+
+/** Rounds from which the review blocks publication only on unresolved earlier issues and new errors of fact. */
+export const EDITORIAL_NARROW_FROM_ROUND = 2;
+const blocks = (issue: EditorialIssue) => issue.severity !== "minor" && issue.category !== "presentation";
+
+/**
+ * Which findings hold publication back. Early rounds: every finding that is not minor or about presentation. From
+ * EDITORIAL_NARROW_FROM_ROUND on, each fresh read keeps finding new gaps, so only an earlier blocking issue the review
+ * says is still unresolved, or a new error of fact, blocks; the rest are passed to the revision and kept as notes.
+ */
+export function editorialGate(findings: EditorialIssue[], round: number, previousIssues: EditorialIssue[]): { blocking: EditorialIssue[]; notes: EditorialIssue[] } {
+  const earlier = new Set(previousIssues.filter(blocks).map((i) => i.id));
+  const blocking = findings.filter((i) => blocks(i) && (round < EDITORIAL_NARROW_FROM_ROUND || i.category === "fact" || (i.previousIssueId !== undefined && earlier.has(i.previousIssueId))));
+  return { blocking, notes: findings.filter((i) => !blocking.includes(i)) };
+}
 
 export function editorialRequirements(plan: SecNodePlan, nodes: SecNodeResult[], review?: ManagerReview) {
   return plan.nodes.filter((n) => n.materiality === "high").map((n) => ({
@@ -67,7 +84,7 @@ export function editorialRequirements(plan: SecNodePlan, nodes: SecNodeResult[],
 }
 
 /** Reviewer recommendations are untrusted claims, never additions to the fact ledger. */
-export function normalizeEditorialIssues(value: unknown, allowedEvidence: Set<string>): EditorialIssue[] {
+export function normalizeEditorialIssues(value: unknown, allowedEvidence: Set<string>, previousIds: Set<string> = new Set()): EditorialIssue[] {
   const root = object(value);
   if (!["pass", "revise"].includes(String(root.verdict)) || !Array.isArray(root.issues)) throw new Error("Editorial audit response is incomplete");
   const issues = rows(root.issues).map((raw, index): EditorialIssue => {
@@ -83,6 +100,7 @@ export function normalizeEditorialIssues(value: unknown, allowedEvidence: Set<st
       evidenceIds,
       detail: typeof r.detail === "string" && r.detail ? r.detail : "The review gave no specific problem; check the draft.",
       acceptance: typeof r.acceptance === "string" ? r.acceptance : "Check the source; without supporting evidence, narrow the original claim and state the limitation instead of copying facts the review proposed.",
+      ...(typeof r.previousIssueId === "string" && previousIds.has(r.previousIssueId) ? { previousIssueId: r.previousIssueId } : {}),
     };
   });
   if (root.verdict === "revise" && !issues.length) throw new Error("Editorial audit requested revision without actionable issues");

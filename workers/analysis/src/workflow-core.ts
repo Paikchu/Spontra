@@ -143,7 +143,7 @@ export type AnalysisOperations = {
   review?(filing: SecFiling, prepared: PreparedFilingReference, brief: SecAnalysisBrief, plan: SecNodePlan, nodes: SecNodeResult[], round: number, execution?: SecModelExecution): Promise<ManagerReview>;
   composePresentation?(filing: SecFiling, prepared: PreparedFilingReference, report: SecAnalysisArtifact['report'], nodes: SecNodeResult[], brief: SecAnalysisBrief, execution?: SecModelExecution): Promise<SecAnalysisArtifact['report']>;
   auditReport?(prepared: PreparedFilingReference, nodes: SecNodeResult[], brief: SecAnalysisBrief,
-    draft: { artifact: SecAnalysisArtifact; summary: SecFilingSummary | null }, round: number, execution?: SecModelExecution, context?: { plan: SecNodePlan; previousIssues: EditorialIssue[] }): Promise<{ issues: string[]; reviewedAt: string; findings?: EditorialIssue[] }>;
+    draft: { artifact: SecAnalysisArtifact; summary: SecFilingSummary | null }, round: number, execution?: SecModelExecution, context?: { plan: SecNodePlan; previousIssues: EditorialIssue[] }): Promise<{ issues: string[]; reviewedAt: string; findings?: EditorialIssue[]; notes?: string[] }>;
   reviseReport?(filing: SecFiling, prepared: PreparedFilingReference, context: SecAnalysisContext, plan: SecNodePlan, nodes: SecNodeResult[], brief: SecAnalysisBrief, review: ManagerReview,
     issues: string[], execution?: SecModelExecution, revision?: { draft: { artifact: SecAnalysisArtifact; summary: SecFilingSummary | null }; round: number; findings?: EditorialIssue[] }): Promise<{ artifact: SecAnalysisArtifact; summary: SecFilingSummary | null }>;
   summarizeEvent(filing: SecFiling, prepared: PreparedFilingReference, execution?: SecModelExecution): Promise<SecFilingSummary>;
@@ -314,7 +314,7 @@ export async function executeSecAnalysisWorkflow(
           const draft = result;
           const audit = await step.do(`editorial-review:${accession}:${round}`, (stepContext) => operations.auditReport!(prepared, loop.nodes, brief, draft, round, executionFor(stepContext), { plan, previousIssues }));
           if (!audit.issues.length) {
-            result.artifact.report.editorialReview = { status: "passed", reviewedAt: audit.reviewedAt };
+            result.artifact.report.editorialReview = { status: "passed", reviewedAt: audit.reviewedAt, ...(audit.notes?.length ? { notes: audit.notes } : {}) };
             break;
           }
           if (round === 4 || !operations.reviseReport) throw new Error(`Reader report failed editorial review: ${audit.issues.join("; ").slice(0, 1000)}`);
