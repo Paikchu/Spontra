@@ -8,6 +8,7 @@ import { normalizeCompanyTicker, pendingRequestId, completeRequestId } from './f
 import { financialDate } from './financial-update-history';
 import { CompanyLogo } from '@/packages/web/src/company-logo';
 import { runElapsed, runView } from './run-progress';
+import { FlowGraph } from './flow-graph';
 import './business-map-companies.css';
 
 const stages: Record<string,string> = {identify:'识别公司',waiting_issuer:'等待同公司任务',collect:'采集及核验最新财报',history:'补充季度历史',audit:'检查披露完整性',complete:'任务结束'};
@@ -151,27 +152,29 @@ function Meter({label,completed,total,done=false}:{label:string;completed:number
   // A scan that stopped once the newest pair verified is finished, not two tenths done.
   return <div className="bm-meter" data-done={done||undefined}><span>{label}</span><b>{done?`已完成 · 读取 ${completed} 份`:`${completed}/${total}`}</b><progress aria-label={label} value={done?1:completed} max={done?1:Math.max(total,1)}/></div>;
 }
-/** Ordered phases as one segmented bar: the phases before `current` done, `current` in progress. */
+/** Ordered phases as a chain of named steps: the phases before `current` done, `current` in progress. */
 function Phases({phases,current,label}:{phases:readonly string[];current:number;label:string}) {
-  return <ol className="bm-phases" aria-label={label} style={{gridTemplateColumns:`repeat(${phases.length},minmax(0,1fr))`}}>
-    {phases.map((p,i)=><li key={p} data-state={i<current?'done':i===current?'current':undefined} aria-current={i===current?'step':undefined} title={p}><span className="bm-admin-sr">{p}</span></li>)}
+  return <ol className="bm-chain" aria-label={label}>
+    {phases.map((p,i)=><li key={p} data-state={i<current?'done':i===current?'current':undefined} aria-current={i===current?'step':undefined}>{p}</li>)}
   </ol>;
 }
-/** One run in flight: its phases, the phase and step it is on, how many steps and how long. */
-function RunProgress({run,named}:{run:BusinessMapCompany['features'][Feature]['progress'][number];named:boolean}) {
+/** One run in flight as a line: what runs, its phases, the phase and step it is on, how many steps and how long. */
+function RunProgress({run,name}:{run:BusinessMapCompany['features'][Feature]['progress'][number];name:string}) {
   const view=runView(run),phase=view.phases[view.current];
-  return <div className="bm-run">
-    <Phases phases={view.phases} current={view.current} label={`${RUN_LABEL[run.kind]} 进度`}/>
-    <p><b>{named?`${RUN_LABEL[run.kind]} · `:''}{view.current+1}/{view.phases.length} {phase}</b>{view.step&&view.step!==phase&&<span>{view.step}</span>}</p>
+  return <div className="bm-run" role="listitem">
+    <span>{name}</span>
+    <Phases phases={view.phases} current={view.current} label={`${name} 进度`}/>
+    <p>{view.step&&view.step!==phase?view.step:phase}</p>
     <small>{run.status==='waiting'?'等待中 · ':''}{view.steps?`${view.steps} 步 · `:''}已运行 {runElapsed(run)}</small>
   </div>;
 }
-/** The financial map's own preparation as phases, with the current phase's count. */
+/** The financial map's own preparation as the same line, with the current phase's count. */
 function TaskProgress({task}:{task:NonNullable<BusinessMapCompany['task']>}) {
   const current=Math.max(0,TASK_PHASES.indexOf(task.stage as typeof TASK_PHASES[number]));
-  return <div className="bm-run bm-task-run">
+  return <div className="bm-run" role="listitem">
+    <span>财务地图</span>
     <Phases phases={TASK_PHASES.map(s=>stages[s]!)} current={task.stage==='waiting_issuer'?-1:current} label="财务地图进度"/>
-    <p><b>{task.stage==='waiting_issuer'?stages.waiting_issuer:`${current+1}/${TASK_PHASES.length} ${stages[task.stage]??task.stage}`}</b>{task.progress.total>0&&<span className="ra-mono">{task.progress.completed}/{task.progress.total}</span>}</p>
+    <p>{task.stage==='waiting_issuer'?stages.waiting_issuer:stages[task.stage]??task.stage}{task.progress.total>0&&<span className="ra-mono">{task.progress.completed}/{task.progress.total}</span>}</p>
     <small>已运行 {runElapsed({startedAt:task.createdAt,updatedAt:task.updatedAt})}</small>
   </div>;
 }
@@ -226,6 +229,7 @@ function Company({company:c,generation,busy,onToggle,onPrepare,onJudge,onFeature
   const [open,setOpen]=useState(false);
   const map=ready?{status:'reviewed',text:'财务地图已显示'}:running||collecting?{status:'processing',text:'财务地图准备中'}:{status:'idle',text:'财务地图未就绪'};
   const now=nowLine(c,running),problems=groupIssues(issues);
+  const runs=FEATURES.flatMap(feature=>(c.features[feature].progress??[]).map((run,_,all)=>({feature,run,count:all.length})));
   const remove=()=>{if(window.confirm(`移出 ${c.ticker}？`))onToggle();};
   return <tbody data-open={open||undefined}>
     <tr className="bm-admin-row" aria-label={`${c.ticker} 数据准备`}>
@@ -236,33 +240,36 @@ function Company({company:c,generation,busy,onToggle,onPrepare,onJudge,onFeature
         {c.dataEnabled?<button className="bm-admin-remove" disabled={busy} onClick={remove} aria-label={`移出 ${c.ticker}`} title="移出白名单"><Trash2 size={16}/></button>:<button className="fm-button" disabled={busy} onClick={onToggle}>加入</button>}</div></td>
     </tr>
     {open&&<tr className="bm-admin-detail"><td colSpan={7}><div className="bm-detail">
+      <FlowGraph ticker={c.ticker}/>
+      {(running&&c.task||runs.length>0)&&<div className="bm-progress" role="list" aria-label="进行中">
+        {running&&c.task&&<TaskProgress task={c.task}/>}
+        {runs.map(({feature,run,count})=><RunProgress key={`${run.kind}:${run.startedAt}`} run={run} name={count>1||RUN_LABEL[run.kind]!==FEATURE_LABEL[feature]?`${FEATURE_LABEL[feature]} · ${RUN_LABEL[run.kind]}`:FEATURE_LABEL[feature]}/>)}
+      </div>}
       <header className="bm-detail-head">
         <div><span>可展示期间</span>{ready&&c.publication.periods.length?<ul className="bm-chips">{c.publication.periods.map(p=><li key={p}>{p}</li>)}</ul>:<em>—</em>}</div>
         {c.task&&!running&&<div><span>最近任务</span><em>{stages[c.task.stage]??c.task.stage}{taskStatus[c.task.status]?` · ${taskStatus[c.task.status]}`:''} · {financialDate(c.task.updatedAt)}</em></div>}
-        {running&&c.task&&<TaskProgress task={c.task}/>}
       </header>
-      <div className="bm-strip" role="list" aria-label="生成状态与数据">
+      <div className="bm-rows" role="list" aria-label="生成状态与数据">
         {FEATURES.map(f=>{const state=featureState(c.features[f],!generation[f]);return <section key={f} role="listitem" className="bm-col" data-status={state.status}>
-          <h4>{FEATURE_LABEL[f]}</h4><span className="ra-badge" data-status={state.status}>{state.text}</span><small>{state.note}</small>
-          {(c.features[f].progress??[]).map(run=><RunProgress key={`${run.kind}:${run.startedAt}`} run={run} named={(c.features[f].progress?.length??0)>1||RUN_LABEL[run.kind]!==FEATURE_LABEL[f]}/>)}</section>;})}
-        <section role="listitem" className="bm-col"><h4>收入构成</h4>
-          {c.publication.revenueCoverage?.length?<dl data-kind="periods">{c.publication.revenueCoverage.map(q=><div key={q.period} data-status={q.status}><dt>{q.period}</dt><dd>{coverage(q)}</dd></div>)}</dl>:<p className="bm-empty">无</p>}</section>
-        <section role="listitem" className="bm-col"><h4>采集</h4>
+          <h4>{FEATURE_LABEL[f]}</h4><div><span className="ra-badge" data-status={state.status}>{state.text}</span><small>{state.note}</small></div></section>;})}
+        <section role="listitem" className="bm-col"><h4>收入构成</h4><div>
+          {c.publication.revenueCoverage?.length?<dl data-kind="periods">{c.publication.revenueCoverage.map(q=><div key={q.period} data-status={q.status}><dt>{q.period}</dt><dd>{coverage(q)}</dd></div>)}</dl>:<p className="bm-empty">无</p>}</div></section>
+        <section role="listitem" className="bm-col"><h4>采集</h4><div>
           {running&&c.task&&<Meter label={stages[c.task.stage]??c.task.stage} completed={c.task.progress.completed} total={c.task.progress.total}/>}
           {!!c.collection?.total&&<Meter label="最新财报扫描" completed={c.collection.completed} total={c.collection.total} done={c.collection.status==='succeeded'}/>}
           {c.history&&<Meter label="历史披露扫描" completed={c.history.completed} total={c.history.total}/>}
           {!running&&!c.collection?.total&&!c.history&&<p className="bm-empty">无采集记录</p>}
-          {(skipped>0||unsupported>0)&&<p className="bm-empty">{[skipped?`${skipped} 份文件无可提取的季度`:'',unsupported?`${unsupported} 项事实格式未读取`:''].filter(Boolean).join(' · ')}</p>}</section>
-        <section role="listitem" className="bm-col"><h4>税前至净利润</h4>
+          {(skipped>0||unsupported>0)&&<p className="bm-empty">{[skipped?`${skipped} 份文件无可提取的季度`:'',unsupported?`${unsupported} 项事实格式未读取`:''].filter(Boolean).join(' · ')}</p>}</div></section>
+        <section role="listitem" className="bm-col"><h4>税前至净利润</h4><div>
           {c.presentation?.source?<>
             <span className="ra-badge" data-status={c.presentation.source==='degraded'?'caution':'reviewed'}>{presentationSource[c.presentation.source]}</span>
             {c.presentation.afterTax.length>0&&<dl>{c.presentation.afterTax.map(a=><div key={a.name}><dt>{a.name}</dt><dd className="ra-mono">{Number(a.value).toLocaleString('en-US')}</dd></div>)}</dl>}
             {c.presentation.basisChanges.length>0&&<p>重述行（不比较环比）：{c.presentation.basisChanges.map(k=>lineName[k]??k).join('、')}</p>}
             {c.presentation.profile&&<p>模型判定：{c.presentation.profile.status==='verified'?'已核验':'未通过'} · {c.presentation.profile.attempts} 次{c.presentation.profile.issues.length>0&&<small>{c.presentation.profile.issues.slice(0,3).join('；')}</small>}</p>}
             {(c.presentation.source==='degraded'||c.presentation.profile)&&<button className="fm-button" disabled={busy} onClick={onJudge}>重新判定</button>}
-          </>:<p className="bm-empty">{c.presentation&&['financial','insurance'].includes(c.presentation.model??'')?'金融/保险报表 · 税前 − 所得税 = 净利润':c.presentation?.model?'直接读取 · 税前 − 所得税 = 净利润':'无'}</p>}</section>
-        <section role="listitem" className="bm-col" data-tone={problems.length?'caution':'ok'}><h4>{problems.length?<AlertTriangle size={13}/>:<CheckCircle2 size={13}/>}问题{problems.length?` · ${problems.length}`:''}</h4>
-          {problems.length?<ul>{problems.map(p=><li key={p.code} title={p.code}>{p.label}{p.filings.length>0&&<small>{p.filings.length} 份文件 · {p.filings.join(', ')}</small>}</li>)}</ul>:<p className="bm-empty">无</p>}</section>
+          </>:<p className="bm-empty">{c.presentation&&['financial','insurance'].includes(c.presentation.model??'')?'金融/保险报表 · 税前 − 所得税 = 净利润':c.presentation?.model?'直接读取 · 税前 − 所得税 = 净利润':'无'}</p>}</div></section>
+        <section role="listitem" className="bm-col" data-tone={problems.length?'caution':'ok'}><h4>{problems.length?<AlertTriangle size={13}/>:<CheckCircle2 size={13}/>}问题{problems.length?` · ${problems.length}`:''}</h4><div>
+          {problems.length?<ul>{problems.map(p=><li key={p.code} title={p.code}>{p.label}{p.filings.length>0&&<small>{p.filings.length} 份文件 · {p.filings.join(', ')}</small>}</li>)}</ul>:<p className="bm-empty">无</p>}</div></section>
       </div>
     </div></td></tr>}
   </tbody>;

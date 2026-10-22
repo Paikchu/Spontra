@@ -36,8 +36,6 @@
   --sans: "Geist", "PingFang SC", "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
   --ease: cubic-bezier(.22, 1, .36, 1);
   --rail-w: 336px;
-  /* A section opened over the whole rail gets a wider column, so filing and finding titles have room on one line. */
-  --rail-open-w: 420px;
   --rail-collapsed-w: 60px;
   --inset: 12px;
   --rail-radius: 20px;
@@ -148,9 +146,6 @@ button { cursor: pointer; }
 @media (min-width: 961px) {
   /* Full width while the column animates open, so content is revealed instead of reflowing. */
   .rail-top, .rail-scroll { min-width: calc(var(--rail-w) - 2px); }
-  .map:has(.rail-scroll[data-expanded]) { grid-template-columns: var(--rail-open-w) minmax(0, 1fr); }
-  /* The view transition morphs the section into the wider rail itself; a concurrent column transition would end in a jump. */
-  :root[data-vt="rail"] .map { transition: none; }
   main[data-rail="collapsed"] .rail-top { min-width: 0; }
   main[data-rail="collapsed"] .map { grid-template-columns: var(--rail-collapsed-w) minmax(0, 1fr); }
   main[data-rail="collapsed"] .rail { align-self: start; }
@@ -174,7 +169,14 @@ button { cursor: pointer; }
 }
 .rail-list { display: flex; flex-direction: column; gap: 0; }
 /* The rail's rhythm: every row, business, finding or filing, is one 28px line. */
-.rail { --row-h: 28px; }
+:root { --row-h: 28px; }
+/* The hover card: a row's full title laid over the row from its title's left edge, the row's particulars under it. */
+.rail-tip {
+  position: fixed; z-index: 40; display: grid; gap: 2px; box-sizing: border-box; min-height: var(--row-h); padding: 4px 10px; border-radius: 8px;
+  background: var(--surface-raised); border: 1px solid var(--border); box-shadow: var(--shadow-overlay); pointer-events: none;
+  font-size: 13px; font-weight: 560; line-height: 1.4; color: var(--foreground); animation: fade-in .12s ease both;
+}
+.rail-tip small { font-size: 11px; font-weight: 500; color: var(--muted-foreground); }
 
 /* Flat list, one line per business: hue chip, name, share, revenue, change. A soft left wash marks the selection; no boxed rows. */
 .row {
@@ -1160,7 +1162,6 @@ button { cursor: pointer; }
   font-size: 12.5px; font-weight: 560; color: var(--foreground); white-space: nowrap;
 }
 main[data-rail="collapsed"] .update-notice { left: calc((100vw + var(--rail-collapsed-w) + var(--inset)) / 2); }
-main:has(.rail-scroll[data-expanded]) .update-notice { left: calc((100vw + var(--rail-open-w) + var(--inset)) / 2); }
 .update-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--brand); box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 22%, transparent); animation: pulse 1.6s ease-in-out infinite; }
 .update-apply { padding: 5px 12px; border: 0; border-radius: 999px; font-size: 12px; font-weight: 650; color: var(--background); background: var(--foreground); transition: opacity .16s; }
 .update-apply:hover { opacity: .86; }
