@@ -94,6 +94,8 @@ export type AnalysisEnv = SecCronEnv & AnalysisReadEnv & {
   TRANSLATION_ENABLED?: string;
   /** Model calls the translator may make per UTC day across all companies; unset means 300. */
   TRANSLATION_DAILY_CALLS?: string;
+  /** Browser Rendering: draws the lens agent's html pictures so the agent reads what a reader would see (`browser`). */
+  BROWSER?: import("@cloudflare/puppeteer").BrowserWorker;
   /** The AI Search namespace the filing library's recall layer lives in (`ai_search_namespaces`). */
   AI_SEARCH?: AiSearchNamespace;
   /** "false" pauses uploading library sections to AI Search; unset or anything else runs it. */

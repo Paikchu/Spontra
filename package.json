@@ -34,6 +34,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.135.0",
+    "@cloudflare/puppeteer": "1.4.0",
     "@streamdown/cjk": "^1.0.3",
     "agents": "0.27.0",
     "class-variance-authority": "^0.7.1",

@@ -10,6 +10,8 @@
  * a new frame.
  */
 (function boot(rendered) {
+  // A copy of PICTURE_BASE_CSS in shared/analysis-runtime/lens/picture.ts, which the harness measures with.
+  var BASE = "html,body{margin:0;padding:0;background:transparent;overflow:hidden}body{display:flow-root;color:var(--foreground);font-family:var(--sans,system-ui,sans-serif);font-size:13px;line-height:1.5;font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}svg{display:block;max-width:100%;overflow:visible}";
   var current = null;
   function post(message) { window.parent.postMessage(message, "*"); }
   function vars(theme) {
@@ -17,9 +19,7 @@
   }
   function css(font) {
     return (font ? '@font-face{font-family:"Geist";src:url("' + font + '") format("woff2");font-weight:100 900;font-display:swap}' : "")
-      + "html,body{margin:0;padding:0;background:transparent;overflow:hidden}"
-      + "body{display:flow-root;color:var(--foreground);font-family:var(--sans,system-ui,sans-serif);font-size:13px;line-height:1.5;font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}"
-      + "svg{display:block;max-width:100%;overflow:visible}";
+      + BASE;
   }
   function render(m) {
     var doc = "<!doctype html><html lang=\"" + String(m.lang).replace(/[^a-zA-Z-]/g, "") + "\" class=\"" + m.theme.scheme + "\"><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><style id=\"tokens\">"

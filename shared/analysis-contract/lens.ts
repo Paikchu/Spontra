@@ -107,6 +107,13 @@ export type LensTableRow = { ref: FindingRef | PeerBaseRef; label?: string; comp
 
 /** `title` names the picture for readers without it; `aspect` is the height the page reserves before the frame reports its own. */
 export type LensHtml = { id: string; title: string; aspect: LensAspect; html: string };
+/**
+ * What the harness's browser saw when it drew an html picture at one width: the height its content took, what a
+ * reader would see as wrong (text over text, a label across a mark, content past the edge, a script error), and
+ * smaller remarks. `failed` when the browser could not draw it at all.
+ */
+export type LensPictureRender = { width: number; height: number; problems: string[]; notes: string[] } | { width: number; failed: string };
+
 /** Hosts a picture may load scripts from; the frame's CSP allows these and nothing else. */
 export const LENS_HTML_SCRIPT_HOSTS = ["cdnjs.cloudflare.com", "cdn.jsdelivr.net", "unpkg.com"] as const;
 

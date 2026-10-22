@@ -1,5 +1,5 @@
 import type { FindingWatch } from "../../analysis-contract/findings.ts";
-import { LENS_LIMITS, type LensBlock, type LensDocument } from "../../analysis-contract/lens.ts";
+import { LENS_LIMITS, type LensBlock, type LensDocument, type LensPictureRender } from "../../analysis-contract/lens.ts";
 import { numberSupported, proseNumbers } from "../findings.ts";
 import { chartHeight, type CompileResult } from "./compile.ts";
 import { htmlProblems } from "./html.ts";
@@ -20,15 +20,20 @@ export type AuditInput = {
   verifyReasons?: string[];
   /** "html": charts must be html pictures, as the lens agent writes them; grammar charts are errors. Unset accepts both. */
   pictures?: "html";
+  /** What the harness's browser saw of each html picture, by picture id; a measured height replaces the aspect's estimate. */
+  renders?: Map<string, LensPictureRender[]>;
 };
 
-function cellHeight(block: LensBlock, width: number, compiled: Map<string, CompileResult>, judgmentChars: number, figures: number): number | null {
+function cellHeight(block: LensBlock, width: number, compiled: Map<string, CompileResult>, judgmentChars: number, figures: number, renders?: Map<string, LensPictureRender[]>): number | null {
   const prose = (chars: number) => Math.ceil(chars / (width / CHAR)) * LINE + 12;
   switch (block.kind) {
     case "judgment": return prose(judgmentChars);
     case "prose": return block.paragraphs.reduce((sum, p) => sum + prose(p.text.length), 0);
     case "chart": return compiled.get(block.chart.id)?.chart ? chartHeight(width, block.chart.aspect) + 18 : null;
-    case "html": return chartHeight(width, block.html.aspect) + 18;
+    case "html": {
+      const seen = renders?.get(block.html.id)?.find(r => r.width === width && "height" in r);
+      return seen && "height" in seen ? seen.height : chartHeight(width, block.html.aspect) + 18;
+    }
     case "figures": return figures * 44 + 16;
     case "watch": return 72;
     case "sources": return 48;
@@ -66,6 +71,8 @@ export function auditDocument(input: AuditInput & { judgmentChars: number; figur
   const chartIds = new Set<string>();
   for (const c of [...charts, ...pictures]) { if (chartIds.has(c.id)) error(`chart ${c.id}`, "chart id used twice"); chartIds.add(c.id); }
   for (const p of pictures) for (const problem of htmlProblems(p.html)) error(`html ${p.id}`, problem);
+  // What the browser saw: each problem is a warning to fix before finishing, at the width it showed up.
+  for (const p of pictures) for (const r of input.renders?.get(p.id) ?? []) if ("problems" in r) for (const problem of r.problems) warn(`html ${p.id} at ${r.width}px`, problem);
   if (input.pictures === "html") for (const c of charts) error(`chart ${c.id}`, "draw this chart as an html picture ({\"kind\":\"html\",...}); chart blocks are not accepted here");
   const seen = new Map<string, string>();
   for (const c of charts) {
@@ -104,7 +111,7 @@ export function auditDocument(input: AuditInput & { judgmentChars: number; figur
     const name = (cell: LensBlock[]) => cell.map(b => b.kind === "chart" ? `chart ${b.chart.id}` : b.kind === "html" ? `html ${b.html.id}` : b.kind).join(" + ");
     for (const [cls, width] of Object.entries(WIDTH_CLASSES) as Array<[string, number]>) {
       if (cls === "narrow") continue; // Cells stack on a phone.
-      const heights = row.cells.map(cell => cell.reduce<number | null>((sum, b) => { const h = cellHeight(b, width, input.compiled, input.judgmentChars, input.figures); return sum == null || h == null ? null : sum + h; }, 0));
+      const heights = row.cells.map(cell => cell.reduce<number | null>((sum, b) => { const h = cellHeight(b, width, input.compiled, input.judgmentChars, input.figures, input.renders); return sum == null || h == null ? null : sum + h; }, 0));
       if (heights.some(h => h == null)) continue;
       const [a, b] = heights as [number, number];
       const ratio = Math.max(a, b) / Math.max(1, Math.min(a, b));

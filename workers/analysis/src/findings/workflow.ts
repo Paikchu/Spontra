@@ -22,6 +22,7 @@ import { mergeHighlights, writeHighlights } from "./highlights.ts";
 import { authoredFindings, findingsCacheKey } from "./read.ts";
 import { writeFindings, type FindingsModel } from "./writer.ts";
 import { writeLensDocuments, type LensModel, type LensTrace } from "../lens/agent.ts";
+import { browserRenderer } from "../lens/draw.ts";
 import { SecModelOutputError } from "../model-stream.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
 import { D1SecRepository } from "../sec/d1.ts";
@@ -29,7 +30,7 @@ import { D1SecRepository } from "../sec/d1.ts";
 /** Changing the prompt or the ledger regenerates every company once. */
 export const FINDINGS_VERSION = "findings.writer.v10";
 /** Changing the lens agent's prompt, grammar or harness redraws every company's findings once (through the findings fingerprint). */
-export const LENS_VERSION = "lens.agent.v4";
+export const LENS_VERSION = "lens.agent.v5";
 export type FindingsWorkflowParams = { ticker: string; fingerprint: string };
 export type FindingsDeps = { model?: FindingsModel; lens?: LensModel; fetcher?: typeof fetch };
 
@@ -114,7 +115,7 @@ export async function executeFindingsWorkflow(params: FindingsWorkflowParams, st
     try { return await callWorkerToolModel(env, fetcher, stage, { system, tools: tools as Anthropic.Beta.BetaTool[], messages: messages as Anthropic.Beta.BetaMessageParam[] }, modelFor(env, "lens"), 3 * 60_000, { reasoning: reasoningFor(env, "lens"), ticker: params.ticker }); }
     catch (error) { if (error instanceof SecModelOutputError) return { error: `${error.code}: ${error.message}`.slice(0, 300) }; throw error; }
   });
-  const lensed = draft.publication ? await writeLensDocuments({ publication: draft.publication, ledger: input.ledger, data: input.data, model: lensModel, version: LENS_VERSION, now, stage }).catch(() => null) : null;
+  const lensed = draft.publication ? await writeLensDocuments({ publication: draft.publication, ledger: input.ledger, data: input.data, model: lensModel, version: LENS_VERSION, now, stage, render: env.BROWSER ? browserRenderer(env.BROWSER) : undefined }).catch(() => null) : null;
   const outcome = lensed ? { ...draft, publication: lensed.publication } : draft;
   const lensTrace: LensTrace | null = lensed?.trace ?? null;
   // The headline figures of each statement view for this report; a failed call publishes the findings without them.

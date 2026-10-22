@@ -1,8 +1,10 @@
 import { z } from "zod";
 import type { AnalysisFinding, FindingEvidence, FindingRef, FindingsPublication } from "../../../../shared/analysis-contract/findings.ts";
-import { LENS_HTML_SCRIPT_HOSTS, LENS_LIMITS, type LensDocument, type LensSeries } from "../../../../shared/analysis-contract/lens.ts";
+import { LENS_HTML_SCRIPT_HOSTS, LENS_LIMITS, type LensDocument, type LensPictureRender, type LensSeries } from "../../../../shared/analysis-contract/lens.ts";
 import { evidenceCandidates, readFindingsPublication, readLensDocument, resolveEvidence, rpoBuckets, spanLabel, verifyFindings, type FindingData, type ResolvedEvidence } from "../../../../shared/analysis-runtime/findings.ts";
-import { auditDocument, type LensWarning } from "../../../../shared/analysis-runtime/lens/audit.ts";
+import { auditDocument, WIDTH_CLASSES, type LensWarning } from "../../../../shared/analysis-runtime/lens/audit.ts";
+import { pictureHash } from "../../../../shared/analysis-runtime/lens/picture.ts";
+import type { PictureRenderer } from "./draw.ts";
 import { compileChart } from "../../../../shared/analysis-runtime/lens/compile.ts";
 import { describeDocument } from "../../../../shared/analysis-runtime/lens/describe.ts";
 import { formatDelta, formatResolved } from "../../../../shared/analysis-runtime/lens/format.ts";
@@ -66,12 +68,20 @@ Method:
 2. Prefer one clear chart per idea; two charts when the judgment has two ideas (e.g. the level and its funding). Only series the catalogue has; prefer series with the yoy/qoq the judgment relies on.
 3. Lay out: first row is the main chart beside the judgment column (stack judgment + figures, and watch when present, in the text cell so the two cells end near each other; a chart beside a short text reads as empty space — use aspect "square" or "tall" beside a tall text column, "wide" on a row of its own). Further charts take rows of their own or sit beside prose. Sources last.
 4. Read each compile result: fix every error, then every warning (label collisions, imbalanced rows, thin bars, long legends), then call finish. Do not finish with errors.
+5. compile draws every html picture in a real browser, at phone width (${WIDTH_CLASSES.narrow}px) and at the width its cell gets (${WIDTH_CLASSES.medium}px beside another cell, ${WIDTH_CLASSES.wide}px on a row of its own), and reports its height and what a reader would see as wrong: text over text, a label partly across a bar or line, content past the edge, script errors, nothing drawn. Fix each of these (move or drop the label, place it inside or beside the mark, shorten it, give the picture more room) and compile again before you finish.
 starting is a plain document built from the finding's original chart: keep what fits in its layout, and redraw its chart blocks as html pictures.`;
 
 /** Open: the lens grammar is larger than a strict schema may be, and the harness checks every document against it. */
 const DOCUMENT = z.unknown().describe("The whole document, {rows:[...]}, in the grammar the system prompt describes.");
 const tool = defineTool<LensState>();
-type LensState = { accepted: { document: LensDocument; warnings: string[] } | null; last: { document: LensDocument; errors: number; warnings: string[] } | null; audit(document: LensDocument): string; series(args: Record<string, unknown>): string };
+type Stage = <T>(name: string, work: () => Promise<T>) => Promise<T>;
+type LensState = {
+  accepted: { document: LensDocument; warnings: string[] } | null; last: { document: LensDocument; errors: number; warnings: string[] } | null;
+  /** Draws the document's html pictures in the browser, each fragment and width once per run; empty without a browser. */
+  draw(document: LensDocument, stage: Stage): Promise<Map<string, LensPictureRender[]>>;
+  audit(document: LensDocument, renders?: Map<string, LensPictureRender[]>): string;
+  series(args: Record<string, unknown>): string;
+};
 const CONTRACT_ERROR = "The document does not match the contract: check block kinds, html fields (id, title, aspect, html), chart fields (id, aspect, span, periods 2–12, series, marks), ids ([a-z][a-z0-9-]*), and that titles and labels contain no digits.";
 const proposed = (value: unknown): LensDocument | null => value === undefined ? null : readLensDocument(asObject(value) ?? value);
 
@@ -83,13 +93,13 @@ const lensTools: AnyTool<LensState>[] = [
       refs: z.array(z.object({ ref: z.record(z.string(), z.unknown()).describe("A ref copied from the catalogue."), transform: z.enum(["value", "yoy", "qoq"]).optional() })).min(1).max(LENS_LIMITS.series),
     }),
     execute: (args, ctx) => ctx.state.series(args), observe: (_a, v) => v }),
-  tool({ name: "compile", description: "Compile and audit the whole document: returns exactly what it draws, with every error and warning.", strict: false,
+  tool({ name: "compile", description: "Compile and audit the whole document, drawing each html picture in a browser: returns what it draws, with every error and warning.", strict: false, timeoutMs: 180_000,
     parameters: z.object({ document: DOCUMENT }),
-    execute: ({ document }, ctx) => { const doc = proposed(document); if (!doc) throw new Error(CONTRACT_ERROR); return ctx.state.audit(doc); }, observe: (_a, v) => v }),
-  tool({ name: "finish", description: "Accept the document: the one given here, compiled first, or else the last one compiled. Only a document that compiled without errors is accepted.", strict: false,
+    execute: async ({ document }, ctx) => { const doc = proposed(document); if (!doc) throw new Error(CONTRACT_ERROR); return ctx.state.audit(doc, await ctx.state.draw(doc, ctx.stage)); }, observe: (_a, v) => v }),
+  tool({ name: "finish", description: "Accept the document: the one given here, compiled first, or else the last one compiled. Only a document that compiled without errors is accepted.", strict: false, timeoutMs: 180_000,
     parameters: z.object({ document: DOCUMENT.optional() }),
-    execute: ({ document }, ctx) => {
-      if (document !== undefined) { const doc = proposed(document); if (!doc) throw new Error(CONTRACT_ERROR); ctx.state.audit(doc); }
+    execute: async ({ document }, ctx) => {
+      if (document !== undefined) { const doc = proposed(document); if (!doc) throw new Error(CONTRACT_ERROR); ctx.state.audit(doc, await ctx.state.draw(doc, ctx.stage)); }
       const last = ctx.state.last;
       if (last && last.errors === 0) { ctx.state.accepted = { document: last.document, warnings: last.warnings }; return "Accepted."; }
       throw new Error(last ? `Not accepted: the last document has ${last.errors} error(s); fix them and compile again.` : "Nothing compiled yet; compile a document first.");
@@ -137,6 +147,8 @@ export type LensRunInput = {
   data: FindingData;
   model: LensModel;
   stage: <T>(name: string, callback: () => Promise<T>) => Promise<T>;
+  /** The harness's browser; unset (tests, no binding) leaves pictures unmeasured. */
+  render?: PictureRenderer;
 };
 
 const list = (w: LensWarning[]) => w.map(x => `${x.where}: ${x.message}`);
@@ -155,12 +167,31 @@ export function lensRecipe(input: LensRunInput): Recipe<LensRunInput, LensDocume
     budget: { turns: LENS_BUDGET.turns, wallMs: LENS_BUDGET.wallMs },
     system: () => SYSTEM,
     open: () => {
-      const state: LensState = { accepted: null, last: null, audit: document => {
+      const drawn = new Map<string, LensPictureRender>();
+      const state: LensState = { accepted: null, last: null, audit: (document, renders) => {
         const compiled = compileDocument(document, input.data, input.periodEnd);
-        const warnings = auditDocument({ document, compiled, candidates, watch: finding.watch, judgmentChars: finding.judgment.text.length, figures: input.resolved.length, pictures: "html" });
+        const warnings = auditDocument({ document, compiled, candidates, watch: finding.watch, judgmentChars: finding.judgment.text.length, figures: input.resolved.length, pictures: "html", renders });
         const errors = warnings.filter(w => w.level === "error").length;
         state.last = { document, errors, warnings: list(warnings.filter(w => w.level === "warning")) };
-        return describeDocument(document, compiled, warnings) + (errors ? "" : "\nThis document compiles; finish when the warnings are addressed or deliberate.");
+        return describeDocument(document, compiled, warnings, renders) + (errors ? "" : "\nThis document compiles; finish when the warnings are addressed or deliberate.");
+      }, draw: async (document, stage) => {
+        const out = new Map<string, LensPictureRender[]>();
+        const render = input.render;
+        if (!render) return out;
+        await Promise.all(document.rows.flatMap(row => row.cells.flat().flatMap(block => {
+          if (block.kind !== "html") return [];
+          // Phone width, and the width the picture's cell gets on a laptop.
+          const widths = [WIDTH_CLASSES.narrow, row.cells.length === 2 ? WIDTH_CLASSES.medium : WIDTH_CLASSES.wide];
+          const hash = pictureHash(block.html.html);
+          return [Promise.all(widths.map(async width => {
+            const key = `${hash}-${width}`;
+            // A durable step, so a replayed run reads the same picture back instead of drawing it again.
+            const seen = drawn.get(key) ?? await stage(`draw-${key}`, () => render(block.html.html, width));
+            drawn.set(key, seen);
+            return seen;
+          })).then(seen => { out.set(block.html.id, seen); })];
+        })));
+        return out;
       }, series: args => readSeries(input, args) };
       return state;
     },
@@ -189,7 +220,7 @@ export async function runLensAgent(input: LensRunInput): Promise<LensOutcome> {
   const act: AgentAct = (stage, system, tools, msgs) => input.stage(`${stage}-act`, () => input.model(`lens-${stage.replace(/-t(\d+)$/, "-$1")}`, system, tools, msgs));
   const host: LoopHost<LensState> = {
     reserve: async () => true, record: turn => { turns.push(turn); }, execute: (_t, calls, run) => sequential(calls, run),
-    signal: new AbortController().signal, now: () => 0,
+    signal: new AbortController().signal, now: () => 0, stage: input.stage,
   };
   const outcome = await runAgentLoop(recipe, input, state, messages, act, host);
   return { id: input.finding.id, document: outcome.output, turns, warnings: state.accepted?.warnings ?? [] };
@@ -220,6 +251,7 @@ export type LensWriteInput = {
   version: string;
   now: string;
   stage: <T>(name: string, callback: () => Promise<T>) => Promise<T>;
+  render?: PictureRenderer;
 };
 
 /**
@@ -229,7 +261,7 @@ export type LensWriteInput = {
 export async function writeLensDocuments(input: LensWriteInput): Promise<{ publication: FindingsPublication; trace: LensTrace }> {
   const { verified } = verifyFindings(input.publication, input.data);
   const catalogue = lensCatalogue(input.ledger, input.data, input.publication.periodEnd);
-  const outcomes = await Promise.allSettled(verified.map(f => runLensAgent({ finding: f, resolved: f.resolved, periodEnd: input.publication.periodEnd, catalogue, data: input.data, model: input.model, stage: (name, cb) => input.stage(`lens-${name}`, cb) })));
+  const outcomes = await Promise.allSettled(verified.map(f => runLensAgent({ finding: f, resolved: f.resolved, periodEnd: input.publication.periodEnd, catalogue, data: input.data, model: input.model, render: input.render, stage: (name, cb) => input.stage(`lens-${name}`, cb) })));
   const results: LensOutcome[] = outcomes.map((o, i) => o.status === "fulfilled" ? o.value : { id: verified[i]!.id, document: null, turns: [], warnings: [`failed: ${o.reason instanceof Error ? o.reason.message : String(o.reason)}`] });
   const byId = new Map(results.map(r => [r.id, r]));
   const findings = input.publication.findings.map(f => { const doc = byId.get(f.id)?.document; return doc ? { ...f, lens: { type: "document" as const, document: doc } } : f; });

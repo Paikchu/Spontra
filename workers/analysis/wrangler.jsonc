@@ -140,6 +140,9 @@
   // index holds the vectors, one namespace per sector and facet. The index was created once by hand (1024 dimensions,
   // cosine); D1 stays the source of every tag and pair.
   "ai": { "binding": "AI" },
+  // Browser Rendering: the lens agent's html pictures are drawn and measured here, so the model reads what a reader
+  // would see (docs/finding-lens-agent.md).
+  "browser": { "binding": "BROWSER" },
   "vectorize": [
     { "binding": "TAGS_INDEX", "index_name": "business-tags" }
   ],
