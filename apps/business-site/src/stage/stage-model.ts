@@ -45,7 +45,9 @@ export type OverlayEvent =
   | { type: "toggle" } | { type: "focus" } | { type: "escape" }
   | { type: "turn-start" } | { type: "turn-end"; staged: boolean }
   | { type: "disconnect" } | { type: "connect"; running: boolean }
-  | { type: "stage-click" };
+  | { type: "stage-click" }
+  /** A scene the agent committed while the reader watched: it gives the stage back however the turn ended. */
+  | { type: "staged" };
 
 export function overlay(state: OverlayState, event: OverlayEvent): OverlayState {
   switch (event.type) {
@@ -57,6 +59,7 @@ export function overlay(state: OverlayState, event: OverlayEvent): OverlayState 
     case "disconnect": return state === "closed" ? state : "disconnected";
     case "connect": return state === "disconnected" ? event.running ? "busy" : "open" : state;
     case "stage-click": return state === "open" ? "mini" : state;
+    case "staged": return state === "busy" || state === "open" ? "mini" : state;
   }
 }
 

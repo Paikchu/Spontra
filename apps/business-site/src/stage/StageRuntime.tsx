@@ -100,15 +100,17 @@ function Connected({ conversation, state, send, view, onScene, onSay, onRefused,
     onMessage: (message: MessageEvent) => {
       const event = readEvent(message.data);
       if (!event) return;
-      if (event.type === "stage:transcript") setEntries(list => nextTranscript(list, event));
+      if (event.type === "stage:transcript") {
+        setEntries(list => nextTranscript(list, event));
+        // The server adds the stage entry once the page has drawn the scene, after the turn has ended; a live one gives
+        // the stage back. Entries replayed on (re)connection do not.
+        if (!event.replace && event.entries.some(e => e.role === "assistant" && e.kind === "stage")) send({ type: "staged" });
+      }
       else if (event.type === "stage:turn") { setTurn(event.turn); send(event.turn ? { type: "turn-start" } : { type: "turn-end", staged: false }); }
     },
     onOpen: () => { opened.current = true; setConnected(true); send({ type: "connect", running: false }); },
     onClose: (event: CloseEvent) => { setConnected(false); if (event.code === 4403 || event.code === 1008) onRefused(); else send({ type: "disconnect" }); },
   });
-  // A revision committed while the overlay is open gives the stage back: the overlay folds to its bar.
-  const last = entries.at(-1);
-  useEffect(() => { if (last?.role === "assistant" && last.kind === "stage") send({ type: "turn-end", staged: true }); }, [last, send]);
   useEffect(() => { if (connected && view) agent.send(JSON.stringify({ type: "observe", view })); }, [agent, connected, view]);
   useEffect(() => { socket.current = agent; }, [agent]);
   const submit = (text: string) => { onSay(); agent.send(JSON.stringify({ type: "say", text })); };

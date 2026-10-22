@@ -9,6 +9,7 @@ test("every edge of the overlay state machine", () => {
     ["open", { type: "escape" }, "mini"], ["mini", { type: "escape" }, "closed"], ["busy", { type: "escape" }, "busy"], ["closed", { type: "escape" }, "closed"],
     ["open", { type: "turn-start" }, "busy"], ["mini", { type: "turn-start" }, "busy"], ["closed", { type: "turn-start" }, "closed"],
     ["busy", { type: "turn-end", staged: true }, "mini"], ["busy", { type: "turn-end", staged: false }, "open"], ["open", { type: "turn-end", staged: true }, "open"],
+    ["open", { type: "staged" }, "mini"], ["busy", { type: "staged" }, "mini"], ["closed", { type: "staged" }, "closed"], ["mini", { type: "staged" }, "mini"],
     ["open", { type: "disconnect" }, "disconnected"], ["busy", { type: "disconnect" }, "disconnected"], ["closed", { type: "disconnect" }, "closed"],
     ["disconnected", { type: "connect", running: false }, "open"], ["disconnected", { type: "connect", running: true }, "busy"], ["open", { type: "connect", running: false }, "open"],
     ["open", { type: "stage-click" }, "mini"], ["busy", { type: "stage-click" }, "busy"],
