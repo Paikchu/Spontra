@@ -1,6 +1,6 @@
 import { financialPolicy, allowData } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 import { companyPolicyEnvironment } from "../financial-data/company-policy.ts";
-import { deriveCompany, REPORT_QUARTERS_VERSION } from "../financial-data/derived.ts";
+import { deriveCompany, REPORT_QUARTERS_VERSION, REPORT_SELECTION_VERSION } from "../financial-data/derived.ts";
 import { ARCHIVE_PREFIX, disclosureAuditPrefix, PRUNE_GRACE_MS, pruneSupersededArchives } from "../financial-data/disclosure-audit.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import { logStatements } from "./log.ts";
@@ -45,7 +45,7 @@ export const TASK_IMPLEMENTATIONS: Record<TaskName, TaskImplementation> = {
 
   "map-derive": {
     // Which archived filings are read changes without the parsed quarters changing: v3 reads every filing in a filing-date window.
-    version: `map-derive.v3:${REPORT_QUARTERS_VERSION}`,
+    version: `map-derive.v3:${REPORT_QUARTERS_VERSION}:${REPORT_SELECTION_VERSION}`,
     async run(env, ticker, { causeId }) {
       if (!await isDataCompany(env, ticker)) return { status: "done", detail: { skipped: "not a data company" } };
       const result = await deriveCompany({ DB: env.DB!, SEC_FILINGS: env.SEC_FILINGS }, ticker, undefined, causeId);

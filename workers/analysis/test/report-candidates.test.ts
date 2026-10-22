@@ -36,3 +36,14 @@ test("an older quarterly report's segment split takes a period over from an exhi
   assert.equal(supersedes(quarter(["meta:FamilyOfAppsMember", "meta:RealityLabsMember"], 51240e6, 20535e6), exhibit), false);
   assert.equal(supersedes(report, quarter(["reported-company-total"], 51242e6, 20535e6, true)), false);
 });
+
+test("a first quarter the exhibit derived from six months and the second quarter gives way within one printed unit", () => {
+  // Meta's 8-K of July 2026 prints six months and the second quarter in millions; its first quarter of 2026 derives to
+  // 56,310 and 22,872, where the 10-Q for March 31, 2026 reports 56,311 and 22,871.
+  const derived = (q: BusinessFlowQuarter) => ({ ...q, figures: Object.fromEntries(Object.entries(q.figures).map(([k, f]) => [k, { ...f, basis: "derived" }])) }) as BusinessFlowQuarter;
+  const exhibit = derived(quarter(["reported-company-total"], 56310e6, 22872e6)), report = quarter(["meta:FamilyOfAppsMember", "meta:RealityLabsMember"], 56311e6, 22871e6);
+  assert.equal(supersedes(report, exhibit), true);
+  assert.equal(supersedes(quarter(["meta:FamilyOfAppsMember", "meta:RealityLabsMember"], 56312e6, 22871e6), exhibit), false);
+  // A figure the exhibit printed itself is not rounded twice, and must match.
+  assert.equal(supersedes(report, quarter(["reported-company-total"], 56310e6, 22872e6)), false);
+});

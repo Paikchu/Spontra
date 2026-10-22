@@ -20,6 +20,8 @@ import { storedCalculation } from './calculation.ts';
  * assembled into one snapshot. A read is a single D1 lookup, whatever the size of the filings behind it.
  */
 export const REPORT_QUARTERS_VERSION = `report-quarters.v2:${SEC_FLOW_PARSER_VERSION}`;
+/** How a period is chosen among the filings that present it (`supersedes`); a new rule rebuilds every snapshot without parsing again. */
+export const REPORT_SELECTION_VERSION = 'report-selection.v2';
 const quartersPrefix = (ticker: string) => `sec:report-quarters:v1:${ticker}:`;
 const snapshotKey = (ticker: string) => `sec:map-derived:v1:${ticker}`;
 
@@ -102,10 +104,18 @@ const wholeCompany = (q: BusinessFlowQuarter) => q.segments.length === 1 && q.se
 /**
  * Whether an older filing's quarter takes a period over from the newer filing that presented it. An earnings exhibit's
  * table gives consolidated amounts only; the quarterly report that verified the segment split is taken instead when it
- * reports the same revenue and operating income, so nothing was recast and only the split was missing.
+ * reports the same revenue and operating income, so nothing was recast and only the split was missing. A figure the
+ * exhibit derived (six months to date − second quarter) carries the rounding of both printed amounts, so it may differ
+ * by one printed unit: the coarsest power of ten every amount of the exhibit's quarter is a multiple of.
  */
 export function supersedes(incoming: BusinessFlowQuarter, existing: BusinessFlowQuarter): boolean {
-  const same = (key: 'revenue' | 'operating') => existing.figures[key]?.value != null && Number(existing.figures[key]!.value) === Number(incoming.figures[key]?.value);
+  const amounts = Object.values(existing.figures).map(f => Math.abs(Number(f?.value))).filter(v => Number.isFinite(v) && v > 0);
+  let unit = 1;
+  while (unit < 1e9 && amounts.length && amounts.every(v => v % (unit * 10) === 0)) unit *= 10;
+  const same = (key: 'revenue' | 'operating') => {
+    const was = existing.figures[key], now = Number(incoming.figures[key]?.value);
+    return was?.value != null && Number.isFinite(now) && Math.abs(Number(was.value) - now) <= (was.basis === 'derived' ? unit : 0);
+  };
   return wholeCompany(existing) && !wholeCompany(incoming) && same('revenue') && same('operating');
 }
 
@@ -213,7 +223,7 @@ export async function deriveCompany(env: DisclosureArchiveEnv, ticker: string, b
   }
 
   const capitalInputs = audits.filter(r => r.capital).map(r => `${r.documentId}:${r.contentSha256}:${r.capital!.version}`);
-  const inputs = JSON.stringify([REPORT_QUARTERS_VERSION, flowKey(flow), used, pending, capitalInputs]);
+  const inputs = JSON.stringify([REPORT_QUARTERS_VERSION, REPORT_SELECTION_VERSION, flowKey(flow), used, pending, capitalInputs]);
   const previous = await repository.getCache<MapDerived>(snapshotKey(ticker));
   const gap = { ...(unarchived.length ? { unarchived } : {}), ...(oversized.length ? { oversized } : {}) };
   if (previous?.payload.inputs === inputs) return { spent, built: false, pending, ...gap };
