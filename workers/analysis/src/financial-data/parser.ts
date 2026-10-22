@@ -20,7 +20,7 @@ export interface DocumentSource {url:string;accession:string;filedAt:string;cik:
  revenueStructure?:RevenueStructure|null;
  /** A structure from operating income to net income that balanced on an earlier filing of this issuer (presentation profile). */
  presentation?:{structure:BridgeStructure;version:string}|null;}
-export const SEC_FLOW_PARSER_VERSION='deterministic-sec.v17';
+export const SEC_FLOW_PARSER_VERSION='deterministic-sec.v18';
 /** Issuers read through a disclosure-specific profile; generic statement arithmetic would describe them in another scheme. */
 export const hasDisclosureProfile=(cik:string)=>cik==='0001341439';
 export interface Fact {source:DocumentSource;operands?:Fact[];formula?:string;precision:number;tag:string;value:number;currency:string;start:string;end:string;context:string;dimensions:Record<string,string>;
@@ -112,8 +112,12 @@ function splitRevenue(facts:Fact[],revenueNames:string[],consolidated:Fact|undef
  if(!consolidated)return null;
  const isRevenue=(f:Fact)=>revenueNames.includes(local(f.tag)),sole=(f:Fact)=>Object.entries(f.dimensions).length===1?Object.entries(f.dimensions)[0]:null;
  const eliminationFacts=facts.filter(f=>{const d=sole(f);return isRevenue(f)&&!!d&&['ConsolidationItemsAxis','StatementBusinessSegmentsAxis','ProductOrServiceAxis'].includes(local(d[0]))&&/eliminat/i.test(d[1]);});
- if(new Set(eliminationFacts.map(f=>f.value)).size>1)issues.push('CONFLICTING_REVENUE_ELIMINATIONS');
- const elimination=eliminationFacts.sort((a,b)=>b.precision-a.precision)[0];
+ // Each revenue concept carries its own eliminations, and two concepts may differ: TTM eliminates 301 against its
+ // segments' gross Revenues and prints "—" against their revenue from external customers. Only one concept's disagreeing is a conflict.
+ const eliminationByConcept=new Map<string,Fact>();
+ for(const concept of new Set(eliminationFacts.map(f=>local(f.tag)))){const list=eliminationFacts.filter(f=>local(f.tag)===concept);if(new Set(list.map(f=>f.value)).size>1){issues.push('CONFLICTING_REVENUE_ELIMINATIONS');continue;}eliminationByConcept.set(concept,list.sort((a,b)=>b.precision-a.precision)[0]);}
+ // A split takes the eliminations reported against its own concept; one whose concept has none tries those of the others.
+ const eliminationsFor=(concepts:Set<string>):Array<Fact|undefined>=>{const own=concepts.size===1?eliminationByConcept.get(local([...concepts][0])):undefined;return own?[own]:eliminationByConcept.size?[...eliminationByConcept.values()]:[undefined];};
  // A bank reports its segments on a managed basis: they reach reported revenue only with its corporate line and the
  // reconciling items, each a fact on the consolidation axis alone. Used only when the segments do not reconcile without them.
  const consolidationOnly=(test:(member:string)=>boolean)=>facts.filter(f=>{const d=sole(f);return isRevenue(f)&&!!d&&local(d[0])==='ConsolidationItemsAxis'&&test(local(d[1]));});
@@ -137,15 +141,17 @@ function splitRevenue(facts:Fact[],revenueNames:string[],consolidated:Fact|undef
    if(reached&&sign===1)found.push(items);}
   return found.length?found:[[]];};
  const sum=(members:Map<string,Fact>)=>[...members.values()].reduce((n,f)=>n+f.value,0);
- const eliminationMember=elimination&&Object.values(elimination.dimensions)[0];
- const eliminations:RevenueAdjustment[]=elimination?[{id:'intersegment-eliminations',name:elimination.memberLabels?.[eliminationMember!]?memberName(eliminationMember!,elimination.memberLabels):'Intersegment eliminations',definition:'revenue-eliminations',fact:elimination,weight:1}]:[];
+ const eliminations=(elimination:Fact|undefined):RevenueAdjustment[]=>{if(!elimination)return [];const member=Object.values(elimination.dimensions)[0];return [{id:'intersegment-eliminations',name:elimination.memberLabels?.[member]?memberName(member,elimination.memberLabels):'Intersegment eliminations',definition:'revenue-eliminations',fact:elimination,weight:1}];};
+ const conceptsOf=(members:Map<string,Fact>)=>new Set([...members.values()].map(f=>f.tag));
  const balanced:Array<{axis:string;members:Map<string,Fact>;adjustments:RevenueAdjustment[];managed:boolean}>=[];
  const keep=(candidate:typeof balanced[number])=>{if(!balanced.some(b=>local(b.axis)===local(candidate.axis)&&b.members.size===candidate.members.size&&[...candidate.members].every(([m,f])=>b.members.get(m)?.value===f.value)))balanced.push(candidate);};
- for(const {axis,members} of groups.values()){const concepts=new Set([...members.values()].map(f=>f.tag));
-  const adjustments=(concepts.size===1?calculated([...concepts][0]):[[]]).map(items=>[...eliminations,...items]).find(items=>near(sum(members)+items.reduce((n,a)=>n+a.weight*a.fact.value,0),consolidated.value));
+ for(const {axis,members} of groups.values()){const concepts=conceptsOf(members);
+  const adjustments=eliminationsFor(concepts).flatMap(elimination=>(concepts.size===1?calculated([...concepts][0]):[[]]).map(items=>[...eliminations(elimination),...items])).find(items=>near(sum(members)+items.reduce((n,a)=>n+a.weight*a.fact.value,0),consolidated.value));
   if(adjustments)keep({axis,members,adjustments,managed:false});}
  if(!balanced.length&&(corporate||reconciling)){
-  for(const {axis,members} of groups.values())if(local(axis)==='StatementBusinessSegmentsAxis'&&members.size>1&&near(sum(members)+(elimination?.value??0)+(corporate?.value??0)+(reconciling?.value??0),consolidated.value))keep({axis,members,adjustments:eliminations,managed:true});
+  for(const {axis,members} of groups.values()){if(local(axis)!=='StatementBusinessSegmentsAxis'||members.size<2)continue;
+   const options=eliminationsFor(conceptsOf(members)),at=options.findIndex(e=>near(sum(members)+(e?.value??0)+(corporate?.value??0)+(reconciling?.value??0),consolidated.value));
+   if(at>=0)keep({axis,members,adjustments:eliminations(options[at]),managed:true});}
   if(balanced.length===1){const [split]=balanced;split.members=new Map(split.members);
    // A nonnegative corporate line is shown beside the segments; a negative one, like the reconciling items, as an adjustment.
    if(corporate){if(corporate.value>=0)split.members.set('corporate',corporate);else split.adjustments=[...split.adjustments,{id:'corporate',name:'Corporate',definition:'revenue-corporate',fact:corporate,weight:1}];}

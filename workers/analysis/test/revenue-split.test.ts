@@ -93,3 +93,26 @@ test("a segment splits into the product lines the filing tags on both axes when 
   // Lines that do not add up to the segment are not shown as its parts.
   assert.equal(split(meta(1006), null).segments[0].children, undefined);
 });
+
+// TTM Technologies' 10-Q for the quarter ended June 29, 2026 (millions): the segment note eliminates 0.301 against the
+// segments' gross Revenues and prints "—" against their revenue from external customers, which adds up to the total.
+const ttm = (externalElimination: number) => {
+  const contract = "us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax", elimination = { "srt:ConsolidationItemsAxis": "us-gaap:IntersegmentEliminationMember" };
+  return [fact("us-gaap:Revenues", 1004.054), fact(contract, 1004.054),
+    segment(contract, "ttmi:AerospaceAndDefenseMember", 382.631), segment(contract, "ttmi:CommercialMember", 621.423),
+    fact(contract, externalElimination, elimination), fact("us-gaap:Revenues", -0.301, elimination)];
+};
+
+test("each revenue concept keeps its own eliminations, and a split balances with those of its concept", () => {
+  const q = split(ttm(0), null);
+  assert.deepEqual(q.segments.map(s => [s.id, Number(s.revenue.value)]), [["ttmi:AerospaceAndDefenseMember", 382631000], ["ttmi:CommercialMember", 621423000]]);
+  assert.deepEqual(q.revenueAdjustments?.map(a => [a.id, Number(a.amount.value), a.amount.lineage?.[0].concept]), [["intersegment-eliminations", 0, "us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax"]]);
+});
+
+test("eliminations that disagree within one concept are a conflict", () => {
+  const facts = [...ttm(0), fact("us-gaap:Revenues", -0.302, { "srt:ConsolidationItemsAxis": "us-gaap:IntersegmentEliminationMember" })];
+  facts[facts.length - 1] = { ...facts[facts.length - 1], context: "c-revenues-elimination-2" };
+  const result = extractVerifiedCurrentQuarters({ ...source, revenueStructure: null }, facts);
+  assert.deepEqual(result.quarters, []);
+  assert.ok(result.issues.includes("CONFLICTING_REVENUE_ELIMINATIONS"));
+});
