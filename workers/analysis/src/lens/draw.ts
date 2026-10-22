@@ -63,7 +63,7 @@ async function open(binding: BrowserWorker): Promise<Browser> {
 /**
  * Runs inside the picture's page: the content's height, and what overlaps or overflows. A source string rather than a
  * function, because the bundler's helpers (`__name`) would travel with a function into a page that lacks them. Text
- * boxes come from ranges over text nodes, marks are filled SVG shapes; a label wholly inside a mark is deliberate, a
+ * boxes come from ranges over text nodes, marks are solid SVG shapes; a label wholly inside a mark is deliberate, a
  * label partly across one is a collision.
  */
 export const MEASURE_PICTURE = `(() => {
@@ -94,7 +94,8 @@ export const MEASURE_PICTURE = `(() => {
   }
   var marks = Array.prototype.slice.call(document.querySelectorAll("svg rect, svg path, svg circle, svg ellipse, svg polygon")).filter(function (el) {
     var s = getComputedStyle(el);
-    return shown(el) && s.fill !== "none" && !/rgba\\([^)]*,\\s*0\\)$/.test(s.fill) && Number(s.fillOpacity) > 0.3;
+    // Solid marks only: a label over a faint area or band fill still reads.
+    return shown(el) && s.fill !== "none" && !/rgba\\([^)]*,\\s*0(\\.[0-5]\\d*)?\\)$/.test(s.fill) && Number(s.fillOpacity) * Number(s.opacity) >= 0.6;
   }).map(function (el) { return box(el.getBoundingClientRect()); }).filter(function (m) { return area(m) > 0 && area(m) < 0.5 * W * Math.max(1, height); });
   var across = [];
   texts.forEach(function (t) {
