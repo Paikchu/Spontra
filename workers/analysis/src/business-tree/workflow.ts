@@ -21,6 +21,8 @@ import { outboxStatement } from "../pipeline/outbox.ts";
 
 /** Changing the prompt, the harness or the output contract researches every company once more. */
 /**
+ * v15: the review gets the harness's placement rules and logs its verdicts, a struck node's children move up, and reads
+ * carry the filing's section headings, which place a product described under its line's heading.
  * v14: after the review, a describe stage writes the descriptions that are missing or were struck from the read passages
  * naming each node, and a second review judges them. v13: names match word for word with punctuation ignored (`("SASE") platform`), and a name loses a leading "Our".
  * v12: a product's passage may name its category line by the line's own words, a name refused twice is told to be left
@@ -30,7 +32,7 @@ import { outboxStatement } from "../pipeline/outbox.ts";
  * wrapped in prose or answered with a tool call (invalid_json, ended with tool_use); v7 and v8 asked for a written
  * "thought", which it declined as extracting its reasoning (refusal, reasoning_extraction).
  */
-export const BUSINESS_TREE_VERSION = "business-tree.react.v14";
+export const BUSINESS_TREE_VERSION = "business-tree.react.v15";
 export const businessTreeCacheKey = (ticker: string) => `business-tree:v1:${ticker}`;
 export type BusinessTreeParams = { ticker: string; fingerprint: string };
 
@@ -88,7 +90,7 @@ export async function executeBusinessTreeWorkflow(params: BusinessTreeParams, st
     ticker: params.ticker, companyName: issuerNames(findSecurity(params.ticker)?.name ?? params.ticker)[0]!, periodEnd: input.periodEnd, businesses: input.businesses,
     filings: input.filings, search: researchSearch(env), modelVersion, fingerprint: params.fingerprint, now,
     // SEC filings are read from the filing library; the web search is left for vendor pages.
-    filingLibrary: treeLibrary(requireDb(env), params.ticker, input.filings),
+    filingLibrary: treeLibrary(requireDb(env), params.ticker, input.filings, { headings: true }),
     // A broken or stalled reply is the turn gone wrong, which the loop answers; HTTP failures and timeouts still retry the step.
     model: {
       act: async (stage, system, tools, messages) => {
