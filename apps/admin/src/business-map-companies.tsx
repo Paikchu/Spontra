@@ -26,6 +26,7 @@ const errors: Record<string,string> = {
   INCOMPARABLE_QUARTERS:'相邻季度口径可比性未核验',
   UNBALANCED_STATEMENT:'报表勾稽未通过',
   NO_DIRECT_COMPARABLE_QUARTER:'无可直接提取的季度数据',
+  NO_QUARTERLY_PERIOD:'这份申报没有单列季度，不能做季度比较',
   SEC_DOCUMENT_TOO_LARGE:'申报文件超过 20 MB',
   NEWER_PUBLICATION_CURRENT:'已有更新的发布',
   INVALID_PAYLOAD:'已发布数据未通过当前校验',
@@ -129,7 +130,7 @@ function Meter({label,completed,total,done=false}:{label:string;completed:number
   return <div className="bm-meter" data-done={done||undefined}><span>{label}</span><b>{done?`已完成 · 读取 ${completed} 份`:`${completed}/${total}`}</b><progress aria-label={label} value={done?1:completed} max={done?1:Math.max(total,1)}/></div>;
 }
 /** Per-document notes from a scan (a filing without a quarter, a fact format the reader skips): not problems with the data. */
-const NOTE=/^(?:\d{10}-\d{2}-\d{6}:)?(?:NO_DIRECT_COMPARABLE_QUARTER|RESTATEMENT_REVIEW_REQUIRED)$|^UNSUPPORTED_SOURCE_FACTS:/;
+const NOTE=/^(?:\d{10}-\d{2}-\d{6}:)?(?:NO_DIRECT_COMPARABLE_QUARTER|NO_QUARTERLY_PERIOD|RESTATEMENT_REVIEW_REQUIRED)$|^UNSUPPORTED_SOURCE_FACTS:/;
 
 /** The list with one switch moved: a company's feature (switching the reports off takes the findings with them) or a global one. */
 function applySwitch(d:BusinessMapCompanies,symbol:string|null,feature:Feature,on:boolean):BusinessMapCompanies {

@@ -5,6 +5,7 @@ import { readStatementTableFacts } from "../src/financial-data/statement-table.t
 import { extractDisclosedQuarters, readReportedFacts, type DocumentSource } from "../src/financial-data/parser.ts";
 import { readSecDocumentBatch, reportsFinancials, type SecReader } from "../src/financial-data/provider.ts";
 import { readRevenueHistory, runHistoryStep } from "../src/financial-data/history.ts";
+import { extractRevenueHistory } from "../src/financial-data/revenue-parser.ts";
 import { checkCompleteFlow, checkCompleteQuarter, newestPair } from "../../../shared/analysis-runtime/financial-data/completeness.ts";
 import { parseFilingDocument } from "../../../shared/analysis-runtime/filing-library/parse.ts";
 import { compactMoney } from "../../../shared/analysis-runtime/locale.ts";
@@ -70,8 +71,12 @@ test("a 20-F reads IFRS concepts in its presentation currency; the US$ convenien
   const revenue = facts.filter(f => f.tag === "ifrs-full:RevenueFromContractsWithCustomers" && f.end === "2025-12-31");
   assert.deepEqual([...new Set(revenue.map(f => f.value))], [3_809_054_300_000]);
   assert.ok(["CostOfSales", "ProfitLossFromOperatingActivities", "ProfitLossBeforeTax", "IncomeTaxExpenseContinuingOperations"].every(name => facts.some(f => f.tag === "ifrs-full:" + name)));
-  // Annual periods alone make no quarter.
+  // Annual periods alone make no quarter, and that is recorded as the filing's own limit.
   assert.equal(extractDisclosedQuarters(annual, annualSource).quarters.length, 0);
+  const annualHistory = extractRevenueHistory(annual, annualSource, "20-F");
+  assert.equal(annualHistory.quarters.length, 0);
+  assert.ok(annualHistory.issues.includes("NO_QUARTERLY_PERIOD"));
+  assert.ok(!annualHistory.issues.includes("NO_DIRECT_COMPARABLE_QUARTER"));
 });
 
 test("a 6-K reports financials only when its exhibits are statements, results or an earnings release", () => {
@@ -143,6 +148,7 @@ test("revenue history reads the NT$ quarters and records no issue for a 6-K noti
   assert.equal(step?.finished, true);
   assert.ok(!step!.issues.some(issue => issue.startsWith("0001046179-26-000680")), step!.issues.join());
   assert.ok(!step!.issues.some(issue => issue.startsWith("0001046179-26-000541")), step!.issues.join());
+  assert.ok(step!.issues.includes("0001628280-26-025362:NO_QUARTERLY_PERIOD"), step!.issues.join());
   const history = await readRevenueHistory(db, CIK, "TSM");
   const q2 = history?.quarters.find(q => q.periodEnd === "2026-06-30");
   assert.equal(q2?.currency, "TWD");

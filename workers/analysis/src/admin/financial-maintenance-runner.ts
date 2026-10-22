@@ -35,6 +35,19 @@ const dependencies: MaintenanceDependencies = {
   reread: rereadHistoryFiling,
 };
 
+/**
+ * Notes a scan records without leaving the task partial or retryable: a filing that does not print a quarter,
+ * a restatement still to review, or source facts whose format the statements do not use.
+ * `ANALYSIS_INCOMPLETE` and an unverified revenue breakdown are not notes.
+ */
+export function maintenanceIssueBlocksTask(issue: string): boolean {
+  return !/^(?:\d{10}-\d{2}-\d{6}:)?(?:NO_DIRECT_COMPARABLE_QUARTER|NO_QUARTERLY_PERIOD|RESTATEMENT_REVIEW_REQUIRED)$/.test(issue)
+    && !issue.startsWith("UNSUPPORTED_SOURCE_FACTS:");
+}
+
+const taskStatus = (issues: string[], failed = false): { status: "partial" | "succeeded" | "failed"; errorCode?: "NO_QUARTER_READ" } =>
+  failed ? { status: "failed", errorCode: "NO_QUARTER_READ" } : { status: issues.some(maintenanceIssueBlocksTask) ? "partial" : "succeeded" };
+
 /** One bounded step per Cron invocation; state is D1-backed, so browser refreshes cannot interrupt it. */
 export async function runFinancialMaintenanceTick(env: AnalysisEnv, deps = dependencies, now = new Date()): Promise<{ processed: boolean; taskId?: string; stage?: string; blocksDataSweep?: boolean }> {
   if (!env.DB) return { processed: false };
@@ -81,8 +94,9 @@ export async function runFinancialMaintenanceTick(env: AnalysisEnv, deps = depen
         const result = await deps.reread(env.DB, reader, { ticker: row.ticker, cik: state.cik! }, row.accession_number!, new Date());
         state.reread = { form: result.form, filedAt: result.filedAt, replaced: result.replaced, quarters: result.quarters };
         issues.push(...result.issues);
-        await finish("complete", { status: result.quarters.length ? (issues.length ? "partial" : "succeeded") : "failed", completedSteps: 2,
-          issues: [...new Set(issues)].slice(-100), ...(result.quarters.length ? {} : { errorCode: "NO_QUARTER_READ" }) });
+        // No quarter, and the filing never printed one: nothing was replaced, and retrying reads the same pages.
+        const noQuarter = result.quarters.length === 0 && !(result.issues.length > 0 && result.issues.every(issue => /:NO_QUARTERLY_PERIOD$/.test(issue)));
+        await finish("complete", { ...taskStatus(issues, noQuarter), completedSteps: 2, issues: [...new Set(issues)].slice(-100) });
       } catch (error) {
         if (error instanceof Error && error.message === "FILING_NOT_IN_HISTORY_WINDOW") await finish("reread", { status: "failed", errorCode: error.message });
         else throw error;
@@ -105,11 +119,13 @@ export async function runFinancialMaintenanceTick(env: AnalysisEnv, deps = depen
       if(publication.flow?.quarters.some(q=>q.segmentDisclosure!=='single_reportable_segment'&&q.segments.some(s=>s.id==='reported-company-total')))issues.push('REVENUE_BREAKDOWN_NOT_VERIFIED');
       const audits = await listFilingDisclosureAudits(env.DB, row.ticker);
       if (!audits.length) issues.push("NO_ARCHIVED_DISCLOSURES");
-      const unsupported = audits.reduce((count, audit) => count + audit.coverage.unsupported, 0);
+      // Text transforms (dates, durations, country names) stay in the archive and are not a failed extraction.
+      // Archives written before the numeric split contribute nothing until they are read again.
+      const unsupported = audits.reduce((count, audit) => count + (audit.coverage.unsupportedNumeric ?? 0), 0);
       if (unsupported) issues.push(`UNSUPPORTED_SOURCE_FACTS:${unsupported}`);
       if (audits.some(audit => audit.coverage.unknownTaxonomy > 0)) issues.push("UNRESOLVED_TAXONOMY_NAMESPACE");
       if (row.action === "analyze") await finish("analysis_dispatch", { completedSteps: 4, issues: [...new Set(issues)] });
-      else await finish("complete", { status: issues.length ? "partial" : "succeeded", completedSteps: 4, issues: [...new Set(issues)] });
+      else await finish("complete", { ...taskStatus(issues), completedSteps: 4, issues: [...new Set(issues)] });
     } else if (row.stage === "analysis_dispatch") {
       if (!aiIsEnabled(env)) await finish("analysis_dispatch", { status: "failed", errorCode: "AI_DISABLED" });
       else {
@@ -132,7 +148,7 @@ export async function runFinancialMaintenanceTick(env: AnalysisEnv, deps = depen
       if (status === "complete") {
         const jobs = await env.DB.prepare("SELECT status FROM sec_analysis_jobs WHERE workflow_instance_id=?").bind(state.workflowId).all<{ status: string }>();
         if (!jobs.results.length || jobs.results.some(j=>j.status!=="complete")) issues.push("ANALYSIS_INCOMPLETE");
-        await finish("complete", { status: issues.length ? "partial" : "succeeded", completedSteps: 5, issues: [...new Set(issues)] });
+        await finish("complete", { ...taskStatus(issues), completedSteps: 5, issues: [...new Set(issues)] });
       } else if (["errored", "terminated"].includes(status)) await finish("analysis_wait", { status: "failed", errorCode: "ANALYSIS_FAILED" });
       else await finish("analysis_wait", { delayMs: 120_000 });
     } else await finish(row.stage, { status: "failed", errorCode: "UNKNOWN_STAGE" });

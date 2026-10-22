@@ -48,6 +48,29 @@ test("a usable brief is built before discovery, and the run goes on to the manag
   assert.deepEqual(calls, ["prepare", "context", "brief", "discovery:0", "discovery:1", "discovery-finish", "manager"]);
 });
 
+test("an exhibit-only amendment is published from the filing and does not enter the reader report", async () => {
+  const calls: string[] = [], jobs: WorkflowJobUpdate[] = [];
+  const target = filing("20-F/A");
+  const operations = {
+    discover: async () => ({ feed: {}, filings: [target] }),
+    publishFeed: async () => undefined,
+    shouldAnalyze: async () => true,
+    updateJob: async (job: WorkflowJobUpdate) => { jobs.push(job); },
+    prepare: async () => { calls.push("prepare"); return { key: "filings/NBIS/x", filing: target, coverAmendment: { exhibit: "97.1" }, discoveryChunks: 2 }; },
+    publishAmendment: async () => { calls.push("publish-amendment"); },
+    getContext: async () => { calls.push("context"); throw new Error("cover amendment must not build a brief"); },
+    buildBrief: async () => { calls.push("brief"); throw new Error("cover amendment must not build a brief"); },
+    plan: async () => { calls.push("manager"); throw new Error("cover amendment must not plan a report"); },
+    scanDisclosures: async () => { calls.push("discovery"); throw new Error("cover amendment must not call the model"); },
+  } as unknown as AnalysisOperations;
+  const result = await executeSecAnalysisWorkflow({ ticker: "NBIS", requestedBy: "scheduled", accessionNumber: target.accessionNumber }, "scheduled-NBIS-amendment", step, operations);
+  assert.deepEqual(result.analyzed, ["0001104659-26-065681"]);
+  assert.deepEqual(result.failed, []);
+  assert.deepEqual(calls, ["prepare", "publish-amendment"]);
+  assert.equal(jobs.at(-1)?.status, "complete");
+  assert.equal(jobs.at(-1)?.currentStage, "published");
+});
+
 test("an event filing still skips the brief and goes from discovery to its summary", async () => {
   const { calls, done } = run("6-K", ["USD", "shares"]);
   assert.deepEqual((await done).analyzed, ["0001104659-26-065681"]);

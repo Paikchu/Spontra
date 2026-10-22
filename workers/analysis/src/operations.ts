@@ -37,6 +37,7 @@ import { figureCatalog } from "./sec/figures.ts";
 import { D1SecRepository } from "./sec/d1.ts";
 import type { SecAnalysisArtifact } from "./sec/types.ts";
 import { cleanSecAccession, cleanSecTicker, type SecFiling, type SecFilingFeed, type SecFilingSummary, type SecNodePlan, type SecNodeResult, type SecNodeSpec } from "./sec/sec.ts";
+import { coverAmendmentNote, coverAmendmentSummary, type CoverAmendment } from "./sec/amendment.ts";
 import { SEC_ANALYSIS_SCHEMA_VERSION, type FilingBlock, type ManagerReview, type SecHistorySnapshot } from "./sec/analysis.ts";
 import { normalizeCompanyFacts } from "./sec/history.ts";
 import { secFundamentalsKey } from "./fundamentals/sec-fundamentals.ts";
@@ -361,6 +362,8 @@ export function createAnalysisOperations(env: AnalysisEnv, fetcher: typeof fetch
       const status = await repository().getAnalysisJobStatus(ticker, filing.accessionNumber, jobAnalysisVersionFor(filing.form));
       if (status === "complete") {
         const summary = await repository().getSummary(ticker, filing.accessionNumber);
+        // The note is the filing's own statement. It does not age out with the discovery schema.
+        if (summary?.source === "filing") return false;
         return summary?.discovery?.version !== "sec-discovery.v1";
       }
       return status === null || status === "failed";
@@ -398,7 +401,8 @@ export function createAnalysisOperations(env: AnalysisEnv, fetcher: typeof fetch
         putJson(env.SEC_FILINGS, `${key}/text.json`, { document, blocks }),
         putJson(env.SEC_FILINGS, `${key}/history.json`, history),
       ]);
-      return { key, filing, discoveryChunks: discoveryChunkCount(document.text.length) };
+      const coverAmendment = coverAmendmentNote(filing.form, document.text);
+      return { key, filing, discoveryChunks: discoveryChunkCount(document.text.length), ...(coverAmendment ? { coverAmendment } : {}) };
     },
     scanDisclosures: async (_filing, reference, index, execution) => {
       const prepared = await readPrepared(env.SEC_FILINGS, reference);
@@ -577,6 +581,16 @@ export function createAnalysisOperations(env: AnalysisEnv, fetcher: typeof fetch
     enqueueMemory: async (jobId, ticker) => {
       if (!env.SEC_MEMORY_WORKFLOW) return;
       await env.SEC_MEMORY_WORKFLOW.create({ id: `memory-${crypto.randomUUID()}`, params: { jobId, ticker } });
+    },
+    publishAmendment: async (filing, note: CoverAmendment) => {
+      const ticker = cleanSecTicker(filing.ticker);
+      const accessionNumber = cleanSecAccession(filing.accessionNumber);
+      const summary = coverAmendmentSummary({ ...filing, ticker, accessionNumber }, note);
+      if (!ticker || !accessionNumber || summary.source !== "filing" || !/^(?:10-[KQ]|20-F|40-F)\/A$/.test(summary.form)) throw new Error("Invalid amendment note.");
+      assertTrackedTicker(env, ticker);
+      const previous = await repository().getSummary(ticker, accessionNumber);
+      if (previous?.generatedAt) await repository().setCache(`admin:summary:${ticker}:${accessionNumber}:${previous.generatedAt}`, previous, previous.generatedAt);
+      await repository().setSummary({ ticker, accessionNumber, form: summary.form }, summary);
     },
     publishEvent: async (summary) => {
       const identity = summaryIdentity(summary);
