@@ -16,11 +16,15 @@ export type RailSectionKey = "business" | "findings" | "events";
 
 /**
  * Swaps the rail between its digest and one section's full list. Where the browser has view
- * transitions the section grows from its place into the rail; elsewhere, or with reduced motion, it swaps at once.
+ * transitions the section grows from its place into the rail, which widens to fit it; elsewhere, or with reduced motion, it swaps at once.
  */
 export function railTransition(update: () => void) {
   if (typeof document.startViewTransition !== "function" || matchMedia("(prefers-reduced-motion: reduce)").matches) { update(); return; }
-  document.startViewTransition(() => flushSync(update));
+  // While the transition runs the rail's column changes width at once, inside the morph, rather than easing after it.
+  const root = document.documentElement;
+  root.dataset.vt = "rail";
+  const done = () => { if (root.dataset.vt === "rail") delete root.dataset.vt; };
+  document.startViewTransition(() => flushSync(update)).finished.then(done, done);
 }
 
 /**
