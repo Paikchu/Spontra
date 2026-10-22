@@ -1,4 +1,5 @@
 import { recordFeatureFailure, TASK_FEATURE } from "../admin/messages.ts";
+import { NOT_TRACKED } from "../core.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import type { TaskMessage } from "./messages.ts";
@@ -91,6 +92,11 @@ export async function driveWorkflow(env: AnalysisEnv, key: string, binding: Work
     } else {
       const failure = verdict ? `Workflow ${started.instanceId} complete with failures: ${verdict.failure.slice(0, 300)}`
         : `Workflow ${started.instanceId} ${state.status}${errorText(state.error) ? `: ${errorText(state.error).slice(0, 300)}` : ""}`;
+      // Queued before the company left the reports list. The run stopped; it is not a failure to retry or to show.
+      if (errorText(state.error).includes(NOT_TRACKED) || failure.includes(NOT_TRACKED)) {
+        if (options.deadLetter) await env.DB!.prepare("DELETE FROM sec_cache WHERE cache_key = ?").bind(failedInputKey(options.deadLetter.task, options.deadLetter.ticker)).run();
+        return { status: "done", detail: { instanceId: started.instanceId, workflow: state.status, skipped: NOT_TRACKED } };
+      }
       if (!options.deadLetter) throw new Error(failure);
       const fingerprint = verdict?.fingerprint ?? started.fingerprint;
       const { task, ticker, causeId } = options.deadLetter, at = new Date().toISOString();

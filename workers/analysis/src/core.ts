@@ -73,6 +73,15 @@ export function assertTrackedTicker(env: Pick<SecCronEnv, "SEC_TRACKED_TICKERS" 
   if (!isTrackedTicker(ticker, trackedTickersFor(env))) throw new Error(NOT_TRACKED);
 }
 
+/**
+ * A scheduled report runs only while this company is still on the reports list. A manual run is not decided here:
+ * an admin analysis carries its own grant, and a manual request for a company that has left the list still fails as before.
+ */
+export function scheduledAnalysisAllowed(env: Pick<SecCronEnv, "SEC_TRACKED_TICKERS" | "SEC_DATA_TICKERS" | "SEC_AI_TICKERS" | "SEC_AI_ENABLED">, params: { ticker: string; requestedBy: string }): boolean {
+  if (params.requestedBy === "manual") return true;
+  return isTrackedTicker(params.ticker, trackedTickersFor(env));
+}
+
 export function dataTickersFor(env:Pick<SecCronEnv,"SEC_TRACKED_TICKERS"|"SEC_DATA_TICKERS"|"SEC_AI_TICKERS"|"SEC_AI_ENABLED">):string[]{return [...financialPolicy({SEC_DATA_TICKERS:env.SEC_DATA_TICKERS,SEC_TRACKED_TICKERS:env.SEC_TRACKED_TICKERS,SEC_AI_ENABLED:"false"}).dataTickers].sort();}
 export function assertDataTicker(env:Pick<SecCronEnv,"SEC_TRACKED_TICKERS"|"SEC_DATA_TICKERS"|"SEC_AI_TICKERS"|"SEC_AI_ENABLED">,ticker:string):void{if(!allowData(financialPolicy({SEC_DATA_TICKERS:env.SEC_DATA_TICKERS,SEC_TRACKED_TICKERS:env.SEC_TRACKED_TICKERS,SEC_AI_ENABLED:"false"}),ticker))throw new Error("Ticker is not data-enabled");}
 

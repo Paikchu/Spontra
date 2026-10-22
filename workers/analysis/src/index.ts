@@ -6,7 +6,7 @@ import { handleMapRead } from "./read-api/router.ts";
 import { handleStageRequest } from "./stage/gateway.ts";
 import { executeReportWorkflow, type ReportParams } from "./stage/report-workflow.ts";
 
-import { assertTrackedTicker, type CompanyAnalysisWorkflowParams, type SecMemoryWorkflowParams, type SecWorkflowParams } from "./core.ts";
+import { assertTrackedTicker, scheduledAnalysisAllowed, type CompanyAnalysisWorkflowParams, type SecMemoryWorkflowParams, type SecWorkflowParams } from "./core.ts";
 import { executeCompanyAnalysisWorkflow, type CompanyWorkflowStep } from "./company-analysis-workflow.ts";
 import { executeSecMemoryWorkflow } from "./memory-workflow.ts";
 import { createAnalysisOperations, type AnalysisEnv } from "./operations.ts";
@@ -69,6 +69,9 @@ function durableSteps(step: WorkflowStep, env: AnalysisEnv, instanceId: string):
 export class SecAnalysisWorkflow extends WorkflowEntrypoint<AnalysisEnv, SecWorkflowParams> {
   async run(event: WorkflowEvent<SecWorkflowParams>, step: WorkflowStep) {
     const env = await maintenanceAnalysisEnvironment(await companyPolicyEnvironment(this.env), event.payload, event.instanceId);
+    // A scheduled run that finds the company gone from the reports list completes with nothing to publish.
+    // Throwing would end the instance in error, and the task would record that as a feature failure.
+    if (!scheduledAnalysisAllowed(env, event.payload)) return { analyzed: [], skipped: [], failed: [] };
     assertTrackedTicker(env,event.payload.ticker);
     const operations = createAnalysisOperations(env, fetch, event.instanceId);
     // One-off reports do not enroll a company in recurring memory/company analysis.
