@@ -1,7 +1,6 @@
-import { useEffect, useState, type FormEvent } from "react";
-import { ArrowUpRight, Bell, Cpu, FileStack, ListChecks, LoaderCircle, LogOut, Moon, Network, ShieldCheck, Sparkles, Sun } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ArrowUpRight, Bell, Cpu, FileStack, ListChecks, Moon, Network, Sparkles, Sun } from "lucide-react";
 import Link from "@/packages/web/src/navigation";
-import { adminApi } from "./admin-api";
 import { BusinessMapCompanies } from "./business-map-companies";
 import { FilingLibrary } from "./filing-library";
 import { BusinessSegments } from "./business-segments";
@@ -40,13 +39,10 @@ function initialSection(): Section {
 }
 
 export function BusinessViewAdmin({ mapOrigin = "" }: { mapOrigin?: string }) {
-  const [authenticated, setAuthenticated] = useState<boolean | null>(null);
   const [section, setSection] = useState<Section>(initialSection);
-  const [key, setKey] = useState("");
-  const [loginBusy, setLoginBusy] = useState(false);
   const [error, setError] = useState("");
   const page = PAGES[section];
-  const { inbox, read } = useInbox(authenticated === true);
+  const { inbox, read } = useInbox(true);
   const [light, setLight] = useState(() => typeof document !== "undefined" && !document.documentElement.classList.contains("dark"));
   function toggleTheme() {
     const next = !light;
@@ -67,17 +63,8 @@ export function BusinessViewAdmin({ mapOrigin = "" }: { mapOrigin?: string }) {
     setSection(next); setError("");
     try { window.history.replaceState(null, "", `${PAGES[next].path}${search}`); } catch { /* Sandboxed preview. */ }
   }
-  async function login(event: FormEvent) {
-    event.preventDefault(); setLoginBusy(true); setError("");
-    try { await adminApi("session", { method: "POST", body: JSON.stringify({ key }) }); setKey(""); setAuthenticated(true); }
-    catch (e) { setError((e as Error).message); }
-    finally { setLoginBusy(false); }
-  }
-  async function logout() {
-    try { await adminApi("session", { method: "DELETE" }); setAuthenticated(false); }
-    catch (e) { setError((e as Error).message); }
-  }
-  const auth = { onUnauthorized: () => setAuthenticated(false), onAuthenticated: () => setAuthenticated(true) };
+  // The admin site has no sign-in: a 401 means Spontra Analysis refused the binding, which only a banner can report.
+  const auth = { onUnauthorized: () => setError("管理接口拒绝访问"), onAuthenticated: () => setError("") };
   const openSection = (ticker: string, documentId: string, sectionId: string) => navigate("filings", `?${new URLSearchParams({ ticker, document: documentId, section: sectionId })}`);
 
   return <div className="report-admin">
@@ -87,21 +74,17 @@ export function BusinessViewAdmin({ mapOrigin = "" }: { mapOrigin?: string }) {
       <div className="ra-sidebar-bottom">
         <button onClick={toggleTheme} aria-pressed={light}>{light ? <Moon size={16} /> : <Sun size={16} />}{light ? "深色" : "浅色"}</button>
         <Link href={`${mapOrigin}/`}><ArrowUpRight size={16} />打开 BusinessView</Link>
-        <div className="ra-account"><ShieldCheck size={18} /><span>管理员</span>{authenticated && <button onClick={() => void logout()} aria-label="退出登录" title="退出登录"><LogOut size={16} /></button>}</div>
       </div>
     </aside>
     <main className="ra-main">
-      {authenticated === false ? <div className="ra-login"><ShieldCheck size={34} /><h2>登录</h2><form onSubmit={event => void login(event)}><label htmlFor="admin-key">管理密码</label><input id="admin-key" type="password" autoComplete="current-password" value={key} onChange={event => setKey(event.target.value)} required /><button className="ra-primary" disabled={loginBusy || !key}>{loginBusy && <LoaderCircle className="ra-spin" size={16} />}{loginBusy ? "登录中" : "登录"}</button></form>{error && <p role="alert" className="ra-error">{error}</p>}</div>
-        : <>
-          {error && <div className="ra-error ra-error-banner" role="alert">{error}</div>}
-          {section === "whitelist" ? <BusinessMapCompanies {...auth} />
-            : section === "financials" ? <FinancialMaintenance {...auth} />
-            : section === "filings" ? <FilingLibrary {...auth} />
-            : section === "business" ? <BusinessSegments {...auth} onOpenSection={openSection} />
-            : section === "models" ? <><StageAdminPanel onUnauthorized={auth.onUnauthorized} /><AiModels {...auth} /></>
-            : section === "messages" ? <AdminInbox inbox={inbox} read={read} onOpen={ticker => navigate("whitelist", `?${new URLSearchParams({ ticker })}`)} />
-            : <AiRuns {...auth} kinds={["findings", "analyst", "checkup"]} translations />}
-        </>}
+      {error && <div className="ra-error ra-error-banner" role="alert">{error}</div>}
+      {section === "whitelist" ? <BusinessMapCompanies {...auth} />
+        : section === "financials" ? <FinancialMaintenance {...auth} />
+        : section === "filings" ? <FilingLibrary {...auth} />
+        : section === "business" ? <BusinessSegments {...auth} onOpenSection={openSection} />
+        : section === "models" ? <><StageAdminPanel onUnauthorized={auth.onUnauthorized} /><AiModels {...auth} /></>
+        : section === "messages" ? <AdminInbox inbox={inbox} read={read} onOpen={ticker => navigate("whitelist", `?${new URLSearchParams({ ticker })}`)} />
+        : <AiRuns {...auth} kinds={["findings", "analyst", "checkup"]} translations />}
     </main>
   </div>;
 }

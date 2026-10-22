@@ -21,23 +21,21 @@
 
 运行状况在 Cloudflare 控制台查看：Cron 在 `spontra-analysis` 的 Settings → Trigger Events；队列积压与重试在 Queues 的三条 `spontra-pipeline-*` 队列；Workflow 实例在 Workflows；报错与重试在 `spontra-analysis` 的 Workers Logs（按 `pipeline-task`、`pipeline-route`、`pipeline-dead` 筛选）。死信仍写入 D1 `pipeline_dead`，后台不再提供重放、关闭和手动发送事件的入口。
 
-## 登录
+## 访问
 
-`REPORT_ADMIN_PASSWORD` 必须在 `spontra-analysis` 配置为 Secret，建议随机生成至少 32 个字符。后台不再接受内部 `SEC_REFRESH_KEY`，没有专用密码时拒绝登录，不回退到内部密钥。`spontra-admin` 不保存这个密码；HTTP 登录凭证使用 `x-report-admin-password`。内部财报鉴权及定时任务保持独立。
+后台暂不设密码，打开即可使用。`spontra-admin` 的 `SPONTRA_ANALYSIS` 绑定指向 Spontra Analysis 的 `AdminGateway` 命名入口；命名入口不能从公网访问，绑定本身就是凭证（与地图的 `MapReads` 相同）。`AdminGateway` 只转发 `/admin/*`，并为每个请求签发一次管理会话，所以仍依赖 `spontra-analysis` 的 Secret `REPORT_ADMIN_PASSWORD`；未配置时返回 503。浏览器不持有任何凭证。
 
-使用 **Spontra Analysis Worker** 专用的 `REPORT_ADMIN_PASSWORD` 登录。密钥在登录时经同源 Admin Worker 代理交给 Spontra Analysis 核验，浏览器只获得 8 小时有效的签名会话 Cookie（HttpOnly、SameSite=Strict，线上启用 Secure）。密钥不写入 localStorage、sessionStorage 或前端构建。
-
-会话由 Spontra Analysis 自己的密钥签名并验证，无需给 Admin Worker 新增管理密钥。轮换 `REPORT_ADMIN_PASSWORD` 会同时使现有会话失效。Spontra Analysis 的 `REPORT_ADMIN_RATE_LIMIT` 限制登录尝试。
+Spontra Analysis 默认入口的 `/admin/*` 不变：仍需 `POST /admin/session`（`x-report-admin-password`）换取 8 小时签名会话，`REPORT_ADMIN_RATE_LIMIT` 限制尝试次数。
 
 ## 接口与发布
 
-Admin Worker：`/api/admin/session`（POST 登录、DELETE 退出），其余为 `financials`、`business-map`、`ai`、`library` 的白名单路径。写操作要求同源 Origin；全部响应为 `private, no-store`。
+Admin Worker：`financials`、`business-map`、`ai`、`library` 的白名单路径。写操作要求同源 Origin；全部响应为 `private, no-store`。
 
-Spontra Analysis 对应路径为 `/admin/*`，管理接口需要签名会话。现有公开只读凭证不能访问管理接口。报告管理本身使用已有表；财报数据维护任务使用下述新增迁移。
+Spontra Analysis 对应路径为 `/admin/*`，经 `AdminGateway` 转发；默认入口的管理接口需要签名会话。现有公开只读凭证不能访问管理接口。报告管理本身使用已有表；财报数据维护任务使用下述新增迁移。
 
 后台代码位于 `apps/admin/`，部署为 `spontra-admin`，仅绑定 `ASSETS` 和 `SPONTRA_ANALYSIS`（`spontra-analysis`）。继续使用 HTTP Service Binding，生产配置缺少绑定时返回 503，不回退到公网 fetch。页面、样式和报告阅读组件保持原有设计，返回主站链接指向 `spontra-app`。
 
-推送 `origin/main` 后，地图与后台的自动构建会先验证、构建后台，并在 CI 中发布独立 admin Worker。若未来要求只改后台就独立发布，再配置单独的 Workers Builds 项目和 watch paths。首次发布无需复制数据库、迁移表或新增密钥。Spontra Analysis 管理接口仍要求签名会话。
+推送 `origin/main` 后，地图与后台的自动构建会先验证、构建后台，并在 CI 中发布独立 admin Worker。若未来要求只改后台就独立发布，再配置单独的 Workers Builds 项目和 watch paths。首次发布无需复制数据库、迁移表或新增密钥。Spontra Analysis 默认入口的管理接口仍要求签名会话。
 
 本次保留原有密钥登录，尚未启用 Cloudflare Access；之后可以在整个 admin Worker 上配置 Access，保持主站公开。仅推送成功不能证明线上部署成功。
 

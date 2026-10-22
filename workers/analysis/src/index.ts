@@ -17,6 +17,7 @@ import { storeWorkflowResult, loadWorkflowResult } from "./workflow-results.ts";
 import { executeBusinessExplainerWorkflow, type BusinessExplainerParams } from "./business-explainer/workflow.ts";
 import { executeBusinessTreeWorkflow, type BusinessTreeParams } from "./business-tree/workflow.ts";
 import { maintenanceAnalysisEnvironment } from "./admin/financial-maintenance-runner.ts";
+import { createAdminSession } from "./admin/auth.ts";
 import { executeGuidanceWorkflow, type GuidanceWorkflowParams } from "./guidance/workflow.ts";
 import { executeFindingsWorkflow, type FindingsWorkflowParams } from "./findings/workflow.ts";
 import { executeItemsWorkflow, type ItemsParams } from "./items/workflow.ts";
@@ -232,6 +233,22 @@ export class StageGateway extends WorkerEntrypoint<AnalysisEnv> {
       console.error(JSON.stringify({ event: "stage-gateway", outcome: "error", path: new URL(request.url).pathname, error: error instanceof Error ? error.message : String(error) }));
       return Response.json({ error: "unavailable" }, { status: 503, headers: { "cache-control": "no-store" } });
     }
+  }
+}
+
+/**
+ * The admin site reaches the admin routes over its Service Binding to this named entrypoint. As with MapReads, the
+ * binding is the credential: each request carries a fresh admin session, so the admin site asks for no password.
+ * The default entrypoint's `/admin/*` still requires a signed session.
+ */
+export class AdminGateway extends WorkerEntrypoint<AnalysisEnv> {
+  async fetch(request: Request) {
+    const path = new URL(request.url).pathname;
+    if (!path.startsWith("/admin/") || path === "/admin/session") return Response.json({ error: "Not found" }, { status: 404 });
+    if (!this.env.REPORT_ADMIN_PASSWORD) return Response.json({ error: "管理后台尚未配置。" }, { status: 503 });
+    const headers = new Headers(request.headers);
+    headers.set("authorization", `Bearer ${await createAdminSession(this.env.REPORT_ADMIN_PASSWORD)}`);
+    return worker.fetch(new Request(request, { headers }), this.env);
   }
 }
 

@@ -9,8 +9,8 @@ export async function handleAdminRequest(request: Request, env: AdminEnv): Promi
   const url = new URL(request.url);
   let response: Response;
   if (url.pathname.startsWith("/api/admin/")) {
-    if (!["GET", "POST", "DELETE"].includes(request.method)) {
-      response = new Response("Method not allowed", { status: 405, headers: { allow: "GET, POST, DELETE" } });
+    if (!["GET", "POST"].includes(request.method)) {
+      response = new Response("Method not allowed", { status: 405, headers: { allow: "GET, POST" } });
     } else {
       let path: string[];
       try { path = url.pathname.slice("/api/admin/".length).split("/").map(decodeURIComponent); }

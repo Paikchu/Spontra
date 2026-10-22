@@ -1,15 +1,12 @@
 import { asServiceBinding, serviceFetcher } from "../../../packages/web/src/model/service-binding.ts";
 
-const COOKIE = "spontra_report_admin";
 const MAX_BODY = 8192;
 type ProxyEnv = Record<string, unknown>;
 const json = (body: unknown, status: number) => Response.json(body, { status, headers: { "cache-control": "private, no-store" } });
 
-function cookie(value: string, request: Request, clear = false): string {
-  return `${COOKIE}=${value}; Path=/api/admin; HttpOnly; SameSite=Strict; Max-Age=${clear ? 0 : 8 * 3600}${new URL(request.url).protocol === "https:" ? "; Secure" : ""}`;
-}
+/** The binding to Spontra Analysis's AdminGateway entrypoint is the credential; the browser holds none. */
 export async function handleReportAdminProxy(request: Request, path: string[], env: ProxyEnv): Promise<Response> {
-  if (!path.length || !/^(session|financials|business-map|ai|library)$/.test(path[0]!) || path.length > (path[0] === "financials" || path[0] === "ai" || path[0] === "library" ? 6 : path[0] === "business-map" ? 5 : 4)) return json({ error: "Not found" }, 404);
+  if (!path.length || !/^(financials|business-map|ai|library)$/.test(path[0]!) || path.length > (path[0] === "financials" || path[0] === "ai" || path[0] === "library" ? 6 : path[0] === "business-map" ? 5 : 4)) return json({ error: "Not found" }, 404);
   if (path[0] === "business-map") {
     const route = path.slice(1).join("/");
     const read = request.method === "GET" && (/^companies(?:\/[A-Z][A-Z0-9.-]{0,9}\/charts)?$/.test(route) || route === "messages");
@@ -35,17 +32,9 @@ export async function handleReportAdminProxy(request: Request, path: string[], e
     if (!read && !write) return json({ error: "Not found" }, 404);
   }
   if (request.method !== "GET") {
-    // Browsers must prove same-origin even before login; no public write proxy.
+    // Browsers must prove same-origin; no cross-site write proxy.
     if (request.headers.get("origin") !== new URL(request.url).origin) return json({ error: "请求来源无效" }, 403);
   }
-  if (path[0] === "session" && request.method === "DELETE") {
-    const response = json({ status: "signed_out" }, 200);
-    response.headers.set("set-cookie", cookie("", request, true));
-    return response;
-  }
-  const login = path.length === 1 && path[0] === "session" && request.method === "POST";
-  const token = request.headers.get("cookie")?.split(";").map(v => v.trim()).find(v => v.startsWith(`${COOKIE}=`))?.slice(COOKIE.length + 1);
-  if (!login && !token) return json({ error: "未登录" }, 401);
   if (request.url.length > 2048 || Number(request.headers.get("content-length") ?? 0) > MAX_BODY) return json({ error: "请求过大" }, 413);
   try {
     const binding = asServiceBinding(env.SPONTRA_ANALYSIS);
@@ -54,7 +43,6 @@ export async function handleReportAdminProxy(request: Request, path: string[], e
     const headers = new Headers({ accept: "application/json" });
     const ip = request.headers.get("cf-connecting-ip");
     if (ip) headers.set("cf-connecting-ip", ip);
-    if (token) headers.set("authorization", `Bearer ${token}`);
     const idempotency = request.headers.get("idempotency-key");
     if (idempotency) headers.set("idempotency-key", idempotency);
     let body: string | undefined;
@@ -63,23 +51,9 @@ export async function handleReportAdminProxy(request: Request, path: string[], e
       if (new TextEncoder().encode(body).length > MAX_BODY) return json({ error: "请求过大" }, 413);
       headers.set("content-type", "application/json");
     }
-    if (login) {
-      let key: unknown;
-      try { key = (JSON.parse(body ?? "{}") as { key?: unknown }).key; } catch { return json({ error: "缺少管理密码" }, 400); }
-      if (typeof key !== "string" || !key || key.length > 4096) return json({ error: "缺少管理密码" }, 400);
-      headers.set("x-report-admin-password", key);
-      body = undefined;
-    }
     const target = new URL(`/admin/${path.map(encodeURIComponent).join("/")}`, origin);
     target.search = new URL(request.url).search;
     const result = await serviceFetcher(binding)(target, { method: request.method, headers, body, redirect: "manual", signal: AbortSignal.timeout(30_000) });
-    if (login && result.status === 200) {
-      const payload = await result.json() as { token?: string };
-      if (!payload.token || !/^report-admin\.v1\.[a-f0-9.-]+$/.test(payload.token)) return json({ error: "登录服务不可用" }, 503);
-      const response = json({ status: "signed_in" }, 200);
-      response.headers.set("set-cookie", cookie(payload.token, request));
-      return response;
-    }
     if (![200, 202, 400, 401, 403, 404, 405, 409, 413, 429, 503].includes(result.status)) return json({ error: "财报服务不可用" }, 503);
     return new Response(result.body, { status: result.status, headers: { "content-type": "application/json", "cache-control": "private, no-store", "x-content-type-options": "nosniff" } });
   } catch { return json({ error: "财报服务不可用" }, 503); }
