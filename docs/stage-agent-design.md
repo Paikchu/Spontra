@@ -538,6 +538,7 @@ P0a 到 P2 已上线。P3、P4 仍按第 10 节后置，未开工。
 - 报告用普通 `WorkflowEntrypoint`，结束时经 RPC 通知 `StageAgent`，未用 `AgentWorkflow`。
 - 没有单独的 ResearchWorkflow；深度研究由报告配方承担。材料随报告存入 `user_reports.body`，没有 `user_documents` 表。
 - 迁移编号为 0035（舞台）、0036（`stage_settings`）、0037（`user_reports`）。
+- 2026-10-22 起提问后对话层淡出，结果只在舞台上展示：回合进行时是加载骨架，之后是 Scene、文字回答、报告提议（开始 / 不用了）或失败提示。对话层只保留读者的问题和简短提示。读者开始的报告独占舞台，先是进度，完成后是报告本身。
 - 2026-10-22 起舞台对所有公司默认开放，不设开关：`/agents/status` 对任何合法代码返回 open，后台舞台页只看花费与对话。`stage_settings` 表保留但不再读取。滥用由三层配额限制。
 - 消息协议用 JSON，未用 `@callable`（测试运行器的类型剥离不支持装饰器）。
 - 严格工具 schema 不接受 minimum / maximum、长度、pattern、format、default 等关键字，注册表统一剥离；`read_series` 为非严格。

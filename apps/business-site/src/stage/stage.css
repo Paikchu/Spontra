@@ -1,23 +1,30 @@
 /* ---------- The stage (docs/stage-agent-design.md §5.5) ---------- */
 
-/* The entry sits at the foot of the rail, under its sections. */
+/* The entry sits at the foot of the rail, under its sections; beside it, the way back to the stage once the reader
+   has moved to the map. */
+.ask-entry { display: flex; gap: 8px; }
 .ask-entry { position: sticky; bottom: -20px; margin: 12px -12px -20px; padding: 10px 12px 14px; background: linear-gradient(to bottom, transparent, var(--surface) 30%); }
 .ask-open {
   display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 38px; border-radius: 999px;
   border: 1px solid var(--border); background: var(--surface-raised); color: var(--foreground); font-size: 13.5px; font-weight: 600;
   transition: background .16s, border-color .16s;
 }
+.ask-back { flex: none; height: 38px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--border); font-size: 13px; font-weight: 600; animation: rise .3s var(--ease) both; }
+.ask-back:hover { border-color: var(--muted-foreground); }
 .ask-open:hover { border-color: var(--muted-foreground); }
 .ask-open[aria-expanded="true"] { background: var(--foreground); color: var(--background); border-color: transparent; }
 .ask-open svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
 
 /* The overlay. While it is open the input rises to the lower quarter of the viewport and the page around it is
    blurred in rings that fan out from the input: heaviest at the bar, clearing toward the edges, so the eye rests on the
-   question. Once the stage takes over (mini) the blur lifts and the bar settles at the foot, out of the scene's way.
+   question. Once the reader asks, the overlay and its blur fade away together and the stage takes the question.
    The page measures the bar into --ask-cx / --ask-cy (its centre), --ask-bw (its width) and --ask-up (from its centre
    to the top of the transcript). */
 @property --ask-turn { syntax: "<angle>"; inherits: true; initial-value: 0deg; }
 .ask-veil { position: fixed; inset: 0; z-index: 24; cursor: default; }
+.ask-veil[data-away] { pointer-events: none; }
+/* Each layer fades on its own: an ancestor's opacity would cut the layers off from the page they blur. */
+.ask-veil[data-away] i { opacity: 0; transition: opacity .5s var(--ease); }
 .ask-veil i {
   position: absolute; inset: 0; pointer-events: none; animation: ask-veil .36s var(--ease) both;
   mask-image: radial-gradient(ellipse var(--rx) var(--ry) at var(--ask-cx, 50%) var(--ask-cy, 75%), #000 var(--core), transparent);
@@ -35,15 +42,12 @@
   position: fixed; bottom: 25vh; left: calc((100vw + var(--rail-w) + var(--inset)) / 2); z-index: 25; translate: -50% 0;
   width: min(760px, calc(100vw - var(--rail-w) - var(--inset) - 64px)); max-height: calc(75dvh - 16px);
   display: flex; flex-direction: column; gap: 10px; padding-top: 24px; pointer-events: none;
-  animation: ask-in .32s var(--ease) both, ask-turn 6s linear infinite; transition: bottom .42s var(--ease);
+  animation: ask-in .32s var(--ease) backwards, ask-turn 6s linear infinite;
+  transition: opacity .42s var(--ease), transform .42s var(--ease), visibility 0s;
 }
+.ask[data-state="away"] { opacity: 0; transform: translateY(16px) scale(.98); visibility: hidden; transition: opacity .42s var(--ease), transform .42s var(--ease), visibility 0s .42s; }
 main[data-rail="collapsed"] ~ .ask, body:has(main[data-rail="collapsed"]) .ask { left: calc((100vw + var(--rail-collapsed-w) + var(--inset)) / 2); width: min(760px, calc(100vw - var(--rail-collapsed-w) - var(--inset) - 64px)); }
 .ask > * { flex: none; }
-.ask[data-state="mini"] { bottom: max(16px, env(safe-area-inset-bottom)); }
-.ask[data-state="mini"]::before {
-  content: ""; position: absolute; inset: 0 -24px -16px; z-index: -1; pointer-events: none;
-  background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--background) 82%, transparent) 38%, var(--background) 72%);
-}
 .ask[data-state="busy"] { animation-duration: .32s, 1.8s; }
 .ask > * { pointer-events: auto; }
 /* The transcript gives up height first when the input grows, so the bar never pushes it off the top. Its scrollbar
@@ -54,17 +58,8 @@ main[data-rail="collapsed"] ~ .ask, body:has(main[data-rail="collapsed"]) .ask {
 }
 .ask-scroll::-webkit-scrollbar, .ask-bar textarea::-webkit-scrollbar { display: none; }
 .ask .ask-scroll:hover { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--foreground) 22%, transparent) transparent; }
-.ask[data-state="mini"] .ask-scroll { max-height: 64px; }
 .ask-entry-user { align-self: flex-end; max-width: 80%; margin: 0; padding: 8px 13px; border-radius: 16px 16px 4px 16px; background: var(--surface-raised); border: 1px solid var(--hairline); font-size: 14px; line-height: 1.55; animation: ask-entry .16s var(--ease) both; }
-.ask-entry-answer { margin: 0; font-size: 14px; line-height: 1.65; animation: ask-entry .2s var(--ease) both; }
-.ask-entry-answer p { margin: 0 0 6px; }
 .ask-entry-notice, .ask-note { margin: 0; font-size: 12px; color: var(--muted-foreground); }
-.ask-entry-stage { display: flex; align-items: center; gap: 10px; margin: 0; font-size: 12.5px; color: var(--muted-foreground); }
-.ask-entry-stage span { font-weight: 650; color: var(--foreground); }
-.ask-entry-stage button { padding: 2px 10px; border-radius: 999px; border: 1px solid var(--border); font-size: 12px; }
-.ask-typing { display: flex; gap: 4px; margin: 0; }
-.ask-typing i { width: 5px; height: 5px; border-radius: 50%; background: var(--muted-foreground); animation: pulse 1.2s ease-in-out infinite; }
-.ask-typing i:nth-child(2) { animation-delay: .15s; } .ask-typing i:nth-child(3) { animation-delay: .3s; }
 .ask-bar {
   position: relative; display: flex; align-items: flex-end; gap: 8px; padding: 12px 12px 12px 22px; border-radius: 30px;
   border: 1px solid transparent; background: var(--surface-raised); box-shadow: var(--shadow-overlay);
@@ -79,15 +74,10 @@ main[data-rail="collapsed"] ~ .ask, body:has(main[data-rail="collapsed"]) .ask {
 }
 .ask-ring { position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none; filter: blur(6px); opacity: .9; }
 .ask-ring::before { inset: -3px; padding: 4px; background: conic-gradient(from var(--ask-turn), transparent 0 55%, var(--chart-2) 70%, var(--brand) 80%, var(--chart-4) 89%, transparent 100%); }
-.ask[data-state="mini"] .ask-ring { opacity: .45; }
-.ask[data-state="mini"] .ask-bar { padding: 8px 8px 8px 18px; }
 .ask-bar textarea { flex: 1; min-width: 0; min-height: 44px; max-height: min(160px, 28dvh); padding: 10px 0; scrollbar-width: none; overflow-wrap: anywhere; border: 0; outline: 0; resize: none; background: transparent; color: var(--foreground); font: inherit; font-size: 16px; line-height: 1.5; field-sizing: content; }
-.ask[data-state="mini"] .ask-bar textarea { min-height: 30px; padding: 5px 0; font-size: 14.5px; }
 .ask-send { height: 40px; padding: 0 18px; border-radius: 999px; background: var(--foreground); color: var(--background); font-size: 13.5px; font-weight: 650; }
-.ask[data-state="mini"] .ask-send { height: 32px; padding: 0 14px; font-size: 13px; }
 .ask-send:disabled { opacity: .35; }
 .ask-close { width: 40px; height: 40px; }
-.ask[data-state="mini"] .ask-close { width: 32px; height: 32px; }
 .ask-close svg { width: 15px; height: 15px; }
 .ask-status { margin: 0; padding: 0 18px; font-size: 11.5px; font-weight: 600; letter-spacing: .02em; color: var(--muted-foreground); }
 .ask-progress { position: absolute; left: 22px; right: 22px; bottom: -6px; height: 2px; border-radius: 2px; overflow: hidden; background: color-mix(in srgb, var(--brand) 18%, transparent); }
@@ -98,8 +88,6 @@ main[data-rail="collapsed"] ~ .ask, body:has(main[data-rail="collapsed"]) .ask {
 @keyframes ask-entry { from { opacity: 0; transform: translateY(6px); } }
 @keyframes ask-progress { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
 
-/* The stage keeps the overlay's height free at its foot. */
-.stage { padding-bottom: max(4px, var(--ask-h, 0px)); transition: padding-bottom .24s var(--ease); }
 
 /* The agent's scene: a marked mode with the way back to the map, then rows of one or two cells. */
 .scene-stage { display: flex; flex-direction: column; gap: 14px; min-height: 0; grid-row: 1 / -1; overflow-y: auto; padding-bottom: 24px; }
@@ -122,21 +110,38 @@ main[data-rail="collapsed"] ~ .ask, body:has(main[data-rail="collapsed"]) .ask {
 .scene-notice { margin: 0; font-size: 13px; color: var(--muted-foreground); }
 .scene-progress { position: relative; display: flex; flex-direction: column; gap: 10px; padding: 18px; border-radius: 14px; border: 1px solid var(--hairline); background: var(--surface); font-size: 13px; font-weight: 600; color: var(--muted-foreground); overflow: hidden; }
 .scene-progress i { position: relative; display: block; height: 2px; border-radius: 2px; background: color-mix(in srgb, var(--brand) 18%, transparent); overflow: hidden; }
+/* The stage's board: the latest question's turn, then its result, each entering as its own piece. */
+.board { display: flex; flex-direction: column; gap: 14px; min-height: 0; animation: rise .5s var(--ease) both; }
+.board-question { margin: 0; font-size: 13px; font-weight: 600; line-height: 1.5; color: var(--muted-foreground); }
+h2.board-question { font-size: 22px; font-weight: 700; line-height: 1.35; color: var(--foreground); letter-spacing: -.01em; max-width: 46ch; }
+.board-phase { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 12.5px; font-weight: 650; letter-spacing: .02em; color: var(--brand); }
+.board-phase i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: pulse 1.1s ease-in-out infinite; }
+.board-skeleton { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 6px; }
+.board-skeleton span {
+  display: block; height: 14px; border-radius: 7px;
+  background: linear-gradient(90deg, var(--fill) 0 40%, color-mix(in srgb, var(--foreground) 9%, transparent) 50%, var(--fill) 60% 100%) 0 0 / 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+.board-skeleton span:first-child { grid-column: 1 / -1; height: min(42vh, 320px); border-radius: 14px; }
+.board-skeleton span:nth-child(2) { grid-column: 1 / -1; width: 72%; }
+.board-skeleton span:nth-child(3) { width: 90%; }
+.board-skeleton span:nth-child(4) { width: 60%; }
+.board-prose { max-width: 72ch; }
+.board-prose p { margin: 0 0 14px; font-size: 16px; line-height: 1.85; }
+.board-proposal { align-items: flex-start; padding: 28px; border-radius: 18px; border: 1px solid var(--border); background: var(--surface); max-width: 760px; }
+.board-proposal h2 { margin: 0; font-size: 20px; font-weight: 700; line-height: 1.45; }
+.board-kind { font-size: 11.5px; font-weight: 700; letter-spacing: .08em; color: var(--brand); }
+.board-actions { display: flex; gap: 10px; margin-top: 6px; }
+.board-actions button { height: 36px; padding: 0 18px; border-radius: 999px; border: 1px solid var(--border); font-size: 13.5px; font-weight: 650; }
+.board-actions .board-yes { background: var(--foreground); color: var(--background); border-color: transparent; }
+.board-notice-text { margin: 0; font-size: 15px; color: var(--muted-foreground); }
 .scene-progress i::after { content: ""; position: absolute; inset: 0; width: 30%; background: var(--brand); animation: ask-progress 1.2s ease-in-out infinite; }
-.ask-entry-question { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); font-size: 13.5px; animation: ask-entry .2s var(--ease) both; }
-.ask-entry-question p { display: flex; gap: 8px; margin: 0; line-height: 1.55; }
-.ask-entry-question b { flex: none; font-size: 11.5px; font-weight: 700; letter-spacing: .06em; color: var(--brand); padding-top: 2px; }
-.ask-entry-question span { display: flex; gap: 8px; }
-.ask-entry-question button { height: 28px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--border); font-size: 12.5px; font-weight: 600; }
-.ask-entry-question .ask-yes { background: var(--foreground); color: var(--background); border-color: transparent; }
-.ask-entry-question em { font-size: 12px; color: var(--muted-foreground); font-style: normal; }
 
 @media (max-width: 960px) {
   .ask, main[data-rail="collapsed"] ~ .ask { left: 50%; width: calc(100vw - 32px); bottom: max(16px, env(safe-area-inset-bottom)); }
   .ask-entry { position: static; margin: 12px 0 0; padding: 0; background: none; }
   .scene-row[data-cells="2"] { grid-template-columns: minmax(0, 1fr); }
-  .update-notice { bottom: calc(max(16px, env(safe-area-inset-bottom)) + var(--ask-h, 0px)); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .ask, .ask-veil i, .ask-scroll, .scene-block, .ask-entry-user, .ask-entry-answer, .stage { animation: none !important; transition: none !important; }
+  .ask, .ask-veil i, .ask-scroll, .scene-block, .ask-entry-user, .board, .board-skeleton span, .board-phase i, .ask-back { animation: none !important; transition: none !important; }
 }

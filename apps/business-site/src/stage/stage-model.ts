@@ -36,32 +36,68 @@ export function nextTranscript(current: TranscriptEntry[], event: Extract<StageE
 }
 
 /**
- * The overlay: closed (not rendered, not connected), open (transcript and input), busy (a turn runs; input disabled),
- * mini (the input bar and the last reply, giving the stage back), disconnected (reconnecting). Escape steps down one
- * level; a finished stage update gives the stage back.
+ * The overlay: closed (never opened on this page; not connected), open (transcript and input), busy (open while a turn
+ * runs; input disabled), away (faded out once the reader has asked, still connected, so the answer lands on the stage),
+ * disconnected (reconnecting). Asking, Escape, the close button and a click outside all send it away; a result that
+ * arrives while it is open sends it away too, so the stage holds the eye.
  */
-export type OverlayState = "closed" | "open" | "busy" | "mini" | "disconnected";
+export type OverlayState = "closed" | "open" | "busy" | "away" | "disconnected";
 export type OverlayEvent =
-  | { type: "toggle" } | { type: "focus" } | { type: "escape" }
-  | { type: "turn-start" } | { type: "turn-end"; staged: boolean }
+  | { type: "toggle" } | { type: "focus" } | { type: "escape" } | { type: "sent" }
+  | { type: "turn-start" } | { type: "turn-end" }
   | { type: "disconnect" } | { type: "connect"; running: boolean }
   | { type: "stage-click" }
-  /** A scene the agent committed while the reader watched: it gives the stage back however the turn ended. */
-  | { type: "staged" };
+  /** A result the agent produced while the reader watched (a scene, an answer, a proposal, a failure). */
+  | { type: "result" };
 
 export function overlay(state: OverlayState, event: OverlayEvent): OverlayState {
   switch (event.type) {
-    case "toggle": return state === "closed" ? "open" : state === "busy" || state === "disconnected" ? state : "closed";
-    case "focus": return state === "closed" || state === "mini" ? "open" : state;
-    case "escape": return state === "open" ? "mini" : state === "mini" ? "closed" : state;
-    case "turn-start": return state === "closed" ? state : "busy";
-    case "turn-end": return state === "busy" ? event.staged ? "mini" : "open" : state;
-    case "disconnect": return state === "closed" ? state : "disconnected";
+    case "toggle": return state === "closed" || state === "away" ? "open" : state === "disconnected" ? state : "away";
+    case "focus": return state === "closed" || state === "away" ? "open" : state;
+    case "escape": case "stage-click": case "sent": case "result": return state === "open" || state === "busy" ? "away" : state;
+    case "turn-start": return state === "open" ? "busy" : state;
+    case "turn-end": return state === "busy" ? "open" : state;
+    case "disconnect": return state === "open" || state === "busy" ? "disconnected" : state;
     case "connect": return state === "disconnected" ? event.running ? "busy" : "open" : state;
-    case "stage-click": return state === "open" ? "mini" : state;
-    case "staged": return state === "busy" || state === "open" ? "mini" : state;
   }
 }
+
+/** Notices that answer the reader's question on the stage; the rest only mark progress in the transcript. */
+const RESULT_NOTICES = new Set<NoticeCode>(["quota-reached", "global-cap-reached", "turn-interrupted", "turn-failed", "conversation-unavailable", "report-failed"]);
+
+/**
+ * What the stage shows for the reader's latest question: the turn while it runs, then its result. A scene (or a
+ * report the reader started, which lives in the scene) is drawn from the agent's state; an answer, a proposed report
+ * or a failure is shown as itself. Null when the latest question has nothing to show.
+ */
+export type StageResult =
+  | { kind: "loading"; question: string; phase: TurnPhase }
+  | { kind: "scene" }
+  | { kind: "answer"; question: string; entry: Extract<TranscriptEntry, { kind: "answer" }> }
+  | { kind: "proposal"; question: string; entry: Extract<TranscriptEntry, { kind: "question" }> }
+  | { kind: "notice"; question: string; code: NoticeCode };
+export function stageResult(entries: TranscriptEntry[], turn: Turn | null, now = Date.now()): StageResult | null {
+  let asked = -1;
+  for (let i = entries.length - 1; i >= 0; i--) if (entries[i]!.role === "user") { asked = i; break; }
+  if (asked < 0) return null;
+  const question = (entries[asked] as Extract<TranscriptEntry, { role: "user" }>).text;
+  if (turn) return { kind: "loading", question, phase: turn.phase };
+  for (let i = entries.length - 1; i > asked; i--) {
+    const e = entries[i]!;
+    if (e.role !== "assistant") continue;
+    if (e.kind === "stage") return { kind: "scene" };
+    if (e.kind === "answer") return { kind: "answer", question, entry: e };
+    if (e.kind === "question") return e.settled === "yes" ? { kind: "scene" } : e.settled === "no" ? null : { kind: "proposal", question, entry: e };
+    if (e.kind === "notice" && RESULT_NOTICES.has(e.code)) return { kind: "notice", question, code: e.code };
+  }
+  // A question just asked whose turn has not been announced yet is still loading; an old one that ended without a
+  // result shows nothing.
+  return now - Date.parse(entries[asked]!.at) < 120_000 ? { kind: "loading", question, phase: "thinking" } : null;
+}
+
+/** Whether a live transcript event carries a result for the reader (not a replay, not a progress mark). */
+export const carriesResult = (event: Extract<StageEvent, { type: "stage:transcript" }>) =>
+  !event.replace && event.entries.some(e => e.role === "assistant" && (e.kind === "stage" || e.kind === "answer" || (e.kind === "question" && !e.settled) || (e.kind === "notice" && RESULT_NOTICES.has(e.code))));
 
 /**
  * Whether the agent's scene holds the stage. The reader's own picks on the map always win: a pick sets the scene
