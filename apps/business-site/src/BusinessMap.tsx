@@ -478,8 +478,8 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
   const focusFinding = (id: string | null) => { onNavigate?.(); setFocusId(id); if (id) { setCheckId(null); setEventId(null); setReportId(null); } else { setStory(false); setSplit(false); } };
   const focusCheck = (id: string | null) => { onNavigate?.(); setCheckId(id); setHoverFlag(null); if (id) { setSelected(null); setFocusId(null); setEventId(null); setReportId(null); setStory(false); setSplit(false); } };
   const focusEvent = (id: string | null) => { onNavigate?.(); setEventId(id); if (id) { setSelected(null); setFocusId(null); setCheckId(null); setReportId(null); setStory(false); setSplit(false); } };
-  // The rail holds one pick at a time: a business, a flag, a finding, or a report/event.
-  const pickBusiness = (id: string | null) => { onNavigate?.(); setSelected(id); if (id) { setFocusId(null); setCheckId(null); setEventId(null); setReportId(null); setStory(false); setSplit(false); } };
+  // The rail holds one pick at a time: a business, a flag, a finding, or a report/event. A business reads on the income statement, whatever held the stage.
+  const pickBusiness = (id: string | null) => { onNavigate?.(); setSelected(id); if (id) { setFocusId(null); setCheckId(null); setEventId(null); setReportId(null); setStory(false); setSplit(false); setView("profit"); } };
   useEffect(() => { if (focusRequest) focusFinding(focusRequest.finding); }, [focusRequest?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
   useLayoutEffect(() => {
     stepStory.current = (delta: 1 | -1) => {
@@ -574,7 +574,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
             const delta = quarter && quantified ? compareRevenueNode(quarter, previous, item.key) : none();
             return <Button variant="unstyled" type="button" role="option" key={item.key} data-id={item.id} aria-selected={current?.key === item.key} tabIndex={current?.key === item.key ? 0 : -1}
               className="row" data-depth={item.depth} data-hover={hovered === item.key || undefined} data-extra={businessDigest.has(item.key) ? undefined : ""} style={{ "--c": hue(item.slot) } as CSSProperties}
-              onClick={() => pickBusiness(current?.key === item.key ? null : item.id)} onMouseEnter={() => setPreview(item.key)}
+              onClick={() => pickBusiness(current?.key === item.key && view === "profit" && !stageOverride ? null : item.id)} onMouseEnter={() => setPreview(item.key)}
               title={share != null ? `${item.name} · ${shareLabel} ${percent(share)}` : item.name}>
               <i className="row-chip" aria-hidden="true" />
               <span className="row-name">{item.name}</span>
