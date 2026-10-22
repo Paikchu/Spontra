@@ -3,7 +3,7 @@
  * validator, presentation-linkbase interpreter, or a claim that every number in
  * an SEC filing has been structured. Persist the source HTML alongside this data.
  */
-export const DISCLOSURE_EXTRACTION_VERSION = "sec-inline-xbrl.v1" as const;
+export const DISCLOSURE_EXTRACTION_VERSION = "sec-inline-xbrl.v2" as const;
 
 export interface DisclosureSource {
   ticker: string;
@@ -92,6 +92,8 @@ export interface FilingDisclosures {
     parsed: number;
     nil: number;
     unsupported: number;
+    /** Numeric and fraction facts that could not be normalized. Text transforms are not in this count. */
+    unsupportedNumeric?: number;
     numeric: number;
     text: number;
     fractions: number;
@@ -446,6 +448,7 @@ export function extractFilingDisclosures(html: string, source: DisclosureSource)
     coverage: {
       scope: "single_document_inline_xbrl_inventory", encountered: factNodes.length, retained: facts.length,
       parsed: count((fact) => fact.status === "parsed"), nil: count((fact) => fact.status === "nil"), unsupported: count((fact) => fact.status === "unsupported"),
+      unsupportedNumeric: count((fact) => fact.status === "unsupported" && (fact.kind === "numeric" || fact.kind === "fraction")),
       numeric: count((fact) => fact.kind === "numeric"), text: count((fact) => fact.kind === "text"), fractions: count((fact) => fact.kind === "fraction"),
       standard: count((fact) => fact.taxonomy === "standard"), custom: count((fact) => fact.taxonomy === "custom"), unknownTaxonomy: count((fact) => fact.taxonomy === "unknown"),
       dimensional: count((fact) => !!fact.context?.dimensions.length), typedDimensional: count((fact) => !!fact.context?.dimensions.some((dimension) => dimension.kind === "typed")),

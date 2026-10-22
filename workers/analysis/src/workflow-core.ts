@@ -20,6 +20,7 @@ import type {
 import { SEC_SUMMARY_VERSION } from "./sec/sec.ts";
 import type { SecAnalysisArtifact, SecAnalysisContext } from "./sec/types.ts";
 import type { SecWorkflowParams } from "./core.ts";
+import type { CoverAmendment } from "./sec/amendment.ts";
 import { modelExecutionForAttempt, type SecModelExecution, SEC_FALLBACK_MODEL } from "./retry-policy.ts";
 import { SecModelOutputError } from "./model-stream.ts";
 import { SecModelHttpError } from "./model-recovery.ts";
@@ -106,6 +107,8 @@ export type PreparedFilingReference = {
   discoveryChunks?: number;
   key: string;
   filing: SecFiling;
+  /** Set when the filing only adds an exhibit and leaves the original disclosures unchanged. */
+  coverAmendment?: CoverAmendment;
 };
 
 export type WorkflowJobUpdate = {
@@ -147,6 +150,8 @@ export type AnalysisOperations = {
   reviseReport?(filing: SecFiling, prepared: PreparedFilingReference, context: SecAnalysisContext, plan: SecNodePlan, nodes: SecNodeResult[], brief: SecAnalysisBrief, review: ManagerReview,
     issues: string[], execution?: SecModelExecution, revision?: { draft: { artifact: SecAnalysisArtifact; summary: SecFilingSummary | null }; round: number; findings?: EditorialIssue[] }): Promise<{ artifact: SecAnalysisArtifact; summary: SecFilingSummary | null }>;
   summarizeEvent(filing: SecFiling, prepared: PreparedFilingReference, execution?: SecModelExecution): Promise<SecFilingSummary>;
+  /** Publishes the filing's own amendment note. Absent, a cover amendment follows the full report path. */
+  publishAmendment?(filing: SecFiling, note: CoverAmendment): Promise<void>;
   summarize(filing: SecFiling, prepared: PreparedFilingReference, context: SecAnalysisContext, plan: SecNodePlan, nodes: SecNodeResult[], brief?: SecAnalysisBrief, review?: ManagerReview, execution?: SecModelExecution): Promise<{ artifact: SecAnalysisArtifact; summary: SecFilingSummary | null }>;
   publish(artifact: SecAnalysisArtifact, summary: SecFilingSummary | null): Promise<void | { memoryJobId?: string }>;
   enqueueMemory?(jobId: string, ticker: string): Promise<void>;
@@ -210,6 +215,15 @@ export async function executeSecAnalysisWorkflow(
       await step.do(`job:${accession}:start`, () => operations.updateJob({ ...baseJob, status: "running", currentStage: "prepare", updatedAt: new Date().toISOString() }));
       console.log(JSON.stringify({ event: "sec-report-generation", policy: "reliability.v1", jobId, workflowInstanceId, ticker: filing.ticker, accession, status: "started" }));
       const prepared = await step.do(`prepare:${accession}`, () => operations.prepare(filing));
+      // A cover page that only adds an exhibit has no statements to analyze. Publishing that limitation
+      // is the result; sending it through the reader report fails the same way on every retry.
+      if (!eventFiling && prepared.coverAmendment && operations.publishAmendment) {
+        stage = "amendment-note";
+        await step.do(`amendment-note:${accession}`, () => operations.publishAmendment!(filing, prepared.coverAmendment!));
+        await step.do(`job:${accession}:complete`, () => operations.updateJob({ ...baseJob, status: "complete", currentStage: "published", updatedAt: new Date().toISOString(), completedAt: new Date().toISOString() }));
+        analyzed.push(accession);
+        continue;
+      }
       const restored = params.regenerateReport && !eventFiling && operations.restoreAnalysis
         ? await step.do(`restore-analysis:${accession}`, () => operations.restoreAnalysis!(filing, prepared)) : null;
       // The brief comes from stored history alone, so a filing whose history cannot be used fails here, before any

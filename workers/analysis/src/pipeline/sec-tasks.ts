@@ -6,6 +6,7 @@ import { guidanceWorkflowSuffix } from "../guidance/extract.ts";
 import { GuidanceStore } from "../guidance/store.ts";
 import { attachLibraryTranscripts } from "../guidance/transcripts.ts";
 import { earningsEvents, publishGuidance } from "../guidance/workflow.ts";
+import { scheduledAnalysisAllowed } from "../core.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import type { SecFilingFeed } from "../sec/sec.ts";
 import type { TaskImplementation, TaskOutcome } from "./tasks.ts";
@@ -89,6 +90,9 @@ export const SEC_TASKS = {
     version: "sec-report.v3-fiscal-periods",
     async run(env, ticker, { now, trigger, causeId }): Promise<TaskOutcome> {
       return driveWorkflow(env, `sec-report:${ticker}`, env.SEC_ANALYSIS_WORKFLOW as WorkflowBindingLike, async () => {
+        // The message may have been queued while reports were still on. Starting now would throw
+        // "Ticker is not tracked" and record another failure of the feature that was just switched off.
+        if (!scheduledAnalysisAllowed(env, { ticker, requestedBy: "scheduled" })) return { status: "done", detail: { skipped: "reports are off for this company" } };
         const waiting = await pendingRetryOutcome(env, "sec-report", ticker, now);
         if (waiting) return waiting;
         const active = await env.DB!.prepare("SELECT job_id FROM sec_analysis_jobs WHERE ticker = ? AND status IN ('running', 'queued') AND updated_at >= ? LIMIT 1")
