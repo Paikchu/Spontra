@@ -67,7 +67,7 @@ export function normalizeCompanyFacts(ticker: string, payload: unknown): SecHist
       }
     }
   }
-  const deduped = chooseCanonicalConcept(observations);
+  const deduped = inReportingCurrency(chooseCanonicalConcept(observations));
   const reported = deduped.filter((item) => item.cumulativeDays === undefined).map(withoutCumulativeMarker);
   // Year-end balance sheet instants are also the fourth quarter's closing balance.
   reported.push(...reported.filter((item) => item.periodScope === "annual" && !item.startDate)
@@ -160,6 +160,24 @@ function chooseCanonicalConcept(observations: CumulativeObservation[]): Cumulati
     void conceptPriority;
     return withoutPriority;
   });
+}
+
+/**
+ * One currency per series: the one its newest filing reports in. An issuer that changed reporting currency restates its
+ * comparatives (Nebius, formerly Yandex, filed capex in RUB until 2023 and in USD since), so companyfacts holds the same
+ * periods in both; values in the old currency are dropped, which also keeps growth from being read across currencies.
+ */
+function inReportingCurrency(observations: CumulativeObservation[]): CumulativeObservation[] {
+  // `currency` names only the currencies the report renders; any ISO code in the unit (RUB, USD/shares) is money here.
+  const money = (observation: CumulativeObservation) => /^([A-Z]{3})(?:\/shares)?$/.exec(observation.unit)?.[1];
+  const current = new Map<string, { currency: string; filedAt: string }>();
+  for (const observation of observations) {
+    const currency = money(observation);
+    if (!currency) continue;
+    const seen = current.get(observation.seriesId);
+    if (!seen || observation.sourceFiledAt > seen.filedAt) current.set(observation.seriesId, { currency, filedAt: observation.sourceFiledAt });
+  }
+  return observations.filter((observation) => { const currency = money(observation); return !currency || currency === current.get(observation.seriesId)?.currency; });
 }
 
 function withoutCumulativeMarker(observation: CumulativeObservation): HistoricalObservation {
