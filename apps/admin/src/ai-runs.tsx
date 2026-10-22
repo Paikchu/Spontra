@@ -9,6 +9,7 @@ import { CompanyLogo } from "@/packages/web/src/company-logo";
 import { completeRequestId, pendingRequestId } from "./financial-maintenance-state";
 import { TranslationsPanel } from "./translations";
 import "./ai-runs.css";
+import { useOnReturn, usePageActive } from "./admin-page";
 
 /** The BusinessView outputs this admin shows; guidance is not part of BusinessView. */
 export type ViewKind = Exclude<AiRunKind, "guidance">;
@@ -69,11 +70,13 @@ export function AiRuns({ onUnauthorized, onAuthenticated, kinds, translations = 
       .catch(e => { if (c.signal.aborted) return; if (e instanceof AdminApiError && e.status === 401) callbacks.current.onUnauthorized(); else setListError((e as Error).message); });
     return () => c.abort();
   }, [refresh]);
-  useEffect(() => { const timer = setInterval(() => { if (!document.hidden) setRefresh(n => n + 1); }, 20000); return () => clearInterval(timer); }, []);
+  const shown = usePageActive();
+  useEffect(() => { const timer = setInterval(() => { if (!document.hidden && shown.current) setRefresh(n => n + 1); }, 20000); return () => clearInterval(timer); }, [shown]);
+  useOnReturn(() => setRefresh(n => n + 1));
   useEffect(() => {
-    if (!ticker) return;
+    if (!ticker || !shown.current) return;
     try { window.history.replaceState(null, "", `${window.location.pathname}?${new URLSearchParams(tabs.length > 1 ? { ticker, kind } : { ticker })}`); } catch { /* Sandboxed preview. */ }
-  }, [ticker, kind, tabs.length]);
+  }, [ticker, kind, tabs.length, shown]);
 
   // A page lists the companies at least one of its tasks runs for; a company switched off leaves the list.
   const listed = list?.companies.filter(c => tabs.some(([k]) => k !== "translations" && (c.kinds as Partial<Record<string, { enabled?: boolean }>>)[k]?.enabled !== false)) ?? [];
@@ -109,10 +112,12 @@ export function AiKindPanel({ ticker, kind, onUnauthorized }: { ticker: string; 
     return () => c.abort();
   }, [ticker, kind, refresh]);
   const active = !!detail?.runs.some(r => ACTIVE.has(r.status));
+  const shown = usePageActive();
   useEffect(() => {
-    const timer = setInterval(() => { if (!document.hidden) setRefresh(n => n + 1); }, active ? 4000 : 20000);
+    const timer = setInterval(() => { if (!document.hidden && shown.current) setRefresh(n => n + 1); }, active ? 4000 : 20000);
     return () => clearInterval(timer);
-  }, [active]);
+  }, [active, shown]);
+  useOnReturn(() => setRefresh(n => n + 1));
   if (error) return error.missing ? <p className="ai-empty">{error.message}</p> : <p className="ra-error ai-pad" role="alert">{error.message}</p>;
   if (!detail) return <p className="ai-empty" role="status"><LoaderCircle size={15} className="ra-spin" /> 加载中</p>;
   return <KindDetail detail={detail} onChanged={() => setRefresh(n => n + 1)} onError={fail} />;

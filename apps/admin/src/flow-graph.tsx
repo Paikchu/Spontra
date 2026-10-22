@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { BusinessMapFlow, FlowNode } from '@/shared/analysis-contract/business-map-admin';
 import { adminApi } from './admin-api';
 import { runView } from './run-progress';
+import { useOnReturn, usePageActive } from './admin-page';
 
 /** The pipeline's names as the admin calls them; the model-written ones are marked. */
 const NODE: Record<string, { label: string; model?: boolean }> = {
@@ -55,10 +56,12 @@ export function FlowGraph({ ticker }: { ticker: string }) {
       .catch(() => { if (!controller.signal.aborted) setFailed(true); });
     return () => controller.abort();
   }, [ticker, tick]);
+  const shown = usePageActive();
   useEffect(() => {
-    const timer = setInterval(() => { if (!document.hidden) setTick(n => n + 1); }, moving ? 5000 : 30000);
+    const timer = setInterval(() => { if (!document.hidden && shown.current) setTick(n => n + 1); }, moving ? 5000 : 30000);
     return () => clearInterval(timer);
-  }, [moving]);
+  }, [moving, shown]);
+  useOnReturn(() => setTick(n => n + 1));
   const placed = useMemo(() => flow && layout(flow), [flow]);
   if (!flow || !placed) return <p className="bm-empty">{failed ? '流程不可读' : '读取流程'}</p>;
   const byId = new Map(flow.nodes.map(n => [n.id, n]));
