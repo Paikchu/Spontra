@@ -20,7 +20,7 @@ export interface DocumentSource {url:string;accession:string;filedAt:string;cik:
  revenueStructure?:RevenueStructure|null;
  /** A structure from operating income to net income that balanced on an earlier filing of this issuer (presentation profile). */
  presentation?:{structure:BridgeStructure;version:string}|null;}
-export const SEC_FLOW_PARSER_VERSION='deterministic-sec.v18';
+export const SEC_FLOW_PARSER_VERSION='deterministic-sec.v19';
 /** Issuers read through a disclosure-specific profile; generic statement arithmetic would describe them in another scheme. */
 export const hasDisclosureProfile=(cik:string)=>cik==='0001341439';
 export interface Fact {source:DocumentSource;operands?:Fact[];formula?:string;precision:number;tag:string;value:number;currency:string;start:string;end:string;context:string;dimensions:Record<string,string>;
@@ -159,6 +159,10 @@ function splitRevenue(facts:Fact[],revenueNames:string[],consolidated:Fact|undef
  }
  let matching=balanced;const detailed=matching.filter(m=>m.members.size>1);if(detailed.length)matching=detailed;const business=matching.filter(m=>local(m.axis)==='StatementBusinessSegmentsAxis');if(business.length)matching=business;
  if(matching.length>1&&new Set(matching.map(m=>local(m.axis))).size===1){const most=Math.max(...matching.map(m=>m.members.size));matching=matching.filter(m=>m.members.size===most);}
+ // The same members balanced twice (TTM's segments from external customers adding up alone, and their gross revenue
+ // less 301 of intersegment sales): the split that needs the fewest reconciling amounts is taken.
+ const sameMembers=matching.length>1&&new Set(matching.map(m=>local(m.axis)+'|'+[...m.members.keys()].sort().join(','))).size===1;
+ if(sameMembers){const needed=(m:typeof matching[number])=>m.adjustments.filter(a=>a.fact.value!==0).length,fewest=Math.min(...matching.map(needed));matching=matching.filter(m=>needed(m)===fewest);}
  if(matching.length>1){issues.push('AMBIGUOUS_REVENUE_AXIS');return null;}
  return matching[0]??null;
 }

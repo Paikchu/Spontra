@@ -116,3 +116,13 @@ test("eliminations that disagree within one concept are a conflict", () => {
   assert.deepEqual(result.quarters, []);
   assert.ok(result.issues.includes("CONFLICTING_REVENUE_ELIMINATIONS"));
 });
+
+test("the same segments balancing twice take the split that needs the fewest reconciling amounts", () => {
+  // TTM's segment note also tags each segment's gross revenue, which reaches the total only less the 0.301 eliminated.
+  const tables = ["SegmentInformationReconciliationsOfNetSalesAndSegmentOperatingIncomeDetail"];
+  const gross = (member: string, value: number) => fact("us-gaap:Revenues", value, { "us-gaap:StatementBusinessSegmentsAxis": member, "srt:ConsolidationItemsAxis": "us-gaap:OperatingSegmentsMember" }, tables);
+  const external = ttm(0).map(f => Object.keys(f.dimensions).length === 1 && "us-gaap:StatementBusinessSegmentsAxis" in f.dimensions ? { ...f, tables } : f);
+  const q = split([...external, gross("ttmi:AerospaceAndDefenseMember", 382.75), gross("ttmi:CommercialMember", 621.605)], null);
+  assert.deepEqual(q.segments.map(s => [s.id, Number(s.revenue.value), s.revenue.lineage?.[0].concept]), [
+    ["ttmi:AerospaceAndDefenseMember", 382631000, "us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax"], ["ttmi:CommercialMember", 621423000, "us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax"]]);
+});
