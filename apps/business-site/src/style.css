@@ -36,6 +36,8 @@
   --sans: "Geist", "PingFang SC", "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
   --ease: cubic-bezier(.22, 1, .36, 1);
   --rail-w: 336px;
+  /* A section opened over the whole rail gets a wider column, so filing and finding titles have room on one line. */
+  --rail-open-w: 420px;
   --rail-collapsed-w: 60px;
   --inset: 12px;
   --rail-radius: 20px;
@@ -146,6 +148,9 @@ button { cursor: pointer; }
 @media (min-width: 961px) {
   /* Full width while the column animates open, so content is revealed instead of reflowing. */
   .rail-top, .rail-scroll { min-width: calc(var(--rail-w) - 2px); }
+  .map:has(.rail-scroll[data-expanded]) { grid-template-columns: var(--rail-open-w) minmax(0, 1fr); }
+  /* The view transition morphs the section into the wider rail itself; a concurrent column transition would end in a jump. */
+  :root[data-vt="rail"] .map { transition: none; }
   main[data-rail="collapsed"] .rail-top { min-width: 0; }
   main[data-rail="collapsed"] .map { grid-template-columns: var(--rail-collapsed-w) minmax(0, 1fr); }
   main[data-rail="collapsed"] .rail { align-self: start; }
@@ -175,7 +180,7 @@ button { cursor: pointer; }
 .row {
   --c: var(--biz-0);
   position: relative; display: grid; grid-template-columns: 9px minmax(0, 1fr) auto auto auto; align-items: center; column-gap: 7px;
-  width: 100%; height: var(--row-h); padding: 0 10px; border: 0; border-radius: 8px; background: transparent; text-align: left;
+  width: 100%; height: var(--row-h); flex: none; padding: 0 10px; border: 0; border-radius: 8px; background: transparent; text-align: left;
   transition: background .3s var(--ease), color .2s;
 }
 .row::after { content: ""; position: absolute; left: -11px; top: 4px; bottom: 4px; width: 3px; border-radius: 2px; background: var(--c); transform: scaleY(0); transition: transform .3s var(--ease); }
@@ -731,7 +736,7 @@ button { cursor: pointer; }
 .findings-rows { display: flex; flex-direction: column; gap: 0; }
 .finding-row {
   position: relative; display: grid; grid-template-columns: 18px minmax(0, 1fr); align-items: center; column-gap: 10px;
-  width: 100%; height: var(--row-h); padding: 0 10px; border: 0; border-radius: 8px; background: transparent; text-align: left;
+  width: 100%; height: var(--row-h); flex: none; padding: 0 10px; border: 0; border-radius: 8px; background: transparent; text-align: left;
   transition: background .3s var(--ease), opacity .25s;
 }
 .finding-row::after { content: ""; position: absolute; left: -11px; top: 4px; bottom: 4px; width: 3px; border-radius: 2px; background: var(--kind); transform: scaleY(0); transition: transform .3s var(--ease); }
@@ -1170,6 +1175,7 @@ button { cursor: pointer; }
   font-size: 12.5px; font-weight: 560; color: var(--foreground); white-space: nowrap;
 }
 main[data-rail="collapsed"] .update-notice { left: calc((100vw + var(--rail-collapsed-w) + var(--inset)) / 2); }
+main:has(.rail-scroll[data-expanded]) .update-notice { left: calc((100vw + var(--rail-open-w) + var(--inset)) / 2); }
 .update-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--brand); box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 22%, transparent); animation: pulse 1.6s ease-in-out infinite; }
 .update-apply { padding: 5px 12px; border: 0; border-radius: 999px; font-size: 12px; font-weight: 650; color: var(--background); background: var(--foreground); transition: opacity .16s; }
 .update-apply:hover { opacity: .86; }
