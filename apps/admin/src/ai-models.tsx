@@ -6,7 +6,7 @@ import { financialDate } from "./financial-update-history";
 import "./ai-models.css";
 
 const MODEL_LABEL: Record<AiModel, string> = {
-  "claude-opus-5-5": "Claude Opus 5.5", "claude-sonnet-5-5": "Claude Sonnet 5.5", "claude-haiku-5-5": "Claude Haiku 5.5", "claude-fable-5-1": "Claude Fable 5.1",
+  "deepseek-flash": "DeepSeek Flash", "deepseek-v4-pro": "DeepSeek V4 Pro",
 };
 const EFFORT_LABEL: Record<AiEffort, string> = { low: "低", medium: "中", high: "高", xhigh: "很高", max: "最高" };
 const modelName = (model: string) => MODEL_LABEL[model as AiModel] ?? model;

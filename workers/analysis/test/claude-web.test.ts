@@ -4,7 +4,7 @@ import { ClaudeWebProvider, type WebCallRecord } from "../src/web-search/claude.
 import { WebSearchError } from "../src/web-search/types.ts";
 
 const message = (content: unknown[], usage: Record<string, unknown> = {}) => ({
-  id: "msg_1", type: "message", role: "assistant", model: "claude-opus-5-5", content, stop_reason: "end_turn", stop_sequence: null,
+  id: "msg_1", type: "message", role: "assistant", model: "deepseek-v4-pro", content, stop_reason: "end_turn", stop_sequence: null,
   usage: { input_tokens: 900, output_tokens: 40, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, ...usage },
 });
 function provider(body: unknown, status = 200) {
@@ -13,7 +13,7 @@ function provider(body: unknown, status = 200) {
     requests.push(JSON.parse(String(init?.body)));
     return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
   }) as typeof fetch;
-  const web = new ClaudeWebProvider({ apiKey: "sk-test", model: "claude-haiku-5-5", effort: "low", fetcher, record: async call => { records.push(call); } });
+  const web = new ClaudeWebProvider({ apiKey: "sk-test", model: "deepseek-flash", effort: "low", fetcher, record: async call => { records.push(call); } });
   return { web, requests, records };
 }
 
@@ -30,7 +30,7 @@ test("a search runs one web_search and keeps each result's cited passages as its
   const result = await web.search({ query: "Oracle OCI revenue", maxResults: 5, startDate: "2026-01-01", excludeDomains: ["reddit.com"] });
   assert.deepEqual(result.results, [{ url: "https://www.oracle.com/news/q1", title: "Oracle Q1", snippet: "Cloud infrastructure revenue was up 55%", score: null, publishedAt: "2026-09-09" }]);
   const [request] = requests;
-  assert.equal(request!.model, "claude-haiku-5-5");
+  assert.equal(request!.model, "deepseek-flash");
   assert.deepEqual(request!.output_config, { effort: "low" });
   assert.deepEqual(request!.tools, [{ type: "web_search_20250305", name: "web_search", max_uses: 1, blocked_domains: ["reddit.com"] }]);
   assert.deepEqual(request!.messages, [{ role: "user", content: "Oracle OCI revenue" }]);
@@ -70,13 +70,13 @@ test("tool errors and HTTP errors become web search errors the callers already h
   assert.equal(denied.records[0]!.error, "http:400");
 });
 
-test("web search names the configured workspace, which a key not scoped to one requires", async () => {
-  const headers: Headers[] = [];
-  const fetcher = (async (_: RequestInfo | URL, init?: RequestInit) => {
-    headers.push(new Headers(init?.headers));
+test("web search goes to the configured Anthropic-format endpoint", async () => {
+  const urls: string[] = [];
+  const fetcher = (async (input: RequestInfo | URL) => {
+    urls.push(String(input));
     return new Response(JSON.stringify(message([{ type: "text", text: "done" }])), { status: 200, headers: { "content-type": "application/json" } });
   }) as typeof fetch;
-  const web = new ClaudeWebProvider({ apiKey: "sk-test", workspaceId: "wrkspc_test", model: "claude-haiku-5-5", effort: "low", fetcher });
+  const web = new ClaudeWebProvider({ apiKey: "sk-test", baseURL: "https://api.deepseek.com/anthropic", model: "deepseek-flash", effort: "low", fetcher });
   await web.search({ query: "Oracle OCI revenue" }).catch(() => null);
-  assert.equal(headers[0]?.get("anthropic-workspace-id"), "wrkspc_test");
+  assert.equal(urls[0], "https://api.deepseek.com/anthropic/v1/messages");
 });

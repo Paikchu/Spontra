@@ -38,7 +38,7 @@ function blocked(env: AnalysisEnv, kind: AiRunKind, ticker: string): string | nu
   if (!featureEnabled(env, featureOf(kind))) return `${FEATURE_NAME[featureOf(kind)]}生成已全局暂停。`;
   if (!enabled(env, kind, ticker)) return `该公司的${FEATURE_NAME[featureOf(kind)]}生成已关闭。`;
   if (!binding(env, kind)) return "该任务的工作流未配置。";
-  if (!env.ANTHROPIC_API_KEY) return "模型密钥未配置。";
+  if (!env.DEEPSEEK_API_KEY) return "模型密钥未配置。";
   return null;
 }
 function automatic(env: AnalysisEnv, kind: AiRunKind, ticker: string): boolean {

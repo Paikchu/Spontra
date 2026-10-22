@@ -58,7 +58,7 @@ test("an event filing still skips the brief and goes from discovery to its summa
 
 const sse = (events: Array<Record<string, unknown>>) => events.map((e) => `event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`).join("");
 const reply = (json: string) => sse([
-  { type: "message_start", message: { id: "msg_1", type: "message", role: "assistant", model: "claude-haiku-5-5", content: [], stop_reason: null, usage: { input_tokens: 40, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } } },
+  { type: "message_start", message: { id: "msg_1", type: "message", role: "assistant", model: "deepseek-flash", content: [], stop_reason: null, usage: { input_tokens: 40, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } } },
   { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } },
   { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: json } },
   { type: "content_block_stop", index: 0 },
@@ -90,7 +90,7 @@ test("a discovery chunk read once is reused by the next Workflow run of the same
     return new Response(reply(JSON.stringify({ disclosures: [{ title: "Customer concentration", quote: QUOTE, whyItMatters: "One customer carries the backlog.", question: "How exposed is revenue to that customer?" }] })),
       { status: 200, headers: { "content-type": "text/event-stream" } });
   }) as typeof fetch;
-  const env = { SEC_FILINGS: bucket, ANTHROPIC_API_KEY: "sk-test" } as unknown as AnalysisEnv;
+  const env = { SEC_FILINGS: bucket, DEEPSEEK_API_KEY: "sk-test" } as unknown as AnalysisEnv;
 
   const first = await createAnalysisOperations(env, fetcher, "scheduled-NBIS-1").scanDisclosures!(target, reference, 0);
   assert.equal(first.status, "complete");
@@ -102,7 +102,7 @@ test("a discovery chunk read once is reused by the next Workflow run of the same
   assert.equal(modelCalls, 1, "the second run reads the stored chunk instead of asking the model");
 
   // A different model is a different request, so it asks again.
-  const other = { ...env, AI_TOOL_SETTINGS: JSON.stringify({ "sec-analysis": { model: "claude-sonnet-5-5" } }) } as AnalysisEnv;
+  const other = { ...env, AI_TOOL_SETTINGS: JSON.stringify({ "sec-analysis": { model: "deepseek-v4-pro" } }) } as AnalysisEnv;
   await createAnalysisOperations(other, fetcher, "scheduled-NBIS-3").scanDisclosures!(target, reference, 0);
   assert.equal(modelCalls, 2);
 });
@@ -115,7 +115,7 @@ test("a chunk whose reply failed validation is not stored, so the next run asks 
   objects.set(`${reference.key}/text.json`, JSON.stringify({ document: { text: TEXT }, blocks: [{ blockId: "b1", start: 0, end: TEXT.length }] }));
   let modelCalls = 0;
   const fetcher = (async () => { modelCalls++; return new Response(reply(JSON.stringify({ items: [] })), { status: 200, headers: { "content-type": "text/event-stream" } }); }) as typeof fetch;
-  const env = { SEC_FILINGS: bucket, ANTHROPIC_API_KEY: "sk-test" } as unknown as AnalysisEnv;
+  const env = { SEC_FILINGS: bucket, DEEPSEEK_API_KEY: "sk-test" } as unknown as AnalysisEnv;
   const final = { attempt: 4, finalAttempt: true };
   assert.equal((await createAnalysisOperations(env, fetcher, "a").scanDisclosures!(target, reference, 0, final)).status, "failed");
   const before = modelCalls;
