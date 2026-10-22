@@ -208,10 +208,18 @@ test("the agent reads series, writes an html picture the frame can run, and the 
   const picture = (html: string): LensDocument => ({ rows: [{ cells: [[{ kind: "html", html: { id: "p1", title: "Capex against operating cash flow", aspect: "square", html } }], [{ kind: "judgment" }, { kind: "figures" }, { kind: "watch" }]] }, { cells: [[{ kind: "sources" }]] }] });
   const bad = picture(`<html><body>${fragment}<script src="https://evil.example/x.js"></script><script>fetch("/api")</script></body></html>`);
   const seen: string[] = [];
-  const replies = [call("series", { span: "quarter", periods: 4, refs: [{ ref: { capital: "capex" } }, { ref: { capital: "capex" }, transform: "yoy" }] }), call("compile", { document: bad }), call("compile", { document: picture(fragment) }), call("finish")];
+  const fixed = fragment.replace('y="30"', 'y="24"');
+  // Read, compile a broken document, compile a good one the browser faults, revise its picture, break it again, then
+  // keep asking to finish: the turns run out on a broken document and the cleanest one stands.
+  const replies = [call("series", { span: "quarter", periods: 4, refs: [{ ref: { capital: "capex" } }, { ref: { capital: "capex" }, transform: "yoy" }] }), call("compile", { document: bad }), call("compile", { document: picture(fragment) }),
+    call("revise", { id: "p1", html: fixed }), call("compile", { document: bad })];
   // The browser: a label collides at phone width; each fragment and width is drawn once, in a named durable step.
   const drawn: string[] = [], steps: string[] = [];
-  const render = async (html: string, width: number) => { drawn.push(`${html.length}@${width}`); return width === 340 ? { width, height: 300, problems: ['"$40.0B" sits partly across a mark'], notes: [] } : { width, height: 410, problems: [], notes: ["2 text items under 10.5px"] }; };
+  const render = async (html: string, width: number, aspect: string) => {
+    drawn.push(`${html.length}@${width}`);
+    assert.equal(aspect, "square");
+    return width === 340 && html === fragment ? { width, height: 337, problems: ['"$40.0B" sits partly across a mark'], notes: [] } : { width, height: 462, problems: [], notes: ["2 text items under 10.5px"] };
+  };
   const outcome = await runLensAgent({ finding: f, resolved: f.resolved, periodEnd: PERIOD, catalogue, data, render, stage: (name, cb) => { steps.push(name); return cb(); },
     model: async (stage, system, _tools, messages) => { assert.match(system, /--muted-foreground/); assert.match(system, /real browser/); seen.push(lastResult(messages)); return replies[Number(stage.split("-").at(-1)) - 1] ?? call("finish"); } });
   assert.match(seen[1]!, /\$40\.0B \[40000000000\]/);
@@ -220,13 +228,18 @@ test("the agent reads series, writes an html picture the frame can run, and the 
   assert.match(seen[2]!, /evil\.example.*https from cdnjs/);
   assert.match(seen[2]!, /fetch is not available/);
   assert.match(seen[3]!, /html p1 \(square, "Capex against operating cash flow"\): \d+ characters; 1 inline svg; 1 inline script/);
-  assert.match(seen[3]!, /drawn at 340px: 300px tall, 1 problem/);
-  assert.match(seen[3]!, /drawn at 500px: 410px tall, nothing overlaps or overflows; 2 text items under 10\.5px/);
+  assert.match(seen[3]!, /drawn in a 340×337px frame: 1 problem/);
+  assert.match(seen[3]!, /drawn in a 500×462px frame: nothing overlaps or overflows; 2 text items under 10\.5px/);
   assert.match(seen[3]!, /html p1 at 340px: "\$40\.0B" sits partly across a mark/);
-  // The bad document is drawn too; finish redraws nothing it has seen.
-  assert.equal(drawn.length, 4);
-  assert.ok(steps.some(s => /-t3-c0-draw-[a-z0-9]+-340$/.test(s)));
-  assert.deepEqual(outcome.document, picture(fragment));
+  // revise changed only the picture; the browser sees nothing wrong with it now.
+  assert.match(seen[4]!, /drawn in a 340×\d+px frame: nothing overlaps/);
+  assert.match(seen[4]!, /errors: none/);
+  assert.match(seen[5]!, /<html> is not allowed/);
+  // Each fragment and width is drawn once, the broken one included; the steps are named by fragment, aspect and width.
+  assert.equal(drawn.length, 6);
+  assert.ok(steps.some(s => /-t3-c0-draw-[a-z0-9]+-square-340$/.test(s)));
+  assert.equal(outcome.turns.length, LENS_BUDGET.turns);
+  assert.deepEqual(outcome.document, picture(fixed));
   assert.ok(readLensDocument(picture(fragment)));
   const lens = verifyLensDocument(picture(fragment), f, f.resolved, data, PERIOD)!;
   assert.equal((lens.document.rows[0]!.cells[0]![0] as { kind: "html"; html: { html: string } }).html.html, fragment);

@@ -32,7 +32,7 @@ export function describeDocument(doc: LensDocument, compiled: Map<string, Compil
   for (const h of doc.rows.flatMap(r => r.cells.flat()).flatMap(c => c.kind === "html" ? [c.html] : [])) {
     lines.push(`html ${h.id} (${h.aspect}, "${h.title}"): ${htmlSummary(h.html)}`);
     // The browser's view, width by width; its problems are listed with the warnings below.
-    for (const r of renders?.get(h.id) ?? []) lines.push("failed" in r ? `  drawn at ${r.width}px: not drawn (${r.failed})` : `  drawn at ${r.width}px: ${r.height}px tall, ${r.problems.length ? `${r.problems.length} problem${r.problems.length === 1 ? "" : "s"}` : "nothing overlaps or overflows"}${r.notes.length ? `; ${r.notes.join("; ")}` : ""}`);
+    for (const r of renders?.get(h.id) ?? []) lines.push("failed" in r ? `  drawn at ${r.width}px: not drawn (${r.failed})` : `  drawn in a ${r.width}×${r.height}px frame: ${r.problems.length ? `${r.problems.length} problem${r.problems.length === 1 ? "" : "s"}` : "nothing overlaps or overflows"}${r.notes.length ? `; ${r.notes.join("; ")}` : ""}`);
   }
   const errors = warnings.filter(w => w.level === "error"), warns = warnings.filter(w => w.level === "warning");
   lines.push(errors.length ? `errors (${errors.length}):\n  ${errors.map(w => `${w.where}: ${w.message}`).join("\n  ")}` : "errors: none");

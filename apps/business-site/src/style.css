@@ -836,6 +836,8 @@ button { cursor: pointer; }
 .lens-prose { color: var(--foreground); }
 /* The chart cell's height follows its width through the chart's aspect; the frame fills it exactly and never sizes itself. */
 .lens-chart-cell { position: relative; height: clamp(200px, calc(100cqw * var(--aspect, .42)), min(420px, 52vh)); animation: rise .5s var(--ease) both; }
+/* An html picture: its aspect over the width plus room for its title, 240–520px and under 62vh (pictureHeight in shared/analysis-runtime/lens/picture.ts). */
+.lens-html-cell { height: clamp(240px, calc(100cqw * var(--aspect, .42) + 72px), min(520px, 62vh)); }
 .lens-chart-cell iframe, .lens-inline { display: block; width: 100%; height: 100%; border: 0; background: transparent; color-scheme: normal; opacity: 0; transition: opacity .3s ease; }
 .lens-chart-cell[data-ready] iframe, .lens-chart-cell[data-ready] .lens-inline { opacity: 1; }
 .lens-inline svg { width: 100%; height: 100%; }

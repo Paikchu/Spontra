@@ -108,7 +108,7 @@ export type LensTableRow = { ref: FindingRef | PeerBaseRef; label?: string; comp
 /** `title` names the picture for readers without it; `aspect` is the height the page reserves before the frame reports its own. */
 export type LensHtml = { id: string; title: string; aspect: LensAspect; html: string };
 /**
- * What the harness's browser saw when it drew an html picture at one width: the height its content took, what a
+ * What the harness's browser saw when it drew an html picture at one width: the frame's height there, what a
  * reader would see as wrong (text over text, a label across a mark, content past the edge, a script error), and
  * smaller remarks. `failed` when the browser could not draw it at all.
  */

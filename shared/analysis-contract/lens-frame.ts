@@ -69,8 +69,8 @@ export const LENS_FRAME_TOKENS = [
 
 /**
  * The html picture frame (`/html-frame`): a sandboxed page with an opaque origin that runs the agent's
- * fragment. The host hands it the fragment with the page's tokens and font; the frame answers with the
- * height its content takes. Neither side trusts the other's origin string: the host checks the source window,
+ * fragment. The host hands it the fragment with the page's tokens and font and sizes the frame
+ * (`pictureHeight`); the fragment fills it, and the frame says when it has drawn. Neither side trusts the other's origin string: the host checks the source window,
  * the frame checks that the message came from its parent.
  */
 export type HtmlFrameMessage =
@@ -79,4 +79,5 @@ export type HtmlFrameMessage =
   | { type: "html:render"; id: string; html: string; theme: LensFrameTheme; font: string | null; lang: string }
   /** The page's theme changed: the frame swaps its colour variables in place, without rerunning the picture. */
   | { type: "html:theme"; theme: LensFrameTheme }
-  | { type: "html:size"; id: string; height: number };
+  /** The fragment and its scripts have loaded; the host shows the frame. */
+  | { type: "html:rendered"; id: string };

@@ -95,6 +95,7 @@ iframe 最容易出的问题是"一个固定尺寸的盒子"：内部滚动条�
 - **一份文档只写一次**：`document.open` 不会重置窗口的全局作用域，再次写入会让模型脚本里的 `const` 重复声明；因此换图时宿主会换一个新的 iframe。
 - **Agent**：新增 `series` 工具（按 catalogue 的 ref 返回每期的标签、页面格式的文字和原始值），预算从 6 轮增到 8 轮；`LENS_VERSION` 升为 `lens.agent.v3`，所有公司会重写一次。v3 上线后模型五条要点全部选了语法图（只说"优先 HTML"不够），v4 起 Lens Agent 的审计把语法图记为错误，图必须写成 HTML；写不出时保留原有语法图。
 - **渲染反馈（v5，2026-10-22）**：compile 会用 Cloudflare Browser Rendering（`browser` 绑定，`workers/analysis/src/lens/draw.ts`）真实渲染每张 HTML 图，宽度为手机 340px 和格子在笔记本上的宽度（并排 500px、独占一行 720px）。渲染用和 frame 相同的文档（`shared/analysis-runtime/lens/picture.ts`：页面 dark 主题变量、frame 的 CSP、基础样式；测试保证与 `html-frame.html`、`_headers`、`style.css` 一致），关闭动画后，页面内脚本测量内容高度，并找出文字互相遮挡、标签部分压在柱或线上、内容超出边界、脚本报错和空图，作为带宽度的 warning 写进 observation；实测高度替代 aspect 估算参与图文平衡审计。每个片段在每个宽度只渲染一次，渲染是 Workflow 的 durable step，重放时直接读结果；同一次运行共用一个浏览器，最多同时开 3 个页面；渲染失败只记为"not drawn"，不影响本轮。当前模型（DeepSeek Flash）不接收图片，所以返回的是测量出的文字报告，没有截图本身。
+- **固定高度与 revise（v6，2026-10-22）**：内容自适应高度时，模型按宽度等比放大的图在 1000px 宽的格子里会长到约 1000px 高。现在 frame 高度由宿主决定：`pictureHeight` = 宽 × aspect + 72px（标题区），限制在 240–520px，页面上还不超过 62vh（`.lens-html-cell`）；body 是这个高度的 flex 列，片段把标题放在上面，图用 `flex:1` 占剩下的空间。测量会报告内容超出框底被裁掉的部分。Agent 新增 `revise` 工具，只替换某张图的 html/aspect/title，文档其余部分不变，避免重写整份文档时丢掉必需块；预算 10 轮；轮次耗尽时采用"无错误且警告最少"的那份文档，而不是最后一份。
 - **已知缺口**：HTML 里的文字是英文，中文界面不会翻译它（翻译流水线不处理带脚本的标记）；测量看的是几何关系，配色、留白比例等审美问题仍靠提示词。
 
 ## 合同

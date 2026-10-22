@@ -1,9 +1,9 @@
 import puppeteer, { type Browser, type BrowserWorker } from "@cloudflare/puppeteer";
-import type { LensPictureRender } from "../../../../shared/analysis-contract/lens.ts";
-import { pictureDocument } from "../../../../shared/analysis-runtime/lens/picture.ts";
+import type { LensAspect, LensPictureRender } from "../../../../shared/analysis-contract/lens.ts";
+import { pictureDocument, pictureHeight } from "../../../../shared/analysis-runtime/lens/picture.ts";
 
-/** Draws one html picture at one width and reports what a reader would see. */
-export type PictureRenderer = (html: string, width: number) => Promise<LensPictureRender>;
+/** Draws one html picture in its frame at one width (the height follows from the aspect) and reports what a reader would see. */
+export type PictureRenderer = (html: string, width: number, aspect: LensAspect) => Promise<LensPictureRender>;
 
 /** How long a picture may take to load its scripts and settle before it is measured. */
 const LOAD_MS = 15_000, SETTLE_MS = 600;
@@ -31,7 +31,7 @@ export function browserRenderer(binding: BrowserWorker): PictureRenderer {
     browser = open(binding);
     return browser;
   };
-  return async (html, width) => {
+  return async (html, width, aspect) => {
     await slot();
     try {
       const page = await (await connected()).newPage();
@@ -40,7 +40,7 @@ export function browserRenderer(binding: BrowserWorker): PictureRenderer {
       page.on("console", m => { if (m.type() === "error") errors.push(`console error: ${m.text()}`.slice(0, 200)); });
       page.on("requestfailed", r => errors.push(`could not load ${r.url().slice(0, 120)}`));
       try {
-        await page.setViewport({ width, height: Math.round(width * 1.2), deviceScaleFactor: 1 });
+        await page.setViewport({ width, height: pictureHeight(width, aspect), deviceScaleFactor: 1 });
         await page.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "reduce" }]);
         await page.setContent(pictureDocument(html), { waitUntil: "networkidle0", timeout: LOAD_MS });
         await new Promise(r => setTimeout(r, SETTLE_MS));
@@ -68,11 +68,15 @@ async function open(binding: BrowserWorker): Promise<Browser> {
  */
 export const MEASURE_PICTURE = `(() => {
   var problems = [], notes = [];
-  var W = document.documentElement.clientWidth;
-  var height = Math.ceil(Math.max(document.body.scrollHeight, document.body.getBoundingClientRect().height));
+  var W = document.documentElement.clientWidth, H = window.innerHeight;
+  var height = H;
   // The frame hides overflow, so the scroll width says nothing: the widest drawn element does.
   var wide = Array.prototype.slice.call(document.body.querySelectorAll("svg, canvas, img, table, div, p")).reduce(function (w, el) { return Math.max(w, Math.ceil(el.getBoundingClientRect().right)); }, document.documentElement.scrollWidth);
   if (wide > W + 1) problems.push("content is " + wide + "px wide in a " + W + "px frame; the overflow is cut off");
+  // The frame is a fixed height: whatever reaches below it is lost.
+  var deep = Array.prototype.slice.call(document.body.querySelectorAll("*")).filter(function (el) { return el.tagName !== "SCRIPT" && el.tagName !== "STYLE" && !el.closest("defs"); })
+    .reduce(function (h, el) { return Math.max(h, Math.ceil(el.getBoundingClientRect().bottom)); }, 0);
+  if (deep > H + 2) problems.push("content reaches " + deep + "px in a " + H + "px frame; the bottom " + (deep - H) + "px is cut off — shrink the drawing to the room left under the title");
   function area(b) { return Math.max(0, b.right - b.left) * Math.max(0, b.bottom - b.top); }
   function meet(a, b) { return { left: Math.max(a.left, b.left), top: Math.max(a.top, b.top), right: Math.min(a.right, b.right), bottom: Math.min(a.bottom, b.bottom) }; }
   function shown(el) { var s = getComputedStyle(el); return s.display !== "none" && s.visibility !== "hidden" && Number(s.opacity) > 0.05; }

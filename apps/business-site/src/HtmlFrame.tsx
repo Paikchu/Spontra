@@ -6,13 +6,10 @@ import { getLocale } from "@/packages/web/src/i18n";
 import geist from "@/packages/web/fonts/Geist-Variable.woff2?url";
 import { useTheme } from "./LensFrame";
 
-/** The tallest a picture may grow, so a runaway fragment cannot push the document away. */
-const MAX_HEIGHT = 1400;
-
 /**
  * A picture the lens agent wrote as HTML. It runs in `/html-frame` at an opaque origin (sandbox without
  * allow-same-origin) under that page's own CSP, so its scripts reach neither the network nor this page.
- * The cell reserves the declared aspect until the frame reports the height its content takes.
+ * The cell's height is the page's (`.lens-html-cell`, the rule of `pictureHeight`); the fragment fills it.
  */
 export function HtmlFrame({ picture }: { picture: LensHtml }) {
   // A frame runs one fragment for its whole life; another picture is another frame.
@@ -21,7 +18,7 @@ export function HtmlFrame({ picture }: { picture: LensHtml }) {
 
 function PictureFrame({ picture }: { picture: LensHtml }) {
   const frame = useRef<HTMLIFrameElement>(null);
-  const [ready, setReady] = useState(false), [height, setHeight] = useState<number | null>(null);
+  const [ready, setReady] = useState(false), [rendered, setRendered] = useState(false);
   const theme = useTheme();
   const post = (message: HtmlFrameMessage) => frame.current?.contentWindow?.postMessage(message, "*");
   useEffect(() => {
@@ -29,7 +26,7 @@ function PictureFrame({ picture }: { picture: LensHtml }) {
       if (!frame.current || event.source !== frame.current.contentWindow || !event.data || typeof event.data !== "object") return;
       const message = event.data;
       if (message.type === "html:ready") setReady(true);
-      else if (message.type === "html:size" && message.id === picture.id && Number.isFinite(message.height)) setHeight(Math.min(MAX_HEIGHT, Math.max(40, Math.round(message.height))));
+      else if (message.type === "html:rendered" && message.id === picture.id) setRendered(true);
     };
     addEventListener("message", listener);
     return () => removeEventListener("message", listener);
@@ -41,8 +38,8 @@ function PictureFrame({ picture }: { picture: LensHtml }) {
     if (!drawn.current) { drawn.current = true; post({ type: "html:render", id: picture.id, html: picture.html, theme, font: new URL(geist, location.href).href, lang: getLocale() }); }
     else post({ type: "html:theme", theme });
   }, [ready, theme]); // eslint-disable-line react-hooks/exhaustive-deps
-  return <div className="lens-chart-cell lens-html-cell" style={{ "--aspect": LENS_ASPECT[picture.aspect], ...(height ? { height } : {}) } as React.CSSProperties}
-    data-ready={height ? "" : undefined} data-frame={height ? "rendered" : ready ? "ready" : "loading"}>
+  return <div className="lens-chart-cell lens-html-cell" style={{ "--aspect": LENS_ASPECT[picture.aspect] } as React.CSSProperties}
+    data-ready={rendered ? "" : undefined} data-frame={rendered ? "rendered" : ready ? "ready" : "loading"}>
     {/* The frame announces itself on load; a listener attached after that asks again. */}
     <iframe ref={frame} src="/html-frame.html" sandbox="allow-scripts" title={picture.title} onLoad={() => { if (!drawn.current) post({ type: "html:ping" }); }} />
     <p className="sr-only">{picture.title}</p>
