@@ -363,13 +363,25 @@ function releaseSegments(tables: Table[], previous: BusinessFlowQuarter, revenue
     return { segments: [{ ...only, revenue: { ...revenue, definition: only.revenue?.definition ?? revenue.definition, comparabilityKey: only.revenue?.comparabilityKey ?? null }, sourceIds: [source.accession] }], adjustments: [] };
   }
   const whole = (issue: string) => ({ issue, adjustments: [], segments: [{ id: "reported-company-total", name: "Total company (segment split not yet verified)", revenue, description: "Consolidated amounts from the earnings release; the segment split follows with the quarterly report.", products: [], customers: null, monetization: null, disclosure: "Segment split not yet verified; only consolidated amounts are shown, with no segment shares allocated.", sourceIds: [source.accession] }] });
-  if (previous.segments.some(s => s.children?.length)) return whole("RELEASE_SEGMENT_CHILDREN_UNSUPPORTED");
   const named = (a: string, b: string) => a === b || loose(a) === loose(b) || (!!defined.get(a) && loose(defined.get(a)!) === loose(b));
   const total = Number(revenue.value);
   for (const table of tables) {
     const found = previous.segments.map(s => find(table, [s.name], end, named));
     if (found.some(f => !f) || new Set(found.map(f => f!.row)).size !== found.length) continue;
-    const segments = previous.segments.map((s, i) => ({ ...s, revenue: amountOf(found[i]!, s.revenue!, `segment:${s.id}`), sourceIds: [source.accession] }));
+    // A segment's parts are the rows printed between its neighbouring segments, and must add up to the segment's row;
+    // parts the release does not print that way leave the segment whole until the quarterly report.
+    const rows = found.map(f => f!.row).sort((a, b) => a - b);
+    const parts = (s: BusinessSegment, at: Bound) => {
+      if (!s.children?.length) return undefined;
+      const from = (rows.filter(r => r < at.row).at(-1) ?? -1) + 1, to = rows.find(r => r > at.row) ?? Infinity;
+      const bound = s.children.map(c => find(table, [c.name], end, named, from, to));
+      if (bound.some(b => !b || b.row === at.row) || new Set(bound.map(b => b!.row)).size !== bound.length || bound.reduce((n, b) => n + b!.value, 0) !== at.value) return undefined;
+      return s.children.map((c, i) => ({ ...c, revenue: amountOf(bound[i]!, c.revenue, `segment:${c.id}`) }));
+    };
+    const segments = previous.segments.map((s, i) => {
+      const { children: _, ...rest } = s, children = parts(s, found[i]!);
+      return { ...rest, revenue: amountOf(found[i]!, s.revenue!, `segment:${s.id}`), sourceIds: [source.accession], ...(children ? { children } : {}) };
+    });
     const adjustments: NonNullable<BusinessFlowQuarter["revenueAdjustments"]> = [];
     let missing: { id: string; name: string; amount: FlowAmount } | null = null, complete = true;
     for (const a of previous.revenueAdjustments ?? []) {

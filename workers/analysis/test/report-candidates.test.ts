@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { PublicBusinessFlow } from "../../../shared/analysis-contract/business-flow.ts";
 import type { StoredAudit } from "../src/financial-data/disclosure-audit.ts";
-import { reportCandidates } from "../src/financial-data/derived.ts";
+import { reportCandidates, supersedes } from "../src/financial-data/derived.ts";
+import type { BusinessFlowQuarter } from "../../../shared/analysis-contract/business-flow.ts";
 
 const folder = "https://www.sec.gov/Archives/edgar/data/1513845/";
 const audit = (n: number, filedAt: string, file: string): StoredAudit => ({
@@ -18,4 +19,20 @@ test("a foreign issuer's earnings exhibit stays a candidate behind many newer no
   const candidates = reportCandidates([...notices, release], flow);
   assert.equal(candidates.length, 31);
   assert.equal(candidates.at(-1)!.documentId, "doc-1");
+});
+
+// Meta's third quarter of 2025: the 8-K of October 2026 prints it beside the new quarter as consolidated amounts only;
+// its own 10-Q verified the Family of Apps / Reality Labs split for the same figures.
+const quarter = (segments: string[], revenue: number, operating: number, single = false) => ({
+  periodEnd: "2025-09-30", figures: { revenue: { value: String(revenue) }, operating: { value: String(operating) } },
+  segments: segments.map(id => ({ id })), ...(single ? { segmentDisclosure: "single_reportable_segment" } : {}),
+}) as unknown as BusinessFlowQuarter;
+
+test("an older quarterly report's segment split takes a period over from an exhibit that printed the same figures whole", () => {
+  const exhibit = quarter(["reported-company-total"], 51242e6, 20535e6), report = quarter(["meta:FamilyOfAppsMember", "meta:RealityLabsMember"], 51242e6, 20535e6);
+  assert.equal(supersedes(report, exhibit), true);
+  // The newer filing's split, or recast figures, or a single reportable segment stay as the newer filing presents them.
+  assert.equal(supersedes(exhibit, report), false);
+  assert.equal(supersedes(quarter(["meta:FamilyOfAppsMember", "meta:RealityLabsMember"], 51240e6, 20535e6), exhibit), false);
+  assert.equal(supersedes(report, quarter(["reported-company-total"], 51242e6, 20535e6, true)), false);
 });

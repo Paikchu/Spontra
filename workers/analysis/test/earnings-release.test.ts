@@ -5,6 +5,8 @@ import { readStatementTableFacts } from "../src/financial-data/statement-table.t
 import type { DocumentSource } from "../src/financial-data/parser.ts";
 import { extractRevenueHistory } from "../src/financial-data/revenue-parser.ts";
 import { mergeHistory } from "../../../shared/analysis-runtime/financial-data/history.ts";
+import { releaseQuarter } from "../../../shared/analysis-runtime/financial-data/earnings-release.ts";
+import type { BusinessFlowQuarter } from "../../../shared/analysis-contract/business-flow.ts";
 
 // Earnings-release exhibits (8-K Exhibit 99.1) are plain HTML: their statements of operations are read from the tables.
 // Each fixture keeps the text before the statement and the statement table of the named release.
@@ -63,4 +65,19 @@ test("a later earnings release does not replace the quarter its periodic report 
   const merged = mergeHistory("NVDA", [tenK], release, "2026-02-25").quarters;
   assert.equal(merged.find(q => q.periodEnd === "2025-01-26")?.source.form, "10-K");
   assert.equal(merged.find(q => q.periodEnd === "2026-01-25")?.source.form, "8-K");
+});
+
+// Meta's release of October 21, 2026 prints Advertising and Other revenue above Family of Apps; the quarter before it is
+// the one its 10-Q for June 30, 2026 establishes, with those two lines as the segment's parts.
+test("a segment's parts are read from the rows the release prints beside it, and must add up to it", () => {
+  const previous = JSON.parse(fixture("meta-q2-2026-quarter.json")) as BusinessFlowQuarter;
+  const read = (html: string) => releaseQuarter([{ url: "https://www.sec.gov/Archives/edgar/data/1326801/000162828026066700/meta-09302026xexhibit991.htm", html }], previous, { accession: "0001628280-26-066700", filedAt: "2026-10-21", parserVersion: "test" });
+  const { quarter, issues } = read(fixture("meta-q3-2026.htm"));
+  assert.deepEqual(issues, []);
+  assert.deepEqual(quarter!.segments.map(s => [s.name, Number(s.revenue!.value) / 1e6, s.children?.map(c => [c.name, Number(c.revenue.value) / 1e6])]),
+    [["Family of Apps", 64158, [["Advertising", 63061], ["Other revenue", 1097]]], ["Reality Labs", 443, undefined]]);
+  assert.deepEqual(quarter!.segments[0]!.children!.map(c => c.revenue.comparabilityKey), previous.segments[0]!.children!.map(c => c.revenue.comparabilityKey));
+  // Parts that do not add up leave the segment whole, not the quarter.
+  const { quarter: whole } = read(fixture("meta-q3-2026.htm").replace("63,061", "63,060"));
+  assert.deepEqual(whole!.segments.map(s => [s.name, s.children]), [["Family of Apps", undefined], ["Reality Labs", undefined]]);
 });

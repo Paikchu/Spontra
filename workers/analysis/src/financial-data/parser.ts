@@ -20,7 +20,7 @@ export interface DocumentSource {url:string;accession:string;filedAt:string;cik:
  revenueStructure?:RevenueStructure|null;
  /** A structure from operating income to net income that balanced on an earlier filing of this issuer (presentation profile). */
  presentation?:{structure:BridgeStructure;version:string}|null;}
-export const SEC_FLOW_PARSER_VERSION='deterministic-sec.v16';
+export const SEC_FLOW_PARSER_VERSION='deterministic-sec.v17';
 /** Issuers read through a disclosure-specific profile; generic statement arithmetic would describe them in another scheme. */
 export const hasDisclosureProfile=(cik:string)=>cik==='0001341439';
 export interface Fact {source:DocumentSource;operands?:Fact[];formula?:string;precision:number;tag:string;value:number;currency:string;start:string;end:string;context:string;dimensions:Record<string,string>;
@@ -108,7 +108,7 @@ type RevenueAdjustment={id:string;name:string;definition:string;fact:Fact;weight
  * The members of one table are one split; one axis shown in two tables (Autodesk's subscription split on the statement,
  * product families in its revenue note) is two candidates, and of several balanced splits the most detailed is taken.
  */
-function splitRevenue(facts:Fact[],revenueNames:string[],consolidated:Fact|undefined,structure:RevenueStructure|null|undefined,issues:string[]):{members:Map<string,Fact>;adjustments:RevenueAdjustment[];managed:boolean}|null{
+function splitRevenue(facts:Fact[],revenueNames:string[],consolidated:Fact|undefined,structure:RevenueStructure|null|undefined,issues:string[]):{axis:string;members:Map<string,Fact>;adjustments:RevenueAdjustment[];managed:boolean}|null{
  if(!consolidated)return null;
  const isRevenue=(f:Fact)=>revenueNames.includes(local(f.tag)),sole=(f:Fact)=>Object.entries(f.dimensions).length===1?Object.entries(f.dimensions)[0]:null;
  const eliminationFacts=facts.filter(f=>{const d=sole(f);return isRevenue(f)&&!!d&&['ConsolidationItemsAxis','StatementBusinessSegmentsAxis','ProductOrServiceAxis'].includes(local(d[0]))&&/eliminat/i.test(d[1]);});
@@ -155,6 +155,19 @@ function splitRevenue(facts:Fact[],revenueNames:string[],consolidated:Fact|undef
  if(matching.length>1&&new Set(matching.map(m=>local(m.axis))).size===1){const most=Math.max(...matching.map(m=>m.members.size));matching=matching.filter(m=>m.members.size===most);}
  if(matching.length>1){issues.push('AMBIGUOUS_REVENUE_AXIS');return null;}
  return matching[0]??null;
+}
+/**
+ * A segment's revenue split by product or service, when the filing tags each line on both axes (Meta's Advertising and
+ * Other revenue within Family of Apps) and the lines add up exactly to the segment's own fact. Each child's id carries
+ * its segment, since one product member (other revenue) often sits under several segments.
+ */
+function segmentChildren(facts:Fact[],axis:string,member:string,parent:Fact):Map<string,Fact>|null{
+ const lines=new Map<string,Fact>();let conflict=false;
+ for(const f of facts){if(f.tag!==parent.tag)continue;const entries=Object.entries(f.dimensions).filter(entry=>!operatingSegments(entry));
+  if(entries.length!==2||!entries.some(([a,m])=>a===axis&&m===member))continue;const product=entries.find(([a])=>local(a)==='ProductOrServiceAxis')?.[1];if(!product||product===member)continue;
+  const old=lines.get(product);if(old&&old.precision>f.precision)continue;if(old&&old.precision===f.precision&&old.value!==f.value){conflict=true;continue;}lines.set(product,f);}
+ if(conflict||lines.size<2||[...lines.values()].some(f=>f.value<0))return null;
+ return near([...lines.values()].reduce((n,f)=>n+f.value,0),parent.value)?lines:null;
 }
 function extractGenericQuarters(html:string,source:DocumentSource,supplemental:Fact[]=[],reviewVerified=false):{quarters:BusinessFlowQuarter[];issues:string[]}{
  const issues:string[]=[];if(html.length>SEC_DOCUMENT_MAX_BYTES)return {quarters:[],issues:['DOCUMENT_TOO_LARGE']};
@@ -228,7 +241,7 @@ function extractGenericQuarters(html:string,source:DocumentSource,supplemental:F
   const revenueSplit=splitRevenue(facts,revenueNames,figures.revenue?select([local(figures.revenue.lineage![0].concept)]):undefined,source.revenueStructure,issues);
   const revenueAdjustments:NonNullable<BusinessFlowQuarter['revenueAdjustments']>=(revenueSplit?.adjustments??[]).map(a=>{const reported=amount(a.fact,a.definition);return {id:a.id,name:a.name,amount:a.weight===1?reported:{...reported,basis:'derived' as const,value:String(-a.fact.value),formula:'− reported '+a.name}};});
   const eliminated=revenueAdjustments.some(a=>a.id==='intersegment-eliminations'),managed=!!revenueSplit?.managed;
-  const segments:BusinessSegment[]=[...(revenueSplit?.members??[])].map(([member,f])=>({id:member,name:member==='corporate'?'Corporate':memberName(member,f.memberLabels),revenue:{...amount(f,'segment:'+member),comparabilityKey:f.tag.startsWith('table:')?'table-segment:'+source.accession+':'+member+':'+f.tag:/^\d{4}$/.test(fiscalFocus)?'deterministic-sec-segment:'+fiscalFocus+':'+member+':'+f.tag:null},description:'A segment or product and service category as the filing discloses it, named by the filing; products and customers are not inferred.',products:[],customers:null,monetization:null,disclosure:managed?'Segment revenue as the filing manages it; the corporate line and the reconciling items to reported revenue are shown separately, and consolidated expenses are not allocated to segments.':eliminated?'Segment revenue includes intersegment sales; eliminations are shown separately, and neither they nor consolidated expenses are allocated to segments.':revenueAdjustments.length?'Revenue the filing reports outside its segments is shown separately as reconciling items; consolidated expenses are not allocated to segments.':'Revenue from the filing\'s segment disclosure; consolidated expenses are not allocated to segments.',sourceIds:[source.accession]}));// Non-reconciling department/management revenue is not substituted for GAAP consolidated revenue.
+  const segments:BusinessSegment[]=[...(revenueSplit?.members??[])].map(([member,f])=>{const lines=member==='corporate'?null:segmentChildren(facts,revenueSplit!.axis,member,f);return {id:member,name:member==='corporate'?'Corporate':memberName(member,f.memberLabels),revenue:{...amount(f,'segment:'+member),comparabilityKey:f.tag.startsWith('table:')?'table-segment:'+source.accession+':'+member+':'+f.tag:/^\d{4}$/.test(fiscalFocus)?'deterministic-sec-segment:'+fiscalFocus+':'+member+':'+f.tag:null},description:'A segment or product and service category as the filing discloses it, named by the filing; products and customers are not inferred.',products:lines?[...lines].map(([product,c])=>memberName(product,c.memberLabels)):[],customers:null,monetization:null,disclosure:managed?'Segment revenue as the filing manages it; the corporate line and the reconciling items to reported revenue are shown separately, and consolidated expenses are not allocated to segments.':eliminated?'Segment revenue includes intersegment sales; eliminations are shown separately, and neither they nor consolidated expenses are allocated to segments.':revenueAdjustments.length?'Revenue the filing reports outside its segments is shown separately as reconciling items; consolidated expenses are not allocated to segments.':'Revenue from the filing\'s segment disclosure; consolidated expenses are not allocated to segments.',sourceIds:[source.accession],...(lines?{children:[...lines].map(([product,c])=>({id:member+'|'+product,name:memberName(product,c.memberLabels),revenue:{...amount(c,'segment:'+member+'|'+product),comparabilityKey:/^\d{4}$/.test(fiscalFocus)?'deterministic-sec-segment:'+fiscalFocus+':'+member+'|'+product+':'+c.tag:null}}))}:{})};});// Non-reconciling department/management revenue is not substituted for GAAP consolidated revenue.
 
   const expenses=financialExpenses;
   // Operating expense lines printed between cost of revenue (or gross profit) and operating income, used only when they add up to the operating expense total.

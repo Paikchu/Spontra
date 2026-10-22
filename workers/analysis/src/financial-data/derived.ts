@@ -96,6 +96,19 @@ export function reportCandidates(audits: StoredAudit[], flow: PublicBusinessFlow
   return candidates.sort((a, b) => b.source.filedAt.localeCompare(a.source.filedAt) || priority(a) - priority(b));
 }
 
+/** Consolidated amounts only, with the segment split not verified (a single reportable segment is a split). */
+const wholeCompany = (q: BusinessFlowQuarter) => q.segments.length === 1 && q.segments[0]!.id === 'reported-company-total' && q.segmentDisclosure !== 'single_reportable_segment';
+
+/**
+ * Whether an older filing's quarter takes a period over from the newer filing that presented it. An earnings exhibit's
+ * table gives consolidated amounts only; the quarterly report that verified the segment split is taken instead when it
+ * reports the same revenue and operating income, so nothing was recast and only the split was missing.
+ */
+export function supersedes(incoming: BusinessFlowQuarter, existing: BusinessFlowQuarter): boolean {
+  const same = (key: 'revenue' | 'operating') => existing.figures[key]?.value != null && Number(existing.figures[key]!.value) === Number(incoming.figures[key]?.value);
+  return wholeCompany(existing) && !wholeCompany(incoming) && same('revenue') && same('operating');
+}
+
 /** The third-quarter report of the fiscal year an annual report closes: the issuer's 10-Q ending one quarter before it. */
 function thirdQuarterReport(audits: StoredAudit[], annual: StoredAudit): StoredAudit | null {
   if (!/^10-K/.test(annual.source.form)) return null;
@@ -147,7 +160,8 @@ async function parseFiling(env: DisclosureArchiveEnv, record: StoredAudit, partn
 
 /**
  * Brings one company's snapshot up to date, parsing at most `budget` source bytes. Returns the bytes spent.
- * Quarters are taken in candidate order, newest-preferred, until eight periods are covered. A rebuilt snapshot is
+ * Quarters are taken in candidate order, newest-preferred, until eight periods are covered and each has its segment
+ * split where an older filing verified one (`supersedes`). A rebuilt snapshot is
  * committed together with its `map.derived` event; an unchanged one emits nothing.
  */
 export async function deriveCompany(env: DisclosureArchiveEnv, ticker: string, budget = PARSE_BUDGET_BYTES, causeId: string | null = null): Promise<{ spent: number; built: boolean; pending: number; unarchived?: string[]; oversized?: string[] }> {
@@ -166,11 +180,11 @@ export async function deriveCompany(env: DisclosureArchiveEnv, ticker: string, b
   const stored = new Map<string, StoredQuarters>();
   for (const row of storedRows.results) { try { const s = JSON.parse(row.payload) as StoredQuarters; stored.set(s.documentId, s); } catch { /* re-parsed below */ } }
 
-  const byPeriod = new Map(flow.quarters.map(q => [q.periodEnd, q]));
+  const byPeriod = new Map(flow.quarters.map(q => [q.periodEnd, q])), published = new Set(byPeriod.keys());
   let spent = 0, pending = 0, reports = 0;
   const used: string[] = [], oversized: string[] = [];
   for (const record of reportCandidates(audits, flow)) {
-    if (byPeriod.size >= REPORT_QUARTERS || reports >= REPORT_FILINGS) break;
+    if (reports >= REPORT_FILINGS || (byPeriod.size >= REPORT_QUARTERS && ![...byPeriod.values()].some(q => !published.has(q.periodEnd) && wholeCompany(q)))) break;
     let entry = stored.get(record.documentId);
     const partner = thirdQuarterReport(audits, record);
     const contentSha256 = partner ? `${record.contentSha256}+${partner.contentSha256}` : record.contentSha256;
@@ -191,7 +205,9 @@ export async function deriveCompany(env: DisclosureArchiveEnv, ticker: string, b
     used.push(`${record.documentId}:${contentSha256}:${entry.labels ?? ''}`);
     if (entry.quarters.length) reports++;
     for (const q of entry.quarters) {
-      if (q.periodEnd > latest.periodEnd || Date.parse(q.periodEnd) <= cutoff.getTime() || byPeriod.has(q.periodEnd)) continue;
+      if (q.periodEnd > latest.periodEnd || Date.parse(q.periodEnd) <= cutoff.getTime() || published.has(q.periodEnd)) continue;
+      const taken = byPeriod.get(q.periodEnd);
+      if (taken && !supersedes(q, taken)) continue;
       byPeriod.set(q.periodEnd, q);
     }
   }

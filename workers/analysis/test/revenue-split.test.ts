@@ -75,3 +75,21 @@ test("one axis shown in two tables is two splits; of two balanced splits the mor
   assert.deepEqual(q.segments.map(s => s.id), ["adsk:ArchitectureEngineeringConstructionAndOperationsMember", "adsk:AutoCADandAutoCADLTFamilyMember", "adsk:ManufacturingMember", "adsk:MediaAndEntertainmentMember", "srt:OtherMember"]);
   assert.equal(q.revenueAdjustments, undefined);
 });
+
+// Meta's 10-Q for the quarter ended June 30, 2026 (millions): Advertising and Other revenue are tagged on the product
+// axis and the Family of Apps segment together.
+const product = (member: string, segmentMember: string, value: number) => fact("us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax", value, { "srt:ProductOrServiceAxis": member, "us-gaap:StatementBusinessSegmentsAxis": segmentMember });
+const meta = (other: number) => [fact("us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax", 60801),
+  segment("us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax", "meta:FamilyOfAppsMember", 60370),
+  segment("us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax", "meta:RealityLabsMember", 431),
+  product("us-gaap:AdvertisingMember", "meta:FamilyOfAppsMember", 59363), product("us-gaap:ServiceOtherMember", "meta:FamilyOfAppsMember", other)]
+  .map(f => ({ ...f, memberLabels: { "us-gaap:AdvertisingMember": "Advertising", "us-gaap:ServiceOtherMember": "Other revenue", "meta:FamilyOfAppsMember": "Family of Apps", "meta:RealityLabsMember": "Reality Labs" } }));
+
+test("a segment splits into the product lines the filing tags on both axes when they add up to it", () => {
+  const q = split(meta(1007), null);
+  assert.deepEqual(q.segments.map(s => [s.name, Number(s.revenue.value) / 1e6]), [["Family of Apps", 60370], ["Reality Labs", 431]]);
+  assert.deepEqual(q.segments[0].children?.map(c => [c.id, c.name, Number(c.revenue.value) / 1e6]), [["meta:FamilyOfAppsMember|us-gaap:AdvertisingMember", "Advertising", 59363], ["meta:FamilyOfAppsMember|us-gaap:ServiceOtherMember", "Other revenue", 1007]]);
+  assert.equal(q.segments[1].children, undefined);
+  // Lines that do not add up to the segment are not shown as its parts.
+  assert.equal(split(meta(1006), null).segments[0].children, undefined);
+});
