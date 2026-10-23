@@ -37,8 +37,8 @@ export async function issuerHistory(db: D1Database, cik: string, ticker: string)
 }
 
 /**
- * Reads one new filing with its read note and keeps the note, so the filing is never read again under this version. A
- * note the model could not make reconcile is kept as unresolved with its last problems; a spent daily budget keeps
+ * Reads one new filing with its read note and keeps the note, so the filing is never read again under this version, with
+ * the problems of every note turned down on the way. A note the model could not make reconcile is kept as unresolved; a spent daily budget keeps
  * nothing, so the filing is read when budget is back. The previous note of the same kind of filing (an earnings release
  * or a periodic report) is offered for reuse.
  */
@@ -54,12 +54,15 @@ export async function readNewFiling(db: D1Database, reader: SecReader, model: No
   try { previous = last ? { note: JSON.parse(last.note_json), labels: JSON.parse(last.labels_json) } : null; } catch { previous = null; }
   const outcome = await readWithNote(context, model, { ticker: issuer.ticker, previous, reportDate: filing.reportDate, reserve });
   if (outcome.budget) return outcome;
-  const status = outcome.quarter ? 'read' : outcome.note && !outcome.note.period ? 'no-quarter' : 'unresolved';
-  await db.prepare(`INSERT INTO filing_read_notes (accession,cik,ticker,form,version,status,period_end,route,attempts,note_json,labels_json,quarter_json,issues_json,updated_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(accession) DO UPDATE SET version=excluded.version,status=excluded.status,period_end=excluded.period_end,route=excluded.route,
-    attempts=excluded.attempts,note_json=excluded.note_json,labels_json=excluded.labels_json,quarter_json=excluded.quarter_json,issues_json=excluded.issues_json,updated_at=excluded.updated_at`)
+  // A filing that prints no published amount anywhere (a 6-K notice) or whose note dates no newer quarter reports none.
+  const status = outcome.quarter ? 'read' : outcome.nothing || (outcome.note && !outcome.note.period) ? 'no-quarter' : 'unresolved';
+  const issues = outcome.nothing ? ['no table of the filing prints an already published amount'] : outcome.issues;
+  await db.prepare(`INSERT INTO filing_read_notes (accession,cik,ticker,form,version,status,period_end,route,attempts,note_json,labels_json,quarter_json,issues_json,rejected_json,updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(accession) DO UPDATE SET version=excluded.version,status=excluded.status,period_end=excluded.period_end,route=excluded.route,
+    attempts=excluded.attempts,note_json=excluded.note_json,labels_json=excluded.labels_json,quarter_json=excluded.quarter_json,issues_json=excluded.issues_json,rejected_json=excluded.rejected_json,updated_at=excluded.updated_at`)
     .bind(filing.accession, issuer.cik, issuer.ticker, filing.form, READ_NOTE_VERSION, status, outcome.quarter?.periodEnd ?? null, outcome.route, outcome.attempts,
       outcome.note ? JSON.stringify(outcome.note) : null, outcome.note && outcome.quarter ? JSON.stringify(noteLabels(outcome.note, context.tables)) : null,
-      outcome.quarter ? JSON.stringify(outcome.quarter) : null, JSON.stringify(outcome.issues.slice(0, 20)), new Date().toISOString()).run();
+      outcome.quarter ? JSON.stringify(outcome.quarter) : null, JSON.stringify(issues.slice(0, 20)),
+      JSON.stringify(outcome.rejected.map(r => ({ route: r.route, problems: r.problems.slice(0, 20) }))), new Date().toISOString()).run();
   return outcome;
 }

@@ -112,7 +112,7 @@
   - 读表说明格式与提示词。
   - 核对：期间原文逐字出现；比较列重复已发布的收入与净利润；季度列不是累计列；完整性门槛的全部合计。
   - 读取顺序：套用上一份、只问期间、完整读表；完整读表最多 4 轮，把不平的等式发回。
-- **缓存表** `filing_read_notes`（migration 0038）：每份申报一行，记录状态（`read` / `no-quarter` / `unresolved`）、读法、读表说明、行名和问题。
+- **缓存表** `filing_read_notes`（migration 0038、0039）：每份申报一行，记录状态（`read` / `no-quarter` / `unresolved`）、读法、读表说明、行名和问题，以及每一份被拒的读表说明和拒绝原因（`rejected_json`）。没有任何表格印出已发布数字的申报（比如 6-K 公告）记为 `no-quarter`，不调用模型。
 - **采集**（`pipeline/financial-tasks.ts` → `collect.ts` 的 `collectNewFilings`）：
   - 已有发布物的公司只读新申报。
   - 无新申报时，任务以 `UP_TO_DATE` 结束，不发布、不调用模型。

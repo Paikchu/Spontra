@@ -348,32 +348,41 @@ export function readNoteFrom(raw: unknown): ReadNote | null {
 
 export type NoteModel = (stage: string, system: string, payload: unknown) => Promise<Record<string, unknown>>;
 export type NoteRoute = 'reuse' | 'period' | 'full';
-export type NoteOutcome = { quarter: BusinessFlowQuarter | null; note: ReadNote | null; route: NoteRoute; attempts: number; issues: string[]; replaces: boolean; budget?: true };
+/** One note the check turned down, with its problems: what the model was told to correct. */
+export type RejectedNote = { route: NoteRoute; problems: string[] };
+/** `nothing`: no table of the filing prints an already published amount, so it reports no quarter to read (a 6-K notice). */
+export type NoteOutcome = { quarter: BusinessFlowQuarter | null; note: ReadNote | null; route: NoteRoute; attempts: number; issues: string[]; replaces: boolean; rejected: RejectedNote[]; budget?: true; nothing?: true };
 
 /**
  * A filing read the cheapest way that reconciles: the previous note placed by its labels (no model call); that note
  * with only the period asked (the date sentences alone); else the whole note written from the relevant tables, with
- * the problems sent back, at most `turns` times. `reserve` takes one call from the daily budget.
+ * the problems sent back, at most `turns` times. `reserve` takes one call from the daily budget. Every note turned down
+ * on the way is returned with its problems.
  */
 export async function readWithNote(context: NoteContext, model: NoteModel, options: { ticker: string; previous?: { note: ReadNote; labels: Record<string, string> } | null; reportDate?: string | null; turns?: number; reserve?: () => Promise<boolean> }): Promise<NoteOutcome> {
-  const [newest] = context.published, reserve = options.reserve ?? (async () => true);
-  if (!newest) return { quarter: null, note: null, route: 'full', attempts: 0, issues: ['nothing is published to check against'], replaces: false };
+  const [newest] = context.published, reserve = options.reserve ?? (async () => true), rejected: RejectedNote[] = [];
+  const none = (fields: Partial<NoteOutcome> & { attempts: number; issues: string[] }): NoteOutcome => ({ quarter: null, note: null, route: 'full', replaces: false, rejected, ...fields });
+  if (!newest) return none({ attempts: 0, issues: ['nothing is published to check against'] });
   const sentences = dateSentences(context.text, newest.periodEnd);
   if (options.previous) {
     const reused = reuseNote(options.previous, context, options.reportDate ?? null);
-    if (reused) { const applied = applyNote(reused, context); if (applied.quarter) return { ...applied, note: reused, route: 'reuse', attempts: 0 }; }
+    if (reused) {
+      const applied = applyNote(reused, context);
+      if (applied.quarter) return { ...applied, note: reused, route: 'reuse', attempts: 0, rejected };
+      rejected.push({ route: 'reuse', problems: applied.issues });
+    }
     // The previous note may only miss the period: ask for that alone, then place the rest as before.
     if (sentences.length && await reserve()) {
       const answer = await model(`read-note-period-${options.ticker}`, PERIOD_SYSTEM, { publishedQuarterEnd: newest.periodEnd, sentences });
-      if (typeof answer.end === 'string' && typeof answer.quote === 'string') {
-        const placed = reuseNote(options.previous, context, answer.end);
-        const note = placed && { ...placed, period: { end: answer.end, quote: answer.quote } };
-        if (note) { const applied = applyNote(note, context); if (applied.quarter) return { ...applied, note, route: 'period', attempts: 1 }; }
-      }
+      const placed = typeof answer.end === 'string' && typeof answer.quote === 'string' ? reuseNote(options.previous, context, answer.end) : null;
+      const note = placed && { ...placed, period: { end: answer.end as string, quote: answer.quote as string } };
+      const applied = note ? applyNote(note, context) : null;
+      if (applied?.quarter) return { ...applied, note, route: 'period', attempts: 1, rejected };
+      rejected.push({ route: 'period', problems: applied?.issues ?? [note ? 'the period answer did not place the previous note' : 'the period answer names no date the previous note can be placed on'] });
     }
   }
   const tables = relevantTables(context.tables, context);
-  if (!tables.length) return { quarter: null, note: null, route: 'full', attempts: 0, issues: ['no table of the filing prints an already published amount'], replaces: false };
+  if (!tables.length) return none({ attempts: 0, issues: [], nothing: true });
   const payload = {
     filing: { form: context.source.form, accession: context.source.accession, filedAt: context.source.filedAt },
     slots: slotsOf(newest), publishedQuarter: { start: newest.periodStart, end: newest.periodEnd, scale: newest.scale },
@@ -384,15 +393,18 @@ export async function readWithNote(context: NoteContext, model: NoteModel, optio
   const history: Array<{ note: unknown; problems: string[] }> = [];
   let last: string[] = [];
   for (let turn = 1; turn <= (options.turns ?? 4); turn++) {
-    if (!await reserve()) return { quarter: null, note: null, route: 'full', attempts: turn - 1, issues: ['daily model budget spent'], replaces: false, budget: true };
+    if (!await reserve()) return none({ attempts: turn - 1, issues: ['daily model budget spent'], budget: true });
     const raw = await model(`read-note-${options.ticker}-${turn}`, READ_NOTE_SYSTEM, history.length ? { ...payload, previousAnswers: history } : payload);
     const note = readNoteFrom(raw);
-    if (!note) { last = ['the answer is not a read note JSON object']; history.push({ note: raw, problems: last }); continue; }
-    if (!note.period) return { quarter: null, note, route: 'full', attempts: turn, issues: [], replaces: false };
-    const applied = applyNote(note, context);
-    if (applied.quarter) return { ...applied, note, route: 'full', attempts: turn };
-    last = applied.issues;
-    history.push({ note, problems: last });
+    if (!note) last = ['the answer is not a read note JSON object'];
+    else if (!note.period) return none({ note, attempts: turn, issues: [] });
+    else {
+      const applied = applyNote(note, context);
+      if (applied.quarter) return { ...applied, note, route: 'full', attempts: turn, rejected };
+      last = applied.issues;
+    }
+    history.push({ note: note ?? raw, problems: last });
+    rejected.push({ route: 'full', problems: last });
   }
-  return { quarter: null, note: null, route: 'full', attempts: options.turns ?? 4, issues: last, replaces: false };
+  return none({ attempts: options.turns ?? 4, issues: last });
 }

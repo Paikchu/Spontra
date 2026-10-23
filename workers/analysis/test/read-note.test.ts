@@ -71,6 +71,9 @@ test("the model's problems go back to it, and a corrected note is read on the ne
   assert.equal(outcome.attempts, 2);
   assert.equal(value(outcome.quarter, "revenue"), 1203855000);
   assert.match(JSON.stringify(payloads[1]!.previousAnswers), /published 2025-09-29 amount/);
+  // The turned-down note is returned with its problems, for the stored record.
+  assert.deepEqual(outcome.rejected.map(r => r.route), ["full"]);
+  assert.match(outcome.rejected[0]!.problems[0]!, /published 2025-09-29 amount/);
   assert.ok(String(payloads[0]!.tables).length < 9000);
 });
 
@@ -101,4 +104,14 @@ test("collection publishes the new quarter on top of the newest published one, a
   const none = await collectNewFilings(job, current, store, [], read);
   assert.equal(none.published, false);
   assert.deepEqual(finished, [["UP_TO_DATE"]]);
+});
+
+test("a filing that prints no published amount in any table reports no quarter, without a model call", async () => {
+  // A 6-K notice: text and a table of share counts, nothing that repeats a published amount.
+  const notice = [{ url, html: "<p>Results of the annual general meeting.</p><table><tr><td>Shares voted</td><td>1,234,567</td></tr></table>" }];
+  let calls = 0;
+  const outcome = await readWithNote({ ...context, tables: filingTables(notice), text: documentText(notice) }, async () => { calls++; return {}; }, { ticker: "TTMI" });
+  assert.equal(calls, 0);
+  assert.equal(outcome.nothing, true);
+  assert.deepEqual(outcome.issues, []);
 });
