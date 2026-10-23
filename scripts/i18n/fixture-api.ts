@@ -5,7 +5,8 @@
  * each gain a row, so an open page's update notice and entrance can be seen.
  */
 import type { Plugin } from "vite";
-import { capital, company, events, filings, findings, TICKER } from "./fixture.ts";
+import type { HomeDigest } from "../../shared/analysis-contract/home.ts";
+import { capital, company, events, filings, findings, flow, TICKER } from "./fixture.ts";
 
 let published = 0;
 const revision = () => new Date(Date.UTC(2026, 7, 10) + published * 3_600_000).toISOString();
@@ -31,6 +32,39 @@ function resources(): Record<string, unknown> {
   };
 }
 
+function homeDigest(): HomeDigest {
+  const latest = flow.quarters.at(-1)!;
+  const scale = latest.scale;
+  const amount = (quarter: typeof latest) => {
+    const value = Number(quarter.figures.revenue?.value);
+    return Number.isFinite(value) ? String(Math.round(value * scale)) : "0";
+  };
+  const pct = (current: string, prior: string | null) => {
+    const left = Number(current);
+    const right = Number(prior);
+    if (!prior || !Number.isFinite(right) || right === 0) return null;
+    return Math.round(((left - right) / Math.abs(right)) * 1000) / 10;
+  };
+  const yearAgo = flow.quarters.find(quarter => quarter.periodEnd === "2025-06-30") ?? null;
+  const previous = flow.quarters.at(-2) ?? null;
+  const counts = { risk: 0, strength: 0, shift: 0, watch: 0 };
+  for (const finding of findings.findings) counts[finding.kind] += 1;
+  return {
+    schemaVersion: "home-digest.v1", status: "ready", generatedAt: "2026-08-10T00:00:00Z",
+    coverage: { count: 1, lastUpdatedAt: "2026-08-10T00:00:00Z" }, popular: [TICKER],
+    companies: [{
+      ticker: TICKER, name: "Acme Corp", nameZh: null, aliases: ["CLOUD"], sector: null, status: "ready",
+      latestPeriod: { periodEnd: latest.periodEnd, fiscalLabel: "2026 Q2", filedAt: latest.reportedAt ?? null },
+      revenue: { value: amount(latest), currency: latest.currency, yoyPct: pct(amount(latest), yearAgo ? amount(yearAgo) : null), qoqPct: pct(amount(latest), previous ? amount(previous) : null) },
+      revenueReason: null,
+      revenueTrend: flow.quarters.slice(-8).map(quarter => ({ periodEnd: quarter.periodEnd, value: amount(quarter) })),
+      findingCounts: counts,
+      topFindings: [...findings.findings].sort((a, b) => b.severity - a.severity || a.id.localeCompare(b.id)).slice(0, 2)
+        .map(finding => ({ id: finding.id, kind: finding.kind, severity: finding.severity, title: finding.title, periodEnd: findings.periodEnd })),
+    }],
+  };
+}
+
 export function fixtureApi(): Plugin {
   return {
     name: "business-site-fixture-api",
@@ -41,6 +75,13 @@ export function fixtureApi(): Plugin {
           published++;
           res.setHeader("content-type", "application/json");
           res.end(JSON.stringify({ published, revision: revision() }));
+          return;
+        }
+        const path = req.url?.split("?")[0];
+        if (path === "/api/business/v1/home") {
+          res.statusCode = req.method === "GET" ? 200 : 405;
+          res.setHeader("content-type", "application/json");
+          res.end(JSON.stringify(req.method === "GET" ? homeDigest() : { error: "Method not allowed" }));
           return;
         }
         const match = req.url?.match(/^\/api\/business\/v1\/companies\/([^/?]+)(\/[a-z]+)?(?:\?|$)/);

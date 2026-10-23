@@ -26,6 +26,7 @@ import { readRevisions } from "../pipeline/revisions.ts";
 import type { RevisionsResponse } from "../../../../shared/analysis-contract/revisions.ts";
 import type { PublicSecFiling } from "../../../../shared/analysis-contract/filings.ts";
 import type { Feature } from "../../../../shared/analysis-contract/business-features.ts";
+import { readHomeDigest, type HomeDigestEnv } from "./home-digest.ts";
 
 /**
  * The analysis backend's read surface, served only to the business map over the `MapReads`
@@ -37,7 +38,7 @@ import type { Feature } from "../../../../shared/analysis-contract/business-feat
  * is why the fundamentals refresh that used to be triggered by a read now happens inside the company
  * analysis Workflow, when an analysis needs it.
  */
-export type AnalysisReadEnv = FeatureDefaultsEnv & {
+export type AnalysisReadEnv = HomeDigestEnv & {
   /** The analysis database. Absent in a partially configured environment, which answers 503. */
   DB?: D1Database;
 };
@@ -60,7 +61,8 @@ type RouteMatch =
   | { kind: "passage"; ticker: string; passageId: string }
   | { kind: "fundamentals"; ticker: string }
   | { kind: "revisions"; ticker: string }
-  | { kind: "findings-index" };
+  | { kind: "findings-index" }
+  | { kind: "home" };
 
 
 /** A filing as the reports feature's display switch leaves it for readers: the filing itself, none of the model's writing. */
@@ -105,13 +107,24 @@ export async function handleMapRead(request: Request, env: AnalysisReadEnv): Pro
 
   try {
     if (route.kind === "findings-index") return await findingsIndex(request, env.DB, env);
+    if (route.kind === "home") return await home(request, env.DB, env);
     return await handleRoute(request, env.DB, env, route);
   } catch (error) {
     return errorResponse(...describeFailure(error));
   }
 }
 
-async function handleRoute(request: Request, database: D1Database, env: FeatureDefaultsEnv, route: Exclude<RouteMatch, { kind: "findings-index" }>): Promise<Response> {
+/** One aggregated read for the public homepage. `?locale=` matches the other read routes. */
+async function home(request: Request, database: D1Database, env: HomeDigestEnv): Promise<Response> {
+  const url = new URL(request.url);
+  if ([...url.searchParams.keys()].some(key => key !== "locale")) return errorResponse("ROUTE_NOT_FOUND", "No such resource.");
+  const requested = url.searchParams.get("locale");
+  if (requested != null && !isLocale(requested)) return errorResponse("ROUTE_NOT_FOUND", "No such resource.");
+  const locale = isLocale(requested) && requested !== "en" ? requested : null;
+  return dataResponse(request, await readHomeDigest(database, env, locale), "cacheable");
+}
+
+async function handleRoute(request: Request, database: D1Database, env: FeatureDefaultsEnv, route: Exclude<RouteMatch, { kind: "findings-index" } | { kind: "home" }>): Promise<Response> {
   // The admin's switch for one feature of this company: off hides what the feature wrote (docs/whitelist-feature-switches-design.md).
   const hidden = async (feature: Feature, ticker = route.ticker) => !await featureShown(database, env, ticker.trim().toUpperCase(), feature);
   const url = new URL(request.url);
@@ -216,6 +229,7 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
 }
 
 function matchRoute(pathname: string): RouteMatch | null {
+  if (/^\/api\/v1\/home\/?$/.test(pathname)) return { kind: "home" };
   if (/^\/api\/v1\/findings\/?$/.test(pathname)) return { kind: "findings-index" };
   const company = /^\/api\/v1\/companies\/([^/]+)\/(filings|fundamentals|business-flow|capital|business-explainer|business-tree|guidance|findings|events|items|passages|revisions)(?:\/([^/]+))?\/?$/.exec(pathname);
   if (!company) return null;

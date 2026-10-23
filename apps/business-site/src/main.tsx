@@ -11,6 +11,8 @@ import { SearchDialog } from "./SearchDialog";
 import { useLiveCompany } from "./live-company";
 import { UpdateNotice } from "./UpdateNotice";
 import { Home } from "./Home";
+import { useHomeDigest } from "./home-data";
+import { reasonKeys } from "./public-reason";
 import { useStageHost } from "./stage/StageHost";
 import { turnPage, usePageTurning } from "./page-turn";
 
@@ -23,6 +25,46 @@ const m = messages({
   loadFailed: "加载失败", retry: "重试", unavailable: "暂无数据", processing: "处理中", loading: "加载中",
   title: "Business View", description: "业务地图 · 从 SEC 文件看公司的业务、营收、成本费用与净利润",
 });
+
+const reasons = messages({
+  unavailable: "This company is not covered yet",
+  preparing: "The latest filing is still being read",
+  missingQuarters: "Two comparable quarters are not ready yet",
+  incomparable: "The two quarters cannot be compared",
+  missingDisclosure: "A required disclosure is missing",
+  invalidSource: "The filing source could not be checked",
+  unbalanced: "The statement does not balance",
+  unsupported: "This industry layout is not supported yet",
+  signed: "This statement layout is not supported yet",
+  invalid: "The published figures could not be read",
+  notCollected: "The latest period has not been collected",
+  restatement: "A restatement is still under review",
+  sourceDown: "The source is temporarily unavailable",
+  backHome: "Back to home",
+}, {
+  unavailable: "这家公司暂未覆盖",
+  preparing: "最新财报仍在读取",
+  missingQuarters: "可比的两个季度尚未齐备",
+  incomparable: "这两个季度无法对比",
+  missingDisclosure: "缺少必要披露",
+  invalidSource: "无法核验申报来源",
+  unbalanced: "报表未配平",
+  unsupported: "该行业结构暂不支持",
+  signed: "该报表结构暂不支持",
+  invalid: "已发布的数字无法读取",
+  notCollected: "最新期间尚未采集",
+  restatement: "重述仍在复核",
+  sourceDown: "数据来源暂时不可用",
+  backHome: "返回首页",
+});
+
+function reasonText(codes: readonly string[]): string {
+  const text = reasonKeys(codes).map(key => {
+    const value = (reasons as Record<string, unknown>)[key];
+    return typeof value === "string" ? value : "";
+  }).filter(Boolean);
+  return text.join(" · ") || reasons.unavailable;
+}
 
 const RECENT_KEY = "business-map-recent";
 function readRecent(): string[] {
@@ -137,7 +179,8 @@ function Company({ ticker, tools, onSeen }: { ticker: string; tools: ReactNode; 
     return (
       <StateShell ticker={ticker} tools={tools} role="status">
         <h2>{publication.status === "unavailable" ? m.unavailable : m.processing}</h2>
-        <p className="state-reasons">{publication.reasons.join(" · ")}</p>
+        <p className="state-reasons">{reasonText(publication.reasons)}</p>
+        <p><a href="/" data-nav>{reasons.backHome}</a></p>
       </StateShell>
     );
   return <Skeleton ticker={ticker} tools={tools} />;
@@ -160,6 +203,7 @@ function Skeleton({ ticker, tools }: { ticker: string; tools: ReactNode }) {
 }
 function App() {
   const locale = useLocale();
+  const home = useHomeDigest(locale);
   const [ticker, setTicker] = useState(tickerFromUrl),
     [searching, setSearching] = useState(false),
     [recent, setRecent] = useState(readRecent),
@@ -220,7 +264,8 @@ function App() {
         e.preventDefault();
         // Home keeps its own field in view; elsewhere the dialog opens.
         const field = document.querySelector<HTMLInputElement>(".home .search-field input");
-        if (field) field.focus();
+        const box = field?.getBoundingClientRect();
+        if (field && box && box.bottom > 64 && box.top < window.innerHeight) field.focus();
         else setSearching(true);
       }
     };
@@ -266,9 +311,16 @@ function App() {
     else setCollapsed(!open);
   }
   const toggleTheme = () => setLight((v) => !v);
+  const covered = new Set((home.digest?.companies ?? []).map(company => company.ticker));
+  const shownRecent = home.status === "ready" ? recent.filter(item => covered.has(item)) : recent;
+  const catalog = (home.digest?.companies ?? []).map(company => ({ ticker: company.ticker, name: company.name, nameZh: company.nameZh, aliases: company.aliases }));
+  const catalogStatus = home.status === "ready" ? "ready" as const : home.status === "error" ? "error" as const : "loading" as const;
   // Text and number forms are produced in the locale current when they render, so a switch remounts the page under the new one.
   if (!ticker)
-    return <Home key={locale} light={light} onToggleTheme={toggleTheme} recent={recent} onPick={openCompany} />;
+    return <Fragment key={locale}>
+      <Home light={light} onToggleTheme={toggleTheme} recent={shownRecent} onPick={openCompany} digest={home.digest} digestStatus={home.status} onRetry={home.retry} onSearch={() => setSearching(true)} />
+      <SearchDialog open={searching} current={null} recent={shownRecent} onClose={() => setSearching(false)} onPick={openCompany} catalog={catalog} popular={home.digest?.popular ?? []} catalogStatus={catalogStatus} />
+    </Fragment>;
   const actions = (
     <RailActions
       light={light}
@@ -284,7 +336,7 @@ function App() {
           <Company key={ticker} ticker={ticker} tools={actions} onSeen={remember} />
         </main>
       </SidebarProvider>
-      <SearchDialog open={searching} current={ticker} recent={recent} onClose={() => setSearching(false)} onPick={openCompany} />
+      <SearchDialog open={searching} current={ticker} recent={shownRecent} onClose={() => setSearching(false)} onPick={openCompany} catalog={catalog} popular={home.digest?.popular ?? []} catalogStatus={catalogStatus} />
     </Fragment>
   );
 }

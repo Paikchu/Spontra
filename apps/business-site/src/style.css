@@ -1,5 +1,7 @@
 /* Independent shell: list on the left, the full statement on the right. Signed bridges reuse Spontra's shared stylesheet. */
 @font-face { font-family: "Geist"; src: url("../../../packages/web/fonts/Geist-Variable.woff2") format("woff2"); font-weight: 100 900; font-style: normal; font-display: swap; }
+@font-face { font-family: "Geist Mono"; src: url("../../../packages/web/fonts/GeistMono-Variable.woff2") format("woff2"); font-weight: 100 900; font-style: normal; font-display: swap; }
+@font-face { font-family: "Newsreader"; src: url("../../../packages/web/fonts/Newsreader-Variable.woff2") format("woff2"); font-weight: 200 800; font-style: normal; font-display: swap; }
 
 :root {
   color-scheme: dark;
@@ -34,6 +36,8 @@
   --stream-tint: #fff;
   --shadow-overlay: 0 18px 50px #0007, 0 2px 8px #0004;
   --sans: "Geist", "PingFang SC", "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+  --mono: "Geist Mono", ui-monospace, monospace;
+  --display: "Newsreader", "Noto Serif SC", "Songti SC", "STSong", Georgia, serif;
   --ease: cubic-bezier(.22, 1, .36, 1);
   --rail-w: 336px;
   --rail-collapsed-w: 60px;
@@ -528,7 +532,7 @@ button { cursor: pointer; }
 .search-panel { overflow: hidden; border-radius: 24px; background: var(--surface-raised); border: 1px solid var(--border); box-shadow: var(--shadow-overlay); }
 .search-field { display: flex; align-items: center; gap: 14px; height: 68px; padding: 0 22px; border-bottom: 1px solid var(--hairline); color: var(--muted-foreground); }
 .search-field svg { width: 22px; height: 22px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; }
-.search-field input { flex: 1; min-width: 0; border: 0; outline: none; background: none; font-size: 20px; font-weight: 520; letter-spacing: .01em; color: var(--foreground); text-transform: uppercase; }
+.search-field input { flex: 1; min-width: 0; border: 0; outline: none; background: none; font-size: 18px; font-weight: 500; letter-spacing: 0; color: var(--foreground); }
 .search-field input::placeholder { color: var(--faint); text-transform: none; letter-spacing: 0; }
 .search-dialog kbd { display: inline-grid; place-items: center; min-width: 22px; height: 22px; padding: 0 6px; border: 1px solid var(--border); border-radius: 6px; font-family: inherit; font-size: 11px; font-weight: 600; color: var(--faint); }
 .search-body { padding: 10px 10px 12px; }
@@ -894,23 +898,42 @@ button { cursor: pointer; }
   .lens-doc { max-height: none; }
 }
 
-/* ---------- Home: search in the middle, the latest findings drifting beneath ---------- */
-/* Same canvas as the map: dotted grid under a faint brand glow. The search sits in the centre of the free space. */
+/* ---------- Home ---------- */
+/* The page scrolls inside main on desktop (body is locked) and with the document below 960px. */
+:root.light .home { --up: #166534; --loss: #b91c1c; }
 .home {
-  display: grid; grid-template-rows: auto minmax(0, 1fr); height: 100%; min-height: 560px; overflow-y: auto; overscroll-behavior: contain;
-  padding: max(16px, env(safe-area-inset-top)) 0 max(28px, env(safe-area-inset-bottom));
+  height: 100%; min-height: 100%; overflow-y: auto; overscroll-behavior: contain;
+  padding: 0 0 max(40px, env(safe-area-inset-bottom));
   background:
-    radial-gradient(1100px 520px at 50% 30%, color-mix(in srgb, var(--brand) 6%, transparent), transparent 70%),
+    radial-gradient(1100px 520px at 50% 12%, color-mix(in srgb, var(--brand) 6%, transparent), transparent 70%),
     radial-gradient(circle at 1px 1px, var(--hairline) 1px, transparent 1.5px) 0 0 / 22px 22px;
 }
-.home-top { display: flex; justify-content: flex-end; gap: 4px; padding: 0 max(24px, env(safe-area-inset-right)) 0 max(24px, env(safe-area-inset-left)); }
-/* Search, recent companies and findings form one block centred in the free space. */
-.home-center { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 44px; min-width: 0; padding-bottom: 6vh; }
-.home-hero {
-  position: relative; z-index: 2; display: flex; flex-direction: column; align-items: center; width: min(720px, 100% - 48px);
-  text-align: center; animation: rise .5s var(--ease) both;
+.home-nav {
+  position: sticky; top: 0; z-index: 20; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 16px; height: 56px;
+  padding: 0 max(32px, env(safe-area-inset-right)) 0 max(32px, env(safe-area-inset-left));
 }
-.home-hero h1 { margin: 0 0 32px; font-size: clamp(32px, 5vw, 48px); font-weight: 650; letter-spacing: -.03em; line-height: 1.1; }
+.home-nav[data-stuck] { background: color-mix(in srgb, var(--background) 82%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-bottom: 1px solid var(--hairline); }
+.home-brand { display: inline-flex; align-items: center; gap: 8px; justify-self: start; font-size: 14px; font-weight: 620; letter-spacing: -.01em; text-decoration: none; }
+.home-mark { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 6px; background: var(--brand); color: #0a1412; font-size: 11px; font-weight: 700; }
+:root.light .home-mark { color: #f4f7f2; }
+.home-anchors { display: flex; gap: 4px; }
+.home-anchors button, .home-nav-search { border: 0; background: transparent; color: var(--muted-foreground); font-size: 13px; font-weight: 560; padding: 6px 10px; border-radius: 999px; }
+.home-anchors button:hover, .home-nav-search:hover { color: var(--foreground); background: color-mix(in srgb, var(--foreground) 6%, transparent); }
+.home-nav-tools { display: flex; align-items: center; gap: 2px; justify-self: end; }
+.home-hero .search-panel { animation: rise .5s var(--ease) .18s both; }
+.home-nav-search { display: inline-flex; align-items: center; gap: 8px; }
+.home-nav-search kbd, .home-eyebrow b, .home-card b, .home-signal b, .home-delta, .home-metric strong { font-variant-numeric: tabular-nums lining-nums; }
+.home-wrap { width: min(1200px, calc(100% - 64px)); margin: 0 auto; }
+.home-hero { position: relative; z-index: 4; display: flex; flex-direction: column; align-items: center; width: min(760px, 100%); min-height: 360px; margin: 0 auto; padding: 72px 0 40px; text-align: center; }
+.home-eyebrow { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 0 0 16px; font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted-foreground); animation: rise .45s var(--ease) both; }
+.home-count { display: inline-block; width: 24px; height: 14px; border-radius: 4px; background: var(--hairline); }
+.home-hero h1 { margin: 0 0 14px; max-width: 16em; font-family: var(--display); font-size: clamp(36px, 4.4vw, 56px); font-weight: 500; line-height: 1.12; letter-spacing: -.02em; animation: rise .5s var(--ease) .06s both; }
+.home-sub { margin: 0 0 28px; max-width: 38em; font-size: 18px; font-weight: 400; line-height: 1.6; color: var(--muted-foreground); animation: rise .5s var(--ease) .12s both; }
+.home-trust { margin: 14px 0 0; font-size: 12px; font-weight: 500; letter-spacing: .02em; color: var(--faint); }
+.home-quick { display: flex; align-items: center; gap: 8px; width: min(760px, 100%); margin: 16px auto 0; overflow-x: auto; scrollbar-width: none; mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 24px), transparent); }
+.home-quick::-webkit-scrollbar { display: none; }
+.home-quick > span { flex: none; font-size: 12px; color: var(--faint); }
+.home-sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 
 /* The inline search is the dialog's panel resting on the page; its list floats beneath the field. */
 .search-panel[data-inline] { position: relative; z-index: 5; width: 100%; overflow: visible; text-align: left; border-radius: 22px; box-shadow: var(--rail-shadow); transition: border-color .2s, box-shadow .2s; }
@@ -924,50 +947,109 @@ button { cursor: pointer; }
 .search-drop .search-foot kbd { min-width: 18px; height: 18px; padding: 0 4px; font-size: 10.5px; }
 .search-drop[hidden] { display: none; }
 
-.home-recent { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; margin-top: 18px; font-size: 12px; color: var(--faint); }
-.home-recent > span { margin-right: 2px; }
-.home-recent a { display: inline-flex; align-items: center; gap: 8px; padding: 4px 12px 4px 4px; border-radius: 999px; font-size: 12.5px; font-weight: 600; letter-spacing: .02em; color: var(--muted-foreground); text-decoration: none; background: var(--surface); border: 1px solid var(--hairline); transition: color .2s, border-color .2s; }
-.home-recent a:hover { color: var(--foreground); border-color: var(--border); }
+.search-panel[data-inline] .search-field { height: 60px; }
+.search-panel[data-inline] .search-body { max-height: min(360px, 50dvh); overflow: auto; }
+.search-name { flex: 1; min-width: 0; overflow: hidden; font-size: 13px; color: var(--muted-foreground); white-space: nowrap; text-overflow: ellipsis; }
+.search-option mark { background: none; color: var(--brand); }
+.search-option[data-uncovered] { cursor: default; }
+.search-live { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
 
-/* Round company logos at chip size, for recent companies and findings alike. */
+.home-quick a { display: inline-flex; align-items: center; gap: 8px; flex: none; padding: 4px 12px 4px 4px; border-radius: 999px; font-size: 12.5px; font-weight: 600; letter-spacing: .02em; color: var(--muted-foreground); text-decoration: none; background: var(--surface); border: 1px solid var(--hairline); }
+.home-quick a:hover { color: var(--foreground); border-color: var(--border); }
 .home .company-logo--sm { width: 22px; height: 22px; border-radius: 999px; }
 .home .company-logo--sm img { inset: 4px; width: calc(100% - 8px); height: calc(100% - 8px); }
 .home .company-logo--sm .company-logo-fallback { font-size: 9px; }
 
-/* ---------- Findings marquee ---------- */
-.home-findings { display: grid; gap: 12px; width: min(1120px, 100%); min-width: 0; animation: fade-in .6s ease both; }
-.home-findings-title { display: flex; justify-content: center; align-items: baseline; gap: 6px; margin: 0; font-size: 12.5px; font-weight: 620; letter-spacing: .02em; }
-.home-findings-title small { font-size: 11px; font-weight: 500; color: var(--faint); }
-.marquee { display: grid; gap: 10px; min-width: 0; overflow: hidden; mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent); -webkit-mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent); }
-.marquee-row { min-width: 0; overflow: hidden; }
-.marquee-track { display: flex; gap: 8px; width: max-content; margin: 0; padding: 2px 0; list-style: none; animation: marquee var(--duration, 40s) linear infinite; }
-/* Brick layout: the second row starts half a chip in and a beat later, so its chips sit between the first row's. */
-.marquee-row[data-offset] .marquee-track { margin-left: 110px; animation-delay: calc(var(--duration) / -9); }
-/* Pointing at or tabbing into a row holds it still so a chip can be read and chosen. */
-.marquee-row:hover .marquee-track, .marquee-row:focus-within .marquee-track { animation-play-state: paused; }
-.marquee-track li { display: flex; }
-/* One gap of the track belongs to each half, so sliding by exactly half lands on an identical frame. */
-@keyframes marquee { to { transform: translateX(calc(-50% - 4px)); } }
-.marquee-chip { flex: none; min-width: 0; max-width: 340px; padding: 4px 13px 4px 4px; font-size: 13px; text-decoration: none; }
-.marquee-chip:hover { color: var(--foreground); background: color-mix(in srgb, var(--kind) 10%, var(--surface)); }
-.marquee-ghost { width: 220px; height: 32px; padding: 0; animation: pulse 1.6s ease-in-out infinite; }
+.home-signals, .home-companies { margin-top: 56px; }
+.home-section-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+.home-section-head h2 { margin: 0; font-size: 24px; font-weight: 650; line-height: 1.3; letter-spacing: -.01em; }
+.home-section-head p { margin: 4px 0 0; font-size: 13px; color: var(--muted-foreground); }
+.home-section-head select { height: 34px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--foreground); }
+.home-tabs { display: flex; gap: 4px; }
+.home-tabs button { border: 1px solid var(--hairline); background: transparent; color: var(--muted-foreground); border-radius: 999px; padding: 5px 12px; font-size: 12.5px; font-weight: 560; }
+.home-tabs button[aria-selected="true"] { color: var(--background); background: var(--foreground); border-color: var(--foreground); }
+.home-signals-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; }
+.home-signal, .home-card { display: flex; flex-direction: column; min-width: 0; border: 1px solid var(--hairline); border-radius: 16px; background: var(--card); text-decoration: none; }
+.home-signal { gap: 8px; min-height: 168px; padding: 16px; }
+.home-signal header, .home-card header { display: flex; align-items: center; gap: 8px; }
+.home-signal header span, .home-card footer { margin-left: auto; font-size: 12px; color: var(--faint); }
+.home-signal b, .home-card b { font-family: var(--mono); font-weight: 600; letter-spacing: .02em; }
+.home-kind { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 12px; font-weight: 600; color: var(--kind, var(--muted-foreground)); }
+.home-kind > i { width: 6px; height: 6px; border-radius: 50%; background: var(--kind); }
+.home-severity { display: inline-flex; gap: 3px; margin-left: 4px; }
+.home-severity i { width: 5px; height: 5px; border-radius: 50%; background: var(--hairline); }
+.home-severity i[data-on] { background: currentColor; }
+.home-signal-title { display: -webkit-box; margin: 0; overflow: hidden; -webkit-line-clamp: 2; -webkit-box-orient: vertical; font-size: 14px; font-weight: 450; line-height: 1.55; }
+.home-more { margin-top: auto; font-size: 12px; color: var(--muted-foreground); }
+.home-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 24px; }
+.home-card { gap: 10px; min-height: 168px; padding: 14px 14px 12px; transition: transform .2s var(--ease), border-color .2s; }
+.home-card:hover { transform: translateY(-2px); border-color: var(--border); }
+.home-card header > span { display: flex; flex: 1; flex-direction: column; min-width: 0; }
+.home-card header small { overflow: hidden; font-size: 13px; font-weight: 450; color: var(--muted-foreground); white-space: nowrap; text-overflow: ellipsis; }
+.home-card .company-logo { width: 32px; height: 32px; }
+.home-open { margin-left: auto; font-size: 12px; color: var(--faint); opacity: 0; }
+.home-card:hover .home-open, .home-card:focus-visible .home-open { opacity: 1; }
+.home-badge { margin-left: auto; padding: 2px 7px; border-radius: 999px; font-size: 11px; font-style: normal; font-weight: 600; color: var(--muted-foreground); background: var(--fill); }
+.home-metric, .home-metric-row, .home-card footer { display: flex; align-items: center; gap: 8px; margin: 0; }
+.home-metric span, .home-metric-row > span:first-child { font-size: 12px; color: var(--faint); }
+.home-metric strong { font-size: 22px; font-weight: 600; letter-spacing: -.01em; }
+.home-delta { font-size: 13px; font-weight: 600; }
+.home-delta[data-dir="up"] { color: var(--up); }
+.home-delta[data-dir="down"] { color: var(--loss); }
+.home-bars { display: inline-flex; align-items: flex-end; gap: 2px; width: 96px; height: 28px; margin-left: auto; }
+.home-bars i { flex: 1; height: var(--h); border-radius: 2px 2px 0 0; background: color-mix(in srgb, var(--brand) 70%, var(--muted-foreground)); transform-origin: bottom; animation: grow .48s var(--ease) both; }
+.home-card footer { margin-top: auto; padding-top: 8px; border-top: 1px solid var(--hairline); font-size: 12px; color: var(--muted-foreground); }
+.home-card footer span:last-child { margin-left: auto; color: var(--faint); }
+.home-ghost { background: linear-gradient(90deg, var(--hairline), color-mix(in srgb, var(--foreground) 7%, transparent), var(--hairline)) 0 0 / 200% 100%; animation: shimmer 1.6s ease-in-out infinite; }
+.home-error { display: grid; justify-items: center; gap: 12px; padding: 28px 0; color: var(--muted-foreground); }
+.home-error button { padding: 8px 16px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); }
+.home-how { margin-top: 72px; }
+.home-how ol { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; margin: 0; padding: 0; list-style: none; }
+.home-how svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.home-how h3 { margin: 10px 0 4px; font-size: 16px; font-weight: 620; }
+.home-how p { margin: 0; font-size: 14px; line-height: 1.55; color: var(--muted-foreground); }
+.home-foot { margin-top: 56px; font-size: 12px; line-height: 1.6; color: var(--faint); }
+.home-foot p { margin: 0 0 6px; }
+.home-toast { position: fixed; left: 50%; bottom: 16px; z-index: 30; transform: translateX(-50%); margin: 0; padding: 8px 14px; border-radius: 999px; background: var(--surface-raised); border: 1px solid var(--border); font-size: 13px; }
+html[lang^="zh"] .home, html[lang^="zh"] .home * { letter-spacing: 0; }
+html[lang^="zh"] .home-sub, html[lang^="zh"] .home-signal-title, html[lang^="zh"] .home-how p { line-height: 1.7; }
 @media (prefers-reduced-motion: reduce) {
-  /* Without motion each row becomes a plain horizontal scroller holding one copy. */
-  .marquee-row { overflow-x: auto; scrollbar-width: none; }
-  .marquee-track li[aria-hidden] { display: none; }
+  .home-hero h1, .home-sub, .home-eyebrow, .home-hero .search-panel { animation: home-fade .15s ease both; }
+  .home-bars i, .home-card, .home-ghost { animation: none; }
+  .home-card:hover { transform: none; }
 }
+@keyframes home-fade { from { opacity: 0; } }
 
-/* Narrow screens let the document scroll (#root and main size to content), so the home claims the viewport itself. */
+@media (max-width: 1279px) {
+  .home-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+  .home-signals-grid { gap: 20px; }
+}
 @media (max-width: 960px) {
   .home { height: auto; min-height: 100dvh; }
+  .home-wrap { width: calc(100% - 48px); }
+  .home-nav { grid-template-columns: 1fr auto; }
+  .home-anchors { display: none; }
+  .home-nav-search span { display: none; }
+  .home-signals, .home-companies { margin-top: 40px; }
+  .home-signals-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+  .home-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+  .home-how ol { grid-template-columns: 1fr; gap: 16px; }
+  .search-panel[data-inline] .search-foot { display: none; }
 }
 @media (max-width: 620px) {
-  .home-hero { width: calc(100% - 32px); }
-  .home-hero h1 { margin-bottom: 24px; }
-  .search-panel[data-inline] .search-field { height: 58px; padding: 0 18px; }
+  .home-nav { height: 52px; padding-inline: max(16px, env(safe-area-inset-left)) max(16px, env(safe-area-inset-right)); }
+  .home-wrap { width: auto; margin-inline: max(16px, env(safe-area-inset-left)) max(16px, env(safe-area-inset-right)); }
+  .home-hero { min-height: 0; padding: 40px 0 28px; }
+  .home-hero h1 { font-size: 32px; }
+  .home-sub { font-size: 16px; }
+  .home-section-head { flex-direction: column; align-items: flex-start; }
+  .home-section-head h2 { font-size: 20px; }
+  .home-signals-grid { display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; }
+  .home-signal { flex: 0 0 85vw; scroll-snap-align: start; }
+  .home-grid { grid-template-columns: 1fr; gap: 12px; }
+  .home-card { min-height: 132px; }
+  .search-panel[data-inline] .search-field { height: 56px; }
   .search-panel[data-inline] .search-field input { font-size: 17px; }
-  .search-panel[data-inline] .search-foot { display: none; }
-  .marquee-chip { max-width: 260px; }
 }
 
 /* ---------- Events: what was filed between reports, in the rail under the findings ---------- */
