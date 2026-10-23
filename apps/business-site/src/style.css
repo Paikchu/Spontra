@@ -252,17 +252,47 @@ button { cursor: pointer; }
 }
 .stage--state { display: block; overflow-y: auto; }
 .stage-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px 24px; flex-wrap: wrap; }
-.stage-head--summary { align-items: flex-start; }
+.stage-head--summary { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 12px 24px; }
+/* One fixed row: the figures compress beside the controls and never wrap, so the chart below keeps its height. */
+.stage-head--summary > .stats { grid-column: 1; grid-row: 1; }
+.stage-head--summary > .stage-controls { grid-column: 2; grid-row: 1; flex-wrap: nowrap; }
+.stage-head--summary > .view-flags { grid-column: 1 / -1; }
 .periods { display: inline-flex; margin-left: auto; padding: 3px; gap: 2px; border-radius: 999px; background: var(--surface); border: 1px solid var(--hairline); }
 .periods button { border: 0; background: transparent; padding: 6px 13px; border-radius: 999px; font-size: 12.5px; font-variant-numeric: tabular-nums; color: var(--muted-foreground); transition: background .2s, color .2s; }
 .periods button:hover { color: var(--foreground); }
 .periods button[aria-checked="true"] { background: var(--foreground); color: var(--background); font-weight: 600; }
 
-.stats { display: flex; flex-wrap: wrap; gap: 14px clamp(28px, 4vw, 56px); }
-.stat { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.stat-label { font-size: 12px; color: var(--muted-foreground); }
-.stat-value { font-size: clamp(22px, 2.1vw, 30px); font-weight: 620; letter-spacing: -.035em; font-variant-numeric: tabular-nums; line-height: 1.15; }
-.stat-note { font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
+.stats {
+  --n: 3; container-type: inline-size; display: flex; flex-wrap: nowrap; column-gap: clamp(20px, 2.6vw, 44px);
+  overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: none;
+}
+.stats::-webkit-scrollbar { display: none; }
+.stats:not(:has(> :nth-child(3))) { --n: 2; }
+.stats:has(> :nth-child(4)) { --n: 4; }
+.stats:has(> :nth-child(5)) { --n: 5; }
+/* Figures shrink to their value's width, never below it; labels and notes give way first, cut to one line. */
+.stat { flex: 0 1 auto; display: flex; flex-direction: column; gap: 4px; }
+.stat-label, .stat-note { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; font-size: 12px; line-height: 1.4; }
+.stat-label { color: var(--muted-foreground); }
+.stat-label .level-mark { margin-right: 6px; }
+/* The value's size follows each figure's share of the row: about 6.5 glyphs to a figure, between 16px and the cap. */
+.stat-value { font-size: clamp(16px, calc(100cqi / var(--n) / 6.5), var(--stat-max, 26px)); font-weight: 620; letter-spacing: -.035em; font-variant-numeric: tabular-nums; line-height: 1.15; white-space: nowrap; }
+.stat-note { color: var(--faint); font-variant-numeric: tabular-nums; }
+/* Past the narrowest size the row scrolls sideways; its edges fade only while there is more to see that way. */
+@supports (animation-timeline: scroll()) {
+  @property --stats-fade-start { syntax: "<length>"; inherits: false; initial-value: 0px; }
+  @property --stats-fade-end { syntax: "<length>"; inherits: false; initial-value: 0px; }
+  .stats {
+    mask-image: linear-gradient(to right, transparent, #000 var(--stats-fade-start), #000 calc(100% - var(--stats-fade-end)), transparent);
+    animation: stats-fade linear both; animation-timeline: scroll(self inline);
+  }
+}
+@keyframes stats-fade {
+  0% { --stats-fade-start: 0px; --stats-fade-end: 32px; }
+  8% { --stats-fade-start: 32px; }
+  92% { --stats-fade-end: 32px; }
+  100% { --stats-fade-start: 32px; --stats-fade-end: 0px; }
+}
 
 .chart { position: relative; min-height: 0; margin-top: 8px; }
 .chart-fallback { position: absolute; inset: 0; overflow: auto; padding-top: 16px; }
@@ -646,6 +676,8 @@ button { cursor: pointer; }
   .finding-title { font-size: 12.5px; }
   .stage { order: 2; min-width: 0; max-width: 100%; padding: 20px 16px 16px; }
   .stage-head, .stats { min-width: 0; max-width: 100%; }
+  .stage-head--summary { grid-template-columns: minmax(0, 1fr); }
+  .stage-head--summary > .stage-controls { grid-column: 1; grid-row: auto; flex-wrap: wrap; }
   .dossier { order: 3; margin: 0 16px 32px; }
   .chart { margin-top: 16px; overflow-x: auto; overscroll-behavior-x: contain; }
   .fc { position: relative; inset: auto; width: max(100%, 780px, var(--mobile-width, 780px)); aspect-ratio: var(--ratio); }
@@ -658,16 +690,13 @@ button { cursor: pointer; }
   .trend-plot[data-rates] { --axis-r: 40px; }
   .provenance { justify-content: flex-start; }
 }
-@media (max-width: 620px) {
-  .stats { gap: 14px 24px; }
-}
 @media (prefers-reduced-motion: reduce) {
   *, *::before, ::backdrop { animation: none !important; transition: none !important; }
   .fc-streams { display: none; }
 }
 @media (min-width: 961px) and (max-height: 820px) {
   .stage { padding-top: 8px; }
-  .stat-value { font-size: 22px; }
+  .stat-value { --stat-max: 22px; }
   .trend { height: 178px; }
 }
 
@@ -1345,7 +1374,6 @@ main[data-rail="collapsed"] .update-notice { left: calc((100vw + var(--rail-coll
 .level-counts > span { display: inline-flex; align-items: center; gap: 4px; color: var(--level); }
 
 /* Tiles: a figure a rule is about carries the rule's mark and an underline in its colour. */
-.stat[data-level] .stat-label { display: inline-flex; align-items: center; gap: 6px; }
 .stat[data-level] .stat-value { text-decoration: underline 2px var(--level); text-underline-offset: 6px; }
 
 /* The view's tripped rules, one row under the tiles. */
