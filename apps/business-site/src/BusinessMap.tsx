@@ -675,7 +675,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
           : <div className="business-flow chart-fallback">{current && <Dossier item={current} parent={parent ?? null} sources={quarter.sources} explainer={explainer} />}<FinancialSankey quarter={quarter} previous={previous} word={word.change} onSegment={key => pickOnChart(items.find(item => item.key === key)?.id ?? null)} /></div>}
       </div>
 
-      {points.length > 0 && <Timeline points={points} now={now.getTime()} currentPeriod={quarter?.periodEnd ?? null} activeEventId={focusedEvent?.id ?? null} activeReportId={null}
+      {points.length > 0 && <Timeline points={points} now={now.getTime()} currentPeriod={quarter?.periodEnd ?? null}
         onReport={(id, end) => { if (filings?.filings.some(f => f.accessionNumber === id)) { focusFinding(null); focusReport(id); } else { setPeriod(quarters.find(q => q.periodEnd === end)?.id ?? null); focusFinding(null); setEventId(null); setReportId(null); } }} onEvent={id => focusEvent(id)} />}
 
       {mindItem && mindMap ? <div className="lens-stage"><MindLens item={mindItem} branch={mindMap.branches.find(b => b.node === mindItem.anchor)} sources={mindMap.sources} onClose={() => setMindItem(null)} /></div>

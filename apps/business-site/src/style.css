@@ -576,7 +576,7 @@ button { cursor: pointer; }
 .error-picks small { font-size: 12px; font-weight: 500; color: var(--muted-foreground); }
 .error-code { margin: 22px 0 0; font-family: var(--mono); font-size: 12px; line-height: 1.4; color: var(--faint); }
 @keyframes error-in { from { opacity: 0; transform: translateY(8px); } }
-@media (prefers-reduced-motion: reduce) { .error-state, .timeline-pop { animation: none; } .timeline-hit i, .timeline-hit b { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .error-state { animation: none; } }
 
 /* ---------- States ---------- */
 .state, .empty { max-width: 520px; margin: 12vh auto 0; padding: 0 24px; text-align: center; line-height: 1.7; }
@@ -1207,41 +1207,21 @@ html[lang^="zh"] .home-sub, html[lang^="zh"] .home-signal-title, html[lang^="zh"
 :root[data-vt="swap-chart"]::view-transition-old(root),
 :root[data-vt="swap-chart"]::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
 
-/* The time axis under the chart: type chips, quarter ticks, one hit target per filing or cluster. */
+/* The time axis under the chart: quarter ticks along the track, one marker per filing, the current report and the focused event lit. */
 .stage[data-timeline] { grid-template-rows: auto minmax(0, 1fr) auto auto auto; }
 .stage:has(.findings)[data-timeline] { grid-template-rows: auto auto minmax(0, 1fr) auto auto auto; }
-.timeline { min-width: 0; max-width: 100%; margin-top: 6px; padding: 4px 0 0; }
-.timeline-filters { display: flex; align-items: center; gap: 6px; height: 36px; margin: 0 0 2px; overflow-x: auto; scrollbar-width: none; }
-.timeline-filters::-webkit-scrollbar { display: none; }
-.timeline-filters button { display: inline-flex; align-items: center; gap: 6px; flex: none; height: 28px; padding: 0 10px; border: 1px solid var(--border); border-radius: 999px; background: transparent; color: var(--muted-foreground); font-size: 12px; font-weight: 560; }
-.timeline-filters button small { font-size: 11px; font-weight: 500; color: var(--muted-foreground); font-variant-numeric: tabular-nums; }
-.timeline-filters button[aria-pressed="true"] { background: var(--foreground); border-color: var(--foreground); color: var(--background); }
-.timeline-filters button[aria-pressed="true"] small { color: var(--background); }
-.timeline-track { position: relative; height: 52px; margin: 0 20px; outline: none; }
-.timeline-track::before { content: ""; position: absolute; left: 0; right: 0; top: 18px; border-top: 1px solid var(--grid); }
-.timeline-track:focus-visible { outline: none; }
-.timeline-tick { position: absolute; top: 30px; transform: translateX(-50%); font-size: 11px; color: var(--muted-foreground); font-variant-numeric: tabular-nums; white-space: nowrap; pointer-events: none; }
-.timeline-tick::before { content: ""; position: absolute; left: 50%; top: -12px; height: 6px; border-left: 1px solid var(--grid); }
-.timeline-mark { position: absolute; top: 18px; z-index: 1; }
-.timeline-hit { position: absolute; top: 0; left: 0; width: 24px; height: 24px; margin: -12px 0 0 -12px; padding: 0; border: 0; border-radius: 999px; background: transparent; color: var(--foreground); touch-action: manipulation; }
-.timeline-hit i, .timeline-hit b { position: absolute; left: 50%; top: 50%; pointer-events: none; transition: transform .15s var(--ease), box-shadow .15s var(--ease); }
-.timeline-hit i { width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px; border: 1px solid var(--tone); border-radius: 50%; background: var(--tone); }
-.timeline-hit[data-kind="report"] i { width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 2px; }
-.timeline-hit[data-weight="1"] i { width: 4px; height: 4px; margin: -2px 0 0 -2px; background: transparent; }
-.timeline-hit[data-weight="0"] i { width: 3px; height: 3px; margin: -1.5px 0 0 -1.5px; background: transparent; }
-.timeline-hit b { display: grid; place-items: center; min-width: 14px; height: 14px; margin: 0; padding: 0 3px; border: 1px solid var(--tone); border-radius: 999px; background: var(--surface-raised); color: var(--foreground); font-size: 10px; font-weight: 650; line-height: 1; font-variant-numeric: tabular-nums; transform: translate(-50%, -50%); }
-.timeline-hit:hover i, .timeline-hit[data-cursor] i, .timeline-hit[data-current] i, .timeline-hit:hover b, .timeline-hit[data-cursor] b, .timeline-hit[data-current] b { box-shadow: 0 0 0 2px var(--focus-ring); z-index: 1; }
-.timeline-hit:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
-.timeline-tip, .timeline-pop { position: absolute; bottom: calc(100% + 8px); left: 50%; z-index: 3; transform: translateX(-50%); }
-.timeline-tip { width: max-content; max-width: 240px; margin: 0; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-raised); box-shadow: var(--shadow-overlay); text-align: left; pointer-events: none; }
-.timeline-tip small, .timeline-pop small { display: block; color: var(--muted-foreground); font-size: 11px; font-weight: 500; }
-.timeline-tip span, .timeline-pop span { display: block; color: var(--foreground); font-size: 14px; font-weight: 560; line-height: 1.4; }
-.timeline-tip[data-edge="start"], .timeline-pop[data-edge="start"] { left: 0; transform: none; }
-.timeline-tip[data-edge="end"], .timeline-pop[data-edge="end"] { left: auto; right: 0; transform: none; }
-.timeline-pop { width: min(280px, 72vw); max-height: 240px; margin: 0; padding: 4px; overflow: auto; list-style: none; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-raised); box-shadow: var(--shadow-overlay); text-align: left; animation: fade-in .15s var(--ease) both; }
-.timeline-pop button { display: grid; gap: 2px; width: 100%; min-height: 44px; padding: 8px 10px; border: 0; border-radius: 8px; background: transparent; text-align: left; }
-.timeline-pop button:hover, .timeline-pop button:focus-visible { background: color-mix(in srgb, var(--foreground) 6%, transparent); }
-@media (pointer: coarse) { .timeline-hit { width: 36px; height: 36px; margin: -18px 0 0 -18px; } }
+.timeline { margin-top: 6px; padding: 10px 0 0; }
+.timeline-track { position: relative; height: 30px; margin: 0 6px; }
+.timeline-track::before { content: ""; position: absolute; left: 0; right: 0; top: 12px; border-top: 1px solid var(--border); }
+.timeline-tick { position: absolute; top: 18px; transform: translateX(-50%); font-size: 10px; color: var(--faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.timeline-tick::before { content: ""; position: absolute; left: 50%; top: -6px; height: 4px; border-left: 1px solid var(--border); }
+.timeline-point { position: absolute; top: 12px; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; padding: 0; border: 1.5px solid var(--tone); border-radius: 50%; background: var(--tone); cursor: pointer; transition: transform .2s var(--ease), box-shadow .2s; }
+.timeline-point[data-kind="report"] { width: 11px; height: 11px; margin: -5.5px 0 0 -5.5px; border-radius: 3px; }
+.timeline-point[data-weight="1"] { width: 6px; height: 6px; margin: -3px 0 0 -3px; background: transparent; }
+.timeline-point[data-weight="0"] { width: 4px; height: 4px; margin: -2px 0 0 -2px; background: transparent; opacity: .5; }
+.timeline-point:hover, .timeline-point[aria-pressed="true"] { transform: scale(1.5); z-index: 1; box-shadow: 0 0 0 3px color-mix(in srgb, var(--tone) 25%, transparent); }
+.timeline-point[aria-pressed="true"] { background: var(--tone); }
+.timeline-point:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
 
 /* The event lens: an insider's holding staircase and figures, or a current report's reading, then the filing's facts and links. */
 .event-kind { --kind: var(--kind, var(--muted-foreground)); }
@@ -1282,7 +1262,7 @@ html[lang^="zh"] .home-sub, html[lang^="zh"] .home-signal-title, html[lang^="zh"
 .lens-axis span[data-edge="start"] { transform: none; } .lens-axis span[data-edge="end"] { transform: translateX(-100%); }
 .insider-ladder .lens-axis { grid-row: 3; }
 .ladder-scale { position: absolute; left: 0; top: 24px; bottom: 20px; display: flex; flex-direction: column; justify-content: space-between; font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; pointer-events: none; }
-@media (max-width: 960px) { .event-row { display: inline-flex; } .event-date { font-size: 12px; } }
+@media (max-width: 960px) { .event-row { display: inline-flex; } .event-date { font-size: 12px; } .timeline-track { margin: 0 2px; } }
 
 /* Reports in the rail and the report lens: the figures the filing verified, the conclusions, and the full report in a modal. */
 [data-class="report"] { --kind: var(--foreground); }
