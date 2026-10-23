@@ -9,7 +9,7 @@ import type { EventsPublication } from "@/shared/analysis-contract/events";
 import type { PublicFilingDigestPage } from "@/shared/analysis-contract/filings";
 import type { MapResource, MapRevisions } from "@/shared/analysis-contract/revisions";
 import type { FindingFundamentals } from "@/shared/analysis-runtime/findings";
-import { fetchCapital, fetchCompany, fetchFindings, fetchRevisions, fetchSupplement, publicationFlow, type CompanyPublication, type FindingsBundle } from "./company-data";
+import { CompanyHttpError, fetchCapital, fetchCompany, fetchFindings, fetchRevisions, fetchSupplement, publicationFlow, type CompanyPublication, type FindingsBundle } from "./company-data";
 import { nextPending, readRevisions, resourcesToRead } from "./revision-reads";
 
 /** Everything the company page draws from, as one value so a newer read can replace parts of it at once. */
@@ -33,12 +33,13 @@ export { openingFace } from "./opening-face";
 const OPENING_RESOURCES = ["capital", "findings", "fundamentals", "events", "filings"] as const;
 
 /** One settled read of everything the first paint draws. A failed supplement leaves its part empty; a failed company is `failed`. */
-async function loadOpening(ticker: string, signal: AbortSignal, onSeen: (ticker: string) => void): Promise<{ data: CompanyData; failed: boolean; revisions: MapRevisions }> {
+async function loadOpening(ticker: string, signal: AbortSignal, onSeen: (ticker: string) => void): Promise<{ data: CompanyData; failed: boolean; revisions: MapRevisions; httpStatus: number | null }> {
   const revisions = await fetchRevisions(ticker, signal).catch(() => null);
   if (signal.aborted) throw new DOMException("Aborted", "AbortError");
   const data: CompanyData = { ...EMPTY };
   const got: MapRevisions = {};
   let failed = false;
+  let httpStatus: number | null = null;
   const take = (resource: MapResource) => { const rev = revisions?.[resource]; if (rev) got[resource] = rev; };
   const aborted = (error: unknown) => signal.aborted || (error instanceof DOMException && error.name === "AbortError");
   await Promise.all([
@@ -49,13 +50,13 @@ async function loadOpening(ticker: string, signal: AbortSignal, onSeen: (ticker:
       data.publication = publication;
       data.flow = flow;
       if (flow) take("company");
-    }).catch(error => { if (aborted(error)) throw error; failed = true; }),
+    }).catch(error => { if (aborted(error)) throw error; failed = true; httpStatus = error instanceof CompanyHttpError ? error.status : 0; }),
     ...OPENING_RESOURCES.map(resource => readResource(ticker, resource, revisions?.[resource], signal).then(part => {
       if (part) { Object.assign(data, part); take(resource); }
     }).catch(error => { if (aborted(error)) throw error; })),
   ]);
   if (signal.aborted) throw new DOMException("Aborted", "AbortError");
-  return { data, failed, revisions: got };
+  return { data, failed, revisions: got, httpStatus };
 }
 
 /** What a newer revision brings that the reader can see: kinds of new rows, or none when only figures or prose moved. */
@@ -114,6 +115,7 @@ export function useLiveCompany(ticker: string, onSeen: (ticker: string) => void)
   const locale = useLocale();
   const [data, setData] = useState<CompanyData>(EMPTY);
   const [failed, setFailed] = useState(false);
+  const [httpStatus, setHttpStatus] = useState<number | null>(null);
   const [ready, setReady] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [pending, setPending] = useState<PendingUpdate | null>(null);
@@ -147,6 +149,7 @@ export function useLiveCompany(ticker: string, onSeen: (ticker: string) => void)
           stageChartBox();
           setData(result.data);
           setFailed(result.failed && !result.data.flow);
+          setHttpStatus(result.failed && !result.data.flow ? result.httpStatus : null);
           setReady(true);
           shown.current = result.revisions;
           checksReady.current = true;
@@ -156,6 +159,7 @@ export function useLiveCompany(ticker: string, onSeen: (ticker: string) => void)
         if (signal.aborted || gen !== loadGen.current) return;
         if (swapping) { checksReady.current = true; return; }
         setFailed(true);
+        setHttpStatus(0);
         setReady(true);
       }
     })();
@@ -208,7 +212,7 @@ export function useLiveCompany(ticker: string, onSeen: (ticker: string) => void)
     setClosed(true);
   }, []);
   const dismiss = useCallback(() => setClosed(true), []);
-  const retry = useCallback(() => { setFailed(false); setReady(false); setData(EMPTY); setPending(null); setAttempt(n => n + 1); }, []);
+  const retry = useCallback(() => { setFailed(false); setHttpStatus(null); setReady(false); setData(EMPTY); setPending(null); setAttempt(n => n + 1); }, []);
   const update = closed ? null : pending;
-  return { data, updates, failed, ready, retry, update, apply, dismiss };
+  return { data, updates, failed, httpStatus, ready, retry, update, apply, dismiss };
 }

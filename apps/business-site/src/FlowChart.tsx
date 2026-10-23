@@ -30,7 +30,7 @@ export type GuidePillMark = { node: string; text: string; action: string | null;
 type Band = { x0: number; x1: number; sy: number; ty: number; h: number; color: string; key: string; owner: string };
 
 /** Type scale in layout units at k = 1; k is solved per pane so labels keep a constant on-screen size. */
-const typeFor = (k: number) => ({ name: 14 * k, value: 21 * k, net: 26 * k, change: 13 * k, gap: 7 * k, offset: 9 * k, pill: 13 * k });
+const typeFor = (k: number) => ({ name: 14 * k, value: 21 * k, net: 26 * k, change: 14 * k, gap: 7 * k, offset: 9 * k, pill: 14 * k });
 /** One-line labels need far less vertical room than the editorial two-line default, so the statement fits a wide pane. */
 const geometryFor = (k: number) => ({ labelHeight: 34 * k, sideLabelHeight: 30 * k, gap: 14, lift: 46, drop: 40, labelGap: 22 * k, labelOffset: 12 * k, margin: 32 * k });
 const SCREEN_VALUE_PX = 16;
