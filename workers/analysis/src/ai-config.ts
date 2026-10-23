@@ -36,6 +36,8 @@ export const AI_TOOLS = {
   analyst: { label: "分析师", reasoning: "high", model: "reasoning" },
   /** Which statement line is pretax income and which come after taxes; the harness checks the arithmetic. */
   presentation: { label: "报表结构", reasoning: "low", model: "reasoning" },
+  /** Where each published line sits in a new filing's tables and which period it reports; the harness reads and reconciles the amounts. */
+  "read-note": { label: "读表说明", reasoning: "low", model: "reasoning" },
   /** Translating published English into Chinese; every translation is checked against its source. */
   translate: { label: "中文翻译", reasoning: "low", model: "analysis" },
   /** Runs one web search or reads one page for the research agents; the agents do the reading. */

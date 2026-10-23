@@ -87,6 +87,8 @@ export type AnalysisEnv = SecCronEnv & AnalysisReadEnv & {
   CHECKUP_DAILY_TURNS?: string;
   /** Model calls per UTC day for judging income statements no calculation or statement row balances (default 60). */
   PRESENTATION_DAILY_CALLS?: string;
+  /** Read-note model calls per UTC day (pipeline/financial-tasks.ts); default 120. */
+  READ_NOTE_DAILY_CALLS?: string;
   BUSINESS_TREE_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
   LIBRARY_CARDS_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
   LIBRARY_LINKS_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;

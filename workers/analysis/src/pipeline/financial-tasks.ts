@@ -1,8 +1,15 @@
-import { financialPolicy, allowData } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
+import { financialPolicy, allowData, aiIsEnabled } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
+import { newestPair } from "../../../../shared/analysis-runtime/financial-data/completeness.ts";
+import { modelFor, reasoningFor } from "../ai-config.ts";
+import { issuerHistory, newFilings, readNewFiling } from "../financial-data/new-filings.ts";
+import { readCompletePublication } from "../financial-data/publication.ts";
+import { READ_NOTE_VERSION, type NoteModel } from "../financial-data/read-note.ts";
+import { SecModelOutputError } from "../model-stream.ts";
+import { callWorkerSecModel } from "../operations.ts";
 import { CAPITAL_VERSION } from "../../../../shared/analysis-runtime/financial-data/capital-structure.ts";
 import { FinancialMaintenanceStore } from "../admin/financial-maintenance-store.ts";
 import { runFinancialMaintenanceTick } from "../admin/financial-maintenance-runner.ts";
-import { collectComplete } from "../financial-data/collect.ts";
+import { collectComplete, collectNewFilings } from "../financial-data/collect.ts";
 import { companyPolicyEnvironment } from "../financial-data/company-policy.ts";
 import { archiveFilingDisclosures, readArchivedDocument, refreshStaleProjections } from "../financial-data/disclosure-audit.ts";
 import { HISTORY_VERSION, runHistoryStep } from "../financial-data/history.ts";
@@ -45,6 +52,14 @@ export async function missedFiling(db: D1Database, ticker: string, jobId: string
   return state.newest;
 }
 
+/** Read-note model calls per UTC day across all issuers; a cap, not a target. */
+async function reserveReadNote(env: AnalysisEnv, now: Date): Promise<boolean> {
+  const cap = Number(env.READ_NOTE_DAILY_CALLS) || 120;
+  const row = await env.DB!.prepare("INSERT INTO feature_budget (day,feature,units) VALUES (?,?,1) ON CONFLICT(day,feature) DO UPDATE SET units=units+1 WHERE units<? RETURNING units")
+    .bind(now.toISOString().slice(0, 10), "read-note-calls", cap).first<{ units: number }>().catch(() => null);
+  return !!row;
+}
+
 async function dataPolicy(env: AnalysisEnv) {
   const policyEnv = await companyPolicyEnvironment(env);
   return financialPolicy({ SEC_DATA_TICKERS: policyEnv.SEC_DATA_TICKERS, SEC_TRACKED_TICKERS: policyEnv.SEC_TRACKED_TICKERS, SEC_AI_ENABLED: "false" });
@@ -66,7 +81,7 @@ export const FINANCIAL_TASKS = {
    * A job that ended unavailable for a transient reason is tried again six hours later, at most three times running.
    */
   collect: {
-    version: SEC_FLOW_PARSER_VERSION,
+    version: `${SEC_FLOW_PARSER_VERSION}:${READ_NOTE_VERSION}`,
     async run(env, ticker, { causeId, now }): Promise<TaskOutcome> {
       const db = env.DB!;
       // Paused, not finished: the filing that asked for this run is collected when collection is switched back on.
@@ -88,6 +103,25 @@ export const FINANCIAL_TASKS = {
         if (!job) return { status: "later", afterMs: 5 * MINUTE, detail: { waiting: "collection owned elsewhere" } };
       }
       const reader = archivingReader(env, ticker, causeId);
+      // An issuer that already publishes takes only its new filings, each read once by a read note; nothing published
+      // is read again (docs/agent-interpretation-design.md). An issuer's first publication still comes from the full read below.
+      const current = aiIsEnabled(env) ? (await readCompletePublication(db, job.cik).catch(() => null))?.flow : null;
+      if (current) {
+        const newest = newestPair(current).quarters[0]!;
+        const filings = await newFilings(db, ticker, job.cik, newest);
+        const listed = JSON.parse(await db.prepare("SELECT json_extract(payload, '$.collectable') c FROM sec_cache WHERE cache_key = ?").bind(`sec:discovery:v1:${ticker}`).first<{ c: string | null }>().then(r => r?.c ?? "[]")) as string[];
+        const history = await issuerHistory(db, job.cik, ticker);
+        const model: NoteModel = async (stage, system, payload) => {
+          try { return await callWorkerSecModel(env, fetch, stage, system, payload, modelFor(env, "read-note"), 3 * MINUTE, true, { reasoning: reasoningFor(env, "read-note"), ticker, kind: "read-note" }); }
+          catch (error) { if (error instanceof SecModelOutputError) return {}; throw error; }
+        };
+        const collected = await collectNewFilings({ ...job, cursor: JSON.stringify({ readNotes: true, documents: listed.map(accession => ({ accession })) }) }, current,
+          new D1CompleteStore(db, causeId), filings, (filing, published) => readNewFiling(db, reader, model, filing, { cik: job!.cik, ticker, published, history }, () => reserveReadNote(env, now)));
+        const detail = { published: collected.published, reasons: collected.reasons, read: collected.read };
+        if (collected.reasons.includes("MODEL_BUDGET_SPENT")) { const tomorrow = new Date(now); tomorrow.setUTCHours(24, 5, 0, 0); return { status: "later", afterMs: tomorrow.getTime() - now.getTime(), detail }; }
+        if (collected.reasons.includes("SOURCE_TEMPORARILY_UNAVAILABLE")) return { status: "later", afterMs: HOUR, detail };
+        return { status: "done", detail };
+      }
       // A quarter whose earnings release is out is published from the release, ahead of its 10-Q.
       // A newest quarter no structure balanced asks for a judgement (presentation-task.ts) in the publication's own
       // transaction; the publication stands meanwhile.

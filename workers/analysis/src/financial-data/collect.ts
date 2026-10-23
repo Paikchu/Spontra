@@ -8,6 +8,33 @@ import { markBasisChanges, type Restated } from './restatement.ts';
 export interface DocumentBatch {quarters:BusinessFlowQuarter[];nextCursor:string;finished:boolean;expectedPeriodEnd?:string;}
 /** The quarter an earnings release reports after the verified pair's newest quarter, when there is one. */
 export type ReadRelease=(job:Job,previous:BusinessFlowQuarter)=>Promise<{quarter:BusinessFlowQuarter|null;issues:string[]}>;
+/**
+ * An issuer that already publishes takes only its new filings, oldest first, each read once by its read note
+ * (read-note.ts); published quarters are never read again. A quarter a filing reports follows the newest published one,
+ * or replaces it when the newest came from an earnings release and the filing is its quarterly report. Nothing new ends
+ * the job without a publication. `read` throws when the filing or the model cannot be reached; the job then retries.
+ */
+export async function collectNewFilings<F extends {accession:string}>(job:Job,current:PublicBusinessFlow,store:CompleteStore,filings:F[],readFiling:(filing:F,published:BusinessFlowQuarter[])=>Promise<{quarter:BusinessFlowQuarter|null;replaces:boolean;issues:string[];budget?:true}>):Promise<{published:boolean;reasons:string[];read:Array<{accession:string;periodEnd:string|null;issues:string[]}>}>{
+ let flow=newestPair(current);const read:Array<{accession:string;periodEnd:string|null;issues:string[]}>=[];
+ try{
+  for(const filing of filings){
+   const outcome=await readFiling(filing,flow.quarters);
+   if(outcome.budget){await store.defer(job,['MODEL_BUDGET_SPENT'],job.cursor);return {published:false,reasons:['MODEL_BUDGET_SPENT'],read};}
+   read.push({accession:filing.accession,periodEnd:outcome.quarter?.periodEnd??null,issues:outcome.issues.slice(0,5)});
+   if(!outcome.quarter)continue;
+   const pair:PublicBusinessFlow={...flow,fetchedAt:new Date().toISOString(),quarters:[outcome.quarter,outcome.replaces?flow.quarters[1]!:flow.quarters[0]!]};
+   if(checkCompleteFlow(pair).complete)flow=pair;
+  }
+ }catch{await store.defer(job,['SOURCE_TEMPORARILY_UNAVAILABLE'],job.cursor);return {published:false,reasons:['SOURCE_TEMPORARILY_UNAVAILABLE'],read};}
+ if(flow.quarters[0]?.periodEnd===newestPair(current).quarters[0]?.periodEnd&&flow.quarters[0]?.sources[0]?.id===newestPair(current).quarters[0]?.sources[0]?.id){
+  const reasons=read.some(r=>r.issues.length)?['NEW_FILING_UNRESOLVED']:['UP_TO_DATE'];
+  if(store.finish)await store.finish(job,reasons);else await store.defer({...job,attempt:3},reasons,job.cursor);
+  return {published:false,reasons,read};
+ }
+ const published=await store.publish(job,flow);
+ if(!published)await store.defer({...job,attempt:3},['NEWER_PUBLICATION_CURRENT'],job.cursor);
+ return {published,reasons:published?[]:['NEWER_PUBLICATION_CURRENT'],read};
+}
 export async function collectComplete(job:Job,policy:FinancialPolicy,store:CompleteStore,readBatch:(job:Job)=>Promise<DocumentBatch>,readRelease?:ReadRelease):Promise<{published:boolean;reasons:string[];flow?:PublicBusinessFlow;release?:{periodEnd:string|null;issues:string[]}}>{
  // The verified pair publishes as it is unless a newer earnings release passes the same gate on top of its newest quarter;
  // a release that cannot be read leaves the verified pair, and the 10-Q brings the quarter later.

@@ -3,7 +3,9 @@ import type { PublicBusinessFlow, BusinessFlowQuarter } from '../../../../shared
 import { checkCompleteFlow } from '../../../../shared/analysis-runtime/financial-data/completeness.ts';
 import { outboxStatement } from '../pipeline/outbox.ts';
 export interface Job {id:string;cik:string;ticker:string;generation:number;lease:string;cursor:string;attempt:number;}
-export interface CompleteStore {stage(job:Job,quarter:BusinessFlowQuarter):Promise<void>;staged(job:Job):Promise<BusinessFlowQuarter[]>;publish(job:Job,flow:PublicBusinessFlow):Promise<boolean>;defer(job:Job,reasons:string[],cursor:string):Promise<void>;}
+export interface CompleteStore {stage(job:Job,quarter:BusinessFlowQuarter):Promise<void>;staged(job:Job):Promise<BusinessFlowQuarter[]>;publish(job:Job,flow:PublicBusinessFlow):Promise<boolean>;defer(job:Job,reasons:string[],cursor:string):Promise<void>;
+ /** Ends a job that found nothing new to publish, as succeeded, with why. */
+ finish?(job:Job,reasons:string[]):Promise<void>;}
 export class D1CompleteStore implements CompleteStore{
  private db:D1Database;private causeId:string|null;private announceDegraded:boolean;
  /** `announceDegraded`: a published newest quarter whose after-tax lines no structure balanced asks for a judgement
@@ -22,6 +24,11 @@ export class D1CompleteStore implements CompleteStore{
    ...(this.announceDegraded&&[...flow.quarters].sort((a,b)=>b.periodEnd.localeCompare(a.periodEnd))[0]?.presentation?.source==='degraded'
     ?[outboxStatement(this.db,{type:'presentation.unresolved',ticker:job.ticker,cik:job.cik,causeId:this.causeId},now,{sql:"EXISTS(SELECT 1 FROM financial_collection_jobs WHERE job_id=? AND status='succeeded' AND updated_at=?)",binds:[job.id,now]})]:[]),
   ]);return (results[2].meta.changes??0)>0;
+ }
+ async finish(job:Job,reasons:string[]){
+  const now=new Date().toISOString();
+  await this.db.prepare(`UPDATE financial_collection_jobs SET status='succeeded',cursor_json=?,reasons_json=?,updated_at=?,lease_token=NULL,lease_until=NULL WHERE job_id=? AND lease_token=? AND status='running' AND lease_until>?`)
+   .bind(job.cursor,JSON.stringify(reasons),now,job.id,job.lease,now).run();
  }
  async defer(job:Job,reasons:string[],cursor:string){
   const now=new Date(),continuation=reasons.length===1&&reasons[0]==='PREPARING';
