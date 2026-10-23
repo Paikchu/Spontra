@@ -204,9 +204,9 @@ function useTween(target: number | null, ms = 650) {
 function Stat({ label, value, format, note, tone, level }: { label: string; value: number | null; format: (v: number | null) => string; note?: string; tone?: "up" | "down"; /** The most pressing checkup flag about this figure. */ level?: FlagLevel }) {
   const shown = useTween(value);
   return <div className="stat" data-level={level}>
-    <span className="stat-label">{level && <LevelMark level={level} label={LEVEL_LABEL[level]} />}{label}</span>
+    <span className="stat-label" title={label}>{level && <LevelMark level={level} label={LEVEL_LABEL[level]} />}{label}</span>
     <strong className="stat-value">{format(shown)}</strong>
-    {note && <span className="stat-note" data-trend={tone}>{note}</span>}
+    {note && <span className="stat-note" data-trend={tone} title={note}>{note}</span>}
   </div>;
 }
 
