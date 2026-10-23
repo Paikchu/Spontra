@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useLocale } from "@/packages/web/src/i18n";
+import { stageChartBox } from "./chart-box";
+import { crossfade } from "./page-turn";
 import type { PublicBusinessFlow } from "@/shared/analysis-contract/business-flow";
 import type { PublicCapitalStructure } from "@/shared/analysis-contract/capital-structure";
 import type { PeersPublication } from "@/shared/analysis-contract/peers";
@@ -22,6 +25,38 @@ export type CompanyData = {
   filings: PublicFilingDigestPage | null;
 };
 const EMPTY: CompanyData = { publication: null, flow: null, capital: null, peers: null, findings: null, fundamentals: null, events: null, filings: null };
+
+/** What the company page shows. The map waits until the opening read has settled, so it never paints half-empty. */
+export type { OpeningFace } from "./opening-face";
+export { openingFace } from "./opening-face";
+
+const OPENING_RESOURCES = ["capital", "findings", "fundamentals", "events", "filings"] as const;
+
+/** One settled read of everything the first paint draws. A failed supplement leaves its part empty; a failed company is `failed`. */
+async function loadOpening(ticker: string, signal: AbortSignal, onSeen: (ticker: string) => void): Promise<{ data: CompanyData; failed: boolean; revisions: MapRevisions }> {
+  const revisions = await fetchRevisions(ticker, signal).catch(() => null);
+  if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+  const data: CompanyData = { ...EMPTY };
+  const got: MapRevisions = {};
+  let failed = false;
+  const take = (resource: MapResource) => { const rev = revisions?.[resource]; if (rev) got[resource] = rev; };
+  const aborted = (error: unknown) => signal.aborted || (error instanceof DOMException && error.name === "AbortError");
+  await Promise.all([
+    fetchCompany(ticker, signal, revisions?.company).then(publication => {
+      if (signal.aborted) return;
+      onSeen(ticker);
+      const flow = publicationFlow(publication, ticker);
+      data.publication = publication;
+      data.flow = flow;
+      if (flow) take("company");
+    }).catch(error => { if (aborted(error)) throw error; failed = true; }),
+    ...OPENING_RESOURCES.map(resource => readResource(ticker, resource, revisions?.[resource], signal).then(part => {
+      if (part) { Object.assign(data, part); take(resource); }
+    }).catch(error => { if (aborted(error)) throw error; })),
+  ]);
+  if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+  return { data, failed, revisions: got };
+}
 
 /** What a newer revision brings that the reader can see: kinds of new rows, or none when only figures or prose moved. */
 export type UpdateNews = "findings" | "reports" | "events";
@@ -71,10 +106,15 @@ function newsOf(patch: Partial<CompanyData>, now: CompanyData): UpdateNews[] {
  * per page view: updates arriving while it is up join it, and after it is taken or dismissed none is offered again. A revision whose read
  * shows nothing new, or fills a part the page has nothing for, is taken silently. Only a read that answered moves a
  * resource's revision on, so a failed read is tried again at the next check.
+ *
+ * The opening read of a company, and a language change, each commit once: the map stays on its skeleton or on the
+ * page already up until every resource has answered, then crossfades. A language change never clears what is showing.
  */
 export function useLiveCompany(ticker: string, onSeen: (ticker: string) => void) {
+  const locale = useLocale();
   const [data, setData] = useState<CompanyData>(EMPTY);
   const [failed, setFailed] = useState(false);
+  const [ready, setReady] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [pending, setPending] = useState<PendingUpdate | null>(null);
   /** The notice comes up once per page view: once the reader takes or dismisses it, later updates wait for the next load. */
@@ -85,41 +125,49 @@ export function useLiveCompany(ticker: string, onSeen: (ticker: string) => void)
   const shown = useRef<MapRevisions | null>(null);
   const current = useRef(data);
   const staged = useRef<PendingUpdate | null>(null);
+  /** False while an opening read or a language refetch is in flight, so a revision check cannot patch the other language in. */
+  const checksReady = useRef(false);
+  const loadGen = useRef(0);
   useLayoutEffect(() => { current.current = data; staged.current = pending; });
 
   useEffect(() => {
     const controller = new AbortController();
     const { signal } = controller;
+    const gen = ++loadGen.current;
+    const swapping = current.current.flow != null;
+    checksReady.current = false;
+    if (swapping) setPending(null);
     void (async () => {
-      const revisions = await fetchRevisions(ticker, signal).catch(() => null);
-      if (signal.aborted) return;
-      // Without revisions the page still loads; the first check then reads everything and keeps what differs.
-      shown.current = {};
-      const seen = (resource: MapResource) => { const rev = revisions?.[resource]; if (rev) shown.current = { ...shown.current, [resource]: rev }; };
-      fetchCompany(ticker, signal, revisions?.company)
-        .then(publication => {
-          if (signal.aborted) return;
-          onSeen(ticker);
-          const flow = publicationFlow(publication, ticker);
-          if (flow) seen("company");
-          setData(d => ({ ...d, publication, flow }));
-        })
-        .catch(() => { if (!signal.aborted) setFailed(true); });
-      // Balance sheet, cash flow, findings and the SEC series they resolve against load on their own; the map is drawn without waiting for them.
-      for (const resource of ["capital", "findings", "fundamentals", "events", "filings"] as const)
-        readResource(ticker, resource, revisions?.[resource], signal)
-          .then(part => { if (!signal.aborted && part) { seen(resource); setData(d => ({ ...d, ...part })); } })
-          .catch(() => { /* Supplementary: the map stands on its own. */ });
+      try {
+        const result = await loadOpening(ticker, signal, onSeen);
+        if (signal.aborted || gen !== loadGen.current) return;
+        // A language refetch that came back without a statement leaves the page that is already up.
+        if (swapping && !result.data.flow) { checksReady.current = true; return; }
+        const commit = () => {
+          stageChartBox();
+          setData(result.data);
+          setFailed(result.failed && !result.data.flow);
+          setReady(true);
+          shown.current = result.revisions;
+          checksReady.current = true;
+        };
+        crossfade(commit, "map");
+      } catch {
+        if (signal.aborted || gen !== loadGen.current) return;
+        if (swapping) { checksReady.current = true; return; }
+        setFailed(true);
+        setReady(true);
+      }
     })();
     return () => controller.abort();
-  }, [ticker, attempt, onSeen]);
+  }, [ticker, attempt, onSeen, locale]);
 
   useEffect(() => {
     const controller = new AbortController();
     const { signal } = controller;
     let checking = false, last = Date.now();
     const check = async () => {
-      if (checking || document.visibilityState !== "visible" || Date.now() - last < MIN_GAP) return;
+      if (checking || !checksReady.current || document.visibilityState !== "visible" || Date.now() - last < MIN_GAP) return;
       const base = shown.current;
       if (!base || !current.current.flow) return;
       checking = true;
@@ -148,7 +196,7 @@ export function useLiveCompany(ticker: string, onSeen: (ticker: string) => void)
       document.removeEventListener("visibilitychange", run);
       removeEventListener("focus", run);
     };
-  }, [ticker]);
+  }, [ticker, locale]);
 
   const apply = useCallback(() => {
     const update = staged.current;
@@ -160,7 +208,7 @@ export function useLiveCompany(ticker: string, onSeen: (ticker: string) => void)
     setClosed(true);
   }, []);
   const dismiss = useCallback(() => setClosed(true), []);
-  const retry = useCallback(() => { setFailed(false); setAttempt(n => n + 1); }, []);
+  const retry = useCallback(() => { setFailed(false); setReady(false); setData(EMPTY); setPending(null); setAttempt(n => n + 1); }, []);
   const update = closed ? null : pending;
-  return { data, updates, failed, retry, update, apply, dismiss };
+  return { data, updates, failed, ready, retry, update, apply, dismiss };
 }

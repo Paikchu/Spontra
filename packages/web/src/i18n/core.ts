@@ -7,8 +7,9 @@ export { LOCALES } from "@/shared/analysis-runtime/locale";
  * React-free core, safe to import from model code that also runs in a Worker (it resolves to "en" there).
  *
  * The reader's interface language. One value for the page, read from `?lang=`, then the saved choice, then the
- * browser's languages. Text and number forms read it when they are produced; the app remounts its tree when it
- * changes, so nothing computed under the previous locale survives a switch.
+ * browser's languages. Text and number forms read it when they are produced. Home remounts on a switch. The company
+ * page stays mounted: it refetches translated prose in place, and any memo that formats with `getLocale()` lists the
+ * locale among its dependencies so the previous language does not survive.
  */
 const STORAGE_KEY = "business-map-locale";
 

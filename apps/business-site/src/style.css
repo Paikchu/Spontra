@@ -252,8 +252,7 @@ button { cursor: pointer; }
 .periods button[aria-checked="true"] { background: var(--foreground); color: var(--background); font-weight: 600; }
 
 .stats { display: flex; flex-wrap: wrap; gap: 14px clamp(28px, 4vw, 56px); }
-.stat { display: flex; flex-direction: column; gap: 4px; min-width: 0; animation: rise .45s var(--ease) both; }
-.stat:nth-child(2) { animation-delay: 50ms; } .stat:nth-child(3) { animation-delay: 100ms; } .stat:nth-child(4) { animation-delay: 150ms; }
+.stat { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .stat-label { font-size: 12px; color: var(--muted-foreground); }
 .stat-value { font-size: clamp(22px, 2.1vw, 30px); font-weight: 620; letter-spacing: -.035em; font-variant-numeric: tabular-nums; line-height: 1.15; }
 .stat-note { font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
@@ -298,7 +297,7 @@ button { cursor: pointer; }
 .fc-hit { fill: transparent; }
 .fc-bar { fill: var(--c); transition: opacity .3s, filter .3s; }
 /* The comparison quarter's amount as a tick across the bar: the striped part is what the bar gained past it, a hollow striped frame what it no longer reaches. */
-.fc-prior { pointer-events: none; animation: fade-in .6s var(--ease) both; animation-delay: var(--d); }
+.fc-prior { pointer-events: none; }
 .fc-prior-tick, .fc-prior-halo { fill: none; vector-effect: non-scaling-stroke; }
 .fc-prior-tick { stroke: var(--foreground); stroke-width: 2; }
 .fc-prior-halo { stroke: var(--background); stroke-width: 4; }
@@ -308,15 +307,15 @@ button { cursor: pointer; }
 .fc-prior-short { stroke: var(--loss); stroke-width: 1.2; stroke-dasharray: 3 2; vector-effect: non-scaling-stroke; }
 /* A cost that shrank is not a loss: its shortfall stays neutral, as its change label does. */
 .fc-node[data-tone="expense"] .fc-prior-short { stroke: var(--muted-foreground); }
-.fc-prior-label { fill: var(--muted-foreground); font-weight: 500; font-variant-numeric: tabular-nums lining-nums; animation: fade-in .3s ease both; }
+.fc-prior-label { fill: var(--muted-foreground); font-weight: 500; font-variant-numeric: tabular-nums lining-nums; }
 /* Guidance on the bars: a bracket is the range guided for this quarter, coloured by where the bar landed; a pill is next quarter's. */
-.fc-guide path { fill: none; stroke: var(--foreground); stroke-width: 2; vector-effect: non-scaling-stroke; opacity: .85; animation: fade-in .6s var(--ease) both; animation-delay: var(--d); }
+.fc-guide path { fill: none; stroke: var(--foreground); stroke-width: 2; vector-effect: non-scaling-stroke; opacity: .85; }
 .fc-guide[data-derived] path { stroke-dasharray: 4 3; }
 .fc-guide[data-verdict="above"] path { stroke: var(--up); }
 .fc-guide[data-verdict="below"] path { stroke: var(--loss); }
 .fc-guide-hit { fill: transparent; }
 .fc-guide:hover path { opacity: 1; stroke-width: 3; }
-.fc-guide-pill { cursor: pointer; animation: fade-in .5s var(--ease) both; animation-delay: var(--d); }
+.fc-guide-pill { cursor: pointer; }
 .fc-guide-pill rect { fill: var(--surface-raised); stroke: var(--border); stroke-width: 1; }
 .fc-guide-pill text { font-size: 13px; font-weight: 600; fill: var(--foreground); font-variant-numeric: tabular-nums; }
 .fc-guide-pill .fc-guide-when { fill: var(--muted-foreground); font-weight: 500; }
@@ -332,7 +331,7 @@ button { cursor: pointer; }
 .fc-node[role="button"] { cursor: pointer; }
 .fc-node[role="button"]:focus { outline: none; }
 .fc-node[role="button"]:focus-visible .fc-bar { stroke: var(--focus-ring); stroke-width: 3px; }
-.fc-label { animation: fade-in .6s var(--ease) both; animation-delay: var(--d); font-variant-numeric: tabular-nums lining-nums; }
+.fc-label { font-variant-numeric: tabular-nums lining-nums; }
 .fc-name { font-size: 14px; font-weight: 520; fill: var(--muted-foreground); }
 .fc-value { font-size: 21px; font-weight: 640; letter-spacing: -.02em; fill: var(--foreground); }
 .fc-node[data-net] .fc-value { font-size: 26px; }
@@ -394,11 +393,11 @@ button { cursor: pointer; }
 .fc-tip-row b { font-weight: 600; color: var(--foreground); font-variant-numeric: tabular-nums; }
 
 /* ---------- Quarterly trend ---------- */
-.trend { --gap: clamp(8px, 1.6vw, 26px); --axis: 52px; display: grid; grid-template-rows: auto minmax(0, 1fr); height: clamp(196px, 26vh, 260px); margin-top: 6px; padding-top: 14px; border-top: 1px solid var(--hairline); animation: rise .6s var(--ease) .15s both; }
+.trend { --gap: clamp(8px, 1.6vw, 26px); --axis: 52px; display: grid; grid-template-rows: auto minmax(0, 1fr); height: clamp(196px, 26vh, 260px); margin-top: 6px; padding-top: 14px; border-top: 1px solid var(--hairline); }
 .trend-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px 24px; flex-wrap: wrap; }
-.trend-title h2 { margin: 0; font-size: 14px; font-weight: 620; letter-spacing: -.01em; animation: rise .4s var(--ease) both; }
+.trend-title h2 { margin: 0; font-size: 14px; font-weight: 620; letter-spacing: -.01em; }
 .trend-title h2 span { color: var(--muted-foreground); font-weight: 500; }
-.trend-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 6px; font-size: 11.5px; color: var(--muted-foreground); animation: fade-in .5s ease both; }
+.trend-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 6px; font-size: 11.5px; color: var(--muted-foreground); }
 .trend-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .trend-legend i { width: 8px; height: 8px; border-radius: 2px; }
 .trend-basis { color: var(--faint); }
@@ -408,7 +407,7 @@ button { cursor: pointer; }
 
 .trend-plot { --axis-r: 0px; position: relative; display: grid; grid-template-columns: repeat(var(--cols, 8), minmax(0, 1fr)); gap: var(--gap); min-height: 0; padding: 22px var(--axis-r) 24px var(--axis); }
 .trend-plot[data-rates] { --axis-r: 48px; }
-.trend-grid { position: absolute; inset: 22px var(--axis-r) 24px var(--axis); pointer-events: none; animation: fade-in .5s ease both; }
+.trend-grid { position: absolute; inset: 22px var(--axis-r) 24px var(--axis); pointer-events: none; }
 .trend-grid div { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--hairline); transition: bottom .7s var(--ease); }
 .trend-grid div:first-child { border-top-style: solid; border-color: var(--border); }
 .trend-grid span { position: absolute; right: calc(100% + 10px); top: -7px; font-size: 10.5px; color: var(--faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -419,14 +418,14 @@ button { cursor: pointer; }
 .trend-hit:not(:disabled) { cursor: pointer; }
 .trend-hit:disabled { cursor: default; }
 .trend-hit:focus-visible { outline-offset: 2px; }
-.trend-stack { position: absolute; inset: 0; width: min(100%, 56px); margin: 0 auto; display: flex; flex-direction: column-reverse; transform-origin: bottom; animation: grow .9s var(--ease) both; animation-delay: calc(var(--i) * 70ms + 200ms); transition: opacity .35s ease, filter .35s ease; }
+.trend-stack { position: absolute; inset: 0; width: min(100%, 56px); margin: 0 auto; display: flex; flex-direction: column-reverse; transform-origin: bottom; transition: opacity .35s ease, filter .35s ease; }
 .trend-col:not([data-current]) .trend-stack { opacity: .5; filter: saturate(.8); }
 .trend-col:hover .trend-stack { opacity: .92; filter: none; }
 .trend-stack i { display: block; flex: none; width: 100%; border-radius: 3px; transition: height .75s var(--ease) calc(var(--i) * 45ms), background-color .5s ease, margin .3s; }
 .trend-stack i[data-on] ~ i[data-on] { margin-bottom: 2px; }
 .trend-stack i[data-tone="total"] { background-color: color-mix(in srgb, var(--biz-0) 55%, var(--background)) !important; background-image: repeating-linear-gradient(135deg, transparent 0 5px, color-mix(in srgb, var(--background) 45%, transparent) 5px 7px); }
-.trend-ghost { position: absolute; bottom: 0; left: 0; right: 0; width: min(100%, 56px); margin: 0 auto; height: 22%; border: 1px dashed var(--border); border-radius: 4px; background: repeating-linear-gradient(135deg, transparent 0 5px, var(--hairline) 5px 6px); animation: fade-in .4s ease both; }
-.trend-value { position: absolute; left: -8px; right: -8px; padding-bottom: 5px; text-align: center; font-size: 11px; color: var(--muted-foreground); font-variant-numeric: tabular-nums; white-space: nowrap; transition: bottom .75s var(--ease) calc(var(--i) * 45ms); animation: fade-in .6s ease both; animation-delay: calc(var(--i) * 70ms + 600ms); }
+.trend-ghost { position: absolute; bottom: 0; left: 0; right: 0; width: min(100%, 56px); margin: 0 auto; height: 22%; border: 1px dashed var(--border); border-radius: 4px; background: repeating-linear-gradient(135deg, transparent 0 5px, var(--hairline) 5px 6px); }
+.trend-value { position: absolute; left: -8px; right: -8px; padding-bottom: 5px; text-align: center; font-size: 11px; color: var(--muted-foreground); font-variant-numeric: tabular-nums; white-space: nowrap; transition: bottom .75s var(--ease) calc(var(--i) * 45ms); }
 .trend-col[data-current] .trend-value { color: var(--foreground); font-size: 12.5px; font-weight: 620; }
 .trend-col[data-state="missing"] .trend-value { bottom: 22% !important; color: var(--faint); }
 .trend-period { position: absolute; top: calc(100% + 7px); left: -8px; right: -8px; display: flex; justify-content: center; align-items: center; gap: 5px; font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -477,10 +476,10 @@ button { cursor: pointer; }
 .trend-value[data-quiet] { opacity: 0 !important; }
 .trend-plot[data-rates] .trend-value { z-index: 4; text-shadow: 0 0 4px var(--background), 0 0 2px var(--background); pointer-events: none; transition: bottom .75s var(--ease) calc(var(--i) * 45ms), opacity .2s ease; }
 .trend-legend-line i { width: 14px !important; height: 2px !important; border-radius: 1px; background: var(--line); }
-.trend-line { position: absolute; top: 0; bottom: 0; left: 50%; z-index: 3; width: calc(100% + var(--gap)); height: 100%; overflow: visible; pointer-events: none; transition: opacity .25s ease; animation: fade-in .6s ease both; animation-delay: calc(var(--i) * 70ms + 500ms); }
+.trend-line { position: absolute; top: 0; bottom: 0; left: 50%; z-index: 3; width: calc(100% + var(--gap)); height: 100%; overflow: visible; pointer-events: none; transition: opacity .25s ease; }
 .trend-line line { stroke: var(--line); stroke-width: 2; stroke-linecap: round; }
 .trend-line .trend-line-hit { stroke: transparent; stroke-width: 14; pointer-events: stroke; cursor: default; }
-.trend-dot { position: absolute; left: 50%; z-index: 5; width: 8px; height: 8px; margin-left: -4px; transform: translateY(50%); border-radius: 50%; background: var(--line); box-shadow: 0 0 0 2px var(--background); transition: transform .2s var(--ease), opacity .25s ease; animation: fade-in .5s ease both; animation-delay: calc(var(--i) * 70ms + 500ms); }
+.trend-dot { position: absolute; left: 50%; z-index: 5; width: 8px; height: 8px; margin-left: -4px; transform: translateY(50%); border-radius: 50%; background: var(--line); box-shadow: 0 0 0 2px var(--background); transition: transform .2s var(--ease), opacity .25s ease; }
 /* A larger invisible target than the mark itself. */
 .trend-dot::before { content: ""; position: absolute; inset: -8px; border-radius: 50%; }
 .trend-plot[data-series="line"] .trend-dot[data-hover] { transform: translateY(50%) scale(1.4); }
@@ -500,15 +499,15 @@ button { cursor: pointer; }
 /* ---------- Growth bridge ---------- */
 .bridge-plot { position: relative; display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); gap: clamp(8px, 1.6vw, 26px); min-height: 0; padding: 22px 0 24px; }
 .bridge-plot--empty { display: grid; place-items: center; padding-left: 0; color: var(--faint); font-size: 12px; }
-.bridge-col { position: relative; min-width: 0; outline: none; animation: fade-in .5s ease both; animation-delay: calc(var(--i) * 80ms); }
+.bridge-col { position: relative; min-width: 0; outline: none; }
 .bridge-col:focus-visible { box-shadow: 0 0 0 2px var(--foreground); border-radius: 6px; }
-.bridge-total { position: absolute; bottom: 0; left: 0; right: 0; width: min(100%, 56px); margin: 0 auto; border-radius: 3px 3px 0 0; background: var(--foreground); transform-origin: bottom; animation: grow .7s var(--ease) both; animation-delay: calc(var(--i) * 80ms + 120ms); }
+.bridge-total { position: absolute; bottom: 0; left: 0; right: 0; width: min(100%, 56px); margin: 0 auto; border-radius: 3px 3px 0 0; background: var(--foreground); transform-origin: bottom; }
 .bridge-col--end:first-child .bridge-total { background: color-mix(in srgb, var(--muted-foreground) 55%, var(--background)); }
 /* Axis break: the bars stand on a floor above zero. */
 .bridge-total[data-cut]::after { content: ""; position: absolute; left: -3px; right: -3px; bottom: 10px; height: 3px; background: var(--background); transform: skewY(-8deg); }
 .bridge-link { position: absolute; left: calc(-1 * clamp(8px, 1.6vw, 26px) - 28px); right: 50%; border-top: 1px dashed var(--border); transform: translateY(50%); }
 .bridge-col--end:last-child .bridge-link { display: none; }
-.bridge-step { position: absolute; left: 0; right: 0; width: min(100%, 56px); margin: 0 auto; border-radius: 3px; transform-origin: bottom; animation: grow .7s var(--ease) both; animation-delay: calc(var(--i) * 80ms + 120ms); transition: filter .2s; }
+.bridge-step { position: absolute; left: 0; right: 0; width: min(100%, 56px); margin: 0 auto; border-radius: 3px; transform-origin: bottom; transition: filter .2s; }
 .bridge-col:hover .bridge-step, .bridge-col:focus-visible .bridge-step { filter: brightness(1.15); }
 .bridge-value { position: absolute; left: -8px; right: -8px; padding-bottom: 6px; text-align: center; font-size: 11.5px; font-weight: 600; color: var(--muted-foreground); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .bridge-col--end .bridge-value { font-size: 12.5px; color: var(--foreground); }
@@ -557,8 +556,10 @@ button { cursor: pointer; }
 .state-reasons { font-size: 12px !important; color: var(--faint) !important; }
 .state button { margin-top: 14px; padding: 9px 18px; border-radius: 10px; background: var(--surface); border: 1px solid var(--border); }
 .row--ghost { height: 28px; background: linear-gradient(90deg, var(--hairline), color-mix(in srgb, var(--foreground) 7%, transparent), var(--hairline)) 0 0 / 200% 100%; animation: shimmer 1.6s ease-in-out infinite both; }
-.map--loading .stage { grid-template-rows: minmax(240px, 1fr); }
-.ghost-chart { position: absolute; inset: 24px 0; border-radius: 16px; background: linear-gradient(90deg, transparent, var(--hairline), transparent) 0 0 / 200% 100%; animation: shimmer 1.8s ease-in-out infinite; }
+.ghost-text { color: transparent; border-radius: 4px; background: linear-gradient(90deg, var(--hairline), color-mix(in srgb, var(--foreground) 8%, transparent), var(--hairline)) 0 0 / 200% 100%; animation: shimmer 1.6s ease-in-out infinite; }
+.map--loading .ghost-text { color: transparent; }
+.ghost-chart { position: absolute; inset: 0; border-radius: 16px; background: linear-gradient(90deg, transparent, var(--hairline), transparent) 0 0 / 200% 100%; animation: shimmer 1.8s ease-in-out infinite; }
+.map--loading .stage button { pointer-events: none; }
 
 @keyframes flow { to { stroke-dashoffset: -84; } }
 @keyframes fade-in { from { opacity: 0; } }
@@ -641,15 +642,15 @@ button { cursor: pointer; }
 
 /* ---------- Management guidance on the trend ---------- */
 /* Guided range as an I-bar over the reported bar; dashed when converted from a growth rate. */
-.trend-guide { position: absolute; left: 0; right: 0; z-index: 3; width: min(70%, 34px); min-height: 2px; margin: 0 auto; box-sizing: border-box; border-top: 2px solid var(--foreground); border-bottom: 2px solid var(--foreground); pointer-events: none; opacity: .7; animation: fade-in .5s ease both; animation-delay: calc(var(--i) * 70ms + 700ms); }
+.trend-guide { position: absolute; left: 0; right: 0; z-index: 3; width: min(70%, 34px); min-height: 2px; margin: 0 auto; box-sizing: border-box; border-top: 2px solid var(--foreground); border-bottom: 2px solid var(--foreground); pointer-events: none; opacity: .7; }
 .trend-guide::before { content: ""; position: absolute; top: 0; bottom: 0; left: 50%; border-left: 1.5px solid var(--foreground); }
 .trend-guide[data-derived] { border-top-style: dashed; border-bottom-style: dashed; }
 .trend-guide[data-derived]::before { border-left-style: dashed; }
 .trend-col:hover .trend-guide { opacity: 1; }
 .trend-col--guide { outline: none; }
 .trend-col--guide:focus-visible { box-shadow: 0 0 0 2px var(--foreground); border-radius: 6px; }
-.trend-guide-ghost { position: absolute; bottom: 0; left: 0; right: 0; width: min(100%, 56px); margin: 0 auto; box-sizing: border-box; border: 1px dashed var(--border); border-top: 0; border-radius: 0 0 3px 3px; background: repeating-linear-gradient(135deg, transparent 0 5px, var(--hairline) 5px 6px); animation: fade-in .6s ease both; animation-delay: calc(var(--i) * 70ms + 300ms); }
-.trend-guide-band { position: absolute; left: 0; right: 0; width: min(100%, 56px); margin: 0 auto; box-sizing: border-box; border: 1.5px dashed var(--foreground); border-radius: 3px; background: color-mix(in srgb, var(--foreground) 12%, transparent); opacity: .8; animation: fade-in .6s ease both; animation-delay: calc(var(--i) * 70ms + 400ms); }
+.trend-guide-ghost { position: absolute; bottom: 0; left: 0; right: 0; width: min(100%, 56px); margin: 0 auto; box-sizing: border-box; border: 1px dashed var(--border); border-top: 0; border-radius: 0 0 3px 3px; background: repeating-linear-gradient(135deg, transparent 0 5px, var(--hairline) 5px 6px); }
+.trend-guide-band { position: absolute; left: 0; right: 0; width: min(100%, 56px); margin: 0 auto; box-sizing: border-box; border: 1.5px dashed var(--foreground); border-radius: 3px; background: color-mix(in srgb, var(--foreground) 12%, transparent); opacity: .8; }
 .trend-col--guide:hover .trend-guide-band, .trend-col--guide:focus-visible .trend-guide-band { opacity: 1; }
 .trend-col--guide .trend-value { color: var(--muted-foreground); }
 .trend-period .trend-period-guide { color: var(--muted-foreground); background: transparent; border: 1px dashed var(--border); font-weight: 560; }
@@ -658,7 +659,7 @@ button { cursor: pointer; }
 .trend[data-outlook] { height: calc(clamp(196px, 26vh, 260px) + 24px); }
 @media (min-width: 961px) and (max-height: 820px) { .trend[data-outlook] { height: 202px; } }
 @media (max-width: 960px) { .trend[data-outlook] { height: auto; } }
-.trend-outlook { display: flex; flex-wrap: nowrap; gap: 14px; overflow-x: auto; scrollbar-width: none; white-space: nowrap; margin: 0; padding-top: 4px; font-size: 11.5px; color: var(--muted-foreground); font-variant-numeric: tabular-nums; animation: fade-in .5s ease both; }
+.trend-outlook { display: flex; flex-wrap: nowrap; gap: 14px; overflow-x: auto; scrollbar-width: none; white-space: nowrap; margin: 0; padding-top: 4px; font-size: 11.5px; color: var(--muted-foreground); font-variant-numeric: tabular-nums; }
 .trend-outlook > span:first-child { color: var(--faint); }
 .trend-outlook b { font-weight: 600; color: var(--foreground); }
 .trend-outlook em { margin-left: 6px; font-style: normal; font-weight: 600; color: var(--muted-foreground); }
@@ -732,7 +733,7 @@ button { cursor: pointer; }
 .stage:has(.findings) { grid-template-rows: auto auto minmax(0, 1fr) auto auto; }
 /* A grid, not a flex row: the chips column is capped at the space left, so a long set scrolls inside it instead of widening the stage. */
 /* Findings live in the rail under the business drawer: one row per finding, most severe first. */
-.findings { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--hairline); animation: rise .45s var(--ease) both; }
+.findings { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--hairline); }
 .findings-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; height: 26px; padding: 0 10px 2px; }
 .findings-title { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 640; letter-spacing: .05em; text-transform: uppercase; color: var(--muted-foreground); white-space: nowrap; }
 .findings-title small { font-size: 11px; font-weight: 500; letter-spacing: 0; color: var(--faint); font-variant-numeric: tabular-nums; }
@@ -1156,10 +1157,27 @@ html[lang^="zh"] .home-sub, html[lang^="zh"] .home-signal-title, html[lang^="zh"
 }
 @keyframes page-out { to { opacity: 0; } }
 
+/* First paint and a language change crossfade the whole map; a statement toggle crossfades only the chart.
+   The root snapshot stays still so the rest of the page does not fade with it. Rail names are cleared so they do not split the snapshot. */
+:root[data-vt="swap-map"] .map { view-transition-name: company-map; }
+:root[data-vt="swap-chart"] .chart { view-transition-name: stage-chart; }
+:root[data-vt="swap-map"] .findings[data-section],
+:root[data-vt="swap-chart"] .findings[data-section] { view-transition-name: none; }
+::view-transition-group(company-map) { animation-duration: .42s; animation-timing-function: var(--ease); }
+::view-transition-old(company-map) { animation: .42s var(--ease) both fade-in reverse; }
+::view-transition-new(company-map) { animation: .42s var(--ease) both fade-in; }
+::view-transition-group(stage-chart) { animation-duration: .32s; animation-timing-function: var(--ease); }
+::view-transition-old(stage-chart) { animation: .32s var(--ease) both fade-in reverse; }
+::view-transition-new(stage-chart) { animation: .32s var(--ease) both fade-in; }
+:root[data-vt="swap-map"]::view-transition-old(root),
+:root[data-vt="swap-map"]::view-transition-new(root),
+:root[data-vt="swap-chart"]::view-transition-old(root),
+:root[data-vt="swap-chart"]::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+
 /* The time axis under the chart: quarter ticks along the track, one marker per filing, the current report and the focused event lit. */
 .stage[data-timeline] { grid-template-rows: auto minmax(0, 1fr) auto auto auto; }
 .stage:has(.findings)[data-timeline] { grid-template-rows: auto auto minmax(0, 1fr) auto auto auto; }
-.timeline { margin-top: 6px; padding: 10px 0 0; animation: rise .5s var(--ease) both; }
+.timeline { margin-top: 6px; padding: 10px 0 0; }
 .timeline-track { position: relative; height: 30px; margin: 0 6px; }
 .timeline-track::before { content: ""; position: absolute; left: 0; right: 0; top: 12px; border-top: 1px solid var(--border); }
 .timeline-tick { position: absolute; top: 18px; transform: translateX(-50%); font-size: 10px; color: var(--faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -1278,7 +1296,7 @@ main[data-rail="collapsed"] .update-notice { left: calc((100vw + var(--rail-coll
 .stat[data-level] .stat-value { text-decoration: underline 2px var(--level); text-underline-offset: 6px; }
 
 /* The view's tripped rules, one row under the tiles. */
-.view-flags { flex: 1 0 100%; display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; animation: rise .45s var(--ease) both; }
+.view-flags { flex: 1 0 100%; display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .view-flag { display: inline-flex; align-items: center; gap: 7px; padding: 4px 11px 4px 9px; border-radius: 999px; font-size: 12px; line-height: 1.3; text-align: left;
   background: color-mix(in srgb, var(--level) 9%, var(--surface)); border: 1px solid color-mix(in srgb, var(--level) 42%, var(--hairline)); transition: border-color .2s, background .2s; }
 .view-flag:hover, .view-flag:focus-visible { border-color: var(--level); background: color-mix(in srgb, var(--level) 16%, var(--surface)); }

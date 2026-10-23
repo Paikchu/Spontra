@@ -1,5 +1,6 @@
 
 import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { peekChartBox } from "./chart-box";
 import type { FinancialGraph } from "@/packages/web/src/model/business-flow-sankey";
 import { estimateTextWidth, layoutInfographic, type InfographicGeometry, type InfographicLayout, type PlacedLink, type PlacedNode } from "@/packages/web/src/model/business-flow-layout";
 import { priorMarks } from "@/packages/web/src/model/business-flow-compare";
@@ -206,14 +207,17 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
 }) {
   const uid = useId().replace(/[^a-zA-Z0-9]/g, "");
   const box = useRef<HTMLDivElement>(null);
-  const [size, setSize] = useState<{ w: number; h: number } | null>(null);
-  useEffect(() => {
+  // The pane measured before this chart mounted, so the first paint is already fitted.
+  const [size, setSize] = useState<{ w: number; h: number } | null>(peekChartBox);
+  useLayoutEffect(() => {
     const element = box.current;
     if (!element) return;
-    const observer = new ResizeObserver(([entry]) => {
-      const w = Math.round(entry.contentRect.width / 8) * 8, h = Math.round(entry.contentRect.height / 8) * 8;
+    const measure = () => {
+      const w = Math.round(element.clientWidth / 8) * 8, h = Math.round(element.clientHeight / 8) * 8;
       if (w > 0 && h > 0) setSize(old => old?.w === w && old.h === h ? old : { w, h });
-    });
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
@@ -395,7 +399,7 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
       <div className="fc-business-scroll" tabIndex={0} data-scrolling={scrolling || undefined} onScroll={revealScrollbar}>{businessDetails}</div>
     </aside>}
     <div className="fc-canvas" ref={box}>
-    <svg key={revealKey} onPointerDown={e => {
+    {size && <svg key={revealKey} onPointerDown={e => {
         // Narrow layouts use native horizontal scrolling instead of capturing touch gestures.
         if (box.current && scrollsSideways(box.current)) return;
         if (e.pointerType === "touch") {
@@ -440,7 +444,6 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
             <stop offset="0" style={{ stopColor: from }} /><stop offset="1" style={{ stopColor: b.color }} />
           </linearGradient>;
         })}
-        <clipPath id={`${uid}reveal`}><rect x={0} y={0} width={layout.width} height={layout.height}>{!reducedMotion() && <animate attributeName="width" from="0" to={layout.width} dur="1.4s" calcMode="spline" keyTimes="0;1" keySplines="0.22 1 0.36 1" fill="freeze" />}</rect></clipPath>
         <linearGradient id={`${uid}sheen`} gradientUnits="userSpaceOnUse" x1={0} x2={layout.width * 0.34} y1={0} y2={0} spreadMethod="repeat">
           <stop offset="0" stopColor="#fff" stopOpacity="0" /><stop offset=".72" stopColor="#fff" stopOpacity="0" />
           <stop offset=".9" stopColor="#fff" stopOpacity=".34" /><stop offset=".96" stopColor="#fff" stopOpacity="0" /><stop offset="1" stopColor="#fff" stopOpacity="0" />
@@ -452,7 +455,7 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
         <pattern id={`${uid}shortn`} width={6 * k} height={6 * k} patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect className="fc-hatch-short fc-hatch-neutral" width={1.4 * k} height={6 * k} /></pattern>
         <filter id={`${uid}glow`} x="-50%" y="-20%" width="200%" height="140%"><feGaussianBlur stdDeviation="6" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
       </defs>
-      <g clipPath={`url(#${uid}reveal)`}>
+      <g>
         <g className="fc-bands">
           {bands.map((b, i) => <path key={b.key} className="fc-band" d={bandPath(b)} fill={`url(#${uid}g${i})`} data-owner={b.owner}
             // A business's own band picks it like its node; keyboard users reach the same pick on the node.
@@ -531,7 +534,7 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
           <text className="fc-slot-text" x={type.pill * 0.8} y={type.pill * 0.38} style={{ fontSize: type.pill }}>{slotLabel}</text>
         </g>}
       </g>}
-    </svg>
+    </svg>}
     {tip && <Tooltip x={tip.x} y={tip.y} width={tip.width}>
       <div className="fc-tip-title"><i style={{ background: tip.tip.color }} />{tip.tip.title}</div>
       {tip.tip.rows.map(([k, v]) => <div className="fc-tip-row" key={k}><span>{k}</span><b>{v}</b></div>)}
