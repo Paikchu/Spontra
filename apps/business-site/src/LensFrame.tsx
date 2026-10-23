@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { LENS_ASPECT } from "@/shared/analysis-contract/lens";
 import { LENS_FRAME_TOKENS, type CompiledChart, type LensFrameMessage, type LensFrameSize, type LensFrameTheme } from "@/shared/analysis-contract/lens-frame";
 import { renderChartSvg } from "@/shared/analysis-runtime/lens/render";
-import { getLocale } from "@/packages/web/src/i18n";
+import { useLocale } from "@/packages/web/src/i18n";
 import { applyHover, watchHover } from "./lens-frame/hover";
 
 /** How long the frame may take to say it is ready before the chart is drawn in place instead. */
@@ -29,6 +29,7 @@ export function useTheme(): LensFrameTheme {
  * document's layout is the page's. When the frame is slow or blocked, the same renderer draws in place.
  */
 export function LensFrame({ chart, onHover }: { chart: CompiledChart; onHover?: (period: number | null) => void }) {
+  const locale = useLocale();
   const box = useRef<HTMLDivElement>(null), frame = useRef<HTMLIFrameElement>(null);
   const [size, setSize] = useState<LensFrameSize | null>(null);
   const [ready, setReady] = useState(false), [rendered, setRendered] = useState(false), [fallback, setFallback] = useState(false);
@@ -69,16 +70,17 @@ export function LensFrame({ chart, onHover }: { chart: CompiledChart; onHover?: 
   useEffect(() => { if (ready && !fallback) post({ type: "lens:theme", theme }); }, [theme]); // eslint-disable-line react-hooks/exhaustive-deps
   return <div ref={box} className="lens-chart-cell" style={{ "--aspect": LENS_ASPECT[chart.aspect] } as React.CSSProperties} data-ready={rendered || fallback ? "" : undefined}
     data-frame={fallback ? "inline" : rendered ? "rendered" : ready ? "ready" : "loading"} data-size={size ? `${size.width}x${size.height}` : undefined}>
-    {fallback ? size && <InlineChart chart={chart} size={size} onHover={onHover} /> : <iframe ref={frame} src={`/lens-frame?lang=${getLocale()}`} sandbox="allow-scripts allow-same-origin" title={chart.title ?? chart.summary} onLoad={() => setReady(true)} />}
+    {fallback ? size && <InlineChart chart={chart} size={size} onHover={onHover} /> : <iframe ref={frame} src={`/lens-frame?lang=${locale}`} sandbox="allow-scripts allow-same-origin" title={chart.title ?? chart.summary} onLoad={() => setReady(true)} />}
     <p className="sr-only">{chart.summary}</p>
   </div>;
 }
 
 /** The same picture drawn into the page, for when the frame is not available. */
 function InlineChart({ chart, size, onHover }: { chart: CompiledChart; size: LensFrameSize; onHover?: (period: number | null) => void }) {
+  const locale = useLocale();
   const host = useRef<HTMLDivElement>(null);
   const drawn = useRef<string | null>(null);
-  const html = useMemo(() => renderChartSvg(chart, size, { locale: getLocale() }), [chart, size]);
+  const html = useMemo(() => renderChartSvg(chart, size, { locale }), [chart, size, locale]);
   // A redraw of the same chart at a new size keeps still, before the first paint, so resizing does not replay the entrance.
   useLayoutEffect(() => {
     const svg = host.current?.querySelector<SVGElement>("svg");

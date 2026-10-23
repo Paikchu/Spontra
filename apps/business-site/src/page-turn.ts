@@ -26,6 +26,32 @@ export function turnPage(update: () => void) {
   notify();
 }
 
+/**
+ * Crossfade the company map (a first paint or a language change) or only its chart (a view toggle).
+ * The outgoing face stays up while the incoming one fades in through the shared `fade-in` keyframe.
+ * Reduced motion, or a turn already running, swaps at once.
+ */
+export function crossfade(update: () => void, part: "map" | "chart" = "chart") {
+  if (typeof document === "undefined" || typeof document.startViewTransition !== "function" || matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    update();
+    return;
+  }
+  const root = document.documentElement;
+  if (root.dataset.vt) { update(); return; }
+  const name = part === "map" ? "swap-map" : "swap-chart";
+  root.dataset.vt = name;
+  let transition: ViewTransition;
+  try {
+    transition = document.startViewTransition(() => flushSync(update));
+  } catch {
+    if (root.dataset.vt === name) delete root.dataset.vt;
+    update();
+    return;
+  }
+  const done = () => { if (root.dataset.vt === name) delete root.dataset.vt; };
+  transition.finished.then(done, done);
+}
+
 /** True while a page turn is in flight. A browser skips the turn when an element it pairs leaves the page, so pages hold their rail until it lands. */
 export function usePageTurning() {
   return useSyncExternalStore(listener => { listeners.add(listener); return () => { listeners.delete(listener); }; }, () => turn !== null);

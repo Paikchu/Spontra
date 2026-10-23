@@ -23,6 +23,8 @@ import type { CapitalQuarter, PublicCapitalStructure } from "@/shared/analysis-c
 import { balanceMetrics, balancePool, cashMetrics, cashPool, type Pool } from "./capital-model";
 import { PoolChart, TONE_LABEL, toneColor } from "./PoolChart";
 import { Rail } from "./Sidebar";
+import { stageChartBox } from "./chart-box";
+import { crossfade } from "./page-turn";
 import type { FindingPassage, FindingsPublication } from "@/shared/analysis-contract/findings";
 import type { PeersPublication } from "@/shared/analysis-contract/peers";
 import { watchVerdict, type FindingFundamentals, type ResolvedEvidence, type ResolvedValue } from "@/shared/analysis-runtime/findings";
@@ -40,7 +42,7 @@ import { EventLens } from "./EventLens";
 import { ReportLens } from "./ReportLens";
 import { Timeline } from "./Timeline";
 import { lazy, Suspense } from "react";
-import { getLocale, messages } from "@/packages/web/src/i18n";
+import { getLocale, messages, useLocale } from "@/packages/web/src/i18n";
 import { SourceLanguage, langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import { compactShares, multiple, perShare, qoqLabel, range, yoyLabel } from "@/shared/analysis-runtime/locale";
 import { assessStatements, peerRanks } from "@/shared/analysis-runtime/statement-analysis";
@@ -263,6 +265,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
   railFoot?: ReactNode;
   /** A finding the stage asked to open on the map; a new nonce asks again. */
   focusRequest?: { finding: string; nonce: number } | null }) {
+  const locale = useLocale();
   const quarters = useMemo(() => [...flow.quarters].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd)), [flow]);
   const [period, setPeriod] = useState<string | null>(null);
   const quarter = quarters.find(q => q.id === period) ?? quarters[0];
@@ -271,17 +274,17 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
   const yearAgo = quarter ? yearAgoQuarter(quarter, quarters) : null, lastQuarter = quarter ? previousQuarter(quarter, quarters) : null;
   const basis: Basis = chosenBasis ?? (yearAgo || !lastQuarter ? "yoy" : "qoq");
   const previous = basis === "yoy" ? yearAgo : lastQuarter;
-  const word = useMemo(() => basisWords(basis), [basis]);
+  const word = useMemo(() => basisWords(basis), [basis, locale]);
   const slots = useMemo(() => hueSlots(quarters), [quarters]);
   const { items, quantified } = useMemo(() => businessItems(quarter, slots), [quarter, slots]);
   const [selected, setSelected] = useState<string | null>(() => new URLSearchParams(location.search).get("business"));
   // Findings are verified against the same data the stage draws; a finding in focus reshapes the stage around its figures.
   const data = useMemo(() => findingData(flow, revenueHistory, capital, fundamentals, guidance, peers, passages, events), [flow, revenueHistory, capital, fundamentals, guidance, peers, passages, events]);
-  const verified = useMemo(() => verifiedFindings(findings, data), [findings, data]);
+  const verified = useMemo(() => verifiedFindings(findings, data, locale), [findings, data, locale]);
   // Scored watches: pass or fail once the watched period reported, from the same data the stage draws.
   const verdicts = useMemo(() => Object.fromEntries(verified.flatMap(f => { const v = f.watch?.test ? watchVerdict(data, f.watch, f.periodEnd) : null; return v ? [[f.id, v.verdict]] : []; })) as Record<string, "pass" | "fail">, [verified, data]);
   // The three-statement checkup of the quarter on the stage, from the same data; its flags come alerts first.
-  const assessment = useMemo(() => quarter ? assessStatements(data, quarter.periodEnd, getLocale()) : null, [data, quarter]);
+  const assessment = useMemo(() => quarter ? assessStatements(data, quarter.periodEnd, locale) : null, [data, quarter, locale]);
   const ranks = useMemo(() => assessment ? peerRanks({ ...data, peers: rankPeers ?? data.peers }, assessment, ticker) : {}, [assessment, data, rankPeers, ticker]);
   const flags = useMemo(() => assessment?.flags ?? [], [assessment]);
   const assessedMetrics = useMemo(() => new Map(assessment?.dimensions.flatMap(d => d.metrics).map(metric => [metric.id, metric]) ?? []), [assessment]);
@@ -370,7 +373,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
   const cash = funding?.cashFlow ?? funding?.yearToDate ?? null;
   const view: View = chosenView === "cash" && cash ? "cash" : chosenView === "balance" && funding?.balanceSheet ? "balance" : "profit";
   // The company's headline figures for the report and view, as the findings run picked them; too few verified keeps the fixed tiles.
-  const highlights = useMemo(() => quarter ? highlightsFor(findings, data, quarter.periodEnd, view, getLocale()) : null, [findings, data, quarter, view]);
+  const highlights = useMemo(() => quarter ? highlightsFor(findings, data, quarter.periodEnd, view, locale) : null, [findings, data, quarter, view, locale]);
   // What the analysis says about the view on the stage: its tripped rules under the tiles, its metrics under the chart.
   const shownFlags = useMemo(() => viewFlags(flags, view), [flags, view]);
   const shownMetrics = useMemo(() => viewMetrics(assessment, view, flagged), [assessment, view, flagged]);
@@ -459,7 +462,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
           rows: [...(p.action && p.action !== "initiated" ? [[m.vsPrevious, actionName(p.action) + (p.item.previous && p.item.previous.low != null ? m.previously(p.item.measure === "growth" || p.item.unit === "percent" ? `${p.item.previous.low}%–${p.item.previous.high}%` : `${dollars(p.item.previous.low)}–${dollars(p.item.previous.high)}`) : "")] as [string, string]] : []), [m.issued, p.item.issuedAt.slice(0, 10)]],
           link: p.source ? m.source(p.source.title) : undefined } })),
     };
-  }, [quarter, graph, guidance, itemByNode, colorOf, money]);
+  }, [quarter, graph, guidance, itemByNode, colorOf, money, locale]);
   // With nothing in focus, the quarter's first finding about this view leads: the chart lights what it names.
   const [leadHidden, setLeadHidden] = useState(false);
   const lead = useMemo(() => focused || current || leadHidden || !quarter ? null : verified.find(f => f.periodEnd === quarter.periodEnd && f.anchors.view === view) ?? null, [focused, current, leadHidden, quarter, verified, view]);
@@ -630,19 +633,19 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
           </>}
         </div>}
         <div className="stage-controls">
-        {view === "profit" && yearAgo && lastQuarter && <ToggleGroup type="single" variant="unstyled" rovingFocus={false} value={basis} onValueChange={next => { if (next) setBasis(next as Basis); }} asChild>
+        {view === "profit" && yearAgo && lastQuarter && <ToggleGroup type="single" variant="unstyled" rovingFocus={false} value={basis} onValueChange={next => { if (next && next !== basis) crossfade(() => setBasis(next as Basis)); }} asChild>
           <span className="trend-views stage-views" role="radiogroup" aria-label={m.comparisonBase}>
             <ToggleGroupItem value="yoy" role="radio" aria-checked={basis === "yoy"}>{yoyLabel(getLocale())}</ToggleGroupItem>
             <ToggleGroupItem value="qoq" role="radio" aria-checked={basis === "qoq"}>{qoqLabel(getLocale())}</ToggleGroupItem>
           </span>
         </ToggleGroup>}
-        {view === "profit" && !current && (trunked?.folded.size ?? 0) > 0 && <ToggleGroup type="single" variant="unstyled" rovingFocus={false} value={detail ? "detail" : "trunk"} onValueChange={next => { if (next) setDetail(next === "detail"); }} asChild>
+        {view === "profit" && !current && (trunked?.folded.size ?? 0) > 0 && <ToggleGroup type="single" variant="unstyled" rovingFocus={false} value={detail ? "detail" : "trunk"} onValueChange={next => { if (next && (next === "detail") !== detail) crossfade(() => setDetail(next === "detail")); }} asChild>
           <span className="trend-views stage-views" role="radiogroup" aria-label={m.statementDepth}>
             <ToggleGroupItem value="trunk" role="radio" aria-checked={!detail}>{m.trunk}</ToggleGroupItem>
             <ToggleGroupItem value="detail" role="radio" aria-checked={detail}>{m.detail}</ToggleGroupItem>
           </span>
         </ToggleGroup>}
-        {funding && (cash || funding.balanceSheet) && <ToggleGroup type="single" variant="unstyled" rovingFocus={false} value={view} onValueChange={next => { if (next) setView(next as View); }} asChild>
+        {funding && (cash || funding.balanceSheet) && <ToggleGroup type="single" variant="unstyled" rovingFocus={false} value={view} onValueChange={next => { if (next && next !== view) crossfade(() => { stageChartBox(); setView(next as View); }); }} asChild>
           <span className="trend-views stage-views" role="radiogroup" aria-label={m.financialView}>
             <ToggleGroupItem value="profit" role="radio" aria-checked={view === "profit"}>{VIEW_LABEL.profit}</ToggleGroupItem>
             {cash && <ToggleGroupItem value="cash" role="radio" aria-checked={view === "cash"}>{VIEW_LABEL.cash}</ToggleGroupItem>}
@@ -672,7 +675,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
           : <div className="business-flow chart-fallback">{current && <Dossier item={current} parent={parent ?? null} sources={quarter.sources} explainer={explainer} />}<FinancialSankey quarter={quarter} previous={previous} word={word.change} onSegment={key => pickOnChart(items.find(item => item.key === key)?.id ?? null)} /></div>}
       </div>
 
-      {points.length > 0 && <Timeline points={points} now={now.getTime()} currentPeriod={quarter?.periodEnd ?? null}
+      {points.length > 0 && <Timeline points={points} now={now.getTime()} currentPeriod={quarter?.periodEnd ?? null} activeEventId={focusedEvent?.id ?? null} activeReportId={null}
         onReport={(id, end) => { if (filings?.filings.some(f => f.accessionNumber === id)) { focusFinding(null); focusReport(id); } else { setPeriod(quarters.find(q => q.periodEnd === end)?.id ?? null); focusFinding(null); setEventId(null); setReportId(null); } }} onEvent={id => focusEvent(id)} />}
 
       {mindItem && mindMap ? <div className="lens-stage"><MindLens item={mindItem} branch={mindMap.branches.find(b => b.node === mindItem.anchor)} sources={mindMap.sources} onClose={() => setMindItem(null)} /></div>

@@ -3,6 +3,8 @@ import { SecModelHttpError } from "./operations.ts";
 import { companyPolicyEnvironment } from "./financial-data/company-policy.ts";
 import { WorkerEntrypoint, WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
 import { handleMapRead } from "./read-api/router.ts";
+import { readHomeDigest } from "./read-api/home-digest.ts";
+import { isLocale } from "../../../shared/analysis-runtime/locale.ts";
 import { handleStageRequest } from "./stage/gateway.ts";
 import { executeReportWorkflow, type ReportParams } from "./stage/report-workflow.ts";
 
@@ -89,6 +91,13 @@ export class SecAnalysisWorkflow extends WorkflowEntrypoint<AnalysisEnv, SecWork
 export class MapReads extends WorkerEntrypoint<AnalysisEnv> {
   fetch(request: Request) {
     return handleMapRead(request, this.env);
+  }
+
+  /** Aggregated homepage read. The public route is `GET /api/v1/home`; this method is the same query. */
+  homeDigest(locale?: string | null) {
+    if (!this.env.DB) return Promise.reject(new Error("The analysis store is not available on this deployment."));
+    const lang = isLocale(locale) && locale !== "en" ? locale : null;
+    return readHomeDigest(this.env.DB, this.env, lang);
   }
 }
 

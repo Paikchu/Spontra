@@ -25,6 +25,7 @@ import type {LibraryTable,PublicPassage} from "@/shared/analysis-contract/filing
 import {formatFilingPeriodLabel} from "@/packages/web/src/model/filing-period-label";
 import {formatSecMetricLabel,formatSecMetricValue} from "@/packages/web/src/model/sec-metric-format";
 import {isLocale,type Locale} from "@/shared/analysis-runtime/locale";
+import {homeLocale,parseHomeDigest,unavailableHome} from "../src/home-model.ts";
 import {MAP_RESOURCES,REVISION,type MapRevisions} from "@/shared/analysis-contract/revisions";
 /** Spontra Analysis is reached over its Service Binding; the host is a label the binding ignores. */
 const ANALYSIS_ORIGIN="https://spontra-analysis.internal";
@@ -334,6 +335,22 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
   const fetcher=upstream??analysisFetcher(env);
   if(!fetcher)return json({error:"Read service unavailable"},503);
   // The companies with published findings, for the home page; the list follows the admin's AI switch.
+  if(url.pathname==="/api/business/v1/home"){
+   if(request.method!=="GET")return json({error:"Method not allowed"},405);
+   const locale=homeLocale(url.searchParams);
+   if(locale==="reject")return json({error:"Not found"},404);
+   try{if(!env.PUBLIC_READ_LIMIT||!(await env.PUBLIC_READ_LIMIT.limit({key:request.headers.get("cf-connecting-ip")??"anonymous"})).success)return json({error:"Too many requests"},429);}catch{return json({error:"Read service unavailable"},503);}
+   const key=new Request(url.href,{method:"GET"});const cached=await cache?.match(key);if(cached)return cached;
+   let digest=null;
+   try{
+    const response=await fetcher(ANALYSIS_ORIGIN+inLocale("/api/v1/home",locale),{signal:AbortSignal.timeout(12000),headers:{accept:"application/json"}});
+    digest=response.ok?parseHomeDigest(await response.json()):null;
+   }catch{digest=null;}
+   if(!digest){const failed=json(unavailableHome(),503);failed.headers.set("cache-control","no-store");return failed;}
+   const response=json(digest);response.headers.set("cache-control","public, max-age=600");
+   if(cache)ctx.waitUntil(cache.put(key,response.clone()));
+   return response;
+  }
   if(url.pathname==="/api/business/v1/findings"){
    if(request.method!=="GET"||[...url.searchParams.keys()].length)return json({error:"Not found"},404);
    try{if(!env.PUBLIC_READ_LIMIT||!(await env.PUBLIC_READ_LIMIT.limit({key:request.headers.get("cf-connecting-ip")??"anonymous"})).success)return json({error:"Too many requests"},429);}catch{return json({error:"Read service unavailable"},503);}

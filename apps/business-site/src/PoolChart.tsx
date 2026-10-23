@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { peekChartBox } from "./chart-box";
 import { estimateTextWidth } from "@/packages/web/src/model/business-flow-layout";
 import type { Pool, PoolItem, PoolTone } from "./capital-model";
 import { labels, messages } from "@/packages/web/src/i18n";
@@ -85,21 +86,23 @@ export function PoolChart({ pool, money, label, spotlight = null }: { pool: Pool
   /** Item keys a finding is about; they stay lit while the pointer is elsewhere. */
   spotlight?: Set<string> | null }) {
   const box = useRef<HTMLDivElement>(null);
-  const [size, setSize] = useState<{ w: number; h: number }>({ w: 960, h: 520 });
-  useEffect(() => {
+  const [size, setSize] = useState<{ w: number; h: number } | null>(peekChartBox);
+  useLayoutEffect(() => {
     const element = box.current;
     if (!element) return;
-    const observer = new ResizeObserver(([entry]) => {
-      const w = Math.round(entry.contentRect.width), h = Math.round(entry.contentRect.height);
-      if (w > 0 && h > 0) setSize(old => old.w === w && old.h === h ? old : { w, h });
-    });
+    const measure = () => {
+      const w = Math.round(element.clientWidth), h = Math.round(element.clientHeight);
+      if (w > 0 && h > 0) setSize(old => old?.w === w && old.h === h ? old : { w, h });
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
-  const layout = useMemo(() => layoutPool(pool, size.w, size.h, money), [pool, size, money]);
+  const layout = useMemo(() => size ? layoutPool(pool, size.w, size.h, money) : null, [pool, size, money]);
   const [active, setActive] = useState<string | null>(null);
   const lit = (key: string) => active ? active === key : Boolean(spotlight?.has(key));
-  const focused = active || (spotlight && layout.nodes.some(n => spotlight.has(n.key)));
+  const focused = active || (spotlight && layout?.nodes.some(n => spotlight.has(n.key)));
   const [tip, setTip] = useState<{ x: number; y: number; item: Placed } | null>(null);
   const share = (v: number) => pool.total ? `${Math.round(v / pool.total * 100)}%` : "";
   const point = (event: React.MouseEvent, item: Placed) => {
@@ -108,7 +111,7 @@ export function PoolChart({ pool, money, label, spotlight = null }: { pool: Pool
   };
   return <div className="pool">
     <div className="pool-canvas" ref={box}>
-      <svg className="fc-svg pool-svg" viewBox={`0 0 ${size.w} ${size.h}`} role="img" aria-label={label} data-focus={focused ? "" : undefined}>
+      {size && layout && <svg className="fc-svg pool-svg" viewBox={`0 0 ${size.w} ${size.h}`} role="img" aria-label={label} data-focus={focused ? "" : undefined}>
         <g>
           {layout.nodes.map(n => {
             const d = n.side === "source"
@@ -137,8 +140,8 @@ export function PoolChart({ pool, money, label, spotlight = null }: { pool: Pool
             </text>
           </g>;
         })}
-      </svg>
-      {tip && <div className="fc-tip" role="presentation" style={{ transform: `translate(${tip.x > size.w - 260 ? tip.x - 16 : tip.x + 16}px, ${tip.y + 16}px) translateX(${tip.x > size.w - 260 ? "-100%" : "0"})` }}>
+      </svg>}
+      {size && tip && <div className="fc-tip" role="presentation" style={{ transform: `translate(${tip.x > size.w - 260 ? tip.x - 16 : tip.x + 16}px, ${tip.y + 16}px) translateX(${tip.x > size.w - 260 ? "-100%" : "0"})` }}>
         <div className="fc-tip-title"><i style={{ background: TONE[tip.item.tone] }} />{tip.item.label}</div>
         <div className="fc-tip-row"><span>{m.amount}</span><b>{money(tip.item.value)}</b></div>
         <div className="fc-tip-row"><span>{m.shareOf(pool.title)}</span><b>{share(tip.item.value)}</b></div>

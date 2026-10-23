@@ -3,6 +3,7 @@ import { Button } from "@/packages/web/src/ui/button";
 import { Sidebar, SidebarHeader, SidebarContent, SidebarTrigger } from "@/packages/web/src/ui/sidebar";
 import { messages, setLocale, useLocale } from "@/packages/web/src/i18n";
 import { CompanyMark } from "./CompanyMark";
+import { crossfade } from "./page-turn";
 
 const m = messages({
   lightTheme: "Light theme", home: "Home", search: "Search companies", searchShortcut: "Search companies (⌘K)",
@@ -16,7 +17,7 @@ const m = messages({
 export function LanguageToggle() {
   const locale = useLocale();
   const next = locale === "zh-CN" ? "en" : "zh-CN";
-  return <Button variant="unstyled" type="button" className="icon-button lang-toggle" aria-label={m.switchTo} title={m.switchTo} lang={next} onClick={() => setLocale(next)}>
+  return <Button variant="unstyled" type="button" className="icon-button lang-toggle" aria-label={m.switchTo} title={m.switchTo} lang={next} onClick={() => { if (document.querySelector(".map")) crossfade(() => setLocale(next), "map"); else setLocale(next); }}>
     <span aria-hidden="true">{m.other}</span>
   </Button>;
 }

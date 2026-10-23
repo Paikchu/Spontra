@@ -35,9 +35,25 @@ export async function fetchRevisions(ticker: string, signal: AbortSignal): Promi
   return body.revisions && typeof body.revisions === "object" ? body.revisions : null;
 }
 
+/** A company read that answered with an HTTP status. `status` 0 is a network failure, which never got one. */
+export class CompanyHttpError extends Error {
+  readonly status: number;
+  constructor(status: number) {
+    super(String(status));
+    this.name = "CompanyHttpError";
+    this.status = status;
+  }
+}
+
 export async function fetchCompany(ticker: string, signal: AbortSignal, rev?: string): Promise<CompanyPublication> {
-  const response = await fetch(companyPath(ticker, "", rev), { signal });
-  if (!response.ok) throw new Error("unavailable");
+  let response: Response;
+  try {
+    response = await fetch(companyPath(ticker, "", rev), { signal });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") throw error;
+    throw new CompanyHttpError(0);
+  }
+  if (!response.ok) throw new CompanyHttpError(response.status);
   return await response.json() as CompanyPublication;
 }
 

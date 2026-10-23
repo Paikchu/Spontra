@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Button } from "@/packages/web/src/ui/button";
-import { getLocale, labels, messages } from "@/packages/web/src/i18n";
+import { labels, messages, useLocale } from "@/packages/web/src/i18n";
 import type { UserReport } from "@/shared/analysis-contract/user-report";
 import type { FindingData } from "@/shared/analysis-runtime/findings";
 import { verifyFindings } from "@/shared/analysis-runtime/findings";
@@ -33,9 +33,9 @@ const m = messages({ queued: "Report queued", running: "Writing report", report:
  * frame the finding page uses; a finding's lens through the same blocks.
  */
 export default function SceneView({ ticker, scene, data, onOpenFinding }: { ticker: string; scene: StageState; data: CompanyData; onOpenFinding: (id: string) => void }) {
-  const locale = getLocale();
+  const locale = useLocale();
   const facts = useMemo(() => data.flow ? findingData(data.flow, data.publication?.history ?? null, data.capital, data.fundamentals, data.publication?.guidance ?? null, data.findings?.peers ?? null, data.findings?.passages ?? null, data.events) : null, [data]);
-  const findings = useMemo(() => facts ? verifiedFindings(data.findings?.findings ?? null, facts) : [], [facts, data.findings]);
+  const findings = useMemo(() => facts ? verifiedFindings(data.findings?.findings ?? null, facts, locale) : [], [facts, data.findings, locale]);
   const verified = useMemo(() => facts ? verifyScene(scene.scene, { ticker, data: facts, findings, candidates: null, materials: data.findings?.findings.materials, options: { locale } }) : null, [facts, findings, scene.revision, scene.scene, ticker, data.findings, locale]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!verified || !facts) return null;
   const byId = new Map(findings.map(f => [f.id, f]));
@@ -71,7 +71,8 @@ export default function SceneView({ ticker, scene, data, onOpenFinding }: { tick
 
 /** A series over time, drawn as the chart grammar draws any chart. */
 const Trend = memo(function Trend({ block, data, periodEnd }: { block: Extract<SceneBlock, { kind: "metric-trend" }>; data: NonNullable<Parameters<typeof compileChart>[1]>; periodEnd: string }) {
-  const chart = useMemo(() => compileChart(trendChart(block), data, periodEnd, { locale: getLocale() }).chart, [block, data, periodEnd]);
+  const locale = useLocale();
+  const chart = useMemo(() => compileChart(trendChart(block), data, periodEnd, { locale }).chart, [block, data, periodEnd, locale]);
   return chart ? <LensFrame chart={chart} /> : null;
 });
 
