@@ -244,7 +244,7 @@ export function guidanceOverlay(slots: Slot[], guidance: GuidancePublication | n
   };
 }
 
-const METRIC_NAMES: Record<GuidanceItem["metric"], string> = labels({
+export const METRIC_NAMES: Record<GuidanceItem["metric"], string> = labels({
   revenue: "Revenue", segment_revenue: "Revenue", gross_margin: "Gross margin", operating_margin: "Operating margin", operating_income: "Operating income", eps: "EPS",
   free_cash_flow: "Free cash flow", operating_cash_flow: "Operating cash flow", capex: "Capital expenditures", rpo: "RPO", billings: "Billings", other: "",
 }, {

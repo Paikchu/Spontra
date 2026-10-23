@@ -2,15 +2,16 @@ import type { BusinessFlowQuarter } from "@/shared/analysis-contract/business-fl
 import type { GuidanceItem, GuidancePublication, GuidanceSource } from "@/shared/analysis-contract/guidance";
 import { getLocale, labels } from "@/packages/web/src/i18n";
 import { perShare, range } from "@/shared/analysis-runtime/locale";
-import { ACTION_NAMES, guidanceLabel, segmentMatches } from "./trend-model";
+import { ACTION_NAMES, METRIC_NAMES, guidanceLabel, segmentMatches } from "./trend-model";
 
 const EXPECTED = labels({ up: "Expected up", down: "Expected down", flat: "Expected flat" }, { up: "预计上升", down: "预计下降", flat: "预计持平" });
+const QUALIFIER = labels({ yoy: "YoY", nonGaap: "Non-GAAP" }, { yoy: "同比", nonGaap: "非 GAAP" });
 
 /**
  * Management guidance on the Sankey itself. A bracket beside a bar is the range guided for this quarter, at the
- * bar's scale, so where the bar ends against it reads as above / within / below. A pill is what the latest report guides
+ * bar's scale, so where the bar ends against it reads as above / within / below. A card is what the latest report guides
  * for the next quarter on that line. Only nodes the statement draws take marks: company revenue, a business whose
- * filing name the guidance uses, and operating profit (gross and operating margins as pills only, since a rate
+ * filing name the guidance uses, and operating profit (gross and operating margins as cards only, since a rate
  * has no height on the bar). Constant-currency variants and lines the chart does not draw stay in the trend panel.
  */
 export type GuideVerdict = "above" | "within" | "below";
@@ -51,6 +52,12 @@ export function pillText(item: GuidanceItem, money: (dollars: number) => string)
   const only = item.low ?? item.high;
   if (item.low == null || item.high == null) return only == null ? "" : `${sign}${num(only)}${unit}`;
   return item.low === item.high ? `${sign}${num(item.low)}${unit}` : `${sign}${range(num(item.low), num(item.high), locale)}${unit}`;
+}
+
+/** What the pill's number is, beside its heading: a growth rate is year over year, a margin names itself, and a non-GAAP figure says so. */
+export function pillQualifier(item: GuidanceItem): string {
+  const what = item.form === "qualitative" ? "" : item.measure === "growth" ? QUALIFIER.yoy : item.measure === "margin" ? METRIC_NAMES[item.metric] : "";
+  return [what, item.basis === "non_gaap" ? QUALIFIER.nonGaap : ""].filter(Boolean).join(" · ");
 }
 
 export const ACTION_GLYPH: Record<NonNullable<GuidanceItem["action"]>, string> = { raised: "↑", lowered: "↓", reaffirmed: "=", narrowed: "↔", widened: "↔", updated: "·", initiated: "" };
