@@ -6,7 +6,7 @@ import { labels, messages } from "@/packages/web/src/i18n";
 import { SourceLanguage, langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import type { FindingData } from "@/shared/analysis-runtime/findings";
 import { ItemAnalysisBody, useItemAnalysis, useVerifiedAnalysis } from "./ItemAnalysis";
-import { reportTitle, reportTitleLang } from "./reports-model";
+import { filingQuarterLabel, reportTitle, reportTitleLang } from "./reports-model";
 
 const VERIFICATION = labels({ verified: "Figures verified", partial: "Partly verified", failed: "Verification failed" }, { verified: "数据已核验", partial: "部分核验", failed: "核验未通过" });
 const m = messages({
@@ -53,11 +53,12 @@ export function ReportLens({ report, ticker, data, updates, nodeColor, index, co
   const [more, setMore] = useState(false);
   const analysis = useItemAnalysis(ticker, report.accessionNumber, updates);
   const verified = useVerifiedAnalysis(analysis, data, ticker);
-  return <section className="lens report-lens" aria-label={m.report(reportTitle(report))} key={report.accessionNumber}>
+  const title = reportTitle(report, ticker);
+  return <section className="lens report-lens" aria-label={m.report(title)} key={report.accessionNumber}>
     <header className="lens-head">
       <div className="lens-title">
-        <b className="lens-kind report-kind">{report.periodLabel ?? report.form}</b>
-        <h2 lang={verified ? langOf(verified.finding.title) : reportTitleLang(report)}>{verified?.finding.title ?? reportTitle(report)}</h2>
+        <b className="lens-kind report-kind">{filingQuarterLabel(ticker, report) ?? report.form}</b>
+        <h2 lang={verified ? langOf(verified.finding.title) : reportTitleLang(report)}>{verified?.finding.title ?? title}</h2>
         <span className="lens-basis">{report.sources.length ? m.release(report.date, report.periodEnd) : m.filed(report.form, report.filingDate)}{!verified && report.verification && ` · ${VERIFICATION[report.verification]}`}<SourceLanguage of={verified ? [verified.finding.title, verified.finding.judgment.text] : [report.headline, report.analystView, ...report.bullets.flatMap(b => [b.label, b.detail])]} /></span>
       </div>
       <div className="lens-nav">

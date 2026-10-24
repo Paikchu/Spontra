@@ -3,8 +3,9 @@ import type { EventsPublication } from "@/shared/analysis-contract/events";
 import type { PublicFilingDigest, PublicFilingDigestPage } from "@/shared/analysis-contract/filings";
 import { DAY_MS } from "@/shared/analysis-runtime/events";
 import { isReport, mergedAccessions, railEntries, type RailEntry } from "@/shared/analysis-runtime/rail";
-import { messages } from "@/packages/web/src/i18n";
+import { getLocale, messages } from "@/packages/web/src/i18n";
 import { langOf } from "@/packages/web/src/i18n/SourceLanguage";
+import { periodLabel } from "@/shared/analysis-runtime/fiscal-label";
 import { eventTitle, isQuietInsider, periodReport, type TimelinePoint } from "./events-model";
 
 const m = messages({
@@ -48,18 +49,28 @@ export function railItems(filings: PublicFilingDigestPage | null, events: Events
   return { recent, earlier: items.filter(i => !ids.has(i.id)), quiet: all.length - all.filter(e => !isQuietInsider(e)).length, since };
 }
 
+/** The issuer quarter for a listed filing. The stored `periodLabel` is ignored so an older payload cannot keep "财季待确认". */
+export function filingQuarterLabel(ticker: string, filing: Pick<PublicFilingDigest, "periodEnd" | "fiscalYear" | "fiscalQuarter" | "fiscalYearEndMonth" | "labelSource">): string | null {
+  if (!filing.periodEnd) return null;
+  const labels = periodLabel({
+    ticker, periodEnd: filing.periodEnd, fiscalYear: filing.fiscalYear, fiscalQuarter: filing.fiscalQuarter,
+    fiscalYearEndMonth: filing.fiscalYearEndMonth, labelSource: filing.labelSource,
+  }, getLocale());
+  return labels.primary ?? labels.unknown;
+}
+
 /** Everything on the time axis: reports from the filings, events from the publication, merged current reports once. Oldest first. */
-export function timelineFromFilings(filings: PublicFilingDigestPage | null, events: EventsPublication | null, months = 24, now = new Date(), quarters: BusinessFlowQuarter[] = []): TimelinePoint[] {
+export function timelineFromFilings(filings: PublicFilingDigestPage | null, events: EventsPublication | null, months = 24, now = new Date(), quarters: BusinessFlowQuarter[] = [], ticker = ""): TimelinePoint[] {
   const floor = new Date(now.getTime() - months * 30.4 * DAY_MS).toISOString().slice(0, 10);
   const reports = (filings?.filings ?? []).filter(isReport);
   const merged = mergedAccessions(reports);
   const points: TimelinePoint[] = reports.filter(r => r.date >= floor)
-    .map(r => ({ id: r.accessionNumber, date: r.date, kind: "report" as const, periodEnd: r.periodEnd!, title: `${r.periodLabel ?? r.form} · ${r.headline || r.form}`, weight: 3 as const }));
+    .map(r => ({ id: r.accessionNumber, date: r.date, kind: "report" as const, periodEnd: r.periodEnd!, title: `${filingQuarterLabel(ticker, r) ?? r.form} · ${r.headline || r.form}`, weight: 3 as const }));
   // The axis is the only quarter control, so a flow quarter the filing list does not cover still gets a tick that switches the stage.
   const covered = new Set(points.map(p => p.periodEnd));
   for (const q of quarters) {
     const date = q.reportedAt ?? q.periodEnd;
-    if (!covered.has(q.periodEnd) && date >= floor) { covered.add(q.periodEnd); points.push({ id: "report:" + q.id, date, kind: "report", periodEnd: q.periodEnd, title: periodReport(q.periodEnd), weight: 3 }); }
+    if (!covered.has(q.periodEnd) && date >= floor) { covered.add(q.periodEnd); points.push({ id: "report:" + q.id, date, kind: "report", periodEnd: q.periodEnd, title: filingQuarterLabel(ticker, q) ?? periodReport(q.periodEnd), weight: 3 }); }
   }
   for (const e of events?.events ?? []) {
     if (e.filedAt < floor || merged.has(e.id)) continue;
@@ -69,8 +80,8 @@ export function timelineFromFilings(filings: PublicFilingDigestPage | null, even
 }
 
 /** The rail's one-line title for a report: its headline, or its period and form while the analysis is still running. */
-export function reportTitle(r: PublicFilingDigest): string {
-  return r.headline || m.pending(r.periodLabel ?? r.form);
+export function reportTitle(r: PublicFilingDigest, ticker = ""): string {
+  return r.headline || m.pending(filingQuarterLabel(ticker, r) ?? r.form);
 }
 
 /** The language of the generated headline while it is the title (Chinese once translated); undefined while the title is composed in the reader's language. */

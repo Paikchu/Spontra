@@ -16,6 +16,10 @@ const quarterSchema = z.object({
   segments: z.array(leaf.extend({ children: z.array(leaf).max(40).optional() })).min(1).max(40),
   revenueAdjustments: z.array(leaf).max(20).optional(),
   source: z.object({ accession: z.string().regex(/^\d{10}-\d{2}-\d{6}$/), url: secUrl, filedAt: date, form: z.string().max(12) }),
+  fiscalYear: z.number().int().nullable().optional(),
+  fiscalQuarter: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]).nullable().optional(),
+  fiscalYearEndMonth: z.number().int().min(1).max(12).nullable().optional(),
+  labelSource: z.enum(["xbrl", "derived", "unknown"]).optional(),
 });
 export const revenueHistorySchema = z.object({ schemaVersion: z.literal("revenue-history.v1"), ticker: z.string().regex(/^[A-Z][A-Z0-9.-]{0,11}$/), updatedAt: z.string(), quarters: z.array(quarterSchema).max(16) });
 

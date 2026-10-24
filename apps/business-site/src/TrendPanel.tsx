@@ -8,6 +8,7 @@ import { compactFlowValue } from "@/packages/web/src/model/business-flow-layout"
 import type { GuidancePublication } from "@/shared/analysis-contract/guidance";
 import { getLocale, messages } from "@/packages/web/src/i18n";
 import { compactMoney, qoqLabel, range, yoyLabel } from "@/shared/analysis-runtime/locale";
+import { QuarterBadge, fiscalPhrase } from "./PeriodMark";
 import { SLOTS, ACTION_NAMES, buildBridge, buildColumns, buildSlots, columnIndex, visibleSlotCount, growth, growthSeries, guidanceLabel, guidanceOverlay, layerOrder, niceTicks, rateTicks, type Bridge, type Column, type GuideMark, type Layer, type TrendItem } from "./trend-model";
 
 const m = messages({
@@ -66,7 +67,7 @@ function layerColor(layer: Layer, hue: (slot: number) => string) {
  * Up to five quarterly bars (fewer for a short disclosure history) that morph rather than remount: every column always renders every layer, and a
  * focus change only moves heights, so "all businesses" collapses into the selected business continuously.
  */
-export function TrendPanel({ history, items, selected, currentPeriod, periods, onPickPeriod, hue, guidance = null, picker = null }: {
+export function TrendPanel({ history, items, selected, currentPeriod, periods, onPickPeriod, hue, guidance = null, picker = null, ticker }: {
   history: RevenueHistory;
   /** Metric picker beside the heading; switching away from revenue replaces this panel with a company-level metric. */
   picker?: ReactNode;
@@ -78,6 +79,7 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
   periods: Set<string>;
   onPickPeriod: (periodEnd: string) => void;
   hue: (slot: number) => string;
+  ticker: string;
 }) {
   const [hover, setHover] = useState<number | null>(null);
   /** Which series the pointer is on; it and its axis stay lit while the other recedes. */
@@ -168,7 +170,7 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
         {ticks.map((t, k) => <div key={t} style={{ bottom: `${t / scale * 100}%` }}><span>{t ? money(t) : ""}</span>{rateAxis && <em>{axisPercent(rateAxis[k])}</em>}</div>)}
       </div>
       <i className="trend-sweep" key={"sweep" + mode} aria-hidden="true" />
-      {columns.map((column, i) => <Bar key={column.slot.periodEnd} column={column} index={i} order={order} scale={scale} hue={hue} money={money}
+      {columns.map((column, i) => <Bar key={column.slot.periodEnd} column={column} index={i} order={order} scale={scale} hue={hue} money={money} ticker={ticker}
         current={column.slot.periodEnd === currentPeriod} pickable={periods.has(column.slot.periodEnd)} hovered={hover === i}
         onHover={() => setHover(i)} onPick={() => onPickPeriod(column.slot.periodEnd)} selected={selected} rate={rates[i]} lag={lineLag} onLine={series === "line"}
         line={rateAxis ? { y: rateY(rates[i] ?? 0), next: rates[i + 1] != null ? rateY(rates[i + 1]!) : null, labelled: i === index || series === "line" } : null}
@@ -239,9 +241,9 @@ function BridgePlot({ bridge, empty, subject, hue, money }: { bridge: Bridge | n
   </div>;
 }
 
-function Bar({ column, index, order, scale, hue, money, current, pickable, hovered, onHover, onPick, selected, rate, lag, line, onLine, guide }: {
+function Bar({ column, index, order, scale, hue, money, current, pickable, hovered, onHover, onPick, selected, rate, lag, line, onLine, guide, ticker }: {
   column: Column; index: number; order: string[]; scale: number; hue: (slot: number) => string; money: (v: number | null) => string;
-  current: boolean; pickable: boolean; hovered: boolean; onHover: () => void; onPick: () => void; selected: TrendItem | null; rate: number | null; lag: 1 | 4;
+  current: boolean; pickable: boolean; hovered: boolean; onHover: () => void; onPick: () => void; selected: TrendItem | null; rate: number | null; lag: 1 | 4; ticker: string;
   /** Growth point on the right axis (percent of plot height) and the segment to the next quarter; null without a right axis. */
   line: { y: number; next: number | null; labelled: boolean } | null;
   /** The pointer is on the growth line: the tooltip leads with the rate and drops the business split. */
@@ -254,9 +256,11 @@ function Bar({ column, index, order, scale, hue, money, current, pickable, hover
   const label = column.state === "missing" ? (column.slot.missingReason === "currency" ? m.otherCurrency : m.notDisclosed) : column.state === "basis" ? (selected ? m.notReported : q?.revenueAdjustments?.length ? m.afterEliminations : column.layers.length > 1 ? m.segmentsAsReported : m.totalOnly) : "";
   const height = (column.total ?? 0) / scale * 100;
   const nearBarLabel = line != null && Math.abs(line.y - height) < 16;
-  return <div className="trend-col" role="listitem" data-state={column.state} data-current={current || undefined} data-align={index < 2 ? "start" : index > 5 ? "end" : undefined} style={{ "--i": index } as CSSProperties} onMouseEnter={onHover}>
+    const fiscal = fiscalPhrase(ticker, column.slot.periodEnd, column.slot.quarter?.periodStart);
+    const mark = fiscal.primary ?? fiscal.unknown;
+    return <div className="trend-col" role="listitem" data-state={column.state} data-current={current || undefined} data-align={index < 2 ? "start" : index > 5 ? "end" : undefined} style={{ "--i": index } as CSSProperties} onMouseEnter={onHover}>
     <Button variant="unstyled" type="button" className="trend-hit" disabled={!pickable} onClick={onPick} onFocus={onHover}
-      aria-label={`${shortPeriod(column.slot.periodEnd)} ${column.total != null ? money(column.total) : ""}${label ? m.comma + label : ""}${guide ? m.guidanceAria(money(guide.low), money(guide.high)) : ""}`} />
+      aria-label={`${mark} ${shortPeriod(column.slot.periodEnd)} ${column.total != null ? money(column.total) : ""}${label ? m.comma + label : ""}${guide ? m.guidanceAria(money(guide.low), money(guide.high)) : ""}`} />
     {/* With the growth line drawn, the axes carry the scale and only the current or hovered bar keeps its value label. */}
     <span className="trend-value" data-quiet={line && !current && !(hovered && !onLine) ? "" : undefined} style={{ bottom: `${height}%` }}>{column.total != null ? money(column.total) : "—"}</span>
     <span className="trend-stack" aria-hidden="true">
@@ -274,9 +278,9 @@ function Bar({ column, index, order, scale, hue, money, current, pickable, hover
     </svg>}
     {line && rate != null && <i className="trend-dot" data-series-line="" data-hover={hovered || undefined} aria-hidden="true" style={{ bottom: `${line.y}%` }} onClick={pickable ? onPick : undefined} />}
     {line?.labelled && rate != null && <span className="trend-rate" data-trend={trend(rate)} data-below={rate < 0 || nearBarLabel || undefined} aria-hidden="true" style={{ bottom: `${nearBarLabel ? Math.min(line.y, height) : line.y}%` }}>{percent(rate)}</span>}
-    <span className="trend-period">{periodLabel(column.slot.periodEnd)}{current && <b>{m.thisQuarter}</b>}</span>
+    <QuarterBadge ticker={ticker} periodEnd={column.slot.periodEnd} periodStart={column.slot.quarter?.periodStart} current={current} prefix={m.thisQuarter} />
     {hovered && <ChartTooltipContent asChild><div className="trend-tip" role="presentation">
-      <div className="trend-tip-title">{q ? `${q.periodStart} — ${q.periodEnd}` : shortPeriod(column.slot.periodEnd)}</div>
+      <div className="trend-tip-title">{mark}{q ? ` · ${q.periodStart} — ${q.periodEnd}` : ` · ${shortPeriod(column.slot.periodEnd)}`}</div>
       {onLine && rate != null && <div className="trend-tip-row trend-tip-lead"><span>{lag === 4 ? m.yoyGrowth : m.qoqGrowth}</span><b data-trend={trend(rate)}>{percent(rate)}</b></div>}
       {!onLine && column.layers.length > 1 && column.layers.map(layer => <div className="trend-tip-row" key={layer.key}><span><i style={{ background: config[layer.key]?.color ?? layerColor(layer, hue) }} />{layer.name}</span><b>{money(layer.value)}</b></div>)}
       {column.total != null && <div className="trend-tip-row trend-tip-total"><span>{selected ? m.businessRevenue : m.totalRevenue}</span><b>{money(column.total)}</b></div>}

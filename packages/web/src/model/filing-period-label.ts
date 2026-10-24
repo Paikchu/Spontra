@@ -1,20 +1,31 @@
+import type { FiscalPeriodFields } from "../../../../shared/analysis-contract/period.ts";
 import type { PublicSecFiling } from "../../../../shared/analysis-contract/filings.ts";
+import { fiscalIdentity, periodLabel, quarterNumber } from "../../../../shared/analysis-runtime/fiscal-label.ts";
 import type { Locale } from "../../../../shared/analysis-runtime/locale.ts";
 
-const ZH_PERIOD: Record<string, string> = { Q1: "第一季度", Q2: "第二季度", Q3: "第三季度", Q4: "第四季度", H1: "上半年", H2: "下半年", M9: "前三季度" };
+const PERIODIC = /^(10-Q|10-K|20-F)(\/A)?$/;
+const ISO = /^\d{4}-\d{2}-\d{2}$/;
 
-/**
- * Display SEC-reported fiscal focus ("Q3 FY2026", "FY2026" / "2026 财年第三季度", "2026 财年"); never infer it
- * from prose or calendar dates.
- */
+/** Reporting period end for a periodic filing or an earnings group; null for a standalone event. */
+export function filingPeriodEnd(filing: Pick<PublicSecFiling, "form" | "reportDate" | "earningsGroup" | "fiscalPeriod">): string | null {
+  if (!filing.earningsGroup && !PERIODIC.test(filing.form)) return null;
+  const end = filing.earningsGroup?.periodEnd || filing.fiscalPeriod?.periodEnd || filing.reportDate;
+  return ISO.test(end) ? end : null;
+}
+
+/** Issuer quarter for a filing. DEI focus is kept when it agrees with the fiscal calendar; a missing focus is derived. */
+export function filingFiscalFields(filing: Pick<PublicSecFiling, "ticker" | "form" | "reportDate" | "earningsGroup" | "fiscalPeriod">): (FiscalPeriodFields & { periodEnd: string }) | null {
+  const periodEnd = filingPeriodEnd(filing);
+  if (!periodEnd) return null;
+  const focus = filing.fiscalPeriod;
+  const quarter = focus && focus.periodEnd === periodEnd ? quarterNumber(focus.fiscalPeriod) : null;
+  return { periodEnd, ...fiscalIdentity({ ticker: filing.ticker, periodEnd, xbrl: quarter && focus ? { fiscalYear: focus.fiscalYear, fiscalQuarter: quarter } : null }) };
+}
+
+/** The issuer quarter, or the period-end phrase when the quarter cannot be determined. Events keep their form name. */
 export function formatFilingPeriodLabel(filing: PublicSecFiling, locale: Locale = "en"): string {
-  if (!filing.earningsGroup && !/^(10-Q|10-K|20-F)(\/A)?$/.test(filing.form)) return filing.form;
-  const period = filing.fiscalPeriod;
-  const zh = locale === "zh-CN";
-  if (!period || period.periodEnd !== (filing.earningsGroup?.periodEnd || filing.reportDate)) return zh ? "财季待确认" : "Fiscal quarter pending";
-  if (zh) return period.fiscalPeriod === "FY" ? `${period.fiscalYear} 财年` : `${period.fiscalYear} 财年${ZH_PERIOD[period.fiscalPeriod] ?? period.fiscalPeriod}`;
-  const year = `FY${period.fiscalYear}`;
-  if (period.fiscalPeriod === "FY") return year;
-  const labels = { M9: "9M" } as Record<string, string>;
-  return `${labels[period.fiscalPeriod] ?? period.fiscalPeriod} ${year}`;
+  const fields = filingFiscalFields(filing);
+  if (!fields) return filing.form;
+  const labels = periodLabel({ ticker: filing.ticker, ...fields }, locale);
+  return labels.primary ?? labels.unknown;
 }

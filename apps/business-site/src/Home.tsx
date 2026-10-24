@@ -6,6 +6,7 @@ import type { HomeCompany, HomeDigest } from "../../../shared/analysis-contract/
 import { CompanyLogo } from "./CompanyMark";
 import { KIND_LABEL } from "./findings-model";
 import type { DigestStatus } from "./home-data";
+import { PeriodMark } from "./PeriodMark";
 import { SearchPanel } from "./SearchDialog";
 import { LanguageToggle, ThemeToggle } from "./Sidebar";
 
@@ -276,20 +277,23 @@ export function Home({ light, onToggleTheme, recent, onPick, digest = null, dige
           </div>
         </div>
         <div className="home-signals-grid">
-          {digestStatus === "loading" ? Array.from({ length: 6 }, (_, i) => <div key={i} className="home-signal home-ghost" />)
-            : signals.map(item => <a key={`${item.company.ticker}-${item.finding.id}`} className="home-signal" data-kind={item.finding.kind} data-nav
-              href={`/companies/${item.company.ticker}?finding=${encodeURIComponent(item.finding.id)}`}>
+          {digestStatus === "loading" ? Array.from({ length: 6 }, (_, i) => <div key={i} className="home-signal home-ghost"><span className="period-skeleton" /></div>)
+            : signals.map(item => {
+              const period = item.company.latestPeriod?.periodEnd === item.finding.periodEnd ? item.company.latestPeriod : null;
+              return <article key={`${item.company.ticker}-${item.finding.id}`} className="home-signal" data-kind={item.finding.kind}>
+              <a className="home-card-stretch" data-nav href={`/companies/${item.company.ticker}?finding=${encodeURIComponent(item.finding.id)}`}><span className="home-sr">{item.company.ticker}</span></a>
               <header>
                 <CompanyLogo ticker={item.company.ticker} small />
                 <b lang="en">{item.company.ticker}</b>
-                <span>{item.company.latestPeriod?.periodEnd === item.finding.periodEnd ? item.company.latestPeriod.fiscalLabel : item.finding.periodEnd}</span>
+                <PeriodMark variant="signal" ticker={item.company.ticker} companyName={item.company.name} periodEnd={item.finding.periodEnd} periodStart={period?.periodStart ?? null} fiscalYear={period?.fiscalYear} fiscalQuarter={period?.fiscalQuarter} fiscalYearEndMonth={period?.fiscalYearEndMonth} labelSource={period?.labelSource} />
               </header>
               <p className="home-kind"><i data-kind={item.finding.kind} />{KIND_LABEL[item.finding.kind]}
                 <span className="home-severity" aria-hidden="true">{[1, 2, 3].map(n => <i key={n} data-on={n <= item.finding.severity || undefined} />)}</span>
               </p>
               <p className="home-signal-title" lang={langOf(item.finding.title)}>{item.finding.title}</p>
               <span className="home-more">{m.seeEvidence}</span>
-            </a>)}
+            </article>;
+            })}
         </div>
       </section>}
       <section className="home-companies" id="home-companies" aria-labelledby="home-companies-title" aria-busy={digestStatus === "loading"}>
@@ -304,12 +308,14 @@ export function Home({ light, onToggleTheme, recent, onPick, digest = null, dige
         </div>
         {digestStatus === "error" ? <div className="home-error" role="alert"><p>{m.error}</p><button type="button" onClick={onRetry}>{m.retry}</button></div>
           : <div className="home-grid">
-            {digestStatus === "loading" ? Array.from({ length: 8 }, (_, i) => <div key={i} className="home-card home-ghost" />)
+            {digestStatus === "loading" ? Array.from({ length: 8 }, (_, i) => <div key={i} className="home-card home-ghost"><span className="period-skeleton" /></div>)
               : shown.map(company => {
                 const name = nameOf(company);
                 const missing = company.revenueReason === "NOT_DISCLOSED" ? m.notDisclosed : company.revenueReason === "MISSING_TWO_QUARTERS" ? m.missingYoy : undefined;
                 const counts = company.findingCounts.risk + company.findingCounts.strength + company.findingCounts.shift + company.findingCounts.watch;
-                return <a key={company.ticker} className="home-card" href={`/companies/${company.ticker}`} data-nav>
+                const period = company.latestPeriod;
+                return <article key={company.ticker} className="home-card">
+                  <a className="home-card-stretch" href={`/companies/${company.ticker}`} data-nav><span className="home-sr">{company.ticker} {name.text}</span></a>
                   <header>
                     <CompanyLogo ticker={company.ticker} />
                     <span><b lang="en">{company.ticker}</b><small lang={name.lang}>{name.text}</small></span>
@@ -322,9 +328,9 @@ export function Home({ light, onToggleTheme, recent, onPick, digest = null, dige
                   <p className="home-metric-row"><span>{m.yoy}</span><Delta pct={company.revenue?.yoyPct ?? null} title={company.revenue?.yoyPct == null ? missing : undefined} /><Bars trend={company.revenueTrend} /></p>
                   <footer>
                     <span>{counts > 0 ? m.counts(company.findingCounts.risk, company.findingCounts.strength) : company.status !== "ready" ? m.findingsPending : "—"}</span>
-                    <span>{company.latestPeriod?.fiscalLabel ?? "—"}</span>
+                    {period ? <PeriodMark variant="footer" ticker={company.ticker} companyName={name.text} periodEnd={period.periodEnd} periodStart={period.periodStart} fiscalYear={period.fiscalYear} fiscalQuarter={period.fiscalQuarter} fiscalYearEndMonth={period.fiscalYearEndMonth} labelSource={period.labelSource} /> : <span className="period-secondary">—</span>}
                   </footer>
-                </a>;
+                </article>;
               })}
           </div>}
       </section>

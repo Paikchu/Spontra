@@ -9,6 +9,7 @@ import { getLocale, messages } from "@/packages/web/src/i18n";
 import { compactMoney, compactNumber, multiple, perShare, qoqLabel, yoyLabel } from "@/shared/analysis-runtime/locale";
 import { REVENUE_METRIC, metricChanges, metricTicks, type MetricOption, type MetricTrend } from "./metric-model";
 import { growth, rateTicks } from "./trend-model";
+import { QuarterBadge, fiscalPhrase } from "./PeriodMark";
 
 const m = messages({
   chartMetric: "Chart metric", revenueByBusiness: "Revenue · By business", yoyGrowth: "YoY growth", qoqGrowth: "QoQ growth", pp: " pp",
@@ -24,7 +25,6 @@ const m = messages({
 
 const DAY = 86_400_000;
 const shortPeriod = (end: string) => end.slice(0, 7).replace("-", ".");
-const periodLabel = (end: string) => <time dateTime={end}><span>{end.slice(0, 4)}</span><span className="trend-period-month">{end.slice(5, 7)}</span></time>;
 const sign = (v: number) => v > 0 ? "+" : v < 0 ? "−" : "";
 const percent = (v: number | null) => v == null ? "—" : `${sign(v)}${Math.abs(v).toFixed(1)}%`;
 const points = (v: number | null) => v == null ? "—" : `${sign(v)}${Math.abs(v).toFixed(1)}${m.pp}`;
@@ -73,8 +73,8 @@ function formatter(trend: MetricTrend) {
  * flow hang below it), and for amounts a growth line on the right axis. Rates are already in points, so their change is
  * stated in points and drawn as no second line. Gaps stay gaps.
  */
-export function MetricTrendPanel({ trend, picker, currentPeriod, periods, onPickPeriod }: {
-  trend: MetricTrend; picker: ReactNode; currentPeriod: string | null; periods: Set<string>; onPickPeriod: (periodEnd: string) => void;
+export function MetricTrendPanel({ trend, picker, currentPeriod, periods, onPickPeriod, ticker }: {
+  trend: MetricTrend; picker: ReactNode; currentPeriod: string | null; periods: Set<string>; onPickPeriod: (periodEnd: string) => void; ticker: string;
 }) {
   const [hover, setHover] = useState<number | null>(null);
   const [series, setSeries] = useState<"bar" | "line" | null>(null);
@@ -134,10 +134,12 @@ export function MetricTrendPanel({ trend, picker, currentPeriod, periods, onPick
         const line = rateAxis && delta != null ? { y: rateY(delta), next: changes[i + 1] != null ? rateY(changes[i + 1]!) : null } : null;
         const labelled = i === current || series === "line";
         const nearBar = line != null && Math.abs(line.y - top) < 16;
+        const fiscal = fiscalPhrase(ticker, point.periodEnd);
+        const mark = fiscal.primary ?? fiscal.unknown;
         return <div key={point.periodEnd} className="trend-col" role="listitem" data-state={v == null ? "missing" : "ok"} data-current={i === current || undefined}
           data-align={i < 2 ? "start" : i > trend.points.length - 3 ? "end" : undefined} style={{ "--i": i } as CSSProperties} onMouseEnter={() => setHover(i)}>
           <Button variant="unstyled" type="button" className="trend-hit" disabled={!pick} onClick={() => pick && onPickPeriod(pick)} onFocus={() => setHover(i)}
-            aria-label={`${shortPeriod(point.periodEnd)} ${trend.label} ${v == null ? m.notDisclosedLower : format(v)}`} />
+            aria-label={`${mark} ${shortPeriod(point.periodEnd)} ${trend.label} ${v == null ? m.notDisclosedLower : format(v)}`} />
           <span className="trend-value" data-below={v != null && v < 0 || undefined} data-quiet={rateAxis && i !== current && !(hover === i && series !== "line") ? "" : undefined}
             style={{ bottom: `${v == null ? 22 : v < 0 ? bottom : top}%` }}>{format(v)}</span>
           {v != null ? <span className="trend-stack" data-negative={v < 0 || undefined} aria-hidden="true" style={{ top: "auto", bottom: `${bottom}%`, height: `${top - bottom}%` }}>
@@ -150,9 +152,9 @@ export function MetricTrendPanel({ trend, picker, currentPeriod, periods, onPick
           {line && <i className="trend-dot" data-series-line="" data-hover={hover === i || undefined} aria-hidden="true" style={{ bottom: `${line.y}%` }} />}
           {line && labelled && <span className="trend-rate" data-trend={direction(delta)} data-below={delta! < 0 || nearBar || undefined} aria-hidden="true"
             style={{ bottom: `${nearBar ? Math.min(line.y, top) : line.y}%` }}>{percent(delta)}</span>}
-          <span className="trend-period">{periodLabel(point.periodEnd)}{i === current && <b>{m.thisQuarter}</b>}</span>
+          <QuarterBadge ticker={ticker} periodEnd={point.periodEnd} current={i === current} prefix={m.thisQuarter} />
           {hover === i && <ChartTooltipContent asChild><div className="trend-tip" role="presentation">
-            <div className="trend-tip-title">{shortPeriod(point.periodEnd)} · {trend.label}</div>
+            <div className="trend-tip-title">{mark} · {shortPeriod(point.periodEnd)} · {trend.label}</div>
             <div className="trend-tip-row trend-tip-lead"><span>{series === "line" && rate ? rateName : m.thisQuarter}</span><b data-trend={series === "line" ? direction(delta) : undefined}>{series === "line" && rate ? percent(delta) : format(v)}</b></div>
             {series !== "line" && delta != null && <div className="trend-tip-row"><span>{lag === 4 ? yoyLabel(getLocale()) : qoqLabel(getLocale())}</span><b data-trend={direction(delta)}>{rate ? percent(delta) : points(delta)}</b></div>}
             {v == null && <p>{m.notDisclosed}</p>}

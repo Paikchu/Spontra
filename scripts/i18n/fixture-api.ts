@@ -6,6 +6,7 @@
  */
 import type { Plugin } from "vite";
 import type { HomeDigest } from "../../shared/analysis-contract/home.ts";
+import { calendarLabel, resolvePeriod } from "../../shared/analysis-runtime/fiscal-label.ts";
 import { capital, company, events, filings, findings, flow, TICKER } from "./fixture.ts";
 
 let published = 0;
@@ -49,12 +50,17 @@ function homeDigest(): HomeDigest {
   const previous = flow.quarters.at(-2) ?? null;
   const counts = { risk: 0, strength: 0, shift: 0, watch: 0 };
   for (const finding of findings.findings) counts[finding.kind] += 1;
+  const period = resolvePeriod({ ticker: TICKER, periodEnd: latest.periodEnd, periodStart: latest.periodStart });
   return {
     schemaVersion: "home-digest.v1", status: "ready", generatedAt: "2026-08-10T00:00:00Z",
     coverage: { count: 1, lastUpdatedAt: "2026-08-10T00:00:00Z" }, popular: [TICKER],
     companies: [{
       ticker: TICKER, name: "Acme Corp", nameZh: null, aliases: ["CLOUD"], sector: null, status: "ready",
-      latestPeriod: { periodEnd: latest.periodEnd, fiscalLabel: "2026 Q2", filedAt: latest.reportedAt ?? null },
+      latestPeriod: {
+        periodEnd: latest.periodEnd, periodStart: latest.periodStart, fiscalLabel: calendarLabel(latest.periodEnd), calendarLabel: calendarLabel(latest.periodEnd),
+        filedAt: latest.reportedAt ?? null, fiscalYear: period.fiscalYear, fiscalQuarter: period.fiscalQuarter,
+        fiscalYearEndMonth: period.fiscalYearEndMonth, labelSource: period.labelSource,
+      },
       revenue: { value: amount(latest), currency: latest.currency, yoyPct: pct(amount(latest), yearAgo ? amount(yearAgo) : null), qoqPct: pct(amount(latest), previous ? amount(previous) : null) },
       revenueReason: null,
       revenueTrend: flow.quarters.slice(-8).map(quarter => ({ periodEnd: quarter.periodEnd, value: amount(quarter) })),

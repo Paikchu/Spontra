@@ -165,6 +165,7 @@ function Skeleton({ ticker, tools }: { ticker: string; tools: ReactNode }) {
       </Rail>
       <section className="stage" data-timeline="" data-view="profit" data-trend="" aria-hidden="true">
         <header className="stage-head stage-head--summary">
+          <div className="stage-kicker"><span className="period-skeleton" /></div>
           <div className="stats">
             {[0, 1, 2].map(i => <div key={i} className="stat"><span className="stat-label ghost-text">{m.revenue}</span><strong className="stat-value ghost-text">$00.0B</strong><span className="stat-note ghost-text">+0.0%</span></div>)}
           </div>

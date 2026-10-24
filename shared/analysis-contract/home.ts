@@ -1,3 +1,5 @@
+import type { FiscalPeriodFields } from "./period.ts";
+
 /**
  * The public homepage digest: one read for every covered company.
  * Amounts are decimal strings in the filing currency (value × scale). Missing figures stay null.
@@ -33,7 +35,17 @@ export type HomeCompany = {
   /** 【假设】Null until admin stores a sector. The page hides the sector filter while every value is null. */
   sector: string | null;
   status: HomeCompanyStatus;
-  latestPeriod: { periodEnd: string; fiscalLabel: string; filedAt: string | null } | null;
+  /**
+   * `fiscalLabel` and `calendarLabel` are the calendar quarter (2026-07-26 → "2026 Q3"), kept for older clients.
+   * The fiscal fields are the issuer's own quarter. `labelSource: "unknown"` means the quarter was not determined.
+   */
+  latestPeriod: ({
+    periodEnd: string;
+    periodStart: string | null;
+    fiscalLabel: string;
+    calendarLabel: string;
+    filedAt: string | null;
+  } & FiscalPeriodFields) | null;
   revenue: HomeRevenue | null;
   revenueReason: HomeRevenueReason | null;
   /** Up to eight quarters, oldest first. */

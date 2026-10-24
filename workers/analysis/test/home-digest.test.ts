@@ -116,7 +116,10 @@ test("the homepage digest lists covered companies and refuses to invent a missin
   assert.ok(acme.aliases.includes("ACMECLOUD"));
   assert.equal(acme.sector, "ai-cloud");
   assert.equal(acme.status, "ready");
-  assert.deepEqual(acme.latestPeriod, { periodEnd: "2026-06-30", fiscalLabel: "2026 Q2", filedAt: "2026-08-07" });
+  assert.deepEqual(acme.latestPeriod, {
+    periodEnd: "2026-06-30", periodStart: "2026-04-01", fiscalLabel: "2026 Q2", calendarLabel: "2026 Q2", filedAt: "2026-08-07",
+    fiscalYear: null, fiscalQuarter: null, fiscalYearEndMonth: null, labelSource: "unknown",
+  });
   assert.equal(acme.revenue?.value, "110");
   assert.equal(acme.revenue?.currency, "USD");
   assert.equal(acme.revenue?.yoyPct, 10);

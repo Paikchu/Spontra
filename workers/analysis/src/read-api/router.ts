@@ -27,6 +27,7 @@ import type { RevisionsResponse } from "../../../../shared/analysis-contract/rev
 import type { PublicSecFiling } from "../../../../shared/analysis-contract/filings.ts";
 import type { Feature } from "../../../../shared/analysis-contract/business-features.ts";
 import { readHomeDigest, type HomeDigestEnv } from "./home-digest.ts";
+import { fiscalFields, readFiscalFocus, stampFlow, stampHistory } from "./fiscal-periods.ts";
 
 /**
  * The analysis backend's read surface, served only to the business map over the `MapReads`
@@ -165,6 +166,10 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
       // Older quarters are assembled on the schedule; until then the published pair stands alone.
       if(payload.flow)payload.reports=(await readMapDerived(database,payload.flow))?.reports??payload.flow;
       if(payload.flow){const flow=await translated("flow",{flow:payload.flow,reports:payload.reports??null});payload.flow=flow.flow;payload.reports=flow.reports;}
+      const focus = await readFiscalFocus(database, route.ticker);
+      if (payload.flow) payload.flow = stampFlow(payload.flow, focus);
+      if (payload.reports) payload.reports = stampFlow(payload.reports, focus);
+      if (payload.history) payload.history = stampHistory(payload.history, focus);
       return dataResponse(request,payload,payload.status==="ready"?"cacheable":"no-store");
     }
     case "capital": {
@@ -223,6 +228,8 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
       if (payload.status === "pending" && findSecurity(query.ticker)?.type !== "stock") {
         return errorResponse("FUNDAMENTALS_NOT_AVAILABLE", "Fundamentals are unavailable for this ticker.");
       }
+      const focus = await readFiscalFocus(database, query.ticker);
+      payload.periods = payload.periods.map(period => ({ ...period, ...fiscalFields(query.ticker, period.periodEnd, focus) }));
       return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
     }
   }

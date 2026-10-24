@@ -42,6 +42,7 @@ import { RailSection, railTransition, type RailSectionKey } from "./RailSection"
 import { EventLens } from "./EventLens";
 import { ReportLens } from "./ReportLens";
 import { Timeline } from "./Timeline";
+import { fiscalPhrase, PeriodMark } from "./PeriodMark";
 import { lazy, Suspense } from "react";
 import { getLocale, messages, useLocale } from "@/packages/web/src/i18n";
 import { SourceLanguage, langOf } from "@/packages/web/src/i18n/SourceLanguage";
@@ -136,7 +137,10 @@ type Basis = "yoy" | "qoq";
 const basisWords = (basis: Basis): CompareBasis & { period: string } => basis === "yoy"
   ? { change: yoyLabel(getLocale()), prior: m.lastYear, period: m.yearAgo } : { change: qoqLabel(getLocale()), prior: m.lastQuarter, period: m.lastQuarterPeriod };
 /** The quarter as a label names it: the flow's own label in English, the quarter's end elsewhere. */
-const periodName = (q: BusinessFlowQuarter) => getLocale() === "en" ? q.label : shortPeriod(q.periodEnd);
+const periodName = (ticker: string, q: BusinessFlowQuarter) => {
+  const labels = fiscalPhrase(ticker, q.periodEnd, q.periodStart);
+  return labels.primary ?? labels.unknown;
+};
 
 /** A loss quarter is drawn as funding (revenue plus the net loss pay every cost); any other quarter as the statement bridge. */
 function statementGraph(q: BusinessFlowQuarter): FinancialGraph {
@@ -318,11 +322,11 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
   const railIndex = railList.findIndex(i => i.id === (focusedReport?.accessionNumber ?? focusedEvent?.id));
   // Reports come from the filings when they have loaded; until then the flow quarters stand in for them on the axis.
   const points = useMemo(() => {
-    const all = filings ? timelineFromFilings(filings, events, 24, now, quarters) : timelinePoints(quarters, events, 24, now);
+    const all = filings ? timelineFromFilings(filings, events, 24, now, quarters, ticker) : timelinePoints(quarters, events, 24, now);
     const ids = timelineIds(railList, eventFilter);
     const quartersOnAxis = eventFilter === "key" || eventFilter === "earnings" || eventFilter === "all";
     return all.filter(point => point.id.startsWith("report:") ? quartersOnAxis : ids.has(point.id));
-  }, [filings, quarters, events, now, eventFilter, railList]);
+  }, [filings, quarters, events, now, eventFilter, railList, ticker]);
   // The trend below the flow shows revenue by business, or one company-level SEC series picked from the fundamentals.
   const metricGroups = useMemo(() => metricOptions(fundamentals), [fundamentals]);
   const hasRevenueTrend = !!revenueHistory && revenueHistory.quarters.length >= 2;
@@ -600,14 +604,14 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
           })}
         </div>
       </RailSection>
-      {showFindings && <FindingsList findings={verified} updates={updates} verdicts={verdicts} focus={focused?.id ?? null} story={story} periodEnd={findings.periodEnd} {...sectionFocus("findings")} onFocus={focusFinding} onStory={() => { if (story) { setStory(false); setFocusId(null); } else { setStory(true); setEventId(null); focusFinding(focused?.id ?? verified[0].id); } }} />}
-      {rail && <EventsList rail={rail} updates={updates} focus={focusedReport?.accessionNumber ?? focusedEvent?.id ?? null} pendingInsider={events?.pendingInsider ?? 0} {...sectionFocus("events")} onFocus={focusItem} filter={eventFilter} onFilter={setEventFilter} phase={eventsPhase} onRetry={onRetryEvents} />}
+      {showFindings && <FindingsList findings={verified} updates={updates} verdicts={verdicts} focus={focused?.id ?? null} story={story} periodEnd={findings.periodEnd} ticker={ticker} {...sectionFocus("findings")} onFocus={focusFinding} onStory={() => { if (story) { setStory(false); setFocusId(null); } else { setStory(true); setEventId(null); focusFinding(focused?.id ?? verified[0].id); } }} />}
+      {rail && <EventsList rail={rail} ticker={ticker} updates={updates} focus={focusedReport?.accessionNumber ?? focusedEvent?.id ?? null} pendingInsider={events?.pendingInsider ?? 0} {...sectionFocus("events")} onFocus={focusItem} filter={eventFilter} onFilter={setEventFilter} phase={eventsPhase} onRetry={onRetryEvents} />}
       {!!quarter?.revenueAdjustments?.length&&<p className="revenue-reconciliation">{m.reconciliation(quarter.currency)}<br/>{m.segmentTotal} {formatFlowValue(segmentRevenue,quarter)}<br/>{quarter.revenueAdjustments.map(a=><span key={a.id}>{a.name} {formatFlowValue(numeric(a.amount),quarter)}<br/></span>)}{m.consolidated} {formatFlowValue(revenue,quarter)}</p>}
       {railFoot}
     </Rail>
 
     <section className="stage" data-focus={focused && findings || focusedCheck || focusedReport || focusedEvent && events ? "lens" : undefined} data-view={view} data-trend={hasRevenueTrend || metricGroups.length ? "" : undefined} data-finding={focused?.kind} data-timeline={points.length ? "" : undefined}
-      aria-label={focused ? m.findingStage(ticker, focused.title) : focusedReport ? m.filingStage(ticker, reportTitle(focusedReport)) : focusedEvent ? m.filingStage(ticker, eventTitle(focusedEvent)) : m.flowStage(ticker)} data-agent={stageOverride ? "" : undefined}>
+      aria-label={focused ? m.findingStage(ticker, focused.title) : focusedReport ? m.filingStage(ticker, reportTitle(focusedReport, ticker)) : focusedEvent ? m.filingStage(ticker, eventTitle(focusedEvent)) : m.flowStage(ticker)} data-agent={stageOverride ? "" : undefined}>
       {stageOverride ? stageOverride : focusedCheck && assessment ? <div className="lens-stage">
         <MetricLens metric={focusedCheck} flags={flags.filter(f => f.metricId === focusedCheck.id)} rank={ranks[focusedCheck.id] ?? null} data={data} findings={verified} sources={checkupSources(data, focusedCheck.evidence.periodEnd)}
           bridge={assessment.bridge} chain={assessment.chain} onClose={() => focusCheck(null)} onFinding={id => focusFinding(id)}
@@ -628,6 +632,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
         onStep={delta => { const next = railList[railIndex + delta]; if (next) focusItem(next); }} onClose={() => focusEvent(null)} /></div>
       : <>
       <header className="stage-head stage-head--summary">
+        {quarter && <div className="stage-kicker"><PeriodMark variant="pill" ticker={ticker} periodEnd={quarter.periodEnd} periodStart={quarter.periodStart} fiscalYear={quarter.fiscalYear} fiscalQuarter={quarter.fiscalQuarter} fiscalYearEndMonth={quarter.fiscalYearEndMonth} labelSource={quarter.labelSource} /></div>}
         {quarter && (view === "cash" || view === "balance") && funding ? <CapitalStats view={view} funding={funding} tiles={highlights} flags={flags} />
           : quarter && !current && highlights ? <HighlightStats tiles={highlights} flags={flags} />
           : quarter && <div className="stats" aria-live="polite">
@@ -683,19 +688,19 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
               focusSlot={n => { const prior = priorOf(n); return segmentRevenue ? `${shareLabel} ${percent(n.value / segmentRevenue * 100)}${prior != null && priorShareBase ? ` · ${word.period} ${percent(prior / priorShareBase * 100)}` : ""}` : null; }}
               onHover={name => setHoverNode(name)} tipFor={tipFor} spotlight={spotlight} priorOf={priorOf} basis={word} brackets={guideMarks.brackets} pills={guideMarks.pills}
               onPick={n => { const item = itemByNode.get(n.name); pickOnChart(item && current?.key !== item.key ? item.id : null); }}
-              label={m.chart(ticker, periodName(quarter), quarter.currency)} />
+              label={m.chart(ticker, periodName(ticker, quarter), quarter.currency)} />
           : <div className="business-flow chart-fallback">{current && <Dossier item={current} parent={parent ?? null} sources={quarter.sources} explainer={explainer} />}<FinancialSankey quarter={quarter} previous={previous} word={word.change} onSegment={key => pickOnChart(items.find(item => item.key === key)?.id ?? null)} /></div>}
       </div>
 
-      {points.length > 0 && <Timeline points={points} now={now.getTime()} currentPeriod={quarter?.periodEnd ?? null}
+      {points.length > 0 && <Timeline points={points} ticker={ticker} now={now.getTime()} currentPeriod={quarter?.periodEnd ?? null}
         onReport={(id, end) => { if (filings?.filings.some(f => f.accessionNumber === id)) { focusFinding(null); focusReport(id); } else { setPeriod(quarters.find(q => q.periodEnd === end)?.id ?? null); focusFinding(null); setEventId(null); setReportId(null); } }} onEvent={id => focusEvent(id)} />}
 
       {mindItem && mindMap ? <div className="lens-stage"><MindLens item={mindItem} branch={mindMap.branches.find(b => b.node === mindItem.anchor)} sources={mindMap.sources} onClose={() => setMindItem(null)} /></div>
       : panel === "metrics" && shownMetrics.length > 0 ? <ViewMetrics metrics={shownMetrics} flagged={flagged} ranks={ranks} noted={noted} onOpen={id => focusCheck(id)} switcher={hasTrend ? switcher : null} />
-      : shownMetric ? <MetricTrendPanel trend={shownMetric} currentPeriod={quarter?.periodEnd ?? null} periods={new Set(quarters.map(q => q.periodEnd))}
+      : shownMetric ? <MetricTrendPanel ticker={ticker} trend={shownMetric} currentPeriod={quarter?.periodEnd ?? null} periods={new Set(quarters.map(q => q.periodEnd))}
         onPickPeriod={end => setPeriod(quarters.find(q => q.periodEnd === end)?.id ?? null)}
         picker={<><MetricPicker value={shownMetric.key} groups={metricGroups} revenue={hasRevenueTrend} onChange={setMetricKey} />{shownMetrics.length > 0 && switcher}</>} />
-      : hasRevenueTrend && <TrendPanel history={revenueHistory!} items={items} selected={current} currentPeriod={quarter?.periodEnd ?? null}
+      : hasRevenueTrend && <TrendPanel ticker={ticker} history={revenueHistory!} items={items} selected={current} currentPeriod={quarter?.periodEnd ?? null}
         periods={new Set(quarters.map(q => q.periodEnd))} onPickPeriod={end => setPeriod(quarters.find(q => q.periodEnd === end)?.id ?? null)} hue={hue} guidance={guidance}
         picker={<><MetricPicker value={REVENUE_METRIC} groups={metricGroups} revenue onChange={setMetricKey} />{shownMetrics.length > 0 && switcher}</>} />}
 

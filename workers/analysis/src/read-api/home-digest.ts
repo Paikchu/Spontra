@@ -13,13 +13,16 @@ import { readHistory } from "../../../../shared/analysis-runtime/financial-data/
 import { canonicalTicker, financialPolicy } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 import { readFindingsPublication } from "../../../../shared/analysis-runtime/findings.ts";
 import type { Locale } from "../../../../shared/analysis-runtime/locale.ts";
+import { calendarLabel } from "../../../../shared/analysis-runtime/fiscal-label.ts";
 import { localize, type TranslationTable } from "../../../../shared/analysis-runtime/translation.ts";
+import { fiscalFields, readFiscalFocus } from "./fiscal-periods.ts";
 
 /**
  * 【假设】Popular tickers until an admin list exists. Names that are not covered are dropped.
  * 【假设】Chinese names, extra aliases and sectors are not in the filings. Leave a ticker out
  * and the page searches its English name only, and hides the sector filter while every sector is null.
- * 【假设】`fiscalLabel` is the calendar quarter of the period end (2026-06-30 → "2026 Q2"), not the issuer's fiscal calendar.
+ * `fiscalLabel` / `calendarLabel` stay the calendar quarter of the period end (2026-07-26 → "2026 Q3") for older clients.
+ * `fiscalYear` / `fiscalQuarter` are the issuer's own quarter, from the fiscal-year-end month and any cached DEI focus.
  * 【假设】Amounts stay in the filing currency. No exchange rate is applied.
  */
 export const HOME_POPULAR_TICKERS = ["NBIS", "META", "TSM", "CRWV", "TTMI"];
@@ -34,12 +37,9 @@ export type HomeDigestEnv = FeatureDefaultsEnv & { SEC_DATA_TICKERS?: string };
 
 type Point = { periodEnd: string; value: number; currency: string; filedAt: string | null };
 
-/** Calendar quarter of a period end. See HOME_CATALOG_NOTES for the assumption. */
+/** Calendar quarter of a period end. Older clients still read this; the page labels the issuer quarter. */
 export function fiscalLabel(periodEnd: string): string {
-  const [year, month] = periodEnd.split("-");
-  const m = Number(month);
-  if (!year || !(m >= 1 && m <= 12)) return periodEnd;
-  return `${year} Q${Math.ceil(m / 3)}`;
+  return calendarLabel(periodEnd);
 }
 
 function baseDecimal(value: string, scale: number): string | null {
@@ -159,7 +159,7 @@ function dataTickers(env: HomeDigestEnv, rows: Array<{ ticker: string; enabled: 
  * Read-only: no model call, no SEC fetch, no write.
  */
 export async function readHomeDigest(db: D1Database, env: HomeDigestEnv, locale: Locale | null, now = new Date(), notes: Record<string, HomeCatalogNote> = HOME_CATALOG_NOTES): Promise<HomeDigest> {
-  const [publications, histories, findings, issuers, settings, translations, findingsShown] = await Promise.all([
+  const [publications, histories, findings, issuers, settings, translations, findingsShown, focus] = await Promise.all([
     db.prepare(`SELECT v.ticker ticker, v.cik cik, v.payload_json payload, v.published_at publishedAt
       FROM financial_complete_current c JOIN financial_complete_versions v ON v.version_id = c.version_id`).all<{ ticker: string; cik: string; payload: string; publishedAt: string }>(),
     db.prepare(`SELECT cache_key, payload FROM sec_cache WHERE cache_key >= 'sec:revenue-history:v1:' AND cache_key < 'sec:revenue-history:v1;'`).all<{ cache_key: string; payload: string }>(),
@@ -168,6 +168,7 @@ export async function readHomeDigest(db: D1Database, env: HomeDigestEnv, locale:
     db.prepare(`SELECT ticker, enabled FROM financial_company_settings`).all<{ ticker: string; enabled: number }>().catch(() => ({ results: [] as Array<{ ticker: string; enabled: number }> })),
     locale ? db.prepare(`SELECT cache_key, payload FROM sec_cache WHERE cache_key >= ? AND cache_key < ?`).bind(`i18n:v1:${locale}:findings:`, `i18n:v1:${locale}:findings;`).all<{ cache_key: string; payload: string }>() : Promise.resolve({ results: [] as Array<{ cache_key: string; payload: string }> }),
     shownFilter(db, env, "findings"),
+    readFiscalFocus(db),
   ]);
 
   const historyByCik = new Map(histories.results.map(row => [row.cache_key.slice("sec:revenue-history:v1:".length), row.payload]));
@@ -229,7 +230,7 @@ export async function readHomeDigest(db: D1Database, env: HomeDigestEnv, locale:
       aliases: aliasesFrom(name, canonical, note?.aliases ?? []),
       sector: note?.sector ?? null,
       status: flow ? (revenue ? "ready" : "partial") : "preparing",
-      latestPeriod: periodEnd ? { periodEnd, fiscalLabel: fiscalLabel(periodEnd), filedAt: flowLatest?.reportedAt?.slice(0, 10) ?? latest?.filedAt ?? null } : null,
+      latestPeriod: periodEnd ? { periodEnd, periodStart: flowLatest?.periodStart ?? null, fiscalLabel: fiscalLabel(periodEnd), calendarLabel: fiscalLabel(periodEnd), filedAt: flowLatest?.reportedAt?.slice(0, 10) ?? latest?.filedAt ?? null, ...fiscalFields(canonical, periodEnd, focus) } : null,
       revenue,
       revenueReason,
       revenueTrend: trend,

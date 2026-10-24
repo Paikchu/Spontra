@@ -98,8 +98,12 @@ export type PublicFilingDigest = {
   reportDate: string;
   /** The reporting period end for a periodic filing or an earnings group; null for a standalone event. */
   periodEnd: string | null;
-  /** "FY2026 Q1", "FY2026 full year", "Fiscal period pending", or null for an event. */
+  /** Issuer quarter ("2027 财年 Q2" / "FY27 Q2") or the undated-quarter phrase. Null for an event. */
   periodLabel: string | null;
+  fiscalYear?: number | null;
+  fiscalQuarter?: 1 | 2 | 3 | 4 | null;
+  fiscalYearEndMonth?: number | null;
+  labelSource?: "xbrl" | "derived" | "unknown";
   /** The earnings release date for a group, else the filing date. */
   date: string;
   /** Every filing an earnings group merged, each with its EDGAR index. */

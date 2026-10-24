@@ -7,7 +7,7 @@ import { messages, useLocale } from "@/packages/web/src/i18n";
 import { SourceLanguage } from "@/packages/web/src/i18n/SourceLanguage";
 import { EVENT_CLASS_LABEL, eventTitle, eventTitleLang, shortDate } from "./events-model";
 import { EVENT_FILTERS, exactShares, filterCounts, noiseRows, rowLeaves, type EventFilter, type NoiseRow } from "./event-noise";
-import { reportTitle, reportTitleLang, type RailItem, type RailItems } from "./reports-model";
+import { filingQuarterLabel, reportTitle, reportTitleLang, type RailItem, type RailItems } from "./reports-model";
 import { RailSection } from "./RailSection";
 import { arrivalStyle, RailRow, rowExit, useArrivals } from "./arrivals";
 import { useRailTip } from "./RailTip";
@@ -38,8 +38,9 @@ const filterLabel = (key: EventFilter) => key === "key" ? m.key : key === "earni
  * Filings and events in the rail. A row of filters sits under the title (Key is the default); planned sales by one
  * person in one month fold into a single row, and 6-Ks with nothing to title them fold into a monthly row.
  */
-export function EventsList({ rail, updates, focus, pendingInsider, expanded, phase = "ready", onFocus, onExpand, onRetry, filter, onFilter }: {
+export function EventsList({ rail, ticker, updates, focus, pendingInsider, expanded, phase = "ready", onFocus, onExpand, onRetry, filter, onFilter }: {
   rail: RailItems;
+  ticker: string;
   /** Updates the reader took; the filings an update brought enter animated, newest first, pushing the rest down. */
   updates: number;
   /** The focused report accession or event id. */
@@ -109,7 +110,7 @@ export function EventsList({ rail, updates, focus, pendingInsider, expanded, pha
           const nodes: ReactNode[] = [];
           if (expanded && i > 0 && row.date < rail.since && rows[i - 1]!.date >= rail.since) nodes.push(<hr key="rule" className="section-rule" data-extra="" />);
           if (turn) nodes.push(<p key={`year-${year}`} className="section-group" data-extra="" aria-hidden="true">{year}</p>);
-          nodes.push(<EventBlock key={row.id} row={row} extra={extra} open={openRows.has(row.id)} focus={focus} arrive={arrived.get(row.id)} motion={rowMotion}
+          nodes.push(<EventBlock key={row.id} row={row} ticker={ticker} extra={extra} open={openRows.has(row.id)} focus={focus} arrive={arrived.get(row.id)} motion={rowMotion}
             onToggle={() => setOpenRows(current => { const next = new Set(current); if (next.has(row.id)) next.delete(row.id); else next.add(row.id); return next; })}
             onFocus={onFocus} tip={tip.bind} />);
           return nodes;
@@ -151,14 +152,14 @@ function EventSkeleton() {
 type RowMotion = { layout: false | "position"; layoutDependency: string; exit: typeof rowExit };
 type RowProps = { checked: boolean; extra?: string; onClick: () => void; arrive?: number; motion: RowMotion; tip: ReturnType<typeof useRailTip>["bind"] };
 
-function EventBlock({ row, extra, open, focus, arrive, motion, onToggle, onFocus, tip }: {
-  row: NoiseRow; extra?: string; open: boolean; focus: string | null; arrive?: number; motion: RowMotion;
+function EventBlock({ row, ticker, extra, open, focus, arrive, motion, onToggle, onFocus, tip }: {
+  row: NoiseRow; ticker: string; extra?: string; open: boolean; focus: string | null; arrive?: number; motion: RowMotion;
   onToggle: () => void; onFocus: (item: RailItem | null) => void; tip: RowProps["tip"];
 }) {
   if (row.kind === "item") {
     const pick = () => onFocus(focus === row.item.id ? null : row.item);
     const props = { checked: focus === row.item.id, extra, onClick: pick, arrive, motion, tip };
-    return row.item.kind === "report" ? <ReportRow report={row.item.report} {...props} /> : <EventRow event={row.item.event} {...props} />;
+    return row.item.kind === "report" ? <ReportRow report={row.item.report} ticker={ticker} {...props} /> : <EventRow event={row.item.event} {...props} />;
   }
   const title = row.kind === "plan" ? m.plan(row.name, row.items.length, exactShares(row.shares)) : m.routine(row.items.length);
   const panelId = `${row.id}-panel`;
@@ -180,14 +181,16 @@ function EventBlock({ row, extra, open, focus, arrive, motion, onToggle, onFocus
   </div>;
 }
 
-function ReportRow({ report, checked, extra, onClick, arrive, motion, tip }: RowProps & { report: PublicFilingDigest }) {
+function ReportRow({ report, ticker, checked, extra, onClick, arrive, motion, tip }: RowProps & { report: PublicFilingDigest; ticker: string }) {
   const forms = report.sources.length ? report.sources.map(s => s.form).join(" + ") : report.form;
-  const meta = [m.report, forms, report.periodLabel, m.periodEnded(String(report.periodEnd)), report.filingDate].filter(Boolean).join(" · ");
+  const quarter = filingQuarterLabel(ticker, report);
+  const title = reportTitle(report, ticker);
+  const meta = [m.report, forms, quarter, m.periodEnded(String(report.periodEnd)), report.filingDate].filter(Boolean).join(" · ");
   return <RailRow variant="unstyled" type="button" role="radio" aria-checked={checked} className="finding-row event-row report-row" data-class="report" data-extra={extra} onClick={onClick}
     {...motion} data-arrived={arrive != null ? "" : undefined} style={arrivalStyle(arrive)}
-    {...tip(reportTitle(report), reportTitleLang(report), meta)} aria-label={`${m.report} ${shortDate(report.date)} ${reportTitle(report)}`}>
+    {...tip(title, reportTitleLang(report), meta)} aria-label={`${m.report} ${shortDate(report.date)} ${title}`}>
     <time className="event-date" dateTime={report.date}>{shortDate(report.date)}</time>
-    <span className="finding-title" lang={reportTitleLang(report)}>{reportTitle(report)}</span>
+    <span className="finding-title" lang={reportTitleLang(report)}>{title}</span>
   </RailRow>;
 }
 

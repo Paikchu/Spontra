@@ -1,4 +1,6 @@
 import type { HomeCompany, HomeDigest, HomeFinding, HomeRevenue, HomeRevenueReason } from "../../../shared/analysis-contract/home.ts";
+import type { FiscalLabelSource } from "../../../shared/analysis-contract/period.ts";
+import { calendarLabel, resolvePeriod } from "../../../shared/analysis-runtime/fiscal-label.ts";
 import { isLocale, type Locale } from "../../../shared/analysis-runtime/locale.ts";
 
 const TICKER = /^[A-Z][A-Z0-9.-]{0,11}$/;
@@ -66,7 +68,25 @@ function company(value: unknown): HomeCompany | null {
   if (row.latestPeriod !== null) {
     const period = record(row.latestPeriod);
     if (!period || !text(period.periodEnd) || !text(period.fiscalLabel) || !(period.filedAt === null || typeof period.filedAt === "string")) return null;
-    latestPeriod = { periodEnd: period.periodEnd as string, fiscalLabel: period.fiscalLabel as string, filedAt: period.filedAt as string | null };
+    const periodEnd = period.periodEnd as string;
+    if (period.periodStart != null && typeof period.periodStart !== "string") return null;
+    const source = period.labelSource;
+    const labelSource: FiscalLabelSource | null = source === "xbrl" || source === "derived" || source === "unknown" ? source : null;
+    const resolved = resolvePeriod({
+      ticker,
+      periodEnd,
+      periodStart: typeof period.periodStart === "string" ? period.periodStart : null,
+      fiscalYear: typeof period.fiscalYear === "number" ? period.fiscalYear : null,
+      fiscalQuarter: typeof period.fiscalQuarter === "number" ? period.fiscalQuarter : null,
+      fiscalYearEndMonth: typeof period.fiscalYearEndMonth === "number" ? period.fiscalYearEndMonth : null,
+      labelSource,
+    });
+    const calendar = typeof period.calendarLabel === "string" && period.calendarLabel ? period.calendarLabel : calendarLabel(periodEnd);
+    latestPeriod = {
+      periodEnd, periodStart: resolved.periodStart, fiscalLabel: period.fiscalLabel as string, calendarLabel: calendar,
+      filedAt: period.filedAt as string | null, fiscalYear: resolved.fiscalYear, fiscalQuarter: resolved.fiscalQuarter,
+      fiscalYearEndMonth: resolved.fiscalYearEndMonth, labelSource: resolved.labelSource,
+    };
   }
   if (!Array.isArray(row.revenueTrend)) return null;
   const revenueTrend: HomeCompany["revenueTrend"] = [];

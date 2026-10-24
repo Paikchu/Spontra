@@ -1,4 +1,5 @@
 import { ANALYSIS_API_SCHEMA_VERSION } from "./common.ts";
+import type { FiscalPeriodFields } from "./period.ts";
 
 /**
  * Wire types for the fundamentals resource. Previously these sat in `lib/fundamentals-api.ts`
@@ -24,7 +25,7 @@ export type PublicFundamentalPeriod = {
   periodType: "3M";
   periodEnd: string;
   currency: string;
-};
+} & Partial<FiscalPeriodFields>;
 
 export type PublicFundamentalPoint = {
   periodEnd: string;

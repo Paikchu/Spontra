@@ -3,6 +3,7 @@ import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from 
 import { messages, useLocale } from "@/packages/web/src/i18n";
 import { CLASS_TONE, EVENT_CLASS_LABEL, type TimelinePoint } from "./events-model";
 import { clusterByGap } from "./timeline-model";
+import { fiscalPhrase } from "./PeriodMark";
 
 const m = messages({
   label: "Filing timeline",
@@ -22,11 +23,12 @@ const BUBBLE = 16;
  * The time axis under the chart. The page decides which filings are on it (the event filter).
  * Points that would land on each other become one numbered bubble; hovering lists them, and a click opens the list.
  */
-export function Timeline({ points, currentPeriod, now, onReport, onEvent }: {
+export function Timeline({ points, currentPeriod, now, onReport, onEvent, ticker }: {
   points: TimelinePoint[];
   /** The reference date the axis extends to, fixed by the page so a re-render never shifts the track. */
   now: number;
   currentPeriod: string | null;
+  ticker: string;
   onReport: (id: string, periodEnd: string) => void;
   onEvent: (id: string) => void;
 }) {
@@ -74,7 +76,12 @@ export function Timeline({ points, currentPeriod, now, onReport, onEvent }: {
     if (point.kind === "report") onReport(point.id, point.periodEnd ?? "");
     else onEvent(point.id);
   };
-  const nameOf = (point: TimelinePoint) => point.kind === "report" ? `${point.date} ${m.report} ${point.title}` : `${point.date} ${EVENT_CLASS_LABEL[point.cls!] ?? ""} ${point.title}`;
+  const nameOf = (point: TimelinePoint) => {
+    const fiscal = point.kind === "report" && point.periodEnd ? fiscalPhrase(ticker, point.periodEnd) : null;
+    const primary = fiscal?.primary ?? fiscal?.unknown ?? "";
+    const body = point.kind === "report" ? `${point.date} ${m.report} ${point.title}` : `${point.date} ${EVENT_CLASS_LABEL[point.cls!] ?? ""} ${point.title}`;
+    return primary ? `${primary} · ${body}` : body;
+  };
 
   return <div className="timeline" role="group" aria-label={m.label}>
     <div className="timeline-track" ref={trackRef}>
@@ -93,7 +100,7 @@ export function Timeline({ points, currentPeriod, now, onReport, onEvent }: {
             aria-pressed={active} aria-expanded={many ? open : undefined} aria-controls={many ? listId : undefined}
             style={{ "--tone": tone } as CSSProperties}
             aria-label={many ? m.events(mark.items.length) : nameOf(lead)}
-            title={many ? undefined : `${lead.date} · ${lead.kind === "report" ? lead.title : `${EVENT_CLASS_LABEL[lead.cls!] ?? ""} · ${lead.title}`}`}
+            title={many ? undefined : nameOf(lead)}
             onMouseEnter={() => setHoverId(mark.id)} onMouseLeave={() => setHoverId(id => id === mark.id ? null : id)}
             onFocus={() => setHoverId(mark.id)} onBlur={() => setHoverId(id => id === mark.id ? null : id)}
             onClick={() => { if (many) setOpenId(id => id === mark.id ? null : mark.id); else activate(lead); }}>

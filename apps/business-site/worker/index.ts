@@ -22,7 +22,7 @@ import type {EventsPublication} from "@/shared/analysis-contract/events";
 import type {ItemAnalysis} from "@/shared/analysis-contract/item-analysis";
 import type {PublicFilingDetail,PublicFilingDigest,PublicFilingDigestPage,PublicFilingPage,PublicSecFiling} from "@/shared/analysis-contract/filings";
 import type {LibraryTable,PublicPassage} from "@/shared/analysis-contract/filing-library";
-import {formatFilingPeriodLabel} from "@/packages/web/src/model/filing-period-label";
+import {filingFiscalFields,formatFilingPeriodLabel} from "@/packages/web/src/model/filing-period-label";
 import {formatSecMetricLabel,formatSecMetricValue} from "@/packages/web/src/model/sec-metric-format";
 import {isLocale,type Locale} from "@/shared/analysis-runtime/locale";
 import {homeLocale,parseHomeDigest,unavailableHome} from "../src/home-model.ts";
@@ -160,16 +160,16 @@ export async function loadEvents(ticker:string,fetcher:typeof fetch=fetch,locale
 }
 
 const ACCESSION=/^\d{10}-\d{2}-\d{6}$/;
-const isPeriodic=(form:string)=>/^(10-Q|10-K|20-F)(\/A)?$/.test(form);
 /** One filing as the map lists it: labels instead of metric keys, text instead of evidence ids, and never the analysis envelope. */
 export function digestFiling(filing:PublicSecFiling,locale:Locale="en"):PublicFilingDigest{
  const group=filing.earningsGroup,summary=filing.summary,analysis=filing.analysis;
- const periodic=!!group||isPeriodic(filing.form);
+ const fields=filingFiscalFields(filing);
  const published=analysis?.publication;
  const text=(v:unknown)=>typeof v==="string"?v:"";
  return {
   accessionNumber:filing.accessionNumber,form:filing.form,filingDate:filing.filingDate,reportDate:filing.reportDate,
-  periodEnd:periodic?group?.periodEnd??filing.fiscalPeriod?.periodEnd??filing.reportDate:null,periodLabel:periodic?formatFilingPeriodLabel(filing,locale):null,
+  periodEnd:fields?.periodEnd??null,periodLabel:fields?formatFilingPeriodLabel(filing,locale):null,
+  fiscalYear:fields?.fiscalYear??null,fiscalQuarter:fields?.fiscalQuarter??null,fiscalYearEndMonth:fields?.fiscalYearEndMonth??null,labelSource:fields?.labelSource,
   date:group?.earningsDate??filing.filingDate,
   sources:(group?.sources??[]).map(s=>({form:s.form,filingDate:s.filingDate,accessionNumber:s.accessionNumber,indexUrl:s.indexUrl})),
   headline:text(summary?.headline)||text(analysis?.headline),

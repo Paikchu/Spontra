@@ -6,6 +6,7 @@ import { KIND_LABEL, type VerifiedFinding } from "./findings-model";
 import { RailSection } from "./RailSection";
 import { arrivalStyle, RailRow, rowExit, useArrivals } from "./arrivals";
 import { useRailTip } from "./RailTip";
+import { fiscalPhrase, PeriodMark } from "./PeriodMark";
 
 const m = messages({
   findings: "Findings", report: (period: string) => `${period} report`,
@@ -25,7 +26,7 @@ const DIGEST = 3;
  * severity. Closed, it shows the top few (and the one in focus). One row in focus reshapes the stage; play walks them in order.
  * Nothing here is a summary: each row is a claim the data supports.
  */
-export function FindingsList({ findings, updates, verdicts, focus, story, periodEnd, expanded, onFocus, onStory, onExpand }: {
+export function FindingsList({ findings, updates, verdicts, focus, story, periodEnd, ticker, expanded, onFocus, onStory, onExpand }: {
   findings: VerifiedFinding[];
   /** Updates the reader took; the findings an update brought enter animated. */
   updates: number;
@@ -35,6 +36,7 @@ export function FindingsList({ findings, updates, verdicts, focus, story, period
   story: boolean;
   /** The report the findings were written from. */
   periodEnd: string;
+  ticker: string;
   expanded: boolean;
   onFocus: (id: string | null) => void;
   onStory: () => void;
@@ -46,7 +48,9 @@ export function FindingsList({ findings, updates, verdicts, focus, story, period
   const tip = useRailTip();
   if (!findings.length) return null;
   const extra = (f: VerifiedFinding, i: number) => i >= DIGEST && f.id !== focus;
-  return <RailSection name="findings" title={m.findings} count={findings.length} tag={<SourceLanguage of={findings.map(f => f.title)} />} hint={m.report(periodEnd.slice(0, 7))} expandable={findings.some(extra)}
+  const phrase = fiscalPhrase(ticker, periodEnd);
+  return <RailSection name="findings" title={m.findings} count={findings.length} tag={<SourceLanguage of={findings.map(f => f.title)} />} hint={m.report(phrase.primary ?? phrase.unknown)}
+    aside={<PeriodMark variant="inline" ticker={ticker} periodEnd={periodEnd} />} expandable={findings.some(extra)}
     expanded={expanded} focused={focus != null} onExpand={onExpand}
     actions={<Button variant="unstyled" type="button" className="icon-button section-action" aria-pressed={story} aria-label={story ? m.stop : m.walk} title={story ? m.stop : m.walkKeys} onClick={onStory}>
       <svg viewBox="0 0 24 24" aria-hidden="true">{story ? <rect x="7" y="7" width="10" height="10" rx="2" /> : <path d="M8 6.5v11l9-5.5Z" />}</svg>
