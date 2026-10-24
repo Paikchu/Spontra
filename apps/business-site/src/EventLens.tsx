@@ -1,13 +1,13 @@
 import { Button } from "@/packages/web/src/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableRow } from "@/packages/web/src/ui/table";
-import { useMemo, useState, type CSSProperties } from "react";
+import { useId, useMemo, useState, type CSSProperties, type PointerEvent } from "react";
 import type { CompanyEvent, EventsPublication } from "@/shared/analysis-contract/events";
 import { INSIDER_RULES } from "@/shared/analysis-runtime/events";
 import { getLocale, labels, messages } from "@/packages/web/src/i18n";
 import { SourceLanguage, langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import { perShare, shortPeriod } from "@/shared/analysis-runtime/locale";
 import type { FindingData } from "@/shared/analysis-runtime/findings";
-import { EVENT_CLASS_LABEL, dollars, eventTitle, eventTitleLang, insiderLens, shares, shortDate, type InsiderLensModel } from "./events-model";
+import { EVENT_CLASS_LABEL, dollars, eventTitle, eventTitleLang, insiderLens, shareCounts, shares, shortDate, type InsiderLensModel } from "./events-model";
 import { ItemAnalysisBody, useItemAnalysis, useVerifiedAnalysis } from "./ItemAnalysis";
 
 const ITEM_LABEL = labels({
@@ -38,6 +38,9 @@ const m = messages({
   otherSellers: "Other insiders selling", people: (n: number) => `${n} ${n === 1 ? "person" : "people"}`, window: (days: number) => `${days}-day window`,
   singleFiling: "Single filing", path: (owner: string, from: string, to: string, sales: number) => `${owner} holding path, ${from} to ${to}, ${sales} ${sales === 1 ? "sale" : "sales"}`,
   directHolding: "Direct holding", sale: "Sale",
+  stake: "Stake", purchase: "Purchase", ofOutstanding: "of shares outstanding", before: (v: string) => `${v} before the trade`,
+  basis: (count: string, asOf: string) => `Direct holding ÷ ${count} outstanding as of ${asOf}`, shareCount: "Share count updated",
+  stakePath: (owner: string, from: string, to: string, first: string, last: string) => `${owner} stake in the company, ${from} to ${to}: ${first} to ${last} of shares outstanding`,
 }, {
   event: (title: string) => `事件：${title}`, filed: "提交日期", eventOn: "事件日期", newer: "较新事件", older: "较早事件", close: "关闭事件",
   analystView: "分析观点", aiSummary: "AI 摘要", noSummary: "无摘要",
@@ -51,6 +54,9 @@ const m = messages({
   otherSellers: "其他内部人卖出", people: (n: number) => `${n} 人`, window: (days: number) => `${days} 天窗口`,
   singleFiling: "仅一份文件", path: (owner: string, from: string, to: string, sales: number) => `${owner} 持股路径，${from} 至 ${to}，卖出 ${sales} 次`,
   directHolding: "直接持股", sale: "卖出",
+  stake: "持股比例", purchase: "买入", ofOutstanding: "占流通股", before: (v: string) => `交易前 ${v}`,
+  basis: (count: string, asOf: string) => `直接持股 ÷ 流通股 ${count}（截至 ${asOf}）`, shareCount: "流通股数更新",
+  stakePath: (owner: string, from: string, to: string, first: string, last: string) => `${owner} 持股比例，${from} 至 ${to}，由 ${first} 变为 ${last}`,
 });
 
 /**
@@ -72,7 +78,8 @@ export function EventLens({ event, publication, ticker, data, updates, nodeColor
   index: number;
   count: number;
 }) {
-  const insider = useMemo(() => insiderLens(publication, event), [publication, event]);
+  const counts = useMemo(() => shareCounts(data.fundamentals), [data.fundamentals]);
+  const insider = useMemo(() => insiderLens(publication, event, counts), [publication, event, counts]);
   const [showQuiet, setShowQuiet] = useState(false);
   const analysis = useItemAnalysis(ticker, event.id, updates);
   const verified = useVerifiedAnalysis(analysis, data, ticker);
@@ -91,7 +98,7 @@ export function EventLens({ event, publication, ticker, data, updates, nodeColor
       </div>
     </header>
     <ItemAnalysisBody analysis={analysis} verified={verified} ticker={ticker} nodeColor={nodeColor} fallback={<div className="lens-doc"><div className="lens-doc-row"><div className="lens-doc-cell">
-      {insider && <InsiderLadder model={insider} event={event} />}
+      {insider && (insider.ownership ? <OwnershipChart model={insider} event={event} /> : <InsiderLadder model={insider} event={event} />)}
       {insider && <InsiderReading model={insider} event={event} />}
       {event.summary ? <>
         <ul className="event-bullets">{event.summary.bullets.map((b, i) => <li key={i} data-importance={b.importance} lang={langOf(b.detail)}><b>{b.label}</b>{b.detail}</li>)}</ul>
@@ -171,23 +178,120 @@ function InsiderLadder({ model, event }: { model: InsiderLensModel; event: Compa
   const y = (v: number) => 92 - (v - bottom) / range * 84;
   // The staircase: hold flat from each filing to the next, then step to the new level.
   const d = path.map((p, i) => `${i ? "L" : "M"}${x(p.date).toFixed(2)},${y(i ? path[i - 1].held : p.held + p.sold - p.bought - p.exercised).toFixed(2)}L${x(p.date).toFixed(2)},${y(p.held).toFixed(2)}`).join("") + `L96,${y(path[path.length - 1].held).toFixed(2)}`;
-  const maxProceeds = Math.max(1, ...model.cadence.sales.map(s => s.proceeds), ...path.map(p => p.sold * (event.insider!.sold?.averagePrice ?? 0)));
   const sales = path.filter(p => p.sold > 0);
+  const maxProceeds = Math.max(1, ...sales.map(p => p.proceeds));
   return <div className="insider-ladder" role="img" aria-label={m.path(event.insider!.ownerName, path[0].date, path[path.length - 1].date, sales.length)}>
     <div className="lens-legend"><span><i className="ladder-step" />{m.directHolding}</span><span><i className="ladder-dot" />{m.sale}</span><span><i className="ladder-dot ladder-dot--planned" />{m.plan}</span></div>
-    <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-      {[0.25, 0.5, 0.75].map(t => <line key={t} className="ladder-grid" x1="4" x2="96" y1={8 + t * 84} y2={8 + t * 84} vectorEffect="non-scaling-stroke" />)}
-      <path className="ladder-path" d={d} vectorEffect="non-scaling-stroke" />
-    </svg>
-    <div className="ladder-marks">
-      {sales.map(p => {
-        const proceeds = model.cadence.sales.find(s => s.id === p.id)?.proceeds ?? 0;
-        const size = 8 + Math.sqrt(Math.max(proceeds, 1) / maxProceeds) * 18;
-        return <i key={p.id} className="ladder-dot" data-planned={p.planned === true || undefined} data-focus={p.id === event.id || undefined}
-          style={{ left: `${x(p.date)}%`, top: `${y(p.held)}%`, width: size, height: size } as CSSProperties} title={`${p.date} · ${shares(p.sold)} · ${dollars(proceeds)}`} />;
-      })}
+    <div className="ladder-plot">
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+        {[0.25, 0.5, 0.75].map(t => <line key={t} className="ladder-grid" x1="4" x2="96" y1={8 + t * 84} y2={8 + t * 84} vectorEffect="non-scaling-stroke" />)}
+        <path className="ladder-path" d={d} vectorEffect="non-scaling-stroke" />
+      </svg>
+      <div className="ladder-marks">
+        {sales.map(p => {
+          const size = 8 + Math.sqrt(Math.max(p.proceeds, 1) / maxProceeds) * 18;
+          return <i key={p.id} className="ladder-dot" data-planned={p.planned === true || undefined} data-focus={p.id === event.id || undefined}
+            style={{ left: `${x(p.date)}%`, top: `${y(p.held)}%`, width: size, height: size } as CSSProperties} title={`${p.date} · ${shares(p.sold)} · ${dollars(p.proceeds)}`} />;
+        })}
+      </div>
+      <div className="ladder-scale"><span style={{ top: "8%" }}>{shares(top)}</span><span style={{ top: "92%" }}>{shares(bottom)}</span></div>
     </div>
     <div className="lens-axis"><span style={{ left: "4%" }} data-edge="start">{shortPeriod(path[0].date)}</span><span style={{ left: "96%" }} data-edge="end">{shortPeriod(path[path.length - 1].date)}</span></div>
-    <div className="ladder-scale"><span>{shares(top)}</span><span>{shares(bottom)}</span></div>
+  </div>;
+}
+
+/** "0.0251%": three significant figures however small the stake, one decimal at least, six at most. */
+function stake(v: number): string {
+  if (v <= 0) return "0%";
+  if (v < 5e-7) return "<0.000001%";
+  return `${v.toFixed(Math.min(6, Math.max(1, 2 - Math.floor(Math.log10(v)))))}%`;
+}
+
+/** A 1, 2, 2.5 or 5 step that splits `max` into at most `count` intervals, and the decimals its labels need. */
+function niceStep(max: number, count = 3): { step: number; decimals: number } {
+  const raw = max / count, mag = 10 ** Math.floor(Math.log10(raw));
+  const factor = [1, 2, 2.5, 5, 10].find(f => f * mag >= raw)!;
+  return { step: factor * mag, decimals: Math.max(0, -Math.floor(Math.log10(factor * mag)) + (factor === 2.5 ? 1 : 0)) };
+}
+
+/**
+ * The owner's direct holding as a share of the company over the trailing two years, drawn from zero so the area is
+ * the stake itself: a step at each filing, and at each reported share count, since issuance and buybacks move the
+ * share too. Sales and purchases are marked, sized by value, hollow under a 10b5-1 plan; the focused filing is lit.
+ * Hovering reads any point back.
+ */
+function OwnershipChart({ model, event }: { model: InsiderLensModel; event: CompanyEvent }) {
+  const own = model.ownership!, points = own.path;
+  const gradient = `ownership-${useId().replace(/[^\w-]/g, "")}`;
+  const [hover, setHover] = useState<number | null>(null);
+  const head = <div className="ownership-head">
+    {own.after != null && <span className="ownership-figure"><b>{stake(own.after)}</b>{m.ofOutstanding}</span>}
+    {own.before != null && own.after != null && own.before !== own.after && <span className="ownership-before">{m.before(stake(own.before))}</span>}
+  </div>;
+  const note = own.outstanding && <p className="ownership-note">{m.basis(shares(own.outstanding.shares), shortPeriod(own.outstanding.date))}</p>;
+  if (points.length < 2) return <div className="ownership-chart" data-single>{head}<div className="lens-empty">{m.singleFiling}</div>{note}</div>;
+
+  const max = Math.max(...points.map(p => p.percent), own.before ?? 0) * 1.08 || 1;
+  const { step, decimals } = niceStep(max);
+  const top = step * Math.ceil(max / step);
+  const ticks = Array.from({ length: Math.round(top / step) + 1 }, (_, i) => i * step);
+  const t0 = Date.parse(points[0].date), span = Math.max(Date.parse(points[points.length - 1].date) - t0, 30 * 86_400_000);
+  const x = (d: string) => (Date.parse(d) - t0) / span * 100;
+  const y = (v: number) => 100 - v / top * 100;
+  const line = `M0,${y(points[0].percent).toFixed(3)}` + points.slice(1).map(p => `H${x(p.date).toFixed(3)}V${y(p.percent).toFixed(3)}`).join("");
+  const byId = new Map(model.path.map(p => [p.id, p]));
+  const trades = points.flatMap(p => { const f = p.filing ? byId.get(p.filing) : undefined; return f && (f.sold > 0 || f.bought > 0) ? [{ point: p, filing: f, kind: f.sold > 0 ? "sale" as const : "purchase" as const, value: f.sold > 0 ? f.proceeds : f.cost }] : []; });
+  const maxValue = Math.max(1, ...trades.map(t => t.value));
+  const read = (e: PointerEvent<HTMLDivElement>) => {
+    const box = e.currentTarget.getBoundingClientRect(), at = (e.clientX - box.left) / box.width * 100;
+    let best = 0;
+    points.forEach((p, i) => { if (Math.abs(x(p.date) - at) < Math.abs(x(points[best].date) - at)) best = i; });
+    setHover(best);
+  };
+  const h = hover != null ? points[hover] : null, hf = h?.filing ? byId.get(h.filing) : undefined;
+  const hx = h ? x(h.date) : 0;
+  const owner = event.insider!.ownerName;
+  return <div className="ownership-chart" role="img" aria-label={m.stakePath(owner, points[0].date, points[points.length - 1].date, stake(points[0].percent), stake(points[points.length - 1].percent))}>
+    {head}
+    <div className="lens-legend" aria-hidden="true">
+      <span><i className="ladder-step" />{m.stake}</span>
+      {trades.some(t => t.kind === "sale") && <span><i className="ladder-dot" />{m.sale}</span>}
+      {trades.some(t => t.kind === "purchase") && <span><i className="ladder-dot" data-kind="purchase" />{m.purchase}</span>}
+      {trades.some(t => t.filing.planned === true) && <span><i className="ladder-dot ladder-dot--planned" />{m.plan}</span>}
+    </div>
+    <div className="ownership-frame" aria-hidden="true">
+      <div className="ownership-ticks">
+        <span className="ownership-ticks-size">{`${top.toFixed(decimals)}%`}</span>
+        {ticks.map(t => <span key={t} style={{ top: `${y(t)}%` }}>{`${t.toFixed(decimals)}%`}</span>)}
+      </div>
+      <div className="ownership-plot" onPointerMove={read} onPointerLeave={() => setHover(null)}>
+        <svg viewBox="0 0 100 100" preserveAspectRatio="none">
+          <defs><linearGradient id={gradient} x1="0" x2="0" y1="0" y2="1"><stop offset="0" className="ownership-fill-top" /><stop offset="1" className="ownership-fill-bottom" /></linearGradient></defs>
+          {ticks.map(t => <line key={t} className={t ? "ownership-grid" : "ownership-base"} x1="0" x2="100" y1={y(t)} y2={y(t)} vectorEffect="non-scaling-stroke" />)}
+          <path className="ownership-area" d={`${line}V100H0Z`} fill={`url(#${gradient})`} />
+          <path className="ownership-line" d={line} vectorEffect="non-scaling-stroke" />
+        </svg>
+        {h && <span className="ownership-guide" style={{ left: `${hx}%` }} />}
+        <div className="ladder-marks">
+          {trades.map(t => {
+            const size = 8 + Math.sqrt(Math.max(t.value, 1) / maxValue) * 14;
+            return <i key={t.filing.id} className="ladder-dot" data-kind={t.kind} data-planned={t.filing.planned === true || undefined} data-focus={t.filing.id === event.id || undefined}
+              style={{ left: `${x(t.point.date)}%`, top: `${y(t.point.percent)}%`, width: size, height: size } as CSSProperties} />;
+          })}
+          {h && !hf && <i className="ownership-hover-dot" style={{ left: `${hx}%`, top: `${y(h.percent)}%` }} />}
+        </div>
+        {h && <div className="ownership-tip" data-align={hx < 18 ? "start" : hx > 82 ? "end" : undefined} data-below={y(h.percent) < 30 || undefined} style={{ left: `${hx}%`, top: `${y(h.percent)}%` }}>
+          <div className="trend-tip-title">{h.date}</div>
+          <div className="trend-tip-row"><span>{m.stake}</span><b>{stake(h.percent)}</b></div>
+          {hf ? <>
+            {hf.sold > 0 && <div className="trend-tip-row"><span>{m.sale}</span><b>{shares(hf.sold)} · {dollars(hf.proceeds)}</b></div>}
+            {hf.bought > 0 && <div className="trend-tip-row"><span>{m.purchase}</span><b>{shares(hf.bought)} · {dollars(hf.cost)}</b></div>}
+            <div className="trend-tip-row"><span>{m.directHolding}</span><b>{shares(hf.held)}</b></div>
+          </> : <div className="trend-tip-row"><span>{m.shareCount}</span></div>}
+        </div>}
+      </div>
+      <div className="lens-axis"><span style={{ left: "0%" }} data-edge="start">{shortPeriod(points[0].date)}</span><span style={{ left: "100%" }} data-edge="end">{shortPeriod(points[points.length - 1].date)}</span></div>
+    </div>
+    {note}
   </div>;
 }

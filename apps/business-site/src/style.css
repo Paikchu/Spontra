@@ -1276,7 +1276,8 @@ html[lang^="zh"] .home-sub, html[lang^="zh"] .home-signal-title, html[lang^="zh"
 
 /* The staircase: each filing's held-after figure is a step; sales are dots sized by proceeds, hollow under a 10b5-1 plan, the focused one lit. */
 .insider-ladder { position: relative; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 6px; min-height: 0; }
-.insider-ladder svg { width: 100%; height: 100%; min-height: 0; overflow: visible; }
+.ladder-plot { position: relative; min-height: 0; }
+.insider-ladder svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 .ladder-grid { stroke: var(--background); stroke-opacity: .35; stroke-dasharray: 3 4; }
 .ladder-path { fill: none; stroke: var(--class-insider); stroke-width: 1.6; stroke-linejoin: round; animation: fade-in .6s ease both; }
 .ladder-marks { position: absolute; inset: 0; pointer-events: none; }
@@ -1290,7 +1291,44 @@ html[lang^="zh"] .home-sub, html[lang^="zh"] .home-signal-title, html[lang^="zh"
 .lens-axis span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
 .lens-axis span[data-edge="start"] { transform: none; } .lens-axis span[data-edge="end"] { transform: translateX(-100%); }
 .insider-ladder .lens-axis { grid-row: 3; }
-.ladder-scale { position: absolute; left: 0; top: 24px; bottom: 20px; display: flex; flex-direction: column; justify-content: space-between; font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; pointer-events: none; }
+.ladder-scale { position: absolute; inset: 0; font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; pointer-events: none; }
+.ladder-scale span { position: absolute; left: 0; transform: translateY(-50%); }
+.ladder-dot[data-kind="purchase"] { background: var(--up); border-color: var(--up); }
+.ladder-dot[data-kind="purchase"][data-planned] { background: transparent; }
+.ladder-dot[data-kind="purchase"][data-focus] { box-shadow: 0 0 0 3px color-mix(in srgb, var(--up) 30%, transparent), 0 0 12px var(--up); }
+
+/* The stake: the owner's direct holding as a share of the company, an area from zero, read back on hover. */
+.lens-doc-cell > .ownership-chart { height: clamp(260px, calc(100cqw * .46), min(360px, 46vh)); }
+.lens-doc-cell > .ownership-chart[data-single] { height: auto; }
+.ownership-chart { display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; gap: 8px; min-height: 0; }
+.ownership-chart[data-single] .lens-empty { min-height: 80px; }
+.ownership-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 14px; }
+.ownership-figure { display: inline-flex; align-items: baseline; gap: 8px; font-size: 13px; color: var(--muted-foreground); }
+.ownership-figure b { font-size: 24px; font-weight: 620; line-height: 1.1; letter-spacing: -.01em; color: var(--foreground); font-variant-numeric: tabular-nums; }
+.ownership-before { font-size: 13px; color: var(--faint); font-variant-numeric: tabular-nums; }
+.ownership-frame { display: grid; grid-template-columns: max-content minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; gap: 6px 14px; min-height: 0; padding-right: 12px; }
+.ownership-ticks { position: relative; font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
+.ownership-ticks span { position: absolute; right: 0; transform: translateY(-50%); white-space: nowrap; }
+.ownership-ticks .ownership-ticks-size { position: static; display: block; height: 0; overflow: hidden; visibility: hidden; transform: none; }
+.ownership-plot { position: relative; min-height: 0; cursor: crosshair; touch-action: pan-y; }
+.ownership-plot svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.ownership-grid { stroke: var(--hairline); stroke-width: 1; }
+.ownership-base { stroke: var(--border); stroke-width: 1; }
+.ownership-fill-top { stop-color: var(--class-insider); stop-opacity: .26; }
+.ownership-fill-bottom { stop-color: var(--class-insider); stop-opacity: .03; }
+.ownership-area { animation: fade-in .6s ease both; }
+.ownership-line { fill: none; stroke: var(--class-insider); stroke-width: 1.75; stroke-linejoin: round; animation: fade-in .6s ease both; }
+.ownership-frame .lens-axis { grid-column: 2; }
+.ownership-guide { position: absolute; top: 0; bottom: 0; width: 1px; transform: translateX(-.5px); background: var(--border); pointer-events: none; }
+.ownership-hover-dot { position: absolute; width: 7px; height: 7px; border-radius: 50%; transform: translate(-50%, -50%); background: var(--surface-raised); border: 1.5px solid var(--class-insider); box-sizing: border-box; }
+.ownership-tip { position: absolute; z-index: 6; min-width: 190px; padding: 10px 12px; transform: translate(-50%, calc(-100% - 14px)); pointer-events: none; border-radius: 10px; font-size: 12px;
+  background: color-mix(in srgb, var(--surface-raised) 94%, transparent); backdrop-filter: blur(10px); border: 1px solid var(--border); box-shadow: var(--shadow-overlay); }
+.ownership-tip[data-align="start"] { transform: translate(-8px, calc(-100% - 14px)); }
+.ownership-tip[data-align="end"] { transform: translate(calc(-100% + 8px), calc(-100% - 14px)); }
+.ownership-tip[data-below] { transform: translate(-50%, 14px); }
+.ownership-tip[data-below][data-align="start"] { transform: translate(-8px, 14px); }
+.ownership-tip[data-below][data-align="end"] { transform: translate(calc(-100% + 8px), 14px); }
+.ownership-note { margin: 0; font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
 @media (max-width: 960px) { .event-row { display: inline-flex; } .event-date { font-size: 12px; } .timeline-track { margin: 0 2px; } }
 
 /* Reports in the rail and the report lens: the figures the filing verified, the conclusions, and the full report in a modal. */

@@ -219,10 +219,62 @@ export function insiderTone(events: CompanyEvent[], event: CompanyEvent): Inside
   return t.rule10b51 === true || cadence.regular ? "planned" : "routine";
 }
 
+export type HoldingPoint = { id: string; date: string; held: number; sold: number; proceeds: number; bought: number; cost: number; exercised: number; planned: boolean | null };
+
 /** The holding path one owner's filings trace, oldest first: each filing's held-after figure, for the ladder. */
-export function holdingPath(events: CompanyEvent[], ownerCik: string, months = 24, until?: string): Array<{ id: string; date: string; held: number; sold: number; bought: number; exercised: number; planned: boolean | null }> {
+export function holdingPath(events: CompanyEvent[], ownerCik: string, months = 24, until?: string): HoldingPoint[] {
   const end = until ? Date.parse(until) : Infinity, start = (Number.isFinite(end) ? end : Date.now()) - months * 30.4 * DAY_MS;
   return events.filter(e => e.insider?.ownerCik === ownerCik && e.insider.heldAfter != null && Date.parse(e.eventDate) <= end && Date.parse(e.eventDate) >= start)
-    .map(e => ({ id: e.id, date: e.eventDate, held: e.insider!.heldAfter!, sold: e.insider!.sold?.shares ?? 0, bought: e.insider!.bought?.shares ?? 0, exercised: e.insider!.exercised, planned: e.insider!.rule10b51 }))
+    .map(e => ({
+      id: e.id, date: e.eventDate, held: e.insider!.heldAfter!, sold: e.insider!.sold?.shares ?? 0, proceeds: e.insider!.sold?.proceeds ?? 0,
+      bought: e.insider!.bought?.shares ?? 0, cost: e.insider!.bought?.cost ?? 0, exercised: e.insider!.exercised, planned: e.insider!.rule10b51,
+    }))
     .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/** Shares outstanding as a filing reports them, dated at the period end. */
+export type ShareCount = { date: string; shares: number };
+
+/** The share count in force on a date: the latest reported on or before it, else the earliest reported after it. */
+export function outstandingAt(counts: ShareCount[], date: string): number | null {
+  let at: ShareCount | undefined;
+  for (const c of counts) if (c.date <= date && (!at || c.date > at.date)) at = c;
+  at ??= counts.reduce<ShareCount | undefined>((first, c) => !first || c.date < first.date ? c : first, undefined);
+  return at ? at.shares : null;
+}
+
+export type OwnershipPoint = { date: string; percent: number; /** The owner's filing this point is, or null where only the share count moved. */ filing: string | null };
+
+export type Ownership = {
+  /** Oldest first, one point per filing and per share count reported between the first filing and the last. */
+  path: OwnershipPoint[];
+  /** The focused filing's direct holding as a percent of shares outstanding, just before its trades and after them. */
+  before: number | null;
+  after: number | null;
+  /** The share count the focused filing is read against. */
+  outstanding: ShareCount | null;
+};
+
+/**
+ * One owner's direct holding as a percent of shares outstanding. The percent moves when either side does: at
+ * each of the owner's filings, and at each share count reported between them, as issuance or buybacks change
+ * the denominator. Null when no share count is known; a percent is never estimated from a missing count.
+ */
+export function ownershipPath(path: HoldingPoint[], counts: ShareCount[], focus: InsiderTransaction & { date: string }): Ownership | null {
+  const valid = counts.filter(c => c.shares > 0 && Number.isFinite(c.shares)).sort((a, b) => a.date.localeCompare(b.date));
+  if (!valid.length) return null;
+  const pct = (held: number, date: string) => { const out = outstandingAt(valid, date); return out ? held / out * 100 : null; };
+  const points: OwnershipPoint[] = [];
+  const first = path[0]?.date, last = path[path.length - 1]?.date;
+  const dates = [...new Set([...path.map(p => p.date), ...valid.map(c => c.date).filter(d => first != null && d > first && d < last!)])].sort();
+  for (const date of dates) {
+    // The holding in force on the date: the last filing on or before it.
+    const filing = path.filter(p => p.date <= date).at(-1);
+    const percent = filing ? pct(filing.held, date) : null;
+    if (percent != null) points.push({ date, percent, filing: filing!.date === date ? filing!.id : null });
+  }
+  const held = focus.heldAfter;
+  const prior = held == null ? null : held + (focus.sold?.shares ?? 0) - (focus.bought?.shares ?? 0);
+  const at = valid.filter(c => c.date <= focus.date).at(-1) ?? valid[0];
+  return { path: points, before: prior != null && prior >= 0 ? pct(prior, focus.date) : null, after: held != null ? pct(held, focus.date) : null, outstanding: at };
 }
