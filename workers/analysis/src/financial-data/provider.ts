@@ -10,7 +10,12 @@ import {SEC_DOCUMENT_MAX_BYTES} from '../../../../shared/analysis-runtime/financ
 import {releaseQuarter} from '../../../../shared/analysis-runtime/financial-data/earnings-release.ts';
 import type {BusinessFlowQuarter} from '../../../../shared/analysis-contract/business-flow.ts';
 export interface SecReader {
+ /** One filing document by its EDGAR URL. The implementation lives in `sec-archive/`; nothing else downloads from EDGAR. */
  read(url:string):Promise<Response>;
+ /** The issuer's submission list, or one of its continuation pages, parsed. */
+ submissions(cik:string,page?:string):Promise<unknown>;
+ /** EDGAR's exchange directory of issuers, parsed. */
+ issuerDirectory():Promise<unknown>;
  /** Persist exact bytes and all encountered facts independently of the chart projection. */
  archive?(source:DocumentSource,html:string,metadata?:{form?:string;reportDate?:string}):Promise<void>;
  /** The stored copy of a document this issuer already archived. A filed EDGAR document never changes, so it stands in for the download. */
@@ -30,11 +35,6 @@ export interface SecReader {
  * what was filed.
  */
 export function canonicalSecHtml(html:string):string{return html.replace(/\s*<script\b[^>]*?(?:\/>|>[\s\S]*?<\/script\s*>)/gi,'');}
-/** One reader is shared by the bounded consumer. It is not a promise of account-wide rate limiting. */
-export function throttledSecReader(userAgent:string,fetcher:typeof fetch=fetch,delayMs=500):SecReader{
- if(!userAgent.trim())throw new Error('SEC contact user-agent is required');let next=0;
- return {read:async(url)=>{const parsed=new URL(url);if(parsed.protocol!=='https:'||!['www.sec.gov','data.sec.gov'].includes(parsed.hostname))throw new Error('Non-SEC source denied');const wait=Math.max(0,next-Date.now());next=Math.max(next,Date.now())+delayMs;if(wait)await new Promise(resolve=>setTimeout(resolve,wait));const response=await fetcher(url,{headers:{'user-agent':userAgent,accept:'application/json,text/html'},signal:AbortSignal.timeout(25000)});if([403,429].includes(response.status))throw new Error('SEC_ACCESS_PAUSED');if(!response.ok)throw new Error('SEC_SOURCE_UNAVAILABLE');return response;}};
-}
 /** A filed document never changes size: one over the cap is a final reason (`SEC_DOCUMENT_TOO_LARGE`), never retried as a source outage. */
 async function readBoundedReport(response:Response):Promise<string>{
  if(Number(response.headers.get('content-length'))>SEC_DOCUMENT_MAX_BYTES)throw new Error('SEC_DOCUMENT_TOO_LARGE');
@@ -87,7 +87,7 @@ export async function readSecDocumentBatch(job:Job,reader:SecReader,maxDocuments
  if(cursor.parserVersion!==SEC_FLOW_PARSER_VERSION){cursor.index=0;cursor.parserVersion=SEC_FLOW_PARSER_VERSION;delete cursor.reportedFacts;delete cursor.reviewDocuments;delete cursor.reviewRequired;delete cursor.documents;delete cursor.release;delete cursor.calculations;delete cursor.revenueStructures;delete cursor.restated;delete cursor.presentation;delete cursor.reports;}
  if(!cursor.documents){
   cursor.presentation=await reader.presentation?.(cik)??null;
-  const response=await reader.read(`https://data.sec.gov/submissions/CIK${cik}.json`);const data=await response.json() as {cik:string|number;sic?:string;filings?:{recent?:{form:string[];accessionNumber:string[];primaryDocument:string[];filingDate:string[];reportDate:string[];items?:string[]}}};if(String(data.cik).padStart(10,'0')!==cik)throw new Error('Issuer identity mismatch');const recent=data.filings?.recent;if(!recent)throw new Error('Missing submissions');cursor.foreign=recent.form.some(form=>/^20-F/.test(form))&&!recent.form.some(form=>/^10-[QK]/.test(form));cursor.expectedPeriodEnd=cursor.foreign?undefined:recent.form.map((form,i)=>/^10-[QK](\/A)?$/.test(form)?recent.reportDate[i]:'').filter(v=>/^\d{4}-\d{2}-\d{2}$/.test(v)).sort().at(-1);const sic=Number(data.sic);cursor.industry=sic>=6300&&sic<6500?'insurance':sic>=6000&&sic<6300?'financial':'standard';cursor.documents=[];
+  const data=await reader.submissions(cik) as {cik:string|number;sic?:string;filings?:{recent?:{form:string[];accessionNumber:string[];primaryDocument:string[];filingDate:string[];reportDate:string[];items?:string[]}}};if(String(data.cik).padStart(10,'0')!==cik)throw new Error('Issuer identity mismatch');const recent=data.filings?.recent;if(!recent)throw new Error('Missing submissions');cursor.foreign=recent.form.some(form=>/^20-F/.test(form))&&!recent.form.some(form=>/^10-[QK]/.test(form));cursor.expectedPeriodEnd=cursor.foreign?undefined:recent.form.map((form,i)=>/^10-[QK](\/A)?$/.test(form)?recent.reportDate[i]:'').filter(v=>/^\d{4}-\d{2}-\d{2}$/.test(v)).sort().at(-1);const sic=Number(data.sic);cursor.industry=sic>=6300&&sic<6500?'insurance':sic>=6000&&sic<6300?'financial':'standard';cursor.documents=[];
   // A foreign issuer's 6-Ks are mostly notices; they are listed by filing date and only those that report financials count.
   const newest=Date.parse(recent.filingDate[0]??'');let counted=0;
   for(let i=0;i<recent.form.length&&counted<(cursor.foreign?MAX_REPORTS:10)&&cursor.documents.length<FOREIGN_LISTED;i++){
@@ -155,8 +155,8 @@ export async function readReleaseQuarter(job:Job,previous:BusinessFlowQuarter,re
  return result.quarter&&result.quarter.periodEnd>previous.periodEnd?result:{quarter:null,issues:result.issues};
 }
 
-export async function discoverDataIssuer(ticker:string,reader:SecReader):Promise<{cik:string;tickers:string[];name:string;industry:'unknown'}>{
- const raw=await (await reader.read('https://www.sec.gov/files/company_tickers_exchange.json')).json() as {fields:string[];data:unknown[][]};
+export async function discoverDataIssuer(ticker:string,reader:Pick<SecReader,'issuerDirectory'>):Promise<{cik:string;tickers:string[];name:string;industry:'unknown'}>{
+ const raw=await reader.issuerDirectory() as {fields:string[];data:unknown[][]};
  if(!Array.isArray(raw.fields)||!Array.isArray(raw.data))throw new Error('Invalid SEC issuer directory');
  const symbol=raw.fields.indexOf('ticker'),cik=raw.fields.indexOf('cik'),name=raw.fields.indexOf('name');
  if(symbol<0||cik<0||name<0)throw new Error('Invalid SEC issuer directory');

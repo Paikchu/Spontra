@@ -1,6 +1,7 @@
 import {companyPolicyEnvironment} from './company-policy.ts';
 import {financialPolicy, allowData} from '../../../../shared/analysis-runtime/financial-data/policy.ts';
-import {discoverDataIssuer, throttledSecReader} from './provider.ts';
+import {discoverDataIssuer} from './provider.ts';
+import {edgarListings} from '../sec-archive/index.ts';
 import type {DataOnlyEnv} from './queue.ts';
 
 type CollectionRow = {job_id:string;status:string;generation:number;updated_at:string};
@@ -19,7 +20,7 @@ export async function requestFinancialCollection(env:DataOnlyEnv,ticker:string,o
  if(recent&&recent.updated_at>cutoff)return result('fresh',recent.job_id);
  const waiting=await env.DB.prepare("SELECT task_id FROM financial_maintenance_tasks WHERE ticker=? AND status IN ('queued','running','cancel_requested') LIMIT 1").bind(ticker).first();
  if(waiting)return result('maintenance');
- const issuer=await discoverDataIssuer(ticker,throttledSecReader(env.SEC_USER_AGENT,options.fetcher??fetch));
+ const issuer=await discoverDataIssuer(ticker,edgarListings(env,{fetcher:options.fetcher,delayMs:500}));
  const previous=await env.DB.prepare('SELECT MAX(generation) generation FROM financial_collection_jobs WHERE cik=?').bind(issuer.cik).first<{generation:number|null}>();
  const generation=Math.max(now.getTime(),(previous?.generation??0)+1),id=`${issuer.cik}:${generation}`;
  // Atomic insertion deduplicates concurrent cron/manual producers and different share classes.

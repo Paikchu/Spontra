@@ -4,7 +4,7 @@ import type { SecCronEnv } from "../core.ts";
 import { knownCik } from "../pipeline/identity.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
 import { D1SecRepository } from "../sec/d1.ts";
-import { throttledSecReader } from "../financial-data/provider.ts";
+import { edgarListings } from "../sec-archive/index.ts";
 import type { SecFilingFeed, SecFilingSummary } from "../sec/sec.ts";
 import { form4XmlUrl, parseForm4 } from "./form4.ts";
 import { eventsCacheKey, exhibitsCacheKey, insiderCacheKey } from "./read.ts";
@@ -97,12 +97,12 @@ export async function refreshCompanyEvents(env: EventsSweepEnv, ticker: string, 
   const cik = feed?.payload.company?.cik ?? feed?.payload.filings[0]?.cik ?? await knownCik(db, ticker);
   if (!cik) return { published: false, insiderReads: 0, exhibitReads: 0, pending: 0, progressed: false };
   const cikNumber = Number(cik);
-  const reader = throttledSecReader(env.SEC_USER_AGENT, fetcher, 200);
+  const listings = edgarListings(env, { fetcher, delayMs: 200 });
   const listDue = options.forceList || !publication || now.getTime() - Date.parse(publication.checkedAt) >= REFRESH_MS;
   let raw: RawEventFiling[];
   let checkedAt = publication?.checkedAt ?? now.toISOString();
   if (listDue) {
-    raw = parseEventSubmissions(await (await reader.read(`https://data.sec.gov/submissions/CIK${cik}.json`)).json(), cikNumber, now);
+    raw = parseEventSubmissions(await listings.submissions(cik), cikNumber, now);
     checkedAt = now.toISOString();
   } else {
     raw = publication!.events.map(e => ({
@@ -126,7 +126,7 @@ export async function refreshCompanyEvents(env: EventsSweepEnv, ticker: string, 
         insiderReads++;
         try {
           let parsed: InsiderTransaction | null = null;
-          try { parsed = parseForm4(await (await reader.read(form4XmlUrl(archiveRoot, filing.primaryDocument))).text()); }
+          try { parsed = parseForm4(await listings.ownershipXml(form4XmlUrl(archiveRoot, filing.primaryDocument))); }
           catch (error) { if (secAccessPaused(error)) throw error; /* A document SEC does not serve is unreadable, as before. */ }
           await repository.setCache(insiderCacheKey(ticker, filing.accessionNumber), parsed ?? { unreadable: true }, now.toISOString());
           insider = parsed;
@@ -142,7 +142,7 @@ export async function refreshCompanyEvents(env: EventsSweepEnv, ticker: string, 
       else if (exhibitReads < LIMITS.exhibitReads) {
         exhibitReads++;
         try {
-          exhibits = parseExhibitIndex(await (await reader.read(`${archiveRoot}/${filing.accessionNumber}-index.htm`)).text(), archiveRoot);
+          exhibits = parseExhibitIndex(await listings.filingIndex(cikNumber, filing.accessionNumber), archiveRoot);
           await repository.setCache(exhibitsCacheKey(ticker, filing.accessionNumber), exhibits, now.toISOString()); saved++;
         } catch (error) { if (secAccessPaused(error)) throw error; exhibits = []; pendingExhibits++; }
       } else pendingExhibits++;

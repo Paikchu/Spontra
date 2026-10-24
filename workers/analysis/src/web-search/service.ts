@@ -3,6 +3,10 @@ import { WebSearchError, type CachePolicy, type ContentData, type ContentRequest
 import type { SearchStore, StoredResult } from "./store.ts";
 import { digest, normalizeContent, normalizeSearch } from "./validation.ts";
 const MINUTE = 60_000;
+/** True for any page on EDGAR's hosts. */
+export function isEdgarUrl(url: string): boolean {
+  try { const host = new URL(url).hostname.toLowerCase(); return host === "sec.gov" || host.endsWith(".sec.gov"); } catch { return false; }
+}
 export class WebSearchService {
   private readonly provider: SearchProvider;
   private readonly store: SearchStore;
@@ -14,8 +18,10 @@ export class WebSearchService {
     const normalized = normalizeSearch(request);
     return this.retrieve("search", normalized, policy, () => this.provider.search(normalized));
   }
-  fetchContent(request: ContentRequest, policy: CachePolicy): Promise<Retrieval<ContentData>> {
+  async fetchContent(request: ContentRequest, policy: CachePolicy): Promise<Retrieval<ContentData>> {
     const normalized = normalizeContent(request);
+    // EDGAR documents come from the SEC archive, never through a web provider's extraction.
+    if (isEdgarUrl(normalized.url)) throw new WebSearchError("archive_only");
     return this.retrieve("content", normalized, policy, () => this.provider.fetchContent(normalized));
   }
   private async retrieve<T extends RetrievalData>(kind: T["kind"], request: unknown, policy: CachePolicy,

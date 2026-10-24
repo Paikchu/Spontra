@@ -1,11 +1,10 @@
-import type { SecReader } from '../financial-data/provider.ts';
+import type { EdgarListings } from '../sec-archive/index.ts';
 import { D1SecRepository } from '../sec/d1.ts';
 import type { IssuerSuggestion } from '../../../../shared/analysis-contract/business-map-admin.ts';
 
 /** One issuer of EDGAR's exchange directory, kept as a tuple: the directory holds ten thousand of them. */
 export type IssuerEntry = [ticker: string, name: string, exchange: string];
 const CACHE_KEY = 'admin:issuer-directory:v1';
-const DIRECTORY_URL = 'https://www.sec.gov/files/company_tickers_exchange.json';
 const FRESH_MS = 24 * 3600_000;
 /** The directory parsed once per isolate; D1 holds it across isolates. */
 let memory: { fetchedAt: string; entries: IssuerEntry[] } | null = null;
@@ -28,14 +27,14 @@ export function parseIssuerDirectory(raw: unknown): IssuerEntry[] {
  * The exchange directory, read from SEC at most once a day and kept in `sec_cache`; when SEC cannot be read, the last
  * copy serves however old it is, and only a first read with no copy at all fails.
  */
-export async function issuerDirectory(db: D1Database, reader: SecReader, now = new Date()): Promise<IssuerEntry[]> {
+export async function issuerDirectory(db: D1Database, listings: Pick<EdgarListings, 'issuerDirectory'>, now = new Date()): Promise<IssuerEntry[]> {
   const fresh = (fetchedAt: string) => now.getTime() - Date.parse(fetchedAt) < FRESH_MS;
   if (memory && fresh(memory.fetchedAt)) return memory.entries;
   const repository = new D1SecRepository(db);
   const stored = await repository.getCache<IssuerEntry[]>(CACHE_KEY).catch(() => null);
   if (stored && fresh(stored.fetchedAt)) { memory = { fetchedAt: stored.fetchedAt, entries: stored.payload }; return stored.payload; }
   try {
-    const entries = parseIssuerDirectory(await (await reader.read(DIRECTORY_URL)).json());
+    const entries = parseIssuerDirectory(await listings.issuerDirectory());
     const fetchedAt = now.toISOString();
     await repository.setCache(CACHE_KEY, entries, fetchedAt).catch(() => undefined);
     memory = { fetchedAt, entries };

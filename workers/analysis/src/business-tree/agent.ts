@@ -380,9 +380,11 @@ async function researchBranch(ctx: BranchContext): Promise<{ branch: TreeBranch;
         const focus = typeof input.focus === "string" ? input.focus.slice(0, 200) : "";
         const terms = keywords([focus, label, ...ancestorsOf(null)]);
         // An SEC document the library holds is read from its passages; anything else from the web.
+        // An SEC document is read from the library alone (docs/sec-archive.md); one it does not hold is not read from the web.
         const page = await stage(`${step}-read`, async () => {
-          const stored = material.kind === "sec" && ctx.filingLibrary ? await ctx.filingLibrary.read(material.url, terms, READ_CHARS) : null;
-          return stored !== null ? { text: stored, own: true } : readPage(ctx, material.url, terms);
+          const stored = material.kind === "sec" ? ctx.filingLibrary ? await ctx.filingLibrary.read(material.url, terms, READ_CHARS) : null : null;
+          if (material.kind === "sec") return stored !== null ? { text: stored, own: true } : { error: "SEC filings are read from the archive only; this one is not archived" };
+          return readPage(ctx, material.url, terms);
         });
         // The library holds only this company's documents: what it returns is the company's own filing.
         if ("own" in page && page.own) material.own = true;

@@ -17,6 +17,7 @@ import { outboxStatement } from "../pipeline/outbox.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import type { FilingBlock } from "../sec/analysis.ts";
 import { prepareSecFiling, selectEventBlocks } from "../sec/pipeline.ts";
+import { archivedFiling } from "../sec-archive/index.ts";
 import { getPublicFilingPage } from "../sec/public-api.ts";
 import { loadStageData } from "../stage/data.ts";
 import type { AgentMessage, AgentReply } from "../tool-loop.ts";
@@ -90,11 +91,13 @@ async function prepareItem(env: AnalysisEnv, ticker: string, subject: ItemSubjec
   let blocks = prepared?.blocks ?? null;
   if (!blocks?.length) {
     const cik = await knownCik(db, ticker);
+    // The filing's text comes from the archive alone; one not archived yet is analysed when the library holds it.
     if (cik) {
       const archive = event.documentUrl.slice(0, event.documentUrl.lastIndexOf("/"));
-      blocks = await prepareSecFiling({ ticker, cik, cikNumber: Number(cik), companyName: ticker, form: event.form, filingDate: event.filedAt, reportDate: event.eventDate, accessionNumber: event.id,
-        primaryDocument: event.documentUrl.slice(event.documentUrl.lastIndexOf("/") + 1), description: event.description, items: event.items.join(","), documentUrl: event.documentUrl, indexUrl: `${archive}/${event.id}-index.htm` },
-      { userAgent: env.SEC_USER_AGENT }).then(p => p.blocks).catch(() => null);
+      blocks = await archivedFiling({ DB: db, SEC_FILINGS: env.SEC_FILINGS, SEC_USER_AGENT: env.SEC_USER_AGENT }, ticker, event.id)
+        .then(stored => prepareSecFiling({ ticker, cik, cikNumber: Number(cik), companyName: ticker, form: event.form, filingDate: event.filedAt, reportDate: event.eventDate, accessionNumber: event.id,
+          primaryDocument: event.documentUrl.slice(event.documentUrl.lastIndexOf("/") + 1), description: event.description, items: event.items.join(","), documentUrl: event.documentUrl, indexUrl: `${archive}/${event.id}-index.htm` }, stored))
+        .then(p => p.blocks).catch(() => null);
     }
   }
   return { documents, earlierAvailable, seed: blocks?.length ? blockPassages(ticker, event, blocks) : [] };

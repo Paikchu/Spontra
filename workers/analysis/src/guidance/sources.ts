@@ -1,5 +1,5 @@
 import type { GuidanceMaterialKind, GuidanceSourceKind } from "../../../../shared/analysis-contract/guidance.ts";
-import { htmlToSecText, streamSecSubmissionParts } from "../sec/sec.ts";
+
 import type { CachePolicy, ContentData, Retrieval, SearchData, SearchRequest, ContentRequest } from "../web-search/types.ts";
 
 /** A document found for an earnings event: readable text, or the reason it could not be read. */
@@ -23,26 +23,6 @@ export function classifyExhibit(text: string): GuidanceMaterialKind {
 export function exhibitTitle(text: string, fallback: string): string {
   const line = text.split("\n").map(l => l.trim()).find(l => l.length >= 12 && l.length <= 160 && /[A-Za-z]/.test(l) && !/^exhibit\b/i.test(l));
   return line ?? fallback;
-}
-
-/**
- * Exhibit 99 documents of one earnings 8-K: the press release, and a shareholder letter or deck
- * when the company files one. The submission's `<TYPE>` marker is authoritative; binary exhibits
- * (uuencoded PDF) are reported as unsupported rather than read as text.
- */
-export async function readSecExhibits(filing: { cikNumber: number; accessionNumber: string; filingDate: string }, fetcher: typeof fetch, userAgent: string): Promise<FoundMaterial[]> {
-  const parts = await streamSecSubmissionParts(filing.cikNumber, filing.accessionNumber, fetcher, userAgent);
-  const folder = `https://www.sec.gov/Archives/edgar/data/${filing.cikNumber}/${filing.accessionNumber.replaceAll("-", "")}/`;
-  return parts.filter(part => /^EX-99/i.test(part.type)).slice(0, 4).map((part): FoundMaterial => {
-    const url = folder + encodeURIComponent(part.filename || `${filing.accessionNumber}.txt`);
-    const base = { sourceKind: "sec" as const, url, publishedAt: filing.filingDate };
-    if (/^begin \d{3} /m.test(part.text.slice(0, 200)) || /\.(pdf|pptx?|xlsx?|zip)$/i.test(part.filename)) {
-      return { ...base, kind: /\.pptx?$/i.test(part.filename) ? "deck" : "press_release", title: `${part.type} ${part.filename}`, unsupported: "binary exhibit" };
-    }
-    const text = /<[a-z][\s\S]*>/i.test(part.text) ? htmlToSecText(part.text) : part.text.trim();
-    if (text.length < MIN_TEXT) return { ...base, kind: "press_release", title: `${part.type} ${part.filename}`, unsupported: "no readable text" };
-    return { ...base, kind: classifyExhibit(text), title: exhibitTitle(text, `${part.type} ${part.filename}`), text };
-  });
 }
 
 export type TranscriptRef = { fiscalYear: number; quarter: 1 | 2 | 3 | 4; date: string };

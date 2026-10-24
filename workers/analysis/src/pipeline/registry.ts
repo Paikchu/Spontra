@@ -20,7 +20,7 @@ export const EVENT_TYPES = [
 export type EventType = typeof EVENT_TYPES[number];
 
 export const TASK_NAMES = [
-  "collect", "history", "reproject", "maintenance", "transcript",
+  "collect", "history", "reproject", "maintenance", "transcript", "archive",
   "map-derive", "archive-prune", "archive-prune-scan",
   "sec-report", "guidance", "events",
   "memory", "company-analysis", "explainer", "tree", "findings", "analyst", "checkup", "items",
@@ -51,6 +51,9 @@ const SECOND = 1000, MINUTE = 60 * SECOND, HOUR = 60 * MINUTE;
 export const TASKS: Record<TaskName, TaskMeta> = {
   // Collects a company's latest complete statements from EDGAR and publishes them.
   "collect": { emits: ["financials.published", "filing.archived", "archive.superseded", "presentation.unresolved"], debounceMs: 30 * SECOND, maxWaitMs: 5 * MINUTE, scope: "data" },
+  // Stores the current reports collection does not read (8-Ks without Item 2.02), so every filing the SEC report
+  // analyses is in the archive (docs/sec-archive.md); no model.
+  "archive": { emits: ["filing.archived", "archive.superseded"], debounceMs: 30 * SECOND, maxWaitMs: 5 * MINUTE, scope: "data" },
   // Brings the company's quarterly revenue history up to date after a publication.
   "history": { emits: ["filing.archived", "archive.superseded"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "data" },
   // Re-projects archived filings whose capital projection predates the current version.
@@ -118,7 +121,8 @@ export type Subscription = { task: TaskName; when?: (event: PipelineEvent) => bo
 export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> = {
   "filing.discovered": [
     { task: "collect", when: e => PERIODIC.test(form(e)) || /^6-K/.test(form(e)) || earnings(e) },
-    { task: "sec-report", when: e => PERIODIC.test(form(e)) || /^(?:8|6)-K/.test(form(e)) },
+    // A current report collection does not read is archived on its own; the SEC report follows `filing.archived`.
+    { task: "archive", when: e => /^8-K/.test(form(e)) && !earnings(e) },
     { task: "events", when: e => /^(?:8-K|6-K|4)(?:\/A)?$/.test(form(e)) },
   ],
   // A company new to the pipeline (admin whitelist, or a data ticker seen by discovery for the first time): its event
@@ -127,7 +131,8 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
   "collection.requested": [{ task: "collect" }, { task: "history" }],
   "maintenance.requested": [{ task: "maintenance" }],
   "financials.published": [{ task: "map-derive" }, { task: "history" }, { task: "explainer" }, { task: "tree" }, { task: "library-links" }],
-  "filing.archived": [{ task: "map-derive" }, { task: "analyst", when: e => /^10-[QK](?:\/A)?$/.test(form(e)) }, { task: "transcript", when: e => /^(?:10-[QK]|20-F|6-K)(?:\/A)?$/.test(form(e)) }, { task: "library" }, { task: "storage-sweep" }],
+  // The SEC report reads filings from the archive alone, so it starts when a filing it analyses is archived.
+  "filing.archived": [{ task: "sec-report", when: e => PERIODIC.test(form(e)) || /^(?:8|6)-K/.test(form(e)) }, { task: "map-derive" }, { task: "analyst", when: e => /^10-[QK](?:\/A)?$/.test(form(e)) }, { task: "transcript", when: e => /^(?:10-[QK]|20-F|6-K)(?:\/A)?$/.test(form(e)) }, { task: "library" }, { task: "storage-sweep" }],
   "library.requested": [{ task: "library" }],
   // A filing newly split into the library is text the checkup notes can now read against the earlier ones.
   "library.prepared": [{ task: "library-cards" }, { task: "checkup" }, { task: "items" }],

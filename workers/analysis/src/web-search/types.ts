@@ -51,7 +51,8 @@ export interface CachePolicy {
   refresh?: boolean;
 }
 export class WebSearchError extends Error {
-  readonly code: "invalid_request" | "not_configured" | "provider_error" | "invalid_response" | "busy" | "lease_lost";
+  /** `archive_only`: SEC filings are never read from the web; the SEC archive holds them (docs/sec-archive.md). */
+  readonly code: "invalid_request" | "not_configured" | "provider_error" | "invalid_response" | "busy" | "lease_lost" | "archive_only";
   readonly retryable: boolean;
   readonly httpStatus?: number;
   constructor(code: WebSearchError["code"], retryable = false, httpStatus?: number) {

@@ -102,8 +102,9 @@ const documents: Record<string, string> = {
 function fixtureReader() {
   const archived: string[] = [];
   const reader: SecReader = {
+    submissions: async () => submissions,
+    issuerDirectory: async () => ({ fields: [], data: [] }),
     read: async url => {
-      if (url === `https://data.sec.gov/submissions/CIK${CIK}.json`) return Response.json(submissions);
       const html = documents[url.slice(FOLDER.length)];
       if (!html) throw new Error("unexpected read " + url);
       return new Response(html);

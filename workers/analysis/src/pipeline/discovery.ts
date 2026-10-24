@@ -1,5 +1,5 @@
 import { canonicalTicker } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
-import { throttledSecReader } from "../financial-data/provider.ts";
+import { edgarListings, type EdgarListings } from "../sec-archive/index.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import { knownCik } from "./identity.ts";
@@ -7,13 +7,19 @@ import { outboxStatement } from "./outbox.ts";
 import { scopeTickers } from "./router.ts";
 
 export const DISCOVERY_HEARTBEAT_KEY = "pipeline:discovery-heartbeat";
-const stateKey = (ticker: string) => `sec:discovery:v1:${ticker}`;
 /** Forms something downstream reads: periodic reports, current reports and insider transactions, with amendments. */
 const ANNOUNCED = /^(?:10-[QK]|20-F|40-F|6-K|8-K|4)(?:\/A)?$/;
 const REMEMBERED = 200;
 
-/** `collectable`: accessions of the filings collection reads (periodic reports, 6-Ks, earnings 8-Ks), newest first. */
-type DiscoveryState = { cik: string; accessions: string[]; checkedAt: string; collectable?: string[] };
+/**
+ * `collectable`: accessions of the filings collection reads (periodic reports, 6-Ks, earnings 8-Ks), newest first.
+ * `current`: the current reports collection does not read, which the `archive` task stores for the SEC report (sec-archive).
+ */
+export type DiscoveryState = { cik: string; accessions: string[]; checkedAt: string; collectable?: string[]; current?: DiscoveredFiling[] };
+export type DiscoveredFiling = { accession: string; form: string; items: string; filingDate: string; reportDate: string; document: string };
+export const discoveryStateKey = (ticker: string) => `sec:discovery:v1:${ticker}`;
+/** The current reports the SEC report analyses that collection does not read: 8-Ks without Item 2.02. */
+const ARCHIVED_ONLY = (f: { form: string; items: string }) => /^8-K(?:\/A)?$/.test(f.form) && !COLLECTED(f);
 /** The forms a collection job lists (provider.ts `readSecDocumentBatch`). */
 const COLLECTED = (f: { form: string; items: string }) => /^(?:10-[QK]|20-F)(?:\/A)?$/.test(f.form) || f.form === "6-K" || (f.form === "8-K" && f.items.includes("2.02"));
 
@@ -34,18 +40,17 @@ export function parseIssuerDirectory(payload: unknown): Record<string, string> {
   }
   return out;
 }
-const issuerDirectory = (reader: { read: (url: string) => Promise<Response> }) => {
+const issuerDirectory = (listings: EdgarListings) => {
   let loaded: Promise<Record<string, string>> | null = null;
-  return () => loaded ??= reader.read("https://www.sec.gov/files/company_tickers_exchange.json").then(r => r.json()).then(parseIssuerDirectory);
+  return () => loaded ??= listings.issuerDirectory().then(parseIssuerDirectory);
 };
-type Filing = { accession: string; form: string; items: string; filingDate: string };
 
-function recentFilings(payload: unknown): Filing[] {
+function recentFilings(payload: unknown): DiscoveredFiling[] {
   const recent = (payload as { filings?: { recent?: Record<string, unknown[]> } } | null)?.filings?.recent;
   if (!recent || !Array.isArray(recent.accessionNumber)) return [];
   const column = (name: string, i: number) => String((recent[name] as unknown[] | undefined)?.[i] ?? "");
   return recent.accessionNumber.slice(0, REMEMBERED).map((_, i) => ({
-    accession: column("accessionNumber", i), form: column("form", i), items: column("items", i), filingDate: column("filingDate", i),
+    accession: column("accessionNumber", i), form: column("form", i), items: column("items", i), filingDate: column("filingDate", i), reportDate: column("reportDate", i), document: column("primaryDocument", i),
   })).filter(f => /^\d{10}-\d{2}-\d{6}$/.test(f.accession));
 }
 
@@ -59,9 +64,9 @@ function recentFilings(payload: unknown): Filing[] {
 export async function runSecDiscovery(env: AnalysisEnv, now = new Date(), fetcher: typeof fetch = fetch) {
   const db = env.DB!;
   const repository = new D1SecRepository(db);
-  const reader = throttledSecReader(env.SEC_USER_AGENT, fetcher, 200);
+  const listings = edgarListings(env, { fetcher });
   const result = { checked: 0, discovered: [] as string[], baseline: [] as string[], bootstrapped: [] as string[], unknown: [] as string[], failed: [] as string[] };
-  const directory = issuerDirectory(reader);
+  const directory = issuerDirectory(listings);
   for (const ticker of await scopeTickers(env, "data")) {
     let cik = await knownCik(db, ticker);
     let bootstrap = false;
@@ -75,15 +80,15 @@ export async function runSecDiscovery(env: AnalysisEnv, now = new Date(), fetche
     }
     if (!cik) { result.unknown.push(ticker); continue; }
     try {
-      const filings = recentFilings(await (await reader.read(`https://data.sec.gov/submissions/CIK${cik}.json`)).json());
+      const filings = recentFilings(await listings.submissions(cik));
       if (!filings.length) throw new Error("EMPTY_SUBMISSIONS");
-      const previous = (await repository.getCache<DiscoveryState>(stateKey(ticker)))?.payload;
+      const previous = (await repository.getCache<DiscoveryState>(discoveryStateKey(ticker)))?.payload;
       const at = now.toISOString();
       const known = new Set(previous?.accessions ?? []);
       const fresh = previous ? filings.filter(f => !known.has(f.accession) && ANNOUNCED.test(f.form)) : [];
       await db.batch([
         db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at")
-          .bind(stateKey(ticker), JSON.stringify({ cik, accessions: filings.map(f => f.accession), checkedAt: at, collectable: filings.filter(COLLECTED).map(f => f.accession).slice(0, 20) } satisfies DiscoveryState), at),
+          .bind(discoveryStateKey(ticker), JSON.stringify({ cik, accessions: filings.map(f => f.accession), checkedAt: at, collectable: filings.filter(COLLECTED).map(f => f.accession).slice(0, 20), current: filings.filter(ARCHIVED_ONLY).slice(0, 40) } satisfies DiscoveryState), at),
         // Oldest first, so subscribers that read the newest state see the filings in the order they were made.
         ...fresh.reverse().map(f => outboxStatement(db, { type: "filing.discovered", ticker, cik, detail: { form: f.form, items: f.items, accession: f.accession } }, at)),
         ...(bootstrap ? [outboxStatement(db, { type: "company.added", ticker, cik }, at), outboxStatement(db, { type: "collection.requested", ticker, cik }, at)] : []),

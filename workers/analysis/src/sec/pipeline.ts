@@ -1,4 +1,5 @@
-import { throttledSecReader } from "../financial-data/provider.ts";
+import type { EdgarListings } from "../sec-archive/gateway.ts";
+import type { ArchivedFiling } from "../sec-archive/archive.ts";
 import { validateAiFiscalPeriod, FISCAL_PERIOD_INSTRUCTION } from "./fiscal-period-ai.ts";
 import { enforceDiscoveryCoverage } from "./discovery.ts";
 import type { SecSourceMaterial } from "../../../../shared/analysis-contract/sec-presentation.ts";
@@ -38,7 +39,6 @@ import {
   normalizeSecSummary,
   parseSecSubmissions,
   SEC_SUMMARY_VERSION,
-  streamSecSubmissionParts,
   type SecCompany,
   type SecDocument,
   type SecFiling,
@@ -58,14 +58,9 @@ export const EXHIBIT_SCOPE_WARNING = "Materials are this accession's filing body
 export const PRESENTATION_FALLBACK_WARNING = "The model's report layout failed validation; the complete standard report is kept.";
 
 export type SecDiscoveryRuntime = {
-  userAgent: string;
-  fetcher?: typeof fetch;
+  /** EDGAR's listings (sec-archive): the issuer directory and the company's submission list. */
+  listings: EdgarListings;
   now?: () => Date;
-};
-
-export type SecPreparationRuntime = {
-  userAgent: string;
-  fetcher?: typeof fetch;
 };
 
 /** Everything the planning, review and synthesis stages need — no filing text. */
@@ -91,16 +86,12 @@ export type PreparedSecFiling = PreparedSecFilingMeta & {
 export async function discoverSecTicker(rawTicker: string, runtime: SecDiscoveryRuntime): Promise<{ feed: SecFilingFeed; filings: SecFiling[] }> {
   const ticker = cleanSecTicker(rawTicker);
   const now = (runtime.now ?? (() => new Date()))();
-  // The same paced reader as collection: SEC's fair-access limit is per client, not per task.
-  const reader = throttledSecReader(runtime.userAgent, runtime.fetcher ?? fetch, 200);
-  const request = (url: string) => reader.read(url);
-  const tickerMap = parseTickerMap(await (await request("https://www.sec.gov/files/company_tickers_exchange.json")).json());
+  const tickerMap = parseTickerMap(await runtime.listings.issuerDirectory());
   const company = tickerMap[ticker];
   if (!company) {
     return { feed: { ticker, company: null, filings: [], fetchedAt: now.toISOString(), status: "unsupported" }, filings: [] };
   }
-  const submissions = await request(`https://data.sec.gov/submissions/CIK${company.cik}.json`);
-  const allFilings = parseSecSubmissions(await submissions.json(), company, 40);
+  const allFilings = parseSecSubmissions(await runtime.listings.submissions(company.cik), company, 40);
   return {
     feed: {
       ticker,
@@ -113,48 +104,21 @@ export async function discoverSecTicker(rawTicker: string, runtime: SecDiscovery
   };
 }
 
-export async function prepareSecFiling(filing: SecFiling, runtime: SecPreparationRuntime): Promise<PreparedSecFiling> {
-  if (/^(10-K|10-Q|20-F|8-K|6-K)(\/A)?$/.test(filing.form)) {
-    try {
-      return await prepareFilingWithExhibits(filing, runtime);
-    } catch {
-      // Exhibit discovery is best-effort; fall back to the single-document path below.
-    }
-  }
-  const response = await (runtime.fetcher ?? fetch)(filing.documentUrl, {
-    cache: "no-store",
-    headers: { accept: "text/html,application/xhtml+xml,text/plain,*/*", "user-agent": runtime.userAgent },
-    signal: AbortSignal.timeout(30_000),
-  });
-  if (!response.ok) throw new Error(`SEC filing HTTP ${response.status}`);
-  const document = htmlToSecDocument(await response.text());
-  if (!document.text) throw new Error("SEC filing document did not contain readable text");
-  const blocks = buildFilingBlocks(document.text, filing.accessionNumber);
-  if (!blocks.length) throw new Error("SEC filing did not produce analysis blocks");
-  const { periodId, periodScope } = buildPeriodIdentity(filing.ticker, filing.form, filing.reportDate);
-  return {
-    filing,
-    periodId,
-    periodScope,
-    sourceMaterials: [{ type: filing.form, filename: filing.primaryDocument, url: filing.documentUrl, status: "read" }],
-    materialWarnings: ["Only the filing body was read; the full set of exhibits could not be read, and standalone decks on the company IR site were not searched."],
-    outline: buildSecOutline(document),
-    blockIds: blocks.map((block) => `ev:${block.blockId}`),
-    blocks,
-    document,
-  };
-}
+/** Thrown when the archive holds nothing for the filing yet; the report waits for `filing.archived`. */
+export const SEC_ARCHIVE_MISSING = "SEC_ARCHIVE_MISSING";
+
+type ArchivedPart = { type: string; filename: string; text: string };
 
 /**
- * Earnings releases and textual investor decks can live in exhibits like EX-99.1.
- * Streams the same-accession full-submission envelope, parses the body
- * and each exhibit into tagged blocks, and offsets spans so everything stays consistent with one
- * combined document text. Falls back to the single-document path when the envelope is unavailable.
+ * The filing's analysis text from the archive alone (docs/sec-archive.md): the body and the exhibits the collector
+ * stored with it, each parsed into tagged blocks whose spans are offset into one combined document text. Nothing is
+ * downloaded here; a filing the archive does not hold yet is `SEC_ARCHIVE_MISSING`.
  */
-async function prepareFilingWithExhibits(filing: SecFiling, runtime: SecPreparationRuntime): Promise<PreparedSecFiling> {
-  const parts = await streamSecSubmissionParts(filing.cikNumber, filing.accessionNumber, runtime.fetcher ?? fetch, runtime.userAgent);
-  if (!parts.some((part) => part.type.toUpperCase() === filing.form.toUpperCase())) throw new Error("SEC submission missing primary filing");
-  // Body first, exhibits in stream order — keeps existing "document order" semantics.
+export async function prepareSecFiling(filing: SecFiling, archived: ArchivedFiling | null): Promise<PreparedSecFiling> {
+  if (!archived || archived.accession !== filing.accessionNumber) throw new Error(SEC_ARCHIVE_MISSING);
+  const parts: ArchivedPart[] = archived.documents.map(d => ({ type: d.role === "primary" ? filing.form : d.type, filename: d.filename, text: d.html }));
+  if (!parts.some((part) => part.type.toUpperCase() === filing.form.toUpperCase())) throw new Error("SEC archive holds no body for the filing");
+  // Body first, exhibits in archive order — keeps existing "document order" semantics.
   const ordered = [...parts].sort((left, right) => {
     const leftBody = left.type.toUpperCase() === filing.form.toUpperCase() ? 0 : 1;
     const rightBody = right.type.toUpperCase() === filing.form.toUpperCase() ? 0 : 1;
@@ -175,7 +139,7 @@ async function prepareFilingWithExhibits(filing: SecFiling, runtime: SecPreparat
     partBlocks.push({ blocks: buildFilingBlocks(document.text, `${filing.accessionNumber}:${part.filename}`), base, type: part.type, isBody: part.type.toUpperCase() === filing.form.toUpperCase() });
     base += document.text.length + 2; // 2 = "\n\n" separator in the combined text
   }
-  if (!documents.length) throw new Error("SEC submission stream contained no readable text");
+  if (!documents.length) throw new Error("SEC archive contained no readable text");
   if (!sourceMaterials.some((material) => material.type === filing.form && material.status === "read")) throw new Error("Primary filing is unreadable");
   const combinedText = documents.map((document) => document.text).join("\n\n");
   const blocks = partBlocks.flatMap(({ blocks: partBlocksForPart, base: partBase, type, isBody }) =>

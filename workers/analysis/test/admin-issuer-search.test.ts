@@ -47,7 +47,7 @@ test("a fragment ranks the ticker itself, then ticker and name starts, later nam
 test("the directory is read from SEC once a day, served from D1 between reads, and the stored copy serves when SEC fails", async () => {
   const db = database();
   let reads = 0, fail = false;
-  const reader = { read: async () => { reads++; if (fail) throw new Error("SEC_ACCESS_PAUSED"); return new Response(JSON.stringify(directory)); } };
+  const reader = { issuerDirectory: async () => { reads++; if (fail) throw new Error("SEC_ACCESS_PAUSED"); return directory; } };
   const first = await issuerDirectory(db, reader, new Date("2026-10-22T08:00:00Z"));
   assert.equal(first.length, 12);
   assert.equal(reads, 1);

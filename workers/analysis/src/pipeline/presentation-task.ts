@@ -1,9 +1,9 @@
 import { aiIsEnabled } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 import { modelFor, reasoningFor } from "../ai-config.ts";
-import { readArchivedDocument } from "../financial-data/disclosure-audit.ts";
 import { readReportedFacts } from "../financial-data/parser.ts";
 import { degraded, judgementStatement, judgeStructure, presentationProfile, type JudgeModel } from "../financial-data/presentation.ts";
-import { readFilingDocuments, throttledSecReader } from "../financial-data/provider.ts";
+import { readFilingDocuments } from "../financial-data/provider.ts";
+import { archivingReader } from "../sec-archive/index.ts";
 import { readCompletePublicationForTicker } from "../financial-data/publication.ts";
 import { SecModelOutputError } from "../model-stream.ts";
 import { callWorkerSecModel, type AnalysisEnv } from "../operations.ts";
@@ -53,10 +53,8 @@ export const PRESENTATION_TASKS = {
       if (!line || !cik) return { status: "done", detail: { skipped: "no source filing" } };
       const profile = await presentationProfile(db, cik);
       if (profile?.accession === line.accession && profile.judge_version === PRESENTATION_VERSION) return { status: "done", detail: { skipped: "this filing was judged", status: profile.status } };
-      const archive = { DB: db, SEC_FILINGS: env.SEC_FILINGS };
-      const reader = throttledSecReader(env.SEC_USER_AGENT, fetch, 1000);
-      reader.archived = url => readArchivedDocument(archive, ticker, url);
-      const [document] = await readFilingDocuments(line.url, reader, line.accession);
+      // The lineage filing is in the archive (the collector stored it); the reader downloads only when it is not.
+      const [document] = await readFilingDocuments(line.url, archivingReader({ DB: db, SEC_FILINGS: env.SEC_FILINGS, SEC_USER_AGENT: env.SEC_USER_AGENT }, ticker), line.accession);
       const source = newest!.sources.find(s => s.id === line.accession);
       const { facts } = readReportedFacts(document.html, { url: line.url, accession: line.accession, filedAt: source?.publishedAt ?? newest!.reportedAt ?? "", cik, industry: "standard" });
       const modelVersion = modelFor(env, "presentation");

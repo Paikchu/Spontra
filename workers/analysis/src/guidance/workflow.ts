@@ -20,7 +20,8 @@ import type { SecFilingFeed } from "../sec/sec.ts";
 import type { WorkflowStepContextLike, WorkflowStepLike } from "../workflow-core.ts";
 import { extractGuidance, GUIDANCE_EXTRACTOR_VERSION, GUIDANCE_MAX_OUTPUT_TOKENS, type GuidanceModelCall } from "./extract.ts";
 import { libraryExhibits } from "../filing-library/exhibits.ts";
-import { findIrDeck, readSecExhibits, reportedTranscriptRef, type FoundMaterial, type TranscriptRef } from "./sources.ts";
+import { archivedExhibits } from "../sec-archive/index.ts";
+import { findIrDeck, reportedTranscriptRef, type FoundMaterial, type TranscriptRef } from "./sources.ts";
 import { GuidanceStore, type StoredMaterial } from "./store.ts";
 import { AiRunStore } from "../ai-runs/store.ts";
 import { transcriptForEvent } from "../transcripts/library.ts";
@@ -46,7 +47,8 @@ export type GuidanceDeps = {
   runId?: string;
   model?: GuidanceModelCall;
   deckSearch?: Parameters<typeof findIrDeck>[0] | null;
-  secExhibits?: typeof readSecExhibits;
+  /** The release's exhibits, as the archive holds them (a test's stand-in); null when the archive has none. */
+  secExhibits?: (ticker: string, accession: string, filingDate: string) => Promise<FoundMaterial[] | null>;
 };
 
 class BudgetExhausted extends Error {}
@@ -164,7 +166,6 @@ export async function publishGuidance(env: AnalysisEnv, ticker: string, now: str
  */
 export async function executeGuidanceWorkflow(params: GuidanceWorkflowParams, step: GuidanceStep, env: AnalysisEnv, deps: GuidanceDeps = {}) {
   assertTrackedTicker(env, params.ticker);
-  const fetcher = deps.fetcher ?? fetch;
   const store = () => new GuidanceStore(requireDb(env), env.SEC_FILINGS);
   const time = (name: string) => step.do(`guidance-time-${name}`, async () => new Date().toISOString());
 
@@ -198,10 +199,12 @@ export async function executeGuidanceWorkflow(params: GuidanceWorkflowParams, st
   // A re-extraction under a new extractor version also takes every material an earlier run stored for this
   // event (a transcript, an IR deck), so nothing is fetched or searched for again.
   const { materials: sec, ref } = await step.do("guidance-sec", async () => {
-    // The filing library already holds the release as text; EDGAR is read only when it does not.
+    // The filing library holds the release as split text; before it is split, the archived documents are read as
+    // they were filed. EDGAR itself is never read here (docs/sec-archive.md).
+    const exhibits = deps.secExhibits ?? ((ticker, accession, date) => archivedExhibits({ DB: requireDb(env), SEC_FILINGS: env.SEC_FILINGS, SEC_USER_AGENT: env.SEC_USER_AGENT }, ticker, accession, date));
     const found = !context.exhibits || context.cikNumber === null ? []
       : (!deps.secExhibits && env.DB ? await libraryExhibits(env.DB, params.ticker, params.accession, params.eventDate) : null)
-        ?? await (deps.secExhibits ?? readSecExhibits)({ cikNumber: context.cikNumber, accessionNumber: params.accession, filingDate: params.eventDate }, fetcher, env.SEC_USER_AGENT);
+        ?? await exhibits(params.ticker, params.accession, params.eventDate) ?? [];
     const saved = await saveAll(found);
     const stored = (await store().eventMaterials(params.ticker, params.accession)).filter(m => !saved.some(s => s.id === m.id));
     return { materials: [...saved, ...stored], ref: context.ref ?? reportedTranscriptRef(found, params.eventDate) };

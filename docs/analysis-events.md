@@ -107,11 +107,11 @@ Cron 和两个队列消费者的入口各做两次主键查询：补发发件箱
 
 | 事件 | 谁发出 | 谁订阅 |
 |---|---|---|
-| `filing.discovered` | SEC 申报发现（Cron） | 财务采集、SEC 财报、基本面、指引、事件 |
+| `filing.discovered` | SEC 申报发现（Cron） | 财务采集、归档（非业绩 8-K）、事件 |
 | `company.added` | 后台增加数据公司 | 财务采集、补历史季度 |
 | `maintenance.requested` | 后台财务维护 | 财务维护 |
 | `financials.published` | `D1CompleteStore.publish`（财务采集、财务维护都经过它） | 地图推导、业务解读、业务脑图、补历史季度 |
-| `filing.archived` | `archiveFilingDisclosures`（新增，或内容、口径变化时） | 地图推导、Transcript |
+| `filing.archived` | `archiveFilingDisclosures`（新增，或内容、口径变化时；财务采集、补历史、维护、归档任务都经过它） | SEC 财报（定期报告、8-K、6-K）、地图推导、Transcript、文件库、要点分析师、存储清理 |
 | `archive.superseded` | `archiveFilingDisclosures`（替换了旧副本时） | 存档清理 |
 | `map.derived` | 地图推导（快照确实重建时） | 要点 |
 | `report.published` | SEC 财报 Workflow | 事件 |
