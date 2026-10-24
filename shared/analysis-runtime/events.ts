@@ -219,10 +219,40 @@ export function insiderTone(events: CompanyEvent[], event: CompanyEvent): Inside
   return t.rule10b51 === true || cadence.regular ? "planned" : "routine";
 }
 
+export type HoldingPoint = { id: string; date: string; held: number; sold: number; proceeds: number; bought: number; cost: number; exercised: number; planned: boolean | null };
+
 /** The holding path one owner's filings trace, oldest first: each filing's held-after figure, for the ladder. */
-export function holdingPath(events: CompanyEvent[], ownerCik: string, months = 24, until?: string): Array<{ id: string; date: string; held: number; sold: number; bought: number; exercised: number; planned: boolean | null }> {
+export function holdingPath(events: CompanyEvent[], ownerCik: string, months = 24, until?: string): HoldingPoint[] {
   const end = until ? Date.parse(until) : Infinity, start = (Number.isFinite(end) ? end : Date.now()) - months * 30.4 * DAY_MS;
   return events.filter(e => e.insider?.ownerCik === ownerCik && e.insider.heldAfter != null && Date.parse(e.eventDate) <= end && Date.parse(e.eventDate) >= start)
-    .map(e => ({ id: e.id, date: e.eventDate, held: e.insider!.heldAfter!, sold: e.insider!.sold?.shares ?? 0, bought: e.insider!.bought?.shares ?? 0, exercised: e.insider!.exercised, planned: e.insider!.rule10b51 }))
+    .map(e => ({
+      id: e.id, date: e.eventDate, held: e.insider!.heldAfter!, sold: e.insider!.sold?.shares ?? 0, proceeds: e.insider!.sold?.proceeds ?? 0,
+      bought: e.insider!.bought?.shares ?? 0, cost: e.insider!.bought?.cost ?? 0, exercised: e.insider!.exercised, planned: e.insider!.rule10b51,
+    }))
     .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/** Shares outstanding as a filing reports them, dated at the period end. */
+export type ShareCount = { date: string; shares: number };
+
+/** The share count in force on a date: the latest reported on or before it, else the earliest reported after it. */
+export function outstandingAt(counts: ShareCount[], date: string): ShareCount | null {
+  let at: ShareCount | null = null;
+  for (const c of counts) if (c.date <= date && (!at || c.date > at.date)) at = c;
+  return at ?? counts.reduce<ShareCount | null>((first, c) => !first || c.date < first.date ? c : first, null);
+}
+
+/** A filing's direct holding as a percent of shares outstanding, just before its trades and after them. */
+export type StakeChange = { before: number | null; after: number | null; /** The share count both are read against. */ outstanding: ShareCount };
+
+/**
+ * The owner's stake in the company around one filing: the direct holding before and after its sales and purchases,
+ * over the share count in force on the event date. Null when no share count is known or the holding after is not
+ * disclosed; a percent is never estimated from a missing figure.
+ */
+export function stakeChange(t: InsiderTransaction, counts: ShareCount[], date: string): StakeChange | null {
+  const outstanding = outstandingAt(counts.filter(c => c.shares > 0 && Number.isFinite(c.shares)), date);
+  if (!outstanding || t.heldAfter == null) return null;
+  const prior = t.heldAfter + (t.sold?.shares ?? 0) - (t.bought?.shares ?? 0);
+  return { before: prior >= 0 ? prior / outstanding.shares * 100 : null, after: t.heldAfter / outstanding.shares * 100, outstanding };
 }

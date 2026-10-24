@@ -7,7 +7,7 @@ import { getLocale, labels, messages } from "@/packages/web/src/i18n";
 import { SourceLanguage, langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import { perShare, shortPeriod } from "@/shared/analysis-runtime/locale";
 import type { FindingData } from "@/shared/analysis-runtime/findings";
-import { EVENT_CLASS_LABEL, dollars, eventTitle, eventTitleLang, insiderLens, shares, shortDate, type InsiderLensModel } from "./events-model";
+import { EVENT_CLASS_LABEL, dollars, eventTitle, eventTitleLang, insiderLens, shareCounts, shares, shortDate, type InsiderLensModel } from "./events-model";
 import { ItemAnalysisBody, useItemAnalysis, useVerifiedAnalysis } from "./ItemAnalysis";
 
 const ITEM_LABEL = labels({
@@ -38,6 +38,7 @@ const m = messages({
   otherSellers: "Other insiders selling", people: (n: number) => `${n} ${n === 1 ? "person" : "people"}`, window: (days: number) => `${days}-day window`,
   singleFiling: "Single filing", path: (owner: string, from: string, to: string, sales: number) => `${owner} holding path, ${from} to ${to}, ${sales} ${sales === 1 ? "sale" : "sales"}`,
   directHolding: "Direct holding", sale: "Sale",
+  stake: "Stake", ofOutstanding: (count: string, asOf: string) => `Direct holding ÷ ${count} outstanding as of ${asOf}`,
 }, {
   event: (title: string) => `事件：${title}`, filed: "提交日期", eventOn: "事件日期", newer: "较新事件", older: "较早事件", close: "关闭事件",
   analystView: "分析观点", aiSummary: "AI 摘要", noSummary: "无摘要",
@@ -51,6 +52,7 @@ const m = messages({
   otherSellers: "其他内部人卖出", people: (n: number) => `${n} 人`, window: (days: number) => `${days} 天窗口`,
   singleFiling: "仅一份文件", path: (owner: string, from: string, to: string, sales: number) => `${owner} 持股路径，${from} 至 ${to}，卖出 ${sales} 次`,
   directHolding: "直接持股", sale: "卖出",
+  stake: "持股比例", ofOutstanding: (count: string, asOf: string) => `直接持股 ÷ 流通股 ${count}（截至 ${asOf}）`,
 });
 
 /**
@@ -72,7 +74,8 @@ export function EventLens({ event, publication, ticker, data, updates, nodeColor
   index: number;
   count: number;
 }) {
-  const insider = useMemo(() => insiderLens(publication, event), [publication, event]);
+  const counts = useMemo(() => shareCounts(data.fundamentals), [data.fundamentals]);
+  const insider = useMemo(() => insiderLens(publication, event, counts), [publication, event, counts]);
   const [showQuiet, setShowQuiet] = useState(false);
   const analysis = useItemAnalysis(ticker, event.id, updates);
   const verified = useVerifiedAnalysis(analysis, data, ticker);
@@ -91,7 +94,7 @@ export function EventLens({ event, publication, ticker, data, updates, nodeColor
       </div>
     </header>
     <ItemAnalysisBody analysis={analysis} verified={verified} ticker={ticker} nodeColor={nodeColor} fallback={<div className="lens-doc"><div className="lens-doc-row"><div className="lens-doc-cell">
-      {insider && <InsiderLadder model={insider} event={event} />}
+      {insider && !insider.stake && <InsiderLadder model={insider} event={event} />}
       {insider && <InsiderReading model={insider} event={event} />}
       {event.summary ? <>
         <ul className="event-bullets">{event.summary.bullets.map((b, i) => <li key={i} data-importance={b.importance} lang={langOf(b.detail)}><b>{b.label}</b>{b.detail}</li>)}</ul>
@@ -144,6 +147,7 @@ function InsiderReading({ model, event }: { model: InsiderLensModel; event: Comp
       {!t.sold && !t.bought && t.exercised && <TableRow><TableHead scope="row">{m.sharesExercised}</TableHead><TableCell><b>{shares(t.exercised)}</b></TableCell></TableRow>}
       {t.sold && <TableRow><TableHead scope="row">{m.priorShare}</TableHead><TableCell><b>{model.share != null ? `${model.share.toFixed(1)}%` : "—"}</b><em>{m.threshold(INSIDER_RULES.attentionShare)}</em></TableCell></TableRow>}
       <TableRow><TableHead scope="row">{m.heldAfter}</TableHead><TableCell><b>{t.heldAfter != null ? shares(t.heldAfter) : m.notDisclosed}</b></TableCell></TableRow>
+      {model.stake && <TableRow><TableHead scope="row">{m.stake}</TableHead><TableCell><b>{model.stake.before != null && model.stake.before !== model.stake.after ? `${stake(model.stake.before)} → ` : ""}{stake(model.stake.after!)}</b><em>{m.ofOutstanding(shares(model.stake.outstanding.shares), shortPeriod(model.stake.outstanding.date))}</em></TableCell></TableRow>}
       <TableRow><TableHead scope="row">{m.plan}</TableHead><TableCell><b>{t.rule10b51 === true ? m.yes : t.rule10b51 === false ? m.no : m.notMarked}</b>{t.planAdoptedOn && <em>{m.adopted(t.planAdoptedOn)}</em>}</TableCell></TableRow>
       <TableRow><TableHead scope="row">{m.salesYear}</TableHead><TableCell><b>{m.sales(model.cadence.sales.length)} · {shares(model.cadence.totalShares)}</b><em>{model.cadence.intervalDays != null ? `${m.interval(Math.round(model.cadence.intervalDays))}${model.cadence.regular ? m.steady : ""}` : m.noInterval} · {m.total(dollars(model.cadence.totalProceeds))}</em></TableCell></TableRow>
       <TableRow><TableHead scope="row">{m.otherSellers}</TableHead><TableCell><b>{m.people(model.cluster.length)}</b><em>{m.window(INSIDER_RULES.clusterDays)}</em></TableCell></TableRow>
@@ -171,23 +175,31 @@ function InsiderLadder({ model, event }: { model: InsiderLensModel; event: Compa
   const y = (v: number) => 92 - (v - bottom) / range * 84;
   // The staircase: hold flat from each filing to the next, then step to the new level.
   const d = path.map((p, i) => `${i ? "L" : "M"}${x(p.date).toFixed(2)},${y(i ? path[i - 1].held : p.held + p.sold - p.bought - p.exercised).toFixed(2)}L${x(p.date).toFixed(2)},${y(p.held).toFixed(2)}`).join("") + `L96,${y(path[path.length - 1].held).toFixed(2)}`;
-  const maxProceeds = Math.max(1, ...model.cadence.sales.map(s => s.proceeds), ...path.map(p => p.sold * (event.insider!.sold?.averagePrice ?? 0)));
   const sales = path.filter(p => p.sold > 0);
+  const maxProceeds = Math.max(1, ...sales.map(p => p.proceeds));
   return <div className="insider-ladder" role="img" aria-label={m.path(event.insider!.ownerName, path[0].date, path[path.length - 1].date, sales.length)}>
     <div className="lens-legend"><span><i className="ladder-step" />{m.directHolding}</span><span><i className="ladder-dot" />{m.sale}</span><span><i className="ladder-dot ladder-dot--planned" />{m.plan}</span></div>
-    <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-      {[0.25, 0.5, 0.75].map(t => <line key={t} className="ladder-grid" x1="4" x2="96" y1={8 + t * 84} y2={8 + t * 84} vectorEffect="non-scaling-stroke" />)}
-      <path className="ladder-path" d={d} vectorEffect="non-scaling-stroke" />
-    </svg>
-    <div className="ladder-marks">
-      {sales.map(p => {
-        const proceeds = model.cadence.sales.find(s => s.id === p.id)?.proceeds ?? 0;
-        const size = 8 + Math.sqrt(Math.max(proceeds, 1) / maxProceeds) * 18;
-        return <i key={p.id} className="ladder-dot" data-planned={p.planned === true || undefined} data-focus={p.id === event.id || undefined}
-          style={{ left: `${x(p.date)}%`, top: `${y(p.held)}%`, width: size, height: size } as CSSProperties} title={`${p.date} · ${shares(p.sold)} · ${dollars(proceeds)}`} />;
-      })}
+    <div className="ladder-plot">
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+        {[0.25, 0.5, 0.75].map(t => <line key={t} className="ladder-grid" x1="4" x2="96" y1={8 + t * 84} y2={8 + t * 84} vectorEffect="non-scaling-stroke" />)}
+        <path className="ladder-path" d={d} vectorEffect="non-scaling-stroke" />
+      </svg>
+      <div className="ladder-marks">
+        {sales.map(p => {
+          const size = 8 + Math.sqrt(Math.max(p.proceeds, 1) / maxProceeds) * 18;
+          return <i key={p.id} className="ladder-dot" data-planned={p.planned === true || undefined} data-focus={p.id === event.id || undefined}
+            style={{ left: `${x(p.date)}%`, top: `${y(p.held)}%`, width: size, height: size } as CSSProperties} title={`${p.date} · ${shares(p.sold)} · ${dollars(p.proceeds)}`} />;
+        })}
+      </div>
+      <div className="ladder-scale"><span style={{ top: "8%" }}>{shares(top)}</span><span style={{ top: "92%" }}>{shares(bottom)}</span></div>
     </div>
     <div className="lens-axis"><span style={{ left: "4%" }} data-edge="start">{shortPeriod(path[0].date)}</span><span style={{ left: "96%" }} data-edge="end">{shortPeriod(path[path.length - 1].date)}</span></div>
-    <div className="ladder-scale"><span>{shares(top)}</span><span>{shares(bottom)}</span></div>
   </div>;
+}
+
+/** "0.0251%": three significant figures however small the stake, one decimal at least, six at most. */
+function stake(v: number): string {
+  if (v <= 0) return "0%";
+  if (v < 5e-7) return "<0.000001%";
+  return `${v.toFixed(Math.min(6, Math.max(1, 2 - Math.floor(Math.log10(v)))))}%`;
 }
