@@ -1,7 +1,7 @@
 import type { BusinessFlowQuarter } from "@/shared/analysis-contract/business-flow";
 import type { CompanyEvent, EventClass, EventsPublication } from "@/shared/analysis-contract/events";
 import type { FindingFundamentals } from "@/shared/analysis-runtime/findings";
-import { DAY_MS, EVENT_CLASS_LABEL as EVENT_CLASS_LABEL_EN, eventClassLabel, holdingPath, insiderCadence, insiderCluster, insiderTone, insiderVerdict, isQuietInsider, ownershipPath, soldShareOfHolding, type InsiderTone, type InsiderVerdict, type Ownership, type ShareCount } from "@/shared/analysis-runtime/events";
+import { DAY_MS, EVENT_CLASS_LABEL as EVENT_CLASS_LABEL_EN, eventClassLabel, holdingPath, insiderCadence, insiderCluster, insiderTone, insiderVerdict, isQuietInsider, soldShareOfHolding, stakeChange, type InsiderTone, type InsiderVerdict, type ShareCount, type StakeChange } from "@/shared/analysis-runtime/events";
 import { compactMoney, compactShares, shortPeriod } from "@/shared/analysis-runtime/locale";
 import { getLocale, labels, messages } from "@/packages/web/src/i18n";
 import { langOf } from "@/packages/web/src/i18n/SourceLanguage";
@@ -93,8 +93,8 @@ export type InsiderLensModel = {
   cadence: ReturnType<typeof insiderCadence>;
   cluster: ReturnType<typeof insiderCluster>;
   path: ReturnType<typeof holdingPath>;
-  /** The owner's direct holding as a share of the company, for a sale or a purchase; null for other filings or without a share count. */
-  ownership: Ownership | null;
+  /** The owner's direct holding as a share of the company before and after a sale or purchase; null for other filings or without a share count. */
+  stake: StakeChange | null;
 };
 
 /** Shares outstanding over time, from the company's SEC fundamentals; empty when the series is not served. */
@@ -110,9 +110,8 @@ export function insiderLens(publication: EventsPublication, event: CompanyEvent,
   const cluster = insiderCluster(publication.events, event.id);
   const share = soldShareOfHolding(t);
   const tone = insiderTone(publication.events, event);
-  const path = holdingPath(publication.events, t.ownerCik, 24, event.eventDate);
-  const ownership = t.sold || t.bought ? ownershipPath(path, counts, { ...t, date: event.eventDate }) : null;
-  return { verdict: insiderVerdict(t, cadence, cluster, getLocale()), tone, share, cadence, cluster, path, ownership };
+  const stake = t.sold || t.bought ? stakeChange(t, counts, event.eventDate) : null;
+  return { verdict: insiderVerdict(t, cadence, cluster, getLocale()), tone, share, cadence, cluster, path: holdingPath(publication.events, t.ownerCik, 24, event.eventDate), stake };
 }
 
 export const CLASS_TONE: Record<EventClass, string> = {

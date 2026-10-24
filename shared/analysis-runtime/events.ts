@@ -236,45 +236,23 @@ export function holdingPath(events: CompanyEvent[], ownerCik: string, months = 2
 export type ShareCount = { date: string; shares: number };
 
 /** The share count in force on a date: the latest reported on or before it, else the earliest reported after it. */
-export function outstandingAt(counts: ShareCount[], date: string): number | null {
-  let at: ShareCount | undefined;
+export function outstandingAt(counts: ShareCount[], date: string): ShareCount | null {
+  let at: ShareCount | null = null;
   for (const c of counts) if (c.date <= date && (!at || c.date > at.date)) at = c;
-  at ??= counts.reduce<ShareCount | undefined>((first, c) => !first || c.date < first.date ? c : first, undefined);
-  return at ? at.shares : null;
+  return at ?? counts.reduce<ShareCount | null>((first, c) => !first || c.date < first.date ? c : first, null);
 }
 
-export type OwnershipPoint = { date: string; percent: number; /** The owner's filing this point is, or null where only the share count moved. */ filing: string | null };
-
-export type Ownership = {
-  /** Oldest first, one point per filing and per share count reported between the first filing and the last. */
-  path: OwnershipPoint[];
-  /** The focused filing's direct holding as a percent of shares outstanding, just before its trades and after them. */
-  before: number | null;
-  after: number | null;
-  /** The share count the focused filing is read against. */
-  outstanding: ShareCount | null;
-};
+/** A filing's direct holding as a percent of shares outstanding, just before its trades and after them. */
+export type StakeChange = { before: number | null; after: number | null; /** The share count both are read against. */ outstanding: ShareCount };
 
 /**
- * One owner's direct holding as a percent of shares outstanding. The percent moves when either side does: at
- * each of the owner's filings, and at each share count reported between them, as issuance or buybacks change
- * the denominator. Null when no share count is known; a percent is never estimated from a missing count.
+ * The owner's stake in the company around one filing: the direct holding before and after its sales and purchases,
+ * over the share count in force on the event date. Null when no share count is known or the holding after is not
+ * disclosed; a percent is never estimated from a missing figure.
  */
-export function ownershipPath(path: HoldingPoint[], counts: ShareCount[], focus: InsiderTransaction & { date: string }): Ownership | null {
-  const valid = counts.filter(c => c.shares > 0 && Number.isFinite(c.shares)).sort((a, b) => a.date.localeCompare(b.date));
-  if (!valid.length) return null;
-  const pct = (held: number, date: string) => { const out = outstandingAt(valid, date); return out ? held / out * 100 : null; };
-  const points: OwnershipPoint[] = [];
-  const first = path[0]?.date, last = path[path.length - 1]?.date;
-  const dates = [...new Set([...path.map(p => p.date), ...valid.map(c => c.date).filter(d => first != null && d > first && d < last!)])].sort();
-  for (const date of dates) {
-    // The holding in force on the date: the last filing on or before it.
-    const filing = path.filter(p => p.date <= date).at(-1);
-    const percent = filing ? pct(filing.held, date) : null;
-    if (percent != null) points.push({ date, percent, filing: filing!.date === date ? filing!.id : null });
-  }
-  const held = focus.heldAfter;
-  const prior = held == null ? null : held + (focus.sold?.shares ?? 0) - (focus.bought?.shares ?? 0);
-  const at = valid.filter(c => c.date <= focus.date).at(-1) ?? valid[0];
-  return { path: points, before: prior != null && prior >= 0 ? pct(prior, focus.date) : null, after: held != null ? pct(held, focus.date) : null, outstanding: at };
+export function stakeChange(t: InsiderTransaction, counts: ShareCount[], date: string): StakeChange | null {
+  const outstanding = outstandingAt(counts.filter(c => c.shares > 0 && Number.isFinite(c.shares)), date);
+  if (!outstanding || t.heldAfter == null) return null;
+  const prior = t.heldAfter + (t.sold?.shares ?? 0) - (t.bought?.shares ?? 0);
+  return { before: prior >= 0 ? prior / outstanding.shares * 100 : null, after: t.heldAfter / outstanding.shares * 100, outstanding };
 }
