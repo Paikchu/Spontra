@@ -91,7 +91,7 @@ function Company({ ticker, tools, onSeen, covered, companies, onHome, onSearch }
   onHome: () => void;
   onSearch: () => void;
 }) {
-  const { data, updates, failed, httpStatus, ready, retry, update, apply, dismiss } = useLiveCompany(ticker, onSeen);
+  const { data, updates, failed, httpStatus, ready, eventsPhase, retry, retryEvents, update, apply, dismiss } = useLiveCompany(ticker, onSeen);
   const { flow, publication, capital, peers, findings, fundamentals, events, filings } = data;
   const stage = useStageHost(ticker, data);
   // The page keeps the face it turned in with until the turn lands, since replacing its rail mid-flight cuts the turn short.
@@ -122,6 +122,8 @@ function Company({ ticker, tools, onSeen, covered, companies, onHome, onSearch }
           fundamentals={fundamentals}
           events={events}
           filings={filings}
+          eventsPhase={eventsPhase}
+          onRetryEvents={retryEvents}
           notice={publication?.outdated ? m.lastSnapshot : null}
           updates={updates}
           stageOverride={stage.stageOverride}
@@ -155,8 +157,9 @@ function Skeleton({ ticker, tools }: { ticker: string; tools: ReactNode }) {
         </section>
         <section className="findings" data-section="events" aria-hidden="true">
           <header className="findings-head"><span className="findings-title ghost-text">{m.events}</span></header>
+          <div className="event-filters">{[0, 1, 2, 3, 4].map(i => <span key={i} className="event-filter event-filter--ghost" />)}</div>
           <div className="findings-rows section-body">
-            {[0, 1, 2, 3].map(i => <div key={i} className="finding-row event-row"><time className="event-date ghost-text">00.00</time><span className="finding-title ghost-text">{m.events}</span></div>)}
+            {[0, 1, 2, 3, 4].map(i => <div key={i} className="finding-row event-row"><time className="event-date ghost-text">00.00</time><span className="finding-title ghost-text">{m.events}</span></div>)}
           </div>
         </section>
       </Rail>

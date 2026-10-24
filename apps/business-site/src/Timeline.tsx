@@ -1,16 +1,26 @@
 import { Button } from "@/packages/web/src/ui/button";
-import { useMemo, type CSSProperties } from "react";
-import { messages } from "@/packages/web/src/i18n";
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from "react";
+import { messages, useLocale } from "@/packages/web/src/i18n";
 import { CLASS_TONE, EVENT_CLASS_LABEL, type TimelinePoint } from "./events-model";
+import { clusterByGap } from "./timeline-model";
 
-const m = messages({ label: "Filing timeline" }, { label: "文件时间轴" });
+const m = messages({
+  label: "Filing timeline",
+  events: (n: number) => `${n} events`,
+  report: "Report",
+}, {
+  label: "文件时间轴",
+  events: (n: number) => `${n} 个事件`,
+  report: "财报",
+});
 
 const DAY = 86_400_000;
+/** Markers closer than a bubble's diameter share one bubble, so the numbers never sit on top of each other. */
+const BUBBLE = 16;
 
 /**
- * The time axis under the chart: every report filing and every event on one line, so a run of
- * insider sales or an 8-K between two reports reads where it happened. A report tick moves the
- * stage to that quarter; an event tick opens its analysis on the whole stage, where the axis steps aside.
+ * The time axis under the chart. The page decides which filings are on it (the event filter).
+ * Points that would land on each other become one numbered bubble; hovering lists them, and a click opens the list.
  */
 export function Timeline({ points, currentPeriod, now, onReport, onEvent }: {
   points: TimelinePoint[];
@@ -20,6 +30,24 @@ export function Timeline({ points, currentPeriod, now, onReport, onEvent }: {
   onReport: (id: string, periodEnd: string) => void;
   onEvent: (id: string) => void;
 }) {
+  useLocale();
+  const listId = useId();
+  const trackRef = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(0);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [hoverId, setHoverId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const element = trackRef.current;
+    if (!element || typeof ResizeObserver === "undefined") return;
+    const measure = () => setWidth(element.clientWidth);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  useEffect(() => { setOpenId(null); setHoverId(null); }, [points]);
+
   const { start, end, ticks } = useMemo(() => {
     if (!points.length) return { start: 0, end: 1, ticks: [] as Array<{ label: string; at: number }> };
     const first = Date.parse(points[0].date), last = Math.max(Date.parse(points[points.length - 1].date), now - 3 * DAY);
@@ -33,19 +61,55 @@ export function Timeline({ points, currentPeriod, now, onReport, onEvent }: {
     }
     return { start, end, ticks };
   }, [points, now]);
+
+  const marks = useMemo(() => {
+    if (!width || !points.length) return [];
+    return clusterByGap(points, point => (Date.parse(point.date) - start) / (end - start) * width, BUBBLE);
+  }, [points, width, start, end]);
+
   if (!points.length) return null;
-  const x = (d: string) => (Date.parse(d) - start) / (end - start) * 100;
+  const xOf = (px: number) => width ? px / width * 100 : 0;
+  const activate = (point: TimelinePoint) => {
+    setOpenId(null);
+    if (point.kind === "report") onReport(point.id, point.periodEnd ?? "");
+    else onEvent(point.id);
+  };
+  const nameOf = (point: TimelinePoint) => point.kind === "report" ? `${point.date} ${m.report} ${point.title}` : `${point.date} ${EVENT_CLASS_LABEL[point.cls!] ?? ""} ${point.title}`;
+
   return <div className="timeline" role="group" aria-label={m.label}>
-    <div className="timeline-track">
+    <div className="timeline-track" ref={trackRef}>
       {ticks.map(t => <span key={t.label} className="timeline-tick" style={{ left: `${t.at}%` }}>{t.label}</span>)}
-      {points.map(p => {
-        const report = p.kind === "report";
-        // The lit report is the quarter the stage shows.
-        const active = report && p.periodEnd === currentPeriod;
-        return <Button variant="unstyled" type="button" key={p.id} className="timeline-point" data-kind={p.kind} data-weight={p.weight} data-class={p.cls} aria-pressed={active}
-          style={{ left: `${x(p.date)}%`, "--tone": report ? "var(--foreground)" : CLASS_TONE[p.cls!] } as CSSProperties}
-          title={`${p.date} · ${report ? p.title : `${EVENT_CLASS_LABEL[p.cls!]} · ${p.title}`}`} aria-label={`${p.date} ${p.title}`}
-          onClick={() => report ? onReport(p.id, p.periodEnd!) : onEvent(p.id)} />;
+      {marks.map(mark => {
+        const many = mark.items.length > 1;
+        const lead = mark.items[0]!;
+        const report = !many && lead.kind === "report";
+        const active = !!mark.items.some(point => point.kind === "report" && point.periodEnd === currentPeriod);
+        const left = width ? xOf(mark.x) : (Date.parse(lead.date) - start) / (end - start) * 100;
+        const open = openId === mark.id;
+        const hover = hoverId === mark.id;
+        const tone = report || lead.kind === "report" ? "var(--foreground)" : CLASS_TONE[lead.cls ?? "other"];
+        return <div key={mark.id} className="timeline-mark" style={{ left: `${left}%` }}>
+          <Button variant="unstyled" type="button" className={many ? "timeline-bubble" : "timeline-point"} data-kind={lead.kind} data-weight={many ? undefined : lead.weight} data-class={lead.cls}
+            aria-pressed={active} aria-expanded={many ? open : undefined} aria-controls={many ? listId : undefined}
+            style={{ "--tone": tone } as CSSProperties}
+            aria-label={many ? m.events(mark.items.length) : nameOf(lead)}
+            title={many ? undefined : `${lead.date} · ${lead.kind === "report" ? lead.title : `${EVENT_CLASS_LABEL[lead.cls!] ?? ""} · ${lead.title}`}`}
+            onMouseEnter={() => setHoverId(mark.id)} onMouseLeave={() => setHoverId(id => id === mark.id ? null : id)}
+            onFocus={() => setHoverId(mark.id)} onBlur={() => setHoverId(id => id === mark.id ? null : id)}
+            onClick={() => { if (many) setOpenId(id => id === mark.id ? null : mark.id); else activate(lead); }}>
+            {many ? mark.items.length : null}
+          </Button>
+          {many && (hover || open) && <div className={open ? "timeline-pop" : "timeline-tip"} id={open ? listId : undefined} role={open ? "list" : "tooltip"} data-edge={left > 78 ? "end" : left < 22 ? "start" : undefined}>
+            <p>{m.events(mark.items.length)}</p>
+            <ul>
+              {mark.items.map(point => <li key={point.id}>
+                {open
+                  ? <Button variant="unstyled" type="button" onClick={() => activate(point)}><small>{point.date}</small><span>{point.title}</span></Button>
+                  : <span><small>{point.date}</small>{point.title}</span>}
+              </li>)}
+            </ul>
+          </div>}
+        </div>;
       })}
     </div>
   </div>;

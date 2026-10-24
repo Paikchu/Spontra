@@ -1,7 +1,7 @@
 import type { BusinessFlowQuarter } from "@/shared/analysis-contract/business-flow";
 import type { CompanyEvent, EventClass, EventsPublication } from "@/shared/analysis-contract/events";
 import type { FindingFundamentals } from "@/shared/analysis-runtime/findings";
-import { DAY_MS, EVENT_CLASS_LABEL as EVENT_CLASS_LABEL_EN, eventClassLabel, holdingPath, insiderCadence, insiderCluster, insiderTone, insiderVerdict, isQuietInsider, soldShareOfHolding, stakeChange, type InsiderTone, type InsiderVerdict, type ShareCount, type StakeChange } from "@/shared/analysis-runtime/events";
+import { DAY_MS, EVENT_CLASS_LABEL as EVENT_CLASS_LABEL_EN, eventClassLabel, filingDocumentTitle, holdingPath, insiderCadence, insiderCluster, insiderTone, insiderVerdict, isQuietInsider, soldShareOfHolding, stakeChange, type InsiderTone, type InsiderVerdict, type ShareCount, type StakeChange } from "@/shared/analysis-runtime/events";
 import { compactMoney, compactShares, shortPeriod } from "@/shared/analysis-runtime/locale";
 import { getLocale, labels, messages } from "@/packages/web/src/i18n";
 import { langOf } from "@/packages/web/src/i18n/SourceLanguage";
@@ -48,13 +48,18 @@ export function eventTitle(e: CompanyEvent): string {
     return m.holdingChange(who);
   }
   if (e.summary?.headline) return e.summary.headline;
-  if (e.description && !/^(8-K|6-K|FORM)\b/i.test(e.description)) return e.description;
-  return `${EVENT_CLASS_LABEL[e.class]} · ${e.form}${e.items.length ? ` · Item ${e.items.filter(i => i !== "9.01").join(", ") || e.items.join(", ")}` : ""}`;
+  const documentTitle = filingDocumentTitle(e);
+  if (documentTitle) return documentTitle;
+  const items = e.items.filter(i => i !== "9.01");
+  if (items.length) return `${EVENT_CLASS_LABEL[e.class]} · ${e.form} · Item ${items.join(", ")}`;
+  // A current report with no items and no description used to read "其他 · 6-K". The form is the whole title; routine 6-Ks are grouped.
+  if (e.class === "other") return e.form;
+  return `${EVENT_CLASS_LABEL[e.class]} · ${e.form}`;
 }
 
 /** The language of the event's title when it is generated (translated once Spontra Analysis has) or EDGAR text (English); undefined when it is composed in the reader's language. */
 export const eventTitleLang = (e: CompanyEvent): ReturnType<typeof langOf> | undefined =>
-  !e.insider && (!!e.summary?.headline || (!!e.description && !/^(8-K|6-K|FORM)\b/i.test(e.description))) ? langOf(eventTitle(e)) : undefined;
+  !e.insider && (!!e.summary?.headline || !!filingDocumentTitle(e)) ? langOf(eventTitle(e)) : undefined;
 
 export type TimelinePoint = {
   id: string;

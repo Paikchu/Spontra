@@ -35,6 +35,7 @@ import { LensPanel } from "./LensPanel";
 import type { EventsPublication } from "@/shared/analysis-contract/events";
 import type { PublicFilingDigestPage } from "@/shared/analysis-contract/filings";
 import { eventTitle, timelinePoints } from "./events-model";
+import { readEventFilter, timelineIds, withEventFilter, type EventFilter } from "./event-noise";
 import { railItems, reportTitle, timelineFromFilings, type RailItem } from "./reports-model";
 import { EventsList } from "./EventsList";
 import { RailSection, railTransition, type RailSectionKey } from "./RailSection";
@@ -254,7 +255,7 @@ function Sources({ sources, ids }: { sources: FlowSource[]; ids?: string[] }) {
   return <ul className="sources">{list.map(s => <li key={s.id}><a href={s.url} target="_blank" rel="noopener noreferrer">{s.title}<span aria-hidden="true"> ↗</span></a></li>)}</ul>;
 }
 
-export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, explainer = null, tree = null, guidance = null, capital = null, findings = null, peers = null, rankPeers = null, passages = null, fundamentals = null, events = null, filings = null, updates = 0, stageOverride = null, onNavigate, onView, railFoot = null, focusRequest = null }: { ticker: string; tools: ReactNode; flow: PublicBusinessFlow; notice: string | null; revenueHistory: RevenueHistory | null; explainer?: BusinessExplainer | null; tree?: BusinessTree | null; guidance?: GuidancePublication | null; capital?: PublicCapitalStructure | null; findings?: FindingsPublication | null; peers?: PeersPublication | null; /** The company and its comparable peers, for the checkup's ranks. */ rankPeers?: PeersPublication | null; passages?: FindingPassage[] | null; fundamentals?: FindingFundamentals | null; events?: EventsPublication | null; filings?: PublicFilingDigestPage | null; /** Updates the reader took; rows they brought enter animated. */ updates?: number;
+export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, explainer = null, tree = null, guidance = null, capital = null, findings = null, peers = null, rankPeers = null, passages = null, fundamentals = null, events = null, filings = null, updates = 0, stageOverride = null, onNavigate, onView, railFoot = null, focusRequest = null, eventsPhase = "ready", onRetryEvents }: { ticker: string; tools: ReactNode; flow: PublicBusinessFlow; notice: string | null; revenueHistory: RevenueHistory | null; explainer?: BusinessExplainer | null; tree?: BusinessTree | null; guidance?: GuidancePublication | null; capital?: PublicCapitalStructure | null; findings?: FindingsPublication | null; peers?: PeersPublication | null; /** The company and its comparable peers, for the checkup's ranks. */ rankPeers?: PeersPublication | null; passages?: FindingPassage[] | null; fundamentals?: FindingFundamentals | null; events?: EventsPublication | null; filings?: PublicFilingDigestPage | null; /** Updates the reader took; rows they brought enter animated. */ updates?: number;
   /** A scene the stage agent built; while set it holds the stage in place of the map's own view (docs/stage-agent-design.md §5.2). */
   stageOverride?: ReactNode | null;
   /** The reader picked something in the rail or on the chart: the map's own view takes the stage back. */
@@ -264,7 +265,10 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
   /** Pinned under the rail's sections (the stage's entry button). */
   railFoot?: ReactNode;
   /** A finding the stage asked to open on the map; a new nonce asks again. */
-  focusRequest?: { finding: string; nonce: number } | null }) {
+  focusRequest?: { finding: string; nonce: number } | null;
+  /** The events request failed on its own; the rest of the page stays up. */
+  eventsPhase?: "ready" | "loading" | "error";
+  onRetryEvents?: () => void; }) {
   const locale = useLocale();
   const quarters = useMemo(() => [...flow.quarters].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd)), [flow]);
   const [period, setPeriod] = useState<string | null>(null);
@@ -301,6 +305,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
   const focused = verified.find(f => f.id === focusId) ?? null;
   // Reports and filed events share the rail with the findings; one row is in focus at a time, and the time axis lists them all.
   const [eventId, setEventId] = useState<string | null>(() => new URLSearchParams(location.search).get("event"));
+  const [eventFilter, setEventFilter] = useState<EventFilter>(() => readEventFilter(location.search));
   const [reportId, setReportId] = useState<string | null>(() => new URLSearchParams(location.search).get("report"));
   const [reader, setReader] = useState(false);
   const [now] = useState(() => new Date());
@@ -312,7 +317,12 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
   const focusedCheck = focused || focusedReport || focusedEvent || !checkId ? null : assessedMetrics.get(checkId) ?? null;
   const railIndex = railList.findIndex(i => i.id === (focusedReport?.accessionNumber ?? focusedEvent?.id));
   // Reports come from the filings when they have loaded; until then the flow quarters stand in for them on the axis.
-  const points = useMemo(() => filings ? timelineFromFilings(filings, events, 24, now, quarters) : timelinePoints(quarters, events, 24, now), [filings, quarters, events, now]);
+  const points = useMemo(() => {
+    const all = filings ? timelineFromFilings(filings, events, 24, now, quarters) : timelinePoints(quarters, events, 24, now);
+    const ids = timelineIds(railList, eventFilter);
+    const quartersOnAxis = eventFilter === "key" || eventFilter === "earnings" || eventFilter === "all";
+    return all.filter(point => point.id.startsWith("report:") ? quartersOnAxis : ids.has(point.id));
+  }, [filings, quarters, events, now, eventFilter, railList]);
   // The trend below the flow shows revenue by business, or one company-level SEC series picked from the fundamentals.
   const metricGroups = useMemo(() => metricOptions(fundamentals), [fundamentals]);
   const hasRevenueTrend = !!revenueHistory && revenueHistory.quarters.length >= 2;
@@ -390,8 +400,10 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
     if (detail) url.searchParams.set("detail", ""); else url.searchParams.delete("detail");
     if (focusedCheck) url.searchParams.set("check", focusedCheck.id); else url.searchParams.delete("check");
     if (view !== "profit") url.searchParams.set("view", view); else url.searchParams.delete("view");
-    if (url.href !== location.href) history.replaceState(history.state, "", url);
-  }, [current, focused, focusedEvent, focusedReport, metric, detail, focusedCheck, view]);
+    const next = withEventFilter(url.search, eventFilter);
+    const written = new URL(url.pathname + next + url.hash, url.origin);
+    if (written.href !== location.href) history.replaceState(history.state, "", written);
+  }, [current, focused, focusedEvent, focusedReport, metric, detail, focusedCheck, view, eventFilter]);
   useEffect(() => {
     onView?.({ periodEnd: quarter?.periodEnd ?? null, view, business: current?.id ?? null, finding: focused?.id ?? null, check: focusedCheck?.id ?? null, event: focusedEvent?.id ?? null, report: focusedReport?.accessionNumber ?? null, metric: metric?.key ?? null });
   }, [onView, quarter?.periodEnd, view, current?.id, focused?.id, focusedCheck?.id, focusedEvent?.id, focusedReport?.accessionNumber, metric?.key]);
@@ -589,7 +601,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
         </div>
       </RailSection>
       {showFindings && <FindingsList findings={verified} updates={updates} verdicts={verdicts} focus={focused?.id ?? null} story={story} periodEnd={findings.periodEnd} {...sectionFocus("findings")} onFocus={focusFinding} onStory={() => { if (story) { setStory(false); setFocusId(null); } else { setStory(true); setEventId(null); focusFinding(focused?.id ?? verified[0].id); } }} />}
-      {rail && <EventsList rail={rail} updates={updates} focus={focusedReport?.accessionNumber ?? focusedEvent?.id ?? null} pendingInsider={events?.pendingInsider ?? 0} {...sectionFocus("events")} onFocus={focusItem} />}
+      {rail && <EventsList rail={rail} updates={updates} focus={focusedReport?.accessionNumber ?? focusedEvent?.id ?? null} pendingInsider={events?.pendingInsider ?? 0} {...sectionFocus("events")} onFocus={focusItem} filter={eventFilter} onFilter={setEventFilter} phase={eventsPhase} onRetry={onRetryEvents} />}
       {!!quarter?.revenueAdjustments?.length&&<p className="revenue-reconciliation">{m.reconciliation(quarter.currency)}<br/>{m.segmentTotal} {formatFlowValue(segmentRevenue,quarter)}<br/>{quarter.revenueAdjustments.map(a=><span key={a.id}>{a.name} {formatFlowValue(numeric(a.amount),quarter)}<br/></span>)}{m.consolidated} {formatFlowValue(revenue,quarter)}</p>}
       {railFoot}
     </Rail>

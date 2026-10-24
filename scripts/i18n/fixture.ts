@@ -189,7 +189,7 @@ export const company: CompleteFlowPublication & { explainer: BusinessExplainer; 
 };
 
 const insider = (id: string, date: string, over: Partial<NonNullable<CompanyEvent["insider"]>>): CompanyEvent => ({
-  id, ticker: TICKER, form: "4", filedAt: date, eventDate: date, items: [], class: "insider", description: "", edgarUrl: SRC, documentUrl: SRC, exhibits: [], summary: null,
+  id, ticker: TICKER, form: "4", filedAt: date, eventDate: date, items: [], class: "insider", description: "", title: null, importance: "routine", edgarUrl: SRC, documentUrl: SRC, exhibits: [], summary: null,
   insider: { ownerCik: "9", ownerName: "Jane Q Officer", title: "Chief Financial Officer", isDirector: false, isOfficer: true, isTenPercentOwner: false, rule10b51: true, planAdoptedOn: "2025-11-02",
     securityTitle: "Common Stock", lines: [{ date, code: "S", acquiredDisposed: "D", shares: 120_000, price: 182.4, ownedAfter: 880_000, ownership: "D", derivative: false }],
     sold: { shares: 120_000, proceeds: 21_888_000, averagePrice: 182.4 }, bought: null, exercised: 0, heldAfter: 880_000, footnotes: ["Weighted average price."], ...over },
@@ -201,10 +201,10 @@ export const events: EventsPublication = {
     insider("e-sale-0", "2026-05-06", { lines: [{ date: "2026-05-06", code: "S", acquiredDisposed: "D", shares: 100_000, price: 160, ownedAfter: 1_000_000, ownership: "D", derivative: false }], sold: { shares: 100_000, proceeds: 16_000_000, averagePrice: 160 }, heldAfter: 1_000_000 }),
     insider("e-grant", "2026-07-15", { sold: null, lines: [{ date: "2026-07-15", code: "A", acquiredDisposed: "A", shares: 5000, price: 0, ownedAfter: 1_005_000, ownership: "D", derivative: false }] }),
     insider("e-buy", "2026-06-20", { ownerName: "John Director", isDirector: true, isOfficer: false, title: null, rule10b51: null, sold: null, bought: { shares: 10_000, cost: 1_650_000, averagePrice: 165 }, lines: [{ date: "2026-06-20", code: "P", acquiredDisposed: "A", shares: 10_000, price: 165, ownedAfter: 50_000, ownership: "D", derivative: false }], heldAfter: 50_000 }),
-    { id: "e-8k", ticker: TICKER, form: "8-K", filedAt: "2026-07-30", eventDate: "2026-07-30", items: ["2.02", "9.01"], class: "earnings", description: "Results of Operations", edgarUrl: SRC, documentUrl: SRC,
+    { id: "e-8k", ticker: TICKER, form: "8-K", filedAt: "2026-07-30", eventDate: "2026-07-30", items: ["2.02", "9.01"], class: "earnings", description: "Results of Operations", title: "Results of Operations", importance: "key", edgarUrl: SRC, documentUrl: SRC,
       exhibits: [{ type: "EX-99.1", title: "Press release", url: SRC }],
       summary: { headline: "Generated event headline.", bullets: [{ label: "Revenue", detail: "Generated detail.", importance: "high" }], analystView: "Generated analyst view.", eventCategory: "earnings_update", generatedAt: "2026-07-30T00:00:00Z" }, insider: null },
-    { id: "e-exec", ticker: TICKER, form: "8-K", filedAt: "2026-06-02", eventDate: "2026-06-01", items: ["5.02"], class: "executive", description: "8-K", edgarUrl: SRC, documentUrl: SRC, exhibits: [], summary: null, insider: null },
+    { id: "e-exec", ticker: TICKER, form: "8-K", filedAt: "2026-06-02", eventDate: "2026-06-01", items: ["5.02"], class: "executive", description: "8-K", title: null, importance: "key", edgarUrl: SRC, documentUrl: SRC, exhibits: [], summary: null, insider: null },
   ],
 };
 

@@ -1,5 +1,5 @@
 import type { CompanyEvent, EventExhibit, EventForm, EventsPublication, EventSummary, InsiderTransaction } from "../../../../shared/analysis-contract/events.ts";
-import { classifyEvent, parseItems, readEventsPublication } from "../../../../shared/analysis-runtime/events.ts";
+import { annotateEvent, classifyEvent, filingDocumentTitle, indexPrimaryDescription, parseItems, readEventsPublication } from "../../../../shared/analysis-runtime/events.ts";
 import type { SecCronEnv } from "../core.ts";
 import { knownCik } from "../pipeline/identity.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
@@ -136,13 +136,20 @@ export async function refreshCompanyEvents(env: EventsSweepEnv, ticker: string, 
       if (!insider) { pendingInsider++; continue; }
     }
     let exhibits = prior?.exhibits ?? [];
+    // The submissions feed often describes a 6-K as "6-K". The filing index's Description cell is the same request the exhibit list uses.
+    // A later submissions read names the form again ("6-K"). Keep a document title already taken from the filing index.
+    let description = filing.description;
+    if (!filingDocumentTitle({ description }) && prior && filingDocumentTitle(prior)) description = prior.description;
     if (!isInsider && !exhibits.length) {
       const cached = await repository.getCache<EventExhibit[]>(exhibitsCacheKey(ticker, filing.accessionNumber));
       if (cached) exhibits = cached.payload;
       else if (exhibitReads < LIMITS.exhibitReads) {
         exhibitReads++;
         try {
-          exhibits = parseExhibitIndex(await (await reader.read(`${archiveRoot}/${filing.accessionNumber}-index.htm`)).text(), archiveRoot);
+          const indexHtml = await (await reader.read(`${archiveRoot}/${filing.accessionNumber}-index.htm`)).text();
+          exhibits = parseExhibitIndex(indexHtml, archiveRoot);
+          const indexed = indexPrimaryDescription(indexHtml);
+          if (indexed) description = indexed;
           await repository.setCache(exhibitsCacheKey(ticker, filing.accessionNumber), exhibits, now.toISOString()); saved++;
         } catch (error) { if (secAccessPaused(error)) throw error; exhibits = []; pendingExhibits++; }
       } else pendingExhibits++;
@@ -150,11 +157,11 @@ export async function refreshCompanyEvents(env: EventsSweepEnv, ticker: string, 
     const summary = isInsider ? null : toSummary(await repository.getSummary(ticker, filing.accessionNumber)) ?? prior?.summary ?? null;
     const items = parseItems(filing.items);
     const eventDate = /^\d{4}-\d{2}-\d{2}$/.test(filing.reportDate) ? filing.reportDate : filing.filingDate;
-    events.push({
+    events.push(annotateEvent({
       id: filing.accessionNumber, ticker, form: filing.form, filedAt: filing.filingDate, eventDate, items,
-      class: classifyEvent(filing.form, items, filing.description || summary?.headline || ""), description: filing.description.slice(0, 300),
+      class: classifyEvent(filing.form, items, description || summary?.headline || ""), description: description.slice(0, 300),
       edgarUrl: `${archiveRoot}/${filing.accessionNumber}-index.html`, documentUrl, exhibits, summary, insider,
-    });
+    }));
   }
   const next: EventsPublication = { schemaVersion: "events.v1", ticker, checkedAt, events, pendingInsider };
   await db.batch([

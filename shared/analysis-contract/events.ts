@@ -57,6 +57,9 @@ export type InsiderTransaction = {
   footnotes: string[];
 };
 
+/** How loudly a filing belongs on the default rail. Computed, never written by a model. */
+export type EventImportance = "key" | "normal" | "routine";
+
 export type EventExhibit = { type: string; title: string; url: string };
 
 export type EventSummary = {
@@ -81,6 +84,13 @@ export type CompanyEvent = {
   class: EventClass;
   /** What the filing is about, as the primary document describes it; empty when EDGAR gives none. */
   description: string;
+  /**
+   * A document title that says more than the form name (an EDGAR description such as "Results of Operations").
+   * Null when the only text EDGAR gives is the form itself ("6-K", "8-K"); those rows are grouped instead of titled.
+   */
+  title: string | null;
+  /** Noise rank for the rail and the time axis. The same rules run in the API and in the page. */
+  importance: EventImportance;
   edgarUrl: string;
   documentUrl: string;
   exhibits: EventExhibit[];

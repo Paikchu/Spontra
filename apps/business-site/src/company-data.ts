@@ -8,6 +8,7 @@ import type { PublicCapitalStructure } from "@/shared/analysis-contract/capital-
 import type { FindingPassage, FindingsPublication } from "@/shared/analysis-contract/findings";
 import type { ItemAnalysis } from "@/shared/analysis-contract/item-analysis";
 import type { PeersPublication } from "@/shared/analysis-contract/peers";
+import type { EventsPublication } from "@/shared/analysis-contract/events";
 import type { FindingFundamentals } from "@/shared/analysis-runtime/findings";
 import type { MapRevisions } from "@/shared/analysis-contract/revisions";
 import { getLocale } from "@/packages/web/src/i18n";
@@ -55,6 +56,23 @@ export async function fetchCompany(ticker: string, signal: AbortSignal, rev?: st
   }
   if (!response.ok) throw new CompanyHttpError(response.status);
   return await response.json() as CompanyPublication;
+}
+
+/**
+ * The events publication, or null while it is still preparing. `error` is a failed request: the page keeps every other
+ * section and offers a retry. A preparing company is not an error.
+ */
+export async function fetchEvents(ticker: string, signal: AbortSignal, rev?: string): Promise<{ events: EventsPublication | null; error: boolean }> {
+  try {
+    const response = await fetch(companyPath(ticker, "/events", rev), { signal });
+    if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+    if (!response.ok) return { events: null, error: true };
+    const body = await response.json() as { status?: string; events?: EventsPublication | null };
+    return { events: body.status === "ready" && body.events ? body.events : null, error: false };
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") throw error;
+    return { events: null, error: true };
+  }
 }
 
 /** A supplementary resource answers on its own; anything but "ready" reads as null. */

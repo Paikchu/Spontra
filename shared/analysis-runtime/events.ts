@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { CompanyEvent, EventClass, EventsPublication, InsiderTransaction } from "../analysis-contract/events.ts";
+import type { CompanyEvent, EventClass, EventImportance, EventsPublication, InsiderTransaction } from "../analysis-contract/events.ts";
 import type { Locale } from "./locale.ts";
 
 /* ---------- Classification ---------- */
@@ -58,6 +58,76 @@ export function classifyEvent(form: string, items: string[], description = ""): 
   return "other";
 }
 
+/* ---------- Noise rank and document titles ---------- */
+
+/** Descriptions that only name the form, so they are not a title a reader can use. */
+const FORM_ONLY = /^(?:form\s+)?(?:8-k|6-k|4)(?:\/a)?$/i;
+/** EDGAR's generic primary-document labels. They describe the form, not the filing. */
+const GENERIC_DESCRIPTION = /^(?:primary document|ownership document|current report|statement of changes in beneficial ownership(?: of securities)?)$/i;
+
+/** A stored or indexed description that says more than the form name; null when it does not. */
+export function filingDocumentTitle(event: { description?: string | null; title?: string | null }): string | null {
+  const raw = (event.title ?? "").trim() || (event.description ?? "").trim();
+  if (!raw || FORM_ONLY.test(raw) || GENERIC_DESCRIPTION.test(raw) || /^(?:8-K|6-K|FORM)\b/i.test(raw)) return null;
+  return raw.slice(0, 300);
+}
+
+/**
+ * The primary document's Description cell on an EDGAR filing index page.
+ * The cell is the form name itself for a routine 6-K ("6-K"); that reads as no title.
+ */
+export function indexPrimaryDescription(html: string): string | null {
+  const row = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = row.exec(html))) {
+    const cells = [...match[1].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)].map(cell =>
+      cell[1].replace(/<[^>]+>/g, " ").replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&").replace(/\s+/g, " ").trim());
+    if (cells.length < 4 || cells[0] !== "1") continue;
+    const description = cells[1] ?? "";
+    const type = cells[3] ?? "";
+    if (!description || FORM_ONLY.test(description) || GENERIC_DESCRIPTION.test(description)) return null;
+    if (description.toUpperCase() === type.toUpperCase() || /^(?:8-K|6-K|FORM)\b/i.test(description)) return null;
+    return description.slice(0, 300);
+  }
+  return null;
+}
+
+/** An open-market sale the Form 4 marks as made under a 10b5-1 plan. */
+export const isPlannedSale = (event: CompanyEvent) =>
+  event.class === "insider" && !!event.insider?.sold && event.insider.sold.shares > 0 && event.insider.rule10b51 === true;
+
+/** A director's or officer's open-market purchase. Grants and exercises are not purchases. */
+export const isOpenMarketBuy = (event: CompanyEvent) => {
+  const insider = event.insider;
+  return event.class === "insider" && !!insider?.bought && insider.bought.shares > 0 && (insider.isDirector || insider.isOfficer);
+};
+
+/**
+ * Where a filing sits in the rail.
+ * Key: earnings and guidance, leadership changes, shareholder votes, a current report that has a summary,
+ * an insider sale that is not a 10b5-1 plan, and a director's or officer's open-market buy.
+ * Routine: 10b5-1 sales, grants and gifts, and a 6-K or 8-K with neither a summary nor a document title.
+ * Everything else (an exercise, a current report that has a document title but no summary) is normal.
+ */
+export function eventImportance(event: CompanyEvent): EventImportance {
+  if (event.class === "earnings" || event.class === "guidance" || event.class === "executive" || event.class === "vote") return "key";
+  const current = event.form.startsWith("8-K") || event.form.startsWith("6-K");
+  if (current && event.summary?.headline) return "key";
+  if (isOpenMarketBuy(event)) return "key";
+  if (event.class === "insider" && event.insider?.sold && event.insider.sold.shares > 0 && event.insider.rule10b51 !== true) return "key";
+  const quiet = event.class === "insider" && !!event.insider && !event.insider.sold && !event.insider.bought && !event.insider.exercised;
+  if (isPlannedSale(event) || quiet) return "routine";
+  if (current && !event.summary?.headline && !filingDocumentTitle(event)) return "routine";
+  return "normal";
+}
+
+/** Fills `title` and `importance` from the filing's own fields. Idempotent, and it calls no model. */
+export function annotateEvent(event: Omit<CompanyEvent, "title" | "importance"> & { title?: string | null }): CompanyEvent {
+  const title = filingDocumentTitle(event);
+  const next: CompanyEvent = { ...event, title, importance: "normal" };
+  return { ...next, importance: eventImportance(next) };
+}
+
 /* ---------- Validation ---------- */
 
 const text = (max: number) => z.string().max(max);
@@ -85,7 +155,8 @@ const event = z.object({
   id: text(40), ticker: z.string().regex(/^[A-Z][A-Z0-9.-]{0,11}$/), form: z.enum(["8-K", "8-K/A", "6-K", "6-K/A", "4", "4/A"]), filedAt: date, eventDate: date,
   items: z.array(z.string().regex(/^\d\.\d\d$/)).max(20),
   class: z.enum(["earnings", "guidance", "executive", "insider", "deal", "financing", "capital_return", "vote", "legal", "other"]),
-  description: text(300), edgarUrl: https, documentUrl: https,
+  description: text(300), title: text(300).nullable().optional(), importance: z.enum(["key", "normal", "routine"]).optional(),
+  edgarUrl: https, documentUrl: https,
   exhibits: z.array(z.object({ type: text(20), title: text(200), url: https })).max(30),
   summary: summary.nullable(), insider: insider.nullable(),
 });
@@ -99,7 +170,8 @@ export function readEventsPublication(value: unknown, ticker: string): EventsPub
   const parsed = eventsPublicationSchema.safeParse(value);
   if (!parsed.success || parsed.data.ticker !== ticker) return null;
   const events = parsed.data.events.filter(e => e.ticker === ticker && (e.form.startsWith("4") ? e.class === "insider" : e.class !== "insider"))
-    .sort((a, b) => b.filedAt.localeCompare(a.filedAt) || b.eventDate.localeCompare(a.eventDate));
+    .sort((a, b) => b.filedAt.localeCompare(a.filedAt) || b.eventDate.localeCompare(a.eventDate))
+    .map(event => annotateEvent(event));
   return { ...parsed.data, events };
 }
 

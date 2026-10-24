@@ -9,7 +9,7 @@ import type { EventsPublication } from "@/shared/analysis-contract/events";
 import type { PublicFilingDigestPage } from "@/shared/analysis-contract/filings";
 import type { MapResource, MapRevisions } from "@/shared/analysis-contract/revisions";
 import type { FindingFundamentals } from "@/shared/analysis-runtime/findings";
-import { CompanyHttpError, fetchCapital, fetchCompany, fetchFindings, fetchRevisions, fetchSupplement, publicationFlow, type CompanyPublication, type FindingsBundle } from "./company-data";
+import { CompanyHttpError, fetchCapital, fetchCompany, fetchEvents, fetchFindings, fetchRevisions, fetchSupplement, publicationFlow, type CompanyPublication, type FindingsBundle } from "./company-data";
 import { nextPending, readRevisions, resourcesToRead } from "./revision-reads";
 
 /** Everything the company page draws from, as one value so a newer read can replace parts of it at once. */
@@ -30,15 +30,16 @@ const EMPTY: CompanyData = { publication: null, flow: null, capital: null, peers
 export type { OpeningFace } from "./opening-face";
 export { openingFace } from "./opening-face";
 
-const OPENING_RESOURCES = ["capital", "findings", "fundamentals", "events", "filings"] as const;
+const OPENING_RESOURCES = ["capital", "findings", "fundamentals", "filings"] as const;
 
 /** One settled read of everything the first paint draws. A failed supplement leaves its part empty; a failed company is `failed`. */
-async function loadOpening(ticker: string, signal: AbortSignal, onSeen: (ticker: string) => void): Promise<{ data: CompanyData; failed: boolean; revisions: MapRevisions; httpStatus: number | null }> {
+async function loadOpening(ticker: string, signal: AbortSignal, onSeen: (ticker: string) => void): Promise<{ data: CompanyData; failed: boolean; eventsError: boolean; revisions: MapRevisions; httpStatus: number | null }> {
   const revisions = await fetchRevisions(ticker, signal).catch(() => null);
   if (signal.aborted) throw new DOMException("Aborted", "AbortError");
   const data: CompanyData = { ...EMPTY };
   const got: MapRevisions = {};
   let failed = false;
+  let eventsError = false;
   let httpStatus: number | null = null;
   const take = (resource: MapResource) => { const rev = revisions?.[resource]; if (rev) got[resource] = rev; };
   const aborted = (error: unknown) => signal.aborted || (error instanceof DOMException && error.name === "AbortError");
@@ -54,9 +55,13 @@ async function loadOpening(ticker: string, signal: AbortSignal, onSeen: (ticker:
     ...OPENING_RESOURCES.map(resource => readResource(ticker, resource, revisions?.[resource], signal).then(part => {
       if (part) { Object.assign(data, part); take(resource); }
     }).catch(error => { if (aborted(error)) throw error; })),
+    fetchEvents(ticker, signal, revisions?.events).then(result => {
+      eventsError = result.error;
+      if (result.events) { data.events = result.events; take("events"); }
+    }),
   ]);
   if (signal.aborted) throw new DOMException("Aborted", "AbortError");
-  return { data, failed, revisions: got, httpStatus };
+  return { data, failed, eventsError, revisions: got, httpStatus };
 }
 
 /** What a newer revision brings that the reader can see: kinds of new rows, or none when only figures or prose moved. */
@@ -123,6 +128,8 @@ export function useLiveCompany(ticker: string, onSeen: (ticker: string) => void)
   const [closed, setClosed] = useState(false);
   /** How many updates the reader took, so lists can tell rows an update brought from rows that loaded late. */
   const [updates, setUpdates] = useState(0);
+  /** The events block's own state, so a failed events read does not take the map down with it. */
+  const [eventsPhase, setEventsPhase] = useState<"ready" | "loading" | "error">("loading");
   /** The revisions of what is on screen, per resource that was read; null until the first read has started. */
   const shown = useRef<MapRevisions | null>(null);
   const current = useRef(data);
@@ -150,6 +157,7 @@ export function useLiveCompany(ticker: string, onSeen: (ticker: string) => void)
           setData(result.data);
           setFailed(result.failed && !result.data.flow);
           setHttpStatus(result.failed && !result.data.flow ? result.httpStatus : null);
+          setEventsPhase(result.eventsError ? "error" : "ready");
           setReady(true);
           shown.current = result.revisions;
           checksReady.current = true;
@@ -184,7 +192,10 @@ export function useLiveCompany(ticker: string, onSeen: (ticker: string) => void)
         const read = await readRevisions(resources, latest, current.current, (r, rev) => readResource(ticker, r, rev, signal));
         if (signal.aborted) return;
         shown.current = { ...shown.current, ...read.same, ...read.filled.revisions };
-        if (Object.keys(read.filled.patch).length) setData(d => ({ ...d, ...read.filled.patch }));
+        if (Object.keys(read.filled.patch).length) {
+          if (read.filled.patch.events) setEventsPhase("ready");
+          setData(d => ({ ...d, ...read.filled.patch }));
+        }
         const next = nextPending(staged.current, read);
         if (JSON.stringify(next?.revisions ?? null) !== JSON.stringify(staged.current?.revisions ?? null))
           setPending(next && { ...next, news: newsOf(next.patch, { ...current.current, ...read.filled.patch }) });
@@ -212,7 +223,19 @@ export function useLiveCompany(ticker: string, onSeen: (ticker: string) => void)
     setClosed(true);
   }, []);
   const dismiss = useCallback(() => setClosed(true), []);
-  const retry = useCallback(() => { setFailed(false); setHttpStatus(null); setReady(false); setData(EMPTY); setPending(null); setAttempt(n => n + 1); }, []);
+  const retry = useCallback(() => { setFailed(false); setHttpStatus(null); setReady(false); setEventsPhase("loading"); setData(EMPTY); setPending(null); setAttempt(n => n + 1); }, []);
+  const retryEvents = useCallback(() => {
+    const controller = new AbortController();
+    setEventsPhase("loading");
+    void fetchEvents(ticker, controller.signal, shown.current?.events).then(result => {
+      if (controller.signal.aborted) return;
+      if (result.events) setData(currentData => ({ ...currentData, events: result.events }));
+      setEventsPhase(result.error ? "error" : "ready");
+    }).catch(error => {
+      if (controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) return;
+      setEventsPhase("error");
+    });
+  }, [ticker]);
   const update = closed ? null : pending;
-  return { data, updates, failed, httpStatus, ready, retry, update, apply, dismiss };
+  return { data, updates, failed, httpStatus, ready, eventsPhase, retry, retryEvents, update, apply, dismiss };
 }
