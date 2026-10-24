@@ -34,8 +34,9 @@ function binding(statuses: Record<string, { status: string; error?: unknown }>):
   };
 }
 
-const discovered = (ticker: string, form: string): EventMessage => ({
-  v: 1, kind: "event", id: `event-${ticker}`, causeId: null, type: "filing.discovered", ticker, cik: null, task: null,
+/** A filing the archive just stored: the event the SEC report starts from (docs/sec-archive.md). */
+const archived = (ticker: string, form: string): EventMessage => ({
+  v: 1, kind: "event", id: `event-${ticker}`, causeId: null, type: "filing.archived", ticker, cik: null, task: null,
   detail: { form, accession: "0001104659-26-065681" }, at: "2026-10-22T08:00:00.000Z",
 });
 
@@ -55,9 +56,9 @@ test("routing a filing does not queue a report for a company whose reports are o
     DB: db, SEC_DATA_TICKERS: "META,NBIS", SEC_AI_TICKERS: "META,NBIS", SEC_AI_ENABLED: "true",
     PIPELINE_TASKS: { async sendBatch(messages: Array<{ body: { task: string; ticker: string } }>) { sent.push(...messages.map(message => message.body)); } },
   } as unknown as AnalysisEnv;
-  await routeEvents(env, [discovered("NBIS", "20-F/A"), discovered("META", "10-Q")]);
+  await routeEvents(env, [archived("NBIS", "20-F/A"), archived("META", "10-Q")]);
   assert.deepEqual(sent.filter(message => message.task === "sec-report").map(message => message.ticker).sort(), ["META"]);
-  assert.ok(sent.some(message => message.ticker === "NBIS" && message.task === "collect"));
+  assert.ok(sent.some(message => message.ticker === "NBIS" && message.task === "map-derive"));
 });
 
 test("a report task already queued for a company that has left the list finishes without starting a workflow", async () => {

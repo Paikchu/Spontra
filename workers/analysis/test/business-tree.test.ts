@@ -1,6 +1,17 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { leadIn, pageExcerpt, runBusinessTree, sectionHeading, TREE_TOOLS, type TreeBlock, type TreeMessage, type TreeModel, type TreeReply, type TreeSearch } from "../src/business-tree/agent.ts";
+import { leadIn, pageExcerpt, runBusinessTree as runTreeAgent, sectionHeading, TREE_TOOLS, type TreeBlock, type TreeLibrary, type TreeMessage, type TreeModel, type TreeReply, type TreeSearch } from "../src/business-tree/agent.ts";
+
+/**
+ * SEC documents are read from the filing library alone (docs/sec-archive.md). These tests describe the library with the
+ * same page the fake search serves, so the filing's text reaches the agent as the archive would hold it.
+ */
+const libraryOf = (search: TreeSearch, filings: Array<{ url: string; title: string; publishedAt: string | null }>): TreeLibrary => ({
+  documents: async () => filings,
+  read: async (url, terms, maxChars) => pageExcerpt((await search.fetchContent({ url, depth: "advanced" }, { scope: "test", maxAgeMs: 0 })).data.text, terms, maxChars),
+  businessSection: async () => null,
+});
+const runBusinessTree: typeof runTreeAgent = input => runTreeAgent({ ...input, filingLibrary: input.filingLibrary ?? libraryOf(input.search, input.filings ?? []) });
 import { treeBusinesses } from "../src/business-tree/workflow.ts";
 import { lineAliases, namedIn, quotedIn, quoteProblem, readBusinessTree, withoutCitations } from "../../../shared/analysis-runtime/business-tree.ts";
 import type { PublicBusinessFlow } from "../../../shared/analysis-contract/business-flow.ts";

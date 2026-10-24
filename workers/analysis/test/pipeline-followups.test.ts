@@ -32,7 +32,7 @@ const columns = (rows: Array<[string, string, string]>) => ({
 test("a history scan after a finished one lists EDGAR again but reads only the filings not read before", async () => {
   const db = database();
   const listing = { cik: CIK, sic: "7372", filings: { recent: columns([["10-Q", "2026-10-16", "0000789019-26-000030"], ["10-Q", "2026-07-30", "0000789019-26-000020"], ["10-K", "2026-04-30", "0000789019-26-000010"]]) } };
-  const reader: SecReader = { async read(url) { if (url.endsWith(`CIK${CIK}.json`)) return Response.json(listing); throw new Error("no document reads expected"); } };
+  const reader: SecReader = { submissions: async () => listing, issuerDirectory: async () => ({ fields: [], data: [] }), async read() { throw new Error("no document reads expected"); } };
   const finished = { version: HISTORY_VERSION, ticker: "MSFT", industry: "standard", documents: [], index: 0, facts: [], issues: [], startedAt: "2026-08-01T00:00:00.000Z", finishedAt: "2026-08-01T00:10:00.000Z",
     read: ["0000789019-26-000020", "0000789019-26-000010", "0000789019-23-000001"] };
   await db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?)").bind(`sec:revenue-history-cursor:v1:${CIK}`, JSON.stringify(finished), finished.finishedAt).run();
@@ -47,7 +47,7 @@ test("a history scan after a finished one lists EDGAR again but reads only the f
 test("a cursor from before incremental scans reads everything once more", async () => {
   const db = database();
   const listing = { cik: CIK, sic: "7372", filings: { recent: columns([["10-Q", "2026-10-16", "0000789019-26-000030"], ["10-K", "2026-04-30", "0000789019-26-000010"]]) } };
-  const reader: SecReader = { async read(url) { if (url.endsWith(`CIK${CIK}.json`)) return Response.json(listing); throw new Error("no document reads expected"); } };
+  const reader: SecReader = { submissions: async () => listing, issuerDirectory: async () => ({ fields: [], data: [] }), async read() { throw new Error("no document reads expected"); } };
   const legacy = { version: HISTORY_VERSION, ticker: "MSFT", industry: "standard", documents: [], index: 0, facts: [], issues: [], startedAt: "2026-08-01T00:00:00.000Z", finishedAt: "2026-08-01T00:10:00.000Z" };
   await db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?)").bind(`sec:revenue-history-cursor:v1:${CIK}`, JSON.stringify(legacy), legacy.finishedAt).run();
   await runHistoryStep(db, reader, { ticker: "MSFT", cik: CIK }, now, 0, { restartFinished: true });

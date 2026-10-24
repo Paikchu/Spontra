@@ -11,11 +11,11 @@ import { FinancialMaintenanceStore } from "../admin/financial-maintenance-store.
 import { runFinancialMaintenanceTick } from "../admin/financial-maintenance-runner.ts";
 import { collectComplete, collectNewFilings } from "../financial-data/collect.ts";
 import { companyPolicyEnvironment } from "../financial-data/company-policy.ts";
-import { archiveFilingDisclosures, readArchivedDocument, refreshStaleProjections } from "../financial-data/disclosure-audit.ts";
+import { refreshStaleProjections } from "../financial-data/disclosure-audit.ts";
+import { archivingReader, edgarListings } from "../sec-archive/index.ts";
 import { HISTORY_VERSION, runHistoryStep } from "../financial-data/history.ts";
 import { SEC_FLOW_PARSER_VERSION } from "../financial-data/parser.ts";
-import { discoverDataIssuer, readReleaseQuarter, readSecDocumentBatch, throttledSecReader, type SecReader } from "../financial-data/provider.ts";
-import { withFilingStructure } from "../financial-data/presentation.ts";
+import { discoverDataIssuer, readReleaseQuarter, readSecDocumentBatch } from "../financial-data/provider.ts";
 import { claimJobFor, latestJob, startCollection } from "../financial-data/queue.ts";
 import { D1CompleteStore } from "../financial-data/store.ts";
 import type { AnalysisEnv } from "../operations.ts";
@@ -65,14 +65,8 @@ async function dataPolicy(env: AnalysisEnv) {
   return financialPolicy({ SEC_DATA_TICKERS: policyEnv.SEC_DATA_TICKERS, SEC_TRACKED_TICKERS: policyEnv.SEC_TRACKED_TICKERS, SEC_AI_ENABLED: "false" });
 }
 
-/** A throttled SEC reader whose documents are archived for this company, read back from the archive when already there. */
-function archivingReader(env: AnalysisEnv, ticker: string, causeId: string): SecReader {
-  const reader = throttledSecReader(env.SEC_USER_AGENT, fetch, 1000);
-  const archive = { DB: env.DB!, SEC_FILINGS: env.SEC_FILINGS };
-  reader.archive = (source, html, metadata) => archiveFilingDisclosures(archive, ticker, source, html, metadata, causeId).then(() => undefined);
-  reader.archived = url => readArchivedDocument(archive, ticker, url);
-  return withFilingStructure(reader, env.DB!);
-}
+/** The archiving reader for this company (sec-archive): the only way a task downloads a filing, and it stores what it reads. */
+const archiveReader = (env: AnalysisEnv, ticker: string, causeId: string) => archivingReader({ DB: env.DB!, SEC_FILINGS: env.SEC_FILINGS, SEC_USER_AGENT: env.SEC_USER_AGENT }, ticker, causeId);
 
 export const FINANCIAL_TASKS = {
   /**
@@ -97,12 +91,12 @@ export const FINANCIAL_TASKS = {
         if (latest && ["queued", "retry", "running"].includes(latest.status)) {
           return { status: "later", afterMs: until(latest.status === "running" ? latest.lease_until : latest.next_attempt_at, now), detail: { waiting: latest.status } };
         }
-        await startCollection(db, ticker, cik ?? (await discoverDataIssuer(ticker, throttledSecReader(env.SEC_USER_AGENT, fetch, 1000))).cik, now);
+        await startCollection(db, ticker, cik ?? (await discoverDataIssuer(ticker, edgarListings(env, { delayMs: 1000 }))).cik, now);
         job = await claimJobFor(db, ticker, now);
         // Another owner (a collection or maintenance task the checks above did not see) has the issuer: wait, never drop the filing.
         if (!job) return { status: "later", afterMs: 5 * MINUTE, detail: { waiting: "collection owned elsewhere" } };
       }
-      const reader = archivingReader(env, ticker, causeId);
+      const reader = archiveReader(env, ticker, causeId);
       // An issuer that already publishes takes only its new filings, each read once by a read note; nothing published
       // is read again (docs/agent-interpretation-design.md). An issuer's first publication still comes from the full read below.
       const current = aiIsEnabled(env) ? (await readCompletePublication(db, job.cik).catch(() => null))?.flow : null;
@@ -150,7 +144,7 @@ export const FINANCIAL_TASKS = {
       const job = await latestJob(env.DB!, ticker);
       if (!job || !/^\d{10}$/.test(job.cik)) return { status: "done", detail: { skipped: "issuer not collected yet" } };
       const cursor = await env.DB!.prepare("SELECT json_extract(payload, '$.finishedAt') finished FROM sec_cache WHERE cache_key = ?").bind(`sec:revenue-history-cursor:v1:${job.cik}`).first<{ finished: string | null }>();
-      const result = await runHistoryStep(env.DB!, archivingReader(env, ticker, causeId), { ticker, cik: job.cik }, now, 3, { restartFinished: !!cursor?.finished });
+      const result = await runHistoryStep(env.DB!, archiveReader(env, ticker, causeId), { ticker, cik: job.cik }, now, 3, { restartFinished: !!cursor?.finished });
       if (result.finished) return { status: "done", detail: result };
       return { status: "later", afterMs: result.retry ? 10 * MINUTE : SECOND, detail: result };
     },

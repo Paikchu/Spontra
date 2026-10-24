@@ -22,7 +22,8 @@ import { normalizeTrackedTicker } from '../sec/config.ts';
 import { emit } from '../pipeline/outbox.ts';
 import { readCompletePublicationForTicker } from '../financial-data/publication.ts';
 import { readMapDerived } from '../financial-data/derived.ts';
-import { discoverDataIssuer, throttledSecReader } from '../financial-data/provider.ts';
+import { discoverDataIssuer } from '../financial-data/provider.ts';
+import { edgarListings } from '../sec-archive/index.ts';
 import { D1SecRepository } from '../sec/d1.ts';
 import { issuerDirectory, searchIssuers } from './issuer-search.ts';
 
@@ -193,7 +194,7 @@ export async function handleBusinessMapAdminRequest(request: Request, env: Analy
     if (path === '/admin/business-map/issuers' && request.method === 'GET') {
       const query = new URL(request.url).searchParams.get('q') ?? '';
       if (!query.trim()) return json({issuers:[]});
-      try { return json({issuers: searchIssuers(await issuerDirectory(db, throttledSecReader(env.SEC_USER_AGENT, fetch, 0)), query)}); }
+      try { return json({issuers: searchIssuers(await issuerDirectory(db, edgarListings(env, { delayMs: 0 })), query)}); }
       catch { return json({error:'暂时无法访问 SEC 发行人目录，请稍后重试。'},503); }
     }
     if (path === '/admin/business-map/messages/read' && request.method === 'POST') {
@@ -226,7 +227,7 @@ export async function handleBusinessMapAdminRequest(request: Request, env: Analy
     // maintenance task; the issuer record saved now lets discovery and collection know its CIK at once.
     if (body.enabled) {
       try {
-        const issuer = await discoverDataIssuer(ticker, throttledSecReader(env.SEC_USER_AGENT, fetch, 0));
+        const issuer = await discoverDataIssuer(ticker, edgarListings(env, { delayMs: 0 }));
         await new D1SecRepository(db).setCache(`admin:financial-issuer:${ticker}`, issuer, now);
       } catch (error) {
         if (error instanceof Error && error.message === 'SEC_ISSUER_NOT_FOUND') return json({error:'SEC 发行人目录中没有这个代码。'},404);

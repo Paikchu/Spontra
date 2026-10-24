@@ -129,15 +129,8 @@ async function collectFilings(input: { companyName: string; filings?: ExplainerF
     }
     if (documents.length) return documents;
   }
-  const read = async (hit: SearchHit) => {
-    try { return documentFor(hit, excerpt((await input.search.fetchContent({ url: hit.url, depth: "advanced" }, { ...scope, maxAgeMs: 30 * 24 * 60 * 60_000 })).data.text, terms, 20_000)); }
-    catch { return null; }
-  };
+  // Without the library no SEC text is read: EDGAR documents never come through the web (docs/sec-archive.md).
   const documents: EvidenceDocument[] = [];
-  for (const filing of (input.filings ?? []).filter(f => isSec(f.url)).slice(0, 2)) {
-    const doc = await read({ url: filing.url, title: filing.title, snippet: "", publishedAt: filing.publishedAt, score: null });
-    if (doc?.excerpt) documents.push(doc);
-  }
   // Search ranking is not recency: choose the newest annual report by its accession year, and only
   // one filed within about the last two years.
   const year = Number(input.now.slice(0, 4));
@@ -145,8 +138,7 @@ async function collectFilings(input: { companyName: string; filings?: ExplainerF
     const result = await input.search.search({ query: `${input.companyName} form 10-K annual report fiscal ${year} ${year - 1}`, maxResults: 10, depth: "advanced", includeDomains: ["sec.gov"] }, scope);
     const annual = result.data.results.filter(h => isSec(h.url) && /10-?k/i.test(`${h.title} ${h.url}`) && (accessionYear(h.url) ?? 0) >= year - 1)
       .sort((a, b) => (accessionYear(b.url) ?? 0) - (accessionYear(a.url) ?? 0))[0];
-    const doc = annual && !documents.some(d => d.url === annual.url) ? await read(annual) : null;
-    if (doc?.excerpt) documents.push(doc);
+    if (annual && !documents.some(d => d.url === annual.url)) documents.push(documentFor(annual, null));
   } catch { /* The flow's own filing still anchors the explanation. */ }
   return documents;
 }
