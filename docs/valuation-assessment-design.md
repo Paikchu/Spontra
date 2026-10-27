@@ -2,7 +2,7 @@
 
 更新日期：2026-10-27（Asia/Shanghai）。状态：设计方案，估值功能尚未实现、未生成评估报告。
 
-**开发交接请同时阅读[独立开发交接规格 v1](valuation-assessment-implementation.md)。** 本文说明资料链路与架构，交接规格补全评分锚点、十类模型公式、报价/失败规则、API、存储、页面状态、接线清单和验收样本。两者冲突时以交接规格中的首版行为为准；接手者无需原对话、截图或 Mispriced 访问权限。
+**开发交接请同时阅读[独立开发交接规格 v1](valuation-assessment-implementation.md)。** 方法层面的升级（驱动因子计算核、三情景一致性与概率、反向估值、校准闭环）见[估值体系优化](valuation-methodology-optimization.md)，与本文冲突处以该文为准。 本文说明资料链路与架构，交接规格补全评分锚点、十类模型公式、报价/失败规则、API、存储、页面状态、接线清单和验收样本。两者冲突时以交接规格中的首版行为为准；接手者无需原对话、截图或 Mispriced 访问权限。
 
 代码核查基线：2026-10-24，[Spontra d798cc1](https://github.com/Paikchu/Spontra/tree/d798cc142910721e2c0a7cb8cd4efad6d7187eff)。源码引用固定到该版本，实施前按最新 main 复核。
 
