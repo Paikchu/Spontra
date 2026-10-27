@@ -6,7 +6,7 @@ import { readReportHistory } from '../../../../shared/analysis-runtime/financial
 import { D1SecRepository } from '../sec/d1.ts';
 import { assembleCapital } from './capital-history.ts';
 import { readStoredAudits, type DisclosureArchiveEnv, type StoredAudit } from './disclosure-audit.ts';
-import { extractDisclosedQuarters, hasDisclosureProfile, readReportedFacts, SEC_FLOW_PARSER_VERSION, type DocumentSource } from './parser.ts';
+import { extractDisclosedQuarters, readReportedFacts, SEC_FLOW_PARSER_VERSION, type DocumentSource } from './parser.ts';
 import { fiscalFourthQuarters, priorPresentationOnly, priorYearsUnchanged } from './period-review.ts';
 import { readCompletePublicationForTicker } from './publication.ts';
 import { outboxStatement } from '../pipeline/outbox.ts';
@@ -162,7 +162,7 @@ export function filingQuarters(filing: { html: string; source: DocumentSource },
   const reviewed = priorPresentationOnly(filing.html);
   let quarters = extractDisclosedQuarters(filing.html, filing.source, [], reviewed).quarters;
   const worded = !!thirdQuarter && reviewed && priorPresentationOnly(thirdQuarter.html);
-  if (thirdQuarter && !hasDisclosureProfile(filing.source.cik) && (worded || priorAnnual)) {
+  if (thirdQuarter && (worded || priorAnnual)) {
     const annual = readReportedFacts(filing.html, filing.source), nineMonths = readReportedFacts(thirdQuarter.html, thirdQuarter.source);
     if (!annual.issues.length && !nineMonths.issues.length) {
       const fourth = fiscalFourthQuarters(annual.facts, nineMonths.facts, filing.source.revenueStructure);

@@ -1,4 +1,4 @@
-import {extractVerifiedCurrentQuarters,hasDisclosureProfile,type Fact,type DocumentSource} from './parser.ts';
+import {extractVerifiedCurrentQuarters,type Fact,type DocumentSource} from './parser.ts';
 import {checkCompleteFlow} from '../../../../shared/analysis-runtime/financial-data/completeness.ts';
 import type {IncomeCalculation,RevenueStructure} from './calculation.ts';
 import type {BridgeStructure} from './bridge.ts';
@@ -82,8 +82,6 @@ function earlierQuarterFacts(current:Fact[],facts:Fact[],previousEnd:string):Fac
  * issuer (a newly listed company's first 10-Q): the quarter before then comes from that report's own cumulative period.
  */
 export function reviewedCurrentPair(all:Fact[],expected:string,documents:Array<{source:DocumentSource;html?:string;eligible:boolean}>,calculations:Record<string,IncomeCalculation>={},presentation:{structure:BridgeStructure;version:string}|null=null,revenueStructures:Record<string,RevenueStructure>={},firstReport=false):{quarters:BusinessFlowQuarter[];reviewed:boolean}{
- // An issuer with a disclosure-specific expense and revenue profile is not read by generic arithmetic.
- if(all[0]&&hasDisclosureProfile(all[0].source.cik))return {quarters:[],reviewed:false};
  const facts=precisionSelect(all);if(!facts)return {quarters:[],reviewed:false};
  const usable=statementFacts(facts);
  const current=usable.filter(f=>f.end===expected&&days(f.start,f.end)>=70&&days(f.start,f.end)<=110);

@@ -60,8 +60,7 @@ export function historyQuarterFrom(q: BusinessFlowQuarter, source: RevenueHistor
 export function mergeHistory(ticker: string, existing: RevenueHistoryQuarter[], incoming: RevenueHistoryQuarter[], updatedAt: string): RevenueHistory {
   const byPeriod = new Map<string, RevenueHistoryQuarter>();
   const rank = (q: RevenueHistoryQuarter) => [(q.basis === "reported" ? 2 : 0) + (q.source.form === "8-K" ? 0 : 1), q.source.filedAt] as const;
-  for (const q of [...existing, ...incoming]) {
-    if (!validHistoryQuarter(q)) continue;
+  for (const q of alignReleaseSplits([...existing, ...incoming].filter(validHistoryQuarter))) {
     const old = byPeriod.get(q.periodEnd);
     if (!old) { byPeriod.set(q.periodEnd, q); continue; }
     const [a, b] = [rank(q), rank(old)];
@@ -77,6 +76,24 @@ export function mergeHistory(ticker: string, existing: RevenueHistoryQuarter[], 
   }
   const quarters = [...byPeriod.values()].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd)).slice(0, HISTORY_QUARTERS).reverse();
   return { schemaVersion: "revenue-history.v1", ticker, updatedAt, quarters };
+}
+
+/**
+ * A series compares like with like: an earnings release's revenue lines stand only where they name the categories a
+ * neighbouring periodic report (the nearest before or after its quarter) splits revenue into. Another split (a release
+ * printing products and services beside reports split by segment) reads as the company total, as a release that
+ * prints no split does.
+ */
+function alignReleaseSplits(quarters: RevenueHistoryQuarter[]): RevenueHistoryQuarter[] {
+  const names = (q: RevenueHistoryQuarter) => q.segments.map(s => s.name.trim().toLowerCase()).sort().join("|");
+  const periodic = quarters.filter(q => q.source.form !== "8-K" && q.segments.length > 1).sort((a, b) => a.periodEnd.localeCompare(b.periodEnd));
+  if (!periodic.length) return quarters;
+  return quarters.map(q => {
+    if (q.source.form !== "8-K" || q.segments.length < 2) return q;
+    const before = periodic.filter(p => p.periodEnd <= q.periodEnd).at(-1), after = periodic.find(p => p.periodEnd >= q.periodEnd);
+    return [before, after].some(p => p && names(p) === names(q)) ? q
+      : { ...q, segments: [{ id: "reported-company-total", name: "Total company (segment split not yet verified)", value: q.revenue, ...(q.lineage ? { lineage: q.lineage } : {}) }] };
+  });
 }
 
 /** Public projection: invalid payloads are dropped, never repaired. */
