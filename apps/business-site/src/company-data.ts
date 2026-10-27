@@ -116,4 +116,3 @@ export function publicationFlow(data: CompanyPublication, ticker: string): Publi
   const quarters = [...new Map([...(data.reports?.quarters ?? []), ...data.flow.quarters].map(q => [q.periodEnd, q])).values()];
   return selectFlow({ ...data.flow, quarters }, null, ticker);
 }
-

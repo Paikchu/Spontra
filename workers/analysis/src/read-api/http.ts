@@ -68,5 +68,3 @@ function matchesEtag(header: string | null, etag: string): boolean {
   return header.split(",").map((candidate) => candidate.trim()).some((candidate) =>
     candidate === etag || candidate === etag.replace(/^W\//, ""));
 }
-
-
