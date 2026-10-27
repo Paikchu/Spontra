@@ -12,6 +12,7 @@ import type { EventsPublication } from "@/shared/analysis-contract/events";
 import type { FindingFundamentals } from "@/shared/analysis-runtime/findings";
 import type { MapRevisions } from "@/shared/analysis-contract/revisions";
 import { getLocale } from "@/packages/web/src/i18n";
+import { rememberIssuer } from "@/shared/analysis-runtime/fiscal-label";
 import { findingData, verifiedFindings, type VerifiedFinding } from "./findings-model";
 
 export type CompanyPublication = CompleteFlowPublication & { explainer?: BusinessExplainer | null; guidance?: GuidancePublication | null; tree?: BusinessTree | null };
@@ -55,7 +56,10 @@ export async function fetchCompany(ticker: string, signal: AbortSignal, rev?: st
     throw new CompanyHttpError(0);
   }
   if (!response.ok) throw new CompanyHttpError(response.status);
-  return await response.json() as CompanyPublication;
+  const publication = await response.json() as CompanyPublication;
+  // Every period label on the page reads the issuer's fiscal calendar from here.
+  if (publication.issuer) rememberIssuer(ticker, publication.issuer);
+  return publication;
 }
 
 /**

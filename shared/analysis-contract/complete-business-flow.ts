@@ -6,5 +6,7 @@ export type CompleteFlowPublication={schemaVersion:'complete-business-flow.v1';s
  /** Supplementary quarterly revenue by business; absent or null when not yet collected. */
  history?:RevenueHistory|null;
  /** Independently audited quarterly statements from the last two years; latest pair remains the publication gate. */
- reports?:PublicBusinessFlow|null};
+ reports?:PublicBusinessFlow|null;
+ /** The issuer's fiscal calendar and the name readers know it by; null fields where neither its submissions nor its annual reports say. */
+ issuer?:{fiscalYearEndMonth:number|null;name:string|null}};
 export type FinancialIssuer={cik:string;tickers:string[];name:string;industry:'standard'|'financial'|'insurance'|'unknown'};

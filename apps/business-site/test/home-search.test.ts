@@ -66,7 +66,7 @@ test("the homepage body is accepted only when it matches the digest", () => {
   const body = { schemaVersion: "home-digest.v1", status: "ready", generatedAt: "2026-08-07T00:00:00Z", coverage: { count: 1, lastUpdatedAt: null }, companies: [company], popular: ["ACME"] };
   assert.equal(parseHomeDigest(body)?.companies[0]?.ticker, "ACME");
   assert.equal(parseHomeDigest(body)?.companies[0]?.latestPeriod?.labelSource, "unknown");
-  const nvdaBody = { ...body, popular: ["NVDA"], companies: [{ ...company, ticker: "NVDA", latestPeriod: { periodEnd: "2026-07-26", fiscalLabel: "2026 Q3", filedAt: "2026-08-26" } }] };
+  const nvdaBody = { ...body, popular: ["NVDA"], companies: [{ ...company, ticker: "NVDA", latestPeriod: { periodEnd: "2026-07-26", fiscalLabel: "2026 Q3", filedAt: "2026-08-26", fiscalYearEndMonth: 1 } }] };
   const nvda = parseHomeDigest(nvdaBody)?.companies[0]?.latestPeriod;
   assert.equal(nvda?.fiscalYear, 2027);
   assert.equal(nvda?.fiscalQuarter, 2);

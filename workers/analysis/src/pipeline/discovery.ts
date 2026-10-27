@@ -7,13 +7,17 @@ import { outboxStatement } from "./outbox.ts";
 import { scopeTickers } from "./router.ts";
 
 export const DISCOVERY_HEARTBEAT_KEY = "pipeline:discovery-heartbeat";
-const stateKey = (ticker: string) => `sec:discovery:v1:${ticker}`;
+export const DISCOVERY_STATE_PREFIX = "sec:discovery:v1:";
+const stateKey = (ticker: string) => `${DISCOVERY_STATE_PREFIX}${ticker}`;
 /** Forms something downstream reads: periodic reports, current reports and insider transactions, with amendments. */
 const ANNOUNCED = /^(?:10-[QK]|20-F|40-F|6-K|8-K|4)(?:\/A)?$/;
 const REMEMBERED = 200;
 
-/** `collectable`: accessions of the filings collection reads (periodic reports, 6-Ks, earnings 8-Ks), newest first. */
-type DiscoveryState = { cik: string; accessions: string[]; checkedAt: string; collectable?: string[] };
+/**
+ * `collectable`: accessions of the filings collection reads (periodic reports, 6-Ks, earnings 8-Ks), newest first.
+ * `fiscalYearEnd` (`MMDD`) and `name` are the issuer's as its submissions state them; EDGAR leaves the year end out for some foreign issuers.
+ */
+export type DiscoveryState = { cik: string; accessions: string[]; checkedAt: string; collectable?: string[]; fiscalYearEnd?: string | null; name?: string | null };
 /** The forms a collection job lists (provider.ts `readSecDocumentBatch`). */
 const COLLECTED = (f: { form: string; items: string }) => /^(?:10-[QK]|20-F)(?:\/A)?$/.test(f.form) || f.form === "6-K" || (f.form === "8-K" && f.items.includes("2.02"));
 
@@ -75,7 +79,8 @@ export async function runSecDiscovery(env: AnalysisEnv, now = new Date(), fetche
     }
     if (!cik) { result.unknown.push(ticker); continue; }
     try {
-      const filings = recentFilings(await (await reader.read(`https://data.sec.gov/submissions/CIK${cik}.json`)).json());
+      const submissions = await (await reader.read(`https://data.sec.gov/submissions/CIK${cik}.json`)).json() as { fiscalYearEnd?: unknown; name?: unknown } | null;
+      const filings = recentFilings(submissions);
       if (!filings.length) throw new Error("EMPTY_SUBMISSIONS");
       const previous = (await repository.getCache<DiscoveryState>(stateKey(ticker)))?.payload;
       const at = now.toISOString();
@@ -83,7 +88,9 @@ export async function runSecDiscovery(env: AnalysisEnv, now = new Date(), fetche
       const fresh = previous ? filings.filter(f => !known.has(f.accession) && ANNOUNCED.test(f.form)) : [];
       await db.batch([
         db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at")
-          .bind(stateKey(ticker), JSON.stringify({ cik, accessions: filings.map(f => f.accession), checkedAt: at, collectable: filings.filter(COLLECTED).map(f => f.accession).slice(0, 20) } satisfies DiscoveryState), at),
+          .bind(stateKey(ticker), JSON.stringify({ cik, accessions: filings.map(f => f.accession), checkedAt: at, collectable: filings.filter(COLLECTED).map(f => f.accession).slice(0, 20),
+            fiscalYearEnd: typeof submissions?.fiscalYearEnd === "string" && /^\d{4}$/.test(submissions.fiscalYearEnd) ? submissions.fiscalYearEnd : null,
+            name: typeof submissions?.name === "string" && submissions.name.trim() ? submissions.name.trim() : null } satisfies DiscoveryState), at),
         // Oldest first, so subscribers that read the newest state see the filings in the order they were made.
         ...fresh.reverse().map(f => outboxStatement(db, { type: "filing.discovered", ticker, cik, detail: { form: f.form, items: f.items, accession: f.accession } }, at)),
         ...(bootstrap ? [outboxStatement(db, { type: "company.added", ticker, cik }, at), outboxStatement(db, { type: "collection.requested", ticker, cik }, at)] : []),

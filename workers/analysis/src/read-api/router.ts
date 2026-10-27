@@ -128,6 +128,7 @@ async function home(request: Request, database: D1Database, env: HomeDigestEnv):
 async function handleRoute(request: Request, database: D1Database, env: FeatureDefaultsEnv, route: Exclude<RouteMatch, { kind: "findings-index" } | { kind: "home" }>): Promise<Response> {
   // The admin's switch for one feature of this company: off hides what the feature wrote (docs/whitelist-feature-switches-design.md).
   const hidden = async (feature: Feature, ticker = route.ticker) => !await featureShown(database, env, ticker.trim().toUpperCase(), feature);
+  const issuerCalendar = async (ticker: string) => (await readFiscalFocus(database, ticker)).issuers.get(ticker.trim().toUpperCase()) ?? { fiscalYearEndMonth: null, name: null };
   const url = new URL(request.url);
   // `?locale=zh-CN` serves a resource with its translated prose applied; the structure, figures and ids are the English
   // publication's, and a string not yet translated stays English. Two lookups and a pure copy, never a model call.
@@ -150,16 +151,18 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
       );
       // Report summaries hidden by the admin: the filings are still listed, as filings, without what the model wrote.
       const filings = await hidden("reports", page.ticker) ? page.filings.map(withoutSummary) : page.filings;
-      return dataResponse(request, { ...page, filings: await translated("filings", filings) });
+      const calendar = await issuerCalendar(page.ticker);
+      return dataResponse(request, { ...page, filings: (await translated("filings", filings)).map(f => ({ ...f, fiscalYearEndMonth: calendar.fiscalYearEndMonth })) });
     }
     case "filing": {
       const detail = await getPublicFiling(new D1SecRepository(database), route.ticker, route.accession,
         url.searchParams.has("reportVersion") || url.searchParams.has("reportDate")
           ? { reportVersion: url.searchParams.get("reportVersion") ?? "", reportDate: url.searchParams.get("reportDate") ?? "" } : undefined);
       if (!detail) return errorResponse("FILING_NOT_FOUND", "SEC filing not found.");
-      if (await hidden("reports", detail.ticker)) return dataResponse(request, { ...detail, filing: withoutSummary(detail.filing) }, "no-store");
+      const { fiscalYearEndMonth } = await issuerCalendar(detail.ticker);
+      if (await hidden("reports", detail.ticker)) return dataResponse(request, { ...detail, filing: { ...withoutSummary(detail.filing), fiscalYearEndMonth } }, "no-store");
       const report = await translated("filing", { summary: detail.filing.summary, analysis: detail.filing.analysis }, route.accession);
-      return dataResponse(request, { ...detail, filing: { ...detail.filing, summary: report.summary, analysis: report.analysis } });
+      return dataResponse(request, { ...detail, filing: { ...detail.filing, summary: report.summary, analysis: report.analysis, fiscalYearEndMonth } });
     }
     case "business-flow": {
       const payload=await readCompletePublicationForTicker(database,route.ticker);
@@ -170,6 +173,7 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
       if (payload.flow) payload.flow = stampFlow(payload.flow, focus);
       if (payload.reports) payload.reports = stampFlow(payload.reports, focus);
       if (payload.history) payload.history = stampHistory(payload.history, focus);
+      payload.issuer = focus.issuers.get(route.ticker.trim().toUpperCase()) ?? { fiscalYearEndMonth: null, name: null };
       return dataResponse(request,payload,payload.status==="ready"?"cacheable":"no-store");
     }
     case "capital": {

@@ -15,7 +15,8 @@ import { researchSearch, researchSearchConfigured } from "../web-search/research
 import { D1SecRepository } from "../sec/d1.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
 import { fiscalPeriodKey, readFiscalPeriod } from "../sec/fiscal-period.ts";
-import { inFiscalSequence, quarterOf } from "../sec/fiscal-sequence.ts";
+import { inFiscalSequence } from "../sec/fiscal-sequence.ts";
+import { quarterNumber } from "../../../../shared/analysis-runtime/fiscal-label.ts";
 import type { SecFilingFeed } from "../sec/sec.ts";
 import type { WorkflowStepContextLike, WorkflowStepLike } from "../workflow-core.ts";
 import { extractGuidance, GUIDANCE_EXTRACTOR_VERSION, GUIDANCE_MAX_OUTPUT_TOKENS, type GuidanceModelCall } from "./extract.ts";
@@ -61,13 +62,13 @@ export function earningsEvents(feed: SecFilingFeed | null, now = Date.now()): Ar
 async function fiscalAnchors(repository: D1SecRepository, feed: SecFilingFeed | null): Promise<FiscalAnchor[]> {
   const anchors: FiscalAnchor[] = [];
   for (const filing of feed?.filings ?? []) {
-    if (!/^(10-Q|10-K)(\/A)?$/.test(filing.form)) continue;
+    if (!/^(10-Q|10-K|20-F)(\/A)?$/.test(filing.form)) continue;
     const period = (await repository.getCache<SecFiscalPeriod | null>(fiscalPeriodKey(filing)))?.payload;
     if (period) anchors.push({ fiscalYear: period.fiscalYear, fiscalPeriod: period.fiscalPeriod, periodEnd: period.periodEnd });
     if (anchors.length >= 8 || period?.fiscalPeriod === "FY") break;
   }
-  // A quarter whose DEI repeats last year's label (Oracle, 2026-08-31) would date the guidance a year early.
-  const labelled = anchors.flatMap(a => { const quarter = quarterOf(a.fiscalPeriod); return quarter ? [{ ...a, quarter }] : []; });
+  // A quarter whose DEI repeats last year's label would date the guidance a year early.
+  const labelled = anchors.flatMap(a => { const quarter = quarterNumber(a.fiscalPeriod); return quarter ? [{ ...a, quarter }] : []; });
   return inFiscalSequence(labelled).map(({ quarter: _, ...anchor }) => anchor);
 }
 
