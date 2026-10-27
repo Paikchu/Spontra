@@ -25,7 +25,7 @@ function percent(value: number | null): string {
   return `${Math.round(value * 1000) / 10}%`;
 }
 
-/** Product-usage cards shared by the public metrics page and the admin dashboard. */
+/** Product-usage cards for the admin dashboard. */
 export function UsageBoard({ summary, range, onRange, labels, pending, failed, onRetry }: {
   summary: TelemetrySummary | null;
   range: TelemetryRange;

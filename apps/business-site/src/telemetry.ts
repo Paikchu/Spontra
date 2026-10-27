@@ -279,16 +279,21 @@ export type TelemetryNamespace = {
   get(id: unknown): { fetch(request: Request): Promise<Response> };
 };
 
-/** Public telemetry route. POST stores one event; GET returns the aggregate. No raw IP is forwarded. */
+/** Host the admin service binding uses. A public request cannot present this hostname. */
+const TELEMETRY_READ_HOST = "business-map.internal";
+
+/** Public telemetry route. POST stores one event. GET of the aggregate is only the admin binding. No raw IP is forwarded. */
 export async function handleTelemetry(request: Request, namespace: TelemetryNamespace | undefined, now = Date.now()): Promise<Response> {
-  if (!namespace) return json({ error: "unavailable" }, 503);
   const url = new URL(request.url);
   if (request.method === "GET") {
+    if (url.hostname !== TELEMETRY_READ_HOST) return json({ error: "Not found" }, 404);
+    if (!namespace) return json({ error: "unavailable" }, 503);
     const range = url.searchParams.get("range") ?? "7d";
     if (!TELEMETRY_RANGES.includes(range as TelemetryRange)) return json({ error: "invalid" }, 400);
     const stub = namespace.get(namespace.idFromName("global"));
     return stub.fetch(new Request(`https://telemetry.internal/summary?range=${range}`, { method: "GET" }));
   }
+  if (!namespace) return json({ error: "unavailable" }, 503);
   if (request.method !== "POST") return json({ error: "Method not allowed" }, 405);
   const raw = await request.arrayBuffer();
   if (raw.byteLength > 1024) return json({ error: "too large" }, 413);

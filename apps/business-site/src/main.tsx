@@ -1,5 +1,5 @@
 import { SidebarProvider } from "@/packages/web/src/ui/sidebar";
-import { Fragment, StrictMode, Suspense, lazy, useCallback, useEffect, useRef, useState, Component, type ReactNode } from "react";
+import { Fragment, StrictMode, useCallback, useEffect, useRef, useState, Component, type ReactNode } from "react";
 import { getLocale, messages, useLocale } from "@/packages/web/src/i18n";
 import { createRoot } from "react-dom/client";
 import { canonicalTicker } from "@/shared/analysis-runtime/financial-data/policy";
@@ -16,7 +16,6 @@ import { VIEW_LABEL } from "./findings-model";
 import { UpdateNotice } from "./UpdateNotice";
 import { Home } from "./Home";
 import { track } from "./track";
-const MetricsPage = lazy(() => import("./MetricsPage").then(mod => ({ default: mod.MetricsPage })));
 import { useHomeDigest } from "./home-data";
 import { useStageHost } from "./stage/StageHost";
 import { turnPage, usePageTurning } from "./page-turn";
@@ -53,10 +52,6 @@ function railYields() {
   }
 }
 
-function isMetricsPath(path: string): boolean {
-  const bare = path.replace(/\/+$/, "") || "/";
-  return bare === "/internal/metrics";
-}
 function tickerFromUrl() {
   const match = location.pathname.match(
     /^\/companies\/([A-Za-z0-9.-]{1,12})\/?$/,
@@ -332,8 +327,6 @@ function App() {
   const catalogStatus = home.status === "ready" ? "ready" as const : home.status === "error" ? "error" as const : "loading" as const;
   const picks = featuredCompanies(home.digest?.companies ?? [], locale);
   // Home remounts so its memos pick up the new locale. The company page stays mounted and refetches in place.
-  if (!ticker && isMetricsPath(path))
-    return <Suspense fallback={null}><MetricsPage key={locale} light={light} onToggleTheme={toggleTheme} /></Suspense>;
   if (!ticker && !isHomePath(path))
     return <ErrorState kind="missing" code="NOT_FOUND" companies={picks} onHome={goHome} onSearch={searchFromError} restoredTitle={m.title} />;
   if (!ticker)

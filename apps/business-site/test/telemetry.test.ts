@@ -115,7 +115,7 @@ function post(body: unknown, ip = "203.0.113.8"): Request {
   });
 }
 
-test("the public route rate-limits by address hash, stores the event, and serves the summary", async () => {
+test("the public route stores events and keeps the aggregate off the public host", async () => {
   const seen: Request[] = [];
   const repo = memoryRepository();
   const env = namespace(repo, seen);
@@ -126,12 +126,18 @@ test("the public route rate-limits by address hash, stores the event, and serves
   assert.match(forwarded.headers.get("x-telemetry-actor") ?? "", /^[0-9a-f]{24}$/);
   assert.equal((await handleTelemetry(post({ ...payload, name: "nope" }), env, NOW)).status, 400);
   assert.equal((await handleTelemetry(new Request("https://businessview.info/api/business/v1/telemetry", { method: "POST", body: "x".repeat(1025) }), env, NOW)).status, 413);
-  const summary = await handleTelemetry(new Request("https://businessview.info/api/business/v1/telemetry?range=24h"), env, NOW);
+  const publicRead = await handleTelemetry(new Request("https://businessview.info/api/business/v1/telemetry?range=24h"), env, NOW);
+  assert.equal(publicRead.status, 404);
+  assert.equal(seen.length, 1);
+  assert.equal((await handleTelemetry(new Request("https://spontra-business-map.example.workers.dev/api/business/v1/telemetry?range=24h"), env, NOW)).status, 404);
+  const summary = await handleTelemetry(new Request("https://business-map.internal/api/business/v1/telemetry?range=24h"), env, NOW);
   assert.equal(summary.status, 200);
   const body = await summary.json() as { pageViews: number; topCompanies: Array<{ ticker: string }> };
   assert.equal(body.pageViews, 1);
   assert.equal(body.topCompanies[0]?.ticker, "META");
-  assert.equal((await handleTelemetry(new Request("https://businessview.info/api/business/v1/telemetry?range=year"), env, NOW)).status, 400);
+  assert.equal((await handleTelemetry(new Request("https://businessview.info/api/business/v1/telemetry?range=year"), env, NOW)).status, 404);
+  assert.equal((await handleTelemetry(new Request("https://business-map.internal/api/business/v1/telemetry?range=year"), env, NOW)).status, 400);
+  assert.equal((await handleTelemetry(new Request("https://business-map.internal/api/business/v1/telemetry"), undefined, NOW)).status, 503);
   assert.equal((await handleTelemetry(post(payload), undefined, NOW)).status, 503);
 
   let blocked = 0;

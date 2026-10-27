@@ -1026,8 +1026,6 @@ button { cursor: pointer; }
 .home-anchors button, .home-nav-search { border: 0; background: transparent; color: var(--muted-foreground); font-size: 13px; font-weight: 560; padding: 6px 10px; border-radius: 999px; }
 .home-anchors button:hover, .home-nav-search:hover { color: var(--foreground); background: color-mix(in srgb, var(--foreground) 6%, transparent); }
 .home-nav-tools { display: flex; align-items: center; gap: 2px; justify-self: end; }
-.usage-page .home-nav { grid-template-columns: 1fr auto; }
-.usage-wrap { padding-top: 28px; }
 .home-hero .search-panel { animation: rise .5s var(--ease) .18s both; }
 .home-nav-search { display: inline-flex; align-items: center; gap: 8px; }
 .home-nav-search kbd, .home-eyebrow b, .home-card b, .home-signal b, .home-delta, .home-metric strong { font-variant-numeric: tabular-nums lining-nums; }
