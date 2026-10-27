@@ -1,4 +1,3 @@
-import { enrichDisclosedRevenue } from "./company-revenue-disclosures";
 import {publicFlowSchema} from "@/shared/analysis-runtime/financial-data/schema";
 import { type BusinessFlowQuarter, type FlowAmount, type FlowMetric, type PublicBusinessFlow } from "@/shared/analysis-contract/business-flow";
 import type { PublicFundamentalsResponse, FundamentalMetricKey } from "@/shared/analysis-contract/fundamentals";
@@ -80,8 +79,7 @@ export function adaptFundamentals(data: PublicFundamentalsResponse | null, ticke
 
 export function selectFlow(published: PublicBusinessFlow | undefined, fundamentals: PublicFundamentalsResponse | null, ticker: string): PublicBusinessFlow {
   const parsed=publicFlowSchema.safeParse(published);
-  const flow = parsed.success && parsed.data.ticker===ticker && parsed.data.quarters.length ? parsed.data : adaptFundamentals(fundamentals,ticker);
-  return { ...flow, quarters: flow.quarters.map(q => enrichDisclosedRevenue(ticker, q)) };
+  return parsed.success && parsed.data.ticker===ticker && parsed.data.quarters.length ? parsed.data : adaptFundamentals(fundamentals,ticker);
 }
 
 /** The quarter `days` before this one, give or take three weeks; a fiscal calendar's 52/53-week years drift a few days. */

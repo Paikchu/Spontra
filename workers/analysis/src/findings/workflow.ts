@@ -19,7 +19,7 @@ import type { WorkflowStepLike } from "../workflow-core.ts";
 import { AiRunStore } from "../ai-runs/store.ts";
 import { buildHighlightTable, buildLedger, type Ledger } from "./ledger.ts";
 import { mergeHighlights, writeHighlights } from "./highlights.ts";
-import { authoredFindings, findingsCacheKey } from "./read.ts";
+import { findingsCacheKey } from "./read.ts";
 import { writeFindings, type FindingsModel } from "./writer.ts";
 import { writeLensDocuments, type LensModel, type LensTrace } from "../lens/agent.ts";
 import { browserRenderer } from "../lens/draw.ts";
@@ -124,15 +124,15 @@ export async function executeFindingsWorkflow(params: FindingsWorkflowParams, st
     ticker: params.ticker, companyName, periodEnd, table: buildHighlightTable(input.data, periodEnd), findings: outcome.publication?.findings.map(f => f.title) ?? [],
     data: input.data, model, stage,
   }).catch(() => ({ highlights: null, withheld: [] }));
-  // Neither findings nor highlights verified: whatever is stored (an authored set, an older run) keeps serving.
+  // Neither findings nor highlights verified: whatever an older run stored keeps serving.
   if (!outcome.publication && !written.highlights) return { status: "empty" as const, withheld: outcome.withheld };
   const published = await step.do("findings-publish", async () => {
     const db = requireDb(env);
     const stored = await new D1SecRepository(db).getCache<unknown>(findingsCacheKey(params.ticker));
-    const previous = (stored ? readFindingsPublication(stored.payload, params.ticker) : null) ?? authoredFindings(params.ticker);
+    const previous = stored ? readFindingsPublication(stored.payload, params.ticker) : null;
     // Earlier reports keep the highlights written when each was the newest.
     const highlights = mergeHighlights(written.highlights, previous?.highlights);
-    // Findings that verified nothing fall back to the set published before (an older run or the authored set), so the
+    // Findings that verified nothing fall back to the set an older run published, so the
     // new highlights still land; it takes this run's fingerprint, so the same input is not written again.
     const base = outcome.publication ?? (previous ? { ...previous, fingerprint: params.fingerprint }
       : { schemaVersion: "findings.v1", ticker: params.ticker, periodEnd, generatedAt: now, model: modelVersion, fingerprint: params.fingerprint, findings: [], sources: input.ledger.sources });

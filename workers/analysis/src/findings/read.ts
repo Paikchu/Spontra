@@ -9,7 +9,6 @@ import { webPassages } from "../analyst/web.ts";
 import { readPeersResponse } from "../peers/read.ts";
 import { AnalysisRequestError } from "../read-api/contract-support/errors.ts";
 import { D1SecRepository } from "../sec/d1.ts";
-import { ORCL_FINDINGS } from "./authored/ORCL.ts";
 
 /**
  * The passages a publication quotes or reads cells from, as the library holds them now. A passage that no longer exists
@@ -36,22 +35,16 @@ export async function findingPassages(db: D1Database, ticker: string, publicatio
 /** v2: English findings. Sets stored under v1 are Chinese and are no longer served; each ticker rewrites under v2. */
 export const findingsCacheKey = (ticker: string) => `findings:v2:${ticker}`;
 
-/** Hand-written sets that stand in until the findings workflow publishes for the ticker. */
-const AUTHORED: Record<string, unknown> = { ORCL: ORCL_FINDINGS };
-
-/** The hand-written set for a ticker, validated; null where none exists. */
-export const authoredFindings = (ticker: string) => readFindingsPublication(AUTHORED[ticker], ticker);
-
-/** The findings as the writer published them (or the authored set), before the analyst's documents are laid over them. */
+/** The findings as the writer published them, before the analyst's documents are laid over them. */
 export async function readStoredFindings(db: D1Database, rawTicker: string): Promise<FindingsPublication | null> {
   const ticker = rawTicker.trim().toUpperCase();
   if (!/^[A-Z][A-Z0-9.-]{0,11}$/.test(ticker)) throw new AnalysisRequestError("INVALID_TICKER", "Invalid company ticker.");
   const stored = await new D1SecRepository(db).getCache<unknown>(findingsCacheKey(ticker));
-  return (stored ? readFindingsPublication(stored.payload, ticker) : null) ?? authoredFindings(ticker);
+  return stored ? readFindingsPublication(stored.payload, ticker) : null;
 }
 
 /**
- * The publication as served: the stored (or authored) set, with the analyst's documents when written for this very
+ * The publication as served: the stored set, with the analyst's documents when written for this very
  * publication, and the checkup notes when written for the same report.
  */
 export async function readServedFindings(db: D1Database, rawTicker: string): Promise<FindingsPublication | null> {
@@ -66,7 +59,7 @@ export async function readServedFindings(db: D1Database, rawTicker: string): Pro
   return readFindingsPublication(mergeCheckup(mergeDossier(base, dossier), checkup), ticker) ?? mergeDossier(base, dossier);
 }
 
-/** A stored publication wins over an authored one; both are re-validated and never repaired. */
+/** The stored publication, re-validated and never repaired. */
 export async function readFindingsResponse(db: D1Database, rawTicker: string, options: { hidden?: boolean } = {}): Promise<FindingsResponse> {
   const ticker = rawTicker.trim().toUpperCase();
   // Switched off in the admin: readers see it as hidden, and what is stored stays.

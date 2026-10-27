@@ -2,7 +2,6 @@ import { companyName } from "../catalog/security-directory.ts";
 import { shownFilter, type FeatureDefaultsEnv } from "../admin/feature-settings.ts";
 import { flowForIssuer } from "../financial-data/publication.ts";
 import { historyForIssuer } from "../financial-data/history.ts";
-import { authoredFindings } from "../findings/read.ts";
 import type { PublicBusinessFlow } from "../../../../shared/analysis-contract/business-flow.ts";
 import type { FindingsPublication } from "../../../../shared/analysis-contract/findings.ts";
 import type { HomeCompany, HomeDigest, HomeFinding, HomeRevenueReason } from "../../../../shared/analysis-contract/home.ts";
@@ -126,7 +125,7 @@ function prior(points: Point[], latest: Point, targetDays: number, slackDays: nu
 }
 
 function findingsOf(raw: unknown, ticker: string, table: TranslationTable | null): FindingsPublication | null {
-  const publication = (raw ? readFindingsPublication(raw, ticker) : null) ?? authoredFindings(ticker);
+  const publication = raw ? readFindingsPublication(raw, ticker) : null;
   return publication ? localize("findings", publication, table) : null;
 }
 
