@@ -65,16 +65,17 @@ export function sendTrack(env: TrackDelivery, name: TrackName, props?: Record<st
     const recent = env.recent ?? pageRecent;
     const stamp = `${name}:${env.path}`;
     const now = env.now;
-    const seen = recent.get(stamp) ?? 0;
-    if ((name === "page_view" || name === "tour_start") && now - seen < 800) return null;
+    for (const [key, time] of recent) if (now - time >= 800) recent.delete(key);
+    const seen = recent.get(stamp);
+    if ((name === "page_view" || name === "tour_start") && seen !== undefined && now - seen < 800) return null;
     const sid = sessionId(env);
     if (!sid) return null;
     const body = JSON.stringify({
       name, props: cleanProps(props), path: env.path.slice(0, 180), lang: env.lang === "zh-CN" ? "zh-CN" : "en",
       theme: env.theme === "light" ? "light" : "dark", ts: now, sid,
     });
-    if (body.length > 900) return null;
-    recent.set(stamp, now);
+    if (new TextEncoder().encode(body).byteLength > 900) return null;
+    if (name === "page_view" || name === "tour_start") recent.set(stamp, now);
     try {
       if (env.beacon("/api/business/v1/telemetry", body)) return body;
     } catch { /* Fall through to fetch. */ }

@@ -571,21 +571,10 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
   const mindItem = mindMap && mindPicked && mindPicked.business === current?.key ? mindPicked.item : null;
   const setMindItem = (item: MindItem | null) => setMindPicked(item && current ? { business: current.key, item } : null);
 
-  const seenView = useRef<string | null>(null);
-  useEffect(() => {
-    if (seenView.current === null) { seenView.current = view; return; }
-    if (seenView.current === view) return;
-    seenView.current = view;
-    track("company_tab_view", { view });
-  }, [view]);
-  const seenPeriod = useRef<string | null>(null);
-  useEffect(() => {
-    const id = quarter?.id ?? "";
-    if (seenPeriod.current === null) { seenPeriod.current = id; return; }
-    if (seenPeriod.current === id) return;
-    seenPeriod.current = id;
-    track("chart_period_change", { ticker });
-  }, [quarter?.id, ticker]);
+  const pickPeriod = (id: string | null) => {
+    if (id && id !== quarter?.id) track("chart_period_change", { ticker });
+    setPeriod(id);
+  };
   const figure = (key: FlowMetric) => quarter ? numeric(quarter.figures[key]) : null;
   const margin = (key: FlowMetric) => { const v = figure(key); return m.margin(v != null && revenue ? percent(v / revenue * 100) : "—"); };
   const change = (key: FlowMetric) => quarter ? compareAmount(quarter, previous, key) : none();
@@ -626,7 +615,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
       {rail && <EventsList rail={rail} ticker={ticker} updates={updates} focus={focusedReport?.accessionNumber ?? focusedEvent?.id ?? null} pendingInsider={events?.pendingInsider ?? 0} {...sectionFocus("events")} onFocus={focusItem} filter={eventFilter} onFilter={setEventFilter} phase={eventsPhase} onRetry={onRetryEvents} />}
       {!!quarter?.revenueAdjustments?.length&&<p className="revenue-reconciliation">{m.reconciliation(quarter.currency)}<br/>{m.segmentTotal} {formatFlowValue(segmentRevenue,quarter)}<br/>{quarter.revenueAdjustments.map(a=><span key={a.id}>{a.name} {formatFlowValue(numeric(a.amount),quarter)}<br/></span>)}{m.consolidated} {formatFlowValue(revenue,quarter)}</p>}
       {railFoot}
-      <div className="rail-end"><PrivacyNote /><CompanyTour /></div>
+      <div className="rail-end"><PrivacyNote /><CompanyTour key={ticker} available={!stageOverride && !focusedCheck && !focused && !focusedReport && !focusedEvent} /></div>
     </Rail>
 
     <section className="stage" id="company-stage" tabIndex={-1} data-focus={focused && findings || focusedCheck || focusedReport || focusedEvent && events ? "lens" : undefined} data-view={view} data-trend={hasRevenueTrend || metricGroups.length ? "" : undefined} data-finding={focused?.kind} data-timeline={points.length ? "" : undefined}
@@ -681,7 +670,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
             <ToggleGroupItem value="detail" role="radio" aria-checked={detail}>{m.detail}</ToggleGroupItem>
           </span>
         </ToggleGroup>}
-        {funding && (cash || funding.balanceSheet) && <ToggleGroup type="single" variant="unstyled" rovingFocus={false} value={view} onValueChange={next => { if (next && next !== view) crossfade(() => { stageChartBox(); setView(next as View); }); }} asChild>
+        {funding && (cash || funding.balanceSheet) && <ToggleGroup type="single" variant="unstyled" rovingFocus={false} value={view} onValueChange={next => { if (next && next !== view) crossfade(() => { stageChartBox(); track("company_tab_view", { ticker, view: next }); setView(next as View); }); }} asChild>
           <span className="trend-views stage-views" role="radiogroup" aria-label={m.financialView}>
             <ToggleGroupItem value="profit" role="radio" aria-checked={view === "profit"}>{VIEW_LABEL.profit}</ToggleGroupItem>
             {cash && <ToggleGroupItem value="cash" role="radio" aria-checked={view === "cash"}>{VIEW_LABEL.cash}</ToggleGroupItem>}
@@ -712,15 +701,15 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
       </div>
 
       {points.length > 0 && <Timeline points={points} ticker={ticker} now={now.getTime()} currentPeriod={quarter?.periodEnd ?? null}
-        onReport={(id, end) => { if (filings?.filings.some(f => f.accessionNumber === id)) { focusFinding(null); focusReport(id); } else { setPeriod(quarters.find(q => q.periodEnd === end)?.id ?? null); focusFinding(null); setEventId(null); setReportId(null); } }} onEvent={id => focusEvent(id)} />}
+        onReport={(id, end) => { if (filings?.filings.some(f => f.accessionNumber === id)) { focusFinding(null); focusReport(id); } else { pickPeriod(quarters.find(q => q.periodEnd === end)?.id ?? null); focusFinding(null); setEventId(null); setReportId(null); } }} onEvent={id => focusEvent(id)} />}
 
       {mindItem && mindMap ? <div className="lens-stage"><MindLens item={mindItem} branch={mindMap.branches.find(b => b.node === mindItem.anchor)} sources={mindMap.sources} onClose={() => setMindItem(null)} /></div>
       : panel === "metrics" && shownMetrics.length > 0 ? <ViewMetrics metrics={shownMetrics} flagged={flagged} ranks={ranks} noted={noted} onOpen={id => focusCheck(id)} switcher={hasTrend ? switcher : null} />
       : shownMetric ? <MetricTrendPanel ticker={ticker} trend={shownMetric} currentPeriod={quarter?.periodEnd ?? null} periods={new Set(quarters.map(q => q.periodEnd))}
-        onPickPeriod={end => setPeriod(quarters.find(q => q.periodEnd === end)?.id ?? null)}
+        onPickPeriod={end => pickPeriod(quarters.find(q => q.periodEnd === end)?.id ?? null)}
         picker={<><MetricPicker value={shownMetric.key} groups={metricGroups} revenue={hasRevenueTrend} onChange={setMetricKey} />{shownMetrics.length > 0 && switcher}</>} />
       : hasRevenueTrend && <TrendPanel ticker={ticker} history={revenueHistory!} items={items} selected={current} currentPeriod={quarter?.periodEnd ?? null}
-        periods={new Set(quarters.map(q => q.periodEnd))} onPickPeriod={end => setPeriod(quarters.find(q => q.periodEnd === end)?.id ?? null)} hue={hue} guidance={guidance}
+        periods={new Set(quarters.map(q => q.periodEnd))} onPickPeriod={end => pickPeriod(quarters.find(q => q.periodEnd === end)?.id ?? null)} hue={hue} guidance={guidance}
         picker={<><MetricPicker value={REVENUE_METRIC} groups={metricGroups} revenue onChange={setMetricKey} />{shownMetrics.length > 0 && switcher}</>} />}
 
       <footer className="stage-foot" data-tour={points.length > 0 ? undefined : "timeline"}>

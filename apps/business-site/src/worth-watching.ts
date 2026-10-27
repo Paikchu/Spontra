@@ -5,7 +5,7 @@ export type SignalTab = "all" | "risk" | "strength" | "shift";
 export type WorthWatchingCard = {
   company: HomeCompany;
   finding: HomeFinding;
-  /** Other findings for this company in the current filter, besides the one on this card. */
+  /** Other findings for this company in the current filter, not included in the returned cards. */
   extra: number;
 };
 
@@ -43,5 +43,7 @@ export function worthWatching(companies: readonly HomeCompany[], tab: SignalTab,
     const seconds = groups.map(group => group[1]).filter((item): item is NonNullable<typeof item> => item != null).sort(byRank);
     picked.push(...seconds.slice(0, limit - picked.length));
   }
-  return picked.map(item => ({ ...item, extra: Math.max(0, countFor(item.company, tab) - 1) }));
+  const shown = new Map<string, number>();
+  for (const item of picked) shown.set(item.company.ticker, (shown.get(item.company.ticker) ?? 0) + 1);
+  return picked.map(item => ({ ...item, extra: Math.max(0, countFor(item.company, tab) - shown.get(item.company.ticker)!) }));
 }

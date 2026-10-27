@@ -20,7 +20,7 @@
   font: 560 13px/1.2 var(--sans);
 }
 .usage-ranges button[aria-pressed="true"] { color: var(--background); background: var(--foreground); border-color: var(--foreground); }
-.usage-ranges button:hover, .usage-retry:hover { color: var(--foreground); }
+.usage-ranges button:not([aria-pressed="true"]):hover, .usage-retry:hover { color: var(--foreground); }
 .usage-kpis, .usage-columns { display: grid; gap: 16px; }
 .usage-kpis { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .usage-columns { grid-template-columns: 1fr 1fr; }

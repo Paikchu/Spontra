@@ -250,7 +250,7 @@ function App() {
   }, []);
   useEffect(() => {
     const shortcut = (e: KeyboardEvent) => {
-      const typing = (e.target as HTMLElement).closest("input, textarea, select, [contenteditable]");
+      const typing = (e.target instanceof Element ? e.target : e.target instanceof Node ? e.target.parentElement : null)?.closest("input, textarea, select, [contenteditable]");
       if (((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") || (e.key === "/" && !typing)) {
         e.preventDefault();
         // Home keeps its own field in view; elsewhere the dialog opens.
@@ -298,7 +298,7 @@ function App() {
   useEffect(() => { track("page_view", ticker ? { ticker } : {}); }, [path, ticker]);
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
-      const link = (e.target as HTMLElement).closest("a");
+      const link = (e.target instanceof Element ? e.target : e.target instanceof Node ? e.target.parentElement : null)?.closest("a");
       if (link?.closest(".sources, .cites, figcaption")) track("source_click");
     };
     document.addEventListener("click", onClick);
@@ -306,7 +306,7 @@ function App() {
   }, []);
   useEffect(() => {
     const follow = (e: MouseEvent) => {
-      const link = (e.target as HTMLElement).closest<HTMLAnchorElement>("a[data-nav]");
+      const link = (e.target instanceof Element ? e.target : e.target instanceof Node ? e.target.parentElement : null)?.closest<HTMLAnchorElement>("a[data-nav]");
       if (!link || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
       e.preventDefault();
       navigate(link.getAttribute("href")!);

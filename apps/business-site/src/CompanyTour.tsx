@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { messages } from "@/packages/web/src/i18n";
 import { track } from "./track";
-import { TOUR_FORCE_KEY, readTourDone, reduceTour, shouldAutoOpen, tourKey, writeTourDone, type TourStep } from "./tour";
+import { TOUR_FORCE_KEY, readTourDone, reduceTour, shouldAutoOpen, tourKey, writeTourDone, tourLayout, type TourStep } from "./tour";
 
 const m = messages({
   how: "How to read this page",
@@ -24,31 +24,13 @@ const m = messages({
   step3: "点时间轴看历史季度。圆点上的数字是叠在同一处的重要事件数",
 });
 
-const COPY = [m.step1, m.step2, m.step3] as const;
 const TARGETS = ["[data-tour='stats']", "[data-tour='chart']", "[data-tour='timeline']"];
 
 type Box = { top: number; left: number; width: number; height: number };
 
-function measure(step: TourStep, mobile: boolean): { hole: Box | null; card: Box | null } {
-  const target = document.querySelector(TARGETS[step] ?? "");
-  if (!target) return { hole: null, card: null };
-  const rect = target.getBoundingClientRect();
-  const pad = 6;
-  const holeLeft = Math.max(8, Math.min(rect.left - pad, window.innerWidth - 32));
-  const hole = {
-    top: Math.max(8, rect.top - pad),
-    left: holeLeft,
-    width: Math.max(24, Math.min(rect.width + pad * 2, window.innerWidth - holeLeft - 8)),
-    height: Math.max(24, rect.height + pad * 2),
-  };
-  if (mobile) return { hole, card: null };
-  const width = Math.min(300, window.innerWidth - 24);
-  const height = 168;
-  let top = hole.top + hole.height + 12;
-  let left = hole.left;
-  if (top + height > window.innerHeight - 12) top = Math.max(12, hole.top - height - 12);
-  if (left + width > window.innerWidth - 12) left = window.innerWidth - width - 12;
-  return { hole, card: { top, left, width, height } };
+function measure(step: TourStep, mobile: boolean, card: DOMRect | undefined) {
+  const target = document.querySelector(TARGETS[step]!);
+  return target ? tourLayout(target.getBoundingClientRect(), window.innerWidth, mobile && card?.height ? Math.min(window.innerHeight, card.bottom + 12) : window.innerHeight, card?.height || 168, mobile) : { hole: null, card: null };
 }
 
 /**
@@ -56,66 +38,79 @@ function measure(step: TourStep, mobile: boolean): { hole: Box | null; card: Box
  * The first visit waits until the map is on screen, then opens unless the reader finished it
  * or this is an automated browser that did not ask for the tour.
  */
-export function CompanyTour() {
+export function CompanyTour({ available = true }: { available?: boolean }) {
+  const COPY = [m.step1, m.step2, m.step3] as const;
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<TourStep>(0);
   const [box, setBox] = useState<{ hole: Box | null; card: Box | null }>({ hole: null, card: null });
-  const [mobile, setMobile] = useState(() => typeof matchMedia === "function" && matchMedia("(max-width: 959px)").matches);
+  const [mobile, setMobile] = useState(() => typeof matchMedia === "function" && matchMedia("(max-width: 960px)").matches);
   const cardRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDialogElement>(null);
   const returnTo = useRef<HTMLElement | null>(null);
   const timer = useRef(0);
 
   function start() {
     window.clearTimeout(timer.current);
+    if (!available || document.querySelector("dialog[open]") || !document.querySelector(TARGETS[0]!)) return;
     setStep(0);
     setOpen(true);
     track("tour_start");
   }
 
   useEffect(() => {
+    if (!available) { setOpen(false); return; }
     let storage: Storage | null = null;
     let session: Storage | null = null;
     try { storage = localStorage; session = sessionStorage; } catch { /* Private mode. */ }
-    const force = session?.getItem(TOUR_FORCE_KEY) === "1";
+    let force = false;
+    try { force = session?.getItem(TOUR_FORCE_KEY) === "1"; } catch { /* Private mode. */ }
     const webdriver = typeof navigator !== "undefined" && navigator.webdriver === true;
     if (!shouldAutoOpen({ done: readTourDone(storage), webdriver, force })) return;
     timer.current = window.setTimeout(start, 600);
     return () => window.clearTimeout(timer.current);
-  }, []);
+  }, [available]);
 
   useEffect(() => {
-    if (!open || !matchMedia("(max-width: 959px)").matches) return;
+    if (!open) return;
     const target = document.querySelector(TARGETS[step] ?? "");
-    const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
     if (!target) return;
-    const rect = target.getBoundingClientRect();
-    const top = window.scrollY + rect.top - (window.innerHeight - rect.height) / 2;
-    window.scrollTo({ top: Math.max(0, top), left: 0, behavior: reduce ? "auto" : "smooth" });
+    try { target.scrollIntoView({ block: "center", inline: "nearest", behavior: "instant" }); } catch { target.scrollIntoView({ block: "center", inline: "nearest" }); }
   }, [open, step]);
 
   useEffect(() => {
     if (!open) return;
     const place = () => {
-      const narrow = matchMedia("(max-width: 959px)").matches;
+      const narrow = matchMedia("(max-width: 960px)").matches;
       setMobile(narrow);
-      setBox(measure(step, narrow));
+      if (!document.querySelector(TARGETS[step]!)) { setOpen(false); return; }
+      setBox(measure(step, narrow, cardRef.current?.getBoundingClientRect()));
     };
     place();
+    const observer = new ResizeObserver(place);
+    const target = document.querySelector(TARGETS[step]!);
+    if (target) observer.observe(target);
+    if (cardRef.current) observer.observe(cardRef.current);
     window.addEventListener("resize", place);
     window.addEventListener("scroll", place, true);
     return () => {
+      observer.disconnect();
       window.removeEventListener("resize", place);
       window.removeEventListener("scroll", place, true);
     };
-  }, [open, step]);
+  }, [open, step, mobile]);
 
   useEffect(() => {
     if (!open) return;
     returnTo.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const dialog = dialogRef.current;
+    if (document.querySelector("dialog[open]")) { setOpen(false); return; }
+    dialog?.showModal();
     cardRef.current?.focus({ preventScroll: true });
     return () => {
+      dialog?.close();
       const back = returnTo.current;
-      if (back && document.contains(back)) back.focus({ preventScroll: true });
+      if (back && back !== document.body && document.contains(back) && !back.matches(":disabled") && !back.closest("[inert]")) back.focus({ preventScroll: true });
       else document.getElementById("company-stage")?.focus({ preventScroll: true });
     };
   }, [open]);
@@ -123,6 +118,19 @@ export function CompanyTour() {
   useEffect(() => {
     if (!open) return;
     const onKey = (event: KeyboardEvent) => {
+      event.stopPropagation();
+      if (event.key === "Tab") {
+        const buttons = [...(cardRef.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? [])];
+        const first = buttons[0];
+        const last = buttons.at(-1);
+        if (event.shiftKey && (document.activeElement === first || document.activeElement === cardRef.current)) {
+          event.preventDefault(); last?.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault(); first?.focus();
+        }
+        return;
+      }
+      if (event.isComposing || event.altKey || event.ctrlKey || event.metaKey) return;
       if (event.key === "Enter" && event.target instanceof HTMLElement && event.target.closest("button")) return;
       const action = tourKey(event.key);
       if (!action) return;
@@ -136,8 +144,9 @@ export function CompanyTour() {
         setOpen(false);
       }
     };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
+    const dialog = dialogRef.current;
+    dialog?.addEventListener("keydown", onKey);
+    return () => dialog?.removeEventListener("keydown", onKey);
   }, [open, step]);
 
   function click(action: "next" | "back" | "skip") {
@@ -150,10 +159,10 @@ export function CompanyTour() {
     }
   }
 
-  const layer = open ? <div className="tour-layer">
+  const layer = open ? <dialog ref={dialogRef} className="tour-layer" data-hole={box.hole ? "" : undefined} aria-labelledby="company-tour-text" onCancel={event => { event.preventDefault(); click("skip"); }}>
     <div className="tour-shade" />
     {box.hole && <div className="tour-hole" style={{ top: box.hole.top, left: box.hole.left, width: box.hole.width, height: box.hole.height }} />}
-    <div ref={cardRef} className="tour-card" role="dialog" aria-modal="true" aria-labelledby="company-tour-text" tabIndex={-1} data-show="" data-mobile={mobile || undefined}
+    <div ref={cardRef} className="tour-card" tabIndex={-1} data-show="" data-mobile={mobile || undefined}
       style={mobile || !box.card ? undefined : { top: box.card.top, left: box.card.left }}>
       <div className="tour-dots" aria-hidden="true">{COPY.map((_, index) => <i key={index} data-on={index === step || undefined} />)}</div>
       <p id="company-tour-text">{COPY[step]}</p>
@@ -165,10 +174,10 @@ export function CompanyTour() {
         </span>
       </div>
     </div>
-  </div> : null;
+  </dialog> : null;
 
   return <>
-    <button type="button" className="rail-tour" onClick={start}>{m.how}</button>
+    <button type="button" className="rail-tour" disabled={!available} onClick={start}>{m.how}</button>
     {layer && typeof document !== "undefined" ? createPortal(layer, document.body) : null}
   </>;
 }

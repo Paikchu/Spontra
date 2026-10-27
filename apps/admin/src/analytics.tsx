@@ -8,7 +8,7 @@ const labels: UsageLabels = {
   unavailable: "统计暂时没有取到",
   retry: "重试",
   utc: "时间按协调世界时",
-  sessions: "日活会话",
+  sessions: "独立会话",
   pageViews: "浏览量",
   companies: "访问最多的公司",
   searches: "无结果搜索",
@@ -44,6 +44,7 @@ export function AnalyticsPanel() {
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     const controller = new AbortController();
+    setSummary(null);
     setPending(true);
     setFailed(false);
     void fetch(`/api/admin/analytics?range=${range}`, { signal: controller.signal, headers: { accept: "application/json" } })
@@ -51,14 +52,15 @@ export function AnalyticsPanel() {
         if (!response.ok) throw new Error(String(response.status));
         const body = await response.json() as TelemetrySummary;
         if (body.schemaVersion !== "telemetry-summary.v1") throw new Error("invalid");
-        setSummary(body);
+        if (!controller.signal.aborted) setSummary(body);
       })
-      .catch(error => {
-        if (error instanceof DOMException && error.name === "AbortError") return;
+      .catch(() => {
+        if (controller.signal.aborted) return;
         setFailed(true);
         setSummary(null);
       })
-      .finally(() => setPending(false));
+      .finally(() => { if (!controller.signal.aborted) setPending(false); });
+    return () => controller.abort();
   }, [range, attempt]);
   return <div className="ra-analytics">
     <UsageBoard summary={summary} range={range} onRange={setRange} labels={labels} pending={pending} failed={failed} onRetry={() => setAttempt(value => value + 1)} />

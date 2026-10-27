@@ -189,6 +189,14 @@ export function Home({ light, onToggleTheme, recent, onPick, digest = null, dige
   const [sort, setSort] = useState<SortKey>("latest");
   const [tab, setTab] = useState<SignalTab>("all");
   const [showAll, setShowAll] = useState(false);
+  const [compactSignals, setCompactSignals] = useState(() => typeof matchMedia === "function" && matchMedia("(max-width: 620px)").matches);
+  useEffect(() => {
+    if (typeof matchMedia !== "function") return;
+    const media = matchMedia("(max-width: 620px)");
+    const update = () => setCompactSignals(media.matches);
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
   const companies = digest?.companies ?? [];
   const catalog = companies.map(company => ({ ticker: company.ticker, name: company.name, nameZh: company.nameZh, aliases: company.aliases }));
   const catalogStatus = digestStatus === "ready" ? "ready" : digestStatus === "error" ? "error" : "loading";
@@ -196,7 +204,8 @@ export function Home({ light, onToggleTheme, recent, onPick, digest = null, dige
     ? recent.slice(0, 5).map(ticker => ({ ticker, popular: false }))
     : (digest?.popular ?? []).slice(0, 5).map(ticker => ({ ticker, popular: true }));
   const shown = sorted(companies, sort);
-  const signals = worthWatching(companies, tab);
+  const allSignals = worthWatching(companies, tab);
+  const signals = worthWatching(companies, tab, compactSignals && !showAll ? 4 : 6);
   const showSignals = digestStatus === "loading" || worthWatching(companies, "all").length > 0;
   const updated = digest ? relativeTime(digest.coverage.lastUpdatedAt) : null;
 
@@ -299,7 +308,7 @@ export function Home({ light, onToggleTheme, recent, onPick, digest = null, dige
             </article>;
             })}
         </div>
-        {digestStatus !== "loading" && signals.length > 4 && !showAll && <button type="button" className="home-signals-all" onClick={() => setShowAll(true)}>{m.seeAll}</button>}
+        {digestStatus !== "loading" && allSignals.length > 4 && !showAll && <button type="button" className="home-signals-all" onClick={() => setShowAll(true)}>{m.seeAll}</button>}
         </>}
       </section>}
       <section className="home-companies" id="home-companies" aria-labelledby="home-companies-title" aria-busy={digestStatus === "loading"}>

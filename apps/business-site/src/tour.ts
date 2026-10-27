@@ -44,3 +44,22 @@ export function reduceTour(step: TourStep, action: TourKey): TourMove {
   if (step === 2) return { type: "done" };
   return { type: "step", step: (step + 1) as TourStep };
 }
+
+/** Keep a visible spotlight and reserve space for the measured coach on short screens. */
+export function tourLayout(rect: { top: number; left: number; width: number; height: number }, width: number, height: number, cardHeight: number, mobile: boolean) {
+  const cardWidth = Math.min(300, width - 24);
+  const left = Math.max(12, Math.min(rect.left, width - cardWidth - 12));
+  const below = rect.top + rect.height + 18;
+  const above = rect.top - cardHeight - 18;
+  const top = !mobile && below + cardHeight <= height - 12 ? below
+    : !mobile && above >= 12 ? above : Math.max(12, height - cardHeight - 12);
+  const holeLeft = Math.max(8, rect.left - 6);
+  const rawTop = Math.max(8, rect.top - 6);
+  const holeTop = rawTop >= top ? Math.max(rawTop, top + cardHeight + 12) : rawTop;
+  const holeRight = Math.min(width - 8, rect.left + rect.width + 6);
+  const holeBottom = Math.min(height - 8, rect.top + rect.height + 6, top > holeTop ? top - 12 : height - 8);
+  return {
+    hole: holeRight > holeLeft && holeBottom > holeTop ? { top: holeTop, left: holeLeft, width: holeRight - holeLeft, height: holeBottom - holeTop } : null,
+    card: { top, left, width: cardWidth, height: cardHeight },
+  };
+}

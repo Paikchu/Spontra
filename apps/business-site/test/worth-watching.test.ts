@@ -49,7 +49,8 @@ test("a filter keeps the same one-company-first rule and can be empty", () => {
   const risks = worthWatching(companies, "risk");
   assert.deepEqual(risks.map(card => card.finding.id), ["m-risk", "o-risk", "o-old"]);
   assert.equal(risks[0]?.extra, 2);
-  assert.equal(risks[1]?.extra, 1);
+  assert.equal(risks[1]?.extra, 0);
+  assert.equal(risks[2]?.extra, 0);
   assert.deepEqual(worthWatching(companies, "strength").map(card => card.finding.id), ["a-strength"]);
   assert.equal(worthWatching(companies, "strength")[0]?.extra, 0);
   assert.deepEqual(worthWatching(companies, "shift").map(card => card.company.ticker), ["META"]);
@@ -63,4 +64,10 @@ test("the newest period breaks a severity tie, then the ticker", () => {
     company("NVDA", [finding("nvda", "shift", 2, "2026-06-30")]),
   ], "shift");
   assert.deepEqual(cards.map(card => card.company.ticker), ["AAPL", "NVDA", "MSFT"]);
+});
+
+test("extra counts only findings absent from the displayed grid", () => {
+  const companies = [company("META", [finding("a", "risk", 3, "2026-06-30"), finding("b", "risk", 2, "2026-06-30")], { risk: 5 })];
+  assert.deepEqual(worthWatching(companies, "risk").map(card => card.extra), [3, 3]);
+  assert.deepEqual(worthWatching(companies, "risk", 1).map(card => card.extra), [4]);
 });

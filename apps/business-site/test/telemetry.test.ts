@@ -147,3 +147,39 @@ test("the public route stores events and keeps the aggregate off the public host
   }
   assert.ok(blocked >= 10);
 });
+
+test("all ranges retain current events, exclude future events, and 4w ends today UTC", () => {
+  const day = 86_400_000;
+  const midnight = Math.floor(NOW / day) * day;
+  for (const range of ["24h", "7d", "4w"] as const) {
+    assert.equal(summarize([event("page_view"), event("page_view", { received: NOW + 1 })], range, NOW).pageViews, 1);
+  }
+  const start = midnight + day - 28 * day;
+  const summary = summarize([event("page_view", { received: start }), event("page_view", { received: start - 1 }), event("page_view")], "4w", NOW);
+  assert.equal(summary.pageViews, 2);
+  assert.equal(summary.series.reduce((n, bucket) => n + bucket.pageViews, 0), 2);
+});
+
+test("summary reads only the selected range", async () => {
+  const repo = memoryRepository();
+  let since = 0;
+  repo.read = value => { since = value; return []; };
+  await handleStoreRequest(repo, new Request("https://telemetry.internal/summary?range=24h"), NOW);
+  assert.equal(since, Math.floor(NOW / 3_600_000) * 3_600_000 - 23 * 3_600_000);
+});
+
+test("tracking sends the first event at time zero and bounds route deduplication memory", () => {
+  const env = delivery({ now: 0 });
+  assert.ok(sendTrack(env, "page_view"));
+  assert.equal(sendTrack(env, "page_view"), null);
+  env.now = 1000;
+  env.path = "/companies/ORCL";
+  assert.ok(sendTrack(env, "page_view"));
+  assert.equal(env.recent?.size, 1);
+});
+
+test("tracking measures the UTF-8 payload budget for Chinese properties", () => {
+  const env = delivery();
+  assert.equal(sendTrack(env, "search_submit", Object.fromEntries(Array.from({ length: 6 }, (_, i) => [`p${i}`, "中".repeat(40)]))), null);
+  assert.equal(env.sent.length, 0);
+});

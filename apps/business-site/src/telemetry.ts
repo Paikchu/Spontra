@@ -43,6 +43,7 @@ export type TelemetryRepository = {
   allow(actor: string, minute: number, limit: number): boolean;
   add(row: StoredEvent): void;
   read(since: number): StoredEvent[];
+  summary?(range: TelemetryRange, now: number): TelemetrySummary;
   prune(oldestEvent: number, oldestMinute: number): void;
 };
 
@@ -96,7 +97,8 @@ function pad(n: number): string {
 function buckets(range: TelemetryRange, now: number): Array<{ start: number; end: number; label: string }> {
   const size = range === "24h" ? HOUR : range === "7d" ? DAY : 7 * DAY;
   const count = range === "24h" ? 24 : range === "7d" ? 7 : 4;
-  const end = Math.floor(now / size) * size + size;
+  const alignment = range === "24h" ? HOUR : DAY;
+  const end = Math.floor(now / alignment) * alignment + alignment;
   return Array.from({ length: count }, (_, index) => {
     const start = end - (count - index) * size;
     const date = new Date(start);
@@ -119,7 +121,7 @@ function rate(part: number, whole: number): number | null {
 export function summarize(rows: readonly StoredEvent[], range: TelemetryRange, now: number): TelemetrySummary {
   const window = buckets(range, now);
   const from = window[0]?.start ?? now;
-  const events = rows.filter(row => row.received >= from && row.received < (window.at(-1)?.end ?? now + 1));
+  const events = rows.filter(row => row.received >= from && row.received <= now);
   const sessions = new Set(events.map(row => row.sid));
   const counts = new Map<TrackName, number>(TRACK_NAMES.map(name => [name, 0]));
   const companies = new Map<string, number>();
@@ -224,6 +226,33 @@ export function sqlRepository(sql: TelemetrySql): TelemetryRepository {
         row.received, row.name, row.path, row.lang, row.theme, row.sid, JSON.stringify(row.props),
       );
     },
+    summary(range, now) {
+      const windows = buckets(range, now);
+      const since = windows[0]!.start;
+      const query = (selection: string, tail = "") => sql.exec(
+        `SELECT ${selection} FROM events WHERE received >= ? AND received <= ? ${tail}`, since, now,
+      ).toArray();
+      const summary = summarize([], range, now);
+      summary.sessions = Number(query("COUNT(DISTINCT sid) AS n")[0]?.n ?? 0);
+      const counts = new Map(query("name, COUNT(*) AS n", "GROUP BY name").map(row => [String(row.name), Number(row.n)]));
+      summary.events = TRACK_NAMES.map(name => ({ name, count: counts.get(name) ?? 0 }));
+      summary.pageViews = counts.get("page_view") ?? 0;
+      summary.series = windows.map(bucket => {
+        const row = sql.exec("SELECT COUNT(DISTINCT sid) AS sessions, COALESCE(SUM(name = 'page_view'), 0) AS views FROM events WHERE received >= ? AND received < ? AND received <= ?", bucket.start, bucket.end, now).toArray()[0];
+        return { label: bucket.label, sessions: Number(row?.sessions ?? 0), pageViews: Number(row?.views ?? 0) };
+      });
+      summary.topCompanies = query("CASE WHEN json_type(props, '$.ticker') = 'text' THEN json_extract(props, '$.ticker') WHEN path GLOB '/companies/*' THEN rtrim(substr(path, 12), '/') END AS ticker, COUNT(*) AS n", "AND name = 'page_view' GROUP BY ticker ORDER BY n DESC, ticker").flatMap(row =>
+        typeof row.ticker === "string" && TICKER.test(row.ticker) ? [{ ticker: row.ticker, views: Number(row.n) }] : [],
+      ).sort((a, b) => b.views - a.views || a.ticker.localeCompare(b.ticker)).slice(0, 5);
+      summary.emptySearches = query("trim(json_extract(props, '$.q')) AS query, COUNT(*) AS n", "AND name = 'search_submit' AND (json_extract(props, '$.empty') = 1 OR json_extract(props, '$.results') = 0) AND trim(json_extract(props, '$.q')) != '' GROUP BY query").map(row => ({ query: String(row.query), count: Number(row.n) })).sort((a, b) => b.count - a.count || a.query.localeCompare(b.query)).slice(0, 10);
+      const companyViews = Number(query("COUNT(*) AS n", "AND name = 'page_view' AND path GLOB '/companies/*'")[0]?.n ?? 0);
+      summary.expandRate = rate(counts.get("finding_expand") ?? 0, companyViews);
+      summary.errorRate = rate(counts.get("error_shown") ?? 0, summary.pageViews);
+      const start = counts.get("tour_start") ?? 0;
+      const done = counts.get("tour_done") ?? 0;
+      summary.tour = { start, done, skip: counts.get("tour_skip") ?? 0, completionRate: rate(done, start) };
+      return summary;
+    },
     read(since) {
       return sql.exec("SELECT received, name, path, lang, theme, sid, props FROM events WHERE received >= ? ORDER BY received", since).toArray().flatMap(row => {
         const parsed = parseTelemetryEvent({
@@ -250,7 +279,9 @@ export async function handleStoreRequest(repo: TelemetryRepository, request: Req
   if (request.method === "GET") {
     const range = url.searchParams.get("range") ?? "7d";
     if (!TELEMETRY_RANGES.includes(range as TelemetryRange)) return json({ error: "invalid" }, 400);
-    const rows = repo.read(now - 35 * DAY);
+    repo.prune(now - RETAIN_MS, Math.floor(now / 60_000) - 2);
+    if (repo.summary) return json(repo.summary(range as TelemetryRange, now), 200);
+    const rows = repo.read(buckets(range as TelemetryRange, now)[0]!.start);
     return json(summarize(rows, range as TelemetryRange, now), 200);
   }
   if (request.method !== "POST") return json({ error: "method" }, 405);
