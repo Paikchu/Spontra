@@ -3,6 +3,7 @@ import { dirname, posix } from "node:path";
 import { pathToFileURL } from "node:url";
 import ts from "typescript";
 import { validateRegistry } from "../workers/analysis/src/pipeline/registry.ts";
+import { checkProductCode } from "./check-issuer-literals.ts";
 
 export function checkSourceBoundary(file: string, source: string): string[] {
   const contract = file.startsWith("shared/analysis-contract/");
@@ -66,7 +67,8 @@ export async function checkArchitecture(): Promise<string[]> {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   // The event graph (docs/analysis-events.md) is checked here too, because this script runs in Spontra Analysis build:
   // every subscribed event has an emitter, every name is known, and no task can trigger itself through others.
-  const errors = [...await checkArchitecture(), ...validateRegistry().map(error => `analysis events: ${error}`)];
+  // Product code names no issuer (check-issuer-literals.ts); the business build runs the same check on its own.
+  const errors = [...await checkArchitecture(), ...validateRegistry().map(error => `analysis events: ${error}`), ...await checkProductCode()];
   if (errors.length) { console.error(errors.join("\n")); process.exitCode = 1; }
   else console.log("Architecture boundaries passed: Spontra Analysis depends only on its own code, declarative shared contracts and pure shared runtime; no Web callbacks or imports. Spontra Analysis event graph is complete and acyclic.");
 }

@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "npm run dev --workspace @spontra/business-site",
-    "build": "npm run check:i18n && npm run business-site:build && npm run admin:build",
+    "build": "npm run check:i18n && npm run check:issuer-literals && npm run business-site:build && npm run admin:build",
     "check:i18n": "node --experimental-strip-types --no-warnings scripts/check-i18n.ts",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "typecheck": "tsc --noEmit",
@@ -20,6 +20,7 @@
     "analysis:typecheck": "tsc --noEmit -p workers/analysis/tsconfig.json && npm run -s test:analysis",
     "test:analysis": "node --experimental-strip-types --no-warnings --test workers/analysis/test/*.test.ts",
     "check:analysis:boundary": "node --experimental-strip-types scripts/check-analysis-boundary.ts",
+    "check:issuer-literals": "node --experimental-strip-types --no-warnings scripts/check-issuer-literals.ts",
     "business-site:build": "npm run build --workspace @spontra/business-site",
     "business-site:typecheck": "npm run typecheck --workspace @spontra/business-site",
     "test:business-site": "tsx --tsconfig apps/business-site/tsconfig.json --test apps/business-site/test/*.test.ts",
