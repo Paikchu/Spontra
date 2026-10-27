@@ -13,6 +13,14 @@
       "/agents/*"
     ]
   },
+  "durable_objects": {
+    "bindings": [
+      { "name": "TELEMETRY", "class_name": "TelemetryStore" }
+    ]
+  },
+  "migrations": [
+    { "tag": "telemetry-v1", "new_sqlite_classes": ["TelemetryStore"] }
+  ],
   "ratelimits": [
     {
       "name": "PUBLIC_READ_LIMIT",

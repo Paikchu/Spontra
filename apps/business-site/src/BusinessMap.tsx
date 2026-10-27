@@ -22,7 +22,10 @@ import { ToggleGroup, ToggleGroupItem } from "@/packages/web/src/ui/toggle-group
 import type { CapitalQuarter, PublicCapitalStructure } from "@/shared/analysis-contract/capital-structure";
 import { balanceMetrics, balancePool, cashMetrics, cashPool, type Pool } from "./capital-model";
 import { PoolChart, TONE_LABEL, toneColor } from "./PoolChart";
+import { CompanyTour } from "./CompanyTour";
+import { PrivacyNote } from "./PrivacyNote";
 import { Rail } from "./Sidebar";
+import { track } from "./track";
 import { stageChartBox } from "./chart-box";
 import { crossfade } from "./page-turn";
 import type { FindingPassage, FindingsPublication } from "@/shared/analysis-contract/findings";
@@ -494,7 +497,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
   const lit = view === "profit" ? spotlight != null : !!poolSpotlight?.size;
   const leadShown = lead && lit && !hoverFlag ? lead : null;
   const nodeColor = useCallback((id: string) => { const item = items.find(i => i.id === id); return item ? hue(item.slot) : "var(--biz-0)"; }, [items]);
-  const focusFinding = (id: string | null) => { onNavigate?.(); setFocusId(id); if (id) { setCheckId(null); setEventId(null); setReportId(null); } else { setStory(false); setSplit(false); } };
+  const focusFinding = (id: string | null) => { onNavigate?.(); setFocusId(id); if (id) { track("finding_expand", { ticker }); setCheckId(null); setEventId(null); setReportId(null); } else { setStory(false); setSplit(false); } };
   const focusCheck = (id: string | null) => { onNavigate?.(); setCheckId(id); setHoverFlag(null); if (id) { setSelected(null); setFocusId(null); setEventId(null); setReportId(null); setStory(false); setSplit(false); } };
   const focusEvent = (id: string | null) => { onNavigate?.(); setEventId(id); if (id) { setSelected(null); setFocusId(null); setCheckId(null); setReportId(null); setStory(false); setSplit(false); } };
   // The rail holds one pick at a time: a business, a flag, a finding, or a report/event. A business reads on the income statement, whatever held the stage.
@@ -568,6 +571,21 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
   const mindItem = mindMap && mindPicked && mindPicked.business === current?.key ? mindPicked.item : null;
   const setMindItem = (item: MindItem | null) => setMindPicked(item && current ? { business: current.key, item } : null);
 
+  const seenView = useRef<string | null>(null);
+  useEffect(() => {
+    if (seenView.current === null) { seenView.current = view; return; }
+    if (seenView.current === view) return;
+    seenView.current = view;
+    track("company_tab_view", { view });
+  }, [view]);
+  const seenPeriod = useRef<string | null>(null);
+  useEffect(() => {
+    const id = quarter?.id ?? "";
+    if (seenPeriod.current === null) { seenPeriod.current = id; return; }
+    if (seenPeriod.current === id) return;
+    seenPeriod.current = id;
+    track("chart_period_change", { ticker });
+  }, [quarter?.id, ticker]);
   const figure = (key: FlowMetric) => quarter ? numeric(quarter.figures[key]) : null;
   const margin = (key: FlowMetric) => { const v = figure(key); return m.margin(v != null && revenue ? percent(v / revenue * 100) : "—"); };
   const change = (key: FlowMetric) => quarter ? compareAmount(quarter, previous, key) : none();
@@ -608,9 +626,10 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
       {rail && <EventsList rail={rail} ticker={ticker} updates={updates} focus={focusedReport?.accessionNumber ?? focusedEvent?.id ?? null} pendingInsider={events?.pendingInsider ?? 0} {...sectionFocus("events")} onFocus={focusItem} filter={eventFilter} onFilter={setEventFilter} phase={eventsPhase} onRetry={onRetryEvents} />}
       {!!quarter?.revenueAdjustments?.length&&<p className="revenue-reconciliation">{m.reconciliation(quarter.currency)}<br/>{m.segmentTotal} {formatFlowValue(segmentRevenue,quarter)}<br/>{quarter.revenueAdjustments.map(a=><span key={a.id}>{a.name} {formatFlowValue(numeric(a.amount),quarter)}<br/></span>)}{m.consolidated} {formatFlowValue(revenue,quarter)}</p>}
       {railFoot}
+      <div className="rail-end"><PrivacyNote /><CompanyTour /></div>
     </Rail>
 
-    <section className="stage" data-focus={focused && findings || focusedCheck || focusedReport || focusedEvent && events ? "lens" : undefined} data-view={view} data-trend={hasRevenueTrend || metricGroups.length ? "" : undefined} data-finding={focused?.kind} data-timeline={points.length ? "" : undefined}
+    <section className="stage" id="company-stage" tabIndex={-1} data-focus={focused && findings || focusedCheck || focusedReport || focusedEvent && events ? "lens" : undefined} data-view={view} data-trend={hasRevenueTrend || metricGroups.length ? "" : undefined} data-finding={focused?.kind} data-timeline={points.length ? "" : undefined}
       aria-label={focused ? m.findingStage(ticker, focused.title) : focusedReport ? m.filingStage(ticker, reportTitle(focusedReport, ticker)) : focusedEvent ? m.filingStage(ticker, eventTitle(focusedEvent)) : m.flowStage(ticker)} data-agent={stageOverride ? "" : undefined}>
       {stageOverride ? stageOverride : focusedCheck && assessment ? <div className="lens-stage">
         <MetricLens metric={focusedCheck} flags={flags.filter(f => f.metricId === focusedCheck.id)} rank={ranks[focusedCheck.id] ?? null} data={data} findings={verified} sources={checkupSources(data, focusedCheck.evidence.periodEnd)}
@@ -631,7 +650,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
       : focusedEvent && events ? <div className="lens-stage"><EventLens event={focusedEvent} publication={events} ticker={ticker} data={data} updates={updates} nodeColor={nodeColor} index={railIndex} count={railList.length}
         onStep={delta => { const next = railList[railIndex + delta]; if (next) focusItem(next); }} onClose={() => focusEvent(null)} /></div>
       : <>
-      <header className="stage-head stage-head--summary">
+      <header className="stage-head stage-head--summary" data-tour="stats">
         {quarter && <div className="stage-kicker"><PeriodMark variant="pill" ticker={ticker} periodEnd={quarter.periodEnd} periodStart={quarter.periodStart} fiscalYear={quarter.fiscalYear} fiscalQuarter={quarter.fiscalQuarter} fiscalYearEndMonth={quarter.fiscalYearEndMonth} labelSource={quarter.labelSource} /></div>}
         {quarter && (view === "cash" || view === "balance") && funding ? <CapitalStats view={view} funding={funding} tiles={highlights} flags={flags} />
           : quarter && !current && highlights ? <HighlightStats tiles={highlights} flags={flags} />
@@ -673,7 +692,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
         {!current && <ViewFlags flags={shownFlags} metrics={assessedMetrics} noted={noted} focus={null} onOpen={id => focusCheck(id)} onHover={setHoverFlag} />}
       </header>
 
-      <div className="chart">
+      <div className="chart" data-tour="chart">
         {leadShown && <div className="lead-finding" data-kind={leadShown.kind}>
           <Button variant="unstyled" type="button" className="lead-finding-open" aria-label={m.openFinding(leadShown.title)} onClick={() => focusFinding(leadShown.id)}>
             <i className="finding-mark" aria-hidden="true">{leadShown.severity}</i><span lang={langOf(leadShown.title)}>{leadShown.title}</span><span aria-hidden="true">→</span>
@@ -704,7 +723,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
         periods={new Set(quarters.map(q => q.periodEnd))} onPickPeriod={end => setPeriod(quarters.find(q => q.periodEnd === end)?.id ?? null)} hue={hue} guidance={guidance}
         picker={<><MetricPicker value={REVENUE_METRIC} groups={metricGroups} revenue onChange={setMetricKey} />{shownMetrics.length > 0 && switcher}</>} />}
 
-      <footer className="stage-foot">
+      <footer className="stage-foot" data-tour={points.length > 0 ? undefined : "timeline"}>
         {(view === "cash" || view === "balance") && funding ? <CapitalLegend view={view} funding={funding} /> : proportional ? <div className="legend" aria-label={m.legend}>
           <span><i className="legend-biz" />{m.businessRevenue}</span>
           <span><i style={{ background: "var(--flow-profit)" }} />{m.profit}</span>

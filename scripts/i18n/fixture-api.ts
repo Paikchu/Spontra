@@ -84,6 +84,21 @@ export function fixtureApi(): Plugin {
           return;
         }
         const path = req.url?.split("?")[0];
+        if (path === "/api/business/v1/telemetry") {
+          if (req.method === "POST") { res.statusCode = 204; res.end(); return; }
+          const range = new URL(req.url ?? "", "http://localhost").searchParams.get("range") ?? "7d";
+          const labels = range === "24h" ? ["00:00"] : range === "4w" ? ["01-01", "01-08", "01-15", "01-22"] : ["10-21", "10-22", "10-23", "10-24", "10-25", "10-26", "10-27"];
+          const names = ["page_view", "search_submit", "search_select", "company_tab_view", "finding_expand", "source_click", "chart_period_change", "lang_toggle", "theme_toggle", "error_shown", "tour_start", "tour_done", "tour_skip"];
+          res.statusCode = req.method === "GET" ? 200 : 405;
+          res.setHeader("content-type", "application/json");
+          res.end(JSON.stringify(req.method === "GET" ? {
+            schemaVersion: "telemetry-summary.v1", range, generatedAt: "2026-10-27T00:00:00.000Z",
+            sessions: 0, pageViews: 0, series: labels.map(label => ({ label, sessions: 0, pageViews: 0 })),
+            topCompanies: [], emptySearches: [], events: names.map(name => ({ name, count: 0 })),
+            expandRate: null, errorRate: null, tour: { start: 0, done: 0, skip: 0, completionRate: null },
+          } : { error: "Method not allowed" }));
+          return;
+        }
         if (path === "/api/business/v1/home") {
           res.statusCode = req.method === "GET" ? 200 : 405;
           res.setHeader("content-type", "application/json");

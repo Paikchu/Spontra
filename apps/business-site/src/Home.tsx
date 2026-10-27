@@ -7,8 +7,10 @@ import { CompanyLogo } from "./CompanyMark";
 import { KIND_LABEL } from "./findings-model";
 import type { DigestStatus } from "./home-data";
 import { PeriodMark } from "./PeriodMark";
+import { PrivacyNote } from "./PrivacyNote";
 import { SearchPanel } from "./SearchDialog";
 import { LanguageToggle, ThemeToggle } from "./Sidebar";
+import { worthWatching, type SignalTab } from "./worth-watching";
 
 const m = messages({
   eyebrowLead: "From SEC filings ·",
@@ -30,6 +32,9 @@ const m = messages({
   tabStrengths: "Strengths",
   tabShifts: "Shifts",
   seeEvidence: "See evidence",
+  signalsEmpty: "Nothing new in this category",
+  moreFindings: (n: number) => `${n} more for this company`,
+  seeAll: "See all",
   companiesTitle: "Companies covered",
   sortLabel: "Sort",
   sortLatest: "Latest report",
@@ -78,6 +83,9 @@ const m = messages({
   tabStrengths: "优势",
   tabShifts: "变化",
   seeEvidence: "查看依据",
+  signalsEmpty: "这一类暂时没有新要点",
+  moreFindings: (n: number) => `该公司另有 ${n} 条`,
+  seeAll: "看全部",
   companiesTitle: "已覆盖公司",
   sortLabel: "排序",
   sortLatest: "最近财报",
@@ -109,7 +117,6 @@ const m = messages({
 });
 
 type SortKey = "latest" | "yoy" | "risk" | "ticker";
-type SignalTab = "all" | "risk" | "strength" | "shift";
 
 function money(value: string, currency: string): string {
   const amount = Number(value);
@@ -135,14 +142,6 @@ function sorted(companies: HomeCompany[], sort: SortKey): HomeCompany[] {
   if (sort === "yoy") return list.sort((a, b) => (b.revenue?.yoyPct ?? -Infinity) - (a.revenue?.yoyPct ?? -Infinity) || ticker(a, b));
   if (sort === "risk") return list.sort((a, b) => b.findingCounts.risk - a.findingCounts.risk || ticker(a, b));
   return list.sort((a, b) => (b.latestPeriod?.periodEnd ?? "").localeCompare(a.latestPeriod?.periodEnd ?? "") || ticker(a, b));
-}
-
-function signalsOf(companies: HomeCompany[], tab: SignalTab) {
-  const items = companies.flatMap(company => company.topFindings.map(finding => ({ company, finding })));
-  return items
-    .filter(item => tab === "all" || item.finding.kind === tab)
-    .sort((a, b) => b.finding.periodEnd.localeCompare(a.finding.periodEnd) || b.finding.severity - a.finding.severity || a.company.ticker.localeCompare(b.company.ticker))
-    .slice(0, 6);
 }
 
 function Delta({ pct, title }: { pct: number | null; title?: string }) {
@@ -189,6 +188,7 @@ export function Home({ light, onToggleTheme, recent, onPick, digest = null, dige
   const [offline, setOffline] = useState(false);
   const [sort, setSort] = useState<SortKey>("latest");
   const [tab, setTab] = useState<SignalTab>("all");
+  const [showAll, setShowAll] = useState(false);
   const companies = digest?.companies ?? [];
   const catalog = companies.map(company => ({ ticker: company.ticker, name: company.name, nameZh: company.nameZh, aliases: company.aliases }));
   const catalogStatus = digestStatus === "ready" ? "ready" : digestStatus === "error" ? "error" : "loading";
@@ -196,8 +196,8 @@ export function Home({ light, onToggleTheme, recent, onPick, digest = null, dige
     ? recent.slice(0, 5).map(ticker => ({ ticker, popular: false }))
     : (digest?.popular ?? []).slice(0, 5).map(ticker => ({ ticker, popular: true }));
   const shown = sorted(companies, sort);
-  const signals = signalsOf(companies, tab);
-  const showSignals = digestStatus === "loading" || signalsOf(companies, "all").length > 0;
+  const signals = worthWatching(companies, tab);
+  const showSignals = digestStatus === "loading" || worthWatching(companies, "all").length > 0;
   const updated = digest ? relativeTime(digest.coverage.lastUpdatedAt) : null;
 
   useEffect(() => { if (matchMedia("(pointer: fine)").matches) inputRef.current?.focus({ preventScroll: true }); }, []);
@@ -271,16 +271,17 @@ export function Home({ light, onToggleTheme, recent, onPick, digest = null, dige
             <p>{m.signalsSub}</p>
           </div>
           <div className="home-tabs" role="tablist" aria-label={m.signalsTitle}>
-            {(["all", "risk", "strength", "shift"] as const).map(key => <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => setTab(key)}>
+            {(["all", "risk", "strength", "shift"] as const).map(key => <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => { setTab(key); setShowAll(false); }}>
               {key === "all" ? m.tabAll : key === "risk" ? m.tabRisks : key === "strength" ? m.tabStrengths : m.tabShifts}
             </button>)}
           </div>
         </div>
-        <div className="home-signals-grid">
+        {digestStatus !== "loading" && signals.length === 0 ? <p className="home-signals-empty">{m.signalsEmpty}</p> : <>
+        <div className="home-signals-grid" data-all={showAll || undefined}>
           {digestStatus === "loading" ? Array.from({ length: 6 }, (_, i) => <div key={i} className="home-signal home-ghost"><span className="period-skeleton" /></div>)
             : signals.map(item => {
               const period = item.company.latestPeriod?.periodEnd === item.finding.periodEnd ? item.company.latestPeriod : null;
-              return <article key={`${item.company.ticker}-${item.finding.id}`} className="home-signal" data-kind={item.finding.kind}>
+              return <article key={`${item.company.ticker}-${item.finding.id}`} className="home-signal" data-kind={item.finding.kind} data-ticker={item.company.ticker} data-finding={item.finding.id}>
               <a className="home-card-stretch" data-nav href={`/companies/${item.company.ticker}?finding=${encodeURIComponent(item.finding.id)}`}><span className="home-sr">{item.company.ticker}</span></a>
               <header>
                 <CompanyLogo ticker={item.company.ticker} small />
@@ -291,10 +292,15 @@ export function Home({ light, onToggleTheme, recent, onPick, digest = null, dige
                 <span className="home-severity" aria-hidden="true">{[1, 2, 3].map(n => <i key={n} data-on={n <= item.finding.severity || undefined} />)}</span>
               </p>
               <p className="home-signal-title" lang={langOf(item.finding.title)}>{item.finding.title}</p>
-              <span className="home-more">{m.seeEvidence}</span>
+              <footer className="home-signal-actions">
+                {item.extra >= 1 && <a className="home-extra" href={`/companies/${item.company.ticker}`} data-nav>{m.moreFindings(item.extra)}</a>}
+                <span className="home-more">{m.seeEvidence}</span>
+              </footer>
             </article>;
             })}
         </div>
+        {digestStatus !== "loading" && signals.length > 4 && !showAll && <button type="button" className="home-signals-all" onClick={() => setShowAll(true)}>{m.seeAll}</button>}
+        </>}
       </section>}
       <section className="home-companies" id="home-companies" aria-labelledby="home-companies-title" aria-busy={digestStatus === "loading"}>
         <div className="home-section-head">
@@ -345,6 +351,7 @@ export function Home({ light, onToggleTheme, recent, onPick, digest = null, dige
       <footer className="home-foot">
         <p>{m.disclaimer}</p>
         <p>{m.trustStatic}</p>
+        <PrivacyNote />
       </footer>
     </div>
     {offline && <p className="home-toast" role="status">{m.offline}</p>}

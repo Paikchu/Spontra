@@ -16,6 +16,10 @@
       "service": "spontra-analysis",
       // A named entrypoint is unreachable from the public internet, so the binding is the admin credential.
       "entrypoint": "AdminGateway"
+    },
+    {
+      "binding": "BUSINESS_SITE",
+      "service": "spontra-business-map"
     }
   ],
   "observability": {

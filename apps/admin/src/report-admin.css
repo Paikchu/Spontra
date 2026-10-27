@@ -107,6 +107,7 @@ html body:has(.report-admin) { padding: 0; }
 @keyframes ra-spin { to { transform: rotate(360deg); } }
 @keyframes ra-rise { from { opacity: 0; transform: translateY(14px); } }
 /* A page is a box-less wrapper; hidden, it keeps its state out of view. */
+.ra-analytics { min-width: 0; padding: 8px 12px 32px; }
 .ra-page { display: contents; }
 .ra-page[hidden] { display: none; }
 .ra-main > *, .ra-page > * { animation: ra-rise 620ms var(--sp-ease) both; }

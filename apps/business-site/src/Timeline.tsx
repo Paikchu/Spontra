@@ -83,7 +83,7 @@ export function Timeline({ points, currentPeriod, now, onReport, onEvent, ticker
     return primary ? `${primary} · ${body}` : body;
   };
 
-  return <div className="timeline" role="group" aria-label={m.label}>
+  return <div className="timeline" role="group" aria-label={m.label} data-tour="timeline">
     <div className="timeline-track" ref={trackRef}>
       {ticks.map(t => <span key={t.label} className="timeline-tick" style={{ left: `${t.at}%` }}>{t.label}</span>)}
       {marks.map(mark => {

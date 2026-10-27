@@ -23,6 +23,7 @@ const CJK = /[㐀-鿿豈-﫿]/;
 /** Latin words a Chinese label may carry: filing vocabulary, accounting abbreviations, product names, key caps. */
 const LATIN_TERMS = new Set([
   "SEC", "XBRL", "EDGAR", "GAAP", "Non-GAAP", "Form", "Item", "Reg", "FD", "RPO", "EPS", "PEG", "EV", "EBITDA", "EV/EBITDA",
+  "Cookie", "IP", "DNT", "GPC",
   "TTM", "AI", "ID", "EN", "Esc", "esc", "Business", "View", "USD", "K", "Q",
   // Return and valuation ratios Chinese finance writing names by their abbreviation.
   "ROE", "ROA", "ROIC", "NOPAT", "P/E", "P/S", "P/B",

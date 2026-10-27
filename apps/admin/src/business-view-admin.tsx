@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowUpRight, Bell, Cpu, FileStack, ListChecks, Moon, Network, Sparkles, Sun } from "lucide-react";
+import { ArrowUpRight, Bell, ChartColumn, Cpu, FileStack, ListChecks, Moon, Network, Sparkles, Sun } from "lucide-react";
 import Link from "@/packages/web/src/navigation";
 import { BusinessMapCompanies } from "./business-map-companies";
 import { FilingLibrary } from "./filing-library";
@@ -10,13 +10,15 @@ import { StageAdminPanel } from "./stage-admin";
 import { FinancialMaintenance } from "./financial-maintenance";
 import { AdminInbox, useInbox } from "./admin-messages";
 import { PageActive } from "./admin-page";
+import { AnalyticsPanel } from "./analytics";
 
-type Section = "whitelist" | "financials" | "filings" | "business" | "findings" | "models" | "messages";
+type Section = "whitelist" | "analytics" | "financials" | "filings" | "business" | "findings" | "models" | "messages";
 type Page = { path: string; title: string; nav?: Section };
 
 /** Every page of the BusinessView admin. Financials is a drill-down from the whitelist, so it has no entry of its own. */
 const PAGES: Record<Section, Page> = {
   whitelist: { path: "/admin/whitelist", title: "白名单管理" },
+  analytics: { path: "/admin/analytics", title: "使用情况" },
   financials: { path: "/admin/financials", title: "财报与更新记录", nav: "whitelist" },
   filings: { path: "/admin/filings", title: "SEC 文件拆分" },
   business: { path: "/admin/business", title: "公司业务板块" },
@@ -24,7 +26,7 @@ const PAGES: Record<Section, Page> = {
   models: { path: "/admin/models", title: "模型配置" },
   messages: { path: "/admin/messages", title: "消息" },
 };
-const NAV: Array<[Section, typeof ListChecks]> = [["whitelist", ListChecks], ["filings", FileStack], ["business", Network], ["findings", Sparkles], ["models", Cpu], ["messages", Bell]];
+const NAV: Array<[Section, typeof ListChecks]> = [["whitelist", ListChecks], ["analytics", ChartColumn], ["filings", FileStack], ["business", Network], ["findings", Sparkles], ["models", Cpu], ["messages", Bell]];
 /** Ink is the default, as on BusinessView; paper is a per-viewer choice. main.tsx applies it before the first paint. */
 export const THEME_KEY = "businessview-admin-theme";
 /** Pages that read what they show from the address on mount: opened with a new address, they start again from it. */
@@ -102,6 +104,7 @@ export function BusinessViewAdmin({ mapOrigin = "" }: { mapOrigin?: string }) {
       {error && <div className="ra-error ra-error-banner" role="alert">{error}</div>}
       {opened.map(key => {
         const content: ReactNode = key === "whitelist" ? <BusinessMapCompanies {...auth} onOpenFinancials={ticker => navigate("financials", `?${new URLSearchParams({ ticker })}`)} />
+          : key === "analytics" ? <AnalyticsPanel />
           : key === "financials" ? <FinancialMaintenance {...auth} />
           : key === "filings" ? <FilingLibrary {...auth} />
           : key === "business" ? <BusinessSegments {...auth} onOpenSection={openSection} />

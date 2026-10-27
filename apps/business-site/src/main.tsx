@@ -1,5 +1,5 @@
 import { SidebarProvider } from "@/packages/web/src/ui/sidebar";
-import { Fragment, StrictMode, useCallback, useEffect, useRef, useState, Component, type ReactNode } from "react";
+import { Fragment, StrictMode, Suspense, lazy, useCallback, useEffect, useRef, useState, Component, type ReactNode } from "react";
 import { getLocale, messages, useLocale } from "@/packages/web/src/i18n";
 import { createRoot } from "react-dom/client";
 import { canonicalTicker } from "@/shared/analysis-runtime/financial-data/policy";
@@ -15,6 +15,8 @@ import { qoqLabel, yoyLabel } from "@/shared/analysis-runtime/locale";
 import { VIEW_LABEL } from "./findings-model";
 import { UpdateNotice } from "./UpdateNotice";
 import { Home } from "./Home";
+import { track } from "./track";
+const MetricsPage = lazy(() => import("./MetricsPage").then(mod => ({ default: mod.MetricsPage })));
 import { useHomeDigest } from "./home-data";
 import { useStageHost } from "./stage/StageHost";
 import { turnPage, usePageTurning } from "./page-turn";
@@ -51,6 +53,10 @@ function railYields() {
   }
 }
 
+function isMetricsPath(path: string): boolean {
+  const bare = path.replace(/\/+$/, "") || "/";
+  return bare === "/internal/metrics";
+}
 function tickerFromUrl() {
   const match = location.pathname.match(
     /^\/companies\/([A-Za-z0-9.-]{1,12})\/?$/,
@@ -294,6 +300,15 @@ function App() {
   const openCompany = (next: string) => navigate(`/companies/${canonicalTicker(next)}`);
   const goHome = useCallback(() => navigate("/"), [navigate]);
   const searchFromError = useCallback(() => { focusSearch.current = true; navigate("/"); }, [navigate]);
+  useEffect(() => { track("page_view", ticker ? { ticker } : {}); }, [path, ticker]);
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      const link = (e.target as HTMLElement).closest("a");
+      if (link?.closest(".sources, .cites, figcaption")) track("source_click");
+    };
+    document.addEventListener("click", onClick);
+    return () => document.removeEventListener("click", onClick);
+  }, []);
   useEffect(() => {
     const follow = (e: MouseEvent) => {
       const link = (e.target as HTMLElement).closest<HTMLAnchorElement>("a[data-nav]");
@@ -310,13 +325,15 @@ function App() {
     if (yields) setOpenedWhileNarrow(open);
     else setCollapsed(!open);
   }
-  const toggleTheme = () => setLight((v) => !v);
+  const toggleTheme = () => { track("theme_toggle", { theme: light ? "dark" : "light" }); setLight((v) => !v); };
   const covered = new Set((home.digest?.companies ?? []).map(company => company.ticker));
   const shownRecent = home.status === "ready" ? recent.filter(item => covered.has(item)) : recent;
   const catalog = (home.digest?.companies ?? []).map(company => ({ ticker: company.ticker, name: company.name, nameZh: company.nameZh, aliases: company.aliases }));
   const catalogStatus = home.status === "ready" ? "ready" as const : home.status === "error" ? "error" as const : "loading" as const;
   const picks = featuredCompanies(home.digest?.companies ?? [], locale);
   // Home remounts so its memos pick up the new locale. The company page stays mounted and refetches in place.
+  if (!ticker && isMetricsPath(path))
+    return <Suspense fallback={null}><MetricsPage key={locale} light={light} onToggleTheme={toggleTheme} /></Suspense>;
   if (!ticker && !isHomePath(path))
     return <ErrorState kind="missing" code="NOT_FOUND" companies={picks} onHome={goHome} onSearch={searchFromError} restoredTitle={m.title} />;
   if (!ticker)

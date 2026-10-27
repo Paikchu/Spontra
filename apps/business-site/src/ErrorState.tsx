@@ -1,7 +1,8 @@
 import { ChartColumn, CircleAlert, CloudOff, SearchX, Timer } from "lucide-react";
-import { useLayoutEffect, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, type ReactNode } from "react";
 import { messages, useLocale } from "@/packages/web/src/i18n";
 import type { CompanyFault } from "./error-model";
+import { track } from "./track";
 
 const m = messages({
   notFoundTitle: (ticker: string) => `${ticker} is not covered yet`,
@@ -83,6 +84,7 @@ export function ErrorState({ kind, code, ticker, companies, onHome, onRetry, onS
     : kind === "rate-limit" ? m.titleLimit
     : kind === "server" ? m.titleServer
     : m.titleMissing;
+  useEffect(() => { track("error_shown", { code }); }, [code]);
   useLayoutEffect(() => {
     document.documentElement.dataset.pageTitle = "error";
     document.title = `${pageTitle} · Spontra`;

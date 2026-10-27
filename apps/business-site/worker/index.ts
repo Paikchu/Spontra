@@ -26,6 +26,8 @@ import {filingFiscalFields,formatFilingPeriodLabel} from "@/packages/web/src/mod
 import {formatSecMetricLabel,formatSecMetricValue} from "@/packages/web/src/model/sec-metric-format";
 import {isLocale,type Locale} from "@/shared/analysis-runtime/locale";
 import {homeLocale,parseHomeDigest,unavailableHome} from "../src/home-model.ts";
+import {handleTelemetry,type TelemetryNamespace} from "../src/telemetry.ts";
+export {TelemetryStore} from "./telemetry-store.ts";
 import {MAP_RESOURCES,REVISION,type MapRevisions} from "@/shared/analysis-contract/revisions";
 /** Spontra Analysis is reached over its Service Binding; the host is a label the binding ignores. */
 const ANALYSIS_ORIGIN="https://spontra-analysis.internal";
@@ -37,7 +39,9 @@ export type SiteEnv={ASSETS:{fetch(request:Request):Promise<Response>};PUBLIC_RE
  /** Service Binding to Spontra Analysis's `StageGateway` named entrypoint: the stage's only door (docs/stage-agent-design.md §3.1). */
  SPONTRA_STAGE?:{fetch(request:Request):Promise<Response>};
  /** Requests to the stage per address per minute: identities, conversations and socket handshakes. */
- AGENT_LIMIT?:{limit(options:{key:string}):Promise<{success:boolean}>}};
+ AGENT_LIMIT?:{limit(options:{key:string}):Promise<{success:boolean}>};
+ /** Anonymous usage events. The binding stores a hash of the address, never the address itself. */
+ TELEMETRY?:TelemetryNamespace};
 /** Reads go straight to Spontra Analysis's read API over the binding; each call is a fresh request, so nothing from the browser's request is forwarded. */
 export function analysisFetcher(env:Pick<SiteEnv,"SPONTRA_ANALYSIS">):typeof fetch|null{
  const binding=env.SPONTRA_ANALYSIS;
@@ -332,6 +336,13 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
  const url=new URL(request.url);
  if(url.pathname.startsWith("/agents/"))return stageDoor(request,env);
  if(url.pathname.startsWith("/api/")){
+  if(url.pathname==="/api/business/v1/telemetry"){
+   const response=await handleTelemetry(request,env.TELEMETRY);
+   const headers=new Headers(response.headers);
+   for(const [name,value] of Object.entries(security))headers.set(name,value);
+   headers.set("cache-control","no-store");
+   return new Response(response.body,{status:response.status,headers});
+  }
   const fetcher=upstream??analysisFetcher(env);
   if(!fetcher)return json({error:"Read service unavailable"},503);
   // The companies with published findings, for the home page; the list follows the admin's AI switch.
