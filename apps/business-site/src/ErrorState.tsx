@@ -6,6 +6,7 @@ import type { CompanyFault } from "./error-model";
 const m = messages({
   notFoundTitle: (ticker: string) => `${ticker} is not covered yet`,
   notFoundBody: "We do not have a filing read for this company yet. These covered companies are ready.",
+  notFoundBodyAlone: "We do not have a filing read for this company yet.",
   thinTitle: (ticker: string) => `${ticker} does not have enough data yet`,
   thinBody: "An analysis needs at least two quarters of filings. It fills in after the next report is published.",
   limitTitle: "Too many requests",
@@ -14,6 +15,7 @@ const m = messages({
   serverBody: "The network or the server failed. Try again.",
   missingTitle: "Page not found",
   missingBody: "This address does not match a page. Go home, or open a company we already cover.",
+  missingBodyAlone: "This address does not match a page.",
   backHome: "Back to home",
   retry: "Retry",
   searchOther: "Search other companies",
@@ -26,6 +28,7 @@ const m = messages({
 }, {
   notFoundTitle: (ticker: string) => `暂未收录 ${ticker}`,
   notFoundBody: "我们还没有这家公司的财报解析，可以先看看已收录的公司。",
+  notFoundBodyAlone: "我们还没有这家公司的财报解析。",
   thinTitle: (ticker: string) => `${ticker} 的数据还不够`,
   thinBody: "至少需要两个季度的财报才能生成分析，下一份财报发布后会自动补上。",
   limitTitle: "请求过于频繁",
@@ -34,6 +37,7 @@ const m = messages({
   serverBody: "网络或服务器出错了，可以再试一次。",
   missingTitle: "未找到",
   missingBody: "这个地址没有对应的页面。可以回到首页，或看看已收录的公司。",
+  missingBodyAlone: "这个地址没有对应的页面。",
   backHome: "返回首页",
   retry: "重试",
   searchOther: "搜索其他公司",
@@ -74,11 +78,13 @@ export function ErrorState({ kind, code, ticker, companies, onHome, onRetry, onS
     : kind === "rate-limit" ? m.limitTitle
     : kind === "server" ? m.serverTitle
     : m.missingTitle;
-  const body = kind === "not-found" && name ? m.notFoundBody
+  // Copy that points at the covered companies only while there are some to show.
+  const listed = companies.length > 0;
+  const body = kind === "not-found" && name ? (listed ? m.notFoundBody : m.notFoundBodyAlone)
     : kind === "insufficient" ? m.thinBody
     : kind === "rate-limit" ? m.limitBody
     : kind === "server" ? m.serverBody
-    : m.missingBody;
+    : listed ? m.missingBody : m.missingBodyAlone;
   const pageTitle = kind === "insufficient" ? m.titleThin
     : kind === "rate-limit" ? m.titleLimit
     : kind === "server" ? m.titleServer
@@ -102,15 +108,17 @@ export function ErrorState({ kind, code, ticker, companies, onHome, onRetry, onS
           ? <button type="button" className="error-secondary" onClick={onRetry}>{m.retry}</button>
           : <button type="button" className="error-secondary" onClick={onSearch}>{m.searchOther}</button>}
       </div>
-      <h2>{m.covered}</h2>
-      <ul className="error-picks">
-        {companies.map(company => <li key={company.ticker}>
-          <a href={`/companies/${company.ticker}`} data-nav>
-            <b lang="en">{company.ticker}</b>
-            <small lang={/[\u3400-\u9fff]/.test(company.name) ? "zh-CN" : "en"}>{company.name}</small>
-          </a>
-        </li>)}
-      </ul>
+      {listed && <>
+        <h2>{m.covered}</h2>
+        <ul className="error-picks">
+          {companies.map(company => <li key={company.ticker}>
+            <a href={`/companies/${company.ticker}`} data-nav>
+              <b lang="en">{company.ticker}</b>
+              <small lang={/[\u3400-\u9fff]/.test(company.name) ? "zh-CN" : "en"}>{company.name}</small>
+            </a>
+          </li>)}
+        </ul>
+      </>}
       <p className="error-code">{m.code(code)}</p>
     </section>
   </div>;

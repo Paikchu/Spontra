@@ -2,9 +2,10 @@ import { z } from "zod";
 import type { DossierPublication } from "../analysis-contract/dossier.ts";
 import type { FindingsPublication } from "../analysis-contract/findings.ts";
 import { findingsMaterialSchema, readLensDocument } from "./findings.ts";
+import { TICKER_PATTERN } from "./financial-data/policy.ts";
 
 const dossierSchema = z.object({
-  schemaVersion: z.literal("dossier.v1"), ticker: z.string().regex(/^[A-Z][A-Z0-9.-]{0,11}$/), findingsFingerprint: z.string().min(1).max(128), fingerprint: z.string().min(1).max(128),
+  schemaVersion: z.literal("dossier.v1"), ticker: z.string().regex(TICKER_PATTERN), findingsFingerprint: z.string().min(1).max(128), fingerprint: z.string().min(1).max(128),
   generatedAt: z.string().max(40), model: z.string().min(1).max(80), documents: z.record(z.string().max(80), z.unknown()), materials: z.array(findingsMaterialSchema).max(120),
 });
 

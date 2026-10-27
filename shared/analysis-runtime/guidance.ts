@@ -3,6 +3,7 @@ import type {
   GuidanceAction, GuidanceBasis, GuidanceDirection, GuidanceForm, GuidanceHorizon, GuidanceItem, GuidanceMaterialKind,
   GuidanceMeasure, GuidanceMetric, GuidancePublication, GuidanceUnit,
 } from "../analysis-contract/guidance.ts";
+import { TICKER_PATTERN } from "./financial-data/policy.ts";
 
 const METRICS = ["revenue", "segment_revenue", "gross_margin", "operating_margin", "operating_income", "eps", "free_cash_flow", "operating_cash_flow", "capex", "rpo", "billings", "other"] as const;
 const MEASURES = ["amount", "growth", "margin", "per_share"] as const;
@@ -279,7 +280,7 @@ const publicItem = z.object({
 });
 export const guidancePublicationSchema = z.object({
   schemaVersion: z.literal("guidance.v1"),
-  ticker: z.string().regex(/^[A-Z][A-Z0-9.-]{0,11}$/),
+  ticker: z.string().regex(TICKER_PATTERN),
   updatedAt: z.string().max(40),
   items: z.array(publicItem).max(400),
   sources: z.array(z.object({ id: z.string().min(1).max(80), kind: z.enum(KINDS), sourceKind: z.enum(["sec", "transcript_api", "ir"]), title: z.string().min(1).max(300), url: https, publishedAt: date })).max(200),

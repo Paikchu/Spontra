@@ -17,8 +17,8 @@ import { FinancialMaintenanceStore, taskView, type MaintenanceRow } from './fina
 import { flowForIssuer } from '../financial-data/publication.ts';
 import { publicFlowSchema } from '../../../../shared/analysis-runtime/financial-data/schema.ts';
 import { checkCompleteFlow, newestPair } from '../../../../shared/analysis-runtime/financial-data/completeness.ts';
-import { financialPolicy } from '../../../../shared/analysis-runtime/financial-data/policy.ts';
-import { normalizeTrackedTicker } from '../sec/config.ts';
+import { dataTickers, normalizeTicker } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
+
 import { emit } from '../pipeline/outbox.ts';
 import { readCompletePublicationForTicker } from '../financial-data/publication.ts';
 import { readMapDerived } from '../financial-data/derived.ts';
@@ -138,7 +138,7 @@ export async function handleBusinessMapAdminRequest(request: Request, env: Analy
     // One company's analysis as a graph: the registry's tasks for the map and its features, and where each stands now.
     const flow = /^\/admin\/business-map\/companies\/([^/]+)\/flow$/.exec(path);
     if (flow && request.method === 'GET') {
-      const ticker = normalizeTrackedTicker(decodeURIComponent(flow[1]!));
+      const ticker = normalizeTicker(decodeURIComponent(flow[1]!));
       if (!ticker) return json({error:'公司代码无效。'},400);
       return json(await readFlow(db, ticker) satisfies BusinessMapFlow);
     }
@@ -146,7 +146,7 @@ export async function handleBusinessMapAdminRequest(request: Request, env: Analy
     // cash flow and balance sheet from the derived capital structure. Read only, like the map's own routes.
     const charts = /^\/admin\/business-map\/companies\/([^/]+)\/charts$/.exec(path);
     if (charts && request.method === 'GET') {
-      const ticker = normalizeTrackedTicker(decodeURIComponent(charts[1]!));
+      const ticker = normalizeTicker(decodeURIComponent(charts[1]!));
       if (!ticker) return json({error:'公司代码无效。'},400);
       const publication = await readCompletePublicationForTicker(db, ticker);
       const derived = publication.flow ? await readMapDerived(db, publication.flow) : null;
@@ -171,7 +171,7 @@ export async function handleBusinessMapAdminRequest(request: Request, env: Analy
     }
     const companySwitch = /^\/admin\/business-map\/companies\/([^/]+)\/features\/([a-z]+)$/.exec(path);
     if (companySwitch && request.method === 'POST') {
-      const ticker = normalizeTrackedTicker(decodeURIComponent(companySwitch[1]!)), feature = companySwitch[2];
+      const ticker = normalizeTicker(decodeURIComponent(companySwitch[1]!)), feature = companySwitch[2];
       const body = await request.json() as {on?:boolean};
       if (!ticker || !isFeature(feature) || typeof body.on !== 'boolean') return json({error:'公司代码或操作参数无效。'},400);
       if (body.on && !dataTickersFor(env).includes(ticker)) return json({error:'请先把该公司加入白名单。'},409);
@@ -205,7 +205,7 @@ export async function handleBusinessMapAdminRequest(request: Request, env: Analy
     // Judge the issuer's income statement again (presentation-task.ts): forget the filing it was judged on and ask.
     const judge = /^\/admin\/business-map\/companies\/([^/]+)\/presentation$/.exec(path);
     if (judge && request.method === 'POST') {
-      const ticker = normalizeTrackedTicker(decodeURIComponent(judge[1]!));
+      const ticker = normalizeTicker(decodeURIComponent(judge[1]!));
       if (!ticker) return json({error:'公司代码无效。'},400);
       const cik = await knownCik(db, ticker);
       if (cik) await db.prepare("UPDATE financial_presentation_profiles SET accession='' WHERE cik=?").bind(cik).run();
@@ -214,7 +214,7 @@ export async function handleBusinessMapAdminRequest(request: Request, env: Analy
     }
     const match = /^\/admin\/business-map\/companies\/([^/]+)$/.exec(path);
     if (!match || request.method !== 'POST') return json({error:'Not found'},404);
-    const ticker = normalizeTrackedTicker(match[1]);
+    const ticker = normalizeTicker(match[1]);
     const body = await request.json() as {enabled?:boolean;requestId?:string};
     if (!ticker || typeof body.enabled !== 'boolean' || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(body.requestId??'')) return json({error:'公司代码或操作参数无效。'},400);
     const receipt=await db.prepare('SELECT ticker,enabled FROM financial_company_setting_requests WHERE request_id=?').bind(body.requestId).first<{ticker:string;enabled:number}>();
@@ -235,7 +235,7 @@ export async function handleBusinessMapAdminRequest(request: Request, env: Analy
     }
     // One D1 transaction saves the choice and its durable initial job. A retried add never
     // creates another job, and repeated enable of a default company does not restart collection.
-    const defaultEnabled = financialPolicy({...env,SEC_AI_ENABLED:'false'}).dataTickers.has(ticker);
+    const defaultEnabled = dataTickers(env).has(ticker);
     await db.batch([
       db.prepare(`INSERT INTO financial_maintenance_tasks(task_id,request_id,ticker,action,status,total_steps,next_attempt_at,created_at,updated_at)
         SELECT ?,?,?,'extract','queued',4,?,?,? WHERE ?=1

@@ -175,12 +175,12 @@ export async function handleAiRunsAdminRequest(request: Request, env: AnalysisEn
       return json({ companies } satisfies AiCompanies);
     }
     // The company's Chinese: coverage per resource, today's budget and every string with its translation.
-    const translations = /^\/admin\/ai\/companies\/([A-Z][A-Z0-9.-]{0,9})\/translations$/.exec(path);
+    const translations = /^\/admin\/ai\/companies\/([A-Z][A-Z0-9.-]{0,11})\/translations$/.exec(path);
     if (translations && request.method === "GET") {
       if (!tickers.includes(translations[1]!)) return json({ error: "该公司不在 AI 分析范围内。" }, 404);
       return json(await translationsAdmin(env, translations[1]!, new Date(now)));
     }
-    const match = /^\/admin\/ai\/companies\/([A-Z][A-Z0-9.-]{0,9})\/(findings|analyst|checkup|explainer|tree|guidance)(?:\/(runs|versions\/([0-9T:.Z-]{10,40})))?$/.exec(path);
+    const match = /^\/admin\/ai\/companies\/([A-Z][A-Z0-9.-]{0,11})\/(findings|analyst|checkup|explainer|tree|guidance)(?:\/(runs|versions\/([0-9T:.Z-]{10,40})))?$/.exec(path);
     if (!match) return json({ error: "Not found" }, 404);
     const [, ticker, kindName, action, versionId] = match;
     const kind = kindName as AiRunKind;

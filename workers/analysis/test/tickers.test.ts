@@ -1,19 +1,22 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { canonicalTicker, financialPolicy } from "../../../shared/analysis-runtime/financial-data/policy.ts";
+import { allowData, canonicalTicker, dataTickers, normalizeTicker, tickerList } from "../../../shared/analysis-runtime/financial-data/policy.ts";
 import { parseIssuerDirectory } from "../src/pipeline/discovery.ts";
-import { normalizeTrackedTicker, parseTrackedTickers } from "../src/sec/config.ts";
 
 test("a second share class resolves to the ticker the data is kept under, wherever a ticker enters", () => {
   assert.equal(canonicalTicker(" goog "), "GOOGL");
   assert.equal(canonicalTicker("GOOGL"), "GOOGL");
   assert.equal(canonicalTicker("brk.b"), "BRK.B");
   assert.equal(canonicalTicker("brk-b"), "BRK.B");
-  assert.equal(normalizeTrackedTicker("goog"), "GOOGL");
-  assert.equal(normalizeTrackedTicker("BRK-B"), "BRK.B");
-  assert.deepEqual(parseTrackedTickers("goog, brk-b,ORCL"), ["BRK.B", "GOOGL", "ORCL"]);
-  const policy = financialPolicy({ SEC_DATA_TICKERS: "ORCL,GOOG,GOOGL,META", SEC_AI_TICKERS: "ORCL" });
-  assert.deepEqual([...policy.dataTickers].sort(), ["GOOGL", "META", "ORCL"]);
+  assert.equal(normalizeTicker("goog"), "GOOGL");
+  assert.equal(normalizeTicker("BRK-B"), "BRK.B");
+  assert.deepEqual(tickerList("goog, brk-b,ORCL"), ["BRK.B", "GOOGL", "ORCL"]);
+  const tickers = dataTickers({ SEC_DATA_TICKERS: "ORCL,GOOG,GOOGL,META" });
+  assert.deepEqual([...tickers].sort(), ["GOOGL", "META", "ORCL"]);
+  assert.equal(allowData(tickers, "goog"), true);
+  assert.equal(normalizeTicker("ABCDEFGHIJKL"), "ABCDEFGHIJKL");
+  assert.equal(normalizeTicker("1ABC"), "");
+  assert.throws(() => tickerList("ORCL, not a ticker"));
 });
 
 test("the issuer directory maps every symbol to its CIK and files the second class under the data ticker", () => {

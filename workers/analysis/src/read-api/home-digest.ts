@@ -9,7 +9,7 @@ import type { RevenueHistory } from "../../../../shared/analysis-contract/revenu
 import { checkCompleteFlow, newestPair } from "../../../../shared/analysis-runtime/financial-data/completeness.ts";
 import { publicFlowSchema } from "../../../../shared/analysis-runtime/financial-data/schema.ts";
 import { readHistory } from "../../../../shared/analysis-runtime/financial-data/history.ts";
-import { canonicalTicker, financialPolicy } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
+import { canonicalTicker, dataTickers as listedDataTickers, TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 import { readFindingsPublication } from "../../../../shared/analysis-runtime/findings.ts";
 import type { Locale } from "../../../../shared/analysis-runtime/locale.ts";
 import { calendarLabel } from "../../../../shared/analysis-runtime/fiscal-label.ts";
@@ -17,18 +17,16 @@ import { localize, type TranslationTable } from "../../../../shared/analysis-run
 import { fiscalFields, readFiscalFocus } from "./fiscal-periods.ts";
 
 /**
- * 【假设】Popular tickers until an admin list exists. Names that are not covered are dropped.
+ * Popular: the covered companies with findings, the freshest filing first, then the rest the same way.
  * 【假设】Chinese names, extra aliases and sectors are not in the filings. Leave a ticker out
  * and the page searches its English name only, and hides the sector filter while every sector is null.
  * `fiscalLabel` / `calendarLabel` stay the calendar quarter of the period end (2026-07-26 → "2026 Q3") for older clients.
  * `fiscalYear` / `fiscalQuarter` are the issuer's own quarter, from the fiscal-year-end month and any cached DEI focus.
  * 【假设】Amounts stay in the filing currency. No exchange rate is applied.
  */
-export const HOME_POPULAR_TICKERS = ["NBIS", "META", "TSM", "CRWV", "TTMI"];
 export type HomeCatalogNote = { nameZh?: string; aliases?: string[]; sector?: string };
 export const HOME_CATALOG_NOTES: Record<string, HomeCatalogNote> = {};
 
-const TICKER = /^[A-Z][A-Z0-9.-]{0,11}$/;
 const MAX_COMPANIES = 40;
 const NAME_STOP = new Set(["INC", "INCORPORATED", "CORPORATION", "CORP", "LTD", "LIMITED", "PLC", "GROUP", "COMPANY", "HOLDINGS", "THE", "AND", "CLASS", "COMMON", "STOCK", "SHARES", "NV", "SA", "AG", "CO"]);
 
@@ -142,11 +140,11 @@ function projectFindings(publication: FindingsPublication | null): { counts: Hom
 
 function dataTickers(env: HomeDigestEnv, rows: Array<{ ticker: string; enabled: number }>): Set<string> {
   let enabled: Set<string>;
-  try { enabled = financialPolicy({ SEC_DATA_TICKERS: env.SEC_DATA_TICKERS, SEC_TRACKED_TICKERS: env.SEC_TRACKED_TICKERS, SEC_AI_ENABLED: "false" }).dataTickers; }
+  try { enabled = listedDataTickers(env); }
   catch { enabled = new Set(); }
   for (const row of rows) {
     const ticker = canonicalTicker(row.ticker);
-    if (!TICKER.test(ticker)) continue;
+    if (!TICKER_PATTERN.test(ticker)) continue;
     if (row.enabled) enabled.add(ticker);
     else enabled.delete(ticker);
   }
@@ -192,7 +190,7 @@ export async function readHomeDigest(db: D1Database, env: HomeDigestEnv, locale:
 
   const consider = (ticker: string, cik: string | null, payload: string | null, publishedAt: string | null) => {
     const canonical = canonicalTicker(ticker);
-    if (!TICKER.test(canonical) || seen.has(canonical)) return;
+    if (!TICKER_PATTERN.test(canonical) || seen.has(canonical)) return;
     seen.add(canonical);
     let flow: PublicBusinessFlow | null = null;
     if (payload) {
@@ -247,9 +245,9 @@ export async function readHomeDigest(db: D1Database, env: HomeDigestEnv, locale:
   const have = new Set(capped.map(company => company.ticker));
   const popular: string[] = [];
   const push = (ticker: string) => { if (have.has(ticker) && !popular.includes(ticker) && popular.length < 5) popular.push(ticker); };
-  for (const ticker of HOME_POPULAR_TICKERS) push(canonicalTicker(ticker));
-  for (const company of capped) if (Object.values(company.findingCounts).some(count => count > 0)) push(company.ticker);
-  for (const company of capped) push(company.ticker);
+  const fresh = [...capped].sort((a, b) => (b.latestPeriod?.filedAt ?? "").localeCompare(a.latestPeriod?.filedAt ?? "") || a.ticker.localeCompare(b.ticker));
+  for (const company of fresh) if (Object.values(company.findingCounts).some(count => count > 0)) push(company.ticker);
+  for (const company of fresh) push(company.ticker);
 
   return {
     schemaVersion: "home-digest.v1",

@@ -1,7 +1,7 @@
-import { financialPolicy, allowData, aiIsEnabled } from "../../../shared/analysis-runtime/financial-data/policy.ts";
+import { allowData, aiIsEnabled, dataTickers, normalizeTicker, tickerList } from "../../../shared/analysis-runtime/financial-data/policy.ts";
 import { D1CompanyAnalysisRepository } from "./company-analysis/repository.ts";
 import { D1SecRepository } from "./sec/d1.ts";
-import { isTrackedTicker, normalizeTrackedTicker, parseTrackedTickers } from "./sec/config.ts";
+
 import { hashString } from "./sec/analysis.ts";
 import { sha256 } from "./company-analysis/api.ts";
 
@@ -40,7 +40,6 @@ export type CompanyAnalysisWorkflowParams = {
 
 export type SecCronEnv = {
   /** This Worker's own copy of the whitelist — nothing here asks another Worker for it. */
-  SEC_TRACKED_TICKERS?: string;
   SEC_DATA_TICKERS?: string;
   SEC_DATA_COLLECTION_ENABLED?: string;
   SEC_AI_TICKERS?: string;
@@ -62,28 +61,29 @@ export type SecCronEnv = {
  * whitelist now has exactly one home, this one, and this Worker is also the one deciding whether to
  * start a run — so the two can no longer drift apart.
  */
-export function trackedTickersFor(env: Pick<SecCronEnv, "SEC_TRACKED_TICKERS" | "SEC_DATA_TICKERS" | "SEC_AI_TICKERS" | "SEC_AI_ENABLED">): string[] {
-  if(!aiIsEnabled(env))return [];
-  return parseTrackedTickers(env.SEC_AI_TICKERS??env.SEC_TRACKED_TICKERS);
+export function trackedTickersFor(env: Pick<SecCronEnv, "SEC_AI_TICKERS" | "SEC_AI_ENABLED">): string[] {
+  return aiIsEnabled(env) ? tickerList(env.SEC_AI_TICKERS) : [];
 }
+
+const tracked = (ticker: string, list: string[]) => { const normalized = normalizeTicker(ticker); return !!normalized && list.includes(normalized); };
 
 /** The error a run raises when its company's feature is no longer switched on. */
 export const NOT_TRACKED = "Ticker is not tracked";
-export function assertTrackedTicker(env: Pick<SecCronEnv, "SEC_TRACKED_TICKERS" | "SEC_DATA_TICKERS" | "SEC_AI_TICKERS" | "SEC_AI_ENABLED">, ticker: string): void {
-  if (!isTrackedTicker(ticker, trackedTickersFor(env))) throw new Error(NOT_TRACKED);
+export function assertTrackedTicker(env: Pick<SecCronEnv, "SEC_AI_TICKERS" | "SEC_AI_ENABLED">, ticker: string): void {
+  if (!tracked(ticker, trackedTickersFor(env))) throw new Error(NOT_TRACKED);
 }
 
 /**
  * A scheduled report runs only while this company is still on the reports list. A manual run is not decided here:
  * an admin analysis carries its own grant, and a manual request for a company that has left the list still fails as before.
  */
-export function scheduledAnalysisAllowed(env: Pick<SecCronEnv, "SEC_TRACKED_TICKERS" | "SEC_DATA_TICKERS" | "SEC_AI_TICKERS" | "SEC_AI_ENABLED">, params: { ticker: string; requestedBy: string }): boolean {
+export function scheduledAnalysisAllowed(env: Pick<SecCronEnv, "SEC_AI_TICKERS" | "SEC_AI_ENABLED">, params: { ticker: string; requestedBy: string }): boolean {
   if (params.requestedBy === "manual") return true;
-  return isTrackedTicker(params.ticker, trackedTickersFor(env));
+  return tracked(params.ticker, trackedTickersFor(env));
 }
 
-export function dataTickersFor(env:Pick<SecCronEnv,"SEC_TRACKED_TICKERS"|"SEC_DATA_TICKERS"|"SEC_AI_TICKERS"|"SEC_AI_ENABLED">):string[]{return [...financialPolicy({SEC_DATA_TICKERS:env.SEC_DATA_TICKERS,SEC_TRACKED_TICKERS:env.SEC_TRACKED_TICKERS,SEC_AI_ENABLED:"false"}).dataTickers].sort();}
-export function assertDataTicker(env:Pick<SecCronEnv,"SEC_TRACKED_TICKERS"|"SEC_DATA_TICKERS"|"SEC_AI_TICKERS"|"SEC_AI_ENABLED">,ticker:string):void{if(!allowData(financialPolicy({SEC_DATA_TICKERS:env.SEC_DATA_TICKERS,SEC_TRACKED_TICKERS:env.SEC_TRACKED_TICKERS,SEC_AI_ENABLED:"false"}),ticker))throw new Error("Ticker is not data-enabled");}
+export function dataTickersFor(env:Pick<SecCronEnv,"SEC_DATA_TICKERS">):string[]{return [...dataTickers(env)].sort();}
+export function assertDataTicker(env:Pick<SecCronEnv,"SEC_DATA_TICKERS">,ticker:string):void{if(!allowData(dataTickers(env),ticker))throw new Error("Ticker is not data-enabled");}
 
 export function requireDb(env: Pick<SecCronEnv, "DB">): D1Database {
   if (!env.DB) throw new Error("SEC pipeline D1 binding is not configured");
@@ -153,7 +153,7 @@ export async function handleSecAnalysisRequest(request: Request, env: SecCronEnv
   } catch {
     return Response.json({ error: "Invalid ticker" }, { status: 400 });
   }
-  const ticker = normalizeTrackedTicker(rawTicker);
+  const ticker = normalizeTicker(rawTicker);
   if (!ticker) return Response.json({ error: "Invalid ticker" }, { status: 400 });
   let trackedTickers: string[];
   try {
@@ -161,7 +161,7 @@ export async function handleSecAnalysisRequest(request: Request, env: SecCronEnv
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Unable to read the SEC watchlist" }, { status: 503 });
   }
-  if (!isTrackedTicker(ticker, trackedTickers)) return Response.json({ error: "Ticker is not tracked" }, { status: 403 });
+  if (!tracked(ticker, trackedTickers)) return Response.json({ error: "Ticker is not tracked" }, { status: 403 });
   try {
     const instance = await startWorkflow(env.SEC_ANALYSIS_WORKFLOW, ticker, "manual", now, mode === "backfill");
     return Response.json({ status: "queued", jobId: instance.id, ticker, mode }, { status: 202 });
@@ -193,7 +193,7 @@ export async function handleCompanyAnalysisRequest(request: Request, env: SecCro
   } catch {
     return Response.json({ error: "Invalid ticker" }, { status: 400 });
   }
-  const ticker = normalizeTrackedTicker(rawTicker);
+  const ticker = normalizeTicker(rawTicker);
   if (!ticker) return Response.json({ error: "Invalid ticker" }, { status: 400 });
   let trackedTickers: string[];
   try {
@@ -201,7 +201,7 @@ export async function handleCompanyAnalysisRequest(request: Request, env: SecCro
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Unable to read the SEC watchlist" }, { status: 503 });
   }
-  if (!isTrackedTicker(ticker, trackedTickers)) return Response.json({ error: "Ticker is not tracked" }, { status: 403 });
+  if (!tracked(ticker, trackedTickers)) return Response.json({ error: "Ticker is not tracked" }, { status: 403 });
   if (!env.COMPANY_ANALYSIS_WORKFLOW || !env.DB) {
     return Response.json({ error: "Company analysis is not configured" }, { status: 503 });
   }

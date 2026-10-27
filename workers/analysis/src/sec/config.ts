@@ -1,38 +1,3 @@
-import { canonicalTicker } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
-
-const TRACKED_TICKER_PATTERN = /^[A-Z][A-Z0-9.-]{0,9}$/;
-
-export class SecTrackedTickerConfigError extends Error {
-  readonly invalidEntries: string[];
-
-  constructor(invalidEntries: string[]) {
-    super(`SEC_TRACKED_TICKERS contains invalid ticker(s): ${invalidEntries.join(", ")}`);
-    this.invalidEntries = invalidEntries;
-    this.name = "SecTrackedTickerConfigError";
-  }
-}
-
-export function parseTrackedTickers(value: string | undefined | null): string[] {
-  const entries = String(value ?? "")
-    .split(/[,\n]+/)
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-  const normalized = entries.map((entry) => canonicalTicker(entry));
-  const invalidEntries = normalized.filter((ticker) => !TRACKED_TICKER_PATTERN.test(ticker));
-  if (invalidEntries.length) throw new SecTrackedTickerConfigError([...new Set(invalidEntries)]);
-  return [...new Set(normalized)].sort();
-}
-
-export function isTrackedTicker(value: string, trackedTickers: string[]): boolean {
-  const ticker = normalizeTrackedTicker(value);
-  return Boolean(ticker) && trackedTickers.includes(ticker);
-}
-
-export function normalizeTrackedTicker(value: string | null | undefined): string {
-  const ticker = canonicalTicker(String(value ?? ""));
-  return TRACKED_TICKER_PATTERN.test(ticker) ? ticker : "";
-}
-
 export function encodePageCursor(value: { filingDate: string; accessionNumber: string }): string {
   return bytesToBase64Url(new TextEncoder().encode(JSON.stringify(value)));
 }

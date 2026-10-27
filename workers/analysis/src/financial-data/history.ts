@@ -4,6 +4,7 @@ import {D1SecRepository} from '../sec/d1.ts';
 import {extractVerifiedCurrentQuarters, readReportedFacts, type DocumentSource, type Fact} from './parser.ts';
 import {readFilingDocuments, reportsFinancials, type SecReader} from './provider.ts';
 import {extractRevenueHistory, REVENUE_PARSER_VERSION} from './revenue-parser.ts';
+import { TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 
 /**
  * Deterministic quarterly revenue history, independently validated from complete income statements.
@@ -38,7 +39,7 @@ const validCik = (cik: string) => /^\d{10}$/.test(cik) && Number(cik) > 0;
  * the general readHistory validator remains strict about ticker identity. Check all provenance,
  * including operands/children, so a wrong-company or mixed-company cache is never relabelled. */
 export function historyForIssuer(raw: unknown, cik: string, ticker: string): RevenueHistory | null {
-  if (!validCik(cik) || !/^[A-Z][A-Z0-9.-]{0,11}$/.test(ticker)) return null;
+  if (!validCik(cik) || !TICKER_PATTERN.test(ticker)) return null;
   const parsed = revenueHistorySchema.safeParse(raw);
   if (!parsed.success) return null;
   const sameIssuer = (value: string) => {
@@ -179,7 +180,7 @@ async function readHistoryContents(contents: Awaited<ReturnType<typeof readFilin
  * finished one lists EDGAR again but reads only the filings the history has not read yet (a new 10-Q, an amendment,
  * a filing whose reads were exhausted); a new parser version or a deleted cursor reads everything again. */
 export async function runHistoryStep(db: D1Database, reader: SecReader, target: {ticker: string; cik: string}, now = new Date(), maxDocuments = 3, options: {restartFinished?: boolean} = {}): Promise<HistoryStepResult> {
-  if (!validCik(target.cik) || !/^[A-Z][A-Z0-9.-]{0,11}$/.test(target.ticker)) throw new Error('Invalid issuer identity');
+  if (!validCik(target.cik) || !TICKER_PATTERN.test(target.ticker)) throw new Error('Invalid issuer identity');
   const repository = new D1SecRepository(db);
   const stored = (await repository.getCache<HistoryCursor>(cursorKey(target.cik)))?.payload;
   const current = stored && stored.version === HISTORY_VERSION && stored.ticker === target.ticker ? stored : undefined;
@@ -268,7 +269,7 @@ export type FilingRereadResult = {accession: string; form: string; filedAt: stri
  * quarterly reports. A reading that yields no quarter replaces nothing: good history is never erased.
  */
 export async function rereadHistoryFiling(db: D1Database, reader: SecReader, target: {ticker: string; cik: string}, accession: string, now = new Date()): Promise<FilingRereadResult> {
-  if (!validCik(target.cik) || !/^[A-Z][A-Z0-9.-]{0,11}$/.test(target.ticker) || !/^\d{10}-\d{2}-\d{6}$/.test(accession)) throw new Error('Invalid issuer identity');
+  if (!validCik(target.cik) || !TICKER_PATTERN.test(target.ticker) || !/^\d{10}-\d{2}-\d{6}$/.test(accession)) throw new Error('Invalid issuer identity');
   const listing = await listDocuments(target.cik, reader, now);
   const document = listing.documents.find(d => d.accession === accession);
   if (!document) throw new Error('FILING_NOT_IN_HISTORY_WINDOW');

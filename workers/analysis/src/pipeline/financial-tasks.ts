@@ -1,4 +1,4 @@
-import { financialPolicy, allowData, aiIsEnabled } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
+import { allowData, aiIsEnabled, dataTickers } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 import { newestPair } from "../../../../shared/analysis-runtime/financial-data/completeness.ts";
 import { modelFor, reasoningFor } from "../ai-config.ts";
 import { issuerHistory, newFilings, readNewFiling } from "../financial-data/new-filings.ts";
@@ -62,7 +62,7 @@ async function reserveReadNote(env: AnalysisEnv, now: Date): Promise<boolean> {
 
 async function dataPolicy(env: AnalysisEnv) {
   const policyEnv = await companyPolicyEnvironment(env);
-  return financialPolicy({ SEC_DATA_TICKERS: policyEnv.SEC_DATA_TICKERS, SEC_TRACKED_TICKERS: policyEnv.SEC_TRACKED_TICKERS, SEC_AI_ENABLED: "false" });
+  return dataTickers(policyEnv);
 }
 
 /** A throttled SEC reader whose documents are archived for this company, read back from the archive when already there. */

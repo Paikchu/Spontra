@@ -16,6 +16,7 @@ import type { WorkflowStepLike } from "../workflow-core.ts";
 import { AiRunStore } from "../ai-runs/store.ts";
 import { nodeHint, runBusinessExplainer, type ExplainerNode } from "./agent.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
+import { TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 
 /** Changing the prompt or output contract regenerates every company once. */
 export const BUSINESS_EXPLAINER_VERSION = "business-explainer.sections.v5";
@@ -90,7 +91,7 @@ export async function executeBusinessExplainerWorkflow(params: BusinessExplainer
 /** Read-only: never starts research. A stored document that fails validation reads as preparing. */
 export async function readBusinessExplainerResponse(db: D1Database, rawTicker: string, options: { hidden?: boolean } = {}): Promise<BusinessExplainerResponse> {
   const ticker = rawTicker.trim().toUpperCase();
-  if (!/^[A-Z][A-Z0-9.-]{0,11}$/.test(ticker)) throw new AnalysisRequestError("INVALID_TICKER", "Invalid company ticker.");
+  if (!TICKER_PATTERN.test(ticker)) throw new AnalysisRequestError("INVALID_TICKER", "Invalid company ticker.");
   // The admin's display switch: hidden explanations read as hidden for readers and stay stored.
   if (options.hidden) return { schemaVersion: "business-explainer-response.v1", status: "hidden", explainer: null };
   const stored = await new D1SecRepository(db).getCache<unknown>(businessExplainerCacheKey(ticker));

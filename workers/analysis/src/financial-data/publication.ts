@@ -6,6 +6,7 @@ import {checkCompleteFlow} from '../../../../shared/analysis-runtime/financial-d
 import {historyForIssuer,readRevenueHistory} from './history.ts';
 import {historyFromSnapshot,mergeHistory,readHistory} from '../../../../shared/analysis-runtime/financial-data/history.ts';
 import type {RevenueHistoryQuarter} from '../../../../shared/analysis-contract/revenue-history.ts';
+import { TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 
 /** Admin list metadata comes from the same verified publications as the detail view, never an
  * in-progress/failed attempt or a newly discovered filing that has not yielded usable data. */
@@ -48,7 +49,7 @@ export async function readCompletePublication(db:D1Database,cik:string):Promise<
 
 /** Data-only public projection: no AI payload, no staged partial quarters, no read-side refresh. */
 export async function readCompletePublicationForTicker(db:D1Database,ticker:string):Promise<CompleteFlowPublication>{
- ticker=ticker.trim().toUpperCase();if(!/^[A-Z][A-Z0-9.-]{0,11}$/.test(ticker))throw new AnalysisRequestError('INVALID_TICKER','Invalid company ticker.');
+ ticker=ticker.trim().toUpperCase();if(!TICKER_PATTERN.test(ticker))throw new AnalysisRequestError('INVALID_TICKER','Invalid company ticker.');
  // Scalar fallbacks preserve source priority without exceeding D1's compound SELECT limit.
  const resolved=await db.prepare(`SELECT COALESCE(
   (SELECT cik FROM financial_collection_jobs WHERE ticker=? ORDER BY generation DESC LIMIT 1),

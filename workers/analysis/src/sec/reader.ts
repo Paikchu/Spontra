@@ -5,6 +5,7 @@ import type { SecFinancialLens, SecMarketSnapshot, SecReaderReport, SecReaderVis
 import type { AnalysisFact, SecAnalysisBrief } from "./analysis.ts";
 import type { SecFilingSummary, SecNodePlan, SecNodeResult } from "./sec.ts";
 import { reconcileCapitalOutlay } from "./cash-reconciliation.ts";
+import { TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 
 const object = (value: unknown): Record<string, unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const string = (value: unknown, max = 1800) => typeof value === "string" ? value.trim().slice(0, max) : "";
@@ -19,7 +20,7 @@ export async function identifyReaderMarketSnapshot(ticker: string, input: SecMar
   const validDate = (value: unknown): value is string => typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)
     && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
   const positive = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && value > 0;
-  if (!/^[A-Z][A-Z0-9.-]{0,9}$/.test(ticker) || snapshot.status !== "available" || !positive(snapshot.price)
+  if (!TICKER_PATTERN.test(ticker) || snapshot.status !== "available" || !positive(snapshot.price)
     || !validDate(snapshot.priceDate) || !/^[A-Z]{3}$/.test(snapshot.currency ?? "")
     || typeof snapshot.asOf !== "string" || !Number.isFinite(Date.parse(snapshot.asOf))
     || snapshot.priceDate > new Date(snapshot.asOf).toISOString().slice(0, 10)

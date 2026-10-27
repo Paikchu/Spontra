@@ -1,9 +1,10 @@
 import type { ReportAdminDetail, ReportAdminItem, ReportAdminPage, ReportAdminJob } from "../../../../shared/analysis-contract/admin.ts";
+import { normalizeTicker } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 import type { PublishedSecReport, SecFilingSummary } from "../../../../shared/analysis-contract/report.ts";
 import { trackedTickersFor, type SecCronEnv } from "../core.ts";
 import { D1SecRepository, SEC_ANALYSIS_JOB_LEASE_MS } from "../sec/d1.ts";
 import { getPublicFiling } from "../sec/public-api.ts";
-import { normalizeTrackedTicker } from "../sec/config.ts";
+
 import { cleanSecAccession } from "../sec/sec.ts";
 import { jobAnalysisVersionFor } from "../workflow-core.ts";
 import { authenticateAdmin, createAdminSession, matchesAdminKey } from "./auth.ts";
@@ -141,7 +142,7 @@ export async function handleReportAdminRequest(request: Request, env: AdminEnv, 
   const match = /^\/admin\/reports\/([^/]+)\/([^/]+)(?:\/(review|regenerate))?$/.exec(url.pathname);
   if (!match) return json({ error: "Not found" }, 404);
   let ticker: string | null, accession: string;
-  try { ticker = normalizeTrackedTicker(decodeURIComponent(match[1]!)); accession = cleanSecAccession(decodeURIComponent(match[2]!)); }
+  try { ticker = normalizeTicker(decodeURIComponent(match[1]!)); accession = cleanSecAccession(decodeURIComponent(match[2]!)); }
   catch { return json({ error: "报告标识无效。" }, 400); }
   if (!ticker || !accession) return json({ error: "报告标识无效。" }, 400);
   const action = match[3];

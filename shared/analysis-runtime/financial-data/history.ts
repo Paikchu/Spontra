@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { BusinessFlowQuarter } from "../../analysis-contract/business-flow.ts";
 import type { RevenueHistory, RevenueHistoryQuarter } from "../../analysis-contract/revenue-history.ts";
+import { TICKER_PATTERN } from "./policy.ts";
 
 /** Eight displayed quarters plus four prior-year comparison quarters. */
 export const HISTORY_QUARTERS = 12;
@@ -21,7 +22,7 @@ const quarterSchema = z.object({
   fiscalYearEndMonth: z.number().int().min(1).max(12).nullable().optional(),
   labelSource: z.enum(["xbrl", "derived", "unknown"]).optional(),
 });
-export const revenueHistorySchema = z.object({ schemaVersion: z.literal("revenue-history.v1"), ticker: z.string().regex(/^[A-Z][A-Z0-9.-]{0,11}$/), updatedAt: z.string(), quarters: z.array(quarterSchema).max(16) });
+export const revenueHistorySchema = z.object({ schemaVersion: z.literal("revenue-history.v1"), ticker: z.string().regex(TICKER_PATTERN), updatedAt: z.string(), quarters: z.array(quarterSchema).max(16) });
 
 const near = (a: number, b: number) => Math.abs(a - b) <= Math.max(1, Math.max(Math.abs(a), Math.abs(b)) * 1e-9);
 const days = (start: string, end: string) => (Date.parse(end) - Date.parse(start)) / 86400000;

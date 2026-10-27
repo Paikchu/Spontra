@@ -1,10 +1,10 @@
 import { companyName } from "../catalog/security-directory.ts";
 import type { FinancialMaintenanceCompany, FinancialMaintenanceCompanyDetail, FinancialMaintenanceCompanyList, FinancialMaintenanceMetric, FinancialMaintenancePeriod } from "../../../../shared/analysis-contract/financial-maintenance.ts";
 import { FLOW_METRICS, type BusinessFlowQuarter } from "../../../../shared/analysis-contract/business-flow.ts";
-import { aiIsEnabled } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
+import { aiIsEnabled, normalizeTicker } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 import { dataTickersFor, trackedTickersFor } from "../core.ts";
 import type { AnalysisEnv } from "../operations.ts";
-import { normalizeTrackedTicker } from "../sec/config.ts";
+
 import { cleanSecAccession } from "../sec/sec.ts";
 import { financialPublicationMetadata, readCompletePublicationForTicker } from "../financial-data/publication.ts";
 import { getFinancialStatements, getFilingDisclosureAuditPage, listFilingDisclosureAudits } from "../financial-data/disclosure-audit.ts";
@@ -131,14 +131,14 @@ export async function handleFinancialAdminRequest(request: Request, env: Analysi
     const statementsMatch = /^\/admin\/financials\/companies\/([^/]+)\/documents\/([a-f0-9]{64})\/statements$/.exec(path);
     if(statementsMatch){
       if(request.method!=="GET")return json({error:"Method not allowed"},405);
-      const ticker=normalizeTrackedTicker(statementsMatch[1]!);if(!ticker)return json({error:"公司代码无效。"},400);
+      const ticker=normalizeTicker(statementsMatch[1]!);if(!ticker)return json({error:"公司代码无效。"},400);
       const result=await getFinancialStatements({DB:env.DB,SEC_FILINGS:env.SEC_FILINGS},ticker,statementsMatch[2]!);
       return result?json(result):json({error:"原始披露档案不存在。"},404);
     }
     const documentMatch = /^\/admin\/financials\/companies\/([^/]+)\/documents\/([a-f0-9]{64})$/.exec(path);
     if (documentMatch) {
       if (request.method !== "GET") return json({ error: "Method not allowed" }, 405);
-      const ticker = normalizeTrackedTicker(documentMatch[1]!);
+      const ticker = normalizeTicker(documentMatch[1]!);
       if (!ticker) return json({ error: "公司代码无效。" }, 400);
       const query = new URL(request.url).searchParams;
       try {
@@ -151,7 +151,7 @@ export async function handleFinancialAdminRequest(request: Request, env: Analysi
     const match = /^\/admin\/financials\/companies\/([^/]+)(?:\/(actions))?$/.exec(path);
     if (!match) return json({ error: "Not found" }, 404);
     let ticker: string;
-    try { ticker = normalizeTrackedTicker(decodeURIComponent(match[1]!)); } catch { return json({ error: "公司代码无效。" }, 400); }
+    try { ticker = normalizeTicker(decodeURIComponent(match[1]!)); } catch { return json({ error: "公司代码无效。" }, 400); }
     if (!ticker) return json({ error: "公司代码无效。" }, 400);
     if (request.method !== (match[2] ? "POST" : "GET")) return json({ error: "Method not allowed" }, 405);
     if (!match[2]) return json(await getFinancialCompany(env, ticker));

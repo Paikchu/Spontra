@@ -144,6 +144,24 @@ test("the homepage digest lists covered companies and refuses to invent a missin
   assert.equal(bad.revenue, null);
 });
 
+test("popular companies are the covered ones with findings, freshest filing first, then the rest", async () => {
+  const db = database();
+  await seed(db);
+  const digest = await readHomeDigest(db, env, null, new Date("2026-10-23T02:00:00Z"));
+  assert.deepEqual(digest.popular, ["ACME", "HIDE", "BAD", "WAIT"]);
+});
+
+test("the issuer's fiscal calendar comes from its stored submissions, else its latest annual report", async () => {
+  const db = database();
+  await seed(db);
+  await db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES ('sec:discovery:v1:ACME', ?, '2026-10-23T00:00:00Z')").bind(JSON.stringify({ cik: "0000320193", accessions: [], checkedAt: "2026-10-23T00:00:00Z", fiscalYearEnd: "0930", name: "ACME CLOUD INC" })).run();
+  await db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES ('sec:fiscal-period:v1:HIDE:0000320194-26-000001', ?, '2026-10-23T00:00:00Z')").bind(JSON.stringify({ fiscalYear: 2025, fiscalPeriod: "FY", periodEnd: "2026-01-31", source: "sec_dei", sourceAccession: "0000320194-26-000001", sourceUrl: FILING })).run();
+  const digest = await readHomeDigest(db, env, null, new Date("2026-10-23T02:00:00Z"));
+  const period = (ticker: string) => digest.companies.find(company => company.ticker === ticker)?.latestPeriod;
+  assert.deepEqual([period("ACME")?.fiscalYearEndMonth, period("ACME")?.fiscalYear, period("ACME")?.fiscalQuarter, period("ACME")?.labelSource], [9, 2026, 3, "derived"]);
+  assert.deepEqual([period("HIDE")?.fiscalYearEndMonth, period("HIDE")?.fiscalYear, period("HIDE")?.fiscalQuarter], [1, 2027, 2]);
+});
+
 test("Chinese titles come from the translation table and nowhere else", async () => {
   const db = database();
   await seed(db);

@@ -9,6 +9,7 @@ import { webPassages } from "../analyst/web.ts";
 import { readPeersResponse } from "../peers/read.ts";
 import { AnalysisRequestError } from "../read-api/contract-support/errors.ts";
 import { D1SecRepository } from "../sec/d1.ts";
+import { TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 
 /**
  * The passages a publication quotes or reads cells from, as the library holds them now. A passage that no longer exists
@@ -38,7 +39,7 @@ export const findingsCacheKey = (ticker: string) => `findings:v2:${ticker}`;
 /** The findings as the writer published them, before the analyst's documents are laid over them. */
 export async function readStoredFindings(db: D1Database, rawTicker: string): Promise<FindingsPublication | null> {
   const ticker = rawTicker.trim().toUpperCase();
-  if (!/^[A-Z][A-Z0-9.-]{0,11}$/.test(ticker)) throw new AnalysisRequestError("INVALID_TICKER", "Invalid company ticker.");
+  if (!TICKER_PATTERN.test(ticker)) throw new AnalysisRequestError("INVALID_TICKER", "Invalid company ticker.");
   const stored = await new D1SecRepository(db).getCache<unknown>(findingsCacheKey(ticker));
   return stored ? readFindingsPublication(stored.payload, ticker) : null;
 }

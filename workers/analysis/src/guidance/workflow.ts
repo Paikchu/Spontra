@@ -25,6 +25,7 @@ import { findIrDeck, readSecExhibits, reportedTranscriptRef, type FoundMaterial,
 import { GuidanceStore, type StoredMaterial } from "./store.ts";
 import { AiRunStore } from "../ai-runs/store.ts";
 import { transcriptForEvent } from "../transcripts/library.ts";
+import { TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 
 export const guidanceCacheKey = (ticker: string) => `guidance:v1:${ticker}`;
 const irHostsKey = (ticker: string) => `guidance-ir-hosts:v1:${ticker}`;
@@ -273,7 +274,7 @@ export async function executeGuidanceWorkflow(params: GuidanceWorkflowParams, st
 /** Read-only: never starts extraction. A stored document that fails validation reads as preparing. */
 export async function readGuidanceResponse(db: D1Database, rawTicker: string, options: { hidden?: boolean } = {}): Promise<GuidanceResponse> {
   const ticker = rawTicker.trim().toUpperCase();
-  if (!/^[A-Z][A-Z0-9.-]{0,11}$/.test(ticker)) throw new AnalysisRequestError("INVALID_TICKER", "Invalid company ticker.");
+  if (!TICKER_PATTERN.test(ticker)) throw new AnalysisRequestError("INVALID_TICKER", "Invalid company ticker.");
   // Guidance is read from the reports feature; the admin's display switch hides it with the summaries.
   if (options.hidden) return { schemaVersion: "guidance-response.v1", status: "hidden", guidance: null };
   const stored = await new D1SecRepository(db).getCache<unknown>(guidanceCacheKey(ticker));

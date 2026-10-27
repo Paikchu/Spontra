@@ -8,10 +8,10 @@ import { TASK_IMPLEMENTATIONS } from "../pipeline/tasks.ts";
 import { failedInputKey } from "../pipeline/workflow-task.ts";
 import { authenticateAdmin } from "./auth.ts";
 import { DISCOVERY_HEARTBEAT_KEY } from "../pipeline/discovery.ts";
+import { TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "cache-control": "private, no-store" } });
 const LOG_COLUMNS = "id, message_id AS messageId, cause_id AS causeId, kind, name, ticker, outcome, detail, created_at AS createdAt";
-const TICKER = /^[A-Z][A-Z0-9.-]{0,11}$/;
 
 async function overview(env: AnalysisEnv, db: D1Database, ticker: string | null): Promise<PipelineOverview> {
   const [outbox, due, dead, log, versions, heartbeat, companies] = await Promise.all([
@@ -79,7 +79,7 @@ async function manualEvent(env: AnalysisEnv, body: { type?: unknown; ticker?: un
   if (!definition) return json({ error: "不支持手动发送该事件。" }, 400);
   let ticker = "*";
   if (definition.scope === "company") {
-    if (typeof body.ticker !== "string" || !TICKER.test(body.ticker)) return json({ error: "请选择公司。" }, 400);
+    if (typeof body.ticker !== "string" || !TICKER_PATTERN.test(body.ticker)) return json({ error: "请选择公司。" }, 400);
     if (!(await scopeTickers(env, "data")).includes(body.ticker)) return json({ error: "该公司不在数据白名单中。" }, 404);
     ticker = body.ticker;
   }
@@ -94,7 +94,7 @@ export async function handlePipelineAdminRequest(request: Request, env: Analysis
   try {
     if (path === "/admin/pipeline" && request.method === "GET") {
       const ticker = url.searchParams.get("ticker");
-      return json(await overview(env, db, ticker && TICKER.test(ticker) ? ticker : null));
+      return json(await overview(env, db, ticker && TICKER_PATTERN.test(ticker) ? ticker : null));
     }
     const trailMatch = /^\/admin\/pipeline\/trail\/([A-Za-z0-9-]{1,64})$/.exec(path);
     if (trailMatch && request.method === "GET") return json(await trail(db, trailMatch[1]!));

@@ -1,7 +1,7 @@
 
 import { selectFlow } from "@/packages/web/src/model/business-flow-model";
 import { checkCompleteFlow, newestPair } from "@/shared/analysis-runtime/financial-data/completeness";
-import { canonicalTicker } from "@/shared/analysis-runtime/financial-data/policy";
+import { canonicalTicker, TICKER_PATTERN } from "@/shared/analysis-runtime/financial-data/policy";
 import type { CompleteFlowPublication } from "@/shared/analysis-contract/complete-business-flow";
 import {readReportHistory} from "@/shared/analysis-runtime/financial-data/report-history";
 import {readHistory} from "@/shared/analysis-runtime/financial-data/history";
@@ -134,7 +134,7 @@ export async function loadFindingsIndex(fetcher:typeof fetch=fetch):Promise<stri
   const response=await fetcher(ANALYSIS_ORIGIN+"/api/v1/findings",{signal:AbortSignal.timeout(8000),headers:{accept:"application/json"}});
   if(!response.ok)return null;
   const body=await response.json() as {schemaVersion?:string;tickers?:unknown};
-  return body.schemaVersion==="findings-index.v1"&&Array.isArray(body.tickers)?body.tickers.filter((t):t is string=>typeof t==="string"&&/^[A-Z][A-Z0-9.-]{0,11}$/.test(t)).slice(0,40):null;
+  return body.schemaVersion==="findings-index.v1"&&Array.isArray(body.tickers)?body.tickers.filter((t):t is string=>typeof t==="string"&&TICKER_PATTERN.test(t)).slice(0,40):null;
  }catch{return null;}
 }
 export async function loadFindings(ticker:string,fetcher:typeof fetch=fetch,locale:Locale|null=null):Promise<FindingsBundle|null>{

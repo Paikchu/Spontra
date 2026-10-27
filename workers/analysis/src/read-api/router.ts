@@ -28,6 +28,7 @@ import type { PublicSecFiling } from "../../../../shared/analysis-contract/filin
 import type { Feature } from "../../../../shared/analysis-contract/business-features.ts";
 import { readHomeDigest, type HomeDigestEnv } from "./home-digest.ts";
 import { fiscalFields, readFiscalFocus, stampFlow, stampHistory } from "./fiscal-periods.ts";
+import { TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 
 /**
  * The analysis backend's read surface, served only to the business map over the `MapReads`
@@ -81,7 +82,7 @@ async function findingsIndex(request: Request, database: D1Database, env: Featur
     shownFilter(database, env, "findings"),
   ]);
   // A company whose findings are switched off is left off the home page as well as its own.
-  const tickers = rows.results.map(r => r.ticker).filter(t => /^[A-Z][A-Z0-9.-]{0,11}$/.test(t) && shown(t));
+  const tickers = rows.results.map(r => r.ticker).filter(t => TICKER_PATTERN.test(t) && shown(t));
   return dataResponse(request, { schemaVersion: "findings-index.v1", tickers }, "cacheable");
 }
 

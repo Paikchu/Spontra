@@ -16,11 +16,13 @@ test("rate limits and server failures stay retryable even when the catalog has t
   assert.deepEqual(companyFault({ httpStatus: 0, reasons: [], covered: null, attempted: false }), { kind: "server", code: "NETWORK" });
 });
 
-test("the suggestion list is the five covered companies, named from the catalog when it has them", () => {
-  const picks = featuredCompanies([{ ticker: "META", name: "Meta Platforms, Inc.", nameZh: "Meta 平台" }, { ticker: "ORCL", name: "Oracle", nameZh: null }], "zh-CN");
-  assert.deepEqual(picks.map(company => company.ticker), ["NBIS", "META", "ORCL", "NET", "AMZN"]);
-  assert.equal(picks[1]?.name, "Meta 平台");
-  assert.equal(picks[2]?.name, "Oracle");
+test("the suggestion list is the homepage's popular companies, named from the catalog", () => {
+  const catalog = [{ ticker: "AAA", name: "Aaa Inc.", nameZh: "甲公司" }, { ticker: "BBB", name: "Bbb Corp", nameZh: null }];
+  const picks = featuredCompanies(catalog, ["BBB", "AAA", "GONE"], "zh-CN");
+  assert.deepEqual(picks.map(company => company.ticker), ["BBB", "AAA"]);
+  assert.equal(picks[0]?.name, "Bbb Corp");
+  assert.equal(picks[1]?.name, "甲公司");
+  assert.deepEqual(featuredCompanies([], [], "en"), []);
   assert.equal(isHomePath("/"), true);
   assert.equal(isHomePath("/index.html"), true);
   assert.equal(isHomePath("/companies/META"), false);
