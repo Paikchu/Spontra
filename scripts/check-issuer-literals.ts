@@ -63,8 +63,17 @@ export async function checkProductCode(): Promise<string[]> {
   return (await Promise.all(paths.map(async file => checkIssuerLiterals(file, await readFile(file, "utf8"))))).flat();
 }
 
+/** The detector against shapes it must and must not flag, so a broken check fails rather than passes everything. */
+export function selfTest(): string[] {
+  const flagged = (source: string) => checkIssuerLiterals("shared/example.ts", source).length;
+  const must = [`const profiled = (cik: string) => cik === "0000000123";`, `if (ticker !== "ACME") return q;`, `if (row.ticker === "ACME") return q;`,
+    `const FEATURED = ["AAA", "BBB", "CCC"];`, `const ISSUERS = { AAA: 1, BBB: 2, CCC: 3 };`];
+  const mustNot = [`const P = ["FY", "Q1", "Q2", "Q3"]; const C = { USD: 1, EUR: 2, JPY: 3 };`, `const CODES = new Set(["S", "P", "M", "F"]);`, `if (row.ticker === "*") return;`];
+  return [...must.filter(s => flagged(s) !== 1).map(s => `issuer check missed: ${s}`), ...mustNot.filter(s => flagged(s) !== 0).map(s => `issuer check flagged: ${s}`)];
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const errors = await checkProductCode();
+  const errors = [...selfTest(), ...await checkProductCode()];
   if (errors.length) { console.error(errors.join("\n")); process.exitCode = 1; }
   else console.log("Issuer literals passed: product code names no company, CIK or ticker list.");
 }
