@@ -165,10 +165,11 @@ const PRETAX='IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryIt
 /**
  * Statements print expenses as positive amounts; a line of other operating income printed beside them is a credit.
  * Which line that is follows from the statement's own arithmetic, not its wording: the operating lines must sum to
- * gross profit less operating income in every dated column, and at most one line may need the opposite orientation.
+ * gross profit (revenue, on a statement without cost of revenue) less operating income in every dated column, and at
+ * most one line may need the opposite orientation.
  * No consistent reading means no line is turned.
  */
-function creditLines(facts:Fact[],lineRows:number[]):Set<number> {
+function creditLines(facts:Fact[],lineRows:number[],direct:boolean):Set<number> {
   const row=(f:Fact)=>Number(f.context.match(/:row-(\d+):/)?.[1]);
   const byPeriod=new Map<string,Fact[]>();
   for(const f of facts){const key=f.start+'|'+f.end;byPeriod.set(key,[...(byPeriod.get(key)??[]),f]);}
@@ -176,7 +177,7 @@ function creditLines(facts:Fact[],lineRows:number[]):Set<number> {
     let checked=0;
     for(const period of byPeriod.values()){
       const of=(tag:string)=>period.find(f=>f.tag==='table:'+tag)?.value;
-      const revenue=of('Revenues'),cost=of('CostOfRevenue'),operating=of('OperatingIncomeLoss'),gross=of('GrossProfit')??(revenue!=null&&cost!=null?revenue-cost:undefined);
+      const revenue=of('Revenues'),cost=of('CostOfRevenue'),operating=of('OperatingIncomeLoss'),gross=of('GrossProfit')??(revenue!=null&&cost!=null?revenue-cost:direct?revenue:undefined);
       const lines=lineRows.map(r=>period.find(f=>row(f)===r));
       if(gross==null||operating==null||lines.some(f=>!f))continue;
       checked++;
@@ -215,7 +216,12 @@ export function readStatementTableFacts(html:string,source:DocumentSource):Fact[
     const {scale,currency}=unit;
     const printed=grid.map(rowLabel),tags=printed.map(conceptOf);
     if(!tags.includes('Revenues'))continue;
-    const operatingAt=tags.indexOf('OperatingIncomeLoss'),openAt=operatingAt<0?-1:tags.slice(0,operatingAt).findLastIndex(tag=>tag==='GrossProfit'||tag==='CostOfRevenue');
+    // Rows printed above the revenue total are its lines, read under their own labels; the parse uses them only when they add up to it.
+    const revenueAt=grid.findIndex((row,i)=>tags[i]==='Revenues'&&amountRow(row));
+    for(let i=firstAmount;i<revenueAt;i++)if(!tags[i]&&printed[i]&&amountRow(grid[i])&&!/^total\b/i.test(printed[i]))tags[i]=lineTag(printed[i]);
+    // A statement without cost of revenue or gross profit prints its operating lines straight after the revenue total.
+    const direct=!tags.some(tag=>tag==='GrossProfit'||tag==='CostOfRevenue');
+    const operatingAt=tags.indexOf('OperatingIncomeLoss'),openAt=operatingAt<0?-1:direct?(revenueAt<operatingAt?revenueAt:-1):tags.slice(0,operatingAt).findLastIndex(tag=>tag==='GrossProfit'||tag==='CostOfRevenue');
     const lineRows:number[]=[];
     if(openAt>=0)for(let i=openAt+1;i<operatingAt;i++){
       if(!tags[i]&&printed[i]&&!/^total\b/i.test(printed[i]))tags[i]=lineTag(printed[i]);
@@ -257,7 +263,7 @@ export function readStatementTableFacts(html:string,source:DocumentSource):Fact[
     // A statement prints its revenue total once per period; two different totals (reported and managed basis) are a summary.
     const revenues=facts.filter(f=>f.tag==='table:Revenues');
     if(revenues.some(f=>revenues.some(g=>g.start===f.start&&g.end===f.end&&g.value!==f.value)))continue;
-    const credits=creditLines(facts,lineRows.filter(r=>facts.some(f=>f.statementRow!.order===r)));
+    const credits=creditLines(facts,lineRows.filter(r=>facts.some(f=>f.statementRow!.order===r)),direct);
     for(const f of facts)if(credits.has(f.statementRow!.order))f.statementRow={...f.statementRow!,flip:true};
     return withFirstQuarters([...facts,...segmentFacts(html,source,facts,scale)]);
   }

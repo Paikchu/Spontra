@@ -36,6 +36,8 @@ const listeners = new Set<() => void>();
 if (typeof document !== "undefined") document.documentElement.lang = current;
 
 export const getLocale = (): Locale => current;
+/** Whether the page reads in Chinese. */
+export const isChinese = (): boolean => current === "zh-CN";
 
 export function setLocale(next: Locale) {
   if (next === current) return;

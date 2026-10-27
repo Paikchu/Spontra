@@ -2,8 +2,8 @@ import type { HomeCompany, HomeDigest, HomeFinding, HomeRevenue, HomeRevenueReas
 import type { FiscalLabelSource } from "../../../shared/analysis-contract/period.ts";
 import { calendarLabel, resolvePeriod } from "../../../shared/analysis-runtime/fiscal-label.ts";
 import { isLocale, type Locale } from "../../../shared/analysis-runtime/locale.ts";
+import { TICKER_PATTERN } from "@/shared/analysis-runtime/financial-data/policy";
 
-const TICKER = /^[A-Z][A-Z0-9.-]{0,11}$/;
 const DECIMAL = /^-?\d+(\.\d+)?$/;
 const REASONS = new Set<HomeRevenueReason>(["NOT_DISCLOSED", "MISSING_TWO_QUARTERS"]);
 const COMPANY_STATUS = new Set<HomeCompany["status"]>(["ready", "preparing", "partial"]);
@@ -57,7 +57,7 @@ function company(value: unknown): HomeCompany | null {
   const ticker = text(row.ticker);
   const name = text(row.name);
   const status = row.status;
-  if (!ticker || !TICKER.test(ticker) || !name || typeof status !== "string" || !COMPANY_STATUS.has(status as HomeCompany["status"])) return null;
+  if (!ticker || !TICKER_PATTERN.test(ticker) || !name || typeof status !== "string" || !COMPANY_STATUS.has(status as HomeCompany["status"])) return null;
   if (!(row.nameZh === null || typeof row.nameZh === "string")) return null;
   if (!(row.sector === null || typeof row.sector === "string")) return null;
   if (!Array.isArray(row.aliases) || row.aliases.some(alias => typeof alias !== "string")) return null;

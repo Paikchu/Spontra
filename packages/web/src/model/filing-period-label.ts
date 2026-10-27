@@ -14,12 +14,12 @@ export function filingPeriodEnd(filing: Pick<PublicSecFiling, "form" | "reportDa
 }
 
 /** Issuer quarter for a filing. DEI focus is kept when it agrees with the fiscal calendar; a missing focus is derived. */
-export function filingFiscalFields(filing: Pick<PublicSecFiling, "ticker" | "form" | "reportDate" | "earningsGroup" | "fiscalPeriod">): (FiscalPeriodFields & { periodEnd: string }) | null {
+export function filingFiscalFields(filing: Pick<PublicSecFiling, "ticker" | "form" | "reportDate" | "earningsGroup" | "fiscalPeriod" | "fiscalYearEndMonth">): (FiscalPeriodFields & { periodEnd: string }) | null {
   const periodEnd = filingPeriodEnd(filing);
   if (!periodEnd) return null;
   const focus = filing.fiscalPeriod;
   const quarter = focus && focus.periodEnd === periodEnd ? quarterNumber(focus.fiscalPeriod) : null;
-  return { periodEnd, ...fiscalIdentity({ ticker: filing.ticker, periodEnd, xbrl: quarter && focus ? { fiscalYear: focus.fiscalYear, fiscalQuarter: quarter } : null }) };
+  return { periodEnd, ...fiscalIdentity({ ticker: filing.ticker, fiscalYearEndMonth: filing.fiscalYearEndMonth, periodEnd, xbrl: quarter && focus ? { fiscalYear: focus.fiscalYear, fiscalQuarter: quarter } : null }) };
 }
 
 /** The issuer quarter, or the period-end phrase when the quarter cannot be determined. Events keep their form name. */

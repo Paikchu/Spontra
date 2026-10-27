@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type FocusEvent, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type FocusEvent, type KeyboardEvent, type MouseEvent, type PointerEvent } from "react";
 import { createPortal } from "react-dom";
 import type { FiscalLabelSource } from "@/shared/analysis-contract/period";
 import { periodLabel, type PeriodCopy } from "@/shared/analysis-runtime/fiscal-label";
@@ -141,56 +141,4 @@ export function QuarterBadge({ ticker, periodEnd, periodStart, current, prefix }
 
 export function fiscalPhrase(ticker: string, periodEnd: string, periodStart?: string | null): PeriodCopy {
   return periodLabel({ ticker, periodEnd, periodStart }, getLocale());
-}
-
-/** A timeline point's delayed explanation. One tip for the whole axis. */
-export function useAxisTip() {
-  const id = useId();
-  const reduced = useReducedMotion();
-  const openTimer = useRef(0);
-  const closeTimer = useRef(0);
-  const anchor = useRef<HTMLElement | null>(null);
-  const [tip, setTip] = useState<{ title: string; note: string; left: number; top: number; phase: Phase } | null>(null);
-  useEffect(() => () => { window.clearTimeout(openTimer.current); window.clearTimeout(closeTimer.current); }, []);
-  const hide = () => {
-    window.clearTimeout(openTimer.current);
-    setTip(current => {
-      if (!current || current.phase !== "open") return null;
-      window.clearTimeout(closeTimer.current);
-      closeTimer.current = window.setTimeout(() => setTip(null), reduced ? 0 : 80);
-      return { ...current, phase: "closing" };
-    });
-  };
-  useEffect(() => {
-    if (!tip) return;
-    const onKey = (event: globalThis.KeyboardEvent) => { if (event.key === "Escape") hide(); };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [tip]);
-  const show = (el: HTMLElement, title: string, note: string) => {
-    anchor.current = el;
-    window.clearTimeout(closeTimer.current);
-    window.clearTimeout(openTimer.current);
-    openTimer.current = window.setTimeout(() => {
-      const rect = el.getBoundingClientRect();
-      const width = Math.min(280, window.innerWidth - 16);
-      setTip({ title, note, left: Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)), top: rect.top - 8, phase: "open" });
-    }, reduced ? 0 : 150);
-  };
-  const bind = (title: string, note: string) => ({
-    onMouseEnter: (event: MouseEvent<HTMLElement>) => show(event.currentTarget, title, note),
-    onMouseLeave: hide,
-    onFocus: (event: FocusEvent<HTMLElement>) => show(event.currentTarget, title, note),
-    onBlur: hide,
-    onKeyDown: (event: KeyboardEvent<HTMLElement>) => { if (event.key === "Escape") { event.stopPropagation(); hide(); } },
-    "aria-describedby": tip ? id : undefined,
-  });
-  const node: ReactNode = tip && typeof document !== "undefined" ? createPortal(
-    <div className="period-tip period-tip--above" id={id} role="tooltip" data-state={tip.phase} style={{ left: tip.left, top: tip.top, transform: "translateY(-100%)" }}>
-      <span>{tip.title}</span>
-      {tip.note && <small>{tip.note}</small>}
-    </div>,
-    document.body,
-  ) : null;
-  return { bind, node };
 }

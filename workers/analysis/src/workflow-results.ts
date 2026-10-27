@@ -1,12 +1,10 @@
+import { sha256 } from "./sha256.ts";
 type ResultBucket = {
   get(key: string): Promise<{ text(): Promise<string> } | null>;
   put(key: string, value: string, options?: { httpMetadata: { contentType: string } }): Promise<unknown>;
 };
 type StoredResult = { __secStoredStepResult: "v1"; key: string; sha256: string };
 export const INLINE_WORKFLOW_RESULT_BYTES = 512 * 1024;
-async function sha256(text: string): Promise<string> {
-  return [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)))].map((b) => b.toString(16).padStart(2, "0")).join("");
-}
 
 /** Workflows limit non-stream step results to 1 MiB. Persist large results externally, not less analysis. */
 export async function storeWorkflowResult<T>(bucket: ResultBucket, instanceId: string, stepName: string, value: T): Promise<T | StoredResult> {

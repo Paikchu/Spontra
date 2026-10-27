@@ -62,7 +62,7 @@ export function FinancialMaintenance({ onUnauthorized, onAuthenticated }: { onUn
       if (controller.signal.aborted) return;
       setList(result);
       authenticated.current();
-      setTicker(current => current || (result.companies.some(company => company.ticker === "ORCL") ? "ORCL" : result.companies[0]?.ticker ?? ""));
+      setTicker(current => current || result.companies[0]?.ticker || "");
       if (!result.companies.length) setLoading(false);
     }).catch((err: Error) => {
       if (controller.signal.aborted) return;

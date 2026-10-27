@@ -3,11 +3,11 @@
 The public business map reads `/api/v1/companies/{ticker}/business-flow` via the existing Web proxy. It never initiates generation. Only complete, source-traced two-quarter income snapshots are published; staged records are not exposed. Failed updates keep the previous complete snapshot with `outdated` and failure reasons. A verified complete legacy SEC snapshot remains usable during rollout.
 
 Configuration (Git-controlled Wrangler variables):
-- `SEC_DATA_TICKERS`: collection allowlist, initially ORCL,NVDA,MSFT,AAPL,JPM,BRK.B,ADSK,NET. This is a bounded initial collection scope, not a claimed full S&P500 constituent universe.
-- `SEC_AI_TICKERS`: independent AI allowlist, initially the existing ORCL,ADSK,NET.
+- `SEC_DATA_TICKERS`: the deployment's collection allowlist; the admin whitelist (`financial_company_settings`) adds or removes companies over it.
+- `SEC_AI_TICKERS`: the deployment's AI allowlist; the admin's feature switches (`business_feature_settings`) override it per company.
 - `SEC_AI_ENABLED`: true/false; false prevents new SEC/company/memory analysis starts, including manual starts. Previously issued/in-flight requests cannot be recalled.
 - `SEC_DATA_COLLECTION_ENABLED`: independent opt-in collection; false pauses this collector.
-- Unspecified new lists preserve legacy `SEC_TRACKED_TICKERS`; explicitly empty lists stay empty.
+- An unset list is empty.
 
 The two-minute data cron processes at most one data job/document batch. It discovers issuer identity from SEC's directory, fetches at most two filing primaries and up to two same-filing Exhibit 99 links per primary, throttles reads, stages progress, and resumes on later ticks. One refresh per configured issuer per day. No model key or workflow binding is passed to the data task. `financial-data` logs carry ticker, publication result, public reason codes and `modelCalls:0`; the independent pre-existing AI cron tasks retain their own policy.
 

@@ -1,5 +1,5 @@
 import type { CompiledAxis, CompiledChart, CompiledSeries, LensFrameSize } from "../../analysis-contract/lens-frame.ts";
-import { compactMoney } from "./format.ts";
+import { compactMoney } from "../locale.ts";
 import type { Locale } from "../locale.ts";
 
 /**

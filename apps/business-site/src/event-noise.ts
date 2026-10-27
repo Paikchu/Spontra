@@ -140,16 +140,3 @@ export function exactShares(shares: number): string {
 export function timelineIds(items: readonly RailItem[], filter: EventFilter): Set<string> {
   return new Set(noiseRows(items, filter).flatMap(row => rowLeaves(row).map(item => item.id)));
 }
-
-/**
- * A timeline marker stays when the same filing is a row of this filter.
- * Quarter ticks that have no filing (`report:…`) follow Key, Earnings and All.
- */
-export function timelinePointVisible(point: { kind: string; id: string }, filter: EventFilter, events: readonly CompanyEvent[] | undefined, items: readonly RailItem[] = []): boolean {
-  if (point.id.startsWith("report:")) return filter === "key" || filter === "earnings" || filter === "all";
-  if (items.length) return timelineIds(items, filter).has(point.id);
-  if (point.kind === "report") return filter === "key" || filter === "earnings" || filter === "all";
-  const event = events?.find(entry => entry.id === point.id);
-  if (!event) return filter === "all";
-  return matchesEventFilter({ kind: "event", id: event.id, date: event.filedAt, event }, filter);
-}

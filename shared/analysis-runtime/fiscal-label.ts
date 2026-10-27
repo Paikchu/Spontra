@@ -2,28 +2,29 @@ import type { FiscalLabelSource, FiscalPeriodFields, FiscalQuarterNumber } from 
 import type { Locale } from "./locale.ts";
 
 /**
- * Fiscal year-end month for each covered issuer, from SEC submissions `fiscalYearEnd`
- * (NBIS omits that field; its 20-F period ends in December). Short names are the ones
- * readers see beside a ticker. A ticker absent from this map has no fiscal quarter.
+ * Each issuer's fiscal calendar as the server reports it (SEC submissions `fiscalYearEnd`, else the period end of its
+ * latest annual report), remembered when a page loads the issuer. An issuer not remembered has no fiscal quarter unless
+ * the caller passes its year-end month.
  */
-const ISSUERS: Record<string, { month: number; name: string }> = {
-  AAPL: { month: 9, name: "Apple" },
-  ADSK: { month: 1, name: "Autodesk" },
-  AMZN: { month: 12, name: "Amazon" },
-  "BRK.B": { month: 12, name: "Berkshire Hathaway" },
-  CRWV: { month: 12, name: "CoreWeave" },
-  GOOGL: { month: 12, name: "Alphabet" },
-  JPM: { month: 12, name: "JPMorgan Chase" },
-  META: { month: 12, name: "Meta" },
-  MSFT: { month: 6, name: "Microsoft" },
-  NBIS: { month: 12, name: "Nebius" },
-  NET: { month: 12, name: "Cloudflare" },
-  NVDA: { month: 1, name: "NVIDIA" },
-  ORCL: { month: 5, name: "Oracle" },
-  SPCX: { month: 12, name: "SpaceX" },
-  TSM: { month: 12, name: "TSMC" },
-  TTMI: { month: 12, name: "TTM Technologies" },
-};
+export type IssuerCalendar = { fiscalYearEndMonth: number | null; name: string | null };
+const issuers = new Map<string, IssuerCalendar>();
+const key = (ticker: string) => ticker.trim().toUpperCase();
+
+export function rememberIssuer(ticker: string, calendar: IssuerCalendar): void {
+  issuers.set(key(ticker), calendar);
+}
+
+/**
+ * The month a fiscal year ends in, from a year-end date (`MMDD`, `YYYY-MM-DD`). A 52/53-week year that closes in the
+ * first week of a month closes the year of the month before it (a year "ending January 31" can close on February 1).
+ */
+export function yearEndMonth(date: string | null | undefined): number | null {
+  const match = /^(?:\d{4}-)?(\d{2})-?(\d{2})$/.exec(date?.trim() ?? "");
+  if (!match) return null;
+  const month = Number(match[1]), day = Number(match[2]);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  return day <= 7 ? (month === 1 ? 12 : month - 1) : month;
+}
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const MONTHS_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -62,16 +63,11 @@ function parts(value: string): { y: number; m: number; d: number } | null {
 }
 
 export function companyShortName(ticker: string): string | null {
-  return ISSUERS[ticker.trim().toUpperCase()]?.name ?? null;
+  return issuers.get(key(ticker))?.name ?? null;
 }
 
 export function fiscalYearEndMonth(ticker: string): number | null {
-  return ISSUERS[ticker.trim().toUpperCase()]?.month ?? null;
-}
-
-/** Covered issuers whose labels the unit tests lock to the latest filing cover. */
-export function coveredFiscalTickers(): string[] {
-  return Object.keys(ISSUERS);
+  return issuers.get(key(ticker))?.fiscalYearEndMonth ?? null;
 }
 
 /** Calendar quarter of a period end (2026-06-30 → "2026 Q2"). Kept for older clients. */
@@ -106,11 +102,11 @@ export function quarterNumber(fiscalPeriod: string): FiscalQuarterNumber | null 
 
 /**
  * Issuer quarter for one period end. A DEI focus whose quarter matches the fiscal calendar keeps `xbrl`
- * as the source; a year that is off by one (Oracle repeats the prior fiscal year) uses the calendar year.
+ * as the source; a year that is off by one (a DEI focus repeating the prior fiscal year) uses the calendar year.
  * A focus that disagrees on the quarter is ignored. No calendar and no focus is `unknown`.
  */
-export function fiscalIdentity(input: { ticker?: string | null; periodEnd: string; xbrl?: XbrlFocus | null }): FiscalPeriodFields {
-  const month = input.ticker ? fiscalYearEndMonth(input.ticker) : null;
+export function fiscalIdentity(input: { ticker?: string | null; fiscalYearEndMonth?: number | null; periodEnd: string; xbrl?: XbrlFocus | null }): FiscalPeriodFields {
+  const month = validMonth(input.fiscalYearEndMonth) ?? (input.ticker ? fiscalYearEndMonth(input.ticker) : null);
   const derived = month ? deriveFiscalQuarter(input.periodEnd, month) : null;
   const xbrl = input.xbrl && input.xbrl.fiscalQuarter >= 1 && input.xbrl.fiscalQuarter <= 4 && Number.isInteger(input.xbrl.fiscalYear) ? input.xbrl : null;
   if (derived && xbrl && xbrl.fiscalQuarter === derived.fiscalQuarter && Math.abs(xbrl.fiscalYear - derived.fiscalYear) <= 1) {
@@ -119,6 +115,10 @@ export function fiscalIdentity(input: { ticker?: string | null; periodEnd: strin
   if (derived) return { fiscalYear: derived.fiscalYear, fiscalQuarter: derived.fiscalQuarter, fiscalYearEndMonth: month, labelSource: "derived" };
   if (xbrl) return { fiscalYear: xbrl.fiscalYear, fiscalQuarter: xbrl.fiscalQuarter, fiscalYearEndMonth: month, labelSource: "xbrl" };
   return { fiscalYear: null, fiscalQuarter: null, fiscalYearEndMonth: month, labelSource: "unknown" };
+}
+
+function validMonth(value: number | null | undefined): number | null {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 12 ? value : null;
 }
 
 function validQuarter(value: number | null | undefined): FiscalQuarterNumber | null {
@@ -140,12 +140,12 @@ export function resolvePeriod(input: {
 }): ResolvedPeriod {
   const quarter = validQuarter(input.fiscalQuarter);
   const year = typeof input.fiscalYear === "number" && Number.isInteger(input.fiscalYear) ? input.fiscalYear : null;
-  const stampedMonth = typeof input.fiscalYearEndMonth === "number" && input.fiscalYearEndMonth >= 1 && input.fiscalYearEndMonth <= 12 ? input.fiscalYearEndMonth : null;
+  const stampedMonth = validMonth(input.fiscalYearEndMonth);
   let fields: FiscalPeriodFields;
   if (input.labelSource === "unknown") fields = { fiscalYear: null, fiscalQuarter: null, fiscalYearEndMonth: stampedMonth, labelSource: "unknown" };
   else if ((input.labelSource === "xbrl" || input.labelSource === "derived") && year != null && quarter) {
     fields = { fiscalYear: year, fiscalQuarter: quarter, fiscalYearEndMonth: stampedMonth ?? (input.ticker ? fiscalYearEndMonth(input.ticker) : null), labelSource: input.labelSource };
-  } else fields = fiscalIdentity({ ticker: input.ticker, periodEnd: input.periodEnd });
+  } else fields = fiscalIdentity({ ticker: input.ticker, fiscalYearEndMonth: stampedMonth, periodEnd: input.periodEnd });
   return { ...fields, periodEnd: input.periodEnd, periodStart: input.periodStart ?? null };
 }
 

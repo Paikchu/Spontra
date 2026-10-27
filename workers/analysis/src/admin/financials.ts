@@ -1,18 +1,18 @@
 import { companyName } from "../catalog/security-directory.ts";
 import type { FinancialMaintenanceCompany, FinancialMaintenanceCompanyDetail, FinancialMaintenanceCompanyList, FinancialMaintenanceMetric, FinancialMaintenancePeriod } from "../../../../shared/analysis-contract/financial-maintenance.ts";
 import { FLOW_METRICS, type BusinessFlowQuarter } from "../../../../shared/analysis-contract/business-flow.ts";
-import { aiIsEnabled } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
+import { aiIsEnabled, normalizeTicker } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 import { dataTickersFor, trackedTickersFor } from "../core.ts";
 import type { AnalysisEnv } from "../operations.ts";
-import { normalizeTrackedTicker } from "../sec/config.ts";
+
 import { cleanSecAccession } from "../sec/sec.ts";
 import { financialPublicationMetadata, readCompletePublicationForTicker } from "../financial-data/publication.ts";
 import { getFinancialStatements, getFilingDisclosureAuditPage, listFilingDisclosureAudits } from "../financial-data/disclosure-audit.ts";
 import { authenticateAdmin } from "./auth.ts";
 import { FinancialMaintenanceStore, taskView } from "./financial-maintenance-store.ts";
 import { emit } from "../pipeline/outbox.ts";
+import { json } from "./http.ts";
 
-const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "cache-control": "private, no-store" } });
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const coverage = {
   scope: ["已定位的 Financial Statements 整章原文与全部原始表格（含比较期间、附注和来源定位）", "已验证的季度利润表和收入分部", "季度收入历史（含可核对的第四季度差额推导）", "原始 Inline XBRL 事实、期间、单位、维度和出处的审计档案"],
@@ -131,14 +131,14 @@ export async function handleFinancialAdminRequest(request: Request, env: Analysi
     const statementsMatch = /^\/admin\/financials\/companies\/([^/]+)\/documents\/([a-f0-9]{64})\/statements$/.exec(path);
     if(statementsMatch){
       if(request.method!=="GET")return json({error:"Method not allowed"},405);
-      const ticker=normalizeTrackedTicker(statementsMatch[1]!);if(!ticker)return json({error:"公司代码无效。"},400);
+      const ticker=normalizeTicker(statementsMatch[1]!);if(!ticker)return json({error:"公司代码无效。"},400);
       const result=await getFinancialStatements({DB:env.DB,SEC_FILINGS:env.SEC_FILINGS},ticker,statementsMatch[2]!);
       return result?json(result):json({error:"原始披露档案不存在。"},404);
     }
     const documentMatch = /^\/admin\/financials\/companies\/([^/]+)\/documents\/([a-f0-9]{64})$/.exec(path);
     if (documentMatch) {
       if (request.method !== "GET") return json({ error: "Method not allowed" }, 405);
-      const ticker = normalizeTrackedTicker(documentMatch[1]!);
+      const ticker = normalizeTicker(documentMatch[1]!);
       if (!ticker) return json({ error: "公司代码无效。" }, 400);
       const query = new URL(request.url).searchParams;
       try {
@@ -151,7 +151,7 @@ export async function handleFinancialAdminRequest(request: Request, env: Analysi
     const match = /^\/admin\/financials\/companies\/([^/]+)(?:\/(actions))?$/.exec(path);
     if (!match) return json({ error: "Not found" }, 404);
     let ticker: string;
-    try { ticker = normalizeTrackedTicker(decodeURIComponent(match[1]!)); } catch { return json({ error: "公司代码无效。" }, 400); }
+    try { ticker = normalizeTicker(decodeURIComponent(match[1]!)); } catch { return json({ error: "公司代码无效。" }, 400); }
     if (!ticker) return json({ error: "公司代码无效。" }, 400);
     if (request.method !== (match[2] ? "POST" : "GET")) return json({ error: "Method not allowed" }, 405);
     if (!match[2]) return json(await getFinancialCompany(env, ticker));

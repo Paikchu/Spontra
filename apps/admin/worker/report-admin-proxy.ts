@@ -9,26 +9,26 @@ export async function handleReportAdminProxy(request: Request, path: string[], e
   if (!path.length || !/^(financials|business-map|ai|library)$/.test(path[0]!) || path.length > (path[0] === "financials" || path[0] === "ai" || path[0] === "library" ? 6 : path[0] === "business-map" ? 5 : 4)) return json({ error: "Not found" }, 404);
   if (path[0] === "business-map") {
     const route = path.slice(1).join("/");
-    const read = request.method === "GET" && (/^companies(?:\/[A-Z][A-Z0-9.-]{0,9}\/(?:charts|flow))?$/.test(route) || route === "messages" || route === "issuers");
-    const write = request.method === "POST" && (route === "messages/read" || /^companies\/[A-Z][A-Z0-9.-]{0,9}(?:\/presentation|\/features\/(?:reports|findings|explainer|tree))?$/.test(route) || /^features\/(?:reports|findings|explainer|tree)$/.test(route));
+    const read = request.method === "GET" && (/^companies(?:\/[A-Z][A-Z0-9.-]{0,11}\/(?:charts|flow))?$/.test(route) || route === "messages" || route === "issuers");
+    const write = request.method === "POST" && (route === "messages/read" || /^companies\/[A-Z][A-Z0-9.-]{0,11}(?:\/presentation|\/features\/(?:reports|findings|explainer|tree))?$/.test(route) || /^features\/(?:reports|findings|explainer|tree)$/.test(route));
     if (!read && !write) return json({ error: "Not found" }, 404);
   }
   if (path[0] === "ai") {
     const route = path.slice(1).join("/");
-    const read = request.method === "GET" && (route === "models" || route === "stage" || /^stage\/conversations\/[0-9a-f]{32}$/.test(route) || /^companies(?:\/[A-Z][A-Z0-9.-]{0,9}\/(?:findings|analyst|checkup|explainer|tree)(?:\/versions\/[0-9T:.Z-]{10,40})?)?$/.test(route) || /^companies\/[A-Z][A-Z0-9.-]{0,9}\/translations$/.test(route));
-    const write = request.method === "POST" && (/^companies\/[A-Z][A-Z0-9.-]{0,9}\/(?:findings|analyst|checkup|explainer|tree)\/runs$/.test(route) || /^models\/[a-z-]{2,40}$/.test(route));
+    const read = request.method === "GET" && (route === "models" || route === "stage" || /^stage\/conversations\/[0-9a-f]{32}$/.test(route) || /^companies(?:\/[A-Z][A-Z0-9.-]{0,11}\/(?:findings|analyst|checkup|explainer|tree)(?:\/versions\/[0-9T:.Z-]{10,40})?)?$/.test(route) || /^companies\/[A-Z][A-Z0-9.-]{0,11}\/translations$/.test(route));
+    const write = request.method === "POST" && (/^companies\/[A-Z][A-Z0-9.-]{0,11}\/(?:findings|analyst|checkup|explainer|tree)\/runs$/.test(route) || /^models\/[a-z-]{2,40}$/.test(route));
     if (!read && !write) return json({ error: "Not found" }, 404);
   }
   if (path[0] === "library") {
     const route = path.slice(1).join("/");
-    const read = request.method === "GET" && /^(?:|find|facts|search|links(?:\/[A-Z][A-Z0-9.-]{0,9})?|tags(?:\/[A-Z][A-Z0-9.-]{0,9}|\/sectors\/[a-z_]{2,40})?|wiki\/[A-Z][A-Z0-9.-]{0,9}|companies\/[A-Z][A-Z0-9.-]{0,9}|documents\/[a-f0-9]{64}(?:\/sections\/s[a-f0-9]{28})?)$/.test(route);
-    const write = request.method === "POST" && /^(?:documents\/[a-f0-9]{64}\/rerun|links\/[A-Z][A-Z0-9.-]{0,9}\/[\p{L}\p{N}-]{1,60}|tags\/[A-Z][A-Z0-9.-]{0,9}\/(?:run|pair|tag\/t[a-f0-9]{24}))$/u.test(route);
+    const read = request.method === "GET" && /^(?:|find|facts|search|links(?:\/[A-Z][A-Z0-9.-]{0,11})?|tags(?:\/[A-Z][A-Z0-9.-]{0,11}|\/sectors\/[a-z_]{2,40})?|wiki\/[A-Z][A-Z0-9.-]{0,11}|companies\/[A-Z][A-Z0-9.-]{0,11}|documents\/[a-f0-9]{64}(?:\/sections\/s[a-f0-9]{28})?)$/.test(route);
+    const write = request.method === "POST" && /^(?:documents\/[a-f0-9]{64}\/rerun|links\/[A-Z][A-Z0-9.-]{0,11}\/[\p{L}\p{N}-]{1,60}|tags\/[A-Z][A-Z0-9.-]{0,11}\/(?:run|pair|tag\/t[a-f0-9]{24}))$/u.test(route);
     if (!read && !write) return json({ error: "Not found" }, 404);
   }
   if (path[0] === "financials") {
     const route = path.slice(1).join("/");
-    const read = request.method === "GET" && /^(companies(?:\/[A-Z][A-Z0-9.-]{0,9}(?:\/documents\/[a-f0-9]{64}(?:\/statements)?)?)?|tasks\/[A-Za-z0-9_-]{1,160})$/.test(route);
-    const write = request.method === "POST" && /^(companies\/[A-Z][A-Z0-9.-]{0,9}\/actions|tasks\/[A-Za-z0-9_-]{1,160}\/cancel)$/.test(route);
+    const read = request.method === "GET" && /^(companies(?:\/[A-Z][A-Z0-9.-]{0,11}(?:\/documents\/[a-f0-9]{64}(?:\/statements)?)?)?|tasks\/[A-Za-z0-9_-]{1,160})$/.test(route);
+    const write = request.method === "POST" && /^(companies\/[A-Z][A-Z0-9.-]{0,11}\/actions|tasks\/[A-Za-z0-9_-]{1,160}\/cancel)$/.test(route);
     if (!read && !write) return json({ error: "Not found" }, 404);
   }
   if (request.method !== "GET") {

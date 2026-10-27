@@ -1,7 +1,7 @@
 import type { AnalysisEnv } from "../operations.ts";
 import type { SecWorkflowParams } from "../core.ts";
 import { D1SecRepository } from "../sec/d1.ts";
-import { aiIsEnabled, financialPolicy } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
+import { aiIsEnabled } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 import { throttledSecReader, discoverDataIssuer, readReleaseQuarter, readSecDocumentBatch, type SecReader } from "../financial-data/provider.ts";
 import { withFilingStructure } from "../financial-data/presentation.ts";
 import { collectComplete } from "../financial-data/collect.ts";
@@ -29,7 +29,7 @@ const dependencies: MaintenanceDependencies = {
   discover: discoverDataIssuer,
   // The earnings release is read as the collect task reads it, so an admin collection never publishes an older pair
   // than the one the release already put on the map.
-  collect: (env, job, reader) => collectComplete(job, financialPolicy({ SEC_DATA_TICKERS: job.ticker, SEC_AI_ENABLED: "false" }),
+  collect: (env, job, reader) => collectComplete(job, new Set([job.ticker]),
     new D1CompleteStore(env.DB!), j => readSecDocumentBatch(j, reader, 1), (j, previous) => readReleaseQuarter(j, previous, reader)),
   history: runHistoryStep,
   reread: rereadHistoryFiling,

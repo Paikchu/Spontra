@@ -1,6 +1,6 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { modelFor, reasoningFor } from "../ai-config.ts";
-import type { DossierPublication, DossierResponse } from "../../../../shared/analysis-contract/dossier.ts";
+import type { DossierPublication } from "../../../../shared/analysis-contract/dossier.ts";
 import type { FindingsPublication } from "../../../../shared/analysis-contract/findings.ts";
 import { readDossierPublication } from "../../../../shared/analysis-runtime/dossier.ts";
 import { readFindingsPublication, refLabel, resolveRef, spanLabel, verifyFindings, type FindingData, type VerifiedFinding } from "../../../../shared/analysis-runtime/findings.ts";
@@ -9,7 +9,7 @@ import { readEventsResponse } from "../events/read.ts";
 import { peersOf } from "../../../../shared/analysis-runtime/lens/table.ts";
 import { comparablePeers } from "../../../../shared/analysis-runtime/peers.ts";
 import { AiRunStore } from "../ai-runs/store.ts";
-import { sha256 } from "../company-analysis/api.ts";
+import { sha256 } from "../sha256.ts";
 import { assertTrackedTicker, requireDb } from "../core.ts";
 import { readLinks } from "../filing-library/links.ts";
 import { libraryToc } from "../filing-library/tool.ts";
@@ -185,12 +185,4 @@ export async function executeAnalystWorkflow(params: AnalystWorkflowParams, step
     await new AiRunStore(db).saveVersion("analyst", params.ticker, record, now);
   });
   return { status: "ready" as const, documents: Object.keys(documents).length, findings: outcomes.map(o => ({ id: o.id, tier: o.tier, lines: o.lines, turns: o.turns.length, composed: !!o.document, warnings: o.warnings.length, review: o.review.length })) };
-}
-
-/** The stored dossier, through the contract; the operator's trace is left out. */
-export async function readDossierResponse(db: D1Database, rawTicker: string): Promise<DossierResponse> {
-  const ticker = rawTicker.trim().toUpperCase();
-  const stored = await new D1SecRepository(db).getCache<unknown>(dossierCacheKey(ticker));
-  const dossier = stored ? readDossierPublication(stored.payload, ticker) : null;
-  return { schemaVersion: "dossier-response.v1", status: dossier ? "ready" : "preparing", dossier };
 }

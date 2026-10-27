@@ -6,7 +6,7 @@ import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import type { BusinessFlowQuarter } from "@/shared/analysis-contract/business-flow";
 import { compactFlowValue } from "@/packages/web/src/model/business-flow-layout";
 import { getLocale, messages } from "@/packages/web/src/i18n";
-import { compactMoney, compactNumber, multiple, perShare, qoqLabel, yoyLabel } from "@/shared/analysis-runtime/locale";
+import { compactMoney, compactNumber, multiple, perShare, qoqLabel, yoyLabel, shortPeriod } from "@/shared/analysis-runtime/locale";
 import { REVENUE_METRIC, metricChanges, metricTicks, type MetricOption, type MetricTrend } from "./metric-model";
 import { growth, rateTicks } from "./trend-model";
 import { QuarterBadge, fiscalPhrase } from "./PeriodMark";
@@ -24,7 +24,6 @@ const m = messages({
 });
 
 const DAY = 86_400_000;
-const shortPeriod = (end: string) => end.slice(0, 7).replace("-", ".");
 const sign = (v: number) => v > 0 ? "+" : v < 0 ? "−" : "";
 const percent = (v: number | null) => v == null ? "—" : `${sign(v)}${Math.abs(v).toFixed(1)}%`;
 const points = (v: number | null) => v == null ? "—" : `${sign(v)}${Math.abs(v).toFixed(1)}${m.pp}`;

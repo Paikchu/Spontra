@@ -171,8 +171,3 @@ export async function libraryFactsAcross(db: D1Database, request: { tickers?: st
     return rows.filter(r => !covered.has(`${r.periodEnd}|${r.flowNodeId}`));
   }))).flat();
 }
-
-/** The validated quarterly numbers as lines a model reads: `公司 · 业务 · 指标 · 期间 · 数值 · 单位 · 来源申报`. */
-export async function libraryFacts(db: D1Database, ticker: string, options: { quarters?: number } = {}): Promise<string[]> {
-  return (await libraryFactRows(db, ticker, options)).map(r => `${r.ticker} · ${r.business} · ${r.metric} · ${r.periodEnd} · ${r.value} · ${r.unit} · ${r.source}`);
-}

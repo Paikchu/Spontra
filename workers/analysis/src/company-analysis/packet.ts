@@ -1,6 +1,7 @@
 import type { CompanyMemoryItem } from "../sec/analysis.ts";
+import { normalizeTicker } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 import { D1FundamentalsRepository, type FundamentalCurrentObservation } from "../fundamentals/fundamentals-d1.ts";
-import { normalizeTrackedTicker } from "../sec/config.ts";
+
 import { buildCompanyFeaturePack, type CompanyFeaturePack } from "./feature-engine.ts";
 import type { CompanyAnalysisD1Database } from "./repository.ts";
 
@@ -47,7 +48,7 @@ export async function buildCompanyAnalysisPacket(input: {
   memoryVersion: number;
   stage: CompanyAnalysisPacketStage;
 }): Promise<CompanyAnalysisPacket> {
-  const ticker = normalizeTrackedTicker(input.rawTicker);
+  const ticker = normalizeTicker(input.rawTicker);
   if (!ticker || !input.periodId || !Number.isInteger(input.memoryVersion)) {
     throw new Error("Company analysis packet identity is invalid.");
   }

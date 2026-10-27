@@ -11,7 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import type { PublicFundamentalsResponse } from "@/shared/analysis-contract/fundamentals.ts";
-import { FUNDAMENTAL_CHART_HEIGHT, FUNDAMENTAL_CHART_WIDTH, buildFundamentalChartGeometry, buildFundamentalChartModel, buildFundamentalChartTooltip, formatFundamentalAxisTick, getFundamentalSeriesVisual, linePath, selectFundamentalPeriodTickIndexes, type FundamentalChartAxis, type FundamentalChartModel, type FundamentalChartSeriesSpec, type FundamentalSeriesVisual } from "@/packages/web/src/model/fundamental-chart.ts";
+import { FUNDAMENTAL_CHART_HEIGHT, FUNDAMENTAL_CHART_WIDTH, buildFundamentalChartGeometry, buildFundamentalChartModel, buildFundamentalChartTooltip, formatFundamentalChartValue, getFundamentalSeriesVisual, linePath, selectFundamentalPeriodTickIndexes, type FundamentalChartAxis, type FundamentalChartModel, type FundamentalChartSeriesSpec, type FundamentalSeriesVisual } from "@/packages/web/src/model/fundamental-chart.ts";
 import { messages } from "@/packages/web/src/i18n";
 
 const m = messages({
@@ -433,7 +433,7 @@ function YAxis({
           y={yForValue(tick, axis, layout) + 4}
           textAnchor={axis.side === "left" ? "end" : "start"}
         >
-          {formatFundamentalAxisTick(tick, axis)}
+          {formatFundamentalChartValue(tick, axis)}
         </text>
       ))}
     </g>

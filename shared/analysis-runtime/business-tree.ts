@@ -2,6 +2,7 @@ import { z } from "zod";
 import { REVENUE_MODEL_TYPES, type BusinessTree, type TreeBranch, type TreeClaim, type TreeNode, type TreeRevenueModel } from "../analysis-contract/business-tree.ts";
 import { FIGURE } from "./business-explainer.ts";
 import type { Locale } from "./locale.ts";
+import { TICKER_PATTERN } from "./financial-data/policy.ts";
 
 /**
  * Caps shared by the agent's harness and the reader, so a stored tree always reads back as it was written.
@@ -142,7 +143,7 @@ const nodeShape = z.object({
 const step = z.object({ thought: z.string().max(2000), action: z.string().max(40), input: z.string().max(2000), observation: z.string().max(4000) });
 const treeShape = z.object({
   schemaVersion: z.literal("business-tree.v1"),
-  ticker: z.string().regex(/^[A-Z][A-Z0-9.-]{0,11}$/),
+  ticker: z.string().regex(TICKER_PATTERN),
   companyName: text(200), generatedAt: z.string().max(40), model: text(80), fingerprint: text(128), periodEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   branches: z.array(z.object({ flowNodeId: text(200), name: text(200), summary: claim.nullable(), children: z.array(z.unknown()).max(TREE_LIMITS.children * 2) })).min(1).max(TREE_LIMITS.branches),
   sources: z.array(z.object({ id: text(40), title: text(300), url: https, kind: z.enum(["sec", "web"]), publishedAt: z.string().max(40).nullable(), own: z.boolean().optional() })).min(1).max(120),

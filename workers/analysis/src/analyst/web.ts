@@ -1,6 +1,6 @@
 import type { FindingPassage } from "../../../../shared/analysis-contract/findings.ts";
 import { excerpt } from "../business-explainer/agent.ts";
-import { sha256 } from "../company-analysis/api.ts";
+import { sha256 } from "../sha256.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import type { SearchHit } from "../web-search/types.ts";

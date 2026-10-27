@@ -1,7 +1,7 @@
 import { Table, TableBody, TableCell, TableHead, TableRow } from "@/packages/web/src/ui/table";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/packages/web/src/ui/button";
-import { getLocale, labels, messages } from "@/packages/web/src/i18n";
+import { getLocale, isChinese as zh, labels, messages } from "@/packages/web/src/i18n";
 import type { AssessedMetric, BridgeStep, CapitalChain, CashBridge, Flag, FlagLevel, MetricForm, MetricPoint, PeerRank, StatementAssessment, StatementDimension } from "@/shared/analysis-contract/statement-analysis";
 import type { FindingRef, FindingSpan, FindingView } from "@/shared/analysis-contract/findings";
 import type { FlowSource } from "@/shared/analysis-contract/business-flow";
@@ -47,7 +47,6 @@ export const DIMENSION_LABEL = labels<StatementDimension>({
 });
 const LEVELS: FlagLevel[] = ["alert", "watch", "note"];
 const RANK: Record<FlagLevel, number> = { alert: 0, watch: 1, note: 2 };
-const zh = () => getLocale() === "zh-CN";
 export const metricLabel = (id: string) => METRIC_DEFS.get(id)?.label[zh() ? 1 : 0] ?? id;
 const metricValue = (metric: Pick<AssessedMetric, "form" | "current">, value = metric.current.value) => formatMetric(value, metric.form, getLocale(), metric.current.resolved.currency ?? "USD");
 type StatementView = FindingView;

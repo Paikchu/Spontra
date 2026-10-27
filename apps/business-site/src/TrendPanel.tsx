@@ -7,7 +7,7 @@ import type { BusinessFlowQuarter } from "@/shared/analysis-contract/business-fl
 import { compactFlowValue } from "@/packages/web/src/model/business-flow-layout";
 import type { GuidancePublication } from "@/shared/analysis-contract/guidance";
 import { getLocale, messages } from "@/packages/web/src/i18n";
-import { compactMoney, qoqLabel, range, yoyLabel } from "@/shared/analysis-runtime/locale";
+import { compactMoney, qoqLabel, range, yoyLabel, shortPeriod } from "@/shared/analysis-runtime/locale";
 import { QuarterBadge, fiscalPhrase } from "./PeriodMark";
 import { SLOTS, ACTION_NAMES, buildBridge, buildColumns, buildSlots, columnIndex, visibleSlotCount, growth, growthSeries, guidanceLabel, guidanceOverlay, layerOrder, niceTicks, rateTicks, type Bridge, type Column, type GuideMark, type Layer, type TrendItem } from "./trend-model";
 
@@ -53,7 +53,6 @@ function flowMoney(v: number | null, currency: string, scale: number): string {
 }
 
 const SHADES = [100, 66, 44, 30];
-const shortPeriod = (end: string) => end.slice(0, 7).replace("-", ".");
 const periodLabel = (end: string) => <time dateTime={end}><span>{end.slice(0, 4)}</span><span className="trend-period-month">{end.slice(5, 7)}</span></time>;
 const percent = (v: number | null) => v == null ? "—" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(1)}%`;
 const trend = (v: number | null) => v == null || v === 0 ? undefined : v > 0 ? "up" : "down";

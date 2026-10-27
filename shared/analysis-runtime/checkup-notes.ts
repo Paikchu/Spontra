@@ -1,5 +1,5 @@
 import type { CheckupNote, FindingMaterial, FindingPassage, FindingRef, FindingSpan } from "../analysis-contract/findings.ts";
-import type { AssessedMetric, Flag, MetricForm } from "../analysis-contract/statement-analysis.ts";
+import type { AssessedMetric, Flag } from "../analysis-contract/statement-analysis.ts";
 import { evidenceCandidates, numberSupported, proseNumbers, refLabel, resolveEvidence, resolveRef, spanLabel, type FindingData } from "./findings.ts";
 import { formatDelta, formatResolved } from "./lens/format.ts";
 import { verifyQuote } from "./lens/verify.ts";
@@ -109,6 +109,3 @@ export function verifyNote(note: CheckupNote, data: FindingData, metric: Assesse
   const quotes = note.quotes.flatMap(q => { const v = verifyQuote(materials, data.passages, q.materialId, q.text); return v ? [{ text: q.text, material: v.material, passage: v.passage, earlier: earlierMaterial(v.material, metric.evidence.periodEnd) }] : []; });
   return { metricId: note.metricId, paragraphs, quotes };
 }
-
-/** The form a metric's value is written in, for the writer's prompt. */
-export const formOf = (metricId: string): MetricForm | null => METRIC_DEFS.get(metricId)?.form ?? null;

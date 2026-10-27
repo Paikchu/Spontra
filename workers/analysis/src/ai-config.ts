@@ -1,7 +1,5 @@
 import { AI_EFFORTS, AI_MODELS, type AiEffort, type AiModel } from "../../../shared/analysis-contract/ai-models-admin.ts";
 import { SEC_FALLBACK_MODEL } from "./retry-policy.ts";
-
-export const REASONING_EFFORTS = AI_EFFORTS;
 export type ReasoningEffort = AiEffort;
 
 /**

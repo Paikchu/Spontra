@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { FindingRef, FindingSpan } from "../../../../shared/analysis-contract/findings.ts";
-import { DEFAULT_SCENE_ROWS, type SceneRow } from "../../../../shared/analysis-contract/scene.ts";
+import type { SceneRow } from "../../../../shared/analysis-contract/scene.ts";
 import { evidenceCandidates, findingRefSchema, numberSupported, proseNumbers, resolveEvidence, shiftPeriod, type ResolvedEvidence } from "../../../../shared/analysis-runtime/findings.ts";
 import { formatDelta, formatResolved } from "../../../../shared/analysis-runtime/lens/format.ts";
 import type { Locale } from "../../../../shared/analysis-runtime/locale.ts";
@@ -140,4 +140,3 @@ export const stageRecipe: Recipe<StageInput, StageOutcome, StageTurn> = {
 
 /** The recipe for one turn: tools bound to the turn's data. */
 export const stageRecipeFor = (input: StageInput): Recipe<StageInput, StageOutcome, StageTurn> => ({ ...stageRecipe, tools: () => stageTools(input) });
-export const DEFAULT_ROWS = DEFAULT_SCENE_ROWS;

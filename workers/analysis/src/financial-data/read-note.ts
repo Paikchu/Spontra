@@ -1,6 +1,7 @@
 import type { BusinessFlowQuarter, BusinessSegment, FlowAmount, FlowMetric } from '../../../../shared/analysis-contract/business-flow.ts';
 import type { RevenueHistoryQuarter } from '../../../../shared/analysis-contract/revenue-history.ts';
 import { checkCompleteFlow } from '../../../../shared/analysis-runtime/financial-data/completeness.ts';
+import {daysBetween as days} from '../../../../shared/analysis-runtime/dates.ts';
 
 /**
  * A new filing read by a read note (docs/agent-interpretation-design.md): the note says where each amount of the newest
@@ -28,7 +29,6 @@ const DAY = 86_400_000;
 const clean = (value: string) => value.replace(/<[^>]*>/g, ' ').replace(/&#(?:x([\da-f]+)|(\d+));/gi, (_, hex, dec) => String.fromCodePoint(parseInt(hex ?? dec, hex ? 16 : 10)))
   .replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&rsquo;|&lsquo;/gi, "'").replace(/&ldquo;|&rdquo;|&quot;/gi, '"')
   .replace(/[​-‍﻿]/g, '').replace(/\s+/g, ' ').trim();
-const days = (from: string, to: string) => (Date.parse(to) - Date.parse(from)) / DAY;
 const nextDay = (date: string) => new Date(Date.parse(date) + DAY).toISOString().slice(0, 10);
 /** A printed amount: "1,203,855", "(10,496)", "—" (zero). Null for anything else. */
 export function printed(text: string): number | null {

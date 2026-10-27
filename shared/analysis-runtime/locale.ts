@@ -97,6 +97,3 @@ export function range(low: string, high: string, locale: Locale = "en"): string 
   }
   return `${low}–${high}`;
 }
-
-/** A plain count with grouping: "1,234" in both locales. */
-export const groupedCount = (value: number) => Math.round(value).toLocaleString("en-US");

@@ -1,6 +1,6 @@
 import type {Job} from './store.ts';
 import type {DocumentBatch} from './collect.ts';
-import {extractDisclosedQuarters, hasDisclosureProfile, readReportedFacts, SEC_FLOW_PARSER_VERSION, type Fact, type DocumentSource} from './parser.ts';
+import {extractDisclosedQuarters, readReportedFacts, SEC_FLOW_PARSER_VERSION, type Fact, type DocumentSource} from './parser.ts';
 import {reviewedCurrentPair} from './period-review.ts';
 import {restatedConcepts} from './restatement.ts';
 import type {IncomeCalculation,RevenueStructure} from './calculation.ts';
@@ -99,14 +99,13 @@ export async function readSecDocumentBatch(job:Job,reader:SecReader,maxDocuments
   }
   // An earnings release filed after the newest quarterly report reports a quarter no report covers yet. It is read on
   // its own once the verified pair is known (readReleaseQuarter), never among the reports that verify that pair.
-  if(!cursor.foreign&&!hasDisclosureProfile(cik)){
+  if(!cursor.foreign){
    const periodic=cursor.documents.filter(d=>d.form!=='8-K').map(d=>d.filedAt).sort().at(-1)??'';
    const release=cursor.documents.filter(d=>d.form==='8-K'&&d.filedAt>periodic).sort((a,b)=>b.filedAt.localeCompare(a.filedAt))[0];
    if(release){cursor.release={url:release.url,accession:release.accession,filedAt:release.filedAt};cursor.documents=cursor.documents.filter(d=>!(d.form==='8-K'&&d.filedAt>periodic));}
   }
   // The current statement and its adjacent filing provide the cumulative bridge.
-  // Preserve Oracle's existing earnings-exhibit profile order.
-  if(!cursor.foreign&&cik!=='0001341439')cursor.documents.sort((a,b)=>Number(a.form==='8-K')-Number(b.form==='8-K')||b.periodEnd.localeCompare(a.periodEnd));
+  if(!cursor.foreign)cursor.documents.sort((a,b)=>Number(a.form==='8-K')-Number(b.form==='8-K')||b.periodEnd.localeCompare(a.periodEnd));
   cursor.index=0;
   if(!cursor.documents.length)throw new Error('NO_SUPPORTED_FILINGS');
  }

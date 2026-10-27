@@ -8,7 +8,7 @@ import { defaultFeatureResolution } from "../financial-data/company-policy.ts";
  * A company without a row follows the deployment's default list; a table not yet migrated reads as no rows.
  */
 /** The deployment lists the read path knows (the MapReads binding sees the vars, never the resolved environment). */
-export type FeatureDefaultsEnv = { SEC_AI_TICKERS?: string; SEC_TRACKED_TICKERS?: string; SEC_AI_ENABLED?: string; BUSINESS_TREE_TICKERS?: string; BUSINESS_TREE_ENABLED?: string };
+export type FeatureDefaultsEnv = { SEC_AI_TICKERS?: string; SEC_AI_ENABLED?: string; BUSINESS_TREE_TICKERS?: string; BUSINESS_TREE_ENABLED?: string };
 
 /** Whether readers see the company's feature: its switch, or the deployment default when the admin never set one. */
 export async function featureShown(db: D1Database, env: FeatureDefaultsEnv, ticker: string, feature: Feature): Promise<boolean> {

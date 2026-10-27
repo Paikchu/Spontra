@@ -1,10 +1,11 @@
+import { TICKER_PATTERN } from "@/shared/analysis-runtime/financial-data/policy";
 const PREFIX = "spontra:financial-maintenance:";
 const memory = new Map<string, string>();
 export type RequestIdStore = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
 export function normalizeCompanyTicker(value: string): string {
   const ticker = value.trim().toUpperCase();
-  return /^[A-Z][A-Z0-9.-]{0,9}$/.test(ticker) ? ticker : "";
+  return TICKER_PATTERN.test(ticker) ? ticker : "";
 }
 
 /** Only an opaque operation UUID is persisted. No credential, company data or response body. */

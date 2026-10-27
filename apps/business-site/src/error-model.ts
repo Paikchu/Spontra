@@ -5,16 +5,6 @@ export type CompanyFault =
   | { kind: "rate-limit"; code: "429" }
   | { kind: "server"; code: string };
 
-const FEATURED = ["NBIS", "META", "ORCL", "NET", "AMZN"] as const;
-
-const FEATURED_NAME: Record<(typeof FEATURED)[number], { en: string; zh: string }> = {
-  NBIS: { en: "Nebius Group", zh: "Nebius Group" },
-  META: { en: "Meta Platforms", zh: "Meta" },
-  ORCL: { en: "Oracle", zh: "甲骨文" },
-  NET: { en: "Cloudflare", zh: "Cloudflare" },
-  AMZN: { en: "Amazon", zh: "亚马逊" },
-};
-
 export type FeaturedCompany = { ticker: string; name: string; nameZh: string | null };
 
 /**
@@ -40,13 +30,11 @@ export function companyFault(input: {
   return { kind: "insufficient", code };
 }
 
-/** The five companies the public site already covers, named from the catalog when it has them. */
-export function featuredCompanies(catalog: readonly FeaturedCompany[], locale: "en" | "zh-CN"): Array<{ ticker: string; name: string }> {
-  return FEATURED.map(ticker => {
+/** The covered companies the homepage puts first, named as the catalog names them; none until the catalog loads. */
+export function featuredCompanies(catalog: readonly FeaturedCompany[], popular: readonly string[], locale: "en" | "zh-CN"): Array<{ ticker: string; name: string }> {
+  return popular.flatMap(ticker => {
     const found = catalog.find(company => company.ticker === ticker);
-    if (found) return { ticker, name: locale === "zh-CN" && found.nameZh ? found.nameZh : found.name };
-    const name = FEATURED_NAME[ticker];
-    return { ticker, name: locale === "zh-CN" ? name.zh : name.en };
+    return found ? [{ ticker, name: locale === "zh-CN" && found.nameZh ? found.nameZh : found.name }] : [];
   });
 }
 
