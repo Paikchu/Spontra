@@ -9,7 +9,7 @@
 .am-list li[data-unread] strong::after { content: ""; display: inline-block; width: 6px; height: 6px; margin-left: 6px; border-radius: 50%; background: var(--brand); vertical-align: middle; }
 .am-list small { overflow: hidden; color: var(--ink-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .am-list time { color: var(--ink-muted); font-size: 12px; white-space: nowrap; }
-.ra-nav-count { margin-left: auto; min-width: 20px; height: 20px; padding: 0 6px; border-radius: var(--sp-radius-pill); background: var(--danger); color: #fff; font-size: 11px; font-weight: 700; line-height: 20px; text-align: center; }
+.ra-nav-count { margin-left: auto; min-width: 20px; height: 20px; padding: 0 6px; border-radius: var(--sp-radius-pill); background: #b91c1c; color: #fff; font-size: 11px; font-weight: 700; line-height: 20px; text-align: center; }
 @media (max-width: 720px) {
   .am-list button { grid-template-columns: auto auto 1fr; row-gap: 4px; }
   .am-list small { grid-column: 1 / -1; }

@@ -696,6 +696,7 @@ button { cursor: pointer; }
   .rail-top { order: -1; padding: max(14px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 14px max(16px, env(safe-area-inset-left)); }
   .rail-list {
     order: 1; position: sticky; top: 0; z-index: 4; flex-direction: row; gap: 6px; overflow-x: auto; scrollbar-width: none;
+    width: 100%; min-width: 0; max-width: 100%;
     padding: 10px 16px; background: color-mix(in srgb, var(--background) 88%, transparent); backdrop-filter: blur(12px);
     border-bottom: 1px solid var(--hairline);
   }
@@ -707,15 +708,17 @@ button { cursor: pointer; }
   .row-name, .row-value, .row[data-depth="1"] .row-name, .row[data-depth="1"] .row-value { font-size: 14px; }
   .row-value { color: var(--muted-foreground); font-weight: 500; }
   .row--all { margin: 0; }
-  .findings { order: 2; margin: 0; padding: 8px 16px; border-top: 0; }
+  .findings { order: 2; margin: 0; padding: 8px 16px; border-top: 0; width: 100%; min-width: 0; max-width: 100%; }
   .findings-head { padding: 0 0 6px; }
-  .findings-rows { flex-direction: row; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+  .findings-rows { flex-direction: row; gap: 6px; overflow-x: auto; scrollbar-width: none; width: 100%; min-width: 0; max-width: 100%; }
   .findings-rows::-webkit-scrollbar { display: none; }
   .finding-row { display: inline-flex; flex: none; width: auto; align-items: center; gap: 7px; padding: 5px 11px 5px 6px; border-radius: 999px; border: 1px solid var(--hairline); white-space: nowrap; }
   .finding-row::after { display: none; }
   .finding-title { font-size: 12.5px; }
   .stage { order: 2; min-width: 0; max-width: 100%; padding: 20px 16px 16px; }
-  .stage-head, .stats { min-width: 0; max-width: 100%; }
+  .stage-head, .stats, .trend, .trend-head, .trend-heading { min-width: 0; max-width: 100%; }
+  .trend-heading { flex-wrap: wrap; }
+  .metric-select select { max-width: min(160px, 46vw); }
   .stage-head--summary { grid-template-columns: minmax(0, 1fr); }
   .stage-head--summary > .stage-controls { grid-column: 1; grid-row: auto; flex-wrap: wrap; }
   .dossier { order: 3; margin: 0 16px 32px; }
@@ -1485,6 +1488,8 @@ main[data-rail="collapsed"] .update-notice { left: calc((100vw + var(--rail-coll
 .view-flag:hover, .view-flag:focus-visible { border-color: var(--level); background: color-mix(in srgb, var(--level) 16%, var(--surface)); }
 .view-flag-name { font-weight: 560; color: var(--foreground); white-space: nowrap; }
 .view-flag b { font-weight: 680; color: var(--level); font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* Light watch orange (#c07a35) is 3.14:1 on the tinted pill. This step keeps the same hue at 5.84:1. */
+:root.light .view-flag b { color: #8f4e14; }
 .view-flag small { font-size: 12px; color: var(--muted-foreground); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* The view's metrics in the panel under the chart: one row of cells, flagged first, scrolling sideways. */
@@ -1548,8 +1553,8 @@ main[data-rail="collapsed"] .update-notice { left: calc((100vw + var(--rail-coll
 .lens-table tr[data-own] th, .lens-table tr[data-own] td { color: var(--level, var(--foreground)); font-weight: 700; }
 
 @media (max-width: 960px) {
-  .view-flags { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
-  .view-flags::-webkit-scrollbar { display: none; }
+  .view-flags, .event-filters { width: 100%; min-width: 0; max-width: 100%; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .view-flags::-webkit-scrollbar, .event-filters::-webkit-scrollbar { display: none; }
   .view-metrics { height: auto; }
   .view-metrics-row { grid-auto-columns: minmax(156px, 46%); height: 150px; }
 }

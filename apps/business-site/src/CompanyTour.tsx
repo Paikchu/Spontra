@@ -87,7 +87,10 @@ export function CompanyTour() {
     if (!open || !matchMedia("(max-width: 959px)").matches) return;
     const target = document.querySelector(TARGETS[step] ?? "");
     const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
-    target?.scrollIntoView({ block: "center", inline: "nearest", behavior: reduce ? "auto" : "smooth" });
+    if (!target) return;
+    const rect = target.getBoundingClientRect();
+    const top = window.scrollY + rect.top - (window.innerHeight - rect.height) / 2;
+    window.scrollTo({ top: Math.max(0, top), left: 0, behavior: reduce ? "auto" : "smooth" });
   }, [open, step]);
 
   useEffect(() => {
