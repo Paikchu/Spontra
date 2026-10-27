@@ -6,7 +6,7 @@ import {
 } from "./company-analysis/contracts.ts";
 import { buildCompanyAnalysisPacket, type CompanyAnalysisPacket } from "./company-analysis/packet.ts";
 import { D1CompanyAnalysisRepository, type CompanyAnalysisRunUpdate } from "./company-analysis/repository.ts";
-import { sha256 } from "./company-analysis/api.ts";
+import { sha256 } from "./sha256.ts";
 import { hashString } from "./sec/analysis.ts";
 import { assertTrackedTicker, requireDb, type CompanyAnalysisWorkflowParams } from "./core.ts";
 import { runBusinessModelAgent } from "./company-analysis/business-agent.ts";

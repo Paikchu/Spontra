@@ -3,7 +3,7 @@ import { D1CompanyAnalysisRepository } from "./company-analysis/repository.ts";
 import { D1SecRepository } from "./sec/d1.ts";
 
 import { hashString } from "./sec/analysis.ts";
-import { sha256 } from "./company-analysis/api.ts";
+import { sha256 } from "./sha256.ts";
 
 export type SecWorkflowBinding<T = SecWorkflowParams> = {
   create(options: { id: string; params: T }): Promise<{ id: string }>;

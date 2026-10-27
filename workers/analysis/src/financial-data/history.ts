@@ -5,6 +5,7 @@ import {extractVerifiedCurrentQuarters, readReportedFacts, type DocumentSource, 
 import {readFilingDocuments, reportsFinancials, type SecReader} from './provider.ts';
 import {extractRevenueHistory, REVENUE_PARSER_VERSION} from './revenue-parser.ts';
 import { TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
+import { daysBetween } from "../../../../shared/analysis-runtime/dates.ts";
 
 /**
  * Deterministic quarterly revenue history, independently validated from complete income statements.
@@ -26,7 +27,7 @@ export type HistoryStepResult = {ticker: string; documents: number; finished: bo
 
 const REVENUE_TAGS = new Set(['RevenueFromContractWithCustomerExcludingAssessedTax', 'Revenues', 'SalesRevenueNet', 'RevenuesNetOfInterestExpense', 'Revenue', 'RevenueFromContractsWithCustomers']);
 const local = (tag: string) => tag.split(':').at(-1)!;
-const span = (f: {start: string; end: string}) => (Date.parse(f.end) - Date.parse(f.start)) / 86400000;
+const span = (f: {start: string; end: string}) => daysBetween(f.start, f.end);
 /** Dimensions compared exactly: an operating-segments total (ConsolidationItemsAxis = OperatingSegmentsMember) is not the
  * consolidated amount (BRK.B nine months 2025: 274,998 against 277,212 USD millions), so no axis is dropped. */
 const dimensionKey = (dimensions: Record<string, string>) => JSON.stringify(Object.entries(dimensions).sort());

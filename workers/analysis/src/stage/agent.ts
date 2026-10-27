@@ -11,7 +11,7 @@ import type { AgentMessage, AgentReply, ToolCall } from "../tool-loop.ts";
 import type { ToolOutcome } from "../tools/registry.ts";
 import { refund, reserve, type Spender } from "./budget.ts";
 import { loadStageData } from "./data.ts";
-import { sha256 } from "./identity.ts";
+import { sha256 } from "../sha256.ts";
 import { STAGE_BUDGET, stageRecipeFor, stageTools, type StageView } from "./recipe.ts";
 
 /**

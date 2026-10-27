@@ -4,7 +4,7 @@ import type { BusinessExplainerResponse } from "../../../../shared/analysis-cont
 import type { PublicBusinessFlow } from "../../../../shared/analysis-contract/business-flow.ts";
 import { readBusinessExplainer } from "../../../../shared/analysis-runtime/business-explainer.ts";
 import { issuerNames } from "../../../../shared/analysis-runtime/business-tree.ts";
-import { sha256 } from "../company-analysis/api.ts";
+import { sha256 } from "../sha256.ts";
 import { findSecurity } from "../catalog/security-directory.ts";
 import { assertTrackedTicker, requireDb } from "../core.ts";
 import { readCompletePublicationForTicker } from "../financial-data/publication.ts";

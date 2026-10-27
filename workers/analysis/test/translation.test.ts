@@ -8,7 +8,8 @@ import { checkTranslation, collectProse, langOf, localize, normalizeTranslation 
 import type { AnalysisEnv } from "../src/operations.ts";
 import { validateRegistry } from "../src/pipeline/registry.ts";
 import { translationsAdmin } from "../src/translation/admin.ts";
-import { ModelUnavailable, publishTables, readTranslationTable, sha256, translateBatch, translationPlan, type TranslationSource } from "../src/translation/translate.ts";
+import { ModelUnavailable, publishTables, readTranslationTable, translateBatch, translationPlan, type TranslationSource } from "../src/translation/translate.ts";
+import { sha256 } from "../src/sha256.ts";
 
 /** D1 over node:sqlite with every migration applied, enough for the translator's statements. */
 function database(): D1Database {

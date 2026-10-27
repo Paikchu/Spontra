@@ -5,7 +5,7 @@ import { STATEMENT_ANALYSIS_VERSION } from "../../../../shared/analysis-contract
 import { issuerNames } from "../../../../shared/analysis-runtime/business-tree.ts";
 import { readFindingFundamentals, readFindingsPublication, type FindingData } from "../../../../shared/analysis-runtime/findings.ts";
 import type { FindingRecordEntry, FindingsPublication } from "../../../../shared/analysis-contract/findings.ts";
-import { sha256 } from "../company-analysis/api.ts";
+import { sha256 } from "../sha256.ts";
 import { D1CompanyAnalysisRepository } from "../company-analysis/repository.ts";
 import { findSecurity } from "../catalog/security-directory.ts";
 import { assertTrackedTicker, requireDb } from "../core.ts";

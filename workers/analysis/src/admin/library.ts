@@ -12,8 +12,8 @@ import { readSectorView, readTagCompanies, readTagsView, requestTags, setPairTie
 import { TIER_ORDER } from "../../../../shared/analysis-runtime/business-tags.ts";
 import type { PeerTier } from "../../../../shared/analysis-contract/business-tags.ts";
 import { TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
+import { json } from "./http.ts";
 
-const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "cache-control": "private, no-store" } });
 const DOCUMENT = /^[a-f0-9]{64}$/, SECTION = /^s[a-f0-9]{28}$/, TICKER = TICKER_PATTERN, SLUG = /^[\p{L}\p{N}-]{1,60}$/u;
 const category = (value: string | null): IndustryCategory | undefined => value && Object.hasOwn(INDUSTRY_CATEGORIES, value) ? value as IndustryCategory : undefined;
 const tickerList = (value: string | null) => value ? value.split(",").map(t => t.trim().toUpperCase()).filter(t => TICKER.test(t)).slice(0, 20) : undefined;

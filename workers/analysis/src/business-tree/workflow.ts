@@ -2,7 +2,7 @@ import { modelFor, reasoningFor } from "../ai-config.ts";
 import type { BusinessTree, BusinessTreeResponse } from "../../../../shared/analysis-contract/business-tree.ts";
 import type { PublicBusinessFlow } from "../../../../shared/analysis-contract/business-flow.ts";
 import { issuerNames, readBusinessTree } from "../../../../shared/analysis-runtime/business-tree.ts";
-import { sha256 } from "../company-analysis/api.ts";
+import { sha256 } from "../sha256.ts";
 import { findSecurity } from "../catalog/security-directory.ts";
 import { requireDb } from "../core.ts";
 import { featureTickersFor } from "../financial-data/company-policy.ts";

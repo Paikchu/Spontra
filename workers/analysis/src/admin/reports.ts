@@ -8,9 +8,9 @@ import { getPublicFiling } from "../sec/public-api.ts";
 import { cleanSecAccession } from "../sec/sec.ts";
 import { jobAnalysisVersionFor } from "../workflow-core.ts";
 import { authenticateAdmin, createAdminSession, matchesAdminKey } from "./auth.ts";
+import { json } from "./http.ts";
 
 type AdminEnv = SecCronEnv & { REPORT_ADMIN_RATE_LIMIT?: { limit(options: { key: string }): Promise<{ success: boolean }> } };
-const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "cache-control": "private, no-store" } });
 const reviewKey = (ticker: string, accession: string, version: string) => `admin:review:${ticker}:${accession}:${version}`;
 // Match report identity through its publication snapshot, with a fallback for older reports.
 const REPORT_IDENTITY = `(json_extract(r.payload, '$.publication.filing.accessionNumber') = f.accession_number OR

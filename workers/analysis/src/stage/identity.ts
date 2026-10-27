@@ -33,6 +33,4 @@ export async function readerOf(secret: string | undefined, token: string | null)
   return diff === 0 ? `anon:${match[2]}` : null;
 }
 
-export async function sha256(value: string): Promise<string> {
-  return hex(await crypto.subtle.digest("SHA-256", encoder.encode(value)));
-}
+

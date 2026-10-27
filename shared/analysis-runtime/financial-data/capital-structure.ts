@@ -5,6 +5,7 @@ import type {
   AssetGroup, BalanceSheet, CapitalFiling, CapitalLine, CapitalQuarter, CapitalSchedule, CapitalSource, CashFlowSection, CashFlowStatement,
   EquityGroup, FinancingGroup, InvestingGroup, LiabilityGroup, OperatingGroup, PublicCapitalStructure, RpoBucket, RpoDisclosure, ScheduleBucket, ScheduleKind, SupplementalGroup,
 } from "../../analysis-contract/capital-structure.ts";
+import { daysBetween as days } from "../dates.ts";
 
 /**
  * Balance sheet and cash flow statement lines, read from the filing's own statement tables.
@@ -21,7 +22,6 @@ type Line<G extends string> = Row & { value: number; group: G };
 type Kind = "balance" | "cashflow";
 
 const local = (concept: string) => concept.split(":").at(-1)!;
-const days = (start: string, end: string) => (Date.parse(end) - Date.parse(start)) / 86400000;
 const nextDay = (date: string) => new Date(Date.parse(date) + 86400000).toISOString().slice(0, 10);
 const near = (a: number, b: number) => Math.abs(a - b) <= Math.max(1, Math.abs(b) * 1e-9);
 const sum = (rows: Array<{ value: number }>) => rows.reduce((total, row) => total + row.value, 0);

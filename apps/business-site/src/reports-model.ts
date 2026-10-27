@@ -86,17 +86,3 @@ export function reportTitle(r: PublicFilingDigest, ticker = ""): string {
 
 /** The language of the generated headline while it is the title (Chinese once translated); undefined while the title is composed in the reader's language. */
 export const reportTitleLang = (r: PublicFilingDigest): ReturnType<typeof langOf> | undefined => r.headline ? langOf(r.headline) : undefined;
-
-/**
- * The rail's digest while its full list is closed: the newest report and the latest `events` filings, newest first.
- * The focused row stays in the digest wherever it falls, so closing the list never hides the pick on stage.
- */
-export function railDigest(rail: RailItems, focus: string | null, events = 3): RailItem[] {
-  const all = [...rail.recent, ...rail.earlier];
-  const picked = new Set<RailItem>(all.filter(i => i.kind === "event").slice(0, events));
-  const report = all.find(i => i.kind === "report");
-  if (report) picked.add(report);
-  const focused = all.find(i => i.id === focus);
-  if (focused) picked.add(focused);
-  return all.filter(i => picked.has(i));
-}

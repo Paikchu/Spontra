@@ -19,8 +19,8 @@ import { D1SecRepository } from "../sec/d1.ts";
 import type { SecFilingFeed } from "../sec/sec.ts";
 import { authenticateAdmin } from "./auth.ts";
 import { researchSearchConfigured } from "../web-search/research-search.ts";
+import { json } from "./http.ts";
 
-const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "cache-control": "private, no-store" } });
 const UUID = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
 /** A run with no news for this long is checked against the Workflow engine. */
 const SETTLE_AFTER_MS = 60_000, MISSING_AFTER_MS = 10 * 60_000;

@@ -1,12 +1,11 @@
 import type { SecFiscalPeriod } from "../../../../shared/analysis-contract/report.ts";
 import { quarterNumber } from "../../../../shared/analysis-runtime/fiscal-label.ts";
+import { daysBetween as days } from "../../../../shared/analysis-runtime/dates.ts";
 
 /** A reported quarter of one company: the fourth quarter is the fiscal year (a 10-K or 20-F). */
 export type FiscalLabel = { fiscalYear: number; quarter: 1 | 2 | 3 | 4; periodEnd: string };
 
-const DAY = 86_400_000;
 const QUARTER_DAYS = 365.25 / 4;
-const days = (from: string, to: string) => (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY;
 const position = (label: Pick<FiscalLabel, "fiscalYear" | "quarter">) => label.fiscalYear * 4 + label.quarter - 1;
 
 /**

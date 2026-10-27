@@ -25,12 +25,12 @@ import { readMapDerived } from '../financial-data/derived.ts';
 import { discoverDataIssuer, throttledSecReader } from '../financial-data/provider.ts';
 import { D1SecRepository } from '../sec/d1.ts';
 import { issuerDirectory, searchIssuers } from './issuer-search.ts';
+import { json } from "./http.ts";
 
 /** Forgets the failed inputs of a feature's tasks for a company, so a retry is not made to wait or refused. */
 async function clearFailures(db: D1Database, ticker: string, feature: Feature): Promise<void> {
   await db.prepare("DELETE FROM sec_cache WHERE cache_key IN (SELECT value FROM json_each(?))").bind(JSON.stringify(FEATURE_TASKS(feature).map(task=>failedInputKey(task,ticker)))).run();
 }
-const json = (body: unknown, status = 200) => Response.json(body, {status, headers: {'cache-control':'private, no-store'}});
 /**
  * Each feature's work in flight per company (`feature:ticker`): the SEC report jobs for the reports, the AI run store
  * for the model Workflows, and the due table for runs waiting their turn. Running beats queued. A running job or run

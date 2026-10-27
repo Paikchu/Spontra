@@ -23,6 +23,7 @@ import type { AgentMessage, AgentReply } from "../tool-loop.ts";
 import type { WorkflowStepLike } from "../workflow-core.ts";
 import { itemOpening, itemPeriodEnd, itemRecipe, itemSubjects, type ItemInput, type ItemSubject } from "./recipe.ts";
 import { itemAnalysisKey, itemsIndexKey, type ItemsIndex, type StoredItem } from "./read.ts";
+import { sha256 } from "../sha256.ts";
 
 /** Changing the item recipe's prompt, tools or materials writes every row's analysis again (through the fingerprint). */
 export const ITEMS_VERSION = "items.v1";
@@ -30,7 +31,6 @@ export const ITEMS_VERSION = "items.v1";
 const CONCURRENCY = 3;
 
 export type ItemsParams = { ticker: string; fingerprint: string };
-const sha256 = async (text: string) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)))].map(b => b.toString(16).padStart(2, "0")).join("");
 /** The filings a report row groups: the report and the current reports merged into it. */
 const accessionsOf = (s: ItemSubject) => s.report ? [s.id, ...s.report.sources.map(x => x.accessionNumber)] : [s.id];
 

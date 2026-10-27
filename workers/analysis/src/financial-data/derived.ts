@@ -12,6 +12,7 @@ import { readCompletePublicationForTicker } from './publication.ts';
 import { outboxStatement } from '../pipeline/outbox.ts';
 import { namesMembers, storedMemberLabels } from './member-labels.ts';
 import { storedCalculation } from './calculation.ts';
+import { daysBetween } from "../../../../shared/analysis-runtime/dates.ts";
 
 /**
  * Everything the business map reads beyond the published latest pair is prepared here, by the `map-derive` task
@@ -71,7 +72,6 @@ export function unarchivedSources(flow: PublicBusinessFlow, audits: StoredAudit[
 }
 
 const issuerOf = (r: StoredAudit) => r.source.documentUrl.match(/\/Archives\/edgar\/data\/(\d+)\//)?.[1];
-const daysBetween = (a: string, b: string) => (Date.parse(b) - Date.parse(a)) / 86400000;
 
 /**
  * Filings that may carry the older quarterly statements, in the order their quarters are preferred: newest filing first.

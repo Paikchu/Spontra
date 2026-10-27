@@ -9,8 +9,8 @@ import { failedInputKey } from "../pipeline/workflow-task.ts";
 import { authenticateAdmin } from "./auth.ts";
 import { DISCOVERY_HEARTBEAT_KEY } from "../pipeline/discovery.ts";
 import { TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
+import { json } from "./http.ts";
 
-const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "cache-control": "private, no-store" } });
 const LOG_COLUMNS = "id, message_id AS messageId, cause_id AS causeId, kind, name, ticker, outcome, detail, created_at AS createdAt";
 
 async function overview(env: AnalysisEnv, db: D1Database, ticker: string | null): Promise<PipelineOverview> {

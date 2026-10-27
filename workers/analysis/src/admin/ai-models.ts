@@ -2,8 +2,8 @@ import { AI_EFFORTS, AI_MODELS, type AiEffort, type AiModel, type AiModelSetting
 import { AI_TOOL_NAMES, AI_TOOLS, defaultModelFor, defaultReasoningFor } from "../ai-config.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import { authenticateAdmin } from "./auth.ts";
+import { json } from "./http.ts";
 
-const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "cache-control": "private, no-store" } });
 type Row = { tool: string; model: string | null; effort: string | null; updated_at: string };
 const isModel = (value: unknown): value is AiModel => typeof value === "string" && (AI_MODELS as readonly string[]).includes(value);
 const isEffort = (value: unknown): value is AiEffort => typeof value === "string" && (AI_EFFORTS as readonly string[]).includes(value);

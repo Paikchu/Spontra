@@ -11,8 +11,8 @@ import { getFinancialStatements, getFilingDisclosureAuditPage, listFilingDisclos
 import { authenticateAdmin } from "./auth.ts";
 import { FinancialMaintenanceStore, taskView } from "./financial-maintenance-store.ts";
 import { emit } from "../pipeline/outbox.ts";
+import { json } from "./http.ts";
 
-const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "cache-control": "private, no-store" } });
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const coverage = {
   scope: ["已定位的 Financial Statements 整章原文与全部原始表格（含比较期间、附注和来源定位）", "已验证的季度利润表和收入分部", "季度收入历史（含可核对的第四季度差额推导）", "原始 Inline XBRL 事实、期间、单位、维度和出处的审计档案"],

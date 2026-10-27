@@ -3,8 +3,8 @@ import {checkCompleteFlow} from '../../../../shared/analysis-runtime/financial-d
 import type {IncomeCalculation,RevenueStructure} from './calculation.ts';
 import type {BridgeStructure} from './bridge.ts';
 import type {BusinessFlowQuarter} from '../../../../shared/analysis-contract/business-flow.ts';
+import {daysBetween as days} from '../../../../shared/analysis-runtime/dates.ts';
 const key=(f:Fact)=>[f.tag,f.currency,JSON.stringify(Object.entries(f.dimensions).sort())].join('|');
-const days=(start:string,end:string)=>(Date.parse(end)-Date.parse(start))/86400000;
 const nextDay=(date:string)=>new Date(Date.parse(date)+86400000).toISOString().slice(0,10);
 const precisionSelect=(facts:Fact[])=>{
  const selected=new Map<string,Fact>();

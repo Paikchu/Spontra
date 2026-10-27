@@ -4,7 +4,7 @@ import type { CheckupNotes, FindingMaterial } from "../../../../shared/analysis-
 import { STATEMENT_ANALYSIS_VERSION } from "../../../../shared/analysis-contract/statement-analysis.ts";
 import { assessStatements } from "../../../../shared/analysis-runtime/statement-analysis.ts";
 import { AiRunStore } from "../ai-runs/store.ts";
-import { sha256 } from "../company-analysis/api.ts";
+import { sha256 } from "../sha256.ts";
 import { assertTrackedTicker, requireDb } from "../core.ts";
 import { libraryToc } from "../filing-library/tool.ts";
 import { findingsInput } from "../findings/workflow.ts";

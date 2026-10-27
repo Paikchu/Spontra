@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { BusinessFlowQuarter } from "../../analysis-contract/business-flow.ts";
 import type { RevenueHistory, RevenueHistoryQuarter } from "../../analysis-contract/revenue-history.ts";
 import { TICKER_PATTERN } from "./policy.ts";
+import { daysBetween as days } from "../dates.ts";
 
 /** Eight displayed quarters plus four prior-year comparison quarters. */
 export const HISTORY_QUARTERS = 12;
@@ -25,7 +26,6 @@ const quarterSchema = z.object({
 export const revenueHistorySchema = z.object({ schemaVersion: z.literal("revenue-history.v1"), ticker: z.string().regex(TICKER_PATTERN), updatedAt: z.string(), quarters: z.array(quarterSchema).max(16) });
 
 const near = (a: number, b: number) => Math.abs(a - b) <= Math.max(1, Math.max(Math.abs(a), Math.abs(b)) * 1e-9);
-const days = (start: string, end: string) => (Date.parse(end) - Date.parse(start)) / 86400000;
 
 /** A quarter is kept only when it is a three-month period whose disclosed nonnegative businesses add up to revenue. */
 export function validHistoryQuarter(q: RevenueHistoryQuarter): boolean {

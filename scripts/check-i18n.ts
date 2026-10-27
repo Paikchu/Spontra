@@ -219,7 +219,7 @@ function checkNumbers(l: LocaleModule, f: LensFormat): string[] {
     ["fiscalYearTo zh", l.fiscalYearTo("2026-08-31", "zh-CN"), "截至 2026.08 财年"],
     ["fiscalYearTo en", l.fiscalYearTo("2026-08-31"), "FY to 2026.08"],
     ["lens periodLabel zh", f.periodLabel("2026-08-31", "fiscal_year", "zh-CN"), "截至 2026.08 财年"],
-    ["lens compactMoney en unchanged", f.compactMoney(-28.7e9, "USD"), "−$28.7B"],
+    ["compactMoney −28.7B en", l.compactMoney(-28.7e9, "USD"), "−$28.7B"],
     ["lens formatDelta zh", f.formatDelta(1.5, "percent", undefined, "zh-CN"), "+1.5个百分点"],
     ["lens formatDelta en unchanged", f.formatDelta(1.5, "percent"), "+1.5 pp"],
     ["range zh shares the unit", l.range("76.0亿美元", "78.0亿美元", "zh-CN"), "76.0–78.0亿美元"],
