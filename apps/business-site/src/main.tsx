@@ -93,7 +93,7 @@ function Company({ ticker, tools, onSeen, covered, companies, onHome, onSearch }
   onSearch: () => void;
 }) {
   const { data, updates, failed, httpStatus, ready, eventsPhase, retry, retryEvents, update, apply, dismiss } = useLiveCompany(ticker, onSeen);
-  const { flow, publication, capital, peers, findings, fundamentals, events, filings } = data;
+  const { flow, publication, capital, peers, findings, fundamentals, events, filings, valuation } = data;
   const stage = useStageHost(ticker, data);
   // The page keeps the face it turned in with until the turn lands, since replacing its rail mid-flight cuts the turn short.
   const face = openingFace({ ready, failed, flow: Boolean(flow), publication: Boolean(publication) });
@@ -123,6 +123,7 @@ function Company({ ticker, tools, onSeen, covered, companies, onHome, onSearch }
           fundamentals={fundamentals}
           events={events}
           filings={filings}
+          valuation={valuation}
           eventsPhase={eventsPhase}
           onRetryEvents={retryEvents}
           notice={publication?.outdated ? m.lastSnapshot : null}

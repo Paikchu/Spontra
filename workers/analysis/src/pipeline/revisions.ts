@@ -17,7 +17,7 @@ export const REVISES: Partial<Record<EventType, readonly MapResource[]>> = {
   "explainer.published": ["company"],
   "tree.published": ["company"],
   // A feature switched shown or hidden: every resource a feature publishes into, so the reader reloads what changed.
-  "feature.settings": ["company", "filings", "findings", "events"],
+  "feature.settings": ["company", "filings", "findings", "events", "valuation"],
   "findings.published": ["findings"],
   "dossier.published": ["findings"],
   "checkup.published": ["findings"],
@@ -26,7 +26,8 @@ export const REVISES: Partial<Record<EventType, readonly MapResource[]>> = {
   "events.published": ["events"],
   // A row's analysis is read by the row's id at the events' and filings' revisions.
   "items.published": ["events", "filings"],
-  "translations.published": ["company", "findings", "events", "filings"],
+  "translations.published": ["company", "findings", "events", "filings", "valuation"],
+  "valuation.published": ["valuation"],
 };
 
 /**

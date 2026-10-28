@@ -4,6 +4,7 @@ import type { AiCompanies, AiCompanyDetail, AiRun, AiRunKind, AiRunStarted, AiRu
 import type { AnalysisFinding, FindingsPublication } from "@/shared/analysis-contract/findings";
 import type { BusinessExplainer } from "@/shared/analysis-contract/business-explainer";
 import type { BusinessTree, TreeNode } from "@/shared/analysis-contract/business-tree";
+import type { ValuationPublication } from "@/shared/analysis-contract/valuation";
 import { adminApi, AdminApiError } from "./admin-api";
 import { CompanyLogo } from "@/packages/web/src/company-logo";
 import { completeRequestId, pendingRequestId } from "./financial-maintenance-state";
@@ -13,12 +14,20 @@ import { useOnReturn, usePageActive } from "./admin-page";
 
 /** The BusinessView outputs this admin shows; guidance is not part of BusinessView. */
 export type ViewKind = Exclude<AiRunKind, "guidance">;
-const KINDS: Array<[ViewKind, string]> = [["findings", "公司要点"], ["analyst", "要点分析师"], ["checkup", "三表分析"], ["explainer", "业务解读"], ["tree", "业务脑图"]];
+const KINDS: Array<[ViewKind, string]> = [["findings", "公司要点"], ["analyst", "要点分析师"], ["checkup", "三表分析"], ["explainer", "业务解读"], ["tree", "业务脑图"], ["valuation", "估值评估"]];
 const STATUS: Record<AiRunStatus, string> = { queued: "排队中", running: "运行中", waiting: "等待中", succeeded: "已完成", empty: "无可发布内容", superseded: "已跳过", cancelled: "已停止", failed: "失败" };
 const ACTIVE = new Set<AiRunStatus>(["queued", "running", "waiting"]);
 const badge = (status: AiRunStatus) => status === "failed" ? "failed" : status === "succeeded" ? "reviewed" : ACTIVE.has(status) ? "processing" : "";
 const STAGES: Array<[RegExp, (m: RegExpExecArray) => string]> = [
-  [/^(findings|explainer|tree)-time$/, () => "记录开始时间"],
+  [/^(findings|explainer|tree|valuation)-time$/, () => "记录开始时间"],
+  [/^valuation-input$/, () => "读取财务事实与材料目录"],
+  [/^valuation-quote$/, () => "冻结参考收盘价与折现率基线"],
+  [/^valuation-prior$/, () => "按历史先验试算"],
+  [/^valuation-research-t(\d+)/, m => `研究 · 第 ${m[1]} 轮`],
+  [/^valuation-assume-t(\d+)/, m => `假设与计算 · 第 ${m[1]} 轮`],
+  [/^valuation-redteam$/, () => "反证检查"],
+  [/^valuation-compose-t(\d+)/, m => `成稿 · 第 ${m[1]} 轮`],
+  [/^valuation-publish$/, () => "发布"],
   [/^tree-input$/, () => "读取业务列表"],
   [/^tree-filings$/, () => "列出财报与年报"],
   [/^tree-b(\d+)-t(\d+)-think$/, m => `第 ${m[1]} 项业务 · 第 ${m[2]} 轮思考`],
@@ -198,12 +207,29 @@ function Versions({ detail, onError }: { detail: AiCompanyDetail; onError: (erro
     <div className="ai-versions-head"><h3>生成结果</h3>{detail.versions.length > 0 && <label>版本<select value={id} onChange={e => setId(e.target.value)}>{detail.versions.map((v, i) => <option key={v.id} value={v.id}>{v.current ? "当前 · " : `v${detail.versions.length - i} · `}{date(v.id)} · {summaryText(detail.kind, v.summary)}</option>)}</select></label>}</div>
     {!detail.versions.length ? <p className="ai-muted">无已发布结果</p> : error ? <p className="ra-error">{error}</p> : !version || version.version.id !== id ? <p className="ai-muted"><LoaderCircle size={15} className="ra-spin" /> 加载中</p>
       : <>{!version.version.current && <p className="ai-hint">历史版本</p>}
-        {detail.kind === "findings" ? <FindingsView publication={version.publication as FindingsPublication} /> : detail.kind === "analyst" ? <AnalystView dossier={version.publication as DossierRecord} /> : detail.kind === "checkup" ? <CheckupView record={version.publication as CheckupRecordView} /> : detail.kind === "explainer" ? <ExplainerView explainer={version.publication as BusinessExplainer} /> : <TreeView tree={version.publication as BusinessTree} />}
+        {detail.kind === "findings" ? <FindingsView publication={version.publication as FindingsPublication} /> : detail.kind === "analyst" ? <AnalystView dossier={version.publication as DossierRecord} /> : detail.kind === "checkup" ? <CheckupView record={version.publication as CheckupRecordView} /> : detail.kind === "explainer" ? <ExplainerView explainer={version.publication as BusinessExplainer} /> : detail.kind === "valuation" ? <ValuationView report={version.publication as ValuationPublication} /> : <TreeView tree={version.publication as BusinessTree} />}
         <details className="ai-raw"><summary>原始 JSON</summary><pre>{JSON.stringify(version.publication, null, 2)}</pre></details></>}
   </section>;
 }
 
 const FINDING_KIND: Record<AnalysisFinding["kind"], string> = { risk: "风险", strength: "优势", shift: "变化", watch: "关注" };
+const VERDICT_ZH: Record<ValuationPublication["verdict"], string> = { supported: "有证据支持错杀", not_supported: "不支持错杀", pending: "待验证" };
+const DIMENSION_ZH: Record<ValuationPublication["dimensions"][number]["key"], string> = { businessQuality: "生意质量", growthExecution: "增长兑现", valuationSafety: "估值安全", mispricingCatalysts: "错杀与催化", financialResilience: "财务韧性" };
+/** The valuation as published: verdict, score, the five dimensions, the range against the reference close, gaps and the sources read. */
+function ValuationView({ report }: { report: ValuationPublication }) {
+  const r = report.model?.range ?? null;
+  const pct = (v: number | null | undefined) => v == null ? "—" : `${(v * 100).toFixed(1)}%`;
+  return <div className="ai-valuation">
+    <p><b>{VERDICT_ZH[report.verdict]}</b> · 综合分 {report.weightedScore ?? "—"} · 置信度 {report.confidence} · 研究日期 {report.researchAsOf.slice(0, 10)} · 财务基期 {report.financialPeriodEnd} · {report.reportStatus === "ready" ? "完整" : "材料不足"}</p>
+    <table className="ai-table"><thead><tr><th>维度</th><th>分数</th><th>置信度</th><th>理由</th></tr></thead><tbody>
+      {report.dimensions.map(d => <tr key={d.key}><td>{DIMENSION_ZH[d.key]}</td><td>{d.score ?? "—"}</td><td>{d.confidence}</td><td lang="en">{d.rationale}</td></tr>)}
+    </tbody></table>
+    {report.model && r && <p>模型 {report.model.modelType} · 折现率 {pct(report.model.discountRate.value)} · 每股价值 {r.low.toFixed(2)} / {r.base.toFixed(2)} / {r.high.toFixed(2)}{r.expected != null ? ` · 期望 ${r.expected.toFixed(2)}` : ""} · 参考价 {r.price ?? "—"} · 安全边际 {pct(r.marginOfSafety)}{report.model.implied ? ` · 现价隐含增长 ${pct(report.model.implied.implied)}` : ""}</p>}
+    {report.gaps.length > 0 && <ul>{report.gaps.map((g, i) => <li key={i}><code>{g.code}</code> <span lang="en">{g.message}</span></li>)}</ul>}
+    <p lang="en">{report.sections.summary}</p>
+    <ol>{report.evidence.map(e => <li key={e.evidenceId}><code>{e.evidenceId}</code> {e.url ? <a href={e.url} target="_blank" rel="noreferrer">{e.title}</a> : e.title}{e.path ? ` › ${e.path}` : ""}</li>)}</ol>
+  </div>;
+}
 /** The analyst's dossier with its trace: per finding, the lines of inquiry the figures opened, every turn, and what the review took out. */
 type DossierRecord = { findingsFingerprint: string; fingerprint: string; generatedAt: string; model: string; documents: Record<string, { rows: Array<{ title?: string; cells: Array<Array<{ kind: string }>> }> }>; materials: Array<{ id: string; title: string; form?: string; path?: string[] }>;
   analystTrace?: { version: string; findings: Array<{ id: string; tier: string; lines: string[]; document: unknown; turns: Array<{ turn: number; thought: string; action: string; input: string; observation: string }>; warnings: string[]; review: string[] }> } };

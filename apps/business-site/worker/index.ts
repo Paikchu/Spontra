@@ -1,4 +1,5 @@
 
+import { readValuationPublication } from "@/shared/analysis-runtime/valuation/read";
 import { selectFlow } from "@/packages/web/src/model/business-flow-model";
 import { checkCompleteFlow, newestPair } from "@/shared/analysis-runtime/financial-data/completeness";
 import { canonicalTicker } from "@/shared/analysis-runtime/financial-data/policy";
@@ -281,6 +282,29 @@ export async function loadFundamentals(ticker:string,fetcher:typeof fetch=fetch)
  }catch{return null;}
 }
 
+/**
+ * The valuation assessment and its history, re-validated: the current report and each version through the contract reader, the
+ * version list and evidence snapshots as served. A hidden company answers hidden; an upstream failure reads as null.
+ */
+export async function loadValuation(ticker:string,path:string,params:URLSearchParams,fetcher:typeof fetch=fetch,locale:Locale|null=null):Promise<Record<string,unknown>|null>{
+ try{
+  const query=path==="/valuation/versions"?`?${new URLSearchParams([...params.entries()].filter(([k])=>k==="before"||k==="limit")).toString()}`:"";
+  const target=path==="/valuation/versions"?`/api/v1/companies/${ticker}/valuation/versions${query}`:inLocale(`/api/v1/companies/${ticker}${path}`,locale);
+  const response=await fetcher(ANALYSIS_ORIGIN+target,{signal:AbortSignal.timeout(8000),headers:{accept:"application/json"}});
+  if(!response.ok)return null;
+  const body=await response.json() as Record<string,unknown>;
+  if(path==="/valuation"){
+   if(body.schemaVersion!=="valuation-response.v1"||typeof body.availability!=="string")return null;
+   const report=readValuationPublication(body.report,ticker);
+   return {schemaVersion:"valuation-response.v1",ticker,availability:report?body.availability:body.availability==="ready"||body.availability==="insufficient"?"preparing":body.availability,report,latestAttempt:body.latestAttempt??null,outdated:body.outdated===true,versions:Array.isArray(body.versions)?body.versions.slice(0,50):[]};
+  }
+  if(path==="/valuation/versions")return body.schemaVersion==="valuation-versions.v1"?{schemaVersion:"valuation-versions.v1",ticker,items:Array.isArray(body.items)?body.items.slice(0,50):[],nextCursor:typeof body.nextCursor==="string"?body.nextCursor:null}:null;
+  if(path.includes("/evidence/"))return body.schemaVersion==="valuation-evidence.v1"&&body.evidence&&typeof body.evidence==="object"?{schemaVersion:"valuation-evidence.v1",ticker,evidence:body.evidence}:null;
+  const report=readValuationPublication(body.report,ticker);
+  return report?{schemaVersion:"valuation-version.v1",ticker,report}:null;
+ }catch{return null;}
+}
+
 /** The company's publication revisions; only known resources at well-formed times pass through. */
 export async function loadRevisions(ticker:string,fetcher:typeof fetch=fetch):Promise<MapRevisions|null>{
  try{
@@ -371,11 +395,11 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
    if(tickers&&cache)ctx.waitUntil(cache.put(key,response.clone()));else response.headers.set("cache-control","no-store");
    return response;
   }
-  const match=url.pathname.match(/^\/api\/business\/v1\/companies\/([A-Z][A-Z0-9.-]{0,11})(\/revision|\/capital|\/findings|\/fundamentals|\/events|\/filings|\/filings\/\d{10}-\d{2}-\d{6}|\/items\/\d{10}-\d{2}-\d{6}|\/passages\/p[0-9a-f]{14,32})?$/);
+  const match=url.pathname.match(/^\/api\/business\/v1\/companies\/([A-Z][A-Z0-9.-]{0,11})(\/revision|\/capital|\/findings|\/fundamentals|\/events|\/filings|\/filings\/\d{10}-\d{2}-\d{6}|\/items\/\d{10}-\d{2}-\d{6}|\/passages\/p[0-9a-f]{14,32}|\/valuation|\/valuation\/versions|\/valuation\/versions\/[0-9a-f]{8,64}|\/valuation\/versions\/[0-9a-f]{8,64}\/evidence\/e[0-9a-f]{6,20})?$/);
   const detail=match?.[2]?.startsWith("/filings/")?match[2].slice("/filings/".length):null;
   // The reader pins a report to its published revision; a resource is asked for at its publication revision (`rev`), which
   // only keys the cache: a newer revision is a new address, so no cached copy can answer it with older data.
-  const allowed=match?.[2]==="/revision"?new Set<string>():detail?new Set(["reportDate","reportVersion","lang"]):new Set<string>(["lang","rev"]);
+  const allowed=match?.[2]==="/revision"?new Set<string>():detail?new Set(["reportDate","reportVersion","lang"]):match?.[2]==="/valuation/versions"?new Set<string>(["before","limit"]):new Set<string>(["lang","rev"]);
   if(!match||[...url.searchParams.keys()].some(k=>!allowed.has(k)))return json({error:"Not found"},404);
   const rev=url.searchParams.get("rev");
   if(rev!=null&&!REVISION.test(rev))return json({error:"Not found"},404);
@@ -399,6 +423,8 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
    if(match[2]==="/filings")return supplementary("filings","filing-digests-response.v1",()=>loadFilings(match[1],fetcher,locale));
    if(match[2].startsWith("/items/"))return supplementary("analysis","item-analysis-response.v1",()=>loadItemAnalysis(match[1],match[2]!.slice("/items/".length),fetcher,locale));
    if(match[2].startsWith("/passages/"))return supplementary("passage","passage-response.v1",()=>loadPassage(match[1],match[2]!.slice("/passages/".length),fetcher));
+   // The valuation answers in every availability, so the page can say preparing, insufficient or failed; only a read that failed is uncached.
+   if(match[2].startsWith("/valuation")){const body=await loadValuation(match[1],match[2],url.searchParams,fetcher,locale);if(!body)return json({error:"Valuation temporarily unavailable"},503);const response=json(body);const cacheable=match[2]==="/valuation"?(body as {availability?:string}).availability==="ready":match[2]!=="/valuation/versions";if(!cacheable)response.headers.set("cache-control","no-store");if(cache&&cacheable)ctx.waitUntil(cache.put(key,response.clone()));return response;}
    if(detail){const reportDate=url.searchParams.get("reportDate"),reportVersion=url.searchParams.get("reportVersion");
     const body=await loadFilingDetail(match[1],detail,reportDate&&reportVersion?{reportDate,reportVersion}:null,fetcher,locale);
     if(!body)return json({error:"Not found"},404);

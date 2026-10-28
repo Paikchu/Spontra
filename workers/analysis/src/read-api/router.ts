@@ -23,6 +23,7 @@ import { localize, type TranslatedResource } from "../../../../shared/analysis-r
 import { isLocale, type Locale } from "../../../../shared/analysis-runtime/locale.ts";
 import { readTranslationTable } from "../translation/translate.ts";
 import { readRevisions } from "../pipeline/revisions.ts";
+import { readValuationResponse, ValuationStore } from "../valuation/store.ts";
 import type { RevisionsResponse } from "../../../../shared/analysis-contract/revisions.ts";
 import type { PublicSecFiling } from "../../../../shared/analysis-contract/filings.ts";
 import type { Feature } from "../../../../shared/analysis-contract/business-features.ts";
@@ -62,6 +63,7 @@ type RouteMatch =
   | { kind: "passage"; ticker: string; passageId: string }
   | { kind: "fundamentals"; ticker: string }
   | { kind: "revisions"; ticker: string }
+  | { kind: "valuation"; ticker: string; versionId?: string; evidenceId?: string; list?: boolean }
   | { kind: "findings-index" }
   | { kind: "home" };
 
@@ -216,6 +218,31 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
       if (payload.analysis) payload.analysis = await translated("item", payload.analysis, route.id);
       return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
     }
+    // The valuation (docs/valuation-assessment-implementation.md §6): hidden answers 200 with nothing; history and evidence
+    // behind the switch answer 404 so an old link cannot read around it. The report's prose is applied in the reader's
+    // language per version; its figures, ids and quoted excerpts stay as written.
+    case "valuation": {
+      const ticker = route.ticker.trim().toUpperCase();
+      const off = await hidden("valuation");
+      if (route.list || route.versionId) {
+        if (off) return errorResponse("ROUTE_NOT_FOUND", "No such resource.");
+        const store = new ValuationStore(database);
+        if (route.list) {
+          const before = url.searchParams.get("before") ?? undefined, limit = Math.min(Math.max(Number(url.searchParams.get("limit") ?? 20) || 20, 1), 50);
+          const items = await store.versions(ticker, limit, before);
+          return dataResponse(request, { schemaVersion: "valuation-versions.v1", ticker, items, nextCursor: items.length === limit ? items[items.length - 1]!.versionId : null }, "no-store");
+        }
+        if (route.evidenceId) {
+          const evidence = await store.evidence(ticker, route.versionId!, route.evidenceId);
+          return evidence ? dataResponse(request, { schemaVersion: "valuation-evidence.v1", ticker, evidence }, "cacheable") : errorResponse("ROUTE_NOT_FOUND", "No such resource.");
+        }
+        const report = await store.version(ticker, route.versionId!);
+        return report ? dataResponse(request, { schemaVersion: "valuation-version.v1", ticker, report: await translated("valuation", report, report.versionId) }, "cacheable") : errorResponse("ROUTE_NOT_FOUND", "No such resource.");
+      }
+      const payload = await readValuationResponse(database, ticker, { hidden: off });
+      if (payload.report) payload.report = await translated("valuation", payload.report, payload.report.versionId);
+      return dataResponse(request, payload, payload.availability === "ready" ? "cacheable" : "no-store");
+    }
     case "passage": {
       const payload = await readPublicPassage(database, route.ticker, route.passageId);
       return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
@@ -238,6 +265,11 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
 function matchRoute(pathname: string): RouteMatch | null {
   if (/^\/api\/v1\/home\/?$/.test(pathname)) return { kind: "home" };
   if (/^\/api\/v1\/findings\/?$/.test(pathname)) return { kind: "findings-index" };
+  const valuation = /^\/api\/v1\/companies\/([^/]+)\/valuation(?:\/(versions)(?:\/([0-9a-f]{8,64})(?:\/evidence\/(e[0-9a-f]{6,20}))?)?)?\/?$/.exec(pathname);
+  if (valuation) {
+    const ticker = safeDecode(valuation[1]!);
+    return ticker === null ? null : { kind: "valuation", ticker, list: valuation[2] === "versions" && !valuation[3], versionId: valuation[3], evidenceId: valuation[4] };
+  }
   const company = /^\/api\/v1\/companies\/([^/]+)\/(filings|fundamentals|business-flow|capital|business-explainer|business-tree|guidance|findings|events|items|passages|revisions)(?:\/([^/]+))?\/?$/.exec(pathname);
   if (!company) return null;
   const ticker = safeDecode(company[1]!);

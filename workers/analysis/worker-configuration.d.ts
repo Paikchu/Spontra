@@ -32,6 +32,7 @@ interface __BaseEnv_Env {
 	GUIDANCE_WORKFLOW: Workflow<Parameters<import("./src/index").GuidanceWorkflow['run']>[0]['payload']>;
 	BUSINESS_EXPLAINER_WORKFLOW: Workflow<Parameters<import("./src/index").BusinessExplainerWorkflow['run']>[0]['payload']>;
 	BUSINESS_TREE_WORKFLOW: Workflow<Parameters<import("./src/index").BusinessTreeWorkflow['run']>[0]['payload']>;
+	VALUATION_WORKFLOW: Workflow<Parameters<import("./src/index").ValuationWorkflow['run']>[0]['payload']>;
 	LIBRARY_CARDS_WORKFLOW: Workflow<Parameters<import("./src/index").LibraryCardsWorkflow['run']>[0]['payload']>;
 	LIBRARY_LINKS_WORKFLOW: Workflow<Parameters<import("./src/index").LibraryLinksWorkflow['run']>[0]['payload']>;
 	BUSINESS_TAGS_WORKFLOW: Workflow<Parameters<import("./src/index").BusinessTagsWorkflow['run']>[0]['payload']>;

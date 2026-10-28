@@ -7,7 +7,7 @@ import { usePageActive } from "./admin-page";
 
 const RESOURCE: Record<TranslatedResource, string> = {
   flow: "业务地图说明", findings: "要点与分析师", explainer: "业务解读", tree: "业务脑图", guidance: "业绩指引",
-  events: "事件摘要", filings: "财报列表", filing: "完整财报", item: "文件分析",
+  events: "事件摘要", filings: "财报列表", filing: "完整财报", item: "文件分析", valuation: "估值评估",
 };
 const STATUS: Record<TranslationEntry["status"], [string, string]> = { ready: ["已翻译", "reviewed"], rejected: ["未通过", "failed"], pending: ["待翻译", "processing"] };
 type Filter = "all" | TranslationEntry["status"];

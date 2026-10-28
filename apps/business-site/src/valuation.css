@@ -1,0 +1,120 @@
+/* The valuation assessment on the stage: one reading column like the lens documents, with its own figures and charts. */
+.val-panel { height: auto; min-height: 0; margin-top: 0; padding-top: 2px; border-top: 0; }
+.val-panel--empty { display: grid; }
+.val-empty { gap: 8px; align-content: center; text-align: center; padding: 40px 0; }
+.val-empty h2 { margin: 0; font-size: 15px; font-weight: 620; color: var(--foreground); }
+.val-empty p { margin: 0; max-width: 46ch; color: var(--muted-foreground); font-size: 13px; }
+.val-empty .lens-loading { width: 160px; }
+.val-doc { gap: 22px 0; }
+.val-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px 24px; }
+.val-verdict { display: grid; gap: 4px; }
+.val-verdict-pill { justify-self: start; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; color: var(--tone, var(--muted-foreground)); background: color-mix(in srgb, var(--tone, var(--muted-foreground)) 12%, transparent); border: 1px solid color-mix(in srgb, var(--tone, var(--muted-foreground)) 35%, transparent); }
+.val-verdict[data-tone="up"] { --tone: var(--up); }
+.val-verdict[data-tone="loss"] { --tone: var(--loss); }
+.val-score { font-family: var(--display); font-size: 38px; font-weight: 500; letter-spacing: -.02em; line-height: 1; font-variant-numeric: tabular-nums; }
+.val-score small { margin-left: 2px; font-family: var(--sans); font-size: 13px; font-weight: 500; color: var(--faint); }
+.val-score-label { font-size: 12.5px; color: var(--muted-foreground); }
+.val-dates { display: flex; flex-wrap: wrap; gap: 6px 22px; margin: 0; font-size: 12.5px; }
+.val-dates div { display: grid; gap: 2px; }
+.val-dates dt { color: var(--faint); }
+.val-dates dd { margin: 0; color: var(--foreground); font-variant-numeric: tabular-nums; }
+.val-select { max-width: 200px; padding: 2px 22px 2px 8px; border: 1px solid var(--hairline); border-radius: 999px; background: var(--surface); color: var(--foreground); font: inherit; font-size: 12px; }
+.val-banner { margin: 0; padding: 8px 12px; border-radius: 10px; font-size: 13px; color: var(--foreground); background: color-mix(in srgb, var(--chart-3) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--chart-3) 30%, transparent); }
+.val-banner[data-tone="info"] { background: color-mix(in srgb, var(--up) 8%, var(--surface)); border-color: color-mix(in srgb, var(--up) 25%, transparent); }
+.val-banner b { font-weight: 620; margin-right: 6px; }
+.val-grid { display: grid; grid-template-columns: minmax(200px, 260px) minmax(0, 1fr); gap: 12px 28px; align-items: center; }
+.val-radar { margin: 0; display: grid; gap: 6px; justify-items: center; }
+.val-radar svg { width: 100%; max-width: 260px; height: auto; overflow: visible; }
+.val-radar figcaption { font-size: 12px; color: var(--faint); }
+.val-radar-ring { fill: none; stroke: var(--hairline); }
+.val-radar-axis { stroke: var(--hairline); }
+.val-radar-shape { fill: color-mix(in srgb, var(--chart-2) 22%, transparent); stroke: var(--chart-2); stroke-width: 1.5; stroke-linejoin: round; }
+.val-radar-dot { fill: var(--chart-2); }
+.val-radar-label { font-size: 10.5px; fill: var(--muted-foreground); }
+.val-dim-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.val-dim-list li { display: grid; grid-template-columns: minmax(100px, 150px) minmax(0, 1fr) 36px 28px; align-items: center; gap: 10px; font-size: 13px; }
+.val-dim-list small { color: var(--faint); font-size: 11.5px; }
+.val-dim-list strong { font-variant-numeric: tabular-nums; text-align: right; }
+.val-dim-bar { display: block; height: 6px; border-radius: 3px; background: var(--fill); overflow: hidden; }
+.val-dim-bar b { display: block; height: 100%; border-radius: 3px; background: var(--chart-2); transition: width .4s var(--ease); }
+.val-block { display: grid; gap: 10px; padding-top: 14px; border-top: 1px solid var(--hairline); }
+.val-block h3 { display: flex; align-items: baseline; gap: 10px; margin: 0; font-size: 14px; font-weight: 620; letter-spacing: -.01em; }
+.val-block h4 { margin: 6px 0 0; font-size: 12px; font-weight: 620; letter-spacing: .02em; text-transform: uppercase; color: var(--muted-foreground); }
+.val-block h5 { margin: 0; font-size: 13px; font-weight: 620; }
+.val-block p, .val-block li { margin: 0; font-size: 14px; line-height: 1.65; color: var(--foreground); }
+.val-block ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+.val-list-line { font-size: 13px !important; color: var(--muted-foreground) !important; }
+.val-list-line b { margin-right: 6px; font-weight: 620; color: var(--foreground); }
+.val-model-line { font-size: 13px !important; color: var(--muted-foreground) !important; }
+.val-implied { padding: 8px 12px; border-radius: 10px; background: var(--fill); font-size: 13px !important; }
+.val-implied b { margin-right: 6px; font-weight: 620; }
+.val-range { padding: 30px 8px 36px; }
+.val-range-track { position: relative; height: 6px; border-radius: 3px; background: var(--fill); }
+.val-range-band { position: absolute; top: 0; height: 100%; border-radius: 3px; background: color-mix(in srgb, var(--chart-2) 35%, transparent); }
+.val-range-mark { position: absolute; top: 50%; display: grid; justify-items: center; transform: translate(-50%, -50%); font-variant-numeric: tabular-nums; }
+.val-range-mark i { width: 10px; height: 10px; border-radius: 50%; background: var(--chart-2); border: 2px solid var(--background); }
+.val-range-mark b { position: absolute; top: -24px; white-space: nowrap; font-size: 12px; font-weight: 620; }
+.val-range-mark small { position: absolute; top: 14px; white-space: nowrap; font-size: 11px; color: var(--faint); }
+.val-range-mark[data-kind="expected"] i { background: var(--chart-4); }
+.val-range-mark[data-kind="base"] i { width: 12px; height: 12px; }
+.val-range-price i { width: 3px; height: 22px; border-radius: 2px; border: 0; background: var(--foreground); }
+.val-range-price b { top: -28px; }
+.val-range-price small { top: 16px; }
+.val-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px 18px; margin: 0; }
+.val-stats div { display: grid; gap: 2px; }
+.val-stats dt { font-size: 12px; color: var(--faint); }
+.val-stats dd { margin: 0; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.val-stats dd small { display: block; font-size: 11.5px; font-weight: 400; color: var(--faint); }
+.val-stats dd[data-sign="up"] { color: var(--up); }
+.val-stats dd[data-sign="down"] { color: var(--loss); }
+.val-stats--diag dd { font-size: 14px; }
+.val-table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+.val-table th, .val-table td { padding: 6px 8px; text-align: right; border-bottom: 1px solid var(--hairline); }
+.val-table th { font-weight: 500; color: var(--muted-foreground); }
+.val-table tbody th, .val-table th:first-child { text-align: left; }
+.val-table tbody th { color: var(--foreground); font-weight: 600; }
+.val-table--facts { font-size: 12.5px; }
+.val-table--facts tbody th { font-weight: 500; }
+.val-sens { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.val-sens li { display: grid; grid-template-columns: minmax(120px, 190px) minmax(0, 1fr) minmax(120px, auto); align-items: center; gap: 10px; font-size: 13px; }
+.val-sens-label small { color: var(--faint); margin-left: 4px; }
+.val-sens-bar { display: block; height: 8px; border-radius: 4px; background: var(--fill); overflow: hidden; }
+.val-sens-bar i { display: block; height: 100%; border-radius: 4px; background: var(--up); }
+.val-sens-bar i[data-sign="down"] { background: var(--loss); }
+.val-sens b { font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
+.val-toggle { justify-self: start; padding: 4px 12px; border-radius: 999px; border: 1px solid var(--hairline); background: var(--surface); color: var(--muted-foreground); font-size: 12px; }
+.val-toggle:hover { color: var(--foreground); }
+.val-model-detail { display: grid; gap: 12px; }
+.val-scenario { display: grid; gap: 4px; padding: 10px 12px; border-radius: 10px; background: var(--fill); }
+.val-dim { display: grid; gap: 6px; padding: 10px 0; }
+.val-dim header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
+.val-dim h4 { margin: 0; font-size: 13px; font-weight: 620; text-transform: none; letter-spacing: 0; color: var(--foreground); }
+.val-dim-score { font-weight: 620; font-variant-numeric: tabular-nums; }
+.val-dim header small { color: var(--faint); font-size: 12px; }
+.val-chips { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px !important; color: var(--muted-foreground) !important; }
+.val-chips b { margin-right: 4px; font-weight: 620; }
+.val-cite { display: inline-block; margin: 0 2px; padding: 0 6px; border-radius: 6px; font-family: var(--mono); font-size: 11px; line-height: 18px; vertical-align: baseline; color: var(--chart-2); background: color-mix(in srgb, var(--chart-2) 12%, transparent); border: 1px solid color-mix(in srgb, var(--chart-2) 30%, transparent); }
+.val-cite:hover { background: color-mix(in srgb, var(--chart-2) 22%, transparent); }
+.val-cite--counter { color: var(--loss); background: color-mix(in srgb, var(--loss) 12%, transparent); border-color: color-mix(in srgb, var(--loss) 30%, transparent); }
+.val-gaps ul { list-style: none; padding: 0; }
+.val-gaps li { font-size: 13px; color: var(--muted-foreground); }
+.val-gaps code { margin-right: 6px; font-family: var(--mono); font-size: 11.5px; color: var(--chart-3); }
+.val-sources { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.val-source { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: baseline; gap: 10px; width: 100%; padding: 6px 8px; border-radius: 8px; text-align: left; font-size: 13px; color: var(--foreground); }
+.val-source:hover { background: var(--fill); }
+.val-source code { font-family: var(--mono); font-size: 11.5px; color: var(--chart-2); }
+.val-source span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.val-source small { color: var(--faint); font-variant-numeric: tabular-nums; }
+.val-dialog { width: min(680px, calc(100vw - 32px)); max-height: min(80vh, 720px); padding: 0; border: 1px solid var(--border); border-radius: 16px; background: var(--surface-raised); color: var(--foreground); box-shadow: var(--shadow-overlay); }
+.val-dialog::backdrop { background: #0008; }
+.val-dialog-body { display: grid; gap: 12px; padding: 18px 20px 20px; }
+.val-dialog-body header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.val-dialog-body h3 { margin: 0; font-size: 15px; font-weight: 620; }
+.val-dialog-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 0; font-size: 12px; color: var(--faint); }
+.val-dialog-body blockquote { margin: 0; padding: 10px 14px; border-left: 2px solid color-mix(in srgb, var(--chart-2) 55%, transparent); background: color-mix(in srgb, var(--chart-2) 5%, transparent); border-radius: 0 10px 10px 0; font-size: 13.5px; line-height: 1.6; white-space: pre-wrap; max-height: 50vh; overflow: auto; }
+.val-dialog-body a { justify-self: start; color: var(--brand); font-size: 13px; }
+.val-foot { margin: 0; font-size: 11.5px; color: var(--faint); }
+/* The stage holds the valuation as one scrolling column under its tab row. */
+.stage[data-view="valuation"] { grid-template-rows: auto minmax(0, 1fr); padding-bottom: 12px; }
+.stage[data-view="valuation"] .stage-head { min-height: 0; }
+@media (max-width: 960px) { .val-grid { grid-template-columns: minmax(0, 1fr); } .val-dim-list li { grid-template-columns: minmax(90px, 120px) minmax(0, 1fr) 32px 24px; } .val-sens li { grid-template-columns: minmax(100px, 150px) minmax(0, 1fr); } .val-sens b { grid-column: 1 / -1; text-align: left; } .val-range { padding: 30px 4px 36px; } }

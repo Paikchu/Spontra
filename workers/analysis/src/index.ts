@@ -18,6 +18,7 @@ import { executeSecAnalysisWorkflow, type WorkflowStepContextLike, type Workflow
 import { storeWorkflowResult, loadWorkflowResult } from "./workflow-results.ts";
 import { executeBusinessExplainerWorkflow, type BusinessExplainerParams } from "./business-explainer/workflow.ts";
 import { executeBusinessTreeWorkflow, type BusinessTreeParams } from "./business-tree/workflow.ts";
+import { executeValuationWorkflow, type ValuationWorkflowParams } from "./valuation/workflow.ts";
 import { maintenanceAnalysisEnvironment } from "./admin/financial-maintenance-runner.ts";
 import { createAdminSession } from "./admin/auth.ts";
 import { executeGuidanceWorkflow, type GuidanceWorkflowParams } from "./guidance/workflow.ts";
@@ -120,6 +121,15 @@ export class BusinessTreeWorkflow extends WorkflowEntrypoint<AnalysisEnv, Busine
 
 /** Index cards for one company's recent library sections; each batch of sections is a durable step. */
 /** One company's translation run: the strings of its publications not yet translated, then every resource's table. */
+/** The valuation assessment of one company (docs/valuation-assessment-design.md); its run and versions are recorded for the admin. */
+export class ValuationWorkflow extends WorkflowEntrypoint<AnalysisEnv, ValuationWorkflowParams> {
+  async run(event: WorkflowEvent<ValuationWorkflowParams>, step: WorkflowStep) {
+    const env = await companyPolicyEnvironment(this.env);
+    const run = { env, kind: "valuation" as const, ticker: event.payload.ticker, runId: event.instanceId };
+    return trackRun(run, () => executeValuationWorkflow(event.payload, trackSteps(durableSteps(step, env, event.instanceId), run), env, fetch, event.instanceId));
+  }
+}
+
 export class TranslateWorkflow extends WorkflowEntrypoint<AnalysisEnv, TranslateParams> {
   async run(event: WorkflowEvent<TranslateParams>, step: WorkflowStep) {
     const env = await companyPolicyEnvironment(this.env);

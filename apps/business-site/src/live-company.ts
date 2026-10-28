@@ -9,7 +9,8 @@ import type { EventsPublication } from "@/shared/analysis-contract/events";
 import type { PublicFilingDigestPage } from "@/shared/analysis-contract/filings";
 import type { MapResource, MapRevisions } from "@/shared/analysis-contract/revisions";
 import type { FindingFundamentals } from "@/shared/analysis-runtime/findings";
-import { CompanyHttpError, fetchCapital, fetchCompany, fetchEvents, fetchFindings, fetchRevisions, fetchSupplement, publicationFlow, type CompanyPublication, type FindingsBundle } from "./company-data";
+import type { ValuationResponse } from "@/shared/analysis-contract/valuation";
+import { CompanyHttpError, fetchCapital, fetchCompany, fetchEvents, fetchFindings, fetchRevisions, fetchSupplement, fetchValuation, publicationFlow, type CompanyPublication, type FindingsBundle } from "./company-data";
 import { nextPending, readRevisions, resourcesToRead } from "./revision-reads";
 
 /** Everything the company page draws from, as one value so a newer read can replace parts of it at once. */
@@ -23,14 +24,16 @@ export type CompanyData = {
   fundamentals: FindingFundamentals | null;
   events: EventsPublication | null;
   filings: PublicFilingDigestPage | null;
+  /** The valuation assessment with its availability; absent until read. */
+  valuation: ValuationResponse | null;
 };
-const EMPTY: CompanyData = { publication: null, flow: null, capital: null, peers: null, findings: null, fundamentals: null, events: null, filings: null };
+const EMPTY: CompanyData = { publication: null, flow: null, capital: null, peers: null, findings: null, fundamentals: null, events: null, filings: null, valuation: null };
 
 /** What the company page shows. The map waits until the opening read has settled, so it never paints half-empty. */
 export type { OpeningFace } from "./opening-face";
 export { openingFace } from "./opening-face";
 
-const OPENING_RESOURCES = ["capital", "findings", "fundamentals", "filings"] as const;
+const OPENING_RESOURCES = ["capital", "findings", "fundamentals", "filings", "valuation"] as const;
 
 /** One settled read of everything the first paint draws. A failed supplement leaves its part empty; a failed company is `failed`. */
 async function loadOpening(ticker: string, signal: AbortSignal, onSeen: (ticker: string) => void): Promise<{ data: CompanyData; failed: boolean; eventsError: boolean; revisions: MapRevisions; httpStatus: number | null }> {
@@ -89,6 +92,10 @@ async function readResource(ticker: string, resource: MapResource, rev: string |
   if (resource === "capital") {
     const read = await fetchCapital(ticker, signal, rev);
     return read ? { capital: read.capital, peers: read.peers } : null;
+  }
+  if (resource === "valuation") {
+    const valuation = await fetchValuation(ticker, signal, rev);
+    return valuation ? { valuation } : null;
   }
   const value = await fetchSupplement<CompanyData[Supplement]>(ticker, resource, signal, rev);
   return value ? { [resource]: value } : null;

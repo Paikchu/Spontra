@@ -46,6 +46,12 @@
       "concurrency": { "limit": 1 }
     },
     {
+      "name": "spontra-valuation",
+      "binding": "VALUATION_WORKFLOW",
+      "class_name": "ValuationWorkflow",
+      "concurrency": { "limit": 1 }
+    },
+    {
       "name": "spontra-library-cards",
       "binding": "LIBRARY_CARDS_WORKFLOW",
       "class_name": "LibraryCardsWorkflow",

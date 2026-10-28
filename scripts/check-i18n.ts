@@ -26,7 +26,7 @@ const LATIN_TERMS = new Set([
   "Cookie", "IP", "DNT", "GPC",
   "TTM", "AI", "ID", "EN", "Esc", "esc", "Business", "View", "USD", "K", "Q",
   // Return and valuation ratios Chinese finance writing names by their abbreviation.
-  "ROE", "ROA", "ROIC", "NOPAT", "P/E", "P/S", "P/B",
+  "ROE", "ROA", "ROIC", "NOPAT", "P/E", "P/S", "P/B", "AFFO", "WACC",
   // Industry abbreviations Chinese finance writing keeps in Latin letters.
   "IaaS", "PaaS", "SaaS", "GPU", "CPU", "CDN", "PC", "IT", "AI",
 ]);

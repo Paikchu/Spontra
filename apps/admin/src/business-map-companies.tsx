@@ -16,7 +16,7 @@ const stages: Record<string,string> = {identify:'识别公司',waiting_issuer:'�
 /** The financial map's preparation in order (financial-maintenance-runner.ts); waiting for the issuer comes before all of it. */
 const TASK_PHASES = ['identify','collect','history','audit'] as const;
 /** Which run a feature's progress line belongs to, when the feature has more than one kind of run. */
-const RUN_LABEL: Record<string,string> = {report:'财报摘要',guidance:'业绩指引',findings:'要点',analyst:'要点分析师',checkup:'三表分析',explainer:'业务解读',tree:'业务脑图'};
+const RUN_LABEL: Record<string,string> = {report:'财报摘要',guidance:'业绩指引',findings:'要点',analyst:'要点分析师',checkup:'三表分析',explainer:'业务解读',tree:'业务脑图',valuation:'估值评估'};
 const errors: Record<string,string> = {
   SEC_ISSUER_NOT_FOUND:'SEC 目录无此代码',
   SEC_ACCESS_PAUSED:'SEC 访问受限 · 退避重试',
@@ -49,7 +49,7 @@ const errors: Record<string,string> = {
 };
 const active = new Set(['queued','running','cancel_requested']);
 /** The reader-facing features, as the map labels them (docs/whitelist-feature-switches-design.md). */
-const FEATURE_LABEL: Record<Feature,string> = {reports:'财报摘要',findings:'要点',explainer:'业务解读',tree:'业务脑图'};
+const FEATURE_LABEL: Record<Feature,string> = {reports:'财报摘要',findings:'要点',explainer:'业务解读',tree:'业务脑图',valuation:'估值评估'};
 /** One problem per code: a filing's code (`<accession>:<code>`) joins the others of the same code, with its filing listed. */
 function groupIssues(codes:string[]):Array<{code:string;label:string;filings:string[]}> {
   const groups=new Map<string,{code:string;label:string;filings:string[]}>();

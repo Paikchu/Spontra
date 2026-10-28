@@ -22,8 +22,8 @@ export function summarize(kind: AiRunKind, publication: unknown): AiVersionSumma
   // A dossier keeps one document per finding under its id, and its sources are the materials the quotes rest on.
   const documents = p.documents && typeof p.documents === "object" ? Object.keys(p.documents as object).length : 0;
   return {
-    items: kind === "analyst" ? documents : list(kind === "findings" ? "findings" : kind === "checkup" ? "notes" : kind === "explainer" ? "businesses" : kind === "tree" ? "branches" : "items"),
-    sources: kind === "analyst" || kind === "checkup" ? list("materials") : list("sources"),
+    items: kind === "analyst" ? documents : list(kind === "findings" ? "findings" : kind === "checkup" ? "notes" : kind === "explainer" ? "businesses" : kind === "tree" ? "branches" : kind === "valuation" ? "dimensions" : "items"),
+    sources: kind === "analyst" || kind === "checkup" ? list("materials") : kind === "valuation" ? list("evidence") : list("sources"),
     periodEnd: typeof p.periodEnd === "string" ? p.periodEnd : null,
     model: typeof p.model === "string" ? p.model : null,
   };

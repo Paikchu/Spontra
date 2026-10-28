@@ -90,6 +90,12 @@ export type AnalysisEnv = SecCronEnv & AnalysisReadEnv & {
   /** Read-note model calls per UTC day (pipeline/financial-tasks.ts); default 120. */
   READ_NOTE_DAILY_CALLS?: string;
   BUSINESS_TREE_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
+  /** The valuation assessment Workflow (docs/valuation-assessment-design.md). */
+  VALUATION_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string; generation: number }>;
+  /** Companies the valuation runs for by default; normally unset, every company starts switched off. */
+  VALUATION_TICKERS?: string;
+  /** "false" pauses valuation runs; the admin's global switch overrides it. */
+  VALUATION_ENABLED?: string;
   LIBRARY_CARDS_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
   LIBRARY_LINKS_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
   TRANSLATE_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;

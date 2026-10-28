@@ -4,7 +4,7 @@ import { parseTrackedTickers } from '../sec/config.ts';
 import { aiToolEnvironment } from '../ai-config.ts';
 
 type PolicyEnv = { DB?: D1Database; SEC_DATA_TICKERS?: string; SEC_TRACKED_TICKERS?: string; SEC_AI_TICKERS?: string; SEC_AI_ENABLED?: string;
-  BUSINESS_TREE_TICKERS?: string; BUSINESS_TREE_ENABLED?: string; FEATURE_RESOLVED?: string; AI_TOOL_SETTINGS?: string };
+  BUSINESS_TREE_TICKERS?: string; BUSINESS_TREE_ENABLED?: string; VALUATION_TICKERS?: string; VALUATION_ENABLED?: string; FEATURE_RESOLVED?: string; AI_TOOL_SETTINGS?: string };
 type Row = { ticker: string; enabled: number };
 type FeatureRow = { ticker: string; feature: Feature; generate: number | null };
 
@@ -28,8 +28,9 @@ export function defaultFeatureResolution(env: Omit<PolicyEnv, 'DB'>): FeatureRes
   const aiOn = aiIsEnabled(env);
   const tree = [...new Set([...parseTrackedTickers(env.BUSINESS_TREE_TICKERS ?? ''), ...ai])];
   return {
-    enabled: { reports: aiOn, findings: aiOn, explainer: aiOn, tree: env.BUSINESS_TREE_ENABLED !== 'false' },
-    tickers: { reports: [...ai], findings: [...ai], explainer: [...ai], tree },
+    // The valuation has no deployment list: every company starts switched off and the admin opens it one by one.
+    enabled: { reports: aiOn, findings: aiOn, explainer: aiOn, tree: env.BUSINESS_TREE_ENABLED !== 'false', valuation: env.VALUATION_ENABLED !== 'false' },
+    tickers: { reports: [...ai], findings: [...ai], explainer: [...ai], tree, valuation: parseTrackedTickers(env.VALUATION_TICKERS ?? '') },
   };
 }
 
@@ -68,6 +69,7 @@ export async function companyPolicyEnvironment<T extends PolicyEnv>(env: T): Pro
     SEC_AI_TICKERS: resolved.tickers.reports.join(','),
     SEC_AI_ENABLED: resolved.enabled.reports ? 'true' : 'false',
     BUSINESS_TREE_ENABLED: resolved.enabled.tree ? 'true' : 'false',
+    VALUATION_ENABLED: resolved.enabled.valuation ? 'true' : 'false',
     FEATURE_RESOLVED: JSON.stringify(resolved),
   });
 }

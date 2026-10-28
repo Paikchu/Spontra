@@ -11,8 +11,8 @@
 import { proseFigures } from "./findings.ts";
 import type { Locale } from "./locale.ts";
 
-export type TranslatedResource = "flow" | "findings" | "explainer" | "tree" | "guidance" | "events" | "filings" | "filing" | "item";
-export const TRANSLATED_RESOURCES: readonly TranslatedResource[] = ["flow", "findings", "explainer", "tree", "guidance", "events", "filings", "filing", "item"];
+export type TranslatedResource = "flow" | "findings" | "explainer" | "tree" | "guidance" | "events" | "filings" | "filing" | "item" | "valuation";
+export const TRANSLATED_RESOURCES: readonly TranslatedResource[] = ["flow", "findings", "explainer", "tree", "guidance", "events", "filings", "filing", "item", "valuation"];
 /** English text → translated text, for one resource of one company in one locale. */
 export type TranslationTable = Readonly<Record<string, string>>;
 
@@ -40,6 +40,12 @@ const RULES: Record<TranslatedResource, Rule> = {
   explainer: { keys: set("text", "title", "label"), skip: set("sources", "name", "products", "line", "companyName", "model", "fingerprint") },
   // The business mind map: summaries, glosses and revenue models; the anchor is a verbatim filing passage.
   tree: { keys: set("text", "gloss", "label"), skip: set("sources", "anchor", "name", "research", "companyName", "model", "fingerprint") },
+  // The valuation: dimension rationales, scenario narratives, the written sections and gap messages; evidence excerpts,
+  // facts, figures and identifiers stay as written.
+  valuation: {
+    keys: set("rationale", "narrative", "summary", "thesis", "expectationsGap", "modelNotes", "nextCheck", "catalysts", "counterEvidence", "nextChecks", "triggers", "invalidation", "gaps", "message", "note", "limitations"),
+    skip: set("evidence", "facts", "sourceRefs", "supportingEvidenceIds", "counterEvidenceIds", "excerpt", "distributions", "sensitivities", "yearly", "versionId", "baseInputFingerprint", "evidenceSetHash", "quote", "notes", "label"),
+  },
   // Guidance: the one-sentence statement and the metric label; the quote is the release's own words.
   guidance: { keys: set("text", "label"), skip: set("sources", "quote", "coverage", "segment") },
   // Events: the 8-K summary only; Form 4 footnotes, EDGAR descriptions and exhibits are filing text.

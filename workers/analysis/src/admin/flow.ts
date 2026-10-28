@@ -9,11 +9,11 @@ import { AiRunStore } from '../ai-runs/store.ts';
  */
 export const FLOW_TASKS = [
   'maintenance', 'collect', 'history', 'map-derive', 'library', 'events', 'sec-report', 'guidance', 'company-analysis',
-  'findings', 'analyst', 'checkup', 'items', 'explainer', 'tree',
+  'findings', 'analyst', 'checkup', 'items', 'explainer', 'tree', 'valuation',
 ] as const satisfies readonly TaskName[];
 const FLOW_SOURCES = ['sec-discovery', 'admin'] as const;
 /** The model Workflows whose steps the AI run store records. */
-const RUN_KIND: Partial<Record<TaskName, AiRunKind>> = { guidance: 'guidance', findings: 'findings', analyst: 'analyst', checkup: 'checkup', explainer: 'explainer', tree: 'tree' };
+const RUN_KIND: Partial<Record<TaskName, AiRunKind>> = { guidance: 'guidance', findings: 'findings', analyst: 'analyst', checkup: 'checkup', explainer: 'explainer', tree: 'tree', valuation: 'valuation' };
 /** A Workflow task answers `later` while it polls its run; one not heard of for this long is not counted as running. */
 const RUNNING_WINDOW_MS = 2 * 3600_000;
 

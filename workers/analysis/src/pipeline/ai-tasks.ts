@@ -15,6 +15,8 @@ import { D1SecRepository } from "../sec/d1.ts";
 import type { TaskContext, TaskImplementation, TaskOutcome } from "./tasks.ts";
 import { driveWorkflow, failedInputOutcome } from "./workflow-task.ts";
 import { researchSearchConfigured } from "../web-search/research-search.ts";
+import { VALUATION_VERSION, valuationFingerprint } from "../valuation/workflow.ts";
+import { ValuationStore } from "../valuation/store.ts";
 
 const MINUTE = 60_000;
 /** Earnings releases this recent may still have guidance on the way; a run silent this long is not waited for. */
@@ -27,7 +29,7 @@ const slug = (ticker: string) => ticker.replace(/[^A-Za-z0-9]/g, "-");
  * (null while there is nothing to write from), compared with what is published. A failed run is retried on the same
  * input after a growing wait, then becomes a dead letter (workflow-task.ts).
  */
-async function runWhenChanged(env: AnalysisEnv, task: "findings" | "explainer" | "tree" | "analyst" | "checkup" | "items", kind: AiRunKind | null, ticker: string, { causeId, now, trigger }: TaskContext,
+async function runWhenChanged(env: AnalysisEnv, task: "findings" | "explainer" | "tree" | "analyst" | "checkup" | "items" | "valuation", kind: AiRunKind | null, ticker: string, { causeId, now, trigger }: TaskContext,
   binding: AiWorkflowBinding<{ ticker: string; fingerprint: string }> | undefined, fingerprint: () => Promise<string | null>, published: () => Promise<string | null>): Promise<TaskOutcome> {
   return driveWorkflow(env, `${task}:${ticker}`, binding, async () => {
     const current = await fingerprint();
@@ -35,7 +37,7 @@ async function runWhenChanged(env: AnalysisEnv, task: "findings" | "explainer" |
     // The last run failed on exactly this input: wait for its retry time, or stay until the dead letter is replayed.
     const failed = await failedInputOutcome(env, task, ticker, current, now);
     if (failed) return failed;
-    const id = `${task === "findings" ? "findings" : task === "tree" ? "business-tree" : task === "analyst" ? "analyst" : task === "checkup" ? "checkup" : task === "items" ? "items" : "business-explainer"}-${slug(ticker)}-${current.slice(0, 16)}-${now.getTime()}`;
+    const id = `${task === "findings" ? "findings" : task === "tree" ? "business-tree" : task === "analyst" ? "analyst" : task === "checkup" ? "checkup" : task === "items" ? "items" : task === "valuation" ? "valuation" : "business-explainer"}-${slug(ticker)}-${current.slice(0, 16)}-${now.getTime()}`;
     if (kind) await quietly(() => new AiRunStore(env.DB!).start({ kind, ticker, runId: id, trigger: "schedule" }, now.toISOString()));
     return { id, params: { ticker, fingerprint: current }, fingerprint: current };
   }, { deadLetter: { task, ticker, causeId }, trigger });
@@ -118,6 +120,16 @@ export const AI_TASKS = {
       if (!researchSearchConfigured(env) || env.BUSINESS_TREE_ENABLED === "false") return { status: "done", detail: { skipped: "business tree disabled" } };
       return runWhenChanged(env, "tree", "tree", ticker, context, env.BUSINESS_TREE_WORKFLOW,
         () => businessTreeFingerprint(env, ticker), storedFingerprint(env, businessTreeCacheKey(ticker)));
+    },
+  },
+
+  /** The valuation assessment, rewritten when the figures, filings, guidance or calls it reads from change (docs/valuation-assessment-design.md). */
+  valuation: {
+    version: VALUATION_VERSION,
+    async run(env, ticker, context): Promise<TaskOutcome> {
+      if (env.VALUATION_ENABLED === "false") return { status: "done", detail: { skipped: "valuation disabled" } };
+      return runWhenChanged(env, "valuation", "valuation", ticker, context, env.VALUATION_WORKFLOW,
+        () => valuationFingerprint(env, ticker), () => new ValuationStore(env.DB!).publishedFingerprint(ticker));
     },
   },
 

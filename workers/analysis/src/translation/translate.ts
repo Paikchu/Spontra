@@ -1,3 +1,4 @@
+import { readValuationResponse } from "../valuation/store.ts";
 import type { PublicFilingPage } from "../../../../shared/analysis-contract/filings.ts";
 import { GLOSSARY_ZH } from "../../../../shared/analysis-runtime/glossary.ts";
 import type { Locale } from "../../../../shared/analysis-runtime/locale.ts";
@@ -60,6 +61,9 @@ export async function readSources(db: D1Database, ticker: string): Promise<Trans
     { resource: "events", scope: "", strings: collectProse("events", events?.events ?? null) },
     { resource: "filings", scope: "", strings: collectProse("filings", (page as PublicFilingPage | null)?.filings ?? null) },
   ];
+  // The current valuation report, scoped by its version so an older version keeps the words it was translated with.
+  const valuation = await quiet(() => readValuationResponse(db, ticker));
+  if (valuation?.report) sources.push({ resource: "valuation", scope: valuation.report.versionId, strings: collectProse("valuation", valuation.report) });
   // Each published report the reader can open, newest first.
   for (const filing of (page as PublicFilingPage | null)?.filings ?? []) {
     if (!filing.summary?.report && !filing.analysis?.reader && !filing.analysis?.presentation) continue;

@@ -14,6 +14,7 @@ export const EVENT_TYPES = [
   "library.requested", "library.prepared", "library.cards.published", "library.links.requested", "library.links.published",
   "business.tags.requested", "business.tags.published",
   "peers.published", "translations.published",
+  "valuation.published",
   "presentation.unresolved",
   "feature.settings",
 ] as const;
@@ -25,7 +26,7 @@ export const TASK_NAMES = [
   "sec-report", "guidance", "events",
   "memory", "company-analysis", "explainer", "tree", "findings", "analyst", "checkup", "items",
   "library", "library-cards", "library-links", "library-search", "storage-sweep", "business-tags",
-  "peers", "translate", "presentation",
+  "peers", "translate", "presentation", "valuation",
 ] as const;
 export type TaskName = typeof TASK_NAMES[number];
 
@@ -108,6 +109,9 @@ export const TASKS: Record<TaskName, TaskMeta> = {
   // Judges an income statement whose lines after operating income no calculation or statement row balances (model; the
   // arithmetic decides), then collects the issuer again through a maintenance task.
   "presentation": { emits: ["maintenance.requested"], debounceMs: 2 * MINUTE, maxWaitMs: 30 * MINUTE, scope: "data" },
+  // The valuation assessment (docs/valuation-assessment-design.md): five researched dimensions and a calculated model,
+  // rewritten when the figures, filings, guidance or calls it reads from change (Workflow; model at the reasoning tier).
+  "valuation": { emits: ["valuation.published"], debounceMs: 5 * MINUTE, maxWaitMs: 30 * MINUTE, scope: "valuation" },
 };
 
 const form = (event: PipelineEvent) => event.detail?.form ?? "";
@@ -126,11 +130,11 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
   "company.added": [{ task: "events" }, { task: "presentation" }],
   "collection.requested": [{ task: "collect" }, { task: "history" }],
   "maintenance.requested": [{ task: "maintenance" }],
-  "financials.published": [{ task: "map-derive" }, { task: "history" }, { task: "explainer" }, { task: "tree" }, { task: "library-links" }],
+  "financials.published": [{ task: "map-derive" }, { task: "history" }, { task: "explainer" }, { task: "tree" }, { task: "library-links" }, { task: "valuation" }],
   "filing.archived": [{ task: "map-derive" }, { task: "analyst", when: e => /^10-[QK](?:\/A)?$/.test(form(e)) }, { task: "transcript", when: e => /^(?:10-[QK]|20-F|6-K)(?:\/A)?$/.test(form(e)) }, { task: "library" }, { task: "storage-sweep" }],
   "library.requested": [{ task: "library" }],
   // A filing newly split into the library is text the checkup notes can now read against the earlier ones.
-  "library.prepared": [{ task: "library-cards" }, { task: "checkup" }, { task: "items" }],
+  "library.prepared": [{ task: "library-cards" }, { task: "checkup" }, { task: "items" }, { task: "valuation" }],
   "library.cards.published": [{ task: "library-links" }, { task: "library-search" }, { task: "storage-sweep" }],
   "library.links.requested": [{ task: "library-links" }],
   // The business links are the units' and sector tags' source; their tags and pairs are written right after them.
@@ -141,7 +145,7 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
   "archive.prune.requested": [{ task: "archive-prune-scan" }],
   "filings.indexed": [{ task: "guidance" }],
   // A stored call is guidance material for the company's earnings event; only where the reports feature is on.
-  "transcript.stored": [{ task: "guidance" }],
+  "transcript.stored": [{ task: "guidance" }, { task: "valuation" }],
   "report.published": [
     { task: "translate" },
     { task: "events", when: e => /^(?:8|6)-K/.test(form(e)) },
@@ -149,9 +153,9 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
     { task: "company-analysis", when: e => PERIODIC.test(form(e)) },
     { task: "items", when: e => PERIODIC.test(form(e)) },
   ],
-  "map.derived": [{ task: "findings" }, { task: "peers" }, { task: "translate" }],
-  "guidance.published": [{ task: "findings" }, { task: "translate" }],
-  "fundamentals.updated": [{ task: "findings" }, { task: "peers" }],
+  "map.derived": [{ task: "findings" }, { task: "peers" }, { task: "translate" }, { task: "valuation" }],
+  "guidance.published": [{ task: "findings" }, { task: "translate" }, { task: "valuation" }],
+  "fundamentals.updated": [{ task: "findings" }, { task: "peers" }, { task: "valuation" }],
   "analysis.published": [{ task: "findings" }],
   "findings.published": [{ task: "analyst" }, { task: "checkup" }, { task: "translate" }],
   // Every publication with reader-facing prose is translated once it lands (docs/i18n-design.md).
@@ -159,6 +163,7 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
   "checkup.published": [{ task: "translate" }],
   "explainer.published": [{ task: "translate" }],
   "tree.published": [{ task: "translate" }],
+  "valuation.published": [{ task: "translate" }],
   // New rows on the rail are filings to analyse.
   "events.published": [{ task: "translate" }, { task: "items" }],
   "items.published": [{ task: "translate" }],
@@ -173,6 +178,7 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
     { task: "items", when: e => e.detail?.feature === "findings" },
     { task: "explainer", when: e => e.detail?.feature === "explainer" },
     { task: "tree", when: e => e.detail?.feature === "tree" },
+    { task: "valuation", when: e => e.detail?.feature === "valuation" },
   ],
 };
 

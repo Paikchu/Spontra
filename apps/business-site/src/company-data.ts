@@ -11,6 +11,7 @@ import type { PeersPublication } from "@/shared/analysis-contract/peers";
 import type { EventsPublication } from "@/shared/analysis-contract/events";
 import type { FindingFundamentals } from "@/shared/analysis-runtime/findings";
 import type { MapRevisions } from "@/shared/analysis-contract/revisions";
+import type { ValuationEvidence, ValuationPublication, ValuationResponse } from "@/shared/analysis-contract/valuation";
 import { getLocale } from "@/packages/web/src/i18n";
 import { findingData, verifiedFindings, type VerifiedFinding } from "./findings-model";
 
@@ -98,6 +99,28 @@ export async function fetchFindings(ticker: string, signal: AbortSignal, rev?: s
   if (!response.ok) return null;
   const body = await response.json() as { status?: string; findings?: FindingsPublication | null; passages?: FindingPassage[]; peers?: PeersPublication | null };
   return body.status === "ready" && body.findings ? { findings: body.findings, passages: body.passages ?? [], peers: body.peers ?? null } : null;
+}
+
+/** The valuation assessment in every state it answers with (hidden, preparing, ready, insufficient, failed); null only when the read failed. */
+export async function fetchValuation(ticker: string, signal: AbortSignal, rev?: string): Promise<ValuationResponse | null> {
+  const response = await fetch(companyPath(ticker, "/valuation", rev), { signal });
+  if (!response.ok) return null;
+  const body = await response.json() as Partial<ValuationResponse>;
+  return body.schemaVersion === "valuation-response.v1" && typeof body.availability === "string" ? body as ValuationResponse : null;
+}
+/** One stored version of the valuation report, by its id. */
+export async function fetchValuationVersion(ticker: string, versionId: string, signal: AbortSignal): Promise<ValuationPublication | null> {
+  const response = await fetch(companyPath(ticker, `/valuation/versions/${encodeURIComponent(versionId)}`), { signal });
+  if (!response.ok) return null;
+  const body = await response.json() as { report?: ValuationPublication | null };
+  return body.report ?? null;
+}
+/** The snapshot of one source a version cites, as it was read when the report was written. */
+export async function fetchValuationEvidence(ticker: string, versionId: string, evidenceId: string, signal: AbortSignal): Promise<ValuationEvidence | null> {
+  const response = await fetch(companyPath(ticker, `/valuation/versions/${encodeURIComponent(versionId)}/evidence/${encodeURIComponent(evidenceId)}`), { signal });
+  if (!response.ok) return null;
+  const body = await response.json() as { evidence?: ValuationEvidence | null };
+  return body.evidence ?? null;
 }
 
 /** One filing rail row's analysis, or null when the row has none and the filing digest stands for it. */

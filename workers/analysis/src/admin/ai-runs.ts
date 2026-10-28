@@ -1,10 +1,12 @@
+import { readValuationResponse } from "../valuation/store.ts";
+import { valuationFingerprint } from "../valuation/workflow.ts";
 import { AI_RUN_KINDS, type AiCompanies, type AiCompanyDetail, type AiKindState, type AiRun, type AiRunKind, type AiRunStarted, type AiUsageDay, type AiVersion, type AiVersionDetail } from "../../../../shared/analysis-contract/ai-runs-admin.ts";
 import { translationsAdmin } from "../translation/admin.ts";
 import { AiRunStore, publishedAt, summarize, TERMINAL } from "../ai-runs/store.ts";
 import { businessExplainerFingerprint, readBusinessExplainerResponse } from "../business-explainer/workflow.ts";
 import { FEATURES, type Feature } from "../../../../shared/analysis-contract/business-features.ts";
 import { featureEnabled, featureTickersFor } from "../financial-data/company-policy.ts";
-const FEATURE_NAME: Record<Feature, string> = { reports: "财报摘要", findings: "要点", explainer: "业务解读", tree: "业务脑图" };
+const FEATURE_NAME: Record<Feature, string> = { reports: "财报摘要", findings: "要点", explainer: "业务解读", tree: "业务脑图", valuation: "估值评估" };
 import { businessTreeFingerprint, readBusinessTreeResponse } from "../business-tree/workflow.ts";
 import { companyName } from "../catalog/security-directory.ts";
 import { findingsFingerprint } from "../findings/workflow.ts";
@@ -27,7 +29,7 @@ const SETTLE_AFTER_MS = 60_000, MISSING_AFTER_MS = 10 * 60_000;
 
 type Binding = AiWorkflowBinding<Record<string, unknown>>;
 function binding(env: AnalysisEnv, kind: AiRunKind): Binding | undefined {
-  return (kind === "findings" ? env.FINDINGS_WORKFLOW : kind === "analyst" ? env.ANALYST_WORKFLOW : kind === "checkup" ? env.CHECKUP_WORKFLOW : kind === "explainer" ? env.BUSINESS_EXPLAINER_WORKFLOW : kind === "tree" ? env.BUSINESS_TREE_WORKFLOW : env.GUIDANCE_WORKFLOW) as Binding | undefined;
+  return (kind === "findings" ? env.FINDINGS_WORKFLOW : kind === "analyst" ? env.ANALYST_WORKFLOW : kind === "checkup" ? env.CHECKUP_WORKFLOW : kind === "explainer" ? env.BUSINESS_EXPLAINER_WORKFLOW : kind === "tree" ? env.BUSINESS_TREE_WORKFLOW : kind === "valuation" ? env.VALUATION_WORKFLOW : env.GUIDANCE_WORKFLOW) as Binding | undefined;
 }
 /** Each kind runs for the companies its feature is switched on for (docs/whitelist-feature-switches-design.md). */
 const featureOf = (kind: AiRunKind): Feature => kind === "guidance" ? "reports" : kind === "analyst" || kind === "checkup" ? "findings" : kind;
@@ -48,6 +50,7 @@ function automatic(env: AnalysisEnv, kind: AiRunKind, ticker: string): boolean {
     : kind === "checkup" ? env.ANALYST_ENABLED === "true" && !!env.CHECKUP_WORKFLOW
     : kind === "explainer" ? !!env.BUSINESS_EXPLAINER_WORKFLOW && researchSearchConfigured(env)
     : kind === "tree" ? !!env.BUSINESS_TREE_WORKFLOW && researchSearchConfigured(env)
+    : kind === "valuation" ? !!env.VALUATION_WORKFLOW && env.VALUATION_ENABLED !== "false"
     : env.GUIDANCE_ENABLED === "true" && !!env.GUIDANCE_WORKFLOW;
 }
 /** The publication readers are served now, validated the same way the public read API does. */
@@ -62,6 +65,7 @@ async function currentPublication(db: D1Database, kind: AiRunKind, ticker: strin
   }
   if (kind === "explainer") return (await readBusinessExplainerResponse(db, ticker)).explainer;
   if (kind === "tree") return (await readBusinessTreeResponse(db, ticker, { research: true })).tree;
+  if (kind === "valuation") return (await readValuationResponse(db, ticker)).report;
   return (await readGuidanceResponse(db, ticker)).guidance;
 }
 function currentVersion(kind: AiRunKind, publication: unknown): AiVersion | null {
@@ -106,7 +110,7 @@ async function guidanceEvents(db: D1Database, env: AnalysisEnv, ticker: string, 
 }
 
 /** The ledger kinds one admin kind spends: the lens agent's calls belong to the findings run. */
-const USAGE_KINDS: Record<AiRunKind, string[]> = { findings: ["findings", "lens"], analyst: ["analyst"], checkup: ["checkup"], explainer: ["explainer"], tree: ["tree"], guidance: ["guidance"] };
+const USAGE_KINDS: Record<AiRunKind, string[]> = { findings: ["findings", "lens"], analyst: ["analyst"], checkup: ["checkup"], explainer: ["explainer"], tree: ["tree"], guidance: ["guidance"], valuation: ["valuation", "valuation-research"] };
 /** The last 30 days of the `ai_usage` ledger (migration 0023) by day; undefined when the table cannot be read. */
 async function usage(db: D1Database, kind: AiRunKind, ticker: string, now: number): Promise<AiUsageDay[] | undefined> {
   const kinds = USAGE_KINDS[kind], since = new Date(now - 30 * 86_400_000).toISOString();
@@ -140,7 +144,7 @@ async function start(env: AnalysisEnv, db: D1Database, kind: AiRunKind, ticker: 
     accession = event.accession;
     params = { ticker, accession: event.accession, eventDate: event.eventDate, manual: true };
   } else {
-    const fingerprint = kind === "findings" ? await findingsFingerprint(env, ticker) : kind === "analyst" ? await analystFingerprint(env, ticker) : kind === "checkup" ? await checkupFingerprint(env, ticker) : kind === "tree" ? await businessTreeFingerprint(env, ticker) : await businessExplainerFingerprint(env, ticker);
+    const fingerprint = kind === "findings" ? await findingsFingerprint(env, ticker) : kind === "analyst" ? await analystFingerprint(env, ticker) : kind === "checkup" ? await checkupFingerprint(env, ticker) : kind === "tree" ? await businessTreeFingerprint(env, ticker) : kind === "valuation" ? await valuationFingerprint(env, ticker) : await businessExplainerFingerprint(env, ticker);
     if (!fingerprint) return json({ error: kind === "analyst" ? "该公司尚无已发布的要点，分析师无从写起。" : "业务地图尚无完整财报，暂时无法生成。" }, 409);
     params = { ticker, fingerprint };
   }
@@ -180,7 +184,7 @@ export async function handleAiRunsAdminRequest(request: Request, env: AnalysisEn
       if (!tickers.includes(translations[1]!)) return json({ error: "该公司不在 AI 分析范围内。" }, 404);
       return json(await translationsAdmin(env, translations[1]!, new Date(now)));
     }
-    const match = /^\/admin\/ai\/companies\/([A-Z][A-Z0-9.-]{0,9})\/(findings|analyst|checkup|explainer|tree|guidance)(?:\/(runs|versions\/([0-9T:.Z-]{10,40})))?$/.exec(path);
+    const match = /^\/admin\/ai\/companies\/([A-Z][A-Z0-9.-]{0,9})\/(findings|analyst|checkup|explainer|tree|guidance|valuation)(?:\/(runs|versions\/([0-9T:.Z-]{10,40})))?$/.exec(path);
     if (!match) return json({ error: "Not found" }, 404);
     const [, ticker, kindName, action, versionId] = match;
     const kind = kindName as AiRunKind;
