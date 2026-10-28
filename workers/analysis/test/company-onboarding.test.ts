@@ -3,6 +3,9 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { runSecDiscovery } from "../src/pipeline/discovery.ts";
+import { newFilings } from "../src/financial-data/new-filings.ts";
+import { READ_NOTE_VERSION } from "../src/financial-data/read-note.ts";
+import type { BusinessFlowQuarter } from "../../../shared/analysis-contract/business-flow.ts";
 import { FinancialMaintenanceStore } from "../src/admin/financial-maintenance-store.ts";
 import { SUBSCRIPTIONS, validateRegistry } from "../src/pipeline/registry.ts";
 import type { AnalysisEnv } from "../src/operations.ts";
@@ -83,4 +86,26 @@ test("a maintenance task holds up collection only for its own issuer", async () 
   assert.equal(await store.hasActiveDataTasksFor("GOOGL", "0001652044"), true, "the same issuer under another ticker");
   assert.equal(await store.hasActiveDataTasksFor("MSFT", "0000789019"), false, "another issuer is not held up");
   assert.equal(await store.hasActiveDataTasks(), true);
+});
+
+test("a data-only issuer's new earnings release reaches collection from discovery alone, with no reports index", async () => {
+  const db = database();
+  const env = { DB: db, SEC_USER_AGENT: "test agent", SEC_DATA_TICKERS: "GOOGL" } as unknown as AnalysisEnv;
+  const recent = (rows: Array<[string, string, string, string, string, string]>) => ({ filings: { recent: {
+    accessionNumber: rows.map(r => r[0]), form: rows.map(r => r[1]), items: rows.map(r => r[2]), filingDate: rows.map(r => r[3]), reportDate: rows.map(r => r[4]), primaryDocument: rows.map(r => r[5]),
+  } } });
+  const tenQ: [string, string, string, string, string, string] = ["0001652044-26-000071", "10-Q", "", "2026-07-23", "2026-06-30", "goog-20260630.htm"];
+  const release: [string, string, string, string, string, string] = ["0001652044-26-000080", "8-K", "2.02,9.01", "2026-10-28", "2026-10-28", "googexhibit991q32026.htm"];
+  await db.prepare("INSERT INTO sec_cache (cache_key, payload) VALUES (?, ?)").bind("sec:discovery:v1:GOOGL", JSON.stringify({ cik: "0001652044", accessions: [], checkedAt: "" })).run();
+  await runSecDiscovery(env, new Date("2026-10-28T20:00:00.000Z"), fetcher({ "CIK0001652044.json": recent([release, ["0001652044-26-000079", "4", "", "2026-10-27", "", "xslF345X05/form4.xml"], tenQ]) }));
+  assert.equal((await db.prepare("SELECT count(*) n FROM sec_filings").first<{ n: number }>())!.n, 0);
+
+  const newest = { periodEnd: "2026-06-30", reportedAt: "2026-07-23", sources: [{ title: "Form 10-Q", publishedAt: "2026-07-23" }] } as unknown as BusinessFlowQuarter;
+  assert.deepEqual(await newFilings(db, "GOOGL", "0001652044", newest), [{ accession: "0001652044-26-000080", form: "8-K", filedAt: "2026-10-28", reportDate: null,
+    url: "https://www.sec.gov/Archives/edgar/data/1652044/000165204426000080/googexhibit991q32026.htm" }]);
+
+  // A filing with a read note under this version is read once.
+  await db.prepare("INSERT INTO filing_read_notes (accession, cik, ticker, form, version, status, updated_at) VALUES (?, ?, ?, ?, ?, 'unresolved', ?)")
+    .bind("0001652044-26-000080", "0001652044", "GOOGL", "8-K", READ_NOTE_VERSION, "2026-10-28T20:12:00.000Z").run();
+  assert.deepEqual(await newFilings(db, "GOOGL", "0001652044", newest), []);
 });

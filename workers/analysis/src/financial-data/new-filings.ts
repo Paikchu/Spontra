@@ -1,5 +1,6 @@
 import type { BusinessFlowQuarter } from '../../../../shared/analysis-contract/business-flow.ts';
 import type { RevenueHistoryQuarter } from '../../../../shared/analysis-contract/revenue-history.ts';
+import type { CollectableFiling } from '../pipeline/discovery.ts';
 import { historyForIssuer, historyKey } from './history.ts';
 import { readFilingDocuments, type SecReader } from './provider.ts';
 import { documentText, filingTables, noteLabels, READ_NOTE_VERSION, readWithNote, type NoteModel, type NoteOutcome, type ReadNote } from './read-note.ts';
@@ -16,19 +17,20 @@ const release = (q: BusinessFlowQuarter) => /^Earnings release/i.test(q.sources[
  * replacing an earnings release can add to it; nothing filed before the newest quarter's own source is new.
  */
 export async function newFilings(db: D1Database, ticker: string, cik: string, newest: BusinessFlowQuarter): Promise<NewFiling[]> {
-  const listed = await db.prepare("SELECT json_extract(payload, '$.collectable') collectable FROM sec_cache WHERE cache_key = ?").bind(`sec:discovery:v1:${ticker}`).first<{ collectable: string | null }>();
-  let accessions: string[] = [];
-  try { accessions = JSON.parse(listed?.collectable ?? '[]'); } catch { accessions = []; }
-  if (!accessions.length) return [];
-  const rows = await db.prepare(`SELECT f.accession_number accession, f.form, f.filing_date filed, f.report_date report, f.document_url url FROM sec_filings f
-    WHERE f.accession_number IN (${accessions.map(() => '?').join(',')}) AND f.accession_number NOT IN (SELECT accession FROM filing_read_notes WHERE cik = ? AND version = ?)`)
-    .bind(...accessions, cik, READ_NOTE_VERSION).all<{ accession: string; form: string; filed: string; report: string | null; url: string }>();
+  // Discovery's own listing, not the reports index (sec_filings): a data-only issuer has no reports index, and the
+  // index is written after collection starts.
+  const listed = await db.prepare("SELECT json_extract(payload, '$.collected') collected FROM sec_cache WHERE cache_key = ?").bind(`sec:discovery:v1:${ticker}`).first<{ collected: string | null }>();
+  let filings: CollectableFiling[] = [];
+  try { filings = JSON.parse(listed?.collected ?? '[]'); } catch { filings = []; }
+  if (!filings.length) return [];
+  const read = new Set((await db.prepare(`SELECT accession FROM filing_read_notes WHERE cik = ? AND version = ? AND accession IN (${filings.map(() => '?').join(',')})`)
+    .bind(cik, READ_NOTE_VERSION, ...filings.map(f => f.accession)).all<{ accession: string }>()).results.map(r => r.accession));
   const sourceFiled = newest.sources[0]?.publishedAt ?? newest.reportedAt ?? newest.periodEnd;
   const quarterOver = new Date(Date.parse(newest.periodEnd) + 70 * DAY).toISOString().slice(0, 10);
-  return [...new Map(rows.results.map(r => [r.accession, r])).values()]
-    .filter(r => r.filed > sourceFiled && (r.filed >= quarterOver || (release(newest) && periodic(r.form))))
-    .sort((a, b) => a.filed.localeCompare(b.filed) || a.accession.localeCompare(b.accession))
-    .map(r => ({ accession: r.accession, form: r.form, filedAt: r.filed, reportDate: periodic(r.form) ? r.report : null, url: r.url }));
+  return [...new Map(filings.filter(f => !read.has(f.accession)).map(f => [f.accession, f])).values()]
+    .filter(f => f.filedAt > sourceFiled && (f.filedAt >= quarterOver || (release(newest) && periodic(f.form))))
+    .sort((a, b) => a.filedAt.localeCompare(b.filedAt) || a.accession.localeCompare(b.accession))
+    .map(f => ({ accession: f.accession, form: f.form, filedAt: f.filedAt, reportDate: periodic(f.form) ? f.reportDate : null, url: f.url }));
 }
 
 export async function issuerHistory(db: D1Database, cik: string, ticker: string): Promise<RevenueHistoryQuarter[]> {

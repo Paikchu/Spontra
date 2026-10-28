@@ -14,10 +14,12 @@ const ANNOUNCED = /^(?:10-[QK]|20-F|40-F|6-K|8-K|4)(?:\/A)?$/;
 const REMEMBERED = 200;
 
 /**
- * `collectable`: accessions of the filings collection reads (periodic reports, 6-Ks, earnings 8-Ks), newest first.
+ * `collectable`: accessions of the filings collection reads (periodic reports, 6-Ks, earnings 8-Ks), newest first; `collected`
+ * the same filings with what reading one needs, so collection depends on no other writer's index (a data-only issuer has none).
  * `fiscalYearEnd` (`MMDD`) and `name` are the issuer's as its submissions state them; EDGAR leaves the year end out for some foreign issuers.
  */
-export type DiscoveryState = { cik: string; accessions: string[]; checkedAt: string; collectable?: string[]; fiscalYearEnd?: string | null; name?: string | null };
+export type CollectableFiling = { accession: string; form: string; filedAt: string; reportDate: string | null; url: string };
+export type DiscoveryState = { cik: string; accessions: string[]; checkedAt: string; collectable?: string[]; collected?: CollectableFiling[]; fiscalYearEnd?: string | null; name?: string | null };
 /** The forms a collection job lists (provider.ts `readSecDocumentBatch`). */
 const COLLECTED = (f: { form: string; items: string }) => /^(?:10-[QK]|20-F)(?:\/A)?$/.test(f.form) || f.form === "6-K" || (f.form === "8-K" && f.items.includes("2.02"));
 
@@ -42,7 +44,7 @@ const issuerDirectory = (reader: { read: (url: string) => Promise<Response> }) =
   let loaded: Promise<Record<string, string>> | null = null;
   return () => loaded ??= reader.read("https://www.sec.gov/files/company_tickers_exchange.json").then(r => r.json()).then(parseIssuerDirectory);
 };
-type Filing = { accession: string; form: string; items: string; filingDate: string };
+type Filing = { accession: string; form: string; items: string; filingDate: string; reportDate: string; primaryDocument: string };
 
 function recentFilings(payload: unknown): Filing[] {
   const recent = (payload as { filings?: { recent?: Record<string, unknown[]> } } | null)?.filings?.recent;
@@ -50,6 +52,7 @@ function recentFilings(payload: unknown): Filing[] {
   const column = (name: string, i: number) => String((recent[name] as unknown[] | undefined)?.[i] ?? "");
   return recent.accessionNumber.slice(0, REMEMBERED).map((_, i) => ({
     accession: column("accessionNumber", i), form: column("form", i), items: column("items", i), filingDate: column("filingDate", i),
+    reportDate: column("reportDate", i), primaryDocument: column("primaryDocument", i),
   })).filter(f => /^\d{10}-\d{2}-\d{6}$/.test(f.accession));
 }
 
@@ -86,9 +89,13 @@ export async function runSecDiscovery(env: AnalysisEnv, now = new Date(), fetche
       const at = now.toISOString();
       const known = new Set(previous?.accessions ?? []);
       const fresh = previous ? filings.filter(f => !known.has(f.accession) && ANNOUNCED.test(f.form)) : [];
+      const collectable = filings.filter(COLLECTED).slice(0, 20);
+      const collected = collectable.filter(f => /^[\w.-]+\.html?$/i.test(f.primaryDocument)).map(f => ({ accession: f.accession, form: f.form, filedAt: f.filingDate,
+        reportDate: /^\d{4}-\d{2}-\d{2}$/.test(f.reportDate) ? f.reportDate : null,
+        url: `https://www.sec.gov/Archives/edgar/data/${Number(cik)}/${f.accession.replaceAll("-", "")}/${f.primaryDocument}` }));
       await db.batch([
         db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at")
-          .bind(stateKey(ticker), JSON.stringify({ cik, accessions: filings.map(f => f.accession), checkedAt: at, collectable: filings.filter(COLLECTED).map(f => f.accession).slice(0, 20),
+          .bind(stateKey(ticker), JSON.stringify({ cik, accessions: filings.map(f => f.accession), checkedAt: at, collectable: collectable.map(f => f.accession), collected,
             fiscalYearEnd: typeof submissions?.fiscalYearEnd === "string" && /^\d{4}$/.test(submissions.fiscalYearEnd) ? submissions.fiscalYearEnd : null,
             name: typeof submissions?.name === "string" && submissions.name.trim() ? submissions.name.trim() : null } satisfies DiscoveryState), at),
         // Oldest first, so subscribers that read the newest state see the filings in the order they were made.
