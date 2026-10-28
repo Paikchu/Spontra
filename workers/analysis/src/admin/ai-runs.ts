@@ -21,8 +21,8 @@ import { D1SecRepository } from "../sec/d1.ts";
 import type { SecFilingFeed } from "../sec/sec.ts";
 import { authenticateAdmin } from "./auth.ts";
 import { researchSearchConfigured } from "../web-search/research-search.ts";
+import { json } from "./http.ts";
 
-const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "cache-control": "private, no-store" } });
 const UUID = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
 /** A run with no news for this long is checked against the Workflow engine. */
 const SETTLE_AFTER_MS = 60_000, MISSING_AFTER_MS = 10 * 60_000;
@@ -179,12 +179,12 @@ export async function handleAiRunsAdminRequest(request: Request, env: AnalysisEn
       return json({ companies } satisfies AiCompanies);
     }
     // The company's Chinese: coverage per resource, today's budget and every string with its translation.
-    const translations = /^\/admin\/ai\/companies\/([A-Z][A-Z0-9.-]{0,9})\/translations$/.exec(path);
+    const translations = /^\/admin\/ai\/companies\/([A-Z][A-Z0-9.-]{0,11})\/translations$/.exec(path);
     if (translations && request.method === "GET") {
       if (!tickers.includes(translations[1]!)) return json({ error: "该公司不在 AI 分析范围内。" }, 404);
       return json(await translationsAdmin(env, translations[1]!, new Date(now)));
     }
-    const match = /^\/admin\/ai\/companies\/([A-Z][A-Z0-9.-]{0,9})\/(findings|analyst|checkup|explainer|tree|guidance|valuation)(?:\/(runs|versions\/([0-9T:.Z-]{10,40})))?$/.exec(path);
+    const match = /^\/admin\/ai\/companies\/([A-Z][A-Z0-9.-]{0,11})\/(findings|analyst|checkup|explainer|tree|guidance|valuation)(?:\/(runs|versions\/([0-9T:.Z-]{10,40})))?$/.exec(path);
     if (!match) return json({ error: "Not found" }, 404);
     const [, ticker, kindName, action, versionId] = match;
     const kind = kindName as AiRunKind;

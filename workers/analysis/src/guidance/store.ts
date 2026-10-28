@@ -1,6 +1,6 @@
 import type { GuidanceMaterialKind, GuidanceSourceKind } from "../../../../shared/analysis-contract/guidance.ts";
 import { normalizeForMatch, type VerifiedGuidance } from "../../../../shared/analysis-runtime/guidance.ts";
-import { sha256 } from "../company-analysis/api.ts";
+import { sha256 } from "../sha256.ts";
 import { GUIDANCE_EXTRACTOR_VERSION, guidanceWorkflowSuffix } from "./extract.ts";
 import type { FoundMaterial } from "./sources.ts";
 

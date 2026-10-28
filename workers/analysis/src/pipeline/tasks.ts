@@ -1,4 +1,4 @@
-import { financialPolicy, allowData } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
+import { allowData, dataTickers } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 import { companyPolicyEnvironment } from "../financial-data/company-policy.ts";
 import { deriveCompany, REPORT_QUARTERS_VERSION, REPORT_SELECTION_VERSION } from "../financial-data/derived.ts";
 import { ARCHIVE_PREFIX, disclosureAuditPrefix, PRUNE_GRACE_MS, pruneSupersededArchives } from "../financial-data/disclosure-audit.ts";
@@ -27,7 +27,7 @@ export type TaskImplementation = {
 
 async function isDataCompany(env: AnalysisEnv, ticker: string): Promise<boolean> {
   const policyEnv = await companyPolicyEnvironment(env);
-  return allowData(financialPolicy({ SEC_DATA_TICKERS: policyEnv.SEC_DATA_TICKERS, SEC_TRACKED_TICKERS: policyEnv.SEC_TRACKED_TICKERS, SEC_AI_ENABLED: "false" }), ticker);
+  return allowData(dataTickers(policyEnv), ticker);
 }
 
 type R2Prunable = AnalysisEnv["SEC_FILINGS"] & {

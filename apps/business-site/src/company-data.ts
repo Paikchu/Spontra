@@ -9,11 +9,10 @@ import type { FindingPassage, FindingsPublication } from "@/shared/analysis-cont
 import type { ItemAnalysis } from "@/shared/analysis-contract/item-analysis";
 import type { PeersPublication } from "@/shared/analysis-contract/peers";
 import type { EventsPublication } from "@/shared/analysis-contract/events";
-import type { FindingFundamentals } from "@/shared/analysis-runtime/findings";
 import type { MapRevisions } from "@/shared/analysis-contract/revisions";
 import type { ValuationEvidence, ValuationPublication, ValuationResponse } from "@/shared/analysis-contract/valuation";
 import { getLocale } from "@/packages/web/src/i18n";
-import { findingData, verifiedFindings, type VerifiedFinding } from "./findings-model";
+import { rememberIssuer } from "@/shared/analysis-runtime/fiscal-label";
 
 export type CompanyPublication = CompleteFlowPublication & { explainer?: BusinessExplainer | null; guidance?: GuidancePublication | null; tree?: BusinessTree | null };
 
@@ -56,7 +55,10 @@ export async function fetchCompany(ticker: string, signal: AbortSignal, rev?: st
     throw new CompanyHttpError(0);
   }
   if (!response.ok) throw new CompanyHttpError(response.status);
-  return await response.json() as CompanyPublication;
+  const publication = await response.json() as CompanyPublication;
+  // Every period label on the page reads the issuer's fiscal calendar from here.
+  if (publication.issuer) rememberIssuer(ticker, publication.issuer);
+  return publication;
 }
 
 /**
@@ -136,27 +138,4 @@ export function publicationFlow(data: CompanyPublication, ticker: string): Publi
   if (data.status !== "ready" || !data.flow) return null;
   const quarters = [...new Map([...(data.reports?.quarters ?? []), ...data.flow.quarters].map(q => [q.periodEnd, q])).values()];
   return selectFlow({ ...data.flow, quarters }, null, ticker);
-}
-
-/** `partial`: verified against a fallback snapshot (no history), so findings may be missing that a fresh read would show. */
-export type CompanyDigest = { ticker: string; periodEnd: string; findings: VerifiedFinding[]; partial: boolean };
-
-/**
- * A company's findings as its page would show them: verified against the same flow, history, capital,
- * fundamentals and guidance, so the home page never lists a finding the company page withholds.
- * The statement is only read once the company has published findings.
- */
-export async function loadDigest(ticker: string, signal: AbortSignal): Promise<CompanyDigest | null> {
-  const bundle = await fetchFindings(ticker, signal);
-  const findings = bundle?.findings ?? null;
-  if (!findings?.findings.length) return null;
-  const [company, capital, fundamentals] = await Promise.all([
-    fetchCompany(ticker, signal),
-    fetchCapital(ticker, signal).then(r => r?.capital ?? null).catch(() => null),
-    fetchSupplement<FindingFundamentals>(ticker, "fundamentals", signal).catch(() => null),
-  ]);
-  const flow = publicationFlow(company, ticker);
-  if (!flow) return null;
-  const verified = verifiedFindings(findings, findingData(flow, company.history ?? null, capital, fundamentals, company.guidance ?? null, bundle?.peers ?? null, bundle?.passages ?? null));
-  return verified.length ? { ticker, periodEnd: findings.periodEnd, findings: verified, partial: company.outdated === true } : null;
 }

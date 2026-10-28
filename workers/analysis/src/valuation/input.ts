@@ -2,7 +2,7 @@ import type { FindingRef } from "../../../../shared/analysis-contract/findings.t
 import type { DiagnosticMetric, FactorDistribution, PeriodType, ValuationFact } from "../../../../shared/analysis-contract/valuation.ts";
 import { readFindingFundamentals, resolveRef, type FindingData } from "../../../../shared/analysis-runtime/findings.ts";
 import { distributionOf } from "../../../../shared/analysis-runtime/valuation/calculator.ts";
-import { sha256 } from "../company-analysis/api.ts";
+import { sha256 } from "../sha256.ts";
 import { companyName, findSecurity } from "../catalog/security-directory.ts";
 import { requireDb } from "../core.ts";
 import { listLibraryDocuments } from "../filing-library/store.ts";

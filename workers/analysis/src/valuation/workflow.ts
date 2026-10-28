@@ -2,7 +2,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { modelFor, reasoningFor } from "../ai-config.ts";
 import { runAgentLoop, sequential, type LoopHost, type Recipe, type TurnRecord } from "../agent-loop.ts";
 import { AiRunStore, quietly } from "../ai-runs/store.ts";
-import { sha256 } from "../company-analysis/api.ts";
+import { sha256 } from "../sha256.ts";
 import { requireDb } from "../core.ts";
 import { featureTickersFor } from "../financial-data/company-policy.ts";
 import { SecModelOutputError } from "../model-stream.ts";
@@ -23,7 +23,7 @@ export type ValuationWorkflowParams = { ticker: string; fingerprint: string };
 const BUDGET = { research: { turns: 16, wallMs: 40 * 60_000 }, assume: { turns: 8, wallMs: 20 * 60_000 }, compose: { turns: 4, wallMs: 10 * 60_000 } };
 const MODEL_BUDGET_MS = 5 * 60_000;
 
-export function valuationTickersFor(env: Pick<AnalysisEnv, "VALUATION_TICKERS" | "VALUATION_ENABLED" | "FEATURE_RESOLVED" | "SEC_TRACKED_TICKERS" | "SEC_DATA_TICKERS" | "SEC_AI_TICKERS" | "SEC_AI_ENABLED" | "BUSINESS_TREE_TICKERS" | "BUSINESS_TREE_ENABLED">): string[] {
+export function valuationTickersFor(env: Parameters<typeof featureTickersFor>[0]): string[] {
   return featureTickersFor(env, "valuation");
 }
 

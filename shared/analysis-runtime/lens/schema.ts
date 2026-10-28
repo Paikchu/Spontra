@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { LENS_COLOR_TOKENS, LENS_LIMITS, LENS_MARK_TYPES, type LensDocument } from "../../analysis-contract/lens.ts";
+import { TICKER_PATTERN } from "../financial-data/policy.ts";
 
 const DIGIT = /\d/;
 /** A short English label with no figure of any kind: a title names the chart, the numbers come from the data. */
@@ -34,7 +35,7 @@ export function lensDocumentSchemaFor(ref: z.ZodTypeAny): z.ZodType<LensDocument
   const tableRow = z.object({ ref: z.union([ref, peerRef]), label: plain(LENS_LIMITS.labelChars).optional(), compare: z.enum(["yoy", "qoq"]).optional() });
   const table = z.object({
     title: plain(LENS_LIMITS.titleChars).optional(), columns: z.enum(["periods", "peers"]), span,
-    periods: z.number().int().min(2).max(LENS_LIMITS.tablePeriods).optional(), peers: z.array(z.string().regex(/^[A-Z][A-Z0-9.-]{0,11}$/)).max(LENS_LIMITS.tablePeers).optional(),
+    periods: z.number().int().min(2).max(LENS_LIMITS.tablePeriods).optional(), peers: z.array(z.string().regex(TICKER_PATTERN)).max(LENS_LIMITS.tablePeers).optional(),
     rows: z.array(tableRow).min(1).max(LENS_LIMITS.tableRows),
   });
   const block = z.discriminatedUnion("kind", [

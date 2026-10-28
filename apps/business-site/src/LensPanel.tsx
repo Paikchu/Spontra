@@ -8,7 +8,7 @@ import type { FindingMaterial, FindingRecordEntry, FindingRef } from "@/shared/a
 import type { LensBlock, LensDocument as LensDocumentShape } from "@/shared/analysis-contract/lens";
 import { spanLabel, watchPeriod, watchVerdict, type FindingData, type ResolvedEvidence, type ResolvedValue } from "@/shared/analysis-runtime/findings";
 import { formatResolved } from "@/shared/analysis-runtime/lens/format";
-import { multiple, yoyLabel } from "@/shared/analysis-runtime/locale";
+import { multiple, yoyLabel, shortPeriod } from "@/shared/analysis-runtime/locale";
 import { documentFromEvidence, lensDocumentOf } from "@/shared/analysis-runtime/lens/legacy";
 import { tableKey, verifyLensDocument, type VerifiedLens } from "@/shared/analysis-runtime/lens/verify";
 import { KIND_LABEL, VIEW_LABEL, type VerifiedFinding } from "./findings-model";
@@ -31,7 +31,6 @@ const m = messages({
 const VERDICT = labels({ above: "Above guidance", within: "Within guidance", below: "Below guidance" }, { above: "高于指引", within: "处于指引区间", below: "低于指引" });
 const RECORD_VERDICT = labels({ pass: "Pass", fail: "Fail" }, { pass: "达成", fail: "未达成" });
 
-const shortPeriod = (end: string) => end.slice(0, 7).replace("-", ".");
 const percent = (v: number | null, digits = 1) => v == null || !Number.isFinite(v) ? "—" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(digits)}%`;
 const trend = (v: number | null) => v == null || v === 0 ? undefined : v > 0 ? "up" : "down";
 /** The first sentence: English sentences end at . ! or ? followed by a capital (so "$55.7" never splits); CJK prose at 。 */

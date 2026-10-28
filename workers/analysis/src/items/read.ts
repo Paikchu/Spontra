@@ -2,6 +2,7 @@ import type { ItemAnalysis, ItemAnalysisResponse, ItemKind } from "../../../../s
 import type { TurnRecord } from "../agent-loop.ts";
 import { AnalysisRequestError } from "../read-api/contract-support/errors.ts";
 import { D1SecRepository } from "../sec/d1.ts";
+import { TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 
 export const itemsIndexKey = (ticker: string) => `items:v1:${ticker}`;
 export const itemAnalysisKey = (ticker: string, id: string) => `item-analysis:v1:${ticker}:${id}`;
@@ -17,7 +18,7 @@ export type StoredItem = ItemAnalysis & { trace: TurnRecord[] };
  */
 export async function readItemAnalysisResponse(db: D1Database, rawTicker: string, id: string, options: { hidden?: boolean } = {}): Promise<ItemAnalysisResponse> {
   const ticker = rawTicker.trim().toUpperCase();
-  if (!/^[A-Z][A-Z0-9.-]{0,11}$/.test(ticker)) throw new AnalysisRequestError("INVALID_TICKER", "Invalid company ticker.");
+  if (!TICKER_PATTERN.test(ticker)) throw new AnalysisRequestError("INVALID_TICKER", "Invalid company ticker.");
   if (!/^\d{10}-\d{2}-\d{6}$/.test(id)) throw new AnalysisRequestError("ROUTE_NOT_FOUND", "Invalid filing id.");
   const stored = options.hidden ? null : await new D1SecRepository(db).getCache<StoredItem>(itemAnalysisKey(ticker, id));
   const value = stored?.payload;

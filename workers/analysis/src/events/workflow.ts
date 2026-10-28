@@ -9,7 +9,7 @@ import type { SecFilingFeed, SecFilingSummary } from "../sec/sec.ts";
 import { form4XmlUrl, parseForm4 } from "./form4.ts";
 import { eventsCacheKey, exhibitsCacheKey, insiderCacheKey } from "./read.ts";
 
-export type EventsSweepEnv = Pick<SecCronEnv, "DB" | "SEC_DATA_TICKERS" | "SEC_TRACKED_TICKERS" | "SEC_AI_TICKERS" | "SEC_AI_ENABLED"> & { SEC_USER_AGENT: string; EVENTS_ENABLED?: string };
+export type EventsSweepEnv = Pick<SecCronEnv, "DB" | "SEC_DATA_TICKERS" | "SEC_AI_TICKERS" | "SEC_AI_ENABLED"> & { SEC_USER_AGENT: string; EVENTS_ENABLED?: string };
 
 /** How old a stored submission list may be before a run re-reads it anyway; a discovered filing always re-reads it. */
 const REFRESH_MS = 6 * 60 * 60_000;

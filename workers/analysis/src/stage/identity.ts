@@ -32,7 +32,3 @@ export async function readerOf(secret: string | undefined, token: string | null)
   for (let i = 0; i < 32; i++) diff |= expected.charCodeAt(i) ^ match[3]!.charCodeAt(i);
   return diff === 0 ? `anon:${match[2]}` : null;
 }
-
-export async function sha256(value: string): Promise<string> {
-  return hex(await crypto.subtle.digest("SHA-256", encoder.encode(value)));
-}

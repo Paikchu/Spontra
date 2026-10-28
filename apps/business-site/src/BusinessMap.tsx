@@ -51,7 +51,7 @@ import { getLocale, messages, useLocale } from "@/packages/web/src/i18n";
 import { SourceLanguage, langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import type { ValuationResponse } from "@/shared/analysis-contract/valuation";
 import { ValuationPanel } from "./ValuationPanel";
-import { compactShares, multiple, perShare, qoqLabel, range, yoyLabel } from "@/shared/analysis-runtime/locale";
+import { compactShares, multiple, perShare, qoqLabel, range, yoyLabel, shortPeriod } from "@/shared/analysis-runtime/locale";
 import { assessStatements, peerRanks } from "@/shared/analysis-runtime/statement-analysis";
 import { verifyNote } from "@/shared/analysis-runtime/checkup-notes";
 import type { Flag, FlagLevel } from "@/shared/analysis-contract/statement-analysis";
@@ -133,7 +133,6 @@ const percent = (v: number | null) => v == null || !Number.isFinite(v) ? "—" :
 const none = (): FlowChange => ({ label: flowWords.na, comparable: false, trend: null, delta: null, previous: null, percent: null });
 /** Chart labels keep about thirteen ems of name; the tooltip carries the full one. */
 const shortName = (name: string) => truncateToWidth(name, 13);
-const shortPeriod = (end: string) => end.slice(0, 7).replace("-", ".");
 type View = "profit" | "cash" | "balance" | "valuation";
 type StatementView = Exclude<View, "valuation">;
 const VIEWS: readonly View[] = ["profit", "cash", "balance", "valuation"];

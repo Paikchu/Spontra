@@ -1,6 +1,7 @@
 import { readFiscalPeriod } from "./fiscal-period.ts";
+import { normalizeTicker } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 import { cleanSecAccession, type SecFilingWithSummary } from "./sec.ts";
-import { decodePageCursor, normalizeTrackedTicker } from "./config.ts";
+import { decodePageCursor } from "./config.ts";
 import { D1SecRepository } from "./d1.ts";
 import { readCachedSecFeed } from "./feed.ts";
 import { findSecurity } from "../catalog/security-directory.ts";
@@ -37,7 +38,7 @@ export async function getPublicFilingPage(
   rawCursor: string | null,
   rawLimit: string | null,
 ): Promise<PublicFilingPage> {
-  const ticker = normalizeTrackedTicker(rawTicker);
+  const ticker = normalizeTicker(rawTicker);
   if (!ticker) throw new AnalysisRequestError("INVALID_TICKER", "Ticker is invalid.");
   if (rawCursor && !decodePageCursor(rawCursor)) throw new AnalysisRequestError("INVALID_CURSOR", "Cursor is invalid.");
   const limit = parseFilingLimit(rawLimit);
@@ -77,7 +78,7 @@ export async function getPublicFiling(
   rawAccession: string,
   snapshot?: { reportDate: string; reportVersion: string },
 ): Promise<PublicFilingDetail | null> {
-  const ticker = normalizeTrackedTicker(rawTicker);
+  const ticker = normalizeTicker(rawTicker);
   const accession = cleanSecAccession(rawAccession);
   if (!ticker || !accession) return null;
   if (snapshot) {

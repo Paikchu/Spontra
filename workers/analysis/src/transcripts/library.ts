@@ -6,7 +6,8 @@ import { AlphaVantageTranscriptProvider, TranscriptAccessError, TranscriptQuotaE
 import { GuidanceStore } from '../guidance/store.ts';
 import type { AnalysisEnv } from '../operations.ts';
 import { parseFiscalPeriod } from '../sec/fiscal-period.ts';
-import { inFiscalSequence, quarterAfterYearEnd, quarterOf, type FiscalLabel } from '../sec/fiscal-sequence.ts';
+import { inFiscalSequence, quarterAfterYearEnd, type FiscalLabel } from '../sec/fiscal-sequence.ts';
+import { quarterNumber } from '../../../../shared/analysis-runtime/fiscal-label.ts';
 import { outboxStatement } from '../pipeline/outbox.ts';
 
 const columns = `id,ticker,period_end periodEnd,accession,filing_url filingUrl,filed_at filedAt,
@@ -82,7 +83,7 @@ async function labelsInSequence(db: D1Database, tickers?: string[]): Promise<{ l
     const ticker = row.cache_key.slice(from.length).split(':')[0]!;
     let period: SecFiscalPeriod | null = null;
     try { period = JSON.parse(row.payload) as SecFiscalPeriod | null; } catch { continue; }
-    const quarter = period ? quarterOf(period.fiscalPeriod) : null;
+    const quarter = period ? quarterNumber(period.fiscalPeriod) : null;
     if (period && quarter && /^\d{4}-\d{2}-\d{2}$/.test(period.periodEnd)) add(ticker, { fiscalYear: period.fiscalYear, quarter, periodEnd: period.periodEnd });
   }
   for (const row of rows) if ([1, 2, 3, 4].includes(row.fiscal_quarter)) add(row.ticker, { fiscalYear: row.fiscal_year, quarter: row.fiscal_quarter as FiscalLabel['quarter'], periodEnd: row.period_end });
@@ -154,7 +155,7 @@ async function labelRow(env: AnalysisEnv, row: QueueRow): Promise<FiscalLabel | 
       period = parseFiscalPeriod(await object.text(), { form: target.form, reportDate: target.periodEnd, accessionNumber: target.accession, documentUrl: target.filingUrl });
     }
     // DEI annual focus maps to the fourth-quarter call. Never guess from calendar months.
-    const quarter = period ? quarterOf(period.fiscalPeriod) : null;
+    const quarter = period ? quarterNumber(period.fiscalPeriod) : null;
     return period && quarter ? { fiscalYear: period.fiscalYear, quarter, periodEnd: target.periodEnd } : null;
   };
   let own: FiscalLabel | null;

@@ -3,6 +3,7 @@ import {
   analysisErrorStatus,
   type AnalysisErrorCode,
 } from "./contract-support/errors.ts";
+import { sha256 as sha256Hex } from "../sha256.ts";
 
 /**
  * Response construction for the read API. One place decides status, cache policy and validators,
@@ -66,9 +67,4 @@ function matchesEtag(header: string | null, etag: string): boolean {
   if (header.trim() === "*") return true;
   return header.split(",").map((candidate) => candidate.trim()).some((candidate) =>
     candidate === etag || candidate === etag.replace(/^W\//, ""));
-}
-
-export async function sha256Hex(value: string): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }

@@ -3,10 +3,10 @@ import { getAgentByName } from "agents";
 import type { AnalysisEnv } from "../operations.ts";
 import type { StageAgent } from "../stage/agent.ts";
 import { STAGE_LIMITS } from "../stage/budget.ts";
-import { sha256 } from "../stage/identity.ts";
+import { sha256 } from "../sha256.ts";
 import { authenticateAdmin } from "./auth.ts";
+import { json } from "./http.ts";
 
-const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "cache-control": "private, no-store" } });
 
 async function stageAdmin(db: D1Database): Promise<StageAdmin> {
   const day = new Date().toISOString().slice(0, 10);

@@ -1,7 +1,7 @@
 import type { FindingRef, FindingSpan } from "../../analysis-contract/findings.ts";
 import type { ResolvedValue, ValueUnit } from "../findings.ts";
 import { ratioForm } from "../highlights.ts";
-import { compactMoney as moneyIn, fiscalYearTo, multiple, perShare, shortPeriod as quarterLabel, type Locale, range } from "../locale.ts";
+import { compactMoney, fiscalYearTo, multiple, perShare, shortPeriod, type Locale, range } from "../locale.ts";
 
 /**
  * Every figure a lens chart writes. `locale` picks the reader's number forms; left out, the English forms
@@ -10,11 +10,6 @@ import { compactMoney as moneyIn, fiscalYearTo, multiple, perShare, shortPeriod 
 
 /** Percentage points after a signed figure: " pp" / "个百分点". */
 const pp = (locale: Locale) => locale === "zh-CN" ? "个百分点" : " pp";
-
-/** "$75.7B", "−$28.7B", "$350M", "4.2B EUR" / "757亿美元": the way the stage writes amounts. */
-export function compactMoney(value: number, currency: string | null, locale: Locale = "en"): string {
-  return moneyIn(value, currency, locale);
-}
 
 /** One figure in its unit; a ratio reads as a percentage when it is a margin or an intensity, as "2.60×" otherwise. */
 export function formatFigure(value: number, unit: ValueUnit, currency: string | null, ref?: FindingRef, locale: Locale = "en"): string {
@@ -39,7 +34,6 @@ export function formatDelta(delta: number, unit: ValueUnit, ref?: FindingRef, lo
   return `${sign}${abs.toFixed(abs >= 100 ? 0 : 1)}%`;
 }
 
-export const shortPeriod = (end: string) => quarterLabel(end);
 /** "2026.08" for a quarter, "FY to 2026.08" / "截至 2026.08 财年" for a four-quarter span. */
 export const periodLabel = (end: string, span: FindingSpan, locale: Locale = "en") => span === "fiscal_year" ? fiscalYearTo(end, locale) : shortPeriod(end);
 

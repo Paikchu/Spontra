@@ -60,7 +60,7 @@ test("readers see a feature exactly when its switch is on: the stored choice, el
 test("the readers answer hidden when the route says so and are untouched otherwise", async () => {
   const { db } = fakeDb([]);
   assert.equal((await readFindingsResponse(db, "ORCL", { hidden: true })).status, "hidden");
-  assert.equal((await readFindingsResponse(db, "ORCL")).status, "ready", "the authored ORCL set serves the admin");
+  assert.equal((await readFindingsResponse(db, "ORCL")).status, "preparing", "nothing stored yet");
   assert.equal((await readGuidanceResponse(db, "NET", { hidden: true })).status, "hidden");
   assert.equal((await readGuidanceResponse(db, "NET")).status, "preparing");
   assert.equal((await readBusinessExplainerResponse(db, "ORCL", { hidden: true })).status, "hidden");

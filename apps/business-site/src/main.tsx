@@ -2,7 +2,7 @@ import { SidebarProvider } from "@/packages/web/src/ui/sidebar";
 import { Fragment, StrictMode, useCallback, useEffect, useRef, useState, Component, type ReactNode } from "react";
 import { getLocale, messages, useLocale } from "@/packages/web/src/i18n";
 import { createRoot } from "react-dom/client";
-import { canonicalTicker } from "@/shared/analysis-runtime/financial-data/policy";
+import { canonicalTicker, TICKER_PATTERN } from "@/shared/analysis-runtime/financial-data/policy";
 import "@/packages/web/src/business-flow/business-flow.css";
 import "./style.css";
 import { BusinessMap } from "./BusinessMap";
@@ -36,7 +36,7 @@ const RECENT_KEY = "business-map-recent";
 function readRecent(): string[] {
   try {
     const value: unknown = JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]");
-    return Array.isArray(value) ? value.filter((t): t is string => typeof t === "string" && /^[A-Z][A-Z0-9.-]{0,11}$/.test(t)).slice(0, 6) : [];
+    return Array.isArray(value) ? value.filter((t): t is string => typeof t === "string" && TICKER_PATTERN.test(t)).slice(0, 6) : [];
   } catch {
     return [];
   }
@@ -326,7 +326,7 @@ function App() {
   const shownRecent = home.status === "ready" ? recent.filter(item => covered.has(item)) : recent;
   const catalog = (home.digest?.companies ?? []).map(company => ({ ticker: company.ticker, name: company.name, nameZh: company.nameZh, aliases: company.aliases }));
   const catalogStatus = home.status === "ready" ? "ready" as const : home.status === "error" ? "error" as const : "loading" as const;
-  const picks = featuredCompanies(home.digest?.companies ?? [], locale);
+  const picks = featuredCompanies(home.digest?.companies ?? [], home.digest?.popular ?? [], locale);
   // Home remounts so its memos pick up the new locale. The company page stays mounted and refetches in place.
   if (!ticker && !isHomePath(path))
     return <ErrorState kind="missing" code="NOT_FOUND" companies={picks} onHome={goHome} onSearch={searchFromError} restoredTitle={m.title} />;

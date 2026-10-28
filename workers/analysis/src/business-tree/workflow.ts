@@ -2,7 +2,7 @@ import { modelFor, reasoningFor } from "../ai-config.ts";
 import type { BusinessTree, BusinessTreeResponse } from "../../../../shared/analysis-contract/business-tree.ts";
 import type { PublicBusinessFlow } from "../../../../shared/analysis-contract/business-flow.ts";
 import { issuerNames, readBusinessTree } from "../../../../shared/analysis-runtime/business-tree.ts";
-import { sha256 } from "../company-analysis/api.ts";
+import { sha256 } from "../sha256.ts";
 import { findSecurity } from "../catalog/security-directory.ts";
 import { requireDb } from "../core.ts";
 import { featureTickersFor } from "../financial-data/company-policy.ts";
@@ -18,6 +18,7 @@ import { AiRunStore } from "../ai-runs/store.ts";
 import { runBusinessTree, type TreeBusiness } from "./agent.ts";
 import { treeLibrary } from "../filing-library/tree-source.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
+import { TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 
 /** Changing the prompt, the harness or the output contract researches every company once more. */
 /**
@@ -35,11 +36,6 @@ import { outboxStatement } from "../pipeline/outbox.ts";
 export const BUSINESS_TREE_VERSION = "business-tree.react.v15";
 export const businessTreeCacheKey = (ticker: string) => `business-tree:v1:${ticker}`;
 export type BusinessTreeParams = { ticker: string; fingerprint: string };
-
-/** Companies whose businesses are broken down: the `tree` feature's list after the admin's switches (company-policy.ts). */
-export function treeTickersFor(env: Pick<AnalysisEnv, "BUSINESS_TREE_TICKERS" | "BUSINESS_TREE_ENABLED" | "FEATURE_RESOLVED" | "SEC_TRACKED_TICKERS" | "SEC_DATA_TICKERS" | "SEC_AI_TICKERS" | "SEC_AI_ENABLED">): string[] {
-  return featureTickersFor(env, "tree");
-}
 
 /** A region is where a business sells, not what it sells: breaking it into products would repeat the product lines once per region. */
 const REGION = /americas|europe|emea|asia|pacific|china|japan|international|domestic|united\s?states|north\s?america|latin\s?america|geograph|region/i;
@@ -79,7 +75,8 @@ export async function businessTreeFingerprint(env: AnalysisEnv, ticker: string):
 
 export async function executeBusinessTreeWorkflow(params: BusinessTreeParams, step: WorkflowStepLike, env: AnalysisEnv, fetcher: typeof fetch = fetch, runId?: string) {
   // Switched off in the admin after the run was scheduled: nothing to write, and nothing that failed.
-  if (!treeTickersFor(env).includes(params.ticker) || env.BUSINESS_TREE_ENABLED === "false") return { status: "superseded" };
+  // The `tree` feature's companies after the admin's switches (company-policy.ts).
+  if (!featureTickersFor(env, "tree").includes(params.ticker) || env.BUSINESS_TREE_ENABLED === "false") return { status: "superseded" };
   const modelVersion = modelFor(env, "tree");
   const tuning = { reasoning: reasoningFor(env, "tree"), ticker: params.ticker, runId };
   const now = await step.do("tree-time", async () => new Date().toISOString());
@@ -126,7 +123,7 @@ export async function executeBusinessTreeWorkflow(params: BusinessTreeParams, st
  */
 export async function readBusinessTreeResponse(db: D1Database, rawTicker: string, options: { research?: boolean; hidden?: boolean } = {}): Promise<BusinessTreeResponse> {
   const ticker = rawTicker.trim().toUpperCase();
-  if (!/^[A-Z][A-Z0-9.-]{0,11}$/.test(ticker)) throw new AnalysisRequestError("INVALID_TICKER", "Invalid company ticker.");
+  if (!TICKER_PATTERN.test(ticker)) throw new AnalysisRequestError("INVALID_TICKER", "Invalid company ticker.");
   if (options.hidden) return { schemaVersion: "business-tree-response.v1", status: "hidden", tree: null };
   const stored = await new D1SecRepository(db).getCache<unknown>(businessTreeCacheKey(ticker));
   const tree = stored ? readBusinessTree(stored.payload, ticker, options) : null;

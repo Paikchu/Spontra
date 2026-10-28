@@ -11,7 +11,7 @@ import type { WorkflowStepLike } from "../workflow-core.ts";
 import type { StageAgent } from "./agent.ts";
 import { refund, reserve } from "./budget.ts";
 import { loadStageData } from "./data.ts";
-import { sha256 } from "./identity.ts";
+import { sha256 } from "../sha256.ts";
 import { reportDocuments, reportOpening, reportRecipe, type ReportInput } from "./report.ts";
 
 export type ReportParams = { userId: string; address: string | null; conversationId: string; ticker: string; question: string; locale: Locale };

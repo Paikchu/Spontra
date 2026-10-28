@@ -1,5 +1,6 @@
 import type { LibraryTable, PublicPassage, PublicPassageResponse } from "../../../../shared/analysis-contract/filing-library.ts";
 import { AnalysisRequestError } from "../read-api/contract-support/errors.ts";
+import { TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 
 /**
  * The public passage read: one library passage by id, with its filing and the two passages on either side in the
@@ -10,7 +11,6 @@ import { AnalysisRequestError } from "../read-api/contract-support/errors.ts";
 
 /** Passage ids are `p` and the 14 lowercase hex digits of `libraryHash` (parse.ts); anything else never names a passage. */
 const PASSAGE_ID = /^p[0-9a-f]{14,32}$/;
-const TICKER = /^[A-Z][A-Z0-9.-]{0,11}$/;
 /** How much of a neighbouring passage comes along: enough to place the quote, not a second copy of the section. */
 const NEIGHBOUR_CHARS = 600;
 const NEIGHBOURS = 2;
@@ -25,7 +25,7 @@ const shorten = (text: string) => text.length > NEIGHBOUR_CHARS ? `${text.slice(
 
 export async function readPublicPassage(db: D1Database, rawTicker: string, rawPassageId: string): Promise<PublicPassageResponse> {
   const ticker = rawTicker.trim().toUpperCase();
-  if (!TICKER.test(ticker)) throw new AnalysisRequestError("INVALID_TICKER", "Invalid company ticker.");
+  if (!TICKER_PATTERN.test(ticker)) throw new AnalysisRequestError("INVALID_TICKER", "Invalid company ticker.");
   const passageId = rawPassageId.trim();
   if (!PASSAGE_ID.test(passageId)) throw new AnalysisRequestError("INVALID_PASSAGE", "Invalid passage id.");
 

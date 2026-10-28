@@ -45,8 +45,6 @@ const METRIC_LABELS: Record<string, string> = {
   total_assets: "Total assets",
   total_liabilities: "Total liabilities",
   stockholders_equity: "Stockholders' equity",
-  data_center_revenue: "Data Center revenue",
-  gaming_revenue: "Gaming revenue",
   shares_outstanding: "Shares outstanding",
 };
 
@@ -83,19 +81,28 @@ const METRIC_LABELS_ZH: Record<string, string> = {
   total_assets: "总资产",
   total_liabilities: "总负债",
   stockholders_equity: "股东权益",
-  // i18n-allow: Data Center and Gaming are the segment names in the filing.
-  data_center_revenue: "Data Center 营收",
-  // i18n-allow: segment name in the filing.
-  gaming_revenue: "Gaming 营收",
   shares_outstanding: "流通股数",
 };
 
 /** Keys whose value is a ratio, whether the model stored 0.75 or 75. */
 const RATIO_KEY = /(margin|ratio|rate|yield|growth|percent)$/;
 
+/**
+ * A known metric reads by its label. A key that ends in one (`data_center_revenue`) is that metric for the part of the
+ * business its leading words name, kept as the filing names it: "Data Center revenue" / "Data Center 营收".
+ */
 export function formatSecMetricLabel(metricKey: string, locale: Locale = "en"): string {
+  const labels = locale === "zh-CN" ? METRIC_LABELS_ZH : METRIC_LABELS;
   const key = metricKey.trim().toLowerCase();
-  return (locale === "zh-CN" ? METRIC_LABELS_ZH : METRIC_LABELS)[key] ?? metricKey.trim().replace(/_/g, " ");
+  if (labels[key]) return labels[key];
+  const words = key.split("_").filter(Boolean);
+  for (let i = 1; i < words.length; i++) {
+    const metric = labels[words.slice(i).join("_")];
+    if (!metric) continue;
+    const part = words.slice(0, i).map(w => w[0]!.toUpperCase() + w.slice(1)).join(" ");
+    return locale === "zh-CN" || /^[A-Z]{2}/.test(metric) ? `${part} ${metric}` : `${part} ${metric[0]!.toLowerCase()}${metric.slice(1)}`;
+  }
+  return metricKey.trim().replace(/_/g, " ");
 }
 
 /**

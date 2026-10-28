@@ -6,6 +6,7 @@ import {
   toYahooFundamentalSymbol,
   type YahooFundamentalsPayload,
 } from "./yahoo-fundamentals-schema.ts";
+import { sha256 as sha256Hex } from "../sha256.ts";
 
 export const YAHOO_FUNDAMENTALS_ENDPOINT =
   "https://query1.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries";
@@ -162,10 +163,6 @@ export async function fetchYahooFundamentals(
   });
 }
 
-export async function sha256Hex(value: string): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-}
 
 function normalizeRequestError(error: unknown): YahooFundamentalsRequestError {
   if (error instanceof YahooFundamentalsRequestError) return error;

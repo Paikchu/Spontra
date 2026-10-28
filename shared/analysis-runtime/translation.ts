@@ -12,7 +12,6 @@ import { proseFigures } from "./findings.ts";
 import type { Locale } from "./locale.ts";
 
 export type TranslatedResource = "flow" | "findings" | "explainer" | "tree" | "guidance" | "events" | "filings" | "filing" | "item" | "valuation";
-export const TRANSLATED_RESOURCES: readonly TranslatedResource[] = ["flow", "findings", "explainer", "tree", "guidance", "events", "filings", "filing", "item", "valuation"];
 /** English text → translated text, for one resource of one company in one locale. */
 export type TranslationTable = Readonly<Record<string, string>>;
 

@@ -1,4 +1,3 @@
-import { enrichDisclosedRevenue } from "./company-revenue-disclosures";
 import {publicFlowSchema} from "@/shared/analysis-runtime/financial-data/schema";
 import { type BusinessFlowQuarter, type FlowAmount, type FlowMetric, type PublicBusinessFlow } from "@/shared/analysis-contract/business-flow";
 import type { PublicFundamentalsResponse, FundamentalMetricKey } from "@/shared/analysis-contract/fundamentals";
@@ -42,7 +41,6 @@ export const flowWords = messages({
   operatingCategoriesCheck: "各类费用之和 = 已披露营业费用",
 });
 
-
 export function numeric(amount: FlowAmount | null | undefined): number | null {
   if (typeof amount?.value !== "string" || amount.value.trim() === "") return null;
   const value = Number(amount.value);
@@ -80,8 +78,7 @@ export function adaptFundamentals(data: PublicFundamentalsResponse | null, ticke
 
 export function selectFlow(published: PublicBusinessFlow | undefined, fundamentals: PublicFundamentalsResponse | null, ticker: string): PublicBusinessFlow {
   const parsed=publicFlowSchema.safeParse(published);
-  const flow = parsed.success && parsed.data.ticker===ticker && parsed.data.quarters.length ? parsed.data : adaptFundamentals(fundamentals,ticker);
-  return { ...flow, quarters: flow.quarters.map(q => enrichDisclosedRevenue(ticker, q)) };
+  return parsed.success && parsed.data.ticker===ticker && parsed.data.quarters.length ? parsed.data : adaptFundamentals(fundamentals,ticker);
 }
 
 /** The quarter `days` before this one, give or take three weeks; a fiscal calendar's 52/53-week years drift a few days. */
@@ -109,8 +106,6 @@ export function compareAmount(current: BusinessFlowQuarter, previous: BusinessFl
 
 /** A change between two quarters. `comparable` is false when the quarters cannot be compared; `trend` says which way the figure moved. */
 export type FlowChange = { label: string; comparable: boolean; trend: "up" | "down" | null; delta: number | null; previous: number | null; percent: number | null };
-/** The English label of a change that cannot be formed; `flowWords.na` is the page's own. */
-export const NOT_COMPARABLE = "n/a";
 
 export function compareFlowAmounts(current: BusinessFlowQuarter, previous: BusinessFlowQuarter | null, key: string, a: FlowAmount | null | undefined, b: FlowAmount | null | undefined): FlowChange {
   const av = numeric(a), bv = numeric(b);

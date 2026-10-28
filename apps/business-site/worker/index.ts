@@ -2,7 +2,7 @@
 import { readValuationPublication } from "@/shared/analysis-runtime/valuation/read";
 import { selectFlow } from "@/packages/web/src/model/business-flow-model";
 import { checkCompleteFlow, newestPair } from "@/shared/analysis-runtime/financial-data/completeness";
-import { canonicalTicker } from "@/shared/analysis-runtime/financial-data/policy";
+import { canonicalTicker, TICKER_PATTERN } from "@/shared/analysis-runtime/financial-data/policy";
 import type { CompleteFlowPublication } from "@/shared/analysis-contract/complete-business-flow";
 import {readReportHistory} from "@/shared/analysis-runtime/financial-data/report-history";
 import {readHistory} from "@/shared/analysis-runtime/financial-data/history";
@@ -69,10 +69,17 @@ export async function loadPublicFlow(ticker:string,fetcher:typeof fetch=fetch,lo
  if(!response.ok)throw new Error("Public source unavailable");
  const publication=await response.json() as CompleteFlowPublication;
  if(publication.schemaVersion!=="complete-business-flow.v1"||!['ready','preparing','unavailable'].includes(publication.status))throw new Error('Invalid publication');
- if(publication.status!=='ready')return {schemaVersion:publication.schemaVersion,status:publication.status,flow:null,reasons:publication.reasons,outdated:false,lastAttemptAt:publication.lastAttemptAt};
+ // The issuer's fiscal calendar labels every period on the page; kept only in its own shape.
+ const issuer=publicIssuer(publication.issuer);
+ if(publication.status!=='ready')return {schemaVersion:publication.schemaVersion,status:publication.status,flow:null,reasons:publication.reasons,outdated:false,lastAttemptAt:publication.lastAttemptAt,...(issuer?{issuer}:{})};
  const flow=newestPair(selectFlow(publication.flow??undefined,null,ticker));const check=checkCompleteFlow(flow);
  // History is re-validated here and stripped to its schema; an invalid record is dropped, never repaired.
- return {schemaVersion:"complete-business-flow.v1",status:check.complete?"ready":"preparing",flow:check.complete?flow:null,reasons:check.complete&&publication.outdated?publication.reasons:check.reasons,outdated:check.complete&&publication.outdated===true,lastAttemptAt:publication.lastAttemptAt??null,history:check.complete?readHistory(publication.history,ticker):null,...(check.complete&&publication.reports?{reports:readReportHistory(publication.reports,ticker)}:{})};
+ return {schemaVersion:"complete-business-flow.v1",status:check.complete?"ready":"preparing",flow:check.complete?flow:null,reasons:check.complete&&publication.outdated?publication.reasons:check.reasons,outdated:check.complete&&publication.outdated===true,lastAttemptAt:publication.lastAttemptAt??null,history:check.complete?readHistory(publication.history,ticker):null,...(check.complete&&publication.reports?{reports:readReportHistory(publication.reports,ticker)}:{}),...(issuer?{issuer}:{})};
+}
+function publicIssuer(value:unknown):CompleteFlowPublication["issuer"]|null{
+ if(!value||typeof value!=="object")return null;
+ const {fiscalYearEndMonth:month,name}=value as {fiscalYearEndMonth?:unknown;name?:unknown};
+ return {fiscalYearEndMonth:typeof month==="number"&&Number.isInteger(month)&&month>=1&&month<=12?month:null,name:typeof name==="string"&&name.trim()?name.trim().slice(0,120):null};
 }
 
 /** Supplementary: an unavailable or invalid explanation reads as null and never fails the flow. */
@@ -139,7 +146,7 @@ export async function loadFindingsIndex(fetcher:typeof fetch=fetch):Promise<stri
   const response=await fetcher(ANALYSIS_ORIGIN+"/api/v1/findings",{signal:AbortSignal.timeout(8000),headers:{accept:"application/json"}});
   if(!response.ok)return null;
   const body=await response.json() as {schemaVersion?:string;tickers?:unknown};
-  return body.schemaVersion==="findings-index.v1"&&Array.isArray(body.tickers)?body.tickers.filter((t):t is string=>typeof t==="string"&&/^[A-Z][A-Z0-9.-]{0,11}$/.test(t)).slice(0,40):null;
+  return body.schemaVersion==="findings-index.v1"&&Array.isArray(body.tickers)?body.tickers.filter((t):t is string=>typeof t==="string"&&TICKER_PATTERN.test(t)).slice(0,40):null;
  }catch{return null;}
 }
 export async function loadFindings(ticker:string,fetcher:typeof fetch=fetch,locale:Locale|null=null):Promise<FindingsBundle|null>{

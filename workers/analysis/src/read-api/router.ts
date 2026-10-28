@@ -29,6 +29,7 @@ import type { PublicSecFiling } from "../../../../shared/analysis-contract/filin
 import type { Feature } from "../../../../shared/analysis-contract/business-features.ts";
 import { readHomeDigest, type HomeDigestEnv } from "./home-digest.ts";
 import { fiscalFields, readFiscalFocus, stampFlow, stampHistory } from "./fiscal-periods.ts";
+import { TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 
 /**
  * The analysis backend's read surface, served only to the business map over the `MapReads`
@@ -83,7 +84,7 @@ async function findingsIndex(request: Request, database: D1Database, env: Featur
     shownFilter(database, env, "findings"),
   ]);
   // A company whose findings are switched off is left off the home page as well as its own.
-  const tickers = rows.results.map(r => r.ticker).filter(t => /^[A-Z][A-Z0-9.-]{0,11}$/.test(t) && shown(t));
+  const tickers = rows.results.map(r => r.ticker).filter(t => TICKER_PATTERN.test(t) && shown(t));
   return dataResponse(request, { schemaVersion: "findings-index.v1", tickers }, "cacheable");
 }
 
@@ -130,6 +131,7 @@ async function home(request: Request, database: D1Database, env: HomeDigestEnv):
 async function handleRoute(request: Request, database: D1Database, env: FeatureDefaultsEnv, route: Exclude<RouteMatch, { kind: "findings-index" } | { kind: "home" }>): Promise<Response> {
   // The admin's switch for one feature of this company: off hides what the feature wrote (docs/whitelist-feature-switches-design.md).
   const hidden = async (feature: Feature, ticker = route.ticker) => !await featureShown(database, env, ticker.trim().toUpperCase(), feature);
+  const issuerCalendar = async (ticker: string) => (await readFiscalFocus(database, ticker)).issuers.get(ticker.trim().toUpperCase()) ?? { fiscalYearEndMonth: null, name: null };
   const url = new URL(request.url);
   // `?locale=zh-CN` serves a resource with its translated prose applied; the structure, figures and ids are the English
   // publication's, and a string not yet translated stays English. Two lookups and a pure copy, never a model call.
@@ -152,16 +154,18 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
       );
       // Report summaries hidden by the admin: the filings are still listed, as filings, without what the model wrote.
       const filings = await hidden("reports", page.ticker) ? page.filings.map(withoutSummary) : page.filings;
-      return dataResponse(request, { ...page, filings: await translated("filings", filings) });
+      const calendar = await issuerCalendar(page.ticker);
+      return dataResponse(request, { ...page, filings: (await translated("filings", filings)).map(f => ({ ...f, fiscalYearEndMonth: calendar.fiscalYearEndMonth })) });
     }
     case "filing": {
       const detail = await getPublicFiling(new D1SecRepository(database), route.ticker, route.accession,
         url.searchParams.has("reportVersion") || url.searchParams.has("reportDate")
           ? { reportVersion: url.searchParams.get("reportVersion") ?? "", reportDate: url.searchParams.get("reportDate") ?? "" } : undefined);
       if (!detail) return errorResponse("FILING_NOT_FOUND", "SEC filing not found.");
-      if (await hidden("reports", detail.ticker)) return dataResponse(request, { ...detail, filing: withoutSummary(detail.filing) }, "no-store");
+      const { fiscalYearEndMonth } = await issuerCalendar(detail.ticker);
+      if (await hidden("reports", detail.ticker)) return dataResponse(request, { ...detail, filing: { ...withoutSummary(detail.filing), fiscalYearEndMonth } }, "no-store");
       const report = await translated("filing", { summary: detail.filing.summary, analysis: detail.filing.analysis }, route.accession);
-      return dataResponse(request, { ...detail, filing: { ...detail.filing, summary: report.summary, analysis: report.analysis } });
+      return dataResponse(request, { ...detail, filing: { ...detail.filing, summary: report.summary, analysis: report.analysis, fiscalYearEndMonth } });
     }
     case "business-flow": {
       const payload=await readCompletePublicationForTicker(database,route.ticker);
@@ -172,6 +176,7 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
       if (payload.flow) payload.flow = stampFlow(payload.flow, focus);
       if (payload.reports) payload.reports = stampFlow(payload.reports, focus);
       if (payload.history) payload.history = stampHistory(payload.history, focus);
+      payload.issuer = focus.issuers.get(route.ticker.trim().toUpperCase()) ?? { fiscalYearEndMonth: null, name: null };
       return dataResponse(request,payload,payload.status==="ready"?"cacheable":"no-store");
     }
     case "capital": {

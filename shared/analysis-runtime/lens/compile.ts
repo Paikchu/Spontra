@@ -1,9 +1,10 @@
 import type { FindingRef, FindingSpan } from "../../analysis-contract/findings.ts";
 import { LENS_ASPECT, type LensChart, type LensColorToken, type LensMark, type LensSeries } from "../../analysis-contract/lens.ts";
 import type { CompiledAxis, CompiledChart, CompiledSeries } from "../../analysis-contract/lens-frame.ts";
-import { refLabel, resolveEvidence, resolveRef, shiftPeriod, type FindingData, type ResolvedValue, type ValueUnit } from "../findings.ts";
+import { refLabel, resolveEvidence, resolveRef, shiftPeriod, type FindingData, type ValueUnit } from "../findings.ts";
 import { ratioForm } from "../highlights.ts";
-import { formatDelta, formatResolved, periodLabel, shortPeriod, tickLabel } from "./format.ts";
+import { formatDelta, formatResolved, periodLabel, tickLabel } from "./format.ts";
+import { shortPeriod } from "../locale.ts";
 import { qoqLabel, yoyLabel, type Locale } from "../locale.ts";
 
 export type CompileOptions = {
@@ -195,4 +196,3 @@ export function compileChart(chart: LensChart, data: FindingData, periodEnd: str
 
 /** Pixel height the host gives a chart cell of a given width; the audit estimates with the same rule. */
 export const chartHeight = (width: number, aspect: keyof typeof LENS_ASPECT) => Math.max(200, Math.min(420, Math.round(width * LENS_ASPECT[aspect])));
-export const resolvedText = (v: ResolvedValue, ref?: FindingRef, locale: Locale = "en") => formatResolved(v, ref, locale);

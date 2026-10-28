@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { CompanyEvent, EventClass, EventImportance, EventsPublication, InsiderTransaction } from "../analysis-contract/events.ts";
 import type { Locale } from "./locale.ts";
+import { TICKER_PATTERN } from "./financial-data/policy.ts";
 
 /* ---------- Classification ---------- */
 
@@ -152,7 +153,7 @@ const summary = z.object({
   analystView: text(1200), eventCategory: z.enum(["earnings_update", "guidance", "m&a", "executive", "legal", "other"]).nullable(), generatedAt: z.string().max(40),
 });
 const event = z.object({
-  id: text(40), ticker: z.string().regex(/^[A-Z][A-Z0-9.-]{0,11}$/), form: z.enum(["8-K", "8-K/A", "6-K", "6-K/A", "4", "4/A"]), filedAt: date, eventDate: date,
+  id: text(40), ticker: z.string().regex(TICKER_PATTERN), form: z.enum(["8-K", "8-K/A", "6-K", "6-K/A", "4", "4/A"]), filedAt: date, eventDate: date,
   items: z.array(z.string().regex(/^\d\.\d\d$/)).max(20),
   class: z.enum(["earnings", "guidance", "executive", "insider", "deal", "financing", "capital_return", "vote", "legal", "other"]),
   description: text(300), title: text(300).nullable().optional(), importance: z.enum(["key", "normal", "routine"]).optional(),
@@ -161,7 +162,7 @@ const event = z.object({
   summary: summary.nullable(), insider: insider.nullable(),
 });
 export const eventsPublicationSchema = z.object({
-  schemaVersion: z.literal("events.v1"), ticker: z.string().regex(/^[A-Z][A-Z0-9.-]{0,11}$/), checkedAt: z.string().max(40),
+  schemaVersion: z.literal("events.v1"), ticker: z.string().regex(TICKER_PATTERN), checkedAt: z.string().max(40),
   events: z.array(event).max(400), pendingInsider: z.number().int().nonnegative(),
 });
 

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { AnalysisFinding, FindingEvidence, FindingRef, FindingsPublication } from "../../../../shared/analysis-contract/findings.ts";
+import type { AnalysisFinding, FindingRef, FindingsPublication } from "../../../../shared/analysis-contract/findings.ts";
 import { LENS_HTML_SCRIPT_HOSTS, LENS_LIMITS, type LensDocument, type LensPictureRender, type LensSeries } from "../../../../shared/analysis-contract/lens.ts";
 import { evidenceCandidates, readFindingsPublication, readLensDocument, resolveEvidence, rpoBuckets, spanLabel, verifyFindings, type FindingData, type ResolvedEvidence } from "../../../../shared/analysis-runtime/findings.ts";
 import { auditDocument, WIDTH_CLASSES, type LensWarning } from "../../../../shared/analysis-runtime/lens/audit.ts";
@@ -288,6 +288,3 @@ export async function writeLensDocuments(input: LensWriteInput): Promise<{ publi
   const publication = readFindingsPublication({ ...input.publication, findings }, input.publication.ticker) ?? input.publication;
   return { publication, trace: { version: input.version, generatedAt: input.now, findings: results } };
 }
-
-/** Evidence as the verifier resolves it, for a finding read outside the page. */
-export const resolvedEvidenceOf = (data: FindingData, evidence: FindingEvidence[]) => evidence.map(e => resolveEvidence(data, e)).filter((r): r is ResolvedEvidence => r != null);

@@ -1,5 +1,5 @@
 import type { AiRun, AiRunKind, AiRunStatus, AiRunTrigger, AiVersion, AiVersionSummary } from "../../../../shared/analysis-contract/ai-runs-admin.ts";
-import { sha256 } from "../company-analysis/api.ts";
+import { sha256 } from "../sha256.ts";
 import { KIND_FEATURE, recordFeatureFailure } from "../admin/messages.ts";
 
 /**

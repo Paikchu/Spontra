@@ -13,6 +13,7 @@ import type { LensDocument } from "../analysis-contract/lens.ts";
 import { lensDocumentSchemaFor } from "./lens/schema.ts";
 import { scheduleBucketAt, scheduleBucketLabel, scheduleTotalAt } from "./schedules.ts";
 import type { Locale } from "./locale.ts";
+import { TICKER_PATTERN } from "./financial-data/policy.ts";
 
 /* ---------- Schema ---------- */
 
@@ -38,7 +39,7 @@ const baseRef = z.union([
   z.object({ nodeId: text(200) }),
   z.object({ guidanceId: text(200) }),
   z.object({ rpoBucket: z.number().int().min(0).max(11) }),
-  z.object({ peer: z.object({ ticker: z.string().regex(/^[A-Z][A-Z0-9.-]{0,11}$/), ref: z.union([z.object({ capital: z.enum(CAPITAL_METRICS) }), z.object({ fundamental: z.enum(FUNDAMENTAL_KEYS) }), z.object({ metric: z.enum(FLOW_METRICS) })]) }) }),
+  z.object({ peer: z.object({ ticker: z.string().regex(TICKER_PATTERN), ref: z.union([z.object({ capital: z.enum(CAPITAL_METRICS) }), z.object({ fundamental: z.enum(FUNDAMENTAL_KEYS) }), z.object({ metric: z.enum(FLOW_METRICS) })]) }) }),
   z.object({ passageCell: z.object({ passageId: z.string().regex(/^[a-z0-9]{8,64}$/), row: z.number().int().min(0).max(200), col: z.number().int().min(0).max(40) }) }),
   z.object({ event: z.object({ id: z.string().regex(/^\d{10}-\d{2}-\d{6}$/), field: z.enum(EVENT_FIELDS) }) }),
   z.object({ schedule: z.object({ kind: z.enum(["debtMaturities", "leasePaymentsDue", "purchaseObligations"]), bucket: z.union([z.number().int().min(0).max(5), z.literal("total")]) }) }),
@@ -79,7 +80,7 @@ const highlight = z.object({ title: text(40), ref, compare: z.enum(["yoy", "qoq"
 export const reportHighlightsSchema = z.object({ periodEnd: date, profit: z.array(highlight).max(4), cash: z.array(highlight).max(4), balance: z.array(highlight).max(4) });
 export const findingsPublicationSchema = z.object({
   schemaVersion: z.literal("findings.v1"),
-  ticker: z.string().regex(/^[A-Z][A-Z0-9.-]{0,11}$/),
+  ticker: z.string().regex(TICKER_PATTERN),
   periodEnd: date, generatedAt: z.string().max(40), model: text(80), fingerprint: text(128).optional(),
   findings: z.array(finding).max(8),
   sources: z.array(z.object({ id: text(40), title: text(300), url: https, kind: z.enum(["sec", "web"]), publishedAt: z.string().max(40).nullable() })).min(1).max(40),

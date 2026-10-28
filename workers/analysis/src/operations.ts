@@ -49,6 +49,7 @@ import { SEC_MODEL_EXECUTION_BUDGET_MS, SEC_MODEL_FIRST_RESPONSE_MS, SEC_MODEL_O
 import type { PreparedFilingReference, AnalysisOperations, WorkflowJobUpdate } from "./workflow-core.ts";
 import { jobAnalysisVersionFor } from "./workflow-core.ts";
 import type { MarkdownConverter } from "./web-search/page.ts";
+import { sha256 } from "./sha256.ts";
 
 type R2ObjectLike = { etag?: string; text(): Promise<string> };
 type R2BucketLike = {
@@ -176,8 +177,7 @@ function secModelFor(env: AnalysisEnv, stage: string, execution?: SecModelExecut
   return execution?.model || aiToolSetting(env, "sec-analysis").model || modelForStage(env, stage) || env.SEC_ANALYSIS_MODEL || SEC_FALLBACK_MODEL;
 }
 
-const sha256Hex = async (value: unknown): Promise<string> => Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(value)))),
-  (b) => b.toString(16).padStart(2, "0")).join("");
+const sha256Hex = (value: unknown): Promise<string> => sha256(JSON.stringify(value));
 
 /**
  * A completed discovery chunk, stored under the filing by everything its model call depends on (prompt, chunk text,

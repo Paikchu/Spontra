@@ -1,3 +1,4 @@
+import { normalizeTicker } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 import {
   COMPANY_ANALYSIS_BLOCK_TYPES,
   COMPANY_ANALYSIS_MAX_BLOCKS_PER_HIGHLIGHT,
@@ -14,7 +15,6 @@ import {
   type FundamentalTransform,
 } from "../../../../shared/analysis-contract/fundamentals.ts";
 export type { CompanyAnalysisCoverageStatus, CompanyAnalysisOverview } from "../../../../shared/analysis-contract/company-analysis.ts";
-import { normalizeTrackedTicker } from "../sec/config.ts";
 
 export const COMPANY_ANALYSIS_SCHEMA_VERSION = "company-analysis.v1";
 /**
@@ -61,7 +61,7 @@ export class CompanyAnalysisValidationError extends Error {
 
 export function normalizeCompanyAnalysisPublication(value: unknown): CompanyAnalysisPublication {
   const item = record(value);
-  const ticker = normalizeTrackedTicker(text(item?.ticker));
+  const ticker = normalizeTicker(text(item?.ticker));
   const analysisId = bounded(item?.analysisId, 160);
   const triggerRef = bounded(item?.triggerRef, 240);
   const periodId = bounded(item?.periodId, 200);

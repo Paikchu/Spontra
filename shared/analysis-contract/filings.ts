@@ -36,6 +36,8 @@ export type AnalysisRunSummary = {
 
 export type PublicSecFiling = {
   fiscalPeriod?: import("./report.ts").SecFiscalPeriod | null;
+  /** The month the issuer's fiscal year ends in, from its submissions or its latest annual report; null when neither says. */
+  fiscalYearEndMonth?: number | null;
   earningsGroup?: import("./report.ts").SecEarningsGroup;
   accessionNumber: string;
   ticker: string;

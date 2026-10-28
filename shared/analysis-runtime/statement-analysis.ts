@@ -370,9 +370,6 @@ export function peerRanks(data: FindingData, assessment: StatementAssessment, ti
   return out;
 }
 
-/** Counts of the flags at each level, for a company's line on the home page. */
-export const flagCounts = (flags: Flag[]): Record<FlagLevel, number> => ({ alert: flags.filter(f => f.level === "alert").length, watch: flags.filter(f => f.level === "watch").length, note: flags.filter(f => f.level === "note").length });
-
 /** The dimensions' names as Spontra Analysis writes them for a model. */
 export const DIMENSION_NAMES: Record<import("../analysis-contract/statement-analysis.ts").StatementDimension, string> = {
   growth: "growth", profitability: "profitability", earningsQuality: "earnings quality", capitalEfficiency: "capital efficiency", safety: "financial safety", valuation: "valuation",

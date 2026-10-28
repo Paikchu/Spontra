@@ -19,5 +19,3 @@ export type DossierPublication = {
   documents: Record<string, LensDocument>;
   materials: FindingMaterial[];
 };
-
-export type DossierResponse = { schemaVersion: "dossier-response.v1"; status: "ready" | "preparing"; dossier: DossierPublication | null };

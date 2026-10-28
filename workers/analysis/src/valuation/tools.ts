@@ -4,7 +4,7 @@ import { SCENARIO_KEYS, VALUATION_DIMENSIONS, VALUATION_MODEL_TYPES, type Confid
 import { calculateValuation, dimensionCeilings, discountRateBaseline, outsideHistory, percentileRank, ValuationCalcError, type CalcRequest } from "../../../../shared/analysis-runtime/valuation/calculator.ts";
 import { EXCLUDED_HOSTS, PAGE_CACHE_MS, hostOf, readWebPage } from "../analyst/web.ts";
 import { renderTable } from "../analyst/agent.ts";
-import { sha256 } from "../company-analysis/api.ts";
+import { sha256 } from "../sha256.ts";
 import { libraryFindAcross, libraryRead } from "../filing-library/tool.ts";
 import { libraryPassages, readLibraryDocument } from "../filing-library/store.ts";
 import type { AnalysisEnv } from "../operations.ts";

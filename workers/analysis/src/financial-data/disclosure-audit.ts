@@ -8,6 +8,7 @@ import type { DocumentSource } from "./parser.ts";
 import { canonicalSecHtml } from "./provider.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
+import { TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 
 type ArchiveBucket = {
   get(key: string): Promise<{ text(): Promise<string> } | null>;
@@ -28,7 +29,7 @@ const summary = ({rawKey: _raw, inventoryKey: _inventory, statementsKey: _statem
 /** Source-addressed archives survive reruns; the D1 pointer advances only after all source, inventory and statement objects exist. */
 export async function archiveFilingDisclosures(env: DisclosureArchiveEnv, ticker: string, source: DocumentSource, served: string,
   metadata: { form?: string; reportDate?: string } = {}, causeId: string | null = null): Promise<DisclosureAuditSummary> {
-  if (!/^[A-Z][A-Z0-9.-]{0,11}$/.test(ticker) || !/^\d{10}-\d{2}-\d{6}$/.test(source.accession)) throw new Error("INVALID_DISCLOSURE_SOURCE");
+  if (!TICKER_PATTERN.test(ticker) || !/^\d{10}-\d{2}-\d{6}$/.test(source.accession)) throw new Error("INVALID_DISCLOSURE_SOURCE");
   // Hash and store what was filed, not what sec.gov wrapped around it, so the same document keeps one address.
   const html = canonicalSecHtml(served);
   const url = new URL(source.url);

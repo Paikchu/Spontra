@@ -17,6 +17,7 @@ import { callWorkerSecModel, type AnalysisEnv } from "../operations.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import { getPublicFiling, getPublicFilingPage } from "../sec/public-api.ts";
+import { sha256 } from "../sha256.ts";
 
 /**
  * The translator (docs/i18n-design.md, phase 2). Reads a company's English publications exactly as the read API
@@ -26,7 +27,6 @@ import { getPublicFiling, getPublicFilingPage } from "../sec/public-api.ts";
  */
 /** v2: the checker compares full values and accepts digits kept verbatim, so v1's false rejections are retried. */
 export const TRANSLATION_VERSION = "translate.v3";
-export const TRANSLATION_LOCALES: readonly Locale[] = ["zh-CN"];
 const LOCALE: Locale = "zh-CN";
 /** Model input per call; long report paragraphs travel alone. */
 const BATCH_CHARS = 6_000, BATCH_ITEMS = 40;
@@ -38,8 +38,6 @@ export const tableKey = (locale: Locale, resource: TranslatedResource, ticker: s
   `i18n:v1:${locale}:${resource}:${ticker}${scope ? `:${scope}` : ""}`;
 type StoredTable = { locale: Locale; version: string; sources: string; strings: TranslationTable; at: string };
 
-const hex = (buffer: ArrayBuffer) => [...new Uint8Array(buffer)].map(b => b.toString(16).padStart(2, "0")).join("");
-export const sha256 = async (text: string) => hex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)));
 const quiet = async <T>(work: () => Promise<T>): Promise<T | null> => { try { return await work(); } catch { return null; } };
 
 /** Every English string the read API serves for the company, per resource, read the way the routes read them. */
