@@ -7,7 +7,7 @@
 import type { Plugin } from "vite";
 import type { HomeDigest } from "../../shared/analysis-contract/home.ts";
 import { calendarLabel, resolvePeriod } from "../../shared/analysis-runtime/fiscal-label.ts";
-import { capital, company, events, filings, findings, flow, TICKER } from "./fixture.ts";
+import { capital, company, events, filings, findings, flow, TICKER, valuation } from "./fixture.ts";
 
 let published = 0;
 const revision = () => new Date(Date.UTC(2026, 7, 10) + published * 3_600_000).toISOString();
@@ -21,7 +21,7 @@ function resources(): Record<string, unknown> {
   const rev = revision();
   return {
     "": company,
-    "/revision": { schemaVersion: "revisions.v1", ticker: TICKER, revisions: { company: rev, capital: rev, findings: rev, fundamentals: rev, events: rev, filings: rev } },
+    "/revision": { schemaVersion: "revisions.v1", ticker: TICKER, revisions: { company: rev, capital: rev, findings: rev, fundamentals: rev, events: rev, filings: rev, valuation: rev } },
     "/capital": { status: "ready", capital },
     "/findings": { status: "ready", findings: { ...findings, findings: [...later.map(l => l.finding).reverse(), ...findings.findings] }, passages: [
       { passageId: "pfixturenote01", documentId: "d1", title: `${TICKER} 10-Q`, form: "10-Q", filedAt: "2026-08-05", url: "https://www.sec.gov/", path: ["MD&A", "Cash flows"], text: "Depreciation and amortization increased as new capacity was placed in service.", table: null },
@@ -30,6 +30,7 @@ function resources(): Record<string, unknown> {
     "/events": { status: "ready", events: { ...events, events: [...later.map(l => l.event).reverse(), ...events.events] } },
     "/filings": { status: "ready", filings },
     "/fundamentals": { status: "unavailable" },
+    "/valuation": valuation,
   };
 }
 

@@ -88,17 +88,18 @@ function Prose({ text, onCite, as: Tag = "p" }: { text: string; onCite: (id: str
 
 function Radar({ dimensions }: { dimensions: ValuationDimension[] }) {
   const complete = dimensions.every(d => d.score != null);
-  const n = VALUATION_DIMENSIONS.length, size = 220, c = size / 2, r = 84;
-  const point = (i: number, value: number) => { const a = -Math.PI / 2 + i * 2 * Math.PI / n; return [c + Math.cos(a) * r * value, c + Math.sin(a) * r * value] as const; };
+  // Labels sit outside the outer ring, so the box is wider than the figure: the side labels need their own room.
+  const n = VALUATION_DIMENSIONS.length, width = 420, height = 236, cx = width / 2, cy = 118, r = 80;
+  const point = (i: number, value: number) => { const a = -Math.PI / 2 + i * 2 * Math.PI / n; return [cx + Math.cos(a) * r * value, cy + Math.sin(a) * r * value] as const; };
   const ring = (value: number) => VALUATION_DIMENSIONS.map((_, i) => point(i, value).join(",")).join(" ");
   const shape = complete ? VALUATION_DIMENSIONS.map((key, i) => point(i, (dimensions.find(d => d.key === key)!.score ?? 0) / 10).join(",")).join(" ") : null;
   return <figure className="val-radar" aria-label={m.dimensions}>
-    <svg viewBox={`0 0 ${size} ${size}`} role="img" aria-hidden={!complete}>
+    <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-hidden={!complete}>
       {[0.25, 0.5, 0.75, 1].map(v => <polygon key={v} className="val-radar-ring" points={ring(v)} />)}
-      {VALUATION_DIMENSIONS.map((_, i) => { const [x, y] = point(i, 1); return <line key={i} className="val-radar-axis" x1={c} y1={c} x2={x} y2={y} />; })}
+      {VALUATION_DIMENSIONS.map((_, i) => { const [x, y] = point(i, 1); return <line key={i} className="val-radar-axis" x1={cx} y1={cy} x2={x} y2={y} />; })}
       {shape && <polygon className="val-radar-shape" points={shape} />}
       {shape && VALUATION_DIMENSIONS.map((key, i) => { const [x, y] = point(i, (dimensions.find(d => d.key === key)!.score ?? 0) / 10); return <circle key={key} className="val-radar-dot" cx={x} cy={y} r={3} />; })}
-      {VALUATION_DIMENSIONS.map((key, i) => { const [x, y] = point(i, 1.22); return <text key={key} className="val-radar-label" x={x} y={y} textAnchor={Math.abs(x - c) < 12 ? "middle" : x < c ? "end" : "start"} dominantBaseline="middle">{DIM[key]}</text>; })}
+      {VALUATION_DIMENSIONS.map((key, i) => { const [x, y] = point(i, 1.18); return <text key={key} className="val-radar-label" x={x} y={y} textAnchor={Math.abs(x - cx) < 12 ? "middle" : x < cx ? "end" : "start"} dominantBaseline="middle">{DIM[key]}</text>; })}
     </svg>
     {!complete && <figcaption>{m.radarNote}</figcaption>}
   </figure>;
@@ -114,7 +115,11 @@ function RangeBar({ report }: { report: ValuationPublication }) {
   const x = (v: number) => `${((v - lo) / (hi - lo) * 100).toFixed(2)}%`;
   const money = (v: number) => perShare(v, model.currency, locale);
   const marks: Array<[string, number, string]> = [[m.bear, range.low, "bear"], [m.base, range.base, "base"], [m.bull, range.high, "bull"]];
-  if (range.expected != null) marks.push([m.expected, range.expected, "expected"]);
+  // The expected value sits on its own mark unless it all but coincides with another, which then carries both names.
+  if (range.expected != null) {
+    const near = marks.find(([, v]) => Math.abs(v - range.expected!) <= (hi - lo) * 0.02);
+    if (near) near[0] = `${near[0]} · ${m.expected}`; else marks.push([m.expected, range.expected, "expected"]);
+  }
   return <div className="val-range" role="img" aria-label={[m.range, ...marks.map(([label, v]) => `${label} ${money(v)}`), ...(range.price != null ? [`${m.price} ${money(range.price)}`] : [])].join(" · ")}>
     <div className="val-range-track">
       <span className="val-range-band" style={{ left: x(range.low), width: `calc(${x(range.high)} - ${x(range.low)})` }} />
