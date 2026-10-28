@@ -18,7 +18,7 @@ import { ValuationStore } from "./store.ts";
 import { ASSUMPTION_TOOLS, CITATION, COMPOSE_TOOLS, RESEARCH_BUDGET, RESEARCH_TOOLS, excerptOf, factLine, impliedThreshold, valuationTools, type RedTeam, type ValuationState } from "./tools.ts";
 
 /** Changing the prompts, the tools, the calculator or the publication contract reassesses every switched-on company once. */
-export const VALUATION_VERSION = "valuation.v2";
+export const VALUATION_VERSION = "valuation.v3";
 export type ValuationWorkflowParams = { ticker: string; fingerprint: string };
 const BUDGET = { research: { turns: 16, wallMs: 40 * 60_000 }, assume: { turns: 8, wallMs: 20 * 60_000 }, compose: { turns: 6, wallMs: 12 * 60_000 } };
 const MODEL_BUDGET_MS = 5 * 60_000;
