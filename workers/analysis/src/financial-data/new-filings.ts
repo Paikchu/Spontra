@@ -12,16 +12,17 @@ const periodic = (form: string) => /^(?:10-[QK]|20-F|40-F)(?:\/A)?$/.test(form);
 const release = (q: BusinessFlowQuarter) => /^Earnings release/i.test(q.sources[0]?.title ?? '');
 
 /**
- * The filings that may report a quarter after the newest published one, oldest first. A filing counts once: one with a
+ * The filings that may report a quarter after the newest published one, oldest first, or null before discovery has listed them. A filing counts once: one with a
  * read note under this version is passed over. Before the newest quarter has ended 70 days, only a quarterly report
  * replacing an earnings release can add to it; nothing filed before the newest quarter's own source is new.
  */
-export async function newFilings(db: D1Database, ticker: string, cik: string, newest: BusinessFlowQuarter): Promise<NewFiling[]> {
+export async function newFilings(db: D1Database, ticker: string, cik: string, newest: BusinessFlowQuarter): Promise<NewFiling[] | null> {
   // Discovery's own listing, not the reports index (sec_filings): a data-only issuer has no reports index, and the
-  // index is written after collection starts.
+  // index is written after collection starts. Null while discovery has not recorded the listing's details.
   const listed = await db.prepare("SELECT json_extract(payload, '$.collected') collected FROM sec_cache WHERE cache_key = ?").bind(`sec:discovery:v1:${ticker}`).first<{ collected: string | null }>();
+  if (!listed?.collected) return null;
   let filings: CollectableFiling[] = [];
-  try { filings = JSON.parse(listed?.collected ?? '[]'); } catch { filings = []; }
+  try { filings = JSON.parse(listed.collected); } catch { return null; }
   if (!filings.length) return [];
   const read = new Set((await db.prepare(`SELECT accession FROM filing_read_notes WHERE cik = ? AND version = ? AND accession IN (${filings.map(() => '?').join(',')})`)
     .bind(cik, READ_NOTE_VERSION, ...filings.map(f => f.accession)).all<{ accession: string }>()).results.map(r => r.accession));

@@ -96,11 +96,11 @@ test("a data-only issuer's new earnings release reaches collection from discover
   } } });
   const tenQ: [string, string, string, string, string, string] = ["0001652044-26-000071", "10-Q", "", "2026-07-23", "2026-06-30", "goog-20260630.htm"];
   const release: [string, string, string, string, string, string] = ["0001652044-26-000080", "8-K", "2.02,9.01", "2026-10-28", "2026-10-28", "googexhibit991q32026.htm"];
-  await db.prepare("INSERT INTO sec_cache (cache_key, payload) VALUES (?, ?)").bind("sec:discovery:v1:GOOGL", JSON.stringify({ cik: "0001652044", accessions: [], checkedAt: "" })).run();
+  await db.prepare("INSERT INTO sec_cache (cache_key, payload) VALUES (?, ?)").bind("sec:discovery:v1:GOOGL", JSON.stringify({ cik: "0001652044", accessions: [], checkedAt: "", collectable: [release[0]] })).run();
+  const newest = { periodEnd: "2026-06-30", reportedAt: "2026-07-23", sources: [{ title: "Form 10-Q", publishedAt: "2026-07-23" }] } as unknown as BusinessFlowQuarter;
+  assert.equal(await newFilings(db, "GOOGL", "0001652044", newest), null, "a listing discovery wrote before it kept the details is not read as nothing new");
   await runSecDiscovery(env, new Date("2026-10-28T20:00:00.000Z"), fetcher({ "CIK0001652044.json": recent([release, ["0001652044-26-000079", "4", "", "2026-10-27", "", "xslF345X05/form4.xml"], tenQ]) }));
   assert.equal((await db.prepare("SELECT count(*) n FROM sec_filings").first<{ n: number }>())!.n, 0);
-
-  const newest = { periodEnd: "2026-06-30", reportedAt: "2026-07-23", sources: [{ title: "Form 10-Q", publishedAt: "2026-07-23" }] } as unknown as BusinessFlowQuarter;
   assert.deepEqual(await newFilings(db, "GOOGL", "0001652044", newest), [{ accession: "0001652044-26-000080", form: "8-K", filedAt: "2026-10-28", reportDate: null,
     url: "https://www.sec.gov/Archives/edgar/data/1652044/000165204426000080/googexhibit991q32026.htm" }]);
 

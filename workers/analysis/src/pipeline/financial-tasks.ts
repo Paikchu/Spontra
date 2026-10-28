@@ -81,7 +81,8 @@ export const FINANCIAL_TASKS = {
    * A job that ended unavailable for a transient reason is tried again six hours later, at most three times running.
    */
   collect: {
-    version: `${SEC_FLOW_PARSER_VERSION}:${READ_NOTE_VERSION}`,
+    // `discovery-listing`: new filings come from discovery's listing; the move re-collects filings the reports index hid.
+    version: `${SEC_FLOW_PARSER_VERSION}:${READ_NOTE_VERSION}:discovery-listing`,
     async run(env, ticker, { causeId, now }): Promise<TaskOutcome> {
       const db = env.DB!;
       // Paused, not finished: the filing that asked for this run is collected when collection is switched back on.
@@ -109,6 +110,8 @@ export const FINANCIAL_TASKS = {
       if (current) {
         const newest = newestPair(current).quarters[0]!;
         const filings = await newFilings(db, ticker, job.cik, newest);
+        // Discovery records the listing on its next run (every ten minutes); the job stays claimed until then.
+        if (!filings) return { status: "later", afterMs: 10 * MINUTE, detail: { waiting: "discovery listing" } };
         const listed = JSON.parse(await db.prepare("SELECT json_extract(payload, '$.collectable') c FROM sec_cache WHERE cache_key = ?").bind(`sec:discovery:v1:${ticker}`).first<{ c: string | null }>().then(r => r?.c ?? "[]")) as string[];
         const history = await issuerHistory(db, job.cik, ticker);
         const model: NoteModel = async (stage, system, payload) => {
