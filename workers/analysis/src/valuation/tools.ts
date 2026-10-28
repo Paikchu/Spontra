@@ -63,8 +63,10 @@ export async function registerEvidence(state: ValuationState, passage: FindingPa
   return evidenceId;
 }
 
-const knownId = (state: ValuationState, id: string) => state.evidence.has(id) || state.input.facts.some(f => f.id === id);
-const checkIds = (state: ValuationState, ids: string[], what: string): string[] => ids.filter(id => !knownId(state, id)).map(id => `${what} cites ${id}, which is neither registered evidence nor a fact id`);
+const knownId = (state: ValuationState, id: string) => state.evidence.has(id) || state.input.facts.some(f => f.id === id) || state.input.diagnostics.some(d => d.key === id);
+/** Evidence ids as prose cites them: in brackets, in parentheses or bare. */
+export const CITATION = /\be[0-9a-f]{10}\b/g;
+const checkIds = (state: ValuationState, ids: string[], what: string): string[] => ids.filter(id => !knownId(state, id)).map(id => `${what} cites ${id}, which is neither registered evidence, a fact id nor a diagnostic key`);
 
 const dimensionSchema = z.object({
   key: z.enum(VALUATION_DIMENSIONS), score: z.number().nullable(), confidence: z.enum(["high", "medium", "low"]),
@@ -97,12 +99,12 @@ const drivers = z.discriminatedUnion("modelType", [
   z.object({ modelType: z.literal("affo_multiple"), affoLow: z.number(), affoHigh: z.number(), weight: z.number(), recurringCostPerShare: z.number(), multiple: z.number(), horizonYears: z.number() }),
   z.object({ modelType: z.literal("affo_dcf"), annualAffo: z.number(), recurringCost: z.number(), growth: z.array(z.number()).length(5), terminalGrowth: z.number() }),
 ]);
-const scenarioSchema = z.object({ narrative: z.string().min(20).max(600), probability: z.number().nullable(), triggers: z.array(z.string().max(200)).max(5), invalidation: z.array(z.string().max(200)).max(5), evidenceIds: z.array(z.string()).max(10), drivers });
+const scenarioSchema = z.object({ narrative: z.string().min(20).max(1500), probability: z.number().nullable(), triggers: z.array(z.string().max(400)).max(6), invalidation: z.array(z.string().max(400)).max(6), evidenceIds: z.array(z.string()).max(12), drivers });
 const calcSchema = z.object({
   modelType: z.enum(VALUATION_MODEL_TYPES),
-  discountRate: z.object({ basis: z.enum(["wacc", "cost_of_equity"]), equityRiskPremium: z.number().nullable(), riskFree: z.number().nullable(), beta: z.number().nullable(), costOfDebt: z.number().nullable(), taxRate: z.number().nullable(), equityWeight: z.number().nullable(), value: z.number().nullable(), rationale: z.string().min(20).max(800), sourceRefs: z.array(z.string()).max(6) }),
-  shares: z.object({ baseFactId: z.string(), dilutionReserve: z.number(), rationale: z.string().min(10).max(500) }),
-  bridge: z.object({ nonOperatingAssets: z.number(), debtAndClaims: z.number(), nonOperatingEquityAdjustment: z.number(), notes: z.array(z.string().max(200)).max(8) }),
+  discountRate: z.object({ basis: z.enum(["wacc", "cost_of_equity"]), equityRiskPremium: z.number().nullable(), riskFree: z.number().nullable(), beta: z.number().nullable(), costOfDebt: z.number().nullable(), taxRate: z.number().nullable(), equityWeight: z.number().nullable(), value: z.number().nullable(), rationale: z.string().min(20).max(1500), sourceRefs: z.array(z.string()).max(8) }),
+  shares: z.object({ baseFactId: z.string(), dilutionPercent: z.number().min(0).max(0.5), rationale: z.string().min(10).max(800) }),
+  bridge: z.object({ nonOperatingAssets: z.number(), debtAndClaims: z.number(), nonOperatingEquityAdjustment: z.number(), notes: z.array(z.string().max(400)).max(10) }),
   scenarios: z.object({ bear: scenarioSchema, base: scenarioSchema, bull: scenarioSchema }),
 });
 type CalcArgs = z.infer<typeof calcSchema>;
@@ -129,7 +131,7 @@ function runCalculation(state: ValuationState, args: CalcArgs): string {
   if (d.equityRiskPremium != null && !d.sourceRefs.length) gaps.push({ code: "discount_rate_unsourced", message: "The equity risk premium cites no source.", evidenceIds: [] });
   const discountRate: DiscountRate = { value, basis: d.basis, components: { riskFree: rf, beta, equityRiskPremium: d.equityRiskPremium, costOfEquity: baseline?.costOfEquity ?? (d.basis === "cost_of_equity" ? value : null), costOfDebt: d.costOfDebt, taxRate: d.taxRate, equityWeight: d.equityWeight }, rationale: d.rationale, sourceRefs: d.sourceRefs };
   const request: CalcRequest = {
-    modelType: args.modelType, currency: state.input.currency, discountRate, shares: { base: baseShares!.value, dilutionReserve: args.shares.dilutionReserve, basis: `${baseShares!.id}; ${args.shares.rationale}` },
+    modelType: args.modelType, currency: state.input.currency, discountRate, shares: { base: baseShares!.value, dilutionReserve: baseShares!.value * args.shares.dilutionPercent, basis: `${baseShares!.id}; dilution ${(args.shares.dilutionPercent * 100).toFixed(2)}% of base; ${args.shares.rationale}` },
     bridge: args.bridge, price: state.quote?.usable ? state.quote.price : null,
     scenarios: Object.fromEntries(SCENARIO_KEYS.map(k => [k, args.scenarios[k] as ScenarioAssumptions])) as Record<"bear" | "base" | "bull", ScenarioAssumptions>,
   };
@@ -278,15 +280,15 @@ export function valuationTools(env: AnalysisEnv): AnyTool<ValuationState>[] {
         if (!ctx.state.dimensions.has("valuationSafety")) throw new Error("submit valuationSafety first");
         ctx.state.assumptionsDone = true; return "Assumptions recorded.";
       }, observe: (_a, v) => v }),
-    tool({ name: "compose_valuation", description: "The written report: every figure must be one the calculator or a fact produced; cite evidence ids in brackets.", parameters: z.object({
-        summary: z.string().min(60).max(900), thesis: z.string().min(80).max(1600), expectationsGap: z.string().min(40).max(1200), catalysts: z.array(z.string().max(300)).max(6), counterEvidence: z.array(z.string().max(300)).max(6), nextChecks: z.array(z.string().max(300)).min(1).max(6), modelNotes: z.string().max(1200),
+    tool({ name: "compose_valuation", description: "The written report: every figure must be one the calculator or a fact produced; cite evidence ids like [e1a2b3c4d5]. Keep each section within its limit: summary 1800, thesis 4000, expectations gap 3000 and model notes 3000 characters; list items 700 characters, at most 8 each.", parameters: z.object({
+        summary: z.string().min(60).max(1800), thesis: z.string().min(80).max(4000), expectationsGap: z.string().min(40).max(3000), catalysts: z.array(z.string().max(700)).max(8), counterEvidence: z.array(z.string().max(700)).max(8), nextChecks: z.array(z.string().max(700)).min(1).max(8), modelNotes: z.string().max(3000),
         coreLogicFailed: z.boolean(), decisiveCounterEvidence: z.boolean(),
       }),
       execute: (args, ctx) => {
-        const cited = [...`${args.summary} ${args.thesis} ${args.expectationsGap} ${args.catalysts.join(" ")} ${args.counterEvidence.join(" ")}`.matchAll(/\[(e[0-9a-f]{10})\]/g)].map(m => m[1]!);
+        const cited = [...`${args.summary} ${args.thesis} ${args.expectationsGap} ${args.catalysts.join(" ")} ${args.counterEvidence.join(" ")}`.matchAll(CITATION)].map(m => m[0]);
         const unknown = cited.filter(id => !ctx.state.evidence.has(id));
         if (unknown.length) return `Not accepted: unknown evidence ids ${[...new Set(unknown)].join(", ")}`;
-        if (!cited.length) return "Not accepted: cite at least one registered evidence id in brackets, e.g. [e1a2b3c4d5].";
+        if (!cited.length) return "Not accepted: cite at least one registered evidence id, e.g. [e1a2b3c4d5].";
         ctx.state.composed = { sections: { summary: args.summary, thesis: args.thesis, expectationsGap: args.expectationsGap, catalysts: args.catalysts, counterEvidence: args.counterEvidence, nextChecks: args.nextChecks, modelNotes: args.modelNotes }, coreLogicFailed: args.coreLogicFailed, decisiveCounterEvidence: args.decisiveCounterEvidence };
         return "Composed. Call finish_valuation to publish.";
       }, observe: (_a, v) => v }),

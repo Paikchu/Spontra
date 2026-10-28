@@ -68,7 +68,8 @@ const DIAG = labels({ revenueGrowthTtm: "Revenue growth (TTM)", roic: "ROIC", ac
 const pct = (v: number | null | undefined, digits = 1) => v == null || !Number.isFinite(v) ? "—" : `${v >= 0 ? "" : "−"}${(Math.abs(v) * 100).toFixed(digits)}%`;
 const signedPct = (v: number | null | undefined) => v == null || !Number.isFinite(v) ? "—" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${(Math.abs(v) * 100).toFixed(1)}%`;
 const day = (iso: string) => iso.slice(0, 10);
-const CITE = /\[(e[0-9a-f]{10})\]/g;
+/** Evidence ids as the report cites them: in brackets, in parentheses or bare. */
+const CITE = /[[(]?\b(e[0-9a-f]{10})\b[\])]?/g;
 const verdictTone = { supported: "up", not_supported: "loss", pending: "neutral" } as const;
 
 /** Generated prose with its evidence citations turned into source chips. */
@@ -84,6 +85,12 @@ function Prose({ text, onCite, as: Tag = "p" }: { text: string; onCite: (id: str
   }
   if (last < text.length) parts.push(text.slice(last));
   return <Tag lang={langOf(text)}>{parts}</Tag>;
+}
+
+/** A citation: registered evidence opens its snapshot; a fact or diagnostic id is named in full. */
+function Cite({ id, counter, onCite }: { id: string; counter?: boolean; onCite: (id: string) => void }) {
+  if (!/^e[0-9a-f]{10}$/.test(id)) return <code className="val-fact-ref">{id}</code>;
+  return <Button variant="unstyled" type="button" className={`val-cite${counter ? " val-cite--counter" : ""}`} onClick={() => onCite(id)} aria-label={`${m.source} ${id}`}>{id.slice(1, 5)}</Button>;
 }
 
 function Radar({ dimensions }: { dimensions: ValuationDimension[] }) {
@@ -186,8 +193,8 @@ function Dimensions({ report, onCite }: { report: ValuationPublication; onCite: 
       <header><h4>{DIM[d.key]}</h4><span className="val-dim-score">{d.score != null ? d.score.toFixed(1) : m.unscored}</span><small>{m.confidence} {CONF[d.confidence]} · {m.weight(pct(DIMENSION_WEIGHTS[d.key], 0))}</small></header>
       <Prose text={d.rationale} onCite={onCite} />
       <p className="val-chips">
-        {d.supportingEvidenceIds.length > 0 && <span><b>{m.evidence}</b> {d.supportingEvidenceIds.map(id => <Button key={id} variant="unstyled" type="button" className="val-cite" onClick={() => onCite(id)}>{id.slice(1, 5)}</Button>)}</span>}
-        {d.counterEvidenceIds.length > 0 && <span><b>{m.counter}</b> {d.counterEvidenceIds.map(id => <Button key={id} variant="unstyled" type="button" className="val-cite val-cite--counter" onClick={() => onCite(id)}>{id.slice(1, 5)}</Button>)}</span>}
+        {d.supportingEvidenceIds.length > 0 && <span><b>{m.evidence}</b> {d.supportingEvidenceIds.map(id => <Cite key={id} id={id} onCite={onCite} />)}</span>}
+        {d.counterEvidenceIds.length > 0 && <span><b>{m.counter}</b> {d.counterEvidenceIds.map(id => <Cite key={id} id={id} counter onCite={onCite} />)}</span>}
       </p>
       {d.gaps.length > 0 && <p className="val-list-line"><b>{m.gaps}</b> {d.gaps.map((g, i) => <span key={i} lang={langOf(g)}>{g}{i < d.gaps.length - 1 ? "; " : ""}</span>)}</p>}
       <p className="val-list-line"><b>{m.nextCheck}</b> <span lang={langOf(d.nextCheck)}>{d.nextCheck}</span></p>

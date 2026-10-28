@@ -95,6 +95,7 @@
 .val-chips b { margin-right: 4px; font-weight: 620; }
 .val-cite { display: inline-block; margin: 0 2px; padding: 0 6px; border-radius: 6px; font-family: var(--mono); font-size: 11px; line-height: 18px; vertical-align: baseline; color: var(--chart-2); background: color-mix(in srgb, var(--chart-2) 12%, transparent); border: 1px solid color-mix(in srgb, var(--chart-2) 30%, transparent); }
 .val-cite:hover { background: color-mix(in srgb, var(--chart-2) 22%, transparent); }
+.val-fact-ref { display: inline-block; margin: 0 2px; padding: 0 6px; border-radius: 6px; font-family: var(--mono); font-size: 11px; line-height: 18px; color: var(--muted-foreground); background: var(--fill); }
 .val-cite--counter { color: var(--loss); background: color-mix(in srgb, var(--loss) 12%, transparent); border-color: color-mix(in srgb, var(--loss) 30%, transparent); }
 .val-gaps ul { list-style: none; padding: 0; }
 .val-gaps li { font-size: 13px; color: var(--muted-foreground); }

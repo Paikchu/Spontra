@@ -15,12 +15,12 @@ import { readValuationPublication } from "../../../../shared/analysis-runtime/va
 import { buildValuationInput, type ValuationInput } from "./input.ts";
 import { fetchBeta, fetchReferenceQuote, fetchRiskFreeRate } from "./market.ts";
 import { ValuationStore } from "./store.ts";
-import { ASSUMPTION_TOOLS, COMPOSE_TOOLS, RESEARCH_BUDGET, RESEARCH_TOOLS, excerptOf, factLine, impliedThreshold, valuationTools, type RedTeam, type ValuationState } from "./tools.ts";
+import { ASSUMPTION_TOOLS, CITATION, COMPOSE_TOOLS, RESEARCH_BUDGET, RESEARCH_TOOLS, excerptOf, factLine, impliedThreshold, valuationTools, type RedTeam, type ValuationState } from "./tools.ts";
 
 /** Changing the prompts, the tools, the calculator or the publication contract reassesses every switched-on company once. */
-export const VALUATION_VERSION = "valuation.v1";
+export const VALUATION_VERSION = "valuation.v2";
 export type ValuationWorkflowParams = { ticker: string; fingerprint: string };
-const BUDGET = { research: { turns: 16, wallMs: 40 * 60_000 }, assume: { turns: 8, wallMs: 20 * 60_000 }, compose: { turns: 4, wallMs: 10 * 60_000 } };
+const BUDGET = { research: { turns: 16, wallMs: 40 * 60_000 }, assume: { turns: 8, wallMs: 20 * 60_000 }, compose: { turns: 6, wallMs: 12 * 60_000 } };
 const MODEL_BUDGET_MS = 5 * 60_000;
 
 export function valuationTickersFor(env: Parameters<typeof featureTickersFor>[0]): string[] {
@@ -207,9 +207,11 @@ export async function assemblePublication(state: ValuationState, now: string, me
   if (!calc && !dimensions.find(d => d.key === "valuationSafety")!.gaps.length) gaps.push({ code: "unsupported_model", message: state.insufficient ?? "No model was computed.", evidenceIds: [] });
   const score = weightedScore(dimensions), confidence = overallConfidence(dimensions);
   const verdict = verdictOf({ dimensions, marginOfSafety: calc?.range.marginOfSafety ?? null, hasModel: !!calc && calc.range.price != null, decisiveCounterEvidence: !!state.composed?.decisiveCounterEvidence || !!state.redTeam?.decisiveCounterEvidence, coreLogicFailed: !!state.composed?.coreLogicFailed });
-  const reportStatus = score != null && calc && state.quote?.usable ? "ready" : "insufficient";
-  const sections = state.composed?.sections ?? { summary: "The assessment did not reach a written report.", thesis: "", expectationsGap: "", catalysts: [], counterEvidence: [], nextChecks: [], modelNotes: "" };
-  const cited = new Set<string>([...dimensions.flatMap(d => [...d.supportingEvidenceIds, ...d.counterEvidenceIds]), ...(calc ? (["bear", "base", "bull"] as const).flatMap(k => calc.scenarios[k].evidenceIds) : []), ...[...`${sections.summary} ${sections.thesis} ${sections.expectationsGap} ${sections.catalysts.join(" ")} ${sections.counterEvidence.join(" ")}`.matchAll(/\[(e[0-9a-f]{10})\]/g)].map(m => m[1]!)]);
+  // A report is complete only once it has been written: scored dimensions and a model without the case stay insufficient.
+  if (!state.composed) gaps.push({ code: "research_budget_exhausted", message: "The written report was not completed within the composition budget; the scores, model and evidence stand on their own.", evidenceIds: [] });
+  const reportStatus = score != null && calc && state.quote?.usable && state.composed ? "ready" : "insufficient";
+  const sections = state.composed?.sections ?? { summary: "", thesis: "", expectationsGap: "", catalysts: [], counterEvidence: [], nextChecks: [], modelNotes: "" };
+  const cited = new Set<string>([...dimensions.flatMap(d => [...d.supportingEvidenceIds, ...d.counterEvidenceIds]), ...(calc ? (["bear", "base", "bull"] as const).flatMap(k => calc.scenarios[k].evidenceIds) : []), ...[...`${sections.summary} ${sections.thesis} ${sections.expectationsGap} ${sections.catalysts.join(" ")} ${sections.counterEvidence.join(" ")}`.matchAll(CITATION)].map(m => m[0])]);
   const evidence = [...state.evidence.values()].filter(e => cited.has(e.evidenceId)).sort((a, b) => a.evidenceId.localeCompare(b.evidenceId));
   const evidenceSetHash = await sha256(JSON.stringify(evidence.map(e => [e.evidenceId, e.contentSha256])));
   const body: Omit<ValuationPublication, "versionId" | "generatedAt"> = {
