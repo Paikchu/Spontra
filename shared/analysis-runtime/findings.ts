@@ -727,7 +727,9 @@ export function proseFigures(prose: string): Array<{ value: number; tolerance: n
     const number = Number(raw!.replace("−", "-").replace(/,/g, ""));
     if (!Number.isFinite(number)) continue;
     const after = prose.slice(match.index! + match[0].length);
-    const scale = magnitude ? ZH_MAGNITUDE[magnitude.trim()]! : ENGLISH_SCALE[(/^\s?(trillion|billion|million|thousand|bn|mn|[tbmk])\b/i.exec(after)?.[1] ?? "").toLowerCase()] ?? 1;
+    // A range writes its unit once, after the last number: "$90–95B" and "$2 to $3 billion" scale both ends.
+    const unit = /^\s?(trillion|billion|million|thousand|bn|mn|[tbmk])\b/i.exec(after)?.[1] ?? /^\s?(?:[–—-]|to)\s?[$€£¥]?\d[\d,]*(?:\.\d+)?\s?(trillion|billion|million|thousand|bn|mn|[tbmk])\b/i.exec(after)?.[1] ?? "";
+    const scale = magnitude ? ZH_MAGNITUDE[magnitude.trim()]! : ENGLISH_SCALE[unit.toLowerCase()] ?? 1;
     if (scale === 1 && Number.isInteger(number) && number >= 1900 && number <= 2100) continue;
     const digits = raw!.includes(".") ? raw!.length - raw!.indexOf(".") - 1 : 0;
     out.push({ value: Math.abs(number * scale), tolerance: 0.5 * 10 ** -digits * scale, raw: raw!.replace(/,/g, "").replace("−", ""), scaled: scale !== 1 });

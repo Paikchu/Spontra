@@ -25,8 +25,8 @@ import { sha256 } from "../sha256.ts";
  * source, and writes one table per resource for the read API to apply. Strings are remembered across publications,
  * so a regenerated finding that kept a sentence costs nothing to translate again.
  */
-/** v2: the checker compares full values and accepts digits kept verbatim, so v1's false rejections are retried. */
-export const TRANSLATION_VERSION = "translate.v3";
+/** v2: the checker compares full values and accepts digits kept verbatim; v4: a range's unit scales both ends ($90–95B). Each bump retries the earlier false rejections. */
+export const TRANSLATION_VERSION = "translate.v4";
 const LOCALE: Locale = "zh-CN";
 /** Model input per call; long report paragraphs travel alone. */
 const BATCH_CHARS = 6_000, BATCH_ITEMS = 40;

@@ -74,6 +74,9 @@ test("a translation must keep every figure, placeholder and markdown line, be Ch
   assert.deepEqual(checkTranslation("{value}, {change} on the year", "{value}，同比 {change}"), []);
   assert.deepEqual(checkTranslation("Oracle Cloud Infrastructure grew 55%.", "Oracle Cloud Infrastructure 增长 55%。"), []);
   assert.match(checkTranslation("Capex was $28.5 billion.", "资本开支为 28.5亿美元。").join(), /figures missing/);
+  // A range's unit covers both ends: $90–95B is 900亿 to 950亿, and a range of percentages stays unscaled.
+  assert.deepEqual(checkTranslation("FY27 capex of $90–95B gross, revenue +27–29%, and $2 to $3 billion of leases.", "2027 财年资本开支总额 900亿至950亿美元，营收增长 27–29%，租赁 20亿至30亿美元。"), []);
+  assert.match(checkTranslation("FY27 capex of $90–95B gross.", "2027 财年资本开支总额 90亿至950亿美元。").join(), /figures missing: 90/);
   // A number the English spells as a word may be a Chinese numeral; a real amount still has to match.
   assert.deepEqual(checkTranslation("Over the trailing four quarters the gap was one-off, not twelve months long.", "近四个季度的缺口是一次性的，而非持续十二个月。"), []);
   assert.match(checkTranslation("Over the trailing four quarters capex was $75.7 billion.", "近四个季度资本开支为 75.7亿美元。").join(), /figures missing/);
