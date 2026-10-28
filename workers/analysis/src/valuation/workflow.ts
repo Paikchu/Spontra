@@ -27,9 +27,13 @@ export function valuationTickersFor(env: Parameters<typeof featureTickersFor>[0]
   return featureTickersFor(env, "valuation");
 }
 
+/** What a run would write from: the material pack's fingerprint under this method version, so a method change reassesses too. */
+export const runFingerprint = (inputFingerprint: string) => sha256(JSON.stringify({ method: VALUATION_VERSION, calculator: CALCULATOR_VERSION, input: inputFingerprint }));
+
 /** The state a run would write from now; null while the company has no complete statement. */
 export async function valuationFingerprint(env: AnalysisEnv, ticker: string): Promise<string | null> {
-  return (await buildValuationInput(env, ticker, new Date().toISOString()))?.fingerprint ?? null;
+  const input = await buildValuationInput(env, ticker, new Date().toISOString());
+  return input ? runFingerprint(input.fingerprint) : null;
 }
 
 const pct = (v: number | null | undefined) => v == null ? "n/a" : `${(v * 100).toFixed(1)}%`;
@@ -235,7 +239,7 @@ export async function executeValuationWorkflow(params: ValuationWorkflowParams, 
     return g;
   });
   const input = await step.do("valuation-input", () => buildValuationInput(env, params.ticker, now));
-  if (!input || input.fingerprint !== params.fingerprint) return { status: "superseded" as const };
+  if (!input || await runFingerprint(input.fingerprint) !== params.fingerprint) return { status: "superseded" as const };
   const market = await step.do("valuation-quote", async () => {
     const [quote, riskFree, beta] = await Promise.all([fetchReferenceQuote(params.ticker, input.currency, fetcher, new Date(now)), fetchRiskFreeRate(input.currency, fetcher, new Date(now)), fetchBeta(params.ticker, input.currency, fetcher, new Date(now))]);
     return { quote, riskFree, beta };
@@ -261,7 +265,7 @@ export async function executeValuationWorkflow(params: ValuationWorkflowParams, 
   const published = await step.do("valuation-publish", async () => {
     // The input moved on while the run worked: this result is not for the current material; the next sweep runs again.
     const fresh = await buildValuationInput(env, params.ticker, now);
-    if (!fresh || fresh.fingerprint !== params.fingerprint) return { current: false, stored: false, reason: "input changed" };
+    if (!fresh || await runFingerprint(fresh.fingerprint) !== params.fingerprint) return { current: false, stored: false, reason: "input changed" };
     const outcome = await store.publish(params.ticker, publication, evidence, generation, params.fingerprint, publication.generatedAt);
     const attempt: ValuationAttempt = { runId: runId ?? "", status: outcome.current ? "succeeded" : "superseded", stage: "publish", updatedAt: publication.generatedAt, reportStatus: publication.reportStatus, gaps: publication.gaps, errorCode: null };
     await store.noteAttempt(params.ticker, attempt, publication.generatedAt);
