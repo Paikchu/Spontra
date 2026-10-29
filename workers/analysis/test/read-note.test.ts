@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import type { BusinessFlowQuarter, PublicBusinessFlow } from "../../../shared/analysis-contract/business-flow.ts";
 import { collectNewFilings } from "../src/financial-data/collect.ts";
 import type { CompleteStore, Job } from "../src/financial-data/store.ts";
-import { applyNote, documentText, filingTables, noteLabels, readWithNote, relevantTables, type NoteContext, type ReadNote } from "../src/financial-data/read-note.ts";
+import { applyNote, applyNoteKeeping, documentText, filingTables, noteLabels, readWithNote, relevantTables, type NoteContext, type ReadNote } from "../src/financial-data/read-note.ts";
 
 // TTM Technologies' earnings release of October 22, 2026 (8-K, Exhibit 99.1): its columns are headed only "Third Quarter"
 // and "2026", and its 52/53-week quarter ended September 28. Published before it: the quarters ended June 29 and March
@@ -76,6 +76,19 @@ test("a revenue row that also prints currency or percentage columns is read; a c
   assert.deepEqual(applyNote(note, gap).issues, []);
   const nine = applyNote({ ...note, tables: note.tables.map(t => ({ ...t, current: 2 })) }, gap);
   assert.match(nine.issues.join(" "), /column 2 is not a three-month amount/);
+});
+
+test("proposed new lines the statement does not need are left out, and net income must add up in the year-to-date column", () => {
+  // An operating-income row offered as a new segment (Alphabet's "Alphabet-level activities") breaks the segment total.
+  const offered = { ...note, new: [{ group: "segment" as const, name: "Aerospace & Defense", table: segments, row: 21 }] };
+  assert.notDeepEqual(applyNote(offered, context).issues, []);
+  const kept = applyNoteKeeping(offered, context);
+  assert.deepEqual([kept.issues, kept.note.new], [[], []]);
+  assert.equal(value(kept.quarter, "revenue"), 1203855000);
+  // A net income row whose nine months are not the quarter plus the two published quarters is the wrong row.
+  const rows = context.tables[statement]!.rows.map((r, i) => (i === 20 ? ["Net income", "84,803", "53,055", "217,000", "126,763"] : r));
+  const other = applyNote(note, { ...context, tables: context.tables.map(t => (t.id === statement ? { ...t, rows } : t)) });
+  assert.match(other.issues.join(" "), /figure:net: T16 R20 column 2 reads 217000 thousands/);
 });
 
 test("the model's problems go back to it, and a corrected note is read on the next turn", async () => {
