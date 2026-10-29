@@ -75,7 +75,7 @@ export async function readFiscalFocus(db: D1Database, ticker?: string): Promise<
   const stated = new Map(states.flatMap(row => { const state = parseState(row.payload); return state ? [[row.cache_key.slice(DISCOVERY_STATE_PREFIX.length).toUpperCase(), state] as const] : []; }));
   for (const key of new Set([...stated.keys(), ...annual.keys()])) {
     const state = stated.get(key);
-    issuers.set(key, { fiscalYearEndMonth: yearEndMonth(state?.fiscalYearEnd) ?? yearEndMonth(annual.get(key)), name: shortName(key, state?.name) });
+    issuers.set(key, { fiscalYearEndMonth: yearEndMonth(state?.fiscalYearEnd) ?? yearEndMonth(annual.get(key)), name: shortName(key, state?.name), annualForm: state?.annualForm ?? null });
   }
   return { focus, issuers };
 }

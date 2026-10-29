@@ -17,9 +17,10 @@ const REMEMBERED = 200;
  * `collectable`: accessions of the filings collection reads (periodic reports, 6-Ks, earnings 8-Ks), newest first; `collected`
  * the same filings with what reading one needs, so collection depends on no other writer's index (a data-only issuer has none).
  * `fiscalYearEnd` (`MMDD`) and `name` are the issuer's as its submissions state them; EDGAR leaves the year end out for some foreign issuers.
+ * `annualForm`: the form of its latest annual report ("10-K", "20-F", "40-F"), so a foreign issuer reads as one before any filing is collected.
  */
 export type CollectableFiling = { accession: string; form: string; filedAt: string; reportDate: string | null; url: string };
-export type DiscoveryState = { cik: string; accessions: string[]; checkedAt: string; collectable?: string[]; collected?: CollectableFiling[]; fiscalYearEnd?: string | null; name?: string | null };
+export type DiscoveryState = { cik: string; accessions: string[]; checkedAt: string; collectable?: string[]; collected?: CollectableFiling[]; fiscalYearEnd?: string | null; name?: string | null; annualForm?: string | null };
 /** The forms a collection job lists (provider.ts `readSecDocumentBatch`). */
 const COLLECTED = (f: { form: string; items: string }) => /^(?:10-[QK]|20-F)(?:\/A)?$/.test(f.form) || f.form === "6-K" || (f.form === "8-K" && f.items.includes("2.02"));
 
@@ -54,6 +55,13 @@ function recentFilings(payload: unknown): Filing[] {
     accession: column("accessionNumber", i), form: column("form", i), items: column("items", i), filingDate: column("filingDate", i),
     reportDate: column("reportDate", i), primaryDocument: column("primaryDocument", i),
   })).filter(f => /^\d{10}-\d{2}-\d{6}$/.test(f.accession));
+}
+
+/** The form of the issuer's latest annual report in its whole recent list, amendments read as the report they amend. */
+export function annualForm(payload: unknown): string | null {
+  const forms = (payload as { filings?: { recent?: { form?: unknown[] } } } | null)?.filings?.recent?.form;
+  const form = Array.isArray(forms) ? forms.map(String).find(f => /^(?:10-K|20-F|40-F)(?:\/A)?$/.test(f)) : undefined;
+  return form ? form.replace(/\/A$/, "") : null;
 }
 
 /**
@@ -97,7 +105,7 @@ export async function runSecDiscovery(env: AnalysisEnv, now = new Date(), fetche
         db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at")
           .bind(stateKey(ticker), JSON.stringify({ cik, accessions: filings.map(f => f.accession), checkedAt: at, collectable: collectable.map(f => f.accession), collected,
             fiscalYearEnd: typeof submissions?.fiscalYearEnd === "string" && /^\d{4}$/.test(submissions.fiscalYearEnd) ? submissions.fiscalYearEnd : null,
-            name: typeof submissions?.name === "string" && submissions.name.trim() ? submissions.name.trim() : null } satisfies DiscoveryState), at),
+            name: typeof submissions?.name === "string" && submissions.name.trim() ? submissions.name.trim() : null, annualForm: annualForm(submissions) } satisfies DiscoveryState), at),
         // Oldest first, so subscribers that read the newest state see the filings in the order they were made.
         ...fresh.reverse().map(f => outboxStatement(db, { type: "filing.discovered", ticker, cik, detail: { form: f.form, items: f.items, accession: f.accession } }, at)),
         ...(bootstrap ? [outboxStatement(db, { type: "company.added", ticker, cik }, at), outboxStatement(db, { type: "collection.requested", ticker, cik }, at)] : []),

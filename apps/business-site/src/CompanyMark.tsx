@@ -14,9 +14,11 @@ export function CompanyLogo({ ticker, small }: { ticker: string; small?: boolean
   </span>;
 }
 
-export function CompanyMark({ ticker }: { ticker: string }) {
-  return <div className="company">
+/** Logo and ticker; with a name, narrow screens show it beside the ticker (wide screens show it on its own line under the row). */
+export function CompanyMark({ ticker, name, fullName }: { ticker: string; name?: string | null; fullName?: string | null }) {
+  return <div className="company brand">
     <CompanyLogo ticker={ticker} />
-    <strong className="company-ticker">{ticker}</strong>
+    <strong className="company-ticker"><b lang="en">{ticker}</b></strong>
+    {name && <span className="brand-company-name" title={fullName ?? name}>{name}</span>}
   </div>;
 }

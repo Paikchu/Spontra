@@ -4,7 +4,7 @@ import type { BusinessFlowQuarter, BusinessSegment, FlowMetric, FlowSource, Publ
 import { deficitFinancialGraph, financialGraph, trunkGraph, type FinancialGraph } from "@/packages/web/src/model/business-flow-sankey";
 import { compactFlowValue, truncateToWidth, type PlacedNode } from "@/packages/web/src/model/business-flow-layout";
 import { availableRevenueTrees, compareRevenueNode, revenueNodeKey } from "@/packages/web/src/model/revenue-tree";
-import { formatFlowValue, compareAmount, compareFlowAmounts, flowWords, numeric, previousQuarter, yearAgoQuarter, type FlowChange } from "@/packages/web/src/model/business-flow-model";
+import { adjustmentName, formatFlowValue, formatReconciliation, compareAmount, compareFlowAmounts, flowWords, numeric, previousQuarter, yearAgoQuarter, type FlowChange } from "@/packages/web/src/model/business-flow-model";
 import { FinancialSankey } from "@/packages/web/src/business-flow/FinancialSankey";
 import { FlowChart, layoutFor, type CompareBasis, type GuideBracketMark, type GuidePillMark, type NodeCopy, type Tip } from "./FlowChart";
 import { ACTION_GLYPH, actionName, guidanceMarks, markSentence, pillQualifier } from "./guidance-marks";
@@ -51,7 +51,9 @@ import { getLocale, messages, useLocale } from "@/packages/web/src/i18n";
 import { SourceLanguage, langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import type { ValuationResponse } from "@/shared/analysis-contract/valuation";
 import { ValuationPanel } from "./ValuationPanel";
-import { compactShares, multiple, perShare, qoqLabel, range, yoyLabel, shortPeriod } from "@/shared/analysis-runtime/locale";
+import { compactShares, multiple, normalizeDisplayText, perShare, qoqLabel, range, yoyLabel, shortPeriod } from "@/shared/analysis-runtime/locale";
+import { companyIdentity, coreSlots, issuerHeader, type CompanyIdentity } from "./company-meta";
+import { useMedia, useSideScroll } from "./side-scroll";
 import { assessStatements, peerRanks } from "@/shared/analysis-runtime/statement-analysis";
 import { verifyNote } from "@/shared/analysis-runtime/checkup-notes";
 import type { Flag, FlagLevel } from "@/shared/analysis-contract/statement-analysis";
@@ -63,7 +65,7 @@ const m = messages({
   companyBusinesses: "Company businesses", businesses: "Businesses", allBusinesses: "All businesses", totalRevenue: "Total revenue",
   topLevelCount: (n: number) => `Total revenue · ${n} top-level ${n === 1 ? "business" : "businesses"}`,
   shareBeforeEliminations: "Share of segment revenue before adjustments", share: "Share of revenue",
-  reconciliation: (currency: string) => `Revenue reconciliation · ${currency} millions`, segmentTotal: "Segment revenue (before adjustments)", consolidated: "Consolidated revenue",
+  reconciliation: "Revenue reconciliation", reconciliationUnit: (currency: string) => `${currency} millions`, segmentTotal: "Segment revenue (before adjustments)", consolidated: "Consolidated revenue",
   findingStage: (ticker: string, title: string) => `${ticker} finding: ${title}`, filingStage: (ticker: string, title: string) => `${ticker} filing: ${title}`, flowStage: (ticker: string) => `${ticker} revenue to profit flow`,
   revenueThisQuarter: "Revenue this quarter", ofParent: (share: string, parent: string) => `${share} of ${parent}`, topLevel: "Top-level business",
   companyRevenue: "Total company revenue", gross: "Gross profit", operating: "Operating income", pretax: "Income before taxes", netLoss: "Net loss", net: "Net income",
@@ -87,12 +89,14 @@ const m = messages({
   profile: (name: string) => `${name} business profile`, noDescription: "No description", customers: "Customers", revenueModel: "Revenue model", notDisclosed: "Not disclosed",
   details: (label: string) => `${label} business details`, products: "Products",
   statementDepth: "Statement depth", trunk: "Summary", detail: "Detail", openFinding: (title: string) => `Open finding: ${title}`, hideFinding: "Hide",
+  statMissing: "N/A", notApplicable: "Not applicable to model", notInFiling: "Not disclosed in filing",
+  swipe: "Swipe horizontally to see full flow",
 }, {
   lastYear: "上年同期", lastQuarter: "上季度", yearAgo: "上年同期", lastQuarterPeriod: "上季度",
   companyBusinesses: "公司业务", businesses: "业务", allBusinesses: "全部业务", totalRevenue: "总营收",
   topLevelCount: (n: number) => `总营收 · ${n} 个一级业务`,
   shareBeforeEliminations: "占调节前分部营收", share: "占营收",
-  reconciliation: () => "营收调节", segmentTotal: "分部营收（调节前）", consolidated: "合并营收",
+  reconciliation: "营收调节（分部合计与合并营收的差）", reconciliationUnit: () => "", segmentTotal: "分部营收（调节前）", consolidated: "合并营收",
   findingStage: (ticker: string, title: string) => `${ticker} 要点：${title}`, filingStage: (ticker: string, title: string) => `${ticker} 文件：${title}`, flowStage: (ticker: string) => `${ticker} 营收至利润流向`,
   revenueThisQuarter: "本季营收", ofParent: (share: string, parent: string) => `占 ${parent} ${share}`, topLevel: "一级业务",
   companyRevenue: "公司总营收", gross: "毛利", operating: "营业利润", pretax: "税前利润", netLoss: "净亏损", net: "净利润",
@@ -116,6 +120,8 @@ const m = messages({
   profile: (name: string) => `${name} 业务概况`, noDescription: "无描述", customers: "客户", revenueModel: "收入模式", notDisclosed: "未披露",
   details: (label: string) => `${label} 业务详情`, products: "产品",
   statementDepth: "报表层级", trunk: "概要", detail: "明细", openFinding: (title: string) => `打开要点：${title}`, hideFinding: "隐藏",
+  statMissing: "暂无", notApplicable: "不适用于该行业报表模型", notInFiling: "财报未披露",
+  swipe: "左右滑动查看完整流向",
 });
 
 const ReportDialog = lazy(() => import("./ReportDialog"));
@@ -219,6 +225,15 @@ function Stat({ label, value, format, note, tone, level }: { label: string; valu
   </div>;
 }
 
+/** A headline figure the statement does not carry: the cell stays, so the narrow grid keeps its four cells. */
+function MissingStat({ label, reason }: { label: string; reason: string }) {
+  return <div className="stat" data-missing="true">
+    <span className="stat-label" title={label}>{label}</span>
+    <strong className="stat-value">{m.statMissing}</strong>
+    <em className="stat-note" title={reason}>{reason}</em>
+  </div>;
+}
+
 /** A highlight's figure in its own unit: an amount, a rate, a margin or a multiple, per share. */
 function highlightValue(v: number | null, r: ResolvedValue, ref: ResolvedEvidence["evidence"]["ref"]): string {
   if (v == null || !Number.isFinite(v)) return "—";
@@ -263,7 +278,7 @@ function Sources({ sources, ids }: { sources: FlowSource[]; ids?: string[] }) {
   return <ul className="sources">{list.map(s => <li key={s.id}><a href={s.url} target="_blank" rel="noopener noreferrer">{s.title}<span aria-hidden="true"> ↗</span></a></li>)}</ul>;
 }
 
-export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, explainer = null, tree = null, guidance = null, capital = null, findings = null, peers = null, rankPeers = null, passages = null, fundamentals = null, events = null, filings = null, valuation = null, updates = 0, stageOverride = null, onNavigate, onView, railFoot = null, focusRequest = null, eventsPhase = "ready", onRetryEvents }: { ticker: string; tools: ReactNode; flow: PublicBusinessFlow; notice: string | null; revenueHistory: RevenueHistory | null; explainer?: BusinessExplainer | null; tree?: BusinessTree | null; guidance?: GuidancePublication | null; capital?: PublicCapitalStructure | null; findings?: FindingsPublication | null; peers?: PeersPublication | null; /** The company and its comparable peers, for the checkup's ranks. */ rankPeers?: PeersPublication | null; passages?: FindingPassage[] | null; fundamentals?: FindingFundamentals | null; events?: EventsPublication | null; filings?: PublicFilingDigestPage | null; /** The valuation assessment in its current availability; hidden or absent leaves the tab out. */ valuation?: ValuationResponse | null; /** Updates the reader took; rows they brought enter animated. */ updates?: number;
+export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, explainer = null, tree = null, guidance = null, capital = null, findings = null, peers = null, rankPeers = null, passages = null, fundamentals = null, events = null, filings = null, valuation = null, updates = 0, stageOverride = null, onNavigate, onView, railFoot = null, focusRequest = null, eventsPhase = "ready", onRetryEvents, company: companyProp = null }: { ticker: string; tools: ReactNode; flow: PublicBusinessFlow; notice: string | null; revenueHistory: RevenueHistory | null; explainer?: BusinessExplainer | null; tree?: BusinessTree | null; guidance?: GuidancePublication | null; capital?: PublicCapitalStructure | null; findings?: FindingsPublication | null; peers?: PeersPublication | null; /** The company and its comparable peers, for the checkup's ranks. */ rankPeers?: PeersPublication | null; passages?: FindingPassage[] | null; fundamentals?: FindingFundamentals | null; events?: EventsPublication | null; filings?: PublicFilingDigestPage | null; /** The valuation assessment in its current availability; hidden or absent leaves the tab out. */ valuation?: ValuationResponse | null; /** Updates the reader took; rows they brought enter animated. */ updates?: number;
   /** A scene the stage agent built; while set it holds the stage in place of the map's own view (docs/stage-agent-design.md §5.2). */
   stageOverride?: ReactNode | null;
   /** The reader picked something in the rail or on the chart: the map's own view takes the stage back. */
@@ -276,7 +291,9 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
   focusRequest?: { finding: string; nonce: number } | null;
   /** The events request failed on its own; the rest of the page stays up. */
   eventsPhase?: "ready" | "loading" | "error";
-  onRetryEvents?: () => void; }) {
+  onRetryEvents?: () => void;
+  /** The issuer's name and fiscal calendar for the header, resolved from data (company-meta.ts). */
+  company?: CompanyIdentity | null; }) {
   const locale = useLocale();
   const quarters = useMemo(() => [...flow.quarters].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd)), [flow]);
   const [period, setPeriod] = useState<string | null>(null);
@@ -592,6 +609,18 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
   const itemChange = current && quarter ? compareRevenueNode(quarter, previous, current.key) : none();
   const parent = current?.parent ? items.find(item => item.key === current.parent) : null;
   const topLevel = items.filter(i => !i.parent).length;
+  // The header's issuer line: the fiscal year end, and the filer context the data shows.
+  const narrow = useMedia("(max-width: 640px)");
+  // The issuer as the page resolved it, its line redone for the quarter on the stage: switching quarters updates the fiscal note.
+  const company = useMemo((): CompanyIdentity => {
+    const base = companyProp ?? companyIdentity({ locale, explainerName: explainer?.companyName, treeName: tree?.companyName, flow, filings, events });
+    return { ...base, ...issuerHeader({ base, quarter, filings, events }, locale) };
+  }, [companyProp, locale, explainer, tree, flow, filings, events, quarter]);
+  const fiscalMonth = company.fiscalYearEndMonth;
+  const companySub = [company.fiscalLabel, company.filingLabel].filter((t): t is string => !!t);
+  // On narrow screens the statement scrolls sideways inside the chart: an edge fade and a swipe hint say there is more.
+  const chartRef = useRef<HTMLDivElement>(null);
+  const chartScroll = useSideScroll(chartRef, `${quarter?.id}:${view}:${detail}:${current?.key}`);
 
   // The statement views, and the valuation when the admin shows it: the tab row stands even where the company has no capital views yet.
   const viewToggle = (!!funding && !!(cash || funding.balanceSheet) || valuationShown) && <ToggleGroup type="single" variant="unstyled" rovingFocus={false} value={view} onValueChange={next => { if (next && next !== view) pickView(next as View); }} asChild>
@@ -603,7 +632,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
     </span>
   </ToggleGroup>;
   return <div className="map">
-    <Rail ticker={ticker} actions={tools} label={m.companyBusinesses} expanded={openSection != null}>
+    <Rail ticker={ticker} actions={tools} label={m.companyBusinesses} expanded={openSection != null} company={company.name ? { name: company.name, fullName: company.fullName ?? company.name, sub: companySub, note: company.fiscalNote } : null}>
       <RailSection name="business" title={m.businesses} expandable={businessExpandable} focused={current != null} drawer expanded={businessOpen} onExpand={toggleBusiness}>
         <div className="rail-list section-body" id="rail-business" role="listbox" aria-label={m.businesses} ref={listRef} onKeyDown={onListKey} onMouseLeave={() => setPreview(null)}>
           {/* All businesses heads the drawer: it shows the whole company, and with nothing else picked a click unfolds or folds the list. */}
@@ -633,7 +662,14 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
       </RailSection>
       {showFindings && <FindingsList findings={verified} updates={updates} verdicts={verdicts} focus={focused?.id ?? null} story={story} periodEnd={findings.periodEnd} ticker={ticker} {...sectionFocus("findings")} onFocus={focusFinding} onStory={() => { if (story) { setStory(false); setFocusId(null); } else { setStory(true); setEventId(null); focusFinding(focused?.id ?? verified[0].id); } }} />}
       {rail && <EventsList rail={rail} ticker={ticker} updates={updates} focus={focusedReport?.accessionNumber ?? focusedEvent?.id ?? null} pendingInsider={events?.pendingInsider ?? 0} {...sectionFocus("events")} onFocus={focusItem} filter={eventFilter} onFilter={setEventFilter} phase={eventsPhase} onRetry={onRetryEvents} />}
-      {!!quarter?.revenueAdjustments?.length&&<p className="revenue-reconciliation">{m.reconciliation(quarter.currency)}<br/>{m.segmentTotal} {formatFlowValue(segmentRevenue,quarter)}<br/>{quarter.revenueAdjustments.map(a=><span key={a.id}>{a.name} {formatFlowValue(numeric(a.amount),quarter)}<br/></span>)}{m.consolidated} {formatFlowValue(revenue,quarter)}</p>}
+      {!!quarter?.revenueAdjustments?.length && <details className="revenue-reconciliation" open={!narrow}>
+        <summary className="rail-label">{m.reconciliation}{m.reconciliationUnit(quarter.currency) && <small> · {m.reconciliationUnit(quarter.currency)}</small>}</summary>
+        <dl>
+          <div><dt>{m.segmentTotal}</dt><dd>{formatReconciliation(segmentRevenue, quarter)}</dd></div>
+          {quarter.revenueAdjustments.map(a => <div key={a.id}><dt>{adjustmentName(a.name)}</dt><dd>{formatReconciliation(numeric(a.amount), quarter)}</dd></div>)}
+          <div><dt>{m.consolidated}</dt><dd>{formatReconciliation(revenue, quarter)}</dd></div>
+        </dl>
+      </details>}
       {railFoot}
       <div className="rail-end"><PrivacyNote /><CompanyTour key={ticker} available={!stageOverride && !focusedCheck && !focused && !focusedReport && !focusedEvent && view !== "valuation"} /></div>
     </Rail>
@@ -664,22 +700,23 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
       </>
       : <>
       <header className="stage-head stage-head--summary" data-tour="stats">
-        {quarter && <div className="stage-kicker"><PeriodMark variant="pill" ticker={ticker} periodEnd={quarter.periodEnd} periodStart={quarter.periodStart} fiscalYear={quarter.fiscalYear} fiscalQuarter={quarter.fiscalQuarter} fiscalYearEndMonth={quarter.fiscalYearEndMonth} labelSource={quarter.labelSource} /></div>}
+        {quarter && <div className="stage-kicker"><PeriodMark variant="pill" ticker={ticker} periodEnd={quarter.periodEnd} periodStart={quarter.periodStart} fiscalYear={quarter.fiscalYear} fiscalQuarter={quarter.fiscalQuarter} fiscalYearEndMonth={fiscalMonth} labelSource={quarter.labelSource} />
+          {companySub.length > 0 && <FiscalMeta text={companySub.join(" · ")} note={company.fiscalNote} />}</div>}
         {quarter && (view === "cash" || view === "balance") && funding ? <CapitalStats view={view} funding={funding} tiles={highlights} flags={flags} />
-          : quarter && !current && highlights ? <HighlightStats tiles={highlights} flags={flags} />
+          // Phones always lead with the four statement figures in their two-by-two grid; wider screens show the report's picked tiles.
+          : quarter && !current && highlights && !(narrow && view === "profit") ? <HighlightStats tiles={highlights} flags={flags} />
           : quarter && <div className="stats" aria-live="polite">
           {current && current.value != null ? <>
             <Stat label={m.revenueThisQuarter} value={current.value} format={money} note={`${word.change} ${itemChange.label}`} tone={itemChange.trend ?? undefined} />
             <Stat label={shareLabel} value={segmentRevenue ? current.value / segmentRevenue * 100 : null} format={percent} note={parent?.value ? m.ofParent(percent(current.value / parent.value * 100), parent.name) : m.topLevel} />
             <Stat label={m.companyRevenue} value={revenue} format={money} />
-          </> : <>
-            <Stat label={m.totalRevenue} value={revenue} format={money} note={`${word.change} ${change("revenue").label}`} tone={change("revenue").trend ?? undefined} level={figureLevel(flags, { metric: "revenue" })} />
-            {quarter.incomeModel !== "direct_operating" && figure("gross") != null && <Stat label={m.gross} value={figure("gross")} format={money} note={margin("gross")} level={figureLevel(flags, { metric: "gross" })} />}
-            {figure("operating") != null || figure("pretax") == null
-              ? <Stat label={m.operating} value={figure("operating")} format={money} note={margin("operating")} level={figureLevel(flags, { metric: "operating" })} />
-              : <Stat label={m.pretax} value={figure("pretax")} format={money} note={margin("pretax")} level={figureLevel(flags, { metric: "pretax" })} />}
-            <Stat label={graph?.deficit ? m.netLoss : m.net} value={figure("net")} format={money} note={coverage != null ? `${margin("net")} · ${m.coverage(percent(coverage * 100))}` : margin("net")} level={figureLevel(flags, { metric: "net" })} />
-          </>}
+          </> : coreSlots(figure, { hideGross: quarter.incomeModel === "direct_operating" }).map(slot => {
+            const label = slot.key === "revenue" ? m.totalRevenue : slot.key === "net" ? graph?.deficit ? m.netLoss : m.net : m[slot.key];
+            // Narrow screens keep all four cells of the grid; a figure the statement does not carry says why (wide screens hide it).
+            if (slot.missing) return <MissingStat key={slot.key} label={label} reason={slot.missing === "model" ? m.notApplicable : m.notInFiling} />;
+            const note = slot.key === "revenue" ? `${word.change} ${change("revenue").label}` : slot.key === "net" && coverage != null ? `${margin("net")} · ${m.coverage(percent(coverage * 100))}` : margin(slot.metric);
+            return <Stat key={slot.key} label={label} value={slot.value} format={money} note={note} tone={slot.key === "revenue" ? change("revenue").trend ?? undefined : undefined} level={figureLevel(flags, { metric: slot.metric })} />;
+          })}
         </div>}
         <div className="stage-controls">
         {view === "profit" && yearAgo && lastQuarter && <ToggleGroup type="single" variant="unstyled" rovingFocus={false} value={basis} onValueChange={next => { if (next && next !== basis) crossfade(() => setBasis(next as Basis)); }} asChild>
@@ -699,7 +736,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
         {!current && <ViewFlags flags={shownFlags} metrics={assessedMetrics} noted={noted} focus={null} onOpen={id => focusCheck(id)} onHover={setHoverFlag} />}
       </header>
 
-      <div className="chart" data-tour="chart">
+      <div className="chart" data-tour="chart" ref={chartRef} data-overflow={chartScroll.overflow || undefined} data-end={chartScroll.atEnd || undefined}>
         {leadShown && <div className="lead-finding" data-kind={leadShown.kind}>
           <Button variant="unstyled" type="button" className="lead-finding-open" aria-label={m.openFinding(leadShown.title)} onClick={() => focusFinding(leadShown.id)}>
             <i className="finding-mark" aria-hidden="true">{leadShown.severity}</i><span lang={langOf(leadShown.title)}>{leadShown.title}</span><span aria-hidden="true">→</span>
@@ -708,6 +745,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17" /></svg>
           </Button>
         </div>}
+        {chartScroll.overflow && <div className="chart-hint-rail" aria-hidden={!chartScroll.hint}><span className="chart-hint" data-shown={chartScroll.hint || undefined}>{m.swipe}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5M3 12h18" /></svg></span></div>}
         {(view === "cash" || view === "balance") && funding ? <CapitalChart view={view} funding={funding} ticker={ticker} spotlight={poolSpotlight} />
           : !quarter ? <div className="empty"><h2>{m.noFinancials}</h2></div>
           : proportional && layout ? <FlowChart graph={graph!} copy={copy} money={v => money(v)} colorOf={colorOf} active={active} revealKey={quarter.id} productBusiness={current ? "segment:" + current.key : null} mindMap={mindMap} mindPick={mindItem?.id ?? null} onMindPick={setMindItem} businessDetails={<Dossier item={current} parent={parent ?? null} sources={quarter.sources} explainer={explainer} />}
@@ -834,10 +872,10 @@ function Dossier({ item, parent, sources, explainer }: { item: Item | null; pare
   const english = (text: string | null | undefined) => text ? <span lang="en">{text}</span> : m.notDisclosed;
   return <section className="dossier" key={item.key} aria-label={m.profile(item.name)}>
     <h3>{parent ? `${parent.name} / ` : ""}{item.name}<SourceLanguage of={[segment.description, segment.customers, segment.monetization]} /></h3>
-    {description ? <p lang="en">{description}</p> : <p>{m.noDescription}</p>}
+    {description ? <p lang="en">{normalizeDisplayText(description)}</p> : <p>{m.noDescription}</p>}
 
     <DossierTabs label={item.name} sections={[[m.customers, english(segment.customers)], [m.revenueModel, english(segment.monetization)]]} />
-    {basis && <p className="fine" lang="en">{basis}</p>}
+    {basis && <p className="fine" lang="en">{normalizeDisplayText(basis)}</p>}
     <Sources sources={sources} ids={segment.sourceIds} />
   </section>;
 }
@@ -886,12 +924,12 @@ function ExplainedDossier({ item, parent, explainer, explained }: { item: Item; 
   return <section className="dossier" aria-label={m.profile(item.name)}>
     <h3>{parent ? `${parent.name} / ` : ""}{item.name}<SourceLanguage of={[explained.summary?.text, ...(explained.offerings ?? []).map(p => p.description.text), ...explained.sections.flatMap(s => [s.title, ...s.items.flatMap(i => [i.label, i.claim.text])])]} /></h3>
     {/* Without a verified summary, the filing's own one-line description still says what the business is. */}
-    {explained.summary ? <p className="dossier-lede" lang={langOf(explained.summary.text)}>{explained.summary.text}{cite(explained.summary)}</p>
+    {explained.summary ? <p className="dossier-lede" lang={langOf(explained.summary.text)}>{normalizeDisplayText(explained.summary.text)}{cite(explained.summary)}</p>
       : item.segment.description && <p lang="en">{item.segment.description.split("\n")[0]}</p>}
 
     {/* Products come first when verified; the other tabs are the angles the model chose for this business. */}
     <DossierTabs label={item.name} sections={[
-      ...(explained.offerings?.length ? [[m.products, <ul className="dossier-products">{explained.offerings.map(p => <li key={p.id} lang={langOf(p.description.text)}><b>{p.name}</b>{p.description.text}{cite(p.description)}</li>)}</ul>] as [string, ReactNode]] : []),
+      ...(explained.offerings?.length ? [[m.products, <ul className="dossier-products">{explained.offerings.map(p => <li key={p.id} lang={langOf(p.description.text)}><b>{p.name}</b>{normalizeDisplayText(p.description.text)}{cite(p.description)}</li>)}</ul>] as [string, ReactNode]] : []),
       ...explained.sections.map((section): [string, ReactNode, string] => [section.title, <DossierSection section={section} cite={cite} />, langOf(section.title)]),
     ]} />
 
@@ -901,7 +939,24 @@ function ExplainedDossier({ item, parent, explainer, explained }: { item: Item; 
 
 /** Steps read as a numbered chain, a list as named entries, prose as plain statements. */
 function DossierSection({ section, cite }: { section: ExplainerSection; cite: (claim: ExplainerClaim) => ReactNode }) {
-  if (section.layout === "steps") return <ol className="dossier-steps">{section.items.map((i, n) => <li key={n}>{i.label && <b>{i.label}</b>}{i.claim.text}{cite(i.claim)}</li>)}</ol>;
-  if (section.layout === "list") return <ul className="dossier-products">{section.items.map((i, n) => <li key={n}><b>{i.label}</b>{i.claim.text}{cite(i.claim)}</li>)}</ul>;
-  return <>{section.items.map((i, n) => <p key={n} className="dossier-prose">{i.label && <b>{i.label}: </b>}{i.claim.text}{cite(i.claim)}</p>)}</>;
+  if (section.layout === "steps") return <ol className="dossier-steps">{section.items.map((i, n) => <li key={n}>{i.label && <b>{i.label}</b>}{normalizeDisplayText(i.claim.text)}{cite(i.claim)}</li>)}</ol>;
+  if (section.layout === "list") return <ul className="dossier-products">{section.items.map((i, n) => <li key={n}><b>{i.label}</b>{normalizeDisplayText(i.claim.text)}{cite(i.claim)}</li>)}</ul>;
+  return <>{section.items.map((i, n) => <p key={n} className="dossier-prose">{i.label && <b>{i.label}: </b>}{normalizeDisplayText(i.claim.text)}{cite(i.claim)}</p>)}</>;
+}
+
+/**
+ * The fiscal year end beside the quarter tag. For an issuer whose year does not end in December it explains the
+ * quarter's fiscal year, on hover or focus and on a tap that toggles it.
+ */
+function FiscalMeta({ text, note }: { text: string; note: string | null }) {
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  if (!note) return <span className="stage-fiscal-meta">{text}</span>;
+  return <span className="stage-fiscal-meta" data-open={open || undefined} onMouseLeave={() => setOpen(false)}>
+    <button type="button" className="fiscal-note" aria-expanded={open} aria-describedby={id} onClick={() => setOpen(v => !v)} onBlur={() => setOpen(false)}
+      onKeyDown={e => { if (e.key === "Escape") setOpen(false); }}>
+      {text}<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" /><path d="M8 7.2v4M8 4.8v.1" /></svg>
+    </button>
+    <span className="fiscal-note-tip" role="tooltip" id={id}>{note}</span>
+  </span>;
 }

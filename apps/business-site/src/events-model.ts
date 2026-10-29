@@ -1,20 +1,21 @@
+import { insiderCompactMoney } from "./insider-money";
 import type { BusinessFlowQuarter } from "@/shared/analysis-contract/business-flow";
 import type { CompanyEvent, EventClass, EventsPublication } from "@/shared/analysis-contract/events";
 import type { FindingFundamentals } from "@/shared/analysis-runtime/findings";
-import { DAY_MS, EVENT_CLASS_LABEL as EVENT_CLASS_LABEL_EN, eventClassLabel, filingDocumentTitle, holdingPath, insiderCadence, insiderCluster, insiderTone, insiderVerdict, isQuietInsider, soldShareOfHolding, stakeChange, type InsiderTone, type InsiderVerdict, type ShareCount, type StakeChange } from "@/shared/analysis-runtime/events";
+import { isOpenMarketInsiderTrade, DAY_MS, EVENT_CLASS_LABEL as EVENT_CLASS_LABEL_EN, eventClassLabel, filingDocumentTitle, holdingPath, insiderCadence, insiderCluster, insiderTone, insiderVerdict, isQuietInsider, soldShareOfHolding, stakeChange, type InsiderTone, type InsiderVerdict, type ShareCount, type StakeChange } from "@/shared/analysis-runtime/events";
 import { compactMoney, compactShares, shortPeriod } from "@/shared/analysis-runtime/locale";
 import { getLocale, labels, messages } from "@/packages/web/src/i18n";
 import { langOf } from "@/packages/web/src/i18n/SourceLanguage";
 
 const m = messages({
-  sale: (who: string, n: string) => `${who} · Sale ${n}`,
-  purchase: (who: string, n: string) => `${who} · Purchase ${n}`,
+  sale: (who: string, n: string, money?: string) => `${who} · Sale ${n}${money ? ` · ${money}` : ""}`,
+  purchase: (who: string, n: string, money?: string) => `${who} · Purchase ${n}${money ? ` · ${money}` : ""}`,
   exercise: (who: string, n: string) => `${who} · Exercise ${n}`,
   holdingChange: (who: string) => `${who} · Holding change`,
   report: (period: string) => `${period} report`,
 }, {
-  sale: (who: string, n: string) => `${who} · 卖出 ${n}`,
-  purchase: (who: string, n: string) => `${who} · 买入 ${n}`,
+  sale: (who: string, n: string, money?: string) => `${who} · 卖出 ${n}${money ? ` · ${money}` : ""}`,
+  purchase: (who: string, n: string, money?: string) => `${who} · 买入 ${n}${money ? ` · ${money}` : ""}`,
   exercise: (who: string, n: string) => `${who} · 行权 ${n}`,
   holdingChange: (who: string) => `${who} · 持股变动`,
   report: (period: string) => `${period} 财报`,
@@ -42,8 +43,8 @@ export function eventTitle(e: CompanyEvent): string {
   const t = e.insider;
   if (t) {
     const who = t.ownerName.replace(/\s+/g, " ");
-    if (t.sold) return m.sale(who, shares(t.sold.shares));
-    if (t.bought) return m.purchase(who, shares(t.bought.shares));
+    if (isOpenMarketInsiderTrade(e) === "sell" && t.sold) return m.sale(who, shares(t.sold.shares), t.sold.proceeds > 0 ? insiderCompactMoney(t.sold.proceeds, getLocale()) : undefined);
+    if (isOpenMarketInsiderTrade(e) === "buy" && t.bought) return m.purchase(who, shares(t.bought.shares), t.bought.cost > 0 ? insiderCompactMoney(t.bought.cost, getLocale()) : undefined);
     if (t.exercised) return m.exercise(who, shares(t.exercised));
     return m.holdingChange(who);
   }

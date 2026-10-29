@@ -7,7 +7,7 @@ import type { BusinessFlowQuarter } from "@/shared/analysis-contract/business-fl
 import { compactFlowValue } from "@/packages/web/src/model/business-flow-layout";
 import type { GuidancePublication } from "@/shared/analysis-contract/guidance";
 import { getLocale, messages } from "@/packages/web/src/i18n";
-import { compactMoney, qoqLabel, range, yoyLabel, shortPeriod } from "@/shared/analysis-runtime/locale";
+import { axisNumber, axisUnit, compactMoney, qoqLabel, range, yoyLabel, shortPeriod } from "@/shared/analysis-runtime/locale";
 import { QuarterBadge, fiscalPhrase } from "./PeriodMark";
 import { SLOTS, ACTION_NAMES, buildBridge, buildColumns, buildSlots, columnIndex, visibleSlotCount, growth, growthSeries, guidanceLabel, guidanceOverlay, layerOrder, niceTicks, rateTicks, type Bridge, type Column, type GuideMark, type Layer, type TrendItem } from "./trend-model";
 
@@ -148,6 +148,7 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
           {view === "trend" && legend.length > 1 && legend.map(layer => <span key={layer.key}><i style={{ background: chartConfig[layer.key]?.color ?? layerColor(layer, hue) }} />{layer.name}</span>)}
           {view === "trend" && rateAxis && <span className="trend-legend-line" style={{ "--line": lineColor } as CSSProperties}><i />{rateName}</span>}
           {view === "trend" && guided.length > 0 && <span className="trend-legend-guide"><i />{m.guidanceRange}</span>}
+          {view === "trend" && <span className="trend-sub">{axisUnit(unit.currency, getLocale())}</span>}
           {view === "bridge" && bridge && bridge.reason !== "split" && <span className="trend-basis">{m.totalsOnly}</span>}
         </div></ChartLegendContent>
       </div>
@@ -166,7 +167,8 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
     <div className="trend-plot" role="list" data-series={series ?? undefined} data-rates={rateAxis ? "" : undefined} style={{ "--line": lineColor, "--cols": columns.length + (overlay.next ? 1 : 0) } as CSSProperties}
       onMouseMove={e => setSeries((e.target as Element).closest("[data-series-line]") ? "line" : (e.target as Element).closest(".trend-col") ? "bar" : null)}>
       <div className="trend-grid" key={scale} aria-hidden="true">
-        {ticks.map((t, k) => <div key={t} style={{ bottom: `${t / scale * 100}%` }}><span>{t ? money(t) : ""}</span>{rateAxis && <em>{axisPercent(rateAxis[k])}</em>}</div>)}
+        {/* Ticks carry the magnitude only; the currency is stated once in the legend, so a tick never outgrows the axis. */}
+        {ticks.map((t, k) => <div key={t} style={{ bottom: `${t / scale * 100}%` }}><span>{axisNumber(t * unit.scale, getLocale())}</span>{rateAxis && <em>{axisPercent(rateAxis[k])}</em>}</div>)}
       </div>
       <i className="trend-sweep" key={"sweep" + mode} aria-hidden="true" />
       {columns.map((column, i) => <Bar key={column.slot.periodEnd} column={column} index={i} order={order} scale={scale} hue={hue} money={money} ticker={ticker}

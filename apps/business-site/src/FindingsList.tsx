@@ -1,3 +1,4 @@
+import { normalizeDisplayText } from "@/shared/analysis-runtime/locale";
 import { AnimatePresence, useReducedMotion } from "motion/react";
 import { Button } from "@/packages/web/src/ui/button";
 import { messages } from "@/packages/web/src/i18n";
@@ -59,9 +60,9 @@ export function FindingsList({ findings, updates, verdicts, focus, story, period
       <AnimatePresence initial={false} mode="popLayout">
       {findings.map((f, i) => <RailRow variant="unstyled" type="button" key={f.id} role="radio" aria-checked={focus === f.id} className="finding-row" data-kind={f.kind}
         layout={still ? false : "position"} layoutDependency={ids.join()} exit={rowExit} data-arrived={arrived.has(f.id) ? "" : undefined} style={arrivalStyle(arrived.get(f.id))}
-        data-extra={extra(f, i) ? "" : undefined} onClick={() => onFocus(focus === f.id ? null : f.id)} {...tip.bind(f.title, langOf(f.title), m.severity(KIND_LABEL[f.kind], f.severity))}>
+        data-extra={extra(f, i) ? "" : undefined} onClick={() => onFocus(focus === f.id ? null : f.id)} {...tip.bind(normalizeDisplayText(f.title), langOf(f.title), m.severity(KIND_LABEL[f.kind], f.severity))}>
         <i className="finding-mark" aria-label={m.severity(KIND_LABEL[f.kind], f.severity)}>{f.severity}</i>
-        <span className="finding-title"><span lang={langOf(f.title)}>{f.title}</span>{f.watchOutcome && <i className="finding-settled" data-verdict={verdicts?.[f.id]} title={m.watchOutcome} aria-label={m.watchOutcome}>{verdicts?.[f.id] === "pass" ? "✓" : verdicts?.[f.id] === "fail" ? "✗" : "↻"}</i>}</span>
+        <span className="finding-title"><span lang={langOf(f.title)}>{normalizeDisplayText(f.title)}</span>{f.watchOutcome && <i className="finding-settled" data-verdict={verdicts?.[f.id]} title={m.watchOutcome} aria-label={m.watchOutcome}>{verdicts?.[f.id] === "pass" ? "✓" : verdicts?.[f.id] === "fail" ? "✗" : "↻"}</i>}</span>
       </RailRow>)}
       </AnimatePresence>
       {tip.node}

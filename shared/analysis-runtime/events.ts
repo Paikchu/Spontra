@@ -93,9 +93,86 @@ export function indexPrimaryDescription(html: string): string | null {
   return null;
 }
 
-/** An open-market sale the Form 4 marks as made under a 10b5-1 plan. */
+export const INSIDER_MATERIAL_VALUE_USD = 1_000_000;
+export const INSIDER_VALUE_WINDOW_DAYS = 30;
+export const INSIDER_FOLD_WINDOW_DAYS = 90;
+
+const HOLDINGS_NOTE = /^\s*(?:\(\d+\)|\d+[.)])?\s*includes\b/i;
+const insiderTexts = (event: CompanyEvent) => [
+  ...(event.insider?.footnotes ?? []), event.description, event.title,
+  event.summary?.headline,
+  ...(event.summary?.bullets?.flatMap(bullet => [bullet.label, bullet.detail]) ?? []),
+  ...((event.summary as (CompanyEvent["summary"] & { points?: string[] }))?.points ?? []),
+].filter((text): text is string => !!text && !HOLDINGS_NOTE.test(text));
+
+export function isEsppTransaction(event: CompanyEvent): boolean {
+  if (event.class !== "insider" || isOpenMarketInsiderTrade(event) !== "buy" || (event.insider?.sold?.shares ?? 0) > 0) return false;
+  return [...insiderTexts(event), event.insider?.securityTitle]
+    .some(text => /employee\s+stock\s+purchase\s+plan|\bespp\b/i.test(text ?? ""));
+}
+
+/** A sale to fund vesting taxes, distinct from issuer-withheld shares on a separate F line. */
+export function isTaxWithholdingSale(event: CompanyEvent): boolean {
+  if (event.class !== "insider" || isOpenMarketInsiderTrade(event) !== "sell") return false;
+  const texts = insiderTexts(event);
+  const taxSale = /(?:sale\s+of\s+shares|shares\s+sold|sold)\b[^.]*\b(?:solely\s+|purely\s+)?to\s+(?:pay|satisfy|cover|fund)\s+(?:the\s+)?(?:reporting\s+person['’]s\s+)?tax\s+(?:liability|withholding|obligations?)|\bsolely\s+to\s+(?:pay|satisfy|cover|fund)\s+(?:the\s+)?tax\s+(?:liability|withholding|obligations?)|\bto\s+(?:satisfy|cover)\s+(?:the\s+reporting\s+person['’]s\s+)?tax\s+withholding\s+obligations?\b/i;
+  // Separate cash-sale explanations take precedence over a tax explanation elsewhere in the filing.
+  const cashSale = /\bsell\s+shares\s+for\s+cash\b|\brepresents\s+the\s+sale\s+of\s+shares\s+in\s+(?:the\s+)?open\s+market\b/i;
+  if (texts.some(text => /\bsell\s+shares\s+for\s+cash\b/i.test(text) || (cashSale.test(text) && !taxSale.test(text)))) return false;
+  return texts.some(text => !/shares\s+withheld|withheld\s+by\s+the\s+issuer/i.test(text) && taxSale.test(text));
+}
+
+export function isPlannedInsiderTrade(event: CompanyEvent): boolean {
+  return event.class === "insider" && (event.insider?.rule10b51 === true
+    || [...(event.insider?.footnotes ?? []), event.description].some(text => /\b10b5-?1\b/i.test(text)));
+}
+
 export const isPlannedSale = (event: CompanyEvent) =>
-  event.class === "insider" && !!event.insider?.sold && event.insider.sold.shares > 0 && event.insider.rule10b51 === true;
+  event.class === "insider" && !!event.insider?.sold && event.insider.sold.shares > 0 && isPlannedInsiderTrade(event);
+
+export function isOpenMarketInsiderTrade(event: CompanyEvent): "buy" | "sell" | null {
+  if (event.class !== "insider" || !event.insider) return null;
+  const { sold, bought } = event.insider;
+  if (sold && sold.shares > 0 && bought && bought.shares > 0) {
+    return (sold.proceeds || bought.cost ? sold.proceeds >= bought.cost : sold.shares >= bought.shares) ? "sell" : "buy";
+  }
+  return sold && sold.shares > 0 ? "sell" : bought && bought.shares > 0 ? "buy" : null;
+}
+
+export function insiderTradeValueUsd(event: CompanyEvent): number {
+  return isOpenMarketInsiderTrade(event) ? (event.insider?.sold?.proceeds ?? 0) + (event.insider?.bought?.cost ?? 0) : 0;
+}
+
+export function isKeyInsiderRole(title: string | null | undefined): boolean {
+  if (!title) return false;
+  if (/chief executive officer|\bceo\b|chief financial officer|\bcfo\b|\bchairman\b|\bchairwoman\b|\bchairperson\b|董事长|董事会主席|首席执行官|首席财务官/i.test(title)) return true;
+  return !/\bvice[\s-]+president\b|\b(?:vp|svp|evp)\b/i.test(title) && /^\s*(?:co-)?president(?:\s*(?:and|&|\/)\s*(?:chief\s+\w+\s+officer|c[eo]o|director|officer|chairman|chairwoman|chairperson))?\s*$/i.test(title.replace(/\./g, ""));
+}
+
+export function insiderWindowValueUsd(event: CompanyEvent, events?: readonly CompanyEvent[], windowDays = INSIDER_VALUE_WINDOW_DAYS): number {
+  if (isEsppTransaction(event) || isTaxWithholdingSale(event) || !isOpenMarketInsiderTrade(event)) return 0;
+  if (!events?.length) return insiderTradeValueUsd(event);
+  const seen = new Set<string>();
+  const center = Date.parse(event.eventDate || event.filedAt);
+  const windowMs = windowDays * DAY_MS;
+  const trades = [event, ...events].flatMap(other => {
+    if (seen.has(other.id)) return [];
+    seen.add(other.id);
+    const sameOwner = other.insider?.ownerCik ? other.insider.ownerCik === event.insider?.ownerCik : other.insider?.ownerName === event.insider?.ownerName;
+    const time = Date.parse(other.eventDate || other.filedAt);
+    return sameOwner && !isEsppTransaction(other) && !isTaxWithholdingSale(other) && isOpenMarketInsiderTrade(other)
+      && Math.abs(time - center) <= windowMs ? [{ time, value: insiderTradeValueUsd(other) }] : [];
+  }).sort((a, b) => a.time - b.time);
+  // Every maximal window can start at its earliest trade, or at the focal event.
+  let maximum = 0, total = 0, right = 0;
+  for (let left = 0; left < trades.length && trades[left].time <= center; left++) {
+    const start = trades[left].time;
+    while (right < trades.length && trades[right].time <= start + windowMs) total += trades[right++].value;
+    if (start + windowMs >= center) maximum = Math.max(maximum, total);
+    total -= trades[left].value;
+  }
+  return maximum;
+}
 
 /** A director's or officer's open-market purchase. Grants and exercises are not purchases. */
 export const isOpenMarketBuy = (event: CompanyEvent) => {
@@ -103,21 +180,13 @@ export const isOpenMarketBuy = (event: CompanyEvent) => {
   return event.class === "insider" && !!insider?.bought && insider.bought.shares > 0 && (insider.isDirector || insider.isOfficer);
 };
 
-/**
- * Where a filing sits in the rail.
- * Key: earnings and guidance, leadership changes, shareholder votes, a current report that has a summary,
- * an insider sale that is not a 10b5-1 plan, and a director's or officer's open-market buy.
- * Routine: 10b5-1 sales, grants and gifts, and a 6-K or 8-K with neither a summary nor a document title.
- * Everything else (an exercise, a current report that has a document title but no summary) is normal.
- */
-export function eventImportance(event: CompanyEvent): EventImportance {
+/** Deterministic importance; insider materiality uses the owner's full 30-day window. */
+export function eventImportance(event: CompanyEvent, events?: readonly CompanyEvent[]): EventImportance {
+  if (event.class === "insider") return isOpenMarketInsiderTrade(event) && !isEsppTransaction(event) && !isTaxWithholdingSale(event)
+    && (insiderWindowValueUsd(event, events) >= INSIDER_MATERIAL_VALUE_USD || isKeyInsiderRole(event.insider?.title)) ? "key" : "routine";
   if (event.class === "earnings" || event.class === "guidance" || event.class === "executive" || event.class === "vote") return "key";
   const current = event.form.startsWith("8-K") || event.form.startsWith("6-K");
   if (current && event.summary?.headline) return "key";
-  if (isOpenMarketBuy(event)) return "key";
-  if (event.class === "insider" && event.insider?.sold && event.insider.sold.shares > 0 && event.insider.rule10b51 !== true) return "key";
-  const quiet = event.class === "insider" && !!event.insider && !event.insider.sold && !event.insider.bought && !event.insider.exercised;
-  if (isPlannedSale(event) || quiet) return "routine";
   if (current && !event.summary?.headline && !filingDocumentTitle(event)) return "routine";
   return "normal";
 }
@@ -173,7 +242,7 @@ export function readEventsPublication(value: unknown, ticker: string): EventsPub
   const events = parsed.data.events.filter(e => e.ticker === ticker && (e.form.startsWith("4") ? e.class === "insider" : e.class !== "insider"))
     .sort((a, b) => b.filedAt.localeCompare(a.filedAt) || b.eventDate.localeCompare(a.eventDate))
     .map(event => annotateEvent(event));
-  return { ...parsed.data, events };
+  return { ...parsed.data, events: events.map(event => ({ ...event, importance: eventImportance(event, events) })) };
 }
 
 /* ---------- Insider analytics ---------- */

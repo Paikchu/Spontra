@@ -67,8 +67,10 @@ export function RailActions({ light, onToggleTheme, onSearch, collapsed }: {
  * Floating card: the company row stays put, everything below it scrolls inside the card.
  * Once the list moves, a blur band under the row softens what slides beneath it; the scrollbar thumb only shows while scrolling or hovered.
  */
-export function Rail({ ticker, actions, label, expanded = false, children }: {
+export function Rail({ ticker, actions, label, expanded = false, company = null, children }: {
   ticker: string; actions: ReactNode; label?: string;
+  /** The issuer under the ticker: its name (full name on hover), and a line of fiscal and filer context; `note` explains a non-calendar fiscal year. */
+  company?: { name: string; fullName: string; sub: string[]; note?: string | null } | null;
   /** A section has opened over the whole rail: the body stops scrolling and that section scrolls its own list. */
   expanded?: boolean;
   children?: ReactNode;
@@ -97,9 +99,13 @@ export function Rail({ ticker, actions, label, expanded = false, children }: {
     idle.current = window.setTimeout(() => delete el.dataset.scrolling, 900);
   }
   return <Sidebar collapsible="none" asChild><aside className="rail" ref={aside} aria-label={label} data-scrolled={scrolled && !expanded || undefined}>
-    <SidebarHeader asChild><div className="rail-top">
-      <CompanyMark ticker={ticker} />
+    <SidebarHeader asChild><div className="rail-top" data-company={company ? "" : undefined}>
+      <CompanyMark ticker={ticker} name={company?.name} fullName={company?.fullName} />
       {actions}
+      {company && <div className="rail-company-meta">
+        <span className="rail-company-name" title={company.fullName}>{company.name}</span>
+        {company.sub.length > 0 && <span className="rail-company-sub" title={company.note ?? undefined}>{company.sub.join(" · ")}</span>}
+      </div>}
       {children && <div className="rail-blur" aria-hidden="true" />}
     </div></SidebarHeader>
     {children && <SidebarContent asChild><div className="rail-scroll" id="rail-body" ref={body} data-expanded={expanded || undefined} onScroll={onScroll}>{children}</div></SidebarContent>}

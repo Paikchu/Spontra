@@ -10,7 +10,7 @@
  * The business-site Worker formats the same metrics for its API, so the locale is a parameter that
  * defaults to English rather than read from the page.
  */
-import { compactMoney, compactNumber, compactShares, currencyName, MINUS, type Locale } from "@/shared/analysis-runtime/locale.ts";
+import { compactMoney, compactNumber, compactShares, currencyName, formatPct, MINUS, type Locale } from "@/shared/analysis-runtime/locale.ts";
 
 const METRIC_LABELS: Record<string, string> = {
   revenue: "Revenue",
@@ -118,18 +118,20 @@ export function formatSecMetricValue(metricKey: string, rawValue: string, unit?:
 
   if (RATIO_KEY.test(metricKey.trim().toLowerCase())) {
     const percent = unit === "ratio" ? numeric * 100 : unit === "%" || unit === "percent" ? numeric : Math.abs(numeric) <= 1 ? numeric * 100 : numeric;
-    return `${percent.toFixed(1)}%`;
+    return formatPct(percent);
   }
 
   const large = Math.abs(numeric) >= 1e4;
   if (locale === "zh-CN") return chineseValue(metricKey, numeric, large, unit, currency);
   const digits = { notation: large ? "compact" : "standard", maximumFractionDigits: large ? 1 : 2, minimumFractionDigits: large ? 0 : 2 } as const;
-  if (/shares/.test(metricKey) || unit === "shares") return `${new Intl.NumberFormat("en-US", { ...digits, minimumFractionDigits: 0 }).format(numeric)} shares`;
+  // Intl writes a hyphen-minus; the page's negative sign is the mathematical minus.
+  const minus = (text: string) => text.replace(/^-/, MINUS);
+  if (/shares/.test(metricKey) || unit === "shares") return `${minus(new Intl.NumberFormat("en-US", { ...digits, minimumFractionDigits: 0 }).format(numeric))} shares`;
   const code = (currency || unit || "").toUpperCase();
   if (/^[A-Z]{3}$/.test(code)) {
-    try { return new Intl.NumberFormat("en-US", { ...digits, style: "currency", currency: code }).format(numeric); } catch { /* not an ISO currency code */ }
+    try { return minus(new Intl.NumberFormat("en-US", { ...digits, style: "currency", currency: code }).format(numeric)); } catch { /* not an ISO currency code */ }
   }
-  return new Intl.NumberFormat("en-US", digits).format(numeric);
+  return minus(new Intl.NumberFormat("en-US", digits).format(numeric));
 }
 
 /** "757亿美元", "1.24美元", "123万股": Chinese counting units, the currency named after the amount. */

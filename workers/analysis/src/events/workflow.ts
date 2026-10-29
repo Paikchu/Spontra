@@ -1,5 +1,5 @@
 import type { CompanyEvent, EventExhibit, EventForm, EventsPublication, EventSummary, InsiderTransaction } from "../../../../shared/analysis-contract/events.ts";
-import { annotateEvent, classifyEvent, filingDocumentTitle, indexPrimaryDescription, parseItems, readEventsPublication } from "../../../../shared/analysis-runtime/events.ts";
+import { annotateEvent, eventImportance, classifyEvent, filingDocumentTitle, indexPrimaryDescription, parseItems, readEventsPublication } from "../../../../shared/analysis-runtime/events.ts";
 import type { SecCronEnv } from "../core.ts";
 import { knownCik } from "../pipeline/identity.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
@@ -163,7 +163,8 @@ export async function refreshCompanyEvents(env: EventsSweepEnv, ticker: string, 
       edgarUrl: `${archiveRoot}/${filing.accessionNumber}-index.html`, documentUrl, exhibits, summary, insider,
     }));
   }
-  const next: EventsPublication = { schemaVersion: "events.v1", ticker, checkedAt, events, pendingInsider };
+  const sortedEvents = events.sort((a, b) => b.filedAt.localeCompare(a.filedAt) || b.eventDate.localeCompare(a.eventDate));
+  const next: EventsPublication = { schemaVersion: "events.v1", ticker, checkedAt, events: sortedEvents.map(event => ({ ...event, importance: eventImportance(event, sortedEvents) })), pendingInsider };
   await db.batch([
     db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at")
       .bind(eventsCacheKey(ticker), JSON.stringify(next), now.toISOString()),

@@ -78,8 +78,8 @@ export async function loadPublicFlow(ticker:string,fetcher:typeof fetch=fetch,lo
 }
 function publicIssuer(value:unknown):CompleteFlowPublication["issuer"]|null{
  if(!value||typeof value!=="object")return null;
- const {fiscalYearEndMonth:month,name}=value as {fiscalYearEndMonth?:unknown;name?:unknown};
- return {fiscalYearEndMonth:typeof month==="number"&&Number.isInteger(month)&&month>=1&&month<=12?month:null,name:typeof name==="string"&&name.trim()?name.trim().slice(0,120):null};
+ const {fiscalYearEndMonth:month,name,annualForm:form}=value as {fiscalYearEndMonth?:unknown;name?:unknown;annualForm?:unknown};
+ return {fiscalYearEndMonth:typeof month==="number"&&Number.isInteger(month)&&month>=1&&month<=12?month:null,name:typeof name==="string"&&name.trim()?name.trim().slice(0,120):null,annualForm:typeof form==="string"&&/^(?:10-K|20-F|40-F)$/.test(form)?form:null};
 }
 
 /** Supplementary: an unavailable or invalid explanation reads as null and never fails the flow. */

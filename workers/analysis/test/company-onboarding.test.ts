@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
-import { runSecDiscovery } from "../src/pipeline/discovery.ts";
+import { annualForm, runSecDiscovery } from "../src/pipeline/discovery.ts";
 import { newFilings } from "../src/financial-data/new-filings.ts";
 import { READ_NOTE_VERSION } from "../src/financial-data/read-note.ts";
 import type { BusinessFlowQuarter } from "../../../shared/analysis-contract/business-flow.ts";
@@ -108,4 +108,14 @@ test("a data-only issuer's new earnings release reaches collection from discover
   await db.prepare("INSERT INTO filing_read_notes (accession, cik, ticker, form, version, status, updated_at) VALUES (?, ?, ?, ?, ?, 'unresolved', ?)")
     .bind("0001652044-26-000080", "0001652044", "GOOGL", "8-K", READ_NOTE_VERSION, "2026-10-28T20:12:00.000Z").run();
   assert.deepEqual(await newFilings(db, "GOOGL", "0001652044", newest), []);
+});
+
+test("the issuer's annual form is its latest annual report's, read across its whole recent list", () => {
+  const recent = (form: string[]) => ({ filings: { recent: { form } } });
+  // A 20-F filer's monthly 6-Ks push its annual report far down the list; an amendment reads as the report it amends.
+  assert.equal(annualForm(recent([...Array<string>(300).fill("6-K"), "20-F", "10-K"])), "20-F");
+  assert.equal(annualForm(recent(["8-K", "10-K/A", "10-Q"])), "10-K");
+  assert.equal(annualForm(recent(["40-F"])), "40-F");
+  assert.equal(annualForm(recent(["6-K", "F-1"])), null);
+  assert.equal(annualForm(null), null);
 });

@@ -6,7 +6,7 @@ import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import type { BusinessFlowQuarter } from "@/shared/analysis-contract/business-flow";
 import { compactFlowValue } from "@/packages/web/src/model/business-flow-layout";
 import { getLocale, messages } from "@/packages/web/src/i18n";
-import { compactMoney, compactNumber, multiple, perShare, qoqLabel, yoyLabel, shortPeriod } from "@/shared/analysis-runtime/locale";
+import { axisNumber, axisUnit, compactMoney, compactNumber, multiple, perShare, qoqLabel, yoyLabel, shortPeriod } from "@/shared/analysis-runtime/locale";
 import { REVENUE_METRIC, metricChanges, metricTicks, type MetricOption, type MetricTrend } from "./metric-model";
 import { growth, rateTicks } from "./trend-model";
 import { QuarterBadge, fiscalPhrase } from "./PeriodMark";
@@ -79,6 +79,8 @@ export function MetricTrendPanel({ trend, picker, currentPeriod, periods, onPick
   const [series, setSeries] = useState<"bar" | "line" | null>(null);
   const [chosenLag, setLag] = useState<1 | 4 | null>(null);
   const format = useMemo(() => formatter(trend), [trend]);
+  // Amounts tick without the currency, stated once in the legend; rates, multiples, per-share and share counts keep their unit.
+  const amounts = trend.unitFamily === "currency";
   const rate = trend.unitFamily !== "percent";
   const lag = chosenLag ?? (metricChanges(trend, 4).filter(v => v != null).length >= 2 ? 4 : 1);
   const changes = useMemo(() => metricChanges(trend, lag), [trend, lag]);
@@ -105,6 +107,7 @@ export function MetricTrendPanel({ trend, picker, currentPeriod, periods, onPick
         <ChartLegendContent asChild key={"legend" + trend.key}><div className="trend-legend">
           {rateAxis && <span className="trend-legend-line" style={{ "--line": "var(--foreground)" } as CSSProperties}><i />{rateName}</span>}
           <span className="trend-basis">{m.secXbrl}</span>
+          {amounts && <span className="trend-sub">{axisUnit(trend.currency || "USD", getLocale())}</span>}
         </div></ChartLegendContent>
       </div>
       <div className="trend-kpis">
@@ -123,7 +126,7 @@ export function MetricTrendPanel({ trend, picker, currentPeriod, periods, onPick
     <div className="trend-plot" role="list" data-series={series ?? undefined} data-rates={rateAxis ? "" : undefined} style={{ "--line": "var(--foreground)", "--cols": trend.points.length } as CSSProperties}
       onMouseMove={e => setSeries((e.target as Element).closest("[data-series-line]") ? "line" : (e.target as Element).closest(".trend-col") ? "bar" : null)}>
       <div className="trend-grid" key={trend.key + hi} aria-hidden="true">
-        {ticks.map((t, k) => <div key={t} data-zero={t === 0 && k > 0 ? "" : undefined} style={{ bottom: `${y(t)}%` }}><span>{format(t)}</span>{rateAxis && <em>{axisPercent(rateAxis[k])}</em>}</div>)}
+        {ticks.map((t, k) => <div key={t} data-zero={t === 0 && k > 0 ? "" : undefined} style={{ bottom: `${y(t)}%` }}><span>{amounts ? axisNumber(t, getLocale()) : format(t)}</span>{rateAxis && <em>{axisPercent(rateAxis[k])}</em>}</div>)}
       </div>
       <i className="trend-sweep" key={"sweep" + trend.key} aria-hidden="true" />
       {trend.points.map((point, i) => {

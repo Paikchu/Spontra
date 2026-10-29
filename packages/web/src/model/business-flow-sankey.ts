@@ -2,7 +2,8 @@ import type { BusinessFlowQuarter, FlowMetric, FlowAmount } from "@/shared/analy
 import { numeric, reconcileQuarter } from "./business-flow-model";
 
 import { revenueNodeKey, selectRevenueTree } from "./revenue-tree";
-import { labels, messages } from "@/packages/web/src/i18n/core";
+import { getLocale, labels, messages } from "@/packages/web/src/i18n/core";
+import { adjustmentLabel } from "@/shared/analysis-runtime/locale";
 
 /** Statement lines in the page's locale; a node's label is read when its graph is built. */
 export const metricLabels: Record<FlowMetric, string> = labels(
@@ -413,7 +414,7 @@ function appendRevenueTree(q:BusinessFlowQuarter,tree:NonNullable<ReturnType<typ
  let negative=0;
  for(const item of adjustments){const value=numeric(item.amount)!;if(!value)continue;
   const name='revenue-adjustment:'+item.id;
-  nodes.push({name,label:item.name,amount:item.amount,value:Math.abs(value),depth:revenueDepth-(value>0?1:0),expense:value<0});
+  nodes.push({name,label:adjustmentLabel(item.name,getLocale()),amount:item.amount,value:Math.abs(value),depth:revenueDepth-(value>0?1:0),expense:value<0});
   if(value<0){negative-=value;links.push({source:root,target:name,value:-value});}else links.push({source:name,target:'revenue',value});
  }
  if(total-negative>0)links.push({source:root,target:'revenue',value:total-negative});
