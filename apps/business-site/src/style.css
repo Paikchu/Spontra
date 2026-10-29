@@ -1683,11 +1683,6 @@ html[lang^="zh"] .period-primary { letter-spacing: 0; }
 .event-title-and-tags .finding-title { flex: 1 1 160px; }
 .event-title-and-tags:has(.plan-tag) { padding: 3px 0; }
 .event-row:has(.plan-tag) { height: auto; min-height: var(--row-h); }
-.insider-summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; padding: 10px 0; font-size: 12px; }
-.insider-summary-muted { color: var(--muted-foreground); }
-.insider-summary-net { font-family: "Geist Mono", monospace; font-size: 13px; font-variant-numeric: tabular-nums; }
-.insider-summary-net[data-direction="sell"] { color: var(--loss); }
-.insider-summary-net[data-direction="buy"] { color: var(--up); }
 .event-fold-detail { display: flex; flex-wrap: wrap; gap: 6px 12px; padding: 8px 0 8px 28px; font-size: 12px; font-variant-numeric: tabular-nums; }
 .event-fold-detail button { display: flex; flex-wrap: wrap; gap: 4px 10px; min-width: 0; text-align: left; }
 .event-fold-detail button[aria-pressed="true"] { color: var(--accent); }
@@ -1695,7 +1690,7 @@ html[lang^="zh"] .period-primary { letter-spacing: 0; }
 .event-fold-title { flex-wrap: wrap; }
 @media (max-width: 960px) {
   .event-fold-text { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
-  .insider-summary, .event-fold-detail { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+  .event-fold-detail { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
 }
 @media (prefers-reduced-motion: reduce) {
   .event-fold-panel { transition: none; }

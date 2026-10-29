@@ -5,10 +5,10 @@ import type { CompanyEvent } from "@/shared/analysis-contract/events";
 import type { PublicFilingDigest } from "@/shared/analysis-contract/filings";
 import { getLocale, messages, useLocale } from "@/packages/web/src/i18n";
 import { isEsppTransaction, isPlannedInsiderTrade } from "@/shared/analysis-runtime/events";
-import { MINUS, perShare } from "@/shared/analysis-runtime/locale";
+import { perShare } from "@/shared/analysis-runtime/locale";
 import { SourceLanguage } from "@/packages/web/src/i18n/SourceLanguage";
 import { EVENT_CLASS_LABEL, eventTitle, eventTitleLang, shortDate } from "./events-model";
-import { EVENT_FILTERS, exactShares, insiderCompactMoney, insiderNetSummary, filterCounts, noiseRows, rowLeaves, type EventFilter, type NoiseRow } from "./event-noise";
+import { EVENT_FILTERS, exactShares, insiderCompactMoney, filterCounts, noiseRows, rowLeaves, type EventFilter, type NoiseRow } from "./event-noise";
 import { filingQuarterLabel, reportTitle, reportTitleLang, type RailItem, type RailItems } from "./reports-model";
 import { RailSection } from "./RailSection";
 import { arrivalStyle, RailRow, rowExit, useArrivals } from "./arrivals";
@@ -20,9 +20,7 @@ const m = messages({
   key: "Key", earnings: "Earnings & guidance", material: "Material events", insiders: "Insiders", all: "All",
   sold: (n: number, amount: string) => `Sold ${n} times in 90 days · ${amount} total`,
   bought: (n: number, amount: string) => `Bought ${n} times in 90 days · ${amount} total`,
-  plan: "10b5-1 plan", espp: "ESPP purchase", summary: "Insider 90-day net activity",
-  noMaterial: "No material insider trades in the last 90 days", netSell: "Net sell", netBuy: "Net buy",
-  people: (buyers: number, sellers: number) => `Buyers ${buyers} · Sellers ${sellers}`,
+  plan: "10b5-1 plan", espp: "ESPP purchase",
   sale: "Open-market sale", purchase: "Open-market purchase", sec: "SEC filing ↗",
   detail: (shares: string, price: string, amount: string) => `${shares} shares · Average ${price} · ${amount} total`,
   routine: (n: number) => `Routine 6-K filings × ${n}`,
@@ -35,9 +33,7 @@ const m = messages({
   key: "重要", earnings: "财报与指引", material: "重大事件", insiders: "内部人", all: "全部",
   sold: (n: number, amount: string) => `90 天内卖出 ${n} 笔 · 合计 ${amount}`,
   bought: (n: number, amount: string) => `90 天内买入 ${n} 笔 · 合计 ${amount}`,
-  plan: "计划内", espp: "员工持股计划代买", summary: "内部人 90 天净买卖",
-  noMaterial: "近 90 天无重要内部人买卖", netSell: "净卖出", netBuy: "净买入",
-  people: (buyers: number, sellers: number) => `买入 ${buyers} 人 · 卖出 ${sellers} 人`,
+  plan: "计划内", espp: "员工持股计划代买",
   sale: "公开市场卖出", purchase: "公开市场买入", sec: "SEC 文件 ↗",
   detail: (shares: string, price: string, amount: string) => `${shares} 股 · 均价 ${price} · 合计 ${amount}`,
   routine: (n: number) => `6-K 例行文件 × ${n}`,
@@ -72,7 +68,6 @@ export function EventsList({ rail, ticker, updates, focus, pendingInsider, expan
   const all = [...rail.recent, ...rail.earlier];
   const rows = noiseRows(all, filter);
   const counts = filterCounts(all);
-  const summary = insiderNetSummary(all);
   const [openRows, setOpenRows] = useState<ReadonlySet<string>>(() => new Set());
   const ids = rows.flatMap(row => [row.id, ...rowLeaves(row).map(item => item.id)]);
   const arrived = useArrivals(ids, updates);
@@ -114,15 +109,6 @@ export function EventsList({ rail, ticker, updates, focus, pendingInsider, expan
         {filterLabel(key)}<small>{counts[key]}</small>
       </Button>)}
     </div>
-    {summary && <div className="insider-summary">
-      <span>{m.summary}</span>
-      {!summary.hasMaterialTrades ? <span className="insider-summary-muted">{m.noMaterial}</span> : <>
-        <span className="insider-summary-net" data-direction={summary.netAmount > 0 ? "buy" : "sell"}>
-          {summary.netAmount > 0 ? m.netBuy : m.netSell} {summary.netAmount > 0 ? "+" : MINUS}{insiderCompactMoney(Math.abs(summary.netAmount))}
-        </span>
-        <span className="insider-summary-muted">{m.people(summary.buyers, summary.sellers)}</span>
-      </>}
-    </div>}
     <div className="findings-rows section-body" id="rail-events">
       <AnimatePresence initial={false} mode="popLayout">
       {rows.length === 0 ? <motion.p key="empty" className="event-empty" initial={still ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={still ? undefined : { opacity: 0 }} transition={{ duration: .16 }}>{m.empty}</motion.p>

@@ -7,7 +7,7 @@ import { isTaxWithholdingSale, eventImportance, insiderWindowValueUsd, isKeyInsi
 import { railEntries } from "../../../shared/analysis-runtime/rail.ts";
 import { setLocale } from "../../../packages/web/src/i18n/core.ts";
 import { eventTitle } from "../src/events-model.ts";
-import { insiderCompactMoney, insiderNetSummary, exactShares, filterCounts, noiseRows, readEventFilter, rowLeaves, timelineIds, withEventFilter } from "../src/event-noise.ts";
+import { insiderCompactMoney, exactShares, filterCounts, noiseRows, readEventFilter, rowLeaves, timelineIds, withEventFilter } from "../src/event-noise.ts";
 import { timelineFromFilings } from "../src/reports-model.ts";
 import { clusterByGap } from "../src/timeline-model.ts";
 
@@ -208,7 +208,6 @@ test("TSM employee purchases and routine 6-Ks leave Key empty and remain folded 
     assert.ok(rows.some(row => row.kind === "plan" && row.espp));
     assert.equal(rows.flatMap(rowLeaves).length, filter === "all" ? entries.length : entries.filter(i => i.kind === "event" && i.event.class === "insider").length);
   }
-  assert.equal(insiderNetSummary(entries)!.hasMaterialTrades, false);
 });
 
 test("NVDA September sales fold into one material 90-day row while pure non-trades stay routine", () => {
@@ -221,6 +220,7 @@ test("NVDA September sales fold into one material 90-day row while pure non-trad
   assert.equal(insiderCompactMoney(row.amount, "zh-CN"), "9.5亿美元");
   assert.equal(insiderCompactMoney(-row.amount, "zh-CN"), "−9.5亿美元");
   assert.equal(insiderCompactMoney(row.amount, "en"), "$950M");
+  assert.equal(insiderCompactMoney(-row.amount, "en"), "−$950M");
   assert.ok(row.items.every(i => i.kind === "event" && eventImportance(i.event, publication.events) === "key"));
   for (const e of publication.events.filter(e => e.class === "insider" && !isOpenMarketInsiderTrade(e))) assert.equal(eventImportance(e, publication.events), "routine");
 });
@@ -237,26 +237,7 @@ test("folds are anchored, direction-specific, ordered and retain singleton filin
   assert.equal(rows.flatMap(rowLeaves).length, 4);
 });
 
-test("net summary counts unique people and both legs, excludes ESPP and old trades", () => {
-  const sell = trade("sell", "2026-10-01", 2_000_000);
-  const buy = trade("buy", "2026-10-02", 0, "CEO");
-  buy.insider!.ownerCik = "10";
-  buy.insider!.sold = null;
-  buy.insider!.bought = { shares: 1000, cost: 500_000, averagePrice: 500 };
-  const espp = trade("espp", "2026-10-03", 9_000_000);
-  espp.insider!.sold = null;
-  espp.insider!.bought = { shares: 1000, cost: 9_000_000, averagePrice: 9000 };
-  espp.description = "ESPP";
-  const entries = entriesOf([sell, buy, espp, trade("old", "2025-01-01")]);
-  assert.deepEqual(insiderNetSummary(entries), { buyAmount: 500_000, sellAmount: 2_000_000, netAmount: -1_500_000, buyers: 1, sellers: 1, hasMaterialTrades: true });
-  assert.equal(insiderNetSummary(entries, new Date("2027-10-01"))!.hasMaterialTrades, false);
-  assert.equal(insiderNetSummary([]), null);
-  assert.equal(insiderNetSummary(entriesOf([trade("small", "2026-10-01", 10)]))!.hasMaterialTrades, false);
-  assert.equal(insiderCompactMoney(946_627_633.26, "zh-CN"), "9.5亿美元");
-  assert.equal(insiderCompactMoney(-946_627_633.26, "en"), "−$950M");
-});
-
-test("NVDA holdings ESPP and code F footnotes preserve cash sales and the 90-day summary", () => {
+test("NVDA holdings ESPP and code F footnotes preserve cash sales and materiality", () => {
   const publication = readEventsPublication(fixture("nvda-events.json"), "NVDA")!;
   for (const id of ["0001588670-26-000014", "0001526111-26-000005"]) {
     const e = publication.events.find(e => e.id === id)!;
@@ -265,10 +246,6 @@ test("NVDA holdings ESPP and code F footnotes preserve cash sales and the 90-day
   }
   const kress = publication.events.find(e => e.id === "0001588670-26-000014")!;
   assert.equal(eventImportance(kress, publication.events), "key");
-  const summary = insiderNetSummary(railEntries(null, publication))!;
-  assert.equal(summary.sellers, 3);
-  // The checked-in SEC fixture totals $967,599,313.46 across these three sellers.
-  assert.ok(Math.abs(summary.sellAmount - 967_599_313.4595) < 0.0001);
 });
 
 test("ESPP requires a pure purchase and ignores indexed holdings notes in every text source", () => {
@@ -298,7 +275,7 @@ test("only company presidents and executive or chair roles qualify by title", ()
 });
 
 const taxNote = "Represents the sale of shares, pursuant to a 10b5-1 trading plan adopted previously, solely to pay the tax liability incident to the vesting of RSUs.";
-test("vesting sell-to-cover is routine and excluded from windows and net activity", () => {
+test("vesting sell-to-cover is routine and excluded from materiality windows", () => {
   const tax = trade("tax", "2026-10-01", 2_000_000, "CEO");
   tax.insider!.footnotes = [taxNote];
   assert.equal(isTaxWithholdingSale(tax), true);
@@ -306,7 +283,6 @@ test("vesting sell-to-cover is routine and excluded from windows and net activit
   assert.equal(insiderWindowValueUsd(tax), 0);
   const cash = trade("cash", "2026-10-02", 300_000);
   assert.equal(insiderWindowValueUsd(cash, [cash, tax]), 300_000);
-  assert.equal(insiderNetSummary(entriesOf([tax, cash]))!.sellAmount, 300_000);
   tax.insider!.footnotes = [];
   tax.summary = { headline: taxNote, points: [] } as CompanyEvent["summary"];
   assert.equal(isTaxWithholdingSale(tax), true);

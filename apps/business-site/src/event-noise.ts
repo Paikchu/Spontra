@@ -1,5 +1,5 @@
 import type { CompanyEvent } from "@/shared/analysis-contract/events";
-import { eventImportance, isEsppTransaction, isTaxWithholdingSale, isPlannedInsiderTrade, isOpenMarketInsiderTrade, INSIDER_FOLD_WINDOW_DAYS } from "@/shared/analysis-runtime/events";
+import { eventImportance, isEsppTransaction, isPlannedInsiderTrade, isOpenMarketInsiderTrade, INSIDER_FOLD_WINDOW_DAYS } from "@/shared/analysis-runtime/events";
 import { getLocale } from "@/packages/web/src/i18n";
 import { insiderCompactMoney as formatInsiderMoney } from "./insider-money";
 import type { Locale } from "@/shared/analysis-runtime/locale";
@@ -111,26 +111,6 @@ export function noiseRows(items: readonly RailItem[], filter: EventFilter): Nois
     emitted.add(host.id);
     return [host];
   });
-}
-
-export function insiderNetSummary(items: readonly RailItem[], now?: Date) {
-  const allEvents = items.flatMap(item => item.kind === "event" ? [item.event] : []);
-  if (!allEvents.some(event => event.class === "insider")) return null;
-  const dates = items.map(item => Date.parse(item.date)).filter(Number.isFinite);
-  const refTime = now?.getTime() ?? (dates.length ? Math.max(...dates) : Date.now());
-  const floor = new Date(refTime - INSIDER_FOLD_WINDOW_DAYS * DAY_MS).toISOString().slice(0, 10);
-  const buyers = new Set<string>(), sellers = new Set<string>(), seen = new Set<string>();
-  let buyAmount = 0, sellAmount = 0, materialCount = 0;
-  for (const event of allEvents) {
-    if (seen.has(event.id) || !isOpenMarketInsiderTrade(event) || isEsppTransaction(event) || isTaxWithholdingSale(event) || !(event.filedAt >= floor || event.eventDate >= floor)) continue;
-    seen.add(event.id);
-    const insider = event.insider!;
-    const owner = insider.ownerCik || ownerName(event);
-    if (insider.bought && insider.bought.shares > 0) { buyAmount += insider.bought.cost; buyers.add(owner); }
-    if (insider.sold && insider.sold.shares > 0) { sellAmount += insider.sold.proceeds; sellers.add(owner); }
-    if (eventImportance(event, allEvents) === "key") materialCount++;
-  }
-  return { buyAmount, sellAmount, netAmount: buyAmount - sellAmount, buyers: buyers.size, sellers: sellers.size, hasMaterialTrades: materialCount > 0 && (buyAmount > 0 || sellAmount > 0) };
 }
 
 /** How many rows each filter shows, after folding. */

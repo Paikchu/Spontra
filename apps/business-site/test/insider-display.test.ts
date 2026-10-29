@@ -20,12 +20,9 @@ const render = (espp = false) => {
   }));
 };
 
-test("focused folded sales render bilingual summary, detail and SEC links", () => {
+test("focused folded sales render bilingual detail and SEC links", () => {
   setLocale("zh-CN");
   const zh = render();
-  assert.ok(zh.includes("内部人 90 天净买卖"));
-  assert.ok(zh.includes("净卖出"));
-  assert.ok(zh.includes("−9.5亿美元"));
   assert.ok(zh.includes('<span lang="en">STEVENS MARK A</span>'));
   assert.ok(zh.includes("90 天内卖出 3 笔 · 合计 9.5亿美元"));
   assert.ok(zh.includes('aria-expanded="true"'));
@@ -35,17 +32,14 @@ test("focused folded sales render bilingual summary, detail and SEC links", () =
   assert.ok(zh.includes("SEC 文件 ↗"));
   setLocale("en");
   const en = render();
-  assert.ok(en.includes("Insider 90-day net activity"));
   assert.ok(en.includes("Sold 3 times in 90 days · $950M total"));
   assert.ok(en.includes("Open-market sale"));
 });
 
-test("employee purchases show a neutral overview and localized badge", () => {
+test("employee purchases show a localized badge", () => {
   setLocale("zh-CN");
   const html = render(true);
-  assert.ok(html.includes("近 90 天无重要内部人买卖"));
   assert.ok(html.includes("员工持股计划代买"));
-  assert.ok(!html.includes('class="insider-summary-net"'));
 });
 
 test("single insider titles include localized transaction amounts without an ESPP badge on sales", () => {
