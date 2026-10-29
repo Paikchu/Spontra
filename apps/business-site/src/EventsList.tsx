@@ -1,12 +1,14 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Button } from "@/packages/web/src/ui/button";
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import { useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import type { CompanyEvent } from "@/shared/analysis-contract/events";
 import type { PublicFilingDigest } from "@/shared/analysis-contract/filings";
-import { messages, useLocale } from "@/packages/web/src/i18n";
+import { getLocale, messages, useLocale } from "@/packages/web/src/i18n";
+import { isEsppTransaction, isPlannedInsiderTrade } from "@/shared/analysis-runtime/events";
+import { perShare } from "@/shared/analysis-runtime/locale";
 import { SourceLanguage } from "@/packages/web/src/i18n/SourceLanguage";
 import { EVENT_CLASS_LABEL, eventTitle, eventTitleLang, shortDate } from "./events-model";
-import { EVENT_FILTERS, exactShares, filterCounts, noiseRows, rowLeaves, type EventFilter, type NoiseRow } from "./event-noise";
+import { EVENT_FILTERS, exactShares, insiderCompactMoney, filterCounts, noiseRows, rowLeaves, type EventFilter, type NoiseRow } from "./event-noise";
 import { filingQuarterLabel, reportTitle, reportTitleLang, type RailItem, type RailItems } from "./reports-model";
 import { RailSection } from "./RailSection";
 import { arrivalStyle, RailRow, rowExit, useArrivals } from "./arrivals";
@@ -16,7 +18,11 @@ const m = messages({
   reports: "Reports", nonTrade: (n: number) => `Form 4 non-trade ${n}`, pending: (n: number) => `Form 4 pending ${n}`,
   title: "Filings and events", filters: "Event filter",
   key: "Key", earnings: "Earnings & guidance", material: "Material events", insiders: "Insiders", all: "All",
-  plan: (name: string, n: number, shares: string) => `${name} · ${n} planned sales this month · ${shares} shares`,
+  sold: (n: number, amount: string) => `Sold ${n} times in 90 days · ${amount} total`,
+  bought: (n: number, amount: string) => `Bought ${n} times in 90 days · ${amount} total`,
+  plan: "10b5-1 plan", espp: "ESPP purchase",
+  sale: "Open-market sale", purchase: "Open-market purchase", sec: "SEC filing ↗",
+  detail: (shares: string, price: string, amount: string) => `${shares} shares · Average ${price} · ${amount} total`,
   routine: (n: number) => `Routine 6-K filings × ${n}`,
   empty: "Nothing in this category yet",
   loadFailed: "Couldn't load this data", retry: "Retry",
@@ -25,7 +31,11 @@ const m = messages({
   reports: "财报", nonTrade: (n: number) => `Form 4 非交易 ${n}`, pending: (n: number) => `Form 4 待处理 ${n}`,
   title: "文件与事件", filters: "事件筛选",
   key: "重要", earnings: "财报与指引", material: "重大事件", insiders: "内部人", all: "全部",
-  plan: (name: string, n: number, shares: string) => `${name} · 本月按计划卖出 ${n} 笔 · 合计 ${shares} 股`,
+  sold: (n: number, amount: string) => `90 天内卖出 ${n} 笔 · 合计 ${amount}`,
+  bought: (n: number, amount: string) => `90 天内买入 ${n} 笔 · 合计 ${amount}`,
+  plan: "计划内", espp: "员工持股计划代买",
+  sale: "公开市场卖出", purchase: "公开市场买入", sec: "SEC 文件 ↗",
+  detail: (shares: string, price: string, amount: string) => `${shares} 股 · 均价 ${price} · 合计 ${amount}`,
   routine: (n: number) => `6-K 例行文件 × ${n}`,
   empty: "这一类暂时没有事件",
   loadFailed: "数据暂时加载失败", retry: "重试",
@@ -35,8 +45,7 @@ const m = messages({
 const filterLabel = (key: EventFilter) => key === "key" ? m.key : key === "earnings" ? m.earnings : key === "material" ? m.material : key === "insiders" ? m.insiders : m.all;
 
 /**
- * Filings and events in the rail. A row of filters sits under the title (Key is the default); planned sales by one
- * person in one month fold into a single row, and 6-Ks with nothing to title them fold into a monthly row.
+ * Filings and events, with person × direction folds over 90 days and monthly routine 6-K folds.
  */
 export function EventsList({ rail, ticker, updates, focus, pendingInsider, expanded, phase = "ready", onFocus, onExpand, onRetry, filter, onFilter }: {
   rail: RailItems;
@@ -67,11 +76,12 @@ export function EventsList({ rail, ticker, updates, focus, pendingInsider, expan
   const rowMotion: RowMotion = { layout: still ? false : "position", layoutDependency: ids.join(), exit: rowExit };
   const digest = digestIds(rows, focus);
   const buttons = useRef(new Map<EventFilter, HTMLButtonElement>());
-  useEffect(() => {
-    if (!focus) return;
-    const host = rows.find(row => row.kind !== "item" && row.items.some(item => item.id === focus));
-    if (host) setOpenRows(current => current.has(host.id) ? current : new Set(current).add(host.id));
-  }, [focus, filter]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [previousSelection, setPreviousSelection] = useState<{ focus: string | null; filter: EventFilter }>({ focus: null, filter });
+  if (previousSelection.focus !== focus || previousSelection.filter !== filter) {
+    setPreviousSelection({ focus, filter });
+    const host = focus ? rows.find(row => row.kind !== "item" && row.items.some(item => item.id === focus)) : null;
+    if (host && !openRows.has(host.id)) setOpenRows(new Set(openRows).add(host.id));
+  }
   const notes = [rail.quiet > 0 ? m.nonTrade(rail.quiet) : null, pendingInsider > 0 ? m.pending(pendingInsider) : null].filter(Boolean).join(" · ");
   const shown = expanded ? rows : rows.filter(row => digest.has(row.id));
   const move = (event: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -161,7 +171,7 @@ function EventBlock({ row, ticker, extra, open, focus, arrive, motion, onToggle,
     const props = { checked: focus === row.item.id, extra, onClick: pick, arrive, motion, tip };
     return row.item.kind === "report" ? <ReportRow report={row.item.report} ticker={ticker} {...props} /> : <EventRow event={row.item.event} {...props} />;
   }
-  const title = row.kind === "plan" ? m.plan(row.name, row.items.length, exactShares(row.shares)) : m.routine(row.items.length);
+  const title = row.kind === "plan" ? (row.direction === "sell" ? m.sold : m.bought)(row.items.length, insiderCompactMoney(row.amount)) : m.routine(row.items.length);
   const panelId = `${row.id}-panel`;
   return <div className="event-fold" data-extra={extra} data-class={row.kind === "plan" ? "insider" : "other"}>
     <Button variant="unstyled" type="button" className="finding-row event-row event-fold-row" aria-expanded={open} aria-controls={panelId} data-arrived={arrive != null ? "" : undefined} style={arrivalStyle(arrive)}
@@ -169,13 +179,13 @@ function EventBlock({ row, ticker, extra, open, focus, arrive, motion, onToggle,
       <time className="event-date" dateTime={row.date}>{shortDate(row.date)}</time>
       <span className="finding-title event-fold-title">
         <svg className="fold-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="M4.2 2.2 8 6 4.2 9.8" /></svg>
-        <span className="event-fold-text">{title}</span>
-        {row.kind === "plan" && <span className="plan-tag">10b5-1</span>}
+        <span className="event-fold-text">{row.kind === "plan" && <><span lang="en">{row.name}</span> · </>}{title}</span>
+        {row.kind === "plan" && <TradeTags planned={row.planned} espp={row.espp} />}
       </span>
     </Button>
     <div className="event-fold-panel" id={panelId} data-open={open ? "" : undefined} inert={open ? undefined : true}>
       <div className="event-fold-inner">
-        {row.items.map(item => item.kind === "event" ? <EventRow key={item.id} event={item.event} checked={focus === item.id} onClick={() => onFocus(focus === item.id ? null : item)} arrive={undefined} motion={motion} tip={tip} /> : null)}
+        {row.kind === "plan" ? row.items.map(item => item.kind === "event" ? <InsiderDetail key={item.id} item={item} direction={row.direction} checked={focus === item.id} onClick={() => onFocus(focus === item.id ? null : item)} /> : null) : row.items.map(item => item.kind === "event" ? <EventRow key={item.id} event={item.event} checked={focus === item.id} onClick={() => onFocus(focus === item.id ? null : item)} arrive={undefined} motion={motion} tip={tip} /> : null)}
       </div>
     </div>
   </div>;
@@ -203,6 +213,27 @@ function EventRow({ event, checked, extra, onClick, arrive, motion, tip }: RowPr
     {...tip(eventTitle(event), eventTitleLang(event), [EVENT_CLASS_LABEL[event.class], event.form, items, meta, event.filedAt].filter(Boolean).join(" · "))}
     aria-label={`${EVENT_CLASS_LABEL[event.class]} ${shortDate(event.filedAt)} ${eventTitle(event)}${meta ? ` ${meta}` : ""}`}>
     <time className="event-date" dateTime={event.filedAt}>{shortDate(event.filedAt)}</time>
-    <span className="finding-title" lang={eventTitleLang(event)}>{eventTitle(event)}</span>
+    <span className="event-title-and-tags">
+      <span className="finding-title" lang={eventTitleLang(event)}>{eventTitle(event)}</span>
+      <TradeTags planned={isPlannedInsiderTrade(event)} espp={isEsppTransaction(event)} />
+    </span>
     </RailRow>;
+}
+
+function TradeTags({ planned, espp }: { planned: boolean; espp: boolean }) {
+  return <>{planned && <span className="plan-tag">{m.plan}</span>}{espp && <span className="plan-tag">{m.espp}</span>}</>;
+}
+
+function InsiderDetail({ item, direction, checked, onClick }: { item: RailItem & { kind: "event" }; direction: "buy" | "sell"; checked: boolean; onClick: () => void }) {
+  const event = item.event;
+  const trade = direction === "sell" ? event.insider!.sold! : event.insider!.bought!;
+  const amount = direction === "sell" ? event.insider!.sold!.proceeds : event.insider!.bought!.cost;
+  return <div className="event-fold-detail">
+    <Button variant="unstyled" type="button" aria-pressed={checked} onClick={onClick}>
+      <time dateTime={event.filedAt}>{event.filedAt}</time>
+      <span>{direction === "sell" ? m.sale : m.purchase}</span>
+      <span>{m.detail(exactShares(trade.shares), perShare(trade.averagePrice, "USD", getLocale()), insiderCompactMoney(amount))}</span>
+    </Button>
+    <a href={event.documentUrl || event.edgarUrl} target="_blank" rel="noopener noreferrer">{m.sec}</a>
+  </div>;
 }

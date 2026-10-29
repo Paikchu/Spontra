@@ -19,6 +19,8 @@ import { track } from "./track";
 import { useHomeDigest } from "./home-data";
 import { useStageHost } from "./stage/StageHost";
 import { turnPage, usePageTurning } from "./page-turn";
+import { companyIdentity } from "./company-meta";
+import type { HomeCompany } from "@/shared/analysis-contract/home";
 
 const m = messages({
   companyBusinesses: "Company businesses", lastSnapshot: "Last complete snapshot", loading: "Loading",
@@ -83,8 +85,10 @@ class ChartBoundary extends Component<
     );
   }
 }
-function Company({ ticker, tools, onSeen, covered, companies, onHome, onSearch }: {
+function Company({ ticker, tools, onSeen, covered, companies, onHome, onSearch, catalog = null }: {
   ticker: string;
+  /** The home catalog's entry for this company: its Chinese name and latest fiscal period. */
+  catalog?: HomeCompany | null;
   tools: ReactNode;
   onSeen: (ticker: string) => void;
   covered: boolean | null;
@@ -95,6 +99,8 @@ function Company({ ticker, tools, onSeen, covered, companies, onHome, onSearch }
   const { data, updates, failed, httpStatus, ready, eventsPhase, retry, retryEvents, update, apply, dismiss } = useLiveCompany(ticker, onSeen);
   const { flow, publication, capital, peers, findings, fundamentals, events, filings, valuation } = data;
   const stage = useStageHost(ticker, data);
+  const locale = useLocale();
+  const company = companyIdentity({ locale, catalog, issuer: publication?.issuer, explainerName: publication?.explainer?.companyName, treeName: publication?.tree?.companyName, flow, filings, events });
   // The page keeps the face it turned in with until the turn lands, since replacing its rail mid-flight cuts the turn short.
   const face = openingFace({ ready, failed, flow: Boolean(flow), publication: Boolean(publication) });
   const [arrival] = useState(face);
@@ -133,6 +139,7 @@ function Company({ ticker, tools, onSeen, covered, companies, onHome, onSearch }
           onView={stage.onView}
           railFoot={stage.railFoot}
           focusRequest={stage.focusRequest}
+          company={company}
         />
         <UpdateNotice update={update} onApply={apply} onDismiss={dismiss} />
         {stage.layer}
@@ -166,15 +173,14 @@ function Skeleton({ ticker, tools }: { ticker: string; tools: ReactNode }) {
         </section>
       </Rail>
       <section className="stage" data-timeline="" data-view="profit" data-trend="" aria-hidden="true">
+        <div className="stage-tabs"><span className="trend-views stage-views">{(["valuation", "profit", "cash", "balance"] as const).map(v => <button key={v} type="button" tabIndex={-1} aria-checked="false">{VIEW_LABEL[v]}</button>)}</span></div>
         <header className="stage-head stage-head--summary">
-          <div className="stage-kicker"><span className="period-skeleton" /></div>
           <div className="stats">
-            {[0, 1, 2].map(i => <div key={i} className="stat"><span className="stat-label ghost-text">{m.revenue}</span><strong className="stat-value ghost-text">$00.0B</strong><span className="stat-note ghost-text">+0.0%</span></div>)}
+            {[0, 1, 2, 3].map(i => <div key={i} className="stat"><span className="stat-label ghost-text">{m.revenue}</span><strong className="stat-value ghost-text">$00.0B</strong></div>)}
           </div>
           <div className="stage-controls">
             <span className="trend-views stage-views"><button type="button" tabIndex={-1} aria-checked="true">{yoyLabel(getLocale())}</button><button type="button" tabIndex={-1} aria-checked="false">{qoqLabel(getLocale())}</button></span>
             <span className="trend-views stage-views"><button type="button" tabIndex={-1} aria-checked="true">{m.summary}</button><button type="button" tabIndex={-1} aria-checked="false">{m.detail}</button></span>
-            <span className="trend-views stage-views"><button type="button" tabIndex={-1} aria-checked="true">{VIEW_LABEL.profit}</button><button type="button" tabIndex={-1} aria-checked="false">{VIEW_LABEL.cash}</button><button type="button" tabIndex={-1} aria-checked="false">{VIEW_LABEL.balance}</button></span>
           </div>
         </header>
         <div className="chart"><div className="ghost-chart" /></div>
@@ -347,7 +353,7 @@ function App() {
     <>
       <SidebarProvider asChild open={!railCollapsed} onOpenChange={setRailOpen} keyboardShortcut={null} persistState={false}>
         <main data-rail={railCollapsed ? "collapsed" : undefined}>
-          <Company key={ticker} ticker={ticker} tools={actions} onSeen={remember} covered={home.status === "ready" ? covered.has(ticker) : null} companies={picks} onHome={goHome} onSearch={searchFromError} />
+          <Company key={ticker} ticker={ticker} tools={actions} onSeen={remember} catalog={home.digest?.companies.find(company => company.ticker === ticker) ?? null} covered={home.status === "ready" ? covered.has(ticker) : null} companies={picks} onHome={goHome} onSearch={searchFromError} />
         </main>
       </SidebarProvider>
       <SearchDialog open={searching} current={ticker} recent={shownRecent} onClose={() => setSearching(false)} onPick={openCompany} catalog={catalog} popular={home.digest?.popular ?? []} catalogStatus={catalogStatus} />

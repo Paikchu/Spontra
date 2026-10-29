@@ -187,6 +187,8 @@ export const explainer: BusinessExplainer = {
 
 export const company: CompleteFlowPublication & { explainer: BusinessExplainer; guidance: GuidancePublication; tree: BusinessTree } = {
   schemaVersion: "complete-business-flow.v1", status: "ready", flow, reasons: [], outdated: false, lastAttemptAt: null, history, reports: null, explainer, guidance, tree,
+  // A fiscal year that ends in May, so the header's fiscal-year explanation renders in both languages.
+  issuer: { name: "Acme Corp", fiscalYearEndMonth: 5 },
 };
 
 const insider = (id: string, date: string, over: Partial<NonNullable<CompanyEvent["insider"]>>): CompanyEvent => ({

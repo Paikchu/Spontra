@@ -149,7 +149,9 @@ const GLOSSARY: Array<[RegExp, string]> = [
 const DROPPED_ARGUMENTS: Record<string, string> = {
   "FinancialSankey.tsx millions": "zh amounts carry 亿/万 and the currency, so the 'USD millions' unit is dropped",
   "FinancialSankey.tsx unit": "same as millions",
-  "BusinessMap.tsx reconciliation": "same as millions",
+  "BusinessMap.tsx reconciliationUnit": "same as millions",
+  "company-meta.ts fiscalEnds": "English names the month (Jan), Chinese writes its number (1 月)",
+  "company-meta.ts fiscalExplain": "English names the month (January), Chinese writes its number (1 月)",
   "BusinessMap.tsx asReported": "same as millions",
   "trend-model.ts expected": "the direction (up/down/flat) is printed as 上升/下降/持平 rather than as the raw value",
 };
@@ -226,7 +228,46 @@ function checkNumbers(l: LocaleModule, f: LensFormat): string[] {
     ["range zh shares the unit", l.range("76.0亿美元", "78.0亿美元", "zh-CN"), "76.0–78.0亿美元"],
     ["range zh keeps mixed units", l.range("5000万美元", "1.20亿美元", "zh-CN"), "5000万美元–1.20亿美元"],
     ["range en unchanged", l.range("$7.6B", "$7.8B"), "$7.6B–$7.8B"],
+    // U23: a figure that rounds into the next unit reads in that unit.
+    ["compactMoney rolls 999.95M into B en", l.compactMoney(999_950_000, "USD", "en"), "$1.00B"],
+    ["compactMoney rolls 9999.5万 into 亿 zh", l.compactMoney(99_995_000, "USD", "zh-CN"), "1.00亿美元"],
+    ["compactNumber rolls 9999.5亿 into 万亿 zh", l.compactNumber(9999.5e8, "zh-CN"), "1.00万亿"],
+    ["compactNumber rolls 999.95B into T en", l.compactNumber(999.95e9, "en"), "1.00T"],
+    ["compactNumber 99.96M takes three digits en", l.compactNumber(99.96e6, "en"), "100M"],
+    ["compactMoney −0 has no sign", l.compactMoney(-0.2, "USD", "en"), "$0"],
+    // U23: percentages with the mathematical minus, and no sign on a zero.
+    ["formatPct 0", l.formatPct(0), "0%"],
+    ["formatPct −0", l.formatPct(-0), "0%"],
+    ["formatPct rounds to 0", l.formatPct(-0.02), "0%"],
+    ["formatPct negative", l.formatPct(-3.14), "−3.1%"],
+    ["formatPct signed", l.formatPct(8.12, { signed: true }), "+8.1%"],
+    ["formatMultiple negative zh", l.formatMultiple(-2.6, "zh-CN"), "−2.60倍"],
+    // U23: model-written text reads with the mathematical minus.
+    ["normalizeDisplayText 负 zh", l.normalizeDisplayText("1730亿美元资本开支使自由现金流降至负116亿美元"), "1730亿美元资本开支使自由现金流降至−116亿美元"],
+    ["normalizeDisplayText hyphen zh", l.normalizeDisplayText("56.6亿美元资本开支使自由现金流降至 -34.1亿美元"), "56.6亿美元资本开支使自由现金流降至 −34.1亿美元"],
+    ["normalizeDisplayText negative en", l.normalizeDisplayText("Capex of $173 billion drives free cash flow to negative $11.6 billion"), "Capex of $173 billion drives free cash flow to −$11.6 billion"],
+    ["normalizeDisplayText Negative en", l.normalizeDisplayText("Negative $11.6 billion"), "−$11.6 billion"],
+    ["normalizeDisplayText negative percent en", l.normalizeDisplayText("negative 12.3%"), "−12.3%"],
+    ["normalizeDisplayText keeps dates and forms", l.normalizeDisplayText("2026-09-30 的 10-K"), "2026-09-30 的 10-K"],
+    // U21: axis ticks leave the currency to the chart's unit line.
+    ["axisNumber zero", l.axisNumber(0, "zh-CN"), "0"],
+    ["axisNumber zh", l.axisNumber(60e9, "zh-CN"), "600亿"],
+    ["axisNumber negative zh", l.axisNumber(-20e9, "zh-CN"), "−200亿"],
+    ["axisNumber 万亿 zh", l.axisNumber(1.5e12, "zh-CN"), "1.50万亿"],
+    ["axisNumber en", l.axisNumber(60e9, "en"), "60B"],
+    ["axisNumber negative en", l.axisNumber(-20e9, "en"), "−20B"],
+    ["axisUnit zh", l.axisUnit("USD", "zh-CN"), "单位：美元"],
+    ["axisUnit en", l.axisUnit("TWD", "en"), "Unit: TWD"],
+    ["adjustmentLabel reconciling zh", l.adjustmentLabel("Reconciling items", "zh-CN"), "调节项"],
+    ["adjustmentLabel intersegment zh", l.adjustmentLabel("Intersegment revenues", "zh-CN"), "分部间抵销"],
+    ["adjustmentLabel en unchanged", l.adjustmentLabel("Intersegment sales", "en"), "Intersegment sales"],
   ];
+  // No rounding may leave a figure at the top of its unit: "1000M", "1000B", "10000万", "10000亿".
+  for (const v of [999.5e3, 999.95e6, 999.95e9, 9999.5e4, 9999.5e8, 99_995_000, 999_950_000])
+    for (const locale of ["en", "zh-CN"] as const) {
+      const text = l.compactNumber(v, locale);
+      if (/^(?:1000(?:\.0+)?[KMBT]|10000(?:\.0+)?(?:万|亿))$/.test(text)) cases.push([`compactNumber ${v} ${locale} rolls over`, text, "the next unit"]);
+    }
   return cases.filter(([, got, want]) => got !== want).map(([name, got, want]) => `number form ${name}: got «${got}», want «${want}»`);
 }
 

@@ -14,9 +14,10 @@ export function CompanyLogo({ ticker, small }: { ticker: string; small?: boolean
   </span>;
 }
 
+/** Logo and ticker in the company rail header. */
 export function CompanyMark({ ticker }: { ticker: string }) {
-  return <div className="company">
+  return <div className="company brand">
     <CompanyLogo ticker={ticker} />
-    <strong className="company-ticker">{ticker}</strong>
+    <strong className="company-ticker"><b lang="en">{ticker}</b></strong>
   </div>;
 }

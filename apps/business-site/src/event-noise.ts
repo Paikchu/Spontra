@@ -1,6 +1,10 @@
 import type { CompanyEvent } from "@/shared/analysis-contract/events";
-import { eventImportance, isPlannedSale } from "@/shared/analysis-runtime/events";
+import { eventImportance, isEsppTransaction, isPlannedInsiderTrade, isOpenMarketInsiderTrade, INSIDER_FOLD_WINDOW_DAYS } from "@/shared/analysis-runtime/events";
 import { getLocale } from "@/packages/web/src/i18n";
+import { insiderCompactMoney as formatInsiderMoney } from "./insider-money";
+import type { Locale } from "@/shared/analysis-runtime/locale";
+
+export const insiderCompactMoney = (value: number, locale: Locale = getLocale()) => formatInsiderMoney(value, locale);
 import type { RailItem } from "./reports-model";
 
 /** The rail's filters. `key` is the default and the one the time axis draws first. */
@@ -43,7 +47,7 @@ function reportInKey(item: RailItem & { kind: "report" }, items: readonly RailIt
 }
 
 /** Whether one rail row belongs in a filter. Reports are earnings, so they are in Key, Earnings and All. */
-export function matchesEventFilter(item: RailItem, filter: EventFilter, items: readonly RailItem[] = []): boolean {
+export function matchesEventFilter(item: RailItem, filter: EventFilter, allEvents?: readonly CompanyEvent[], items: readonly RailItem[] = []): boolean {
   if (filter === "all") return true;
   if (item.kind === "report") {
     if (filter === "earnings") return true;
@@ -51,68 +55,62 @@ export function matchesEventFilter(item: RailItem, filter: EventFilter, items: r
     return reportInKey(item, items);
   }
   const event = item.event;
-  if (filter === "key") return eventImportance(event) === "key";
+  if (filter === "key") return eventImportance(event, allEvents) === "key";
   if (filter === "earnings") return event.class === "earnings" || event.class === "guidance";
   if (filter === "insiders") return event.class === "insider";
   if (MATERIAL.has(event.class)) return true;
-  return event.class === "other" && eventImportance(event) !== "routine";
+  return event.class === "other" && eventImportance(event, allEvents) !== "routine";
 }
 
 export type NoiseRow =
   | { kind: "item"; id: string; date: string; item: RailItem }
-  | { kind: "plan"; id: string; date: string; name: string; shares: number; items: RailItem[] }
+  | { kind: "plan"; id: string; date: string; name: string; ownerCik: string; direction: "buy" | "sell"; shares: number; amount: number; planned: boolean; espp: boolean; items: RailItem[] }
   | { kind: "routine"; id: string; date: string; items: RailItem[] };
 
 const ownerName = (event: CompanyEvent) => (event.insider?.ownerName ?? "").replace(/\s+/g, " ").trim();
 
-/**
- * The filtered rail, with two folds applied on the way:
- * one person's 10b5-1 sales in the same month become one row (two or more filings), and
- * 6-Ks with no summary and no document title become one row per month.
- * Every other filing stays a row. The leaves of the result are exactly the filings the filter selected.
- */
+/** Fold each owner's trades by direction into anchored 90-day clusters; routine 6-Ks stay monthly. */
 export function noiseRows(items: readonly RailItem[], filter: EventFilter): NoiseRow[] {
-  const picked = items.filter(item => matchesEventFilter(item, filter, items));
-  const plans = new Map<string, RailItem[]>();
-  const routines = new Map<string, RailItem[]>();
+  const allEvents = items.flatMap(item => item.kind === "event" ? [item.event] : []);
+  const picked = items.filter(item => matchesEventFilter(item, filter, allEvents, items)).sort((a, b) => b.date.localeCompare(a.date));
+  const clusters = new Map<string, Extract<NoiseRow, { kind: "plan" }>>();
+  const hosts = new Map<RailItem, NoiseRow>();
+  const routines = new Map<string, Extract<NoiseRow, { kind: "routine" }>>();
   for (const item of picked) {
     if (item.kind !== "event") continue;
     const event = item.event;
-    if (isPlannedSale(event)) {
-      const key = `${event.insider!.ownerCik}|${event.filedAt.slice(0, 7)}`;
-      plans.set(key, [...(plans.get(key) ?? []), item]);
-    } else if (event.form.startsWith("6-K") && eventImportance(event) === "routine") {
+    const direction = isOpenMarketInsiderTrade(event);
+    if (direction) {
+      const insider = event.insider!;
+      const ownerKey = insider.ownerCik || ownerName(event);
+      const key = `${ownerKey}:${direction}`;
+      let cluster = clusters.get(key);
+      if (!cluster || Date.parse(cluster.date) - Date.parse(event.filedAt) > INSIDER_FOLD_WINDOW_DAYS * DAY_MS) {
+        cluster = { kind: "plan", id: `plan:${key}:${event.filedAt}`, date: item.date, ownerCik: insider.ownerCik, name: ownerName(event), direction, shares: 0, amount: 0, planned: false, espp: false, items: [] };
+        clusters.set(key, cluster);
+      }
+      cluster.items.push(item);
+      cluster.shares += direction === "sell" ? insider.sold!.shares : insider.bought!.shares;
+      cluster.amount += direction === "sell" ? insider.sold!.proceeds : insider.bought!.cost;
+      cluster.planned ||= isPlannedInsiderTrade(event);
+      cluster.espp ||= isEsppTransaction(event);
+      hosts.set(item, cluster);
+    } else if (event.form.startsWith("6-K") && eventImportance(event, allEvents) === "routine") {
       const key = event.filedAt.slice(0, 7);
-      routines.set(key, [...(routines.get(key) ?? []), item]);
+      const group = routines.get(key) ?? { kind: "routine", id: `routine:${key}`, date: item.date, items: [] };
+      group.items.push(item);
+      routines.set(key, group);
+      hosts.set(item, group);
     }
   }
   const emitted = new Set<string>();
-  const rows: NoiseRow[] = [];
-  for (const item of picked) {
-    if (item.kind === "event" && isPlannedSale(item.event)) {
-      const key = `${item.event.insider!.ownerCik}|${item.event.filedAt.slice(0, 7)}`;
-      const group = plans.get(key) ?? [];
-      if (group.length >= 2) {
-        const id = `plan:${key}`;
-        if (emitted.has(id)) continue;
-        emitted.add(id);
-        const shares = group.reduce((sum, entry) => sum + (entry.kind === "event" ? entry.event.insider!.sold!.shares : 0), 0);
-        rows.push({ kind: "plan", id, date: group[0]!.date, name: ownerName(item.event), shares, items: group });
-        continue;
-      }
-    }
-    if (item.kind === "event" && item.event.form.startsWith("6-K") && eventImportance(item.event) === "routine") {
-      const key = item.event.filedAt.slice(0, 7);
-      const id = `routine:${key}`;
-      if (emitted.has(id)) continue;
-      emitted.add(id);
-      const group = routines.get(key) ?? [];
-      rows.push({ kind: "routine", id, date: group[0]!.date, items: group });
-      continue;
-    }
-    rows.push({ kind: "item", id: item.id, date: item.date, item });
-  }
-  return rows;
+  return picked.flatMap(item => {
+    const host = hosts.get(item);
+    if (!host || (host.kind === "plan" && host.items.length < 2)) return [{ kind: "item", id: item.id, date: item.date, item } as NoiseRow];
+    if (emitted.has(host.id)) return [];
+    emitted.add(host.id);
+    return [host];
+  });
 }
 
 /** How many rows each filter shows, after folding. */

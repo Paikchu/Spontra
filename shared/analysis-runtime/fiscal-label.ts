@@ -6,7 +6,8 @@ import type { Locale } from "./locale.ts";
  * latest annual report), remembered when a page loads the issuer. An issuer not remembered has no fiscal quarter unless
  * the caller passes its year-end month.
  */
-export type IssuerCalendar = { fiscalYearEndMonth: number | null; name: string | null };
+/** `annualForm`: the form of the issuer's latest annual report ("10-K", "20-F", "40-F"); absent from an older read. */
+export type IssuerCalendar = { fiscalYearEndMonth: number | null; name: string | null; annualForm?: string | null };
 const issuers = new Map<string, IssuerCalendar>();
 const key = (ticker: string) => ticker.trim().toUpperCase();
 

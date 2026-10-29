@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { getLocale, messages, useLocale } from "@/packages/web/src/i18n";
 import { langOf } from "@/packages/web/src/i18n/SourceLanguage";
-import { compactMoney } from "@/shared/analysis-runtime/locale";
+import { compactMoney, normalizeDisplayText } from "@/shared/analysis-runtime/locale";
 import type { HomeCompany, HomeDigest } from "../../../shared/analysis-contract/home.ts";
 import { CompanyLogo } from "./CompanyMark";
 import { KIND_LABEL } from "./findings-model";
@@ -300,7 +300,7 @@ export function Home({ light, onToggleTheme, recent, onPick, digest = null, dige
               <p className="home-kind"><i data-kind={item.finding.kind} />{KIND_LABEL[item.finding.kind]}
                 <span className="home-severity" aria-hidden="true">{[1, 2, 3].map(n => <i key={n} data-on={n <= item.finding.severity || undefined} />)}</span>
               </p>
-              <p className="home-signal-title" lang={langOf(item.finding.title)}>{item.finding.title}</p>
+              <p className="home-signal-title" lang={langOf(item.finding.title)}>{normalizeDisplayText(item.finding.title)}</p>
               <footer className="home-signal-actions">
                 {item.extra >= 1 && <a className="home-extra" href={`/companies/${item.company.ticker}`} data-nav>{m.moreFindings(item.extra)}</a>}
                 <span className="home-more">{m.seeEvidence}</span>

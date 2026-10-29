@@ -8,6 +8,8 @@
   },
   "scripts": {
     "dev": "npm run dev --workspace @spontra/business-site",
+    "check": "npm run check:i18n && npm run check:issuer-literals && npm run check:analysis:boundary && npm run typecheck && npm run business-site:typecheck && npm run admin:typecheck && npm run build",
+    "test": "npm run test:analysis && npm run test:business-site && npm run test:web && npm run test:admin",
     "build": "npm run check:i18n && npm run check:issuer-literals && npm run business-site:build && npm run admin:build",
     "check:i18n": "node --experimental-strip-types --no-warnings scripts/check-i18n.ts",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",

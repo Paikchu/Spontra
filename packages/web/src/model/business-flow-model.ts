@@ -1,7 +1,7 @@
 import {publicFlowSchema} from "@/shared/analysis-runtime/financial-data/schema";
 import { type BusinessFlowQuarter, type FlowAmount, type FlowMetric, type PublicBusinessFlow } from "@/shared/analysis-contract/business-flow";
 import type { PublicFundamentalsResponse, FundamentalMetricKey } from "@/shared/analysis-contract/fundamentals";
-import { currencyName, MINUS } from "@/shared/analysis-runtime/locale";
+import { adjustmentLabel, currencyName, formatPct, MINUS } from "@/shared/analysis-runtime/locale";
 import { getLocale, messages } from "@/packages/web/src/i18n/core";
 
 /** Change words and statement checks; a change's label reads in the page's locale when it is formed. */
@@ -119,7 +119,7 @@ export function compareFlowAmounts(current: BusinessFlowQuarter, previous: Busin
   if ((av < 0 && bv >= 0) || (av >= 0 && bv < 0)) return av < 0 ? moved(profit ? flowWords.turnedLoss : flowWords.turnedNegative, "down") : moved(profit ? flowWords.turnedProfit : flowWords.turnedPositive, "up");
   if (bv < 0) return delta === 0 ? moved(flowWords.flat, null) : delta > 0 ? moved(profit ? flowWords.lossNarrowed : flowWords.increased, "up") : moved(profit ? flowWords.lossWidened : flowWords.decreased, "down");
   const percent = delta / bv * 100;
-  return { label: `${percent > 0 ? "+" : ""}${percent.toFixed(1)}%`, comparable: true, trend: percent > 0 ? "up" : percent < 0 ? "down" : null, delta, previous: bv, percent };
+  return { label: formatPct(percent, { signed: true }), comparable: true, trend: percent > 0 ? "up" : percent < 0 ? "down" : null, delta, previous: bv, percent };
 }
 
 export type Reconciliation = { label: string; status: "balanced" | "missing" | "mismatch"; difference: number | null };
@@ -170,3 +170,24 @@ export function formatFlowValue(value: number | null, quarter: BusinessFlowQuart
   const display = value * quarter.scale / 1_000_000;
   return new Intl.NumberFormat("en-US", { maximumFractionDigits: Math.abs(display) < 1 ? 3 : 1 }).format(display);
 }
+
+/**
+ * One row of the revenue reconciliation (segment total, each adjustment, consolidated revenue). Every row keeps at most
+ * two decimals in its own unit so the column reads at one precision: "12.04亿美元", "−56.7万美元" / "1,204.4", "−0.57".
+ */
+export function formatReconciliation(value: number | null, quarter: BusinessFlowQuarter): string {
+  if (value == null) return flowWords.notDisclosed;
+  if (getLocale() === "zh-CN") {
+    const amount = value * quarter.scale, abs = Math.abs(amount);
+    const [divisor, suffix] = abs >= 1e8 ? [1e8, "亿"] : abs >= 1e4 ? [1e4, "万"] : [1, ""];
+    const name = currencyName(quarter.currency, "zh-CN");
+    const text = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(abs / divisor);
+    return (amount < 0 && /[1-9]/.test(text) ? MINUS : "") + text + suffix + (name === quarter.currency ? ` ${name}` : name);
+  }
+  const display = value * quarter.scale / 1_000_000;
+  const text = new Intl.NumberFormat("en-US", { maximumFractionDigits: Math.abs(display) < 1 ? 2 : 1 }).format(Math.abs(display));
+  return (display < 0 && /[1-9]/.test(text) ? MINUS : "") + text;
+}
+
+/** A revenue adjustment's name as the page's locale reads it ("Intersegment sales" → "分部间抵销"). */
+export const adjustmentName = (name: string) => adjustmentLabel(name, getLocale());

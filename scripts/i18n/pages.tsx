@@ -7,8 +7,9 @@
  * resolve exactly as in the browser.
  */
 import { renderToStaticMarkup } from "react-dom/server";
-import { setLocale } from "@/packages/web/src/i18n/core";
+import { getLocale, setLocale } from "@/packages/web/src/i18n/core";
 import { BusinessMap } from "@/apps/business-site/src/BusinessMap";
+import { companyIdentity } from "@/apps/business-site/src/company-meta";
 import { Home } from "@/apps/business-site/src/Home";
 import { SearchPanel } from "@/apps/business-site/src/SearchDialog";
 import { Rail, RailActions } from "@/apps/business-site/src/Sidebar";
@@ -85,7 +86,8 @@ function CompanyPage({ payload }: { payload: Payload }) {
   return <SidebarProvider asChild open keyboardShortcut={null} persistState={false}><main>
     <BusinessMap ticker={TICKER} tools={<RailActions light={false} onToggleTheme={() => {}} onSearch={() => {}} collapsed={false} />} flow={payload.flow} notice={null}
       revenueHistory={company.history ?? null} explainer={payload.explainer} tree={payload.tree} guidance={payload.guidance}
-      capital={capital} findings={payload.findings} fundamentals={null} events={payload.events} filings={payload.filings} valuation={payload.valuation} />
+      capital={capital} findings={payload.findings} fundamentals={null} events={payload.events} filings={payload.filings} valuation={payload.valuation}
+      company={companyIdentity({ locale: getLocale(), issuer: company.issuer, explainerName: payload.explainer.companyName, treeName: payload.tree.companyName })} />
   </main></SidebarProvider>;
 }
 

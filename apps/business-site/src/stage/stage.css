@@ -146,3 +146,15 @@ h2.board-question { font-size: 22px; font-weight: 700; line-height: 1.35; color:
 @media (prefers-reduced-motion: reduce) {
   .ask, .ask-veil i, .ask-scroll, .scene-block, .ask-entry-user, .board, .board-skeleton span, .board-phase i, .ask-back { animation: none !important; transition: none !important; }
 }
+
+/* Phones: the entry floats at the bottom right as one 48px round button, out of the page's flow (U21). */
+@media (max-width: 640px) {
+  .ask-entry { position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 25; flex-direction: row-reverse; margin: 0; padding: 0; background: transparent; pointer-events: none; }
+  .ask-open {
+    pointer-events: auto; flex: none; width: 48px; height: 48px; min-width: 48px; padding: 0; border-radius: 999px; justify-content: center;
+    background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow-card, var(--shadow-overlay));
+  }
+  .ask-open > span { display: none; }
+  .ask-open svg { width: 20px; height: 20px; }
+  .ask-back { pointer-events: auto; height: 48px; background: var(--surface); box-shadow: var(--shadow-card, var(--shadow-overlay)); }
+}

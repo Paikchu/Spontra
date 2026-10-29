@@ -147,6 +147,11 @@ button { cursor: pointer; }
 .company-logo--sm img { inset: 5px; width: calc(100% - 10px); height: calc(100% - 10px); }
 .company-logo--sm .company-logo-fallback { font-size: 12px; }
 .company-ticker { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 18px; font-weight: 650; letter-spacing: -.01em; line-height: 1.2; }
+.company-ticker b { font-weight: inherit; }
+/* The issuer under the ticker: the filer context its figures need (a 20-F, a reporting currency). */
+.rail-top[data-company] { flex-wrap: wrap; row-gap: 6px; }
+.rail-company-meta { flex: 0 0 100%; display: flex; flex-direction: column; gap: 2px; min-width: 0; padding-right: 6px; }
+.rail-company-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--sans); font-size: 12px; line-height: 16px; color: var(--muted-foreground); }
 .rail-actions { display: flex; gap: 2px; flex: none; }
 /* Ghost tools: the ticker is the rail's title, the tools a quiet row beside it that fills only under the pointer. */
 .rail-actions .icon-button { width: 28px; height: 28px; border-radius: 8px; background: transparent; color: var(--faint); }
@@ -188,7 +193,7 @@ button { cursor: pointer; }
   main[data-rail="collapsed"] .rail { align-self: start; }
   main[data-rail="collapsed"] .rail-top { flex-direction: column; gap: 8px; padding: 12px 0; border-bottom-color: transparent; }
   main[data-rail="collapsed"] .company { flex: none; }
-  main[data-rail="collapsed"] .company-ticker, main[data-rail="collapsed"] .rail-scroll, main[data-rail="collapsed"] .rail-blur { display: none; }
+  main[data-rail="collapsed"] .company-ticker, main[data-rail="collapsed"] .rail-scroll, main[data-rail="collapsed"] .rail-blur, main[data-rail="collapsed"] .rail-company-meta { display: none; }
   main[data-rail="collapsed"] .rail-actions { flex-direction: column; }
   main[data-rail="collapsed"] .rail-toggle { order: -1; }
 }
@@ -237,7 +242,7 @@ button { cursor: pointer; }
 .row-share { font-size: 12px; font-weight: 500; color: var(--faint); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
 .row-value { font-size: 13.5px; font-weight: 560; font-variant-numeric: tabular-nums; letter-spacing: -.01em; text-align: right; white-space: nowrap; color: color-mix(in srgb, var(--foreground) 92%, transparent); }
 .row-delta { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
-.row-delta em, .stat-note { font-style: normal; }
+.row-delta em { font-style: normal; }
 [data-trend="up"] { color: var(--up); }
 [data-trend="down"] { color: var(--loss); }
 /* Children: indented one step behind a hairline, a size smaller, no share column (the row's tooltip keeps it) so the name has room. */
@@ -273,18 +278,24 @@ button { cursor: pointer; }
 
 /* ---------- Stage ---------- */
 .stage {
-  display: grid; grid-template-rows: auto minmax(0, 1fr) auto auto; min-width: 0; min-height: 0;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto minmax(0, 1fr) auto auto; min-width: 0; min-height: 0;
   padding: 14px max(clamp(20px, 3vw, 44px), env(safe-area-inset-right)) 4px clamp(24px, 3vw, 44px);
 }
 .stage--state { display: block; overflow-y: auto; }
 .stage-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px 24px; flex-wrap: wrap; }
 .stage-head--summary { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 12px 24px; }
 /* One fixed row: the figures compress beside the controls and never wrap, so the chart below keeps its height. */
-.stage-head--summary > .stage-kicker { grid-column: 1 / -1; grid-row: 1; }
-.stage-head--summary > .stats { grid-column: 1; grid-row: 2; }
-.stage-head--summary > .stage-controls { grid-column: 2; grid-row: 2; flex-wrap: nowrap; }
-.stage-head--summary > .view-flags { grid-column: 1 / -1; grid-row: 3; }
-.stage-kicker { display: flex; align-items: center; gap: 8px; min-height: 22px; }
+.stage-head--summary > .stats { grid-column: 1; grid-row: 1; }
+.stage-head--summary > .stage-controls { grid-column: 2; grid-row: 1; flex-wrap: nowrap; }
+.stage-head--summary > .view-flags { grid-column: 1 / -1; grid-row: 2; }
+/* Every part of the stage spans its width; only the figures' header shares the first row, with the view tabs at its right. */
+.stage > * { grid-column: 1 / -1; }
+.stage > .stage-head--summary { grid-column: 1; grid-row: 1; }
+/* The view tabs hold the stage's top-right corner, right of the figures' controls: one element for every view, pinned while the stage scrolls. */
+.stage > .stage-tabs { grid-column: 2; grid-row: 1; align-self: start; position: sticky; top: var(--stage-tabs-top, 0px); z-index: 6; display: flex; justify-content: flex-end; min-width: 0; padding-left: 12px; }
+.stage > .stage-tabs:empty { padding: 0; }
+.stage-tabs .stage-views { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+.stage-tabs .stage-views::-webkit-scrollbar { display: none; }
 .periods { display: inline-flex; margin-left: auto; padding: 3px; gap: 2px; border-radius: 999px; background: var(--surface); border: 1px solid var(--hairline); }
 .periods button { border: 0; background: transparent; padding: 6px 13px; border-radius: 999px; font-size: 12.5px; font-variant-numeric: tabular-nums; color: var(--muted-foreground); transition: background .2s, color .2s; }
 .periods button:hover { color: var(--foreground); }
@@ -300,12 +311,14 @@ button { cursor: pointer; }
 .stats:has(> :nth-child(5)) { --n: 5; }
 /* Figures shrink to their value's width, never below it; labels and notes give way first, cut to one line. */
 .stat { flex: 0 1 auto; display: flex; flex-direction: column; gap: 4px; }
-.stat-label, .stat-note { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; font-size: 12px; line-height: 1.4; }
+.stat-label { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; font-size: 12px; line-height: 1.4; }
 .stat-label { color: var(--muted-foreground); }
 .stat-label .level-mark { margin-right: 6px; }
 /* The value's size follows each figure's share of the row: about 6.5 glyphs to a figure, between 16px and the cap. */
 .stat-value { font-size: clamp(16px, calc(100cqi / var(--n) / 6.5), var(--stat-max, 26px)); font-weight: 620; letter-spacing: -.035em; font-variant-numeric: tabular-nums; line-height: 1.15; white-space: nowrap; }
-.stat-note { color: var(--faint); font-variant-numeric: tabular-nums; }
+/* A headline number reads as news: good in the gain colour, bad in the loss colour, by the figure's own direction. */
+.stat-value[data-tone="good"] { color: var(--up); }
+.stat-value[data-tone="bad"] { color: var(--loss); }
 /* Past the narrowest size the row scrolls sideways; its edges fade only while there is more to see that way. */
 @supports (animation-timeline: scroll()) {
   @property --stats-fade-start { syntax: "<length>"; inherits: false; initial-value: 0px; }
@@ -461,7 +474,7 @@ button { cursor: pointer; }
 .fc-tip-row b { font-weight: 600; color: var(--foreground); font-variant-numeric: tabular-nums; }
 
 /* ---------- Quarterly trend ---------- */
-.trend { --gap: clamp(8px, 1.6vw, 26px); --axis: 52px; display: grid; grid-template-rows: auto minmax(0, 1fr); height: clamp(196px, 26vh, 260px); margin-top: 6px; padding-top: 14px; border-top: 1px solid var(--hairline); }
+.trend { --gap: clamp(8px, 1.6vw, 26px); --axis: 58px; display: grid; grid-template-rows: auto minmax(0, 1fr); height: clamp(196px, 26vh, 260px); margin-top: 6px; padding-top: 14px; border-top: 1px solid var(--hairline); }
 .trend-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px 24px; flex-wrap: wrap; }
 .trend-title h2 { margin: 0; font-size: 14px; font-weight: 620; letter-spacing: -.01em; }
 .trend-title h2 span { color: var(--muted-foreground); font-weight: 500; }
@@ -478,7 +491,7 @@ button { cursor: pointer; }
 .trend-grid { position: absolute; inset: 22px var(--axis-r) 56px var(--axis); pointer-events: none; }
 .trend-grid div { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--grid); transition: bottom .7s var(--ease); }
 .trend-grid div:first-child { border-top-style: solid; border-color: var(--grid); }
-.trend-grid span { position: absolute; right: calc(100% + 10px); top: -7px; font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.trend-grid span { position: absolute; right: calc(100% + 6px); top: -7px; max-width: calc(var(--axis) - 6px); overflow: hidden; font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .trend-sweep { position: absolute; inset: 22px var(--axis-r) 56px var(--axis); pointer-events: none; z-index: 1; background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--foreground) 9%, transparent) 50%, transparent) no-repeat; background-size: 22% 100%; animation: sweep 1.15s var(--ease) both; }
 
 .trend-col { position: relative; min-width: 0; container-type: inline-size; }
@@ -699,6 +712,13 @@ button { cursor: pointer; }
     border-bottom: 1px solid var(--hairline);
   }
   .rail-list::-webkit-scrollbar { display: none; }
+  /* The figures take the stage's full width, so the tabs keep its top-right corner in a row above them, only as wide as
+     themselves; the page scrolls, and they pin under the business chips (10px padding, a 36px chip, the hairline, 8px air). */
+  .stage { grid-template-columns: minmax(0, 1fr); }
+  .stage > .stage-head--summary { grid-column: 1 / -1; grid-row: auto; }
+  .stage > .stage-tabs { --stage-tabs-top: 65px; grid-column: 1 / -1; justify-self: end; max-width: 100%; margin-bottom: 10px; padding: 0; }
+  .stage > .stage-tabs:empty { margin: 0; }
+  .stage-tabs .stage-views { box-shadow: 0 2px 10px color-mix(in srgb, var(--background) 60%, transparent); }
   .row, .row[data-depth] { display: inline-flex; flex: none; width: auto; height: auto; margin: 0; gap: 8px; padding: 8px 12px; border-radius: 999px; white-space: nowrap; }
   .row::before, .row::after { display: none; }
   .row[aria-selected="true"], .row--all[aria-selected="true"] { background: color-mix(in srgb, var(--c) 14%, transparent); }
@@ -725,7 +745,7 @@ button { cursor: pointer; }
   .pool { position: relative; inset: auto; width: max(100%, 640px); height: 460px; }
   .stage-controls { margin-left: 0; justify-content: flex-start; }
   .stage-foot { flex-direction: column; align-items: flex-start; }
-  .trend { --axis: 40px; --gap: 6px; height: 240px; }
+  .trend { --axis: 56px; --gap: 6px; height: 240px; }
   /* The header wraps on narrow screens, so the bar view sizes to its content with a fixed plot height. */
   .trend:not([data-view="bridge"]) { height: auto; grid-template-rows: auto 220px; }
   .trend-plot[data-rates] { --axis-r: 40px; }
@@ -826,6 +846,12 @@ button { cursor: pointer; }
 }
 
 .revenue-reconciliation { margin: 12px 16px; color: var(--muted-foreground); font-size: 12px; line-height: 1.8; }
+.revenue-reconciliation summary { cursor: pointer; font-weight: 600; color: var(--foreground); list-style-position: outside; }
+.revenue-reconciliation summary small { font-size: 12px; font-weight: 500; color: var(--muted-foreground); }
+.revenue-reconciliation dl { display: grid; gap: 2px; margin: 4px 0 0; }
+.revenue-reconciliation dl > div { display: flex; justify-content: space-between; gap: 12px; }
+.revenue-reconciliation dt { min-width: 0; overflow-wrap: anywhere; }
+.revenue-reconciliation dd { margin: 0; flex: none; text-align: right; font-variant-numeric: tabular-nums; font-family: var(--mono); color: var(--foreground); }
 
 /* ---------- Findings: what deserves attention, bound to the figures on the stage ---------- */
 /* Kind colours: a risk reads as a loss, a strength as growth, a shift as the first business hue, a watch item stays quiet. */
@@ -1228,10 +1254,10 @@ html[lang^="zh"] .home-sub, html[lang^="zh"] .home-signal-title, html[lang^="zh"
 .event-fold { min-width: 0; }
 .event-fold-row { height: auto; min-height: var(--row-h); align-items: flex-start; padding-top: 4px; padding-bottom: 4px; }
 .event-fold-title { display: flex; align-items: flex-start; gap: 6px; min-width: 0; white-space: normal; overflow: visible; text-overflow: unset; }
-.event-fold-text { min-width: 0; font-variant-numeric: tabular-nums; }
+.event-fold-text { flex: 1 1 calc(100% - 18px); min-width: 0; font-variant-numeric: tabular-nums; }
 .fold-chevron { flex: none; width: 12px; height: 12px; margin-top: 2px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; transition: transform 160ms var(--ease); }
 .event-fold-row[aria-expanded="true"] .fold-chevron { transform: rotate(90deg); }
-.plan-tag { flex: none; height: 18px; padding: 0 6px; border-radius: 999px; background: var(--fill); color: var(--muted-foreground); font-size: 11px; font-weight: 500; line-height: 18px; }
+.plan-tag { flex: none; padding: 0 6px; border-radius: 6px; background: var(--surface); border: 1px solid var(--border); color: var(--muted-foreground); font-size: 11px; font-weight: 500; line-height: 16px; }
 .event-fold-panel { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 200ms var(--ease); }
 .event-fold-panel[data-open] { grid-template-rows: 1fr; }
 .event-fold-inner { overflow: hidden; min-height: 0; }
@@ -1564,12 +1590,7 @@ main[data-rail="collapsed"] .update-notice { left: calc((100vw + var(--rail-coll
   font-variant-numeric: tabular-nums; color: var(--foreground); white-space: nowrap; border-radius: 4px;
 }
 .period-mark[data-unknown] .period-primary { white-space: normal; text-align: right; }
-.period-mark[data-variant="pill"]:not([data-unknown]) .period-primary {
-  display: inline-flex; align-items: center; box-sizing: border-box; height: 22px; padding: 0 8px; border-radius: 999px;
-  background: var(--fill); border: 1px solid var(--border);
-}
 .period-secondary { font-family: var(--sans); font-size: 12px; font-weight: 500; line-height: 1.3; color: var(--muted-foreground); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.period-dot { margin-right: 6px; }
 .home-signal header .period-primary, .home-card footer .period-primary { margin-left: 0; color: var(--foreground); font-size: 12px; }
 html[lang="en"] .period-mark:not([data-unknown]) .period-primary { letter-spacing: 0.02em; text-transform: uppercase; }
 html[lang^="zh"] .period-primary { letter-spacing: 0; }
@@ -1600,3 +1621,77 @@ html[lang^="zh"] .period-primary { letter-spacing: 0; }
 .home-signal-actions { flex-wrap: wrap; }
 .home-extra:focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; border-radius: 2px; }
 .tour-layer[data-hole] .tour-shade { background: transparent; }
+
+/* ---------- Narrow sideways scroller for the flow chart (U21) ---------- */
+/* The statement keeps its full width inside the chart; while more of it lies to the right the right edge fades, and a
+   hint says to swipe until the reader scrolls or three seconds pass. The page itself never scrolls sideways. */
+.chart-hint-rail { position: sticky; left: 0; z-index: 3; width: 100%; height: 0; pointer-events: none; }
+.chart-hint {
+  position: absolute; top: 8px; right: 8px; display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-raised) 92%, transparent); border: 1px solid var(--border); box-shadow: var(--shadow-overlay);
+  font-size: 12px; line-height: 16px; font-weight: 560; color: var(--foreground); white-space: nowrap; opacity: 0; transition: opacity .4s var(--ease);
+}
+.chart-hint[data-shown] { opacity: 1; }
+.chart-hint svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+@media (min-width: 961px) { .chart-hint-rail { display: none; } }
+@media (max-width: 960px) {
+  .chart[data-overflow]:not([data-end]) { mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent); -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent); }
+  /* The reconciliation and the ask entry follow the rail's sections instead of leading them. */
+  .revenue-reconciliation, .ask-entry { order: 5; }
+}
+
+/* A headline figure the statement does not carry keeps its cell only where the grid needs four (narrow screens). */
+@media (min-width: 641px) {
+  .stats > div[data-missing="true"] { display: none; }
+  .stats:has(> :nth-child(4)):has(> [data-missing]) { --n: 3; }
+  .stats:has(> :nth-child(4)):has(> [data-missing] ~ [data-missing]) { --n: 2; }
+}
+
+/* ---------- Phone company page (U21/U22): figures first, chart next, the rail's sections after ---------- */
+@media (max-width: 640px) {
+  .rail-top { order: 0; flex-wrap: nowrap; gap: 8px; padding: max(8px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 8px max(16px, env(safe-area-inset-left)); }
+  .rail-top[data-company] { flex-wrap: wrap; }
+  .rail-top .company { gap: 8px; }
+  .rail-top .company-logo { width: 28px; height: 28px; border-radius: 8px; }
+  .rail-top .company-ticker { flex: none; font-size: 16px; }
+  .stage { order: 1; padding: 8px 16px 16px; }
+  /* The business section dissolves into its chip row (display: contents above), so the row itself takes the place. */
+  .findings[data-section="business"], .findings[data-section="business"] .rail-list { order: 2; }
+  .findings[data-section="business"] .rail-list { position: static; border-top: 1px solid var(--hairline); }
+  /* The chips no longer pin on phones, so the tabs pin near the top of the screen. */
+  .stage > .stage-tabs { --stage-tabs-top: max(8px, env(safe-area-inset-top)); margin-bottom: 8px; }
+  .findings[data-section="findings"] { order: 3; }
+  .findings[data-section="events"] { order: 4; }
+  .revenue-reconciliation { order: 5; }
+  .rail-end { order: 6; }
+  .stage-head--summary { row-gap: 8px; }
+  /* Four figures in a two-by-two grid, every cell present. */
+  .stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; overflow: visible; mask-image: none; -webkit-mask-image: none; animation: none; }
+  .stat { min-width: 0; gap: 2px; }
+  .stat-label { font-size: 12px; line-height: 16px; color: var(--muted-foreground); }
+  .stat-value { font-family: var(--mono); font-size: 22px; line-height: 28px; font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; }
+  .stat[data-missing="true"] .stat-value { color: var(--faint); }
+  .chart { margin-top: 12px; }
+  .trend { --axis: 56px; }
+  .revenue-reconciliation { margin: 8px 16px; padding: 10px 12px; border: 1px solid var(--hairline); border-radius: 10px; }
+  /* The loading face keeps the same order and grid, so nothing moves when the page arrives. */
+  .map--loading .stats > .stat { min-width: 0; }
+}
+
+/* ---------- Insider noise & 90-day fold (U24) ---------- */
+.event-title-and-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; min-width: 0; }
+.event-title-and-tags .finding-title { flex: 1 1 160px; }
+.event-title-and-tags:has(.plan-tag) { padding: 3px 0; }
+.event-row:has(.plan-tag) { height: auto; min-height: var(--row-h); }
+.event-fold-detail { display: flex; flex-wrap: wrap; gap: 6px 12px; padding: 8px 0 8px 28px; font-size: 12px; font-variant-numeric: tabular-nums; }
+.event-fold-detail button { display: flex; flex-wrap: wrap; gap: 4px 10px; min-width: 0; text-align: left; }
+.event-fold-detail button[aria-pressed="true"] { color: var(--accent); }
+.event-fold-detail a { color: var(--muted-foreground); text-decoration: underline; }
+.event-fold-title { flex-wrap: wrap; }
+@media (max-width: 960px) {
+  .event-fold-text { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
+  .event-fold-detail { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .event-fold-panel { transition: none; }
+}

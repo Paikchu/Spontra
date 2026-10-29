@@ -131,7 +131,7 @@ async function home(request: Request, database: D1Database, env: HomeDigestEnv):
 async function handleRoute(request: Request, database: D1Database, env: FeatureDefaultsEnv, route: Exclude<RouteMatch, { kind: "findings-index" } | { kind: "home" }>): Promise<Response> {
   // The admin's switch for one feature of this company: off hides what the feature wrote (docs/whitelist-feature-switches-design.md).
   const hidden = async (feature: Feature, ticker = route.ticker) => !await featureShown(database, env, ticker.trim().toUpperCase(), feature);
-  const issuerCalendar = async (ticker: string) => (await readFiscalFocus(database, ticker)).issuers.get(ticker.trim().toUpperCase()) ?? { fiscalYearEndMonth: null, name: null };
+  const issuerCalendar = async (ticker: string) => (await readFiscalFocus(database, ticker)).issuers.get(ticker.trim().toUpperCase()) ?? { fiscalYearEndMonth: null, name: null, annualForm: null };
   const url = new URL(request.url);
   // `?locale=zh-CN` serves a resource with its translated prose applied; the structure, figures and ids are the English
   // publication's, and a string not yet translated stays English. Two lookups and a pure copy, never a model call.
@@ -176,7 +176,7 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
       if (payload.flow) payload.flow = stampFlow(payload.flow, focus);
       if (payload.reports) payload.reports = stampFlow(payload.reports, focus);
       if (payload.history) payload.history = stampHistory(payload.history, focus);
-      payload.issuer = focus.issuers.get(route.ticker.trim().toUpperCase()) ?? { fiscalYearEndMonth: null, name: null };
+      payload.issuer = focus.issuers.get(route.ticker.trim().toUpperCase()) ?? { fiscalYearEndMonth: null, name: null, annualForm: null };
       return dataResponse(request,payload,payload.status==="ready"?"cacheable":"no-store");
     }
     case "capital": {
