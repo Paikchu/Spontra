@@ -148,11 +148,9 @@ button { cursor: pointer; }
 .company-logo--sm .company-logo-fallback { font-size: 12px; }
 .company-ticker { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 18px; font-weight: 650; letter-spacing: -.01em; line-height: 1.2; }
 .company-ticker b { font-weight: inherit; }
-/* The issuer under the ticker: its name, then its fiscal year end and filer context. Narrow screens put the name beside the ticker. */
-.brand-company-name { display: none; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; line-height: 20px; font-weight: 600; color: var(--foreground); }
+/* The issuer under the ticker: fiscal year end and filer context, with a tip for non-calendar fiscal years. */
 .rail-top[data-company] { flex-wrap: wrap; row-gap: 6px; }
 .rail-company-meta { flex: 0 0 100%; display: flex; flex-direction: column; gap: 2px; min-width: 0; padding-right: 6px; }
-.rail-company-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--display); font-size: 18px; line-height: 24px; font-weight: 500; color: var(--foreground); }
 .rail-company-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--sans); font-size: 12px; line-height: 16px; color: var(--muted-foreground); }
 .rail-actions { display: flex; gap: 2px; flex: none; }
 /* Ghost tools: the ticker is the rail's title, the tools a quiet row beside it that fills only under the pointer. */
@@ -292,16 +290,17 @@ button { cursor: pointer; }
 .stage-head--summary > .stage-controls { grid-column: 2; grid-row: 2; flex-wrap: nowrap; }
 .stage-head--summary > .view-flags { grid-column: 1 / -1; grid-row: 3; }
 .stage-kicker { display: flex; align-items: center; gap: 8px; min-height: 22px; }
-/* The fiscal year end beside the quarter tag; a non-calendar year explains itself on hover, focus or tap. */
-.stage-fiscal-meta { position: relative; display: inline-flex; align-items: center; font-family: var(--sans); font-size: 12px; line-height: 16px; color: var(--muted-foreground); }
-.fiscal-note { display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: help; }
-.fiscal-note svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; }
+/* The fiscal year end under the ticker; a non-calendar year explains itself on hover, focus or tap. */
+.fiscal-meta { position: relative; display: inline-flex; align-items: center; max-width: 100%; min-width: 0; font-family: var(--sans); font-size: 12px; line-height: 16px; color: var(--muted-foreground); }
+.fiscal-note { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; min-width: 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: help; }
+.fiscal-note .rail-company-sub { flex: 0 1 auto; }
+.fiscal-note svg { flex: none; width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; }
 .fiscal-note-tip {
   position: absolute; top: calc(100% + 6px); left: 0; z-index: 40; display: none; width: max-content; max-width: min(300px, calc(100vw - 32px));
   padding: 8px 10px; border-radius: 8px; background: var(--surface-raised); border: 1px solid var(--border); box-shadow: var(--shadow-overlay);
   font-size: 12px; line-height: 1.45; color: var(--foreground); white-space: normal;
 }
-.stage-fiscal-meta:hover .fiscal-note-tip, .stage-fiscal-meta:focus-within .fiscal-note-tip, .stage-fiscal-meta[data-open] .fiscal-note-tip { display: block; animation: fade-in .12s var(--ease) both; }
+.fiscal-meta:hover .fiscal-note-tip, .fiscal-meta:focus-within .fiscal-note-tip, .fiscal-meta[data-open] .fiscal-note-tip { display: block; animation: fade-in .12s var(--ease) both; }
 .periods { display: inline-flex; margin-left: auto; padding: 3px; gap: 2px; border-radius: 999px; background: var(--surface); border: 1px solid var(--hairline); }
 .periods button { border: 0; background: transparent; padding: 6px 13px; border-radius: 999px; font-size: 12.5px; font-variant-numeric: tabular-nums; color: var(--muted-foreground); transition: background .2s, color .2s; }
 .periods button:hover { color: var(--foreground); }
@@ -1652,11 +1651,10 @@ html[lang^="zh"] .period-primary { letter-spacing: 0; }
 /* ---------- Phone company page (U21/U22): figures first, chart next, the rail's sections after ---------- */
 @media (max-width: 640px) {
   .rail-top { order: 0; flex-wrap: nowrap; gap: 8px; padding: max(8px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 8px max(16px, env(safe-area-inset-left)); }
+  .rail-top[data-company] { flex-wrap: wrap; }
   .rail-top .company { gap: 8px; }
   .rail-top .company-logo { width: 28px; height: 28px; border-radius: 8px; }
   .rail-top .company-ticker { flex: none; font-size: 16px; }
-  .rail-company-meta { display: none; }
-  .brand-company-name { display: block; flex: 0 1 auto; }
   .stage { order: 1; padding: 8px 16px 16px; }
   /* The business section dissolves into its chip row (display: contents above), so the row itself takes the place. */
   .findings[data-section="business"], .findings[data-section="business"] .rail-list { order: 2; }
@@ -1667,7 +1665,6 @@ html[lang^="zh"] .period-primary { letter-spacing: 0; }
   .rail-end { order: 6; }
   .stage-head--summary { row-gap: 8px; }
   .stage-kicker { flex-wrap: wrap; row-gap: 2px; min-height: 0; }
-  .stage-kicker .stage-fiscal-meta { flex-basis: 100%; }
   /* Four figures in a two-by-two grid, every cell present. */
   .stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; overflow: visible; mask-image: none; -webkit-mask-image: none; animation: none; }
   .stat { min-width: 0; gap: 2px; }

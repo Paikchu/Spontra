@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode, type UIEvent } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode, type UIEvent } from "react";
 import { Button } from "@/packages/web/src/ui/button";
 import { Sidebar, SidebarHeader, SidebarContent, SidebarTrigger } from "@/packages/web/src/ui/sidebar";
 import { messages, setLocale, useLocale } from "@/packages/web/src/i18n";
@@ -64,13 +64,31 @@ export function RailActions({ light, onToggleTheme, onSearch, collapsed }: {
 }
 
 /**
+ * The fiscal year end under the ticker. For an issuer whose year does not end in December it explains the
+ * quarter's fiscal year, on hover or focus and on a tap that toggles it.
+ */
+function FiscalMeta({ text, note }: { text: string; note: string | null }) {
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  if (!note) return <span className="rail-company-sub">{text}</span>;
+  return <span className="fiscal-meta" data-open={open || undefined} onMouseLeave={() => setOpen(false)}>
+    <button type="button" className="fiscal-note" aria-expanded={open} aria-describedby={id} onClick={() => setOpen(v => !v)} onBlur={() => setOpen(false)}
+      onKeyDown={e => { if (e.key === "Escape") setOpen(false); }}>
+      <span className="rail-company-sub">{text}</span>
+      <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" /><path d="M8 7.2v4M8 4.8v.1" /></svg>
+    </button>
+    <span className="fiscal-note-tip" role="tooltip" id={id}>{note}</span>
+  </span>;
+}
+
+/**
  * Floating card: the company row stays put, everything below it scrolls inside the card.
  * Once the list moves, a blur band under the row softens what slides beneath it; the scrollbar thumb only shows while scrolling or hovered.
  */
 export function Rail({ ticker, actions, label, expanded = false, company = null, children }: {
   ticker: string; actions: ReactNode; label?: string;
-  /** The issuer under the ticker: its name (full name on hover), and a line of fiscal and filer context; `note` explains a non-calendar fiscal year. */
-  company?: { name: string; fullName: string; sub: string[]; note?: string | null } | null;
+  /** Fiscal and filer context under the ticker; `note` explains a non-calendar fiscal year. */
+  company?: { sub: string[]; note?: string | null } | null;
   /** A section has opened over the whole rail: the body stops scrolling and that section scrolls its own list. */
   expanded?: boolean;
   children?: ReactNode;
@@ -100,11 +118,10 @@ export function Rail({ ticker, actions, label, expanded = false, company = null,
   }
   return <Sidebar collapsible="none" asChild><aside className="rail" ref={aside} aria-label={label} data-scrolled={scrolled && !expanded || undefined}>
     <SidebarHeader asChild><div className="rail-top" data-company={company ? "" : undefined}>
-      <CompanyMark ticker={ticker} name={company?.name} fullName={company?.fullName} />
+      <CompanyMark ticker={ticker} />
       {actions}
-      {company && <div className="rail-company-meta">
-        <span className="rail-company-name" title={company.fullName}>{company.name}</span>
-        {company.sub.length > 0 && <span className="rail-company-sub" title={company.note ?? undefined}>{company.sub.join(" · ")}</span>}
+      {company && company.sub.length > 0 && <div className="rail-company-meta">
+        <FiscalMeta text={company.sub.join(" · ")} note={company.note ?? null} />
       </div>}
       {children && <div className="rail-blur" aria-hidden="true" />}
     </div></SidebarHeader>

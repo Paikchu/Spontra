@@ -632,7 +632,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
     </span>
   </ToggleGroup>;
   return <div className="map">
-    <Rail ticker={ticker} actions={tools} label={m.companyBusinesses} expanded={openSection != null} company={company.name ? { name: company.name, fullName: company.fullName ?? company.name, sub: companySub, note: company.fiscalNote } : null}>
+    <Rail ticker={ticker} actions={tools} label={m.companyBusinesses} expanded={openSection != null} company={companySub.length > 0 ? { sub: companySub, note: company.fiscalNote } : null}>
       <RailSection name="business" title={m.businesses} expandable={businessExpandable} focused={current != null} drawer expanded={businessOpen} onExpand={toggleBusiness}>
         <div className="rail-list section-body" id="rail-business" role="listbox" aria-label={m.businesses} ref={listRef} onKeyDown={onListKey} onMouseLeave={() => setPreview(null)}>
           {/* All businesses heads the drawer: it shows the whole company, and with nothing else picked a click unfolds or folds the list. */}
@@ -700,8 +700,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
       </>
       : <>
       <header className="stage-head stage-head--summary" data-tour="stats">
-        {quarter && <div className="stage-kicker"><PeriodMark variant="pill" ticker={ticker} periodEnd={quarter.periodEnd} periodStart={quarter.periodStart} fiscalYear={quarter.fiscalYear} fiscalQuarter={quarter.fiscalQuarter} fiscalYearEndMonth={fiscalMonth} labelSource={quarter.labelSource} />
-          {companySub.length > 0 && <FiscalMeta text={companySub.join(" · ")} note={company.fiscalNote} />}</div>}
+        {quarter && <div className="stage-kicker"><PeriodMark variant="pill" ticker={ticker} periodEnd={quarter.periodEnd} periodStart={quarter.periodStart} fiscalYear={quarter.fiscalYear} fiscalQuarter={quarter.fiscalQuarter} fiscalYearEndMonth={fiscalMonth} labelSource={quarter.labelSource} /></div>}
         {quarter && (view === "cash" || view === "balance") && funding ? <CapitalStats view={view} funding={funding} tiles={highlights} flags={flags} />
           // Phones always lead with the four statement figures in their two-by-two grid; wider screens show the report's picked tiles.
           : quarter && !current && highlights && !(narrow && view === "profit") ? <HighlightStats tiles={highlights} flags={flags} />
@@ -942,21 +941,4 @@ function DossierSection({ section, cite }: { section: ExplainerSection; cite: (c
   if (section.layout === "steps") return <ol className="dossier-steps">{section.items.map((i, n) => <li key={n}>{i.label && <b>{i.label}</b>}{normalizeDisplayText(i.claim.text)}{cite(i.claim)}</li>)}</ol>;
   if (section.layout === "list") return <ul className="dossier-products">{section.items.map((i, n) => <li key={n}><b>{i.label}</b>{normalizeDisplayText(i.claim.text)}{cite(i.claim)}</li>)}</ul>;
   return <>{section.items.map((i, n) => <p key={n} className="dossier-prose">{i.label && <b>{i.label}: </b>}{normalizeDisplayText(i.claim.text)}{cite(i.claim)}</p>)}</>;
-}
-
-/**
- * The fiscal year end beside the quarter tag. For an issuer whose year does not end in December it explains the
- * quarter's fiscal year, on hover or focus and on a tap that toggles it.
- */
-function FiscalMeta({ text, note }: { text: string; note: string | null }) {
-  const [open, setOpen] = useState(false);
-  const id = useId();
-  if (!note) return <span className="stage-fiscal-meta">{text}</span>;
-  return <span className="stage-fiscal-meta" data-open={open || undefined} onMouseLeave={() => setOpen(false)}>
-    <button type="button" className="fiscal-note" aria-expanded={open} aria-describedby={id} onClick={() => setOpen(v => !v)} onBlur={() => setOpen(false)}
-      onKeyDown={e => { if (e.key === "Escape") setOpen(false); }}>
-      {text}<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" /><path d="M8 7.2v4M8 4.8v.1" /></svg>
-    </button>
-    <span className="fiscal-note-tip" role="tooltip" id={id}>{note}</span>
-  </span>;
 }

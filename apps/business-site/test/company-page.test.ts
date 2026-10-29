@@ -62,14 +62,12 @@ function bankFlow(): PublicBusinessFlow {
 
 const slotsOf = (html: string) => [...html.matchAll(/<div class="stat"( data-missing="true")?[^>]*>.*?<\/div>/g)].map(m => m[0]);
 
-test("U22: the rail heads with the issuer's name and its fiscal year; the stage explains a non-calendar fiscal year", () => {
+test("U22: the rail shows fiscal year + tip under the ticker; the stage keeps only the period pill", () => {
   const zh = render("zh-CN");
-  assert.match(zh, /<span class="rail-company-name" title="Acme Corp">Acme Corp<\/span>/);
-  assert.match(zh, /<span class="rail-company-sub" title="该公司财年截至每年 5 月，所以 2026\.06\.30 结束的季度是 2027 财年 Q1">财年截至 5 月<\/span>/);
-  assert.match(zh, /<span class="brand-company-name" title="Acme Corp">Acme Corp<\/span>/);
-  assert.match(zh, /class="stage-fiscal-meta"[^>]*><button[^>]*class="fiscal-note"[^>]*>财年截至 5 月/);
+  assert.doesNotMatch(zh, /rail-company-name|brand-company-name|stage-fiscal-meta/);
+  assert.match(zh, /class="fiscal-meta"[^>]*><button[^>]*class="fiscal-note"[^>]*>.*?<span class="rail-company-sub">财年截至 5 月<\/span>/s);
   assert.match(zh, /<span class="fiscal-note-tip" role="tooltip"[^>]*>该公司财年截至每年 5 月，所以 2026\.06\.30 结束的季度是 2027 财年 Q1<\/span>/);
-  // The period tag reads the same fiscal calendar.
+  // The period tag alone stays on the stage.
   assert.match(zh, /2027 财年 Q1/);
   const en = render("en");
   assert.match(en, /class="rail-company-sub"[^>]*>FY ends May</);
@@ -77,17 +75,17 @@ test("U22: the rail heads with the issuer's name and its fiscal year; the stage 
   assert.match(en, /FY27 Q1/);
 });
 
-test("U22: a foreign issuer's fiscal year, form and currency read the same on the rail and on the phone's stage", () => {
+test("U22: a foreign issuer's fiscal year, form and currency stay on the rail (desktop and phone)", () => {
   const zh = render("zh-CN", foreignFlow(), { filings: foreignFilings, issuer: { name: "Acme Corp", fiscalYearEndMonth: 12 } });
   assert.match(zh, /<span class="rail-company-sub"[^>]*>财年截至 12 月 · 20-F · 报告货币：新台币<\/span>/);
-  assert.match(zh, /<span class="stage-fiscal-meta">财年截至 12 月 · 20-F · 报告货币：新台币<\/span>/);
+  assert.doesNotMatch(zh, /stage-fiscal-meta/);
   const en = render("en", foreignFlow(), { filings: foreignFilings, issuer: { name: "Acme Corp", fiscalYearEndMonth: 12 } });
   assert.match(en, /<span class="rail-company-sub"[^>]*>FY ends Dec · 20-F · Reports in TWD<\/span>/);
-  assert.match(en, /<span class="stage-fiscal-meta">FY ends Dec · 20-F · Reports in TWD<\/span>/);
+  assert.doesNotMatch(en, /stage-fiscal-meta/);
   // A company prop with only a name and fiscal month still gets the line from the flow and the filings.
   const bare = render("en", foreignFlow(), { filings: foreignFilings, identity: { name: "Acme Corp", fullName: null, fiscalYearEndMonth: 12, annualForm: null, fiscalLabel: null, filingLabel: null, fiscalNote: null } });
   assert.match(bare, /<span class="rail-company-sub"[^>]*>FY ends Dec · 20-F · Reports in TWD<\/span>/);
-  assert.match(bare, /<span class="stage-fiscal-meta">FY ends Dec · 20-F · Reports in TWD<\/span>/);
+  assert.doesNotMatch(bare, /stage-fiscal-meta/);
 });
 
 test("U22: on production's data, an empty filings feed and the form on the issuer, the line still names the 20-F", () => {
@@ -95,10 +93,10 @@ test("U22: on production's data, an empty filings feed and the form on the issue
   for (const filings of [null, { ...filings0, filings: [] }]) {
     const zh = render("zh-CN", foreignFlow(), { filings, issuer });
     assert.match(zh, /<span class="rail-company-sub"[^>]*>财年截至 12 月 · 20-F · 报告货币：新台币<\/span>/);
-    assert.match(zh, /<span class="stage-fiscal-meta">财年截至 12 月 · 20-F · 报告货币：新台币<\/span>/);
+    assert.doesNotMatch(zh, /stage-fiscal-meta/);
     const en = render("en", foreignFlow(), { filings, issuer });
     assert.match(en, /<span class="rail-company-sub"[^>]*>FY ends Dec · 20-F · Reports in TWD<\/span>/);
-    assert.match(en, /<span class="stage-fiscal-meta">FY ends Dec · 20-F · Reports in TWD<\/span>/);
+    assert.doesNotMatch(en, /stage-fiscal-meta/);
   }
 });
 
@@ -109,7 +107,7 @@ test("U22: the fiscal note is the quarter on the stage's, not the one the page r
   assert.doesNotMatch(identity.fiscalNote!, /2026\.06\.30/);
   const zh = render("zh-CN", flow, { identity });
   assert.match(zh, /<span class="fiscal-note-tip" role="tooltip"[^>]*>该公司财年截至每年 5 月，所以 2026\.06\.30 结束的季度是 2027 财年 Q1<\/span>/);
-  assert.match(zh, /class="rail-company-sub" title="该公司财年截至每年 5 月，所以 2026\.06\.30 结束的季度是 2027 财年 Q1"/);
+  assert.match(zh, /<span class="rail-company-sub">财年截至 5 月<\/span>/);
 });
 
 test("U21: an operating company's header shows its four figures, none of them empty", () => {
@@ -180,8 +178,9 @@ test("U21: on phones the page reads top bar, figures and chart, then the rail's 
   assert.deepEqual(sequence, [0, 1, 2, 3, 4, 5, 6]);
   assert.match(phone, /\.stats \{[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
   assert.match(phone, /\.stat-value \{[^}]*font-family: var\(--mono\);[^}]*font-size: 22px; line-height: 28px; font-weight: 600;[^}]*tabular-nums/);
-  assert.match(phone, /\.rail-company-meta \{ display: none; \}/);
-  assert.match(phone, /\.brand-company-name \{ display: block;/);
+  assert.doesNotMatch(phone, /\.rail-company-meta \{[^}]*display:\s*none/);
+  assert.doesNotMatch(phone, /brand-company-name/);
+  assert.match(phone, /\.rail-top\[data-company\] \{ flex-wrap: wrap; \}/);
   // Wide screens keep their header: a missing figure's cell is for the phone grid only.
   assert.match(media(await read("../src/style.css"), "min-width: 641px"), /\.stats > div\[data-missing="true"\] \{ display: none; \}/);
 });
