@@ -89,8 +89,8 @@ export type PeriodMarkProps = {
   fiscalYearEndMonth?: number | null;
   labelSource?: FiscalLabelSource | null;
   companyName?: string | null;
-  /** Pill beside the company header, home-card footer, signal header, or a rail aside. */
-  variant: "pill" | "footer" | "signal" | "inline";
+  /** Home-card footer, signal header, or a rail aside. */
+  variant: "footer" | "signal" | "inline";
   pending?: boolean;
 };
 
@@ -124,7 +124,6 @@ export function PeriodMark({ ticker, periodEnd, periodStart, fiscalYear, fiscalQ
         else onMark(event.currentTarget, true);
       }}
     >{text}</span>
-    {labels.primary && variant === "pill" && <span className="period-secondary"><span className="period-dot" aria-hidden="true">·</span>{secondary}</span>}
     {labels.primary && variant === "footer" && <span className="period-secondary">{secondary}</span>}
     {tip.node}
   </span>;

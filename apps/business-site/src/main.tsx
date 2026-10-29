@@ -173,15 +173,14 @@ function Skeleton({ ticker, tools }: { ticker: string; tools: ReactNode }) {
         </section>
       </Rail>
       <section className="stage" data-timeline="" data-view="profit" data-trend="" aria-hidden="true">
+        <div className="stage-tabs"><span className="trend-views stage-views">{(["valuation", "profit", "cash", "balance"] as const).map(v => <button key={v} type="button" tabIndex={-1} aria-checked="false">{VIEW_LABEL[v]}</button>)}</span></div>
         <header className="stage-head stage-head--summary">
-          <div className="stage-kicker"><span className="period-skeleton" /></div>
           <div className="stats">
-            {[0, 1, 2, 3].map(i => <div key={i} className="stat"><span className="stat-label ghost-text">{m.revenue}</span><strong className="stat-value ghost-text">$00.0B</strong><span className="stat-note ghost-text">+0.0%</span></div>)}
+            {[0, 1, 2, 3].map(i => <div key={i} className="stat"><span className="stat-label ghost-text">{m.revenue}</span><strong className="stat-value ghost-text">$00.0B</strong></div>)}
           </div>
           <div className="stage-controls">
             <span className="trend-views stage-views"><button type="button" tabIndex={-1} aria-checked="true">{yoyLabel(getLocale())}</button><button type="button" tabIndex={-1} aria-checked="false">{qoqLabel(getLocale())}</button></span>
             <span className="trend-views stage-views"><button type="button" tabIndex={-1} aria-checked="true">{m.summary}</button><button type="button" tabIndex={-1} aria-checked="false">{m.detail}</button></span>
-            <span className="trend-views stage-views"><button type="button" tabIndex={-1} aria-checked="true">{VIEW_LABEL.profit}</button><button type="button" tabIndex={-1} aria-checked="false">{VIEW_LABEL.cash}</button><button type="button" tabIndex={-1} aria-checked="false">{VIEW_LABEL.balance}</button></span>
           </div>
         </header>
         <div className="chart"><div className="ghost-chart" /></div>

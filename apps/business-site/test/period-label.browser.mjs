@@ -1,5 +1,5 @@
 /**
- * Renders the business site and checks fiscal period labels.
+ * Renders the business site and checks fiscal period labels (the home page's cards and signals; company pages carry none since U25).
  * The dev server must already be running (fixture or a proxy to the read API).
  *   node apps/business-site/test/period-label.browser.mjs
  */
@@ -20,7 +20,7 @@ const viewports = [
 ];
 const themes = ["dark", "light"];
 const locales = ["zh-CN", "en"];
-const pages = (process.env.PERIOD_LABEL_PAGES ?? "home,NVDA,AAPL,ORCL,META,NBIS").split(",").filter(Boolean).map(name => (
+const pages = (process.env.PERIOD_LABEL_PAGES ?? "home").split(",").filter(Boolean).map(name => (
   name === "home" ? { name, path: "/" } : { name, path: `/companies/${name}` }
 ));
 
@@ -79,7 +79,6 @@ for (const viewport of viewports) {
           const text = expected.primary ?? expected.unknown;
           if (mark.primary !== text) note(where, `${mark.ticker} ${mark.period} shows «${mark.primary}» expected «${text}»`);
           if (mark.variant === "footer" && viewport.name === "mobile" && mark.secondaryShown) note(where, "mobile footer still shows a secondary label");
-          if (mark.variant === "pill" && expected.primary && !mark.secondary.includes(locale === "zh-CN" ? "截至" : "Ended")) note(where, "pill is missing the period-end line");
         }
         const layout = await page.evaluate(() => {
           const problems = [];
@@ -91,7 +90,7 @@ for (const viewport of viewports) {
             }
             return false;
           };
-          for (const el of document.querySelectorAll(".period-mark, .period-primary, .period-secondary, .stage-kicker, .home-card")) {
+          for (const el of document.querySelectorAll(".period-mark, .period-primary, .period-secondary, .home-card")) {
             const box = el.getBoundingClientRect();
             if (box.width === 0 || box.height === 0) continue;
             if (el.scrollWidth > el.clientWidth + 2) problems.push(`${el.className || el.tagName} overflows ${el.scrollWidth}>${el.clientWidth}`);
