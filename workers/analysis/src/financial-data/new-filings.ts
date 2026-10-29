@@ -66,6 +66,6 @@ export async function readNewFiling(db: D1Database, reader: SecReader, model: No
     .bind(filing.accession, issuer.cik, issuer.ticker, filing.form, READ_NOTE_VERSION, status, outcome.quarter?.periodEnd ?? null, outcome.route, outcome.attempts,
       outcome.note ? JSON.stringify(outcome.note) : null, outcome.note && outcome.quarter ? JSON.stringify(noteLabels(outcome.note, context.tables)) : null,
       outcome.quarter ? JSON.stringify(outcome.quarter) : null, JSON.stringify(issues.slice(0, 20)),
-      JSON.stringify(outcome.rejected.map(r => ({ route: r.route, problems: r.problems.slice(0, 20) }))), new Date().toISOString()).run();
+      JSON.stringify(outcome.rejected.map(r => ({ route: r.route, problems: r.problems.slice(0, 20), note: r.note }))), new Date().toISOString()).run();
   return outcome;
 }
