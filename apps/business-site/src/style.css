@@ -148,7 +148,7 @@ button { cursor: pointer; }
 .company-logo--sm .company-logo-fallback { font-size: 12px; }
 .company-ticker { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 18px; font-weight: 650; letter-spacing: -.01em; line-height: 1.2; }
 .company-ticker b { font-weight: inherit; }
-/* The issuer under the ticker: fiscal year end and filer context, with a tip for non-calendar fiscal years. */
+/* The issuer under the ticker: the filer context its figures need (a 20-F, a reporting currency). */
 .rail-top[data-company] { flex-wrap: wrap; row-gap: 6px; }
 .rail-company-meta { flex: 0 0 100%; display: flex; flex-direction: column; gap: 2px; min-width: 0; padding-right: 6px; }
 .rail-company-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--sans); font-size: 12px; line-height: 16px; color: var(--muted-foreground); }
@@ -242,7 +242,7 @@ button { cursor: pointer; }
 .row-share { font-size: 12px; font-weight: 500; color: var(--faint); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
 .row-value { font-size: 13.5px; font-weight: 560; font-variant-numeric: tabular-nums; letter-spacing: -.01em; text-align: right; white-space: nowrap; color: color-mix(in srgb, var(--foreground) 92%, transparent); }
 .row-delta { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
-.row-delta em, .stat-note { font-style: normal; }
+.row-delta em { font-style: normal; }
 [data-trend="up"] { color: var(--up); }
 [data-trend="down"] { color: var(--loss); }
 /* Children: indented one step behind a hairline, a size smaller, no share column (the row's tooltip keeps it) so the name has room. */
@@ -278,29 +278,21 @@ button { cursor: pointer; }
 
 /* ---------- Stage ---------- */
 .stage {
-  display: grid; grid-template-rows: auto minmax(0, 1fr) auto auto; min-width: 0; min-height: 0;
+  display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto auto; min-width: 0; min-height: 0;
   padding: 14px max(clamp(20px, 3vw, 44px), env(safe-area-inset-right)) 4px clamp(24px, 3vw, 44px);
 }
 .stage--state { display: block; overflow-y: auto; }
 .stage-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px 24px; flex-wrap: wrap; }
 .stage-head--summary { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 12px 24px; }
 /* One fixed row: the figures compress beside the controls and never wrap, so the chart below keeps its height. */
-.stage-head--summary > .stage-kicker { grid-column: 1 / -1; grid-row: 1; }
-.stage-head--summary > .stats { grid-column: 1; grid-row: 2; }
-.stage-head--summary > .stage-controls { grid-column: 2; grid-row: 2; flex-wrap: nowrap; }
-.stage-head--summary > .view-flags { grid-column: 1 / -1; grid-row: 3; }
-.stage-kicker { display: flex; align-items: center; gap: 8px; min-height: 22px; }
-/* The fiscal year end under the ticker; a non-calendar year explains itself on hover, focus or tap. */
-.fiscal-meta { position: relative; display: inline-flex; align-items: center; max-width: 100%; min-width: 0; font-family: var(--sans); font-size: 12px; line-height: 16px; color: var(--muted-foreground); }
-.fiscal-note { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; min-width: 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: help; }
-.fiscal-note .rail-company-sub { flex: 0 1 auto; }
-.fiscal-note svg { flex: none; width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; }
-.fiscal-note-tip {
-  position: absolute; top: calc(100% + 6px); left: 0; z-index: 40; display: none; width: max-content; max-width: min(300px, calc(100vw - 32px));
-  padding: 8px 10px; border-radius: 8px; background: var(--surface-raised); border: 1px solid var(--border); box-shadow: var(--shadow-overlay);
-  font-size: 12px; line-height: 1.45; color: var(--foreground); white-space: normal;
-}
-.fiscal-meta:hover .fiscal-note-tip, .fiscal-meta:focus-within .fiscal-note-tip, .fiscal-meta[data-open] .fiscal-note-tip { display: block; animation: fade-in .12s var(--ease) both; }
+.stage-head--summary > .stats { grid-column: 1; grid-row: 1; }
+.stage-head--summary > .stage-controls { grid-column: 2; grid-row: 1; flex-wrap: nowrap; }
+.stage-head--summary > .view-flags { grid-column: 1 / -1; grid-row: 2; }
+/* The view tabs head the stage in their own row, one element for every view, pinned while the stage scrolls under them. */
+.stage-tabs { position: sticky; top: var(--stage-tabs-top, 0px); z-index: 6; display: flex; align-items: center; min-width: 0; padding-bottom: 12px; }
+.stage-tabs:empty { padding: 0; }
+.stage-tabs .stage-views { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+.stage-tabs .stage-views::-webkit-scrollbar { display: none; }
 .periods { display: inline-flex; margin-left: auto; padding: 3px; gap: 2px; border-radius: 999px; background: var(--surface); border: 1px solid var(--hairline); }
 .periods button { border: 0; background: transparent; padding: 6px 13px; border-radius: 999px; font-size: 12.5px; font-variant-numeric: tabular-nums; color: var(--muted-foreground); transition: background .2s, color .2s; }
 .periods button:hover { color: var(--foreground); }
@@ -316,12 +308,14 @@ button { cursor: pointer; }
 .stats:has(> :nth-child(5)) { --n: 5; }
 /* Figures shrink to their value's width, never below it; labels and notes give way first, cut to one line. */
 .stat { flex: 0 1 auto; display: flex; flex-direction: column; gap: 4px; }
-.stat-label, .stat-note { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; font-size: 12px; line-height: 1.4; }
+.stat-label { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; font-size: 12px; line-height: 1.4; }
 .stat-label { color: var(--muted-foreground); }
 .stat-label .level-mark { margin-right: 6px; }
 /* The value's size follows each figure's share of the row: about 6.5 glyphs to a figure, between 16px and the cap. */
 .stat-value { font-size: clamp(16px, calc(100cqi / var(--n) / 6.5), var(--stat-max, 26px)); font-weight: 620; letter-spacing: -.035em; font-variant-numeric: tabular-nums; line-height: 1.15; white-space: nowrap; }
-.stat-note { color: var(--faint); font-variant-numeric: tabular-nums; }
+/* A headline number reads as news: good in the gain colour, bad in the loss colour, by the figure's own direction. */
+.stat-value[data-tone="good"] { color: var(--up); }
+.stat-value[data-tone="bad"] { color: var(--loss); }
 /* Past the narrowest size the row scrolls sideways; its edges fade only while there is more to see that way. */
 @supports (animation-timeline: scroll()) {
   @property --stats-fade-start { syntax: "<length>"; inherits: false; initial-value: 0px; }
@@ -715,6 +709,9 @@ button { cursor: pointer; }
     border-bottom: 1px solid var(--hairline);
   }
   .rail-list::-webkit-scrollbar { display: none; }
+  /* The page scrolls: the stage's tab row pins under the business chips (10px padding, a 36px chip, the hairline), on the page's own ground. */
+  .stage-tabs { --stage-tabs-top: 57px; margin: 0 -16px; padding: 8px 16px; background: color-mix(in srgb, var(--background) 88%, transparent); backdrop-filter: blur(12px); }
+  .stage-tabs:empty { margin: 0; padding: 0; }
   .row, .row[data-depth] { display: inline-flex; flex: none; width: auto; height: auto; margin: 0; gap: 8px; padding: 8px 12px; border-radius: 999px; white-space: nowrap; }
   .row::before, .row::after { display: none; }
   .row[aria-selected="true"], .row--all[aria-selected="true"] { background: color-mix(in srgb, var(--c) 14%, transparent); }
@@ -853,7 +850,7 @@ button { cursor: pointer; }
 /* Kind colours: a risk reads as a loss, a strength as growth, a shift as the first business hue, a watch item stays quiet. */
 .map, .home { --kind-risk: var(--loss); --kind-strength: var(--up); --kind-shift: var(--biz-1); --kind-watch: var(--muted-foreground); }
 [data-kind="risk"] { --kind: var(--kind-risk); } [data-kind="strength"] { --kind: var(--kind-strength); } [data-kind="shift"] { --kind: var(--kind-shift); } [data-kind="watch"] { --kind: var(--kind-watch); }
-.stage:has(.findings) { grid-template-rows: auto auto minmax(0, 1fr) auto auto; }
+.stage:has(.findings) { grid-template-rows: auto auto auto minmax(0, 1fr) auto auto; }
 /* A grid, not a flex row: the chips column is capped at the space left, so a long set scrolls inside it instead of widening the stage. */
 /* Findings live in the rail under the business drawer: one row per finding, most severe first. */
 .findings { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--hairline); }
@@ -1349,8 +1346,8 @@ html[lang^="zh"] .home-sub, html[lang^="zh"] .home-signal-title, html[lang^="zh"
 :root[data-vt="swap-chart"]::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
 
 /* The time axis under the chart: quarter ticks along the track, one marker per filing, the current report and the focused event lit. */
-.stage[data-timeline] { grid-template-rows: auto minmax(0, 1fr) auto auto auto; }
-.stage:has(.findings)[data-timeline] { grid-template-rows: auto auto minmax(0, 1fr) auto auto auto; }
+.stage[data-timeline] { grid-template-rows: auto auto minmax(0, 1fr) auto auto auto; }
+.stage:has(.findings)[data-timeline] { grid-template-rows: auto auto auto minmax(0, 1fr) auto auto auto; }
 .timeline { margin-top: 6px; padding: 10px 0 0; }
 .timeline-track { position: relative; height: 30px; margin: 0 6px; }
 .timeline-track::before { content: ""; position: absolute; left: 0; right: 0; top: 12px; border-top: 1px solid var(--border); }
@@ -1586,12 +1583,7 @@ main[data-rail="collapsed"] .update-notice { left: calc((100vw + var(--rail-coll
   font-variant-numeric: tabular-nums; color: var(--foreground); white-space: nowrap; border-radius: 4px;
 }
 .period-mark[data-unknown] .period-primary { white-space: normal; text-align: right; }
-.period-mark[data-variant="pill"]:not([data-unknown]) .period-primary {
-  display: inline-flex; align-items: center; box-sizing: border-box; height: 22px; padding: 0 8px; border-radius: 999px;
-  background: var(--fill); border: 1px solid var(--border);
-}
 .period-secondary { font-family: var(--sans); font-size: 12px; font-weight: 500; line-height: 1.3; color: var(--muted-foreground); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.period-dot { margin-right: 6px; }
 .home-signal header .period-primary, .home-card footer .period-primary { margin-left: 0; color: var(--foreground); font-size: 12px; }
 html[lang="en"] .period-mark:not([data-unknown]) .period-primary { letter-spacing: 0.02em; text-transform: uppercase; }
 html[lang^="zh"] .period-primary { letter-spacing: 0; }
@@ -1659,22 +1651,19 @@ html[lang^="zh"] .period-primary { letter-spacing: 0; }
   /* The business section dissolves into its chip row (display: contents above), so the row itself takes the place. */
   .findings[data-section="business"], .findings[data-section="business"] .rail-list { order: 2; }
   .findings[data-section="business"] .rail-list { position: static; border-top: 1px solid var(--hairline); }
+  /* The chips no longer pin on phones, so the tab row pins to the top of the screen. */
+  .stage-tabs { --stage-tabs-top: 0px; }
   .findings[data-section="findings"] { order: 3; }
   .findings[data-section="events"] { order: 4; }
   .revenue-reconciliation { order: 5; }
   .rail-end { order: 6; }
   .stage-head--summary { row-gap: 8px; }
-  .stage-kicker { flex-wrap: wrap; row-gap: 2px; min-height: 0; }
   /* Four figures in a two-by-two grid, every cell present. */
   .stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; overflow: visible; mask-image: none; -webkit-mask-image: none; animation: none; }
   .stat { min-width: 0; gap: 2px; }
   .stat-label { font-size: 12px; line-height: 16px; color: var(--muted-foreground); }
   .stat-value { font-family: var(--mono); font-size: 22px; line-height: 28px; font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; }
-  .stat-note { font-size: 12px; line-height: 16px; font-style: normal; }
-  .stat-note[data-trend="up"] { color: var(--up); }
-  .stat-note[data-trend="down"] { color: var(--loss); }
   .stat[data-missing="true"] .stat-value { color: var(--faint); }
-  .stat[data-missing="true"] .stat-note { color: var(--faint); }
   .chart { margin-top: 12px; }
   .trend { --axis: 56px; }
   .revenue-reconciliation { margin: 8px 16px; padding: 10px 12px; border: 1px solid var(--hairline); border-radius: 10px; }

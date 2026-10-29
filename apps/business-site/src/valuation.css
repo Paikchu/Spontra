@@ -117,5 +117,4 @@
 .val-foot { margin: 0; font-size: 11.5px; color: var(--faint); }
 /* The stage holds the valuation as one scrolling column under its tab row. */
 .stage[data-view="valuation"] { grid-template-rows: auto minmax(0, 1fr); padding-bottom: 12px; }
-.stage[data-view="valuation"] .stage-head { min-height: 0; }
 @media (max-width: 960px) { .val-grid { grid-template-columns: minmax(0, 1fr); } .val-dim-list li { grid-template-columns: minmax(90px, 120px) minmax(0, 1fr) 32px 24px; } .val-sens li { grid-template-columns: minmax(100px, 150px) minmax(0, 1fr); } .val-sens b { grid-column: 1 / -1; text-align: left; } .val-range { padding: 30px 4px 36px; } }

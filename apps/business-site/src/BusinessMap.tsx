@@ -31,7 +31,8 @@ import { crossfade } from "./page-turn";
 import type { FindingPassage, FindingsPublication } from "@/shared/analysis-contract/findings";
 import type { PeersPublication } from "@/shared/analysis-contract/peers";
 import { watchVerdict, type FindingFundamentals, type ResolvedEvidence, type ResolvedValue } from "@/shared/analysis-runtime/findings";
-import { formatChange, higherIsBetter, highlightChange, highlightsFor, ratioForm, type VerifiedHighlight } from "@/shared/analysis-runtime/highlights";
+import { formatChange, highlightChange, ratioForm } from "@/shared/analysis-runtime/highlights";
+import { heroTiles, type HeroTile, type HeroTone } from "./hero-model";
 import { anchorNodeNames, anchorPoolKeys, findingData, VIEW_LABEL, verifiedFindings } from "./findings-model";
 import { FindingsList } from "./FindingsList";
 import { LensPanel } from "./LensPanel";
@@ -45,7 +46,7 @@ import { RailSection, railTransition, type RailSectionKey } from "./RailSection"
 import { EventLens } from "./EventLens";
 import { ReportLens } from "./ReportLens";
 import { Timeline } from "./Timeline";
-import { fiscalPhrase, PeriodMark } from "./PeriodMark";
+import { fiscalPhrase } from "./PeriodMark";
 import { lazy, Suspense } from "react";
 import { getLocale, messages, useLocale } from "@/packages/web/src/i18n";
 import { SourceLanguage, langOf } from "@/packages/web/src/i18n/SourceLanguage";
@@ -141,7 +142,7 @@ const none = (): FlowChange => ({ label: flowWords.na, comparable: false, trend:
 const shortName = (name: string) => truncateToWidth(name, 13);
 type View = "profit" | "cash" | "balance" | "valuation";
 type StatementView = Exclude<View, "valuation">;
-const VIEWS: readonly View[] = ["profit", "cash", "balance", "valuation"];
+const VIEWS: readonly View[] = ["valuation", "profit", "cash", "balance"];
 /** Every change on the stage is against one base: the same quarter a year earlier (YoY) or the quarter before (QoQ). */
 type Basis = "yoy" | "qoq";
 const basisWords = (basis: Basis): CompareBasis & { period: string } => basis === "yoy"
@@ -216,23 +217,28 @@ function useTween(target: number | null, ms = 650) {
   return value;
 }
 
-function Stat({ label, value, format, note, tone, level }: { label: string; value: number | null; format: (v: number | null) => string; note?: string; tone?: "up" | "down"; /** The most pressing checkup flag about this figure. */ level?: FlagLevel }) {
+/**
+ * A headline tile: its title and its large number, green for good news and red for bad. The detail behind the number
+ * (its level, its comparison, its share) stays in the tile's tooltip.
+ */
+function Stat({ label, value, format, note, tone, level }: { label: string; value: number | null; format: (v: number | null) => string; note?: string; tone?: HeroTone; /** The most pressing checkup flag about this figure. */ level?: FlagLevel }) {
   const shown = useTween(value);
-  return <div className="stat" data-level={level}>
-    <span className="stat-label" title={label}>{level && <LevelMark level={level} label={LEVEL_LABEL[level]} />}{label}</span>
-    <strong className="stat-value">{format(shown)}</strong>
-    {note && <span className="stat-note" data-trend={tone} title={note}>{note}</span>}
+  return <div className="stat" data-level={level} title={note ? `${label} · ${note}` : undefined}>
+    <span className="stat-label" title={note ? undefined : label}>{level && <LevelMark level={level} label={LEVEL_LABEL[level]} />}{label}</span>
+    <strong className="stat-value" data-tone={tone}>{format(shown)}</strong>
   </div>;
 }
 
-/** A headline figure the statement does not carry: the cell stays, so the narrow grid keeps its four cells. */
+/** A headline figure the statement does not carry: the cell stays, so the narrow grid keeps its four cells; the tooltip says why. */
 function MissingStat({ label, reason }: { label: string; reason: string }) {
-  return <div className="stat" data-missing="true">
-    <span className="stat-label" title={label}>{label}</span>
-    <strong className="stat-value">{m.statMissing}</strong>
-    <em className="stat-note" title={reason}>{reason}</em>
+  return <div className="stat" data-missing="true" title={`${label} · ${reason}`}>
+    <span className="stat-label">{label}</span>
+    <strong className="stat-value" aria-label={`${m.statMissing} · ${reason}`}>{m.statMissing}</strong>
   </div>;
 }
+
+/** A statement figure whose rise is good news, toned by its move against the comparison quarter. */
+const trendTone = (trend: "up" | "down" | null | undefined): HeroTone | undefined => trend === "up" ? "good" : trend === "down" ? "bad" : undefined;
 
 /** A highlight's figure in its own unit: an amount, a rate, a margin or a multiple, per share. */
 function highlightValue(v: number | null, r: ResolvedValue, ref: ResolvedEvidence["evidence"]["ref"]): string {
@@ -246,16 +252,16 @@ function highlightValue(v: number | null, r: ResolvedValue, ref: ResolvedEvidenc
 }
 
 /**
- * The headline figures a model picked for this report and view, each resolved from the data. The large number is the
- * figure, or its change when the rate is the news; the note carries the other, and the label is left out of the note
- * when the title already names it.
+ * The headline figures for this report and view (hero-model.ts), each resolved from the data and toned good or bad.
+ * The large number is the figure, or its change when the rate is the news; the tooltip carries the other, and the
+ * label is left out of it when the title already names it.
  */
-function HighlightStats({ tiles, flags = [] }: { tiles: VerifiedHighlight[]; flags?: Flag[] }) {
+function HighlightStats({ tiles, flags = [] }: { tiles: HeroTile[]; flags?: Flag[] }) {
   return <div className="stats" aria-live="polite">{tiles.map(tile => {
     const flagLevel = figureLevel(flags, refFigure(tile.ref));
     const r = tile.resolved, change = highlightChange(r, getLocale()), basis = r.evidence.compare === "qoq" ? qoqLabel(getLocale()) : yoyLabel(getLocale());
     const level = (v: ResolvedValue | null) => v ? highlightValue(v.value, v, tile.ref) : "";
-    const tone = change && r.delta && higherIsBetter(tile.ref) ? r.delta > 0 ? "up" : "down" : undefined;
+    const tone = tile.tone;
     if (tile.show === "change" && r.delta != null) {
       const note = `${level(r.current)}${r.compare ? ` · ${r.compareLabel} ${level(r.compare)}` : ""}`;
       return <Stat key={JSON.stringify(tile.ref)} label={`${tile.title} · ${basis}`} value={r.delta} format={v => v == null ? "—" : formatChange(v, r, getLocale())} note={note} tone={tone} level={flagLevel} />;
@@ -404,14 +410,22 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
   const folded = useMemo(() => trunk && trunked ? trunked.folded : new Map<string, string>(), [trunk, trunked]);
   const previousGraph = useMemo(() => { const g = previous ? statementGraph(previous) : null; return g && previous && trunk ? trunkGraph(g, previous).graph : g; }, [previous, trunk]);
   const funding = capital?.quarters.find(q => q.periodEnd === quarter?.periodEnd) ?? null;
-  const [chosenView, setView] = useState<View>(() => { const v = new URLSearchParams(location.search).get("view"); return VIEWS.includes(v as View) ? v as View : "profit"; });
   const cash = funding?.cashFlow ?? funding?.yearToDate ?? null;
   const valuationShown = !!valuation && valuation.availability !== "hidden";
+  // The page opens on the valuation when a report is published for it; otherwise (hidden, preparing, failed) on the
+  // income statement. The opening read settles before the map mounts, so the default is known at first paint.
+  const homeView: View = valuationShown && valuation?.report ? "valuation" : "profit";
+  const [chosenView, setView] = useState<View>(() => {
+    const params = new URLSearchParams(location.search), v = params.get("view");
+    if (VIEWS.includes(v as View)) return v as View;
+    // A link to a business, finding, flag, report or event reads on the statements.
+    return ["business", "finding", "check", "event", "report", "metric"].some(k => params.has(k)) ? "profit" : homeView;
+  });
   const view: View = chosenView === "valuation" && valuationShown ? "valuation" : chosenView === "cash" && cash ? "cash" : chosenView === "balance" && funding?.balanceSheet ? "balance" : "profit";
   // The statement the figures, flags and metrics under the valuation refer to: the one the reader comes back to.
   const statementView: StatementView = view === "valuation" ? "profit" : view;
-  // The company's headline figures for the report and view, as the findings run picked them; too few verified keeps the fixed tiles.
-  const highlights = useMemo(() => quarter ? highlightsFor(findings, data, quarter.periodEnd, statementView, locale) : null, [findings, data, quarter, statementView, locale]);
+  // The company's headline figures for the report and view, as the findings run picked them with any bad news the picks left out; too few verified keeps the fixed tiles.
+  const highlights = useMemo(() => quarter ? heroTiles(findings, data, quarter.periodEnd, statementView, locale) : null, [findings, data, quarter, statementView, locale]);
   // What the analysis says about the view on the stage: its tripped rules under the tiles, its metrics under the chart.
   const shownFlags = useMemo(() => viewFlags(flags, statementView), [flags, statementView]);
   const shownMetrics = useMemo(() => viewMetrics(assessment, statementView, flagged), [assessment, statementView, flagged]);
@@ -427,11 +441,11 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
     if (metric) url.searchParams.set("metric", metric.key); else url.searchParams.delete("metric");
     if (detail) url.searchParams.set("detail", ""); else url.searchParams.delete("detail");
     if (focusedCheck) url.searchParams.set("check", focusedCheck.id); else url.searchParams.delete("check");
-    if (view !== "profit") url.searchParams.set("view", view); else url.searchParams.delete("view");
+    if (view !== homeView) url.searchParams.set("view", view); else url.searchParams.delete("view");
     const next = withEventFilter(url.search, eventFilter);
     const written = new URL(url.pathname + next + url.hash, url.origin);
     if (written.href !== location.href) history.replaceState(history.state, "", written);
-  }, [current, focused, focusedEvent, focusedReport, metric, detail, focusedCheck, view, eventFilter]);
+  }, [current, focused, focusedEvent, focusedReport, metric, detail, focusedCheck, view, homeView, eventFilter]);
   useEffect(() => {
     onView?.({ periodEnd: quarter?.periodEnd ?? null, view, business: current?.id ?? null, finding: focused?.id ?? null, check: focusedCheck?.id ?? null, event: focusedEvent?.id ?? null, report: focusedReport?.accessionNumber ?? null, metric: metric?.key ?? null });
   }, [onView, quarter?.periodEnd, view, current?.id, focused?.id, focusedCheck?.id, focusedEvent?.id, focusedReport?.accessionNumber, metric?.key]);
@@ -609,30 +623,29 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
   const itemChange = current && quarter ? compareRevenueNode(quarter, previous, current.key) : none();
   const parent = current?.parent ? items.find(item => item.key === current.parent) : null;
   const topLevel = items.filter(i => !i.parent).length;
-  // The header's issuer line: the fiscal year end, and the filer context the data shows.
   const narrow = useMedia("(max-width: 640px)");
-  // The issuer as the page resolved it, its line redone for the quarter on the stage: switching quarters updates the fiscal note.
+  // The issuer as the page resolved it, its filer line (a 20-F, a reporting currency) redone for the quarter on the stage.
   const company = useMemo((): CompanyIdentity => {
     const base = companyProp ?? companyIdentity({ locale, explainerName: explainer?.companyName, treeName: tree?.companyName, flow, filings, events });
-    return { ...base, ...issuerHeader({ base, quarter, filings, events }, locale) };
+    return { ...base, ...issuerHeader({ base, quarter, filings, events }) };
   }, [companyProp, locale, explainer, tree, flow, filings, events, quarter]);
-  const fiscalMonth = company.fiscalYearEndMonth;
-  const companySub = [company.fiscalLabel, company.filingLabel].filter((t): t is string => !!t);
   // On narrow screens the statement scrolls sideways inside the chart: an edge fade and a swipe hint say there is more.
   const chartRef = useRef<HTMLDivElement>(null);
   const chartScroll = useSideScroll(chartRef, `${quarter?.id}:${view}:${detail}:${current?.key}`);
 
-  // The statement views, and the valuation when the admin shows it: the tab row stands even where the company has no capital views yet.
+  // The valuation first when the admin shows it, then the statement views: the tab row stands even where the company has no capital views yet.
   const viewToggle = (!!funding && !!(cash || funding.balanceSheet) || valuationShown) && <ToggleGroup type="single" variant="unstyled" rovingFocus={false} value={view} onValueChange={next => { if (next && next !== view) pickView(next as View); }} asChild>
     <span className="trend-views stage-views" role="radiogroup" aria-label={m.financialView}>
+      {valuationShown && <ToggleGroupItem value="valuation" role="radio" aria-checked={view === "valuation"}>{VIEW_LABEL.valuation}</ToggleGroupItem>}
       <ToggleGroupItem value="profit" role="radio" aria-checked={view === "profit"}>{VIEW_LABEL.profit}</ToggleGroupItem>
       {cash && <ToggleGroupItem value="cash" role="radio" aria-checked={view === "cash"}>{VIEW_LABEL.cash}</ToggleGroupItem>}
       {funding?.balanceSheet && <ToggleGroupItem value="balance" role="radio" aria-checked={view === "balance"}>{VIEW_LABEL.balance}</ToggleGroupItem>}
-      {valuationShown && <ToggleGroupItem value="valuation" role="radio" aria-checked={view === "valuation"}>{VIEW_LABEL.valuation}</ToggleGroupItem>}
     </span>
   </ToggleGroup>;
+  // A lens (finding, flag, report, event) or the stage agent holds the whole stage; otherwise the tab row heads it.
+  const lensUp = !!stageOverride || !!(focusedCheck && assessment) || !!(focused && findings) || !!focusedReport || !!(focusedEvent && events);
   return <div className="map">
-    <Rail ticker={ticker} actions={tools} label={m.companyBusinesses} expanded={openSection != null} company={companySub.length > 0 ? { sub: companySub, note: company.fiscalNote } : null}>
+    <Rail ticker={ticker} actions={tools} label={m.companyBusinesses} expanded={openSection != null} company={company.filingLabel ? { sub: company.filingLabel } : null}>
       <RailSection name="business" title={m.businesses} expandable={businessExpandable} focused={current != null} drawer expanded={businessOpen} onExpand={toggleBusiness}>
         <div className="rail-list section-body" id="rail-business" role="listbox" aria-label={m.businesses} ref={listRef} onKeyDown={onListKey} onMouseLeave={() => setPreview(null)}>
           {/* All businesses heads the drawer: it shows the whole company, and with nothing else picked a click unfolds or folds the list. */}
@@ -676,6 +689,8 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
 
     <section className="stage" id="company-stage" tabIndex={-1} data-focus={focused && findings || focusedCheck || focusedReport || focusedEvent && events ? "lens" : undefined} data-view={view} data-trend={view !== "valuation" && (hasRevenueTrend || metricGroups.length) ? "" : undefined} data-finding={focused?.kind} data-timeline={view !== "valuation" && points.length ? "" : undefined}
       aria-label={focused ? m.findingStage(ticker, focused.title) : focusedReport ? m.filingStage(ticker, reportTitle(focusedReport, ticker)) : focusedEvent ? m.filingStage(ticker, eventTitle(focusedEvent)) : m.flowStage(ticker)} data-agent={stageOverride ? "" : undefined}>
+      {/* One tab row for every view, always in this slot: switching views changes its pressed tab, never remounts it, and it stays pinned while the stage scrolls. */}
+      {!lensUp && <div className="stage-tabs">{viewToggle}</div>}
       {stageOverride ? stageOverride : focusedCheck && assessment ? <div className="lens-stage">
         <MetricLens metric={focusedCheck} flags={flags.filter(f => f.metricId === focusedCheck.id)} rank={ranks[focusedCheck.id] ?? null} data={data} findings={verified} sources={checkupSources(data, focusedCheck.evidence.periodEnd)}
           bridge={assessment.bridge} chain={assessment.chain} onClose={() => focusCheck(null)} onFinding={id => focusFinding(id)}
@@ -694,27 +709,23 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
           snapshot={focusedReport.snapshot ? { reportDate: focusedReport.snapshot.reportDate, reportVersion: focusedReport.snapshot.reportVersion } : null} onClose={() => setReader(false)} /></Suspense>}</div>
       : focusedEvent && events ? <div className="lens-stage"><EventLens event={focusedEvent} publication={events} ticker={ticker} data={data} updates={updates} nodeColor={nodeColor} index={railIndex} count={railList.length}
         onStep={delta => { const next = railList[railIndex + delta]; if (next) focusItem(next); }} onClose={() => focusEvent(null)} /></div>
-      : view === "valuation" && valuation ? <>
-      <header className="stage-head stage-head--summary"><div className="stage-controls">{viewToggle}</div></header>
-      <div className="lens-stage"><ValuationPanel ticker={ticker} valuation={valuation} /></div>
-      </>
+      : view === "valuation" && valuation ? <div className="lens-stage"><ValuationPanel ticker={ticker} valuation={valuation} /></div>
       : <>
       <header className="stage-head stage-head--summary" data-tour="stats">
-        {quarter && <div className="stage-kicker"><PeriodMark variant="pill" ticker={ticker} periodEnd={quarter.periodEnd} periodStart={quarter.periodStart} fiscalYear={quarter.fiscalYear} fiscalQuarter={quarter.fiscalQuarter} fiscalYearEndMonth={fiscalMonth} labelSource={quarter.labelSource} /></div>}
         {quarter && (view === "cash" || view === "balance") && funding ? <CapitalStats view={view} funding={funding} tiles={highlights} flags={flags} />
           // Phones always lead with the four statement figures in their two-by-two grid; wider screens show the report's picked tiles.
           : quarter && !current && highlights && !(narrow && view === "profit") ? <HighlightStats tiles={highlights} flags={flags} />
           : quarter && <div className="stats" aria-live="polite">
           {current && current.value != null ? <>
-            <Stat label={m.revenueThisQuarter} value={current.value} format={money} note={`${word.change} ${itemChange.label}`} tone={itemChange.trend ?? undefined} />
+            <Stat label={m.revenueThisQuarter} value={current.value} format={money} note={`${word.change} ${itemChange.label}`} tone={trendTone(itemChange.trend)} />
             <Stat label={shareLabel} value={segmentRevenue ? current.value / segmentRevenue * 100 : null} format={percent} note={parent?.value ? m.ofParent(percent(current.value / parent.value * 100), parent.name) : m.topLevel} />
-            <Stat label={m.companyRevenue} value={revenue} format={money} />
+            <Stat label={m.companyRevenue} value={revenue} format={money} note={`${word.change} ${change("revenue").label}`} tone={trendTone(change("revenue").trend)} />
           </> : coreSlots(figure, { hideGross: quarter.incomeModel === "direct_operating" }).map(slot => {
             const label = slot.key === "revenue" ? m.totalRevenue : slot.key === "net" ? graph?.deficit ? m.netLoss : m.net : m[slot.key];
             // Narrow screens keep all four cells of the grid; a figure the statement does not carry says why (wide screens hide it).
             if (slot.missing) return <MissingStat key={slot.key} label={label} reason={slot.missing === "model" ? m.notApplicable : m.notInFiling} />;
             const note = slot.key === "revenue" ? `${word.change} ${change("revenue").label}` : slot.key === "net" && coverage != null ? `${margin("net")} · ${m.coverage(percent(coverage * 100))}` : margin(slot.metric);
-            return <Stat key={slot.key} label={label} value={slot.value} format={money} note={note} tone={slot.key === "revenue" ? change("revenue").trend ?? undefined : undefined} level={figureLevel(flags, { metric: slot.metric })} />;
+            return <Stat key={slot.key} label={label} value={slot.value} format={money} note={note} tone={trendTone(change(slot.metric).trend)} level={figureLevel(flags, { metric: slot.metric })} />;
           })}
         </div>}
         <div className="stage-controls">
@@ -730,7 +741,6 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
             <ToggleGroupItem value="detail" role="radio" aria-checked={detail}>{m.detail}</ToggleGroupItem>
           </span>
         </ToggleGroup>}
-        {viewToggle}
         </div>
         {!current && <ViewFlags flags={shownFlags} metrics={assessedMetrics} noted={noted} focus={null} onOpen={id => focusCheck(id)} onHover={setHoverFlag} />}
       </header>
@@ -797,7 +807,7 @@ const cashPeriod = (funding: CapitalQuarter) => funding.cashFlow ? m.thisQuarter
 const pct = (v: number | null) => v == null || !Number.isFinite(v) ? "—" : `${Math.round(v * 100)}%`;
 
 type PoolView = Exclude<StatementView, "profit">;
-function CapitalStats({ view, funding, tiles, flags }: { view: PoolView; funding: CapitalQuarter; tiles: VerifiedHighlight[] | null; flags: Flag[] }) {
+function CapitalStats({ view, funding, tiles, flags }: { view: PoolView; funding: CapitalQuarter; tiles: HeroTile[] | null; flags: Flag[] }) {
   if (tiles) return <HighlightStats tiles={tiles} flags={flags} />;
   const level = (capital: string) => figureLevel(flags, { capital });
   const money = capitalMoney(funding);
@@ -808,13 +818,13 @@ function CapitalStats({ view, funding, tiles, flags }: { view: PoolView; funding
       <Stat label={m.debt} value={b2.debt} format={money} note={m.leverage(pct(b2.leverage))} level={level("debt")} />
       {b2.customer > 0 ? <Stat label={m.customer} value={b2.customer} format={money} note={m.ofAssets(pct(b2.customer / b2.assets))} />
         : <Stat label={m.cash} value={b.assets.filter(l => l.group === "cash").reduce((s, l) => s + Number(l.value), 0)} format={money} level={level("cash")} />}
-      <Stat label={m.equity} value={b2.equity} format={money} note={b2.deficit > 0 ? m.paidIn(money(b2.paidIn), money(b2.deficit)) : m.ofAssets(pct(b2.equity / b2.assets))} tone={b2.equity < 0 ? "down" : undefined} level={level("equity")} />
+      <Stat label={m.equity} value={b2.equity} format={money} note={b2.deficit > 0 ? m.paidIn(money(b2.paidIn), money(b2.deficit)) : m.ofAssets(pct(b2.equity / b2.assets))} tone={b2.equity < 0 ? "bad" : undefined} level={level("equity")} />
     </div>;
   }
   const c = cashOf(funding), k = cashMetrics(c), period = cashPeriod(funding);
   const outside = [k.debtNet != null ? m.netBorrowing(money(k.debtNet)) : null, k.equityIssued ? m.sharesIssued(money(k.equityIssued)) : null].filter(Boolean).join(" · ");
   return <div className="stats" aria-live="polite">
-    <Stat label={m.operatingCash(period)} value={k.operating} format={money} note={k.selfFunding == null ? undefined : m.capexCoverage(k.selfFunding >= 2 ? multiple(k.selfFunding.toFixed(1), getLocale()) : pct(k.selfFunding))} tone={k.operating < 0 ? "down" : undefined} level={level("operatingCashFlow")} />
+    <Stat label={m.operatingCash(period)} value={k.operating} format={money} note={k.selfFunding == null ? undefined : m.capexCoverage(k.selfFunding >= 2 ? multiple(k.selfFunding.toFixed(1), getLocale()) : pct(k.selfFunding))} tone={k.operating < 0 ? "bad" : undefined} level={level("operatingCashFlow")} />
     {k.capex != null && <Stat label={m.capex} value={k.capex} format={money} note={k.free != null ? m.free(money(k.free)) : undefined} level={level("capex") ?? level("freeCashFlow")} />}
     <Stat label={m.financing} value={k.financing} format={money} note={outside || undefined} level={level("debtIssued") ?? level("financing")} />
     <Stat label={m.cashChange} value={Number(c.netChange)} format={money} note={funding.balanceSheet ? m.endingCash(money(funding.balanceSheet.assets.filter(l => l.group === "cash").reduce((s, l) => s + Number(l.value), 0))) : undefined} />

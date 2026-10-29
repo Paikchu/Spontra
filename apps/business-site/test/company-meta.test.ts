@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { setLocale } from "../../../packages/web/src/i18n/core.ts";
-import { companyIdentity, coreSlots, filerContext, fiscalExplanation, fiscalYearEndText, issuerHeader } from "../src/company-meta.ts";
+import { companyIdentity, coreSlots, filerContext, issuerHeader } from "../src/company-meta.ts";
 import type { BusinessFlowQuarter } from "../../../shared/analysis-contract/business-flow.ts";
 import { sideScroll } from "../src/side-scroll.ts";
 import type { FlowMetric } from "../../../shared/analysis-contract/business-flow.ts";
@@ -23,28 +23,6 @@ test("U22: the header's name comes from data, the Chinese name first on the Chin
   assert.deepEqual(who({ locale: "en" }), { name: null, fullName: null, fiscalYearEndMonth: null });
 });
 
-test("U22: the fiscal year end reads in both languages", () => {
-  setLocale("zh-CN");
-  assert.equal(fiscalYearEndText(12), "财年截至 12 月");
-  assert.equal(fiscalYearEndText(1), "财年截至 1 月");
-  assert.equal(fiscalYearEndText(null), null);
-  setLocale("en");
-  assert.equal(fiscalYearEndText(12), "FY ends Dec");
-  assert.equal(fiscalYearEndText(9), "FY ends Sep");
-});
-
-test("U22: a fiscal year that does not end in December explains the quarter's fiscal year; a calendar year does not", () => {
-  setLocale("zh-CN");
-  assert.equal(fiscalExplanation({ periodEnd: "2026-07-26", fiscalYearEndMonth: 1 }, "zh-CN"), "该公司财年截至每年 1 月，所以 2026.07.26 结束的季度是 2027 财年 Q2");
-  assert.equal(fiscalExplanation({ periodEnd: "2026-06-27", fiscalYearEndMonth: 9 }, "zh-CN"), "该公司财年截至每年 9 月，所以 2026.06.27 结束的季度是 2026 财年 Q3");
-  assert.equal(fiscalExplanation({ periodEnd: "2026-06-30", fiscalYearEndMonth: 12 }, "zh-CN"), null);
-  assert.equal(fiscalExplanation({ periodEnd: "2026-06-30", fiscalYearEndMonth: null }, "zh-CN"), null);
-  setLocale("en");
-  assert.equal(fiscalExplanation({ periodEnd: "2026-08-31", fiscalYearEndMonth: 5 }, "en"), "Fiscal year ends in May, so the quarter ended Aug 31, 2026 is FY2027 Q1");
-  // A stamped fiscal period wins over the derived one.
-  assert.equal(fiscalExplanation({ periodEnd: "2026-03-31", fiscalYearEndMonth: 6, fiscalYear: 2026, fiscalQuarter: 3, labelSource: "xbrl" }, "en"), "Fiscal year ends in June, so the quarter ended Mar 31, 2026 is FY2026 Q3");
-});
-
 test("U22: the filer context names a foreign issuer's form and a reporting currency other than dollars", () => {
   setLocale("en");
   assert.deepEqual(filerContext({ currency: "USD", forms: ["10-Q", "8-K"] }), []);
@@ -59,7 +37,7 @@ test("U22: the identity carries the latest quarter's issuer line from the flow a
   setLocale("zh-CN");
   const flow = { quarters: [q("2026-03-31", { currency: "TWD" }), q("2026-06-30", { currency: "TWD", fiscalYearEndMonth: 12 })] };
   const identity = companyIdentity({ locale: "zh-CN", issuer: { name: "Example Holdings" }, flow, filings: { filings: [{ form: "6-K" }, { form: "20-F" }] } });
-  assert.deepEqual(identity, { name: "Example Holdings", fullName: "Example Holdings", fiscalYearEndMonth: 12, annualForm: null, fiscalLabel: "财年截至 12 月", filingLabel: "20-F · 报告货币：新台币", fiscalNote: null });
+  assert.deepEqual(identity, { name: "Example Holdings", fullName: "Example Holdings", fiscalYearEndMonth: 12, annualForm: null, filingLabel: "20-F · 报告货币：新台币" });
 });
 
 test("U22: with no filing collected yet, the issuer's annual form still names a foreign issuer", () => {
@@ -67,9 +45,8 @@ test("U22: with no filing collected yet, the issuer's annual form still names a 
   // As production serves a 20-F filer whose filings are not collected: the flow in its currency, an empty filings feed.
   const flow = { quarters: [q("2026-06-30", { currency: "TWD" })] };
   const identity = companyIdentity({ locale: "zh-CN", issuer: { name: "Example Semiconductor", fiscalYearEndMonth: 12, annualForm: "20-F" }, flow, filings: null });
-  assert.equal(identity.fiscalLabel, "财年截至 12 月");
   assert.equal(identity.filingLabel, "20-F · 报告货币：新台币");
-  assert.equal(issuerHeader({ base: identity, quarter: flow.quarters[0] }, "zh-CN").filingLabel, "20-F · 报告货币：新台币");
+  assert.equal(issuerHeader({ base: identity, quarter: flow.quarters[0] }).filingLabel, "20-F · 报告货币：新台币");
   // A domestic filer's 10-K adds nothing.
   assert.equal(companyIdentity({ locale: "zh-CN", issuer: { annualForm: "10-K" }, flow: { quarters: [q("2026-06-30")] } }).filingLabel, null);
 });
@@ -81,20 +58,18 @@ test("U22: with neither filings nor an annual form, the filed events' 6-K names 
   const events = { events: [{ form: "4" }, { form: "6-K" }, { form: "6-K/A" }] };
   const identity = companyIdentity({ locale: "zh-CN", issuer: { name: "Example Semiconductor" }, flow, filings: null, events });
   assert.equal(identity.filingLabel, "20-F · 报告货币：新台币");
-  assert.equal(issuerHeader({ base: identity, quarter: flow.quarters[0], events }, "zh-CN").filingLabel, "20-F · 报告货币：新台币");
+  assert.equal(issuerHeader({ base: identity, quarter: flow.quarters[0], events }).filingLabel, "20-F · 报告货币：新台币");
   // A domestic filer's 8-K and Form 4 events add nothing.
   assert.equal(companyIdentity({ locale: "zh-CN", flow: { quarters: [q("2026-06-30")] }, events: { events: [{ form: "8-K" }, { form: "4" }] } }).filingLabel, null);
 });
 
-test("U22: the issuer line follows the quarter shown: its fiscal note changes with the quarter", () => {
+test("U25: the issuer line follows the quarter shown and carries no fiscal year end", () => {
   setLocale("zh-CN");
-  const base = { fiscalYearEndMonth: 1, fiscalLabel: "财年截至 1 月", filingLabel: null, fiscalNote: "stale" };
-  assert.equal(issuerHeader({ base, quarter: q("2026-07-26") }, "zh-CN").fiscalNote, "该公司财年截至每年 1 月，所以 2026.07.26 结束的季度是 2027 财年 Q2");
-  assert.equal(issuerHeader({ base, quarter: q("2026-04-26") }, "zh-CN").fiscalNote, "该公司财年截至每年 1 月，所以 2026.04.26 结束的季度是 2027 财年 Q1");
-  // The quarter's own fiscal calendar wins; without a quarter the base's line stands.
-  assert.equal(issuerHeader({ base, quarter: q("2026-06-30", { fiscalYearEndMonth: 12, currency: "EUR" }) }, "zh-CN").fiscalNote, null);
-  assert.deepEqual(issuerHeader({ base, quarter: q("2026-06-30", { fiscalYearEndMonth: 12, currency: "EUR" }) }, "zh-CN"), { fiscalYearEndMonth: 12, fiscalLabel: "财年截至 12 月", filingLabel: "报告货币：欧元", fiscalNote: null });
-  assert.deepEqual(issuerHeader({ base }, "zh-CN"), { fiscalYearEndMonth: 1, fiscalLabel: "财年截至 1 月", filingLabel: null, fiscalNote: "stale" });
+  const base = { fiscalYearEndMonth: 1, filingLabel: "20-F" };
+  // The quarter's own currency and calendar win; without a quarter the base's line stands.
+  assert.deepEqual(issuerHeader({ base, quarter: q("2026-06-30", { fiscalYearEndMonth: 12, currency: "EUR" }) }), { fiscalYearEndMonth: 12, filingLabel: "报告货币：欧元" });
+  assert.deepEqual(issuerHeader({ base, quarter: q("2026-07-26") }), { fiscalYearEndMonth: 1, filingLabel: null });
+  assert.deepEqual(issuerHeader({ base }), { fiscalYearEndMonth: 1, filingLabel: "20-F" });
 });
 
 const figures = (values: Partial<Record<FlowMetric, number>>) => (key: FlowMetric) => values[key] ?? null;
