@@ -1,18 +1,20 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/packages/web/src/ui/button";
-import { getLocale, labels, messages, useLocale } from "@/packages/web/src/i18n";
+import { labels, messages, useLocale } from "@/packages/web/src/i18n";
 import { SourceLanguage, langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import { compactMoney, compactShares, perShare } from "@/shared/analysis-runtime/locale";
-import { DIMENSION_WEIGHTS, VALUATION_DIMENSIONS, type ValuationDimension, type ValuationDimensionKey, type ValuationEvidence, type ValuationPublication, type ValuationResponse } from "@/shared/analysis-contract/valuation";
+import { DIMENSION_WEIGHTS, type ValuationEvidence, type ValuationPublication, type ValuationResponse } from "@/shared/analysis-contract/valuation";
 import { fetchValuationVersion } from "./company-data";
 import { track } from "./track";
+import { citationOrder, leadSentence, pathLeaf, proseBlocks, proseParts } from "./valuation-prose";
 import "./valuation.css";
 
 /**
  * The valuation assessment on the company stage (docs/valuation-assessment-implementation.md §9): the verdict and score, the
- * five dimensions as a radar and a list, the three-scenario range against the reference close, the model's inputs and
- * sensitivities, the written case, and the sources, each opening the snapshot the report was written from. Every number
- * shown was calculated or read by Spontra Analysis; the page only lays them out.
+ * three-scenario range against the reference close, the five dimensions each with its score and the sentence behind it, the
+ * written case (its thesis folded under the summary), the model's inputs and sensitivities, and the sources as numbered
+ * footnotes, each opening the snapshot the report was written from. Every number shown was calculated or read by Spontra
+ * Analysis; the page only lays them out.
  */
 const m = messages({
   title: "Valuation assessment", 
@@ -22,7 +24,8 @@ const m = messages({
   failed: "The last assessment did not complete", failedNote: "A new attempt starts when the company's material changes or the assessment is requested again.",
   insufficient: "Not enough material for a complete assessment", insufficientNote: "The parts that could be established are shown; the gaps below say what is missing.",
   updating: "A newer assessment is in progress", updateFailed: "The latest attempt did not complete; this report stands",
-  dimensions: "Five dimensions", weight: (value: string) => `Weight ${value}`, radarNote: "The radar needs all five scores",
+  dimensions: "Five dimensions", weight: (value: string) => `Weight ${value}`, composite: (score: string) => `Composite ${score} of 10`, citedAs: (n: string) => `Source ${n}`,
+  readThesis: "Read the full thesis", hideThesis: "Hide the full thesis",
   
   range: "Value per share", bear: "Bear", base: "Base", bull: "Bull", expected: "Expected", price: "Reference close", priceDate: (date: string) => `Close of ${date}`,
   marginOfSafety: "Margin of safety", baseUpside: "To base value", expectedUpside: "To expected value", downside: "Bear case vs. price", noQuote: "No usable reference close",
@@ -43,7 +46,8 @@ const m = messages({
   failed: "上一次评估未完成", failedNote: "公司材料更新或再次请求评估时会开始新的尝试。",
   insufficient: "材料不足，评估尚不完整", insufficientNote: "已能确认的部分照常展示；下方缺口说明还缺什么。",
   updating: "新的评估正在进行", updateFailed: "最近一次尝试未完成，当前报告继续有效",
-  dimensions: "五个维度", weight: (value: string) => `权重 ${value}`, radarNote: "五维齐全时才绘制雷达图",
+  dimensions: "五个维度", weight: (value: string) => `权重 ${value}`, composite: (score: string) => `综合 ${score} 分，满分 10 分`, citedAs: (n: string) => `来源 ${n}`,
+  readThesis: "展开完整论证", hideThesis: "收起完整论证",
  
   range: "每股价值", bear: "悲观", base: "基准", bull: "乐观", expected: "期望", price: "参考收盘价", priceDate: (date: string) => `${date} 收盘`,
   marginOfSafety: "安全边际", baseUpside: "至基准价值", expectedUpside: "至期望价值", downside: "悲观情景相对现价", noQuote: "无可用参考收盘价",
@@ -68,48 +72,48 @@ const DIAG = labels({ revenueGrowthTtm: "Revenue growth (TTM)", roic: "ROIC", ac
 const pct = (v: number | null | undefined, digits = 1) => v == null || !Number.isFinite(v) ? "—" : `${v >= 0 ? "" : "−"}${(Math.abs(v) * 100).toFixed(digits)}%`;
 const signedPct = (v: number | null | undefined) => v == null || !Number.isFinite(v) ? "—" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${(Math.abs(v) * 100).toFixed(1)}%`;
 const day = (iso: string) => iso.slice(0, 10);
-/** Evidence ids as the report cites them: in brackets, in parentheses or bare. */
-const CITE = /[[(]?\b(e[0-9a-f]{10})\b[\])]?/g;
+/** A figure the model produced; one it could not is left out rather than shown as a dash. */
+const has = (v: number | null | undefined): v is number => v != null && Number.isFinite(v);
 const verdictTone = { supported: "up", not_supported: "loss", pending: "neutral" } as const;
+const isEvidenceId = (id: string) => /^e[0-9a-f]{10}$/.test(id);
 
-/** Generated prose with its evidence citations turned into source chips. */
+/** Footnote numbers and source names for the evidence the report cites, in reading order. */
+type Footnotes = { order: Map<string, number>; names: Map<string, string> };
+const FootnotesContext = createContext<Footnotes>({ order: new Map(), names: new Map() });
+
+function sourceName(e: ValuationEvidence): string {
+  const leaf = pathLeaf(e.path);
+  return leaf && leaf !== e.title ? `${e.title} · ${leaf}` : e.title;
+}
+
+/** One or more citations as superscript footnote numbers; each opens its source's snapshot. */
+function Cites({ ids, onCite, counter }: { ids: string[]; onCite: (id: string) => void; counter?: boolean }) {
+  const { order, names } = useContext(FootnotesContext);
+  return <sup className={`val-refs${counter ? " val-refs--counter" : ""}`}>
+    {ids.map((id, i) => {
+      const n = order.get(id);
+      return <Fragment key={`${id}-${i}`}>{i > 0 && ","}<Button variant="unstyled" type="button" className="val-ref" title={names.get(id)} aria-label={m.citedAs(String(n ?? "?"))} onClick={() => onCite(id)}>{n ?? "?"}</Button></Fragment>;
+    })}
+  </sup>;
+}
+
+/** Generated prose with its evidence citations turned into footnote numbers. */
 function Prose({ text, onCite, as: Tag = "p" }: { text: string; onCite: (id: string) => void; as?: "p" | "li" }) {
-  const parts: ReactNode[] = [];
-  let last = 0;
-  for (const match of text.matchAll(CITE)) {
-    const at = match.index ?? 0;
-    if (at > last) parts.push(text.slice(last, at));
-    const id = match[1]!;
-    parts.push(<Button key={`${id}-${at}`} variant="unstyled" type="button" className="val-cite" onClick={() => onCite(id)} aria-label={`${m.source} ${id}`}>{id.slice(1, 5)}</Button>);
-    last = at + match[0].length;
-  }
-  if (last < text.length) parts.push(text.slice(last));
-  return <Tag lang={langOf(text)}>{parts}</Tag>;
+  return <Tag lang={langOf(text)}>{proseParts(text).map((part, i) => part.kind === "text" ? part.text : <Cites key={i} ids={part.ids} onCite={onCite} />)}</Tag>;
 }
 
-/** A citation: registered evidence opens its snapshot; a fact or diagnostic id is named in full. */
+/** A long section: paragraphs, with the report's run-in capitalised headings lifted out as headings. */
+function ProseBlocks({ text, onCite }: { text: string; onCite: (id: string) => void }) {
+  return <>{proseBlocks(text).map((block, i) => <Fragment key={i}>
+    {block.heading && <h5 className="val-runhead" lang={langOf(block.heading)}>{block.heading}</h5>}
+    {block.text && <Prose text={block.text} onCite={onCite} />}
+  </Fragment>)}</>;
+}
+
+/** A listed citation: registered evidence is a footnote; a fact or diagnostic id is named in full. */
 function Cite({ id, counter, onCite }: { id: string; counter?: boolean; onCite: (id: string) => void }) {
-  if (!/^e[0-9a-f]{10}$/.test(id)) return <code className="val-fact-ref">{id}</code>;
-  return <Button variant="unstyled" type="button" className={`val-cite${counter ? " val-cite--counter" : ""}`} onClick={() => onCite(id)} aria-label={`${m.source} ${id}`}>{id.slice(1, 5)}</Button>;
-}
-
-function Radar({ dimensions }: { dimensions: ValuationDimension[] }) {
-  const complete = dimensions.every(d => d.score != null);
-  // Labels sit outside the outer ring, so the box is wider than the figure: the side labels need their own room.
-  const n = VALUATION_DIMENSIONS.length, width = 420, height = 236, cx = width / 2, cy = 118, r = 80;
-  const point = (i: number, value: number) => { const a = -Math.PI / 2 + i * 2 * Math.PI / n; return [cx + Math.cos(a) * r * value, cy + Math.sin(a) * r * value] as const; };
-  const ring = (value: number) => VALUATION_DIMENSIONS.map((_, i) => point(i, value).join(",")).join(" ");
-  const shape = complete ? VALUATION_DIMENSIONS.map((key, i) => point(i, (dimensions.find(d => d.key === key)!.score ?? 0) / 10).join(",")).join(" ") : null;
-  return <figure className="val-radar" aria-label={m.dimensions}>
-    <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-hidden={!complete}>
-      {[0.25, 0.5, 0.75, 1].map(v => <polygon key={v} className="val-radar-ring" points={ring(v)} />)}
-      {VALUATION_DIMENSIONS.map((_, i) => { const [x, y] = point(i, 1); return <line key={i} className="val-radar-axis" x1={cx} y1={cy} x2={x} y2={y} />; })}
-      {shape && <polygon className="val-radar-shape" points={shape} />}
-      {shape && VALUATION_DIMENSIONS.map((key, i) => { const [x, y] = point(i, (dimensions.find(d => d.key === key)!.score ?? 0) / 10); return <circle key={key} className="val-radar-dot" cx={x} cy={y} r={3} />; })}
-      {VALUATION_DIMENSIONS.map((key, i) => { const [x, y] = point(i, 1.18); return <text key={key} className="val-radar-label" x={x} y={y} textAnchor={Math.abs(x - cx) < 12 ? "middle" : x < cx ? "end" : "start"} dominantBaseline="middle">{DIM[key]}</text>; })}
-    </svg>
-    {!complete && <figcaption>{m.radarNote}</figcaption>}
-  </figure>;
+  if (!isEvidenceId(id)) return <code className="val-fact-ref">{id}</code>;
+  return <Cites ids={[id]} counter={counter} onCite={onCite} />;
 }
 
 function RangeBar({ report }: { report: ValuationPublication }) {
@@ -186,30 +190,45 @@ function Model({ report, onCite }: { report: ValuationPublication; onCite: (id: 
   </section>;
 }
 
+/** The five dimensions, each a row that says its score and why in one line, opening to the full rationale. */
 function Dimensions({ report, onCite }: { report: ValuationPublication; onCite: (id: string) => void }) {
   return <section className="val-block">
     <h3>{m.dimensions}</h3>
-    {report.dimensions.map(d => <article key={d.key} className="val-dim">
-      <header><h4>{DIM[d.key]}</h4><span className="val-dim-score">{d.score != null ? d.score.toFixed(1) : m.unscored}</span><small>{m.confidence} {CONF[d.confidence]} · {m.weight(pct(DIMENSION_WEIGHTS[d.key], 0))}</small></header>
-      <Prose text={d.rationale} onCite={onCite} />
-      <p className="val-chips">
-        {d.supportingEvidenceIds.length > 0 && <span><b>{m.evidence}</b> {d.supportingEvidenceIds.map(id => <Cite key={id} id={id} onCite={onCite} />)}</span>}
-        {d.counterEvidenceIds.length > 0 && <span><b>{m.counter}</b> {d.counterEvidenceIds.map(id => <Cite key={id} id={id} counter onCite={onCite} />)}</span>}
-      </p>
-      {d.gaps.length > 0 && <p className="val-list-line"><b>{m.gaps}</b> {d.gaps.map((g, i) => <span key={i} lang={langOf(g)}>{g}{i < d.gaps.length - 1 ? "; " : ""}</span>)}</p>}
-      <p className="val-list-line"><b>{m.nextCheck}</b> <span lang={langOf(d.nextCheck)}>{d.nextCheck}</span></p>
-    </article>)}
+    <ol className="val-dims">
+      {report.dimensions.map(d => <li key={d.key} className="val-dim">
+        <details>
+          <summary>
+            <span className="val-dim-name">{DIM[d.key]}</span>
+            <strong className="val-dim-score">{d.score != null ? d.score.toFixed(1) : "—"}</strong>
+            <i className="val-dim-bar" aria-hidden="true"><b style={{ width: `${(d.score ?? 0) * 10}%` }} /></i>
+            <span className="val-dim-lead"><span lang={langOf(d.rationale)}>{leadSentence(d.rationale)}</span>{d.confidence !== "medium" && <small> · {m.confidence} {CONF[d.confidence]}</small>}</span>
+          </summary>
+          <div className="val-dim-body">
+            <Prose text={d.rationale} onCite={onCite} />
+            <p className="val-chips">
+              {d.supportingEvidenceIds.length > 0 && <span><b>{m.evidence}</b> {d.supportingEvidenceIds.map(id => <Cite key={id} id={id} onCite={onCite} />)}</span>}
+              {d.counterEvidenceIds.length > 0 && <span><b>{m.counter}</b> {d.counterEvidenceIds.map(id => <Cite key={id} id={id} counter onCite={onCite} />)}</span>}
+              <span><b>{m.confidence}</b> {CONF[d.confidence]} · {m.weight(pct(DIMENSION_WEIGHTS[d.key], 0))}</span>
+            </p>
+            {d.gaps.length > 0 && <p className="val-list-line"><b>{m.gaps}</b> {d.gaps.map((g, i) => <span key={i} lang={langOf(g)}>{g}{i < d.gaps.length - 1 ? "; " : ""}</span>)}</p>}
+            <p className="val-list-line"><b>{m.nextCheck}</b> <span lang={langOf(d.nextCheck)}>{d.nextCheck}</span></p>
+          </div>
+        </details>
+      </li>)}
+    </ol>
   </section>;
 }
 
 function Sources({ report, open, onOpen, onClose }: { report: ValuationPublication; open: string | null; onOpen: (id: string) => void; onClose: () => void }) {
+  const { order } = useContext(FootnotesContext);
   const dialog = useRef<HTMLDialogElement>(null);
   const shown = report.evidence.find(e => e.evidenceId === open) ?? null;
+  const listed = [...report.evidence].sort((a, b) => (order.get(a.evidenceId) ?? Infinity) - (order.get(b.evidenceId) ?? Infinity));
   useEffect(() => { const d = dialog.current; if (!d) return; if (shown && !d.open) d.showModal(); else if (!shown && d.open) d.close(); }, [shown]);
   return <section className="val-block">
     <h3>{m.sources}</h3>
     <ol className="val-sources">
-      {report.evidence.map(e => <li key={e.evidenceId}><Button variant="unstyled" type="button" className="val-source" onClick={() => onOpen(e.evidenceId)}><code>{e.evidenceId.slice(1, 5)}</code><span lang="en">{e.title}{e.path ? ` › ${e.path}` : ""}</span><small>{e.publishedAt ? day(e.publishedAt) : ""}</small></Button></li>)}
+      {listed.map(e => <li key={e.evidenceId}><Button variant="unstyled" type="button" className="val-source" onClick={() => onOpen(e.evidenceId)}><b>{order.get(e.evidenceId) ?? "—"}</b><span lang="en">{sourceName(e)}</span><small>{e.publishedAt ? day(e.publishedAt) : ""}</small></Button></li>)}
     </ol>
     <dialog ref={dialog} className="val-dialog" onClose={onClose} aria-label={m.source}>
       {shown && <div className="val-dialog-body">
@@ -229,6 +248,15 @@ function Status({ valuation }: { valuation: ValuationResponse }) {
   return null;
 }
 
+/** Footnotes numbered as the report reads: the written case first, then the dimensions and scenarios, then the rest. */
+function footnotesOf(report: ValuationPublication): Footnotes {
+  const s = report.sections;
+  const texts = [s.summary, s.thesis, s.expectationsGap, ...s.catalysts, ...s.counterEvidence, ...s.nextChecks, s.modelNotes,
+    ...report.dimensions.flatMap(d => [d.rationale, ...d.supportingEvidenceIds, ...d.counterEvidenceIds]),
+    ...(report.model ? (["bear", "base", "bull"] as const).map(k => report.model!.scenarios[k].narrative) : [])];
+  return { order: citationOrder(texts, report.evidence.map(e => e.evidenceId)), names: new Map(report.evidence.map(e => [e.evidenceId, sourceName(e)])) };
+}
+
 export function ValuationPanel({ ticker, valuation }: { ticker: string; valuation: ValuationResponse }) {
   const locale = useLocale();
   const [versionId, setVersionId] = useState<string | null>(null);
@@ -243,20 +271,22 @@ export function ValuationPanel({ ticker, valuation }: { ticker: string; valuatio
   }, [ticker, versionId, valuation.report?.versionId]);
   const report = versionId && version ? version : valuation.report;
   const gaps = useMemo(() => report ? [...new Map(report.gaps.map(g => [g.code + (g.field ?? ""), g])).values()] : [], [report]);
-  if (!report) {
+  const footnotes = useMemo(() => report ? footnotesOf(report) : null, [report]);
+  if (!report || !footnotes) {
     const failed = valuation.availability === "failed";
     return <section className="lens val-panel val-panel--empty" aria-label={m.title}>
       <div className="lens-empty val-empty"><h2>{failed ? m.failed : m.preparing}</h2><p>{failed ? m.failedNote : m.preparingNote}</p>{!failed && <i className="lens-loading" />}</div>
     </section>;
   }
   const range = report.model?.range ?? null;
-  return <section className="lens val-panel" aria-label={m.title}>
+  const sections = report.sections;
+  const folded = Boolean(sections.thesis || sections.expectationsGap || sections.modelNotes);
+  return <FootnotesContext.Provider value={footnotes}><section className="lens val-panel" aria-label={m.title}>
     <div className="lens-doc val-doc">
       <header className="val-head">
         <div className="val-verdict" data-tone={verdictTone[report.verdict]}>
-          <span className="val-verdict-pill">{VERDICT[report.verdict]}</span>
-          <strong className="val-score">{report.weightedScore != null ? report.weightedScore.toFixed(1) : "—"}<small>/10</small></strong>
-          <span className="val-score-label">{report.weightedScore != null ? m.score : m.unscored} · {m.confidence} {CONF[report.confidence]}</span>
+          <strong className="val-verdict-label">{VERDICT[report.verdict]}</strong>
+          <span className="val-score-line">{report.weightedScore != null ? m.composite(report.weightedScore.toFixed(1)) : m.unscored}{report.confidence !== "medium" && <> · {m.confidence} {CONF[report.confidence]}</>}</span>
         </div>
         <dl className="val-dates">
           <div><dt>{m.researchDate}</dt><dd>{day(report.researchAsOf)}</dd></div>
@@ -267,36 +297,35 @@ export function ValuationPanel({ ticker, valuation }: { ticker: string; valuatio
         </dl>
       </header>
       <Status valuation={valuation} />
-      <div className="val-grid">
-        <Radar dimensions={report.dimensions} />
-        <ol className="val-dim-list">
-          {report.dimensions.map(d => <li key={d.key}><span>{DIM[d.key]}</span><i className="val-dim-bar"><b style={{ width: `${(d.score ?? 0) * 10}%` }} /></i><strong>{d.score != null ? d.score.toFixed(1) : "—"}</strong><small>{CONF[d.confidence]}</small></li>)}
-        </ol>
-      </div>
       {report.model && <section className="val-block">
         <h3>{m.range}</h3>
         <RangeBar report={report} />
         <dl className="val-stats">
           <div><dt>{m.price}</dt><dd>{report.quote ? <>{perShare(report.quote.price, report.quote.currency, locale)}<small>{m.priceDate(report.quote.priceDate)}</small></> : m.noQuote}</dd></div>
-          <div><dt>{m.marginOfSafety}</dt><dd data-sign={range && range.marginOfSafety != null ? (range.marginOfSafety >= 0 ? "up" : "down") : undefined}>{pct(range?.marginOfSafety)}</dd></div>
-          <div><dt>{m.baseUpside}</dt><dd>{signedPct(range?.baseUpside)}</dd></div>
-          <div><dt>{m.expectedUpside}</dt><dd>{signedPct(range?.expectedUpside)}</dd></div>
-          <div><dt>{m.downside}</dt><dd>{signedPct(range?.downsideCoverage)}</dd></div>
+          {has(range?.marginOfSafety) && <div><dt>{m.marginOfSafety}</dt><dd data-sign={range!.marginOfSafety! >= 0 ? "up" : "down"}>{pct(range!.marginOfSafety)}</dd></div>}
+          {has(range?.baseUpside) && <div><dt>{m.baseUpside}</dt><dd>{signedPct(range!.baseUpside)}</dd></div>}
+          {has(range?.expectedUpside) && <div><dt>{m.expectedUpside}</dt><dd>{signedPct(range!.expectedUpside)}</dd></div>}
+          {has(range?.downsideCoverage) && <div><dt>{m.downside}</dt><dd>{signedPct(range!.downsideCoverage)}</dd></div>}
         </dl>
       </section>}
-      {gaps.length > 0 && <section className="val-block val-gaps"><h3>{m.gaps}</h3><ul>{gaps.map(g => <li key={g.code + (g.field ?? "")}><code>{g.code}</code> <span lang={langOf(g.message)}>{g.message}</span></li>)}</ul></section>}
-      <section className="val-block val-sections">
-        <h3>{m.summary}<SourceLanguage of={[report.sections.summary, report.sections.thesis]} /></h3>
-        <Prose text={report.sections.summary} onCite={setOpen} />
-        {report.sections.thesis && <><h4>{m.thesis}</h4><Prose text={report.sections.thesis} onCite={setOpen} /></>}
-        {report.sections.expectationsGap && <><h4>{m.expectationsGap}</h4><Prose text={report.sections.expectationsGap} onCite={setOpen} /></>}
-        {report.sections.catalysts.length > 0 && <><h4>{m.catalysts}</h4><ul>{report.sections.catalysts.map((t, i) => <Prose key={i} as="li" text={t} onCite={setOpen} />)}</ul></>}
-        {report.sections.counterEvidence.length > 0 && <><h4>{m.counterEvidence}</h4><ul>{report.sections.counterEvidence.map((t, i) => <Prose key={i} as="li" text={t} onCite={setOpen} />)}</ul></>}
-        {report.sections.nextChecks.length > 0 && <><h4>{m.nextChecks}</h4><ul>{report.sections.nextChecks.map((t, i) => <Prose key={i} as="li" text={t} onCite={setOpen} />)}</ul></>}
-        {report.sections.modelNotes && <><h4>{m.modelNotes}</h4><Prose text={report.sections.modelNotes} onCite={setOpen} /></>}
-      </section>
-      <Model report={report} onCite={setOpen} />
       <Dimensions report={report} onCite={setOpen} />
+      <section className="val-block val-sections">
+        <h3>{m.summary}<SourceLanguage of={[sections.summary, sections.thesis]} /></h3>
+        <ProseBlocks text={sections.summary} onCite={setOpen} />
+        {folded && <details className="val-fold">
+          <summary><span className="val-fold-open">{m.readThesis}</span><span className="val-fold-close">{m.hideThesis}</span></summary>
+          <div className="val-fold-body">
+            {sections.thesis && <><h4>{m.thesis}</h4><ProseBlocks text={sections.thesis} onCite={setOpen} /></>}
+            {sections.expectationsGap && <><h4>{m.expectationsGap}</h4><ProseBlocks text={sections.expectationsGap} onCite={setOpen} /></>}
+            {sections.modelNotes && <><h4>{m.modelNotes}</h4><ProseBlocks text={sections.modelNotes} onCite={setOpen} /></>}
+          </div>
+        </details>}
+        {sections.catalysts.length > 0 && <><h4>{m.catalysts}</h4><ul>{sections.catalysts.map((t, i) => <Prose key={i} as="li" text={t} onCite={setOpen} />)}</ul></>}
+        {sections.counterEvidence.length > 0 && <><h4>{m.counterEvidence}</h4><ul>{sections.counterEvidence.map((t, i) => <Prose key={i} as="li" text={t} onCite={setOpen} />)}</ul></>}
+        {sections.nextChecks.length > 0 && <><h4>{m.nextChecks}</h4><ul>{sections.nextChecks.map((t, i) => <Prose key={i} as="li" text={t} onCite={setOpen} />)}</ul></>}
+      </section>
+      {gaps.length > 0 && <section className="val-block val-gaps"><h3>{m.gaps}</h3><ul>{gaps.map(g => <li key={g.code + (g.field ?? "")} title={g.code}><span lang={langOf(g.message)}>{g.message}</span>{g.evidenceIds.length > 0 && <Cites ids={g.evidenceIds} onCite={setOpen} />}</li>)}</ul></section>}
+      <Model report={report} onCite={setOpen} />
       {report.diagnostics.some(d => d.value != null) && <section className="val-block">
         <h3>{m.diagnostics}</h3>
         <dl className="val-stats val-stats--diag">
@@ -310,7 +339,7 @@ export function ValuationPanel({ ticker, valuation }: { ticker: string; valuatio
         </tbody></table>
       </section>}
       <Sources report={report} open={open} onOpen={setOpen} onClose={() => setOpen(null)} />
-      <p className="val-foot">{m.generated(day(report.generatedAt))} · {report.methodVersion} · {report.calculatorVersion}{getLocale() === "zh-CN" && report.sections.summary && langOf(report.sections.summary) === "en" ? "" : ""}</p>
+      <p className="val-foot">{m.generated(day(report.generatedAt))} · {report.methodVersion} · {report.calculatorVersion}</p>
     </div>
-  </section>;
+  </section></FootnotesContext.Provider>;
 }
