@@ -6,16 +6,16 @@ import {daysBetween as days} from '../../../../shared/analysis-runtime/dates.ts'
 /**
  * A new filing read by a read note (docs/agent-interpretation-design.md): the note says where each amount of the newest
  * published quarter sits in the filing's tables and which period a column covers; code reads the amounts at those places
- * and accepts the quarter only when everything reconciles: every total the completeness gate knows, and every column the
- * note dates to an already published quarter against that quarter. The note carries places, signs and a quoted date,
+ * and accepts the quarter only when everything reconciles: every total the completeness gate knows, and the revenue row's
+ * columns code finds repeating an already published quarter against that quarter. The note carries places, signs and a quoted date,
  * never an amount, so a wrong note fails the check instead of publishing a wrong figure.
  */
-export const READ_NOTE_VERSION = 'read-note.v1';
+export const READ_NOTE_VERSION = 'read-note.v2';
 
 /** One table as text: each row's non-empty cells, a parenthesised negative closed into one cell. */
 export type FilingTable = { id: number; url: string; rows: string[][] };
 export type FilingDocument = { url: string; html: string };
-export type TablePlace = { table: number; unit: 'units' | 'thousands' | 'millions' | 'billions'; current: number; compare?: Array<{ column: number; end: string }> };
+export type TablePlace = { table: number; unit: 'units' | 'thousands' | 'millions' | 'billions'; current: number };
 export type NoteItem = { slot: string; table: number; row: number; sign?: 1 | -1 };
 export type NewItem = { group: 'expense' | 'other' | 'afterTax' | 'segment'; name: string; table: number; row: number; sign?: 1 | -1 };
 export type ReadNote = { period: { end: string; quote: string } | null; tables: TablePlace[]; items: NoteItem[]; new?: NewItem[] };
@@ -191,50 +191,60 @@ export function applyNote(note: ReadNote, context: NoteContext): { quarter: Busi
       disclosure: template.segments[0]?.disclosure ?? '', sourceIds: [context.source.accession] })),
   ];
 
-  // Columns the note dates to already published quarters must repeat them: revenue and net income exactly, segments
-  // where the revenue history holds them. One such column is required, so every accepted note is anchored outside its table.
-  let anchored = false;
-  for (const place of note.tables) for (const compare of place.compare ?? []) {
-    const known = context.published.find(q => q.periodEnd === compare.end), history = context.history.find(q => q.periodEnd === compare.end);
-    if (!known && !history) { issues.push(`T${place.table} column ${compare.column}: ${compare.end} is not an already published quarter; list only columns of published quarters under "compare"`); continue; }
-    const scale = known?.scale ?? history!.scale;
-    const check = (slot: string, expected: number | null) => {
-      const at = placed.get(slot);
-      if (!at || at.table !== place.table || expected === null) return;
-      const value = read(at, compare.column, slot);
-      if (value === null) return;
-      const tolerance = SCALE[place.unit] / 2 + 1;
-      if (Math.abs(value - expected * scale) > tolerance) issues.push(`${slot}: T${place.table} R${at.row} column ${compare.column} reads ${value / SCALE[place.unit]} ${place.unit}, but the published ${compare.end} amount is ${expected * scale / SCALE[place.unit]} ${place.unit}`);
-      else if (slot === 'figure:revenue') anchored = true;
-    };
-    check('figure:revenue', known?.figures.revenue ? Number(known.figures.revenue.value) : history ? Number(history.revenue) : null);
-    // Other lines may differ: a later filing restates or regroups them (TTM's year-ago segments are recast), and the
-    // latest filing stands.
-    check('figure:net', known?.figures.net ? Number(known.figures.net.value) : null);
-  }
-  if (!anchored) issues.push('no column dated to an already published quarter repeats its revenue; date the comparison columns under "compare"');
-  // The current column is three months long: a cumulative column the row also prints (six, nine or twelve months)
-  // is the current amount plus the year's earlier published quarters. When the revenue row prints columns the note
-  // neither reads nor dates, one of them must be that cumulative total, or the current column is itself cumulative.
+  // The revenue row's other columns that repeat an already published quarter's revenue anchor the note outside its table;
+  // code finds them, so the model only places rows. One is required, and the table's net income must repeat that quarter's too.
   const revenueAt = placed.get('figure:revenue'), revenuePlace = revenueAt && places.get(revenueAt.table);
   const revenueRow = revenueAt && tables.get(revenueAt.table)?.rows[revenueAt.row];
+  const quarters = [...context.published.map(q => ({ end: q.periodEnd, start: q.periodStart, revenue: Number(q.figures.revenue?.value) * q.scale })),
+    ...context.history.map(q => ({ end: q.periodEnd, start: q.periodStart, revenue: Number(q.revenue) * q.scale }))].filter(q => Number.isFinite(q.revenue));
   if (revenueAt && revenuePlace && revenueRow) {
     const printedAmounts = amounts(revenueRow).map(n => n * (revenueAt.sign ?? 1) * SCALE[revenuePlace.unit]);
-    const used = new Set([revenuePlace.current, ...(revenuePlace.compare ?? []).map(c => c.column)]);
-    const unused = printedAmounts.filter((_, k) => !used.has(k));
-    const quarters = [...context.published.map(q => ({ end: q.periodEnd, start: q.periodStart, revenue: Number(q.figures.revenue?.value) * q.scale })),
-      ...context.history.map(q => ({ end: q.periodEnd, start: q.periodStart, revenue: Number(q.revenue) * q.scale }))];
-    const earlier: number[] = [];
-    for (let at = base.periodEnd; earlier.length < 3;) {
-      const q = quarters.find(x => x.end === at);
-      if (!q?.start || !Number.isFinite(q.revenue)) break;
-      earlier.push(q.revenue);
-      at = new Date(Date.parse(q.start) - DAY).toISOString().slice(0, 10);
+    const tolerance = SCALE[revenuePlace.unit] / 2 + 1;
+    const anchors = printedAmounts.flatMap((value, column) => {
+      const known = column === revenuePlace.current ? undefined : quarters.find(q => Math.abs(value - q.revenue) <= tolerance);
+      return known ? [{ column, end: known.end }] : [];
+    });
+    if (!anchors.length) issues.push(`figure:revenue: no other column of T${revenueAt.table} R${revenueAt.row} repeats an already published quarter's revenue; place revenue in a table that also prints an earlier published quarter`);
+    const netAt = placed.get('figure:net');
+    for (const anchor of netAt?.table === revenueAt.table ? anchors : []) {
+      const known = context.published.find(q => q.periodEnd === anchor.end)?.figures.net, value = known && read(netAt!, anchor.column, 'figure:net');
+      if (known && value !== null && value !== undefined && Math.abs(value - Number(known.value) * context.published.find(q => q.periodEnd === anchor.end)!.scale) > tolerance)
+        issues.push(`figure:net: T${netAt!.table} R${netAt!.row} column ${anchor.column} reads ${value / SCALE[revenuePlace.unit]} ${revenuePlace.unit}, but the published ${anchor.end} net income is ${known.value}`);
     }
-    const current = printedAmounts[revenuePlace.current], tolerance = SCALE[revenuePlace.unit] * 2;
-    const cumulative = (value: number) => earlier.some((_, n) => Math.abs(value - current! - earlier.slice(0, n + 1).reduce((a, b) => a + b, 0)) <= tolerance);
-    if (current !== undefined && unused.length && earlier.length && !unused.some(cumulative))
-      issues.push(`figure:revenue: T${revenueAt.table} R${revenueAt.row} column ${revenuePlace.current} is not a three-month amount: no other column of the row equals it plus the year's earlier published quarters; "current" must be the three-month column`);
+
+    // The current column is three months long. A cumulative column (six, nine or twelve months) is the three-month amount
+    // plus the year's earlier quarters, so a wrong current column shows itself three ways, each decided only on known quarters:
+    // the row prints current less earlier quarters; a larger column the row prints (half again current, so not a currency
+    // or percentage column) is not current plus them; or the year-ago cumulative column (an anchor plus its year's earlier
+    // quarters) has no larger current-year column at the offset current keeps from that anchor.
+    const chain = (from: string | undefined) => {
+      const out: number[] = [];
+      for (let at = from; at && out.length < 3;) {
+        const q = quarters.find(x => x.end === at);
+        if (!q?.start) break;
+        out.push(q.revenue);
+        at = new Date(Date.parse(q.start) - DAY).toISOString().slice(0, 10);
+      }
+      return out;
+    };
+    const sumsOf = (list: number[]) => list.map((_, n) => list.slice(0, n + 1).reduce((a, b) => a + b, 0));
+    const current = printedAmounts[revenuePlace.current], wide = SCALE[revenuePlace.unit] * 2, earlier = chain(base.periodEnd), sums = sumsOf(earlier);
+    const unused = printedAmounts.map((u, k) => ({ u, k })).filter(({ k }) => k !== revenuePlace.current && !anchors.some(a => a.column === k));
+    if (current !== undefined) {
+      const shorter = unused.some(({ u }) => sums.some(sum => Math.abs(current - sum - u) <= wide));
+      const larger = unused.filter(({ u }) => Math.abs(u) >= Math.abs(current) * 1.5);
+      const unmatched = earlier.length === 3 && larger.length && !larger.some(({ u }) => sums.some(sum => Math.abs(u - current - sum) <= wide));
+      const unpaired = anchors.some(a => {
+        const start = quarters.find(q => q.end === a.end)?.start, ago = start ? sumsOf(chain(new Date(Date.parse(start) - DAY).toISOString().slice(0, 10))) : [];
+        return unused.some(({ u, k }) => {
+          if (!ago.some(sum => Math.abs(u - printedAmounts[a.column]! - sum) <= wide)) return false;
+          const now = printedAmounts[k + revenuePlace.current - a.column];
+          return now === undefined || Math.abs(now) <= Math.abs(current);
+        });
+      });
+      if (shorter || unmatched || unpaired)
+        issues.push(`figure:revenue: T${revenueAt.table} R${revenueAt.row} column ${revenuePlace.current} is not a three-month amount; "current" must be the three-month column`);
+    }
   }
   if (issues.length) return { quarter: null, issues: [...new Set(issues)].slice(0, 20), replaces };
 
@@ -286,12 +296,7 @@ export function reuseNote(previous: { note: ReadNote; labels: Record<string, str
     if (!match) return null;
     tableFor.set(place.table, match.id);
   }
-  const shift = days(previous.note.period.end, end);
-  const knownEnds = [...context.published.map(q => q.periodEnd), ...context.history.map(q => q.periodEnd)];
-  const tables = previous.note.tables.map(p => ({ ...p, table: tableFor.get(p.table)!, compare: (p.compare ?? []).flatMap(c => {
-    const near = knownEnds.find(k => Math.abs(days(c.end, k) - shift) <= 7);
-    return near ? [{ column: c.column, end: near }] : [];
-  }) }));
+  const tables = previous.note.tables.map(p => ({ table: tableFor.get(p.table)!, unit: p.unit, current: p.current }));
   const items = previous.note.items.map(i => {
     const table = context.tables[tableFor.get(i.table)!]!;
     return { ...i, table: table.id, row: table.rows.findIndex(r => labelKey(label(r)) === labelKey(previous.labels[i.slot]!)) };
@@ -304,17 +309,17 @@ export const noteLabels = (note: ReadNote, tables: FilingTable[]): Record<string
 
 export const READ_NOTE_SYSTEM = `You read the tables of one SEC filing and write a read note: where each line of the company's newest published quarter sits in this filing, for the newest quarter the filing reports. You never write an amount; code reads every amount at the places you give and checks them.
 
-Input: the published quarter's lines ("slots", each with its published amount), already published quarters ("known", for comparison columns), the filing's tables (T<id>, rows R<n>, cells separated by " | "), and sentences of the filing that name dates.
+Input: the published quarter's lines ("slots", each with its published amount), already published quarters ("known"), the filing's tables (T<id>, rows R<n>, cells separated by " | "), and sentences of the filing that name dates.
 
 Return one JSON object:
 {"period": {"end": "YYYY-MM-DD", "quote": "<verbatim passage of the filing naming that date>"} or null,
- "tables": [{"table": <id>, "unit": "units"|"thousands"|"millions"|"billions", "current": <k>, "compare": [{"column": <k>, "end": "YYYY-MM-DD"}]}],
+ "tables": [{"table": <id>, "unit": "units"|"thousands"|"millions"|"billions", "current": <k>}],
  "items": [{"slot": "<slot>", "table": <id>, "row": <n>, "sign": 1 or -1}],
  "new": [{"group": "expense"|"other"|"afterTax"|"segment", "name": "<row label>", "table": <id>, "row": <n>, "sign": 1 or -1}]}
 
 - period: the end of the newest three-month period the filing reports. null when the filing reports no three-month period after the published quarter.
 - Columns are counted over a row's amounts only, from 0, left to right: the row label and empty cells do not count; "—" counts as an amount (zero).
-- current: the column of the three-month period ending period.end. compare: other columns of the same table that are three-month periods ending on a "known" date; give at least one, normally the same quarter a year earlier.
+- current: the column of the three-month period ending period.end. Place revenue in a table that also prints an earlier quarter of "known" (normally the same quarter a year earlier); code finds that column.
 - unit: the unit the table states ("in thousands", "$ in millions"); units when it states none.
 - sign: -1 when the printed amount has the opposite sign of the slot's published amount convention (for example taxes printed as a negative benefit while the slot carries a benefit as negative); otherwise 1 or omit.
 - Place every slot the filing prints for that period. Gross profit, total operating expenses and other income may be left out when not printed; code derives them.
@@ -334,8 +339,7 @@ export function readNoteFrom(raw: unknown): ReadNote | null {
   const tables = r.tables.flatMap(t => {
     const x = t as Record<string, unknown>, table = int(x.table), current = int(x.current);
     if (table === null || current === null || typeof x.unit !== 'string' || !(x.unit in SCALE)) return [];
-    const compare = Array.isArray(x.compare) ? x.compare.flatMap(c => { const y = c as Record<string, unknown>, column = int(y.column); return column !== null && typeof y.end === 'string' ? [{ column, end: y.end }] : []; }) : [];
-    return [{ table, unit: x.unit as TablePlace['unit'], current, compare }];
+    return [{ table, unit: x.unit as TablePlace['unit'], current }];
   });
   const items = r.items.flatMap(i => { const x = i as Record<string, unknown>, table = int(x.table), row = int(x.row); return typeof x.slot === 'string' && table !== null && row !== null ? [{ slot: x.slot, table, row, sign: sign(x.sign) }] : []; });
   const added = Array.isArray(r.new) ? r.new.flatMap(i => {
@@ -349,7 +353,7 @@ export function readNoteFrom(raw: unknown): ReadNote | null {
 export type NoteModel = (stage: string, system: string, payload: unknown) => Promise<Record<string, unknown>>;
 export type NoteRoute = 'reuse' | 'period' | 'full';
 /** One note the check turned down, with its problems: what the model was told to correct. */
-export type RejectedNote = { route: NoteRoute; problems: string[] };
+export type RejectedNote = { route: NoteRoute; problems: string[]; note: unknown };
 /** `nothing`: no table of the filing prints an already published amount, so it reports no quarter to read (a 6-K notice). */
 export type NoteOutcome = { quarter: BusinessFlowQuarter | null; note: ReadNote | null; route: NoteRoute; attempts: number; issues: string[]; replaces: boolean; rejected: RejectedNote[]; budget?: true; nothing?: true };
 
@@ -369,7 +373,7 @@ export async function readWithNote(context: NoteContext, model: NoteModel, optio
     if (reused) {
       const applied = applyNote(reused, context);
       if (applied.quarter) return { ...applied, note: reused, route: 'reuse', attempts: 0, rejected };
-      rejected.push({ route: 'reuse', problems: applied.issues });
+      rejected.push({ route: 'reuse', problems: applied.issues, note: reused });
     }
     // The previous note may only miss the period: ask for that alone, then place the rest as before.
     if (sentences.length && await reserve()) {
@@ -378,7 +382,7 @@ export async function readWithNote(context: NoteContext, model: NoteModel, optio
       const note = placed && { ...placed, period: { end: answer.end as string, quote: answer.quote as string } };
       const applied = note ? applyNote(note, context) : null;
       if (applied?.quarter) return { ...applied, note, route: 'period', attempts: 1, rejected };
-      rejected.push({ route: 'period', problems: applied?.issues ?? [note ? 'the period answer did not place the previous note' : 'the period answer names no date the previous note can be placed on'] });
+      rejected.push({ route: 'period', note: note ?? answer, problems: applied?.issues ?? [note ? 'the period answer did not place the previous note' : 'the period answer names no date the previous note can be placed on'] });
     }
   }
   const tables = relevantTables(context.tables, context);
@@ -404,7 +408,7 @@ export async function readWithNote(context: NoteContext, model: NoteModel, optio
       last = applied.issues;
     }
     history.push({ note: note ?? raw, problems: last });
-    rejected.push({ route: 'full', problems: last });
+    rejected.push({ route: 'full', problems: last, note: note ?? raw });
   }
   return none({ attempts: options.turns ?? 4, issues: last });
 }

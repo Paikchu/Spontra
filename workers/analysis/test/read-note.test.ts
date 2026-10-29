@@ -16,10 +16,10 @@ const context: NoteContext = { tables: filingTables(documents), text: documentTe
   source: { accession: "0001193125-26-428263", url: "https://www.sec.gov/Archives/edgar/data/1116942/000119312526428263/d282109d8k.htm", filedAt: "2026-10-22", form: "8-K" } };
 const statement = 16, segments = 17;
 const at = (table: number, rows: Array<[string, number, (1 | -1)?]>) => rows.map(([slot, row, sign]) => ({ slot, table, row, sign: sign ?? 1 }));
-// What a correct note says: the statement and the segment table, current column 0, the year-ago column 1.
+// What a correct note says: the statement and the segment table, current column 0; code finds the year-ago column 1.
 const note: ReadNote = {
   period: { end: "2026-09-28", quote: "today reported results for the third quarter of 2026, which ended on September 28, 2026" },
-  tables: [statement, segments].map(table => ({ table, unit: "thousands" as const, current: 0, compare: [{ column: 1, end: "2025-09-29" }] })),
+  tables: [statement, segments].map(table => ({ table, unit: "thousands" as const, current: 0 })),
   items: [
     ...at(statement, [["figure:revenue", 3], ["figure:cost", 4], ["figure:gross", 5], ["figure:operatingExpenses", 12], ["figure:operating", 13], ["figure:pretax", 18], ["figure:tax", 19, -1], ["figure:net", 20],
       ["figure:sales", 7], ["figure:administration", 8], ["figure:research", 9], ["expense:SellingAndMarketingExpense", 7], ["expense:GeneralAndAdministrativeExpense", 8],
@@ -52,7 +52,7 @@ test("a correct note reads the quarter the release reports, reconciled against i
 test("a note with the wrong unit, a cumulative column or a period the filing does not state is refused", () => {
   const unit = applyNote({ ...note, tables: note.tables.map(t => ({ ...t, unit: "millions" as const })) }, context);
   assert.equal(unit.quarter, null);
-  assert.match(unit.issues[0]!, /published 2025-09-29 amount/);
+  assert.match(unit.issues[0]!, /repeats an already published quarter's revenue/);
   // The nine-month column balances every total too; only the cumulative check tells it is not a quarter.
   const cumulative = applyNote({ ...note, tables: note.tables.map(t => ({ ...t, current: 2 })) }, context);
   assert.equal(cumulative.quarter, null);
@@ -63,6 +63,21 @@ test("a note with the wrong unit, a cumulative column or a period the filing doe
   assert.match(swapped.issues.join(" "), /do not reconcile/);
 });
 
+test("a revenue row that also prints currency or percentage columns is read; a cumulative column is refused even when the year's earlier quarters are not all known", () => {
+  // GOOGL's constant-currency table: next to the quarter it prints an FX-adjusted amount and percentages, none cumulative.
+  const rows = context.tables[statement]!.rows.map((r, i) => (i === 3 ? ["Net sales", "1,203,855", "752,736", "1,210,000", "60"] : r));
+  const fx = { ...context, tables: context.tables.map(t => (t.id === statement ? { ...t, rows } : t)) };
+  assert.deepEqual(applyNote(note, fx).issues, []);
+  // The revenue history stops before the newest quarter's year (TTMI's did): the year-ago nine-month column, the anchor
+  // plus its year's earlier quarters, still tells which column pairs with the anchor.
+  // Production's history also holds the quarter ended March 31, 2025, which the year-ago nine months need.
+  const march = { ...context.history.find(q => q.periodEnd === "2025-06-30")!, periodStart: "2024-12-31", periodEnd: "2025-03-31", revenue: "648668000", segments: [] };
+  const gap = { ...context, published: context.published.slice(0, 1), history: [march, ...context.history.filter(q => q.periodEnd < "2025-12-01")] };
+  assert.deepEqual(applyNote(note, gap).issues, []);
+  const nine = applyNote({ ...note, tables: note.tables.map(t => ({ ...t, current: 2 })) }, gap);
+  assert.match(nine.issues.join(" "), /column 2 is not a three-month amount/);
+});
+
 test("the model's problems go back to it, and a corrected note is read on the next turn", async () => {
   const answers: unknown[] = [{ ...note, tables: note.tables.map(t => ({ ...t, unit: "millions" })) }, note];
   const payloads: Array<Record<string, unknown>> = [];
@@ -70,10 +85,11 @@ test("the model's problems go back to it, and a corrected note is read on the ne
   assert.equal(outcome.route, "full");
   assert.equal(outcome.attempts, 2);
   assert.equal(value(outcome.quarter, "revenue"), 1203855000);
-  assert.match(JSON.stringify(payloads[1]!.previousAnswers), /published 2025-09-29 amount/);
+  assert.match(JSON.stringify(payloads[1]!.previousAnswers), /repeats an already published quarter's revenue/);
   // The turned-down note is returned with its problems, for the stored record.
   assert.deepEqual(outcome.rejected.map(r => r.route), ["full"]);
-  assert.match(outcome.rejected[0]!.problems[0]!, /published 2025-09-29 amount/);
+  assert.match(outcome.rejected[0]!.problems[0]!, /repeats an already published quarter's revenue/);
+  assert.equal((outcome.rejected[0]!.note as ReadNote).tables[0]!.unit, "millions");
   assert.ok(String(payloads[0]!.tables).length < 9000);
 });
 
