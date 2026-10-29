@@ -278,7 +278,7 @@ button { cursor: pointer; }
 
 /* ---------- Stage ---------- */
 .stage {
-  display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto auto; min-width: 0; min-height: 0;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto minmax(0, 1fr) auto auto; min-width: 0; min-height: 0;
   padding: 14px max(clamp(20px, 3vw, 44px), env(safe-area-inset-right)) 4px clamp(24px, 3vw, 44px);
 }
 .stage--state { display: block; overflow-y: auto; }
@@ -288,9 +288,12 @@ button { cursor: pointer; }
 .stage-head--summary > .stats { grid-column: 1; grid-row: 1; }
 .stage-head--summary > .stage-controls { grid-column: 2; grid-row: 1; flex-wrap: nowrap; }
 .stage-head--summary > .view-flags { grid-column: 1 / -1; grid-row: 2; }
-/* The view tabs head the stage in their own row, one element for every view, pinned while the stage scrolls under them. */
-.stage-tabs { position: sticky; top: var(--stage-tabs-top, 0px); z-index: 6; display: flex; align-items: center; min-width: 0; padding-bottom: 12px; }
-.stage-tabs:empty { padding: 0; }
+/* Every part of the stage spans its width; only the figures' header shares the first row, with the view tabs at its right. */
+.stage > * { grid-column: 1 / -1; }
+.stage > .stage-head--summary { grid-column: 1; grid-row: 1; }
+/* The view tabs hold the stage's top-right corner, right of the figures' controls: one element for every view, pinned while the stage scrolls. */
+.stage > .stage-tabs { grid-column: 2; grid-row: 1; align-self: start; position: sticky; top: var(--stage-tabs-top, 0px); z-index: 6; display: flex; justify-content: flex-end; min-width: 0; padding-left: 12px; }
+.stage > .stage-tabs:empty { padding: 0; }
 .stage-tabs .stage-views { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
 .stage-tabs .stage-views::-webkit-scrollbar { display: none; }
 .periods { display: inline-flex; margin-left: auto; padding: 3px; gap: 2px; border-radius: 999px; background: var(--surface); border: 1px solid var(--hairline); }
@@ -709,9 +712,13 @@ button { cursor: pointer; }
     border-bottom: 1px solid var(--hairline);
   }
   .rail-list::-webkit-scrollbar { display: none; }
-  /* The page scrolls: the stage's tab row pins under the business chips (10px padding, a 36px chip, the hairline), on the page's own ground. */
-  .stage-tabs { --stage-tabs-top: 57px; margin: 0 -16px; padding: 8px 16px; background: color-mix(in srgb, var(--background) 88%, transparent); backdrop-filter: blur(12px); }
-  .stage-tabs:empty { margin: 0; padding: 0; }
+  /* The figures take the stage's full width, so the tabs keep its top-right corner in a row above them, only as wide as
+     themselves; the page scrolls, and they pin under the business chips (10px padding, a 36px chip, the hairline, 8px air). */
+  .stage { grid-template-columns: minmax(0, 1fr); }
+  .stage > .stage-head--summary { grid-column: 1 / -1; grid-row: auto; }
+  .stage > .stage-tabs { --stage-tabs-top: 65px; grid-column: 1 / -1; justify-self: end; max-width: 100%; margin-bottom: 10px; padding: 0; }
+  .stage > .stage-tabs:empty { margin: 0; }
+  .stage-tabs .stage-views { box-shadow: 0 2px 10px color-mix(in srgb, var(--background) 60%, transparent); }
   .row, .row[data-depth] { display: inline-flex; flex: none; width: auto; height: auto; margin: 0; gap: 8px; padding: 8px 12px; border-radius: 999px; white-space: nowrap; }
   .row::before, .row::after { display: none; }
   .row[aria-selected="true"], .row--all[aria-selected="true"] { background: color-mix(in srgb, var(--c) 14%, transparent); }
@@ -850,7 +857,7 @@ button { cursor: pointer; }
 /* Kind colours: a risk reads as a loss, a strength as growth, a shift as the first business hue, a watch item stays quiet. */
 .map, .home { --kind-risk: var(--loss); --kind-strength: var(--up); --kind-shift: var(--biz-1); --kind-watch: var(--muted-foreground); }
 [data-kind="risk"] { --kind: var(--kind-risk); } [data-kind="strength"] { --kind: var(--kind-strength); } [data-kind="shift"] { --kind: var(--kind-shift); } [data-kind="watch"] { --kind: var(--kind-watch); }
-.stage:has(.findings) { grid-template-rows: auto auto auto minmax(0, 1fr) auto auto; }
+.stage:has(.findings) { grid-template-rows: auto auto minmax(0, 1fr) auto auto; }
 /* A grid, not a flex row: the chips column is capped at the space left, so a long set scrolls inside it instead of widening the stage. */
 /* Findings live in the rail under the business drawer: one row per finding, most severe first. */
 .findings { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--hairline); }
@@ -1346,8 +1353,8 @@ html[lang^="zh"] .home-sub, html[lang^="zh"] .home-signal-title, html[lang^="zh"
 :root[data-vt="swap-chart"]::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
 
 /* The time axis under the chart: quarter ticks along the track, one marker per filing, the current report and the focused event lit. */
-.stage[data-timeline] { grid-template-rows: auto auto minmax(0, 1fr) auto auto auto; }
-.stage:has(.findings)[data-timeline] { grid-template-rows: auto auto auto minmax(0, 1fr) auto auto auto; }
+.stage[data-timeline] { grid-template-rows: auto minmax(0, 1fr) auto auto auto; }
+.stage:has(.findings)[data-timeline] { grid-template-rows: auto auto minmax(0, 1fr) auto auto auto; }
 .timeline { margin-top: 6px; padding: 10px 0 0; }
 .timeline-track { position: relative; height: 30px; margin: 0 6px; }
 .timeline-track::before { content: ""; position: absolute; left: 0; right: 0; top: 12px; border-top: 1px solid var(--border); }
@@ -1651,8 +1658,8 @@ html[lang^="zh"] .period-primary { letter-spacing: 0; }
   /* The business section dissolves into its chip row (display: contents above), so the row itself takes the place. */
   .findings[data-section="business"], .findings[data-section="business"] .rail-list { order: 2; }
   .findings[data-section="business"] .rail-list { position: static; border-top: 1px solid var(--hairline); }
-  /* The chips no longer pin on phones, so the tab row pins to the top of the screen. */
-  .stage-tabs { --stage-tabs-top: 0px; }
+  /* The chips no longer pin on phones, so the tabs pin near the top of the screen. */
+  .stage > .stage-tabs { --stage-tabs-top: max(8px, env(safe-area-inset-top)); margin-bottom: 8px; }
   .findings[data-section="findings"] { order: 3; }
   .findings[data-section="events"] { order: 4; }
   .revenue-reconciliation { order: 5; }

@@ -642,7 +642,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
       {funding?.balanceSheet && <ToggleGroupItem value="balance" role="radio" aria-checked={view === "balance"}>{VIEW_LABEL.balance}</ToggleGroupItem>}
     </span>
   </ToggleGroup>;
-  // A lens (finding, flag, report, event) or the stage agent holds the whole stage; otherwise the tab row heads it.
+  // A lens (finding, flag, report, event) or the stage agent holds the whole stage; otherwise the tabs stand at its top right.
   const lensUp = !!stageOverride || !!(focusedCheck && assessment) || !!(focused && findings) || !!focusedReport || !!(focusedEvent && events);
   return <div className="map">
     <Rail ticker={ticker} actions={tools} label={m.companyBusinesses} expanded={openSection != null} company={company.filingLabel ? { sub: company.filingLabel } : null}>
@@ -689,7 +689,8 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
 
     <section className="stage" id="company-stage" tabIndex={-1} data-focus={focused && findings || focusedCheck || focusedReport || focusedEvent && events ? "lens" : undefined} data-view={view} data-trend={view !== "valuation" && (hasRevenueTrend || metricGroups.length) ? "" : undefined} data-finding={focused?.kind} data-timeline={view !== "valuation" && points.length ? "" : undefined}
       aria-label={focused ? m.findingStage(ticker, focused.title) : focusedReport ? m.filingStage(ticker, reportTitle(focusedReport, ticker)) : focusedEvent ? m.filingStage(ticker, eventTitle(focusedEvent)) : m.flowStage(ticker)} data-agent={stageOverride ? "" : undefined}>
-      {/* One tab row for every view, always in this slot: switching views changes its pressed tab, never remounts it, and it stays pinned while the stage scrolls. */}
+      {/* The view tabs, one element for every view in this slot, standing at the stage's top-right corner beside the figures' controls:
+          switching views changes the pressed tab, never remounts it, and it stays pinned while the stage scrolls. */}
       {!lensUp && <div className="stage-tabs">{viewToggle}</div>}
       {stageOverride ? stageOverride : focusedCheck && assessment ? <div className="lens-stage">
         <MetricLens metric={focusedCheck} flags={flags.filter(f => f.metricId === focusedCheck.id)} rank={ranks[focusedCheck.id] ?? null} data={data} findings={verified} sources={checkupSources(data, focusedCheck.evidence.periodEnd)}

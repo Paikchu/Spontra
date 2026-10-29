@@ -93,7 +93,7 @@ test("U22: on production's data, an empty filings feed and the form on the issue
   }
 });
 
-/** The stage's tab row: its own first child, outside the figures' header; the tabs' values in order and the pressed one. */
+/** The stage's view tabs: its own first child, outside the figures' header; the tabs' values in order and the pressed one. */
 function tabsOf(html: string) {
   const stage = html.match(/<section class="stage"[^>]*>(.*)<\/section>/s)?.[1] ?? "";
   const row = stage.match(/^<div class="stage-tabs">(.*?)<\/div>/s)?.[1] ?? null;
@@ -103,7 +103,7 @@ function tabsOf(html: string) {
 
 test("U25: the valuation tab comes first and the page opens on it when a report is published", () => {
   const ready = tabsOf(render("zh-CN", flow, { valuation }));
-  assert.ok(ready.row, "the tab row heads the stage");
+  assert.ok(ready.row, "the tabs are the stage's first child");
   assert.deepEqual(ready.labels, ["估值评估", "利润", "现金流", "资产负债表"]);
   assert.equal(ready.pressed, "估值评估");
   assert.equal(ready.view, "valuation");
@@ -111,7 +111,7 @@ test("U25: the valuation tab comes first and the page opens on it when a report 
   assert.doesNotMatch(render("zh-CN", flow, { valuation, search: "?view=profit" }), /<header class="stage-head[^"]*"[^>]*>(?:(?!<\/header>).)*role="radiogroup" aria-label="财务视图"/s);
 });
 
-test("U25: without a published valuation the page opens on the income statement, the tab row in the same place", () => {
+test("U25: without a published valuation the page opens on the income statement, the tabs in the same place", () => {
   for (const v of [null, { ...valuation, availability: "preparing", report: null }, { ...valuation, availability: "failed", report: null }] as Array<ValuationResponse | null>) {
     const tabs = tabsOf(render("zh-CN", flow, { valuation: v }));
     assert.equal(tabs.view, "profit");
@@ -126,6 +126,19 @@ test("U25: a link to a view or to something on the statements opens there, not o
   assert.equal(tabsOf(render("zh-CN", flow, { valuation, search: "?view=cash" })).view, "cash");
   assert.equal(tabsOf(render("zh-CN", flow, { valuation, search: "?business=cloud" })).view, "profit");
   assert.equal(tabsOf(render("zh-CN", flow, { valuation, search: "?metric=capex" })).view, "profit");
+});
+
+test("U25: the tabs keep the stage's top-right corner beside the figures' controls, pinned, at every width", async () => {
+  const css = await read("../src/style.css");
+  // Wide screens: the figures' header and the tabs share the stage's first row, the tabs in the right-hand column.
+  assert.match(css, /\.stage \{[^}]*grid-template-columns: minmax\(0, 1fr\) auto;/);
+  assert.match(css, /\.stage > \.stage-head--summary \{ grid-column: 1; grid-row: 1; \}/);
+  assert.match(css, /\.stage > \.stage-tabs \{ grid-column: 2; grid-row: 1;[^}]*position: sticky;/);
+  // Tablets and phones: a row of their own above the figures, only as wide as the tabs, at the right; never a full-width bar.
+  const tablet = media(css, "max-width: 960px"), phone = media(css, "max-width: 640px");
+  assert.match(tablet, /\.stage > \.stage-tabs \{[^}]*--stage-tabs-top: 65px;[^}]*justify-self: end;/);
+  assert.match(phone, /\.stage > \.stage-tabs \{ --stage-tabs-top: max\(8px, env\(safe-area-inset-top\)\);/);
+  for (const block of [css, tablet, phone]) assert.doesNotMatch(block, /\.stage-tabs \{[^}]*(?:margin: 0 -16px|backdrop-filter)/);
 });
 
 test("U25: a headline tile is its title and its number, toned good or bad, its detail in the tooltip", () => {
