@@ -1,5 +1,5 @@
 import { Button } from "@/packages/web/src/ui/button";
-import { ChartContainer, ChartLegendContent, ChartTooltipContent, type ChartConfig } from "@/packages/web/src/ui/chart";
+import { ChartContainer, ChartLegendContent, ChartTooltipContent, type ChartConfig } from "@/packages/web/src/ui/custom-chart";
 import { NativeSelect, NativeSelectOptGroup, NativeSelectOption } from "@/packages/web/src/ui/native-select";
 import { ToggleGroup, ToggleGroupItem } from "@/packages/web/src/ui/toggle-group";
 import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
