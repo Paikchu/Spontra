@@ -23,8 +23,6 @@ import { ToggleGroup, ToggleGroupItem } from "@/packages/web/src/ui/toggle-group
 import type { CapitalQuarter, PublicCapitalStructure } from "@/shared/analysis-contract/capital-structure";
 import { balanceMetrics, balancePool, cashMetrics, cashPool, type Pool } from "./capital-model";
 import { PoolChart, TONE_LABEL, toneColor } from "./PoolChart";
-import { CompanyTour } from "./CompanyTour";
-import { PrivacyNote } from "./PrivacyNote";
 import { Rail } from "./Sidebar";
 import { track } from "./track";
 import { stageChartBox } from "./chart-box";
@@ -62,7 +60,7 @@ import { checkupSources, figureLevel, LEVEL_LABEL, LevelMark, MetricLens, PanelS
 
 const m = messages({
   lastYear: "last year", lastQuarter: "last quarter", yearAgo: "Year ago", lastQuarterPeriod: "Last quarter",
-  companyBusinesses: "Company businesses", businesses: "Businesses", allBusinesses: "All businesses", totalRevenue: "Total revenue", nextQuarter: "Next quarter", composition: "Revenue mix",
+  companyBusinesses: "Company businesses", businesses: "Businesses", allBusinesses: "All businesses", totalRevenue: "Total revenue", nextQuarter: "Next quarter", composition: "Revenue mix", foldBusinesses: "Collapse businesses", unfoldBusinesses: "Expand businesses",
   topLevelCount: (n: number) => `Total revenue · ${n} top-level ${n === 1 ? "business" : "businesses"}`,
   shareBeforeEliminations: "Share of segment revenue before adjustments", share: "Share of revenue",
   reconciliation: "Revenue reconciliation", reconciliationUnit: (currency: string) => `${currency} millions`, segmentTotal: "Segment revenue (before adjustments)", consolidated: "Consolidated revenue",
@@ -93,7 +91,7 @@ const m = messages({
   swipe: "Swipe horizontally to see full flow",
 }, {
   lastYear: "上年同期", lastQuarter: "上季度", yearAgo: "上年同期", lastQuarterPeriod: "上季度",
-  companyBusinesses: "公司业务", businesses: "业务", allBusinesses: "全部业务", totalRevenue: "总营收", nextQuarter: "下季度", composition: "营收构成",
+  companyBusinesses: "公司业务", businesses: "业务", allBusinesses: "全部业务", totalRevenue: "总营收", nextQuarter: "下季度", composition: "营收构成", foldBusinesses: "收起业务", unfoldBusinesses: "展开业务",
   topLevelCount: (n: number) => `总营收 · ${n} 个一级业务`,
   shareBeforeEliminations: "占调节前分部营收", share: "占营收",
   reconciliation: "营收调节（分部合计与合并营收的差）", reconciliationUnit: () => "", segmentTotal: "分部营收（调节前）", consolidated: "合并营收",
@@ -335,7 +333,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
   const focused = verified.find(f => f.id === focusId) ?? null;
   // Reports and filed events share the rail with the findings; one row is in focus at a time, and the time axis lists them all.
   const [eventId, setEventId] = useState<string | null>(() => new URLSearchParams(location.search).get("event"));
-  const [eventFilter, setEventFilter] = useState<EventFilter>(() => readEventFilter(location.search));
+  const [eventFilter] = useState<EventFilter>(() => readEventFilter(location.search));
   const [reportId, setReportId] = useState<string | null>(() => new URLSearchParams(location.search).get("report"));
   const [reader, setReader] = useState(false);
   const [now] = useState(() => new Date());
@@ -525,7 +523,34 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
   const focusCheck = (id: string | null) => { onNavigate?.(); setCheckId(id); setHoverFlag(null); if (id) { leaveValuation(); setSelected(null); setFocusId(null); setEventId(null); setReportId(null); setSplit(false); } };
   const focusEvent = (id: string | null) => { onNavigate?.(); setEventId(id); if (id) { leaveValuation(); setSelected(null); setFocusId(null); setCheckId(null); setReportId(null); setSplit(false); } };
   // The rail holds one pick at a time: a business, a flag, a finding, or a report/event. A business reads on the income statement, whatever held the stage.
-  const pickBusiness = (id: string | null) => { onNavigate?.(); setSelected(id); if (id) { setFocusId(null); setCheckId(null); setEventId(null); setReportId(null); setSplit(false); setView("profit"); } };
+  const pickBusiness = (id: string | null) => { onNavigate?.(); setSelected(id); if (id) { setFocusId(null); setCheckId(null); setEventId(null); setReportId(null); setSplit(false); setView("profit"); setBizFolded(false); } };
+  // The business rows fold away once the reader scrolls what is under them, so the stream takes the rail; the total and
+  // the mix stay as the head. Scrolling up again at the top, the chevron, or picking a business brings the rows back.
+  const [bizFolded, setBizFolded] = useState(false);
+  useEffect(() => {
+    const body = document.getElementById("rail-body");
+    if (!body) return;
+    const wide = () => matchMedia("(min-width: 961px)").matches;
+    const below = (target: EventTarget | null) => target instanceof Node && body.contains(target) && !body.querySelector(".biz")?.contains(target);
+    const onWheel = (e: WheelEvent) => {
+      if (!wide()) return;
+      if (e.deltaY > 6 && below(e.target)) setBizFolded(true);
+      else if (e.deltaY < -6 && body.scrollTop <= 0) setBizFolded(false);
+    };
+    let touch: { y: number; below: boolean } | null = null;
+    const onTouchStart = (e: TouchEvent) => { const t = e.touches[0]; touch = t ? { y: t.clientY, below: below(e.target) } : null; };
+    const onTouchMove = (e: TouchEvent) => {
+      const t = e.touches[0];
+      if (!t || !touch || !wide()) return;
+      const dy = touch.y - t.clientY;
+      if (dy > 12 && touch.below) { setBizFolded(true); touch = null; }
+      else if (dy < -12 && body.scrollTop <= 0) { setBizFolded(false); touch = null; }
+    };
+    body.addEventListener("wheel", onWheel, { passive: true });
+    body.addEventListener("touchstart", onTouchStart, { passive: true });
+    body.addEventListener("touchmove", onTouchMove, { passive: true });
+    return () => { body.removeEventListener("wheel", onWheel); body.removeEventListener("touchstart", onTouchStart); body.removeEventListener("touchmove", onTouchMove); };
+  }, []);
   useEffect(() => { if (focusRequest) focusFinding(focusRequest.finding); }, [focusRequest?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
   // A report in focus also brings the stage to its quarter when the flow has it.
   const focusReport = (id: string | null) => {
@@ -611,18 +636,21 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
   return <div className="map">
     <Rail ticker={ticker} actions={tools} label={m.companyBusinesses} company={company.filingLabel ? { sub: company.filingLabel } : null} foot={railFoot}>
       {/* The businesses, open from the start: the company's revenue and change, next quarter's guidance beside it, the mix as one bar, then one line per business. */}
-      <section className="biz" data-section="business" aria-label={m.businesses}>
+      <section className="biz" data-section="business" data-folded={bizFolded || undefined} aria-label={m.businesses}>
         <div className="biz-head">
           <Button variant="unstyled" type="button" className="biz-total" aria-pressed={!current} title={quantified ? m.topLevelCount(topLevel) : m.totalRevenue} onClick={() => { if (current) pickBusiness(null); }}>
             <span className="biz-total-value">{revenue != null ? money(revenue) : "—"}</span>
             {quarter && change("revenue").comparable && <span className="biz-total-delta"><Delta change={change("revenue")} word={word.change} /></span>}
           </Button>
           {revenueGuide && <span className="biz-guide" title={`${revenueGuide.tip.title}${revenueGuide.qualifier ? ` · ${revenueGuide.qualifier}` : ""}`}>{m.nextQuarter} {revenueGuide.glyph}{revenueGuide.text}</span>}
+          <Button variant="unstyled" type="button" className="icon-button biz-fold" aria-expanded={!bizFolded} aria-controls="rail-business" aria-label={bizFolded ? m.unfoldBusinesses : m.foldBusinesses} title={bizFolded ? m.unfoldBusinesses : m.foldBusinesses} onClick={() => setBizFolded(v => !v)}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5" /></svg>
+          </Button>
         </div>
         {composition.length > 1 && <div className="biz-bar" role="img" aria-label={[m.composition, ...composition.map(c => `${c.name} ${percent(c.share)}`)].join(" · ")}>
           {composition.map(c => <i key={c.key} data-hover={hovered === c.key || preview === c.key || undefined} data-picked={current?.key === c.key || undefined} style={{ flexBasis: `${c.share}%`, background: hue(c.slot) }} />)}
         </div>}
-        <div className="rail-list section-body" id="rail-business" role="listbox" aria-label={m.businesses} ref={listRef} onKeyDown={onListKey} onMouseLeave={() => setPreview(null)}>
+        <div className="biz-rows" inert={bizFolded ? true : undefined}><div className="rail-list section-body" id="rail-business" role="listbox" aria-label={m.businesses} ref={listRef} onKeyDown={onListKey} onMouseLeave={() => setPreview(null)}>
           {/* All businesses as a row only where the head is out of the flow: the phone's chip strip. */}
           <Button variant="unstyled" type="button" role="option" aria-selected={!current} tabIndex={!current ? 0 : -1} className="row row--all" onMouseEnter={() => setPreview(null)}
             onClick={() => { if (current) pickBusiness(null); }} title={quantified ? m.topLevelCount(topLevel) : m.totalRevenue}>
@@ -644,11 +672,11 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
               {share != null && delta.comparable && <span className="row-delta"><Delta change={delta} word={word.change} /></span>}
             </Button>;
           })}
-        </div>
+        </div></div>
       </section>
       {detailsLoading && <CompanyDetailsSkeleton />}
       {!detailsLoading && (rail || verified.length > 0) && <RailStream rail={rail} findings={verified} findingsPeriodEnd={findings?.periodEnd ?? null} verdicts={verdicts} ticker={ticker} updates={updates}
-        focus={focused?.id ?? focusedReport?.accessionNumber ?? focusedEvent?.id ?? null} pendingInsider={events?.pendingInsider ?? 0} phase={eventsPhase} filter={eventFilter} onFilter={setEventFilter}
+        focus={focused?.id ?? focusedReport?.accessionNumber ?? focusedEvent?.id ?? null} phase={eventsPhase} filter={eventFilter}
         onFocusItem={focusItem} onFocusFinding={focusFinding} onRetry={onRetryEvents} />}
       {!!quarter?.revenueAdjustments?.length && <details className="revenue-reconciliation" open={!narrow}>
         <summary className="rail-label">{m.reconciliation}{m.reconciliationUnit(quarter.currency) && <small> · {m.reconciliationUnit(quarter.currency)}</small>}</summary>
@@ -658,7 +686,6 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
           <div><dt>{m.consolidated}</dt><dd>{formatReconciliation(revenue, quarter)}</dd></div>
         </dl>
       </details>}
-      <div className="rail-end"><PrivacyNote /><CompanyTour key={ticker} available={!detailsLoading && !stageOverride && !focusedCheck && !focused && !focusedReport && !focusedEvent && view !== "valuation"} /></div>
     </Rail>
 
     <section className="stage" id="company-stage" tabIndex={-1} data-focus={focused && findings || focusedCheck || focusedReport || focusedEvent && events ? "lens" : undefined} data-view={view} data-trend={view !== "valuation" && (hasRevenueTrend || metricGroups.length) ? "" : undefined} data-finding={focused?.kind} data-timeline={view !== "valuation" && points.length ? "" : undefined}

@@ -15,8 +15,8 @@ const render = (espp = false) => {
   const events = sales.map(e => espp ? { ...e, description: "ESPP", insider: { ...e.insider!, sold: null, bought: { shares: e.insider!.sold!.shares, cost: e.insider!.sold!.proceeds, averagePrice: e.insider!.sold!.averagePrice } } } : e);
   return renderToStaticMarkup(createElement(RailStream, {
     rail: { recent: railEntries(null, { ...publication, events }), earlier: [], quiet: 0, since: "2026-01-01" },
-    findings: [], findingsPeriodEnd: null, ticker: publication.ticker, updates: 0, focus: events[0].id, pendingInsider: 0,
-    onFocusItem: () => {}, onFocusFinding: () => {}, filter: "insiders", onFilter: () => {},
+    findings: [], findingsPeriodEnd: null, ticker: publication.ticker, updates: 0, focus: events[0].id,
+    onFocusItem: () => {}, onFocusFinding: () => {}, filter: "insiders",
   }));
 };
 
@@ -51,8 +51,8 @@ test("single insider titles include localized transaction amounts without an ESP
     assert.equal(eventTitle(sale), locale === "zh-CN" ? "Kress Colette · 卖出 3.49万股 · 765万美元" : "Kress Colette · Sale 34.9K shares · $7.65M");
     const html = renderToStaticMarkup(createElement(RailStream, {
       rail: { recent: railEntries(null, { ...publication, events: [sale] }), earlier: [], quiet: 0, since: "2026-01-01" },
-      findings: [], findingsPeriodEnd: null, ticker: "NVDA", updates: 0, focus: sale.id, pendingInsider: 0,
-      onFocusItem: () => {}, onFocusFinding: () => {}, filter: "key", onFilter: () => {},
+      findings: [], findingsPeriodEnd: null, ticker: "NVDA", updates: 0, focus: sale.id,
+      onFocusItem: () => {}, onFocusFinding: () => {}, filter: "key",
     }));
     assert.ok(html.includes(eventTitle(sale)));
     assert.ok(!html.includes("ESPP") && !html.includes("员工持股计划代买"));

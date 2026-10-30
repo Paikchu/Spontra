@@ -57,7 +57,6 @@ export function CompanySkeleton({ ticker, tools }: { ticker: string; tools: Reac
 export function CompanyDetailsSkeleton() {
   return <div className="company-details-loading" aria-busy="true" aria-label={m.loading}>
     <section className="stream" data-section="stream" aria-hidden="true">
-      <div className="event-filters">{[0, 1, 2, 3, 4].map(i => <span key={i} className="event-filter event-filter--ghost" />)}</div>
       <div className="stream-rows">
         {[0, 1, 2, 3, 4].map(i => <div key={i} className="stream-row"><span className="stream-mark"><i className="finding-mark" aria-hidden="true" /></span><span className="stream-body"><span className="stream-title ghost-text">{m.findings}</span><span className="stream-meta ghost-text">00.00 · {m.events}</span></span></div>)}
       </div>

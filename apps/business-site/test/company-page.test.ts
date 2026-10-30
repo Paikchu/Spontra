@@ -218,8 +218,8 @@ const orderOf = (block: string, selector: string) => {
 
 test("U21: on phones the page reads top bar, figures and chart, then the rail's sections, then the reconciliation", async () => {
   const phone = media(await read("../src/style.css"), "max-width: 640px");
-  const sequence = [".rail-top", ".stage", ".biz", ".stream", ".revenue-reconciliation", ".rail-end"].map(s => orderOf(phone, s));
-  assert.deepEqual(sequence, [0, 1, 2, 3, 4, 5]);
+  const sequence = [".rail-top", ".stage", ".biz", ".stream", ".revenue-reconciliation"].map(s => orderOf(phone, s));
+  assert.deepEqual(sequence, [0, 1, 2, 3, 4]);
   assert.match(phone, /\.stats \{[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
   assert.match(phone, /\.stat-value \{[^}]*font-family: var\(--mono\);[^}]*font-size: 22px; line-height: 28px; font-weight: 600;[^}]*tabular-nums/);
   assert.doesNotMatch(phone, /\.rail-company-meta \{[^}]*display:\s*none/);

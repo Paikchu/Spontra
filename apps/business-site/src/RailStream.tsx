@@ -1,6 +1,6 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Button } from "@/packages/web/src/ui/button";
-import { useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { CompanyEvent, EventClass } from "@/shared/analysis-contract/events";
 import type { PublicFilingDigest } from "@/shared/analysis-contract/filings";
 import { getLocale, messages, useLocale } from "@/packages/web/src/i18n";
@@ -8,17 +8,15 @@ import { eventClassLabel, isEsppTransaction, isPlannedInsiderTrade } from "@/sha
 import { normalizeDisplayText, perShare } from "@/shared/analysis-runtime/locale";
 import { langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import { eventTitle, eventTitleLang, shortDate } from "./events-model";
-import { EVENT_FILTERS, exactShares, insiderCompactMoney, filterCounts, noiseRows, rowLeaves, type EventFilter, type NoiseRow } from "./event-noise";
+import { exactShares, insiderCompactMoney, noiseRows, rowLeaves, type EventFilter, type NoiseRow } from "./event-noise";
 import { filingQuarterLabel, reportTitle, reportTitleLang, type RailItem, type RailItems } from "./reports-model";
 import { KIND_LABEL, VIEW_LABEL, type VerifiedFinding } from "./findings-model";
 import { arrivalStyle, RailRow, rowExit, useArrivals } from "./arrivals";
 import { useRailTip } from "./RailTip";
 
 const m = messages({
-  title: "Findings, reports and events", filters: "Filter",
-  key: "Key", earnings: "Reports", material: "Events", insiders: "Insiders", all: "All",
-  report: "Report", nonTrade: (n: number) => `Form 4 non-trade ${n}`, pending: (n: number) => `Form 4 pending ${n}`,
-  earlier: (n: number) => `Earlier · ${n}`, recent: "Recent only",
+  title: "Findings, reports and events",
+  report: "Report",
   sold: (n: number, amount: string) => `Sold ${n} times in 90 days · ${amount} total`,
   bought: (n: number, amount: string) => `Bought ${n} times in 90 days · ${amount} total`,
   plan: "10b5-1 plan", espp: "ESPP purchase",
@@ -30,10 +28,8 @@ const m = messages({
   director: "Director", tenPercent: "10% owner",
   severity: (kind: string, n: number) => `${kind} · Severity ${n}`, watchOutcome: "Watch outcome",
 }, {
-  title: "要点、财报与事件", filters: "筛选",
-  key: "重要", earnings: "财报", material: "事件", insiders: "内部人", all: "全部",
-  report: "财报", nonTrade: (n: number) => `Form 4 非交易 ${n}`, pending: (n: number) => `Form 4 待处理 ${n}`,
-  earlier: (n: number) => `更早 · ${n}`, recent: "只看最近",
+  title: "要点、财报与事件",
+  report: "财报",
   sold: (n: number, amount: string) => `90 天内卖出 ${n} 笔 · 合计 ${amount}`,
   bought: (n: number, amount: string) => `90 天内买入 ${n} 笔 · 合计 ${amount}`,
   plan: "计划内", espp: "员工持股计划代买",
@@ -46,9 +42,11 @@ const m = messages({
   severity: (kind: string, n: number) => `${kind} · 重要度 ${n}`, watchOutcome: "跟踪结果",
 });
 
-const filterLabel = (key: EventFilter) => key === "key" ? m.key : key === "earnings" ? m.earnings : key === "material" ? m.material : key === "insiders" ? m.insiders : m.all;
 /** The readings that carry the report's findings beside its filings; the event-only readings leave them out. */
 const FINDINGS_IN: ReadonlySet<EventFilter> = new Set<EventFilter>(["key", "earnings", "all"]);
+
+/** Older rows join this many at a time. */
+const PAGE = 12;
 
 type StreamRow = { kind: "noise"; id: string; date: string; row: NoiseRow } | { kind: "finding"; id: string; date: string; finding: VerifiedFinding };
 
@@ -69,9 +67,9 @@ function composeRows(noise: NoiseRow[], findings: VerifiedFinding[], periodEnd: 
  * One stream for the rail: the report's findings, the filings and the events, newest first, in one shape per row: a
  * mark (the event's class, or the finding's severity in its kind's colour), a title, and a line of particulars that
  * starts with the date. Insider trades fold by person and direction over 90 days; routine 6-Ks fold by month.
- * The recent rows show; the older ones open under them.
+ * The recent rows show first; older ones load as the reader scrolls to the end.
  */
-export function RailStream({ rail, findings, findingsPeriodEnd, verdicts, ticker, updates, focus, pendingInsider, phase = "ready", filter, onFilter, onFocusItem, onFocusFinding, onRetry }: {
+export function RailStream({ rail, findings, findingsPeriodEnd, verdicts, ticker, updates, focus, phase = "ready", filter, onFocusItem, onFocusFinding, onRetry }: {
   rail: RailItems | null;
   /** Verified findings, most severe first. */
   findings: VerifiedFinding[];
@@ -84,11 +82,10 @@ export function RailStream({ rail, findings, findingsPeriodEnd, verdicts, ticker
   updates: number;
   /** The focused finding id, report accession or event id. */
   focus: string | null;
-  pendingInsider: number;
   /** `loading` while a retry is in flight; `error` when the events request failed and the rest of the page did not. */
   phase?: "ready" | "loading" | "error";
+  /** The reading of the list (`?events=`); Key by default. */
   filter: EventFilter;
-  onFilter: (filter: EventFilter) => void;
   onFocusItem: (item: RailItem | null) => void;
   onFocusFinding: (id: string | null) => void;
   onRetry?: () => void;
@@ -96,54 +93,43 @@ export function RailStream({ rail, findings, findingsPeriodEnd, verdicts, ticker
   useLocale();
   const all = rail ? [...rail.recent, ...rail.earlier] : [];
   const noise = noiseRows(all, filter);
-  const eventCounts = filterCounts(all);
-  const counts = Object.fromEntries(EVENT_FILTERS.map(key => [key, eventCounts[key] + (FINDINGS_IN.has(key) ? findings.length : 0)])) as Record<EventFilter, number>;
   const rows = composeRows(noise, findings, findingsPeriodEnd, filter);
-  const [more, setMore] = useState(false);
   const [openRows, setOpenRows] = useState<ReadonlySet<string>>(() => new Set());
   const hosts = (id: string | null) => id ? rows.find(r => r.id === id || (r.kind === "noise" && rowLeaves(r.row).some(item => item.id === id))) ?? null : null;
   const focusedRow = hosts(focus);
+  // The recent rows open the list; each time the end comes into view another page of older rows joins, and the row in
+  // focus is always among them.
   const since = rail?.since ?? "";
-  const recent = rows.filter(r => r.date >= since || r === focusedRow);
-  const earlier = rows.filter(r => !recent.includes(r));
-  const shown = more ? rows : recent;
+  const recentCount = Math.max(PAGE, rows.filter(r => r.date >= since).length);
+  const [limit, setLimit] = useState(recentCount);
+  const [pagedFor, setPagedFor] = useState(filter);
+  if (pagedFor !== filter) { setPagedFor(filter); setLimit(recentCount); }
+  const shown = rows.slice(0, Math.max(limit, focusedRow ? rows.indexOf(focusedRow) + 1 : 0));
+  const more = shown.length < rows.length;
+  const end = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = end.current;
+    if (!el || !more) return;
+    const observer = new IntersectionObserver(entries => { if (entries.some(e => e.isIntersecting)) setLimit(n => n + PAGE); }, { root: el.closest(".rail-scroll"), rootMargin: "0px 0px 120px 0px" });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [more, shown.length]);
   const ids = shown.flatMap(r => [r.id, ...(r.kind === "noise" ? rowLeaves(r.row).map(item => item.id) : [])]);
   const arrived = useArrivals(ids, updates);
   const still = useReducedMotion();
   const tip = useRailTip();
   const rowMotion: RowMotion = { layout: still ? false : "position", layoutDependency: ids.join(), exit: rowExit };
-  const buttons = useRef(new Map<EventFilter, HTMLButtonElement>());
-  const [previousSelection, setPreviousSelection] = useState<{ focus: string | null; filter: EventFilter }>({ focus: null, filter });
-  if (previousSelection.focus !== focus || previousSelection.filter !== filter) {
-    setPreviousSelection({ focus, filter });
+  const [previousFocus, setPreviousFocus] = useState<string | null>(null);
+  if (previousFocus !== focus) {
+    setPreviousFocus(focus);
     if (focusedRow?.kind === "noise" && focusedRow.row.kind !== "item" && !openRows.has(focusedRow.id)) setOpenRows(new Set(openRows).add(focusedRow.id));
   }
-  const notes = [rail && rail.quiet > 0 ? m.nonTrade(rail.quiet) : null, pendingInsider > 0 ? m.pending(pendingInsider) : null].filter(Boolean).join(" · ");
-  const move = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    const index = EVENT_FILTERS.indexOf(filter);
-    const next = event.key === "ArrowRight" || event.key === "ArrowDown" ? EVENT_FILTERS[(index + 1) % EVENT_FILTERS.length]
-      : event.key === "ArrowLeft" || event.key === "ArrowUp" ? EVENT_FILTERS[(index - 1 + EVENT_FILTERS.length) % EVENT_FILTERS.length]
-      : event.key === "Home" ? EVENT_FILTERS[0]
-      : event.key === "End" ? EVENT_FILTERS[EVENT_FILTERS.length - 1]
-      : null;
-    if (!next || next === filter) { if (next) event.preventDefault(); return; }
-    event.preventDefault();
-    onFilter(next);
-    buttons.current.get(next)?.focus();
-  };
   const toggleRow = (id: string) => setOpenRows(current => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; });
   return <section className="stream" data-section="stream" data-focus={focus != null ? "" : undefined} aria-label={m.title}>
     {phase === "loading" ? <StreamSkeleton /> : phase === "error" ? <div className="event-state">
       <p>{m.loadFailed}</p>
       <Button variant="unstyled" type="button" onClick={onRetry}>{m.retry}</Button>
     </div> : <>
-    <div className="event-filters" role="radiogroup" aria-label={m.filters} onKeyDown={move}>
-      {EVENT_FILTERS.map(key => <Button variant="unstyled" type="button" key={key} role="radio" aria-checked={filter === key} tabIndex={filter === key ? 0 : -1}
-        className="event-filter" ref={node => { if (node) buttons.current.set(key, node); else buttons.current.delete(key); }}
-        onClick={() => onFilter(key)}>
-        {filterLabel(key)}<small>{counts[key]}</small>
-      </Button>)}
-    </div>
     <div className="stream-rows" id="rail-stream">
       <AnimatePresence initial={false} mode="popLayout">
       {rows.length === 0 ? <motion.p key="empty" className="event-empty" initial={still ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={still ? undefined : { opacity: 0 }} transition={{ duration: .16 }}>{m.empty}</motion.p>
@@ -155,17 +141,13 @@ export function RailStream({ rail, findings, findingsPeriodEnd, verdicts, ticker
       </AnimatePresence>
       {tip.node}
     </div>
-    {(earlier.length > 0 || notes) && <div className="stream-foot">
-      {earlier.length > 0 && <Button variant="unstyled" type="button" className="stream-more" aria-expanded={more} aria-controls="rail-stream" onClick={() => setMore(v => !v)}>{more ? m.recent : m.earlier(earlier.length)}</Button>}
-      {notes && <span className="stream-note">{notes}</span>}
-    </div>}
+    {more && <div ref={end} className="stream-end" aria-hidden="true" />}
     </>}
   </section>;
 }
 
 function StreamSkeleton() {
   return <>
-    <div className="event-filters" aria-hidden="true">{[0, 1, 2, 3, 4].map(i => <span key={i} className="event-filter event-filter--ghost" />)}</div>
     <div className="stream-rows">
       {[0, 1, 2, 3, 4].map(i => <div key={i} className="stream-row"><span className="stream-mark"><i className="finding-mark" /></span><span className="stream-body"><span className="stream-title ghost-text">{m.title}</span><span className="stream-meta ghost-text">00.00</span></span></div>)}
     </div>
