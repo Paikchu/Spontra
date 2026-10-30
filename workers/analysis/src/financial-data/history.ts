@@ -1,7 +1,7 @@
 import type {RevenueHistory, RevenueHistoryQuarter} from '../../../../shared/analysis-contract/revenue-history.ts';
 import {historyQuarterFrom, mergeHistory, readHistory, revenueHistorySchema, validHistoryQuarter} from '../../../../shared/analysis-runtime/financial-data/history.ts';
 import {D1SecRepository} from '../sec/d1.ts';
-import {extractVerifiedCurrentQuarters, readReportedFacts, type DocumentSource, type Fact} from './parser.ts';
+import {extractVerifiedCurrentQuarters, readReportedFacts, SEC_FLOW_PARSER_VERSION, type DocumentSource, type Fact} from './parser.ts';
 import {readFilingDocuments, reportsFinancials, type SecReader} from './provider.ts';
 import {extractRevenueHistory, REVENUE_PARSER_VERSION} from './revenue-parser.ts';
 import { TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
@@ -12,7 +12,9 @@ import { daysBetween } from "../../../../shared/analysis-runtime/dates.ts";
  * Reads direct periods and all explicitly dated supplemental quarterly columns, including comparatives.
  * Run by the `history` task after each publication; it never touches the complete-snapshot pointer.
  */
-export const HISTORY_VERSION = 'revenue-history.v6:' + REVENUE_PARSER_VERSION;
+// The revenue parser reads through parser.ts, so a fix there must re-read filings an earlier scan marked read without
+// a quarter (TTMI's 2026 10-Qs, fixed in deterministic-sec.v18, stayed out of the history).
+export const HISTORY_VERSION = `revenue-history.v6:${REVENUE_PARSER_VERSION}:${SEC_FLOW_PARSER_VERSION}`;
 export const historyKey = (cik: string) => `sec:revenue-history:v1:${cik}`;
 const cursorKey = (cik: string) => `sec:revenue-history-cursor:v1:${cik}`;
 const REFRESH_MS = 86400000, LOOKBACK_DAYS = 1185, MAX_DOCUMENTS = 32, MAX_LISTED = 400, NOTICES_PER_STEP = 12, MAX_DOCUMENT_ATTEMPTS = 3;

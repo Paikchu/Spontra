@@ -38,7 +38,7 @@ function render(locale: "en" | "zh-CN", payload: PublicBusinessFlow = flow, opti
   setLocale(locale);
   browser(options.search);
   const pageFilings = options.filings ?? null;
-  // As main.tsx resolves it: the issuer, the publications, the flow and the filings.
+  // As CompanyPage.tsx resolves it: the issuer, the publications, the flow and the filings.
   const identity = options.identity ?? companyIdentity({ locale, issuer: options.issuer ?? company.issuer, explainerName: company.explainer.companyName, flow: payload, filings: pageFilings });
   return renderToStaticMarkup(h(SidebarProvider, { asChild: true, open: true, keyboardShortcut: null, persistState: false },
     h("main", null, h(BusinessMap, { ticker: TICKER, tools: null, flow: payload, notice: null, revenueHistory: company.history ?? null, capital, filings: pageFilings, company: identity, valuation: options.valuation ?? null, findings: options.findings ?? null }))));
@@ -245,9 +245,9 @@ test("U21: on phones Ask is one 48px round button at the bottom right, named for
 });
 
 test("U21: the sideways chart fades its right edge and says to swipe, and the loading face keeps four cells", async () => {
-  const [css, map, main] = await Promise.all([read("../src/style.css"), read("../src/BusinessMap.tsx"), read("../src/main.tsx")]);
+  const [css, map, skeleton] = await Promise.all([read("../src/style.css"), read("../src/BusinessMap.tsx"), read("../src/CompanySkeleton.tsx")]);
   assert.match(media(css, "max-width: 960px"), /\.chart\[data-overflow\]:not\(\[data-end\]\) \{ mask-image: linear-gradient\(to right/);
   assert.match(map, /swipe: "左右滑动查看完整流向"/);
   assert.match(map, /swipe: "Swipe horizontally to see full flow"/);
-  assert.match(main, /\[0, 1, 2, 3\]\.map\(i => <div key=\{i\} className="stat">/);
+  assert.match(skeleton, /\[0, 1, 2, 3\]\.map\(i => <div key=\{i\} className="stat">/);
 });

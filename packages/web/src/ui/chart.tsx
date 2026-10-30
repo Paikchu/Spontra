@@ -5,39 +5,13 @@ import { cn } from "cn"
 import { Slot } from "radix-ui"
 import * as RechartsPrimitive from "recharts"
 import type { TooltipValueType } from "recharts"
+import { CHART_THEMES as THEMES, ChartContext, useChart, type ChartConfig } from "./chart-context"
+import { ChartTooltipContent as CustomChartTooltip, ChartLegendContent as CustomChartLegend } from "./custom-chart"
 
-// Format: { THEME_NAME: CSS_SELECTOR }
-const THEMES = { light: "", dark: ".dark" } as const
+export type { ChartConfig }
 
 const INITIAL_DIMENSION = { width: 320, height: 200 } as const
 type TooltipNameType = number | string
-
-export type ChartConfig = Record<
-  string,
-  {
-    label?: React.ReactNode
-    icon?: React.ComponentType
-  } & (
-    | { color?: string; theme?: never }
-    | { color?: never; theme: Record<keyof typeof THEMES, string> }
-  )
->
-
-type ChartContextProps = {
-  config: ChartConfig
-}
-
-const ChartContext = React.createContext<ChartContextProps | null>(null)
-
-function useChart() {
-  const context = React.useContext(ChartContext)
-
-  if (!context) {
-    throw new Error("useChart must be used within a <ChartContainer />")
-  }
-
-  return context
-}
 
 function ChartContainer({
   id,
@@ -287,12 +261,6 @@ function ChartTooltipContent(props: (React.ComponentProps<typeof RechartsTooltip
   return <RechartsTooltipContent {...props} />
 }
 
-function CustomChartTooltip({ asChild, ...props }: React.ComponentProps<"div"> & { asChild: true; children: React.ReactElement }) {
-  useChart()
-  const Comp = asChild ? Slot.Root : "div"
-  return <Comp data-slot="chart-tooltip" {...props} />
-}
-
 const ChartLegend = RechartsPrimitive.Legend
 
 function RechartsLegendContent({
@@ -353,12 +321,6 @@ function RechartsLegendContent({
 function ChartLegendContent(props: (React.ComponentProps<typeof RechartsLegendContent> & { asChild?: false }) | (React.ComponentProps<"div"> & { asChild: true; children: React.ReactElement })) {
   if (props.asChild) return <CustomChartLegend {...props} />
   return <RechartsLegendContent {...props} />
-}
-
-function CustomChartLegend({ asChild, ...props }: React.ComponentProps<"div"> & { asChild: true; children: React.ReactElement }) {
-  useChart()
-  const Comp = asChild ? Slot.Root : "div"
-  return <Comp data-slot="chart-legend" {...props} />
 }
 
 // Helper to extract item config from a payload.

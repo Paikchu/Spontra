@@ -1,6 +1,6 @@
 import { Button } from "@/packages/web/src/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/packages/web/src/ui/toggle-group";
-import { ChartContainer, ChartLegendContent, ChartTooltipContent, useChart, type ChartConfig } from "@/packages/web/src/ui/chart";
+import { ChartContainer, ChartLegendContent, ChartTooltipContent, useChart, type ChartConfig } from "@/packages/web/src/ui/custom-chart";
 import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import type { RevenueHistory } from "@/shared/analysis-contract/revenue-history";
 import type { BusinessFlowQuarter } from "@/shared/analysis-contract/business-flow";

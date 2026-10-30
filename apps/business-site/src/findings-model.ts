@@ -6,12 +6,11 @@ import type { PublicCapitalStructure } from "@/shared/analysis-contract/capital-
 import type { GuidancePublication } from "@/shared/analysis-contract/guidance";
 import type { RevenueHistory } from "@/shared/analysis-contract/revenue-history";
 import { verifyFindings, type FindingData, type FindingFundamentals, type VerifiedFinding } from "@/shared/analysis-runtime/findings";
-import { getLocale, labels, type Locale } from "@/packages/web/src/i18n";
+import { getLocale, type Locale } from "@/packages/web/src/i18n";
 
 export type { VerifiedFinding };
 
-export const KIND_LABEL: Record<VerifiedFinding["kind"], string> = labels({ risk: "Risk", strength: "Strength", shift: "Shift", watch: "Watch" }, { risk: "风险", strength: "优势", shift: "变化", watch: "跟踪" });
-export const VIEW_LABEL = labels({ profit: "Profit", cash: "Cash flow", balance: "Balance sheet", valuation: "Valuation" }, { profit: "利润", cash: "现金流", balance: "资产负债表", valuation: "估值评估" });
+export { KIND_LABEL, VIEW_LABEL } from "./findings-labels";
 
 export function findingData(flow: PublicBusinessFlow, history: RevenueHistory | null, capital: PublicCapitalStructure | null, fundamentals: FindingFundamentals | null, guidance: GuidancePublication | null, peers: PeersPublication | null = null, passages: FindingPassage[] | null = null, events: EventsPublication | null = null): FindingData {
   return { quarters: flow.quarters, history, capital, fundamentals, guidance, peers, passages, events };
