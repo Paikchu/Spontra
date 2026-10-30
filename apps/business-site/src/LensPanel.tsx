@@ -73,7 +73,7 @@ export function LensPanel({ finding, data, sources, materials, record, ticker, n
   return <section className="lens" data-kind={finding.kind} data-compact={compact || undefined} aria-label={m.finding(finding.title)} key={finding.id}>
     <header className="lens-head">
       <div className="lens-title">
-        <b className="lens-kind" data-kind={finding.kind}>{KIND_LABEL[finding.kind]}<i aria-label={m.severity(finding.severity)}>{"●".repeat(finding.severity)}</i></b>
+        <b className="lens-kind" data-kind={finding.kind}>{KIND_LABEL[finding.kind]}<i aria-label={m.severity(finding.severity)}>{finding.severity}</i></b>
         <h2 lang={langOf(finding.title)}>{normalizeDisplayText(finding.title)}</h2>
         <span className="lens-basis">{m.report(shortPeriod(finding.periodEnd))} · {VIEW_LABEL[finding.anchors.view]}<SourceLanguage of={[finding.title, finding.judgment.text]} /></span>
       </div>

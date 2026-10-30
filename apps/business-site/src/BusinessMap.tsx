@@ -23,7 +23,6 @@ import type { CapitalQuarter, PublicCapitalStructure } from "@/shared/analysis-c
 import { balanceMetrics, balancePool, cashMetrics, cashPool, type Pool } from "./capital-model";
 import { PoolChart, TONE_LABEL, toneColor } from "./PoolChart";
 import { CompanyTour } from "./CompanyTour";
-import { PrivacyNote } from "./PrivacyNote";
 import { Rail } from "./Sidebar";
 import { track } from "./track";
 import { stageChartBox } from "./chart-box";
@@ -684,7 +683,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
         </dl>
       </details>}
       {railFoot}
-      <div className="rail-end"><PrivacyNote /><CompanyTour key={ticker} available={!stageOverride && !focusedCheck && !focused && !focusedReport && !focusedEvent && view !== "valuation"} /></div>
+      <div className="rail-end"><CompanyTour key={ticker} available={!stageOverride && !focusedCheck && !focused && !focusedReport && !focusedEvent && view !== "valuation"} /></div>
     </Rail>
 
     <section className="stage" id="company-stage" tabIndex={-1} data-focus={focused && findings || focusedCheck || focusedReport || focusedEvent && events ? "lens" : undefined} data-view={view} data-trend={view !== "valuation" && (hasRevenueTrend || metricGroups.length) ? "" : undefined} data-finding={focused?.kind} data-timeline={view !== "valuation" && points.length ? "" : undefined}
@@ -731,13 +730,13 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
         </div>}
         <div className="stage-controls">
         {view === "profit" && yearAgo && lastQuarter && <ToggleGroup type="single" variant="unstyled" rovingFocus={false} value={basis} onValueChange={next => { if (next && next !== basis) crossfade(() => setBasis(next as Basis)); }} asChild>
-          <span className="trend-views stage-views" role="radiogroup" aria-label={m.comparisonBase}>
+          <span className="trend-views" role="radiogroup" aria-label={m.comparisonBase}>
             <ToggleGroupItem value="yoy" role="radio" aria-checked={basis === "yoy"}>{yoyLabel(getLocale())}</ToggleGroupItem>
             <ToggleGroupItem value="qoq" role="radio" aria-checked={basis === "qoq"}>{qoqLabel(getLocale())}</ToggleGroupItem>
           </span>
         </ToggleGroup>}
         {view === "profit" && !current && (trunked?.folded.size ?? 0) > 0 && <ToggleGroup type="single" variant="unstyled" rovingFocus={false} value={detail ? "detail" : "trunk"} onValueChange={next => { if (next && (next === "detail") !== detail) crossfade(() => setDetail(next === "detail")); }} asChild>
-          <span className="trend-views stage-views" role="radiogroup" aria-label={m.statementDepth}>
+          <span className="trend-views" role="radiogroup" aria-label={m.statementDepth}>
             <ToggleGroupItem value="trunk" role="radio" aria-checked={!detail}>{m.trunk}</ToggleGroupItem>
             <ToggleGroupItem value="detail" role="radio" aria-checked={detail}>{m.detail}</ToggleGroupItem>
           </span>

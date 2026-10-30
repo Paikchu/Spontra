@@ -97,6 +97,13 @@ function company(value: unknown): HomeCompany | null {
     if (!periodEnd || !amount) return null;
     revenueTrend.push({ periodEnd, value: amount });
   }
+  let statement: HomeCompany["statement"] = null;
+  if (row.statement != null) {
+    const item = record(row.statement);
+    const currency = item && text(item.currency), revenueAmount = item && decimal(item.revenue), net = item && decimal(item.net);
+    const cost = item && item.cost != null ? decimal(item.cost) : null;
+    if (currency && revenueAmount && net) statement = { currency, revenue: revenueAmount, cost, net };
+  }
   const counts = record(row.findingCounts);
   const count = (key: string) => counts && typeof counts[key] === "number" && Number.isInteger(counts[key]) && (counts[key] as number) >= 0 ? counts[key] as number : null;
   const risk = count("risk");
@@ -114,7 +121,7 @@ function company(value: unknown): HomeCompany | null {
   return {
     ticker, name, nameZh: row.nameZh, aliases: row.aliases as string[], sector: row.sector,
     status: status as HomeCompany["status"], latestPeriod, revenue: parsedRevenue,
-    revenueReason: row.revenueReason as HomeRevenueReason | null, revenueTrend,
+    revenueReason: row.revenueReason as HomeRevenueReason | null, revenueTrend, statement,
     findingCounts: { risk, strength, shift, watch }, topFindings,
   };
 }

@@ -6,104 +6,85 @@ import type { HomeCompany, HomeDigest } from "../../../shared/analysis-contract/
 import { CompanyLogo } from "./CompanyMark";
 import { KIND_LABEL } from "./findings-model";
 import type { DigestStatus } from "./home-data";
+import { stripBandPath, stripOf } from "./home-strip";
 import { PeriodMark } from "./PeriodMark";
 import { PrivacyNote } from "./PrivacyNote";
 import { SearchPanel } from "./SearchDialog";
 import { LanguageToggle, ThemeToggle } from "./Sidebar";
-import { worthWatching, type SignalTab } from "./worth-watching";
+import { worthWatching, type SignalTab, type WorthWatchingCard } from "./worth-watching";
 
 const m = messages({
-  eyebrowLead: "From SEC filings ·",
-  eyebrowTail: "US companies covered",
   title: "See how a company makes money, and spot the risks early",
-  subtitle: "Every filing turned into a business map: where revenue comes from, where money goes, and what changed this quarter.",
-  trust: (time: string) => `Source: SEC EDGAR · Updated after each filing · Last update ${time}`,
-  trustStatic: "Source: SEC EDGAR · Updated after each filing",
-  navFindings: "Findings",
-  navCompanies: "Companies",
-  navHow: "How it works",
+  trust: (count: number, time: string) => `${count} US companies, read from SEC EDGAR · Updated ${time}`,
+  trustStatic: (count: number) => `${count} US companies, read from SEC EDGAR`,
   search: "Search companies",
   recent: "Recently viewed",
   popular: "Popular",
   signalsTitle: "Worth watching",
-  signalsSub: "Key changes and risks from the latest filings",
   tabAll: "All",
   tabRisks: "Risks",
   tabStrengths: "Strengths",
   tabShifts: "Shifts",
-  seeEvidence: "See evidence",
   signalsEmpty: "Nothing new in this category",
-  moreFindings: (n: number) => `${n} more for this company`,
-  seeAll: "See all",
+  moreFindings: (n: number) => `${n} more`,
   companiesTitle: "Companies covered",
   sortLabel: "Sort",
   sortLatest: "Latest report",
   sortYoy: "Revenue YoY",
   sortRisk: "Risk count",
   sortTicker: "Ticker order",
-  latestRevenue: "Latest quarterly revenue",
-  yoy: "YoY",
+  colCompany: "Company",
+  colStatement: "Latest quarter",
+  colRevenue: "Revenue",
+  colYoy: "YoY",
+  colReport: "Report",
+  colFindings: "Findings",
+  stripLabel: (revenue: string, net: string) => `Revenue ${revenue}, net income ${net}`,
   counts: (r: number, s: number) => `${r} risks · ${s} strengths`,
   findingsPending: "Findings still generating",
-  open: "Open",
+  noFindings: "No findings yet",
   updating: "Updating",
-  how1: "Find a company",
-  how1d: "Type a ticker or name and pick a covered company.",
-  how2: "Read the business map",
-  how2d: "Revenue, costs and profit in one picture.",
-  how3: "Check the findings",
-  how3d: "Risks, strengths and shifts, each traced to the SEC text.",
   disclaimer: "Generated from public SEC filings for research only. Not investment advice.",
   notDisclosed: "Not disclosed this quarter",
   missingYoy: "Fewer than two quarters, so the year-over-year rate is unavailable",
   error: "Couldn't load data",
   retry: "Retry",
   offline: "You are offline",
-  justNow: "Just now",
+  justNow: "just now",
   minutesAgo: (n: number) => `${n} minutes ago`,
   hoursAgo: (n: number) => `${n} hours ago`,
   daysAgo: (n: number) => `${n} days ago`,
 }, {
-  eyebrowLead: "基于 SEC 原始财报 · 已覆盖",
-  eyebrowTail: "家美股公司",
   title: "看懂一家公司怎么赚钱，提前发现风险",
-  subtitle: "把财报变成一张业务地图：收入从哪来、钱花在哪、最新一季变了什么。",
-  trust: (time: string) => `数据来源 SEC EDGAR · 财报发布后自动更新 · 最近更新 ${time}`,
-  trustStatic: "数据来源 SEC EDGAR · 财报发布后自动更新",
-  navFindings: "要点",
-  navCompanies: "公司",
-  navHow: "怎么用",
+  trust: (count: number, time: string) => `已覆盖 ${count} 家美股公司，数据来自 SEC EDGAR · 最近更新 ${time}`,
+  trustStatic: (count: number) => `已覆盖 ${count} 家美股公司，数据来自 SEC EDGAR`,
   search: "搜索公司",
   recent: "最近查看",
   popular: "热门",
   signalsTitle: "值得关注",
-  signalsSub: "最新财报中的重要变化与风险",
   tabAll: "全部",
   tabRisks: "风险",
   tabStrengths: "优势",
   tabShifts: "变化",
-  seeEvidence: "查看依据",
   signalsEmpty: "这一类暂时没有新要点",
-  moreFindings: (n: number) => `该公司另有 ${n} 条`,
-  seeAll: "看全部",
+  moreFindings: (n: number) => `另有 ${n} 条`,
   companiesTitle: "已覆盖公司",
   sortLabel: "排序",
   sortLatest: "最近财报",
   sortYoy: "营收同比",
   sortRisk: "风险数量",
   sortTicker: "代码字母序",
-  latestRevenue: "最新季度营收",
-  yoy: "同比",
+  colCompany: "公司",
+  colStatement: "最新季度",
+  colRevenue: "营收",
+  colYoy: "同比",
+  colReport: "财报",
+  colFindings: "要点",
+  stripLabel: (revenue: string, net: string) => `营收 ${revenue}，净利润 ${net}`,
   counts: (r: number, s: number) => `风险 ${r} · 优势 ${s}`,
   findingsPending: "要点生成中",
-  open: "打开",
+  noFindings: "暂无要点",
   updating: "更新中",
-  how1: "搜索公司",
-  how1d: "输入代码或名称，从已覆盖的公司中选择。",
-  how2: "看业务地图",
-  how2d: "收入、成本和利润，一张图看清。",
-  how3: "看要点",
-  how3d: "风险、优势与变化，每条都能追溯到 SEC 原文。",
   disclaimer: "本站内容基于公开 SEC 申报自动生成，仅供研究参考，不构成投资建议。",
   notDisclosed: "该季度财报未披露此项",
   missingYoy: "历史不足两个季度，无法计算同比",
@@ -144,6 +125,18 @@ function sorted(companies: HomeCompany[], sort: SortKey): HomeCompany[] {
   return list.sort((a, b) => (b.latestPeriod?.periodEnd ?? "").localeCompare(a.latestPeriod?.periodEnd ?? "") || ticker(a, b));
 }
 
+/** Cards in rank order, gathered under the company each belongs to; a company's group stands where its first card ranked. */
+function grouped(cards: WorthWatchingCard[]): Array<{ company: HomeCompany; findings: WorthWatchingCard["finding"][]; extra: number }> {
+  const groups = new Map<string, { company: HomeCompany; findings: WorthWatchingCard["finding"][]; extra: number }>();
+  for (const card of cards) {
+    const group = groups.get(card.company.ticker) ?? { company: card.company, findings: [], extra: 0 };
+    group.findings.push(card.finding);
+    group.extra = card.extra;
+    groups.set(card.company.ticker, group);
+  }
+  return [...groups.values()];
+}
+
 function Delta({ pct, title }: { pct: number | null; title?: string }) {
   if (pct == null) return <span className="home-delta" title={title}>—</span>;
   const dir = pct > 0 ? "up" : pct < 0 ? "down" : "flat";
@@ -152,22 +145,27 @@ function Delta({ pct, title }: { pct: number | null; title?: string }) {
   return <span className="home-delta" data-dir={dir}>{arrow}{sign}{Math.abs(pct).toFixed(1)}%</span>;
 }
 
+/** Eight quarters of revenue as bars: the row's picture when the quarter's statement is not in the digest. */
 function Bars({ trend }: { trend: Array<{ value: string }> }) {
   const values = trend.map(point => Number(point.value)).filter(value => Number.isFinite(value) && value >= 0);
   const max = Math.max(1, ...values);
   return <span className="home-bars" aria-hidden="true">{values.map((value, index) =>
-    <i key={index} style={{ ["--h" as string]: `${Math.max(8, (value / max) * 100)}%`, animationDelay: `${index * 20}ms` }} />)}</span>;
+    <i key={index} style={{ ["--h" as string]: `${Math.max(8, (value / max) * 100)}%` }} />)}</span>;
 }
 
-function scrollToSection(id: string) {
-  const target = document.getElementById(id);
-  const home = document.querySelector<HTMLElement>("main.home");
-  if (!target || !home) return;
-  const behavior: ScrollBehavior = matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
-  if (home.scrollHeight > home.clientHeight + 1) {
-    const top = target.getBoundingClientRect().top - home.getBoundingClientRect().top + home.scrollTop - 64;
-    home.scrollTo({ top, behavior });
-  } else target.scrollIntoView({ behavior, block: "start" });
+/** The quarter's revenue flowing into its costs and its profit: the statement the company page draws, at row size. */
+function StatementStrip({ company }: { company: HomeCompany }) {
+  const statement = company.statement ?? null;
+  const strip = statement ? stripOf(statement) : null;
+  if (!statement || !strip) return <Bars trend={company.revenueTrend} />;
+  const { width, height, bar } = strip;
+  return <svg className="home-strip" viewBox={`0 0 ${width} ${height + (strip.loss ? strip.loss.h + 2 : 0)}`} width={width} height={height + (strip.loss ? strip.loss.h + 2 : 0)} role="img"
+    aria-label={m.stripLabel(money(statement.revenue, statement.currency), money(statement.net, statement.currency))}>
+    {strip.bands.map(band => <path key={band.kind} className="home-strip-band" data-kind={band.kind} d={stripBandPath(band, strip)} />)}
+    <rect className="home-strip-bar" data-kind="revenue" x={0} y={0} width={bar} height={height} />
+    {strip.bands.map(band => <rect key={band.kind} className="home-strip-bar" data-kind={band.kind} x={width - bar} y={band.ty} width={bar} height={band.th} />)}
+    {strip.loss && <rect className="home-strip-loss" x={width - bar - 0.5} y={strip.loss.y + 1.5} width={bar - 1} height={strip.loss.h - 1} />}
+  </svg>;
 }
 
 /** Homepage: the covered catalog, the latest findings, and a search that only opens a covered company. */
@@ -188,15 +186,6 @@ export function Home({ light, onToggleTheme, recent, onPick, digest = null, dige
   const [offline, setOffline] = useState(false);
   const [sort, setSort] = useState<SortKey>("latest");
   const [tab, setTab] = useState<SignalTab>("all");
-  const [showAll, setShowAll] = useState(false);
-  const [compactSignals, setCompactSignals] = useState(() => typeof matchMedia === "function" && matchMedia("(max-width: 620px)").matches);
-  useEffect(() => {
-    if (typeof matchMedia !== "function") return;
-    const media = matchMedia("(max-width: 620px)");
-    const update = () => setCompactSignals(media.matches);
-    media.addEventListener("change", update);
-    return () => media.removeEventListener("change", update);
-  }, []);
   const companies = digest?.companies ?? [];
   const catalog = companies.map(company => ({ ticker: company.ticker, name: company.name, nameZh: company.nameZh, aliases: company.aliases }));
   const catalogStatus = digestStatus === "ready" ? "ready" : digestStatus === "error" ? "error" : "loading";
@@ -204,10 +193,10 @@ export function Home({ light, onToggleTheme, recent, onPick, digest = null, dige
     ? recent.slice(0, 5).map(ticker => ({ ticker, popular: false }))
     : (digest?.popular ?? []).slice(0, 5).map(ticker => ({ ticker, popular: true }));
   const shown = sorted(companies, sort);
-  const allSignals = worthWatching(companies, tab);
-  const signals = worthWatching(companies, tab, compactSignals && !showAll ? 4 : 6);
+  const groups = grouped(worthWatching(companies, tab, 8));
   const showSignals = digestStatus === "loading" || worthWatching(companies, "all").length > 0;
   const updated = digest ? relativeTime(digest.coverage.lastUpdatedAt) : null;
+  const count = digest?.coverage.count ?? 0;
 
   useEffect(() => { if (matchMedia("(pointer: fine)").matches) inputRef.current?.focus({ preventScroll: true }); }, []);
   useEffect(() => {
@@ -244,11 +233,6 @@ export function Home({ light, onToggleTheme, recent, onPick, digest = null, dige
         <span className="home-mark" lang="en">BV</span>
         <span lang="en">Business View</span>
       </a>
-      <nav className="home-anchors" aria-label={m.navHow}>
-        {showSignals && <button type="button" onClick={() => scrollToSection("home-signals")}>{m.navFindings}</button>}
-        <button type="button" onClick={() => scrollToSection("home-companies")}>{m.navCompanies}</button>
-        <button type="button" onClick={() => scrollToSection("home-how")}>{m.navHow}</button>
-      </nav>
       <div className="home-nav-tools">
         {fieldHidden && <button type="button" className="home-nav-search" onClick={onSearch}>
           <span>{m.search}</span><kbd aria-hidden="true">/</kbd>
@@ -259,61 +243,52 @@ export function Home({ light, onToggleTheme, recent, onPick, digest = null, dige
     </header>
     <div className="home-wrap">
       <section className="home-hero" aria-labelledby="home-title">
-        <p className="home-eyebrow">
-          <span>{m.eyebrowLead}</span>
-          {digestStatus === "loading" ? <i className="home-count" /> : <b>{digest?.coverage.count ?? 0}</b>}
-          <span>{m.eyebrowTail}</span>
-        </p>
         <h1 id="home-title">{m.title}</h1>
-        <p className="home-sub">{m.subtitle}</p>
         <SearchPanel inline current={null} recent={recent} onPick={onPick} inputRef={inputRef} catalog={catalog} popular={digest?.popular ?? []} catalogStatus={catalogStatus} />
-        <p className="home-trust">{updated ? m.trust(updated) : m.trustStatic}</p>
+        {digestStatus !== "loading" && <p className="home-trust">{updated ? m.trust(count, updated) : m.trustStatic(count)}</p>}
       </section>
       {chips.length > 0 && <nav className="home-quick" aria-label={chips[0].popular ? m.popular : m.recent}>
         <span>{chips[0].popular ? m.popular : m.recent}</span>
         {chips.map(chip => <a key={chip.ticker} href={`/companies/${chip.ticker}`} data-nav><CompanyLogo ticker={chip.ticker} small /><span lang="en">{chip.ticker}</span></a>)}
       </nav>}
-      {showSignals && <section className="home-signals" id="home-signals" aria-labelledby="home-signals-title" aria-busy={digestStatus === "loading"}>
+      {showSignals && <section className="home-watch" id="home-signals" aria-labelledby="home-signals-title" aria-busy={digestStatus === "loading"}>
         <div className="home-section-head">
-          <div>
-            <h2 id="home-signals-title">{m.signalsTitle}</h2>
-            <p>{m.signalsSub}</p>
-          </div>
+          <h2 id="home-signals-title">{m.signalsTitle}</h2>
           <div className="home-tabs" role="tablist" aria-label={m.signalsTitle}>
-            {(["all", "risk", "strength", "shift"] as const).map(key => <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => { setTab(key); setShowAll(false); }}>
+            {(["all", "risk", "strength", "shift"] as const).map(key => <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => setTab(key)}>
               {key === "all" ? m.tabAll : key === "risk" ? m.tabRisks : key === "strength" ? m.tabStrengths : m.tabShifts}
             </button>)}
           </div>
         </div>
-        {digestStatus !== "loading" && signals.length === 0 ? <p className="home-signals-empty">{m.signalsEmpty}</p> : <>
-        <div className="home-signals-grid" data-all={showAll || undefined}>
-          {digestStatus === "loading" ? Array.from({ length: 6 }, (_, i) => <div key={i} className="home-signal home-ghost"><span className="period-skeleton" /></div>)
-            : signals.map(item => {
-              const period = item.company.latestPeriod?.periodEnd === item.finding.periodEnd ? item.company.latestPeriod : null;
-              return <article key={`${item.company.ticker}-${item.finding.id}`} className="home-signal" data-kind={item.finding.kind} data-ticker={item.company.ticker} data-finding={item.finding.id}>
-              <a className="home-card-stretch" data-nav href={`/companies/${item.company.ticker}?finding=${encodeURIComponent(item.finding.id)}`}><span className="home-sr">{item.company.ticker}</span></a>
-              <header>
-                <CompanyLogo ticker={item.company.ticker} small />
-                <b lang="en">{item.company.ticker}</b>
-                <PeriodMark variant="signal" ticker={item.company.ticker} companyName={item.company.name} periodEnd={item.finding.periodEnd} periodStart={period?.periodStart ?? null} fiscalYear={period?.fiscalYear} fiscalQuarter={period?.fiscalQuarter} fiscalYearEndMonth={period?.fiscalYearEndMonth} labelSource={period?.labelSource} />
-              </header>
-              <p className="home-kind"><i data-kind={item.finding.kind} />{KIND_LABEL[item.finding.kind]}
-                <span className="home-severity" aria-hidden="true">{[1, 2, 3].map(n => <i key={n} data-on={n <= item.finding.severity || undefined} />)}</span>
-              </p>
-              <p className="home-signal-title" lang={langOf(item.finding.title)}>{normalizeDisplayText(item.finding.title)}</p>
-              <footer className="home-signal-actions">
-                {item.extra >= 1 && <a className="home-extra" href={`/companies/${item.company.ticker}`} data-nav>{m.moreFindings(item.extra)}</a>}
-                <span className="home-more">{m.seeEvidence}</span>
-              </footer>
-            </article>;
+        {digestStatus === "loading" ? <ol className="home-watch-list" aria-hidden="true">{Array.from({ length: 4 }, (_, i) => <li key={i} className="home-watch-group home-ghost" />)}</ol>
+          : groups.length === 0 ? <p className="home-signals-empty">{m.signalsEmpty}</p>
+          : <ol className="home-watch-list">
+            {groups.map(group => {
+              const name = nameOf(group.company);
+              const period = group.company.latestPeriod;
+              return <li key={group.company.ticker} className="home-watch-group">
+                <header>
+                  <a href={`/companies/${group.company.ticker}`} data-nav className="home-watch-company">
+                    <CompanyLogo ticker={group.company.ticker} small /><b lang="en">{group.company.ticker}</b><span lang={name.lang}>{name.text}</span>
+                  </a>
+                  {period && <PeriodMark variant="signal" ticker={group.company.ticker} companyName={group.company.name} periodEnd={group.findings[0]!.periodEnd} periodStart={period.periodEnd === group.findings[0]!.periodEnd ? period.periodStart : null} fiscalYear={period.periodEnd === group.findings[0]!.periodEnd ? period.fiscalYear : undefined} fiscalQuarter={period.periodEnd === group.findings[0]!.periodEnd ? period.fiscalQuarter : undefined} fiscalYearEndMonth={period.fiscalYearEndMonth} labelSource={period.periodEnd === group.findings[0]!.periodEnd ? period.labelSource : undefined} />}
+                </header>
+                <ul>
+                  {group.findings.map(finding => <li key={finding.id} className="home-watch-item" data-kind={finding.kind}>
+                    <a href={`/companies/${group.company.ticker}?finding=${encodeURIComponent(finding.id)}`} data-nav>
+                      <i className="finding-mark" aria-label={`${KIND_LABEL[finding.kind]} ${finding.severity}`}>{finding.severity}</i>
+                      <span lang={langOf(finding.title)}>{normalizeDisplayText(finding.title)}</span>
+                    </a>
+                  </li>)}
+                  {group.extra > 0 && <li className="home-watch-more"><a href={`/companies/${group.company.ticker}`} data-nav>{m.moreFindings(group.extra)}</a></li>}
+                </ul>
+              </li>;
             })}
-        </div>
-        {digestStatus !== "loading" && allSignals.length > 4 && !showAll && <button type="button" className="home-signals-all" onClick={() => setShowAll(true)}>{m.seeAll}</button>}
-        </>}
+          </ol>}
       </section>}
       <section className="home-companies" id="home-companies" aria-labelledby="home-companies-title" aria-busy={digestStatus === "loading"}>
         <div className="home-section-head">
-          <h2 id="home-companies-title">{m.companiesTitle}{digestStatus === "loading" ? <i className="home-count" /> : <b>{locale === "zh-CN" ? `（${digest?.coverage.count ?? 0}）` : ` (${digest?.coverage.count ?? 0})`}</b>}</h2>
+          <h2 id="home-companies-title">{m.companiesTitle}{digestStatus !== "loading" && <b>{locale === "zh-CN" ? `（${count}）` : ` (${count})`}</b>}</h2>
           {digestStatus === "ready" && <select aria-label={m.sortLabel} value={sort} onChange={e => setSort(e.target.value as SortKey)}>
             <option value="latest">{m.sortLatest}</option>
             <option value="yoy">{m.sortYoy}</option>
@@ -322,44 +297,35 @@ export function Home({ light, onToggleTheme, recent, onPick, digest = null, dige
           </select>}
         </div>
         {digestStatus === "error" ? <div className="home-error" role="alert"><p>{m.error}</p><button type="button" onClick={onRetry}>{m.retry}</button></div>
-          : <div className="home-grid">
-            {digestStatus === "loading" ? Array.from({ length: 8 }, (_, i) => <div key={i} className="home-card home-ghost"><span className="period-skeleton" /></div>)
-              : shown.map(company => {
-                const name = nameOf(company);
-                const missing = company.revenueReason === "NOT_DISCLOSED" ? m.notDisclosed : company.revenueReason === "MISSING_TWO_QUARTERS" ? m.missingYoy : undefined;
-                const counts = company.findingCounts.risk + company.findingCounts.strength + company.findingCounts.shift + company.findingCounts.watch;
-                const period = company.latestPeriod;
-                return <article key={company.ticker} className="home-card">
-                  <a className="home-card-stretch" href={`/companies/${company.ticker}`} data-nav><span className="home-sr">{company.ticker} {name.text}</span></a>
-                  <header>
-                    <CompanyLogo ticker={company.ticker} />
-                    <span><b lang="en">{company.ticker}</b><small lang={name.lang}>{name.text}</small></span>
-                    {company.status === "preparing" && <em className="home-badge">{m.updating}</em>}
-                    <span className="home-open">{m.open}</span>
-                  </header>
-                  <p className="home-metric"><span>{m.latestRevenue}</span>
-                    <strong title={company.revenue ? undefined : missing}>{company.revenue ? money(company.revenue.value, company.revenue.currency) : "—"}</strong>
-                  </p>
-                  <p className="home-metric-row"><span>{m.yoy}</span><Delta pct={company.revenue?.yoyPct ?? null} title={company.revenue?.yoyPct == null ? missing : undefined} /><Bars trend={company.revenueTrend} /></p>
-                  <footer>
-                    <span>{counts > 0 ? m.counts(company.findingCounts.risk, company.findingCounts.strength) : company.status !== "ready" ? m.findingsPending : "—"}</span>
-                    {period ? <PeriodMark variant="footer" ticker={company.ticker} companyName={name.text} periodEnd={period.periodEnd} periodStart={period.periodStart} fiscalYear={period.fiscalYear} fiscalQuarter={period.fiscalQuarter} fiscalYearEndMonth={period.fiscalYearEndMonth} labelSource={period.labelSource} /> : <span className="period-secondary">—</span>}
-                  </footer>
-                </article>;
-              })}
-          </div>}
-      </section>
-      <section className="home-how" id="home-how" aria-labelledby="home-how-title">
-        <h2 id="home-how-title" className="home-sr">{m.navHow}</h2>
-        <ol>
-          <li><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5" /><path d="m16 16 4 4" /></svg><h3>{m.how1}</h3><p>{m.how1d}</p></li>
-          <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 16V8m6 8V5m6 11v-6m4 6V9" /></svg><h3>{m.how2}</h3><p>{m.how2d}</p></li>
-          <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 5 6v6c0 4.5 3 6.5 7 8 4-1.5 7-3.5 7-8V6Z" /></svg><h3>{m.how3}</h3><p>{m.how3d}</p></li>
-        </ol>
+          : <table className="home-table">
+            <thead><tr><th scope="col">{m.colCompany}</th><th scope="col">{m.colStatement}</th><th scope="col" className="num">{m.colRevenue}</th><th scope="col" className="num">{m.colYoy}</th><th scope="col">{m.colReport}</th><th scope="col">{m.colFindings}</th></tr></thead>
+            <tbody>
+              {digestStatus === "loading" ? Array.from({ length: 8 }, (_, i) => <tr key={i} className="home-ghost" aria-hidden="true"><td colSpan={6} /></tr>)
+                : shown.map(company => {
+                  const name = nameOf(company);
+                  const missing = company.revenueReason === "NOT_DISCLOSED" ? m.notDisclosed : company.revenueReason === "MISSING_TWO_QUARTERS" ? m.missingYoy : undefined;
+                  const counts = company.findingCounts.risk + company.findingCounts.strength + company.findingCounts.shift + company.findingCounts.watch;
+                  const period = company.latestPeriod;
+                  return <tr key={company.ticker}>
+                    <td className="home-co">
+                      <a href={`/companies/${company.ticker}`} data-nav className="home-row-link">
+                        <CompanyLogo ticker={company.ticker} />
+                        <span><b lang="en">{company.ticker}</b><small lang={name.lang}>{name.text}</small></span>
+                        {company.status === "preparing" && <em className="home-badge">{m.updating}</em>}
+                      </a>
+                    </td>
+                    <td className="home-pic"><StatementStrip company={company} /></td>
+                    <td className="num"><strong title={company.revenue ? undefined : missing}>{company.revenue ? money(company.revenue.value, company.revenue.currency) : "—"}</strong></td>
+                    <td className="num"><Delta pct={company.revenue?.yoyPct ?? null} title={company.revenue?.yoyPct == null ? missing : undefined} /></td>
+                    <td className="home-period">{period ? <PeriodMark variant="footer" ticker={company.ticker} companyName={name.text} periodEnd={period.periodEnd} periodStart={period.periodStart} fiscalYear={period.fiscalYear} fiscalQuarter={period.fiscalQuarter} fiscalYearEndMonth={period.fiscalYearEndMonth} labelSource={period.labelSource} /> : null}</td>
+                    <td className="home-counts">{counts > 0 ? m.counts(company.findingCounts.risk, company.findingCounts.strength) : company.status !== "ready" ? m.findingsPending : m.noFindings}</td>
+                  </tr>;
+                })}
+            </tbody>
+          </table>}
       </section>
       <footer className="home-foot">
         <p>{m.disclaimer}</p>
-        <p>{m.trustStatic}</p>
         <PrivacyNote />
       </footer>
     </div>

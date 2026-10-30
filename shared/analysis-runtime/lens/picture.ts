@@ -18,8 +18,8 @@ export const PICTURE_BASE_CSS = "html,body{margin:0;padding:0;height:100%;backgr
 
 /** The page's dark theme, the one the harness measures in: the values of `apps/business-site/src/style.css` `:root` (a test keeps them equal). */
 export const PICTURE_PREVIEW_THEME: LensFrameTheme = { scheme: "dark", tokens: {
-  "--background": "#0a1412", "--surface": "#0f1d1a", "--border": "#20352f", "--hairline": "#ffffff0f", "--foreground": "#e8efeb",
-  "--muted-foreground": "#93a59d", "--faint": "#7e8e86", "--up": "#79d9cd", "--loss": "#f08e83", "--flow-revenue": "#d9e4de",
+  "--background": "#000000", "--surface": "#0d0d0d", "--border": "#2a2a2a", "--hairline": "#ffffff14", "--foreground": "#ededed",
+  "--muted-foreground": "#a1a1a1", "--faint": "#8b8b8b", "--up": "#79d9cd", "--loss": "#f08e83", "--flow-revenue": "#d6d6d6",
   "--flow-profit": "#79d9cd", "--flow-expense": "#e8b777", "--biz-0": "#7d8f88", "--biz-1": "#4489e0", "--biz-2": "#d2578c",
   "--biz-3": "#8a7ae8", "--biz-4": "#2ea6b8", "--sans": "\"Geist\", \"PingFang SC\", \"Noto Sans SC\", \"Microsoft YaHei\", system-ui, sans-serif",
   "--ease": "cubic-bezier(.22, 1, .36, 1)",

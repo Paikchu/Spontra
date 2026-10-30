@@ -221,7 +221,9 @@ test("U21: on phones the page reads top bar, figures and chart, then the rail's 
   const sequence = [".rail-top", ".stage", '.findings[data-section="business"]', '.findings[data-section="findings"]', '.findings[data-section="events"]', ".revenue-reconciliation", ".rail-end"].map(s => orderOf(phone, s));
   assert.deepEqual(sequence, [0, 1, 2, 3, 4, 5, 6]);
   assert.match(phone, /\.stats \{[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
-  assert.match(phone, /\.stat-value \{[^}]*font-family: var\(--mono\);[^}]*font-size: 22px; line-height: 28px; font-weight: 600;[^}]*tabular-nums/);
+  // Headline figures keep the page face: monospace read as terminal output.
+  assert.match(phone, /\.stat-value \{[^}]*font-size: 22px; line-height: 28px; font-weight: 620;[^}]*tabular-nums/);
+  assert.doesNotMatch(phone, /\.stat-value \{[^}]*font-family: var\(--mono\)/);
   assert.doesNotMatch(phone, /\.rail-company-meta \{[^}]*display:\s*none/);
   assert.doesNotMatch(phone, /brand-company-name/);
   assert.match(phone, /\.rail-top\[data-company\] \{ flex-wrap: wrap; \}/);
@@ -235,12 +237,12 @@ test("U21: the trend's axis is wide enough for its ticks at every width", async 
   for (const query of ["max-width: 960px", "max-width: 640px"]) for (const m of media(css, query).matchAll(/--axis:\s*(\d+)px/g)) assert.ok(Number(m[1]) >= 56, `${query} --axis ${m[1]}px`);
 });
 
-test("U21: on phones Ask is one 48px round button at the bottom right, named for screen readers", async () => {
-  const [css, host] = await Promise.all([read("../src/stage/stage.css"), read("../src/stage/StageHost.tsx")]);
+test("on phones Ask stays in the page flow at the rail's end: no floating button over the sections", async () => {
+  const [css, host] = await Promise.all([read("../src/stage/stage.css"), read("../src/StageHost.tsx".replace("/StageHost", "/stage/StageHost"))]);
   const phone = media(css, "max-width: 640px");
-  assert.match(phone, /\.ask-entry \{[^}]*position: fixed; right: 16px; bottom: calc\(16px \+ env\(safe-area-inset-bottom\)\);/);
-  assert.match(phone, /\.ask-open \{[^}]*width: 48px; height: 48px; min-width: 48px; padding: 0; border-radius: 999px;/);
-  assert.match(phone, /\.ask-open > span \{ display: none; \}/);
+  assert.doesNotMatch(phone, /\.ask-entry \{[^}]*position: fixed/);
+  assert.doesNotMatch(phone, /\.ask-open \{[^}]*border-radius: 999px/);
+  assert.match(media(css, "max-width: 960px"), /\.ask-entry \{ position: static;/);
   assert.match(host, /className="ask-open" aria-label=\{m\.ask\} title=\{m\.ask\}/);
 });
 

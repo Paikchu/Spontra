@@ -192,7 +192,6 @@ function Layer({ state, send, entries, turn, connected, onSubmit, onCancel }: {
     </div>
     {status && <p className="ask-status" role="status">{status}</p>}
     <form ref={bar} className="ask-bar" onSubmit={submit}>
-      <span className="ask-ring" aria-hidden="true" />
       <textarea ref={input} rows={1} value={text} maxLength={600} aria-label={m.input} placeholder={m.input} disabled={!connected} onChange={e => setText(e.target.value)} />
       {busy ? <Button variant="unstyled" type="button" className="ask-send" onClick={onCancel}>{m.cancel}</Button>
         : <Button variant="unstyled" type="submit" className="ask-send" disabled={!text.trim() || !connected}>{m.send}</Button>}

@@ -93,6 +93,14 @@ function historyOf(payload: string | undefined, ticker: string, cik: string | nu
   return readHistory(raw, ticker) ?? (cik ? historyForIssuer(raw, cik, ticker) : null);
 }
 
+/** Revenue, cost of revenue and net income of one quarter, as the home row draws them; null without revenue and net. */
+function statementOf(quarter: PublicBusinessFlow["quarters"][number]): HomeCompany["statement"] {
+  const figure = (key: "revenue" | "cost" | "net") => { const raw = quarter.figures[key]?.value; return raw == null ? null : baseDecimal(raw, quarter.scale); };
+  const revenue = figure("revenue"), net = figure("net");
+  if (revenue == null || net == null || !(Number(revenue) > 0)) return null;
+  return { currency: quarter.currency, revenue, cost: figure("cost"), net };
+}
+
 function pointsOf(flow: PublicBusinessFlow | null, history: RevenueHistory | null): Point[] {
   const byEnd = new Map<string, Point>();
   for (const quarter of history?.quarters ?? []) {
@@ -219,6 +227,7 @@ export async function readHomeDigest(db: D1Database, env: HomeDigestEnv, locale:
       revenueReason = "NOT_DISCLOSED";
     }
     const trend = points.slice(-8).map(point => ({ periodEnd: point.periodEnd, value: baseDecimal(String(point.value), 1)! }));
+    const statement = flowLatest ? statementOf(flowLatest) : null;
     lastUpdatedAt = later(lastUpdatedAt, later(publishedAt, history?.updatedAt ?? null));
     companies.push({
       ticker: canonical,
@@ -231,6 +240,7 @@ export async function readHomeDigest(db: D1Database, env: HomeDigestEnv, locale:
       revenue,
       revenueReason,
       revenueTrend: trend,
+      statement,
       findingCounts: counts,
       topFindings: top,
     });

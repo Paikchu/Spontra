@@ -26,9 +26,9 @@ export function writeTourDone(storage: { setItem(key: string, value: string): vo
  * A finished tour (`bv-tour-done`) never auto-opens; the rail button ignores this and starts at step 1.
  */
 export function shouldAutoOpen(input: { done: boolean; webdriver: boolean; force: boolean }): boolean {
+  // The walkthrough is asked for (the rail link, or the force key for a recording), never sprung on a first visit.
   if (input.done) return false;
-  if (input.webdriver && !input.force) return false;
-  return true;
+  return input.force;
 }
 
 export function tourKey(key: string): TourKey | null {

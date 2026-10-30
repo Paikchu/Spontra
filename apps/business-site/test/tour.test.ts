@@ -2,12 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { tourLayout, readTourDone, reduceTour, shouldAutoOpen, tourKey, writeTourDone, type TourStep } from "../src/tour.ts";
 
-test("a first visit auto-opens and a finished or webdriver visit does not", () => {
-  assert.equal(shouldAutoOpen({ done: false, webdriver: false, force: false }), true);
+test("the walkthrough opens only when forced, never on a first visit", () => {
+  assert.equal(shouldAutoOpen({ done: false, webdriver: false, force: false }), false);
   assert.equal(shouldAutoOpen({ done: true, webdriver: false, force: false }), false);
   assert.equal(shouldAutoOpen({ done: true, webdriver: false, force: true }), false);
   assert.equal(shouldAutoOpen({ done: false, webdriver: true, force: false }), false);
   assert.equal(shouldAutoOpen({ done: false, webdriver: true, force: true }), true);
+  assert.equal(shouldAutoOpen({ done: false, webdriver: false, force: true }), true);
 });
 
 test("done is stored as bv-tour-done and a broken store stays closed", () => {

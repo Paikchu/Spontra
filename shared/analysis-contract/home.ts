@@ -26,6 +26,8 @@ export type HomeRevenue = {
   qoqPct: number | null;
 };
 
+export type HomeStatement = { currency: string; revenue: string; cost: string | null; net: string };
+
 export type HomeCompany = {
   ticker: string;
   name: string;
@@ -50,6 +52,11 @@ export type HomeCompany = {
   revenueReason: HomeRevenueReason | null;
   /** Up to eight quarters, oldest first. */
   revenueTrend: Array<{ periodEnd: string; value: string }>;
+  /**
+   * The latest quarter's statement in three figures (revenue, cost of revenue, net income), decimal strings in the
+   * filing currency, for the row's small revenue-to-profit flow. Null when the quarter does not carry them.
+   */
+  statement?: HomeStatement | null;
   findingCounts: { risk: number; strength: number; shift: number; watch: number };
   /** At most two, highest severity first. */
   topFindings: HomeFinding[];

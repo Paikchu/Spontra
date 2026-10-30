@@ -12,7 +12,7 @@
 
 ## P0 — 可读性与身份（先做）
 
-状态：第 1–3 条已于 2026-10-30 在前端实现（`ValuationPanel.tsx`、`valuation-prose.ts`、`valuation.css`）；"(mine, not disclosed)" 一类作者旁白仍需在 Spontra Analysis 的估值提示词中去掉，前端只把全大写小标题提成标题。第 4–6 条未做。
+状态：2026-10-30 全部 20 条已在前端实现（估值页三条见 `ValuationPanel.tsx`、`valuation-prose.ts`；首页见 `Home.tsx`、`home-strip.ts`；公司页控件、Ask、导览、要点标记见 `BusinessMap.tsx`、`stage.css`、`tour.ts`、`LensPanel.tsx`）。暗色主题同日改为纯黑。两处留给后端：正文里 "(mine, not disclosed)" 一类作者旁白要在 Spontra Analysis 的估值提示词中去掉；首页每行的迷你收入→利润流程图读 `HomeCompany.statement`，由 `home-digest.ts` 新增，Spontra Analysis 发布前首页回落到营收柱条。导览不再首访自动弹出，但 rail 里 "怎么看这一页" 仍可按需走一遍。
 
 ### 1. 估值页正文是"模型草稿直出"
 

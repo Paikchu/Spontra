@@ -41,6 +41,10 @@ function homeDigest(): HomeDigest {
     const value = Number(quarter.figures.revenue?.value);
     return Number.isFinite(value) ? String(Math.round(value * scale)) : "0";
   };
+  const figure = (quarter: typeof latest, key: "cost" | "net") => {
+    const value = Number(quarter.figures[key]?.value);
+    return Number.isFinite(value) ? String(Math.round(value * scale)) : null;
+  };
   const pct = (current: string, prior: string | null) => {
     const left = Number(current);
     const right = Number(prior);
@@ -65,6 +69,7 @@ function homeDigest(): HomeDigest {
       revenue: { value: amount(latest), currency: latest.currency, yoyPct: pct(amount(latest), yearAgo ? amount(yearAgo) : null), qoqPct: pct(amount(latest), previous ? amount(previous) : null) },
       revenueReason: null,
       revenueTrend: flow.quarters.slice(-8).map(quarter => ({ periodEnd: quarter.periodEnd, value: amount(quarter) })),
+      statement: { currency: latest.currency, revenue: amount(latest), cost: figure(latest, "cost"), net: figure(latest, "net") ?? amount(latest) },
       findingCounts: counts,
       topFindings: [...findings.findings].sort((a, b) => b.severity - a.severity || a.id.localeCompare(b.id)).slice(0, 2)
         .map(finding => ({ id: finding.id, kind: finding.kind, severity: finding.severity, title: finding.title, periodEnd: findings.periodEnd })),

@@ -30,7 +30,7 @@ export type GuidePillMark = { node: string; qualifier: string; text: string; imp
 type Band = { x0: number; x1: number; sy: number; ty: number; h: number; color: string; key: string; owner: string };
 
 /** Type scale in layout units at k = 1; k is solved per pane so labels keep a constant on-screen size. */
-const typeFor = (k: number) => ({ name: 14 * k, value: 21 * k, net: 26 * k, change: 14 * k, gap: 7 * k, offset: 9 * k, pill: 14 * k });
+const typeFor = (k: number) => ({ name: 15 * k, value: 21 * k, net: 26 * k, change: 14 * k, gap: 7 * k, offset: 9 * k, pill: 14 * k });
 /** One-line labels need far less vertical room than the editorial two-line default, so the statement fits a wide pane. */
 const geometryFor = (k: number) => ({ labelHeight: 34 * k, sideLabelHeight: 30 * k, gap: 14, lift: 46, drop: 40, labelGap: 22 * k, labelOffset: 12 * k, margin: 32 * k });
 /** Next quarter's guidance as a card beside the bar: a heading naming what is guided, the range, and the amount a growth rate implies. */
@@ -43,7 +43,7 @@ function guideCard(pill: GuidePillMark, k: number) {
   const height = (pill.implied ? impliedTop + size.implied : valueTop + size.value) + padY;
   return { size, head, width, height, x: accent + padX, headY: padY + size.head * 0.8, valueY: valueTop + size.value * 0.8, impliedY: impliedTop + size.implied * 0.8, accent, padY };
 }
-const SCREEN_VALUE_PX = 16;
+const SCREEN_VALUE_PX = 17;
 const valueSize = (n: PlacedNode, k: number) => n.name === "net" ? typeFor(k).net : typeFor(k).value;
 const EMPTY: InfographicLayout = { width: 1, height: 1, nodeWidth: 22, nodes: [], links: [] };
 const reducedMotion = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;

@@ -25,12 +25,12 @@ const dark = tokens(css.match(/:root \{([\s\S]*?)\n\}/)![1]!);
 const light = tokens(css.match(/:root\.light \{([\s\S]*?)\n\}/)![1]!);
 
 test("dark text tokens clear 4.5:1 and chart grid clears 3:1", () => {
-  assert.ok(contrast(dark["muted-foreground"]!, "#152723") >= 4.5);
-  assert.ok(contrast(dark.faint!, "#152723") >= 4.5);
-  assert.ok(contrast(dark.faint!, "#0a1412") >= 4.5);
-  assert.ok(contrast(dark.foreground!, "#0a1412") >= 4.5);
-  assert.ok(contrast(dark.grid!, "#0a1412") >= 3);
-  assert.ok(contrast(dark.grid!, "#0f1d1a") >= 3);
+  assert.ok(contrast(dark["muted-foreground"]!, dark["surface-raised"]!) >= 4.5);
+  assert.ok(contrast(dark.faint!, dark["surface-raised"]!) >= 4.5);
+  assert.ok(contrast(dark.faint!, dark.background!) >= 4.5);
+  assert.ok(contrast(dark.foreground!, dark.background!) >= 4.5);
+  assert.ok(contrast(dark.grid!, dark.background!) >= 3);
+  assert.ok(contrast(dark.grid!, dark.surface!) >= 3);
 });
 
 test("light text tokens clear 4.5:1 and chart grid clears 3:1", () => {
