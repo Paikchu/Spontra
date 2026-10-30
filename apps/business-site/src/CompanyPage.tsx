@@ -11,6 +11,7 @@ import { UpdateNotice } from "./UpdateNotice";
 import { useStageHost } from "./stage/StageHost";
 import { usePageTurning } from "./page-turn";
 import { companyIdentity } from "./company-meta";
+import type { CompanyOpening } from "./company-opening";
 
 const m = messages({ lastSnapshot: "Last complete snapshot", title: "Business View" }, { lastSnapshot: "最近一次完整快照", title: "Business View" });
 
@@ -30,8 +31,9 @@ class ChartBoundary extends Component<
     );
   }
 }
-export default function CompanyPage({ ticker, tools, onSeen, covered, companies, onHome, onSearch, catalog = null }: {
+export default function CompanyPage({ ticker, opening, tools, onSeen, covered, companies, onHome, onSearch, catalog = null }: {
   ticker: string;
+  opening: CompanyOpening;
   /** The home catalog's entry for this company: its Chinese name and latest fiscal period. */
   catalog?: HomeCompany | null;
   tools: ReactNode;
@@ -41,7 +43,7 @@ export default function CompanyPage({ ticker, tools, onSeen, covered, companies,
   onHome: () => void;
   onSearch: () => void;
 }) {
-  const { data, updates, failed, httpStatus, ready, settled, eventsPhase, retry, retryEvents, update, apply, dismiss } = useLiveCompany(ticker, onSeen);
+  const { data, updates, failed, httpStatus, ready, settled, eventsPhase, retry, retryEvents, update, apply, dismiss } = useLiveCompany(ticker, onSeen, opening);
   const { flow, publication, capital, peers, findings, fundamentals, events, filings, valuation } = data;
   const stage = useStageHost(ticker, data);
   const locale = useLocale();

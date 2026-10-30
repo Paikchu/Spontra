@@ -1,5 +1,5 @@
 import { SidebarProvider } from "@/packages/web/src/ui/sidebar";
-import { Component, Fragment, StrictMode, Suspense, lazy, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { Component, Fragment, StrictMode, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { messages, useLocale } from "@/packages/web/src/i18n";
 import { createRoot } from "react-dom/client";
 import { canonicalTicker, TICKER_PATTERN } from "@/shared/analysis-runtime/financial-data/policy";
@@ -13,6 +13,7 @@ import { Home } from "./Home";
 import { track } from "./track";
 import { useHomeDigest } from "./home-data";
 import { turnPage } from "./page-turn";
+import { createCompanyOpening } from "./company-opening";
 
 const m = messages({
   title: "Business View", description: "Business map · Businesses, revenue, costs and net income from SEC filings",
@@ -105,6 +106,12 @@ function App() {
         return false;
       }
     });
+  // The route owns the read even while its lazy component is still downloading.
+  const opening = useMemo(() => ticker ? createCompanyOpening(ticker, locale) : null, [ticker, locale]);
+  useEffect(() => {
+    const request = opening?.start();
+    return () => request?.abort();
+  }, [opening]);
   useEffect(() => {
     document.documentElement.classList.toggle("light", light);
     document.documentElement.classList.toggle("dark", !light);
@@ -250,7 +257,7 @@ function App() {
         <main data-rail={railCollapsed ? "collapsed" : undefined}>
           <CompanyRouteBoundary key={ticker} ticker={ticker} companies={picks} onHome={goHome} onSearch={searchFromError}>
             <Suspense fallback={<CompanySkeleton ticker={ticker} tools={actions} />}>
-              <Company key={ticker} ticker={ticker} tools={actions} onSeen={remember} catalog={home.digest?.companies.find(company => company.ticker === ticker) ?? null} covered={home.status === "ready" ? covered.has(ticker) : null} companies={picks} onHome={goHome} onSearch={searchFromError} />
+              <Company key={ticker} ticker={ticker} opening={opening!} tools={actions} onSeen={remember} catalog={home.digest?.companies.find(company => company.ticker === ticker) ?? null} covered={home.status === "ready" ? covered.has(ticker) : null} companies={picks} onHome={goHome} onSearch={searchFromError} />
             </Suspense>
           </CompanyRouteBoundary>
         </main>

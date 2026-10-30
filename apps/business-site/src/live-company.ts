@@ -12,6 +12,7 @@ import type { FindingFundamentals } from "@/shared/analysis-runtime/findings";
 import type { ValuationResponse } from "@/shared/analysis-contract/valuation";
 import { CompanyHttpError, fetchCapital, fetchCompany, fetchEvents, fetchFindings, fetchRevisions, fetchSupplement, fetchValuation, publicationFlow, type CompanyPublication, type FindingsBundle } from "./company-data";
 import { nextPending, readRevisions, resourcesToRead } from "./revision-reads";
+import type { CompanyOpening, OpeningRequests } from "./company-opening";
 
 /** Everything the company page draws from, as one value so a newer read can replace parts of it at once. */
 export type CompanyData = {
@@ -58,21 +59,22 @@ function primaryResources(search: string, valuation: ValuationResponse | null): 
 }
 
 /** Start every versioned read together; publish the primary view before unrelated supplements finish. */
-async function loadOpening(ticker: string, signal: AbortSignal, onSeen: (ticker: string) => void, search: string, onPrimary?: (read: OpeningRead) => void): Promise<OpeningRead> {
-  const revisions = await fetchRevisions(ticker, signal).catch(() => null);
+async function loadOpening(ticker: string, request: OpeningRequests, onSeen: (ticker: string) => void, search: string, onPrimary?: (read: OpeningRead) => void): Promise<OpeningRead> {
+  const { signal } = request;
+  const revisions = await request.revisions;
   if (signal.aborted) throw new DOMException("Aborted", "AbortError");
   const read = async (resource: MapResource): Promise<OpeningPart> => {
     try {
       if (resource === "company") {
-        const publication = await fetchCompany(ticker, signal, revisions?.company);
+        const publication = await fetchCompany(ticker, signal, revisions?.company, request.response("company"));
         if (!signal.aborted) onSeen(ticker);
         return { resource, data: { publication, flow: publicationFlow(publication, ticker) } };
       }
       if (resource === "events") {
-        const result = await fetchEvents(ticker, signal, revisions?.events);
+        const result = await fetchEvents(ticker, signal, revisions?.events, request.response("events"));
         return { resource, data: result.events ? { events: result.events } : undefined, eventsError: result.error };
       }
-      return { resource, data: await readResource(ticker, resource, revisions?.[resource], signal) ?? undefined };
+      return { resource, data: await readResource(ticker, resource, revisions?.[resource], signal, request.response(resource)) ?? undefined };
     } catch (error) {
       if (signal.aborted || (error instanceof DOMException && error.name === "AbortError")) throw error;
       return { resource, failed: resource === "company", httpStatus: error instanceof CompanyHttpError ? error.status : 0 };
@@ -116,25 +118,25 @@ const MIN_GAP = 30_000;
 type Supplement = "fundamentals" | "events" | "filings";
 
 /** The resource's part of the page's data, read at the given revision; null where the resource has nothing to show. */
-async function readResource(ticker: string, resource: MapResource, rev: string | undefined, signal: AbortSignal): Promise<Partial<CompanyData> | null> {
+async function readResource(ticker: string, resource: MapResource, rev: string | undefined, signal: AbortSignal, response?: Promise<Response>): Promise<Partial<CompanyData> | null> {
   if (resource === "company") {
-    const publication = await fetchCompany(ticker, signal, rev);
+    const publication = await fetchCompany(ticker, signal, rev, response);
     const flow = publicationFlow(publication, ticker);
     return flow ? { publication, flow } : null;
   }
   if (resource === "findings") {
-    const findings = await fetchFindings(ticker, signal, rev);
+    const findings = await fetchFindings(ticker, signal, rev, response);
     return findings ? { findings } : null;
   }
   if (resource === "capital") {
-    const read = await fetchCapital(ticker, signal, rev);
+    const read = await fetchCapital(ticker, signal, rev, response);
     return read ? { capital: read.capital, peers: read.peers } : null;
   }
   if (resource === "valuation") {
-    const valuation = await fetchValuation(ticker, signal, rev);
+    const valuation = await fetchValuation(ticker, signal, rev, response);
     return valuation ? { valuation } : null;
   }
-  const value = await fetchSupplement<CompanyData[Supplement]>(ticker, resource, signal, rev);
+  const value = await fetchSupplement<CompanyData[Supplement]>(ticker, resource, signal, rev, response);
   return value ? { [resource]: value } : null;
 }
 
@@ -160,7 +162,7 @@ function newsOf(patch: Partial<CompanyData>, now: CompanyData): UpdateNews[] {
  * First visits commit the primary view, then supplements in one background transition. A language change still
  * commits the whole read together, keeping the current page visible until the translated resources settle.
  */
-export function useLiveCompany(ticker: string, onSeen: (ticker: string) => void) {
+export function useLiveCompany(ticker: string, onSeen: (ticker: string) => void, opening: CompanyOpening) {
   const locale = useLocale();
   const [data, setData] = useState<CompanyData>(EMPTY);
   const [failed, setFailed] = useState(false);
@@ -185,25 +187,26 @@ export function useLiveCompany(ticker: string, onSeen: (ticker: string) => void)
   useLayoutEffect(() => { current.current = data; staged.current = pending; });
 
   useEffect(() => {
-    const controller = new AbortController();
-    const { signal } = controller;
+    const request = opening.start();
+    const { signal } = request;
     const gen = ++loadGen.current;
     const swapping = current.current.flow != null;
     checksReady.current = false;
     if (swapping) setPending(null);
     void (async () => {
       try {
-        const commit = (result: OpeningRead) => {
+        const commit = (result: OpeningRead, finished = false) => {
           if (signal.aborted || gen !== loadGen.current) return;
           setData(result.data);
           setFailed(result.failed && !result.data.flow);
           setHttpStatus(result.failed && !result.data.flow ? result.httpStatus : null);
           setEventsPhase(result.eventsPhase);
           setReady(true);
+          if (finished) setSettled(true);
           shown.current = result.revisions;
         };
         let primaryShown = false;
-        const result = await loadOpening(ticker, signal, onSeen, location.search, swapping ? undefined : first => {
+        const result = await loadOpening(ticker, request, onSeen, location.search, swapping ? undefined : first => {
           if (signal.aborted || gen !== loadGen.current) return;
           primaryShown = true;
           commit(first);
@@ -211,7 +214,7 @@ export function useLiveCompany(ticker: string, onSeen: (ticker: string) => void)
         if (signal.aborted || gen !== loadGen.current) return;
         // A language refetch without a statement keeps the page already on screen.
         if (swapping && !result.data.flow) { setSettled(true); checksReady.current = true; return; }
-        const complete = () => { commit(result); setSettled(true); };
+        const complete = () => commit(result, true);
         if (primaryShown) startTransition(complete);
         else crossfade(() => { stageChartBox(); complete(); }, "map");
         checksReady.current = true;
@@ -224,8 +227,8 @@ export function useLiveCompany(ticker: string, onSeen: (ticker: string) => void)
         setSettled(true);
       }
     })();
-    return () => controller.abort();
-  }, [ticker, attempt, onSeen, locale]);
+    return () => request.abort();
+  }, [ticker, attempt, onSeen, locale, opening]);
 
   useEffect(() => {
     const controller = new AbortController();
