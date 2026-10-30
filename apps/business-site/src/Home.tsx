@@ -4,7 +4,7 @@ import { langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import { compactMoney, normalizeDisplayText } from "@/shared/analysis-runtime/locale";
 import type { HomeCompany, HomeDigest } from "../../../shared/analysis-contract/home.ts";
 import { CompanyLogo } from "./CompanyMark";
-import { KIND_LABEL } from "./findings-model";
+import { KIND_LABEL } from "./findings-labels";
 import type { DigestStatus } from "./home-data";
 import { stripBandPath, stripOf } from "./home-strip";
 import { PeriodMark } from "./PeriodMark";

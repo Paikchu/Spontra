@@ -38,7 +38,7 @@ function render(locale: "en" | "zh-CN", payload: PublicBusinessFlow = flow, opti
   setLocale(locale);
   browser(options.search);
   const pageFilings = options.filings ?? null;
-  // As main.tsx resolves it: the issuer, the publications, the flow and the filings.
+  // As CompanyPage.tsx resolves it: the issuer, the publications, the flow and the filings.
   const identity = options.identity ?? companyIdentity({ locale, issuer: options.issuer ?? company.issuer, explainerName: company.explainer.companyName, flow: payload, filings: pageFilings });
   return renderToStaticMarkup(h(SidebarProvider, { asChild: true, open: true, keyboardShortcut: null, persistState: false },
     h("main", null, h(BusinessMap, { ticker: TICKER, tools: null, flow: payload, notice: null, revenueHistory: company.history ?? null, capital, filings: pageFilings, company: identity, valuation: options.valuation ?? null, findings: options.findings ?? null }))));
@@ -218,8 +218,8 @@ const orderOf = (block: string, selector: string) => {
 
 test("U21: on phones the page reads top bar, figures and chart, then the rail's sections, then the reconciliation", async () => {
   const phone = media(await read("../src/style.css"), "max-width: 640px");
-  const sequence = [".rail-top", ".stage", '.findings[data-section="business"]', '.findings[data-section="findings"]', '.findings[data-section="events"]', ".revenue-reconciliation", ".rail-end"].map(s => orderOf(phone, s));
-  assert.deepEqual(sequence, [0, 1, 2, 3, 4, 5, 6]);
+  const sequence = [".rail-top", ".stage", ".biz", ".stream", ".revenue-reconciliation"].map(s => orderOf(phone, s));
+  assert.deepEqual(sequence, [0, 1, 2, 3, 4]);
   assert.match(phone, /\.stats \{[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
   // Headline figures keep the page face: monospace read as terminal output.
   assert.match(phone, /\.stat-value \{[^}]*font-size: 22px; line-height: 28px; font-weight: 620;[^}]*tabular-nums/);
@@ -242,14 +242,14 @@ test("on phones Ask stays in the page flow at the rail's end: no floating button
   const phone = media(css, "max-width: 640px");
   assert.doesNotMatch(phone, /\.ask-entry \{[^}]*position: fixed/);
   assert.doesNotMatch(phone, /\.ask-open \{[^}]*border-radius: 999px/);
-  assert.match(media(css, "max-width: 960px"), /\.ask-entry \{ position: static;/);
+  assert.match(media(css, "max-width: 960px"), /\.ask-entry \{ margin: 12px 0 0;/);
   assert.match(host, /className="ask-open" aria-label=\{m\.ask\} title=\{m\.ask\}/);
 });
 
 test("U21: the sideways chart fades its right edge and says to swipe, and the loading face keeps four cells", async () => {
-  const [css, map, main] = await Promise.all([read("../src/style.css"), read("../src/BusinessMap.tsx"), read("../src/main.tsx")]);
+  const [css, map, skeleton] = await Promise.all([read("../src/style.css"), read("../src/BusinessMap.tsx"), read("../src/CompanySkeleton.tsx")]);
   assert.match(media(css, "max-width: 960px"), /\.chart\[data-overflow\]:not\(\[data-end\]\) \{ mask-image: linear-gradient\(to right/);
   assert.match(map, /swipe: "左右滑动查看完整流向"/);
   assert.match(map, /swipe: "Swipe horizontally to see full flow"/);
-  assert.match(main, /\[0, 1, 2, 3\]\.map\(i => <div key=\{i\} className="stat">/);
+  assert.match(skeleton, /\[0, 1, 2, 3\]\.map\(i => <div key=\{i\} className="stat">/);
 });

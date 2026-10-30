@@ -129,6 +129,7 @@ button { cursor: pointer; }
 }
 .rail[data-scrolled] .rail-blur { opacity: 1; }
 /* Overlay-style scrollbar: transparent track on the card surface, a translucent thumb only while scrolling or hovered. */
+.company-details-loading { display: contents; }
 .rail-scroll {
   flex: 1; min-height: 0; overflow-y: auto; padding: 4px max(0px, calc(12px - var(--rail-gutter, 0px))) 16px 12px; overscroll-behavior: contain; scrollbar-gutter: stable;
   scrollbar-width: thin; scrollbar-color: transparent transparent; transition: scrollbar-color .3s;
@@ -160,10 +161,6 @@ button { cursor: pointer; }
 .rail-actions .icon-button { width: 28px; height: 28px; border-radius: 8px; background: transparent; color: var(--faint); }
 .rail-actions .icon-button:hover { background: color-mix(in srgb, var(--foreground) 7%, transparent); color: var(--foreground); }
 .rail-actions .icon-button[aria-pressed="true"] { color: var(--muted-foreground); }
-.rail-end { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin-top: 12px; padding: 4px 4px 0; }
-.rail-end .privacy-note, .rail-tour { font-size: 12px; line-height: 1.4; }
-.rail-tour { padding: 0; border: 0; background: transparent; color: var(--muted-foreground); font: 500 12px/1.4 var(--sans); text-align: left; }
-.rail-tour:hover { color: var(--foreground); text-decoration: underline; }
 .tour-layer { margin: 0; padding: 0; border: 0; width: 100%; max-width: none; height: 100%; max-height: none; background: transparent; overflow: hidden; position: fixed; inset: 0; z-index: 80; pointer-events: none; }
 .tour-shade { position: absolute; inset: 0; background: rgb(0 0 0 / 40%); pointer-events: auto; }
 :root.light .tour-shade { background: rgb(10 20 18 / 25%); }
@@ -196,7 +193,7 @@ button { cursor: pointer; }
   main[data-rail="collapsed"] .rail { align-self: start; }
   main[data-rail="collapsed"] .rail-top { flex-direction: column; gap: 8px; padding: 12px 0; border-bottom-color: transparent; }
   main[data-rail="collapsed"] .company { flex: none; }
-  main[data-rail="collapsed"] .company-ticker, main[data-rail="collapsed"] .rail-scroll, main[data-rail="collapsed"] .rail-blur, main[data-rail="collapsed"] .rail-company-meta { display: none; }
+  main[data-rail="collapsed"] .company-ticker, main[data-rail="collapsed"] .rail-scroll, main[data-rail="collapsed"] .rail-foot, main[data-rail="collapsed"] .rail-blur, main[data-rail="collapsed"] .rail-company-meta { display: none; }
   main[data-rail="collapsed"] .rail-actions { flex-direction: column; }
   main[data-rail="collapsed"] .rail-toggle { order: -1; }
 }
@@ -226,7 +223,7 @@ button { cursor: pointer; }
 /* Flat list, one line per business: hue chip, name, share, revenue, change. A soft left wash marks the selection; no boxed rows. */
 .row {
   --c: var(--biz-0);
-  position: relative; display: grid; grid-template-columns: 9px minmax(0, 1fr) auto auto auto; align-items: center; column-gap: 7px;
+  position: relative; display: grid; grid-template-columns: 9px minmax(0, 1fr) auto auto; align-items: center; column-gap: 7px;
   width: 100%; height: var(--row-h); flex: none; padding: 0 10px; border: 0; border-radius: 8px; background: transparent; text-align: left;
   transition: background .3s var(--ease), color .2s;
 }
@@ -701,7 +698,6 @@ button { cursor: pointer; }
 
 /* ---------- Narrow screens: stack, keep the diagram legible with horizontal scroll ---------- */
 @media (max-width: 960px) {
-  .rail-end { order: 8; width: 100%; padding: 8px max(16px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
   body { overflow: auto; }
   #root, main { height: auto; min-height: 100%; }
   .map { display: flex; flex-direction: column; width: 100%; min-width: 0; height: auto; min-height: 100%; padding: 0; }
@@ -731,13 +727,10 @@ button { cursor: pointer; }
   .row-name, .row-value, .row[data-depth="1"] .row-name, .row[data-depth="1"] .row-value { font-size: 14px; }
   .row-value { color: var(--muted-foreground); font-weight: 500; }
   .row--all { margin: 0; }
-  .findings { order: 2; margin: 0; padding: 8px 16px; border-top: 0; width: 100%; min-width: 0; max-width: 100%; }
-  .findings-head { padding: 0 0 6px; }
-  .findings-rows { flex-direction: row; gap: 6px; overflow-x: auto; scrollbar-width: none; width: 100%; min-width: 0; max-width: 100%; }
-  .findings-rows::-webkit-scrollbar { display: none; }
-  .finding-row { display: inline-flex; flex: none; width: auto; align-items: center; gap: 7px; padding: 5px 11px 5px 6px; border-radius: 999px; border: 1px solid var(--hairline); white-space: nowrap; }
-  .finding-row::after { display: none; }
-  .finding-title { font-size: 12.5px; }
+  .map .biz { display: contents; }
+  .map .biz > .biz-head, .map .biz > .biz-bar { display: none; }
+  .map .biz-rows, .map .biz-rows > .rail-list { display: contents; }
+  .map .stream { order: 2; margin: 0; padding: 8px 16px; width: 100%; min-width: 0; max-width: 100%; }
   .stage { order: 2; min-width: 0; max-width: 100%; padding: 20px 16px 16px; }
   .stage-head, .stats, .trend, .trend-head, .trend-heading { min-width: 0; max-width: 100%; }
   .trend-heading { flex-wrap: wrap; }
@@ -862,37 +855,61 @@ button { cursor: pointer; }
 /* Kind colours: a risk reads as a loss, a strength as growth, a shift as the first business hue, a watch item stays quiet. */
 .map, .home { --kind-risk: var(--loss); --kind-strength: var(--up); --kind-shift: var(--biz-1); --kind-watch: var(--muted-foreground); }
 [data-kind="risk"] { --kind: var(--kind-risk); } [data-kind="strength"] { --kind: var(--kind-strength); } [data-kind="shift"] { --kind: var(--kind-shift); } [data-kind="watch"] { --kind: var(--kind-watch); }
-.stage:has(.findings) { grid-template-rows: auto auto minmax(0, 1fr) auto auto; }
 /* A grid, not a flex row: the chips column is capped at the space left, so a long set scrolls inside it instead of widening the stage. */
-/* Findings live in the rail under the business drawer: one row per finding, most severe first. */
-.findings { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--hairline); }
-.findings-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; height: 26px; padding: 0 10px 2px; }
-.findings-title { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 640; letter-spacing: .05em; text-transform: uppercase; color: var(--muted-foreground); white-space: nowrap; }
-.findings-title small { font-size: 12px; font-weight: 500; letter-spacing: 0; color: var(--faint); font-variant-numeric: tabular-nums; }
-.findings-story { padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 560; color: var(--muted-foreground); background: transparent; border: 1px solid var(--hairline); transition: color .2s, background .2s; }
-.findings-story:hover { color: var(--foreground); }
-.findings-story[aria-pressed="true"] { color: var(--background); background: var(--foreground); border-color: var(--foreground); }
-.findings-rows { display: flex; flex-direction: column; gap: 0; }
-.finding-row {
-  position: relative; display: grid; grid-template-columns: 18px minmax(0, 1fr); align-items: center; column-gap: 10px;
-  width: 100%; height: var(--row-h); flex: none; padding: 0 10px; border: 0; border-radius: 8px; background: transparent; text-align: left;
+/* ---------- The businesses, open from the start ---------- */
+.biz { display: flex; flex-direction: column; gap: 8px; padding: 4px 4px 6px; }
+.biz-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; min-width: 0; padding: 0 6px; }
+.biz-total { display: inline-flex; align-items: baseline; gap: 8px; min-width: 0; padding: 0; border: 0; background: transparent; text-align: left; color: var(--foreground); }
+.biz-total-value { font-size: 22px; font-weight: 650; letter-spacing: -.01em; line-height: 1.2; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.biz-total[aria-pressed="false"] .biz-total-value { color: var(--muted-foreground); }
+.biz-total:hover .biz-total-value { color: var(--foreground); }
+.biz-total-delta { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.biz-total-delta em { font-style: normal; }
+.biz-guide { flex: none; font-size: 12px; color: var(--muted-foreground); font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* The mix as one bar: each business its hue, as wide as its share; the business under the pointer or picked stands out. */
+.biz-fold { flex: none; align-self: center; width: 24px; height: 24px; margin: -4px -4px -4px 0; color: var(--faint); }
+.biz-fold:hover { color: var(--foreground); }
+.biz-fold svg { width: 14px; height: 14px; transition: transform .24s var(--ease); }
+.biz[data-folded] .biz-fold svg { transform: rotate(-90deg); }
+/* The rows fold to nothing under the head; the list keeps its place for when they return. */
+.biz-rows { display: grid; grid-template-rows: 1fr; transition: grid-template-rows .24s var(--ease); }
+.biz-rows > .rail-list { min-height: 0; overflow: hidden; }
+.biz[data-folded] .biz-rows { grid-template-rows: 0fr; }
+.biz[data-folded] { padding-bottom: 0; }
+.biz-bar { display: flex; gap: 2px; height: 8px; margin: 0 6px; border-radius: 4px; overflow: hidden; }
+.biz-bar i { flex: 0 1 auto; min-width: 2px; transition: opacity .2s; }
+.biz-bar:has([data-picked]) i:not([data-picked]), .biz-bar:has([data-hover]) i:not([data-hover]) { opacity: .45; }
+@media (min-width: 961px) { .row.row--all { display: none; } }
+
+/* ---------- The stream: findings, reports and events in one list ---------- */
+.stream { display: flex; flex-direction: column; padding: 6px 0 8px; }
+.stream-rows { display: flex; flex-direction: column; gap: 0; }
+.stream-row {
+  position: relative; display: grid; grid-template-columns: 22px minmax(0, 1fr); align-items: start; column-gap: 8px;
+  width: 100%; flex: none; padding: 7px 10px; border: 0; border-radius: 10px; background: transparent; text-align: left; color: var(--foreground);
   transition: background .3s var(--ease), opacity .25s;
 }
-.finding-row::after { content: ""; position: absolute; left: -11px; top: 4px; bottom: 4px; width: 3px; border-radius: 2px; background: var(--kind); transform: scaleY(0); transition: transform .3s var(--ease); }
-.finding-row:hover { background: color-mix(in srgb, var(--kind) 6%, transparent); }
-.finding-row[aria-checked="true"] { background: color-mix(in srgb, var(--kind) 12%, transparent); }
-.finding-row[aria-checked="true"]::after { transform: none; }
-.finding-row:focus-visible { outline-offset: -2px; }
+.stream-row:hover { background: color-mix(in srgb, var(--foreground) 5%, transparent); }
+.stream-row[aria-checked="true"] { background: color-mix(in srgb, var(--brand) 14%, transparent); }
+.stream-row:focus-visible { outline-offset: -2px; }
+.stream-mark { display: inline-grid; place-items: center; width: 22px; height: 22px; margin-top: -2px; color: var(--muted-foreground); }
+.stream-mark svg { width: 16px; height: 16px; }
+.stream-mark[data-direction="buy"] { color: var(--up); }
+.stream-mark[data-direction="sell"] { color: var(--loss); }
+.stream-mark[data-quiet] { color: var(--faint); }
+.stream-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.stream-title { min-width: 0; font-size: 14px; font-weight: 500; line-height: 1.35; color: color-mix(in srgb, var(--foreground) 88%, transparent); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
+.stream-row:hover .stream-title, .stream-row[aria-checked="true"] .stream-title { color: var(--foreground); }
+.stream-row[aria-checked="true"] .stream-title { font-weight: 600; }
+.stream-meta { display: flex; align-items: center; gap: 4px; min-width: 0; font-size: 12px; line-height: 1.3; color: var(--muted-foreground); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stream-row[aria-checked="true"] .stream-meta { color: var(--brand); }
 /* Quiet the rows that are not in focus by color, not opacity: a 0.62 fade put 12px dates under 4.5:1. */
-.findings[data-focus] .finding-row:not([aria-checked="true"]) .finding-title,
-.findings[data-focus] .finding-row:not([aria-checked="true"]) .event-date { color: var(--muted-foreground); }
-.findings[data-focus] .finding-row:not([aria-checked="true"]):hover .finding-title { color: var(--foreground); }
-/* The mark is a tinted tile in the kind's colour; the finding in focus fills it in. */
-.finding-mark { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 5px; font-size: 12px; font-style: normal; font-weight: 700; color: var(--kind); background: color-mix(in srgb, var(--kind) 14%, transparent); font-variant-numeric: tabular-nums; transition: background .2s, color .2s; }
+.stream[data-focus] .stream-row:not([aria-checked="true"]) .stream-title { color: var(--muted-foreground); }
+.stream[data-focus] .stream-row:not([aria-checked="true"]):hover .stream-title { color: var(--foreground); }
+.stream-end { height: 1px; }
 .finding-row[aria-checked="true"] .finding-mark { color: var(--background); background: var(--kind); }
-.finding-title { min-width: 0; font-size: 14px; font-weight: 540; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: color-mix(in srgb, var(--foreground) 88%, transparent); }
-.finding-row[aria-checked="true"] .finding-title, .finding-row:hover .finding-title { color: var(--foreground); }
-.finding-row[aria-checked="true"] .finding-title { font-weight: 640; }
+/* The mark is a tinted tile in the kind's colour; the finding in focus fills it in. */
+.finding-mark { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 6px; font-size: 12px; font-style: normal; font-weight: 700; color: var(--kind); background: color-mix(in srgb, var(--kind) 14%, transparent); font-variant-numeric: tabular-nums; transition: background .2s, color .2s; }
 .finding-settled { display: inline-grid; place-items: center; width: 15px; height: 15px; border-radius: 50%; font-size: 12px; font-style: normal; color: var(--kind); background: color-mix(in srgb, var(--kind) 14%, transparent); }
 
 
@@ -923,8 +940,6 @@ button { cursor: pointer; }
 .lens-nav button:hover:not(:disabled) { color: var(--foreground); }
 .lens-nav button:disabled { opacity: .4; cursor: default; }
 .lens-pair { border-color: color-mix(in srgb, var(--kind) 40%, transparent) !important; }
-.lens-steps { display: inline-flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
-.lens-steps button { width: 28px; padding: 4px 0 !important; }
 .lens-close { width: 28px; padding: 4px 0 !important; }
 .lens-judgment { margin: 0 0 10px; color: var(--foreground); }
 .lens-watch { margin: 0 0 10px; font-size: 12.5px; color: var(--muted-foreground); }
@@ -1206,61 +1221,21 @@ html[lang^="zh"] .home-watch-item a { line-height: 1.7; }
 .map { --class-earnings: var(--flow-profit); --class-guidance: var(--biz-1); --class-executive: var(--biz-3); --class-insider: var(--flow-expense); --class-deal: var(--biz-2); --class-financing: var(--biz-4); --class-capital_return: var(--up); --class-vote: var(--muted-foreground); --class-legal: var(--loss); --class-other: var(--muted-foreground); }
 [data-class="earnings"] { --kind: var(--class-earnings); } [data-class="guidance"] { --kind: var(--class-guidance); } [data-class="executive"] { --kind: var(--class-executive); } [data-class="insider"] { --kind: var(--class-insider); }
 [data-class="deal"] { --kind: var(--class-deal); } [data-class="financing"] { --kind: var(--class-financing); } [data-class="capital_return"] { --kind: var(--class-capital_return); } [data-class="vote"] { --kind: var(--class-vote); } [data-class="legal"] { --kind: var(--class-legal); } [data-class="other"] { --kind: var(--class-other); }
-.event-row { grid-template-columns: 48px minmax(0, 1fr); }
-.event-date { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted-foreground); font-variant-numeric: tabular-nums; line-height: 1; }
 
-/* ---------- Rail sections: business, findings and filings share one shape ---------- */
-/* Title, icon actions, then a chevron that opens the whole list; closed, rows outside the digest carry data-extra and stay hidden. */
-.rail-scroll > .findings:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
-.findings-head { gap: 6px; }
-.findings-head .findings-title { margin-right: auto; }
-.findings-aside { flex: none; max-width: 46%; text-transform: none; letter-spacing: 0; }
-.section-action { width: 24px; height: 24px; background: transparent; color: var(--faint); }
-.section-action svg { width: 13px; height: 13px; fill: currentColor; stroke-width: 1.5; }
-.section-action[aria-pressed="true"] { color: var(--background); background: var(--foreground); }
-.section-action[aria-pressed="true"]:hover { color: var(--background); background: var(--foreground); }
-.section-expand svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; transition: transform .3s var(--ease); }
-.section-expand:hover svg { transform: translateX(1px); }
-/* The business drawer's head is All businesses itself: one quiet line, name, revenue and change side by side,
-   ruled off from the businesses under it. A picked business takes the colour; the head goes quiet. */
-@media (min-width: 961px) {
-  .row.row--all { grid-template-columns: 9px minmax(0, 1fr) auto auto; margin-bottom: 4px; }
-  .row.row--all::before { content: ""; position: absolute; left: 10px; right: 10px; bottom: -2px; border-top: 1px solid var(--hairline); }
-  .row.row--all[aria-selected="false"] .row-value { color: var(--muted-foreground); }
-}
-.findings[data-open] [data-extra] { animation: rise .3s var(--ease) both; }
-.section-back { flex: none; width: 28px; height: 28px; margin: -4px 0 -4px -4px; }
-.findings[data-expanded] .findings-head { padding-bottom: 10px; }
-.findings[data-expanded] .findings-title { font-size: 14px; letter-spacing: -.01em; text-transform: none; color: var(--foreground); }
-.finding-title .finding-settled { margin-left: 6px; vertical-align: 1px; }
-/* Event filters: one 28px capsule per reading of the list. The count is the rows that reading shows. */
-.event-filters { display: flex; flex-wrap: nowrap; gap: 6px; padding: 0 10px 8px; overflow-x: auto; scrollbar-width: none; }
-.event-filters::-webkit-scrollbar { display: none; }
-.event-filter {
-  display: inline-flex; align-items: center; gap: 6px; flex: none; height: 28px; padding: 0 10px; border: 1px solid transparent; border-radius: 999px;
-  background: var(--fill); color: var(--muted-foreground); font-size: 12px; font-weight: 500; line-height: 1; white-space: nowrap;
-}
-.event-filter small { font-family: var(--mono); font-size: 11px; font-weight: 500; font-variant-numeric: tabular-nums; color: var(--muted-foreground); }
-.event-filter:hover { color: var(--foreground); }
-.event-filter[aria-checked="true"] { background: color-mix(in srgb, var(--brand) 16%, transparent); border-color: var(--brand); color: var(--foreground); }
-.event-filter[aria-checked="true"] small { color: var(--foreground); }
-.event-filter:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
-.event-filter--ghost { width: 76px; color: transparent; background: var(--hairline); }
+.stream-title .finding-settled { margin-left: 6px; vertical-align: 1px; }
 .event-empty, .event-state { margin: 2px 10px 12px; font-size: 13px; line-height: 1.4; color: var(--muted-foreground); }
 .event-state { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .event-state button { flex: none; height: 28px; padding: 0 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--fill); color: var(--foreground); font-size: 12px; font-weight: 500; }
 .event-rows { display: flex; flex-direction: column; min-width: 0; }
 .event-fold { min-width: 0; }
-.event-fold-row { height: auto; min-height: var(--row-h); align-items: flex-start; padding-top: 4px; padding-bottom: 4px; }
-.event-fold-title { display: flex; align-items: flex-start; gap: 6px; min-width: 0; white-space: normal; overflow: visible; text-overflow: unset; }
-.event-fold-text { flex: 1 1 calc(100% - 18px); min-width: 0; font-variant-numeric: tabular-nums; }
+.event-fold-text { font-variant-numeric: tabular-nums; }
 .fold-chevron { flex: none; width: 12px; height: 12px; margin-top: 2px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; transition: transform 160ms var(--ease); }
 .event-fold-row[aria-expanded="true"] .fold-chevron { transform: rotate(90deg); }
 .plan-tag { flex: none; padding: 0 6px; border-radius: 6px; background: var(--surface); border: 1px solid var(--border); color: var(--muted-foreground); font-size: 11px; font-weight: 500; line-height: 16px; }
 .event-fold-panel { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 200ms var(--ease); }
 .event-fold-panel[data-open] { grid-template-rows: 1fr; }
 .event-fold-inner { overflow: hidden; min-height: 0; }
-.event-fold-inner .event-row { padding-left: 28px; }
+.event-fold-inner .stream-row { padding-left: 40px; }
 /* The class legend doubles as the filter: the class mark, its name and count. */
 .section-filters { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 10px 10px; }
 .section-filter {
@@ -1276,39 +1251,11 @@ html[lang^="zh"] .home-watch-item a { line-height: 1.7; }
 /* In the open list a dashed rule ends this period and a year mark sits where the year turns, as on the time axis. */
 .section-rule { margin: 6px 10px; border: 0; border-top: 1px dashed var(--border); }
 .section-group { margin: 6px 10px 0; font-size: 12px; font-weight: 600; color: var(--faint); font-variant-numeric: tabular-nums; }
-/* Filing marks match the time axis: a rounded square for a report, a dot in the class colour for an event. */
-.event-date::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--kind); }
-.report-row .event-date::before { width: 8px; height: 8px; border-radius: 2px; }
 
-@media (min-width: 961px) {
-  .findings:not([data-expanded]):not([data-open]) [data-extra] { display: none; }
-  /* Open, the section takes the rail's height: its header and filters stay, its rows scroll on their own. */
-  .rail-scroll[data-expanded] { display: flex; flex-direction: column; overflow: hidden; padding-right: 12px; padding-bottom: 0; scrollbar-gutter: auto; }
-  .rail-scroll[data-expanded] > :not([data-expanded]) { display: none; }
-  .findings[data-expanded] { flex: 1; min-height: 0; display: flex; flex-direction: column; margin-top: 0; padding-top: 0; border-top: 0; animation: none; }
-  .findings[data-expanded] > * { flex: none; }
-  .findings[data-expanded] .section-body {
-    flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin: 0 -12px; padding: 6px max(0px, calc(12px - var(--rail-gutter, 0px))) 20px 12px; border-top: 1px solid var(--hairline); scrollbar-gutter: stable;
-    scrollbar-width: thin; scrollbar-color: transparent transparent; transition: scrollbar-color .3s;
-  }
-  .findings[data-expanded] .section-body:hover { scrollbar-color: color-mix(in srgb, var(--foreground) 22%, transparent) transparent; }
-}
-/* Narrow screens keep the chip rows: businesses list in full, findings and filings keep their digest until opened. */
 @media (max-width: 960px) {
-  .findings[data-section="business"] { display: contents; }
-  .findings:not([data-expanded]):not([data-section="business"]) [data-extra] { display: none; }
-  .section-group, .section-rule { display: none; }
   .section-filters { padding: 0 0 8px; overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; }
 }
 
-/* The section grows from its place in the rail into the whole rail: the box morphs, its rows are revealed rather than stretched. */
-.findings[data-section="business"] { view-transition-name: rail-business; }
-.findings[data-section="findings"] { view-transition-name: rail-findings; }
-.findings[data-section="events"] { view-transition-name: rail-events; }
-::view-transition-group(rail-business), ::view-transition-group(rail-findings), ::view-transition-group(rail-events) { animation-duration: .42s; animation-timing-function: var(--ease); }
-::view-transition-old(rail-business), ::view-transition-new(rail-business),
-::view-transition-old(rail-findings), ::view-transition-new(rail-findings),
-::view-transition-old(rail-events), ::view-transition-new(rail-events) { height: 100%; object-fit: none; object-position: top left; }
 ::view-transition-old(root), ::view-transition-new(root) { animation-duration: .24s; }
 
 /* Home ⇄ company: the search card becomes the rail, the field its company row, the magnifier the logo and the typed ticker the ticker.
@@ -1317,7 +1264,6 @@ html[lang^="zh"] .home-watch-item a { line-height: 1.7; }
 :root[data-vt="page"] .home .search-field, :root[data-vt="page"] .rail-top { view-transition-name: page-head; }
 :root[data-vt="page"] .home .search-field svg, :root[data-vt="page"] .rail-top .company-logo { view-transition-name: page-logo; }
 :root[data-vt="page"] .home .search-field input, :root[data-vt="page"] .rail-top .company-ticker { view-transition-name: page-ticker; }
-:root[data-vt="page"] .findings[data-section] { view-transition-name: none; }
 :root[data-vt="page"] .home-hero { animation: none; }
 ::view-transition-group(page-card), ::view-transition-group(page-head), ::view-transition-group(page-logo), ::view-transition-group(page-ticker) { animation-duration: .56s; animation-timing-function: var(--ease); }
 /* Card and row contents keep their size and are revealed by the morphing box rather than stretched with it. */
@@ -1338,8 +1284,6 @@ html[lang^="zh"] .home-watch-item a { line-height: 1.7; }
    The root snapshot stays still so the rest of the page does not fade with it. Rail names are cleared so they do not split the snapshot. */
 :root[data-vt="swap-map"] .map { view-transition-name: company-map; }
 :root[data-vt="swap-chart"] .chart { view-transition-name: stage-chart; }
-:root[data-vt="swap-map"] .findings[data-section],
-:root[data-vt="swap-chart"] .findings[data-section] { view-transition-name: none; }
 ::view-transition-group(company-map) { animation-duration: .42s; animation-timing-function: var(--ease); }
 ::view-transition-old(company-map) { animation: .42s var(--ease) both fade-in reverse; }
 ::view-transition-new(company-map) { animation: .42s var(--ease) both fade-in; }
@@ -1353,7 +1297,6 @@ html[lang^="zh"] .home-watch-item a { line-height: 1.7; }
 
 /* The time axis under the chart: quarter ticks along the track, one marker per filing, the current report and the focused event lit. */
 .stage[data-timeline] { grid-template-rows: auto minmax(0, 1fr) auto auto auto; }
-.stage:has(.findings)[data-timeline] { grid-template-rows: auto auto minmax(0, 1fr) auto auto auto; }
 .timeline { margin-top: 6px; padding: 10px 0 0; }
 .timeline-track { position: relative; height: 30px; margin: 0 6px; }
 .timeline-track::before { content: ""; position: absolute; left: 0; right: 0; top: 12px; border-top: 1px solid var(--border); }
@@ -1429,14 +1372,8 @@ html[lang^="zh"] .home-watch-item a { line-height: 1.7; }
 .ladder-scale { position: absolute; inset: 0; font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; pointer-events: none; }
 .ladder-scale span { position: absolute; left: 0; transform: translateY(-50%); }
 @media (max-width: 960px) {
-  .event-row { display: inline-flex; } .event-date { font-size: 12px; } .timeline-track { margin: 0 2px; }
-  .event-filters { margin-inline: -4px; padding-inline: 4px; mask-image: linear-gradient(90deg, transparent, #000 16px, #000 calc(100% - 16px), transparent); }
-  .findings[data-section="events"] .findings-rows { flex-direction: column; overflow-x: hidden; }
-  .findings[data-section="events"] .event-rows, .findings[data-section="events"] .event-fold { width: 100%; max-width: 100%; }
-  .findings[data-section="events"] .finding-row {
-    display: grid; width: 100%; max-width: 100%; height: auto; min-height: 28px; white-space: normal; border: 0; border-radius: 8px;
-  }
-  .findings[data-section="events"] .finding-title { white-space: normal; overflow: visible; text-overflow: unset; }
+  .timeline-track { margin: 0 2px; }
+  .stream-rows, .event-rows, .event-fold { width: 100%; max-width: 100%; }
 }
 
 /* Reports in the rail and the report lens: the figures the filing verified, the conclusions, and the full report in a modal. */
@@ -1480,9 +1417,9 @@ main[data-rail="collapsed"] .update-notice { left: calc((100vw + var(--rail-coll
 }
 
 /* Rows an update brought drop in from above, one after another, with a glow in their colour that fades; the rest slide down. */
-.findings-rows { position: relative; }
-.finding-row[data-arrived] { animation: row-arrive .55s var(--ease) backwards; animation-delay: calc(var(--arrive, 0) * 70ms); }
-.finding-row[data-arrived]::before {
+.stream-rows { position: relative; }
+.stream-row[data-arrived] { animation: row-arrive .55s var(--ease) backwards; animation-delay: calc(var(--arrive, 0) * 70ms); }
+.stream-row[data-arrived]::before {
   content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
   background: color-mix(in srgb, var(--kind, var(--brand)) 18%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--kind, var(--brand)) 30%, transparent);
   animation: row-glow 2.4s ease-out both; animation-delay: calc(var(--arrive, 0) * 70ms);
@@ -1631,8 +1568,8 @@ html[lang^="zh"] .period-primary { letter-spacing: 0; }
 @media (min-width: 961px) { .chart-hint-rail { display: none; } }
 @media (max-width: 960px) {
   .chart[data-overflow]:not([data-end]) { mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent); -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent); }
-  /* The reconciliation and the ask entry follow the rail's sections instead of leading them. */
-  .revenue-reconciliation, .ask-entry { order: 5; }
+  /* The reconciliation and the console follow the rail's sections instead of leading them. */
+  .revenue-reconciliation, .rail-foot { order: 5; }
 }
 
 /* A headline figure the statement does not carry keeps its cell only where the grid needs four (narrow screens). */
@@ -1651,14 +1588,12 @@ html[lang^="zh"] .period-primary { letter-spacing: 0; }
   .rail-top .company-ticker { flex: none; font-size: 16px; }
   .stage { order: 1; padding: 8px 16px 16px; }
   /* The business section dissolves into its chip row (display: contents above), so the row itself takes the place. */
-  .findings[data-section="business"], .findings[data-section="business"] .rail-list { order: 2; }
-  .findings[data-section="business"] .rail-list { position: static; border-top: 1px solid var(--hairline); }
+  .biz, .biz .rail-list { order: 2; }
+  .biz .rail-list { position: static; border-top: 1px solid var(--hairline); }
   /* The chips no longer pin on phones, so the tabs pin near the top of the screen. */
   .stage > .stage-tabs { --stage-tabs-top: max(8px, env(safe-area-inset-top)); margin-bottom: 8px; }
-  .findings[data-section="findings"] { order: 3; }
-  .findings[data-section="events"] { order: 4; }
-  .revenue-reconciliation { order: 5; }
-  .rail-end { order: 6; }
+  .stream { order: 3; }
+  .revenue-reconciliation { order: 4; }
   .stage-head--summary { row-gap: 8px; }
   /* Four figures in a two-by-two grid, every cell present. */
   .stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; overflow: visible; mask-image: none; -webkit-mask-image: none; animation: none; }
@@ -1674,15 +1609,10 @@ html[lang^="zh"] .period-primary { letter-spacing: 0; }
 }
 
 /* ---------- Insider noise & 90-day fold (U24) ---------- */
-.event-title-and-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; min-width: 0; }
-.event-title-and-tags .finding-title { flex: 1 1 160px; }
-.event-title-and-tags:has(.plan-tag) { padding: 3px 0; }
-.event-row:has(.plan-tag) { height: auto; min-height: var(--row-h); }
-.event-fold-detail { display: flex; flex-wrap: wrap; gap: 6px 12px; padding: 8px 0 8px 28px; font-size: 12px; font-variant-numeric: tabular-nums; }
+.event-fold-detail { display: flex; flex-wrap: wrap; gap: 6px 12px; padding: 8px 0 8px 40px; font-size: 12px; font-variant-numeric: tabular-nums; }
 .event-fold-detail button { display: flex; flex-wrap: wrap; gap: 4px 10px; min-width: 0; text-align: left; }
 .event-fold-detail button[aria-pressed="true"] { color: var(--accent); }
 .event-fold-detail a { color: var(--muted-foreground); text-decoration: underline; }
-.event-fold-title { flex-wrap: wrap; }
 @media (max-width: 960px) {
   .event-fold-text { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
   .event-fold-detail { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }

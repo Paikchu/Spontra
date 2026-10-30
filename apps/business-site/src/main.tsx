@@ -1,38 +1,47 @@
 import { SidebarProvider } from "@/packages/web/src/ui/sidebar";
-import { Fragment, StrictMode, useCallback, useEffect, useRef, useState, Component, type ReactNode } from "react";
-import { getLocale, messages, useLocale } from "@/packages/web/src/i18n";
+import { Component, Fragment, StrictMode, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { messages, useLocale } from "@/packages/web/src/i18n";
 import { createRoot } from "react-dom/client";
 import { canonicalTicker, TICKER_PATTERN } from "@/shared/analysis-runtime/financial-data/policy";
-import "@/packages/web/src/business-flow/business-flow.css";
 import "./style.css";
-import { BusinessMap } from "./BusinessMap";
-import { Rail, RailActions } from "./Sidebar";
+import { CompanySkeleton } from "./CompanySkeleton";
+import { RailActions } from "./Sidebar";
 import { SearchDialog } from "./SearchDialog";
 import { ErrorState } from "./ErrorState";
-import { companyFault, featuredCompanies, isHomePath } from "./error-model";
-import { openingFace, useLiveCompany } from "./live-company";
-import { qoqLabel, yoyLabel } from "@/shared/analysis-runtime/locale";
-import { VIEW_LABEL } from "./findings-model";
-import { UpdateNotice } from "./UpdateNotice";
+import { featuredCompanies, isHomePath } from "./error-model";
 import { Home } from "./Home";
 import { track } from "./track";
 import { useHomeDigest } from "./home-data";
-import { useStageHost } from "./stage/StageHost";
-import { turnPage, usePageTurning } from "./page-turn";
-import { companyIdentity } from "./company-meta";
-import type { HomeCompany } from "@/shared/analysis-contract/home";
+import { turnPage } from "./page-turn";
+import { createCompanyOpening } from "./company-opening";
 
 const m = messages({
-  companyBusinesses: "Company businesses", lastSnapshot: "Last complete snapshot", loading: "Loading",
-  allBusinesses: "All businesses", findings: "Findings", events: "Filings and events",
-  summary: "Summary", detail: "Detail", revenue: "Revenue", businessRevenue: "Business revenue", profit: "Profit", costs: "Costs and expenses",
   title: "Business View", description: "Business map · Businesses, revenue, costs and net income from SEC filings",
 }, {
-  companyBusinesses: "公司业务", lastSnapshot: "最近一次完整快照", loading: "加载中",
-  allBusinesses: "全部业务", findings: "要点", events: "文件与事件",
-  summary: "概要", detail: "明细", revenue: "营收", businessRevenue: "业务营收", profit: "利润", costs: "成本与费用",
   title: "Business View", description: "业务地图 · 从 SEC 文件看公司的业务、营收、成本费用与净利润",
 });
+
+const loadCompanyPage = () => import("./CompanyPage");
+const Company = lazy(loadCompanyPage);
+// Speculative loading must not surface an error before the reader opens the route.
+const preloadCompanyPage = () => { void loadCompanyPage().catch(() => {}); };
+
+/** The route chunk can fail before the company's own render boundary has loaded. */
+class CompanyRouteBoundary extends Component<{
+  ticker: string;
+  companies: Array<{ ticker: string; name: string }>;
+  onHome: () => void;
+  onSearch: () => void;
+  children: ReactNode;
+}, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() { return { failed: true }; }
+  render() {
+    return this.state.failed
+      ? <ErrorState kind="server" code="LOAD" ticker={this.props.ticker} companies={this.props.companies} onHome={this.props.onHome} onSearch={this.props.onSearch} onRetry={() => location.reload()} restoredTitle={`${this.props.ticker} · ${m.title}`} />
+      : this.props.children;
+  }
+}
 
 const RECENT_KEY = "business-map-recent";
 function readRecent(): string[] {
@@ -66,141 +75,18 @@ function tickerFromUrl() {
 }
 /** Only crossing between home and a company turns the page; one company to another swaps in place. */
 function showTicker(next: string | null, set: (ticker: string | null) => void) {
+  if (next) preloadCompanyPage();
   if ((document.querySelector("main.home") !== null) === (next === null)) set(next);
   else turnPage(() => set(next));
-}
-class ChartBoundary extends Component<
-  { ticker: string; companies: Array<{ ticker: string; name: string }>; onHome: () => void; onSearch: () => void; children: ReactNode },
-  { failed: boolean }
-> {
-  state = { failed: false };
-  static getDerivedStateFromError() {
-    return { failed: true };
-  }
-  render() {
-    return this.state.failed ? (
-      <ErrorState kind="server" code="RENDER" ticker={this.props.ticker} companies={this.props.companies} onHome={this.props.onHome} onSearch={this.props.onSearch} onRetry={() => this.setState({ failed: false })} restoredTitle={`${this.props.ticker} · ${m.title}`} />
-    ) : (
-      this.props.children
-    );
-  }
-}
-function Company({ ticker, tools, onSeen, covered, companies, onHome, onSearch, catalog = null }: {
-  ticker: string;
-  /** The home catalog's entry for this company: its Chinese name and latest fiscal period. */
-  catalog?: HomeCompany | null;
-  tools: ReactNode;
-  onSeen: (ticker: string) => void;
-  covered: boolean | null;
-  companies: Array<{ ticker: string; name: string }>;
-  onHome: () => void;
-  onSearch: () => void;
-}) {
-  const { data, updates, failed, httpStatus, ready, eventsPhase, retry, retryEvents, update, apply, dismiss } = useLiveCompany(ticker, onSeen);
-  const { flow, publication, capital, peers, findings, fundamentals, events, filings, valuation } = data;
-  const stage = useStageHost(ticker, data);
-  const locale = useLocale();
-  const company = companyIdentity({ locale, catalog, issuer: publication?.issuer, explainerName: publication?.explainer?.companyName, treeName: publication?.tree?.companyName, flow, filings, events });
-  // The page keeps the face it turned in with until the turn lands, since replacing its rail mid-flight cuts the turn short.
-  const face = openingFace({ ready, failed, flow: Boolean(flow), publication: Boolean(publication) });
-  const [arrival] = useState(face);
-  const shown = usePageTurning() ? arrival : face;
-  const fault = shown === "failed" || shown === "state" ? companyFault({
-    httpStatus: shown === "failed" ? httpStatus : null,
-    reasons: publication?.reasons ?? [],
-    covered,
-    attempted: Boolean(publication?.lastAttemptAt),
-  }) : null;
-  if (fault)
-    return <ErrorState kind={fault.kind} code={fault.code} ticker={ticker} companies={companies} onHome={onHome} onRetry={retry} onSearch={onSearch} restoredTitle={`${ticker} · ${m.title}`} />;
-  if (shown === "map" && flow)
-    return (
-      <ChartBoundary ticker={ticker} companies={companies} onHome={onHome} onSearch={onSearch}>
-        <BusinessMap
-          ticker={ticker}
-          tools={tools}
-          flow={flow}
-          revenueHistory={publication?.history ?? null}
-          explainer={publication?.explainer ?? null}
-          tree={publication?.tree ?? null}
-          guidance={publication?.guidance ?? null}
-          capital={capital}
-          findings={findings?.findings ?? null} peers={findings?.peers ?? null} rankPeers={peers} passages={findings?.passages ?? null}
-          fundamentals={fundamentals}
-          events={events}
-          filings={filings}
-          valuation={valuation}
-          eventsPhase={eventsPhase}
-          onRetryEvents={retryEvents}
-          notice={publication?.outdated ? m.lastSnapshot : null}
-          updates={updates}
-          stageOverride={stage.stageOverride}
-          onNavigate={stage.onNavigate}
-          onView={stage.onView}
-          railFoot={stage.railFoot}
-          focusRequest={stage.focusRequest}
-          company={company}
-        />
-        <UpdateNotice update={update} onApply={apply} onDismiss={dismiss} />
-        {stage.layer}
-      </ChartBoundary>
-    );
-  return <Skeleton ticker={ticker} tools={tools} />;
-}
-/** Same boxes as the loaded map: closed rail digest, head, chart, timeline, trend and footer. Text is a shimmer in the real line metrics. */
-function Skeleton({ ticker, tools }: { ticker: string; tools: ReactNode }) {
-  return (
-    <div className="map map--loading" role="status" aria-label={m.loading} aria-busy="true">
-      <Rail ticker={ticker} actions={tools} label={m.companyBusinesses}>
-        <section className="findings" data-section="business" aria-hidden="true">
-          <div className="rail-list section-body">
-            <div className="row row--all"><i className="row-chip row-chip--all" aria-hidden="true" /><span className="row-name ghost-text">{m.allBusinesses}</span></div>
-            {[0, 1, 2].map(i => <div key={i} className="row" data-depth="0" data-extra=""><i className="row-chip" aria-hidden="true" /><span className="row-name ghost-text">{m.allBusinesses}</span></div>)}
-          </div>
-        </section>
-        <section className="findings" data-section="findings" aria-hidden="true">
-          <header className="findings-head"><span className="findings-title ghost-text">{m.findings}</span></header>
-          <div className="findings-rows section-body">
-            {[0, 1, 2].map(i => <div key={i} className="finding-row"><i className="finding-mark" aria-hidden="true" /><span className="finding-title ghost-text">{m.findings}</span></div>)}
-          </div>
-        </section>
-        <section className="findings" data-section="events" aria-hidden="true">
-          <header className="findings-head"><span className="findings-title ghost-text">{m.events}</span></header>
-          <div className="event-filters">{[0, 1, 2, 3, 4].map(i => <span key={i} className="event-filter event-filter--ghost" />)}</div>
-          <div className="findings-rows section-body">
-            {[0, 1, 2, 3, 4].map(i => <div key={i} className="finding-row event-row"><time className="event-date ghost-text">00.00</time><span className="finding-title ghost-text">{m.events}</span></div>)}
-          </div>
-        </section>
-      </Rail>
-      <section className="stage" data-timeline="" data-view="profit" data-trend="" aria-hidden="true">
-        <div className="stage-tabs"><span className="trend-views stage-views">{(["valuation", "profit", "cash", "balance"] as const).map(v => <button key={v} type="button" tabIndex={-1} aria-checked="false">{VIEW_LABEL[v]}</button>)}</span></div>
-        <header className="stage-head stage-head--summary">
-          <div className="stats">
-            {[0, 1, 2, 3].map(i => <div key={i} className="stat"><span className="stat-label ghost-text">{m.revenue}</span><strong className="stat-value ghost-text">$00.0B</strong></div>)}
-          </div>
-          <div className="stage-controls">
-            <span className="trend-views stage-views"><button type="button" tabIndex={-1} aria-checked="true">{yoyLabel(getLocale())}</button><button type="button" tabIndex={-1} aria-checked="false">{qoqLabel(getLocale())}</button></span>
-            <span className="trend-views stage-views"><button type="button" tabIndex={-1} aria-checked="true">{m.summary}</button><button type="button" tabIndex={-1} aria-checked="false">{m.detail}</button></span>
-          </div>
-        </header>
-        <div className="chart"><div className="ghost-chart" /></div>
-        <div className="timeline"><div className="timeline-track" /></div>
-        <div className="trend" data-view="trend">
-          <div className="trend-head"><div className="trend-title"><h2 className="ghost-text">{m.revenue}</h2><div className="trend-legend"><span className="ghost-text">{m.businessRevenue}</span><span className="ghost-text">{m.profit}</span></div></div></div>
-          <div className="trend-plot" />
-        </div>
-        <footer className="stage-foot">
-          <div className="legend"><span className="ghost-text">{m.businessRevenue}</span><span className="ghost-text">{m.profit}</span><span className="ghost-text">{m.costs}</span></div>
-          <p className="provenance"><span className="ghost-text">{m.loading}</span></p>
-        </footer>
-      </section>
-    </div>
-  );
 }
 function App() {
   const locale = useLocale();
   const home = useHomeDigest(locale);
-  const [ticker, setTicker] = useState(tickerFromUrl),
+  const [ticker, setTicker] = useState(() => {
+      const initialTicker = tickerFromUrl();
+      if (initialTicker) preloadCompanyPage();
+      return initialTicker;
+    }),
     [path, setPath] = useState(() => location.pathname),
     [searching, setSearching] = useState(false),
     [recent, setRecent] = useState(readRecent),
@@ -220,6 +106,12 @@ function App() {
         return false;
       }
     });
+  // The route owns the read even while its lazy component is still downloading.
+  const opening = useMemo(() => ticker ? createCompanyOpening(ticker, locale) : null, [ticker, locale]);
+  useEffect(() => {
+    const request = opening?.start();
+    return () => request?.abort();
+  }, [opening]);
   useEffect(() => {
     document.documentElement.classList.toggle("light", light);
     document.documentElement.classList.toggle("dark", !light);
@@ -312,14 +204,24 @@ function App() {
     return () => document.removeEventListener("click", onClick);
   }, []);
   useEffect(() => {
+    const warm = (e: Event) => {
+      const link = (e.target instanceof Element ? e.target : null)?.closest<HTMLAnchorElement>("a[data-nav]");
+      if (link?.getAttribute("href")?.startsWith("/companies/")) preloadCompanyPage();
+    };
     const follow = (e: MouseEvent) => {
       const link = (e.target instanceof Element ? e.target : e.target instanceof Node ? e.target.parentElement : null)?.closest<HTMLAnchorElement>("a[data-nav]");
       if (!link || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
       e.preventDefault();
       navigate(link.getAttribute("href")!);
     };
+    document.addEventListener("pointerover", warm);
+    document.addEventListener("focusin", warm);
     document.addEventListener("click", follow);
-    return () => document.removeEventListener("click", follow);
+    return () => {
+      document.removeEventListener("pointerover", warm);
+      document.removeEventListener("focusin", warm);
+      document.removeEventListener("click", follow);
+    };
   }, [navigate]);
   // A narrow window collapses the rail without overwriting the preference saved for wide windows.
   const railCollapsed = yields ? !openedWhileNarrow : collapsed;
@@ -353,7 +255,11 @@ function App() {
     <>
       <SidebarProvider asChild open={!railCollapsed} onOpenChange={setRailOpen} keyboardShortcut={null} persistState={false}>
         <main data-rail={railCollapsed ? "collapsed" : undefined}>
-          <Company key={ticker} ticker={ticker} tools={actions} onSeen={remember} catalog={home.digest?.companies.find(company => company.ticker === ticker) ?? null} covered={home.status === "ready" ? covered.has(ticker) : null} companies={picks} onHome={goHome} onSearch={searchFromError} />
+          <CompanyRouteBoundary key={ticker} ticker={ticker} companies={picks} onHome={goHome} onSearch={searchFromError}>
+            <Suspense fallback={<CompanySkeleton ticker={ticker} tools={actions} />}>
+              <Company key={ticker} ticker={ticker} opening={opening!} tools={actions} onSeen={remember} catalog={home.digest?.companies.find(company => company.ticker === ticker) ?? null} covered={home.status === "ready" ? covered.has(ticker) : null} companies={picks} onHome={goHome} onSearch={searchFromError} />
+            </Suspense>
+          </CompanyRouteBoundary>
         </main>
       </SidebarProvider>
       <SearchDialog open={searching} current={ticker} recent={shownRecent} onClose={() => setSearching(false)} onPick={openCompany} catalog={catalog} popular={home.digest?.popular ?? []} catalogStatus={catalogStatus} />

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { startTransition, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocale } from "@/packages/web/src/i18n";
 import { stageChartBox } from "./chart-box";
 import { crossfade } from "./page-turn";
@@ -7,11 +7,12 @@ import type { PublicCapitalStructure } from "@/shared/analysis-contract/capital-
 import type { PeersPublication } from "@/shared/analysis-contract/peers";
 import type { EventsPublication } from "@/shared/analysis-contract/events";
 import type { PublicFilingDigestPage } from "@/shared/analysis-contract/filings";
-import type { MapResource, MapRevisions } from "@/shared/analysis-contract/revisions";
+import { MAP_RESOURCES, type MapResource, type MapRevisions } from "@/shared/analysis-contract/revisions";
 import type { FindingFundamentals } from "@/shared/analysis-runtime/findings";
 import type { ValuationResponse } from "@/shared/analysis-contract/valuation";
 import { CompanyHttpError, fetchCapital, fetchCompany, fetchEvents, fetchFindings, fetchRevisions, fetchSupplement, fetchValuation, publicationFlow, type CompanyPublication, type FindingsBundle } from "./company-data";
 import { nextPending, readRevisions, resourcesToRead } from "./revision-reads";
+import type { CompanyOpening, OpeningRequests } from "./company-opening";
 
 /** Everything the company page draws from, as one value so a newer read can replace parts of it at once. */
 export type CompanyData = {
@@ -29,42 +30,80 @@ export type CompanyData = {
 };
 const EMPTY: CompanyData = { publication: null, flow: null, capital: null, peers: null, findings: null, fundamentals: null, events: null, filings: null, valuation: null };
 
-/** What the company page shows. The map waits until the opening read has settled, so it never paints half-empty. */
+/** The main view becomes available once its own opening resources have settled. */
 export type { OpeningFace } from "./opening-face";
 export { openingFace } from "./opening-face";
 
-const OPENING_RESOURCES = ["capital", "findings", "fundamentals", "filings", "valuation"] as const;
+type OpeningRead = {
+  data: CompanyData;
+  failed: boolean;
+  eventsPhase: "ready" | "loading" | "error";
+  revisions: MapRevisions;
+  httpStatus: number | null;
+};
+type OpeningPart = { resource: MapResource; data?: Partial<CompanyData>; failed?: boolean; httpStatus?: number; eventsError?: boolean };
 
-/** One settled read of everything the first paint draws. A failed supplement leaves its part empty; a failed company is `failed`. */
-async function loadOpening(ticker: string, signal: AbortSignal, onSeen: (ticker: string) => void): Promise<{ data: CompanyData; failed: boolean; eventsError: boolean; revisions: MapRevisions; httpStatus: number | null }> {
-  const revisions = await fetchRevisions(ticker, signal).catch(() => null);
+/** Deep links keep the target's evidence ready before the map resolves and normalizes its URL. */
+function primaryResources(search: string, valuation: ValuationResponse | null): readonly MapResource[] {
+  const params = new URLSearchParams(search);
+  // These lenses verify figures against the combined statements, findings and event evidence.
+  if (["finding", "check", "report"].some(key => params.has(key))) return MAP_RESOURCES;
+  if (params.has("event")) return MAP_RESOURCES.filter(resource => resource !== "filings");
+  const requestedView = params.get("view");
+  const statementLink = ["business", "metric"].some(key => params.has(key));
+  const opensValuation = !!valuation && valuation.availability !== "hidden" && (requestedView === "valuation" || (!requestedView && !statementLink && !!valuation?.report));
+  if (opensValuation) return ["company", "valuation"];
+  // Tabs, headline figures and checks are part of the first statement frame. Keep their geometry and meaning stable;
+  // the filing/event history can arrive later without blocking them.
+  return ["company", "valuation", "capital", "findings", "fundamentals"];
+}
+
+/** Start every versioned read together; publish the primary view before unrelated supplements finish. */
+async function loadOpening(ticker: string, request: OpeningRequests, onSeen: (ticker: string) => void, search: string, onPrimary?: (read: OpeningRead) => void): Promise<OpeningRead> {
+  const { signal } = request;
+  const revisions = await request.revisions;
   if (signal.aborted) throw new DOMException("Aborted", "AbortError");
-  const data: CompanyData = { ...EMPTY };
-  const got: MapRevisions = {};
-  let failed = false;
-  let eventsError = false;
-  let httpStatus: number | null = null;
-  const take = (resource: MapResource) => { const rev = revisions?.[resource]; if (rev) got[resource] = rev; };
-  const aborted = (error: unknown) => signal.aborted || (error instanceof DOMException && error.name === "AbortError");
-  await Promise.all([
-    fetchCompany(ticker, signal, revisions?.company).then(publication => {
-      if (signal.aborted) return;
-      onSeen(ticker);
-      const flow = publicationFlow(publication, ticker);
-      data.publication = publication;
-      data.flow = flow;
-      if (flow) take("company");
-    }).catch(error => { if (aborted(error)) throw error; failed = true; httpStatus = error instanceof CompanyHttpError ? error.status : 0; }),
-    ...OPENING_RESOURCES.map(resource => readResource(ticker, resource, revisions?.[resource], signal).then(part => {
-      if (part) { Object.assign(data, part); take(resource); }
-    }).catch(error => { if (aborted(error)) throw error; })),
-    fetchEvents(ticker, signal, revisions?.events).then(result => {
-      eventsError = result.error;
-      if (result.events) { data.events = result.events; take("events"); }
-    }),
-  ]);
+  const read = async (resource: MapResource): Promise<OpeningPart> => {
+    try {
+      if (resource === "company") {
+        const publication = await fetchCompany(ticker, signal, revisions?.company, request.response("company"));
+        if (!signal.aborted) onSeen(ticker);
+        return { resource, data: { publication, flow: publicationFlow(publication, ticker) } };
+      }
+      if (resource === "events") {
+        const result = await fetchEvents(ticker, signal, revisions?.events, request.response("events"));
+        return { resource, data: result.events ? { events: result.events } : undefined, eventsError: result.error };
+      }
+      return { resource, data: await readResource(ticker, resource, revisions?.[resource], signal, request.response(resource)) ?? undefined };
+    } catch (error) {
+      if (signal.aborted || (error instanceof DOMException && error.name === "AbortError")) throw error;
+      return { resource, failed: resource === "company", httpStatus: error instanceof CompanyHttpError ? error.status : 0 };
+    }
+  };
+  const collect = (parts: OpeningPart[]): OpeningRead => {
+    const result: OpeningRead = { data: { ...EMPTY }, failed: false, eventsPhase: "loading", revisions: {}, httpStatus: null };
+    for (const part of parts) {
+      Object.assign(result.data, part.data);
+      if (part.failed) { result.failed = true; result.httpStatus = part.httpStatus ?? 0; }
+      if (part.resource === "events") result.eventsPhase = part.eventsError ? "error" : "ready";
+      const rev = revisions?.[part.resource];
+      if (rev && part.data && (part.resource !== "company" || part.data.flow)) result.revisions[part.resource] = rev;
+    }
+    return result;
+  };
+  const reads = new Map(MAP_RESOURCES.map(resource => [resource, read(resource)]));
+  // Attach the full read immediately so cancellation cannot leave a secondary rejection unobserved.
+  const complete = Promise.all(reads.values());
+  void complete.catch(() => {});
+  const valuation = await reads.get("valuation")!;
+  const primary = primaryResources(search, valuation.data?.valuation ?? null);
+  if (onPrimary && primary.length < MAP_RESOURCES.length) {
+    const parts = await Promise.all(primary.map(resource => reads.get(resource)!));
+    if (!signal.aborted) onPrimary(collect(parts));
+  }
+  const parts = await complete;
   if (signal.aborted) throw new DOMException("Aborted", "AbortError");
-  return { data, failed, eventsError, revisions: got, httpStatus };
+  return collect(parts);
 }
 
 /** What a newer revision brings that the reader can see: kinds of new rows, or none when only figures or prose moved. */
@@ -79,25 +118,25 @@ const MIN_GAP = 30_000;
 type Supplement = "fundamentals" | "events" | "filings";
 
 /** The resource's part of the page's data, read at the given revision; null where the resource has nothing to show. */
-async function readResource(ticker: string, resource: MapResource, rev: string | undefined, signal: AbortSignal): Promise<Partial<CompanyData> | null> {
+async function readResource(ticker: string, resource: MapResource, rev: string | undefined, signal: AbortSignal, response?: Promise<Response>): Promise<Partial<CompanyData> | null> {
   if (resource === "company") {
-    const publication = await fetchCompany(ticker, signal, rev);
+    const publication = await fetchCompany(ticker, signal, rev, response);
     const flow = publicationFlow(publication, ticker);
     return flow ? { publication, flow } : null;
   }
   if (resource === "findings") {
-    const findings = await fetchFindings(ticker, signal, rev);
+    const findings = await fetchFindings(ticker, signal, rev, response);
     return findings ? { findings } : null;
   }
   if (resource === "capital") {
-    const read = await fetchCapital(ticker, signal, rev);
+    const read = await fetchCapital(ticker, signal, rev, response);
     return read ? { capital: read.capital, peers: read.peers } : null;
   }
   if (resource === "valuation") {
-    const valuation = await fetchValuation(ticker, signal, rev);
+    const valuation = await fetchValuation(ticker, signal, rev, response);
     return valuation ? { valuation } : null;
   }
-  const value = await fetchSupplement<CompanyData[Supplement]>(ticker, resource, signal, rev);
+  const value = await fetchSupplement<CompanyData[Supplement]>(ticker, resource, signal, rev, response);
   return value ? { [resource]: value } : null;
 }
 
@@ -120,15 +159,16 @@ function newsOf(patch: Partial<CompanyData>, now: CompanyData): UpdateNews[] {
  * shows nothing new, or fills a part the page has nothing for, is taken silently. Only a read that answered moves a
  * resource's revision on, so a failed read is tried again at the next check.
  *
- * The opening read of a company, and a language change, each commit once: the map stays on its skeleton or on the
- * page already up until every resource has answered, then crossfades. A language change never clears what is showing.
+ * First visits commit the primary view, then supplements in one background transition. A language change still
+ * commits the whole read together, keeping the current page visible until the translated resources settle.
  */
-export function useLiveCompany(ticker: string, onSeen: (ticker: string) => void) {
+export function useLiveCompany(ticker: string, onSeen: (ticker: string) => void, opening: CompanyOpening) {
   const locale = useLocale();
   const [data, setData] = useState<CompanyData>(EMPTY);
   const [failed, setFailed] = useState(false);
   const [httpStatus, setHttpStatus] = useState<number | null>(null);
   const [ready, setReady] = useState(false);
+  const [settled, setSettled] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [pending, setPending] = useState<PendingUpdate | null>(null);
   /** The notice comes up once per page view: once the reader takes or dismisses it, later updates wait for the next load. */
@@ -147,39 +187,48 @@ export function useLiveCompany(ticker: string, onSeen: (ticker: string) => void)
   useLayoutEffect(() => { current.current = data; staged.current = pending; });
 
   useEffect(() => {
-    const controller = new AbortController();
-    const { signal } = controller;
+    const request = opening.start();
+    const { signal } = request;
     const gen = ++loadGen.current;
     const swapping = current.current.flow != null;
     checksReady.current = false;
     if (swapping) setPending(null);
     void (async () => {
       try {
-        const result = await loadOpening(ticker, signal, onSeen);
-        if (signal.aborted || gen !== loadGen.current) return;
-        // A language refetch that came back without a statement leaves the page that is already up.
-        if (swapping && !result.data.flow) { checksReady.current = true; return; }
-        const commit = () => {
-          stageChartBox();
+        const commit = (result: OpeningRead, finished = false) => {
+          if (signal.aborted || gen !== loadGen.current) return;
           setData(result.data);
           setFailed(result.failed && !result.data.flow);
           setHttpStatus(result.failed && !result.data.flow ? result.httpStatus : null);
-          setEventsPhase(result.eventsError ? "error" : "ready");
+          setEventsPhase(result.eventsPhase);
           setReady(true);
+          if (finished) setSettled(true);
           shown.current = result.revisions;
-          checksReady.current = true;
         };
-        crossfade(commit, "map");
+        let primaryShown = false;
+        const result = await loadOpening(ticker, request, onSeen, location.search, swapping ? undefined : first => {
+          if (signal.aborted || gen !== loadGen.current) return;
+          primaryShown = true;
+          commit(first);
+        });
+        if (signal.aborted || gen !== loadGen.current) return;
+        // A language refetch without a statement keeps the page already on screen.
+        if (swapping && !result.data.flow) { setSettled(true); checksReady.current = true; return; }
+        const complete = () => commit(result, true);
+        if (primaryShown) startTransition(complete);
+        else crossfade(() => { stageChartBox(); complete(); }, "map");
+        checksReady.current = true;
       } catch {
         if (signal.aborted || gen !== loadGen.current) return;
-        if (swapping) { checksReady.current = true; return; }
+        if (swapping) { setSettled(true); checksReady.current = true; return; }
         setFailed(true);
         setHttpStatus(0);
         setReady(true);
+        setSettled(true);
       }
     })();
-    return () => controller.abort();
-  }, [ticker, attempt, onSeen, locale]);
+    return () => request.abort();
+  }, [ticker, attempt, onSeen, locale, opening]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -230,7 +279,7 @@ export function useLiveCompany(ticker: string, onSeen: (ticker: string) => void)
     setClosed(true);
   }, []);
   const dismiss = useCallback(() => setClosed(true), []);
-  const retry = useCallback(() => { setFailed(false); setHttpStatus(null); setReady(false); setEventsPhase("loading"); setData(EMPTY); setPending(null); setAttempt(n => n + 1); }, []);
+  const retry = useCallback(() => { setFailed(false); setHttpStatus(null); setReady(false); setSettled(false); setEventsPhase("loading"); setData(EMPTY); setPending(null); setAttempt(n => n + 1); }, []);
   const retryEvents = useCallback(() => {
     const controller = new AbortController();
     setEventsPhase("loading");
@@ -244,5 +293,5 @@ export function useLiveCompany(ticker: string, onSeen: (ticker: string) => void)
     });
   }, [ticker]);
   const update = closed ? null : pending;
-  return { data, updates, failed, httpStatus, ready, eventsPhase, retry, retryEvents, update, apply, dismiss };
+  return { data, updates, failed, httpStatus, ready, settled, eventsPhase, retry, retryEvents, update, apply, dismiss };
 }

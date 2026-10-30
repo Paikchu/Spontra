@@ -90,6 +90,14 @@ export function fixtureApi(): Plugin {
           return;
         }
         const path = req.url?.split("?")[0];
+        // BUSINESS_SITE_STAGE=1 opens the rail's console against no agent, so its layout can be looked at; the socket never connects.
+        if (process.env.BUSINESS_SITE_STAGE && path?.startsWith("/agents/")) {
+          res.setHeader("content-type", "application/json");
+          if (path === "/agents/status") { res.end(JSON.stringify({ open: true, reader: true })); return; }
+          if (path === "/agents/identity") { res.statusCode = 204; res.end(); return; }
+          if (path === "/agents/conversations") { res.end(JSON.stringify(req.method === "POST" ? { id: "0".repeat(32) } : { conversations: [] })); return; }
+          res.statusCode = 404; res.end("{}"); return;
+        }
         if (path === "/api/business/v1/telemetry") {
           if (req.method === "POST") { res.statusCode = 204; res.end(); return; }
           res.statusCode = req.method === "GET" ? 404 : 405;
