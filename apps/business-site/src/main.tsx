@@ -142,7 +142,6 @@ function Company({ ticker, tools, onSeen, covered, companies, onHome, onSearch, 
           company={company}
         />
         <UpdateNotice update={update} onApply={apply} onDismiss={dismiss} />
-        {stage.layer}
       </ChartBoundary>
     );
   return <Skeleton ticker={ticker} tools={tools} />;
@@ -152,23 +151,18 @@ function Skeleton({ ticker, tools }: { ticker: string; tools: ReactNode }) {
   return (
     <div className="map map--loading" role="status" aria-label={m.loading} aria-busy="true">
       <Rail ticker={ticker} actions={tools} label={m.companyBusinesses}>
-        <section className="findings" data-section="business" aria-hidden="true">
+        <section className="biz" data-section="business" aria-hidden="true">
+          <div className="biz-head"><span className="biz-total"><span className="biz-total-value ghost-text">$00.0B</span></span></div>
+          <div className="biz-bar"><i style={{ flexBasis: "100%", background: "var(--hairline)" }} /></div>
           <div className="rail-list section-body">
             <div className="row row--all"><i className="row-chip row-chip--all" aria-hidden="true" /><span className="row-name ghost-text">{m.allBusinesses}</span></div>
-            {[0, 1, 2].map(i => <div key={i} className="row" data-depth="0" data-extra=""><i className="row-chip" aria-hidden="true" /><span className="row-name ghost-text">{m.allBusinesses}</span></div>)}
+            {[0, 1, 2].map(i => <div key={i} className="row" data-depth="0"><i className="row-chip" aria-hidden="true" /><span className="row-name ghost-text">{m.allBusinesses}</span></div>)}
           </div>
         </section>
-        <section className="findings" data-section="findings" aria-hidden="true">
-          <header className="findings-head"><span className="findings-title ghost-text">{m.findings}</span></header>
-          <div className="findings-rows section-body">
-            {[0, 1, 2].map(i => <div key={i} className="finding-row"><i className="finding-mark" aria-hidden="true" /><span className="finding-title ghost-text">{m.findings}</span></div>)}
-          </div>
-        </section>
-        <section className="findings" data-section="events" aria-hidden="true">
-          <header className="findings-head"><span className="findings-title ghost-text">{m.events}</span></header>
+        <section className="stream" data-section="stream" aria-hidden="true">
           <div className="event-filters">{[0, 1, 2, 3, 4].map(i => <span key={i} className="event-filter event-filter--ghost" />)}</div>
-          <div className="findings-rows section-body">
-            {[0, 1, 2, 3, 4].map(i => <div key={i} className="finding-row event-row"><time className="event-date ghost-text">00.00</time><span className="finding-title ghost-text">{m.events}</span></div>)}
+          <div className="stream-rows">
+            {[0, 1, 2, 3, 4].map(i => <div key={i} className="stream-row"><span className="stream-mark"><i className="finding-mark" aria-hidden="true" /></span><span className="stream-body"><span className="stream-title ghost-text">{m.findings}</span><span className="stream-meta ghost-text">00.00 · {m.events}</span></span></div>)}
           </div>
         </section>
       </Rail>

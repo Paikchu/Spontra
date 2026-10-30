@@ -18,13 +18,13 @@ import { HtmlFrame } from "./HtmlFrame";
 const m = messages({
   finding: (title: string) => `Finding: ${title}`, severity: (n: number) => `Severity ${n}`, report: (period: string) => `${period} report`,
   focusThis: "Focus this", exitComparison: "Exit comparison", compare: (kind: string) => `Compare · ${kind}`,
-  previous: "Previous finding", next: "Next finding", close: "Close finding", nextQuarter: "Next quarter", fullYear: "Full year",
+  close: "Close finding", nextQuarter: "Next quarter", fullYear: "Full year",
   reported: (period: string) => `${period} reported`, pending: (period: string) => `Pending · ${period} report`, pp: " pp",
   metric: "Metric", current: "Current", compared: "Compared with", change: "Change",
 }, {
   finding: (title: string) => `要点：${title}`, severity: (n: number) => `重要度 ${n}`, report: (period: string) => `${period} 财报`,
   focusThis: "聚焦此条", exitComparison: "退出对比", compare: (kind: string) => `对比 · ${kind}`,
-  previous: "上一条要点", next: "下一条要点", close: "关闭要点", nextQuarter: "下季度", fullYear: "全年",
+  close: "关闭要点", nextQuarter: "下季度", fullYear: "全年",
   reported: (period: string) => `${period} 已公布`, pending: (period: string) => `待公布 · ${period} 财报`, pp: "个百分点",
   metric: "指标", current: "本期", compared: "对比", change: "变化",
 });
@@ -48,7 +48,7 @@ const near = (a: string, b: string) => Math.abs(Date.parse(a) - Date.parse(b)) <
  * the figures, what to watch, the sources) as the agent laid it out, verified against the same data
  * the stage draws. Findings written before the agent are laid out the standard way from their chart.
  */
-export function LensPanel({ finding, data, sources, materials, record, ticker, nodeColor, pair, story, index, count, onPair, onStep, onClose, split = false, compact = false, onFocusThis }: {
+export function LensPanel({ finding, data, sources, materials, record, ticker, nodeColor, pair, onPair, onClose, split = false, compact = false, onFocusThis }: {
   finding: VerifiedFinding;
   data: FindingData;
   sources: ExplainerSource[];
@@ -58,12 +58,8 @@ export function LensPanel({ finding, data, sources, materials, record, ticker, n
   ticker: string;
   nodeColor: (id: string) => string;
   pair: VerifiedFinding | null;
-  story: boolean;
-  index: number;
-  count: number;
   /** Opens or closes the side-by-side view with the paired finding. */
   onPair: () => void;
-  onStep: (delta: 1 | -1) => void;
   onClose: () => void;
   split?: boolean;
   /** The second panel of a pair: the judgment folded to its first sentence. */
@@ -80,7 +76,6 @@ export function LensPanel({ finding, data, sources, materials, record, ticker, n
       <div className="lens-nav">
         {compact ? <Button variant="unstyled" type="button" className="lens-pair" onClick={onFocusThis}>{m.focusThis}</Button> : <>
           {pair && <Button variant="unstyled" type="button" className="lens-pair" aria-pressed={split} onClick={onPair} title={pair.title}>{split ? m.exitComparison : m.compare(KIND_LABEL[pair.kind])}</Button>}
-          {story && <span className="lens-steps"><Button variant="unstyled" type="button" aria-label={m.previous} disabled={index <= 0} onClick={() => onStep(-1)}>‹</Button><span>{index + 1} / {count}</span><Button variant="unstyled" type="button" aria-label={m.next} disabled={index >= count - 1} onClick={() => onStep(1)}>›</Button></span>}
           <Button variant="unstyled" type="button" className="lens-close" aria-label={m.close} onClick={onClose}>✕</Button>
         </>}
       </div>

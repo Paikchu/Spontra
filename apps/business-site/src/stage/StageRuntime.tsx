@@ -1,19 +1,15 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import { createPortal } from "react-dom";
 import { useAgent } from "agents/react";
 import { Button } from "@/packages/web/src/ui/button";
 import { getLocale, labels, messages } from "@/packages/web/src/i18n";
-import { langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import type { NoticeCode } from "@/shared/analysis-contract/scene";
 import type { CompanyView } from "../BusinessMap";
 import { carriesResult, nextTranscript, readEvent, type OverlayEvent, type OverlayState, type StageState, type TranscriptEntry, type Turn } from "./stage-model";
 
 const m = messages({
-  input: "Ask about this company", send: "Send", cancel: "Stop", close: "Close", stage: "Stage",
-  reading: "Reading", laying: "Laying out", answering: "Answering", connecting: "Connecting", retention: "Kept 30 days",
+  input: "Ask about this company", send: "Send", cancel: "Stop", stage: "Stage", connecting: "Connecting",
 }, {
-  input: "向这家公司提问", send: "发送", cancel: "停止", close: "关闭", stage: "舞台",
-  reading: "读取中", laying: "排版中", answering: "回答中", connecting: "连接中", retention: "保留 30 天",
+  input: "向这家公司提问", send: "发送", cancel: "停止", stage: "舞台", connecting: "连接中",
 });
 const NOTICE: Record<NoticeCode, string> = labels({
   "quota-reached": "Daily limit reached", "global-cap-reached": "Paused for today", "turn-interrupted": "Interrupted",
@@ -127,46 +123,9 @@ function Layer({ state, send, entries, turn, connected, onSubmit, onCancel }: {
 }) {
   const [text, setText] = useState("");
   const input = useRef<HTMLTextAreaElement>(null);
-  const scroll = useRef<HTMLDivElement>(null);
   const away = state === "away";
   const busy = state === "busy" || turn != null;
   useEffect(() => { if (state === "open") input.current?.focus(); }, [state]);
-  useEffect(() => { const el = scroll.current; if (el) el.scrollTop = el.scrollHeight; }, [entries.length, turn?.phase]);
-  // When the input grows the transcript gives up height; it keeps its latest entry in view while it does, unless the
-  // reader has scrolled back through it.
-  useEffect(() => {
-    const el = scroll.current;
-    if (!el) return;
-    let pinned = true;
-    const onScroll = () => { pinned = el.scrollHeight - el.scrollTop - el.clientHeight < 24; };
-    const observer = new ResizeObserver(() => { if (pinned) el.scrollTop = el.scrollHeight; });
-    el.addEventListener("scroll", onScroll, { passive: true });
-    observer.observe(el);
-    return () => { observer.disconnect(); el.removeEventListener("scroll", onScroll); };
-  }, []);
-  // The blur around the overlay is centred on the input bar.
-  const root = useRef<HTMLDivElement>(null);
-  const bar = useRef<HTMLFormElement>(null);
-  useEffect(() => {
-    const el = root.current, form = bar.current;
-    if (!el || !form) return;
-    const style = document.documentElement.style;
-    const sync = () => {
-      const box = form.getBoundingClientRect(), top = el.getBoundingClientRect().top;
-      const cy = box.top + box.height / 2;
-      style.setProperty("--ask-cx", `${box.left + box.width / 2}px`);
-      style.setProperty("--ask-cy", `${cy}px`);
-      style.setProperty("--ask-bw", `${box.width}px`);
-      style.setProperty("--ask-up", `${Math.max(box.height / 2, cy - top)}px`);
-    };
-    const observer = new ResizeObserver(sync);
-    observer.observe(el); observer.observe(form); sync();
-    addEventListener("resize", sync);
-    return () => {
-      observer.disconnect(); removeEventListener("resize", sync);
-      for (const name of ["--ask-cx", "--ask-cy", "--ask-bw", "--ask-up"]) style.removeProperty(name);
-    };
-  }, []);
   // Browsers without `field-sizing: content` grow the input by hand, up to the height the stylesheet allows.
   useEffect(() => {
     const el = input.current;
@@ -179,25 +138,20 @@ function Layer({ state, send, entries, turn, connected, onSubmit, onCancel }: {
     if (e.key === "Escape") { e.stopPropagation(); e.preventDefault(); send({ type: "escape" }); input.current?.blur(); }
     else if (e.key === "Enter" && !e.shiftKey && e.target === input.current) { e.preventDefault(); submit(); }
   };
-  // Words only: the reader's questions and the short notices; answers, scenes and proposals are on the stage.
-  const said = entries.filter(e => e.role === "user" || e.kind === "notice");
-  const status = !connected ? m.connecting : turn ? turn.phase === "staging" ? m.laying : turn.phase === "answering" ? m.answering : m.reading : null;
-  return createPortal(<>
-    <div className="ask-veil" data-away={away || undefined} aria-hidden="true" onClick={() => send({ type: "stage-click" })}><i /><i /><i /></div>
-    <div ref={root} className="ask" data-state={state} role="dialog" aria-label={m.stage} aria-hidden={away || undefined} inert={away} onKeyDown={onKey}>
-    <div className="ask-scroll" ref={scroll} aria-live="polite">
-      {said.length === 0 && <p className="ask-note">{m.retention}</p>}
-      {said.map(e => e.role === "user" ? <p key={e.id} className="ask-entry-user" lang={langOf(e.text)}>{e.text}</p>
-        : e.kind === "notice" ? <p key={e.id} className="ask-entry-notice">{NOTICE[e.code]}</p> : null)}
+  // The console is the input and one button: answers, scenes and proposals take the stage. Only a notice that is the
+  // latest thing said (a fault, a report's progress) stands over the bar, since nowhere else shows it.
+  const last = entries[entries.length - 1];
+  const notice = last && last.role === "assistant" && last.kind === "notice" && last.code !== "retention" ? NOTICE[last.code] : null;
+  return <>
+    <div className="ask-veil" data-away={away || undefined} aria-hidden="true" onClick={() => send({ type: "stage-click" })} />
+    <div className="ask" data-state={state} role="dialog" aria-label={m.stage} aria-hidden={away || undefined} inert={away} onKeyDown={onKey}>
+      {notice && <p className="ask-note" role="status">{notice}</p>}
+      <form className="ask-bar" onSubmit={submit}>
+        <span className="ask-ring" aria-hidden="true" />
+        <textarea ref={input} rows={1} value={text} maxLength={600} aria-label={m.input} placeholder={connected ? m.input : m.connecting} disabled={!connected} onChange={e => setText(e.target.value)} />
+        {busy ? <Button variant="unstyled" type="button" className="ask-send" onClick={onCancel}>{m.cancel}</Button>
+          : <Button variant="unstyled" type="submit" className="ask-send" disabled={!text.trim() || !connected}>{m.send}</Button>}
+      </form>
     </div>
-    {status && <p className="ask-status" role="status">{status}</p>}
-    <form ref={bar} className="ask-bar" onSubmit={submit}>
-      <span className="ask-ring" aria-hidden="true" />
-      <textarea ref={input} rows={1} value={text} maxLength={600} aria-label={m.input} placeholder={m.input} disabled={!connected} onChange={e => setText(e.target.value)} />
-      {busy ? <Button variant="unstyled" type="button" className="ask-send" onClick={onCancel}>{m.cancel}</Button>
-        : <Button variant="unstyled" type="submit" className="ask-send" disabled={!text.trim() || !connected}>{m.send}</Button>}
-      <Button variant="unstyled" type="button" className="ask-close icon-button" aria-label={m.close} onClick={() => send({ type: "toggle" })}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17" /></svg></Button>
-    </form>
-    {busy && <span className="ask-progress" aria-hidden="true" />}
-  </div></>, document.body);
+  </>;
 }

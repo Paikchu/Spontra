@@ -26,7 +26,7 @@ const CATEGORY = labels<NonNullable<NonNullable<CompanyEvent["summary"]>["eventC
   { earnings_update: "业绩更新", guidance: "业绩指引", "m&a": "并购", executive: "管理层", legal: "法律", other: "其他" });
 
 const m = messages({
-  event: (title: string) => `Event: ${title}`, filed: "Filed", eventOn: "Event", newer: "Newer event", older: "Older event", close: "Close event",
+  event: (title: string) => `Event: ${title}`, filed: "Filed", eventOn: "Event", close: "Close event",
   analystView: "Analyst view", aiSummary: "AI summary", noSummary: "No summary",
   footnotes: (n: number) => `${n} filing ${n === 1 ? "footnote" : "footnotes"}`, edgarIndex: "EDGAR filing index", filing: (form: string) => `${form} filing`,
   form: "Form", eventDate: "Event date", items: "Items", item: (code: string) => `Item ${code}`, document: "Document", exhibits: "Exhibits", summaryCategory: "Summary category",
@@ -40,7 +40,7 @@ const m = messages({
   directHolding: "Direct holding", sale: "Sale",
   stake: "Stake", ofOutstanding: (count: string, asOf: string) => `Direct holding ÷ ${count} outstanding as of ${asOf}`,
 }, {
-  event: (title: string) => `事件：${title}`, filed: "提交日期", eventOn: "事件日期", newer: "较新事件", older: "较早事件", close: "关闭事件",
+  event: (title: string) => `事件：${title}`, filed: "提交日期", eventOn: "事件日期", close: "关闭事件",
   analystView: "分析观点", aiSummary: "AI 摘要", noSummary: "无摘要",
   footnotes: (n: number) => `文件脚注 ${n} 条`, edgarIndex: "EDGAR 文件索引", filing: (form: string) => `${form} 文件`,
   form: "文件类型", eventDate: "事件日期", items: "事项", item: (code: string) => `Item ${code}`, document: "文档", exhibits: "附件", summaryCategory: "摘要类别",
@@ -62,7 +62,7 @@ const m = messages({
  * the same single-column document; the summary's headline is the title, so it is not repeated. The tag on an insider
  * sale is rule-based.
  */
-export function EventLens({ event, publication, ticker, data, updates, nodeColor, onClose, onStep, index, count }: {
+export function EventLens({ event, publication, ticker, data, updates, nodeColor, onClose }: {
   event: CompanyEvent;
   publication: EventsPublication;
   ticker: string;
@@ -70,9 +70,6 @@ export function EventLens({ event, publication, ticker, data, updates, nodeColor
   updates: number;
   nodeColor: (id: string) => string;
   onClose: () => void;
-  onStep: (delta: 1 | -1) => void;
-  index: number;
-  count: number;
 }) {
   const counts = useMemo(() => shareCounts(data.fundamentals), [data.fundamentals]);
   const insider = useMemo(() => insiderLens(publication, event, counts), [publication, event, counts]);
@@ -89,7 +86,6 @@ export function EventLens({ event, publication, ticker, data, updates, nodeColor
         <span className="lens-basis">{event.form} · {m.filed} {event.filedAt}{event.eventDate !== event.filedAt ? ` · ${m.eventOn} ${event.eventDate}` : ""}</span>
       </div>
       <div className="lens-nav">
-        <span className="lens-steps"><Button variant="unstyled" type="button" aria-label={m.newer} disabled={index <= 0} onClick={() => onStep(-1)}>‹</Button><span>{index + 1} / {count}</span><Button variant="unstyled" type="button" aria-label={m.older} disabled={index >= count - 1} onClick={() => onStep(1)}>›</Button></span>
         <Button variant="unstyled" type="button" className="lens-close" aria-label={m.close} onClick={onClose}>✕</Button>
       </div>
     </header>

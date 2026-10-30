@@ -7,16 +7,16 @@ import { setLocale } from "../../../packages/web/src/i18n/core.ts";
 import { readEventsPublication } from "../../../shared/analysis-runtime/events.ts";
 import { railEntries } from "../../../shared/analysis-runtime/rail.ts";
 import { eventTitle } from "../src/events-model.ts";
-import { EventsList } from "../src/EventsList.tsx";
+import { RailStream } from "../src/RailStream.tsx";
 
 const publication = readEventsPublication(JSON.parse(readFileSync(new URL("./fixtures/nvda-events.json", import.meta.url), "utf8")), "NVDA")!;
 const sales = publication.events.filter(e => e.insider?.ownerName === "STEVENS MARK A" && e.filedAt.startsWith("2026-09"));
 const render = (espp = false) => {
   const events = sales.map(e => espp ? { ...e, description: "ESPP", insider: { ...e.insider!, sold: null, bought: { shares: e.insider!.sold!.shares, cost: e.insider!.sold!.proceeds, averagePrice: e.insider!.sold!.averagePrice } } } : e);
-  return renderToStaticMarkup(createElement(EventsList, {
+  return renderToStaticMarkup(createElement(RailStream, {
     rail: { recent: railEntries(null, { ...publication, events }), earlier: [], quiet: 0, since: "2026-01-01" },
-    ticker: publication.ticker, updates: 0, focus: events[0].id, pendingInsider: 0, expanded: true,
-    onFocus: () => {}, onExpand: () => {}, filter: "insiders", onFilter: () => {},
+    findings: [], findingsPeriodEnd: null, ticker: publication.ticker, updates: 0, focus: events[0].id, pendingInsider: 0,
+    onFocusItem: () => {}, onFocusFinding: () => {}, filter: "insiders", onFilter: () => {},
   }));
 };
 
@@ -49,10 +49,10 @@ test("single insider titles include localized transaction amounts without an ESP
     setLocale(locale);
     assert.equal(eventTitle(buy), locale === "zh-CN" ? "Roks Edwin · 买入 1.00万股 · 112万美元" : "Roks Edwin · Purchase 10.0K shares · $1.12M");
     assert.equal(eventTitle(sale), locale === "zh-CN" ? "Kress Colette · 卖出 3.49万股 · 765万美元" : "Kress Colette · Sale 34.9K shares · $7.65M");
-    const html = renderToStaticMarkup(createElement(EventsList, {
+    const html = renderToStaticMarkup(createElement(RailStream, {
       rail: { recent: railEntries(null, { ...publication, events: [sale] }), earlier: [], quiet: 0, since: "2026-01-01" },
-      ticker: "NVDA", updates: 0, focus: sale.id, pendingInsider: 0, expanded: true,
-      onFocus: () => {}, onExpand: () => {}, filter: "key", onFilter: () => {},
+      findings: [], findingsPeriodEnd: null, ticker: "NVDA", updates: 0, focus: sale.id, pendingInsider: 0,
+      onFocusItem: () => {}, onFocusFinding: () => {}, filter: "key", onFilter: () => {},
     }));
     assert.ok(html.includes(eventTitle(sale)));
     assert.ok(!html.includes("ESPP") && !html.includes("员工持股计划代买"));
