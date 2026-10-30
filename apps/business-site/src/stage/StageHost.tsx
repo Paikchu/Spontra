@@ -11,7 +11,7 @@ const StageRuntime = lazy(() => import("./StageRuntime"));
 const loadBoard = () => import("./StageBoard");
 const StageBoard = lazy(loadBoard);
 
-const m = messages({ ask: "Ask", prompt: "Ask about this company", map: "Map", stage: "Stage" }, { ask: "提问", prompt: "向这家公司提问", map: "地图", stage: "舞台" });
+const m = messages({ ask: "Ask", map: "Map", stage: "Stage" }, { ask: "提问", map: "地图", stage: "舞台" });
 const NO_ACTIVITY: StageActivity = { entries: [], turn: null, answer: () => {} };
 
 /** What the company page takes from the stage: the console at the rail's foot (closed and open), and the scene when it holds the stage. */
@@ -77,10 +77,10 @@ export function useStageHost(ticker: string, data: CompanyData): StageHost {
   const hasScene = !!scene && !isDefaultScene(scene.scene.rows);
   const showBoard = onStage && (result != null || hasScene);
   return {
-    // The closed console is one line that reads as the input; opening it mounts the runtime over the rail's foot.
+    // The closed console is the Ask button; opening it mounts the runtime over the rail's foot.
     railFoot: <>
       <div className="ask-entry"><Button variant="unstyled" type="button" className="ask-open" aria-label={m.ask} title={m.ask} aria-keyshortcuts="Meta+J Control+J" aria-expanded={state === "open" || state === "busy" || state === "disconnected"} onClick={() => dispatch({ type: "toggle" })}>
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v7a2.5 2.5 0 0 1-2.5 2.5H10l-4 4v-4h0A2 2 0 0 1 4 14Z" /></svg><span>{m.prompt}</span></Button>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v7a2.5 2.5 0 0 1-2.5 2.5H10l-4 4v-4h0A2 2 0 0 1 4 14Z" /></svg><span>{m.ask}</span></Button>
         {!showBoard && (result != null || hasScene) && <Button variant="unstyled" type="button" className="ask-back" onClick={() => setOnStage(true)}>{m.stage}</Button>}</div>
       {state !== "closed" && <Suspense fallback={null}><StageRuntime ticker={ticker} reader={open.reader} state={state} send={send} view={view} onScene={onScene} onSay={onSay} onActivity={onActivity} /></Suspense>}
     </>,

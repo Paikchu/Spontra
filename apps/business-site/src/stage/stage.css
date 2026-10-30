@@ -1,16 +1,17 @@
 /* ---------- The stage (docs/stage-agent-design.md §5.5) ---------- */
 
-/* The console at the foot of the rail. Closed, one quiet line that reads as the input it opens; beside it, the way back to
-   the stage once the reader has moved to the map. */
+/* The console at the foot of the rail. Closed, the Ask button as it always was; beside it, the way back to the stage
+   once the reader has moved to the map. */
 .ask-entry { display: flex; gap: 8px; padding: 6px 12px 12px; }
 .ask-open {
-  display: flex; align-items: center; justify-content: flex-start; gap: 8px; width: 100%; height: 40px; padding: 0 14px; border-radius: 999px;
-  border: 1px solid var(--border); background: var(--surface); color: var(--muted-foreground); font-size: 14px; font-weight: 500; text-align: left;
-  transition: background .16s, border-color .16s, color .16s;
+  display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 40px; border-radius: 999px;
+  border: 1px solid transparent; background: var(--fill); color: var(--foreground); font-size: 13.5px; font-weight: 600;
+  transition: background .16s, border-color .16s;
 }
-.ask-open:hover { border-color: var(--muted-foreground); color: var(--foreground); }
-.ask-open svg { display: none; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
-.ask-open > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ask-open:hover { background: color-mix(in srgb, var(--foreground) 10%, transparent); }
+.ask-open:not([aria-expanded="true"]) svg { color: var(--brand); }
+.ask-open[aria-expanded="true"] { background: var(--foreground); color: var(--background); border-color: transparent; }
+.ask-open svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
 .ask-back { flex: none; height: 40px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--border); font-size: 13px; font-weight: 600; animation: rise .3s var(--ease) both; }
 .ask-back:hover { border-color: var(--muted-foreground); }
 
@@ -108,7 +109,6 @@ h2.board-question { font-size: 22px; font-weight: 700; line-height: 1.35; color:
   .ask-veil { position: fixed; }
   .ask { position: fixed; left: 16px; right: 16px; bottom: max(16px, env(safe-area-inset-bottom)); }
   .ask-entry { margin: 12px 0 0; padding: 0 16px; }
-  .ask-open svg { display: block; }
   .scene-row[data-cells="2"] { grid-template-columns: minmax(0, 1fr); }
 }
 @media (prefers-reduced-motion: reduce) {
