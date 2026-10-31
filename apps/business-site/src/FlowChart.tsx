@@ -414,8 +414,8 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
     </div>;
   };
   const primaryNodes = ["revenue", "gross", "operating", "net"];
-  // Dense statements must not shrink their text below the reading floor.
-  const compact = narrowPane || Boolean(size && Math.min(size.w / worldW, size.h / worldH) * type.name < 12);
+  // Only narrow panes swap the Sankey for the compact list; desktop always draws the chart.
+  const compact = narrowPane;
   // The explanation is page text beside the canvas, not part of the scaled drawing: opening it narrows the pane and the Sankey refits.
   return <div className="fc" data-compact={compact || undefined} data-products={expanded || undefined} data-mind={mind ? "" : undefined} style={{ "--ratio": `${worldW} / ${worldH}`, "--mobile-width": `${Math.ceil(worldW * SCREEN_VALUE_PX / (21 * k))}px` } as CSSProperties} onMouseLeave={() => { setTip(null); onHover(null); }}>
     <div className="fc-compact" role="group" aria-label={label}>
