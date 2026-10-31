@@ -11,7 +11,7 @@ import { axisNumber, axisUnit, compactMoney, qoqLabel, range, yoyLabel, shortPer
 import { QuarterBadge, fiscalPhrase } from "./PeriodMark";
 import { MomentumTag } from "./MomentumTag";
 import { momentumOf } from "./momentum";
-import { SLOTS, ACTION_NAMES, buildBridge, buildColumns, buildSlots, columnIndex, visibleSlotCount, growth, growthSeries, guidanceLabel, guidanceOverlay, layerOrder, niceTicks, rateTicks, type Bridge, type Column, type GuideMark, type Layer, type TrendItem } from "./trend-model";
+import { SLOTS, ACTION_NAMES, buildBridge, buildColumns, buildSlots, columnIndex, visibleSlotCount, growth, growthSeries, guidanceLabel, guidanceOverlay, layerOrder, niceTicks, onSameBasis, rateTicks, type Bridge, type Column, type GuideMark, type Layer, type TrendItem } from "./trend-model";
 
 const m = messages({
   yoyGrowth: "YoY growth", qoqGrowth: "QoQ growth", comparisonBase: "Comparison base", allBusinesses: "All businesses",
@@ -29,6 +29,8 @@ const m = messages({
   managementGuidance: (period: string) => `${period} management guidance`, guidedYoy: "Guided YoY", yearAgoBase: "Year-ago base", vsPrevious: "vs. previous",
   secFiling: (form: string, filed: string) => `SEC ${form} · ${filed}`,
   comma: ", ",
+  basisChanged: "Segments re-based", basisWhy: (since: string) => `Segments reported on a new basis from ${since}. Growth by business is only computed within one basis; a year-ago quarter restated in the latest filing is on the new basis.`,
+  earlierBasis: "Earlier segment basis", currentBasis: "Current segment basis",
 }, {
   yoyGrowth: "同比增长", qoqGrowth: "环比增长", comparisonBase: "比较基准", allBusinesses: "全部业务",
   revenueOf: (name: string) => `${name} 营收`, totalRevenueLower: "总营收", trendLabel: (subject: string, n: number) => `${subject}：营收，最近 ${n} 个季度`,
@@ -45,6 +47,8 @@ const m = messages({
   managementGuidance: (period: string) => `${period} 管理层指引`, guidedYoy: "指引同比", yearAgoBase: "上年同期基数", vsPrevious: "较前次",
   secFiling: (form: string, filed: string) => `SEC ${form} · ${filed}`,
   comma: "，",
+  basisChanged: "分部口径已调整", basisWhy: (since: string) => `自 ${since} 起按新分部口径披露。分业务的增速只在同一口径内计算；最新财报按新口径重算的上年同期数属于新口径。`,
+  earlierBasis: "原分部口径", currentBasis: "现分部口径",
 });
 
 /** An amount in the reader's number form; English keeps the flow chart's own formatter. */
@@ -103,7 +107,10 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
   const guidanceMoney = (v: number | null) => flowMoney(v, "USD", 1);
   const known = columns.filter(c => c.total != null);
   const last = historyColumns.at(-1)?.total ?? null, yearAgo = historyColumns.at(-5)?.total ?? null;
-  const yoy = growth(last, yearAgo), span = known.length > 1 ? growth(known.at(-1)!.total, known[0].total) : null;
+  // A business's change is read within one segment basis only; the company's total is the same on any basis.
+  const comparable = (a: Column | undefined, b: Column | undefined) => !selected || (!!a && !!b && onSameBasis(a, b));
+  const yoy = comparable(historyColumns.at(-1), historyColumns.at(-5)) ? growth(last, yearAgo) : null;
+  const span = known.length > 1 && comparable(known.at(-1), known[0]) ? growth(known.at(-1)!.total, known[0].total) : null;
   const mode = selected?.key ?? "all";
   const legend = useMemo(() => selected ? (columns.find(c => c.layers.length > 1)?.layers ?? [])
     : [...new Map([...columns].reverse().flatMap(column => column.layers.filter(layer => layer.tone !== "total")).map(layer => [layer.key, layer])).values()], [selected, columns]);
@@ -113,8 +120,11 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
   const lag = chosenLag ?? (buildBridge(historyColumns, historyIndex, 4) ? 4 : 1);
   const bridge = useMemo(() => buildBridge(historyColumns, historyIndex, lag), [historyColumns, historyIndex, lag]);
   // The growth line has its own default: year over year needs four earlier quarters, so a short history reads quarter over quarter.
-  const lineLag = chosenLag ?? (growthSeries(historyColumns, 4).slice(-visible).filter(v => v != null).length >= 2 ? 4 : 1);
-  const rates = useMemo(() => growthSeries(historyColumns, lineLag).slice(-visible), [historyColumns, lineLag, visible]);
+  const lineLag = chosenLag ?? (growthSeries(historyColumns, 4, !!selected).slice(-visible).filter(v => v != null).length >= 2 ? 4 : 1);
+  const rates = useMemo(() => growthSeries(historyColumns, lineLag, !!selected).slice(-visible), [historyColumns, lineLag, visible, selected]);
+  // A re-segmentation inside the bars drawn: the first quarter on the current basis after one on an earlier basis.
+  const rebased = columns.some(c => c.segmentBasis === "earlier") && columns.some(c => c.segmentBasis === "current");
+  const basisSince = rebased ? columns.find((c, i) => c.segmentBasis === "current" && columns.slice(0, i).some(p => p.segmentBasis === "earlier"))?.slot.periodEnd ?? null : null;
   const rateAxis = useMemo(() => rateTicks(rates), [rates]);
   const rateY = (v: number) => rateAxis ? (v - rateAxis[0]) / (rateAxis[3] - rateAxis[0]) * 100 : 0;
   const rateName = lineLag === 4 ? m.yoyGrowth : m.qoqGrowth;
@@ -141,6 +151,7 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
         <div className="trend-heading">
           <h2 key={mode}>{subject}</h2>
           <MomentumTag momentum={momentum} subject={selected ? m.revenueOf(selected.name) : m.totalRevenueLower} />
+          {basisSince && <span className="basis-tag" tabIndex={0} title={m.basisWhy(shortPeriod(basisSince))} aria-label={`${m.basisChanged} · ${m.basisWhy(shortPeriod(basisSince))}`}>{m.basisChanged}</span>}
           {picker}
           <ToggleGroup type="single" variant="unstyled" rovingFocus={false} value={view} onValueChange={next => { if (next) setView(next as "trend" | "bridge"); }} asChild>
             <span className="trend-views" role="radiogroup" aria-label={m.revenueView}>
@@ -176,7 +187,7 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
         {ticks.map((t, k) => <div key={t} style={{ bottom: `${t / scale * 100}%` }}><span>{axisNumber(t * unit.scale, getLocale())}</span>{rateAxis && <em>{axisPercent(rateAxis[k])}</em>}</div>)}
       </div>
       <i className="trend-sweep" key={"sweep" + mode} aria-hidden="true" />
-      {columns.map((column, i) => <Bar key={column.slot.periodEnd} column={column} index={i} order={order} scale={scale} hue={hue} money={money} ticker={ticker}
+      {columns.map((column, i) => <Bar key={column.slot.periodEnd} column={column} index={i} basisBreak={rebased && !!column.segmentBasis && (() => { const before = columns.slice(0, i).reverse().find(c => c.segmentBasis); return !!before && before.segmentBasis !== column.segmentBasis; })()} order={order} scale={scale} hue={hue} money={money} ticker={ticker}
         current={column.slot.periodEnd === currentPeriod} pickable={periods.has(column.slot.periodEnd)} hovered={hover === i}
         onHover={() => setHover(i)} onPick={() => onPickPeriod(column.slot.periodEnd)} selected={selected} rate={rates[i]} lag={lineLag} onLine={series === "line"}
         line={rateAxis ? { y: rateY(rates[i] ?? 0), next: rates[i + 1] != null ? rateY(rates[i + 1]!) : null, labelled: i === index || series === "line" } : null}
@@ -247,8 +258,8 @@ function BridgePlot({ bridge, empty, subject, hue, money }: { bridge: Bridge | n
   </div>;
 }
 
-function Bar({ column, index, order, scale, hue, money, current, pickable, hovered, onHover, onPick, selected, rate, lag, line, onLine, guide, ticker }: {
-  column: Column; index: number; order: string[]; scale: number; hue: (slot: number) => string; money: (v: number | null) => string;
+function Bar({ column, index, basisBreak = false, order, scale, hue, money, current, pickable, hovered, onHover, onPick, selected, rate, lag, line, onLine, guide, ticker }: {
+  column: Column; index: number; /** The segment basis changes between the split quarter before this one and this one. */ basisBreak?: boolean; order: string[]; scale: number; hue: (slot: number) => string; money: (v: number | null) => string;
   current: boolean; pickable: boolean; hovered: boolean; onHover: () => void; onPick: () => void; selected: TrendItem | null; rate: number | null; lag: 1 | 4; ticker: string;
   /** Growth point on the right axis (percent of plot height) and the segment to the next quarter; null without a right axis. */
   line: { y: number; next: number | null; labelled: boolean } | null;
@@ -264,7 +275,7 @@ function Bar({ column, index, order, scale, hue, money, current, pickable, hover
   const nearBarLabel = line != null && Math.abs(line.y - height) < 16;
     const fiscal = fiscalPhrase(ticker, column.slot.periodEnd, column.slot.quarter?.periodStart);
     const mark = fiscal.primary ?? fiscal.unknown;
-    return <div className="trend-col" role="listitem" data-state={column.state} data-current={current || undefined} data-align={index < 2 ? "start" : index > 5 ? "end" : undefined} style={{ "--i": index } as CSSProperties} onMouseEnter={onHover}>
+    return <div className="trend-col" role="listitem" data-state={column.state} data-current={current || undefined} data-segment-basis={column.segmentBasis ?? undefined} data-basis-break={basisBreak || undefined} data-align={index < 2 ? "start" : index > 5 ? "end" : undefined} style={{ "--i": index } as CSSProperties} onMouseEnter={onHover}>
     <Button variant="unstyled" type="button" className="trend-hit" disabled={!pickable} onClick={onPick} onFocus={onHover}
       aria-label={`${mark} ${shortPeriod(column.slot.periodEnd)} ${column.total != null ? money(column.total) : ""}${label ? m.comma + label : ""}${guide ? m.guidanceAria(money(guide.low), money(guide.high)) : ""}`} />
     {/* With the growth line drawn, the axes carry the scale and only the current or hovered bar keeps its value label. */}
@@ -294,6 +305,7 @@ function Bar({ column, index, order, scale, hue, money, current, pickable, hover
       {!onLine && guide && <div className="trend-tip-row"><span>{guide.derived ? m.guidanceDerived : m.guidance}</span><b>{range(money(guide.low), money(guide.high), getLocale())}</b></div>}
       {!onLine && guide && column.total != null && <p>{column.total > guide.high ? m.aboveRange : column.total < guide.low ? m.belowRange : m.withinRange} · {m.issued(guide.item.issuedAt)}</p>}
       {label && <p>{label}{column.state === "basis" && q && !selected ? `: ${q.segments.map(s => s.name).join(", ")}` : ""}</p>}
+      {column.segmentBasis === "earlier" && <p className="trend-tip-basis">{m.earlierBasis}</p>}
       {q && <p className="trend-tip-source">{q.basis === "derived" ? m.derivedQ4 : ""}{m.secFiling(q.source.form, q.source.filedAt)}</p>}
     </div></ChartTooltipContent>}
   </div>;

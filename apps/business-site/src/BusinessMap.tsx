@@ -38,6 +38,7 @@ import { ShareholderReturns } from "./ShareholderReturns";
 import { MomentumTag } from "./MomentumTag";
 import { NonOperatingTag } from "./NonOperatingTag";
 import { nonOperating, type NonOperating } from "./non-operating";
+import { basisChangedAt, businessValue, yearAgoOnBasis } from "@/shared/analysis-runtime/segment-basis";
 import { momentumOf, type Momentum } from "./momentum";
 import { marketCapOf, shareholderReturns } from "./shareholder-returns";
 import { anchorNodeNames, anchorPoolKeys, findingData, VIEW_LABEL, verifiedFindings } from "./findings-model";
@@ -74,6 +75,7 @@ const m = messages({
   reconciliation: "Revenue reconciliation", reconciliationUnit: (currency: string) => `${currency} millions`, segmentTotal: "Segment revenue (before adjustments)", consolidated: "Consolidated revenue",
   findingStage: (ticker: string, title: string) => `${ticker} finding: ${title}`, filingStage: (ticker: string, title: string) => `${ticker} filing: ${title}`, flowStage: (ticker: string) => `${ticker} revenue to profit flow`,
   revenueThisQuarter: "Revenue this quarter", ofParent: (share: string, parent: string) => `${share} of ${parent}`, topLevel: "Top-level business",
+  segmentsRebased: "Segments re-based", segmentsRebasedWhy: (restated: boolean) => `This quarter reports its businesses on a new segment basis.${restated ? " Year-over-year changes use the year-ago quarter as restated in this filing." : " Businesses are not compared with quarters on the earlier basis."}`,
   companyRevenue: "Total company revenue", gross: "Gross profit", operating: "Operating income", pretax: "Income before taxes", netLoss: "Net loss", net: "Net income",
   margin: (value: string) => `Margin ${value}`, coverage: (value: string) => `Cost coverage ${value}`,
   comparisonBase: "Comparison base", financialView: "Financial view", noFinancials: "No quarterly financials disclosed",
@@ -105,6 +107,7 @@ const m = messages({
   reconciliation: "营收调节（分部合计与合并营收的差）", reconciliationUnit: () => "", segmentTotal: "分部营收（调节前）", consolidated: "合并营收",
   findingStage: (ticker: string, title: string) => `${ticker} 要点：${title}`, filingStage: (ticker: string, title: string) => `${ticker} 文件：${title}`, flowStage: (ticker: string) => `${ticker} 营收至利润流向`,
   revenueThisQuarter: "本季营收", ofParent: (share: string, parent: string) => `占 ${parent} ${share}`, topLevel: "一级业务",
+  segmentsRebased: "分部口径已调整", segmentsRebasedWhy: (restated: boolean) => `本季按新的分部口径披露业务。${restated ? "同比取本期财报按新口径重算的上年同期数。" : "不与原口径的季度逐项比较。"}`,
   companyRevenue: "公司总营收", gross: "毛利", operating: "营业利润", pretax: "税前利润", netLoss: "净亏损", net: "净利润",
   margin: (value: string) => `利润率 ${value}`, coverage: (value: string) => `成本覆盖率 ${value}`,
   comparisonBase: "比较基准", financialView: "报表视图", noFinancials: "未披露季度财务数据",
@@ -387,6 +390,20 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
   const priorShareBase = quarter && previous && compareAmount(quarter, previous, "revenue").percent != null
     ? quarter.revenueAdjustments?.length ? previous.segments.reduce((sum, s) => sum + (numeric(s.revenue) ?? 0), 0) || null : numeric(previous.figures.revenue) : null;
   const money = useCallback((v: number | null) => quarter ? compactFlowValue(v, quarter) : "—", [quarter]);
+  // Segment basis (B6): a re-segmented quarter says so, and its businesses compare with the year-ago quarter on the same
+  // basis, preferring the comparative restated in the quarter's own filing, never with a quarter on another basis.
+  const rebased = useMemo(() => quarter ? basisChangedAt(revenueHistory, quarter.periodEnd, quarter.segments) : false, [revenueHistory, quarter]);
+  const restatedBase = useMemo(() => quarter && basis === "yoy" ? yearAgoOnBasis(revenueHistory, quarter.periodEnd, quarter.segments, quarter.currency) : null, [revenueHistory, quarter, basis]);
+  const segmentChange = useCallback((key: string): FlowChange => {
+    if (!quarter) return none();
+    const own = compareRevenueNode(quarter, previous, key);
+    const item = items.find(i => i.key === key), segment = item && quarter.segments.find(s => s.id === item.id);
+    if (!restatedBase || !segment || (own.comparable && !restatedBase.restatedInFiling)) return own;
+    const now = numeric(segment.revenue), before = businessValue(restatedBase.quarter, segment);
+    if (now == null || before == null || before <= 0) return own;
+    const value = now * quarter.scale, percent = (value / before - 1) * 100;
+    return { label: `${percent > 0 ? "+" : ""}${percent.toFixed(1)}%`, comparable: true, trend: percent > 0 ? "up" : percent < 0 ? "down" : null, delta: (value - before) / quarter.scale, previous: before / quarter.scale, percent };
+  }, [quarter, previous, items, restatedBase]);
 
   // A business picked in the chart is brought into view in the list, scrolling only the list (a column or, on narrow screens, a chip row).
   useEffect(() => {
@@ -472,7 +489,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
   const comparisonOf = useCallback((n: PlacedNode) => !quarter ? null
     : n.amount ? compareFlowAmounts(quarter, previous, n.name, n.amount, previousGraph?.nodes.find(p => p.name === n.name)?.amount)
     : n.metric ? compareAmount(quarter, previous, n.metric)
-    : n.segmentId ? compareRevenueNode(quarter, previous, n.segmentId) : null, [quarter, previous, previousGraph]);
+    : n.segmentId ? segmentChange(n.segmentId) : null, [quarter, previous, previousGraph, segmentChange]);
   const changeOf = useCallback((n: PlacedNode) => comparisonOf(n) ?? none(), [comparisonOf]);
   /** The comparison amount behind a percentage change: only a same-sign, same-definition comparison quarter is drawn as a tick. */
   const priorOf = useCallback((n: PlacedNode) => { const c = comparisonOf(n); return c && c.percent != null && c.previous != null ? Math.abs(c.previous) : null; }, [comparisonOf]);
@@ -642,7 +659,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
   const figure = (key: FlowMetric) => quarter ? numeric(quarter.figures[key]) : null;
   const margin = (key: FlowMetric) => { const v = figure(key); return m.margin(v != null && revenue ? percent(v / revenue * 100) : "—"); };
   const change = (key: FlowMetric) => quarter ? compareAmount(quarter, previous, key) : none();
-  const itemChange = current && quarter ? compareRevenueNode(quarter, previous, current.key) : none();
+  const itemChange = current && quarter ? segmentChange(current.key) : none();
   const parent = current?.parent ? items.find(item => item.key === current.parent) : null;
   const topLevel = items.filter(i => !i.parent).length;
   const narrow = useMedia("(max-width: 640px)");
@@ -675,6 +692,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
             <span className="biz-total-value">{revenue != null ? money(revenue) : "—"}</span>
             {quarter && change("revenue").comparable && <span className="biz-total-delta"><Delta change={change("revenue")} word={word.change} /></span>}
           </Button>
+          {rebased && <span className="basis-tag biz-basis" tabIndex={0} title={m.segmentsRebasedWhy(!!restatedBase?.restatedInFiling)} aria-label={`${m.segmentsRebased} · ${m.segmentsRebasedWhy(!!restatedBase?.restatedInFiling)}`}>{m.segmentsRebased}</span>}
           {revenueGuide && <span className="biz-guide" title={`${revenueGuide.tip.title}${revenueGuide.qualifier ? ` · ${revenueGuide.qualifier}` : ""}`}>{m.nextQuarter} {revenueGuide.glyph}{revenueGuide.text}</span>}
           <Button variant="unstyled" type="button" className="icon-button biz-fold" aria-expanded={!bizFolded} aria-controls="rail-business" aria-label={bizFolded ? m.unfoldBusinesses : m.foldBusinesses} title={bizFolded ? m.unfoldBusinesses : m.foldBusinesses} onClick={() => setBizFolded(v => !v)}>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5" /></svg>
@@ -694,7 +712,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
           </Button>
           {items.map(item => {
             const share = item.value != null && segmentRevenue ? item.value / segmentRevenue * 100 : null;
-            const delta = quarter && quantified ? compareRevenueNode(quarter, previous, item.key) : none();
+            const delta = quarter && quantified ? segmentChange(item.key) : none();
             return <Button variant="unstyled" type="button" role="option" key={item.key} data-id={item.id} aria-selected={current?.key === item.key} tabIndex={current?.key === item.key ? 0 : -1}
               className="row" data-depth={item.depth} data-hover={hovered === item.key || undefined} style={{ "--c": hue(item.slot) } as CSSProperties}
               onClick={() => pickBusiness(current?.key === item.key && view === "profit" && !stageOverride ? null : item.id)} onMouseEnter={() => setPreview(item.key)}

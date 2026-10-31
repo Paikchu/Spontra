@@ -1740,6 +1740,15 @@ html[lang^="zh"] .period-primary { letter-spacing: 0; }
 .home-fresh-figure .home-delta { font-size: 12.5px; white-space: nowrap; }
 @media (max-width: 640px) { .home-fresh-card { flex: 0 0 min(78vw, 260px); } .home-fresh-row { margin-right: -16px; padding-right: 16px; } }
 
+/* ---------- Segment basis (B6): a re-segmentation marked on the trend, bars on an earlier basis set apart ---------- */
+.basis-tag { display: inline-flex; align-items: center; flex: none; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 620; line-height: 1.4; white-space: nowrap; cursor: help;
+  color: var(--muted-foreground); background: var(--surface); border: 1px dashed var(--border); }
+.basis-tag:focus-visible { outline: 2px solid var(--foreground); outline-offset: 2px; }
+.trend-col[data-segment-basis="earlier"]:not(:hover) .trend-stack { opacity: .32; filter: grayscale(.7); }
+.trend-col[data-basis-break]::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; border-left: 1px dashed var(--border); pointer-events: none; }
+.trend-tip-basis { color: var(--muted-foreground); }
+.biz-basis { align-self: center; font-size: 11px; padding: 1px 7px; }
+
 /* Small chart labels keep text contrast independently of the flow palette. */
 .fc-change[data-trend], .fc-node:not([data-tone="expense"]) .fc-change[data-trend] { fill: var(--muted-foreground); }
 
