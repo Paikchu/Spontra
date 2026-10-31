@@ -244,9 +244,9 @@ function InsiderTitle({ name, content, amount, tags, full }: { name: string; con
     <span className="insider-name" lang="en">{name}</span>
     <span className="insider-transaction">
       <span className="insider-content">{content}</span>
-      {tags && <span className="insider-tags">{tags}</span>}
       {amount && <span className="insider-amount">{amount}</span>}
     </span>
+    {tags && <span className="insider-tags">{tags}</span>}
   </span>;
 }
 
