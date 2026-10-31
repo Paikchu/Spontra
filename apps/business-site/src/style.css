@@ -1688,6 +1688,39 @@ html[lang^="zh"] .period-primary { letter-spacing: 0; }
 .home-yoy { display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px; } .home-yoy .momentum-pop { left: auto; right: 0; }
 .stat-label .momentum { margin-left: 6px; } .trend-heading .momentum { flex: none; }
 
+/* ---------- Non-operating results in net income (R28): a gain green, a loss amber; pressing opens the composition ---------- */
+.nonop { --nonop: var(--up); position: relative; display: inline-flex; align-items: center; vertical-align: middle; }
+.nonop[data-kind="loss"] { --nonop: var(--flow-expense); }
+.nonop-tag { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 620; line-height: 1.4; white-space: nowrap; cursor: pointer; font-variant-numeric: tabular-nums;
+  color: var(--nonop); background: color-mix(in srgb, var(--nonop) 12%, var(--surface)); border: 1px dashed color-mix(in srgb, var(--nonop) 55%, var(--hairline)); }
+:root.light .nonop[data-kind="loss"] .nonop-tag { color: #8f4e14; }
+.nonop[data-size="small"] .nonop-tag { padding: 0 6px; font-size: 11px; }
+.nonop-tag:focus-visible { outline: 2px solid var(--ring, var(--nonop)); outline-offset: 2px; }
+.nonop-pop { --nonop: var(--up); position: fixed; z-index: 60; display: grid; gap: 6px; width: max-content; max-width: min(340px, calc(100vw - 24px)); padding: 11px 13px; border-radius: 10px; text-align: left; white-space: normal;
+  background: var(--popover, var(--surface)); color: var(--foreground); border: 1px solid var(--border); box-shadow: 0 8px 24px rgb(0 0 0 / .18); font-size: 12px; font-weight: 400; line-height: 1.45; letter-spacing: 0; text-transform: none; }
+.nonop-pop[data-kind="loss"] { --nonop: var(--flow-expense); }
+.nonop-pop b { font-weight: 620; font-size: 13px; }
+.nonop-pop small { color: var(--muted-foreground); font-size: 12px; }
+.nonop-head { margin-top: 2px; color: var(--muted-foreground); font-size: 11px; font-weight: 620; }
+.nonop-pop ol { display: grid; gap: 3px; margin: 0; padding: 0; list-style: none; font-variant-numeric: tabular-nums; }
+.nonop-pop li { display: flex; justify-content: space-between; gap: 18px; }
+.nonop-pop li[data-kind="tax"] { padding-top: 3px; border-top: 1px solid var(--hairline); color: var(--muted-foreground); }
+.nonop-pop em { font-style: normal; font-weight: 600; white-space: nowrap; }
+.nonop-pop em[data-trend="up"] { color: var(--up); } .nonop-pop em[data-trend="down"] { color: var(--loss); }
+.nonop-adjusted { display: grid; gap: 2px; padding: 7px 9px; border-radius: 8px; background: color-mix(in srgb, var(--nonop) 8%, transparent); }
+.nonop-adjusted > span { font-weight: 620; font-size: 13px; font-variant-numeric: tabular-nums; }
+.nonop-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.nonop-actions a { color: var(--foreground); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--border); }
+.nonop-trend { padding: 2px 9px; border-radius: 999px; border: 1px solid var(--border); font-size: 12px; font-weight: 600; cursor: pointer; }
+.nonop-trend:hover, .nonop-actions a:hover { border-color: var(--foreground); text-decoration-color: currentColor; }
+.stat-label .nonop { margin-left: 6px; }
+.nonop-line { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; font-size: 12px; color: var(--muted-foreground); }
+.nonop-line .nonop-tag { padding: 3px 10px; }
+.profit-pair { flex: none; }
+.nonop-pop:focus { outline: none; }
+.stat-extra { display: flex; min-width: 0; }
+.stat-extra .nonop { max-width: 100%; } .stat-extra .nonop-tag { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+
 /* Small chart labels keep text contrast independently of the flow palette. */
 .fc-change[data-trend], .fc-node:not([data-tone="expense"]) .fc-change[data-trend] { fill: var(--muted-foreground); }
 

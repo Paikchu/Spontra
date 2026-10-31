@@ -17,6 +17,7 @@ const SERIES: Partial<Record<HistoricalObservation["seriesId"], FundamentalMetri
   depreciation: "depreciation_and_amortization", stock_compensation: "stock_based_compensation", total_assets: "total_assets", total_liabilities: "total_liabilities",
   equity: "stockholders_equity", receivables: "accounts_receivable", inventory: "inventory", long_term_debt: "long_term_debt", shares: "ordinary_shares",
   buybacks: "share_repurchases", dividends: "dividends_paid",
+  equity_securities_gains: "equity_securities_gains", interest_income: "nonoperating_interest_income", interest_expense: "nonoperating_interest_expense", fx_gains: "foreign_exchange_gains",
 };
 /** Series that also carry their fiscal-year totals, for shareholder returns read over full years against free cash flow and stock pay. */
 const ANNUAL: ReadonlySet<FundamentalMetricKey> = new Set(["share_repurchases", "dividends_paid", "free_cash_flow", "operating_cash_flow", "capital_expenditure", "stock_based_compensation"]);

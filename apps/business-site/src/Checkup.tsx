@@ -1,5 +1,5 @@
 import { Table, TableBody, TableCell, TableHead, TableRow } from "@/packages/web/src/ui/table";
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/packages/web/src/ui/button";
 import { getLocale, isChinese as zh, labels, messages } from "@/packages/web/src/i18n";
 import type { AssessedMetric, BridgeStep, CapitalChain, CashBridge, Flag, FlagLevel, MetricForm, MetricPoint, PeerRank, StatementAssessment, StatementDimension } from "@/shared/analysis-contract/statement-analysis";
@@ -200,11 +200,13 @@ export const viewFlags = (flags: Flag[], view: StatementView) => flags.filter(f 
  * The view's tripped rules as one row under its tiles: each names the metric, its value and the rule, in the level's
  * colour and shape. Hovering one lights what it is about on the chart; a click opens it.
  */
-export function ViewFlags({ flags, metrics, noted, focus, onOpen, onHover }: {
+export function ViewFlags({ flags, metrics, noted, focus, onOpen, onHover, lead = null }: {
   flags: Flag[]; metrics: Map<string, AssessedMetric>; /** Metrics with a written analysis. */ noted: Set<string>; focus: string | null; onOpen: (metricId: string) => void; onHover: (flag: Flag | null) => void;
+  /** A note that leads the row (net income's non-operating part). */ lead?: ReactNode;
 }) {
-  if (!flags.length) return null;
+  if (!flags.length && !lead) return null;
   return <ul className="view-flags" aria-label={m.flags} onMouseLeave={() => onHover(null)}>
+    {lead && <li className="view-flags-lead">{lead}</li>}
     {flags.map(f => { const metric = metrics.get(f.metricId), copy = flagCopy(f, metric, metric?.evidence.periodEnd ?? f.evidence[0]?.periodEnd ?? f.since, getLocale()); return <li key={f.ruleId}>
       <Button variant="unstyled" type="button" className="view-flag" data-level={f.level} aria-pressed={focus === f.metricId} aria-label={`${LEVEL_LABEL[f.level]} · ${copy.sentence}`} title={`${LEVEL_LABEL[f.level]} · ${DIMENSION_LABEL[f.dimension]} · ${m.since(shortPeriod(f.since))}`}
         onClick={() => onOpen(f.metricId)} onMouseEnter={() => onHover(f)} onFocus={() => onHover(f)} onBlur={() => onHover(null)}>

@@ -17,12 +17,12 @@ const m = messages({
   chartMetric: "Chart metric", revenueByBusiness: "Revenue · By business", yoyGrowth: "YoY growth", qoqGrowth: "QoQ growth", pp: " pp",
   trendLabel: (label: string, n: number) => `${label}, last ${n} quarters`, wholeCompany: "Whole company", since: (period: string) => `Since ${period}`,
   comparisonBase: "Comparison base", notDisclosedLower: "not disclosed", thisQuarter: "This quarter", notDisclosed: "Not disclosed", noComparison: "No comparison period",
-  secXbrl: "SEC XBRL", sec: (id: string) => `SEC ${id}`,
+  secXbrl: "SEC XBRL", sec: (id: string) => `SEC ${id}`, profitPair: "Operating or net income", operating: "Operating income", net: "Net income",
 }, {
   chartMetric: "图表指标", revenueByBusiness: "营收 · 按业务", yoyGrowth: "同比增长", qoqGrowth: "环比增长", pp: "个百分点",
   trendLabel: (label: string, n: number) => `${label}，最近 ${n} 个季度`, wholeCompany: "公司整体", since: (period: string) => `${period} 以来`,
   comparisonBase: "比较基准", notDisclosedLower: "未披露", thisQuarter: "本季度", notDisclosed: "未披露", noComparison: "无可比期",
-  secXbrl: "SEC XBRL", sec: (id: string) => `SEC ${id}`,
+  secXbrl: "SEC XBRL", sec: (id: string) => `SEC ${id}`, profitPair: "营业利润或净利润", operating: "营业利润", net: "净利润",
 });
 
 const DAY = 86_400_000;
@@ -45,6 +45,18 @@ export function MetricPicker({ value, groups, revenue, onChange }: { value: stri
       </NativeSelectOptGroup>)}
     </NativeSelect>
   </span>;
+}
+
+/** The two profits a non-operating gap sets apart, one press from each other on the trend (R28). */
+export const PROFIT_PAIR = ["operating_income", "net_income"] as const;
+
+export function ProfitToggle({ value, onChange }: { value: string; onChange: (key: string) => void }) {
+  return <ToggleGroup type="single" variant="unstyled" rovingFocus={false} value={value} onValueChange={next => { if (next && next !== value) onChange(next); }} asChild>
+    <span className="periods periods--small profit-pair" role="radiogroup" aria-label={m.profitPair}>
+      <ToggleGroupItem value="operating_income" role="radio" aria-checked={value === "operating_income"}>{m.operating}</ToggleGroupItem>
+      <ToggleGroupItem value="net_income" role="radio" aria-checked={value === "net_income"}>{m.net}</ToggleGroupItem>
+    </span>
+  </ToggleGroup>;
 }
 
 function formatter(trend: MetricTrend) {

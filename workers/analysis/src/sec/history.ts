@@ -1,6 +1,6 @@
 import { hashString, type HistoricalObservation, type SecCanonicalSeriesId, type SecHistorySnapshot } from "./analysis.ts";
 
-export const COMPANY_FACTS_REGISTRY_VERSION = "sec-canonical-series.v5";
+export const COMPANY_FACTS_REGISTRY_VERSION = "sec-canonical-series.v6";
 
 type RegistryEntry = {
   seriesId: SecCanonicalSeriesId;
@@ -29,6 +29,12 @@ export const SEC_CANONICAL_SERIES_REGISTRY: RegistryEntry[] = [
   // same concepts; an issuer that tags none leaves the series absent, never zero.
   { seriesId: "buybacks", concepts: ["PaymentsForRepurchaseOfCommonStock", "PaymentsForRepurchaseOfEquity"] },
   { seriesId: "dividends", concepts: ["PaymentsOfDividends", "PaymentsOfDividendsCommonStock", "PaymentsOfOrdinaryDividends"] },
+  // What makes up other income (expense), as the note tags it: the lines that set net income apart from operating income
+  // (Alphabet's equity-security gains). Signed as filed: a gain positive, interest expense positive as a cost.
+  { seriesId: "equity_securities_gains", concepts: ["EquitySecuritiesFvNiGainLoss", "MarketableSecuritiesGainLoss", "EquitySecuritiesFvNiUnrealizedGainLoss"] },
+  { seriesId: "interest_income", concepts: ["InvestmentIncomeInterest", "InterestIncomeOther", "InvestmentIncomeInterestAndDividend"] },
+  { seriesId: "interest_expense", concepts: ["InterestExpenseNonoperating", "InterestExpense"] },
+  { seriesId: "fx_gains", concepts: ["ForeignCurrencyTransactionGainLossBeforeTax"] },
   { seriesId: "total_assets", concepts: ["Assets"] },
   { seriesId: "total_liabilities", concepts: ["Liabilities"] },
   { seriesId: "equity", concepts: ["StockholdersEquity", "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest"] },
