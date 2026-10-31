@@ -16,7 +16,11 @@ const SERIES: Partial<Record<HistoricalObservation["seriesId"], FundamentalMetri
   gross_margin: "gross_margin", operating_margin: "operating_margin", rpo: "remaining_performance_obligation",
   depreciation: "depreciation_and_amortization", stock_compensation: "stock_based_compensation", total_assets: "total_assets", total_liabilities: "total_liabilities",
   equity: "stockholders_equity", receivables: "accounts_receivable", inventory: "inventory", long_term_debt: "long_term_debt", shares: "ordinary_shares",
+  buybacks: "share_repurchases", dividends: "dividends_paid",
 };
+/** Series that also carry their fiscal-year totals, for shareholder returns read over full years against free cash flow and stock pay. */
+const ANNUAL: ReadonlySet<FundamentalMetricKey> = new Set(["share_repurchases", "dividends_paid", "free_cash_flow", "operating_cash_flow", "capital_expenditure", "stock_based_compensation"]);
+const ANNUAL_YEARS = 4;
 
 export async function getSecFundamentals(database: D1Like, query: FundamentalApiQuery): Promise<PublicFundamentalsResponse> {
   const cached = await new D1SecRepository(database).getCache<SecHistorySnapshot>(secFundamentalsKey(query.ticker));
@@ -62,10 +66,16 @@ export async function buildSecFundamentals(history: SecHistorySnapshot, query: F
         ...(point ? { sourceAccession: point.sourceAccession, sourceFiledAt: point.sourceFiledAt,
           ...(point.derivationFormula ? { derivationFormula: point.derivationFormula } : {}) } : {}) };
     });
+    // Fiscal years as filed in the 10-K / 20-F: one twelve-month value per year end, in the series' own currency and unit.
+    const annual = ANNUAL.has(metricKey) && latest ? [...new Map((source?.annual ?? [])
+      .filter((item) => item.qualityStatus === "validated_xbrl" && item.startDate && item.unit === latest.unit && (item.currency ?? "") === currency && Number.isFinite(Number(item.value)))
+      .sort((a, b) => b.endDate.localeCompare(a.endDate) || b.sourceFiledAt.localeCompare(a.sourceFiledAt))
+      .map((item) => [item.endDate, item] as const)).values()].slice(0, ANNUAL_YEARS).reverse()
+      .map((item) => ({ periodStart: item.startDate!, periodEnd: item.endDate, valueDecimal: item.value, sourceAccession: item.sourceAccession })) : null;
     return { metricKey, label: definition.label, shortLabel: definition.shortLabel, category: definition.category,
       unitFamily: definition.unitFamily, unit, currency, basis: candidates.some((item) => item.basis === "derived") ? "derived" as const : "reported" as const,
       displaySign: definition.displaySign, defaultMark: definition.defaultMark, allowedTransforms: definition.allowedTransforms,
-      available: points.some((point) => point.valueDecimal !== null), points };
+      available: points.some((point) => point.valueDecimal !== null), points, ...(annual?.length ? { annual } : {}) };
   });
   const issueCount = series.reduce((count, item) => count + item.points.filter((point) => point.valueDecimal === null).length, 0);
   const stale = !fetchedAt || !Number.isFinite(Date.parse(fetchedAt)) || now.getTime() - Date.parse(fetchedAt) >= FUNDAMENTALS_STALE_AFTER_MS;

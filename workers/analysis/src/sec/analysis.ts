@@ -28,6 +28,8 @@ export const SEC_CANONICAL_SERIES_IDS = [
   "rpo",
   "depreciation",
   "stock_compensation",
+  "buybacks",
+  "dividends",
   "total_assets",
   "total_liabilities",
   "equity",

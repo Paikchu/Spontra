@@ -1638,6 +1638,35 @@ html[lang^="zh"] .period-primary { letter-spacing: 0; }
   .event-fold-panel { transition: none; }
 }
 
+/* ---------- Shareholder returns, under the cash-flow view (R25) ---------- */
+.returns { margin-top: 10px; padding-top: 14px; border-top: 1px solid var(--hairline); }
+.returns-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 16px; }
+.returns-head h2 { margin: 0; font-size: 14px; font-weight: 640; }
+.returns-note { margin: 0; font-size: 13px; color: var(--muted-foreground); }
+.returns-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+.returns-cell { min-width: 0; padding: 10px 12px; border-radius: 12px; background: var(--surface); border: 1px solid var(--hairline); }
+.returns-cell h3 { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 0 0 6px; font-size: 13px; font-weight: 620; }
+.returns-cell h3 small { font-size: 12px; font-weight: 400; color: var(--faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.returns-cell dl { display: grid; gap: 3px; margin: 0; }
+.returns-cell dl > div { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; font-size: 13px; }
+.returns-cell dt { color: var(--muted-foreground); }
+.returns-cell dt[title] { text-decoration: underline dotted var(--faint); text-underline-offset: 3px; cursor: help; }
+.returns-cell dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
+.returns-cell dd small { display: block; font-size: 12px; font-weight: 400; color: var(--muted-foreground); }
+.returns-cell [data-missing] { color: var(--faint); font-weight: 400; }
+.returns-total { padding-top: 3px; border-top: 1px dashed var(--hairline); }
+.returns-total dd { font-size: 15px; }
+.returns-quarters { display: grid; gap: 2px; margin: 8px 0 0; padding: 6px 0 0; list-style: none; border-top: 1px solid var(--hairline); font-size: 12px; font-variant-numeric: tabular-nums; }
+.returns-quarters li { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; color: var(--muted-foreground); }
+.returns-quarters li > span + span { text-align: right; }
+.returns-quarters-head { color: var(--faint) !important; }
+.returns-source { margin: 6px 0 0; font-size: 12px; color: var(--faint); }
+@media (max-width: 1100px) { .returns-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 620px) { .returns-grid { grid-template-columns: minmax(0, 1fr); } }
+/* The card sits below the statement: the chart keeps its height and the stage scrolls to the card. */
+@media (min-width: 961px) { .stage:has(> .returns) { overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border) transparent; grid-template-rows: auto minmax(min(440px, 58vh), 1fr) auto auto; } }
+.returns-source code { font-family: inherit; margin-left: 4px; }
+
 /* Small chart labels keep text contrast independently of the flow palette. */
 .fc-change[data-trend], .fc-node:not([data-tone="expense"]) .fc-change[data-trend] { fill: var(--muted-foreground); }
 

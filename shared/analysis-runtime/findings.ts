@@ -105,13 +105,19 @@ const fundamentalsSchema = z.object({ series: z.array(z.object({
   metricKey: z.enum(FUNDAMENTAL_KEYS), label: text(80), category: z.enum(["income_statement", "cash_flow", "balance_sheet", "per_share", "valuation", "ratio"]),
   unitFamily: z.enum(["currency", "percent", "per_share", "shares", "multiple"]), currency: z.string().max(8), available: z.boolean(),
   points: z.array(z.object({ periodEnd: date, valueDecimal: z.string().max(40).nullable(), sourceAccession: z.string().max(40).optional() })).max(64),
+  annual: z.array(z.object({ periodStart: date, periodEnd: date, valueDecimal: z.string().max(40), sourceAccession: z.string().max(40).optional() })).max(8).optional(),
 })).max(64) });
+/** A series this build does not know (a newer Spontra Analysis catalogue) is left out instead of failing the whole read. */
+const knownSeries = (value: unknown) => {
+  const body = value as { series?: unknown } | null;
+  return body && Array.isArray(body.series) ? { ...body, series: body.series.filter(s => FUNDAMENTAL_KEYS.includes((s as { metricKey?: FundamentalMetricKey } | null)?.metricKey as FundamentalMetricKey)) } : value;
+};
 
 /** The public subset of a fundamentals response: SEC-sourced series and points, nothing about refresh state. */
 export function readFindingFundamentals(value: unknown, ticker: string): FindingFundamentals | null {
   const body = value as { ticker?: unknown; source?: unknown; status?: unknown } | null;
   if (!body || body.ticker !== ticker || body.source !== "sec_xbrl" || body.status !== "ready") return null;
-  const parsed = fundamentalsSchema.safeParse(value);
+  const parsed = fundamentalsSchema.safeParse(knownSeries(value));
   return parsed.success ? parsed.data : null;
 }
 
@@ -130,7 +136,7 @@ export function readFindingsPublication(value: unknown, ticker: string): Finding
 /* ---------- Resolution ---------- */
 
 /** Everything a finding may point at, as the page already holds it. Absent data resolves to nothing, never to zero. */
-export type FindingFundamentalSeries = Pick<PublicFundamentalSeries, "metricKey" | "label" | "category" | "unitFamily" | "currency" | "available"> & { points: Array<Pick<PublicFundamentalPoint, "periodEnd" | "valueDecimal" | "sourceAccession">> };
+export type FindingFundamentalSeries = Pick<PublicFundamentalSeries, "metricKey" | "label" | "category" | "unitFamily" | "currency" | "available" | "annual"> & { points: Array<Pick<PublicFundamentalPoint, "periodEnd" | "valueDecimal" | "sourceAccession">> };
 /** The part of a fundamentals response findings read; a public copy stripped to these fields is enough. */
 export type FindingFundamentals = { series: FindingFundamentalSeries[] };
 export type FindingData = {

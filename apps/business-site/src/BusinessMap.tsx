@@ -34,6 +34,8 @@ import type { PeersPublication } from "@/shared/analysis-contract/peers";
 import { watchVerdict, type FindingFundamentals, type ResolvedEvidence, type ResolvedValue } from "@/shared/analysis-runtime/findings";
 import { formatChange, highlightChange, ratioForm } from "@/shared/analysis-runtime/highlights";
 import { heroTiles, type HeroTile, type HeroTone } from "./hero-model";
+import { ShareholderReturns } from "./ShareholderReturns";
+import { marketCapOf, shareholderReturns } from "./shareholder-returns";
 import { anchorNodeNames, anchorPoolKeys, findingData, VIEW_LABEL, verifiedFindings } from "./findings-model";
 import { RailStream } from "./RailStream";
 import { LensPanel } from "./LensPanel";
@@ -397,6 +399,8 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
   const previousGraph = useMemo(() => { const g = previous ? statementGraph(previous) : null; return g && previous && trunk ? trunkGraph(g, previous).graph : g; }, [previous, trunk]);
   const funding = capital?.quarters.find(q => q.periodEnd === quarter?.periodEnd) ?? null;
   const cash = funding?.cashFlow ?? funding?.yearToDate ?? null;
+  // Buybacks and dividends at the report on the stage, for the cash-flow view's shareholder-returns card.
+  const returns = useMemo(() => quarter ? shareholderReturns(fundamentals, quarter.periodEnd, marketCapOf(valuation, quarter.currency)) : null, [fundamentals, quarter, valuation]);
   const valuationShown = !!valuation && valuation.availability !== "hidden";
   // The page opens on the valuation when a report is published for it; otherwise (hidden, preparing, failed) on the
   // income statement. The opening read settles before the map mounts, so the default is known at first paint.
@@ -782,6 +786,8 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
       : hasRevenueTrend && <TrendPanel ticker={ticker} history={revenueHistory!} items={items} selected={current} currentPeriod={quarter?.periodEnd ?? null}
         periods={new Set(quarters.map(q => q.periodEnd))} onPickPeriod={end => pickPeriod(quarters.find(q => q.periodEnd === end)?.id ?? null)} hue={hue} guidance={guidance}
         picker={<><MetricPicker value={REVENUE_METRIC} groups={metricGroups} revenue onChange={setMetricKey} />{shownMetrics.length > 0 && switcher}</>} />}
+
+      {view === "cash" && returns && <ShareholderReturns returns={returns} />}
 
       <footer className="stage-foot" data-tour={points.length > 0 ? undefined : "timeline"}>
         {(view === "cash" || view === "balance") && funding ? <CapitalLegend view={view} funding={funding} /> : proportional ? <div className="legend" aria-label={m.legend}>

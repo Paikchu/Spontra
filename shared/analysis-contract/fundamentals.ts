@@ -36,6 +36,9 @@ export type PublicFundamentalPoint = {
   derivationFormula?: string;
 };
 
+/** A fiscal year's total as the annual report tags it (twelve months, `periodStart`..`periodEnd`). */
+export type PublicFundamentalAnnualPoint = { periodStart: string; periodEnd: string; valueDecimal: string; sourceAccession?: string };
+
 export type PublicFundamentalSeries = {
   metricKey: FundamentalMetricKey;
   label: string;
@@ -50,6 +53,8 @@ export type PublicFundamentalSeries = {
   allowedTransforms: readonly FundamentalTransform[];
   available: boolean;
   points: PublicFundamentalPoint[];
+  /** Up to four fiscal years, oldest first, on the cash-flow series shareholder returns are read from; absent elsewhere. */
+  annual?: PublicFundamentalAnnualPoint[];
 };
 
 export type PublicFundamentalsResponse = {

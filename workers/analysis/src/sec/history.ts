@@ -1,6 +1,6 @@
 import { hashString, type HistoricalObservation, type SecCanonicalSeriesId, type SecHistorySnapshot } from "./analysis.ts";
 
-export const COMPANY_FACTS_REGISTRY_VERSION = "sec-canonical-series.v4";
+export const COMPANY_FACTS_REGISTRY_VERSION = "sec-canonical-series.v5";
 
 type RegistryEntry = {
   seriesId: SecCanonicalSeriesId;
@@ -25,6 +25,10 @@ export const SEC_CANONICAL_SERIES_REGISTRY: RegistryEntry[] = [
   // Non-cash charges and balance-sheet lines the analyst ledger reads as ratios (capex / D&A, SBC / revenue, AR / revenue).
   { seriesId: "depreciation", concepts: ["DepreciationDepletionAndAmortization", "DepreciationAndAmortization", "DepreciationAmortizationAndAccretionNet", "Depreciation"] },
   { seriesId: "stock_compensation", concepts: ["ShareBasedCompensation", "AllocatedShareBasedCompensationExpense"] },
+  // Cash returned to shareholders, as the cash-flow statement tags it (positive payments). Banks and Berkshire tag the
+  // same concepts; an issuer that tags none leaves the series absent, never zero.
+  { seriesId: "buybacks", concepts: ["PaymentsForRepurchaseOfCommonStock", "PaymentsForRepurchaseOfEquity"] },
+  { seriesId: "dividends", concepts: ["PaymentsOfDividends", "PaymentsOfDividendsCommonStock", "PaymentsOfOrdinaryDividends"] },
   { seriesId: "total_assets", concepts: ["Assets"] },
   { seriesId: "total_liabilities", concepts: ["Liabilities"] },
   { seriesId: "equity", concepts: ["StockholdersEquity", "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest"] },

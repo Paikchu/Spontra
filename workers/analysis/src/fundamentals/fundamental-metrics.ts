@@ -64,6 +64,8 @@ const reportedMetrics = {
   capital_expenditure: { ...sharedCatalog.capital_expenditure, yahooField: "quarterlyCapitalExpenditure" },
   free_cash_flow: { ...sharedCatalog.free_cash_flow, yahooField: "quarterlyFreeCashFlow" },
   stock_based_compensation: { ...sharedCatalog.stock_based_compensation, yahooField: "quarterlyStockBasedCompensation" },
+  share_repurchases: { ...sharedCatalog.share_repurchases, yahooField: null },
+  dividends_paid: { ...sharedCatalog.dividends_paid, yahooField: null },
   depreciation_and_amortization: { ...sharedCatalog.depreciation_and_amortization, yahooField: "quarterlyDepreciationAndAmortization" },
   research_and_development: { ...sharedCatalog.research_and_development, yahooField: "quarterlyResearchAndDevelopment" },
   cash_and_cash_equivalents: { ...sharedCatalog.cash_and_cash_equivalents, yahooField: "quarterlyCashAndCashEquivalents" },
