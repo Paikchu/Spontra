@@ -407,8 +407,8 @@ button { cursor: pointer; }
 .fc-guide-next:focus { outline: none; }
 .fc-tip-note { margin: 8px 0 0; max-width: 260px; font-size: 12px; line-height: 1.5; color: var(--muted-foreground); font-style: italic; }
 .fc-tip-link { margin: 6px 0 0; font-size: 12px; color: var(--muted-foreground); }
-.fc-node { transition: opacity .35s var(--ease); }
-.fc-svg[data-focus] .fc-node:not([data-lit]) { opacity: .34; }
+.fc-node { opacity: 1; transition: opacity 150ms ease; }
+.fc-svg[data-focus] .fc-node:not([data-lit]) { opacity: .35; }
 .fc-node[data-active] .fc-bar { filter: drop-shadow(0 0 8px var(--c)); }
 .fc-node[role="button"] { cursor: pointer; }
 .fc-node[role="button"]:focus { outline: none; }
@@ -920,7 +920,7 @@ button { cursor: pointer; }
 
 
 /* A finding in focus spotlights the nodes it names; everything else recedes. */
-.fc-svg[data-focus="spotlight"] .fc-node:not([data-lit]) { opacity: .28; }
+.fc-svg[data-focus="spotlight"] .fc-node:not([data-lit]) { opacity: 1; }
 .fc-svg[data-focus="spotlight"] .fc-band[data-lit="on"] { fill-opacity: .46; }
 .fc-svg[data-focus="spotlight"] .fc-node[data-lit] .fc-bar { filter: drop-shadow(0 0 7px color-mix(in srgb, var(--c) 70%, transparent)); }
 .fc-svg[data-focus="spotlight"] .fc-node[data-lit] .fc-name { fill: var(--foreground); }
@@ -1306,7 +1306,7 @@ html[lang^="zh"] .home-watch-item a { line-height: 1.7; }
 .timeline { margin-top: 6px; padding: 10px 0 0; }
 .timeline-track { position: relative; height: 30px; margin: 0 6px; }
 .timeline-track::before { content: ""; position: absolute; left: 0; right: 0; top: 12px; border-top: 1px solid var(--border); }
-.timeline-tick { position: absolute; top: 18px; transform: translateX(-50%); font-size: 10px; color: var(--faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.timeline-tick { position: absolute; top: 18px; transform: translateX(-50%); font-size: 12px; color: var(--muted-foreground); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .timeline-tick::before { content: ""; position: absolute; left: 50%; top: -6px; height: 4px; border-left: 1px solid var(--border); }
 .timeline-mark { position: absolute; top: 0; width: 0; height: 0; }
 .timeline-point { position: absolute; top: 12px; left: 0; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; padding: 0; border: 1.5px solid var(--tone); border-radius: 50%; background: var(--tone); cursor: pointer; transition: opacity 160ms var(--ease), transform .2s var(--ease), box-shadow .2s; }
@@ -1637,3 +1637,6 @@ html[lang^="zh"] .period-primary { letter-spacing: 0; }
 @media (prefers-reduced-motion: reduce) {
   .event-fold-panel { transition: none; }
 }
+
+/* Small chart labels keep text contrast independently of the flow palette. */
+.fc-change[data-trend], .fc-node:not([data-tone="expense"]) .fc-change[data-trend] { fill: var(--muted-foreground); }

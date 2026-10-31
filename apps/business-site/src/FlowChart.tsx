@@ -391,7 +391,7 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
   const slotLabel = focus?.slot && active ? focusSlot(byName.get(active)!) : null;
   // One delegated handler: focus follows whatever band or node is under the pointer, and clears over empty canvas.
   const hoverOver = (event: React.MouseEvent<SVGSVGElement>) => {
-    const owner = (event.target as Element).closest<SVGElement>("[data-owner]")?.dataset.owner ?? null;
+    const owner = (event.target as Element).closest<SVGElement>(".fc-node[data-owner]")?.dataset.owner ?? null;
     onHover(owner);
     if (!owner) setTip(null);
   };
@@ -446,7 +446,7 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
         // Capture coordinates now: React may run this updater after pointerup clears the ref.
         setCamera(c => ({ ...c, x, y }));
       }}
-      onPointerUp={e => release(e.pointerId)} onPointerCancel={e => release(e.pointerId)} onLostPointerCapture={e => { if (drag.current?.pointerId === e.pointerId) drag.current = null; }} className="fc-svg" viewBox={`${camera.x} ${camera.y} ${viewportWidth} ${viewportHeight}`} preserveAspectRatio="xMidYMid meet" role="group" aria-label={label} onMouseOver={hoverOver} data-focus={focus ? (focus.segment ? "segment" : "path") : lit ? "spotlight" : undefined}>
+      onPointerUp={e => release(e.pointerId)} onPointerCancel={e => release(e.pointerId)} onLostPointerCapture={e => { if (drag.current?.pointerId === e.pointerId) drag.current = null; }} className="fc-svg" viewBox={`${camera.x} ${camera.y} ${viewportWidth} ${viewportHeight}`} preserveAspectRatio="xMidYMid meet" role="group" aria-label={label} onMouseOver={hoverOver} data-focus={focus ? (focus.segment ? "segment" : "path") : undefined}>
       <defs>
         {bands.map((b, i) => {
           const from = colorOf(b.key.split(">")[0]);
