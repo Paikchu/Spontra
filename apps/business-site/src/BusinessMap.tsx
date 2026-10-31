@@ -314,7 +314,8 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
   company?: CompanyIdentity | null; }) {
   const locale = useLocale();
   const quarters = useMemo(() => [...flow.quarters].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd)), [flow]);
-  const [period, setPeriod] = useState<string | null>(null);
+  // `?period=` opens a report other than the latest (a home card links straight to the quarter it reports).
+  const [period, setPeriod] = useState<string | null>(() => { const end = new URLSearchParams(location.search).get("period"); return end ? quarters.find(q => Math.abs(Date.parse(q.periodEnd) - Date.parse(end)) <= 20 * 86_400_000)?.id ?? null : null; });
   const quarter = quarters.find(q => q.id === period) ?? quarters[0];
   // YoY by default; QoQ when the year-ago quarter was not collected but the one before was.
   const [chosenBasis, setBasis] = useState<Basis | null>(null);
@@ -443,6 +444,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
   const noted = useMemo(() => new Set(notes.map(n => n.metricId)), [notes]);
   useEffect(() => {
     const url = new URL(location.href);
+    if (quarter && quarter.id !== quarters[0]?.id) url.searchParams.set("period", quarter.periodEnd); else url.searchParams.delete("period");
     if (current) url.searchParams.set("business", current.id); else url.searchParams.delete("business");
     if (focused) url.searchParams.set("finding", focused.id); else url.searchParams.delete("finding");
     if (focusedEvent) url.searchParams.set("event", focusedEvent.id); else url.searchParams.delete("event");
@@ -454,7 +456,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
     const next = withEventFilter(url.search, eventFilter);
     const written = new URL(url.pathname + next + url.hash, url.origin);
     if (written.href !== location.href) history.replaceState(history.state, "", written);
-  }, [current, focused, focusedEvent, focusedReport, metric, detail, focusedCheck, view, homeView, eventFilter]);
+  }, [quarter, quarters, current, focused, focusedEvent, focusedReport, metric, detail, focusedCheck, view, homeView, eventFilter]);
   useEffect(() => {
     onView?.({ periodEnd: quarter?.periodEnd ?? null, view, business: current?.id ?? null, finding: focused?.id ?? null, check: focusedCheck?.id ?? null, event: focusedEvent?.id ?? null, report: focusedReport?.accessionNumber ?? null, metric: metric?.key ?? null });
   }, [onView, quarter?.periodEnd, view, current?.id, focused?.id, focusedCheck?.id, focusedEvent?.id, focusedReport?.accessionNumber, metric?.key]);

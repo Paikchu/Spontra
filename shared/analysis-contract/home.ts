@@ -57,6 +57,12 @@ export type HomeCompany = {
    * filing currency, for the row's small revenue-to-profit flow. Null when the quarter does not carry them.
    */
   statement?: HomeStatement | null;
+  /**
+   * Operating income over revenue for the latest quarter and the quarter a year before it, in percent (31.8 = 31.8%),
+   * from the published quarters and the reports assembled behind them. Null when the latest quarter has no operating
+   * income; `yearAgoPct` null when the year-ago quarter is not held.
+   */
+  operatingMargin?: { pct: number; yearAgoPct: number | null } | null;
   findingCounts: { risk: number; strength: number; shift: number; watch: number };
   /** At most two, highest severity first. */
   topFindings: HomeFinding[];

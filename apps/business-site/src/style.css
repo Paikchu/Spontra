@@ -1721,6 +1721,25 @@ html[lang^="zh"] .period-primary { letter-spacing: 0; }
 .stat-extra { display: flex; min-width: 0; }
 .stat-extra .nonop { max-width: 100%; } .stat-extra .nonop-tag { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 
+/* ---------- Fresh results (R29): the last seven days' reports, one card each, sideways on every width ---------- */
+.home-fresh { margin-top: 40px; }
+.home-fresh + .home-watch { margin-top: 40px; }
+.home-fresh-sub { font-size: 13px; color: var(--muted-foreground); }
+.home-fresh-row { display: flex; gap: 12px; margin: 0 -4px; padding: 4px 4px 10px; list-style: none; overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; scroll-padding-inline: 4px; scrollbar-width: thin; scrollbar-color: var(--border) transparent; -webkit-overflow-scrolling: touch; }
+.home-fresh-card { flex: 1 0 200px; max-width: 280px; scroll-snap-align: start; }
+.home-fresh-card a { display: grid; gap: 10px; height: 100%; padding: 14px 16px; border-radius: 12px; color: inherit; text-decoration: none; background: var(--surface); border: 1px solid var(--hairline); transition: border-color .2s; }
+.home-fresh-card a:hover { border-color: var(--border); }
+.home-fresh-card a:focus-visible { outline: 2px solid var(--foreground); outline-offset: 2px; }
+.home-fresh-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.home-fresh-head b { font-family: var(--mono); font-weight: 600; letter-spacing: .02em; }
+.home-fresh-head > span { overflow: hidden; font-size: 13px; color: var(--muted-foreground); white-space: nowrap; text-overflow: ellipsis; }
+.home-fresh-when { display: flex; gap: 6px; font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
+.home-fresh-figure { display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: 2px 8px; }
+.home-fresh-figure small { grid-column: 1 / -1; font-size: 12px; color: var(--muted-foreground); }
+.home-fresh-figure strong { font-size: 18px; font-weight: 650; letter-spacing: -.02em; font-variant-numeric: tabular-nums lining-nums; }
+.home-fresh-figure .home-delta { font-size: 12.5px; white-space: nowrap; }
+@media (max-width: 640px) { .home-fresh-card { flex: 0 0 min(78vw, 260px); } .home-fresh-row { margin-right: -16px; padding-right: 16px; } }
+
 /* Small chart labels keep text contrast independently of the flow palette. */
 .fc-change[data-trend], .fc-node:not([data-tone="expense"]) .fc-change[data-trend] { fill: var(--muted-foreground); }
 
