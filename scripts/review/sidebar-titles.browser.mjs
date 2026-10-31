@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright-core';
 
-const output = process.env.OUTPUT_DIR ?? '/workspace/r1031/unified-fix';
+const output = process.env.OUTPUT_DIR ?? '/workspace/r1031/unified-fix2';
 await mkdir(output, { recursive: true });
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH ?? '/usr/bin/google-chrome', args: ['--no-sandbox'] });
 const results = [];
@@ -33,6 +33,11 @@ try {
         text: e.textContent, className: e.className, clientWidth: e.clientWidth, scrollWidth: e.scrollWidth,
         textOverflow: getComputedStyle(e).textOverflow,
       }));
+      const details = [...document.querySelectorAll('.rail .row-name, .rail .insider-title + .stream-meta')].filter(visible).map(e => ({
+        text: e.textContent, className: e.className, clientWidth: e.clientWidth, scrollWidth: e.scrollWidth,
+        clientHeight: e.clientHeight, scrollHeight: e.scrollHeight,
+        textOverflow: getComputedStyle(e).textOverflow, lineClamp: getComputedStyle(e).webkitLineClamp,
+      }));
       const insiders = [...document.querySelectorAll('.insider-title')].filter(visible).map(e => {
         const name = e.querySelector('.insider-name'), content = e.querySelector('.insider-content');
         const transaction = e.querySelector('.insider-transaction'), tags = e.querySelector('.insider-tags'), amount = e.querySelector('.insider-amount');
@@ -48,13 +53,15 @@ try {
         };
       });
       const rail = document.querySelector('.rail'), scroll = document.querySelector('.rail-scroll');
-      return { titles, insiders, pageWidth: document.documentElement.scrollWidth, viewport: innerWidth,
+      return { titles, details, insiders, pageWidth: document.documentElement.scrollWidth, viewport: innerWidth,
         railWidth: rail.clientWidth, railScrollWidth: rail.scrollWidth,
         scrollWidth: scroll.clientWidth, scrollScrollWidth: scroll.scrollWidth };
     });
     results.push({ width, lang, theme, errors, ...metrics });
     if (width === 1440) await page.screenshot({ path: `${output}/nvda-${theme}-${lang}-1440.png`, fullPage: true });
     assert.equal(errors.length, 0, JSON.stringify(errors));
+    assert.ok(metrics.details.some(t => t.className === 'row-name') && metrics.details.some(t => t.className === 'stream-meta'), 'Real segment names and trade metadata must be loaded');
+    assert.ok(metrics.details.every(t => t.scrollWidth <= t.clientWidth && t.scrollHeight <= t.clientHeight && t.textOverflow !== 'ellipsis' && t.lineClamp === 'none'), JSON.stringify(metrics.details));
     assert.ok(metrics.titles.length && metrics.insiders.length, 'Real transaction titles must be loaded');
     assert.ok(metrics.titles.every(t => t.scrollWidth <= t.clientWidth && t.textOverflow !== 'ellipsis'), JSON.stringify(metrics.titles.filter(t => t.scrollWidth > t.clientWidth || t.textOverflow === 'ellipsis')));
     assert.ok(metrics.insiders.every(t => t.fullTextRetained && t.nameFirst && t.tagsSeparate && t.amountAligned && t.amountStyle && t.unclamped), JSON.stringify(metrics.insiders));

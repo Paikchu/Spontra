@@ -266,7 +266,7 @@ function EventRow({ event, checked, onClick, arrive, motion, tip }: RowProps & {
     <span className="stream-body">
       {parts ? <InsiderTitle {...parts} tags={join([planned && m.plan, espp && m.espp])} full={join([title, planned && m.plan, espp && m.espp])} />
         : <span className="stream-title" lang={eventTitleLang(event)} title={title}>{title}</span>}
-      <span className="stream-meta">{meta}</span>
+      <span className="stream-meta" title={meta}>{meta}</span>
     </span>
   </RailRow>;
 }
