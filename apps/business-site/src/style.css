@@ -1702,3 +1702,39 @@ html[lang^="zh"] .period-primary { letter-spacing: 0; }
 
 .module-failures { grid-column: 1 / -1; }
 .module-failures:empty { display: none; }
+
+/* Opaque local backing makes the light text floor readable in either theme. */
+.fc-label-backdrop { fill: #161616; }
+.fc-label .fc-name, .fc-label .fc-change, .fc-node .fc-label .fc-change[data-trend] { fill: #b8b8b8; }
+.fc-node .fc-label .fc-value, .fc-node .fc-label .fc-name { fill: #ededed; }
+.timeline-tick, .timeline-bubble, .timeline-tip, .timeline-pop { color: #b8b8b8; background: #161616; }
+.timeline-tip small, .timeline-pop small { color: #b8b8b8; }
+.timeline-tick { border-radius: 3px; padding: 0 2px; }
+.fc-compact { display: none; }
+@media (max-width: 960px) {
+  .chart:has(.fc) { overflow: visible; min-height: 0; height: auto; }
+  .fc { width: 100%; aspect-ratio: auto; display: block; }
+  .fc > .fc-canvas { display: none; }
+  .view-flags { flex-wrap: wrap; overflow: visible; }
+  .view-flags > li { flex: 0 1 auto; min-width: 0; max-width: 100%; }
+  .view-flag { flex-wrap: wrap; max-width: 100%; border-radius: 12px; }
+  .view-flag-name { white-space: normal; }
+}
+
+.fc-compact-details { color: #b8b8b8; font-size: 12px; }
+.fc-compact-details summary { padding: 4px 0; cursor: pointer; }
+.fc-compact-details[open] { display: grid; gap: 5px; }
+
+/* Keep the desktop canvas measurable when a dense statement uses the readable fallback. */
+.fc[data-compact] > .fc-canvas { visibility: hidden; }
+@media (min-width: 961px) {
+  .fc[data-compact] > .fc-compact { position: absolute; inset: 0; overflow: auto; align-content: start; }
+}
+  .fc[data-compact] > .fc-compact { display: grid; gap: 5px; padding: 8px; border-radius: 10px; background: #161616; }
+  .fc-compact-node > :is(div, button) { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 2px 8px; width: 100%; padding: 0; border: 0; background: none; text-align: left; color: #ededed; font-variant-numeric: tabular-nums; }
+  .fc-compact-node button { cursor: pointer; }
+  .fc-compact-name { font-size: 12px; overflow-wrap: anywhere; }
+  .fc-compact-value { font-size: 15px; font-weight: 600; }
+  .fc-compact-change { grid-column: 2; font-size: 12px; color: #b8b8b8; }
+  .fc-compact-track { grid-column: 1 / -1; height: 3px; background: #303030; border-radius: 2px; overflow: hidden; }
+  .fc-compact-track > span { display: block; height: 100%; }
