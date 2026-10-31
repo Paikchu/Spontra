@@ -23,6 +23,7 @@ const m = messages({
   sale: "Open-market sale", purchase: "Open-market purchase", sec: "SEC filing ↗",
   detail: (shares: string, price: string, amount: string) => `${shares} shares · Average ${price} · ${amount} total`,
   routine: (n: number) => `Routine 6-K filings × ${n}`, forms: (n: number) => `Form 4 ×${n}`,
+  fallback: "No key events in the last 90 days — showing all",
   empty: "Nothing in this category yet",
   loadFailed: "Couldn't load this data", retry: "Retry",
   director: "Director", tenPercent: "10% owner",
@@ -36,6 +37,7 @@ const m = messages({
   sale: "公开市场卖出", purchase: "公开市场买入", sec: "SEC 文件 ↗",
   detail: (shares: string, price: string, amount: string) => `${shares} 股 · 均价 ${price} · 合计 ${amount}`,
   routine: (n: number) => `6-K 例行文件 × ${n}`, forms: (n: number) => `Form 4 ×${n}`,
+  fallback: "近 90 天没有重要事件，已显示全部",
   empty: "这一类暂时没有内容",
   loadFailed: "数据暂时加载失败", retry: "重试",
   director: "董事", tenPercent: "10% 股东",
@@ -69,7 +71,7 @@ function composeRows(noise: NoiseRow[], findings: VerifiedFinding[], periodEnd: 
  * starts with the date. Insider trades fold by person and direction over 90 days; routine 6-Ks fold by month.
  * The recent rows show first; older ones load as the reader scrolls to the end.
  */
-export function RailStream({ rail, findings, findingsPeriodEnd, verdicts, ticker, updates, focus, phase = "ready", filter, onFocusItem, onFocusFinding, onRetry }: {
+export function RailStream({ rail, findings, findingsPeriodEnd, verdicts, ticker, updates, focus, phase = "ready", filter, fallback = false, onFocusItem, onFocusFinding, onRetry }: {
   rail: RailItems | null;
   /** Verified findings, most severe first. */
   findings: VerifiedFinding[];
@@ -86,6 +88,7 @@ export function RailStream({ rail, findings, findingsPeriodEnd, verdicts, ticker
   phase?: "ready" | "loading" | "error";
   /** The reading of the list (`?events=`); Key by default. */
   filter: EventFilter;
+  fallback?: boolean;
   onFocusItem: (item: RailItem | null) => void;
   onFocusFinding: (id: string | null) => void;
   onRetry?: () => void;
@@ -130,6 +133,7 @@ export function RailStream({ rail, findings, findingsPeriodEnd, verdicts, ticker
       <p>{m.loadFailed}</p>
       <Button variant="unstyled" type="button" onClick={onRetry}>{m.retry}</Button>
     </div> : <>
+    {fallback && <p className="event-empty" role="status">{m.fallback}</p>}
     <div className="stream-rows" id="rail-stream">
       <AnimatePresence initial={false} mode="popLayout">
       {rows.length === 0 ? <motion.p key="empty" className="event-empty" initial={still ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={still ? undefined : { opacity: 0 }} transition={{ duration: .16 }}>{m.empty}</motion.p>

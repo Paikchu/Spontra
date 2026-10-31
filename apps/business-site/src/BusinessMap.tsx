@@ -38,7 +38,7 @@ import { LensPanel } from "./LensPanel";
 import type { EventsPublication } from "@/shared/analysis-contract/events";
 import type { PublicFilingDigestPage } from "@/shared/analysis-contract/filings";
 import { eventTitle, timelinePoints } from "./events-model";
-import { readEventFilter, timelineIds, withEventFilter, type EventFilter } from "./event-noise";
+import { defaultEventFilter, timelineIds, withEventFilter } from "./event-noise";
 import { railItems, reportTitle, timelineFromFilings, type RailItem } from "./reports-model";
 import { EventLens } from "./EventLens";
 import { ReportLens } from "./ReportLens";
@@ -333,12 +333,13 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
   const focused = verified.find(f => f.id === focusId) ?? null;
   // Reports and filed events share the rail with the findings; one row is in focus at a time, and the time axis lists them all.
   const [eventId, setEventId] = useState<string | null>(() => new URLSearchParams(location.search).get("event"));
-  const [eventFilter] = useState<EventFilter>(() => readEventFilter(location.search));
+  const [initialEventSearch] = useState(() => location.search);
   const [reportId, setReportId] = useState<string | null>(() => new URLSearchParams(location.search).get("report"));
   const [reader, setReader] = useState(false);
   const [now] = useState(() => new Date());
   const rail = useMemo(() => railItems(filings, events, now), [filings, events, now]);
   const railList = useMemo(() => rail ? [...rail.recent, ...rail.earlier] : [], [rail]);
+  const { filter: eventFilter, fallback: eventFallback } = defaultEventFilter(initialEventSearch, eventsPhase === "ready" && !detailsLoading ? railList : null, now);
   const focusedEvent = focusId || reportId ? null : events?.events.find(e => e.id === eventId) ?? null;
   const focusedReport = focusId ? null : filings?.filings.find(f => f.accessionNumber === reportId) ?? null;
   // A flag holds the stage only when no finding, report or event does.
@@ -676,7 +677,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
       </section>
       {detailsLoading && <CompanyDetailsSkeleton />}
       {!detailsLoading && (rail || verified.length > 0) && <RailStream rail={rail} findings={verified} findingsPeriodEnd={findings?.periodEnd ?? null} verdicts={verdicts} ticker={ticker} updates={updates}
-        focus={focused?.id ?? focusedReport?.accessionNumber ?? focusedEvent?.id ?? null} phase={eventsPhase} filter={eventFilter}
+        focus={focused?.id ?? focusedReport?.accessionNumber ?? focusedEvent?.id ?? null} phase={eventsPhase} filter={eventFilter} fallback={eventFallback}
         onFocusItem={focusItem} onFocusFinding={focusFinding} onRetry={onRetryEvents} />}
       {!!quarter?.revenueAdjustments?.length && <details className="revenue-reconciliation" open={!narrow}>
         <summary className="rail-label">{m.reconciliation}{m.reconciliationUnit(quarter.currency) && <small> · {m.reconciliationUnit(quarter.currency)}</small>}</summary>

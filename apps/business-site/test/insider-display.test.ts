@@ -61,3 +61,16 @@ test("single insider titles include localized transaction amounts without an ESP
     assert.ok(!eventTitle(unknown).includes("美元"));
   }
 });
+
+
+test("automatic fallback notice uses the active locale", () => {
+  for (const locale of ["zh-CN", "en"] as const) {
+    setLocale(locale);
+    const html = renderToStaticMarkup(createElement(RailStream, {
+      rail: null, findings: [], findingsPeriodEnd: null, ticker: publication.ticker, updates: 0, focus: null,
+      onFocusItem: () => {}, onFocusFinding: () => {}, filter: "all", fallback: true,
+    }));
+    assert.ok(html.includes('role="status"'));
+    assert.ok(html.includes(locale === "zh-CN" ? "近 90 天没有重要事件，已显示全部" : "No key events in the last 90 days — showing all"));
+  }
+});
