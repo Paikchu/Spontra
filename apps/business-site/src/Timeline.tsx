@@ -16,8 +16,7 @@ const m = messages({
 });
 
 const DAY = 86_400_000;
-/** Markers closer than a bubble's diameter share one bubble, so the numbers never sit on top of each other. */
-const BUBBLE = 16;
+
 
 /**
  * The time axis under the chart. The page decides which filings are on it (the event filter).
@@ -64,10 +63,12 @@ export function Timeline({ points, currentPeriod, now, onReport, onEvent, ticker
     return { start, end, ticks };
   }, [points, now]);
 
+  // Reserve enough room even if every event joins a single cluster.
+  const bubbleSize = Math.max(28, String(points.length).length * 8 + 12);
   const marks = useMemo(() => {
     if (!width || !points.length) return [];
-    return clusterByGap(points, point => (Date.parse(point.date) - start) / (end - start) * width, BUBBLE);
-  }, [points, width, start, end]);
+    return clusterByGap(points, point => (Date.parse(point.date) - start) / (end - start) * width, bubbleSize + 6);
+  }, [points, width, start, end, bubbleSize]);
 
   if (!points.length) return null;
   const xOf = (px: number) => width ? px / width * 100 : 0;
@@ -83,7 +84,7 @@ export function Timeline({ points, currentPeriod, now, onReport, onEvent, ticker
     return primary ? `${primary} · ${body}` : body;
   };
 
-  return <div className="timeline" role="group" aria-label={m.label} data-tour="timeline">
+  return <div className="timeline" style={{ "--timeline-bubble-size": `${bubbleSize}px` } as CSSProperties} role="group" aria-label={m.label} data-tour="timeline">
     <div className="timeline-track" ref={trackRef}>
       {readableTicks(ticks, width).map(t => <span key={t.label} className="timeline-tick" style={{ left: `${t.at}%` }}>{t.label}</span>)}
       {marks.map(mark => {

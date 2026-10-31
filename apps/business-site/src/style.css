@@ -1304,14 +1304,14 @@ html[lang^="zh"] .home-watch-item a { line-height: 1.7; }
 /* The time axis under the chart: quarter ticks along the track, one marker per filing, the current report and the focused event lit. */
 .stage[data-timeline] { grid-template-rows: auto minmax(0, 1fr) auto auto auto; }
 .timeline { margin-top: 6px; padding: 10px 0 0; }
-.timeline-track { position: relative; height: 30px; margin: 0 6px; }
+.timeline-track { position: relative; height: 58px; margin: 0 22px; }
 .timeline-track::before { content: ""; position: absolute; left: 0; right: 0; top: 12px; border-top: 1px solid var(--border); }
-.timeline-tick { position: absolute; top: 18px; transform: translateX(-50%); font-size: 12px; color: var(--muted-foreground); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.timeline-tick { position: absolute; top: 36px; transform: translateX(-50%); font-size: 12px; color: var(--muted-foreground); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .timeline-tick::before { content: ""; position: absolute; left: 50%; top: -6px; height: 4px; border-left: 1px solid var(--border); }
 .timeline-mark { position: absolute; top: 0; width: 0; height: 0; }
 .timeline-point { position: absolute; top: 12px; left: 0; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; padding: 0; border: 1.5px solid var(--tone); border-radius: 50%; background: var(--tone); cursor: pointer; transition: opacity 160ms var(--ease), transform .2s var(--ease), box-shadow .2s; }
 .timeline-bubble {
-  position: absolute; top: 12px; left: 0; display: grid; place-items: center; width: 16px; height: 16px; margin: -8px 0 0 -8px; padding: 0;
+  position: absolute; top: 12px; left: 0; display: grid; place-items: center; width: var(--timeline-bubble-size, 28px); height: 28px; margin: -14px 0 0; transform: translateX(-50%); padding: 0;
   border: 1px solid var(--border); border-radius: 50%; background: var(--surface-raised); color: var(--foreground);
   font-size: 12px; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; cursor: pointer; z-index: 1;
   transition: opacity 160ms var(--ease), transform .2s var(--ease);
@@ -1378,7 +1378,7 @@ html[lang^="zh"] .home-watch-item a { line-height: 1.7; }
 .ladder-scale { position: absolute; inset: 0; font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; pointer-events: none; }
 .ladder-scale span { position: absolute; left: 0; transform: translateY(-50%); }
 @media (max-width: 960px) {
-  .timeline-track { margin: 0 2px; }
+  .timeline-track { margin: 0 22px; }
   .stream-rows, .event-rows, .event-fold { width: 100%; max-width: 100%; }
 }
 
@@ -1740,8 +1740,8 @@ html[lang^="zh"] .period-primary { letter-spacing: 0; }
 .fc-label-backdrop { fill: #161616; }
 .fc-label .fc-name, .fc-label .fc-change, .fc-node .fc-label .fc-change[data-trend] { fill: #b8b8b8; }
 .fc-node .fc-label .fc-value, .fc-node .fc-label .fc-name { fill: #ededed; }
-.timeline-tick, .timeline-bubble, .timeline-tip, .timeline-pop { color: #b8b8b8; background: #161616; }
-.timeline-tip small, .timeline-pop small { color: #b8b8b8; }
+.timeline-tick, .timeline-bubble, .timeline-tip, .timeline-pop { color: var(--muted-foreground); background: var(--surface-raised); }
+.timeline-tip small, .timeline-pop small { color: var(--muted-foreground); }
 .timeline-tick { border-radius: 3px; padding: 0 2px; }
 .fc-compact { display: none; }
 @media (max-width: 960px) {
@@ -1754,7 +1754,7 @@ html[lang^="zh"] .period-primary { letter-spacing: 0; }
   .view-flag-name { white-space: normal; }
 }
 
-.fc-compact-details { color: #b8b8b8; font-size: 12px; }
+.fc-compact-details { color: var(--muted-foreground); font-size: 12px; }
 .fc-compact-details summary { padding: 4px 0; cursor: pointer; }
 .fc-compact-details[open] { display: grid; gap: 5px; }
 
@@ -1763,11 +1763,14 @@ html[lang^="zh"] .period-primary { letter-spacing: 0; }
 @media (min-width: 961px) {
   .fc[data-compact] > .fc-compact { position: absolute; inset: 0; overflow: auto; align-content: start; }
 }
-  .fc[data-compact] > .fc-compact { display: grid; gap: 5px; padding: 8px; border-radius: 10px; background: #161616; }
-  .fc-compact-node > :is(div, button) { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 2px 8px; width: 100%; padding: 0; border: 0; background: none; text-align: left; color: #ededed; font-variant-numeric: tabular-nums; }
+  .fc[data-compact] > .fc-compact { display: grid; gap: 5px; padding: 8px; border-radius: 10px; background: var(--surface-raised); }
+  .fc-compact-node > :is(div, button) { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 2px 8px; width: 100%; padding: 0; border: 0; background: none; text-align: left; color: var(--foreground); font-variant-numeric: tabular-nums; }
   .fc-compact-node button { cursor: pointer; }
   .fc-compact-name { font-size: 12px; overflow-wrap: anywhere; }
   .fc-compact-value { font-size: 15px; font-weight: 600; }
-  .fc-compact-change { grid-column: 2; font-size: 12px; color: #b8b8b8; }
-  .fc-compact-track { grid-column: 1 / -1; height: 3px; background: #303030; border-radius: 2px; overflow: hidden; }
+  .fc-compact-change { grid-column: 2; font-size: 12px; color: var(--muted-foreground); }
+  .fc-compact-track { grid-column: 1 / -1; height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; }
   .fc-compact-track > span { display: block; height: 100%; }
+
+/* Compact bars need contrast against the light track as well as the card. */
+.light .fc-compact { --flow-profit: #096b5f; --flow-expense: #91521c; }
