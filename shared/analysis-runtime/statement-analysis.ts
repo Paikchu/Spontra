@@ -137,15 +137,27 @@ function thresholdValue(form: MetricForm, value: number, locale: Locale): string
 }
 /** The rule as a formula the reader can check: each condition in the metric's units, then the run it must hold for. */
 export function ruleThreshold(rule: StatementRuleDef, locale: Locale = "en", defs: ReadonlyMap<string, StatementMetricDef> = METRIC_BY_ID): string {
+  return ruleText(rule, locale, defs, op => `${op} `);
+}
+
+/**
+ * The rule in words for the page, where no comparison sign is shown: "above 15 pp, and Revenue growth above 0%, 2 quarters
+ * running" / "高于 15个百分点，且 营收同比 高于 0%，连续 2 季". The formula form above is what the model and the ledger read.
+ */
+export function ruleCriteria(rule: StatementRuleDef, locale: Locale = "en", defs: ReadonlyMap<string, StatementMetricDef> = METRIC_BY_ID): string {
+  return ruleText(rule, locale, defs, op => zh(locale) ? (op === ">" ? "高于 " : "低于 ") : (op === ">" ? "above " : "below "), true);
+}
+
+function ruleText(rule: StatementRuleDef, locale: Locale, defs: ReadonlyMap<string, StatementMetricDef>, sign: (op: "<" | ">") => string, words = false): string {
   const parts = rule.all.map(c => {
     const def = defs.get(c.metric), name = c.metric === rule.metric || !def ? "" : `${def.label[zh(locale) ? 1 : 0]} `;
     if ("flipped" in c) return `${name}${zh(locale) ? (c.flipped === "toPositive" ? "由负转正（较上年同期）" : "由正转负（较上年同期）") : (c.flipped === "toPositive" ? "turned positive vs. a year ago" : "turned negative vs. a year ago")}`;
     if ("falling" in c) return `${name}${zh(locale) ? `连续 ${c.falling} 季下降` : `falling ${c.falling} quarters`}`;
     const on = c.on === "value" ? "" : zh(locale) ? (c.on === "yoy" ? "同比变动 " : "环比变动 ") : (c.on === "yoy" ? "YoY change " : "QoQ change ");
     const form: MetricForm = c.on === "value" ? def?.form ?? "multiple" : def?.form === "money" || def?.form === "per_share" ? "percent" : def?.form === "percent" ? "points" : def?.form ?? "multiple";
-    return `${name}${on}${c.op} ${thresholdValue(form, c.value, locale)}`;
+    return `${name}${on}${sign(c.op)}${thresholdValue(form, c.value, locale)}`;
   });
-  const run = rule.persist > 1 ? (zh(locale) ? `，连续 ${rule.persist} 季` : `, ${rule.persist} quarters`) : "";
+  const run = rule.persist > 1 ? (zh(locale) ? `，连续 ${rule.persist} 季` : words ? `, ${rule.persist} quarters running` : `, ${rule.persist} quarters`) : "";
   return parts.join(zh(locale) ? "，且 " : ", and ") + run;
 }
 
