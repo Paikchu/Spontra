@@ -7,7 +7,7 @@ import { getLocale, messages, useLocale } from "@/packages/web/src/i18n";
 import { eventClassLabel, isEsppTransaction, isPlannedInsiderTrade } from "@/shared/analysis-runtime/events";
 import { normalizeDisplayText, perShare } from "@/shared/analysis-runtime/locale";
 import { langOf } from "@/packages/web/src/i18n/SourceLanguage";
-import { eventTitle, eventTitleLang, shortDate } from "./events-model";
+import { eventTitle, insiderTitleParts, eventTitleLang, shortDate } from "./events-model";
 import { exactShares, insiderCompactMoney, noiseRows, rowLeaves, type EventFilter, type NoiseRow } from "./event-noise";
 import { filingQuarterLabel, reportTitle, reportTitleLang, type RailItem, type RailItems } from "./reports-model";
 import { KIND_LABEL, VIEW_LABEL, type VerifiedFinding } from "./findings-model";
@@ -19,6 +19,7 @@ const m = messages({
   report: "Report",
   sold: (n: number, amount: string) => `Sold ${n} times in 90 days · ${amount} total`,
   bought: (n: number, amount: string) => `Bought ${n} times in 90 days · ${amount} total`,
+  soldCount: (n: number) => `Sold ${n} times in 90 days`, boughtCount: (n: number) => `Bought ${n} times in 90 days`,
   plan: "10b5-1 plan", espp: "ESPP purchase",
   sale: "Open-market sale", purchase: "Open-market purchase", sec: "SEC filing ↗",
   detail: (shares: string, price: string, amount: string) => `${shares} shares · Average ${price} · ${amount} total`,
@@ -33,6 +34,7 @@ const m = messages({
   report: "财报",
   sold: (n: number, amount: string) => `90 天内卖出 ${n} 笔 · 合计 ${amount}`,
   bought: (n: number, amount: string) => `90 天内买入 ${n} 笔 · 合计 ${amount}`,
+  soldCount: (n: number) => `90 天内卖出 ${n} 笔`, boughtCount: (n: number) => `90 天内买入 ${n} 笔`,
   plan: "计划内", espp: "员工持股计划代买",
   sale: "公开市场卖出", purchase: "公开市场买入", sec: "SEC 文件 ↗",
   detail: (shares: string, price: string, amount: string) => `${shares} 股 · 均价 ${price} · 合计 ${amount}`,
@@ -200,7 +202,7 @@ function NoiseBlock({ row, ticker, open, focus, arrive, motion, onToggle, onFocu
   }
   const locale = getLocale();
   const title = row.kind === "plan" ? (row.direction === "sell" ? m.sold : m.bought)(row.items.length, insiderCompactMoney(row.amount)) : m.routine(row.items.length);
-  const meta = row.kind === "plan" ? join([shortDate(row.date), eventClassLabel("insider", locale), row.planned && m.plan, row.espp && m.espp, m.forms(row.items.length)])
+  const meta = row.kind === "plan" ? join([shortDate(row.date), eventClassLabel("insider", locale), m.forms(row.items.length)])
     : join([shortDate(row.date), eventClassLabel("other", locale)]);
   const panelId = `${row.id}-panel`;
   return <div className="event-fold" data-class={row.kind === "plan" ? "insider" : "other"}>
@@ -208,7 +210,8 @@ function NoiseBlock({ row, ticker, open, focus, arrive, motion, onToggle, onFocu
       onClick={onToggle}>
       {row.kind === "plan" ? <Mark cls="insider" direction={row.direction} quiet={row.planned || row.espp} /> : <Mark cls="other" quiet />}
       <span className="stream-body">
-        <span className="stream-title event-fold-text">{row.kind === "plan" && <><span lang="en">{row.name}</span> · </>}{title}</span>
+        {row.kind === "plan" ? <InsiderTitle name={row.name} content={(row.direction === "sell" ? m.soldCount : m.boughtCount)(row.items.length)} amount={insiderCompactMoney(row.amount)} tags={join([row.planned && m.plan, row.espp && m.espp])} full={join([row.name, title, row.planned && m.plan, row.espp && m.espp])} />
+          : <span className="stream-title event-fold-text" title={title}>{title}</span>}
         <span className="stream-meta"><svg className="fold-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="M4.2 2.2 8 6 4.2 9.8" /></svg>{meta}</span>
       </span>
     </Button>
@@ -236,20 +239,33 @@ function ReportRow({ report, ticker, checked, onClick, arrive, motion, tip }: Ro
   </RailRow>;
 }
 
+function InsiderTitle({ name, content, amount, tags, full }: { name: string; content: string; amount: string | null; tags: string; full: string }) {
+  return <span className="stream-title insider-title" title={full}>
+    <span className="insider-name" lang="en">{name}</span>
+    <span className="insider-transaction">
+      <span className="insider-content">{content}</span>
+      {tags && <span className="insider-tags">{tags}</span>}
+      {amount && <span className="insider-amount">{amount}</span>}
+    </span>
+  </span>;
+}
+
 function EventRow({ event, checked, onClick, arrive, motion, tip }: RowProps & { event: CompanyEvent }) {
   const locale = getLocale();
   const insider = event.insider;
   const direction = insider?.bought ? "buy" : insider?.sold ? "sell" : null;
   const planned = isPlannedInsiderTrade(event), espp = isEsppTransaction(event);
   const role = insider ? insider.title ?? (insider.isDirector ? m.director : insider.isTenPercentOwner ? m.tenPercent : null) : null;
-  const meta = join([shortDate(event.filedAt), eventClassLabel(event.class, locale), role, planned && m.plan, espp && m.espp, formName(event.form)]);
+  const meta = join([shortDate(event.filedAt), eventClassLabel(event.class, locale), role, formName(event.form)]);
   const title = eventTitle(event);
+  const parts = insiderTitleParts(event);
   return <RailRow variant="unstyled" type="button" role="radio" aria-checked={checked} className="stream-row" data-class={event.class} onClick={onClick}
     {...motion} data-arrived={arrive != null ? "" : undefined} style={arrivalStyle(arrive)}
     {...tip(title, eventTitleLang(event), meta)} aria-label={`${eventClassLabel(event.class, locale)} ${shortDate(event.filedAt)} ${title}`}>
     <Mark cls={event.class} direction={direction} quiet={planned || espp} />
     <span className="stream-body">
-      <span className="stream-title" lang={eventTitleLang(event)}>{title}</span>
+      {parts ? <InsiderTitle {...parts} tags={join([planned && m.plan, espp && m.espp])} full={join([title, planned && m.plan, espp && m.espp])} />
+        : <span className="stream-title" lang={eventTitleLang(event)} title={title}>{title}</span>}
       <span className="stream-meta">{meta}</span>
     </span>
   </RailRow>;
