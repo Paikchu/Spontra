@@ -57,6 +57,13 @@ export type PublicFundamentalSeries = {
   annual?: PublicFundamentalAnnualPoint[];
 };
 
+/**
+ * Why no metric can be shown: `annual_only`, the issuer tags its statements in XBRL only in its annual report (a 20-F
+ * filer whose quarterly results come as 6-K exhibits without XBRL); `no_quarterly_values`, none of the concepts the
+ * catalogue reads carries a quarterly value.
+ */
+export type FundamentalsUnavailableReason = "annual_only" | "no_quarterly_values";
+
 export type PublicFundamentalsResponse = {
   apiSchemaVersion: typeof ANALYSIS_API_SCHEMA_VERSION;
   schemaVersion: typeof FUNDAMENTALS_API_SCHEMA_VERSION;
@@ -64,7 +71,12 @@ export type PublicFundamentalsResponse = {
   /** Actual provider; SEC-derived ratios and cash flow retain SEC provenance. */
   source: "yahoo_finance" | "sec_xbrl";
   ticker: string;
-  status: "ready" | "pending";
+  /**
+   * `unavailable`: Company Facts holds periods but no income-statement or cash-flow series has a quarterly value, so no
+   * metric can be shown; `unavailableReason` says why.
+   */
+  status: "ready" | "pending" | "unavailable";
+  unavailableReason?: FundamentalsUnavailableReason;
   dataVersion: string | null;
   fetchedAt: string | null;
   stale: boolean;

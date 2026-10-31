@@ -1,6 +1,7 @@
 import { ANALYSIS_API_SCHEMA_VERSION } from "../../../../shared/analysis-contract/common.ts";
 import { FUNDAMENTAL_METRIC_CATALOG, FUNDAMENTAL_METRIC_CATALOG_VERSION } from "./fundamental-metrics.ts";
-import { FUNDAMENTALS_API_SCHEMA_VERSION, FUNDAMENTALS_STALE_AFTER_MS, type FundamentalMetricKey, type PublicFundamentalsResponse } from "../../../../shared/analysis-contract/fundamentals.ts";
+import { FUNDAMENTALS_API_SCHEMA_VERSION, FUNDAMENTALS_STALE_AFTER_MS, type FundamentalMetricKey, type FundamentalsUnavailableReason, type PublicFundamentalsResponse } from "../../../../shared/analysis-contract/fundamentals.ts";
+import { latestFundamentalsQuarter } from "../../../../shared/analysis-runtime/fundamentals-freshness.ts";
 import type { FundamentalApiQuery } from "./fundamentals-api.ts";
 import type { HistoricalObservation, SecHistorySnapshot } from "../sec/analysis.ts";
 import { D1SecRepository, historyFromRows } from "../sec/d1.ts";
@@ -22,6 +23,7 @@ const SERIES: Partial<Record<HistoricalObservation["seriesId"], FundamentalMetri
 /** Series that also carry their fiscal-year totals, for shareholder returns read over full years against free cash flow and stock pay. */
 const ANNUAL: ReadonlySet<FundamentalMetricKey> = new Set(["share_repurchases", "dividends_paid", "free_cash_flow", "operating_cash_flow", "capital_expenditure", "stock_based_compensation"]);
 const ANNUAL_YEARS = 4;
+const FLOW_CATEGORIES = new Set(["income_statement", "cash_flow"]);
 
 export async function getSecFundamentals(database: D1Like, query: FundamentalApiQuery): Promise<PublicFundamentalsResponse> {
   const cached = await new D1SecRepository(database).getCache<SecHistorySnapshot>(secFundamentalsKey(query.ticker));
@@ -78,13 +80,19 @@ export async function buildSecFundamentals(history: SecHistorySnapshot, query: F
       displaySign: definition.displaySign, defaultMark: definition.defaultMark, allowedTransforms: definition.allowedTransforms,
       available: points.some((point) => point.valueDecimal !== null), points, ...(annual?.length ? { annual } : {}) };
   });
+  // Periods with no income-statement or cash-flow value anywhere (only year-end balances copied from annual reports): no
+  // metric to show, and the reason is the filer's, not a refresh still to come.
+  const empty = dates.length > 0 && latestFundamentalsQuarter(series) == null;
+  const unavailableReason: FundamentalsUnavailableReason | null = !empty ? null
+    : history.series.some((item) => FLOW_CATEGORIES.has(FUNDAMENTAL_METRIC_CATALOG[SERIES[item.seriesId]!]?.category ?? "") && item.annual.some((point) => point.qualityStatus === "validated_xbrl"))
+      ? "annual_only" : "no_quarterly_values";
   const issueCount = series.reduce((count, item) => count + item.points.filter((point) => point.valueDecimal === null).length, 0);
   const stale = !fetchedAt || !Number.isFinite(Date.parse(fetchedAt)) || now.getTime() - Date.parse(fetchedAt) >= FUNDAMENTALS_STALE_AFTER_MS;
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify([history.registryVersion, dates, series])));
   return {
     apiSchemaVersion: ANALYSIS_API_SCHEMA_VERSION, schemaVersion: FUNDAMENTALS_API_SCHEMA_VERSION,
     catalogVersion: FUNDAMENTAL_METRIC_CATALOG_VERSION, source: "sec_xbrl", ticker: query.ticker,
-    status: dates.length ? "ready" : "pending", fetchedAt, stale,
+    status: unavailableReason ? "unavailable" : dates.length ? "ready" : "pending", ...(unavailableReason ? { unavailableReason } : {}), fetchedAt, stale,
     dataVersion: dates.length ? [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("") : null,
     partial: issueCount > 0 || dates.length < query.periodCount, qualityStatus: dates.length ? issueCount || dates.length < query.periodCount ? "partial" : "complete" : null,
     issueCount, requestedPeriodCount: query.periodCount,

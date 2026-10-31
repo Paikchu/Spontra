@@ -67,11 +67,15 @@ export async function fetchEvents(ticker: string, signal: AbortSignal, rev?: str
   }
 }
 
-/** A supplementary resource answers on its own; anything but "ready" reads as null. */
+/**
+ * A supplementary resource answers on its own; anything but "ready" reads as null, except fundamentals that are
+ * unavailable for a stated reason, which the page shows.
+ */
 export async function fetchSupplement<T>(ticker: string, resource: "findings" | "fundamentals" | "events" | "filings", signal: AbortSignal, rev?: string, openingResponse?: Promise<Response>): Promise<T | null> {
   const response = await companyRequest(companyPath(ticker, "/" + resource, rev), signal, openingResponse);
   if (!response.ok) throw new CompanyHttpError(response.status);
   const body = await response.json() as { status?: string } & Record<string, unknown>;
+  if (resource === "fundamentals" && body.status === "unavailable" && (body.fundamentals as { unavailable?: unknown } | null)?.unavailable) return body.fundamentals as T;
   return body.status === "ready" ? body[resource] as T : null;
 }
 

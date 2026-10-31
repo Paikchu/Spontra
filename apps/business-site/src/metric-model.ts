@@ -63,6 +63,8 @@ export function metricTrend(series: FindingFundamentalSeries, visible = SLOTS): 
 const COMPONENT_METRICS = new Set(["equity_securities_gains", "nonoperating_interest_income", "nonoperating_interest_expense", "foreign_exchange_gains"]);
 
 export function metricOptions(fundamentals: FindingFundamentals | null): Array<{ group: string; options: MetricOption[] }> {
+  // Fundamentals without a quarterly metric (an annual-only XBRL filer) offer none, even with year-end balances attached.
+  if (fundamentals?.unavailable) return [];
   const series = (fundamentals?.series ?? []).filter(s => s.available && s.metricKey !== "total_revenue" && !COMPONENT_METRICS.has(s.metricKey) && metricTrend(s));
   return GROUPS
     .map(category => ({ group: GROUP_LABEL[category], options: series.filter(s => s.category === category).map(s => ({ key: s.metricKey, label: seriesLabel(s) })) }))

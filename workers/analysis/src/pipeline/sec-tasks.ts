@@ -2,6 +2,7 @@ import { readEventsPublication } from "../../../../shared/analysis-runtime/event
 import { AiRunStore, quietly } from "../ai-runs/store.ts";
 import { refreshCompanyEvents, secAccessPaused } from "../events/workflow.ts";
 import { eventsCacheKey } from "../events/read.ts";
+import { refreshSecFundamentals } from "../fundamentals/refresh.ts";
 import { guidanceWorkflowSuffix } from "../guidance/extract.ts";
 import { GuidanceStore } from "../guidance/store.ts";
 import { attachLibraryTranscripts } from "../guidance/transcripts.ts";
@@ -78,6 +79,17 @@ async function failedReports(db: D1Database, instanceId: string): Promise<{ fail
 const SECOND = 1000, MINUTE = 60 * SECOND;
 
 export const SEC_TASKS = {
+  /**
+   * Re-reads Company Facts after new statements are published (fundamentals/refresh.ts): a later quarter replaces the
+   * stored snapshot and emits `fundamentals.updated`; while Company Facts is behind the filing, the run comes back.
+   */
+  fundamentals: {
+    version: "fundamentals.v1",
+    async run(env, ticker, { now, causeId }): Promise<TaskOutcome> {
+      const result = await refreshSecFundamentals({ DB: env.DB!, SEC_USER_AGENT: env.SEC_USER_AGENT }, ticker, fetch, now, causeId);
+      return result.status === "behind" && result.retryAfterMs ? { status: "later", afterMs: result.retryAfterMs, detail: result } : { status: "done", detail: result };
+    },
+  },
   /**
    * Runs the SEC report Workflow for an AI company with a new filing: it indexes the filing list (`filings.indexed`),
    * writes reports and 8-K summaries (`report.published`) and the SEC fundamentals (`fundamentals.updated`). A run
