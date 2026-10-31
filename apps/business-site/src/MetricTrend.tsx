@@ -7,6 +7,8 @@ import type { BusinessFlowQuarter } from "@/shared/analysis-contract/business-fl
 import { compactFlowValue } from "@/packages/web/src/model/business-flow-layout";
 import { getLocale, messages } from "@/packages/web/src/i18n";
 import { axisNumber, axisUnit, compactMoney, compactNumber, multiple, perShare, qoqLabel, yoyLabel, shortPeriod } from "@/shared/analysis-runtime/locale";
+import { MomentumTag } from "./MomentumTag";
+import { momentumOf } from "./momentum";
 import { REVENUE_METRIC, metricChanges, metricTicks, type MetricOption, type MetricTrend } from "./metric-model";
 import { growth, rateTicks } from "./trend-model";
 import { QuarterBadge, fiscalPhrase } from "./PeriodMark";
@@ -72,6 +74,9 @@ function formatter(trend: MetricTrend) {
  * flow hang below it), and for amounts a growth line on the right axis. Rates are already in points, so their change is
  * stated in points and drawn as no second line. Gaps stay gaps.
  */
+/** The amounts whose growth momentum the trend tags: revenue and operating income. */
+const MOMENTUM_METRICS = new Set(["total_revenue", "operating_income"]);
+
 export function MetricTrendPanel({ trend, picker, currentPeriod, periods, onPickPeriod, ticker }: {
   trend: MetricTrend; picker: ReactNode; currentPeriod: string | null; periods: Set<string>; onPickPeriod: (periodEnd: string) => void; ticker: string;
 }) {
@@ -103,7 +108,7 @@ export function MetricTrendPanel({ trend, picker, currentPeriod, periods, onPick
   return <ChartContainer asChild config={config}><section className="trend" data-view="metric" aria-label={m.trendLabel(trend.label, trend.points.length)} onMouseLeave={() => { setHover(null); setSeries(null); }}>
     <header className="trend-head">
       <div className="trend-title">
-        <div className="trend-heading"><h2>{m.wholeCompany}</h2>{picker}</div>
+        <div className="trend-heading"><h2>{m.wholeCompany}</h2>{MOMENTUM_METRICS.has(trend.key) && <MomentumTag momentum={momentumOf(trend.history, currentPeriod)} subject={trend.label} />}{picker}</div>
         <ChartLegendContent asChild key={"legend" + trend.key}><div className="trend-legend">
           {rateAxis && <span className="trend-legend-line" style={{ "--line": "var(--foreground)" } as CSSProperties}><i />{rateName}</span>}
           <span className="trend-basis">{m.secXbrl}</span>

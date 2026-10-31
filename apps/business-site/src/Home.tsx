@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { MomentumTag } from "./MomentumTag";
+import { momentumOf } from "./momentum";
 import { getLocale, messages, useLocale } from "@/packages/web/src/i18n";
 import { langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import { compactMoney, normalizeDisplayText } from "@/shared/analysis-runtime/locale";
@@ -316,7 +318,7 @@ export function Home({ light, onToggleTheme, recent, onPick, digest = null, dige
                     </td>
                     <td className="home-pic"><StatementStrip company={company} /></td>
                     <td className="num"><strong title={company.revenue ? undefined : missing}>{company.revenue ? money(company.revenue.value, company.revenue.currency) : "—"}</strong></td>
-                    <td className="num"><Delta pct={company.revenue?.yoyPct ?? null} title={company.revenue?.yoyPct == null ? missing : undefined} /></td>
+                    <td className="num"><span className="home-yoy"><MomentumTag momentum={momentumOf(company.revenueTrend.map(p => ({ periodEnd: p.periodEnd, value: Number(p.value) })))} subject={m.colRevenue} size="small" /><Delta pct={company.revenue?.yoyPct ?? null} title={company.revenue?.yoyPct == null ? missing : undefined} /></span></td>
                     <td className="home-period">{period ? <PeriodMark variant="footer" ticker={company.ticker} companyName={name.text} periodEnd={period.periodEnd} periodStart={period.periodStart} fiscalYear={period.fiscalYear} fiscalQuarter={period.fiscalQuarter} fiscalYearEndMonth={period.fiscalYearEndMonth} labelSource={period.labelSource} /> : null}</td>
                     <td className="home-counts">{counts > 0 ? m.counts(company.findingCounts.risk, company.findingCounts.strength) : company.status !== "ready" ? m.findingsPending : m.noFindings}</td>
                   </tr>;

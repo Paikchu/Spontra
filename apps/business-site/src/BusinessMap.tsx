@@ -35,6 +35,8 @@ import { watchVerdict, type FindingFundamentals, type ResolvedEvidence, type Res
 import { formatChange, highlightChange, ratioForm } from "@/shared/analysis-runtime/highlights";
 import { heroTiles, type HeroTile, type HeroTone } from "./hero-model";
 import { ShareholderReturns } from "./ShareholderReturns";
+import { MomentumTag } from "./MomentumTag";
+import { momentumOf, type Momentum } from "./momentum";
 import { marketCapOf, shareholderReturns } from "./shareholder-returns";
 import { anchorNodeNames, anchorPoolKeys, findingData, VIEW_LABEL, verifiedFindings } from "./findings-model";
 import { RailStream } from "./RailStream";
@@ -222,10 +224,10 @@ function useTween(target: number | null, ms = 650) {
  * A headline tile: its title and its large number, green for good news and red for bad. The detail behind the number
  * (its level, its comparison, its share) stays in the tile's tooltip.
  */
-function Stat({ label, value, format, note, tone, level }: { label: string; value: number | null; format: (v: number | null) => string; note?: string; tone?: HeroTone; /** The most pressing checkup flag about this figure. */ level?: FlagLevel }) {
+function Stat({ label, value, format, note, tone, level, badge }: { label: string; value: number | null; format: (v: number | null) => string; note?: string; tone?: HeroTone; /** The most pressing checkup flag about this figure. */ level?: FlagLevel; /** A small tag beside the label: the figure's growth momentum. */ badge?: ReactNode }) {
   const shown = useTween(value);
   return <div className="stat" data-level={level} title={note ? `${label} · ${note}` : undefined}>
-    <span className="stat-label" title={note ? undefined : label}>{level && <LevelMark level={level} label={LEVEL_LABEL[level]} />}{label}</span>
+    <span className="stat-label" title={note ? undefined : label}>{level && <LevelMark level={level} label={LEVEL_LABEL[level]} />}{label}{badge}</span>
     <strong className="stat-value" data-tone={tone}>{format(shown)}</strong>
   </div>;
 }
@@ -257,19 +259,21 @@ function highlightValue(v: number | null, r: ResolvedValue, ref: ResolvedEvidenc
  * The large number is the figure, or its change when the rate is the news; the tooltip carries the other, and the
  * label is left out of it when the title already names it.
  */
-function HighlightStats({ tiles, flags = [] }: { tiles: HeroTile[]; flags?: Flag[] }) {
+function HighlightStats({ tiles, flags = [], momentum = {} }: { tiles: HeroTile[]; flags?: Flag[]; /** Growth momentum of revenue and operating income, tagged on their tiles. */ momentum?: Partial<Record<FlowMetric, Momentum | null>> }) {
   return <div className="stats" aria-live="polite">{tiles.map(tile => {
     const flagLevel = figureLevel(flags, refFigure(tile.ref));
     const r = tile.resolved, change = highlightChange(r, getLocale()), basis = r.evidence.compare === "qoq" ? qoqLabel(getLocale()) : yoyLabel(getLocale());
     const level = (v: ResolvedValue | null) => v ? highlightValue(v.value, v, tile.ref) : "";
     const tone = tile.tone;
+    const moving = "metric" in tile.ref ? momentum[tile.ref.metric] ?? null : null;
+    const badge = moving && <MomentumTag momentum={moving} subject={r.label} size="small" />;
     if (tile.show === "change" && r.delta != null) {
       const note = `${level(r.current)}${r.compare ? ` · ${r.compareLabel} ${level(r.compare)}` : ""}`;
-      return <Stat key={JSON.stringify(tile.ref)} label={`${tile.title} · ${basis}`} value={r.delta} format={v => v == null ? "—" : formatChange(v, r, getLocale())} note={note} tone={tone} level={flagLevel} />;
+      return <Stat key={JSON.stringify(tile.ref)} label={`${tile.title} · ${basis}`} value={r.delta} format={v => v == null ? "—" : formatChange(v, r, getLocale())} note={note} tone={tone} level={flagLevel} badge={badge} />;
     }
     const named = tile.title.toLowerCase() === r.label.toLowerCase() ? "" : `${r.label} · `;
     const note = change ? `${named}${basis} ${change}` : r.compare ? `${named}${r.compareLabel} ${level(r.compare)}` : named.slice(0, -3) || undefined;
-    return <Stat key={JSON.stringify(tile.ref)} label={tile.title} value={r.current.value} format={v => highlightValue(v, r.current, tile.ref)} note={note} tone={tone} level={flagLevel} />;
+    return <Stat key={JSON.stringify(tile.ref)} label={tile.title} value={r.current.value} format={v => highlightValue(v, r.current, tile.ref)} note={note} tone={tone} level={flagLevel} badge={badge} />;
   })}</div>;
 }
 
@@ -399,6 +403,15 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
   const previousGraph = useMemo(() => { const g = previous ? statementGraph(previous) : null; return g && previous && trunk ? trunkGraph(g, previous).graph : g; }, [previous, trunk]);
   const funding = capital?.quarters.find(q => q.periodEnd === quarter?.periodEnd) ?? null;
   const cash = funding?.cashFlow ?? funding?.yearToDate ?? null;
+  // Growth momentum of revenue and operating income at the quarter on the stage: the SEC quarterly series, else the flow's own quarters.
+  const momentum = useMemo((): Partial<Record<FlowMetric, Momentum | null>> => {
+    if (!quarter) return {};
+    const values = (key: string, metric: FlowMetric) => {
+      const sec = fundamentals?.series.find(s => s.metricKey === key && s.available)?.points.map(p => ({ periodEnd: p.periodEnd, value: p.valueDecimal == null ? null : Number(p.valueDecimal) }));
+      return sec?.some(p => p.value != null) ? sec : quarters.map(q => { const v = numeric(q.figures[metric]); return { periodEnd: q.periodEnd, value: v == null ? null : v * q.scale }; });
+    };
+    return { revenue: momentumOf(values("total_revenue", "revenue"), quarter.periodEnd), operating: momentumOf(values("operating_income", "operating"), quarter.periodEnd) };
+  }, [fundamentals, quarters, quarter]);
   // Buybacks and dividends at the report on the stage, for the cash-flow view's shareholder-returns card.
   const returns = useMemo(() => quarter ? shareholderReturns(fundamentals, quarter.periodEnd, marketCapOf(valuation, quarter.currency)) : null, [fundamentals, quarter, valuation]);
   const valuationShown = !!valuation && valuation.availability !== "hidden";
@@ -723,7 +736,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
       <header className="stage-head stage-head--summary" data-tour="stats">
         {quarter && (view === "cash" || view === "balance") && funding ? <CapitalStats view={view} funding={funding} tiles={highlights} flags={flags} />
           // Phones always lead with the four statement figures in their two-by-two grid; wider screens show the report's picked tiles.
-          : quarter && !current && highlights && !(narrow && view === "profit") ? <HighlightStats tiles={highlights} flags={flags} />
+          : quarter && !current && highlights && !(narrow && view === "profit") ? <HighlightStats tiles={highlights} flags={flags} momentum={momentum} />
           : quarter && <div className="stats" aria-live="polite">
           {current && current.value != null ? <>
             <Stat label={m.revenueThisQuarter} value={current.value} format={money} note={`${word.change} ${itemChange.label}`} tone={trendTone(itemChange.trend)} />
@@ -734,7 +747,9 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
             // Narrow screens keep all four cells of the grid; a figure the statement does not carry says why (wide screens hide it).
             if (slot.missing) return <MissingStat key={slot.key} label={label} reason={slot.missing === "model" ? m.notApplicable : m.notInFiling} />;
             const note = slot.key === "revenue" ? `${word.change} ${change("revenue").label}` : slot.key === "net" && coverage != null ? `${margin("net")} · ${m.coverage(percent(coverage * 100))}` : margin(slot.metric);
-            return <Stat key={slot.key} label={label} value={slot.value} format={money} note={note} tone={trendTone(change(slot.metric).trend)} level={figureLevel(flags, { metric: slot.metric })} />;
+            const moving = slot.metric === "revenue" || slot.metric === "operating" ? momentum[slot.metric] ?? null : null;
+            return <Stat key={slot.key} label={label} value={slot.value} format={money} note={note} tone={trendTone(change(slot.metric).trend)} level={figureLevel(flags, { metric: slot.metric })}
+              badge={moving && <MomentumTag momentum={moving} subject={label} size="small" />} />;
           })}
         </div>}
         <div className="stage-controls">
