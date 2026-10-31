@@ -113,7 +113,12 @@ export function fixtureApi(): Plugin {
         }
         const match = req.url?.match(/^\/api\/business\/v1\/companies\/([^/?]+)(\/[a-z]+)?(?:\?|$)/);
         if (!match) return next();
-        const body = match[1] === TICKER ? resources()[match[2] ?? ""] : undefined;
+        const parts = resources();
+        const opening = {
+          revisions: (parts["/revision"] as { revisions: unknown }).revisions,
+          resources: Object.fromEntries(Object.entries(parts).filter(([path]) => path !== "/revision").map(([path, body]) => [path.slice(1) || "company", { status: 200, body }])),
+        };
+        const body = match[1] === TICKER ? match[2] === "/opening" ? opening : parts[match[2] ?? ""] : undefined;
         res.statusCode = body ? 200 : 404;
         res.setHeader("content-type", "application/json");
         res.end(JSON.stringify(body ?? { error: "not in fixture" }));

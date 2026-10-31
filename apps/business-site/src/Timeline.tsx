@@ -2,7 +2,7 @@ import { Button } from "@/packages/web/src/ui/button";
 import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from "react";
 import { messages, useLocale } from "@/packages/web/src/i18n";
 import { CLASS_TONE, EVENT_CLASS_LABEL, type TimelinePoint } from "./events-model";
-import { clusterByGap } from "./timeline-model";
+import { clusterByGap, readableTicks } from "./timeline-model";
 import { fiscalPhrase } from "./PeriodMark";
 
 const m = messages({
@@ -85,7 +85,7 @@ export function Timeline({ points, currentPeriod, now, onReport, onEvent, ticker
 
   return <div className="timeline" role="group" aria-label={m.label} data-tour="timeline">
     <div className="timeline-track" ref={trackRef}>
-      {ticks.map(t => <span key={t.label} className="timeline-tick" style={{ left: `${t.at}%` }}>{t.label}</span>)}
+      {readableTicks(ticks, width).map(t => <span key={t.label} className="timeline-tick" style={{ left: `${t.at}%` }}>{t.label}</span>)}
       {marks.map(mark => {
         const many = mark.items.length > 1;
         const lead = mark.items[0]!;

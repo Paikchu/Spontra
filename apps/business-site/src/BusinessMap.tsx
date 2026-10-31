@@ -589,8 +589,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
   const composition = items.filter(i => !i.parent).flatMap(i => i.value != null && segmentRevenue ? [{ key: i.key, name: i.name, slot: i.slot, share: Math.max(0, i.value / segmentRevenue * 100) }] : []);
   // What the latest report guides for next quarter's revenue, beside this quarter's figure.
   const revenueGuide = guideMarks.pills.find(p => p.node === "revenue") ?? null;
-  const previewItem = items.find(item => item.key === preview);
-  const active = previewItem ? "segment:" + previewItem.key : hoverNode ?? (current ? "segment:" + current.key : null);
+  const active = hoverNode ?? (current ? "segment:" + current.key : null);
   const hovered = hoverNode ? itemByNode.get(hoverNode)?.key : undefined;
 
   // Arrow keys move through the rows on screen (the digest while the section is closed) and pick each in turn.
@@ -766,10 +765,10 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
           </span>
         </ToggleGroup>}
         </div>
+        <div className="module-failures">{moduleErrors.filter(r => ["capital", "fundamentals", "valuation"].includes(r)).map(resource => <ModuleFailure key={resource} resource={resource} retry={onRetryModule} />)}</div>
         {!current && <ViewFlags flags={shownFlags} metrics={assessedMetrics} noted={noted} focus={null} onOpen={id => focusCheck(id)} onHover={setHoverFlag} />}
       </header>
 
-      {moduleErrors.filter(r => ["capital", "fundamentals", "valuation"].includes(r)).map(resource => <ModuleFailure key={resource} resource={resource} retry={onRetryModule} />)}
       <div className="chart" data-tour="chart" ref={chartRef} data-overflow={chartScroll.overflow || undefined} data-end={chartScroll.atEnd || undefined}>
         {leadShown && <div className="lead-finding" data-kind={leadShown.kind}>
           <Button variant="unstyled" type="button" className="lead-finding-open" aria-label={m.openFinding(leadShown.title)} onClick={() => focusFinding(leadShown.id)}>

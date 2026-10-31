@@ -1313,7 +1313,7 @@ html[lang^="zh"] .home-watch-item a { line-height: 1.7; }
 .timeline-bubble {
   position: absolute; top: 12px; left: 0; display: grid; place-items: center; width: 16px; height: 16px; margin: -8px 0 0 -8px; padding: 0;
   border: 1px solid var(--border); border-radius: 50%; background: var(--surface-raised); color: var(--foreground);
-  font-size: 10px; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; cursor: pointer; z-index: 1;
+  font-size: 12px; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; cursor: pointer; z-index: 1;
   transition: opacity 160ms var(--ease), transform .2s var(--ease);
 }
 .timeline-bubble:hover, .timeline-bubble[aria-expanded="true"] { z-index: 2; }
@@ -1328,7 +1328,7 @@ html[lang^="zh"] .home-watch-item a { line-height: 1.7; }
 .timeline-tip li, .timeline-pop li { font-size: 12px; line-height: 1.35; }
 .timeline-tip li span, .timeline-pop li button { display: flex; gap: 6px; width: 100%; padding: 3px 0; text-align: left; color: inherit; }
 .timeline-pop li button:hover { color: var(--foreground); }
-.timeline-tip small, .timeline-pop small { flex: none; color: var(--muted-foreground); font-variant-numeric: tabular-nums; }
+.timeline-tip small, .timeline-pop small { font-size: 12px; flex: none; color: var(--muted-foreground); font-variant-numeric: tabular-nums; }
 .timeline-point[data-kind="report"] { width: 11px; height: 11px; margin: -5.5px 0 0 -5.5px; border-radius: 3px; }
 .timeline-point[data-weight="1"] { width: 6px; height: 6px; margin: -3px 0 0 -3px; background: transparent; }
 .timeline-point[data-weight="0"] { width: 4px; height: 4px; margin: -2px 0 0 -2px; background: transparent; opacity: .5; }
@@ -1693,3 +1693,12 @@ html[lang^="zh"] .period-primary { letter-spacing: 0; }
 
 .module-failure { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 12px; color: var(--muted-foreground); font-size: 13px; }
 .module-failure button { color: var(--foreground); text-decoration: underline; background: none; border: 0; cursor: pointer; }
+
+/* A sideways chart owns its natural height; desktop's expanding grid row is unnecessary here. */
+@media (max-width: 960px) {
+  .stage, .stage[data-timeline] { grid-template-rows: none; grid-auto-rows: auto; }
+  .view-flags > li { flex: 0 0 auto; }
+}
+
+.module-failures { grid-column: 1 / -1; }
+.module-failures:empty { display: none; }

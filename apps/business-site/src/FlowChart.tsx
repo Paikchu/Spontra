@@ -1,3 +1,4 @@
+import { useMedia } from "./side-scroll";
 
 import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { peekChartBox } from "./chart-box";
@@ -154,15 +155,17 @@ function worldOf(mind: MindMapLayout | null, layout: InfographicLayout): World {
 }
 
 /** A few fixed-point steps: larger type widens the layout, which shrinks the fit scale, so k converges quickly. */
-function fitLayout(graph: FinancialGraph, copy: (n: PlacedNode) => NodeCopy, size: { w: number; h: number } | null) {
-  let k = 1, layout = layoutFor(graph, copy, k);
+function fitLayout(graph: FinancialGraph, copy: (n: PlacedNode) => NodeCopy, size: { w: number; h: number } | null, narrow = false) {
+  // Avoid accumulating a tall staircase above revenue in a sideways phone viewport.
+  const geometry = narrow ? { lift: 10, drop: 16, margin: 20 } : {};
+  let k = 1, layout = layoutFor(graph, copy, k, geometry);
   if (!layout || !size) return layout && { layout, k };
   for (let i = 0; i < 5; i++) {
     const scale = Math.min(size.w / layout.width, size.h / layout.height);
     const next = Math.max(0.9, Math.min(1.3, SCREEN_VALUE_PX / (21 * scale)));
     if (Math.abs(next - k) < 0.02) break;
     k = next;
-    layout = layoutFor(graph, copy, k)!;
+    layout = layoutFor(graph, copy, k, geometry)!;
   }
   return { layout, k };
 }
@@ -231,7 +234,8 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
-  const fitted = useMemo(() => fitLayout(graph, copy, size), [graph, copy, size]);
+  const narrowPane = useMedia("(max-width: 960px)");
+  const fitted = useMemo(() => fitLayout(graph, copy, size, narrowPane), [graph, copy, size, narrowPane]);
   const [tip, setTip] = useState<{ x: number; y: number; width: number; tip: Tip } | null>(null);
   const layout = fitted?.layout ?? EMPTY, k = fitted?.k ?? 1, type = typeFor(k);
   const w = layout.nodeWidth;
@@ -240,7 +244,6 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
   const bracketOf = useMemo(() => new Map((brackets ?? []).map(b => [b.node, b])), [brackets]);
   const pillOf = useMemo(() => new Map((pills ?? []).map(p => [p.node, p])), [pills]);
   const productTarget = productBusiness ? byName.get(productBusiness) : null;
-  const narrowPane = typeof matchMedia === "function" && matchMedia("(max-width: 960px)").matches;
   const mind = useMemo(() => mindMap && fitted && productBusiness
     ? mindFor(mindMap, fitted.layout, copy, fitted.k, narrowPane ? null : focusBounds(fitted.layout, productBusiness, copy, fitted.k), size) : null, [mindMap, fitted, copy, productBusiness, size, narrowPane]);
   const expanded = Boolean(productTarget) && !mind;
@@ -384,6 +387,14 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
   const lit = focus ? focus.nodes : spotlight && spotlight.size ? spotlight : null;
   const litLinks = focus ? focus.links : lit ? new Set(layout.links.filter(l => lit.has(l.source) || lit.has(l.target)).map(linkKey)) : null;
   const revenue = byName.get("segment-total") ?? byName.get("revenue");
+  useLayoutEffect(() => {
+    const canvas = box.current;
+    const scroller = canvas?.closest<HTMLElement>(".chart");
+    const node = byName.get("revenue");
+    if (!narrowPane || !canvas || !scroller || !node) return;
+    const center = (node.x + w / 2 - world.x0) / worldW * canvas.clientWidth;
+    scroller.scrollLeft = Math.max(0, center - scroller.clientWidth / 2);
+  }, [narrowPane, byName, w, world.x0, worldW, revealKey]);
   const point = (event: { clientX: number; clientY: number }, value: Tip) => {
     const rect = box.current?.getBoundingClientRect();
     if (rect) setTip({ x: event.clientX - rect.left, y: event.clientY - rect.top, width: rect.width, tip: value });
