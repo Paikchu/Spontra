@@ -62,7 +62,7 @@ export function analysisFetcher(env:Pick<SiteEnv,"SPONTRA_ANALYSIS">):typeof fet
 }
 export type SiteContext={waitUntil(promise:Promise<unknown>):void};
 const security={"x-content-type-options":"nosniff","referrer-policy":"strict-origin-when-cross-origin","content-security-policy":"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://images.financialmodelingprep.com; connect-src 'self'; font-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"};
-function json(body:unknown,status=200){return Response.json(body,{status,headers:{...security,"cache-control":status===200?"public, max-age=60":"no-store"}});}
+function json(body:unknown,status=200){return Response.json(body,{status,headers:{...security,...(status===429?{"retry-after":"60"}:{}),"cache-control":status===200?"public, max-age=14400":"no-store"}});}
 /** The only public output is schema-stripped SEC business flow, never the analysis envelope. */
 export async function loadPublicFlow(ticker:string,fetcher:typeof fetch=fetch,locale:Locale|null=null):Promise<CompleteFlowPublication>{
  const response=await fetcher(ANALYSIS_ORIGIN+inLocale(`/api/v1/companies/${ticker}/business-flow`,locale),{signal:AbortSignal.timeout(12000),headers:{accept:"application/json"}});
@@ -336,7 +336,7 @@ const sha256Hex=async(value:string)=>Array.from(new Uint8Array(await crypto.subt
  */
 export async function stageDoor(request:Request,env:SiteEnv):Promise<Response>{
  const url=new URL(request.url);
- const plain=(body:unknown,status:number)=>Response.json(body,{status,headers:{...security,"cache-control":"no-store"}});
+ const plain=(body:unknown,status:number)=>Response.json(body,{status,headers:{...security,...(status===429?{"retry-after":"60"}:{}),"cache-control":"no-store"}});
  if(!env.SPONTRA_STAGE)return plain({error:"unavailable"},503);
  const origin=request.headers.get("origin");
  const upgrade=request.headers.get("upgrade")?.toLowerCase()==="websocket";
@@ -359,6 +359,7 @@ export async function stageDoor(request:Request,env:SiteEnv):Promise<Response>{
  }
  const out=new Response(response.body,{status:response.status,headers:response.headers});
  for(const [name,value] of Object.entries(security))out.headers.set(name,value);
+ if(response.status===429&&!out.headers.has("retry-after"))out.headers.set("retry-after","60");
  out.headers.set("cache-control","no-store");
  return out;
 }
@@ -371,10 +372,14 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
    const response=await handleTelemetry(request,env.TELEMETRY);
    const headers=new Headers(response.headers);
    for(const [name,value] of Object.entries(security))headers.set(name,value);
+   if(response.status===429&&!headers.has("retry-after"))headers.set("retry-after","60");
    headers.set("cache-control","no-store");
    return new Response(response.body,{status:response.status,headers});
   }
-  const fetcher=upstream??analysisFetcher(env);
+  const source=upstream??analysisFetcher(env);
+  let readFailureStatus=0, readRetryAfter:string|null=null;
+  const fetcher:typeof fetch|null=source?async(input,init)=>{try{const response=await source(input,init);if(!response.ok){readFailureStatus=response.status===429?429:503;readRetryAfter=response.headers.get("retry-after");}return response;}catch(error){readFailureStatus=503;throw error;}}:null;
+  const moduleJson=(body:unknown)=>{const response=json(body,readFailureStatus||200);if(readFailureStatus===429)response.headers.set("retry-after",readRetryAfter??"60");return response;};
   if(!fetcher)return json({error:"Read service unavailable"},503);
   // The companies with published findings, for the home page; the list follows the admin's AI switch.
   if(url.pathname==="/api/business/v1/home"){
@@ -402,7 +407,7 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
    if(tickers&&cache)ctx.waitUntil(cache.put(key,response.clone()));else response.headers.set("cache-control","no-store");
    return response;
   }
-  const match=url.pathname.match(/^\/api\/business\/v1\/companies\/([A-Z][A-Z0-9.-]{0,11})(\/revision|\/capital|\/findings|\/fundamentals|\/events|\/filings|\/filings\/\d{10}-\d{2}-\d{6}|\/items\/\d{10}-\d{2}-\d{6}|\/passages\/p[0-9a-f]{14,32}|\/valuation|\/valuation\/versions|\/valuation\/versions\/[0-9a-f]{8,64}|\/valuation\/versions\/[0-9a-f]{8,64}\/evidence\/e[0-9a-f]{6,20})?$/);
+  const match=url.pathname.match(/^\/api\/business\/v1\/companies\/([A-Z][A-Z0-9.-]{0,11})(\/opening|\/revision|\/capital|\/findings|\/fundamentals|\/events|\/filings|\/filings\/\d{10}-\d{2}-\d{6}|\/items\/\d{10}-\d{2}-\d{6}|\/passages\/p[0-9a-f]{14,32}|\/valuation|\/valuation\/versions|\/valuation\/versions\/[0-9a-f]{8,64}|\/valuation\/versions\/[0-9a-f]{8,64}\/evidence\/e[0-9a-f]{6,20})?$/);
   const detail=match?.[2]?.startsWith("/filings/")?match[2].slice("/filings/".length):null;
   // The reader pins a report to its published revision; a resource is asked for at its publication revision (`rev`), which
   // only keys the cache: a newer revision is a new address, so no cached copy can answer it with older data.
@@ -418,31 +423,48 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
   match[1]=canonicalTicker(match[1]);
   if(request.method!=="GET")return json({error:"Method not allowed"},405);
   try{if(!env.PUBLIC_READ_LIMIT||!(await env.PUBLIC_READ_LIMIT.limit({key:request.headers.get("cf-connecting-ip")??"anonymous"})).success)return json({error:"Too many requests"},429);}catch{return json({error:"Read service unavailable"},503);}
+  // One browser request; resource caches retain their individual revision and locale keys.
+  if(match[2]==="/opening"){
+   const revisions=await loadRevisions(match[1],fetcher)??{};
+   const entries=await Promise.all(MAP_RESOURCES.map(async resource=>{
+    const part=new URL(url.origin+`/api/business/v1/companies/${match[1]}${resource==="company"?"":`/${resource}`}`);
+    if(lang)part.searchParams.set("lang",lang);
+    if(revisions[resource])part.searchParams.set("rev",revisions[resource]!);
+    try{
+     const response=await handle(new Request(part),{...env,PUBLIC_READ_LIMIT:{limit:async()=>({success:true})}},ctx,fetcher,cache);
+     return [resource,{status:response.status,body:await response.json(),retryAfter:response.headers.get("retry-after")}];
+    }catch{return [resource,{status:503,body:null}];}
+   }));
+   const response=json({revisions,resources:Object.fromEntries(entries)});
+   response.headers.set("cache-control","no-store");
+   return response;
+  }
   // What changed since the page loaded: answered fresh every time, never from a cache.
   if(match[2]==="/revision"){const revisions=await loadRevisions(match[1],fetcher);const response=json({schemaVersion:"revisions.v1",ticker:match[1],revisions:revisions??{}},revisions?200:503);response.headers.set("cache-control","no-store");return response;}
   const key=new Request(url.href,{method:"GET"});const cached=await cache?.match(key);if(cached)return cached;
   if(match[2]){
    // Supplementary resources answer on their own and are cached only when they have something to say.
-   const supplementary=async<T>(name:string,version:string,load:()=>Promise<T|null>)=>{const body=await load();const response=json({schemaVersion:version,status:body?"ready":"unavailable",[name]:body});if(!body)response.headers.set("cache-control","no-store");if(cache&&body)ctx.waitUntil(cache.put(key,response.clone()));return response;};
-   if(match[2]==="/capital"){const body=await loadCapital(match[1],fetcher);const response=json({schemaVersion:"capital-response.v1",status:body?"ready":"unavailable",capital:body?.capital??null,peers:body?.peers??null});if(!body)response.headers.set("cache-control","no-store");if(cache&&body)ctx.waitUntil(cache.put(key,response.clone()));return response;}
-   if(match[2]==="/findings"){const bundle=await loadFindings(match[1],fetcher,locale);const response=json({schemaVersion:"findings-response.v1",status:bundle?"ready":"unavailable",findings:bundle?.findings??null,passages:bundle?.passages??[],peers:bundle?.peers??null});if(!bundle)response.headers.set("cache-control","no-store");if(cache&&bundle)ctx.waitUntil(cache.put(key,response.clone()));return response;}
+   const supplementary=async<T>(name:string,version:string,load:()=>Promise<T|null>)=>{const body=await load();const response=moduleJson({schemaVersion:version,status:body?"ready":"unavailable",[name]:body});if(!body)response.headers.set("cache-control","no-store");if(cache&&body&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));return response;};
+   if(match[2]==="/capital"){const body=await loadCapital(match[1],fetcher);const response=moduleJson({schemaVersion:"capital-response.v1",status:body?"ready":"unavailable",capital:body?.capital??null,peers:body?.peers??null});if(!body)response.headers.set("cache-control","no-store");if(cache&&body&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));return response;}
+   if(match[2]==="/findings"){const bundle=await loadFindings(match[1],fetcher,locale);const response=moduleJson({schemaVersion:"findings-response.v1",status:bundle?"ready":"unavailable",findings:bundle?.findings??null,passages:bundle?.passages??[],peers:bundle?.peers??null});if(!bundle)response.headers.set("cache-control","no-store");if(cache&&bundle&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));return response;}
    if(match[2]==="/events")return supplementary("events","events-response.v1",()=>loadEvents(match[1],fetcher,locale));
    if(match[2]==="/filings")return supplementary("filings","filing-digests-response.v1",()=>loadFilings(match[1],fetcher,locale));
    if(match[2].startsWith("/items/"))return supplementary("analysis","item-analysis-response.v1",()=>loadItemAnalysis(match[1],match[2]!.slice("/items/".length),fetcher,locale));
    if(match[2].startsWith("/passages/"))return supplementary("passage","passage-response.v1",()=>loadPassage(match[1],match[2]!.slice("/passages/".length),fetcher));
    // The valuation answers in every availability, so the page can say preparing, insufficient or failed; only a read that failed is uncached.
-   if(match[2].startsWith("/valuation")){const body=await loadValuation(match[1],match[2],url.searchParams,fetcher,locale);if(!body)return json({error:"Valuation temporarily unavailable"},503);const response=json(body);const cacheable=match[2]==="/valuation"?(body as {availability?:string}).availability==="ready":match[2]!=="/valuation/versions";if(!cacheable)response.headers.set("cache-control","no-store");if(cache&&cacheable)ctx.waitUntil(cache.put(key,response.clone()));return response;}
+   if(match[2].startsWith("/valuation")){const body=await loadValuation(match[1],match[2],url.searchParams,fetcher,locale);if(!body)return readFailureStatus?moduleJson({error:"Valuation temporarily unavailable"}):json({error:"Valuation temporarily unavailable"},503);const response=json(body);const cacheable=match[2]==="/valuation"?(body as {availability?:string}).availability==="ready":match[2]!=="/valuation/versions";if(!cacheable)response.headers.set("cache-control","no-store");if(cache&&cacheable)ctx.waitUntil(cache.put(key,response.clone()));return response;}
    if(detail){const reportDate=url.searchParams.get("reportDate"),reportVersion=url.searchParams.get("reportVersion");
     const body=await loadFilingDetail(match[1],detail,reportDate&&reportVersion?{reportDate,reportVersion}:null,fetcher,locale);
     if(!body)return json({error:"Not found"},404);
     const response=json(body);if(cache)ctx.waitUntil(cache.put(key,response.clone()));return response;}
-   return supplementary("fundamentals","fundamentals-response.v1",()=>loadFundamentals(match[1],fetcher));
+   // Fundamentals with no quarterly metric answer "unavailable" with the reason, the series (year-end balances) still attached.
+   {const body=await loadFundamentals(match[1],fetcher);const response=json({schemaVersion:"fundamentals-response.v1",status:body&&!body.unavailable?"ready":"unavailable",...(body?.unavailable?{reason:body.unavailable.reason}:{}),fundamentals:body});if(!body)response.headers.set("cache-control","no-store");if(cache&&body)ctx.waitUntil(cache.put(key,response.clone()));return response;}
   }
   try{const [flow,explainer,guidance,tree]=await Promise.all([loadPublicFlow(match[1],fetcher,locale),loadExplainer(match[1],fetcher,locale),loadGuidance(match[1],fetcher,locale),loadTree(match[1],fetcher,locale)]);const response=json({...flow,explainer,guidance,tree});
    // An incomplete answer is never cached, so one slow upstream read cannot pin "preparing" for a minute.
    const cacheable=flow.status==="ready";
    if(!cacheable)response.headers.set("cache-control","no-store");
-   if(cache&&cacheable)ctx.waitUntil(cache.put(key,response.clone()));return response;}catch{return json({error:"Public company data temporarily unavailable"},503);}
+   if(cache&&cacheable)ctx.waitUntil(cache.put(key,response.clone()));return response;}catch{return readFailureStatus?moduleJson({error:"Public company data temporarily unavailable"}):json({error:"Public company data temporarily unavailable"},503);}
  }
  if(request.method!=="GET"&&request.method!=="HEAD")return json({error:"Method not allowed"},405);
  const response=await env.ASSETS.fetch(request);const headers=new Headers(response.headers);for(const [name,value]of Object.entries(security))headers.set(name,value);return new Response(response.body,{status:response.status,headers});

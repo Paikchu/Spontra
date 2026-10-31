@@ -8,16 +8,16 @@ import { getLocale, labels, messages } from "@/packages/web/src/i18n";
 import { langOf } from "@/packages/web/src/i18n/SourceLanguage";
 
 const m = messages({
-  sale: (who: string, n: string, money?: string) => `${who} · Sale ${n}${money ? ` · ${money}` : ""}`,
-  purchase: (who: string, n: string, money?: string) => `${who} · Purchase ${n}${money ? ` · ${money}` : ""}`,
-  exercise: (who: string, n: string) => `${who} · Exercise ${n}`,
-  holdingChange: (who: string) => `${who} · Holding change`,
+  sale: (n: string) => `Sale ${n}`,
+  purchase: (n: string) => `Purchase ${n}`,
+  exercise: (n: string) => `Exercise ${n}`,
+  holdingChange: "Holding change",
   report: (period: string) => `${period} report`,
 }, {
-  sale: (who: string, n: string, money?: string) => `${who} · 卖出 ${n}${money ? ` · ${money}` : ""}`,
-  purchase: (who: string, n: string, money?: string) => `${who} · 买入 ${n}${money ? ` · ${money}` : ""}`,
-  exercise: (who: string, n: string) => `${who} · 行权 ${n}`,
-  holdingChange: (who: string) => `${who} · 持股变动`,
+  sale: (n: string) => `卖出 ${n}`,
+  purchase: (n: string) => `买入 ${n}`,
+  exercise: (n: string) => `行权 ${n}`,
+  holdingChange: "持股变动",
   report: (period: string) => `${period} 财报`,
 });
 
@@ -38,16 +38,21 @@ export const shortDate = (d: string) => d.slice(5).replace("-", ".");
 
 export { isQuietInsider };
 
+/** Structured title keeps the amount visible independently of a long name or transaction. */
+export function insiderTitleParts(e: CompanyEvent): { name: string; content: string; amount: string | null } | null {
+  const t = e.insider;
+  if (!t) return null;
+  const name = t.ownerName.replace(/\s+/g, " ").trim();
+  const direction = isOpenMarketInsiderTrade(e);
+  if (direction === "sell" && t.sold) return { name, content: m.sale(shares(t.sold.shares)), amount: t.sold.proceeds > 0 ? insiderCompactMoney(t.sold.proceeds, getLocale()) : null };
+  if (direction === "buy" && t.bought) return { name, content: m.purchase(shares(t.bought.shares)), amount: t.bought.cost > 0 ? insiderCompactMoney(t.bought.cost, getLocale()) : null };
+  return { name, content: t.exercised ? m.exercise(shares(t.exercised)) : m.holdingChange, amount: null };
+}
+
 /** The rail's one-line title: what happened, from the figures for Form 4 and from the summary (or EDGAR's description) for a current report. */
 export function eventTitle(e: CompanyEvent): string {
-  const t = e.insider;
-  if (t) {
-    const who = t.ownerName.replace(/\s+/g, " ");
-    if (isOpenMarketInsiderTrade(e) === "sell" && t.sold) return m.sale(who, shares(t.sold.shares), t.sold.proceeds > 0 ? insiderCompactMoney(t.sold.proceeds, getLocale()) : undefined);
-    if (isOpenMarketInsiderTrade(e) === "buy" && t.bought) return m.purchase(who, shares(t.bought.shares), t.bought.cost > 0 ? insiderCompactMoney(t.bought.cost, getLocale()) : undefined);
-    if (t.exercised) return m.exercise(who, shares(t.exercised));
-    return m.holdingChange(who);
-  }
+  const insider = insiderTitleParts(e);
+  if (insider) return [insider.name, insider.content, insider.amount].filter(Boolean).join(" · ");
   if (e.summary?.headline) return e.summary.headline;
   const documentTitle = filingDocumentTitle(e);
   if (documentTitle) return documentTitle;

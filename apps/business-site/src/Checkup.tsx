@@ -1,5 +1,5 @@
 import { Table, TableBody, TableCell, TableHead, TableRow } from "@/packages/web/src/ui/table";
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/packages/web/src/ui/button";
 import { getLocale, isChinese as zh, labels, messages } from "@/packages/web/src/i18n";
 import type { AssessedMetric, BridgeStep, CapitalChain, CashBridge, Flag, FlagLevel, MetricForm, MetricPoint, PeerRank, StatementAssessment, StatementDimension } from "@/shared/analysis-contract/statement-analysis";
@@ -12,6 +12,7 @@ import { compactMoney, qoqLabel, shortPeriod, yoyLabel } from "@/shared/analysis
 import { KIND_LABEL, type VerifiedFinding } from "./findings-model";
 import type { VerifiedNote } from "@/shared/analysis-runtime/checkup-notes";
 import { SourceLanguage, langOf } from "@/packages/web/src/i18n/SourceLanguage";
+import { flagCopy, metricRules } from "./flag-copy";
 
 /**
  * The three-statement analysis, shown inside the statements it reads (docs/three-statement-analysis-design.md): each
@@ -25,7 +26,7 @@ const m = messages({
   peers: (rank: number, of: number) => `Peers ${rank}/${of}`, peerTitle: (rows: string) => `Peers: ${rows}`,
   metric: (title: string) => `Metric: ${title}`, close: "Close",
   trend: "Trend", parts: "Components", figures: "Figures", related: "Findings", peerTable: "Peers", sources: "Sources",
-  current: "Latest", threshold: "Threshold", open: (title: string) => `Open ${title}`,
+  current: "Latest", conditions: "When this is flagged", met: "Met", unmet: "Not met", open: (title: string) => `Open ${title}`,
   chartLabel: (name: string) => `${name}, last quarters`, metrics: "Metrics", panel: "Panel", flags: "Rules tripped",
   analysis: "Analysis", earlier: "Earlier report", currentReport: "Current report", filed: (form: string, period: string) => `${form} · ${period}`,
 }, {
@@ -35,7 +36,7 @@ const m = messages({
   peers: (rank: number, of: number) => `同业 ${rank}/${of}`, peerTitle: (rows: string) => `同业：${rows}`,
   metric: (title: string) => `指标：${title}`, close: "关闭",
   trend: "走势", parts: "构成", figures: "数据", related: "要点", peerTable: "同业", sources: "来源",
-  current: "最新", threshold: "阈值", open: (title: string) => `打开${title}`,
+  current: "最新", conditions: "触发条件", met: "已达到", unmet: "未达标", open: (title: string) => `打开${title}`,
   chartLabel: (name: string) => `${name}，最近若干季度`, metrics: "指标", panel: "面板", flags: "命中规则",
   analysis: "分析", earlier: "往期财报", currentReport: "本期财报", filed: (form: string, period: string) => `${form} · ${period}`,
 });
@@ -199,18 +200,18 @@ export const viewFlags = (flags: Flag[], view: StatementView) => flags.filter(f 
  * The view's tripped rules as one row under its tiles: each names the metric, its value and the rule, in the level's
  * colour and shape. Hovering one lights what it is about on the chart; a click opens it.
  */
-export function ViewFlags({ flags, metrics, noted, focus, onOpen, onHover }: {
+export function ViewFlags({ flags, metrics, noted, focus, onOpen, onHover, lead = null }: {
   flags: Flag[]; metrics: Map<string, AssessedMetric>; /** Metrics with a written analysis. */ noted: Set<string>; focus: string | null; onOpen: (metricId: string) => void; onHover: (flag: Flag | null) => void;
+  /** A note that leads the row (net income's non-operating part). */ lead?: ReactNode;
 }) {
-  if (!flags.length) return null;
+  if (!flags.length && !lead) return null;
   return <ul className="view-flags" aria-label={m.flags} onMouseLeave={() => onHover(null)}>
-    {flags.map(f => { const metric = metrics.get(f.metricId); return <li key={f.ruleId}>
-      <Button variant="unstyled" type="button" className="view-flag" data-level={f.level} aria-pressed={focus === f.metricId} title={`${LEVEL_LABEL[f.level]} · ${DIMENSION_LABEL[f.dimension]} · ${m.since(shortPeriod(f.since))}`}
+    {lead && <li className="view-flags-lead">{lead}</li>}
+    {flags.map(f => { const metric = metrics.get(f.metricId), copy = flagCopy(f, metric, metric?.evidence.periodEnd ?? f.evidence[0]?.periodEnd ?? f.since, getLocale()); return <li key={f.ruleId}>
+      <Button variant="unstyled" type="button" className="view-flag" data-level={f.level} aria-pressed={focus === f.metricId} aria-label={`${LEVEL_LABEL[f.level]} · ${copy.sentence}`} title={`${LEVEL_LABEL[f.level]} · ${DIMENSION_LABEL[f.dimension]} · ${m.since(shortPeriod(f.since))}`}
         onClick={() => onOpen(f.metricId)} onMouseEnter={() => onHover(f)} onFocus={() => onHover(f)} onBlur={() => onHover(null)}>
-        <LevelMark level={f.level} label={LEVEL_LABEL[f.level]} />
-        <span className="view-flag-name">{metricLabel(f.metricId)}</span>
-        {metric && <b>{metricValue(metric, f.value)}</b>}
-        <small>{f.threshold}</small>
+        <LevelMark level={f.level} />
+        <span className="view-flag-text"><span className="view-flag-name">{copy.name}</span> <b>{metric ? metricValue(metric, f.value) : copy.value}</b>{copy.sentence.slice(`${copy.name} ${copy.value}`.length)}</span>
         {noted.has(f.metricId) && <i className="view-flag-noted">{m.analysis}</i>}
       </Button>
     </li>; })}
@@ -245,7 +246,7 @@ function MetricCell({ metric, flag, rank, noted, onOpen }: { metric: AssessedMet
     <Spark metric={metric} thresholds={thresholds} level={flag?.level} />
     <span className="checkup-cell-note">
       {change && <span>{change}</span>}
-      {flag && <span className="checkup-cell-rule">{flag.threshold}</span>}
+      {flag && <span className="checkup-cell-rule">{flagCopy(flag, metric, metric.evidence.periodEnd, getLocale()).verdict}</span>}
       {noted && <span className="checkup-cell-noted">{m.analysis}</span>}
       {rank && <span title={m.peerTitle(rank.rows.map(r => `${r.ticker} ${formatMetric(r.value, metric.form, getLocale())}`).join(" · "))}>{m.peers(rank.rank, rank.of)}</span>}
     </span>
@@ -304,7 +305,8 @@ export function MetricLens({ metric, flags, rank, data, findings, sources, bridg
   const parts = useMemo(() => partsOf(data, metric), [data, metric]);
   const related = useMemo(() => relatedFindings(metric.id, metric.evidence.periodEnd, findings), [metric, findings]);
   const thresholds = [...new Set(flags.flatMap(thresholdsOf))];
-  const figures: Array<[string, string]> = [[m.current, metricValue(metric)], ...flags.map(f => [`${LEVEL_LABEL[f.level]} · ${m.threshold}`, f.threshold] as [string, string])];
+  const figures: Array<[string, string]> = [[m.current, metricValue(metric)]];
+  const rules = metricRules(metric.id, flags, getLocale());
   if (metric.measure === "value" && metric.yoy != null) figures.push([yoyLabel(getLocale()), formatMetricChange(metric.yoy, metric.form, getLocale())]);
   if (metric.measure === "value" && metric.qoq != null) figures.push([qoqLabel(getLocale()), formatMetricChange(metric.qoq, metric.form, getLocale())]);
   for (const s of parts?.series ?? []) { const last = s.points.at(-1); if (last) figures.push([s.label, parts!.form === "money" ? compactMoney(last.value, "USD", getLocale()) : formatMetric(last.value, parts!.form, getLocale())]); }
@@ -325,6 +327,11 @@ export function MetricLens({ metric, flags, rank, data, findings, sources, bridg
         </div>
         <div className="lens-doc-cell"><h3 className="lens-row-title">{m.figures}</h3>
           <Table className="lens-table lens-pairs"><TableBody>{figures.map(([label, value]) => <TableRow key={label}><TableHead scope="row">{label}</TableHead><TableCell><b>{value}</b></TableCell></TableRow>)}</TableBody></Table>
+          {rules.length > 0 && <><h3 className="lens-row-title">{m.conditions}</h3>
+          <ul className="rule-status">{rules.map(r => <li key={r.rule.id} data-level={r.met ? r.level : "unmet"}>
+            <span className="rule-status-mark">{r.met ? <><LevelMark level={r.level} />{m.met}</> : m.unmet}</span>
+            <span className="rule-status-text">{r.criteria}</span>
+          </li>)}</ul></>}
         </div>
       </div>
       {note && <div className="lens-doc-row">

@@ -7,7 +7,7 @@ import { isTaxWithholdingSale, eventImportance, insiderWindowValueUsd, isKeyInsi
 import { railEntries } from "../../../shared/analysis-runtime/rail.ts";
 import { setLocale } from "../../../packages/web/src/i18n/core.ts";
 import { eventTitle } from "../src/events-model.ts";
-import { insiderCompactMoney, exactShares, filterCounts, noiseRows, readEventFilter, rowLeaves, timelineIds, withEventFilter } from "../src/event-noise.ts";
+import { defaultEventFilter, insiderCompactMoney, exactShares, filterCounts, noiseRows, readEventFilter, rowLeaves, timelineIds, withEventFilter } from "../src/event-noise.ts";
 import { timelineFromFilings } from "../src/reports-model.ts";
 import { clusterByGap } from "../src/timeline-model.ts";
 
@@ -307,4 +307,18 @@ test("materiality uses a contiguous inclusive 30-day window containing each trad
   assert.equal(eventImportance(events[0], events), "routine");
   assert.ok(events.slice(1).every(e => eventImportance(e, events) === "key"));
   assert.equal(insiderWindowValueUsd(events[0], events, 27), 595_000);
+});
+
+
+test("default Key falls back for routine events, but preserves explicit filters and material events", () => {
+  const routine = railEntries(null, tsmEvents);
+  assert.deepEqual(defaultEventFilter("", routine, NOW), { filter: "all", fallback: true });
+  assert.ok(noiseRows(routine, defaultEventFilter("", routine, NOW).filter).length > 0);
+  for (const filter of ["key", "all", "insiders", "earnings", "material"] as const)
+    assert.deepEqual(defaultEventFilter(`?events=${filter}`, routine, NOW), { filter, fallback: false });
+  const material = railEntries(null, readEventsPublication(fixture("nvda-events.json"), "NVDA")!);
+  assert.deepEqual(defaultEventFilter("", material, NOW), { filter: "key", fallback: false });
+  for (const items of [null, [], routine]) {
+    assert.deepEqual(defaultEventFilter("", items, new Date("2030-01-01")), { filter: "key", fallback: false });
+  }
 });

@@ -101,6 +101,22 @@ function statementOf(quarter: PublicBusinessFlow["quarters"][number]): HomeCompa
   return { currency: quarter.currency, revenue, cost: figure("cost"), net };
 }
 
+type MarginRow = { ticker: string; periodEnd: string | null; currency: string | null; revenue: string | number | null; operating: string | number | null };
+const marginPct = (row: Pick<MarginRow, "revenue" | "operating">) => {
+  const revenue = Number(row.revenue), operating = Number(row.operating);
+  return row.revenue != null && row.operating != null && Number.isFinite(revenue) && Number.isFinite(operating) && revenue > 0 ? Math.round(operating / revenue * 10_000) / 100 : null;
+};
+
+/** The latest quarter's operating margin and the year-ago quarter's (365 days back, 20 days either way), same currency. */
+function operatingMarginOf(latest: PublicBusinessFlow["quarters"][number], rows: MarginRow[]): HomeCompany["operatingMargin"] {
+  const pct = marginPct({ revenue: latest.figures.revenue?.value ?? null, operating: latest.figures.operating?.value ?? null });
+  if (pct == null) return null;
+  const target = Date.parse(latest.periodEnd) - 365 * 86_400_000;
+  const yearAgo = rows.filter(row => row.periodEnd && row.currency === latest.currency && Math.abs(Date.parse(row.periodEnd) - target) <= 20 * 86_400_000 && marginPct(row) != null)
+    .sort((a, b) => Math.abs(Date.parse(a.periodEnd!) - target) - Math.abs(Date.parse(b.periodEnd!) - target))[0];
+  return { pct, yearAgoPct: yearAgo ? marginPct(yearAgo) : null };
+}
+
 function pointsOf(flow: PublicBusinessFlow | null, history: RevenueHistory | null): Point[] {
   const byEnd = new Map<string, Point>();
   for (const quarter of history?.quarters ?? []) {
@@ -164,7 +180,7 @@ function dataTickers(env: HomeDigestEnv, rows: Array<{ ticker: string; enabled: 
  * Read-only: no model call, no SEC fetch, no write.
  */
 export async function readHomeDigest(db: D1Database, env: HomeDigestEnv, locale: Locale | null, now = new Date(), notes: Record<string, HomeCatalogNote> = HOME_CATALOG_NOTES): Promise<HomeDigest> {
-  const [publications, histories, findings, issuers, settings, translations, findingsShown, focus] = await Promise.all([
+  const [publications, histories, findings, issuers, settings, translations, findingsShown, focus, reportFigures] = await Promise.all([
     db.prepare(`SELECT v.ticker ticker, v.cik cik, v.payload_json payload, v.published_at publishedAt
       FROM financial_complete_current c JOIN financial_complete_versions v ON v.version_id = c.version_id`).all<{ ticker: string; cik: string; payload: string; publishedAt: string }>(),
     db.prepare(`SELECT cache_key, payload FROM sec_cache WHERE cache_key >= 'sec:revenue-history:v1:' AND cache_key < 'sec:revenue-history:v1;'`).all<{ cache_key: string; payload: string }>(),
@@ -174,7 +190,15 @@ export async function readHomeDigest(db: D1Database, env: HomeDigestEnv, locale:
     locale ? db.prepare(`SELECT cache_key, payload FROM sec_cache WHERE cache_key >= ? AND cache_key < ?`).bind(`i18n:v1:${locale}:findings:`, `i18n:v1:${locale}:findings;`).all<{ cache_key: string; payload: string }>() : Promise.resolve({ results: [] as Array<{ cache_key: string; payload: string }> }),
     shownFilter(db, env, "findings"),
     readFiscalFocus(db),
+    // The older quarters assembled behind each publication, only the figures an operating margin needs.
+    db.prepare(`SELECT substr(c.cache_key, 20) ticker, json_extract(q.value, '$.periodEnd') periodEnd, json_extract(q.value, '$.currency') currency,
+        json_extract(q.value, '$.figures.revenue.value') revenue, json_extract(q.value, '$.figures.operating.value') operating
+      FROM sec_cache c, json_each(c.payload, '$.reports.quarters') q
+      WHERE c.cache_key >= 'sec:map-derived:v1:' AND c.cache_key < 'sec:map-derived:v1;' AND json_valid(c.payload)`)
+      .all<MarginRow>().catch(() => ({ results: [] as MarginRow[] })),
   ]);
+  const marginRows = new Map<string, MarginRow[]>();
+  for (const row of reportFigures.results) { const ticker = canonicalTicker(row.ticker); marginRows.set(ticker, [...marginRows.get(ticker) ?? [], row]); }
 
   const historyByCik = new Map(histories.results.map(row => [row.cache_key.slice("sec:revenue-history:v1:".length), row.payload]));
   const findingsByTicker = new Map(findings.results.map(row => [canonicalTicker(row.ticker), jsonRow(row.payload)]));
@@ -228,6 +252,7 @@ export async function readHomeDigest(db: D1Database, env: HomeDigestEnv, locale:
     }
     const trend = points.slice(-8).map(point => ({ periodEnd: point.periodEnd, value: baseDecimal(String(point.value), 1)! }));
     const statement = flowLatest ? statementOf(flowLatest) : null;
+    const operatingMargin = flowLatest ? operatingMarginOf(flowLatest, [...(marginRows.get(canonical) ?? []), ...(flow?.quarters ?? []).map(q => ({ ticker: canonical, periodEnd: q.periodEnd, currency: q.currency, revenue: q.figures.revenue?.value ?? null, operating: q.figures.operating?.value ?? null }))]) : null;
     lastUpdatedAt = later(lastUpdatedAt, later(publishedAt, history?.updatedAt ?? null));
     companies.push({
       ticker: canonical,
@@ -241,6 +266,7 @@ export async function readHomeDigest(db: D1Database, env: HomeDigestEnv, locale:
       revenueReason,
       revenueTrend: trend,
       statement,
+      operatingMargin,
       findingCounts: counts,
       topFindings: top,
     });

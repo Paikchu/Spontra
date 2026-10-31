@@ -34,14 +34,14 @@ function browser(search = "") {
   g.removeEventListener ??= () => {};
 }
 
-function render(locale: "en" | "zh-CN", payload: PublicBusinessFlow = flow, options: { filings?: PublicFilingDigestPage | null; issuer?: { name: string; fiscalYearEndMonth: number | null; annualForm?: string | null }; identity?: CompanyIdentity; valuation?: ValuationResponse | null; findings?: FindingsPublication | null; search?: string } = {}) {
+function render(locale: "en" | "zh-CN", payload: PublicBusinessFlow = flow, options: { filings?: PublicFilingDigestPage | null; issuer?: { name: string; fiscalYearEndMonth: number | null; annualForm?: string | null }; identity?: CompanyIdentity; valuation?: ValuationResponse | null; findings?: FindingsPublication | null; search?: string; moduleErrors?: import("../../../shared/analysis-contract/revisions.ts").MapResource[] } = {}) {
   setLocale(locale);
   browser(options.search);
   const pageFilings = options.filings ?? null;
   // As CompanyPage.tsx resolves it: the issuer, the publications, the flow and the filings.
   const identity = options.identity ?? companyIdentity({ locale, issuer: options.issuer ?? company.issuer, explainerName: company.explainer.companyName, flow: payload, filings: pageFilings });
   return renderToStaticMarkup(h(SidebarProvider, { asChild: true, open: true, keyboardShortcut: null, persistState: false },
-    h("main", null, h(BusinessMap, { ticker: TICKER, tools: null, flow: payload, notice: null, revenueHistory: company.history ?? null, capital, filings: pageFilings, company: identity, valuation: options.valuation ?? null, findings: options.findings ?? null }))));
+    h("main", null, h(BusinessMap, { ticker: TICKER, tools: null, flow: payload, notice: null, revenueHistory: company.history ?? null, capital, filings: pageFilings, company: identity, valuation: options.valuation ?? null, findings: options.findings ?? null, moduleErrors: options.moduleErrors }))));
 }
 
 /** A foreign issuer: its quarters in New Taiwan dollars on a calendar fiscal year, its annual report a 20-F. */
@@ -252,4 +252,16 @@ test("U21: the sideways chart fades its right edge and says to swipe, and the lo
   assert.match(map, /swipe: "左右滑动查看完整流向"/);
   assert.match(map, /swipe: "Swipe horizontally to see full flow"/);
   assert.match(skeleton, /\[0, 1, 2, 3\]\.map\(i => <div key=\{i\} className="stat">/);
+});
+
+
+test("module failures stay in the header instead of consuming the chart grid row", () => {
+  for (const locale of ["en", "zh-CN"] as const) {
+    const html = render(locale, flow, { moduleErrors: ["capital"], search: "?view=profit" });
+    const header = html.match(/<header class="stage-head[^]*?<\/header>/)?.[0] ?? "";
+    assert.match(header, /data-module="capital"/);
+    assert(header.includes(locale === "en" ? "Temporarily unable to load" : "暂时加载不出来"));
+    assert.match(html, /class="fc"/);
+    assert.equal((html.match(/class="module-failure"/g) ?? []).length, 1);
+  }
 });

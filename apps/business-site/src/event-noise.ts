@@ -19,6 +19,20 @@ export function readEventFilter(search: string): EventFilter {
   return EVENT_FILTERS.includes(raw as EventFilter) ? raw as EventFilter : "key";
 }
 
+/** Only the implicit default falls back; explicit category links keep the reader's choice. */
+export function defaultEventFilter(search: string, items: readonly RailItem[] | null, now: Date): { filter: EventFilter; fallback: boolean } {
+  const filter = readEventFilter(search);
+  const explicit = EVENT_FILTERS.includes(new URLSearchParams(search).get("events") as EventFilter);
+  const since = new Date(now.getTime() - 90 * 86_400_000).toISOString().slice(0, 10);
+  const today = now.toISOString().slice(0, 10);
+  const events = items?.filter(item => item.kind === "event") ?? [];
+  const recent = events.filter(item => item.date >= since && item.date <= today);
+  const allEvents = events.flatMap(item => item.kind === "event" ? [item.event] : []);
+  const fallback = !explicit && filter === "key" && recent.length > 0
+    && !recent.some(item => matchesEventFilter(item, "key", allEvents));
+  return { filter: fallback ? "all" : filter, fallback };
+}
+
 /** Writes the filter into a query, leaving every other parameter where it is. Key stays in the URL so a shared link names it. */
 export function withEventFilter(search: string, filter: EventFilter): string {
   const params = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);

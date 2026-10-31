@@ -18,3 +18,16 @@ export function clusterByGap<T extends { id: string }>(items: readonly T[], xOf:
   }
   return out;
 }
+
+/** Keep 12px date labels apart without hiding any event markers. */
+export function readableTicks<T extends { at: number }>(ticks: T[], width: number): T[] {
+  const visible: T[] = [];
+  let previous = -Infinity;
+  for (const tick of ticks) {
+    const x = tick.at / 100 * width;
+    if (x < 28 || x > width - 28 || x - previous < 64) continue;
+    visible.push(tick);
+    previous = x;
+  }
+  return visible;
+}

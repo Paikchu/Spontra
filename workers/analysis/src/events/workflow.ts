@@ -6,7 +6,7 @@ import { outboxStatement } from "../pipeline/outbox.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import { throttledSecReader } from "../financial-data/provider.ts";
 import type { SecFilingFeed, SecFilingSummary } from "../sec/sec.ts";
-import { form4XmlUrl, parseForm4 } from "./form4.ts";
+import { form4XmlUrl, normalizeCik, parseForm4 } from "./form4.ts";
 import { eventsCacheKey, exhibitsCacheKey, insiderCacheKey } from "./read.ts";
 
 export type EventsSweepEnv = Pick<SecCronEnv, "DB" | "SEC_DATA_TICKERS" | "SEC_AI_TICKERS" | "SEC_AI_ENABLED"> & { SEC_USER_AGENT: string; EVENTS_ENABLED?: string };
@@ -76,6 +76,17 @@ function toSummary(summary: SecFilingSummary | null): EventSummary | null {
   };
 }
 
+/** What the insider cache holds per accession: the parsed transaction, a document SEC did not serve, or another issuer's filing. */
+export type InsiderCacheEntry = InsiderTransaction | { unreadable: true } | { otherIssuer: string };
+
+/**
+ * A Form 4 belongs on the company's rail only when the company is its issuer. A transaction read before the issuer was
+ * parsed carries no issuer and is kept; `scripts/clean-foreign-insider.ts` re-reads those.
+ */
+export function sameIssuer(insider: Pick<InsiderTransaction, "issuerCik">, companyCik: string | number): boolean {
+  return !insider.issuerCik || normalizeCik(insider.issuerCik) === normalizeCik(companyCik);
+}
+
 type Fetcher = typeof fetch;
 /** A 403 or 429 from SEC: the caller stops for a while instead of trying the next read (provider.ts). */
 export const secAccessPaused = (error: unknown) => error instanceof Error && error.message === "SEC_ACCESS_PAUSED";
@@ -120,21 +131,27 @@ export async function refreshCompanyEvents(env: EventsSweepEnv, ticker: string, 
     const documentUrl = `${archiveRoot}/${filing.primaryDocument}`;
     let insider: InsiderTransaction | null = prior?.insider ?? null;
     if (isInsider && !insider) {
-      const cached = await repository.getCache<InsiderTransaction | { unreadable: true }>(insiderCacheKey(ticker, filing.accessionNumber));
-      if (cached && !("unreadable" in cached.payload)) insider = cached.payload;
+      const cached = (await repository.getCache<InsiderCacheEntry>(insiderCacheKey(ticker, filing.accessionNumber)))?.payload;
+      // Another issuer's filing, recorded once so it is neither read again nor counted as pending.
+      if (cached && "otherIssuer" in cached) continue;
+      if (cached && !("unreadable" in cached)) insider = cached;
       else if (!cached && insiderReads < LIMITS.insiderReads) {
         insiderReads++;
         try {
           let parsed: InsiderTransaction | null = null;
           try { parsed = parseForm4(await (await reader.read(form4XmlUrl(archiveRoot, filing.primaryDocument))).text()); }
           catch (error) { if (secAccessPaused(error)) throw error; /* A document SEC does not serve is unreadable, as before. */ }
-          await repository.setCache(insiderCacheKey(ticker, filing.accessionNumber), parsed ?? { unreadable: true }, now.toISOString());
-          insider = parsed;
+          const foreign = parsed && !sameIssuer(parsed, cikNumber);
+          await repository.setCache(insiderCacheKey(ticker, filing.accessionNumber), foreign ? { otherIssuer: parsed!.issuerCik! } : parsed ?? { unreadable: true }, now.toISOString());
           saved++;
+          if (foreign) continue;
+          insider = parsed;
         } catch (error) { if (secAccessPaused(error)) throw error; /* Left pending; the next tick reads it again. */ }
       }
       if (!insider) { pendingInsider++; continue; }
     }
+    // The company's submission list also carries the Form 4s it filed as a holder of other companies' stock.
+    if (insider && !sameIssuer(insider, cikNumber)) continue;
     let exhibits = prior?.exhibits ?? [];
     // The submissions feed often describes a 6-K as "6-K". The filing index's Description cell is the same request the exhibit list uses.
     // A later submissions read names the form again ("6-K"). Keep a document title already taken from the filing index.

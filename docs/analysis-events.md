@@ -110,13 +110,13 @@ Cron 和两个队列消费者的入口各做两次主键查询：补发发件箱
 | `filing.discovered` | SEC 申报发现（Cron） | 财务采集、SEC 财报、基本面、指引、事件 |
 | `company.added` | 后台增加数据公司 | 财务采集、补历史季度 |
 | `maintenance.requested` | 后台财务维护 | 财务维护 |
-| `financials.published` | `D1CompleteStore.publish`（财务采集、财务维护都经过它） | 地图推导、业务解读、业务脑图、补历史季度 |
+| `financials.published` | `D1CompleteStore.publish`（财务采集、财务维护都经过它） | 基本面刷新（`fundamentals`）、地图推导、业务解读、业务脑图、补历史季度 |
 | `filing.archived` | `archiveFilingDisclosures`（新增，或内容、口径变化时） | 地图推导、Transcript |
 | `archive.superseded` | `archiveFilingDisclosures`（替换了旧副本时） | 存档清理 |
 | `map.derived` | 地图推导（快照确实重建时） | 要点 |
 | `report.published` | SEC 财报 Workflow | 事件 |
 | `analysis.published` | 公司分析 Workflow | 要点 |
-| `fundamentals.updated` | 基本面 | 要点 |
+| `fundamentals.updated` | SEC 财报（发现申报时）、基本面刷新（`fundamentals`，新报表发布后；Company Facts 读到更晚的季度才发） | 要点、同业、估值 |
 | `guidance.published` | 指引 Workflow | 要点 |
 | `task.version_changed` | Cron 或队列消费者入口检测到某个任务的版本变了 | 只路由给版本变化的那个任务，对所有公司各登记一次 |
 | `explainer.published`、`tree.published`、`findings.published`、`events.published`、`dossier.published` | 各自任务 | 翻译（`findings.published` 另有要点分析师） |
@@ -306,3 +306,4 @@ P4 的实现要点与差异：
 
 - **AI 名单在后台控制（2026-10-15）。** `financial_ai_settings` 覆盖 `SEC_AI_TICKERS`；后台开启一家公司时发出 `ai.enabled`（订阅者 `sec-report`、`explainer`），后续事件链不变。2026-10-17 并入功能开关（下一条）。
 - **功能开关在后台控制（2026-10-17）。** 任务的 scope 从 `ai` 拆成 `reports`（`sec-report`、`guidance`）、`findings`（`memory`、`company-analysis`、`findings`、`analyst`）、`explainer`、`tree`，各读 `business_feature_settings` 解析出的名单；`ai.enabled` 与 `tree.settings` 合并为 `feature.settings`（`detail.feature`），订阅者是该功能的首个任务，并推进地图 company、filings、findings、events 版本号。见 [businessview-admin](businessview-admin.md)、[whitelist-feature-switches-design](whitelist-feature-switches-design.md)。
+- **基本面跟上新报表（2026-10-31，B9）。** 基本面只在 SEC 财报任务发现申报时读一次 Company Facts，常常早于 SEC 把新季度写进去，之后再没人读，Alphabet 的基本面停在 2026-06-30，页面已是 2026-09-30。新增 `fundamentals` 任务订阅 `financials.published`：重读 Company Facts，报表流量科目到达更晚的季度（或序列注册表更新）才替换 `sec:fundamentals:<ticker>` 并发 `fundamentals.updated`；仍落后于已发布季度时 6 小时后重试，最多到该季度申报后 14 天，没有任何季度流量值的发行人（20-F）不等。无季度利润表、现金流值时接口返回 `status: "unavailable"` 和 `unavailableReason`（`annual_only`、`no_quarterly_values`），页面写「SEC 季度指标不可用」并说明原因。无模型调用。

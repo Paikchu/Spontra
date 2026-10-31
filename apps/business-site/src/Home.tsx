@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { MomentumTag } from "./MomentumTag";
+import { momentumOf } from "./momentum";
 import { getLocale, messages, useLocale } from "@/packages/web/src/i18n";
 import { langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import { compactMoney, normalizeDisplayText } from "@/shared/analysis-runtime/locale";
@@ -12,6 +14,7 @@ import { PrivacyNote } from "./PrivacyNote";
 import { SearchPanel } from "./SearchDialog";
 import { LanguageToggle, ThemeToggle } from "./Sidebar";
 import { worthWatching, type SignalTab, type WorthWatchingCard } from "./worth-watching";
+import { FRESH_DAYS, freshResults, type FreshResult } from "./fresh-results";
 
 const m = messages({
   title: "See how a company makes money, and spot the risks early",
@@ -20,6 +23,13 @@ const m = messages({
   search: "Search companies",
   recent: "Recently viewed",
   popular: "Popular",
+  freshTitle: "Fresh results",
+  freshSub: (days: number) => `Reported in the last ${days} days`,
+  freshFiled: (date: string) => `Filed ${date}`,
+  freshRevenue: "Revenue",
+  freshMargin: "Operating margin",
+  freshMarginChange: (pp: string) => `${pp} pts YoY`,
+  freshOpen: (ticker: string, period: string) => `Open ${ticker} at its ${period} report`,
   signalsTitle: "Worth watching",
   tabAll: "All",
   tabRisks: "Risks",
@@ -61,6 +71,13 @@ const m = messages({
   search: "搜索公司",
   recent: "最近查看",
   popular: "热门",
+  freshTitle: "最新财报",
+  freshSub: (days: number) => `近 ${days} 天发布业绩`,
+  freshFiled: (date: string) => `${date} 发布`,
+  freshRevenue: "营收",
+  freshMargin: "营业利润率",
+  freshMarginChange: (pp: string) => `同比 ${pp} 个百分点`,
+  freshOpen: (ticker: string, period: string) => `打开 ${ticker} ${period} 财报`,
   signalsTitle: "值得关注",
   tabAll: "全部",
   tabRisks: "风险",
@@ -168,6 +185,36 @@ function StatementStrip({ company }: { company: HomeCompany }) {
   </svg>;
 }
 
+const filedDate = (date: string) => getLocale() === "zh-CN" ? `${Number(date.slice(5, 7))}月${Number(date.slice(8, 10))}日`
+  : new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(`${date}T00:00:00Z`));
+const signedPp = (pp: number) => `${pp > 0 ? "+" : pp < 0 ? "−" : ""}${Math.abs(pp).toFixed(1)}`;
+
+/** One fresh report: the company, when it filed, revenue with its year-over-year growth and the operating margin's move; the card opens the quarter. */
+function FreshCard({ result, name }: { result: FreshResult; name: { text: string; lang: string } }) {
+  const { company } = result, period = company.latestPeriod!;
+  const fiscal = period.labelSource && period.labelSource !== "unknown" && period.fiscalYear && period.fiscalQuarter ? period : null;
+  const label = fiscal ? getLocale() === "zh-CN" ? `${fiscal.fiscalYear} 财年 Q${fiscal.fiscalQuarter}` : `FY${String(fiscal.fiscalYear).slice(-2)} Q${fiscal.fiscalQuarter}` : period.calendarLabel;
+  const pp = result.marginChangePp;
+  return <li className="home-fresh-card">
+    <a href={result.href} data-nav aria-label={m.freshOpen(company.ticker, label)}>
+      <span className="home-fresh-head">
+        <CompanyLogo ticker={company.ticker} small /><b lang="en">{company.ticker}</b><span lang={name.lang}>{name.text}</span>
+      </span>
+      <span className="home-fresh-when"><time dateTime={result.filedAt}>{m.freshFiled(filedDate(result.filedAt))}</time><span aria-hidden="true">·</span><span>{label}</span></span>
+      <span className="home-fresh-figure">
+        <small>{m.freshRevenue}</small>
+        <strong>{company.revenue ? money(company.revenue.value, company.revenue.currency) : "—"}</strong>
+        <Delta pct={company.revenue?.yoyPct ?? null} />
+      </span>
+      {result.marginPct != null && <span className="home-fresh-figure">
+        <small>{m.freshMargin}</small>
+        <strong>{result.marginPct.toFixed(1)}%</strong>
+        {pp != null && <span className="home-delta" data-dir={pp > 0 ? "up" : pp < 0 ? "down" : "flat"}>{m.freshMarginChange(signedPp(pp))}</span>}
+      </span>}
+    </a>
+  </li>;
+}
+
 /** Homepage: the covered catalog, the latest findings, and a search that only opens a covered company. */
 export function Home({ light, onToggleTheme, recent, onPick, digest = null, digestStatus = "loading", onRetry, onSearch }: {
   light: boolean;
@@ -195,6 +242,8 @@ export function Home({ light, onToggleTheme, recent, onPick, digest = null, dige
   const shown = sorted(companies, sort);
   const groups = grouped(worthWatching(companies, tab, 8));
   const showSignals = digestStatus === "loading" || worthWatching(companies, "all").length > 0;
+  const [now] = useState(() => new Date());
+  const fresh = digestStatus === "loading" ? [] : freshResults(companies, now);
   const updated = digest ? relativeTime(digest.coverage.lastUpdatedAt) : null;
   const count = digest?.coverage.count ?? 0;
 
@@ -251,6 +300,13 @@ export function Home({ light, onToggleTheme, recent, onPick, digest = null, dige
         <span>{chips[0].popular ? m.popular : m.recent}</span>
         {chips.map(chip => <a key={chip.ticker} href={`/companies/${chip.ticker}`} data-nav><CompanyLogo ticker={chip.ticker} small /><span lang="en">{chip.ticker}</span></a>)}
       </nav>}
+      {fresh.length > 0 && <section className="home-fresh" aria-labelledby="home-fresh-title">
+        <div className="home-section-head">
+          <h2 id="home-fresh-title">{m.freshTitle}</h2>
+          <span className="home-fresh-sub">{m.freshSub(FRESH_DAYS)}</span>
+        </div>
+        <ol className="home-fresh-row">{fresh.map(result => <FreshCard key={result.company.ticker} result={result} name={nameOf(result.company)} />)}</ol>
+      </section>}
       {showSignals && <section className="home-watch" id="home-signals" aria-labelledby="home-signals-title" aria-busy={digestStatus === "loading"}>
         <div className="home-section-head">
           <h2 id="home-signals-title">{m.signalsTitle}</h2>
@@ -316,7 +372,7 @@ export function Home({ light, onToggleTheme, recent, onPick, digest = null, dige
                     </td>
                     <td className="home-pic"><StatementStrip company={company} /></td>
                     <td className="num"><strong title={company.revenue ? undefined : missing}>{company.revenue ? money(company.revenue.value, company.revenue.currency) : "—"}</strong></td>
-                    <td className="num"><Delta pct={company.revenue?.yoyPct ?? null} title={company.revenue?.yoyPct == null ? missing : undefined} /></td>
+                    <td className="num"><span className="home-yoy"><MomentumTag momentum={momentumOf(company.revenueTrend.map(p => ({ periodEnd: p.periodEnd, value: Number(p.value) })))} subject={m.colRevenue} size="small" /><Delta pct={company.revenue?.yoyPct ?? null} title={company.revenue?.yoyPct == null ? missing : undefined} /></span></td>
                     <td className="home-period">{period ? <PeriodMark variant="footer" ticker={company.ticker} companyName={name.text} periodEnd={period.periodEnd} periodStart={period.periodStart} fiscalYear={period.fiscalYear} fiscalQuarter={period.fiscalQuarter} fiscalYearEndMonth={period.fiscalYearEndMonth} labelSource={period.labelSource} /> : null}</td>
                     <td className="home-counts">{counts > 0 ? m.counts(company.findingCounts.risk, company.findingCounts.strength) : company.status !== "ready" ? m.findingsPending : m.noFindings}</td>
                   </tr>;

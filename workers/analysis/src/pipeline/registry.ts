@@ -23,7 +23,7 @@ export type EventType = typeof EVENT_TYPES[number];
 export const TASK_NAMES = [
   "collect", "history", "reproject", "maintenance", "transcript",
   "map-derive", "archive-prune", "archive-prune-scan",
-  "sec-report", "guidance", "events",
+  "sec-report", "fundamentals", "guidance", "events",
   "memory", "company-analysis", "explainer", "tree", "findings", "analyst", "checkup", "items",
   "library", "library-cards", "library-links", "library-search", "storage-sweep", "business-tags",
   "peers", "translate", "presentation", "valuation",
@@ -69,6 +69,9 @@ export const TASKS: Record<TaskName, TaskMeta> = {
   "archive-prune-scan": { emits: [], debounceMs: 0, maxWaitMs: 0, scope: "global" },
   // Runs the SEC report Workflow, which indexes the filing list, writes reports and 8-K summaries.
   "sec-report": { emits: ["filings.indexed", "report.published", "fundamentals.updated"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "reports" },
+  // Re-reads Company Facts when new statements are published, so the SEC fundamentals keep up with the page; retried
+  // while Company Facts is still behind the filing. No model.
+  "fundamentals": { emits: ["fundamentals.updated"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "data" },
   // Extracts management guidance from earnings releases and the calls the transcript library stored (Workflow).
   "guidance": { emits: ["guidance.published"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "reports" },
   // Current reports and Form 4 filings for the map's event rail; no model.
@@ -130,7 +133,7 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
   "company.added": [{ task: "events" }, { task: "presentation" }],
   "collection.requested": [{ task: "collect" }, { task: "history" }],
   "maintenance.requested": [{ task: "maintenance" }],
-  "financials.published": [{ task: "map-derive" }, { task: "history" }, { task: "explainer" }, { task: "tree" }, { task: "library-links" }, { task: "valuation" }],
+  "financials.published": [{ task: "fundamentals" }, { task: "map-derive" }, { task: "history" }, { task: "explainer" }, { task: "tree" }, { task: "library-links" }, { task: "valuation" }],
   "filing.archived": [{ task: "map-derive" }, { task: "analyst", when: e => /^10-[QK](?:\/A)?$/.test(form(e)) }, { task: "transcript", when: e => /^(?:10-[QK]|20-F|6-K)(?:\/A)?$/.test(form(e)) }, { task: "library" }, { task: "storage-sweep" }],
   "library.requested": [{ task: "library" }],
   // A filing newly split into the library is text the checkup notes can now read against the earlier ones.

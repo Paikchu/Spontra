@@ -104,6 +104,9 @@ function company(value: unknown): HomeCompany | null {
     const cost = item && item.cost != null ? decimal(item.cost) : null;
     if (currency && revenueAmount && net) statement = { currency, revenue: revenueAmount, cost, net };
   }
+  const margin = record(row.operatingMargin);
+  const marginPct = margin ? finiteOrNull(margin.pct) : undefined, yearAgoPct = margin ? finiteOrNull(margin.yearAgoPct) : undefined;
+  const operatingMargin = marginPct != null && yearAgoPct !== undefined ? { pct: marginPct, yearAgoPct } : null;
   const counts = record(row.findingCounts);
   const count = (key: string) => counts && typeof counts[key] === "number" && Number.isInteger(counts[key]) && (counts[key] as number) >= 0 ? counts[key] as number : null;
   const risk = count("risk");
@@ -121,7 +124,7 @@ function company(value: unknown): HomeCompany | null {
   return {
     ticker, name, nameZh: row.nameZh, aliases: row.aliases as string[], sector: row.sector,
     status: status as HomeCompany["status"], latestPeriod, revenue: parsedRevenue,
-    revenueReason: row.revenueReason as HomeRevenueReason | null, revenueTrend, statement,
+    revenueReason: row.revenueReason as HomeRevenueReason | null, revenueTrend, statement, operatingMargin,
     findingCounts: { risk, strength, shift, watch }, topFindings,
   };
 }

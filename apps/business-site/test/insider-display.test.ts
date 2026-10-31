@@ -23,7 +23,7 @@ const render = (espp = false) => {
 test("focused folded sales render bilingual detail and SEC links", () => {
   setLocale("zh-CN");
   const zh = render();
-  assert.ok(zh.includes('<span lang="en">STEVENS MARK A</span>'));
+  assert.ok(zh.includes('<span class="insider-name" lang="en">STEVENS MARK A</span>'));
   assert.ok(zh.includes("90 天内卖出 3 笔 · 合计 9.5亿美元"));
   assert.ok(zh.includes('aria-expanded="true"'));
   assert.ok(zh.includes("公开市场卖出"));
@@ -55,9 +55,26 @@ test("single insider titles include localized transaction amounts without an ESP
       onFocusItem: () => {}, onFocusFinding: () => {}, filter: "key",
     }));
     assert.ok(html.includes(eventTitle(sale)));
+    assert.ok(html.includes('class="stream-title insider-title" title="'));
+    assert.ok(html.includes('class="insider-transaction"'));
+    assert.ok(html.includes('class="insider-amount"'));
+    assert.ok(html.includes('<span class="insider-name" lang="en">Kress Colette</span>'));
     assert.ok(!html.includes("ESPP") && !html.includes("员工持股计划代买"));
     const unknown = { ...buy, insider: { ...buy.insider, bought: { ...buy.insider.bought, cost: 0 } } };
     assert.ok(!eventTitle(unknown).includes("$"));
     assert.ok(!eventTitle(unknown).includes("美元"));
+  }
+});
+
+
+test("automatic fallback notice uses the active locale", () => {
+  for (const locale of ["zh-CN", "en"] as const) {
+    setLocale(locale);
+    const html = renderToStaticMarkup(createElement(RailStream, {
+      rail: null, findings: [], findingsPeriodEnd: null, ticker: publication.ticker, updates: 0, focus: null,
+      onFocusItem: () => {}, onFocusFinding: () => {}, filter: "all", fallback: true,
+    }));
+    assert.ok(html.includes('role="status"'));
+    assert.ok(html.includes(locale === "zh-CN" ? "近 90 天没有重要事件，已显示全部" : "No key events in the last 90 days — showing all"));
   }
 });

@@ -1,3 +1,4 @@
+import { RateNotice } from "./ModuleFailure";
 import { Component, useState, type ReactNode } from "react";
 import { messages, useLocale } from "@/packages/web/src/i18n";
 import type { HomeCompany } from "@/shared/analysis-contract/home";
@@ -43,7 +44,7 @@ export default function CompanyPage({ ticker, opening, tools, onSeen, covered, c
   onHome: () => void;
   onSearch: () => void;
 }) {
-  const { data, updates, failed, httpStatus, ready, settled, eventsPhase, retry, retryEvents, update, apply, dismiss } = useLiveCompany(ticker, onSeen, opening);
+  const { moduleErrors, retryModule, rateLimited, data, updates, failed, httpStatus, ready, settled, eventsPhase, retry, retryEvents, update, apply, dismiss } = useLiveCompany(ticker, onSeen, opening);
   const { flow, publication, capital, peers, findings, fundamentals, events, filings, valuation } = data;
   const stage = useStageHost(ticker, data);
   const locale = useLocale();
@@ -58,15 +59,18 @@ export default function CompanyPage({ ticker, opening, tools, onSeen, covered, c
     covered,
     attempted: Boolean(publication?.lastAttemptAt),
   }) : null;
-  if (fault)
+  if (fault && !moduleErrors.length)
     return <ErrorState kind={fault.kind} code={fault.code} ticker={ticker} companies={companies} onHome={onHome} onRetry={retry} onSearch={onSearch} restoredTitle={`${ticker} · ${m.title}`} />;
-  if (shown === "map" && flow)
+  if ((shown === "map" && flow) || (ready && moduleErrors.length > 0))
     return (
       <ChartBoundary ticker={ticker} companies={companies} onHome={onHome} onSearch={onSearch}>
+        {rateLimited && <RateNotice />}
         <BusinessMap
+          moduleErrors={moduleErrors}
+          onRetryModule={retryModule}
           ticker={ticker}
           tools={tools}
-          flow={flow}
+          flow={flow ?? { schemaVersion: "business-flow.v1", ticker, fetchedAt: null, quarters: [] }}
           revenueHistory={publication?.history ?? null}
           explainer={publication?.explainer ?? null}
           tree={publication?.tree ?? null}
@@ -92,5 +96,5 @@ export default function CompanyPage({ ticker, opening, tools, onSeen, covered, c
         <UpdateNotice update={update} onApply={apply} onDismiss={dismiss} />
       </ChartBoundary>
     );
-  return <CompanySkeleton ticker={ticker} tools={tools} />;
+  return <>{rateLimited && <RateNotice />}<CompanySkeleton ticker={ticker} tools={tools} /></>;
 }

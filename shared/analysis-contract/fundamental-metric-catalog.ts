@@ -135,6 +135,96 @@ export const FUNDAMENTAL_METRIC_CATALOG = {
     ],
     "colorRole": "stock-based-compensation"
   },
+  "share_repurchases": {
+    "basis": "reported",
+    "label": "Share repurchases",
+    "shortLabel": "Buybacks",
+    "category": "cash_flow",
+    "unitFamily": "currency",
+    "defaultMark": "bar",
+    "displaySign": "as_reported",
+    "allowedTransforms": [
+      "value",
+      "qoq_growth",
+      "yoy_growth"
+    ],
+    "colorRole": "share-repurchases"
+  },
+  "dividends_paid": {
+    "basis": "reported",
+    "label": "Dividends paid",
+    "shortLabel": "Dividends",
+    "category": "cash_flow",
+    "unitFamily": "currency",
+    "defaultMark": "bar",
+    "displaySign": "as_reported",
+    "allowedTransforms": [
+      "value",
+      "qoq_growth",
+      "yoy_growth"
+    ],
+    "colorRole": "dividends-paid"
+  },
+  "equity_securities_gains": {
+    "basis": "reported",
+    "label": "Gains on equity securities",
+    "shortLabel": "Equity securities gains",
+    "category": "income_statement",
+    "unitFamily": "currency",
+    "defaultMark": "bar",
+    "displaySign": "as_reported",
+    "allowedTransforms": [
+      "value",
+      "qoq_growth",
+      "yoy_growth"
+    ],
+    "colorRole": "equity-securities-gains"
+  },
+  "nonoperating_interest_income": {
+    "basis": "reported",
+    "label": "Interest income",
+    "shortLabel": "Interest income",
+    "category": "income_statement",
+    "unitFamily": "currency",
+    "defaultMark": "bar",
+    "displaySign": "as_reported",
+    "allowedTransforms": [
+      "value",
+      "qoq_growth",
+      "yoy_growth"
+    ],
+    "colorRole": "nonoperating-interest-income"
+  },
+  "nonoperating_interest_expense": {
+    "basis": "reported",
+    "label": "Interest expense",
+    "shortLabel": "Interest expense",
+    "category": "income_statement",
+    "unitFamily": "currency",
+    "defaultMark": "bar",
+    "displaySign": "as_reported",
+    "allowedTransforms": [
+      "value",
+      "qoq_growth",
+      "yoy_growth"
+    ],
+    "colorRole": "nonoperating-interest-expense"
+  },
+  "foreign_exchange_gains": {
+    "basis": "reported",
+    "label": "Foreign exchange gains",
+    "shortLabel": "FX gains",
+    "category": "income_statement",
+    "unitFamily": "currency",
+    "defaultMark": "bar",
+    "displaySign": "as_reported",
+    "allowedTransforms": [
+      "value",
+      "qoq_growth",
+      "yoy_growth"
+    ],
+    "colorRole": "foreign-exchange-gains"
+  },
   "depreciation_and_amortization": {
     "basis": "reported",
     "label": "Depreciation and amortization",
@@ -482,7 +572,8 @@ export const FUNDAMENTAL_METRIC_CATALOG = {
 /** Each metric's `label` in Chinese, for a reader's page; the catalog's English labels stay what Spontra Analysis and the model read. */
 export const FUNDAMENTAL_METRIC_LABEL_ZH: Record<keyof typeof FUNDAMENTAL_METRIC_CATALOG, string> = {
   total_revenue: "营收", gross_profit: "毛利", operating_income: "营业利润", net_income: "净利润", diluted_eps: "稀释每股收益",
-  operating_cash_flow: "经营现金流", capital_expenditure: "资本开支", free_cash_flow: "自由现金流", stock_based_compensation: "股权激励费用",
+  operating_cash_flow: "经营现金流", capital_expenditure: "资本开支", free_cash_flow: "自由现金流", stock_based_compensation: "股权激励费用", share_repurchases: "股票回购", dividends_paid: "分红",
+  equity_securities_gains: "投资公允价值变动", nonoperating_interest_income: "利息收入", nonoperating_interest_expense: "利息支出", foreign_exchange_gains: "汇兑损益",
   depreciation_and_amortization: "折旧与摊销", research_and_development: "研发费用", remaining_performance_obligation: "剩余履约义务",
   cash_and_cash_equivalents: "现金及现金等价物", long_term_debt: "长期债务", total_assets: "总资产", total_liabilities: "总负债",
   stockholders_equity: "股东权益", inventory: "存货", accounts_receivable: "应收账款", ordinary_shares: "流通股数", market_cap: "市值",

@@ -1,3 +1,4 @@
+import { observeRateLimit } from "./company-request";
 import { startTransition, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocale } from "@/packages/web/src/i18n";
 import { stageChartBox } from "./chart-box";
@@ -40,6 +41,7 @@ type OpeningRead = {
   eventsPhase: "ready" | "loading" | "error";
   revisions: MapRevisions;
   httpStatus: number | null;
+  errors: MapResource[];
 };
 type OpeningPart = { resource: MapResource; data?: Partial<CompanyData>; failed?: boolean; httpStatus?: number; eventsError?: boolean };
 
@@ -59,9 +61,9 @@ function primaryResources(search: string, valuation: ValuationResponse | null): 
 }
 
 /** Start every versioned read together; publish the primary view before unrelated supplements finish. */
-async function loadOpening(ticker: string, request: OpeningRequests, onSeen: (ticker: string) => void, search: string, onPrimary?: (read: OpeningRead) => void): Promise<OpeningRead> {
+export async function loadOpening(ticker: string, request: OpeningRequests, onSeen: (ticker: string) => void, search: string, onPrimary?: (read: OpeningRead) => void): Promise<OpeningRead> {
   const { signal } = request;
-  const revisions = await request.revisions;
+  const revisions = await request.revisions.catch(() => null);
   if (signal.aborted) throw new DOMException("Aborted", "AbortError");
   const read = async (resource: MapResource): Promise<OpeningPart> => {
     try {
@@ -81,9 +83,10 @@ async function loadOpening(ticker: string, request: OpeningRequests, onSeen: (ti
     }
   };
   const collect = (parts: OpeningPart[]): OpeningRead => {
-    const result: OpeningRead = { data: { ...EMPTY }, failed: false, eventsPhase: "loading", revisions: {}, httpStatus: null };
+    const result: OpeningRead = { data: { ...EMPTY }, failed: false, eventsPhase: "loading", revisions: {}, httpStatus: null, errors: [] };
     for (const part of parts) {
       Object.assign(result.data, part.data);
+      if (part.httpStatus != null || part.eventsError) result.errors.push(part.resource);
       if (part.failed) { result.failed = true; result.httpStatus = part.httpStatus ?? 0; }
       if (part.resource === "events") result.eventsPhase = part.eventsError ? "error" : "ready";
       const rev = revisions?.[part.resource];
@@ -164,6 +167,9 @@ function newsOf(patch: Partial<CompanyData>, now: CompanyData): UpdateNews[] {
  */
 export function useLiveCompany(ticker: string, onSeen: (ticker: string) => void, opening: CompanyOpening) {
   const locale = useLocale();
+  const [moduleErrors, setModuleErrors] = useState<MapResource[]>([]);
+  const [rateLimited, setRateLimited] = useState(false);
+  useEffect(() => observeRateLimit(setRateLimited), []);
   const [data, setData] = useState<CompanyData>(EMPTY);
   const [failed, setFailed] = useState(false);
   const [httpStatus, setHttpStatus] = useState<number | null>(null);
@@ -198,6 +204,7 @@ export function useLiveCompany(ticker: string, onSeen: (ticker: string) => void,
         const commit = (result: OpeningRead, finished = false) => {
           if (signal.aborted || gen !== loadGen.current) return;
           setData(result.data);
+          setModuleErrors(result.errors);
           setFailed(result.failed && !result.data.flow);
           setHttpStatus(result.failed && !result.data.flow ? result.httpStatus : null);
           setEventsPhase(result.eventsPhase);
@@ -292,6 +299,18 @@ export function useLiveCompany(ticker: string, onSeen: (ticker: string) => void,
       setEventsPhase("error");
     });
   }, [ticker]);
+  const retries = useRef(new Set<AbortController>());
+  useEffect(() => () => { retries.current.forEach(c => c.abort()); retries.current.clear(); }, [ticker, locale]);
+  const retryModule = useCallback((resource: MapResource) => {
+    const controller = new AbortController();
+    retries.current.add(controller);
+    void readResource(ticker, resource, shown.current?.[resource], controller.signal).then(patch => {
+      if (controller.signal.aborted) return;
+      if (patch) setData(d => ({ ...d, ...patch }));
+      setModuleErrors(errors => errors.filter(item => item !== resource));
+      if (resource === "events") setEventsPhase("ready");
+    }).catch(() => {}).finally(() => retries.current.delete(controller));
+  }, [ticker]);
   const update = closed ? null : pending;
-  return { data, updates, failed, httpStatus, ready, settled, eventsPhase, retry, retryEvents, update, apply, dismiss };
+  return { moduleErrors, retryModule, rateLimited, data, updates, failed, httpStatus, ready, settled, eventsPhase, retry, retryEvents, update, apply, dismiss };
 }

@@ -183,3 +183,18 @@ test("the read route serves the digest and rejects a stray query", async () => {
   const rejected = await handleMapRead(new Request("https://analysis.internal/api/v1/home?lang=zh-CN"), { DB: db, ...env });
   assert.equal(rejected.status, 404);
 });
+
+test("R29: the latest quarter's operating margin comes with the year-ago quarter's, from the reports assembled behind the publication", async () => {
+  const db = database();
+  await seed(db);
+  const yearAgo = quarter("2025-04-01", "2025-06-30", "100", "50", "50", "0", "50", "10", "40");
+  await db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES ('sec:map-derived:v1:ACME', ?, '2026-08-07T00:00:00Z')")
+    .bind(JSON.stringify({ ticker: "ACME", flowKey: "x", inputs: "x", builtAt: "2026-08-07T00:00:00Z", reports: { schemaVersion: "business-flow.v1", ticker: "ACME", fetchedAt: null, quarters: [yearAgo] }, capital: null, pendingFilings: 0 })).run();
+  const digest = await readHomeDigest(db, env, null, new Date("2026-08-10T02:00:00Z"));
+  // 70 / 110 now against 50 / 100 a year before.
+  assert.deepEqual(digest.companies.find(c => c.ticker === "ACME")!.operatingMargin, { pct: 63.64, yearAgoPct: 50 });
+  // Without the older reports the year-ago margin is unknown, never guessed.
+  const bare = database();
+  await seed(bare);
+  assert.deepEqual((await readHomeDigest(bare, env, null, new Date("2026-08-10T02:00:00Z"))).companies.find(c => c.ticker === "ACME")!.operatingMargin, { pct: 63.64, yearAgoPct: null });
+});

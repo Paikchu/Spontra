@@ -1,123 +1,82 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { MAP_RESOURCES } from "../../../shared/analysis-contract/revisions.ts";
-import { companyPath, createCompanyOpening } from "../src/company-opening.ts";
-import { CompanyHttpError, fetchCompany, fetchValuation } from "../src/company-data.ts";
+import { createCompanyOpening } from "../src/company-opening.ts";
+import { companyRequest, retryDelay, observeRateLimit } from "../src/company-request.ts";
+import { loadOpening } from "../src/live-company.ts";
+import { handle, type SiteEnv } from "../worker/index.ts";
 
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (reason: unknown) => void;
-  const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
-  return { promise, resolve, reject };
-}
-
-test("an opening starts once and launches all versioned resources before the route consumes them", async t => {
-  const original = globalThis.fetch;
-  t.after(() => { globalThis.fetch = original; });
-  const revision = deferred<Response>();
-  const requests: Array<{ url: string; signal: AbortSignal | null | undefined; cache: RequestCache | undefined }> = [];
-  globalThis.fetch = async (input, init) => {
-    const url = String(input);
-    requests.push({ url, signal: init?.signal, cache: init?.cache });
-    return url.endsWith("/revision") ? revision.promise : Response.json({ status: "ready" });
-  };
-  const opening = createCompanyOpening("META", "zh-CN");
-  assert.equal(requests.length, 0, "pure handle creation does not fetch during render");
+const bundle = () => ({ revisions: { company: "2026-10-30T00:00:00Z" }, resources: Object.fromEntries(MAP_RESOURCES.map(resource => [resource, { status: 200, body: { status: "preparing" } }])) });
+test("one locale-specific opening request is shared by every module and restarts after cleanup", async t => {
+  const original = globalThis.fetch; t.after(() => { globalThis.fetch = original; });
+  const urls: string[] = [];
+  globalThis.fetch = async input => { urls.push(String(input)); return Response.json(bundle()); };
+  const opening = createCompanyOpening("ACME", "zh-CN");
+  assert.equal(urls.length, 0);
   const run = opening.start();
-  assert.equal(opening.start(), run, "eager shell and lazy route share the same run");
-  assert.equal(requests.length, 1);
-  assert.equal(requests[0].cache, "no-store");
-  const versions = { company: "2026-10-30T00:00:00Z", capital: "2026-10-29T00:00:00Z" };
-  revision.resolve(Response.json({ revisions: versions }));
-  await new Promise<void>(resolve => setImmediate(resolve));
-  assert.equal(requests.length, 8, "resource downloads start even while no route consumer is mounted");
-  assert.deepEqual(await run.revisions, versions);
-  for (const resource of MAP_RESOURCES) {
-    const suffix = resource === "company" ? "" : `/${resource}`;
-    const request = requests.find(item => new URL(item.url, "https://example.test").pathname === `/api/business/v1/companies/META${suffix}`)!;
-    const url = new URL(request.url, "https://example.test");
-    assert.equal(url.searchParams.get("lang"), "zh-CN");
-    assert.equal(url.searchParams.get("rev"), versions[resource as keyof typeof versions] ?? null);
-    assert.equal(request.signal, run.signal);
-    assert.equal((await run.response(resource)).status, 200);
-  }
+  assert.equal(opening.start(), run);
+  for (const resource of MAP_RESOURCES) assert.equal((await run.response(resource)).status, 200);
+  assert.deepEqual(urls, ["/api/business/v1/companies/ACME/opening?lang=zh-CN"]);
+  assert.deepEqual(await run.revisions, bundle().revisions);
+  run.abort(); const next = opening.start(); assert.notEqual(next, run);
+  run.abort(); assert.equal(next.signal.aborted, false); next.abort();
+});
+test("a failed module does not discard successful modules", async t => {
+  const original = globalThis.fetch; t.after(() => { globalThis.fetch = original; });
+  const body = bundle();
+  body.resources.capital = { status: 503, body: { status: "unavailable" } };
+  globalThis.fetch = async () => Response.json(body);
+  const run = createCompanyOpening("ACME", "en").start();
+  const result = await loadOpening("ACME", run, () => {}, "");
+  assert.deepEqual(result.errors, ["capital"]);
+  assert.equal(result.failed, false);
+  assert.equal(result.data.publication?.status, "preparing");
   run.abort();
 });
-
-test("leaving before the revision arrives prevents every resource request", async t => {
-  const original = globalThis.fetch;
-  t.after(() => { globalThis.fetch = original; });
-  const revision = deferred<Response>();
-  const requests: string[] = [];
-  globalThis.fetch = async input => { requests.push(String(input)); return revision.promise; };
-  const run = createCompanyOpening("META", "en").start();
-  run.abort();
-  // A mocked transport can finish after abort; the real fetch is also covered by its signal.
-  revision.resolve(Response.json({ revisions: { company: "2026-10-30T00:00:00Z" } }));
-  await assert.rejects(run.response("company"), error => error instanceof DOMException && error.name === "AbortError");
-  assert.equal(requests.length, 1);
+test("abort rejects all pending module reads", async t => {
+  const original = globalThis.fetch; t.after(() => { globalThis.fetch = original; });
+  let finish!: (response: Response) => void;
+  globalThis.fetch = async () => new Promise(resolve => { finish = resolve; });
+  const run = createCompanyOpening("ACME", "en").start(); run.abort(); finish(Response.json(bundle()));
+  await assert.rejects(run.response("company"), { name: "AbortError" });
 });
-
-test("cleanup and retry get a new run without allowing an old cleanup to abort it", async t => {
-  const original = globalThis.fetch;
-  t.after(() => { globalThis.fetch = original; });
-  const revisions = [deferred<Response>(), deferred<Response>()];
-  let count = 0;
-  globalThis.fetch = async input => String(input).endsWith("/revision") ? revisions[count++].promise : Response.json({ status: "ready" });
-  const opening = createCompanyOpening("META", "en");
-  const first = opening.start();
-  first.abort();
-  const second = opening.start();
-  assert.notEqual(second, first);
-  first.abort();
-  assert.equal(second.signal.aborted, false, "StrictMode's old cleanup owns only its old run");
-  revisions[0].resolve(Response.json({ revisions: {} }));
-  revisions[1].resolve(Response.json({ revisions: {} }));
-  await assert.rejects(first.response("company"));
-  assert.equal((await second.response("company")).status, 200);
-  assert.equal(count, 2);
-  second.abort();
+test("429 waits Retry-After and retries exactly once, with an observable notice", async t => {
+  const original = globalThis.fetch; t.after(() => { globalThis.fetch = original; });
+  let calls = 0; const states: boolean[] = [];
+  const unsubscribe = observeRateLimit(value => states.push(value)); t.after(unsubscribe);
+  globalThis.fetch = async () => { calls++; return new Response(null, { status: 429, headers: { "retry-after": "0.02" } }); };
+  const start = Date.now();
+  assert.equal((await companyRequest("/test", new AbortController().signal)).status, 429);
+  assert(Date.now() - start >= 18); assert.equal(calls, 2); assert.deepEqual(states, [false, true, false]);
+  assert.equal(retryDelay("2"), 2000);
+  assert.equal(retryDelay("Wed, 21 Oct 2026 07:28:00 GMT", Date.parse("2026-10-21T07:27:58Z")), 2000);
+  assert.equal(retryDelay(null), 60_000);
 });
-
-test("a resource failure before the module arrives remains available to its eventual consumer", async t => {
-  const original = globalThis.fetch;
-  t.after(() => { globalThis.fetch = original; });
-  globalThis.fetch = async input => {
-    if (String(input).endsWith("/revision")) return Response.json({ revisions: {} });
-    throw new Error("offline while loading company code");
+test("leaving cancels a scheduled retry", async t => {
+  const original = globalThis.fetch; t.after(() => { globalThis.fetch = original; });
+  let calls = 0; globalThis.fetch = async () => { calls++; return new Response(null, { status: 429, headers: { "retry-after": "60" } }); };
+  const controller = new AbortController(); const request = companyRequest("/test", controller.signal);
+  await new Promise(resolve => setImmediate(resolve)); controller.abort();
+  await assert.rejects(request, { name: "AbortError" }); assert.equal(calls, 1);
+});
+const env: SiteEnv = { ASSETS: { fetch: async () => new Response() }, PUBLIC_READ_LIMIT: { limit: async () => ({ success: true }) } };
+test("worker bundles modules, preserves a failure, and caches successful reads for four hours", async () => {
+  const stored = new Map<string, Response>(); const writes: Promise<unknown>[] = [];
+  const cache = { match: async (key: Request) => stored.get(key.url)?.clone(), put: async (key: Request, value: Response) => { stored.set(key.url, value); } } as Cache;
+  const upstream: typeof fetch = async input => {
+    const path = new URL(String(input)).pathname;
+    if (path.endsWith("/revisions")) return Response.json({ schemaVersion: "revisions.v1", revisions: { filings: "2026-10-30T00:00:00Z" } });
+    if (path.endsWith("/capital")) return new Response(null, { status: 503 });
+    if (path.endsWith("/filings")) return Response.json({ ticker: "ACME", filings: [] });
+    if (path.endsWith("/business-flow")) return Response.json({ schemaVersion: "complete-business-flow.v1", status: "preparing", flow: null });
+    return Response.json({ status: "preparing" });
   };
-  const run = createCompanyOpening("META", "en").start();
-  await new Promise<void>(resolve => setImmediate(resolve));
-  await assert.rejects(run.response("company"), /offline while loading company code/);
-  run.abort();
-});
-
-test("a failed revision read still starts the locale-specific unversioned reads", async t => {
-  const original = globalThis.fetch;
-  t.after(() => { globalThis.fetch = original; });
-  const requests: string[] = [];
-  globalThis.fetch = async input => {
-    const url = String(input);
-    requests.push(url);
-    if (url.endsWith("/revision")) throw new Error("revision unavailable");
-    return Response.json({ status: "ready" });
-  };
-  const run = createCompanyOpening("BRK.B", "en").start();
-  assert.equal(await run.revisions, null);
-  await run.response("company");
-  assert.equal(requests.length, 8);
-  assert(requests.includes("/api/business/v1/companies/BRK.B"));
-  assert(requests.every(url => !url.includes("lang=") && !url.includes("rev=")));
-  run.abort();
-});
-
-test("the company readers consume the opening response without a second request", async t => {
-  const original = globalThis.fetch;
-  t.after(() => { globalThis.fetch = original; });
-  globalThis.fetch = async () => { throw new Error("unexpected duplicate fetch"); };
-  const controller = new AbortController();
-  await assert.rejects(fetchCompany("META", controller.signal, undefined, Promise.resolve(new Response(null, { status: 503 }))), error => error instanceof CompanyHttpError && error.status === 503);
-  const body = { schemaVersion: "valuation-response.v1", availability: "hidden" };
-  assert.deepEqual(await fetchValuation("META", controller.signal, undefined, Promise.resolve(Response.json(body))), body);
-  assert.equal(companyPath("META", "zh-CN", "/valuation/versions/v1"), "/api/business/v1/companies/META/valuation/versions/v1?lang=zh-CN");
+  const response = await handle(new Request("https://example.test/api/business/v1/companies/ACME/opening?lang=zh-CN"), env, { waitUntil: p => { writes.push(p); } }, upstream, cache);
+  const body = await response.json() as { resources: Record<string, { status: number }> };
+  assert.equal(body.resources.capital.status, 503); assert.equal(body.resources.company.status, 200); assert.equal(body.resources.filings.status, 200);
+  await Promise.all(writes);
+  assert.equal(stored.size, 1);
+  const [key, cached] = [...stored][0]; assert(key.includes("lang=zh-CN")); assert(key.includes("rev="));
+  assert.equal(cached.headers.get("cache-control"), "public, max-age=14400");
+  assert.equal(response.headers.get("cache-control"), "no-store");
 });

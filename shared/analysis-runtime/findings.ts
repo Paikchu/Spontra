@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { FLOW_METRICS, type BusinessFlowQuarter, type FlowMetric } from "../analysis-contract/business-flow.ts";
 import { FUNDAMENTAL_METRIC_CATALOG, FUNDAMENTAL_METRIC_LABEL_ZH } from "../analysis-contract/fundamental-metric-catalog.ts";
-import type { FundamentalMetricKey, PublicFundamentalPoint, PublicFundamentalSeries } from "../analysis-contract/fundamentals.ts";
+import type { FundamentalMetricKey, FundamentalsUnavailableReason, PublicFundamentalPoint, PublicFundamentalSeries } from "../analysis-contract/fundamentals.ts";
 import { DERIVED_METRICS, EVENT_FIELDS, type AnalysisFinding, type CapitalMetric, type DerivedMetric, type EventField, type FindingEvidence, type FindingPassage, type FindingRef, type FindingSpan, type FindingWatch, type FindingsPublication } from "../analysis-contract/findings.ts";
 import type { EventsPublication } from "../analysis-contract/events.ts";
 import type { PeersPublication } from "../analysis-contract/peers.ts";
@@ -105,14 +105,28 @@ const fundamentalsSchema = z.object({ series: z.array(z.object({
   metricKey: z.enum(FUNDAMENTAL_KEYS), label: text(80), category: z.enum(["income_statement", "cash_flow", "balance_sheet", "per_share", "valuation", "ratio"]),
   unitFamily: z.enum(["currency", "percent", "per_share", "shares", "multiple"]), currency: z.string().max(8), available: z.boolean(),
   points: z.array(z.object({ periodEnd: date, valueDecimal: z.string().max(40).nullable(), sourceAccession: z.string().max(40).optional() })).max(64),
+  annual: z.array(z.object({ periodStart: date, periodEnd: date, valueDecimal: z.string().max(40), sourceAccession: z.string().max(40).optional() })).max(8).optional(),
 })).max(64) });
+/** A series this build does not know (a newer Spontra Analysis catalogue) is left out instead of failing the whole read. */
+const knownSeries = (value: unknown) => {
+  const body = value as { series?: unknown } | null;
+  return body && Array.isArray(body.series) ? { ...body, series: body.series.filter(s => FUNDAMENTAL_KEYS.includes((s as { metricKey?: FundamentalMetricKey } | null)?.metricKey as FundamentalMetricKey)) } : value;
+};
 
-/** The public subset of a fundamentals response: SEC-sourced series and points, nothing about refresh state. */
+const UNAVAILABLE_REASONS: readonly FundamentalsUnavailableReason[] = ["annual_only", "no_quarterly_values"];
+
+/**
+ * The public subset of a fundamentals response: SEC-sourced series and points, nothing about refresh state. An
+ * unavailable response (no quarterly income-statement or cash-flow value) keeps its series, which may still hold
+ * year-end balances, and says why no metric can be shown.
+ */
 export function readFindingFundamentals(value: unknown, ticker: string): FindingFundamentals | null {
-  const body = value as { ticker?: unknown; source?: unknown; status?: unknown } | null;
-  if (!body || body.ticker !== ticker || body.source !== "sec_xbrl" || body.status !== "ready") return null;
-  const parsed = fundamentalsSchema.safeParse(value);
-  return parsed.success ? parsed.data : null;
+  const body = value as { ticker?: unknown; source?: unknown; status?: unknown; unavailableReason?: unknown } | null;
+  if (!body || body.ticker !== ticker || body.source !== "sec_xbrl") return null;
+  const unavailable = body.status === "unavailable" && UNAVAILABLE_REASONS.includes(body.unavailableReason as FundamentalsUnavailableReason) ? body.unavailableReason as FundamentalsUnavailableReason : null;
+  if (body.status !== "ready" && !unavailable) return null;
+  const parsed = fundamentalsSchema.safeParse(knownSeries(value));
+  return parsed.success ? { ...parsed.data, ...(unavailable ? { unavailable: { reason: unavailable } } : {}) } : null;
 }
 
 export function readFindingsPublication(value: unknown, ticker: string): FindingsPublication | null {
@@ -130,9 +144,11 @@ export function readFindingsPublication(value: unknown, ticker: string): Finding
 /* ---------- Resolution ---------- */
 
 /** Everything a finding may point at, as the page already holds it. Absent data resolves to nothing, never to zero. */
-export type FindingFundamentalSeries = Pick<PublicFundamentalSeries, "metricKey" | "label" | "category" | "unitFamily" | "currency" | "available"> & { points: Array<Pick<PublicFundamentalPoint, "periodEnd" | "valueDecimal" | "sourceAccession">> };
+export type FindingFundamentalSeries = Pick<PublicFundamentalSeries, "metricKey" | "label" | "category" | "unitFamily" | "currency" | "available" | "annual"> & { points: Array<Pick<PublicFundamentalPoint, "periodEnd" | "valueDecimal" | "sourceAccession">> };
 /** The part of a fundamentals response findings read; a public copy stripped to these fields is enough. */
-export type FindingFundamentals = { series: FindingFundamentalSeries[] };
+export type FindingFundamentals = { series: FindingFundamentalSeries[];
+  /** No quarterly metric can be shown, and why (`PublicFundamentalsResponse.unavailableReason`). */
+  unavailable?: { reason: FundamentalsUnavailableReason } };
 export type FindingData = {
   quarters: BusinessFlowQuarter[];
   history: RevenueHistory | null;
