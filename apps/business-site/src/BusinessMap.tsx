@@ -238,7 +238,7 @@ function useTween(target: number | null, ms = 650) {
 function Stat({ label, value, format, note, tone, level, badge, extra }: { label: string; value: number | null; format: (v: number | null) => string; note?: string; tone?: HeroTone; /** The most pressing checkup flag about this figure. */ level?: FlagLevel; /** A small tag beside the label: the figure's growth momentum. */ badge?: ReactNode; /** A tag under the figure: net income's non-operating part. */ extra?: ReactNode }) {
   const shown = useTween(value);
   return <div className="stat" data-level={level} data-extra={extra ? "" : undefined} title={note ? `${label} · ${note}` : undefined}>
-    <span className="stat-label" title={note ? undefined : label}>{level && <LevelMark level={level} label={LEVEL_LABEL[level]} />}{label}{badge}</span>
+    <span className="stat-label" title={note ? undefined : label}><span className="stat-label-text">{level && <LevelMark level={level} label={LEVEL_LABEL[level]} />}{label}</span>{badge}</span>
     <strong className="stat-value" data-tone={tone}>{format(shown)}</strong>
     {extra && <span className="stat-extra">{extra}</span>}
   </div>;

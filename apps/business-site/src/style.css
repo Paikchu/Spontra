@@ -310,11 +310,14 @@ button { cursor: pointer; }
 .stats:not(:has(> :nth-child(3))) { --n: 2; }
 .stats:has(> :nth-child(4)) { --n: 4; }
 .stats:has(> :nth-child(5)) { --n: 5; }
-/* Figures share the row; a title wraps to a second line before it is cut. */
+/* Figures share the row; a title wraps to a second line before it is cut. The momentum tag sits beside (or under) the title and never clips. */
 .stat { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; justify-content: flex-end; gap: 4px; }
-.stat-label { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-size: 12px; line-height: 1.4; }
-.stat-label { color: var(--muted-foreground); }
+.stat-label { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; min-width: 0; font-size: 12px; line-height: 1.4; color: var(--muted-foreground); }
+.stat-label-text { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; min-width: 0; }
 .stat-label .level-mark { margin-right: 6px; }
+.stat-label .momentum { flex: none; }
+/* A hero column with a momentum tag keeps room for the longest English label ("Accelerating" / "Turned negative"). */
+.stat:has(.momentum) { min-width: 6.5rem; }
 /* The value's size follows each figure's share of the row: about 6.5 glyphs to a figure, between 16px and the cap. */
 .stat-value { font-size: clamp(16px, calc(100cqi / var(--n) / 6.5), var(--stat-max, 26px)); font-weight: 620; letter-spacing: -.035em; font-variant-numeric: tabular-nums; line-height: 1.15; white-space: nowrap; }
 /* A headline number reads as news: good in the gain colour, bad in the loss colour, by the figure's own direction. */
@@ -1685,7 +1688,7 @@ html[lang^="zh"] .period-primary { letter-spacing: 0; }
 .momentum-pop li { display: flex; justify-content: space-between; gap: 18px; }
 .momentum-pop em { font-style: normal; font-weight: 600; }
 .home-yoy { display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px; } .home-yoy .momentum-pop { left: auto; right: 0; }
-.stat-label .momentum { margin-left: 6px; } .trend-heading .momentum { flex: none; }
+.trend-heading .momentum { flex: none; }
 
 /* ---------- Non-operating results in net income (R28): a gain green, a loss amber; pressing opens the composition ---------- */
 .nonop { --nonop: var(--up); position: relative; display: inline-flex; align-items: center; vertical-align: middle; }
