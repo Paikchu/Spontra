@@ -1640,3 +1640,6 @@ html[lang^="zh"] .period-primary { letter-spacing: 0; }
 
 /* Small chart labels keep text contrast independently of the flow palette. */
 .fc-change[data-trend], .fc-node:not([data-tone="expense"]) .fc-change[data-trend] { fill: var(--muted-foreground); }
+
+.module-failure { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 12px; color: var(--muted-foreground); font-size: 13px; }
+.module-failure button { color: var(--foreground); text-decoration: underline; background: none; border: 0; cursor: pointer; }

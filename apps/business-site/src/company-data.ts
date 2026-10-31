@@ -1,3 +1,4 @@
+import { companyRequest } from "./company-request";
 import { selectFlow } from "@/packages/web/src/model/business-flow-model";
 import type { CompleteFlowPublication } from "@/shared/analysis-contract/complete-business-flow";
 import type { PublicBusinessFlow } from "@/shared/analysis-contract/business-flow";
@@ -37,7 +38,7 @@ export class CompanyHttpError extends Error {
 export async function fetchCompany(ticker: string, signal: AbortSignal, rev?: string, openingResponse?: Promise<Response>): Promise<CompanyPublication> {
   let response: Response;
   try {
-    response = await (openingResponse ?? fetch(companyPath(ticker, "", rev), { signal }));
+    response = await companyRequest(companyPath(ticker, "", rev), signal, openingResponse);
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") throw error;
     throw new CompanyHttpError(0);
@@ -55,7 +56,7 @@ export async function fetchCompany(ticker: string, signal: AbortSignal, rev?: st
  */
 export async function fetchEvents(ticker: string, signal: AbortSignal, rev?: string, openingResponse?: Promise<Response>): Promise<{ events: EventsPublication | null; error: boolean }> {
   try {
-    const response = await (openingResponse ?? fetch(companyPath(ticker, "/events", rev), { signal }));
+    const response = await companyRequest(companyPath(ticker, "/events", rev), signal, openingResponse);
     if (signal.aborted) throw new DOMException("Aborted", "AbortError");
     if (!response.ok) return { events: null, error: true };
     const body = await response.json() as { status?: string; events?: EventsPublication | null };
@@ -68,16 +69,16 @@ export async function fetchEvents(ticker: string, signal: AbortSignal, rev?: str
 
 /** A supplementary resource answers on its own; anything but "ready" reads as null. */
 export async function fetchSupplement<T>(ticker: string, resource: "findings" | "fundamentals" | "events" | "filings", signal: AbortSignal, rev?: string, openingResponse?: Promise<Response>): Promise<T | null> {
-  const response = await (openingResponse ?? fetch(companyPath(ticker, "/" + resource, rev), { signal }));
-  if (!response.ok) return null;
+  const response = await companyRequest(companyPath(ticker, "/" + resource, rev), signal, openingResponse);
+  if (!response.ok) throw new CompanyHttpError(response.status);
   const body = await response.json() as { status?: string } & Record<string, unknown>;
   return body.status === "ready" ? body[resource] as T : null;
 }
 
 /** The capital structure with the company's comparable peers, as the site serves them together. */
 export async function fetchCapital(ticker: string, signal: AbortSignal, rev?: string, openingResponse?: Promise<Response>): Promise<{ capital: PublicCapitalStructure; peers: PeersPublication | null } | null> {
-  const response = await (openingResponse ?? fetch(companyPath(ticker, "/capital", rev), { signal }));
-  if (!response.ok) return null;
+  const response = await companyRequest(companyPath(ticker, "/capital", rev), signal, openingResponse);
+  if (!response.ok) throw new CompanyHttpError(response.status);
   const body = await response.json() as { status?: string; capital?: PublicCapitalStructure | null; peers?: PeersPublication | null };
   return body.status === "ready" && body.capital ? { capital: body.capital, peers: body.peers ?? null } : null;
 }
@@ -85,16 +86,16 @@ export async function fetchCapital(ticker: string, signal: AbortSignal, rev?: st
 /** The findings with the passages their quotes rest on and the peers projection, as the site serves them together. */
 export type FindingsBundle = { findings: FindingsPublication; passages: FindingPassage[]; peers: PeersPublication | null };
 export async function fetchFindings(ticker: string, signal: AbortSignal, rev?: string, openingResponse?: Promise<Response>): Promise<FindingsBundle | null> {
-  const response = await (openingResponse ?? fetch(companyPath(ticker, "/findings", rev), { signal }));
-  if (!response.ok) return null;
+  const response = await companyRequest(companyPath(ticker, "/findings", rev), signal, openingResponse);
+  if (!response.ok) throw new CompanyHttpError(response.status);
   const body = await response.json() as { status?: string; findings?: FindingsPublication | null; passages?: FindingPassage[]; peers?: PeersPublication | null };
   return body.status === "ready" && body.findings ? { findings: body.findings, passages: body.passages ?? [], peers: body.peers ?? null } : null;
 }
 
 /** The valuation assessment in every state it answers with (hidden, preparing, ready, insufficient, failed); null only when the read failed. */
 export async function fetchValuation(ticker: string, signal: AbortSignal, rev?: string, openingResponse?: Promise<Response>): Promise<ValuationResponse | null> {
-  const response = await (openingResponse ?? fetch(companyPath(ticker, "/valuation", rev), { signal }));
-  if (!response.ok) return null;
+  const response = await companyRequest(companyPath(ticker, "/valuation", rev), signal, openingResponse);
+  if (!response.ok) throw new CompanyHttpError(response.status);
   const body = await response.json() as Partial<ValuationResponse>;
   return body.schemaVersion === "valuation-response.v1" && typeof body.availability === "string" ? body as ValuationResponse : null;
 }

@@ -1,3 +1,4 @@
+import { companyRequest } from "./company-request";
 import { MAP_RESOURCES, type MapResource, type MapRevisions } from "@/shared/analysis-contract/revisions";
 import type { Locale } from "@/shared/analysis-runtime/locale";
 
@@ -17,6 +18,8 @@ export async function fetchRevisions(ticker: string, signal: AbortSignal): Promi
   const body = await response.json() as { revisions?: MapRevisions };
   return body.revisions && typeof body.revisions === "object" ? body.revisions : null;
 }
+
+type OpeningBundle = { revisions: MapRevisions | null; resources: Partial<Record<MapResource, { status: number; body: unknown; retryAfter?: string | null; exhausted?: boolean }>> };
 
 export type OpeningRequests = {
   signal: AbortSignal;
@@ -41,13 +44,15 @@ export function createCompanyOpening(ticker: string, locale: Locale): CompanyOpe
       if (current && !current.signal.aborted) return current;
       const controller = new AbortController();
       const { signal } = controller;
-      const revisions = observed(fetchRevisions(ticker, signal).catch(error => {
-        if (signal.aborted) throw error;
-        return null;
+      const bundle = observed(companyRequest(companyPath(ticker, locale, "/opening"), signal).then(async response => {
+        if (!response.ok) return { revisions: null, resources: Object.fromEntries(MAP_RESOURCES.map(resource => [resource, { status: response.status, body: null, exhausted: true }])) } as OpeningBundle;
+        return await response.json() as OpeningBundle;
       }));
-      const responses = new Map<MapResource, Promise<Response>>(MAP_RESOURCES.map(resource => [resource, observed(revisions.then(revs => {
+      const revisions = observed(bundle.then(body => body.revisions));
+      const responses = new Map<MapResource, Promise<Response>>(MAP_RESOURCES.map(resource => [resource, observed(bundle.then(body => {
         signal.throwIfAborted();
-        return fetch(companyPath(ticker, locale, resource === "company" ? "" : `/${resource}`, revs?.[resource]), { signal });
+        const part = body.resources[resource];
+        return Response.json(part?.body ?? null, { status: part?.status ?? 503, headers: { ...(part?.retryAfter ? { "retry-after": part.retryAfter } : {}), ...(part?.exhausted ? { "x-retry-exhausted": "true" } : {}) } });
       }))]));
       current = {
         signal,
