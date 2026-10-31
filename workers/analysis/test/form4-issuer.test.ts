@@ -122,3 +122,42 @@ test("the company's own filings are never removed: NVIDIA's and TSMC's Form 4s n
     assert.equal(withoutForeign(publication, checks), null);
   }
 });
+
+/* ---------- GOOGL: GV 2019 GP selling Ethos (LIFE) ---------- */
+
+/** GV's sale of Ethos Technologies (LIFE) stock lists Alphabet as a reporting owner, so EDGAR files it in Alphabet's submissions. */
+const GV_LIFE = fixture("googl-gv-life-0001168404-26-000041.xml");
+const GOOGL = "0001652044";
+
+test("GV 2019 GP's sale of Ethos (LIFE) is another issuer's Form 4, left off Alphabet's rail", async () => {
+  const t = parseForm4(GV_LIFE)!;
+  assert.deepEqual([t.issuerCik, t.issuerTradingSymbol, t.ownerName], ["1788451", "LIFE", "GV 2019 GP, L.L.C."]);
+  assert.equal(sameIssuer(t, GOOGL), false);
+
+  const db = database();
+  await db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?)").bind("sec:discovery:v1:GOOGL", JSON.stringify({ cik: GOOGL, accessions: [], checkedAt: now.toISOString() }), now.toISOString()).run();
+  const id = "0001168404-26-000041";
+  const submissions = { filings: { recent: {
+    accessionNumber: [id], form: ["4"], filingDate: ["2026-07-29"], reportDate: ["2026-07-27"],
+    primaryDocument: ["xslF345X06/form4-07292026_110704.xml"], primaryDocDescription: ["FORM 4"], items: [""],
+  } } };
+  const fetcher = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith(`CIK${GOOGL}.json`)) return Response.json(submissions);
+    return url.includes(id.replaceAll("-", "")) ? new Response(GV_LIFE) : new Response("not here", { status: 404 });
+  }) as typeof fetch;
+  const result = await refreshCompanyEvents(env(db), "GOOGL", fetcher, now, { forceList: true });
+  assert.deepEqual({ insiderReads: result.insiderReads, pending: result.pending }, { insiderReads: 1, pending: 0 });
+  assert.deepEqual(readEventsPublication(await stored(db, "events:v1:GOOGL"), "GOOGL")!.events.map(e => e.id), []);
+  assert.deepEqual(await stored(db, `insider:v1:GOOGL:${id}`), { otherIssuer: "1788451" });
+
+  // Stored before the fix (no issuer on the transaction), the cleanup re-reads the document and removes it.
+  const { issuerCik, issuerTradingSymbol, ...insider } = t; void issuerCik; void issuerTradingSymbol;
+  const root = `https://www.sec.gov/Archives/edgar/data/1652044/${id.replaceAll("-", "")}`;
+  const legacy: EventsPublication = { schemaVersion: "events.v1", ticker: "GOOGL", checkedAt: now.toISOString(), pendingInsider: 0, events: [{
+    id, ticker: "GOOGL", form: "4", filedAt: "2026-07-29", eventDate: "2026-07-27", items: [], class: "insider", description: "FORM 4", title: null,
+    edgarUrl: `${root}/${id}-index.html`, documentUrl: `${root}/xslF345X06/form4-07292026_110704.xml`, exhibits: [], summary: null, insider }] };
+  const checks = await checkInsiderIssuers(legacy, GOOGL, async url => url === `${root}/form4-07292026_110704.xml` ? GV_LIFE : null);
+  assert.deepEqual(checks.map(c => [c.issuerTradingSymbol, c.foreign, c.via]), [["LIFE", true, "document"]]);
+  assert.deepEqual(withoutForeign(legacy, checks)!.events, []);
+});
