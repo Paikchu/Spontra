@@ -31,9 +31,9 @@ export type GuidePillMark = { node: string; qualifier: string; text: string; imp
 type Band = { x0: number; x1: number; sy: number; ty: number; h: number; color: string; key: string; owner: string };
 
 /** Type scale in layout units at k = 1; k is solved per pane so labels keep a constant on-screen size. */
-const typeFor = (k: number) => ({ name: 21 * k, value: 21 * k, net: 21 * k, change: 21 * k, gap: 7 * k, offset: 9 * k, pill: 14 * k });
-/** Three short lines preserve readable type without widening every Sankey column. */
-const geometryFor = (k: number) => ({ labelHeight: 84 * k, sideLabelHeight: 84 * k, gap: 14, lift: 46, drop: 40, labelGap: 22 * k, labelOffset: 12 * k, margin: 32 * k });
+const typeFor = (k: number) => ({ name: 15 * k, value: 21 * k, net: 26 * k, change: 14 * k, gap: 7 * k, offset: 9 * k, pill: 14 * k });
+/** One-line labels need far less vertical room than the editorial two-line default, so the statement fits a wide pane. */
+const geometryFor = (k: number) => ({ labelHeight: 34 * k, sideLabelHeight: 30 * k, gap: 14, lift: 46, drop: 40, labelGap: 22 * k, labelOffset: 12 * k, margin: 32 * k });
 /** Next quarter's guidance as a card beside the bar: a heading naming what is guided, the range, and the amount a growth rate implies. */
 function guideCard(pill: GuidePillMark, k: number) {
   const size = { head: 14 * k, value: 18 * k, implied: 14 * k }, padX = 10 * k, padY = 8 * k, accent = 3 * k, lead = 4 * k;
@@ -44,7 +44,7 @@ function guideCard(pill: GuidePillMark, k: number) {
   const height = (pill.implied ? impliedTop + size.implied : valueTop + size.value) + padY;
   return { size, head, width, height, x: accent + padX, headY: padY + size.head * 0.8, valueY: valueTop + size.value * 0.8, impliedY: impliedTop + size.implied * 0.8, accent, padY };
 }
-const SCREEN_VALUE_PX = 13.5;
+const SCREEN_VALUE_PX = 17;
 const valueSize = (n: PlacedNode, k: number) => n.name === "net" ? typeFor(k).net : typeFor(k).value;
 const EMPTY: InfographicLayout = { width: 1, height: 1, nodeWidth: 22, nodes: [], links: [] };
 const reducedMotion = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -62,30 +62,8 @@ function linePath(x0: number, sy: number, x1: number, ty: number) {
 
 function labelWidth(n: PlacedNode, text: NodeCopy, k: number) {
   const type = typeFor(k);
-  return Math.max(estimateTextWidth(text.name, type.name), estimateTextWidth(text.value, valueSize(n, k), true) + 4 * k,
-    text.change ? estimateTextWidth(text.change.label, type.change, true) : 0);
-}
-
-/** Measure the rendered glyph bounds so localized names always have an opaque backing. */
-function ChartLabel({ x, y, anchor, text, k, vs }: { x: number; y: number; anchor: "start" | "middle" | "end"; text: NodeCopy; k: number; vs: number }) {
-  const ref = useRef<SVGTextElement>(null);
-  const [bounds, setBounds] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
-  const type = typeFor(k);
-  useLayoutEffect(() => {
-    const measure = () => {
-      const box = ref.current?.getBBox();
-      if (box) setBounds({ x: box.x, y: box.y, width: box.width, height: box.height });
-    };
-    measure();
-    document.fonts.addEventListener("loadingdone", measure);
-    return () => document.fonts.removeEventListener("loadingdone", measure);
-  }, [x, y, anchor, text.name, text.value, text.change?.label, k, vs]);
-  return <g>
-    {bounds && <rect className="fc-label-backdrop" x={bounds.x - 4 * k} y={bounds.y - 3 * k} width={bounds.width + 8 * k} height={bounds.height + 6 * k} rx={4 * k} />}
-    <text ref={ref} className="fc-label" x={r(x)} y={r(y)} textAnchor={anchor}>
-      <tspan className="fc-name" style={{ fontSize: type.name }}>{text.name}</tspan><tspan className="fc-value" x={r(x)} dy={type.change * 1.3} style={{ fontSize: vs }}>{text.value}</tspan>{text.change && <tspan className="fc-change" x={r(x)} dy={type.change * 1.3} data-trend={text.change.trend} style={{ fontSize: type.change }}>{text.change.label}</tspan>}
-    </text>
-  </g>;
+  return estimateTextWidth(text.name, type.name) + type.gap + estimateTextWidth(text.value, valueSize(n, k), true) + 4 * k
+    + (text.change ? type.gap * 0.8 + estimateTextWidth(text.change.label, type.change, true) : 0);
 }
 
 export function layoutFor(graph: FinancialGraph, copy: (n: PlacedNode) => NodeCopy, k = 1, geometry: Partial<InfographicGeometry> = {}): InfographicLayout | null {
@@ -182,9 +160,9 @@ function fitLayout(graph: FinancialGraph, copy: (n: PlacedNode) => NodeCopy, siz
   const geometry = narrow ? { lift: 10, drop: 16, margin: 20 } : {};
   let k = 1, layout = layoutFor(graph, copy, k, geometry);
   if (!layout || !size) return layout && { layout, k };
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < 5; i++) {
     const scale = Math.min(size.w / layout.width, size.h / layout.height);
-    const next = Math.max(0.9, Math.min(6, SCREEN_VALUE_PX / (21 * scale)));
+    const next = Math.max(0.9, Math.min(1.3, SCREEN_VALUE_PX / (21 * scale)));
     if (Math.abs(next - k) < 0.02) break;
     k = next;
     layout = layoutFor(graph, copy, k, geometry)!;
@@ -537,7 +515,7 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
           const unitScale = n.value > 0 ? n.h / n.value : 0;
           const span = bracket && unitScale ? (n.side === "bottom" ? [n.y + n.h - bracket.high * unitScale, n.y + n.h - bracket.low * unitScale] : [n.y + bracket.low * unitScale, n.y + bracket.high * unitScale]) : null;
           const pillX = n.x + w + (span ? 18 : 12) * k, card = pill ? guideCard(pill, k) : null;
-          const [x, y, anchor]: [number, number, "start" | "middle" | "end"] = n.side === "top" ? [n.x + w / 2, n.y - type.offset - 2 - type.change * 2.6, "middle"]
+          const [x, y, anchor]: [number, number, "start" | "middle" | "end"] = n.side === "top" ? [n.x + w / 2, n.y - type.offset - 2, "middle"]
             : n.side === "bottom" ? [n.x + w / 2, n.y + n.h + type.offset + vs * 0.78, "middle"]
             : [n.side === "left" ? n.x - gap : n.x + w + gap, n.y + side / 2 + vs * 0.36, n.side === "left" ? "end" : "start"];
           const isLit = lit ? lit.has(n.name) || undefined : undefined;
@@ -558,7 +536,9 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
               <path className="fc-prior-tick" d={`M${r(n.x - 5 * k)},${r(mark.tick)}H${r(n.x + w + 5 * k)}`} />
               {priorText && <text className="fc-prior-label" x={r(n.side === "left" ? n.x - gap : n.x + w + gap)} y={r(mark.tick + type.change * 0.36)} textAnchor={n.side === "left" ? "end" : "start"} style={{ fontSize: type.change }}>{priorText}</text>}
             </g>}
-            <ChartLabel x={x} y={y} anchor={anchor} text={text} k={k} vs={vs} />
+            <text className="fc-label" x={r(x)} y={r(y)} textAnchor={anchor}>
+              <tspan className="fc-name" style={{ fontSize: type.name }}>{text.name}</tspan><tspan className="fc-value" dx={type.gap} style={{ fontSize: vs }}>{text.value}</tspan>{text.change && <tspan className="fc-change" dx={type.gap * 0.8} data-trend={text.change.trend} style={{ fontSize: type.change }}>{text.change.label}</tspan>}
+            </text>
             {bracket && span && <g className="fc-guide" data-verdict={bracket.verdict} data-derived={bracket.derived || undefined} transform={`translate(${r(n.x + w + 4 * k)},0)`}
               onMouseMove={e => { e.stopPropagation(); point(e, bracket.tip); }} onMouseLeave={() => setTip(null)}>
               <title>{bracket.tip.title}</title>

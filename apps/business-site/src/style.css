@@ -1774,9 +1774,6 @@ html[lang^="zh"] .period-primary { letter-spacing: 0; }
 .module-failures:empty { display: none; }
 
 /* Opaque local backing makes the light text floor readable in either theme. */
-.fc-label-backdrop { fill: #161616; }
-.fc-label .fc-name, .fc-label .fc-change, .fc-node .fc-label .fc-change[data-trend] { fill: #b8b8b8; }
-.fc-node .fc-label .fc-value, .fc-node .fc-label .fc-name { fill: #ededed; }
 .timeline-tick, .timeline-bubble, .timeline-tip, .timeline-pop { color: var(--muted-foreground); background: var(--surface-raised); }
 .timeline-tip small, .timeline-pop small { color: var(--muted-foreground); }
 .timeline-tick { border-radius: 3px; padding: 0 2px; }
