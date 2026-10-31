@@ -54,8 +54,16 @@ export function form4XmlUrl(archiveRoot: string, primaryDocument: string): strin
   return `${archiveRoot}/${primaryDocument.replace(/^xsl[^/]*\//i, "")}`;
 }
 
+/** A CIK as EDGAR compares it: digits without the leading zeros some documents pad it with. */
+export const normalizeCik = (cik: string | number | null | undefined) => cik == null ? null : String(cik).trim().replace(/^0+(?=\d)/, "") || null;
+
 export function parseForm4(xml: string): InsiderTransaction | null {
   if (!/<ownershipDocument/i.test(xml)) return null;
+  // The company whose shares moved. EDGAR lists a filing under every party to it, so a holder that is itself a filer
+  // (Berkshire reporting its sales of DaVita) files Form 4s that sit in its own submission list but are about another issuer.
+  const issuer = blocks(xml, "issuer")[0] ?? "";
+  const issuerCik = normalizeCik(field(issuer, "issuerCik"));
+  const issuerTradingSymbol = field(issuer, "issuerTradingSymbol")?.toUpperCase() ?? null;
   const owner = blocks(xml, "reportingOwner")[0] ?? "";
   const ownerCik = field(owner, "rptOwnerCik")?.replace(/^0+/, "") ?? null;
   const ownerName = field(owner, "rptOwnerName");
@@ -80,7 +88,7 @@ export function parseForm4(xml: string): InsiderTransaction | null {
   const adopted = footnotes.map(f => /adopted\s+(?:on\s+)?([A-Z][a-z]+ \d{1,2}, \d{4}|\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{4})/.exec(f)?.[1]).find(Boolean) ?? null;
   const planFlag = flag(field(xml, "aff10b5One"));
   return {
-    ownerCik, ownerName, title: field(relationship, "officerTitle"),
+    issuerCik, issuerTradingSymbol, ownerCik, ownerName, title: field(relationship, "officerTitle"),
     isDirector: flag(field(relationship, "isDirector")) === true, isOfficer: flag(field(relationship, "isOfficer")) === true, isTenPercentOwner: flag(field(relationship, "isTenPercentOwner")) === true,
     // Before the 2023 form change there was no box; a footnote naming a 10b5-1 plan still counts.
     rule10b51: planFlag ?? (footnotes.some(f => /10b5-1/i.test(f)) ? true : null),

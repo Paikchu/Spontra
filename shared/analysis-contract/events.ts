@@ -31,6 +31,12 @@ export type InsiderLine = {
 };
 
 export type InsiderTransaction = {
+  /**
+   * The issuer whose securities the filing reports, CIK without leading zeros. Absent on transactions read before it
+   * was parsed; a filing about another issuer (the company reporting as an owner of someone else's stock) is never kept.
+   */
+  issuerCik?: string | null;
+  issuerTradingSymbol?: string | null;
   /** The reporting owner's CIK, stable across filings. */
   ownerCik: string;
   ownerName: string;

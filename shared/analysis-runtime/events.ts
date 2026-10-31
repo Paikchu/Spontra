@@ -211,6 +211,7 @@ const insiderLine = z.object({
   ownership: z.enum(["D", "I"]), derivative: z.boolean(),
 });
 const insider = z.object({
+  issuerCik: z.string().regex(/^\d{1,10}$/).nullable().optional(), issuerTradingSymbol: text(20).nullable().optional(),
   ownerCik: text(20), ownerName: text(160), title: text(120).nullable(), isDirector: z.boolean(), isOfficer: z.boolean(), isTenPercentOwner: z.boolean(),
   rule10b51: z.boolean().nullable(), planAdoptedOn: date.nullable(), securityTitle: text(120), lines: z.array(insiderLine).max(200),
   sold: z.object({ shares: finite.nonnegative(), proceeds: finite.nonnegative(), averagePrice: finite.nonnegative() }).nullable(),
