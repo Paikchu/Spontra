@@ -62,7 +62,7 @@ export function analysisFetcher(env:Pick<SiteEnv,"SPONTRA_ANALYSIS">):typeof fet
 }
 export type SiteContext={waitUntil(promise:Promise<unknown>):void};
 const security={"x-content-type-options":"nosniff","referrer-policy":"strict-origin-when-cross-origin","content-security-policy":"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://images.financialmodelingprep.com; connect-src 'self'; font-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"};
-function json(body:unknown,status=200){return Response.json(body,{status,headers:{...security,"cache-control":status===200?"public, max-age=14400":"no-store"}});}
+function json(body:unknown,status=200){return Response.json(body,{status,headers:{...security,...(status===429?{"retry-after":"60"}:{}),"cache-control":status===200?"public, max-age=14400":"no-store"}});}
 /** The only public output is schema-stripped SEC business flow, never the analysis envelope. */
 export async function loadPublicFlow(ticker:string,fetcher:typeof fetch=fetch,locale:Locale|null=null):Promise<CompleteFlowPublication>{
  const response=await fetcher(ANALYSIS_ORIGIN+inLocale(`/api/v1/companies/${ticker}/business-flow`,locale),{signal:AbortSignal.timeout(12000),headers:{accept:"application/json"}});
@@ -336,7 +336,7 @@ const sha256Hex=async(value:string)=>Array.from(new Uint8Array(await crypto.subt
  */
 export async function stageDoor(request:Request,env:SiteEnv):Promise<Response>{
  const url=new URL(request.url);
- const plain=(body:unknown,status:number)=>Response.json(body,{status,headers:{...security,"cache-control":"no-store"}});
+ const plain=(body:unknown,status:number)=>Response.json(body,{status,headers:{...security,...(status===429?{"retry-after":"60"}:{}),"cache-control":"no-store"}});
  if(!env.SPONTRA_STAGE)return plain({error:"unavailable"},503);
  const origin=request.headers.get("origin");
  const upgrade=request.headers.get("upgrade")?.toLowerCase()==="websocket";
@@ -359,6 +359,7 @@ export async function stageDoor(request:Request,env:SiteEnv):Promise<Response>{
  }
  const out=new Response(response.body,{status:response.status,headers:response.headers});
  for(const [name,value] of Object.entries(security))out.headers.set(name,value);
+ if(response.status===429&&!out.headers.has("retry-after"))out.headers.set("retry-after","60");
  out.headers.set("cache-control","no-store");
  return out;
 }
@@ -371,6 +372,7 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
    const response=await handleTelemetry(request,env.TELEMETRY);
    const headers=new Headers(response.headers);
    for(const [name,value] of Object.entries(security))headers.set(name,value);
+   if(response.status===429&&!headers.has("retry-after"))headers.set("retry-after","60");
    headers.set("cache-control","no-store");
    return new Response(response.body,{status:response.status,headers});
   }
