@@ -7,7 +7,7 @@ import { locateGuidance } from "./locate.ts";
  * every earnings event last run under another version, and until a material is re-extracted its earlier items
  * stay published.
  */
-export const GUIDANCE_EXTRACTOR_VERSION = "guidance-extractor.v3";
+export const GUIDANCE_EXTRACTOR_VERSION = "guidance-extractor.v4";
 /** How a guidance Workflow id ends: the extractor version it ran under, letters and digits only. */
 export const guidanceWorkflowSuffix = (version = GUIDANCE_EXTRACTOR_VERSION) => version.replace(/[^A-Za-z0-9]/g, "");
 export const GUIDANCE_MAX_OUTPUT_TOKENS = 8_192;
@@ -25,6 +25,7 @@ export const GUIDANCE_SYSTEM_PROMPT = [
   "One item per metric, basis and target period. A range is form=range with low and high. A single number is form=point with low=high. \"At least\" is floor (low only); \"up to\" or \"no more than\" is ceiling (high only). Statements with a direction but no number are form=qualitative with low=null, high=null and direction up|down|flat.",
   "metric: revenue (company total), segment_revenue (a segment, product line or cloud business; put its name in segment), gross_margin, operating_margin, operating_income, eps, free_cash_flow, operating_cash_flow, capex, rpo, billings, other (put the source wording in label).",
   "measure: amount (currency amount, unit=USD in whole dollars: $15.2 billion -> 15200000000), growth (year-over-year percent change, unit=percent: 14% -> 14), margin (percent of revenue, unit=percent), per_share (unit=USD_per_share: $1.47 -> 1.47). Basis points convert to percent (50 basis points -> 0.5). A decline is negative growth.",
+  "Monetary values are signed: explicit minus signs, accounting parentheses and loss/negative wording indicate negative amounts or per-share values. Keep low <= high numerically: loss per share of $0.10 to $0.15 -> low=-0.15, high=-0.10. Positive guidance stays positive.",
   "basis: gaap, non_gaap (also adjusted), constant_currency, or unspecified when the text does not say.",
   "When the source gives both constant-currency and reported USD guidance, emit separate items for both bases, even when their numbers are identical. Use gaap for reported revenue in USD and non_gaap for adjusted EPS in USD; constant_currency applies only to the constant-currency item. Never drop the USD item.",
   "horizon: quarter (set fiscalYear and fiscalQuarter), annual (fiscalYear, fiscalQuarter=null), long_term (multi-year target; fiscalYear of the target year if stated, else null). Use the company's own fiscal year numbering. Resolve phrases like \"next quarter\" or \"this fiscal year\" from documentContext.",

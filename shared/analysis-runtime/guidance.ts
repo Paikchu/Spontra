@@ -61,18 +61,39 @@ const NUMBER = /(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d+))?\s*(%|percent\b|basis points
 /**
  * Every value a quote can be read as. A scale word also applies to an earlier bare number in the
  * same range ("$15.0 to $15.2 billion"), and basis points read as percentage points.
+ * Monetary values retain signs supported by minus signs, accounting parentheses or local loss wording.
  */
-export function quoteNumbers(quote: string): number[] {
-  const text = quote.normalize("NFKC");
+export function quoteNumbers(quote: string, monetary = false): number[] {
+  const text = quote.normalize("NFKC").replace(/−/g, "-");
   const found = [...text.matchAll(NUMBER)].map(m => ({ value: Number(`${m[1].replace(/,/g, "")}${m[2] ? `.${m[2]}` : ""}`), suffix: (m[3] ?? "").toLowerCase(), start: m.index!, end: m.index! + m[0].length }));
+  const rangeBetween = (from: number, to: number) => /^\s*(?:to|[-–—]|and|or)\s*[+-]?\s*$/i.test(text.slice(from, to).replace(/[()$]/g, ""));
   const values: number[] = [];
+  let previousLossWording = false;
   found.forEach((current, index) => {
-    values.push(current.value);
     let suffix = current.suffix;
     const next = found[index + 1];
-    if (!suffix && next?.suffix && /^\s*(?:to|-|–|—|and|or)\s*\$?\s*$/i.test(text.slice(current.end, next.start))) suffix = next.suffix;
-    if (SCALE[suffix]) values.push(current.value * SCALE[suffix]);
-    if (/^(basis|bps)/.test(suffix)) values.push(current.value / 100);
+    const nextInRange = next && rangeBetween(current.end, next.start);
+    if (!suffix && nextInRange && next.suffix) suffix = next.suffix;
+    let value = current.value;
+    if (monetary) {
+      const previous = found[index - 1];
+      const before = text.slice(previous?.end ?? 0, current.start);
+      const after = text.slice(current.end);
+      // Only wording attached to this number/range supplies a sign, never an unrelated clause.
+      const lossWording = /\b(?:loss(?:es)?|negative)\b/i.test(before.split(/[,.;!?]/).at(-1)!)
+        || /^\s*\)?\s*(?:net\s+)?loss(?:es)?\b/i.test(text.slice(nextInRange ? next.end : current.end))
+        || Boolean(previous && rangeBetween(previous.end, current.start) && previousLossWording);
+      const sign = before.match(/(?:([+-])\s*\$?|\$\s*([+-]))\s*$/);
+      // A single hyphen between endpoints is a range separator ("$0.10-$0.15").
+      const rangeHyphen = previous && /^\s*-\s*\$?\s*$/.test(before);
+      const explicitSign = sign && !rangeHyphen ? (sign[1] ?? sign[2]) : null;
+      const accounting = /(?:\(\s*\$?|\$\s*\()\s*$/.test(before) && /^\s*\)/.test(after);
+      if (explicitSign === "-" || accounting || (!explicitSign && lossWording)) value = -value;
+      previousLossWording = lossWording;
+    }
+    values.push(value);
+    if (SCALE[suffix]) values.push(value * SCALE[suffix]);
+    if (/^(basis|bps)/.test(suffix)) values.push(value / 100);
   });
   return values;
 }
@@ -119,7 +140,7 @@ export function verifyGuidance(item: ExtractedGuidance, normalizedSource: string
     if (low !== null && high !== null && low > high) issues.push("low is greater than high");
     const expected: GuidanceUnit | null = item.measure === "amount" ? "USD" : item.measure === "per_share" ? "USD_per_share" : item.measure ? "percent" : null;
     if (item.unit !== expected) issues.push(`unit must be ${expected ?? "consistent with measure"}`);
-    const candidates = item.quote ? quoteNumbers(item.quote) : [];
+    const candidates = item.quote ? quoteNumbers(item.quote, item.unit === "USD" || item.unit === "USD_per_share") : [];
     // A decline ("down 2% to 4%") is written without a sign; growth may be negative.
     for (const value of [low, high]) if (value !== null && !candidates.some(c => near(item.unit === "percent" ? Math.abs(value) : value, c, item.unit))) issues.push(`value ${value} does not appear in the quote`);
   }
