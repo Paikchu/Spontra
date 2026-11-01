@@ -42,6 +42,7 @@ import { basisChangedAt, businessValue, yearAgoOnBasis } from "@/shared/analysis
 import { momentumOf, type Momentum } from "./momentum";
 import { marketCapOf, shareholderReturns } from "./shareholder-returns";
 import { anchorNodeNames, anchorPoolKeys, findingData, VIEW_LABEL, verifiedFindings } from "./findings-model";
+import { SeverityIcon } from "./SeverityIcon";
 import { RailStream } from "./RailStream";
 import { LensPanel } from "./LensPanel";
 import type { EventsPublication } from "@/shared/analysis-contract/events";
@@ -811,7 +812,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
       <div className="chart" data-tour="chart" ref={chartRef} data-overflow={chartScroll.overflow || undefined} data-end={chartScroll.atEnd || undefined}>
         {leadShown && <div className="lead-finding" data-kind={leadShown.kind}>
           <Button variant="unstyled" type="button" className="lead-finding-open" aria-label={m.openFinding(leadShown.title)} onClick={() => focusFinding(leadShown.id)}>
-            <i className="finding-mark" aria-hidden="true">{leadShown.severity}</i><span lang={langOf(leadShown.title)}>{leadShown.title}</span><span aria-hidden="true">→</span>
+            <SeverityIcon severity={leadShown.severity} /><span lang={langOf(leadShown.title)}>{leadShown.title}</span><span aria-hidden="true">→</span>
           </Button>
           <Button variant="unstyled" type="button" className="icon-button lead-finding-hide" aria-label={m.hideFinding} title={m.hideFinding} onClick={() => setLeadHidden(true)}>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17" /></svg>

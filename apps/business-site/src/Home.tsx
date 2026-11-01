@@ -6,7 +6,7 @@ import { langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import { compactMoney, normalizeDisplayText } from "@/shared/analysis-runtime/locale";
 import type { HomeCompany, HomeDigest } from "../../../shared/analysis-contract/home.ts";
 import { CompanyLogo } from "./CompanyMark";
-import { KIND_LABEL } from "./findings-labels";
+import { SeverityIcon } from "./SeverityIcon";
 import type { DigestStatus } from "./home-data";
 import { stripBandPath, stripOf } from "./home-strip";
 import { PeriodMark } from "./PeriodMark";
@@ -332,7 +332,7 @@ export function Home({ light, onToggleTheme, recent, onPick, digest = null, dige
                 <ul>
                   {group.findings.map(finding => <li key={finding.id} className="home-watch-item" data-kind={finding.kind}>
                     <a href={`/companies/${group.company.ticker}?finding=${encodeURIComponent(finding.id)}`} data-nav>
-                      <i className="finding-mark" aria-label={`${KIND_LABEL[finding.kind]} ${finding.severity}`}>{finding.severity}</i>
+                      <SeverityIcon severity={finding.severity} />
                       <span lang={langOf(finding.title)}>{normalizeDisplayText(finding.title)}</span>
                     </a>
                   </li>)}

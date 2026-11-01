@@ -8,7 +8,7 @@
 - 文案：每个文件在顶部用 `messages(en, zh)` 定义自己的表；有限集合（事件类别、要点类别、报表视图）用 `labels(en, zh)`。`zh` 缺键或函数签名不同会在 `typecheck` 报错。
   ```ts
   const m = messages({ loadFailed: "Load failed", severity: (n: number) => `Severity ${n}` },
-                     { loadFailed: "加载失败",    severity: (n: number) => `重要度 ${n}` });
+                     { loadFailed: "加载失败",    severity: (n: number) => `严重度 ${n}` });
   ```
 - 数字：`shared/analysis-runtime/locale.ts` 里的纯函数（`compactMoney`、`compactShares`、`points`、`multiple`、`fiscalYearTo`、`yoyLabel`…），每个都显式接收 `locale`，默认 `"en"`。站点代码传 `getLocale()`。
 - `shared/analysis-runtime/*` 同时被 Spontra Analysis Worker 使用：只能加**可选的、默认 `"en"` 的** `locale` 参数，Worker 的输出必须逐字不变；不得在 shared 代码里读全局语言。
@@ -36,7 +36,7 @@
 |---|---|
 | Findings | 要点 |
 | Risk / Strength / Shift / Watch | 风险 / 优势 / 变化 / 跟踪 |
-| Severity | 重要度 |
+| Severity | 严重度 |
 | Watch outcome | 跟踪结果 |
 | Walk through | 逐条浏览 |
 | Revenue | 营收 |

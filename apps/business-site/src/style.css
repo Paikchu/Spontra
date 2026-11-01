@@ -283,11 +283,19 @@ button { cursor: pointer; }
 }
 .stage--state { display: block; overflow-y: auto; }
 .stage-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px 24px; flex-wrap: wrap; }
-.stage-head--summary { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 12px 24px; }
-/* One fixed row: the figures compress beside the controls and never wrap, so the chart below keeps its height. */
-.stage-head--summary > .stats { grid-column: 1; grid-row: 1; }
-.stage-head--summary > .stage-controls { grid-column: 2; grid-row: 1; flex-wrap: nowrap; }
-.stage-head--summary > .view-flags { grid-column: 1 / -1; grid-row: 2; }
+/* The figures share a row with the controls while each keeps 120px for its title; when they cannot, the controls move to
+   a second row rather than cut the titles ("Operating income" must never read "Operating..."). Flags take a row of their own. */
+.stage-head--summary { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px 24px; }
+.stage-head--summary > * { flex: 1 0 100%; min-width: 0; }
+.stage-head--summary > .stats { flex: 1 1 0; min-width: min(100%, calc(var(--n) * 120px + (var(--n) - 1) * clamp(20px, 2.6vw, 44px))); }
+.stage-head--summary > .stage-controls { flex: none; margin-left: auto; flex-wrap: nowrap; }
+/* Too narrow for four figures at 120px in a row (the 1280 desktop, where the view tabs share the stage's first row): two by two. */
+@media (min-width: 641px) {
+  .stage-head--summary { container: stage-head / inline-size; }
+  @container stage-head (max-width: 600px) {
+    .stats:has(> .stat:nth-child(4)):not(:has(> [data-missing])) { --n: 2; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 24px; overflow: visible; mask-image: none; -webkit-mask-image: none; animation: none; }
+  }
+}
 /* Every part of the stage spans its width; only the figures' header shares the first row, with the view tabs at its right. */
 .stage > * { grid-column: 1 / -1; }
 .stage > .stage-head--summary { grid-column: 1; grid-row: 1; }
@@ -311,7 +319,7 @@ button { cursor: pointer; }
 .stats:has(> :nth-child(4)) { --n: 4; }
 .stats:has(> :nth-child(5)) { --n: 5; }
 /* Figures share the row; a title wraps to a second line before it is cut. The momentum tag sits beside (or under) the title and never clips. */
-.stat { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; justify-content: flex-end; gap: 4px; }
+.stat { flex: 1 1 0; min-width: 120px; display: flex; flex-direction: column; justify-content: flex-end; gap: 4px; }
 .stat-label { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; min-width: 0; font-size: 12px; line-height: 1.4; color: var(--muted-foreground); }
 .stat-label-text { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; min-width: 0; }
 .stat-label .level-mark { margin-right: 6px; }
@@ -739,8 +747,7 @@ button { cursor: pointer; }
   .stage-head, .stats, .trend, .trend-head, .trend-heading { min-width: 0; max-width: 100%; }
   .trend-heading { flex-wrap: wrap; }
   .metric-select select { max-width: min(160px, 46vw); }
-  .stage-head--summary { grid-template-columns: minmax(0, 1fr); }
-  .stage-head--summary > .stage-controls { grid-column: 1; grid-row: auto; flex-wrap: wrap; }
+  .stage-head--summary > .stage-controls { margin-left: 0; flex-wrap: wrap; }
   .dossier { order: 3; margin: 0 16px 32px; }
   .chart { margin-top: 16px; overflow-x: auto; overscroll-behavior-x: contain; }
   .fc { position: relative; inset: auto; width: max(100%, 780px, var(--mobile-width, 780px)); aspect-ratio: var(--ratio); }
@@ -917,9 +924,18 @@ button { cursor: pointer; }
 .stream[data-focus] .stream-row:not([aria-checked="true"]) .stream-title { color: var(--muted-foreground); }
 .stream[data-focus] .stream-row:not([aria-checked="true"]):hover .stream-title { color: var(--foreground); }
 .stream-end { height: 1px; }
-.finding-row[aria-checked="true"] .finding-mark { color: var(--background); background: var(--kind); }
 /* The mark is a tinted tile in the kind's colour; the finding in focus fills it in. */
 .finding-mark { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 6px; font-size: 12px; font-style: normal; font-weight: 700; color: var(--kind); background: color-mix(in srgb, var(--kind) 14%, transparent); font-variant-numeric: tabular-nums; transition: background .2s, color .2s; }
+/* A finding's severity as an icon in the level colours: 3 a filled red triangle, 2 an amber circled "!", 1 a grey "i".
+   One em wide and one line tall, so it sits centred on the first line of the text beside it and never wraps. */
+.severity-icon { --sev: var(--muted-foreground); flex: none; display: inline-block; width: 1em; height: 1em; height: 1lh; vertical-align: top; overflow: visible;
+  fill: color-mix(in srgb, var(--sev) 14%, transparent); stroke: var(--sev); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.severity-icon[data-severity="3"] { --sev: var(--level-alert, var(--loss)); }
+.severity-icon[data-severity="2"] { --sev: var(--level-watch, var(--flow-expense)); }
+.severity-icon .severity-icon-fill { fill: var(--sev); stroke: none; }
+.severity-icon .severity-icon-cut { fill: none; stroke: var(--background); stroke-width: 1.8; }
+.stream-mark .severity-icon { width: 14px; height: 14px; } /* the title's 1em */
+.lens-kind .severity-icon { height: 1em; }
 .finding-settled { display: inline-grid; place-items: center; width: 15px; height: 15px; border-radius: 50%; font-size: 12px; font-style: normal; color: var(--kind); background: color-mix(in srgb, var(--kind) 14%, transparent); }
 
 
@@ -1135,7 +1151,6 @@ button { cursor: pointer; }
 .home-watch-group ul { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
 .home-watch-item a { display: grid; grid-template-columns: 18px minmax(0, 1fr); align-items: start; gap: 10px; padding: 3px 0; color: inherit; text-decoration: none; font-size: 14px; line-height: 1.5; }
 .home-watch-item a:hover span { text-decoration: underline; text-underline-offset: 3px; }
-.home-watch-item .finding-mark { margin-top: 2px; }
 .home-watch-more a { display: inline-block; padding: 2px 0 0 28px; font-size: 12.5px; color: var(--muted-foreground); text-decoration: none; }
 .home-watch-more a:hover { color: var(--foreground); text-decoration: underline; text-underline-offset: 3px; }
 .home-signals-empty { margin: 0; padding: 8px 0 4px; color: var(--muted-foreground); font-size: 14px; line-height: 1.6; }
@@ -1246,6 +1261,21 @@ html[lang^="zh"] .home-watch-item a { line-height: 1.7; }
 .event-fold-panel[data-open] { grid-template-rows: 1fr; }
 .event-fold-inner { overflow: hidden; min-height: 0; }
 .event-fold-inner .stream-row { padding-left: 40px; }
+/* The insider summary card: 90 days of open-market trades in one place, the three largest people, the rest behind a button. */
+.insider-summary { min-width: 0; margin: 2px 0; border-radius: 10px; background: color-mix(in srgb, var(--foreground) 3%, transparent); border: 1px solid var(--hairline); }
+.insider-summary-head:hover { background: transparent; }
+.insider-summary-head .stream-title { font-variant-numeric: tabular-nums; }
+.insider-summary-top { display: flex; flex-direction: column; gap: 2px; margin: 4px 0 0; padding: 0; list-style: none; font-size: 12.5px; color: var(--muted-foreground); }
+.insider-summary-top li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 8px; }
+.insider-summary-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.insider-summary-amount { display: inline-flex; align-items: center; gap: 3px; justify-self: end; text-align: right; white-space: nowrap; font-family: var(--mono); font-size: 12px; font-variant-numeric: tabular-nums; color: var(--foreground); }
+.insider-arrow { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.insider-arrow[data-direction="sell"] { color: var(--loss); }
+.insider-arrow[data-direction="buy"] { color: var(--up); }
+.insider-summary-toggle { display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; margin-top: 4px; padding: 2px 0; border: 0; background: none; font-size: 12px; color: var(--muted-foreground); }
+.insider-summary-toggle:hover { color: var(--foreground); }
+.insider-summary-toggle[aria-expanded="true"] .fold-chevron { transform: rotate(90deg); }
+.insider-summary .event-fold-inner .stream-row { padding-left: 24px; }
 /* The class legend doubles as the filter: the class mark, its name and count. */
 .section-filters { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 10px 10px; }
 .section-filter {

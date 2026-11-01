@@ -152,3 +152,72 @@ export function exactShares(shares: number): string {
 export function timelineIds(items: readonly RailItem[], filter: EventFilter): Set<string> {
   return new Set(noiseRows(items, filter).flatMap(row => rowLeaves(row).map(item => item.id)));
 }
+
+/** The readings whose rail opens with the latest earnings filing and folds the last 90 days of insider trades into one card. */
+const PINNED_IN: ReadonlySet<EventFilter> = new Set<EventFilter>(["key", "all"]);
+export const INSIDER_SUMMARY_DAYS = 90;
+
+/** One person's open-market trades in the summary window, netted: negative is net sold. */
+export type InsiderPerson = { key: string; name: string; sold: number; bought: number; net: number; planned: boolean; trades: number };
+
+/** The last 90 days of open-market insider trades as one card: totals, the people, and the per-person rows behind it. */
+export type InsiderSummary = {
+  id: "insider-summary"; date: string;
+  sold: number; bought: number; net: number;
+  /** Everyone who traded, largest net amount first. */
+  people: InsiderPerson[];
+  /** How many of them traded under a 10b5-1 plan. */
+  planned: number;
+  /** The rows the card expands to: each person's trades folded by direction, as the Insiders reading shows them. */
+  rows: NoiseRow[];
+  items: RailItem[];
+};
+
+const isEarningsRow = (row: NoiseRow) => row.kind === "item" && (row.item.kind === "report"
+  || (row.item.event.class === "earnings" && (row.item.event.items.includes("2.02") || !row.item.event.form.startsWith("8-K"))));
+
+/** Summarizes the open-market insider trades filed in the 90 days up to `now`; null when there are none. */
+export function insiderSummary(items: readonly RailItem[], now: Date, days = INSIDER_SUMMARY_DAYS): InsiderSummary | null {
+  const since = new Date(now.getTime() - days * DAY_MS).toISOString().slice(0, 10);
+  const trades = items.filter((item): item is RailItem & { kind: "event" } => item.kind === "event" && item.date >= since && isOpenMarketInsiderTrade(item.event) != null);
+  if (!trades.length) return null;
+  const people = new Map<string, InsiderPerson>();
+  let sold = 0, bought = 0;
+  for (const { event } of trades) {
+    const insider = event.insider!;
+    const key = insider.ownerCik || ownerName(event);
+    const person = people.get(key) ?? { key, name: ownerName(event), sold: 0, bought: 0, net: 0, planned: false, trades: 0 };
+    const out = isOpenMarketInsiderTrade(event) === "sell" ? insider.sold!.proceeds : 0;
+    const into = isOpenMarketInsiderTrade(event) === "buy" ? insider.bought!.cost : 0;
+    person.sold += out; person.bought += into; person.net = person.bought - person.sold; person.trades += 1;
+    person.planned ||= isPlannedInsiderTrade(event);
+    people.set(key, person);
+    sold += out; bought += into;
+  }
+  const ranked = [...people.values()].sort((a, b) => Math.abs(b.net) - Math.abs(a.net) || b.trades - a.trades || a.name.localeCompare(b.name));
+  const sorted = [...trades].sort((a, b) => b.date.localeCompare(a.date));
+  return {
+    id: "insider-summary", date: sorted[0]!.date, sold, bought, net: bought - sold,
+    people: ranked, planned: ranked.filter(p => p.planned).length,
+    rows: noiseRows(sorted, "insiders"), items: sorted,
+  };
+}
+
+/**
+ * The rail's order for a reading: the latest earnings filing (10-Q, 10-K or an 8-K under item 2.02) first, then the
+ * insider summary, then the rest newest first without the trades the summary holds. Other readings keep plain date order.
+ */
+export function railLayout(items: readonly RailItem[], filter: EventFilter, now: Date): { pinned: NoiseRow | null; summary: InsiderSummary | null; rest: NoiseRow[] } {
+  if (!PINNED_IN.has(filter)) return { pinned: null, summary: null, rest: noiseRows(items, filter) };
+  const summary = insiderSummary(items, now);
+  const held = new Set(summary?.items.map(item => item.id));
+  // Matching runs over every filing (an insider row's importance reads the person's other trades); only the rows drop.
+  const rows = noiseRows(items, filter).flatMap(row => {
+    if (row.kind === "item") return held.has(row.item.id) ? [] : [row];
+    if (row.kind === "routine") return [row];
+    const left = row.items.filter(item => !held.has(item.id));
+    return left.length === row.items.length ? [row] : left.map((item): NoiseRow => ({ kind: "item", id: item.id, date: item.date, item }));
+  });
+  const pinned = rows.find(isEarningsRow) ?? null;
+  return { pinned, summary, rest: rows.filter(row => row !== pinned) };
+}
