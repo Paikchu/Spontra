@@ -33,7 +33,7 @@ export function parseEventSubmissions(payload: unknown, cikNumber: number, now: 
   const column = (name: string) => asArray(recent[name]);
   const accessions = column("accessionNumber"), forms = column("form"), filingDates = column("filingDate"), reportDates = column("reportDate");
   const primaries = column("primaryDocument"), descriptions = column("primaryDocDescription"), items = column("items");
-  const cutoff = new Date(now); cutoff.setMonth(cutoff.getMonth() - WINDOW_MONTHS);
+  const cutoff = new Date(now); cutoff.setUTCMonth(cutoff.getUTCMonth() - WINDOW_MONTHS);
   const floor = cutoff.toISOString().slice(0, 10);
   const filings: RawEventFiling[] = [];
   for (let i = 0; i < accessions.length; i++) {
