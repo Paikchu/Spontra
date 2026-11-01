@@ -1,4 +1,3 @@
-/// <reference path="./assets.d.ts" />
 import { useEffect, useRef, useState } from "react";
 import { LENS_ASPECT, type LensHtml } from "@/shared/analysis-contract/lens";
 import type { HtmlFrameMessage } from "@/shared/analysis-contract/lens-frame";

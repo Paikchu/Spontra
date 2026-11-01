@@ -9,7 +9,6 @@ export function CompanyLogo({ ticker, small }: { ticker: string; small?: boolean
   return <span className={small ? "company-logo company-logo--sm" : "company-logo"} data-failed={!loaded || undefined} aria-hidden="true">
     <span className="company-logo-fallback">{ticker.replace(/[^A-Z0-9]/g, "").slice(0, 2) || "·"}</span>
     {/* Vite app, not Next: a native image keeps the onError monogram fallback. */}
-    {/* eslint-disable-next-line @next/next/no-img-element */}
     {loaded && <img key={ticker} src={logoUrl(ticker)} alt="" decoding="async" referrerPolicy="no-referrer" onError={() => setFailed(ticker)} />}
   </span>;
 }

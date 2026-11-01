@@ -291,13 +291,13 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
   useEffect(() => () => clearTimeout(scrollIdle.current), []);
   const [camera, setCamera] = useState<Camera>(() => home(world));
   const cameraRef = useRef(camera);
-  cameraRef.current = camera;
+  useLayoutEffect(() => { cameraRef.current = camera; }, [camera]);
   const flight = useRef(0);
-  /** Glide the camera, interpolating the visible box so the zoom feels linear. */
+  /** Glide the camera, interpolating the visible box so the zoom feels linear. With reduced motion it has already landed. */
   const flyTo = (target: Camera) => {
     cancelAnimationFrame(flight.current);
+    if (reducedMotion()) return;
     const from = cameraRef.current;
-    if (reducedMotion()) { setCamera(target); return; }
     const start = performance.now();
     const step = (now: number) => {
       const p = Math.min(1, (now - start) / 520), e = 1 - Math.pow(1 - p, 3);
@@ -374,6 +374,12 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
     // With a breakdown, the frame takes it and the business's path into revenue; type never grows past the plain focus.
     return cameraFor(union(own, mind.box), world, size, FOCUS_ZOOM * Math.max(worldW / fitted!.layout.width, worldH / fitted!.layout.height));
   }, [productBusiness, fitted, copy, size, mind, world, worldW, worldH]);
+  // With reduced motion a new focus (or the same one revealed again) is landed on in the render that brings it.
+  const [aimed, setAimed] = useState<{ camera: Camera; key: string } | null>(null);
+  if (aimed?.camera !== focusCamera || aimed.key !== revealKey) {
+    setAimed({ camera: focusCamera, key: revealKey });
+    if (reducedMotion()) setCamera(focusCamera);
+  }
   useEffect(() => { drag.current = null; flyTo(focusCamera); }, [focusCamera, revealKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const viewportWidth = worldW / camera.zoom, viewportHeight = worldH / camera.zoom;
 

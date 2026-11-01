@@ -33,7 +33,8 @@
     "packages/web/**/*.tsx",
     "shared/**/*.ts",
     "scripts/**/*.ts",
-    "scripts/**/*.tsx"
+    "scripts/**/*.tsx",
+    "apps/business-site/src/assets.d.ts"
   ],
   "exclude": [
     "node_modules",

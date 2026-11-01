@@ -47,7 +47,9 @@ export function Timeline({ points, currentPeriod, now, onReport, onEvent, ticker
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
-  useEffect(() => { setOpenId(null); setHoverId(null); }, [points]);
+  // New points close whatever was open or hovered on the old ones.
+  const [shownPoints, setShownPoints] = useState(points);
+  if (shownPoints !== points) { setShownPoints(points); setOpenId(null); setHoverId(null); }
 
   const { start, end, ticks } = useMemo(() => {
     if (!points.length) return { start: 0, end: 1, ticks: [] as Array<{ label: string; at: number }> };

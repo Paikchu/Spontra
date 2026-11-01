@@ -21,9 +21,9 @@ function Facts({ facts }: { facts: LibraryFactRow[] }) {
  */
 export function LinksPanel({ ticker, onOpen, fail }: { ticker: string; onOpen: Open; fail: (e: unknown) => void }) {
   const [view, setView] = useState<LibraryLinksView | null>(null), [refresh, setRefresh] = useState(0), [notice, setNotice] = useState('');
-  useEffect(() => { if (!ticker) return; const c = new AbortController(); setView(null); void adminApi<LibraryLinksView>(`library/links/${encodeURIComponent(ticker)}`, { signal: c.signal }).then(setView).catch(e => { if (!c.signal.aborted) fail(e); }); return () => c.abort(); }, [ticker, refresh]);
+  useEffect(() => { if (!ticker) return; const c = new AbortController(); void adminApi<LibraryLinksView>(`library/links/${encodeURIComponent(ticker)}`, { signal: c.signal }).then(setView).catch(e => { if (!c.signal.aborted) fail(e); }); return () => c.abort(); }, [ticker, refresh]);
   const save = (businessKey: string, body: { industryCategory: IndustryCategory | null } | { automatic: true }) =>
-    void adminApi(`library/links/${encodeURIComponent(ticker)}/${encodeURIComponent(slugOf(businessKey))}`, { method: 'POST', body: JSON.stringify(body) }).then(() => setRefresh(n => n + 1)).catch(fail);
+    void adminApi(`library/links/${encodeURIComponent(ticker)}/${encodeURIComponent(slugOf(businessKey))}`, { method: 'POST', body: JSON.stringify(body) }).then(() => { setView(null); setRefresh(n => n + 1); }).catch(fail);
   const rerun = () => void adminApi(`library/links/${encodeURIComponent(ticker)}/run`, { method: 'POST', body: '{}' }).then(() => setNotice('已请求重新提议')).catch(fail);
   const verdict = (l: LibraryLinksView['links'][number]) => !l.review ? '' : l.review.proposed === l.review.reviewed ? '' : `提议 ${l.review.proposed ?? '无'} · 复核 ${l.review.reviewedPresent ? l.review.reviewed ?? '无' : '未答'}`;
   return <div className="fl-panel">
@@ -82,7 +82,7 @@ function Entry({ e, ticker, onOpen }: { e: LibraryWikiEntry; ticker: string; onO
 /** The derived company page: businesses with numbers and their sections, what changed, new risks; all from the library. */
 export function WikiPanel({ ticker, onOpen, fail }: { ticker: string; onOpen: Open; fail: (e: unknown) => void }) {
   const [page, setPage] = useState<LibraryWikiPage | null>(null);
-  useEffect(() => { if (!ticker) return; const c = new AbortController(); setPage(null); void adminApi<LibraryWikiPage>(`library/wiki/${encodeURIComponent(ticker)}`, { signal: c.signal }).then(setPage).catch(e => { if (!c.signal.aborted) fail(e); }); return () => c.abort(); }, [ticker]);
+  useEffect(() => { if (!ticker) return; const c = new AbortController(); void adminApi<LibraryWikiPage>(`library/wiki/${encodeURIComponent(ticker)}`, { signal: c.signal }).then(setPage).catch(e => { if (!c.signal.aborted) fail(e); }); return () => c.abort(); }, [ticker]);
   if (!page) return <p className="fl-empty">加载中</p>;
   return <div className="fl-panel fl-wiki">
     <p className="fl-caption">来源：{page.documents.map(d => `${d.form} ${d.filedAt.slice(0, 10)}`).join('、')}</p>

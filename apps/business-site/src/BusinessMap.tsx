@@ -329,7 +329,8 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
   const quarter = quarters.find(q => q.id === period) ?? quarters[0];
   // YoY by default; QoQ when the year-ago quarter was not collected but the one before was.
   const [chosenBasis, setBasis] = useState<Basis | null>(null);
-  const yearAgo = quarter ? yearAgoQuarter(quarter, quarters) : null, lastQuarter = quarter ? previousQuarter(quarter, quarters) : null;
+  const yearAgo = useMemo(() => quarter ? yearAgoQuarter(quarter, quarters) : null, [quarter, quarters]);
+  const lastQuarter = useMemo(() => quarter ? previousQuarter(quarter, quarters) : null, [quarter, quarters]);
   const basis: Basis = chosenBasis ?? (yearAgo || !lastQuarter ? "yoy" : "qoq");
   const previous = basis === "yoy" ? yearAgo : lastQuarter;
   const word = useMemo(() => basisWords(basis), [basis, locale]);
@@ -485,12 +486,15 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
     onView?.({ periodEnd: quarter?.periodEnd ?? null, view, business: current?.id ?? null, finding: focused?.id ?? null, check: focusedCheck?.id ?? null, event: focusedEvent?.id ?? null, report: focusedReport?.accessionNumber ?? null, metric: metric?.key ?? null });
   }, [onView, quarter?.periodEnd, view, current?.id, focused?.id, focusedCheck?.id, focusedEvent?.id, focusedReport?.accessionNumber, metric?.key]);
   // A finding in focus brings the stage to its report and statement view, and clears any business pick so the whole statement reads.
-  useEffect(() => {
-    if (!focused) return;
-    setSelected(null);
-    setPeriod(quarters.find(q => q.periodEnd === focused.periodEnd)?.id ?? null);
-    setView(focused.anchors.view);
-  }, [focused?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [staged, setStaged] = useState<string | null>(null);
+  if ((focused?.id ?? null) !== staged) {
+    setStaged(focused?.id ?? null);
+    if (focused) {
+      setSelected(null);
+      setPeriod(quarters.find(q => q.periodEnd === focused.periodEnd)?.id ?? null);
+      setView(focused.anchors.view);
+    }
+  }
   const amountOf = useCallback((n: PlacedNode) => n.amount ? numeric(n.amount) : n.metric && quarter ? numeric(quarter.figures[n.metric]) : n.value, [quarter]);
   /** Same comparison as the list and tooltip: only an equal-definition comparison quarter yields a change. */
   const comparisonOf = useCallback((n: PlacedNode) => !quarter ? null
@@ -573,7 +577,8 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
     if (next === "valuation") { onNavigate?.(); setFocusId(null); setCheckId(null); setEventId(null); setReportId(null); setSplit(false); setReader(false); setHoverFlag(null); }
     crossfade(() => { stageChartBox(); track("company_tab_view", { ticker, view: next }); setView(next); });
   };
-  const focusFinding = (id: string | null) => { onNavigate?.(); setFocusId(id); if (id) { track("finding_expand", { ticker }); setCheckId(null); setEventId(null); setReportId(null); } else { setSplit(false); } };
+  const showFinding = (id: string | null) => { setFocusId(id); if (id) { setCheckId(null); setEventId(null); setReportId(null); } else { setSplit(false); } };
+  const focusFinding = (id: string | null) => { onNavigate?.(); showFinding(id); if (id) track("finding_expand", { ticker }); };
   const focusCheck = (id: string | null) => { onNavigate?.(); setCheckId(id); setHoverFlag(null); if (id) { leaveValuation(); setSelected(null); setFocusId(null); setEventId(null); setReportId(null); setSplit(false); } };
   const focusEvent = (id: string | null) => { onNavigate?.(); setEventId(id); if (id) { leaveValuation(); setSelected(null); setFocusId(null); setCheckId(null); setReportId(null); setSplit(false); } };
   // The rail holds one pick at a time: a business, a flag, a finding, or a report/event. A business reads on the income statement, whatever held the stage.
@@ -605,7 +610,10 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
     body.addEventListener("touchmove", onTouchMove, { passive: true });
     return () => { body.removeEventListener("wheel", onWheel); body.removeEventListener("touchstart", onTouchStart); body.removeEventListener("touchmove", onTouchMove); };
   }, []);
-  useEffect(() => { if (focusRequest) focusFinding(focusRequest.finding); }, [focusRequest?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
+  // A finding the stage asks for is shown in the render that brings the request; navigating and counting it follow the commit.
+  const [answered, setAnswered] = useState<number | null>(null);
+  if (focusRequest && focusRequest.nonce !== answered) { setAnswered(focusRequest.nonce); showFinding(focusRequest.finding); }
+  useEffect(() => { if (focusRequest) { onNavigate?.(); if (focusRequest.finding) track("finding_expand", { ticker }); } }, [focusRequest?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
   // A report in focus also brings the stage to its quarter when the flow has it.
   const focusReport = (id: string | null) => {
     onNavigate?.(); setReportId(id); setReader(false);
@@ -1004,8 +1012,8 @@ function ExplainedDossier({ item, parent, explainer, explained }: { item: Item; 
 
     {/* Products come first when verified; the other tabs are the angles the model chose for this business. */}
     <DossierTabs label={item.name} sections={[
-      ...(explained.offerings?.length ? [[m.products, <ul className="dossier-products">{explained.offerings.map(p => <li key={p.id} lang={langOf(p.description.text)}><b>{p.name}</b>{normalizeDisplayText(p.description.text)}{cite(p.description)}</li>)}</ul>] as [string, ReactNode]] : []),
-      ...explained.sections.map((section): [string, ReactNode, string] => [section.title, <DossierSection section={section} cite={cite} />, langOf(section.title)]),
+      ...(explained.offerings?.length ? [[m.products, <ul key="products" className="dossier-products">{explained.offerings.map(p => <li key={p.id} lang={langOf(p.description.text)}><b>{p.name}</b>{normalizeDisplayText(p.description.text)}{cite(p.description)}</li>)}</ul>] as [string, ReactNode]] : []),
+      ...explained.sections.map((section): [string, ReactNode, string] => [section.title, <DossierSection key={section.title} section={section} cite={cite} />, langOf(section.title)]),
     ]} />
 
     <ol className="sources sources--numbered">{cited.map(s => <li key={s.id}><a href={s.url} target="_blank" rel="noopener noreferrer">{s.title}<span aria-hidden="true"> ↗</span></a></li>)}</ol>
