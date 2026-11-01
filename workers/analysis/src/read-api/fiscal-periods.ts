@@ -21,12 +21,11 @@ function parsePeriod(payload: string): SecFiscalPeriod | null {
   }
 }
 
-/** Cached rows under a `…:` key prefix: one issuer's (its key, or its keys continuing with `:`) or every issuer's. */
+/** Cached rows under a `…:` key prefix (a failed read rejects; callers map it to STORAGE_UNAVAILABLE): one issuer's (its key, or its keys continuing with `:`) or every issuer's. */
 async function cachedRows(db: D1Database, prefix: string, ticker: string | undefined, nested: boolean) {
   const from = ticker ? `${prefix}${ticker}${nested ? ":" : ""}` : prefix, to = ticker ? `${prefix}${ticker}${nested ? ";" : "\u0000"}` : `${prefix.slice(0, -1)};`;
   const rows = await db.prepare(`SELECT cache_key, payload FROM sec_cache WHERE cache_key >= ? AND cache_key < ?`).bind(from, to)
-    .all<{ cache_key: string; payload: string }>()
-    .catch(() => ({ results: [] as Array<{ cache_key: string; payload: string }> }));
+    .all<{ cache_key: string; payload: string }>();
   return rows.results ?? [];
 }
 
