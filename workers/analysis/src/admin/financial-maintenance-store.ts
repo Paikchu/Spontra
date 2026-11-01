@@ -60,7 +60,7 @@ export class FinancialMaintenanceStore {
       (task_id,request_id,ticker,action,accession_number,retry_of,status,total_steps,next_attempt_at,created_at,updated_at)
       VALUES (?,?,?,?,?,?,'queued',?,?,?,?) ON CONFLICT DO NOTHING RETURNING *`)
       .bind(input.requestId, input.requestId, input.ticker, input.action, input.accessionNumber ?? null, input.retryOf ?? null,
-        input.action === "analyze" ? 5 : input.action === "reread" ? 2 : 4, now.toISOString(), now.toISOString(), now.toISOString()).first<MaintenanceRow>();
+        input.action === "analyze" ? 5 : input.action === "reread" ? 3 : 4, now.toISOString(), now.toISOString(), now.toISOString()).first<MaintenanceRow>();
   }
   async cancel(id: string, now: Date) {
     // An active call completes at its next checkpoint. A request cannot erase a completed result.
@@ -70,12 +70,24 @@ export class FinancialMaintenanceStore {
       .bind(now.toISOString(), now.toISOString(), now.toISOString(), now.toISOString(), id).run();
     return this.get(id);
   }
+  /** Renew only a live owner. A cancelled/expired worker cannot resurrect itself or publish. */
+  async heartbeat(row: MaintenanceRow, now = new Date()): Promise<void> {
+    const changed = await this.db.prepare(`UPDATE financial_maintenance_tasks SET lease_until=?,updated_at=?
+      WHERE task_id=? AND lease_token=? AND status='running' AND lease_until>? RETURNING task_id`)
+      .bind(new Date(now.getTime()+MAINTENANCE_LEASE_MS).toISOString(),now.toISOString(),row.task_id,row.lease_token,now.toISOString()).first();
+    if (!changed) throw new Error("MAINTENANCE_LEASE_LOST");
+  }
   async claim(now: Date) {
     // A cancelled lease never becomes runnable again; stale workers cannot advance it.
     await this.db.prepare(`UPDATE financial_maintenance_tasks SET status='cancelled',completed_at=?,updated_at=?,lease_token=NULL,lease_until=NULL
       WHERE status='cancel_requested' AND (lease_until IS NULL OR lease_until<=?)`).bind(now.toISOString(), now.toISOString(), now.toISOString()).run();
     await this.db.prepare(`UPDATE financial_maintenance_tasks SET status='failed',error_code='LEASE_EXPIRED',completed_at=?,updated_at=?,lease_token=NULL,lease_until=NULL
-      WHERE status='running' AND lease_until<=? AND attempt>=3 AND stage NOT IN ('analysis_dispatch','analysis_wait')`)
+      WHERE status='running' AND (lease_until IS NULL OR lease_until<=?) AND attempt>=3 AND stage NOT IN ('analysis_dispatch','analysis_wait')`)
+      .bind(now.toISOString(),now.toISOString(),now.toISOString()).run();
+    // Recover interrupted data steps with their persisted checkpoint and attempt count intact.
+    await this.db.prepare(`UPDATE financial_maintenance_tasks SET status='queued',error_code='LEASE_EXPIRED_RETRY',
+      next_attempt_at=?,updated_at=?,lease_token=NULL,lease_until=NULL
+      WHERE status='running' AND (lease_until IS NULL OR lease_until<=?) AND attempt<3 AND stage NOT IN ('analysis_dispatch','analysis_wait')`)
       .bind(now.toISOString(),now.toISOString(),now.toISOString()).run();
     await this.db.prepare(`UPDATE financial_collection_jobs SET status='unavailable',reasons_json='["MAINTENANCE_STOPPED"]',lease_token=NULL,lease_until=NULL,updated_at=?
       WHERE status IN ('queued','retry','running') AND (lease_until IS NULL OR lease_until<=?)

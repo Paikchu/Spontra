@@ -39,11 +39,11 @@ test('history chooses a verified derived Q4 split over equal-revenue release pla
  const total={...q,basis:'reported' as const,source:{...q.source,form:'8-K'},segments:[{id:'reported-company-total',name:'Total',value:q.revenue}],revenueAdjustments:undefined};
  for(const list of [[q,total],[total,q]]) assert.deepEqual(mergeHistory('TEST',[],list,source.filedAt).quarters[0].segments,q.segments);
  assert.equal(mergeHistory('TEST',[],[q,{...total,revenue:'301',segments:[{...total.segments[0],value:'301'}]}],source.filedAt).quarters[0].segments.length,2); // near tolerance
- const different={...total,revenue:'310',segments:[{...total.segments[0],value:'310'}]};
+ const different={...total,revenue:'2000000',segments:[{...total.segments[0],value:'2000000'}]};
  assert.equal(mergeHistory('TEST',[],[q,different],source.filedAt).quarters[0].source.form,'8-K');
 });
 const quarter: RevenueHistoryQuarter={periodStart:'2025-10-01',periodEnd:'2025-12-31',currency:'USD',scale:1e6,revenue:'300',basis:'reported',source:{...source,form:'8-K'},segments:[{id:'reported-company-total',name:'Total',value:'300'}]};
-const anchor: RevenueHistoryQuarter={...quarter,periodStart:'2025-07-01',periodEnd:'2025-09-30',source:{...quarter.source,form:'10-Q'},segments:[{id:'north',name:'North',value:'200'},{id:'south',name:'South',value:'100'}]};
+const anchor: RevenueHistoryQuarter={...quarter,periodStart:'2025-07-01',periodEnd:'2025-09-30',source:{...quarter.source,form:'10-Q'},segments:['North','South'].map((name,i)=>({id:name.toLowerCase(),name,value:String(i?100:200),lineage:[{accession:source.accession,url:source.url,concept:'us-gaap:Revenues',contextId:'segment',periodStart:'2025-07-01',periodEnd:'2025-09-30',parserVersion:'test',dimensions:{'us-gaap:StatementBusinessSegmentsAxis':`test:${name}Member`}}]}))};
 const row=(name:string,values:string|number='')=>`<tr><td>${name}</td><td>${values}</td></tr>`;
 const table=(body:string)=>`<p>In millions, except per share amounts</p><table>${row('','Three Months Ended December 31, 2025')}${body}</table>`;
 const statement=()=>'<p>Consolidated statements of income</p>'+table(row('Revenue',300)+row('Net income',30)+row('Earnings per share')+row('Basic',1.75)+row('Diluted',1.5)+row('Weighted average shares')+row('Diluted',20));

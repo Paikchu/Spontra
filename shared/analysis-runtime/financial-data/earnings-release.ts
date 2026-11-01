@@ -295,8 +295,13 @@ export function enrichReleaseHistory(documents: ReleaseDocument[], quarter: Reve
   let result: RevenueHistoryQuarter = { ...quarter, segments: [{id: "reported-company-total", name: "Total company (segment split not yet verified)", value: quarter.revenue, lineage: quarter.lineage}], revenueAdjustments: undefined };
   if (eps.length && new Set(eps.map(e => e.value)).size === 1) result.dilutedEps = { value: String(eps[0]!.value), basis: "reported", source: {...source, url: eps[0]!.table.url}, lineage: lineage(eps[0]!, "EarningsPerShareDiluted") };
   const anchors = verified.filter(q => q.source.form !== "8-K" && q.segments.length > 1).sort((a, b) => Math.abs(Date.parse(a.periodEnd) - Date.parse(end)) - Math.abs(Date.parse(b.periodEnd) - Date.parse(end)));
-  const business = anchors.filter(q => q.segments.every(s => s.lineage?.some(l => Object.keys(l.dimensions).some(a => a.endsWith(":StatementBusinessSegmentsAxis")))));
-  const anchor = business[0] ?? anchors.find(q => q.basis === "reported") ?? anchors[0];
+  const isBusiness = (s: RevenueHistoryQuarter["segments"][number]) => s.lineage?.some(l => Object.keys(l.dimensions).some(a => a.endsWith(":StatementBusinessSegmentsAxis")));
+  const business = anchors.filter(q => q.segments.some(isBusiness) && q.segments.every(s => isBusiness(s)
+    || (s.id === "corporate" && s.lineage?.some(l => Object.entries(l.dimensions).some(([a,m]) => a.endsWith(":ConsolidationItemsAxis") && m.endsWith(":CorporateNonSegmentMember"))))));
+  const nearest = verified.filter(q => q.source.form !== "8-K").sort((a,b)=>Math.abs(Date.parse(a.periodEnd)-Date.parse(end))-Math.abs(Date.parse(b.periodEnd)-Date.parse(end)))[0];
+  if (nearest?.segmentDisclosure === "single_reportable_segment") return {...result, segmentDisclosure: nearest.segmentDisclosure,
+    segments: [{...result.segments[0]!, name: "Total company (single reportable segment)"}]};
+  const anchor = business[0];
   if (!anchor) return result;
   const defined = abbreviations(documents);
   const named = (a: string, b: string) => loose(defined.get(a) ?? a) === loose(defined.get(b) ?? b);

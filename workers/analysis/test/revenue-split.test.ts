@@ -65,14 +65,14 @@ test("a bank's managed-basis segments reach reported revenue with its corporate 
   assert.deepEqual(q.revenueAdjustments?.map(a => [a.id, a.name, Number(a.amount.value) / 1e6]), [["reconciling-items", "Reconciling items", -675]]);
 });
 
-test("one axis shown in two tables is two splits; of two balanced splits the more detailed is taken, with no list of members", () => {
+test("product/service axes never authorize reportable segments even when they reconcile", () => {
   const product = (member: string, value: number, table: string) => segment("us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax", member, value, [table], "srt:ProductOrServiceAxis");
   // Autodesk, quarter ended July 31, 2026: subscription and other on the statement, product families in the revenue note.
   const q = split([fact("us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax", 2046),
     product("us-gaap:SubscriptionAndCirculationMember", 1952, "Statement"), product("us-gaap:ProductAndServiceOtherMember", 94, "Statement"),
     product("adsk:ArchitectureEngineeringConstructionAndOperationsMember", 1029, "ContractRevenue"), product("adsk:AutoCADandAutoCADLTFamilyMember", 500, "ContractRevenue"),
     product("adsk:ManufacturingMember", 385, "ContractRevenue"), product("adsk:MediaAndEntertainmentMember", 92, "ContractRevenue"), product("srt:OtherMember", 40, "ContractRevenue")], null);
-  assert.deepEqual(q.segments.map(s => s.id), ["adsk:ArchitectureEngineeringConstructionAndOperationsMember", "adsk:AutoCADandAutoCADLTFamilyMember", "adsk:ManufacturingMember", "adsk:MediaAndEntertainmentMember", "srt:OtherMember"]);
+  assert.deepEqual(q.segments.map(s => s.id), ["reported-company-total"]);
   assert.equal(q.revenueAdjustments, undefined);
 });
 
