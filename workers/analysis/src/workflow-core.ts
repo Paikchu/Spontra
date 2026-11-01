@@ -1,3 +1,4 @@
+import type { WorkflowStepContext } from "cloudflare:workers";
 import type { EditorialIssue } from "./sec/editorial.ts";
 import { DISCOVERY_BUDGET_WARNING, type DiscoveryChunk } from "./sec/discovery.ts";
 import {
@@ -38,9 +39,7 @@ export function jobAnalysisVersionFor(form: string): string {
     : SEC_ANALYSIS_SCHEMA_VERSION;
 }
 
-export type WorkflowStepContextLike = {
-  attempt: number;
-};
+export type WorkflowStepContextLike = Pick<WorkflowStepContext, "attempt">;
 
 export type WorkflowStepLike = {
   do<T>(name: string, callback: (context?: WorkflowStepContextLike) => Promise<T>): Promise<T>;
