@@ -40,7 +40,7 @@ export function defaultFeatureResolution(env: Omit<PolicyEnv, 'DB'>): FeatureRes
  * over each feature's default list and global switch (docs/whitelist-feature-switches-design.md). The result is carried
  * as `FEATURE_RESOLVED`; `SEC_AI_TICKERS` is set to the reports list so code reading it as "the AI list" keeps working.
  * Applying it twice gives the same lists, so every entry point applies it once and code below reads the environment as
- * before. A table not yet migrated leaves its defaults in force. The admin's model settings ride along as
+ * before. A settings read failure aborts resolution; defaults apply only when no row exists. The admin's model settings ride along as
  * `AI_TOOL_SETTINGS` (ai-config.ts).
  */
 export async function companyPolicyEnvironment<T extends PolicyEnv>(env: T): Promise<T> {
@@ -55,8 +55,8 @@ export async function companyPolicyEnvironment<T extends PolicyEnv>(env: T): Pro
   const resolution = parseFeatureResolution(env.FEATURE_RESOLVED) ?? defaultFeatureResolution(env);
   const sets = Object.fromEntries(FEATURES.map(f => [f, new Set(resolution.tickers[f])])) as Record<Feature, Set<string>>;
   const enabled = { ...resolution.enabled };
-  const rows = await env.DB.prepare('SELECT ticker,feature,generate FROM business_feature_settings WHERE generate IS NOT NULL').bind().all<FeatureRow>().catch(() => null);
-  for (const row of rows?.results ?? []) {
+  const rows = await env.DB.prepare('SELECT ticker,feature,generate FROM business_feature_settings WHERE generate IS NOT NULL').bind().all<FeatureRow>();
+  for (const row of rows.results) {
     if (!(row.feature in sets)) continue;
     if (row.ticker === '*') enabled[row.feature] = !!row.generate;
     else if (row.generate) sets[row.feature].add(row.ticker);
