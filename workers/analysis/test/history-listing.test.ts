@@ -45,8 +45,8 @@ test("the history listing continues into EDGAR's older submission pages until th
   const cursor = JSON.parse(rows.get(`sec:revenue-history-cursor:v1:${CIK}`)!.payload) as { documents: Array<{ accession: string; form: string }> };
   // Listed through the second page; the 2023-05 10-Q is past the lookback, and the third page is never read.
   assert.deepEqual(cursor.documents.map(d => [d.form, d.accession]), [
-    ["10-Q", "0001628280-26-054343"], ["10-K", "0000019617-25-000270"], ["8-K", "0000019617-25-000040"],
-    ["10-Q", "0000019617-24-000600"], ["10-Q", "0000019617-23-000500"],
+    ["10-Q", "0001628280-26-054343"], ["10-K", "0000019617-25-000270"],
+    ["10-Q", "0000019617-24-000600"], ["10-Q", "0000019617-23-000500"], ["8-K", "0000019617-25-000040"],
   ]);
   assert.ok(!read.some(url => url.endsWith("-submissions-003.json")));
 });

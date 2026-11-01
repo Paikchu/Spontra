@@ -1,3 +1,4 @@
+import {enrichReleaseHistory} from "../../../../shared/analysis-runtime/financial-data/earnings-release.ts";
 import {SEC_DOCUMENT_MAX_BYTES} from '../../../../shared/analysis-runtime/financial-data/limits.ts';
 import type {RevenueHistoryQuarter} from '../../../../shared/analysis-contract/revenue-history.ts';
 import {historyQuarterFrom, mergeHistory} from '../../../../shared/analysis-runtime/financial-data/history.ts';
@@ -8,7 +9,7 @@ type HistorySource = RevenueHistoryQuarter['source'];
 const clean = (html: string) => html.replace(/<[^>]*>/g, ' ').replace(/&#(?:x([\da-f]+)|(\d+));/gi, (_, hex, dec) => String.fromCodePoint(parseInt(hex ?? dec, hex ? 16 : 10))).replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/\s+/g, ' ').trim();
 
 /** Income-statement publication gates must not discard independently reconciled revenue disclosure. */
-export function extractRevenueHistory(html: string, source: DocumentSource, form: string): {quarters: RevenueHistoryQuarter[]; issues: string[]} {
+export function extractRevenueHistory(html: string, source: DocumentSource, form: string, verified: RevenueHistoryQuarter[] = []): {quarters: RevenueHistoryQuarter[]; issues: string[]} {
   if (html.length > SEC_DOCUMENT_MAX_BYTES) return {quarters: [], issues: ['DOCUMENT_TOO_LARGE']};
   const historySource: HistorySource = {accession: source.accession, url: source.url, filedAt: source.filedAt, form};
   const generic = extractDisclosedQuarters(html, source);
@@ -23,5 +24,6 @@ export function extractRevenueHistory(html: string, source: DocumentSource, form
   const printsQuarter = /(?:three|3)\s+months\s+ended/i.test(clean(html));
   const issues = (quarters.length ? generic.issues.filter(issue => issue === 'RESTATEMENT_REVIEW_REQUIRED') : generic.issues)
     .map(issue => issue === 'NO_DIRECT_COMPARABLE_QUARTER' && !printsQuarter ? 'NO_QUARTERLY_PERIOD' : issue);
-  return {quarters: mergeHistory('X', [], quarters, source.filedAt).quarters, issues};
+  const enriched = form === '8-K' ? quarters.map(q => enrichReleaseHistory([{url: source.url, html}], q, verified)) : quarters;
+  return {quarters: mergeHistory('X', [], enriched, source.filedAt).quarters, issues};
 }

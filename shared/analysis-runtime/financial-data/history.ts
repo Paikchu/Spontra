@@ -10,7 +10,7 @@ const amount = z.string().refine(v => v.trim() !== "" && Number.isFinite(Number(
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const secUrl = z.string().refine(v => { try { const u = new URL(v); return u.protocol === "https:" && /(^|\.)sec\.gov$/.test(u.hostname); } catch { return false; } });
 const lineage = z.array(z.object({accession: z.string().regex(/^\d{10}-\d{2}-\d{6}$/), url: secUrl, concept: z.string().max(300), contextId: z.string().max(500), periodStart: date, periodEnd: date, parserVersion: z.string().max(100), dimensions: z.record(z.string(),z.string())})).max(80);
-const leaf = z.object({ id: z.string().min(1).max(200), name: z.string().max(200), value: amount, lineage: lineage.optional() });
+const leaf = z.object({ id: z.string().min(1).max(200), name: z.string().max(200), value: amount, basis: z.enum(["reported", "derived"]).optional(), formula: z.string().max(500).optional(), lineage: lineage.optional() });
 const quarterSchema = z.object({
   periodStart: date, periodEnd: date, currency: z.string().regex(/^[A-Z]{3}$/), scale: z.number().finite().positive(), revenue: amount,
   basis: z.enum(["reported", "derived"]), formula: z.string().max(500).optional(),
@@ -18,6 +18,7 @@ const quarterSchema = z.object({
   segments: z.array(leaf.extend({ children: z.array(leaf).max(40).optional() })).min(1).max(40),
   revenueAdjustments: z.array(leaf).max(20).optional(),
   source: z.object({ accession: z.string().regex(/^\d{10}-\d{2}-\d{6}$/), url: secUrl, filedAt: date, form: z.string().max(12) }),
+  dilutedEps: z.object({ value: amount, basis: z.literal("reported"), source: z.object({ accession: z.string().regex(/^\d{10}-\d{2}-\d{6}$/), url: secUrl, filedAt: date, form: z.literal("8-K") }), lineage }).optional(),
   fiscalYear: z.number().int().nullable().optional(),
   fiscalQuarter: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]).nullable().optional(),
   fiscalYearEndMonth: z.number().int().min(1).max(12).nullable().optional(),
@@ -50,21 +51,30 @@ export function historyQuarterFrom(q: BusinessFlowQuarter, source: RevenueHistor
       const balanced = children?.length && near(children.reduce((sum, c) => sum + Number(c.value), 0), Number(s.revenue!.value));
       return { id: s.id, name: s.name, value: s.revenue!.value!, ...(s.revenue!.lineage ? {lineage: s.revenue!.lineage} : {}), ...(balanced ? { children } : {}) };
     }),
-    ...(q.revenueAdjustments?.length?{revenueAdjustments:q.revenueAdjustments.map(a=>({id:a.id,name:a.name,value:a.amount.value!,lineage:a.amount.lineage}))}:{}),
+    ...(q.revenueAdjustments?.length?{revenueAdjustments:q.revenueAdjustments.map(a=>({id:a.id,name:a.name,value:a.amount.value!,basis:a.amount.basis,formula:a.amount.formula,lineage:a.amount.lineage}))}:{}),
     source,
   };
   return validHistoryQuarter(candidate) ? candidate : null;
 }
 
-/** Reported beats derived, and a periodic report (10-Q, 10-K, 20-F, 6-K) beats the earnings release it supersedes;
+/** A verified Q4 split beats an equal-revenue placeholder. Otherwise reported beats derived,
+ * and a periodic report (10-Q, 10-K, 20-F, 6-K) beats the earnings release it supersedes;
  * then prefer the newest disclosure, retaining a verified split over an equal-revenue total-only fallback. */
 export function mergeHistory(ticker: string, existing: RevenueHistoryQuarter[], incoming: RevenueHistoryQuarter[], updatedAt: string): RevenueHistory {
   const byPeriod = new Map<string, RevenueHistoryQuarter>();
   const rank = (q: RevenueHistoryQuarter) => [(q.basis === "reported" ? 2 : 0) + (q.source.form === "8-K" ? 0 : 1), q.source.filedAt] as const;
-  for (const q of alignReleaseSplits([...existing, ...incoming].filter(validHistoryQuarter))) {
+  for (const q of alignReleaseSplits([...existing, ...incoming].filter(validHistoryQuarter).map(q => ({...q})))) {
     const old = byPeriod.get(q.periodEnd);
     if (!old) { byPeriod.set(q.periodEnd, q); continue; }
+    // EPS is independently reported; keep it even when a periodic split wins the revenue ranking.
+    const eps = q.currency === old.currency && q.periodStart === old.periodStart ? old.dilutedEps ?? q.dilutedEps : undefined;
+    if (eps) { q.dilutedEps ??= eps; old.dilutedEps ??= eps; }
     const [a, b] = [rank(q), rank(old)];
+    const placeholder = (v: RevenueHistoryQuarter) => v.segments.length === 1 && v.segments[0].id === "reported-company-total";
+    if ((q.basis === "derived" || old.basis === "derived" || q.fiscalQuarter === 4 || old.fiscalQuarter === 4) && q.currency === old.currency && q.scale === old.scale && q.periodStart === old.periodStart && near(Number(q.revenue), Number(old.revenue))) {
+      if (placeholder(q) && old.segments.length > 1) continue;
+      if (placeholder(old) && q.segments.length > 1) { byPeriod.set(q.periodEnd, q); continue; }
+    }
     if (a[0] === b[0] && q.currency === old.currency && q.scale === old.scale && q.periodStart === old.periodStart && near(Number(q.revenue), Number(old.revenue))) {
       if (q.segments.length === 1 && old.segments.length > 1) continue;
       if (q.segments.length > 1 && old.segments.length === 1) { byPeriod.set(q.periodEnd, q); continue; }
@@ -93,7 +103,7 @@ function alignReleaseSplits(quarters: RevenueHistoryQuarter[]): RevenueHistoryQu
     if (q.source.form !== "8-K" || q.segments.length < 2) return q;
     const before = periodic.filter(p => p.periodEnd <= q.periodEnd).at(-1), after = periodic.find(p => p.periodEnd >= q.periodEnd);
     return [before, after].some(p => p && names(p) === names(q)) ? q
-      : { ...q, segments: [{ id: "reported-company-total", name: "Total company (segment split not yet verified)", value: q.revenue, ...(q.lineage ? { lineage: q.lineage } : {}) }] };
+      : { ...q, revenueAdjustments: undefined, segments: [{ id: "reported-company-total", name: "Total company (segment split not yet verified)", value: q.revenue, ...(q.lineage ? { lineage: q.lineage } : {}) }] };
   });
 }
 

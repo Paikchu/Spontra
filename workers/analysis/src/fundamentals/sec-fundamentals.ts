@@ -1,3 +1,5 @@
+import type {RevenueHistoryQuarter} from "../../../../shared/analysis-contract/revenue-history.ts";
+import {historyForIssuer, historyKey} from "../financial-data/history.ts";
 import { ANALYSIS_API_SCHEMA_VERSION } from "../../../../shared/analysis-contract/common.ts";
 import { FUNDAMENTAL_METRIC_CATALOG, FUNDAMENTAL_METRIC_CATALOG_VERSION } from "./fundamental-metrics.ts";
 import { FUNDAMENTALS_API_SCHEMA_VERSION, FUNDAMENTALS_STALE_AFTER_MS, type FundamentalMetricKey, type FundamentalsUnavailableReason, type PublicFundamentalsResponse } from "../../../../shared/analysis-contract/fundamentals.ts";
@@ -26,8 +28,11 @@ const ANNUAL_YEARS = 4;
 const FLOW_CATEGORIES = new Set(["income_statement", "cash_flow"]);
 
 export async function getSecFundamentals(database: D1Like, query: FundamentalApiQuery): Promise<PublicFundamentalsResponse> {
-  const cached = await new D1SecRepository(database).getCache<SecHistorySnapshot>(secFundamentalsKey(query.ticker));
-  if (cached) return buildSecFundamentals(cached.payload, query, cached.fetchedAt);
+  const repository = new D1SecRepository(database);
+  const cached = await repository.getCache<SecHistorySnapshot>(secFundamentalsKey(query.ticker));
+  const issuer = await database.prepare("SELECT cik FROM sec_filings WHERE ticker = ? ORDER BY filing_date DESC LIMIT 1").bind(query.ticker).first<{cik: string}>();
+  const revenueHistory = issuer ? historyForIssuer((await repository.getCache(historyKey(issuer.cik)))?.payload, issuer.cik, query.ticker) : null;
+  if (cached) return buildSecFundamentals(cached.payload, query, cached.fetchedAt, new Date(), revenueHistory?.quarters);
   // Existing companies can display previously ingested SEC facts before the next discovery sweep.
   const rows = await database.prepare(`
     SELECT fact_id AS observationId, series_id AS seriesId, metric_key AS metricKey,
@@ -40,10 +45,11 @@ export async function getSecFundamentals(database: D1Like, query: FundamentalApi
       AND quality_status = 'validated_xbrl' AND source_version != 'legacy_unvalidated'
     ORDER BY observation_end DESC, source_filed_at DESC
   `).bind(query.ticker).all<Parameters<typeof historyFromRows>[0][number]>();
-  return buildSecFundamentals(historyFromRows(rows.results), query, null);
+  return buildSecFundamentals(historyFromRows(rows.results), query, null, new Date(), revenueHistory?.quarters);
 }
 
-export async function buildSecFundamentals(history: SecHistorySnapshot, query: FundamentalApiQuery, fetchedAt: string | null, now = new Date()): Promise<PublicFundamentalsResponse> {
+export async function buildSecFundamentals(history: SecHistorySnapshot, query: FundamentalApiQuery, fetchedAt: string | null, now = new Date(), releaseQuarters: RevenueHistoryQuarter[] = []): Promise<PublicFundamentalsResponse> {
+  history = withReleaseEps(history, releaseQuarters);
   const revenue = history.series.find((series) => series.seriesId === "revenue")?.quarters ?? [];
   // Revenue may be absent even when a quarter's other statements were disclosed. Keep the
   // period visible with null revenue instead of hiding every metric from that period.
@@ -115,4 +121,18 @@ export async function buildSecFundamentals(history: SecHistorySnapshot, query: F
       ?? history.series.flatMap((item) => item.quarters).find((point) => point.endDate === periodEnd && point.currency)?.currency ?? "" })),
     series, refresh: { recommended: stale, scheduled: false, mode: "backend_scheduled" },
   };
+}
+
+/** A release's printed quarterly EPS fills holes only; EPS is never an additive FY-minus-nine-month measure. */
+export function withReleaseEps(history: SecHistorySnapshot, quarters: RevenueHistoryQuarter[]): SecHistorySnapshot {
+  const existing = history.series.find(s => s.seriesId === "diluted_eps");
+  const additions: HistoricalObservation[] = quarters.flatMap(q => {
+    const eps = q.dilutedEps;
+    if (!eps || existing?.quarters.some(p => p.endDate === q.periodEnd && p.value != null && String(p.value).trim() !== "" && Number.isFinite(Number(p.value)))) return [];
+    return [{ observationId: `release-eps:${eps.source.accession}:${q.periodEnd}`, seriesId: "diluted_eps", metricKey: "diluted_eps", value: eps.value, unit: `${q.currency}/shares`, currency: q.currency,
+      basis: "gaap", periodScope: "quarter", startDate: q.periodStart, endDate: q.periodEnd, sourceAccession: eps.source.accession, sourceFiledAt: eps.source.filedAt, sourceVersion: "release-history.v1", qualityStatus: "validated_xbrl", xbrlConcept: "release:EarningsPerShareDiluted" }];
+  });
+  if (!additions.length) return history;
+  const ends = new Set(additions.map(p => p.endDate));
+  return { ...history, series: [...history.series.filter(s => s.seriesId !== "diluted_eps"), { seriesId: "diluted_eps", annual: existing?.annual ?? [], quarters: [...(existing?.quarters ?? []).filter(p => !ends.has(p.endDate)), ...additions] }] };
 }
