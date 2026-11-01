@@ -77,7 +77,11 @@ export async function driveWorkflow(env: AnalysisEnv, key: string, binding: Work
   if (started && binding.get) {
     let state: { status: string; error?: unknown };
     try { state = await (await binding.get(started.instanceId)).status(); }
-    catch { state = { status: "unknown" }; }
+    catch (error) {
+      return { status: "later", afterMs: pollMs, detail: { instanceId: started.instanceId,
+        workflow: "status-unavailable", error: error instanceof Error ? error.message : String(error) } };
+    }
+    // Only an actual unknown status expires after an hour; a failed status read leaves the run tracked.
     if (RUNNING.has(state.status) && (state.status !== "unknown" || Date.now() - Date.parse(started.startedAt) < 60 * 60_000)) {
       return { status: "later", afterMs: pollMs, detail: { instanceId: started.instanceId, workflow: state.status } };
     }
