@@ -155,6 +155,27 @@ test('republish atomically inserts immutable version, updates public payload/rev
  assert.throws(()=>rebuildPublication(flow,[{...historyQuarterFrom(flow.quarters[0],{...source,form:'10-K'})!,revenue:'999'}],now.toISOString()),/REPUBLICATION_REVENUE_CONFLICT/);
 });
 
+test('republish stays within D1 compound SELECT limits and revises share classes from every source once',async()=>{
+ const {db,store,now}=await publicationFixture(),task=(await store.claim(now))!;
+ await db.prepare("UPDATE financial_complete_versions SET ticker='TEST.V' WHERE version_id='old'").run();
+ await db.prepare('INSERT INTO financial_collection_jobs(job_id,cik,ticker,generation,status,next_attempt_at,updated_at) VALUES(?,?,?,?,?,?,?)')
+  .bind('alias-job',source.cik,'TEST.J',2,'succeeded',source.filedAt,source.filedAt).run();
+ await db.prepare('INSERT INTO sec_filings(filing_id,ticker,accession_number,cik,form,filing_date,report_date,document_url,index_url) VALUES(?,?,?,?,?,?,?,?,?)')
+  .bind('alias-filing','TEST.F',source.accession,source.cik,'10-K',source.filedAt,'2025-12-31',source.url,source.url).run();
+ for(const ticker of ['TEST.A','TEST.J'])await db.prepare('INSERT INTO sec_cache(cache_key,payload,fetched_at) VALUES(?,?,?)')
+  .bind(`admin:financial-issuer:${ticker}`,JSON.stringify({cik:source.cik}),source.filedAt).run();
+ let batches=0;
+ const limitedDb={...db,prepare(sql:string){
+  assert.ok((sql.match(/\bUNION\b/gi)??[]).length<=4,`D1 compound SELECT limit exceeded: ${sql}`);
+  return db.prepare(sql);
+ },batch:async(items:D1PreparedStatement[])=>{batches++;return db.batch(items);}} as D1Database;
+ await republishStoredFinancials(limitedDb,{ticker:'TEST.R',cik:source.cik,taskId:task.task_id,leaseToken:task.lease_token!},now);
+ assert.equal(batches,1);
+ const revisions=(await db.prepare('SELECT ticker,resource,revision FROM publication_revisions ORDER BY ticker,resource').all()).results;
+ assert.deepEqual(revisions.map(row=>({...row})),['TEST','TEST.A','TEST.F','TEST.J','TEST.R','TEST.V'].flatMap(ticker=>
+  ['capital','company','fundamentals'].map(resource=>({ticker,resource,revision:now.toISOString()}))));
+});
+
 test('republish stage completes through maintenance and never invokes discover, collect, reread or AI',async()=>{
  const {db}=await publicationFixture();
  const unexpected=async()=>{throw new Error('Unexpected workflow');};
