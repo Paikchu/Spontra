@@ -170,3 +170,19 @@ test("A17: overflow in finite inputs is an explicit calculation error", () => {
   const hugeCash = { modelType: "fcfe" as const, cfo: 1e308, capex: 0, sbc: 0, normalization: 0, netBorrowing: 0, growth: [10, 0, 0, 0, 0], terminalGrowth: 0 };
   assert.throws(() => scenarioValue(hugeCash, 0.1, 1, bridge), overflow);
 });
+
+test("A18: unknown interest is insufficient data, while disclosed zero supports EPS", async () => {
+  const { forwardFundamentals } = await import("../../../shared/analysis-runtime/valuation/calculator.ts");
+  const drivers = fcff(0, 0.2) as Extract<ModelDrivers, { modelType: "fcff" }>;
+  const missing = forwardFundamentals(drivers, 1, { da0: 10, interestExpense0: null, shares: 10 });
+  assert.equal(missing.eps, null);
+  assert.equal(missing.epsStatus, "insufficient_data");
+  assert.ok(missing.notes.some(note => /insufficient data.*interest/i.test(note)));
+  const zero = forwardFundamentals(drivers, 1, { da0: 10, interestExpense0: 0, shares: 10 });
+  assert.equal(zero.epsStatus, "ready");
+  close(zero.eps!, 16);
+  const modeled = calculateValuation({ ...request(10), context: { peers: { peRatio: { p25: 10, median: 15, p75: 20, count: 3 } } as never, trailing: { da: 10, ebitda: 100, interestExpense: null } } });
+  const pe = modeled.methods!.find(method => method.method === "pe_forward")!;
+  assert.equal(pe.base, null);
+  assert.ok(pe.notes.some(note => /insufficient data.*interest/i.test(note)));
+});
