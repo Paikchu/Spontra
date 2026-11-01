@@ -62,16 +62,18 @@ function SidebarProvider({
   asChild = false,
   keyboardShortcut = SIDEBAR_KEYBOARD_SHORTCUT,
   persistState = true,
+  mobileBreakpoint,
   ...props
 }: React.ComponentProps<"div"> & {
   asChild?: boolean
   keyboardShortcut?: string | null
   persistState?: boolean
+  mobileBreakpoint?: number
   defaultOpen?: boolean
   open?: boolean
   onOpenChange?: (open: boolean) => void
 }) {
-  const isMobile = useIsMobile()
+  const isMobile = useIsMobile(mobileBreakpoint)
   const [openMobile, setOpenMobile] = React.useState(false)
 
   // This is the internal state of the sidebar.

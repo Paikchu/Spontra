@@ -95,8 +95,6 @@
  .fm-update-status { flex-wrap: wrap; font-size: 12px; }
  .fm-update-status > span { flex: 1; }
  .fm-history-dialog { padding: 24px 19px; }
- .ra-sidebar nav { overflow-x: auto; }
- .ra-sidebar nav button { flex-shrink: 0; }
 }
 @media (prefers-reduced-motion: reduce) { .fm-summary > summary svg { transition: none; } }
 

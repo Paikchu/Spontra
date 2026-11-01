@@ -1,35 +1,21 @@
 /* BusinessView admin shell on the Spontra "Ink & Highlighter" system: every value is a token from
-   packages/web/src/styles/globals.css (:root = paper, .dark = ink). The rail floats on the canvas as BusinessView's does. */
+   packages/web/src/styles/globals.css (:root = paper, .dark = ink). */
 html:has(.report-admin), body:has(.report-admin) { background: var(--canvas); }
 html body:has(.report-admin) { padding: 0; }
-.report-admin { min-height: 100svh; display: grid; grid-template-columns: 232px minmax(0, 1fr); gap: var(--space-3); padding: var(--space-3); background: var(--canvas); color: var(--ink); font-family: var(--sans); font-size: 14px; line-height: 1.5; font-variant-numeric: tabular-nums lining-nums; }
-.report-admin :where(button, select, input, textarea) { font: inherit; color: inherit; }
+.report-admin { min-height: 100svh; background: var(--canvas); color: var(--ink); font-family: var(--sans); font-size: 14px; line-height: 1.5; font-variant-numeric: tabular-nums lining-nums; }
+.ra-main :where(button, select, input, textarea) { font: inherit; color: inherit; }
 .report-admin :where(button) { cursor: pointer; }
 .report-admin :where(button:disabled) { cursor: not-allowed; opacity: .5; }
 .report-admin :is(button, a, input, select, textarea, summary, [tabindex]):focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
-.report-admin :where(a) { color: var(--link); text-underline-offset: 3px; }
+.ra-main :where(a) { color: var(--link); text-underline-offset: 3px; }
 .report-admin code, .report-admin .ra-mono { font-family: var(--mono); font-size: .92em; }
 .report-admin ::selection { background: var(--sp-accent); color: var(--sp-on-accent); }
 
-/* ---------- Rail ---------- */
-.ra-sidebar { position: sticky; top: var(--space-3); height: calc(100svh - 2 * var(--space-3)); display: flex; flex-direction: column; padding: var(--space-4) var(--space-3); border-radius: var(--sp-radius-md); background: var(--surface); box-shadow: 0 0 0 1px var(--line), inset 0 1px 0 var(--sheen); }
-.ra-brand { display: flex; align-items: center; gap: 10px; padding: 2px var(--space-2) 0; color: var(--ink); font-size: 17px; font-weight: 700; letter-spacing: -.02em; text-decoration: none; }
-.ra-brand-dot { width: 10px; height: 10px; flex: none; border-radius: 50%; background: var(--sp-accent); box-shadow: 0 0 0 4px var(--sp-accent-soft); }
-.ra-brand small { margin-left: auto; white-space: nowrap; padding: 2px 8px; border-radius: var(--sp-radius-pill); background: var(--fill); color: var(--ink-muted); font-size: 11px; font-weight: 600; letter-spacing: 0; }
-.ra-sidebar nav { display: flex; flex-direction: column; gap: 2px; margin-top: var(--space-6); }
-.ra-sidebar nav button { display: flex; align-items: center; gap: 12px; height: var(--control-md); padding: 0 14px; border: 0; border-radius: var(--sp-radius-pill); background: transparent; color: var(--ink-soft); font-size: 14px; font-weight: 550; text-align: left; transition: background-color 160ms var(--sp-ease), color 160ms var(--sp-ease); }
-.ra-sidebar nav button svg { flex: none; color: var(--ink-muted); transition: color 160ms var(--sp-ease); }
-.ra-sidebar nav button:hover { background: var(--fill); color: var(--ink); }
-.ra-sidebar nav button[aria-current] { background: var(--brand-soft); color: var(--brand); font-weight: 650; }
-.ra-sidebar nav button[aria-current] svg { color: var(--brand); }
-.ra-sidebar-bottom { display: flex; flex-direction: column; gap: 2px; margin-top: auto; padding-top: var(--space-3); border-top: 1px solid var(--line); }
-.ra-sidebar-bottom > a, .ra-sidebar-bottom > button { display: flex; align-items: center; gap: 10px; height: var(--control-sm); padding: 0 var(--space-2); border: 0; border-radius: var(--sp-radius-pill); background: transparent; color: var(--ink-muted); font-size: 13px; text-decoration: none; }
-.ra-sidebar-bottom > a:hover, .ra-sidebar-bottom > button:hover { background: var(--fill); color: var(--ink); }
-
-/* ---------- Page ---------- */
-.ra-main { min-width: 0; display: flex; flex-direction: column; }
-/* Full-height page panels: the rail and the panel share the canvas inset. */
-.report-admin { --page-height: calc(100svh - 2 * var(--space-3)); }
+/* ---------- Shell and page ---------- */
+.ra-shell-header { background: var(--background); }
+.ra-main { min-width: 0; display: flex; flex-direction: column; padding: var(--space-4); }
+/* Keep window scrolling for page restoration; full-height panels fit below the shell header. */
+.report-admin { --page-height: calc(100svh - 4rem - 2 * var(--space-4)); }
 
 /* A panel: an ink surface separated by a 1px line and a top sheen, not a shadow. */
 .ra-panel, .ra-workspace { border-radius: var(--sp-radius-md); background: var(--surface); box-shadow: 0 0 0 1px var(--line), inset 0 1px 0 var(--sheen); }
@@ -113,14 +99,9 @@ html body:has(.report-admin) { padding: 0; }
 .ra-main > *, .ra-page > * { animation: ra-rise 620ms var(--sp-ease) both; }
 .ra-main > .ra-page { animation: none; }
 
-@media (max-width: 1050px) { .report-admin { grid-template-columns: 196px minmax(0, 1fr); } .ra-workspace { grid-template-columns: 260px minmax(0, 1fr); } .ra-detail { padding: var(--space-5) var(--space-4); } }
+@media (max-width: 1050px) { .ra-workspace { grid-template-columns: 260px minmax(0, 1fr); } .ra-detail { padding: var(--space-5) var(--space-4); } }
 @media (max-width: 760px) {
-  .report-admin { grid-template-columns: minmax(0, 1fr); padding: var(--space-2); }
-  .ra-sidebar { position: static; height: auto; padding: var(--space-3); }
-  .ra-sidebar nav { flex-direction: row; flex-wrap: wrap; gap: 4px; margin-top: var(--space-3); }
-  .ra-sidebar nav button { height: var(--control-sm); padding: 0 12px; gap: 6px; font-size: 13px; }
-  .ra-sidebar-bottom { flex-direction: row; align-items: center; flex-wrap: wrap; gap: 4px; margin-top: var(--space-3); }
-  .ra-sidebar-bottom > a, .ra-sidebar-bottom > button { font-size: 12px; }
+  .ra-main { padding: var(--space-2); }
   .report-admin { --page-height: auto; }
   .ra-workspace { grid-template-columns: minmax(0, 1fr); }
   .ra-list { border-right: 0; border-bottom: 1px solid var(--line); }

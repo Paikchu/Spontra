@@ -1,6 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowUpRight, Bell, ChartColumn, Cpu, FileStack, ListChecks, Moon, Network, Sparkles, Sun } from "lucide-react";
-import Link from "@/packages/web/src/navigation";
+import { Breadcrumb, BreadcrumbItem, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/packages/web/src/ui/breadcrumb";
+import { Separator } from "@/packages/web/src/ui/separator";
+import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/packages/web/src/ui/sidebar";
+import { AppSidebar, adminNavGroup } from "./app-sidebar";
 import { BusinessMapCompanies } from "./business-map-companies";
 import { FilingLibrary } from "./filing-library";
 import { BusinessSegments } from "./business-segments";
@@ -12,7 +14,7 @@ import { AdminInbox, useInbox } from "./admin-messages";
 import { PageActive } from "./admin-page";
 import { AnalyticsPanel } from "./analytics";
 
-type Section = "whitelist" | "analytics" | "financials" | "filings" | "business" | "findings" | "models" | "messages";
+export type Section = "whitelist" | "analytics" | "financials" | "filings" | "business" | "findings" | "models" | "messages";
 type Page = { path: string; title: string; nav?: Section };
 
 /** Every page of the BusinessView admin. Financials is a drill-down from the whitelist, so it has no entry of its own. */
@@ -26,7 +28,6 @@ const PAGES: Record<Section, Page> = {
   models: { path: "/admin/models", title: "模型配置" },
   messages: { path: "/admin/messages", title: "消息" },
 };
-const NAV: Array<[Section, typeof ListChecks]> = [["whitelist", ListChecks], ["analytics", ChartColumn], ["filings", FileStack], ["business", Network], ["findings", Sparkles], ["models", Cpu], ["messages", Bell]];
 /** Ink is the default, as on BusinessView; paper is a per-viewer choice. main.tsx applies it before the first paint. */
 export const THEME_KEY = "businessview-admin-theme";
 /** Pages that read what they show from the address on mount: opened with a new address, they start again from it. */
@@ -91,16 +92,23 @@ export function BusinessViewAdmin({ mapOrigin = "" }: { mapOrigin?: string }) {
   const auth = { onUnauthorized: () => setError("管理接口拒绝访问"), onAuthenticated: () => setError("") };
   const openSection = (ticker: string, documentId: string, sectionId: string) => navigate("filings", `?${new URLSearchParams({ ticker, document: documentId, section: sectionId })}`);
 
-  return <div className="report-admin">
-    <aside className="ra-sidebar">
-      <a className="ra-brand" href={PAGES.whitelist.path}><span className="ra-brand-dot" aria-hidden="true" />BusinessView<small>后台</small></a>
-      <nav aria-label="后台导航">{NAV.map(([key, Icon]) => <button key={key} aria-current={(page.nav ?? section) === key ? "page" : undefined} onClick={() => navigate(key)}><Icon size={19} />{PAGES[key].title}{key === "messages" && !!inbox?.unread && <span className="ra-nav-count" aria-label={`${inbox.unread} 条未读`}>{inbox.unread > 99 ? "99+" : inbox.unread}</span>}</button>)}</nav>
-      <div className="ra-sidebar-bottom">
-        <button onClick={toggleTheme} aria-pressed={light}>{light ? <Moon size={16} /> : <Sun size={16} />}{light ? "深色" : "浅色"}</button>
-        <Link href={`${mapOrigin}/`}><ArrowUpRight size={16} />打开 BusinessView</Link>
-      </div>
-    </aside>
-    <main className="ra-main">
+  return <SidebarProvider className="report-admin" mobileBreakpoint={769} persistState={false}>
+    <AppSidebar section={section} activeSection={page.nav ?? section} pages={PAGES} navigate={navigate} unread={inbox?.unread ?? 0} light={light} toggleTheme={toggleTheme} mapOrigin={mapOrigin} />
+    <SidebarInset className="min-w-0">
+      <header className="ra-shell-header flex min-h-16 shrink-0 items-center gap-2 border-b px-4">
+        <SidebarTrigger aria-label="切换侧边栏" />
+        <Separator orientation="vertical" className="mr-2 max-h-4 self-center" />
+        <Breadcrumb aria-label="页面位置">
+          <BreadcrumbList>
+            <BreadcrumbItem>BusinessView 后台</BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>{adminNavGroup(page.nav ?? section)}</BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem><BreadcrumbPage>{page.title}</BreadcrumbPage></BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
+      </header>
+      <div className="ra-main">
       {error && <div className="ra-error ra-error-banner" role="alert">{error}</div>}
       {opened.map(key => {
         const content: ReactNode = key === "whitelist" ? <BusinessMapCompanies {...auth} onOpenFinancials={ticker => navigate("financials", `?${new URLSearchParams({ ticker })}`)} />
@@ -113,6 +121,7 @@ export function BusinessViewAdmin({ mapOrigin = "" }: { mapOrigin?: string }) {
           : <AiRuns {...auth} kinds={["findings", "analyst", "checkup"]} translations />;
         return <div key={`${key}:${generation[key] ?? 0}`} className="ra-page" hidden={key !== section}><PageActive.Provider value={key === section}>{content}</PageActive.Provider></div>;
       })}
-    </main>
-  </div>;
+      </div>
+    </SidebarInset>
+  </SidebarProvider>;
 }
