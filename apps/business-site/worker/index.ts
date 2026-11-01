@@ -403,8 +403,8 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
    try{if(!env.PUBLIC_READ_LIMIT||!(await env.PUBLIC_READ_LIMIT.limit({key:request.headers.get("cf-connecting-ip")??"anonymous"})).success)return json({error:"Too many requests"},429);}catch{return json({error:"Read service unavailable"},503);}
    const key=new Request(url.href,{method:"GET"});const cached=await cache?.match(key);if(cached)return cached;
    const tickers=await loadFindingsIndex(fetcher);
-   const response=json({schemaVersion:"findings-index.v1",status:tickers?"ready":"unavailable",tickers:tickers??[]});
-   if(tickers&&cache)ctx.waitUntil(cache.put(key,response.clone()));else response.headers.set("cache-control","no-store");
+   const response=moduleJson({schemaVersion:"findings-index.v1",status:tickers?"ready":"unavailable",tickers:tickers??[]});
+   if(tickers&&cache&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));else response.headers.set("cache-control","no-store");
    return response;
   }
   const match=url.pathname.match(/^\/api\/business\/v1\/companies\/([A-Z][A-Z0-9.-]{0,11})(\/opening|\/revision|\/capital|\/findings|\/fundamentals|\/events|\/filings|\/filings\/\d{10}-\d{2}-\d{6}|\/items\/\d{10}-\d{2}-\d{6}|\/passages\/p[0-9a-f]{14,32}|\/valuation|\/valuation\/versions|\/valuation\/versions\/[0-9a-f]{8,64}|\/valuation\/versions\/[0-9a-f]{8,64}\/evidence\/e[0-9a-f]{6,20})?$/);
@@ -458,7 +458,7 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
     if(!body)return json({error:"Not found"},404);
     const response=json(body);if(cache)ctx.waitUntil(cache.put(key,response.clone()));return response;}
    // Fundamentals with no quarterly metric answer "unavailable" with the reason, the series (year-end balances) still attached.
-   {const body=await loadFundamentals(match[1],fetcher);const response=json({schemaVersion:"fundamentals-response.v1",status:body&&!body.unavailable?"ready":"unavailable",...(body?.unavailable?{reason:body.unavailable.reason}:{}),fundamentals:body});if(!body)response.headers.set("cache-control","no-store");if(cache&&body)ctx.waitUntil(cache.put(key,response.clone()));return response;}
+   {const body=await loadFundamentals(match[1],fetcher);const response=moduleJson({schemaVersion:"fundamentals-response.v1",status:body&&!body.unavailable?"ready":"unavailable",...(body?.unavailable?{reason:body.unavailable.reason}:{}),fundamentals:body});if(!body)response.headers.set("cache-control","no-store");if(cache&&body&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));return response;}
   }
   try{const [flow,explainer,guidance,tree]=await Promise.all([loadPublicFlow(match[1],fetcher,locale),loadExplainer(match[1],fetcher,locale),loadGuidance(match[1],fetcher,locale),loadTree(match[1],fetcher,locale)]);const response=moduleJson({...flow,explainer,guidance,tree});
    // An incomplete answer is never cached, so one slow upstream read cannot pin "preparing" for a minute.

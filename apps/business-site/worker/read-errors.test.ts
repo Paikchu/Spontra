@@ -35,3 +35,17 @@ test("A03: ancillary read failures are explicit and never cache an incomplete re
   assert.equal((await response.json() as { status: string }).status, "ready");
   assert.equal(response.headers.get("cache-control"), "public, max-age=14400");
 });
+
+test("A04: fundamentals and findings index retain upstream errors and retry headers", async () => {
+  for (const route of ["findings", "companies/ACME/fundamentals"]) {
+    for (const status of [429, 500]) {
+      const response = await handle(url(route), env, { waitUntil() { assert.fail("cannot cache a failed read"); } }, async () => refused(status));
+      assert.equal(response.status, status === 429 ? 429 : 503, route);
+      assert.equal(response.headers.get("cache-control"), "no-store");
+      if (status === 429) assert.equal(response.headers.get("retry-after"), "120");
+    }
+    const response = await handle(url(route), env, { waitUntil() {} }, async () => Response.json({ status: "unavailable" }));
+    assert.equal(response.status, 200);
+    assert.equal((await response.json() as { status: string }).status, "unavailable");
+  }
+});
