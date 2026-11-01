@@ -45,12 +45,19 @@ async function call(state: ValuationState, name: string, input: unknown) {
     state, signal: new AbortController().signal, recipe: "test", stage: async (_name, work) => work(),
   });
 }
-const scenario = { narrative: "Stable cash flow supported by the filing.", probability: null, triggers: [], invalidation: [], evidenceIds: [evidenceId], drivers: { modelType: "fcfe", cfo: 150, capex: 20, sbc: 30, normalization: 0, netBorrowing: 0, growth: [0, 0, 0, 0, 0], terminalGrowth: 0 } };
-const calculation = {
-  modelType: "fcfe", discountRate: { basis: "cost_of_equity", value: 0.1, riskFree: null, beta: null, equityRiskPremium: null, costOfDebt: null, taxRate: null, equityWeight: null, rationale: "Explicit discount rate assumption for this test.", sourceRefs: [] },
+const why = { rationale: "Supported by the current filing's liquidity disclosure.", evidenceIds: [evidenceId] };
+const scenario = { narrative: "Stable cash flow supported by the filing.", triggers: ["Cash flow holds"], invalidation: ["Cash flow falls"], evidenceIds: [evidenceId], assumptions: { revenue: why, margin: why, capex: why }, drivers: { modelType: "fcfe", cfo: 150, capex: 20, sbc: 30, normalization: 0, netBorrowing: 0, growth: [0, 0, 0, 0, 0], terminalGrowth: 0 } };
+const component = (value: number | null, source: string) => ({ value, source, evidenceIds: [] });
+const weight = (w: number, rationale: string) => ({ weight: w, rationale: `${rationale} The equity-level model has no forward-multiple cross-check, so the cash-flow method carries the whole weight.`, evidenceIds: [evidenceId] });
+const probability = (p: number, rationale: string) => ({ probability: p, rationale, evidenceIds: [evidenceId] });
+export const calculation = {
+  modelType: "fcfe", discountRate: { basis: "cost_of_equity", riskFree: component(0.04, "test risk-free"), beta: component(1, "test beta"), equityRiskPremium: component(0.06, "test premium"), costOfDebt: component(null, "not needed: cost of equity"), taxRate: component(null, "not needed: cost of equity"), equityWeight: component(null, "not needed: cost of equity"), rationale: "Cost of equity from the test components." },
   shares: { baseFactId: "shares_outstanding", dilutionPercent: 0, rationale: "No additional dilution." },
-  bridge: { nonOperatingAssets: 0, debtAndClaims: 0, nonOperatingEquityAdjustment: 0, notes: [] },
-  scenarios: { bear: scenario, base: scenario, bull: scenario },
+  bridge: { nonOperatingAssets: 0, debtAndClaims: 0, nonOperatingEquityAdjustment: 0, notes: ["no net claims in this test"] },
+  scenarios: { bear: scenario, base: scenario, bull: scenario }, midYear: false, forwardYears: 3,
+  methodWeights: { dcf: weight(1, "The equity cash flows are the only usable method."), ev_ebitda_forward: weight(0, "Not applicable to an equity-level model."), pe_forward: weight(0, "Not applicable to an equity-level model.") },
+  scenarioProbabilities: { bear: probability(0.3, "Downside weight from the liquidity risk."), base: probability(0.5, "The filing's own run-rate."), management: { probability: 0, rationale: "no target set", evidenceIds: [] }, bull: probability(0.2, "Upside if refinancing completes early.") },
+  managementComparison: null, consensus: { status: "unavailable", reason: "No sell-side target page was read in this test run." },
 };
 
 test("AD-3: unresolved filing evidence rejects resilience above 7.5 at submission", async () => {
@@ -85,7 +92,8 @@ for (const status of ["unresolved", "resolved", "unknown"] as const) {
 test("AD-3: gaps and keyword mentions alone do not establish unresolved risk", async () => {
   const state = stateWith("Our accounting policies use the going concern basis of accounting.");
   assert.equal(goingConcernOf(state), "unknown");
-  const submitted = await call(state, "submit_dimension", { ...dimension(8), gaps: ["Read more about going concern and refinancing."] });
+  // The assessment is required; "unknown" says the evidence establishes neither doubt nor its alleviation.
+  const submitted = await call(state, "submit_dimension", { ...dimension(8), gaps: ["Read more about going concern and refinancing."], goingConcern: assessment("unknown") });
   assert.match(submitted.observation, /financialResilience recorded/);
   const { publication } = await assemblePublication(state, now, "test");
   assert.equal(publication.dimensions.find(d => d.key === "financialResilience")!.score, 8);

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { CONFIDENCES, DIAGNOSTIC_UNITS, DISCOUNT_RATE_BASES, EVIDENCE_KINDS, FACT_BASES, GAP_CODES, GATE_STATUSES, MANAGEMENT_TARGET_METRICS, PEER_SELECTION_BASES, PERIOD_TYPES, REPORT_STATUSES, VALUATION_DIMENSIONS, VALUATION_METHODS, VALUATION_MODEL_TYPES, VERDICTS, type ModelDrivers, type ValuationPublication } from "../../analysis-contract/valuation.ts";
+import { CONFIDENCES, DIAGNOSTIC_UNITS, DISCOUNT_RATE_BASES, DISCOUNT_RATE_COMPONENTS, EVIDENCE_KINDS, EXTENDED_SCENARIO_KEYS, FACT_BASES, GAP_CODES, GATE_STATUSES, MANAGEMENT_TARGET_METRICS, PEER_SELECTION_BASES, PERIOD_TYPES, REPORT_STATUSES, VALUATION_DIMENSIONS, VALUATION_METHODS, VALUATION_MODEL_TYPES, VERDICTS, type ModelDrivers, type ValuationPublication } from "../../analysis-contract/valuation.ts";
 
 /** The stored publication as the read API and the page accept it; anything else reads as absent rather than half-drawn. */
 const finite = z.number().finite();
@@ -41,10 +41,24 @@ const reference = z.object({
 });
 const consensus = z.object({ mean: finite, low: nullableFinite, high: nullableFinite, count: z.number().nullable(), asOf: z.string().nullable(), evidenceId: z.string().nullable() });
 const scenarioResult = z.object({ perShare: finite, equityValue: finite, enterpriseValue: nullableFinite, pvExplicit: nullableFinite, pvTerminal: nullableFinite, terminalShare: nullableFinite, yearly: z.array(yearRow), notes: strings });
-const scenario = z.object({ narrative: z.string(), probability: nullableFinite, triggers: strings, invalidation: strings, evidenceIds: strings, drivers, result: scenarioResult });
+// valuation.calc.v4 additions, all optional (docs/valuation-v2-SPEC.md, "v3: judged weights and the management scenario").
+const judgement = z.object({ rationale: z.string(), evidenceIds: strings });
+const pathAssumptions = z.object({ revenue: judgement, margin: judgement, capex: judgement });
+const methodRecord = <T extends z.ZodType>(value: T) => z.object(Object.fromEntries(VALUATION_METHODS.map(k => [k, value])) as Record<typeof VALUATION_METHODS[number], T>);
+const scenarioValuation = z.object({ methods: methodRecord(nullableFinite), weights: methodRecord(finite), perShare: finite });
+const methodWeights = methodRecord(judgement.extend({ weight: finite }));
+const scenarioProbabilities = z.object(Object.fromEntries(EXTENDED_SCENARIO_KEYS.map(k => [k, judgement.extend({ probability: finite })])) as Record<typeof EXTENDED_SCENARIO_KEYS[number], ReturnType<typeof judgement.extend<{ probability: typeof finite }>>>);
+const discountRateSources = z.object(Object.fromEntries(DISCOUNT_RATE_COMPONENTS.map(k => [k, z.object({ source: z.string(), evidenceIds: strings })])) as Record<typeof DISCOUNT_RATE_COMPONENTS[number], z.ZodObject<{ source: z.ZodString; evidenceIds: typeof strings }>>);
+const managementComparison = z.object({ rows: z.array(z.object({ metric: z.enum(MANAGEMENT_TARGET_METRICS), fiscalYear: z.number(), year: z.number(), target: finite, base: finite, gap: finite })), explanation: z.string(), evidenceIds: strings });
+const consensusNote = z.object({ status: z.enum(["cited", "unavailable"]), source: z.string().nullable(), reason: z.string().nullable() });
+const scenario = z.object({ narrative: z.string(), probability: nullableFinite, triggers: strings, invalidation: strings, evidenceIds: strings, drivers, result: scenarioResult, assumptions: pathAssumptions.optional(), valuation: scenarioValuation.optional() });
+const managementScenario = scenario.extend({
+  label: z.string(), triangulation: z.lazy(() => triangulation).nullable(), methods: z.array(z.lazy(() => method)),
+  anchors: z.array(z.object({ metric: z.enum(MANAGEMENT_TARGET_METRICS), fiscalYear: z.number(), year: z.number(), target: finite, path: nullableFinite })), sources: z.array(managementSource), notes: strings,
+});
 const model = z.object({
   calculatorVersion: z.string(), modelType: z.enum(VALUATION_MODEL_TYPES), currency: z.string(),
-  discountRate: z.object({ value: finite, basis: z.enum(DISCOUNT_RATE_BASES), components: z.object({ riskFree: nullableFinite, beta: nullableFinite, equityRiskPremium: nullableFinite, costOfEquity: nullableFinite, costOfDebt: nullableFinite, taxRate: nullableFinite, equityWeight: nullableFinite }), rationale: z.string(), sourceRefs: strings }),
+  discountRate: z.object({ value: finite, basis: z.enum(DISCOUNT_RATE_BASES), components: z.object({ riskFree: nullableFinite, beta: nullableFinite, equityRiskPremium: nullableFinite, costOfEquity: nullableFinite, costOfDebt: nullableFinite, taxRate: nullableFinite, equityWeight: nullableFinite }), rationale: z.string(), sourceRefs: strings, sources: discountRateSources.optional() }),
   shares: z.object({ base: finite, dilutionReserve: finite, economic: finite, basis: z.string() }),
   bridge: z.object({ nonOperatingAssets: finite, debtAndClaims: finite, nonOperatingEquityAdjustment: finite, notes: strings }),
   scenarios: z.object({ bear: scenario, base: scenario, bull: scenario }),
@@ -56,6 +70,8 @@ const model = z.object({
   methods: z.array(method).optional(), triangulation: triangulation.nullable().optional(), gates: z.array(gateRow).optional(),
   anchors: z.object({ revenue: anchor.nullable() }).optional(), verification: verification.nullable().optional(), peers: peers.nullable().optional(), consensus: consensus.nullable().optional(),
   references: z.array(reference).optional(),
+  methodWeights: methodWeights.optional(), scenarioProbabilities: scenarioProbabilities.optional(), managementScenario: managementScenario.nullable().optional(),
+  managementComparison: managementComparison.nullable().optional(), consensusNote: consensusNote.nullable().optional(),
 });
 const sections = z.object({ summary: z.string(), thesis: z.string(), expectationsGap: z.string(), catalysts: strings, counterEvidence: strings, nextChecks: strings, modelNotes: z.string() });
 const publication = z.object({

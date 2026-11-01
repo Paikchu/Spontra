@@ -3,7 +3,7 @@ import { Button } from "@/packages/web/src/ui/button";
 import { labels, messages, useLocale } from "@/packages/web/src/i18n";
 import { SourceLanguage, langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import { compactMoney, compactShares, perShare } from "@/shared/analysis-runtime/locale";
-import { DIMENSION_WEIGHTS, type ValuationEvidence, type ValuationPublication, type ValuationResponse } from "@/shared/analysis-contract/valuation";
+import { DIMENSION_WEIGHTS, DISCOUNT_RATE_COMPONENTS, EXTENDED_SCENARIO_KEYS, VALUATION_METHODS, type ScenarioEntry, type ValuationEvidence, type ValuationPublication, type ValuationResponse } from "@/shared/analysis-contract/valuation";
 import { fetchValuationVersion } from "./company-data";
 import { track } from "./track";
 import { citationOrder, leadSentence, pathLeaf, proseBlocks, proseParts } from "./valuation-prose";
@@ -37,7 +37,15 @@ const m = messages({
   summary: "Summary", thesis: "Thesis", expectationsGap: "Expectations gap", catalysts: "Catalysts", counterEvidence: "Counter-evidence", nextChecks: "Next checks", modelNotes: "Model notes",
   evidence: "Supporting evidence", counter: "Against", gaps: "Gaps", nextCheck: "Next check", diagnostics: "Diagnostics", sources: "Sources", source: "Source", openSource: "Open the filing", snapshot: "As read when the report was written", close: "Close",
   history: "History of each factor", years: (n: number) => `${n} years`, median: "Median", rangeLabel: "Range",
-  
+  // valuation.calc.v4: the methods and their judged weights, the four scenarios and their probabilities, the comparable set, the checks, management's targets and the consensus.
+  expectedValue: "Expected value", expectedNote: "Probability-weighted over the bear, base, management and bull scenarios; the headline base value weighs the cash-flow model with the forward multiples at the weights below.",
+  methods: "Valuation methods", methodLow: "Low (peer p25)", methodBase: "Base (peer median)", methodHigh: "High (peer p75)", weightCol: "Weight", notApplied: "Not applied", why: "Why",
+  dcfValue: "Cash-flow value", weightedValue: "Weighted value", management: "Management", probabilities: "Scenario probabilities", managementScenarioNote: "Computed by code from management's cited targets on the base case's rate, shares, bridge and horizon; weighed by its judged probability, never the base.",
+  revenuePath: "Revenue path", marginPath: "Margin path", capexPath: "Capex path", rateSources: "Discount rate sources",
+  peers: "Comparable set", peerBasisLabel: "Basis", peerQuartiles: (p25: string, median: string, p75: string) => `p25 ${p25} · median ${median} · p75 ${p75}`, peerNone: "No peer multiples were available; the cash-flow model stands alone.",
+  checks: "Model checks", checkStatus: "Status", checkDetail: "Detail",
+  managementTargets: "Management targets vs base case", yearCol: "Year", fiscalYear: (fy: number) => `FY${fy}`, targetCol: "Target", baseCol: "Base case", gapCol: "Gap", targetSources: "Target sources",
+  consensus: "Sell-side consensus", consensusMean: "Mean target", consensusRange: "Range", analysts: (n: number) => `${n} analysts`, consensusUnavailable: "Consensus unavailable", asOf: (date: string) => `as of ${date}`,
 }, {
   title: "估值评估",
   score: "综合分", unscored: "未评分", confidence: "置信度",
@@ -59,8 +67,21 @@ const m = messages({
   summary: "结论", thesis: "论证", expectationsGap: "预期差", catalysts: "催化", counterEvidence: "反证", nextChecks: "下一验证点", modelNotes: "模型说明",
   evidence: "支持证据", counter: "反证", gaps: "缺口", nextCheck: "下一验证点", diagnostics: "诊断指标", sources: "来源", source: "来源", openSource: "打开申报原文", snapshot: "报告写成时读取的快照", close: "关闭",
   history: "各因子历史", years: (n: number) => `${n} 年`, median: "中位数", rangeLabel: "区间",
- 
+  expectedValue: "期望价值", expectedNote: "按悲观、基准、管理层与乐观四个情景的概率加权；标题的基准价值按下方权重将现金流模型与远期倍数加权。",
+  methods: "估值方法", methodLow: "低（同业 25 分位）", methodBase: "基准（同业中位）", methodHigh: "高（同业 75 分位）", weightCol: "权重", notApplied: "未采用", why: "理由",
+  dcfValue: "现金流折现值", weightedValue: "加权价值", management: "管理层", probabilities: "情景概率", managementScenarioNote: "由代码按管理层引用的目标、在基准情景的折现率、股数、桥接与期限上算出；按其判断的概率加权，从不作为基准。",
+  revenuePath: "收入路径", marginPath: "利润率路径", capexPath: "资本开支路径", rateSources: "折现率来源",
+  peers: "可比公司", peerBasisLabel: "依据", peerQuartiles: (p25: string, median: string, p75: string) => `25 分位 ${p25} · 中位 ${median} · 75 分位 ${p75}`, peerNone: "没有可用的同业倍数；仅有现金流模型。",
+  checks: "模型校验", checkStatus: "状态", checkDetail: "说明",
+  managementTargets: "管理层目标与基准情景", yearCol: "年份", fiscalYear: (fy: number) => `${fy} 财年`, targetCol: "目标", baseCol: "基准情景", gapCol: "差距", targetSources: "目标来源",
+  consensus: "卖方共识", consensusMean: "目标均值", consensusRange: "区间", analysts: (n: number) => `${n} 位分析师`, consensusUnavailable: "无可用市场共识", asOf: (date: string) => `截至 ${date}`,
 });
+const METHOD = labels({ dcf: "Discounted cash flow", ev_ebitda_forward: "EV/EBITDA, forward", pe_forward: "P/E, forward" }, { dcf: "现金流折现", ev_ebitda_forward: "远期 EV/EBITDA", pe_forward: "远期 P/E" });
+const PEER_BASIS = labels({ curated: "Curated set", ranking: "Business-tag peers", unit: "Segment peers", category: "Same category", none: "None" }, { curated: "人工选定", ranking: "业务标签同业", unit: "业务板块同业", category: "同类公司", none: "无" });
+const GATE_STATUS = labels({ pass: "Pass", flag: "Flag", fail: "Fail" }, { pass: "通过", flag: "提示", fail: "未通过" });
+const GATE = labels({ terminal_share: "Terminal value share", non_negative_scenarios: "Non-negative scenarios", terminal_growth: "Terminal growth", cited_inputs: "Cited inputs", rpo_floor: "Contracted revenue floor", implied_multiple_vs_history: "Implied multiple vs history", method_dispersion: "Method dispersion", management_targets: "Management targets", consensus_divergence: "Consensus divergence", consensus_unavailable: "Consensus", method_unavailable: "Unapplied method", method_zero_weight: "Unweighted method" },
+  { terminal_share: "终值占比", non_negative_scenarios: "情景非负", terminal_growth: "终值增长", cited_inputs: "引用输入核对", rpo_floor: "合同收入下限", implied_multiple_vs_history: "隐含倍数与历史", method_dispersion: "方法离散度", management_targets: "管理层目标", consensus_divergence: "与市场共识偏离", consensus_unavailable: "市场共识", method_unavailable: "未能采用的方法", method_zero_weight: "未加权的方法" });
+const RATE_COMPONENT = labels({ riskFree: "Risk-free rate", beta: "Beta", equityRiskPremium: "Equity risk premium", costOfDebt: "Cost of debt", taxRate: "Tax rate", equityWeight: "Equity weight" }, { riskFree: "无风险利率", beta: "贝塔", equityRiskPremium: "股权风险溢价", costOfDebt: "债务成本", taxRate: "税率", equityWeight: "权益权重" });
 const VERDICT = labels({ supported: "Evidence supports mispricing", not_supported: "Mispricing not supported", pending: "Pending verification" }, { supported: "有证据支持错杀", not_supported: "不支持错杀", pending: "待验证" });
 const CONF = labels({ high: "High", medium: "Medium", low: "Low" }, { high: "高", medium: "中", low: "低" });
 const DIM = labels({ businessQuality: "Business quality", growthExecution: "Growth delivery", valuationSafety: "Valuation safety", mispricingCatalysts: "Mispricing and catalysts", financialResilience: "Financial resilience" }, { businessQuality: "生意质量", growthExecution: "增长兑现", valuationSafety: "估值安全", mispricingCatalysts: "错杀与催化", financialResilience: "财务韧性" });
@@ -98,7 +119,7 @@ function Cites({ ids, onCite, counter }: { ids: string[]; onCite: (id: string) =
 }
 
 /** Generated prose with its evidence citations turned into footnote numbers. */
-function Prose({ text, onCite, as: Tag = "p" }: { text: string; onCite: (id: string) => void; as?: "p" | "li" }) {
+function Prose({ text, onCite, as: Tag = "p" }: { text: string; onCite: (id: string) => void; as?: "p" | "li" | "span" }) {
   return <Tag lang={langOf(text)}>{proseParts(text).map((part, i) => part.kind === "text" ? part.text : <Cites key={i} ids={part.ids} onCite={onCite} />)}</Tag>;
 }
 
@@ -162,31 +183,97 @@ function Model({ report, onCite }: { report: ValuationPublication; onCite: (id: 
   const model = report.model;
   if (!model) return null;
   const rate = model.discountRate;
+  const rows: Array<[keyof typeof m & ("bear" | "base" | "management" | "bull"), ScenarioEntry]> = [["bear", model.scenarios.bear], ["base", model.scenarios.base], ...(model.managementScenario ? [["management", model.managementScenario] as ["management", ScenarioEntry]] : []), ["bull", model.scenarios.bull]];
+  const weighted = rows.some(([, s]) => s.valuation);
   return <section className="val-block">
     <h3>{m.model}</h3>
     <p className="val-model-line">{MODEL_TYPE[model.modelType]} · {m.discountRate} {pct(rate.value)}{m.rateBasis(rate.basis === "wacc" ? m.wacc : m.costOfEquity)} · {m.shares} {compactShares(model.shares.economic, locale)}{model.shares.dilutionReserve ? m.dilution(compactShares(model.shares.dilutionReserve, locale)) : ""}</p>
-    <table className="val-table"><thead><tr><th>{m.scenarios}</th><th>{m.perShareValue}</th><th>{m.probability}</th><th>{m.growth}</th><th>{m.margin}</th><th>{m.terminalShare}</th></tr></thead><tbody>
-      {(["bear", "base", "bull"] as const).map(key => { const s = model.scenarios[key]; const d = s.drivers as { path?: { revenueGrowth?: number[]; operatingMargin?: number[] } };
-        return <tr key={key}><th>{m[key]}</th><td>{perShare(s.result.perShare, model.currency, locale)}</td><td>{s.probability != null ? pct(s.probability, 0) : "—"}</td><td>{d.path?.revenueGrowth ? pct(avg(d.path.revenueGrowth)) : "—"}</td><td>{d.path?.operatingMargin ? pct(avg(d.path.operatingMargin)) : "—"}</td><td>{s.result.terminalShare != null ? pct(s.result.terminalShare, 0) : "—"}</td></tr>; })}
+    <table className="val-table"><thead><tr><th>{m.scenarios}</th><th>{weighted ? m.dcfValue : m.perShareValue}</th>{weighted && <th>{m.weightedValue}</th>}<th>{m.probability}</th><th>{m.growth}</th><th>{m.margin}</th><th>{m.terminalShare}</th></tr></thead><tbody>
+      {rows.map(([key, s]) => { const d = s.drivers as { path?: { revenueGrowth?: number[]; operatingMargin?: number[] } };
+        return <tr key={key}><th>{m[key]}</th><td>{perShare(s.result.perShare, model.currency, locale)}</td>{weighted && <td>{s.valuation ? perShare(s.valuation.perShare, model.currency, locale) : "—"}</td>}<td>{s.probability != null ? pct(s.probability, 0) : "—"}</td><td>{d.path?.revenueGrowth ? pct(avg(d.path.revenueGrowth)) : "—"}</td><td>{d.path?.operatingMargin ? pct(avg(d.path.operatingMargin)) : "—"}</td><td>{s.result.terminalShare != null ? pct(s.result.terminalShare, 0) : "—"}</td></tr>; })}
     </tbody></table>
+    {model.scenarioProbabilities && <div className="val-why-list"><h5>{m.probabilities}</h5>
+      {EXTENDED_SCENARIO_KEYS.map(key => { const p = model.scenarioProbabilities![key]; return <p key={key} className="val-why"><b>{m[key]} {pct(p.probability, 0)}</b> <Prose as="span" text={p.rationale} onCite={onCite} /> {p.evidenceIds.length > 0 && <Cites ids={p.evidenceIds.filter(isEvidenceId)} onCite={onCite} />}</p>; })}
+    </div>}
     {model.implied && <p className="val-implied"><b>{m.implied}</b> {model.implied.converged ? m.impliedText(pct(model.implied.implied), pct(model.implied.baseAverage)) : m.impliedNotConverged}</p>}
     <h4>{m.sensitivities}</h4>
     <Sensitivities report={report} />
     <Button variant="unstyled" type="button" className="val-toggle" aria-expanded={open} onClick={() => setOpen(v => !v)}>{open ? m.hideModel : m.showModel}</Button>
     {open && <div className="val-model-detail">
-      {(["bear", "base", "bull"] as const).map(key => { const s = model.scenarios[key]; return <div key={key} className="val-scenario">
+      {rows.map(([key, s]) => <div key={key} className="val-scenario">
         <h5>{m[key]}</h5>
+        {key === "management" && <p className="val-list-line">{m.managementScenarioNote}</p>}
         <Prose text={s.narrative} onCite={onCite} />
+        {s.assumptions && <p className="val-chips"><span><b>{m.revenuePath}</b> <Prose as="span" text={s.assumptions.revenue.rationale} onCite={onCite} /><Cites ids={s.assumptions.revenue.evidenceIds.filter(isEvidenceId)} onCite={onCite} /></span><span><b>{m.marginPath}</b> <Prose as="span" text={s.assumptions.margin.rationale} onCite={onCite} /><Cites ids={s.assumptions.margin.evidenceIds.filter(isEvidenceId)} onCite={onCite} /></span><span><b>{m.capexPath}</b> <Prose as="span" text={s.assumptions.capex.rationale} onCite={onCite} /><Cites ids={s.assumptions.capex.evidenceIds.filter(isEvidenceId)} onCite={onCite} /></span></p>}
         {s.triggers.length > 0 && <p className="val-list-line"><b>{m.triggers}</b> {s.triggers.map((t, i) => <span key={i} lang={langOf(t)}>{t}{i < s.triggers.length - 1 ? "; " : ""}</span>)}</p>}
         {s.invalidation.length > 0 && <p className="val-list-line"><b>{m.invalidation}</b> {s.invalidation.map((t, i) => <span key={i} lang={langOf(t)}>{t}{i < s.invalidation.length - 1 ? "; " : ""}</span>)}</p>}
-      </div>; })}
+        {key === "management" && model.managementScenario && model.managementScenario.sources.length > 0 && <p className="val-list-line"><b>{m.targetSources}</b> {model.managementScenario.sources.map((src, i) => <span key={src.id} lang="en"><a href={src.url} target="_blank" rel="noreferrer noopener">{src.title}</a> ({src.date}){i < model.managementScenario!.sources.length - 1 ? "; " : ""}</span>)}</p>}
+      </div>)}
       <p className="val-list-line"><b>{m.bridge}</b> {m.nonOperating} {compactMoney(model.bridge.nonOperatingAssets, model.currency, locale)} · {m.claims} {compactMoney(model.bridge.debtAndClaims, model.currency, locale)}</p>
       <p className="val-list-line" lang={langOf(rate.rationale)}><b>{m.discountRate}</b> {rate.rationale}</p>
+      {rate.sources && <p className="val-chips"><b>{m.rateSources}</b>{DISCOUNT_RATE_COMPONENTS.map(key => <span key={key}><b>{RATE_COMPONENT[key]}</b> <span lang="en">{rate.sources![key].source}</span><Cites ids={rate.sources![key].evidenceIds.filter(isEvidenceId)} onCite={onCite} /></span>)}</p>}
       {model.limitations.length > 0 && <p className="val-list-line"><b>{m.limitations}</b> {model.limitations.map((t, i) => <span key={i} lang={langOf(t)}>{t} </span>)}</p>}
       <table className="val-table val-table--facts"><thead><tr><th>{m.inputs}</th><th></th><th></th></tr></thead><tbody>
         {report.facts.map(f => <tr key={f.id}><th lang="en">{f.label}</th><td>{f.unit === "ratio" ? pct(f.value) : f.unit === "shares" ? compactShares(f.value, locale) : compactMoney(f.value, f.currency, locale)}</td><td><small>{f.periodEnd ?? ""} · {f.basis}</small></td></tr>)}
       </tbody></table>
     </div>}
+  </section>;
+}
+
+/** The methods on the base path with their judged weights and the reasons; absent on reports written before the cross-check. */
+function Methods({ report, onCite }: { report: ValuationPublication; onCite: (id: string) => void }) {
+  const locale = useLocale();
+  const model = report.model;
+  if (!model?.methods?.length) return null;
+  const money = (v: number | null) => v != null ? perShare(v, model.currency, locale) : "—";
+  return <section className="val-block">
+    <h3>{m.methods}</h3>
+    <table className="val-table"><thead><tr><th>{m.methods}</th><th>{m.methodLow}</th><th>{m.methodBase}</th><th>{m.methodHigh}</th><th>{m.weightCol}</th></tr></thead><tbody>
+      {model.methods.map(method => <tr key={method.method}><th>{METHOD[method.method]}{method.base == null && <small> · {m.notApplied}</small>}</th><td>{money(method.low)}</td><td>{money(method.base)}</td><td>{money(method.high)}</td><td>{pct(method.weight, 0)}</td></tr>)}
+    </tbody></table>
+    {model.methodWeights && <div className="val-why-list">
+      {VALUATION_METHODS.map(key => { const w = model.methodWeights![key]; const method = model.methods!.find(x => x.method === key); return <p key={key} className="val-why"><b>{METHOD[key]} {pct(w.weight, 0)}</b> <Prose as="span" text={w.rationale} onCite={onCite} /> <Cites ids={w.evidenceIds.filter(isEvidenceId)} onCite={onCite} />{method && method.base == null && method.notes[0] && <small lang="en"> · {method.notes[0]}</small>}</p>; })}
+    </div>}
+    {model.peers ? <p className="val-list-line"><b>{m.peers}</b> {PEER_BASIS[model.peers.basis ?? "ranking"]} · <span lang="en">{model.peers.peers.join(", ")}</span>{model.peers.evToEbitda && <> · EV/EBITDA {m.peerQuartiles(`${model.peers.evToEbitda.p25.toFixed(1)}×`, `${model.peers.evToEbitda.median.toFixed(1)}×`, `${model.peers.evToEbitda.p75.toFixed(1)}×`)}</>}{model.peers.peRatio && <> · P/E {m.peerQuartiles(`${model.peers.peRatio.p25.toFixed(1)}×`, `${model.peers.peRatio.median.toFixed(1)}×`, `${model.peers.peRatio.p75.toFixed(1)}×`)}</>}{model.peers.notes.length > 0 && <small lang="en"> · {model.peers.notes.join("; ")}</small>}</p> : <p className="val-list-line"><b>{m.peers}</b> {m.peerNone}</p>}
+  </section>;
+}
+
+/** Management's cited targets beside the base path, the model's explanation of the gap, and the consensus or why none could be cited. */
+function Anchors({ report, onCite }: { report: ValuationPublication; onCite: (id: string) => void }) {
+  const locale = useLocale();
+  const model = report.model;
+  if (!model) return null;
+  const comparison = model.managementComparison ?? null, consensus = model.consensus ?? null, note = model.consensusNote ?? null;
+  if (!comparison && !consensus && !note) return null;
+  return <section className="val-block">
+    {comparison && <>
+      <h3>{m.managementTargets}</h3>
+      <table className="val-table"><thead><tr><th>{m.yearCol}</th><th>{m.targetCol}</th><th>{m.baseCol}</th><th>{m.gapCol}</th></tr></thead><tbody>
+        {comparison.rows.map(row => <tr key={`${row.metric}-${row.fiscalYear}`}><th>{m.fiscalYear(row.fiscalYear)} · {row.year}</th><td>{compactMoney(row.target, model.currency, locale)}</td><td>{compactMoney(row.base, model.currency, locale)}</td><td data-sign={row.gap >= 0 ? "up" : "down"}>{signedPct(row.gap)}</td></tr>)}
+      </tbody></table>
+      {comparison.explanation && <p className="val-why"><b>{m.why}</b> <Prose as="span" text={comparison.explanation} onCite={onCite} /> <Cites ids={comparison.evidenceIds.filter(isEvidenceId)} onCite={onCite} /></p>}
+    </>}
+    {(consensus || note) && <>
+      <h3>{m.consensus}</h3>
+      {consensus ? <dl className="val-stats">
+        <div><dt>{m.consensusMean}</dt><dd>{perShare(consensus.mean, model.currency, locale)}{consensus.asOf && <small>{m.asOf(consensus.asOf)}</small>}</dd></div>
+        {consensus.low != null && consensus.high != null && <div><dt>{m.consensusRange}</dt><dd>{perShare(consensus.low, model.currency, locale)} – {perShare(consensus.high, model.currency, locale)}</dd></div>}
+        {consensus.count != null && <div><dt>{m.source}</dt><dd>{m.analysts(consensus.count)}{note?.source && <small lang="en">{note.source}</small>}</dd></div>}
+      </dl> : <p className="val-why"><b>{m.consensusUnavailable}</b> {note?.reason && <Prose as="span" text={note.reason} onCite={onCite} />}</p>}
+      {consensus?.evidenceId && isEvidenceId(consensus.evidenceId) && <p className="val-list-line"><b>{m.source}</b> <Cites ids={[consensus.evidenceId]} onCite={onCite} /></p>}
+    </>}
+  </section>;
+}
+
+/** The calculator's checks: each gate's status and the figures behind it. */
+function Checks({ report }: { report: ValuationPublication }) {
+  const gates = report.model?.gates;
+  if (!gates?.length) return null;
+  return <section className="val-block">
+    <h3>{m.checks}</h3>
+    <table className="val-table val-table--checks"><thead><tr><th>{m.checks}</th><th>{m.checkStatus}</th><th>{m.checkDetail}</th></tr></thead><tbody>
+      {gates.map((g, i) => <tr key={`${g.key}-${i}`} data-status={g.status}><th>{GATE[g.key as keyof typeof GATE] ?? <span lang="en">{g.key}</span>}</th><td><i className="val-gate" data-status={g.status} aria-hidden="true" />{GATE_STATUS[g.status]}</td><td lang="en">{g.detail}</td></tr>)}
+    </tbody></table>
   </section>;
 }
 
@@ -248,12 +335,28 @@ function Status({ valuation }: { valuation: ValuationResponse }) {
   return null;
 }
 
+/** The judgements of a valuation.calc.v4 model in reading order: weights, probabilities, path assumptions, the comparison, the consensus, the rate sources. */
+function judgementTexts(model: ValuationPublication["model"]): string[] {
+  if (!model) return [];
+  const ids = (list: string[]) => list.filter(isEvidenceId).map(id => `[${id}]`).join("");
+  return [
+    ...VALUATION_METHODS.map(k => model.methodWeights ? `${model.methodWeights[k].rationale} ${ids(model.methodWeights[k].evidenceIds)}` : ""),
+    ...EXTENDED_SCENARIO_KEYS.map(k => model.scenarioProbabilities ? `${model.scenarioProbabilities[k].rationale} ${ids(model.scenarioProbabilities[k].evidenceIds)}` : ""),
+    ...(["bear", "base", "bull"] as const).flatMap(k => { const a = model.scenarios[k].assumptions; return a ? [`${a.revenue.rationale} ${ids(a.revenue.evidenceIds)}`, `${a.margin.rationale} ${ids(a.margin.evidenceIds)}`, `${a.capex.rationale} ${ids(a.capex.evidenceIds)}`] : []; }),
+    model.managementScenario ? `${model.managementScenario.narrative} ${ids(model.managementScenario.evidenceIds)}` : "",
+    model.managementComparison ? `${model.managementComparison.explanation} ${ids(model.managementComparison.evidenceIds)}` : "",
+    model.consensusNote?.reason ?? "", model.consensus?.evidenceId ? `[${model.consensus.evidenceId}]` : "",
+    ...DISCOUNT_RATE_COMPONENTS.map(k => model.discountRate.sources ? ids(model.discountRate.sources[k].evidenceIds) : ""),
+  ].filter(Boolean);
+}
+
 /** Footnotes numbered as the report reads: the written case first, then the dimensions and scenarios, then the rest. */
 function footnotesOf(report: ValuationPublication): Footnotes {
   const s = report.sections;
   const texts = [s.summary, s.thesis, s.expectationsGap, ...s.catalysts, ...s.counterEvidence, ...s.nextChecks, s.modelNotes,
     ...report.dimensions.flatMap(d => [d.rationale, ...d.supportingEvidenceIds, ...d.counterEvidenceIds]),
-    ...(report.model ? (["bear", "base", "bull"] as const).map(k => report.model!.scenarios[k].narrative) : [])];
+    ...(report.model ? (["bear", "base", "bull"] as const).map(k => report.model!.scenarios[k].narrative) : []),
+    ...judgementTexts(report.model)];
   return { order: citationOrder(texts, report.evidence.map(e => e.evidenceId)), names: new Map(report.evidence.map(e => [e.evidenceId, sourceName(e)])) };
 }
 
@@ -302,11 +405,13 @@ export function ValuationPanel({ ticker, valuation }: { ticker: string; valuatio
         <RangeBar report={report} />
         <dl className="val-stats">
           <div><dt>{m.price}</dt><dd>{report.quote ? <>{perShare(report.quote.price, report.quote.currency, locale)}<small>{m.priceDate(report.quote.priceDate)}</small></> : m.noQuote}</dd></div>
+          {has(range?.expected) && <div><dt>{m.expectedValue}</dt><dd>{perShare(range!.expected!, report.model!.currency, locale)}</dd></div>}
           {has(range?.marginOfSafety) && <div><dt>{m.marginOfSafety}</dt><dd data-sign={range!.marginOfSafety! >= 0 ? "up" : "down"}>{pct(range!.marginOfSafety)}</dd></div>}
           {has(range?.baseUpside) && <div><dt>{m.baseUpside}</dt><dd>{signedPct(range!.baseUpside)}</dd></div>}
           {has(range?.expectedUpside) && <div><dt>{m.expectedUpside}</dt><dd>{signedPct(range!.expectedUpside)}</dd></div>}
           {has(range?.downsideCoverage) && <div><dt>{m.downside}</dt><dd>{signedPct(range!.downsideCoverage)}</dd></div>}
         </dl>
+        {has(range?.expected) && report.model!.scenarioProbabilities && <p className="val-list-line">{m.expectedNote}</p>}
       </section>}
       <Dimensions report={report} onCite={setOpen} />
       <section className="val-block val-sections">
@@ -326,6 +431,9 @@ export function ValuationPanel({ ticker, valuation }: { ticker: string; valuatio
       </section>
       {gaps.length > 0 && <section className="val-block val-gaps"><h3>{m.gaps}</h3><ul>{gaps.map(g => <li key={g.code + (g.field ?? "")} title={g.code}><span lang={langOf(g.message)}>{g.message}</span>{g.evidenceIds.length > 0 && <Cites ids={g.evidenceIds} onCite={setOpen} />}</li>)}</ul></section>}
       <Model report={report} onCite={setOpen} />
+      <Methods report={report} onCite={setOpen} />
+      <Anchors report={report} onCite={setOpen} />
+      <Checks report={report} />
       {report.diagnostics.some(d => d.value != null) && <section className="val-block">
         <h3>{m.diagnostics}</h3>
         <dl className="val-stats val-stats--diag">
