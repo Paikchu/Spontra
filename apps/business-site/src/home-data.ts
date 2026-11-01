@@ -7,13 +7,36 @@ const keyOf = (locale: string) => `spontra-home-v1:${locale}`;
 
 export type DigestStatus = "loading" | "ready" | "error";
 
+function readCached(locale: string): HomeDigest | null {
+  if (typeof sessionStorage === "undefined") return null;
+  try {
+    const raw = sessionStorage.getItem(keyOf(locale));
+    if (!raw) return null;
+    const saved = JSON.parse(raw) as { at?: unknown; body?: unknown };
+    return typeof saved.at === "number" && Date.now() - saved.at < TTL ? parseHomeDigest(saved.body) : null;
+  } catch {
+    return null; /* Storage may be disabled. */
+  }
+}
+
 /**
  * One homepage read, reused by the page and the company-page search.
- * Storage is read in an effect so a render (including the translation check) never touches it.
+ * A fresh cached digest (session storage, 10 minutes) is shown from the first paint; a render without
+ * storage (the server-side translation check) reads nothing.
  */
 export function useHomeDigest(locale: string): { digest: HomeDigest | null; status: DigestStatus; retry: () => void } {
-  const [digest, setDigest] = useState<HomeDigest | null>(null);
-  const [status, setStatus] = useState<DigestStatus>("loading");
+  const [digest, setDigest] = useState<HomeDigest | null>(() => readCached(locale));
+  const [status, setStatus] = useState<DigestStatus>(() => (readCached(locale) ? "ready" : "loading"));
+  const [cachedFor, setCachedFor] = useState(locale);
+  if (cachedFor !== locale) {
+    // A locale switch shows that locale's cached digest at once, as a reset during render rather than an effect.
+    setCachedFor(locale);
+    const cached = readCached(locale);
+    if (cached) {
+      setDigest(cached);
+      setStatus("ready");
+    }
+  }
   const [attempt, setAttempt] = useState(0);
   const retried = useRef(false);
   const retry = useCallback(() => {
@@ -25,22 +48,8 @@ export function useHomeDigest(locale: string): { digest: HomeDigest | null; stat
   useEffect(() => {
     let live = true;
     let timer = 0;
-    let have = false;
+    let have = readCached(locale) !== null;
     const controller = new AbortController();
-    try {
-      const raw = sessionStorage.getItem(keyOf(locale));
-      if (raw) {
-        const saved = JSON.parse(raw) as { at?: unknown; body?: unknown };
-        const parsed = typeof saved.at === "number" && Date.now() - saved.at < TTL ? parseHomeDigest(saved.body) : null;
-        if (parsed) {
-          have = true;
-          setDigest(parsed);
-          setStatus("ready");
-        }
-      }
-    } catch {
-      /* Storage may be disabled. */
-    }
     const run = async () => {
       try {
         const response = await fetch(`/api/business/v1/home?lang=${encodeURIComponent(locale)}`, { signal: controller.signal, headers: { accept: "application/json" } });
