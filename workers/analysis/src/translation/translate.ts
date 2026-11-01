@@ -191,13 +191,14 @@ export async function translateBatch(env: AnalysisEnv, ticker: string, runId: st
     for (const item of pending) {
       const zh = answers.get(item.i);
       const problems = zh == null ? ["omitted from the model's answer"] : checkTranslation(item.text, zh);
-      outcome.set(item.i, { text: problems.length ? null : zh!, problems });
+      // A failed first answer is still pending until the corrective answer is evaluated.
+      if (!problems.length || attempt === 2) outcome.set(item.i, { text: problems.length ? null : zh!, problems });
       if (problems.length) retry.push({ i: item.i, text: item.text, problems });
     }
     pending = retry;
   }
   const model = modelFor(env, "translate");
-  // Only strings the model answered are remembered; the rest stay pending for the next run.
+  // Persist successes and final evaluated failures; interrupted corrections stay pending for the next run.
   const rows = batch.flatMap((item, i) => {
     const o = outcome.get(i);
     return o ? [[locale, item.sha, item.text, o.text, o.text ? "ready" : "rejected", o.problems.length ? JSON.stringify(o.problems) : null, TRANSLATION_VERSION, model, now]] : [];
