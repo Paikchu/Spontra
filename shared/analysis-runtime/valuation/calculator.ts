@@ -26,6 +26,13 @@ export class ValuationCalcError extends Error {
 
 const finite = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
 const requireFinite = (value: unknown, name: string): number => { if (!finite(value)) throw new ValuationCalcError("invalid_input", `${name} must be a finite number`); return value; };
+/** Reject nonfinite numeric results before they can be serialized to null or used in ratios. */
+function finiteResult<T>(value: T, name: string): T {
+  if (typeof value === "number") requireFinite(value, name);
+  else if (Array.isArray(value)) value.forEach((v, i) => finiteResult(v, `${name}[${i}]`));
+  else if (value && typeof value === "object") for (const [key, v] of Object.entries(value)) finiteResult(v, `${name}.${key}`);
+  return value;
+}
 const requireDiscountRate = (value: unknown): number => {
   const rate = requireFinite(value, "discount rate");
   if (rate <= 0) throw new ValuationCalcError("invalid_input", "discount rate must be positive");
@@ -91,20 +98,22 @@ export type CalcRequest = {
 
 /** Discounts a cash-flow path and a terminal value at year `n`: the common kernel every cash-flow model shares. */
 export function discountPath(cashFlows: number[], terminalValue: number, r: number, rows: Array<Partial<YearRow>> = [], midYear = false): { pvExplicit: number; pvTerminal: number; yearly: YearRow[] } {
+  requireDiscountRate(r);
+  finiteResult({ cashFlows, terminalValue, rows }, "discount inputs");
   const shift = midYear ? 0.5 : 0;
   const yearly = cashFlows.map((cashFlow, i) => {
-    const discountFactor = 1 / (1 + r) ** (i + 1 - shift);
+    const discountFactor = 1 / requireFinite((1 + r) ** (i + 1 - shift), "discount divisor");
     const row: YearRow = { year: i + 1, revenue: rows[i]?.revenue ?? null, nopat: rows[i]?.nopat ?? null, reinvestment: rows[i]?.reinvestment ?? null, cashFlow, discountFactor, presentValue: cashFlow * discountFactor };
     if (rows[i]?.buildCapex != null) row.buildCapex = rows[i]!.buildCapex;
     return row;
   });
   const pvExplicit = yearly.reduce((sum, row) => sum + row.presentValue, 0);
-  const pvTerminal = terminalValue / (1 + r) ** (cashFlows.length - shift);
-  return { pvExplicit, pvTerminal, yearly };
+  const pvTerminal = terminalValue / requireFinite((1 + r) ** (cashFlows.length - shift), "terminal discount divisor");
+  return finiteResult({ pvExplicit, pvTerminal, yearly }, "discount result");
 }
 
 /** Gordon terminal value on the year after the last forecast year. */
-export const gordonTerminal = (lastCashFlow: number, r: number, g: number) => lastCashFlow * (1 + g) / (r - g);
+export const gordonTerminal = (lastCashFlow: number, r: number, g: number) => requireFinite(requireFinite(lastCashFlow * (1 + g), "terminal cash flow") / (r - g), "terminal value");
 
 /**
  * The value-driver terminal: growth has to be paid for with reinvestment at the terminal return on capital, so
@@ -116,14 +125,20 @@ export function valueDriverTerminal(lastNopat: number, r: number, g: number, ter
   if (g < 0) throw new ValuationCalcError("invalid_input", "terminal growth cannot be negative under the value-driver terminal");
   const reinvestmentRate = g / terminalRoic;
   if (reinvestmentRate >= 1) throw new ValuationCalcError("invalid_input", "terminal growth cannot exceed the terminal ROIC");
-  return { terminalValue: lastNopat * (1 + g) * (1 - reinvestmentRate) / (r - g), reinvestmentRate };
+  return finiteResult({ terminalValue: lastNopat * (1 + g) * (1 - reinvestmentRate) / (r - g), reinvestmentRate }, "value driver terminal");
 }
 
-const shareValue = (equity: number, shares: number) => equity / shares;
+const shareValue = (equity: number, shares: number) => requireFinite(requireFinite(equity, "equity value") / shares, "per-share value");
 const terminalShareOf = (pvExplicit: number, pvTerminal: number) => { const total = pvExplicit + pvTerminal; return total > 0 ? pvTerminal / total : null; };
 
 /** One scenario of one model: the equity value and per-share value from its drivers, the shared rate, shares and bridge. */
 export function scenarioValue(drivers: ModelDrivers, r: number, shares: number, bridge: EquityBridge, options: { midYear?: boolean } = {}): ScenarioResult {
+  requireFinite(shares, "shares");
+  finiteResult(bridge, "bridge");
+  return finiteResult(evaluateScenario(drivers, r, shares, bridge, options), "scenario result");
+}
+
+function evaluateScenario(drivers: ModelDrivers, r: number, shares: number, bridge: EquityBridge, options: { midYear?: boolean }): ScenarioResult {
   requireDiscountRate(r);
   if (!(shares > 0)) throw new ValuationCalcError("shares", "shares must be positive");
   const notes: string[] = [];
@@ -260,7 +275,7 @@ function multipleValue(perShareBasis: number, multiple: number, horizonYears: nu
   requireFinite(multiple, "multiple"); requireFinite(horizonYears, "horizonYears"); requireFinite(r, "discount rate");
   if (multiple < 0) throw new ValuationCalcError("multiple", "multiple cannot be negative");
   if (horizonYears < 0) throw new ValuationCalcError("invalid_input", "horizonYears cannot be negative");
-  const perShare = perShareBasis * multiple / (1 + r) ** horizonYears;
+  const perShare = requireFinite(perShareBasis * multiple, "multiple terminal value") / requireFinite((1 + r) ** horizonYears, "multiple discount divisor");
   notes.push(`per-share basis ${perShareBasis}`);
   return { perShare, equityValue: perShare * shares, enterpriseValue: null, pvExplicit: null, pvTerminal: null, terminalShare: null, yearly: [], notes };
 }
@@ -269,7 +284,7 @@ function multipleValue(perShareBasis: number, multiple: number, horizonYears: nu
 export function calculateValuation(request: CalcRequest): ValuationModelResult {
   const r = requireDiscountRate(request.discountRate.value);
   const base = requireFinite(request.shares.base, "shares.base"), dilution = requireFinite(request.shares.dilutionReserve, "shares.dilutionReserve");
-  const shares: ShareCount = { base, dilutionReserve: dilution, economic: base + dilution, basis: request.shares.basis };
+  const shares: ShareCount = { base, dilutionReserve: dilution, economic: requireFinite(base + dilution, "economic shares"), basis: request.shares.basis };
   if (shares.economic <= 0) throw new ValuationCalcError("shares", "economic shares must be positive");
   for (const key of ["nonOperatingAssets", "debtAndClaims", "nonOperatingEquityAdjustment"] as const) requireFinite(request.bridge[key], `bridge.${key}`);
   const expectedBasis = request.discountRate.basis;
@@ -302,7 +317,7 @@ export function calculateValuation(request: CalcRequest): ValuationModelResult {
   const terminalShare = results.base.result.terminalShare;
   if (terminalShare != null && terminalShare > TERMINAL_SHARE_LIMIT) limitations.push(`Terminal value is ${(terminalShare * 100).toFixed(0)}% of the base operating value.`);
   const result: ValuationModelResult = { calculatorVersion: CALCULATOR_VERSION, modelType: request.modelType, currency: request.currency, discountRate: request.discountRate, shares, bridge: request.bridge, scenarios: results, range, sensitivities, implied, limitations, horizonYears, midYear };
-  if (!request.context) return result;
+  if (!request.context) return finiteResult(result, "valuation result");
   // The cross-checks: the DCF beside the forward multiples, the anchors, the verification and the gates over all of it.
   const c = request.context;
   const dcf: MethodValuation = { method: "dcf", label: "Discounted cash flow", low: values.bear, base: values.base, high: values.bull, weight: 0, basis: `${request.modelType}, ${horizonYears} years`, notes: [] };
@@ -317,7 +332,7 @@ export function calculateValuation(request: CalcRequest): ValuationModelResult {
   const management = c.management && c.periodEnd && baseDrivers.modelType === "fcff" ? managementGate(baseDrivers, c.management, c.periodEnd) : null;
   const gates = sanityGates({ result, riskFree: c.riskFree ?? null, anchor: c.anchor ?? null, consensus: c.consensus ?? null, triangulation, verification, impliedMultiple, multipleHistory, peers: c.peers ?? null, management });
   if (methods.length === 1) limitations.push("No forward-multiple cross-check: the ranking peers' multiples were not available.");
-  return { ...result, methods, triangulation, gates, anchors: { revenue: c.anchor ?? null }, verification, peers: c.peers ?? null, consensus: c.consensus ?? null, ...(references.length ? { references } : {}) };
+  return finiteResult({ ...result, methods, triangulation, gates, anchors: { revenue: c.anchor ?? null }, verification, peers: c.peers ?? null, consensus: c.consensus ?? null, ...(references.length ? { references } : {}) }, "valuation result");
 }
 
 /** The management case beside the model: the cited targets on the model's own rate, shares, bridge, horizon, tax and sales-to-capital; empty without targets inside the horizon. */
@@ -331,7 +346,7 @@ function managementReferences(request: CalcRequest, r: number, shares: number, c
     const sub = calculateValuation(managementRequest(request, built.drivers));
     return [{ key: "management", label: "Management case (cited targets)", drivers: built.drivers, result, triangulation: sub.triangulation ?? null, methods: sub.methods ?? [], anchors: built.anchors, sources: c.management.sources, notes: built.notes }];
   } catch (error) {
-    if (error instanceof ValuationCalcError) return [];
+    if (error instanceof ValuationCalcError && !/finite number/.test(error.message)) return [];
     throw error;
   }
 }
@@ -383,14 +398,14 @@ export function forwardMultipleValue(input: { metric: number; multiples: Multipl
   requireDiscountRate(r);
   if (!(shares > 0)) throw new ValuationCalcError("shares", "shares must be positive");
   if (h < 0) throw new ValuationCalcError("invalid_input", "horizonYears cannot be negative");
-  const discount = (1 + r) ** h;
+  const discount = requireFinite((1 + r) ** h, "forward discount divisor");
   const value = (multiple: number) => {
     if (multiple < 0) throw new ValuationCalcError("multiple", "multiple cannot be negative");
-    if (input.kind === "equity") return metric * multiple / discount;
+    if (input.kind === "equity") return requireFinite(metric * multiple, "forward terminal value") / discount;
     const netClaimsAtHorizon = bridge.debtAndClaims - bridge.nonOperatingAssets - input.cumulativeCashFlow;
-    return (metric * multiple - netClaimsAtHorizon) / discount / shares;
+    return requireFinite(requireFinite(metric * multiple, "forward terminal value") - netClaimsAtHorizon, "forward equity value") / discount / shares;
   };
-  return { low: value(multiples.p25), base: value(multiples.median), high: value(multiples.p75) };
+  return finiteResult({ low: value(multiples.p25), base: value(multiples.median), high: value(multiples.p75) }, "forward multiple result");
 }
 
 /** Default method weights by life cycle; explicit weights are normalized over the methods given. */
@@ -618,7 +633,10 @@ export function sensitivitiesOf(request: CalcRequest, r: number, shares: number)
     try {
       const value = scenarioValue(move.apply(base), move.rate ?? r, shares, request.bridge, options).perShare;
       out.push({ factor: move.factor, step: move.step, perShare: value, changePercent: baseValue !== 0 ? (value / baseValue - 1) * 100 : 0 });
-    } catch { /* a move that breaks a constraint (r <= g) is left out */ }
+    } catch (error) {
+      if (!(error instanceof ValuationCalcError) || /finite number/.test(error.message)) throw error;
+      // A sensitivity outside a model constraint (such as r <= g) is not defined.
+    }
   }
   return out.sort((a, b) => Math.abs(b.changePercent) - Math.abs(a.changePercent));
 }
@@ -636,7 +654,10 @@ export function impliedGrowth(request: CalcRequest, r: number, shares: number, p
   const baseAverage = base.path.revenueGrowth.reduce((a, b) => a + b, 0) / years;
   let low = -0.5, high = 1.0;
   let fLow: number, fHigh: number;
-  try { fLow = valueAt(low) - price; fHigh = valueAt(high) - price; } catch { return null; }
+  try { fLow = valueAt(low) - price; fHigh = valueAt(high) - price; } catch (error) {
+    if (!(error instanceof ValuationCalcError) || /finite number/.test(error.message)) throw error;
+    return null;
+  }
   if (fLow > 0 || fHigh < 0 || !(fLow <= fHigh)) return { factor: "revenueGrowth", implied: fLow > 0 ? low : high, baseAverage, gap: (fLow > 0 ? low : high) - baseAverage, converged: false };
   for (let i = 0; i < 80 && high - low > 1e-7; i++) {
     const mid = (low + high) / 2;
