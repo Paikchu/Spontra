@@ -22,10 +22,10 @@ const TOKEN_VAR: Record<LensColorToken, string> = {
   revenue: "var(--flow-revenue)", profit: "var(--flow-profit)", expense: "var(--flow-expense)", loss: "var(--loss)", up: "var(--up)", muted: "var(--muted-foreground)",
   "biz-0": "var(--biz-0)", "biz-1": "var(--biz-1)", "biz-2": "var(--biz-2)", "biz-3": "var(--biz-3)", "biz-4": "var(--biz-4)",
 };
-export const colorVar = (token: LensColorToken) => TOKEN_VAR[token];
+const colorVar = (token: LensColorToken) => TOKEN_VAR[token];
 
 /** Series colour follows what the figure is: revenue neutral, profit and cash generated teal, costs and capital spending amber. */
-export function defaultColor(ref: FindingRef, index: number): string {
+function defaultColor(ref: FindingRef, index: number): string {
   if ("ratio" in ref) return defaultColor(ref.ratio.numerator, index);
   if ("metric" in ref) return ref.metric === "revenue" ? TOKEN_VAR.revenue : ["gross", "operating", "pretax", "net"].includes(ref.metric) ? TOKEN_VAR.profit : TOKEN_VAR.expense;
   if ("capital" in ref) return ["operatingCashFlow", "cash", "equity", "rpo", "rpoNext12MonthsShare", "currentAssets", "receivables", "investments", "customerAdvances"].includes(ref.capital) ? TOKEN_VAR.profit : ["freeCashFlow", "totalAssets", "productive", "leaseAssets", "intangibles", "inventory"].includes(ref.capital) ? TOKEN_VAR["biz-1"] : ["debt", "leases", "payables", "deferredTax", "totalLiabilities", "currentLiabilities"].includes(ref.capital) ? TOKEN_VAR["biz-2"] : TOKEN_VAR.expense;

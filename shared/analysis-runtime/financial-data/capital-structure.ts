@@ -383,7 +383,7 @@ const RPO_AXIS = RPO + "ExpectedTimingOfSatisfactionStartDateAxis";
 const WORDS: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, eighteen: 18, "twenty-four": 24, "thirty-six": 36, "forty-eight": 48, sixty: 60 };
 
 /** "P2Y", "P12M", "twelve months", "2 years" → months; anything else is unknown rather than guessed. */
-export function timingMonths(text: string | null): number | null {
+function timingMonths(text: string | null): number | null {
   if (!text) return null;
   const value = text.trim().toLowerCase();
   const iso = value.match(/^p(?:(\d+)y)?(?:(\d+)m)?$/);
@@ -403,7 +403,7 @@ const factCurrency = (f: DisclosureFact) => f.unit?.numerator[0]?.name.replace(/
  * contexts at that same instant, with the bucket length read from the timing text tagged beside them.
  * Nothing is derived: a filing that states only shares has no amounts, and vice versa.
  */
-export function extractRpo(disclosures: FilingDisclosures, source: CapitalSource): RpoDisclosure | null {
+function extractRpo(disclosures: FilingDisclosures, source: CapitalSource): RpoDisclosure | null {
   // The timing words carry an SEC transform the extractor does not implement; their source text is still exact.
   const facts = disclosures.facts.filter(f => (f.status === "parsed" || (usGaap(f, RPO_PERIOD) && f.rawValue)) && f.context?.period.kind === "instant" && f.context.period.end);
   const totals = facts.filter(f => f.kind === "numeric" && f.numericValue != null && usGaap(f, RPO) && !f.context!.dimensions.length && /^[A-Z]{3}$/.test(factCurrency(f) ?? ""));
@@ -555,7 +555,7 @@ export function extractCapitalFiling(statements: FinancialStatements, source: Ca
  * earlier in the year and counts as zero there. A row that disappears, or changes group, means the
  * presentation changed; then only the section totals are derived.
  */
-export function quarterCashFlow(current: CashFlowStatement, prior: CashFlowStatement | null): CashFlowStatement | null {
+function quarterCashFlow(current: CashFlowStatement, prior: CashFlowStatement | null): CashFlowStatement | null {
   const span = days(current.periodStart, current.periodEnd);
   if (span >= 70 && span <= 110) return current;
   if (!prior || prior.periodStart !== current.periodStart || prior.currency !== current.currency) return null;

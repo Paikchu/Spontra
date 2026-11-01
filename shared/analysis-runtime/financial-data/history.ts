@@ -5,7 +5,7 @@ import { TICKER_PATTERN } from "./policy.ts";
 import { daysBetween as days } from "../dates.ts";
 
 /** Eight displayed quarters plus four prior-year comparison quarters. */
-export const HISTORY_QUARTERS = 12;
+const HISTORY_QUARTERS = 12;
 const amount = z.string().refine(v => v.trim() !== "" && Number.isFinite(Number(v)));
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const secUrl = z.string().refine(v => { try { const u = new URL(v); return u.protocol === "https:" && /(^|\.)sec\.gov$/.test(u.hostname); } catch { return false; } });

@@ -36,7 +36,7 @@ export const PICTURE_MAX = 520, PICTURE_MIN = 240;
  */
 export const pictureHeight = (width: number, aspect: LensAspect) => Math.round(Math.min(PICTURE_MAX, Math.max(PICTURE_MIN, width * LENS_ASPECT[aspect] + PICTURE_HEAD)));
 
-export const pictureVars = (theme: LensFrameTheme) => `:root{${Object.entries(theme.tokens).map(([k, v]) => `${k}:${v}`).join(";")};color-scheme:${theme.scheme}}`;
+const pictureVars = (theme: LensFrameTheme) => `:root{${Object.entries(theme.tokens).map(([k, v]) => `${k}:${v}`).join(";")};color-scheme:${theme.scheme}}`;
 
 /** The whole document for one fragment, as the harness's browser loads it: the frame's policy, the page's tokens, the fragment. */
 export function pictureDocument(html: string, theme: LensFrameTheme = PICTURE_PREVIEW_THEME, lang = "en"): string {

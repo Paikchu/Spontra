@@ -12,7 +12,7 @@ import { compactMoney, fiscalYearTo, multiple, perShare, shortPeriod, type Local
 const pp = (locale: Locale) => locale === "zh-CN" ? "个百分点" : " pp";
 
 /** One figure in its unit; a ratio reads as a percentage when it is a margin or an intensity, as "2.60×" otherwise. */
-export function formatFigure(value: number, unit: ValueUnit, currency: string | null, ref?: FindingRef, locale: Locale = "en"): string {
+function formatFigure(value: number, unit: ValueUnit, currency: string | null, ref?: FindingRef, locale: Locale = "en"): string {
   if (unit === "USD") return compactMoney(value, currency, locale);
   if (unit === "percent") return `${Number(value.toFixed(1))}%`;
   if (unit === "points") return `${value > 0 ? "+" : value < 0 ? "−" : ""}${Math.abs(value).toFixed(1)}${pp(locale)}`;

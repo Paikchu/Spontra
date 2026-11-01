@@ -9,7 +9,7 @@ import type { CalcRequest } from "./calculator.ts";
 type Fcff = Extract<ModelDrivers, { modelType: "fcff" }>;
 export type ManagementFacts = { revenue0: number; operatingMargin0: number | null; sbcToRevenue: number | null; da0: number | null; capex0: number | null };
 /** A revenue path more than this far under a management revenue target, or above it at all beyond the tolerance, is flagged. */
-export const MANAGEMENT_DISCOUNT_FLAG = 0.25, MANAGEMENT_PREMIUM_FLAG = 0.10;
+const MANAGEMENT_DISCOUNT_FLAG = 0.25, MANAGEMENT_PREMIUM_FLAG = 0.10;
 
 const monthIndex = (date: string) => Number(date.slice(0, 4)) * 12 + Number(date.slice(5, 7)) - 1;
 /** The forecast year (1-based) a fiscal year lands on: the first year ending at or after the fiscal year's end; 0 when it is already past, null beyond the horizon. */

@@ -9,7 +9,7 @@ export const canonicalTicker=(ticker:string):string=>{const t=ticker.trim().toUp
 export const TICKER_PATTERN=/^[A-Z][A-Z0-9.-]{0,11}$/;
 /** The canonical ticker, or '' when the value is not one. */
 export const normalizeTicker=(value:string|null|undefined):string=>{const ticker=canonicalTicker(String(value??''));return TICKER_PATTERN.test(ticker)?ticker:'';};
-export class TickerListError extends Error{
+class TickerListError extends Error{
  readonly invalidEntries:string[];
  constructor(invalidEntries:string[]){super(`Ticker list contains invalid ticker(s): ${invalidEntries.join(', ')}`);this.invalidEntries=invalidEntries;this.name='TickerListError';}
 }

@@ -12,11 +12,11 @@ export const CALCULATOR_VERSION = "valuation.calc.v3";
 export const FORECAST_YEARS = 5;
 export const MIN_FORECAST_YEARS = 5, MAX_FORECAST_YEARS = 10;
 /** Terminal growth above this is flagged; above the risk-free rate it is rejected. */
-export const TERMINAL_GROWTH_FLAG = 0.03;
+const TERMINAL_GROWTH_FLAG = 0.03;
 /** Method bases further apart than this ratio are flagged; a base further than this share from the consensus mean is flagged. */
-export const DISPERSION_LIMIT = 2, CONSENSUS_DIVERGENCE_LIMIT = 0.5;
+const DISPERSION_LIMIT = 2, CONSENSUS_DIVERGENCE_LIMIT = 0.5;
 /** Terminal value above this share of operating value is a gap the report must name as its first invalidation condition. */
-export const TERMINAL_SHARE_LIMIT = 0.8;
+const TERMINAL_SHARE_LIMIT = 0.8;
 
 export type ValuationCalcErrorCode = "invalid_input" | "rate_order" | "shares" | "multiple" | "scenario_order" | "unsupported_model";
 export class ValuationCalcError extends Error {
