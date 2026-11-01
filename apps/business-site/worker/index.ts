@@ -392,7 +392,7 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
     const response=await fetcher(ANALYSIS_ORIGIN+inLocale("/api/v1/home",locale),{signal:AbortSignal.timeout(12000),headers:{accept:"application/json"}});
     digest=response.ok?parseHomeDigest(await response.json()):null;
    }catch{digest=null;}
-   if(!digest){const failed=json(unavailableHome(),503);failed.headers.set("cache-control","no-store");return failed;}
+   if(!digest){const failed=readFailureStatus?moduleJson(unavailableHome()):json(unavailableHome(),503);failed.headers.set("cache-control","no-store");return failed;}
    const response=json(digest);response.headers.set("cache-control","public, max-age=600");
    if(cache)ctx.waitUntil(cache.put(key,response.clone()));
    return response;
