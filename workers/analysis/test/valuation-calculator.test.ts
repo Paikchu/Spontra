@@ -158,3 +158,15 @@ test("A16: interpolation rejects extrapolation and reversed bounds for EPS and A
   assert.throws(() => scenarioValue({ modelType: "affo_multiple", affoLow: 2, affoHigh: 1, weight: 0.5, recurringCostPerShare: 0, multiple: 10, horizonYears: 0 }, 0.1, 100, bridge), ValuationCalcError);
   for (const weight of [0, 1]) close(scenarioValue({ modelType: "earnings_multiple", epsLow: 1, epsHigh: 2, weight, multiple: 10, horizonYears: 0 }, 0.1, 100, bridge).perShare, (1 + weight) * 10);
 });
+
+test("A17: overflow in finite inputs is an explicit calculation error", () => {
+  const enormous: ModelDrivers = { modelType: "earnings_multiple", epsLow: 1e308, epsHigh: 1e308, weight: 0.5, multiple: 10, horizonYears: 0 };
+  const overflow = (error: unknown) => error instanceof ValuationCalcError && /finite/.test(error.message);
+  assert.throws(() => scenarioValue(enormous, 0.1, 1, bridge), overflow);
+  assert.throws(() => scenarioValue({ ...enormous, epsLow: 10, epsHigh: 10, horizonYears: 10 }, 1e308, 1, bridge), overflow);
+  assert.throws(() => scenarioValue({ modelType: "asset_nav", assets: [{ units: 1e308, price: 10, costBasis: 0, taxRate: 0 }], otherNetAssets: 0, debtClaims: 0, preferredClaims: 0, operatingReserve: 0 }, 0.1, 1, bridge), overflow);
+  assert.throws(() => calculateValuation({ ...request(10), modelType: "earnings_multiple", shares: { base: 1, dilutionReserve: 0, basis: "diluted" }, discountRate: rate(0.1, "cost_of_equity"), scenarios: { bear: scenario(enormous), base: scenario(enormous), bull: scenario(enormous) } }), overflow);
+  assert.throws(() => calculateValuation({ ...request(10), shares: { base: 1e308, dilutionReserve: 1e308, basis: "diluted" } }), overflow);
+  const hugeCash = { modelType: "fcfe" as const, cfo: 1e308, capex: 0, sbc: 0, normalization: 0, netBorrowing: 0, growth: [10, 0, 0, 0, 0], terminalGrowth: 0 };
+  assert.throws(() => scenarioValue(hugeCash, 0.1, 1, bridge), overflow);
+});
