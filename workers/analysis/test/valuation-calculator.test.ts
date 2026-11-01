@@ -148,3 +148,13 @@ test("A15: all scenario models reject nonpositive discount rates", () => {
   for (const drivers of models) for (const discount of [-0.5, 0]) assert.throws(() => scenarioValue(drivers, discount, 100, bridge), ValuationCalcError);
   close(scenarioValue(models[0]!, 0.1, 100, bridge).perShare, 100 / 1.1);
 });
+
+test("A16: interpolation rejects extrapolation and reversed bounds for EPS and AFFO", () => {
+  for (const weight of [-0.1, 1.1, 2]) {
+    assert.throws(() => scenarioValue({ modelType: "earnings_multiple", epsLow: 1, epsHigh: 2, weight, multiple: 10, horizonYears: 0 }, 0.1, 100, bridge), ValuationCalcError);
+    assert.throws(() => scenarioValue({ modelType: "affo_multiple", affoLow: 1, affoHigh: 2, weight, recurringCostPerShare: 0, multiple: 10, horizonYears: 0 }, 0.1, 100, bridge), ValuationCalcError);
+  }
+  assert.throws(() => scenarioValue({ modelType: "earnings_multiple", epsLow: 2, epsHigh: 1, weight: 0.5, multiple: 10, horizonYears: 0 }, 0.1, 100, bridge), ValuationCalcError);
+  assert.throws(() => scenarioValue({ modelType: "affo_multiple", affoLow: 2, affoHigh: 1, weight: 0.5, recurringCostPerShare: 0, multiple: 10, horizonYears: 0 }, 0.1, 100, bridge), ValuationCalcError);
+  for (const weight of [0, 1]) close(scenarioValue({ modelType: "earnings_multiple", epsLow: 1, epsHigh: 2, weight, multiple: 10, horizonYears: 0 }, 0.1, 100, bridge).perShare, (1 + weight) * 10);
+});

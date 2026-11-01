@@ -97,11 +97,11 @@ const drivers = z.discriminatedUnion("modelType", [
   z.object({ modelType: z.literal("fcfe"), cfo: z.number(), capex: z.number(), sbc: z.number(), normalization: z.number(), netBorrowing: z.number(), growth: z.array(z.number()).length(5), terminalGrowth: z.number() }),
   z.object({ modelType: z.literal("revenue_fcfe"), revenue0: z.number(), growth: z.array(z.number()).length(5), afterSbcEquityCashMargin: z.array(z.number()).length(5), terminalGrowth: z.number() }),
   z.object({ modelType: z.literal("residual_income"), bookEquity0: z.number(), roe: z.array(z.number()).length(5), payout: z.array(z.number()).length(5), terminalRoe: z.number(), terminalGrowth: z.number() }),
-  z.object({ modelType: z.literal("earnings_multiple"), epsLow: z.number(), epsHigh: z.number(), weight: z.number(), multiple: z.number(), horizonYears: z.number() }),
+  z.object({ modelType: z.literal("earnings_multiple"), epsLow: z.number(), epsHigh: z.number(), weight: z.number().min(0).max(1), multiple: z.number(), horizonYears: z.number() }).refine(d => d.epsLow <= d.epsHigh, "epsLow must not exceed epsHigh"),
   z.object({ modelType: z.literal("reported_earnings_multiple"), commonEarnings: z.number(), earningsScale: z.number(), multiple: z.number(), horizonYears: z.number() }),
   z.object({ modelType: z.literal("proforma_earnings_multiple"), commonEarnings: z.number(), earningsScale: z.number(), multiple: z.number(), horizonYears: z.number() }),
   z.object({ modelType: z.literal("asset_nav"), assets: z.array(z.object({ units: z.number(), price: z.number(), costBasis: z.number(), taxRate: z.number() })).min(1), otherNetAssets: z.number(), debtClaims: z.number(), preferredClaims: z.number(), operatingReserve: z.number() }),
-  z.object({ modelType: z.literal("affo_multiple"), affoLow: z.number(), affoHigh: z.number(), weight: z.number(), recurringCostPerShare: z.number(), multiple: z.number(), horizonYears: z.number() }),
+  z.object({ modelType: z.literal("affo_multiple"), affoLow: z.number(), affoHigh: z.number(), weight: z.number().min(0).max(1), recurringCostPerShare: z.number(), multiple: z.number(), horizonYears: z.number() }).refine(d => d.affoLow <= d.affoHigh, "affoLow must not exceed affoHigh"),
   z.object({ modelType: z.literal("affo_dcf"), annualAffo: z.number(), recurringCost: z.number(), growth: z.array(z.number()).length(5), terminalGrowth: z.number() }),
 ]);
 const scenarioSchema = z.object({ narrative: z.string().min(20).max(1500), probability: z.number().nullable(), triggers: z.array(z.string().max(400)).max(6), invalidation: z.array(z.string().max(400)).max(6), evidenceIds: z.array(z.string()).max(12), drivers });

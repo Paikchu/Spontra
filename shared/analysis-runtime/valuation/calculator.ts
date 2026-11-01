@@ -31,6 +31,12 @@ const requireDiscountRate = (value: unknown): number => {
   if (rate <= 0) throw new ValuationCalcError("invalid_input", "discount rate must be positive");
   return rate;
 };
+const interpolate = (low: number, high: number, weight: number): number => {
+  requireFinite(low, "low"); requireFinite(high, "high"); requireFinite(weight, "weight");
+  if (weight < 0 || weight > 1) throw new ValuationCalcError("invalid_input", "weight must be between 0 and 1");
+  if (low > high) throw new ValuationCalcError("invalid_input", "low must not exceed high");
+  return (1 - weight) * low + weight * high;
+};
 const requireYears = (values: unknown, name: string, years = FORECAST_YEARS): number[] => {
   if (!Array.isArray(values) || values.length !== years) throw new ValuationCalcError("invalid_input", `${name} must list ${years} yearly values`);
   return values.map((v, i) => requireFinite(v, `${name}[${i + 1}]`));
@@ -212,7 +218,7 @@ export function scenarioValue(drivers: ModelDrivers, r: number, shares: number, 
       return { perShare: shareValue(equityValue, shares), equityValue, enterpriseValue: null, pvExplicit, pvTerminal, terminalShare: null, yearly, notes };
     }
     case "earnings_multiple": {
-      const eps = (1 - requireFinite(drivers.weight, "weight")) * requireFinite(drivers.epsLow, "epsLow") + drivers.weight * requireFinite(drivers.epsHigh, "epsHigh");
+      const eps = interpolate(drivers.epsLow, drivers.epsHigh, drivers.weight);
       return multipleValue(eps, drivers.multiple, drivers.horizonYears, r, shares, notes);
     }
     case "reported_earnings_multiple":
@@ -233,7 +239,7 @@ export function scenarioValue(drivers: ModelDrivers, r: number, shares: number, 
       return { perShare: shareValue(equityValue, shares), equityValue, enterpriseValue: assetValue, pvExplicit: null, pvTerminal: null, terminalShare: null, yearly: [], notes };
     }
     case "affo_multiple": {
-      const perShare = (1 - requireFinite(drivers.weight, "weight")) * requireFinite(drivers.affoLow, "affoLow") + drivers.weight * requireFinite(drivers.affoHigh, "affoHigh") - requireFinite(drivers.recurringCostPerShare, "recurringCostPerShare");
+      const perShare = interpolate(drivers.affoLow, drivers.affoHigh, drivers.weight) - requireFinite(drivers.recurringCostPerShare, "recurringCostPerShare");
       return multipleValue(perShare, drivers.multiple, drivers.horizonYears, r, shares, notes);
     }
     case "affo_dcf": {
