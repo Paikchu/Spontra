@@ -1,3 +1,4 @@
+import type { WorkflowStepConfig } from "cloudflare:workers";
 import { modelFor, reasoningFor } from "./ai-config.ts";
 import {
   COMPANY_ANALYSIS_PROMPT_VERSION,
@@ -23,17 +24,8 @@ import { syncFundamentals } from "./fundamentals.ts";
 
 export type CompanyWorkflowStep = {
   do<T>(name: string, callback: () => Promise<T>): Promise<T>;
-  do<T>(name: string, config: CompanyWorkflowStepConfig, callback: () => Promise<T>): Promise<T>;
+  do<T>(name: string, config: WorkflowStepConfig, callback: () => Promise<T>): Promise<T>;
   sleep(name: string, duration: number): Promise<void>;
-};
-
-type CompanyWorkflowStepConfig = {
-  retries: {
-    limit: number;
-    delay: string;
-    backoff: "exponential";
-  };
-  timeout: string;
 };
 
 /** Each model turn is a durable checkpoint; one logical Agent session can exceed a single step. */
@@ -44,7 +36,7 @@ export const COMPANY_AGENT_MODEL_STEP_CONFIG = {
     backoff: "exponential",
   },
   timeout: SEC_WORKFLOW_STEP_TIMEOUT,
-} as const satisfies CompanyWorkflowStepConfig;
+} as const satisfies WorkflowStepConfig;
 
 async function refreshFundamentalsIfStale(env: AnalysisEnv, ticker: string): Promise<{ refreshed: boolean; error?: string }> {
   const [freshness] = await new D1FundamentalsRepository(requireDb(env)).listFundamentalsFreshness([ticker]);

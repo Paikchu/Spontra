@@ -1,7 +1,7 @@
 import { NonRetryableError } from "cloudflare:workflows";
 import { SecModelHttpError } from "./operations.ts";
 import { companyPolicyEnvironment } from "./financial-data/company-policy.ts";
-import { WorkerEntrypoint, WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
+import { WorkerEntrypoint, WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep, type WorkflowStepConfig } from "cloudflare:workers";
 import { handleMapRead } from "./read-api/router.ts";
 import { readHomeDigest } from "./read-api/home-digest.ts";
 import { isLocale } from "../../../shared/analysis-runtime/locale.ts";
@@ -9,7 +9,7 @@ import { handleStageRequest } from "./stage/gateway.ts";
 import { executeReportWorkflow, type ReportParams } from "./stage/report-workflow.ts";
 
 import { assertTrackedTicker, scheduledAnalysisAllowed, type CompanyAnalysisWorkflowParams, type SecMemoryWorkflowParams, type SecWorkflowParams } from "./core.ts";
-import { executeCompanyAnalysisWorkflow, type CompanyWorkflowStep } from "./company-analysis-workflow.ts";
+import { executeCompanyAnalysisWorkflow } from "./company-analysis-workflow.ts";
 import { executeSecMemoryWorkflow } from "./memory-workflow.ts";
 import { createAnalysisOperations, type AnalysisEnv } from "./operations.ts";
 import { retryDelayForAttempt, SEC_WORKFLOW_STEP_TIMEOUT } from "./retry-policy.ts";
@@ -40,16 +40,16 @@ const WORKFLOW_RETRY = {
     delay: ({ ctx }: { ctx: WorkflowStepContextLike }) => retryDelayForAttempt(ctx.attempt),
   },
   timeout: SEC_WORKFLOW_STEP_TIMEOUT,
-};
+} satisfies WorkflowStepConfig;
 
 function durableSteps(step: WorkflowStep, env: AnalysisEnv, instanceId: string): WorkflowStepLike {
-  const dynamicStep = step as unknown as {
-    do<T>(name: string, config: typeof WORKFLOW_RETRY, callback: (context?: WorkflowStepContextLike) => Promise<T>): Promise<T>;
-  };
   return {
     async do<T>(name: string, callback: (context?: WorkflowStepContextLike) => Promise<T>): Promise<T> {
-      const stored = await dynamicStep.do(name, WORKFLOW_RETRY, async (context) => {
-        try { return await storeWorkflowResult(env.SEC_FILINGS, instanceId, name, await callback(context)); }
+      type Stored = Awaited<ReturnType<typeof storeWorkflowResult<T>>>;
+      const stored = await step.do(name, WORKFLOW_RETRY, async (context) => {
+        // The domain leaves T unconstrained. Keep assertions at the stored-payload
+        // boundary so the platform checks config and callback context directly.
+        try { return await storeWorkflowResult(env.SEC_FILINGS, instanceId, name, await callback(context)) as Rpc.Serializable<unknown>; }
         catch (error) {
           if (error instanceof SecModelHttpError && error.status >= 400 && error.status < 500 && error.status !== 429 && error.status !== 408) {
             // The request layer redacts the credential before constructing this message.
@@ -59,7 +59,7 @@ function durableSteps(step: WorkflowStep, env: AnalysisEnv, instanceId: string):
         }
       });
       for (let attempt = 0; ; attempt++) {
-        try { return await loadWorkflowResult<T>(env.SEC_FILINGS, stored); }
+        try { return await loadWorkflowResult<T>(env.SEC_FILINGS, stored as Stored); }
         catch (error) {
           if (attempt >= 2 || /integrity|Invalid stored|missing/.test(String(error))) throw error;
           await new Promise<void>((resolve) => setTimeout(resolve, 1000 * 3 ** attempt));
@@ -222,7 +222,7 @@ export class CompanyAnalysisWorkflow extends WorkflowEntrypoint<AnalysisEnv, Com
       event.payload,
       event.instanceId,
       event.timestamp,
-      step as unknown as CompanyWorkflowStep,
+      step,
       env,
     );
   }
