@@ -74,9 +74,10 @@ export function compactShares(value: number, locale: Locale = "en"): string {
 /** Percentage points: "+1.5 pp" / "+1.5个百分点". `fixed: false` trims a trailing ".0"; `signed: false` drops the plus sign. */
 export function points(value: number, locale: Locale = "en", options: { signed?: boolean; fixed?: boolean } = {}): string {
   const { signed = true, fixed = true } = options;
-  const abs = Math.abs(value);
-  const body = fixed ? abs.toFixed(1) : String(Number(abs.toFixed(1)));
-  const sign = signed ? value > 0 ? "+" : value < 0 ? MINUS : "" : value < 0 ? MINUS : "";
+  const rounded = Number(value.toFixed(1));
+  const abs = Math.abs(rounded);
+  const body = fixed ? abs.toFixed(1) : String(abs);
+  const sign = rounded < 0 ? MINUS : signed && rounded > 0 ? "+" : "";
   return sign + body + (locale === "zh-CN" ? "个百分点" : " pp");
 }
 
