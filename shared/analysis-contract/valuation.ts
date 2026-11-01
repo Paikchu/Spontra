@@ -9,12 +9,16 @@ export const VALUATION_DIMENSIONS = ["businessQuality", "growthExecution", "valu
 export type ValuationDimensionKey = typeof VALUATION_DIMENSIONS[number];
 export const DIMENSION_WEIGHTS: Record<ValuationDimensionKey, number> = { businessQuality: 0.2, growthExecution: 0.2, valuationSafety: 0.3, mispricingCatalysts: 0.2, financialResilience: 0.1 };
 
-export type Confidence = "high" | "medium" | "low";
-export type ValuationVerdict = "supported" | "not_supported" | "pending";
-export type ReportStatus = "ready" | "insufficient";
+export const CONFIDENCES = ["high", "medium", "low"] as const;
+export type Confidence = typeof CONFIDENCES[number];
+export const VERDICTS = ["supported", "not_supported", "pending"] as const;
+export type ValuationVerdict = typeof VERDICTS[number];
+export const REPORT_STATUSES = ["ready", "insufficient"] as const;
+export type ReportStatus = typeof REPORT_STATUSES[number];
 export type ScenarioKey = "bear" | "base" | "bull";
 export const SCENARIO_KEYS: readonly ScenarioKey[] = ["bear", "base", "bull"];
-export type DiscountRateBasis = "wacc" | "cost_of_equity";
+export const DISCOUNT_RATE_BASES = ["wacc", "cost_of_equity"] as const;
+export type DiscountRateBasis = typeof DISCOUNT_RATE_BASES[number];
 export const VALUATION_MODEL_TYPES = ["fcff", "fcfe", "revenue_fcfe", "residual_income", "earnings_multiple", "reported_earnings_multiple", "proforma_earnings_multiple", "asset_nav", "affo_multiple", "affo_dcf"] as const;
 export type ValuationModelType = typeof VALUATION_MODEL_TYPES[number];
 
@@ -28,8 +32,10 @@ export type GapCode = typeof GAP_CODES[number];
 export type ValuationGap = { code: GapCode; field?: string; period?: string; message: string; evidenceIds: string[] };
 
 /** A fact the calculator may use: reported from a registered source, derived by code from reported facts, or assumed by the researcher with a reason. */
-export type FactBasis = "reported" | "derived" | "company_guidance" | "assumption";
-export type PeriodType = "quarter" | "ttm" | "fiscal_year" | "instant";
+export const FACT_BASES = ["reported", "derived", "company_guidance", "assumption"] as const;
+export type FactBasis = typeof FACT_BASES[number];
+export const PERIOD_TYPES = ["quarter", "ttm", "fiscal_year", "instant"] as const;
+export type PeriodType = typeof PERIOD_TYPES[number];
 export type ValuationFact = {
   id: string;
   label: string;
@@ -118,7 +124,8 @@ export type ValuationMethodKey = typeof VALUATION_METHODS[number];
 export type MethodValuation = { method: ValuationMethodKey; label: string; low: number | null; base: number | null; high: number | null; weight: number; basis: string; notes: string[] };
 /** The weighted football field over the applicable methods; `dispersion` is max/min of the method bases (null when a base is not positive). */
 export type Triangulation = { low: number; base: number; high: number; dispersion: number | null; weights: Record<ValuationMethodKey, number> };
-export type GateStatus = "pass" | "flag" | "fail";
+export const GATE_STATUSES = ["pass", "flag", "fail"] as const;
+export type GateStatus = typeof GATE_STATUSES[number];
 /** A sanity gate: `fail` rejects the calculation, `flag` annotates it; `value` and `limit` are the figures compared. */
 export type SanityGate = { key: string; status: GateStatus; detail: string; value: number | null; limit: number | null };
 /** Contracted revenue by forecast year from the RPO buckets: a floor the revenue path should not fall under. */
@@ -140,7 +147,8 @@ export type ConsensusTarget = { mean: number; low: number | null; high: number |
 
 /* ---- Management targets: cited public statements by the company, stored as curated data and compared, never copied. ---- */
 
-export type ManagementTargetMetric = "revenue" | "segment_revenue" | "operating_margin" | "eps" | "capex" | "fcf" | "rpo";
+export const MANAGEMENT_TARGET_METRICS = ["revenue", "segment_revenue", "operating_margin", "eps", "capex", "fcf", "rpo"] as const;
+export type ManagementTargetMetric = typeof MANAGEMENT_TARGET_METRICS[number];
 export type ManagementTargetSource = { id: string; title: string; url: string; date: string };
 /**
  * One target management stated for one fiscal year: a floor ("at least"), a ceiling ("at most"), a point target, or a
@@ -221,7 +229,8 @@ export type ValuationDimension = {
   nextCheck: string;
 };
 
-export type EvidenceKind = "sec" | "web" | "fact";
+export const EVIDENCE_KINDS = ["sec", "web", "fact"] as const;
+export type EvidenceKind = typeof EVIDENCE_KINDS[number];
 /** A source the report cites: the snapshot stored with the version, never a live re-read. */
 export type ValuationEvidence = {
   evidenceId: string;
@@ -242,7 +251,8 @@ export type ReferenceQuote = { price: number; currency: string; priceDate: strin
 
 /** A factor's historical distribution, for placing an assumption; computed by code from validated facts. */
 export type FactorDistribution = { factor: string; periods: Array<{ periodEnd: string; value: number }>; min: number; p25: number; median: number; p75: number; max: number };
-export type DiagnosticMetric = { key: string; label: string; value: number | null; unit: "ratio" | "percent" | "years" | "currency" | "x"; periodEnd: string | null; note: string | null };
+export const DIAGNOSTIC_UNITS = ["ratio", "percent", "years", "currency", "x"] as const;
+export type DiagnosticMetric = { key: string; label: string; value: number | null; unit: typeof DIAGNOSTIC_UNITS[number]; periodEnd: string | null; note: string | null };
 
 export type ValuationSections = {
   summary: string;
