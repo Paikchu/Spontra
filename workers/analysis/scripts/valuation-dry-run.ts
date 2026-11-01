@@ -1,5 +1,8 @@
 /**
  * Valuation dry run on real public data, without a model call or a database (docs/valuation-v2-SPEC.md, acceptance).
+ * Offline: reads saved input files only; no network or database access. Prints to stdout by default;
+ * --out and --json write/overwrite the named local files. Required environment variables: none.
+ * Run from the repository root with a populated --data-dir and --ticker:
  *
  *   node --experimental-strip-types --no-warnings workers/analysis/scripts/valuation-dry-run.ts \
  *     --data-dir /path/to/data --ticker ORCL --consensus 235.8,110,400,43,2026-10-31 --out ORCL.md --json ORCL.json

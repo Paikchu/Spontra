@@ -13,6 +13,9 @@
  *   member-id match alone would have made, now left out;
  * - the latest quarter's businesses read against a year-ago quarter restated in the latest filing.
  *
+ * Run from the repository root (required environment: none for API or local D1; remote D1 needs
+ * Wrangler authentication via login or CLOUDFLARE_API_TOKEN and access to the configured account):
+ *
  *   node --experimental-strip-types workers/analysis/scripts/segment-basis-dry-run.ts --tickers MSFT,SPCX
  *   node --experimental-strip-types workers/analysis/scripts/segment-basis-dry-run.ts --source d1
  *
@@ -23,7 +26,7 @@ import { execFileSync } from "node:child_process";
 import type { RevenueHistory, RevenueHistoryQuarter } from "../../../shared/analysis-contract/revenue-history.ts";
 import { basisChangedAt, basisRuns, businessValue, sameBasis, segmentBasis, yearAgoOnBasis } from "../../../shared/analysis-runtime/segment-basis.ts";
 
-const args = process.argv.slice(2);
+const args: string[] = process.argv.slice(2);
 const option = (name: string) => { const i = args.indexOf(`--${name}`); return i >= 0 ? args[i + 1] ?? null : null; };
 const source = option("source") ?? "api";
 const origin = option("origin") ?? "https://businessview.info";

@@ -2,12 +2,14 @@
  * Fundamentals freshness check (B9), read only: for every covered company, the latest quarter its SEC fundamentals reach
  * (an income-statement or cash-flow value) against the latest quarter its page shows, and whether the fundamentals are
  * unavailable and why. Exits non-zero when any company's fundamentals are behind its page. No model calls, no writes.
+ * Required environment variables: none; the selected public HTTP origin must be reachable.
+ * Run from the repository root:
  *
  *   node --experimental-strip-types workers/analysis/scripts/check-fundamentals-fresh.ts [--origin https://businessview.info] [--tickers GOOGL,NBIS]
  */
 import { fundamentalsBehind, latestFundamentalsQuarter } from "../../../shared/analysis-runtime/fundamentals-freshness.ts";
 
-const args = process.argv.slice(2);
+const args: string[] = process.argv.slice(2);
 const option = (name: string) => { const i = args.indexOf(`--${name}`); return i >= 0 ? args[i + 1] ?? null : null; };
 const origin = option("origin") ?? "https://businessview.info";
 const get = async <T>(path: string) => (await fetch(origin + path, { headers: { accept: "application/json" } })).json() as Promise<T>;
