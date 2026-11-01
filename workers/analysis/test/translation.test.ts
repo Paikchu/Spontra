@@ -153,6 +153,42 @@ test("a model that gives no answer marks nothing: the strings stay pending, the 
   assert.equal(await translationPlan(db, "TEST", "zh-CN", read) == null || (await translationPlan(db, "TEST", "zh-CN", read))!.batches.length === 0, true, "a string the model left out of a real answer is settled, not retried forever");
 });
 
+for (const stopped of ["budget", "unavailable"] as const) {
+  for (const failure of ["omitted", "invalid"] as const) {
+    test(`an ${failure} translation stays retryable when correction stops for ${stopped}, while successful translations are remembered`, async () => {
+      const db = database();
+      const env = { DB: db, TRANSLATION_DAILY_CALLS: stopped === "budget" ? "1" : "10" } as unknown as AnalysisEnv;
+      const read = async (): Promise<TranslationSource[]> => [{ resource: "events", scope: "", strings: ["Results beat guidance.", "Capex was $28.5 billion."] }];
+      const plan = await translationPlan(db, "TEST", "zh-CN", read);
+      const calls: string[] = [];
+      const result = await translateBatch(env, "TEST", "run", plan!.batches.flat(), async (stage, items) => {
+        calls.push(stage);
+        if (stage === "translate-2") {
+          assert.deepEqual(items.map(item => item.text), ["Capex was $28.5 billion."]);
+          assert.ok(items[0]!.problems!.length > 0);
+          throw new ModelUnavailable("stream_stall");
+        }
+        const answers = new Map([[0, "业绩超出指引。"]]);
+        if (failure === "invalid") answers.set(1, "资本开支为 28.5亿美元。");
+        return answers;
+      });
+      assert.deepEqual(result, { ready: 1, rejected: 0, stopped });
+      assert.deepEqual(calls, stopped === "budget" ? ["translate-1"] : ["translate-1", "translate-2"]);
+      const rows = (await db.prepare("SELECT source, status FROM i18n_strings").all<{ source: string; status: string }>()).results;
+      assert.deepEqual(rows.map(row => [row.source, row.status]), [["Results beat guidance.", "ready"]]);
+      await publishTables(db, "TEST", "zh-CN", read);
+      assert.deepEqual(await readTranslationTable(db, "zh-CN", "events", "TEST"), { "Results beat guidance.": "业绩超出指引。" });
+      const retry = await translationPlan(db, "TEST", "zh-CN", read);
+      assert.deepEqual(retry!.batches.flat().map(item => item.text), ["Capex was $28.5 billion."]);
+      const recovered = await translateBatch({ ...env, TRANSLATION_DAILY_CALLS: "10" }, "TEST", "retry", retry!.batches.flat(),
+        async (_stage, items) => new Map(items.map(item => [item.i, "资本开支为 285亿美元。"])));
+      assert.deepEqual(recovered, { ready: 1, rejected: 0 });
+      await publishTables(db, "TEST", "zh-CN", read);
+      assert.equal(await translationPlan(db, "TEST", "zh-CN", read), null);
+    });
+  }
+}
+
 test("the checker compares figures at full value, so unit changes, ordinals, possessives and standard abbreviations pass, and a wrong scale does not", () => {
   const ok: Array<[string, string]> = [
     ["The restructuring table shows fiscal 2026 plan costs of $1,640 million, cash payments of $1,236 million.", "重组表显示 2026 财年计划成本为 16.40亿美元，现金支付为 12.36亿美元。"],
