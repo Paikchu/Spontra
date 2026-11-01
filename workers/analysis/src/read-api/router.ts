@@ -10,6 +10,7 @@ import { readPeersResponse } from "../peers/read.ts";
 import { peersFor } from "../../../../shared/analysis-runtime/peers.ts";
 import { rankingPeers } from "../../../../shared/analysis-runtime/statement-analysis.ts";
 import { readEventsResponse } from "../events/read.ts";
+import { readInsiderTransactionsResponse, readInsidersResponse } from "../events/insider-ledger.ts";
 import { readItemAnalysisResponse } from "../items/read.ts";
 import { readPublicPassage } from "../filing-library/passage-read.ts";
 import { parseFundamentalApiQuery } from "../fundamentals/fundamentals-api.ts";
@@ -60,6 +61,8 @@ type RouteMatch =
   | { kind: "guidance"; ticker: string }
   | { kind: "findings"; ticker: string }
   | { kind: "events"; ticker: string }
+  | { kind: "insiders"; ticker: string }
+  | { kind: "insider-transactions"; ticker: string; personKey: string }
   | { kind: "item"; ticker: string; id: string }
   | { kind: "passage"; ticker: string; passageId: string }
   | { kind: "fundamentals"; ticker: string }
@@ -220,6 +223,15 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
       payload.events = await translated("events", payload.events);
       return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
     }
+    // Insider trades by person: the filings' own figures, so no switch hides them and no translation applies.
+    case "insiders": {
+      const payload = await readInsidersResponse(database, route.ticker);
+      return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
+    }
+    case "insider-transactions": {
+      const payload = await readInsiderTransactionsResponse(database, route.ticker, route.personKey, url.searchParams.get("cursor"), url.searchParams.get("limit"));
+      return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
+    }
     // One rail row's analysis, under the AI analysis switch; the analysis is applied in the reader's language like a finding.
     case "item": {
       const payload = await readItemAnalysisResponse(database, route.ticker, route.id, { hidden: await hidden("findings") });
@@ -277,6 +289,12 @@ function matchRoute(pathname: string): RouteMatch | null {
   if (valuation) {
     const ticker = safeDecode(valuation[1]!);
     return ticker === null ? null : { kind: "valuation", ticker, list: valuation[2] === "versions" && !valuation[3], versionId: valuation[3], evidenceId: valuation[4] };
+  }
+  const insiders = /^\/api\/v1\/companies\/([^/]+)\/insiders(?:\/([^/]+)\/transactions)?\/?$/.exec(pathname);
+  if (insiders) {
+    const ticker = safeDecode(insiders[1]!), personKey = insiders[2] === undefined ? undefined : safeDecode(insiders[2]);
+    if (ticker === null || personKey === null) return null;
+    return personKey === undefined ? { kind: "insiders", ticker } : { kind: "insider-transactions", ticker, personKey };
   }
   const company = /^\/api\/v1\/companies\/([^/]+)\/(filings|fundamentals|business-flow|capital|business-explainer|business-tree|guidance|findings|events|items|passages|revisions)(?:\/([^/]+))?\/?$/.exec(pathname);
   if (!company) return null;

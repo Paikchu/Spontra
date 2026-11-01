@@ -8,6 +8,7 @@ import { throttledSecReader } from "../financial-data/provider.ts";
 import type { SecFilingFeed, SecFilingSummary } from "../sec/sec.ts";
 import { parseSecArchiveDocumentUrl, secArchiveDocumentUrl, secArchiveRoot } from "../sec/archive-url.ts";
 import { form4XmlUrl, normalizeCik, parseForm4 } from "./form4.ts";
+import { recordRailInsiders } from "./insider-ledger.ts";
 import { eventsCacheKey, exhibitsCacheKey, insiderCacheKey } from "./read.ts";
 
 export type EventsSweepEnv = Pick<SecCronEnv, "DB" | "SEC_DATA_TICKERS" | "SEC_AI_TICKERS" | "SEC_AI_ENABLED"> & { SEC_USER_AGENT: string; EVENTS_ENABLED?: string };
@@ -183,6 +184,8 @@ export async function refreshCompanyEvents(env: EventsSweepEnv, ticker: string, 
   }
   const sortedEvents = events.sort((a, b) => b.filedAt.localeCompare(a.filedAt) || b.eventDate.localeCompare(a.eventDate));
   const next: EventsPublication = { schemaVersion: "events.v1", ticker, checkedAt, events: sortedEvents.map(event => ({ ...event, importance: eventImportance(event, sortedEvents) })), pendingInsider };
+  // The per-person ledger takes every Form 4 of the rail it does not hold yet; one read just now is new to readers, one already listed is history.
+  await recordRailInsiders(db, ticker, cikNumber, sortedEvents, new Set(previous.keys()), now);
   await db.batch([
     db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at")
       .bind(eventsCacheKey(ticker), JSON.stringify(next), now.toISOString()),

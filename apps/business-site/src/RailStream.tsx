@@ -7,8 +7,10 @@ import { getLocale, messages, useLocale } from "@/packages/web/src/i18n";
 import { eventClassLabel, isEsppTransaction, isPlannedInsiderTrade } from "@/shared/analysis-runtime/events";
 import { normalizeDisplayText, perShare } from "@/shared/analysis-runtime/locale";
 import { langOf } from "@/packages/web/src/i18n/SourceLanguage";
+import type { InsiderPersonSummary, InsidersPublication } from "@/shared/analysis-contract/insiders";
 import { eventTitle, insiderTitleParts, eventTitleLang, shortDate } from "./events-model";
-import { exactShares, insiderCompactMoney, railLayout, rowLeaves, streamRows, type EventFilter, type InsiderPerson, type InsiderSummary, type NoiseRow, type StreamRow as Row } from "./event-noise";
+import { exactShares, insiderCompactMoney, railLayout, rowLeaves, streamRows, type EventFilter, type InsiderCard, type NoiseRow, type StreamRow as Row } from "./event-noise";
+import { CODE_LABEL, fallbackInsiders, personKeyOf, roleLabel, useInsiderHistory, useInsiders, type InsiderHistory } from "./insiders-model";
 import { filingQuarterLabel, reportTitle, reportTitleLang, type RailItem, type RailItems } from "./reports-model";
 import { KIND_LABEL, VIEW_LABEL, type VerifiedFinding } from "./findings-model";
 import { SeverityIcon, severityLabel } from "./SeverityIcon";
@@ -18,51 +20,49 @@ import { useRailTip } from "./RailTip";
 const m = messages({
   title: "Findings, reports and events",
   report: "Report",
-  sold: (n: number, amount: string) => `Sold ${n} times in 90 days · ${amount} total`,
-  bought: (n: number, amount: string) => `Bought ${n} times in 90 days · ${amount} total`,
-  soldCount: (n: number) => `Sold ${n} times in 90 days`, boughtCount: (n: number) => `Bought ${n} times in 90 days`,
-  plan: "10b5-1 plan", espp: "ESPP purchase",
-  sale: "Open-market sale", purchase: "Open-market purchase", sec: "SEC filing ↗",
-  detail: (shares: string, price: string, amount: string) => `${shares} shares · Average ${price} · ${amount} total`,
+  plan: "10b5-1 plan", espp: "ESPP purchase", sec: "SEC filing ↗",
   routine: (n: number) => `Routine 6-K filings × ${n}`, forms: (n: number) => `Form 4 ×${n}`,
   fallback: "No key events in the last 90 days — showing all",
   empty: "Nothing in this category yet",
   loadFailed: "Couldn't load this data", retry: "Retry",
   director: "Director", tenPercent: "10% owner",
   watchOutcome: "Watch outcome",
-  insiderNet: (sold: boolean, amount: string) => `Insiders, 90 days: net ${sold ? "sold" : "bought"} ${amount}`,
-  people: (n: number) => n === 1 ? "1 person" : `${n} people`, plannedPeople: (n: number) => `${n} on 10b5-1 plans`,
-  showAll: (n: number) => `Show all ${n}`, showLess: "Show less", netSold: "net sold", netBought: "net bought",
+  insiders: "Insider trades", people: (n: number) => n === 1 ? "1 person" : `${n} people`, newCount: (n: number) => `${n} new`, newTag: "New",
+  trade: (what: string, shares: string) => `${what} ${shares} shares`, shares: (n: string) => `${n} shares`,
+  netSold: (amount: string, shares: string) => `Net sold ${amount} · ${shares} shares`, netBought: (amount: string, shares: string) => `Net bought ${amount} · ${shares} shares`,
+  noTrades: "No open-market trades", sales: (n: number) => `${n} ${n === 1 ? "sale" : "sales"}`, purchases: (n: number) => `${n} ${n === 1 ? "purchase" : "purchases"}`,
+  history: (name: string) => `${name}: every Form 4 transaction`, ownedAfter: (shares: string) => `Owned after ${shares}`, indirect: "Indirect", derivative: "Derivative",
+  loadMore: "Load more", loadingHistory: "Loading…", historyFailed: "Couldn't load the history",
+  showAll: (n: number) => `Show all ${n}`, showLess: "Show less",
 }, {
   title: "要点、财报与事件",
   report: "财报",
-  sold: (n: number, amount: string) => `90 天内卖出 ${n} 笔 · 合计 ${amount}`,
-  bought: (n: number, amount: string) => `90 天内买入 ${n} 笔 · 合计 ${amount}`,
-  soldCount: (n: number) => `90 天内卖出 ${n} 笔`, boughtCount: (n: number) => `90 天内买入 ${n} 笔`,
-  plan: "计划内", espp: "员工持股计划代买",
-  sale: "公开市场卖出", purchase: "公开市场买入", sec: "SEC 文件 ↗",
-  detail: (shares: string, price: string, amount: string) => `${shares} 股 · 均价 ${price} · 合计 ${amount}`,
+  plan: "计划内", espp: "员工持股计划代买", sec: "SEC 文件 ↗",
   routine: (n: number) => `6-K 例行文件 × ${n}`, forms: (n: number) => `Form 4 ×${n}`,
   fallback: "近 90 天没有重要事件，已显示全部",
   empty: "这一类暂时没有内容",
   loadFailed: "数据暂时加载失败", retry: "重试",
   director: "董事", tenPercent: "10% 股东",
   watchOutcome: "跟踪结果",
-  insiderNet: (sold: boolean, amount: string) => `内部人 90 天净${sold ? "卖出" : "买入"} ${amount}`,
-  people: (n: number) => `${n} 人`, plannedPeople: (n: number) => `其中 10b5-1 计划 ${n} 人`,
-  showAll: (n: number) => `展开全部 ${n} 人`, showLess: "收起", netSold: "净卖出", netBought: "净买入",
+  insiders: "内部人交易", people: (n: number) => `${n} 人`, newCount: (n: number) => `新增 ${n} 笔`, newTag: "新",
+  trade: (what: string, shares: string) => `${what} ${shares} 股`, shares: (n: string) => `${n} 股`,
+  netSold: (amount: string, shares: string) => `净卖出 ${amount} · ${shares} 股`, netBought: (amount: string, shares: string) => `净买入 ${amount} · ${shares} 股`,
+  noTrades: "无公开市场交易", sales: (n: number) => `卖出 ${n} 笔`, purchases: (n: number) => `买入 ${n} 笔`,
+  history: (name: string) => `${name}：全部 Form 4 交易`, ownedAfter: (shares: string) => `交易后持股 ${shares}`, indirect: "间接持有", derivative: "衍生品",
+  loadMore: "加载更多", loadingHistory: "加载中…", historyFailed: "交易历史暂时加载失败",
+  showAll: (n: number) => `展开全部 ${n} 人`, showLess: "收起",
 });
 
 /** Older rows join this many at a time. */
 const PAGE = 12;
 
 type StreamRow = Row<VerifiedFinding>;
-const leavesOf = (r: StreamRow) => r.kind === "noise" ? rowLeaves(r.row) : r.kind === "insiders" ? r.summary.items : [];
+const leavesOf = (r: StreamRow) => r.kind === "noise" ? rowLeaves(r.row) : r.kind === "insiders" ? r.card.items : [];
 
 /**
  * One stream for the rail: the report's findings, the filings and the events, newest first, in one shape per row: a
  * mark (the event's class, or the finding's severity icon), a title, and a line of particulars that
- * starts with the date. Insider trades fold by person and direction over 90 days; routine 6-Ks fold by month.
+ * starts with the date. Insider trades sit on one card, grouped by person; routine 6-Ks fold by month.
  * The recent rows show first; older ones load as the reader scrolls to the end.
  */
 export function RailStream({ rail, findings, findingsPeriodEnd, verdicts, ticker, updates, focus, phase = "ready", filter, fallback = false, onFocusItem, onFocusFinding, onRetry }: {
@@ -89,7 +89,8 @@ export function RailStream({ rail, findings, findingsPeriodEnd, verdicts, ticker
 }) {
   useLocale();
   const all = rail ? [...rail.recent, ...rail.earlier] : [];
-  const rows = streamRows(railLayout(all, filter, new Date()), findings, findingsPeriodEnd, filter);
+  const [now] = useState(() => new Date());
+  const rows = streamRows(railLayout(all, filter), findings, findingsPeriodEnd, filter);
   const [openRows, setOpenRows] = useState<ReadonlySet<string>>(() => new Set());
   const hosts = (id: string | null) => id ? rows.find(r => r.id === id || leavesOf(r).some(item => item.id === id)) ?? null : null;
   const focusedRow = hosts(focus);
@@ -120,10 +121,11 @@ export function RailStream({ rail, findings, findingsPeriodEnd, verdicts, ticker
     setPreviousFocus(focus);
     if (focusedRow?.kind === "noise" && focusedRow.row.kind !== "item" && !openRows.has(focusedRow.id)) setOpenRows(new Set(openRows).add(focusedRow.id));
     if (focusedRow?.kind === "insiders") {
-      // A trade in focus opens the card and the person's fold that holds it.
-      const fold = focusedRow.summary.rows.find(row => row.kind !== "item" && rowLeaves(row).some(item => item.id === focus));
+      // A trade in focus opens the card and the row of the person who filed it.
+      const item = focusedRow.card.items.find(item => item.id === focus);
+      const key = item ? personKeyOf(item.event) : null;
       const next = new Set(openRows).add(focusedRow.id);
-      if (fold) next.add(fold.id);
+      if (key) next.add(personRowId(key));
       if (next.size !== openRows.size) setOpenRows(next);
     }
   }
@@ -140,7 +142,7 @@ export function RailStream({ rail, findings, findingsPeriodEnd, verdicts, ticker
         : <motion.div key={filter} className="event-rows" initial={still ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={still ? undefined : { opacity: 0 }} transition={{ duration: .16, ease: [0.22, 1, 0.36, 1] }}>
         {shown.map(r => r.kind === "finding"
           ? <FindingRow key={r.id} finding={r.finding} date={r.date} verdict={verdicts?.[r.id]} checked={focus === r.id} arrive={arrived.get(r.id)} motion={rowMotion} tip={tip.bind} onClick={() => onFocusFinding(focus === r.id ? null : r.id)} />
-          : r.kind === "insiders" ? <InsiderSummaryCard key={r.id} summary={r.summary} ticker={ticker} open={openRows.has(r.id)} openRows={openRows} focus={focus} arrive={arrived.get(r.id)} motion={rowMotion} onToggle={toggleRow} onFocus={onFocusItem} tip={tip.bind} />
+          : r.kind === "insiders" ? <InsiderPersonsCard key={r.id} card={r.card} ticker={ticker} updates={updates} now={now} open={openRows.has(r.id)} openRows={openRows} focus={focus} arrive={arrived.get(r.id)} onToggle={toggleRow} onFocus={onFocusItem} />
           : <NoiseBlock key={r.id} row={r.row} ticker={ticker} open={openRows.has(r.id)} focus={focus} arrive={arrived.get(r.id)} motion={rowMotion} onToggle={() => toggleRow(r.id)} onFocus={onFocusItem} tip={tip.bind} />)}
         </motion.div>}
       </AnimatePresence>
@@ -199,73 +201,135 @@ function NoiseBlock({ row, ticker, open, focus, arrive, motion, onToggle, onFocu
     const props = { checked: focus === row.item.id, onClick: pick, arrive, motion, tip };
     return row.item.kind === "report" ? <ReportRow report={row.item.report} ticker={ticker} {...props} /> : <EventRow event={row.item.event} {...props} />;
   }
-  const locale = getLocale();
-  const title = row.kind === "plan" ? (row.direction === "sell" ? m.sold : m.bought)(row.items.length, insiderCompactMoney(row.amount)) : m.routine(row.items.length);
-  const meta = row.kind === "plan" ? join([shortDate(row.date), eventClassLabel("insider", locale), m.forms(row.items.length)])
-    : join([shortDate(row.date), eventClassLabel("other", locale)]);
+  const title = m.routine(row.items.length);
+  const meta = join([shortDate(row.date), eventClassLabel("other", getLocale())]);
   const panelId = `${row.id}-panel`;
-  return <div className="event-fold" data-class={row.kind === "plan" ? "insider" : "other"}>
+  return <div className="event-fold" data-class="other">
     <Button variant="unstyled" type="button" className="stream-row event-fold-row" aria-expanded={open} aria-controls={panelId} data-arrived={arrive != null ? "" : undefined} style={arrivalStyle(arrive)}
       onClick={onToggle}>
-      {row.kind === "plan" ? <Mark cls="insider" direction={row.direction} quiet={row.planned || row.espp} /> : <Mark cls="other" quiet />}
+      <Mark cls="other" quiet />
       <span className="stream-body">
-        {row.kind === "plan" ? <InsiderTitle name={row.name} content={(row.direction === "sell" ? m.soldCount : m.boughtCount)(row.items.length)} amount={insiderCompactMoney(row.amount)} tags={join([row.planned && m.plan, row.espp && m.espp])} full={join([row.name, title, row.planned && m.plan, row.espp && m.espp])} />
-          : <span className="stream-title event-fold-text" title={title}>{title}</span>}
-        <span className="stream-meta"><svg className="fold-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="M4.2 2.2 8 6 4.2 9.8" /></svg>{meta}</span>
+        <span className="stream-title event-fold-text" title={title}>{title}</span>
+        <span className="stream-meta"><Chevron />{meta}</span>
       </span>
     </Button>
     <div className="event-fold-panel" id={panelId} data-open={open ? "" : undefined} inert={open ? undefined : true}>
       <div className="event-fold-inner">
-        {row.kind === "plan" ? row.items.map(item => item.kind === "event" ? <InsiderDetail key={item.id} item={item} direction={row.direction} checked={focus === item.id} onClick={() => onFocus(focus === item.id ? null : item)} /> : null)
-          : row.items.map(item => item.kind === "event" ? <EventRow key={item.id} event={item.event} checked={focus === item.id} onClick={() => onFocus(focus === item.id ? null : item)} arrive={undefined} motion={motion} tip={tip} /> : null)}
+        {row.items.map(item => item.kind === "event" ? <EventRow key={item.id} event={item.event} checked={focus === item.id} onClick={() => onFocus(focus === item.id ? null : item)} arrive={undefined} motion={motion} tip={tip} /> : null)}
       </div>
     </div>
   </div>;
 }
 
+const Chevron = () => <svg className="fold-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="M4.2 2.2 8 6 4.2 9.8" /></svg>;
 const ARROW = { sell: "M6 2.5v7M3 6.5l3 3 3-3", buy: "M6 9.5v-7M3 5.5l3-3 3 3" } as const;
 const Arrow = ({ direction }: { direction: "buy" | "sell" }) => <svg className="insider-arrow" data-direction={direction} viewBox="0 0 12 12" aria-hidden="true"><path d={ARROW[direction]} /></svg>;
+/** The mark of a trade the reader has not seen before: filed and recorded within the last two weeks. */
+const NewTag = () => <span className="insider-new"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1.5 7.3 4.7 10.5 6 7.3 7.3 6 10.5 4.7 7.3 1.5 6l3.2-1.3Z" /></svg>{m.newTag}</span>;
 
-/** One person's line on the card: the name, then the net amount with an arrow for its direction, right-aligned. */
-function PersonLine({ person }: { person: InsiderPerson }) {
-  const direction = person.net < 0 ? "sell" : "buy";
-  const amount = insiderCompactMoney(Math.abs(person.net));
-  return <li data-direction={direction}>
-    <span className="insider-summary-name" lang="en" title={person.name}>{person.name}</span>
-    <span className="insider-summary-amount" aria-label={`${direction === "sell" ? m.netSold : m.netBought} ${amount}`}><Arrow direction={direction} />{amount}</span>
+/** How many people the card lists before "Show all". */
+const PEOPLE_SHOWN = 5;
+export const personRowId = (key: string) => `insider:${key}`;
+const domId = (key: string) => `insider-${key.replace(/[^a-z0-9]/gi, "-")}-panel`;
+
+/**
+ * Every Form 4 of the company on one card, grouped by the person who filed it: the people come from Spontra Analysis's
+ * ledger, which reaches back past the rail, and from the rail's own filings until it answers. A row is the person's latest
+ * trade and net position, and opens their whole history, a page at a time.
+ */
+export function InsiderPersonsCard({ card, ticker, updates, now, open, openRows, focus, arrive, onToggle, onFocus }: {
+  card: InsiderCard; ticker: string; updates: number; now: Date; open: boolean; openRows: ReadonlySet<string>; focus: string | null; arrive?: number;
+  onToggle: (id: string) => void; onFocus: (item: RailItem | null) => void;
+}) {
+  const events = card.items.map(item => item.event);
+  const publication = useInsiders(ticker, updates, () => fallbackInsiders(ticker, events, now));
+  const persons = publication.persons;
+  const fresh = persons.reduce((n, p) => n + p.newCount, 0);
+  const listed = open ? persons : persons.slice(0, PEOPLE_SHOWN);
+  const title = join([m.insiders, m.people(persons.length), fresh > 0 && m.newCount(fresh)]);
+  const meta = join([shortDate(card.date), m.forms(persons.reduce((n, p) => n + p.filings, 0))]);
+  const panelId = `${card.id}-panel`;
+  return <div className="insider-card" data-class="insider" data-arrived={arrive != null ? "" : undefined} style={arrivalStyle(arrive)}>
+    <div className="stream-row insider-card-head">
+      <Mark cls="insider" />
+      <span className="stream-body">
+        <span className="stream-title" title={title}>{title}</span>
+        <span className="stream-meta">{meta}</span>
+      </span>
+    </div>
+    <ol className="insider-people" id={panelId}>
+      {listed.map(person => <PersonRow key={person.key} person={person} source={publication.source} ticker={ticker} events={events} items={card.items} now={now}
+        open={openRows.has(personRowId(person.key))} focus={focus} onToggle={() => onToggle(personRowId(person.key))} onFocus={onFocus} />)}
+    </ol>
+    {persons.length > PEOPLE_SHOWN && <Button variant="unstyled" type="button" className="insider-card-toggle" aria-expanded={open} aria-controls={panelId} onClick={() => onToggle(card.id)}>
+      <Chevron />{open ? m.showLess : m.showAll(persons.length)}
+    </Button>}
+  </div>;
+}
+
+/** One person: the latest trade with its amount, the role, the net position and the counts; open, their history. */
+function PersonRow({ person, source, ticker, events, items, now, open, focus, onToggle, onFocus }: {
+  person: InsiderPersonSummary; source: InsidersPublication["source"]; ticker: string; events: readonly CompanyEvent[]; items: readonly RailItem[]; now: Date;
+  open: boolean; focus: string | null; onToggle: () => void; onFocus: (item: RailItem | null) => void;
+}) {
+  const latest = person.latest;
+  const direction = latest?.side === "buy" ? "buy" : latest?.side === "sell" ? "sell" : null;
+  const history = useInsiderHistory(ticker, person.key, open, source, events, now);
+  const traded = person.sold.count + person.bought.count > 0;
+  const netSold = person.net.value < 0 || (person.net.value === 0 && person.net.shares < 0);
+  const net = traded ? (netSold ? m.netSold : m.netBought)(insiderCompactMoney(Math.abs(person.net.value)), exactShares(Math.abs(person.net.shares))) : m.noTrades;
+  const meta = join([roleLabel(person.role), net, person.sold.count > 0 && m.sales(person.sold.count), person.bought.count > 0 && m.purchases(person.bought.count), m.forms(person.filings)]);
+  const panelId = domId(person.key);
+  return <li className="insider-person" data-new={person.newCount > 0 ? "" : undefined}>
+    <Button variant="unstyled" type="button" className="stream-row insider-person-row" aria-expanded={open} aria-controls={panelId} onClick={onToggle}>
+      <Mark cls="insider" direction={direction} quiet={!direction || latest?.planned} />
+      <span className="stream-body">
+        <span className="stream-title insider-title">
+          <span className="insider-person-name"><span className="insider-name" lang="en">{person.name}</span>{person.newCount > 0 && <NewTag />}</span>
+          {latest && <span className="insider-transaction">
+            <span className="insider-content">{shortDate(latest.date)} · {m.trade(CODE_LABEL[latest.code], exactShares(latest.shares))}{latest.planned ? ` · ${m.plan}` : ""}</span>
+            {latest.value != null && latest.value > 0 && <span className="insider-amount">{latest.side === "sell" ? <Arrow direction="sell" /> : latest.side === "buy" ? <Arrow direction="buy" /> : null}{insiderCompactMoney(latest.value)}</span>}
+          </span>}
+        </span>
+        <span className="stream-meta" title={meta}><Chevron />{traded && <Arrow direction={netSold ? "sell" : "buy"} />}{meta}</span>
+      </span>
+    </Button>
+    <div className="event-fold-panel" id={panelId} data-open={open ? "" : undefined} inert={open ? undefined : true}>
+      <div className="event-fold-inner">
+        {open && <PersonHistory name={person.name} history={history} items={items} focus={focus} onFocus={onFocus} />}
+      </div>
+    </div>
   </li>;
 }
 
-/**
- * The last 90 days of open-market insider trades as one card: net amount, how many people and how many on 10b5-1 plans,
- * the three largest by amount, and the per-person folded rows behind "Show all": every insider filing, of any age, is in
- * the list only while it is open.
- */
-export function InsiderSummaryCard({ summary, ticker, open, openRows, focus, arrive, motion, onToggle, onFocus, tip }: {
-  summary: InsiderSummary; ticker: string; open: boolean; openRows: ReadonlySet<string>; focus: string | null; arrive?: number; motion: RowMotion;
-  onToggle: (id: string) => void; onFocus: (item: RailItem | null) => void; tip: RowProps["tip"];
-}) {
-  const sold = summary.net < 0 || (summary.net === 0 && summary.sold > 0);
-  const direction = sold ? "sell" : "buy";
-  const title = join([m.insiderNet(sold, insiderCompactMoney(Math.abs(summary.net))), m.people(summary.people.length), summary.planned > 0 && m.plannedPeople(summary.planned)]);
-  const panelId = `${summary.id}-panel`;
-  return <div className="insider-summary" data-class="insider" data-direction={direction} data-arrived={arrive != null ? "" : undefined} style={arrivalStyle(arrive)}>
-    <div className="stream-row insider-summary-head">
-      <Mark cls="insider" direction={direction} />
-      <span className="stream-body">
-        <span className="stream-title" title={title}>{title}</span>
-        <ol className="insider-summary-top">{summary.people.slice(0, 3).map(person => <PersonLine key={person.key} person={person} />)}</ol>
-        {summary.people.length > 0 && <Button variant="unstyled" type="button" className="insider-summary-toggle" aria-expanded={open} aria-controls={panelId} onClick={() => onToggle(summary.id)}>
-          <svg className="fold-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="M4.2 2.2 8 6 4.2 9.8" /></svg>{open ? m.showLess : m.showAll(summary.people.length)}
-        </Button>}
-      </span>
-    </div>
-    <div className="event-fold-panel" id={panelId} data-open={open ? "" : undefined} inert={open ? undefined : true}>
-      <div className="event-fold-inner">
-        {open && summary.rows.map(row => <NoiseBlock key={row.id} row={row} ticker={ticker} open={openRows.has(row.id)} focus={focus} motion={motion} onToggle={() => onToggle(row.id)} onFocus={onFocus} tip={tip} />)}
-      </div>
-    </div>
-  </div>;
+/** The person's lines, newest first: date, what, shares, price, amount, what they held after, and the filing. A line on the rail is a link to its event. */
+function PersonHistory({ name, history, items, focus, onFocus }: { name: string; history: InsiderHistory; items: readonly RailItem[]; focus: string | null; onFocus: (item: RailItem | null) => void }) {
+  return <>
+    <ol className="insider-history" aria-label={m.history(name)}>
+      {history.items.map(row => {
+        const item = items.find(i => i.id === row.accession);
+        const tags = join([row.planned && m.plan, row.ownership === "I" && m.indirect, row.derivative && m.derivative]);
+        const cells = <>
+          <time dateTime={row.date}>{row.date}</time>
+          <span className="insider-history-code" data-side={row.side}><b lang="en">{row.code}</b>{CODE_LABEL[row.code]}</span>
+          <span>{m.shares(exactShares(row.shares))}</span>
+          <span>{row.price != null ? perShare(row.price, "USD", getLocale()) : "—"}</span>
+          <span className="insider-amount">{row.value != null && row.value > 0 ? insiderCompactMoney(row.value) : "—"}</span>
+          {row.ownedAfter != null && <span className="insider-history-after">{m.ownedAfter(exactShares(row.ownedAfter))}</span>}
+          {tags && <span className="insider-history-tags">{tags}</span>}
+          {row.isNew && <NewTag />}
+        </>;
+        return <li key={row.id} data-new={row.isNew ? "" : undefined}>
+          {item ? <Button variant="unstyled" type="button" className="insider-history-row" aria-pressed={focus === row.accession} onClick={() => onFocus(focus === row.accession ? null : item)}>{cells}</Button>
+            : <span className="insider-history-row">{cells}</span>}
+          <a href={row.filingUrl} target="_blank" rel="noopener noreferrer">{m.sec}</a>
+        </li>;
+      })}
+    </ol>
+    {history.phase === "loading" && <p className="insider-history-state" aria-busy="true">{m.loadingHistory}</p>}
+    {history.phase === "error" && <p className="insider-history-state">{m.historyFailed} <Button variant="unstyled" type="button" onClick={history.more}>{m.retry}</Button></p>}
+    {history.phase === "ready" && history.nextCursor && <Button variant="unstyled" type="button" className="insider-card-toggle" onClick={history.more}>{m.loadMore}</Button>}
+  </>;
 }
 
 function ReportRow({ report, ticker, checked, onClick, arrive, motion, tip }: RowProps & { report: PublicFilingDigest; ticker: string }) {
@@ -328,18 +392,4 @@ function FindingRow({ finding, date, verdict, checked, onClick, arrive, motion, 
       <span className="stream-meta">{meta}</span>
     </span>
   </RailRow>;
-}
-
-function InsiderDetail({ item, direction, checked, onClick }: { item: RailItem & { kind: "event" }; direction: "buy" | "sell"; checked: boolean; onClick: () => void }) {
-  const event = item.event;
-  const trade = direction === "sell" ? event.insider!.sold! : event.insider!.bought!;
-  const amount = direction === "sell" ? event.insider!.sold!.proceeds : event.insider!.bought!.cost;
-  return <div className="event-fold-detail">
-    <Button variant="unstyled" type="button" aria-pressed={checked} onClick={onClick}>
-      <time dateTime={event.filedAt}>{event.filedAt}</time>
-      <span>{direction === "sell" ? m.sale : m.purchase}</span>
-      <span>{m.detail(exactShares(trade.shares), perShare(trade.averagePrice, "USD", getLocale()), insiderCompactMoney(amount))}</span>
-    </Button>
-    <a href={event.documentUrl || event.edgarUrl} target="_blank" rel="noopener noreferrer">{m.sec}</a>
-  </div>;
 }

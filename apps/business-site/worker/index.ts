@@ -20,6 +20,8 @@ import {readPeersPublication} from "@/shared/analysis-runtime/peers";
 import type {PeersPublication} from "@/shared/analysis-contract/peers";
 import {readEventsPublication} from "@/shared/analysis-runtime/events";
 import type {EventsPublication} from "@/shared/analysis-contract/events";
+import {readInsiderTransactionsPage,readInsidersPublication} from "@/shared/analysis-runtime/insiders";
+import type {InsiderTransactionsPage,InsidersPublication} from "@/shared/analysis-contract/insiders";
 import type {ItemAnalysis} from "@/shared/analysis-contract/item-analysis";
 import type {PublicFilingDetail,PublicFilingDigest,PublicFilingDigestPage,PublicFilingPage,PublicSecFiling} from "@/shared/analysis-contract/filings";
 import type {LibraryTable,PublicPassage} from "@/shared/analysis-contract/filing-library";
@@ -168,6 +170,26 @@ export async function loadEvents(ticker:string,fetcher:typeof fetch=fetch,locale
   if(!response.ok)return null;
   const body=await response.json() as {schemaVersion?:string;status?:string;events?:unknown};
   return body.schemaVersion==="events-response.v1"&&body.status==="ready"?readEventsPublication(body.events,ticker):null;
+ }catch{return null;}
+}
+
+/** Insider trades by person, and one page of a person's history; the figures are the filings' own, so no locale applies. */
+export async function loadInsiders(ticker:string,fetcher:typeof fetch=fetch):Promise<InsidersPublication|null>{
+ try{
+  const response=await fetcher(ANALYSIS_ORIGIN+`/api/v1/companies/${ticker}/insiders`,{signal:AbortSignal.timeout(8000),headers:{accept:"application/json"}});
+  if(!response.ok)return null;
+  const body=await response.json() as {schemaVersion?:string;status?:string;insiders?:unknown};
+  return body.schemaVersion==="insiders-response.v1"&&body.status==="ready"?readInsidersPublication(body.insiders,ticker):null;
+ }catch{return null;}
+}
+export async function loadInsiderTransactions(ticker:string,personKey:string,search:URLSearchParams,fetcher:typeof fetch=fetch):Promise<InsiderTransactionsPage|null>{
+ try{
+  const query=new URLSearchParams();for(const name of ["cursor","limit"]){const value=search.get(name);if(value!=null)query.set(name,value);}
+  const tail=query.size?`?${query}`:"";
+  const response=await fetcher(ANALYSIS_ORIGIN+`/api/v1/companies/${ticker}/insiders/${encodeURIComponent(personKey)}/transactions${tail}`,{signal:AbortSignal.timeout(8000),headers:{accept:"application/json"}});
+  if(!response.ok)return null;
+  const body=await response.json() as {schemaVersion?:string;status?:string;transactions?:unknown};
+  return body.schemaVersion==="insider-transactions-response.v1"&&body.status==="ready"?readInsiderTransactionsPage(body.transactions,ticker,personKey):null;
  }catch{return null;}
 }
 
@@ -406,11 +428,11 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
    if(tickers&&cache&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));else response.headers.set("cache-control","no-store");
    return response;
   }
-  const match=url.pathname.match(/^\/api\/business\/v1\/companies\/([A-Z][A-Z0-9.-]{0,11})(\/opening|\/revision|\/capital|\/findings|\/fundamentals|\/events|\/filings|\/filings\/\d{10}-\d{2}-\d{6}|\/items\/\d{10}-\d{2}-\d{6}|\/passages\/p[0-9a-f]{14,32}|\/valuation|\/valuation\/versions|\/valuation\/versions\/[0-9a-f]{8,64}|\/valuation\/versions\/[0-9a-f]{8,64}\/evidence\/e[0-9a-f]{6,20})?$/);
+  const match=url.pathname.match(/^\/api\/business\/v1\/companies\/([A-Z][A-Z0-9.-]{0,11})(\/opening|\/revision|\/capital|\/findings|\/fundamentals|\/events|\/insiders|\/insiders\/(?:\d{1,10}|name(?::|%3[Aa])(?:[a-z0-9]|%20){1,160})\/transactions|\/filings|\/filings\/\d{10}-\d{2}-\d{6}|\/items\/\d{10}-\d{2}-\d{6}|\/passages\/p[0-9a-f]{14,32}|\/valuation|\/valuation\/versions|\/valuation\/versions\/[0-9a-f]{8,64}|\/valuation\/versions\/[0-9a-f]{8,64}\/evidence\/e[0-9a-f]{6,20})?$/);
   const detail=match?.[2]?.startsWith("/filings/")?match[2].slice("/filings/".length):null;
   // The reader pins a report to its published revision; a resource is asked for at its publication revision (`rev`), which
   // only keys the cache: a newer revision is a new address, so no cached copy can answer it with older data.
-  const allowed=match?.[2]==="/revision"?new Set<string>():detail?new Set(["reportDate","reportVersion","lang"]):match?.[2]==="/valuation/versions"?new Set<string>(["before","limit"]):new Set<string>(["lang","rev"]);
+  const allowed=match?.[2]==="/revision"?new Set<string>():detail?new Set(["reportDate","reportVersion","lang"]):match?.[2]==="/valuation/versions"?new Set<string>(["before","limit"]):match?.[2]?.startsWith("/insiders/")?new Set<string>(["cursor","limit"]):new Set<string>(["lang","rev"]);
   if(!match||[...url.searchParams.keys()].some(k=>!allowed.has(k)))return json({error:"Not found"},404);
   const rev=url.searchParams.get("rev");
   if(rev!=null&&!REVISION.test(rev))return json({error:"Not found"},404);
@@ -447,6 +469,8 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
    if(match[2]==="/capital"){const body=await loadCapital(match[1],fetcher);const response=moduleJson({schemaVersion:"capital-response.v1",status:body?"ready":"unavailable",capital:body?.capital??null,peers:body?.peers??null});if(!body)response.headers.set("cache-control","no-store");if(cache&&body&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));return response;}
    if(match[2]==="/findings"){const bundle=await loadFindings(match[1],fetcher,locale);const response=moduleJson({schemaVersion:"findings-response.v1",status:bundle?"ready":"unavailable",findings:bundle?.findings??null,passages:bundle?.passages??[],peers:bundle?.peers??null});if(!bundle)response.headers.set("cache-control","no-store");if(cache&&bundle&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));return response;}
    if(match[2]==="/events")return supplementary("events","events-response.v1",()=>loadEvents(match[1],fetcher,locale));
+   if(match[2]==="/insiders")return supplementary("insiders","insiders-response.v1",()=>loadInsiders(match[1],fetcher));
+   if(match[2].startsWith("/insiders/"))return supplementary("transactions","insider-transactions-response.v1",()=>loadInsiderTransactions(match[1],decodeURIComponent(match[2]!.slice("/insiders/".length,-"/transactions".length)),url.searchParams,fetcher));
    if(match[2]==="/filings")return supplementary("filings","filing-digests-response.v1",()=>loadFilings(match[1],fetcher,locale));
    if(match[2].startsWith("/items/"))return supplementary("analysis","item-analysis-response.v1",()=>loadItemAnalysis(match[1],match[2]!.slice("/items/".length),fetcher,locale));
    if(match[2].startsWith("/passages/"))return supplementary("passage","passage-response.v1",()=>loadPassage(match[1],match[2]!.slice("/passages/".length),fetcher));

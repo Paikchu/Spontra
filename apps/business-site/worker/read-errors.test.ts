@@ -70,3 +70,29 @@ test("A06: home preserves upstream rate limits and server retry delay", async ()
   const invalid = await handle(url("home"), env, { waitUntil() {} }, async () => Response.json({}));
   assert.equal(invalid.status, 503);
 });
+
+test("insiders by person and one person's history are proxied with the key decoded and only the cursor and limit passed", async () => {
+  const persons = { schemaVersion: "insiders.v1", ticker: TICKER, source: "ledger", newDays: 14, asOf: "2026-10-30T00:00:00.000Z", persons: [] };
+  const page = { schemaVersion: "insider-transactions.v1", ticker: TICKER, personKey: "name:wei c c", source: "ledger", items: [], nextCursor: null };
+  const asked: string[] = [];
+  const upstream: typeof fetch = async input => {
+    const u = new URL(String(input)); asked.push(u.pathname + u.search);
+    if (u.pathname.endsWith("/insiders")) return Response.json({ schemaVersion: "insiders-response.v1", status: "ready", insiders: persons });
+    if (u.pathname.endsWith("/transactions")) return Response.json({ schemaVersion: "insider-transactions-response.v1", status: "ready", transactions: page });
+    return Response.json({ status: "unavailable" });
+  };
+  const list = await handle(url(`companies/${TICKER}/insiders`), env, { waitUntil() {} }, upstream);
+  assert.equal(list.status, 200);
+  assert.deepEqual(await list.json(), { schemaVersion: "insiders-response.v1", status: "ready", insiders: persons });
+  const history = await handle(url(`companies/${TICKER}/insiders/name%3Awei%20c%20c/transactions?cursor=2026-10-19%7C2026-10-20%7C0001046179-26-000900%7C1&limit=10`), env, { waitUntil() {} }, upstream);
+  assert.equal(history.status, 200);
+  assert.deepEqual(await history.json(), { schemaVersion: "insider-transactions-response.v1", status: "ready", transactions: page });
+  assert.deepEqual(asked, [`/api/v1/companies/${TICKER}/insiders`, `/api/v1/companies/${TICKER}/insiders/name%3Awei%20c%20c/transactions?cursor=2026-10-19%7C2026-10-20%7C0001046179-26-000900%7C1&limit=10`]);
+  // A key of another shape, or a query the route does not take, is not a resource; an upstream fault is not cached and not ready.
+  for (const bad of [`companies/${TICKER}/insiders/../transactions`, `companies/${TICKER}/insiders/x%20y/transactions`, `companies/${TICKER}/insiders/123/transactions?lang=zh-CN`, `companies/${TICKER}/insiders?cursor=1`]) {
+    assert.equal((await handle(url(bad), env, { waitUntil() {} }, upstream)).status, 404, bad);
+  }
+  const failed = await handle(url(`companies/${TICKER}/insiders/123/transactions`), env, { waitUntil() { assert.fail("a failed read is not cached"); } }, async () => refused(500));
+  assert.equal(failed.status, 503);
+  assert.equal(failed.headers.get("cache-control"), "no-store");
+});
