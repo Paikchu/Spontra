@@ -67,7 +67,7 @@ export type NoteRunInput = {
   documents: TocDocument[];
   act: AgentAct;
   stage: <T>(name: string, callback: () => Promise<T>) => Promise<T>;
-  /** False once the day's model turns are spent; the loop then ends without a note. */
+  /** Reserve per model-stage attempt; completed stages replay without reserving again. False ends the note. */
   reserveTurn: () => Promise<boolean>;
   budget?: NoteBudget;
 };
@@ -145,8 +145,11 @@ export async function runNote(input: NoteRunInput): Promise<NoteOutcome> {
   }) }];
   let failed = 0, quiet = 0;
   for (let turn = 1; turn <= budget.turns && !state.accepted; turn++) {
-    if (!await input.reserveTurn()) { turns.push({ turn, thought: "", action: "budget", input: "", observation: "The day's model budget is spent." }); break; }
-    const reply = await input.stage(`${metric.id}-t${turn}`, () => input.act(`checkup-${metric.id}-${turn}`, SYSTEM, NOTE_TOOLS, messages));
+    const reply = await input.stage(`${metric.id}-t${turn}`, async () => {
+      if (!await input.reserveTurn()) return null;
+      return input.act(`checkup-${metric.id}-${turn}`, SYSTEM, NOTE_TOOLS, messages);
+    });
+    if (reply === null) { turns.push({ turn, thought: "", action: "budget", input: "", observation: "The day's model budget is spent." }); break; }
     const failure = replyFailure(reply);
     if (failure !== null || "error" in reply) { turns.push({ turn, thought: "", action: "invalid", input: "", observation: String(failure).slice(0, 600) }); if (++failed >= FAILED_REPLIES) break; continue; }
     failed = 0;
