@@ -77,8 +77,10 @@ export function parseForm4(xml: string): InsiderTransaction | null {
   const sum = (code: InsiderTransactionCode, ad: "A" | "D") => {
     const picked = lines.filter(l => !l.derivative && l.code === code && l.acquiredDisposed === ad);
     const shares = picked.reduce((s, l) => s + l.shares, 0);
-    const money = picked.reduce((s, l) => s + l.shares * (l.price ?? 0), 0);
-    return shares > 0 ? { shares, money, averagePrice: money / shares } : null;
+    const priced = picked.filter(l => l.price != null);
+    const pricedShares = priced.reduce((s, l) => s + l.shares, 0);
+    const money = priced.length === picked.length ? priced.reduce((s, l) => s + l.shares * l.price!, 0) : null;
+    return shares > 0 ? { shares, pricedShares, money, averagePrice: money == null ? null : money / shares } : null;
   };
   const sold = sum("S", "D"), bought = sum("P", "A");
   const exercised = lines.filter(l => !l.derivative && l.code === "M" && l.acquiredDisposed === "A").reduce((s, l) => s + l.shares, 0);
@@ -94,7 +96,7 @@ export function parseForm4(xml: string): InsiderTransaction | null {
     rule10b51: planFlag ?? (footnotes.some(f => /10b5-1/i.test(f)) ? true : null),
     planAdoptedOn: adopted ? isoDate(adopted) : null,
     securityTitle: field(blocks(xml, "nonDerivativeTransaction")[0] ?? xml, "securityTitle") ?? "Common Stock",
-    lines, sold: sold && { shares: sold.shares, proceeds: sold.money, averagePrice: sold.averagePrice }, bought: bought && { shares: bought.shares, cost: bought.money, averagePrice: bought.averagePrice },
+    lines, sold: sold && { shares: sold.shares, proceeds: sold.money, averagePrice: sold.averagePrice, pricedShares: sold.pricedShares }, bought: bought && { shares: bought.shares, cost: bought.money, averagePrice: bought.averagePrice, pricedShares: bought.pricedShares },
     exercised, heldAfter, footnotes,
   };
 }

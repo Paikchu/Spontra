@@ -20,7 +20,7 @@ export type InsiderLine = {
   /** Shares acquired (A) or disposed (D). */
   acquiredDisposed: "A" | "D";
   shares: number;
-  /** Per-share price as reported; null for grants, gifts and option exercises reported at zero. */
+  /** Per-share price as reported, including explicit zero; null when no numeric price is reported. */
   price: number | null;
   /** Shares of this class the owner held after the line, as reported on the line. */
   ownedAfter: number | null;
@@ -51,10 +51,15 @@ export type InsiderTransaction = {
   planAdoptedOn: string | null;
   securityTitle: string;
   lines: InsiderLine[];
-  /** Open-market sales (code S) in this filing: shares, proceeds and weighted price; null when there were none. */
-  sold: { shares: number; proceeds: number; averagePrice: number } | null;
-  /** Open-market purchases (code P) in this filing. */
-  bought: { shares: number; cost: number; averagePrice: number } | null;
+  /**
+   * Non-derivative open-market sales (code S, disposed) in this filing; null when there were none.
+   * Shares includes unpriced lines. Proceeds and weighted averagePrice are null if any selected line is unpriced.
+   * pricedShares counts shares with a reported numeric price (including zero); absent on legacy aggregates,
+   * whose price coverage is unknown. New parsers always emit it.
+   */
+  sold: { shares: number; proceeds: number | null; averagePrice: number | null; pricedShares?: number } | null;
+  /** Open-market purchases (code P, acquired), with the same pricing/coverage rules as sold. */
+  bought: { shares: number; cost: number | null; averagePrice: number | null; pricedShares?: number } | null;
   /** Shares exercised or converted (code M) in this filing. */
   exercised: number;
   /** Shares held directly after the last non-derivative line; null when the filing reports none. */

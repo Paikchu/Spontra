@@ -451,7 +451,7 @@ function eventAt(data: FindingData, id: string, field: EventField, span: Finding
   const t = event?.insider;
   if (!event || !t) return null;
   const pick: Record<EventField, [number | null | undefined, ValueUnit]> = {
-    sharesSold: [t.sold?.shares, "shares"], proceeds: [t.sold?.proceeds, "USD"], averagePrice: [t.sold?.averagePrice ?? t.bought?.averagePrice, "per_share"],
+    sharesSold: [t.sold?.shares, "shares"], proceeds: [t.sold?.proceeds, "USD"], averagePrice: [t.sold ? t.sold.averagePrice : t.bought?.averagePrice, "per_share"],
     sharesBought: [t.bought?.shares, "shares"], cost: [t.bought?.cost, "USD"], exercised: [t.exercised, "shares"], heldAfter: [t.heldAfter, "shares"],
   };
   const [value, unit] = pick[field];
