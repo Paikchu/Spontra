@@ -11,7 +11,7 @@ const heading = (label: string) => `<tr><td>${label}</td><td></td><td></td><td><
 const statement = (rows: string) => `<p>CONDENSED CONSOLIDATED STATEMENTS OF OPERATIONS ($ in millions)</p><table>
   <tr><td></td><td colspan="2">Three Months Ended August 31, 2026</td><td colspan="2">Three Months Ended August 31, 2025</td></tr>${rows}</table>`;
 
-test("a statement without cost of revenue splits revenue by its printed lines and draws its direct costs", () => {
+test("statement revenue lines do not establish reportable segments; direct costs remain disclosed", () => {
   const html = statement([
     heading("REVENUES"), line("Platform", [600, 500]), line("Licenses", [300, 280]), line("Support", [100, 120]), line("Total revenues", [1000, 900]),
     heading("OPERATING EXPENSES"), line("Platform and licenses", [250, 220]), line("Support", [60, 70]), line("Sales and marketing", [150, 140]),
@@ -23,7 +23,7 @@ test("a statement without cost of revenue splits revenue by its printed lines an
   assert.ok(current);
   assert.equal(current.periodEnd, "2026-08-31");
   assert.equal(current.incomeModel, "direct_operating");
-  assert.deepEqual(current.segments.map(s => [s.name, s.revenue.value]), [["Platform", "600000000"], ["Licenses", "300000000"], ["Support", "100000000"]]);
+  assert.deepEqual(current.segments.map(s => [s.id, s.revenue.value]), [["reported-company-total", "1000000000"]]);
   assert.deepEqual(current.expenseComponents?.map(e => [e.name, e.group]), [
     ["Platform and licenses", "direct"], ["Support", "direct"], ["Sales and marketing", "sales"], ["Research and development", "research"], ["General and administrative", "administration"],
   ]);

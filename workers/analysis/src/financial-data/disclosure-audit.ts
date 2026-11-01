@@ -28,7 +28,7 @@ const summary = ({rawKey: _raw, inventoryKey: _inventory, statementsKey: _statem
 
 /** Source-addressed archives survive reruns; the D1 pointer advances only after all source, inventory and statement objects exist. */
 export async function archiveFilingDisclosures(env: DisclosureArchiveEnv, ticker: string, source: DocumentSource, served: string,
-  metadata: { form?: string; reportDate?: string } = {}, causeId: string | null = null): Promise<DisclosureAuditSummary> {
+  metadata: { form?: string; reportDate?: string } = {}, causeId: string | null = null, options: {announce?: boolean} = {}): Promise<DisclosureAuditSummary> {
   if (!TICKER_PATTERN.test(ticker) || !/^\d{10}-\d{2}-\d{6}$/.test(source.accession)) throw new Error("INVALID_DISCLOSURE_SOURCE");
   // Hash and store what was filed, not what sec.gov wrapped around it, so the same document keeps one address.
   const html = canonicalSecHtml(served);
@@ -67,9 +67,10 @@ export async function archiveFilingDisclosures(env: DisclosureArchiveEnv, ticker
   await env.DB.batch([
     env.DB.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at")
       .bind(cacheKey, JSON.stringify(record), archivedAt),
-    outboxStatement(env.DB, { type: "filing.archived", ticker, cik: source.cik || null, detail, causeId }, archivedAt),
+    // Deterministic maintenance keeps its audit without dispatching downstream model consumers.
+    ...(options.announce === false ? [] : [outboxStatement(env.DB, { type: "filing.archived", ticker, cik: source.cik || null, detail, causeId }, archivedAt)]),
     ...superseded.map(key => env.DB.prepare("INSERT INTO pipeline_superseded (key, ticker, superseded_at) VALUES (?, ?, ?) ON CONFLICT(key) DO NOTHING").bind(key, ticker, archivedAt)),
-    ...(superseded.length ? [outboxStatement(env.DB, { type: "archive.superseded", ticker, cik: source.cik || null, detail, causeId }, archivedAt)] : []),
+    ...(superseded.length && options.announce !== false ? [outboxStatement(env.DB, { type: "archive.superseded", ticker, cik: source.cik || null, detail, causeId }, archivedAt)] : []),
   ]);
   return summary(record);
 }

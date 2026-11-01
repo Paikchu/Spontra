@@ -15,6 +15,7 @@ const quarterSchema = z.object({
   periodStart: date, periodEnd: date, currency: z.string().regex(/^[A-Z]{3}$/), scale: z.number().finite().positive(), revenue: amount,
   basis: z.enum(["reported", "derived"]), formula: z.string().max(500).optional(),
   presentation: z.string().max(500).optional(), lineage: lineage.optional(),
+  segmentDisclosure: z.literal("single_reportable_segment").optional(),
   segments: z.array(leaf.extend({ children: z.array(leaf).max(40).optional() })).min(1).max(40),
   revenueAdjustments: z.array(leaf).max(20).optional(),
   source: z.object({ accession: z.string().regex(/^\d{10}-\d{2}-\d{6}$/), url: secUrl, filedAt: date, form: z.string().max(12) }),
@@ -44,12 +45,14 @@ export function historyQuarterFrom(q: BusinessFlowQuarter, source: RevenueHistor
   const derived = q.figures.revenue!.basis === "derived";
   const candidate: RevenueHistoryQuarter = {
     periodStart: q.periodStart, periodEnd: q.periodEnd, currency: q.currency, scale: q.scale, revenue, basis: derived ? "derived" : "reported",
+    ...(q.fiscalQuarter ? {fiscalQuarter:q.fiscalQuarter} : {}),
     ...(derived && q.figures.revenue!.formula ? { formula: q.figures.revenue!.formula } : {}),
     ...(q.figures.revenue!.lineage ? {lineage: q.figures.revenue!.lineage} : {}),
+    ...(q.segmentDisclosure ? {segmentDisclosure: q.segmentDisclosure} : {}),
     segments: q.segments.map(s => {
       const children = s.children?.filter(c => c.revenue?.value != null).map(c => ({ id: c.id, name: c.name, value: c.revenue.value!, ...(c.revenue.lineage ? {lineage: c.revenue.lineage} : {}) }));
       const balanced = children?.length && near(children.reduce((sum, c) => sum + Number(c.value), 0), Number(s.revenue!.value));
-      return { id: s.id, name: s.name, value: s.revenue!.value!, ...(s.revenue!.lineage ? {lineage: s.revenue!.lineage} : {}), ...(balanced ? { children } : {}) };
+      return { id: s.id, name: s.name, value: s.revenue!.value!, basis: s.revenue!.basis, formula: s.revenue!.formula, ...(s.revenue!.lineage ? {lineage: s.revenue!.lineage} : {}), ...(balanced ? { children } : {}) };
     }),
     ...(q.revenueAdjustments?.length?{revenueAdjustments:q.revenueAdjustments.map(a=>({id:a.id,name:a.name,value:a.amount.value!,basis:a.amount.basis,formula:a.amount.formula,lineage:a.amount.lineage}))}:{}),
     source,
@@ -57,7 +60,31 @@ export function historyQuarterFrom(q: BusinessFlowQuarter, source: RevenueHistor
   return validHistoryQuarter(candidate) ? candidate : null;
 }
 
-/** A verified Q4 split beats an equal-revenue placeholder. Otherwise reported beats derived,
+/** Q4 only: one million reporting-currency units or one basis point (0.01%), whichever
+ * is larger. Convert the absolute floor to the stored scale. This is a ranking tolerance,
+ * never a relaxation of the exact segment reconciliation gate. */
+export function roundingCompatible(a: RevenueHistoryQuarter, b: RevenueHistoryQuarter): boolean {
+  return a.currency === b.currency && a.scale === b.scale && a.periodStart === b.periodStart && a.periodEnd === b.periodEnd
+    && Math.abs(Number(a.revenue) - Number(b.revenue)) <= Math.max(1_000_000 / a.scale, Math.max(Math.abs(Number(a.revenue)), Math.abs(Number(b.revenue))) * 0.0001);
+}
+export function reconcileRounding(split: RevenueHistoryQuarter, total: RevenueHistoryQuarter): RevenueHistoryQuarter {
+  if (total.basis !== "reported" || Number(split.revenue) === Number(total.revenue)) return split;
+  const adjustments = (split.revenueAdjustments ?? []).filter(a => a.id !== "rounding");
+  const originalTotal = split.segments.reduce((sum,s)=>sum+Number(s.value),0) + adjustments.reduce((sum,a)=>sum+Number(a.value),0);
+  const difference = Number(total.revenue) - originalTotal;
+  // Keep the directly reported consolidated total; the split's own provenance remains on its leaves.
+  const lineage = [...(total.lineage ?? []), ...(split.lineage ?? []), ...split.segments.flatMap(s => s.lineage ?? []), ...(split.revenueAdjustments ?? []).flatMap(a=>a.lineage??[])];
+  if (!lineage.length) return split;
+  const result: RevenueHistoryQuarter = {...split, revenue: total.revenue, basis: split.basis, formula: split.basis === "derived" ? `${split.formula ?? "Verified split"}; adjusted to reported revenue ${total.revenue}`.slice(0,500) : undefined,
+    lineage: total.lineage, revenueAdjustments: [...adjustments, {
+      id: "rounding", name: "Reporting rounding difference", value: String(difference), basis: "derived",
+      formula: `Reported revenue ${total.revenue} (${total.source.accession}) − verified split total ${originalTotal} (${split.source.accession}); Q4 reporting rounding tolerance`,
+      lineage: [...new Map(lineage.map(l => [JSON.stringify(l), l])).values()].slice(0, 80),
+    }]};
+  return validHistoryQuarter(result) ? result : split;
+}
+
+/** A verified Q4 split beats a rounding-compatible total-only placeholder. Otherwise reported beats derived,
  * and a periodic report (10-Q, 10-K, 20-F, 6-K) beats the earnings release it supersedes;
  * then prefer the newest disclosure, retaining a verified split over an equal-revenue total-only fallback. */
 export function mergeHistory(ticker: string, existing: RevenueHistoryQuarter[], incoming: RevenueHistoryQuarter[], updatedAt: string): RevenueHistory {
@@ -67,13 +94,14 @@ export function mergeHistory(ticker: string, existing: RevenueHistoryQuarter[], 
     const old = byPeriod.get(q.periodEnd);
     if (!old) { byPeriod.set(q.periodEnd, q); continue; }
     // EPS is independently reported; keep it even when a periodic split wins the revenue ranking.
-    const eps = q.currency === old.currency && q.periodStart === old.periodStart ? old.dilutedEps ?? q.dilutedEps : undefined;
-    if (eps) { q.dilutedEps ??= eps; old.dilutedEps ??= eps; }
+    const eps = q.currency === old.currency && q.periodStart === old.periodStart ? (q.dilutedEps && (!old.dilutedEps || q.dilutedEps.source.filedAt >= old.dilutedEps.source.filedAt) ? q.dilutedEps : old.dilutedEps) : undefined;
+    if (eps) { q.dilutedEps = eps; old.dilutedEps = eps; }
     const [a, b] = [rank(q), rank(old)];
-    const placeholder = (v: RevenueHistoryQuarter) => v.segments.length === 1 && v.segments[0].id === "reported-company-total";
-    if ((q.basis === "derived" || old.basis === "derived" || q.fiscalQuarter === 4 || old.fiscalQuarter === 4) && q.currency === old.currency && q.scale === old.scale && q.periodStart === old.periodStart && near(Number(q.revenue), Number(old.revenue))) {
-      if (placeholder(q) && old.segments.length > 1) continue;
-      if (placeholder(old) && q.segments.length > 1) { byPeriod.set(q.periodEnd, q); continue; }
+    const placeholder = (v: RevenueHistoryQuarter) => v.segments.length === 1 && v.segments[0].id === "reported-company-total" && v.segmentDisclosure !== "single_reportable_segment";
+    const verifiedSplit = (v: RevenueHistoryQuarter) => v.segments.length > 1 || v.segmentDisclosure === "single_reportable_segment";
+    if ((q.basis === "derived" || old.basis === "derived" || q.fiscalQuarter === 4 || old.fiscalQuarter === 4) && q.currency === old.currency && q.scale === old.scale && q.periodStart === old.periodStart && roundingCompatible(q, old)) {
+      if (placeholder(q) && verifiedSplit(old)) { byPeriod.set(q.periodEnd, reconcileRounding(old, q)); continue; }
+      if (placeholder(old) && verifiedSplit(q)) { byPeriod.set(q.periodEnd, reconcileRounding(q, old)); continue; }
     }
     if (a[0] === b[0] && q.currency === old.currency && q.scale === old.scale && q.periodStart === old.periodStart && near(Number(q.revenue), Number(old.revenue))) {
       if (q.segments.length === 1 && old.segments.length > 1) continue;
