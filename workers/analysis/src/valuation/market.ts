@@ -70,6 +70,18 @@ export async function fetchRiskFreeRate(currency: string, fetcher: typeof fetch 
   return { value: latest.close / 100, date: latest.date, label: market.yieldLabel, sourceUrl: read.url };
 }
 
+/** Two years of weekly closes for the company's own trailing-multiple history (docs/valuation-v2-SPEC.md §5); null when the chart does not answer. */
+export async function fetchWeeklyCloses(ticker: string, fetcher: typeof fetch = fetch, now = new Date()): Promise<Close[] | null> {
+  const read = await chart(ticker.replaceAll(".", "-"), "2y", "1wk", fetcher, now);
+  return read?.points.length ? read.points : null;
+}
+
+/** The ranking peers' last closes, each a reference quote in the valuation currency or null; read in parallel, never in a read route. */
+export async function fetchPeerQuotes(tickers: string[], currency: string, fetcher: typeof fetch = fetch, now = new Date()): Promise<Record<string, ReferenceQuote | null>> {
+  const quotes = await Promise.all(tickers.map(t => fetchReferenceQuote(t, currency, fetcher, now).catch(() => null)));
+  return Object.fromEntries(tickers.map((t, i) => [t, quotes[i] ?? null]));
+}
+
 export type BetaEstimate = { beta: number; observations: number; from: string; to: string; index: string; sourceUrl: string };
 /** Beta from two years of weekly log returns against the market index; null with fewer than a year of overlapping weeks. */
 export async function fetchBeta(ticker: string, currency: string, fetcher: typeof fetch = fetch, now = new Date()): Promise<BetaEstimate | null> {

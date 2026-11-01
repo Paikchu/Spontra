@@ -19,7 +19,9 @@ export const VALUATION_MODEL_TYPES = ["fcff", "fcfe", "revenue_fcfe", "residual_
 export type ValuationModelType = typeof VALUATION_MODEL_TYPES[number];
 
 export const GAP_CODES = ["missing_inputs", "unsupported_model", "missing_quote", "stale_quote", "identity_mismatch", "conflicting_sources", "unverified_consensus", "unreadable_source", "research_budget_exhausted",
-  "assumption_out_of_history_range", "tv_share_high", "reinvestment_inconsistent", "discount_rate_unsourced", "calculation_rejected"] as const;
+  "assumption_out_of_history_range", "tv_share_high", "reinvestment_inconsistent", "discount_rate_unsourced", "calculation_rejected",
+  // valuation.calc.v2 gates (docs/valuation-v2-SPEC.md): flagged, never forced.
+  "cited_input_mismatch", "consensus_divergence", "method_dispersion", "rpo_floor_breached", "negative_scenario", "terminal_growth_high", "implied_multiple_outside_history", "peers_unavailable"] as const;
 export type GapCode = typeof GAP_CODES[number];
 export type ValuationGap = { code: GapCode; field?: string; period?: string; message: string; evidenceIds: string[] };
 
@@ -43,8 +45,12 @@ export type ValuationFact = {
   rationale: string | null;
 };
 
-/** One year of a driver path; the same shape for every scenario so scenarios differ only in the numbers. */
-export type DriverPath = { revenueGrowth: number[]; operatingMargin: number[]; taxRate: number[]; salesToCapital: number[]; normalization?: number[] };
+/**
+ * One year of a driver path; the same shape for every scenario so scenarios differ only in the numbers. Five to ten years,
+ * every array the same length. `buildCapex` is capital spent ahead of revenue (capacity under construction), in currency
+ * units per year: reinvestment the sales-to-capital term does not see, so a build phase is not read as a steady state.
+ */
+export type DriverPath = { revenueGrowth: number[]; operatingMargin: number[]; taxRate: number[]; salesToCapital: number[]; normalization?: number[]; buildCapex?: number[] };
 export type ScenarioAssumptions = {
   narrative: string;
   probability: number | null;
@@ -55,7 +61,8 @@ export type ScenarioAssumptions = {
 };
 /** The per-scenario inputs of each model; the discount rate, shares and bridge are report-level and shared. */
 export type ModelDrivers =
-  | { modelType: "fcff"; revenue0: number; path: DriverPath; terminalGrowth: number; terminalRoic: number }
+  /** `terminalOperatingMargin`: the normalized margin the terminal NOPAT is taken from when the last forecast year still carries build-phase costs. */
+  | { modelType: "fcff"; revenue0: number; path: DriverPath; terminalGrowth: number; terminalRoic: number; terminalOperatingMargin?: number }
   | { modelType: "fcfe"; cfo: number; capex: number; sbc: number; normalization: number; netBorrowing: number; growth: number[]; terminalGrowth: number }
   | { modelType: "revenue_fcfe"; revenue0: number; growth: number[]; afterSbcEquityCashMargin: number[]; terminalGrowth: number }
   | { modelType: "residual_income"; bookEquity0: number; roe: number[]; payout: number[]; terminalRoe: number; terminalGrowth: number }
@@ -83,7 +90,7 @@ export type DiscountRate = {
   sourceRefs: string[];
 };
 
-export type YearRow = { year: number; revenue: number | null; nopat: number | null; reinvestment: number | null; cashFlow: number; discountFactor: number; presentValue: number };
+export type YearRow = { year: number; revenue: number | null; nopat: number | null; reinvestment: number | null; cashFlow: number; discountFactor: number; presentValue: number; buildCapex?: number | null };
 export type ScenarioResult = {
   perShare: number;
   equityValue: number;
@@ -101,6 +108,28 @@ export type ValuationRange = {
   low: number; high: number; base: number; expected: number | null;
   price: number | null; marginOfSafety: number | null; downsideCoverage: number | null; expectedUpside: number | null; baseUpside: number | null;
 };
+/* ---- valuation.calc.v2: cross-checks, gates and anchors (docs/valuation-v2-SPEC.md). All optional; a v1 payload still reads. ---- */
+
+export const VALUATION_METHODS = ["dcf", "ev_ebitda_forward", "pe_forward"] as const;
+export type ValuationMethodKey = typeof VALUATION_METHODS[number];
+/** One method's football-field bar: per-share low / base / high, null where the method could not be applied. */
+export type MethodValuation = { method: ValuationMethodKey; label: string; low: number | null; base: number | null; high: number | null; weight: number; basis: string; notes: string[] };
+/** The weighted football field over the applicable methods; `dispersion` is max/min of the method bases (null when a base is not positive). */
+export type Triangulation = { low: number; base: number; high: number; dispersion: number | null; weights: Record<ValuationMethodKey, number> };
+export type GateStatus = "pass" | "flag" | "fail";
+/** A sanity gate: `fail` rejects the calculation, `flag` annotates it; `value` and `limit` are the figures compared. */
+export type SanityGate = { key: string; status: GateStatus; detail: string; value: number | null; limit: number | null };
+/** Contracted revenue by forecast year from the RPO buckets: a floor the revenue path should not fall under. */
+export type RevenueAnchor = { source: "rpo"; asOf: string; total: number; floor: number[]; floorToRevenue0: number[]; notes: string[] };
+export type InputCheck = { field: string; cited: number; expected: number | null; factIds: string[]; tolerance: number; status: GateStatus; detail: string };
+/** The cited inputs checked against the registered facts: revenue, shares, the bridge against debt, leases, preferred and minority claims. */
+export type InputVerification = { checks: InputCheck[]; ok: boolean };
+export type MultipleQuartiles = { p25: number; median: number; p75: number; count: number };
+/** The ranking peers' trailing multiples at their reference closes; `peers` lists the tickers that answered. */
+export type PeerMultiples = { peers: string[]; asOf: string; evToEbitda: MultipleQuartiles | null; peRatio: MultipleQuartiles | null; notes: string[] };
+/** A sell-side consensus target the research registered with its evidence; compared, never copied. */
+export type ConsensusTarget = { mean: number; low: number | null; high: number | null; count: number | null; asOf: string | null; evidenceId: string | null };
+
 export type ValuationModelResult = {
   calculatorVersion: string;
   modelType: ValuationModelType;
@@ -113,6 +142,16 @@ export type ValuationModelResult = {
   sensitivities: Sensitivity[];
   implied: ImpliedPath | null;
   limitations: string[];
+  /** Forecast years of the base path (5–10); absent on v1 payloads, which are five. */
+  horizonYears?: number;
+  midYear?: boolean;
+  methods?: MethodValuation[];
+  triangulation?: Triangulation | null;
+  gates?: SanityGate[];
+  anchors?: { revenue: RevenueAnchor | null };
+  verification?: InputVerification | null;
+  peers?: PeerMultiples | null;
+  consensus?: ConsensusTarget | null;
 };
 
 export type ValuationDimension = {

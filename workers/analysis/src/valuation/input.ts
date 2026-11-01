@@ -1,7 +1,12 @@
 import type { FindingRef } from "../../../../shared/analysis-contract/findings.ts";
 import type { DiagnosticMetric, FactorDistribution, PeriodType, ValuationFact } from "../../../../shared/analysis-contract/valuation.ts";
+import type { RpoDisclosure } from "../../../../shared/analysis-contract/capital-structure.ts";
+import type { PeerCompany, PeersPublication } from "../../../../shared/analysis-contract/peers.ts";
 import { readFindingFundamentals, resolveRef, type FindingData } from "../../../../shared/analysis-runtime/findings.ts";
-import { distributionOf } from "../../../../shared/analysis-runtime/valuation/calculator.ts";
+import { rankingPeers } from "../../../../shared/analysis-runtime/statement-analysis.ts";
+import { distributionOf, type Lifecycle } from "../../../../shared/analysis-runtime/valuation/calculator.ts";
+import { lifecycleOf } from "../../../../shared/analysis-runtime/valuation/prior.ts";
+import { readPeersResponse } from "../peers/read.ts";
 import { sha256 } from "../sha256.ts";
 import { companyName, findSecurity } from "../catalog/security-directory.ts";
 import { requireDb } from "../core.ts";
@@ -25,11 +30,15 @@ import type { GuidancePublication } from "../../../../shared/analysis-contract/g
  * of each driver, the diagnostics every dimension must answer, and the catalogue of filings, guidance and calls the agent
  * may read. No model call, no SEC fetch. Everything here is deterministic, so the fingerprint says what a run would write from.
  */
-export const VALUATION_INPUT_VERSION = "valuation.input.v1";
+export const VALUATION_INPUT_VERSION = "valuation.input.v2";
 const DAY = 86_400_000;
 
 export type ValuationDocument = { documentId: string; accession: string; form: string; docType: string; filedAt: string; reportDate: string; url: string };
 export type ValuationTranscript = { id: string; periodEnd: string; title: string; filedAt: string; sourceUrl: string; characters: number; fiscalYear: number; fiscalQuarter: number };
+/** A ranking peer's trailing figures from the peers projection and the SEC share series, for the forward-multiple cross-check. */
+export type PeerFundamentals = { ticker: string; periodEnd: string; ebitda: number | null; coreEarnings: number | null; netDebt: number | null; shares: number | null };
+/** Trailing EBITDA and net debt per quarter, for the company's own EV/EBITDA history. */
+export type TrailingQuarter = { periodEnd: string; ebitdaTtm: number; netDebt: number };
 export type ValuationInput = {
   ticker: string;
   cik: string | null;
@@ -48,6 +57,13 @@ export type ValuationInput = {
   missing: string[];
   fingerprint: string;
   data: FindingData;
+  /** The newest RPO disclosure, for the contracted-revenue floor. */
+  rpo: RpoDisclosure | null;
+  lifecycle: Lifecycle;
+  /** Ranking peers (business-tag pairs of basis company), else companies sharing a category; not part of the fingerprint. */
+  peers: PeerFundamentals[];
+  peerBasis: "ranking" | "category" | "none";
+  trailingQuarters: TrailingQuarter[];
 };
 
 const num = (value: string | number | null | undefined): number | null => { const n = typeof value === "number" ? value : Number(value); return Number.isFinite(n) ? n : null; };
@@ -98,7 +114,11 @@ const FACT_SPECS: FactSpec[] = [
   { id: "net_debt", label: "Net debt (debt + leases − cash), newest balance sheet", ref: { derived: "netDebt" }, span: "quarter", periodType: "instant" },
   { id: "invested_capital", label: "Invested capital, newest balance sheet", ref: { derived: "investedCapital" }, span: "quarter", periodType: "instant" },
   { id: "debt_due_12m", label: "Debt due within twelve months", ref: { schedule: { kind: "debtMaturities", bucket: 1 } }, span: "quarter", periodType: "instant" },
+  { id: "rpo_total", label: "Remaining performance obligations, newest disclosure", ref: { capital: "rpo" }, span: "quarter", periodType: "instant" },
+  { id: "rpo_next_12m_share", label: "Share of RPO recognized within twelve months", ref: { capital: "rpoNext12MonthsShare" }, span: "quarter", periodType: "instant" },
 ];
+/** Claims ahead of common equity the balance sheet carries under equity: preferred stock and minority interests, by concept. */
+const SENIOR_EQUITY = { preferred: /Preferred/i, minority: /MinorityInterest|Noncontrolling/i };
 
 const SHARE_CONCEPTS = {
   diluted: /WeightedAverageNumberOfDilutedSharesOutstanding/i, basic: /WeightedAverageNumberOfSharesOutstandingBasic/i, outstanding: /CommonStockSharesOutstanding|EntityCommonStockSharesOutstanding/i,
@@ -128,8 +148,20 @@ export function buildFacts(data: FindingData, snapshot: SecHistorySnapshot | nul
   for (const spec of FACT_SPECS) {
     const resolved = resolveRef(data, spec.ref, periodEnd, spec.span);
     if (!resolved || resolved.range) { if (spec.required) missing.push(spec.id); continue; }
-    facts.push({ id: spec.id, label: spec.label, value: resolved.value, unit: resolved.unit === "USD" ? (resolved.currency ?? currency) : resolved.unit, currency: resolved.unit === "USD" ? resolved.currency ?? currency : null,
+    // A percent resolves in percent points; facts carry ratios.
+    const percent = resolved.unit === "percent";
+    facts.push({ id: spec.id, label: spec.label, value: percent ? resolved.value / 100 : resolved.value, unit: resolved.unit === "USD" ? (resolved.currency ?? currency) : percent ? "ratio" : resolved.unit, currency: resolved.unit === "USD" ? resolved.currency ?? currency : null,
       periodType: spec.periodType, periodStart: resolved.periodStart, periodEnd: resolved.periodEnd, basis: "derived" in spec.ref ? "derived" : "reported", formula: "derived" in spec.ref ? spec.ref.derived : null, sourceRefs: resolved.accessions, rationale: null });
+  }
+  const sheet = data.capital?.quarters.find(q => Math.abs(Date.parse(q.periodEnd) - Date.parse(periodEnd)) <= 20 * DAY)?.balanceSheet ?? null;
+  if (sheet) {
+    const senior = (id: string, label: string, test: RegExp) => {
+      const lines = sheet.equity.filter(l => test.test(l.concept) || test.test(l.id));
+      const value = lines.reduce((sum, l) => sum + (num(l.value) ?? 0), 0);
+      if (lines.length && value > 0) facts.push({ id, label, value, unit: currency, currency, periodType: "instant", periodStart: null, periodEnd: sheet.asOf, basis: "reported", formula: null, sourceRefs: [...lines.map(l => l.concept), sheet.source.accession], rationale: null });
+    };
+    senior("preferred_stock", "Preferred stock, newest balance sheet", SENIOR_EQUITY.preferred);
+    senior("minority_interest", "Noncontrolling interests, newest balance sheet", SENIOR_EQUITY.minority);
   }
   const shares = shareFacts(snapshot, periodEnd);
   facts.push(...shares);
@@ -221,6 +253,46 @@ export function selectDocuments(documents: LibraryDocumentSummary[], researchAsO
   return [...new Map(chosen.map(d => [d.documentId, d])).values()].map(d => ({ documentId: d.documentId, accession: d.accessionNumber, form: d.form, docType: d.docType, filedAt: d.filedAt, reportDate: d.reportDate, url: d.documentUrl }));
 }
 
+const ttmOf = (company: PeerCompany, figure: keyof PeerCompany["quarters"][number]["figures"]): number | null => {
+  const values = company.quarters.slice(0, 4).map(q => num(q.figures[figure]));
+  return values.length === 4 && values.every((v): v is number => v != null) ? values.reduce((a, b) => a + b, 0) : null;
+};
+/** Earnings before securities gains and one-offs: operating income less tax at the statutory rate; peers carry no interest line. */
+const CORE_TAX = 0.21;
+
+/** The peers' trailing EBITDA, core earnings and net debt from the peers projection, with their newest SEC share count. */
+export async function buildPeerFundamentals(db: D1Database, ticker: string, peers: PeersPublication | null): Promise<{ peers: PeerFundamentals[]; basis: ValuationInput["peerBasis"] }> {
+  if (!peers) return { peers: [], basis: "none" };
+  let tickers = rankingPeers(peers, ticker), basis: ValuationInput["peerBasis"] = "ranking";
+  if (tickers.length < 2) {
+    const mine = new Set(peers.companies.find(c => c.ticker === ticker)?.categories ?? []);
+    tickers = peers.companies.filter(c => c.ticker !== ticker && c.categories.some(cat => mine.has(cat))).map(c => c.ticker);
+    basis = tickers.length ? "category" : "none";
+  }
+  const repository = new D1SecRepository(db);
+  const out: PeerFundamentals[] = [];
+  for (const peer of tickers.slice(0, 12)) {
+    const company = peers.companies.find(c => c.ticker === peer);
+    const newest = company?.quarters[0];
+    if (!company || !newest) continue;
+    const operating = ttmOf(company, "operatingIncome"), depreciation = ttmOf(company, "depreciation");
+    const debt = num(newest.figures.debt), cash = num(newest.figures.cash), leases = num(newest.figures.leases) ?? 0;
+    const snapshot = await repository.getCache<SecHistorySnapshot>(secFundamentalsKey(peer)).then(r => r?.payload ?? null).catch(() => null);
+    const shares = shareFacts(snapshot, newest.periodEnd.slice(0, 4) + "-12-31").find(f => f.id === "shares_outstanding")?.value ?? shareFacts(snapshot, "9999-12-31").find(f => f.id === "shares_diluted_weighted")?.value ?? null;
+    out.push({ ticker: peer, periodEnd: newest.periodEnd, ebitda: operating != null && depreciation != null ? operating + depreciation : null, coreEarnings: operating != null ? operating * (1 - CORE_TAX) : null, netDebt: debt != null && cash != null ? debt + leases - cash : null, shares });
+  }
+  return { peers: out, basis: out.length ? basis : "none" };
+}
+
+/** Trailing EBITDA and net debt at each quarter the data can answer, newest first. */
+export function buildTrailingQuarters(data: FindingData): TrailingQuarter[] {
+  const ends = [...new Set(data.quarters.map(q => q.periodEnd))].sort().reverse();
+  return ends.flatMap(end => {
+    const ebitda = resolveRef(data, { derived: "ebitda" }, end, "fiscal_year"), netDebt = resolveRef(data, { derived: "netDebt" }, end, "quarter");
+    return ebitda && !ebitda.range && netDebt && !netDebt.range ? [{ periodEnd: end, ebitdaTtm: ebitda.value, netDebt: netDebt.value }] : [];
+  });
+}
+
 /** Everything a run starts from, or null while the company has no complete statement to value. */
 export async function buildValuationInput(env: AnalysisEnv, ticker: string, researchAsOf: string): Promise<ValuationInput | null> {
   const db = requireDb(env);
@@ -233,11 +305,14 @@ export async function buildValuationInput(env: AnalysisEnv, ticker: string, rese
   const { facts, missing } = buildFacts(data, snapshot, newest.periodEnd, currency);
   const distributions = buildDistributions(snapshot, data);
   const diagnostics = buildDiagnostics(facts, snapshot, data, newest.periodEnd);
-  const [library, calls, cik] = await Promise.all([
+  const [library, calls, cik, peerPublication] = await Promise.all([
     listLibraryDocuments(db, { ticker, forms: DOCUMENT_FORMS, limit: 120 }).catch(() => [] as LibraryDocumentSummary[]),
     readyTranscripts(db, ticker, new Date(Date.parse(newest.periodEnd) - 400 * DAY).toISOString().slice(0, 10)).catch(() => []),
     knownCik(db, ticker).catch(() => null),
+    readPeersResponse(db).then(r => r.peers).catch(() => null),
   ]);
+  const peers = await buildPeerFundamentals(db, ticker, peerPublication).catch(() => ({ peers: [] as PeerFundamentals[], basis: "none" as const }));
+  const rpo = data.capital?.quarters.find(q => Math.abs(Date.parse(q.periodEnd) - Date.parse(newest.periodEnd)) <= 20 * DAY)?.rpo ?? null;
   const documents = selectDocuments(library, researchAsOf);
   const transcripts: ValuationTranscript[] = calls.filter(c => c.filedAt.slice(0, 10) <= researchAsOf.slice(0, 10)).slice(0, 4)
     .map(c => ({ id: c.id, periodEnd: c.periodEnd, title: c.title, filedAt: c.filedAt, sourceUrl: c.sourceUrl, characters: c.content.length, fiscalYear: c.fiscalYear, fiscalQuarter: c.fiscalQuarter }));
@@ -250,5 +325,6 @@ export async function buildValuationInput(env: AnalysisEnv, ticker: string, rese
   return {
     ticker, cik, companyName: companyName(ticker) ?? findSecurity(ticker)?.name ?? ticker, currency, financialPeriodEnd: newest.periodEnd, incomeModel: newest.incomeModel ?? "unknown",
     facts, distributions, diagnostics, documents, guidance: data.guidance, transcripts, missing, fingerprint, data,
+    rpo, lifecycle: lifecycleOf({ facts, diagnostics }), peers: peers.peers, peerBasis: peers.basis, trailingQuarters: buildTrailingQuarters(data),
   };
 }

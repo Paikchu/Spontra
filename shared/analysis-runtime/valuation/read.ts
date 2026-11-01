@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { GAP_CODES, VALUATION_DIMENSIONS, VALUATION_MODEL_TYPES, type ValuationPublication } from "../../analysis-contract/valuation.ts";
+import { GAP_CODES, VALUATION_DIMENSIONS, VALUATION_METHODS, VALUATION_MODEL_TYPES, type ValuationPublication } from "../../analysis-contract/valuation.ts";
 
 /** The stored publication as the read API and the page accept it; anything else reads as absent rather than half-drawn. */
 const finite = z.number().finite();
@@ -10,7 +10,17 @@ const gap = z.object({ code: z.enum(GAP_CODES), field: z.string().optional(), pe
 const dimension = z.object({ key: z.enum(VALUATION_DIMENSIONS), score: nullableFinite, confidence, rationale: z.string(), supportingEvidenceIds: strings, counterEvidenceIds: strings, gaps: strings, nextCheck: z.string() });
 const fact = z.object({ id: z.string(), label: z.string(), value: finite, unit: z.string(), currency: z.string().nullable(), periodType: z.enum(["quarter", "ttm", "fiscal_year", "instant"]), periodStart: z.string().nullable(), periodEnd: z.string().nullable(), basis: z.enum(["reported", "derived", "company_guidance", "assumption"]), formula: z.string().nullable(), sourceRefs: strings, rationale: z.string().nullable() });
 const evidence = z.object({ evidenceId: z.string(), kind: z.enum(["sec", "web", "fact"]), title: z.string(), url: z.string().nullable(), documentId: z.string().nullable(), passageId: z.string().nullable(), form: z.string().nullable(), publishedAt: z.string().nullable(), fetchedAt: z.string().nullable(), excerpt: z.string(), contentSha256: z.string(), path: z.string().nullable() });
-const yearRow = z.object({ year: z.number(), revenue: nullableFinite, nopat: nullableFinite, reinvestment: nullableFinite, cashFlow: finite, discountFactor: finite, presentValue: finite });
+const yearRow = z.object({ year: z.number(), revenue: nullableFinite, nopat: nullableFinite, reinvestment: nullableFinite, cashFlow: finite, discountFactor: finite, presentValue: finite, buildCapex: nullableFinite.optional() });
+// valuation.calc.v2 additions, all optional so a v1 payload still reads (docs/valuation-v2-SPEC.md).
+const gateStatus = z.enum(["pass", "flag", "fail"]);
+const quartiles = z.object({ p25: finite, median: finite, p75: finite, count: z.number() });
+const method = z.object({ method: z.enum(VALUATION_METHODS), label: z.string(), low: nullableFinite, base: nullableFinite, high: nullableFinite, weight: finite, basis: z.string(), notes: strings });
+const triangulation = z.object({ low: finite, high: finite, base: finite, dispersion: nullableFinite, weights: z.record(z.enum(VALUATION_METHODS), finite) });
+const gateRow = z.object({ key: z.string(), status: gateStatus, detail: z.string(), value: nullableFinite, limit: nullableFinite });
+const anchor = z.object({ source: z.literal("rpo"), asOf: z.string(), total: finite, floor: z.array(finite), floorToRevenue0: z.array(finite), notes: strings });
+const verification = z.object({ checks: z.array(z.object({ field: z.string(), cited: finite, expected: nullableFinite, factIds: strings, tolerance: finite, status: gateStatus, detail: z.string() })), ok: z.boolean() });
+const peers = z.object({ peers: strings, asOf: z.string(), evToEbitda: quartiles.nullable(), peRatio: quartiles.nullable(), notes: strings });
+const consensus = z.object({ mean: finite, low: nullableFinite, high: nullableFinite, count: z.number().nullable(), asOf: z.string().nullable(), evidenceId: z.string().nullable() });
 const scenarioResult = z.object({ perShare: finite, equityValue: finite, enterpriseValue: nullableFinite, pvExplicit: nullableFinite, pvTerminal: nullableFinite, terminalShare: nullableFinite, yearly: z.array(yearRow), notes: strings });
 const scenario = z.object({ narrative: z.string(), probability: nullableFinite, triggers: strings, invalidation: strings, evidenceIds: strings, drivers: z.looseObject({ modelType: z.enum(VALUATION_MODEL_TYPES) }), result: scenarioResult });
 const model = z.object({
@@ -23,6 +33,9 @@ const model = z.object({
   sensitivities: z.array(z.object({ factor: z.string(), step: z.string(), perShare: finite, changePercent: finite })),
   implied: z.object({ factor: z.literal("revenueGrowth"), implied: finite, baseAverage: finite, gap: finite, converged: z.boolean() }).nullable(),
   limitations: strings,
+  horizonYears: z.number().optional(), midYear: z.boolean().optional(),
+  methods: z.array(method).optional(), triangulation: triangulation.nullable().optional(), gates: z.array(gateRow).optional(),
+  anchors: z.object({ revenue: anchor.nullable() }).optional(), verification: verification.nullable().optional(), peers: peers.nullable().optional(), consensus: consensus.nullable().optional(),
 });
 const sections = z.object({ summary: z.string(), thesis: z.string(), expectationsGap: z.string(), catalysts: strings, counterEvidence: strings, nextChecks: strings, modelNotes: z.string() });
 const publication = z.object({
