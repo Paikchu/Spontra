@@ -125,7 +125,10 @@ async function home(request: Request, database: D1Database, env: HomeDigestEnv):
   const requested = url.searchParams.get("locale");
   if (requested != null && !isLocale(requested)) return errorResponse("ROUTE_NOT_FOUND", "No such resource.");
   const locale = isLocale(requested) && requested !== "en" ? requested : null;
-  return dataResponse(request, await readHomeDigest(database, env, locale), "cacheable");
+  const digest = await readHomeDigest(database, env, locale);
+  // Generation time changes on every read, even when the homepage content is unchanged.
+  const { generatedAt, ...validatorPayload } = digest;
+  return dataResponse(request, digest, "cacheable", validatorPayload);
 }
 
 async function handleRoute(request: Request, database: D1Database, env: FeatureDefaultsEnv, route: Exclude<RouteMatch, { kind: "findings-index" } | { kind: "home" }>): Promise<Response> {
