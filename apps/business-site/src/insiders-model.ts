@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import type { CompanyEvent, InsiderTransactionCode } from "@/shared/analysis-contract/events";
 import type { InsiderPersonSummary, InsiderTransactionRow, InsiderTransactionsPage, InsidersPublication } from "@/shared/analysis-contract/insiders";
-import { INSIDER_HISTORY_PAGE, INSIDER_NEW_DAYS, insiderPersonKey, pageRows, personsFromEvents, rowsFromEvents } from "@/shared/analysis-runtime/insiders";
+import { INSIDER_HISTORY_PAGE, INSIDER_NEW_DAYS, pageRows, personsFromEvents, rowsFromEvents } from "@/shared/analysis-runtime/insiders";
 import { labels, messages } from "@/packages/web/src/i18n";
 import { fetchInsiderHistory, fetchInsiders } from "./company-data";
 
 /**
  * Insider trades by person on the rail. The people and their history come from Spontra Analysis's ledger, which holds
  * every Form 4 of the company; until it answers (or when it cannot), the rail's own filings are grouped here by the
- * same rules, so the card reads the same either way, only shorter.
+ * same rules, so the rows read the same either way, only fewer.
  */
 
 const m = messages({
@@ -31,26 +31,27 @@ export function roleLabel(role: InsiderPersonSummary["role"]): string {
   return [role.title, role.isDirector && m.director, role.isTenPercentOwner && m.tenPercent, !role.title && !role.isDirector && !role.isTenPercentOwner && role.isOfficer && m.officer].filter(Boolean).join(" · ");
 }
 
-/** The person a rail filing belongs to, by the ledger's own rule, so a focused trade opens the right person. */
-export const personKeyOf = (event: CompanyEvent): string | null => event.insider ? insiderPersonKey(event.insider) : null;
-
-/** The rail's filings grouped as the ledger groups them, for the card before the backend answers. */
+/** The rail's filings grouped as the ledger groups them, for the rows before the backend answers. */
 export function fallbackInsiders(ticker: string, events: readonly CompanyEvent[], now: Date): InsidersPublication {
   return { schemaVersion: "insiders.v1", ticker, source: "events", newDays: INSIDER_NEW_DAYS, asOf: now.toISOString(), persons: personsFromEvents(events, now) };
 }
 
-/** The people of the company: the backend's answer once it comes, the rail's own grouping before and without it. */
-export function useInsiders(ticker: string, updates: number, fallback: () => InsidersPublication): InsidersPublication {
+/**
+ * The people of the company: the backend's answer once it comes, the rail's own grouping before and without it. Read only
+ * while `enabled`: a reading that lists no insider filing asks for none.
+ */
+export function useInsiders(ticker: string, updates: number, enabled: boolean, fallback: () => InsidersPublication): InsidersPublication {
   const [read, setRead] = useState<{ key: string; publication: InsidersPublication | null } | null>(null);
   const key = `${ticker}:${updates}`;
   useEffect(() => {
+    if (!enabled) return;
     const controller = new AbortController();
     fetchInsiders(ticker, controller.signal)
       .then(publication => { if (!controller.signal.aborted) setRead({ key, publication }); })
       .catch(() => { if (!controller.signal.aborted) setRead({ key, publication: null }); });
     return () => controller.abort();
-  }, [ticker, key]);
-  return read?.key === key && read.publication ? read.publication : fallback();
+  }, [ticker, key, enabled]);
+  return enabled && read?.key === key && read.publication ? read.publication : fallback();
 }
 
 export type InsiderHistory = { items: InsiderTransactionRow[]; nextCursor: string | null; phase: "idle" | "loading" | "ready" | "error"; more: () => void };

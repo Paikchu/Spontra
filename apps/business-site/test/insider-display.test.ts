@@ -8,7 +8,8 @@ import { readEventsPublication } from "../../../shared/analysis-runtime/events.t
 import { insiderPersonKey, personsFromEvents } from "../../../shared/analysis-runtime/insiders.ts";
 import { railEntries } from "../../../shared/analysis-runtime/rail.ts";
 import { eventTitle } from "../src/events-model.ts";
-import { personRowId, RailStream } from "../src/RailStream.tsx";
+import { personRowId } from "../src/event-noise.ts";
+import { RailStream } from "../src/RailStream.tsx";
 
 const publication = readEventsPublication(JSON.parse(readFileSync(new URL("./fixtures/nvda-events.json", import.meta.url), "utf8")), "NVDA")!;
 const sales = publication.events.filter(e => e.insider?.ownerName === "STEVENS MARK A" && e.filedAt.startsWith("2026-09"));
@@ -19,10 +20,10 @@ const render = (focus: string | null = sales[0]!.id, filter: "insiders" | "key" 
   onFocusItem: () => {}, onFocusFinding: () => {}, filter,
 }));
 
-test("a focused sale opens its person on the card, with the history's bilingual labels and SEC links", () => {
+test("a focused sale opens its person's row, with the history's bilingual labels and SEC links", () => {
   setLocale("zh-CN");
   const zh = render();
-  assert.ok(zh.includes("内部人交易"));
+  assert.ok(!zh.includes("内部人交易"));
   assert.ok(zh.includes('<span class="insider-name" lang="en">STEVENS MARK A</span>'));
   // The person's row is open (the focused trade is theirs) and lists their lines from the rail: sale label, price, SEC link.
   assert.ok(zh.includes(`aria-expanded="true" aria-controls="insider-${stevens}-panel"`));
@@ -35,7 +36,7 @@ test("a focused sale opens its person on the card, with the history's bilingual 
   assert.ok(zh.includes("净卖出"));
   setLocale("en");
   const en = render();
-  assert.ok(en.includes("Insider trades"));
+  assert.ok(!en.includes("Insider trades"));
   assert.ok(en.includes("Net sold"));
   assert.ok(en.includes("Owned after"));
   assert.ok(en.includes("SEC filing ↗"));
@@ -45,22 +46,25 @@ test("a focused sale opens its person on the card, with the history's bilingual 
   assert.ok(!closed.includes("insider-history"));
 });
 
-test("the card reads the same in the Key reading, and lists the people latest trade first behind Show all", () => {
+test("in the Key reading every person is a row of the rail, with no group row and no Show all", () => {
   setLocale("en");
   const html = render(null, "key");
-  // The rail leaves out Form 4s with nothing traded, so the card's people are those of the rail's filings.
+  // The rail leaves out Form 4s with nothing traded, so the people are those of the rail's filings.
   const persons = personsFromEvents(railEntries(null, publication).flatMap(item => item.kind === "event" && item.event.insider ? [item.event] : []), new Date());
   assert.ok(persons.length > 5);
-  assert.ok(html.includes(`Show all ${persons.length}`));
-  for (const person of persons.slice(0, 5)) assert.ok(html.includes(`lang="en">${person.name}</span>`), person.name);
-  assert.ok(!html.includes(`lang="en">${persons[persons.length - 1]!.name}</span>`));
-  assert.ok(html.includes(`${persons.length} people`));
-  // No Form 4 lists as its own row outside the card.
+  assert.ok(!html.includes("Show all") && !html.includes("people"));
+  assert.ok(!html.includes("insider-card"));
+  // One collapsed row per person, each its own row of the rail, latest trade first; older people join as the rail pages.
+  const shown = html.split('class="insider-person" data-class="insider"').length - 1;
+  assert.ok(shown >= 5 && shown <= persons.length);
+  const at = persons.slice(0, shown).map(person => html.indexOf(`lang="en">${person.name}</span>`));
+  assert.ok(at.every((i, n) => i >= 0 && (n === 0 || at[n - 1]! < i)));
+  // No Form 4 lists as its own event row.
   assert.ok(!html.includes('class="stream-row" data-class="insider"'));
   assert.equal(personRowId("123"), "insider:123");
 });
 
-test("single insider titles include localized transaction amounts, and the card tags no ESPP purchase as a sale", () => {
+test("single insider titles include localized transaction amounts, and the person row tags no ESPP purchase as a sale", () => {
   const sale = publication.events.find(e => e.id === "0001588670-26-000014")!;
   const buy = { ...sale, insider: { ...sale.insider!, ownerName: "Roks Edwin", sold: null, bought: { shares: 10_000, cost: 1_120_000, averagePrice: 112 } } };
   for (const locale of ["zh-CN", "en"] as const) {
@@ -72,7 +76,7 @@ test("single insider titles include localized transaction amounts, and the card 
       findings: [], findingsPeriodEnd: null, ticker: "NVDA", updates: 0, focus: null,
       onFocusItem: () => {}, onFocusFinding: () => {}, filter: "key",
     }));
-    assert.ok(html.includes('class="insider-card"'));
+    assert.ok(html.includes('class="insider-person" data-class="insider"'));
     assert.ok(html.includes('<span class="insider-name" lang="en">Kress Colette</span>'));
     assert.ok(html.includes('class="insider-amount"'));
     assert.ok(html.includes(locale === "zh-CN" ? "765万美元" : "$7.65M"));
