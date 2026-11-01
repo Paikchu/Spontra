@@ -7,7 +7,7 @@ import { isTaxWithholdingSale, eventImportance, insiderWindowValueUsd, isKeyInsi
 import { railEntries } from "../../../shared/analysis-runtime/rail.ts";
 import { setLocale } from "../../../packages/web/src/i18n/core.ts";
 import { eventTitle } from "../src/events-model.ts";
-import { defaultEventFilter, insiderCompactMoney, exactShares, filterCounts, insiderCard, noiseRows, readEventFilter, rowLeaves, timelineIds, withEventFilter } from "../src/event-noise.ts";
+import { defaultEventFilter, insiderCompactMoney, exactShares, filterCounts, insiderFilings, noiseRows, readEventFilter, rowLeaves, timelineIds, withEventFilter } from "../src/event-noise.ts";
 import { personsFromEvents } from "../../../shared/analysis-runtime/insiders.ts";
 import { timelineFromFilings } from "../src/reports-model.ts";
 import { clusterByGap } from "../src/timeline-model.ts";
@@ -50,20 +50,20 @@ test("importance follows the rail rules and does not call a model", () => {
   assert.equal(eventImportance(event({ id: "t", form: "6-K", class: "other", filedAt: "2026-05-01", description: "Monthly operating statistics" })), "normal");
 });
 
-test("sales by one person across months are one person on the card, and the leaves are the filings", () => {
+test("sales by one person across months are one person, and the leaves are the filings", () => {
   const sale = (id: string, day: string, shares: number): CompanyEvent => event({
     id, form: "4", class: "insider", filedAt: day,
     insider: { ownerCik: "9", ownerName: "Olivan Javier", title: "COO", isDirector: false, isOfficer: true, isTenPercentOwner: false, rule10b51: true, planAdoptedOn: null, securityTitle: "Class A", lines: [{ date: day, code: "S", acquiredDisposed: "D", shares, price: 100, ownedAfter: 1, ownership: "D", derivative: false }], sold: { shares, proceeds: shares * 100, averagePrice: 100 }, bought: null, exercised: 0, heldAfter: 1, footnotes: [] },
   });
   const publication: EventsPublication = { schemaVersion: "events.v1", ticker: "TEST", checkedAt: "2026-10-24T00:00:00Z", pendingInsider: 0, events: [sale("a", "2026-10-21", 1575), sale("b", "2026-10-14", 1575), sale("c", "2026-10-07", 1575), sale("d", "2026-09-30", 1575)] };
   const entries = railEntries(null, readEventsPublication(publication, "TEST"));
-  // The reading lists each filing as itself; the card holds all of them, grouped by the person who filed them.
+  // The reading lists each filing as itself; the rail lists them through the person who filed them.
   const rows = noiseRows(entries, "insiders");
   assert.equal(rows.filter(row => row.kind === "item").length, 4);
   assert.equal(rows.flatMap(rowLeaves).length, 4);
-  const card = insiderCard(entries)!;
-  assert.deepEqual(card.items.map(item => item.id), ["a", "b", "c", "d"]);
-  const [person, ...others] = personsFromEvents(card.items.map(item => item.event), NOW);
+  const filings = insiderFilings(entries);
+  assert.deepEqual(filings.map(item => item.id), ["a", "b", "c", "d"]);
+  const [person, ...others] = personsFromEvents(filings.map(item => item.event), NOW);
   assert.equal(others.length, 0);
   assert.deepEqual([person!.key, person!.filings, person!.sold.shares, person!.sold.count, person!.lastTradeAt, person!.planned], ["9", 4, 6300, 4, "2026-10-21", true]);
   setLocale("en");
@@ -203,13 +203,13 @@ test("text detection and mixed filings preserve both value legs", () => {
   assert.equal(insiderWindowValueUsd(e), 0);
 });
 
-test("TSM employee purchases and routine 6-Ks leave Key empty, and every Form 4 is on the card in the other readings", () => {
+test("TSM employee purchases and routine 6-Ks leave Key empty, and every Form 4 lists through its person in the other readings", () => {
   const entries = railEntries(null, tsmEvents);
   assert.equal(filterCounts(entries).key, 0);
   assert.ok(tsmEvents.events.every(e => eventImportance(e, tsmEvents.events) === "routine"));
   const insiders = entries.filter(i => i.kind === "event" && i.event.class === "insider");
   assert.ok(insiders.length > 0);
-  assert.equal(insiderCard(entries)!.items.length, insiders.length);
+  assert.equal(insiderFilings(entries).length, insiders.length);
   for (const filter of ["all", "insiders"] as const) {
     const rows = noiseRows(entries, filter);
     assert.equal(rows.flatMap(rowLeaves).length, filter === "all" ? entries.length : insiders.length);
@@ -223,7 +223,7 @@ test("NVDA's September seller is one person whose lines sum to the filings' proc
   const filings = publication.events.filter(e => e.insider?.ownerName === "STEVENS MARK A");
   assert.equal(stevens.filings, filings.length);
   assert.ok(stevens.sold.count >= 3);
-  // The line-level sum the card shows is the sum of the filings' own sale figures.
+  // The line-level sum a person row shows is the sum of the filings' own sale figures.
   assert.equal(Math.round(stevens.sold.value), Math.round(filings.reduce((s, e) => s + (e.insider!.sold?.proceeds ?? 0), 0)));
   assert.ok(filings.filter(e => e.filedAt.startsWith("2026-09")).length >= 3);
   assert.equal(insiderCompactMoney(950_000_000, "zh-CN"), "9.5亿美元");
@@ -236,7 +236,7 @@ test("NVDA's September seller is one person whose lines sum to the filings' proc
   assert.equal(new Set(persons.map(p => p.key)).size, persons.length);
 });
 
-test("the Insiders reading lists filings in date order, and the card nets one person's sales against their purchase", () => {
+test("the Insiders reading lists filings in date order, and a person row nets one person's sales against their purchase", () => {
   const a = trade("a", "2026-10-01"), b = trade("b", "2026-07-03"), c = trade("c", "2026-07-02");
   const buy = trade("buy", "2026-09-30");
   buy.insider!.sold = null;
@@ -247,7 +247,7 @@ test("the Insiders reading lists filings in date order, and the card nets one pe
   const rows = noiseRows(entries, "insiders");
   assert.deepEqual(rows.map(r => r.date), [a.filedAt, buy.filedAt, b.filedAt, c.filedAt]);
   assert.equal(rows.flatMap(rowLeaves).length, 4);
-  const [person] = personsFromEvents(insiderCard(entries)!.items.map(item => item.event), NOW);
+  const [person] = personsFromEvents(insiderFilings(entries).map(item => item.event), NOW);
   assert.deepEqual([person!.sold.count, person!.bought.count, person!.net.shares, person!.net.value, person!.latest!.side], [3, 1, -2900, -1_799_900, "sell"]);
 });
 

@@ -9,8 +9,8 @@ import { normalizeDisplayText, perShare } from "@/shared/analysis-runtime/locale
 import { langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import type { InsiderPersonSummary, InsidersPublication } from "@/shared/analysis-contract/insiders";
 import { eventTitle, insiderTitleParts, eventTitleLang, shortDate } from "./events-model";
-import { exactShares, insiderCompactMoney, railLayout, rowLeaves, streamRows, type EventFilter, type InsiderCard, type NoiseRow, type StreamRow as Row } from "./event-noise";
-import { CODE_LABEL, fallbackInsiders, personKeyOf, roleLabel, useInsiderHistory, useInsiders, type InsiderHistory } from "./insiders-model";
+import { exactShares, insiderCompactMoney, railLayout, rowLeaves, streamRows, type EventFilter, type InsiderFiling, type NoiseRow, type StreamRow as Row } from "./event-noise";
+import { CODE_LABEL, fallbackInsiders, roleLabel, useInsiderHistory, useInsiders, type InsiderHistory } from "./insiders-model";
 import { filingQuarterLabel, reportTitle, reportTitleLang, type RailItem, type RailItems } from "./reports-model";
 import { KIND_LABEL, VIEW_LABEL, type VerifiedFinding } from "./findings-model";
 import { SeverityIcon, severityLabel } from "./SeverityIcon";
@@ -27,13 +27,12 @@ const m = messages({
   loadFailed: "Couldn't load this data", retry: "Retry",
   director: "Director", tenPercent: "10% owner",
   watchOutcome: "Watch outcome",
-  insiders: "Insider trades", people: (n: number) => n === 1 ? "1 person" : `${n} people`, newCount: (n: number) => `${n} new`, newTag: "New",
+  newTag: "New",
   trade: (what: string, shares: string) => `${what} ${shares} shares`, shares: (n: string) => `${n} shares`,
   netSold: (amount: string, shares: string) => `Net sold ${amount} · ${shares} shares`, netBought: (amount: string, shares: string) => `Net bought ${amount} · ${shares} shares`,
   noTrades: "No open-market trades", sales: (n: number) => `${n} ${n === 1 ? "sale" : "sales"}`, purchases: (n: number) => `${n} ${n === 1 ? "purchase" : "purchases"}`,
   history: (name: string) => `${name}: every Form 4 transaction`, ownedAfter: (shares: string) => `Owned after ${shares}`, indirect: "Indirect", derivative: "Derivative",
   loadMore: "Load more", loadingHistory: "Loading…", historyFailed: "Couldn't load the history",
-  showAll: (n: number) => `Show all ${n}`, showLess: "Show less",
 }, {
   title: "要点、财报与事件",
   report: "财报",
@@ -44,25 +43,24 @@ const m = messages({
   loadFailed: "数据暂时加载失败", retry: "重试",
   director: "董事", tenPercent: "10% 股东",
   watchOutcome: "跟踪结果",
-  insiders: "内部人交易", people: (n: number) => `${n} 人`, newCount: (n: number) => `新增 ${n} 笔`, newTag: "新",
+  newTag: "新",
   trade: (what: string, shares: string) => `${what} ${shares} 股`, shares: (n: string) => `${n} 股`,
   netSold: (amount: string, shares: string) => `净卖出 ${amount} · ${shares} 股`, netBought: (amount: string, shares: string) => `净买入 ${amount} · ${shares} 股`,
   noTrades: "无公开市场交易", sales: (n: number) => `卖出 ${n} 笔`, purchases: (n: number) => `买入 ${n} 笔`,
   history: (name: string) => `${name}：全部 Form 4 交易`, ownedAfter: (shares: string) => `交易后持股 ${shares}`, indirect: "间接持有", derivative: "衍生品",
   loadMore: "加载更多", loadingHistory: "加载中…", historyFailed: "交易历史暂时加载失败",
-  showAll: (n: number) => `展开全部 ${n} 人`, showLess: "收起",
 });
 
 /** Older rows join this many at a time. */
 const PAGE = 12;
 
 type StreamRow = Row<VerifiedFinding>;
-const leavesOf = (r: StreamRow) => r.kind === "noise" ? rowLeaves(r.row) : r.kind === "insiders" ? r.card.items : [];
+const leavesOf = (r: StreamRow) => r.kind === "noise" ? rowLeaves(r.row) : r.kind === "person" ? r.items : [];
 
 /**
  * One stream for the rail: the report's findings, the filings and the events, newest first, in one shape per row: a
  * mark (the event's class, or the finding's severity icon), a title, and a line of particulars that
- * starts with the date. Insider trades sit on one card, grouped by person; routine 6-Ks fold by month.
+ * starts with the date. Insider trades list by person, at the date of their latest trade; routine 6-Ks fold by month.
  * The recent rows show first; older ones load as the reader scrolls to the end.
  */
 export function RailStream({ rail, findings, findingsPeriodEnd, verdicts, ticker, updates, focus, phase = "ready", filter, fallback = false, onFocusItem, onFocusFinding, onRetry }: {
@@ -90,7 +88,12 @@ export function RailStream({ rail, findings, findingsPeriodEnd, verdicts, ticker
   useLocale();
   const all = rail ? [...rail.recent, ...rail.earlier] : [];
   const [now] = useState(() => new Date());
-  const rows = streamRows(railLayout(all, filter), findings, findingsPeriodEnd, filter);
+  const layout = railLayout(all, filter);
+  // The people come from Spontra Analysis's ledger, which reaches back past the rail, and from the rail's own filings until it answers.
+  const filings = layout.insiders;
+  const events = filings.map(item => item.event);
+  const insiders = useInsiders(ticker, updates, filings.length > 0, () => fallbackInsiders(ticker, events, now));
+  const rows = streamRows(layout, findings, findingsPeriodEnd, filter, insiders.persons);
   const [openRows, setOpenRows] = useState<ReadonlySet<string>>(() => new Set());
   const hosts = (id: string | null) => id ? rows.find(r => r.id === id || leavesOf(r).some(item => item.id === id)) ?? null : null;
   const focusedRow = hosts(focus);
@@ -120,14 +123,8 @@ export function RailStream({ rail, findings, findingsPeriodEnd, verdicts, ticker
   if (previousFocus !== focus) {
     setPreviousFocus(focus);
     if (focusedRow?.kind === "noise" && focusedRow.row.kind !== "item" && !openRows.has(focusedRow.id)) setOpenRows(new Set(openRows).add(focusedRow.id));
-    if (focusedRow?.kind === "insiders") {
-      // A trade in focus opens the card and the row of the person who filed it.
-      const item = focusedRow.card.items.find(item => item.id === focus);
-      const key = item ? personKeyOf(item.event) : null;
-      const next = new Set(openRows).add(focusedRow.id);
-      if (key) next.add(personRowId(key));
-      if (next.size !== openRows.size) setOpenRows(next);
-    }
+    // A trade in focus opens the row of the person who filed it.
+    if (focusedRow?.kind === "person" && !openRows.has(focusedRow.id)) setOpenRows(new Set(openRows).add(focusedRow.id));
   }
   const toggleRow = (id: string) => setOpenRows(current => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; });
   return <section className="stream" data-section="stream" data-focus={focus != null ? "" : undefined} aria-label={m.title}>
@@ -142,7 +139,8 @@ export function RailStream({ rail, findings, findingsPeriodEnd, verdicts, ticker
         : <motion.div key={filter} className="event-rows" initial={still ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={still ? undefined : { opacity: 0 }} transition={{ duration: .16, ease: [0.22, 1, 0.36, 1] }}>
         {shown.map(r => r.kind === "finding"
           ? <FindingRow key={r.id} finding={r.finding} date={r.date} verdict={verdicts?.[r.id]} checked={focus === r.id} arrive={arrived.get(r.id)} motion={rowMotion} tip={tip.bind} onClick={() => onFocusFinding(focus === r.id ? null : r.id)} />
-          : r.kind === "insiders" ? <InsiderPersonsCard key={r.id} card={r.card} ticker={ticker} updates={updates} now={now} open={openRows.has(r.id)} openRows={openRows} focus={focus} arrive={arrived.get(r.id)} onToggle={toggleRow} onFocus={onFocusItem} />
+          : r.kind === "person" ? <PersonRow key={r.id} person={r.person} source={insiders.source} ticker={ticker} events={events} items={filings} now={now}
+            open={openRows.has(r.id)} focus={focus} arrive={arrived.get(r.id)} onToggle={() => toggleRow(r.id)} onFocus={onFocusItem} />
           : <NoiseBlock key={r.id} row={r.row} ticker={ticker} open={openRows.has(r.id)} focus={focus} arrive={arrived.get(r.id)} motion={rowMotion} onToggle={() => toggleRow(r.id)} onFocus={onFocusItem} tip={tip.bind} />)}
         </motion.div>}
       </AnimatePresence>
@@ -227,50 +225,15 @@ const Arrow = ({ direction }: { direction: "buy" | "sell" }) => <svg className="
 /** The mark of a trade the reader has not seen before: filed and recorded within the last two weeks. */
 const NewTag = () => <span className="insider-new"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1.5 7.3 4.7 10.5 6 7.3 7.3 6 10.5 4.7 7.3 1.5 6l3.2-1.3Z" /></svg>{m.newTag}</span>;
 
-/** How many people the card lists before "Show all". */
-const PEOPLE_SHOWN = 5;
-export const personRowId = (key: string) => `insider:${key}`;
 const domId = (key: string) => `insider-${key.replace(/[^a-z0-9]/gi, "-")}-panel`;
 
 /**
- * Every Form 4 of the company on one card, grouped by the person who filed it: the people come from Spontra Analysis's
- * ledger, which reaches back past the rail, and from the rail's own filings until it answers. A row is the person's latest
- * trade and net position, and opens their whole history, a page at a time.
+ * One person who filed a Form 4 of the company: the latest trade with its amount, the role, the net position over their
+ * whole history and the counts. Open, the row lists that history a page at a time.
  */
-export function InsiderPersonsCard({ card, ticker, updates, now, open, openRows, focus, arrive, onToggle, onFocus }: {
-  card: InsiderCard; ticker: string; updates: number; now: Date; open: boolean; openRows: ReadonlySet<string>; focus: string | null; arrive?: number;
-  onToggle: (id: string) => void; onFocus: (item: RailItem | null) => void;
-}) {
-  const events = card.items.map(item => item.event);
-  const publication = useInsiders(ticker, updates, () => fallbackInsiders(ticker, events, now));
-  const persons = publication.persons;
-  const fresh = persons.reduce((n, p) => n + p.newCount, 0);
-  const listed = open ? persons : persons.slice(0, PEOPLE_SHOWN);
-  const title = join([m.insiders, m.people(persons.length), fresh > 0 && m.newCount(fresh)]);
-  const meta = join([shortDate(card.date), m.forms(persons.reduce((n, p) => n + p.filings, 0))]);
-  const panelId = `${card.id}-panel`;
-  return <div className="insider-card" data-class="insider" data-arrived={arrive != null ? "" : undefined} style={arrivalStyle(arrive)}>
-    <div className="stream-row insider-card-head">
-      <Mark cls="insider" />
-      <span className="stream-body">
-        <span className="stream-title" title={title}>{title}</span>
-        <span className="stream-meta">{meta}</span>
-      </span>
-    </div>
-    <ol className="insider-people" id={panelId}>
-      {listed.map(person => <PersonRow key={person.key} person={person} source={publication.source} ticker={ticker} events={events} items={card.items} now={now}
-        open={openRows.has(personRowId(person.key))} focus={focus} onToggle={() => onToggle(personRowId(person.key))} onFocus={onFocus} />)}
-    </ol>
-    {persons.length > PEOPLE_SHOWN && <Button variant="unstyled" type="button" className="insider-card-toggle" aria-expanded={open} aria-controls={panelId} onClick={() => onToggle(card.id)}>
-      <Chevron />{open ? m.showLess : m.showAll(persons.length)}
-    </Button>}
-  </div>;
-}
-
-/** One person: the latest trade with its amount, the role, the net position and the counts; open, their history. */
-function PersonRow({ person, source, ticker, events, items, now, open, focus, onToggle, onFocus }: {
-  person: InsiderPersonSummary; source: InsidersPublication["source"]; ticker: string; events: readonly CompanyEvent[]; items: readonly RailItem[]; now: Date;
-  open: boolean; focus: string | null; onToggle: () => void; onFocus: (item: RailItem | null) => void;
+function PersonRow({ person, source, ticker, events, items, now, open, focus, arrive, onToggle, onFocus }: {
+  person: InsiderPersonSummary; source: InsidersPublication["source"]; ticker: string; events: readonly CompanyEvent[]; items: readonly InsiderFiling[]; now: Date;
+  open: boolean; focus: string | null; arrive?: number; onToggle: () => void; onFocus: (item: RailItem | null) => void;
 }) {
   const latest = person.latest;
   const direction = latest?.side === "buy" ? "buy" : latest?.side === "sell" ? "sell" : null;
@@ -280,8 +243,8 @@ function PersonRow({ person, source, ticker, events, items, now, open, focus, on
   const net = traded ? (netSold ? m.netSold : m.netBought)(insiderCompactMoney(Math.abs(person.net.value)), exactShares(Math.abs(person.net.shares))) : m.noTrades;
   const meta = join([roleLabel(person.role), net, person.sold.count > 0 && m.sales(person.sold.count), person.bought.count > 0 && m.purchases(person.bought.count), m.forms(person.filings)]);
   const panelId = domId(person.key);
-  return <li className="insider-person" data-new={person.newCount > 0 ? "" : undefined}>
-    <Button variant="unstyled" type="button" className="stream-row insider-person-row" aria-expanded={open} aria-controls={panelId} onClick={onToggle}>
+  return <div className="insider-person" data-class="insider" data-new={person.newCount > 0 ? "" : undefined}>
+    <Button variant="unstyled" type="button" className="stream-row insider-person-row" aria-expanded={open} aria-controls={panelId} data-arrived={arrive != null ? "" : undefined} style={arrivalStyle(arrive)} onClick={onToggle}>
       <Mark cls="insider" direction={direction} quiet={!direction || latest?.planned} />
       <span className="stream-body">
         <span className="stream-title insider-title">
@@ -299,7 +262,7 @@ function PersonRow({ person, source, ticker, events, items, now, open, focus, on
         {open && <PersonHistory name={person.name} history={history} items={items} focus={focus} onFocus={onFocus} />}
       </div>
     </div>
-  </li>;
+  </div>;
 }
 
 /** The person's lines, newest first: date, what, shares, price, amount, what they held after, and the filing. A line on the rail is a link to its event. */
@@ -328,7 +291,7 @@ function PersonHistory({ name, history, items, focus, onFocus }: { name: string;
     </ol>
     {history.phase === "loading" && <p className="insider-history-state" aria-busy="true">{m.loadingHistory}</p>}
     {history.phase === "error" && <p className="insider-history-state">{m.historyFailed} <Button variant="unstyled" type="button" onClick={history.more}>{m.retry}</Button></p>}
-    {history.phase === "ready" && history.nextCursor && <Button variant="unstyled" type="button" className="insider-card-toggle" onClick={history.more}>{m.loadMore}</Button>}
+    {history.phase === "ready" && history.nextCursor && <Button variant="unstyled" type="button" className="insider-history-more" onClick={history.more}>{m.loadMore}</Button>}
   </>;
 }
 

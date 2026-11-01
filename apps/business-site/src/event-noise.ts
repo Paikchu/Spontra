@@ -1,5 +1,7 @@
 import type { CompanyEvent } from "@/shared/analysis-contract/events";
+import type { InsiderPersonSummary } from "@/shared/analysis-contract/insiders";
 import { eventImportance } from "@/shared/analysis-runtime/events";
+import { insiderPersonKey } from "@/shared/analysis-runtime/insiders";
 import { getLocale } from "@/packages/web/src/i18n";
 import { insiderCompactMoney as formatInsiderMoney } from "./insider-money";
 import type { Locale } from "@/shared/analysis-runtime/locale";
@@ -80,7 +82,7 @@ export type NoiseRow =
   | { kind: "item"; id: string; date: string; item: RailItem }
   | { kind: "routine"; id: string; date: string; items: RailItem[] };
 
-/** The rows of a reading: routine 6-Ks fold by month; everything else lists as itself. Insider trades group by person on the card. */
+/** The rows of a reading: routine 6-Ks fold by month; everything else lists as itself. Insider trades list by person (`streamRows`). */
 export function noiseRows(items: readonly RailItem[], filter: EventFilter): NoiseRow[] {
   const allEvents = items.flatMap(item => item.kind === "event" ? [item.event] : []);
   const picked = items.filter(item => matchesEventFilter(item, filter, allEvents, items)).sort((a, b) => b.date.localeCompare(a.date));
@@ -135,30 +137,29 @@ export function timelineIds(items: readonly RailItem[], filter: EventFilter): Se
 
 /** The readings whose rail opens with the latest earnings filing. */
 const PINNED_IN: ReadonlySet<EventFilter> = new Set<EventFilter>(["key", "all"]);
-/** The readings that list insider trades: all of them on one card, grouped by person. */
+/** The readings that list insider trades: one row per person, among the other rows. */
 const INSIDERS_IN: ReadonlySet<EventFilter> = new Set<EventFilter>(["key", "all", "insiders"]);
 
-/**
- * The insider card: every Form 4 on the rail, of any age, so none of them lists beside it. The card shows the people
- * (from Spontra Analysis's ledger, or grouped here from these filings until it answers), each with their whole history.
- */
-export type InsiderCard = { id: "insiders"; date: string; items: Array<RailItem & { kind: "event" }> };
+export type InsiderFiling = RailItem & { kind: "event" };
 
-export function insiderCard(items: readonly RailItem[]): InsiderCard | null {
-  const filings = items.filter((item): item is RailItem & { kind: "event" } => item.kind === "event" && item.event.class === "insider").sort((a, b) => b.date.localeCompare(a.date));
-  return filings.length ? { id: "insiders", date: filings[0]!.date, items: filings } : null;
+/**
+ * Every Form 4 on the rail, of any age, newest first. None of them lists as its own row: they reach the rail through their
+ * people (from Spontra Analysis's ledger, or grouped from these filings until it answers), each with their whole history.
+ */
+export function insiderFilings(items: readonly RailItem[]): InsiderFiling[] {
+  return items.filter((item): item is InsiderFiling => item.kind === "event" && item.event.class === "insider").sort((a, b) => b.date.localeCompare(a.date));
 }
 
 const isEarningsRow = (row: NoiseRow) => row.kind === "item" && (row.item.kind === "report"
   || (row.item.event.class === "earnings" && (row.item.event.items.includes("2.02") || !row.item.event.form.startsWith("8-K"))));
 
 /**
- * The rail's order for a reading: the latest earnings filing (10-Q, 10-K or an 8-K under item 2.02) first, then the
- * insider card, then the rest newest first without the filings the card holds. Other readings keep plain date order.
+ * The rail's order for a reading: the latest earnings filing (10-Q, 10-K or an 8-K under item 2.02) first, then the rest
+ * newest first without the insider filings, which list through their people. Other readings keep plain date order.
  */
-export function railLayout(items: readonly RailItem[], filter: EventFilter): { pinned: NoiseRow | null; insiders: InsiderCard | null; rest: NoiseRow[]; items: readonly RailItem[] } {
-  const insiders = INSIDERS_IN.has(filter) ? insiderCard(items) : null;
-  const held = new Set(insiders?.items.map(item => item.id));
+export function railLayout(items: readonly RailItem[], filter: EventFilter): { pinned: NoiseRow | null; insiders: InsiderFiling[]; rest: NoiseRow[]; items: readonly RailItem[] } {
+  const insiders = INSIDERS_IN.has(filter) ? insiderFilings(items) : [];
+  const held = new Set(insiders.map(item => item.id));
   // Matching runs over every filing (an insider row's importance reads the person's other trades); only the rows drop.
   const rows = noiseRows(items, filter).filter(row => row.kind !== "item" || !held.has(row.item.id));
   const pinned = PINNED_IN.has(filter) ? rows.find(isEarningsRow) ?? null : null;
@@ -218,24 +219,35 @@ export function reportsPeriod(row: NoiseRow, periodEnd: string | null, items: re
 const FINDINGS_IN: ReadonlySet<EventFilter> = new Set<EventFilter>(["key", "earnings", "all"]);
 
 export type StreamRow<F> = { kind: "noise"; id: string; date: string; row: NoiseRow } | { kind: "finding"; id: string; date: string; finding: F }
-  | { kind: "insiders"; id: string; date: string; card: InsiderCard };
+  | { kind: "person"; id: string; date: string; person: InsiderPersonSummary; items: InsiderFiling[] };
+
+export const personRowId = (key: string) => `insider:${key}`;
+/** The person a rail filing belongs to, by the ledger's own rule. */
+const personKeyOf = (event: CompanyEvent): string | null => event.insider ? insiderPersonKey(event.insider) : null;
 
 /**
- * The rail's rows in order: the latest earnings filing leads with its findings beneath it, then the insider card,
- * then everything else newest first. Findings follow the filing of their quarter; when no row is that filing they are left
- * out, never put under another quarter's filing. A rail with no rows at all lists them alone.
+ * The rail's rows in order: the latest earnings filing leads with its findings beneath it, then everything else newest
+ * first, each insider at the date of their latest trade. Findings follow the filing of their quarter; when no row is that
+ * filing they are left out, never put under another quarter's filing. A rail with no rows at all lists them alone.
+ * `persons` are the people of the reading's insider filings; a reading without those lists none.
  */
-export function streamRows<F extends { id: string }>(layout: ReturnType<typeof railLayout>, findings: readonly F[], periodEnd: string | null, filter: EventFilter): StreamRow<F>[] {
-  const noise = layout.pinned ? [layout.pinned, ...layout.rest] : layout.rest;
-  const rows: StreamRow<F>[] = noise.map(row => ({ kind: "noise", id: row.id, date: row.date, row }));
-  if (layout.insiders) rows.splice(layout.pinned ? 1 : 0, 0, { kind: "insiders", id: layout.insiders.id, date: layout.insiders.date, card: layout.insiders });
+export function streamRows<F extends { id: string }>(layout: ReturnType<typeof railLayout>, findings: readonly F[], periodEnd: string | null, filter: EventFilter, persons: readonly InsiderPersonSummary[] = []): StreamRow<F>[] {
+  const rest: StreamRow<F>[] = layout.rest.map(row => ({ kind: "noise", id: row.id, date: row.date, row }));
+  if (layout.insiders.length) {
+    for (const person of persons) {
+      const date = person.lastTradeAt ?? person.latest?.date ?? "";
+      const row: StreamRow<F> = { kind: "person", id: personRowId(person.key), date, person, items: layout.insiders.filter(item => personKeyOf(item.event) === person.key) };
+      // Before the first older row, so the rows already listed keep their order and a person follows rows of the same day.
+      const at = rest.findIndex(r => r.date < date);
+      rest.splice(at < 0 ? rest.length : at, 0, row);
+    }
+  }
+  const rows: StreamRow<F>[] = layout.pinned ? [{ kind: "noise", id: layout.pinned.id, date: layout.pinned.date, row: layout.pinned }, ...rest] : rest;
   if (findings.length && FINDINGS_IN.has(filter)) {
-    const at = noise.findIndex(row => reportsPeriod(row, periodEnd, layout.items));
+    const at = rows.findIndex(row => row.kind === "noise" && reportsPeriod(row.row, periodEnd, layout.items));
     if (at >= 0 || !rows.length) {
-      const date = at >= 0 ? noise[at]!.date : periodEnd ?? "";
-      // The card sits right after the pinned filing, so a later row's place in `rows` is one past its place in `noise`.
-      const after = at < 0 ? 0 : at === 0 && layout.pinned ? 1 : at + 1 + (layout.insiders ? 1 : 0);
-      rows.splice(after, 0, ...findings.map((finding): StreamRow<F> => ({ kind: "finding", id: finding.id, date, finding })));
+      const date = at >= 0 ? rows[at]!.date : periodEnd ?? "";
+      rows.splice(at + 1, 0, ...findings.map((finding): StreamRow<F> => ({ kind: "finding", id: finding.id, date, finding })));
     }
   }
   return rows;
