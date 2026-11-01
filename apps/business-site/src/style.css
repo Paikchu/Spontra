@@ -1254,6 +1254,21 @@ html[lang^="zh"] .home-watch-item a { line-height: 1.7; }
 .event-fold-panel[data-open] { grid-template-rows: 1fr; }
 .event-fold-inner { overflow: hidden; min-height: 0; }
 .event-fold-inner .stream-row { padding-left: 40px; }
+/* The insider summary card: 90 days of open-market trades in one place, the three largest people, the rest behind a button. */
+.insider-summary { min-width: 0; margin: 2px 0; border-radius: 10px; background: color-mix(in srgb, var(--foreground) 3%, transparent); border: 1px solid var(--hairline); }
+.insider-summary-head:hover { background: transparent; }
+.insider-summary-head .stream-title { font-variant-numeric: tabular-nums; }
+.insider-summary-top { display: flex; flex-direction: column; gap: 2px; margin: 4px 0 0; padding: 0; list-style: none; font-size: 12.5px; color: var(--muted-foreground); }
+.insider-summary-top li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 8px; }
+.insider-summary-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.insider-summary-amount { display: inline-flex; align-items: center; gap: 3px; justify-self: end; text-align: right; white-space: nowrap; font-family: var(--mono); font-size: 12px; font-variant-numeric: tabular-nums; color: var(--foreground); }
+.insider-arrow { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.insider-arrow[data-direction="sell"] { color: var(--loss); }
+.insider-arrow[data-direction="buy"] { color: var(--up); }
+.insider-summary-toggle { display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; margin-top: 4px; padding: 2px 0; border: 0; background: none; font-size: 12px; color: var(--muted-foreground); }
+.insider-summary-toggle:hover { color: var(--foreground); }
+.insider-summary-toggle[aria-expanded="true"] .fold-chevron { transform: rotate(90deg); }
+.insider-summary .event-fold-inner .stream-row { padding-left: 24px; }
 /* The class legend doubles as the filter: the class mark, its name and count. */
 .section-filters { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 10px 10px; }
 .section-filter {
