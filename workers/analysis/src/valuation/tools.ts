@@ -26,6 +26,12 @@ export const RESEARCH_BUDGET = { finds: 5, reads: 10, searches: 3, webReads: 4, 
 const READ_CHARS = 5_000, EXCERPT_CHARS = 500, PASSAGE_CHARS = 2_000;
 
 export type RedTeam = { weakestAssumptions: Array<{ factor: string; why: string; evidenceIds: string[] }>; decisiveCounterEvidence: boolean; counterEvidenceIds: string[] };
+const goingConcernSchema = z.object({
+  status: z.enum(["unresolved", "resolved", "unknown"]),
+  rationale: z.string().min(20).max(800),
+  evidence: z.array(z.object({ evidenceId: z.string(), quote: z.string().min(20).max(1500) })).max(6),
+});
+type GoingConcernAssessment = z.infer<typeof goingConcernSchema>;
 export type ValuationState = {
   input: ValuationInput;
   researchAsOf: string;
@@ -40,6 +46,8 @@ export type ValuationState = {
   hits: SearchHit[];
   used: { finds: number; reads: number; searches: number; webReads: number; transcripts: number };
   dimensions: Map<ValuationDimensionKey, ValuationDimension>;
+  /** Internal research classification; public dimensions retain their existing shape. */
+  goingConcern?: GoingConcernAssessment;
   researchDone: boolean;
   calc: { request: CalcRequest; result: ValuationModelResult } | null;
   modelGaps: ValuationGap[];
@@ -72,21 +80,56 @@ const knownId = (state: ValuationState, id: string) => state.evidence.has(id) ||
 export const CITATION = /\be[0-9a-f]{10}\b/g;
 const checkIds = (state: ValuationState, ids: string[], what: string): string[] => ids.filter(id => !knownId(state, id)).map(id => `${what} cites ${id}, which is neither registered evidence, a fact id nor a diagnostic key`);
 
+class GoingConcernEvidenceError extends Error {}
+
+/** The researcher interprets the disclosure, including negation and mitigation; code verifies its citations.
+ * No assessment means unknown, never resolved. Gaps and keyword mentions alone are not assessments.
+ * Revalidate at every consumer so invalid evidence cannot silently disable the ceiling at publication.
+ */
+export function goingConcernOf(state: ValuationState, assessment = state.goingConcern): GoingConcernAssessment["status"] {
+  if (!assessment) return "unknown";
+  if (assessment.status !== "unknown" && !assessment.evidence.length) throw new GoingConcernEvidenceError("going-concern unresolved/resolved assessments need quoted registered evidence");
+  const normalize = (text: string) => text.replace(/\s+/g, " ").trim();
+  for (const cite of assessment.evidence) {
+    const evidence = state.evidence.get(cite.evidenceId);
+    if (!evidence || normalize(cite.quote).length < 20 || !normalize(evidence.excerpt).includes(normalize(cite.quote))) {
+      throw new GoingConcernEvidenceError(`going-concern evidence ${cite.evidenceId} must quote a registered passage verbatim`);
+    }
+  }
+  return assessment.status;
+}
+
 const dimensionSchema = z.object({
   key: z.enum(VALUATION_DIMENSIONS), score: z.number().nullable(), confidence: z.enum(["high", "medium", "low"]),
   rationale: z.string().min(80).max(2000), supportingEvidenceIds: z.array(z.string()).max(12), counterEvidenceIds: z.array(z.string()).max(12),
   gaps: z.array(z.string().max(300)).max(6), nextCheck: z.string().min(10).max(400),
+  goingConcern: goingConcernSchema.optional(),
 });
 
 function submitDimension(state: ValuationState, value: z.infer<typeof dimensionSchema>, allowed: ValuationDimensionKey[]): string {
+  const { goingConcern, ...dimension } = value;
   const errors: string[] = [];
   if (!allowed.includes(value.key)) errors.push(`${value.key} is not scored in this phase`);
   if (value.score != null && (value.score < 0 || value.score > 10 || Math.abs(value.score * 2 - Math.round(value.score * 2)) > 1e-9)) errors.push("score must be 0–10 in steps of 0.5, or null");
   errors.push(...checkIds(state, value.supportingEvidenceIds, "supportingEvidenceIds"), ...checkIds(state, value.counterEvidenceIds, "counterEvidenceIds"));
   if (value.score != null && !value.supportingEvidenceIds.some(id => state.evidence.has(id) && state.evidence.get(id)!.kind === "sec")) errors.push("a scored dimension needs at least one registered filing passage among its supporting evidence");
   if (value.score == null && !value.gaps.length) errors.push("an unscored dimension must name the gap that prevents a score");
+  if (goingConcern && value.key !== "financialResilience") errors.push("goingConcern belongs only to financialResilience");
+  if (value.key === "financialResilience") {
+    const assessment = goingConcern ?? state.goingConcern;
+    try {
+      if (goingConcernOf(state, assessment) === "unresolved" && value.score != null && value.score > 7.5) errors.push("financialResilience cannot exceed 7.5 with unresolved going-concern evidence");
+    } catch (error) {
+      if (!(error instanceof GoingConcernEvidenceError)) throw error;
+      errors.push(error.message);
+    }
+    for (const cite of assessment?.evidence ?? []) {
+      if (![...value.supportingEvidenceIds, ...value.counterEvidenceIds].includes(cite.evidenceId)) errors.push(`going-concern evidence ${cite.evidenceId} must also be cited by the dimension`);
+    }
+  }
   if (errors.length) return `Not accepted:\n  ${errors.join("\n  ")}`;
-  state.dimensions.set(value.key, value);
+  if (goingConcern) state.goingConcern = goingConcern;
+  state.dimensions.set(value.key, dimension);
   return `${value.key} recorded: score ${value.score ?? "null"}, confidence ${value.confidence}.`;
 }
 
@@ -185,7 +228,7 @@ function runCalculation(state: ValuationState, args: CalcArgs): string {
   state.insufficient = null;
   const r = result.range;
   const line = (k: "bear" | "base" | "bull") => `${k}: ${r[k === "bear" ? "low" : k === "bull" ? "high" : "base"].toFixed(2)} per share` + (result.scenarios[k].result.terminalShare != null ? ` (terminal ${pct(result.scenarios[k].result.terminalShare!)})` : "");
-  const ceilings = dimensionCeilings({ marginOfSafety: r.marginOfSafety, downsideCoverage: r.downsideCoverage, bearProbability: args.scenarios.bear.probability, terminalShare, hasIndependentConsensus: !!consensus, impliedGap: result.implied?.gap ?? null, impliedGapThreshold: impliedThreshold(state), goingConcernUnresolved: false });
+  const ceilings = dimensionCeilings({ marginOfSafety: r.marginOfSafety, downsideCoverage: r.downsideCoverage, bearProbability: args.scenarios.bear.probability, terminalShare, hasIndependentConsensus: !!consensus, impliedGap: result.implied?.gap ?? null, impliedGapThreshold: impliedThreshold(state), goingConcernUnresolved: goingConcernOf(state) === "unresolved" });
   const methods = (result.methods ?? []).filter(m => m.method !== "dcf").map(m => `${m.method}: ${m.base != null ? `${m.low!.toFixed(2)} / ${m.base.toFixed(2)} / ${m.high!.toFixed(2)}` : m.notes[0] ?? "n/a"}`);
   const flagged = (result.gates ?? []).filter(g => g.status !== "pass");
   return [
@@ -307,7 +350,7 @@ export function valuationTools(env: AnalysisEnv): AnyTool<ValuationState>[] {
         const id = await registerEvidence(ctx.state, read.passage, "web", read.record.publishedAt);
         return `[${id}] ${read.record.title} (${hostOf(target.url)} · ${read.record.publishedAt ?? "undated"})\n${untrusted(hostOf(target.url), read.passage.text.slice(0, 3000))}`;
       }, observe: (_a, v) => v }),
-    tool({ name: "submit_dimension", description: "Record one dimension's score (0–10 in 0.5 steps, or null with a gap), confidence, rationale and the evidence ids it rests on.", parameters: dimensionSchema,
+    tool({ name: "submit_dimension", description: "Record one dimension's score (0–10 in 0.5 steps, or null with a gap), confidence, rationale and evidence ids. For financialResilience, include goingConcern: unresolved for current substantial doubt not alleviated by completed mitigation, resolved only when disclosure explicitly establishes alleviation, unknown when evidence is insufficient. Explain the classification and quote registered evidence verbatim; also cite those ids in the dimension. Unresolved risk caps the score at 7.5.", parameters: dimensionSchema,
       execute: (value, ctx) => submitDimension(ctx.state, value, ctx.state.researchDone ? ["valuationSafety"] : ["businessQuality", "growthExecution", "financialResilience", "mispricingCatalysts"]), observe: (_a, v) => v }),
     tool({ name: "finish_research", description: "End the research phase once businessQuality, growthExecution, financialResilience and mispricingCatalysts are each submitted.", parameters: z.object({}),
       execute: (_a, ctx) => {
