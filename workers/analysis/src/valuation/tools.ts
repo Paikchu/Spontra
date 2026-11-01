@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { FindingPassage } from "../../../../shared/analysis-contract/findings.ts";
-import { SCENARIO_KEYS, VALUATION_DIMENSIONS, VALUATION_METHODS, VALUATION_MODEL_TYPES, type ConsensusTarget, type DiscountRate, type FactorDistribution, type ManagementTarget, type PeerMultiples, type SanityGate, type ScenarioAssumptions, type ValuationDimension, type ValuationDimensionKey, type ValuationEvidence, type ValuationGap, type ValuationModelResult, type ValuationSections } from "../../../../shared/analysis-contract/valuation.ts";
-import { calculateValuation, dimensionCeilings, discountRateBaseline, horizonOf, MAX_FORECAST_YEARS, MIN_FORECAST_YEARS, outsideHistory, percentileRank, ValuationCalcError, type CalcContext, type CalcRequest } from "../../../../shared/analysis-runtime/valuation/calculator.ts";
+import { DISCOUNT_RATE_COMPONENTS, EXTENDED_SCENARIO_KEYS, SCENARIO_KEYS, VALUATION_DIMENSIONS, VALUATION_METHODS, VALUATION_MODEL_TYPES, type ConsensusNote, type ConsensusTarget, type DiscountRate, type DiscountRateSources, type FactorDistribution, type ManagementTarget, type PeerMultiples, type SanityGate, type ScenarioAssumptions, type ValuationDimension, type ValuationDimensionKey, type ValuationEvidence, type ValuationGap, type ValuationModelResult, type ValuationSections } from "../../../../shared/analysis-contract/valuation.ts";
+import { calculateValuation, dimensionCeilings, discountRateBaseline, horizonOf, MAX_FORECAST_YEARS, MIN_FORECAST_YEARS, outsideHistory, percentileRank, ValuationCalcError, WEIGHT_SUM_TOLERANCE, type CalcContext, type CalcRequest } from "../../../../shared/analysis-runtime/valuation/calculator.ts";
 import { anchorOf } from "../../../../shared/analysis-runtime/valuation/prior.ts";
 import { EXCLUDED_HOSTS, PAGE_CACHE_MS, hostOf, readWebPage } from "../analyst/web.ts";
 import { renderTable } from "../analyst/agent.ts";
@@ -69,7 +69,9 @@ export async function registerEvidence(state: ValuationState, passage: FindingPa
   const contentSha256 = await sha256(passage.text);
   const evidenceId = `e${(await sha256(`${kind}|${passage.documentId}|${passage.passageId}|${contentSha256}`)).slice(0, 10)}`;
   if (!state.evidence.has(evidenceId)) {
-    state.evidence.set(evidenceId, { evidenceId, kind, title: passage.title.slice(0, 300), url: passage.url, documentId: kind === "sec" ? passage.documentId : null, passageId: kind === "sec" ? passage.passageId : null, form: passage.form,
+    // A filing passage and a management-target passage keep their document and passage ids (the latter are found by `management:<ticker>`); a web page carries none.
+    const keepIds = kind === "sec" || passage.form === "management";
+    state.evidence.set(evidenceId, { evidenceId, kind, title: passage.title.slice(0, 300), url: passage.url, documentId: keepIds ? passage.documentId : null, passageId: keepIds ? passage.passageId : null, form: passage.form,
       publishedAt: kind === "sec" ? passage.filedAt : publishedAt, fetchedAt: state.now, excerpt: passage.table ? renderTable(passage.table, []).slice(0, 1500) : passage.text.slice(0, 1500), contentSha256, path: passage.path.join(" › ") });
   }
   return evidenceId;
@@ -117,6 +119,7 @@ function submitDimension(state: ValuationState, value: z.infer<typeof dimensionS
   if (goingConcern && value.key !== "financialResilience") errors.push("goingConcern belongs only to financialResilience");
   if (value.key === "financialResilience") {
     const assessment = goingConcern ?? state.goingConcern;
+    if (!assessment) errors.push("financialResilience needs goingConcern: unresolved, resolved or unknown, with the rationale and the quoted evidence");
     try {
       if (goingConcernOf(state, assessment) === "unresolved" && value.score != null && value.score > 7.5) errors.push("financialResilience cannot exceed 7.5 with unresolved going-concern evidence");
     } catch (error) {
@@ -147,22 +150,56 @@ const drivers = z.discriminatedUnion("modelType", [
   z.object({ modelType: z.literal("affo_multiple"), affoLow: z.number(), affoHigh: z.number(), weight: z.number().min(0).max(1), recurringCostPerShare: z.number(), multiple: z.number(), horizonYears: z.number() }).refine(d => d.affoLow <= d.affoHigh, "affoLow must not exceed affoHigh"),
   z.object({ modelType: z.literal("affo_dcf"), annualAffo: z.number(), recurringCost: z.number(), growth: z.array(z.number()).length(5), terminalGrowth: z.number() }),
 ]);
-const scenarioSchema = z.object({ narrative: z.string().min(20).max(1500), probability: z.number().nullable(), triggers: z.array(z.string().max(400)).max(6), invalidation: z.array(z.string().max(400)).max(6), evidenceIds: z.array(z.string()).max(12), drivers });
+/**
+ * Every judgement the calculation rests on is a required argument (docs/valuation-v2-SPEC.md, "v3: judged weights and the
+ * management scenario"): a missing or malformed one is a schema error the model reads and corrects; nothing is defaulted by code.
+ */
+const ids = (max: number, min = 0) => z.array(z.string().max(40)).min(min).max(max);
+const judgement = z.object({ rationale: z.string().min(20).max(1200), evidenceIds: ids(10, 1) });
+const weightJudgement = z.object({ weight: z.number().min(0).max(1), rationale: z.string().min(60).max(1500), evidenceIds: ids(10, 1) });
+const probabilityJudgement = z.object({ probability: z.number().min(0).max(1), rationale: z.string().min(20).max(1000), evidenceIds: ids(10) });
+/** The management scenario's probability: without a target set the rationale is just "no target set". */
+const managementProbability = probabilityJudgement.extend({ rationale: z.string().min(5).max(1000) });
+const sumsToOne = (values: number[]) => Math.abs(values.reduce((a, b) => a + b, 0) - 1) <= WEIGHT_SUM_TOLERANCE;
+/** A discount-rate component: its value (null only when the basis does not need it), where it came from and the evidence or fact ids behind it. */
+const component = z.object({ value: z.number().nullable(), source: z.string().min(3).max(400), evidenceIds: ids(6) });
+const scenarioSchema = z.object({
+  narrative: z.string().min(20).max(1500), triggers: z.array(z.string().min(5).max(400)).min(1).max(6), invalidation: z.array(z.string().min(5).max(400)).min(1).max(6), evidenceIds: ids(12, 1), drivers,
+  /** Why the revenue, margin and capex paths run as they do, each with its evidence. */
+  assumptions: z.object({ revenue: judgement, margin: judgement, capex: judgement }),
+});
 const calcSchema = z.object({
   modelType: z.enum(VALUATION_MODEL_TYPES),
-  discountRate: z.object({ basis: z.enum(["wacc", "cost_of_equity"]), equityRiskPremium: z.number().nullable(), riskFree: z.number().nullable(), beta: z.number().nullable(), costOfDebt: z.number().nullable(), taxRate: z.number().nullable(), equityWeight: z.number().nullable(), value: z.number().nullable(), rationale: z.string().min(20).max(1500), sourceRefs: z.array(z.string()).max(8) }),
+  discountRate: z.object({
+    basis: z.enum(["wacc", "cost_of_equity"]), riskFree: component, beta: component, equityRiskPremium: component, costOfDebt: component, taxRate: component, equityWeight: component,
+    rationale: z.string().min(20).max(1500),
+  }).refine(d => d.basis === "wacc" ? DISCOUNT_RATE_COMPONENTS.every(k => d[k].value != null) : (["riskFree", "beta", "equityRiskPremium"] as const).every(k => d[k].value != null), { message: "wacc needs a value for riskFree, beta, equityRiskPremium, costOfDebt, taxRate and equityWeight; cost_of_equity for riskFree, beta and equityRiskPremium (the others null with the reason as source)" }),
   shares: z.object({ baseFactId: z.string(), dilutionPercent: z.number().min(0).max(0.5), rationale: z.string().min(10).max(800) }),
-  bridge: z.object({ nonOperatingAssets: z.number(), debtAndClaims: z.number(), nonOperatingEquityAdjustment: z.number(), notes: z.array(z.string().max(400)).max(10) }),
+  bridge: z.object({ nonOperatingAssets: z.number(), debtAndClaims: z.number(), nonOperatingEquityAdjustment: z.number(), notes: z.array(z.string().max(400)).min(1).max(10) }),
   scenarios: z.object({ bear: scenarioSchema, base: scenarioSchema, bull: scenarioSchema }),
-  /** Mid-year discounting; default year end. */
-  midYear: z.boolean().optional(),
-  /** Years ahead the forward multiples are applied (default 3) and the method weights (default by life cycle). */
-  forwardYears: z.number().int().min(1).max(5).optional(),
-  methodWeights: z.object({ dcf: z.number().min(0), ev_ebitda_forward: z.number().min(0), pe_forward: z.number().min(0) }).optional(),
-  /** A sell-side consensus target read from a registered page: compared and flagged, never copied into the model. */
-  consensus: z.object({ mean: z.number().positive(), low: z.number().nullable(), high: z.number().nullable(), count: z.number().int().nullable(), asOf: z.string().max(10).nullable(), evidenceId: z.string() }).nullable().optional(),
+  /** Mid-year discounting (true) or year end (false). */
+  midYear: z.boolean(),
+  /** The forecast year the forward multiples are applied to (usually 3). */
+  forwardYears: z.number().int().min(1).max(5),
+  /**
+   * The weight of each method, judged from the business and its outlook; non-negative, summing to 1, no bounds. A method
+   * that cannot be applied still gets a weight (0) with the reason; the calculator says which methods applied.
+   */
+  methodWeights: z.object({ dcf: weightJudgement, ev_ebitda_forward: weightJudgement, pe_forward: weightJudgement }).refine(w => sumsToOne(VALUATION_METHODS.map(k => w[k].weight)), { message: `the three method weights must sum to 1 (tolerance ${WEIGHT_SUM_TOLERANCE})` }),
+  /** The probability of each scenario, judged with evidence; the four sum to 1. management is 0 with the reason when the company has no cited target set. */
+  scenarioProbabilities: z.object({ bear: probabilityJudgement, base: probabilityJudgement, management: managementProbability, bull: probabilityJudgement }).refine(p => sumsToOne(EXTENDED_SCENARIO_KEYS.map(k => p[k].probability)), { message: `the four scenario probabilities must sum to 1 (tolerance ${WEIGHT_SUM_TOLERANCE})` }),
+  /** The explanation of the gap between the base path and management's cited targets (the figures are computed); null only when the company has no target set. */
+  managementComparison: z.object({ explanation: z.string().min(40).max(1500), evidenceIds: ids(10, 1) }).nullable(),
+  /** A sell-side consensus target read from a registered page (compared, never copied), or the reason none could be cited. */
+  consensus: z.discriminatedUnion("status", [
+    z.object({ status: z.literal("cited"), mean: z.number().positive(), low: z.number().nullable(), high: z.number().nullable(), count: z.number().int().nullable(), asOf: z.string().max(10).nullable(), evidenceId: z.string(), source: z.string().min(3).max(300) }),
+    z.object({ status: z.literal("unavailable"), reason: z.string().min(20).max(600) }),
+  ]),
 });
 type CalcArgs = z.infer<typeof calcSchema>;
+
+/** Management's registered target evidence ids, the ones the management scenario has to cite. */
+const managementEvidenceIds = (state: ValuationState) => [...state.evidence.values()].filter(e => e.documentId === `management:${state.input.ticker}`).map(e => e.evidenceId);
 
 function runCalculation(state: ValuationState, args: CalcArgs): string {
   const errors: string[] = [];
@@ -172,29 +209,44 @@ function runCalculation(state: ValuationState, args: CalcArgs): string {
   for (const key of SCENARIO_KEYS) {
     const s = args.scenarios[key];
     if (s.drivers.modelType !== args.modelType) errors.push(`scenario ${key} uses ${s.drivers.modelType}, not ${args.modelType}`);
-    errors.push(...checkIds(state, s.evidenceIds, `scenario ${key}`));
+    errors.push(...checkIds(state, s.evidenceIds, `scenario ${key}`), ...(["revenue", "margin", "capex"] as const).flatMap(k => checkIds(state, s.assumptions[k].evidenceIds, `scenario ${key} ${k} assumption`)));
     if (s.drivers.modelType === "fcff") { try { horizonOf(s.drivers.path); } catch (error) { errors.push(`scenario ${key}: ${(error as Error).message}`); } }
   }
   const lengths = new Set(SCENARIO_KEYS.map(k => { const d = args.scenarios[k].drivers; return d.modelType === "fcff" ? d.path.revenueGrowth.length : 0; }));
   if (lengths.size > 1) errors.push("every scenario must use the same horizon");
-  if (args.consensus && !state.evidence.has(args.consensus.evidenceId)) errors.push(`consensus cites ${args.consensus.evidenceId}, which is not registered evidence`);
+  for (const key of VALUATION_METHODS) errors.push(...checkIds(state, args.methodWeights[key].evidenceIds, `methodWeights.${key}`));
+  for (const key of EXTENDED_SCENARIO_KEYS) errors.push(...checkIds(state, args.scenarioProbabilities[key].evidenceIds, `scenarioProbabilities.${key}`));
+  for (const key of DISCOUNT_RATE_COMPONENTS) errors.push(...checkIds(state, args.discountRate[key].evidenceIds, `discountRate.${key}`));
+  if (args.consensus.status === "cited" && !state.evidence.has(args.consensus.evidenceId)) errors.push(`consensus cites ${args.consensus.evidenceId}, which is not registered evidence`);
+  // The management scenario exists only for a company with a cited target set, and then it has to cite that evidence.
+  const managementIds = managementEvidenceIds(state);
+  const management = args.scenarioProbabilities.management;
+  if (state.input.management) {
+    if (!args.managementComparison) errors.push("managementComparison is required: this company has cited management targets; explain the gap between the base path and them");
+    else errors.push(...checkIds(state, args.managementComparison.evidenceIds, "managementComparison"));
+    if (!management.evidenceIds.some(id => managementIds.includes(id))) errors.push(`scenarioProbabilities.management must cite management's registered target evidence (${managementIds.join(", ") || "none registered"})`);
+  } else {
+    if (args.managementComparison) errors.push("managementComparison must be null: this company has no cited management target set");
+    if (management.probability !== 0) errors.push("scenarioProbabilities.management must be 0 (rationale: no target set): this company has no cited management targets");
+  }
   if (errors.length) return `Not accepted:\n  ${errors.join("\n  ")}`;
-  // The discount rate: computed from sourced components when they are all given, else the stated value as an assumption.
+  // The discount rate from its sourced components; every one is required by the schema for the basis chosen.
   const d = args.discountRate;
-  const rf = d.riskFree ?? state.riskFree?.value ?? null, beta = d.beta ?? state.beta?.beta ?? null;
-  const baseline = rf != null && beta != null && d.equityRiskPremium != null ? discountRateBaseline({ riskFree: rf, beta, equityRiskPremium: d.equityRiskPremium, costOfDebt: d.costOfDebt, taxRate: d.taxRate, equityWeight: d.equityWeight }, d.basis) : null;
-  const value = baseline?.value ?? d.value;
-  if (value == null) return "Not accepted: give either every component of the discount rate (riskFree, beta, equityRiskPremium, and for wacc costOfDebt, taxRate, equityWeight) or an explicit value with its rationale.";
+  const baseline = discountRateBaseline({ riskFree: d.riskFree.value!, beta: d.beta.value!, equityRiskPremium: d.equityRiskPremium.value!, costOfDebt: d.costOfDebt.value, taxRate: d.taxRate.value, equityWeight: d.equityWeight.value }, d.basis);
+  if (!baseline) return "Not accepted: the discount rate could not be computed from the components given.";
+  const value = baseline.value;
   const gaps: ValuationGap[] = [];
-  if (!baseline) gaps.push({ code: "discount_rate_unsourced", message: `The discount rate ${pct(value)} is a stated assumption, not computed from sourced components.`, evidenceIds: [] });
-  if (d.equityRiskPremium != null && !d.sourceRefs.length) gaps.push({ code: "discount_rate_unsourced", message: "The equity risk premium cites no source.", evidenceIds: [] });
-  const discountRate: DiscountRate = { value, basis: d.basis, components: { riskFree: rf, beta, equityRiskPremium: d.equityRiskPremium, costOfEquity: baseline?.costOfEquity ?? (d.basis === "cost_of_equity" ? value : null), costOfDebt: d.costOfDebt, taxRate: d.taxRate, equityWeight: d.equityWeight }, rationale: d.rationale, sourceRefs: d.sourceRefs };
-  const consensus: ConsensusTarget | null = args.consensus ? { mean: args.consensus.mean, low: args.consensus.low, high: args.consensus.high, count: args.consensus.count, asOf: args.consensus.asOf, evidenceId: args.consensus.evidenceId } : null;
+  if (!d.equityRiskPremium.evidenceIds.length) gaps.push({ code: "discount_rate_unsourced", message: `The equity risk premium ${pct(d.equityRiskPremium.value!)} cites no registered evidence (stated source: ${d.equityRiskPremium.source}).`, evidenceIds: [] });
+  const sources = Object.fromEntries(DISCOUNT_RATE_COMPONENTS.map(k => [k, { source: d[k].source, evidenceIds: d[k].evidenceIds }])) as DiscountRateSources;
+  const discountRate: DiscountRate = { value, basis: d.basis, components: { riskFree: d.riskFree.value, beta: d.beta.value, equityRiskPremium: d.equityRiskPremium.value, costOfEquity: baseline.costOfEquity, costOfDebt: d.costOfDebt.value, taxRate: d.taxRate.value, equityWeight: d.equityWeight.value }, rationale: d.rationale, sourceRefs: DISCOUNT_RATE_COMPONENTS.map(k => `${k}: ${d[k].source}`), sources };
+  const consensus: ConsensusTarget | null = args.consensus.status === "cited" ? { mean: args.consensus.mean, low: args.consensus.low, high: args.consensus.high, count: args.consensus.count, asOf: args.consensus.asOf, evidenceId: args.consensus.evidenceId } : null;
+  const consensusNote: ConsensusNote = args.consensus.status === "cited" ? { status: "cited", source: args.consensus.source, reason: null } : { status: "unavailable", source: null, reason: args.consensus.reason };
   const request: CalcRequest = {
     modelType: args.modelType, currency: state.input.currency, discountRate, shares: { base: baseShares!.value, dilutionReserve: baseShares!.value * args.shares.dilutionPercent, basis: `${baseShares!.id}; dilution ${(args.shares.dilutionPercent * 100).toFixed(2)}% of base; ${args.shares.rationale}` },
-    bridge: args.bridge, price: state.quote?.usable ? state.quote.price : null, midYear: args.midYear === true,
-    scenarios: Object.fromEntries(SCENARIO_KEYS.map(k => [k, args.scenarios[k] as ScenarioAssumptions])) as Record<"bear" | "base" | "bull", ScenarioAssumptions>,
-    context: calcContext(state, args, consensus),
+    bridge: args.bridge, price: state.quote?.usable ? state.quote.price : null, midYear: args.midYear,
+    // The scenarios' probabilities are the judged ones; the calculator writes them onto each scenario from the four-way set.
+    scenarios: Object.fromEntries(SCENARIO_KEYS.map(k => [k, { ...args.scenarios[k], probability: null } satisfies ScenarioAssumptions])) as Record<"bear" | "base" | "bull", ScenarioAssumptions>,
+    context: calcContext(state, args, consensus, consensusNote),
   };
   let result: ValuationModelResult;
   try { result = calculateValuation(request); }
@@ -227,40 +279,43 @@ function runCalculation(state: ValuationState, args: CalcArgs): string {
   state.modelGaps = gaps;
   state.insufficient = null;
   const r = result.range;
-  const line = (k: "bear" | "base" | "bull") => `${k}: ${r[k === "bear" ? "low" : k === "bull" ? "high" : "base"].toFixed(2)} per share` + (result.scenarios[k].result.terminalShare != null ? ` (terminal ${pct(result.scenarios[k].result.terminalShare!)})` : "");
-  const ceilings = dimensionCeilings({ marginOfSafety: r.marginOfSafety, downsideCoverage: r.downsideCoverage, bearProbability: args.scenarios.bear.probability, terminalShare, hasIndependentConsensus: !!consensus, impliedGap: result.implied?.gap ?? null, impliedGapThreshold: impliedThreshold(state), goingConcernUnresolved: goingConcernOf(state) === "unresolved" });
-  const methods = (result.methods ?? []).filter(m => m.method !== "dcf").map(m => `${m.method}: ${m.base != null ? `${m.low!.toFixed(2)} / ${m.base.toFixed(2)} / ${m.high!.toFixed(2)}` : m.notes[0] ?? "n/a"}`);
+  const line = (k: "bear" | "base" | "bull") => { const s = result.scenarios[k]; return `${k}: DCF ${s.result.perShare.toFixed(2)}, weighted ${s.valuation ? s.valuation.perShare.toFixed(2) : "n/a"} per share, p=${pct(args.scenarioProbabilities[k].probability)}` + (s.result.terminalShare != null ? ` (terminal ${pct(s.result.terminalShare)})` : ""); };
+  const ms = result.managementScenario ?? null;
+  const ceilings = dimensionCeilings({ marginOfSafety: r.marginOfSafety, downsideCoverage: r.downsideCoverage, bearProbability: args.scenarioProbabilities.bear.probability, terminalShare, hasIndependentConsensus: !!consensus, impliedGap: result.implied?.gap ?? null, impliedGapThreshold: impliedThreshold(state), goingConcernUnresolved: goingConcernOf(state) === "unresolved" });
+  const methods = (result.methods ?? []).map(m => `${m.method} (weight ${pct(m.weight)}): ${m.base != null ? `${m.low!.toFixed(2)} / ${m.base.toFixed(2)} / ${m.high!.toFixed(2)}` : `not applied — ${m.notes[0] ?? "n/a"}`}`);
   const flagged = (result.gates ?? []).filter(g => g.status !== "pass");
   return [
-    `Calculated (${result.modelType}, ${result.horizonYears} years, r = ${pct(value)} ${d.basis}${baseline ? ", from components" : ", stated"}; economic shares ${money(result.shares.economic)}).`,
+    `Calculated (${result.modelType}, ${result.horizonYears} years, r = ${pct(value)} ${d.basis} from components; economic shares ${money(result.shares.economic)}).`,
     SCENARIO_KEYS.map(line).join("\n"),
-    `expected: ${r.expected != null ? r.expected.toFixed(2) : "n/a (no probabilities)"}; price ${r.price ?? "n/a"}; margin of safety ${r.marginOfSafety != null ? pct(r.marginOfSafety) : "n/a"}; downside coverage ${r.downsideCoverage != null ? pct(r.downsideCoverage) : "n/a"}`,
-    methods.length ? `cross-check (p25 / median / p75 of peers ${result.peers?.peers.join(", ") ?? ""}): ${methods.join("; ")}${result.triangulation ? `; weighted ${result.triangulation.low.toFixed(2)}–${result.triangulation.high.toFixed(2)}, base ${result.triangulation.base.toFixed(2)}` : ""}` : "cross-check: no peer multiples available",
+    ms ? `management (cited targets, computed by code): DCF ${ms.result.perShare.toFixed(2)}, weighted ${ms.valuation ? ms.valuation.perShare.toFixed(2) : "n/a"} per share, p=${pct(management.probability)}${ms.result.terminalShare != null ? ` (terminal ${pct(ms.result.terminalShare)})` : ""}; ${ms.anchors.filter(a => a.metric === "revenue").map(a => `FY${a.fiscalYear} revenue ${money(a.target)} in year ${a.year}`).join(", ")}` : "management scenario: none (no cited total-revenue target inside the horizon)",
+    `range (method-weighted): ${r.low.toFixed(2)} – ${r.base.toFixed(2)} – ${r.high.toFixed(2)}; expected (probability-weighted over bear/base/management/bull): ${r.expected != null ? r.expected.toFixed(2) : "n/a"}; price ${r.price ?? "n/a"}; margin of safety on the base ${r.marginOfSafety != null ? pct(r.marginOfSafety) : "n/a"}; downside coverage ${r.downsideCoverage != null ? pct(r.downsideCoverage) : "n/a"}`,
+    `methods on the base path (p25 / median / p75 of peers ${result.peers?.peers.join(", ") || "none"}): ${methods.join("; ")}${result.triangulation ? `; football field ${result.triangulation.low.toFixed(2)}–${result.triangulation.high.toFixed(2)}, base ${result.triangulation.base.toFixed(2)}` : ""}`,
+    result.managementComparison ? `management comparison: ${result.managementComparison.rows.map(row => `year ${row.year} (FY${row.fiscalYear}) base ${money(row.base)} vs target ${money(row.target)} (${row.gap >= 0 ? "+" : ""}${(row.gap * 100).toFixed(0)}%)`).join("; ")}` : "",
     result.implied ? `market-implied constant revenue growth: ${pct(result.implied.implied)} vs base average ${pct(result.implied.baseAverage)} (gap ${pct(result.implied.gap)}${result.implied.converged ? "" : ", not converged"})` : "",
-    ...(result.references ?? []).map(ref => `${ref.label}: DCF ${ref.result.perShare.toFixed(2)} per share (terminal ${ref.result.terminalShare != null ? pct(ref.result.terminalShare) : "n/a"})${ref.triangulation ? `, weighted ${ref.triangulation.base.toFixed(2)}` : ""}; ${ref.anchors.filter(a => a.metric === "revenue").map(a => `FY${a.fiscalYear} revenue ${money(a.target)} in year ${a.year}`).join(", ")}. Computed by code from cited targets; compared, never copied.`),
     `gates: ${(result.gates ?? []).length - flagged.length} pass${flagged.length ? `; ${flagged.map(g => `${g.key} ${g.status}: ${g.detail}`).join("; ")}` : ""}`,
-    `sensitivities: ${result.sensitivities.slice(0, 4).map(s => `${s.factor} ${s.step} → ${s.changePercent >= 0 ? "+" : ""}${s.changePercent.toFixed(1)}%`).join("; ")}`,
+    `sensitivities (base DCF): ${result.sensitivities.slice(0, 4).map(s => `${s.factor} ${s.step} → ${s.changePercent >= 0 ? "+" : ""}${s.changePercent.toFixed(1)}%`).join("; ")}`,
     placements.length ? `history: ${placements.join("; ")}` : "",
     `ceilings now in force: ${Object.entries(ceilings).map(([k, v]) => `${k} ≤ ${v}`).join(", ") || "none"}`,
     "Submit valuationSafety with submit_dimension, then finish_assumptions; or revise and calculate again.",
   ].filter(Boolean).join("\n");
 }
 
-/** What the calculator may compare the model against: facts, the RPO floor over the chosen horizon, peers, history and the trailing figures. */
-function calcContext(state: ValuationState, args: CalcArgs, consensus: ConsensusTarget | null): CalcContext {
+/** What the calculator may compare the model against: facts, the RPO floor over the chosen horizon, peers, history, the trailing figures and the judgements. */
+function calcContext(state: ValuationState, args: CalcArgs, consensus: ConsensusTarget | null, consensusNote: ConsensusNote): CalcContext {
   const fact = (id: string) => state.input.facts.find(f => f.id === id)?.value ?? null;
   const base = args.scenarios.base.drivers;
   const years = base.modelType === "fcff" ? base.path.revenueGrowth.length : MIN_FORECAST_YEARS;
   const rpo = state.input.rpo;
   const anchor = rpo && base.modelType === "fcff" ? anchorOf({ asOf: rpo.asOf, total: Number(rpo.total), buckets: rpo.buckets.map(b => ({ start: b.start, months: b.months, share: b.share == null ? null : Number(b.share) })) }, years, base.revenue0) : null;
   return {
-    facts: state.input.facts.map(f => ({ id: f.id, value: f.value, unit: f.unit })), riskFree: state.riskFree?.value ?? null, anchor, peers: state.peerMultiples, consensus, multipleHistory: state.multipleHistory,
-    trailing: { ebitda: fact("ebitda_ttm"), da: fact("da_ttm"), interestExpense: fact("interest_expense_ttm") }, forwardYears: args.forwardYears ?? 3, methodWeights: args.methodWeights ?? null, lifecycle: state.input.lifecycle,
-    management: state.input.management, periodEnd: state.input.financialPeriodEnd,
+    facts: state.input.facts.map(f => ({ id: f.id, value: f.value, unit: f.unit })), riskFree: state.riskFree?.value ?? null, anchor, peers: state.peerMultiples, consensus, consensusNote, multipleHistory: state.multipleHistory,
+    trailing: { ebitda: fact("ebitda_ttm"), da: fact("da_ttm"), interestExpense: fact("interest_expense_ttm") }, forwardYears: args.forwardYears, methodWeights: args.methodWeights, lifecycle: state.input.lifecycle,
+    management: state.input.management, periodEnd: state.input.financialPeriodEnd, scenarioProbabilities: args.scenarioProbabilities,
+    managementComparison: args.managementComparison ? { rationale: args.managementComparison.explanation, evidenceIds: args.managementComparison.evidenceIds } : null,
   };
 }
 
-const GATE_GAP: Partial<Record<string, ValuationGap["code"]>> = { terminal_share: "tv_share_high", terminal_growth: "terminal_growth_high", cited_inputs: "cited_input_mismatch", rpo_floor: "rpo_floor_breached", implied_multiple_vs_history: "implied_multiple_outside_history", method_dispersion: "method_dispersion", consensus_divergence: "consensus_divergence", non_negative_scenarios: "negative_scenario", management_targets: "management_target_gap" };
+const GATE_GAP: Partial<Record<string, ValuationGap["code"]>> = { terminal_share: "tv_share_high", terminal_growth: "terminal_growth_high", cited_inputs: "cited_input_mismatch", rpo_floor: "rpo_floor_breached", implied_multiple_vs_history: "implied_multiple_outside_history", method_dispersion: "method_dispersion", consensus_divergence: "consensus_divergence", consensus_unavailable: "unverified_consensus", non_negative_scenarios: "negative_scenario", management_targets: "management_target_gap", method_unavailable: "method_unavailable", method_zero_weight: "method_zero_weight" };
 /** Flagged gates as gaps the report carries; a passing gate leaves nothing behind. */
 export function gateGaps(gates: SanityGate[]): ValuationGap[] {
   return gates.flatMap(g => g.status === "pass" || !GATE_GAP[g.key] ? [] : [{ code: GATE_GAP[g.key]!, field: g.key, message: g.detail, evidenceIds: [] }]);
@@ -358,9 +413,9 @@ export function valuationTools(env: AnalysisEnv): AnyTool<ValuationState>[] {
         if (missing.length) throw new Error(`submit ${missing.join(", ")} first (score null with a gap is allowed)`);
         ctx.state.researchDone = true; return "Research recorded.";
       }, observe: (_a, v) => v }),
-    tool({ name: "calculate_valuation", description: `Run the calculator: one model, three coherent scenarios sharing one discount rate, a ${MIN_FORECAST_YEARS}–${MAX_FORECAST_YEARS} year path (fcff may add buildCapex ahead of revenue and a terminalOperatingMargin). Returns values, the peer-multiple cross-check, gates, the market-implied path and gaps; a failed gate is not recorded.`, parameters: calcSchema, strict: false, timeoutMs: 20_000,
+    tool({ name: "calculate_valuation", description: `Run the calculator: one model, three coherent scenarios sharing one discount rate built from sourced components, a ${MIN_FORECAST_YEARS}–${MAX_FORECAST_YEARS} year path (fcff may add buildCapex ahead of revenue and a terminalOperatingMargin), the judged method weights (sum 1) and scenario probabilities for bear/base/management/bull (sum 1), the management-target comparison and the consensus (or why none). Every field is required; a missing one is a schema error. Returns each scenario's DCF and method-weighted value, the management scenario, the expected value, the cross-check, gates, the market-implied path and gaps; a failed gate is not recorded.`, parameters: calcSchema, strict: false, timeoutMs: 20_000,
       execute: (args, ctx) => runCalculation(ctx.state, args), observe: (_a, v) => v }),
-    tool({ name: "declare_model_insufficient", description: "State that no model can be computed from the registered facts and say which inputs are missing.", parameters: z.object({ reason: z.string().min(20).max(600), missingFactIds: z.array(z.string().max(60)).max(10) }),
+    tool({ name: "declare_model_insufficient", description: "State that no model can be computed from the registered facts and say which inputs are missing.", parameters: z.object({ reason: z.string().min(20).max(600), missingFactIds: z.array(z.string().max(60)).min(1).max(10) }),
       execute: ({ reason, missingFactIds }, ctx) => { ctx.state.insufficient = reason; ctx.state.modelGaps = [{ code: "missing_inputs", message: reason, evidenceIds: [], field: missingFactIds.join(",") || undefined }]; ctx.state.calc = null; return "Recorded as insufficient; submit valuationSafety as null with the gap, then finish_assumptions."; }, observe: (_a, v) => v }),
     tool({ name: "finish_assumptions", description: "End the assumptions phase: a calculation (or a declared insufficiency) and the valuationSafety dimension are recorded.", parameters: z.object({}),
       execute: (_a, ctx) => {
@@ -368,8 +423,8 @@ export function valuationTools(env: AnalysisEnv): AnyTool<ValuationState>[] {
         if (!ctx.state.dimensions.has("valuationSafety")) throw new Error("submit valuationSafety first");
         ctx.state.assumptionsDone = true; return "Assumptions recorded.";
       }, observe: (_a, v) => v }),
-    tool({ name: "compose_valuation", description: "The written report: every figure must be one the calculator or a fact produced; cite evidence ids like [e1a2b3c4d5]. Keep each section within its limit: summary 1800, thesis 4000, expectations gap 3000 and model notes 3000 characters; list items 700 characters, at most 8 each.", parameters: z.object({
-        summary: z.string().min(60).max(1800), thesis: z.string().min(80).max(4000), expectationsGap: z.string().min(40).max(3000), catalysts: z.array(z.string().max(700)).max(8), counterEvidence: z.array(z.string().max(700)).max(8), nextChecks: z.array(z.string().max(700)).min(1).max(8), modelNotes: z.string().max(3000),
+    tool({ name: "compose_valuation", description: "The written report: every figure must be one the calculator or a fact produced; cite evidence ids like [e1a2b3c4d5]. Every section is required: at least one catalyst, one counter-evidence item and one next check; model notes name each method's value and weight with the reason, each scenario's probability with the reason, the management scenario and the consensus (or why none). Keep each section within its limit: summary 1800, thesis 4000, expectations gap 3000 and model notes 3000 characters; list items 700 characters, at most 8 each.", parameters: z.object({
+        summary: z.string().min(60).max(1800), thesis: z.string().min(80).max(4000), expectationsGap: z.string().min(40).max(3000), catalysts: z.array(z.string().max(700)).min(1).max(8), counterEvidence: z.array(z.string().max(700)).min(1).max(8), nextChecks: z.array(z.string().max(700)).min(1).max(8), modelNotes: z.string().min(120).max(3000),
         coreLogicFailed: z.boolean(), decisiveCounterEvidence: z.boolean(),
       }),
       execute: (args, ctx) => {

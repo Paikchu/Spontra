@@ -103,8 +103,12 @@ test("peer multiples: quartiles over the peers that answer; a peer without a quo
 test("triangulation and weights: methods renormalize over those applied, dispersion is max/min; weights default by life cycle", () => {
   const w = methodWeightsOf(null, "build");
   close(w.dcf, 0.5); close(w.ev_ebitda_forward, 0.3); close(w.pe_forward, 0.2);
-  close(methodWeightsOf({ dcf: 1, ev_ebitda_forward: 1, pe_forward: 0 }, "mature").dcf, 0.5);
+  close(methodWeightsOf({ dcf: 0.5, ev_ebitda_forward: 0.5, pe_forward: 0 }, "mature").dcf, 0.5);
+  // Explicit weights are judged, never renormalized: they must sum to 1 within the tolerance.
+  assert.throws(() => methodWeightsOf({ dcf: 1, ev_ebitda_forward: 1, pe_forward: 0 }, "mature"), (e: unknown) => e instanceof ValuationCalcError && /sum to 1/.test(e.message));
   assert.throws(() => methodWeightsOf({ dcf: 0, ev_ebitda_forward: 0, pe_forward: 0 }, "mature"), ValuationCalcError);
+  assert.throws(() => methodWeightsOf({ dcf: 0.5, ev_ebitda_forward: 0.5 }, "mature"), ValuationCalcError);
+  close(methodWeightsOf({ dcf: { weight: 0.7, rationale: "r", evidenceIds: [] }, ev_ebitda_forward: 0.3, pe_forward: 0 }, "mature").dcf, 0.7);
   const t = triangulate([
     { method: "dcf", label: "", low: 80, base: 100, high: 120, weight: 0.5, basis: "", notes: [] },
     { method: "ev_ebitda_forward", label: "", low: 150, base: 200, high: 250, weight: 0.3, basis: "", notes: [] },
@@ -143,8 +147,10 @@ test("gates: negative scenarios and terminal share above 100% fail, terminal gro
   assert.equal(gates.find(g => g.key === "non_negative_scenarios")!.status, "fail");
   assert.equal(gates.find(g => g.key === "terminal_growth")!.status, "flag");
   assert.equal(sanityGates({ result: heavy, riskFree: 0.04, anchor: null, consensus: null, triangulation: null, verification: null, impliedMultiple: null, multipleHistory: null, peers: null }).find(g => g.key === "terminal_growth")!.status, "fail");
-  // Gaps carry the flags and fails, never the passes.
-  assert.deepEqual(gateGaps(plain).map(g => g.code), ["method_dispersion"]);
+  // Gaps carry the flags and fails, never the passes; a missing consensus is said, never skipped.
+  assert.equal(plain.find(g => g.key === "consensus_unavailable")!.status, "flag");
+  assert.match(plain.find(g => g.key === "consensus_unavailable")!.detail, /^consensus unavailable/);
+  assert.deepEqual(gateGaps(plain).map(g => g.code), ["method_dispersion", "unverified_consensus"]);
 });
 
 const crossCheckPeers = peerMultiplesOf([
@@ -175,7 +181,7 @@ for (const [label, context] of Object.entries<NonNullable<CalcRequest["context"]
 
 for (const [label, peers] of Object.entries({ agreeing: crossCheckPeers, dispersed: { ...crossCheckPeers, evToEbitda: { p25: 100, median: 120, p75: 140, count: 2 } } })) {
   test(`calculateValuation checks dispersion with two applied methods: ${label}`, () => {
-    const result = calculateValuation(request(5, { context: { peers, trailing: crossCheckTrailing, methodWeights: { dcf: 1, ev_ebitda_forward: 1, pe_forward: 0 } } }));
+    const result = calculateValuation(request(5, { context: { peers, trailing: crossCheckTrailing, methodWeights: { dcf: 0.5, ev_ebitda_forward: 0.5, pe_forward: 0 } } }));
     assert.ok(result.methods!.every(m => m.base != null), "all rows have values, but the zero-weight method is excluded");
     assert.equal(Object.values(result.triangulation!.weights).filter(w => w > 0).length, 2);
     const gate = result.gates!.find(g => g.key === "method_dispersion")!;

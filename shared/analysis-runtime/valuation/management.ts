@@ -1,4 +1,4 @@
-import type { ManagementTarget, ManagementTargetSet, ModelDrivers, ReferenceScenario, SanityGate } from "../../analysis-contract/valuation.ts";
+import type { ManagementComparisonRow, ManagementTarget, ManagementTargetSet, ModelDrivers, ReferenceScenario, SanityGate } from "../../analysis-contract/valuation.ts";
 import type { CalcRequest } from "./calculator.ts";
 
 /**
@@ -142,15 +142,20 @@ export function managementCapexShape(set: ManagementTargetSet, periodEnd: string
   });
 }
 
-/** The base revenue path against the total-revenue targets: flagged when more than the limit under a target, or above it beyond the tolerance. */
-export function managementGate(base: Fcff, set: ManagementTargetSet, periodEnd: string): SanityGate | null {
+/** The base revenue path against the total-revenue targets the horizon covers: one row per target year with the base figure and the gap (base / target − 1). */
+export function managementComparisonRows(base: Fcff, set: ManagementTargetSet, periodEnd: string): ManagementComparisonRow[] {
   const years = base.path.revenueGrowth.length;
   const targets = [...byYear(set, periodEnd, years, "revenue").entries()].sort((a, b) => a[0] - b[0]);
-  if (!targets.length) return null;
   let revenue = base.revenue0;
   const path: number[] = [];
   for (const g of base.path.revenueGrowth) { revenue *= 1 + g; path.push(revenue); }
-  const rows = targets.map(([year, t]) => ({ year, fiscalYear: t.fiscalYear, target: t.value, base: path[year - 1]!, gap: path[year - 1]! / t.value - 1 }));
+  return targets.map(([year, t]) => ({ metric: "revenue" as const, year, fiscalYear: t.fiscalYear, target: t.value, base: path[year - 1]!, gap: path[year - 1]! / t.value - 1 }));
+}
+
+/** The base revenue path against the total-revenue targets: flagged when more than the limit under a target, or above it beyond the tolerance. */
+export function managementGate(base: Fcff, set: ManagementTargetSet, periodEnd: string): SanityGate | null {
+  const rows = managementComparisonRows(base, set, periodEnd);
+  if (!rows.length) return null;
   const worst = rows.reduce((a, b) => Math.abs(b.gap) > Math.abs(a.gap) ? b : a);
   const under = rows.filter(r => r.gap < -MANAGEMENT_DISCOUNT_FLAG), over = rows.filter(r => r.gap > MANAGEMENT_PREMIUM_FLAG);
   const detail = rows.map(r => `year ${r.year} (FY${r.fiscalYear}) base ${(r.base / 1e9).toFixed(1)}B vs management ${(r.target / 1e9).toFixed(1)}B (${r.gap >= 0 ? "+" : ""}${(r.gap * 100).toFixed(0)}%)`).join("; ");
@@ -165,9 +170,9 @@ export function managementFactsOf(facts: Array<{ id: string; value: number }>, r
   return { revenue0, operatingMargin0: fact("operating_margin_ttm"), sbcToRevenue: fact("sbc_ttm") != null && revenue > 0 ? fact("sbc_ttm")! / revenue : null, da0: fact("da_ttm"), capex0: fact("capex_ttm") != null ? Math.abs(fact("capex_ttm")!) : null };
 }
 
-/** A request whose three scenarios are the management path, for the cross-check and the per-share value under the shared rate, shares and bridge. */
+/** A request whose three scenarios are the management path, for its own cross-check under the shared rate, shares and bridge; the judged probabilities, the comparison and the consensus belong to the researched model and stay out. */
 export function managementRequest(request: CalcRequest, drivers: Fcff): CalcRequest {
   const scenario = (narrative: string) => ({ narrative, probability: null, triggers: [], invalidation: [], evidenceIds: [], drivers });
-  const { management: _m, ...context } = request.context ?? {};
+  const { management: _m, scenarioProbabilities: _p, managementComparison: _c, consensusNote: _n, ...context } = request.context ?? {};
   return { ...request, scenarios: { bear: scenario("management case"), base: scenario("management case"), bull: scenario("management case") }, context: { ...context, consensus: null } };
 }
