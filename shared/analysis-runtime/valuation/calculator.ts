@@ -331,7 +331,7 @@ export function calculateValuation(request: CalcRequest): ValuationModelResult {
   const references = managementReferences(request, r, shares.economic, c);
   const management = c.management && c.periodEnd && baseDrivers.modelType === "fcff" ? managementGate(baseDrivers, c.management, c.periodEnd) : null;
   const gates = sanityGates({ result, riskFree: c.riskFree ?? null, anchor: c.anchor ?? null, consensus: c.consensus ?? null, triangulation, verification, impliedMultiple, multipleHistory, peers: c.peers ?? null, management });
-  if (methods.length === 1) limitations.push("No forward-multiple cross-check: the ranking peers' multiples were not available.");
+  if (appliedMethodCount(triangulation) < 2) limitations.push("No forward-multiple cross-check: fewer than two valuation methods have usable values and positive weights.");
   return finiteResult({ ...result, methods, triangulation, gates, anchors: { revenue: c.anchor ?? null }, verification, peers: c.peers ?? null, consensus: c.consensus ?? null, ...(references.length ? { references } : {}) }, "valuation result");
 }
 
@@ -422,6 +422,9 @@ export function methodWeightsOf(explicit: Partial<Record<ValuationMethodKey, num
   for (const key of VALUATION_METHODS) chosen[key] = chosen[key] / total;
   return chosen;
 }
+
+/** Triangulation weights are positive only for methods with usable values that contributed to the result. */
+const appliedMethodCount = (triangulation: Triangulation | null): number => triangulation ? Object.values(triangulation.weights).filter(w => w > 0).length : 0;
 
 /** The football field: method weights renormalized over the methods that applied; dispersion is max/min of the bases. */
 export function triangulate(methods: MethodValuation[]): Triangulation | null {
@@ -542,8 +545,9 @@ export function sanityGates(input: { result: ValuationModelResult; riskFree: num
     const outside = input.impliedMultiple < h.min || input.impliedMultiple > h.max;
     gate("implied_multiple_vs_history", outside ? "flag" : "pass", `base value implies ${input.impliedMultiple.toFixed(1)}x trailing EBITDA; the company traded at ${h.min.toFixed(1)}–${h.max.toFixed(1)}x (median ${h.median.toFixed(1)}x) over ${h.periods.length} weeks`, input.impliedMultiple, outside ? (input.impliedMultiple < h.min ? h.min : h.max) : null);
   }
-  if (input.triangulation?.dispersion != null) gate("method_dispersion", input.triangulation.dispersion > DISPERSION_LIMIT ? "flag" : "pass", `method bases span ${input.triangulation.dispersion.toFixed(2)}x`, input.triangulation.dispersion, DISPERSION_LIMIT);
-  else if (input.peers == null) gate("method_dispersion", "flag", "single method: no peer multiples to cross-check against");
+  const methodCount = appliedMethodCount(input.triangulation);
+  if (methodCount < 2) gate("method_dispersion", "flag", `${methodCount === 1 ? "single method" : "no applied methods"}: fewer than two valuation methods have usable values and positive weights`);
+  else if (input.triangulation?.dispersion != null) gate("method_dispersion", input.triangulation.dispersion > DISPERSION_LIMIT ? "flag" : "pass", `method bases span ${input.triangulation.dispersion.toFixed(2)}x`, input.triangulation.dispersion, DISPERSION_LIMIT);
   if (input.management) gates.push(input.management);
   if (input.consensus && input.consensus.mean > 0) {
     const divergence = result.range.base / input.consensus.mean - 1;

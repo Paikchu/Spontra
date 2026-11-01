@@ -147,6 +147,46 @@ test("gates: negative scenarios and terminal share above 100% fail, terminal gro
   assert.deepEqual(gateGaps(plain).map(g => g.code), ["method_dispersion"]);
 });
 
+const crossCheckPeers = peerMultiplesOf([
+  { ticker: "A", price: 100, shares: 10, ebitda: 100, coreEarnings: 50, netDebt: 200 },
+  { ticker: "B", price: 100, shares: 10, ebitda: 100, coreEarnings: 50, netDebt: 200 },
+], "2026-10-31")!;
+const crossCheckTrailing = { ebitda: 250, da: 50, interestExpense: 10 };
+
+for (const [label, context] of Object.entries<NonNullable<CalcRequest["context"]>>({
+  "no peers": { peers: null, trailing: crossCheckTrailing },
+  "one peer without quartiles": { peers: peerMultiplesOf([{ ticker: "A", price: 100, shares: 10, ebitda: 100, coreEarnings: 50, netDebt: 200 }], "2026-10-31"), trailing: crossCheckTrailing },
+  "peer multiples without usable forward metrics": { peers: crossCheckPeers },
+  "usable forward methods with zero weights": { peers: crossCheckPeers, trailing: crossCheckTrailing, methodWeights: { dcf: 1, ev_ebitda_forward: 0, pe_forward: 0 } },
+  "no applied methods": { peers: null, trailing: crossCheckTrailing, methodWeights: { dcf: 0, ev_ebitda_forward: 1, pe_forward: 0 } },
+})) {
+  test(`calculateValuation flags a missing method cross-check: ${label}`, () => {
+    const result = calculateValuation(request(5, { context }));
+    assert.equal(result.methods!.length, 3, "unavailable method rows remain visible");
+    const applied = result.triangulation ? Object.values(result.triangulation.weights).filter(w => w > 0).length : 0;
+    assert.equal(applied, label === "no applied methods" ? 0 : 1);
+    const gate = result.gates!.find(g => g.key === "method_dispersion")!;
+    assert.equal(gate.status, "flag", "fewer than two applied methods cannot pass the cross-check");
+    assert.match(gate.detail, applied === 1 ? /single method/i : /no applied methods/i);
+    assert.ok(result.limitations.some(l => /no forward-multiple cross-check/i.test(l)));
+    assert.deepEqual(gateGaps([gate]), [{ code: "method_dispersion", field: "method_dispersion", message: gate.detail, evidenceIds: [] }]);
+  });
+}
+
+for (const [label, peers] of Object.entries({ agreeing: crossCheckPeers, dispersed: { ...crossCheckPeers, evToEbitda: { p25: 100, median: 120, p75: 140, count: 2 } } })) {
+  test(`calculateValuation checks dispersion with two applied methods: ${label}`, () => {
+    const result = calculateValuation(request(5, { context: { peers, trailing: crossCheckTrailing, methodWeights: { dcf: 1, ev_ebitda_forward: 1, pe_forward: 0 } } }));
+    assert.ok(result.methods!.every(m => m.base != null), "all rows have values, but the zero-weight method is excluded");
+    assert.equal(Object.values(result.triangulation!.weights).filter(w => w > 0).length, 2);
+    const gate = result.gates!.find(g => g.key === "method_dispersion")!;
+    assert.equal(gate.status, label === "agreeing" ? "pass" : "flag");
+    assert.equal(gate.value, result.triangulation!.dispersion);
+    assert.match(gate.detail, /method bases span/);
+    assert.equal(result.limitations.some(l => /no forward-multiple cross-check/i.test(l)), false);
+    assert.equal(gateGaps([gate]).length, label === "agreeing" ? 0 : 1);
+  });
+}
+
 test("calculateValuation with a context: methods, triangulation, gates, verification and the anchor ride on the result; a v2 payload reads back", () => {
   const facts = [{ id: "revenue_ttm", value: 1000, unit: "USD" }, { id: "shares_diluted_weighted", value: 100, unit: "shares" }, { id: "debt", value: 200, unit: "USD" }, { id: "cash", value: 300, unit: "USD" }];
   const peers = { peers: ["A", "B"], asOf: "2026-10-31", evToEbitda: { p25: 10, median: 12, p75: 14, count: 2 }, peRatio: { p25: 18, median: 20, p75: 22, count: 2 }, notes: [] };
