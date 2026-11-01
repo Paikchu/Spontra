@@ -86,13 +86,19 @@ test("with reports switched off the events route still lists every filing, witho
   assert.deepEqual(hidden.events.events.map(e => [e.id, e.summary]), [["0001-26-000001", null]]);
 });
 
-test("before the table exists the defaults stand, and a switch writes both stored bits together", async () => {
+test("missing settings tables reject reads, and a switch writes both stored bits together", async () => {
   const unmigrated = fakeDb([], false);
-  assert.equal(await featureShown(unmigrated.db, deployment, "ORCL", "findings"), true);
-  assert.equal(await featureShown(unmigrated.db, deployment, "AAPL", "findings"), false);
+  await assert.rejects(featureShown(unmigrated.db, deployment, "ORCL", "findings"), /no such table/);
+  await assert.rejects(featureShown(unmigrated.db, deployment, "AAPL", "findings"), /no such table/);
   const { db, writes } = fakeDb([]);
   await writeFeatureSetting(db, "ORCL", "reports", false, "2026-10-17T00:00:00Z");
   assert.deepEqual(writes[0]!.binds, ["ORCL", "reports", 0, 0, "2026-10-17T00:00:00Z"]);
   await writeFeatureSetting(db, "*", "tree", true, "2026-10-17T00:00:00Z");
   assert.deepEqual(writes[1]!.binds, ["*", "tree", 1, null, "2026-10-17T00:00:00Z"]);
+});
+
+test("A20: a display query failure cannot enable a feature from deployment defaults", async () => {
+  const { db } = fakeDb([], false);
+  await assert.rejects(featureShown(db, deployment, "ORCL", "findings"), /business_feature_settings/);
+  await assert.rejects(shownFilter(db, deployment, "findings"), /business_feature_settings/);
 });

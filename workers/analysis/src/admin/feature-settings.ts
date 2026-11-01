@@ -5,7 +5,7 @@ import { defaultFeatureResolution } from "../financial-data/company-policy.ts";
  * The admin's feature switches as stored (`business_feature_settings`, docs/whitelist-feature-switches-design.md). One
  * switch per company and feature: on generates the feature and shows it, off stops generating and hides what was written
  * (it stays stored). Generation is resolved into the environment by company-policy.ts; reads here are the display side.
- * A company without a row follows the deployment's default list; a table not yet migrated reads as no rows.
+ * A company without a row follows the deployment's default list. Query failures propagate so stored choices cannot be replaced by defaults.
  */
 /** The deployment lists the read path knows (the MapReads binding sees the vars, never the resolved environment). */
 export type FeatureDefaultsEnv = { SEC_AI_TICKERS?: string; SEC_AI_ENABLED?: string; BUSINESS_TREE_TICKERS?: string; BUSINESS_TREE_ENABLED?: string; VALUATION_TICKERS?: string; VALUATION_ENABLED?: string };
@@ -19,8 +19,8 @@ export async function featureShown(db: D1Database, env: FeatureDefaultsEnv, tick
 export async function shownFilter(db: D1Database, env: FeatureDefaultsEnv, feature: Feature, ticker?: string): Promise<(ticker: string) => boolean> {
   // `display` decides where set: a failed run stops generation (messages.ts) and leaves what was written shown.
   const rows = await db.prepare(`SELECT ticker, coalesce(display, generate) shown FROM business_feature_settings WHERE feature = ? AND ticker <> '*' AND coalesce(display, generate) IS NOT NULL${ticker ? " AND ticker = ?" : ""}`)
-    .bind(...(ticker ? [feature, ticker] : [feature])).all<{ ticker: string; shown: number }>().catch(() => null);
-  const stored = new Map((rows?.results ?? []).map(r => [r.ticker, !!r.shown]));
+    .bind(...(ticker ? [feature, ticker] : [feature])).all<{ ticker: string; shown: number }>();
+  const stored = new Map(rows.results.map(r => [r.ticker, !!r.shown]));
   const defaults = new Set(defaultFeatureResolution(env).tickers[feature]);
   return t => stored.get(t) ?? defaults.has(t);
 }

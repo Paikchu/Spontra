@@ -27,10 +27,10 @@ test("the admin's feature switches override each feature's default list per comp
   const again = await companyPolicyEnvironment(env);
   assert.deepEqual(featureTickersFor(again, "reports"), ["GOOGL", "ORCL"]);
   assert.deepEqual(featureTickersFor(again, "tree"), ["AMZN", "ORCL"]);
-  // Before the table exists the deployment defaults stand.
-  const unmigrated = await companyPolicyEnvironment({ ...base, DB: fakeDb([], null) });
-  assert.deepEqual(trackedTickersFor(unmigrated), ["NET", "ORCL"]);
-  assert.deepEqual(featureTickersFor(unmigrated, "tree"), ["AMZN", "NET", "ORCL"]);
+  await assert.rejects(companyPolicyEnvironment({ ...base, DB: fakeDb([], null) }), /no such table/);
+  const unset = await companyPolicyEnvironment({ ...base, DB: fakeDb([], []) });
+  assert.deepEqual(trackedTickersFor(unset), ["NET", "ORCL"]);
+  assert.deepEqual(featureTickersFor(unset, "tree"), ["AMZN", "NET", "ORCL"]);
 });
 
 test("a feature's global switch empties its list without touching the others", async () => {
@@ -64,4 +64,15 @@ test("company names drop their listing's share-class wording", async () => {
   assert.equal(companyName("ORCL"), "Oracle Corporation");
   assert.equal(companyName("TSM"), "Taiwan Semiconductor Manufacturing Company Ltd.");
   assert.equal(companyName("ZZZZZZ"), null);
+});
+
+test("A20: a generation settings query failure cannot restore deployment defaults", async () => {
+  const db = { prepare(sql: string) {
+    const statement = { bind() { return statement; }, async all() {
+      if (sql.includes("business_feature_settings")) throw new Error("settings database unavailable");
+      return { results: [] };
+    } };
+    return statement;
+  } } as unknown as D1Database;
+  await assert.rejects(companyPolicyEnvironment({ DB: db, SEC_AI_TICKERS: "ORCL", SEC_AI_ENABLED: "true" }), /settings database unavailable/);
 });
