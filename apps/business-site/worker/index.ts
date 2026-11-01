@@ -460,9 +460,9 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
    // Fundamentals with no quarterly metric answer "unavailable" with the reason, the series (year-end balances) still attached.
    {const body=await loadFundamentals(match[1],fetcher);const response=json({schemaVersion:"fundamentals-response.v1",status:body&&!body.unavailable?"ready":"unavailable",...(body?.unavailable?{reason:body.unavailable.reason}:{}),fundamentals:body});if(!body)response.headers.set("cache-control","no-store");if(cache&&body)ctx.waitUntil(cache.put(key,response.clone()));return response;}
   }
-  try{const [flow,explainer,guidance,tree]=await Promise.all([loadPublicFlow(match[1],fetcher,locale),loadExplainer(match[1],fetcher,locale),loadGuidance(match[1],fetcher,locale),loadTree(match[1],fetcher,locale)]);const response=json({...flow,explainer,guidance,tree});
+  try{const [flow,explainer,guidance,tree]=await Promise.all([loadPublicFlow(match[1],fetcher,locale),loadExplainer(match[1],fetcher,locale),loadGuidance(match[1],fetcher,locale),loadTree(match[1],fetcher,locale)]);const response=moduleJson({...flow,explainer,guidance,tree});
    // An incomplete answer is never cached, so one slow upstream read cannot pin "preparing" for a minute.
-   const cacheable=flow.status==="ready";
+   const cacheable=flow.status==="ready"&&!readFailureStatus;
    if(!cacheable)response.headers.set("cache-control","no-store");
    if(cache&&cacheable)ctx.waitUntil(cache.put(key,response.clone()));return response;}catch{return readFailureStatus?moduleJson({error:"Public company data temporarily unavailable"}):json({error:"Public company data temporarily unavailable"},503);}
  }
