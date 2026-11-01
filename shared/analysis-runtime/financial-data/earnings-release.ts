@@ -385,8 +385,10 @@ function build(statement: Table, tables: Table[], previous: BusinessFlowQuarter,
   if (previous.figures.operatingExpenses) {
     const like = previous.figures.operatingExpenses;
     if (previous.incomeModel === "financial") figures.operatingExpenses = derived(sum(expenseComponents), like, expenseComponents.map(c => c.amount), "Release noninterest expense + release provision for credit losses");
-    else if (previous.incomeModel === "standard") figures.operatingExpenses = num(figures.gross) != null && num(figures.operating) != null
-      ? derived(num(figures.gross)! - num(figures.operating)!, like, [figures.gross!, figures.operating!], "Release gross profit − release operating income (total operating expenses)") : undefined as never;
+    else if (previous.incomeModel === "standard") {
+      if (num(figures.gross) != null && num(figures.operating) != null)
+        figures.operatingExpenses = derived(num(figures.gross)! - num(figures.operating)!, like, [figures.gross!, figures.operating!], "Release gross profit − release operating income (total operating expenses)");
+    }
     else if (rows.operatingTotal) figures.operatingExpenses = amountOf(rows.operatingTotal, like, "operatingExpenses");
   }
   if (previous.figures.other && num(figures.pretax) != null && num(figures.operating) != null)

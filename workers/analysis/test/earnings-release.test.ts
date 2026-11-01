@@ -15,6 +15,32 @@ const source = (cik: string, accession: string, filedAt: string): DocumentSource
 const millions = (n: number) => n * 1e6;
 const quarters = (name: string, src: DocumentSource) => extractRevenueHistory(fixture(name), src, "8-K").quarters.map(q => [q.periodStart, q.periodEnd, Number(q.revenue)]).sort((a, b) => String(a[1]).localeCompare(String(b[1])));
 
+test("standard releases derive operating expenses only when gross profit and operating income are available", () => {
+  const previous = JSON.parse(fixture("meta-q2-2026-quarter.json")) as BusinessFlowQuarter;
+  const read = (prior: BusinessFlowQuarter) => releaseQuarter(
+    [{ url: "https://www.sec.gov/Archives/edgar/data/1326801/000162828026066700/meta-09302026xexhibit991.htm", html: fixture("meta-q3-2026.htm") }], prior,
+    { accession: "0001628280-26-066700", filedAt: "2026-10-21", parserVersion: "test" },
+  );
+  const result = read(previous);
+  assert.deepEqual(result.issues, []);
+  assert.ok(result.quarter);
+  for (const quarter of [result.quarter, JSON.parse(JSON.stringify(result)).quarter]) {
+    assert.equal(quarter.figures.operatingExpenses.value, "38244000000");
+    assert.equal(quarter.figures.operatingExpenses.basis, "derived");
+    assert.equal(quarter.figures.operatingExpenses.formula, "Release gross profit − release operating income (total operating expenses)");
+  }
+  // Only figures established by the previous quarter are read or derived from the release.
+  for (const input of ["gross", "operating"] as const) {
+    const figures = { ...previous.figures };
+    delete figures[input];
+    delete figures.other; // Keep the missing-input check focused on operating expenses.
+    const missing = read({ ...previous, figures });
+    const expected = { quarter: null, issues: ["RELEASE_FIGURE_MISSING:operatingExpenses", "RELEASE_FIGURE_MISSING:cost"] };
+    assert.deepEqual(missing, expected);
+    assert.equal(JSON.stringify(missing), JSON.stringify(expected));
+  }
+});
+
 test("CoreWeave's fourth quarter is read from its release, past the non-GAAP paragraph before the statement", () => {
   assert.deepEqual(quarters("crwv-q4-2025.htm", source("0001769628", "0001769628-26-000094", "2026-02-26")), [
     ["2024-10-01", "2024-12-31", millions(747)],
