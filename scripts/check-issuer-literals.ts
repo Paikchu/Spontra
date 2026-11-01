@@ -43,7 +43,8 @@ export function checkIssuerLiterals(file: string, source: string): string[] {
     if (listed.filter(e => e.text.length > 1).length >= 3 && !sanctioned(node)) errors.push(`${at(node)}: list of tickers`);
     if (ts.isObjectLiteralExpression(node) && !sanctioned(node)) {
       const keys = node.properties.flatMap(p => p.name && (ts.isIdentifier(p.name) || ts.isStringLiteralLike(p.name)) ? [p.name.text] : []);
-      if (keys.filter(k => TICKER.test(k) && !VOCABULARY.has(k)).length >= 3) errors.push(`${at(node)}: record keyed by tickers`);
+      // Single-letter keys are a code table (insider transaction codes), as single-letter list entries are.
+      if (keys.filter(k => TICKER.test(k) && k.length > 1 && !VOCABULARY.has(k)).length >= 3) errors.push(`${at(node)}: record keyed by tickers`);
     }
     ts.forEachChild(node, visit);
   }
@@ -68,7 +69,7 @@ export function selfTest(): string[] {
   const flagged = (source: string) => checkIssuerLiterals("shared/example.ts", source).length;
   const must = [`const profiled = (cik: string) => cik === "0000000123";`, `if (ticker !== "ACME") return q;`, `if (row.ticker === "ACME") return q;`,
     `const FEATURED = ["AAA", "BBB", "CCC"];`, `const ISSUERS = { AAA: 1, BBB: 2, CCC: 3 };`];
-  const mustNot = [`const P = ["FY", "Q1", "Q2", "Q3"]; const C = { USD: 1, EUR: 2, JPY: 3 };`, `const CODES = new Set(["S", "P", "M", "F"]);`, `if (row.ticker === "*") return;`];
+  const mustNot = [`const P = ["FY", "Q1", "Q2", "Q3"]; const C = { USD: 1, EUR: 2, JPY: 3 };`, `const CODES = new Set(["S", "P", "M", "F"]);`, `const LABEL = { S: "Sale", P: "Purchase", M: "Exercise" };`, `if (row.ticker === "*") return;`];
   return [...must.filter(s => flagged(s) !== 1).map(s => `issuer check missed: ${s}`), ...mustNot.filter(s => flagged(s) !== 0).map(s => `issuer check flagged: ${s}`)];
 }
 

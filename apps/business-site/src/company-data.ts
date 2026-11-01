@@ -10,6 +10,7 @@ import type { FindingPassage, FindingsPublication } from "@/shared/analysis-cont
 import type { ItemAnalysis } from "@/shared/analysis-contract/item-analysis";
 import type { PeersPublication } from "@/shared/analysis-contract/peers";
 import type { EventsPublication } from "@/shared/analysis-contract/events";
+import type { InsiderTransactionsPage, InsidersPublication } from "@/shared/analysis-contract/insiders";
 import type { ValuationEvidence, ValuationPublication, ValuationResponse } from "@/shared/analysis-contract/valuation";
 import { getLocale } from "@/packages/web/src/i18n";
 import { rememberIssuer } from "@/shared/analysis-runtime/fiscal-label";
@@ -124,6 +125,24 @@ export async function fetchItemAnalysis(ticker: string, id: string, signal: Abor
   if (!response.ok) return null;
   const body = await response.json() as { status?: string; analysis?: ItemAnalysis | null };
   return body.status === "ready" && body.analysis ? body.analysis : null;
+}
+
+/** Insider trades by person, or null while the backend has none for the company (the page groups the rail's own filings instead). */
+export async function fetchInsiders(ticker: string, signal: AbortSignal): Promise<InsidersPublication | null> {
+  const response = await fetch(companyPath(ticker, "/insiders"), { signal });
+  if (!response.ok) return null;
+  const body = await response.json() as { status?: string; insiders?: InsidersPublication | null };
+  return body.status === "ready" && body.insiders ? body.insiders : null;
+}
+
+/** One page of a person's Form 4 lines, newest first; `cursor` continues from the previous page. Null when the read failed. */
+export async function fetchInsiderHistory(ticker: string, personKey: string, cursor: string | null, signal: AbortSignal): Promise<InsiderTransactionsPage | null> {
+  // The figures are the filings' own, so the page is read without a locale; only the cursor keys it.
+  const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
+  const response = await fetch(`/api/business/v1/companies/${encodeURIComponent(ticker)}/insiders/${encodeURIComponent(personKey)}/transactions${query}`, { signal });
+  if (!response.ok) return null;
+  const body = await response.json() as { status?: string; transactions?: InsiderTransactionsPage | null };
+  return body.status === "ready" && body.transactions ? body.transactions : null;
 }
 
 /** The drawable flow: the published pair plus the archived report quarters, or null while the statement is incomplete. */

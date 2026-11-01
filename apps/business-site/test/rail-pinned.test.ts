@@ -9,7 +9,8 @@ import { setLocale } from "../../../packages/web/src/i18n/core.ts";
 import { readEventsPublication } from "../../../shared/analysis-runtime/events.ts";
 import { railEntries } from "../../../shared/analysis-runtime/rail.ts";
 import { railLayout, releasedPeriod, rowLeaves, streamRows, type EventFilter } from "../src/event-noise.ts";
-import { InsiderSummaryCard, RailStream } from "../src/RailStream.tsx";
+import { personsFromEvents } from "../../../shared/analysis-runtime/insiders.ts";
+import { RailStream } from "../src/RailStream.tsx";
 
 // The rail reads the clock, so the CRWV-like fixture is dated from today.
 const NOW = new Date();
@@ -23,7 +24,9 @@ const form4 = (id: string, day: string, [cik, name]: [string, string], sold: num
   id, form: "4", class: "insider", filedAt: day,
   insider: {
     ownerCik: cik, ownerName: name, title: "Chief Executive Officer", isDirector: false, isOfficer: true, isTenPercentOwner: false,
-    rule10b51: !!extra.plan, planAdoptedOn: null, securityTitle: "Class A", lines: [],
+    rule10b51: !!extra.plan, planAdoptedOn: null, securityTitle: "Class A",
+    lines: sold ? [{ date: day, code: "S", acquiredDisposed: "D", shares: sold / 100, price: 100, ownedAfter: 1, ownership: "D", derivative: false }]
+      : extra.exercised ? [{ date: day, code: "M", acquiredDisposed: "A", shares: extra.exercised, price: null, ownedAfter: 1, ownership: "D", derivative: false }] : [],
     sold: sold ? { shares: sold / 100, proceeds: sold, averagePrice: 100 } : null, bought: null,
     exercised: extra.exercised ?? 0, heldAfter: 1, footnotes: [],
   },
@@ -66,76 +69,70 @@ const shortDay = (day: string) => `${day.slice(5, 7)}.${day.slice(8, 10)}`;
 
 /** The ids the default list shows, the card counted as one row and its folded rows left out. */
 const listed = (filter: EventFilter, findings: VerifiedFinding[] = [], periodEnd: string | null = null) =>
-  streamRows(railLayout(ALL, filter, NOW), findings, periodEnd, filter).flatMap(r => r.kind === "noise" ? rowLeaves(r.row).map(item => item.id) : [r.id]);
+  streamRows(railLayout(ALL, filter), findings, periodEnd, filter).flatMap(r => r.kind === "noise" ? rowLeaves(r.row).map(item => item.id) : [r.id]);
 
 const render = (filter: EventFilter, focus: string | null = null, findings: VerifiedFinding[] = [], periodEnd: string | null = null) => renderToStaticMarkup(createElement(RailStream, {
   rail: { recent: ALL, earlier: [], quiet: 0, since: ago(90) }, findings, findingsPeriodEnd: periodEnd, ticker: "CRWV", updates: 0, focus,
   onFocusItem: () => {}, onFocusFinding: () => {}, filter,
 }));
 
-test("with the insider card shown, no Form 4 of any age lists outside it; its figures stay the 90 days", () => {
+test("with the insider card shown, no Form 4 of any age lists outside it; the card groups them by person", () => {
   for (const filter of ["key", "all"] as const) {
     const ids = listed(filter);
-    assert.deepEqual(ids.slice(0, 2), ["earnings-8k", "insider-summary"], filter);
+    assert.deepEqual(ids.slice(0, 2), ["earnings-8k", "insiders"], filter);
     assert.ok(!ids.some(id => IN_WINDOW.includes(id) || OLDER_IDS.includes(id)), filter);
-    const summary = railLayout(ALL, filter, NOW).summary!;
-    // The card holds every one of them, the exercise and the older sales included, but sums only the window's trades.
-    assert.deepEqual(summary.items.map(item => item.id).sort(), [...IN_WINDOW, ...OLDER_IDS].sort(), filter);
-    assert.equal(summary.sold, 920_000_000);
-    assert.equal(summary.people.length, 3);
+    const card = railLayout(ALL, filter).insiders!;
+    // The card holds every one of them, the exercise and the older sales included.
+    assert.deepEqual(card.items.map(item => item.id).sort(), [...IN_WINDOW, ...OLDER_IDS].sort(), filter);
   }
-  // No card in the Insiders reading: its per-person rows list as before.
-  const insiders = streamRows(railLayout(ALL, "insiders", NOW), [], null, "insiders");
-  assert.ok(!insiders.some(r => r.kind === "insiders"));
-  assert.ok(insiders.flatMap(r => r.kind === "noise" ? rowLeaves(r.row).map(item => item.id) : []).includes("intrator-1"));
+  const persons = personsFromEvents(ALL.flatMap(item => item.kind === "event" && item.event.insider ? [item.event] : []), NOW);
+  // Latest trade first; Intrator's six sales, of any age, are one person with one net figure.
+  assert.deepEqual(persons.map(p => [p.name, p.filings, p.sold.count]), [["Intrator Michael", 6, 6], ["Magnetar Financial LLC", 1, 1], ["Agarwal Nitin", 1, 1], ["McVeety Chen", 1, 0]]);
+  assert.equal(persons[0]!.sold.value, 620_000_000);
+  assert.equal(persons[0]!.latest!.date, ago(10));
+  // The Insiders reading is the same card, alone.
+  const insiders = streamRows(railLayout(ALL, "insiders"), [], null, "insiders");
+  assert.deepEqual(insiders.map(r => r.kind), ["insiders"]);
 });
 
-test("the card's trade rows render only behind Show all, and collapse again", () => {
+test("a person's history renders only once their row is open, and a trade in focus opens it", () => {
   for (const locale of ["en", "zh-CN"] as const) {
     setLocale(locale);
     const html = render("key");
-    assert.ok(html.includes(locale === "en" ? "Show all 3" : "展开全部 3 人"));
-    assert.ok(html.includes('aria-expanded="false"'));
-    assert.ok(!html.includes(locale === "en" ? "Sold 4 times in 90 days" : "90 天内卖出 4 笔"), locale);
-    assert.ok(!html.includes("Open-market sale") && !html.includes("公开市场卖出"));
-    assert.ok(!OLDER_IDS.some(id => html.includes(id)) && !html.includes(shortDay(ago(94))) && !html.includes(shortDay(ago(140))), locale);
+    assert.ok(html.includes(locale === "en" ? "Insider trades · 4 people" : "内部人交易 · 4 人"), locale);
+    assert.ok(html.includes("Intrator Michael") && html.includes("McVeety Chen"));
+    // Four people fit without a toggle; every row is closed and no line of history is on the page.
+    assert.ok(!html.includes(locale === "en" ? "Show all" : "展开全部"), locale);
+    assert.ok(!html.includes('aria-expanded="true"'));
+    assert.ok(!html.includes("insider-history"));
+    assert.ok(!html.includes(ago(94)) && !html.includes(ago(140)), locale);
+    assert.ok(html.includes(locale === "en" ? "Net sold" : "净卖出"), locale);
   }
   setLocale("en");
-  const summary = railLayout(ALL, "all", NOW).summary!;
-  const card = (open: boolean) => renderToStaticMarkup(createElement(InsiderSummaryCard, {
-    summary, ticker: "CRWV", open, openRows: new Set<string>(), focus: null,
-    motion: { layout: false, layoutDependency: "", exit: {} as never }, onToggle: () => {}, onFocus: () => {}, tip: () => ({}),
-  }));
-  const open = card(true), closed = card(false);
-  assert.ok(open.includes('aria-expanded="true"') && open.includes("Show less"));
-  assert.ok(open.includes("McVeety Chen"));
-  // Show all reveals the older sales as well, folded per person over 90 days as the Insiders reading folds them.
-  const folds = summary.rows.filter(row => row.kind === "plan" && row.name === "Intrator Michael").map(row => rowLeaves(row).map(item => item.id));
-  assert.deepEqual(folds, [["intrator-1", "intrator-2", "intrator-3", "intrator-0730"], ["intrator-0723", "intrator-old"]]);
-  assert.ok(open.includes("Sold 4 times in 90 days") && open.includes("Sold 2 times in 90 days"));
-  assert.ok(!closed.includes("Sold 4 times") && !closed.includes("Sold 2 times"));
-  assert.ok(closed.includes('aria-expanded="false"') && closed.includes("Show all 3"));
-  assert.ok(!closed.includes("Sold 3 times in 90 days"));
-  assert.ok(!closed.includes("McVeety Chen"));
-  // A trade in focus (picked on the time axis) opens the card on its own.
-  assert.ok(render("key", "intrator-2").includes("Sold 4 times in 90 days"));
-  assert.ok(render("key", "intrator-old").includes("Sold 2 times in 90 days"));
+  // A trade in focus (picked on the time axis) opens the person who filed it, with their whole history from the rail.
+  const open = render("key", "intrator-2");
+  assert.ok(open.includes('aria-expanded="true" aria-controls="insider-1-panel"'));
+  assert.ok(open.includes(ago(94)) && open.includes(ago(140)));
+  assert.ok(open.includes('aria-pressed="true"'));
+  assert.ok(open.includes("SEC filing ↗"));
+  assert.ok(!open.includes('aria-expanded="true" aria-controls="insider-2-panel"'));
+  assert.ok(render("key", "intrator-old").includes('aria-expanded="true" aria-controls="insider-1-panel"'));
 });
 
-test("without trades in the window there is no card and the trades list as before", () => {
-  const layout = railLayout(rail([OLD, EARNINGS]), "all", NOW);
-  assert.equal(layout.summary, null);
-  assert.ok(layout.rest.some(row => row.kind === "item" && row.item.id === "intrator-old"));
+test("one old filing still makes the card, and never lists beside it", () => {
+  const layout = railLayout(rail([OLD, EARNINGS]), "all");
+  assert.deepEqual(layout.insiders!.items.map(item => item.id), ["intrator-old"]);
+  assert.ok(!layout.rest.some(row => row.kind === "item" && row.item.id === "intrator-old"));
 });
 
 test("the pinned earnings 8-K carries its findings beneath it with severity icons", () => {
   for (const filter of ["key", "all"] as const) {
-    assert.deepEqual(listed(filter, FINDINGS, PERIOD_END).slice(0, 4), ["earnings-8k", "f-backlog", "f-capex", "insider-summary"], filter);
+    assert.deepEqual(listed(filter, FINDINGS, PERIOD_END).slice(0, 4), ["earnings-8k", "f-backlog", "f-capex", "insiders"], filter);
   }
   setLocale("en");
   const html = render("key", null, FINDINGS, PERIOD_END);
   const at = (text: string) => html.indexOf(text);
-  assert.ok(at("Q2 results") >= 0 && at("Q2 results") < at("Backlog concentration") && at("Capex outruns cash") < at("Insiders, 90 days"));
+  assert.ok(at("Q2 results") >= 0 && at("Q2 results") < at("Backlog concentration") && at("Capex outruns cash") < at("Insider trades"));
   assert.ok(html.includes('class="severity-icon" data-severity="3" viewBox="0 0 16 16" role="img" aria-label="Severity: Major (highest of 3)"'));
   assert.ok(html.includes('data-severity="2"'));
 });
@@ -143,21 +140,21 @@ test("the pinned earnings 8-K carries its findings beneath it with severity icon
 test("findings of another quarter are never placed under the pinned filing, with or without the card", () => {
   const earlier = ago(80 + 42 + 182);
   assert.ok(!listed("key", FINDINGS, earlier).some(id => id.startsWith("f-")));
-  assert.deepEqual(listed("key").slice(0, 2), ["earnings-8k", "insider-summary"]);
+  assert.deepEqual(listed("key").slice(0, 2), ["earnings-8k", "insiders"]);
   assert.ok(!render("key", null, FINDINGS, earlier).includes("severity-icon"));
-  // No card: the next row after the pinned filing is still not a finding.
-  const bare = rail([OLD, EARNINGS]);
-  const ids = streamRows(railLayout(bare, "all", NOW), FINDINGS, earlier, "all").map(r => r.id);
-  assert.deepEqual(ids, ["earnings-8k", "intrator-old"]);
+  // No insider filings at all: the next row after the pinned filing is still not a finding.
+  const bare = rail([EARNINGS, event({ id: "deal", form: "8-K", class: "deal", filedAt: ago(5), items: ["1.01"] })]);
+  const ids = streamRows(railLayout(bare, "all"), FINDINGS, earlier, "all").map(r => r.id);
+  assert.deepEqual(ids, ["earnings-8k", "deal"]);
   // A rail with no filings at all still lists the findings.
-  assert.deepEqual(streamRows(railLayout([], "key", NOW), FINDINGS, earlier, "key").map(r => r.id), ["f-backlog", "f-capex"]);
+  assert.deepEqual(streamRows(railLayout([], "key"), FINDINGS, earlier, "key").map(r => r.id), ["f-backlog", "f-capex"]);
 });
 
 // The quarter a release reports, on fixed dates: CRWV's 8-K of 2026-08-11 reports the quarter that ended 2026-06-30.
 const FIXED = new Date("2026-11-01T00:00:00Z");
 const release = (id: string, day: string) => event({ id, form: "8-K", class: "earnings", filedAt: day, items: ["2.02", "9.01"], title: "Results of Operations" });
 const quarterRows = (events: CompanyEvent[], periodEnd: string, filter: EventFilter = "key") =>
-  streamRows(railLayout(rail(events), filter, FIXED), FINDINGS, periodEnd, filter).map(r => r.id);
+  streamRows(railLayout(rail(events), filter), FINDINGS, periodEnd, filter).map(r => r.id);
 
 test("an earnings 8-K carries the findings of the quarter it reports, matched by quarter not by filing date", () => {
   const q2 = release("crwv-0811", "2026-08-11");
@@ -166,13 +163,13 @@ test("an earnings 8-K carries the findings of the quarter it reports, matched by
   // The anchor may be any quarter of the grid: a year back or ahead still dates the 08.11 release to 06.30.
   assert.equal(releasedPeriod(rail([q2])[0]!, rail([q2]), "2025-06-30"), "2026-06-30");
   assert.equal(releasedPeriod(rail([q2])[0]!, rail([q2]), "2026-12-31"), "2026-06-30");
-  assert.deepEqual(quarterRows([q2, ...trades], "2026-06-30").slice(0, 4), ["crwv-0811", "f-backlog", "f-capex", "insider-summary"]);
+  assert.deepEqual(quarterRows([q2, ...trades], "2026-06-30").slice(0, 4), ["crwv-0811", "f-backlog", "f-capex", "insiders"]);
   assert.deepEqual(quarterRows([q2], "2026-06-30"), ["crwv-0811", "f-backlog", "f-capex"]);
   // A 52/53-week quarter ending a couple of days off the month's end is the same quarter.
   assert.deepEqual(quarterRows([q2], "2026-06-28"), ["crwv-0811", "f-backlog", "f-capex"]);
   // Findings of the quarter before or after: nothing extra under the release, card or no card.
   for (const periodEnd of ["2026-03-31", "2026-09-30"]) {
-    assert.deepEqual(quarterRows([q2, ...trades], periodEnd), ["crwv-0811", "insider-summary"], periodEnd);
+    assert.deepEqual(quarterRows([q2, ...trades], periodEnd), ["crwv-0811", "insiders"], periodEnd);
     assert.deepEqual(quarterRows([q2], periodEnd), ["crwv-0811"], periodEnd);
   }
 });
