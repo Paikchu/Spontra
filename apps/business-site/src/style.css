@@ -863,13 +863,13 @@ button { cursor: pointer; }
 /* ---------- The businesses, open from the start ---------- */
 .biz { display: flex; flex-direction: column; gap: 8px; padding: 4px 4px 6px; }
 .biz-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; min-width: 0; padding: 0 6px; }
-.biz-total { display: inline-flex; align-items: baseline; gap: 8px; min-width: 0; padding: 0; border: 0; background: transparent; text-align: left; color: var(--foreground); }
+.biz-total { flex: none; display: inline-flex; align-items: baseline; gap: 8px; min-width: 0; padding: 0; border: 0; background: transparent; text-align: left; color: var(--foreground); }
 .biz-total-value { font-size: 22px; font-weight: 650; letter-spacing: -.01em; line-height: 1.2; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .biz-total[aria-pressed="false"] .biz-total-value { color: var(--muted-foreground); }
 .biz-total:hover .biz-total-value { color: var(--foreground); }
 .biz-total-delta { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .biz-total-delta em { font-style: normal; }
-.biz-guide { flex: none; font-size: 12px; color: var(--muted-foreground); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.biz-guide { display: block; padding: 0 6px; overflow-wrap: anywhere; font-size: 12px; color: var(--muted-foreground); font-variant-numeric: tabular-nums; }
 /* The mix as one bar: each business its hue, as wide as its share; the business under the pointer or picked stands out. */
 .biz-fold { flex: none; align-self: center; width: 24px; height: 24px; margin: -4px -4px -4px 0; color: var(--faint); }
 .biz-fold:hover { color: var(--foreground); }

@@ -71,6 +71,40 @@ export function layoutFor(graph: FinancialGraph, copy: (n: PlacedNode) => NodeCo
 }
 
 type Box = { x0: number; y0: number; x1: number; y1: number };
+/** Prefer beside, then below. A compact mark stays inside the bar if both are occupied. */
+export function placeGuidance(beside: Box, below: Box, occupied: readonly Box[], bounds: Box): Box | null {
+  const clear = (box: Box) => box.x0 >= bounds.x0 && box.x1 <= bounds.x1 && box.y0 >= bounds.y0 && box.y1 <= bounds.y1
+    && occupied.every(other => box.x1 + 4 <= other.x0 || box.x0 >= other.x1 + 4 || box.y1 + 4 <= other.y0 || box.y0 >= other.y1 + 4);
+  return [beside, below].find(clear) ?? null;
+}
+
+function nodeLabel(n: PlacedNode, text: NodeCopy, k: number, w: number) {
+  const type = typeFor(k), vs = valueSize(n, k), gap = geometryFor(k).labelOffset;
+  const [x, y, anchor]: [number, number, "start" | "middle" | "end"] = n.side === "top" ? [n.x + w / 2, n.y - type.offset - 2, "middle"]
+    : n.side === "bottom" ? [n.x + w / 2, n.y + n.h + type.offset + vs * 0.78, "middle"]
+    : [n.side === "left" ? n.x - gap : n.x + w + gap, n.y + Math.max(n.h, geometryFor(k).sideLabelHeight) / 2 + vs * 0.36, n.side === "left" ? "end" : "start"];
+  const width = labelWidth(n, text, k), left = x - (anchor === "middle" ? width / 2 : anchor === "end" ? width : 0);
+  return { x, y, anchor, box: { x0: left, x1: left + width, y0: y - vs, y1: y + vs * 0.3 } };
+}
+
+export function guidancePlacements(layout: InfographicLayout, copy: (n: PlacedNode) => NodeCopy, pills: readonly GuidePillMark[], k: number) {
+  const occupied = layout.nodes.flatMap(n => [nodeLabel(n, copy(n), k, layout.nodeWidth).box,
+    { x0: n.x - 6 * k, y0: n.y - 6 * k, x1: n.x + layout.nodeWidth + 16 * k, y1: n.y + n.h + 6 * k }]);
+  const result = new Map<string, Box | null>();
+  for (const pill of pills) {
+    const n = layout.nodes.find(n => n.name === pill.node);
+    if (!n) continue;
+    const card = guideCard(pill, k), x = n.x + layout.nodeWidth + 24 * k;
+    const rect = (x0: number, y0: number): Box => ({ x0, y0, x1: x0 + card.width, y1: y0 + card.height });
+    const belowY = Math.max(n.y + n.h + 12 * k, nodeLabel(n, copy(n), k, layout.nodeWidth).box.y1 + 12 * k);
+    const placed = placeGuidance(rect(x, n.y + n.h / 2 - card.height / 2), rect(n.x, belowY), occupied,
+      { x0: 0, y0: 0, x1: layout.width, y1: layout.height });
+    result.set(n.name, placed);
+    if (placed) occupied.push(placed);
+  }
+  return result;
+}
+
 type Camera = { x: number; y: number; zoom: number };
 /** The drawable area: the statement, widened to the left when a business's breakdown hangs beside it. */
 type World = Box;
@@ -243,6 +277,7 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
   const byName = useMemo(() => new Map(layout.nodes.map(n => [n.name, n])), [layout]);
   const bracketOf = useMemo(() => new Map((brackets ?? []).map(b => [b.node, b])), [brackets]);
   const pillOf = useMemo(() => new Map((pills ?? []).map(p => [p.node, p])), [pills]);
+  const guidePlaces = useMemo(() => guidancePlacements(layout, copy, pills ?? [], k), [layout, copy, pills, k]);
   const productTarget = productBusiness ? byName.get(productBusiness) : null;
   const mind = useMemo(() => mindMap && fitted && productBusiness
     ? mindFor(mindMap, fitted.layout, copy, fitted.k, narrowPane ? null : focusBounds(fitted.layout, productBusiness, copy, fitted.k), size) : null, [mindMap, fitted, copy, productBusiness, size, narrowPane]);
@@ -394,6 +429,7 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
   const slotLabel = focus?.slot && active ? focusSlot(byName.get(active)!) : null;
   // One delegated handler: focus follows whatever band or node is under the pointer, and clears over empty canvas.
   const hoverOver = (event: React.MouseEvent<SVGSVGElement>) => {
+    if ((event.target as Element).closest(".fc-guide-next")) return;
     const owner = (event.target as Element).closest<SVGElement>(".fc-node[data-owner]")?.dataset.owner ?? null;
     onHover(owner);
     if (!owner) setTip(null);
@@ -514,10 +550,10 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
           const bracket = marksShown ? bracketOf.get(n.name) : undefined, pill = marksShown ? pillOf.get(n.name) : undefined;
           const unitScale = n.value > 0 ? n.h / n.value : 0;
           const span = bracket && unitScale ? (n.side === "bottom" ? [n.y + n.h - bracket.high * unitScale, n.y + n.h - bracket.low * unitScale] : [n.y + bracket.low * unitScale, n.y + bracket.high * unitScale]) : null;
-          const pillX = n.x + w + (span ? 18 : 12) * k, card = pill ? guideCard(pill, k) : null;
-          const [x, y, anchor]: [number, number, "start" | "middle" | "end"] = n.side === "top" ? [n.x + w / 2, n.y - type.offset - 2, "middle"]
-            : n.side === "bottom" ? [n.x + w / 2, n.y + n.h + type.offset + vs * 0.78, "middle"]
-            : [n.side === "left" ? n.x - gap : n.x + w + gap, n.y + side / 2 + vs * 0.36, n.side === "left" ? "end" : "start"];
+          const card = pill ? guideCard(pill, k) : null, placement = guidePlaces.get(n.name);
+          const pillX = placement?.x0 ?? n.x + w / 2 - 8 * k;
+          const pillY = placement?.y0 ?? n.y + n.h / 2 - 8 * k;
+          const { x, y, anchor } = nodeLabel(n, text, k, w);
           const isLit = lit ? lit.has(n.name) || undefined : undefined;
           // The node in focus names its comparison amount beside the tick, where neither its own label nor a guidance mark sits.
           const prior = mark && n.name === active && !bracket && !pill ? priorOf?.(n) ?? null : null;
@@ -545,14 +581,26 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
               <rect className="fc-guide-hit" x={-3 * k} y={Math.min(span[0], span[1]) - 6 * k} width={14 * k} height={Math.abs(span[1] - span[0]) + 12 * k} />
               <path d={`M${r(8 * k)},${r(span[0])}H0V${r(span[1])}H${r(8 * k)}`} />
             </g>}
-            {pill && card && <g className="fc-guide-next" data-action={pill.action ?? undefined} transform={`translate(${r(pillX)},${r(n.y + n.h / 2 - card.height / 2)})`} onMouseMove={e => { e.stopPropagation(); point(e, pill.tip); }} onMouseLeave={() => setTip(null)}><a href={pill.url ?? undefined} target="_blank" rel="noopener noreferrer" aria-label={pill.tip.title}>
-              <path className="fc-guide-lead" d={`M${r(n.x + w - pillX)},${r(card.height / 2)}H0`} />
-              <rect className="fc-guide-box" x={0} y={0} width={r(card.width)} height={r(card.height)} rx={6 * k} />
-              <rect className="fc-guide-accent" x={card.accent} y={card.padY} width={card.accent} height={r(card.height - card.padY * 2)} rx={card.accent / 2} />
-              <text className="fc-guide-head" x={r(card.x)} y={r(card.headY)} style={{ fontSize: card.size.head }}>{card.head}</text>
-              <text className="fc-guide-value" x={r(card.x)} y={r(card.valueY)} style={{ fontSize: card.size.value }}>{pill.glyph && <tspan className="fc-guide-glyph">{pill.glyph} </tspan>}{pill.text}</text>
-              {pill.implied && <text className="fc-guide-implied" x={r(card.x)} y={r(card.impliedY)} style={{ fontSize: card.size.implied }}>{pill.implied}</text>}
-            </a></g>}
+            {pill && card && <g className="fc-guide-next" data-marker={!placement || undefined} data-action={pill.action ?? undefined} transform={`translate(${r(pillX)},${r(pillY)})`}
+              onMouseMove={e => { e.stopPropagation(); point(e, pill.tip); }} onMouseLeave={() => setTip(null)}>
+              <a href={pill.url ?? undefined} target="_blank" rel="noopener noreferrer" tabIndex={0} onClick={e => e.stopPropagation()}
+                aria-label={`${card.head}: ${pill.text}${pill.implied ? ` · ${pill.implied}` : ""}`}
+                onFocus={e => { e.stopPropagation(); const rect = e.currentTarget.getBoundingClientRect(); point({ clientX: rect.left, clientY: rect.bottom }, pill.tip); }}
+                onBlur={e => { e.stopPropagation(); setTip(null); }} onKeyDown={e => { e.stopPropagation(); if (e.key === "Escape") setTip(null); }}>
+                <title>{`${card.head}: ${pill.text}`}</title>
+                {placement ? <>
+                  <rect className="fc-guide-box" x={0} y={0} width={r(card.width)} height={r(card.height)} rx={6 * k} />
+                  <rect className="fc-guide-accent" x={card.accent} y={card.padY} width={card.accent} height={r(card.height - card.padY * 2)} rx={card.accent / 2} />
+                  <text className="fc-guide-head" x={r(card.x)} y={r(card.headY)} style={{ fontSize: card.size.head }}>{card.head}</text>
+                  <text className="fc-guide-value" x={r(card.x)} y={r(card.valueY)} style={{ fontSize: card.size.value }}>{pill.glyph && <tspan className="fc-guide-glyph">{pill.glyph} </tspan>}{pill.text}</text>
+                  {pill.implied && <text className="fc-guide-implied" x={r(card.x)} y={r(card.impliedY)} style={{ fontSize: card.size.implied }}>{pill.implied}</text>}
+                </> : <>
+                  <circle className="fc-guide-box" cx={8 * k} cy={8 * k} r={8 * k} />
+                  <text className="fc-guide-head" x={8 * k} y={12 * k} textAnchor="middle" style={{ fontSize: 12 * k }}>i</text>
+                </>}
+              </a>
+            </g>}
+
           </g>;
         })}
       </g>

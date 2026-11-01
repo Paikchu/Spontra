@@ -694,7 +694,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
   const lensUp = !!stageOverride || !!(focusedCheck && assessment) || !!(focused && findings) || !!focusedReport || !!(focusedEvent && events);
   return <div className="map">
     <Rail ticker={ticker} actions={tools} label={m.companyBusinesses} company={company.filingLabel ? { sub: company.filingLabel } : null} foot={railFoot}>
-      {/* The businesses, open from the start: the company's revenue and change, next quarter's guidance beside it, the mix as one bar, then one line per business. */}
+      {/* The businesses, open from the start: the company's revenue and change, next quarter's guidance on its own line, the mix as one bar, then one line per business. */}
       <section className="biz" data-section="business" data-folded={bizFolded || undefined} aria-label={m.businesses}>
         <div className="biz-head">
           <Button variant="unstyled" type="button" className="biz-total" aria-pressed={!current} title={quantified ? m.topLevelCount(topLevel) : m.totalRevenue} onClick={() => { if (current) pickBusiness(null); }}>
@@ -702,11 +702,11 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
             {quarter && change("revenue").comparable && <span className="biz-total-delta"><Delta change={change("revenue")} word={word.change} /></span>}
           </Button>
           {rebased && <span className="basis-tag biz-basis" tabIndex={0} title={m.segmentsRebasedWhy(!!restatedBase?.restatedInFiling)} aria-label={`${m.segmentsRebased} · ${m.segmentsRebasedWhy(!!restatedBase?.restatedInFiling)}`}>{m.segmentsRebased}</span>}
-          {revenueGuide && <span className="biz-guide" title={`${revenueGuide.tip.title}${revenueGuide.qualifier ? ` · ${revenueGuide.qualifier}` : ""}`}>{m.nextQuarter} {revenueGuide.glyph}{revenueGuide.text}</span>}
           <Button variant="unstyled" type="button" className="icon-button biz-fold" aria-expanded={!bizFolded} aria-controls="rail-business" aria-label={bizFolded ? m.unfoldBusinesses : m.foldBusinesses} title={bizFolded ? m.unfoldBusinesses : m.foldBusinesses} onClick={() => setBizFolded(v => !v)}>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5" /></svg>
           </Button>
         </div>
+        {revenueGuide && <span className="biz-guide" title={`${revenueGuide.tip.title}${revenueGuide.qualifier ? ` · ${revenueGuide.qualifier}` : ""}`}>{m.nextQuarter} {revenueGuide.glyph}{revenueGuide.text}</span>}
         {composition.length > 1 && <div className="biz-bar" role="img" aria-label={[m.composition, ...composition.map(c => `${c.name} ${percent(c.share)}`)].join(" · ")}>
           {composition.map(c => <i key={c.key} data-hover={hovered === c.key || preview === c.key || undefined} data-picked={current?.key === c.key || undefined} style={{ flexBasis: `${c.share}%`, background: hue(c.slot) }} />)}
         </div>}
