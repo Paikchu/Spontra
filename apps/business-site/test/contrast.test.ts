@@ -44,3 +44,9 @@ test("light text tokens clear 4.5:1 and chart grid clears 3:1", () => {
   assert.ok(contrast(light.up!, "#e3e5e4") >= 4.5);
   assert.ok(contrast(light.loss!, "#e3e5e4") >= 4.5);
 });
+
+test("severity icon colours clear 3:1 against the page in both themes", () => {
+  for (const theme of [dark, light]) {
+    for (const token of ["loss", "flow-expense", "muted-foreground"]) assert.ok(contrast(theme[token]!, theme.background!) >= 3, token);
+  }
+});

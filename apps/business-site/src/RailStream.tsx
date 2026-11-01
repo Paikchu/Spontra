@@ -11,6 +11,7 @@ import { eventTitle, insiderTitleParts, eventTitleLang, shortDate } from "./even
 import { exactShares, insiderCompactMoney, noiseRows, rowLeaves, type EventFilter, type NoiseRow } from "./event-noise";
 import { filingQuarterLabel, reportTitle, reportTitleLang, type RailItem, type RailItems } from "./reports-model";
 import { KIND_LABEL, VIEW_LABEL, type VerifiedFinding } from "./findings-model";
+import { SeverityIcon, severityLabel } from "./SeverityIcon";
 import { arrivalStyle, RailRow, rowExit, useArrivals } from "./arrivals";
 import { useRailTip } from "./RailTip";
 
@@ -28,7 +29,7 @@ const m = messages({
   empty: "Nothing in this category yet",
   loadFailed: "Couldn't load this data", retry: "Retry",
   director: "Director", tenPercent: "10% owner",
-  severity: (kind: string, n: number) => `${kind} · Severity ${n}`, watchOutcome: "Watch outcome",
+  watchOutcome: "Watch outcome",
 }, {
   title: "要点、财报与事件",
   report: "财报",
@@ -43,7 +44,7 @@ const m = messages({
   empty: "这一类暂时没有内容",
   loadFailed: "数据暂时加载失败", retry: "重试",
   director: "董事", tenPercent: "10% 股东",
-  severity: (kind: string, n: number) => `${kind} · 重要度 ${n}`, watchOutcome: "跟踪结果",
+  watchOutcome: "跟踪结果",
 });
 
 /** The readings that carry the report's findings beside its filings; the event-only readings leave them out. */
@@ -69,7 +70,7 @@ function composeRows(noise: NoiseRow[], findings: VerifiedFinding[], periodEnd: 
 
 /**
  * One stream for the rail: the report's findings, the filings and the events, newest first, in one shape per row: a
- * mark (the event's class, or the finding's severity in its kind's colour), a title, and a line of particulars that
+ * mark (the event's class, or the finding's severity icon), a title, and a line of particulars that
  * starts with the date. Insider trades fold by person and direction over 90 days; routine 6-Ks fold by month.
  * The recent rows show first; older ones load as the reader scrolls to the end.
  */
@@ -273,12 +274,12 @@ function EventRow({ event, checked, onClick, arrive, motion, tip }: RowProps & {
 
 function FindingRow({ finding, date, verdict, checked, onClick, arrive, motion, tip }: RowProps & { finding: VerifiedFinding; date: string; verdict?: "pass" | "fail" }) {
   const title = normalizeDisplayText(finding.title);
-  const severity = m.severity(KIND_LABEL[finding.kind], finding.severity);
+  const severity = `${KIND_LABEL[finding.kind]} · ${severityLabel(finding.severity)}`;
   const meta = join([date && shortDate(date), KIND_LABEL[finding.kind], VIEW_LABEL[finding.anchors.view]]);
   return <RailRow variant="unstyled" type="button" role="radio" aria-checked={checked} className="stream-row finding-row" data-kind={finding.kind} onClick={onClick}
     {...motion} data-arrived={arrive != null ? "" : undefined} style={arrivalStyle(arrive)}
     {...tip(title, langOf(finding.title), severity)}>
-    <span className="stream-mark"><i className="finding-mark" aria-label={severity}>{finding.severity}</i></span>
+    <span className="stream-mark"><SeverityIcon severity={finding.severity} /></span>
     <span className="stream-body">
       <span className="stream-title"><span lang={langOf(finding.title)}>{title}</span>{finding.watchOutcome && <i className="finding-settled" data-verdict={verdict} title={m.watchOutcome} aria-label={m.watchOutcome}>{verdict === "pass" ? "✓" : verdict === "fail" ? "✗" : "↻"}</i>}</span>
       <span className="stream-meta">{meta}</span>

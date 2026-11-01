@@ -141,7 +141,7 @@ const GLOSSARY: Array<[RegExp, string]> = [
   [/\bgross profit\b/i, "毛利"], [/\boperating income\b/i, "营业利润"], [/\bnet income\b/i, "净利润"],
   [/\bcost of revenue\b/i, "营业成本"], [/\bfree cash flow\b/i, "自由现金流"], [/\boperating cash flow\b/i, "经营现金流"],
   [/\b(capex|capital expenditures?)\b/i, "资本开支"], [/\bguidance\b/i, "指引"], [/\bYoY\b/, "同比"], [/\bQoQ\b/, "环比"],
-  [/\bfindings?\b/i, "要点"], [/\bbalance sheet\b/i, "资产负债表"], [/\bnot disclosed\b/i, "未披露"], [/\bseverity\b/i, "重要度"],
+  [/\bfindings?\b/i, "要点"], [/\bbalance sheet\b/i, "资产负债表"], [/\bnot disclosed\b/i, "未披露"], [/\bseverity\b/i, "严重度"],
   [/(?<!cost of )\brevenue\b(?! model)/i, "营收"], [/\brevenue model\b/i, "收入模式"], [/\bbuybacks?\b/i, "回购"], [/\bdividends?\b/i, "分红"],
   [/\beliminations?\b/i, "抵销"], [/\bresearch and development\b|\bR&D\b/i, "研发"], [/\binsiders?\b/i, "内部人"],
 ];

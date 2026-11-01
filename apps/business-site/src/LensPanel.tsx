@@ -12,17 +12,18 @@ import { multiple, normalizeDisplayText, yoyLabel, shortPeriod } from "@/shared/
 import { documentFromEvidence, lensDocumentOf } from "@/shared/analysis-runtime/lens/legacy";
 import { tableKey, verifyLensDocument, type VerifiedLens } from "@/shared/analysis-runtime/lens/verify";
 import { KIND_LABEL, VIEW_LABEL, type VerifiedFinding } from "./findings-model";
+import { SeverityIcon } from "./SeverityIcon";
 import { LensFrame } from "./LensFrame";
 import { HtmlFrame } from "./HtmlFrame";
 
 const m = messages({
-  finding: (title: string) => `Finding: ${title}`, severity: (n: number) => `Severity ${n}`, report: (period: string) => `${period} report`,
+  finding: (title: string) => `Finding: ${title}`, report: (period: string) => `${period} report`,
   focusThis: "Focus this", exitComparison: "Exit comparison", compare: (kind: string) => `Compare · ${kind}`,
   close: "Close finding", nextQuarter: "Next quarter", fullYear: "Full year",
   reported: (period: string) => `${period} reported`, pending: (period: string) => `Pending · ${period} report`, pp: " pp",
   metric: "Metric", current: "Current", compared: "Compared with", change: "Change",
 }, {
-  finding: (title: string) => `要点：${title}`, severity: (n: number) => `重要度 ${n}`, report: (period: string) => `${period} 财报`,
+  finding: (title: string) => `要点：${title}`, report: (period: string) => `${period} 财报`,
   focusThis: "聚焦此条", exitComparison: "退出对比", compare: (kind: string) => `对比 · ${kind}`,
   close: "关闭要点", nextQuarter: "下季度", fullYear: "全年",
   reported: (period: string) => `${period} 已公布`, pending: (period: string) => `待公布 · ${period} 财报`, pp: "个百分点",
@@ -69,7 +70,7 @@ export function LensPanel({ finding, data, sources, materials, record, ticker, n
   return <section className="lens" data-kind={finding.kind} data-compact={compact || undefined} aria-label={m.finding(finding.title)} key={finding.id}>
     <header className="lens-head">
       <div className="lens-title">
-        <b className="lens-kind" data-kind={finding.kind}>{KIND_LABEL[finding.kind]}<i aria-label={m.severity(finding.severity)}>{finding.severity}</i></b>
+        <b className="lens-kind" data-kind={finding.kind}>{KIND_LABEL[finding.kind]}<SeverityIcon severity={finding.severity} /></b>
         <h2 lang={langOf(finding.title)}>{normalizeDisplayText(finding.title)}</h2>
         <span className="lens-basis">{m.report(shortPeriod(finding.periodEnd))} · {VIEW_LABEL[finding.anchors.view]}<SourceLanguage of={[finding.title, finding.judgment.text]} /></span>
       </div>

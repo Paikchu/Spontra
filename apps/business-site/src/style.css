@@ -917,9 +917,18 @@ button { cursor: pointer; }
 .stream[data-focus] .stream-row:not([aria-checked="true"]) .stream-title { color: var(--muted-foreground); }
 .stream[data-focus] .stream-row:not([aria-checked="true"]):hover .stream-title { color: var(--foreground); }
 .stream-end { height: 1px; }
-.finding-row[aria-checked="true"] .finding-mark { color: var(--background); background: var(--kind); }
 /* The mark is a tinted tile in the kind's colour; the finding in focus fills it in. */
 .finding-mark { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 6px; font-size: 12px; font-style: normal; font-weight: 700; color: var(--kind); background: color-mix(in srgb, var(--kind) 14%, transparent); font-variant-numeric: tabular-nums; transition: background .2s, color .2s; }
+/* A finding's severity as an icon in the level colours: 3 a filled red triangle, 2 an amber circled "!", 1 a grey "i".
+   One em wide and one line tall, so it sits centred on the first line of the text beside it and never wraps. */
+.severity-icon { --sev: var(--muted-foreground); flex: none; display: inline-block; width: 1em; height: 1em; height: 1lh; vertical-align: top; overflow: visible;
+  fill: color-mix(in srgb, var(--sev) 14%, transparent); stroke: var(--sev); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.severity-icon[data-severity="3"] { --sev: var(--level-alert, var(--loss)); }
+.severity-icon[data-severity="2"] { --sev: var(--level-watch, var(--flow-expense)); }
+.severity-icon .severity-icon-fill { fill: var(--sev); stroke: none; }
+.severity-icon .severity-icon-cut { fill: none; stroke: var(--background); stroke-width: 1.8; }
+.stream-mark .severity-icon { width: 14px; height: 14px; } /* the title's 1em */
+.lens-kind .severity-icon { height: 1em; }
 .finding-settled { display: inline-grid; place-items: center; width: 15px; height: 15px; border-radius: 50%; font-size: 12px; font-style: normal; color: var(--kind); background: color-mix(in srgb, var(--kind) 14%, transparent); }
 
 
@@ -1135,7 +1144,6 @@ button { cursor: pointer; }
 .home-watch-group ul { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
 .home-watch-item a { display: grid; grid-template-columns: 18px minmax(0, 1fr); align-items: start; gap: 10px; padding: 3px 0; color: inherit; text-decoration: none; font-size: 14px; line-height: 1.5; }
 .home-watch-item a:hover span { text-decoration: underline; text-underline-offset: 3px; }
-.home-watch-item .finding-mark { margin-top: 2px; }
 .home-watch-more a { display: inline-block; padding: 2px 0 0 28px; font-size: 12.5px; color: var(--muted-foreground); text-decoration: none; }
 .home-watch-more a:hover { color: var(--foreground); text-decoration: underline; text-underline-offset: 3px; }
 .home-signals-empty { margin: 0; padding: 8px 0 4px; color: var(--muted-foreground); font-size: 14px; line-height: 1.6; }

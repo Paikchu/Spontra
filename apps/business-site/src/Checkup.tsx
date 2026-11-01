@@ -10,6 +10,7 @@ import { refView } from "@/shared/analysis-runtime/highlights";
 import { flagFigures, formatMetric, formatMetricChange, METRIC_DEFS, thresholdsOf } from "@/shared/analysis-runtime/statement-analysis";
 import { compactMoney, qoqLabel, shortPeriod, yoyLabel } from "@/shared/analysis-runtime/locale";
 import { KIND_LABEL, type VerifiedFinding } from "./findings-model";
+import { SeverityIcon } from "./SeverityIcon";
 import type { VerifiedNote } from "@/shared/analysis-runtime/checkup-notes";
 import { SourceLanguage, langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import { flagCopy, metricRules } from "./flag-copy";
@@ -358,7 +359,7 @@ export function MetricLens({ metric, flags, rank, data, findings, sources, bridg
       {(related.length > 0 || sources.length > 0) && <div className="lens-doc-row">
         {related.length > 0 && <div className="lens-doc-cell"><h3 className="lens-row-title">{m.related}</h3>
           <ul className="flag-related">{related.map(f => <li key={f.id}><Button variant="unstyled" type="button" className="finding-row" data-kind={f.kind} onClick={() => onFinding(f.id)} title={KIND_LABEL[f.kind]}>
-            <i className="finding-mark" aria-hidden="true">{f.severity}</i><span className="finding-title">{f.title}</span>
+            <SeverityIcon severity={f.severity} /><span className="finding-title">{f.title}</span>
           </Button></li>)}</ul>
         </div>}
         {sources.length > 0 && <div className="lens-doc-cell"><h3 className="lens-row-title">{m.sources}</h3>
