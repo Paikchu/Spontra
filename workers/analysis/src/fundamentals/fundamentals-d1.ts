@@ -297,18 +297,6 @@ export class D1FundamentalsRepository implements FundamentalsRepository {
     return wanted.map((ticker) => ({ ticker, fetchedAt: byTicker.get(ticker) ?? null }));
   }
 
-  async listFundamentalsAttempts(tickers: string[]): Promise<Array<{ ticker: string; lastAttemptAt: string; leaseUntil: string | null }>> {
-    if (!tickers.length) return [];
-    const rows = await this.database.prepare(`
-      SELECT ticker, MAX(started_at) AS lastAttemptAt,
-        MAX(CASE WHEN status = 'running' THEN lease_until END) AS leaseUntil
-      FROM fundamental_fetch_runs
-      WHERE ticker IN (${tickers.map(() => "?").join(", ")})
-      GROUP BY ticker
-    `).bind(...tickers).all<{ ticker: string; lastAttemptAt: string; leaseUntil: string | null }>();
-    return rows.results;
-  }
-
   async getLastGoodSnapshot(ticker: string): Promise<FundamentalLastGoodSnapshot | null> {
     const latest = await this.database.prepare(`
       SELECT run_id AS runId, ticker, fetched_at AS fetchedAt, quality_status AS qualityStatus,
