@@ -7,7 +7,7 @@ import { weightedQuantile } from "./peers.ts";
  * §2–§6). Every amount a report shows comes from here; the model supplies inputs and reasons. Nothing is rounded until it
  * is displayed. Invalid inputs are rejected with a `ValuationCalcError` rather than producing NaN, Infinity or a made-up figure.
  */
-export const CALCULATOR_VERSION = "valuation.calc.v2";
+export const CALCULATOR_VERSION = "valuation.calc.v3";
 /** The default horizon; an fcff path may run `MIN_FORECAST_YEARS`–`MAX_FORECAST_YEARS` years (docs/valuation-v2-SPEC.md §1). */
 export const FORECAST_YEARS = 5;
 export const MIN_FORECAST_YEARS = 5, MAX_FORECAST_YEARS = 10;
@@ -357,7 +357,7 @@ function forwardMethods(request: CalcRequest, base: ScenarioResult, r: number, s
   const drivers = request.scenarios.base.drivers;
   if (drivers.modelType !== "fcff") return [];
   const h = Math.min(Math.max(Math.round(c.forwardYears ?? 3), 1), base.yearly.length);
-  const metrics = forwardFundamentals(drivers, h, { da0: c.trailing?.da ?? null, interestExpense0: c.trailing?.interestExpense ?? 0, shares });
+  const metrics = forwardFundamentals(drivers, h, { da0: c.trailing?.da ?? null, interestExpense0: c.trailing?.interestExpense ?? null, shares });
   const cumulativeCashFlow = base.yearly.slice(0, h).reduce((sum, y) => sum + y.cashFlow, 0);
   const out: MethodValuation[] = [];
   const unavailable = (method: ValuationMethodKey, label: string, basis: string, why: string): MethodValuation => ({ method, label, low: null, base: null, high: null, weight: 0, basis, notes: [why] });
@@ -368,12 +368,12 @@ function forwardMethods(request: CalcRequest, base: ScenarioResult, r: number, s
   if (peers?.peRatio && metrics.eps != null && metrics.eps > 0) {
     const v = forwardMultipleValue({ metric: metrics.eps, multiples: peers.peRatio, horizonYears: h, r, kind: "equity", bridge: request.bridge, shares, cumulativeCashFlow });
     out.push({ method: "pe_forward", label: `P/E on year ${h}`, ...v, weight: 0, basis: `year ${h} core EPS ${metrics.eps.toFixed(2)} × peers p25/median/p75 ${peers.peRatio.p25.toFixed(1)}/${peers.peRatio.median.toFixed(1)}/${peers.peRatio.p75.toFixed(1)} (${peers.peRatio.count} peers), discounted ${h} years`, notes: metrics.notes });
-  } else out.push(unavailable("pe_forward", `P/E on year ${h}`, "not applied", peers?.peRatio ? "forward core EPS is not positive" : "no peer P/E"));
+  } else out.push(unavailable("pe_forward", `P/E on year ${h}`, "not applied", metrics.epsStatus === "insufficient_data" ? "Insufficient data: trailing interest expense is unknown; forward EPS and P/E are unavailable" : peers?.peRatio ? "forward core EPS is not positive" : "no peer P/E"));
   return out;
 }
 
 /** Year-`h` EBITDA and core EPS of an fcff path: EBIT from the path, D&A scaled with revenue, interest held at its trailing level. */
-export function forwardFundamentals(drivers: Extract<ModelDrivers, { modelType: "fcff" }>, h: number, input: { da0: number | null; interestExpense0: number | null; shares: number }): { revenue: number; ebit: number; ebitda: number | null; eps: number | null; notes: string[] } {
+export function forwardFundamentals(drivers: Extract<ModelDrivers, { modelType: "fcff" }>, h: number, input: { da0: number | null; interestExpense0: number | null; shares: number }): { revenue: number; ebit: number; ebitda: number | null; eps: number | null; epsStatus: "ready" | "insufficient_data"; notes: string[] } {
   const years = horizonOf(drivers.path);
   const n = Math.min(Math.max(h, 1), years);
   let revenue = drivers.revenue0;
@@ -382,10 +382,12 @@ export function forwardFundamentals(drivers: Extract<ModelDrivers, { modelType: 
   const notes: string[] = [];
   const da = input.da0 != null && drivers.revenue0 > 0 ? input.da0 * revenue / drivers.revenue0 : null;
   if (da == null) notes.push("no trailing D&A: EBITDA not projected");
-  const interest = input.interestExpense0 ?? 0;
-  const eps = input.shares > 0 ? (ebit - interest) * (1 - drivers.path.taxRate[n - 1]!) / input.shares : null;
-  notes.push(`core EPS excludes securities gains: (EBIT − interest ${interest.toExponential(2)}) × (1 − tax)`);
-  return { revenue, ebit, ebitda: da != null ? ebit + da : null, eps, notes };
+  const interest = input.interestExpense0;
+  if (interest != null) requireFinite(interest, "interest expense");
+  const eps = interest != null && input.shares > 0 ? (ebit - interest) * (1 - drivers.path.taxRate[n - 1]!) / input.shares : null;
+  if (interest == null) notes.push("Insufficient data: trailing interest expense is unknown; EPS not projected");
+  else notes.push(`core EPS excludes securities gains: (EBIT − interest ${interest.toExponential(2)}) × (1 − tax)`);
+  return finiteResult({ revenue, ebit, ebitda: da != null ? ebit + da : null, eps, epsStatus: eps == null ? "insufficient_data" as const : "ready" as const, notes }, "forward fundamentals");
 }
 
 /**
