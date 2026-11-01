@@ -17,7 +17,7 @@ import { readValuationPublication } from "../../../../shared/analysis-runtime/va
 import { buildValuationInput, type ValuationInput } from "./input.ts";
 import { fetchBeta, fetchPeerQuotes, fetchReferenceQuote, fetchRiskFreeRate, fetchWeeklyCloses } from "./market.ts";
 import { ValuationStore } from "./store.ts";
-import { ASSUMPTION_TOOLS, CITATION, COMPOSE_TOOLS, RESEARCH_BUDGET, RESEARCH_TOOLS, excerptOf, factLine, impliedThreshold, registerManagementEvidence, valuationTools, type RedTeam, type ValuationState } from "./tools.ts";
+import { ASSUMPTION_TOOLS, CITATION, COMPOSE_TOOLS, RESEARCH_BUDGET, RESEARCH_TOOLS, excerptOf, factLine, goingConcernOf, impliedThreshold, registerManagementEvidence, valuationTools, type RedTeam, type ValuationState } from "./tools.ts";
 
 /** Changing the prompts, the tools, the calculator or the publication contract reassesses every switched-on company once. */
 export const VALUATION_VERSION = "valuation.v4";
@@ -51,6 +51,7 @@ Do not give 5 for uncertainty: say what is known, what is not, and score null wi
 export const RESEARCH_SYSTEM = `You research one listed company for a valuation assessment. Everything you conclude must rest on evidence you read in this run: filing passages, call excerpts or web pages registered with an id like [e1a2b3c4d5], or the validated facts listed by id. Search snippets are not evidence; only a read page is. Assumptions are never disclosures.
 Work the four research dimensions: businessQuality, growthExecution, financialResilience, mispricingCatalysts. Read the business and risk-factor sections, the MD&A, the debt and commitments notes, the newest results release, and guidance. Treat counter-evidence first. Use the web only for a named gap (a guidance change, a launch date, an official statistic), at most ${RESEARCH_BUDGET.searches} searches and ${RESEARCH_BUDGET.webReads} page reads; the filings come first.
 The diagnostics listed in the opening message were computed by code from the facts; each dimension's rationale must answer the ones that bear on it (ROIC, accruals, cash conversion, dilution, leverage, coverage) by name.
+When submitting financialResilience, assess goingConcern from the current disclosures: unresolved means substantial doubt remains; resolved requires explicit evidence that completed mitigation alleviates it; unknown means the evidence does not establish either. Quote the registered passage and explain the assessment in the dimension rationale. Planned refinancing alone does not resolve risk; a generic risk-factor mention or a missing document alone does not establish it. Reconcile older warnings with newer disclosures. An unresolved assessment limits financialResilience to 7.5.
 ${SCORING}
 Call submit_dimension for each of the four, then finish_research. Budget: ${RESEARCH_BUDGET.reads} filing reads, ${RESEARCH_BUDGET.finds} finds, ${RESEARCH_BUDGET.transcripts} call reads. Keep tool arguments small; never ask for a whole filing.`;
 
@@ -211,13 +212,13 @@ export async function assemblePublication(state: ValuationState, now: string, me
   else if (!state.quote.usable) gaps.push({ code: "stale_quote", message: state.quote.limitations.join(" "), evidenceIds: [] });
   for (const id of state.input.missing) gaps.push({ code: "missing_inputs", field: id, message: `${id} could not be resolved from the validated statements.`, evidenceIds: [] });
   const ceilings = dimensionCeilings({ marginOfSafety: calc?.range.marginOfSafety ?? null, downsideCoverage: calc?.range.downsideCoverage ?? null, bearProbability: calc?.scenarios.bear.probability ?? null, terminalShare: calc?.scenarios.base.result.terminalShare ?? null,
-    hasIndependentConsensus: !!calc?.consensus, impliedGap: calc?.implied?.converged ? calc.implied.gap : null, impliedGapThreshold: impliedThreshold(state), goingConcernUnresolved: false });
+    hasIndependentConsensus: !!calc?.consensus, impliedGap: calc?.implied?.converged ? calc.implied.gap : null, impliedGapThreshold: impliedThreshold(state), goingConcernUnresolved: goingConcernOf(state) === "unresolved" });
   const dimensions: ValuationDimension[] = VALUATION_DIMENSIONS.map(key => {
     const d = state.dimensions.get(key) ?? { key, score: null, confidence: "low" as const, rationale: "Not assessed: the research phase ended before this dimension was recorded.", supportingEvidenceIds: [], counterEvidenceIds: [], gaps: ["not assessed"], nextCheck: "Re-run the assessment." };
     const ceiling = ceilings[key];
     const score = d.score != null && ceiling != null && d.score > ceiling ? ceiling : d.score;
     const red = state.redTeam?.counterEvidenceIds.filter(id => !d.counterEvidenceIds.includes(id)) ?? [];
-    return { ...d, score, counterEvidenceIds: key === "mispricingCatalysts" ? [...d.counterEvidenceIds, ...red] : d.counterEvidenceIds, gaps: score !== d.score ? [...d.gaps, `score capped at ${ceiling} by the calculated figures`] : d.gaps };
+    return { ...d, score, counterEvidenceIds: key === "mispricingCatalysts" ? [...d.counterEvidenceIds, ...red] : d.counterEvidenceIds, gaps: score !== d.score ? [...d.gaps, `score capped at ${ceiling} by ${key === "financialResilience" ? "unresolved going-concern evidence" : "the calculated figures"}`] : d.gaps };
   });
   if (!calc && !dimensions.find(d => d.key === "valuationSafety")!.gaps.length) gaps.push({ code: "unsupported_model", message: state.insufficient ?? "No model was computed.", evidenceIds: [] });
   const score = weightedScore(dimensions), confidence = overallConfidence(dimensions);
