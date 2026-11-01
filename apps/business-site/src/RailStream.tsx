@@ -8,7 +8,7 @@ import { eventClassLabel, isEsppTransaction, isPlannedInsiderTrade } from "@/sha
 import { normalizeDisplayText, perShare } from "@/shared/analysis-runtime/locale";
 import { langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import { eventTitle, insiderTitleParts, eventTitleLang, shortDate } from "./events-model";
-import { exactShares, insiderCompactMoney, railLayout, rowLeaves, type EventFilter, type InsiderPerson, type InsiderSummary, type NoiseRow } from "./event-noise";
+import { exactShares, insiderCompactMoney, railLayout, rowLeaves, streamRows, type EventFilter, type InsiderPerson, type InsiderSummary, type NoiseRow, type StreamRow as Row } from "./event-noise";
 import { filingQuarterLabel, reportTitle, reportTitleLang, type RailItem, type RailItems } from "./reports-model";
 import { KIND_LABEL, VIEW_LABEL, type VerifiedFinding } from "./findings-model";
 import { SeverityIcon, severityLabel } from "./SeverityIcon";
@@ -53,33 +53,10 @@ const m = messages({
   showAll: (n: number) => `展开全部 ${n} 人`, showLess: "收起", netSold: "净卖出", netBought: "净买入",
 });
 
-/** The readings that carry the report's findings beside its filings; the event-only readings leave them out. */
-const FINDINGS_IN: ReadonlySet<EventFilter> = new Set<EventFilter>(["key", "earnings", "all"]);
-
 /** Older rows join this many at a time. */
 const PAGE = 12;
 
-type StreamRow = { kind: "noise"; id: string; date: string; row: NoiseRow } | { kind: "finding"; id: string; date: string; finding: VerifiedFinding }
-  | { kind: "insiders"; id: string; date: string; summary: InsiderSummary };
-
-/**
- * The latest earnings filing leads, then the insider summary card, then everything else newest first. The findings slot
- * in after the report they were written from, so the stream reads "the filing, then what it says"; without that report
- * among the rows they lead the list.
- */
-function composeRows(layout: ReturnType<typeof railLayout>, findings: VerifiedFinding[], periodEnd: string | null, filter: EventFilter): StreamRow[] {
-  const noise = layout.pinned ? [layout.pinned, ...layout.rest] : layout.rest;
-  const rows: StreamRow[] = noise.map(row => ({ kind: "noise", id: row.id, date: row.date, row }));
-  let lead = layout.pinned ? 1 : 0;
-  if (findings.length && FINDINGS_IN.has(filter)) {
-    const at = noise.findIndex(row => row.kind === "item" && row.item.kind === "report" && row.item.report.periodEnd === periodEnd);
-    const date = at >= 0 ? noise[at]!.date : periodEnd ?? "";
-    rows.splice(at + 1, 0, ...findings.map((finding): StreamRow => ({ kind: "finding", id: finding.id, date, finding })));
-    if (at + 1 <= lead) lead += findings.length;
-  }
-  if (layout.summary) rows.splice(lead, 0, { kind: "insiders", id: layout.summary.id, date: layout.summary.date, summary: layout.summary });
-  return rows;
-}
+type StreamRow = Row<VerifiedFinding>;
 const leavesOf = (r: StreamRow) => r.kind === "noise" ? rowLeaves(r.row) : r.kind === "insiders" ? r.summary.items : [];
 
 /**
@@ -112,7 +89,7 @@ export function RailStream({ rail, findings, findingsPeriodEnd, verdicts, ticker
 }) {
   useLocale();
   const all = rail ? [...rail.recent, ...rail.earlier] : [];
-  const rows = composeRows(railLayout(all, filter, new Date()), findings, findingsPeriodEnd, filter);
+  const rows = streamRows(railLayout(all, filter, new Date()), findings, findingsPeriodEnd, filter);
   const [openRows, setOpenRows] = useState<ReadonlySet<string>>(() => new Set());
   const hosts = (id: string | null) => id ? rows.find(r => r.id === id || leavesOf(r).some(item => item.id === id)) ?? null : null;
   const focusedRow = hosts(focus);
@@ -261,9 +238,10 @@ function PersonLine({ person }: { person: InsiderPerson }) {
 
 /**
  * The last 90 days of open-market insider trades as one card: net amount, how many people and how many on 10b5-1 plans,
- * the three largest by amount, and the per-person folded rows behind "Show all".
+ * the three largest by amount, and the per-person folded rows behind "Show all": the window's filings are in the list only
+ * while it is open.
  */
-function InsiderSummaryCard({ summary, ticker, open, openRows, focus, arrive, motion, onToggle, onFocus, tip }: {
+export function InsiderSummaryCard({ summary, ticker, open, openRows, focus, arrive, motion, onToggle, onFocus, tip }: {
   summary: InsiderSummary; ticker: string; open: boolean; openRows: ReadonlySet<string>; focus: string | null; arrive?: number; motion: RowMotion;
   onToggle: (id: string) => void; onFocus: (item: RailItem | null) => void; tip: RowProps["tip"];
 }) {
@@ -284,7 +262,7 @@ function InsiderSummaryCard({ summary, ticker, open, openRows, focus, arrive, mo
     </div>
     <div className="event-fold-panel" id={panelId} data-open={open ? "" : undefined} inert={open ? undefined : true}>
       <div className="event-fold-inner">
-        {summary.rows.map(row => <NoiseBlock key={row.id} row={row} ticker={ticker} open={openRows.has(row.id)} focus={focus} motion={motion} onToggle={() => onToggle(row.id)} onFocus={onFocus} tip={tip} />)}
+        {open && summary.rows.map(row => <NoiseBlock key={row.id} row={row} ticker={ticker} open={openRows.has(row.id)} focus={focus} motion={motion} onToggle={() => onToggle(row.id)} onFocus={onFocus} tip={tip} />)}
       </div>
     </div>
   </div>;
