@@ -108,3 +108,34 @@ test("B9: NBIS has periods but no quarterly statement value: unavailable, annual
   assert.equal(ready.status, "ready");
   assert.equal(readFindingFundamentals(ready, "GOOGL")!.unavailable, undefined);
 });
+
+
+test("B13: sparse META-like history reserves 12 consecutive quarters instead of importing 2013", async () => {
+  const history = normalizeCompanyFacts("META", facts(true));
+  const source = history.series.find(s => s.seriesId === "revenue")!;
+  const point = source.quarters.at(-1)!;
+  source.quarters.push({ ...point, endDate: "2013-09-30" }, { ...point, endDate: "2013-12-31" },
+    { ...point, endDate: "2023-09-30" }, { ...point, endDate: "2024-06-30" });
+  const response = await buildSecFundamentals(history, { ticker: "META", periodCount: 12 } as never, null);
+  assert.deepEqual(response.periods.map(p => p.periodEnd), ["2023-12-31", "2024-03-31", "2024-06-30", "2024-09-30", "2024-12-31", "2025-03-31", "2025-06-30", "2025-09-30", "2025-12-31", "2026-03-31", "2026-06-30", "2026-09-30"]);
+  const revenue = response.series.find(s => s.metricKey === "total_revenue")!;
+  assert.equal(revenue.points[0]!.valueDecimal, null);
+  assert.equal(revenue.points[0]!.missing, true);
+  assert.equal(revenue.points[1]!.missing, true);
+  assert.equal(revenue.points[2]!.valueDecimal, point.value);
+  assert.equal(revenue.points[2]!.missing, false);
+  assert.ok(response.series.every(s => s.points.length === 12 && s.points.every(p => p.periodEnd >= "2023-12-31")));
+  assert.equal(response.partial, true);
+});
+
+
+test("B13: a 52/53-week filer's real period ends and values remain in the calendar-quarter window", async () => {
+  const history = normalizeCompanyFacts("NVDA", facts(true));
+  for (const series of history.series) series.quarters = series.quarters.map(p => ({ ...p, endDate: p.endDate === "2026-09-30" ? "2026-07-26" : "2026-04-26" }));
+  const response = await buildSecFundamentals(history, { ticker: "NVDA", periodCount: 12 } as never, null);
+  assert.equal(response.periods.length, 12);
+  assert.equal(response.periods.at(-1)!.periodEnd, "2026-07-26");
+  const revenue = response.series.find(s => s.metricKey === "total_revenue")!;
+  assert.ok(revenue.points.slice(-2).every(p => p.valueDecimal !== null && !p.missing));
+  assert.ok(response.periods.every(p => p.periodEnd >= "2023-10-01"));
+});

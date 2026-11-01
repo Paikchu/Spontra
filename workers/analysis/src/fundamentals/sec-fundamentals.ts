@@ -47,8 +47,21 @@ export async function buildSecFundamentals(history: SecHistorySnapshot, query: F
   const revenue = history.series.find((series) => series.seriesId === "revenue")?.quarters ?? [];
   // Revenue may be absent even when a quarter's other statements were disclosed. Keep the
   // period visible with null revenue instead of hiding every metric from that period.
-  const dates = [...new Set(history.series.filter((series) => SERIES[series.seriesId]).flatMap((series) => series.quarters)
-    .filter((point) => point.qualityStatus === "validated_xbrl").map((point) => point.endDate))].sort().slice(-query.periodCount);
+  const quarterIndex = (date: string) => {
+    const parsed = new Date(`${date}T00:00:00Z`);
+    return parsed.getUTCFullYear() * 4 + Math.floor(parsed.getUTCMonth() / 3);
+  };
+  const reportedDates = [...new Set(history.series.filter((series) => SERIES[series.seriesId]).flatMap((series) => series.quarters)
+    .filter((point) => point.qualityStatus === "validated_xbrl" && Number.isFinite(Date.parse(point.endDate)))
+    .map((point) => point.endDate))].sort();
+  const latestDate = reportedDates.at(-1);
+  // Reserve each consecutive calendar quarter. Keep actual SEC period ends (including
+  // 52/53-week filers); only absent quarters get a synthetic calendar-quarter end.
+  const dates = latestDate ? Array.from({ length: query.periodCount }, (_, index) => {
+    const quarter = quarterIndex(latestDate) - query.periodCount + 1 + index;
+    return reportedDates.findLast(date => quarterIndex(date) === quarter)
+      ?? new Date(Date.UTC(Math.floor(quarter / 4), (quarter % 4 + 1) * 3, 0)).toISOString().slice(0, 10);
+  }) : [];
   const keys = query.metricKeys ?? Object.values(SERIES);
   const series = keys.map((metricKey) => {
     const definition = FUNDAMENTAL_METRIC_CATALOG[metricKey];
@@ -65,7 +78,9 @@ export async function buildSecFundamentals(history: SecHistorySnapshot, query: F
     const points = dates.map((periodEnd) => {
       // A single series must never silently mix currencies or units.
       const point = candidates.find((item) => item.endDate === periodEnd && (item.currency ?? "") === currency && item.unit === latest?.unit);
-      return { periodEnd, valueDecimal: point && Number.isFinite(Number(point.value)) ? point.unit === "ratio" ? String(Number(point.value) * 100) : point.value : null, revision: null,
+      const valueDecimal = point && point.value != null && String(point.value).trim() !== "" && Number.isFinite(Number(point.value))
+        ? point.unit === "ratio" ? String(Number(point.value) * 100) : point.value : null;
+      return { periodEnd, valueDecimal, revision: null, missing: valueDecimal === null,
         ...(point ? { sourceAccession: point.sourceAccession, sourceFiledAt: point.sourceFiledAt,
           ...(point.derivationFormula ? { derivationFormula: point.derivationFormula } : {}) } : {}) };
     });

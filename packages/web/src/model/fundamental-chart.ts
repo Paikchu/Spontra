@@ -31,7 +31,7 @@ export const FUNDAMENTAL_NOT_MEANINGFUL_HINT = "Not meaningful";
 const m = messages({
   notMeaningfulLabel: FUNDAMENTAL_NOT_MEANINGFUL_LABEL, notMeaningfulHint: FUNDAMENTAL_NOT_MEANINGFUL_HINT, noData: "No data",
 }, {
-  notMeaningfulLabel: "不适用", notMeaningfulHint: "不适用", noData: "无数据",
+  notMeaningfulLabel: "不适用", notMeaningfulHint: "不适用", noData: "缺数据",
 });
 const TRANSFORM_SUFFIX = labels<FundamentalTransform>({
   value: "", qoq_growth: " · QoQ growth", yoy_growth: " · YoY growth", qoq_change: " · QoQ change", yoy_change: " · YoY change",

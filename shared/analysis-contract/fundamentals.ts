@@ -31,6 +31,8 @@ export type PublicFundamentalPoint = {
   periodEnd: string;
   valueDecimal: string | null;
   revision: number | null;
+  /** No usable observation for this quarter. */
+  missing?: boolean;
   sourceAccession?: string;
   sourceFiledAt?: string;
   derivationFormula?: string;
