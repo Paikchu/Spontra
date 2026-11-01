@@ -32,7 +32,7 @@ const cell = z.array(body).min(1).max(SCENE_LIMITS.blocksPerCell);
 const row = z.object({ title: plain(SCENE_LIMITS.titleChars).optional(), cells: z.array(cell).min(1).max(SCENE_LIMITS.cells) });
 
 /** A scene as the model writes it: rows only, with its period. Block ids and the data basis are the harness's. */
-export const sceneDraftSchema = z.object({
+const sceneDraftSchema = z.object({
   periodEnd: date.optional(),
   findingId: z.string().max(80).optional(),
   rows: z.array(row).min(1).max(SCENE_LIMITS.rows),

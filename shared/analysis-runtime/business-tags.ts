@@ -21,7 +21,7 @@ export const PEER_MATCH_VERSION = "peer-match.v2";
  * Calibrated on the first production tags (2026-10-19): CRWV's offering covers NBIS at 0.78, ORCL's OCI at 0.76, the
  * hyperscalers at 0.71–0.73 and Cloudflare at 0.68; the hyperscalers cover one another at 0.79–0.81.
  */
-export const DEFAULT_TAG_THRESHOLDS = { same: 0.77, near: 0.7 } as const;
+const DEFAULT_TAG_THRESHOLDS = { same: 0.77, near: 0.7 } as const;
 /** Both units must be at least this much of their companies before company-wide figures stand for the compared business. */
 export const COMPANY_BASIS_EXPOSURE = 0.8;
 /** The revenue node of a single-segment company. */

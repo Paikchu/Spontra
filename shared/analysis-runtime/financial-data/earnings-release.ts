@@ -85,7 +85,7 @@ export function releasePeriodEnd(html: string, filedAt: string): string | undefi
 }
 
 /** Every table with period columns and a stated unit, in filing order. */
-export function releaseTables(documents: ReleaseDocument[]): Table[] {
+function releaseTables(documents: ReleaseDocument[]): Table[] {
   const tables: Table[] = [];
   for (const source of documents) {
     let previousScale: number | undefined;

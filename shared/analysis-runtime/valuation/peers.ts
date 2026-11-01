@@ -10,7 +10,7 @@ import { comparablePeers } from "../peers.ts";
  */
 export type PeerSelection = { tickers: string[]; weights: Record<string, number>; basis: PeerSelectionBasis; notes: string[] };
 /** How far a pair's tier lets its multiple speak for the company. */
-export const TIER_WEIGHT: Record<"direct" | "partial" | "adjacent", number> = { direct: 1, partial: 0.5, adjacent: 0 };
+const TIER_WEIGHT: Record<"direct" | "partial" | "adjacent", number> = { direct: 1, partial: 0.5, adjacent: 0 };
 const MIN_PEERS = 2;
 
 const normalized = (weights: Record<string, number>): Record<string, number> => {

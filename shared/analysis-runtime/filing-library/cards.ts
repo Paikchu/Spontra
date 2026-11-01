@@ -2,7 +2,7 @@ import { LIBRARY_TOPICS, type LibraryCanonical, type LibraryFactRef, type Librar
 
 /** Changing the prompt or the checks rewrites every card once. */
 export const LIBRARY_CARD_VERSION = "library-cards.v1";
-export const CARD_LIMITS = { gist: 80, entities: 20, entity: 80, answers: 5, answer: 60, metrics: 12 } as const;
+const CARD_LIMITS = { gist: 80, entities: 20, entity: 80, answers: 5, answer: 60, metrics: 12 } as const;
 
 /** The taxonomy branch a section's topic comes from; null where the topic is the section's own kind and no model picks it. */
 export function topicFamily(canonical: LibraryCanonical): LibraryTopicFamily | null {
