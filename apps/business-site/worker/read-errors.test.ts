@@ -61,3 +61,12 @@ test("A05: filing absence stays 404 while service faults remain retryable", asyn
   const response = await handle(url(route), env, { waitUntil() {} }, async () => { throw new Error("binding disconnected"); });
   assert.equal(response.status, 503);
 });
+
+test("A06: home preserves upstream rate limits and server retry delay", async () => {
+  const response = await handle(url("home"), env, { waitUntil() { assert.fail("failed home must not cache"); } }, async () => refused());
+  assert.equal(response.status, 429);
+  assert.equal(response.headers.get("retry-after"), "120");
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  const invalid = await handle(url("home"), env, { waitUntil() {} }, async () => Response.json({}));
+  assert.equal(invalid.status, 503);
+});
