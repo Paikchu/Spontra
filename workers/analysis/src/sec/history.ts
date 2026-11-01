@@ -1,6 +1,6 @@
 import { hashString, type HistoricalObservation, type SecCanonicalSeriesId, type SecHistorySnapshot } from "./analysis.ts";
 
-export const COMPANY_FACTS_REGISTRY_VERSION = "sec-canonical-series.v6";
+export const COMPANY_FACTS_REGISTRY_VERSION = "sec-canonical-series.v7";
 
 type RegistryEntry = {
   seriesId: SecCanonicalSeriesId;
@@ -69,8 +69,8 @@ export function normalizeCompanyFacts(ticker: string, payload: unknown): SecHist
         const units = record(conceptRoot?.units);
         for (const [unit, rawUnits] of Object.entries(units ?? {})) {
           if (!Array.isArray(rawUnits)) continue;
-          for (const raw of latestRevisions(rawUnits, concept, unit)) {
-            const normalized = normalizeObservation(ticker, registry.seriesId, taxonomy, concept, unit, raw, priority);
+          for (const { raw, annualInstant } of latestRevisions(rawUnits, concept, unit)) {
+            const normalized = normalizeObservation(ticker, registry.seriesId, taxonomy, concept, unit, raw, priority, annualInstant);
             if (normalized) observations.push(normalized);
           }
         }
@@ -96,14 +96,16 @@ export function normalizeCompanyFacts(ticker: string, payload: unknown): SecHist
   };
 }
 
-function latestRevisions(values: unknown[], concept: string, unit: string): RawObservation[] {
-  const revisions = new Map<string, RawObservation>();
+function latestRevisions(values: unknown[], concept: string, unit: string): Array<{ raw: RawObservation; annualInstant: boolean }> {
+  const revisions = new Map<string, { raw: RawObservation; annualInstant: boolean }>();
   for (const value of values) {
     const raw = record(value) as RawObservation | null;
     if (!raw || !/^(10-Q|10-K|20-F)(\/A)?$/.test(String(raw.form ?? ""))) continue;
     const key = `${concept}:${unit}:${String(raw.start ?? "instant")}:${String(raw.end ?? "")}`;
     const previous = revisions.get(key);
-    if (!previous || revisionKey(raw) > revisionKey(previous)) revisions.set(key, raw);
+    // A later quarterly filing can restate a year-end balance without changing its annual membership.
+    const annualInstant = previous?.annualInstant === true || (raw.start === undefined && /^(10-K|20-F)(\/A)?$/.test(String(raw.form ?? "")));
+    revisions.set(key, { raw: !previous || revisionKey(raw) > revisionKey(previous.raw) ? raw : previous.raw, annualInstant });
   }
   return [...revisions.values()];
 }
@@ -116,6 +118,7 @@ function normalizeObservation(
   unit: string,
   raw: RawObservation,
   conceptPriority: number,
+  annualInstant: boolean,
 ): CumulativeObservation | null {
   const endDate = isoDate(raw.end);
   const startDate = isoDate(raw.start);
@@ -125,10 +128,9 @@ function normalizeObservation(
   if (!endDate || (raw.start !== undefined && !startDate) || value === null || !sourceAccession || !sourceFiledAt) return null;
   const durationDays = startDate ? daysBetween(startDate, endDate) : null;
   if (durationDays !== null && (durationDays < 60 || durationDays > 380)) return null;
-  const annualForm = /^(10-K|20-F)/.test(String(raw.form ?? ""));
   // The filing form describes the source document, not the duration of each fact in it.
   // Annual reports can repeat nine-month comparatives; these remain cumulative facts.
-  const annual = durationDays !== null ? durationDays >= 330 : annualForm;
+  const annual = durationDays !== null ? durationDays >= 330 : annualInstant;
   // Cash flow statements in a 10-Q are reported year-to-date, so the quarter has to be recovered
   // by differencing successive cumulative facts rather than read off directly.
   const cumulativeDays = durationDays !== null && durationDays > 130 && !annual ? durationDays : undefined;
@@ -136,7 +138,8 @@ function normalizeObservation(
   const currency = /^(USD|EUR|GBP|JPY|CNY|CAD|AUD)(?:\/shares)?$/i.exec(unit)?.[1]?.toUpperCase();
   const observationKey = `${ticker}:${seriesId}:${unit}:${startDate ?? "instant"}:${endDate}:${sourceAccession}`;
   return {
-    observationId: `xbrl:${hashString(observationKey)}`,
+    // Backfilling an annual instant must not reuse the primary key of its old quarter-only row.
+    observationId: `xbrl:${hashString(observationKey)}${annual && !startDate ? ":annual" : ""}`,
     seriesId,
     metricKey: seriesId,
     value,
