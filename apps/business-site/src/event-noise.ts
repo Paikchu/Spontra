@@ -160,7 +160,7 @@ export const INSIDER_SUMMARY_DAYS = 90;
 /** One person's open-market trades in the summary window, netted: negative is net sold. */
 export type InsiderPerson = { key: string; name: string; sold: number; bought: number; net: number; planned: boolean; trades: number };
 
-/** The last 90 days of open-market insider trades as one card: totals, the people, and the per-person rows behind it. */
+/** The last 90 days of open-market insider trades as one card: totals, the people, and every insider row behind it. */
 export type InsiderSummary = {
   id: "insider-summary"; date: string;
   sold: number; bought: number; net: number;
@@ -168,9 +168,9 @@ export type InsiderSummary = {
   people: InsiderPerson[];
   /** How many of them traded under a 10b5-1 plan. */
   planned: number;
-  /** The rows the card expands to: each person's trades folded by direction, as the Insiders reading shows them. */
+  /** The rows the card expands to, of any age: each person's trades folded by direction, as the Insiders reading shows them. */
   rows: NoiseRow[];
-  /** Every insider filing of the window, the trades and the rest; the rail lists none of them outside the card. */
+  /** Every insider filing on the rail, of any age, the trades and the rest; the rail lists none of them outside the card. */
   items: RailItem[];
 };
 
@@ -179,12 +179,13 @@ const isEarningsRow = (row: NoiseRow) => row.kind === "item" && (row.item.kind =
 
 /**
  * Summarizes the open-market insider trades filed in the 90 days up to `now`; null when there are none. The card holds
- * every insider filing of the window (grants and withheld shares too), so none of them lists beside it until it opens.
+ * every insider filing on the rail, older ones and grants or withheld shares too, so none of them lists beside it until
+ * it opens; its figures stay those of the window.
  */
 export function insiderSummary(items: readonly RailItem[], now: Date, days = INSIDER_SUMMARY_DAYS): InsiderSummary | null {
   const since = new Date(now.getTime() - days * DAY_MS).toISOString().slice(0, 10);
-  const filings = items.filter((item): item is RailItem & { kind: "event" } => item.kind === "event" && item.date >= since && item.event.class === "insider");
-  const trades = filings.filter(item => isOpenMarketInsiderTrade(item.event) != null);
+  const filings = items.filter((item): item is RailItem & { kind: "event" } => item.kind === "event" && item.event.class === "insider");
+  const trades = filings.filter(item => item.date >= since && isOpenMarketInsiderTrade(item.event) != null);
   if (!trades.length) return null;
   const people = new Map<string, InsiderPerson>();
   let sold = 0, bought = 0;
@@ -212,8 +213,8 @@ export function insiderSummary(items: readonly RailItem[], now: Date, days = INS
  * The rail's order for a reading: the latest earnings filing (10-Q, 10-K or an 8-K under item 2.02) first, then the
  * insider summary, then the rest newest first without the trades the summary holds. Other readings keep plain date order.
  */
-export function railLayout(items: readonly RailItem[], filter: EventFilter, now: Date): { pinned: NoiseRow | null; summary: InsiderSummary | null; rest: NoiseRow[] } {
-  if (!PINNED_IN.has(filter)) return { pinned: null, summary: null, rest: noiseRows(items, filter) };
+export function railLayout(items: readonly RailItem[], filter: EventFilter, now: Date): { pinned: NoiseRow | null; summary: InsiderSummary | null; rest: NoiseRow[]; items: readonly RailItem[] } {
+  if (!PINNED_IN.has(filter)) return { pinned: null, summary: null, rest: noiseRows(items, filter), items };
   const summary = insiderSummary(items, now);
   const held = new Set(summary?.items.map(item => item.id));
   // Matching runs over every filing (an insider row's importance reads the person's other trades); only the rows drop.
@@ -224,23 +225,56 @@ export function railLayout(items: readonly RailItem[], filter: EventFilter, now:
     return left.length === row.items.length ? [row] : left.map((item): NoiseRow => ({ kind: "item", id: item.id, date: item.date, item }));
   });
   const pinned = rows.find(isEarningsRow) ?? null;
-  return { pinned, summary, rest: rows.filter(row => row !== pinned) };
+  return { pinned, summary, rest: rows.filter(row => row !== pinned), items };
 }
 
-/** The longest an earnings release follows the end of the period it reports; the next period's release comes later. */
-const RELEASE_LAG_DAYS = 100;
+/** Quarter ends this close are one quarter: a 52/53-week year ends its quarters on a weekday near the month's end. */
+const SAME_QUARTER_DAYS = 10;
+
+const sameQuarter = (a: string, b: string) => Math.abs(Date.parse(a) - Date.parse(b)) <= SAME_QUARTER_DAYS * DAY_MS;
+
+/** A date `months` later (earlier when negative); a month's last day stays the last day. */
+function addMonths(iso: string, months: number): string {
+  const [y, m, d] = iso.split("-").map(Number) as [number, number, number];
+  const lastDay = (year: number, month: number) => new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  const to = new Date(Date.UTC(y, m - 1 + months, 1));
+  const day = d === lastDay(y, m - 1) ? lastDay(to.getUTCFullYear(), to.getUTCMonth()) : Math.min(d, lastDay(to.getUTCFullYear(), to.getUTCMonth()));
+  return new Date(Date.UTC(to.getUTCFullYear(), to.getUTCMonth(), day)).toISOString().slice(0, 10);
+}
+
+const isEarningsRelease = (item: RailItem): item is RailItem & { kind: "event" } => item.kind === "event" && isEarningsRow({ kind: "item", id: item.id, date: item.date, item });
 
 /**
- * Whether a row is the filing a findings set was written from: a report of that period, or an earnings release (an 8-K
- * under item 2.02) filed within 100 days after the period ended. The findings carry only their period, so the date decides.
+ * The quarter an earnings release (an 8-K under item 2.02) reports: the latest quarter that ended before it was filed,
+ * on the three-month grid of `anchor` (a known period end) and the periods of the reports listed. Null when another
+ * release came out between that quarter's end and this one, or when nothing dates the quarters.
  */
-export function reportsPeriod(row: NoiseRow, periodEnd: string | null): boolean {
+export function releasedPeriod(release: RailItem, items: readonly RailItem[], anchor: string | null): string | null {
+  const filed = release.date;
+  const ends = items.flatMap(item => item.kind === "report" && item.report.periodEnd && item.report.periodEnd < filed ? [item.report.periodEnd] : []);
+  if (anchor) {
+    let step = 0;
+    while (addMonths(anchor, 3 * step) >= filed && step > -400) step -= 1;
+    while (addMonths(anchor, 3 * (step + 1)) < filed && step < 400) step += 1;
+    ends.push(addMonths(anchor, 3 * step));
+  }
+  if (!ends.length) return null;
+  const quarter = ends.reduce((a, b) => b > a ? b : a);
+  const earlier = items.some(item => item.id !== release.id && isEarningsRelease(item) && item.date > quarter && item.date < filed);
+  return earlier ? null : quarter;
+}
+
+/**
+ * Whether a row is the filing a findings set was written from: a report of that period, or the earnings release that
+ * reports that quarter. A release of any other quarter never carries them.
+ */
+export function reportsPeriod(row: NoiseRow, periodEnd: string | null, items: readonly RailItem[]): boolean {
   if (!periodEnd || row.kind !== "item") return false;
   const item = row.item;
   if (item.kind === "report") return item.report.periodEnd === periodEnd;
   if (!isEarningsRow(row)) return false;
-  const lag = Date.parse(item.date) - Date.parse(periodEnd);
-  return lag > 0 && lag <= RELEASE_LAG_DAYS * DAY_MS;
+  const quarter = releasedPeriod(item, items, periodEnd);
+  return quarter != null && sameQuarter(quarter, periodEnd);
 }
 
 /** The readings that carry the report's findings beside its filings; the event-only readings leave them out. */
@@ -251,20 +285,21 @@ export type StreamRow<F> = { kind: "noise"; id: string; date: string; row: Noise
 
 /**
  * The rail's rows in order: the latest earnings filing leads with its findings beneath it, then the insider summary card,
- * then everything else newest first. Findings follow the filing they were written from; findings of a period whose
- * filing is not among the rows lead the list, below the pinned filing and the card.
+ * then everything else newest first. Findings follow the filing of their quarter; when no row is that filing they are left
+ * out, never put under another quarter's filing. A rail with no rows at all lists them alone.
  */
 export function streamRows<F extends { id: string }>(layout: ReturnType<typeof railLayout>, findings: readonly F[], periodEnd: string | null, filter: EventFilter): StreamRow<F>[] {
   const noise = layout.pinned ? [layout.pinned, ...layout.rest] : layout.rest;
   const rows: StreamRow<F>[] = noise.map(row => ({ kind: "noise", id: row.id, date: row.date, row }));
-  let lead = layout.pinned ? 1 : 0;
-  if (layout.summary) rows.splice(lead++, 0, { kind: "insiders", id: layout.summary.id, date: layout.summary.date, summary: layout.summary });
+  if (layout.summary) rows.splice(layout.pinned ? 1 : 0, 0, { kind: "insiders", id: layout.summary.id, date: layout.summary.date, summary: layout.summary });
   if (findings.length && FINDINGS_IN.has(filter)) {
-    const at = noise.findIndex(row => reportsPeriod(row, periodEnd));
-    const date = at >= 0 ? noise[at]!.date : periodEnd ?? "";
-    // The card sits right after the pinned filing, so a later row's place in `rows` is one past its place in `noise`.
-    const after = at < 0 ? (layout.pinned ? lead : 0) : at === 0 && layout.pinned ? 1 : at + 1 + (layout.summary ? 1 : 0);
-    rows.splice(after, 0, ...findings.map((finding): StreamRow<F> => ({ kind: "finding", id: finding.id, date, finding })));
+    const at = noise.findIndex(row => reportsPeriod(row, periodEnd, layout.items));
+    if (at >= 0 || !rows.length) {
+      const date = at >= 0 ? noise[at]!.date : periodEnd ?? "";
+      // The card sits right after the pinned filing, so a later row's place in `rows` is one past its place in `noise`.
+      const after = at < 0 ? 0 : at === 0 && layout.pinned ? 1 : at + 1 + (layout.summary ? 1 : 0);
+      rows.splice(after, 0, ...findings.map((finding): StreamRow<F> => ({ kind: "finding", id: finding.id, date, finding })));
+    }
   }
   return rows;
 }

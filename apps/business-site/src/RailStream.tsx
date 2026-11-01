@@ -238,8 +238,8 @@ function PersonLine({ person }: { person: InsiderPerson }) {
 
 /**
  * The last 90 days of open-market insider trades as one card: net amount, how many people and how many on 10b5-1 plans,
- * the three largest by amount, and the per-person folded rows behind "Show all": the window's filings are in the list only
- * while it is open.
+ * the three largest by amount, and the per-person folded rows behind "Show all": every insider filing, of any age, is in
+ * the list only while it is open.
  */
 export function InsiderSummaryCard({ summary, ticker, open, openRows, focus, arrive, motion, onToggle, onFocus, tip }: {
   summary: InsiderSummary; ticker: string; open: boolean; openRows: ReadonlySet<string>; focus: string | null; arrive?: number; motion: RowMotion;

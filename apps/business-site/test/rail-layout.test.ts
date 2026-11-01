@@ -53,9 +53,11 @@ test("the last 90 days of insider trades sum to a net amount, people and 10b5-1 
     ["Magnetar Financial LLC", -530_000_000, 1], ["Intrator Michael", -350_000_000, 2], ["Agarwal Nitin", -12_000_000, 1],
   ]);
   assert.equal(summary.people.find(p => p.name === "Buyer Director")!.net, 2_000_000);
-  // The trade before the window stays out; the expanded rows are the per-person folds and hold exactly the window's trades.
-  assert.ok(!summary.items.some(item => item.id === "old"));
-  assert.deepEqual(summary.rows.flatMap(rowLeaves).map(item => item.id).sort(), ["a1", "b1", "c1", "i1", "i2", "m1"]);
+  // The trade before the window stays out of the figures (McBee's 9M is not summed) but the card holds it: the expanded
+  // rows are the per-person folds of every insider filing, of any age.
+  assert.equal(summary.people.find(p => p.name === "McBee Brannin")!.sold, 4_000_000);
+  assert.ok(summary.items.some(item => item.id === "old"));
+  assert.deepEqual(summary.rows.flatMap(rowLeaves).map(item => item.id).sort(), ["a1", "b1", "c1", "i1", "i2", "m1", "old"]);
   const intrator = summary.rows.find(row => row.kind === "plan" && row.name === "Intrator Michael");
   assert.ok(intrator && intrator.kind === "plan" && intrator.items.length === 2);
 });
@@ -77,7 +79,9 @@ test("the latest earnings filing leads the rail, the summary holds the window's 
     assert.ok(!restIds.includes("earn"));
     assert.ok(!restIds.some(id => layout.summary!.items.some(item => item.id === id)), filter);
   }
-  assert.ok(railLayout(all, "all", NOW).rest.flatMap(rowLeaves).some(item => item.id === "old"));
+  // A trade older than the window lives in the card too, never beside it.
+  assert.ok(!railLayout(all, "all", NOW).rest.flatMap(rowLeaves).some(item => item.id === "old"));
+  assert.ok(railLayout(all, "all", NOW).summary!.items.some(item => item.id === "old"));
   // The Insiders reading keeps its per-person rows; the others get no card and no pin.
   for (const filter of ["insiders", "earnings", "material"] as const) {
     const layout = railLayout(all, filter, NOW);
