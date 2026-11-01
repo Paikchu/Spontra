@@ -137,11 +137,11 @@ function priorAnnualReport(audits: StoredAudit[], annual: StoredAudit): StoredAu
     .sort((a, b) => b.source.filedAt.localeCompare(a.source.filedAt))[0] ?? null;
 }
 
-async function readFiling(env: DisclosureArchiveEnv, record: StoredAudit, industry: Industry): Promise<ReadFiling | null> {
+async function readFiling(env: DisclosureArchiveEnv, record: StoredAudit, industry: Industry): Promise<ReadFiling> {
   const raw = await env.SEC_FILINGS.get(record.rawKey);
-  if (!raw) return null;
+  if (!raw) throw new Error(`Archived filing ${record.documentId} missing from R2`);
   const html = await raw.text();
-  if (new TextEncoder().encode(html).byteLength !== record.sourceBytes) return null;
+  if (new TextEncoder().encode(html).byteLength !== record.sourceBytes) throw new Error(`Archived filing ${record.documentId} size does not match its inventory`);
   const cik = issuerOf(record)!.padStart(10, '0');
   const needed = namesMembers(html), memberLabels = needed ? await storedMemberLabels(env.DB, record.source.accessionNumber) : null;
   const structure = needed ? await storedCalculation(env.DB, record.source.accessionNumber) : null;
@@ -173,11 +173,9 @@ export function filingQuarters(filing: { html: string; source: DocumentSource },
   return quarters.filter(q => checkCompleteQuarter(q).complete);
 }
 
-async function parseFiling(env: DisclosureArchiveEnv, record: StoredAudit, partner: StoredAudit | null, earlier: StoredAudit | null, contentSha256: string, industry: Industry): Promise<StoredQuarters | null> {
+async function parseFiling(env: DisclosureArchiveEnv, record: StoredAudit, partner: StoredAudit | null, earlier: StoredAudit | null, contentSha256: string, industry: Industry): Promise<StoredQuarters> {
   const filing = await readFiling(env, record, industry);
-  if (!filing) return null;
   const thirdQuarter = partner ? await readFiling(env, partner, industry) : null;
-  if (partner && !thirdQuarter) return null;
   // The previous annual report is read only when either report notes reclassified or recast prior periods.
   const priorAnnual = thirdQuarter && earlier && !(priorPresentationOnly(filing.html) && priorPresentationOnly(thirdQuarter.html)) ? await readFiling(env, earlier, industry) : null;
   // Unsupported layouts return no quarters normally; exceptions are failed parses, never cacheable results.
@@ -225,8 +223,7 @@ export async function deriveCompany(env: DisclosureArchiveEnv, ticker: string, b
       if (bytes > budget) { oversized.push(record.documentId); continue; }
       if (spent + bytes > budget) { pending++; continue; }
       spent += bytes;
-      const parsed = await parseFiling(env, record, partner, earlier, contentSha256, industry).catch(() => null);
-      if (!parsed) continue;
+      const parsed = await parseFiling(env, record, partner, earlier, contentSha256, industry);
       await repository.setCache(quartersPrefix(ticker) + record.documentId, parsed, new Date().toISOString());
       entry = parsed;
     }
