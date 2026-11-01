@@ -137,3 +137,14 @@ test("A14: a zero bear valuation represents total loss and constrains the safety
   assert.equal(range.expectedUpside, -1);
   assert.equal(dimensionCeilings({ marginOfSafety: range.marginOfSafety, downsideCoverage: range.downsideCoverage, bearProbability: 0.3, terminalShare: null, hasIndependentConsensus: false, impliedGap: null, impliedGapThreshold: null, goingConcernUnresolved: false }).valuationSafety, 7.5);
 });
+
+test("A15: all scenario models reject nonpositive discount rates", () => {
+  const models: ModelDrivers[] = [
+    { modelType: "earnings_multiple", epsLow: 10, epsHigh: 10, weight: 0.5, multiple: 10, horizonYears: 1 },
+    { modelType: "affo_multiple", affoLow: 10, affoHigh: 10, weight: 0.5, recurringCostPerShare: 0, multiple: 10, horizonYears: 1 },
+    { modelType: "reported_earnings_multiple", commonEarnings: 1000, earningsScale: 1, multiple: 10, horizonYears: 1 },
+    fcff(0.05),
+  ];
+  for (const drivers of models) for (const discount of [-0.5, 0]) assert.throws(() => scenarioValue(drivers, discount, 100, bridge), ValuationCalcError);
+  close(scenarioValue(models[0]!, 0.1, 100, bridge).perShare, 100 / 1.1);
+});
