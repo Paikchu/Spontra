@@ -20,7 +20,7 @@ import { daysBetween } from "../../../../shared/analysis-runtime/dates.ts";
  * quarterly statements once and the result stored, then each company's older quarters and capital structure are
  * assembled into one snapshot. A read is a single D1 lookup, whatever the size of the filings behind it.
  */
-export const REPORT_QUARTERS_VERSION = `report-quarters.v2:${SEC_FLOW_PARSER_VERSION}`;
+export const REPORT_QUARTERS_VERSION = `report-quarters.v3:${SEC_FLOW_PARSER_VERSION}`;
 /** How a period is chosen among the filings that present it (`supersedes`); a new rule rebuilds every snapshot without parsing again. */
 export const REPORT_SELECTION_VERSION = 'report-selection.v2';
 const quartersPrefix = (ticker: string) => `sec:report-quarters:v1:${ticker}:`;
@@ -180,9 +180,8 @@ async function parseFiling(env: DisclosureArchiveEnv, record: StoredAudit, partn
   if (partner && !thirdQuarter) return null;
   // The previous annual report is read only when either report notes reclassified or recast prior periods.
   const priorAnnual = thirdQuarter && earlier && !(priorPresentationOnly(filing.html) && priorPresentationOnly(thirdQuarter.html)) ? await readFiling(env, earlier, industry) : null;
-  let quarters: BusinessFlowQuarter[] = [];
-  try { quarters = filingQuarters(filing, thirdQuarter, priorAnnual); }
-  catch { /* An unsupported layout yields no quarters, and is recorded so it is not parsed again. */ }
+  // Unsupported layouts return no quarters normally; exceptions are failed parses, never cacheable results.
+  const quarters = filingQuarters(filing, thirdQuarter, priorAnnual);
   const read = [filing.labels, thirdQuarter?.labels], labels: Labels = read.includes('missing') ? 'missing' : read.includes('named') ? 'named' : 'unneeded';
   return { documentId: record.documentId, contentSha256, version: REPORT_QUARTERS_VERSION, industry, labels, quarters };
 }
