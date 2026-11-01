@@ -283,11 +283,19 @@ button { cursor: pointer; }
 }
 .stage--state { display: block; overflow-y: auto; }
 .stage-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px 24px; flex-wrap: wrap; }
-.stage-head--summary { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 12px 24px; }
-/* One fixed row: the figures compress beside the controls and never wrap, so the chart below keeps its height. */
-.stage-head--summary > .stats { grid-column: 1; grid-row: 1; }
-.stage-head--summary > .stage-controls { grid-column: 2; grid-row: 1; flex-wrap: nowrap; }
-.stage-head--summary > .view-flags { grid-column: 1 / -1; grid-row: 2; }
+/* The figures share a row with the controls while each keeps 120px for its title; when they cannot, the controls move to
+   a second row rather than cut the titles ("Operating income" must never read "Operating..."). Flags take a row of their own. */
+.stage-head--summary { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px 24px; }
+.stage-head--summary > * { flex: 1 0 100%; min-width: 0; }
+.stage-head--summary > .stats { flex: 1 1 0; min-width: min(100%, calc(var(--n) * 120px + (var(--n) - 1) * clamp(20px, 2.6vw, 44px))); }
+.stage-head--summary > .stage-controls { flex: none; margin-left: auto; flex-wrap: nowrap; }
+/* Too narrow for four figures at 120px in a row (the 1280 desktop, where the view tabs share the stage's first row): two by two. */
+@media (min-width: 641px) {
+  .stage-head--summary { container: stage-head / inline-size; }
+  @container stage-head (max-width: 600px) {
+    .stats:has(> .stat:nth-child(4)):not(:has(> [data-missing])) { --n: 2; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 24px; overflow: visible; mask-image: none; -webkit-mask-image: none; animation: none; }
+  }
+}
 /* Every part of the stage spans its width; only the figures' header shares the first row, with the view tabs at its right. */
 .stage > * { grid-column: 1 / -1; }
 .stage > .stage-head--summary { grid-column: 1; grid-row: 1; }
@@ -311,7 +319,7 @@ button { cursor: pointer; }
 .stats:has(> :nth-child(4)) { --n: 4; }
 .stats:has(> :nth-child(5)) { --n: 5; }
 /* Figures share the row; a title wraps to a second line before it is cut. The momentum tag sits beside (or under) the title and never clips. */
-.stat { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; justify-content: flex-end; gap: 4px; }
+.stat { flex: 1 1 0; min-width: 120px; display: flex; flex-direction: column; justify-content: flex-end; gap: 4px; }
 .stat-label { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; min-width: 0; font-size: 12px; line-height: 1.4; color: var(--muted-foreground); }
 .stat-label-text { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; min-width: 0; }
 .stat-label .level-mark { margin-right: 6px; }
@@ -739,8 +747,7 @@ button { cursor: pointer; }
   .stage-head, .stats, .trend, .trend-head, .trend-heading { min-width: 0; max-width: 100%; }
   .trend-heading { flex-wrap: wrap; }
   .metric-select select { max-width: min(160px, 46vw); }
-  .stage-head--summary { grid-template-columns: minmax(0, 1fr); }
-  .stage-head--summary > .stage-controls { grid-column: 1; grid-row: auto; flex-wrap: wrap; }
+  .stage-head--summary > .stage-controls { margin-left: 0; flex-wrap: wrap; }
   .dossier { order: 3; margin: 0 16px 32px; }
   .chart { margin-top: 16px; overflow-x: auto; overscroll-behavior-x: contain; }
   .fc { position: relative; inset: auto; width: max(100%, 780px, var(--mobile-width, 780px)); aspect-ratio: var(--ratio); }
