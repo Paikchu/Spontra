@@ -1,5 +1,6 @@
 import type {RevenueStructure} from "./calculation.ts";
 import type {RevenueHistory, RevenueHistoryQuarter} from '../../../../shared/analysis-contract/revenue-history.ts';
+import {secArchiveDocumentUrl, secArchiveRoot} from '../sec/archive-url.ts';
 import {historyQuarterFrom, mergeHistory, readHistory, revenueHistorySchema, validHistoryQuarter} from '../../../../shared/analysis-runtime/financial-data/history.ts';
 import {D1SecRepository} from '../sec/d1.ts';
 import {extractVerifiedCurrentQuarters, readReportedFacts, SEC_FLOW_PARSER_VERSION, type DocumentSource, type Fact} from './parser.ts';
@@ -80,7 +81,7 @@ async function listDocuments(cik: string, reader: SecReader, now: Date): Promise
       if (!/^(?:10-[QK]|20-F|6-K)(?:\/A)?$/.test(form) && !(form === '8-K' && block.items?.[i]?.includes('2.02'))) continue;
       const accession = block.accessionNumber[i], primary = block.primaryDocument[i];
       if (!/^\d{10}-\d{2}-\d{6}$/.test(accession) || !/^[A-Za-z0-9_.-]+\.html?$/.test(primary)) continue;
-      documents.push({url: `https://www.sec.gov/Archives/edgar/data/${Number(cik)}/${accession.replaceAll('-', '')}/${primary}`, accession, filedAt: block.filingDate[i], periodEnd: block.reportDate[i], form});
+      documents.push({url: secArchiveDocumentUrl(secArchiveRoot(Number(cik), accession), primary), accession, filedAt: block.filingDate[i], periodEnd: block.reportDate[i], form});
       if (!/^6-K/.test(form)) counted++;
     }
   };

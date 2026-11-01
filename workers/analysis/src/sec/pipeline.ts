@@ -1,4 +1,5 @@
 import { throttledSecReader } from "../financial-data/provider.ts";
+import { secArchiveDocumentUrl, secArchiveRoot } from "./archive-url.ts";
 import { validateAiFiscalPeriod, FISCAL_PERIOD_INSTRUCTION } from "./fiscal-period-ai.ts";
 import { enforceDiscoveryCoverage } from "./discovery.ts";
 import type { SecSourceMaterial } from "../../../../shared/analysis-contract/sec-presentation.ts";
@@ -166,7 +167,7 @@ async function prepareFilingWithExhibits(filing: SecFiling, runtime: SecPreparat
   const sourceMaterials: SecSourceMaterial[] = [];
   for (const part of ordered) {
     const unsupported = /\.(pdf|pptx?|xlsx?|zip)$/i.test(part.filename) || /^%PDF|^begin \d{3} /m.test(part.text);
-    sourceMaterials.push({ type: part.type, filename: part.filename, url: `https://www.sec.gov/Archives/edgar/data/${filing.cikNumber}/${filing.accessionNumber.replaceAll("-", "")}/${encodeURIComponent(part.filename)}`, status: unsupported ? "unsupported" : "read" });
+    sourceMaterials.push({ type: part.type, filename: part.filename, url: secArchiveDocumentUrl(secArchiveRoot(filing.cikNumber, filing.accessionNumber), encodeURIComponent(part.filename)), status: unsupported ? "unsupported" : "read" });
     if (unsupported) continue;
     const document = htmlToSecDocument(part.text);
     if (!document.text) { sourceMaterials[sourceMaterials.length - 1].status = "unsupported"; continue; }

@@ -1,4 +1,5 @@
 import type {Job} from './store.ts';
+import {secArchiveDocumentUrl, secArchiveRoot} from '../sec/archive-url.ts';
 import type {DocumentBatch} from './collect.ts';
 import {extractDisclosedQuarters, readReportedFacts, SEC_FLOW_PARSER_VERSION, type Fact, type DocumentSource} from './parser.ts';
 import {reviewedCurrentPair} from './period-review.ts';
@@ -93,8 +94,8 @@ export async function readSecDocumentBatch(job:Job,reader:SecReader,maxDocuments
   for(let i=0;i<recent.form.length&&counted<(cursor.foreign?MAX_REPORTS:10)&&cursor.documents.length<FOREIGN_LISTED;i++){
    if(cursor.foreign&&recent.form[i]==='6-K'&&!(Date.parse(recent.filingDate[i])>=newest-FOREIGN_LOOKBACK_DAYS*86400000))break;
    if(!/^(?:10-[QK]|20-F)(\/A)?$/.test(recent.form[i])&&!(cursor.foreign&&recent.form[i]==='6-K')&&!(recent.form[i]==='8-K'&&recent.items?.[i]?.includes('2.02')))continue;const accession=recent.accessionNumber[i],doc=recent.primaryDocument[i];if(!/^\d{10}-\d{2}-\d{6}$/.test(accession)||!/^[A-Za-z0-9_.-]+\.html?$/.test(doc))continue;
-   const folder=`https://www.sec.gov/Archives/edgar/data/${Number(cik)}/${accession.replaceAll('-','')}/`;
-   cursor.documents.push({url:folder+doc,accession,filedAt:recent.filingDate[i],periodEnd:recent.reportDate[i],form:recent.form[i]});
+   const folder=secArchiveRoot(Number(cik),accession);
+   cursor.documents.push({url:secArchiveDocumentUrl(folder,doc),accession,filedAt:recent.filingDate[i],periodEnd:recent.reportDate[i],form:recent.form[i]});
    if(recent.form[i]!=='6-K')counted++;
   }
   // An earnings release filed after the newest quarterly report reports a quarter no report covers yet. It is read on
