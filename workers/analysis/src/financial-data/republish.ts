@@ -60,6 +60,15 @@ export async function republishStoredFinancials(db: D1Database, target: {ticker:
     SELECT generation FROM financial_complete_versions WHERE cik=? UNION ALL SELECT generation FROM financial_collection_jobs WHERE cik=?)`)
     .bind(target.cik,target.cik).first<{generation:number|null}>();
   const nextGeneration = Math.max(now.getTime(),(generation?.generation??0)+1);
+  // Resolve share classes separately to stay within D1's compound SELECT limit.
+  const tickerSources = await Promise.all([
+    db.prepare('SELECT DISTINCT ticker FROM financial_collection_jobs WHERE cik=?').bind(target.cik).all<{ticker:string}>(),
+    db.prepare('SELECT DISTINCT ticker FROM sec_filings WHERE cik=?').bind(target.cik).all<{ticker:string}>(),
+    db.prepare('SELECT DISTINCT ticker FROM financial_complete_versions WHERE cik=?').bind(target.cik).all<{ticker:string}>(),
+    db.prepare(`SELECT substr(cache_key,length('admin:financial-issuer:')+1) ticker FROM sec_cache
+      WHERE cache_key LIKE 'admin:financial-issuer:%' AND json_valid(payload) AND json_extract(payload,'$.cik')=?`).bind(target.cik).all<{ticker:string}>(),
+  ]);
+  const tickers = [...new Set([target.ticker,flow.ticker,...tickerSources.flatMap(source=>source.results.map(row=>row.ticker))])];
   const owns = `EXISTS(SELECT 1 FROM financial_maintenance_tasks WHERE task_id=? AND lease_token=? AND status='running' AND lease_until>?)`;
   const owned = [target.taskId,target.leaseToken,at];
   const results = await db.batch([
@@ -70,15 +79,10 @@ export async function republishStoredFinancials(db: D1Database, target: {ticker:
       AND EXISTS(SELECT 1 FROM financial_complete_versions WHERE version_id=?)`)
       .bind(version,nextGeneration,target.cik,current.version_id,...owned,version),
     // Include share classes already served through this issuer, not only the requested ticker.
-    ...['company','fundamentals','capital'].map(resource=>db.prepare(`INSERT INTO publication_revisions(ticker,resource,revision)
-      SELECT ticker,?,? FROM (
-        SELECT ? ticker UNION SELECT ? UNION SELECT ticker FROM financial_collection_jobs WHERE cik=?
-        UNION SELECT ticker FROM sec_filings WHERE cik=? UNION SELECT ticker FROM financial_complete_versions WHERE cik=?
-        UNION SELECT substr(cache_key,length('admin:financial-issuer:')+1) FROM sec_cache
-          WHERE cache_key LIKE 'admin:financial-issuer:%' AND json_valid(payload) AND json_extract(payload,'$.cik')=?
-      ) WHERE ${owns} AND EXISTS(SELECT 1 FROM financial_complete_current WHERE cik=? AND version_id=?)
+    ...tickers.flatMap(ticker=>['company','fundamentals','capital'].map(resource=>db.prepare(`INSERT INTO publication_revisions(ticker,resource,revision)
+      SELECT ?,?,? WHERE ${owns} AND EXISTS(SELECT 1 FROM financial_complete_current WHERE cik=? AND version_id=?)
       ON CONFLICT(ticker,resource) DO UPDATE SET revision=CASE WHEN publication_revisions.revision>=excluded.revision THEN strftime('%Y-%m-%dT%H:%M:%fZ',publication_revisions.revision,'+0.001 seconds') ELSE excluded.revision END`)
-      .bind(resource,at,target.ticker,flow.ticker,target.cik,target.cik,target.cik,target.cik,...owned,target.cik,version)),
+      .bind(ticker,resource,at,...owned,target.cik,version))),
   ]);
   if (!results[1].meta.changes) throw new Error('REPUBLICATION_LEASE_OR_VERSION_CHANGED');
   return version;
