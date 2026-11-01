@@ -61,7 +61,7 @@ export const PRESENTATION_TASKS = {
       const { facts } = readReportedFacts(document.html, { url: line.url, accession: line.accession, filedAt: source?.publishedAt ?? newest!.reportedAt ?? "", cik, industry: "standard" });
       const modelVersion = modelFor(env, "presentation");
       const model: JudgeModel = async (stage, system, payload) => {
-        try { return await callWorkerSecModel(env, fetch, stage, system, payload, modelVersion, MODEL_BUDGET_MS, true, { reasoning: reasoningFor(env, "presentation"), ticker, kind: "presentation" }); }
+        try { return await callWorkerSecModel(env, fetch, stage, system, payload, modelVersion, MODEL_BUDGET_MS, { reasoning: reasoningFor(env, "presentation"), ticker, kind: "presentation" }); }
         catch (error) { if (error instanceof SecModelOutputError) return {}; throw error; }
       };
       let judgement: Awaited<ReturnType<typeof judgeStructure>>;

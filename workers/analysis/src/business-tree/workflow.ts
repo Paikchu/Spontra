@@ -95,7 +95,7 @@ export async function executeBusinessTreeWorkflow(params: BusinessTreeParams, st
         catch (error) { if (error instanceof SecModelOutputError) return { error: `${error.code}: ${error.message}`.slice(0, 300) }; throw error; }
       },
       judge: async (stage, system, payload) => {
-        try { return await callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, 5 * 60_000, true, tuning); }
+        try { return await callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, 5 * 60_000, tuning); }
         catch (error) { if (error instanceof SecModelOutputError) return {}; throw error; }
       },
     },

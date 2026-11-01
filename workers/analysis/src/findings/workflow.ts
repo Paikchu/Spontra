@@ -102,7 +102,7 @@ export async function executeFindingsWorkflow(params: FindingsWorkflowParams, st
   const input = await step.do("findings-input", () => findingsInput(env, params.ticker));
   // The report, guidance or narrative moved on after scheduling; the next sweep starts a run for the new state.
   if (!input || input.fingerprint !== params.fingerprint) return { status: "superseded" as const };
-  const model: FindingsModel = deps.model ?? ((stage, system, payload) => callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, MODEL_BUDGET_MS, true, { reasoning: reasoningFor(env, "findings"), ticker: params.ticker }));
+  const model: FindingsModel = deps.model ?? ((stage, system, payload) => callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, MODEL_BUDGET_MS, { reasoning: reasoningFor(env, "findings"), ticker: params.ticker }));
   const companyName = issuerNames(findSecurity(params.ticker)?.name ?? params.ticker)[0]!;
   const stage = <T>(name: string, callback: () => Promise<T>) => step.do(`findings-${name}`, callback);
   const draft = await writeFindings({

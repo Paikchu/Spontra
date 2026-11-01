@@ -194,7 +194,7 @@ async function redTeam(env: AnalysisEnv, step: WorkflowStepLike, state: Valuatio
   };
   const system = `You are the counter-evidence reviewer of a valuation. From the base case, the price-implied path and the registered evidence only, name the two assumptions most likely to be wrong and what in the evidence argues against them. Reply as JSON: {"weakestAssumptions":[{"factor":"...","why":"...","evidenceIds":["e..."]}],"decisiveCounterEvidence":false,"counterEvidenceIds":["e..."]}. decisiveCounterEvidence is true only when a registered passage contradicts the long-term thesis and nothing in the rationales answers it. Cite only ids from the evidence list.`;
   const reply = await step.do("valuation-redteam", async () => {
-    try { return await callWorkerSecModel(env, fetcher, "valuation-redteam", system, payload, modelFor(env, "valuation"), MODEL_BUDGET_MS, true, { reasoning: reasoningFor(env, "valuation"), ticker: state.input.ticker, runId, kind: "valuation" }); }
+    try { return await callWorkerSecModel(env, fetcher, "valuation-redteam", system, payload, modelFor(env, "valuation"), MODEL_BUDGET_MS, { reasoning: reasoningFor(env, "valuation"), ticker: state.input.ticker, runId, kind: "valuation" }); }
     catch (error) { if (error instanceof SecModelOutputError) return null; throw error; }
   });
   if (!reply) return null;
