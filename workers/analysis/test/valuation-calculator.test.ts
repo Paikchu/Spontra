@@ -130,3 +130,10 @@ test("rejections: r <= g, shares <= 0, a bull case that grows faster but reinves
   assert.throws(() => calculateValuation({ ...request(null), discountRate: rate(0.09, "cost_of_equity") }), ValuationCalcError);
   assert.equal(impliedGrowth(request(null), 0.09, 102, 1e9)?.converged, false);
 });
+
+test("A14: a zero bear valuation represents total loss and constrains the safety score", () => {
+  const range = valuationRange({ bear: 0, base: 20, bull: 30 }, 0, 10);
+  assert.equal(range.downsideCoverage, -1);
+  assert.equal(range.expectedUpside, -1);
+  assert.equal(dimensionCeilings({ marginOfSafety: range.marginOfSafety, downsideCoverage: range.downsideCoverage, bearProbability: 0.3, terminalShare: null, hasIndependentConsensus: false, impliedGap: null, impliedGapThreshold: null, goingConcernUnresolved: false }).valuationSafety, 7.5);
+});
