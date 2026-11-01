@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { FindingPassage } from "../../../../shared/analysis-contract/findings.ts";
-import { SCENARIO_KEYS, VALUATION_DIMENSIONS, VALUATION_METHODS, VALUATION_MODEL_TYPES, type Confidence, type ConsensusTarget, type DiscountRate, type FactorDistribution, type ManagementTarget, type PeerMultiples, type SanityGate, type ScenarioAssumptions, type ValuationDimension, type ValuationDimensionKey, type ValuationEvidence, type ValuationGap, type ValuationModelResult, type ValuationSections } from "../../../../shared/analysis-contract/valuation.ts";
+import { SCENARIO_KEYS, VALUATION_DIMENSIONS, VALUATION_METHODS, VALUATION_MODEL_TYPES, type ConsensusTarget, type DiscountRate, type FactorDistribution, type ManagementTarget, type PeerMultiples, type SanityGate, type ScenarioAssumptions, type ValuationDimension, type ValuationDimensionKey, type ValuationEvidence, type ValuationGap, type ValuationModelResult, type ValuationSections } from "../../../../shared/analysis-contract/valuation.ts";
 import { calculateValuation, dimensionCeilings, discountRateBaseline, horizonOf, MAX_FORECAST_YEARS, MIN_FORECAST_YEARS, outsideHistory, percentileRank, ValuationCalcError, type CalcContext, type CalcRequest } from "../../../../shared/analysis-runtime/valuation/calculator.ts";
 import { anchorOf } from "../../../../shared/analysis-runtime/valuation/prior.ts";
 import { EXCLUDED_HOSTS, PAGE_CACHE_MS, hostOf, readWebPage } from "../analyst/web.ts";
@@ -361,5 +361,4 @@ export const RESEARCH_TOOLS = ["read_financials", "list_filings", "find_filing_s
 export const ASSUMPTION_TOOLS = ["read_financials", "read_guidance", "calculate_valuation", "declare_model_insufficient", "submit_dimension", "finish_assumptions"];
 export const COMPOSE_TOOLS = ["compose_valuation", "finish_valuation"];
 
-export const confidenceOf = (value: string): Confidence => value === "high" || value === "medium" ? value : "low";
 export const excerptOf = (e: ValuationEvidence) => e.excerpt.replace(/\s+/g, " ").slice(0, EXCERPT_CHARS);
