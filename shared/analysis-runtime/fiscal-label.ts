@@ -1,5 +1,6 @@
 import type { FiscalLabelSource, FiscalPeriodFields, FiscalQuarterNumber } from "../analysis-contract/period.ts";
 import type { Locale } from "./locale.ts";
+import { nominalFiscalMonth } from "./dates.ts";
 
 /**
  * Each issuer's fiscal calendar as the server reports it (SEC submissions `fiscalYearEnd`, else the period end of its
@@ -24,7 +25,7 @@ export function yearEndMonth(date: string | null | undefined): number | null {
   if (!match) return null;
   const month = Number(match[1]), day = Number(match[2]);
   if (month < 1 || month > 12 || day < 1 || day > 31) return null;
-  return day <= 7 ? (month === 1 ? 12 : month - 1) : month;
+  return nominalFiscalMonth(0, month, day).month;
 }
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -80,18 +81,19 @@ export function calendarLabel(periodEnd: string): string {
 
 /**
  * Quarter of `periodEnd` on a fiscal year that ends in `fyEndMonth`.
- * The year is the calendar year when the period ends on or before that month, otherwise the next year.
- * 52/53-week dates stay in the month the company reports them in.
+ * First-week closes belong to the previous nominal month. The fiscal year is that month's calendar
+ * year when it is on or before `fyEndMonth`, otherwise the next year.
  */
 export function deriveFiscalQuarter(periodEnd: string, fyEndMonth: number): { fiscalYear: number; fiscalQuarter: FiscalQuarterNumber } | null {
   const date = parts(periodEnd);
   if (!date || fyEndMonth < 1 || fyEndMonth > 12) return null;
+  const { year, month } = nominalFiscalMonth(date.y, date.m, date.d);
   const startMonth = fyEndMonth === 12 ? 1 : fyEndMonth + 1;
-  let delta = date.m - startMonth;
+  let delta = month - startMonth;
   if (delta < 0) delta += 12;
   const fiscalQuarter = (Math.floor(delta / 3) + 1) as FiscalQuarterNumber;
   if (fiscalQuarter < 1 || fiscalQuarter > 4) return null;
-  return { fiscalYear: date.m <= fyEndMonth ? date.y : date.y + 1, fiscalQuarter };
+  return { fiscalYear: month <= fyEndMonth ? year : year + 1, fiscalQuarter };
 }
 
 /** DEI focus as a numbered quarter. FY is the fourth; half-year and nine-month foci are not quarters. */
