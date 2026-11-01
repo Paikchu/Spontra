@@ -163,7 +163,7 @@ export async function handleSecAnalysisRequest(request: Request, env: SecCronEnv
   }
   if (!tracked(ticker, trackedTickers)) return Response.json({ error: "Ticker is not tracked" }, { status: 403 });
   try {
-    const instance = await startWorkflow(env.SEC_ANALYSIS_WORKFLOW, ticker, "manual", now, mode === "backfill");
+    const instance = await startWorkflow(env.SEC_ANALYSIS_WORKFLOW, ticker, now, mode === "backfill");
     return Response.json({ status: "queued", jobId: instance.id, ticker, mode }, { status: 202 });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Unable to queue analysis" }, { status: 503 });
@@ -229,8 +229,7 @@ export async function handleCompanyAnalysisRequest(request: Request, env: SecCro
   }
 }
 
-async function startWorkflow(binding: SecWorkflowBinding, ticker: string, requestedBy: SecWorkflowParams["requestedBy"], now: number, backfill: boolean) {
-  const runKey = requestedBy === "manual" ? `${now}-${crypto.randomUUID()}` : Math.floor(now / (5 * 60_000));
-  const id = `${requestedBy}-${ticker}-${runKey}`;
-  return binding.create({ id, params: { ticker, requestedBy, backfill } });
+async function startWorkflow(binding: SecWorkflowBinding, ticker: string, now: number, backfill: boolean) {
+  const id = `manual-${ticker}-${now}-${crypto.randomUUID()}`;
+  return binding.create({ id, params: { ticker, requestedBy: "manual", backfill } });
 }
