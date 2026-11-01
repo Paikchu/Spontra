@@ -546,7 +546,7 @@ function checkScenarioConsistency(scenarios: Record<ScenarioKey, ScenarioAssumpt
 }
 
 export function valuationRange(values: Record<ScenarioKey, number>, expected: number | null, price: number | null): ValuationRange {
-  const ratio = (numerator: number | null, denominator: number | null) => numerator != null && denominator != null && denominator > 0 && numerator > 0 ? numerator / denominator - 1 : null;
+  const ratio = (numerator: number | null, denominator: number | null) => numerator != null && denominator != null && denominator > 0 && numerator >= 0 ? numerator / denominator - 1 : null;
   return {
     low: values.bear, high: values.bull, base: values.base, expected, price,
     marginOfSafety: price != null && price > 0 && values.base > 0 ? 1 - price / values.base : null,
