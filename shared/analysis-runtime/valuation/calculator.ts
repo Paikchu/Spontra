@@ -26,13 +26,17 @@ export class ValuationCalcError extends Error {
 
 const finite = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
 const requireFinite = (value: unknown, name: string): number => { if (!finite(value)) throw new ValuationCalcError("invalid_input", `${name} must be a finite number`); return value; };
+const requireDiscountRate = (value: unknown): number => {
+  const rate = requireFinite(value, "discount rate");
+  if (rate <= 0) throw new ValuationCalcError("invalid_input", "discount rate must be positive");
+  return rate;
+};
 const requireYears = (values: unknown, name: string, years = FORECAST_YEARS): number[] => {
   if (!Array.isArray(values) || values.length !== years) throw new ValuationCalcError("invalid_input", `${name} must list ${years} yearly values`);
   return values.map((v, i) => requireFinite(v, `${name}[${i + 1}]`));
 };
 const requireRates = (r: number, g: number) => {
-  requireFinite(r, "discount rate"); requireFinite(g, "terminal growth");
-  if (r <= 0) throw new ValuationCalcError("invalid_input", "discount rate must be positive");
+  requireDiscountRate(r); requireFinite(g, "terminal growth");
   if (r <= g) throw new ValuationCalcError("rate_order", "terminal growth must be below the discount rate");
 };
 
@@ -114,6 +118,7 @@ const terminalShareOf = (pvExplicit: number, pvTerminal: number) => { const tota
 
 /** One scenario of one model: the equity value and per-share value from its drivers, the shared rate, shares and bridge. */
 export function scenarioValue(drivers: ModelDrivers, r: number, shares: number, bridge: EquityBridge, options: { midYear?: boolean } = {}): ScenarioResult {
+  requireDiscountRate(r);
   if (!(shares > 0)) throw new ValuationCalcError("shares", "shares must be positive");
   const notes: string[] = [];
   const midYear = options.midYear === true;
@@ -256,7 +261,7 @@ function multipleValue(perShareBasis: number, multiple: number, horizonYears: nu
 
 /** The whole model: three scenarios, the range, the sensitivities on the base case, the market-implied path, and with a context the cross-checks and gates. */
 export function calculateValuation(request: CalcRequest): ValuationModelResult {
-  const r = requireFinite(request.discountRate.value, "discount rate");
+  const r = requireDiscountRate(request.discountRate.value);
   const base = requireFinite(request.shares.base, "shares.base"), dilution = requireFinite(request.shares.dilutionReserve, "shares.dilutionReserve");
   const shares: ShareCount = { base, dilutionReserve: dilution, economic: base + dilution, basis: request.shares.basis };
   if (shares.economic <= 0) throw new ValuationCalcError("shares", "economic shares must be positive");
@@ -369,6 +374,7 @@ export function forwardFundamentals(drivers: Extract<ModelDrivers, { modelType: 
 export function forwardMultipleValue(input: { metric: number; multiples: MultipleQuartiles; horizonYears: number; r: number; kind: "ev" | "equity"; bridge: EquityBridge; shares: number; cumulativeCashFlow: number }): { low: number; base: number; high: number } {
   const { metric, multiples, horizonYears: h, r, bridge, shares } = input;
   requireFinite(metric, "forward metric"); requireFinite(r, "discount rate");
+  requireDiscountRate(r);
   if (!(shares > 0)) throw new ValuationCalcError("shares", "shares must be positive");
   if (h < 0) throw new ValuationCalcError("invalid_input", "horizonYears cannot be negative");
   const discount = (1 + r) ** h;
