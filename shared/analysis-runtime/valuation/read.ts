@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { GAP_CODES, VALUATION_DIMENSIONS, VALUATION_METHODS, VALUATION_MODEL_TYPES, type ValuationPublication } from "../../analysis-contract/valuation.ts";
+import { GAP_CODES, PEER_SELECTION_BASES, VALUATION_DIMENSIONS, VALUATION_METHODS, VALUATION_MODEL_TYPES, type ValuationPublication } from "../../analysis-contract/valuation.ts";
 
 /** The stored publication as the read API and the page accept it; anything else reads as absent rather than half-drawn. */
 const finite = z.number().finite();
@@ -19,7 +19,12 @@ const triangulation = z.object({ low: finite, high: finite, base: finite, disper
 const gateRow = z.object({ key: z.string(), status: gateStatus, detail: z.string(), value: nullableFinite, limit: nullableFinite });
 const anchor = z.object({ source: z.literal("rpo"), asOf: z.string(), total: finite, floor: z.array(finite), floorToRevenue0: z.array(finite), notes: strings });
 const verification = z.object({ checks: z.array(z.object({ field: z.string(), cited: finite, expected: nullableFinite, factIds: strings, tolerance: finite, status: gateStatus, detail: z.string() })), ok: z.boolean() });
-const peers = z.object({ peers: strings, asOf: z.string(), evToEbitda: quartiles.nullable(), peRatio: quartiles.nullable(), notes: strings });
+const peers = z.object({ peers: strings, asOf: z.string(), evToEbitda: quartiles.nullable(), peRatio: quartiles.nullable(), notes: strings, basis: z.enum(PEER_SELECTION_BASES).optional(), weights: z.record(z.string(), finite).optional() });
+const managementSource = z.object({ id: z.string(), title: z.string(), url: z.string(), date: z.string() });
+const reference = z.object({
+  key: z.literal("management"), label: z.string(), drivers: z.looseObject({ modelType: z.enum(VALUATION_MODEL_TYPES) }), result: z.lazy(() => scenarioResult), triangulation: z.lazy(() => triangulation).nullable(), methods: z.array(z.lazy(() => method)),
+  anchors: z.array(z.object({ metric: z.enum(["revenue", "segment_revenue", "operating_margin", "eps", "capex", "fcf", "rpo"]), fiscalYear: z.number(), year: z.number(), target: finite, path: nullableFinite })), sources: z.array(managementSource), notes: strings,
+});
 const consensus = z.object({ mean: finite, low: nullableFinite, high: nullableFinite, count: z.number().nullable(), asOf: z.string().nullable(), evidenceId: z.string().nullable() });
 const scenarioResult = z.object({ perShare: finite, equityValue: finite, enterpriseValue: nullableFinite, pvExplicit: nullableFinite, pvTerminal: nullableFinite, terminalShare: nullableFinite, yearly: z.array(yearRow), notes: strings });
 const scenario = z.object({ narrative: z.string(), probability: nullableFinite, triggers: strings, invalidation: strings, evidenceIds: strings, drivers: z.looseObject({ modelType: z.enum(VALUATION_MODEL_TYPES) }), result: scenarioResult });
@@ -36,6 +41,7 @@ const model = z.object({
   horizonYears: z.number().optional(), midYear: z.boolean().optional(),
   methods: z.array(method).optional(), triangulation: triangulation.nullable().optional(), gates: z.array(gateRow).optional(),
   anchors: z.object({ revenue: anchor.nullable() }).optional(), verification: verification.nullable().optional(), peers: peers.nullable().optional(), consensus: consensus.nullable().optional(),
+  references: z.array(reference).optional(),
 });
 const sections = z.object({ summary: z.string(), thesis: z.string(), expectationsGap: z.string(), catalysts: strings, counterEvidence: strings, nextChecks: strings, modelNotes: z.string() });
 const publication = z.object({

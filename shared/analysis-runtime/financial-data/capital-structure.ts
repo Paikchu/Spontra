@@ -160,6 +160,8 @@ function reconcile<T extends { value: number }>(items: T[], total: number): T[] 
 function classify<G extends string>(row: Row, rules: Array<[G, RegExp]>, fallback: G): G {
   return rules.find(([, pattern]) => pattern.test(local(row.concept)) || pattern.test(row.label))?.[0] ?? fallback;
 }
+/** The equity group a balance-sheet line falls in by its concept and label (the same rules the extractor applies). */
+export const equityGroupOf = (concept: string, label: string): EquityGroup => classify({ concept, label } as Row, EQUITY_RULES, "paidIn");
 
 const ASSET_RULES: Array<[AssetGroup, RegExp]> = [
   ["leaseAssets", /OperatingLeaseRightOfUse|operating lease right[- ]of[- ]use/i],
@@ -179,7 +181,8 @@ const LIABILITY_RULES: Array<[LiabilityGroup, RegExp]> = [
   ["payables", /AccountsPayable|Accrued|InterestPayable|TaxesPayable|EmployeeRelated|payable|accrued/i],
 ];
 const EQUITY_RULES: Array<[EquityGroup, RegExp]> = [
-  ["redeemable", /TemporaryEquity|RedeemableNoncontrolling|redeemable/i],
+  // "ConvertiblePreferredStockNonredeemableOrRedeemableIssuerOptionValue" is permanent equity (preferred the holder cannot put back); only equity redeemable at the holder's option is temporary.
+  ["redeemable", /TemporaryEquity|RedeemableNoncontrolling|^(?!.*NonredeemableOrRedeemable).*redeemable/i],
   ["noncontrolling", /MinorityInterest|noncontrolling|non-controlling/i],
   ["retained", /RetainedEarnings|AccumulatedDeficit|retained earnings|accumulated deficit/i],
   ["otherEquity", /AccumulatedOtherComprehensive|other comprehensive/i],

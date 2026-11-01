@@ -1,4 +1,6 @@
-import { DIMENSION_WEIGHTS, SCENARIO_KEYS, VALUATION_DIMENSIONS, VALUATION_METHODS, type Confidence, type ConsensusTarget, type DiscountRate, type EquityBridge, type FactorDistribution, type ImpliedPath, type InputCheck, type InputVerification, type MethodValuation, type ModelDrivers, type MultipleQuartiles, type PeerMultiples, type RevenueAnchor, type SanityGate, type ScenarioAssumptions, type ScenarioKey, type ScenarioResult, type Sensitivity, type ShareCount, type Triangulation, type ValuationDimension, type ValuationMethodKey, type ValuationModelResult, type ValuationModelType, type ValuationRange, type ValuationVerdict, type YearRow } from "../../analysis-contract/valuation.ts";
+import { DIMENSION_WEIGHTS, SCENARIO_KEYS, VALUATION_DIMENSIONS, VALUATION_METHODS, type Confidence, type ConsensusTarget, type DiscountRate, type EquityBridge, type FactorDistribution, type ImpliedPath, type InputCheck, type InputVerification, type ManagementTargetSet, type MethodValuation, type ModelDrivers, type MultipleQuartiles, type PeerMultiples, type PeerSelectionBasis, type ReferenceScenario, type RevenueAnchor, type SanityGate, type ScenarioAssumptions, type ScenarioKey, type ScenarioResult, type Sensitivity, type ShareCount, type Triangulation, type ValuationDimension, type ValuationMethodKey, type ValuationModelResult, type ValuationModelType, type ValuationRange, type ValuationVerdict, type YearRow } from "../../analysis-contract/valuation.ts";
+import { managementDrivers, managementFactsOf, managementGate, managementRequest } from "./management.ts";
+import { weightedQuantile } from "./peers.ts";
 
 /**
  * The deterministic valuation calculator (docs/valuation-assessment-implementation.md §4, docs/valuation-methodology-optimization.md
@@ -58,6 +60,9 @@ export type CalcContext = {
   forwardYears?: number;
   methodWeights?: Partial<Record<ValuationMethodKey, number>> | null;
   lifecycle?: Lifecycle | null;
+  /** Management's cited targets and the period end the forecast years count from: the management reference case and its gate. */
+  management?: ManagementTargetSet | null;
+  periodEnd?: string | null;
 };
 export type Lifecycle = "build" | "growth" | "mature";
 
@@ -122,6 +127,8 @@ export function scenarioValue(drivers: ModelDrivers, r: number, shares: number, 
       const normalization = path.normalization ? requireYears(path.normalization, "normalization", years) : new Array<number>(years).fill(0);
       const buildCapex = path.buildCapex ? requireYears(path.buildCapex, "buildCapex", years) : null;
       if (buildCapex?.some(v => v < 0)) throw new ValuationCalcError("invalid_input", "buildCapex cannot be negative");
+      // The build may peak in any year, but it has to end inside the horizon: a terminal that still carries it would be a steady state misread.
+      if (buildCapex && buildCapex[years - 1]! > 0) throw new ValuationCalcError("invalid_input", `buildCapex must end inside the horizon: year ${years} still carries ${buildCapex[years - 1]}; extend the horizon or let the build taper to 0`);
       requireRates(r, drivers.terminalGrowth);
       let revenue = revenue0;
       const rows: Array<Partial<YearRow>> = [], cashFlows: number[] = [];
@@ -295,9 +302,27 @@ export function calculateValuation(request: CalcRequest): ValuationModelResult {
   const verification = c.facts ? verifyCitedInputs(request, c.facts) : null;
   const multipleHistory = c.multipleHistory ?? null, trailingEbitda = c.trailing?.ebitda ?? null;
   const impliedMultiple = results.base.result.enterpriseValue != null && trailingEbitda != null && trailingEbitda > 0 ? results.base.result.enterpriseValue / trailingEbitda : null;
-  const gates = sanityGates({ result, riskFree: c.riskFree ?? null, anchor: c.anchor ?? null, consensus: c.consensus ?? null, triangulation, verification, impliedMultiple, multipleHistory, peers: c.peers ?? null });
+  const references = managementReferences(request, r, shares.economic, c);
+  const management = c.management && c.periodEnd && baseDrivers.modelType === "fcff" ? managementGate(baseDrivers, c.management, c.periodEnd) : null;
+  const gates = sanityGates({ result, riskFree: c.riskFree ?? null, anchor: c.anchor ?? null, consensus: c.consensus ?? null, triangulation, verification, impliedMultiple, multipleHistory, peers: c.peers ?? null, management });
   if (methods.length === 1) limitations.push("No forward-multiple cross-check: the ranking peers' multiples were not available.");
-  return { ...result, methods, triangulation, gates, anchors: { revenue: c.anchor ?? null }, verification, peers: c.peers ?? null, consensus: c.consensus ?? null };
+  return { ...result, methods, triangulation, gates, anchors: { revenue: c.anchor ?? null }, verification, peers: c.peers ?? null, consensus: c.consensus ?? null, ...(references.length ? { references } : {}) };
+}
+
+/** The management case beside the model: the cited targets on the model's own rate, shares, bridge, horizon, tax and sales-to-capital; empty without targets inside the horizon. */
+function managementReferences(request: CalcRequest, r: number, shares: number, c: CalcContext): ReferenceScenario[] {
+  const base = request.scenarios.base.drivers;
+  if (!c.management || !c.periodEnd || base.modelType !== "fcff") return [];
+  const built = managementDrivers(base, c.management, c.periodEnd, managementFactsOf(c.facts ?? [], base.revenue0));
+  if (!built) return [];
+  try {
+    const result = scenarioValue(built.drivers, r, shares, request.bridge, { midYear: request.midYear === true });
+    const sub = calculateValuation(managementRequest(request, built.drivers));
+    return [{ key: "management", label: "Management case (cited targets)", drivers: built.drivers, result, triangulation: sub.triangulation ?? null, methods: sub.methods ?? [], anchors: built.anchors, sources: c.management.sources, notes: built.notes }];
+  } catch (error) {
+    if (error instanceof ValuationCalcError) return [];
+    throw error;
+  }
 }
 
 /** The forward EV/EBITDA and P/E methods on the base path, `forwardYears` ahead, at the ranking peers' quartiles. */
@@ -381,24 +406,25 @@ export function triangulate(methods: MethodValuation[]): Triangulation | null {
   return { low: weighted(m => m.low!), base: weighted(m => m.base!), high: weighted(m => m.high!), dispersion: min > 0 ? max / min : null, weights };
 }
 
-/** Quartiles of the ranking peers' trailing EV/EBITDA and core P/E at their reference closes; peers without a figure are left out. */
-export function peerMultiplesOf(peers: Array<{ ticker: string; price: number | null; shares: number | null; ebitda: number | null; coreEarnings: number | null; netDebt: number | null }>, asOf: string): PeerMultiples | null {
-  const ev: number[] = [], pe: number[] = [], answered: string[] = [], notes: string[] = [];
+/**
+ * Quartiles of the peers' trailing EV/EBITDA and core P/E at their reference closes; peers without a figure are left out.
+ * A peer's `weight` (default equal) is its share of the weighted quartiles; weights are renormalized over the peers that answer.
+ */
+export function peerMultiplesOf(peers: Array<{ ticker: string; price: number | null; shares: number | null; ebitda: number | null; coreEarnings: number | null; netDebt: number | null; weight?: number | null }>, asOf: string, basis?: PeerSelectionBasis): PeerMultiples | null {
+  const ev: Array<{ value: number; weight: number }> = [], pe: Array<{ value: number; weight: number }> = [], answered: string[] = [], notes: string[] = [], weights: Record<string, number> = {};
   for (const p of peers) {
     if (!finite(p.price) || !finite(p.shares) || !(p.price! > 0) || !(p.shares! > 0)) { notes.push(`${p.ticker}: no quote or share count`); continue; }
-    const marketCap = p.price! * p.shares!;
+    const marketCap = p.price! * p.shares!, weight = finite(p.weight) && p.weight! > 0 ? p.weight! : 1;
     let used = false;
-    if (finite(p.ebitda) && p.ebitda! > 0 && finite(p.netDebt)) { ev.push((marketCap + p.netDebt!) / p.ebitda!); used = true; }
-    if (finite(p.coreEarnings) && p.coreEarnings! > 0) { pe.push(marketCap / p.coreEarnings!); used = true; }
-    if (used) answered.push(p.ticker); else notes.push(`${p.ticker}: no positive EBITDA or core earnings`);
+    if (finite(p.ebitda) && p.ebitda! > 0 && finite(p.netDebt)) { ev.push({ value: (marketCap + p.netDebt!) / p.ebitda!, weight }); used = true; }
+    if (finite(p.coreEarnings) && p.coreEarnings! > 0) { pe.push({ value: marketCap / p.coreEarnings!, weight }); used = true; }
+    if (used) { answered.push(p.ticker); weights[p.ticker] = weight; } else notes.push(`${p.ticker}: no positive EBITDA or core earnings`);
   }
   if (!answered.length) return null;
-  const quartiles = (list: number[]): MultipleQuartiles | null => {
-    if (list.length < 2) return null;
-    const d = distributionOf("multiple", list.map((value, i) => ({ periodEnd: String(i), value })));
-    return d ? { p25: d.p25, median: d.median, p75: d.p75, count: list.length } : list.length === 2 ? { p25: Math.min(...list), median: (list[0]! + list[1]!) / 2, p75: Math.max(...list), count: 2 } : null;
-  };
-  return { peers: answered, asOf, evToEbitda: quartiles(ev), peRatio: quartiles(pe), notes };
+  const total = Object.values(weights).reduce((a, b) => a + b, 0);
+  for (const t of answered) weights[t] = weights[t]! / total;
+  const quartiles = (list: Array<{ value: number; weight: number }>): MultipleQuartiles | null => list.length < 2 ? null : { p25: weightedQuantile(list, 0.25), median: weightedQuantile(list, 0.5), p75: weightedQuantile(list, 0.75), count: list.length };
+  return { peers: answered, asOf, evToEbitda: quartiles(ev), peRatio: quartiles(pe), notes, weights, ...(basis ? { basis } : {}) };
 }
 
 /**
@@ -463,7 +489,7 @@ export function verifyCitedInputs(request: CalcRequest, facts: Array<{ id: strin
 }
 
 /** The gates (docs/valuation-v2-SPEC.md §5): fails reject the calculation inside the tool, flags annotate the report. */
-export function sanityGates(input: { result: ValuationModelResult; riskFree: number | null; anchor: RevenueAnchor | null; consensus: ConsensusTarget | null; triangulation: Triangulation | null; verification: InputVerification | null; impliedMultiple: number | null; multipleHistory: FactorDistribution | null; peers: PeerMultiples | null }): SanityGate[] {
+export function sanityGates(input: { result: ValuationModelResult; riskFree: number | null; anchor: RevenueAnchor | null; consensus: ConsensusTarget | null; triangulation: Triangulation | null; verification: InputVerification | null; impliedMultiple: number | null; multipleHistory: FactorDistribution | null; peers: PeerMultiples | null; management?: SanityGate | null }): SanityGate[] {
   const { result } = input;
   const gates: SanityGate[] = [];
   const gate = (key: string, status: SanityGate["status"], detail: string, value: number | null = null, limit: number | null = null) => gates.push({ key, status, detail, value, limit });
@@ -489,6 +515,7 @@ export function sanityGates(input: { result: ValuationModelResult; riskFree: num
   }
   if (input.triangulation?.dispersion != null) gate("method_dispersion", input.triangulation.dispersion > DISPERSION_LIMIT ? "flag" : "pass", `method bases span ${input.triangulation.dispersion.toFixed(2)}x`, input.triangulation.dispersion, DISPERSION_LIMIT);
   else if (input.peers == null) gate("method_dispersion", "flag", "single method: no peer multiples to cross-check against");
+  if (input.management) gates.push(input.management);
   if (input.consensus && input.consensus.mean > 0) {
     const divergence = result.range.base / input.consensus.mean - 1;
     gate("consensus_divergence", Math.abs(divergence) > CONSENSUS_DIVERGENCE_LIMIT ? "flag" : "pass", `base ${result.range.base.toFixed(2)} is ${(divergence * 100).toFixed(0)}% from the consensus mean ${input.consensus.mean.toFixed(2)}${input.consensus.low != null && input.consensus.high != null ? ` (range ${input.consensus.low}–${input.consensus.high})` : ""}${Math.abs(divergence) > CONSENSUS_DIVERGENCE_LIMIT ? "; the expectations-gap section must quantify why" : ""}`, divergence, CONSENSUS_DIVERGENCE_LIMIT);

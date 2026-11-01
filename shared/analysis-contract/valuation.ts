@@ -21,7 +21,9 @@ export type ValuationModelType = typeof VALUATION_MODEL_TYPES[number];
 export const GAP_CODES = ["missing_inputs", "unsupported_model", "missing_quote", "stale_quote", "identity_mismatch", "conflicting_sources", "unverified_consensus", "unreadable_source", "research_budget_exhausted",
   "assumption_out_of_history_range", "tv_share_high", "reinvestment_inconsistent", "discount_rate_unsourced", "calculation_rejected",
   // valuation.calc.v2 gates (docs/valuation-v2-SPEC.md): flagged, never forced.
-  "cited_input_mismatch", "consensus_divergence", "method_dispersion", "rpo_floor_breached", "negative_scenario", "terminal_growth_high", "implied_multiple_outside_history", "peers_unavailable"] as const;
+  "cited_input_mismatch", "consensus_divergence", "method_dispersion", "rpo_floor_breached", "negative_scenario", "terminal_growth_high", "implied_multiple_outside_history", "peers_unavailable",
+  // The base path against management's cited targets: a discount or premium beyond the limit is named, never forced.
+  "management_target_gap"] as const;
 export type GapCode = typeof GAP_CODES[number];
 export type ValuationGap = { code: GapCode; field?: string; period?: string; message: string; evidenceIds: string[] };
 
@@ -125,10 +127,62 @@ export type InputCheck = { field: string; cited: number; expected: number | null
 /** The cited inputs checked against the registered facts: revenue, shares, the bridge against debt, leases, preferred and minority claims. */
 export type InputVerification = { checks: InputCheck[]; ok: boolean };
 export type MultipleQuartiles = { p25: number; median: number; p75: number; count: number };
-/** The ranking peers' trailing multiples at their reference closes; `peers` lists the tickers that answered. */
-export type PeerMultiples = { peers: string[]; asOf: string; evToEbitda: MultipleQuartiles | null; peRatio: MultipleQuartiles | null; notes: string[] };
+/**
+ * Where the comparable set came from, in priority order: the curated peer map in the repository, whole-company
+ * business-tag pairs, segment-level (unit) pairs weighted by exposure, companies sharing a category, or none.
+ */
+export const PEER_SELECTION_BASES = ["curated", "ranking", "unit", "category", "none"] as const;
+export type PeerSelectionBasis = typeof PEER_SELECTION_BASES[number];
+/** The peers' trailing multiples at their reference closes; `peers` lists the tickers that answered, `weights` their share of the weighted quartiles (sum 1). */
+export type PeerMultiples = { peers: string[]; asOf: string; evToEbitda: MultipleQuartiles | null; peRatio: MultipleQuartiles | null; notes: string[]; basis?: PeerSelectionBasis; weights?: Record<string, number> };
 /** A sell-side consensus target the research registered with its evidence; compared, never copied. */
 export type ConsensusTarget = { mean: number; low: number | null; high: number | null; count: number | null; asOf: string | null; evidenceId: string | null };
+
+/* ---- Management targets: cited public statements by the company, stored as curated data and compared, never copied. ---- */
+
+export type ManagementTargetMetric = "revenue" | "segment_revenue" | "operating_margin" | "eps" | "capex" | "fcf" | "rpo";
+export type ManagementTargetSource = { id: string; title: string; url: string; date: string };
+/**
+ * One target management stated for one fiscal year: a floor ("at least"), a ceiling ("at most"), a point target, or a
+ * figure derived from stated ones (the derivation in `note`). Amounts in the company's currency base unit; margins as
+ * 0–1 decimals; EPS per share. `basis` says whether the figure is GAAP or the company's non-GAAP presentation.
+ */
+export type ManagementTarget = {
+  metric: ManagementTargetMetric;
+  /** The segment or product line a `segment_revenue` target names. */
+  segment?: string;
+  fiscalYear: number;
+  value: number;
+  unit: "currency" | "ratio" | "per_share";
+  basis: "gaap" | "non_gaap";
+  kind: "target" | "floor" | "ceiling" | "derived";
+  /** Source ids from the set's `sources`. */
+  sourceIds: string[];
+  note?: string;
+};
+export type ManagementTargetSet = {
+  ticker: string;
+  /** The month the fiscal year ends in (1–12), to place a fiscal-year target on a forecast year. */
+  fiscalYearEndMonth: number;
+  /** The date of the newest statement the set reflects. */
+  asOf: string;
+  sources: ManagementTargetSource[];
+  targets: ManagementTarget[];
+};
+/** A reference scenario computed by code from cited inputs (the management case), shown beside the researched scenarios and never part of the range. */
+export type ReferenceScenario = {
+  key: "management";
+  label: string;
+  drivers: ModelDrivers;
+  result: ScenarioResult;
+  /** The weighted football field with the reference path as the base, when peer multiples were available. */
+  triangulation: Triangulation | null;
+  methods: MethodValuation[];
+  /** The fiscal-year targets and the forecast year each landed on. */
+  anchors: Array<{ metric: ManagementTargetMetric; fiscalYear: number; year: number; target: number; path: number | null }>;
+  sources: ManagementTargetSource[];
+  notes: string[];
+};
 
 export type ValuationModelResult = {
   calculatorVersion: string;
@@ -152,6 +206,8 @@ export type ValuationModelResult = {
   verification?: InputVerification | null;
   peers?: PeerMultiples | null;
   consensus?: ConsensusTarget | null;
+  /** Reference scenarios computed from cited inputs beside the researched model (management case). */
+  references?: ReferenceScenario[];
 };
 
 export type ValuationDimension = {

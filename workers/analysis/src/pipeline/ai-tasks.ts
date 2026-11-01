@@ -15,7 +15,9 @@ import { D1SecRepository } from "../sec/d1.ts";
 import type { TaskContext, TaskImplementation, TaskOutcome } from "./tasks.ts";
 import { driveWorkflow, failedInputOutcome } from "./workflow-task.ts";
 import { researchSearchConfigured } from "../web-search/research-search.ts";
-import { VALUATION_VERSION, valuationFingerprint } from "../valuation/workflow.ts";
+import { runFingerprint, VALUATION_VERSION } from "../valuation/workflow.ts";
+import { buildValuationInput } from "../valuation/input.ts";
+import { methodChangeHeldBack } from "../valuation/reassess.ts";
 import { ValuationStore } from "../valuation/store.ts";
 
 const MINUTE = 60_000;
@@ -123,13 +125,26 @@ export const AI_TASKS = {
     },
   },
 
-  /** The valuation assessment, rewritten when the figures, filings, guidance or calls it reads from change (docs/valuation-assessment-design.md). */
+  /**
+   * The valuation assessment, rewritten when the figures, filings, guidance or calls it reads from change
+   * (docs/valuation-assessment-design.md). A method change alone (prompt, calculator or input version) reassesses only
+   * the companies named in VALUATION_REASSESS_TICKERS (valuation/reassess.ts); the others keep their report until new
+   * material arrives or an admin starts a run.
+   */
   valuation: {
     version: VALUATION_VERSION,
     async run(env, ticker, context): Promise<TaskOutcome> {
       if (env.VALUATION_ENABLED === "false") return { status: "done", detail: { skipped: "valuation disabled" } };
+      const store = new ValuationStore(env.DB!);
+      const input = await buildValuationInput(env, ticker, context.now.toISOString());
+      if (input) {
+        const current = await store.current(ticker);
+        const published = current?.version_id ? await store.version(ticker, current.version_id) : null;
+        const held = methodChangeHeldBack(env, published, { methodVersion: VALUATION_VERSION, financialPeriodEnd: input.financialPeriodEnd }, ticker);
+        if (held) return { status: "done", detail: { skipped: "method change held back", ...held } };
+      }
       return runWhenChanged(env, "valuation", "valuation", ticker, context, env.VALUATION_WORKFLOW,
-        () => valuationFingerprint(env, ticker), () => new ValuationStore(env.DB!).publishedFingerprint(ticker));
+        async () => input ? runFingerprint(input.fingerprint) : null, () => store.publishedFingerprint(ticker));
     },
   },
 

@@ -20,6 +20,11 @@ export type PriorInput = {
   /** The prior's equity risk premium; the research must source the final one. */
   equityRiskPremium?: number;
   midYear?: boolean;
+  /**
+   * The build-capex timing by forecast year, e.g. management's capex plan with its peak in year two; default a four-year
+   * taper. The shape is scaled to the taper's total, so it moves when the history-derived excess is spent, not how much.
+   */
+  capexShape?: number[] | null;
 };
 
 const monthIndex = (date: string) => Number(date.slice(0, 4)) * 12 + Number(date.slice(5, 7)) - 1;
@@ -83,14 +88,22 @@ export function priorRequest(input: PriorInput): CalcRequest | null {
   // Capital spent ahead of revenue: capex beyond one and a half times depreciation, tapering off over four years.
   const capex = fact("capex_ttm") != null ? Math.abs(fact("capex_ttm")!) : null, da = fact("da_ttm");
   const excess = lifecycle === "build" && capex != null && da != null ? Math.max(capex - 1.5 * da, 0) : 0;
-  const buildCapex = excess > 0 ? [1, 0.75, 0.5, 0.25, ...new Array(Math.max(years - 4, 0)).fill(0)].slice(0, years).map(k => k * excess) : null;
+  const taper = [1, 0.75, 0.5, 0.25, ...new Array<number>(Math.max(years - 4, 0)).fill(0)].slice(0, years);
+  let shape = taper;
+  if (input.capexShape?.some(k => k > 0)) {
+    const given = [...input.capexShape.slice(0, years), ...new Array<number>(Math.max(years - input.capexShape.length, 0)).fill(0)].map(k => Math.max(k, 0));
+    given[years - 1] = 0;
+    const scale = taper.reduce((a, b) => a + b, 0) / given.reduce((a, b) => a + b, 0);
+    shape = Number.isFinite(scale) && scale > 0 ? given.map(k => k * scale) : taper;
+  }
+  const buildCapex = excess > 0 ? shape.map(k => k * excess) : null;
   const path = (gr0: number, grN: number, mg: number) => ({
     revenueGrowth: fade(gr0, grN, years), operatingMargin: new Array<number>(years).fill(mg), taxRate: new Array<number>(years).fill(tax), salesToCapital: new Array<number>(years).fill(salesToCapital), ...(buildCapex ? { buildCapex } : {}),
   });
   const scenario = (narrative: string, gr0: number, grN: number, mg: number) => ({ narrative, probability: null, triggers: [], invalidation: [], evidenceIds: [], drivers: { modelType: "fcff" as const, revenue0: revenue, path: path(gr0, grN, mg), terminalGrowth: g, terminalRoic } });
   const notes = [`prior: ${lifecycle} life cycle, ${years}-year horizon`, "cash and investments versus debt, leases, preferred and minority claims"];
   if (anchor) notes.push(`RPO floor years 1–2: ${anchor.floorToRevenue0.slice(0, 2).map(v => `${(v * 100).toFixed(0)}% of trailing revenue`).join(", ")}`);
-  if (buildCapex) notes.push(`build capex ${excess.toExponential(2)} tapering over four years`);
+  if (buildCapex) notes.push(shape !== taper ? `build capex ${excess.toExponential(2)} × ${shape.map(k => k.toFixed(2)).join(", ")} (the cited capex plan's timing, scaled to the taper's total)` : `build capex ${excess.toExponential(2)} tapering over four years`);
   return {
     modelType: "fcff", currency: input.currency, midYear: input.midYear === true,
     discountRate: { value: r, basis: "wacc", components: { riskFree: rf, beta: input.beta, equityRiskPremium: erp, costOfEquity, costOfDebt, taxRate: tax, equityWeight }, rationale: "prior from sourced components; the equity risk premium is a placeholder the research must source", sourceRefs: [] },

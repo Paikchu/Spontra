@@ -97,6 +97,8 @@ export type AnalysisEnv = SecCronEnv & AnalysisReadEnv & {
   VALUATION_TICKERS?: string;
   /** "false" pauses valuation runs; the admin's global switch overrides it. */
   VALUATION_ENABLED?: string;
+  /** Companies a valuation method change may reassess on unchanged material ("*" for all; unset for none) — valuation/reassess.ts. */
+  VALUATION_REASSESS_TICKERS?: string;
   LIBRARY_CARDS_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
   LIBRARY_LINKS_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
   TRANSLATE_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;

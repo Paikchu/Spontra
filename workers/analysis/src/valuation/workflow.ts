@@ -11,12 +11,13 @@ import type { AgentMessage, AgentReply } from "../tool-loop.ts";
 import type { WorkflowStepLike } from "../workflow-core.ts";
 import { DIMENSION_WEIGHTS, VALUATION_DIMENSIONS, type ValuationAttempt, type ValuationDimension, type ValuationDimensionKey, type ValuationEvidence, type ValuationGap, type ValuationPublication } from "../../../../shared/analysis-contract/valuation.ts";
 import { CALCULATOR_VERSION, calculateValuation, dimensionCeilings, multipleHistoryOf, overallConfidence, peerMultiplesOf, verdictOf, weightedScore, type CalcRequest } from "../../../../shared/analysis-runtime/valuation/calculator.ts";
-import { priorRequest as priorOf } from "../../../../shared/analysis-runtime/valuation/prior.ts";
+import { horizonFor, priorRequest as priorOf } from "../../../../shared/analysis-runtime/valuation/prior.ts";
+import { managementCapexShape, managementFactsOf } from "../../../../shared/analysis-runtime/valuation/management.ts";
 import { readValuationPublication } from "../../../../shared/analysis-runtime/valuation/read.ts";
 import { buildValuationInput, type ValuationInput } from "./input.ts";
 import { fetchBeta, fetchPeerQuotes, fetchReferenceQuote, fetchRiskFreeRate, fetchWeeklyCloses } from "./market.ts";
 import { ValuationStore } from "./store.ts";
-import { ASSUMPTION_TOOLS, CITATION, COMPOSE_TOOLS, RESEARCH_BUDGET, RESEARCH_TOOLS, excerptOf, factLine, impliedThreshold, valuationTools, type RedTeam, type ValuationState } from "./tools.ts";
+import { ASSUMPTION_TOOLS, CITATION, COMPOSE_TOOLS, RESEARCH_BUDGET, RESEARCH_TOOLS, excerptOf, factLine, impliedThreshold, registerManagementEvidence, valuationTools, type RedTeam, type ValuationState } from "./tools.ts";
 
 /** Changing the prompts, the tools, the calculator or the publication contract reassesses every switched-on company once. */
 export const VALUATION_VERSION = "valuation.v4";
@@ -56,10 +57,10 @@ Call submit_dimension for each of the four, then finish_research. Budget: ${RESE
 export const ASSUME_SYSTEM = `You set the valuation model's assumptions for one listed company and run the calculator; every figure comes from calculate_valuation. One discount rate for all three scenarios, from sourced components (risk-free, beta, equity risk premium with its source; cost of debt, tax rate, equity weight for WACC). Risk goes into the scenarios' cash flows, not into separate rates.
 Model: asset-holding entity asset_nav, REIT affo, bank or insurer residual_income, any other operating company fcff with a driver path (revenue growth, operating margin including stock compensation, tax rate, sales-to-capital) over 5–10 years and a value-driver terminal (terminal growth at most 3% and below the risk-free rate; terminal ROIC at or above the discount rate unless you say why). Never choose a model for a higher value.
 Build phase (capex far above depreciation, cash flow negative): use 7–10 years, put the capital spent ahead of revenue in buildCapex (it must end within the horizon), keep sales-to-capital for the reinvestment revenue growth needs, and give terminalOperatingMargin when the last year still carries build costs. Revenue must not fall under the contracted RPO floor the prior shows. Copy revenue0, shares and the bridge from the facts (debt + leases + preferred + minority as claims); the calculator checks them and rejects a mismatch.
-Three scenarios: one coherent story each with narrative, triggers, invalidation and evidence ids; a faster bull case reinvests at least as much; margins above history need a reason. Probabilities only when justified (sum 1), else null for all. Dilution reserve: a treasury-stock estimate if the equity note was read, else 0 with the reason. If you read a sell-side consensus target, pass it as consensus with its evidence id; it is compared, never copied.
+Management targets listed in the opening are cited public statements (evidence ids given): the calculator computes a management reference case from them and flags a base revenue path more than 25% under them; a discount to management is normal but the narrative must say why. Three scenarios: one coherent story each with narrative, triggers, invalidation and evidence ids; a faster bull case reinvests at least as much; margins above history need a reason. Probabilities only when justified (sum 1), else null for all. Dilution reserve: a treasury-stock estimate if the equity note was read, else 0 with the reason. If you read a sell-side consensus target, pass it as consensus with its evidence id; it is compared, never copied.
 After the calculation read the cross-check, the gates and the market-implied growth; a failed gate means revise. Then submit valuationSafety (${SCORING.split("\n")[5]!.replace("- valuationSafety (assumptions phase): ", "anchors: ")}) and finish_assumptions. If the facts cannot support any model, declare_model_insufficient.`;
 
-export const COMPOSE_SYSTEM = `You write the valuation report from the recorded research, the calculated model, its cross-check and gates, and the counter-evidence review. Use only figures from the facts or the calculation, exactly as given; cite evidence ids in brackets. Separate public facts, management guidance and research assumptions. The model notes name each method's value and every flagged gate; a base more than 50% from the consensus or the price needs a quantified expectations gap. Say plainly when the market-implied path already matches the base case. Next checks name the observable that would confirm or break each key assumption. Set coreLogicFailed only when the evidence shows the long-term thesis has failed; decisiveCounterEvidence when a counter-argument remains unanswered. Call compose_valuation, then finish_valuation.`;
+export const COMPOSE_SYSTEM = `You write the valuation report from the recorded research, the calculated model, its cross-check and gates, and the counter-evidence review. Use only figures from the facts or the calculation, exactly as given; cite evidence ids in brackets. Separate public facts, management guidance and research assumptions. The model notes name each method's value, the management reference case (when present) with the base's discount to management's targets, and every flagged gate; a base more than 50% from the consensus or the price needs a quantified expectations gap. Say plainly when the market-implied path already matches the base case. Next checks name the observable that would confirm or break each key assumption. Set coreLogicFailed only when the evidence shows the long-term thesis has failed; decisiveCounterEvidence when a counter-argument remains unanswered. Call compose_valuation, then finish_valuation.`;
 
 const NUDGE = "Reply with a tool call; prose alone is not recorded.";
 
@@ -75,12 +76,23 @@ export function openingResearch(state: ValuationState): string {
     `Company history by factor:\n${dist || "none"}`,
     `Diagnostics computed from the facts:\n${diag}`,
     `Readable filings: ${input.documents.length} (list_filings). Calls: ${input.transcripts.length ? input.transcripts.map(t => `${t.id} (${t.title}, FY${t.fiscalYear} Q${t.fiscalQuarter})`).join("; ") : "none"}. Guidance items: ${input.guidance?.items.length ?? 0} (read_guidance).`,
+    managementText(state),
     "Start with find_filing_sections or list_filings.",
   ].filter(Boolean).join("\n\n");
 }
 
 /** The facts the models read, one line each; the research opening already carried the rest. */
 const MODEL_FACTS = ["revenue_ttm", "operating_income_ttm", "net_income_ttm", "cfo_ttm", "capex_ttm", "da_ttm", "sbc_ttm", "interest_expense_ttm", "ebitda_ttm", "cash", "investments", "debt", "leases", "preferred_stock", "minority_interest", "equity", "net_debt", "invested_capital", "shares_diluted_weighted", "shares_outstanding", "operating_margin_ttm", "effective_tax_rate_ttm", "fcf_ttm", "rpo_total", "rpo_next_12m_share"];
+
+/** Management's cited targets with the evidence ids that carry them, one line per target; empty without a curated set. */
+export function managementText(state: ValuationState): string {
+  const set = state.input.management;
+  if (!set) return "";
+  const ids = [...state.evidence.values()].filter(e => e.documentId === `management:${state.input.ticker}`).map(e => `${e.evidenceId} (${e.publishedAt})`);
+  const amount = (t: typeof set.targets[number]) => t.unit === "ratio" ? pct(t.value) : t.unit === "per_share" ? t.value.toFixed(2) : `${(t.value / 1e9).toFixed(1)}B`;
+  const lines = set.targets.map(t => `FY${t.fiscalYear} ${t.metric === "segment_revenue" ? `${t.segment} revenue` : t.metric.replace("_", " ")} ${t.kind === "floor" ? "≥ " : t.kind === "ceiling" ? "≤ " : ""}${amount(t)}${t.basis === "non_gaap" ? " non-GAAP" : ""}${t.kind === "derived" ? " (derived)" : ""}`);
+  return `Management targets (cited, fiscal year ends month ${set.fiscalYearEndMonth}, as of ${set.asOf}; evidence ${ids.join(", ") || "registered at the start of the run"}):\n${lines.join("\n")}`;
+}
 
 export function openingAssume(state: ValuationState, prior: CalcRequest | null): string {
   const { input } = state;
@@ -93,12 +105,12 @@ export function openingAssume(state: ValuationState, prior: CalcRequest | null):
   const facts = input.facts.filter(f => MODEL_FACTS.includes(f.id)).map(factLine).join("\n");
   const dist = input.distributions.filter(d => ["revenueGrowth", "operatingMargin", "capexToRevenue", "fcfMargin"].includes(d.factor)).map(d => `${d.factor}: p25 ${pct(d.p25)} · median ${pct(d.median)} · p75 ${pct(d.p75)} (${d.periods.length} years)`).join("\n");
   const anchor = prior?.context?.anchor;
-  const peers = state.peerMultiples ? `Peers (${input.peerBasis}: ${state.peerMultiples.peers.join(", ")}) trailing EV/EBITDA p25/median/p75 ${state.peerMultiples.evToEbitda ? `${state.peerMultiples.evToEbitda.p25.toFixed(1)}/${state.peerMultiples.evToEbitda.median.toFixed(1)}/${state.peerMultiples.evToEbitda.p75.toFixed(1)}` : "n/a"}; core P/E ${state.peerMultiples.peRatio ? `${state.peerMultiples.peRatio.p25.toFixed(1)}/${state.peerMultiples.peRatio.median.toFixed(1)}/${state.peerMultiples.peRatio.p75.toFixed(1)}` : "n/a"}.` : "Peers: no multiples available; the DCF stands alone.";
+  const peers = state.peerMultiples ? `Peers (${input.peerBasis}: ${state.peerMultiples.peers.map(p => `${p}${state.peerMultiples!.weights?.[p] != null && input.peerBasis === "unit" ? ` ${(state.peerMultiples!.weights[p]! * 100).toFixed(0)}%` : ""}`).join(", ")}) trailing EV/EBITDA p25/median/p75 ${state.peerMultiples.evToEbitda ? `${state.peerMultiples.evToEbitda.p25.toFixed(1)}/${state.peerMultiples.evToEbitda.median.toFixed(1)}/${state.peerMultiples.evToEbitda.p75.toFixed(1)}` : "n/a"}; core P/E ${state.peerMultiples.peRatio ? `${state.peerMultiples.peRatio.p25.toFixed(1)}/${state.peerMultiples.peRatio.median.toFixed(1)}/${state.peerMultiples.peRatio.p75.toFixed(1)}` : "n/a"}.` : "Peers: no multiples available; the DCF stands alone.";
   const priorText = prior ? `Prior (${input.lifecycle} life cycle, ${prior.scenarios.base.drivers.modelType === "fcff" ? prior.scenarios.base.drivers.path.revenueGrowth.length : 5} years; revise, do not copy): ${JSON.stringify({ discountRate: Number(prior.discountRate.value.toFixed(4)), shares: prior.shares.base, bridge: { nonOperatingAssets: prior.bridge.nonOperatingAssets, debtAndClaims: prior.bridge.debtAndClaims }, base: prior.scenarios.base.drivers })}${anchor ? `\nRPO floor (contracted revenue by year, ${anchor.asOf}): ${anchor.floor.map(f => (f / 1e9).toFixed(1)).join(", ")}B = ${anchor.floorToRevenue0.map(v => pct(v)).join(", ")} of trailing revenue.${anchor.notes.length ? ` ${anchor.notes.join("; ")}` : ""}` : ""}` : "No prior could be computed from history.";
   return [
     `Company: ${input.companyName} (${input.ticker}); statements in ${input.currency} to ${input.financialPeriodEnd}; ${input.lifecycle} life cycle. ${state.quote ? `Reference close ${state.quote.price} ${state.quote.currency} on ${state.quote.priceDate}${state.quote.usable ? "" : " (not usable)"}.` : "No reference quote."}`,
-    `Model facts (id | label | value | period | basis):\n${facts}`, `History:\n${dist || "none"}`, rates, peers, `Recorded dimensions:\n${dims}`, `Registered evidence:\n${evidence || "none"}`, priorText, "Call calculate_valuation.",
-  ].join("\n\n");
+    `Model facts (id | label | value | period | basis):\n${facts}`, `History:\n${dist || "none"}`, rates, peers, managementText(state), `Recorded dimensions:\n${dims}`, `Registered evidence:\n${evidence || "none"}`, priorText, "Call calculate_valuation.",
+  ].filter(Boolean).join("\n\n");
 }
 
 export function openingCompose(state: ValuationState): string {
@@ -111,6 +123,7 @@ export function openingCompose(state: ValuationState): string {
     `Range ${calc.range.low.toFixed(2)}–${calc.range.high.toFixed(2)}, base ${calc.range.base.toFixed(2)}, expected ${calc.range.expected?.toFixed(2) ?? "n/a"}, price ${calc.range.price ?? "n/a"}, margin of safety ${pct(calc.range.marginOfSafety)}, downside coverage ${pct(calc.range.downsideCoverage)}, expected upside ${pct(calc.range.expectedUpside)}.`,
     calc.implied ? `Market-implied constant revenue growth ${pct(calc.implied.implied)} vs base average ${pct(calc.implied.baseAverage)} (gap ${pct(calc.implied.gap)}).` : "",
     calc.methods?.length ? `Methods: ${calc.methods.map(m => `${m.label} ${m.base != null ? `${m.low!.toFixed(2)} / ${m.base.toFixed(2)} / ${m.high!.toFixed(2)} (weight ${(m.weight * 100).toFixed(0)}%)` : "not applied"}`).join("; ")}${calc.triangulation ? `; weighted ${calc.triangulation.low.toFixed(2)}–${calc.triangulation.high.toFixed(2)}, base ${calc.triangulation.base.toFixed(2)}` : ""}.` : "",
+    ...(calc.references ?? []).map(ref => `${ref.label}: DCF ${ref.result.perShare.toFixed(2)} per share${ref.triangulation ? `, weighted ${ref.triangulation.base.toFixed(2)}` : ""}; ${ref.anchors.filter(a => a.metric === "revenue").map(a => `FY${a.fiscalYear} revenue ${(a.target / 1e9).toFixed(0)}B`).join(", ")}; computed by code from cited targets.`),
     calc.gates?.length ? `Gates: ${calc.gates.map(g => `${g.key} ${g.status}${g.status === "pass" ? "" : ` (${g.detail})`}`).join("; ")}.` : "",
     `Sensitivities: ${calc.sensitivities.slice(0, 5).map(s => `${s.factor} ${s.step} ${s.changePercent >= 0 ? "+" : ""}${s.changePercent.toFixed(1)}%`).join("; ")}.`,
     `Limitations: ${calc.limitations.join(" ")}`,
@@ -125,10 +138,16 @@ export function openingCompose(state: ValuationState): string {
 export function priorRequest(state: ValuationState): CalcRequest | null {
   const { input } = state;
   const rpo = input.rpo ? { asOf: input.rpo.asOf, total: Number(input.rpo.total), buckets: input.rpo.buckets.map(b => ({ start: b.start, months: b.months, share: b.share == null ? null : Number(b.share) })) } : null;
-  const prior = priorOf({ currency: input.currency, facts: input.facts.map(f => ({ id: f.id, value: f.value, unit: f.unit })), distributions: input.distributions, diagnostics: input.diagnostics, rpo, riskFree: state.riskFree?.value ?? null, beta: state.beta?.beta ?? null, price: state.quote?.usable ? state.quote.price : null });
-  if (!prior) return null;
   const fact = (id: string) => input.facts.find(f => f.id === id)?.value ?? null;
-  return { ...prior, context: { ...prior.context, peers: state.peerMultiples, multipleHistory: state.multipleHistory, trailing: { ebitda: fact("ebitda_ttm"), da: fact("da_ttm"), interestExpense: fact("interest_expense_ttm") } } };
+  const build = (capexShape: number[] | null): CalcRequest | null => {
+    const prior = priorOf({ currency: input.currency, facts: input.facts.map(f => ({ id: f.id, value: f.value, unit: f.unit })), distributions: input.distributions, diagnostics: input.diagnostics, rpo, riskFree: state.riskFree?.value ?? null, beta: state.beta?.beta ?? null, price: state.quote?.usable ? state.quote.price : null, capexShape });
+    return prior ? { ...prior, context: { ...prior.context, peers: state.peerMultiples, multipleHistory: state.multipleHistory, trailing: { ebitda: fact("ebitda_ttm"), da: fact("da_ttm"), interestExpense: fact("interest_expense_ttm") }, management: input.management, periodEnd: input.financialPeriodEnd } } : null;
+  };
+  // The cited capex plan times the prior's build capex (peak in any year) as long as the prior still passes every gate; the taper stands otherwise, and without a plan.
+  const capexShape = input.management && fact("revenue_ttm") ? managementCapexShape(input.management, input.financialPeriodEnd, horizonFor(input.lifecycle), managementFactsOf(input.facts, fact("revenue_ttm")!)) : null;
+  const shaped = capexShape ? build(capexShape) : null;
+  if (shaped) { try { if (calculateValuation(shaped).gates?.every(g => g.status !== "fail")) return shaped; } catch { /* the taper follows */ } }
+  return build(null);
 }
 
 type Loop = { recipeId: string; system: string; allow: string[]; budget: { turns: number; wallMs: number }; settled: (s: ValuationState) => boolean; tool: "valuation-research" | "valuation" };
@@ -237,13 +256,16 @@ export async function executeValuationWorkflow(params: ValuationWorkflowParams, 
     const [quote, riskFree, beta, closes, peerQuotes] = await Promise.all([fetchReferenceQuote(params.ticker, input.currency, fetcher, at), fetchRiskFreeRate(input.currency, fetcher, at), fetchBeta(params.ticker, input.currency, fetcher, at),
       fetchWeeklyCloses(params.ticker, fetcher, at), fetchPeerQuotes(input.peers.map(p => p.ticker), input.currency, fetcher, at)]);
     // The peers' multiples at their closes and the company's own two-year EV/EBITDA range, both frozen with the quote.
-    const peerMultiples = peerMultiplesOf(input.peers.map(p => ({ ...p, price: peerQuotes[p.ticker]?.usable ? peerQuotes[p.ticker]!.price : null })), now.slice(0, 10));
+    const peerMultiples = peerMultiplesOf(input.peers.map(p => ({ ...p, price: peerQuotes[p.ticker]?.usable ? peerQuotes[p.ticker]!.price : null })), now.slice(0, 10), input.peerBasis);
+    if (peerMultiples) peerMultiples.notes.push(...input.peerNotes);
     const shares = input.facts.find(f => f.id === "shares_outstanding")?.value ?? input.facts.find(f => f.id === "shares_diluted_weighted")?.value ?? null;
     const multipleHistory = closes && shares ? multipleHistoryOf(closes, shares, input.trailingQuarters) : null;
     return { quote, riskFree, beta, peerMultiples, multipleHistory };
   });
   const state: ValuationState = { input, researchAsOf: now, now, quote: market.quote, riskFree: market.riskFree, beta: market.beta, peerMultiples: market.peerMultiples, multipleHistory: market.multipleHistory, evidence: new Map(), hits: [], used: { finds: 0, reads: 0, searches: 0, webReads: 0, transcripts: 0 },
     dimensions: new Map(), researchDone: false, calc: null, modelGaps: [], insufficient: null, assumptionsDone: false, redTeam: null, composed: null, cancelled: false };
+  // Management's cited targets are evidence from the first turn: the research, the scenarios and the report may cite them.
+  await registerManagementEvidence(state);
   const prior = await step.do("valuation-prior", async () => {
     const request = priorRequest(state);
     if (!request) return null;

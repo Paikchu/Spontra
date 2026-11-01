@@ -2,7 +2,10 @@
  * Valuation dry run on real public data, without a model call or a database (docs/valuation-v2-SPEC.md, acceptance).
  *
  *   node --experimental-strip-types --no-warnings workers/analysis/scripts/valuation-dry-run.ts \
- *     --data-dir /path/to/data --ticker ORCL --peers MSFT,AMZN,GOOGL,META --consensus 235.8,110,400,43,2026-10-31 --out ORCL.md --json ORCL.json
+ *     --data-dir /path/to/data --ticker ORCL --consensus 235.8,110,400,43,2026-10-31 --out ORCL.md --json ORCL.json
+ *
+ * Peers default to the curated map (src/valuation/curated); `--peers` overrides. When the company has curated management
+ * targets, the management reference case and its gate are computed and written beside the prior.
  *
  * The data directory holds what the production run reads through its own routes: `{T}_fundamentals.json` and `{T}_capital.json`
  * from the public read API, `yh_{SYMBOL}.json` Yahoo chart answers (2y weekly; `%5ETNX`, `%5EGSPC`), `sec_{t}_shares.json`
@@ -15,6 +18,8 @@ import { parseArgs } from "node:util";
 import type { FactorDistribution, ValuationModelResult } from "../../../shared/analysis-contract/valuation.ts";
 import { calculateValuation, distributionOf, multipleHistoryOf, peerMultiplesOf, sanityGates, verifyCitedInputs, type CalcRequest } from "../../../shared/analysis-runtime/valuation/calculator.ts";
 import { anchorOf, lifecycleOf, priorRequest, type PriorFact } from "../../../shared/analysis-runtime/valuation/prior.ts";
+import { managementCapexShape, managementFactsOf } from "../../../shared/analysis-runtime/valuation/management.ts";
+import { curatedPeersFor, managementTargetsFor } from "../src/valuation/curated.ts";
 import { fetchBeta, fetchPeerQuotes, fetchReferenceQuote, fetchRiskFreeRate, fetchWeeklyCloses } from "../src/valuation/market.ts";
 
 const { values: args } = parseArgs({ options: { "data-dir": { type: "string" }, ticker: { type: "string" }, peers: { type: "string", default: "" }, consensus: { type: "string" }, out: { type: "string" }, json: { type: "string" }, now: { type: "string", default: "2026-11-01T00:00:00.000Z" }, tax: { type: "string" } } });
@@ -88,7 +93,10 @@ const rpo = newest?.rpo ? { asOf: newest.rpo.asOf, total: Number(newest.rpo.tota
 // ---- Market inputs through the production reader, over the saved chart answers.
 const [quote, riskFree, beta, closes] = await Promise.all([fetchReferenceQuote(ticker, "USD", fetcher, now), fetchRiskFreeRate("USD", fetcher, now), fetchBeta(ticker, "USD", fetcher, now), fetchWeeklyCloses(ticker, fetcher, now)]);
 if (!quote || !riskFree || !beta) throw new Error(`market inputs missing: quote ${!!quote}, rf ${!!riskFree}, beta ${!!beta}`);
-const peerTickers = args.peers!.split(",").map(s => s.trim().toUpperCase()).filter(Boolean);
+const peerTickers = args.peers ? args.peers.split(",").map(s => s.trim().toUpperCase()).filter(Boolean) : curatedPeersFor(ticker) ?? [];
+const peerBasis = args.peers ? "ranking" as const : "curated" as const;
+const management = managementTargetsFor(ticker);
+const periodEnd = revenueWindows.at(-1)!.periodEnd;
 const peerQuotes = await fetchPeerQuotes(peerTickers, "USD", fetcher, now);
 const peerRows = peerTickers.map(t => {
   const s = fundamentals(t), q = capital(t)[0]?.balanceSheet ?? null;
@@ -96,7 +104,7 @@ const peerRows = peerTickers.map(t => {
   const pDebt = q ? group(q.liabilities, "debt") + group(q.liabilities, "leases") : last(s, "long_term_debt") ?? 0, pCash = q ? group(q.assets, "cash") : last(s, "cash_and_cash_equivalents") ?? 0;
   return { ticker: t, price: peerQuotes[t]?.usable ? peerQuotes[t]!.price : null, shares: sharesOf(t), ebitda: op != null && d != null ? op + d : null, coreEarnings: op != null ? op * (1 - 0.21) : null, netDebt: pDebt - pCash };
 });
-const peers = peerMultiplesOf(peerRows, now.toISOString().slice(0, 10));
+const peers = peerMultiplesOf(peerRows, now.toISOString().slice(0, 10), peerBasis);
 const trailingQuarters = windows(series, "operating_income").flatMap(w => {
   const d = windows(series, "depreciation_and_amortization").find(x => x.periodEnd === w.periodEnd);
   const q = quarters.find(x => x.periodEnd === w.periodEnd)?.balanceSheet ?? null;
@@ -137,9 +145,14 @@ if (report?.model) {
 }
 
 // ---- After: the v2 prior with its context, run twice to show the deterministic part does not drift.
-const after = priorRequest({ currency: "USD", facts, distributions, diagnostics, rpo, riskFree: riskFree.value, beta: beta.beta, price: quote.price });
-if (!after) throw new Error("the v2 prior could not be built");
-after.context = { ...after.context, peers, consensus, multipleHistory, trailing };
+// As the workflow does: the cited capex plan times the prior's build capex when the prior still passes every gate; the taper otherwise.
+const priorWith = (capexShape: number[] | null) => { const r = priorRequest({ currency: "USD", facts, distributions, diagnostics, rpo, riskFree: riskFree.value, beta: beta.beta, price: quote.price, capexShape }); if (r) r.context = { ...r.context, peers, consensus, multipleHistory, trailing, management, periodEnd }; return r; };
+const capexShape = management ? managementCapexShape(management, periodEnd, lifecycle === "build" ? 7 : 5, managementFactsOf(facts, revenue)) : null;
+const tapered = priorWith(null), shaped = capexShape ? priorWith(capexShape) : null;
+if (!tapered) throw new Error("the v2 prior could not be built");
+const taperedResult = calculateValuation(tapered), shapedResult = shaped ? calculateValuation(shaped) : null;
+const shapedPasses = !!shapedResult?.gates?.every(g => g.status !== "fail");
+const after = shaped && shapedPasses ? shaped : tapered;
 const afterResult = calculateValuation(after), rerun = calculateValuation(JSON.parse(JSON.stringify(after)) as CalcRequest);
 const drift = Math.abs(rerun.range.base / afterResult.range.base - 1);
 
@@ -153,13 +166,18 @@ lines.push(`# ${ticker} valuation dry run (deterministic, ${now.toISOString().sl
 lines.push(`Reference close ${money(quote.price)} on ${quote.priceDate}; risk-free ${pct(riskFree.value)} (${riskFree.date}); beta ${beta.beta.toFixed(2)} (${beta.observations} weeks); life cycle **${lifecycle}**; shares ${bn(shares)}.`, "");
 lines.push(`Facts (TTM to ${revenueWindows.at(-1)?.periodEnd}): revenue ${bn(revenue)}, operating income ${bn(operating)} (${pct(operating / revenue)}), D&A ${bn(da)}, capex ${bn(capex)}, CFO ${bn(cfo)}, FCF ${bn(cfo != null && capex != null ? cfo - Math.abs(capex) : null)}, cash+securities ${bn(cash)}, other investments ${bn(investments)}, debt ${bn(debt)}, leases ${bn(leases)}, preferred ${bn(preferred)}, minority ${bn(minority)}, tax ${pct(tax)}${args.tax || reportFact("effective_tax_rate_ttm") != null ? "" : " (statutory assumption)"}.`, "");
 if (rpo) lines.push(`RPO ${bn(rpo.total)} as of ${rpo.asOf}: ${rpo.buckets.map(b => `${pct(b.share)} from ${b.start ?? "period end"}${b.months ? ` over ${b.months} months` : ""}`).join("; ")}.`, "");
-lines.push(`Peers (${peerTickers.join(", ")}): ${peers ? `EV/EBITDA p25/median/p75 ${peers.evToEbitda ? `${peers.evToEbitda.p25.toFixed(1)}/${peers.evToEbitda.median.toFixed(1)}/${peers.evToEbitda.p75.toFixed(1)}` : "n/a"}; core P/E ${peers.peRatio ? `${peers.peRatio.p25.toFixed(1)}/${peers.peRatio.median.toFixed(1)}/${peers.peRatio.p75.toFixed(1)}` : "n/a"} (${peers.peers.join(", ")})${peers.notes.length ? `; ${peers.notes.join("; ")}` : ""}` : "none"}.`, "");
+lines.push(`Peers (${peerBasis}: ${peerTickers.join(", ")}): ${peers ? `EV/EBITDA p25/median/p75 ${peers.evToEbitda ? `${peers.evToEbitda.p25.toFixed(1)}/${peers.evToEbitda.median.toFixed(1)}/${peers.evToEbitda.p75.toFixed(1)}` : "n/a"}; core P/E ${peers.peRatio ? `${peers.peRatio.p25.toFixed(1)}/${peers.peRatio.median.toFixed(1)}/${peers.peRatio.p75.toFixed(1)}` : "n/a"} (${peers.peers.join(", ")})${peers.notes.length ? `; ${peers.notes.join("; ")}` : ""}` : "none"}.`, "");
 if (multipleHistory) lines.push(`Own trailing EV/EBITDA over ${multipleHistory.periods.length} weeks: ${multipleHistory.min.toFixed(1)}–${multipleHistory.max.toFixed(1)}x, median ${multipleHistory.median.toFixed(1)}x.`, "");
 if (consensus) lines.push(`Consensus target: mean ${money(consensus.mean)}${consensus.low != null ? `, range ${money(consensus.low)}–${money(consensus.high)}` : ""}${consensus.count ? `, ${consensus.count} analysts` : ""}${consensus.asOf ? `, ${consensus.asOf}` : ""}.`, "");
 lines.push("## Per-share values", "", "| Run | Bear | Base | Bull | Base vs price | Base vs consensus | Terminal share (base) | Horizon |", "| --- | --- | --- | --- | --- | --- | --- | --- |");
 const row = (label: string, r: ValuationModelResult | null) => r ? `| ${label} | ${money(r.range.low)} | ${money(r.range.base)} | ${money(r.range.high)} | ${pct(r.range.base / quote.price - 1)} | ${consensus ? pct(r.range.base / consensus.mean - 1) : "n/a"} | ${pct(base(r).result.terminalShare)} | ${r.horizonYears ?? 5}y |` : `| ${label} | n/a | n/a | n/a | | | | |`;
 if (published) lines.push(`| Published report (main, LLM drivers), recomputed | ${money(report!.model.range.low)} | ${money(published.recomputed)} | ${money(report!.model.range.high)} | ${pct(published.recomputed / report!.quote.price - 1)} | ${consensus ? pct(published.recomputed / consensus.mean - 1) : "n/a"} | ${pct(report!.model.scenarios.base!.result.terminalShare)} | 5y |`);
-lines.push(row("Before: v1 prior (5y, history medians)", beforeResult), row("After: v2 prior (RPO floor, build capex, 3% g cap)", afterResult), "");
+const reference = afterResult.references?.[0] ?? null;
+if (shapedResult) lines.push(row(after === shaped ? "After: v2 prior, four-year capex taper (for comparison)" : "After: v2 prior, cited capex timing (fails a gate, not chosen)", after === shaped ? taperedResult : shapedResult));
+lines.push(row(`After: v2 prior (RPO floor, ${after === shaped ? "cited capex timing" : "four-year capex taper"}, 3% g cap)`, afterResult));
+if (reference) lines.push(`| Management case (deterministic from cited targets) | — | ${money(reference.result.perShare)} | — | ${pct(reference.result.perShare / quote.price - 1)} | ${consensus ? pct(reference.result.perShare / consensus.mean - 1) : "n/a"} | ${pct(reference.result.terminalShare)} | ${reference.result.yearly.length}y |`);
+lines.push("");
+if (afterResult.triangulation) lines.push(`Weighted football field (DCF / EV/EBITDA / P/E): after ${money(afterResult.triangulation.low)}–${money(afterResult.triangulation.high)}, base ${money(afterResult.triangulation.base)}${reference?.triangulation ? `; management case ${money(reference.triangulation.low)}–${money(reference.triangulation.high)}, base ${money(reference.triangulation.base)}` : ""}.`, "");
 if (published) lines.push(`Published base stored ${money(published.stored)}, recomputed ${money(published.recomputed)} (calculator reproduces v1 inputs). v2 gates on the published drivers: ${published.gates.map(g => `${g.key} **${g.status}**`).join(", ")}. Verification: ${published.verification.checks.filter(c => c.status !== "pass").map(c => c.detail).join("; ") || "all cited inputs match"}.`, "");
 const ab = base(afterResult).drivers as Extract<CalcRequest["scenarios"]["base"]["drivers"], { modelType: "fcff" }>;
 lines.push("## After: v2 prior drivers (base)", "", `WACC ${pct(afterResult.discountRate.value)}; revenue growth ${ab.path.revenueGrowth.map(pct).join(" → ")}; operating margin ${pct(ab.path.operatingMargin[0])}; sales-to-capital ${ab.path.salesToCapital[0]!.toFixed(2)}; build capex ${ab.path.buildCapex ? ab.path.buildCapex.map(bn).join(", ") : "none"}; terminal g ${pct(ab.terminalGrowth)}, terminal ROIC ${pct(ab.terminalRoic)}; bridge: non-operating ${bn(afterResult.bridge.nonOperatingAssets)}, claims ${bn(afterResult.bridge.debtAndClaims)}.`, "");
@@ -168,10 +186,19 @@ if (afterResult.anchors?.revenue) lines.push(`RPO floor by year: ${afterResult.a
 lines.push("## After: method breakdown (football field)", "", "| Method | Low | Base | High | Weight | Basis |", "| --- | --- | --- | --- | --- | --- |", ...(afterResult.methods ?? []).map(m => `| ${m.label} | ${money(m.low)} | ${money(m.base)} | ${money(m.high)} | ${pct(m.weight)} | ${m.base != null ? m.basis : m.notes.join("; ")} |`), "");
 if (afterResult.triangulation) lines.push(`Weighted range ${money(afterResult.triangulation.low)}–${money(afterResult.triangulation.high)}, base ${money(afterResult.triangulation.base)}; dispersion ${afterResult.triangulation.dispersion?.toFixed(2) ?? "n/a"}x.`, "");
 lines.push("## After: gates", "", "| Gate | Status | Detail |", "| --- | --- | --- |", ...(afterResult.gates ?? []).map(g => `| ${g.key} | ${g.status} | ${g.detail} |`), "");
+if (reference) {
+  const rd = reference.drivers as Extract<CalcRequest["scenarios"]["base"]["drivers"], { modelType: "fcff" }>;
+  lines.push("## Management case (computed by code from cited targets; a reference, never the base)", "");
+  lines.push(`Targets: ${reference.anchors.map(a => `${a.metric} FY${a.fiscalYear} → year ${a.year}: ${a.metric === "operating_margin" ? pct(a.target) : bn(a.target)}${a.path != null ? ` (path ${a.metric === "operating_margin" ? pct(a.path) : bn(a.path)})` : ""}`).join("; ")}.`, "");
+  lines.push(`Revenue growth ${rd.path.revenueGrowth.map(pct).join(" → ")}; operating margin ${rd.path.operatingMargin.map(pct).join(" → ")}; sales-to-capital ${rd.path.salesToCapital.map(v => v.toFixed(2)).join(", ")}; build capex ${rd.path.buildCapex ? rd.path.buildCapex.map(bn).join(", ") : "none"}; same WACC, shares, bridge, tax and terminal as the prior.`, "");
+  lines.push("| Year | Revenue | NOPAT | Reinvestment (incl. build) | FCFF | PV |", "| --- | --- | --- | --- | --- | --- |", ...reference.result.yearly.map(y => `| ${y.year} | ${bn(y.revenue)} | ${bn(y.nopat)} | ${bn(y.reinvestment)} | ${bn(y.cashFlow)} | ${bn(y.presentValue)} |`), "");
+  lines.push(`DCF ${money(reference.result.perShare)} per share (terminal share ${pct(reference.result.terminalShare)}); methods: ${reference.methods.map(m => `${m.label} ${m.base != null ? `${money(m.low)} / ${money(m.base)} / ${money(m.high)}` : "not applied"}`).join("; ")}${reference.triangulation ? `; weighted ${money(reference.triangulation.low)}–${money(reference.triangulation.high)}, base ${money(reference.triangulation.base)}, dispersion ${reference.triangulation.dispersion?.toFixed(2) ?? "n/a"}x` : ""}.`, "");
+  lines.push(`Notes: ${reference.notes.join("; ")}.`, "", `Sources: ${reference.sources.map(s => `${s.title} (${s.date}) ${s.url}`).join("; ")}`, "");
+}
 lines.push("## Before: v2 gates applied to the v1 prior", "", beforeGates.map(g => `${g.key} **${g.status}**`).join(", "), "");
 lines.push(`Implied constant revenue growth at the price: before ${pct(beforeResult?.implied?.implied)} (base avg ${pct(beforeResult?.implied?.baseAverage)}); after ${pct(afterResult.implied?.implied)} (base avg ${pct(afterResult.implied?.baseAverage)}).`, "");
 lines.push(`Top sensitivities (after): ${afterResult.sensitivities.slice(0, 4).map(s => `${s.factor} ${s.step} ${s.changePercent >= 0 ? "+" : ""}${s.changePercent.toFixed(1)}%`).join("; ")}.`, "");
 lines.push(`Rerun drift of the deterministic part: ${(drift * 100).toFixed(4)}%.`, "");
 const out = lines.join("\n");
 if (args.out) writeFileSync(args.out, out); else process.stdout.write(out);
-if (args.json) writeFileSync(args.json, JSON.stringify({ ticker, quote, riskFree, beta, lifecycle, facts, diagnostics, rpo, peers, multipleHistory, consensus, before: beforeResult, beforeGates, published, after: afterResult, afterRequest: after, drift }, null, 1));
+if (args.json) writeFileSync(args.json, JSON.stringify({ ticker, quote, riskFree, beta, lifecycle, facts, diagnostics, rpo, peers, peerBasis, multipleHistory, consensus, management, before: beforeResult, beforeGates, published, tapered: taperedResult, shaped: shapedResult, shapedPasses, after: afterResult, afterRequest: after, drift }, null, 1));

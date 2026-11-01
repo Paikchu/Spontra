@@ -24,6 +24,8 @@
     "GUIDANCE_DAILY_TRANSCRIPT_CALLS": "25",
     "TRANSCRIPTS_ENABLED": "true",
     "BUSINESS_TREE_TICKERS": "MSFT,ORCL,NVDA,ADSK,NET",
+    // A valuation method change (prompt, calculator, input version) reassesses only these companies on unchanged material; the rest wait for new material or a manual run.
+    "VALUATION_REASSESS_TICKERS": "ORCL",
     "TRANSLATION_ENABLED": "true"
   },
   "workflows": [

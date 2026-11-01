@@ -1,0 +1,21 @@
+{
+  "$comment": "Curated comparable sets for the forward-multiple cross-check (docs/valuation-v2-SPEC.md §3a). Highest-priority peer source; only tickers in the peers projection resolve. Loss-making peers, peers with EBITDA at or below zero and peers with incomplete figures are dropped at run time.",
+  "companies": [
+    { "ticker": "ORCL", "peers": ["MSFT", "AMZN", "GOOGL", "META"], "note": "hyperscale cloud and enterprise platform owners" },
+    { "ticker": "GOOGL", "peers": ["MSFT", "AMZN", "META", "ORCL"], "note": "advertising and cloud platforms with build-phase capex" },
+    { "ticker": "MSFT", "peers": ["GOOGL", "AMZN", "ORCL", "META"], "note": "cloud and software platforms" },
+    { "ticker": "AMZN", "peers": ["MSFT", "GOOGL", "META", "AAPL"], "note": "cloud, advertising and consumer platforms" },
+    { "ticker": "META", "peers": ["GOOGL", "MSFT", "AMZN", "AAPL"], "note": "advertising and consumer platforms" },
+    { "ticker": "AAPL", "peers": ["MSFT", "GOOGL", "META", "AMZN"], "note": "consumer platforms with services" },
+    { "ticker": "NVDA", "peers": ["TSM", "INTC", "MSFT", "AAPL"], "note": "AI compute hardware and the platforms that buy it; INTC drops out while loss-making" },
+    { "ticker": "TSM", "peers": ["NVDA", "INTC", "TTMI", "AAPL"], "note": "semiconductor manufacturing and its customers" },
+    { "ticker": "INTC", "peers": ["NVDA", "TSM", "TTMI"], "note": "semiconductors and electronics manufacturing" },
+    { "ticker": "TTMI", "peers": ["INTC", "TSM", "NVDA"], "note": "electronics manufacturing and semiconductors" },
+    { "ticker": "ADSK", "peers": ["MSFT", "ORCL", "NET", "GOOGL"], "note": "subscription software" },
+    { "ticker": "NET", "peers": ["MSFT", "ORCL", "ADSK", "GOOGL"], "note": "cloud security and software platforms" },
+    { "ticker": "CRWV", "peers": ["ORCL", "MSFT", "AMZN", "GOOGL"], "note": "AI cloud infrastructure; the hyperscalers it competes with" },
+    { "ticker": "NBIS", "peers": ["ORCL", "MSFT", "AMZN", "GOOGL"], "note": "AI cloud infrastructure; the hyperscalers it competes with" },
+    { "ticker": "JPM", "peers": ["BRK.B"], "note": "financials; the projection holds one other financial, so the unit and category sources follow" },
+    { "ticker": "BRK.B", "peers": ["JPM"], "note": "financials; see JPM" }
+  ]
+}

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { FindingPassage } from "../../../../shared/analysis-contract/findings.ts";
-import { SCENARIO_KEYS, VALUATION_DIMENSIONS, VALUATION_METHODS, VALUATION_MODEL_TYPES, type Confidence, type ConsensusTarget, type DiscountRate, type FactorDistribution, type PeerMultiples, type SanityGate, type ScenarioAssumptions, type ValuationDimension, type ValuationDimensionKey, type ValuationEvidence, type ValuationGap, type ValuationModelResult, type ValuationSections } from "../../../../shared/analysis-contract/valuation.ts";
+import { SCENARIO_KEYS, VALUATION_DIMENSIONS, VALUATION_METHODS, VALUATION_MODEL_TYPES, type Confidence, type ConsensusTarget, type DiscountRate, type FactorDistribution, type ManagementTarget, type PeerMultiples, type SanityGate, type ScenarioAssumptions, type ValuationDimension, type ValuationDimensionKey, type ValuationEvidence, type ValuationGap, type ValuationModelResult, type ValuationSections } from "../../../../shared/analysis-contract/valuation.ts";
 import { calculateValuation, dimensionCeilings, discountRateBaseline, horizonOf, MAX_FORECAST_YEARS, MIN_FORECAST_YEARS, outsideHistory, percentileRank, ValuationCalcError, type CalcContext, type CalcRequest } from "../../../../shared/analysis-runtime/valuation/calculator.ts";
 import { anchorOf } from "../../../../shared/analysis-runtime/valuation/prior.ts";
 import { EXCLUDED_HOSTS, PAGE_CACHE_MS, hostOf, readWebPage } from "../analyst/web.ts";
@@ -194,6 +194,7 @@ function runCalculation(state: ValuationState, args: CalcArgs): string {
     `expected: ${r.expected != null ? r.expected.toFixed(2) : "n/a (no probabilities)"}; price ${r.price ?? "n/a"}; margin of safety ${r.marginOfSafety != null ? pct(r.marginOfSafety) : "n/a"}; downside coverage ${r.downsideCoverage != null ? pct(r.downsideCoverage) : "n/a"}`,
     methods.length ? `cross-check (p25 / median / p75 of peers ${result.peers?.peers.join(", ") ?? ""}): ${methods.join("; ")}${result.triangulation ? `; weighted ${result.triangulation.low.toFixed(2)}–${result.triangulation.high.toFixed(2)}, base ${result.triangulation.base.toFixed(2)}` : ""}` : "cross-check: no peer multiples available",
     result.implied ? `market-implied constant revenue growth: ${pct(result.implied.implied)} vs base average ${pct(result.implied.baseAverage)} (gap ${pct(result.implied.gap)}${result.implied.converged ? "" : ", not converged"})` : "",
+    ...(result.references ?? []).map(ref => `${ref.label}: DCF ${ref.result.perShare.toFixed(2)} per share (terminal ${ref.result.terminalShare != null ? pct(ref.result.terminalShare) : "n/a"})${ref.triangulation ? `, weighted ${ref.triangulation.base.toFixed(2)}` : ""}; ${ref.anchors.filter(a => a.metric === "revenue").map(a => `FY${a.fiscalYear} revenue ${money(a.target)} in year ${a.year}`).join(", ")}. Computed by code from cited targets; compared, never copied.`),
     `gates: ${(result.gates ?? []).length - flagged.length} pass${flagged.length ? `; ${flagged.map(g => `${g.key} ${g.status}: ${g.detail}`).join("; ")}` : ""}`,
     `sensitivities: ${result.sensitivities.slice(0, 4).map(s => `${s.factor} ${s.step} → ${s.changePercent >= 0 ? "+" : ""}${s.changePercent.toFixed(1)}%`).join("; ")}`,
     placements.length ? `history: ${placements.join("; ")}` : "",
@@ -212,10 +213,11 @@ function calcContext(state: ValuationState, args: CalcArgs, consensus: Consensus
   return {
     facts: state.input.facts.map(f => ({ id: f.id, value: f.value, unit: f.unit })), riskFree: state.riskFree?.value ?? null, anchor, peers: state.peerMultiples, consensus, multipleHistory: state.multipleHistory,
     trailing: { ebitda: fact("ebitda_ttm"), da: fact("da_ttm"), interestExpense: fact("interest_expense_ttm") }, forwardYears: args.forwardYears ?? 3, methodWeights: args.methodWeights ?? null, lifecycle: state.input.lifecycle,
+    management: state.input.management, periodEnd: state.input.financialPeriodEnd,
   };
 }
 
-const GATE_GAP: Partial<Record<string, ValuationGap["code"]>> = { terminal_share: "tv_share_high", terminal_growth: "terminal_growth_high", cited_inputs: "cited_input_mismatch", rpo_floor: "rpo_floor_breached", implied_multiple_vs_history: "implied_multiple_outside_history", method_dispersion: "method_dispersion", consensus_divergence: "consensus_divergence", non_negative_scenarios: "negative_scenario" };
+const GATE_GAP: Partial<Record<string, ValuationGap["code"]>> = { terminal_share: "tv_share_high", terminal_growth: "terminal_growth_high", cited_inputs: "cited_input_mismatch", rpo_floor: "rpo_floor_breached", implied_multiple_vs_history: "implied_multiple_outside_history", method_dispersion: "method_dispersion", consensus_divergence: "consensus_divergence", non_negative_scenarios: "negative_scenario", management_targets: "management_target_gap" };
 /** Flagged gates as gaps the report carries; a passing gate leaves nothing behind. */
 export function gateGaps(gates: SanityGate[]): ValuationGap[] {
   return gates.flatMap(g => g.status === "pass" || !GATE_GAP[g.key] ? [] : [{ code: GATE_GAP[g.key]!, field: g.key, message: g.detail, evidenceIds: [] }]);
@@ -338,6 +340,21 @@ export function valuationTools(env: AnalysisEnv): AnyTool<ValuationState>[] {
     tool({ name: "finish_valuation", description: "Publish the composed report.", parameters: z.object({}),
       execute: (_a, ctx) => { if (!ctx.state.composed) throw new Error("compose_valuation first"); return "Published."; }, observe: (_a, v) => v }),
   ];
+}
+
+/** Management's cited targets as evidence the model may cite: one passage per source, listing the targets it supports. */
+export async function registerManagementEvidence(state: ValuationState): Promise<string[]> {
+  const set = state.input.management;
+  if (!set) return [];
+  const amount = (t: ManagementTarget) => t.unit === "ratio" ? pct(t.value) : t.unit === "per_share" ? t.value.toFixed(2) : money(t.value);
+  const ids: string[] = [];
+  for (const source of set.sources) {
+    const targets = set.targets.filter(t => t.sourceIds.includes(source.id));
+    if (!targets.length) continue;
+    const text = `Management targets (${source.date}): ${targets.map(t => `${t.metric === "segment_revenue" ? `${t.segment} revenue` : t.metric.replace("_", " ")} FY${t.fiscalYear} ${t.kind === "floor" ? "at least " : t.kind === "ceiling" ? "at most " : ""}${amount(t)}${t.basis === "non_gaap" ? " (non-GAAP)" : ""}${t.kind === "derived" ? " (derived)" : ""}${t.note ? ` — ${t.note}` : ""}`).join("; ")}.`;
+    ids.push(await registerEvidence(state, { passageId: `management:${source.id}`, documentId: `management:${state.input.ticker}`, title: source.title, form: "management", filedAt: source.date, url: source.url, path: ["management targets", source.date], text, table: null }, "web", source.date));
+  }
+  return ids;
 }
 
 export const RESEARCH_TOOLS = ["read_financials", "list_filings", "find_filing_sections", "read_filing_section", "read_guidance", "read_transcript", "search_evidence", "read_web_evidence", "submit_dimension", "finish_research"];
