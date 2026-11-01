@@ -90,7 +90,7 @@ test("aggregates sessions, companies, empty searches, rates, and tour completion
   assert.equal(summary.sessions, 2);
   assert.equal(summary.pageViews, 3);
   assert.deepEqual(summary.topCompanies, [{ ticker: "META", views: 2 }, { ticker: "ORCL", views: 1 }]);
-  assert.deepEqual(summary.emptySearches, [{ query: "zzzz", count: 2 }]);
+  assert.deepEqual(summary.emptySearches, [{ query: "zzzz", count: 1 }]);
   assert.equal(summary.expandRate, 0.333);
   assert.equal(summary.errorRate, 0.333);
   assert.deepEqual(summary.tour, { start: 2, done: 1, skip: 1, completionRate: 0.5 });
@@ -111,7 +111,7 @@ function post(body: unknown, ip = "203.0.113.8"): Request {
   return new Request("https://businessview.info/api/business/v1/telemetry", {
     method: "POST",
     body: JSON.stringify(body),
-    headers: { "content-type": "application/json", "cf-connecting-ip": ip },
+    headers: { "content-type": "application/json", "cf-connecting-ip": ip, origin: "https://businessview.info" },
   });
 }
 
@@ -125,7 +125,7 @@ test("the public route stores events and keeps the aggregate off the public host
   assert.equal(forwarded.headers.get("cf-connecting-ip"), null);
   assert.match(forwarded.headers.get("x-telemetry-actor") ?? "", /^[0-9a-f]{24}$/);
   assert.equal((await handleTelemetry(post({ ...payload, name: "nope" }), env, NOW)).status, 400);
-  assert.equal((await handleTelemetry(new Request("https://businessview.info/api/business/v1/telemetry", { method: "POST", body: "x".repeat(1025) }), env, NOW)).status, 413);
+  assert.equal((await handleTelemetry(new Request("https://businessview.info/api/business/v1/telemetry", { method: "POST", body: "x".repeat(1025), headers: { origin: "https://businessview.info" } }), env, NOW)).status, 413);
   const publicRead = await handleTelemetry(new Request("https://businessview.info/api/business/v1/telemetry?range=24h"), env, NOW);
   assert.equal(publicRead.status, 404);
   assert.equal(seen.length, 1);
@@ -182,4 +182,56 @@ test("tracking measures the UTF-8 payload budget for Chinese properties", () => 
   const env = delivery();
   assert.equal(sendTrack(env, "search_submit", Object.fromEntries(Array.from({ length: 6 }, (_, i) => [`p${i}`, "中".repeat(40)]))), null);
   assert.equal(env.sent.length, 0);
+});
+
+
+test("telemetry checks exact origins and Referer fallback before reading or forwarding", async () => {
+  const seen: Request[] = [];
+  const env = namespace(memoryRepository(), seen);
+  const payload = event("page_view");
+  for (const origin of [null, "https://evil.example", "https://businessview.info.evil.example", "http://businessview.info", "null", "http://localhost:4188"]) {
+    const request = post(payload);
+    if (origin === null) request.headers.delete("origin"); else request.headers.set("origin", origin);
+    request.headers.set("referer", "https://businessview.info/");
+    if (origin === null) request.headers.delete("referer");
+    assert.equal((await handleTelemetry(request, env, NOW)).status, 403, String(origin));
+    assert.equal(request.bodyUsed, false);
+  }
+  for (const source of ["https://businessview.info", "https://www.businessview.info"]) {
+    const request = post(payload);
+    request.headers.set("origin", source);
+    assert.equal((await handleTelemetry(request, env, NOW)).status, 204);
+    const referer = post(payload);
+    referer.headers.delete("origin");
+    referer.headers.set("referer", `${source}/companies/META`);
+    assert.equal((await handleTelemetry(referer, env, NOW)).status, 204);
+  }
+  const local = new Request("http://localhost:4188/api/business/v1/telemetry", { method: "POST", headers: { origin: "http://localhost:4188" }, body: JSON.stringify(payload) });
+  assert.equal((await handleTelemetry(local, env, NOW)).status, 204);
+  assert.equal(seen.length, 5);
+});
+
+test("telemetry rejects declared and streamed oversized bodies, including dishonest lengths", async () => {
+  const env = namespace();
+  const declared = post(event("page_view"));
+  declared.headers.set("content-length", "1025");
+  assert.equal((await handleTelemetry(declared, env, NOW)).status, 413);
+  assert.equal(declared.bodyUsed, false);
+  for (const length of [null, "1"]) {
+    let cancelled = false;
+    const body = new ReadableStream({ pull(controller) { controller.enqueue(new Uint8Array(600)); }, cancel() { cancelled = true; } });
+    const request = new Request("https://businessview.info/api/business/v1/telemetry", { method: "POST", headers: { origin: "https://businessview.info", ...(length ? { "content-length": length } : {}) }, body, duplex: "half" } as RequestInit);
+    assert.equal((await handleTelemetry(request, env, NOW)).status, 413);
+    assert.equal(cancelled, true);
+  }
+});
+
+test("ranking counts each target once per day for both sessions and edge IP hashes", () => {
+  const base = event("page_view", { path: "/companies/META", actor: "hash-a" });
+  const rows = [base, base, { ...base, sid: "another-session" }, { ...base, actor: "hash-b" },
+    { ...base, sid: "independent", actor: "hash-c" }, { ...base, received: NOW - 86_400_000 },
+    ...Array.from({ length: 4 }, (_, i) => event("search_submit", { actor: "hash-a", sid: `session-${i}`, props: { q: "zzzz", empty: 1 } }))];
+  const summary = summarize(rows, "7d", NOW);
+  assert.deepEqual(summary.topCompanies, [{ ticker: "META", views: 3 }]);
+  assert.deepEqual(summary.emptySearches, [{ query: "zzzz", count: 1 }]);
 });

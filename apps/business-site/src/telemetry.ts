@@ -21,6 +21,8 @@ export type StoredEvent = {
   lang: "en" | "zh-CN";
   theme: "light" | "dark";
   sid: string;
+  /** Edge-derived IP hash; absent on legacy events. Never accepted from the client. */
+  actor?: string;
   props: TelemetryProps;
 };
 
@@ -127,6 +129,14 @@ export function summarize(rows: readonly StoredEvent[], range: TelemetryRange, n
   const companies = new Map<string, number>();
   const searches = new Map<string, number>();
   const series = window.map(bucket => ({ label: bucket.label, sessions: new Set<string>(), pageViews: 0 }));
+  const seen = new Set<string>();
+  const unique = (event: StoredEvent, target: string) => {
+    const day = Math.floor(event.received / DAY);
+    const keys = [`sid:${event.sid}:${day}:${target}`, ...(event.actor ? [`ip:${event.actor}:${day}:${target}`] : [])];
+    const fresh = keys.every(key => !seen.has(key));
+    keys.forEach(key => seen.add(key));
+    return fresh;
+  };
   let companyViews = 0;
   for (const event of events) {
     counts.set(event.name, (counts.get(event.name) ?? 0) + 1);
@@ -135,13 +145,13 @@ export function summarize(rows: readonly StoredEvent[], range: TelemetryRange, n
     if (event.name === "page_view") {
       if (bucket) bucket.pageViews += 1;
       const ticker = tickerOf(event);
-      if (ticker) companies.set(ticker, (companies.get(ticker) ?? 0) + 1);
+      if (ticker && unique(event, `company:${ticker}`)) companies.set(ticker, (companies.get(ticker) ?? 0) + 1);
       if (event.path.startsWith("/companies/")) companyViews += 1;
     }
     if (event.name === "search_submit") {
       const empty = event.props.empty === 1 || event.props.results === 0;
       const query = typeof event.props.q === "string" ? event.props.q.trim() : "";
-      if (empty && query) searches.set(query, (searches.get(query) ?? 0) + 1);
+      if (empty && query && unique(event, `search:${query}`)) searches.set(query, (searches.get(query) ?? 0) + 1);
     }
   }
   const top = (map: Map<string, number>, limit: number) => [...map.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, limit);
@@ -199,7 +209,8 @@ const SCHEMA = [
     lang TEXT NOT NULL,
     theme TEXT NOT NULL,
     sid TEXT NOT NULL,
-    props TEXT NOT NULL
+    props TEXT NOT NULL,
+    actor TEXT
   )`,
   "CREATE INDEX IF NOT EXISTS events_received ON events (received)",
   `CREATE TABLE IF NOT EXISTS rate_hits (
@@ -212,6 +223,9 @@ const SCHEMA = [
 
 export function sqlRepository(sql: TelemetrySql): TelemetryRepository {
   for (const statement of SCHEMA) sql.exec(statement);
+  if (!sql.exec("PRAGMA table_info(events)").toArray().some(row => row.name === "actor")) {
+    sql.exec("ALTER TABLE events ADD COLUMN actor TEXT");
+  }
   return {
     allow(actor, minute, limit) {
       const row = sql.exec(
@@ -222,8 +236,8 @@ export function sqlRepository(sql: TelemetrySql): TelemetryRepository {
     },
     add(row) {
       sql.exec(
-        "INSERT INTO events (received, name, path, lang, theme, sid, props) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        row.received, row.name, row.path, row.lang, row.theme, row.sid, JSON.stringify(row.props),
+        "INSERT INTO events (received, name, path, lang, theme, sid, props, actor) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        row.received, row.name, row.path, row.lang, row.theme, row.sid, JSON.stringify(row.props), row.actor ?? "",
       );
     },
     summary(range, now) {
@@ -241,10 +255,24 @@ export function sqlRepository(sql: TelemetrySql): TelemetryRepository {
         const row = sql.exec("SELECT COUNT(DISTINCT sid) AS sessions, COALESCE(SUM(name = 'page_view'), 0) AS views FROM events WHERE received >= ? AND received < ? AND received <= ?", bucket.start, bucket.end, now).toArray()[0];
         return { label: bucket.label, sessions: Number(row?.sessions ?? 0), pageViews: Number(row?.views ?? 0) };
       });
-      summary.topCompanies = query("CASE WHEN json_type(props, '$.ticker') = 'text' THEN json_extract(props, '$.ticker') WHEN path GLOB '/companies/*' THEN rtrim(substr(path, 12), '/') END AS ticker, COUNT(*) AS n", "AND name = 'page_view' GROUP BY ticker ORDER BY n DESC, ticker").flatMap(row =>
-        typeof row.ticker === "string" && TICKER.test(row.ticker) ? [{ ticker: row.ticker, views: Number(row.n) }] : [],
+      // Rank each target independently by session/day and IP hash/day. Legacy rows
+      // without an actor retain session deduplication without sharing an anonymous IP.
+      const ranked = (target: string, condition: string) => sql.exec(`
+        WITH targets AS (
+          SELECT id, received, sid, actor, ${target} AS target FROM events
+          WHERE received >= ? AND received <= ? AND ${condition}
+        ), ranked AS (
+          SELECT target,
+            ROW_NUMBER() OVER (PARTITION BY target, sid, CAST(received / ${DAY} AS INTEGER) ORDER BY id) AS session_rank,
+            ROW_NUMBER() OVER (PARTITION BY target, COALESCE(NULLIF(actor, ''), 'legacy:' || sid), CAST(received / ${DAY} AS INTEGER) ORDER BY id) AS actor_rank
+          FROM targets
+        ) SELECT target, COUNT(*) AS n FROM ranked
+          WHERE session_rank = 1 AND actor_rank = 1 GROUP BY target
+      `, since, now).toArray();
+      summary.topCompanies = ranked("CASE WHEN json_type(props, '$.ticker') = 'text' THEN json_extract(props, '$.ticker') WHEN path GLOB '/companies/*' THEN rtrim(substr(path, 12), '/') END", "name = 'page_view'").flatMap(row =>
+        typeof row.target === "string" && TICKER.test(row.target) ? [{ ticker: row.target, views: Number(row.n) }] : [],
       ).sort((a, b) => b.views - a.views || a.ticker.localeCompare(b.ticker)).slice(0, 5);
-      summary.emptySearches = query("trim(json_extract(props, '$.q')) AS query, COUNT(*) AS n", "AND name = 'search_submit' AND (json_extract(props, '$.empty') = 1 OR json_extract(props, '$.results') = 0) AND trim(json_extract(props, '$.q')) != '' GROUP BY query").map(row => ({ query: String(row.query), count: Number(row.n) })).sort((a, b) => b.count - a.count || a.query.localeCompare(b.query)).slice(0, 10);
+      summary.emptySearches = ranked("trim(json_extract(props, '$.q'))", "name = 'search_submit' AND (json_extract(props, '$.empty') = 1 OR json_extract(props, '$.results') = 0) AND trim(json_extract(props, '$.q')) != ''").map(row => ({ query: String(row.target), count: Number(row.n) })).sort((a, b) => b.count - a.count || a.query.localeCompare(b.query)).slice(0, 10);
       const companyViews = Number(query("COUNT(*) AS n", "AND name = 'page_view' AND path GLOB '/companies/*'")[0]?.n ?? 0);
       summary.expandRate = rate(counts.get("finding_expand") ?? 0, companyViews);
       summary.errorRate = rate(counts.get("error_shown") ?? 0, summary.pageViews);
@@ -254,12 +282,12 @@ export function sqlRepository(sql: TelemetrySql): TelemetryRepository {
       return summary;
     },
     read(since) {
-      return sql.exec("SELECT received, name, path, lang, theme, sid, props FROM events WHERE received >= ? ORDER BY received", since).toArray().flatMap(row => {
+      return sql.exec("SELECT received, name, path, lang, theme, sid, props, actor FROM events WHERE received >= ? ORDER BY received", since).toArray().flatMap(row => {
         const parsed = parseTelemetryEvent({
           name: row.name, path: row.path, lang: row.lang, theme: row.theme, sid: row.sid,
           props: JSON.parse(String(row.props ?? "{}")),
         });
-        return parsed ? [{ ...parsed, received: Number(row.received) }] : [];
+        return parsed ? [{ ...parsed, received: Number(row.received), ...(row.actor ? { actor: String(row.actor) } : {}) }] : [];
       });
     },
     prune(oldestEvent, oldestMinute) {
@@ -285,8 +313,8 @@ export async function handleStoreRequest(repo: TelemetryRepository, request: Req
     return json(summarize(rows, range as TelemetryRange, now), 200);
   }
   if (request.method !== "POST") return json({ error: "method" }, 405);
-  const raw = await request.arrayBuffer();
-  if (raw.byteLength > 1024) return json({ error: "too large" }, 413);
+  const raw = await cappedBody(request);
+  if (!raw) return json({ error: "too large" }, 413);
   let body: unknown;
   try { body = JSON.parse(new TextDecoder().decode(raw)); } catch { return json({ error: "invalid" }, 400); }
   const event = parseTelemetryEvent(body);
@@ -296,8 +324,41 @@ export async function handleStoreRequest(repo: TelemetryRepository, request: Req
   const minute = Math.floor(now / 60_000);
   repo.prune(now - RETAIN_MS, minute - 2);
   if (!repo.allow(actor, minute, TELEMETRY_RATE_LIMIT)) return json({ error: "rate" }, 429);
-  repo.add({ ...event, received: now });
+  repo.add({ ...event, actor, received: now });
   return new Response(null, { status: 204, headers: { "cache-control": "no-store" } });
+}
+
+/** Read at most 1 KiB, including requests with no or dishonest Content-Length. */
+async function cappedBody(request: Request): Promise<Uint8Array | null> {
+  const length = request.headers.get("content-length");
+  if (length && Number(length) > 1024) return null;
+  const reader = request.body?.getReader();
+  if (!reader) return new Uint8Array();
+  const bytes = new Uint8Array(1024);
+  let size = 0;
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) return bytes.slice(0, size);
+      if (size + value.byteLength > bytes.length) { await reader.cancel(); return null; }
+      bytes.set(value, size);
+      size += value.byteLength;
+    }
+  } finally { reader.releaseLock(); }
+}
+
+function allowedSource(request: Request): boolean {
+  const origin = request.headers.get("origin");
+  const source = origin ?? request.headers.get("referer");
+  if (!source) return false;
+  try {
+    const url = new URL(source);
+    if (origin !== null && source !== url.origin) return false;
+    if (url.origin === "https://businessview.info" || url.origin === "https://www.businessview.info") return true;
+    // Local origins are accepted only by a local dev server, never a public host.
+    const local = (host: string) => ["localhost", "127.0.0.1", "[::1]"].includes(host);
+    return local(new URL(request.url).hostname) && local(url.hostname) && ["http:", "https:"].includes(url.protocol);
+  } catch { return false; }
 }
 
 async function actorHash(ip: string): Promise<string> {
@@ -324,10 +385,11 @@ export async function handleTelemetry(request: Request, namespace: TelemetryName
     const stub = namespace.get(namespace.idFromName("global"));
     return stub.fetch(new Request(`https://telemetry.internal/summary?range=${range}`, { method: "GET" }));
   }
+  if (request.method === "POST" && !allowedSource(request)) return json({ error: "forbidden" }, 403);
   if (!namespace) return json({ error: "unavailable" }, 503);
   if (request.method !== "POST") return json({ error: "Method not allowed" }, 405);
-  const raw = await request.arrayBuffer();
-  if (raw.byteLength > 1024) return json({ error: "too large" }, 413);
+  const raw = await cappedBody(request);
+  if (!raw) return json({ error: "too large" }, 413);
   let parsed: unknown;
   try { parsed = JSON.parse(new TextDecoder().decode(raw)); } catch { return json({ error: "invalid" }, 400); }
   const event = parseTelemetryEvent(parsed);
