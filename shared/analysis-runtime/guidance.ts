@@ -4,6 +4,7 @@ import type {
   GuidanceMeasure, GuidanceMetric, GuidancePublication, GuidanceUnit,
 } from "../analysis-contract/guidance.ts";
 import { TICKER_PATTERN } from "./financial-data/policy.ts";
+import { nominalFiscalMonth } from "./dates.ts";
 
 const METRICS = ["revenue", "segment_revenue", "gross_margin", "operating_margin", "operating_income", "eps", "free_cash_flow", "operating_cash_flow", "capex", "rpo", "billings", "other"] as const;
 const MEASURES = ["amount", "growth", "margin", "per_share"] as const;
@@ -171,9 +172,9 @@ export function resolvePeriodEnd(fiscalYear: number | null, fiscalQuarter: numbe
   const anchor = valid.find(a => a.fiscalPeriod === "FY") ?? valid[0];
   if (!quarter || !anchor) return null;
   const anchorQuarter = anchor.fiscalPeriod === "FY" ? 4 : Number(anchor.fiscalPeriod.slice(1));
-  // An anchor on the 1st-7th belongs to the previous month (52/53-week years end on a weekday near month end).
   const [y, m, d] = anchor.periodEnd.split("-").map(Number);
-  const anchorMonth = y * 12 + (m - 1) - (d <= 7 ? 1 : 0);
+  const nominal = nominalFiscalMonth(y, m, d);
+  const anchorMonth = nominal.year * 12 + nominal.month - 1;
   const target = anchorMonth + ((fiscalYear - anchor.fiscalYear) * 4 + (quarter - anchorQuarter)) * 3;
   const year = Math.floor(target / 12), month = target % 12;
   const last = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
