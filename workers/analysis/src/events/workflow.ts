@@ -6,6 +6,7 @@ import { outboxStatement } from "../pipeline/outbox.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import { throttledSecReader } from "../financial-data/provider.ts";
 import type { SecFilingFeed, SecFilingSummary } from "../sec/sec.ts";
+import { parseSecArchiveDocumentUrl, secArchiveDocumentUrl, secArchiveRoot } from "../sec/archive-url.ts";
 import { form4XmlUrl, normalizeCik, parseForm4 } from "./form4.ts";
 import { eventsCacheKey, exhibitsCacheKey, insiderCacheKey } from "./read.ts";
 
@@ -40,7 +41,7 @@ export function parseEventSubmissions(payload: unknown, cikNumber: number, now: 
     if (!EVENT_FORMS.has(form) || !accessionNumber || !/^\d{4}-\d{2}-\d{2}$/.test(filingDate) || filingDate < floor) continue;
     filings.push({
       form, accessionNumber, filingDate, reportDate: String(reportDates[i] ?? ""), items: String(items[i] ?? ""), description: String(descriptions[i] ?? ""),
-      primaryDocument: String(primaries[i] ?? ""), archiveRoot: `https://www.sec.gov/Archives/edgar/data/${cikNumber}/${accessionNumber.replaceAll("-", "")}`,
+      primaryDocument: String(primaries[i] ?? ""), archiveRoot: secArchiveRoot(cikNumber, accessionNumber),
     });
   }
   filings.sort((a, b) => b.filingDate.localeCompare(a.filingDate) || b.accessionNumber.localeCompare(a.accessionNumber));
@@ -63,7 +64,7 @@ export function parseExhibitIndex(html: string, archiveRoot: string): EventExhib
     if (!href) continue;
     const file = href.split("/").pop() ?? "";
     const title = cells[1].replace(/<[^>]+>/g, "").trim() || type;
-    out.push({ type, title: title.slice(0, 200), url: `${archiveRoot}/${file}` });
+    out.push({ type, title: title.slice(0, 200), url: secArchiveDocumentUrl(archiveRoot, file) });
   }
   return out.slice(0, 30);
 }
@@ -118,7 +119,7 @@ export async function refreshCompanyEvents(env: EventsSweepEnv, ticker: string, 
   } else {
     raw = publication!.events.map(e => ({
       form: e.form, accessionNumber: e.id, filingDate: e.filedAt, reportDate: e.eventDate, items: e.items.join(","), description: e.description,
-      primaryDocument: e.documentUrl.slice(e.documentUrl.lastIndexOf("/", e.documentUrl.lastIndexOf("/") - 1) + 1), archiveRoot: e.documentUrl.slice(0, e.documentUrl.indexOf("/", "https://www.sec.gov/Archives/edgar/data/".length + String(cikNumber).length + 1)),
+      ...parseSecArchiveDocumentUrl(e.documentUrl),
     }));
   }
   const previous = new Map((publication?.events ?? []).map(e => [e.id, e]));
@@ -128,7 +129,7 @@ export async function refreshCompanyEvents(env: EventsSweepEnv, ticker: string, 
     const prior = previous.get(filing.accessionNumber);
     const isInsider = filing.form.startsWith("4");
     const archiveRoot = filing.archiveRoot;
-    const documentUrl = `${archiveRoot}/${filing.primaryDocument}`;
+    const documentUrl = secArchiveDocumentUrl(archiveRoot, filing.primaryDocument);
     let insider: InsiderTransaction | null = prior?.insider ?? null;
     if (isInsider && !insider) {
       const cached = (await repository.getCache<InsiderCacheEntry>(insiderCacheKey(ticker, filing.accessionNumber)))?.payload;
@@ -163,7 +164,7 @@ export async function refreshCompanyEvents(env: EventsSweepEnv, ticker: string, 
       else if (exhibitReads < LIMITS.exhibitReads) {
         exhibitReads++;
         try {
-          const indexHtml = await (await reader.read(`${archiveRoot}/${filing.accessionNumber}-index.htm`)).text();
+          const indexHtml = await (await reader.read(secArchiveDocumentUrl(archiveRoot, `${filing.accessionNumber}-index.htm`))).text();
           exhibits = parseExhibitIndex(indexHtml, archiveRoot);
           const indexed = indexPrimaryDescription(indexHtml);
           if (indexed) description = indexed;
@@ -177,7 +178,7 @@ export async function refreshCompanyEvents(env: EventsSweepEnv, ticker: string, 
     events.push(annotateEvent({
       id: filing.accessionNumber, ticker, form: filing.form, filedAt: filing.filingDate, eventDate, items,
       class: classifyEvent(filing.form, items, description || summary?.headline || ""), description: description.slice(0, 300),
-      edgarUrl: `${archiveRoot}/${filing.accessionNumber}-index.html`, documentUrl, exhibits, summary, insider,
+      edgarUrl: secArchiveDocumentUrl(archiveRoot, `${filing.accessionNumber}-index.html`), documentUrl, exhibits, summary, insider,
     }));
   }
   const sortedEvents = events.sort((a, b) => b.filedAt.localeCompare(a.filedAt) || b.eventDate.localeCompare(a.eventDate));

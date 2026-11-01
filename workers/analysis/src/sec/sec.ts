@@ -1,5 +1,6 @@
 import type { AnalysisFact, ManagerReview, PublishedSecReport, SecNodeSpecV2 } from "./analysis.ts";
 import { canonicalTicker } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
+import { secArchiveDocumentUrl, secArchiveRoot } from "./archive-url.ts";
 
 /** 8: English summaries with English-sized limits (7 was the last Chinese one). */
 export const SEC_SUMMARY_VERSION = 8;
@@ -278,8 +279,7 @@ export async function streamSecSubmissionParts(
   fetcher: typeof fetch,
   userAgent: string,
 ): Promise<SecSubmissionPart[]> {
-  const accessionPath = accessionNumber.replaceAll("-", "");
-  const url = `https://www.sec.gov/Archives/edgar/data/${cikNumber}/${accessionPath}/${accessionNumber}.txt`;
+  const url = secArchiveDocumentUrl(secArchiveRoot(cikNumber, accessionNumber), `${accessionNumber}.txt`);
   const response = await fetcher(url, {
     cache: "no-store",
     headers: { accept: "text/plain,*/*", "user-agent": userAgent },
@@ -419,8 +419,7 @@ export function parseSecSubmissions(payload: unknown, company: SecCompany, limit
     const form = String(forms[index] ?? "");
     const primaryDocument = String(primaryDocuments[index] ?? "");
     if (!isBusinessFiling(form) || !accessionNumber || !primaryDocument) return [];
-    const accessionPath = accessionNumber.replaceAll("-", "");
-    const archiveRoot = `https://www.sec.gov/Archives/edgar/data/${company.cikNumber}/${accessionPath}`;
+    const archiveRoot = secArchiveRoot(company.cikNumber, accessionNumber);
     return [{
       ticker: company.ticker,
       cik: company.cik,
@@ -434,7 +433,7 @@ export function parseSecSubmissions(payload: unknown, company: SecCompany, limit
       description: String(descriptions[index] ?? ""),
       items: String(items[index] ?? ""),
       documentUrl: `${archiveRoot}/${primaryDocument}`,
-      indexUrl: `${archiveRoot}/${accessionNumber}-index.html`,
+      indexUrl: secArchiveDocumentUrl(archiveRoot, `${accessionNumber}-index.html`),
     }];
   });
 

@@ -1,4 +1,5 @@
 import { canonicalTicker } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
+import { secArchiveDocumentUrl, secArchiveRoot } from "../sec/archive-url.ts";
 import { throttledSecReader } from "../financial-data/provider.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import { D1SecRepository } from "../sec/d1.ts";
@@ -100,7 +101,7 @@ export async function runSecDiscovery(env: AnalysisEnv, now = new Date(), fetche
       const collectable = filings.filter(COLLECTED).slice(0, 20);
       const collected = collectable.filter(f => /^[\w.-]+\.html?$/i.test(f.primaryDocument)).map(f => ({ accession: f.accession, form: f.form, filedAt: f.filingDate,
         reportDate: /^\d{4}-\d{2}-\d{2}$/.test(f.reportDate) ? f.reportDate : null,
-        url: `https://www.sec.gov/Archives/edgar/data/${Number(cik)}/${f.accession.replaceAll("-", "")}/${f.primaryDocument}` }));
+        url: secArchiveDocumentUrl(secArchiveRoot(Number(cik), f.accession), f.primaryDocument) }));
       await db.batch([
         db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at")
           .bind(stateKey(ticker), JSON.stringify({ cik, accessions: filings.map(f => f.accession), checkedAt: at, collectable: collectable.map(f => f.accession), collected,

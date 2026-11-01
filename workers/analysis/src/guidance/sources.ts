@@ -1,5 +1,6 @@
 import type { GuidanceMaterialKind, GuidanceSourceKind } from "../../../../shared/analysis-contract/guidance.ts";
 import { htmlToSecText, streamSecSubmissionParts } from "../sec/sec.ts";
+import { secArchiveDocumentUrl, secArchiveRoot } from "../sec/archive-url.ts";
 import type { CachePolicy, ContentData, Retrieval, SearchData, SearchRequest, ContentRequest } from "../web-search/types.ts";
 
 /** A document found for an earnings event: readable text, or the reason it could not be read. */
@@ -32,9 +33,9 @@ export function exhibitTitle(text: string, fallback: string): string {
  */
 export async function readSecExhibits(filing: { cikNumber: number; accessionNumber: string; filingDate: string }, fetcher: typeof fetch, userAgent: string): Promise<FoundMaterial[]> {
   const parts = await streamSecSubmissionParts(filing.cikNumber, filing.accessionNumber, fetcher, userAgent);
-  const folder = `https://www.sec.gov/Archives/edgar/data/${filing.cikNumber}/${filing.accessionNumber.replaceAll("-", "")}/`;
+  const folder = secArchiveRoot(filing.cikNumber, filing.accessionNumber);
   return parts.filter(part => /^EX-99/i.test(part.type)).slice(0, 4).map((part): FoundMaterial => {
-    const url = folder + encodeURIComponent(part.filename || `${filing.accessionNumber}.txt`);
+    const url = secArchiveDocumentUrl(folder, encodeURIComponent(part.filename || `${filing.accessionNumber}.txt`));
     const base = { sourceKind: "sec" as const, url, publishedAt: filing.filingDate };
     if (/^begin \d{3} /m.test(part.text.slice(0, 200)) || /\.(pdf|pptx?|xlsx?|zip)$/i.test(part.filename)) {
       return { ...base, kind: /\.pptx?$/i.test(part.filename) ? "deck" : "press_release", title: `${part.type} ${part.filename}`, unsupported: "binary exhibit" };
