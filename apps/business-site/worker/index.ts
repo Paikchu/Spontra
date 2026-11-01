@@ -216,14 +216,13 @@ export async function loadFilings(ticker:string,fetcher:typeof fetch=fetch,local
 /** One filing with its full published report, for the in-page reader; only the documented envelope passes through. */
 export async function loadFilingDetail(ticker:string,accession:string,snapshot:{reportDate:string;reportVersion:string}|null,fetcher:typeof fetch=fetch,locale:Locale|null=null):Promise<PublicFilingDetail|null>{
  if(!ACCESSION.test(accession))return null;
- try{
   const query=snapshot?"?"+new URLSearchParams(snapshot):"";
   const response=await fetcher(ANALYSIS_ORIGIN+inLocale(`/api/v1/companies/${ticker}/filings/${accession}${query}`,locale),{signal:AbortSignal.timeout(12000),headers:{accept:"application/json"}});
-  if(!response.ok)return null;
+  if(response.status===404)return null;
+  if(!response.ok)throw new Error("Filing detail source unavailable");
   const detail=await response.json() as PublicFilingDetail;
   if(detail.ticker!==ticker||detail.filing?.ticker!==ticker)return null;
   return {apiSchemaVersion:detail.apiSchemaVersion,ticker,company:detail.company?{ticker:detail.company.ticker,name:detail.company.name,cik:detail.company.cik}:null,filing:detail.filing};
- }catch{return null;}
 }
 
 /** A passage id is `p` and fourteen hex digits; the page links a quote to nothing else. */
@@ -453,10 +452,10 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
    if(match[2].startsWith("/passages/"))return supplementary("passage","passage-response.v1",()=>loadPassage(match[1],match[2]!.slice("/passages/".length),fetcher));
    // The valuation answers in every availability, so the page can say preparing, insufficient or failed; only a read that failed is uncached.
    if(match[2].startsWith("/valuation")){const body=await loadValuation(match[1],match[2],url.searchParams,fetcher,locale);if(!body)return readFailureStatus?moduleJson({error:"Valuation temporarily unavailable"}):json({error:"Valuation temporarily unavailable"},503);const response=json(body);const cacheable=match[2]==="/valuation"?(body as {availability?:string}).availability==="ready":match[2]!=="/valuation/versions";if(!cacheable)response.headers.set("cache-control","no-store");if(cache&&cacheable)ctx.waitUntil(cache.put(key,response.clone()));return response;}
-   if(detail){const reportDate=url.searchParams.get("reportDate"),reportVersion=url.searchParams.get("reportVersion");
+   if(detail){try{const reportDate=url.searchParams.get("reportDate"),reportVersion=url.searchParams.get("reportVersion");
     const body=await loadFilingDetail(match[1],detail,reportDate&&reportVersion?{reportDate,reportVersion}:null,fetcher,locale);
     if(!body)return json({error:"Not found"},404);
-    const response=json(body);if(cache)ctx.waitUntil(cache.put(key,response.clone()));return response;}
+    const response=json(body);if(cache)ctx.waitUntil(cache.put(key,response.clone()));return response;}catch{return readFailureStatus?moduleJson({error:"Filing detail temporarily unavailable"}):json({error:"Filing detail temporarily unavailable"},503);}}
    // Fundamentals with no quarterly metric answer "unavailable" with the reason, the series (year-end balances) still attached.
    {const body=await loadFundamentals(match[1],fetcher);const response=moduleJson({schemaVersion:"fundamentals-response.v1",status:body&&!body.unavailable?"ready":"unavailable",...(body?.unavailable?{reason:body.unavailable.reason}:{}),fundamentals:body});if(!body)response.headers.set("cache-control","no-store");if(cache&&body&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));return response;}
   }

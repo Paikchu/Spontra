@@ -49,3 +49,15 @@ test("A04: fundamentals and findings index retain upstream errors and retry head
     assert.equal((await response.json() as { status: string }).status, "unavailable");
   }
 });
+
+test("A05: filing absence stays 404 while service faults remain retryable", async () => {
+  const route = "companies/ACME/filings/0000000001-26-000001";
+  for (const status of [404, 429, 500]) {
+    const response = await handle(url(route), env, { waitUntil() { assert.fail("no detail to cache"); } }, async () => refused(status));
+    assert.equal(response.status, status === 500 ? 503 : status);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    if (status === 429) assert.equal(response.headers.get("retry-after"), "120");
+  }
+  const response = await handle(url(route), env, { waitUntil() {} }, async () => { throw new Error("binding disconnected"); });
+  assert.equal(response.status, 503);
+});
