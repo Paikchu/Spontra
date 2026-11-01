@@ -105,7 +105,7 @@ export async function executeCompanyAnalysisWorkflow(
     const output = await runBusinessModelAgent({
       ticker: params.ticker, companyName: issuerNames(findSecurity(params.ticker)?.name ?? params.ticker)[0]!,
       reportDate: packet.reportDate, now: generatedAt, tools,
-      model: (stage, system, payload) => callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, 5 * 60_000, true, { reasoning: reasoningFor(env, "company-analysis") }),
+      model: (stage, system, payload) => callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, 5 * 60_000, { reasoning: reasoningFor(env, "company-analysis") }),
       runStage: (name, callback) => step.do(`business-agent-${name}`, COMPANY_AGENT_MODEL_STEP_CONFIG, callback),
     });
     await step.do("company-run-validating", () => updateStatus(env, {

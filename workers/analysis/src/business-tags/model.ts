@@ -41,7 +41,7 @@ export async function trackedNames(db: D1Database): Promise<(text: string) => st
 
 async function call(env: AnalysisEnv, fetcher: typeof fetch, stage: string, system: string, payload: unknown, tool: "business-tags" | "business-tags-review", ticker: string) {
   for (const attempt of [1, 2]) {
-    try { return await callWorkerSecModel(env, fetcher, `${stage}-${attempt}`, system, payload, modelFor(env, tool), 5 * 60_000, true, { reasoning: reasoningFor(env, tool), ticker, kind: "business-tags" }); }
+    try { return await callWorkerSecModel(env, fetcher, `${stage}-${attempt}`, system, payload, modelFor(env, tool), 5 * 60_000, { reasoning: reasoningFor(env, tool), ticker, kind: "business-tags" }); }
     catch (error) { if (!(error instanceof SecModelOutputError) || attempt === 2) throw error; }
   }
   return null;

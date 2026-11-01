@@ -71,7 +71,7 @@ export async function executeBusinessExplainerWorkflow(params: BusinessExplainer
     ticker: params.ticker, companyName: issuerNames(findSecurity(params.ticker)?.name ?? params.ticker)[0]!, nodes: input.nodes,
     filings: input.filings, search: researchSearch(env), modelVersion, fingerprint: params.fingerprint, now,
     filingLibrary: treeLibrary(requireDb(env), params.ticker, input.filings),
-    model: (stage, system, payload) => callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, 5 * 60_000, true, { reasoning: reasoningFor(env, "explainer"), ticker: params.ticker, runId }),
+    model: (stage, system, payload) => callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, 5 * 60_000, { reasoning: reasoningFor(env, "explainer"), ticker: params.ticker, runId }),
     stage: (name, callback) => step.do(`explainer-${name}`, callback),
   });
   if (!readBusinessExplainer(explainer, params.ticker)) throw new Error("Business explainer failed its public contract.");

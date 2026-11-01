@@ -225,7 +225,7 @@ export function createAnalysisOperations(env: AnalysisEnv, fetcher: typeof fetch
           catch { checkpointDisabled = true; console.warn(JSON.stringify({ event: "sec-model-checkpoint", action: "save", outcome: "unavailable", stage })); }
         },
       };
-      return recoverModelJson({ stage, model: selectedModel, fallbackModel, jsonMode: (execution?.attempt ?? 1) === 1, checkpoint,
+      return recoverModelJson({ stage, model: selectedModel, fallbackModel, checkpoint,
         heartbeat: async () => {
           if (workflowInstanceId !== "standalone" && env.DB) {
             try { await boundedModelIO(env.DB.prepare("UPDATE sec_analysis_jobs SET updated_at = ? WHERE workflow_instance_id = ? AND status = 'running'")
@@ -235,7 +235,7 @@ export function createAnalysisOperations(env: AnalysisEnv, fetcher: typeof fetch
         },
         log: (event) => console.log(JSON.stringify({ ...event, workflowInstanceId })),
         request: (options) => requestWorkerSecModelContent(env, fetcher, stage, system, payload, options.model,
-          Math.max(1, deadline - Date.now()), options.jsonMode, { ...options, workflowInstanceId, reasoning: reasoningFor(env, "sec-analysis"), kind: "sec-analysis" }),
+          Math.max(1, deadline - Date.now()), { ...options, workflowInstanceId, reasoning: reasoningFor(env, "sec-analysis"), kind: "sec-analysis" }),
       });
     };
   };
@@ -733,10 +733,10 @@ function collectArtifactKeys(reference: PreparedFilingReference, synthesisKey: s
 
 export async function callWorkerSecModel(
   env: AnalysisEnv, fetcher: typeof fetch, stage: string, system: string, payload: unknown,
-  modelOverride?: string, executionBudgetMs = SEC_MODEL_EXECUTION_BUDGET_MS, jsonMode = true,
+  modelOverride?: string, executionBudgetMs = SEC_MODEL_EXECUTION_BUDGET_MS,
   tuning?: ModelCallTuning,
 ): Promise<Record<string, unknown>> {
-  return parseModelJson(await requestWorkerSecModelContent(env, fetcher, stage, system, payload, modelOverride, executionBudgetMs, jsonMode, tuning));
+  return parseModelJson(await requestWorkerSecModelContent(env, fetcher, stage, system, payload, modelOverride, executionBudgetMs, tuning));
 }
 
 /**
@@ -759,7 +759,6 @@ async function requestWorkerSecModelContent(
   payload: unknown,
   modelOverride?: string,
   executionBudgetMs = SEC_MODEL_EXECUTION_BUDGET_MS,
-  jsonMode = true,
   options?: Partial<ModelRequestOptions> & Pick<ModelCallTuning, "onMetrics" | "reasoning" | "ticker" | "runId" | "kind">,
 ): Promise<string> {
   const apiKey = await resolveWorkerModelKey(env, fetcher);
@@ -788,7 +787,6 @@ async function requestWorkerSecModelContent(
   metrics.reasoning = options?.reasoning ?? "high";
   metrics.mode = options?.continuation ? "continuation" : options?.repair ? "repair" : "initial";
   // The Anthropic format has no JSON response mode short of a schema; the system prompt asks for one object and `parseModelJson` holds it to that.
-  void jsonMode;
   let stream: AsyncIterable<Anthropic.Beta.BetaRawMessageStreamEvent> & { controller: AbortController };
   try {
     stream = await client.beta.messages.create({

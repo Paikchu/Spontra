@@ -78,7 +78,7 @@ function modelCall(env: AnalysisEnv, store: GuidanceStore, fetcher: typeof fetch
   const cap = Number(env.GUIDANCE_DAILY_MODEL_CALLS) > 0 ? Number(env.GUIDANCE_DAILY_MODEL_CALLS) : DEFAULT_DAILY_MODEL_CALLS;
   return async (stage, system, payload) => {
     if (!await store.reserve("guidance-model", day, cap)) throw new BudgetExhausted("guidance model budget exhausted");
-    return callWorkerSecModel(env, fetcher, stage, system, payload, model, MODEL_BUDGET_MS, true, { maxTokens: GUIDANCE_MAX_OUTPUT_TOKENS, reasoning: reasoningFor(env, "guidance"), ticker: call.ticker, runId: call.runId });
+    return callWorkerSecModel(env, fetcher, stage, system, payload, model, MODEL_BUDGET_MS, { maxTokens: GUIDANCE_MAX_OUTPUT_TOKENS, reasoning: reasoningFor(env, "guidance"), ticker: call.ticker, runId: call.runId });
   };
 }
 

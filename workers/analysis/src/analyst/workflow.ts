@@ -137,7 +137,7 @@ export async function executeAnalystWorkflow(params: AnalystWorkflowParams, step
       catch (error) { if (error instanceof SecModelOutputError) return { error: `${error.code}: ${error.message}`.slice(0, 300) }; throw error; }
     },
     judge: async (stage, system, payload) => {
-      try { return await callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, MODEL_BUDGET_MS, true, tuning); }
+      try { return await callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, MODEL_BUDGET_MS, tuning); }
       catch (error) { if (error instanceof SecModelOutputError) return {}; throw error; }
     },
   };

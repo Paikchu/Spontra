@@ -158,7 +158,7 @@ async function askModel(env: AnalysisEnv, fetcher: typeof fetch, ticker: string,
   const model = modelFor(env, "translate");
   const payload = { items: items.map(({ i, text, problems }) => ({ i, text, ...(problems ? { fix: `上一次译文的问题：${problems.join("；")}` } : {}) })) };
   let result: Record<string, unknown>;
-  try { result = await callWorkerSecModel(env, fetcher, stage, SYSTEM, payload, model, 3 * 60_000, true, { reasoning: reasoningFor(env, "translate"), ticker, runId, kind: "translate" }); }
+  try { result = await callWorkerSecModel(env, fetcher, stage, SYSTEM, payload, model, 3 * 60_000, { reasoning: reasoningFor(env, "translate"), ticker, runId, kind: "translate" }); }
   catch (error) {
     if (error instanceof SecModelOutputError || /model-timeout/.test(String(error))) throw new ModelUnavailable(error instanceof SecModelOutputError ? error.code : "timeout");
     throw error;

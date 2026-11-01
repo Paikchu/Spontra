@@ -115,7 +115,7 @@ export const FINANCIAL_TASKS = {
         const listed = JSON.parse(await db.prepare("SELECT json_extract(payload, '$.collectable') c FROM sec_cache WHERE cache_key = ?").bind(`sec:discovery:v1:${ticker}`).first<{ c: string | null }>().then(r => r?.c ?? "[]")) as string[];
         const history = await issuerHistory(db, job.cik, ticker);
         const model: NoteModel = async (stage, system, payload) => {
-          try { return await callWorkerSecModel(env, fetch, stage, system, payload, modelFor(env, "read-note"), 3 * MINUTE, true, { reasoning: reasoningFor(env, "read-note"), ticker, kind: "read-note" }); }
+          try { return await callWorkerSecModel(env, fetch, stage, system, payload, modelFor(env, "read-note"), 3 * MINUTE, { reasoning: reasoningFor(env, "read-note"), ticker, kind: "read-note" }); }
           catch (error) { if (error instanceof SecModelOutputError) return {}; throw error; }
         };
         const collected = await collectNewFilings({ ...job, cursor: JSON.stringify({ readNotes: true, documents: listed.map(accession => ({ accession })) }) }, current,
