@@ -113,10 +113,11 @@ export async function driveWorkflow(env: AnalysisEnv, key: string, binding: Work
       const { task, ticker, causeId } = options.deadLetter, at = new Date().toISOString();
       const previous = fingerprint ? (await repository.getCache<FailedInput>(failedInputKey(task, ticker)))?.payload : undefined;
       const attempts = previous?.fingerprint === fingerprint ? (previous?.attempts ?? 1) + 1 : 1;
-      // The feature stops at its first failure: the admin is told and switching it on again is the retry.
-      await recordFeatureFailure(env.DB, ticker, TASK_FEATURE[task], failure, at);
       const final = !verdict && (state.status === "terminated" || (errorName(state.error) === "NonRetryableError" && !ACCOUNT_FAILURE.test(errorText(state.error))));
       const wait = !final && fingerprint ? FAILED_INPUT_RETRY_WAITS_MS[attempts - 1] : undefined;
+      // The admin is told of every failure; the feature is switched off only once no retry is left, and switching it on
+      // again is then the retry. Switched off at the first failure, the retries would be refused as out of scope.
+      await recordFeatureFailure(env.DB, ticker, TASK_FEATURE[task], failure, at, wait === undefined);
       if (wait !== undefined) {
         const retryAt = new Date(Date.now() + wait).toISOString();
         console.warn(JSON.stringify({ event: "pipeline-retry", task, ticker, attempts, retryAt, failure }));

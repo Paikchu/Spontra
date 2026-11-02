@@ -8,7 +8,7 @@ import type { FindingRecordEntry, FindingsPublication } from "../../../../shared
 import { sha256 } from "../sha256.ts";
 import { D1CompanyAnalysisRepository } from "../company-analysis/repository.ts";
 import { findSecurity } from "../catalog/security-directory.ts";
-import { assertTrackedTicker, requireDb } from "../core.ts";
+import { assertFeatureTicker, requireDb } from "../core.ts";
 import { readMapDerived } from "../financial-data/derived.ts";
 import { readCompletePublicationForTicker } from "../financial-data/publication.ts";
 import { parseFundamentalApiQuery } from "../fundamentals/fundamentals-api.ts";
@@ -95,7 +95,7 @@ export async function priorWatches(store: AiRunStore, ticker: string, previous: 
 }
 
 export async function executeFindingsWorkflow(params: FindingsWorkflowParams, step: WorkflowStepLike, env: AnalysisEnv, deps: FindingsDeps = {}) {
-  assertTrackedTicker(env, params.ticker);
+  assertFeatureTicker(env, "findings", params.ticker);
   const fetcher = deps.fetcher ?? fetch;
   const modelVersion = modelFor(env, "findings");
   const now = await step.do("findings-time", async () => new Date().toISOString());

@@ -10,7 +10,7 @@ import { peersOf } from "../../../../shared/analysis-runtime/lens/table.ts";
 import { comparablePeers } from "../../../../shared/analysis-runtime/peers.ts";
 import { AiRunStore } from "../ai-runs/store.ts";
 import { sha256 } from "../sha256.ts";
-import { assertTrackedTicker, requireDb } from "../core.ts";
+import { assertFeatureTicker, requireDb } from "../core.ts";
 import { readLinks } from "../filing-library/links.ts";
 import { libraryToc } from "../filing-library/tool.ts";
 import { findingsInput } from "../findings/workflow.ts";
@@ -113,7 +113,7 @@ export function providerOutage(researched: PromiseSettledResult<AnalystOutcome>[
 }
 
 export async function executeAnalystWorkflow(params: AnalystWorkflowParams, step: WorkflowStepLike, env: AnalysisEnv, deps: AnalystDeps = {}) {
-  assertTrackedTicker(env, params.ticker);
+  assertFeatureTicker(env, "findings", params.ticker);
   const fetcher = deps.fetcher ?? fetch;
   const modelVersion = modelFor(env, "analyst");
   const now = await step.do("analyst-time", async () => new Date().toISOString());

@@ -9,7 +9,7 @@ import { buildCompanyAnalysisPacket, type CompanyAnalysisPacket } from "./compan
 import { D1CompanyAnalysisRepository, type CompanyAnalysisRunUpdate } from "./company-analysis/repository.ts";
 import { sha256 } from "./sha256.ts";
 import { hashString } from "./sec/analysis.ts";
-import { assertTrackedTicker, requireDb, type CompanyAnalysisWorkflowParams } from "./core.ts";
+import { assertFeatureTicker, requireDb, type CompanyAnalysisWorkflowParams } from "./core.ts";
 import { runBusinessModelAgent } from "./company-analysis/business-agent.ts";
 import { createBusinessResearchTools } from "./company-analysis/business-tools.ts";
 import { issuerNames } from "../../../shared/analysis-runtime/business-tree.ts";
@@ -67,7 +67,7 @@ export async function executeCompanyAnalysisWorkflow(
   };
   try {
     const claimed = await step.do("company-run-created", () => {
-      assertTrackedTicker(env, params.ticker);
+      assertFeatureTicker(env, "findings", params.ticker);
       return new D1CompanyAnalysisRepository(requireDb(env)).beginRun({
         ...statusBase, status: "waiting_fundamentals", updatedAt: new Date().toISOString(),
       }, params.recoveryAttempt ?? 0, params.expectedUpdatedAt);
@@ -148,7 +148,7 @@ export async function executeCompanyAnalysisWorkflow(
       generatedAt,
     });
     const published = await step.do("company-publish", () => {
-      assertTrackedTicker(env, publication.ticker);
+      assertFeatureTicker(env, "findings", publication.ticker);
       return new D1CompanyAnalysisRepository(requireDb(env)).publish(publication);
     });
     return { status: published.duplicate ? "duplicate" : "ready", analysisId, inputHash, rounds: output.rounds };
@@ -168,7 +168,7 @@ function readPacket(
   params: CompanyAnalysisWorkflowParams,
   packetStage: "current_quarter" | "cross_period",
 ): Promise<CompanyAnalysisPacket> {
-  assertTrackedTicker(env, params.ticker);
+  assertFeatureTicker(env, "findings", params.ticker);
   return buildCompanyAnalysisPacket({
     database: requireDb(env),
     rawTicker: params.ticker,
@@ -179,7 +179,7 @@ function readPacket(
 }
 
 function updateStatus(env: AnalysisEnv, value: Omit<CompanyAnalysisRunUpdate, "updatedAt">): Promise<void> {
-  assertTrackedTicker(env, value.ticker);
+  assertFeatureTicker(env, "findings", value.ticker);
   return new D1CompanyAnalysisRepository(requireDb(env)).upsertRun({ ...value, updatedAt: new Date().toISOString() });
 }
 

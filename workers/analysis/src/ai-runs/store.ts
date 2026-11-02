@@ -78,7 +78,8 @@ export class AiRunStore {
     await this.update(kind, ticker, runId, { status: outcome.status, finishedAt: now }, now);
     await this.db.prepare("UPDATE sec_cache SET payload=json_set(payload,'$.result',json(?2),'$.error',?3) WHERE cache_key=?1")
       .bind(runPrefix(kind, ticker) + runId, JSON.stringify(outcome.result ?? null), outcome.error?.slice(0, 1000) ?? null).run();
-    if (outcome.status === "failed") await recordFeatureFailure(this.db, ticker, KIND_FEATURE[kind], `${kind} ${runId}: ${outcome.error ?? "failed"}`, now);
+    // Noted only: the task driving the run decides whether retries are left before the switch goes off (workflow-task.ts).
+    if (outcome.status === "failed") await recordFeatureFailure(this.db, ticker, KIND_FEATURE[kind], `${kind} ${runId}: ${outcome.error ?? "failed"}`, now, false);
   }
 
   async get(kind: AiRunKind, ticker: string, runId: string): Promise<AiRun | null> {

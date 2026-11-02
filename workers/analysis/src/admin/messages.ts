@@ -44,17 +44,18 @@ export function messageStatements(db: D1Database, events: EventMessage[], at: st
 }
 
 /**
- * A failed run of a company's feature: noted in the inbox, and the company's switch turned off. Only generation stops;
- * what was written stays shown (`display` keeps its value). The reports take the findings with them, as the switch does.
- * Never throws: bookkeeping must not fail the work it describes.
+ * A failed run of a company's feature: noted in the inbox, and, once no automatic retry is left (`switchOff`), the
+ * company's switch turned off. A failure with retries still to come leaves the feature on, so the retry runs. Only
+ * generation stops; what was written stays shown (`display` keeps its value). The reports take the findings with them,
+ * as the switch does. Never throws: bookkeeping must not fail the work it describes.
  */
-export async function recordFeatureFailure(db: D1Database | undefined, ticker: string, feature: Feature | undefined, failure: string, at = new Date().toISOString()): Promise<void> {
+export async function recordFeatureFailure(db: D1Database | undefined, ticker: string, feature: Feature | undefined, failure: string, at = new Date().toISOString(), switchOff = true): Promise<void> {
   if (!db || !feature || ticker === '*') return;
   const off = (f: Feature) => db.prepare(`INSERT INTO business_feature_settings (ticker, feature, generate, display, updated_at) VALUES (?, ?, 0, 1, ?)
     ON CONFLICT (ticker, feature) DO UPDATE SET generate = 0, display = coalesce(business_feature_settings.display, business_feature_settings.generate, 1), updated_at = excluded.updated_at`)
     .bind(ticker, f, at);
   try {
-    await db.batch([...noteStatements(db, ticker, feature, 'failed', failure.slice(0, 1000), at), off(feature), ...(feature === 'reports' ? [off('findings')] : [])]);
+    await db.batch([...noteStatements(db, ticker, feature, 'failed', failure.slice(0, 1000), at), ...(switchOff ? [off(feature), ...(feature === 'reports' ? [off('findings')] : [])] : [])]);
   } catch (error) {
     console.warn(JSON.stringify({ event: 'admin-message', ticker, feature, error: error instanceof Error ? error.message : String(error) }));
   }

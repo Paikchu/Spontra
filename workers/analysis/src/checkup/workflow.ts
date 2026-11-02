@@ -5,7 +5,7 @@ import { STATEMENT_ANALYSIS_VERSION } from "../../../../shared/analysis-contract
 import { assessStatements } from "../../../../shared/analysis-runtime/statement-analysis.ts";
 import { AiRunStore } from "../ai-runs/store.ts";
 import { sha256 } from "../sha256.ts";
-import { assertTrackedTicker, requireDb } from "../core.ts";
+import { assertFeatureTicker, requireDb } from "../core.ts";
 import { libraryToc } from "../filing-library/tool.ts";
 import { findingsInput } from "../findings/workflow.ts";
 import { SecModelOutputError } from "../model-stream.ts";
@@ -75,7 +75,7 @@ export function checkupContent(outcomes: NoteOutcome[]): { notes: CheckupNotes["
 }
 
 export async function executeCheckupWorkflow(params: CheckupWorkflowParams, step: WorkflowStepLike, env: AnalysisEnv, deps: { act?: AgentAct; fetcher?: typeof fetch } = {}) {
-  assertTrackedTicker(env, params.ticker);
+  assertFeatureTicker(env, "findings", params.ticker);
   const fetcher = deps.fetcher ?? fetch;
   const modelVersion = modelFor(env, "analyst");
   const now = await step.do("checkup-time", async () => new Date().toISOString());

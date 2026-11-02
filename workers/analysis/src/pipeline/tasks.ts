@@ -1,12 +1,12 @@
 import { allowData, dataTickers } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
-import { companyPolicyEnvironment } from "../financial-data/company-policy.ts";
+import { companyPolicyEnvironment, featureTickersFor } from "../financial-data/company-policy.ts";
 import { deriveCompany, REPORT_QUARTERS_VERSION, REPORT_SELECTION_VERSION } from "../financial-data/derived.ts";
 import { ARCHIVE_PREFIX, disclosureAuditPrefix, PRUNE_GRACE_MS, pruneSupersededArchives } from "../financial-data/disclosure-audit.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import { logStatements } from "./log.ts";
 import type { TaskMessage } from "./messages.ts";
 import { delaySeconds } from "./router.ts";
-import type { TaskName } from "./registry.ts";
+import { TASKS, type TaskName, type TaskScope } from "./registry.ts";
 import { FINANCIAL_TASKS } from "./financial-tasks.ts";
 import { SEC_TASKS } from "./sec-tasks.ts";
 import { AI_TASKS } from "./ai-tasks.ts";
@@ -104,6 +104,11 @@ export const TASK_IMPLEMENTATIONS: Record<TaskName, TaskImplementation> = {
 
 type DueRow = { due_at: string; first_requested_at: string; cause_id: string | null };
 
+/** Whether a company is in a task's scope, read from the environment the queue entry already resolved (no D1 read). */
+function inScope(env: AnalysisEnv, scope: Exclude<TaskScope, "global">, ticker: string): boolean {
+  return scope === "data" ? allowData(dataTickers(env), ticker) : featureTickersFor(env, scope).includes(ticker);
+}
+
 /**
  * Runs one task message if it is still the current one for its company and task. A message is stale when
  * `pipeline_due` moved on (a newer trigger pushed the run back) or is gone (the run already happened). A message
@@ -117,6 +122,14 @@ export async function runTaskMessage(env: AnalysisEnv, message: TaskMessage, now
   if (Date.parse(row.due_at) > now.getTime() + 1000) {
     await env.PIPELINE_TASKS!.send(message, { contentType: "json", delaySeconds: delaySeconds(row.due_at, now.getTime()) });
     return { outcome: "deferred" };
+  }
+  // A company that left the task's scope since the run was scheduled (a feature switched off, a company removed): the
+  // run and any continuation it would send end here, instead of polling or starting Workflows for it.
+  const scope = TASKS[message.task].scope;
+  if (scope !== "global" && !inScope(env, scope, message.ticker)) {
+    await db.batch([db.prepare("DELETE FROM pipeline_due WHERE ticker = ? AND task = ? AND due_at = ?").bind(message.ticker, message.task, row.due_at),
+      ...logStatements(db, { messageId: message.id, causeId: message.causeId, kind: "task", name: message.task, ticker: message.ticker, outcome: "done", detail: { skipped: `${scope} is off for this company` } })]);
+    return { outcome: "done", detail: { skipped: `${scope} is off for this company` } };
   }
   const started = Date.now();
   let outcome: TaskOutcome;

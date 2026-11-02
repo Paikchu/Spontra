@@ -107,3 +107,18 @@ test("an analysis-stage maintenance task whose Workflow stays unobservable ends 
   const ended = await store.get("t1");
   assert.deepEqual({ status: ended!.status, code: ended!.error_code }, { status: "failed", code: "WORKFLOW_STATUS_UNAVAILABLE" });
 });
+
+test("a run whose company left the task's feature since it was scheduled ends without running or continuing", async () => {
+  const db = database();
+  const dueAt = "2026-11-02T05:00:00.000Z";
+  await db.prepare("INSERT INTO pipeline_due (ticker, task, due_at, first_requested_at, cause_id) VALUES ('META', 'company-analysis', ?, ?, 'e1')").bind(dueAt, dueAt).run();
+  const sent: unknown[] = [];
+  // The findings switch is off for META; the reports switch stays on.
+  const env = { DB: db, SEC_DATA_TICKERS: "META", SEC_AI_TICKERS: "META", SEC_AI_ENABLED: "true",
+    FEATURE_RESOLVED: JSON.stringify({ enabled: { reports: true, findings: true, explainer: true, tree: true, valuation: true }, tickers: { reports: ["META"], findings: [], explainer: [], tree: [], valuation: [] } }),
+    PIPELINE_TASKS: { send: async (m: unknown) => { sent.push(m); } } } as unknown as AnalysisEnv;
+  const result = await runTaskMessage(env, { v: 1, kind: "task", id: "m1", causeId: "e1", task: "company-analysis", ticker: "META", dueAt }, new Date(dueAt));
+  assert.deepEqual(result, { outcome: "done", detail: { skipped: "findings is off for this company" } });
+  assert.equal(sent.length, 0);
+  assert.equal(await db.prepare("SELECT 1 FROM pipeline_due WHERE ticker = 'META'").bind().first(), null);
+});

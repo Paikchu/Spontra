@@ -1,3 +1,5 @@
+import { featureTickersFor } from "./financial-data/company-policy.ts";
+import type { Feature } from "../../../shared/analysis-contract/business-features.ts";
 import { allowData, aiIsEnabled, dataTickers, normalizeTicker, tickerList } from "../../../shared/analysis-runtime/financial-data/policy.ts";
 import { D1CompanyAnalysisRepository } from "./company-analysis/repository.ts";
 import { D1SecRepository } from "./sec/d1.ts";
@@ -71,6 +73,14 @@ const tracked = (ticker: string, list: string[]) => { const normalized = normali
 export const NOT_TRACKED = "Ticker is not tracked";
 export function assertTrackedTicker(env: Pick<SecCronEnv, "SEC_AI_TICKERS" | "SEC_AI_ENABLED">, ticker: string): void {
   if (!tracked(ticker, trackedTickersFor(env))) throw new Error(NOT_TRACKED);
+}
+
+/**
+ * The same refusal for a run of another feature: the company analysis, memory, findings, analyst and checkup belong to the
+ * findings switch and the explainer to its own, so a run is refused by the switch that scheduled it, not the reports list.
+ */
+export function assertFeatureTicker(env: Parameters<typeof featureTickersFor>[0], feature: Feature, ticker: string): void {
+  if (!tracked(ticker, featureTickersFor(env, feature))) throw new Error(NOT_TRACKED);
 }
 
 /**
