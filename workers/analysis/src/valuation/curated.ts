@@ -43,24 +43,25 @@ export function parseTargets(value: unknown): StoredManagementTargets {
   return set;
 }
 
-type Row = { peers_json: string | null; targets_json: string | null; updated_at: string };
+type Row = { peers_json: string | null; targets_json: string | null; reassess: number; updated_at: string };
 
 /** The company's stored inputs; a row that no longer passes the schema reads as absent rather than failing the run. */
 export async function readValuationCompanyInputs(db: D1Database, company: string): Promise<Omit<ValuationCompanyInputs, "fiscalYearEndMonth">> {
-  const row = await db.prepare("SELECT peers_json, targets_json, updated_at FROM valuation_company_inputs WHERE ticker = ?").bind(company).first<Row>();
+  const row = await db.prepare("SELECT peers_json, targets_json, reassess, updated_at FROM valuation_company_inputs WHERE ticker = ?").bind(company).first<Row>();
   const read = <T>(text: string | null, parse: (value: unknown) => T): T | null => { if (!text) return null; try { return parse(JSON.parse(text)); } catch { return null; } };
-  return { ticker: company, peers: read(row?.peers_json ?? null, v => parsePeers(company, v)), targets: read(row?.targets_json ?? null, parseTargets), updatedAt: row?.updated_at ?? null };
+  return { ticker: company, peers: read(row?.peers_json ?? null, v => parsePeers(company, v)), targets: read(row?.targets_json ?? null, parseTargets), reassess: row?.reassess === 1, updatedAt: row?.updated_at ?? null };
 }
 
-/** Saves both inputs at once; null clears one. A row with neither is deleted. */
-export async function writeValuationCompanyInputs(db: D1Database, company: string, input: { peers: unknown; targets: unknown }, now: string): Promise<Omit<ValuationCompanyInputs, "fiscalYearEndMonth">> {
+/** Saves the inputs at once; null clears peers or targets. A row with nothing set is deleted. */
+export async function writeValuationCompanyInputs(db: D1Database, company: string, input: { peers: unknown; targets: unknown; reassess: boolean }, now: string): Promise<Omit<ValuationCompanyInputs, "fiscalYearEndMonth">> {
   const peers = input.peers == null ? null : parsePeers(company, input.peers);
   const targets = input.targets == null ? null : parseTargets(input.targets);
-  if (!peers && !targets) await db.prepare("DELETE FROM valuation_company_inputs WHERE ticker = ?").bind(company).run();
-  else await db.prepare(`INSERT INTO valuation_company_inputs (ticker, peers_json, targets_json, updated_at) VALUES (?, ?, ?, ?)
-    ON CONFLICT(ticker) DO UPDATE SET peers_json = excluded.peers_json, targets_json = excluded.targets_json, updated_at = excluded.updated_at`)
-    .bind(company, peers ? JSON.stringify(peers) : null, targets ? JSON.stringify(targets) : null, now).run();
-  return { ticker: company, peers, targets, updatedAt: peers || targets ? now : null };
+  const kept = !!peers || !!targets || input.reassess;
+  if (!kept) await db.prepare("DELETE FROM valuation_company_inputs WHERE ticker = ?").bind(company).run();
+  else await db.prepare(`INSERT INTO valuation_company_inputs (ticker, peers_json, targets_json, reassess, updated_at) VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(ticker) DO UPDATE SET peers_json = excluded.peers_json, targets_json = excluded.targets_json, reassess = excluded.reassess, updated_at = excluded.updated_at`)
+    .bind(company, peers ? JSON.stringify(peers) : null, targets ? JSON.stringify(targets) : null, input.reassess ? 1 : 0, now).run();
+  return { ticker: company, peers, targets, reassess: input.reassess, updatedAt: kept ? now : null };
 }
 
 /**

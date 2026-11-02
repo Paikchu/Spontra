@@ -17,7 +17,7 @@ test("A19: every required projection read failure preserves the published peers"
   for (const [name, fail] of faults) {
     const before = { schemaVersion: "peers.v1", generatedAt: "2026-01-01T00:00:00Z", companies: [] };
     const fixture = auditDb({ fail, cache: { "peers:v1": before } });
-    await assert.rejects(publishPeers({ DB: fixture.db, SEC_DATA_TICKERS: "ACME" }, new Date("2026-11-01T00:00:00Z")), /injected read failure/, name);
+    await assert.rejects(publishPeers({ DB: fixture.db }, new Date("2026-11-01T00:00:00Z")), /injected read failure/, name);
     assert.equal(fixture.writes.length, 0, name);
     assert.deepEqual(fixture.cache["peers:v1"], before);
   }
@@ -25,7 +25,7 @@ test("A19: every required projection read failure preserves the published peers"
 
 test("A19: successful reads with genuinely absent optional data can publish", async () => {
   const fixture = auditDb();
-  const result = await publishPeers({ DB: fixture.db, SEC_DATA_TICKERS: "ACME" }, new Date("2026-11-01T00:00:00Z"));
+  const result = await publishPeers({ DB: fixture.db }, new Date("2026-11-01T00:00:00Z"));
   assert.equal(result.companies, 1);
   assert.equal(result.quarters, 2);
   assert.ok(fixture.writes.length > 0);

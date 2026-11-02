@@ -6,6 +6,7 @@ import type { AnalysisEnv } from "../src/operations.ts";
 import type { AgentAct } from "../src/tool-loop.ts";
 import type { WorkflowStepLike } from "../src/workflow-core.ts";
 import { data, PERIOD } from "./fixtures/stage-data.ts";
+import { resolvedFor } from "./fixtures/company-settings.ts";
 
 const assessment = assessStatements(data, PERIOD);
 const metricId = assessment.flags[0]!.metricId;
@@ -41,7 +42,7 @@ function harness(cap: number, options: { beforeStage?: (name: string) => void; r
   };
   const env: AnalysisEnv = {
     DB: db as unknown as D1Database,
-    SEC_AI_ENABLED: "true", SEC_AI_TICKERS: "TEST", CHECKUP_DAILY_TURNS: String(cap),
+    ...resolvedFor(["TEST"]), CHECKUP_DAILY_TURNS: String(cap),
   };
   const step: WorkflowStepLike = {
     async do<T>(name: string, callback: () => Promise<T>): Promise<T> {

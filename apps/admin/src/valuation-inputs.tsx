@@ -10,13 +10,14 @@ function parsePeerField(text: string): string[] | null {
 
 /**
  * A company's valuation inputs (business-map/companies/<T>/valuation-inputs): the comparable set the cross-check tries
- * first, and management's cited targets as JSON. An empty field clears that input; the service validates both.
+ * first, management's cited targets as JSON, and whether a method change alone reassesses the company. An empty field
+ * clears that input; the service validates both.
  */
 export function ValuationInputs({ ticker, onUnauthorized }: { ticker: string; onUnauthorized: () => void }) {
   const [inputs, setInputs] = useState<ValuationCompanyInputs | null>(null);
-  const [peers, setPeers] = useState(''), [targets, setTargets] = useState('');
+  const [peers, setPeers] = useState(''), [targets, setTargets] = useState(''), [reassess, setReassess] = useState(false);
   const [error, setError] = useState(''), [saving, setSaving] = useState(false), [saved, setSaved] = useState(false);
-  const show = (value: ValuationCompanyInputs) => { setInputs(value); setPeers(value.peers?.join(', ') ?? ''); setTargets(value.targets ? JSON.stringify(value.targets, null, 2) : ''); };
+  const show = (value: ValuationCompanyInputs) => { setInputs(value); setPeers(value.peers?.join(', ') ?? ''); setTargets(value.targets ? JSON.stringify(value.targets, null, 2) : ''); setReassess(value.reassess); };
   useEffect(() => {
     let live = true;
     adminApi<ValuationCompanyInputs>(`business-map/companies/${encodeURIComponent(ticker)}/valuation-inputs`)
@@ -31,7 +32,7 @@ export function ValuationInputs({ ticker, onUnauthorized }: { ticker: string; on
     if (targets.trim()) { try { parsed = JSON.parse(targets); } catch { setError('管理层目标不是有效的 JSON'); return; } }
     setSaving(true);
     try {
-      show(await adminApi<ValuationCompanyInputs>(`business-map/companies/${encodeURIComponent(ticker)}/valuation-inputs`, { method: 'POST', body: JSON.stringify({ peers: parsePeerField(peers), targets: parsed }) }));
+      show(await adminApi<ValuationCompanyInputs>(`business-map/companies/${encodeURIComponent(ticker)}/valuation-inputs`, { method: 'POST', body: JSON.stringify({ peers: parsePeerField(peers), targets: parsed, reassess }) }));
       setSaved(true);
     } catch (e) { if (e instanceof AdminApiError && e.status === 401) onUnauthorized(); else setError(e instanceof Error ? e.message : '保存失败'); }
     finally { setSaving(false); }
@@ -43,6 +44,7 @@ export function ValuationInputs({ ticker, onUnauthorized }: { ticker: string; on
     <input id={`bm-peers-${ticker}`} value={peers} onChange={e => { setPeers(e.target.value); setSaved(false); }} placeholder="留空则按业务标签选择" autoComplete="off" spellCheck={false} />
     <label htmlFor={`bm-targets-${ticker}`}>管理层目标</label>
     <textarea id={`bm-targets-${ticker}`} value={targets} onChange={e => { setTargets(e.target.value); setSaved(false); }} placeholder="留空则无管理层情景" rows={targets ? 14 : 3} spellCheck={false} />
+    <label className="bm-valuation-check"><input type="checkbox" checked={reassess} onChange={e => { setReassess(e.target.checked); setSaved(false); }} />方法更新时自动重估</label>
     <p className="bm-valuation-meta">{inputs.fiscalYearEndMonth ? `财年结束：${inputs.fiscalYearEndMonth} 月` : '财报未给出财年结束月份，目标暂不使用'}{inputs.targets && ` · 截至 ${inputs.targets.asOf}`}{inputs.updatedAt && ` · 更新于 ${inputs.updatedAt.slice(0, 10)}`}</p>
     {error && <p role="alert" className="ra-error">{error}</p>}
     <div className="bm-valuation-actions"><button className="fm-button" disabled={saving}>{saving ? '保存中' : '保存'}</button>{saved && <span role="status">已保存</span>}</div>

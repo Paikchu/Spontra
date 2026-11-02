@@ -303,15 +303,15 @@ test("management comparison rows: one per total-revenue target inside the horizo
   assert.deepEqual(managementComparisonRows(fcff(0.2, 0.3), { ...orcl, targets: orcl.targets.filter(t => t.metric !== "revenue") }, "2026-08-31"), []);
 });
 
-test("the version bump reassesses only the listed company: an ORCL report under valuation.v4/calc.v2 runs, every other company on unchanged material is held", () => {
+test("the version bump reassesses only the marked company: an ORCL report under valuation.v4/calc.v2 runs, every other company on unchanged material is held", () => {
   assert.equal(VALUATION_VERSION, "valuation.v5");
   const published = { methodVersion: "valuation.v4", calculatorVersion: "valuation.calc.v2", financialPeriodEnd: "2026-08-31" };
   const current = { methodVersion: VALUATION_VERSION, calculatorVersion: CALCULATOR_VERSION, financialPeriodEnd: "2026-08-31" };
-  assert.equal(methodChangeHeldBack({ VALUATION_REASSESS_TICKERS: "ORCL" }, published, current, "ORCL"), null);
+  assert.equal(methodChangeHeldBack(true, published, current, "ORCL"), null);
   for (const other of ["GOOGL", "MSFT", "NVDA"]) {
-    const held = methodChangeHeldBack({ VALUATION_REASSESS_TICKERS: "ORCL" }, published, current, other);
+    const held = methodChangeHeldBack(false, published, current, other);
     assert.ok(held && held.reason.includes("valuation.v4/valuation.calc.v2 → valuation.v5/valuation.calc.v4") && held.reason.includes(other));
   }
-  assert.ok(methodChangeHeldBack({ VALUATION_REASSESS_TICKERS: "ORCL" }, { ...published, methodVersion: "valuation.v4", calculatorVersion: "valuation.calc.v3" }, current, "GOOGL"), "a calc.v3 report is held too");
+  assert.ok(methodChangeHeldBack(false, { ...published, methodVersion: "valuation.v4", calculatorVersion: "valuation.calc.v3" }, current, "GOOGL"), "a calc.v3 report is held too");
   assert.deepEqual(EXTENDED_SCENARIO_KEYS, ["bear", "base", "management", "bull"]);
 });

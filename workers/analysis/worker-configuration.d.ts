@@ -11,8 +11,6 @@ interface __BaseEnv_Env {
 	BROWSER: BrowserRun;
 	AI: Ai;
 	CF_VERSION_METADATA: WorkerVersionMetadata;
-	SEC_DATA_TICKERS: "ORCL,NVDA,MSFT,AAPL,JPM,BRK.B,ADSK,NET,AMZN,GOOGL,META";
-	SEC_AI_TICKERS: "ORCL";
 	SEC_AI_ENABLED: "true";
 	SEC_DATA_COLLECTION_ENABLED: "true";
 	SEC_USER_AGENT: "earning-report-analysis/1.0 max.zhangyuchen@gmail.com";
@@ -25,7 +23,6 @@ interface __BaseEnv_Env {
 	GUIDANCE_DAILY_MODEL_CALLS: "40";
 	GUIDANCE_DAILY_TRANSCRIPT_CALLS: "25";
 	TRANSCRIPTS_ENABLED: "true";
-	BUSINESS_TREE_TICKERS: "MSFT,ORCL,NVDA,ADSK,NET";
 	TRANSLATION_ENABLED: "true";
 	DEEPSEEK_API_KEY: string;
 	StageAgent: DurableObjectNamespace<import("./src/index").StageAgent>;
@@ -58,5 +55,5 @@ type StringifyValues<EnvType extends Record<string, unknown>> = {
 	[Binding in keyof EnvType]: EnvType[Binding] extends string ? EnvType[Binding] : string;
 };
 declare namespace NodeJS {
-	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "SEC_DATA_TICKERS" | "SEC_AI_TICKERS" | "SEC_AI_ENABLED" | "SEC_DATA_COLLECTION_ENABLED" | "SEC_USER_AGENT" | "SEC_ANALYSIS_MODEL" | "SEC_REASONING_MODEL" | "GUIDANCE_ENABLED" | "FINDINGS_ENABLED" | "ANALYST_ENABLED" | "GUIDANCE_DECK_SEARCH" | "GUIDANCE_DAILY_MODEL_CALLS" | "GUIDANCE_DAILY_TRANSCRIPT_CALLS" | "TRANSCRIPTS_ENABLED" | "BUSINESS_TREE_TICKERS" | "TRANSLATION_ENABLED" | "DEEPSEEK_API_KEY">> {}
+	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "SEC_AI_ENABLED" | "SEC_DATA_COLLECTION_ENABLED" | "SEC_USER_AGENT" | "SEC_ANALYSIS_MODEL" | "SEC_REASONING_MODEL" | "GUIDANCE_ENABLED" | "FINDINGS_ENABLED" | "ANALYST_ENABLED" | "GUIDANCE_DECK_SEARCH" | "GUIDANCE_DAILY_MODEL_CALLS" | "GUIDANCE_DAILY_TRANSCRIPT_CALLS" | "TRANSCRIPTS_ENABLED" | "TRANSLATION_ENABLED" | "DEEPSEEK_API_KEY">> {}
 }

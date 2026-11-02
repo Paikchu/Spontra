@@ -8,11 +8,13 @@ import { driveWorkflow, failedInputKey, type WorkflowBindingLike } from "../src/
 import { routeEvents } from "../src/pipeline/router.ts";
 import type { EventMessage } from "../src/pipeline/messages.ts";
 import type { AnalysisEnv } from "../src/operations.ts";
+import { switchOn, UNSEEDED } from "./fixtures/company-settings.ts";
 
 function database(): D1Database {
   const sqlite = new DatabaseSync(":memory:");
   const dir = new URL("../migrations/", import.meta.url);
   for (const file of readdirSync(dir).filter(f => f.endsWith(".sql")).sort()) sqlite.exec(readFileSync(new URL(file, dir), "utf8").replace(/--> statement-breakpoint/g, ""));
+  sqlite.exec(UNSEEDED);
   const statement = (sql: string, values: unknown[] = []) => ({
     bind: (...next: unknown[]) => statement(sql, next),
     run: async () => { sqlite.prepare(sql).run(...values as never[]); return { success: true }; },
@@ -49,10 +51,11 @@ test("a scheduled report runs only while the company is still on the reports lis
 
 test("routing a filing does not queue a report for a company whose reports are off, and still queues one that is on", async () => {
   const db = database();
+  await switchOn(db, ["META", "NBIS"], { reports: ["META"] });
   await db.prepare("INSERT INTO business_feature_settings (ticker, feature, generate, display, updated_at) VALUES ('NBIS', 'reports', 0, 1, '2026-10-22T08:00:00.000Z')").run();
   const sent: Array<{ task: string; ticker: string }> = [];
   const env = {
-    DB: db, SEC_DATA_TICKERS: "META,NBIS", SEC_AI_TICKERS: "META,NBIS", SEC_AI_ENABLED: "true",
+    DB: db, SEC_AI_ENABLED: "true",
     PIPELINE_TASKS: { async sendBatch(messages: Array<{ body: { task: string; ticker: string } }>) { sent.push(...messages.map(message => message.body)); } },
   } as unknown as AnalysisEnv;
   await routeEvents(env, [discovered("NBIS", "20-F/A"), discovered("META", "10-Q")]);

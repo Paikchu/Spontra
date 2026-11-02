@@ -93,12 +93,8 @@ export type AnalysisEnv = SecCronEnv & AnalysisReadEnv & {
   BUSINESS_TREE_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
   /** The valuation assessment Workflow (docs/valuation-assessment-design.md). */
   VALUATION_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string; generation: number }>;
-  /** Companies the valuation runs for by default; normally unset, every company starts switched off. */
-  VALUATION_TICKERS?: string;
   /** "false" pauses valuation runs; the admin's global switch overrides it. */
   VALUATION_ENABLED?: string;
-  /** Companies a valuation method change may reassess on unchanged material ("*" for all; unset for none) — valuation/reassess.ts. */
-  VALUATION_REASSESS_TICKERS?: string;
   LIBRARY_CARDS_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
   LIBRARY_LINKS_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
   TRANSLATE_WORKFLOW?: AiWorkflowBinding<{ ticker: string; fingerprint: string }>;
@@ -131,8 +127,6 @@ export type AnalysisEnv = SecCronEnv & AnalysisReadEnv & {
   AI_REASONING?: string;
   /** The admin's model and effort per AI tool (JSON), set only by `aiToolEnvironment`. */
   AI_TOOL_SETTINGS?: string;
-  /** Companies whose businesses the ReAct agent breaks down; unset falls back to the AI list. */
-  BUSINESS_TREE_TICKERS?: string;
   /** "false" pauses the business-tree sweep; unset or anything else runs it. The admin's global switch overrides it. */
   BUSINESS_TREE_ENABLED?: string;
   /** The four feature lists and global switches after the admin's switches (JSON), set only by `companyPolicyEnvironment`. */

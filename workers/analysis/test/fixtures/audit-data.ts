@@ -7,8 +7,8 @@ export const auditFlow: PublicBusinessFlow = { schemaVersion: "business-flow.v1"
 }) };
 
 
-/** Minimal read-only D1 fixture; fault injection happens before each query returns. */
-export function auditDb(options: { fail?: (sql: string, binds: unknown[]) => boolean; audits?: unknown[]; quarters?: unknown[]; cache?: Record<string, unknown> } = {}) {
+/** Minimal read-only D1 fixture with ACME on the admin whitelist; fault injection happens before each query returns. */
+export function auditDb(options: { fail?: (sql: string, binds: unknown[]) => boolean; audits?: unknown[]; quarters?: unknown[]; cache?: Record<string, unknown>; whitelist?: string[] } = {}) {
   const writes: Array<{ sql: string; binds: unknown[] }> = [];
   const reads: string[] = [];
   const cache = options.cache ?? {};
@@ -29,6 +29,7 @@ export function auditDb(options: { fail?: (sql: string, binds: unknown[]) => boo
           check();
           if (sql.includes("json_remove(payload")) return { results: (options.audits ?? []).map(value => ({ payload: JSON.stringify(value) })) };
           if (sql.includes("SELECT payload FROM sec_cache WHERE cache_key LIKE")) return { results: (options.quarters ?? []).map(value => ({ payload: JSON.stringify(value) })) };
+          if (sql.includes("FROM financial_company_settings")) return { results: (options.whitelist ?? ["ACME"]).map(ticker => ({ ticker, enabled: 1 })) };
           return { results: [] };
         },
         async run() { writes.push({ sql, binds }); return { success: true, meta: { changes: 1 } }; },

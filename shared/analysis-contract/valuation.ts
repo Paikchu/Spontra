@@ -224,6 +224,8 @@ export type ValuationCompanyInputs = {
   /** The comparable set the cross-check tries first; null lets the business-tag pairs choose. */
   peers: string[] | null;
   targets: StoredManagementTargets | null;
+  /** Whether a valuation method change alone reassesses the company (valuation/reassess.ts). */
+  reassess: boolean;
   updatedAt: string | null;
   /** The fiscal-year end the filings give, which places each target's fiscal year; null when none is known yet. */
   fiscalYearEndMonth: number | null;
