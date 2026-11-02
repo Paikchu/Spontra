@@ -273,7 +273,6 @@ function readTable(v:unknown):LibraryTable|null{
  }
  return {unit:str(t.unit)?t.unit:null,columns:t.columns,rows,notes:strings(t.notes),xbrlBlock:str(t.xbrlBlock)?t.xbrlBlock:null};
 }
-/** One filing-library passage with its neighbours, for a quote that links to the filing's own words; only the typed fields pass through. */
 /** One filing rail row's analysis, re-checked for shape; null when the row has none (the map shows the filing digest). */
 export async function loadItemAnalysis(ticker:string,id:string,fetcher:typeof fetch=fetch,locale:Locale|null=null):Promise<ItemAnalysis|null>{
  if(!ACCESSION.test(id))return null;
@@ -286,6 +285,7 @@ export async function loadItemAnalysis(ticker:string,id:string,fetcher:typeof fe
  }catch{return null;}
 }
 
+/** One filing-library passage with its neighbours, for a quote that links to the filing's own words; only the typed fields pass through. */
 export async function loadPassage(ticker:string,passageId:string,fetcher:typeof fetch=fetch):Promise<PublicPassage|null>{
  if(!PASSAGE_ID.test(passageId))return null;
  try{
@@ -485,7 +485,7 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
    {const body=await loadFundamentals(match[1],fetcher);const response=moduleJson({schemaVersion:"fundamentals-response.v1",status:body&&!body.unavailable?"ready":"unavailable",...(body?.unavailable?{reason:body.unavailable.reason}:{}),fundamentals:body});if(!body)response.headers.set("cache-control","no-store");if(cache&&body&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));return response;}
   }
   try{const [flow,explainer,guidance,tree]=await Promise.all([loadPublicFlow(match[1],fetcher,locale),loadExplainer(match[1],fetcher,locale),loadGuidance(match[1],fetcher,locale),loadTree(match[1],fetcher,locale)]);const response=moduleJson({...flow,explainer,guidance,tree});
-   // An incomplete answer is never cached, so one slow upstream read cannot pin "preparing" for a minute.
+   // An incomplete answer is never cached, so one slow upstream read cannot pin "preparing" for four hours (public, max-age=14400).
    const cacheable=flow.status==="ready"&&!readFailureStatus;
    if(!cacheable)response.headers.set("cache-control","no-store");
    if(cache&&cacheable)ctx.waitUntil(cache.put(key,response.clone()));return response;}catch{return readFailureStatus?moduleJson({error:"Public company data temporarily unavailable"}):json({error:"Public company data temporarily unavailable"},503);}
