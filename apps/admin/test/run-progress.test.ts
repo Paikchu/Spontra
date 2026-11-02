@@ -23,6 +23,18 @@ test("parallel tree businesses show the furthest phase, and the step names the b
   assert.equal(runView(run("tree", ["tree-b1-describe-review"])).phases[runView(run("tree", ["tree-b1-describe-review"])).current], "复核");
 });
 
+test("every business-tree step the workflow records is labelled", () => {
+  const step = (stage: string) => runView(run("tree", [stage])).step;
+  assert.equal(step("tree-filings"), "列出财报与年报");
+  assert.equal(step("tree-b1-library"), "第 1 项业务 · 读取年报业务章节");
+  assert.equal(step("tree-b1-t3-act"), "第 1 项业务 · 第 3 轮思考");
+  assert.equal(step("tree-b2-t1-1-search"), "第 2 项业务 · 第 1 轮网页搜索");
+  assert.equal(step("tree-b2-t1-2-read"), "第 2 项业务 · 第 1 轮阅读");
+  assert.equal(step("tree-b1-review"), "第 1 项业务 · 审校");
+  assert.equal(step("tree-b1-describe-2"), "第 1 项业务 · 描述");
+  assert.equal(step("tree-b1-describe-review"), "第 1 项业务 · 复核描述");
+});
+
 test("findings, analyst and explainer steps read as their phases", () => {
   const lens = runView(run("findings", ["findings-time", "findings-input", "findings-write", "findings-lens-f2-t2-c0-read"]));
   assert.deepEqual([lens.phases[lens.current], lens.step], ["绘制图表", "图表 · 第 2 轮阅读"]);
