@@ -45,3 +45,15 @@ test("a task's state and the event that started it come from the due table and t
   assert.equal(node("admin").state, "done");
   assert.equal(node("explainer").state, "idle");
 });
+
+test("a run that had nothing to do shows why, so a company stuck short of a feature is visible", async () => {
+  const now = Date.parse("2026-11-02T01:00:00Z");
+  const db = fakeDb({ due: [], log: [
+    { messageId: "t-tree", causeId: null, kind: "task", name: "tree", outcome: "done", createdAt: "2026-11-02T00:55:00Z", skipped: "no verified business link (4 of 4 disputed)" },
+    { messageId: "t-derive", causeId: null, kind: "task", name: "map-derive", outcome: "done", createdAt: "2026-11-02T00:50:00Z", skipped: null },
+  ] });
+  const flow = await readFlow(db, "INTC", now);
+  const node = (id: string) => flow.nodes.find(n => n.id === id)!;
+  assert.deepEqual([node("tree").state, node("tree").skipped], ["done", "no verified business link (4 of 4 disputed)"]);
+  assert.equal(node("map-derive").skipped, null);
+});

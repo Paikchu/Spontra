@@ -12,7 +12,7 @@ import { driveWorkflow, failedInputOutcome } from "./workflow-task.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import { BUSINESS_TAGS_VERSION, PEER_MATCH_VERSION } from "../../../../shared/analysis-runtime/business-tags.ts";
 import { matchCompany } from "../business-tags/match.ts";
-import { tagsCacheKey, tagsPlan } from "../business-tags/input.ts";
+import { tagsCacheKey, tagsPlan, tagsSkipReason } from "../business-tags/input.ts";
 
 /** Source bytes and wall time one run spends; what is left is split by the next run, right away. */
 const BYTE_BUDGET = 24_000_000, TIME_BUDGET_MS = 60_000, BATCH = 60;
@@ -90,7 +90,7 @@ export const LIBRARY_TASKS = {
       if (env.BUSINESS_TAGS_ENABLED === "false" || !env.DEEPSEEK_API_KEY) return { status: "done", detail: { skipped: "business tags disabled" } };
       return driveWorkflow(env, `business-tags:${ticker}`, env.BUSINESS_TAGS_WORKFLOW, async () => {
         const plan = await tagsPlan(env.DB!, ticker);
-        if (!plan) return null;
+        if (!plan) return { status: "done", detail: { skipped: await tagsSkipReason(env.DB!, ticker) } };
         const repository = new D1SecRepository(env.DB!);
         const stored = (await repository.getCache<{ fingerprint: string; matchVersion?: string }>(tagsCacheKey(ticker)))?.payload;
         if (stored?.fingerprint === plan.fingerprint) {

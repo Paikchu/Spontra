@@ -38,7 +38,7 @@ function layout(flow: BusinessMapFlow) {
 function status(node: FlowNode): string {
   if (node.source) return node.at ? `最近 ${time(node.at)}` : '无记录';
   if (node.state === 'running' && node.progress) { const view = runView(node.progress); return `${view.current + 1}/${view.phases.length} ${view.phases[view.current]}`; }
-  return [STATE[node.state], time(node.at)].filter(Boolean).join(' · ');
+  return [node.skipped ? '跳过' : STATE[node.state], time(node.at)].filter(Boolean).join(' · ');
 }
 
 /**
@@ -80,7 +80,7 @@ export function FlowGraph({ ticker }: { ticker: string }) {
         {flow.nodes.map(node => {
           const { x, y } = placed.position.get(node.id)!, meta = NODE[node.id] ?? { label: node.id }, view = node.progress ? runView(node.progress) : null;
           return <g key={node.id} className="bm-flow-node" data-state={node.state} data-model={meta.model || undefined} data-source={node.source || undefined} transform={`translate(${x} ${y})`}>
-            <title>{[meta.label, STATE[node.state], node.via ? `由 ${NODE[node.via.from]?.label ?? node.via.from} 的 ${node.via.event} 触发` : '', view?.step ?? ''].filter(Boolean).join('\n')}</title>
+            <title>{[meta.label, STATE[node.state], node.via ? `由 ${NODE[node.via.from]?.label ?? node.via.from} 的 ${node.via.event} 触发` : '', node.skipped ? `跳过：${node.skipped}` : '', view?.step ?? ''].filter(Boolean).join('\n')}</title>
             <rect width={NODE_W} height={NODE_H} rx={node.source ? NODE_H / 2 : 8} />
             {meta.model && <rect className="bm-flow-model" width={3} height={NODE_H - 16} x={0} y={8} rx={1.5} />}
             <text x={12} y={19} className="bm-flow-label">{meta.label}</text>
