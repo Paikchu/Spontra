@@ -94,7 +94,7 @@ export async function executeValuationEvaluation(rawParams: ValuationEvaluationP
       request: result.request, evidence: result.registeredEvidence, operatingForecasts: result.nearTermForecast?.status === "available" ? result.nearTermForecast.forecasts : [],
     } : null;
     const output = {
-      status: evaluationStatus(result), phases: result.phases, researchProgress: result.researchProgress, runId, producedAt, cutoff: prepared.cutoff, inputSha256: prepared.inputSha256,
+      status: evaluationStatus(result), phases: result.phases, researchProgress: result.researchProgress, assumptionProgress: result.assumptionProgress, runId, producedAt, cutoff: prepared.cutoff, inputSha256: prepared.inputSha256,
       publication: result.publication, artifact, nearTermForecast: result.nearTermForecast, trace: result.turns, limitations: prepared.limitations,
       priceGuide: priceGuideOf({ report: result.publication, quote: result.publication.quote, asOf: prepared.cutoff }),
     };

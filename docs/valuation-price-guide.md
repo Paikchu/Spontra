@@ -20,6 +20,10 @@ New research does not become ready without a completed counter-evidence review a
 
 Evidence collection and recording the research conclusions have separate execution budgets. If collection reaches its limit, a bounded finalization phase can reread registered excerpts and financial facts, submit the remaining dimensions, and finish research. It cannot search, read new sources or access historical outcomes. Missing support remains a null score and a named gap. Collection failures and cancellation stop immediately; an unfinished finalization never advances into assumptions. Historical artifacts retain the collection stop reason separately from the final research status.
 
+Assumptions are submitted as shared parameters followed by one complete path per stage: base, bear, bull, normal lower and normal upper. The final tool assembles the original calculation request and applies the same formulas and cross-case checks. No path is filled by copying another. An accepted parameter or path edit clears the previous calculation, valuation score, quarterly forecast and review so they must be confirmed again. This keeps a long model reply from becoming a prerequisite for running the calculation.
+
+Registered evidence keeps the excerpt presented by the reader, including its selected table focus. A new excerpt-format identity preserves existing report evidence while allowing quotations beyond the old shortened preview to be checked against the text actually read.
+
 Changes to the latest attempt also update the public resource revision, including incomplete attempts that retain the previous report. Completion time belongs to the attempt; the immutable report keeps its original research time.
 
 ## ORCL evaluation
