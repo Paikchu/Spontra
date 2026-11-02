@@ -24,7 +24,7 @@ import { REVENUE_METRIC, metricOptions, metricTrend } from "./metric-model";
 import { ToggleGroup, ToggleGroupItem } from "@/packages/web/src/ui/toggle-group";
 import type { CapitalQuarter, PublicCapitalStructure } from "@/shared/analysis-contract/capital-structure";
 import { balanceMetrics, balancePool, cashMetrics, cashPool, type Pool } from "./capital-model";
-import { PoolChart, TONE_LABEL, toneColor } from "./PoolChart";
+import { PoolChart } from "./PoolChart";
 import { Rail } from "./Sidebar";
 import { track } from "./track";
 import { stageChartBox } from "./chart-box";
@@ -84,7 +84,6 @@ const m = messages({
   margin: (value: string) => `Margin ${value}`, coverage: (value: string) => `Cost coverage ${value}`,
   comparisonBase: "Comparison base", financialView: "Financial view", noFinancials: "No quarterly financials disclosed",
   chart: (ticker: string, period: string, currency: string) => `${ticker} ${period} revenue to net income, ${currency}`,
-  legend: "Legend", businessRevenue: "Business revenue", profit: "Profit", loss: "Loss", costs: "Costs and expenses", data: (date: string) => `Data ${date}`,
   thisQuarter: "This quarter", marginLabel: "Margin", offset: "Offset", remaining: "Remaining after offset", asReported: (currency: string) => `As reported (${currency} millions)`,
   above: "Above range", within: "Within range", below: "Below range", thisGuidance: (text: string) => `This quarter’s guidance · ${text}`,
   derivedGuidance: "Guidance (from growth rate)", guidanceRange: "Guidance range", result: "Result", issued: "Issued", source: (title: string) => `Source: ${title}`,
@@ -97,7 +96,6 @@ const m = messages({
   sharesIssued: (value: string) => `Shares issued ${value}`, cashChange: "Change in cash", endingCash: (value: string) => `Ending cash and short-term investments ${value}`,
   yearToDate: (months: number) => `Year to date (${months} months)`,
   balanceChart: (ticker: string, date: string) => `${ticker} funding sources to assets as of ${date}`, cashChart: (ticker: string, period: string) => `${ticker} cash sources and uses, ${period.toLowerCase()}`,
-  derived: (to: number, from: number) => `Derived · ${to}M − ${from}M year to date`,
   profile: (name: string) => `${name} business profile`, noDescription: "No description", customers: "Customers", revenueModel: "Revenue model", notDisclosed: "Not disclosed",
   details: (label: string) => `${label} business details`, products: "Products",
   statementDepth: "Statement depth", trunk: "Summary", detail: "Detail", openFinding: (title: string) => `Open finding: ${title}`, hideFinding: "Hide",
@@ -119,7 +117,6 @@ const m = messages({
   margin: (value: string) => `利润率 ${value}`, coverage: (value: string) => `成本覆盖率 ${value}`,
   comparisonBase: "比较基准", financialView: "报表视图", noFinancials: "未披露季度财务数据",
   chart: (ticker: string, period: string, currency: string) => `${ticker} ${period} 营收至净利润，${currency}`,
-  legend: "图例", businessRevenue: "业务营收", profit: "利润", loss: "亏损", costs: "成本与费用", data: (date: string) => `数据 ${date}`,
   thisQuarter: "本季度", marginLabel: "利润率", offset: "抵减", remaining: "抵减后余额", asReported: () => "披露值",
   above: "高于指引区间", within: "处于指引区间", below: "低于指引区间", thisGuidance: (text: string) => `本季度指引 · ${text}`,
   derivedGuidance: "业绩指引（按增长率推算）", guidanceRange: "指引区间", result: "结果", issued: "发布日期", source: (title: string) => `来源：${title}`,
@@ -132,7 +129,6 @@ const m = messages({
   sharesIssued: (value: string) => `股权融资 ${value}`, cashChange: "现金变动", endingCash: (value: string) => `期末现金及短期投资 ${value}`,
   yearToDate: (months: number) => `年初至今（${months} 个月）`,
   balanceChart: (ticker: string, date: string) => `${ticker} 截至 ${date} 的资金来源与资产`, cashChart: (ticker: string, period: string) => `${ticker} 现金来源与去向，${period}`,
-  derived: (to: number, from: number) => `推算 · 年初至今 ${to} 个月 − ${from} 个月`,
   profile: (name: string) => `${name} 业务概况`, noDescription: "无描述", customers: "客户", revenueModel: "收入模式", notDisclosed: "未披露",
   details: (label: string) => `${label} 业务详情`, products: "产品",
   statementDepth: "报表层级", trunk: "概要", detail: "明细", openFinding: (title: string) => `打开要点：${title}`, hideFinding: "隐藏",
@@ -303,7 +299,7 @@ function Sources({ sources, ids }: { sources: FlowSource[]; ids?: string[] }) {
   return <ul className="sources">{list.map(s => <li key={s.id}><a href={s.url} target="_blank" rel="noopener noreferrer">{s.title}<span aria-hidden="true"> ↗</span></a></li>)}</ul>;
 }
 
-export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, explainer = null, tree = null, guidance = null, capital = null, findings = null, peers = null, rankPeers = null, passages = null, fundamentals = null, events = null, filings = null, valuation = null, updates = 0, stageOverride = null, onNavigate, onView, railFoot = null, focusRequest = null, eventsPhase = "ready", detailsLoading = false, onRetryEvents, company: companyProp = null, moduleErrors = [], onRetryModule = () => {} }: { ticker: string; tools: ReactNode; flow: PublicBusinessFlow; notice: string | null; revenueHistory: RevenueHistory | null; explainer?: BusinessExplainer | null; tree?: BusinessTree | null; guidance?: GuidancePublication | null; capital?: PublicCapitalStructure | null; findings?: FindingsPublication | null; peers?: PeersPublication | null; /** The company and its comparable peers, for the checkup's ranks. */ rankPeers?: PeersPublication | null; passages?: FindingPassage[] | null; fundamentals?: FindingFundamentals | null; events?: EventsPublication | null; filings?: PublicFilingDigestPage | null; /** The valuation assessment in its current availability; hidden or absent leaves the tab out. */ valuation?: ValuationResponse | null; /** Updates the reader took; rows they brought enter animated. */ updates?: number;
+export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = null, tree = null, guidance = null, capital = null, findings = null, peers = null, rankPeers = null, passages = null, fundamentals = null, events = null, filings = null, valuation = null, updates = 0, stageOverride = null, onNavigate, onView, railFoot = null, focusRequest = null, eventsPhase = "ready", detailsLoading = false, onRetryEvents, company: companyProp = null, moduleErrors = [], onRetryModule = () => {} }: { ticker: string; tools: ReactNode; flow: PublicBusinessFlow; revenueHistory: RevenueHistory | null; explainer?: BusinessExplainer | null; tree?: BusinessTree | null; guidance?: GuidancePublication | null; capital?: PublicCapitalStructure | null; findings?: FindingsPublication | null; peers?: PeersPublication | null; /** The company and its comparable peers, for the checkup's ranks. */ rankPeers?: PeersPublication | null; passages?: FindingPassage[] | null; fundamentals?: FindingFundamentals | null; events?: EventsPublication | null; filings?: PublicFilingDigestPage | null; /** The valuation assessment in its current availability; hidden or absent leaves the tab out. */ valuation?: ValuationResponse | null; /** Updates the reader took; rows they brought enter animated. */ updates?: number;
   /** A scene the stage agent built; while set it holds the stage in place of the map's own view (docs/stage-agent-design.md §5.2). */
   stageOverride?: ReactNode | null;
   /** The reader picked something in the rail or on the chart: the map's own view takes the stage back. */
@@ -850,20 +846,6 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
         picker={<><MetricPicker value={REVENUE_METRIC} groups={metricGroups} revenue onChange={setMetricKey} />{metricsUnavailable}{shownMetrics.length > 0 && switcher}</>} />}
 
       {view === "cash" && returns && <ShareholderReturns returns={returns} />}
-
-      <footer className="stage-foot">
-        {(view === "cash" || view === "balance") && funding ? <CapitalLegend view={view} funding={funding} /> : proportional ? <div className="legend" aria-label={m.legend}>
-          <span><i className="legend-biz" />{m.businessRevenue}</span>
-          <span><i style={{ background: "var(--flow-profit)" }} />{m.profit}</span>
-          {(graph?.signed || graph?.deficit) && <span><i style={{ background: "var(--loss)" }} />{graph?.deficit ? m.netLoss : m.loss}</span>}
-          <span><i style={{ background: "var(--flow-expense)" }} />{m.costs}</span>
-        </div> : null}
-        <p className="provenance">
-          {notice && <span>{notice}</span>}
-          {(view === "cash" || view === "balance") && funding && <CapitalProvenance view={view} funding={funding} />}
-          {flow.fetchedAt && <span>{m.data(flow.fetchedAt.slice(0, 10))}</span>}
-        </p>
-      </footer>
       </>}
     </section>
   </div>;
@@ -914,24 +896,6 @@ function CapitalChart({ view, funding, ticker, spotlight = null }: { view: PoolV
   const money = useMemo(() => { const format = capitalMoney(funding); return (v: number) => format(v); }, [funding]);
   return <PoolChart key={view + funding.periodEnd} pool={pool} money={money} spotlight={spotlight}
     label={view === "balance" ? m.balanceChart(ticker, funding.periodEnd) : m.cashChart(ticker, cashPeriod(funding))} />;
-}
-
-function CapitalLegend({ view, funding }: { view: PoolView; funding: CapitalQuarter }) {
-  const pool = poolOf(view, funding);
-  // Tones whose items are too small to see are left out of the legend.
-  const tones = [...new Set([...pool.sources, ...pool.uses].filter(item => item.value >= pool.total * 0.01).map(item => item.tone))];
-  return <div className="legend" aria-label={m.legend}>
-    {tones.map(tone => <span key={tone}><i style={{ background: toneColor(tone) }} />{TONE_LABEL[tone]}</span>)}
-  </div>;
-}
-
-function CapitalProvenance({ view, funding }: { view: PoolView; funding: CapitalQuarter }) {
-  if (view === "balance") return <a href={funding.balanceSheet!.source.url} target="_blank" rel="noopener noreferrer">{funding.balanceSheet!.source.form} {funding.balanceSheet!.source.accession}</a>;
-  const c = cashOf(funding);
-  return <>
-    {c.basis === "derived" && <span title={c.formula}>{m.derived(months(funding.yearToDate!.periodStart, c.periodEnd), months(funding.yearToDate!.periodStart, c.periodStart))}</span>}
-    {c.sources.map(s => <a key={s.accession} href={s.url} target="_blank" rel="noopener noreferrer">{s.form} {s.accession}</a>)}
-  </>;
 }
 
 /** Scrolls each scrollable ancestor just enough to show the element; unlike scrollIntoView it never moves the page. */
