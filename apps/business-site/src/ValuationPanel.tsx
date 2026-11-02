@@ -4,6 +4,8 @@ import { labels, messages, useLocale } from "@/packages/web/src/i18n";
 import { SourceLanguage, langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import { compactMoney, compactShares, perShare } from "@/shared/analysis-runtime/locale";
 import { DIMENSION_WEIGHTS, DISCOUNT_RATE_COMPONENTS, EXTENDED_SCENARIO_KEYS, VALUATION_METHODS, type ScenarioEntry, type ValuationEvidence, type ValuationPublication, type ValuationResponse } from "@/shared/analysis-contract/valuation";
+import type { ValuationPriceGuide } from "@/shared/analysis-contract/price-guide";
+import { priceGuideOf } from "@/shared/analysis-runtime/valuation/price-guide";
 import { fetchValuationVersion } from "./company-data";
 import { type VersionRead, versionLoading, versionSettled, versionView } from "./valuation-version";
 import { track } from "./track";
@@ -11,11 +13,8 @@ import { citationOrder, leadSentence, pathLeaf, proseBlocks, proseParts } from "
 import "./valuation.css";
 
 /**
- * The valuation assessment on the company stage (docs/valuation-assessment-implementation.md §9): the verdict and score, the
- * three-scenario range against the reference close, the five dimensions each with its score and the sentence behind it, the
- * written case (its thesis folded under the summary), the model's inputs and sensitivities, and the sources as numbered
- * footnotes, each opening the snapshot the report was written from. Every number shown was calculated or read by Spontra
- * Analysis; the page only lays them out.
+ * Price guidance leads with the supported normal range and its reference quote. Stress scenarios stay under their own
+ * disclosure; research scores, assumptions and source snapshots explain the assessment. Spontra Analysis owns every value.
  */
 const m = messages({
   title: "Valuation assessment", 
@@ -47,6 +46,9 @@ const m = messages({
   checks: "Model checks", checkStatus: "Status", checkDetail: "Detail",
   managementTargets: "Management targets vs base case", yearCol: "Year", fiscalYear: (fy: number) => `FY${fy}`, targetCol: "Target", baseCol: "Base case", gapCol: "Gap", targetSources: "Target sources",
   consensus: "Sell-side consensus", consensusMean: "Mean target", consensusRange: "Range", analysts: (n: number) => `${n} analysts`, consensusUnavailable: "Consensus unavailable", asOf: (date: string) => `as of ${date}`,
+  pricePosition: "Price relative to fair value", fairRange: "Fair value range", centralValue: "Base value", keyAssumptions: "Key assumptions", stressScenarios: "Scenarios and stress tests", researchAssessment: "Research assessment", historicalAssessment: "Assessment at the time",
+  below: "Below fair value range", within: "Within fair value range", above: "Above fair value range", unable: "Unable to assess",
+  noRange: "A supported fair value range is not available.", noQuoteGuide: "A reference quote is not available.", unusableQuote: "The reference quote cannot be used for this comparison.", staleQuote: "The reference quote is out of date.", currencyMismatch: "The quote and valuation use different currencies.", incompleteResearch: "The research is not complete enough to assess fair value.", unresolvedEvidence: "Key valuation assumptions still need supporting evidence.", reportUpdating: "The company's information has changed; the assessment needs updating.",
   versionLoading: "Loading this version", versionFailed: "Couldn't load this version", versionFailedNote: "Pick another version, or return to the current one.",
 }, {
   title: "估值评估",
@@ -77,6 +79,9 @@ const m = messages({
   checks: "模型校验", checkStatus: "状态", checkDetail: "说明",
   managementTargets: "管理层目标与基准情景", yearCol: "年份", fiscalYear: (fy: number) => `${fy} 财年`, targetCol: "目标", baseCol: "基准情景", gapCol: "差距", targetSources: "目标来源",
   consensus: "卖方共识", consensusMean: "目标均值", consensusRange: "区间", analysts: (n: number) => `${n} 位分析师`, consensusUnavailable: "无可用市场共识", asOf: (date: string) => `截至 ${date}`,
+  pricePosition: "股价相对合理价值", fairRange: "合理价值区间", centralValue: "基准价值", keyAssumptions: "关键假设", stressScenarios: "情景与压力测试", researchAssessment: "研究评价", historicalAssessment: "当时评价",
+  below: "偏低", within: "区间内", above: "偏高", unable: "暂无法判断",
+  noRange: "尚无有证据支持的合理价值区间。", noQuoteGuide: "暂无参考报价。", unusableQuote: "参考报价暂不适用于本次比较。", staleQuote: "参考报价已过期。", currencyMismatch: "报价与估值的币种不一致。", incompleteResearch: "研究材料尚不足以判断合理价值。", unresolvedEvidence: "关键估值假设仍缺少支持证据。", reportUpdating: "公司资料已更新，估值需要重新评估。",
   versionLoading: "正在加载这个版本", versionFailed: "无法加载这个版本", versionFailedNote: "可选择其他版本，或返回当前版本。",
 });
 const METHOD = labels({ dcf: "Discounted cash flow", ev_ebitda_forward: "EV/EBITDA, forward", pe_forward: "P/E, forward" }, { dcf: "现金流折现", ev_ebitda_forward: "远期 EV/EBITDA", pe_forward: "远期 P/E" });
@@ -86,6 +91,19 @@ const GATE = labels({ terminal_share: "Terminal value share", non_negative_scena
   { terminal_share: "终值占比", non_negative_scenarios: "情景非负", terminal_growth: "终值增长", cited_inputs: "引用输入核对", rpo_floor: "合同收入下限", implied_multiple_vs_history: "隐含倍数与历史", method_dispersion: "方法离散度", management_targets: "管理层目标", consensus_divergence: "与市场共识偏离", consensus_unavailable: "市场共识", method_unavailable: "未能采用的方法", method_zero_weight: "未加权的方法" });
 const RATE_COMPONENT = labels({ riskFree: "Risk-free rate", beta: "Beta", equityRiskPremium: "Equity risk premium", costOfDebt: "Cost of debt", taxRate: "Tax rate", equityWeight: "Equity weight" }, { riskFree: "无风险利率", beta: "贝塔", equityRiskPremium: "股权风险溢价", costOfDebt: "债务成本", taxRate: "税率", equityWeight: "权益权重" });
 const VERDICT = labels({ supported: "Evidence supports mispricing", not_supported: "Mispricing not supported", pending: "Pending verification" }, { supported: "有证据支持错杀", not_supported: "不支持错杀", pending: "待验证" });
+const PRICE_TONE: Record<"below" | "within" | "above", string> = { below: "up", within: "neutral", above: "loss" };
+function guideReason(reason: Extract<ValuationPriceGuide, { status: "unavailable" }>["reason"]): string {
+  switch (reason) {
+    case "no_range": return m.noRange;
+    case "no_quote": return m.noQuoteGuide;
+    case "unusable_quote": return m.unusableQuote;
+    case "stale_quote": return m.staleQuote;
+    case "currency_mismatch": return m.currencyMismatch;
+    case "incomplete_research": return m.incompleteResearch;
+    case "unresolved_evidence": return m.unresolvedEvidence;
+    case "report_updating": return m.reportUpdating;
+  }
+}
 const CONF = labels({ high: "High", medium: "Medium", low: "Low" }, { high: "高", medium: "中", low: "低" });
 const DIM = labels({ businessQuality: "Business quality", growthExecution: "Growth delivery", valuationSafety: "Valuation safety", mispricingCatalysts: "Mispricing and catalysts", financialResilience: "Financial resilience" }, { businessQuality: "生意质量", growthExecution: "增长兑现", valuationSafety: "估值安全", mispricingCatalysts: "错杀与催化", financialResilience: "财务韧性" });
 const MODEL_TYPE = labels({ fcff: "Free cash flow to the firm (driver-based)", fcfe: "Free cash flow to equity", revenue_fcfe: "Revenue-driven equity cash flow", residual_income: "Residual income", earnings_multiple: "Guided earnings multiple", reported_earnings_multiple: "Reported earnings multiple", proforma_earnings_multiple: "Pro forma earnings multiple", asset_nav: "Net asset value", affo_multiple: "AFFO multiple", affo_dcf: "AFFO discounted cash flow" }, { fcff: "企业自由现金流（驱动因子）", fcfe: "股权自由现金流", revenue_fcfe: "收入驱动股权现金流", residual_income: "剩余收益", earnings_multiple: "指引盈利倍数", reported_earnings_multiple: "已报盈利倍数", proforma_earnings_multiple: "备考盈利倍数", asset_nav: "资产净值", affo_multiple: "AFFO 倍数", affo_dcf: "AFFO 现金流折现" });
@@ -98,7 +116,6 @@ const signedPct = (v: number | null | undefined) => v == null || !Number.isFinit
 const day = (iso: string) => iso.slice(0, 10);
 /** A figure the model produced; one it could not is left out rather than shown as a dash. */
 const has = (v: number | null | undefined): v is number => v != null && Number.isFinite(v);
-const verdictTone = { supported: "up", not_supported: "loss", pending: "neutral" } as const;
 const isEvidenceId = (id: string) => /^e[0-9a-f]{10}$/.test(id);
 
 /** Footnote numbers and source names for the evidence the report cites, in reading order. */
@@ -138,6 +155,29 @@ function ProseBlocks({ text, onCite }: { text: string; onCite: (id: string) => v
 function Cite({ id, counter, onCite }: { id: string; counter?: boolean; onCite: (id: string) => void }) {
   if (!isEvidenceId(id)) return <code className="val-fact-ref">{id}</code>;
   return <Cites ids={[id]} counter={counter} onCite={onCite} />;
+}
+
+function FairValue({ report, guide, onCite }: { report: ValuationPublication; guide: ValuationPriceGuide; onCite: (id: string) => void }) {
+  const locale = useLocale();
+  const fair = report.model?.fairValueRange;
+  const supported = fair?.status === "available" && (guide.status === "available" || guide.reason === "no_quote" || guide.reason === "unusable_quote" || guide.reason === "stale_quote" || guide.reason === "currency_mismatch");
+  const assumptions = supported ? report.model?.scenarios.base.assumptions : null;
+  return <section className="val-block val-fair" aria-label={m.pricePosition}>
+    <h3>{m.fairRange}</h3>
+    <p className="val-fair-value">{supported ? `${perShare(fair.low, report.currency, locale)} – ${perShare(fair.high, report.currency, locale)}` : "—"}</p>
+    <dl className="val-stats">
+      <div><dt>{m.price}</dt><dd>{guide.quote ? <>{perShare(guide.quote.price, guide.quote.currency, locale)}<small>{m.priceDate(guide.quote.priceDate)}</small></> : m.noQuote}</dd></div>
+      {supported && <div><dt>{m.centralValue}</dt><dd>{perShare(fair.base, report.currency, locale)}</dd></div>}
+    </dl>
+    {guide.status === "unavailable" && <p className="val-list-line">{guideReason(guide.reason)}</p>}
+    {fair?.status === "unavailable" && fair.reason && <Prose text={fair.reason} onCite={onCite} />}
+    {supported && <>
+      <p><Prose as="span" text={fair.rationale} onCite={onCite} /> {fair.evidenceIds.length > 0 && <Cites ids={fair.evidenceIds.filter(isEvidenceId)} onCite={onCite} />}</p>
+      {assumptions && <div className="val-why-list"><h4>{m.keyAssumptions}</h4>
+        {(["revenue", "margin", "capex"] as const).map(key => <p key={key} className="val-why"><b>{m[key === "revenue" ? "revenuePath" : key === "margin" ? "marginPath" : "capexPath"]}</b><Prose as="span" text={assumptions[key].rationale} onCite={onCite} /> <Cites ids={assumptions[key].evidenceIds.filter(isEvidenceId)} onCite={onCite} /></p>)}
+      </div>}
+    </>}
+  </section>;
 }
 
 function RangeBar({ report }: { report: ValuationPublication }) {
@@ -283,8 +323,9 @@ function Checks({ report }: { report: ValuationPublication }) {
 /** The five dimensions, each a row that says its score and why in one line, opening to the full rationale. */
 function Dimensions({ report, onCite }: { report: ValuationPublication; onCite: (id: string) => void }) {
   return <section className="val-block">
-    <h3>{m.dimensions}</h3>
-    <ol className="val-dims">
+    <h3>{m.researchAssessment}</h3>
+    <p className="val-score-line">{VERDICT[report.verdict]} · {report.weightedScore != null ? m.composite(report.weightedScore.toFixed(1)) : m.unscored} · {m.confidence} {CONF[report.confidence]}</p>
+    <ol className="val-dims" aria-label={m.dimensions}>
       {report.dimensions.map(d => <li key={d.key} className="val-dim">
         <details>
           <summary>
@@ -356,7 +397,11 @@ function judgementTexts(model: ValuationPublication["model"]): string[] {
 /** Footnotes numbered as the report reads: the written case first, then the dimensions and scenarios, then the rest. */
 function footnotesOf(report: ValuationPublication): Footnotes {
   const s = report.sections;
-  const texts = [s.summary, s.thesis, s.expectationsGap, ...s.catalysts, ...s.counterEvidence, ...s.nextChecks, s.modelNotes,
+  const fair = report.model?.fairValueRange;
+  const assumptions = report.model?.scenarios.base.assumptions;
+  const fairTexts = fair ? [fair.status === "available" ? fair.rationale : fair.reason, ...fair.evidenceIds,
+    ...(fair.status === "available" && assumptions ? [assumptions.revenue, assumptions.margin, assumptions.capex].flatMap(a => [a.rationale, ...a.evidenceIds]) : [])] : [];
+  const texts = [...fairTexts, s.summary, s.thesis, s.expectationsGap, ...s.catalysts, ...s.counterEvidence, ...s.nextChecks, s.modelNotes,
     ...report.dimensions.flatMap(d => [d.rationale, ...d.supportingEvidenceIds, ...d.counterEvidenceIds]),
     ...(report.model ? (["bear", "base", "bull"] as const).map(k => report.model!.scenarios[k].narrative) : []),
     ...judgementTexts(report.model)];
@@ -403,14 +448,17 @@ export function ValuationPanel({ ticker, valuation }: { ticker: string; valuatio
     </section>;
   }
   const range = report.model?.range ?? null;
+  const guide: ValuationPriceGuide = current
+    ? valuation.priceGuide?.reportVersionId === report.versionId ? valuation.priceGuide : { status: "unavailable", reportVersionId: report.versionId, quote: null, reason: report.model?.fairValueRange?.status === "available" ? "no_quote" : "no_range" }
+    : priceGuideOf({ report, quote: report.quote, asOf: report.researchAsOf, outdated: false });
   const sections = report.sections;
   const folded = Boolean(sections.thesis || sections.expectationsGap || sections.modelNotes);
   return <FootnotesContext.Provider value={footnotes}><section className="lens val-panel" aria-label={m.title}>
     <div className="lens-doc val-doc">
       <header className="val-head">
-        <div className="val-verdict" data-tone={verdictTone[report.verdict]}>
-          <strong className="val-verdict-label">{VERDICT[report.verdict]}</strong>
-          <span className="val-score-line">{report.weightedScore != null ? m.composite(report.weightedScore.toFixed(1)) : m.unscored}{report.confidence !== "medium" && <> · {m.confidence} {CONF[report.confidence]}</>}</span>
+        <div className="val-verdict" data-tone={guide.status === "available" ? PRICE_TONE[guide.position] : "neutral"}>
+          <strong className="val-verdict-label">{guide.status === "available" ? m[guide.position] : m.unable}</strong>
+          <span className="val-score-line">{current ? m.pricePosition : m.historicalAssessment}</span>
         </div>
         <dl className="val-dates">
           <div><dt>{m.researchDate}</dt><dd>{day(report.researchAsOf)}</dd></div>
@@ -418,8 +466,11 @@ export function ValuationPanel({ ticker, valuation }: { ticker: string; valuatio
           {picker}
         </dl>
       </header>
-      <Status valuation={valuation} />
-      {report.model && <section className="val-block">
+      {current && <Status valuation={valuation} />}
+      <FairValue report={report} guide={guide} onCite={setOpen} />
+      {report.model && <section className="val-block"><details className="val-fold val-stress">
+        <summary>{m.stressScenarios}</summary>
+        <div className="val-fold-body">
         <h3>{m.range}</h3>
         <RangeBar report={report} />
         <dl className="val-stats">
@@ -431,7 +482,9 @@ export function ValuationPanel({ ticker, valuation }: { ticker: string; valuatio
           {has(range?.downsideCoverage) && <div><dt>{m.downside}</dt><dd>{signedPct(range!.downsideCoverage)}</dd></div>}
         </dl>
         {has(range?.expected) && report.model!.scenarioProbabilities && <p className="val-list-line">{m.expectedNote}</p>}
-      </section>}
+        <Model report={report} onCite={setOpen} />
+        </div>
+      </details></section>}
       <Dimensions report={report} onCite={setOpen} />
       <section className="val-block val-sections">
         <h3>{m.summary}<SourceLanguage of={[sections.summary, sections.thesis]} /></h3>
@@ -449,7 +502,6 @@ export function ValuationPanel({ ticker, valuation }: { ticker: string; valuatio
         {sections.nextChecks.length > 0 && <><h4>{m.nextChecks}</h4><ul>{sections.nextChecks.map((t, i) => <Prose key={i} as="li" text={t} onCite={setOpen} />)}</ul></>}
       </section>
       {gaps.length > 0 && <section className="val-block val-gaps"><h3>{m.gaps}</h3><ul>{gaps.map(g => <li key={g.code + (g.field ?? "")} title={g.code}><span lang={langOf(g.message)}>{g.message}</span>{g.evidenceIds.length > 0 && <Cites ids={g.evidenceIds} onCite={setOpen} />}</li>)}</ul></section>}
-      <Model report={report} onCite={setOpen} />
       <Methods report={report} onCite={setOpen} />
       <Anchors report={report} onCite={setOpen} />
       <Checks report={report} />
