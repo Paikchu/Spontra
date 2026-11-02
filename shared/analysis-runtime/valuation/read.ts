@@ -56,6 +56,12 @@ const managementScenario = scenario.extend({
   label: z.string(), triangulation: z.lazy(() => triangulation).nullable(), methods: z.array(z.lazy(() => method)),
   anchors: z.array(z.object({ metric: z.enum(MANAGEMENT_TARGET_METRICS), fiscalYear: z.number(), year: z.number(), target: finite, path: nullableFinite })), sources: z.array(managementSource), notes: strings,
 });
+const normalCase = scenario.omit({ probability: true }).extend({ assumptions: pathAssumptions, valuation: scenarioValuation, gates: z.array(gateRow), verification: verification.nullable() });
+const fairValueRange = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("available"), kind: z.literal("normal_cases"), low: finite.positive(), base: finite.positive(), high: finite.positive(), lower: normalCase, upper: normalCase, rationale: z.string(), evidenceIds: strings })
+    .refine(v => v.low <= v.base && v.base <= v.high && v.low === v.lower.valuation.perShare && v.high === v.upper.valuation.perShare, "normal range must match its ordered calculated bounds"),
+  z.object({ status: z.literal("unavailable"), reason: z.string(), evidenceIds: strings }),
+]);
 const model = z.object({
   calculatorVersion: z.string(), modelType: z.enum(VALUATION_MODEL_TYPES), currency: z.string(),
   discountRate: z.object({ value: finite, basis: z.enum(DISCOUNT_RATE_BASES), components: z.object({ riskFree: nullableFinite, beta: nullableFinite, equityRiskPremium: nullableFinite, costOfEquity: nullableFinite, costOfDebt: nullableFinite, taxRate: nullableFinite, equityWeight: nullableFinite }), rationale: z.string(), sourceRefs: strings, sources: discountRateSources.optional() }),
@@ -72,7 +78,8 @@ const model = z.object({
   references: z.array(reference).optional(),
   methodWeights: methodWeights.optional(), scenarioProbabilities: scenarioProbabilities.optional(), managementScenario: managementScenario.nullable().optional(),
   managementComparison: managementComparison.nullable().optional(), consensusNote: consensusNote.nullable().optional(),
-});
+  fairValueRange: fairValueRange.optional(),
+}).refine(v => v.fairValueRange?.status !== "available" || v.fairValueRange.base === v.range.base, "normal central value must be the researched base");
 const sections = z.object({ summary: z.string(), thesis: z.string(), expectationsGap: z.string(), catalysts: strings, counterEvidence: strings, nextChecks: strings, modelNotes: z.string() });
 const publication = z.object({
   schemaVersion: z.literal("valuation.v1"), ticker: z.string(), cik: z.string().nullable(), companyName: z.string(), currency: z.string(),

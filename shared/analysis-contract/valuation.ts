@@ -35,7 +35,7 @@ export const GAP_CODES = ["missing_inputs", "unsupported_model", "missing_quote"
   "management_target_gap",
   // valuation.calc.v4 (docs/valuation-v2-SPEC.md, "v3: judged weights and the management scenario"): a method the model weighted
   // could not be applied, a usable method was given no weight, or no consensus target could be cited.
-  "method_unavailable", "method_zero_weight"] as const;
+  "method_unavailable", "method_zero_weight", "review_incomplete", "unresolved_counter_evidence"] as const;
 export type GapCode = typeof GAP_CODES[number];
 export type ValuationGap = { code: GapCode; field?: string; period?: string; message: string; evidenceIds: string[] };
 
@@ -154,6 +154,16 @@ export type Triangulation = { low: number; base: number; high: number; dispersio
  * the judged weights renormalized over the methods that applied; `perShare` is what the range and the expected value use.
  */
 export type ScenarioValuation = { methods: Record<ValuationMethodKey, number | null>; weights: Record<ValuationMethodKey, number>; perShare: number };
+/** Normal operating uncertainty, separate from stress scenarios and their probabilities. */
+export type NormalCaseInput = Pick<ScenarioAssumptions, "narrative" | "drivers" | "triggers" | "invalidation" | "evidenceIds"> & { assumptions: PathAssumptions };
+export type FairValueBasis =
+  | { status: "available"; kind: "normal_cases"; lower: NormalCaseInput; upper: NormalCaseInput; rationale: string; evidenceIds: string[] }
+  | { status: "unavailable"; reason: string; evidenceIds: string[] };
+export type NormalCaseResult = NormalCaseInput & { result: ScenarioResult; valuation: ScenarioValuation; gates: SanityGate[]; verification: InputVerification | null };
+/** The base is the existing researched base; both bounds are independently evidenced normal operating paths, not stress endpoints or a percentage around it. */
+export type FairValueRange =
+  | { status: "available"; kind: "normal_cases"; low: number; base: number; high: number; lower: NormalCaseResult; upper: NormalCaseResult; rationale: string; evidenceIds: string[] }
+  | { status: "unavailable"; reason: string; evidenceIds: string[] };
 /** The model's judged weight of one method, with the reasons (business, life cycle, build phase, backlog, margin path, industry outlook) and evidence. */
 export type MethodWeightJudgement = Judgement & { weight: number };
 export type MethodWeights = Record<ValuationMethodKey, MethodWeightJudgement>;
@@ -294,6 +304,8 @@ export type ValuationModelResult = {
   managementScenario?: ManagementScenario | null;
   managementComparison?: ManagementComparison | null;
   consensusNote?: ConsensusNote | null;
+  /** valuation.calc.v5: absent on historical reports; never inferred from bear/bull or the football field. */
+  fairValueRange?: FairValueRange;
 };
 
 export type ValuationDimension = {
