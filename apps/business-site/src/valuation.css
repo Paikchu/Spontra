@@ -142,3 +142,5 @@
 
 .val-fair .val-fair-value { font-family: var(--display); font-size: 28px; font-weight: 500; line-height: 1.3; letter-spacing: -.015em; font-variant-numeric: tabular-nums; }
 .val-stress > .val-fold-body { padding-top: 16px; }
+
+.val-table--yearly { display: block; max-width: 100%; overflow-x: auto; white-space: nowrap; }

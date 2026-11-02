@@ -128,3 +128,43 @@ test("older reports and mismatched current guides cannot acquire a price judgeme
   assert.match(html, /<strong class="val-verdict-label">Unable to assess<\/strong>/);
   assert.doesNotMatch(mainGuide(html), /2026-08-13/);
 });
+
+function forecastReport(explicit: boolean): ValuationPublication {
+  const report = fairReport(), model = report.model!, base = model.scenarios.base;
+  assert.equal(base.drivers.modelType, "fcff");
+  if (base.drivers.modelType !== "fcff") throw new Error("fixture must use FCFF");
+  const common = { revenueGrowth: [0.1, 0.1], operatingMargin: [0.25, 0.25], taxRate: [0.2, 0.2], normalization: [0, 3_000_000] };
+  const path = explicit
+    ? { ...common, capitalPlan: { capex: [30_000_000, 20_000_000], depreciation: [10_000_000, 12_000_000], workingCapitalChange: [5_000_000, 2_000_000] } }
+    : { ...common, salesToCapital: [2, 2] };
+  const yearly = [
+    { year: 1, revenue: 100_000_000, nopat: 20_000_000, reinvestment: 25_000_000, cashFlow: -5_000_000, discountFactor: 0.9, presentValue: -4_500_000, ...(explicit ? { capex: 30_000_000, depreciation: 10_000_000, workingCapitalChange: 5_000_000 } : {}) },
+    { year: 2, revenue: 110_000_000, nopat: 25_000_000, reinvestment: 10_000_000, cashFlow: 18_000_000, discountFactor: 0.8, presentValue: 14_400_000, ...(explicit ? { capex: 20_000_000, depreciation: 12_000_000, workingCapitalChange: 2_000_000 } : {}) },
+  ];
+  return { ...report, model: { ...model, scenarios: { ...model.scenarios, base: { ...base, drivers: { ...base.drivers, path }, result: { ...base.result, yearly } } }, sensitivities: [...model.sensitivities, { factor: "capex", step: "+10%", perShare: 120, changePercent: -9.1 }] } };
+}
+
+const forecast = (html: string) => html.match(/<details class="val-fold val-yearly">([\s\S]*?)<\/details>/)?.[1] ?? "";
+
+test("the folded capital plan shows yearly cash-flow components and adjustments without labelling net reinvestment as capex", () => {
+  const report = forecastReport(true), html = render("en", report, availableGuide("below", 98));
+  const table = text(forecast(html));
+  assert.match(html, /<details class="val-fold val-yearly"><summary>Base case yearly forecast<\/summary>/);
+  assert.match(table, /Year Revenue NOPAT CapEx D&amp;A ΔNWC Adjustment FCFF/);
+  assert.match(table, /Year 1 \$100M \$20\.0M \$30\.0M \$10\.0M \$5\.0M \$0 −\$5\.0M/);
+  assert.match(table, /Year 2 \$110M \$25\.0M \$20\.0M \$12\.0M \$2\.0M \$3\.0M \$18\.0M/);
+  assert.match(table, /No additional sales-to-capital reinvestment or build capex is deducted/);
+  assert.match(text(html), /Capital expenditure \+10%/);
+  const zh = text(forecast(render("zh-CN", report, availableGuide("below", 98))));
+  assert.match(zh, /基准情景逐年预测/);
+  assert.match(zh, /年份 收入 税后经营利润 资本开支 折旧摊销 营运资本变动 调整 企业自由现金流/);
+  assert.match(zh, /不再重复扣减/);
+});
+
+test("legacy forecast rows show their reported reinvestment and do not fabricate capital-plan components", () => {
+  const table = text(forecast(render("en", forecastReport(false), availableGuide("below", 98))));
+  assert.match(table, /Year Revenue NOPAT Reinvestment Adjustment FCFF/);
+  assert.match(table, /Year 1 \$100M \$20\.0M \$25\.0M \$0 −\$5\.0M/);
+  assert.doesNotMatch(table, /CapEx|D&amp;A|ΔNWC/);
+  assert.equal(forecast(render("en", valuationReport)), "");
+});

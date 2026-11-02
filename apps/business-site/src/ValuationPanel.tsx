@@ -41,6 +41,9 @@ const m = messages({
   expectedValue: "Expected value", expectedNote: "Probability-weighted over the bear, base, management and bull scenarios; the headline base value weighs the cash-flow model with the forward multiples at the weights below.",
   methods: "Valuation methods", methodLow: "Low (peer p25)", methodBase: "Base (peer median)", methodHigh: "High (peer p75)", weightCol: "Weight", notApplied: "Not applied", why: "Why",
   dcfValue: "Cash-flow value", weightedValue: "Weighted value", management: "Management", probabilities: "Scenario probabilities", managementScenarioNote: "Computed by code from management's cited targets on the base case's rate, shares, bridge and horizon; weighed by its judged probability, never the base.",
+  yearlyForecast: "Base case yearly forecast", forecastYear: (year: number) => `Year ${year}`, revenueCol: "Revenue", nopatCol: "NOPAT", capexCol: "CapEx", depreciationCol: "D&A", workingCapitalCol: "ΔNWC", fcffCol: "FCFF", reinvestmentCol: "Reinvestment", adjustmentCol: "Adjustment",
+  explicitCapitalPlan: "Uses the annual capital plan: FCFF = NOPAT + D&A − CapEx − ΔNWC, plus any adjustment shown. No additional sales-to-capital reinvestment or build capex is deducted.",
+  salesCapitalPlan: "Reinvestment is estimated from revenue changes and includes any additional construction spending. FCFF = NOPAT − reinvestment, plus any adjustment shown.",
   revenuePath: "Revenue path", marginPath: "Margin path", capexPath: "Capex path", rateSources: "Discount rate sources",
   peers: "Comparable set", peerBasisLabel: "Basis", peerQuartiles: (p25: string, median: string, p75: string) => `p25 ${p25} · median ${median} · p75 ${p75}`, peerNone: "No peer multiples were available; the cash-flow model stands alone.",
   checks: "Model checks", checkStatus: "Status", checkDetail: "Detail",
@@ -74,6 +77,9 @@ const m = messages({
   expectedValue: "期望价值", expectedNote: "按悲观、基准、管理层与乐观四个情景的概率加权；标题的基准价值按下方权重将现金流模型与远期倍数加权。",
   methods: "估值方法", methodLow: "低（同业 25 分位）", methodBase: "基准（同业中位）", methodHigh: "高（同业 75 分位）", weightCol: "权重", notApplied: "未采用", why: "理由",
   dcfValue: "现金流折现值", weightedValue: "加权价值", management: "管理层", probabilities: "情景概率", managementScenarioNote: "由代码按管理层引用的目标、在基准情景的折现率、股数、桥接与期限上算出；按其判断的概率加权，从不作为基准。",
+  yearlyForecast: "基准情景逐年预测", forecastYear: (year: number) => `第 ${year} 年`, revenueCol: "收入", nopatCol: "税后经营利润", capexCol: "资本开支", depreciationCol: "折旧摊销", workingCapitalCol: "营运资本变动", fcffCol: "企业自由现金流", reinvestmentCol: "再投资", adjustmentCol: "调整",
+  explicitCapitalPlan: "按逐年资本计划计算：企业自由现金流 = 税后经营利润 + 折旧摊销 − 资本开支 − 营运资本变动，另加表中列示的调整；不再重复扣减按销售资本比估算的再投资或额外建设资本开支。",
+  salesCapitalPlan: "再投资按收入变化估算，并包含额外建设支出。企业自由现金流 = 税后经营利润 − 再投资，另加表中列示的调整。",
   revenuePath: "收入路径", marginPath: "利润率路径", capexPath: "资本开支路径", rateSources: "折现率来源",
   peers: "可比公司", peerBasisLabel: "依据", peerQuartiles: (p25: string, median: string, p75: string) => `25 分位 ${p25} · 中位 ${median} · 75 分位 ${p75}`, peerNone: "没有可用的同业倍数；仅有现金流模型。",
   checks: "模型校验", checkStatus: "状态", checkDetail: "说明",
@@ -107,7 +113,7 @@ function guideReason(reason: Extract<ValuationPriceGuide, { status: "unavailable
 const CONF = labels({ high: "High", medium: "Medium", low: "Low" }, { high: "高", medium: "中", low: "低" });
 const DIM = labels({ businessQuality: "Business quality", growthExecution: "Growth delivery", valuationSafety: "Valuation safety", mispricingCatalysts: "Mispricing and catalysts", financialResilience: "Financial resilience" }, { businessQuality: "生意质量", growthExecution: "增长兑现", valuationSafety: "估值安全", mispricingCatalysts: "错杀与催化", financialResilience: "财务韧性" });
 const MODEL_TYPE = labels({ fcff: "Free cash flow to the firm (driver-based)", fcfe: "Free cash flow to equity", revenue_fcfe: "Revenue-driven equity cash flow", residual_income: "Residual income", earnings_multiple: "Guided earnings multiple", reported_earnings_multiple: "Reported earnings multiple", proforma_earnings_multiple: "Pro forma earnings multiple", asset_nav: "Net asset value", affo_multiple: "AFFO multiple", affo_dcf: "AFFO discounted cash flow" }, { fcff: "企业自由现金流（驱动因子）", fcfe: "股权自由现金流", revenue_fcfe: "收入驱动股权现金流", residual_income: "剩余收益", earnings_multiple: "指引盈利倍数", reported_earnings_multiple: "已报盈利倍数", proforma_earnings_multiple: "备考盈利倍数", asset_nav: "资产净值", affo_multiple: "AFFO 倍数", affo_dcf: "AFFO 现金流折现" });
-const FACTOR = labels({ revenueGrowth: "Revenue growth", operatingMargin: "Operating margin", netMargin: "Net margin", fcfMargin: "Free cash flow margin", capexToRevenue: "Capex to revenue", sbcToRevenue: "Stock compensation to revenue", returnOnEquity: "Return on equity", discountRate: "Discount rate", salesToCapital: "Sales to capital", terminalGrowth: "Terminal growth", terminalRoic: "Terminal ROIC", roe: "Return on equity", terminalRoe: "Terminal ROE", multiple: "Multiple", assetPrices: "Asset prices", afterSbcEquityCashMargin: "Equity cash margin" }, { revenueGrowth: "收入增长", operatingMargin: "营业利润率", netMargin: "净利率", fcfMargin: "自由现金流率", capexToRevenue: "资本开支占收入", sbcToRevenue: "股权激励占收入", returnOnEquity: "净资产收益率", discountRate: "折现率", salesToCapital: "销售资本比", terminalGrowth: "终值增长", terminalRoic: "终期 ROIC", roe: "净资产收益率", terminalRoe: "终期 ROE", multiple: "倍数", assetPrices: "资产价格", afterSbcEquityCashMargin: "权益现金利润率" });
+const FACTOR = labels({ revenueGrowth: "Revenue growth", operatingMargin: "Operating margin", netMargin: "Net margin", fcfMargin: "Free cash flow margin", capexToRevenue: "Capex to revenue", sbcToRevenue: "Stock compensation to revenue", returnOnEquity: "Return on equity", discountRate: "Discount rate", salesToCapital: "Sales to capital", terminalGrowth: "Terminal growth", capex: "Capital expenditure", terminalRoic: "Terminal ROIC", roe: "Return on equity", terminalRoe: "Terminal ROE", multiple: "Multiple", assetPrices: "Asset prices", afterSbcEquityCashMargin: "Equity cash margin" }, { revenueGrowth: "收入增长", operatingMargin: "营业利润率", netMargin: "净利率", fcfMargin: "自由现金流率", capexToRevenue: "资本开支占收入", sbcToRevenue: "股权激励占收入", returnOnEquity: "净资产收益率", discountRate: "折现率", salesToCapital: "销售资本比", terminalGrowth: "终值增长", capex: "资本开支", terminalRoic: "终期 ROIC", roe: "净资产收益率", terminalRoe: "终期 ROE", multiple: "倍数", assetPrices: "资产价格", afterSbcEquityCashMargin: "权益现金利润率" });
 const DIAG = labels({ revenueGrowthTtm: "Revenue growth (TTM)", roic: "ROIC", accrualRatio: "Accrual ratio", fcfConversion: "FCF conversion", sbcToRevenue: "SBC / revenue", capexToDa: "Capex / D&A", netDebtToEbitda: "Net debt / EBITDA", interestCoverage: "Interest coverage", dilutionCagr: "Share count change", cashRunwayYears: "Cash runway", debtDueCoverage: "Cash / debt due" },
   { revenueGrowthTtm: "收入增长（近四季）", roic: "投入资本回报率", accrualRatio: "应计比率", fcfConversion: "自由现金流转化", sbcToRevenue: "股权激励占收入", capexToDa: "资本开支 / 折旧摊销", netDebtToEbitda: "净债务 / EBITDA", interestCoverage: "利息覆盖倍数", dilutionCagr: "股数年化变化", cashRunwayYears: "现金跑道", debtDueCoverage: "现金 / 一年内到期债务" });
 
@@ -220,6 +226,31 @@ function Sensitivities({ report }: { report: ValuationPublication }) {
 
 const avg = (list: number[]) => list.reduce((a, b) => a + b, 0) / Math.max(list.length, 1);
 
+function YearlyForecast({ report }: { report: ValuationPublication }) {
+  const locale = useLocale();
+  const scenario = report.model?.scenarios.base;
+  if (!scenario || scenario.drivers.modelType !== "fcff" || !scenario.result.yearly.length) return null;
+  const { path } = scenario.drivers;
+  const explicit = !!path.capitalPlan;
+  const adjusted = path.normalization?.some(value => value !== 0);
+  const money = (value: number | null | undefined) => value == null ? "—" : compactMoney(value, report.currency, locale);
+  return <details className="val-fold val-yearly">
+    <summary>{m.yearlyForecast}</summary>
+    <div className="val-fold-body">
+      <p className="val-list-line">{explicit ? m.explicitCapitalPlan : m.salesCapitalPlan}</p>
+      <table className="val-table val-table--yearly" tabIndex={0} aria-label={m.yearlyForecast}><thead><tr><th>{m.yearCol}</th><th>{m.revenueCol}</th><th>{m.nopatCol}</th>
+        {explicit ? <><th>{m.capexCol}</th><th>{m.depreciationCol}</th><th>{m.workingCapitalCol}</th></> : <th>{m.reinvestmentCol}</th>}
+        {adjusted && <th>{m.adjustmentCol}</th>}<th>{m.fcffCol}</th>
+      </tr></thead><tbody>
+        {scenario.result.yearly.map(row => <tr key={row.year}><th>{m.forecastYear(row.year)}</th><td>{money(row.revenue)}</td><td>{money(row.nopat)}</td>
+          {explicit ? <><td>{money(row.capex)}</td><td>{money(row.depreciation)}</td><td>{money(row.workingCapitalChange)}</td></> : <td>{money(row.reinvestment)}</td>}
+          {adjusted && <td>{money(path.normalization?.[row.year - 1])}</td>}<td>{money(row.cashFlow)}</td>
+        </tr>)}
+      </tbody></table>
+    </div>
+  </details>;
+}
+
 function Model({ report, onCite }: { report: ValuationPublication; onCite: (id: string) => void }) {
   const locale = useLocale();
   const [open, setOpen] = useState(false);
@@ -235,6 +266,7 @@ function Model({ report, onCite }: { report: ValuationPublication; onCite: (id: 
       {rows.map(([key, s]) => { const d = s.drivers as { path?: { revenueGrowth?: number[]; operatingMargin?: number[] } };
         return <tr key={key}><th>{m[key]}</th><td>{perShare(s.result.perShare, model.currency, locale)}</td>{weighted && <td>{s.valuation ? perShare(s.valuation.perShare, model.currency, locale) : "—"}</td>}<td>{s.probability != null ? pct(s.probability, 0) : "—"}</td><td>{d.path?.revenueGrowth ? pct(avg(d.path.revenueGrowth)) : "—"}</td><td>{d.path?.operatingMargin ? pct(avg(d.path.operatingMargin)) : "—"}</td><td>{s.result.terminalShare != null ? pct(s.result.terminalShare, 0) : "—"}</td></tr>; })}
     </tbody></table>
+    <YearlyForecast report={report} />
     {model.scenarioProbabilities && <div className="val-why-list"><h5>{m.probabilities}</h5>
       {EXTENDED_SCENARIO_KEYS.map(key => { const p = model.scenarioProbabilities![key]; return <p key={key} className="val-why"><b>{m[key]} {pct(p.probability, 0)}</b> <Prose as="span" text={p.rationale} onCite={onCite} /> {p.evidenceIds.length > 0 && <Cites ids={p.evidenceIds.filter(isEvidenceId)} onCite={onCite} />}</p>; })}
     </div>}
