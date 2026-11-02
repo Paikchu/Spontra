@@ -1,4 +1,4 @@
-import { DIMENSION_WEIGHTS, EXTENDED_SCENARIO_KEYS, SCENARIO_KEYS, VALUATION_DIMENSIONS, VALUATION_METHODS, type Confidence, type ConsensusNote, type ConsensusTarget, type DiscountRate, type EquityBridge, type FactorDistribution, type ImpliedPath, type InputCheck, type InputVerification, type Judgement, type ManagementComparison, type ManagementScenario, type ManagementTargetSet, type MethodValuation, type MethodWeightJudgement, type MethodWeights, type ModelDrivers, type MultipleQuartiles, type PeerMultiples, type PeerSelectionBasis, type RevenueAnchor, type SanityGate, type ScenarioAssumptions, type ScenarioEntry, type ScenarioKey, type ScenarioProbabilities, type ScenarioResult, type ScenarioValuation, type Sensitivity, type ShareCount, type Triangulation, type ValuationDimension, type ValuationMethodKey, type ValuationModelResult, type ValuationModelType, type ValuationRange, type ValuationVerdict, type YearRow } from "../../analysis-contract/valuation.ts";
+import { DIMENSION_WEIGHTS, EXTENDED_SCENARIO_KEYS, SCENARIO_KEYS, VALUATION_DIMENSIONS, VALUATION_METHODS, type Confidence, type ConsensusNote, type ConsensusTarget, type DiscountRate, type EquityBridge, type FactorDistribution, type FairValueBasis, type FairValueRange, type NormalCaseInput, type NormalCaseResult, type ImpliedPath, type InputCheck, type InputVerification, type Judgement, type ManagementComparison, type ManagementScenario, type ManagementTargetSet, type MethodValuation, type MethodWeightJudgement, type MethodWeights, type ModelDrivers, type MultipleQuartiles, type PeerMultiples, type PeerSelectionBasis, type RevenueAnchor, type SanityGate, type ScenarioAssumptions, type ScenarioEntry, type ScenarioKey, type ScenarioProbabilities, type ScenarioResult, type ScenarioValuation, type Sensitivity, type ShareCount, type Triangulation, type ValuationDimension, type ValuationMethodKey, type ValuationModelResult, type ValuationModelType, type ValuationRange, type ValuationVerdict, type YearRow } from "../../analysis-contract/valuation.ts";
 import { managementComparisonRows, managementDrivers, managementFactsOf, managementGate, managementRequest } from "./management.ts";
 import { weightedQuantile } from "./peers.ts";
 
@@ -7,7 +7,7 @@ import { weightedQuantile } from "./peers.ts";
  * §2–§6). Every amount a report shows comes from here; the model supplies inputs and reasons. Nothing is rounded until it
  * is displayed. Invalid inputs are rejected with a `ValuationCalcError` rather than producing NaN, Infinity or a made-up figure.
  */
-export const CALCULATOR_VERSION = "valuation.calc.v4";
+export const CALCULATOR_VERSION = "valuation.calc.v5";
 /** The default horizon; an fcff path may run `MIN_FORECAST_YEARS`–`MAX_FORECAST_YEARS` years (docs/valuation-v2-SPEC.md §1). */
 export const FORECAST_YEARS = 5;
 export const MIN_FORECAST_YEARS = 5, MAX_FORECAST_YEARS = 10;
@@ -101,6 +101,8 @@ export type CalcRequest = {
   bridge: EquityBridge;
   scenarios: Record<ScenarioKey, ScenarioAssumptions>;
   price: number | null;
+  /** Independently evidenced normal bounds; absent for older callers. */
+  fairValueBasis?: FairValueBasis;
   /** Mid-year convention: cash flows at t − 0.5, the terminal at n − 0.5. Default off (year end). */
   midYear?: boolean;
   context?: CalcContext;
@@ -328,7 +330,7 @@ export function calculateValuation(request: CalcRequest): ValuationModelResult {
   const terminalShare = results.base.result.terminalShare;
   if (terminalShare != null && terminalShare > TERMINAL_SHARE_LIMIT) limitations.push(`Terminal value is ${(terminalShare * 100).toFixed(0)}% of the base operating value.`);
   const result: ValuationModelResult = { calculatorVersion: CALCULATOR_VERSION, modelType: request.modelType, currency: request.currency, discountRate: request.discountRate, shares, bridge: request.bridge, scenarios: results, range, sensitivities, implied, limitations, horizonYears, midYear };
-  if (!request.context) return finiteResult(result, "valuation result");
+  if (!request.context) return withFairValueRange(request, finiteResult(result, "valuation result"));
   // The cross-checks: the DCF beside the forward multiples, each scenario valued on its own path at the judged weights, the
   // management scenario from cited targets, the probability-weighted expectation, the anchors, the verification and the gates.
   const c = request.context;
@@ -364,8 +366,42 @@ export function calculateValuation(request: CalcRequest): ValuationModelResult {
   const gates = sanityGates({ result: withRange, riskFree: c.riskFree ?? null, anchor: c.anchor ?? null, consensus: c.consensus ?? null, consensusNote, triangulation, methods, verification, impliedMultiple, multipleHistory, peers: c.peers ?? null, management: managementGateRow });
   if (appliedMethodCount(triangulation) < 2) limitations.push("No forward-multiple cross-check: fewer than two valuation methods have usable values and positive weights.");
   if (forward.some(m => m.base != null)) limitations.push("The range weighs each scenario's DCF with the forward multiples on its own path at the judged weights; the sensitivities, the terminal share and the market-implied growth are on the base DCF alone.");
-  return finiteResult({ ...withRange, limitations, methods, triangulation, gates, anchors: { revenue: c.anchor ?? null }, verification, peers: c.peers ?? null, consensus: c.consensus ?? null,
-    ...(judgedWeights ? { methodWeights: judgedWeights } : {}), ...(judged ? { scenarioProbabilities: judged } : {}), managementScenario: management, managementComparison, consensusNote }, "valuation result");
+  return withFairValueRange(request, finiteResult({ ...withRange, limitations, methods, triangulation, gates, anchors: { revenue: c.anchor ?? null }, verification, peers: c.peers ?? null, consensus: c.consensus ?? null,
+    ...(judgedWeights ? { methodWeights: judgedWeights } : {}), ...(judged ? { scenarioProbabilities: judged } : {}), managementScenario: management, managementComparison, consensusNote }, "valuation result"));
+}
+
+/** Evaluate the normal bounds with the same economics as the base, without adding them to the probability distribution. */
+function withFairValueRange(request: CalcRequest, model: ValuationModelResult): ValuationModelResult {
+  const basis = request.fairValueBasis;
+  if (!basis) return model;
+  if (basis.status === "unavailable") return { ...model, fairValueRange: { ...basis } };
+  const weights = request.context ? methodWeightsOf(request.context.methodWeights ?? null, request.context.lifecycle ?? null) : { dcf: 1, ev_ebitda_forward: 0, pe_forward: 0 };
+  const baseValuation = model.scenarios.base.valuation ?? { methods: { dcf: model.range.base, ev_ebitda_forward: null, pe_forward: null }, weights, perShare: model.range.base };
+  const check = (name: string, value: ValuationModelResult, valuation: ScenarioValuation) => {
+    const failed = value.gates?.filter(g => g.status === "fail") ?? [];
+    if (failed.length) throw new ValuationCalcError("invalid_input", `fair value ${name}: ${failed.map(g => `${g.key}: ${g.detail}`).join("; ")}`);
+    const missing = VALUATION_METHODS.filter(k => weights[k] > 0 && valuation.methods[k] == null);
+    if (missing.length) throw new ValuationCalcError("invalid_input", `fair value ${name}: positive-weight methods ${missing.join(", ")} are unavailable; revise the shared method weights or declare fairValueBasis unavailable`);
+    if (valuation.perShare <= 0) throw new ValuationCalcError("invalid_input", `fair value ${name} must be positive`);
+  };
+  check("base", model, baseValuation);
+  const evaluate = (name: "lower" | "upper", input: NormalCaseInput): NormalCaseResult => {
+    if (input.drivers.modelType !== request.modelType) throw new ValuationCalcError("invalid_input", `fair value ${name} must use the base model type`);
+    const base = request.scenarios.base.drivers;
+    const horizon = (drivers: ModelDrivers) => drivers.modelType === "fcff" ? horizonOf(drivers.path) : "horizonYears" in drivers ? drivers.horizonYears : FORECAST_YEARS;
+    if (horizon(input.drivers) !== horizon(base)) throw new ValuationCalcError("invalid_input", `fair value ${name} must use the base forecast horizon`);
+    const scenario: ScenarioAssumptions = { ...input, probability: null };
+    const context: CalcContext = { ...request.context, management: null, scenarioProbabilities: null, managementComparison: null };
+    const calculated = calculateValuation({ ...request, fairValueBasis: undefined, scenarios: { bear: scenario, base: scenario, bull: scenario }, context: request.context ? context : undefined });
+    const valuation = calculated.scenarios.base.valuation ?? { methods: { dcf: calculated.range.base, ev_ebitda_forward: null, pe_forward: null }, weights, perShare: calculated.range.base };
+    check(name, calculated, valuation);
+    return { ...input, result: calculated.scenarios.base.result, valuation, gates: calculated.gates ?? [], verification: calculated.verification ?? null };
+  };
+  const lower = evaluate("lower", basis.lower), upper = evaluate("upper", basis.upper);
+  const low = lower.valuation.perShare, base = model.range.base, high = upper.valuation.perShare;
+  if (low > base || base > high) throw new ValuationCalcError("scenario_order", `normal fair values are out of order (lower ${low}, base ${base}, upper ${high}); revise the normal operating paths`);
+  const fairValueRange: FairValueRange = { status: "available", kind: "normal_cases", low, base, high, lower, upper, rationale: basis.rationale, evidenceIds: [...basis.evidenceIds] };
+  return finiteResult({ ...model, fairValueRange }, "fair value range");
 }
 
 /** The judged weights with their rationale, when every method was given one; plain numbers leave nothing to publish. */
@@ -409,7 +445,7 @@ function managementScenarioOf(request: CalcRequest, r: number, shares: number, c
   if (!built) return null;
   try {
     const result = scenarioValue(built.drivers, r, shares, request.bridge, { midYear: request.midYear === true });
-    const sub = calculateValuation(managementRequest(request, built.drivers));
+    const sub = calculateValuation({ ...managementRequest(request, built.drivers), fairValueBasis: undefined });
     const valuation = scenarioValuation(request, built.drivers, result, r, shares, c, weights);
     const judged = c.scenarioProbabilities?.management ?? null;
     const revenue = built.anchors.filter(a => a.metric === "revenue").map(a => `FY${a.fiscalYear} revenue ${(a.target / 1e9).toFixed(1)}B in year ${a.year}`).join(", ");

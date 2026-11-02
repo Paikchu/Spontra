@@ -55,6 +55,7 @@ export const calculation = {
   shares: { baseFactId: "shares_outstanding", dilutionPercent: 0, rationale: "No additional dilution." },
   bridge: { nonOperatingAssets: 0, debtAndClaims: 0, nonOperatingEquityAdjustment: 0, notes: ["no net claims in this test"] },
   scenarios: { bear: scenario, base: scenario, bull: scenario }, midYear: false, forwardYears: 3,
+  fairValueBasis: { status: "unavailable", reason: "Normal operating bounds were not researched for this liquidity test.", evidenceIds: [] },
   methodWeights: { dcf: weight(1, "The equity cash flows are the only usable method."), ev_ebitda_forward: weight(0, "Not applicable to an equity-level model."), pe_forward: weight(0, "Not applicable to an equity-level model.") },
   scenarioProbabilities: { bear: probability(0.3, "Downside weight from the liquidity risk."), base: probability(0.5, "The filing's own run-rate."), management: { probability: 0, rationale: "no target set", evidenceIds: [] }, bull: probability(0.2, "Upside if refinancing completes early.") },
   managementComparison: null, consensus: { status: "unavailable", reason: "No sell-side target page was read in this test run." },

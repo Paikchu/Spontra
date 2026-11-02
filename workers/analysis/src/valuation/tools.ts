@@ -177,6 +177,10 @@ const calcSchema = z.object({
   shares: z.object({ baseFactId: z.string(), dilutionPercent: z.number().min(0).max(0.5), rationale: z.string().min(10).max(800) }),
   bridge: z.object({ nonOperatingAssets: z.number(), debtAndClaims: z.number(), nonOperatingEquityAdjustment: z.number(), notes: z.array(z.string().max(400)).min(1).max(10) }),
   scenarios: z.object({ bear: scenarioSchema, base: scenarioSchema, bull: scenarioSchema }),
+  fairValueBasis: z.discriminatedUnion("status", [
+    z.object({ status: z.literal("available"), kind: z.literal("normal_cases"), lower: scenarioSchema, upper: scenarioSchema, rationale: z.string().min(60).max(1500), evidenceIds: ids(12, 1) }),
+    z.object({ status: z.literal("unavailable"), reason: z.string().min(20).max(1000), evidenceIds: ids(12) }),
+  ]),
   /** Mid-year discounting (true) or year end (false). */
   midYear: z.boolean(),
   /** The forecast year the forward multiples are applied to (usually 3). */
@@ -214,6 +218,11 @@ function runCalculation(state: ValuationState, args: CalcArgs): string {
   }
   const lengths = new Set(SCENARIO_KEYS.map(k => { const d = args.scenarios[k].drivers; return d.modelType === "fcff" ? d.path.revenueGrowth.length : 0; }));
   if (lengths.size > 1) errors.push("every scenario must use the same horizon");
+  errors.push(...checkIds(state, args.fairValueBasis.evidenceIds, "fairValueBasis"));
+  if (args.fairValueBasis.status === "available") for (const key of ["lower", "upper"] as const) {
+    const normal = args.fairValueBasis[key];
+    errors.push(...checkIds(state, normal.evidenceIds, `normal ${key}`), ...(["revenue", "margin", "capex"] as const).flatMap(k => checkIds(state, normal.assumptions[k].evidenceIds, `normal ${key} ${k}`)));
+  }
   for (const key of VALUATION_METHODS) errors.push(...checkIds(state, args.methodWeights[key].evidenceIds, `methodWeights.${key}`));
   for (const key of EXTENDED_SCENARIO_KEYS) errors.push(...checkIds(state, args.scenarioProbabilities[key].evidenceIds, `scenarioProbabilities.${key}`));
   for (const key of DISCOUNT_RATE_COMPONENTS) errors.push(...checkIds(state, args.discountRate[key].evidenceIds, `discountRate.${key}`));
@@ -244,6 +253,7 @@ function runCalculation(state: ValuationState, args: CalcArgs): string {
   const request: CalcRequest = {
     modelType: args.modelType, currency: state.input.currency, discountRate, shares: { base: baseShares!.value, dilutionReserve: baseShares!.value * args.shares.dilutionPercent, basis: `${baseShares!.id}; dilution ${(args.shares.dilutionPercent * 100).toFixed(2)}% of base; ${args.shares.rationale}` },
     bridge: args.bridge, price: state.quote?.usable ? state.quote.price : null, midYear: args.midYear,
+    fairValueBasis: args.fairValueBasis,
     // The scenarios' probabilities are the judged ones; the calculator writes them onto each scenario from the four-way set.
     scenarios: Object.fromEntries(SCENARIO_KEYS.map(k => [k, { ...args.scenarios[k], probability: null } satisfies ScenarioAssumptions])) as Record<"bear" | "base" | "bull", ScenarioAssumptions>,
     context: calcContext(state, args, consensus, consensusNote),
@@ -275,6 +285,7 @@ function runCalculation(state: ValuationState, args: CalcArgs): string {
   }
   const terminalShare = result.scenarios.base.result.terminalShare;
   gaps.push(...gateGaps(result.gates ?? []));
+  if (result.fairValueRange?.status === "available") for (const key of ["lower", "upper"] as const) gaps.push(...gateGaps(result.fairValueRange[key].gates).map(g => ({ ...g, field: `normal.${key}.${g.field}` })));
   state.calc = { request, result };
   state.modelGaps = gaps;
   state.insufficient = null;
@@ -286,6 +297,7 @@ function runCalculation(state: ValuationState, args: CalcArgs): string {
   const flagged = (result.gates ?? []).filter(g => g.status !== "pass");
   return [
     `Calculated (${result.modelType}, ${result.horizonYears} years, r = ${pct(value)} ${d.basis} from components; economic shares ${money(result.shares.economic)}).`,
+    result.fairValueRange?.status === "available" ? `Normal fair-value range: ${result.fairValueRange.low.toFixed(2)} – ${result.fairValueRange.base.toFixed(2)} – ${result.fairValueRange.high.toFixed(2)} per share; independent normal operating paths, not stress endpoints or a price target. ${result.fairValueRange.rationale}` : `Normal fair-value range unavailable: ${result.fairValueRange?.status === "unavailable" ? result.fairValueRange.reason : "not assessed"}.`,
     SCENARIO_KEYS.map(line).join("\n"),
     ms ? `management (cited targets, computed by code): DCF ${ms.result.perShare.toFixed(2)}, weighted ${ms.valuation ? ms.valuation.perShare.toFixed(2) : "n/a"} per share, p=${pct(management.probability)}${ms.result.terminalShare != null ? ` (terminal ${pct(ms.result.terminalShare)})` : ""}; ${ms.anchors.filter(a => a.metric === "revenue").map(a => `FY${a.fiscalYear} revenue ${money(a.target)} in year ${a.year}`).join(", ")}` : "management scenario: none (no cited total-revenue target inside the horizon)",
     `range (method-weighted): ${r.low.toFixed(2)} – ${r.base.toFixed(2)} – ${r.high.toFixed(2)}; expected (probability-weighted over bear/base/management/bull): ${r.expected != null ? r.expected.toFixed(2) : "n/a"}; price ${r.price ?? "n/a"}; margin of safety on the base ${r.marginOfSafety != null ? pct(r.marginOfSafety) : "n/a"}; downside coverage ${r.downsideCoverage != null ? pct(r.downsideCoverage) : "n/a"}`,
