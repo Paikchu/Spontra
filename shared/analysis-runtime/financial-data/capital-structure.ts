@@ -13,7 +13,7 @@ import { daysBetween as days } from "../dates.ts";
  * those cells, signed as the statement shows them. A statement is published only when its lines add up
  * to the totals the issuer reports; anything else is dropped, never estimated.
  */
-export const CAPITAL_VERSION = "sec-capital-structure.v5";
+export const CAPITAL_VERSION = "sec-capital-structure.v6";
 
 type Fact = StatementCell["facts"][number];
 /** `dimensional`: the amount is a member-tagged fact, as a segment subtotal printed on the face statement is. */

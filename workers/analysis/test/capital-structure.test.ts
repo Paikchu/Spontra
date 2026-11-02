@@ -121,7 +121,7 @@ test("facts that are unparsed, non-currency or dimensional never form a schedule
 });
 
 test("a filing carries its schedules under the bumped version, and the quarter keeps only those stated at its period end", () => {
-  assert.equal(CAPITAL_VERSION, "sec-capital-structure.v5");
+  assert.equal(CAPITAL_VERSION, "sec-capital-structure.v6");
   const filing = extractCapitalFiling({ status: "not_located" } as FinancialStatements, source, disclosures([...ladder, ...purchases]));
   assert.equal(filing.version, CAPITAL_VERSION);
   assert.equal(filing.schedules?.length, 2);
