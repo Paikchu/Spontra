@@ -130,3 +130,43 @@ test("a context window overflow is sized from the provider's message", () => {
   assert.deepEqual(contextOverflow("Model x HTTP 400: This model's maximum context length is 131072 tokens. However, you requested 140000 tokens (120000 in the messages, 20000 in the completion)."), { window: 131072, prompt: 120000 });
   assert.equal(contextOverflow("Model x HTTP 400: max_tokens must be at most 8192"), null);
 });
+
+test("a company analysis recovery whose instance ended without taking the run spends the attempt instead of being polled forever", async () => {
+  const { recoverCompanyAnalysis } = await import("../src/core.ts");
+  const { COMPANY_ANALYSIS_PROMPT_VERSION } = await import("../src/company-analysis/contracts.ts");
+  const db = database();
+  const failedAt = "2026-10-22T04:33:12.000Z";
+  await db.prepare("INSERT INTO sec_periods (period_id, ticker, period_scope, end_date) VALUES ('p1', 'META', 'quarter', '2026-09-30')").bind().run();
+  await db.prepare("INSERT INTO sec_company_memory_threads (ticker, version) VALUES ('META', 3)").bind().run();
+  await db.prepare("INSERT INTO sec_memory_jobs (job_id, ticker, filing_id, period_id, status, source_r2_key, completed_at) VALUES ('m1', 'META', 'f1', 'p1', 'complete', 'k', ?)").bind(failedAt).run();
+  await db.prepare(`INSERT INTO company_analysis_runs (analysis_id, ticker, trigger_ref, period_id, memory_version, status, model_version, prompt_version, updated_at, workflow_instance_id, recovery_count)
+    VALUES ('company:META:1', 'META', 'm1:3', 'p1', 3, 'failed', 'm', ?, ?, 'company-old', 0)`).bind(COMPANY_ANALYSIS_PROMPT_VERSION, failedAt).run();
+  const ended = new Set<string>();
+  const workflow = {
+    async create({ id }: { id: string }) { if (ended.has(id)) throw new Error("instance.already_exists"); ended.add(id); },
+    async get() { return { status: async () => ({ status: "errored" }) }; },
+  };
+  const env = { DB: db, COMPANY_ANALYSIS_WORKFLOW: workflow } as unknown as AnalysisEnv;
+  const now = Date.parse("2026-10-22T05:00:00.000Z");
+  const first = await recoverCompanyAnalysis(env, "META", now);
+  assert.equal(first.running, true);
+  // The same id comes back: the instance it names has ended, so the attempt is spent and the next waits its back-off.
+  const second = await recoverCompanyAnalysis(env, "META", now + 15 * 60_000);
+  assert.equal(second.running, false);
+  const row = await db.prepare("SELECT recovery_count n, updated_at at FROM company_analysis_runs WHERE analysis_id = 'company:META:1'").bind().first<{ n: number; at: string }>();
+  assert.deepEqual({ ...row }, { n: 1, at: new Date(now + 15 * 60_000).toISOString() });
+  assert.ok(second.nextRecoveryAt && Date.parse(second.nextRecoveryAt) > now + 15 * 60_000);
+});
+
+test("a Workflow still running a day after it started is stopped and retried like a failed run, not polled forever", async () => {
+  const db = database();
+  let terminated = 0;
+  const workflows: WorkflowBindingLike = { async create() {}, async get() { return { status: async () => ({ status: "waiting" }), terminate: async () => { terminated++; } }; } };
+  const env = { DB: db } as unknown as AnalysisEnv;
+  await db.prepare("INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?)").bind("pipeline:workflow:findings:NET",
+    JSON.stringify({ instanceId: "findings-NET-1", startedAt: new Date(Date.now() - 25 * 60 * 60_000).toISOString(), fingerprint: "f1", trigger: "e1" }), new Date().toISOString()).run();
+  const outcome = await driveWorkflow(env, "findings:NET", workflows, async () => null, { deadLetter: { task: "findings", ticker: "NET", causeId: "m1" }, trigger: "e1" });
+  assert.equal(terminated, 1);
+  assert.deepEqual([outcome.status, (outcome.detail as { retry?: number }).retry], ["later", 1]);
+  assert.equal((await readFailed(db, "findings", "NET"))?.attempts, 1);
+});

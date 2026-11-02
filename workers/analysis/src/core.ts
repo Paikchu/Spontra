@@ -121,7 +121,16 @@ export async function recoverCompanyAnalysis(env: SecCronEnv, ticker: string, no
       ? `company-recovery-${await sha256(`${candidate.analysisId}:${candidate.expectedUpdatedAt}`)}`
       : `company-${hashString(candidate.triggerRef)}`;
     try { await env.COMPANY_ANALYSIS_WORKFLOW.create({ id, params: { ...candidate, ticker } }); }
-    catch (error) { if (!/already exists|duplicate/i.test(String(error))) throw error; }
+    catch (error) {
+      if (!/already.?exists|duplicate/i.test(String(error))) throw error;
+      // The id was used before. An instance that ended without moving the run (META's refused the company on 2026-10-22
+      // and was polled every 15 minutes for weeks) spends this attempt; a first run with no row simply stops here.
+      const state = env.COMPANY_ANALYSIS_WORKFLOW.get ? await env.COMPANY_ANALYSIS_WORKFLOW.get(id).then(i => i.status()).then(s => s.status).catch(() => null) : null;
+      if (state && ["errored", "terminated", "complete"].includes(state)) {
+        if (candidate.analysisId) await repository.consumeRecovery(candidate.analysisId, candidate.expectedUpdatedAt!, new Date(now).toISOString());
+        return { started: null, running: false, nextRecoveryAt: await repository.nextRecoveryAt(ticker) };
+      }
+    }
     return { started: id, running: true, nextRecoveryAt: null };
   }
   return { started: null, running: false, nextRecoveryAt: await repository.nextRecoveryAt(ticker) };
