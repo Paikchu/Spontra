@@ -18,6 +18,10 @@ The assumptions agent supplies normal boundaries with full drivers and evidence,
 
 New research does not become ready without a completed counter-evidence review and without resolving decisive contradictions in its assumptions. A negative valuation conclusion alone is not a failure. Failed/incomplete candidates cannot replace an existing ready report.
 
+Evidence collection and recording the research conclusions have separate execution budgets. If collection reaches its limit, a bounded finalization phase can reread registered excerpts and financial facts, submit the remaining dimensions, and finish research. It cannot search, read new sources or access historical outcomes. Missing support remains a null score and a named gap. Collection failures and cancellation stop immediately; an unfinished finalization never advances into assumptions. Historical artifacts retain the collection stop reason separately from the final research status.
+
+Changes to the latest attempt also update the public resource revision, including incomplete attempts that retain the previous report. Completion time belongs to the attempt; the immutable report keeps its original research time.
+
 ## ORCL evaluation
 
 The current run uses current disclosed evidence and freezes a reference close. Historical evaluation reconstructs the latest four full quarterly/annual disclosures separately. Every source must have been available by its declared cutoff; companyfacts records are selected by filing time and accession, not only fiscal period end. Daily prices are cut before weekly aggregation; management targets and peers cannot come from later disclosures. Outcomes are stored separately and never supplied to the research run.

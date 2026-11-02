@@ -21,9 +21,9 @@ import { ValuationStore } from "./store.ts";
 import { ASSUMPTION_TOOLS, CITATION, COMPOSE_TOOLS, RESEARCH_BUDGET, RESEARCH_TOOLS, excerptOf, factLine, goingConcernOf, impliedThreshold, registerManagementEvidence, valuationTools, type RedTeam, type ValuationState, type FrozenResearchSource } from "./tools.ts";
 
 /** Changing the prompts, the tools, the calculator or the publication contract reassesses every switched-on company once. */
-export const VALUATION_VERSION = "valuation.v7";
+export const VALUATION_VERSION = "valuation.v8";
 export type ValuationWorkflowParams = { ticker: string; fingerprint: string };
-const BUDGET = { research: { turns: 24, wallMs: 40 * 60_000 }, assume: { turns: 12, wallMs: 20 * 60_000 }, compose: { turns: 6, wallMs: 12 * 60_000 } };
+const BUDGET = { research: { turns: 24, wallMs: 40 * 60_000 }, researchFinalize: { turns: 8, wallMs: 12 * 60_000 }, assume: { turns: 12, wallMs: 20 * 60_000 }, compose: { turns: 6, wallMs: 12 * 60_000 } };
 const MODEL_BUDGET_MS = 5 * 60_000;
 
 export function valuationTickersFor(env: Parameters<typeof featureTickersFor>[0]): string[] {
@@ -55,6 +55,23 @@ The diagnostics listed in the opening message were computed by code from the fac
 When submitting financialResilience, assess goingConcern from the current disclosures: unresolved means substantial doubt remains; resolved requires explicit evidence that completed mitigation alleviates it; unknown means the evidence does not establish either. Quote the registered passage and explain the assessment in the dimension rationale. Planned refinancing alone does not resolve risk; a generic risk-factor mention or a missing document alone does not establish it. Reconcile older warnings with newer disclosures. An unresolved assessment limits financialResilience to 7.5.
 ${SCORING}
 Call submit_dimension for each of the four, then finish_research. Budget: ${RESEARCH_BUDGET.reads} filing reads, ${RESEARCH_BUDGET.finds} finds, ${RESEARCH_BUDGET.transcripts} call reads. Keep tool arguments small; never ask for a whole filing.`;
+
+const FINALIZE_RESEARCH_SYSTEM = `Finish the recorded research conclusions using only the validated financial facts and evidence excerpts already registered in this run. Evidence collection is closed: no new sources, network reads or later information are available. Complete the missing businessQuality, growthExecution, financialResilience and mispricingCatalysts dimensions, then call finish_research. Retain the already accepted dimensions unless a registered passage requires a correction. A missing basis requires a null score and a concrete gap; do not invent evidence or assign a default score to finish.
+Use read_valuation_evidence to reread exact passages before quoting them. financialResilience requires goingConcern: unresolved for current substantial doubt not alleviated by completed mitigation, resolved only with explicit evidence of completed mitigation, unknown when the available evidence does not establish either. Cite its evidence IDs in the dimension, copy quotes verbatim and keep the goingConcern rationale within 800 characters. Unresolved risk caps financialResilience at 7.5. Answer the supplied financial diagnostics in the relevant rationales.
+${SCORING}`;
+
+function openingResearchFinalization(state: ValuationState): string {
+  const keys = VALUATION_DIMENSIONS.filter(key => key !== "valuationSafety");
+  return [
+    `Company ${state.input.ticker}; information cutoff ${state.researchAsOf}. Evidence collection reached its budget; only recording conclusions remains.`,
+    `Missing dimensions: ${keys.filter(key => !state.dimensions.has(key)).join(", ") || "none; finish_research is still required"}.`,
+    `Accepted dimensions: ${JSON.stringify([...state.dimensions.values()])}`,
+    `Recorded going-concern assessment: ${JSON.stringify(state.goingConcern ?? null)}`,
+    `Financial diagnostics: ${JSON.stringify(state.input.diagnostics)}`,
+    `Registered evidence directory (read_valuation_evidence returns full excerpts):\n${[...state.evidence.values()].map(e => `[${e.evidenceId}] ${e.title}: ${excerptOf(e)}`).join("\n")}`,
+    "Submit the missing dimensions, explicitly recording null and the evidence gap where necessary, then finish_research. Do not set valuationSafety in this phase.",
+  ].join("\n\n");
+}
 
 export const ASSUME_SYSTEM = `You set the valuation model's assumptions for one listed company and run the calculator; every figure comes from calculate_valuation, and every argument of calculate_valuation is required: a missing or malformed one is a schema error you must correct and resubmit (nothing is defaulted for you). One discount rate for all scenarios, each component (risk-free, beta, equity risk premium; cost of debt, tax rate, equity weight for WACC) with its value, its named source and evidence or fact ids. Risk goes into the scenarios' cash flows, not into separate rates.
 All money and share-count inputs use full base units, never billions or millions: copy the exact values shown by read_financials (for example 64076000000 USD, not 64.076). Rates are decimals. Use read_valuation_evidence to reread registered e... excerpts; read_financials accepts fact ids only.
@@ -308,13 +325,19 @@ export async function researchValuation({ input, market, now, step, env, mode, g
     try { return { request, result: calculateValuation(request) }; } catch { return null; }
   });
   const turns: TurnRecord[] = [];
+  const researchProgress = { collection: "not_run", finalization: "not_run" };
   const finish = async (phases: { research: string; assumptions: string; composition: string }) => {
     const { publication, evidence } = await assemblePublication(state, generatedAt, VALUATION_VERSION);
-    return { phases, publication, evidence, registeredEvidence: [...state.evidence.values()], turns, request: state.calc?.request ?? null,
+    return { phases, researchProgress, publication, evidence, registeredEvidence: [...state.evidence.values()], turns, request: state.calc?.request ?? null,
       nearTermForecast: state.nearTermForecast ?? null,
-      promptSha256: await sha256(JSON.stringify({ method: VALUATION_VERSION, prompts: [RESEARCH_SYSTEM, ASSUME_SYSTEM, COMPOSE_SYSTEM], budget: BUDGET, mode: mode.kind })) };
+      promptSha256: await sha256(JSON.stringify({ method: VALUATION_VERSION, prompts: [RESEARCH_SYSTEM, FINALIZE_RESEARCH_SYSTEM, ASSUME_SYSTEM, COMPOSE_SYSTEM], budget: BUDGET, mode: mode.kind })) };
   };
-  const research = await runLoop(env, step, state, { recipeId: "valuation-research", system: RESEARCH_SYSTEM, allow: mode.kind === "snapshot" ? ["read_financials", "list_snapshot_sources", "find_snapshot_passages", "read_snapshot_source", "read_guidance", "submit_dimension", "finish_research"] : RESEARCH_TOOLS, budget: BUDGET.research, settled: s => s.researchDone, tool: "valuation-research" }, (mode.kind === "snapshot" ? `Historical reconstruction at ${now}. Use only frozen original text and facts provided here, never later outcomes or outside knowledge. The list_snapshot_sources/find_snapshot_passages/read_snapshot_source tools replace live filing and web readers.\n\n` : "") + openingResearch(state), generation, fetcher, turns, runId);
+  let research = await runLoop(env, step, state, { recipeId: "valuation-research", system: RESEARCH_SYSTEM, allow: mode.kind === "snapshot" ? ["read_financials", "list_snapshot_sources", "find_snapshot_passages", "read_snapshot_source", "read_guidance", "submit_dimension", "finish_research"] : RESEARCH_TOOLS, budget: BUDGET.research, settled: s => s.researchDone, tool: "valuation-research" }, (mode.kind === "snapshot" ? `Historical reconstruction at ${now}. Use only frozen original text and facts provided here, never later outcomes or outside knowledge. The list_snapshot_sources/find_snapshot_passages/read_snapshot_source tools replace live filing and web readers.\n\n` : "") + openingResearch(state), generation, fetcher, turns, runId);
+  researchProgress.collection = research;
+  if (research === "budget") {
+    research = await runLoop(env, step, state, { recipeId: "valuation-research-finalize", system: FINALIZE_RESEARCH_SYSTEM, allow: ["read_valuation_evidence", "read_financials", "submit_dimension", "finish_research"], budget: BUDGET.researchFinalize, settled: s => s.researchDone, tool: "valuation-research" }, openingResearchFinalization(state), generation, fetcher, turns, runId);
+    researchProgress.finalization = research;
+  }
   if (research === "cancelled") return null;
   if (research !== "finished") return finish({ research, assumptions: "not_run", composition: "not_run" });
   const assume = await runLoop(env, step, state, { recipeId: "valuation-assume", system: ASSUME_SYSTEM, allow: mode.kind === "snapshot" ? [...ASSUMPTION_TOOLS, "submit_next_quarter_forecast"] : ASSUMPTION_TOOLS, budget: BUDGET.assume, settled: s => s.assumptionsDone, tool: "valuation" }, openingAssume(state, prior?.request ?? null) + (mode.kind === "snapshot" ? "\nBefore finish_assumptions, submit_next_quarter_forecast from the same frozen evidence (not a mechanical annual/4 allocation), or explicitly say why it is unavailable." : ""), generation, fetcher, turns, runId);
