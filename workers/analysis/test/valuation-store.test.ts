@@ -37,8 +37,8 @@ function publication(versionId: string, reportStatus: "ready" | "insufficient", 
 test("the migration widens the feature switch and inbox to the valuation and keeps existing rows", async () => {
   const db = database();
   await db.prepare("INSERT INTO business_feature_settings (ticker, feature, generate, display, updated_at) VALUES ('ACME', 'valuation', 1, 1, '2026-10-28T00:00:00Z')").bind().run();
-  assert.equal(await featureShown(db, {}, "ACME", "valuation"), true);
-  assert.equal(await featureShown(db, {}, "OTHER", "valuation"), false);
+  assert.equal(await featureShown(db, "ACME", "valuation"), true);
+  assert.equal(await featureShown(db, "OTHER", "valuation"), false);
   await recordFeatureFailure(db, "ACME", "valuation", "boom", "2026-10-28T01:00:00Z");
   const row = await db.prepare("SELECT generate, display FROM business_feature_settings WHERE ticker = 'ACME' AND feature = 'valuation'").bind().first<{ generate: number; display: number }>();
   assert.deepEqual({ ...row }, { generate: 0, display: 1 });

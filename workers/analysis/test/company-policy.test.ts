@@ -12,36 +12,39 @@ const fakeDb = (data: Array<{ ticker: string; enabled: number }>, features: Arra
   } }),
 }) as unknown as D1Database;
 
-test("the admin's feature switches override each feature's default list per company, removals included, and applying it twice changes nothing", async () => {
-  const base = { SEC_DATA_TICKERS: "ORCL,GOOGL,NET", SEC_AI_TICKERS: "ORCL,NET", SEC_AI_ENABLED: "true", BUSINESS_TREE_TICKERS: "AMZN" };
-  const env = await companyPolicyEnvironment({ ...base, DB: fakeDb([{ ticker: "AMZN", enabled: 1 }], [
-    { ticker: "GOOGL", feature: "reports", generate: 1 }, { ticker: "NET", feature: "reports", generate: 0 },
-    { ticker: "GOOGL", feature: "findings", generate: 1 }, { ticker: "ORCL", feature: "explainer", generate: 0 }, { ticker: "NET", feature: "tree", generate: 0 },
+test("the admin's rows are the company lists: a deployment list is ignored, removals hold, and applying it twice changes nothing", async () => {
+  // A list left on the deployed Worker (wrangler --keep-vars) must not switch anyone on.
+  const base = { SEC_DATA_TICKERS: "ZZZ", SEC_AI_TICKERS: "ZZZ", SEC_AI_ENABLED: "true", BUSINESS_TREE_TICKERS: "ZZZ" };
+  const env = await companyPolicyEnvironment({ ...base, DB: fakeDb([{ ticker: "AMZN", enabled: 1 }, { ticker: "ORCL", enabled: 1 }, { ticker: "NET", enabled: 0 }], [
+    { ticker: "GOOGL", feature: "reports", generate: 1 }, { ticker: "ORCL", feature: "reports", generate: 1 }, { ticker: "NET", feature: "reports", generate: 0 },
+    { ticker: "GOOGL", feature: "findings", generate: 1 }, { ticker: "ORCL", feature: "explainer", generate: 0 }, { ticker: "AMZN", feature: "tree", generate: 1 }, { ticker: "NET", feature: "tree", generate: null },
   ]) });
   assert.deepEqual(featureTickersFor(env, "reports"), ["GOOGL", "ORCL"]);
   assert.deepEqual(trackedTickersFor(env), ["GOOGL", "ORCL"]);
-  assert.deepEqual(featureTickersFor(env, "findings"), ["GOOGL", "NET", "ORCL"]);
-  assert.deepEqual(featureTickersFor(env, "explainer"), ["NET"]);
-  assert.deepEqual(featureTickersFor(env, "tree"), ["AMZN", "ORCL"]);
-  assert.deepEqual(env.SEC_DATA_TICKERS!.split(",").sort(), ["AMZN", "GOOGL", "NET", "ORCL"]);
+  assert.deepEqual(featureTickersFor(env, "findings"), ["GOOGL"]);
+  assert.deepEqual(featureTickersFor(env, "explainer"), []);
+  assert.deepEqual(featureTickersFor(env, "tree"), ["AMZN"]);
+  assert.deepEqual(env.SEC_DATA_TICKERS!.split(",").sort(), ["AMZN", "ORCL"]);
   const again = await companyPolicyEnvironment(env);
   assert.deepEqual(featureTickersFor(again, "reports"), ["GOOGL", "ORCL"]);
-  assert.deepEqual(featureTickersFor(again, "tree"), ["AMZN", "ORCL"]);
+  assert.deepEqual(again.SEC_DATA_TICKERS!.split(",").sort(), ["AMZN", "ORCL"]);
   await assert.rejects(companyPolicyEnvironment({ ...base, DB: fakeDb([], null) }), /no such table/);
   const unset = await companyPolicyEnvironment({ ...base, DB: fakeDb([], []) });
-  assert.deepEqual(trackedTickersFor(unset), ["NET", "ORCL"]);
-  assert.deepEqual(featureTickersFor(unset, "tree"), ["AMZN", "NET", "ORCL"]);
+  assert.deepEqual(trackedTickersFor(unset), []);
+  assert.deepEqual(featureTickersFor(unset, "tree"), []);
+  assert.equal(unset.SEC_DATA_TICKERS, "");
 });
 
 test("a feature's global switch empties its list without touching the others", async () => {
-  const base = { SEC_DATA_TICKERS: "ORCL,NET", SEC_AI_TICKERS: "ORCL,NET", SEC_AI_ENABLED: "true" };
-  const env = await companyPolicyEnvironment({ ...base, DB: fakeDb([], [{ ticker: "*", feature: "tree", generate: 0 }, { ticker: "*", feature: "findings", generate: 0 }]) });
+  const on = (ticker: string, feature: string) => ({ ticker, feature, generate: 1 });
+  const rows = ["ORCL", "NET"].flatMap(t => ["reports", "findings", "tree"].map(f => on(t, f)));
+  const env = await companyPolicyEnvironment({ SEC_AI_ENABLED: "true", DB: fakeDb([], [...rows, { ticker: "*", feature: "tree", generate: 0 }, { ticker: "*", feature: "findings", generate: 0 }]) });
   assert.deepEqual(featureTickersFor(env, "tree"), []);
   assert.deepEqual(featureTickersFor(env, "findings"), []);
   assert.equal(featureEnabled(env, "findings"), false);
   assert.deepEqual(featureTickersFor(env, "reports"), ["NET", "ORCL"]);
   assert.equal(env.BUSINESS_TREE_ENABLED, "false");
-  const paused = await companyPolicyEnvironment({ ...base, SEC_AI_ENABLED: "false", DB: fakeDb([], [{ ticker: "*", feature: "reports", generate: 1 }]) });
+  const paused = await companyPolicyEnvironment({ SEC_AI_ENABLED: "false", DB: fakeDb([], [...rows, { ticker: "*", feature: "reports", generate: 1 }]) });
   assert.deepEqual(featureTickersFor(paused, "reports"), ["NET", "ORCL"]);
   assert.deepEqual(featureTickersFor(paused, "findings"), []);
 });

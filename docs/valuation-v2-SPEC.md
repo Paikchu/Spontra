@@ -56,7 +56,7 @@ The calculator now rejects a `buildCapex` path whose last year is still positive
 
 ### 6. Reassessment on a method change
 
-A version bump (`VALUATION_VERSION`, `CALCULATOR_VERSION`, `VALUATION_INPUT_VERSION`) changes every switched-on company's fingerprint at once. `workers/analysis/src/valuation/reassess.ts` holds such a run back when the published report was written under an older method on the same financial period and the company is not in `VALUATION_REASSESS_TICKERS` (wrangler var; `*` for all, unset for none). New material (a later period), a listed company, or a manual admin run goes ahead. The pipeline task logs `skipped: "method change held back"` with the versions.
+A version bump (`VALUATION_VERSION`, `CALCULATOR_VERSION`, `VALUATION_INPUT_VERSION`) changes every switched-on company's fingerprint at once. `workers/analysis/src/valuation/reassess.ts` holds such a run back when the published report was written under an older method on the same financial period and the company is not marked to reassess (`valuation_company_inputs.reassess`, the admin's 估值输入 "方法更新时自动重估"; migration 0043 marked ORCL, the former `VALUATION_REASSESS_TICKERS`). New material (a later period), a marked company, or a manual admin run goes ahead. The pipeline task logs `skipped: "method change held back"` with the versions.
 
 ### Data correction
 
@@ -94,7 +94,7 @@ Contract additions are optional and the reader (`read.ts`) still parses v1–v3 
 
 ### Reassessment
 
-Both `VALUATION_VERSION` (`valuation.v5`, the prompts and tools changed) and `CALCULATOR_VERSION` (`valuation.calc.v4`) move. The deploy's `task.version_changed` fan-out reaches every switched-on company; `methodChangeHeldBack` holds every company with a report on unchanged material except those in `VALUATION_REASSESS_TICKERS` (`ORCL`). One ORCL run: the version event and any fingerprint trigger inside the five-minute debounce collapse into the same `pipeline_due` row; while the Workflow instance runs, later triggers return "later" (`driveWorkflow`), and once it has published, the stored fingerprint equals the current one.
+Both `VALUATION_VERSION` (`valuation.v5`, the prompts and tools changed) and `CALCULATOR_VERSION` (`valuation.calc.v4`) move. The deploy's `task.version_changed` fan-out reaches every switched-on company; `methodChangeHeldBack` holds every company with a report on unchanged material except those marked to reassess (`ORCL`). One ORCL run: the version event and any fingerprint trigger inside the five-minute debounce collapse into the same `pipeline_due` row; while the Workflow instance runs, later triggers return "later" (`driveWorkflow`), and once it has published, the stored fingerprint equals the current one.
 
 ### Frontend (business site, this repository)
 

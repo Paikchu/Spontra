@@ -13,7 +13,7 @@ import { DatabaseSync } from "node:sqlite";
 import { managementTargetSet, MANAGEMENT_TARGETS_MAX_AGE_DAYS, parsePeers, parseTargets, readValuationCompanyInputs, writeValuationCompanyInputs } from "../src/valuation/curated.ts";
 import inputs from "./fixtures/valuation-inputs.json" with { type: "json" };
 import { buildPeerFundamentals } from "../src/valuation/input.ts";
-import { methodChangeHeldBack, reassessTickers } from "../src/valuation/reassess.ts";
+import { methodChangeHeldBack } from "../src/valuation/reassess.ts";
 import { gateGaps } from "../src/valuation/tools.ts";
 
 const close = (actual: number, expected: number, digits = 2) => assert.equal(Number(actual.toFixed(digits)) + 0, Number(expected.toFixed(digits)) + 0);
@@ -107,17 +107,20 @@ test("valuation inputs: the admin's peers and targets validate on write; the mig
     assert.deepEqual(stored.peers, row.peers ?? null, ticker);
     assert.deepEqual(stored.targets, row.targets ? parseTargets(row.targets) : null, ticker);
   }
-  assert.deepEqual(await readValuationCompanyInputs(db, "ZZZZ"), { ticker: "ZZZZ", peers: null, targets: null, updatedAt: null });
+  assert.deepEqual(await readValuationCompanyInputs(db, "ZZZZ"), { ticker: "ZZZZ", peers: null, targets: null, reassess: false, updatedAt: null });
+  assert.equal((await readValuationCompanyInputs(db, "ORCL")).reassess, true, "the former VALUATION_REASSESS_TICKERS");
   const targets = parseTargets(inputs.ORCL.targets);
   assert.throws(() => parsePeers("AAA", ["AAA", "BBB"]), /自己/);
   assert.throws(() => parsePeers("AAA", []), /可比公司/);
   assert.throws(() => parseTargets({ ...targets, targets: [{ ...targets.targets[0]!, sourceIds: ["nope"] }] }), /不存在的来源/);
   assert.throws(() => parseTargets({ ...targets, fiscalYearEndMonth: 5 }), /管理层目标/);
-  const saved = await writeValuationCompanyInputs(db, "NEWCO", { peers: ["AAA", "BBB", "AAA"], targets: null }, "2026-11-02T00:00:00.000Z");
+  const saved = await writeValuationCompanyInputs(db, "NEWCO", { peers: ["AAA", "BBB", "AAA"], targets: null, reassess: false }, "2026-11-02T00:00:00.000Z");
   assert.deepEqual(saved.peers, ["AAA", "BBB"]);
   assert.deepEqual((await readValuationCompanyInputs(db, "NEWCO")).peers, ["AAA", "BBB"]);
-  await assert.rejects(writeValuationCompanyInputs(db, "NEWCO", { peers: ["NEWCO"], targets: null }, "2026-11-02T00:00:00.000Z"), /自己/);
-  await writeValuationCompanyInputs(db, "NEWCO", { peers: null, targets: null }, "2026-11-02T00:00:00.000Z");
+  await assert.rejects(writeValuationCompanyInputs(db, "NEWCO", { peers: ["NEWCO"], targets: null, reassess: false }, "2026-11-02T00:00:00.000Z"), /自己/);
+  await writeValuationCompanyInputs(db, "NEWCO", { peers: null, targets: null, reassess: true }, "2026-11-02T00:00:00.000Z");
+  assert.deepEqual(await readValuationCompanyInputs(db, "NEWCO"), { ticker: "NEWCO", peers: null, targets: null, reassess: true, updatedAt: "2026-11-02T00:00:00.000Z" });
+  await writeValuationCompanyInputs(db, "NEWCO", { peers: null, targets: null, reassess: false }, "2026-11-02T00:00:00.000Z");
   assert.equal((await readValuationCompanyInputs(db, "NEWCO")).updatedAt, null);
 });
 
@@ -264,19 +267,14 @@ test("equity lines: nonredeemable (or issuer-option) convertible preferred is pe
 
 /* ---- reassessment on a method change ---- */
 
-test("method change held back: an older report on unchanged material waits unless the company is listed; new material, a listed company, '*' or no report run", () => {
+test("method change held back: an older report on unchanged material waits unless the company is marked; new material, a marked company or no report run", () => {
   const published = { methodVersion: "valuation.v3", calculatorVersion: "valuation.calc.v1", financialPeriodEnd: "2026-08-31" };
   const current = { methodVersion: "valuation.v4", calculatorVersion: "valuation.calc.v2", financialPeriodEnd: "2026-08-31" };
-  assert.deepEqual(reassessTickers({ VALUATION_REASSESS_TICKERS: "ORCL, msft" }), ["MSFT", "ORCL"]);
-  assert.equal(reassessTickers({ VALUATION_REASSESS_TICKERS: "*" }), "*");
-  assert.deepEqual(reassessTickers({}), []);
-  assert.deepEqual(reassessTickers({ VALUATION_REASSESS_TICKERS: "not a ticker!" }), []);
-  const held = methodChangeHeldBack({ VALUATION_REASSESS_TICKERS: "ORCL" }, published, current, "GOOGL");
+  const held = methodChangeHeldBack(false, published, current, "GOOGL");
   assert.ok(held && held.reason.includes("valuation.v3/valuation.calc.v1 → valuation.v4/valuation.calc.v2") && held.reason.includes("GOOGL"));
-  assert.equal(methodChangeHeldBack({ VALUATION_REASSESS_TICKERS: "ORCL" }, published, current, "ORCL"), null);
-  assert.equal(methodChangeHeldBack({ VALUATION_REASSESS_TICKERS: "*" }, published, current, "GOOGL"), null);
-  assert.equal(methodChangeHeldBack({}, published, { ...current, financialPeriodEnd: "2026-11-30" }, "GOOGL"), null, "a new period runs");
-  assert.equal(methodChangeHeldBack({}, null, current, "GOOGL"), null, "a first run is not a reassessment");
-  assert.equal(methodChangeHeldBack({}, { ...published, methodVersion: "valuation.v4", calculatorVersion: "valuation.calc.v2" }, current, "GOOGL"), null, "same method: the fingerprint decides");
-  assert.ok(methodChangeHeldBack({}, published, current, "GOOGL"), "unset list holds everyone");
+  assert.equal(methodChangeHeldBack(true, published, current, "ORCL"), null);
+  assert.equal(methodChangeHeldBack(false, published, { ...current, financialPeriodEnd: "2026-11-30" }, "GOOGL"), null, "a new period runs");
+  assert.equal(methodChangeHeldBack(false, null, current, "GOOGL"), null, "a first run is not a reassessment");
+  assert.equal(methodChangeHeldBack(false, { ...published, methodVersion: "valuation.v4", calculatorVersion: "valuation.calc.v2" }, current, "GOOGL"), null, "same method: the fingerprint decides");
+  assert.ok(methodChangeHeldBack(false, published, current, "GOOGL"), "an unmarked company is held");
 });

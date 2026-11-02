@@ -98,7 +98,7 @@ export class MapReads extends WorkerEntrypoint<AnalysisEnv> {
   homeDigest(locale?: string | null) {
     if (!this.env.DB) return Promise.reject(new Error("The analysis store is not available on this deployment."));
     const lang = isLocale(locale) && locale !== "en" ? locale : null;
-    return readHomeDigest(this.env.DB, this.env, lang);
+    return readHomeDigest(this.env.DB, lang);
   }
 }
 

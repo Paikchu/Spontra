@@ -24,8 +24,8 @@ function fixture(protection: "policy" | "task", failedTable?: string) {
         async all() {
           queries.push(sql);
           if (failedTable && sql.includes(failedTable)) throw failure;
-          if (sql.includes("business_feature_settings")) return { results: protection === "policy"
-            ? [{ ticker: "ADHOC", feature: "reports", generate: 1 }] : [] };
+          if (sql.includes("business_feature_settings")) return { results: [{ ticker: "ORCL", feature: "reports", generate: 1 }, ...protection === "policy"
+            ? [{ ticker: "ADHOC", feature: "reports", generate: 1 }] : []] };
           if (sql.includes("financial_maintenance_tasks")) return { results: protection === "task"
             ? [{ ticker: "ADHOC" }] : [] };
           if (sql.includes("financial_company_settings") || sql.includes("ai_tool_settings") || sql.includes("web_search_cache")) return { results: [] };
@@ -44,7 +44,7 @@ function fixture(protection: "policy" | "task", failedTable?: string) {
     },
     async delete(keys: string[]) { deleted.push(...keys); },
   } as unknown as R2Bucket;
-  const env = { DB: db, SEC_FILINGS: bucket, SEC_AI_TICKERS: "ORCL", SEC_AI_ENABLED: "true" } as AnalysisEnv;
+  const env = { DB: db, SEC_FILINGS: bucket, SEC_AI_ENABLED: "true" } as AnalysisEnv;
   return { env, failure, deleted, listed, queries };
 }
 

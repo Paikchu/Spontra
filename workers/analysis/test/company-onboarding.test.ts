@@ -9,12 +9,14 @@ import type { BusinessFlowQuarter } from "../../../shared/analysis-contract/busi
 import { FinancialMaintenanceStore } from "../src/admin/financial-maintenance-store.ts";
 import { SUBSCRIPTIONS, validateRegistry } from "../src/pipeline/registry.ts";
 import type { AnalysisEnv } from "../src/operations.ts";
+import { switchOn, UNSEEDED } from "./fixtures/company-settings.ts";
 
 /** D1 over node:sqlite with every migration applied. */
 function database(): D1Database {
   const sqlite = new DatabaseSync(":memory:");
   const dir = new URL("../migrations/", import.meta.url);
   for (const file of readdirSync(dir).filter(f => f.endsWith(".sql")).sort()) sqlite.exec(readFileSync(new URL(file, dir), "utf8").replace(/--> statement-breakpoint/g, ""));
+  sqlite.exec(UNSEEDED);
   const statement = (sql: string, values: unknown[] = []) => ({
     bind: (...next: unknown[]) => statement(sql, next),
     run: async () => { sqlite.prepare(sql).run(...values as never[]); return { success: true }; },
@@ -42,7 +44,8 @@ const outbox = async (db: D1Database) => (await db.prepare("SELECT type, ticker,
 
 test("a data ticker discovery has never seen is announced as a new company with its first collection, then only its new filings", async () => {
   const db = database();
-  const env = { DB: db, SEC_USER_AGENT: "test agent", SEC_DATA_TICKERS: "NBIS" } as unknown as AnalysisEnv;
+  await switchOn(db, ["NBIS"]);
+  const env = { DB: db, SEC_USER_AGENT: "test agent" } as unknown as AnalysisEnv;
   const first = await runSecDiscovery(env, new Date("2026-10-17T10:00:00.000Z"), fetcher({ "company_tickers_exchange.json": DIRECTORY, "CIK0002056322.json": submissions(FILINGS) }));
   assert.deepEqual({ baseline: first.baseline, bootstrapped: first.bootstrapped, discovered: first.discovered }, { baseline: ["NBIS"], bootstrapped: ["NBIS"], discovered: [] });
   assert.deepEqual(await outbox(db), [
@@ -60,7 +63,8 @@ test("a data ticker discovery has never seen is announced as a new company with 
 
 test("a ticker the issuer directory does not list is recorded where the admin's company list looks, and nothing is emitted", async () => {
   const db = database();
-  const env = { DB: db, SEC_USER_AGENT: "test agent", SEC_DATA_TICKERS: "NBSI" } as unknown as AnalysisEnv;
+  await switchOn(db, ["NBSI"]);
+  const env = { DB: db, SEC_USER_AGENT: "test agent" } as unknown as AnalysisEnv;
   const result = await runSecDiscovery(env, new Date("2026-10-17T10:00:00.000Z"), fetcher({ "company_tickers_exchange.json": DIRECTORY }));
   assert.deepEqual(result.unknown, ["NBSI"]);
   assert.deepEqual(await outbox(db), []);
@@ -90,7 +94,8 @@ test("a maintenance task holds up collection only for its own issuer", async () 
 
 test("a data-only issuer's new earnings release reaches collection from discovery alone, with no reports index", async () => {
   const db = database();
-  const env = { DB: db, SEC_USER_AGENT: "test agent", SEC_DATA_TICKERS: "GOOGL" } as unknown as AnalysisEnv;
+  await switchOn(db, ["GOOGL"]);
+  const env = { DB: db, SEC_USER_AGENT: "test agent" } as unknown as AnalysisEnv;
   const recent = (rows: Array<[string, string, string, string, string, string]>) => ({ filings: { recent: {
     accessionNumber: rows.map(r => r[0]), form: rows.map(r => r[1]), items: rows.map(r => r[2]), filingDate: rows.map(r => r[3]), reportDate: rows.map(r => r[4]), primaryDocument: rows.map(r => r[5]),
   } } });

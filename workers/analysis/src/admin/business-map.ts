@@ -224,10 +224,10 @@ export async function handleBusinessMapAdminRequest(request: Request, env: Analy
       if (!ticker) return json({error:'公司代码无效。'},400);
       const fiscalYearEndMonth = await readFiscalFocus(db, ticker).then(map => map.issuers.get(ticker)?.fiscalYearEndMonth ?? null).catch(() => null);
       if (request.method === 'GET') return json({...await readValuationCompanyInputs(db, ticker), fiscalYearEndMonth} satisfies ValuationCompanyInputs);
-      const body = await request.json().catch(() => null) as {peers?:unknown;targets?:unknown}|null;
-      if (!body || !('peers' in body) || !('targets' in body)) return json({error:'操作参数无效。'},400);
+      const body = await request.json().catch(() => null) as {peers?:unknown;targets?:unknown;reassess?:unknown}|null;
+      if (!body || !('peers' in body) || !('targets' in body) || typeof body.reassess !== 'boolean') return json({error:'操作参数无效。'},400);
       let saved: Omit<ValuationCompanyInputs,'fiscalYearEndMonth'>;
-      try { saved = await writeValuationCompanyInputs(db, ticker, {peers: body.peers, targets: body.targets}, new Date().toISOString()); }
+      try { saved = await writeValuationCompanyInputs(db, ticker, {peers: body.peers, targets: body.targets, reassess: body.reassess}, new Date().toISOString()); }
       catch (error) { return json({error: error instanceof Error ? error.message : '估值输入无效。'},400); }
       await emit(env,[{type:'feature.settings',ticker,cik:await knownCik(db,ticker),detail:{feature:'valuation'}}]);
       return json({...saved, fiscalYearEndMonth} satisfies ValuationCompanyInputs);

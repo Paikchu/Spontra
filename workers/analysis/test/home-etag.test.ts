@@ -4,21 +4,21 @@ import type { HomeDigest } from "../../../shared/analysis-contract/home.ts";
 import { handleMapRead } from "../src/read-api/router.ts";
 import { dataResponse } from "../src/read-api/http.ts";
 
-// Empty stored publications; only read operations are available to the route.
-function emptyDatabase(): D1Database {
-  const statement = {
-    bind: () => statement,
-    all: async () => ({ results: [] }),
-  };
+// Empty stored publications and the given admin whitelist; only read operations are available to the route.
+function emptyDatabase(whitelist: string[]): D1Database {
   return { prepare: (sql: string) => {
     assert.match(sql.trim(), /^SELECT\b/i);
+    const statement = {
+      bind: () => statement,
+      all: async () => ({ results: sql.includes("FROM financial_company_settings") ? whitelist.map(ticker => ({ ticker, enabled: 1 })) : [] }),
+    };
     return statement;
   } } as unknown as D1Database;
 }
 
 test("home revalidates unchanged content across generation times and invalidates changed content", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: new Date("2026-11-02T00:00:00Z") });
-  const env = { DB: emptyDatabase(), SEC_DATA_TICKERS: "ACME" };
+  const env = { DB: emptyDatabase(["ACME"]) };
   const url = "https://analysis.internal/api/v1/home";
   const first = await handleMapRead(new Request(url), env);
   assert.equal(first.status, 200);
@@ -41,7 +41,7 @@ test("home revalidates unchanged content across generation times and invalidates
   assert.equal(unchanged.headers.get("cache-control"), first.headers.get("cache-control"));
   assert.equal(await unchanged.text(), "");
 
-  const changed = await handleMapRead(conditional(), { ...env, SEC_DATA_TICKERS: "ACME,WAIT" });
+  const changed = await handleMapRead(conditional(), { DB: emptyDatabase(["ACME", "WAIT"]) });
   assert.equal(changed.status, 200);
   assert.notEqual(changed.headers.get("etag"), etag);
   const changedBody = await changed.json() as HomeDigest;

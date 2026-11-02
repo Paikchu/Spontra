@@ -18,6 +18,7 @@ import { researchSearchConfigured } from "../web-search/research-search.ts";
 import { runFingerprint, VALUATION_VERSION } from "../valuation/workflow.ts";
 import { buildValuationInput } from "../valuation/input.ts";
 import { methodChangeHeldBack } from "../valuation/reassess.ts";
+import { readValuationCompanyInputs } from "../valuation/curated.ts";
 import { ValuationStore } from "../valuation/store.ts";
 
 const MINUTE = 60_000;
@@ -128,7 +129,7 @@ export const AI_TASKS = {
   /**
    * The valuation assessment, rewritten when the figures, filings, guidance or calls it reads from change
    * (docs/valuation-assessment-design.md). A method change alone (prompt, calculator or input version) reassesses only
-   * the companies named in VALUATION_REASSESS_TICKERS (valuation/reassess.ts); the others keep their report until new
+   * the companies the admin marked to reassess (valuation/reassess.ts); the others keep their report until new
    * material arrives or an admin starts a run.
    */
   valuation: {
@@ -140,7 +141,8 @@ export const AI_TASKS = {
       if (input) {
         const current = await store.current(ticker);
         const published = current?.version_id ? await store.version(ticker, current.version_id) : null;
-        const held = methodChangeHeldBack(env, published, { methodVersion: VALUATION_VERSION, financialPeriodEnd: input.financialPeriodEnd }, ticker);
+        const reassess = (await readValuationCompanyInputs(env.DB!, ticker)).reassess;
+        const held = methodChangeHeldBack(reassess, published, { methodVersion: VALUATION_VERSION, financialPeriodEnd: input.financialPeriodEnd }, ticker);
         if (held) return { status: "done", detail: { skipped: "method change held back", ...held } };
       }
       return runWhenChanged(env, "valuation", "valuation", ticker, context, env.VALUATION_WORKFLOW,

@@ -83,10 +83,10 @@ function withoutSummary(filing: PublicSecFiling): PublicSecFiling {
  * The companies that have published findings, for the home page: whichever companies the admin's AI switch has had on,
  * read from what is stored rather than from a list kept in the page.
  */
-async function findingsIndex(request: Request, database: D1Database, env: FeatureDefaultsEnv): Promise<Response> {
+async function findingsIndex(request: Request, database: D1Database): Promise<Response> {
   const [rows, shown] = await Promise.all([
     database.prepare("SELECT substr(cache_key, 13) ticker FROM sec_cache WHERE cache_key LIKE 'findings:v2:%' ORDER BY fetched_at DESC LIMIT 40").all<{ ticker: string }>(),
-    shownFilter(database, env, "findings"),
+    shownFilter(database, "findings"),
   ]);
   // A company whose findings are switched off is left off the home page as well as its own.
   const tickers = rows.results.map(r => r.ticker).filter(t => TICKER_PATTERN.test(t) && shown(t));
@@ -115,8 +115,8 @@ export async function handleMapRead(request: Request, env: AnalysisReadEnv): Pro
   }
 
   try {
-    if (route.kind === "findings-index") return await findingsIndex(request, env.DB, env);
-    if (route.kind === "home") return await home(request, env.DB, env);
+    if (route.kind === "findings-index") return await findingsIndex(request, env.DB);
+    if (route.kind === "home") return await home(request, env.DB);
     if (route.kind === "ticker") return await primary(request, env.DB, route.ticker);
     return await handleRoute(request, env.DB, env, route);
   } catch (error) {
@@ -137,13 +137,13 @@ async function primary(request: Request, database: D1Database, ticker: string): 
 }
 
 /** One aggregated read for the public homepage. `?locale=` matches the other read routes. */
-async function home(request: Request, database: D1Database, env: HomeDigestEnv): Promise<Response> {
+async function home(request: Request, database: D1Database): Promise<Response> {
   const url = new URL(request.url);
   if ([...url.searchParams.keys()].some(key => key !== "locale")) return errorResponse("ROUTE_NOT_FOUND", "No such resource.");
   const requested = url.searchParams.get("locale");
   if (requested != null && !isLocale(requested)) return errorResponse("ROUTE_NOT_FOUND", "No such resource.");
   const locale = isLocale(requested) && requested !== "en" ? requested : null;
-  const digest = await readHomeDigest(database, env, locale);
+  const digest = await readHomeDigest(database, locale);
   // Generation time changes on every read, even when the homepage content is unchanged.
   const validatorPayload = omit(digest, "generatedAt");
   return dataResponse(request, digest, "cacheable", validatorPayload);
@@ -151,7 +151,7 @@ async function home(request: Request, database: D1Database, env: HomeDigestEnv):
 
 async function handleRoute(request: Request, database: D1Database, env: FeatureDefaultsEnv, route: Exclude<RouteMatch, { kind: "findings-index" } | { kind: "home" } | { kind: "ticker" }>): Promise<Response> {
   // The admin's switch for one feature of this company: off hides what the feature wrote (docs/whitelist-feature-switches-design.md).
-  const hidden = async (feature: Feature, ticker = route.ticker) => !await featureShown(database, env, ticker.trim().toUpperCase(), feature);
+  const hidden = async (feature: Feature, ticker = route.ticker) => !await featureShown(database, ticker.trim().toUpperCase(), feature);
   const issuerCalendar = async (ticker: string) => (await readFiscalFocus(database, ticker)).issuers.get(ticker.trim().toUpperCase()) ?? { fiscalYearEndMonth: null, name: null, annualForm: null };
   const url = new URL(request.url);
   // `?locale=zh-CN` serves a resource with its translated prose applied; the structure, figures and ids are the English

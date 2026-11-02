@@ -9,7 +9,7 @@ import type { RevenueHistory } from "../../../../shared/analysis-contract/revenu
 import { checkCompleteFlow, newestPair } from "../../../../shared/analysis-runtime/financial-data/completeness.ts";
 import { publicFlowSchema } from "../../../../shared/analysis-runtime/financial-data/schema.ts";
 import { readHistory } from "../../../../shared/analysis-runtime/financial-data/history.ts";
-import { canonicalTicker, dataTickers as listedDataTickers, TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
+import { canonicalTicker, TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 import { readFindingsPublication } from "../../../../shared/analysis-runtime/findings.ts";
 import type { Locale } from "../../../../shared/analysis-runtime/locale.ts";
 import { calendarLabel } from "../../../../shared/analysis-runtime/fiscal-label.ts";
@@ -30,7 +30,7 @@ export const HOME_CATALOG_NOTES: Record<string, HomeCatalogNote> = {};
 const MAX_COMPANIES = 40;
 const NAME_STOP = new Set(["INC", "INCORPORATED", "CORPORATION", "CORP", "LTD", "LIMITED", "PLC", "GROUP", "COMPANY", "HOLDINGS", "THE", "AND", "CLASS", "COMMON", "STOCK", "SHARES", "NV", "SA", "AG", "CO"]);
 
-export type HomeDigestEnv = FeatureDefaultsEnv & { SEC_DATA_TICKERS?: string };
+export type HomeDigestEnv = FeatureDefaultsEnv;
 
 type Point = { periodEnd: string; value: number; currency: string; filedAt: string | null };
 
@@ -162,24 +162,16 @@ function projectFindings(publication: FindingsPublication | null): { counts: Hom
   return { counts, top };
 }
 
-function dataTickers(env: HomeDigestEnv, rows: Array<{ ticker: string; enabled: number }>): Set<string> {
-  let enabled: Set<string>;
-  try { enabled = listedDataTickers(env); }
-  catch { enabled = new Set(); }
-  for (const row of rows) {
-    const ticker = canonicalTicker(row.ticker);
-    if (!TICKER_PATTERN.test(ticker)) continue;
-    if (row.enabled) enabled.add(ticker);
-    else enabled.delete(ticker);
-  }
-  return enabled;
+/** The whitelist as the admin keeps it: the companies switched on, and nothing a deployment lists. */
+function dataTickers(rows: Array<{ ticker: string; enabled: number }>): Set<string> {
+  return new Set(rows.filter(row => row.enabled).map(row => canonicalTicker(row.ticker)).filter(ticker => TICKER_PATTERN.test(ticker)));
 }
 
 /**
  * Covered companies for the public homepage, from publications already stored.
  * Read-only: no model call, no SEC fetch, no write.
  */
-export async function readHomeDigest(db: D1Database, env: HomeDigestEnv, locale: Locale | null, now = new Date(), notes: Record<string, HomeCatalogNote> = HOME_CATALOG_NOTES): Promise<HomeDigest> {
+export async function readHomeDigest(db: D1Database, locale: Locale | null, now = new Date(), notes: Record<string, HomeCatalogNote> = HOME_CATALOG_NOTES): Promise<HomeDigest> {
   const [publications, histories, findings, issuers, settings, translations, findingsShown, focus, reportFigures, named] = await Promise.all([
     db.prepare(`SELECT v.ticker ticker, v.cik cik, v.payload_json payload, v.published_at publishedAt
       FROM financial_complete_current c JOIN financial_complete_versions v ON v.version_id = c.version_id`).all<{ ticker: string; cik: string; payload: string; publishedAt: string }>(),
@@ -188,7 +180,7 @@ export async function readHomeDigest(db: D1Database, env: HomeDigestEnv, locale:
     db.prepare(`SELECT substr(cache_key, 24) ticker, payload FROM sec_cache WHERE cache_key >= 'admin:financial-issuer:' AND cache_key < 'admin:financial-issuer;'`).all<{ ticker: string; payload: string }>(),
     db.prepare(`SELECT ticker, enabled FROM financial_company_settings`).all<{ ticker: string; enabled: number }>().catch(() => ({ results: [] as Array<{ ticker: string; enabled: number }> })),
     locale ? db.prepare(`SELECT cache_key, payload FROM sec_cache WHERE cache_key >= ? AND cache_key < ?`).bind(`i18n:v1:${locale}:findings:`, `i18n:v1:${locale}:findings;`).all<{ cache_key: string; payload: string }>() : Promise.resolve({ results: [] as Array<{ cache_key: string; payload: string }> }),
-    shownFilter(db, env, "findings"),
+    shownFilter(db, "findings"),
     readFiscalFocus(db),
     // The older quarters assembled behind each publication, only the figures an operating margin needs.
     db.prepare(`SELECT substr(c.cache_key, 20) ticker, json_extract(q.value, '$.periodEnd') periodEnd, json_extract(q.value, '$.currency') currency,
@@ -215,7 +207,7 @@ export async function readHomeDigest(db: D1Database, env: HomeDigestEnv, locale:
     if (Object.keys(table).length) translationByTicker.set(canonicalTicker(row.cache_key.slice(translationPrefix.length)), table);
   }
 
-  const enabled = dataTickers(env, settings.results);
+  const enabled = dataTickers(settings.results);
   const seen = new Set<string>();
   let damaged = false;
   let lastUpdatedAt: string | null = null;
