@@ -11,7 +11,7 @@ import type { ItemAnalysis } from "@/shared/analysis-contract/item-analysis";
 import type { PeersPublication } from "@/shared/analysis-contract/peers";
 import type { EventsPublication } from "@/shared/analysis-contract/events";
 import type { InsiderTransactionsPage, InsidersPublication } from "@/shared/analysis-contract/insiders";
-import type { ValuationEvidence, ValuationPublication, ValuationResponse } from "@/shared/analysis-contract/valuation";
+import type { ValuationPublication, ValuationResponse } from "@/shared/analysis-contract/valuation";
 import { getLocale } from "@/packages/web/src/i18n";
 import { rememberIssuer } from "@/shared/analysis-runtime/fiscal-label";
 import { companyPath as pathForLocale } from "./company-opening";
@@ -110,13 +110,6 @@ export async function fetchValuationVersion(ticker: string, versionId: string, s
   if (!response.ok) return null;
   const body = await response.json() as { report?: ValuationPublication | null };
   return body.report ?? null;
-}
-/** The snapshot of one source a version cites, as it was read when the report was written. */
-export async function fetchValuationEvidence(ticker: string, versionId: string, evidenceId: string, signal: AbortSignal): Promise<ValuationEvidence | null> {
-  const response = await fetch(companyPath(ticker, `/valuation/versions/${encodeURIComponent(versionId)}/evidence/${encodeURIComponent(evidenceId)}`), { signal });
-  if (!response.ok) return null;
-  const body = await response.json() as { evidence?: ValuationEvidence | null };
-  return body.evidence ?? null;
 }
 
 /** One filing rail row's analysis, or null when the row has none and the filing digest stands for it. */
