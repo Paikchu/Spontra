@@ -28,8 +28,15 @@ export const EVENT_CLASS_LABEL = labels(EVENT_CLASS_LABEL_EN,
 /** Share-count formatting: 1,234,567 reads as 1.23M shares (123万股) in the rail and the lens. */
 export const shares = (v: number): string => compactShares(v, getLocale());
 
-/** US dollars compact: $12.3M, $1.2B (1230万美元, 12亿美元). */
-export const dollars = (v: number): string => compactMoney(v, "USD", getLocale());
+/** US dollars compact: $12.3M, $1.2B (1230万美元, 12亿美元); an unknown amount (a Form 4 line without a price) reads "—". */
+export const dollars = (v: number | null): string => v == null ? "—" : compactMoney(v, "USD", getLocale());
+
+/** A total of amounts some of which may be unknown: exact when all are known, "≥" the known part when some are, "—" when none are. */
+export function partialDollars(values: readonly (number | null)[]): string {
+  const known = values.filter((v): v is number => v != null);
+  const total = dollars(known.reduce((s, v) => s + v, 0));
+  return known.length === values.length ? total : known.length ? `≥ ${total}` : "—";
+}
 
 /** "2026.08 report" / "2026.08 财报": a quarter's report by its period end. */
 export const periodReport = (periodEnd: string) => m.report(shortPeriod(periodEnd));
@@ -44,8 +51,8 @@ export function insiderTitleParts(e: CompanyEvent): { name: string; content: str
   if (!t) return null;
   const name = t.ownerName.replace(/\s+/g, " ").trim();
   const direction = isOpenMarketInsiderTrade(e);
-  if (direction === "sell" && t.sold) return { name, content: m.sale(shares(t.sold.shares)), amount: t.sold.proceeds > 0 ? insiderCompactMoney(t.sold.proceeds, getLocale()) : null };
-  if (direction === "buy" && t.bought) return { name, content: m.purchase(shares(t.bought.shares)), amount: t.bought.cost > 0 ? insiderCompactMoney(t.bought.cost, getLocale()) : null };
+  if (direction === "sell" && t.sold) return { name, content: m.sale(shares(t.sold.shares)), amount: t.sold.proceeds != null && t.sold.proceeds > 0 ? insiderCompactMoney(t.sold.proceeds, getLocale()) : null };
+  if (direction === "buy" && t.bought) return { name, content: m.purchase(shares(t.bought.shares)), amount: t.bought.cost != null && t.bought.cost > 0 ? insiderCompactMoney(t.bought.cost, getLocale()) : null };
   return { name, content: t.exercised ? m.exercise(shares(t.exercised)) : m.holdingChange, amount: null };
 }
 

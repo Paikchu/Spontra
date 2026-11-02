@@ -133,13 +133,18 @@ export function isOpenMarketInsiderTrade(event: CompanyEvent): "buy" | "sell" | 
   if (event.class !== "insider" || !event.insider) return null;
   const { sold, bought } = event.insider;
   if (sold && sold.shares > 0 && bought && bought.shares > 0) {
-    return (sold.proceeds || bought.cost ? sold.proceeds >= bought.cost : sold.shares >= bought.shares) ? "sell" : "buy";
+    const compareMoney = sold.proceeds != null && bought.cost != null && (sold.proceeds > 0 || bought.cost > 0);
+    return (compareMoney ? sold.proceeds! >= bought.cost! : sold.shares >= bought.shares) ? "sell" : "buy";
   }
   return sold && sold.shares > 0 ? "sell" : bought && bought.shares > 0 ? "buy" : null;
 }
 
-export function insiderTradeValueUsd(event: CompanyEvent): number {
-  return isOpenMarketInsiderTrade(event) ? (event.insider?.sold?.proceeds ?? 0) + (event.insider?.bought?.cost ?? 0) : 0;
+/** Gross trade value; null when any reported sale or purchase has unknown total money. */
+export function insiderTradeValueUsd(event: CompanyEvent): number | null {
+  if (!isOpenMarketInsiderTrade(event)) return 0;
+  const { sold, bought } = event.insider!;
+  if ((sold && sold.proceeds == null) || (bought && bought.cost == null)) return null;
+  return (sold ? sold.proceeds! : 0) + (bought ? bought.cost! : 0);
 }
 
 export function isKeyInsiderRole(title: string | null | undefined): boolean {
@@ -148,7 +153,8 @@ export function isKeyInsiderRole(title: string | null | undefined): boolean {
   return !/\bvice[\s-]+president\b|\b(?:vp|svp|evp)\b/i.test(title) && /^\s*(?:co-)?president(?:\s*(?:and|&|\/)\s*(?:chief\s+\w+\s+officer|c[eo]o|director|officer|chairman|chairwoman|chairperson))?\s*$/i.test(title.replace(/\./g, ""));
 }
 
-export function insiderWindowValueUsd(event: CompanyEvent, events?: readonly CompanyEvent[], windowDays = INSIDER_VALUE_WINDOW_DAYS): number {
+/** Maximum gross trade value in a window containing this event; null if a contributing trade is unpriced. */
+export function insiderWindowValueUsd(event: CompanyEvent, events?: readonly CompanyEvent[], windowDays = INSIDER_VALUE_WINDOW_DAYS): number | null {
   if (isEsppTransaction(event) || isTaxWithholdingSale(event) || !isOpenMarketInsiderTrade(event)) return 0;
   if (!events?.length) return insiderTradeValueUsd(event);
   const seen = new Set<string>();
@@ -162,13 +168,14 @@ export function insiderWindowValueUsd(event: CompanyEvent, events?: readonly Com
     return sameOwner && !isEsppTransaction(other) && !isTaxWithholdingSale(other) && isOpenMarketInsiderTrade(other)
       && Math.abs(time - center) <= windowMs ? [{ time, value: insiderTradeValueUsd(other) }] : [];
   }).sort((a, b) => a.time - b.time);
+  if (trades.some(trade => trade.value == null)) return null;
   // Every maximal window can start at its earliest trade, or at the focal event.
   let maximum = 0, total = 0, right = 0;
   for (let left = 0; left < trades.length && trades[left].time <= center; left++) {
     const start = trades[left].time;
-    while (right < trades.length && trades[right].time <= start + windowMs) total += trades[right++].value;
+    while (right < trades.length && trades[right].time <= start + windowMs) total += trades[right++].value!;
     if (start + windowMs >= center) maximum = Math.max(maximum, total);
-    total -= trades[left].value;
+    total -= trades[left].value!;
   }
   return maximum;
 }
@@ -181,8 +188,11 @@ export const isOpenMarketBuy = (event: CompanyEvent) => {
 
 /** Deterministic importance; insider materiality uses the owner's full 30-day window. */
 export function eventImportance(event: CompanyEvent, events?: readonly CompanyEvent[]): EventImportance {
-  if (event.class === "insider") return isOpenMarketInsiderTrade(event) && !isEsppTransaction(event) && !isTaxWithholdingSale(event)
-    && (insiderWindowValueUsd(event, events) >= INSIDER_MATERIAL_VALUE_USD || isKeyInsiderRole(event.insider?.title)) ? "key" : "routine";
+  if (event.class === "insider") {
+    const value = insiderWindowValueUsd(event, events);
+    return isOpenMarketInsiderTrade(event) && !isEsppTransaction(event) && !isTaxWithholdingSale(event)
+      && ((value != null && value >= INSIDER_MATERIAL_VALUE_USD) || isKeyInsiderRole(event.insider?.title)) ? "key" : "routine";
+  }
   if (event.class === "earnings" || event.class === "guidance" || event.class === "executive" || event.class === "vote") return "key";
   const current = event.form.startsWith("8-K") || event.form.startsWith("6-K");
   if (current && event.summary?.headline) return "key";
@@ -213,8 +223,8 @@ const insider = z.object({
   issuerCik: z.string().regex(/^\d{1,10}$/).nullable().optional(), issuerTradingSymbol: text(20).nullable().optional(),
   ownerCik: text(20), ownerName: text(160), title: text(120).nullable(), isDirector: z.boolean(), isOfficer: z.boolean(), isTenPercentOwner: z.boolean(),
   rule10b51: z.boolean().nullable(), planAdoptedOn: date.nullable(), securityTitle: text(120), lines: z.array(insiderLine).max(200),
-  sold: z.object({ shares: finite.nonnegative(), proceeds: finite.nonnegative(), averagePrice: finite.nonnegative() }).nullable(),
-  bought: z.object({ shares: finite.nonnegative(), cost: finite.nonnegative(), averagePrice: finite.nonnegative() }).nullable(),
+  sold: z.object({ shares: finite.nonnegative(), proceeds: finite.nonnegative().nullable(), averagePrice: finite.nonnegative().nullable(), pricedShares: finite.nonnegative().optional() }).nullable(),
+  bought: z.object({ shares: finite.nonnegative(), cost: finite.nonnegative().nullable(), averagePrice: finite.nonnegative().nullable(), pricedShares: finite.nonnegative().optional() }).nullable(),
   exercised: finite.nonnegative(), heldAfter: finite.nullable(), footnotes: z.array(text(2000)).max(40),
 });
 const summary = z.object({
@@ -258,13 +268,14 @@ export function soldShareOfHolding(t: InsiderTransaction): number | null {
 
 export type InsiderCadence = {
   /** Sales by this owner in the trailing window, oldest first. */
-  sales: Array<{ id: string; date: string; shares: number; proceeds: number; share: number | null; planned: boolean | null }>;
+  sales: Array<{ id: string; date: string; shares: number; proceeds: number | null; share: number | null; planned: boolean | null }>;
   /** Mean days between consecutive sales; null with fewer than two. */
   intervalDays: number | null;
   /** True when every interval sits within 40% of the mean and there are at least three sales: a scheduled pattern. */
   regular: boolean;
   totalShares: number;
-  totalProceeds: number;
+  /** Null when any sale in the cadence has unknown proceeds. */
+  totalProceeds: number | null;
 };
 
 /** One owner's sales over the trailing months before (and including) the event, so a single filing reads against its own history. */
@@ -276,11 +287,11 @@ export function insiderCadence(events: CompanyEvent[], ownerCik: string, until: 
   const gaps = sales.slice(1).map((s, i) => (Date.parse(s.date) - Date.parse(sales[i].date)) / DAY_MS);
   const intervalDays = gaps.length ? gaps.reduce((a, b) => a + b, 0) / gaps.length : null;
   const regular = sales.length >= 3 && intervalDays != null && gaps.every(g => Math.abs(g - intervalDays) <= intervalDays * 0.4);
-  return { sales, intervalDays, regular, totalShares: sales.reduce((s, x) => s + x.shares, 0), totalProceeds: sales.reduce((s, x) => s + x.proceeds, 0) };
+  return { sales, intervalDays, regular, totalShares: sales.reduce((s, x) => s + x.shares, 0), totalProceeds: sales.reduce<number | null>((s, x) => s == null || x.proceeds == null ? null : s + x.proceeds, 0) };
 }
 
 /** Other insiders who sold within the window around the event date: a cluster is a stronger signal than one seller. */
-export function insiderCluster(events: CompanyEvent[], eventId: string, days = 30): Array<{ id: string; ownerName: string; title: string | null; date: string; proceeds: number }> {
+export function insiderCluster(events: CompanyEvent[], eventId: string, days = 30): Array<{ id: string; ownerName: string; title: string | null; date: string; proceeds: number | null }> {
   const self = events.find(e => e.id === eventId)?.insider;
   const at = Date.parse(events.find(e => e.id === eventId)?.eventDate ?? "");
   if (!self || !Number.isFinite(at)) return [];
@@ -361,15 +372,15 @@ export function insiderTone(events: CompanyEvent[], event: CompanyEvent): Inside
   return t.rule10b51 === true || cadence.regular ? "planned" : "routine";
 }
 
-export type HoldingPoint = { id: string; date: string; held: number; sold: number; proceeds: number; bought: number; cost: number; exercised: number; planned: boolean | null };
+export type HoldingPoint = { id: string; date: string; held: number; sold: number; proceeds: number | null; bought: number; cost: number | null; exercised: number; planned: boolean | null };
 
 /** The holding path one owner's filings trace, oldest first: each filing's held-after figure, for the ladder. */
 export function holdingPath(events: CompanyEvent[], ownerCik: string, months = 24, until?: string): HoldingPoint[] {
   const end = until ? Date.parse(until) : Infinity, start = (Number.isFinite(end) ? end : Date.now()) - months * 30.4 * DAY_MS;
   return events.filter(e => e.insider?.ownerCik === ownerCik && e.insider.heldAfter != null && Date.parse(e.eventDate) <= end && Date.parse(e.eventDate) >= start)
     .map(e => ({
-      id: e.id, date: e.eventDate, held: e.insider!.heldAfter!, sold: e.insider!.sold?.shares ?? 0, proceeds: e.insider!.sold?.proceeds ?? 0,
-      bought: e.insider!.bought?.shares ?? 0, cost: e.insider!.bought?.cost ?? 0, exercised: e.insider!.exercised, planned: e.insider!.rule10b51,
+      id: e.id, date: e.eventDate, held: e.insider!.heldAfter!, sold: e.insider!.sold?.shares ?? 0, proceeds: e.insider!.sold ? e.insider!.sold.proceeds : 0,
+      bought: e.insider!.bought?.shares ?? 0, cost: e.insider!.bought ? e.insider!.bought.cost : 0, exercised: e.insider!.exercised, planned: e.insider!.rule10b51,
     }))
     .sort((a, b) => a.date.localeCompare(b.date));
 }

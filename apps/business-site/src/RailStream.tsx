@@ -10,7 +10,7 @@ import { langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import type { InsiderPersonSummary, InsidersPublication } from "@/shared/analysis-contract/insiders";
 import { eventTitle, insiderTitleParts, eventTitleLang, shortDate } from "./events-model";
 import { exactShares, insiderCompactMoney, railLayout, rowLeaves, streamRows, type EventFilter, type InsiderFiling, type NoiseRow, type StreamRow as Row } from "./event-noise";
-import { CODE_LABEL, fallbackInsiders, roleLabel, useInsiderHistory, useInsiders, type InsiderHistory } from "./insiders-model";
+import { CODE_LABEL, fallbackInsiders, netValueUnknown, roleLabel, useInsiderHistory, useInsiders, type InsiderHistory } from "./insiders-model";
 import { filingQuarterLabel, reportTitle, reportTitleLang, type RailItem, type RailItems } from "./reports-model";
 import { KIND_LABEL, VIEW_LABEL, type VerifiedFinding } from "./findings-model";
 import { SeverityIcon, severityLabel } from "./SeverityIcon";
@@ -239,8 +239,10 @@ function PersonRow({ person, source, ticker, events, items, now, open, focus, ar
   const direction = latest?.side === "buy" ? "buy" : latest?.side === "sell" ? "sell" : null;
   const history = useInsiderHistory(ticker, person.key, open, source, events, now);
   const traded = person.sold.count + person.bought.count > 0;
-  const netSold = person.net.value < 0 || (person.net.value === 0 && person.net.shares < 0);
-  const net = traded ? (netSold ? m.netSold : m.netBought)(insiderCompactMoney(Math.abs(person.net.value)), exactShares(Math.abs(person.net.shares))) : m.noTrades;
+  // A net that leaves unpriced lines out is no net value: the amount reads "—" and the shares say which way it went.
+  const unknownValue = traded && netValueUnknown(person, events);
+  const netSold = unknownValue ? person.net.shares < 0 : person.net.value < 0 || (person.net.value === 0 && person.net.shares < 0);
+  const net = traded ? (netSold ? m.netSold : m.netBought)(unknownValue ? "—" : insiderCompactMoney(Math.abs(person.net.value)), exactShares(Math.abs(person.net.shares))) : m.noTrades;
   const meta = join([roleLabel(person.role), net, person.sold.count > 0 && m.sales(person.sold.count), person.bought.count > 0 && m.purchases(person.bought.count), m.forms(person.filings)]);
   const panelId = domId(person.key);
   return <div className="insider-person" data-class="insider" data-new={person.newCount > 0 ? "" : undefined}>
