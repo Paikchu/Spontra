@@ -1,7 +1,7 @@
 import { DIMENSION_WEIGHTS, EXTENDED_SCENARIO_KEYS, SCENARIO_KEYS, VALUATION_DIMENSIONS, VALUATION_METHODS, type CapitalPlan, type DriverPath, type Confidence, type ConsensusNote, type ConsensusTarget, type DiscountRate, type EquityBridge, type FactorDistribution, type FairValueBasis, type FairValueRange, type NormalCaseInput, type NormalCaseResult, type ImpliedPath, type InputCheck, type InputVerification, type Judgement, type ManagementComparison, type ManagementScenario, type ManagementTargetSet, type MethodValuation, type MethodWeightJudgement, type MethodWeights, type ModelDrivers, type MultipleQuartiles, type PeerMultiples, type PeerSelectionBasis, type RevenueAnchor, type SanityGate, type ScenarioAssumptions, type ScenarioEntry, type ScenarioKey, type ScenarioProbabilities, type ScenarioResult, type ScenarioValuation, type Sensitivity, type ShareCount, type Triangulation, type ValuationDimension, type ValuationMethodKey, type ValuationModelResult, type ValuationModelType, type ValuationRange, type ValuationVerdict, type YearRow } from "../../analysis-contract/valuation.ts";
 import { managementComparisonRows, managementDrivers, managementFactsOf, managementGate, managementRequest } from "./management.ts";
 import { weightedQuantile } from "./peers.ts";
-import { financeLeaseAmount, operatingExpenseNetDebt } from "./lease-basis.ts";
+import { financeLeaseAmount, missingFinancingFactIds } from "./lease-basis.ts";
 
 /**
  * The deterministic valuation calculator (docs/valuation-assessment-implementation.md §4, docs/valuation-methodology-optimization.md
@@ -393,7 +393,8 @@ function withFairValueRange(request: CalcRequest, model: ValuationModelResult): 
   const basis = request.fairValueBasis;
   if (!basis) return model;
   if (basis.status === "unavailable") return { ...model, fairValueRange: { ...basis } };
-  if (request.bridge.leaseTreatment === "operating_expense" && operatingExpenseNetDebt(request.context?.facts ?? []) == null) throw new ValuationCalcError("invalid_input", "finance lease classification, debt or cash inputs are unresolved; declare fairValueBasis unavailable until the financing claims can be reconciled");
+  const missingFinance = request.bridge.leaseTreatment === "operating_expense" ? missingFinancingFactIds(request.context?.facts ?? []) : [];
+  if (missingFinance.length) throw new ValuationCalcError("invalid_input", `normal fair-value range has unresolved inputs: ${missingFinance.join(", ")}; read the missing facts or declare fairValueBasis unavailable; never substitute zero or total leases`);
   const weights = request.context ? methodWeightsOf(request.context.methodWeights ?? null, request.context.lifecycle ?? null) : { dcf: 1, ev_ebitda_forward: 0, pe_forward: 0 };
   const baseValuation = model.scenarios.base.valuation ?? { methods: { dcf: model.range.base, ev_ebitda_forward: null, pe_forward: null }, weights, perShare: model.range.base };
   const check = (name: string, value: ValuationModelResult, valuation: ScenarioValuation) => {

@@ -64,7 +64,7 @@ test("missing lease classification keeps the normal range unavailable and stops 
   const r = request(); r.context!.facts = facts().filter(f => f.id !== "finance_leases");
   const assumptions = { revenue: { rationale: "Synthetic evidence.", evidenceIds: ["source"] }, margin: { rationale: "Synthetic evidence.", evidenceIds: ["source"] }, capex: { rationale: "Synthetic evidence.", evidenceIds: ["source"] } };
   r.fairValueBasis = { status: "available", kind: "normal_cases", lower: { ...r.scenarios.base, assumptions }, upper: { ...r.scenarios.base, assumptions }, rationale: "The operating bounds are evidenced but financing claims remain unresolved.", evidenceIds: ["source"] };
-  assert.throws(() => calculateValuation(r), /finance lease classification/);
+  assert.throws(() => calculateValuation(r), /unresolved inputs: finance_leases/);
   r.fairValueBasis = { status: "unavailable", reason: "Finance lease classification has not been resolved.", evidenceIds: [] };
   const incomplete = calculateValuation(r);
   assert.ok(incomplete.gates?.some(g => g.key === "lease_classification" && g.status === "flag"));

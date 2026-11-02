@@ -3,6 +3,7 @@ import type { DiagnosticMetric, FactorDistribution, ManagementTargetSet, PeerSel
 import type { BalanceSheet, RpoDisclosure } from "../../../../shared/analysis-contract/capital-structure.ts";
 import type { PeerCompany, PeersPublication } from "../../../../shared/analysis-contract/peers.ts";
 import { readFindingFundamentals, resolveRef, type FindingData } from "../../../../shared/analysis-runtime/findings.ts";
+import { readFilingLeaseFacts } from "./filing-lease-facts.ts";
 import { selectPeers } from "../../../../shared/analysis-runtime/valuation/peers.ts";
 import { distributionOf, type Lifecycle } from "../../../../shared/analysis-runtime/valuation/calculator.ts";
 import { financeLeaseAmount, operatingExpenseNetDebt } from "../../../../shared/analysis-runtime/valuation/lease-basis.ts";
@@ -33,7 +34,7 @@ import type { GuidancePublication } from "../../../../shared/analysis-contract/g
  * of each driver, the diagnostics every dimension must answer, and the catalogue of filings, guidance and calls the agent
  * may read. No model call, no SEC fetch. Everything here is deterministic, so the fingerprint says what a run would write from.
  */
-export const VALUATION_INPUT_VERSION = "valuation.input.v3";
+export const VALUATION_INPUT_VERSION = "valuation.input.v4";
 const DAY = 86_400_000;
 
 export type ValuationDocument = { documentId: string; accession: string; form: string; docType: string; filedAt: string; reportDate: string; url: string };
@@ -113,7 +114,6 @@ const FACT_SPECS: FactSpec[] = [
   { id: "cash", label: "Cash and equivalents, newest balance sheet", ref: { capital: "cash" }, span: "quarter", periodType: "instant", required: true },
   { id: "investments", label: "Investments, newest balance sheet", ref: { capital: "investments" }, span: "quarter", periodType: "instant" },
   { id: "debt", label: "Debt, newest balance sheet", ref: { capital: "debt" }, span: "quarter", periodType: "instant", required: true },
-  { id: "leases", label: "Lease liabilities, newest balance sheet", ref: { capital: "leases" }, span: "quarter", periodType: "instant" },
   { id: "equity", label: "Stockholders' equity, newest balance sheet", ref: { capital: "equity" }, span: "quarter", periodType: "instant" },
   { id: "total_assets", label: "Total assets, newest balance sheet", ref: { capital: "totalAssets" }, span: "quarter", periodType: "instant" },
   { id: "total_liabilities", label: "Total liabilities, newest balance sheet", ref: { capital: "totalLiabilities" }, span: "quarter", periodType: "instant" },
@@ -161,7 +161,11 @@ export function leaseFactsOf(sheet: BalanceSheet | null): ValuationFact[] {
   if (classified.length && classified.every(l => l.kind && l.value != null)) {
     for (const kind of ["operating", "finance"] as const) {
       const matching = classified.filter(l => l.kind === kind);
-      if (matching.length) out.push(fact(`${kind}_leases`, `${kind === "operating" ? "Operating" : "Finance"} lease liabilities, newest balance sheet`, matching.reduce((sum, l) => sum + l.value!, 0), matching.map(l => l.line)));
+      const totals = matching.filter(l => /(?:Operating|Finance)LeaseLiability$|CapitalLeaseObligations?$/i.test(l.line.concept.split(":").at(-1)!));
+      const current = matching.filter(l => /Current$/i.test(l.line.concept) && !/Noncurrent$/i.test(l.line.concept));
+      const noncurrent = matching.filter(l => /Noncurrent$/i.test(l.line.concept));
+      const complete = totals.length ? totals : current.length && noncurrent.length ? [...current, ...noncurrent] : [];
+      if (complete.length) out.push(fact(`${kind}_leases`, `${kind === "operating" ? "Operating" : "Finance"} lease liabilities, newest balance sheet`, complete.reduce((sum, l) => sum + l.value!, 0), complete.map(l => l.line)));
     }
   }
   const overlap = sheet.liabilities.filter(l => l.group === "debt" && /Debt.*(?:Finance|Capital)Lease|debt.*(?:finance|capital) lease/i.test(`${l.concept} ${l.label}`));
@@ -172,7 +176,7 @@ export function leaseFactsOf(sheet: BalanceSheet | null): ValuationFact[] {
 const sheetAt = (data: FindingData, periodEnd: string) => data.capital?.quarters.find(q => Math.abs(Date.parse(q.periodEnd) - Date.parse(periodEnd)) <= 20 * DAY)?.balanceSheet ?? null;
 
 /** Every fact the specs name that the stored data can resolve at the newest quarter, with what is missing. */
-export function buildFacts(data: FindingData, snapshot: SecHistorySnapshot | null, periodEnd: string, currency: string): { facts: ValuationFact[]; missing: string[] } {
+export function buildFacts(data: FindingData, snapshot: SecHistorySnapshot | null, periodEnd: string, currency: string, disclosedLeases: readonly ValuationFact[] = []): { facts: ValuationFact[]; missing: string[] } {
   const facts: ValuationFact[] = [];
   const missing: string[] = [];
   for (const spec of FACT_SPECS) {
@@ -194,6 +198,12 @@ export function buildFacts(data: FindingData, snapshot: SecHistorySnapshot | nul
     senior("preferred_stock", "Preferred stock, newest balance sheet", SENIOR_EQUITY.preferred);
     senior("minority_interest", "Noncontrolling interests, newest balance sheet", SENIOR_EQUITY.minority);
   }
+  for (const disclosed of disclosedLeases) {
+    const index = facts.findIndex(f => f.id === disclosed.id);
+    if (index >= 0) facts[index] = disclosed; else facts.push(disclosed);
+  }
+  const operatingLeaseFact = facts.find(f => f.id === "operating_leases"), finance = facts.find(f => f.id === "finance_leases");
+  if (operatingLeaseFact && finance && !facts.some(f => f.id === "leases")) facts.push({ ...operatingLeaseFact, id: "leases", label: "Total operating and finance lease liabilities", value: operatingLeaseFact.value + finance.value, basis: "derived", formula: "operating_leases + finance_leases", sourceRefs: [...new Set([...operatingLeaseFact.sourceRefs, ...finance.sourceRefs])] });
   const financeLeases = financeLeaseAmount(facts);
   if (financeLeases == null) missing.push("finance_leases");
   const value = (id: string) => facts.find(f => f.id === id)?.value ?? null;
@@ -304,7 +314,7 @@ const CORE_TAX = 0.21;
  * A peer that is loss-making (trailing operating income at or below zero), has EBITDA at or below zero, or lacks a
  * figure the multiples need is dropped with a note, so the quartiles are over companies whose multiples mean something.
  */
-export async function buildPeerFundamentals(db: D1Database, ticker: string, peers: PeersPublication | null, curated: string[] | null, sharesOf?: (peer: string, periodEnd: string) => Promise<number | null>, balanceSheetOf?: (peer: string, periodEnd: string) => Promise<BalanceSheet | null>): Promise<{ peers: PeerFundamentals[]; basis: ValuationInput["peerBasis"]; notes: string[] }> {
+export async function buildPeerFundamentals(db: D1Database, ticker: string, peers: PeersPublication | null, curated: string[] | null, sharesOf?: (peer: string, periodEnd: string) => Promise<number | null>, balanceSheetOf?: (peer: string, periodEnd: string) => Promise<BalanceSheet | null>, disclosedLeasesOf?: (peer: string, periodEnd: string, sheet: BalanceSheet | null) => Promise<ValuationFact[]>): Promise<{ peers: PeerFundamentals[]; basis: ValuationInput["peerBasis"]; notes: string[] }> {
   if (!peers) return { peers: [], basis: "none", notes: ["no peers projection"] };
   const selection = selectPeers(peers, ticker, curated);
   const repository = new D1SecRepository(db);
@@ -327,7 +337,11 @@ export async function buildPeerFundamentals(db: D1Database, ticker: string, peer
     const operating = ttmOf(company, "operatingIncome"), depreciation = ttmOf(company, "depreciation");
     const debt = num(newest.figures.debt), cash = num(newest.figures.cash);
     const [count, sheet] = await Promise.all([shares(peer, newest.periodEnd), balanceSheet(peer, newest.periodEnd).catch(() => null)]);
-    const leaseFacts = leaseFactsOf(sheet);
+    let disclosed: ValuationFact[] = [];
+    try { if (disclosedLeasesOf) disclosed = await disclosedLeasesOf(peer, newest.periodEnd, sheet); }
+    catch (error) { notes.push(`${peer}: archived lease disclosure unavailable (${error instanceof Error ? error.message : String(error)}); omitted from the comparison`); continue; }
+    const disclosedIds = new Set(disclosed.map(f => f.id));
+    const leaseFacts = [...leaseFactsOf(sheet).filter(f => !disclosedIds.has(f.id)), ...disclosed];
     const senior = (test: RegExp) => sheet?.equity.filter(l => test.test(l.concept) || test.test(l.id)).reduce((sum, l) => sum + (num(l.value) ?? 0), 0) ?? 0;
     const financing = [...leaseFacts, ...(debt != null ? [{ id: "debt", value: debt }] : []), ...(cash != null ? [{ id: "cash", value: cash }] : []), { id: "investments", value: sheet?.assets.filter(l => l.group === "investments").reduce((sum, l) => sum + (num(l.value) ?? 0), 0) ?? 0 }, { id: "preferred_stock", value: senior(SENIOR_EQUITY.preferred) }, { id: "minority_interest", value: senior(SENIOR_EQUITY.minority) }];
     if (financeLeaseAmount(financing) == null || financing.some(f => f.id === "finance_lease_debt_overlap" && f.value === 1)) notes.push(`${peer}: lease classification or finance-lease/debt overlap is unresolved; omitted from the operating-expense EV comparison`);
@@ -344,12 +358,12 @@ export async function buildPeerFundamentals(db: D1Database, ticker: string, peer
 }
 
 /** Trailing EBITDA and net debt at each quarter the data can answer, newest first. */
-export function buildTrailingQuarters(data: FindingData): TrailingQuarter[] {
+export function buildTrailingQuarters(data: FindingData, disclosedLeases: ReadonlyMap<string, readonly ValuationFact[]> = new Map()): TrailingQuarter[] {
   const ends = [...new Set(data.quarters.map(q => q.periodEnd))].sort().reverse();
   return ends.flatMap(end => {
     const ebitda = resolveRef(data, { derived: "ebitda" }, end, "fiscal_year");
     const currency = data.quarters.find(q => q.periodEnd === end)?.currency ?? "USD";
-    const netDebt = operatingExpenseNetDebt(buildFacts(data, null, end, currency).facts);
+    const netDebt = operatingExpenseNetDebt(buildFacts(data, null, end, currency, disclosedLeases.get(end)).facts);
     return ebitda && !ebitda.range && netDebt != null ? [{ periodEnd: end, ebitdaTtm: ebitda.value, netDebt }] : [];
   });
 }
@@ -363,7 +377,9 @@ export async function buildValuationInput(env: AnalysisEnv, ticker: string, rese
   const newest = [...data.quarters].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd))[0];
   if (!newest) return null;
   const currency = newest.currency;
-  const { facts, missing } = buildFacts(data, snapshot, newest.periodEnd, currency);
+  const leases = await readFilingLeaseFacts({ DB: db, SEC_FILINGS: env.SEC_FILINGS }, { ticker, periodEnd: newest.periodEnd, currency, researchAsOf, preferredAccession: sheetAt(data, newest.periodEnd)?.source.accession });
+  const { facts, missing } = buildFacts(data, snapshot, newest.periodEnd, currency, leases.facts);
+  missing.push(...leases.unresolved);
   const distributions = buildDistributions(snapshot, data);
   const diagnostics = buildDiagnostics(facts, snapshot, data, newest.periodEnd);
   const [library, calls, cik, peerPublication, inputs, calendar] = await Promise.all([
@@ -374,7 +390,7 @@ export async function buildValuationInput(env: AnalysisEnv, ticker: string, rese
     readValuationCompanyInputs(db, ticker).catch(() => null),
     readFiscalFocus(db, ticker).then(map => map.issuers.get(ticker)?.fiscalYearEndMonth ?? null).catch(() => null),
   ]);
-  const peers = await buildPeerFundamentals(db, ticker, peerPublication, inputs?.peers ?? null).catch(() => ({ peers: [] as PeerFundamentals[], basis: "none" as const, notes: ["peer fundamentals could not be read"] }));
+  const peers = await buildPeerFundamentals(db, ticker, peerPublication, inputs?.peers ?? null, undefined, undefined, async (peer, periodEnd, sheet) => (await readFilingLeaseFacts({ DB: db, SEC_FILINGS: env.SEC_FILINGS }, { ticker: peer, periodEnd, currency, researchAsOf, preferredAccession: sheet?.source.accession })).facts).catch(() => ({ peers: [] as PeerFundamentals[], basis: "none" as const, notes: ["peer fundamentals could not be read"] }));
   const { set: management, notes: managementNotes } = managementTargetSet(ticker, inputs?.targets ?? null, calendar, researchAsOf);
   const rpo = data.capital?.quarters.find(q => Math.abs(Date.parse(q.periodEnd) - Date.parse(newest.periodEnd)) <= 20 * DAY)?.rpo ?? null;
   const documents = selectDocuments(library, researchAsOf);
@@ -390,6 +406,6 @@ export async function buildValuationInput(env: AnalysisEnv, ticker: string, rese
   return {
     ticker, cik, companyName: await companyName(db, ticker) ?? ticker, currency, financialPeriodEnd: newest.periodEnd, incomeModel: newest.incomeModel ?? "unknown",
     facts, distributions, diagnostics, documents, guidance: data.guidance, transcripts, missing, fingerprint,
-    rpo, lifecycle: lifecycleOf({ facts, diagnostics }), peers: peers.peers, peerBasis: peers.basis, peerNotes: peers.notes, management, managementNotes, trailingQuarters: buildTrailingQuarters(data),
+    rpo, lifecycle: lifecycleOf({ facts, diagnostics }), peers: peers.peers, peerBasis: peers.basis, peerNotes: peers.notes, management, managementNotes, trailingQuarters: buildTrailingQuarters(data, new Map([[newest.periodEnd, leases.facts]])),
   };
 }
