@@ -169,7 +169,8 @@ export const SEC_TASKS = {
    * continue a bounded number per run for as long as they make progress.
    */
   events: {
-    version: "events.v1",
+    // v2: the run also indexes the filings list, which a company without the report summaries had none of.
+    version: "events.v2-filing-index",
     async run(env, ticker, { now, causeId }): Promise<TaskOutcome> {
       if (env.EVENTS_ENABLED === "false") return { status: "done", detail: { skipped: "events disabled" } };
       const stored = await new D1SecRepository(env.DB!).getCache<unknown>(eventsCacheKey(ticker));

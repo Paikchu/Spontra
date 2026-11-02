@@ -74,8 +74,8 @@ export const TASKS: Record<TaskName, TaskMeta> = {
   "fundamentals": { emits: ["fundamentals.updated"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "data" },
   // Extracts management guidance from earnings releases and the calls the transcript library stored (Workflow).
   "guidance": { emits: ["guidance.published"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "reports" },
-  // Current reports and Form 4 filings for the map's event rail; no model.
-  "events": { emits: ["events.published"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "data" },
+  // Current reports and Form 4 filings for the map's event rail, and every company's filings list; no model.
+  "events": { emits: ["events.published", "filings.indexed"], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "data" },
   // Starts report memory for a published periodic report; the memory Workflow starts the company analysis itself.
   "memory": { emits: [], debounceMs: MINUTE, maxWaitMs: 10 * MINUTE, scope: "findings" },
   // Recovers company analyses that stopped, failed or are behind the prompt version.
@@ -126,7 +126,8 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
   "filing.discovered": [
     { task: "collect", when: e => PERIODIC.test(form(e)) || /^6-K/.test(form(e)) || earnings(e) },
     { task: "sec-report", when: e => PERIODIC.test(form(e)) || /^(?:8|6)-K/.test(form(e)) },
-    { task: "events", when: e => /^(?:8-K|6-K|4)(?:\/A)?$/.test(form(e)) },
+    // Every business filing: the rail lists current reports and Form 4s, and the run indexes the filings list for all.
+    { task: "events", when: e => PERIODIC.test(form(e)) || /^(?:8-K|6-K|4)(?:\/A)?$/.test(form(e)) },
   ],
   // A company new to the pipeline (admin whitelist, or a data ticker seen by discovery for the first time): its event
   // rail is built now, not at its next current report; collection comes with the maintenance or collection request.
