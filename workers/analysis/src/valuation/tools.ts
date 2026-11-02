@@ -66,7 +66,7 @@ const tool = defineTool<ValuationState>();
 const untrusted = (host: string, text: string) => `<untrusted source="${host}">\n${text}\n</untrusted>`;
 const money = (v: number) => Math.abs(v) >= 1e9 ? `${(v / 1e9).toFixed(2)}B` : Math.abs(v) >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : v.toFixed(2);
 const pct = (v: number) => `${(v * 100).toFixed(1)}%`;
-export const factLine = (f: ValuationInput["facts"][number]) => `${f.id} | ${f.label} | ${f.unit === "ratio" ? f.value.toFixed(4) : f.unit === "shares" ? money(f.value) : money(f.value)} ${f.unit === "ratio" ? "" : f.unit} | ${f.periodType}${f.periodEnd ? ` to ${f.periodEnd}` : ""} | ${f.basis}${f.formula ? ` (${f.formula})` : ""}`;
+export const factLine = (f: ValuationInput["facts"][number]) => `${f.id} | ${f.label} | ${f.value} ${f.unit}${f.unit === "ratio" ? "" : ` (${money(f.value)})`} | ${f.periodType}${f.periodEnd ? ` to ${f.periodEnd}` : ""} | ${f.basis}${f.formula ? ` (${f.formula})` : ""}`;
 
 /** Registers a passage once and returns its id: source identity plus content hash, so a re-split passage is new evidence. */
 export async function registerEvidence(state: ValuationState, passage: FindingPassage, kind: "sec" | "web", publishedAt: string | null): Promise<string> {
@@ -373,6 +373,11 @@ export function valuationTools(env: AnalysisEnv): AnyTool<ValuationState>[] {
         const id = await registerEvidence(ctx.state, { documentId: source.sourceId, passageId: `${source.sourceId}:${offset}`, title: source.title, form: source.form, filedAt: source.publishedAt, url: source.url, path: ["Frozen original", `offset ${offset}`], text, table: null }, source.kind, source.publishedAt);
         return `[${id}] ${source.title}\n${text}`;
       }, observe: (_a, v) => v }),
+    tool({ name: "read_valuation_evidence", description: "Re-read full registered evidence excerpts by e... IDs. read_financials takes financial fact IDs, not evidence IDs.", parameters: z.object({ evidenceIds: ids(8, 1) }), concurrencySafe: true,
+      execute: ({ evidenceIds }, ctx) => evidenceIds.map(id => {
+        const source = ctx.state.evidence.get(id);
+        return source ? `[${id}] ${source.title} (${source.publishedAt ?? "undated"})\n${source.excerpt}` : `Unknown registered evidence ${id}.`;
+      }).join("\n\n"), observe: (_a, v) => v }),
     tool({ name: "read_financials", description: "The validated financial facts (ids, values, periods). Pass ids to read some, none to read all.", parameters: z.object({ ids: z.array(z.string()).max(40).optional() }), concurrencySafe: true,
       execute: ({ ids }, ctx) => { const facts = ctx.state.input.facts.filter(f => !ids?.length || ids.includes(f.id)); return facts.length ? facts.map(factLine).join("\n") : "No such facts."; }, observe: (_a, v) => v }),
     tool({ name: "list_filings", description: "The filings this run may read, newest first.", parameters: z.object({}), concurrencySafe: true,
@@ -514,7 +519,7 @@ export async function registerManagementEvidence(state: ValuationState): Promise
 }
 
 export const RESEARCH_TOOLS = ["read_financials", "list_filings", "find_filing_sections", "read_filing_section", "read_guidance", "read_transcript", "search_evidence", "read_web_evidence", "submit_dimension", "finish_research"];
-export const ASSUMPTION_TOOLS = ["read_financials", "read_guidance", "calculate_valuation", "declare_model_insufficient", "submit_dimension", "finish_assumptions"];
+export const ASSUMPTION_TOOLS = ["read_financials", "read_valuation_evidence", "read_guidance", "calculate_valuation", "declare_model_insufficient", "submit_dimension", "finish_assumptions"];
 export const COMPOSE_TOOLS = ["compose_valuation", "finish_valuation"];
 
 export const excerptOf = (e: ValuationEvidence) => e.excerpt.replace(/\s+/g, " ").slice(0, EXCERPT_CHARS);

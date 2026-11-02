@@ -21,9 +21,9 @@ import { ValuationStore } from "./store.ts";
 import { ASSUMPTION_TOOLS, CITATION, COMPOSE_TOOLS, RESEARCH_BUDGET, RESEARCH_TOOLS, excerptOf, factLine, goingConcernOf, impliedThreshold, registerManagementEvidence, valuationTools, type RedTeam, type ValuationState, type FrozenResearchSource } from "./tools.ts";
 
 /** Changing the prompts, the tools, the calculator or the publication contract reassesses every switched-on company once. */
-export const VALUATION_VERSION = "valuation.v6";
+export const VALUATION_VERSION = "valuation.v7";
 export type ValuationWorkflowParams = { ticker: string; fingerprint: string };
-const BUDGET = { research: { turns: 16, wallMs: 40 * 60_000 }, assume: { turns: 8, wallMs: 20 * 60_000 }, compose: { turns: 6, wallMs: 12 * 60_000 } };
+const BUDGET = { research: { turns: 24, wallMs: 40 * 60_000 }, assume: { turns: 12, wallMs: 20 * 60_000 }, compose: { turns: 6, wallMs: 12 * 60_000 } };
 const MODEL_BUDGET_MS = 5 * 60_000;
 
 export function valuationTickersFor(env: Parameters<typeof featureTickersFor>[0]): string[] {
@@ -57,6 +57,7 @@ ${SCORING}
 Call submit_dimension for each of the four, then finish_research. Budget: ${RESEARCH_BUDGET.reads} filing reads, ${RESEARCH_BUDGET.finds} finds, ${RESEARCH_BUDGET.transcripts} call reads. Keep tool arguments small; never ask for a whole filing.`;
 
 export const ASSUME_SYSTEM = `You set the valuation model's assumptions for one listed company and run the calculator; every figure comes from calculate_valuation, and every argument of calculate_valuation is required: a missing or malformed one is a schema error you must correct and resubmit (nothing is defaulted for you). One discount rate for all scenarios, each component (risk-free, beta, equity risk premium; cost of debt, tax rate, equity weight for WACC) with its value, its named source and evidence or fact ids. Risk goes into the scenarios' cash flows, not into separate rates.
+All money and share-count inputs use full base units, never billions or millions: copy the exact values shown by read_financials (for example 64076000000 USD, not 64.076). Rates are decimals. Use read_valuation_evidence to reread registered e... excerpts; read_financials accepts fact ids only.
 Model: asset-holding entity asset_nav, REIT affo, bank or insurer residual_income, any other operating company fcff with a driver path (revenue growth, operating margin including stock compensation, tax rate, sales-to-capital) over 5–10 years and a value-driver terminal (terminal growth at most 3% and below the risk-free rate; terminal ROIC at or above the discount rate unless you say why). Never choose a model for a higher value.
 Build phase (capex far above depreciation, cash flow negative): use 7–10 years and prefer explicit capitalPlan arrays so construction, depreciation and working-capital needs need not coincide with revenue growth. In explicit mode omit salesToCapital/buildCapex: FCFF is NOPAT + depreciation − capex − workingCapitalChange; maintenance capex does not vanish in the final year. If only an implicit plan is supported, use salesToCapital with buildCapex for investments ahead of revenue (that extra build must end within the horizon). Explain the transition into terminal growth/ROIC and give terminalOperatingMargin only with a normalization basis. Compare the base path with the disclosed RPO schedule and explain departures; a schedule is not guaranteed cash, and a stress case may include delayed or cancelled conversion. Never lift a forecast solely to match an anchor. Copy revenue0, shares and the bridge from the facts (debt + finance leases + preferred + minority as claims under operating_expense treatment); the calculator checks them and rejects a mismatch.
 Three researched scenarios (bear, base, bull): one coherent story each with narrative, triggers, invalidation, evidence ids and, under assumptions, why the revenue, margin and capex paths run as they do, each with evidence; a faster bull case reinvests at least as much; margins above history need a reason.
@@ -81,9 +82,9 @@ export function openingResearch(state: ValuationState): string {
     input.missing.length ? `Missing required facts: ${input.missing.join(", ")}.` : "",
     `Company history by factor:\n${dist || "none"}`,
     `Diagnostics computed from the facts:\n${diag}`,
-    `Readable filings: ${input.documents.length} (list_filings). Calls: ${input.transcripts.length ? input.transcripts.map(t => `${t.id} (${t.title}, FY${t.fiscalYear} Q${t.fiscalQuarter})`).join("; ") : "none"}. Guidance items: ${input.guidance?.items.length ?? 0} (read_guidance).`,
+    state.frozenSources ? `Frozen original documents: ${state.frozenSources.length}; use list_snapshot_sources to choose the documents and read_snapshot_source to register evidence.` : `Readable filings: ${input.documents.length} (list_filings). Calls: ${input.transcripts.length ? input.transcripts.map(t => `${t.id} (${t.title}, FY${t.fiscalYear} Q${t.fiscalQuarter})`).join("; ") : "none"}. Guidance items: ${input.guidance?.items.length ?? 0} (read_guidance).`,
     managementText(state),
-    "Start with find_filing_sections or list_filings.",
+    state.frozenSources ? "Start with list_snapshot_sources or find_snapshot_passages." : "Start with find_filing_sections or list_filings.",
   ].filter(Boolean).join("\n\n");
 }
 
@@ -267,7 +268,7 @@ export async function assemblePublication(state: ValuationState, now: string, me
   const score = weightedScore(dimensions), confidence = overallConfidence(dimensions);
   const verdict = verdictOf({ dimensions, marginOfSafety: calc?.range.marginOfSafety ?? null, hasModel: !!calc && calc.range.price != null, decisiveCounterEvidence: !!state.composed?.decisiveCounterEvidence || !!state.redTeam?.decisiveCounterEvidence, coreLogicFailed: !!state.composed?.coreLogicFailed });
   // A report is complete only once it has been written: scored dimensions and a model without the case stay insufficient.
-  if (!state.composed) gaps.push({ code: "research_budget_exhausted", message: "The written report was not completed within the composition budget; the scores, model and evidence stand on their own.", evidenceIds: [] });
+  if (!state.composed) gaps.push({ code: "research_budget_exhausted", message: "The research and written report did not complete within the available run; partial scores, calculations and evidence do not establish a current price assessment.", evidenceIds: [] });
   const reviewIncomplete = gaps.some(g => g.code === "review_incomplete" || g.code === "unresolved_counter_evidence");
   const reportStatus = score != null && calc && state.quote?.usable && state.composed && !reviewIncomplete ? "ready" : "insufficient";
   const composed = state.composed?.sections ?? { summary: "", thesis: "", expectationsGap: "", catalysts: [], counterEvidence: [], nextChecks: [], modelNotes: "" };
@@ -307,16 +308,22 @@ export async function researchValuation({ input, market, now, step, env, mode, g
     try { return { request, result: calculateValuation(request) }; } catch { return null; }
   });
   const turns: TurnRecord[] = [];
+  const finish = async (phases: { research: string; assumptions: string; composition: string }) => {
+    const { publication, evidence } = await assemblePublication(state, generatedAt, VALUATION_VERSION);
+    return { phases, publication, evidence, registeredEvidence: [...state.evidence.values()], turns, request: state.calc?.request ?? null,
+      nearTermForecast: state.nearTermForecast ?? null,
+      promptSha256: await sha256(JSON.stringify({ method: VALUATION_VERSION, prompts: [RESEARCH_SYSTEM, ASSUME_SYSTEM, COMPOSE_SYSTEM], budget: BUDGET, mode: mode.kind })) };
+  };
   const research = await runLoop(env, step, state, { recipeId: "valuation-research", system: RESEARCH_SYSTEM, allow: mode.kind === "snapshot" ? ["read_financials", "list_snapshot_sources", "find_snapshot_passages", "read_snapshot_source", "read_guidance", "submit_dimension", "finish_research"] : RESEARCH_TOOLS, budget: BUDGET.research, settled: s => s.researchDone, tool: "valuation-research" }, (mode.kind === "snapshot" ? `Historical reconstruction at ${now}. Use only frozen original text and facts provided here, never later outcomes or outside knowledge. The list_snapshot_sources/find_snapshot_passages/read_snapshot_source tools replace live filing and web readers.\n\n` : "") + openingResearch(state), generation, fetcher, turns, runId);
   if (research === "cancelled") return null;
-  if (research === "failed") throw new Error("The research loop produced no usable replies.");
+  if (research !== "finished") return finish({ research, assumptions: "not_run", composition: "not_run" });
   const assume = await runLoop(env, step, state, { recipeId: "valuation-assume", system: ASSUME_SYSTEM, allow: mode.kind === "snapshot" ? [...ASSUMPTION_TOOLS, "submit_next_quarter_forecast"] : ASSUMPTION_TOOLS, budget: BUDGET.assume, settled: s => s.assumptionsDone, tool: "valuation" }, openingAssume(state, prior?.request ?? null) + (mode.kind === "snapshot" ? "\nBefore finish_assumptions, submit_next_quarter_forecast from the same frozen evidence (not a mechanical annual/4 allocation), or explicitly say why it is unavailable." : ""), generation, fetcher, turns, runId);
   if (assume === "cancelled") return null;
+  if (assume !== "finished") return finish({ research, assumptions: assume, composition: "not_run" });
   state.redTeam = await redTeam(env, step, state, fetcher, runId);
   const compose = await runLoop(env, step, state, { recipeId: "valuation-compose", system: COMPOSE_SYSTEM, allow: COMPOSE_TOOLS, budget: BUDGET.compose, settled: s => !!s.composed, tool: "valuation" }, openingCompose(state), generation, fetcher, turns, runId);
   if (compose === "cancelled") return null;
-  const { publication, evidence } = await assemblePublication(state, generatedAt, VALUATION_VERSION);
-  return { phases: { research, assumptions: assume, composition: compose }, publication, evidence, registeredEvidence: [...state.evidence.values()], turns, request: state.calc?.request ?? null, nearTermForecast: state.nearTermForecast ?? null, promptSha256: await sha256(RESEARCH_SYSTEM + ASSUME_SYSTEM + COMPOSE_SYSTEM + (mode.kind === "snapshot" ? "frozen-originals-and-next-quarter.v1" : "live")) };
+  return finish({ research, assumptions: assume, composition: compose });
 }
 
 export async function executeValuationWorkflow(params: ValuationWorkflowParams, step: WorkflowStepLike, env: AnalysisEnv, fetcher: typeof fetch = fetch, runId?: string) {
@@ -351,11 +358,11 @@ export async function executeValuationWorkflow(params: ValuationWorkflowParams, 
     const fresh = await buildValuationInput(env, params.ticker, now);
     if (!fresh || await runFingerprint(fresh.fingerprint) !== params.fingerprint) return { current: false, stored: false, reason: "input changed" };
     const outcome = await store.publish(params.ticker, publication, evidence, generation, params.fingerprint, publication.generatedAt);
-    const attempt: ValuationAttempt = { runId: runId ?? "", status: outcome.current ? "succeeded" : "superseded", stage: "publish", updatedAt: publication.generatedAt, reportStatus: publication.reportStatus, gaps: publication.gaps, errorCode: null };
+    const attempt: ValuationAttempt = { runId: runId ?? "", status: publication.reportStatus === "insufficient" ? "empty" : outcome.current ? "succeeded" : "superseded", stage: "publish", updatedAt: publication.generatedAt, reportStatus: publication.reportStatus, gaps: publication.gaps, errorCode: null };
     await store.noteAttempt(params.ticker, attempt, publication.generatedAt);
     if (outcome.current) await quietly(() => new AiRunStore(db).saveVersion("valuation", params.ticker, { ...publication, trace: turns.slice(-80) }, publication.generatedAt));
-    return { ...outcome, reason: outcome.current ? "published" : "generation moved on" };
+    return { ...outcome, reason: outcome.current ? "published" : publication.reportStatus === "insufficient" ? "research incomplete; previous report retained" : "generation moved on" };
   });
-  if (!published.current) return { status: "superseded" as const, reason: published.reason };
+  if (!published.current) return { status: publication.reportStatus === "insufficient" ? "empty" as const : "superseded" as const, reason: published.reason };
   return { status: publication.reportStatus === "ready" ? "ready" as const : "empty" as const, reportStatus: publication.reportStatus, verdict: publication.verdict, score: publication.weightedScore, evidence: evidence.length, turns: turns.length, versionId: publication.versionId };
 }

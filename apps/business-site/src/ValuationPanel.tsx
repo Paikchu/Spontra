@@ -23,7 +23,7 @@ const m = messages({
   preparing: "The assessment is being prepared", preparingNote: "Research runs over the filings, figures and calls on file; the report appears here once it is written and checked.",
   failed: "The last assessment did not complete", failedNote: "A new attempt starts when the company's material changes or the assessment is requested again.",
   insufficient: "Not enough material for a complete assessment", insufficientNote: "The parts that could be established are shown; the gaps below say what is missing.",
-  updating: "A newer assessment is in progress", updateFailed: "The latest attempt did not complete; this report stands",
+  updating: "A newer assessment is in progress", updateFailed: "The latest attempt did not complete; the previous report is retained",
   dimensions: "Five dimensions", weight: (value: string) => `Weight ${value}`, composite: (score: string) => `Composite ${score} of 10`, citedAs: (n: string) => `Source ${n}`,
   readThesis: "Read the full thesis", hideThesis: "Hide the full thesis",
   
@@ -51,7 +51,7 @@ const m = messages({
   consensus: "Sell-side consensus", consensusMean: "Mean target", consensusRange: "Range", analysts: (n: number) => `${n} analysts`, consensusUnavailable: "Consensus unavailable", asOf: (date: string) => `as of ${date}`,
   pricePosition: "Price relative to fair value", fairRange: "Fair value range", centralValue: "Base value", keyAssumptions: "Key assumptions", stressScenarios: "Scenarios and stress tests", researchAssessment: "Research assessment", historicalAssessment: "Assessment at the time",
   below: "Below fair value range", within: "Within fair value range", above: "Above fair value range", unable: "Unable to assess",
-  noPositiveRange: "The model does not support a positive equity value range.", equityShortfall: "Negative values represent a modelled shortfall after senior claims, not a tradable negative share price.", noRange: "A supported fair value range is not available.", noQuoteGuide: "A reference quote is not available.", unusableQuote: "The reference quote cannot be used for this comparison.", staleQuote: "The reference quote is out of date.", currencyMismatch: "The quote and valuation use different currencies.", incompleteResearch: "The research is not complete enough to assess fair value.", unresolvedEvidence: "Key valuation assumptions still need supporting evidence.", reportUpdating: "The company's information has changed; the assessment needs updating.",
+  noPositiveRange: "The model does not support a positive equity value range.", equityShortfall: "Negative values represent a modelled shortfall after senior claims, not a tradable negative share price.", noRange: "A supported fair value range is not available.", noQuoteGuide: "A reference quote is not available.", unusableQuote: "The reference quote cannot be used for this comparison.", staleQuote: "The reference quote is out of date.", currencyMismatch: "The quote and valuation use different currencies.", incompleteResearch: "The research is not complete enough to assess fair value.", unresolvedEvidence: "Key valuation assumptions still need supporting evidence.", reportUpdating: "The current assessment needs updating.",
   versionLoading: "Loading this version", versionFailed: "Couldn't load this version", versionFailedNote: "Pick another version, or return to the current one.",
 }, {
   title: "估值评估",
@@ -60,7 +60,7 @@ const m = messages({
   preparing: "评估正在准备", preparingNote: "研究基于已归档的申报、财务数据与电话会；报告写成并核验后会显示在这里。",
   failed: "上一次评估未完成", failedNote: "公司材料更新或再次请求评估时会开始新的尝试。",
   insufficient: "材料不足，评估尚不完整", insufficientNote: "已能确认的部分照常展示；下方缺口说明还缺什么。",
-  updating: "新的评估正在进行", updateFailed: "最近一次尝试未完成，当前报告继续有效",
+  updating: "新的评估正在进行", updateFailed: "最近一次评估未完成，暂保留上一版报告",
   dimensions: "五个维度", weight: (value: string) => `权重 ${value}`, composite: (score: string) => `综合 ${score} 分，满分 10 分`, citedAs: (n: string) => `来源 ${n}`,
   readThesis: "展开完整论证", hideThesis: "收起完整论证",
  
@@ -88,7 +88,7 @@ const m = messages({
   pricePosition: "股价相对合理价值", fairRange: "合理价值区间", centralValue: "基准价值", keyAssumptions: "关键假设", stressScenarios: "情景与压力测试", researchAssessment: "研究评价", historicalAssessment: "当时评价",
   below: "偏低", within: "区间内", above: "偏高", unable: "暂无法判断",
   noPositiveRange: "模型尚不能支持正的股权价值区间。", equityShortfall: "负值表示模型中扣除优先索偿后的权益缺口，不是可交易的负股价。",
-  noRange: "尚无有证据支持的合理价值区间。", noQuoteGuide: "暂无参考报价。", unusableQuote: "参考报价暂不适用于本次比较。", staleQuote: "参考报价已过期。", currencyMismatch: "报价与估值的币种不一致。", incompleteResearch: "研究材料尚不足以判断合理价值。", unresolvedEvidence: "关键估值假设仍缺少支持证据。", reportUpdating: "公司资料已更新，估值需要重新评估。",
+  noRange: "尚无有证据支持的合理价值区间。", noQuoteGuide: "暂无参考报价。", unusableQuote: "参考报价暂不适用于本次比较。", staleQuote: "参考报价已过期。", currencyMismatch: "报价与估值的币种不一致。", incompleteResearch: "研究材料尚不足以判断合理价值。", unresolvedEvidence: "关键估值假设仍缺少支持证据。", reportUpdating: "当前估值需要重新评估。",
   versionLoading: "正在加载这个版本", versionFailed: "无法加载这个版本", versionFailedNote: "可选择其他版本，或返回当前版本。",
 });
 const METHOD = labels({ dcf: "Discounted cash flow", ev_ebitda_forward: "EV/EBITDA, forward", pe_forward: "P/E, forward" }, { dcf: "现金流折现", ev_ebitda_forward: "远期 EV/EBITDA", pe_forward: "远期 P/E" });
@@ -408,7 +408,7 @@ function Sources({ report, open, onOpen, onClose }: { report: ValuationPublicati
 
 function Status({ valuation }: { valuation: ValuationResponse }) {
   const attempt = valuation.latestAttempt;
-  if (valuation.report && valuation.outdated) return <p className="val-banner" data-tone={attempt?.status === "failed" ? "warn" : "info"}>{attempt?.status === "failed" ? m.updateFailed : m.updating}</p>;
+  if (valuation.report && valuation.outdated) return <p className="val-banner" data-tone={attempt?.status === "failed" ? "warn" : "info"}>{attempt && ["failed", "empty", "superseded", "cancelled"].includes(attempt.status) ? m.updateFailed : m.updating}</p>;
   if (valuation.report?.reportStatus === "insufficient") return <p className="val-banner" data-tone="warn"><b>{m.insufficient}</b> {m.insufficientNote}</p>;
   return null;
 }
