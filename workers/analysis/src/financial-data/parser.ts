@@ -202,7 +202,7 @@ function segmentChildren(facts:Fact[],axis:string,member:string,parent:Fact):Map
  if(conflict||lines.size<2||[...lines.values()].some(f=>f.value<0))return null;
  return near([...lines.values()].reduce((n,f)=>n+f.value,0),parent.value)?lines:null;
 }
-function extractGenericQuarters(html:string,source:DocumentSource,supplemental:Fact[]=[],reviewVerified=false,parsed?:ReturnType<typeof readReportedFacts>):{quarters:BusinessFlowQuarter[];issues:string[]}{
+function extractGenericQuarters(html:string,source:DocumentSource,supplemental:Fact[],reviewVerified:boolean,parsed?:ReturnType<typeof readReportedFacts>):{quarters:BusinessFlowQuarter[];issues:string[]}{
  const issues:string[]=[];if(html.length>SEC_DOCUMENT_MAX_BYTES)return {quarters:[],issues:['DOCUMENT_TOO_LARGE']};
  // A restatement is found by comparing what filings report for the same period (restatement.ts), not by wording.
  const reported=parsed??readReportedFacts(html,source);issues.push(...reported.issues);const buckets=new Map<string,Fact[]>();for(const fact of [...reported.facts,...supplemental]){const days=(Date.parse(fact.end)-Date.parse(fact.start))/86400000;if(days<70||days>110)continue;const key=[fact.start,fact.end,fact.currency].join('|');buckets.set(key,[...(buckets.get(key)??[]),fact]);}
