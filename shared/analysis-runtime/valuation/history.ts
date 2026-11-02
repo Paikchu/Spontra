@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { FACT_BASES, PERIOD_TYPES, type ValuationFact } from "../../analysis-contract/valuation.ts";
-import { calculateValuation, peerMultiplesOf, type CalcRequest } from "./calculator.ts";
+import { FACT_BASES, PEER_SELECTION_BASES, PERIOD_TYPES, type DriverPath, type FairValueBasis, type ValuationFact } from "../../analysis-contract/valuation.ts";
+import { calculateValuation, MAX_FORECAST_YEARS, MIN_FORECAST_YEARS, peerMultiplesOf, type CalcContext, type CalcRequest } from "./calculator.ts";
 
 const finite = z.number().finite();
 const nullable = finite.nullable();
@@ -74,31 +74,59 @@ export function readHistoryInput(value: unknown): HistoryInput {
 }
 
 const judgement = z.object({ rationale: z.string(), evidenceIds: strings });
-const path = z.object({ revenueGrowth: z.array(finite), operatingMargin: z.array(finite), taxRate: z.array(finite), salesToCapital: z.array(finite), normalization: z.array(finite).optional(), buildCapex: z.array(finite).optional() });
+const years = z.array(finite).min(MIN_FORECAST_YEARS).max(MAX_FORECAST_YEARS);
+const spendingYears = z.array(finite.nonnegative()).min(MIN_FORECAST_YEARS).max(MAX_FORECAST_YEARS);
+const pathFields = { revenueGrowth: years, operatingMargin: years, taxRate: years, normalization: years.optional() };
+const path = z.union([
+  z.strictObject({ ...pathFields, salesToCapital: years, buildCapex: years.optional(), capitalPlan: z.null().optional() }),
+  z.strictObject({ ...pathFields, capitalPlan: z.strictObject({ capex: spendingYears, depreciation: spendingYears, workingCapitalChange: years }) }),
+]).superRefine((value, ctx) => {
+  const horizon = value.revenueGrowth.length;
+  const checkLength = (numbers: number[] | undefined, field: string[]) => {
+    if (numbers && numbers.length !== horizon) ctx.addIssue({ code: "custom", path: field, message: `Must contain ${horizon} forecast years` });
+  };
+  checkLength(value.operatingMargin, ["operatingMargin"]); checkLength(value.taxRate, ["taxRate"]); checkLength(value.normalization, ["normalization"]);
+  if (value.capitalPlan) {
+    checkLength(value.capitalPlan.capex, ["capitalPlan", "capex"]);
+    checkLength(value.capitalPlan.depreciation, ["capitalPlan", "depreciation"]);
+    checkLength(value.capitalPlan.workingCapitalChange, ["capitalPlan", "workingCapitalChange"]);
+  } else { checkLength(value.salesToCapital, ["salesToCapital"]); checkLength(value.buildCapex, ["buildCapex"]); }
+}) satisfies z.ZodType<DriverPath>;
 const fcff = z.object({ modelType: z.literal("fcff"), revenue0: finite, path, terminalGrowth: finite, terminalRoic: finite, terminalOperatingMargin: finite.optional() });
-const scenario = z.object({ narrative: z.string(), probability: nullable, triggers: strings, invalidation: strings, evidenceIds: strings, drivers: fcff, assumptions: z.object({ revenue: judgement, margin: judgement, capex: judgement }).optional() });
+const pathAssumptions = z.object({ revenue: judgement, margin: judgement, capex: judgement });
+const scenarioFields = { narrative: z.string(), triggers: strings, invalidation: strings, evidenceIds: strings, drivers: fcff };
+const scenario = z.object({ ...scenarioFields, probability: nullable, assumptions: pathAssumptions.optional() });
+const normalCase = z.strictObject({ ...scenarioFields, assumptions: pathAssumptions });
+const fairValueBasis = z.discriminatedUnion("status", [
+  z.strictObject({ status: z.literal("available"), kind: z.literal("normal_cases"), lower: normalCase, upper: normalCase, rationale: z.string(), evidenceIds: strings }),
+  z.strictObject({ status: z.literal("unavailable"), reason: z.string(), evidenceIds: strings }),
+]) satisfies z.ZodType<FairValueBasis>;
 const quartiles = z.object({ p25: finite, median: finite, p75: finite, count: finite });
 const weighted = z.union([finite, judgement.extend({ weight: finite })]);
 const probability = judgement.extend({ probability: finite });
-const context = z.looseObject({
+const context = z.strictObject({
   facts: z.array(z.object({ id: z.string(), value: finite, unit: z.string() })).optional(), riskFree: nullable.optional(),
   anchor: z.object({ source: z.literal("rpo"), asOf: date, total: finite, floor: z.array(finite), floorToRevenue0: z.array(finite), notes: strings }).nullable().optional(),
-  peers: z.object({ peers: strings, asOf: date, evToEbitda: quartiles.nullable(), peRatio: quartiles.nullable(), notes: strings }).nullable().optional(),
+  peers: z.object({ peers: strings, asOf: date, evToEbitda: quartiles.nullable(), peRatio: quartiles.nullable(), notes: strings, basis: z.enum(PEER_SELECTION_BASES).optional(), weights: z.record(z.string(), finite).optional() }).nullable().optional(),
   consensus: z.object({ mean: finite, low: nullable, high: nullable, count: nullable, asOf: date.nullable(), evidenceId: z.string().nullable() }).nullable().optional(),
+  multipleHistory: z.object({ factor: z.string(), periods: z.array(z.object({ periodEnd: date, value: finite })), min: finite, p25: finite, median: finite, p75: finite, max: finite }).nullable().optional(),
   trailing: z.object({ ebitda: nullable, da: nullable, interestExpense: nullable }).optional(), forwardYears: finite.optional(),
   methodWeights: z.object({ dcf: weighted.optional(), ev_ebitda_forward: weighted.optional(), pe_forward: weighted.optional() }).nullable().optional(), lifecycle: z.enum(["build", "growth", "mature"]).nullable().optional(),
   management: management.nullable().optional(), periodEnd: date.nullable().optional(),
   scenarioProbabilities: z.object({ bear: probability, base: probability, management: probability, bull: probability }).nullable().optional(), managementComparison: judgement.nullable().optional(),
   consensusNote: z.object({ status: z.enum(["cited", "unavailable"]), source: z.string().nullable(), reason: z.string().nullable() }).nullable().optional(),
-});
+}) satisfies z.ZodType<CalcContext>;
+const componentSource = z.object({ source: z.string(), evidenceIds: strings });
+const discountRateSources = z.strictObject({ riskFree: componentSource, beta: componentSource, equityRiskPremium: componentSource, costOfDebt: componentSource, taxRate: componentSource, equityWeight: componentSource });
 /** This harness deliberately accepts the FCFF family used for the operating-company replay, not every valuation model. */
-const requestSchema = z.object({
+const requestSchema = z.strictObject({
   modelType: z.literal("fcff"), currency: z.string(),
-  discountRate: z.object({ value: finite, basis: z.enum(["wacc", "cost_of_equity"]), components: z.object({ riskFree: nullable, beta: nullable, equityRiskPremium: nullable, costOfEquity: nullable, costOfDebt: nullable, taxRate: nullable, equityWeight: nullable }), rationale: z.string(), sourceRefs: strings }),
+  discountRate: z.object({ value: finite, basis: z.enum(["wacc", "cost_of_equity"]), components: z.object({ riskFree: nullable, beta: nullable, equityRiskPremium: nullable, costOfEquity: nullable, costOfDebt: nullable, taxRate: nullable, equityWeight: nullable }), rationale: z.string(), sourceRefs: strings, sources: discountRateSources.optional() }),
   shares: z.object({ base: finite, dilutionReserve: finite, basis: z.string() }), bridge: z.object({ nonOperatingAssets: finite, debtAndClaims: finite, nonOperatingEquityAdjustment: finite, notes: strings }),
-  scenarios: z.object({ bear: scenario, base: scenario, bull: scenario }), price: nullable, midYear: z.boolean().optional(), context: context.optional(),
+  scenarios: z.object({ bear: scenario, base: scenario, bull: scenario }), price: nullable, fairValueBasis: fairValueBasis.optional(), midYear: z.boolean().optional(), context: context.optional(),
 }) satisfies z.ZodType<CalcRequest>;
-const operatingForecast = z.object({ metric: z.string(), periodStart: date, periodEnd: date, value: finite, unit: z.string(), basis: z.string() });
+const operatingMeasure = z.object({ metric: z.string(), periodStart: date, periodEnd: date, value: finite, unit: z.string(), basis: z.string() });
+const operatingForecast = operatingMeasure.extend({ rationale: z.string().min(1), evidenceIds: strings.min(1) });
 const evidence = z.object({ evidenceId: z.string(), kind: z.enum(["sec", "web", "fact"]), title: z.string(), url: z.string().nullable(), documentId: z.string().nullable(), passageId: z.string().nullable(), form: z.string().nullable(), publishedAt: z.string().nullable(), fetchedAt: z.string().nullable(), excerpt: z.string().min(1), contentSha256: hash, path: z.string().nullable() });
 export const historyAssumptionsSchema = z.object({
   schemaVersion: z.literal("valuation-history-assumptions.v1"), kind: z.literal("agent_reconstruction"), ticker: z.string(), cutoff: instant, inputSha256: hash,
@@ -136,6 +164,7 @@ export function historyRequest(input: HistoryInput, artifact: HistoryAssumptions
     }
   };
   cited(request);
+  cited(artifact.operatingForecasts);
   const value = (id: string) => input.facts.find(f => f.id === id)?.value ?? null;
   if (request.context?.consensus && (!request.context.consensus.asOf || request.context.consensus.asOf > input.cutoff.slice(0, 10) || !request.context.consensus.evidenceId)) throw new Error("Historical consensus needs an eligible dated source");
   if (request.context?.anchor && (request.context.anchor.asOf > input.cutoff.slice(0, 10) || request.context.anchor.total !== value("rpo_total"))) throw new Error("Revenue anchor does not match the historical RPO");
@@ -149,7 +178,7 @@ export function historyRequest(input: HistoryInput, artifact: HistoryAssumptions
 
 export const historyOutcomeSchema = z.object({
   schemaVersion: z.literal("valuation-history-outcome.v1"), ticker: z.string(), cutoff: instant, inputSha256: hash, evaluationAsOf: instant,
-  market: z.array(bar), benchmark: z.array(bar), actuals: z.array(operatingForecast.extend({ availableAt: instant, sourceId: z.string() })),
+  market: z.array(bar), benchmark: z.array(bar), actuals: z.array(operatingMeasure.extend({ availableAt: instant, sourceId: z.string() })),
 });
 export type HistoryOutcome = z.infer<typeof historyOutcomeSchema>;
 
