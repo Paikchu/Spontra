@@ -109,10 +109,15 @@ export const LIBRARY_TASKS = {
 
   /** The recall layer: uploads what changed among the carded sections and deletes what left them, within a budget per run. */
   "library-search": {
-    version: "library-search.v1",
+    // v2: an AI Search overload waits instead of dead-lettering; the bump re-syncs the companies whose run was dead-lettered.
+    version: "library-search.v2-overload-wait",
     async run(env, ticker): Promise<TaskOutcome> {
       if (!searchEnabled(env)) return { status: "done", detail: { skipped: "recall layer not configured" } };
-      const result = await syncSearchItems(env, ticker);
+      let result: Awaited<ReturnType<typeof syncSearchItems>>;
+      // AI Search busy or limiting (seen as `ai_search_instance_overloaded`): a wait, not a failure the queue's five
+      // quick retries spend and dead-letter, which left GOOGL, META and TTMI with sections never uploaded.
+      try { result = await syncSearchItems(env, ticker); }
+      catch (error) { if (/overloaded|rate.?limit|too many requests|\b429\b|\b50[234]\b|timed? ?out/i.test(String(error))) return { status: "later", afterMs: 15 * 60_000, detail: { waiting: "AI Search busy", error: String(error).slice(0, 200) } }; throw error; }
       return result.remaining ? { status: "later", afterMs: 1000, detail: result } : { status: "done", detail: result };
     },
   },
