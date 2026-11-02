@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isSecUrl } from "../sec-sources.ts";
 import type { FinancialStatements, StatementCell, StatementTable } from "./financial-statements.ts";
 import type { DisclosureFact, FilingDisclosures } from "./disclosure-extraction.ts";
 import type {
@@ -609,7 +610,7 @@ export function buildCapitalQuarters(filings: CapitalFiling[], limit = 8): Capit
 
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const amount = z.string().refine(v => v.trim() !== "" && Number.isFinite(Number(v)));
-const secUrl = z.string().refine(v => { try { const u = new URL(v); return u.protocol === "https:" && /(^|\.)sec\.gov$/.test(u.hostname); } catch { return false; } });
+const secUrl = z.string().refine(isSecUrl);
 const sourceSchema = z.object({ accession: z.string().regex(/^\d{10}-\d{2}-\d{6}$/), url: secUrl, filedAt: z.string().max(40), form: z.string().max(12) });
 const lineSchema = <G extends readonly [string, ...string[]]>(groups: G) => z.object({ id: z.string().min(1).max(200), label: z.string().max(400), concept: z.string().max(300), group: z.enum(groups), value: amount });
 const sectionSchema = <G extends readonly [string, ...string[]]>(groups: G) => z.object({ total: amount, lines: z.array(lineSchema(groups)).max(80).nullable() });

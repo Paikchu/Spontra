@@ -1,6 +1,7 @@
 import type { BusinessDeepDive, CompanyAnalysisOverview } from "../../../../shared/analysis-contract/company-analysis.ts";
 import { normalizeBusinessDeepDive, normalizeCompanyAnalysisOverview } from "./contracts.ts";
 import type { AvailableSecReport, BusinessResearchTools, BusinessToolResult } from "./business-tools.ts";
+import { isSecUrl } from "../../../../shared/analysis-runtime/sec-sources.ts";
 
 export type BusinessModel = (stage: string, system: string, payload: unknown) => Promise<Record<string, unknown>>;
 type Action =
@@ -62,7 +63,7 @@ export async function runBusinessModelAgent(input: {
   }
   const initialHits = (observations.find((entry) => entry.action === "search_web")?.observation as { hits?: Array<{ url: string }> } | undefined)?.hits;
   if (initialHits?.length) {
-    const selected = initialHits.find((hit) => /(?:investor|ir\.|sec\.gov)/i.test(hit.url)) ?? initialHits[0]!;
+    const selected = initialHits.find((hit) => isSecUrl(hit.url) || /investor|ir\./i.test(hit.url)) ?? initialHits[0]!;
     try { await tool(++rounds, { action: "read_web", url: selected.url }); }
     catch { limitations.push("Extracting the page text failed; this source rests on its search snippet only, so conclusions drawn from it need a second check."); }
   }

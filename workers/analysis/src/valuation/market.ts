@@ -1,13 +1,12 @@
 import type { ReferenceQuote } from "../../../../shared/analysis-contract/valuation.ts";
+import { readYahooChart, yahooChartUrl, yahooSymbol, type ChartClose } from "../market/yahoo.ts";
 
 /**
  * The market inputs a run freezes once (docs/valuation-assessment-implementation.md §2, docs/valuation-methodology-optimization.md §3):
  * the last completed daily close as the reference price, the ten-year government yield as the risk-free rate, and the
- * company's beta regressed from its own weekly returns against the market index. Read through the same public chart
- * endpoint the SEC reader already uses; never in a read route, and never treated as a live price.
+ * company's beta regressed from its own weekly returns against the market index. Read through the shared Yahoo chart client
+ * (market/yahoo.ts), as the filing reports are; never in a read route, and never treated as a live price.
  */
-const CHART = "https://query1.finance.yahoo.com/v8/finance/chart/";
-const HEADERS = { accept: "application/json", "user-agent": "Mozilla/5.0" };
 const DAY = 86_400_000;
 /** A close older than this cannot stand in for the current price. */
 export const QUOTE_MAX_AGE_DAYS = 7;
@@ -16,38 +15,11 @@ const MARKETS: Record<string, { index: string; yield: string; yieldLabel: string
   USD: { index: "^GSPC", yield: "^TNX", yieldLabel: "CBOE 10-Year Treasury Note Yield" },
 };
 
-const record = (v: unknown): Record<string, unknown> => v && typeof v === "object" ? v as Record<string, unknown> : {};
-const positive = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v > 0;
-type Close = { date: string; close: number };
-
-
-async function chart(symbol: string, range: string, interval: "1d" | "1wk", fetcher: typeof fetch, now: Date): Promise<{ currency: string | null; symbol: string | null; timeZone: string; points: Close[]; url: string } | null> {
-  const url = new URL(`${CHART}${encodeURIComponent(symbol)}`);
-  url.searchParams.set("range", range); url.searchParams.set("interval", interval);
-  let body: unknown;
-  try {
-    const response = await fetcher(url.href, { headers: HEADERS, signal: AbortSignal.timeout(8000) });
-    if (!response.ok) return null;
-    body = await response.json();
-  } catch { return null; }
-  const result = record((record(record(body).chart).result as unknown[] | undefined)?.[0]);
-  const meta = record(result.meta);
-  const times = Array.isArray(result.timestamp) ? result.timestamp : [];
-  const values = record((record(result.indicators).quote as unknown[] | undefined)?.[0]).close;
-  if (!Array.isArray(values)) return null;
-  const timeZone = typeof meta.exchangeTimezoneName === "string" ? meta.exchangeTimezoneName : "America/New_York";
-  let formatter: Intl.DateTimeFormat;
-  try { formatter = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }); } catch { formatter = new Intl.DateTimeFormat("en-CA", { timeZone: "UTC", year: "numeric", month: "2-digit", day: "2-digit" }); }
-  const today = formatter.format(now);
-  const seen = new Set<string>();
-  const points = times.flatMap((t, i) => positive(t) && t * 1000 <= now.getTime() && positive(values[i]) ? [{ date: formatter.format(new Date(t * 1000)), close: values[i] as number }] : [])
-    .filter(p => { if (p.date >= today || seen.has(p.date)) return false; seen.add(p.date); return true; }).sort((a, b) => a.date.localeCompare(b.date));
-  return { currency: typeof meta.currency === "string" ? meta.currency : null, symbol: typeof meta.symbol === "string" ? meta.symbol : null, timeZone, points, url: url.href };
-}
+const chart = (symbol: string, range: string, interval: "1d" | "1wk", fetcher: typeof fetch, now: Date) => readYahooChart(yahooChartUrl(symbol, { range, interval }), fetcher, now);
 
 /** The last completed close before today; `usable` says whether the spec lets it enter a comparison. */
 export async function fetchReferenceQuote(ticker: string, currency: string, fetcher: typeof fetch = fetch, now = new Date()): Promise<ReferenceQuote | null> {
-  const symbol = ticker.replaceAll(".", "-");
+  const symbol = yahooSymbol(ticker);
   const read = await chart(symbol, "1mo", "1d", fetcher, now);
   const latest = read?.points.at(-1);
   if (!read || !latest) return null;
@@ -71,8 +43,8 @@ export async function fetchRiskFreeRate(currency: string, fetcher: typeof fetch 
 }
 
 /** Two years of weekly closes for the company's own trailing-multiple history (docs/valuation-v2-SPEC.md §5); null when the chart does not answer. */
-export async function fetchWeeklyCloses(ticker: string, fetcher: typeof fetch = fetch, now = new Date()): Promise<Close[] | null> {
-  const read = await chart(ticker.replaceAll(".", "-"), "2y", "1wk", fetcher, now);
+export async function fetchWeeklyCloses(ticker: string, fetcher: typeof fetch = fetch, now = new Date()): Promise<ChartClose[] | null> {
+  const read = await chart(yahooSymbol(ticker), "2y", "1wk", fetcher, now);
   return read?.points.length ? read.points : null;
 }
 
@@ -87,9 +59,9 @@ export type BetaEstimate = { beta: number; observations: number; from: string; t
 export async function fetchBeta(ticker: string, currency: string, fetcher: typeof fetch = fetch, now = new Date()): Promise<BetaEstimate | null> {
   const market = MARKETS[currency];
   if (!market) return null;
-  const [stock, index] = await Promise.all([chart(ticker.replaceAll(".", "-"), "2y", "1wk", fetcher, now), chart(market.index, "2y", "1wk", fetcher, now)]);
+  const [stock, index] = await Promise.all([chart(yahooSymbol(ticker), "2y", "1wk", fetcher, now), chart(market.index, "2y", "1wk", fetcher, now)]);
   if (!stock || !index) return null;
-  const byWeek = (points: Close[]) => new Map(points.map(p => [p.date, p.close]));
+  const byWeek = (points: ChartClose[]) => new Map(points.map(p => [p.date, p.close]));
   const s = byWeek(stock.points), m = byWeek(index.points);
   const dates = [...s.keys()].filter(d => m.has(d)).sort();
   const rs: number[] = [], rm: number[] = [];

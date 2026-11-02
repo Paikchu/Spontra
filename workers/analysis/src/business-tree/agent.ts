@@ -3,6 +3,7 @@ import { ANCHOR_FRAGMENTS, branchAncestors, businessHint, compactName, hasConten
 import { excerpt } from "../business-explainer/agent.ts";
 import type { WebSearchService } from "../web-search/service.ts";
 import type { SearchHit } from "../web-search/types.ts";
+import { isSecUrl, SEC_DOMAIN } from "../../../../shared/analysis-runtime/sec-sources.ts";
 
 /** A disclosed business as the flow draws it, with the children the statement itself discloses under it. */
 export type TreeBusiness = { flowNodeId: string; name: string; children: Array<{ flowNodeId: string; name: string }> };
@@ -142,7 +143,7 @@ class Library {
     if (!url) return null;
     let material = this.list.find(m => m.url === url);
     if (!material) {
-      material = { id: `${this.prefix}-s${this.list.length + 1}`, url, title: hit.title.slice(0, 300) || hostname(url), publishedAt: validDate(hit.publishedAt), kind: isSec(url) ? "sec" : "web", snippet: "", text: "", read: false, own: false };
+      material = { id: `${this.prefix}-s${this.list.length + 1}`, url, title: hit.title.slice(0, 300) || hostname(url), publishedAt: validDate(hit.publishedAt), kind: isSecUrl(url) ? "sec" : "web", snippet: "", text: "", read: false, own: false };
       this.list.push(material);
     }
     if (hit.own && material.kind === "sec") material.own = true;
@@ -791,12 +792,12 @@ async function libraryFilings(input: TreeRunInput, scope: { scope: string; maxAg
  */
 async function collectFilings(input: TreeRunInput, scope: { scope: string; maxAgeMs: number }): Promise<Array<{ url: string; title: string; snippet: string; publishedAt: string | null; own?: boolean }>> {
   // The flow's own filings are the company's; an annual report found by search is only listed.
-  const filings: Array<{ url: string; title: string; snippet: string; publishedAt: string | null; own?: boolean }> = (input.filings ?? []).filter(f => isSec(f.url)).slice(0, 2).map(f => ({ url: f.url, title: f.title, snippet: "", publishedAt: f.publishedAt, own: true }));
+  const filings: Array<{ url: string; title: string; snippet: string; publishedAt: string | null; own?: boolean }> = (input.filings ?? []).filter(f => isSecUrl(f.url)).slice(0, 2).map(f => ({ url: f.url, title: f.title, snippet: "", publishedAt: f.publishedAt, own: true }));
   const year = Number(input.now.slice(0, 4));
   try {
-    const result = await input.search.search({ query: `${input.companyName} form 10-K annual report fiscal ${year} ${year - 1} business segments products`, maxResults: 10, depth: "advanced", includeDomains: ["sec.gov"] }, scope);
+    const result = await input.search.search({ query: `${input.companyName} form 10-K annual report fiscal ${year} ${year - 1} business segments products`, maxResults: 10, depth: "advanced", includeDomains: [SEC_DOMAIN] }, scope);
     // Search ranking is not recency: the newest annual report by accession year, filed within about two years.
-    const annual = result.data.results.filter(h => isSec(h.url) && /10-?k/i.test(`${h.title} ${h.url}`) && (accessionYear(h.url) ?? 0) >= year - 1)
+    const annual = result.data.results.filter(h => isSecUrl(h.url) && /10-?k/i.test(`${h.title} ${h.url}`) && (accessionYear(h.url) ?? 0) >= year - 1)
       .sort((a, b) => (accessionYear(b.url) ?? 0) - (accessionYear(a.url) ?? 0))[0];
     if (annual && !filings.some(f => f.url === annual.url)) filings.push({ url: annual.url, title: `${annual.title.slice(0, 200)} (annual report, 10-K)`, snippet: annual.snippet.slice(0, 1_500), publishedAt: annual.publishedAt });
   } catch { /* The flow's own filings still anchor the research. */ }
@@ -821,4 +822,3 @@ function validDate(value: string | null): string | null {
 }
 function isHttps(value: string): boolean { return canonical(value) !== null; }
 function hostname(value: string): string { try { return new URL(value).hostname.toLowerCase(); } catch { return ""; } }
-function isSec(value: string): boolean { const host = hostname(value); return isHttps(value) && (host === "sec.gov" || host.endsWith(".sec.gov")); }

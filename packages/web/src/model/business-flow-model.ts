@@ -2,6 +2,7 @@ import {publicFlowSchema} from "@/shared/analysis-runtime/financial-data/schema"
 import { type BusinessFlowQuarter, type FlowAmount, type FlowMetric, type PublicBusinessFlow } from "@/shared/analysis-contract/business-flow";
 import type { PublicFundamentalsResponse, FundamentalMetricKey } from "@/shared/analysis-contract/fundamentals";
 import { adjustmentLabel, currencyName, formatPct, MINUS } from "@/shared/analysis-runtime/locale";
+import { edgarSearchUrl } from "@/shared/analysis-runtime/sec-sources";
 import { getLocale, messages } from "@/packages/web/src/i18n/core";
 
 /** Change words and statement checks; a change's label reads in the page's locale when it is formed. */
@@ -58,7 +59,7 @@ export function adaptFundamentals(data: PublicFundamentalsResponse | null, ticke
       const series = data.series.find(s => s && Array.isArray(s.points) && s.metricKey === key && s.unitFamily === "currency" && s.currency === period.currency && s.unit === period.currency);
       const point = series?.points.find(p => p && p.periodEnd === period.periodEnd);
       if (!series || !point) continue;
-      if (point.sourceAccession && !sources.some(s => s.id === point.sourceAccession)) sources.push({ id: point.sourceAccession, title: `SEC filing ${point.sourceAccession}`, url: `https://www.sec.gov/edgar/search/#/q=${encodeURIComponent(point.sourceAccession)}`, publishedAt: point.sourceFiledAt });
+      if (point.sourceAccession && !sources.some(s => s.id === point.sourceAccession)) sources.push({ id: point.sourceAccession, title: `SEC filing ${point.sourceAccession}`, url: edgarSearchUrl(point.sourceAccession), publishedAt: point.sourceFiledAt });
       figures[target as FlowMetric] = { value: point.valueDecimal, basis: series.basis, definition: `${data.catalogVersion}:${key}`, comparabilityKey: point.revision != null ? `${data.source}:${key}:revision-${point.revision}` : null, sourceIds: point.sourceAccession ? [point.sourceAccession] : [], formula: point.derivationFormula };
     }
     // Differences are only formed from figures in the same filing/revision. No YTD subtraction.

@@ -5,13 +5,14 @@
  * Required environment variables: none; the selected public HTTP origin must be reachable.
  * Run from the repository root:
  *
- *   node --experimental-strip-types workers/analysis/scripts/check-fundamentals-fresh.ts [--origin https://businessview.info] [--tickers GOOGL,NBIS]
+ *   node --experimental-strip-types workers/analysis/scripts/check-fundamentals-fresh.ts [--origin <site>] [--tickers GOOGL,NBIS]
  */
 import { fundamentalsBehind, latestFundamentalsQuarter } from "../../../shared/analysis-runtime/fundamentals-freshness.ts";
+import { PUBLIC_SITE_ORIGIN } from "../../../shared/analysis-runtime/site.ts";
 
 const args: string[] = process.argv.slice(2);
 const option = (name: string) => { const i = args.indexOf(`--${name}`); return i >= 0 ? args[i + 1] ?? null : null; };
-const origin = option("origin") ?? "https://businessview.info";
+const origin = option("origin") ?? PUBLIC_SITE_ORIGIN;
 const get = async <T>(path: string) => (await fetch(origin + path, { headers: { accept: "application/json" } })).json() as Promise<T>;
 
 type Home = { companies: Array<{ ticker: string; latestPeriod: { periodEnd: string } | null }> };

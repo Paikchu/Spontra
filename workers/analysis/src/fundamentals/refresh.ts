@@ -1,4 +1,5 @@
 import { fundamentalsBehind } from "../../../../shared/analysis-runtime/fundamentals-freshness.ts";
+import { secCompanyFactsUrl } from "../../../../shared/analysis-runtime/sec-sources.ts";
 import type { PublicBusinessFlow } from "../../../../shared/analysis-contract/business-flow.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
 import type { SecHistorySnapshot } from "../sec/analysis.ts";
@@ -59,7 +60,7 @@ export async function refreshSecFundamentals(env: Env, ticker: string, fetcher: 
   const published = await publishedQuarter(db, ticker);
   if (!published) return { status: "no-publication", published: null, stored: null, facts: null };
   const stored = (await repository.getCache<SecHistorySnapshot>(secFundamentalsKey(ticker)))?.payload ?? null;
-  const response = await fetcher(`https://data.sec.gov/api/xbrl/companyfacts/CIK${published.cik.replace(/\D/g, "").padStart(10, "0")}.json`, {
+  const response = await fetcher(secCompanyFactsUrl(published.cik), {
     cache: "no-store", headers: { accept: "application/json", "user-agent": env.SEC_USER_AGENT }, signal: AbortSignal.timeout(30_000),
   });
   const base = { published: published.periodEnd, stored: snapshotQuarter(stored) };

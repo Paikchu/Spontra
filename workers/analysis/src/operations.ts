@@ -8,6 +8,7 @@ export { readModelContent } from "./model-stream.ts";
 export { SecModelHttpError } from "./model-recovery.ts";
 import { fiscalPeriodInput } from "./sec/fiscal-period-ai.ts";
 import { fetchSecMarketSnapshot } from "./sec/market.ts";
+import { secCompanyFactsUrl } from "../../../shared/analysis-runtime/sec-sources.ts";
 import { normalizeEditorialIssues, editorialRequirements, editorialGate } from "./sec/editorial.ts";
 import { EDITORIAL_REVIEW_PROMPT, identifyReaderMarketSnapshot } from "./sec/reader.ts";
 import { fiscalPeriodKey, fiscalPeriodsFromCompanyFacts, readFiscalPeriod } from "./sec/fiscal-period.ts";
@@ -696,8 +697,7 @@ async function fetchCompanyHistory(cik: string, ticker: string, userAgent: strin
 }
 
 async function fetchCompanyFacts(cik: string, userAgent: string, fetcher: typeof fetch): Promise<unknown> {
-  const normalizedCik = String(cik).replace(/\D/g, "").padStart(10, "0");
-  const response = await fetcher(`https://data.sec.gov/api/xbrl/companyfacts/CIK${normalizedCik}.json`, {
+  const response = await fetcher(secCompanyFactsUrl(cik), {
     cache: "no-store",
     headers: { accept: "application/json", "user-agent": userAgent },
     signal: AbortSignal.timeout(30_000),
