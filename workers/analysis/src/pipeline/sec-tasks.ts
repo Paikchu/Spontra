@@ -99,8 +99,8 @@ export const SEC_TASKS = {
    */
   "sec-report": {
     // v3: the run writes each periodic filing's fiscal period from Company Facts, which guidance dates its items by.
-    // v4: a newest periodic report that is an amendment brings the original it amends (NBIS had only a cover-page 20-F/A).
-    version: "sec-report.v4-amended-originals",
+    // v5: a period's canonical report is the original, not its amendment (NBIS had only a cover-page 20-F/A, NET a 10-K/A).
+    version: "sec-report.v5-original-canonical",
     async run(env, ticker, { now, trigger, causeId }): Promise<TaskOutcome> {
       return driveWorkflow(env, `sec-report:${ticker}`, env.SEC_ANALYSIS_WORKFLOW as WorkflowBindingLike, async () => {
         // The message may have been queued while reports were still on. Starting now would throw

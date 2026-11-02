@@ -50,7 +50,10 @@ export function buildEarningsGroups(filings: SecFiling[], periods: Map<string, s
   }
   const metadata = new Map<string, SecEarningsGroup>();
   for (const [id, members] of groups) {
-    const ordered = [...members].sort((a, b) => Number(isPeriodic(b.form)) - Number(isPeriodic(a.form)) || b.filingDate.localeCompare(a.filingDate) || b.accessionNumber.localeCompare(a.accessionNumber));
+    // The period's report is its periodic filing, the original before an amendment: an amendment is most often a cover
+    // page or Part III (NBIS's 20-F/A, NET's 10-K/A), and as the canonical member it left the period with no real report.
+    const amended = (filing: SecFiling) => Number(/\/A$/.test(filing.form));
+    const ordered = [...members].sort((a, b) => Number(isPeriodic(b.form)) - Number(isPeriodic(a.form)) || amended(a) - amended(b) || b.filingDate.localeCompare(a.filingDate) || b.accessionNumber.localeCompare(a.accessionNumber));
     const primary = ordered[0];
     const sources = ordered.map(({ earningsGroup: _group, ...source }) => { void _group; return source; });
     const releases = members.filter((filing) => !isPeriodic(filing.form));
