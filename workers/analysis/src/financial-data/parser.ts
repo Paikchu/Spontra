@@ -17,7 +17,7 @@ export interface DocumentSource {url:string;accession:string;filedAt:string;cik:
  revenueStructure?:RevenueStructure|null;
  /** A structure from operating income to net income that balanced on an earlier filing of this issuer (presentation profile). */
  presentation?:{structure:BridgeStructure;version:string}|null;}
-export const SEC_FLOW_PARSER_VERSION='deterministic-sec.v20';
+export const SEC_FLOW_PARSER_VERSION='deterministic-sec.v21';
 export interface Fact {source:DocumentSource;operands?:Fact[];formula?:string;precision:number;tag:string;value:number;currency:string;start:string;end:string;context:string;dimensions:Record<string,string>;
  /** The issuer's income statement row printing this fact; flip means the statement shows it with the opposite sign. */
  statementRow?:{order:number;label:string;flip:boolean};
@@ -151,6 +151,12 @@ function splitRevenue(facts:Fact[],revenueNames:string[],consolidated:Fact|undef
  const conceptsOf=(members:Map<string,Fact>)=>new Set([...members.values()].map(f=>f.tag));
  const balanced:RevenueSplit[]=[];
  const keep=(candidate:typeof balanced[number])=>{if(!balanced.some(b=>local(b.axis)===local(candidate.axis)&&b.members.size===candidate.members.size&&[...candidate.members].every(([m,f])=>b.members.get(m)?.value===f.value)))balanced.push(candidate);};
+ // A member equal to the sum of two or more other members of its axis is a subtotal the filing tags beside them
+ // (Intel's "Intel Products" = CCPG + DCAI); the split is tried without it as well, and still has to balance exactly.
+ const withoutSubtotals=(members:Map<string,Fact>)=>{const list=[...members];if(list.length>12)return members;
+  const subtotal=([m,f]:[string,Fact])=>{const others=list.filter(([o])=>o!==m).map(([,g])=>g.value);for(let mask=1;mask<1<<others.length;mask++){let n=0,count=0;for(let i=0;i<others.length;i++)if(mask&1<<i){n+=others[i];count++;}if(count>=2&&near(n,f.value))return true;}return false;};
+  const kept=new Map(list.filter(entry=>!subtotal(entry)));return kept.size>=2&&kept.size<members.size?kept:members;};
+ for(const [key,group] of [...groups]){const stripped=withoutSubtotals(group.members);if(stripped!==group.members)groups.set(key+'|without-subtotals',{axis:group.axis,members:stripped});}
  for(const {axis,members} of groups.values()){const concepts=conceptsOf(members);
   const adjustments=eliminationsFor(concepts).flatMap(elimination=>(concepts.size===1?calculated([...concepts][0]):[[]]).map(items=>[...eliminations(elimination),...items])).find(items=>near(sum(members)+items.reduce((n,a)=>n+a.weight*a.fact.value,0),consolidated.value));
   if(adjustments)keep({axis,members,adjustments,managed:false});}

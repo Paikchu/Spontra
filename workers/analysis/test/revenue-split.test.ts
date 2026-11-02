@@ -126,3 +126,15 @@ test("the same segments balancing twice take the split that needs the fewest rec
   assert.deepEqual(q.segments.map(s => [s.id, Number(s.revenue.value), s.revenue.lineage?.[0].concept]), [
     ["ttmi:AerospaceAndDefenseMember", 382631000, "us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax"], ["ttmi:CommercialMember", 621423000, "us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax"]]);
 });
+
+test("a member the filing tags as the sum of other members on the same axis is a subtotal, not a segment", () => {
+  // Intel's 10-Q for the quarter ended September 26, 2026 (millions): "Intel Products" is CCPG plus DCAI on the segment axis.
+  const rev = "us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax", tables = ["OperatingSegmentsFinancialInformationbySegmentDetails"];
+  const op = (member: string, value: number) => fact(rev, value, { "us-gaap:StatementBusinessSegmentsAxis": member, "srt:ConsolidationItemsAxis": "us-gaap:OperatingSegmentsMember" }, tables);
+  const facts = [fact(rev, 16513), op("intc:ClientComputingAndPhysicalAIGroupMember", 8097), op("intc:DatacenterAndAIMember", 7318),
+    op("intc:ClientComputingGroupDatacenterAndAIAndNetworkAndEdgeMember", 15415), op("intc:IntelFoundryMember", 6697), op("us-gaap:AllOtherSegmentsMember", 692),
+    fact(rev, -6291, { "srt:ConsolidationItemsAxis": "us-gaap:IntersegmentEliminationMember" }, tables)];
+  const q = split(facts, { arcs: [], labels: {}, members: {} });
+  assert.deepEqual(q.segments.map(s => [s.id, Number(s.revenue.value) / 1e6]), [["intc:ClientComputingAndPhysicalAIGroupMember", 8097], ["intc:DatacenterAndAIMember", 7318], ["intc:IntelFoundryMember", 6697], ["us-gaap:AllOtherSegmentsMember", 692]]);
+  assert.deepEqual(q.revenueAdjustments?.map(a => [a.id, Number(a.amount.value) / 1e6]), [["intersegment-eliminations", -6291]]);
+});
