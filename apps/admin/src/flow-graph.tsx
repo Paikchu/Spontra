@@ -11,7 +11,7 @@ const NODE: Record<string, { label: string; model?: boolean }> = {
   events: { label: '事件' }, 'sec-report': { label: '财报摘要', model: true }, guidance: { label: '业绩指引', model: true },
   'company-analysis': { label: '公司综述', model: true }, findings: { label: '要点', model: true }, analyst: { label: '要点分析师', model: true },
   checkup: { label: '三表分析', model: true }, items: { label: '申报解读', model: true }, explainer: { label: '业务解读', model: true },
-  tree: { label: '业务脑图', model: true },
+  tree: { label: '业务脑图', model: true }, valuation: { label: '估值评估', model: true },
 };
 const STATE: Record<FlowNode['state'], string> = { running: '运行中', queued: '排队', done: '完成', failed: '失败', idle: '未运行' };
 const COL = 176, NODE_W = 140, NODE_H = 46, GAP = 14, PAD = 8;
