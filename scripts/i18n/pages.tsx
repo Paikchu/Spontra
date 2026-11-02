@@ -84,7 +84,7 @@ function readable(html: string): string[] {
 /** The company page as main.tsx mounts it, reading its focus from the URL set by browser(). */
 function CompanyPage({ payload }: { payload: Payload }) {
   return <SidebarProvider asChild open keyboardShortcut={null} persistState={false}><main>
-    <BusinessMap ticker={TICKER} tools={<RailActions light={false} onToggleTheme={() => {}} onSearch={() => {}} collapsed={false} />} flow={payload.flow} notice={null}
+    <BusinessMap ticker={TICKER} tools={<RailActions light={false} onToggleTheme={() => {}} onSearch={() => {}} collapsed={false} />} flow={payload.flow}
       revenueHistory={company.history ?? null} explainer={payload.explainer} tree={payload.tree} guidance={payload.guidance}
       capital={capital} findings={payload.findings} fundamentals={null} events={payload.events} filings={payload.filings} valuation={payload.valuation}
       company={companyIdentity({ locale: getLocale(), issuer: company.issuer, explainerName: payload.explainer.companyName, treeName: payload.tree.companyName })} />

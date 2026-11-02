@@ -7,17 +7,20 @@
  *     --payload ORCL-live-payload.json --weights 0.5,0.3,0.2 --probabilities 0.2,0.4,0.25,0.15 --consensus 235.8,110,400,43,2026-10-31 --out replay.md --json replay.json
  *
  * The payload is a ValuationPublication (or `{ report }`); the peers, anchor, facts, rate, shares and bridge it carries are reused as they
- * were frozen with the report; management targets come from the curated set in this repository.
+ * were frozen with the report; management targets come from `--inputs`, the company's valuation inputs as the admin route answers
+ * them (`GET /api/admin/business-map/companies/<T>/valuation-inputs`), placed by `--fye` or the file's `fiscalYearEndMonth`.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import type { ValuationPublication } from "../../../shared/analysis-contract/valuation.ts";
 import { calculateValuation, type CalcRequest } from "../../../shared/analysis-runtime/valuation/calculator.ts";
-import { managementTargetsFor } from "../src/valuation/curated.ts";
+import { managementTargetSet, parseTargets } from "../src/valuation/curated.ts";
 
-const { values: args } = parseArgs({ options: { payload: { type: "string" }, weights: { type: "string" }, probabilities: { type: "string" }, consensus: { type: "string" }, out: { type: "string" }, json: { type: "string" } } });
+const { values: args } = parseArgs({ options: { payload: { type: "string" }, weights: { type: "string" }, probabilities: { type: "string" }, consensus: { type: "string" }, out: { type: "string" }, json: { type: "string" }, inputs: { type: "string" }, fye: { type: "string" } } });
 const raw = JSON.parse(readFileSync(args.payload!, "utf8")) as { report?: ValuationPublication } & ValuationPublication;
 const report = raw.report ?? raw;
+const inputs = args.inputs ? JSON.parse(readFileSync(args.inputs, "utf8")) as { targets?: unknown; fiscalYearEndMonth?: number | null } : null;
+const management = managementTargetSet(report.ticker, inputs?.targets ? parseTargets(inputs.targets) : null, args.fye ? Number(args.fye) : inputs?.fiscalYearEndMonth ?? null, new Date().toISOString()).set;
 const m = report.model;
 if (!m) throw new Error("the payload has no model");
 const fact = (id: string) => report.facts.find(f => f.id === id)?.value ?? null;
@@ -32,7 +35,7 @@ const request: CalcRequest = {
     facts: report.facts.map(f => ({ id: f.id, value: f.value, unit: f.unit })), riskFree: m.discountRate.components.riskFree, anchor: m.anchors?.revenue ?? null, peers: m.peers ?? null, consensus,
     consensusNote: consensus ? { status: "cited", source: args.consensus ? "command line" : "the published report", reason: null } : { status: "unavailable", source: null, reason: "the published report cited none and none was given on the command line" },
     trailing: { ebitda: fact("ebitda_ttm"), da: fact("da_ttm"), interestExpense: fact("interest_expense_ttm") }, forwardYears: 3, methodWeights: weights, lifecycle: null,
-    management: managementTargetsFor(report.ticker), periodEnd: report.financialPeriodEnd, scenarioProbabilities: probabilities, managementComparison: { rationale: "replay (command line)", evidenceIds: [] },
+    management, periodEnd: report.financialPeriodEnd, scenarioProbabilities: probabilities, managementComparison: { rationale: "replay (command line)", evidenceIds: [] },
   },
 };
 const result = calculateValuation(request);
