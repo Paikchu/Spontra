@@ -2,14 +2,15 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { ComposedAnalysis } from "@/shared/analysis-contract/findings";
 import type { ItemAnalysis } from "@/shared/analysis-contract/item-analysis";
 import { verifyFindings, type FindingData, type VerifiedFinding } from "@/shared/analysis-runtime/findings";
-import { getLocale } from "@/packages/web/src/i18n";
+import { getLocale, useLocale } from "@/packages/web/src/i18n";
 import { fetchItemAnalysis } from "./company-data";
 import { LensBlocks } from "./LensPanel";
 
-/** The analysis of the rail row in focus: undefined while it loads, null when the row has none. Read again after an update. */
+/** The analysis of the rail row in focus: undefined while it loads, null when the row has none. Read again after an update or a language switch. */
 export function useItemAnalysis(ticker: string, id: string, updates: number): ItemAnalysis | null | undefined {
   const [read, setRead] = useState<{ key: string; analysis: ItemAnalysis | null } | null>(null);
-  const key = `${ticker}:${id}:${updates}`;
+  const locale = useLocale();
+  const key = `${ticker}:${id}:${updates}:${locale}`;
   useEffect(() => {
     const controller = new AbortController();
     fetchItemAnalysis(ticker, id, controller.signal)
