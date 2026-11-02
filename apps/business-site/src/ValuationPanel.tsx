@@ -380,7 +380,7 @@ export function ValuationPanel({ ticker, valuation }: { ticker: string; valuatio
     // A read that does not answer, or answers with no report, is this version's failure and shows as such.
     void fetchValuationVersion(ticker, versionId, c.signal).catch(() => null).then(r => { if (!c.signal.aborted) setRead(versionSettled(versionId, r)); });
     return () => c.abort();
-  }, [ticker, versionId, valuation.report?.versionId]);
+  }, [ticker, versionId, valuation.report?.versionId, locale]);
   // A new pick starts from its own loading state; nothing read for the previous pick carries over.
   const pick = (id: string) => { setVersionId(id); setRead(versionLoading(id)); };
   const view = versionView(versionId, valuation.report, read);
