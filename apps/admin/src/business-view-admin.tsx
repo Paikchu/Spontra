@@ -118,7 +118,7 @@ export function BusinessViewAdmin({ mapOrigin = "" }: { mapOrigin?: string }) {
           : key === "business" ? <BusinessSegments {...auth} onOpenSection={openSection} />
           : key === "models" ? <><StageAdminPanel onUnauthorized={auth.onUnauthorized} /><AiModels {...auth} /></>
           : key === "messages" ? <AdminInbox inbox={inbox} read={read} onOpen={ticker => navigate("whitelist", `?${new URLSearchParams({ ticker })}`)} />
-          : <AiRuns {...auth} kinds={["findings", "analyst", "checkup"]} translations />;
+          : <AiRuns {...auth} kinds={["findings", "analyst", "checkup", "valuation"]} translations />;
         return <div key={`${key}:${generation[key] ?? 0}`} className="ra-page" hidden={key !== section}><PageActive.Provider value={key === section}>{content}</PageActive.Provider></div>;
       })}
       </div>
