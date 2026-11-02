@@ -34,8 +34,12 @@ export class ValuationStore {
 
   /** Records where the newest run stands; read beside the report so the page can say "updating" or "last attempt failed". */
   async noteAttempt(ticker: string, attempt: ValuationAttempt, now: string): Promise<void> {
-    await this.db.prepare(`INSERT INTO valuation_current (ticker, version_id, latest_attempt_json, request_generation, last_fingerprint, updated_at) VALUES (?, NULL, ?, 0, NULL, ?)
-      ON CONFLICT (ticker) DO UPDATE SET latest_attempt_json = excluded.latest_attempt_json, updated_at = excluded.updated_at`).bind(ticker, JSON.stringify(attempt), now).run();
+    await this.db.batch([
+      this.db.prepare(`INSERT INTO valuation_current (ticker, version_id, latest_attempt_json, request_generation, last_fingerprint, updated_at) VALUES (?, NULL, ?, 0, NULL, ?)
+        ON CONFLICT (ticker) DO UPDATE SET latest_attempt_json = excluded.latest_attempt_json, updated_at = excluded.updated_at`).bind(ticker, JSON.stringify(attempt), now),
+      this.db.prepare(`INSERT INTO publication_revisions (ticker, resource, revision) VALUES (?, 'valuation', ?)
+        ON CONFLICT(ticker, resource) DO UPDATE SET revision = max(revision, excluded.revision)`).bind(ticker, now),
+    ]);
   }
 
   /**

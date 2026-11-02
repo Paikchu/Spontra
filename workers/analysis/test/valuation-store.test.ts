@@ -95,6 +95,21 @@ test("the stored payload reads back through the contract; a payload for another 
   assert.equal(readValuationPublication({ ...p, dimensions: p.dimensions.slice(1) }, "ACME"), null);
 });
 
+test("an unfinished refresh invalidates the public resource while retaining the prior report", async () => {
+  const db = database(), store = new ValuationStore(db);
+  const issuedAt = "2026-10-28T01:00:00.000Z";
+  const generation = await store.advance("ACME", issuedAt);
+  await store.publish("ACME", publication("ready-report", "ready", issuedAt), [evidence], generation, "fp1", issuedAt);
+  for (const [status, updatedAt] of [["running", "2026-10-28T02:00:00.000Z"], ["empty", "2026-10-28T02:10:00.000Z"]] as const) {
+    await store.noteAttempt("ACME", { runId: "refresh", status, stage: status === "running" ? "input" : "publish", updatedAt, reportStatus: status === "empty" ? "insufficient" : null, gaps: [], errorCode: null }, updatedAt);
+    const response = await readValuationResponse(db, "ACME");
+    assert.equal(response.report?.versionId, "ready-report");
+    assert.equal(response.latestAttempt?.status, status);
+    assert.equal(response.outdated, true);
+    assert.equal((await db.prepare("SELECT revision FROM publication_revisions WHERE ticker='ACME' AND resource='valuation'").bind().first<{ revision: string }>())?.revision, updatedAt);
+  }
+});
+
 
 test("reference closes refresh visible ranges and their read revision without rewriting research", async () => {
   const db = database();

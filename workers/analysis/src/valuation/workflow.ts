@@ -358,8 +358,9 @@ export async function executeValuationWorkflow(params: ValuationWorkflowParams, 
     const fresh = await buildValuationInput(env, params.ticker, now);
     if (!fresh || await runFingerprint(fresh.fingerprint) !== params.fingerprint) return { current: false, stored: false, reason: "input changed" };
     const outcome = await store.publish(params.ticker, publication, evidence, generation, params.fingerprint, publication.generatedAt);
-    const attempt: ValuationAttempt = { runId: runId ?? "", status: publication.reportStatus === "insufficient" ? "empty" : outcome.current ? "succeeded" : "superseded", stage: "publish", updatedAt: publication.generatedAt, reportStatus: publication.reportStatus, gaps: publication.gaps, errorCode: null };
-    await store.noteAttempt(params.ticker, attempt, publication.generatedAt);
+    const completedAt = new Date().toISOString();
+    const attempt: ValuationAttempt = { runId: runId ?? "", status: publication.reportStatus === "insufficient" ? "empty" : outcome.current ? "succeeded" : "superseded", stage: "publish", updatedAt: completedAt, reportStatus: publication.reportStatus, gaps: publication.gaps, errorCode: null };
+    await store.noteAttempt(params.ticker, attempt, completedAt);
     if (outcome.current) await quietly(() => new AiRunStore(db).saveVersion("valuation", params.ticker, { ...publication, trace: turns.slice(-80) }, publication.generatedAt));
     return { ...outcome, reason: outcome.current ? "published" : publication.reportStatus === "insufficient" ? "research incomplete; previous report retained" : "generation moved on" };
   });
