@@ -152,12 +152,12 @@ export async function loadFindingsIndex(fetcher:typeof fetch=fetch):Promise<stri
  }catch{return null;}
 }
 /** The ticker a company's data is kept under (a second share class reads as the class EDGAR lists first), or null when the read fails. */
-export async function loadPrimaryTicker(ticker:string,fetcher:typeof fetch=fetch):Promise<string|null>{
+export async function loadPrimaryTicker(ticker:string,fetcher:typeof fetch=fetch):Promise<{ticker:string;listed:boolean}|null>{
  try{
   const response=await fetcher(ANALYSIS_ORIGIN+`/api/v1/tickers/${encodeURIComponent(ticker)}`,{signal:AbortSignal.timeout(5000),headers:{accept:"application/json"}});
   if(!response.ok)return null;
-  const body=await response.json() as {schemaVersion?:string;requested?:unknown;ticker?:unknown};
-  return body.schemaVersion==="ticker.v1"&&body.requested===ticker&&typeof body.ticker==="string"&&TICKER_PATTERN.test(body.ticker)?body.ticker:null;
+  const body=await response.json() as {schemaVersion?:string;requested?:unknown;ticker?:unknown;listed?:unknown};
+  return body.schemaVersion==="ticker.v1"&&body.requested===ticker&&typeof body.ticker==="string"&&TICKER_PATTERN.test(body.ticker)?{ticker:body.ticker,listed:body.listed===true}:null;
  }catch{return null;}
 }
 export async function loadFindings(ticker:string,fetcher:typeof fetch=fetch,locale:Locale|null=null):Promise<FindingsBundle|null>{
@@ -433,11 +433,13 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
   if(named){
    if(request.method!=="GET"||[...url.searchParams.keys()].length)return json({error:"Not found"},404);
    try{if(!env.PUBLIC_READ_LIMIT||!(await env.PUBLIC_READ_LIMIT.limit({key:request.headers.get("cf-connecting-ip")??"anonymous"})).success)return json({error:"Too many requests"},429);}catch{return json({error:"Read service unavailable"},503);}
-   const key=new Request(url.href,{method:"GET"});const cached=await cache?.match(key);if(cached)return cached;
-   const ticker=await loadPrimaryTicker(named[1]!,fetcher);
-   if(!ticker){const failed=json({error:"Read service unavailable"},readFailureStatus===429?429:503);failed.headers.set("cache-control","no-store");return failed;}
-   const response=json({schemaVersion:"ticker.v1",requested:named[1],ticker});response.headers.set("cache-control","public, max-age=86400");
-   if(cache)ctx.waitUntil(cache.put(key,response.clone()));
+   // Only an answer the issuer directory gave is kept; one given before the directory was read is asked again.
+   const key=new Request(`${url.origin}${url.pathname}?listed=1`,{method:"GET"});const cached=await cache?.match(key);if(cached)return cached;
+   const answer=await loadPrimaryTicker(named[1]!,fetcher);
+   if(!answer){const failed=json({error:"Read service unavailable"},readFailureStatus===429?429:503);failed.headers.set("cache-control","no-store");return failed;}
+   const response=json({schemaVersion:"ticker.v1",requested:named[1],ticker:answer.ticker});
+   response.headers.set("cache-control",answer.listed?"public, max-age=86400":"no-store");
+   if(cache&&answer.listed)ctx.waitUntil(cache.put(key,response.clone()));
    return response;
   }
   if(url.pathname==="/api/business/v1/findings"){

@@ -82,7 +82,7 @@ function indexOf(entries: IssuerEntry[]): DirectoryIndex {
 }
 
 /** The directory's entry for a ticker, or null when EDGAR lists no issuer under it (or the directory was never read). */
-function listedIssuer(entries: IssuerEntry[], ticker: string): IssuerEntry | null {
+export function listedIssuer(entries: IssuerEntry[], ticker: string): IssuerEntry | null {
   return indexOf(entries).byTicker.get(canonicalTicker(ticker)) ?? null;
 }
 

@@ -17,7 +17,7 @@ import { parseFundamentalApiQuery } from "../fundamentals/fundamentals-api.ts";
 import { getSecFundamentals } from "../fundamentals/sec-fundamentals.ts";
 import { getPublicFiling, getPublicFilingPage } from "../sec/public-api.ts";
 import { D1SecRepository } from "../sec/d1.ts";
-import { primaryTicker, securities, storedIssuerDirectory } from "../catalog/issuer-directory.ts";
+import { listedIssuer, primaryTicker, securities, storedIssuerDirectory } from "../catalog/issuer-directory.ts";
 import { AnalysisRequestError, type AnalysisErrorCode } from "./contract-support/errors.ts";
 import { dataResponse, errorResponse } from "./http.ts";
 import { localize, type TranslatedResource } from "../../../../shared/analysis-runtime/translation.ts";
@@ -131,7 +131,9 @@ export async function handleMapRead(request: Request, env: AnalysisReadEnv): Pro
 async function primary(request: Request, database: D1Database, ticker: string): Promise<Response> {
   const requested = normalizeTicker(ticker);
   if (!requested) return errorResponse("ROUTE_NOT_FOUND", "No such resource.");
-  return dataResponse(request, { schemaVersion: "ticker.v1", requested, ticker: primaryTicker(await storedIssuerDirectory(database), requested) }, "cacheable");
+  const directory = await storedIssuerDirectory(database);
+  // `listed` says the directory knew the ticker, so a reader may keep the answer; before EDGAR was first read it is false.
+  return dataResponse(request, { schemaVersion: "ticker.v1", requested, ticker: primaryTicker(directory, requested), listed: listedIssuer(directory, requested) !== null }, "no-store");
 }
 
 /** One aggregated read for the public homepage. `?locale=` matches the other read routes. */
