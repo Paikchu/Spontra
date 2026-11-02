@@ -1,3 +1,5 @@
+import type { ValuationPriceGuide } from "./price-guide.ts";
+
 /**
  * The valuation assessment (docs/valuation-assessment-design.md, docs/valuation-assessment-implementation.md,
  * docs/valuation-methodology-optimization.md): five researched dimensions, one calculated model over three scenarios
@@ -385,6 +387,7 @@ export type ValuationResponse = {
   ticker: string;
   availability: ValuationAvailability;
   report: ValuationPublication | null;
+  priceGuide?: ValuationPriceGuide;
   latestAttempt: ValuationAttempt | null;
   outdated: boolean;
   versions: Array<{ versionId: string; generatedAt: string; researchAsOf: string; reportStatus: ReportStatus; weightedScore: number | null; verdict: ValuationVerdict }>;
