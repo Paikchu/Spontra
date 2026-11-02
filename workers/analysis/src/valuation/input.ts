@@ -5,7 +5,7 @@ import type { PeerCompany, PeersPublication } from "../../../../shared/analysis-
 import { readFindingFundamentals, resolveRef, type FindingData } from "../../../../shared/analysis-runtime/findings.ts";
 import { readFilingLeaseFacts } from "./filing-lease-facts.ts";
 import { selectPeers } from "../../../../shared/analysis-runtime/valuation/peers.ts";
-import { distributionOf, type Lifecycle } from "../../../../shared/analysis-runtime/valuation/calculator.ts";
+import { coreEquityEarnings, distributionOf, type Lifecycle } from "../../../../shared/analysis-runtime/valuation/calculator.ts";
 import { financeLeaseAmount, operatingExpenseNetDebt } from "../../../../shared/analysis-runtime/valuation/lease-basis.ts";
 import { lifecycleOf } from "../../../../shared/analysis-runtime/valuation/prior.ts";
 import { readPeersResponse } from "../peers/read.ts";
@@ -34,7 +34,7 @@ import type { GuidancePublication } from "../../../../shared/analysis-contract/g
  * of each driver, the diagnostics every dimension must answer, and the catalogue of filings, guidance and calls the agent
  * may read. No model call, no SEC fetch. Everything here is deterministic, so the fingerprint says what a run would write from.
  */
-export const VALUATION_INPUT_VERSION = "valuation.input.v4";
+export const VALUATION_INPUT_VERSION = "valuation.input.v5";
 const DAY = 86_400_000;
 
 export type ValuationDocument = { documentId: string; accession: string; form: string; docType: string; filedAt: string; reportDate: string; url: string };
@@ -306,15 +306,22 @@ const ttmOf = (company: PeerCompany, figure: keyof PeerCompany["quarters"][numbe
   const values = company.quarters.slice(0, 4).map(q => num(q.figures[figure]));
   return values.length === 4 && values.every((v): v is number => v != null) ? values.reduce((a, b) => a + b, 0) : null;
 };
-/** Earnings before securities gains and one-offs: operating income less tax at the statutory rate; peers carry no interest line. */
+/** Peers use the same after-interest operating earnings formula as the subject, at an explicit normalized tax assumption. */
 const CORE_TAX = 0.21;
+
+async function peerInterestExpense(db: D1Database, ticker: string, periodEnd: string): Promise<number | null> {
+  const response = await getSecFundamentals(db, parseFundamentalApiQuery(ticker, new URLSearchParams({ metrics: "nonoperating_interest_expense", periodCount: "12" })));
+  const fundamentals = readFindingFundamentals(response, ticker);
+  const value = resolveRef({ quarters: [], history: null, capital: null, fundamentals, guidance: null }, { fundamental: "nonoperating_interest_expense" }, periodEnd, "fiscal_year");
+  return value?.currency === "USD" && !value.range ? value.value : null;
+}
 
 /**
  * The peers' trailing EBITDA, core earnings and net debt from the peers projection, with their newest SEC share count.
  * A peer that is loss-making (trailing operating income at or below zero), has EBITDA at or below zero, or lacks a
  * figure the multiples need is dropped with a note, so the quartiles are over companies whose multiples mean something.
  */
-export async function buildPeerFundamentals(db: D1Database, ticker: string, peers: PeersPublication | null, curated: string[] | null, sharesOf?: (peer: string, periodEnd: string) => Promise<number | null>, balanceSheetOf?: (peer: string, periodEnd: string) => Promise<BalanceSheet | null>, disclosedLeasesOf?: (peer: string, periodEnd: string, sheet: BalanceSheet | null) => Promise<ValuationFact[]>): Promise<{ peers: PeerFundamentals[]; basis: ValuationInput["peerBasis"]; notes: string[] }> {
+export async function buildPeerFundamentals(db: D1Database, ticker: string, peers: PeersPublication | null, curated: string[] | null, sharesOf?: (peer: string, periodEnd: string) => Promise<number | null>, balanceSheetOf?: (peer: string, periodEnd: string) => Promise<BalanceSheet | null>, disclosedLeasesOf?: (peer: string, periodEnd: string, sheet: BalanceSheet | null) => Promise<ValuationFact[]>, interestExpenseOf: (peer: string, periodEnd: string) => Promise<number | null> = (peer, periodEnd) => peerInterestExpense(db, peer, periodEnd)): Promise<{ peers: PeerFundamentals[]; basis: ValuationInput["peerBasis"]; notes: string[] }> {
   if (!peers) return { peers: [], basis: "none", notes: ["no peers projection"] };
   const selection = selectPeers(peers, ticker, curated);
   const repository = new D1SecRepository(db);
@@ -349,7 +356,11 @@ export async function buildPeerFundamentals(db: D1Database, ticker: string, peer
     if (operating == null || ebitda == null || netDebt == null || count == null) { notes.push(`${peer}: incomplete figures (${[operating == null && "operating income", depreciation == null && "D&A", netDebt == null && "net debt", count == null && "shares"].filter(Boolean).join(", ")})`); continue; }
     if (operating <= 0) { notes.push(`${peer}: loss-making (trailing operating income ${operating.toExponential(2)})`); continue; }
     if (ebitda <= 0) { notes.push(`${peer}: EBITDA not positive`); continue; }
-    out.push({ ticker: peer, periodEnd: newest.periodEnd, ebitda, coreEarnings: operating * (1 - CORE_TAX), netDebt, shares: count, weight: selection.weights[peer] ?? 1 });
+    const interest = await interestExpenseOf(peer, newest.periodEnd).catch(() => null);
+    const coreEarnings = coreEquityEarnings(operating, interest, CORE_TAX);
+    if (coreEarnings == null) notes.push(`${peer}: reported trailing interest expense is unavailable; P/E omitted, EV/EBITDA retained`);
+    else if (coreEarnings <= 0) notes.push(`${peer}: normalized after-interest earnings are not positive; P/E omitted, EV/EBITDA retained`);
+    out.push({ ticker: peer, periodEnd: newest.periodEnd, ebitda, coreEarnings, netDebt, shares: count, weight: selection.weights[peer] ?? 1 });
   }
   if (out.length < 2 && out.length) notes.push(`only ${out[0]!.ticker} qualifies; quartiles need two peers`);
   const total = out.reduce((sum, p) => sum + p.weight, 0);

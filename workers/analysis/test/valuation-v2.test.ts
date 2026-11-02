@@ -10,7 +10,7 @@ const close = (actual: number, expected: number, digits = 2) => assert.equal(Num
 const bridge = { nonOperatingAssets: 0, debtAndClaims: 0, nonOperatingEquityAdjustment: 0, notes: [] };
 const fill = (n: number, v: number) => new Array<number>(n).fill(v);
 const scenario = (drivers: ModelDrivers, probability: number | null = null): ScenarioAssumptions => ({ narrative: "", probability, triggers: [], invalidation: [], evidenceIds: [], drivers });
-const rate = (value: number) => ({ value, basis: "wacc" as const, components: { riskFree: null, beta: null, equityRiskPremium: null, costOfEquity: null, costOfDebt: null, taxRate: null, equityWeight: null }, rationale: "", sourceRefs: [] });
+const rate = (value: number) => ({ value, basis: "wacc" as const, components: { riskFree: null, beta: null, equityRiskPremium: null, costOfEquity: value + 0.02, costOfDebt: null, taxRate: null, equityWeight: null }, rationale: "Synthetic equity cost is two percentage points above WACC.", sourceRefs: [] });
 const fcff = (years: number, growth: number, margin = 0.2, extra: Partial<Extract<ModelDrivers, { modelType: "fcff" }>> = {}, path: Partial<Extract<ModelDrivers, { modelType: "fcff" }>["path"]> = {}): ModelDrivers =>
   ({ modelType: "fcff", revenue0: 1000, path: { revenueGrowth: fill(years, growth), operatingMargin: fill(years, margin), taxRate: fill(years, 0.2), salesToCapital: fill(years, 2), ...path }, terminalGrowth: 0.03, terminalRoic: 0.15, ...extra });
 const request = (years: number, extra: Partial<CalcRequest> = {}): CalcRequest => ({
@@ -72,17 +72,17 @@ test("RPO floor: a 12-month bucket lands in year one, a 24-month bucket spreads 
   assert.deepEqual(floorBreaches({ ...drivers, revenue0: 100 }, anchor).map(b => b.year), [1, 2, 3, 4, 5]);
 });
 
-test("forward multiples: year-3 EBITDA at the peer median, net claims rolled forward by the base cash flows, discounted three years", () => {
+test("forward multiples: discount interim FCFF and exit EV before today's claims; equity exit price uses its own rate", () => {
   const drivers = fcff(5, 0.10) as Extract<ModelDrivers, { modelType: "fcff" }>;
   const f = forwardFundamentals(drivers, 3, { da0: 50, interestExpense0: 10, shares: 100 });
   close(f.revenue, 1331); close(f.ebit, 266.2); close(f.ebitda!, 266.2 + 66.55); close(f.eps!, (266.2 - 10) * 0.8 / 100, 6);
   const multiples = { p25: 10, median: 12, p75: 14, count: 5 };
-  const ev = forwardMultipleValue({ metric: 300, multiples, horizonYears: 3, r: 0.09, kind: "ev", bridge: { ...bridge, nonOperatingAssets: 100, debtAndClaims: 400 }, shares: 100, cumulativeCashFlow: -150 });
-  // Net claims 300 today plus 150 of negative cash flow = 450 at the horizon.
-  close(ev.base, (300 * 12 - 450) / 1.09 ** 3 / 100, 6); close(ev.low, (300 * 10 - 450) / 1.09 ** 3 / 100, 6);
-  const pe = forwardMultipleValue({ metric: 2, multiples, horizonYears: 3, r: 0.09, kind: "equity", bridge, shares: 100, cumulativeCashFlow: 0 });
-  close(pe.base, 24 / 1.09 ** 3, 6);
-  assert.throws(() => forwardMultipleValue({ metric: 2, multiples: { ...multiples, p25: -1 }, horizonYears: 3, r: 0.09, kind: "equity", bridge, shares: 100, cumulativeCashFlow: 0 }), ValuationCalcError);
+  const pvExplicit = -50 / 1.09 - 50 / 1.09 ** 2 - 50 / 1.09 ** 3;
+  const ev = forwardMultipleValue({ metric: 300, multiples, horizonYears: 3, r: 0.09, kind: "ev", bridge: { ...bridge, nonOperatingAssets: 100, debtAndClaims: 400 }, shares: 100, pvExplicit });
+  close(ev.base, (pvExplicit + 300 * 12 / 1.09 ** 3 - 300) / 100, 6); close(ev.low, (pvExplicit + 300 * 10 / 1.09 ** 3 - 300) / 100, 6);
+  const pe = forwardMultipleValue({ metric: 2, multiples, horizonYears: 3, r: 0.12, kind: "equity" });
+  close(pe.base, 24 / 1.12 ** 3, 6);
+  assert.throws(() => forwardMultipleValue({ metric: 2, multiples: { ...multiples, p25: -1 }, horizonYears: 3, r: 0.12, kind: "equity" }), ValuationCalcError);
 });
 
 test("peer multiples: quartiles over the peers that answer; a peer without a quote or with negative EBITDA is left out", () => {

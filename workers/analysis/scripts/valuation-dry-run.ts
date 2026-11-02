@@ -21,7 +21,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import type { FactorDistribution, ValuationModelResult } from "../../../shared/analysis-contract/valuation.ts";
-import { calculateValuation, distributionOf, multipleHistoryOf, peerMultiplesOf, sanityGates, verifyCitedInputs, type CalcRequest } from "../../../shared/analysis-runtime/valuation/calculator.ts";
+import { calculateValuation, coreEquityEarnings, distributionOf, multipleHistoryOf, peerMultiplesOf, sanityGates, verifyCitedInputs, type CalcRequest } from "../../../shared/analysis-runtime/valuation/calculator.ts";
 import { anchorOf, lifecycleOf, priorRequest, type PriorFact } from "../../../shared/analysis-runtime/valuation/prior.ts";
 import { managementCapexShape, managementFactsOf } from "../../../shared/analysis-runtime/valuation/management.ts";
 import { managementTargetSet, parsePeers, parseTargets } from "../src/valuation/curated.ts";
@@ -110,7 +110,7 @@ const peerRows = peerTickers.map(t => {
   const s = fundamentals(t), q = capital(t)[0]?.balanceSheet ?? null;
   const op = ttm(s, "operating_income"), d = ttm(s, "depreciation_and_amortization");
   const pDebt = q ? group(q.liabilities, "debt") + group(q.liabilities, "leases") : last(s, "long_term_debt") ?? 0, pCash = q ? group(q.assets, "cash") : last(s, "cash_and_cash_equivalents") ?? 0;
-  return { ticker: t, price: peerQuotes[t]?.usable ? peerQuotes[t]!.price : null, shares: sharesOf(t), ebitda: op != null && d != null ? op + d : null, coreEarnings: op != null ? op * (1 - 0.21) : null, netDebt: pDebt - pCash };
+  return { ticker: t, price: peerQuotes[t]?.usable ? peerQuotes[t]!.price : null, shares: sharesOf(t), ebitda: op != null && d != null ? op + d : null, coreEarnings: op != null ? coreEquityEarnings(op, ttm(s, "nonoperating_interest_expense"), 0.21) : null, netDebt: pDebt - pCash };
 });
 const peers = peerMultiplesOf(peerRows, now.toISOString().slice(0, 10), peerBasis);
 const trailingQuarters = windows(series, "operating_income").flatMap(w => {

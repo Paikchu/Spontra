@@ -8,7 +8,7 @@ import { financeLeaseAmount, missingFinancingFactIds } from "./lease-basis.ts";
  * §2–§6). Every amount a report shows comes from here; the model supplies inputs and reasons. Nothing is rounded until it
  * is displayed. Invalid inputs are rejected with a `ValuationCalcError` rather than producing NaN, Infinity or a made-up figure.
  */
-export const CALCULATOR_VERSION = "valuation.calc.v8";
+export const CALCULATOR_VERSION = "valuation.calc.v9";
 /** The default horizon; an fcff path may run `MIN_FORECAST_YEARS`–`MAX_FORECAST_YEARS` years (docs/valuation-v2-SPEC.md §1). */
 export const FORECAST_YEARS = 5;
 export const MIN_FORECAST_YEARS = 5, MAX_FORECAST_YEARS = 10;
@@ -484,21 +484,29 @@ function forwardMethods(request: CalcRequest, drivers: ModelDrivers, scenario: S
   if (drivers.modelType !== "fcff") return [];
   const h = Math.min(Math.max(Math.round(c.forwardYears ?? 3), 1), scenario.yearly.length);
   const metrics = forwardFundamentals(drivers, h, { da0: c.trailing?.da ?? null, interestExpense0: c.trailing?.interestExpense ?? null, shares });
-  const cumulativeCashFlow = scenario.yearly.slice(0, h).reduce((sum, y) => sum + y.cashFlow, 0);
+  const pvExplicit = scenario.yearly.slice(0, h).reduce((sum, y) => sum + y.presentValue, 0);
   const out: MethodValuation[] = [];
   const unavailable = (method: ValuationMethodKey, label: string, basis: string, why: string): MethodValuation => ({ method, label, low: null, base: null, high: null, weight: 0, basis, notes: [why] });
   if (peers?.evToEbitda && metrics.ebitda != null && metrics.ebitda > 0) {
-    const v = forwardMultipleValue({ metric: metrics.ebitda, multiples: peers.evToEbitda, horizonYears: h, r, kind: "ev", bridge: request.bridge, shares, cumulativeCashFlow });
-    out.push({ method: "ev_ebitda_forward", label: `EV/EBITDA on year ${h}`, ...v, weight: 0, basis: `year ${h} EBITDA ${metrics.ebitda.toExponential(3)} × peers p25/median/p75 ${peers.evToEbitda.p25.toFixed(1)}/${peers.evToEbitda.median.toFixed(1)}/${peers.evToEbitda.p75.toFixed(1)} (${peers.evToEbitda.count} peers), discounted ${h} years; net claims rolled forward by the path's cash flows`, notes: metrics.notes });
+    const v = forwardMultipleValue({ metric: metrics.ebitda, multiples: peers.evToEbitda, horizonYears: h, r, kind: "ev", bridge: request.bridge, shares, pvExplicit });
+    out.push({ method: "ev_ebitda_forward", label: `EV/EBITDA on year ${h}`, ...v, weight: 0, basis: `year ${h} EBITDA ${metrics.ebitda.toExponential(3)} × peers p25/median/p75 ${peers.evToEbitda.p25.toFixed(1)}/${peers.evToEbitda.median.toFixed(1)}/${peers.evToEbitda.p75.toFixed(1)} (${peers.evToEbitda.count} peers), terminal enterprise value discounted ${h} years at WACC ${(r * 100).toFixed(2)}%; plus each interim FCFF present value, then today's non-operating assets less claims`, notes: metrics.notes });
   } else out.push(unavailable("ev_ebitda_forward", `EV/EBITDA on year ${h}`, "not applied", peers?.evToEbitda ? "forward EBITDA is not positive" : "no peer EV/EBITDA"));
-  if (peers?.peRatio && metrics.eps != null && metrics.eps > 0) {
-    const v = forwardMultipleValue({ metric: metrics.eps, multiples: peers.peRatio, horizonYears: h, r, kind: "equity", bridge: request.bridge, shares, cumulativeCashFlow });
-    out.push({ method: "pe_forward", label: `P/E on year ${h}`, ...v, weight: 0, basis: `year ${h} core EPS ${metrics.eps.toFixed(2)} × peers p25/median/p75 ${peers.peRatio.p25.toFixed(1)}/${peers.peRatio.median.toFixed(1)}/${peers.peRatio.p75.toFixed(1)} (${peers.peRatio.count} peers), discounted ${h} years`, notes: metrics.notes });
-  } else out.push(unavailable("pe_forward", `P/E on year ${h}`, "not applied", metrics.epsStatus === "insufficient_data" ? "Insufficient data: trailing interest expense is unknown; forward EPS and P/E are unavailable" : peers?.peRatio ? "forward core EPS is not positive" : "no peer P/E"));
+  const costOfEquity = request.discountRate.components.costOfEquity;
+  const hasEquityRate = finite(costOfEquity) && costOfEquity > 0;
+  if (peers?.peRatio && metrics.eps != null && metrics.eps > 0 && hasEquityRate) {
+    const v = forwardMultipleValue({ metric: metrics.eps, multiples: peers.peRatio, horizonYears: h, r: costOfEquity, kind: "equity" });
+    out.push({ method: "pe_forward", label: `P/E on year ${h}`, ...v, weight: 0, basis: `year ${h} core EPS ${metrics.eps.toFixed(2)} × peers p25/median/p75 ${peers.peRatio.p25.toFixed(1)}/${peers.peRatio.median.toFixed(1)}/${peers.peRatio.p75.toFixed(1)} (${peers.peRatio.count} peers), future equity price discounted ${h} years at cost of equity ${(costOfEquity * 100).toFixed(2)}%`, notes: [...metrics.notes, "This is a present-value reference for a future EPS-times-multiple share price, using the existing trailing-interest assumption. Interim dividends and financing changes are not separately modeled; this is not a complete FCFE valuation."] });
+  } else out.push(unavailable("pe_forward", `P/E on year ${h}`, "not applied", metrics.epsStatus === "insufficient_data" ? "Insufficient data: trailing interest expense is unknown; forward EPS and P/E are unavailable" : !hasEquityRate ? "Insufficient data: a positive sourced cost of equity is unavailable; P/E is not discounted at WACC" : peers?.peRatio ? "forward core EPS is not positive" : "no peer P/E"));
   return out;
 }
 
-/** Year-`h` EBITDA and core EPS of an fcff path: EBIT from the path, D&A scaled with revenue, interest held at its trailing level. */
+/** The same after-interest operating earnings basis for peer P/E denominators and the subject's projected EPS. */
+export function coreEquityEarnings(ebit: number, interestExpense: number | null, taxRate: number): number | null {
+  if (interestExpense == null) return null;
+  return requireFinite((requireFinite(ebit, "EBIT") - requireFinite(interestExpense, "interest expense")) * (1 - requireFinite(taxRate, "tax rate")), "core equity earnings");
+}
+
+/** Year-`h` EBITDA and core EPS: D&A from the explicit plan or scaled with revenue; interest held at its trailing level. */
 export function forwardFundamentals(drivers: Extract<ModelDrivers, { modelType: "fcff" }>, h: number, input: { da0: number | null; interestExpense0: number | null; shares: number }): { revenue: number; ebit: number; ebitda: number | null; eps: number | null; epsStatus: "ready" | "insufficient_data"; notes: string[] } {
   const years = horizonOf(drivers.path);
   const n = Math.min(Math.max(h, 1), years);
@@ -512,28 +520,29 @@ export function forwardFundamentals(drivers: Extract<ModelDrivers, { modelType: 
   if (da == null) notes.push("no trailing D&A: EBITDA not projected");
   const interest = input.interestExpense0;
   if (interest != null) requireFinite(interest, "interest expense");
-  const eps = interest != null && input.shares > 0 ? (ebit - interest) * (1 - drivers.path.taxRate[n - 1]!) / input.shares : null;
+  const earnings = coreEquityEarnings(ebit, interest, drivers.path.taxRate[n - 1]!);
+  const eps = earnings != null && input.shares > 0 ? earnings / input.shares : null;
   if (interest == null) notes.push("Insufficient data: trailing interest expense is unknown; EPS not projected");
   else notes.push(`core EPS excludes securities gains: (EBIT − interest ${interest.toExponential(2)}) × (1 − tax)`);
   return finiteResult({ revenue, ebit, ebitda: da != null ? ebit + da : null, eps, epsStatus: eps == null ? "insufficient_data" as const : "ready" as const, notes }, "forward fundamentals");
 }
 
 /**
- * A forward multiple brought back to today: an enterprise multiple less the net claims as the base cash flows leave them
- * at the horizon (a build phase adds debt before it adds EBITDA), or an equity multiple on the per-share metric.
+ * Enterprise exit value and each interim FCFF are discounted at WACC before today's equity bridge.
+ * An equity exit price is discounted at the separately supplied cost of equity; it is already after financing claims.
  */
-export function forwardMultipleValue(input: { metric: number; multiples: MultipleQuartiles; horizonYears: number; r: number; kind: "ev" | "equity"; bridge: EquityBridge; shares: number; cumulativeCashFlow: number }): { low: number; base: number; high: number } {
-  const { metric, multiples, horizonYears: h, r, bridge, shares } = input;
+export function forwardMultipleValue(input: { metric: number; multiples: MultipleQuartiles; horizonYears: number; r: number } & ({ kind: "ev"; bridge: EquityBridge; shares: number; pvExplicit: number } | { kind: "equity" })): { low: number; base: number; high: number } {
+  const { metric, multiples, horizonYears: h, r } = input;
   requireFinite(metric, "forward metric"); requireFinite(r, "discount rate");
   requireDiscountRate(r);
-  if (!(shares > 0)) throw new ValuationCalcError("shares", "shares must be positive");
+  if (input.kind === "ev" && !(input.shares > 0)) throw new ValuationCalcError("shares", "shares must be positive");
   if (h < 0) throw new ValuationCalcError("invalid_input", "horizonYears cannot be negative");
   const discount = requireFinite((1 + r) ** h, "forward discount divisor");
   const value = (multiple: number) => {
     if (multiple < 0) throw new ValuationCalcError("multiple", "multiple cannot be negative");
     if (input.kind === "equity") return requireFinite(metric * multiple, "forward terminal value") / discount;
-    const netClaimsAtHorizon = bridge.debtAndClaims - bridge.nonOperatingAssets - input.cumulativeCashFlow;
-    return requireFinite(requireFinite(metric * multiple, "forward terminal value") - netClaimsAtHorizon, "forward equity value") / discount / shares;
+    const enterpriseValue = requireFinite(input.pvExplicit, "interim FCFF present value") + requireFinite(metric * multiple, "forward terminal value") / discount;
+    return requireFinite(enterpriseValue + input.bridge.nonOperatingAssets - input.bridge.debtAndClaims, "present equity value") / input.shares;
   };
   return finiteResult({ low: value(multiples.p25), base: value(multiples.median), high: value(multiples.p75) }, "forward multiple result");
 }
