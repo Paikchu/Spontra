@@ -118,10 +118,10 @@ export function historyRequest(input: HistoryInput, artifact: HistoryAssumptions
   const normalized = (text: string) => text.replace(/\s+/g, " ").trim();
   for (const e of artifact.evidence) {
     if (!e.publishedAt || Date.parse(e.publishedAt) > Date.parse(input.cutoff)) throw new Error(`Future or undated Agent evidence: ${e.evidenceId}`);
-    const source = input.sources.find(s => s.id === e.documentId || s.url === e.url);
-    if (!source) throw new Error(`Agent evidence source is outside the snapshot: ${e.evidenceId}`);
+    const sources = input.sources.filter(s => s.id === e.documentId || s.url === e.url);
+    if (!sources.length) throw new Error(`Agent evidence source is outside the snapshot: ${e.evidenceId}`);
     const fromManagement = e.documentId === `management:${input.ticker}` && input.management?.sources.some(s => s.url === e.url);
-    const inText = input.researchMaterials.some(m => m.sourceId === source.id && normalized(m.text).includes(normalized(e.excerpt)));
+    const inText = input.researchMaterials.some(m => sources.some(s => s.id === m.sourceId) && normalized(m.text).includes(normalized(e.excerpt)));
     if (!fromManagement && !inText) throw new Error(`Agent evidence excerpt is absent from the frozen source: ${e.evidenceId}`);
   }
   if (new Set(artifact.evidence.map(e => e.evidenceId)).size !== artifact.evidence.length) throw new Error("Duplicate Agent evidence id");

@@ -55,7 +55,9 @@ test("facts cannot cite a source outside their frozen snapshot", () => {
 });
 
 test("registered Agent evidence must resolve to eligible source text and context stays frozen", () => {
-  const input = readHistoryInput(fixture()), agent = assumptions();
+  const seed = fixture();
+  seed.sources.unshift({ id: "same-filing-facts", kind: "sec_fact_extract", url: "https://example.org/filing", availableAt: "2025-12-11T21:07:00Z", path: "fact-extract.json", sha256: hash });
+  const input = readHistoryInput(seed), agent = assumptions();
   const request = historyRequest(input, agent, hash);
   assert.equal(request.price, 100);
   assert.equal(request.context?.facts?.[0]?.id, "shares_outstanding");
