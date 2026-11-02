@@ -38,7 +38,7 @@ const m = messages({
   evidence: "Supporting evidence", counter: "Against", gaps: "Gaps", nextCheck: "Next check", diagnostics: "Diagnostics", sources: "Sources", source: "Source", openSource: "Open the filing", snapshot: "As read when the report was written", close: "Close",
   history: "History of each factor", years: (n: number) => `${n} years`, median: "Median", rangeLabel: "Range",
   // valuation.calc.v4: the methods and their judged weights, the four scenarios and their probabilities, the comparable set, the checks, management's targets and the consensus.
-  expectedValue: "Expected value", expectedNote: "Probability-weighted over the bear, base, management and bull scenarios; the headline base value weighs the cash-flow model with the forward multiples at the weights below.",
+  expectedValue: "Scenario-weighted value", expectedNote: "Probability-weighted over the bear, base, management and bull scenarios; the headline base value weighs the cash-flow model with the forward multiples at the weights below.",
   methods: "Valuation methods", methodLow: "Low (peer p25)", methodBase: "Base (peer median)", methodHigh: "High (peer p75)", weightCol: "Weight", notApplied: "Not applied", why: "Why",
   dcfValue: "Cash-flow value", weightedValue: "Weighted value", management: "Management", probabilities: "Scenario probabilities", managementScenarioNote: "Computed by code from management's cited targets on the base case's rate, shares, bridge and horizon; weighed by its judged probability, never the base.",
   yearlyForecast: "Base case yearly forecast", forecastYear: (year: number) => `Year ${year}`, revenueCol: "Revenue", nopatCol: "NOPAT", capexCol: "CapEx", depreciationCol: "D&A", workingCapitalCol: "ΔNWC", fcffCol: "FCFF", reinvestmentCol: "Reinvestment", adjustmentCol: "Adjustment",
@@ -51,7 +51,7 @@ const m = messages({
   consensus: "Sell-side consensus", consensusMean: "Mean target", consensusRange: "Range", analysts: (n: number) => `${n} analysts`, consensusUnavailable: "Consensus unavailable", asOf: (date: string) => `as of ${date}`,
   pricePosition: "Price relative to fair value", fairRange: "Fair value range", centralValue: "Base value", keyAssumptions: "Key assumptions", stressScenarios: "Scenarios and stress tests", researchAssessment: "Research assessment", historicalAssessment: "Assessment at the time",
   below: "Below fair value range", within: "Within fair value range", above: "Above fair value range", unable: "Unable to assess",
-  noRange: "A supported fair value range is not available.", noQuoteGuide: "A reference quote is not available.", unusableQuote: "The reference quote cannot be used for this comparison.", staleQuote: "The reference quote is out of date.", currencyMismatch: "The quote and valuation use different currencies.", incompleteResearch: "The research is not complete enough to assess fair value.", unresolvedEvidence: "Key valuation assumptions still need supporting evidence.", reportUpdating: "The company's information has changed; the assessment needs updating.",
+  noPositiveRange: "The model does not support a positive equity value range.", equityShortfall: "Negative values represent a modelled shortfall after senior claims, not a tradable negative share price.", noRange: "A supported fair value range is not available.", noQuoteGuide: "A reference quote is not available.", unusableQuote: "The reference quote cannot be used for this comparison.", staleQuote: "The reference quote is out of date.", currencyMismatch: "The quote and valuation use different currencies.", incompleteResearch: "The research is not complete enough to assess fair value.", unresolvedEvidence: "Key valuation assumptions still need supporting evidence.", reportUpdating: "The company's information has changed; the assessment needs updating.",
   versionLoading: "Loading this version", versionFailed: "Couldn't load this version", versionFailedNote: "Pick another version, or return to the current one.",
 }, {
   title: "估值评估",
@@ -74,7 +74,7 @@ const m = messages({
   summary: "结论", thesis: "论证", expectationsGap: "预期差", catalysts: "催化", counterEvidence: "反证", nextChecks: "下一验证点", modelNotes: "模型说明",
   evidence: "支持证据", counter: "反证", gaps: "缺口", nextCheck: "下一验证点", diagnostics: "诊断指标", sources: "来源", source: "来源", openSource: "打开申报原文", snapshot: "报告写成时读取的快照", close: "关闭",
   history: "各因子历史", years: (n: number) => `${n} 年`, median: "中位数", rangeLabel: "区间",
-  expectedValue: "期望价值", expectedNote: "按悲观、基准、管理层与乐观四个情景的概率加权；标题的基准价值按下方权重将现金流模型与远期倍数加权。",
+  expectedValue: "情景加权值", expectedNote: "按悲观、基准、管理层与乐观四个情景的概率加权；标题的基准价值按下方权重将现金流模型与远期倍数加权。",
   methods: "估值方法", methodLow: "低（同业 25 分位）", methodBase: "基准（同业中位）", methodHigh: "高（同业 75 分位）", weightCol: "权重", notApplied: "未采用", why: "理由",
   dcfValue: "现金流折现值", weightedValue: "加权价值", management: "管理层", probabilities: "情景概率", managementScenarioNote: "由代码按管理层引用的目标、在基准情景的折现率、股数、桥接与期限上算出；按其判断的概率加权，从不作为基准。",
   yearlyForecast: "基准情景逐年预测", forecastYear: (year: number) => `第 ${year} 年`, revenueCol: "收入", nopatCol: "税后经营利润", capexCol: "资本开支", depreciationCol: "折旧摊销", workingCapitalCol: "营运资本变动", fcffCol: "企业自由现金流", reinvestmentCol: "再投资", adjustmentCol: "调整",
@@ -87,6 +87,7 @@ const m = messages({
   consensus: "卖方共识", consensusMean: "目标均值", consensusRange: "区间", analysts: (n: number) => `${n} 位分析师`, consensusUnavailable: "无可用市场共识", asOf: (date: string) => `截至 ${date}`,
   pricePosition: "股价相对合理价值", fairRange: "合理价值区间", centralValue: "基准价值", keyAssumptions: "关键假设", stressScenarios: "情景与压力测试", researchAssessment: "研究评价", historicalAssessment: "当时评价",
   below: "偏低", within: "区间内", above: "偏高", unable: "暂无法判断",
+  noPositiveRange: "模型尚不能支持正的股权价值区间。", equityShortfall: "负值表示模型中扣除优先索偿后的权益缺口，不是可交易的负股价。",
   noRange: "尚无有证据支持的合理价值区间。", noQuoteGuide: "暂无参考报价。", unusableQuote: "参考报价暂不适用于本次比较。", staleQuote: "参考报价已过期。", currencyMismatch: "报价与估值的币种不一致。", incompleteResearch: "研究材料尚不足以判断合理价值。", unresolvedEvidence: "关键估值假设仍缺少支持证据。", reportUpdating: "公司资料已更新，估值需要重新评估。",
   versionLoading: "正在加载这个版本", versionFailed: "无法加载这个版本", versionFailedNote: "可选择其他版本，或返回当前版本。",
 });
@@ -101,6 +102,7 @@ const PRICE_TONE: Record<"below" | "within" | "above", string> = { below: "up", 
 function guideReason(reason: Extract<ValuationPriceGuide, { status: "unavailable" }>["reason"]): string {
   switch (reason) {
     case "no_range": return m.noRange;
+    case "non_positive_range": return m.noPositiveRange;
     case "no_quote": return m.noQuoteGuide;
     case "unusable_quote": return m.unusableQuote;
     case "stale_quote": return m.staleQuote;
@@ -505,6 +507,7 @@ export function ValuationPanel({ ticker, valuation }: { ticker: string; valuatio
         <div className="val-fold-body">
         <h3>{m.range}</h3>
         <RangeBar report={report} />
+        {range && range.low < 0 && <p className="val-list-line">{m.equityShortfall}</p>}
         <dl className="val-stats">
           <div><dt>{m.price}</dt><dd>{report.quote ? <>{perShare(report.quote.price, report.quote.currency, locale)}<small>{m.priceDate(report.quote.priceDate)}</small></> : m.noQuote}</dd></div>
           {has(range?.expected) && <div><dt>{m.expectedValue}</dt><dd>{perShare(range!.expected!, report.model!.currency, locale)}</dd></div>}

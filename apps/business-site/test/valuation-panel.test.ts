@@ -35,7 +35,7 @@ test("valuation.calc.v4: the panel shows each method with its weight and reason,
   assert.match(t, /Cash-flow value/); assert.match(t, /Weighted value/);
   assert.match(t, /Management \$150\.00 \$165\.00 20%/); assert.match(t, /Scenario probabilities/); assert.match(t, /Management 20% Generated management probability rationale\./);
   assert.match(t, /Bear \$70\.00 \$77\.00 25%/); assert.match(t, /Base \$120\.00 \$132\.00 40%/);
-  assert.match(t, /Expected value/); assert.match(t, /\$140\.25/); assert.match(t, /Probability-weighted over the bear, base, management and bull scenarios/);
+  assert.match(t, /Scenario-weighted value/); assert.match(t, /\$140\.25/); assert.match(t, /Probability-weighted over the bear, base, management and bull scenarios/);
   assert.match(html, /aria-label="Valuation assessment"/);
   // Peers, checks, management comparison and the consensus note.
   assert.match(t, /Comparable set Curated set · MSFT, AMZN, GOOGL · EV\/EBITDA p25 14\.0× · median 16\.0× · p75 18\.0×/);
@@ -51,7 +51,7 @@ test("valuation.calc.v4: the panel shows each method with its weight and reason,
 
 test("valuation.calc.v4: the Chinese page carries the same sections with translated labels and the generated text tagged English", () => {
   const html = render("zh-CN", valuationReport), t = text(html);
-  assert.match(t, /估值方法/); assert.match(t, /现金流折现 50%/); assert.match(t, /远期 EV\/EBITDA/); assert.match(t, /加权价值/); assert.match(t, /期望价值/); assert.match(t, /情景概率/); assert.match(t, /管理层 20%/);
+  assert.match(t, /估值方法/); assert.match(t, /现金流折现 50%/); assert.match(t, /远期 EV\/EBITDA/); assert.match(t, /加权价值/); assert.match(t, /情景加权值/); assert.match(t, /情景概率/); assert.match(t, /管理层 20%/);
   assert.match(t, /可比公司 人工选定 · MSFT, AMZN, GOOGL/); assert.match(t, /模型校验/); assert.match(t, /终值占比 通过/); assert.match(t, /方法离散度 提示/); assert.match(t, /管理层目标与基准情景/); assert.match(t, /2027 财年 · 1/); assert.match(t, /卖方共识/); assert.match(t, /无可用市场共识/);
   assert.match(html, /lang="en">Generated weight rationale for the cash-flow model\./);
   assert.doesNotMatch(t, /Valuation methods|Model checks|Expected value/);

@@ -25,12 +25,13 @@ export function priceGuideOf({ report, quote, asOf, outdated = false }: {
   if (outdated) return unavailable("report_updating");
   const fair = report?.model?.fairValueRange;
   if (!report || !fair || fair.status !== "available") return unavailable("no_range");
-  if (report.researchAsOf.slice(0, 10) > asOf.slice(0, 10) || report.reportStatus !== "ready") return unavailable("incomplete_research");
+  if (!Number.isFinite(Date.parse(report.researchAsOf)) || Date.parse(report.researchAsOf) > Date.parse(asOf) || report.reportStatus !== "ready") return unavailable("incomplete_research");
   if (report.gaps.some(g => ["identity_mismatch", "conflicting_sources", "calculation_rejected", "review_incomplete", "unresolved_counter_evidence"].includes(g.code)) || report.model?.gates?.some(g => g.status === "fail")) return unavailable("unresolved_evidence");
   const knownIds = new Set([...report.evidence.map(e => e.evidenceId), ...report.facts.map(f => f.id), ...report.diagnostics.map(d => d.key)]);
   const citations = [fair.evidenceIds, fair.lower.evidenceIds, fair.upper.evidenceIds,
     ...[fair.lower, fair.upper].flatMap(c => [c.assumptions.revenue.evidenceIds, c.assumptions.margin.evidenceIds, c.assumptions.capex.evidenceIds])];
-  if (citations.some(ids => !ids.length || ids.some(id => !knownIds.has(id))) || ![fair.low, fair.base, fair.high].every(Number.isFinite) || fair.low <= 0 || fair.low > fair.base || fair.base > fair.high) return unavailable("unresolved_evidence");
+  if (citations.some(ids => !ids.length || ids.some(id => !knownIds.has(id))) || ![fair.low, fair.base, fair.high].every(Number.isFinite) || fair.low > fair.base || fair.base > fair.high) return unavailable("unresolved_evidence");
+  if (fair.low <= 0) return unavailable("non_positive_range");
   if (!quote) return unavailable("no_quote");
   if (quote.currency !== report.currency || quote.currency !== report.model?.currency) return unavailable("currency_mismatch");
   if (!quote.usable || !Number.isFinite(quote.price) || quote.price <= 0) return unavailable("unusable_quote");

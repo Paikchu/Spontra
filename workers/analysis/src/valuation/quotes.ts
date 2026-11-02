@@ -27,17 +27,24 @@ export async function refreshValuationQuotes(env: AnalysisEnv, now = new Date(),
       AND (q.fetched_at IS NULL OR q.fetched_at < ?)
     ORDER BY COALESCE(q.fetched_at, '') LIMIT 8`).bind(PREFIX, new Date(now.getTime() - REFRESH_MS).toISOString()).all<{ ticker: string; currency: string }>();
   const store = new D1SecRepository(db);
+  const persist = (ticker: string, quote: unknown) => db.batch([
+    db.prepare(`INSERT INTO sec_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?)
+      ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at`)
+      .bind(PREFIX + ticker, JSON.stringify(quote), now.toISOString()),
+    db.prepare(`INSERT INTO publication_revisions (ticker, resource, revision) VALUES (?, 'valuation', ?)
+      ON CONFLICT(ticker, resource) DO UPDATE SET revision = max(revision, excluded.revision)`).bind(ticker, now.toISOString()),
+  ]);
   const failed: string[] = [];
   let refreshed = 0;
   for (const company of due.results) {
     const quote = await fetchReferenceQuote(company.ticker, company.currency, fetcher, now);
     if (!quote?.usable) {
       const previous = await store.getCache<unknown>(PREFIX + company.ticker);
-      await store.setCache(PREFIX + company.ticker, previous?.payload ?? null, now.toISOString());
+      await persist(company.ticker, previous?.payload ?? null);
       failed.push(company.ticker);
       continue;
     }
-    await store.setCache(PREFIX + company.ticker, quote, now.toISOString());
+    await persist(company.ticker, quote);
     refreshed++;
   }
   return { refreshed, failed };
