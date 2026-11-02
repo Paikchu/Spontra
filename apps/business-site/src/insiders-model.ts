@@ -32,10 +32,12 @@ export function roleLabel(role: InsiderPersonSummary["role"]): string {
 }
 
 /**
- * Whether the person's summed sale and purchase value leaves money out: a sale or purchase line, their latest or one of
- * the rail's filings, reported no price, and the totals count it as nothing. The ledger's totals do not say so themselves.
+ * Whether the person's net value is unknown, from the totals or an unpriced trade visible on the rail.
+ * The row checks the rail too because legacy publications have no price coverage fields.
  */
-export function netValueUnknown(person: Pick<InsiderPersonSummary, "key" | "latest">, events: readonly CompanyEvent[]): boolean {
+export function netValueUnknown(person: Pick<InsiderPersonSummary, "key" | "latest" | "sold" | "bought" | "net">, events: readonly CompanyEvent[]): boolean {
+  if (person.net.value == null || person.net.complete === false || person.sold.value == null || person.bought.value == null
+    || person.sold.unpricedCount > 0 || person.bought.unpricedCount > 0) return true;
   if (person.latest && person.latest.side !== "other" && person.latest.value == null) return true;
   return events.some(e => e.insider != null && insiderPersonKey(e.insider) === person.key
     && e.insider.lines.some(l => l.price == null && tradeSide(l.code, l.acquiredDisposed, l.derivative) !== "other"));

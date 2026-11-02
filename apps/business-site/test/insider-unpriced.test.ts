@@ -8,7 +8,7 @@ import type { CompanyEvent } from "../../../shared/analysis-contract/events.ts";
 import { readEventsPublication } from "../../../shared/analysis-runtime/events.ts";
 import { personsFromEvents } from "../../../shared/analysis-runtime/insiders.ts";
 import { railEntries } from "../../../shared/analysis-runtime/rail.ts";
-import { dollars, eventTitle, insiderLens, partialDollars } from "../src/events-model.ts";
+import { dollars, eventTitle, insiderLens, insiderTotalDollars, partialDollars } from "../src/events-model.ts";
 import { netValueUnknown } from "../src/insiders-model.ts";
 import { RailStream } from "../src/RailStream.tsx";
 
@@ -53,20 +53,49 @@ test("a person total with one priced and one unpriced filing is partial, never a
     assert.equal(partialDollars([null, null]), "—");
     assert.equal(partialDollars([1_000_000, 2_000_000]), dollars(3_000_000));
   }
-  // The summed net leaves the unpriced sale out, so the row shows no net amount, only the net shares and their side.
+  // An unpriced sale makes the net unknown, so the row shows only the net shares and their side.
   const person = personsFromEvents(events, new Date("2026-10-01"))[0]!;
   assert.ok(person.latest && person.latest.value != null, "the latest line is priced: the unpriced one is found among the filings");
   assert.equal(netValueUnknown(person, events), true);
-  assert.equal(netValueUnknown(person, [priced]), false);
+  assert.equal(person.sold.value, null);
+  assert.equal(person.net.value, null);
+  assert.equal(person.net.complete, false);
+  assert.equal(netValueUnknown(person, [priced]), true);
+  assert.equal(netValueUnknown(person, []), true, "totals include older unpriced lines absent from the rail");
+  const complete = personsFromEvents([priced, legacy], new Date("2026-10-01"))[0]!;
+  assert.equal(netValueUnknown(complete, []), false);
+  assert.equal(netValueUnknown({ ...complete, sold: person.sold }, []), true, "side totals are consulted even with a numeric net");
   setLocale("zh-CN");
   const zh = renderRail(events);
   assert.match(zh, /净卖出 — · [\d,]+ 股/);
+  assert.ok(zh.includes(`卖出 ${person.sold.count} 笔 ≥ `));
   setLocale("en");
   const en = renderRail(events);
   assert.match(en, /Net sold — · [\d,]+ shares/);
+  assert.ok(en.includes(`${person.sold.count} sales ≥ $`));
   assert.ok(!/Net sold \$/.test(en));
   // Priced on both sides, the net reads as before.
   assert.match(renderRail([priced, legacy]), /Net sold \$[\d.]+M · [\d,]+ shares/);
+});
+
+test("person side totals show the known subtotal, unknown, exact zero, and exact purchases", () => {
+  for (const code of ["S", "P"] as const) {
+    const pricedEvent: CompanyEvent = { ...priced, insider: { ...priced.insider!, lines: [{ ...priced.insider!.lines[0]!, code, acquiredDisposed: code === "S" ? "D" : "A", shares: 10, price: 100 }] } };
+    const unknownEvent: CompanyEvent = { ...pricedEvent, id: "unpriced", insider: { ...pricedEvent.insider!, lines: [{ ...pricedEvent.insider!.lines[0]!, price: null }] } };
+    const person = personsFromEvents([pricedEvent, unknownEvent], new Date("2026-10-01"))[0]!;
+    for (const locale of ["zh-CN", "en"] as const) {
+      setLocale(locale);
+      const totals = code === "S" ? person.sold : person.bought;
+      assert.equal(insiderTotalDollars(totals), partialDollars([1_000, null]));
+      assert.equal(insiderTotalDollars({ ...totals, pricedValue: 0, pricedCount: 0, unpricedCount: 2 }), "—");
+      assert.equal(insiderTotalDollars({ ...totals, pricedValue: 0, pricedCount: 1 }), `≥ ${dollars(0)}`);
+      assert.equal(insiderTotalDollars({ ...totals, value: 0, pricedValue: 0, pricedCount: 2, unpricedCount: 0 }), dollars(0));
+      assert.equal(insiderTotalDollars({ ...totals, value: 1_000, pricedCount: 2, unpricedCount: 0 }), dollars(1_000));
+      const html = renderRail([pricedEvent, unknownEvent]);
+      assert.match(html, locale === "en" ? /Net (sold|bought) —/ : /净(卖出|买入) —/);
+      assert.ok(html.includes(`${locale === "en" ? (code === "S" ? "2 sales" : "2 purchases") : (code === "S" ? "卖出 2 笔" : "买入 2 笔")} ${partialDollars([1_000, null])}`));
+    }
+  }
 });
 
 test("a legacy aggregate without pricedShares still reads and shows its reported amount", () => {
