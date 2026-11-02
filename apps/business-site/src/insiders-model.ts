@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { CompanyEvent, InsiderTransactionCode } from "@/shared/analysis-contract/events";
 import type { InsiderPersonSummary, InsiderTransactionRow, InsiderTransactionsPage, InsidersPublication } from "@/shared/analysis-contract/insiders";
-import { INSIDER_HISTORY_PAGE, INSIDER_NEW_DAYS, pageRows, personsFromEvents, rowsFromEvents } from "@/shared/analysis-runtime/insiders";
+import { INSIDER_HISTORY_PAGE, INSIDER_NEW_DAYS, insiderPersonKey, pageRows, personsFromEvents, rowsFromEvents, tradeSide } from "@/shared/analysis-runtime/insiders";
 import { labels, messages } from "@/packages/web/src/i18n";
 import { fetchInsiderHistory, fetchInsiders } from "./company-data";
 
@@ -29,6 +29,16 @@ export const CODE_LABEL = labels<InsiderTransactionCode>({
 /** The person's role as the latest filing reports it: the officer title, then director and ten-percent owner. */
 export function roleLabel(role: InsiderPersonSummary["role"]): string {
   return [role.title, role.isDirector && m.director, role.isTenPercentOwner && m.tenPercent, !role.title && !role.isDirector && !role.isTenPercentOwner && role.isOfficer && m.officer].filter(Boolean).join(" · ");
+}
+
+/**
+ * Whether the person's summed sale and purchase value leaves money out: a sale or purchase line, their latest or one of
+ * the rail's filings, reported no price, and the totals count it as nothing. The ledger's totals do not say so themselves.
+ */
+export function netValueUnknown(person: Pick<InsiderPersonSummary, "key" | "latest">, events: readonly CompanyEvent[]): boolean {
+  if (person.latest && person.latest.side !== "other" && person.latest.value == null) return true;
+  return events.some(e => e.insider != null && insiderPersonKey(e.insider) === person.key
+    && e.insider.lines.some(l => l.price == null && tradeSide(l.code, l.acquiredDisposed, l.derivative) !== "other"));
 }
 
 /** The rail's filings grouped as the ledger groups them, for the rows before the backend answers. */

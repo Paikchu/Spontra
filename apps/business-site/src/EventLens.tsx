@@ -7,7 +7,7 @@ import { getLocale, labels, messages } from "@/packages/web/src/i18n";
 import { SourceLanguage, langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import { perShare, shortPeriod } from "@/shared/analysis-runtime/locale";
 import type { FindingData } from "@/shared/analysis-runtime/findings";
-import { EVENT_CLASS_LABEL, dollars, eventTitle, eventTitleLang, insiderLens, shareCounts, shares, shortDate, type InsiderLensModel } from "./events-model";
+import { EVENT_CLASS_LABEL, dollars, eventTitle, eventTitleLang, insiderLens, partialDollars, shareCounts, shares, shortDate, type InsiderLensModel } from "./events-model";
 import { ItemAnalysisBody, useItemAnalysis, useVerifiedAnalysis } from "./ItemAnalysis";
 
 const ITEM_LABEL = labels({
@@ -133,7 +133,7 @@ function InsiderReading({ model, event }: { model: InsiderLensModel; event: Comp
       <TableRow><TableHead scope="row">{m.role}</TableHead><TableCell><b>{role}</b></TableCell></TableRow>
       {t.sold && <>
         <TableRow><TableHead scope="row">{m.sharesSold}</TableHead><TableCell><b>{shares(t.sold.shares)}</b></TableCell></TableRow>
-        <TableRow><TableHead scope="row">{m.avgPrice}</TableHead><TableCell><b>{perShare(t.sold.averagePrice, "USD", getLocale())}</b></TableCell></TableRow>
+        <TableRow><TableHead scope="row">{m.avgPrice}</TableHead><TableCell><b>{t.sold.averagePrice != null ? perShare(t.sold.averagePrice, "USD", getLocale()) : "—"}</b></TableCell></TableRow>
         <TableRow><TableHead scope="row">{m.proceeds}</TableHead><TableCell><b>{dollars(t.sold.proceeds)}</b></TableCell></TableRow>
       </>}
       {!t.sold && t.bought && <>
@@ -145,7 +145,7 @@ function InsiderReading({ model, event }: { model: InsiderLensModel; event: Comp
       <TableRow><TableHead scope="row">{m.heldAfter}</TableHead><TableCell><b>{t.heldAfter != null ? shares(t.heldAfter) : m.notDisclosed}</b></TableCell></TableRow>
       {model.stake && <TableRow><TableHead scope="row">{m.stake}</TableHead><TableCell><b>{model.stake.before != null && model.stake.before !== model.stake.after ? `${stake(model.stake.before)} → ` : ""}{stake(model.stake.after!)}</b><em>{m.ofOutstanding(shares(model.stake.outstanding.shares), shortPeriod(model.stake.outstanding.date))}</em></TableCell></TableRow>}
       <TableRow><TableHead scope="row">{m.plan}</TableHead><TableCell><b>{t.rule10b51 === true ? m.yes : t.rule10b51 === false ? m.no : m.notMarked}</b>{t.planAdoptedOn && <em>{m.adopted(t.planAdoptedOn)}</em>}</TableCell></TableRow>
-      <TableRow><TableHead scope="row">{m.salesYear}</TableHead><TableCell><b>{m.sales(model.cadence.sales.length)} · {shares(model.cadence.totalShares)}</b><em>{model.cadence.intervalDays != null ? `${m.interval(Math.round(model.cadence.intervalDays))}${model.cadence.regular ? m.steady : ""}` : m.noInterval} · {m.total(dollars(model.cadence.totalProceeds))}</em></TableCell></TableRow>
+      <TableRow><TableHead scope="row">{m.salesYear}</TableHead><TableCell><b>{m.sales(model.cadence.sales.length)} · {shares(model.cadence.totalShares)}</b><em>{model.cadence.intervalDays != null ? `${m.interval(Math.round(model.cadence.intervalDays))}${model.cadence.regular ? m.steady : ""}` : m.noInterval} · {m.total(partialDollars(model.cadence.sales.map(s => s.proceeds)))}</em></TableCell></TableRow>
       <TableRow><TableHead scope="row">{m.otherSellers}</TableHead><TableCell><b>{m.people(model.cluster.length)}</b><em>{m.window(INSIDER_RULES.clusterDays)}</em></TableCell></TableRow>
     </TableBody></Table>
     {model.cluster.length > 0 && <ul className="event-cluster">{model.cluster.map(c => <li key={c.id}><span>{c.ownerName}{c.title ? ` · ${c.title}` : ""}</span><span>{shortDate(c.date)} · {dollars(c.proceeds)}</span></li>)}</ul>}
@@ -172,7 +172,8 @@ function InsiderLadder({ model, event }: { model: InsiderLensModel; event: Compa
   // The staircase: hold flat from each filing to the next, then step to the new level.
   const d = path.map((p, i) => `${i ? "L" : "M"}${x(p.date).toFixed(2)},${y(i ? path[i - 1].held : p.held + p.sold - p.bought - p.exercised).toFixed(2)}L${x(p.date).toFixed(2)},${y(p.held).toFixed(2)}`).join("") + `L96,${y(path[path.length - 1].held).toFixed(2)}`;
   const sales = path.filter(p => p.sold > 0);
-  const maxProceeds = Math.max(1, ...sales.map(p => p.proceeds));
+  // A sale with unknown proceeds (an unpriced line) takes the smallest dot: there is no figure to size it by.
+  const maxProceeds = Math.max(1, ...sales.flatMap(p => p.proceeds != null ? [p.proceeds] : []));
   return <div className="insider-ladder" role="img" aria-label={m.path(event.insider!.ownerName, path[0].date, path[path.length - 1].date, sales.length)}>
     <div className="lens-legend"><span><i className="ladder-step" />{m.directHolding}</span><span><i className="ladder-dot" />{m.sale}</span><span><i className="ladder-dot ladder-dot--planned" />{m.plan}</span></div>
     <div className="ladder-plot">
@@ -182,7 +183,7 @@ function InsiderLadder({ model, event }: { model: InsiderLensModel; event: Compa
       </svg>
       <div className="ladder-marks">
         {sales.map(p => {
-          const size = 8 + Math.sqrt(Math.max(p.proceeds, 1) / maxProceeds) * 18;
+          const size = 8 + (p.proceeds != null ? Math.sqrt(Math.max(p.proceeds, 1) / maxProceeds) * 18 : 0);
           return <i key={p.id} className="ladder-dot" data-planned={p.planned === true || undefined} data-focus={p.id === event.id || undefined}
             style={{ left: `${x(p.date)}%`, top: `${y(p.held)}%`, width: size, height: size } as CSSProperties} title={`${p.date} · ${shares(p.sold)} · ${dollars(p.proceeds)}`} />;
         })}
