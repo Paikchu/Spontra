@@ -23,7 +23,15 @@
 
 ## 访问
 
-后台暂不设密码，打开即可使用。`spontra-admin` 的 `SPONTRA_ANALYSIS` 绑定指向 Spontra Analysis 的 `AdminGateway` 命名入口；命名入口不能从公网访问，绑定本身就是凭证（与地图的 `MapReads` 相同）。`AdminGateway` 只转发 `/admin/*`，并为每个请求签发一次管理会话，所以仍依赖 `spontra-analysis` 的 Secret `REPORT_ADMIN_PASSWORD`；未配置时返回 503。浏览器不持有任何凭证。
+后台由 Cloudflare Access 保护：`spontra-admin` 的 Worker 变量 `ACCESS_TEAM_DOMAIN`（如 `myteam.cloudflareaccess.com`）与 `ACCESS_AUD`（Access 应用的 AUD 标签）都设置后，Admin Worker 用团队域名 `/cdn-cgi/access/certs` 的公钥（RS256，缓存 10 分钟）校验每个 `/api/admin/*` 请求的 `Cf-Access-Jwt-Assertion`，核对签名、`iss`、`aud`、`exp`/`nbf`；缺少或无效令牌返回 401 `{"error":"需要登录"}`，取不到公钥返回 503，均不转发。两个值任一未设置时后台保持开放（打开即可使用），`/api/` 响应带 `x-admin-auth: unconfigured`。两个值都是公开标识，不是密钥，也不需要新增 Secret。
+
+启用步骤：
+
+1. Cloudflare Zero Trust → Access → Applications 新建 Self-hosted 应用，域名填 `spontra-admin` 的全部访问地址（含 `spontra-admin.<子域>.workers.dev` 及任何自定义域名），按需配置允许登录的策略。也可在 Workers → `spontra-admin` → Settings → Domains & Routes 为 `workers.dev` 开启 Access。
+2. 在应用的 Overview 复制 Application Audience (AUD) Tag；团队域名为 Zero Trust → Settings 中的 Team domain（`<团队>.cloudflareaccess.com`）。
+3. Workers → `spontra-admin` → Settings → Variables and Secrets 添加纯文本变量 `ACCESS_TEAM_DOMAIN` 与 `ACCESS_AUD`。不写入 `wrangler.jsonc`；自动发布以 `wrangler deploy --keep-vars` 保留控制台设置的变量。
+
+`spontra-admin` 的 `SPONTRA_ANALYSIS` 绑定指向 Spontra Analysis 的 `AdminGateway` 命名入口；命名入口不能从公网访问，绑定本身就是凭证（与地图的 `MapReads` 相同）。`AdminGateway` 只转发 `/admin/*`，并为每个请求签发一次管理会话，所以仍依赖 `spontra-analysis` 的 Secret `REPORT_ADMIN_PASSWORD`；未配置时返回 503。浏览器不持有任何凭证。
 
 Spontra Analysis 默认入口的 `/admin/*` 不变：仍需 `POST /admin/session`（`x-report-admin-password`）换取 8 小时签名会话，`REPORT_ADMIN_RATE_LIMIT` 限制尝试次数。
 
@@ -37,7 +45,7 @@ Spontra Analysis 对应路径为 `/admin/*`，经 `AdminGateway` 转发；默认
 
 推送 `origin/main` 后，地图与后台的自动构建会先验证、构建后台，并在 CI 中发布独立 admin Worker。若未来要求只改后台就独立发布，再配置单独的 Workers Builds 项目和 watch paths。首次发布无需复制数据库、迁移表或新增密钥。Spontra Analysis 默认入口的管理接口仍要求签名会话。
 
-本次保留原有密钥登录，尚未启用 Cloudflare Access；之后可以在整个 admin Worker 上配置 Access，保持主站公开。仅推送成功不能证明线上部署成功。
+后台登录见上文「访问」（Cloudflare Access，仅作用于 admin Worker，主站保持公开）。仅推送成功不能证明线上部署成功。
 
 ## 财报数据维护
 
