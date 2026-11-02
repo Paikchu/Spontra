@@ -40,13 +40,16 @@ export type TelemetrySummary = {
   errorRate: number | null;
 };
 
-export type TelemetryRepository = {
+type RepositoryWrites = {
   allow(actor: string, minute: number, limit: number): boolean;
   add(row: StoredEvent): void;
-  read(since: number): StoredEvent[];
-  summary?(range: TelemetryRange, now: number): TelemetrySummary;
   prune(oldestEvent: number, oldestMinute: number): void;
 };
+/** Aggregates in the store itself (SQLite). */
+export type SummaryRepository = RepositoryWrites & { summary(range: TelemetryRange, now: number): TelemetrySummary };
+/** Returns raw rows that are summarized in memory. */
+export type RowRepository = RepositoryWrites & { read(since: number): StoredEvent[] };
+export type TelemetryRepository = SummaryRepository | RowRepository;
 
 type SqlValue = string | number;
 type SqlCursor = { toArray(): Array<Record<string, SqlValue | null>> };
@@ -170,7 +173,7 @@ export function summarize(rows: readonly StoredEvent[], range: TelemetryRange, n
   };
 }
 
-export function memoryRepository(): TelemetryRepository {
+export function memoryRepository(): RowRepository {
   const events: StoredEvent[] = [];
   const hits = new Map<string, number>();
   return {
@@ -213,7 +216,7 @@ const SCHEMA = [
   )`,
 ];
 
-export function sqlRepository(sql: TelemetrySql): TelemetryRepository {
+export function sqlRepository(sql: TelemetrySql): SummaryRepository {
   for (const statement of SCHEMA) sql.exec(statement);
   if (!sql.exec("PRAGMA table_info(events)").toArray().some(row => row.name === "actor")) {
     sql.exec("ALTER TABLE events ADD COLUMN actor TEXT");
@@ -270,15 +273,6 @@ export function sqlRepository(sql: TelemetrySql): TelemetryRepository {
       summary.errorRate = rate(counts.get("error_shown") ?? 0, summary.pageViews);
       return summary;
     },
-    read(since) {
-      return sql.exec("SELECT received, name, path, lang, theme, sid, props, actor FROM events WHERE received >= ? ORDER BY received", since).toArray().flatMap(row => {
-        const parsed = parseTelemetryEvent({
-          name: row.name, path: row.path, lang: row.lang, theme: row.theme, sid: row.sid,
-          props: JSON.parse(String(row.props ?? "{}")),
-        });
-        return parsed ? [{ ...parsed, received: Number(row.received), ...(row.actor ? { actor: String(row.actor) } : {}) }] : [];
-      });
-    },
     prune(oldestEvent, oldestMinute) {
       sql.exec("DELETE FROM events WHERE received < ?", oldestEvent);
       sql.exec("DELETE FROM rate_hits WHERE minute < ?", oldestMinute);
@@ -297,7 +291,7 @@ export async function handleStoreRequest(repo: TelemetryRepository, request: Req
     const range = url.searchParams.get("range") ?? "7d";
     if (!TELEMETRY_RANGES.includes(range as TelemetryRange)) return json({ error: "invalid" }, 400);
     repo.prune(now - RETAIN_MS, Math.floor(now / 60_000) - 2);
-    if (repo.summary) return json(repo.summary(range as TelemetryRange, now), 200);
+    if ("summary" in repo) return json(repo.summary(range as TelemetryRange, now), 200);
     const rows = repo.read(buckets(range as TelemetryRange, now)[0]!.start);
     return json(summarize(rows, range as TelemetryRange, now), 200);
   }
@@ -364,7 +358,7 @@ export type TelemetryNamespace = {
 const TELEMETRY_READ_HOST = "business-map.internal";
 
 /** Public telemetry route. POST stores one event. GET of the aggregate is only the admin binding. No raw IP is forwarded. */
-export async function handleTelemetry(request: Request, namespace: TelemetryNamespace | undefined, now = Date.now()): Promise<Response> {
+export async function handleTelemetry(request: Request, namespace: TelemetryNamespace | undefined): Promise<Response> {
   const url = new URL(request.url);
   if (request.method === "GET") {
     if (url.hostname !== TELEMETRY_READ_HOST) return json({ error: "Not found" }, 404);
@@ -388,7 +382,7 @@ export async function handleTelemetry(request: Request, namespace: TelemetryName
   const forwarded = new Request("https://telemetry.internal/event", {
     method: "POST",
     headers: { "content-type": "application/json", "x-telemetry-actor": actor },
-    body: JSON.stringify({ ...event, ts: typeof (parsed as { ts?: unknown }).ts === "number" ? (parsed as { ts: number }).ts : now }),
+    body: JSON.stringify(event),
   });
   return stub.fetch(forwarded);
 }
