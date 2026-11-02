@@ -85,9 +85,12 @@ export function rowsFromEvents(events: readonly CompanyEvent[], now: Date): Insi
   return events.flatMap(e => e.insider ? filingRows(e, e.insider, e.filedAt, now) : []).sort(compareRows);
 }
 
-const totals = (rows: InsiderLedgerRow[]): InsiderTotals => ({
-  shares: rows.reduce((s, r) => s + r.shares, 0), value: rows.reduce((s, r) => s + (r.value ?? 0), 0), count: rows.length,
-});
+const totals = (rows: InsiderLedgerRow[]): InsiderTotals => {
+  const pricedCount = rows.filter(r => r.value != null).length;
+  const unpricedCount = rows.length - pricedCount;
+  const pricedValue = rows.reduce((s, r) => s + (r.value ?? 0), 0);
+  return { shares: rows.reduce((s, r) => s + r.shares, 0), value: unpricedCount > 0 ? null : pricedValue, count: rows.length, pricedValue, pricedCount, unpricedCount };
+};
 
 /** One person's summary from their rows, in any order. */
 export function summarizePerson(rows: InsiderLedgerRow[], now: Date): InsiderPersonSummary | null {
@@ -104,7 +107,7 @@ export function summarizePerson(rows: InsiderLedgerRow[], now: Date): InsiderPer
     key: latest.personKey, ownerCik: latest.ownerCik, name: latestFiling.name, role: latestFiling.role,
     firstTradeAt: sorted[sorted.length - 1]!.date, lastTradeAt: latest.date,
     latest: stamped[0]!, lastNewTradeAt: newAts.length ? newAts.reduce((a, b) => a > b ? a : b) : null, newCount: stamped.filter(r => r.isNew).length,
-    sold, bought, net: { shares: bought.shares - sold.shares, value: bought.value - sold.value },
+    sold, bought, net: { shares: bought.shares - sold.shares, value: bought.value == null || sold.value == null ? null : bought.value - sold.value, complete: bought.value != null && sold.value != null },
     transactions: sorted.length, filings: new Set(sorted.map(r => r.accession)).size,
     heldAfter: held?.ownedAfter ?? null, planned: sorted.some(r => r.planned),
   };
@@ -167,12 +170,20 @@ const row = z.object({
   ownedAfter: finite.nullable(), ownership: z.enum(["D", "I"]), derivative: z.boolean(), securityTitle: text(120), planned: z.boolean(),
   filingUrl: https, indexUrl: https, firstSeenAt: text(40), isNew: z.boolean(),
 });
-const totalsSchema = z.object({ shares: finite.nonnegative(), value: finite.nonnegative(), count: z.number().int().nonnegative() });
+const totalsSchema = z.object({
+  shares: finite.nonnegative(), value: finite.nonnegative().nullable(), count: z.number().int().nonnegative(),
+  pricedValue: finite.nonnegative().optional(), pricedCount: z.number().int().nonnegative().optional(), unpricedCount: z.number().int().nonnegative().optional(),
+}).transform(t => ({
+  ...t, pricedValue: t.pricedValue ?? t.value ?? 0,
+  pricedCount: t.pricedCount ?? (t.value == null ? 0 : t.count), unpricedCount: t.unpricedCount ?? (t.value == null ? t.count : 0),
+}));
+const netSchema = z.object({ shares: finite, value: finite.nullable(), complete: z.boolean().optional() })
+  .transform(n => ({ ...n, complete: n.complete ?? n.value != null }));
 const person = z.object({
   key: z.string().regex(PERSON_KEY), ownerCik: z.string().regex(/^\d{1,10}$/).nullable(), name: text(160),
   role: z.object({ title: text(120).nullable(), isDirector: z.boolean(), isOfficer: z.boolean(), isTenPercentOwner: z.boolean() }),
   firstTradeAt: date.nullable(), lastTradeAt: date.nullable(), latest: row.nullable(), lastNewTradeAt: text(40).nullable(), newCount: z.number().int().nonnegative(),
-  sold: totalsSchema, bought: totalsSchema, net: z.object({ shares: finite, value: finite }), transactions: z.number().int().nonnegative(), filings: z.number().int().nonnegative(),
+  sold: totalsSchema, bought: totalsSchema, net: netSchema, transactions: z.number().int().nonnegative(), filings: z.number().int().nonnegative(),
   heldAfter: finite.nullable(), planned: z.boolean(),
 });
 export const insidersPublicationSchema = z.object({
