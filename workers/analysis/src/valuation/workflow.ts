@@ -182,7 +182,7 @@ async function runLoop(env: AnalysisEnv, step: WorkflowStepLike, state: Valuatio
     catch (error) { if (error instanceof SecModelOutputError) return { error: `${error.code}: ${error.message}`.slice(0, 300) }; throw error; }
   });
   const store = new ValuationStore(requireDb(env));
-  const host: LoopHost<ValuationState> = {
+  const host: LoopHost = {
     // Switched off or re-requested while the run was working: the loop ends before its next model call.
     reserve: async () => { const ok = await stillEligible(env, state.input.ticker, store, generation); if (!ok) state.cancelled = true; return ok; },
     record: turn => { turns.push(turn); }, execute: (_t, calls, run) => sequential(calls, run),

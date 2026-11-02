@@ -1,7 +1,6 @@
 import type { FindingMaterial, FindingPassage, FindingRecordEntry, FindingRef } from "../../../../shared/analysis-contract/findings.ts";
 import { LIBRARY_CANONICALS, type IndustryCategory } from "../../../../shared/analysis-contract/filing-library.ts";
 import { LENS_LIMITS, type LensDocument } from "../../../../shared/analysis-contract/lens.ts";
-import type { PeersPublication } from "../../../../shared/analysis-contract/peers.ts";
 import { evidenceCandidates, lensDocumentIssues, readLensDocument, resolveEvidence, resolveRef, type FindingData, type VerifiedFinding } from "../../../../shared/analysis-runtime/findings.ts";
 import { auditDocument } from "../../../../shared/analysis-runtime/lens/audit.ts";
 import { describeDocument } from "../../../../shared/analysis-runtime/lens/describe.ts";

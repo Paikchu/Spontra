@@ -38,9 +38,11 @@ export function NonOperatingTag({ result, onTrend, size = "small" }: { result: N
   const [at, setAt] = useState<CSSProperties | null>(null);
   const id = useId();
   const root = useRef<HTMLSpanElement>(null), pop = useRef<HTMLSpanElement>(null);
+  // A closed card forgets its place, so the next opening measures it afresh.
+  if (!open && at) setAt(null);
   // The hero row clips and scrolls sideways, so the card is laid on the page under the tag and kept inside the window.
   useLayoutEffect(() => {
-    if (!open) { setAt(null); return; }
+    if (!open) return;
     const tag = root.current?.getBoundingClientRect(), card = pop.current?.getBoundingClientRect();
     if (!tag || !card) return;
     const left = Math.max(12, Math.min(tag.left, innerWidth - card.width - 12));

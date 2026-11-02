@@ -8,15 +8,17 @@ const m = messages({
   undisclosed: "Not disclosed", fcfNegative: "FCF not positive",
   more: (buybacks: string, sbc: string, x: string) => `Buybacks of ${buybacks} over the last four quarters were ${x}× stock-based compensation (${sbc}), more than offsetting the dilution it brings.`,
   less: (buybacks: string, sbc: string, pct: string) => `Buybacks of ${buybacks} over the last four quarters were ${pct} of stock-based compensation (${sbc}), short of offsetting its dilution.`,
-  source: "Source", quarters: "By quarter",
+  source: "Source", sourceSystem: "SEC XBRL", quarters: "By quarter",
 }, {
   title: "股东回报", ttm: "近 4 季", to: (period: string) => `截至 ${period}`, fy: (year: number) => `${year} 财年`,
   buybacks: "回购", dividends: "分红", total: "合计", ofFcf: "占自由现金流", yield: "股东回报率", yieldTip: "回购与分红之和 ÷ 市值",
   undisclosed: "未披露", fcfNegative: "自由现金流非正",
   more: (buybacks: string, sbc: string, x: string) => `近 4 季回购 ${buybacks}，是同期股权激励 ${sbc} 的 ${x} 倍，足以抵消其带来的稀释。`,
   less: (buybacks: string, sbc: string, pct: string) => `近 4 季回购 ${buybacks}，仅为同期股权激励 ${sbc} 的 ${pct}，不足以抵消其带来的稀释。`,
-  source: "来源", quarters: "分季",
+  source: "来源", sourceSystem: "SEC XBRL", quarters: "分季",
 });
+/** The XBRL concepts the figures are read from: identifiers quoted as they are filed, not copy to translate. */
+const CONCEPTS = { buybacks: "PaymentsForRepurchaseOfCommonStock", dividends: "PaymentsOfDividends" };
 
 const pct = (v: number) => `${(v * 100).toFixed(v >= 0.995 || v < 0.1 ? 1 : 0)}%`;
 
@@ -54,6 +56,6 @@ export function ShareholderReturns({ returns }: { returns: Returns }) {
   return <section className="returns" aria-label={m.title}>
     <header className="returns-head"><h2>{m.title}</h2>{note && <p className="returns-note">{note}</p>}</header>
     <div className="returns-grid">{[returns.ttm, ...returns.years].map(cell)}</div>
-    <p className="returns-source">{m.source} · SEC XBRL <code>PaymentsForRepurchaseOfCommonStock</code> <code>PaymentsOfDividends</code></p>
+    <p className="returns-source">{m.source} · {m.sourceSystem} <code>{CONCEPTS.buybacks}</code> <code>{CONCEPTS.dividends}</code></p>
   </section>;
 }

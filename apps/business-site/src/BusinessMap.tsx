@@ -37,7 +37,7 @@ import { heroTiles, type HeroTile, type HeroTone } from "./hero-model";
 import { ShareholderReturns } from "./ShareholderReturns";
 import { MomentumTag } from "./MomentumTag";
 import { NonOperatingTag } from "./NonOperatingTag";
-import { nonOperating, type NonOperating } from "./non-operating";
+import { nonOperating } from "./non-operating";
 import { basisChangedAt, businessValue, yearAgoOnBasis } from "@/shared/analysis-runtime/segment-basis";
 import { momentumOf, type Momentum } from "./momentum";
 import { marketCapOf, shareholderReturns } from "./shareholder-returns";
@@ -55,7 +55,7 @@ import { ReportLens } from "./ReportLens";
 import { Timeline } from "./Timeline";
 import { fiscalPhrase } from "./PeriodMark";
 import { lazy, Suspense } from "react";
-import { getLocale, messages, useLocale } from "@/packages/web/src/i18n";
+import { getLocale, messages, useLocale, type Locale } from "@/packages/web/src/i18n";
 import { SourceLanguage, langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import type { ValuationResponse } from "@/shared/analysis-contract/valuation";
 import { ValuationPanel } from "./ValuationPanel";
@@ -160,8 +160,8 @@ type StatementView = Exclude<View, "valuation">;
 const VIEWS: readonly View[] = ["valuation", "profit", "cash", "balance"];
 /** Every change on the stage is against one base: the same quarter a year earlier (YoY) or the quarter before (QoQ). */
 type Basis = "yoy" | "qoq";
-const basisWords = (basis: Basis): CompareBasis & { period: string } => basis === "yoy"
-  ? { change: yoyLabel(getLocale()), prior: m.lastYear, period: m.yearAgo } : { change: qoqLabel(getLocale()), prior: m.lastQuarter, period: m.lastQuarterPeriod };
+const basisWords = (basis: Basis, locale: Locale): CompareBasis & { period: string } => basis === "yoy"
+  ? { change: yoyLabel(locale), prior: m.lastYear, period: m.yearAgo } : { change: qoqLabel(locale), prior: m.lastQuarter, period: m.lastQuarterPeriod };
 /** The quarter as a label names it: the flow's own label in English, the quarter's end elsewhere. */
 const periodName = (ticker: string, q: BusinessFlowQuarter) => {
   const labels = fiscalPhrase(ticker, q.periodEnd, q.periodStart);
@@ -329,10 +329,11 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
   const quarter = quarters.find(q => q.id === period) ?? quarters[0];
   // YoY by default; QoQ when the year-ago quarter was not collected but the one before was.
   const [chosenBasis, setBasis] = useState<Basis | null>(null);
-  const yearAgo = quarter ? yearAgoQuarter(quarter, quarters) : null, lastQuarter = quarter ? previousQuarter(quarter, quarters) : null;
+  const yearAgo = useMemo(() => quarter ? yearAgoQuarter(quarter, quarters) : null, [quarter, quarters]);
+  const lastQuarter = useMemo(() => quarter ? previousQuarter(quarter, quarters) : null, [quarter, quarters]);
   const basis: Basis = chosenBasis ?? (yearAgo || !lastQuarter ? "yoy" : "qoq");
   const previous = basis === "yoy" ? yearAgo : lastQuarter;
-  const word = useMemo(() => basisWords(basis), [basis, locale]);
+  const word = useMemo(() => basisWords(basis, locale), [basis, locale]);
   const slots = useMemo(() => hueSlots(quarters), [quarters]);
   const { items, quantified } = useMemo(() => businessItems(quarter, slots), [quarter, slots]);
   const [selected, setSelected] = useState<string | null>(() => new URLSearchParams(location.search).get("business"));
@@ -485,12 +486,15 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
     onView?.({ periodEnd: quarter?.periodEnd ?? null, view, business: current?.id ?? null, finding: focused?.id ?? null, check: focusedCheck?.id ?? null, event: focusedEvent?.id ?? null, report: focusedReport?.accessionNumber ?? null, metric: metric?.key ?? null });
   }, [onView, quarter?.periodEnd, view, current?.id, focused?.id, focusedCheck?.id, focusedEvent?.id, focusedReport?.accessionNumber, metric?.key]);
   // A finding in focus brings the stage to its report and statement view, and clears any business pick so the whole statement reads.
-  useEffect(() => {
-    if (!focused) return;
-    setSelected(null);
-    setPeriod(quarters.find(q => q.periodEnd === focused.periodEnd)?.id ?? null);
-    setView(focused.anchors.view);
-  }, [focused?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [staged, setStaged] = useState<string | null>(null);
+  if ((focused?.id ?? null) !== staged) {
+    setStaged(focused?.id ?? null);
+    if (focused) {
+      setSelected(null);
+      setPeriod(quarters.find(q => q.periodEnd === focused.periodEnd)?.id ?? null);
+      setView(focused.anchors.view);
+    }
+  }
   const amountOf = useCallback((n: PlacedNode) => n.amount ? numeric(n.amount) : n.metric && quarter ? numeric(quarter.figures[n.metric]) : n.value, [quarter]);
   /** Same comparison as the list and tooltip: only an equal-definition comparison quarter yields a change. */
   const comparisonOf = useCallback((n: PlacedNode) => !quarter ? null
@@ -546,7 +550,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
         tip: { title: m.thisGuidance(markSentence(b.item, dollars)), color: colorOf(b.node), note: b.item.quote,
           rows: [[b.derived ? m.derivedGuidance : m.guidanceRange, `${dollars(b.low)}–${dollars(b.high)}`], [m.thisQuarter, money(amountOfNode(b.node))], [m.result, VERDICT[b.verdict]], [m.issued, b.item.issuedAt.slice(0, 10)]],
           link: b.source ? m.source(b.source.title) : undefined } })),
-      pills: marks.pills.map(p => ({ node: p.node, qualifier: pillQualifier(p.item), text: p.text, implied: p.item.derived ? `≈ ${range(dollars(p.item.derived.low), dollars(p.item.derived.high), getLocale())}` : null, action: p.action ?? null, glyph: p.action ? ACTION_GLYPH[p.action] : "", url: p.source?.url ?? null,
+      pills: marks.pills.map(p => ({ node: p.node, qualifier: pillQualifier(p.item), text: p.text, implied: p.item.derived ? `≈ ${range(dollars(p.item.derived.low), dollars(p.item.derived.high), locale)}` : null, action: p.action ?? null, glyph: p.action ? ACTION_GLYPH[p.action] : "", url: p.source?.url ?? null,
         tip: { title: m.nextGuidance(markSentence(p.item, dollars)), color: colorOf(p.node), note: p.item.quote,
           rows: [...(p.action && p.action !== "initiated" ? [[m.vsPrevious, actionName(p.action) + (p.item.previous && p.item.previous.low != null ? m.previously(p.item.measure === "growth" || p.item.unit === "percent" ? `${p.item.previous.low}%–${p.item.previous.high}%` : `${dollars(p.item.previous.low)}–${dollars(p.item.previous.high)}`) : "")] as [string, string]] : []), [m.issued, p.item.issuedAt.slice(0, 10)]],
           link: p.source ? m.source(p.source.title) : undefined } })),
@@ -573,7 +577,8 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
     if (next === "valuation") { onNavigate?.(); setFocusId(null); setCheckId(null); setEventId(null); setReportId(null); setSplit(false); setReader(false); setHoverFlag(null); }
     crossfade(() => { stageChartBox(); track("company_tab_view", { ticker, view: next }); setView(next); });
   };
-  const focusFinding = (id: string | null) => { onNavigate?.(); setFocusId(id); if (id) { track("finding_expand", { ticker }); setCheckId(null); setEventId(null); setReportId(null); } else { setSplit(false); } };
+  const showFinding = (id: string | null) => { setFocusId(id); if (id) { setCheckId(null); setEventId(null); setReportId(null); } else { setSplit(false); } };
+  const focusFinding = (id: string | null) => { onNavigate?.(); showFinding(id); if (id) track("finding_expand", { ticker }); };
   const focusCheck = (id: string | null) => { onNavigate?.(); setCheckId(id); setHoverFlag(null); if (id) { leaveValuation(); setSelected(null); setFocusId(null); setEventId(null); setReportId(null); setSplit(false); } };
   const focusEvent = (id: string | null) => { onNavigate?.(); setEventId(id); if (id) { leaveValuation(); setSelected(null); setFocusId(null); setCheckId(null); setReportId(null); setSplit(false); } };
   // The rail holds one pick at a time: a business, a flag, a finding, or a report/event. A business reads on the income statement, whatever held the stage.
@@ -605,7 +610,10 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
     body.addEventListener("touchmove", onTouchMove, { passive: true });
     return () => { body.removeEventListener("wheel", onWheel); body.removeEventListener("touchstart", onTouchStart); body.removeEventListener("touchmove", onTouchMove); };
   }, []);
-  useEffect(() => { if (focusRequest) focusFinding(focusRequest.finding); }, [focusRequest?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
+  // A finding the stage asks for is shown in the render that brings the request; navigating and counting it follow the commit.
+  const [answered, setAnswered] = useState<number | null>(null);
+  if (focusRequest && focusRequest.nonce !== answered) { setAnswered(focusRequest.nonce); showFinding(focusRequest.finding); }
+  useEffect(() => { if (focusRequest) { onNavigate?.(); if (focusRequest.finding) track("finding_expand", { ticker }); } }, [focusRequest?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
   // A report in focus also brings the stage to its quarter when the flow has it.
   const focusReport = (id: string | null) => {
     onNavigate?.(); setReportId(id); setReader(false);
@@ -1004,8 +1012,8 @@ function ExplainedDossier({ item, parent, explainer, explained }: { item: Item; 
 
     {/* Products come first when verified; the other tabs are the angles the model chose for this business. */}
     <DossierTabs label={item.name} sections={[
-      ...(explained.offerings?.length ? [[m.products, <ul className="dossier-products">{explained.offerings.map(p => <li key={p.id} lang={langOf(p.description.text)}><b>{p.name}</b>{normalizeDisplayText(p.description.text)}{cite(p.description)}</li>)}</ul>] as [string, ReactNode]] : []),
-      ...explained.sections.map((section): [string, ReactNode, string] => [section.title, <DossierSection section={section} cite={cite} />, langOf(section.title)]),
+      ...(explained.offerings?.length ? [[m.products, <ul key="products" className="dossier-products">{explained.offerings.map(p => <li key={p.id} lang={langOf(p.description.text)}><b>{p.name}</b>{normalizeDisplayText(p.description.text)}{cite(p.description)}</li>)}</ul>] as [string, ReactNode]] : []),
+      ...explained.sections.map((section): [string, ReactNode, string] => [section.title, <DossierSection key={section.title} section={section} cite={cite} />, langOf(section.title)]),
     ]} />
 
     <ol className="sources sources--numbered">{cited.map(s => <li key={s.id}><a href={s.url} target="_blank" rel="noopener noreferrer">{s.title}<span aria-hidden="true"> ↗</span></a></li>)}</ol>

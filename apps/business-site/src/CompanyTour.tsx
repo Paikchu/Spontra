@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal, flushSync } from "react-dom";
 import { messages } from "@/packages/web/src/i18n";
 import { track } from "./track";
 import { TOUR_FORCE_KEY, readTourDone, reduceTour, shouldAutoOpen, tourKey, writeTourDone, tourLayout, type TourStep } from "./tour";
@@ -49,16 +49,20 @@ export function CompanyTour({ available = true }: { available?: boolean }) {
   const returnTo = useRef<HTMLElement | null>(null);
   const timer = useRef(0);
 
-  function start() {
+  const start = useCallback(() => {
     window.clearTimeout(timer.current);
     if (!available || document.querySelector("dialog[open]") || !document.querySelector(TARGETS[0]!)) return;
-    setStep(0);
-    setOpen(true);
+    // The layer opens in this same task, so no other dialog can open between the check above and showModal().
+    flushSync(() => {
+      setStep(0);
+      setOpen(true);
+    });
     track("tour_start");
-  }
+  }, [available]);
 
+  if (!available && open) setOpen(false);
   useEffect(() => {
-    if (!available) { setOpen(false); return; }
+    if (!available) return;
     let storage: Storage | null = null;
     let session: Storage | null = null;
     try { storage = localStorage; session = sessionStorage; } catch { /* Private mode. */ }
@@ -68,7 +72,7 @@ export function CompanyTour({ available = true }: { available?: boolean }) {
     if (!shouldAutoOpen({ done: readTourDone(storage), webdriver, force })) return;
     timer.current = window.setTimeout(start, 600);
     return () => window.clearTimeout(timer.current);
-  }, [available]);
+  }, [available, start]);
 
   useEffect(() => {
     if (!open) return;
@@ -104,7 +108,6 @@ export function CompanyTour({ available = true }: { available?: boolean }) {
     if (!open) return;
     returnTo.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const dialog = dialogRef.current;
-    if (document.querySelector("dialog[open]")) { setOpen(false); return; }
     dialog?.showModal();
     cardRef.current?.focus({ preventScroll: true });
     return () => {

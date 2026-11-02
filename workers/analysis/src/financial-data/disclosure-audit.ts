@@ -9,6 +9,7 @@ import { canonicalSecHtml } from "./provider.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
 import { TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
+import { omit } from "../../../../shared/analysis-runtime/omit.ts";
 
 type ArchiveBucket = {
   get(key: string): Promise<{ text(): Promise<string> } | null>;
@@ -24,7 +25,7 @@ export type StoredAudit = DisclosureAuditSummary & { rawKey: string; inventoryKe
 export const disclosureAuditPrefix = (ticker: string) => `sec:disclosure-audit:v1:${ticker}:`;
 export const ARCHIVE_PREFIX = "financial-disclosures/";
 const digest = async (text: string) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)))].map(n => n.toString(16).padStart(2, "0")).join("");
-const summary = ({rawKey: _raw, inventoryKey: _inventory, statementsKey: _statements, capital: _capital, ...value}: StoredAudit): DisclosureAuditSummary => value;
+const summary = (value: StoredAudit): DisclosureAuditSummary => omit(value, "rawKey", "inventoryKey", "statementsKey", "capital");
 
 /** Source-addressed archives survive reruns; the D1 pointer advances only after all source, inventory and statement objects exist. */
 export async function archiveFilingDisclosures(env: DisclosureArchiveEnv, ticker: string, source: DocumentSource, served: string,

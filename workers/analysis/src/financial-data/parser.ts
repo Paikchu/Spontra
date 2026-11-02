@@ -5,6 +5,7 @@ import { disclosedWholeCompany } from '../../../../shared/analysis-runtime/finan
 import {extractFilingDisclosures} from '../../../../shared/analysis-runtime/financial-data/disclosure-extraction.ts';
 import {extractFinancialStatements} from '../../../../shared/analysis-runtime/financial-data/financial-statements.ts';
 import {memberName} from './member-labels.ts';
+import {omit} from '../../../../shared/analysis-runtime/omit.ts';
 import {readIncomeStatementCells} from '../../../../shared/analysis-runtime/financial-data/income-statement.ts';
 import type {IncomeCalculation,RevenueStructure} from './calculation.ts';
 import {applyOther,applyStructure,otherFromCalculation,otherFromStatement,structureFromCalculation,structureFromStatement,structureKey,type BridgeAnchors,type BridgeStructure,type OtherPeriod,type ResolvedBridge} from './bridge.ts';
@@ -55,7 +56,7 @@ export function hasSingleReportableSegment(html:string,cik?:string):boolean {
 export function readReportedFacts(html:string,source:DocumentSource):{facts:Fact[];issues:string[]}{
  source={...source,singleSegment:source.singleSegment || hasSingleReportableSegment(html,source.cik),fiscalYear:text(html.match(/<ix:nonNumeric[^>]*name=["\']dei:DocumentFiscalYearFocus["\'][^>]*>([\s\S]*?)<\/ix:nonNumeric>/i)?.[1]??'')};
  if(!/<ix:nonFraction/i.test(html))return {facts:readStatementTableFacts(html,source),issues:[]};
- const {memberLabels,revenueStructure,calculation:_calculation,presentation:_presentation,...factSource}=source;source=factSource;
+ const {memberLabels,revenueStructure}=source;source=omit(source,'memberLabels','revenueStructure','calculation','presentation');
  // Lines the filing's revenue calculation adds to a revenue total (hedging gains beside contract revenue) are read as consolidated facts.
  const revenueLines=new Set(revenueStructure?.arcs.flatMap(a=>[local(a.parent),local(a.child)])??[]);
  const issues:string[]=[];

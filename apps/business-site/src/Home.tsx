@@ -17,6 +17,7 @@ import { worthWatching, type SignalTab, type WorthWatchingCard } from "./worth-w
 import { FRESH_DAYS, freshResults, type FreshResult } from "./fresh-results";
 
 const m = messages({
+  brand: "Business View",
   title: "See how a company makes money, and spot the risks early",
   trust: (count: number, time: string) => `${count} US companies, read from SEC EDGAR · Updated ${time}`,
   trustStatic: (count: number) => `${count} US companies, read from SEC EDGAR`,
@@ -65,6 +66,7 @@ const m = messages({
   hoursAgo: (n: number) => `${n} hours ago`,
   daysAgo: (n: number) => `${n} days ago`,
 }, {
+  brand: "Business View",
   title: "看懂一家公司怎么赚钱，提前发现风险",
   trust: (count: number, time: string) => `已覆盖 ${count} 家美股公司，数据来自 SEC EDGAR · 最近更新 ${time}`,
   trustStatic: (count: number) => `已覆盖 ${count} 家美股公司，数据来自 SEC EDGAR`,
@@ -279,8 +281,8 @@ export function Home({ light, onToggleTheme, recent, onPick, digest = null, dige
   return <main className="home">
     <header className="home-nav" data-stuck={stuck || undefined}>
       <a className="home-brand" href="/" data-nav>
-        <span className="home-mark" lang="en">BV</span>
-        <span lang="en">Business View</span>
+        <span className="home-mark" lang="en">{m.brand.replace(/[^A-Z]/g, "")}</span>
+        <span lang="en">{m.brand}</span>
       </a>
       <div className="home-nav-tools">
         {fieldHidden && <button type="button" className="home-nav-search" onClick={onSearch}>

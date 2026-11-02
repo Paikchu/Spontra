@@ -19,7 +19,7 @@ const done: AnyTool<S> = { name: "done", description: "Finish.", parameters: z.o
 const policy: ToolPolicy = { allow: ["add", "done"], post: (exec, value) => exec.name === "add" && (value as number) > 100 ? { kind: "block", feedback: "Too large." } : { kind: "accept" } };
 const recipe: Recipe<null, number[], S> = { id: "t", budget: { turns: 5, wallMs: 60_000 }, system: () => "sys", open: () => ({ added: [], done: false }), tools: () => [add, done], policy,
   settled: s => s.done, settle: s => s.added, nudge: "Call a tool." };
-const host = (records: string[] = []): LoopHost<S> => ({ reserve: async () => true, record: r => records.push(`${r.action}:${r.observation}`), execute: (_t, calls, run) => sequential(calls, run), signal: new AbortController().signal, now: () => 0 });
+const host = (records: string[] = []): LoopHost => ({ reserve: async () => true, record: r => records.push(`${r.action}:${r.observation}`), execute: (_t, calls, run) => sequential(calls, run), signal: new AbortController().signal, now: () => 0 });
 
 test("a tool's model-facing schema is strict and closed unless the tool takes a whole document", () => {
   const schema = toolSchema(add);

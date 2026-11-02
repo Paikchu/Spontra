@@ -2,6 +2,7 @@ import type { BusinessFlowQuarter, BusinessSegment, FlowAmount, FlowMetric } fro
 import type { RevenueHistoryQuarter } from '../../../../shared/analysis-contract/revenue-history.ts';
 import { checkCompleteFlow } from '../../../../shared/analysis-runtime/financial-data/completeness.ts';
 import {daysBetween as days} from '../../../../shared/analysis-runtime/dates.ts';
+import {omit} from '../../../../shared/analysis-runtime/omit.ts';
 
 /**
  * A new filing read by a read note (docs/agent-interpretation-design.md): the note says where each amount of the newest
@@ -184,7 +185,7 @@ export function applyNote(note: ReadNote, context: NoteContext): { quarter: Busi
     ...template.segments.flatMap(s => {
       const at = placed.get(`segment:${s.id}`), revenue = at && s.revenue && amountAt(at, s.revenue, `segment:${s.id}`);
       if (!revenue) return [];
-      const { children: _children, ...segment } = s;
+      const segment = omit(s, 'children');
       return [{ ...segment, revenue, sourceIds: [context.source.accession] }];
     }),
     ...added('segment').map(c => ({ id: c.id, name: c.name, revenue: c.amount, description: template.segments[0]?.description ?? '', products: [], customers: null, monetization: null,

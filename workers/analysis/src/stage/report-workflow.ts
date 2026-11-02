@@ -63,7 +63,7 @@ export async function executeReportWorkflow(params: ReportParams, steps: Workflo
       throw error;
     }
   });
-  const host: LoopHost<typeof state> = {
+  const host: LoopHost = {
     reserve: () => { turn++; return steps.do(`report-reserve-${turn}`, async () => (await reserve(db, "stage-report-calls", { reader: params.userId, address: params.address })).ok); },
     record: () => {},
     execute: (_t, calls, run) => sequential(calls, run),

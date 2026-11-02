@@ -365,9 +365,14 @@ export function ValuationPanel({ ticker, valuation }: { ticker: string; valuatio
   const [versionId, setVersionId] = useState<string | null>(null);
   const [version, setVersion] = useState<ValuationPublication | null>(null);
   const [open, setOpen] = useState<string | null>(null);
-  useEffect(() => { setVersionId(null); setVersion(null); setOpen(null); }, [ticker]);
+  // Another company starts on its current version with no source open.
+  const [shownTicker, setShownTicker] = useState(ticker);
+  if (shownTicker !== ticker) { setShownTicker(ticker); setVersionId(null); setVersion(null); setOpen(null); }
+  // The current version is read from the response; a loaded older one is let go.
+  const current = !versionId || versionId === valuation.report?.versionId;
+  if (current && version) setVersion(null);
   useEffect(() => {
-    if (!versionId || versionId === valuation.report?.versionId) { setVersion(null); return; }
+    if (!versionId || versionId === valuation.report?.versionId) return;
     const c = new AbortController();
     void fetchValuationVersion(ticker, versionId, c.signal).then(r => { if (!c.signal.aborted) setVersion(r); }).catch(() => {});
     return () => c.abort();

@@ -187,7 +187,7 @@ function classifyTable(table: Element): "toc" | "layout" | "data" {
 }
 
 /** Inline XBRL facts shown in the document, located by the same element offset the archive inventory's ids carry. */
-function readFacts(nodes: Element[], meta: LibraryDocumentMeta): { facts: FactNode[]; notes: Span[]; tableBlocks: Span[] } {
+function readFacts(nodes: Element[]): { facts: FactNode[]; notes: Span[]; tableBlocks: Span[] } {
   const continuations = new Map<string, Element>();
   for (const node of nodes) if (isInline(node) && node.local === "continuation" && node.attributes.id) continuations.set(node.attributes.id, node);
   const facts: FactNode[] = [], notes: Span[] = [], tableBlocks: Span[] = [];
@@ -431,7 +431,7 @@ function readTable(block: TableBlock, facts: FactNode[], before: string, notes: 
 export function parseFilingDocument(html: string, meta: LibraryDocumentMeta): ParsedLibraryResult {
   const { nodes, root } = parseMarkup(html);
   const issues: string[] = [];
-  const { facts, notes, tableBlocks } = readFacts(nodes, meta);
+  const { facts, notes, tableBlocks } = readFacts(nodes);
   const blocks = dropPageFurniture(flatten(html, root));
   blocks.forEach((block, i) => { block.index = i; });
   const docType = detectDocType(meta.form, meta.documentUrl, blocks);

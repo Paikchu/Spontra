@@ -13,7 +13,6 @@ const n2 = (v: number) => Number(v.toFixed(2));
 /** CJK characters run about one em wide, nearly twice a Latin character; widths are estimated per character. */
 const WIDE = /[\u3000-\u9fff\uac00-\ud7af\uff00-\uffef]/g, WIDE_EXTRA = 4.6;
 const textW = (s: string) => s.length * CHAR + (s.match(WIDE)?.length ?? 0) * WIDE_EXTRA;
-const LABELLED = new Set(["line", "step", "dot", "area", "stacked_area", "rule"]);
 
 type Scale = { y: (v: number) => number; zero: number; axis: CompiledAxis };
 
