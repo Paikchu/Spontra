@@ -30,8 +30,14 @@ const FLOW_CATEGORIES = new Set(["income_statement", "cash_flow"]);
 export async function getSecFundamentals(database: D1Like, query: FundamentalApiQuery): Promise<PublicFundamentalsResponse> {
   const repository = new D1SecRepository(database);
   const cached = await repository.getCache<SecHistorySnapshot>(secFundamentalsKey(query.ticker));
-  const issuer = await database.prepare("SELECT cik FROM sec_filings WHERE ticker = ? ORDER BY filing_date DESC LIMIT 1").bind(query.ticker).first<{cik: string}>();
-  const revenueHistory = issuer ? historyForIssuer((await repository.getCache(historyKey(issuer.cik)))?.payload, issuer.cik, query.ticker) : null;
+  const issuer = await database.prepare("SELECT cik FROM sec_filings WHERE ticker = ? ORDER BY filing_date DESC LIMIT 1").bind(query.ticker).first<{cik: string}>()
+    ?? await database.prepare(`SELECT COALESCE(
+      (SELECT cik FROM financial_collection_jobs WHERE ticker=? ORDER BY generation DESC LIMIT 1),
+      (SELECT v.cik FROM financial_complete_current c JOIN financial_complete_versions v ON v.version_id=c.version_id WHERE v.ticker=? LIMIT 1),
+      (SELECT json_extract(payload,'$.cik') FROM sec_cache WHERE cache_key='admin:financial-issuer:'||? AND json_valid(payload)),
+      (SELECT substr(cache_key,length('sec:revenue-history:v1:')+1) FROM sec_cache WHERE cache_key LIKE 'sec:revenue-history:v1:%' AND json_valid(payload) AND json_extract(payload,'$.ticker')=? LIMIT 1)
+    ) cik`).bind(query.ticker,query.ticker,query.ticker,query.ticker).first<{cik:string}>();
+  const revenueHistory = issuer?.cik ? historyForIssuer((await repository.getCache(historyKey(issuer.cik)))?.payload, issuer.cik, query.ticker) : null;
   if (cached) return buildSecFundamentals(cached.payload, query, cached.fetchedAt, new Date(), revenueHistory?.quarters);
   // Existing companies can display previously ingested SEC facts before the next discovery sweep.
   const rows = await database.prepare(`

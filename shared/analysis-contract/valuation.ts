@@ -17,6 +17,9 @@ export const REPORT_STATUSES = ["ready", "insufficient"] as const;
 export type ReportStatus = typeof REPORT_STATUSES[number];
 export type ScenarioKey = "bear" | "base" | "bull";
 export const SCENARIO_KEYS: readonly ScenarioKey[] = ["bear", "base", "bull"];
+/** The scenarios the expected value weighs: the three researched ones and the management scenario computed from cited targets. */
+export const EXTENDED_SCENARIO_KEYS = ["bear", "base", "management", "bull"] as const;
+export type ExtendedScenarioKey = typeof EXTENDED_SCENARIO_KEYS[number];
 export const DISCOUNT_RATE_BASES = ["wacc", "cost_of_equity"] as const;
 export type DiscountRateBasis = typeof DISCOUNT_RATE_BASES[number];
 export const VALUATION_MODEL_TYPES = ["fcff", "fcfe", "revenue_fcfe", "residual_income", "earnings_multiple", "reported_earnings_multiple", "proforma_earnings_multiple", "asset_nav", "affo_multiple", "affo_dcf"] as const;
@@ -27,7 +30,10 @@ export const GAP_CODES = ["missing_inputs", "unsupported_model", "missing_quote"
   // valuation.calc.v2 gates (docs/valuation-v2-SPEC.md): flagged, never forced.
   "cited_input_mismatch", "consensus_divergence", "method_dispersion", "rpo_floor_breached", "negative_scenario", "terminal_growth_high", "implied_multiple_outside_history", "peers_unavailable",
   // The base path against management's cited targets: a discount or premium beyond the limit is named, never forced.
-  "management_target_gap"] as const;
+  "management_target_gap",
+  // valuation.calc.v4 (docs/valuation-v2-SPEC.md, "v3: judged weights and the management scenario"): a method the model weighted
+  // could not be applied, a usable method was given no weight, or no consensus target could be cited.
+  "method_unavailable", "method_zero_weight"] as const;
 export type GapCode = typeof GAP_CODES[number];
 export type ValuationGap = { code: GapCode; field?: string; period?: string; message: string; evidenceIds: string[] };
 
@@ -59,6 +65,10 @@ export type ValuationFact = {
  * units per year: reinvestment the sales-to-capital term does not see, so a build phase is not read as a steady state.
  */
 export type DriverPath = { revenueGrowth: number[]; operatingMargin: number[]; taxRate: number[]; salesToCapital: number[]; normalization?: number[]; buildCapex?: number[] };
+/** A judgement the model made and the registered evidence it rests on. */
+export type Judgement = { rationale: string; evidenceIds: string[] };
+/** Why a scenario's revenue, margin and capex paths run as they do; the figures are in `drivers`, the reasons here. */
+export type PathAssumptions = { revenue: Judgement; margin: Judgement; capex: Judgement };
 export type ScenarioAssumptions = {
   narrative: string;
   probability: number | null;
@@ -66,6 +76,8 @@ export type ScenarioAssumptions = {
   invalidation: string[];
   evidenceIds: string[];
   drivers: ModelDrivers;
+  /** valuation.calc.v4: the reasons behind the key paths; absent on older payloads. */
+  assumptions?: PathAssumptions;
 };
 /** The per-scenario inputs of each model; the discount rate, shares and bridge are report-level and shared. */
 export type ModelDrivers =
@@ -91,11 +103,17 @@ export type EquityBridge = {
   notes: string[];
 };
 export type ShareCount = { base: number; dilutionReserve: number; economic: number; basis: string };
+export const DISCOUNT_RATE_COMPONENTS = ["riskFree", "beta", "equityRiskPremium", "costOfDebt", "taxRate", "equityWeight"] as const;
+export type DiscountRateComponent = typeof DISCOUNT_RATE_COMPONENTS[number];
+/** Where each discount-rate component came from: a named source and the registered evidence or fact ids behind it. */
+export type DiscountRateSources = Record<DiscountRateComponent, { source: string; evidenceIds: string[] }>;
 export type DiscountRate = {
   value: number; basis: DiscountRateBasis;
   components: { riskFree: number | null; beta: number | null; equityRiskPremium: number | null; costOfEquity: number | null; costOfDebt: number | null; taxRate: number | null; equityWeight: number | null };
   rationale: string;
   sourceRefs: string[];
+  /** valuation.calc.v4: a source per component; absent on older payloads. */
+  sources?: DiscountRateSources;
 };
 
 export type YearRow = { year: number; revenue: number | null; nopat: number | null; reinvestment: number | null; cashFlow: number; discountFactor: number; presentValue: number; buildCapex?: number | null };
@@ -112,6 +130,11 @@ export type ScenarioResult = {
 };
 export type Sensitivity = { factor: string; step: string; perShare: number; changePercent: number };
 export type ImpliedPath = { factor: "revenueGrowth"; implied: number; baseAverage: number; gap: number; converged: boolean };
+/**
+ * The range the report headlines. Under valuation.calc.v4 `low`, `base` and `high` are the bear, base and bull scenarios'
+ * method-weighted per-share values (DCF and the forward multiples at the judged weights; `ScenarioValuation`), `expected` the
+ * probability-weighted value over bear, base, management and bull; older payloads carry the DCF values and the three-scenario expectation.
+ */
 export type ValuationRange = {
   low: number; high: number; base: number; expected: number | null;
   price: number | null; marginOfSafety: number | null; downsideCoverage: number | null; expectedUpside: number | null; baseUpside: number | null;
@@ -124,6 +147,22 @@ export type ValuationMethodKey = typeof VALUATION_METHODS[number];
 export type MethodValuation = { method: ValuationMethodKey; label: string; low: number | null; base: number | null; high: number | null; weight: number; basis: string; notes: string[] };
 /** The weighted football field over the applicable methods; `dispersion` is max/min of the method bases (null when a base is not positive). */
 export type Triangulation = { low: number; base: number; high: number; dispersion: number | null; weights: Record<ValuationMethodKey, number> };
+/**
+ * One scenario's value by method on its own path (the forward multiples at the peers' median), and the per-share value at
+ * the judged weights renormalized over the methods that applied; `perShare` is what the range and the expected value use.
+ */
+export type ScenarioValuation = { methods: Record<ValuationMethodKey, number | null>; weights: Record<ValuationMethodKey, number>; perShare: number };
+/** The model's judged weight of one method, with the reasons (business, life cycle, build phase, backlog, margin path, industry outlook) and evidence. */
+export type MethodWeightJudgement = Judgement & { weight: number };
+export type MethodWeights = Record<ValuationMethodKey, MethodWeightJudgement>;
+/** The model's judged probability of one scenario, with the reasons and evidence; the four sum to 1. */
+export type ScenarioProbability = Judgement & { probability: number };
+export type ScenarioProbabilities = Record<ExtendedScenarioKey, ScenarioProbability>;
+/** The base path against management's cited targets, one row per target the horizon covers, and the model's explanation of the gap. */
+export type ManagementComparisonRow = { metric: ManagementTargetMetric; fiscalYear: number; year: number; target: number; base: number; gap: number };
+export type ManagementComparison = { rows: ManagementComparisonRow[]; explanation: string; evidenceIds: string[] };
+/** Whether a sell-side consensus could be cited: its source when it could, the reason when it could not. */
+export type ConsensusNote = { status: "cited" | "unavailable"; source: string | null; reason: string | null };
 export const GATE_STATUSES = ["pass", "flag", "fail"] as const;
 export type GateStatus = typeof GATE_STATUSES[number];
 /** A sanity gate: `fail` rejects the calculation, `flag` annotates it; `value` and `limit` are the figures compared. */
@@ -192,6 +231,23 @@ export type ReferenceScenario = {
   notes: string[];
 };
 
+/** A scenario as the model publishes it: the assumptions, the DCF result and (valuation.calc.v4) its method-weighted value. */
+export type ScenarioEntry = ScenarioAssumptions & { result: ScenarioResult; valuation?: ScenarioValuation };
+/**
+ * The management scenario (valuation.calc.v4): drivers computed by code from management's cited targets on the model's own
+ * rate, shares, bridge, horizon, tax and sales-to-capital, valued like the researched scenarios, with the probability the
+ * model judged for it. It is part of the expected value, never the base.
+ */
+export type ManagementScenario = ScenarioEntry & {
+  label: string;
+  /** The weighted football field with the management path as the base, when peer multiples were available. */
+  triangulation: Triangulation | null;
+  methods: MethodValuation[];
+  anchors: Array<{ metric: ManagementTargetMetric; fiscalYear: number; year: number; target: number; path: number | null }>;
+  sources: ManagementTargetSource[];
+  notes: string[];
+};
+
 export type ValuationModelResult = {
   calculatorVersion: string;
   modelType: ValuationModelType;
@@ -199,7 +255,7 @@ export type ValuationModelResult = {
   discountRate: DiscountRate;
   shares: ShareCount;
   bridge: EquityBridge;
-  scenarios: Record<ScenarioKey, ScenarioAssumptions & { result: ScenarioResult }>;
+  scenarios: Record<ScenarioKey, ScenarioEntry>;
   range: ValuationRange;
   sensitivities: Sensitivity[];
   implied: ImpliedPath | null;
@@ -214,8 +270,14 @@ export type ValuationModelResult = {
   verification?: InputVerification | null;
   peers?: PeerMultiples | null;
   consensus?: ConsensusTarget | null;
-  /** Reference scenarios computed from cited inputs beside the researched model (management case). */
+  /** Reference scenarios computed from cited inputs beside the researched model (management case); written by valuation.calc.v2–v3, superseded by `managementScenario`. */
   references?: ReferenceScenario[];
+  /* ---- valuation.calc.v4: judged weights and probabilities, the management scenario, the comparison and the consensus note. All optional; older payloads still read. ---- */
+  methodWeights?: MethodWeights;
+  scenarioProbabilities?: ScenarioProbabilities;
+  managementScenario?: ManagementScenario | null;
+  managementComparison?: ManagementComparison | null;
+  consensusNote?: ConsensusNote | null;
 };
 
 export type ValuationDimension = {

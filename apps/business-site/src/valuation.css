@@ -98,6 +98,19 @@
 .val-scenario { display: grid; gap: 4px; padding: 10px 12px; border-radius: 10px; background: var(--fill); }
 .val-chips { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px !important; color: var(--muted-foreground) !important; }
 .val-chips b { margin-right: 4px; font-weight: 620; }
+/* The judgements behind the figures (method weights, scenario probabilities, the management gap, the consensus): one line each with its reason. */
+.val-why-list { display: grid; gap: 4px; }
+.val-why-list h5 { margin: 4px 0 0; }
+.val-why { font-size: 13px !important; line-height: 1.55 !important; color: var(--muted-foreground) !important; }
+.val-why b { margin-right: 6px; font-weight: 620; color: var(--foreground); white-space: nowrap; }
+.val-why small { color: var(--faint); }
+.val-table td[data-sign="up"] { color: var(--up); }
+.val-table td[data-sign="down"] { color: var(--loss); }
+.val-table--checks td:nth-child(2) { white-space: nowrap; }
+.val-table--checks td:last-child { text-align: left; font-size: 12.5px; color: var(--muted-foreground); }
+.val-gate { display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 50%; background: var(--up); vertical-align: 0; }
+.val-gate[data-status="flag"] { background: var(--chart-3); }
+.val-gate[data-status="fail"] { background: var(--loss); }
 /* Citations are footnote numbers in the margin of the sentence, numbered in reading order and listed under Sources. */
 .val-refs { margin-left: 3px; font-size: 11.5px; line-height: 1; vertical-align: baseline; color: var(--chart-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .val-refs::before { content: "["; }

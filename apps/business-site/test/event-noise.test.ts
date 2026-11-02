@@ -7,7 +7,8 @@ import { isTaxWithholdingSale, eventImportance, insiderWindowValueUsd, isKeyInsi
 import { railEntries } from "../../../shared/analysis-runtime/rail.ts";
 import { setLocale } from "../../../packages/web/src/i18n/core.ts";
 import { eventTitle } from "../src/events-model.ts";
-import { defaultEventFilter, insiderCompactMoney, exactShares, filterCounts, noiseRows, readEventFilter, rowLeaves, timelineIds, withEventFilter } from "../src/event-noise.ts";
+import { defaultEventFilter, insiderCompactMoney, exactShares, filterCounts, insiderFilings, noiseRows, readEventFilter, rowLeaves, timelineIds, withEventFilter } from "../src/event-noise.ts";
+import { personsFromEvents } from "../../../shared/analysis-runtime/insiders.ts";
 import { timelineFromFilings } from "../src/reports-model.ts";
 import { clusterByGap } from "../src/timeline-model.ts";
 
@@ -49,23 +50,26 @@ test("importance follows the rail rules and does not call a model", () => {
   assert.equal(eventImportance(event({ id: "t", form: "6-K", class: "other", filedAt: "2026-05-01", description: "Monthly operating statistics" })), "normal");
 });
 
-test("sales by one person across months fold, and the leaves are the filings", () => {
+test("sales by one person across months are one person, and the leaves are the filings", () => {
   const sale = (id: string, day: string, shares: number): CompanyEvent => event({
     id, form: "4", class: "insider", filedAt: day,
-    insider: { ownerCik: "9", ownerName: "Olivan Javier", title: "COO", isDirector: false, isOfficer: true, isTenPercentOwner: false, rule10b51: true, planAdoptedOn: null, securityTitle: "Class A", lines: [], sold: { shares, proceeds: 0, averagePrice: 0 }, bought: null, exercised: 0, heldAfter: 1, footnotes: [] },
+    insider: { ownerCik: "9", ownerName: "Olivan Javier", title: "COO", isDirector: false, isOfficer: true, isTenPercentOwner: false, rule10b51: true, planAdoptedOn: null, securityTitle: "Class A", lines: [{ date: day, code: "S", acquiredDisposed: "D", shares, price: 100, ownedAfter: 1, ownership: "D", derivative: false }], sold: { shares, proceeds: shares * 100, averagePrice: 100 }, bought: null, exercised: 0, heldAfter: 1, footnotes: [] },
   });
   const publication: EventsPublication = { schemaVersion: "events.v1", ticker: "TEST", checkedAt: "2026-10-24T00:00:00Z", pendingInsider: 0, events: [sale("a", "2026-10-21", 1575), sale("b", "2026-10-14", 1575), sale("c", "2026-10-07", 1575), sale("d", "2026-09-30", 1575)] };
-  const rows = noiseRows(railEntries(null, readEventsPublication(publication, "TEST")), "insiders");
-  const folded = rows.find(row => row.kind === "plan");
-  assert.ok(folded && folded.kind === "plan");
-  assert.equal(folded.items.length, 4);
-  assert.equal(folded.shares, 6300);
-  assert.equal(rows.filter(row => row.kind === "item").length, 0);
+  const entries = railEntries(null, readEventsPublication(publication, "TEST"));
+  // The reading lists each filing as itself; the rail lists them through the person who filed them.
+  const rows = noiseRows(entries, "insiders");
+  assert.equal(rows.filter(row => row.kind === "item").length, 4);
   assert.equal(rows.flatMap(rowLeaves).length, 4);
+  const filings = insiderFilings(entries);
+  assert.deepEqual(filings.map(item => item.id), ["a", "b", "c", "d"]);
+  const [person, ...others] = personsFromEvents(filings.map(item => item.event), NOW);
+  assert.equal(others.length, 0);
+  assert.deepEqual([person!.key, person!.filings, person!.sold.shares, person!.sold.count, person!.lastTradeAt, person!.planned], ["9", 4, 6300, 4, "2026-10-21", true]);
   setLocale("en");
-  assert.equal(exactShares(folded.shares), "6,300");
+  assert.equal(exactShares(person!.sold.shares), "6,300");
   setLocale("zh-CN");
-  assert.equal(exactShares(folded.shares), "6,300");
+  assert.equal(exactShares(person!.sold.shares), "6,300");
 });
 
 test("routine 6-Ks group by month, including a month with one filing, and a real title stays its own row", () => {
@@ -199,42 +203,52 @@ test("text detection and mixed filings preserve both value legs", () => {
   assert.equal(insiderWindowValueUsd(e), 0);
 });
 
-test("TSM employee purchases and routine 6-Ks leave Key empty and remain folded in other filters", () => {
+test("TSM employee purchases and routine 6-Ks leave Key empty, and every Form 4 lists through its person in the other readings", () => {
   const entries = railEntries(null, tsmEvents);
   assert.equal(filterCounts(entries).key, 0);
   assert.ok(tsmEvents.events.every(e => eventImportance(e, tsmEvents.events) === "routine"));
+  const insiders = entries.filter(i => i.kind === "event" && i.event.class === "insider");
+  assert.ok(insiders.length > 0);
+  assert.equal(insiderFilings(entries).length, insiders.length);
   for (const filter of ["all", "insiders"] as const) {
     const rows = noiseRows(entries, filter);
-    assert.ok(rows.some(row => row.kind === "plan" && row.espp));
-    assert.equal(rows.flatMap(rowLeaves).length, filter === "all" ? entries.length : entries.filter(i => i.kind === "event" && i.event.class === "insider").length);
+    assert.equal(rows.flatMap(rowLeaves).length, filter === "all" ? entries.length : insiders.length);
   }
 });
 
-test("NVDA September sales fold into one material 90-day row while pure non-trades stay routine", () => {
+test("NVDA's September seller is one person whose lines sum to the filings' proceeds, while pure non-trades stay routine", () => {
   const publication = readEventsPublication(fixture("nvda-events.json"), "NVDA")!;
-  const rows = noiseRows(railEntries(null, publication), "key");
-  const row = rows.find(row => row.kind === "plan" && row.name === "STEVENS MARK A" && row.date === "2026-09-22");
-  assert.ok(row?.kind === "plan");
-  assert.deepEqual(row.items.map(i => i.date), ["2026-09-22", "2026-09-08", "2026-09-02"]);
-  assert.equal(row.direction, "sell");
-  assert.equal(insiderCompactMoney(row.amount, "zh-CN"), "9.5亿美元");
-  assert.equal(insiderCompactMoney(-row.amount, "zh-CN"), "−9.5亿美元");
-  assert.equal(insiderCompactMoney(row.amount, "en"), "$950M");
-  assert.equal(insiderCompactMoney(-row.amount, "en"), "−$950M");
-  assert.ok(row.items.every(i => i.kind === "event" && eventImportance(i.event, publication.events) === "key"));
+  const persons = personsFromEvents(publication.events, NOW);
+  const stevens = persons.find(p => p.name === "STEVENS MARK A")!;
+  const filings = publication.events.filter(e => e.insider?.ownerName === "STEVENS MARK A");
+  assert.equal(stevens.filings, filings.length);
+  assert.ok(stevens.sold.count >= 3);
+  // The line-level sum a person row shows is the sum of the filings' own sale figures.
+  assert.equal(Math.round(stevens.sold.value), Math.round(filings.reduce((s, e) => s + (e.insider!.sold?.proceeds ?? 0), 0)));
+  assert.ok(filings.filter(e => e.filedAt.startsWith("2026-09")).length >= 3);
+  assert.equal(insiderCompactMoney(950_000_000, "zh-CN"), "9.5亿美元");
+  assert.equal(insiderCompactMoney(-950_000_000, "zh-CN"), "−9.5亿美元");
+  assert.equal(insiderCompactMoney(950_000_000, "en"), "$950M");
+  assert.equal(insiderCompactMoney(-950_000_000, "en"), "−$950M");
   for (const e of publication.events.filter(e => e.class === "insider" && !isOpenMarketInsiderTrade(e))) assert.equal(eventImportance(e, publication.events), "routine");
+  // Latest trade first, and nobody is listed twice.
+  assert.deepEqual(persons.map(p => p.lastTradeAt), [...persons.map(p => p.lastTradeAt)].sort().reverse());
+  assert.equal(new Set(persons.map(p => p.key)).size, persons.length);
 });
 
-test("folds are anchored, direction-specific, ordered and retain singleton filings", () => {
+test("the Insiders reading lists filings in date order, and a person row nets one person's sales against their purchase", () => {
   const a = trade("a", "2026-10-01"), b = trade("b", "2026-07-03"), c = trade("c", "2026-07-02");
   const buy = trade("buy", "2026-09-30");
   buy.insider!.sold = null;
   buy.insider!.bought = { shares: 100, cost: 100, averagePrice: 1 };
-  const rows = noiseRows(entriesOf([c, buy, b, a]), "insiders");
-  assert.equal(rows[0].kind, "plan");
-  assert.equal(rowLeaves(rows[0]).length, 2);
-  assert.deepEqual(rows.map(r => r.date), [a.filedAt, buy.filedAt, c.filedAt]);
+  buy.insider!.lines = [{ date: "2026-09-30", code: "P", acquiredDisposed: "A", shares: 100, price: 1, ownedAfter: 5100, ownership: "D", derivative: false }];
+  for (const e of [a, b, c]) e.insider!.lines = [{ date: e.filedAt, code: "S", acquiredDisposed: "D", shares: 1000, price: 600, ownedAfter: 5000, ownership: "D", derivative: false }];
+  const entries = entriesOf([c, buy, b, a]);
+  const rows = noiseRows(entries, "insiders");
+  assert.deepEqual(rows.map(r => r.date), [a.filedAt, buy.filedAt, b.filedAt, c.filedAt]);
   assert.equal(rows.flatMap(rowLeaves).length, 4);
+  const [person] = personsFromEvents(insiderFilings(entries).map(item => item.event), NOW);
+  assert.deepEqual([person!.sold.count, person!.bought.count, person!.net.shares, person!.net.value, person!.latest!.side], [3, 1, -2900, -1_799_900, "sell"]);
 });
 
 test("NVDA holdings ESPP and code F footnotes preserve cash sales and materiality", () => {

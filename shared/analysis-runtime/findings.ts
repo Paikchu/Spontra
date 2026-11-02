@@ -195,8 +195,9 @@ const DAY = 86_400_000;
 const near = (a: string, b: string) => Math.abs(Date.parse(a) - Date.parse(b)) <= 20 * DAY;
 const monthIndex = (date: string) => Number(date.slice(0, 4)) * 12 + Number(date.slice(5, 7)) - 1;
 const monthEnd = (index: number) => new Date(Date.UTC(Math.floor(index / 12), index % 12 + 1, 0)).toISOString().slice(0, 10);
-/** The calendar month end `months` earlier; fiscal quarters are matched to it within twenty days. */
-export const shiftPeriod = (periodEnd: string, months: number) => monthEnd(monthIndex(periodEnd) + months);
+/** Shift from the nominal fiscal month: first-week closes belong to the previous month in 52/53-week calendars.
+ * Match quarters within the existing twenty-day window around the resulting month end. */
+export const shiftPeriod = (periodEnd: string, months: number) => monthEnd(monthIndex(periodEnd) - (Number(periodEnd.slice(8, 10)) <= 7 ? 1 : 0) + months);
 const finite = (v: unknown): number | null => { const n = typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : NaN; return Number.isFinite(n) ? n : null; };
 const sum = (lines: Array<{ value: string | number }>) => lines.reduce((total, line) => total + Number(line.value), 0);
 

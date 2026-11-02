@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { calendarLabel, fiscalIdentity, periodLabel, rememberIssuer, resolvePeriod, yearEndMonth } from "../../../shared/analysis-runtime/fiscal-label.ts";
+import { calendarLabel, deriveFiscalQuarter, fiscalIdentity, periodLabel, rememberIssuer, resolvePeriod, yearEndMonth } from "../../../shared/analysis-runtime/fiscal-label.ts";
+import { resolvePeriodEnd } from "../../../shared/analysis-runtime/guidance.ts";
 
 // The year end each issuer's SEC submissions state (`fiscalYearEnd`), and the quarter its latest filing cover reports.
 const LATEST: Array<[string, string, string, string, number, 1 | 2 | 3 | 4]> = [
@@ -38,6 +39,30 @@ test("a year end in a month's first week closes the year of the month before", (
   assert.equal(yearEndMonth(null), null);
   assert.equal(yearEndMonth("1340"), null);
 });
+
+const FIRST_WEEK: Array<[string, string, number, 1 | 2 | 3 | 4, string]> = [
+  ["0901", "2024-09-01", 2024, 4, "2024-08-31"], // Costco year end
+  ["0202", "2025-05-04", 2026, 1, "2025-04-30"], // HD: retain the project's ending-year convention
+  ["0104", "2025-01-04", 2024, 4, "2024-12-31"], // January rolls back the year too
+  ["0930", "2025-01-07", 2025, 1, "2024-12-31"],
+  ["1231", "2025-04-07", 2025, 1, "2025-03-31"], // last day of the first week
+  ["1231", "2025-04-08", 2025, 2, "2025-04-30"], // day eight remains in its month
+];
+
+for (const [yearEnd, periodEnd, fiscalYear, fiscalQuarter, nominalEnd] of FIRST_WEEK) {
+  test(`fiscal derivation and guidance share the nominal month for ${periodEnd}, year end ${yearEnd}`, () => {
+    const fiscalYearEndMonth = yearEndMonth(yearEnd)!;
+    const expected = { fiscalYear, fiscalQuarter };
+    assert.deepEqual(deriveFiscalQuarter(periodEnd, fiscalYearEndMonth), expected);
+    const identity = fiscalIdentity({ periodEnd, fiscalYearEndMonth, xbrl: expected });
+    assert.deepEqual(identity, { ...expected, fiscalYearEndMonth, labelSource: "xbrl" });
+    const label = periodLabel({ periodEnd, fiscalYearEndMonth });
+    assert.equal(label.primary, `FY${String(fiscalYear).slice(-2)} Q${fiscalQuarter}`);
+    assert.equal(label.periodEnd, periodEnd);
+    const anchors = [{ ...expected, fiscalPeriod: `Q${fiscalQuarter}`, periodEnd }];
+    assert.equal(resolvePeriodEnd(identity.fiscalYear, identity.fiscalQuarter, "quarter", anchors), nominalEnd);
+  });
+}
 
 test("an issuer remembered from the server labels by ticker alone", () => {
   rememberIssuer("ACME", { fiscalYearEndMonth: 1, name: "Acme" });

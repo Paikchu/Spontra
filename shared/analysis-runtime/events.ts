@@ -95,7 +95,6 @@ export function indexPrimaryDescription(html: string): string | null {
 
 export const INSIDER_MATERIAL_VALUE_USD = 1_000_000;
 export const INSIDER_VALUE_WINDOW_DAYS = 30;
-export const INSIDER_FOLD_WINDOW_DAYS = 90;
 
 const HOLDINGS_NOTE = /^\s*(?:\(\d+\)|\d+[.)])?\s*includes\b/i;
 const insiderTexts = (event: CompanyEvent) => [

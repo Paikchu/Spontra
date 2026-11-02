@@ -156,7 +156,7 @@ test("management gate: a base revenue path more than 25% under a target, or abov
   assert.deepEqual(gateGaps([low]).map(g => g.code), ["management_target_gap"]);
 });
 
-test("calculateValuation with management targets: the reference case rides on the result with its own triangulation, the gate is among the gates, and a v2 payload with it reads back", () => {
+test("calculateValuation with management targets: the management scenario rides on the result with its own triangulation, the gate is among the gates, and a payload with it reads back", () => {
   const facts = [...orclFacts.map(f => ({ ...f, unit: f.id === "operating_margin_ttm" ? "ratio" : "USD" })), { id: "shares_outstanding", value: 3e9, unit: "shares" }];
   const peers = { peers: ["A", "B"], asOf: "2026-11-01", evToEbitda: { p25: 17, median: 18.6, p75: 22, count: 2 }, peRatio: { p25: 29, median: 31, p75: 36, count: 2 }, notes: [], basis: "curated" as const, weights: { A: 0.5, B: 0.5 } };
   const drivers = (g: number, m: number) => ({ ...fcff(7, g, m, { taxRate: fill(7, 0.13), salesToCapital: fill(7, 1.44), buildCapex: [60e9, 45e9, 30e9, 15e9, 0, 0, 0] }), revenue0: 71.777e9, terminalRoic: 0.111 });
@@ -166,9 +166,11 @@ test("calculateValuation with management targets: the reference case rides on th
     context: { facts, riskFree: 0.049, peers, trailing: { ebitda: 32.5e9, da: 9.428e9, interestExpense: 5.1e9 }, lifecycle: "build", management: orcl, periodEnd: "2026-08-31" },
   };
   const result = calculateValuation(request);
-  const ref = result.references![0]!;
-  assert.equal(ref.key, "management");
-  assert.ok(ref.result.perShare > result.range.base, `management ${ref.result.perShare} above base ${result.range.base}`);
+  const ref = result.managementScenario!;
+  assert.equal(ref.label, "Management scenario (cited targets)");
+  assert.ok(ref.result.perShare > result.scenarios.base.result.perShare, `management ${ref.result.perShare} above base DCF ${result.scenarios.base.result.perShare}`);
+  assert.ok(ref.valuation && ref.valuation.perShare > ref.result.perShare, "the management path's weighted value carries the multiples");
+  assert.equal(result.references, undefined, "the reference list is superseded by the management scenario");
   assert.ok(ref.triangulation && ref.triangulation.base > ref.result.perShare, "the multiples on the management path exceed its DCF");
   assert.equal(ref.methods.length, 3);
   assert.equal(ref.sources.length, orcl.sources.length);
@@ -176,13 +178,14 @@ test("calculateValuation with management targets: the reference case rides on th
   assert.equal(gate.status, "flag", gate.detail);
   // Without a period end there is no reference and no gate; the rest is unchanged.
   const plain = calculateValuation({ ...request, context: { ...request.context, management: null } });
-  assert.equal(plain.references, undefined); assert.ok(!plain.gates!.some(g => g.key === "management_targets"));
+  assert.equal(plain.managementScenario, null); assert.equal(plain.managementComparison, null); assert.ok(!plain.gates!.some(g => g.key === "management_targets"));
   close(plain.range.base, result.range.base, 8);
   const publication = { schemaVersion: "valuation.v1", ticker: "ORCL", cik: null, companyName: "Oracle", currency: "USD", researchAsOf: "2026-11-01", financialPeriodEnd: "2026-08-31", generatedAt: "2026-11-01", methodVersion: "valuation.v4", calculatorVersion: result.calculatorVersion, baseInputFingerprint: "f", evidenceSetHash: "h", reportStatus: "ready", verdict: "pending", weightedScore: 6, confidence: "medium",
     dimensions: ["businessQuality", "growthExecution", "valuationSafety", "mispricingCatalysts", "financialResilience"].map(key => ({ key, score: 6, confidence: "medium", rationale: "r", supportingEvidenceIds: [], counterEvidenceIds: [], gaps: [], nextCheck: "n" })),
     quote: null, model: result, facts: [], diagnostics: [], distributions: [], sections: { summary: "", thesis: "", expectationsGap: "", catalysts: [], counterEvidence: [], nextChecks: [], modelNotes: "" }, evidence: [], gaps: gateGaps(result.gates!), versionId: "v" } as unknown as ValuationPublication;
   const read = readValuationPublication(JSON.parse(JSON.stringify(publication)), "ORCL")!;
-  assert.equal(read.model!.references![0]!.anchors.length, ref.anchors.length);
+  assert.equal(read.model!.managementScenario!.anchors.length, ref.anchors.length);
+  assert.equal(read.model!.managementComparison!.rows.length, 2);
   assert.equal(read.model!.peers!.weights!.A, 0.5);
 });
 

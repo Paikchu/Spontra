@@ -1261,21 +1261,32 @@ html[lang^="zh"] .home-watch-item a { line-height: 1.7; }
 .event-fold-panel[data-open] { grid-template-rows: 1fr; }
 .event-fold-inner { overflow: hidden; min-height: 0; }
 .event-fold-inner .stream-row { padding-left: 40px; }
-/* The insider summary card: 90 days of open-market trades in one place, the three largest people, the rest behind a button. */
-.insider-summary { min-width: 0; margin: 2px 0; border-radius: 10px; background: color-mix(in srgb, var(--foreground) 3%, transparent); border: 1px solid var(--hairline); }
-.insider-summary-head:hover { background: transparent; }
-.insider-summary-head .stream-title { font-variant-numeric: tabular-nums; }
-.insider-summary-top { display: flex; flex-direction: column; gap: 2px; margin: 4px 0 0; padding: 0; list-style: none; font-size: 12.5px; color: var(--muted-foreground); }
-.insider-summary-top li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 8px; }
-.insider-summary-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.insider-summary-amount { display: inline-flex; align-items: center; gap: 3px; justify-self: end; text-align: right; white-space: nowrap; font-family: var(--mono); font-size: 12px; font-variant-numeric: tabular-nums; color: var(--foreground); }
+/* Insider trades by person, among the other rows: a row is the person's latest trade and net position; open, their history. */
+.insider-person { min-width: 0; }
+.insider-person-name { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.insider-new { display: inline-flex; align-items: center; gap: 3px; padding: 0 6px; border-radius: 999px; background: color-mix(in srgb, var(--brand) 14%, transparent); color: var(--brand); font-family: var(--sans); font-size: 11px; font-weight: 600; line-height: 16px; white-space: nowrap; }
+.insider-new svg { width: 10px; height: 10px; fill: currentColor; }
+.insider-amount .insider-arrow { margin-right: 2px; vertical-align: -1px; }
+.insider-person-row .stream-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; white-space: normal; overflow: visible; text-overflow: clip; }
+.insider-person-row[aria-expanded="true"] .fold-chevron { transform: rotate(90deg); }
 .insider-arrow { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 .insider-arrow[data-direction="sell"] { color: var(--loss); }
 .insider-arrow[data-direction="buy"] { color: var(--up); }
-.insider-summary-toggle { display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; margin-top: 4px; padding: 2px 0; border: 0; background: none; font-size: 12px; color: var(--muted-foreground); }
-.insider-summary-toggle:hover { color: var(--foreground); }
-.insider-summary-toggle[aria-expanded="true"] .fold-chevron { transform: rotate(90deg); }
-.insider-summary .event-fold-inner .stream-row { padding-left: 24px; }
+.insider-history-more { display: inline-flex; align-items: center; gap: 4px; margin: 2px 10px 8px 40px; padding: 2px 0; border: 0; background: none; font-size: 12px; color: var(--muted-foreground); }
+.insider-history-more:hover { color: var(--foreground); }
+/* The history: one line per transaction, newest first; a line the rail lists is a button to its event. */
+.insider-history { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 2px 10px 8px 40px; list-style: none; }
+.insider-history li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; min-width: 0; font-size: 12px; font-variant-numeric: tabular-nums; }
+.insider-history-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; min-width: 0; text-align: left; overflow-wrap: anywhere; }
+.insider-history button[aria-pressed="true"] { color: var(--accent); }
+.insider-history a { color: var(--muted-foreground); text-decoration: underline; }
+.insider-history-code { display: inline-flex; align-items: baseline; gap: 4px; }
+.insider-history-code b { padding: 0 4px; border-radius: 4px; border: 1px solid var(--border); background: var(--surface); font-family: var(--mono); font-size: 11px; font-weight: 600; }
+.insider-history-code[data-side="sell"] b { color: var(--loss); }
+.insider-history-code[data-side="buy"] b { color: var(--up); }
+.insider-history-after, .insider-history-tags { color: var(--muted-foreground); }
+.insider-history-state { margin: 0 10px 8px 40px; font-size: 12px; color: var(--muted-foreground); }
+.insider-history-state button { margin-left: 6px; color: var(--foreground); text-decoration: underline; }
 /* The class legend doubles as the filter: the class mark, its name and count. */
 .section-filters { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 10px 10px; }
 .section-filter {
@@ -1413,7 +1424,7 @@ html[lang^="zh"] .home-watch-item a { line-height: 1.7; }
 .ladder-scale span { position: absolute; left: 0; transform: translateY(-50%); }
 @media (max-width: 960px) {
   .timeline-track { margin: 0 22px; }
-  .stream-rows, .event-rows, .event-fold { width: 100%; max-width: 100%; }
+  .stream-rows, .event-rows, .event-fold, .insider-person { width: 100%; max-width: 100%; }
 }
 
 /* Reports in the rail and the report lens: the figures the filing verified, the conclusions, and the full report in a modal. */
@@ -1660,14 +1671,10 @@ html[lang^="zh"] .period-primary { letter-spacing: 0; }
   .map--loading .stats > .stat { min-width: 0; }
 }
 
-/* ---------- Insider noise & 90-day fold (U24) ---------- */
-.event-fold-detail { display: flex; flex-wrap: wrap; gap: 6px 12px; padding: 8px 0 8px 40px; font-size: 12px; font-variant-numeric: tabular-nums; }
-.event-fold-detail button { display: flex; flex-wrap: wrap; gap: 4px 10px; min-width: 0; text-align: left; }
-.event-fold-detail button[aria-pressed="true"] { color: var(--accent); }
-.event-fold-detail a { color: var(--muted-foreground); text-decoration: underline; }
+/* ---------- Routine 6-K folds and insider histories on narrow screens ---------- */
 @media (max-width: 960px) {
   .event-fold-text { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
-  .event-fold-detail { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+  .insider-history, .insider-history li { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
 }
 @media (prefers-reduced-motion: reduce) {
   .event-fold-panel { transition: none; }

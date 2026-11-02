@@ -231,11 +231,17 @@ export const filings: PublicFilingDigestPage = {
  * figures in Chinese units, names kept. The page check renders the company with these applied.
  */
 const dimension = (key: ValuationDimension["key"], score: number | null, rationale: string, nextCheck: string): ValuationDimension => ({ key, score, confidence: "medium", rationale, supportingEvidenceIds: ["e0123456789"], counterEvidenceIds: [], gaps: [], nextCheck });
+const why = (rationale: string) => ({ rationale, evidenceIds: ["e0123456789"] });
+/** A scenario as valuation.calc.v4 publishes it: the DCF result and the method-weighted value (the multiples 20% above the DCF here). */
 const scenarioOf = (narrative: string, growth: number, margin: number, perShareValue: number, probability: number) => ({
   narrative, probability, triggers: ["Generated trigger."], invalidation: ["Generated invalidation."], evidenceIds: ["e0123456789"],
+  assumptions: { revenue: why("Generated revenue assumption."), margin: why("Generated margin assumption."), capex: why("Generated capex assumption.") },
   drivers: { modelType: "fcff" as const, revenue0: 32_000_000_000, path: { revenueGrowth: [growth, growth, growth, growth, growth], operatingMargin: [margin, margin, margin, margin, margin], taxRate: [0.2, 0.2, 0.2, 0.2, 0.2], salesToCapital: [2, 2, 2, 2, 2] }, terminalGrowth: 0.03, terminalRoic: 0.15 },
   result: { perShare: perShareValue, equityValue: perShareValue * 1_000_000_000, enterpriseValue: perShareValue * 1_000_000_000 + 5_000_000_000, pvExplicit: 30_000_000_000, pvTerminal: 90_000_000_000, terminalShare: 0.75, yearly: [], notes: [] },
+  valuation: { methods: { dcf: perShareValue, ev_ebitda_forward: perShareValue * 1.2, pe_forward: perShareValue * 1.2 }, weights: { dcf: 0.5, ev_ebitda_forward: 0.3, pe_forward: 0.2 }, perShare: perShareValue * 1.1 },
 });
+const methodOf = (method: "dcf" | "ev_ebitda_forward" | "pe_forward", label: string, low: number, base: number, high: number, weight: number, basis: string) => ({ method, label, low, base, high, weight, basis, notes: [] });
+const managementSource = { id: "src-1", title: "Acme investor day 2026", url: "https://example.test/investor-day", date: "2026-05-01" };
 export const valuationReport: ValuationPublication = {
   schemaVersion: "valuation.v1", ticker: TICKER, cik: "0000000001", companyName: "Acme Cloud", currency: "USD", researchAsOf: "2026-08-12T00:00:00Z", financialPeriodEnd: PERIOD, generatedAt: "2026-08-12T00:00:00Z",
   methodVersion: "valuation.v1", calculatorVersion: "valuation.calc.v1", baseInputFingerprint: "fp", evidenceSetHash: "h", reportStatus: "ready", verdict: "pending", weightedScore: 6.4, confidence: "medium",
@@ -251,10 +257,22 @@ export const valuationReport: ValuationPublication = {
     calculatorVersion: "valuation.calc.v1", modelType: "fcff", currency: "USD",
     discountRate: { value: 0.089, basis: "wacc", components: { riskFree: 0.04, beta: 1.2, equityRiskPremium: 0.045, costOfEquity: 0.094, costOfDebt: 0.05, taxRate: 0.2, equityWeight: 0.85 }, rationale: "Generated discount rate rationale.", sourceRefs: [] },
     shares: { base: 1_000_000_000, dilutionReserve: 10_000_000, economic: 1_010_000_000, basis: "shares_diluted_weighted" }, bridge: { nonOperatingAssets: 12_000_000_000, debtAndClaims: 7_000_000_000, nonOperatingEquityAdjustment: 0, notes: [] },
-    scenarios: { bear: scenarioOf("Generated bear narrative.", 0.03, 0.22, 70, 0.25), base: scenarioOf("Generated base narrative.", 0.08, 0.26, 120, 0.5), bull: scenarioOf("Generated bull narrative.", 0.13, 0.3, 170, 0.25) },
-    range: { low: 70, high: 170, base: 120, expected: 120, price: 98, marginOfSafety: 0.1833, downsideCoverage: -0.2857, expectedUpside: 0.2245, baseUpside: 0.2245 },
+    scenarios: { bear: scenarioOf("Generated bear narrative.", 0.03, 0.22, 70, 0.25), base: scenarioOf("Generated base narrative.", 0.08, 0.26, 120, 0.4), bull: scenarioOf("Generated bull narrative.", 0.13, 0.3, 170, 0.15) },
+    range: { low: 77, high: 187, base: 132, expected: 140.25, price: 98, marginOfSafety: 0.2576, downsideCoverage: -0.2143, expectedUpside: 0.4311, baseUpside: 0.3469 },
     sensitivities: [{ factor: "terminalGrowth", step: "+0.5pp", perShare: 131, changePercent: 9.2 }, { factor: "discountRate", step: "+0.5pp", perShare: 110, changePercent: -8.3 }, { factor: "operatingMargin", step: "+1pp", perShare: 126, changePercent: 5 }],
     implied: { factor: "revenueGrowth", implied: 0.055, baseAverage: 0.08, gap: -0.025, converged: true }, limitations: ["Cash flows are discounted at year end; no mid-year convention and no stub period."],
+    // valuation.calc.v4: the methods on the base path, the judged weights and probabilities, the management scenario, the comparison, the peers, the checks and the consensus note.
+    horizonYears: 5, midYear: false,
+    methods: [methodOf("dcf", "Discounted cash flow", 70, 120, 170, 0.5, "fcff, 5 years"), methodOf("ev_ebitda_forward", "EV/EBITDA on year 3", 130, 144, 160, 0.3, "year 3 EBITDA 1.2e+10 × peers p25/median/p75 14.0/16.0/18.0 (3 peers), discounted 3 years"), methodOf("pe_forward", "P/E on year 3", 128, 144, 158, 0.2, "year 3 core EPS 6.00 × peers p25/median/p75 22.0/24.0/26.0 (3 peers), discounted 3 years")],
+    triangulation: { low: 99, base: 132, high: 165, dispersion: 1.2, weights: { dcf: 0.5, ev_ebitda_forward: 0.3, pe_forward: 0.2 } },
+    methodWeights: { dcf: { weight: 0.5, ...why("Generated weight rationale for the cash-flow model.") }, ev_ebitda_forward: { weight: 0.3, ...why("Generated weight rationale for the EBITDA multiple.") }, pe_forward: { weight: 0.2, ...why("Generated weight rationale for the earnings multiple.") } },
+    scenarioProbabilities: { bear: { probability: 0.25, ...why("Generated bear probability rationale.") }, base: { probability: 0.4, ...why("Generated base probability rationale.") }, management: { probability: 0.2, ...why("Generated management probability rationale.") }, bull: { probability: 0.15, ...why("Generated bull probability rationale.") } },
+    managementScenario: { ...scenarioOf("Generated management scenario narrative.", 0.12, 0.28, 150, 0.2), label: "Management scenario (cited targets)", triangulation: null, methods: [], anchors: [{ metric: "revenue", fiscalYear: 2027, year: 1, target: 36_000_000_000, path: 35_840_000_000 }], sources: [managementSource], notes: [] },
+    managementComparison: { rows: [{ metric: "revenue", fiscalYear: 2027, year: 1, target: 36_000_000_000, base: 34_560_000_000, gap: -0.04 }], explanation: "Generated management comparison explanation.", evidenceIds: ["e0123456789"] },
+    gates: [{ key: "terminal_share", status: "pass", detail: "terminal value is 75% of the base operating value", value: 0.75, limit: 0.8 }, { key: "method_dispersion", status: "flag", detail: "method bases span 1.20x", value: 1.2, limit: 2 }, { key: "consensus_unavailable", status: "flag", detail: "consensus unavailable: no sell-side page was readable", value: null, limit: null }],
+    anchors: { revenue: null }, verification: null,
+    peers: { peers: ["MSFT", "AMZN", "GOOGL"], asOf: "2026-08-11", evToEbitda: { p25: 14, median: 16, p75: 18, count: 3 }, peRatio: { p25: 22, median: 24, p75: 26, count: 3 }, notes: [], basis: "curated", weights: { MSFT: 0.3333, AMZN: 0.3333, GOOGL: 0.3334 } },
+    consensus: null, consensusNote: { status: "unavailable", source: null, reason: "Generated consensus unavailability reason." },
   },
   facts: [{ id: "revenue_ttm", label: "Revenue, trailing twelve months", value: 32_000_000_000, unit: "USD", currency: "USD", periodType: "ttm", periodStart: null, periodEnd: PERIOD, basis: "reported", formula: null, sourceRefs: [], rationale: null }],
   diagnostics: [{ key: "roic", label: "Return on invested capital", value: 0.21, unit: "percent", periodEnd: PERIOD, note: null }, { key: "netDebtToEbitda", label: "Net debt / EBITDA", value: -0.4, unit: "x", periodEnd: PERIOD, note: null }],
@@ -294,6 +312,10 @@ export const ZH_TABLES = {
     "Cash flows are discounted at year end; no mid-year convention and no stub period.": "现金流按年末折现；不使用年中折现，也没有短期间调整。",
     "Generated summary of the valuation [e0123456789].": "生成的估值结论 [e0123456789]。", "Generated thesis.": "生成的论证。", "Generated expectations gap.": "生成的预期差。",
     "Generated catalyst.": "生成的催化。", "Generated counter-evidence.": "生成的反证。", "Generated next check.": "生成的下一验证点。", "Generated model notes.": "生成的模型说明。",
+    "Generated revenue assumption.": "生成的收入假设。", "Generated margin assumption.": "生成的利润率假设。", "Generated capex assumption.": "生成的资本开支假设。",
+    "Generated weight rationale for the cash-flow model.": "生成的现金流模型权重理由。", "Generated weight rationale for the EBITDA multiple.": "生成的 EBITDA 倍数权重理由。", "Generated weight rationale for the earnings multiple.": "生成的盈利倍数权重理由。",
+    "Generated bear probability rationale.": "生成的悲观情景概率理由。", "Generated base probability rationale.": "生成的基准情景概率理由。", "Generated management probability rationale.": "生成的管理层情景概率理由。", "Generated bull probability rationale.": "生成的乐观情景概率理由。",
+    "Generated management scenario narrative.": "生成的管理层情景叙事。", "Generated management comparison explanation.": "生成的管理层目标差距说明。", "Generated consensus unavailability reason.": "生成的市场共识缺失原因。",
   },
 } satisfies Record<string, Record<string, string>>;
 

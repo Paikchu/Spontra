@@ -189,11 +189,12 @@ async function readHistoryContents(contents: Awaited<ReturnType<typeof readFilin
     if (revenueStructure) structures[document.accession] = revenueStructure;
     const source: DocumentSource = {url: content.url, accession: document.accession, filedAt: document.filedAt, cik, industry, ...(content.memberLabels ? {memberLabels: content.memberLabels} : {}), ...(revenueStructure ? {revenueStructure} : {})};
     await reader.archive?.(source, content.html, {form: document.form, reportDate: document.periodEnd});
-    const parsed = extractRevenueHistory(content.html, source, document.form, verified);
+    const reported = readReportedFacts(content.html, source);
+    const parsed = extractRevenueHistory(content.html, source, document.form, verified, reported);
     quarters.push(...parsed.quarters);
     // Cumulative facts feed fourth-quarter derivation only from filings without a restatement flag.
     if (document.form !== '8-K' && !parsed.issues.includes('RESTATEMENT_REVIEW_REQUIRED')) {
-      facts.push(...readReportedFacts(content.html, source).facts.filter(f => (REVENUE_TAGS.has(local(f.tag)) || revenueStructure?.arcs.some(a => a.child === f.tag || a.parent === f.tag)) && span(f) >= 70 && Object.keys(f.dimensions).every(axis => ['StatementBusinessSegmentsAxis', 'ProductOrServiceAxis', 'ConsolidationItemsAxis'].includes(local(axis)))).map(f => ({...f, source: {...f.source, url: content.url}})));
+      facts.push(...reported.facts.filter(f => (REVENUE_TAGS.has(local(f.tag)) || revenueStructure?.arcs.some(a => a.child === f.tag || a.parent === f.tag)) && span(f) >= 70 && Object.keys(f.dimensions).every(axis => ['StatementBusinessSegmentsAxis', 'ProductOrServiceAxis', 'ConsolidationItemsAxis'].includes(local(axis)))).map(f => ({...f, source: {...f.source, url: content.url}})));
     }
     if (!parsed.quarters.length) issues.push(...parsed.issues.map(issue => `${document.accession}:${issue}`));
   }
@@ -288,7 +289,7 @@ export async function readRevenueHistory(db: D1Database, cik: string, ticker: st
   return history ? readHistory(history, ticker) : null;
 }
 
-export type FilingRereadResult = {accession: string; form: string; filedAt: string; replaced: string[]; quarters: string[]; issues: string[]};
+export type FilingRereadResult = {accession: string; form: string; filedAt: string; replaced: string[]; quarters: string[]; issues: string[]; pending?: boolean; historyUpdated?: boolean};
 
 /**
  * Reads one filing again (admin "重新读取此报告") and replaces the history quarters that filing is the source of with what
@@ -296,35 +297,80 @@ export type FilingRereadResult = {accession: string; form: string; filedAt: stri
  * copy when there is one. An annual report also re-derives its fourth quarter, read against the same fiscal year's
  * quarterly reports. A reading that yields no quarter replaces nothing: good history is never erased.
  */
-export async function rereadHistoryFiling(db: D1Database, reader: SecReader, target: {ticker: string; cik: string}, accession: string, now = new Date()): Promise<FilingRereadResult> {
+export type RereadOptions = {
+  /** Task-scoped checkpoint: one document per maintenance invocation, retained on retry. */
+  checkpointKey?: string;
+  maxDocuments?: number;
+  guard?: {taskId: string; leaseToken: string};
+  heartbeat?: () => Promise<void>;
+};
+type RereadCheckpoint = {
+  version: string; accession: string; document: HistoryDocument; industry: DocumentSource['industry'];
+  remaining: HistoryDocument[]; read: Awaited<ReturnType<typeof readHistoryContents>>;
+  result?: FilingRereadResult;
+};
+/** Cache mutations from a maintenance task are fenced by the current, unexpired lease. */
+async function writeRereadCache(db: D1Database, key: string, payload: unknown, options: RereadOptions) {
+  await options.heartbeat?.();
+  const at = new Date().toISOString();
+  if (!options.guard) return new D1SecRepository(db).setCache(key, payload, at);
+  const result = await db.prepare(`INSERT INTO sec_cache(cache_key,payload,fetched_at) SELECT ?,?,?
+    WHERE EXISTS(SELECT 1 FROM financial_maintenance_tasks WHERE task_id=? AND lease_token=? AND status='running' AND lease_until>?)
+    ON CONFLICT(cache_key) DO UPDATE SET payload=excluded.payload,fetched_at=excluded.fetched_at`)
+    .bind(key,JSON.stringify(payload),at,options.guard.taskId,options.guard.leaseToken,at).run();
+  if (!result.meta.changes) throw new Error('MAINTENANCE_LEASE_LOST');
+}
+export async function rereadHistoryFiling(db: D1Database, reader: SecReader, target: {ticker: string; cik: string}, accession: string, now = new Date(), options: RereadOptions = {}): Promise<FilingRereadResult> {
   if (!validCik(target.cik) || !TICKER_PATTERN.test(target.ticker) || !/^\d{10}-\d{2}-\d{6}$/.test(accession)) throw new Error('Invalid issuer identity');
-  const listing = await listDocuments(target.cik, reader, now);
-  const document = listing.documents.find(d => d.accession === accession);
-  if (!document) throw new Error('FILING_NOT_IN_HISTORY_WINDOW');
-  const contents = await readFilingDocuments(document.url, reader, document.accession, document.form);
-  const result = {accession, form: document.form, filedAt: document.filedAt};
-  if (!reportsFinancials(document.form, contents[0].html)) return {...result, replaced: [], quarters: [], issues: [`${accession}:NOT_A_FINANCIAL_REPORT`]};
-  const verified = await readRevenueHistory(db, target.cik, target.ticker);
-  const read = await readHistoryContents(contents, document, reader, target.cik, listing.industry, verified?.quarters);
-  const facts = [...read.facts], structures = {...read.structures};
-  const annual = /^(?:10-K|20-F)(?:\/A)?$/.test(document.form);
-  if (annual) {
-    // The nine months of the same fiscal year come from the quarterly reports filed in the year before this one.
-    const from = Date.parse(document.filedAt) - 400 * 86400000;
-    for (const quarterly of listing.documents.filter(d => /^10-Q(?:\/A)?$/.test(d.form) && Date.parse(d.filedAt) >= from && d.filedAt <= document.filedAt)) {
-      const quarterlyRead = await readHistoryContents(await readFilingDocuments(quarterly.url, reader, quarterly.accession, quarterly.form), quarterly, reader, target.cik, listing.industry);
-      facts.push(...quarterlyRead.facts);
-      Object.assign(structures, quarterlyRead.structures);
-    }
-  }
   const repository = new D1SecRepository(db);
+  let checkpoint = options.checkpointKey ? (await repository.getCache<RereadCheckpoint>(options.checkpointKey))?.payload : undefined;
+  if (checkpoint?.version !== HISTORY_VERSION || checkpoint.accession !== accession) checkpoint = undefined;
+  if (checkpoint?.result) return checkpoint.result;
+  let consumed = 0;
+  if (!checkpoint) {
+    await options.heartbeat?.();
+    const listing = await listDocuments(target.cik, reader, now);
+    const document = listing.documents.find(d => d.accession === accession);
+    if (!document) throw new Error('FILING_NOT_IN_HISTORY_WINDOW');
+    const contents = await readFilingDocuments(document.url, reader, document.accession, document.form);
+    if (!reportsFinancials(document.form, contents[0].html)) return {accession, form: document.form, filedAt: document.filedAt, replaced: [], quarters: [], issues: [`${accession}:NOT_A_FINANCIAL_REPORT`]};
+    const verified = await readRevenueHistory(db, target.cik, target.ticker);
+    await options.heartbeat?.();
+    const read = await readHistoryContents(contents, document, reader, target.cik, listing.industry, verified?.quarters);
+    const from = Date.parse(document.filedAt) - 400 * 86400000;
+    const remaining = /^(?:10-K|20-F)(?:\/A)?$/.test(document.form) ? listing.documents.filter(d => /^10-Q(?:\/A)?$/.test(d.form) && Date.parse(d.filedAt) >= from && d.filedAt <= document.filedAt) : [];
+    checkpoint = {version: HISTORY_VERSION, accession, document, industry: listing.industry, remaining, read};
+    consumed++;
+  }
+  const {document, read} = checkpoint;
+  while (checkpoint.remaining.length && consumed < (options.maxDocuments ?? Infinity)) {
+    const quarterly = checkpoint.remaining[0];
+    await options.heartbeat?.();
+    const contents = await readFilingDocuments(quarterly.url, reader, quarterly.accession, quarterly.form);
+    await options.heartbeat?.();
+    const quarterlyRead = await readHistoryContents(contents, quarterly, reader, target.cik, checkpoint.industry);
+    read.facts = uniqueFacts([...read.facts, ...quarterlyRead.facts]);
+    Object.assign(read.structures, quarterlyRead.structures);
+    checkpoint.remaining.shift(); consumed++;
+  }
+  const result = {accession, form: document.form, filedAt: document.filedAt};
+  if (checkpoint.remaining.length) {
+    if (!options.checkpointKey) throw new Error('REREAD_CHECKPOINT_REQUIRED');
+    await writeRereadCache(db, options.checkpointKey, checkpoint, options);
+    return {...result, replaced: [], quarters: [], issues: [], pending: true};
+  }
   const existing = historyForIssuer((await repository.getCache<unknown>(historyKey(target.cik)))?.payload, target.cik, target.ticker)?.quarters ?? [];
-  const kept = existing.filter(q => q.source.accession !== accession);
-  const derived = annual ? deriveFourthQuarters(withStructures(facts, structures), target.cik, mergeHistory(target.ticker, kept, read.quarters, now.toISOString()).quarters).filter(q => q.source.accession === accession) : [];
-  const incoming = [...read.quarters, ...derived].filter(validHistoryQuarter);
+  const annual = /^(?:10-K|20-F)(?:\/A)?$/.test(document.form);
+  const derived = annual ? deriveFourthQuarters(withStructures(read.facts, read.structures), target.cik, mergeHistory(target.ticker, existing, read.quarters, now.toISOString()).quarters).filter(q => q.source.accession === accession) : [];
+  const incoming = [...read.quarters, ...derived].filter(validHistoryQuarter).map(q => ({...q, dilutedEps: q.dilutedEps ?? existing.find(p=>p.periodEnd===q.periodEnd && p.periodStart===q.periodStart && p.currency===q.currency)?.dilutedEps}));
   if (!incoming.length) return {...result, replaced: [], quarters: [], issues: read.issues.length ? read.issues : [`${accession}:NO_DIRECT_COMPARABLE_QUARTER`]};
+  // An incomplete reread cannot erase a previously valid period that it did not recover.
+  const replacing = new Set(incoming.map(q=>q.periodEnd));
+  const kept = existing.filter(q => q.source.accession !== accession || !replacing.has(q.periodEnd));
   const history = mergeHistory(target.ticker, kept, incoming, now.toISOString());
-  await repository.setCache(historyKey(target.cik), history, now.toISOString());
-  const held = new Set(history.quarters.filter(q => q.source.accession === accession).map(q => q.periodEnd));
-  return {...result, replaced: existing.filter(q => q.source.accession === accession).map(q => q.periodEnd).sort(), quarters: [...held].sort(), issues: read.issues};
+  await writeRereadCache(db, historyKey(target.cik), history, options);
+  const held = new Set(history.quarters.filter(q => replacing.has(q.periodEnd) && (q.source.accession === accession || q.dilutedEps?.source.accession === accession)).map(q => q.periodEnd));
+  const completed = {...result, historyUpdated: true, replaced: existing.filter(q => q.source.accession === accession && replacing.has(q.periodEnd)).map(q => q.periodEnd).sort(), quarters: [...held].sort(), issues: read.issues};
+  if (options.checkpointKey) await writeRereadCache(db, options.checkpointKey, {...checkpoint, result: completed}, options);
+  return completed;
 }

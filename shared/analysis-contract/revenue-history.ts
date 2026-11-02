@@ -16,6 +16,7 @@ export type RevenueHistoryQuarter = {
   /** Original filing presentation; never implies verification against other filings. */
   presentation?: string;
   lineage?: RevenueHistoryLineage[];
+  segmentDisclosure?: "single_reportable_segment";
   segments: RevenueHistoryNode[];
   revenueAdjustments?: RevenueHistoryLeaf[];
   dilutedEps?: { value: string; basis: "reported"; source: RevenueHistoryQuarter["source"]; lineage: RevenueHistoryLineage[] };

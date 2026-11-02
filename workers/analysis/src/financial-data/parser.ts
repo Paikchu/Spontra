@@ -17,7 +17,7 @@ export interface DocumentSource {url:string;accession:string;filedAt:string;cik:
  revenueStructure?:RevenueStructure|null;
  /** A structure from operating income to net income that balanced on an earlier filing of this issuer (presentation profile). */
  presentation?:{structure:BridgeStructure;version:string}|null;}
-export const SEC_FLOW_PARSER_VERSION='deterministic-sec.v19';
+export const SEC_FLOW_PARSER_VERSION='deterministic-sec.v21';
 export interface Fact {source:DocumentSource;operands?:Fact[];formula?:string;precision:number;tag:string;value:number;currency:string;start:string;end:string;context:string;dimensions:Record<string,string>;
  /** The issuer's income statement row printing this fact; flip means the statement shows it with the opposite sign. */
  statementRow?:{order:number;label:string;flip:boolean};
@@ -34,9 +34,27 @@ const flowConcepts=new Set([...Object.values(tags).flat(), 'RevenuesNetOfInteres
 /** The consolidation-items member that only says "these are the operating segments": not a dimension of the split itself. */
 const operatingSegments=([axis,member]:[string,string])=>local(axis)==='ConsolidationItemsAxis'&&local(member)==='OperatingSegmentsMember';
 const near=(a:number,b:number)=>Math.abs(a-b)<=Math.max(1,Math.max(Math.abs(a),Math.abs(b))*1e-9);
+/** Positive reportable-segment evidence, independent of product/service revenue tables. */
+export function hasSingleReportableSegment(html:string,cik?:string):boolean {
+ const contexts=new Map([...html.matchAll(/<(?:[\w-]+:)?context\b([^>]*)>([\s\S]*?)<\/(?:[\w-]+:)?context\s*>/gi)]
+  .map(m=>[attrs(m[1]).id,m[2]]));
+ const counts=[...html.matchAll(/<ix:nonFraction\b([^>]*)>([\s\S]*?)<\/ix:nonFraction\s*>/gi)].flatMap(m=>{
+  const a=attrs(m[1]),context=contexts.get(a.contextref),value=Number(text(m[2]));
+  if(!/^(?:dei|us-gaap):SegmentReportingNumberOfReportableSegments$/.test(a.name??'')||a.sign||Number(a.scale??0)!==0||!Number.isInteger(value)||value<1)return [];
+  if(contexts.size&&(!context||/explicitMember|typedMember/i.test(context)))return [];
+  const issuer=context?.match(/<(?:[\w-]+:)?identifier[^>]*>([^<]+)/i)?.[1];
+  if(cik&&(!issuer||Number(issuer)!==Number(cik)))return [];
+  return [{value,end:context?.match(/<(?:[\w-]+:)?(?:endDate|instant)[^>]*>([^<]+)/i)?.[1]??''}];
+ });
+ if(counts.length){const latest=counts.map(c=>c.end).sort().at(-1);return counts.filter(c=>c.end===latest).every(c=>c.value===1);}
+ const plain=text(html).replace(/\s+/g,' ');
+ // Attribute the disclosure to the whole issuer, never a generic accounting-standard example.
+ return /\b(?:we|the company) (?:operate(?:s)? (?:its business )?in|ha(?:s|ve)|(?:is|are) managed as) (?:one|a single) (?:operating and (?:one )?reportable|reportable|operating) segment\b/i.test(plain)
+   || /\boperates? in (?:one|a single) (?:operating and (?:one )?)?reportable segment[, ]+(?:the )?company as a whole\b/i.test(plain);
+}
 export function readReportedFacts(html:string,source:DocumentSource):{facts:Fact[];issues:string[]}{
+ source={...source,singleSegment:source.singleSegment || hasSingleReportableSegment(html,source.cik),fiscalYear:text(html.match(/<ix:nonNumeric[^>]*name=["\']dei:DocumentFiscalYearFocus["\'][^>]*>([\s\S]*?)<\/ix:nonNumeric>/i)?.[1]??'')};
  if(!/<ix:nonFraction/i.test(html))return {facts:readStatementTableFacts(html,source),issues:[]};
- source={...source,singleSegment:/the company operates (?:its business )?in (?:one|a single) operating segment/i.test(text(html).replace(/\s+/g,' ')),fiscalYear:text(html.match(/<ix:nonNumeric[^>]*name=["\']dei:DocumentFiscalYearFocus["\'][^>]*>([\s\S]*?)<\/ix:nonNumeric>/i)?.[1]??'')};
  const {memberLabels,revenueStructure,calculation:_calculation,presentation:_presentation,...factSource}=source;source=factSource;
  // Lines the filing's revenue calculation adds to a revenue total (hedging gains beside contract revenue) are read as consolidated facts.
  const revenueLines=new Set(revenueStructure?.arcs.flatMap(a=>[local(a.parent),local(a.child)])??[]);
@@ -92,19 +110,12 @@ export function bridgePeriods(facts:Fact[]):BridgePeriod[]{
  return [...buckets.values()].map(anchorsOf).filter((p):p is BridgePeriod=>!!p);
 }
 type RevenueAdjustment={id:string;name:string;definition:string;fact:Fact;weight:1|-1};
-/**
- * Consolidated revenue split into the members of one segment or product axis, when the filing's facts balance it
- * exactly: Σ members + reconciling items = consolidated revenue. Reconciling items are what the filing itself declares:
- * intersegment eliminations reported against the axis, and the lines the filing's revenue calculation adds beside the
- * segments' concept on the way to the consolidated total (Alphabet's hedging gains: Revenues =
- * RevenueFromContractWithCustomer + RevenueNotFromContractWithCustomer, the segments reporting the first). A bank's
- * managed-basis segments reach reported revenue with its corporate line and reconciling items on the consolidation axis.
- * The members of one table are one split; one axis shown in two tables (Autodesk's subscription split on the statement,
- * product families in its revenue note) is two candidates, and of several balanced splits the most detailed is taken.
- */
+/** Reportable-segment members must reconcile to consolidated revenue through disclosed
+ * eliminations and calculation lines. Product/service axes and statement revenue lines
+ * do not establish reportable segments, even when they sum to consolidated revenue. */
 type RevenueSplit={axis:string;members:Map<string,Fact>;adjustments:RevenueAdjustment[];managed:boolean;children?:Map<string,Map<string,Fact>>};
 function splitRevenue(facts:Fact[],revenueNames:string[],consolidated:Fact|undefined,structure:RevenueStructure|null|undefined,issues:string[]):RevenueSplit|null{
- if(!consolidated)return null;
+ if(!consolidated||facts.some(f=>f.source.singleSegment))return null;
  const isRevenue=(f:Fact)=>revenueNames.includes(local(f.tag)),sole=(f:Fact)=>Object.entries(f.dimensions).length===1?Object.entries(f.dimensions)[0]:null;
  const eliminationFacts=facts.filter(f=>{const d=sole(f);return isRevenue(f)&&!!d&&['ConsolidationItemsAxis','StatementBusinessSegmentsAxis','ProductOrServiceAxis'].includes(local(d[0]))&&/eliminat/i.test(d[1]);});
  // Each revenue concept carries its own eliminations, and two concepts may differ: TTM eliminates 301 against its
@@ -120,7 +131,7 @@ function splitRevenue(facts:Fact[],revenueNames:string[],consolidated:Fact|undef
  const corporate=single(consolidationOnly(m=>m==='CorporateNonSegmentMember'),'CONFLICTING_CORPORATE_REVENUE');
  const reconciling=single(consolidationOnly(m=>/ReconcilingItems?Member$/.test(m)&&!/eliminat/i.test(m)),'CONFLICTING_RECONCILING_ITEMS');
  const groups=new Map<string,{axis:string;members:Map<string,Fact>}>();
- for(const f of facts){if(eliminationFacts.includes(f))continue;const entries=Object.entries(f.dimensions).filter(entry=>!operatingSegments(entry));if(!isRevenue(f)||entries.length!==1||!['StatementBusinessSegmentsAxis','ProductOrServiceAxis'].includes(local(entries[0][0])))continue;const [axis,member]=entries[0];
+ for(const f of facts){if(eliminationFacts.includes(f))continue;const entries=Object.entries(f.dimensions).filter(entry=>!operatingSegments(entry));if(!isRevenue(f)||entries.length!==1||local(entries[0][0])!=='StatementBusinessSegmentsAxis')continue;const [axis,member]=entries[0];
   const axisKey=axis+'|'+Object.entries(f.dimensions).filter(([a])=>local(a)==='ConsolidationItemsAxis').map(([a,m])=>a+':'+m).join(',');
   // Every member of the axis together, as before tables were known, and the members of each table that shows the member.
   for(const table of ['*',...(f.tables??[])]){const key=axisKey+'|'+table,group=groups.get(key)??{axis,members:new Map<string,Fact>()};const old=group.members.get(member);if(old&&old.precision>f.precision)continue;if(old&&old.precision===f.precision&&old.value!==f.value){issues.push('CONFLICTING_SEGMENT');continue;}group.members.set(member,f);groups.set(key,group);}
@@ -140,6 +151,12 @@ function splitRevenue(facts:Fact[],revenueNames:string[],consolidated:Fact|undef
  const conceptsOf=(members:Map<string,Fact>)=>new Set([...members.values()].map(f=>f.tag));
  const balanced:RevenueSplit[]=[];
  const keep=(candidate:typeof balanced[number])=>{if(!balanced.some(b=>local(b.axis)===local(candidate.axis)&&b.members.size===candidate.members.size&&[...candidate.members].every(([m,f])=>b.members.get(m)?.value===f.value)))balanced.push(candidate);};
+ // A member equal to the sum of two or more other members of its axis is a subtotal the filing tags beside them
+ // (Intel's "Intel Products" = CCPG + DCAI); the split is tried without it as well, and still has to balance exactly.
+ const withoutSubtotals=(members:Map<string,Fact>)=>{const list=[...members];if(list.length>12)return members;
+  const subtotal=([m,f]:[string,Fact])=>{const others=list.filter(([o])=>o!==m).map(([,g])=>g.value);for(let mask=1;mask<1<<others.length;mask++){let n=0,count=0;for(let i=0;i<others.length;i++)if(mask&1<<i){n+=others[i];count++;}if(count>=2&&near(n,f.value))return true;}return false;};
+  const kept=new Map(list.filter(entry=>!subtotal(entry)));return kept.size>=2&&kept.size<members.size?kept:members;};
+ for(const [key,group] of [...groups]){const stripped=withoutSubtotals(group.members);if(stripped!==group.members)groups.set(key+'|without-subtotals',{axis:group.axis,members:stripped});}
  for(const {axis,members} of groups.values()){const concepts=conceptsOf(members);
   const adjustments=eliminationsFor(concepts).flatMap(elimination=>(concepts.size===1?calculated([...concepts][0]):[[]]).map(items=>[...eliminations(elimination),...items])).find(items=>near(sum(members)+items.reduce((n,a)=>n+a.weight*a.fact.value,0),consolidated.value));
   if(adjustments)keep({axis,members,adjustments,managed:false});}
@@ -172,50 +189,10 @@ function splitRevenue(facts:Fact[],revenueNames:string[],consolidated:Fact|undef
  const sameMembers=matching.length>1&&new Set(matching.map(m=>local(m.axis)+'|'+[...m.members.keys()].sort().join(','))).size===1;
  if(sameMembers){const needed=(m:typeof matching[number])=>m.adjustments.filter(a=>a.fact.value!==0).length,fewest=Math.min(...matching.map(needed));matching=matching.filter(m=>needed(m)===fewest);}
  // The revenue lines the income statement itself prints, when they say more than the split chosen from the notes.
- const face=faceSplit(facts,consolidated);
- if(face&&face.members.size>Math.max(1,...matching.map(m=>m.members.size)))return face;
+
  if(matching.length>1){issues.push('AMBIGUOUS_REVENUE_AXIS');return null;}
  return matching[0]??null;
 }
-/**
- * The revenue lines the income statement prints above its revenue total, read as the statement's own split when they
- * are consolidated amounts that add up to that total exactly. Offerings the notes tag on the product axis nest under
- * the line they add up to, when every offering finds its line exactly one way.
- */
-function faceSplit(facts:Fact[],consolidated:Fact):RevenueSplit|null{
- const rows=facts.filter(f=>f.statementRow&&!Object.keys(f.dimensions).length&&f.source.url===consolidated.source.url);
- const total=rows.find(f=>f.tag===consolidated.tag&&near(f.value,consolidated.value));if(!total)return null;
- const byOrder=new Map<number,Fact>();
- for(const f of rows){if(f.statementRow!.order>=total.statementRow!.order)continue;const old=byOrder.get(f.statementRow!.order);if(old&&(old.tag!==f.tag||old.value!==f.value))return null;if(!old||f.precision>old.precision)byOrder.set(f.statementRow!.order,f);}
- const lines=[...byOrder].sort((a,b)=>a[0]-b[0]).map(([,f])=>f);
- if(lines.length<2||lines.some(f=>f.value<0||f.tag===total.tag)||!near(lines.reduce((n,f)=>n+f.value,0),total.value))return null;
- const members=new Map(lines.map(f=>[local(f.tag),{...f,memberLabels:{[local(f.tag)]:f.statementRow!.label}}] as [string,Fact]));
- // A product member equal to a line is that line under another name, not a part of it.
- const offerings=new Map<string,Fact>();
- for(const f of facts){if(f.tag!==total.tag)continue;const entries=Object.entries(f.dimensions).filter(entry=>!operatingSegments(entry));if(entries.length!==1||local(entries[0][0])!=='ProductOrServiceAxis'||f.value<=0||lines.some(l=>near(l.value,f.value)))continue;const old=offerings.get(entries[0][1]);if(old&&old.value!==f.value)return {axis:'statement',members,adjustments:[],managed:false};if(!old||f.precision>old.precision)offerings.set(entries[0][1],f);}
- const pieces=[...offerings],placed=nest(lines.map(f=>f.value),pieces.map(([,f])=>f.value));
- if(!placed)return {axis:'statement',members,adjustments:[],managed:false};
- const children=new Map<string,Map<string,Fact>>();
- [...members.keys()].forEach((member,i)=>{if(placed[i].length)children.set(member,new Map(placed[i].map(j=>pieces[j])));});
- return {axis:'statement',members,adjustments:[],managed:false,children};
-}
-/**
- * The one way to place every piece under a line so each line that takes pieces is their exact sum (at least two of
- * them); null when there is none, more than one, or no piece to place.
- */
-function nest(lines:number[],pieces:number[]):number[][]|null{
- if(!pieces.length||pieces.length>16)return null;
- let found:number[][]|null=null,count=0;const assigned:number[][]=lines.map(()=>[]),sums=lines.map(()=>0);
- const place=(j:number):void=>{if(count>1)return;
-  if(j===pieces.length){if(assigned.every((a,i)=>!a.length||(a.length>1&&near(sums[i],lines[i])))){count++;found=assigned.map(a=>[...a]);}return;}
-  for(let i=0;i<lines.length;i++){if(sums[i]+pieces[j]>lines[i]+Math.max(1,Math.abs(lines[i])*1e-9))continue;assigned[i].push(j);sums[i]+=pieces[j];place(j+1);sums[i]-=pieces[j];assigned[i].pop();}};
- place(0);return count===1?found:null;
-}
-/**
- * A segment's revenue split by product or service, when the filing tags each line on both axes (Meta's Advertising and
- * Other revenue within Family of Apps) and the lines add up exactly to the segment's own fact. Each child's id carries
- * its segment, since one product member (other revenue) often sits under several segments.
- */
 function segmentChildren(facts:Fact[],axis:string,member:string,parent:Fact):Map<string,Fact>|null{
  const lines=new Map<string,Fact>();let conflict=false;
  for(const f of facts){if(f.tag!==parent.tag)continue;const entries=Object.entries(f.dimensions).filter(entry=>!operatingSegments(entry));
@@ -224,10 +201,10 @@ function segmentChildren(facts:Fact[],axis:string,member:string,parent:Fact):Map
  if(conflict||lines.size<2||[...lines.values()].some(f=>f.value<0))return null;
  return near([...lines.values()].reduce((n,f)=>n+f.value,0),parent.value)?lines:null;
 }
-function extractGenericQuarters(html:string,source:DocumentSource,supplemental:Fact[]=[],reviewVerified=false):{quarters:BusinessFlowQuarter[];issues:string[]}{
+function extractGenericQuarters(html:string,source:DocumentSource,supplemental:Fact[]=[],reviewVerified=false,parsed?:ReturnType<typeof readReportedFacts>):{quarters:BusinessFlowQuarter[];issues:string[]}{
  const issues:string[]=[];if(html.length>SEC_DOCUMENT_MAX_BYTES)return {quarters:[],issues:['DOCUMENT_TOO_LARGE']};
  // A restatement is found by comparing what filings report for the same period (restatement.ts), not by wording.
- const reported=readReportedFacts(html,source);issues.push(...reported.issues);const buckets=new Map<string,Fact[]>();for(const fact of [...reported.facts,...supplemental]){const days=(Date.parse(fact.end)-Date.parse(fact.start))/86400000;if(days<70||days>110)continue;const key=[fact.start,fact.end,fact.currency].join('|');buckets.set(key,[...(buckets.get(key)??[]),fact]);}
+ const reported=parsed??readReportedFacts(html,source);issues.push(...reported.issues);const buckets=new Map<string,Fact[]>();for(const fact of [...reported.facts,...supplemental]){const days=(Date.parse(fact.end)-Date.parse(fact.start))/86400000;if(days<70||days>110)continue;const key=[fact.start,fact.end,fact.currency].join('|');buckets.set(key,[...(buckets.get(key)??[]),fact]);}
  const fiscalFocus=source.fiscalYear??text(html.match(/<ix:nonNumeric[^>]*name=["']dei:DocumentFiscalYearFocus["'][^>]*>([\s\S]*?)<\/ix:nonNumeric>/i)?.[1]??'');
  const quarters:BusinessFlowQuarter[]=[];
  // Operating income to net income (bridge.ts). A structure read from the statement rows or kept from an earlier filing
@@ -296,7 +273,7 @@ function extractGenericQuarters(html:string,source:DocumentSource,supplemental:F
   const revenueSplit=splitRevenue(facts,revenueNames,figures.revenue?select([local(figures.revenue.lineage![0].concept)]):undefined,source.revenueStructure,issues);
   const revenueAdjustments:NonNullable<BusinessFlowQuarter['revenueAdjustments']>=(revenueSplit?.adjustments??[]).map(a=>{const reported=amount(a.fact,a.definition);return {id:a.id,name:a.name,amount:a.weight===1?reported:{...reported,basis:'derived' as const,value:String(-a.fact.value),formula:'− reported '+a.name}};});
   const eliminated=revenueAdjustments.some(a=>a.id==='intersegment-eliminations'),managed=!!revenueSplit?.managed;
-  const segments:BusinessSegment[]=[...(revenueSplit?.members??[])].map(([member,f])=>{const lines=member==='corporate'?null:revenueSplit!.children?revenueSplit!.children.get(member)??null:segmentChildren(facts,revenueSplit!.axis,member,f);return {id:member,name:member==='corporate'?'Corporate':memberName(member,f.memberLabels),revenue:{...amount(f,'segment:'+member),comparabilityKey:f.tag.startsWith('table:')?'table-segment:'+source.accession+':'+member+':'+f.tag:/^\d{4}$/.test(fiscalFocus)?'deterministic-sec-segment:'+fiscalFocus+':'+member+':'+f.tag:null},description:'A segment or product and service category as the filing discloses it, named by the filing; products and customers are not inferred.',products:lines?[...lines].map(([product,c])=>memberName(product,c.memberLabels)):[],customers:null,monetization:null,disclosure:managed?'Segment revenue as the filing manages it; the corporate line and the reconciling items to reported revenue are shown separately, and consolidated expenses are not allocated to segments.':eliminated?'Segment revenue includes intersegment sales; eliminations are shown separately, and neither they nor consolidated expenses are allocated to segments.':revenueAdjustments.length?'Revenue the filing reports outside its segments is shown separately as reconciling items; consolidated expenses are not allocated to segments.':'Revenue from the filing\'s segment disclosure; consolidated expenses are not allocated to segments.',sourceIds:[source.accession],...(lines?{children:[...lines].map(([product,c])=>({id:member+'|'+product,name:memberName(product,c.memberLabels),revenue:{...amount(c,'segment:'+member+'|'+product),comparabilityKey:/^\d{4}$/.test(fiscalFocus)?'deterministic-sec-segment:'+fiscalFocus+':'+member+'|'+product+':'+c.tag:null}}))}:{})};});// Non-reconciling department/management revenue is not substituted for GAAP consolidated revenue.
+  const segments:BusinessSegment[]=[...(revenueSplit?.members??[])].map(([member,f])=>{const lines=member==='corporate'?null:revenueSplit!.children?revenueSplit!.children.get(member)??null:segmentChildren(facts,revenueSplit!.axis,member,f);return {id:member,name:member==='corporate'?'Corporate':memberName(member,f.memberLabels),revenue:{...amount(f,'segment:'+member),comparabilityKey:f.tag.startsWith('table:')?'table-segment:'+source.accession+':'+member+':'+f.tag:/^\d{4}$/.test(fiscalFocus)?'deterministic-sec-segment:'+fiscalFocus+':'+member+':'+f.tag:null},description:'A reportable segment named by the filing; products and customers are not inferred.',products:lines?[...lines].map(([product,c])=>memberName(product,c.memberLabels)):[],customers:null,monetization:null,disclosure:managed?'Segment revenue as the filing manages it; the corporate line and the reconciling items to reported revenue are shown separately, and consolidated expenses are not allocated to segments.':eliminated?'Segment revenue includes intersegment sales; eliminations are shown separately, and neither they nor consolidated expenses are allocated to segments.':revenueAdjustments.length?'Revenue the filing reports outside its segments is shown separately as reconciling items; consolidated expenses are not allocated to segments.':'Revenue from the filing\'s segment disclosure; consolidated expenses are not allocated to segments.',sourceIds:[source.accession],...(lines?{children:[...lines].map(([product,c])=>({id:member+'|'+product,name:memberName(product,c.memberLabels),revenue:{...amount(c,'segment:'+member+'|'+product),comparabilityKey:/^\d{4}$/.test(fiscalFocus)?'deterministic-sec-segment:'+fiscalFocus+':'+member+'|'+product+':'+c.tag:null}}))}:{})};});// Non-reconciling department/management revenue is not substituted for GAAP consolidated revenue.
 
   const expenses=financialExpenses;
   // Operating expense lines printed between cost of revenue (or gross profit) and operating income, used only when they add up to the operating expense total.
@@ -331,9 +308,8 @@ function extractGenericQuarters(html:string,source:DocumentSource,supplemental:F
  * The quarters a document reports: inline XBRL facts, or the statement tables of a document without them.
  * `presentationReviewed`: the caller established that the filing only reclassified prior periods to its current presentation.
  */
-export function extractDisclosedQuarters(html:string,source:DocumentSource,supplemental:Fact[]=[],presentationReviewed=false):{quarters:BusinessFlowQuarter[];issues:string[]}{
- if(!/<ix:nonFraction/i.test(html)){const facts=readStatementTableFacts(html,source);if(facts.length)return extractGenericQuarters('',source,facts,true);}
- return extractGenericQuarters(html,source,supplemental,presentationReviewed);
+export function extractDisclosedQuarters(html:string,source:DocumentSource,supplemental:Fact[]=[],presentationReviewed=false,parsed?:ReturnType<typeof readReportedFacts>):{quarters:BusinessFlowQuarter[];issues:string[]}{
+ return extractGenericQuarters(html,source,supplemental,presentationReviewed,parsed);
 }
 
 /** Internal entry for facts reviewed by the cumulative-period verifier. */

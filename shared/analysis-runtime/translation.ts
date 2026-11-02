@@ -42,8 +42,9 @@ const RULES: Record<TranslatedResource, Rule> = {
   // The valuation: dimension rationales, scenario narratives, the written sections and gap messages; evidence excerpts,
   // facts, figures and identifiers stay as written.
   valuation: {
-    keys: set("rationale", "narrative", "summary", "thesis", "expectationsGap", "modelNotes", "nextCheck", "catalysts", "counterEvidence", "nextChecks", "triggers", "invalidation", "gaps", "message", "note", "limitations"),
-    skip: set("evidence", "facts", "sourceRefs", "supportingEvidenceIds", "counterEvidenceIds", "excerpt", "distributions", "sensitivities", "yearly", "versionId", "baseInputFingerprint", "evidenceSetHash", "quote", "notes", "label"),
+    // valuation.calc.v4 adds the judgements' rationales (the same key), the management comparison's `explanation` and the consensus note's `reason`; gate details, method bases and component sources are figures and references.
+    keys: set("rationale", "narrative", "summary", "thesis", "expectationsGap", "modelNotes", "nextCheck", "catalysts", "counterEvidence", "nextChecks", "triggers", "invalidation", "gaps", "message", "note", "limitations", "explanation", "reason"),
+    skip: set("evidence", "facts", "sourceRefs", "supportingEvidenceIds", "counterEvidenceIds", "excerpt", "distributions", "sensitivities", "yearly", "versionId", "baseInputFingerprint", "evidenceSetHash", "quote", "notes", "label", "sources", "source", "basis", "detail", "anchors", "verification"),
   },
   // Guidance: the one-sentence statement and the metric label; the quote is the release's own words.
   guidance: { keys: set("text", "label"), skip: set("sources", "quote", "coverage", "segment") },

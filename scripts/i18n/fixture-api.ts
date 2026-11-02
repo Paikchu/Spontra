@@ -7,6 +7,7 @@
 import type { Plugin } from "vite";
 import type { HomeDigest } from "../../shared/analysis-contract/home.ts";
 import { calendarLabel, resolvePeriod } from "../../shared/analysis-runtime/fiscal-label.ts";
+import { decodeCursor, historyFromEvents, historyLimit, INSIDER_NEW_DAYS, personsFromEvents } from "../../shared/analysis-runtime/insiders.ts";
 import { capital, company, events, filings, findings, flow, TICKER, valuation } from "./fixture.ts";
 
 let published = 0;
@@ -28,6 +29,7 @@ function resources(): Record<string, unknown> {
       { passageId: "pfixturenote02", documentId: "d0", title: `${TICKER} 10-K`, form: "10-K", filedAt: "2026-02-20", url: "https://www.sec.gov/", path: ["MD&A", "Liquidity"], text: "We expect depreciation to rise as we place additional capacity in service.", table: null },
     ] },
     "/events": { status: "ready", events: { ...events, events: [...later.map(l => l.event).reverse(), ...events.events] } },
+    "/insiders": { status: "ready", insiders: { schemaVersion: "insiders.v1", ticker: TICKER, source: "events", newDays: INSIDER_NEW_DAYS, asOf: rev, persons: personsFromEvents(events.events, new Date(rev)) } },
     "/filings": { status: "ready", filings },
     "/fundamentals": { status: "unavailable" },
     "/valuation": valuation,
@@ -109,6 +111,15 @@ export function fixtureApi(): Plugin {
           res.statusCode = req.method === "GET" ? 200 : 405;
           res.setHeader("content-type", "application/json");
           res.end(JSON.stringify(req.method === "GET" ? homeDigest() : { error: "Method not allowed" }));
+          return;
+        }
+        const history = req.url?.match(/^\/api\/business\/v1\/companies\/([^/?]+)\/insiders\/([^/?]+)\/transactions(?:\?(.*))?$/);
+        if (history) {
+          const query = new URLSearchParams(history[3] ?? "");
+          const page = history[1] === TICKER ? historyFromEvents(events.events, TICKER, decodeURIComponent(history[2]!), decodeCursor(query.get("cursor")) ?? null, historyLimit(query.get("limit")), new Date(revision())) : null;
+          res.statusCode = page ? 200 : 404;
+          res.setHeader("content-type", "application/json");
+          res.end(JSON.stringify(page ? { schemaVersion: "insider-transactions-response.v1", status: "ready", transactions: page } : { error: "not in fixture" }));
           return;
         }
         const match = req.url?.match(/^\/api\/business\/v1\/companies\/([^/?]+)(\/[a-z]+)?(?:\?|$)/);
