@@ -5,6 +5,7 @@ import { SourceLanguage, langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import { compactMoney, compactShares, perShare } from "@/shared/analysis-runtime/locale";
 import { DIMENSION_WEIGHTS, DISCOUNT_RATE_COMPONENTS, EXTENDED_SCENARIO_KEYS, VALUATION_METHODS, type ScenarioEntry, type ValuationEvidence, type ValuationPublication, type ValuationResponse } from "@/shared/analysis-contract/valuation";
 import { fetchValuationVersion } from "./company-data";
+import { type VersionRead, versionLoading, versionSettled, versionView } from "./valuation-version";
 import { track } from "./track";
 import { citationOrder, leadSentence, pathLeaf, proseBlocks, proseParts } from "./valuation-prose";
 import "./valuation.css";
@@ -46,6 +47,7 @@ const m = messages({
   checks: "Model checks", checkStatus: "Status", checkDetail: "Detail",
   managementTargets: "Management targets vs base case", yearCol: "Year", fiscalYear: (fy: number) => `FY${fy}`, targetCol: "Target", baseCol: "Base case", gapCol: "Gap", targetSources: "Target sources",
   consensus: "Sell-side consensus", consensusMean: "Mean target", consensusRange: "Range", analysts: (n: number) => `${n} analysts`, consensusUnavailable: "Consensus unavailable", asOf: (date: string) => `as of ${date}`,
+  versionLoading: "Loading this version", versionFailed: "Couldn't load this version", versionFailedNote: "Pick another version, or return to the current one.",
 }, {
   title: "估值评估",
   score: "综合分", unscored: "未评分", confidence: "置信度",
@@ -75,6 +77,7 @@ const m = messages({
   checks: "模型校验", checkStatus: "状态", checkDetail: "说明",
   managementTargets: "管理层目标与基准情景", yearCol: "年份", fiscalYear: (fy: number) => `${fy} 财年`, targetCol: "目标", baseCol: "基准情景", gapCol: "差距", targetSources: "目标来源",
   consensus: "卖方共识", consensusMean: "目标均值", consensusRange: "区间", analysts: (n: number) => `${n} 位分析师`, consensusUnavailable: "无可用市场共识", asOf: (date: string) => `截至 ${date}`,
+  versionLoading: "正在加载这个版本", versionFailed: "无法加载这个版本", versionFailedNote: "可选择其他版本，或返回当前版本。",
 });
 const METHOD = labels({ dcf: "Discounted cash flow", ev_ebitda_forward: "EV/EBITDA, forward", pe_forward: "P/E, forward" }, { dcf: "现金流折现", ev_ebitda_forward: "远期 EV/EBITDA", pe_forward: "远期 P/E" });
 const PEER_BASIS = labels({ curated: "Curated set", ranking: "Business-tag peers", unit: "Segment peers", category: "Same category", none: "None" }, { curated: "人工选定", ranking: "业务标签同业", unit: "业务板块同业", category: "同类公司", none: "无" });
@@ -363,23 +366,36 @@ function footnotesOf(report: ValuationPublication): Footnotes {
 export function ValuationPanel({ ticker, valuation }: { ticker: string; valuation: ValuationResponse }) {
   const locale = useLocale();
   const [versionId, setVersionId] = useState<string | null>(null);
-  const [version, setVersion] = useState<ValuationPublication | null>(null);
+  const [read, setRead] = useState<VersionRead | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   // Another company starts on its current version with no source open.
   const [shownTicker, setShownTicker] = useState(ticker);
-  if (shownTicker !== ticker) { setShownTicker(ticker); setVersionId(null); setVersion(null); setOpen(null); }
+  if (shownTicker !== ticker) { setShownTicker(ticker); setVersionId(null); setRead(null); setOpen(null); }
   // The current version is read from the response; a loaded older one is let go.
   const current = !versionId || versionId === valuation.report?.versionId;
-  if (current && version) setVersion(null);
+  if (current && read) setRead(null);
   useEffect(() => {
     if (!versionId || versionId === valuation.report?.versionId) return;
     const c = new AbortController();
-    void fetchValuationVersion(ticker, versionId, c.signal).then(r => { if (!c.signal.aborted) setVersion(r); }).catch(() => {});
+    // A read that does not answer, or answers with no report, is this version's failure and shows as such.
+    void fetchValuationVersion(ticker, versionId, c.signal).catch(() => null).then(r => { if (!c.signal.aborted) setRead(versionSettled(versionId, r)); });
     return () => c.abort();
   }, [ticker, versionId, valuation.report?.versionId]);
-  const report = versionId && version ? version : valuation.report;
+  // A new pick starts from its own loading state; nothing read for the previous pick carries over.
+  const pick = (id: string) => { setVersionId(id); setRead(versionLoading(id)); };
+  const view = versionView(versionId, valuation.report, read);
+  const report = view.phase === "ready" ? view.report : null;
   const gaps = useMemo(() => report ? [...new Map(report.gaps.map(g => [g.code + (g.field ?? ""), g])).values()] : [], [report]);
   const footnotes = useMemo(() => report ? footnotesOf(report) : null, [report]);
+  const picker = valuation.versions.length > 1 && <div><dt>{m.version}</dt><dd><select className="val-select" value={versionId ?? valuation.report?.versionId ?? ""} onChange={e => pick(e.target.value)} aria-label={m.version}>
+    {valuation.versions.map(v => <option key={v.versionId} value={v.versionId}>{day(v.generatedAt)}{v.versionId === valuation.report?.versionId ? ` · ${m.current}` : ""}</option>)}
+  </select></dd></div>;
+  if (view.phase !== "ready") {
+    const failed = view.phase === "failed";
+    return <section className="lens val-panel val-panel--empty" aria-label={m.title}>
+      <div className="lens-empty val-empty"><dl className="val-dates">{picker}</dl><h2>{failed ? m.versionFailed : m.versionLoading}</h2>{failed ? <p>{m.versionFailedNote}</p> : <i className="lens-loading" />}</div>
+    </section>;
+  }
   if (!report || !footnotes) {
     const failed = valuation.availability === "failed";
     return <section className="lens val-panel val-panel--empty" aria-label={m.title}>
@@ -399,9 +415,7 @@ export function ValuationPanel({ ticker, valuation }: { ticker: string; valuatio
         <dl className="val-dates">
           <div><dt>{m.researchDate}</dt><dd>{day(report.researchAsOf)}</dd></div>
           <div><dt>{m.financialBase}</dt><dd>{report.financialPeriodEnd}</dd></div>
-          {valuation.versions.length > 1 && <div><dt>{m.version}</dt><dd><select className="val-select" value={versionId ?? valuation.report?.versionId ?? ""} onChange={e => setVersionId(e.target.value)} aria-label={m.version}>
-            {valuation.versions.map(v => <option key={v.versionId} value={v.versionId}>{day(v.generatedAt)}{v.versionId === valuation.report?.versionId ? ` · ${m.current}` : ""}</option>)}
-          </select></dd></div>}
+          {picker}
         </dl>
       </header>
       <Status valuation={valuation} />
