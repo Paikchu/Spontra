@@ -6,7 +6,7 @@ import { readBusinessExplainer } from "../../../../shared/analysis-runtime/busin
 import { issuerNames } from "../../../../shared/analysis-runtime/business-tree.ts";
 import { sha256 } from "../sha256.ts";
 import { companyName } from "../catalog/issuer-directory.ts";
-import { assertTrackedTicker, requireDb } from "../core.ts";
+import { assertFeatureTicker, requireDb } from "../core.ts";
 import { readCompletePublicationForTicker } from "../financial-data/publication.ts";
 import { callWorkerSecModel, type AnalysisEnv } from "../operations.ts";
 import { AnalysisRequestError } from "../read-api/contract-support/errors.ts";
@@ -61,7 +61,7 @@ export async function businessExplainerFingerprint(env: AnalysisEnv, ticker: str
 }
 
 export async function executeBusinessExplainerWorkflow(params: BusinessExplainerParams, step: WorkflowStepLike, env: AnalysisEnv, fetcher: typeof fetch = fetch, runId?: string) {
-  assertTrackedTicker(env, params.ticker);
+  assertFeatureTicker(env, "explainer", params.ticker);
   const modelVersion = modelFor(env, "explainer");
   const now = await step.do("explainer-time", async () => new Date().toISOString());
   const input = await step.do("explainer-input", () => readInput(env, params.ticker));

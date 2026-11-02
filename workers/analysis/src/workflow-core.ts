@@ -407,10 +407,16 @@ export async function executeSecAnalysisWorkflow(
   return { analyzed, skipped, failed };
 }
 
-function selectLatestWorkflowFilings(filings: SecFiling[]): SecFiling[] {
+/**
+ * The newest periodic report and the recent current reports. When the newest periodic report is an amendment, the newest
+ * original comes too: an amendment can be a cover page that only adds an exhibit (NBIS's 20-F/A), and the report it
+ * amends would otherwise never be analysed. An original already analysed is skipped by `shouldAnalyze`.
+ */
+export function selectLatestWorkflowFilings(filings: SecFiling[]): SecFiling[] {
   const primary = filings.find((filing) => /^(10-K|10-Q|20-F)(\/A)?$/.test(filing.form));
+  const original = primary?.form.endsWith("/A") ? filings.find((filing) => /^(10-K|10-Q|20-F)$/.test(filing.form)) : undefined;
   const events = filings.slice(0, 5).filter((filing) => /^(8-K|6-K)(\/A)?$/.test(filing.form));
-  return [...(primary ? [primary] : []), ...events]
+  return [...(original ? [original] : []), ...(primary ? [primary] : []), ...events]
     .filter((filing, index, all) => all.findIndex((candidate) => candidate.accessionNumber === filing.accessionNumber) === index);
 }
 

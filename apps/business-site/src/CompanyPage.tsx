@@ -39,7 +39,8 @@ export default function CompanyPage({ ticker, opening, tools, onSeen, covered, c
   catalog?: HomeCompany | null;
   tools: ReactNode;
   onSeen: (ticker: string) => void;
-  covered: boolean | null;
+  /** Whether the catalog lists the company: null when it could not load, undefined while it is being read. */
+  covered: boolean | null | undefined;
   companies: Array<{ ticker: string; name: string }>;
   onHome: () => void;
   onSearch: () => void;
@@ -58,6 +59,7 @@ export default function CompanyPage({ ticker, opening, tools, onSeen, covered, c
     reasons: publication?.reasons ?? [],
     covered,
     attempted: Boolean(publication?.lastAttemptAt),
+    preparing: publication?.status === "preparing",
   }) : null;
   if (fault && !moduleErrors.length)
     return <ErrorState kind={fault.kind} code={fault.code} ticker={ticker} companies={companies} onHome={onHome} onRetry={retry} onSearch={onSearch} restoredTitle={`${ticker} · ${m.title}`} />;

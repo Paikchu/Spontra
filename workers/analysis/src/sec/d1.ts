@@ -47,6 +47,24 @@ function reportPublished(database: D1Like, summary: SecFilingSummary) {
   return database.prepare(sql).bind(...values);
 }
 
+/** The filing list's row for one filing, as SQL and values, so a caller can commit it with its own statements. */
+export function filingIndexInsert(filing: SecFiling): { sql: string; values: unknown[] } {
+  return { sql: `
+      INSERT INTO sec_filings (
+        filing_id, ticker, accession_number, cik, form, filing_date, report_date,
+        document_url, index_url, parser_version, ingest_status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'sec-structure.v1', 'indexed')
+      ON CONFLICT(filing_id) DO UPDATE SET
+        ticker = excluded.ticker, accession_number = excluded.accession_number,
+        cik = excluded.cik, form = excluded.form, filing_date = excluded.filing_date,
+        report_date = excluded.report_date, document_url = excluded.document_url,
+        index_url = excluded.index_url, ingest_status = CASE
+          WHEN sec_filings.ingest_status = 'analyzed' THEN sec_filings.ingest_status
+          ELSE excluded.ingest_status END
+    `, values: [filing.accessionNumber, filing.ticker, filing.accessionNumber, filing.cik,
+      filing.form, filing.filingDate, filing.reportDate, filing.documentUrl, filing.indexUrl] };
+}
+
 export class D1SecRepository implements SecRepository {
   private readonly database: D1Like;
   private readonly jobs: SecAnalysisJobRepository;
@@ -115,22 +133,8 @@ export class D1SecRepository implements SecRepository {
   }
 
   async upsertFilingIndex(filing: SecFiling): Promise<void> {
-    await this.database.prepare(`
-      INSERT INTO sec_filings (
-        filing_id, ticker, accession_number, cik, form, filing_date, report_date,
-        document_url, index_url, parser_version, ingest_status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'sec-structure.v1', 'indexed')
-      ON CONFLICT(filing_id) DO UPDATE SET
-        ticker = excluded.ticker, accession_number = excluded.accession_number,
-        cik = excluded.cik, form = excluded.form, filing_date = excluded.filing_date,
-        report_date = excluded.report_date, document_url = excluded.document_url,
-        index_url = excluded.index_url, ingest_status = CASE
-          WHEN sec_filings.ingest_status = 'analyzed' THEN sec_filings.ingest_status
-          ELSE excluded.ingest_status END
-    `).bind(
-      filing.accessionNumber, filing.ticker, filing.accessionNumber, filing.cik,
-      filing.form, filing.filingDate, filing.reportDate, filing.documentUrl, filing.indexUrl,
-    ).run();
+    const { sql, values } = filingIndexInsert(filing);
+    await this.database.prepare(sql).bind(...values).run();
   }
 
   /** Durable membership in the existing JSON store; no new database migration. */

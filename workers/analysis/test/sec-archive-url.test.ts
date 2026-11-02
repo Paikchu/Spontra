@@ -24,12 +24,15 @@ function harness(publication: EventsPublication | null = null) {
         : key === `exhibits:v1:BRK.B:${accession}` ? [] : null;
       return payload === null ? null : { payload: JSON.stringify(payload), fetchedAt: now.toISOString() };
     },
+    // The filings list indexed from the same submissions read: none known yet.
+    all: async () => { assert.ok(sql.includes("FROM sec_filings"), sql); return { results: [] }; },
     run: async () => { throw new Error("Unexpected database write"); },
     sql, values,
   });
   const db = {
     prepare: (sql: string) => statement(sql),
     batch: async (statements: ReturnType<typeof statement>[]) => {
+      if (statements[0].sql.includes("INSERT INTO sec_filings")) return [];
       assert.equal(statements[0].values[0], "events:v1:BRK.B");
       published = JSON.parse(String(statements[0].values[1]));
       return [];

@@ -3,9 +3,9 @@ import { annotateEvent, eventImportance, classifyEvent, filingDocumentTitle, ind
 import type { SecCronEnv } from "../core.ts";
 import { knownCik } from "../pipeline/identity.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
-import { D1SecRepository } from "../sec/d1.ts";
+import { D1SecRepository, filingIndexInsert } from "../sec/d1.ts";
 import { throttledSecReader } from "../financial-data/provider.ts";
-import type { SecFilingFeed, SecFilingSummary } from "../sec/sec.ts";
+import { parseSecSubmissions, type SecFilingFeed, type SecFilingSummary } from "../sec/sec.ts";
 import { parseSecArchiveDocumentUrl, secArchiveDocumentUrl, secArchiveRoot } from "../sec/archive-url.ts";
 import { form4XmlUrl, normalizeCik, parseForm4 } from "./form4.ts";
 import { recordRailInsiders } from "./insider-ledger.ts";
@@ -94,6 +94,21 @@ type Fetcher = typeof fetch;
 export const secAccessPaused = (error: unknown) => error instanceof Error && error.message === "SEC_ACCESS_PAUSED";
 
 /**
+ * EDGAR's business filings into `sec_filings`, the table the public filings list pages; the SEC report run adds summaries
+ * and earnings groups. Filings new to the list move its revision (`filings.indexed`).
+ */
+export async function indexFilings(db: D1Database, ticker: string, cik: string, submissions: unknown, at: string, causeId: string | null = null): Promise<number> {
+  const filings = parseSecSubmissions(submissions, { ticker, cik, cikNumber: Number(cik), name: ticker }, 40);
+  if (!filings.length) return 0;
+  const known = new Set((await db.prepare("SELECT accession_number a FROM sec_filings WHERE ticker = ? AND accession_number IN (SELECT value FROM json_each(?))")
+    .bind(ticker, JSON.stringify(filings.map(f => f.accessionNumber))).all<{ a: string }>()).results.map(r => r.a));
+  const fresh = filings.filter(f => !known.has(f.accessionNumber));
+  if (!fresh.length) return 0;
+  await db.batch([...fresh.map(filing => { const { sql, values } = filingIndexInsert(filing); return db.prepare(sql).bind(...values); }), outboxStatement(db, { type: "filings.indexed", ticker, cik, causeId }, at)]);
+  return fresh.length;
+}
+
+/**
  * Rebuilds the company's event rail. `forceList` re-reads EDGAR's submission list (a new filing was discovered);
  * otherwise the stored list is kept and only pending Form 4 and exhibit reads advance, a bounded number per call.
  * `pending` counts reads still outstanding and `progressed` whether this call stored any, so a caller continues
@@ -115,7 +130,10 @@ export async function refreshCompanyEvents(env: EventsSweepEnv, ticker: string, 
   let raw: RawEventFiling[];
   let checkedAt = publication?.checkedAt ?? now.toISOString();
   if (listDue) {
-    raw = parseEventSubmissions(await (await reader.read(`https://data.sec.gov/submissions/CIK${cik}.json`)).json(), cikNumber, now);
+    const submissions = await (await reader.read(`https://data.sec.gov/submissions/CIK${cik}.json`)).json();
+    raw = parseEventSubmissions(submissions, cikNumber, now);
+    // The filings list is indexed from the same read, so a company without the report summaries still lists its filings.
+    await indexFilings(db, ticker, cik, submissions, now.toISOString(), options.causeId ?? null);
     checkedAt = now.toISOString();
   } else {
     raw = publication!.events.map(e => ({

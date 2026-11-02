@@ -10,6 +10,15 @@ test("an unknown ticker is not covered, and a listed company with one reason is 
   assert.deepEqual(companyFault({ httpStatus: null, reasons: ["INVALID_SOURCE", "UNBALANCED_STATEMENT"], covered: true, attempted: true }), { kind: "insufficient", code: "INVALID_SOURCE, UNBALANCED_STATEMENT" });
 });
 
+test("a listed company not yet attempted is being prepared; the fault waits while the catalog is read", () => {
+  assert.deepEqual(companyFault({ httpStatus: null, reasons: ["MISSING_TWO_QUARTERS"], covered: true, attempted: false, preparing: true }), { kind: "preparing", code: "PREPARING" });
+  assert.deepEqual(companyFault({ httpStatus: null, reasons: [], covered: true, attempted: false, preparing: true }), { kind: "preparing", code: "PREPARING" });
+  assert.deepEqual(companyFault({ httpStatus: null, reasons: ["MISSING_TWO_QUARTERS"], covered: true, attempted: true, preparing: true }), { kind: "insufficient", code: "MISSING_TWO_QUARTERS" });
+  assert.deepEqual(companyFault({ httpStatus: null, reasons: ["MISSING_TWO_QUARTERS"], covered: null, attempted: false, preparing: true }), { kind: "not-found", code: "NOT_FOUND" });
+  assert.equal(companyFault({ httpStatus: null, reasons: ["MISSING_TWO_QUARTERS"], covered: undefined, attempted: false, preparing: true }), null);
+  assert.deepEqual(companyFault({ httpStatus: 503, reasons: [], covered: undefined, attempted: false }), { kind: "server", code: "503" });
+});
+
 test("rate limits and server failures stay retryable even when the catalog has the company", () => {
   assert.deepEqual(companyFault({ httpStatus: 429, reasons: [], covered: true, attempted: false }), { kind: "rate-limit", code: "429" });
   assert.deepEqual(companyFault({ httpStatus: 503, reasons: [], covered: null, attempted: false }), { kind: "server", code: "503" });

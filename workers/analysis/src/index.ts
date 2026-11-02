@@ -8,7 +8,7 @@ import { isLocale } from "../../../shared/analysis-runtime/locale.ts";
 import { handleStageRequest } from "./stage/gateway.ts";
 import { executeReportWorkflow, type ReportParams } from "./stage/report-workflow.ts";
 
-import { assertTrackedTicker, scheduledAnalysisAllowed, type CompanyAnalysisWorkflowParams, type SecMemoryWorkflowParams, type SecWorkflowParams } from "./core.ts";
+import { assertFeatureTicker, assertTrackedTicker, scheduledAnalysisAllowed, type CompanyAnalysisWorkflowParams, type SecMemoryWorkflowParams, type SecWorkflowParams } from "./core.ts";
 import { executeCompanyAnalysisWorkflow } from "./company-analysis-workflow.ts";
 import { executeSecMemoryWorkflow } from "./memory-workflow.ts";
 import { createAnalysisOperations, type AnalysisEnv } from "./operations.ts";
@@ -209,7 +209,7 @@ export class GuidanceWorkflow extends WorkflowEntrypoint<AnalysisEnv, GuidanceWo
 export class SecMemoryWorkflow extends WorkflowEntrypoint<AnalysisEnv, SecMemoryWorkflowParams> {
   async run(event: WorkflowEvent<SecMemoryWorkflowParams>, step: WorkflowStep) {
     const env = await companyPolicyEnvironment(this.env);
-    assertTrackedTicker(env,event.payload.ticker);
+    assertFeatureTicker(env,"findings",event.payload.ticker);
     return executeSecMemoryWorkflow(event.payload, event.instanceId, durableSteps(step, env, event.instanceId), env);
   }
 }
@@ -217,7 +217,7 @@ export class SecMemoryWorkflow extends WorkflowEntrypoint<AnalysisEnv, SecMemory
 export class CompanyAnalysisWorkflow extends WorkflowEntrypoint<AnalysisEnv, CompanyAnalysisWorkflowParams> {
   async run(event: WorkflowEvent<CompanyAnalysisWorkflowParams>, step: WorkflowStep) {
     const env = await companyPolicyEnvironment(this.env);
-    assertTrackedTicker(env,event.payload.ticker);
+    assertFeatureTicker(env,"findings",event.payload.ticker);
     return executeCompanyAnalysisWorkflow(
       event.payload,
       event.instanceId,

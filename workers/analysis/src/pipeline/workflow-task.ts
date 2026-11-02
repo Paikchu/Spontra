@@ -6,12 +6,14 @@ import type { TaskMessage } from "./messages.ts";
 import type { TaskName } from "./registry.ts";
 import type { TaskOutcome } from "./tasks.ts";
 
-type Instance = { status(): Promise<{ status: string; error?: unknown }> };
+type Instance = { status(): Promise<{ status: string; error?: unknown }>; terminate?(): Promise<void> };
 export type WorkflowBindingLike = { create(options: { id: string; params: unknown }): Promise<unknown>; get?(id: string): Promise<Instance> };
 /** `trigger`: the due row's cause when the run started; a different cause at completion means a new trigger arrived meanwhile. */
 type Started = { instanceId: string; startedAt: string; fingerprint?: string; trigger?: string | null };
 
 const RUNNING = new Set(["queued", "running", "paused", "waiting", "waitingForPause", "unknown"]);
+/** How long a run may stay unfinished before it is stopped and handled as a failed run (retried on the same input). */
+export const WORKFLOW_DEADLINE_MS = 24 * 60 * 60_000;
 const errorText = (error: unknown) => typeof error === "string" ? error : (error as { message?: string } | undefined)?.message ?? "";
 const errorName = (error: unknown) => (error as { name?: string } | undefined)?.name ?? "";
 
@@ -76,14 +78,19 @@ export async function driveWorkflow(env: AnalysisEnv, key: string, binding: Work
   const started = (await repository.getCache<Started>(cacheKey))?.payload;
   if (started && binding.get) {
     let state: { status: string; error?: unknown };
-    try { state = await (await binding.get(started.instanceId)).status(); }
+    let instance: Instance;
+    try { instance = await binding.get(started.instanceId); state = await instance.status(); }
     catch (error) {
       return { status: "later", afterMs: pollMs, detail: { instanceId: started.instanceId,
         workflow: "status-unavailable", error: error instanceof Error ? error.message : String(error) } };
     }
     // Only an actual unknown status expires after an hour; a failed status read leaves the run tracked.
-    if (RUNNING.has(state.status) && (state.status !== "unknown" || Date.now() - Date.parse(started.startedAt) < 60 * 60_000)) {
-      return { status: "later", afterMs: pollMs, detail: { instanceId: started.instanceId, workflow: state.status } };
+    const age = Date.now() - Date.parse(started.startedAt);
+    if (RUNNING.has(state.status) && (state.status !== "unknown" || age < 60 * 60_000)) {
+      if (age < WORKFLOW_DEADLINE_MS) return { status: "later", afterMs: pollMs, detail: { instanceId: started.instanceId, workflow: state.status } };
+      // Paused, waiting or stuck past the deadline: stopped, and handled like a run that errored, so its retries apply.
+      await instance!.terminate?.().catch(() => undefined);
+      state = { status: "errored", error: `still ${state.status} after ${Math.round(age / 3_600_000)} hours` };
     }
     await env.DB!.prepare("DELETE FROM sec_cache WHERE cache_key = ?").bind(cacheKey).run();
     const verdict = state.status === "complete" && options.verify ? await options.verify(started.instanceId) : null;
@@ -106,10 +113,11 @@ export async function driveWorkflow(env: AnalysisEnv, key: string, binding: Work
       const { task, ticker, causeId } = options.deadLetter, at = new Date().toISOString();
       const previous = fingerprint ? (await repository.getCache<FailedInput>(failedInputKey(task, ticker)))?.payload : undefined;
       const attempts = previous?.fingerprint === fingerprint ? (previous?.attempts ?? 1) + 1 : 1;
-      // The feature stops at its first failure: the admin is told and switching it on again is the retry.
-      await recordFeatureFailure(env.DB, ticker, TASK_FEATURE[task], failure, at);
       const final = !verdict && (state.status === "terminated" || (errorName(state.error) === "NonRetryableError" && !ACCOUNT_FAILURE.test(errorText(state.error))));
       const wait = !final && fingerprint ? FAILED_INPUT_RETRY_WAITS_MS[attempts - 1] : undefined;
+      // The admin is told of every failure; the feature is switched off only once no retry is left, and switching it on
+      // again is then the retry. Switched off at the first failure, the retries would be refused as out of scope.
+      await recordFeatureFailure(env.DB, ticker, TASK_FEATURE[task], failure, at, wait === undefined);
       if (wait !== undefined) {
         const retryAt = new Date(Date.now() + wait).toISOString();
         console.warn(JSON.stringify({ event: "pipeline-retry", task, ticker, attempts, retryAt, failure }));

@@ -99,7 +99,8 @@ export const SEC_TASKS = {
    */
   "sec-report": {
     // v3: the run writes each periodic filing's fiscal period from Company Facts, which guidance dates its items by.
-    version: "sec-report.v3-fiscal-periods",
+    // v4: a newest periodic report that is an amendment brings the original it amends (NBIS had only a cover-page 20-F/A).
+    version: "sec-report.v4-amended-originals",
     async run(env, ticker, { now, trigger, causeId }): Promise<TaskOutcome> {
       return driveWorkflow(env, `sec-report:${ticker}`, env.SEC_ANALYSIS_WORKFLOW as WorkflowBindingLike, async () => {
         // The message may have been queued while reports were still on. Starting now would throw
@@ -169,7 +170,8 @@ export const SEC_TASKS = {
    * continue a bounded number per run for as long as they make progress.
    */
   events: {
-    version: "events.v1",
+    // v2: the run also indexes the filings list, which a company without the report summaries had none of.
+    version: "events.v2-filing-index",
     async run(env, ticker, { now, causeId }): Promise<TaskOutcome> {
       if (env.EVENTS_ENABLED === "false") return { status: "done", detail: { skipped: "events disabled" } };
       const stored = await new D1SecRepository(env.DB!).getCache<unknown>(eventsCacheKey(ticker));

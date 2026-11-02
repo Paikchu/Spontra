@@ -19,6 +19,7 @@ import { daysBetween } from "../../../../shared/analysis-runtime/dates.ts";
 export const HISTORY_VERSION = `revenue-history.v6:${REVENUE_PARSER_VERSION}:${SEC_FLOW_PARSER_VERSION}`;
 export const historyKey = (cik: string) => `sec:revenue-history:v1:${cik}`;
 const cursorKey = (cik: string) => `sec:revenue-history-cursor:v1:${cik}`;
+const readingKey = (cik: string) => `sec:revenue-history-reading:v1:${cik}`;
 const REFRESH_MS = 86400000, LOOKBACK_DAYS = 1185, MAX_DOCUMENTS = 32, MAX_LISTED = 400, NOTICES_PER_STEP = 12, MAX_DOCUMENT_ATTEMPTS = 3;
 /** Cumulative facts kept across scans for the fourth-quarter bridge: a 10-K's nine months come from the same fiscal
  * year's third-quarter report, filed up to about a year earlier. */
@@ -227,10 +228,22 @@ export async function runHistoryStep(db: D1Database, reader: SecReader, target: 
   const resolvedIssues: string[] = [];
   let attempted = 0, notices = 0, retry: HistoryStepResult['retry'];
   cursor.attempts ??= {};
+  // A step the Worker killed mid-read (JPM's 10-K exhausted its memory with two 10-Qs beside it) saved nothing and left
+  // this mark: the document it died on is read alone next time, and given up on after as many deaths as failures.
+  const killed = (await repository.getCache<{accession: string; count: number}>(readingKey(target.cik)))?.payload;
+  const next = cursor.documents[cursor.index];
+  if (killed && next && killed.accession === next.accession) {
+    if (killed.count >= MAX_DOCUMENT_ATTEMPTS) {
+      cursor.issues = [...new Set([...cursor.issues, `${next.accession}:SOURCE_RETRY_EXHAUSTED`])].slice(-40);
+      cursor.partial = true;
+      cursor.index++;
+    } else maxDocuments = 1;
+  }
   while (cursor.index < cursor.documents.length && (cursor.reports ?? 0) < MAX_DOCUMENTS && attempted < maxDocuments && notices < NOTICES_PER_STEP) {
     const document = cursor.documents[cursor.index];
     const temporaryIssue = `${document.accession}:SOURCE_TEMPORARILY_UNAVAILABLE`;
     let reading = false;
+    await repository.setCache(readingKey(target.cik), {accession: document.accession, count: killed?.accession === document.accession ? killed.count + 1 : 1}, now.toISOString());
     try {
       // Commit a filing's facts only after all linked exhibits have been read and archived.
       // Otherwise a partial success followed by an R2 error would duplicate facts on retry.
@@ -279,6 +292,7 @@ export async function runHistoryStep(db: D1Database, reader: SecReader, target: 
   if (obtainedData && history.quarters.length) await repository.setCache(historyKey(target.cik), history, now.toISOString());
   cursor.structures = Object.fromEntries(Object.entries(cursor.structures ?? {}).filter(([accession]) => cursor.facts.some(f => f.source.accession === accession)));
   await repository.setCache(cursorKey(target.cik), cursor, now.toISOString());
+  await db.prepare('DELETE FROM sec_cache WHERE cache_key = ?').bind(readingKey(target.cik)).run();
   return {ticker: target.ticker, documents: attempted, finished, quarters: history.quarters.length, issues: cursor.issues.slice(-5), partial: cursor.partial ?? false, ...(retry ? {retry} : {}), ...(resolvedIssues.length ? {resolvedIssues} : {})};
 }
 

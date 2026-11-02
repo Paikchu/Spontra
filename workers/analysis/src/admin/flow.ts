@@ -37,7 +37,7 @@ export function flowGraph(): { nodes: Array<{ id: string; source: boolean; depth
   return { nodes: [...drawn].map(id => ({ id, source: (FLOW_SOURCES as readonly string[]).includes(id), depth: depth.get(id)! })), edges: [...edges.values()] };
 }
 
-type LogRow = { messageId: string; causeId: string | null; kind: string; name: string; outcome: string; createdAt: string };
+type LogRow = { messageId: string; causeId: string | null; kind: string; name: string; outcome: string; createdAt: string; skipped: string | null };
 type RunRow = { runId: string; status: string; stage: string | null; startedAt: string; updatedAt: string };
 
 /** The source that emits an event with no cause: the admin's own requests first, the EDGAR poll for what only it sends. */
@@ -57,7 +57,7 @@ export async function readFlow(db: D1Database, ticker: string, now = Date.now())
   const [due, log, runs, job, maintenance] = await Promise.all([
     db.prepare("SELECT task, due_at dueAt, first_requested_at firstAt, cause_id causeId FROM pipeline_due WHERE ticker = ?").bind(ticker)
       .all<{ task: string; dueAt: string; firstAt: string; causeId: string | null }>().then(r => r.results).catch(() => []),
-    db.prepare("SELECT message_id messageId, cause_id causeId, kind, name, outcome, created_at createdAt FROM pipeline_log WHERE ticker = ? ORDER BY created_at DESC LIMIT 400").bind(ticker)
+    db.prepare("SELECT message_id messageId, cause_id causeId, kind, name, outcome, created_at createdAt, CASE WHEN json_valid(detail) THEN json_extract(detail, '$.skipped') END skipped FROM pipeline_log WHERE ticker = ? ORDER BY created_at DESC LIMIT 400").bind(ticker)
       .all<LogRow>().then(r => r.results).catch(() => [] as LogRow[]),
     store.latestRuns().catch(() => new Map<string, RunRow>()),
     db.prepare("SELECT current_stage stage, created_at startedAt, updated_at at FROM sec_analysis_jobs WHERE ticker = ? AND status = 'running' AND updated_at >= ? ORDER BY updated_at DESC LIMIT 1")
@@ -91,19 +91,20 @@ export async function readFlow(db: D1Database, ticker: string, now = Date.now())
   const nodes = await Promise.all(graph.nodes.map(async (node): Promise<FlowNode> => {
     if (node.source) {
       const sent = log.find(row => row.kind === 'event' && !row.causeId && sourceOf(row.name) === node.id);
-      return { ...node, state: sent ? 'done' : 'idle', at: sent?.createdAt ?? null, via: null, progress: null };
+      return { ...node, state: sent ? 'done' : 'idle', at: sent?.createdAt ?? null, via: null, progress: null, skipped: null };
     }
     if (node.id === 'maintenance') {
       const state = maintenance ? MAINTENANCE_STATE[maintenance.status] ?? 'idle' : 'idle';
       return { ...node, state, at: maintenance ? (state === 'running' || state === 'queued' ? maintenance.createdAt : maintenance.updatedAt) : null,
-        via: maintenance ? { from: 'admin', event: 'maintenance.requested' } : null, progress: null };
+        via: maintenance ? { from: 'admin', event: 'maintenance.requested' } : null, progress: null, skipped: null };
     }
     const waiting = dueBy.get(node.id), last = latest.get(node.id), end = ended.get(node.id);
     const progress = await progressOf(node.id);
     const polled = !!waiting && last?.outcome === 'later' && now - Date.parse(last.createdAt) < RUNNING_WINDOW_MS;
     const state: FlowNodeState = progress || polled ? 'running' : waiting ? 'queued' : end ? (end.outcome === 'failed' ? 'failed' : 'done') : 'idle';
     const at = state === 'running' ? progress?.startedAt ?? waiting?.firstAt ?? null : state === 'queued' ? waiting!.dueAt : end?.createdAt ?? null;
-    return { ...node, state, at, via: via(waiting?.causeId ?? end?.causeId ?? null), progress };
+    const skipped = state === 'done' && typeof end?.skipped === 'string' ? end.skipped : null;
+    return { ...node, state, at, via: via(waiting?.causeId ?? end?.causeId ?? null), progress, skipped };
   }));
   return { ticker, nodes, edges: graph.edges };
 }

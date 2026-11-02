@@ -6,7 +6,7 @@ import { decodeEntities, descendants, nodeText, parseMarkup, type Element } from
 import { tableGrid } from "../financial-data/table-grid.ts";
 
 /** Changing how documents are split re-parses every document; ids of unchanged text survive it. */
-export const LIBRARY_PARSER_VERSION = "filing-library.v3";
+export const LIBRARY_PARSER_VERSION = "filing-library.v4";
 /**
  * A leaf longer than this is split again. A headed section is a unit however short (a one-line product still names a product);
  * only a heading with next to no text under it folds into its parent. A split chunk starts at a bold lead-in once it holds a few hundred characters.
@@ -70,6 +70,19 @@ const TWENTY_F: Record<string, LibraryCanonical> = {
   "18": "financial_statements", "19": "exhibits",
 };
 /** Items whose range is the financial statements, where XBRL note spans split the text into notes. */
+/**
+ * Cross-reference-index filers (Intel) title the parts of an annual report in words instead of "Item N" headings; a block
+ * that is one of these titles, whole, opens that part. Read only where no item opens the business or MD&A.
+ */
+const PART_TITLES: Array<[RegExp, LibraryCanonical]> = [
+  [/^(?:(?:our )?business(?: overview)?|description of (?:the )?business|information on the company|our strateg(?:y|ies))$/, "business"],
+  [/^risk factors$/, "risk_factors"],
+  [/^(?:management's discussion and analysis(?: of financial condition and results of operations)?(?: \(md&a\))?|md&a|operating and financial review and prospects|critical accounting estimates)$/, "mdna"],
+  [/^quantitative and qualitative disclosures? about market risks?$/, "market_risk"],
+  [/^(?:consolidated )?financial statements(?: and supplement(?:al|ary) (?:details|data|information))?$/, "financial_statements"],
+  [/^properties$/, "properties"], [/^legal proceedings$/, "legal"], [/^controls and procedures$/, "controls"], [/^cybersecurity$/, "cybersecurity"],
+  [/^exhibits(?: and financial statement schedules)?$/, "exhibits"], [/^other key information$/, "other"],
+];
 const STATEMENT_RANGES = new Set<LibraryCanonical>(["financial_statements", "other"]);
 const PERIODIC_BOILERPLATE = new Set<LibraryCanonical>(["front", "unresolved_comments", "mine_safety", "reserved", "foreign_inspection", "governance", "compensation", "ownership", "relationships", "accountant_fees", "exhibits", "summary", "back"]);
 const SIGNAL = new Set<LibraryCanonical>(["risk_factors", "controls", "legal", "accountant_changes", "cybersecurity"]);
@@ -283,6 +296,32 @@ function detectDocType(form: string, url: string, blocks: Block[]): LibraryDocTy
 }
 
 type ItemHit = { index: number; key: string; number: string; title: string; consumed: number[] };
+type PartHit = { index: number; key: string; title: string; canonical: LibraryCanonical; consumed: number[] };
+
+/** For each key, the occurrence followed by the most content before the next hit: a table of contents or index entry has almost none. */
+function bestHits<T extends { index: number; key: string; consumed: number[] }>(hits: T[], blocks: Block[], end: number): T[] {
+  const size = (from: number, to: number) => { let n = 0; for (let i = from; i < to; i++) { const b = blocks[i]; n += b.kind === "text" ? b.text.length : b.kind === "table" ? 400 : 0; } return n; };
+  const best = new Map<string, { hit: T; size: number }>();
+  hits.forEach((hit, k) => {
+    const content = size(hit.index + hit.consumed.length, hits[k + 1]?.index ?? end);
+    const current = best.get(hit.key);
+    if (!current || content > current.size) best.set(hit.key, { hit, size: content });
+  });
+  return [...best.values()].map(v => v.hit).sort((a, b) => a.index - b.index);
+}
+
+/** Parts opened by a plain-word title before `end`; a title inside a tagged note (a note's "Legal Proceedings") is the note's own heading. */
+function findPartTitles(blocks: Block[], notes: Span[], end: number): PartHit[] {
+  const hits: PartHit[] = [];
+  for (let i = 0; i < end; i++) {
+    const block = blocks[i];
+    if (block.kind !== "text" || block.text.length > 100 || notes.some(n => block.start >= n.start && block.start < n.end)) continue;
+    const key = block.text.replace(/[‘’]/g, "'").replace(/[.:]$/, "").toLowerCase();
+    const canonical = PART_TITLES.find(([pattern]) => pattern.test(key))?.[1];
+    if (canonical) hits.push({ index: i, key, title: block.text.replace(/[.:]$/, ""), canonical, consumed: [i] });
+  }
+  return bestHits(hits, blocks, end);
+}
 
 /** The document's items: for each item number, the occurrence followed by the most content (a table of contents entry has almost none). */
 function findItems(blocks: Block[], form: string): ItemHit[] {
@@ -305,14 +344,7 @@ function findItems(blocks: Block[], form: string): ItemHit[] {
     const number = match[1].toLowerCase();
     hits.push({ index: i, key: quarterly ? `${part}-${number}` : number, number, title, consumed });
   }
-  const size = (from: number, to: number) => { let n = 0; for (let i = from; i < to; i++) { const b = blocks[i]; n += b.kind === "text" ? b.text.length : b.kind === "table" ? 400 : 0; } return n; };
-  const best = new Map<string, { hit: ItemHit; size: number }>();
-  hits.forEach((hit, k) => {
-    const content = size(hit.index + hit.consumed.length, hits[k + 1]?.index ?? blocks.length);
-    const current = best.get(hit.key);
-    if (!current || content > current.size) best.set(hit.key, { hit, size: content });
-  });
-  return [...best.values()].map(v => v.hit).sort((a, b) => a.index - b.index);
+  return bestHits(hits, blocks, blocks.length);
 }
 
 function canonicalFor(form: string, key: string, docType: LibraryDocType): LibraryCanonical {
@@ -439,7 +471,11 @@ export function parseFilingDocument(html: string, meta: LibraryDocumentMeta): Pa
   const items = periodic ? findItems(blocks, meta.form) : [];
   // A 6-K has no item structure: it is a cover page and the exhibits it furnishes.
   const itemized = !/^6-K/.test(meta.form), structured = items.length >= (/^(?:8-K|6-K)/.test(meta.form) ? 1 : 2);
-  if (periodic && itemized && !structured) issues.push("ITEMS_NOT_FOUND");
+  // An annual report whose items open neither the business nor the MD&A: its parts are titled in words, before any item.
+  const titled = periodic && /^(?:10-K|20-F)/.test(meta.form) && !(structured && items.some(item => ["business", "mdna"].includes(canonicalFor(meta.form, item.key, docType))))
+    ? findPartTitles(blocks, notes, structured ? items[0].index : blocks.length) : [];
+  const parts = titled.some(t => t.canonical === "business" || t.canonical === "mdna") ? titled : [];
+  if (periodic && itemized && !structured) issues.push(parts.length ? "ITEMS_FROM_TITLES" : "ITEMS_NOT_FOUND");
 
   const roots: Draft[] = [];
   const draft = (title: string, canonical: LibraryCanonical, parent: Draft | null, level: number, extra: Partial<Draft> = {}): Draft => {
@@ -447,20 +483,23 @@ export function parseFilingDocument(html: string, meta: LibraryDocumentMeta): Pa
     if (parent) parent.children.push(d); else roots.push(d);
     return d;
   };
-  const consumed = new Set(items.flatMap(item => item.consumed));
+  const consumed = new Set([...items, ...parts].flatMap(hit => hit.consumed));
   const ranges: Array<{ container: Draft; from: number; to: number }> = [];
-  if (structured) {
-    if (items[0].index > 0) {
+  const heads = [
+    ...parts.map(part => ({ index: part.index, label: part.title, canonical: part.canonical, itemKey: null })),
+    ...(structured ? items : []).map(item => ({ index: item.index, label: `Item ${item.number.toUpperCase()}${item.title ? `. ${item.title}` : ""}`, canonical: canonicalFor(meta.form, item.key, docType), itemKey: item.key.toUpperCase() })),
+  ];
+  const sectioned = heads.length > 0;
+  if (sectioned) {
+    if (heads[0].index > 0) {
       // Some filers (banks' cross-reference 10-Qs) put the whole report before their first item heading: that is content, not a cover.
-      const front = blocks.slice(0, items[0].index).reduce((n, b) => n + (b.kind === "text" ? b.text.length : b.kind === "table" ? 400 : 0), 0);
+      const front = blocks.slice(0, heads[0].index).reduce((n, b) => n + (b.kind === "text" ? b.text.length : b.kind === "table" ? 400 : 0), 0);
       const main = front > 30_000;
       if (main) issues.push("CONTENT_BEFORE_ITEMS");
-      ranges.push({ container: draft(main ? "Report" : "Front matter", main ? "other" : "front", null, -2, { container: true, at: 0 }), from: 0, to: items[0].index });
+      ranges.push({ container: draft(main ? "Report" : "Front matter", main ? "other" : "front", null, -2, { container: true, at: 0 }), from: 0, to: heads[0].index });
     }
-    items.forEach((item, k) => {
-      const label = `Item ${item.number.toUpperCase()}${item.title ? `. ${item.title}` : ""}`;
-      const canonical = canonicalFor(meta.form, item.key, docType);
-      ranges.push({ container: draft(label, canonical, null, -2, { itemKey: item.key.toUpperCase(), container: true, at: item.index }), from: item.index, to: items[k + 1]?.index ?? blocks.length });
+    heads.forEach((head, k) => {
+      ranges.push({ container: draft(head.label, head.canonical, null, -2, { itemKey: head.itemKey, container: true, at: head.index }), from: head.index, to: heads[k + 1]?.index ?? blocks.length });
     });
   } else {
     const firstHeading = blocks.find((b): b is TextBlock => b.kind === "text" && isHeading(b));
@@ -478,7 +517,7 @@ export function parseFilingDocument(html: string, meta: LibraryDocumentMeta): Pa
     const borrowed = (range.container.canonical === "exhibits" || range.container.canonical === "summary") && inRange.some(b => { const n = noteAround(b); return n !== null && /^(?:us-gaap|ifrs(?:-full)?):/.test(n.concept); });
     const statements = borrowed || STATEMENT_RANGES.has(range.container.canonical);
     let stack: Draft[] = [range.container], note: Span | null = null, noteDraft: Draft | null = null;
-    let usedTitle = range.from > 0 || !structured ? false : true;
+    let usedTitle = range.from > 0 || !sectioned ? false : true;
     for (const block of inRange) {
       if (statements) {
         const inside = noteAround(block);
@@ -502,7 +541,7 @@ export function parseFilingDocument(html: string, meta: LibraryDocumentMeta): Pa
           }
         }
       }
-      if (!usedTitle && !structured && block.kind === "text" && block.text === range.container.title) { usedTitle = true; continue; }
+      if (!usedTitle && !sectioned && block.kind === "text" && block.text === range.container.title) { usedTitle = true; continue; }
       if (block.kind === "text" && isHeading(block) && !PART.test(block.text) && !(structured && ITEM.test(block.text))) {
         const level = levelOf(block);
         while (stack.length > 1 && !stack.at(-1)!.container && stack.at(-1)!.level >= level) stack.pop();
@@ -524,7 +563,7 @@ export function parseFilingDocument(html: string, meta: LibraryDocumentMeta): Pa
       for (const d of walk(range.container.children)) if (d.canonical === range.container.canonical && d.at <= to && last(d) >= from) d.canonical = "financial_statements";
     }
   }
-  const structure: LibraryStructure = structured ? "items" : headingCount ? "outline" : "flat";
+  const structure: LibraryStructure = sectioned ? "items" : headingCount ? "outline" : "flat";
 
   // Footnotes directly under a data table belong to it.
   const footnotes = new Map<number, string[]>();

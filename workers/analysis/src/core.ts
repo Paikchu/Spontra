@@ -1,3 +1,5 @@
+import { featureTickersFor } from "./financial-data/company-policy.ts";
+import type { Feature } from "../../../shared/analysis-contract/business-features.ts";
 import { allowData, aiIsEnabled, dataTickers, normalizeTicker, tickerList } from "../../../shared/analysis-runtime/financial-data/policy.ts";
 import { D1CompanyAnalysisRepository } from "./company-analysis/repository.ts";
 import { D1SecRepository } from "./sec/d1.ts";
@@ -74,6 +76,14 @@ export function assertTrackedTicker(env: Pick<SecCronEnv, "SEC_AI_TICKERS" | "SE
 }
 
 /**
+ * The same refusal for a run of another feature: the company analysis, memory, findings, analyst and checkup belong to the
+ * findings switch and the explainer to its own, so a run is refused by the switch that scheduled it, not the reports list.
+ */
+export function assertFeatureTicker(env: Parameters<typeof featureTickersFor>[0], feature: Feature, ticker: string): void {
+  if (!tracked(ticker, featureTickersFor(env, feature))) throw new Error(NOT_TRACKED);
+}
+
+/**
  * A scheduled report runs only while this company is still on the reports list. A manual run is not decided here:
  * an admin analysis carries its own grant, and a manual request for a company that has left the list still fails as before.
  */
@@ -121,7 +131,16 @@ export async function recoverCompanyAnalysis(env: SecCronEnv, ticker: string, no
       ? `company-recovery-${await sha256(`${candidate.analysisId}:${candidate.expectedUpdatedAt}`)}`
       : `company-${hashString(candidate.triggerRef)}`;
     try { await env.COMPANY_ANALYSIS_WORKFLOW.create({ id, params: { ...candidate, ticker } }); }
-    catch (error) { if (!/already exists|duplicate/i.test(String(error))) throw error; }
+    catch (error) {
+      if (!/already.?exists|duplicate/i.test(String(error))) throw error;
+      // The id was used before. An instance that ended without moving the run (META's refused the company on 2026-10-22
+      // and was polled every 15 minutes for weeks) spends this attempt; a first run with no row simply stops here.
+      const state = env.COMPANY_ANALYSIS_WORKFLOW.get ? await env.COMPANY_ANALYSIS_WORKFLOW.get(id).then(i => i.status()).then(s => s.status).catch(() => null) : null;
+      if (state && ["errored", "terminated", "complete"].includes(state)) {
+        if (candidate.analysisId) await repository.consumeRecovery(candidate.analysisId, candidate.expectedUpdatedAt!, new Date(now).toISOString());
+        return { started: null, running: false, nextRecoveryAt: await repository.nextRecoveryAt(ticker) };
+      }
+    }
     return { started: id, running: true, nextRecoveryAt: null };
   }
   return { started: null, running: false, nextRecoveryAt: await repository.nextRecoveryAt(ticker) };

@@ -64,3 +64,32 @@ test("a revisioned events route still reads and writes the edge cache with a pub
   assert.equal(puts, 1);
   assert.equal(reads, 1);
 });
+
+test("the home digest is held at the edge for half a minute and revalidated by the browser with its ETag", async () => {
+  const digest = { schemaVersion: "home-digest.v1", status: "ready", generatedAt: "2026-11-02T00:00:00.000Z", coverage: { count: 0, lastUpdatedAt: null }, companies: [], popular: [] };
+  const stored = new Map<string, Response>();
+  const pending: Promise<unknown>[] = [];
+  const cache = {
+    match: async (key: Request) => stored.get(key.url)?.clone(),
+    put: async (key: Request, response: Response) => { stored.set(key.url, response); },
+  } as unknown as Cache;
+  let reads = 0;
+  const upstream: typeof fetch = async () => { reads++; return Response.json(digest); };
+  const home = "https://example.test/api/business/v1/home";
+  const first = await handle(new Request(home), env, { waitUntil: p => { pending.push(p); } }, upstream, cache);
+  await Promise.all(pending);
+  assert.equal(first.status, 200);
+  assert.equal(first.headers.get("cache-control"), "no-cache");
+  const etag = first.headers.get("etag");
+  assert.match(etag ?? "", /^W\/"[0-9a-f]{32}"$/);
+  assert.equal(stored.get(home)?.headers.get("cache-control"), "public, max-age=30");
+  const again = await handle(new Request(home, { headers: { "if-none-match": etag! } }), env, { waitUntil() {} }, upstream, cache);
+  assert.equal(again.status, 304);
+  assert.equal(again.headers.get("etag"), etag);
+  assert.equal(again.headers.get("cache-control"), "no-cache");
+  const other = await handle(new Request(home, { headers: { "if-none-match": 'W/"stale"' } }), env, { waitUntil() {} }, upstream, cache);
+  assert.equal(other.status, 200);
+  assert.equal(other.headers.get("cache-control"), "no-cache");
+  assert.deepEqual(await other.json(), digest);
+  assert.equal(reads, 1);
+});

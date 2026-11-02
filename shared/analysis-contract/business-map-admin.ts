@@ -74,6 +74,8 @@ export type FlowNode = {
   via: { from: string; event: string } | null;
   /** A model run in flight: its steps so far. */
   progress: FeatureRunProgress | null;
+  /** Why the last run had nothing to do, when it said. */
+  skipped: string | null;
 };
 export type FlowEdge = { from: string; to: string; events: string[] };
 export type BusinessMapFlow = { ticker: string; nodes: FlowNode[]; edges: FlowEdge[] };

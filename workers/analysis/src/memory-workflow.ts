@@ -3,7 +3,7 @@ import { modelFor, reasoningFor } from "./ai-config.ts";
 import { D1SecRepository } from "./sec/d1.ts";
 import { hashString } from "./sec/analysis.ts";
 import { normalizeMemoryExtraction } from "./sec/memory.ts";
-import { assertTrackedTicker, requireDb, type SecMemoryWorkflowParams } from "./core.ts";
+import { assertFeatureTicker, requireDb, type SecMemoryWorkflowParams } from "./core.ts";
 import { callWorkerSecModel, type AnalysisEnv } from "./operations.ts";
 import { modelExecutionForAttempt, SEC_MEMORY_MODEL_LEASE_MS } from "./retry-policy.ts";
 import type { WorkflowStepLike } from "./workflow-core.ts";
@@ -38,7 +38,7 @@ export async function executeSecMemoryWorkflow(
     return normalizeMemoryExtraction(value, validEvidenceIds, priorMemoryIds);
   });
   const committed = await step.do(`memory-commit:${params.jobId}`, async () => {
-    assertTrackedTicker(env, claim.ticker);
+    assertFeatureTicker(env, "findings", claim.ticker);
     return { status: "committed" as const, ...await repository.commitMemoryJob(claim, extraction) };
   });
   let companyAnalysisQueued = false;

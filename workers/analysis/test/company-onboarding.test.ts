@@ -9,6 +9,7 @@ import type { BusinessFlowQuarter } from "../../../shared/analysis-contract/busi
 import { FinancialMaintenanceStore } from "../src/admin/financial-maintenance-store.ts";
 import { SUBSCRIPTIONS, validateRegistry } from "../src/pipeline/registry.ts";
 import type { AnalysisEnv } from "../src/operations.ts";
+import { indexFilings } from "../src/events/workflow.ts";
 import { switchOn, UNSEEDED } from "./fixtures/company-settings.ts";
 
 /** D1 over node:sqlite with every migration applied. */
@@ -123,4 +124,25 @@ test("the issuer's annual form is its latest annual report's, read across its wh
   assert.equal(annualForm(recent(["40-F"])), "40-F");
   assert.equal(annualForm(recent(["6-K", "F-1"])), null);
   assert.equal(annualForm(null), null);
+});
+
+test("a company without the report summaries gets its filings list from the event rail's read, announced once per new filing", async () => {
+  const db = database();
+  const list = (rows: Array<[string, string, string]>) => ({ name: "Taiwan Semiconductor", filings: { recent: {
+    accessionNumber: rows.map(r => r[0]), form: rows.map(r => r[1]), filingDate: rows.map(r => r[2]), reportDate: rows.map(() => ""),
+    primaryDocument: rows.map(r => `${r[0]}.htm`), primaryDocDescription: rows.map(() => ""), items: rows.map(() => ""),
+  } } });
+  const first: Array<[string, string, string]> = [["0001046179-26-000002", "6-K", "2026-10-15"], ["0001046179-26-000001", "20-F", "2026-04-15"], ["0001046179-26-000000", "SC 13G", "2026-02-01"]];
+  assert.equal(await indexFilings(db, "TSM", "0001046179", list(first), "2026-10-16T00:00:00.000Z"), 2);
+  assert.deepEqual((await db.prepare("SELECT accession_number a, form FROM sec_filings WHERE ticker = 'TSM' ORDER BY a").all<{ a: string; form: string }>()).results.map(r => ({ ...r })),
+    [{ a: "0001046179-26-000001", form: "20-F" }, { a: "0001046179-26-000002", form: "6-K" }]);
+  // Nothing new: no rows, no event.
+  assert.equal(await indexFilings(db, "TSM", "0001046179", list(first), "2026-10-16T01:00:00.000Z"), 0);
+  assert.equal(await indexFilings(db, "TSM", "0001046179", list([["0001046179-26-000003", "6-K", "2026-11-01"], ...first]), "2026-11-01T01:00:00.000Z"), 1);
+  assert.deepEqual((await outbox(db)).map(e => e.type), ["filings.indexed", "filings.indexed"]);
+});
+
+test("every business filing a data company files reaches the events task, which indexes the filings list", () => {
+  const routed = (form: string) => (SUBSCRIPTIONS["filing.discovered"] ?? []).some(s => s.task === "events" && (!s.when || s.when({ type: "filing.discovered", ticker: "TSM", detail: { form } })));
+  assert.deepEqual(["10-Q", "10-K", "20-F", "6-K", "8-K", "4", "SC 13G"].map(routed), [true, true, true, true, true, true, false]);
 });
