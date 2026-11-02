@@ -222,7 +222,7 @@ function featureState(f:BusinessMapCompany['features'][Feature],paused:boolean):
   return f.publishedAt?{status:'reviewed',text:'已生成',note:written}:{status:'unreviewed',text:'等待生成',note:'有新数据时开始'};
 }
 
-/** One company as a table row: its map state, the four feature switches and the actions; the row opens to the details. */
+/** One company as a table row: its map state, one switch per feature and the actions; the row opens to the details. */
 function Company({company:c,generation,busy,onToggle,onPrepare,onJudge,onFeature,onOpenFinancials,focused,onFocused}:{company:BusinessMapCompany;generation:Record<Feature,boolean>;busy:boolean;onToggle:()=>void;onPrepare:()=>void;onJudge:()=>void;onFeature:(feature:Feature,on:boolean)=>void;onOpenFinancials?:(ticker:string)=>void;focused:boolean;onFocused:()=>void}) {
   const running=!!c.task&&active.has(c.task.status),collecting=!!c.collection&&['queued','running','retry'].includes(c.collection.status);
   const ready=c.publication.status==='ready';
@@ -247,7 +247,7 @@ function Company({company:c,generation,busy,onToggle,onPrepare,onJudge,onFeature
       <td><div className="bm-admin-actions"><button className="fm-button" disabled={busy||running||!c.dataEnabled} onClick={onPrepare}>{running?'准备中':'重新准备'}</button><a href={`/admin/financials?ticker=${c.ticker}`} onClick={e=>{if(!onOpenFinancials||e.metaKey||e.ctrlKey||e.shiftKey||e.button!==0)return;e.preventDefault();onOpenFinancials(c.ticker);}}>财报</a>{ready&&<a href={`${BUSINESS_MAP_ORIGIN}/companies/${encodeURIComponent(c.ticker)}`} target="_blank" rel="noreferrer" aria-label={`${c.ticker} 业务地图`}>地图<ExternalLink size={12}/></a>}
         {c.dataEnabled?<button className="bm-admin-remove" disabled={busy} onClick={remove} aria-label={`移出 ${c.ticker}`} title="移出白名单"><Trash2 size={16}/></button>:<button className="fm-button" disabled={busy} onClick={onToggle}>加入</button>}</div></td>
     </tr>
-    {open&&<tr className="bm-admin-detail"><td colSpan={7}><div className="bm-detail">
+    {open&&<tr className="bm-admin-detail"><td colSpan={FEATURES.length+3}><div className="bm-detail">
       <FlowGraph ticker={c.ticker}/>
       {(running&&c.task||runs.length>0)&&<div className="bm-progress" role="list" aria-label="进行中">
         {running&&c.task&&<TaskProgress task={c.task}/>}
