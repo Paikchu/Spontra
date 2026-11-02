@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal, flushSync } from "react-dom";
 import { messages } from "@/packages/web/src/i18n";
 import { track } from "./track";
@@ -49,7 +49,7 @@ export function CompanyTour({ available = true }: { available?: boolean }) {
   const returnTo = useRef<HTMLElement | null>(null);
   const timer = useRef(0);
 
-  function start() {
+  const start = useCallback(() => {
     window.clearTimeout(timer.current);
     if (!available || document.querySelector("dialog[open]") || !document.querySelector(TARGETS[0]!)) return;
     // The layer opens in this same task, so no other dialog can open between the check above and showModal().
@@ -58,7 +58,7 @@ export function CompanyTour({ available = true }: { available?: boolean }) {
       setOpen(true);
     });
     track("tour_start");
-  }
+  }, [available]);
 
   if (!available && open) setOpen(false);
   useEffect(() => {
@@ -72,7 +72,7 @@ export function CompanyTour({ available = true }: { available?: boolean }) {
     if (!shouldAutoOpen({ done: readTourDone(storage), webdriver, force })) return;
     timer.current = window.setTimeout(start, 600);
     return () => window.clearTimeout(timer.current);
-  }, [available]);
+  }, [available, start]);
 
   useEffect(() => {
     if (!open) return;

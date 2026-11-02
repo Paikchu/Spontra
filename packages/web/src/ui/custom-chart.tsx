@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { Slot } from "radix-ui"
+import { omit } from "@/shared/analysis-runtime/omit"
 import { ChartContext, useChart, type ChartConfig } from "./chart-context"
 
 export { useChart }
@@ -16,7 +17,6 @@ type ComposedChartProps = React.ComponentProps<"div"> & {
 export function ChartContainer({
   id,
   config,
-  asChild: _asChild,
   ...props
 }: ComposedChartProps & { config: ChartConfig }) {
   const uniqueId = React.useId()
@@ -24,17 +24,17 @@ export function ChartContainer({
 
   return (
     <ChartContext.Provider value={{ config }}>
-      <Slot.Root data-slot="chart" data-chart={chartId} {...props} />
+      <Slot.Root data-slot="chart" data-chart={chartId} {...omit(props, "asChild")} />
     </ChartContext.Provider>
   )
 }
 
-export function ChartTooltipContent({ asChild: _asChild, ...props }: ComposedChartProps) {
+export function ChartTooltipContent(props: ComposedChartProps) {
   useChart()
-  return <Slot.Root data-slot="chart-tooltip" {...props} />
+  return <Slot.Root data-slot="chart-tooltip" {...omit(props, "asChild")} />
 }
 
-export function ChartLegendContent({ asChild: _asChild, ...props }: ComposedChartProps) {
+export function ChartLegendContent(props: ComposedChartProps) {
   useChart()
-  return <Slot.Root data-slot="chart-legend" {...props} />
+  return <Slot.Root data-slot="chart-legend" {...omit(props, "asChild")} />
 }

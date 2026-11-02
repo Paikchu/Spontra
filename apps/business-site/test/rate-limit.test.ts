@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { handle, type SiteEnv } from "../worker/index.ts";
-const ctx = { waitUntil: (_: Promise<unknown>) => {} };
+const ctx = { waitUntil: () => {} };
 const upstream: typeof fetch = async () => Response.json({});
 const env: SiteEnv = { ASSETS: { fetch: async () => new Response() }, PUBLIC_READ_LIMIT: { limit: async () => ({ success: false }) } };
 test("public read budget is 300 per minute, independent of the stage budget", () => {

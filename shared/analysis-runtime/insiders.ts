@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { CompanyEvent, InsiderLine, InsiderTransaction, InsiderTransactionCode } from "../analysis-contract/events.ts";
 import type { InsiderPersonSummary, InsiderRole, InsiderTotals, InsiderTradeSide, InsiderTransactionRow, InsiderTransactionsPage, InsidersPublication } from "../analysis-contract/insiders.ts";
 import { TICKER_PATTERN } from "./financial-data/policy.ts";
+import { omit } from "./omit.ts";
 
 /**
  * Insider trades grouped by person. The same rules build the ledger's person rows at ingestion, the API's answer when
@@ -149,7 +150,7 @@ export function pageRows<T extends InsiderTransactionRow>(rows: readonly T[], cu
 export function historyFromEvents(events: readonly CompanyEvent[], ticker: string, personKey: string, cursor: HistoryCursor | null, limit: number, now: Date): InsiderTransactionsPage {
   const rows = rowsFromEvents(events, now).filter(r => r.personKey === personKey);
   const page = pageRows(rows, cursor, limit);
-  return { schemaVersion: "insider-transactions.v1", ticker, personKey, source: "events", items: page.items.map(({ personKey: _k, ownerCik: _c, name: _n, role: _r, ...row }) => row), nextCursor: page.nextCursor };
+  return { schemaVersion: "insider-transactions.v1", ticker, personKey, source: "events", items: page.items.map(row => omit(row, "personKey", "ownerCik", "name", "role")), nextCursor: page.nextCursor };
 }
 
 /* ---------- Validation: the site re-reads what the analysis backend serves ---------- */

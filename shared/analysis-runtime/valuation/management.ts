@@ -1,5 +1,6 @@
 import type { ManagementComparisonRow, ManagementTarget, ManagementTargetSet, ModelDrivers, ReferenceScenario, SanityGate } from "../../analysis-contract/valuation.ts";
 import type { CalcRequest } from "./calculator.ts";
+import { omit } from "../omit.ts";
 
 /**
  * The management case (docs/valuation-v2-SPEC.md §3b): a reference path computed by code from management's cited
@@ -119,7 +120,7 @@ export function managementDrivers(base: Fcff, set: ManagementTargetSet, periodEn
   const build = managementBuildCapex(set, periodEnd, path, facts);
   if (build) { anchors.push(...build.anchors.map(a => ({ ...a, path: null }))); notes.push(...build.notes, `build capex from the capex and cash-flow targets: ${build.buildCapex.map(v => (v / 1e9).toFixed(1)).join(", ")}B`); }
   for (const a of anchors) if (a.metric === "revenue") a.path = path.revenue[a.year - 1] ?? null;
-  const { buildCapex: _dropped, ...rest } = base.path;
+  const rest = omit(base.path, "buildCapex");
   const drivers: Fcff = { ...base, path: { ...rest, revenueGrowth: revenue.growth, operatingMargin, salesToCapital, ...(build ? { buildCapex: build.buildCapex } : {}) } };
   return { drivers, anchors, notes };
 }
@@ -173,6 +174,6 @@ export function managementFactsOf(facts: Array<{ id: string; value: number }>, r
 /** A request whose three scenarios are the management path, for its own cross-check under the shared rate, shares and bridge; the judged probabilities, the comparison and the consensus belong to the researched model and stay out. */
 export function managementRequest(request: CalcRequest, drivers: Fcff): CalcRequest {
   const scenario = (narrative: string) => ({ narrative, probability: null, triggers: [], invalidation: [], evidenceIds: [], drivers });
-  const { management: _m, scenarioProbabilities: _p, managementComparison: _c, consensusNote: _n, ...context } = request.context ?? {};
+  const context = omit(request.context ?? {}, "management", "scenarioProbabilities", "managementComparison", "consensusNote");
   return { ...request, scenarios: { bear: scenario("management case"), base: scenario("management case"), bull: scenario("management case") }, context: { ...context, consensus: null } };
 }

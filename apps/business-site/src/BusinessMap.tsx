@@ -37,7 +37,7 @@ import { heroTiles, type HeroTile, type HeroTone } from "./hero-model";
 import { ShareholderReturns } from "./ShareholderReturns";
 import { MomentumTag } from "./MomentumTag";
 import { NonOperatingTag } from "./NonOperatingTag";
-import { nonOperating, type NonOperating } from "./non-operating";
+import { nonOperating } from "./non-operating";
 import { basisChangedAt, businessValue, yearAgoOnBasis } from "@/shared/analysis-runtime/segment-basis";
 import { momentumOf, type Momentum } from "./momentum";
 import { marketCapOf, shareholderReturns } from "./shareholder-returns";
@@ -55,7 +55,7 @@ import { ReportLens } from "./ReportLens";
 import { Timeline } from "./Timeline";
 import { fiscalPhrase } from "./PeriodMark";
 import { lazy, Suspense } from "react";
-import { getLocale, messages, useLocale } from "@/packages/web/src/i18n";
+import { getLocale, messages, useLocale, type Locale } from "@/packages/web/src/i18n";
 import { SourceLanguage, langOf } from "@/packages/web/src/i18n/SourceLanguage";
 import type { ValuationResponse } from "@/shared/analysis-contract/valuation";
 import { ValuationPanel } from "./ValuationPanel";
@@ -160,8 +160,8 @@ type StatementView = Exclude<View, "valuation">;
 const VIEWS: readonly View[] = ["valuation", "profit", "cash", "balance"];
 /** Every change on the stage is against one base: the same quarter a year earlier (YoY) or the quarter before (QoQ). */
 type Basis = "yoy" | "qoq";
-const basisWords = (basis: Basis): CompareBasis & { period: string } => basis === "yoy"
-  ? { change: yoyLabel(getLocale()), prior: m.lastYear, period: m.yearAgo } : { change: qoqLabel(getLocale()), prior: m.lastQuarter, period: m.lastQuarterPeriod };
+const basisWords = (basis: Basis, locale: Locale): CompareBasis & { period: string } => basis === "yoy"
+  ? { change: yoyLabel(locale), prior: m.lastYear, period: m.yearAgo } : { change: qoqLabel(locale), prior: m.lastQuarter, period: m.lastQuarterPeriod };
 /** The quarter as a label names it: the flow's own label in English, the quarter's end elsewhere. */
 const periodName = (ticker: string, q: BusinessFlowQuarter) => {
   const labels = fiscalPhrase(ticker, q.periodEnd, q.periodStart);
@@ -333,7 +333,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
   const lastQuarter = useMemo(() => quarter ? previousQuarter(quarter, quarters) : null, [quarter, quarters]);
   const basis: Basis = chosenBasis ?? (yearAgo || !lastQuarter ? "yoy" : "qoq");
   const previous = basis === "yoy" ? yearAgo : lastQuarter;
-  const word = useMemo(() => basisWords(basis), [basis, locale]);
+  const word = useMemo(() => basisWords(basis, locale), [basis, locale]);
   const slots = useMemo(() => hueSlots(quarters), [quarters]);
   const { items, quantified } = useMemo(() => businessItems(quarter, slots), [quarter, slots]);
   const [selected, setSelected] = useState<string | null>(() => new URLSearchParams(location.search).get("business"));
@@ -550,7 +550,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
         tip: { title: m.thisGuidance(markSentence(b.item, dollars)), color: colorOf(b.node), note: b.item.quote,
           rows: [[b.derived ? m.derivedGuidance : m.guidanceRange, `${dollars(b.low)}–${dollars(b.high)}`], [m.thisQuarter, money(amountOfNode(b.node))], [m.result, VERDICT[b.verdict]], [m.issued, b.item.issuedAt.slice(0, 10)]],
           link: b.source ? m.source(b.source.title) : undefined } })),
-      pills: marks.pills.map(p => ({ node: p.node, qualifier: pillQualifier(p.item), text: p.text, implied: p.item.derived ? `≈ ${range(dollars(p.item.derived.low), dollars(p.item.derived.high), getLocale())}` : null, action: p.action ?? null, glyph: p.action ? ACTION_GLYPH[p.action] : "", url: p.source?.url ?? null,
+      pills: marks.pills.map(p => ({ node: p.node, qualifier: pillQualifier(p.item), text: p.text, implied: p.item.derived ? `≈ ${range(dollars(p.item.derived.low), dollars(p.item.derived.high), locale)}` : null, action: p.action ?? null, glyph: p.action ? ACTION_GLYPH[p.action] : "", url: p.source?.url ?? null,
         tip: { title: m.nextGuidance(markSentence(p.item, dollars)), color: colorOf(p.node), note: p.item.quote,
           rows: [...(p.action && p.action !== "initiated" ? [[m.vsPrevious, actionName(p.action) + (p.item.previous && p.item.previous.low != null ? m.previously(p.item.measure === "growth" || p.item.unit === "percent" ? `${p.item.previous.low}%–${p.item.previous.high}%` : `${dollars(p.item.previous.low)}–${dollars(p.item.previous.high)}`) : "")] as [string, string]] : []), [m.issued, p.item.issuedAt.slice(0, 10)]],
           link: p.source ? m.source(p.source.title) : undefined } })),

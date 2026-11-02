@@ -380,7 +380,7 @@ export function FlowChart({ graph, copy, money, colorOf, active, focusSlot, onHo
     setAimed({ camera: focusCamera, key: revealKey });
     if (reducedMotion()) setCamera(focusCamera);
   }
-  useEffect(() => { drag.current = null; flyTo(focusCamera); }, [focusCamera, revealKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { drag.current = null; flyTo(focusCamera); }, [focusCamera, revealKey]);
   const viewportWidth = worldW / camera.zoom, viewportHeight = worldH / camera.zoom;
 
 

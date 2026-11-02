@@ -64,9 +64,6 @@ const rail = (events: CompanyEvent[]) => {
 };
 const ALL = rail([...WINDOW, ...OLDER, EARNINGS]);
 const IN_WINDOW = WINDOW.map(e => e.id);
-/** The rail's MM.DD date, as a row's meta line starts. */
-const shortDay = (day: string) => `${day.slice(5, 7)}.${day.slice(8, 10)}`;
-
 /** The people of a rail's filings, as the rail groups them before the ledger answers. */
 const personsOf = (items: typeof ALL) => personsFromEvents(items.flatMap(item => item.kind === "event" && item.event.insider ? [item.event] : []), NOW);
 const PERSONS = personsOf(ALL);

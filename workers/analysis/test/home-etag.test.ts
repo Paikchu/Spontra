@@ -7,7 +7,7 @@ import { dataResponse } from "../src/read-api/http.ts";
 // Empty stored publications; only read operations are available to the route.
 function emptyDatabase(): D1Database {
   const statement = {
-    bind: (..._values: unknown[]) => statement,
+    bind: () => statement,
     all: async () => ({ results: [] }),
   };
   return { prepare: (sql: string) => {

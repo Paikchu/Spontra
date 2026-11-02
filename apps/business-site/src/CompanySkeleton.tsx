@@ -28,14 +28,14 @@ export function CompanySkeleton({ ticker, tools }: { ticker: string; tools: Reac
         <CompanyDetailsSkeleton />
       </Rail>
       <section className="stage" data-timeline="" data-view="profit" data-trend="" aria-hidden="true">
-        <div className="stage-tabs"><span className="trend-views stage-views">{(["valuation", "profit", "cash", "balance"] as const).map(v => <button key={v} type="button" tabIndex={-1} aria-checked="false">{VIEW_LABEL[v]}</button>)}</span></div>
+        <div className="stage-tabs"><span className="trend-views stage-views">{(["valuation", "profit", "cash", "balance"] as const).map(v => <button key={v} type="button" role="radio" tabIndex={-1} aria-checked="false">{VIEW_LABEL[v]}</button>)}</span></div>
         <header className="stage-head stage-head--summary">
           <div className="stats">
             {[0, 1, 2, 3].map(i => <div key={i} className="stat"><span className="stat-label ghost-text">{m.revenue}</span><strong className="stat-value ghost-text">$00.0B</strong></div>)}
           </div>
           <div className="stage-controls">
-            <span className="trend-views stage-views"><button type="button" tabIndex={-1} aria-checked="true">{yoyLabel(getLocale())}</button><button type="button" tabIndex={-1} aria-checked="false">{qoqLabel(getLocale())}</button></span>
-            <span className="trend-views stage-views"><button type="button" tabIndex={-1} aria-checked="true">{m.summary}</button><button type="button" tabIndex={-1} aria-checked="false">{m.detail}</button></span>
+            <span className="trend-views stage-views"><button type="button" role="radio" tabIndex={-1} aria-checked="true">{yoyLabel(getLocale())}</button><button type="button" role="radio" tabIndex={-1} aria-checked="false">{qoqLabel(getLocale())}</button></span>
+            <span className="trend-views stage-views"><button type="button" role="radio" tabIndex={-1} aria-checked="true">{m.summary}</button><button type="button" role="radio" tabIndex={-1} aria-checked="false">{m.detail}</button></span>
           </div>
         </header>
         <div className="chart"><div className="ghost-chart" /></div>

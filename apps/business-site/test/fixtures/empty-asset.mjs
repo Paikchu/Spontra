@@ -1,1 +1,2 @@
-export default "";
+const emptyAsset = "";
+export default emptyAsset;

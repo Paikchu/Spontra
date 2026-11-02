@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { toolResult, type AgentBlock, type AgentSchema, type AgentTool, type ToolCall } from "../tool-loop.ts";
+import { omit } from "../../../../shared/analysis-runtime/omit.ts";
 
 /**
  * The tool contract every agent shares (docs/stage-agent-design.md §4), after DeepSeek Harness's `ToolDefinition`:
@@ -47,7 +48,7 @@ export type ToolOutcome = { observation: string; error?: boolean; value?: unknow
 /** The model-facing schema of a tool, from its zod parameters. */
 export function toolSchema<S>(tool: AnyTool<S>): AgentTool {
   const json = z.toJSONSchema(tool.parameters, { target: "draft-7", io: "input" }) as Record<string, unknown>;
-  const { $schema: _schema, ...rest } = json;
+  const rest = omit(json, "$schema");
   const input_schema = { type: "object", properties: {}, required: [], ...(tool.strict === false ? rest : closed(rest)) } as AgentSchema;
   return { name: tool.name, description: tool.description, ...(tool.strict === false ? {} : { strict: true as const }), input_schema };
 }
