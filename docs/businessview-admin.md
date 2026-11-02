@@ -41,7 +41,7 @@ Admin Worker：`financials`、`business-map`、`ai`、`library` 的白名单路�
 
 Spontra Analysis 对应路径为 `/admin/*`，经 `AdminGateway` 转发；默认入口的管理接口需要签名会话。现有公开只读凭证不能访问管理接口。报告管理本身使用已有表；财报数据维护任务使用下述新增迁移。
 
-后台代码位于 `apps/admin/`，部署为 `spontra-admin`，仅绑定 `ASSETS` 和 `SPONTRA_ANALYSIS`（`spontra-analysis`）。继续使用 HTTP Service Binding，生产配置缺少绑定时返回 503，不回退到公网 fetch。页面、样式和报告阅读组件保持原有设计，返回主站链接指向 `spontra-app`。
+后台代码位于 `apps/admin/`，部署为 `spontra-admin`，绑定 `ASSETS`、`SPONTRA_ANALYSIS`（`spontra-analysis` 的 `AdminGateway` 入口）和 `BUSINESS_SITE`（`spontra-business-map`，供「使用情况」页读取）。继续使用 HTTP Service Binding，生产配置缺少绑定时返回 503，不回退到公网 fetch。页面、样式和报告阅读组件保持原有设计，白名单中的「地图」链接指向 `spontra-business-map`。
 
 推送 `origin/main` 后，地图与后台的自动构建会先验证、构建后台，并在 CI 中发布独立 admin Worker。若未来要求只改后台就独立发布，再配置单独的 Workers Builds 项目和 watch paths。首次发布无需复制数据库、迁移表或新增密钥。Spontra Analysis 默认入口的管理接口仍要求签名会话。
 
