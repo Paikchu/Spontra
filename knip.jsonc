@@ -18,7 +18,7 @@
     "apps/business-site": {
       // worker/index.ts (wrangler "main") and src/main.tsx are detected; the HTML inputs come from vite.config.ts.
       "entry": ["index.html", "lens-frame.html", "test/*.test.ts"],
-      "project": ["src/**/*.{ts,tsx}", "worker/**/*.ts", "scripts/**/*.mjs"]
+      "project": ["src/**/*.{ts,tsx}", "worker/**/*.ts"]
     },
     "apps/admin": {
       "entry": ["index.html", "test/*.test.ts"],
