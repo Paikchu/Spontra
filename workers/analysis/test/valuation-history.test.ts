@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { evaluateHistory, historyAssumptionsSchema, historyRequest, readHistoryInput, replayHistory, type HistoryInput, type HistoryOutcome } from "../../../shared/analysis-runtime/valuation/history.ts";
+import { evaluateHistory, historyAssumptionsSchema, historyOutcomeSchema, historyRequest, readHistoryInput, replayHistory, type HistoryInput, type HistoryOutcome } from "../../../shared/analysis-runtime/valuation/history.ts";
 
 const hash = "a".repeat(64);
 function fixture(): HistoryInput {
@@ -186,4 +186,23 @@ test("first-release outcome records retain and verify their source publication t
   assert.doesNotThrow(() => evaluateHistory(readHistoryInput(fixture()), assumptions(), data, hash));
   data.actuals[0]!.availableAt = "2026-03-01T00:00:00Z";
   assert.throws(() => evaluateHistory(readHistoryInput(fixture()), assumptions(), data, hash), /dated first-release source/);
+});
+
+test("the named SPY benchmark uses the same holding period and includes cash dividends", () => {
+  const data = outcome(); data.actuals = [];
+  data.benchmarkSymbol = "SPY"; data.benchmarkSourceId = "benchmark-SPY"; data.benchmarkReturnBasis = "cash_dividends_not_reinvested";
+  data.sources = [{ id: "benchmark-SPY", kind: "market_daily", url: "https://example.org/SPY", availableAt: "2026-01-12T21:00:00Z", path: "spy-daily.json", sha256: hash }];
+  data.benchmark[1]!.dividend = 2;
+  const result = evaluateHistory(readHistoryInput(fixture()), assumptions(), historyOutcomeSchema.parse(data), hash);
+  assert.equal(result.benchmarkSymbol, "SPY"); assert.equal(result.benchmarkSourceId, "benchmark-SPY");
+  assert.equal(result.benchmarkReturnBasis, "cash_dividends_not_reinvested");
+  const first = result.market[0]!;
+  assert.ok("benchmarkReturn" in first && first.benchmarkReturn != null && Math.abs(first.benchmarkReturn - 0.07) < 1e-9);
+  assert.ok("excessReturn" in first && first.excessReturn != null && Math.abs(first.excessReturn - 0.04) < 1e-9);
+  data.benchmark[1]!.date = "2026-01-09"; data.benchmark[1]!.closeAt = "2026-01-09T21:00:00Z";
+  const mismatched = evaluateHistory(readHistoryInput(fixture()), assumptions(), data, hash).market[0]!;
+  assert.ok("benchmarkReturn" in mismatched && mismatched.benchmarkReturn === null);
+  assert.equal(historyOutcomeSchema.safeParse({ ...data, benchmarkSourceId: undefined }).success, false);
+  data.sources[0]!.availableAt = "2026-02-03T21:00:00Z";
+  assert.throws(() => evaluateHistory(readHistoryInput(fixture()), assumptions(), data, hash), /eligible dated outcome source/);
 });

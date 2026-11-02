@@ -209,7 +209,11 @@ export function historyRequest(input: HistoryInput, artifact: HistoryAssumptions
 
 export const historyOutcomeSchema = z.object({
   schemaVersion: z.literal("valuation-history-outcome.v1"), ticker: z.string(), cutoff: instant, inputSha256: hash, evaluationAsOf: instant,
+  benchmarkSymbol: z.string().min(1).optional(), benchmarkSourceId: z.string().min(1).optional(), benchmarkReturnBasis: z.literal("cash_dividends_not_reinvested").optional(),
   market: z.array(bar), benchmark: z.array(bar), actuals: z.array(operatingMeasure.extend({ availableAt: instant, sourceId: z.string() })), sources: z.array(source).optional(),
+}).superRefine((value, ctx) => {
+  const present = [value.benchmarkSymbol, value.benchmarkSourceId, value.benchmarkReturnBasis].filter(v => v != null).length;
+  if (present !== 0 && present !== 3) ctx.addIssue({ code: "custom", path: ["benchmarkSymbol"], message: "Benchmark symbol, source id and return basis must be provided together" });
 });
 export type HistoryOutcome = z.infer<typeof historyOutcomeSchema>;
 
@@ -221,6 +225,10 @@ export function evaluateHistory(input: HistoryInput, artifact: HistoryAssumption
     if (!source || source.availableAt !== actual.availableAt) throw new Error(`Outcome actual lacks its dated first-release source: ${actual.metric} ${actual.periodEnd}`);
   }
   const asOf = Date.parse(outcome.evaluationAsOf);
+  if (outcome.benchmarkSourceId) {
+    const source = outcome.sources?.find(s => s.id === outcome.benchmarkSourceId);
+    if (!source || Date.parse(source.availableAt) > asOf) throw new Error("Benchmark has no eligible dated outcome source");
+  }
   const operating = artifact.operatingForecasts.map(forecast => {
     const actual = outcome.actuals.filter(a => a.metric === forecast.metric && a.periodStart === forecast.periodStart && a.periodEnd === forecast.periodEnd && a.unit === forecast.unit && a.basis === forecast.basis && Date.parse(a.availableAt) <= asOf).sort((a, b) => a.availableAt.localeCompare(b.availableAt))[0];
     return actual ? { ...forecast, status: "observed", actual: actual.value, error: forecast.value - actual.value, absolutePercentError: actual.value > 0 ? Math.abs(forecast.value / actual.value - 1) : null, sourceId: actual.sourceId } : { ...forecast, status: "pending", reason: "No disclosed actual for the same period and basis at the evaluation cutoff" };
@@ -233,13 +241,13 @@ export function evaluateHistory(input: HistoryInput, artifact: HistoryAssumption
     if (!stock || (Date.parse(targetDate) - Date.parse(stock.date)) / 86_400_000 > 7) return { months, targetDate, status: "pending", reason: "No completed market close near the target date" };
     const dividends = outcome.market.filter(b => b.date <= stock.date && Date.parse(b.closeAt) > Date.parse(input.cutoff)).reduce((n, b) => n + b.dividend, 0);
     const benchmarkStart = outcome.benchmark.find(b => b.date === input.market.quote.priceDate);
-    const benchmarkEnd = outcome.benchmark.filter(b => b.date <= stock.date).at(-1);
+    const benchmarkEnd = outcome.benchmark.filter(b => b.date <= stock.date && Date.parse(b.closeAt) <= asOf).at(-1);
     const benchmarkDividends = outcome.benchmark.filter(b => b.date > input.market.quote.priceDate && b.date <= stock.date).reduce((n, b) => n + b.dividend, 0);
     const totalReturn = (stock.close + dividends) / input.market.quote.price - 1;
-    const benchmarkReturn = benchmarkStart && benchmarkEnd ? (benchmarkEnd.close + benchmarkDividends) / benchmarkStart.close - 1 : null;
+    const benchmarkReturn = benchmarkStart && benchmarkEnd?.date === stock.date ? (benchmarkEnd.close + benchmarkDividends) / benchmarkStart.close - 1 : null;
     return { months, targetDate, status: "observed", priceDate: stock.date, price: stock.close, dividends, totalReturn, benchmarkReturn, excessReturn: benchmarkReturn == null ? null : totalReturn - benchmarkReturn };
   });
-  return { operating, market, limitations: ["Four reconstructed quarters do not establish accuracy or calibrate probabilities.", "Returns include cash dividends without reinvestment; these are research comparisons, not simulated fills.", "An intrinsic-value estimate is not a 12-month price target."] };
+  return { operating, market, benchmarkSymbol: outcome.benchmarkSymbol ?? null, benchmarkSourceId: outcome.benchmarkSourceId ?? null, benchmarkReturnBasis: "cash_dividends_not_reinvested", limitations: ["Four reconstructed quarters do not establish accuracy or calibrate probabilities.", "Returns include cash dividends without reinvestment; these are research comparisons, not simulated fills.", "An intrinsic-value estimate is not a 12-month price target."] };
 }
 
 export function replayHistory(input: HistoryInput, artifact: HistoryAssumptions, inputSha256: string) {
