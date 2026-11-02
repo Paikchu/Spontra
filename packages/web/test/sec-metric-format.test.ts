@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { formatSecMetricLabel } from "../src/model/sec-metric-format.ts";
+import { formatSecMetricLabel, formatSecMetricValue } from "../src/model/sec-metric-format.ts";
 
 test("a key ending in a known metric reads as that metric of the part its leading words name", () => {
   assert.equal(formatSecMetricLabel("data_center_revenue"), "Data Center revenue");
@@ -23,4 +23,12 @@ test("Chinese labels translate growth and common operating keys and mark unknown
   assert.equal(formatSecMetricLabel("revenue_growth"), "revenue growth");
   assert.equal(formatSecMetricLabel("data_center_units"), "data center units");
   assert.equal(formatSecMetricLabel("subscriber_churn"), "subscriber churn");
+});
+
+test("a ratio metric is scaled by its unit, and one without a unit keeps its stored number", () => {
+  assert.equal(formatSecMetricValue("gross_margin", "0.08", "ratio"), "8.0%");
+  assert.equal(formatSecMetricValue("gross_margin", "1.2", "%"), "1.2%");
+  assert.equal(formatSecMetricValue("revenue_growth", "1.2", "percent"), "1.2%");
+  assert.equal(formatSecMetricValue("revenue_growth", "0.8"), "0.8");
+  assert.equal(formatSecMetricValue("revenue_growth", "75"), "75");
 });

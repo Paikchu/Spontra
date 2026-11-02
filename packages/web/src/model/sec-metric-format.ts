@@ -87,7 +87,7 @@ const METRIC_LABELS_ZH: Record<string, string> = {
   arpu: "每用户平均收入",
 };
 
-/** Keys whose value is a ratio, whether the model stored 0.75 or 75. */
+/** Keys whose value is a ratio; its `unit` says whether the model stored 0.75 ("ratio") or 75 ("%"). */
 const RATIO_KEY = /(margin|ratio|rate|yield|growth|percent)$/;
 
 /**
@@ -131,8 +131,10 @@ export function formatSecMetricValue(metricKey: string, rawValue: string, unit?:
   if (!Number.isFinite(numeric)) return value;
 
   if (RATIO_KEY.test(metricKey.trim().toLowerCase())) {
-    const percent = unit === "ratio" ? numeric * 100 : unit === "%" || unit === "percent" ? numeric : Math.abs(numeric) <= 1 ? numeric * 100 : numeric;
-    return formatPct(percent);
+    if (unit === "ratio") return formatPct(numeric * 100);
+    if (unit === "%" || unit === "percent") return formatPct(numeric);
+    // Without a unit, 0.8 could be 80 % or 0.8 %; the stored number is shown rather than a guessed scale.
+    return value;
   }
 
   const large = Math.abs(numeric) >= 1e4;
