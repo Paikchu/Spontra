@@ -2,9 +2,6 @@
 
 import * as React from "react"
 
-// Format: { THEME_NAME: CSS_SELECTOR }
-export const CHART_THEMES = { light: "", dark: ".dark" } as const
-
 export type ChartConfig = Record<
   string,
   {
@@ -12,7 +9,7 @@ export type ChartConfig = Record<
     icon?: React.ComponentType
   } & (
     | { color?: string; theme?: never }
-    | { color?: never; theme: Record<keyof typeof CHART_THEMES, string> }
+    | { color?: never; theme: Record<"light" | "dark", string> }
   )
 >
 
