@@ -48,7 +48,16 @@ export type InsiderTransactionRow = {
   isNew: boolean;
 };
 
-export type InsiderTotals = { shares: number; value: number; count: number };
+export type InsiderTotals = {
+  shares: number;
+  /** Null when any counted line is unpriced. */
+  value: number | null;
+  count: number;
+  /** Sum of the priced lines, even when the full value is unknown. */
+  pricedValue: number;
+  pricedCount: number;
+  unpricedCount: number;
+};
 
 export type InsiderPersonSummary = {
   /** The owner CIK, or `name:<normalized name>` when the filing gives none. */
@@ -68,7 +77,7 @@ export type InsiderPersonSummary = {
   sold: InsiderTotals;
   bought: InsiderTotals;
   /** bought − sold: negative is net sold. */
-  net: { shares: number; value: number };
+  net: { shares: number; value: number | null; complete: boolean };
   transactions: number;
   filings: number;
   /** Shares held directly after the latest non-derivative line that reports it. */

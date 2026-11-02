@@ -1,5 +1,5 @@
 import type { CompanyEvent, InsiderTransaction, InsiderTransactionCode } from "../../../../shared/analysis-contract/events.ts";
-import type { InsiderPersonSummary, InsiderTransactionRow, InsiderTransactionsPage, InsiderTransactionsResponse, InsidersPublication, InsidersResponse } from "../../../../shared/analysis-contract/insiders.ts";
+import type { InsiderPersonSummary, InsiderTotals, InsiderTransactionRow, InsiderTransactionsPage, InsiderTransactionsResponse, InsidersPublication, InsidersResponse } from "../../../../shared/analysis-contract/insiders.ts";
 import { compareRows, decodeCursor, encodeCursor, filingRows, historyFromEvents, historyLimit, INSIDER_NEW_DAYS, isNewRow, PERSON_KEY, personsFromEvents, summarizePerson, type InsiderLedgerRow } from "../../../../shared/analysis-runtime/insiders.ts";
 import { TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 import { omit } from "../../../../shared/analysis-runtime/omit.ts";
@@ -77,8 +77,9 @@ export function personRow(ticker: string, issuer: string, key: string, summary: 
   return {
     ticker, owner_key: key, issuer_cik: issuer, owner_cik: summary.ownerCik, name: summary.name, title: summary.role.title, is_director: summary.role.isDirector ? 1 : 0, is_officer: summary.role.isOfficer ? 1 : 0,
     is_ten_percent_owner: summary.role.isTenPercentOwner ? 1 : 0, first_trade_at: summary.firstTradeAt, last_trade_at: summary.lastTradeAt, last_new_trade_at: summary.lastNewTradeAt,
-    latest_json: summary.latest ? JSON.stringify(summary.latest) : null, sold_shares: summary.sold.shares, sold_value: summary.sold.value, sell_count: summary.sold.count,
-    bought_shares: summary.bought.shares, bought_value: summary.bought.value, buy_count: summary.bought.count, net_shares: summary.net.shares, net_value: summary.net.value,
+    // These existing NOT NULL columns store priced subtotals; public values get coverage from the transaction rows on read.
+    latest_json: summary.latest ? JSON.stringify(summary.latest) : null, sold_shares: summary.sold.shares, sold_value: summary.sold.pricedValue, sell_count: summary.sold.count,
+    bought_shares: summary.bought.shares, bought_value: summary.bought.pricedValue, buy_count: summary.bought.count, net_shares: summary.net.shares, net_value: summary.bought.pricedValue - summary.sold.pricedValue,
     transaction_count: summary.transactions, filing_count: summary.filings, held_after: summary.heldAfter, planned: summary.planned ? 1 : 0, updated_at: stamp,
   };
 }
@@ -163,15 +164,23 @@ const checkTicker = (raw: string) => {
   return ticker;
 };
 
-function personFromRow(r: PersonRow, newCount: number, now: Date): InsiderPersonSummary {
+type PriceCoverage = Pick<InsiderTotals, "pricedValue" | "pricedCount" | "unpricedCount">;
+type CoverageRow = PriceCoverage & { owner_key: string; side: "sell" | "buy" };
+
+function personFromRow(r: PersonRow, newCount: number, now: Date, coverage: ReadonlyMap<string, PriceCoverage>): InsiderPersonSummary {
   let latest: InsiderTransactionRow | null = null;
   try { latest = r.latest_json ? JSON.parse(r.latest_json) as InsiderTransactionRow : null; } catch { latest = null; }
   if (latest) latest = { ...latest, isNew: isNewRow(latest, now) };
+  const totals = (side: "sell" | "buy", shares: number, count: number): InsiderTotals => {
+    const c = coverage.get(`${r.owner_key}:${side}`) ?? { pricedValue: 0, pricedCount: 0, unpricedCount: count };
+    return { shares, count, value: c.unpricedCount > 0 ? null : c.pricedValue, pricedValue: c.pricedValue, pricedCount: c.pricedCount, unpricedCount: c.unpricedCount };
+  };
+  const sold = totals("sell", r.sold_shares, r.sell_count), bought = totals("buy", r.bought_shares, r.buy_count);
   return {
     key: r.owner_key, ownerCik: r.owner_cik, name: r.name, role: { title: r.title, isDirector: r.is_director === 1, isOfficer: r.is_officer === 1, isTenPercentOwner: r.is_ten_percent_owner === 1 },
     firstTradeAt: r.first_trade_at, lastTradeAt: r.last_trade_at, latest, lastNewTradeAt: r.last_new_trade_at, newCount,
-    sold: { shares: r.sold_shares, value: r.sold_value, count: r.sell_count }, bought: { shares: r.bought_shares, value: r.bought_value, count: r.buy_count },
-    net: { shares: r.net_shares, value: r.net_value }, transactions: r.transaction_count, filings: r.filing_count, heldAfter: r.held_after, planned: r.planned === 1,
+    sold, bought, net: { shares: r.net_shares, value: bought.value == null || sold.value == null ? null : bought.value - sold.value, complete: bought.value != null && sold.value != null },
+    transactions: r.transaction_count, filings: r.filing_count, heldAfter: r.held_after, planned: r.planned === 1,
   };
 }
 
@@ -183,10 +192,15 @@ export async function readInsidersResponse(db: D1Database, rawTicker: string, no
   if (rows.results.length) {
     // The new window moves with the clock, so the counts are read live: one indexed read over the lines seen lately.
     const cutoff = new Date(now.getTime() - INSIDER_NEW_DAYS * 86_400_000).toISOString();
-    const recent = await db.prepare("SELECT owner_key, filed_at, first_seen_at FROM insider_transactions WHERE ticker = ? AND first_seen_at >= ?").bind(ticker, cutoff).all<{ owner_key: string; filed_at: string; first_seen_at: string }>();
+    const [recent, coverage] = await Promise.all([
+      db.prepare("SELECT owner_key, filed_at, first_seen_at FROM insider_transactions WHERE ticker = ? AND first_seen_at >= ?").bind(ticker, cutoff).all<{ owner_key: string; filed_at: string; first_seen_at: string }>(),
+      db.prepare(`SELECT owner_key, side, COALESCE(SUM(value), 0) AS pricedValue, COUNT(value) AS pricedCount, COUNT(*) - COUNT(value) AS unpricedCount
+        FROM insider_transactions WHERE ticker = ? AND side IN ('sell', 'buy') GROUP BY owner_key, side`).bind(ticker).all<CoverageRow>(),
+    ]);
+    const bySide = new Map(coverage.results.map(c => [`${c.owner_key}:${c.side}`, c]));
     const counts = new Map<string, number>();
     for (const r of recent.results) if (isNewRow({ filedAt: r.filed_at, firstSeenAt: r.first_seen_at }, now)) counts.set(r.owner_key, (counts.get(r.owner_key) ?? 0) + 1);
-    const persons = rows.results.map(r => personFromRow(r, counts.get(r.owner_key) ?? 0, now));
+    const persons = rows.results.map(r => personFromRow(r, counts.get(r.owner_key) ?? 0, now, bySide));
     publication = { schemaVersion: "insiders.v1", ticker, source: "ledger", newDays: INSIDER_NEW_DAYS, asOf: now.toISOString(), persons };
   } else {
     const events = (await readEventsResponse(db, ticker)).events;

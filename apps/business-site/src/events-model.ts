@@ -1,6 +1,7 @@
 import { insiderCompactMoney } from "./insider-money";
 import type { BusinessFlowQuarter } from "@/shared/analysis-contract/business-flow";
 import type { CompanyEvent, EventClass, EventsPublication } from "@/shared/analysis-contract/events";
+import type { InsiderTotals } from "@/shared/analysis-contract/insiders";
 import type { FindingFundamentals } from "@/shared/analysis-runtime/findings";
 import { isOpenMarketInsiderTrade, DAY_MS, EVENT_CLASS_LABEL as EVENT_CLASS_LABEL_EN, eventClassLabel, filingDocumentTitle, holdingPath, insiderCadence, insiderCluster, insiderTone, insiderVerdict, isQuietInsider, soldShareOfHolding, stakeChange, type InsiderTone, type InsiderVerdict, type ShareCount, type StakeChange } from "@/shared/analysis-runtime/events";
 import { compactMoney, compactShares, shortPeriod } from "@/shared/analysis-runtime/locale";
@@ -37,6 +38,10 @@ export function partialDollars(values: readonly (number | null)[]): string {
   const total = dollars(known.reduce((s, v) => s + v, 0));
   return known.length === values.length ? total : known.length ? `≥ ${total}` : "—";
 }
+
+/** Person totals retain the priced subtotal when the full amount is unknown. */
+export const insiderTotalDollars = (totals: InsiderTotals): string => partialDollars(totals.value != null ? [totals.value]
+  : totals.pricedCount > 0 ? [totals.pricedValue, null] : [null]);
 
 /** "2026.08 report" / "2026.08 财报": a quarter's report by its period end. */
 export const periodReport = (periodEnd: string) => m.report(shortPeriod(periodEnd));

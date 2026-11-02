@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import type { CompanyEvent, InsiderLine, InsiderTransaction } from "../../../shared/analysis-contract/events.ts";
-import { insiderPersonKey, personsFromEvents } from "../../../shared/analysis-runtime/insiders.ts";
+import { insiderPersonKey, personsFromEvents, readInsidersPublication } from "../../../shared/analysis-runtime/insiders.ts";
 import { parseForm4 } from "../src/events/form4.ts";
 import { readInsidersResponse, readInsiderTransactionsResponse, recordedAccessions, recordInsiderFilings, type InsiderFilingInput } from "../src/events/insider-ledger.ts";
 import { refreshCompanyEvents } from "../src/events/workflow.ts";
@@ -56,7 +56,9 @@ test("lines group by reporting owner CIK across filings, padded or not; a filing
   assert.deepEqual(persons.map(p => [p.key, p.name, p.transactions, p.filings, p.lastTradeAt]), [["2114024", "Yuan Lipen", 3, 2, "2026-10-19"], ["name:wei c c", "Wei C.C.", 1, 1, "2026-08-30"]]);
   const yuan = persons[0]!;
   assert.deepEqual({ sold: yuan.sold, bought: yuan.bought, net: yuan.net, heldAfter: yuan.heldAfter }, {
-    sold: { shares: 200, value: 62_000, count: 1 }, bought: { shares: 1_500, value: 440_000, count: 2 }, net: { shares: 1_300, value: 378_000 }, heldAfter: 11_300,
+    sold: { shares: 200, value: 62_000, count: 1, pricedValue: 62_000, pricedCount: 1, unpricedCount: 0 },
+    bought: { shares: 1_500, value: 440_000, count: 2, pricedValue: 440_000, pricedCount: 2, unpricedCount: 0 },
+    net: { shares: 1_300, value: 378_000, complete: true }, heldAfter: 11_300,
   });
   assert.equal(yuan.latest!.id, "0001046179-26-000800:1");
   assert.equal(yuan.latest!.side, "sell");
@@ -66,6 +68,60 @@ test("lines group by reporting owner CIK across filings, padded or not; a filing
     .map((f): CompanyEvent => ({ ...f.event, ticker: "TSM", eventDate: f.event.filedAt, items: [], class: "insider", description: "", title: null, importance: "normal", exhibits: [], summary: null, insider: f.transaction }));
   assert.deepEqual(personsFromEvents(events, NOW).map(p => [p.key, p.transactions]), [["2114024", 2]]);
   assert.equal(insiderPersonKey({ ownerCik: "0002114024", ownerName: "x" }), "2114024");
+});
+
+for (const side of ["S", "P"] as const) test(`an older unpriced ${side} line makes ledger and fallback totals and net unknown`, async () => {
+  const db = database();
+  const filings = [
+    filing("0001046179-26-000700", "2026-07-10", [line("2026-07-09", side, 100, null, 10_000)]),
+    filing("0001046179-26-000800", "2026-10-20", [line("2026-10-19", side, 200, 310, 10_200), line("2026-10-19", "G", 50, null, 10_250)]),
+  ];
+  await recordInsiderFilings(db, filings, NOW);
+  const ledger = (await readInsidersResponse(db, "TSM", NOW)).insiders!;
+  const person = ledger.persons[0]!;
+  const totals = side === "S" ? person.sold : person.bought;
+  const other = side === "S" ? person.bought : person.sold;
+  assert.deepEqual(totals, { shares: 300, value: null, count: 2, pricedValue: 62_000, pricedCount: 1, unpricedCount: 1 });
+  assert.deepEqual(other, { shares: 0, value: 0, count: 0, pricedValue: 0, pricedCount: 0, unpricedCount: 0 });
+  assert.deepEqual(person.net, { shares: side === "S" ? -300 : 300, value: null, complete: false });
+  assert.equal(person.transactions, 3, "unpriced gifts are not counted in open-market totals");
+  // The existing NOT NULL columns still hold known subtotals; the API derives coverage from all lines, including history.
+  const stored = await db.prepare("SELECT sold_value, bought_value, net_value FROM insider_persons WHERE ticker = ?").bind("TSM").first<{ sold_value: number; bought_value: number; net_value: number }>();
+  assert.deepEqual({ ...stored }, { sold_value: side === "S" ? 62_000 : 0, bought_value: side === "P" ? 62_000 : 0, net_value: side === "S" ? -62_000 : 62_000 });
+  const events = filings.map((f): CompanyEvent => ({ ...f.event, ticker: "TSM", eventDate: f.event.filedAt, items: [], class: "insider", description: "", title: null, importance: "normal", exhibits: [], summary: null, insider: f.transaction }));
+  const fallback = personsFromEvents(events, NOW)[0]!;
+  assert.deepEqual({ sold: fallback.sold, bought: fallback.bought, net: fallback.net }, { sold: person.sold, bought: person.bought, net: person.net });
+  const parsed = readInsidersPublication(ledger, "TSM")!.persons[0]!;
+  assert.deepEqual({ sold: parsed.sold, bought: parsed.bought, net: parsed.net }, { sold: person.sold, bought: person.bought, net: person.net }, "null values and coverage survive validation");
+  // Re-reading an unpriced filing with its price supplied restores exact values without a migration.
+  await recordInsiderFilings(db, [{ ...filings[0]!, transaction: { ...filings[0]!.transaction, lines: [line("2026-07-09", side, 100, 300, 10_000)] } }], NOW);
+  const corrected = (await readInsidersResponse(db, "TSM", NOW)).insiders!.persons[0]!;
+  assert.deepEqual(side === "S" ? corrected.sold : corrected.bought, { shares: 300, value: 92_000, count: 2, pricedValue: 92_000, pricedCount: 2, unpricedCount: 0 });
+  assert.deepEqual(corrected.net, { shares: side === "S" ? -300 : 300, value: side === "S" ? -92_000 : 92_000, complete: true });
+});
+
+test("fully unpriced lines stay unknown while a reported zero price counts as priced", async () => {
+  const db = database();
+  await recordInsiderFilings(db, [filing("0001046179-26-000724", "2026-10-08", [line("2026-10-07", "S", 100, null, 10_000), line("2026-10-07", "P", 50, 0, 10_050)])], NOW);
+  const person = (await readInsidersResponse(db, "TSM", NOW)).insiders!.persons[0]!;
+  assert.deepEqual(person.sold, { shares: 100, value: null, count: 1, pricedValue: 0, pricedCount: 0, unpricedCount: 1 });
+  assert.deepEqual(person.bought, { shares: 50, value: 0, count: 1, pricedValue: 0, pricedCount: 1, unpricedCount: 0 });
+  assert.deepEqual(person.net, { shares: -50, value: null, complete: false });
+});
+
+test("legacy person publications without coverage retain their reported amounts", async () => {
+  const db = database();
+  await recordInsiderFilings(db, [filing("0001046179-26-000724", "2026-10-08", [line("2026-10-07", "S", 100, 300, 10_000)])], NOW);
+  const publication = (await readInsidersResponse(db, "TSM", NOW)).insiders!;
+  const person = publication.persons[0]!;
+  const legacy = { ...publication, persons: [{ ...person,
+    sold: { shares: 100, value: 30_000, count: 1 }, bought: { shares: 0, value: 0, count: 0 }, net: { shares: -100, value: -30_000 },
+  }] };
+  assert.deepEqual(readInsidersPublication(legacy, "TSM"), readInsidersPublication(publication, "TSM"));
+  for (const value of [NaN, Infinity]) {
+    assert.equal(readInsidersPublication({ ...publication, persons: [{ ...person, sold: { ...person.sold, value } }] }, "TSM"), null);
+    assert.equal(readInsidersPublication({ ...publication, persons: [{ ...person, net: { ...person.net, value } }] }, "TSM"), null);
+  }
 });
 
 test("recording the same filing again rewrites the same rows and keeps when they were first seen", async () => {
