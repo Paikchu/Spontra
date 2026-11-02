@@ -32,7 +32,11 @@ const goingConcernSchema = z.object({
   evidence: z.array(z.object({ evidenceId: z.string(), quote: z.string().min(20).max(1500) })).max(6),
 });
 type GoingConcernAssessment = z.infer<typeof goingConcernSchema>;
+export type FrozenResearchSource = { sourceId: string; title: string; text: string; url: string; publishedAt: string; form: string; kind: "sec" | "web" };
+
 export type ValuationState = {
+  frozenSources?: FrozenResearchSource[];
+  nearTermForecast?: { status: "unavailable"; reason: string } | { status: "available"; forecasts: Array<{ metric: string; periodStart: string; periodEnd: string; value: number; unit: string; basis: string; rationale: string; evidenceIds: string[] }> };
   input: ValuationInput;
   researchAsOf: string;
   now: string;
@@ -343,6 +347,27 @@ export function valuationTools(env: AnalysisEnv): AnyTool<ValuationState>[] {
   const db = env.DB!;
   const search = researchSearchConfigured(env) ? researchSearch(env) : null;
   return [
+    tool({ name: "list_snapshot_sources", description: "The only original documents available at this historical cutoff. Read them with read_snapshot_source; find offsets with find_snapshot_passages.", parameters: z.object({}), concurrencySafe: true,
+      execute: (_args, ctx) => (ctx.state.frozenSources ?? []).map(s => `${s.sourceId} | ${s.title} | published ${s.publishedAt} | ${s.text.length} characters`).join("\n"), observe: (_a, v) => v }),
+    tool({ name: "find_snapshot_passages", description: "Find original text in the frozen documents; returns offsets for read_snapshot_source.", parameters: z.object({ terms: z.array(z.string().min(2).max(80)).min(1).max(6) }), concurrencySafe: true,
+      execute: ({ terms }, ctx) => {
+        if (ctx.state.used.finds >= RESEARCH_BUDGET.finds) throw new Error("No finds left; read the frozen sources.");
+        ctx.state.used.finds++;
+        return (ctx.state.frozenSources ?? []).flatMap(s => terms.flatMap(term => {
+          const offset = s.text.toLowerCase().indexOf(term.toLowerCase());
+          return offset < 0 ? [] : [`${s.sourceId} offset ${Math.max(0, offset - 200)}: ${s.text.slice(Math.max(0, offset - 100), offset + 300)}`];
+        })).slice(0, 12).join("\n") || "No matching passage in the frozen sources.";
+      }, observe: (_a, v) => v }),
+    tool({ name: "read_snapshot_source", description: "Read original text from one frozen source and register evidence. Only evidence actually read may support a judgement.", parameters: z.object({ sourceId: z.string(), offset: z.number().int().min(0), length: z.number().int().min(100).max(READ_CHARS) }),
+      execute: async ({ sourceId, offset, length }, ctx) => {
+        if (ctx.state.used.reads >= RESEARCH_BUDGET.reads) throw new Error("No original-text reads left.");
+        const source = ctx.state.frozenSources?.find(s => s.sourceId === sourceId);
+        if (!source || offset >= source.text.length) throw new Error("Unknown frozen source or offset.");
+        ctx.state.used.reads++;
+        const text = source.text.slice(offset, offset + length);
+        const id = await registerEvidence(ctx.state, { documentId: source.sourceId, passageId: `${source.sourceId}:${offset}`, title: source.title, form: source.form, filedAt: source.publishedAt, url: source.url, path: ["Frozen original", `offset ${offset}`], text, table: null }, source.kind, source.publishedAt);
+        return `[${id}] ${source.title}\n${text}`;
+      }, observe: (_a, v) => v }),
     tool({ name: "read_financials", description: "The validated financial facts (ids, values, periods). Pass ids to read some, none to read all.", parameters: z.object({ ids: z.array(z.string()).max(40).optional() }), concurrencySafe: true,
       execute: ({ ids }, ctx) => { const facts = ctx.state.input.facts.filter(f => !ids?.length || ids.includes(f.id)); return facts.length ? facts.map(factLine).join("\n") : "No such facts."; }, observe: (_a, v) => v }),
     tool({ name: "list_filings", description: "The filings this run may read, newest first.", parameters: z.object({}), concurrencySafe: true,
@@ -429,10 +454,26 @@ export function valuationTools(env: AnalysisEnv): AnyTool<ValuationState>[] {
       execute: (args, ctx) => runCalculation(ctx.state, args), observe: (_a, v) => v }),
     tool({ name: "declare_model_insufficient", description: "State that no model can be computed from the registered facts and say which inputs are missing.", parameters: z.object({ reason: z.string().min(20).max(600), missingFactIds: z.array(z.string().max(60)).min(1).max(10) }),
       execute: ({ reason, missingFactIds }, ctx) => { ctx.state.insufficient = reason; ctx.state.modelGaps = [{ code: "missing_inputs", message: reason, evidenceIds: [], field: missingFactIds.join(",") || undefined }]; ctx.state.calc = null; return "Recorded as insufficient; submit valuationSafety as null with the gap, then finish_assumptions."; }, observe: (_a, v) => v }),
+    tool({ name: "submit_next_quarter_forecast", description: "Historical evaluation only: record independently researched next-quarter GAAP revenue/operating income/capex/CFO forecasts, or explicitly say the materials cannot support them. Do not divide an annual forecast by four. The period is fixed by the financial base, and no outcomes are available.", parameters: z.discriminatedUnion("status", [
+      z.object({ status: z.literal("unavailable"), reason: z.string().min(20).max(800) }),
+      z.object({ status: z.literal("available"), forecasts: z.array(z.object({ metric: z.enum(["revenue", "operating_income", "capex", "cfo"]), value: z.number().finite(), rationale: z.string().min(40).max(1200), evidenceIds: ids(10, 1) })).min(1).max(4) }),
+    ]), execute: (args, ctx) => {
+      if (!ctx.state.frozenSources) throw new Error("This tool belongs only to a frozen historical evaluation.");
+      if (args.status === "unavailable") { ctx.state.nearTermForecast = args; return "The next-quarter forecast is explicitly unavailable."; }
+      if (new Set(args.forecasts.map(f => f.metric)).size !== args.forecasts.length) throw new Error("Each forecast metric must be unique.");
+      const errors = args.forecasts.flatMap(f => checkIds(ctx.state, f.evidenceIds, `forecast ${f.metric}`));
+      if (errors.length) return `Not accepted: ${errors.join("; ")}`;
+      const end = new Date(ctx.state.input.financialPeriodEnd + "T00:00:00Z");
+      const periodStart = new Date(end.getTime() + 86_400_000).toISOString().slice(0, 10);
+      const periodEnd = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth() + 4, 0)).toISOString().slice(0, 10);
+      ctx.state.nearTermForecast = { status: "available", forecasts: args.forecasts.map(f => ({ ...f, periodStart, periodEnd, unit: "USD", basis: "gaap" })) };
+      return `Next-quarter forecasts recorded for ${periodStart} to ${periodEnd}.`;
+    }, observe: (_a, v) => v }),
     tool({ name: "finish_assumptions", description: "End the assumptions phase: a calculation (or a declared insufficiency) and the valuationSafety dimension are recorded.", parameters: z.object({}),
       execute: (_a, ctx) => {
         if (!ctx.state.calc && !ctx.state.insufficient) throw new Error("call calculate_valuation or declare_model_insufficient first");
         if (!ctx.state.dimensions.has("valuationSafety")) throw new Error("submit valuationSafety first");
+        if (ctx.state.frozenSources && !ctx.state.nearTermForecast) throw new Error("submit_next_quarter_forecast first, or explicitly declare its unavailability");
         ctx.state.assumptionsDone = true; return "Assumptions recorded.";
       }, observe: (_a, v) => v }),
     tool({ name: "compose_valuation", description: "The written report: every figure must be one the calculator or a fact produced; cite evidence ids like [e1a2b3c4d5]. Every section is required: at least one catalyst, one counter-evidence item and one next check; model notes name each method's value and weight with the reason, each scenario's probability with the reason, the management scenario and the consensus (or why none). Keep each section within its limit: summary 1800, thesis 4000, expectations gap 3000 and model notes 3000 characters; list items 700 characters, at most 8 each.", parameters: z.object({

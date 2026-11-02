@@ -1,3 +1,4 @@
+import { refreshValuationQuotes } from "./valuation/quotes.ts";
 import { handleStageAdminRequest } from "./admin/stage.ts";
 import { handleAiModelsAdminRequest } from "./admin/ai-models.ts";
 import { companyPolicyEnvironment } from "./financial-data/company-policy.ts";
@@ -72,7 +73,7 @@ const worker = {
   },
 
   /**
-   * The only schedule: discover new SEC filings, because EDGAR pushes nothing (docs/analysis-events.md). Everything a
+   * The schedule discovers new SEC filings and refreshes reference closes independently of valuation research. Everything a
    * filing leads to runs on the events and tasks queues. A failed discovery fails the invocation, which is what
    * Cloudflare's error notification watches.
    */
@@ -81,7 +82,10 @@ const worker = {
     await pipelineEntry(env);
     try {
       console.log(JSON.stringify({ event: "sec-discovery", ...await runSecDiscovery(env) }));
+
     } finally {
+      try { console.log(JSON.stringify({ event: "valuation-quotes", ...await refreshValuationQuotes(env) })); }
+      catch (error) { console.error(JSON.stringify({ event: "valuation-quotes", error: error instanceof Error ? error.message : String(error) })); }
       // Filings just discovered go out now rather than at the next invocation.
       await flushOutbox(env).catch((error:unknown)=>console.error(JSON.stringify({event:"pipeline-outbox",error:error instanceof Error?error.message:String(error)})));
     }

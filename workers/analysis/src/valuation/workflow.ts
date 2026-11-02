@@ -15,10 +15,10 @@ import { CALCULATOR_VERSION, calculateValuation, dimensionCeilings, multipleHist
 import { horizonFor, priorRequest as priorOf } from "../../../../shared/analysis-runtime/valuation/prior.ts";
 import { managementCapexShape, managementFactsOf } from "../../../../shared/analysis-runtime/valuation/management.ts";
 import { readValuationPublication } from "../../../../shared/analysis-runtime/valuation/read.ts";
-import { buildValuationInput } from "./input.ts";
+import { buildValuationInput, type ValuationInput } from "./input.ts";
 import { fetchBeta, fetchPeerQuotes, fetchReferenceQuote, fetchRiskFreeRate, fetchWeeklyCloses } from "./market.ts";
 import { ValuationStore } from "./store.ts";
-import { ASSUMPTION_TOOLS, CITATION, COMPOSE_TOOLS, RESEARCH_BUDGET, RESEARCH_TOOLS, excerptOf, factLine, goingConcernOf, impliedThreshold, registerManagementEvidence, valuationTools, type RedTeam, type ValuationState } from "./tools.ts";
+import { ASSUMPTION_TOOLS, CITATION, COMPOSE_TOOLS, RESEARCH_BUDGET, RESEARCH_TOOLS, excerptOf, factLine, goingConcernOf, impliedThreshold, registerManagementEvidence, valuationTools, type RedTeam, type ValuationState, type FrozenResearchSource } from "./tools.ts";
 
 /** Changing the prompts, the tools, the calculator or the publication contract reassesses every switched-on company once. */
 export const VALUATION_VERSION = "valuation.v6";
@@ -182,7 +182,7 @@ export function priorRequest(state: ValuationState): CalcRequest | null {
 
 type Loop = { recipeId: string; system: string; allow: string[]; budget: { turns: number; wallMs: number }; settled: (s: ValuationState) => boolean; tool: "valuation-research" | "valuation" };
 
-async function runLoop(env: AnalysisEnv, step: WorkflowStepLike, state: ValuationState, loop: Loop, opening: string, generation: number, fetcher: typeof fetch, turns: TurnRecord[], runId?: string): Promise<"finished" | "budget" | "failed" | "cancelled"> {
+async function runLoop(env: AnalysisEnv, step: WorkflowStepLike, state: ValuationState, loop: Loop, opening: string, generation: number | null, fetcher: typeof fetch, turns: TurnRecord[], runId?: string): Promise<"finished" | "budget" | "failed" | "cancelled"> {
   const tools = valuationTools(env);
   const recipe: Recipe<string, ValuationState, ValuationState> = {
     id: loop.recipeId, budget: loop.budget, system: () => loop.system, open: () => state, tools: () => tools, policy: { allow: loop.allow }, settled: loop.settled, settle: s => s, nudge: NUDGE,
@@ -195,7 +195,7 @@ async function runLoop(env: AnalysisEnv, step: WorkflowStepLike, state: Valuatio
   const store = new ValuationStore(requireDb(env));
   const host: LoopHost = {
     // Switched off or re-requested while the run was working: the loop ends before its next model call.
-    reserve: async () => { const ok = await stillEligible(env, state.input.ticker, store, generation); if (!ok) state.cancelled = true; return ok; },
+    reserve: async () => { const ok = generation === null || await stillEligible(env, state.input.ticker, store, generation); if (!ok) state.cancelled = true; return ok; },
     record: turn => { turns.push(turn); }, execute: (_t, calls, run) => sequential(calls, run),
     stage: (name, work) => step.do(name, work), signal: new AbortController().signal, now: () => Date.now(),
   };
@@ -291,6 +291,34 @@ export async function assemblePublication(state: ValuationState, now: string, me
   return { publication: { ...body, generatedAt: now, versionId }, evidence };
 }
 
+export async function researchValuation({ input, market, now, step, env, mode, generatedAt = now, fetcher = fetch, runId }: {
+  input: ValuationInput; market: Pick<ValuationState, "quote" | "riskFree" | "beta" | "peerMultiples" | "multipleHistory">;
+  now: string; generatedAt?: string; step: WorkflowStepLike; env: AnalysisEnv; fetcher?: typeof fetch; runId?: string;
+  mode: { kind: "live"; generation: number } | { kind: "snapshot"; sources: FrozenResearchSource[] };
+}) {
+  const generation = mode.kind === "live" ? mode.generation : null;
+  const state: ValuationState = { ...(mode.kind === "snapshot" ? { frozenSources: mode.sources } : {}), input, researchAsOf: now, now: generatedAt, quote: market.quote, riskFree: market.riskFree, beta: market.beta, peerMultiples: market.peerMultiples, multipleHistory: market.multipleHistory, evidence: new Map(), hits: [], used: { finds: 0, reads: 0, searches: 0, webReads: 0, transcripts: 0 },
+    dimensions: new Map(), researchDone: false, calc: null, modelGaps: [], insufficient: null, assumptionsDone: false, redTeam: null, composed: null, cancelled: false };
+  // Management's cited targets are evidence from the first turn: the research, the scenarios and the report may cite them.
+  await registerManagementEvidence(state);
+  const prior = await step.do("valuation-prior", async () => {
+    const request = priorRequest(state);
+    if (!request) return null;
+    try { return { request, result: calculateValuation(request) }; } catch { return null; }
+  });
+  const turns: TurnRecord[] = [];
+  const research = await runLoop(env, step, state, { recipeId: "valuation-research", system: RESEARCH_SYSTEM, allow: mode.kind === "snapshot" ? ["read_financials", "list_snapshot_sources", "find_snapshot_passages", "read_snapshot_source", "read_guidance", "submit_dimension", "finish_research"] : RESEARCH_TOOLS, budget: BUDGET.research, settled: s => s.researchDone, tool: "valuation-research" }, (mode.kind === "snapshot" ? `Historical reconstruction at ${now}. Use only frozen original text and facts provided here, never later outcomes or outside knowledge. The list_snapshot_sources/find_snapshot_passages/read_snapshot_source tools replace live filing and web readers.\n\n` : "") + openingResearch(state), generation, fetcher, turns, runId);
+  if (research === "cancelled") return null;
+  if (research === "failed") throw new Error("The research loop produced no usable replies.");
+  const assume = await runLoop(env, step, state, { recipeId: "valuation-assume", system: ASSUME_SYSTEM, allow: mode.kind === "snapshot" ? [...ASSUMPTION_TOOLS, "submit_next_quarter_forecast"] : ASSUMPTION_TOOLS, budget: BUDGET.assume, settled: s => s.assumptionsDone, tool: "valuation" }, openingAssume(state, prior?.request ?? null) + (mode.kind === "snapshot" ? "\nBefore finish_assumptions, submit_next_quarter_forecast from the same frozen evidence (not a mechanical annual/4 allocation), or explicitly say why it is unavailable." : ""), generation, fetcher, turns, runId);
+  if (assume === "cancelled") return null;
+  state.redTeam = await redTeam(env, step, state, fetcher, runId);
+  const compose = await runLoop(env, step, state, { recipeId: "valuation-compose", system: COMPOSE_SYSTEM, allow: COMPOSE_TOOLS, budget: BUDGET.compose, settled: s => !!s.composed, tool: "valuation" }, openingCompose(state), generation, fetcher, turns, runId);
+  if (compose === "cancelled") return null;
+  const { publication, evidence } = await assemblePublication(state, generatedAt, VALUATION_VERSION);
+  return { publication, evidence, registeredEvidence: [...state.evidence.values()], turns, request: state.calc?.request ?? null, nearTermForecast: state.nearTermForecast ?? null, promptSha256: await sha256(RESEARCH_SYSTEM + ASSUME_SYSTEM + COMPOSE_SYSTEM + (mode.kind === "snapshot" ? "frozen-originals-and-next-quarter.v1" : "live")) };
+}
+
 export async function executeValuationWorkflow(params: ValuationWorkflowParams, step: WorkflowStepLike, env: AnalysisEnv, fetcher: typeof fetch = fetch, runId?: string) {
   if (!valuationTickersFor(env).includes(params.ticker) || env.VALUATION_ENABLED === "false") return { status: "superseded" as const };
   const db = requireDb(env);
@@ -314,25 +342,9 @@ export async function executeValuationWorkflow(params: ValuationWorkflowParams, 
     const multipleHistory = closes && shares ? multipleHistoryOf(closes, shares, input.trailingQuarters) : null;
     return { quote, riskFree, beta, peerMultiples, multipleHistory };
   });
-  const state: ValuationState = { input, researchAsOf: now, now, quote: market.quote, riskFree: market.riskFree, beta: market.beta, peerMultiples: market.peerMultiples, multipleHistory: market.multipleHistory, evidence: new Map(), hits: [], used: { finds: 0, reads: 0, searches: 0, webReads: 0, transcripts: 0 },
-    dimensions: new Map(), researchDone: false, calc: null, modelGaps: [], insufficient: null, assumptionsDone: false, redTeam: null, composed: null, cancelled: false };
-  // Management's cited targets are evidence from the first turn: the research, the scenarios and the report may cite them.
-  await registerManagementEvidence(state);
-  const prior = await step.do("valuation-prior", async () => {
-    const request = priorRequest(state);
-    if (!request) return null;
-    try { return { request, result: calculateValuation(request) }; } catch { return null; }
-  });
-  const turns: TurnRecord[] = [];
-  const research = await runLoop(env, step, state, { recipeId: "valuation-research", system: RESEARCH_SYSTEM, allow: RESEARCH_TOOLS, budget: BUDGET.research, settled: s => s.researchDone, tool: "valuation-research" }, openingResearch(state), generation, fetcher, turns, runId);
-  if (research === "cancelled") return { status: "superseded" as const };
-  if (research === "failed") throw new Error("The research loop produced no usable replies.");
-  const assume = await runLoop(env, step, state, { recipeId: "valuation-assume", system: ASSUME_SYSTEM, allow: ASSUMPTION_TOOLS, budget: BUDGET.assume, settled: s => s.assumptionsDone, tool: "valuation" }, openingAssume(state, prior?.request ?? null), generation, fetcher, turns, runId);
-  if (assume === "cancelled") return { status: "superseded" as const };
-  state.redTeam = await redTeam(env, step, state, fetcher, runId);
-  const compose = await runLoop(env, step, state, { recipeId: "valuation-compose", system: COMPOSE_SYSTEM, allow: COMPOSE_TOOLS, budget: BUDGET.compose, settled: s => !!s.composed, tool: "valuation" }, openingCompose(state), generation, fetcher, turns, runId);
-  if (compose === "cancelled") return { status: "superseded" as const };
-  const { publication, evidence } = await assemblePublication(state, now, VALUATION_VERSION);
+  const researched = await researchValuation({ input, market, now, step, env, mode: { kind: "live", generation }, fetcher, runId });
+  if (!researched) return { status: "superseded" as const };
+  const { publication, evidence, turns } = researched;
   if (!readValuationPublication(publication, params.ticker)) throw new Error("The valuation failed its public contract.");
   const published = await step.do("valuation-publish", async () => {
     // The input moved on while the run worked: this result is not for the current material; the next sweep runs again.

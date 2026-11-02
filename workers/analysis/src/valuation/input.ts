@@ -58,7 +58,6 @@ export type ValuationInput = {
   /** Why a figure the models need is missing, by fact id. */
   missing: string[];
   fingerprint: string;
-  data: FindingData;
   /** The newest RPO disclosure, for the contracted-revenue floor. */
   rpo: RpoDisclosure | null;
   lifecycle: Lifecycle;
@@ -346,7 +345,7 @@ export async function buildValuationInput(env: AnalysisEnv, ticker: string, rese
   }));
   return {
     ticker, cik, companyName: await companyName(db, ticker) ?? ticker, currency, financialPeriodEnd: newest.periodEnd, incomeModel: newest.incomeModel ?? "unknown",
-    facts, distributions, diagnostics, documents, guidance: data.guidance, transcripts, missing, fingerprint, data,
+    facts, distributions, diagnostics, documents, guidance: data.guidance, transcripts, missing, fingerprint,
     rpo, lifecycle: lifecycleOf({ facts, diagnostics }), peers: peers.peers, peerBasis: peers.basis, peerNotes: peers.notes, management, managementNotes, trailingQuarters: buildTrailingQuarters(data),
   };
 }
