@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync,readdirSync} from 'node:fs';
 import {DatabaseSync} from 'node:sqlite';
-import {mergeHistory,validHistoryQuarter,historyQuarterFrom} from '../../../shared/analysis-runtime/financial-data/history.ts';
+import {mergeHistory,validHistoryQuarter} from '../../../shared/analysis-runtime/financial-data/history.ts';
 import {extractDisclosedQuarters,readReportedFacts,hasSingleReportableSegment,type DocumentSource} from '../src/financial-data/parser.ts';
 import {extractRevenueHistory} from '../src/financial-data/revenue-parser.ts';
 import {historyKey,readRevenueHistory,rereadHistoryFiling} from '../src/financial-data/history.ts';
@@ -141,7 +141,7 @@ async function publicationFixture(){
 }
 
 test('republish atomically inserts immutable version, updates public payload/revisions and aliases, without model events',async()=>{
- const {db,store,now,flow}=await publicationFixture(),task=(await store.claim(now))!;
+ const {db,store,now,flow,history}=await publicationFixture(),task=(await store.claim(now))!;
  await db.prepare('INSERT INTO sec_cache(cache_key,payload,fetched_at) VALUES(?,?,?)').bind('admin:financial-issuer:TEST.A',JSON.stringify({cik:source.cik}),source.filedAt).run();
  const target={ticker:'TEST',cik:source.cik,taskId:task.task_id,leaseToken:task.lease_token!};
  const version=await republishStoredFinancials(db,target,now);
@@ -152,7 +152,7 @@ test('republish atomically inserts immutable version, updates public payload/rev
  const rows=await db.prepare('SELECT payload_json FROM financial_complete_versions WHERE version_id=?').bind('old').first<{payload_json:string}>();assert.deepEqual(JSON.parse(rows!.payload_json),flow);
  assert.equal(await republishStoredFinancials(db,target,now),version);assert.equal((await db.prepare('SELECT count(*) n FROM financial_complete_versions').first<{n:number}>())!.n,2);
  assert.equal((await db.prepare('SELECT count(*) n FROM pipeline_outbox').first<{n:number}>())!.n,0);
- assert.throws(()=>rebuildPublication(flow,[{...historyQuarterFrom(flow.quarters[0],{...source,form:'10-K'})!,revenue:'999'}],now.toISOString()),/REPUBLICATION_REVENUE_CONFLICT/);
+ assert.throws(()=>rebuildPublication(flow,[{...history.find(q=>q.periodEnd===flow.quarters[0].periodEnd)!,revenue:'999'}],now.toISOString()),/REPUBLICATION_REVENUE_CONFLICT/);
 });
 
 test('republish stays within D1 compound SELECT limits and revises share classes from every source once',async()=>{
