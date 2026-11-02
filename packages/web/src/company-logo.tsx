@@ -20,7 +20,6 @@ export function CompanyLogo({ symbol, size = "sm" }: { symbol: string; size?: "s
       <span className="company-logo-fallback">{fallback}</span>
       {src && (
         // The logo host is ticker-driven, so a native image keeps the resilient onError fallback.
-        // eslint-disable-next-line @next/next/no-img-element
         <img
           alt=""
           decoding="async"

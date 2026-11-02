@@ -45,10 +45,10 @@ test("the income statement's calculation tree is read from MetaLinks, and a comb
   assert.equal(calculation.root, "us-gaap:NetIncomeLoss");
   assert.equal(calculation.arcs.filter(a => a.parent === "us-gaap:NetIncomeLoss").length, 3);
   assert.equal(calculation.labels["us-gaap:IncomeLossFromEquityMethodInvestments"], "Equity-method investment activity, net of tax");
-  const combined = structuredClone(metaLinks) as any;
+  const combined = structuredClone(metaLinks) as { instance: Record<string, { report: Record<string, { shortName: string }>; tag: Record<string, { calculation: Record<string, { root?: boolean; parentTag?: string; weight?: number; order?: number }> }> }> };
   const instance = combined.instance["amzn-20260630.htm"];
   instance.report.R4.shortName = "Condensed Consolidated Statements of Operations and Comprehensive Loss";
-  for (const tag of Object.values<any>(instance.tag)) { const c = tag.calculation["http://www.amazon.com/role/ConsolidatedStatementsofOperations"]; if (c?.root) { delete c.root; c.parentTag = "us-gaap_ComprehensiveIncomeNetOfTax"; c.weight = 1; c.order = 1; } }
+  for (const tag of Object.values(instance.tag)) { const c = tag.calculation["http://www.amazon.com/role/ConsolidatedStatementsofOperations"]; if (c?.root) { delete c.root; c.parentTag = "us-gaap_ComprehensiveIncomeNetOfTax"; c.weight = 1; c.order = 1; } }
   assert.equal(parseIncomeCalculation(combined)!.root, "us-gaap:NetIncomeLoss");
   assert.equal(parseIncomeCalculation({ instance: { x: { report: {}, tag: {} } } }), null);
 });

@@ -1,6 +1,7 @@
 import type { RevenueHistoryQuarter } from "../../analysis-contract/revenue-history.ts";
 import type { BusinessFlowQuarter, BusinessSegment, FlowAmount, FlowMetric } from "../../analysis-contract/business-flow.ts";
 import { checkCompleteFlow } from "./completeness.ts";
+import { omit } from "../omit.ts";
 
 /**
  * The quarter an earnings release (Form 8-K, Exhibit 99) reports, read before the quarterly report is filed.
@@ -485,7 +486,7 @@ function releaseSegments(tables: Table[], previous: BusinessFlowQuarter, revenue
       return s.children.map((c, i) => ({ ...c, revenue: amountOf(bound[i]!, c.revenue, `segment:${c.id}`) }));
     };
     const segments = previous.segments.map((s, i) => {
-      const { children: _, ...rest } = s, children = parts(s, found[i]!);
+      const rest = omit(s, "children"), children = parts(s, found[i]!);
       return { ...rest, revenue: amountOf(found[i]!, s.revenue!, `segment:${s.id}`), sourceIds: [source.accession], ...(children ? { children } : {}) };
     });
     const adjustments: NonNullable<BusinessFlowQuarter["revenueAdjustments"]> = [];

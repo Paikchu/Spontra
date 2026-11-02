@@ -2,6 +2,7 @@ import type { CompanyEvent, InsiderTransaction, InsiderTransactionCode } from ".
 import type { InsiderPersonSummary, InsiderTransactionRow, InsiderTransactionsPage, InsiderTransactionsResponse, InsidersPublication, InsidersResponse } from "../../../../shared/analysis-contract/insiders.ts";
 import { compareRows, decodeCursor, encodeCursor, filingRows, historyFromEvents, historyLimit, INSIDER_NEW_DAYS, isNewRow, PERSON_KEY, personsFromEvents, summarizePerson, type InsiderLedgerRow } from "../../../../shared/analysis-runtime/insiders.ts";
 import { TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
+import { omit } from "../../../../shared/analysis-runtime/omit.ts";
 import { AnalysisRequestError } from "../read-api/contract-support/errors.ts";
 import { normalizeCik } from "./form4.ts";
 import { readEventsResponse } from "./read.ts";
@@ -94,7 +95,7 @@ export function toLedgerRow(r: StoredRow, now: Date): InsiderLedgerRow {
   return { ...row, isNew: isNewRow(row, now) };
 }
 
-const stripPerson = ({ personKey: _k, ownerCik: _c, name: _n, role: _r, ...row }: InsiderLedgerRow): InsiderTransactionRow => row;
+const stripPerson = (row: InsiderLedgerRow): InsiderTransactionRow => omit(row, "personKey", "ownerCik", "name", "role");
 
 /** The accessions the ledger already holds for the company, so a refresh records only what is missing. */
 export async function recordedAccessions(db: D1Database, ticker: string): Promise<Set<string>> {

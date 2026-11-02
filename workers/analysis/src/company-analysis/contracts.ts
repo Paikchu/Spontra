@@ -1,4 +1,5 @@
 import { normalizeTicker } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
+import { omit } from "../../../../shared/analysis-runtime/omit.ts";
 import {
   COMPANY_ANALYSIS_BLOCK_TYPES,
   COMPANY_ANALYSIS_MAX_BLOCKS_PER_HIGHLIGHT,
@@ -198,7 +199,7 @@ export function normalizeBusinessDeepDive(value: unknown): BusinessDeepDive {
   }
   return {
     headline, introduction, sections,
-    sources: sources.map(({ validUrl: _validUrl, ...source }) => source),
+    sources: sources.map(source => omit(source, "validUrl")),
     limitations: strings(item?.limitations, 12, 400),
   };
 }

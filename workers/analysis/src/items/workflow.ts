@@ -141,7 +141,7 @@ export async function executeItemsWorkflow(params: ItemsParams, step: WorkflowSt
       const state = recipe.open(input);
       const messages: AgentMessage[] = [{ role: "user", content: itemOpening(input, state) }];
       const turns: TurnRecord[] = [];
-      const host: LoopHost<typeof state> = {
+      const host: LoopHost = {
         reserve: async () => true, record: turn => { turns.push(turn); }, execute: (_t, calls, run) => sequential(calls, run),
         stage: (name, work) => step.do(name, work), signal: new AbortController().signal, now: () => Date.parse(now),
       };

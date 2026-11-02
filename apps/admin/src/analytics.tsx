@@ -42,11 +42,19 @@ export function AnalyticsPanel() {
   const [pending, setPending] = useState(true);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
-  useEffect(() => {
-    const controller = new AbortController();
+  // A new range or a retry clears the board in the same update that starts the next load.
+  const reload = () => {
     setSummary(null);
     setPending(true);
     setFailed(false);
+  };
+  const changeRange = (next: TelemetryRange) => {
+    if (next === range) return;
+    reload();
+    setRange(next);
+  };
+  useEffect(() => {
+    const controller = new AbortController();
     void fetch(`/api/admin/analytics?range=${range}`, { signal: controller.signal, headers: { accept: "application/json" } })
       .then(async response => {
         if (!response.ok) throw new Error(String(response.status));
@@ -63,6 +71,6 @@ export function AnalyticsPanel() {
     return () => controller.abort();
   }, [range, attempt]);
   return <div className="ra-analytics">
-    <UsageBoard summary={summary} range={range} onRange={setRange} labels={labels} pending={pending} failed={failed} onRetry={() => setAttempt(value => value + 1)} />
+    <UsageBoard summary={summary} range={range} onRange={changeRange} labels={labels} pending={pending} failed={failed} onRetry={() => { reload(); setAttempt(value => value + 1); }} />
   </div>;
 }

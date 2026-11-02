@@ -26,6 +26,7 @@ import { GuidanceStore, type StoredMaterial } from "./store.ts";
 import { AiRunStore } from "../ai-runs/store.ts";
 import { transcriptForEvent } from "../transcripts/library.ts";
 import { TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
+import { omit } from "../../../../shared/analysis-runtime/omit.ts";
 
 export const guidanceCacheKey = (ticker: string) => `guidance:v1:${ticker}`;
 const irHostsKey = (ticker: string) => `guidance-ir-hosts:v1:${ticker}`;
@@ -70,7 +71,7 @@ async function fiscalAnchors(repository: D1SecRepository, feed: SecFilingFeed | 
   }
   // A quarter whose DEI repeats last year's label would date the guidance a year early.
   const labelled = anchors.flatMap(a => { const quarter = quarterNumber(a.fiscalPeriod); return quarter ? [{ ...a, quarter }] : []; });
-  return inFiscalSequence(labelled).map(({ quarter: _, ...anchor }) => anchor);
+  return inFiscalSequence(labelled).map(anchor => omit(anchor, "quarter"));
 }
 
 function modelCall(env: AnalysisEnv, store: GuidanceStore, fetcher: typeof fetch, day: string, call: { ticker: string; runId?: string }): GuidanceModelCall {

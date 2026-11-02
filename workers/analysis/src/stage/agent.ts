@@ -53,26 +53,26 @@ const TRANSCRIPT_SENT = 40;
 const FOLD_AFTER_RESULTS = 80;
 const MAX_TEXT = 600;
 
-const emptyScene = (ticker: string): SceneDocument => ({ schemaVersion: "scene.v1", scope: { periodEnd: "" }, basis: {}, rows: DEFAULT_SCENE_ROWS.map(r => ({ ...r })) });
+const emptyScene = (): SceneDocument => ({ schemaVersion: "scene.v1", scope: { periodEnd: "" }, basis: {}, rows: DEFAULT_SCENE_ROWS.map(r => ({ ...r })) });
 const uid = () => crypto.randomUUID().replace(/-/g, "").slice(0, 16);
 
 export class StageAgent extends Agent<StageEnv, StageState> {
-  initialState: StageState = { scene: emptyScene(""), revision: 0, applied: 0, contentLanguage: "en" };
+  initialState: StageState = { scene: emptyScene(), revision: 0, applied: 0, contentLanguage: "en" };
   private running: AbortController | null = null;
   private view: StageView | null = null;
 
   async onStart(props?: StageProps): Promise<void> {
-    this.sql`CREATE TABLE IF NOT EXISTS owner (user_id TEXT NOT NULL, ticker TEXT NOT NULL, locale TEXT NOT NULL)`;
-    this.sql`CREATE TABLE IF NOT EXISTS messages (seq INTEGER PRIMARY KEY, role TEXT NOT NULL, content TEXT NOT NULL)`;
-    this.sql`CREATE TABLE IF NOT EXISTS transcript (seq INTEGER PRIMARY KEY AUTOINCREMENT, entry TEXT NOT NULL)`;
-    this.sql`CREATE TABLE IF NOT EXISTS scenes (revision INTEGER PRIMARY KEY, at TEXT NOT NULL, by TEXT NOT NULL, scene TEXT NOT NULL)`;
-    this.sql`CREATE TABLE IF NOT EXISTS log (seq INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, turn TEXT NOT NULL, entry TEXT NOT NULL)`;
-    this.sql`CREATE TABLE IF NOT EXISTS turns (id TEXT PRIMARY KEY, at TEXT NOT NULL, status TEXT NOT NULL, calls INTEGER NOT NULL DEFAULT 0)`;
-    this.sql`CREATE TABLE IF NOT EXISTS questions (id TEXT PRIMARY KEY, question TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'open')`;
-    if (props && !this.owner()) this.sql`INSERT INTO owner (user_id, ticker, locale) VALUES (${props.userId}, ${props.ticker}, ${props.locale})`;
+    void this.sql`CREATE TABLE IF NOT EXISTS owner (user_id TEXT NOT NULL, ticker TEXT NOT NULL, locale TEXT NOT NULL)`;
+    void this.sql`CREATE TABLE IF NOT EXISTS messages (seq INTEGER PRIMARY KEY, role TEXT NOT NULL, content TEXT NOT NULL)`;
+    void this.sql`CREATE TABLE IF NOT EXISTS transcript (seq INTEGER PRIMARY KEY AUTOINCREMENT, entry TEXT NOT NULL)`;
+    void this.sql`CREATE TABLE IF NOT EXISTS scenes (revision INTEGER PRIMARY KEY, at TEXT NOT NULL, by TEXT NOT NULL, scene TEXT NOT NULL)`;
+    void this.sql`CREATE TABLE IF NOT EXISTS log (seq INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, turn TEXT NOT NULL, entry TEXT NOT NULL)`;
+    void this.sql`CREATE TABLE IF NOT EXISTS turns (id TEXT PRIMARY KEY, at TEXT NOT NULL, status TEXT NOT NULL, calls INTEGER NOT NULL DEFAULT 0)`;
+    void this.sql`CREATE TABLE IF NOT EXISTS questions (id TEXT PRIMARY KEY, question TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'open')`;
+    if (props && !this.owner()) void this.sql`INSERT INTO owner (user_id, ticker, locale) VALUES (${props.userId}, ${props.ticker}, ${props.locale})`;
     // A turn the object was evicted in the middle of is marked, not run again: its model calls are already paid.
     for (const t of this.sql<{ id: string }>`SELECT id FROM turns WHERE status = 'running'`) {
-      this.sql`UPDATE turns SET status = 'interrupted' WHERE id = ${t.id}`;
+      void this.sql`UPDATE turns SET status = 'interrupted' WHERE id = ${t.id}`;
       this.addTranscript({ id: uid(), at: new Date().toISOString(), role: "assistant", kind: "notice", code: "turn-interrupted" });
     }
   }
@@ -108,7 +108,7 @@ export class StageAgent extends Agent<StageEnv, StageState> {
   private sendTo(connection: Connection, event: StageEvent) { connection.send(JSON.stringify(event)); }
   private emit(event: StageEvent) { this.broadcast(JSON.stringify(event)); }
   private addTranscript(entry: TranscriptEntry) {
-    this.sql`INSERT INTO transcript (entry) VALUES (${JSON.stringify(entry)})`;
+    void this.sql`INSERT INTO transcript (entry) VALUES (${JSON.stringify(entry)})`;
     this.emit({ type: "stage:transcript", entries: [entry] });
   }
   private notice(code: NoticeCode) { this.addTranscript({ id: uid(), at: new Date().toISOString(), role: "assistant", kind: "notice", code }); }
@@ -118,7 +118,7 @@ export class StageAgent extends Agent<StageEnv, StageState> {
     if (this.state.revision !== expectedRevision) return false;
     const revision = expectedRevision + 1;
     const scene: SceneDocument = { schemaVersion: "scene.v1", scope, basis, rows };
-    this.sql`INSERT INTO scenes (revision, at, by, scene) VALUES (${revision}, ${new Date().toISOString()}, ${by}, ${JSON.stringify(scene)})`;
+    void this.sql`INSERT INTO scenes (revision, at, by, scene) VALUES (${revision}, ${new Date().toISOString()}, ${by}, ${JSON.stringify(scene)})`;
     this.setState({ ...this.state, scene, revision });
     return true;
   }
@@ -127,7 +127,7 @@ export class StageAgent extends Agent<StageEnv, StageState> {
     return this.sql<{ role: string; content: string }>`SELECT role, content FROM messages ORDER BY seq`.map(r => ({ role: r.role as AgentMessage["role"], content: JSON.parse(r.content) as AgentMessage["content"] }));
   }
   private saveMessages(messages: AgentMessage[], from: number) {
-    messages.slice(from).forEach((m, i) => { this.sql`INSERT INTO messages (seq, role, content) VALUES (${from + i}, ${m.role}, ${JSON.stringify(m.content)})`; });
+    messages.slice(from).forEach((m, i) => { void this.sql`INSERT INTO messages (seq, role, content) VALUES (${from + i}, ${m.role}, ${JSON.stringify(m.content)})`; });
   }
 
   private async turn(text: string, address: string | null): Promise<void> {
@@ -145,7 +145,7 @@ export class StageAgent extends Agent<StageEnv, StageState> {
     if (!says.ok) { this.notice(says.which === "global" ? "global-cap-reached" : "quota-reached"); return; }
     const controller = new AbortController();
     this.running = controller;
-    this.sql`INSERT INTO turns (id, at, status) VALUES (${turnId}, ${new Date().toISOString()}, 'running')`;
+    void this.sql`INSERT INTO turns (id, at, status) VALUES (${turnId}, ${new Date().toISOString()}, 'running')`;
     this.emit({ type: "stage:turn", turn: { id: turnId, phase: "thinking", status: null } });
     let calls = 0, status = "failed", capHit: "reader" | "address" | "global" | null = null, firstError: string | null = null, reason: string | null = null;
     const startedAt = new Date().toISOString();
@@ -161,9 +161,9 @@ export class StageAgent extends Agent<StageEnv, StageState> {
       // A long exchange is folded at a turn's start into one summary, so the cache breaks once rather than every turn.
       if (messages.flatMap(m => Array.isArray(m.content) ? m.content.filter(b => b.type === "tool_result") : []).length > FOLD_AFTER_RESULTS) {
         const recent = this.sql<{ entry: string }>`SELECT entry FROM transcript ORDER BY seq DESC LIMIT 6`.map(r => r.entry).reverse();
-        this.sql`DELETE FROM messages`;
+        void this.sql`DELETE FROM messages`;
         messages = [{ role: "user", content: JSON.stringify({ summary: "Earlier turns of this conversation, folded.", stage: this.state.scene.rows, recent }) }, { role: "assistant", content: [{ type: "text", text: "Noted." }] }];
-        this.sql`INSERT INTO log (at, turn, entry) VALUES (${new Date().toISOString()}, ${turnId}, ${JSON.stringify({ action: "fold" })})`;
+        void this.sql`INSERT INTO log (at, turn, entry) VALUES (${new Date().toISOString()}, ${turnId}, ${JSON.stringify({ action: "fold" })})`;
       }
       const start = messages.length;
       messages.push({ role: "user", content: JSON.stringify({ request: text, view: this.view, stage: this.state.scene.rows.map(r => ({ title: r.title, cells: r.cells.map(c => c.map(b => b.kind)) })), budget: { turns: STAGE_BUDGET.turns } }) });
@@ -176,7 +176,7 @@ export class StageAgent extends Agent<StageEnv, StageState> {
           return { error: `${error instanceof SecModelOutputError ? error.code : "request"}: ${error instanceof Error ? error.message : String(error)}`.slice(0, 300) };
         }
       };
-      const host: LoopHost<typeof state> = {
+      const host: LoopHost = {
         reserve: async () => {
           const r = await reserve(db, "stage-calls", who).catch(() => ({ ok: false as const, which: "global" as const }));
           if (!r.ok) { capHit = r.which; return false; }
@@ -185,7 +185,7 @@ export class StageAgent extends Agent<StageEnv, StageState> {
         },
         record: entry => {
           if (entry.action === "invalid" && !firstError) firstError = entry.observation.slice(0, 500);
-          this.sql`INSERT INTO log (at, turn, entry) VALUES (${new Date().toISOString()}, ${turnId}, ${JSON.stringify(entry)})`;
+          void this.sql`INSERT INTO log (at, turn, entry) VALUES (${new Date().toISOString()}, ${turnId}, ${JSON.stringify(entry)})`;
         },
         execute: async (_turn, list, run) => {
           const safe = new Set(tools.filter(t => t.concurrencySafe).map(t => t.name));
@@ -210,7 +210,7 @@ export class StageAgent extends Agent<StageEnv, StageState> {
         status = "done";
       } else if (result.kind === "report") {
         const questionId = uid();
-        this.sql`INSERT INTO questions (id, question) VALUES (${questionId}, ${result.question})`;
+        void this.sql`INSERT INTO questions (id, question) VALUES (${questionId}, ${result.question})`;
         this.addTranscript({ id: uid(), at: new Date().toISOString(), role: "assistant", kind: "question", questionId, question: result.question });
         status = "asked";
       } else if (result.kind === "answer") {
@@ -229,7 +229,7 @@ export class StageAgent extends Agent<StageEnv, StageState> {
       this.notice("turn-failed");
     } finally {
       this.running = null;
-      this.sql`UPDATE turns SET status = ${status}, calls = ${calls} WHERE id = ${turnId}`;
+      void this.sql`UPDATE turns SET status = ${status}, calls = ${calls} WHERE id = ${turnId}`;
       this.emit({ type: "stage:draft", rows: null });
       this.emit({ type: "stage:turn", turn: null });
       // A turn that spent nothing on the model gives its say back.
@@ -246,13 +246,13 @@ export class StageAgent extends Agent<StageEnv, StageState> {
     const owner = this.owner();
     const row = this.sql<{ question: string; status: string }>`SELECT question, status FROM questions WHERE id = ${questionId}`[0];
     if (!owner || !row || row.status !== "open") return;
-    this.sql`UPDATE questions SET status = ${yes ? "yes" : "no"} WHERE id = ${questionId}`;
+    void this.sql`UPDATE questions SET status = ${yes ? "yes" : "no"} WHERE id = ${questionId}`;
     const entries = this.sql<{ seq: number; entry: string }>`SELECT seq, entry FROM transcript ORDER BY seq DESC LIMIT 40`;
     for (const e of entries) {
       const entry = JSON.parse(e.entry) as TranscriptEntry;
       if (entry.role === "assistant" && entry.kind === "question" && entry.questionId === questionId) {
         const settled = { ...entry, settled: yes ? "yes" as const : "no" as const };
-        this.sql`UPDATE transcript SET entry = ${JSON.stringify(settled)} WHERE seq = ${e.seq}`;
+        void this.sql`UPDATE transcript SET entry = ${JSON.stringify(settled)} WHERE seq = ${e.seq}`;
         this.emit({ type: "stage:transcript", entries: [settled] });
       }
     }

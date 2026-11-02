@@ -31,6 +31,7 @@ import type { Feature } from "../../../../shared/analysis-contract/business-feat
 import { readHomeDigest, type HomeDigestEnv } from "./home-digest.ts";
 import { fiscalFields, readFiscalFocus, stampFlow, stampHistory } from "./fiscal-periods.ts";
 import { TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
+import { omit } from "../../../../shared/analysis-runtime/omit.ts";
 
 /**
  * The analysis backend's read surface, served only to the business map over the `MapReads`
@@ -130,7 +131,7 @@ async function home(request: Request, database: D1Database, env: HomeDigestEnv):
   const locale = isLocale(requested) && requested !== "en" ? requested : null;
   const digest = await readHomeDigest(database, env, locale);
   // Generation time changes on every read, even when the homepage content is unchanged.
-  const { generatedAt, ...validatorPayload } = digest;
+  const validatorPayload = omit(digest, "generatedAt");
   return dataResponse(request, digest, "cacheable", validatorPayload);
 }
 

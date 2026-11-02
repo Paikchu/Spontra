@@ -23,7 +23,7 @@ export type Recipe<I, O, S> = {
 export type TurnRecord = { turn: number; thought: string; action: string; input: string; observation: string };
 
 /** Where the loop's effects go: the per-turn allowance, the trail, and how calls run. */
-export type LoopHost<S> = {
+export type LoopHost = {
   /** Reserves one model call against the daily allowances; false ends the run. */
   reserve(): Promise<boolean>;
   record(turn: TurnRecord): void;
@@ -43,7 +43,7 @@ export type LoopOutcome<O> = { output: O; reason: "finished" | "budget" | "faile
  * Runs the recipe over `messages`, which the caller owns: the stage keeps one array across a conversation, a
  * Workflow starts a new one. The caller pushes the opening user message before calling.
  */
-export async function runAgentLoop<I, O, S>(recipe: Recipe<I, O, S>, input: I, state: S, messages: AgentMessage[], act: AgentAct, host: LoopHost<S>): Promise<LoopOutcome<O>> {
+export async function runAgentLoop<I, O, S>(recipe: Recipe<I, O, S>, input: I, state: S, messages: AgentMessage[], act: AgentAct, host: LoopHost): Promise<LoopOutcome<O>> {
   const tools = recipe.tools(state);
   const schemas = schemasFor(tools, recipe.policy);
   const system = recipe.system(input);
