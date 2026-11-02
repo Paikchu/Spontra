@@ -10,6 +10,7 @@ import { CompanyLogo } from '@/packages/web/src/company-logo';
 import { runElapsed, runView } from './run-progress';
 import { FlowGraph } from './flow-graph';
 import { useOnReturn, usePageActive } from './admin-page';
+import { addressTicker } from './address-ticker';
 import './business-map-companies.css';
 
 const stages: Record<string,string> = {identify:'识别公司',waiting_issuer:'等待同公司任务',collect:'采集及核验最新财报',history:'补充季度历史',audit:'检查披露完整性',complete:'任务结束'};
@@ -64,7 +65,9 @@ function issueText(code:string) { const parts=code.split(':'); if(parts[0]==='UN
 function storage() { try { return window.sessionStorage; } catch { return undefined; } }
 
 export function BusinessMapCompanies({onUnauthorized,onAuthenticated,onOpenFinancials}:{onUnauthorized:()=>void;onAuthenticated:()=>void;onOpenFinancials?:(ticker:string)=>void}) {
-  const [data,setData]=useState<BusinessMapCompanies|null>(null),[ticker,setTicker]=useState(''),[search,setSearch]=useState('');
+  const [data,setData]=useState<BusinessMapCompanies|null>(null),[ticker,setTicker]=useState(''),[search,setSearch]=useState(()=>addressTicker(window.location.search));
+  // The company the page was opened for (a message's link): its row opens and comes into view once, when the list arrives.
+  const [focus,setFocus]=useState(()=>addressTicker(window.location.search));
   const [loadError,setLoadError]=useState('');
   const [error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState(''),[refresh,setRefresh]=useState(0);
   const lock=useRef(false),pending=useRef(new Set<string>()),switched=useRef(0),callbacks=useRef({onUnauthorized,onAuthenticated});
@@ -140,7 +143,7 @@ export function BusinessMapCompanies({onUnauthorized,onAuthenticated,onOpenFinan
       <thead><tr><th>公司</th><th>状态</th>
         {FEATURES.map(f=><th key={f} className="bm-admin-feature-col"><span className="bm-admin-feature-head">{FEATURE_LABEL[f]}<button className="bm-switch bm-switch-sm" role="switch" aria-checked={!!data?.generation[f]} aria-label={`${FEATURE_LABEL[f]}（全部公司）`} title={data?.generation[f]?'全部公司生成中 · 点击暂停':'已全局暂停 · 点击恢复'} disabled={!data} onClick={()=>void switchFeature(null,f,!data?.generation[f])}><span/></button></span></th>)}
         <th>操作</th></tr></thead>
-      {companies.map(company=><Company key={company.ticker} company={company} generation={data!.generation} busy={!!busy} onToggle={()=>void mutate(company.ticker,!company.dataEnabled)} onPrepare={()=>void mutate(company.ticker)} onJudge={()=>void judge(company.ticker)} onFeature={(feature,on)=>void switchFeature(company.ticker,feature,on)} onOpenFinancials={onOpenFinancials}/>)}
+      {companies.map(company=><Company key={company.ticker} company={company} generation={data!.generation} busy={!!busy} onToggle={()=>void mutate(company.ticker,!company.dataEnabled)} onPrepare={()=>void mutate(company.ticker)} onJudge={()=>void judge(company.ticker)} onFeature={(feature,on)=>void switchFeature(company.ticker,feature,on)} onOpenFinancials={onOpenFinancials} focused={company.ticker===focus} onFocused={()=>setFocus('')}/>)}
     </table></div>}
     {data&&!companies.length&&<p>无匹配公司</p>}
   </section>;
@@ -219,7 +222,7 @@ function featureState(f:BusinessMapCompany['features'][Feature],paused:boolean):
 }
 
 /** One company as a table row: its map state, the four feature switches and the actions; the row opens to the details. */
-function Company({company:c,generation,busy,onToggle,onPrepare,onJudge,onFeature,onOpenFinancials}:{company:BusinessMapCompany;generation:Record<Feature,boolean>;busy:boolean;onToggle:()=>void;onPrepare:()=>void;onJudge:()=>void;onFeature:(feature:Feature,on:boolean)=>void;onOpenFinancials?:(ticker:string)=>void}) {
+function Company({company:c,generation,busy,onToggle,onPrepare,onJudge,onFeature,onOpenFinancials,focused,onFocused}:{company:BusinessMapCompany;generation:Record<Feature,boolean>;busy:boolean;onToggle:()=>void;onPrepare:()=>void;onJudge:()=>void;onFeature:(feature:Feature,on:boolean)=>void;onOpenFinancials?:(ticker:string)=>void;focused:boolean;onFocused:()=>void}) {
   const running=!!c.task&&active.has(c.task.status),collecting=!!c.collection&&['queued','running','retry'].includes(c.collection.status);
   const ready=c.publication.status==='ready';
   const revenuePending=c.publication.revenueCoverage?.some(q=>q.status==='unverified');
@@ -229,12 +232,13 @@ function Company({company:c,generation,busy,onToggle,onPrepare,onJudge,onFeature
   const notes=taskIssues.filter(code=>NOTE.test(code));
   const issues=[...new Set([...(revenuePending?['REVENUE_BREAKDOWN_NOT_VERIFIED']:[]),...taskIssues.filter(code=>!NOTE.test(code)),...(c.collection?.status==='succeeded'?[]:c.collection?.reasons??[]),...(!ready||c.publication.outdated?c.publication.reasons:[])])].filter(s=>s!=='PREPARING');
   const skipped=notes.filter(code=>!code.startsWith('UNSUPPORTED_SOURCE_FACTS:')).length,unsupported=notes.filter(code=>code.startsWith('UNSUPPORTED_SOURCE_FACTS:')).reduce((n,code)=>n+Number(code.split(':')[1]??0),0);
-  const [open,setOpen]=useState(false);
+  const [open,setOpen]=useState(focused),body=useRef<HTMLTableSectionElement>(null);
+  useEffect(()=>{if(!focused)return;body.current?.scrollIntoView({block:'start'});onFocused();},[focused,onFocused]);
   const map=ready?{status:'reviewed',text:'财务地图已显示'}:running||collecting?{status:'processing',text:'财务地图准备中'}:{status:'idle',text:'财务地图未就绪'};
   const now=nowLine(c,running),problems=groupIssues(issues);
   const runs=FEATURES.flatMap(feature=>(c.features[feature].progress??[]).map((run,_,all)=>({feature,run,count:all.length})));
   const remove=()=>{if(window.confirm(`移出 ${c.ticker}？`))onToggle();};
-  return <tbody data-open={open||undefined}>
+  return <tbody ref={body} data-open={open||undefined}>
     <tr className="bm-admin-row" aria-label={`${c.ticker} 数据准备`}>
       <td><div className="bm-admin-company-cell"><button className="bm-admin-toggle" aria-expanded={open} aria-label={`${c.ticker} 详情`} onClick={()=>setOpen(o=>!o)}><ChevronRight size={15}/></button><CompanyLogo symbol={c.ticker}/><span className="bm-admin-name"><strong className="ra-mono">{c.ticker}</strong>{c.name&&c.name!==c.ticker&&<small>{c.name}</small>}</span></div></td>
       <td><div className="bm-admin-states"><span className="ra-badge" data-status={map.status}>{map.text}</span>{now&&<small className="bm-admin-now">{now}</small>}</div></td>
