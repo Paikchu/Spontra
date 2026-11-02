@@ -16,6 +16,7 @@ import { KIND_LABEL, VIEW_LABEL, type VerifiedFinding } from "./findings-model";
 import { SeverityIcon, severityLabel } from "./SeverityIcon";
 import { arrivalStyle, RailRow, rowExit, useArrivals } from "./arrivals";
 import { useRailTip } from "./RailTip";
+import { useMedia } from "./side-scroll";
 
 const m = messages({
   title: "Findings, reports and events",
@@ -107,13 +108,15 @@ export function RailStream({ rail, findings, findingsPeriodEnd, verdicts, ticker
   const shown = rows.slice(0, Math.max(limit, focusedRow ? rows.indexOf(focusedRow) + 1 : 0));
   const more = shown.length < rows.length;
   const end = useRef<HTMLDivElement>(null);
+  // Up to 960px the rail lays out flat (`display: contents`) and the page scrolls instead.
+  const flat = useMedia("(max-width: 960px)");
   useEffect(() => {
     const el = end.current;
     if (!el || !more) return;
-    const observer = new IntersectionObserver(entries => { if (entries.some(e => e.isIntersecting)) setLimit(n => n + PAGE); }, { root: el.closest(".rail-scroll"), rootMargin: "0px 0px 120px 0px" });
+    const observer = new IntersectionObserver(entries => { if (entries.some(e => e.isIntersecting)) setLimit(n => n + PAGE); }, { root: flat ? null : el.closest(".rail-scroll"), rootMargin: "0px 0px 120px 0px" });
     observer.observe(el);
     return () => observer.disconnect();
-  }, [more, shown.length]);
+  }, [more, shown.length, flat]);
   const ids = shown.flatMap(r => [r.id, ...leavesOf(r).map(item => item.id)]);
   const arrived = useArrivals(ids, updates);
   const still = useReducedMotion();
