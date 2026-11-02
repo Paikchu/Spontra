@@ -350,6 +350,16 @@ export async function loadRevisions(ticker:string,fetcher:typeof fetch=fetch):Pr
 const READER_COOKIE="spontra_reader";
 const readerCookie=(token:string,secure:boolean)=>`${READER_COOKIE}=${token}; Path=/agents; HttpOnly; SameSite=Strict; Max-Age=31536000${secure?"; Secure":""}`;
 const sha256Hex=async(value:string)=>Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(value))),b=>b.toString(16).padStart(2,"0")).join("");
+/** The home digest lists newly added companies, so the edge keeps it half a minute and browsers revalidate it by ETag every time. */
+const HOME_EDGE_SECONDS=30;
+function revalidated(request:Request,response:Response):Response{
+ const etag=response.headers.get("etag");
+ const asked=request.headers.get("if-none-match");
+ if(etag&&asked&&asked.split(",").some(tag=>tag.trim().replace(/^W\//,"")===etag.replace(/^W\//,"")))return new Response(null,{status:304,headers:{...security,etag,"cache-control":"no-cache"}});
+ const out=new Response(response.body,response);
+ out.headers.set("cache-control","no-cache");
+ return out;
+}
 /**
  * The stage's public door (docs/stage-agent-design.md §3.1): same-origin requests only, limited per address, passed
  * to Spontra Analysis's StageGateway with the reader's token from its cookie and a hash of the address; the address
@@ -408,16 +418,16 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
    const locale=homeLocale(url.searchParams);
    if(locale==="reject")return json({error:"Not found"},404);
    try{if(!env.PUBLIC_READ_LIMIT||!(await env.PUBLIC_READ_LIMIT.limit({key:request.headers.get("cf-connecting-ip")??"anonymous"})).success)return json({error:"Too many requests"},429);}catch{return json({error:"Read service unavailable"},503);}
-   const key=new Request(url.href,{method:"GET"});const cached=await cache?.match(key);if(cached)return cached;
+   const key=new Request(url.href,{method:"GET"});const cached=await cache?.match(key);if(cached)return revalidated(request,cached);
    let digest=null;
    try{
     const response=await fetcher(ANALYSIS_ORIGIN+inLocale("/api/v1/home",locale),{signal:AbortSignal.timeout(12000),headers:{accept:"application/json"}});
     digest=response.ok?parseHomeDigest(await response.json()):null;
    }catch{digest=null;}
    if(!digest){const failed=readFailureStatus?moduleJson(unavailableHome()):json(unavailableHome(),503);failed.headers.set("cache-control","no-store");return failed;}
-   const response=json(digest);response.headers.set("cache-control","public, max-age=600");
+   const response=json(digest);response.headers.set("cache-control",`public, max-age=${HOME_EDGE_SECONDS}`);response.headers.set("etag",`W/"${(await sha256Hex(JSON.stringify(digest))).slice(0,32)}"`);
    if(cache)ctx.waitUntil(cache.put(key,response.clone()));
-   return response;
+   return revalidated(request,response);
   }
   if(url.pathname==="/api/business/v1/findings"){
    if(request.method!=="GET"||[...url.searchParams.keys()].length)return json({error:"Not found"},404);

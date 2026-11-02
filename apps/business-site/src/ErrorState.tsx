@@ -1,4 +1,4 @@
-import { ChartColumn, CircleAlert, CloudOff, SearchX, Timer } from "lucide-react";
+import { ChartColumn, CircleAlert, CloudOff, Hourglass, SearchX, Timer } from "lucide-react";
 import { useEffect, useLayoutEffect, type ReactNode } from "react";
 import { messages, useLocale } from "@/packages/web/src/i18n";
 import type { CompanyFault } from "./error-model";
@@ -10,6 +10,8 @@ const m = messages({
   notFoundBodyAlone: "We do not have a filing read for this company yet.",
   thinTitle: (ticker: string) => `${ticker} does not have enough data yet`,
   thinBody: "An analysis needs at least two quarters of filings. It fills in after the next report is published.",
+  preparingTitle: (ticker: string) => `Preparing data for ${ticker}`,
+  preparingBody: "This page updates when the data is ready.",
   limitTitle: "Too many requests",
   limitBody: "Try again in about a minute.",
   serverTitle: "This page did not load",
@@ -24,6 +26,7 @@ const m = messages({
   code: (code: string) => `Error code: ${code}`,
   titleMissing: "Not found",
   titleThin: "Not enough data",
+  titlePreparing: "Preparing data",
   titleLimit: "Try again soon",
   titleServer: "Unavailable",
 }, {
@@ -32,6 +35,8 @@ const m = messages({
   notFoundBodyAlone: "我们还没有这家公司的财报解析。",
   thinTitle: (ticker: string) => `${ticker} 的数据还不够`,
   thinBody: "至少需要两个季度的财报才能生成分析，下一份财报发布后会自动补上。",
+  preparingTitle: (ticker: string) => `${ticker} 数据准备中`,
+  preparingBody: "数据就绪后页面会自动更新。",
   limitTitle: "请求过于频繁",
   limitBody: "大约一分钟后可以重试。",
   serverTitle: "页面没有载入",
@@ -46,6 +51,7 @@ const m = messages({
   code: (code: string) => `错误代码：${code}`,
   titleMissing: "未找到",
   titleThin: "数据不足",
+  titlePreparing: "数据准备中",
   titleLimit: "请稍后再试",
   titleServer: "暂时无法打开",
 });
@@ -55,6 +61,7 @@ export type ErrorKind = CompanyFault["kind"] | "missing";
 const ICONS: Record<ErrorKind, ReactNode> = {
   "not-found": <SearchX strokeWidth={1.5} />,
   insufficient: <ChartColumn strokeWidth={1.5} />,
+  preparing: <Hourglass strokeWidth={1.5} />,
   "rate-limit": <Timer strokeWidth={1.5} />,
   server: <CloudOff strokeWidth={1.5} />,
   missing: <CircleAlert strokeWidth={1.5} />,
@@ -74,8 +81,10 @@ export function ErrorState({ kind, code, ticker, companies, onHome, onRetry, onS
   useLocale();
   const name = ticker ?? "";
   const retryable = kind === "rate-limit" || kind === "server";
+  const reloadable = retryable || kind === "preparing";
   const title = kind === "not-found" && name ? m.notFoundTitle(name)
     : kind === "insufficient" && name ? m.thinTitle(name)
+    : kind === "preparing" ? (name ? m.preparingTitle(name) : m.titlePreparing)
     : kind === "rate-limit" ? m.limitTitle
     : kind === "server" ? m.serverTitle
     : m.missingTitle;
@@ -83,10 +92,12 @@ export function ErrorState({ kind, code, ticker, companies, onHome, onRetry, onS
   const listed = companies.length > 0;
   const body = kind === "not-found" && name ? (listed ? m.notFoundBody : m.notFoundBodyAlone)
     : kind === "insufficient" ? m.thinBody
+    : kind === "preparing" ? m.preparingBody
     : kind === "rate-limit" ? m.limitBody
     : kind === "server" ? m.serverBody
     : listed ? m.missingBody : m.missingBodyAlone;
   const pageTitle = kind === "insufficient" ? m.titleThin
+    : kind === "preparing" ? m.titlePreparing
     : kind === "rate-limit" ? m.titleLimit
     : kind === "server" ? m.titleServer
     : m.titleMissing;
@@ -106,7 +117,7 @@ export function ErrorState({ kind, code, ticker, companies, onHome, onRetry, onS
       <p className="error-body">{body}</p>
       <div className="error-actions">
         <button type="button" className="error-primary" onClick={onHome}>{m.backHome}</button>
-        {retryable
+        {reloadable
           ? <button type="button" className="error-secondary" onClick={onRetry}>{m.retry}</button>
           : <button type="button" className="error-secondary" onClick={onSearch}>{m.searchOther}</button>}
       </div>

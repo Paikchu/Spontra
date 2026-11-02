@@ -21,10 +21,14 @@ function readCached(locale: string): HomeDigest | null {
 
 /**
  * One homepage read, reused by the page and the company-page search.
- * A fresh cached digest (session storage, 10 minutes) is shown from the first paint; a render without
- * storage (the server-side translation check) reads nothing.
+ * A fresh cached digest (session storage, 10 minutes) is shown from the first paint and read again on every mount; a
+ * render without storage (the server-side translation check) reads nothing.
+ *
+ * `covered` answers for `ticker`: a company the digest in hand does not list is read once more before it counts as not
+ * covered, so a newly added company is not turned away by an older copy. undefined while that read is out; null when the
+ * catalog could not load.
  */
-export function useHomeDigest(locale: string): { digest: HomeDigest | null; status: DigestStatus; retry: () => void } {
+export function useHomeDigest(locale: string, ticker: string | null = null): { digest: HomeDigest | null; status: DigestStatus; retry: () => void; covered: boolean | null | undefined } {
   const [digest, setDigest] = useState<HomeDigest | null>(() => readCached(locale));
   const [status, setStatus] = useState<DigestStatus>(() => (readCached(locale) ? "ready" : "loading"));
   const [cachedFor, setCachedFor] = useState(locale);
@@ -38,6 +42,21 @@ export function useHomeDigest(locale: string): { digest: HomeDigest | null; stat
     }
   }
   const [attempt, setAttempt] = useState(0);
+  /** `asked` is the ticker the latest read was started for; `answered` the read that has finished. */
+  const [rendered, setRendered] = useState(ticker);
+  const [asked, setAsked] = useState(ticker);
+  const [reads, setReads] = useState(0);
+  const [answered, setAnswered] = useState(-1);
+  if (rendered !== ticker) {
+    setRendered(ticker);
+    setAsked(null);
+  }
+  const listed = !!ticker && !!digest?.companies.some(company => company.ticker === ticker);
+  if (ticker && asked !== ticker && !listed && status === "ready") {
+    setAsked(ticker);
+    setReads(n => n + 1);
+  }
+  const covered = !ticker ? null : listed ? true : status === "error" ? null : asked === ticker && answered === reads ? false : undefined;
   const retried = useRef(false);
   const retry = useCallback(() => {
     retried.current = false;
@@ -50,6 +69,7 @@ export function useHomeDigest(locale: string): { digest: HomeDigest | null; stat
     let timer = 0;
     let have = readCached(locale) !== null;
     const controller = new AbortController();
+    const read = reads;
     const run = async () => {
       try {
         const response = await fetch(`/api/business/v1/home?lang=${encodeURIComponent(locale)}`, { signal: controller.signal, headers: { accept: "application/json" } });
@@ -64,15 +84,17 @@ export function useHomeDigest(locale: string): { digest: HomeDigest | null; stat
         have = true;
         setDigest(parsed);
         setStatus("ready");
+        setAnswered(read);
         try { sessionStorage.setItem(keyOf(locale), JSON.stringify({ at: Date.now(), body: parsed })); } catch { /* Storage may be disabled. */ }
       } catch (error) {
         if (!live || (error instanceof DOMException && error.name === "AbortError")) return;
+        setAnswered(read);
         if (!have) setStatus("error");
       }
     };
     void run();
     return () => { live = false; controller.abort(); window.clearTimeout(timer); };
-  }, [locale, attempt]);
+  }, [locale, attempt, reads]);
 
-  return { digest, status, retry };
+  return { digest, status, retry, covered };
 }

@@ -40,6 +40,8 @@ type OpeningRead = {
   failed: boolean;
   eventsPhase: "ready" | "loading" | "error";
   revisions: MapRevisions;
+  /** The company's revision when the read started, read or not; a page without a statement reloads when it moves. */
+  companyRevision: string | null;
   httpStatus: number | null;
   errors: MapResource[];
 };
@@ -83,7 +85,7 @@ export async function loadOpening(ticker: string, request: OpeningRequests, onSe
     }
   };
   const collect = (parts: OpeningPart[]): OpeningRead => {
-    const result: OpeningRead = { data: { ...EMPTY }, failed: false, eventsPhase: "loading", revisions: {}, httpStatus: null, errors: [] };
+    const result: OpeningRead = { data: { ...EMPTY }, failed: false, eventsPhase: "loading", revisions: {}, companyRevision: revisions?.company ?? null, httpStatus: null, errors: [] };
     for (const part of parts) {
       Object.assign(result.data, part.data);
       if (part.httpStatus != null || part.eventsError) result.errors.push(part.resource);
@@ -114,8 +116,12 @@ export type UpdateNews = "findings" | "reports" | "events";
 /** A newer read, already loaded, waiting for the reader to take it. */
 export type PendingUpdate = { revisions: MapRevisions; patch: Partial<CompanyData>; news: UpdateNews[] };
 
-/** How often a visible page asks whether anything was published; a return to the tab asks at once, at most every half minute. */
+/**
+ * How often a visible page asks whether anything was published; a return to the tab asks at once, at most every half minute.
+ * A page still waiting for its statement asks more often.
+ */
 const CHECK_EVERY = 3 * 60_000;
+const WAIT_EVERY = 45_000;
 const MIN_GAP = 30_000;
 
 type Supplement = "fundamentals" | "events" | "filings";
@@ -185,6 +191,7 @@ export function useLiveCompany(ticker: string, onSeen: (ticker: string) => void,
   const [eventsPhase, setEventsPhase] = useState<"ready" | "loading" | "error">("loading");
   /** The revisions of what is on screen, per resource that was read; null until the first read has started. */
   const shown = useRef<MapRevisions | null>(null);
+  const companyRevision = useRef<string | null>(null);
   const current = useRef(data);
   const staged = useRef<PendingUpdate | null>(null);
   /** False while an opening read or a language refetch is in flight, so a revision check cannot patch the other language in. */
@@ -211,6 +218,7 @@ export function useLiveCompany(ticker: string, onSeen: (ticker: string) => void,
           setReady(true);
           if (finished) setSettled(true);
           shown.current = result.revisions;
+          companyRevision.current = result.companyRevision;
         };
         let primaryShown = false;
         const result = await loadOpening(ticker, request, onSeen, location.search, swapping ? undefined : first => {
@@ -244,12 +252,17 @@ export function useLiveCompany(ticker: string, onSeen: (ticker: string) => void,
     const check = async () => {
       if (checking || !checksReady.current || document.visibilityState !== "visible" || Date.now() - last < MIN_GAP) return;
       const base = shown.current;
-      if (!base || !current.current.flow) return;
+      if (!base) return;
       checking = true;
       last = Date.now();
       try {
         const latest = await fetchRevisions(ticker, signal);
         if (!latest || signal.aborted) return;
+        // Without a statement there is nothing to patch: a newly published company revision reloads the page.
+        if (!current.current.flow) {
+          if (latest.company && latest.company !== companyRevision.current) setAttempt(n => n + 1);
+          return;
+        }
         const resources = resourcesToRead(base, latest, staged.current?.revisions);
         if (!resources.length) return;
         const read = await readRevisions(resources, latest, current.current, (r, rev) => readResource(ticker, r, rev, signal));
@@ -266,11 +279,13 @@ export function useLiveCompany(ticker: string, onSeen: (ticker: string) => void,
     };
     const run = () => { void check(); };
     const timer = setInterval(run, CHECK_EVERY);
+    const waiting = setInterval(() => { if (!current.current.flow) run(); }, WAIT_EVERY);
     document.addEventListener("visibilitychange", run);
     addEventListener("focus", run);
     return () => {
       controller.abort();
       clearInterval(timer);
+      clearInterval(waiting);
       document.removeEventListener("visibilitychange", run);
       removeEventListener("focus", run);
     };

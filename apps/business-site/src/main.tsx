@@ -81,7 +81,6 @@ function showTicker(next: string | null, set: (ticker: string | null) => void) {
 }
 function App() {
   const locale = useLocale();
-  const home = useHomeDigest(locale);
   const [ticker, setTicker] = useState(() => {
       const initialTicker = tickerFromUrl();
       if (initialTicker) preloadCompanyPage();
@@ -106,6 +105,7 @@ function App() {
         return false;
       }
     });
+  const home = useHomeDigest(locale, ticker);
   // The route owns the read even while its lazy component is still downloading.
   const opening = useMemo(() => ticker ? createCompanyOpening(ticker, locale) : null, [ticker, locale]);
   useEffect(() => {
@@ -257,7 +257,7 @@ function App() {
         <main data-rail={railCollapsed ? "collapsed" : undefined}>
           <CompanyRouteBoundary key={ticker} ticker={ticker} companies={picks} onHome={goHome} onSearch={searchFromError}>
             <Suspense fallback={<CompanySkeleton ticker={ticker} tools={actions} />}>
-              <Company key={ticker} ticker={ticker} opening={opening!} tools={actions} onSeen={remember} catalog={home.digest?.companies.find(company => company.ticker === ticker) ?? null} covered={home.status === "ready" ? covered.has(ticker) : null} companies={picks} onHome={goHome} onSearch={searchFromError} />
+              <Company key={ticker} ticker={ticker} opening={opening!} tools={actions} onSeen={remember} catalog={home.digest?.companies.find(company => company.ticker === ticker) ?? null} covered={home.covered} companies={picks} onHome={goHome} onSearch={searchFromError} />
             </Suspense>
           </CompanyRouteBoundary>
         </main>
