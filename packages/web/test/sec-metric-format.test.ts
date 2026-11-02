@@ -13,3 +13,14 @@ test("known keys keep their label and unknown keys read as words", () => {
   assert.equal(formatSecMetricLabel("revenue", "zh-CN"), "营收");
   assert.equal(formatSecMetricLabel("backlog_units"), "backlog units");
 });
+
+test("Chinese labels translate growth and common operating keys and mark unknown keys; English is unchanged", () => {
+  assert.equal(formatSecMetricLabel("revenue_growth", "zh-CN"), "营收增长");
+  assert.equal(formatSecMetricLabel("data_center_revenue_growth", "zh-CN"), "Data Center 营收增长");
+  assert.equal(formatSecMetricLabel("data_center_units", "zh-CN"), "Data Center 销量");
+  assert.equal(formatSecMetricLabel("backlog", "zh-CN"), "未交付订单");
+  assert.equal(formatSecMetricLabel("subscriber_churn", "zh-CN"), "指标（subscriber churn）");
+  assert.equal(formatSecMetricLabel("revenue_growth"), "revenue growth");
+  assert.equal(formatSecMetricLabel("data_center_units"), "data center units");
+  assert.equal(formatSecMetricLabel("subscriber_churn"), "subscriber churn");
+});

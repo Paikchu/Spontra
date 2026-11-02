@@ -82,6 +82,9 @@ const METRIC_LABELS_ZH: Record<string, string> = {
   total_liabilities: "总负债",
   stockholders_equity: "股东权益",
   shares_outstanding: "流通股数",
+  units: "销量",
+  backlog: "未交付订单",
+  arpu: "每用户平均收入",
 };
 
 /** Keys whose value is a ratio, whether the model stored 0.75 or 75. */
@@ -90,10 +93,21 @@ const RATIO_KEY = /(margin|ratio|rate|yield|growth|percent)$/;
 /**
  * A known metric reads by its label. A key that ends in one (`data_center_revenue`) is that metric for the part of the
  * business its leading words name, kept as the filing names it: "Data Center revenue" / "Data Center 营收".
+ * In Chinese a known metric's `_growth` reads as its 增长 ("营收增长"), and a key with no Chinese label is marked as an
+ * untranslated metric name ("指标（foo bar）") rather than shown as if it were the translation.
  */
 export function formatSecMetricLabel(metricKey: string, locale: Locale = "en"): string {
-  const labels = locale === "zh-CN" ? METRIC_LABELS_ZH : METRIC_LABELS;
   const key = metricKey.trim().toLowerCase();
+  const known = knownMetricLabel(key, locale);
+  if (known) return known;
+  const words = metricKey.trim().replace(/_/g, " ");
+  if (locale !== "zh-CN") return words;
+  const base = key.endsWith("_growth") ? knownMetricLabel(key.slice(0, -"_growth".length), locale) : undefined;
+  return base ? `${base}增长` : `指标（${words}）`;
+}
+
+function knownMetricLabel(key: string, locale: Locale): string | undefined {
+  const labels = locale === "zh-CN" ? METRIC_LABELS_ZH : METRIC_LABELS;
   if (labels[key]) return labels[key];
   const words = key.split("_").filter(Boolean);
   for (let i = 1; i < words.length; i++) {
@@ -102,7 +116,7 @@ export function formatSecMetricLabel(metricKey: string, locale: Locale = "en"): 
     const part = words.slice(0, i).map(w => w[0]!.toUpperCase() + w.slice(1)).join(" ");
     return locale === "zh-CN" || /^[A-Z]{2}/.test(metric) ? `${part} ${metric}` : `${part} ${metric[0]!.toLowerCase()}${metric.slice(1)}`;
   }
-  return metricKey.trim().replace(/_/g, " ");
+  return undefined;
 }
 
 /**
