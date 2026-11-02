@@ -462,10 +462,11 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
   }
   // What changed since the page loaded: answered fresh every time, never from a cache.
   if(match[2]==="/revision"){const revisions=await loadRevisions(match[1],fetcher);const response=json({schemaVersion:"revisions.v1",ticker:match[1],revisions:revisions??{}},revisions?200:503);response.headers.set("cache-control","no-store");return response;}
-  const key=new Request(url.href,{method:"GET"});const cached=await cache?.match(key);if(cached)return cached;
+  const privateRead=match[2]==="/insiders"||match[2]?.startsWith("/insiders/")||match[2]?.startsWith("/items/");
+  const key=new Request(url.href,{method:"GET"});const cached=privateRead?undefined:await cache?.match(key);if(cached)return cached;
   if(match[2]){
    // Supplementary resources answer on their own and are cached only when they have something to say.
-   const supplementary=async<T>(name:string,version:string,load:()=>Promise<T|null>)=>{const body=await load();const response=moduleJson({schemaVersion:version,status:body?"ready":"unavailable",[name]:body});if(!body)response.headers.set("cache-control","no-store");if(cache&&body&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));return response;};
+   const supplementary=async<T>(name:string,version:string,load:()=>Promise<T|null>)=>{const body=await load();const response=moduleJson({schemaVersion:version,status:body?"ready":"unavailable",[name]:body});if(!body)response.headers.set("cache-control","no-store");else if(privateRead&&response.ok)response.headers.set("cache-control","private, max-age=30");if(!privateRead&&cache&&body&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));return response;};
    if(match[2]==="/capital"){const body=await loadCapital(match[1],fetcher);const response=moduleJson({schemaVersion:"capital-response.v1",status:body?"ready":"unavailable",capital:body?.capital??null,peers:body?.peers??null});if(!body)response.headers.set("cache-control","no-store");if(cache&&body&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));return response;}
    if(match[2]==="/findings"){const bundle=await loadFindings(match[1],fetcher,locale);const response=moduleJson({schemaVersion:"findings-response.v1",status:bundle?"ready":"unavailable",findings:bundle?.findings??null,passages:bundle?.passages??[],peers:bundle?.peers??null});if(!bundle)response.headers.set("cache-control","no-store");if(cache&&bundle&&response.ok)ctx.waitUntil(cache.put(key,response.clone()));return response;}
    if(match[2]==="/events")return supplementary("events","events-response.v1",()=>loadEvents(match[1],fetcher,locale));
