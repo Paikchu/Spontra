@@ -45,8 +45,9 @@ function initialSection(): Section {
 }
 
 /**
- * The admin shell. A page opened once stays mounted behind the others, so switching back shows it as it was, its data,
- * place and scroll included, and brings it up to date behind what it shows (admin-page.ts).
+ * The admin shell. A page opened once stays mounted behind the others (one that reads its address, until back or forward
+ * leaves it), so switching back shows it as it was, its data, place and scroll included, and brings it up to date behind
+ * what it shows (admin-page.ts).
  */
 export function BusinessViewAdmin({ mapOrigin = "" }: { mapOrigin?: string }) {
   const [section, setSection] = useState<Section>(initialSection);
@@ -70,8 +71,19 @@ export function BusinessViewAdmin({ mapOrigin = "" }: { mapOrigin?: string }) {
     const ticker = new URLSearchParams(search).get("ticker");
     try { window.history.replaceState(null, "", `${PAGES[section].path}${ticker ? `?${new URLSearchParams({ ticker })}` : ""}`); } catch { /* Sandboxed preview. */ }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  // Pages push their own levels into history; back and forward also move between pages.
-  useEffect(() => { const onPop = () => show(initialSection()); window.addEventListener("popstate", onPop); return () => window.removeEventListener("popstate", onPop); });
+  // Page switches and pages' own levels are pushed into history, so back and forward also move between pages. A page
+  // that reads its address starts again from the one moved to; left this way, it no longer knows its address, so it
+  // is closed and opens afresh when next opened. Moves within the shown page are that page's to follow.
+  useEffect(() => {
+    const onPop = () => {
+      const next = initialSection();
+      if (next === section) return;
+      if (FROM_ADDRESS.has(section)) { delete kept.current[section]; setOpened(list => list.filter(key => key !== section)); }
+      if (FROM_ADDRESS.has(next)) { delete kept.current[next]; setGeneration(g => ({ ...g, [next]: (g[next] ?? 0) + 1 })); }
+      show(next); setError("");
+    };
+    window.addEventListener("popstate", onPop); return () => window.removeEventListener("popstate", onPop);
+  });
   // The page shown again goes back to where it was scrolled.
   useLayoutEffect(() => { window.scrollTo({ top: kept.current[section]?.scroll ?? 0, behavior: "instant" }); }, [section]);
 
@@ -85,7 +97,9 @@ export function BusinessViewAdmin({ mapOrigin = "" }: { mapOrigin?: string }) {
     const address = search ?? kept.current[next]?.search ?? "";
     if (search !== undefined && FROM_ADDRESS.has(next) && opened.includes(next)) setGeneration(g => ({ ...g, [next]: (g[next] ?? 0) + 1 }));
     if (search !== undefined && kept.current[next]) kept.current[next]!.scroll = 0;
-    try { window.history.replaceState(null, "", `${PAGES[next].path}${address}`); } catch { /* Sandboxed preview. */ }
+    // A new address is a new history entry; opening the address already shown replaces it.
+    const url = `${PAGES[next].path}${address}`;
+    try { window.history[url === `${window.location.pathname}${window.location.search}` ? "replaceState" : "pushState"](null, "", url); } catch { /* Sandboxed preview. */ }
     show(next); setError("");
   }
   // The admin site has no sign-in: a 401 means Spontra Analysis refused the binding, which only a banner can report.
