@@ -144,3 +144,46 @@ test("historical parser rejects mixed investment modes and malformed normal boun
   const implicit = assumptions(); implicit.request.scenarios.base.drivers.path.capitalPlan = null;
   assert.equal(historyAssumptionsSchema.safeParse(implicit).success, true);
 });
+
+function operatingLeaseFixture(): HistoryInput {
+  const input = fixture(); input.valuationPolicy = { leaseTreatment: "operating_expense" };
+  for (const [id, value] of [["debt", 30], ["finance_leases", 5], ["operating_leases", 90], ["leases", 95], ["cash", 20], ["investments", 10], ["preferred_stock", 2], ["minority_interest", 1], ["valuation_net_claims", 8]] satisfies Array<[string, number]>) {
+    input.facts.push({ ...input.facts[0]!, id, label: id, value, unit: "USD", currency: "USD" });
+  }
+  input.peers = [{ ticker: "AAA", periodEnd: "2025-11-30", price: 10, shares: 100, ebitda: 20, coreEarnings: 10, netDebt: 8, sourceRefs: ["filing"], earningsBasis: "Operating leases remain expenses", facts: structuredClone(input.facts) }];
+  return input;
+}
+
+test("operating-expense replay binds the bridge and peer claims to the same financing-lease basis", () => {
+  const input = readHistoryInput(operatingLeaseFixture()), agent = assumptions();
+  agent.request.bridge.leaseTreatment = "operating_expense";
+  agent.request.bridge.debtAndClaims = 38;
+  const parsed = historyAssumptionsSchema.parse(JSON.parse(JSON.stringify(agent)));
+  assert.equal(parsed.request.bridge.leaseTreatment, "operating_expense");
+  assert.deepEqual(historyRequest(input, parsed, hash).bridge, parsed.request.bridge);
+  parsed.request.bridge.debtAndClaims = 128;
+  assert.throws(() => historyRequest(input, parsed, hash), /bridge claims differ/);
+  assert.throws(() => historyRequest(input, assumptions(), hash), /different lease treatments/);
+  const badPeer = operatingLeaseFixture(); badPeer.peers[0]!.netDebt = 98;
+  assert.throws(() => readHistoryInput(badPeer), /Peer claims do not match/);
+});
+
+test("missing peer lease classification or liquid investments disables EV rather than substituting zero", () => {
+  const input = operatingLeaseFixture();
+  input.peers[0]!.facts = input.peers[0]!.facts.filter(f => f.id !== "finance_leases");
+  assert.throws(() => readHistoryInput(input), /Peer claims do not match/);
+  input.peers[0]!.netDebt = null;
+  assert.doesNotThrow(() => readHistoryInput(input));
+  const missingInvestment = operatingLeaseFixture(); missingInvestment.peers[0]!.facts = missingInvestment.peers[0]!.facts.filter(f => f.id !== "investments");
+  assert.throws(() => readHistoryInput(missingInvestment), /Peer claims do not match/);
+  missingInvestment.peers[0]!.netDebt = null;
+  assert.doesNotThrow(() => readHistoryInput(missingInvestment));
+});
+
+test("first-release outcome records retain and verify their source publication time", () => {
+  const data = outcome();
+  data.sources = [{ id: "future-filing", kind: "earnings_release", url: "https://example.org/earnings", availableAt: "2026-03-10T21:00:00Z", path: "earnings.html", sha256: hash }];
+  assert.doesNotThrow(() => evaluateHistory(readHistoryInput(fixture()), assumptions(), data, hash));
+  data.actuals[0]!.availableAt = "2026-03-01T00:00:00Z";
+  assert.throws(() => evaluateHistory(readHistoryInput(fixture()), assumptions(), data, hash), /dated first-release source/);
+});

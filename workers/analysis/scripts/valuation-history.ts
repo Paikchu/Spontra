@@ -23,11 +23,14 @@ const sha256 = (value: string | Buffer) => createHash("sha256").update(value).di
 const raw = readFileSync(args.input);
 const input = readHistoryInput(JSON.parse(raw.toString("utf8")));
 const inputSha256 = sha256(raw), root = resolve(args["source-root"]);
-for (const source of input.sources) {
-  const path = resolve(root, source.path), fromRoot = relative(root, path);
-  if (isAbsolute(source.path) || fromRoot.startsWith("..") || isAbsolute(fromRoot)) throw new Error(`Source path leaves the frozen source root: ${source.id}`);
-  if (sha256(readFileSync(path)) !== source.sha256) throw new Error(`Source hash mismatch: ${source.id}`);
-}
+const verifySources = (sources: typeof input.sources) => {
+  for (const source of sources) {
+    const path = resolve(root, source.path), fromRoot = relative(root, path);
+    if (isAbsolute(source.path) || fromRoot.startsWith("..") || isAbsolute(fromRoot)) throw new Error(`Source path leaves the frozen source root: ${source.id}`);
+    if (sha256(readFileSync(path)) !== source.sha256) throw new Error(`Source hash mismatch: ${source.id}`);
+  }
+};
+verifySources(input.sources);
 for (const material of input.researchMaterials) {
   if (sha256(material.text) !== material.sha256) throw new Error(`Research text hash mismatch: ${material.sourceId}`);
 }
@@ -37,7 +40,9 @@ if (args.validate) {
   if (!args.assumptions || !args.out) throw new Error("A replay requires --assumptions from an Agent and --out; a code-only prior is not a historical Agent run");
   const artifact = historyAssumptionsSchema.parse(JSON.parse(readFileSync(args.assumptions, "utf8")));
   const replay = replayHistory(input, artifact, inputSha256);
-  const evaluation = args.outcomes ? evaluateHistory(input, artifact, historyOutcomeSchema.parse(JSON.parse(readFileSync(args.outcomes, "utf8"))), inputSha256) : null;
+  const outcome = args.outcomes ? historyOutcomeSchema.parse(JSON.parse(readFileSync(args.outcomes, "utf8"))) : null;
+  if (outcome?.sources) verifySources(outcome.sources);
+  const evaluation = outcome ? evaluateHistory(input, artifact, outcome, inputSha256) : null;
   writeFileSync(args.out, JSON.stringify({ schemaVersion: "valuation-history-run.v1", kind: artifact.kind, ticker: input.ticker, cutoff: input.cutoff, inputSha256, model: artifact.model, promptSha256: artifact.promptSha256, transcriptPath: artifact.transcriptPath, ...replay, evaluation, limitations: input.limitations }, null, 2) + "\n");
   process.stdout.write(`${input.ticker} ${input.cutoff}: saved replay to ${args.out}\n`);
 }

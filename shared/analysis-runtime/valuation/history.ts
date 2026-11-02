@@ -20,6 +20,7 @@ const peer = z.object({ ticker: z.string(), periodEnd: date, price: nullable, sh
 
 export const historyInputSchema = z.object({
   schemaVersion: z.literal("valuation-history-input.v1"), ticker: z.string(), currency: z.literal("USD"), cutoff: instant, financialPeriodEnd: date, cutoffPolicy: z.string(),
+  valuationPolicy: z.object({ leaseTreatment: z.literal("operating_expense") }).optional(),
   sources: z.array(source).min(1), facts: z.array(fact).min(1), management: management.nullable(),
   market: z.object({
     quote: z.object({ price: finite.positive(), priceDate: date, sourceId: z.string() }),
@@ -30,6 +31,18 @@ export const historyInputSchema = z.object({
   peers: z.array(peer), researchMaterials: z.array(z.object({ sourceId: z.string(), title: z.string(), text: z.string(), sha256: hash })), missing: strings, limitations: strings,
 });
 export type HistoryInput = z.infer<typeof historyInputSchema>;
+
+type HistoricalClaims = { status: "missing"; missing: string[] } | { status: "known"; grossClaims: number; nonOperatingAssets: number; netClaims: number };
+function operatingExpenseClaims(facts: ValuationFact[]): HistoricalClaims {
+  const byId = new Map(facts.map(f => [f.id, f]));
+  const debtId = byId.has("valuation_debt") ? "valuation_debt" : "debt";
+  const debt = byId.get(debtId)?.value, cash = byId.get("cash")?.value, investments = byId.get("investments")?.value;
+  const finance = byId.get("finance_leases")?.value ?? (byId.get("leases")?.value === 0 ? 0 : undefined);
+  const missing = [debt == null ? debtId : null, finance == null ? "finance_leases" : null, cash == null ? "cash" : null, investments == null ? "investments" : null].filter((s): s is string => s != null);
+  if (debt == null || finance == null || cash == null || investments == null) return { status: "missing", missing };
+  const senior = ["preferred_stock", "minority_interest", "other_senior_claims"].flatMap(id => { const f = byId.get(id); return f ? [f.value] : []; }).reduce((sum, n) => sum + n, 0);
+  return { status: "known", grossClaims: debt + finance + senior, nonOperatingAssets: cash + investments, netClaims: debt + finance + senior - cash - investments };
+}
 
 /** A historical input is a closed evidence set. Source publication time, not download time, determines eligibility. */
 export function readHistoryInput(value: unknown): HistoryInput {
@@ -47,6 +60,14 @@ export function readHistoryInput(value: unknown): HistoryInput {
   input.facts.forEach(checkFact);
   if (new Set(input.facts.map(f => f.id)).size !== input.facts.length) throw new Error("Duplicate historical fact id");
   for (const p of input.peers) { p.sourceRefs.forEach(requireSource); p.facts.forEach(checkFact); if (p.periodEnd > cutoffDate) throw new Error(`Future peer period: ${p.ticker}`); }
+  if (input.valuationPolicy?.leaseTreatment === "operating_expense") {
+    const own = operatingExpenseClaims(input.facts), derived = input.facts.find(f => f.id === "valuation_net_claims");
+    if (derived && (own.status !== "known" || derived.value !== own.netClaims)) throw new Error("Historical valuation_net_claims does not match the declared lease basis");
+    for (const p of input.peers) {
+      const claims = operatingExpenseClaims(p.facts);
+      if (claims.status === "missing" ? p.netDebt != null : p.netDebt !== claims.netClaims) throw new Error(`Peer claims do not match the declared lease basis: ${p.ticker}`);
+    }
+  }
   if (input.financialPeriodEnd > cutoffDate) throw new Error("Future financial period");
   for (const s of input.market.series) {
     requireSource(s.sourceId);
@@ -122,7 +143,7 @@ const discountRateSources = z.strictObject({ riskFree: componentSource, beta: co
 const requestSchema = z.strictObject({
   modelType: z.literal("fcff"), currency: z.string(),
   discountRate: z.object({ value: finite, basis: z.enum(["wacc", "cost_of_equity"]), components: z.object({ riskFree: nullable, beta: nullable, equityRiskPremium: nullable, costOfEquity: nullable, costOfDebt: nullable, taxRate: nullable, equityWeight: nullable }), rationale: z.string(), sourceRefs: strings, sources: discountRateSources.optional() }),
-  shares: z.object({ base: finite, dilutionReserve: finite, basis: z.string() }), bridge: z.object({ nonOperatingAssets: finite, debtAndClaims: finite, nonOperatingEquityAdjustment: finite, notes: strings }),
+  shares: z.object({ base: finite, dilutionReserve: finite, basis: z.string() }), bridge: z.object({ nonOperatingAssets: finite, debtAndClaims: finite, nonOperatingEquityAdjustment: finite, leaseTreatment: z.literal("operating_expense").optional(), notes: strings }),
   scenarios: z.object({ bear: scenario, base: scenario, bull: scenario }), price: nullable, fairValueBasis: fairValueBasis.optional(), midYear: z.boolean().optional(), context: context.optional(),
 }) satisfies z.ZodType<CalcRequest>;
 const operatingMeasure = z.object({ metric: z.string(), periodStart: date, periodEnd: date, value: finite, unit: z.string(), basis: z.string() });
@@ -141,6 +162,16 @@ export function historyRequest(input: HistoryInput, artifact: HistoryAssumptions
   if (input.missing.length) throw new Error(`Historical input incomplete: ${input.missing.join(", ")}`);
   const request = artifact.request;
   if (request.currency !== input.currency) throw new Error("Valuation currency does not match historical input");
+  if (request.bridge.leaseTreatment !== input.valuationPolicy?.leaseTreatment) throw new Error("Agent bridge and historical peers use different lease treatments");
+  if (request.bridge.leaseTreatment === "operating_expense") {
+    const claims = operatingExpenseClaims(input.facts);
+    if (claims.status === "missing") {
+      if (request.fairValueBasis?.status !== "unavailable") throw new Error(`Declare fairValueBasis unavailable: missing historical claim inputs ${claims.missing.join(", ")}`);
+    } else {
+      if (Math.abs(request.bridge.debtAndClaims - claims.grossClaims) > Math.max(Math.abs(claims.grossClaims), 1) * 0.02) throw new Error("Agent bridge claims differ from historical debt, financing leases and known senior claims");
+      if (request.bridge.nonOperatingAssets - claims.nonOperatingAssets > Math.max(Math.abs(claims.nonOperatingAssets), 1) * 0.02) throw new Error("Agent bridge assets exceed historical cash and investments");
+    }
+  }
   const shares = input.facts.find(f => f.id === artifact.shareBasisFactId && f.unit === "shares");
   if (!shares || request.shares.base !== shares.value) throw new Error("Share base does not match the selected historical fact");
   const normalized = (text: string) => text.replace(/\s+/g, " ").trim();
@@ -178,13 +209,17 @@ export function historyRequest(input: HistoryInput, artifact: HistoryAssumptions
 
 export const historyOutcomeSchema = z.object({
   schemaVersion: z.literal("valuation-history-outcome.v1"), ticker: z.string(), cutoff: instant, inputSha256: hash, evaluationAsOf: instant,
-  market: z.array(bar), benchmark: z.array(bar), actuals: z.array(operatingMeasure.extend({ availableAt: instant, sourceId: z.string() })),
+  market: z.array(bar), benchmark: z.array(bar), actuals: z.array(operatingMeasure.extend({ availableAt: instant, sourceId: z.string() })), sources: z.array(source).optional(),
 });
 export type HistoryOutcome = z.infer<typeof historyOutcomeSchema>;
 
 /** Evaluate only identical metric periods/bases; partial annual observations never stand in for a full-year forecast. */
 export function evaluateHistory(input: HistoryInput, artifact: HistoryAssumptions, outcome: HistoryOutcome, inputSha256: string) {
   if (outcome.ticker !== input.ticker || outcome.cutoff !== input.cutoff || outcome.inputSha256 !== inputSha256) throw new Error("Outcome does not belong to this frozen input");
+  if (outcome.sources) for (const actual of outcome.actuals) {
+    const source = outcome.sources.find(s => s.id === actual.sourceId);
+    if (!source || source.availableAt !== actual.availableAt) throw new Error(`Outcome actual lacks its dated first-release source: ${actual.metric} ${actual.periodEnd}`);
+  }
   const asOf = Date.parse(outcome.evaluationAsOf);
   const operating = artifact.operatingForecasts.map(forecast => {
     const actual = outcome.actuals.filter(a => a.metric === forecast.metric && a.periodStart === forecast.periodStart && a.periodEnd === forecast.periodEnd && a.unit === forecast.unit && a.basis === forecast.basis && Date.parse(a.availableAt) <= asOf).sort((a, b) => a.availableAt.localeCompare(b.availableAt))[0];
