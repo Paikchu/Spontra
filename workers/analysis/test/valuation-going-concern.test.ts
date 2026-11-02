@@ -53,7 +53,7 @@ const probability = (p: number, rationale: string) => ({ probability: p, rationa
 export const calculation = {
   modelType: "fcfe", discountRate: { basis: "cost_of_equity", riskFree: component(0.04, "test risk-free"), beta: component(1, "test beta"), equityRiskPremium: component(0.06, "test premium"), costOfDebt: component(null, "not needed: cost of equity"), taxRate: component(null, "not needed: cost of equity"), equityWeight: component(null, "not needed: cost of equity"), rationale: "Cost of equity from the test components." },
   shares: { baseFactId: "shares_outstanding", dilutionPercent: 0, rationale: "No additional dilution." },
-  bridge: { nonOperatingAssets: 0, debtAndClaims: 0, nonOperatingEquityAdjustment: 0, notes: ["no net claims in this test"] },
+  bridge: { leaseTreatment: "operating_expense", nonOperatingAssets: 0, debtAndClaims: 0, nonOperatingEquityAdjustment: 0, notes: ["no net claims in this test"] },
   scenarios: { bear: scenario, base: scenario, bull: scenario }, midYear: false, forwardYears: 3,
   fairValueBasis: { status: "unavailable", reason: "Normal operating bounds were not researched for this liquidity test.", evidenceIds: [] },
   methodWeights: { dcf: weight(1, "The equity cash flows are the only usable method."), ev_ebitda_forward: weight(0, "Not applicable to an equity-level model."), pe_forward: weight(0, "Not applicable to an equity-level model.") },

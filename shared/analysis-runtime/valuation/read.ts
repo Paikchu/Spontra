@@ -71,7 +71,7 @@ const model = z.object({
   calculatorVersion: z.string(), modelType: z.enum(VALUATION_MODEL_TYPES), currency: z.string(),
   discountRate: z.object({ value: finite, basis: z.enum(DISCOUNT_RATE_BASES), components: z.object({ riskFree: nullableFinite, beta: nullableFinite, equityRiskPremium: nullableFinite, costOfEquity: nullableFinite, costOfDebt: nullableFinite, taxRate: nullableFinite, equityWeight: nullableFinite }), rationale: z.string(), sourceRefs: strings, sources: discountRateSources.optional() }),
   shares: z.object({ base: finite, dilutionReserve: finite, economic: finite, basis: z.string() }),
-  bridge: z.object({ nonOperatingAssets: finite, debtAndClaims: finite, nonOperatingEquityAdjustment: finite, notes: strings }),
+  bridge: z.object({ leaseTreatment: z.literal("operating_expense").optional(), nonOperatingAssets: finite, debtAndClaims: finite, nonOperatingEquityAdjustment: finite, notes: strings }),
   scenarios: z.object({ bear: scenario, base: scenario, bull: scenario }),
   range: z.object({ low: finite, high: finite, base: finite, expected: nullableFinite, price: nullableFinite, marginOfSafety: nullableFinite, downsideCoverage: nullableFinite, expectedUpside: nullableFinite, baseUpside: nullableFinite }),
   sensitivities: z.array(z.object({ factor: z.string(), step: z.string(), perShare: finite, changePercent: finite })),

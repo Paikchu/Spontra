@@ -1,4 +1,5 @@
 import type { FactorDistribution, RevenueAnchor } from "../../analysis-contract/valuation.ts";
+import { financeLeaseAmount } from "./lease-basis.ts";
 import { rpoRevenueFloor, type CalcRequest, type Lifecycle } from "./calculator.ts";
 
 /**
@@ -65,8 +66,10 @@ export function priorRequest(input: PriorInput): CalcRequest | null {
   const lifecycle = lifecycleOf(input);
   const years = horizonFor(lifecycle);
   const tax = fact("effective_tax_rate_ttm") ?? 0.21;
-  const equity = fact("equity"), debt = (fact("debt") ?? 0) + (fact("leases") ?? 0), cash = (fact("cash") ?? 0) + (fact("investments") ?? 0);
-  const claims = debt + (fact("preferred_stock") ?? 0) + (fact("minority_interest") ?? 0);
+  const financeLeases = financeLeaseAmount(input.facts);
+  if (financeLeases == null || fact("debt") == null || fact("cash") == null || fact("finance_lease_debt_overlap") === 1) return null;
+  const equity = fact("equity"), debt = fact("debt")! + financeLeases, cash = fact("cash")! + (fact("investments") ?? 0);
+  const claims = debt + (fact("preferred_stock") ?? 0) + (fact("minority_interest") ?? 0) + (fact("other_senior_claims") ?? 0);
   const price = input.price;
   const marketCap = price ? price * shares : equity ?? null;
   const equityWeight = marketCap && marketCap > 0 ? marketCap / (marketCap + debt) : 0.8;
@@ -101,13 +104,13 @@ export function priorRequest(input: PriorInput): CalcRequest | null {
     revenueGrowth: fade(gr0, grN, years), operatingMargin: new Array<number>(years).fill(mg), taxRate: new Array<number>(years).fill(tax), salesToCapital: new Array<number>(years).fill(salesToCapital), ...(buildCapex ? { buildCapex } : {}),
   });
   const scenario = (narrative: string, gr0: number, grN: number, mg: number) => ({ narrative, probability: null, triggers: [], invalidation: [], evidenceIds: [], drivers: { modelType: "fcff" as const, revenue0: revenue, path: path(gr0, grN, mg), terminalGrowth: g, terminalRoic } });
-  const notes = [`prior: ${lifecycle} life cycle, ${years}-year horizon`, "cash and investments versus debt, leases, preferred and minority claims"];
+  const notes = [`prior: ${lifecycle} life cycle, ${years}-year horizon`, "operating rent stays in earnings; cash and investments versus debt, finance leases, preferred and minority claims"];
   if (anchor) notes.push(`RPO floor years 1–2: ${anchor.floorToRevenue0.slice(0, 2).map(v => `${(v * 100).toFixed(0)}% of trailing revenue`).join(", ")}`);
   if (buildCapex) notes.push(shape !== taper ? `build capex ${excess.toExponential(2)} × ${shape.map(k => k.toFixed(2)).join(", ")} (the cited capex plan's timing, scaled to the taper's total)` : `build capex ${excess.toExponential(2)} tapering over four years`);
   return {
     modelType: "fcff", currency: input.currency, midYear: input.midYear === true,
     discountRate: { value: r, basis: "wacc", components: { riskFree: rf, beta: input.beta, equityRiskPremium: erp, costOfEquity, costOfDebt, taxRate: tax, equityWeight }, rationale: "prior from sourced components; the equity risk premium is a placeholder the research must source", sourceRefs: [] },
-    shares: { base: shares, dilutionReserve: 0, basis: "prior" }, bridge: { nonOperatingAssets: cash, debtAndClaims: claims, nonOperatingEquityAdjustment: 0, notes }, price,
+    shares: { base: shares, dilutionReserve: 0, basis: "prior" }, bridge: { leaseTreatment: "operating_expense", nonOperatingAssets: cash, debtAndClaims: claims, nonOperatingEquityAdjustment: 0, notes }, price,
     scenarios: {
       bear: scenario("history p25, fading to 2%", start(growth.p25), Math.min(0.02, start(growth.p25)), margin.p25),
       base: scenario("history median, fading to 4%", start(growth.median), Math.min(0.04, start(growth.median)), margin.median),

@@ -101,6 +101,8 @@ export type ModelDrivers =
   | { modelType: "affo_dcf"; annualAffo: number; recurringCost: number; growth: number[]; terminalGrowth: number };
 
 export type EquityBridge = {
+  /** New runs keep operating rent in earnings and deduct finance leases only; absent on legacy reports. */
+  leaseTreatment?: "operating_expense";
   /** Cash, investments and other non-operating assets attributable to common equity, after any tax or claims. */
   nonOperatingAssets: number;
   /** Debt, leases, preferred, minority interests and other claims ahead of common equity. */

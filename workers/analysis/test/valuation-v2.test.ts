@@ -231,7 +231,7 @@ test("multiple history: EV/EBITDA week by week from closes and the trailing quar
 });
 
 test("life cycle and prior: a build-phase company gets seven years, build capex that ends, a 3% terminal growth cap and RPO-anchored growth", () => {
-  const facts = [["revenue_ttm", 71.777e9, "USD"], ["operating_income_ttm", 23.056e9, "USD"], ["cfo_ttm", 46.94e9, "USD"], ["capex_ttm", 75.66e9, "USD"], ["da_ttm", 10.043e9, "USD"], ["interest_expense_ttm", 5.103e9, "USD"], ["cash", 37.077e9, "USD"], ["debt", 125.337e9, "USD"], ["leases", 30.594e9, "USD"], ["preferred_stock", 4.954e9, "USD"], ["minority_interest", 0.424e9, "USD"], ["equity", 67.196e9, "USD"], ["shares_diluted_weighted", 3.0e9, "shares"], ["effective_tax_rate_ttm", 0.1295, "ratio"], ["fcf_ttm", -28.72e9, "USD"]].map(([id, value, unit]) => ({ id: id as string, value: value as number, unit: unit as string }));
+  const facts = [["revenue_ttm", 71.777e9, "USD"], ["operating_income_ttm", 23.056e9, "USD"], ["cfo_ttm", 46.94e9, "USD"], ["capex_ttm", 75.66e9, "USD"], ["da_ttm", 10.043e9, "USD"], ["interest_expense_ttm", 5.103e9, "USD"], ["cash", 37.077e9, "USD"], ["debt", 125.337e9, "USD"], ["leases", 30.594e9, "USD"], ["finance_leases", 5e9, "USD"], ["preferred_stock", 4.954e9, "USD"], ["minority_interest", 0.424e9, "USD"], ["equity", 67.196e9, "USD"], ["shares_diluted_weighted", 3.0e9, "shares"], ["effective_tax_rate_ttm", 0.1295, "ratio"], ["fcf_ttm", -28.72e9, "USD"]].map(([id, value, unit]) => ({ id: id as string, value: value as number, unit: unit as string }));
   const distribution = (factor: string, values: number[]) => ({ factor, periods: values.map((value, i) => ({ periodEnd: `20${20 + i}-05-31`, value })), min: Math.min(...values), p25: values[1]!, median: values[2]!, p75: values[3]!, max: Math.max(...values) });
   const distributions = [distribution("revenueGrowth", [0.06, 0.097, 0.149, 0.175, 0.216]), distribution("operatingMargin", [0.257, 0.283, 0.304, 0.306, 0.321]), distribution("capexToRevenue", [0.106, 0.13, 0.174, 0.37, 0.826])];
   const diagnostics = [{ key: "capexToDa", value: 7.53 }, { key: "roic", value: 0.108 }, { key: "revenueGrowthTtm", value: 0.216 }];
@@ -248,7 +248,7 @@ test("life cycle and prior: a build-phase company gets seven years, build capex 
   assert.equal(base.path.buildCapex!.filter(v => v > 0).length, 4);
   close(base.path.buildCapex![0]!, 75.66e9 - 1.5 * 10.043e9, 0);
   assert.equal(base.terminalGrowth, 0.03);
-  close(prior.bridge.debtAndClaims, 125.337e9 + 30.594e9 + 4.954e9 + 0.424e9, 0);
+  close(prior.bridge.debtAndClaims, 125.337e9 + 5e9 + 4.954e9 + 0.424e9, 0);
   assert.equal(prior.context!.lifecycle, "build");
   assert.ok(prior.context!.anchor);
   const result = calculateValuation(prior);

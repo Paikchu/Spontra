@@ -1,13 +1,14 @@
 import { DIMENSION_WEIGHTS, EXTENDED_SCENARIO_KEYS, SCENARIO_KEYS, VALUATION_DIMENSIONS, VALUATION_METHODS, type CapitalPlan, type DriverPath, type Confidence, type ConsensusNote, type ConsensusTarget, type DiscountRate, type EquityBridge, type FactorDistribution, type FairValueBasis, type FairValueRange, type NormalCaseInput, type NormalCaseResult, type ImpliedPath, type InputCheck, type InputVerification, type Judgement, type ManagementComparison, type ManagementScenario, type ManagementTargetSet, type MethodValuation, type MethodWeightJudgement, type MethodWeights, type ModelDrivers, type MultipleQuartiles, type PeerMultiples, type PeerSelectionBasis, type RevenueAnchor, type SanityGate, type ScenarioAssumptions, type ScenarioEntry, type ScenarioKey, type ScenarioProbabilities, type ScenarioResult, type ScenarioValuation, type Sensitivity, type ShareCount, type Triangulation, type ValuationDimension, type ValuationMethodKey, type ValuationModelResult, type ValuationModelType, type ValuationRange, type ValuationVerdict, type YearRow } from "../../analysis-contract/valuation.ts";
 import { managementComparisonRows, managementDrivers, managementFactsOf, managementGate, managementRequest } from "./management.ts";
 import { weightedQuantile } from "./peers.ts";
+import { financeLeaseAmount, operatingExpenseNetDebt } from "./lease-basis.ts";
 
 /**
  * The deterministic valuation calculator (docs/valuation-assessment-implementation.md §4, docs/valuation-methodology-optimization.md
  * §2–§6). Every amount a report shows comes from here; the model supplies inputs and reasons. Nothing is rounded until it
  * is displayed. Invalid inputs are rejected with a `ValuationCalcError` rather than producing NaN, Infinity or a made-up figure.
  */
-export const CALCULATOR_VERSION = "valuation.calc.v7";
+export const CALCULATOR_VERSION = "valuation.calc.v8";
 /** The default horizon; an fcff path may run `MIN_FORECAST_YEARS`–`MAX_FORECAST_YEARS` years (docs/valuation-v2-SPEC.md §1). */
 export const FORECAST_YEARS = 5;
 export const MIN_FORECAST_YEARS = 5, MAX_FORECAST_YEARS = 10;
@@ -392,6 +393,7 @@ function withFairValueRange(request: CalcRequest, model: ValuationModelResult): 
   const basis = request.fairValueBasis;
   if (!basis) return model;
   if (basis.status === "unavailable") return { ...model, fairValueRange: { ...basis } };
+  if (request.bridge.leaseTreatment === "operating_expense" && operatingExpenseNetDebt(request.context?.facts ?? []) == null) throw new ValuationCalcError("invalid_input", "finance lease classification, debt or cash inputs are unresolved; declare fairValueBasis unavailable until the financing claims can be reconciled");
   const weights = request.context ? methodWeightsOf(request.context.methodWeights ?? null, request.context.lifecycle ?? null) : { dcf: 1, ev_ebitda_forward: 0, pe_forward: 0 };
   const baseValuation = model.scenarios.base.valuation ?? { methods: { dcf: model.range.base, ev_ebitda_forward: null, pe_forward: null }, weights, perShare: model.range.base };
   const check = (name: string, value: ValuationModelResult, valuation: ScenarioValuation) => {
@@ -648,9 +650,15 @@ export function verifyCitedInputs(request: CalcRequest, facts: Array<{ id: strin
     check("shares.base", request.shares.base, nearest.value, [nearest.id], 0.001, "both");
   }
   const debt = fact("debt"), leases = fact("leases"), preferred = fact("preferred_stock"), minority = fact("minority_interest");
-  if (debt != null) check("bridge.debtAndClaims (debt + leases)", request.bridge.debtAndClaims, debt + (leases ?? 0), ["debt", ...(leases != null ? ["leases"] : [])], 0.02, "at_least");
-  const seniorClaims = (preferred ?? 0) + (minority ?? 0);
-  if (debt != null && seniorClaims > 0) check("bridge.debtAndClaims (incl. preferred and minority)", request.bridge.debtAndClaims, debt + (leases ?? 0) + seniorClaims, ["debt", ...(leases != null ? ["leases"] : []), ...(preferred ? ["preferred_stock"] : []), ...(minority ? ["minority_interest"] : [])], 0.02, "at_least", "flag");
+  const seniorClaims = (preferred ?? 0) + (minority ?? 0) + (fact("other_senior_claims") ?? 0);
+  if (request.bridge.leaseTreatment === "operating_expense") {
+    const finance = financeLeaseAmount(facts);
+    if (finance == null || fact("finance_lease_debt_overlap") === 1) checks.push({ field: "lease_classification", cited: request.bridge.debtAndClaims, expected: null, factIds: ["finance_leases"], tolerance: 0, status: "flag", detail: "Finance lease liabilities or their overlap with debt could not be reconciled; operating leases cannot be substituted and a normal fair-value range is unavailable." });
+    else if (debt != null) check("bridge.debtAndClaims (operating-expense lease basis)", request.bridge.debtAndClaims, debt + finance + seniorClaims, ["debt", fact("finance_leases") != null ? "finance_leases" : "leases", ...(preferred != null ? ["preferred_stock"] : []), ...(minority != null ? ["minority_interest"] : []), ...(fact("other_senior_claims") != null ? ["other_senior_claims"] : [])], 0.02, "both");
+  } else {
+    if (debt != null) check("bridge.debtAndClaims (debt + leases)", request.bridge.debtAndClaims, debt + (leases ?? 0), ["debt", ...(leases != null ? ["leases"] : [])], 0.02, "at_least");
+    if (debt != null && seniorClaims > 0) check("bridge.debtAndClaims (incl. preferred and minority)", request.bridge.debtAndClaims, debt + (leases ?? 0) + seniorClaims, ["debt", ...(leases != null ? ["leases"] : []), ...(preferred ? ["preferred_stock"] : []), ...(minority ? ["minority_interest"] : [])], 0.02, "at_least", "flag");
+  }
   const cash = fact("cash"), investments = fact("investments");
   if (cash != null) check("bridge.nonOperatingAssets (cash + investments)", request.bridge.nonOperatingAssets, cash + (investments ?? 0), ["cash", ...(investments != null ? ["investments"] : [])], 0.02, "at_most");
   return { checks, ok: !checks.some(c => c.status === "fail") };
@@ -670,6 +678,7 @@ export function sanityGates(input: { result: ValuationModelResult; riskFree: num
     const aboveRf = input.riskFree != null && g > input.riskFree + 1e-9;
     gate("terminal_growth", aboveRf ? "fail" : g > TERMINAL_GROWTH_FLAG + 1e-9 ? "flag" : "pass", aboveRf ? `terminal growth ${(g * 100).toFixed(1)}% exceeds the risk-free rate ${(input.riskFree! * 100).toFixed(1)}%` : g > TERMINAL_GROWTH_FLAG ? `terminal growth ${(g * 100).toFixed(1)}% is above the usual 2–3%; the narrative must say why` : `terminal growth ${(g * 100).toFixed(1)}%`, g, aboveRf ? input.riskFree : TERMINAL_GROWTH_FLAG);
   }
+  if (input.verification?.checks.some(c => c.field === "lease_classification")) gate("lease_classification", "flag", input.verification.checks.find(c => c.field === "lease_classification")!.detail);
   if (input.verification) gate("cited_inputs", input.verification.ok ? (input.verification.checks.some(c => c.status === "flag") ? "flag" : "pass") : "fail", input.verification.checks.filter(c => c.status !== "pass").map(c => c.detail).join("; ") || "cited inputs match the registered facts");
   if (input.anchor) {
     const base = result.scenarios.base.drivers;
