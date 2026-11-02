@@ -27,7 +27,7 @@ export const historyInputSchema = z.object({
     beta: z.object({ value: finite, from: date, to: date, observations: z.number().int(), sourceIds: strings }).nullable(),
     series: z.array(z.object({ symbol: z.string(), sourceId: z.string(), bars: z.array(bar).min(1) })),
   }),
-  peers: z.array(peer), researchMaterials: z.array(z.object({ sourceId: z.string(), title: z.string(), text: z.string() })), missing: strings, limitations: strings,
+  peers: z.array(peer), researchMaterials: z.array(z.object({ sourceId: z.string(), title: z.string(), text: z.string(), sha256: hash })), missing: strings, limitations: strings,
 });
 export type HistoryInput = z.infer<typeof historyInputSchema>;
 
@@ -99,10 +99,11 @@ const requestSchema = z.object({
   scenarios: z.object({ bear: scenario, base: scenario, bull: scenario }), price: nullable, midYear: z.boolean().optional(), context: context.optional(),
 }) satisfies z.ZodType<CalcRequest>;
 const operatingForecast = z.object({ metric: z.string(), periodStart: date, periodEnd: date, value: finite, unit: z.string(), basis: z.string() });
+const evidence = z.object({ evidenceId: z.string(), kind: z.enum(["sec", "web", "fact"]), title: z.string(), url: z.string().nullable(), documentId: z.string().nullable(), passageId: z.string().nullable(), form: z.string().nullable(), publishedAt: z.string().nullable(), fetchedAt: z.string().nullable(), excerpt: z.string().min(1), contentSha256: hash, path: z.string().nullable() });
 export const historyAssumptionsSchema = z.object({
   schemaVersion: z.literal("valuation-history-assumptions.v1"), kind: z.literal("agent_reconstruction"), ticker: z.string(), cutoff: instant, inputSha256: hash,
   producedAt: instant, model: z.string().min(1), promptSha256: hash, transcriptPath: z.string().min(1), shareBasisFactId: z.string(), request: requestSchema,
-  operatingForecasts: z.array(operatingForecast),
+  evidence: z.array(evidence), operatingForecasts: z.array(operatingForecast),
 });
 export type HistoryAssumptions = z.infer<typeof historyAssumptionsSchema>;
 
@@ -114,7 +115,18 @@ export function historyRequest(input: HistoryInput, artifact: HistoryAssumptions
   if (request.currency !== input.currency) throw new Error("Valuation currency does not match historical input");
   const shares = input.facts.find(f => f.id === artifact.shareBasisFactId && f.unit === "shares");
   if (!shares || request.shares.base !== shares.value) throw new Error("Share base does not match the selected historical fact");
-  const allowed = new Set([...input.sources.map(s => s.id), ...input.facts.map(f => f.id)]);
+  const normalized = (text: string) => text.replace(/\s+/g, " ").trim();
+  for (const e of artifact.evidence) {
+    if (!e.publishedAt || Date.parse(e.publishedAt) > Date.parse(input.cutoff)) throw new Error(`Future or undated Agent evidence: ${e.evidenceId}`);
+    const source = input.sources.find(s => s.id === e.documentId || s.url === e.url);
+    if (!source) throw new Error(`Agent evidence source is outside the snapshot: ${e.evidenceId}`);
+    const fromManagement = e.documentId === `management:${input.ticker}` && input.management?.sources.some(s => s.url === e.url);
+    const inText = input.researchMaterials.some(m => m.sourceId === source.id && normalized(m.text).includes(normalized(e.excerpt)));
+    if (!fromManagement && !inText) throw new Error(`Agent evidence excerpt is absent from the frozen source: ${e.evidenceId}`);
+  }
+  if (new Set(artifact.evidence.map(e => e.evidenceId)).size !== artifact.evidence.length) throw new Error("Duplicate Agent evidence id");
+  const diagnostics = ["revenueGrowthTtm", "roic", "accrualRatio", "fcfConversion", "sbcToRevenue", "capexToDa", "netDebtToEbitda", "interestCoverage", "dilutionCagr", "cashRunwayYears", "debtDueCoverage"];
+  const allowed = new Set([...input.sources.map(s => s.id), ...input.facts.map(f => f.id), ...artifact.evidence.map(e => e.evidenceId), ...diagnostics]);
   const cited = (value: unknown): void => {
     if (!value || typeof value !== "object") return;
     for (const [key, child] of Object.entries(value)) {
@@ -154,7 +166,7 @@ export function evaluateHistory(input: HistoryInput, artifact: HistoryAssumption
     const targetDate = target.toISOString().slice(0, 10);
     if (target.getTime() > asOf) return { months, targetDate, status: "pending" };
     const stock = outcome.market.filter(b => b.date <= targetDate && Date.parse(b.closeAt) <= asOf).at(-1);
-    if (!stock) return { months, targetDate, status: "pending" };
+    if (!stock || (Date.parse(targetDate) - Date.parse(stock.date)) / 86_400_000 > 7) return { months, targetDate, status: "pending", reason: "No completed market close near the target date" };
     const dividends = outcome.market.filter(b => b.date <= stock.date && Date.parse(b.closeAt) > Date.parse(input.cutoff)).reduce((n, b) => n + b.dividend, 0);
     const benchmarkStart = outcome.benchmark.find(b => b.date === input.market.quote.priceDate);
     const benchmarkEnd = outcome.benchmark.filter(b => b.date <= stock.date).at(-1);
