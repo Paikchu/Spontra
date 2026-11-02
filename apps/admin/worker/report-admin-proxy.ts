@@ -1,7 +1,11 @@
 import { asServiceBinding, serviceFetcher } from "../../../packages/web/src/model/service-binding.ts";
+import { FEATURES } from "../../../shared/analysis-contract/business-features.ts";
 
 const MAX_BODY = 8192;
 type ProxyEnv = Record<string, unknown>;
+const FEATURE = `(?:${FEATURES.join("|")})`;
+const companyWrite = new RegExp(`^companies\\/[A-Z][A-Z0-9.-]{0,11}(?:\\/presentation|\\/features\\/${FEATURE})?$`);
+const featureWrite = new RegExp(`^features\\/${FEATURE}$`);
 const json = (body: unknown, status: number) => Response.json(body, { status, headers: { "cache-control": "private, no-store" } });
 
 /** The binding to Spontra Analysis's AdminGateway entrypoint is the credential; the browser holds none. */
@@ -10,7 +14,7 @@ export async function handleReportAdminProxy(request: Request, path: string[], e
   if (path[0] === "business-map") {
     const route = path.slice(1).join("/");
     const read = request.method === "GET" && (/^companies(?:\/[A-Z][A-Z0-9.-]{0,11}\/(?:charts|flow))?$/.test(route) || route === "messages" || route === "issuers");
-    const write = request.method === "POST" && (route === "messages/read" || /^companies\/[A-Z][A-Z0-9.-]{0,11}(?:\/presentation|\/features\/(?:reports|findings|explainer|tree))?$/.test(route) || /^features\/(?:reports|findings|explainer|tree)$/.test(route));
+    const write = request.method === "POST" && (route === "messages/read" || companyWrite.test(route) || featureWrite.test(route));
     if (!read && !write) return json({ error: "Not found" }, 404);
   }
   if (path[0] === "ai") {
