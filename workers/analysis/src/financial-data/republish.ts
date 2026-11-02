@@ -10,7 +10,8 @@ import {readRevenueHistory} from './history.ts';
 export function rebuildPublication(flow: PublicBusinessFlow, history: RevenueHistoryQuarter[], at: string): PublicBusinessFlow {
   const quarters = flow.quarters.map(q => {
     let h = history.find(h => h.periodEnd === q.periodEnd && h.periodStart === q.periodStart && h.currency === q.currency);
-    if (!h) return q;
+    // A company total alone is not evidence of a verified business split.
+    if (!h || !(h.segments.length > 1 || h.segmentDisclosure === 'single_reportable_segment')) return q;
     if (h.scale !== q.scale) {
       const factor = h.scale / q.scale;
       const leaf = (l: RevenueHistoryLeaf) => ({...l, value: String(Number(l.value) * factor)});
@@ -53,9 +54,14 @@ export async function republishStoredFinancials(db: D1Database, target: {ticker:
   if (prior) return version;
   const current = await db.prepare(`SELECT v.payload_json,v.version_id FROM financial_complete_current c JOIN financial_complete_versions v ON v.version_id=c.version_id WHERE c.cik=?`).bind(target.cik).first<{payload_json:string;version_id:string}>();
   if (!current) throw new Error('REPUBLICATION_NO_COMPLETE_STATEMENTS');
+  // Recover from earlier rereads that damaged presentation. Generation orders publications,
+  // as it does for the current pointer; keep current itself as the write fence below.
+  const base = await db.prepare(`SELECT payload_json FROM financial_complete_versions
+    WHERE cik=? AND version_id NOT GLOB 'reread:*' ORDER BY generation DESC LIMIT 1`)
+    .bind(target.cik).first<{payload_json:string}>() ?? current;
   const history = await readRevenueHistory(db,target.cik,target.ticker);
   if (!history) throw new Error('REPUBLICATION_NO_HISTORY');
-  const flow = rebuildPublication(publicFlowSchema.parse(JSON.parse(current.payload_json)),history.quarters,at);
+  const flow = rebuildPublication(publicFlowSchema.parse(JSON.parse(base.payload_json)),history.quarters,at);
   const generation = await db.prepare(`SELECT max(generation) generation FROM (
     SELECT generation FROM financial_complete_versions WHERE cik=? UNION ALL SELECT generation FROM financial_collection_jobs WHERE cik=?)`)
     .bind(target.cik,target.cik).first<{generation:number|null}>();
