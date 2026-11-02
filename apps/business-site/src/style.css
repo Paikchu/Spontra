@@ -161,28 +161,6 @@ button { cursor: pointer; }
 .rail-actions .icon-button { width: 28px; height: 28px; border-radius: 8px; background: transparent; color: var(--faint); }
 .rail-actions .icon-button:hover { background: color-mix(in srgb, var(--foreground) 7%, transparent); color: var(--foreground); }
 .rail-actions .icon-button[aria-pressed="true"] { color: var(--muted-foreground); }
-.tour-layer { margin: 0; padding: 0; border: 0; width: 100%; max-width: none; height: 100%; max-height: none; background: transparent; overflow: hidden; position: fixed; inset: 0; z-index: 80; pointer-events: none; }
-.tour-shade { position: absolute; inset: 0; background: rgb(0 0 0 / 40%); pointer-events: auto; }
-:root.light .tour-shade { background: rgb(10 20 18 / 25%); }
-.tour-hole { position: fixed; z-index: 1; border-radius: 12px; pointer-events: none; box-shadow: 0 0 0 2px var(--brand), 0 0 0 9999px rgb(0 0 0 / 40%); }
-:root.light .tour-hole { box-shadow: 0 0 0 2px var(--brand), 0 0 0 9999px rgb(10 20 18 / 25%); }
-.tour-card { position: fixed; z-index: 2; width: min(300px, calc(100vw - 24px)); max-width: 300px; padding: 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-raised); color: var(--foreground); box-shadow: var(--shadow-overlay); pointer-events: auto; transform-origin: top left; animation: tour-in 200ms var(--ease); }
-.tour-card p { margin: 8px 0 12px; color: var(--muted-foreground); font-size: 13px; line-height: 20px; }
-.tour-dots { display: flex; gap: 6px; }
-.tour-dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--border); }
-.tour-dots i[data-on] { background: var(--brand); }
-.tour-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.tour-actions span { display: flex; gap: 12px; }
-.tour-skip, .tour-back, .tour-next { padding: 4px 0; border: 0; background: transparent; color: var(--muted-foreground); font: 560 13px/1.2 var(--sans); }
-.tour-next { color: var(--foreground); }
-@keyframes tour-in { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: scale(1); } }
-@media (prefers-reduced-motion: reduce) {
-  .tour-card { animation: tour-fade 200ms var(--ease); }
-}
-@keyframes tour-fade { from { opacity: 0; } to { opacity: 1; } }
-@media (max-width: 960px) {
-  .tour-card[data-mobile] { top: auto; left: max(12px, env(safe-area-inset-left)); right: max(12px, env(safe-area-inset-right)); bottom: max(12px, env(safe-area-inset-bottom)); width: auto; max-width: none; }
-}
 
 /* Collapsed: a slim floating column of logo and controls; the stage takes the width. */
 @media (min-width: 961px) {
@@ -1610,11 +1588,6 @@ html[lang^="zh"] .period-primary { letter-spacing: 0; }
   .period-skeleton { animation: none; }
   .period-tip[data-state="open"], .period-tip[data-state="closing"] { animation: none; }
 }
-
-.tour-layer::backdrop { background: transparent; }
-.tour-card { box-sizing: border-box; max-height: calc(100vh - 24px); max-height: calc(100dvh - 24px); overflow-y: auto; }
-.rail-tour:disabled { opacity: .6; cursor: default; }
-.tour-layer[data-hole] .tour-shade { background: transparent; }
 
 /* ---------- Narrow sideways scroller for the flow chart (U21) ---------- */
 /* The statement keeps its full width inside the chart; while more of it lies to the right the right edge fades, and a

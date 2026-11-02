@@ -780,7 +780,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
       : focusedEvent && events ? <div className="lens-stage"><EventLens event={focusedEvent} publication={events} ticker={ticker} data={data} updates={updates} nodeColor={nodeColor} onClose={() => focusEvent(null)} /></div>
       : view === "valuation" && valuation ? <div className="lens-stage"><ValuationPanel ticker={ticker} valuation={valuation} /></div>
       : <>
-      <header className="stage-head stage-head--summary" data-tour="stats">
+      <header className="stage-head stage-head--summary">
         {quarter && (view === "cash" || view === "balance") && funding ? <CapitalStats view={view} funding={funding} tiles={highlights} flags={flags} />
           // Phones always lead with the four statement figures in their two-by-two grid; wider screens show the report's picked tiles.
           : quarter && !current && highlights && !(narrow && view === "profit") ? <HighlightStats tiles={highlights} flags={flags} momentum={momentum} netTag={narrow ? netTag : null} />
@@ -817,7 +817,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
         {!current && <ViewFlags lead={netTag && !narrow ? <span className="nonop-line"><span>{m.net}</span>{netTag}</span> : null} flags={shownFlags} metrics={assessedMetrics} noted={noted} focus={null} onOpen={id => focusCheck(id)} onHover={setHoverFlag} />}
       </header>
 
-      <div className="chart" data-tour="chart" ref={chartRef} data-overflow={chartScroll.overflow || undefined} data-end={chartScroll.atEnd || undefined}>
+      <div className="chart" ref={chartRef} data-overflow={chartScroll.overflow || undefined} data-end={chartScroll.atEnd || undefined}>
         {leadShown && <div className="lead-finding" data-kind={leadShown.kind}>
           <Button variant="unstyled" type="button" className="lead-finding-open" aria-label={m.openFinding(leadShown.title)} onClick={() => focusFinding(leadShown.id)}>
             <SeverityIcon severity={leadShown.severity} /><span lang={langOf(leadShown.title)}>{leadShown.title}</span><span aria-hidden="true">→</span>
@@ -851,7 +851,7 @@ export function BusinessMap({ ticker, tools, flow, notice, revenueHistory, expla
 
       {view === "cash" && returns && <ShareholderReturns returns={returns} />}
 
-      <footer className="stage-foot" data-tour={points.length > 0 ? undefined : "timeline"}>
+      <footer className="stage-foot">
         {(view === "cash" || view === "balance") && funding ? <CapitalLegend view={view} funding={funding} /> : proportional ? <div className="legend" aria-label={m.legend}>
           <span><i className="legend-biz" />{m.businessRevenue}</span>
           <span><i style={{ background: "var(--flow-profit)" }} />{m.profit}</span>

@@ -86,7 +86,7 @@ export function Timeline({ points, currentPeriod, now, onReport, onEvent, ticker
     return primary ? `${primary} · ${body}` : body;
   };
 
-  return <div className="timeline" style={{ "--timeline-bubble-size": `${bubbleSize}px` } as CSSProperties} role="group" aria-label={m.label} data-tour="timeline">
+  return <div className="timeline" style={{ "--timeline-bubble-size": `${bubbleSize}px` } as CSSProperties} role="group" aria-label={m.label}>
     <div className="timeline-track" ref={trackRef}>
       {readableTicks(ticks, width).map(t => <span key={t.label} className="timeline-tick" style={{ left: `${t.at}%` }}>{t.label}</span>)}
       {marks.map(mark => {

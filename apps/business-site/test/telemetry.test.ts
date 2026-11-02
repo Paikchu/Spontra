@@ -71,7 +71,7 @@ test("the store refuses oversized, unknown, and malformed events and never keeps
   assert.equal(text.includes("1.2.3.4"), false);
 });
 
-test("aggregates sessions, companies, empty searches, rates, and tour completion", () => {
+test("aggregates sessions, companies, empty searches, and rates", () => {
   const rows: StoredEvent[] = [
     event("page_view", { sid: SID, path: "/companies/META", props: { ticker: "META" } }),
     event("page_view", { sid: "22222222-2222-4222-8222-222222222222", path: "/companies/ORCL", props: { ticker: "ORCL" }, received: NOW - 3_600_000 }),
@@ -81,10 +81,6 @@ test("aggregates sessions, companies, empty searches, rates, and tour completion
     event("search_submit", { props: { q: "meta", results: 1, empty: 0 } }),
     event("finding_expand", { path: "/companies/META" }),
     event("error_shown", { props: { code: "NETWORK" } }),
-    event("tour_start"),
-    event("tour_start", { sid: "22222222-2222-4222-8222-222222222222" }),
-    event("tour_done"),
-    event("tour_skip", { sid: "22222222-2222-4222-8222-222222222222" }),
   ];
   const summary = summarize(rows, "7d", NOW);
   assert.equal(summary.sessions, 2);
@@ -93,7 +89,6 @@ test("aggregates sessions, companies, empty searches, rates, and tour completion
   assert.deepEqual(summary.emptySearches, [{ query: "zzzz", count: 1 }]);
   assert.equal(summary.expandRate, 0.333);
   assert.equal(summary.errorRate, 0.333);
-  assert.deepEqual(summary.tour, { start: 2, done: 1, skip: 1, completionRate: 0.5 });
   assert.equal(summary.events.find(item => item.name === "page_view")?.count, 3);
   assert.equal(summary.series.length, 7);
   assert.equal(summarize([], "24h", NOW).pageViews, 0);

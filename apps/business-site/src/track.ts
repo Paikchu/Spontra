@@ -2,7 +2,6 @@
 export const TRACK_NAMES = [
   "page_view", "search_submit", "search_select", "company_tab_view", "finding_expand",
   "source_click", "chart_period_change", "lang_toggle", "theme_toggle", "error_shown",
-  "tour_start", "tour_done", "tour_skip",
 ] as const;
 
 export type TrackName = (typeof TRACK_NAMES)[number];
@@ -67,7 +66,7 @@ export function sendTrack(env: TrackDelivery, name: TrackName, props?: Record<st
     const now = env.now;
     for (const [key, time] of recent) if (now - time >= 800) recent.delete(key);
     const seen = recent.get(stamp);
-    if ((name === "page_view" || name === "tour_start") && seen !== undefined && now - seen < 800) return null;
+    if (name === "page_view" && seen !== undefined && now - seen < 800) return null;
     const sid = sessionId(env);
     if (!sid) return null;
     const body = JSON.stringify({
@@ -75,7 +74,7 @@ export function sendTrack(env: TrackDelivery, name: TrackName, props?: Record<st
       theme: env.theme === "light" ? "light" : "dark", ts: now, sid,
     });
     if (new TextEncoder().encode(body).byteLength > 900) return null;
-    if (name === "page_view" || name === "tour_start") recent.set(stamp, now);
+    if (name === "page_view") recent.set(stamp, now);
     try {
       if (env.beacon("/api/business/v1/telemetry", body)) return body;
     } catch { /* Fall through to fetch. */ }

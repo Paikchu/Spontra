@@ -12,7 +12,7 @@
 
 ## P0 — 可读性与身份（先做）
 
-状态：2026-10-30 全部 20 条已在前端实现（估值页三条见 `ValuationPanel.tsx`、`valuation-prose.ts`；首页见 `Home.tsx`、`home-strip.ts`；公司页控件、Ask、导览、要点标记见 `BusinessMap.tsx`、`stage.css`、`tour.ts`、`LensPanel.tsx`）。暗色主题同日改为纯黑。两处留给后端：正文里 "(mine, not disclosed)" 一类作者旁白要在 Spontra Analysis 的估值提示词中去掉；首页每行的迷你收入→利润流程图读 `HomeCompany.statement`，由 `home-digest.ts` 新增，Spontra Analysis 发布前首页回落到营收柱条。导览不再首访自动弹出，但 rail 里 "怎么看这一页" 仍可按需走一遍。
+状态：2026-10-30 全部 20 条已在前端实现（估值页三条见 `ValuationPanel.tsx`、`valuation-prose.ts`；首页见 `Home.tsx`、`home-strip.ts`；公司页控件、Ask、要点标记见 `BusinessMap.tsx`、`stage.css`、`LensPanel.tsx`）。暗色主题同日改为纯黑。两处留给后端：正文里 "(mine, not disclosed)" 一类作者旁白要在 Spontra Analysis 的估值提示词中去掉；首页每行的迷你收入→利润流程图读 `HomeCompany.statement`，由 `home-digest.ts` 新增，Spontra Analysis 发布前首页回落到营收柱条。导览已整体删除（见第 16 条）。
 
 ### 1. 估值页正文是"模型草稿直出"
 
@@ -137,6 +137,8 @@
 证据：三步弹窗（Skip / Next / 三个点），遮罩挡住舞台。
 
 改法：删除导览组件（`CompanyTour.tsx`），保留 rail 里 "How to read this page" 链接打开同样的三句说明。首访不弹。
+
+现状：2026-11-02 导览组件、`tour.ts`、`tour_*` 埋点与运维后台的引导完成率一并删除；rail 里没有 "How to read this page" 入口，公司页不再有导览。
 
 ### 17. Severity 的三重编码
 
