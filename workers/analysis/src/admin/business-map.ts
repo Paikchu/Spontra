@@ -24,8 +24,11 @@ import { readCompletePublicationForTicker } from '../financial-data/publication.
 import { readMapDerived } from '../financial-data/derived.ts';
 import { discoverDataIssuer, throttledSecReader } from '../financial-data/provider.ts';
 import { D1SecRepository } from '../sec/d1.ts';
-import { issuerDirectory, searchIssuers } from './issuer-search.ts';
+import { issuerDirectory, primaryTicker, searchIssuers } from '../catalog/issuer-directory.ts';
 import { json } from "./http.ts";
+import { readValuationCompanyInputs, writeValuationCompanyInputs } from '../valuation/curated.ts';
+import { readFiscalFocus } from '../read-api/fiscal-periods.ts';
+import type { ValuationCompanyInputs } from '../../../../shared/analysis-contract/valuation.ts';
 
 /** Forgets the failed inputs of a feature's tasks for a company, so a retry is not made to wait or refused. */
 async function clearFailures(db: D1Database, ticker: string, feature: Feature): Promise<void> {
@@ -213,10 +216,28 @@ export async function handleBusinessMapAdminRequest(request: Request, env: Analy
       await emit(env,[{type:'presentation.unresolved',ticker,cik}]);
       return json({ticker,requested:true},202);
     }
+    // The valuation inputs the admin keeps for a company (valuation/curated.ts): its comparable set and management's
+    // cited targets. Saving one emits `feature.settings` for the valuation, which runs again when its input changed.
+    const valuation = /^\/admin\/business-map\/companies\/([^/]+)\/valuation-inputs$/.exec(path);
+    if (valuation && (request.method === 'GET' || request.method === 'POST')) {
+      const ticker = normalizeTicker(decodeURIComponent(valuation[1]!));
+      if (!ticker) return json({error:'公司代码无效。'},400);
+      const fiscalYearEndMonth = await readFiscalFocus(db, ticker).then(map => map.issuers.get(ticker)?.fiscalYearEndMonth ?? null).catch(() => null);
+      if (request.method === 'GET') return json({...await readValuationCompanyInputs(db, ticker), fiscalYearEndMonth} satisfies ValuationCompanyInputs);
+      const body = await request.json().catch(() => null) as {peers?:unknown;targets?:unknown}|null;
+      if (!body || !('peers' in body) || !('targets' in body)) return json({error:'操作参数无效。'},400);
+      let saved: Omit<ValuationCompanyInputs,'fiscalYearEndMonth'>;
+      try { saved = await writeValuationCompanyInputs(db, ticker, {peers: body.peers, targets: body.targets}, new Date().toISOString()); }
+      catch (error) { return json({error: error instanceof Error ? error.message : '估值输入无效。'},400); }
+      await emit(env,[{type:'feature.settings',ticker,cik:await knownCik(db,ticker),detail:{feature:'valuation'}}]);
+      return json({...saved, fiscalYearEndMonth} satisfies ValuationCompanyInputs);
+    }
     const match = /^\/admin\/business-map\/companies\/([^/]+)$/.exec(path);
     if (!match || request.method !== 'POST') return json({error:'Not found'},404);
-    const ticker = normalizeTicker(match[1]);
+    let ticker = normalizeTicker(match[1]);
     const body = await request.json() as {enabled?:boolean;requestId?:string};
+    // A second share class joins as the class EDGAR lists first for its issuer, so one company is never kept twice.
+    if (ticker && body.enabled === true) ticker = primaryTicker(await issuerDirectory(db, throttledSecReader(env.SEC_USER_AGENT, fetch, 0)).catch(() => []), ticker);
     if (!ticker || typeof body.enabled !== 'boolean' || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(body.requestId??'')) return json({error:'公司代码或操作参数无效。'},400);
     const receipt=await db.prepare('SELECT ticker,enabled FROM financial_company_setting_requests WHERE request_id=?').bind(body.requestId).first<{ticker:string;enabled:number}>();
     if(receipt)return receipt.ticker===ticker&&receipt.enabled===Number(body.enabled)?json({ticker,enabled:body.enabled,reused:true}):json({error:'操作标识已用于不同请求。'},409);

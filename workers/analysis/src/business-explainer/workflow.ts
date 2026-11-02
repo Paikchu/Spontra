@@ -5,7 +5,7 @@ import type { PublicBusinessFlow } from "../../../../shared/analysis-contract/bu
 import { readBusinessExplainer } from "../../../../shared/analysis-runtime/business-explainer.ts";
 import { issuerNames } from "../../../../shared/analysis-runtime/business-tree.ts";
 import { sha256 } from "../sha256.ts";
-import { findSecurity } from "../catalog/security-directory.ts";
+import { companyName } from "../catalog/issuer-directory.ts";
 import { assertTrackedTicker, requireDb } from "../core.ts";
 import { readCompletePublicationForTicker } from "../financial-data/publication.ts";
 import { callWorkerSecModel, type AnalysisEnv } from "../operations.ts";
@@ -68,7 +68,7 @@ export async function executeBusinessExplainerWorkflow(params: BusinessExplainer
   // The business list changed after scheduling; the next sweep starts a run for the new list.
   if (input.fingerprint !== params.fingerprint) return { status: "superseded" };
   const explainer = await runBusinessExplainer({
-    ticker: params.ticker, companyName: issuerNames(findSecurity(params.ticker)?.name ?? params.ticker)[0]!, nodes: input.nodes,
+    ticker: params.ticker, companyName: issuerNames(await companyName(requireDb(env), params.ticker) ?? params.ticker)[0]!, nodes: input.nodes,
     filings: input.filings, search: researchSearch(env), modelVersion, fingerprint: params.fingerprint, now,
     filingLibrary: treeLibrary(requireDb(env), params.ticker, input.filings),
     model: (stage, system, payload) => callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, 5 * 60_000, { reasoning: reasoningFor(env, "explainer"), ticker: params.ticker, runId }),

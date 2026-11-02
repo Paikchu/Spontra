@@ -17,7 +17,7 @@ import { parseFundamentalApiQuery } from "../fundamentals/fundamentals-api.ts";
 import { getSecFundamentals } from "../fundamentals/sec-fundamentals.ts";
 import { getPublicFiling, getPublicFilingPage } from "../sec/public-api.ts";
 import { D1SecRepository } from "../sec/d1.ts";
-import { findSecurity } from "../catalog/security-directory.ts";
+import { primaryTicker, securities, storedIssuerDirectory } from "../catalog/issuer-directory.ts";
 import { AnalysisRequestError, type AnalysisErrorCode } from "./contract-support/errors.ts";
 import { dataResponse, errorResponse } from "./http.ts";
 import { localize, type TranslatedResource } from "../../../../shared/analysis-runtime/translation.ts";
@@ -30,7 +30,7 @@ import type { PublicSecFiling } from "../../../../shared/analysis-contract/filin
 import type { Feature } from "../../../../shared/analysis-contract/business-features.ts";
 import { readHomeDigest, type HomeDigestEnv } from "./home-digest.ts";
 import { fiscalFields, readFiscalFocus, stampFlow, stampHistory } from "./fiscal-periods.ts";
-import { TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
+import { normalizeTicker, TICKER_PATTERN } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
 import { omit } from "../../../../shared/analysis-runtime/omit.ts";
 
 /**
@@ -70,6 +70,7 @@ type RouteMatch =
   | { kind: "revisions"; ticker: string }
   | { kind: "valuation"; ticker: string; versionId?: string; evidenceId?: string; list?: boolean }
   | { kind: "findings-index" }
+  | { kind: "ticker"; ticker: string }
   | { kind: "home" };
 
 
@@ -116,10 +117,21 @@ export async function handleMapRead(request: Request, env: AnalysisReadEnv): Pro
   try {
     if (route.kind === "findings-index") return await findingsIndex(request, env.DB, env);
     if (route.kind === "home") return await home(request, env.DB, env);
+    if (route.kind === "ticker") return await primary(request, env.DB, route.ticker);
     return await handleRoute(request, env.DB, env, route);
   } catch (error) {
     return errorResponse(...describeFailure(error));
   }
+}
+
+/**
+ * The ticker a company's data is kept under, for a ticker as typed or linked: a second share class answers with the
+ * class EDGAR lists first for its issuer (catalog/issuer-directory.ts); any other ticker answers with itself.
+ */
+async function primary(request: Request, database: D1Database, ticker: string): Promise<Response> {
+  const requested = normalizeTicker(ticker);
+  if (!requested) return errorResponse("ROUTE_NOT_FOUND", "No such resource.");
+  return dataResponse(request, { schemaVersion: "ticker.v1", requested, ticker: primaryTicker(await storedIssuerDirectory(database), requested) }, "cacheable");
 }
 
 /** One aggregated read for the public homepage. `?locale=` matches the other read routes. */
@@ -135,7 +147,7 @@ async function home(request: Request, database: D1Database, env: HomeDigestEnv):
   return dataResponse(request, digest, "cacheable", validatorPayload);
 }
 
-async function handleRoute(request: Request, database: D1Database, env: FeatureDefaultsEnv, route: Exclude<RouteMatch, { kind: "findings-index" } | { kind: "home" }>): Promise<Response> {
+async function handleRoute(request: Request, database: D1Database, env: FeatureDefaultsEnv, route: Exclude<RouteMatch, { kind: "findings-index" } | { kind: "home" } | { kind: "ticker" }>): Promise<Response> {
   // The admin's switch for one feature of this company: off hides what the feature wrote (docs/whitelist-feature-switches-design.md).
   const hidden = async (feature: Feature, ticker = route.ticker) => !await featureShown(database, env, ticker.trim().toUpperCase(), feature);
   const issuerCalendar = async (ticker: string) => (await readFiscalFocus(database, ticker)).issuers.get(ticker.trim().toUpperCase()) ?? { fiscalYearEndMonth: null, name: null, annualForm: null };
@@ -273,7 +285,7 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
       const payload = await getSecFundamentals(database, query);
       // Preserved from the pre-backend behaviour: a ticker the directory does not know as a stock
       // has no fundamentals to collect, and says so, rather than reporting an empty pending set.
-      if (payload.status === "pending" && findSecurity(query.ticker)?.type !== "stock") {
+      if (payload.status === "pending" && (await securities(database))(query.ticker)?.etf !== false) {
         return errorResponse("FUNDAMENTALS_NOT_AVAILABLE", "Fundamentals are unavailable for this ticker.");
       }
       const focus = await readFiscalFocus(database, query.ticker);
@@ -286,6 +298,8 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
 function matchRoute(pathname: string): RouteMatch | null {
   if (/^\/api\/v1\/home\/?$/.test(pathname)) return { kind: "home" };
   if (/^\/api\/v1\/findings\/?$/.test(pathname)) return { kind: "findings-index" };
+  const named = /^\/api\/v1\/tickers\/([^/]+)\/?$/.exec(pathname);
+  if (named) { const ticker = safeDecode(named[1]!); return ticker === null ? null : { kind: "ticker", ticker }; }
   const valuation = /^\/api\/v1\/companies\/([^/]+)\/valuation(?:\/(versions)(?:\/([0-9a-f]{8,64})(?:\/evidence\/(e[0-9a-f]{6,20}))?)?)?\/?$/.exec(pathname);
   if (valuation) {
     const ticker = safeDecode(valuation[1]!);

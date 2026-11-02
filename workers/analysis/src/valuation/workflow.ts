@@ -89,10 +89,10 @@ export function openingResearch(state: ValuationState): string {
 /** The facts the models read, one line each; the research opening already carried the rest. */
 const MODEL_FACTS = ["revenue_ttm", "operating_income_ttm", "net_income_ttm", "cfo_ttm", "capex_ttm", "da_ttm", "sbc_ttm", "interest_expense_ttm", "ebitda_ttm", "cash", "investments", "debt", "leases", "preferred_stock", "minority_interest", "equity", "net_debt", "invested_capital", "shares_diluted_weighted", "shares_outstanding", "operating_margin_ttm", "effective_tax_rate_ttm", "fcf_ttm", "rpo_total", "rpo_next_12m_share"];
 
-/** Management's cited targets with the evidence ids that carry them, one line per target; empty without a curated set. */
+/** Management's cited targets with the evidence ids that carry them, one line per target; empty without a target set. */
 export function managementText(state: ValuationState): string {
   const set = state.input.management;
-  if (!set) return "";
+  if (!set) return state.input.managementNotes?.length ? `Management targets: none used (${state.input.managementNotes.join("; ")}).` : "";
   const ids = [...state.evidence.values()].filter(e => e.documentId === `management:${state.input.ticker}`).map(e => `${e.evidenceId} (${e.publishedAt})`);
   const amount = (t: typeof set.targets[number]) => t.unit === "ratio" ? pct(t.value) : t.unit === "per_share" ? t.value.toFixed(2) : `${(t.value / 1e9).toFixed(1)}B`;
   const lines = set.targets.map(t => `FY${t.fiscalYear} ${t.metric === "segment_revenue" ? `${t.segment} revenue` : t.metric.replace("_", " ")} ${t.kind === "floor" ? "≥ " : t.kind === "ceiling" ? "≤ " : ""}${amount(t)}${t.basis === "non_gaap" ? " non-GAAP" : ""}${t.kind === "derived" ? " (derived)" : ""}`);

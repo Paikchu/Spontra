@@ -7,7 +7,7 @@ import { readFindingFundamentals, readFindingsPublication, type FindingData } fr
 import type { FindingRecordEntry, FindingsPublication } from "../../../../shared/analysis-contract/findings.ts";
 import { sha256 } from "../sha256.ts";
 import { D1CompanyAnalysisRepository } from "../company-analysis/repository.ts";
-import { findSecurity } from "../catalog/security-directory.ts";
+import { companyName as listedName } from "../catalog/issuer-directory.ts";
 import { assertTrackedTicker, requireDb } from "../core.ts";
 import { readMapDerived } from "../financial-data/derived.ts";
 import { readCompletePublicationForTicker } from "../financial-data/publication.ts";
@@ -103,7 +103,7 @@ export async function executeFindingsWorkflow(params: FindingsWorkflowParams, st
   // The report, guidance or narrative moved on after scheduling; the next sweep starts a run for the new state.
   if (!input || input.fingerprint !== params.fingerprint) return { status: "superseded" as const };
   const model: FindingsModel = deps.model ?? ((stage, system, payload) => callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, MODEL_BUDGET_MS, { reasoning: reasoningFor(env, "findings"), ticker: params.ticker }));
-  const companyName = issuerNames(findSecurity(params.ticker)?.name ?? params.ticker)[0]!;
+  const companyName = issuerNames(await listedName(requireDb(env), params.ticker) ?? params.ticker)[0]!;
   const stage = <T>(name: string, callback: () => Promise<T>) => step.do(`findings-${name}`, callback);
   const draft = await writeFindings({
     ticker: params.ticker, companyName, ledger: input.ledger, context: input.context, data: input.data,

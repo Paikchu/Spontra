@@ -151,6 +151,15 @@ export async function loadFindingsIndex(fetcher:typeof fetch=fetch):Promise<stri
   return body.schemaVersion==="findings-index.v1"&&Array.isArray(body.tickers)?body.tickers.filter((t):t is string=>typeof t==="string"&&TICKER_PATTERN.test(t)).slice(0,40):null;
  }catch{return null;}
 }
+/** The ticker a company's data is kept under (a second share class reads as the class EDGAR lists first), or null when the read fails. */
+export async function loadPrimaryTicker(ticker:string,fetcher:typeof fetch=fetch):Promise<string|null>{
+ try{
+  const response=await fetcher(ANALYSIS_ORIGIN+`/api/v1/tickers/${encodeURIComponent(ticker)}`,{signal:AbortSignal.timeout(5000),headers:{accept:"application/json"}});
+  if(!response.ok)return null;
+  const body=await response.json() as {schemaVersion?:string;requested?:unknown;ticker?:unknown};
+  return body.schemaVersion==="ticker.v1"&&body.requested===ticker&&typeof body.ticker==="string"&&TICKER_PATTERN.test(body.ticker)?body.ticker:null;
+ }catch{return null;}
+}
 export async function loadFindings(ticker:string,fetcher:typeof fetch=fetch,locale:Locale|null=null):Promise<FindingsBundle|null>{
  try{
   const response=await fetcher(ANALYSIS_ORIGIN+inLocale(`/api/v1/companies/${ticker}/findings`,locale),{signal:AbortSignal.timeout(8000),headers:{accept:"application/json"}});
@@ -419,6 +428,18 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
    if(cache)ctx.waitUntil(cache.put(key,response.clone()));
    return response;
   }
+  // Which share class a ticker's data is kept under, so a link to the other class opens the same company.
+  const named=url.pathname.match(/^\/api\/business\/v1\/tickers\/([A-Z][A-Z0-9.-]{0,11})$/);
+  if(named){
+   if(request.method!=="GET"||[...url.searchParams.keys()].length)return json({error:"Not found"},404);
+   try{if(!env.PUBLIC_READ_LIMIT||!(await env.PUBLIC_READ_LIMIT.limit({key:request.headers.get("cf-connecting-ip")??"anonymous"})).success)return json({error:"Too many requests"},429);}catch{return json({error:"Read service unavailable"},503);}
+   const key=new Request(url.href,{method:"GET"});const cached=await cache?.match(key);if(cached)return cached;
+   const ticker=await loadPrimaryTicker(named[1]!,fetcher);
+   if(!ticker){const failed=json({error:"Read service unavailable"},readFailureStatus===429?429:503);failed.headers.set("cache-control","no-store");return failed;}
+   const response=json({schemaVersion:"ticker.v1",requested:named[1],ticker});response.headers.set("cache-control","public, max-age=86400");
+   if(cache)ctx.waitUntil(cache.put(key,response.clone()));
+   return response;
+  }
   if(url.pathname==="/api/business/v1/findings"){
    if(request.method!=="GET"||[...url.searchParams.keys()].length)return json({error:"Not found"},404);
    try{if(!env.PUBLIC_READ_LIMIT||!(await env.PUBLIC_READ_LIMIT.limit({key:request.headers.get("cf-connecting-ip")??"anonymous"})).success)return json({error:"Too many requests"},429);}catch{return json({error:"Read service unavailable"},503);}
@@ -440,7 +461,6 @@ export async function handle(request:Request,env:SiteEnv,ctx:SiteContext,upstrea
   const lang=url.searchParams.get("lang");
   if(lang!=null&&!isLocale(lang))return json({error:"Not found"},404);
   const locale:Locale|null=isLocale(lang)&&lang!=="en"?lang:null;
-  // A second share class reads as the class the data is kept under.
   match[1]=canonicalTicker(match[1]);
   if(request.method!=="GET")return json({error:"Method not allowed"},405);
   try{if(!env.PUBLIC_READ_LIMIT||!(await env.PUBLIC_READ_LIMIT.limit({key:request.headers.get("cf-connecting-ip")??"anonymous"})).success)return json({error:"Too many requests"},429);}catch{return json({error:"Read service unavailable"},503);}

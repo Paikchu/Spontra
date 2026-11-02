@@ -2,7 +2,7 @@ import { LIBRARY_TOPICS, type LibraryCanonical, type LibraryFactRef } from "../.
 import { checkCard, LIBRARY_CARD_VERSION, metricsFor, noteTopic, topicFamily } from "../../../../shared/analysis-runtime/filing-library/cards.ts";
 import { libraryHash } from "../../../../shared/analysis-runtime/filing-library/parse.ts";
 import { modelFor, reasoningFor } from "../ai-config.ts";
-import { findSecurity } from "../catalog/security-directory.ts";
+import { companyName } from "../catalog/issuer-directory.ts";
 import { SecModelOutputError } from "../model-stream.ts";
 import { callWorkerSecModel, type AnalysisEnv } from "../operations.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
@@ -97,7 +97,7 @@ const SYSTEM = `你为财报文件的章节写索引卡，供 Agent 检索导航
 - gist：一两句中文，说明这一节讲什么，不超过 80 字；不写任何金额、百分比、增速、年份等数字。
 - entities：原文中出现的产品、业务、品牌、客户、地区、技术名称，逐字照抄原文写法（保留大小写），最多 20 个；没有就给空数组。不要写泛称（如 revenue、customers）。
 - topic：只在章节给了 topics 时，从中选一个最贴切的值；没给就省略。
-- answers：这一节原文能回答的 2–5 个具体问题，每个不超过 30 字，例如“Azure 按什么收费”。
+- answers：这一节原文能回答的 2–5 个具体问题，每个不超过 30 字，例如“云服务按什么收费”。
 只返回 JSON：{"cards":[{"id","gist","entities","topic","answers"}]}，每个输入章节一张，id 原样返回。`;
 
 /** One model call for a batch of sibling sections; every card is checked against its section's full text before it is stored. */
@@ -115,7 +115,7 @@ export async function writeCardBatch(env: AnalysisEnv, ticker: string, sectionId
   }
   const model = modelFor(env, "library-cards"), reasoning = reasoningFor(env, "library-cards");
   const payload = {
-    company: findSecurity(ticker)?.name ?? ticker, ticker,
+    company: await companyName(db, ticker) ?? ticker, ticker,
     sections: sections.map(s => {
       const family = topicFamily(s.canonical);
       return { id: s.section_id, form: s.form, period: s.report_date, path: (JSON.parse(s.path) as string[]).join(" › "), text: (textOf.get(s.section_id) ?? "").slice(0, SECTION_CHARS),

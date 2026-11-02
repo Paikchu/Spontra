@@ -18,7 +18,7 @@ function stateWith(excerpt = unresolved): ValuationState {
       facts: [{ id: "shares_outstanding", label: "Shares", value: 100, unit: "shares", currency: null, periodType: "instant", periodStart: null, periodEnd: "2026-06-30", basis: "reported", formula: null, sourceRefs: [], rationale: null }],
       distributions: [], diagnostics: [], documents: [], guidance: null, transcripts: [], missing: [], fingerprint: "input",
       data: { quarters: [], history: null, capital: null, fundamentals: null, guidance: null },
-      rpo: null, lifecycle: "mature", peers: [], peerBasis: "none", peerNotes: [], management: null, trailingQuarters: [],
+      rpo: null, lifecycle: "mature", peers: [], peerBasis: "none", peerNotes: [], management: null, managementNotes: [], trailingQuarters: [],
     },
     researchAsOf: now, now, quote: null, riskFree: null, beta: null, peerMultiples: null, multipleHistory: null,
     evidence: new Map([[evidenceId, evidence]]), hits: [], used: { finds: 0, reads: 0, searches: 0, webReads: 0, transcripts: 0 },

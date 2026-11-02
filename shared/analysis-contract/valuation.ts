@@ -174,7 +174,7 @@ export type InputCheck = { field: string; cited: number; expected: number | null
 export type InputVerification = { checks: InputCheck[]; ok: boolean };
 export type MultipleQuartiles = { p25: number; median: number; p75: number; count: number };
 /**
- * Where the comparable set came from, in priority order: the curated peer map in the repository, whole-company
+ * Where the comparable set came from, in priority order: the set the admin keeps for the company, whole-company
  * business-tag pairs, segment-level (unit) pairs weighted by exposure, companies sharing a category, or none.
  */
 export const PEER_SELECTION_BASES = ["curated", "ranking", "unit", "category", "none"] as const;
@@ -215,6 +215,18 @@ export type ManagementTargetSet = {
   asOf: string;
   sources: ManagementTargetSource[];
   targets: ManagementTarget[];
+};
+/** A target set as the admin stores it: the company is the row's key and the fiscal-year end comes from its filings. */
+export type StoredManagementTargets = Omit<ManagementTargetSet, "ticker" | "fiscalYearEndMonth">;
+/** One company's admin-maintained valuation inputs (admin `business-map/companies/<T>/valuation-inputs`). */
+export type ValuationCompanyInputs = {
+  ticker: string;
+  /** The comparable set the cross-check tries first; null lets the business-tag pairs choose. */
+  peers: string[] | null;
+  targets: StoredManagementTargets | null;
+  updatedAt: string | null;
+  /** The fiscal-year end the filings give, which places each target's fiscal year; null when none is known yet. */
+  fiscalYearEndMonth: number | null;
 };
 /** A reference scenario computed by code from cited inputs (the management case), shown beside the researched scenarios and never part of the range. */
 export type ReferenceScenario = {

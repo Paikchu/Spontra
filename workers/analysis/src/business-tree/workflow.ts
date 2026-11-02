@@ -3,7 +3,7 @@ import type { BusinessTree, BusinessTreeResponse } from "../../../../shared/anal
 import type { PublicBusinessFlow } from "../../../../shared/analysis-contract/business-flow.ts";
 import { issuerNames, readBusinessTree } from "../../../../shared/analysis-runtime/business-tree.ts";
 import { sha256 } from "../sha256.ts";
-import { findSecurity } from "../catalog/security-directory.ts";
+import { companyName } from "../catalog/issuer-directory.ts";
 import { requireDb } from "../core.ts";
 import { featureTickersFor } from "../financial-data/company-policy.ts";
 import { readCompletePublicationForTicker } from "../financial-data/publication.ts";
@@ -84,7 +84,7 @@ export async function executeBusinessTreeWorkflow(params: BusinessTreeParams, st
   // The business list changed after scheduling; the next sweep starts a run for the new list.
   if (input.fingerprint !== params.fingerprint || !input.periodEnd) return { status: "superseded" };
   const tree = await runBusinessTree({
-    ticker: params.ticker, companyName: issuerNames(findSecurity(params.ticker)?.name ?? params.ticker)[0]!, periodEnd: input.periodEnd, businesses: input.businesses,
+    ticker: params.ticker, companyName: issuerNames(await companyName(requireDb(env), params.ticker) ?? params.ticker)[0]!, periodEnd: input.periodEnd, businesses: input.businesses,
     filings: input.filings, search: researchSearch(env), modelVersion, fingerprint: params.fingerprint, now,
     // SEC filings are read from the filing library; the web search is left for vendor pages.
     filingLibrary: treeLibrary(requireDb(env), params.ticker, input.filings, { headings: true }),

@@ -1,4 +1,4 @@
-import { canonicalTicker } from "../../../../shared/analysis-runtime/financial-data/policy.ts";
+import { issuerDirectory, refreshListings } from "../catalog/issuer-directory.ts";
 import { secArchiveDocumentUrl, secArchiveRoot } from "../sec/archive-url.ts";
 import { throttledSecReader } from "../financial-data/provider.ts";
 import type { AnalysisEnv } from "../operations.ts";
@@ -25,27 +25,7 @@ export type DiscoveryState = { cik: string; accessions: string[]; checkedAt: str
 /** The forms a collection job lists (provider.ts `readSecDocumentBatch`). */
 const COLLECTED = (f: { form: string; items: string }) => /^(?:10-[QK]|20-F)(?:\/A)?$/.test(f.form) || f.form === "6-K" || (f.form === "8-K" && f.items.includes("2.02"));
 
-/**
- * EDGAR's issuer directory, read once per run and only when a company's CIK is not yet known: every listed symbol
- * mapped to its ten-digit CIK, with a second share class filed under the data ticker it resolves to.
- */
-export function parseIssuerDirectory(payload: unknown): Record<string, string> {
-  const root = payload as { fields?: unknown; data?: unknown } | null;
-  const fields = Array.isArray(root?.fields) ? root.fields.map(String) : [];
-  const symbol = fields.indexOf("ticker"), cik = fields.indexOf("cik");
-  const out: Record<string, string> = {};
-  if (symbol < 0 || cik < 0 || !Array.isArray(root?.data)) return out;
-  for (const row of root!.data as unknown[][]) {
-    const ticker = canonicalTicker(String(row[symbol] ?? ""));
-    const id = String(row[cik] ?? "").padStart(10, "0");
-    if (ticker && /^\d{10}$/.test(id) && Number(id) > 0 && !out[ticker]) out[ticker] = id;
-  }
-  return out;
-}
-const issuerDirectory = (reader: { read: (url: string) => Promise<Response> }) => {
-  let loaded: Promise<Record<string, string>> | null = null;
-  return () => loaded ??= reader.read("https://www.sec.gov/files/company_tickers_exchange.json").then(r => r.json()).then(parseIssuerDirectory);
-};
+
 type Filing = { accession: string; form: string; items: string; filingDate: string; reportDate: string; primaryDocument: string };
 
 function recentFilings(payload: unknown): Filing[] {
@@ -77,14 +57,18 @@ export async function runSecDiscovery(env: AnalysisEnv, now = new Date(), fetche
   const repository = new D1SecRepository(db);
   const reader = throttledSecReader(env.SEC_USER_AGENT, fetcher, 200);
   const result = { checked: 0, discovered: [] as string[], baseline: [] as string[], bootstrapped: [] as string[], unknown: [] as string[], failed: [] as string[] };
-  const directory = issuerDirectory(reader);
+  // The two reference directories (catalog/issuer-directory.ts) are read here at most once a day; every other reader
+  // uses the stored copies. EDGAR's names the CIK of a company the pipeline has not collected yet.
+  let directory: Promise<Record<string, string>> | null = null;
+  const ciks = () => directory ??= issuerDirectory(db, reader, now).then(entries => Object.fromEntries(entries.filter(e => e[3]).map(e => [e[0], e[3]])));
+  await Promise.all([ciks().catch(() => undefined), refreshListings(db, fetcher, now).catch(() => undefined)]);
   for (const ticker of await scopeTickers(env, "data")) {
     let cik = await knownCik(db, ticker);
     let bootstrap = false;
     // A company on the data list the pipeline has never collected: its CIK comes from EDGAR's issuer directory, and
     // its first collection is asked for in the same batch as its baseline.
     if (!cik) {
-      const listed = await directory().then(d => ({ cik: d[ticker] ?? null, read: true })).catch(() => ({ cik: null, read: false }));
+      const listed = await ciks().then(d => ({ cik: d[ticker] ?? null, read: true })).catch(() => ({ cik: null, read: false }));
       cik = listed.cik; bootstrap = cik !== null;
       // The directory was read and does not list the ticker: say so where the admin's company list looks.
       if (!cik && listed.read) await repository.setCache(`sec:financial-discovery-failure:v1:${ticker}`, { reason: "SEC_ISSUER_NOT_FOUND" }, now.toISOString()).catch(() => undefined);

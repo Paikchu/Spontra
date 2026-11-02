@@ -7,9 +7,10 @@ import { selectPeers } from "../../../../shared/analysis-runtime/valuation/peers
 import { distributionOf, type Lifecycle } from "../../../../shared/analysis-runtime/valuation/calculator.ts";
 import { lifecycleOf } from "../../../../shared/analysis-runtime/valuation/prior.ts";
 import { readPeersResponse } from "../peers/read.ts";
-import { curatedPeersFor, managementTargetsFor } from "./curated.ts";
+import { managementTargetSet, readValuationCompanyInputs } from "./curated.ts";
+import { readFiscalFocus } from "../read-api/fiscal-periods.ts";
 import { sha256 } from "../sha256.ts";
-import { companyName, findSecurity } from "../catalog/security-directory.ts";
+import { companyName } from "../catalog/issuer-directory.ts";
 import { requireDb } from "../core.ts";
 import { listLibraryDocuments } from "../filing-library/store.ts";
 import { readMapDerived } from "../financial-data/derived.ts";
@@ -61,13 +62,15 @@ export type ValuationInput = {
   /** The newest RPO disclosure, for the contracted-revenue floor. */
   rpo: RpoDisclosure | null;
   lifecycle: Lifecycle;
-  /** The comparable set (shared/analysis-runtime/valuation/peers.ts): curated map, business-tag pairs, else shared categories; not part of the fingerprint. */
+  /** The comparable set (shared/analysis-runtime/valuation/peers.ts): the admin's set, business-tag pairs, else shared categories; not part of the fingerprint. */
   peers: PeerFundamentals[];
   peerBasis: PeerSelectionBasis;
   /** Why peers were chosen or dropped: the selection's notes and each exclusion (loss-making, no EBITDA, incomplete figures). */
   peerNotes: string[];
-  /** Management's cited targets from the curated set, when the company has one; part of the fingerprint. */
+  /** Management's cited targets the admin keeps for the company, when it has a current set; part of the fingerprint. */
   management: ManagementTargetSet | null;
+  /** Why a stored target set was not used (too old, no fiscal-year end). */
+  managementNotes: string[];
   trailingQuarters: TrailingQuarter[];
 };
 
@@ -320,14 +323,16 @@ export async function buildValuationInput(env: AnalysisEnv, ticker: string, rese
   const { facts, missing } = buildFacts(data, snapshot, newest.periodEnd, currency);
   const distributions = buildDistributions(snapshot, data);
   const diagnostics = buildDiagnostics(facts, snapshot, data, newest.periodEnd);
-  const [library, calls, cik, peerPublication] = await Promise.all([
+  const [library, calls, cik, peerPublication, inputs, calendar] = await Promise.all([
     listLibraryDocuments(db, { ticker, forms: DOCUMENT_FORMS, limit: 120 }).catch(() => [] as LibraryDocumentSummary[]),
     readyTranscripts(db, ticker, new Date(Date.parse(newest.periodEnd) - 400 * DAY).toISOString().slice(0, 10)).catch(() => []),
     knownCik(db, ticker).catch(() => null),
     readPeersResponse(db).then(r => r.peers).catch(() => null),
+    readValuationCompanyInputs(db, ticker).catch(() => null),
+    readFiscalFocus(db, ticker).then(map => map.issuers.get(ticker)?.fiscalYearEndMonth ?? null).catch(() => null),
   ]);
-  const peers = await buildPeerFundamentals(db, ticker, peerPublication, curatedPeersFor(ticker)).catch(() => ({ peers: [] as PeerFundamentals[], basis: "none" as const, notes: ["peer fundamentals could not be read"] }));
-  const management = managementTargetsFor(ticker);
+  const peers = await buildPeerFundamentals(db, ticker, peerPublication, inputs?.peers ?? null).catch(() => ({ peers: [] as PeerFundamentals[], basis: "none" as const, notes: ["peer fundamentals could not be read"] }));
+  const { set: management, notes: managementNotes } = managementTargetSet(ticker, inputs?.targets ?? null, calendar, researchAsOf);
   const rpo = data.capital?.quarters.find(q => Math.abs(Date.parse(q.periodEnd) - Date.parse(newest.periodEnd)) <= 20 * DAY)?.rpo ?? null;
   const documents = selectDocuments(library, researchAsOf);
   const transcripts: ValuationTranscript[] = calls.filter(c => c.filedAt.slice(0, 10) <= researchAsOf.slice(0, 10)).slice(0, 4)
@@ -340,8 +345,8 @@ export async function buildValuationInput(env: AnalysisEnv, ticker: string, rese
     management: management ? [management.asOf, management.targets.map(t => [t.metric, t.segment ?? "", t.fiscalYear, t.value])] : null,
   }));
   return {
-    ticker, cik, companyName: companyName(ticker) ?? findSecurity(ticker)?.name ?? ticker, currency, financialPeriodEnd: newest.periodEnd, incomeModel: newest.incomeModel ?? "unknown",
+    ticker, cik, companyName: await companyName(db, ticker) ?? ticker, currency, financialPeriodEnd: newest.periodEnd, incomeModel: newest.incomeModel ?? "unknown",
     facts, distributions, diagnostics, documents, guidance: data.guidance, transcripts, missing, fingerprint, data,
-    rpo, lifecycle: lifecycleOf({ facts, diagnostics }), peers: peers.peers, peerBasis: peers.basis, peerNotes: peers.notes, management, trailingQuarters: buildTrailingQuarters(data),
+    rpo, lifecycle: lifecycleOf({ facts, diagnostics }), peers: peers.peers, peerBasis: peers.basis, peerNotes: peers.notes, management, managementNotes, trailingQuarters: buildTrailingQuarters(data),
   };
 }

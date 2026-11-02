@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
-import { issuerDirectory, parseIssuerDirectory, searchIssuers } from "../src/admin/issuer-search.ts";
+import { companyName, issuerDirectory, parseIssuerDirectory, refreshListings, searchIssuers, securities } from "../src/catalog/issuer-directory.ts";
 
 /** D1 over node:sqlite with every migration applied. */
 function database(): D1Database {
@@ -53,10 +53,34 @@ test("the directory is read from SEC once a day, served from D1 between reads, a
   assert.equal(reads, 1);
   await issuerDirectory(db, reader, new Date("2026-10-22T20:00:00Z"));
   assert.equal(reads, 1);
-  const stored = await db.prepare("SELECT fetched_at FROM sec_cache WHERE cache_key='admin:issuer-directory:v1'").first<{ fetched_at: string }>();
+  const stored = await db.prepare("SELECT fetched_at FROM sec_cache WHERE cache_key='catalog:issuer-directory:v2'").first<{ fetched_at: string }>();
   assert.equal(stored?.fetched_at, "2026-10-22T08:00:00.000Z");
   fail = true;
   const stale = await issuerDirectory(db, reader, new Date("2026-10-24T08:00:00Z"));
   assert.equal(reads, 2);
   assert.equal(stale.length, 12);
+});
+
+test("a company is named by its listing title, else by EDGAR's name; an ETF says so; the listing is read from Nasdaq Trader at most once a day", async () => {
+  const db = database();
+  await issuerDirectory(db, { read: async () => new Response(JSON.stringify(directory)) }, new Date());
+  const filler = Array.from({ length: 1000 }, (_, i) => `Y|Q${String.fromCharCode(65 + i % 26)}${String.fromCharCode(65 + Math.floor(i / 26) % 26)}${String.fromCharCode(65 + Math.floor(i / 676))}|Filler ${i} Common Stock|N| |N|100|N||||N`);
+  const listing = ["Nasdaq Traded|Symbol|Security Name|Listing Exchange|Market Category|ETF|Round Lot Size|Test Issue|Financial Status|CQS Symbol|NASDAQ Symbol|NextShares",
+    "Y|GOOGL|Alphabet Inc. - Class A Common Stock|Q|Q|N|40|N|N||GOOGL|N", "Y|BRK.B|Berkshire Hathaway Inc. New Common Stock|N| |N|40|N||BRK.B|BRK.B|N", "Y|IDXF|Example Index Fund|P| |Y|100|N||IDXF|IDXF|N", ...filler].join("\n");
+  let reads = 0;
+  const fetcher = (async () => { reads++; return new Response(listing); }) as unknown as typeof fetch;
+  await refreshListings(db, fetcher, new Date());
+  await refreshListings(db, fetcher, new Date());
+  assert.equal(reads, 1);
+  const named = await securities(db);
+  assert.deepEqual(named("GOOGL"), { name: "Alphabet Inc.", etf: false });
+  assert.deepEqual(named("brk-b"), { name: "Berkshire Hathaway Inc.", etf: false });
+  assert.deepEqual(named("IDXF"), { name: "Example Index Fund", etf: true });
+  // Listed by EDGAR only: EDGAR's own spelling.
+  assert.deepEqual(named("AMZN"), { name: "AMAZON COM INC", etf: false });
+  assert.equal(named("ZZZZZZ"), null);
+  assert.equal(await companyName(db, "GOOGL"), "Alphabet Inc.");
+  // A day later the listing is read again; a failed read keeps the copy and says why.
+  await assert.rejects(refreshListings(db, (async () => new Response("", { status: 503 })) as unknown as typeof fetch, new Date(Date.now() + 2 * 86_400_000)), /LISTINGS_UNAVAILABLE/);
+  assert.deepEqual((await securities(db))("GOOGL"), { name: "Alphabet Inc.", etf: false });
 });

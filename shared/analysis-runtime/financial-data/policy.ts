@@ -1,10 +1,9 @@
 /**
- * One company, one ticker: a second share class resolves to the class the data is kept under, so a URL, a list
- * entry, a peer reference or a search for the other class reaches the same filings and figures. A share class is
- * written with a dot (BRK.B), as EDGAR's issuer directory keys it; the dash some listings use reads as the same ticker.
+ * A ticker as typed, in the one spelling every store keys on: upper case, a share class written with a dot (BRK.B), as
+ * EDGAR's issuer directory keys it; the dash some listings use reads as the same ticker. Which class a company's data
+ * is kept under is the issuer directory's to say (catalog/issuer-directory.ts `primaryTicker`), not code's.
  */
-export const TICKER_ALIASES:Readonly<Record<string,string>>={GOOG:'GOOGL'};
-export const canonicalTicker=(ticker:string):string=>{const t=ticker.trim().toUpperCase().replaceAll('-','.');return TICKER_ALIASES[t]??t;};
+export const canonicalTicker=(ticker:string):string=>ticker.trim().toUpperCase().replaceAll('-','.');
 /** A ticker as every entry point accepts it, after `canonicalTicker`. */
 export const TICKER_PATTERN=/^[A-Z][A-Z0-9.-]{0,11}$/;
 /** The canonical ticker, or '' when the value is not one. */

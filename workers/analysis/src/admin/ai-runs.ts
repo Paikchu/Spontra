@@ -8,7 +8,7 @@ import { FEATURES, type Feature } from "../../../../shared/analysis-contract/bus
 import { featureEnabled, featureTickersFor } from "../financial-data/company-policy.ts";
 const FEATURE_NAME: Record<Feature, string> = { reports: "财报摘要", findings: "要点", explainer: "业务解读", tree: "业务脑图", valuation: "估值评估" };
 import { businessTreeFingerprint, readBusinessTreeResponse } from "../business-tree/workflow.ts";
-import { companyName } from "../catalog/security-directory.ts";
+import { securities } from "../catalog/issuer-directory.ts";
 import { findingsFingerprint } from "../findings/workflow.ts";
 import { analystFingerprint, dossierCacheKey } from "../analyst/workflow.ts";
 import { checkupFingerprint } from "../checkup/workflow.ts";
@@ -171,9 +171,9 @@ export async function handleAiRunsAdminRequest(request: Request, env: AnalysisEn
     // Version ids are timestamps; the admin proxy percent-encodes their colons.
     const path = decodeURIComponent(new URL(request.url).pathname);
     if (path === "/admin/ai/companies" && request.method === "GET") {
-      const latest = await new AiRunStore(db).latestRuns();
+      const [latest, named] = await Promise.all([new AiRunStore(db).latestRuns(), securities(db)]);
       const companies = await Promise.all(tickers.map(async ticker => ({
-        ticker, name: companyName(ticker) ?? ticker,
+        ticker, name: named(ticker)?.name ?? ticker,
         kinds: Object.fromEntries(await Promise.all(AI_RUN_KINDS.map(async kind => [kind, await state(env, db, kind, ticker, latest.get(`${kind}:${ticker}`) ?? null)]))) as AiCompanies["companies"][number]["kinds"],
       })));
       return json({ companies } satisfies AiCompanies);
@@ -208,7 +208,7 @@ export async function handleAiRunsAdminRequest(request: Request, env: AnalysisEn
     const versions = [...(head ? [head] : []), ...(await store.versions(kind, ticker!)).filter(v => v.id !== head?.id)];
     const latestRun = runs[0] ? { runId: runs[0].runId, status: runs[0].status, stage: runs[0].stage, trigger: runs[0].trigger, startedAt: runs[0].startedAt, updatedAt: runs[0].updatedAt } : null;
     return json({
-      ticker: ticker!, name: companyName(ticker!) ?? ticker!, kind,
+      ticker: ticker!, name: (await securities(db))(ticker!)?.name ?? ticker!, kind,
       state: { enabled: enabled(env, kind, ticker!), blocked: blocked(env, kind, ticker!), automatic: automatic(env, kind, ticker!), current: head, latestRun },
       runs, versions, events: kind === "guidance" ? await guidanceEvents(db, env, ticker!, now) : [],
       ...(spent ? { usage: spent } : {}),

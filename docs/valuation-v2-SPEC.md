@@ -37,7 +37,7 @@ Out of scope: SOTP, non-USD markets, REIT/insurance models, daily repricing, and
 
 `shared/analysis-runtime/valuation/peers.ts` chooses the cross-check's peers in priority order, each source counting only when it gives at least two companies the projection carries:
 
-1. **Curated** (`workers/analysis/src/valuation/curated/peer-map.json`): the hand-picked set per company, equal weights. `peerBasis: "curated"`.
+1. **Curated** (D1 `valuation_company_inputs.peers_json`, edited in the admin's whitelist row under 估值输入): the set an admin picks for a company, equal weights. `peerBasis: "curated"`. No company is listed in code; a company without a row starts at the pairs.
 2. **Pairs** (business tags, `docs/peer-similarity-design.md`): direct and partial pairs; a whole-company pair weighs 1 (basis `ranking`), a segment pair weighs tier (direct 1, partial 0.5) × own unit exposure × peer unit exposure (basis `unit`). Adjacent pairs carry nothing.
 3. **Category**: companies sharing an industry category, equal weights.
 
@@ -45,7 +45,7 @@ Out of scope: SOTP, non-USD markets, REIT/insurance models, daily repricing, and
 
 ### 3b. Management targets and the management case
 
-`workers/analysis/src/valuation/curated/management-targets.json` stores management's public targets as cited facts (metric, fiscal year, value, GAAP/non-GAAP basis, floor/target/derived, source ids with URLs). They are:
+D1 `valuation_company_inputs.targets_json` stores management's public targets as cited facts (metric, fiscal year, value, GAAP/non-GAAP basis, floor/target/derived, source ids with URLs), edited in the admin's whitelist row under 估值输入 and validated on save (`workers/analysis/src/valuation/curated.ts`). The fiscal-year end that places each target comes from the company's filings, not the stored set; a set whose `asOf` is more than 540 days before the research date, or a company whose filings give no fiscal-year end, gets no management case, and the run's prompt says why. They are:
 
 - registered as evidence at the start of a run (`registerManagementEvidence`, kind `web`, one passage per source), so the research, the scenarios and the report can cite them; listed in the research and assumption openings; part of the input fingerprint;
 - turned by `shared/analysis-runtime/valuation/management.ts` into a deterministic **reference scenario** on the model's own rate, shares, bridge, horizon, tax and sales-to-capital: revenue runs geometrically through the total-revenue targets (a fiscal year lands on the first forecast year ending at or after it), then fades straight to the terminal growth; a non-GAAP margin target is brought to the calculator's basis by deducting the trailing `sbc_ttm / revenue_ttm`; build capex comes from the gross capex targets less maintenance (D&A scaled with revenue) and the growth reinvestment, and in a year with a free-cash-flow floor the sales-to-capital rises so the floor is met; the build ends inside the horizon. Published as `model.references[0]` with its own forward-multiple triangulation; never part of the range;
