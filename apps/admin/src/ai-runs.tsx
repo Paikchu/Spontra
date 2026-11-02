@@ -11,6 +11,7 @@ import { completeRequestId, pendingRequestId } from "./financial-maintenance-sta
 import { TranslationsPanel } from "./translations";
 import "./ai-runs.css";
 import { useOnReturn, usePageActive } from "./admin-page";
+import { PLANS } from "./run-progress";
 
 /** The BusinessView outputs this admin shows; guidance is not part of BusinessView. */
 export type ViewKind = Exclude<AiRunKind, "guidance">;
@@ -29,11 +30,7 @@ const STAGES: Array<[RegExp, (m: RegExpExecArray) => string]> = [
   [/^valuation-compose-t(\d+)/, m => `成稿 · 第 ${m[1]} 轮`],
   [/^valuation-publish$/, () => "发布"],
   [/^tree-input$/, () => "读取业务列表"],
-  [/^tree-filings$/, () => "列出财报与年报"],
-  [/^tree-b(\d+)-t(\d+)-think$/, m => `第 ${m[1]} 项业务 · 第 ${m[2]} 轮思考`],
-  [/^tree-b(\d+)-t(\d+)-search$/, m => `第 ${m[1]} 项业务 · 第 ${m[2]} 轮搜索`],
-  [/^tree-b(\d+)-t(\d+)-read$/, m => `第 ${m[1]} 项业务 · 第 ${m[2]} 轮读取网页`],
-  [/^tree-b(\d+)-review/, m => `第 ${m[1]} 项业务 · 审校`],
+  ...PLANS.tree.step,
   [/^tree-publish$/, () => "发布"],
   [/^findings-input$/, () => "读取财报、指引与公司综述"],
   [/^findings-write$/, () => "撰写要点"],
