@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type FocusEvent, type KeyboardEvent, type MouseEvent, type PointerEvent } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type FocusEvent, type KeyboardEvent, type MouseEvent, type PointerEvent } from "react";
 import { createPortal } from "react-dom";
 import type { FiscalLabelSource } from "@/shared/analysis-contract/period";
 import { periodLabel, type PeriodCopy } from "@/shared/analysis-runtime/fiscal-label";
@@ -52,7 +52,7 @@ function useMarkTip(text: string) {
     const delay = immediate || reduced ? 0 : 150;
     openTimer.current = window.setTimeout(() => { place(el); setPhase("open"); }, delay);
   };
-  const hide = () => {
+  const hide = useCallback(() => {
     window.clearTimeout(openTimer.current);
     setPhase(current => {
       if (current !== "open") return "closed";
@@ -60,7 +60,7 @@ function useMarkTip(text: string) {
       closeTimer.current = window.setTimeout(() => setPhase("closed"), reduced ? 0 : 80);
       return "closing";
     });
-  };
+  }, [reduced]);
   useEffect(() => {
     if (phase === "closed") return;
     const onKey = (event: globalThis.KeyboardEvent) => { if (event.key === "Escape") hide(); };
@@ -72,7 +72,7 @@ function useMarkTip(text: string) {
     document.addEventListener("keydown", onKey);
     document.addEventListener("pointerdown", onPointer);
     return () => { document.removeEventListener("keydown", onKey); document.removeEventListener("pointerdown", onPointer); };
-  }, [phase]);
+  }, [phase, hide]);
   const node = phase !== "closed" && typeof document !== "undefined" ? createPortal(
     <div className="period-tip" id={id} role="tooltip" data-state={phase} style={{ left: box.left, top: box.top }}>{text}</div>,
     document.body,
