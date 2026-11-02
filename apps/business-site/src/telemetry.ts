@@ -38,7 +38,6 @@ export type TelemetrySummary = {
   events: Array<{ name: TrackName; count: number }>;
   expandRate: number | null;
   errorRate: number | null;
-  tour: { start: number; done: number; skip: number; completionRate: number | null };
 };
 
 export type TelemetryRepository = {
@@ -156,7 +155,6 @@ export function summarize(rows: readonly StoredEvent[], range: TelemetryRange, n
   }
   const top = (map: Map<string, number>, limit: number) => [...map.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, limit);
   const pageViews = counts.get("page_view") ?? 0;
-  const tourStart = counts.get("tour_start") ?? 0;
   return {
     schemaVersion: "telemetry-summary.v1",
     range,
@@ -169,12 +167,6 @@ export function summarize(rows: readonly StoredEvent[], range: TelemetryRange, n
     events: TRACK_NAMES.map(name => ({ name, count: counts.get(name) ?? 0 })),
     expandRate: rate(counts.get("finding_expand") ?? 0, companyViews),
     errorRate: rate(counts.get("error_shown") ?? 0, pageViews),
-    tour: {
-      start: tourStart,
-      done: counts.get("tour_done") ?? 0,
-      skip: counts.get("tour_skip") ?? 0,
-      completionRate: rate(counts.get("tour_done") ?? 0, tourStart),
-    },
   };
 }
 
@@ -276,9 +268,6 @@ export function sqlRepository(sql: TelemetrySql): TelemetryRepository {
       const companyViews = Number(query("COUNT(*) AS n", "AND name = 'page_view' AND path GLOB '/companies/*'")[0]?.n ?? 0);
       summary.expandRate = rate(counts.get("finding_expand") ?? 0, companyViews);
       summary.errorRate = rate(counts.get("error_shown") ?? 0, summary.pageViews);
-      const start = counts.get("tour_start") ?? 0;
-      const done = counts.get("tour_done") ?? 0;
-      summary.tour = { start, done, skip: counts.get("tour_skip") ?? 0, completionRate: rate(done, start) };
       return summary;
     },
     read(since) {

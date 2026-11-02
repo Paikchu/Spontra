@@ -14,7 +14,6 @@ export type UsageLabels = {
   events: string;
   expand: string;
   errors: string;
-  tour: string;
   none: string;
   ranges: Record<TelemetryRange, string>;
   eventName: Record<string, string>;
@@ -57,7 +56,6 @@ export function UsageBoard({ summary, range, onRange, labels, pending, failed, o
             <article className="usage-card"><h2>{labels.pageViews}</h2>{figure(pending || !summary ? "—" : String(summary.pageViews))}</article>
             <article className="usage-card"><h2>{labels.expand}</h2>{figure(pending || !summary ? "—" : percent(summary.expandRate))}</article>
             <article className="usage-card"><h2>{labels.errors}</h2>{figure(pending || !summary ? "—" : percent(summary.errorRate))}</article>
-            <article className="usage-card"><h2>{labels.tour}</h2>{figure(pending || !summary ? "—" : percent(summary.tour.completionRate))}</article>
           </div>
           <div className="usage-columns">
             <article className="usage-card">

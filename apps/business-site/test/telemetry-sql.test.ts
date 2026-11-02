@@ -12,7 +12,6 @@ test('SQLite aggregates match the in-memory model for every range', async t => {
   for (let i = 0; i < 100; i++) {
     rows.push({ received: now - i * 3_600_000, name: i % 3 ? 'page_view' : 'search_submit', path: '/companies/META', sid: `11111111-1111-4111-8111-${String(i % 5).padStart(12, '0')}`, lang: 'en', theme: 'dark', props: i % 3 ? {} : { q: 'zzzz', results: 0 } });
   }
-  rows.push({ ...rows[0]!, received: now, name: 'tour_start' }, { ...rows[0]!, received: now, name: 'tour_done' });
   rows.push(
     { ...rows[0]!, received: now + 1, name: 'page_view' },
     { ...rows[0]!, received: now - 40 * 86_400_000, name: 'page_view' },

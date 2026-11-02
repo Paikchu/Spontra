@@ -15,7 +15,6 @@ const labels: UsageLabels = {
   events: "事件分布",
   expand: "要点展开率",
   errors: "错误率",
-  tour: "引导完成率",
   none: "暂无",
   ranges: { "24h": "近 24 小时", "7d": "近 7 天", "4w": "近 4 周" },
   eventName: {
@@ -29,9 +28,6 @@ const labels: UsageLabels = {
     lang_toggle: "切换语言",
     theme_toggle: "切换主题",
     error_shown: "显示错误",
-    tour_start: "开始引导",
-    tour_done: "完成引导",
-    tour_skip: "跳过引导",
   },
 };
 

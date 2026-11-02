@@ -14,10 +14,6 @@ try {
     const page = await browser.newPage({ viewport: { width, height: 900 } });
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
-    await page.addInitScript(() => {
-      localStorage.setItem('bv-tour-done', '1');
-      sessionStorage.setItem('bv-tour-auto', '1');
-    });
     await page.goto(`${process.env.BASE_URL ?? 'http://127.0.0.1:4188'}/companies/NVDA?lang=${lang === 'zh' ? 'zh-CN' : lang}&view=profit`);
     await page.locator('.insider-title').first().waitFor({ state: 'attached', timeout: 90000 });
     const expand = page.locator('.rail-toggle[aria-expanded="false"]');
