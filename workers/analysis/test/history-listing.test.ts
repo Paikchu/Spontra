@@ -16,7 +16,11 @@ function cacheDb() {
   const statement = (sql: string, args: unknown[] = []) => ({
     bind: (...values: unknown[]) => statement(sql, values),
     first: async () => /SELECT payload/.test(sql) ? rows.get(String(args[0])) ?? null : null,
-    run: async () => { if (/INSERT INTO sec_cache/.test(sql)) rows.set(String(args[0]), { payload: String(args[1]), fetchedAt: String(args[2]) }); return { success: true }; },
+    run: async () => {
+      if (/INSERT INTO sec_cache/.test(sql)) rows.set(String(args[0]), { payload: String(args[1]), fetchedAt: String(args[2]) });
+      if (/DELETE FROM sec_cache WHERE cache_key = \?/.test(sql)) rows.delete(String(args[0]));
+      return { success: true };
+    },
   });
   return { rows, db: { prepare: (sql: string) => statement(sql) } as unknown as D1Database };
 }
@@ -49,4 +53,28 @@ test("the history listing continues into EDGAR's older submission pages until th
     ["10-Q", "0000019617-24-000600"], ["10-Q", "0000019617-23-000500"], ["8-K", "0000019617-25-000040"],
   ]);
   assert.ok(!read.some(url => url.endsWith("-submissions-003.json")));
+});
+
+test("a document that killed its step is read alone, and given up on after three deaths", async () => {
+  const listing = { [`https://data.sec.gov/submissions/CIK${CIK}.json`]: { cik: CIK, sic: "6021", filings: { recent: columns([
+    ["10-Q", "2026-08-06", "0001628280-26-054343"], ["10-K", "2026-02-14", "0000019617-26-000100"], ["10-Q", "2025-11-01", "0000019617-25-000600"]]) } } };
+  const marks: Array<string | undefined> = [];
+  const { rows, db } = cacheDb();
+  const markKey = `sec:revenue-history-reading:v1:${CIK}`;
+  const reader: SecReader = { async read(url) {
+    if (url in listing) return new Response(JSON.stringify(listing[url as keyof typeof listing]));
+    // The mark names the document before it is read, so a step killed here leaves it behind.
+    marks.push(rows.get(markKey)?.payload);
+    throw new Error("unavailable");
+  } };
+  const now = new Date("2026-10-16T00:00:00Z");
+  await runHistoryStep(db, reader, { ticker: "JPM", cik: CIK }, now, 0);
+  rows.set(markKey, { payload: JSON.stringify({ accession: "0001628280-26-054343", count: 3 }), fetchedAt: now.toISOString() });
+  const result = await runHistoryStep(db, reader, { ticker: "JPM", cik: CIK }, now, 3);
+  const cursor = JSON.parse(rows.get(`sec:revenue-history-cursor:v1:${CIK}`)!.payload) as { index: number; issues: string[] };
+  assert.equal(cursor.index, 1);
+  assert.ok(result.issues.includes("0001628280-26-054343:SOURCE_RETRY_EXHAUSTED"));
+  assert.deepEqual(marks.map(m => m && JSON.parse(m)), [{ accession: "0000019617-26-000100", count: 1 }]);
+  // The step ended and saved: no mark is left.
+  assert.equal(rows.has(markKey), false);
 });
