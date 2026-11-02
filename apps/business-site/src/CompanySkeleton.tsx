@@ -6,10 +6,10 @@ import { VIEW_LABEL } from "./findings-labels";
 
 const m = messages({
   companyBusinesses: "Company businesses", loading: "Loading", allBusinesses: "All businesses", findings: "Findings", events: "Filings and events",
-  summary: "Summary", detail: "Detail", revenue: "Revenue", businessRevenue: "Business revenue", profit: "Profit", costs: "Costs and expenses",
+  summary: "Summary", detail: "Detail", revenue: "Revenue", businessRevenue: "Business revenue", profit: "Profit",
 }, {
   companyBusinesses: "公司业务", loading: "加载中", allBusinesses: "全部业务", findings: "要点", events: "文件与事件",
-  summary: "概要", detail: "明细", revenue: "营收", businessRevenue: "业务营收", profit: "利润", costs: "成本与费用",
+  summary: "概要", detail: "明细", revenue: "营收", businessRevenue: "业务营收", profit: "利润",
 });
 
 /** Same boxes as the loaded map: closed rail digest, head, chart, timeline, trend and footer. Text is a shimmer in the real line metrics. */
@@ -44,10 +44,6 @@ export function CompanySkeleton({ ticker, tools }: { ticker: string; tools: Reac
           <div className="trend-head"><div className="trend-title"><h2 className="ghost-text">{m.revenue}</h2><div className="trend-legend"><span className="ghost-text">{m.businessRevenue}</span><span className="ghost-text">{m.profit}</span></div></div></div>
           <div className="trend-plot" />
         </div>
-        <footer className="stage-foot">
-          <div className="legend"><span className="ghost-text">{m.businessRevenue}</span><span className="ghost-text">{m.profit}</span><span className="ghost-text">{m.costs}</span></div>
-          <p className="provenance"><span className="ghost-text">{m.loading}</span></p>
-        </footer>
       </section>
     </div>
   );
