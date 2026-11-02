@@ -115,29 +115,29 @@ test("the public route stores events and keeps the aggregate off the public host
   const repo = memoryRepository();
   const env = namespace(repo, seen);
   const payload = { name: "page_view", props: { ticker: "META" }, path: "/companies/META", lang: "en", theme: "light", ts: NOW, sid: SID };
-  assert.equal((await handleTelemetry(post(payload), env, NOW)).status, 204);
+  assert.equal((await handleTelemetry(post(payload), env)).status, 204);
   const forwarded = seen[0]!;
   assert.equal(forwarded.headers.get("cf-connecting-ip"), null);
   assert.match(forwarded.headers.get("x-telemetry-actor") ?? "", /^[0-9a-f]{24}$/);
-  assert.equal((await handleTelemetry(post({ ...payload, name: "nope" }), env, NOW)).status, 400);
-  assert.equal((await handleTelemetry(new Request("https://businessview.info/api/business/v1/telemetry", { method: "POST", body: "x".repeat(1025), headers: { origin: "https://businessview.info" } }), env, NOW)).status, 413);
-  const publicRead = await handleTelemetry(new Request("https://businessview.info/api/business/v1/telemetry?range=24h"), env, NOW);
+  assert.equal((await handleTelemetry(post({ ...payload, name: "nope" }), env)).status, 400);
+  assert.equal((await handleTelemetry(new Request("https://businessview.info/api/business/v1/telemetry", { method: "POST", body: "x".repeat(1025), headers: { origin: "https://businessview.info" } }), env)).status, 413);
+  const publicRead = await handleTelemetry(new Request("https://businessview.info/api/business/v1/telemetry?range=24h"), env);
   assert.equal(publicRead.status, 404);
   assert.equal(seen.length, 1);
-  assert.equal((await handleTelemetry(new Request("https://spontra-business-map.example.workers.dev/api/business/v1/telemetry?range=24h"), env, NOW)).status, 404);
-  const summary = await handleTelemetry(new Request("https://business-map.internal/api/business/v1/telemetry?range=24h"), env, NOW);
+  assert.equal((await handleTelemetry(new Request("https://spontra-business-map.example.workers.dev/api/business/v1/telemetry?range=24h"), env)).status, 404);
+  const summary = await handleTelemetry(new Request("https://business-map.internal/api/business/v1/telemetry?range=24h"), env);
   assert.equal(summary.status, 200);
   const body = await summary.json() as { pageViews: number; topCompanies: Array<{ ticker: string }> };
   assert.equal(body.pageViews, 1);
   assert.equal(body.topCompanies[0]?.ticker, "META");
-  assert.equal((await handleTelemetry(new Request("https://businessview.info/api/business/v1/telemetry?range=year"), env, NOW)).status, 404);
-  assert.equal((await handleTelemetry(new Request("https://business-map.internal/api/business/v1/telemetry?range=year"), env, NOW)).status, 400);
-  assert.equal((await handleTelemetry(new Request("https://business-map.internal/api/business/v1/telemetry"), undefined, NOW)).status, 503);
-  assert.equal((await handleTelemetry(post(payload), undefined, NOW)).status, 503);
+  assert.equal((await handleTelemetry(new Request("https://businessview.info/api/business/v1/telemetry?range=year"), env)).status, 404);
+  assert.equal((await handleTelemetry(new Request("https://business-map.internal/api/business/v1/telemetry?range=year"), env)).status, 400);
+  assert.equal((await handleTelemetry(new Request("https://business-map.internal/api/business/v1/telemetry"), undefined)).status, 503);
+  assert.equal((await handleTelemetry(post(payload), undefined)).status, 503);
 
   let blocked = 0;
   for (let i = 0; i < 70; i += 1) {
-    const response = await handleTelemetry(post({ ...payload, name: "lang_toggle", path: "/" }, "203.0.113.9"), env, NOW);
+    const response = await handleTelemetry(post({ ...payload, name: "lang_toggle", path: "/" }, "203.0.113.9"), env);
     if (response.status === 429) blocked += 1;
   }
   assert.ok(blocked >= 10);
@@ -189,20 +189,20 @@ test("telemetry checks exact origins and Referer fallback before reading or forw
     if (origin === null) request.headers.delete("origin"); else request.headers.set("origin", origin);
     request.headers.set("referer", "https://businessview.info/");
     if (origin === null) request.headers.delete("referer");
-    assert.equal((await handleTelemetry(request, env, NOW)).status, 403, String(origin));
+    assert.equal((await handleTelemetry(request, env)).status, 403, String(origin));
     assert.equal(request.bodyUsed, false);
   }
   for (const source of ["https://businessview.info", "https://www.businessview.info"]) {
     const request = post(payload);
     request.headers.set("origin", source);
-    assert.equal((await handleTelemetry(request, env, NOW)).status, 204);
+    assert.equal((await handleTelemetry(request, env)).status, 204);
     const referer = post(payload);
     referer.headers.delete("origin");
     referer.headers.set("referer", `${source}/companies/META`);
-    assert.equal((await handleTelemetry(referer, env, NOW)).status, 204);
+    assert.equal((await handleTelemetry(referer, env)).status, 204);
   }
   const local = new Request("http://localhost:4188/api/business/v1/telemetry", { method: "POST", headers: { origin: "http://localhost:4188" }, body: JSON.stringify(payload) });
-  assert.equal((await handleTelemetry(local, env, NOW)).status, 204);
+  assert.equal((await handleTelemetry(local, env)).status, 204);
   assert.equal(seen.length, 5);
 });
 
@@ -210,13 +210,13 @@ test("telemetry rejects declared and streamed oversized bodies, including dishon
   const env = namespace();
   const declared = post(event("page_view"));
   declared.headers.set("content-length", "1025");
-  assert.equal((await handleTelemetry(declared, env, NOW)).status, 413);
+  assert.equal((await handleTelemetry(declared, env)).status, 413);
   assert.equal(declared.bodyUsed, false);
   for (const length of [null, "1"]) {
     let cancelled = false;
     const body = new ReadableStream({ pull(controller) { controller.enqueue(new Uint8Array(600)); }, cancel() { cancelled = true; } });
     const request = new Request("https://businessview.info/api/business/v1/telemetry", { method: "POST", headers: { origin: "https://businessview.info", ...(length ? { "content-length": length } : {}) }, body, duplex: "half" } as RequestInit);
-    assert.equal((await handleTelemetry(request, env, NOW)).status, 413);
+    assert.equal((await handleTelemetry(request, env)).status, 413);
     assert.equal(cancelled, true);
   }
 });

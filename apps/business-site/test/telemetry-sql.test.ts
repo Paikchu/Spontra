@@ -22,7 +22,7 @@ test('SQLite aggregates match the in-memory model for every range', async t => {
   );
   rows.push(...Array.from({ length: 5 }, (_, i) => ({ ...rows[1]!, received: now, sid: `22222222-2222-4222-8222-${String(i).padStart(12, '0')}`, actor: 'shared-hash' })));
   for (const row of rows) repo.add(row);
-  for (const range of ['24h', '7d', '4w'] as const) assert.deepEqual(repo.summary!(range, now), summarize(rows, range, now));
+  for (const range of ['24h', '7d', '4w'] as const) assert.deepEqual(repo.summary(range, now), summarize(rows, range, now));
   db.close();
 });
 
@@ -35,11 +35,13 @@ test('existing telemetry tables gain the hash column without losing legacy event
   const now = Date.UTC(2026, 9, 27, 15, 30);
   db.prepare('INSERT INTO events (received, name, path, lang, theme, sid, props) VALUES (?, ?, ?, ?, ?, ?, ?)').run(now, 'page_view', '/companies/META', 'en', 'dark', '11111111-1111-4111-8111-111111111111', '{}');
   const sql = { exec(query: string, ...args: Array<string | number>) { const rows = db.prepare(query).all(...args); return { toArray: () => rows as never }; } };
+  const actors = () => db.prepare('SELECT actor FROM events ORDER BY id').all().map(row => row.actor);
   const repo = sqlRepository(sql);
-  assert.equal(repo.read(0).length, 1);
-  repo.add({ ...repo.read(0)[0]!, actor: 'new-edge-hash' });
-  assert.deepEqual(repo.summary!('24h', now).topCompanies, [{ ticker: 'META', views: 1 }]);
-  assert.equal(repo.read(0)[1]!.actor, 'new-edge-hash');
-  assert.equal(sqlRepository(sql).read(0).length, 2); // Reopening is idempotent.
+  assert.deepEqual(actors(), [null]);
+  repo.add({ received: now, name: 'page_view', path: '/companies/META', lang: 'en', theme: 'dark', sid: '11111111-1111-4111-8111-111111111111', props: {}, actor: 'new-edge-hash' });
+  assert.deepEqual(repo.summary('24h', now).topCompanies, [{ ticker: 'META', views: 1 }]);
+  assert.deepEqual(actors(), [null, 'new-edge-hash']);
+  sqlRepository(sql); // Reopening is idempotent.
+  assert.deepEqual(actors(), [null, 'new-edge-hash']);
   db.close();
 });
