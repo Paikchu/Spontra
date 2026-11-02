@@ -7,8 +7,10 @@
  *   node --experimental-strip-types --no-warnings workers/analysis/scripts/valuation-dry-run.ts \
  *     --data-dir /path/to/data --ticker ORCL --consensus 235.8,110,400,43,2026-10-31 --out ORCL.md --json ORCL.json
  *
- * Peers default to the curated map (src/valuation/curated); `--peers` overrides. When the company has curated management
- * targets, the management reference case and its gate are computed and written beside the prior.
+ * Peers and management targets come from `--inputs`, the company's valuation inputs as the admin route answers them
+ * (`GET /api/admin/business-map/companies/<T>/valuation-inputs`); `--peers` overrides the peers. With targets and a
+ * fiscal-year end (`--fye`, else the file's `fiscalYearEndMonth`), the management reference case and its gate are
+ * computed and written beside the prior.
  *
  * The data directory holds what the production run reads through its own routes: `{T}_fundamentals.json` and `{T}_capital.json`
  * from the public read API, `yh_{SYMBOL}.json` Yahoo chart answers (2y weekly; `%5ETNX`, `%5EGSPC`), `sec_{t}_shares.json`
@@ -22,10 +24,10 @@ import type { FactorDistribution, ValuationModelResult } from "../../../shared/a
 import { calculateValuation, distributionOf, multipleHistoryOf, peerMultiplesOf, sanityGates, verifyCitedInputs, type CalcRequest } from "../../../shared/analysis-runtime/valuation/calculator.ts";
 import { anchorOf, lifecycleOf, priorRequest, type PriorFact } from "../../../shared/analysis-runtime/valuation/prior.ts";
 import { managementCapexShape, managementFactsOf } from "../../../shared/analysis-runtime/valuation/management.ts";
-import { curatedPeersFor, managementTargetsFor } from "../src/valuation/curated.ts";
+import { managementTargetSet, parsePeers, parseTargets } from "../src/valuation/curated.ts";
 import { fetchBeta, fetchPeerQuotes, fetchReferenceQuote, fetchRiskFreeRate, fetchWeeklyCloses } from "../src/valuation/market.ts";
 
-const { values: args } = parseArgs({ options: { "data-dir": { type: "string" }, ticker: { type: "string" }, peers: { type: "string", default: "" }, consensus: { type: "string" }, out: { type: "string" }, json: { type: "string" }, now: { type: "string", default: "2026-11-01T00:00:00.000Z" }, tax: { type: "string" },
+const { values: args } = parseArgs({ options: { "data-dir": { type: "string" }, ticker: { type: "string" }, peers: { type: "string", default: "" }, consensus: { type: "string" }, out: { type: "string" }, json: { type: "string" }, now: { type: "string", default: "2026-11-01T00:00:00.000Z" }, inputs: { type: "string" }, fye: { type: "string" }, tax: { type: "string" },
   /** Illustrative judged weights `dcf,ev,pe` and probabilities `bear,base,management,bull` (each summing to 1); without them the prior uses the life-cycle default weights and gives no expected value. */
   weights: { type: "string" }, probabilities: { type: "string" } } });
 const dir = args["data-dir"]!, ticker = args.ticker!.toUpperCase(), now = new Date(args.now!);
@@ -98,9 +100,10 @@ const rpo = newest?.rpo ? { asOf: newest.rpo.asOf, total: Number(newest.rpo.tota
 // ---- Market inputs through the production reader, over the saved chart answers.
 const [quote, riskFree, beta, closes] = await Promise.all([fetchReferenceQuote(ticker, "USD", fetcher, now), fetchRiskFreeRate("USD", fetcher, now), fetchBeta(ticker, "USD", fetcher, now), fetchWeeklyCloses(ticker, fetcher, now)]);
 if (!quote || !riskFree || !beta) throw new Error(`market inputs missing: quote ${!!quote}, rf ${!!riskFree}, beta ${!!beta}`);
-const peerTickers = args.peers ? args.peers.split(",").map(s => s.trim().toUpperCase()).filter(Boolean) : curatedPeersFor(ticker) ?? [];
+const inputs = args.inputs ? JSON.parse(readFileSync(args.inputs, "utf8")) as { peers?: unknown; targets?: unknown; fiscalYearEndMonth?: number | null } : null;
+const peerTickers = args.peers ? args.peers.split(",").map(s => s.trim().toUpperCase()).filter(Boolean) : inputs?.peers ? parsePeers(ticker, inputs.peers) : [];
 const peerBasis = args.peers ? "ranking" as const : "curated" as const;
-const management = managementTargetsFor(ticker);
+const management = managementTargetSet(ticker, inputs?.targets ? parseTargets(inputs.targets) : null, args.fye ? Number(args.fye) : inputs?.fiscalYearEndMonth ?? null, now.toISOString()).set;
 const periodEnd = revenueWindows.at(-1)!.periodEnd;
 const peerQuotes = await fetchPeerQuotes(peerTickers, "USD", fetcher, now);
 const peerRows = peerTickers.map(t => {

@@ -108,3 +108,11 @@ Spontra Analysis 对应路径为 `/admin/*`，经 `AdminGateway` 转发；默认
 每次切换发出 `feature.settings`（`detail.feature` 标明功能），由该功能的首个任务检查是否有东西要写（财报摘要 → `sec-report`，要点 → `findings` 与 `company-analysis`，业务解读 → `explainer`，业务脑图 → `tree`），并推进地图的 company、filings、findings、events 版本号，读者立刻看到变化。读者能否看到只看这个开关：公司有存储的选择就用它，没有就用部署默认名单（`SEC_AI_TICKERS`、`BUSINESS_TREE_TICKERS`）；从未开过的公司即使库里有旧内容也不展示。关着时公开读取接口返回 `status: "hidden"`（要点、业务解读、业务脑图、指引）或只列申报不带摘要（`filings`、`events`）；首页要点轮播（`/api/business/v1/findings`）不列这些公司；后台读取不受影响，存储不删。
 
 接口：`POST /api/admin/business-map/companies/:ticker/features/:feature`（`{on}`）、`POST /api/admin/business-map/features/:feature`（`{on}`，全局生成）。
+
+## 估值输入（2026-11-02）
+
+白名单详情底部的"估值输入"区按公司维护两项估值输入：**可比公司**（逗号或空格分隔的代码，留空则按业务标签选择可比公司）和**管理层目标**（`{asOf, sources, targets}` JSON，留空则没有管理层情景）。保存时由服务端校验，未通过时在原处显示原因。财年结束月份取自公司财报，不由人工填写；`asOf` 早于研究日 540 天以上的目标不再使用。
+
+存于 `valuation_company_inputs`（migration 0042，原 `valuation/curated/*.json` 的内容原样迁入）。保存会发出 `feature.settings`（`detail.feature = valuation`），管理层目标变化会改变估值输入指纹，从而触发重估；只改可比公司不会触发，需要在 AI 运行页手动运行。接口：`GET` / `POST /api/admin/business-map/companies/:ticker/valuation-inputs`（`{peers, targets}`，正文上限 64 KB）。
+
+公司名称与股票类别不再写在代码里：EDGAR 的交易所目录（`catalog:issuer-directory:v2`）给出代码对应的发行人与 CIK，同一发行人的第二类股票按 EDGAR 先列出的类别读取（如 GOOG → GOOGL）；Nasdaq Trader 的上市目录（`catalog:listings:v1`）提供公司名称与是否 ETF。两份目录由 SEC 发现任务每天最多读取一次，其余读取只读存储副本。

@@ -8,7 +8,10 @@ import { selectPeers, weightedQuantile } from "../../../shared/analysis-runtime/
 import { priorRequest } from "../../../shared/analysis-runtime/valuation/prior.ts";
 import { readValuationPublication } from "../../../shared/analysis-runtime/valuation/read.ts";
 import { equityGroupOf } from "../../../shared/analysis-runtime/financial-data/capital-structure.ts";
-import { curatedPeersFor, managementTargetsFor, readManagementTargets, readPeerMap } from "../src/valuation/curated.ts";
+import { readdirSync, readFileSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
+import { managementTargetSet, MANAGEMENT_TARGETS_MAX_AGE_DAYS, parsePeers, parseTargets, readValuationCompanyInputs, writeValuationCompanyInputs } from "../src/valuation/curated.ts";
+import inputs from "./fixtures/valuation-inputs.json" with { type: "json" };
 import { buildPeerFundamentals } from "../src/valuation/input.ts";
 import { methodChangeHeldBack, reassessTickers } from "../src/valuation/reassess.ts";
 import { gateGaps } from "../src/valuation/tools.ts";
@@ -84,26 +87,60 @@ test("peer fundamentals: loss-making peers, peers without positive EBITDA and pe
   assert.equal(none.basis, "none");
 });
 
-test("curated data: the peer map and the management targets validate; every target cites a listed source; ORCL carries the cited figures", () => {
-  const map = readPeerMap();
-  assert.deepEqual(map.get("ORCL"), ["MSFT", "AMZN", "GOOGL", "META"]);
-  assert.deepEqual(curatedPeersFor("GOOGL"), ["MSFT", "AMZN", "META", "ORCL"]);
-  for (const [ticker, peers] of map) { assert.ok(!peers.includes(ticker), `${ticker} lists itself`); assert.equal(new Set(peers).size, peers.length); }
-  const sets = readManagementTargets();
-  const orcl = managementTargetsFor("ORCL")!;
-  assert.equal(orcl.fiscalYearEndMonth, 5);
-  assert.equal(orcl.targets.find(t => t.metric === "revenue" && t.fiscalYear === 2030)!.value, 225e9);
-  assert.equal(orcl.targets.find(t => t.metric === "segment_revenue" && t.fiscalYear === 2030)!.value, 166e9);
-  assert.equal(orcl.targets.find(t => t.metric === "operating_margin")!.basis, "non_gaap");
-  for (const set of sets.values()) for (const t of set.targets) for (const id of t.sourceIds) assert.ok(set.sources.some(s => s.id === id && s.url.startsWith("https://")));
-  assert.equal(managementTargetsFor("GOOGL"), null);
-  assert.throws(() => readPeerMap({ companies: [{ ticker: "AAA", peers: ["AAA"] }] }), /own peer/);
-  assert.throws(() => readManagementTargets({ sets: [{ ...orcl, targets: [{ ...orcl.targets[0]!, sourceIds: ["nope"] }] }] }), /unknown source/);
+/** D1 over node:sqlite with every migration applied. */
+function database(): D1Database {
+  const sqlite = new DatabaseSync(":memory:");
+  const dir = new URL("../migrations/", import.meta.url);
+  for (const file of readdirSync(dir).filter(f => f.endsWith(".sql")).sort()) sqlite.exec(readFileSync(new URL(file, dir), "utf8").replace(/--> statement-breakpoint/g, ""));
+  const statement = (sql: string, values: unknown[] = []) => ({
+    bind: (...next: unknown[]) => statement(sql, next),
+    run: async () => { sqlite.prepare(sql).run(...values as never[]); return { success: true }; },
+    first: async <T>() => (sqlite.prepare(sql).get(...values as never[]) ?? null) as T | null,
+  });
+  return { prepare: (sql: string) => statement(sql) } as unknown as D1Database;
+}
+
+test("valuation inputs: the admin's peers and targets validate on write; the migration carries the former files over unchanged", async () => {
+  const db = database();
+  for (const [ticker, row] of Object.entries(inputs as Record<string, { peers?: string[]; targets?: unknown }>)) {
+    const stored = await readValuationCompanyInputs(db, ticker);
+    assert.deepEqual(stored.peers, row.peers ?? null, ticker);
+    assert.deepEqual(stored.targets, row.targets ? parseTargets(row.targets) : null, ticker);
+  }
+  assert.deepEqual(await readValuationCompanyInputs(db, "ZZZZ"), { ticker: "ZZZZ", peers: null, targets: null, updatedAt: null });
+  const targets = parseTargets(inputs.ORCL.targets);
+  assert.throws(() => parsePeers("AAA", ["AAA", "BBB"]), /自己/);
+  assert.throws(() => parsePeers("AAA", []), /可比公司/);
+  assert.throws(() => parseTargets({ ...targets, targets: [{ ...targets.targets[0]!, sourceIds: ["nope"] }] }), /不存在的来源/);
+  assert.throws(() => parseTargets({ ...targets, fiscalYearEndMonth: 5 }), /管理层目标/);
+  const saved = await writeValuationCompanyInputs(db, "NEWCO", { peers: ["AAA", "BBB", "AAA"], targets: null }, "2026-11-02T00:00:00.000Z");
+  assert.deepEqual(saved.peers, ["AAA", "BBB"]);
+  assert.deepEqual((await readValuationCompanyInputs(db, "NEWCO")).peers, ["AAA", "BBB"]);
+  await assert.rejects(writeValuationCompanyInputs(db, "NEWCO", { peers: ["NEWCO"], targets: null }, "2026-11-02T00:00:00.000Z"), /自己/);
+  await writeValuationCompanyInputs(db, "NEWCO", { peers: null, targets: null }, "2026-11-02T00:00:00.000Z");
+  assert.equal((await readValuationCompanyInputs(db, "NEWCO")).updatedAt, null);
+});
+
+test("management targets: the fiscal-year end comes from the filings, and a set past the age limit is not used", () => {
+  const stored = parseTargets(inputs.ORCL.targets);
+  const used = managementTargetSet("ORCL", stored, 5, "2026-11-01T00:00:00.000Z");
+  assert.equal(used.set?.fiscalYearEndMonth, 5);
+  assert.equal(used.set?.targets.find(t => t.metric === "revenue" && t.fiscalYear === 2030)!.value, 225e9);
+  assert.equal(used.set?.targets.find(t => t.metric === "operating_margin")!.basis, "non_gaap");
+  assert.deepEqual(managementTargetSet("ORCL", null, 5, "2026-11-01"), { set: null, notes: [] });
+  const unplaced = managementTargetSet("ORCL", stored, null, "2026-11-01");
+  assert.equal(unplaced.set, null);
+  assert.match(unplaced.notes[0]!, /fiscal-year end/);
+  const late = new Date(Date.parse(stored.asOf) + (MANAGEMENT_TARGETS_MAX_AGE_DAYS + 1) * 86_400_000).toISOString();
+  const stale = managementTargetSet("ORCL", stored, 5, late);
+  assert.equal(stale.set, null);
+  assert.match(stale.notes[0]!, /day limit/);
+  assert.ok(managementTargetSet("ORCL", stored, 5, new Date(Date.parse(stored.asOf) + MANAGEMENT_TARGETS_MAX_AGE_DAYS * 86_400_000).toISOString()).set);
 });
 
 /* ---- management case ---- */
 
-const orcl = managementTargetsFor("ORCL")!;
+const orcl = managementTargetSet("ORCL", parseTargets(inputs.ORCL.targets), 5, "2026-11-01").set!;
 const orclFacts = [["revenue_ttm", 71.777e9], ["operating_margin_ttm", 0.3212], ["sbc_ttm", 4.814e9], ["da_ttm", 9.428e9], ["capex_ttm", 75.66e9]].map(([id, value]) => ({ id: id as string, value: value as number }));
 
 test("management case: fiscal years land on forecast years, revenue runs through the targets then fades, the margin converts non-GAAP by the stock-compensation share, build capex peaks in year two and ends", () => {

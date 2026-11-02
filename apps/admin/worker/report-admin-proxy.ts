@@ -2,6 +2,9 @@ import { asServiceBinding, serviceFetcher } from "../../../packages/web/src/mode
 import { FEATURES } from "../../../shared/analysis-contract/business-features.ts";
 
 const MAX_BODY = 8192;
+/** A company's valuation inputs carry management's cited targets with their sources, which run past the usual limit. */
+const MAX_VALUATION_INPUTS_BODY = 65536;
+const valuationInputs = /^companies\/[A-Z][A-Z0-9.-]{0,11}\/valuation-inputs$/;
 type ProxyEnv = Record<string, unknown>;
 const FEATURE = `(?:${FEATURES.join("|")})`;
 const companyWrite = new RegExp(`^companies\\/[A-Z][A-Z0-9.-]{0,11}(?:\\/presentation|\\/features\\/${FEATURE})?$`);
@@ -13,8 +16,8 @@ export async function handleReportAdminProxy(request: Request, path: string[], e
   if (!path.length || !/^(financials|business-map|ai|library)$/.test(path[0]!) || path.length > (path[0] === "financials" || path[0] === "ai" || path[0] === "library" ? 6 : path[0] === "business-map" ? 5 : 4)) return json({ error: "Not found" }, 404);
   if (path[0] === "business-map") {
     const route = path.slice(1).join("/");
-    const read = request.method === "GET" && (/^companies(?:\/[A-Z][A-Z0-9.-]{0,11}\/(?:charts|flow))?$/.test(route) || route === "messages" || route === "issuers");
-    const write = request.method === "POST" && (route === "messages/read" || companyWrite.test(route) || featureWrite.test(route));
+    const read = request.method === "GET" && (/^companies(?:\/[A-Z][A-Z0-9.-]{0,11}\/(?:charts|flow|valuation-inputs))?$/.test(route) || route === "messages" || route === "issuers");
+    const write = request.method === "POST" && (route === "messages/read" || companyWrite.test(route) || featureWrite.test(route) || valuationInputs.test(route));
     if (!read && !write) return json({ error: "Not found" }, 404);
   }
   if (path[0] === "ai") {
@@ -39,7 +42,8 @@ export async function handleReportAdminProxy(request: Request, path: string[], e
     // Browsers must prove same-origin; no cross-site write proxy.
     if (request.headers.get("origin") !== new URL(request.url).origin) return json({ error: "请求来源无效" }, 403);
   }
-  if (request.url.length > 2048 || Number(request.headers.get("content-length") ?? 0) > MAX_BODY) return json({ error: "请求过大" }, 413);
+  const maxBody = path[0] === "business-map" && valuationInputs.test(path.slice(1).join("/")) ? MAX_VALUATION_INPUTS_BODY : MAX_BODY;
+  if (request.url.length > 2048 || Number(request.headers.get("content-length") ?? 0) > maxBody) return json({ error: "请求过大" }, 413);
   try {
     const binding = asServiceBinding(env.SPONTRA_ANALYSIS);
     const origin = "https://spontra-analysis.internal";
@@ -52,7 +56,7 @@ export async function handleReportAdminProxy(request: Request, path: string[], e
     let body: string | undefined;
     if (request.method === "POST") {
       body = await request.text();
-      if (new TextEncoder().encode(body).length > MAX_BODY) return json({ error: "请求过大" }, 413);
+      if (new TextEncoder().encode(body).length > maxBody) return json({ error: "请求过大" }, 413);
       headers.set("content-type", "application/json");
     }
     const target = new URL(`/admin/${path.map(encodeURIComponent).join("/")}`, origin);

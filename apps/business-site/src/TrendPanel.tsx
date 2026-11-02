@@ -11,14 +11,14 @@ import { axisNumber, axisUnit, compactMoney, qoqLabel, range, yoyLabel, shortPer
 import { QuarterBadge, fiscalPhrase } from "./PeriodMark";
 import { MomentumTag } from "./MomentumTag";
 import { momentumOf } from "./momentum";
-import { SLOTS, ACTION_NAMES, buildBridge, buildColumns, buildSlots, columnIndex, visibleSlotCount, growth, growthSeries, guidanceLabel, guidanceOverlay, layerOrder, niceTicks, onSameBasis, rateTicks, type Bridge, type Column, type GuideMark, type Layer, type TrendItem } from "./trend-model";
+import { SLOTS, ACTION_NAMES, buildBridge, buildColumns, buildSlots, columnIndex, visibleSlotCount, growth, growthSeries, guidanceOverlay, layerOrder, niceTicks, onSameBasis, rateTicks, type Bridge, type Column, type GuideMark, type Layer, type TrendItem } from "./trend-model";
 
 const m = messages({
   yoyGrowth: "YoY growth", qoqGrowth: "QoQ growth", comparisonBase: "Comparison base", allBusinesses: "All businesses",
   revenueOf: (name: string) => `${name} revenue`, totalRevenueLower: "total revenue", trendLabel: (subject: string, n: number) => `${subject}: revenue, last ${n} quarters`,
   revenueView: "Revenue view", revenue: "Revenue", growthDrivers: "Growth drivers", guidanceRange: "Guidance range", totalsOnly: "Totals only",
   since: (period: string) => `Since ${period}`, period: "Period", change: (basis: string) => `${basis} change`,
-  noYearAgo: "No comparable year-ago quarter", noPrior: "No comparable prior quarter", outlook: "Management outlook", guidanceIssued: (date: string) => `Guidance · ${date}`,
+  noYearAgo: "No comparable year-ago quarter", noPrior: "No comparable prior quarter",
   pp: " pp", yearAgo: "Year ago", priorQuarter: "Prior quarter", thisQuarter: "This quarter",
   bridgeLabel: (subject: string, from: string, to: string) => `${subject} change, ${from} to ${to}`, changeHead: "Change", contribution: "Contribution",
   otherCurrency: "Other reporting currency", notDisclosed: "Not disclosed", notReported: "Not reported", afterEliminations: "Consolidated revenue after adjustments",
@@ -36,7 +36,7 @@ const m = messages({
   revenueOf: (name: string) => `${name} 营收`, totalRevenueLower: "总营收", trendLabel: (subject: string, n: number) => `${subject}：营收，最近 ${n} 个季度`,
   revenueView: "营收视图", revenue: "营收", growthDrivers: "增长来源", guidanceRange: "指引区间", totalsOnly: "仅总额",
   since: (period: string) => `${period} 以来`, period: "区间", change: (basis: string) => `${basis}变化`,
-  noYearAgo: "无可比的上年同期季度", noPrior: "无可比的上一季度", outlook: "管理层展望", guidanceIssued: (date: string) => `业绩指引 · ${date}`,
+  noYearAgo: "无可比的上年同期季度", noPrior: "无可比的上一季度",
   pp: "个百分点", yearAgo: "上年同期", priorQuarter: "上一季度", thisQuarter: "本季度",
   bridgeLabel: (subject: string, from: string, to: string) => `${subject}变化，${from} 至 ${to}`, changeHead: "变化", contribution: "贡献",
   otherCurrency: "其他报告货币", notDisclosed: "未披露", notReported: "未报告", afterEliminations: "调节后的合并营收",
@@ -104,7 +104,6 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
   const scale = ticks.at(-1)!;
   const unit = historySlots.at(-1)!.quarter!;
   const money = (v: number | null) => flowMoney(v, unit.currency, unit.scale);
-  const guidanceMoney = (v: number | null) => flowMoney(v, "USD", 1);
   const known = columns.filter(c => c.total != null);
   const last = historyColumns.at(-1)?.total ?? null, yearAgo = historyColumns.at(-5)?.total ?? null;
   // A business's change is read within one segment basis only; the company's total is the same on any basis.
@@ -145,7 +144,7 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
     growth: { label: rateName, color: lineColor },
   }), [historyColumns, hue, rateName, lineColor]);
 
-  return <ChartContainer asChild config={chartConfig}><section className="trend" data-view={view} data-outlook={view === "trend" && overlay.outlook.length ? "" : undefined} aria-label={m.trendLabel(subject, slots.length)} onMouseLeave={() => { setHover(null); setSeries(null); }}>
+  return <ChartContainer asChild config={chartConfig}><section className="trend" data-view={view} aria-label={m.trendLabel(subject, slots.length)} onMouseLeave={() => { setHover(null); setSeries(null); }}>
     <header className="trend-head">
       <div className="trend-title">
         <div className="trend-heading">
@@ -194,10 +193,6 @@ export function TrendPanel({ history, items, selected, currentPeriod, periods, o
         guide={overlay.bySlot[i]} />)}
       {overlay.next && <GuideColumn mark={overlay.next} index={columns.length} scale={scale} money={money} hovered={hover === columns.length} onHover={() => setHover(columns.length)} />}
     </div>
-    {overlay.outlook.length > 0 && <p className="trend-outlook" aria-label={m.outlook}>
-      <span>{m.guidanceIssued(overlay.outlook[0].issuedAt)}</span>
-      {overlay.outlook.map(item => <span key={item.id} title={item.text}><b>{guidanceLabel(item, guidanceMoney)}</b>{item.action && item.previous && <em data-action={item.action}>{ACTION_NAMES[item.action]}</em>}</span>)}
-    </p>}
     </>}
   </section></ChartContainer>;
 }

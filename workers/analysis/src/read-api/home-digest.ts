@@ -1,4 +1,4 @@
-import { companyName } from "../catalog/security-directory.ts";
+import { securities } from "../catalog/issuer-directory.ts";
 import { shownFilter, type FeatureDefaultsEnv } from "../admin/feature-settings.ts";
 import { flowForIssuer } from "../financial-data/publication.ts";
 import { historyForIssuer } from "../financial-data/history.ts";
@@ -180,7 +180,7 @@ function dataTickers(env: HomeDigestEnv, rows: Array<{ ticker: string; enabled: 
  * Read-only: no model call, no SEC fetch, no write.
  */
 export async function readHomeDigest(db: D1Database, env: HomeDigestEnv, locale: Locale | null, now = new Date(), notes: Record<string, HomeCatalogNote> = HOME_CATALOG_NOTES): Promise<HomeDigest> {
-  const [publications, histories, findings, issuers, settings, translations, findingsShown, focus, reportFigures] = await Promise.all([
+  const [publications, histories, findings, issuers, settings, translations, findingsShown, focus, reportFigures, named] = await Promise.all([
     db.prepare(`SELECT v.ticker ticker, v.cik cik, v.payload_json payload, v.published_at publishedAt
       FROM financial_complete_current c JOIN financial_complete_versions v ON v.version_id = c.version_id`).all<{ ticker: string; cik: string; payload: string; publishedAt: string }>(),
     db.prepare(`SELECT cache_key, payload FROM sec_cache WHERE cache_key >= 'sec:revenue-history:v1:' AND cache_key < 'sec:revenue-history:v1;'`).all<{ cache_key: string; payload: string }>(),
@@ -196,6 +196,7 @@ export async function readHomeDigest(db: D1Database, env: HomeDigestEnv, locale:
       FROM sec_cache c, json_each(c.payload, '$.reports.quarters') q
       WHERE c.cache_key >= 'sec:map-derived:v1:' AND c.cache_key < 'sec:map-derived:v1;' AND json_valid(c.payload)`)
       .all<MarginRow>().catch(() => ({ results: [] as MarginRow[] })),
+    securities(db),
   ]);
   const marginRows = new Map<string, MarginRow[]>();
   for (const row of reportFigures.results) { const ticker = canonicalTicker(row.ticker); marginRows.set(ticker, [...marginRows.get(ticker) ?? [], row]); }
@@ -236,7 +237,7 @@ export async function readHomeDigest(db: D1Database, env: HomeDigestEnv, locale:
     const flowLatest = flow ? [...flow.quarters].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd))[0] : null;
     const periodEnd = flowLatest?.periodEnd ?? latest?.periodEnd ?? null;
     const note = notes[canonical];
-    const name = companyName(canonical) ?? issuerName(issuerByTicker.get(canonical)) ?? canonical;
+    const name = named(canonical)?.name ?? issuerName(issuerByTicker.get(canonical)) ?? canonical;
     const shown = findingsShown(canonical);
     const publication = shown ? findingsOf(findingsByTicker.get(canonical), canonical, translationByTicker.get(canonical) ?? null) : null;
     const { counts, top } = projectFindings(publication);

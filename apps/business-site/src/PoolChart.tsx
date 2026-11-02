@@ -2,7 +2,7 @@ import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "
 import { peekChartBox } from "./chart-box";
 import { estimateTextWidth } from "@/packages/web/src/model/business-flow-layout";
 import type { Pool, PoolItem, PoolTone } from "./capital-model";
-import { labels, messages } from "@/packages/web/src/i18n";
+import { messages } from "@/packages/web/src/i18n";
 
 const m = messages({
   folded: (n: number) => `${n} other items`, amount: "Amount",
@@ -19,15 +19,6 @@ const TONE: Record<PoolTone, string> = {
   customer: "var(--biz-1)", payable: "var(--biz-0)", equity: "var(--biz-3)", deficit: "var(--loss)", returned: "var(--biz-2)",
   productive: "var(--biz-4)", cash: "var(--chart-1)", invest: "var(--chart-4)", other: "var(--biz-0)",
 };
-export const toneColor = (tone: PoolTone) => TONE[tone];
-/** Legend names describe the role, not one item, since several items share a tone. */
-export const TONE_LABEL: Record<PoolTone, string> = labels({
-  own: "Operations and retained earnings", debt: "Borrowing", lease: "Leases", customer: "Customer prepayments", payable: "Payables and accruals", equity: "Shareholder capital", deficit: "Losses and burn",
-  returned: "Returned to shareholders", productive: "Equipment and capital expenditures", cash: "Cash", invest: "Investments", other: "Other",
-}, {
-  own: "经营与留存收益", debt: "借款", lease: "租赁", customer: "客户预付款", payable: "应付账款及预提费用", equity: "股东投入", deficit: "亏损与消耗",
-  returned: "股东回报", productive: "设备与资本开支", cash: "现金", invest: "投资", other: "其他",
-});
 const BAR = 16, SLOT = 40, GAP = 10, TOP = 44, BOTTOM = 12, NAME = 12.5, VALUE = 16;
 type Placed = PoolItem & { side: "source" | "use"; x: number; y: number; h: number; poolY: number };
 const r = (v: number) => Math.round(v * 10) / 10;

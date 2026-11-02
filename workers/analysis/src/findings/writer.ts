@@ -35,7 +35,7 @@ Writing rules:
 - judgment.sourceIds: pick the 1 to 3 most relevant source ids from payload.sources.
 
 Output format: return one JSON object {findings:[...]}, each finding shaped as follows (field names must match exactly):
-{"id":"capex-fcf","kind":"risk","severity":3,"title":"Capex reaches $55.7 billion and free cash flow turns negative","judgment":{"text":"...","sourceIds":["s1"]},"evidence":[{"ref":{"capital":"capex"},"periodEnd":"2026-05-31","span":"fiscal_year","compare":"yoy"}],"anchors":{"view":"cash","nodeIds":[],"metrics":[],"capital":["capex","operatingCashFlow"]},"lens":{"type":"compare_bars","refs":[{"capital":"operatingCashFlow"},{"capital":"capex"},{"capital":"freeCashFlow"}],"span":"fiscal_year"},"pairWith":"cloud-engine","watch":{"ref":{"capital":"capex"},"condition":"...","horizon":"fiscal_year","compare":"yoy"}}
+{"id":"capex-fcf","kind":"risk","severity":3,"title":"Capex reaches $12.4 billion and free cash flow turns negative","judgment":{"text":"...","sourceIds":["s1"]},"evidence":[{"ref":{"capital":"capex"},"periodEnd":"2026-06-30","span":"fiscal_year","compare":"yoy"}],"anchors":{"view":"cash","nodeIds":[],"metrics":[],"capital":["capex","operatingCashFlow"]},"lens":{"type":"compare_bars","refs":[{"capital":"operatingCashFlow"},{"capital":"capex"},{"capital":"freeCashFlow"}],"span":"fiscal_year"},"pairWith":"cloud-engine","watch":{"ref":{"capital":"capex"},"condition":"...","horizon":"fiscal_year","compare":"yoy"}}
 kind is one of risk, strength, shift, watch. ids use lowercase English letters and hyphens.`;
 
 const REPAIR_SYSTEM = `${FINDINGS_SYSTEM}

@@ -55,17 +55,6 @@ test("a feature switched on in the admin starts that feature's tasks, and the ev
   assert.deepEqual(validateRegistry(), []);
 });
 
-test("company names drop their listing's share-class wording", async () => {
-  const { companyName } = await import("../src/catalog/security-directory.ts");
-  assert.equal(companyName("GOOGL"), "Alphabet Inc.");
-  assert.equal(companyName("NET"), "Cloudflare, Inc.");
-  assert.equal(companyName("BRK.B"), "Berkshire Hathaway Inc.");
-  assert.equal(companyName("JPM"), "JP Morgan Chase & Co.");
-  assert.equal(companyName("ORCL"), "Oracle Corporation");
-  assert.equal(companyName("TSM"), "Taiwan Semiconductor Manufacturing Company Ltd.");
-  assert.equal(companyName("ZZZZZZ"), null);
-});
-
 test("A20: a generation settings query failure cannot restore deployment defaults", async () => {
   const db = { prepare(sql: string) {
     const statement = { bind() { return statement; }, async all() {

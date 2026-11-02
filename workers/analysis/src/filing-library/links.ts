@@ -3,7 +3,7 @@ import { checkLinks, LIBRARY_LINKS_VERSION, readReviews, settleLinks, type LinkD
 import { libraryHash } from "../../../../shared/analysis-runtime/filing-library/parse.ts";
 import { modelFor, reasoningFor } from "../ai-config.ts";
 import { issuerNames } from "../../../../shared/analysis-runtime/business-tree.ts";
-import { findSecurity } from "../catalog/security-directory.ts";
+import { companyName } from "../catalog/issuer-directory.ts";
 import { readCompletePublicationForTicker } from "../financial-data/publication.ts";
 import { SecModelOutputError } from "../model-stream.ts";
 import { callWorkerSecModel, type AnalysisEnv } from "../operations.ts";
@@ -74,7 +74,7 @@ export async function proposeLinks(env: AnalysisEnv, ticker: string, fetcher: ty
   // A section's title belongs to its text for the name check: headings name businesses as often as prose does.
   const sections = new Map(input.candidates.map(c => [c.sectionId, `${c.path.join(" ")}\n${texts.get(c.sectionId) ?? ""}`]));
   const payload = {
-    company: issuerNames(findSecurity(ticker)?.name ?? ticker)[0], ticker, flow: input.flow, categories: INDUSTRY_CATEGORIES,
+    company: issuerNames(await companyName(db, ticker) ?? ticker)[0], ticker, flow: input.flow, categories: INDUSTRY_CATEGORIES,
     sections: input.candidates.map(c => ({ id: c.sectionId, path: c.path.join(" › "), gist: c.gist, entities: c.entities.slice(0, 12), excerpt: (texts.get(c.sectionId) ?? "").slice(0, SECTION_TEXT) })),
   };
   const model = modelFor(env, "library-links");
@@ -107,7 +107,7 @@ export async function reviewLinks(env: AnalysisEnv, ticker: string, drafts: Link
     for (const r of rows) sections.set(r.section_id, { path: (JSON.parse(r.path) as string[]).join(" › "), text: r.text ?? "" });
   }
   const payload = {
-    company: issuerNames(findSecurity(ticker)?.name ?? ticker)[0], ticker, categories: INDUSTRY_CATEGORIES,
+    company: issuerNames(await companyName(db, ticker) ?? ticker)[0], ticker, categories: INDUSTRY_CATEGORIES,
     businesses: drafts.map(d => ({ key: d.businessKey, name: d.name, onBusinessMap: !!d.flowNodeId,
       sections: d.sectionIds.flatMap(id => { const s = sections.get(id); return s ? [{ id, path: s.path, excerpt: s.text.slice(0, REVIEW_TEXT) }] : []; }) })),
   };

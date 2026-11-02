@@ -13,7 +13,7 @@ import { assertFeatureTicker, requireDb, type CompanyAnalysisWorkflowParams } fr
 import { runBusinessModelAgent } from "./company-analysis/business-agent.ts";
 import { createBusinessResearchTools } from "./company-analysis/business-tools.ts";
 import { issuerNames } from "../../../shared/analysis-runtime/business-tree.ts";
-import { findSecurity } from "./catalog/security-directory.ts";
+import { companyName } from "./catalog/issuer-directory.ts";
 import { researchSearch } from "./web-search/research-search.ts";
 import { callWorkerSecModel } from "./operations.ts";
 import type { AnalysisEnv } from "./operations.ts";
@@ -103,7 +103,7 @@ export async function executeCompanyAnalysisWorkflow(
       status: "analyzing",
     }));
     const output = await runBusinessModelAgent({
-      ticker: params.ticker, companyName: issuerNames(findSecurity(params.ticker)?.name ?? params.ticker)[0]!,
+      ticker: params.ticker, companyName: issuerNames(await companyName(requireDb(env), params.ticker) ?? params.ticker)[0]!,
       reportDate: packet.reportDate, now: generatedAt, tools,
       model: (stage, system, payload) => callWorkerSecModel(env, fetcher, stage, system, payload, modelVersion, 5 * 60_000, { reasoning: reasoningFor(env, "company-analysis") }),
       runStage: (name, callback) => step.do(`business-agent-${name}`, COMPANY_AGENT_MODEL_STEP_CONFIG, callback),

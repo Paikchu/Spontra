@@ -329,14 +329,6 @@ button { cursor: pointer; }
 .chart { position: relative; min-height: 0; margin-top: 8px; }
 .chart-fallback { position: absolute; inset: 0; overflow: auto; padding-top: 16px; }
 
-.stage-foot { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 24px; padding-top: 12px; border-top: 1px solid var(--hairline); font-size: 12px; color: var(--muted-foreground); }
-.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; }
-.legend span { display: inline-flex; align-items: center; gap: 7px; }
-.legend i { width: 10px; height: 10px; border-radius: 3px; }
-.legend .legend-biz { background: linear-gradient(135deg, var(--biz-1), var(--biz-2) 35%, var(--biz-3) 65%, var(--biz-4)); }
-.provenance { display: flex; flex-wrap: wrap; justify-content: flex-end; margin: 0; color: var(--faint); }
-.provenance > * + *::before { content: "·"; margin: 0 8px; color: var(--faint); display: inline-block; }
-
 /* ---------- Chart ---------- */
 .fc { position: absolute; inset: 0; display: grid; grid-template-columns: minmax(0, 1fr); }
 .fc-canvas { position: relative; min-width: 0; min-height: 0; }
@@ -683,8 +675,6 @@ button { cursor: pointer; }
 .pool-svg[data-focus] .fc-node:not([data-lit]):not(.pool-total) { opacity: .45; }
 .pool-share { fill: var(--faint); font-weight: 500; }
 .pool-tip-line span { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.provenance a { color: var(--faint); text-decoration: underline; text-decoration-color: var(--hairline); text-underline-offset: 3px; }
-.provenance a:hover { color: var(--foreground); }
 
 /* ---------- Narrow screens: stack, keep the diagram legible with horizontal scroll ---------- */
 @media (max-width: 960px) {
@@ -731,12 +721,10 @@ button { cursor: pointer; }
   .fc { position: relative; inset: auto; width: max(100%, 780px, var(--mobile-width, 780px)); aspect-ratio: var(--ratio); }
   .pool { position: relative; inset: auto; width: max(100%, 640px); height: 460px; }
   .stage-controls { margin-left: 0; justify-content: flex-start; }
-  .stage-foot { flex-direction: column; align-items: flex-start; }
   .trend { --axis: 56px; --gap: 6px; height: 240px; }
   /* The header wraps on narrow screens, so the bar view sizes to its content with a fixed plot height. */
   .trend:not([data-view="bridge"]) { height: auto; grid-template-rows: auto 220px; }
   .trend-plot[data-rates] { --axis-r: 40px; }
-  .provenance { justify-content: flex-start; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, ::backdrop { animation: none !important; transition: none !important; }
@@ -763,16 +751,6 @@ button { cursor: pointer; }
 .trend-col--guide .trend-value { color: var(--muted-foreground); }
 .trend-period .trend-period-guide { color: var(--muted-foreground); background: transparent; border: 1px dashed var(--border); font-weight: 560; }
 .trend-legend-guide i { width: 10px !important; height: 8px !important; box-sizing: border-box; border: 1.5px dashed var(--foreground); border-radius: 2px; background: transparent; }
-/* One line added under the plot (an implicit auto row); the panel grows by that line instead of shrinking the bars. */
-.trend[data-outlook] { height: calc(clamp(196px, 26vh, 260px) + 24px); }
-@media (min-width: 961px) and (max-height: 820px) { .trend[data-outlook] { height: 202px; } }
-@media (max-width: 960px) { .trend[data-outlook] { height: auto; } }
-.trend-outlook { display: flex; flex-wrap: nowrap; gap: 14px; overflow-x: auto; scrollbar-width: none; white-space: nowrap; margin: 0; padding-top: 4px; font-size: 12px; color: var(--muted-foreground); font-variant-numeric: tabular-nums; }
-.trend-outlook > span:first-child { color: var(--faint); }
-.trend-outlook b { font-weight: 600; color: var(--foreground); }
-.trend-outlook em { margin-left: 6px; font-style: normal; font-weight: 600; color: var(--muted-foreground); }
-.trend-outlook em[data-action="raised"] { color: var(--up); }
-.trend-outlook em[data-action="lowered"] { color: var(--loss); }
 /* Stack dates and badges so all eight quarters (and the next guidance) stay readable. */
 @media (max-width: 620px) {
   .trend[data-view="trend"] { grid-template-rows: auto 256px; }

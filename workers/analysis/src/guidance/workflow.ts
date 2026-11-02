@@ -6,7 +6,7 @@ import {
   type FiscalAnchor, type GuidanceEntry, type VerifiedGuidance,
 } from "../../../../shared/analysis-runtime/guidance.ts";
 import { issuerNames } from "../../../../shared/analysis-runtime/business-tree.ts";
-import { findSecurity } from "../catalog/security-directory.ts";
+import { companyName } from "../catalog/issuer-directory.ts";
 import { assertTrackedTicker, requireDb } from "../core.ts";
 import { readCompletePublicationForTicker } from "../financial-data/publication.ts";
 import { callWorkerSecModel, SecModelHttpError, type AnalysisEnv } from "../operations.ts";
@@ -188,7 +188,7 @@ export async function executeGuidanceWorkflow(params: GuidanceWorkflowParams, st
       cikNumber: filing?.cikNumber ?? null,
       // A periodic report's exhibits are not a release; an event standing under one reads only its stored call.
       exhibits: !!filing && /^(?:8-K|6-K)(?:\/A)?$/.test(filing.form),
-      companyName: issuerNames(findSecurity(params.ticker)?.name ?? feed?.company?.name ?? params.ticker)[0]!, ref,
+      companyName: issuerNames(await companyName(requireDb(env), params.ticker) ?? feed?.company?.name ?? params.ticker)[0]!, ref,
     };
   });
 

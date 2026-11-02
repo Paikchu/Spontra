@@ -216,7 +216,7 @@ export function rateTicks(rates: Array<number | null>): number[] | null {
 
 /** A guided revenue range placed on a quarter: stated as an amount, or derived from stated growth. */
 export type GuideMark = { periodEnd: string; low: number; high: number; derived: boolean; item: GuidanceItem; source: GuidanceSource | null };
-export type GuideOverlay = { bySlot: Array<GuideMark | null>; next: GuideMark | null; outlook: GuidanceItem[] };
+export type GuideOverlay = { bySlot: Array<GuideMark | null>; next: GuideMark | null };
 
 const DAY = 86_400_000;
 const near = (a: string, b: string) => Math.abs(Date.parse(a) - Date.parse(b)) <= 20 * DAY;
@@ -243,11 +243,10 @@ function mark(item: GuidanceItem, sources: GuidanceSource[]): GuideMark | null {
 
 /**
  * Places quarterly revenue guidance on the trend: each reported quarter gets the last range guided for it,
- * and the next quarter gets its own column. Annual and long-term targets do not fit a quarterly axis and
- * are returned separately, from the latest event only. Unplottable future quarterly guidance stays visible as text.
+ * and the next quarter gets its own column.
  */
 export function guidanceOverlay(slots: Slot[], guidance: GuidancePublication | null, selected: TrendItem | null): GuideOverlay {
-  const empty = { bySlot: slots.map(() => null), next: null, outlook: [] };
+  const empty = { bySlot: slots.map(() => null), next: null };
   if (!guidance || !slots.length) return empty;
   const latestFirst = [...guidance.items].sort((a, b) => b.issuedAt.localeCompare(a.issuedAt));
   const quarterly = latestFirst.filter(i => i.horizon === "quarter" && forSubject(i, selected));
@@ -257,15 +256,9 @@ export function guidanceOverlay(slots: Slot[], guidance: GuidancePublication | n
   };
   const last = slots.at(-1)!.periodEnd;
   const canPlot = slots.at(-1)!.quarter?.currency === "USD";
-  const longer = latestFirst.filter(i => (selected ? forSubject(i, selected) : !i.segment)
-    && (i.horizon !== "quarter" || ((!i.periodEnd || Date.parse(i.periodEnd) > Date.parse(last)) && (!canPlot || !mark(i, guidance.sources)))));
-  const newest = longer[0]?.issuedAt;
-  const order = ["revenue", "segment_revenue", "operating_margin", "eps", "free_cash_flow", "capex"];
-  const rank = (i: GuidanceItem) => { const r = order.indexOf(i.metric); return r < 0 ? order.length : r; };
   return {
     bySlot: slots.map(slot => canPlot && slot.missingReason !== "currency" ? pick(end => near(end, slot.periodEnd)) : null),
     next: canPlot ? pick(end => Date.parse(end) - Date.parse(last) > 20 * DAY && Date.parse(end) - Date.parse(last) < 120 * DAY) : null,
-    outlook: longer.filter(i => i.issuedAt === newest).sort((a, b) => rank(a) - rank(b) || (a.horizon === "annual" ? -1 : 1)).slice(0, 4),
   };
 }
 

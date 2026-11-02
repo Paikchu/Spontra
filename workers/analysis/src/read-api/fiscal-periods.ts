@@ -4,7 +4,7 @@ import type { SecFiscalPeriod } from "../../../../shared/analysis-contract/repor
 import type { RevenueHistory } from "../../../../shared/analysis-contract/revenue-history.ts";
 import { fiscalIdentity, quarterNumber, yearEndMonth, type IssuerCalendar, type XbrlFocus } from "../../../../shared/analysis-runtime/fiscal-label.ts";
 import { issuerNames } from "../../../../shared/analysis-runtime/business-tree.ts";
-import { companyName } from "../catalog/security-directory.ts";
+import { securities, type Security } from "../catalog/issuer-directory.ts";
 import { DISCOVERY_STATE_PREFIX, type DiscoveryState } from "../pipeline/discovery.ts";
 import { fiscalPeriodsInSequence } from "../sec/fiscal-sequence.ts";
 
@@ -45,9 +45,10 @@ function parseState(payload: string): DiscoveryState | null {
  */
 export async function readFiscalFocus(db: D1Database, ticker?: string): Promise<FiscalFocusMap> {
   const canonical = ticker?.trim().toUpperCase();
-  const [periods, states] = await Promise.all([
+  const [periods, states, named] = await Promise.all([
     cachedRows(db, "sec:fiscal-period:v1:", canonical, true),
     cachedRows(db, DISCOVERY_STATE_PREFIX, canonical, false),
+    securities(db),
   ]);
   const byTicker = new Map<string, SecFiscalPeriod[]>();
   for (const row of periods) {
@@ -74,14 +75,14 @@ export async function readFiscalFocus(db: D1Database, ticker?: string): Promise<
   const stated = new Map(states.flatMap(row => { const state = parseState(row.payload); return state ? [[row.cache_key.slice(DISCOVERY_STATE_PREFIX.length).toUpperCase(), state] as const] : []; }));
   for (const key of new Set([...stated.keys(), ...annual.keys()])) {
     const state = stated.get(key);
-    issuers.set(key, { fiscalYearEndMonth: yearEndMonth(state?.fiscalYearEnd) ?? yearEndMonth(annual.get(key)), name: shortName(key, state?.name), annualForm: state?.annualForm ?? null });
+    issuers.set(key, { fiscalYearEndMonth: yearEndMonth(state?.fiscalYearEnd) ?? yearEndMonth(annual.get(key)), name: shortName(named(key), state?.name), annualForm: state?.annualForm ?? null });
   }
   return { focus, issuers };
 }
 
 /** The name readers know the issuer by: its listing's name without legal form, else the name its filings carry. */
-function shortName(ticker: string, filed: string | null | undefined): string | null {
-  const listed = companyName(ticker) ?? filed?.trim();
+function shortName(security: Security | null, filed: string | null | undefined): string | null {
+  const listed = security?.name ?? filed?.trim();
   return listed ? issuerNames(listed).at(-1) ?? listed : null;
 }
 

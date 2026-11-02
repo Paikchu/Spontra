@@ -69,7 +69,7 @@ function tickerFromUrl() {
   );
   if (!match) return null;
   const ticker = canonicalTicker(match[1]);
-  // The address shows the class the data is kept under.
+  // The address shows the ticker in the one spelling every store keys on.
   if (ticker !== match[1]) history.replaceState(history.state, "", `/companies/${ticker}${location.search}${location.hash}`);
   return ticker;
 }
@@ -106,6 +106,21 @@ function App() {
       }
     });
   const home = useHomeDigest(locale, ticker);
+  // A second share class moves to the class its data is kept under, which the issuer directory names.
+  useEffect(() => {
+    if (!ticker) return;
+    const controller = new AbortController();
+    fetch(`/api/business/v1/tickers/${encodeURIComponent(ticker)}`, { signal: controller.signal, headers: { accept: "application/json" } })
+      .then(response => response.ok ? response.json() as Promise<{ ticker?: unknown }> : null)
+      .then(body => {
+        const primary = typeof body?.ticker === "string" && TICKER_PATTERN.test(body.ticker) ? body.ticker : null;
+        if (!primary || primary === ticker || controller.signal.aborted) return;
+        history.replaceState(history.state, "", `/companies/${primary}${location.search}${location.hash}`);
+        setTicker(primary);
+      })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [ticker]);
   // The route owns the read even while its lazy component is still downloading.
   const opening = useMemo(() => ticker ? createCompanyOpening(ticker, locale) : null, [ticker, locale]);
   useEffect(() => {

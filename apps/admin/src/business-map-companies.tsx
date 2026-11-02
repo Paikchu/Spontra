@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertTriangle, CheckCircle2, ChevronRight, ExternalLink, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
 import type { BusinessMapCompanies, BusinessMapCompany, IssuerSuggestion } from '@/shared/analysis-contract/business-map-admin';
@@ -10,6 +10,7 @@ import { financialDate } from './financial-update-history';
 import { CompanyLogo } from '@/packages/web/src/company-logo';
 import { runElapsed, runView } from './run-progress';
 import { FlowGraph } from './flow-graph';
+import { ValuationInputs } from './valuation-inputs';
 import { useOnReturn, usePageActive } from './admin-page';
 import { addressTicker } from './address-ticker';
 import './business-map-companies.css';
@@ -76,6 +77,7 @@ export function BusinessMapCompanies({onUnauthorized,onAuthenticated,onOpenFinan
   useEffect(()=>{if(!notice)return;const timer=setTimeout(()=>setNotice(''),2500);return()=>clearTimeout(timer);},[notice]);
   useEffect(()=>{if(!error)return;const timer=setTimeout(()=>setError(''),6000);return()=>clearTimeout(timer);},[error]);
   useEffect(()=>{callbacks.current={onUnauthorized,onAuthenticated};},[onUnauthorized,onAuthenticated]);
+  const unauthorized=useCallback(()=>callbacks.current.onUnauthorized(),[]);
   useEffect(()=>{
     const controller=new AbortController(),started=switched.current;
     void adminApi<BusinessMapCompanies>('business-map/companies',{signal:controller.signal}).then(result=>{
@@ -144,7 +146,7 @@ export function BusinessMapCompanies({onUnauthorized,onAuthenticated,onOpenFinan
       <thead><tr><th>公司</th><th>状态</th>
         {FEATURES.map(f=><th key={f} className="bm-admin-feature-col"><span className="bm-admin-feature-head">{FEATURE_LABEL[f]}<button className="bm-switch bm-switch-sm" role="switch" aria-checked={!!data?.generation[f]} aria-label={`${FEATURE_LABEL[f]}（全部公司）`} title={data?.generation[f]?'全部公司生成中 · 点击暂停':'已全局暂停 · 点击恢复'} disabled={!data} onClick={()=>void switchFeature(null,f,!data?.generation[f])}><span/></button></span></th>)}
         <th>操作</th></tr></thead>
-      {companies.map(company=><Company key={company.ticker} company={company} generation={data!.generation} busy={!!busy} onToggle={()=>void mutate(company.ticker,!company.dataEnabled)} onPrepare={()=>void mutate(company.ticker)} onJudge={()=>void judge(company.ticker)} onFeature={(feature,on)=>void switchFeature(company.ticker,feature,on)} onOpenFinancials={onOpenFinancials} focused={company.ticker===focus} onFocused={()=>setFocus('')}/>)}
+      {companies.map(company=><Company key={company.ticker} company={company} onUnauthorized={unauthorized} generation={data!.generation} busy={!!busy} onToggle={()=>void mutate(company.ticker,!company.dataEnabled)} onPrepare={()=>void mutate(company.ticker)} onJudge={()=>void judge(company.ticker)} onFeature={(feature,on)=>void switchFeature(company.ticker,feature,on)} onOpenFinancials={onOpenFinancials} focused={company.ticker===focus} onFocused={()=>setFocus('')}/>)}
     </table></div>}
     {data&&!companies.length&&<p>无匹配公司</p>}
   </section>;
@@ -223,7 +225,7 @@ function featureState(f:BusinessMapCompany['features'][Feature],paused:boolean):
 }
 
 /** One company as a table row: its map state, one switch per feature and the actions; the row opens to the details. */
-function Company({company:c,generation,busy,onToggle,onPrepare,onJudge,onFeature,onOpenFinancials,focused,onFocused}:{company:BusinessMapCompany;generation:Record<Feature,boolean>;busy:boolean;onToggle:()=>void;onPrepare:()=>void;onJudge:()=>void;onFeature:(feature:Feature,on:boolean)=>void;onOpenFinancials?:(ticker:string)=>void;focused:boolean;onFocused:()=>void}) {
+function Company({company:c,generation,busy,onToggle,onPrepare,onJudge,onFeature,onOpenFinancials,focused,onFocused,onUnauthorized}:{company:BusinessMapCompany;onUnauthorized:()=>void;generation:Record<Feature,boolean>;busy:boolean;onToggle:()=>void;onPrepare:()=>void;onJudge:()=>void;onFeature:(feature:Feature,on:boolean)=>void;onOpenFinancials?:(ticker:string)=>void;focused:boolean;onFocused:()=>void}) {
   const running=!!c.task&&active.has(c.task.status),collecting=!!c.collection&&['queued','running','retry'].includes(c.collection.status);
   const ready=c.publication.status==='ready';
   const revenuePending=c.publication.revenueCoverage?.some(q=>q.status==='unverified');
@@ -279,6 +281,7 @@ function Company({company:c,generation,busy,onToggle,onPrepare,onJudge,onFeature
         <section role="listitem" className="bm-col" data-tone={problems.length?'caution':'ok'}><h4>{problems.length?<AlertTriangle size={13}/>:<CheckCircle2 size={13}/>}问题{problems.length?` · ${problems.length}`:''}</h4><div>
           {problems.length?<ul>{problems.map(p=><li key={p.code} title={p.code}>{p.label}{p.filings.length>0&&<small>{p.filings.length} 份文件 · {p.filings.join(', ')}</small>}</li>)}</ul>:<p className="bm-empty">无</p>}</div></section>
       </div>
+      <ValuationInputs ticker={c.ticker} onUnauthorized={onUnauthorized}/>
     </div></td></tr>}
   </tbody>;
 }

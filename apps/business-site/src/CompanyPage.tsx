@@ -14,7 +14,7 @@ import { usePageTurning } from "./page-turn";
 import { companyIdentity } from "./company-meta";
 import type { CompanyOpening } from "./company-opening";
 
-const m = messages({ lastSnapshot: "Last complete snapshot", title: "Business View" }, { lastSnapshot: "最近一次完整快照", title: "Business View" });
+const m = messages({ title: "Business View" }, { title: "Business View" });
 
 class ChartBoundary extends Component<
   { ticker: string; companies: Array<{ ticker: string; name: string }>; onHome: () => void; onSearch: () => void; children: ReactNode },
@@ -86,7 +86,6 @@ export default function CompanyPage({ ticker, opening, tools, onSeen, covered, c
           eventsPhase={eventsPhase}
           detailsLoading={!settled}
           onRetryEvents={retryEvents}
-          notice={publication?.outdated ? m.lastSnapshot : null}
           updates={updates}
           stageOverride={stage.stageOverride}
           onNavigate={stage.onNavigate}

@@ -4,7 +4,8 @@ import { EXTENDED_SCENARIO_KEYS, VALUATION_METHODS, type ModelDrivers, type Scen
 import { CALCULATOR_VERSION, calculateValuation, ValuationCalcError, type CalcRequest } from "../../../shared/analysis-runtime/valuation/calculator.ts";
 import { managementComparisonRows } from "../../../shared/analysis-runtime/valuation/management.ts";
 import { readValuationPublication } from "../../../shared/analysis-runtime/valuation/read.ts";
-import { managementTargetsFor } from "../src/valuation/curated.ts";
+import { managementTargetSet, parseTargets } from "../src/valuation/curated.ts";
+import inputs from "./fixtures/valuation-inputs.json" with { type: "json" };
 import { methodChangeHeldBack } from "../src/valuation/reassess.ts";
 import { gateGaps, registerManagementEvidence, valuationTools, type ValuationState } from "../src/valuation/tools.ts";
 import { assemblePublication, judgementLines, openingAssume, RED_TEAM_SCHEMA, VALUATION_VERSION } from "../src/valuation/workflow.ts";
@@ -19,7 +20,7 @@ const rate = (value: number) => ({ value, basis: "wacc" as const, components: { 
 const fcff = (g: number, m: number, build: number[] = [40e9, 30e9, 20e9, 10e9, 0, 0, 0]): Extract<ModelDrivers, { modelType: "fcff" }> =>
   ({ modelType: "fcff", revenue0: 71.777e9, path: { revenueGrowth: fill(7, g), operatingMargin: fill(7, m), taxRate: fill(7, 0.13), salesToCapital: fill(7, 1.44), buildCapex: build }, terminalGrowth: 0.03, terminalRoic: 0.111 });
 const scenario = (drivers: ModelDrivers, probability: number | null = null): ScenarioAssumptions => ({ narrative: "", probability, triggers: [], invalidation: [], evidenceIds: [], drivers });
-const orcl = managementTargetsFor("ORCL")!;
+const orcl = managementTargetSet("ORCL", parseTargets(inputs.ORCL.targets), 5, "2026-11-01").set!;
 const facts = [["revenue_ttm", 71.777e9, "USD"], ["operating_margin_ttm", 0.3212, "ratio"], ["sbc_ttm", 4.814e9, "USD"], ["da_ttm", 9.428e9, "USD"], ["capex_ttm", 75.66e9, "USD"], ["shares_outstanding", 3e9, "shares"], ["debt", 125e9, "USD"], ["leases", 30e9, "USD"], ["cash", 37e9, "USD"], ["ebitda_ttm", 32.5e9, "USD"], ["interest_expense_ttm", 5.1e9, "USD"]].map(([id, value, unit]) => ({ id: id as string, value: value as number, unit: unit as string }));
 const peers = { peers: ["A", "B"], asOf: "2026-11-01", evToEbitda: { p25: 15.3, median: 16.7, p75: 18.3, count: 2 }, peRatio: { p25: 27.1, median: 28.9, p75: 30.4, count: 2 }, notes: [], basis: "curated" as const, weights: { A: 0.5, B: 0.5 } };
 const judged = (dcf: number, ev: number, pe: number) => ({ dcf: { weight: dcf, rationale: "dcf", evidenceIds: ["e1"] }, ev_ebitda_forward: { weight: ev, rationale: "ev", evidenceIds: ["e1"] }, pe_forward: { weight: pe, rationale: "pe", evidenceIds: ["e1"] } });
@@ -166,7 +167,7 @@ function stateWith(): ValuationState {
       facts: facts.map(f => ({ ...f, label: f.id, currency: f.unit === "USD" ? "USD" : null, periodType: "ttm" as const, periodStart: null, periodEnd: "2026-08-31", basis: "reported" as const, formula: null, sourceRefs: [], rationale: null })),
       distributions: [], diagnostics: [], documents: [], guidance: null, transcripts: [], missing: [], fingerprint: "input",
       data: { quarters: [], history: null, capital: null, fundamentals: null, guidance: null },
-      rpo: null, lifecycle: "build", peers: [], peerBasis: "curated", peerNotes: [], management: orcl, trailingQuarters: [],
+      rpo: null, lifecycle: "build", peers: [], peerBasis: "curated", peerNotes: [], management: orcl, managementNotes: [], trailingQuarters: [],
     },
     researchAsOf: now, now, quote: { price: 130.67, currency: "USD", priceDate: "2026-10-30", source: "test", sourceUrl: "https://example.test", fetchedAt: now, usable: true, limitations: [] }, riskFree: { value: 0.049, label: "10Y", date: "2026-10-30" } as ValuationState["riskFree"], beta: null, peerMultiples: peers, multipleHistory: null,
     evidence: new Map([[evidenceId, evidence]]), hits: [], used: { finds: 0, reads: 0, searches: 0, webReads: 0, transcripts: 0 },
