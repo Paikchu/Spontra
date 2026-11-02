@@ -1,9 +1,9 @@
 import {publicFlowSchema} from './schema.ts';
 import type { PublicBusinessFlow, BusinessFlowQuarter, FlowAmount, FlowMetric } from '../../analysis-contract/business-flow.ts';
 import type { CompleteFlowCheck, CompleteFlowReason } from '../../analysis-contract/complete-business-flow.ts';
+import { isSecUrl } from "../sec-sources.ts";
 const number=(amount:FlowAmount|undefined|null):number|null=>typeof amount?.value==='string'&&amount.value.trim()!==''&&Number.isFinite(Number(amount.value))?Number(amount.value):null;
 const balanced=(a:number,b:number)=>Math.abs(a-b)<=Math.max(1e-6,Math.max(Math.abs(a),Math.abs(b))*1e-9);
-const sourceUrl=(text:string)=>{try{const u=new URL(text);return u.protocol==='https:'&&(u.hostname==='www.sec.gov'||u.hostname==='sec.gov'||u.hostname==='data.sec.gov');}catch{return false;}};
 /** A same-filing 6M minus Q2 bridge uses a later operand period, whether the filing prints a statement table or tags
  * inline XBRL. Both sides must have identical concepts/dimensions and end dates, and bracket exactly the derived quarter. */
 function samePresentationBridge(amount:FlowAmount,q:BusinessFlowQuarter,line:NonNullable<FlowAmount['lineage']>[number]):boolean {
@@ -37,7 +37,7 @@ function validateCompleteFlow(flow:PublicBusinessFlow,requirePair=true):Complete
   const keys:FlowMetric[]=financial?(q.incomeModel==='insurance'?['revenue','operatingExpenses','other','pretax','tax','net']:['revenue','operatingExpenses','pretax','tax','net']):q.incomeModel==='standard'?['revenue','cost','gross','operatingExpenses','operating','other','pretax','tax','net']:['revenue','operatingExpenses','operating','other','pretax','tax','net'];
   const validAmount=(amount:FlowAmount|undefined|null)=>{
    if(number(amount)==null){reasons.add('MISSING_DISCLOSURE');return;}
-   if(!amount!.sourceIds.length||!amount!.sourceIds.every(id=>q.sources.some(s=>s.id===id&&sourceUrl(s.url)))||!amount!.lineage?.length||!amount!.lineage.every(l=>sourceUrl(l.url)&&l.accession&&l.concept&&l.contextId&&amount!.sourceIds.includes(l.accession)&&((l.periodStart===q.periodStart&&l.periodEnd===q.periodEnd)||samePresentationBridge(amount!,q,l)||(amount!.basis==='derived'&&l.periodStart<q.periodStart!&&(l.periodEnd===q.periodEnd||Date.parse(l.periodEnd)+86400000===Date.parse(q.periodStart!))))))reasons.add('INVALID_SOURCE');
+   if(!amount!.sourceIds.length||!amount!.sourceIds.every(id=>q.sources.some(s=>s.id===id&&isSecUrl(s.url)))||!amount!.lineage?.length||!amount!.lineage.every(l=>isSecUrl(l.url)&&l.accession&&l.concept&&l.contextId&&amount!.sourceIds.includes(l.accession)&&((l.periodStart===q.periodStart&&l.periodEnd===q.periodEnd)||samePresentationBridge(amount!,q,l)||(amount!.basis==='derived'&&l.periodStart<q.periodStart!&&(l.periodEnd===q.periodEnd||Date.parse(l.periodEnd)+86400000===Date.parse(q.periodStart!))))))reasons.add('INVALID_SOURCE');
    if(amount!.basis==='derived'&&!amount!.formula)reasons.add('INVALID_SOURCE');
   };
   // A line a later filing restated stays uncompared; it does not hold back the lines that still compare.

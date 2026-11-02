@@ -3,13 +3,10 @@ import {
   YahooFundamentalsPayloadError,
   normalizeFundamentalTicker,
   parseYahooFundamentalsPayload,
-  toYahooFundamentalSymbol,
   type YahooFundamentalsPayload,
 } from "./yahoo-fundamentals-schema.ts";
 import { sha256 as sha256Hex } from "../sha256.ts";
-
-export const YAHOO_FUNDAMENTALS_ENDPOINT =
-  "https://query1.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries";
+import { YAHOO_FUNDAMENTALS_ENDPOINT, YAHOO_HEADERS, yahooSymbol } from "../market/yahoo.ts";
 
 export type YahooFundamentalsRequest = {
   ticker: string;
@@ -68,9 +65,9 @@ export async function buildYahooFundamentalsRequest(
     });
   }
 
-  const yahooSymbol = toYahooFundamentalSymbol(ticker);
-  const url = new URL(`${YAHOO_FUNDAMENTALS_ENDPOINT}/${encodeURIComponent(yahooSymbol)}`);
-  url.searchParams.set("symbol", yahooSymbol);
+  const symbol = yahooSymbol(ticker);
+  const url = new URL(`${YAHOO_FUNDAMENTALS_ENDPOINT}/${encodeURIComponent(symbol)}`);
+  url.searchParams.set("symbol", symbol);
   url.searchParams.set("type", YAHOO_QUARTERLY_FUNDAMENTAL_FIELDS.join(","));
   url.searchParams.set("period1", String(Math.floor(Date.UTC(now.getUTCFullYear() - 10, 0, 1) / 1_000)));
   url.searchParams.set("period2", String(Math.floor(now.getTime() / 1_000) + 86_400));
@@ -99,10 +96,7 @@ export async function fetchYahooFundamentals(
     try {
       const response = await fetcher(request.url, {
         cache: "no-store",
-        headers: {
-          accept: "application/json",
-          "user-agent": "Mozilla/5.0 (compatible; MAX-Fundamentals/1.0)",
-        },
+        headers: YAHOO_HEADERS,
         signal: AbortSignal.timeout(timeoutMs),
       });
       if (!response.ok) {

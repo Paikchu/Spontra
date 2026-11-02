@@ -26,6 +26,7 @@ import { browserRenderer } from "../lens/draw.ts";
 import { SecModelOutputError } from "../model-stream.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
 import { D1SecRepository } from "../sec/d1.ts";
+import { isSecUrl } from "../../../../shared/analysis-runtime/sec-sources.ts";
 
 /** Changing the prompt or the ledger regenerates every company once. */
 export const FINDINGS_VERSION = "findings.writer.v10";
@@ -61,7 +62,7 @@ export async function findingsInput(env: AnalysisEnv, ticker: string): Promise<I
   ]);
   const data: FindingData = { quarters, history: publication.history ?? null, capital, fundamentals, guidance };
   const sources = new Map<string, ExplainerSource>();
-  for (const q of quarters) for (const s of q.sources) if (/^https:\/\/www\.sec\.gov\//.test(s.url) && !sources.has(s.id)) sources.set(s.id, { id: s.id, title: s.title, url: s.url, kind: "sec", publishedAt: s.publishedAt ?? null });
+  for (const q of quarters) for (const s of q.sources) if (isSecUrl(s.url) && !sources.has(s.id)) sources.set(s.id, { id: s.id, title: s.title, url: s.url, kind: "sec", publishedAt: s.publishedAt ?? null });
   for (const s of guidance?.sources ?? []) if (!sources.has(s.id)) sources.set(s.id, { id: s.id, title: s.title, url: s.url, kind: s.sourceKind === "sec" ? "sec" : "web", publishedAt: s.publishedAt });
   const ledger = buildLedger(data, newest.periodEnd, [...sources.values()].slice(0, 40));
   const overview = analysis?.overview;

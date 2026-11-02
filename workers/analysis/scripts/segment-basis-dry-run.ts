@@ -19,17 +19,18 @@
  *   node --experimental-strip-types workers/analysis/scripts/segment-basis-dry-run.ts --tickers MSFT,SPCX
  *   node --experimental-strip-types workers/analysis/scripts/segment-basis-dry-run.ts --source d1
  *
- * `--source api` (default) reads the public company route (`--origin`, default https://businessview.info); `--source d1`
+ * `--source api` (default) reads the public company route (`--origin`, default the public site); `--source d1`
  * runs one SELECT over the analysis D1 through wrangler (`--local` for the local database).
  */
 import { execFileSync } from "node:child_process";
 import type { RevenueHistory, RevenueHistoryQuarter } from "../../../shared/analysis-contract/revenue-history.ts";
 import { basisChangedAt, basisRuns, businessValue, sameBasis, segmentBasis, yearAgoOnBasis } from "../../../shared/analysis-runtime/segment-basis.ts";
+import { PUBLIC_SITE_ORIGIN } from "../../../shared/analysis-runtime/site.ts";
 
 const args: string[] = process.argv.slice(2);
 const option = (name: string) => { const i = args.indexOf(`--${name}`); return i >= 0 ? args[i + 1] ?? null : null; };
 const source = option("source") ?? "api";
-const origin = option("origin") ?? "https://businessview.info";
+const origin = option("origin") ?? PUBLIC_SITE_ORIGIN;
 if (source !== "api" && source !== "d1") throw new Error("--source is api or d1");
 
 async function histories(): Promise<Array<{ key: string; history: RevenueHistory }>> {

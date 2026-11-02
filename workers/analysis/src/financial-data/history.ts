@@ -1,6 +1,6 @@
 import type {RevenueStructure} from "./calculation.ts";
 import type {RevenueHistory, RevenueHistoryQuarter} from '../../../../shared/analysis-contract/revenue-history.ts';
-import {secArchiveDocumentUrl, secArchiveRoot} from '../sec/archive-url.ts';
+import {edgarArchiveCik, secArchiveDocumentUrl, secArchiveRoot, secSubmissionsPageUrl, secSubmissionsUrl} from '../../../../shared/analysis-runtime/sec-sources.ts';
 import {historyQuarterFrom, mergeHistory, readHistory, revenueHistorySchema, validHistoryQuarter} from '../../../../shared/analysis-runtime/financial-data/history.ts';
 import {D1SecRepository} from '../sec/d1.ts';
 import {extractVerifiedCurrentQuarters, readReportedFacts, SEC_FLOW_PARSER_VERSION, type DocumentSource, type Fact} from './parser.ts';
@@ -50,12 +50,7 @@ export function historyForIssuer(raw: unknown, cik: string, ticker: string): Rev
   if (!validCik(cik) || !TICKER_PATTERN.test(ticker)) return null;
   const parsed = revenueHistorySchema.safeParse(raw);
   if (!parsed.success) return null;
-  const sameIssuer = (value: string) => {
-    try {
-      const url = new URL(value), sourceCik = url.pathname.match(/^\/Archives\/edgar\/data\/(\d{1,10})\//)?.[1];
-      return url.protocol === 'https:' && ['www.sec.gov', 'sec.gov'].includes(url.hostname) && !url.username && !url.password && !url.port && !!sourceCik && Number(sourceCik) === Number(cik);
-    } catch { return false; }
-  };
+  const sameIssuer = (value: string) => edgarArchiveCik(value) === Number(cik);
   if (!parsed.data.quarters.every(q => sameIssuer(q.source.url) && (!q.dilutedEps || sameIssuer(q.dilutedEps.source.url)) && [...(q.dilutedEps?.lineage ?? []), ...(q.lineage ?? []), ...(q.revenueAdjustments??[]).flatMap(a=>a.lineage??[]), ...q.segments.flatMap(s => [...(s.lineage ?? []), ...(s.children ?? []).flatMap(c => c.lineage ?? [])])].every(lineage => sameIssuer(lineage.url)))) return null;
   return {...parsed.data, ticker};
 }
@@ -66,7 +61,7 @@ type SubmissionColumns = {form: string[]; accessionNumber: string[]; primaryDocu
 const MAX_SUBMISSION_PAGES = 48;
 
 async function listDocuments(cik: string, reader: SecReader, now: Date): Promise<{documents: HistoryDocument[]; industry: DocumentSource['industry']}> {
-  const data = await (await reader.read(`https://data.sec.gov/submissions/CIK${cik}.json`)).json() as {cik: string | number; sic?: string; filings?: {recent?: SubmissionColumns; files?: Array<{name?: string; filingFrom?: string; filingTo?: string}>}};
+  const data = await (await reader.read(secSubmissionsUrl(cik))).json() as {cik: string | number; sic?: string; filings?: {recent?: SubmissionColumns; files?: Array<{name?: string; filingFrom?: string; filingTo?: string}>}};
   if (String(data.cik).padStart(10, '0') !== cik) throw new Error('Issuer identity mismatch');
   const recent = data.filings?.recent;
   if (!recent) throw new Error('Missing submissions');
@@ -92,7 +87,7 @@ async function listDocuments(cik: string, reader: SecReader, now: Date): Promise
     .sort((a, b) => (b.filingTo ?? '').localeCompare(a.filingTo ?? '')).slice(0, MAX_SUBMISSION_PAGES);
   for (const page of pages) {
     if (reachedCutoff || full()) break;
-    const block = await (await reader.read(`https://data.sec.gov/submissions/${page.name}`)).json() as SubmissionColumns;
+    const block = await (await reader.read(secSubmissionsPageUrl(page.name!))).json() as SubmissionColumns;
     if (!Array.isArray(block.form)) throw new Error('Missing submissions');
     scan(block);
   }

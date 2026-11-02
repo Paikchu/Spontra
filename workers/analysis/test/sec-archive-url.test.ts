@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { EventsPublication } from "../../../shared/analysis-contract/events.ts";
 import { refreshCompanyEvents, type EventsSweepEnv } from "../src/events/workflow.ts";
-import { parseSecArchiveDocumentUrl, secArchiveDocumentUrl, secArchiveRoot } from "../src/sec/archive-url.ts";
+import { parseSecArchiveDocumentUrl, secArchiveDocumentUrl, secArchiveRoot } from "../../../shared/analysis-runtime/sec-sources.ts";
 
 const now = new Date("2026-10-30T10:00:00.000Z");
 const accession = "0001193125-26-438090";

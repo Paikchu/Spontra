@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { AlertTriangle, CheckCircle2, ChevronRight, ExternalLink, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
 import type { BusinessMapCompanies, BusinessMapCompany, IssuerSuggestion } from '@/shared/analysis-contract/business-map-admin';
 import { FEATURES, type Feature } from '@/shared/analysis-contract/business-features';
-import { BUSINESS_MAP_ORIGIN } from '@/shared/admin-site';
+import { PUBLIC_SITE_ORIGIN } from '@/shared/analysis-runtime/site';
 import { adminApi, AdminApiError } from './admin-api';
 import { normalizeCompanyTicker, pendingRequestId, completeRequestId } from './financial-maintenance-state';
 import { financialDate } from './financial-update-history';
@@ -246,7 +246,7 @@ function Company({company:c,generation,busy,onToggle,onPrepare,onJudge,onFeature
       <td><div className="bm-admin-company-cell"><button className="bm-admin-toggle" aria-expanded={open} aria-label={`${c.ticker} 详情`} onClick={()=>setOpen(o=>!o)}><ChevronRight size={15}/></button><CompanyLogo symbol={c.ticker}/><span className="bm-admin-name"><strong className="ra-mono">{c.ticker}</strong>{c.name&&c.name!==c.ticker&&<small>{c.name}</small>}</span></div></td>
       <td><div className="bm-admin-states"><span className="ra-badge" data-status={map.status}>{map.text}</span>{now&&<small className="bm-admin-now">{now}</small>}</div></td>
       {FEATURES.map(f=><td key={f} className="bm-admin-feature-col"><button className="bm-switch" role="switch" data-failed={!!c.features[f].failure||undefined} aria-checked={c.features[f].on} aria-label={`${c.ticker} ${FEATURE_LABEL[f]}`} title={featureState(c.features[f],!generation[f]).text} disabled={!c.dataEnabled&&!c.features[f].on} onClick={()=>onFeature(f,!c.features[f].on)}><span/></button></td>)}
-      <td><div className="bm-admin-actions"><button className="fm-button" disabled={busy||running||!c.dataEnabled} onClick={onPrepare}>{running?'准备中':'重新准备'}</button><a href={`/admin/financials?ticker=${c.ticker}`} onClick={e=>{if(!onOpenFinancials||e.metaKey||e.ctrlKey||e.shiftKey||e.button!==0)return;e.preventDefault();onOpenFinancials(c.ticker);}}>财报</a>{ready&&<a href={`${BUSINESS_MAP_ORIGIN}/companies/${encodeURIComponent(c.ticker)}`} target="_blank" rel="noreferrer" aria-label={`${c.ticker} 业务地图`}>地图<ExternalLink size={12}/></a>}
+      <td><div className="bm-admin-actions"><button className="fm-button" disabled={busy||running||!c.dataEnabled} onClick={onPrepare}>{running?'准备中':'重新准备'}</button><a href={`/admin/financials?ticker=${c.ticker}`} onClick={e=>{if(!onOpenFinancials||e.metaKey||e.ctrlKey||e.shiftKey||e.button!==0)return;e.preventDefault();onOpenFinancials(c.ticker);}}>财报</a>{ready&&<a href={`${PUBLIC_SITE_ORIGIN}/companies/${encodeURIComponent(c.ticker)}`} target="_blank" rel="noreferrer" aria-label={`${c.ticker} 业务地图`}>地图<ExternalLink size={12}/></a>}
         {c.dataEnabled?<button className="bm-admin-remove" disabled={busy} onClick={remove} aria-label={`移出 ${c.ticker}`} title="移出白名单"><Trash2 size={16}/></button>:<button className="fm-button" disabled={busy} onClick={onToggle}>加入</button>}</div></td>
     </tr>
     {open&&<tr className="bm-admin-detail"><td colSpan={FEATURES.length+3}><div className="bm-detail">

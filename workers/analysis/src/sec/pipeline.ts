@@ -1,5 +1,5 @@
 import { throttledSecReader } from "../financial-data/provider.ts";
-import { secArchiveDocumentUrl, secArchiveRoot } from "./archive-url.ts";
+import { SEC_EXCHANGE_DIRECTORY_URL, secArchiveDocumentUrl, secArchiveRoot, secSubmissionsUrl } from "../../../../shared/analysis-runtime/sec-sources.ts";
 import { validateAiFiscalPeriod, FISCAL_PERIOD_INSTRUCTION } from "./fiscal-period-ai.ts";
 import { enforceDiscoveryCoverage } from "./discovery.ts";
 import type { SecSourceMaterial } from "../../../../shared/analysis-contract/sec-presentation.ts";
@@ -95,12 +95,12 @@ export async function discoverSecTicker(rawTicker: string, runtime: SecDiscovery
   // The same paced reader as collection: SEC's fair-access limit is per client, not per task.
   const reader = throttledSecReader(runtime.userAgent, runtime.fetcher ?? fetch, 200);
   const request = (url: string) => reader.read(url);
-  const tickerMap = parseTickerMap(await (await request("https://www.sec.gov/files/company_tickers_exchange.json")).json());
+  const tickerMap = parseTickerMap(await (await request(SEC_EXCHANGE_DIRECTORY_URL)).json());
   const company = tickerMap[ticker];
   if (!company) {
     return { feed: { ticker, company: null, filings: [], fetchedAt: now.toISOString(), status: "unsupported" }, filings: [] };
   }
-  const submissions = await request(`https://data.sec.gov/submissions/CIK${company.cik}.json`);
+  const submissions = await request(secSubmissionsUrl(company.cik));
   const allFilings = parseSecSubmissions(await submissions.json(), company, 40);
   return {
     feed: {

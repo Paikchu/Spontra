@@ -2,6 +2,7 @@ import type { SecReader } from '../financial-data/provider.ts';
 import { D1SecRepository } from '../sec/d1.ts';
 import type { IssuerSuggestion } from '../../../../shared/analysis-contract/business-map-admin.ts';
 import { canonicalTicker, TICKER_PATTERN } from '../../../../shared/analysis-runtime/financial-data/policy.ts';
+import { SEC_EXCHANGE_DIRECTORY_URL } from '../../../../shared/analysis-runtime/sec-sources.ts';
 
 /**
  * EDGAR's exchange directory: every listed symbol with its issuer's name, exchange and CIK. It is the one source for
@@ -11,7 +12,6 @@ import { canonicalTicker, TICKER_PATTERN } from '../../../../shared/analysis-run
  */
 export type IssuerEntry = [ticker: string, name: string, exchange: string, cik: string];
 const CACHE_KEY = 'catalog:issuer-directory:v2';
-const DIRECTORY_URL = 'https://www.sec.gov/files/company_tickers_exchange.json';
 const FRESH_MS = 24 * 3600_000;
 /** The directory parsed once per isolate; D1 holds it across isolates. */
 let memory: { fetchedAt: string; entries: IssuerEntry[] } | null = null;
@@ -42,7 +42,7 @@ export async function issuerDirectory(db: D1Database, reader: SecReader, now = n
   const stored = await repository.getCache<IssuerEntry[]>(CACHE_KEY).catch(() => null);
   if (stored && fresh(stored.fetchedAt)) { memory = { fetchedAt: stored.fetchedAt, entries: stored.payload }; return stored.payload; }
   try {
-    const entries = parseIssuerDirectory(await (await reader.read(DIRECTORY_URL)).json());
+    const entries = parseIssuerDirectory(await (await reader.read(SEC_EXCHANGE_DIRECTORY_URL)).json());
     const fetchedAt = now.toISOString();
     await repository.setCache(CACHE_KEY, entries, fetchedAt).catch(() => undefined);
     memory = { fetchedAt, entries };
