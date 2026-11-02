@@ -75,3 +75,15 @@ test("normal range survives publication parsing and translation; malformed persi
   fair.base += 1;
   assert.equal(readValuationPublication(read, "TST"), null);
 });
+
+
+test("non-positive normal residuals are retained rather than changed to pass an economic gate", () => {
+  const r = request(); r.bridge.debtAndClaims = 10000;
+  r.context!.facts = r.context!.facts!.map(f => f.id === "debt" ? { ...f, value: 10000 } : f);
+  const result = calculateValuation({ ...r, fairValueBasis: basis() });
+  const fair = result.fairValueRange; assert.ok(fair?.status === "available");
+  assert.ok(fair.low < fair.base && fair.base < fair.high && fair.high < 0);
+  assert.equal(result.gates!.find(g => g.key === "non_negative_scenarios")!.status, "flag");
+  assert.ok(!result.gates!.some(g => g.status === "fail"));
+  assert.deepEqual(readValuationPublication(publication(result), "TST")?.model?.fairValueRange, fair);
+});

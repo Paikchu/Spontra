@@ -7,7 +7,7 @@ import { weightedQuantile } from "./peers.ts";
  * §2–§6). Every amount a report shows comes from here; the model supplies inputs and reasons. Nothing is rounded until it
  * is displayed. Invalid inputs are rejected with a `ValuationCalcError` rather than producing NaN, Infinity or a made-up figure.
  */
-export const CALCULATOR_VERSION = "valuation.calc.v6";
+export const CALCULATOR_VERSION = "valuation.calc.v7";
 /** The default horizon; an fcff path may run `MIN_FORECAST_YEARS`–`MAX_FORECAST_YEARS` years (docs/valuation-v2-SPEC.md §1). */
 export const FORECAST_YEARS = 5;
 export const MIN_FORECAST_YEARS = 5, MAX_FORECAST_YEARS = 10;
@@ -343,6 +343,7 @@ export function calculateValuation(request: CalcRequest): ValuationModelResult {
   const baseDrivers = request.scenarios.base.drivers;
   const horizonYears = baseDrivers.modelType === "fcff" ? horizonOf(baseDrivers.path) : FORECAST_YEARS;
   const limitations: string[] = [midYear ? "Cash flows are discounted mid-year; no stub period." : "Cash flows are discounted at year end; no mid-year convention and no stub period."];
+  if (SCENARIO_KEYS.some(k => results[k].result.perShare < 0)) limitations.push("Negative scenario results are raw residual equity shortfalls, not tradable share prices; probability-weighted results retain those raw residuals and are not limited-liability payoffs.");
   const terminalShare = results.base.result.terminalShare;
   if (terminalShare != null && terminalShare > TERMINAL_SHARE_LIMIT) limitations.push(`Terminal value is ${(terminalShare * 100).toFixed(0)}% of the base operating value.`);
   const result: ValuationModelResult = { calculatorVersion: CALCULATOR_VERSION, modelType: request.modelType, currency: request.currency, discountRate: request.discountRate, shares, bridge: request.bridge, scenarios: results, range, sensitivities, implied, limitations, horizonYears, midYear };
@@ -398,7 +399,6 @@ function withFairValueRange(request: CalcRequest, model: ValuationModelResult): 
     if (failed.length) throw new ValuationCalcError("invalid_input", `fair value ${name}: ${failed.map(g => `${g.key}: ${g.detail}`).join("; ")}`);
     const missing = VALUATION_METHODS.filter(k => weights[k] > 0 && valuation.methods[k] == null);
     if (missing.length) throw new ValuationCalcError("invalid_input", `fair value ${name}: positive-weight methods ${missing.join(", ")} are unavailable; revise the shared method weights or declare fairValueBasis unavailable`);
-    if (valuation.perShare <= 0) throw new ValuationCalcError("invalid_input", `fair value ${name} must be positive`);
   };
   check("base", model, baseValuation);
   const evaluate = (name: "lower" | "upper", input: NormalCaseInput): NormalCaseResult => {
@@ -662,9 +662,9 @@ export function sanityGates(input: { result: ValuationModelResult; riskFree: num
   const gates: SanityGate[] = [];
   const gate = (key: string, status: SanityGate["status"], detail: string, value: number | null = null, limit: number | null = null) => gates.push({ key, status, detail, value, limit });
   const terminalShare = result.scenarios.base.result.terminalShare;
-  if (terminalShare != null) gate("terminal_share", terminalShare > 1 ? "fail" : terminalShare > TERMINAL_SHARE_LIMIT ? "flag" : "pass", `terminal value is ${(terminalShare * 100).toFixed(0)}% of the base operating value${terminalShare > 1 ? ": the explicit period is worth less than nothing; extend the horizon or normalize the build phase" : ""}`, terminalShare, TERMINAL_SHARE_LIMIT);
+  if (terminalShare != null) gate("terminal_share", terminalShare > TERMINAL_SHARE_LIMIT ? "flag" : "pass", `terminal value is ${(terminalShare * 100).toFixed(0)}% of the base operating value${terminalShare > 1 ? ": explicit-period present value is negative; the model depends on later cash-flow delivery" : ""}`, terminalShare, TERMINAL_SHARE_LIMIT);
   const negative = SCENARIO_KEYS.filter(k => result.scenarios[k].result.perShare < 0 || (result.scenarios[k].valuation?.perShare ?? 0) < 0);
-  gate("non_negative_scenarios", negative.length ? "fail" : "pass", negative.length ? `${negative.join(", ")} per-share value is negative: equity cannot be worth less than zero; revise the path` : "every scenario is non-negative", negative.length ? Math.min(result.scenarios[negative[0]!].result.perShare, result.scenarios[negative[0]!].valuation?.perShare ?? 0) : null, 0);
+  gate("non_negative_scenarios", negative.length ? "flag" : "pass", negative.length ? `${negative.join(", ")} raw residual equity value is negative: preserve the modeled shortfall and review funding and claim coverage; this is not a negative tradable share price` : "every scenario is non-negative", negative.length ? Math.min(result.scenarios[negative[0]!].result.perShare, result.scenarios[negative[0]!].valuation?.perShare ?? 0) : null, 0);
   const g = "terminalGrowth" in result.scenarios.base.drivers ? result.scenarios.base.drivers.terminalGrowth : null;
   if (g != null) {
     const aboveRf = input.riskFree != null && g > input.riskFree + 1e-9;

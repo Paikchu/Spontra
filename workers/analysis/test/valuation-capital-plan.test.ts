@@ -57,7 +57,7 @@ test("normal bounds preserve complete plans and share the base investment mode; 
   const r = request();
   r.fairValueBasis = { status: "available", kind: "normal_cases", lower: normal(explicit(0.08, 0.24)), upper: normal(explicit(0.12, 0.26)), rationale: "Normal construction, demand and working-capital variation determines the explicit paths.", evidenceIds: ["e1234567890"] };
   const model = calculateValuation(r), fair = model.fairValueRange;
-  assert.equal(model.calculatorVersion, "valuation.calc.v6");
+  assert.equal(model.calculatorVersion, CALCULATOR_VERSION);
   assert.ok(fair?.status === "available");
   assert.ok(fair.lower.drivers.modelType === "fcff"); assert.deepEqual(fair.lower.drivers.path.capitalPlan, plan());
   assert.equal(model.sensitivities.some(s => s.factor === "salesToCapital"), false);

@@ -128,7 +128,7 @@ test("verification: revenue within 0.5%, shares exact, claims at least debt plus
   assert.deepEqual(wrong.checks.filter(c => c.status === "fail").map(c => c.field.split(" ")[0]), ["revenue0", "bridge.debtAndClaims", "bridge.nonOperatingAssets"]);
 });
 
-test("gates: negative scenarios and terminal share above 100% fail, terminal growth above 3% flags, above the risk-free rate fails; consensus divergence only flags", () => {
+test("gates: negative scenarios and terminal share above 100% flag, terminal growth above 3% flags, above the risk-free rate fails; consensus divergence only flags", () => {
   const result = calculateValuation(request(5));
   const base = (overrides: Partial<Parameters<typeof sanityGates>[0]> = {}) => sanityGates({ result, riskFree: 0.045, anchor: null, consensus: null, triangulation: null, verification: null, impliedMultiple: null, multipleHistory: null, peers: null, ...overrides });
   const plain = base();
@@ -140,11 +140,11 @@ test("gates: negative scenarios and terminal share above 100% fail, terminal gro
   assert.equal(consensus.status, "flag"); assert.ok(consensus.detail.includes("quantify"));
   const history = base({ impliedMultiple: 30, multipleHistory: { factor: "evToEbitda", periods: [], min: 10, p25: 12, median: 14, p75: 16, max: 20 } }).find(g => g.key === "implied_multiple_vs_history")!;
   assert.equal(history.status, "flag"); assert.equal(history.limit, 20);
-  // A build-phase path with negative explicit cash flows: terminal share above one and a negative bear case fail.
+  // A build-phase path with negative explicit cash flows: terminal share above one and a negative bear case remain visible as flags.
   const heavy = calculateValuation({ ...request(5), scenarios: { bear: scenario(fcff(5, 0.19, 0.25, { terminalGrowth: 0.04, terminalRoic: 0.10 }, { salesToCapital: fill(5, 0.3) })), base: scenario(fcff(5, 0.25, 0.3, { terminalGrowth: 0.045, terminalRoic: 0.125 }, { salesToCapital: fill(5, 0.3) })), bull: scenario(fcff(5, 0.3, 0.31, { terminalGrowth: 0.045, terminalRoic: 0.15 }, { salesToCapital: fill(5, 0.3) })) }, bridge: { ...bridge, nonOperatingAssets: 50, debtAndClaims: 600 }, discountRate: rate(0.11) });
   const gates = sanityGates({ result: heavy, riskFree: 0.045, anchor: null, consensus: null, triangulation: null, verification: null, impliedMultiple: null, multipleHistory: null, peers: null });
-  assert.equal(gates.find(g => g.key === "terminal_share")!.status, "fail");
-  assert.equal(gates.find(g => g.key === "non_negative_scenarios")!.status, "fail");
+  assert.equal(gates.find(g => g.key === "terminal_share")!.status, "flag");
+  assert.equal(gates.find(g => g.key === "non_negative_scenarios")!.status, "flag");
   assert.equal(gates.find(g => g.key === "terminal_growth")!.status, "flag");
   assert.equal(sanityGates({ result: heavy, riskFree: 0.04, anchor: null, consensus: null, triangulation: null, verification: null, impliedMultiple: null, multipleHistory: null, peers: null }).find(g => g.key === "terminal_growth")!.status, "fail");
   // Gaps carry the flags and fails, never the passes; a missing consensus is said, never skipped.

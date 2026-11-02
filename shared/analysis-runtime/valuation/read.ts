@@ -63,7 +63,7 @@ const managementScenario = scenario.extend({
 });
 const normalCase = scenario.omit({ probability: true }).extend({ assumptions: pathAssumptions, valuation: scenarioValuation, gates: z.array(gateRow), verification: verification.nullable() });
 const fairValueRange = z.discriminatedUnion("status", [
-  z.object({ status: z.literal("available"), kind: z.literal("normal_cases"), low: finite.positive(), base: finite.positive(), high: finite.positive(), lower: normalCase, upper: normalCase, rationale: z.string(), evidenceIds: strings })
+  z.object({ status: z.literal("available"), kind: z.literal("normal_cases"), low: finite, base: finite, high: finite, lower: normalCase, upper: normalCase, rationale: z.string(), evidenceIds: strings })
     .refine(v => v.low <= v.base && v.base <= v.high && v.low === v.lower.valuation.perShare && v.high === v.upper.valuation.perShare, "normal range must match its ordered calculated bounds"),
   z.object({ status: z.literal("unavailable"), reason: z.string(), evidenceIds: strings }),
 ]);

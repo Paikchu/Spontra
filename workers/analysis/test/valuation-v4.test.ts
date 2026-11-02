@@ -116,7 +116,7 @@ test("calc.v4 gates: weight on a method the path cannot apply is spread and flag
   assert.ok(!equity.gates!.some(g => g.status === "fail"));
 });
 
-test("calc.v4: a method-weighted order that contradicts the DCF order is rejected, and a weighted value below zero fails the non-negative gate", () => {
+test("calc.v4: a method-weighted order that contradicts the DCF order is rejected, and a weighted value below zero flags the modeled shortfall", () => {
   // A bull path whose multiples value sits under the base's: the forward EBITDA follows the margin, so a bull with a far lower margin is out of order on the weighted values.
   const inverted = request();
   inverted.scenarios.bull = scenario(fcff(0.31, 0.2));
@@ -126,7 +126,7 @@ test("calc.v4: a method-weighted order that contradicts the DCF order is rejecte
   heavy.scenarios = { bear: scenario(fcff(0.15, 0.28, [300e9, 300e9, 300e9, 100e9, 0, 0, 0])), base: scenario(fcff(0.2, 0.3212, [300e9, 300e9, 300e9, 100e9, 0, 0, 0])), bull: scenario(fcff(0.3, 0.34, [300e9, 300e9, 300e9, 100e9, 0, 0, 0])) };
   try {
     const result = calculateValuation(heavy);
-    assert.equal(result.gates!.find(g => g.key === "non_negative_scenarios")!.status, "fail");
+    assert.equal(result.gates!.find(g => g.key === "non_negative_scenarios")!.status, "flag");
   } catch (error) {
     assert.ok(error instanceof ValuationCalcError, String(error));
   }
