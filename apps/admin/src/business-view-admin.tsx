@@ -31,7 +31,7 @@ const PAGES: Record<Section, Page> = {
 /** Ink is the default, as on BusinessView; paper is a per-viewer choice. main.tsx applies it before the first paint. */
 export const THEME_KEY = "businessview-admin-theme";
 /** Pages that read what they show from the address on mount: opened with a new address, they start again from it. */
-const FROM_ADDRESS = new Set<Section>(["financials", "filings", "business", "findings"]);
+const FROM_ADDRESS = new Set<Section>(["whitelist", "financials", "filings", "business", "findings"]);
 /** Paths of the earlier admin, kept so bookmarks land on the page that replaced them. */
 const LEGACY: Record<string, Section> = { "/admin/business-map": "whitelist", "/admin/library": "filings" };
 
