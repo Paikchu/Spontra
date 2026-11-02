@@ -141,7 +141,12 @@ function submitDimension(state: ValuationState, value: z.infer<typeof dimensionS
 }
 
 const years = z.array(z.number()).min(MIN_FORECAST_YEARS).max(MAX_FORECAST_YEARS);
-const driverPath = z.object({ revenueGrowth: years, operatingMargin: years, taxRate: years, salesToCapital: years, normalization: years.optional(), buildCapex: years.optional() });
+const commonPath = { revenueGrowth: years, operatingMargin: years, taxRate: years, normalization: years.optional() };
+const capitalPlan = z.object({ capex: z.array(z.number().nonnegative()).min(MIN_FORECAST_YEARS).max(MAX_FORECAST_YEARS), depreciation: z.array(z.number().nonnegative()).min(MIN_FORECAST_YEARS).max(MAX_FORECAST_YEARS), workingCapitalChange: years });
+const driverPath = z.union([
+  z.object({ ...commonPath, salesToCapital: years, buildCapex: years.optional(), capitalPlan: z.null().optional() }),
+  z.object({ ...commonPath, capitalPlan, salesToCapital: z.never().optional(), buildCapex: z.never().optional() }),
+]);
 const drivers = z.discriminatedUnion("modelType", [
   z.object({ modelType: z.literal("fcff"), revenue0: z.number(), path: driverPath, terminalGrowth: z.number(), terminalRoic: z.number(), terminalOperatingMargin: z.number().optional() }),
   z.object({ modelType: z.literal("fcfe"), cfo: z.number(), capex: z.number(), sbc: z.number(), normalization: z.number(), netBorrowing: z.number(), growth: z.array(z.number()).length(5), terminalGrowth: z.number() }),
@@ -450,7 +455,7 @@ export function valuationTools(env: AnalysisEnv): AnyTool<ValuationState>[] {
         if (missing.length) throw new Error(`submit ${missing.join(", ")} first (score null with a gap is allowed)`);
         ctx.state.researchDone = true; return "Research recorded.";
       }, observe: (_a, v) => v }),
-    tool({ name: "calculate_valuation", description: `Run the calculator: one model, three coherent scenarios sharing one discount rate built from sourced components, a ${MIN_FORECAST_YEARS}–${MAX_FORECAST_YEARS} year path (fcff may add buildCapex ahead of revenue and a terminalOperatingMargin), the judged method weights (sum 1) and scenario probabilities for bear/base/management/bull (sum 1), the management-target comparison and the consensus (or why none). Every field is required; a missing one is a schema error. Returns each scenario's DCF and method-weighted value, the management scenario, the expected value, the cross-check, gates, the market-implied path and gaps; a failed gate is not recorded.`, parameters: calcSchema, strict: false, timeoutMs: 20_000,
+    tool({ name: "calculate_valuation", description: `Run the calculator: one model, three coherent scenarios sharing one discount rate built from sourced components, a ${MIN_FORECAST_YEARS}–${MAX_FORECAST_YEARS} year path (fcff uses either salesToCapital with optional buildCapex, or capitalPlan with explicit capex, depreciation and workingCapitalChange arrays of the same length; never both. With capitalPlan, net reinvestment is capex minus depreciation plus workingCapitalChange; EBITDA uses that year's depreciation. terminalOperatingMargin is optional), the judged method weights (sum 1) and scenario probabilities for bear/base/management/bull (sum 1), the management-target comparison and the consensus (or why none). Every field is required; a missing one is a schema error. Returns each scenario's DCF and method-weighted value, the management scenario, the expected value, the cross-check, gates, the market-implied path and gaps; a failed gate is not recorded.`, parameters: calcSchema, strict: false, timeoutMs: 20_000,
       execute: (args, ctx) => runCalculation(ctx.state, args), observe: (_a, v) => v }),
     tool({ name: "declare_model_insufficient", description: "State that no model can be computed from the registered facts and say which inputs are missing.", parameters: z.object({ reason: z.string().min(20).max(600), missingFactIds: z.array(z.string().max(60)).min(1).max(10) }),
       execute: ({ reason, missingFactIds }, ctx) => { ctx.state.insufficient = reason; ctx.state.modelGaps = [{ code: "missing_inputs", message: reason, evidenceIds: [], field: missingFactIds.join(",") || undefined }]; ctx.state.calc = null; return "Recorded as insufficient; submit valuationSafety as null with the gap, then finish_assumptions."; }, observe: (_a, v) => v }),

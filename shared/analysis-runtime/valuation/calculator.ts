@@ -1,4 +1,4 @@
-import { DIMENSION_WEIGHTS, EXTENDED_SCENARIO_KEYS, SCENARIO_KEYS, VALUATION_DIMENSIONS, VALUATION_METHODS, type Confidence, type ConsensusNote, type ConsensusTarget, type DiscountRate, type EquityBridge, type FactorDistribution, type FairValueBasis, type FairValueRange, type NormalCaseInput, type NormalCaseResult, type ImpliedPath, type InputCheck, type InputVerification, type Judgement, type ManagementComparison, type ManagementScenario, type ManagementTargetSet, type MethodValuation, type MethodWeightJudgement, type MethodWeights, type ModelDrivers, type MultipleQuartiles, type PeerMultiples, type PeerSelectionBasis, type RevenueAnchor, type SanityGate, type ScenarioAssumptions, type ScenarioEntry, type ScenarioKey, type ScenarioProbabilities, type ScenarioResult, type ScenarioValuation, type Sensitivity, type ShareCount, type Triangulation, type ValuationDimension, type ValuationMethodKey, type ValuationModelResult, type ValuationModelType, type ValuationRange, type ValuationVerdict, type YearRow } from "../../analysis-contract/valuation.ts";
+import { DIMENSION_WEIGHTS, EXTENDED_SCENARIO_KEYS, SCENARIO_KEYS, VALUATION_DIMENSIONS, VALUATION_METHODS, type CapitalPlan, type DriverPath, type Confidence, type ConsensusNote, type ConsensusTarget, type DiscountRate, type EquityBridge, type FactorDistribution, type FairValueBasis, type FairValueRange, type NormalCaseInput, type NormalCaseResult, type ImpliedPath, type InputCheck, type InputVerification, type Judgement, type ManagementComparison, type ManagementScenario, type ManagementTargetSet, type MethodValuation, type MethodWeightJudgement, type MethodWeights, type ModelDrivers, type MultipleQuartiles, type PeerMultiples, type PeerSelectionBasis, type RevenueAnchor, type SanityGate, type ScenarioAssumptions, type ScenarioEntry, type ScenarioKey, type ScenarioProbabilities, type ScenarioResult, type ScenarioValuation, type Sensitivity, type ShareCount, type Triangulation, type ValuationDimension, type ValuationMethodKey, type ValuationModelResult, type ValuationModelType, type ValuationRange, type ValuationVerdict, type YearRow } from "../../analysis-contract/valuation.ts";
 import { managementComparisonRows, managementDrivers, managementFactsOf, managementGate, managementRequest } from "./management.ts";
 import { weightedQuantile } from "./peers.ts";
 
@@ -7,7 +7,7 @@ import { weightedQuantile } from "./peers.ts";
  * §2–§6). Every amount a report shows comes from here; the model supplies inputs and reasons. Nothing is rounded until it
  * is displayed. Invalid inputs are rejected with a `ValuationCalcError` rather than producing NaN, Infinity or a made-up figure.
  */
-export const CALCULATOR_VERSION = "valuation.calc.v5";
+export const CALCULATOR_VERSION = "valuation.calc.v6";
 /** The default horizon; an fcff path may run `MIN_FORECAST_YEARS`–`MAX_FORECAST_YEARS` years (docs/valuation-v2-SPEC.md §1). */
 export const FORECAST_YEARS = 5;
 export const MIN_FORECAST_YEARS = 5, MAX_FORECAST_YEARS = 10;
@@ -58,6 +58,15 @@ export function horizonOf(path: { revenueGrowth: unknown }): number {
   const n = Array.isArray(path.revenueGrowth) ? path.revenueGrowth.length : 0;
   if (n < MIN_FORECAST_YEARS || n > MAX_FORECAST_YEARS) throw new ValuationCalcError("invalid_input", `the driver path must list ${MIN_FORECAST_YEARS} to ${MAX_FORECAST_YEARS} yearly values`);
   return n;
+}
+
+/** Validate one explicit plan at the calculator boundary; it replaces both implicit reinvestment inputs. */
+function capitalPlanOf(path: DriverPath, years: number): CapitalPlan | null {
+  if (path.capitalPlan == null) return null;
+  if (path.salesToCapital !== undefined || path.buildCapex !== undefined) throw new ValuationCalcError("invalid_input", "capitalPlan is mutually exclusive with salesToCapital and buildCapex");
+  const plan = { capex: requireYears(path.capitalPlan.capex, "capitalPlan.capex", years), depreciation: requireYears(path.capitalPlan.depreciation, "capitalPlan.depreciation", years), workingCapitalChange: requireYears(path.capitalPlan.workingCapitalChange, "capitalPlan.workingCapitalChange", years) };
+  if (plan.capex.some(v => v < 0) || plan.depreciation.some(v => v < 0)) throw new ValuationCalcError("invalid_input", "capitalPlan capex and depreciation must be non-negative");
+  return plan;
 }
 
 /** What the calculator may compare the model against; every piece optional, none of it changes a scenario's value. */
@@ -117,6 +126,7 @@ export function discountPath(cashFlows: number[], terminalValue: number, r: numb
     const discountFactor = 1 / requireFinite((1 + r) ** (i + 1 - shift), "discount divisor");
     const row: YearRow = { year: i + 1, revenue: rows[i]?.revenue ?? null, nopat: rows[i]?.nopat ?? null, reinvestment: rows[i]?.reinvestment ?? null, cashFlow, discountFactor, presentValue: cashFlow * discountFactor };
     if (rows[i]?.buildCapex != null) row.buildCapex = rows[i]!.buildCapex;
+    for (const key of ["capex", "depreciation", "workingCapitalChange"] as const) if (rows[i]?.[key] != null) row[key] = rows[i]![key];
     return row;
   });
   const pvExplicit = yearly.reduce((sum, row) => sum + row.presentValue, 0);
@@ -161,7 +171,9 @@ function evaluateScenario(drivers: ModelDrivers, r: number, shares: number, brid
       const path = drivers.path;
       const years = horizonOf(path);
       const growth = requireYears(path.revenueGrowth, "revenueGrowth", years), margin = requireYears(path.operatingMargin, "operatingMargin", years);
-      const tax = requireYears(path.taxRate, "taxRate", years), s2c = requireYears(path.salesToCapital, "salesToCapital", years);
+      const tax = requireYears(path.taxRate, "taxRate", years);
+      const capitalPlan = capitalPlanOf(path, years);
+      const s2c = capitalPlan ? null : requireYears(path.salesToCapital, "salesToCapital", years);
       const normalization = path.normalization ? requireYears(path.normalization, "normalization", years) : new Array<number>(years).fill(0);
       const buildCapex = path.buildCapex ? requireYears(path.buildCapex, "buildCapex", years) : null;
       if (buildCapex?.some(v => v < 0)) throw new ValuationCalcError("invalid_input", "buildCapex cannot be negative");
@@ -174,18 +186,22 @@ function evaluateScenario(drivers: ModelDrivers, r: number, shares: number, brid
       for (let i = 0; i < years; i++) {
         const previous = revenue;
         revenue = previous * (1 + growth[i]!);
-        if (s2c[i]! <= 0) throw new ValuationCalcError("invalid_input", "salesToCapital must be positive");
         const nopat = revenue * margin[i]! * (1 - tax[i]!);
-        let reinvestment = (revenue - previous) / s2c[i]!;
-        // Shrinking revenue releases capital, but never more than a year's worth of depreciation can plausibly return.
-        depreciationCap = Math.abs(nopat) * 0.25;
-        if (reinvestment < 0 && -reinvestment > depreciationCap) { reinvestment = -depreciationCap; notes.push(`year ${i + 1}: negative reinvestment capped`); }
-        // Capacity built ahead of revenue is reinvestment too; it ends when the build does, so it never reaches the terminal.
-        const build = buildCapex?.[i] ?? 0;
-        reinvestment += build;
+        let reinvestment: number;
+        if (capitalPlan) {
+          reinvestment = capitalPlan.capex[i]! - capitalPlan.depreciation[i]! + capitalPlan.workingCapitalChange[i]!;
+        } else {
+          if (s2c![i]! <= 0) throw new ValuationCalcError("invalid_input", "salesToCapital must be positive");
+          reinvestment = (revenue - previous) / s2c![i]!;
+          // The legacy estimate caps capital released by shrinking revenue; explicit working-capital releases use their stated amounts.
+          depreciationCap = Math.abs(nopat) * 0.25;
+          if (reinvestment < 0 && -reinvestment > depreciationCap) { reinvestment = -depreciationCap; notes.push(`year ${i + 1}: negative reinvestment capped`); }
+          reinvestment += buildCapex?.[i] ?? 0;
+        }
         cashFlows.push(nopat - reinvestment + normalization[i]!);
-        rows.push({ revenue, nopat, reinvestment, ...(buildCapex ? { buildCapex: build } : {}) });
+        rows.push({ revenue, nopat, reinvestment, ...(capitalPlan ? { capex: capitalPlan.capex[i]!, depreciation: capitalPlan.depreciation[i]!, workingCapitalChange: capitalPlan.workingCapitalChange[i]! } : buildCapex ? { buildCapex: buildCapex[i]! } : {}) });
       }
+      if (capitalPlan) notes.push("Explicit net reinvestment = capex − depreciation + change in working capital; sales-to-capital and build capex are not applied.");
       if (buildCapex) notes.push(`build capex ${buildCapex.reduce((a, b) => a + b, 0)} over ${years} years, outside the sales-to-capital reinvestment`);
       const last = rows[years - 1]!;
       let terminalNopat = last.nopat!;
@@ -388,6 +404,7 @@ function withFairValueRange(request: CalcRequest, model: ValuationModelResult): 
   const evaluate = (name: "lower" | "upper", input: NormalCaseInput): NormalCaseResult => {
     if (input.drivers.modelType !== request.modelType) throw new ValuationCalcError("invalid_input", `fair value ${name} must use the base model type`);
     const base = request.scenarios.base.drivers;
+    if (input.drivers.modelType === "fcff" && base.modelType === "fcff" && !!input.drivers.path.capitalPlan !== !!base.path.capitalPlan) throw new ValuationCalcError("invalid_input", `fair value ${name} must use the base investment mode`);
     const horizon = (drivers: ModelDrivers) => drivers.modelType === "fcff" ? horizonOf(drivers.path) : "horizonYears" in drivers ? drivers.horizonYears : FORECAST_YEARS;
     if (horizon(input.drivers) !== horizon(base)) throw new ValuationCalcError("invalid_input", `fair value ${name} must use the base forecast horizon`);
     const scenario: ScenarioAssumptions = { ...input, probability: null };
@@ -486,7 +503,9 @@ export function forwardFundamentals(drivers: Extract<ModelDrivers, { modelType: 
   for (let i = 0; i < n; i++) revenue *= 1 + drivers.path.revenueGrowth[i]!;
   const ebit = revenue * drivers.path.operatingMargin[n - 1]!;
   const notes: string[] = [];
-  const da = input.da0 != null && drivers.revenue0 > 0 ? input.da0 * revenue / drivers.revenue0 : null;
+  const capitalPlan = capitalPlanOf(drivers.path, years);
+  const da = capitalPlan ? capitalPlan.depreciation[n - 1]! : input.da0 != null && drivers.revenue0 > 0 ? input.da0 * revenue / drivers.revenue0 : null;
+  if (capitalPlan) notes.push(`year ${n} depreciation ${da} from the explicit capital plan`);
   if (da == null) notes.push("no trailing D&A: EBITDA not projected");
   const interest = input.interestExpense0;
   if (interest != null) requireFinite(interest, "interest expense");
@@ -697,6 +716,7 @@ function checkScenarioConsistency(scenarios: Record<ScenarioKey, ScenarioAssumpt
   const avg = (list: number[]) => list.reduce((a, b) => a + b, 0) / list.length;
   const base = scenarios.base.drivers, bull = scenarios.bull.drivers;
   if (base.modelType !== "fcff" || bull.modelType !== "fcff") return;
+  if (base.path.capitalPlan || bull.path.capitalPlan) return;
   const baseReinvest = avg(base.path.revenueGrowth) / avg(base.path.salesToCapital), bullReinvest = avg(bull.path.revenueGrowth) / avg(bull.path.salesToCapital);
   if (avg(bull.path.revenueGrowth) > avg(base.path.revenueGrowth) + 1e-9 && bullReinvest + 1e-9 < baseReinvest) {
     throw new ValuationCalcError("scenario_order", "reinvestment_inconsistent: the bull case grows faster than the base but reinvests less of its revenue growth");
@@ -727,10 +747,11 @@ export function sensitivitiesOf(request: CalcRequest, r: number, shares: number)
       moves.push(
         { factor: "revenueGrowth", step: "+1pp", apply: d => d.modelType === "fcff" ? { ...d, path: { ...d.path, revenueGrowth: addAll(d.path.revenueGrowth, 0.01) } } : d },
         { factor: "operatingMargin", step: "+1pp", apply: d => d.modelType === "fcff" ? { ...d, path: { ...d.path, operatingMargin: addAll(d.path.operatingMargin, 0.01) } } : d },
-        { factor: "salesToCapital", step: "+10%", apply: d => d.modelType === "fcff" ? { ...d, path: { ...d.path, salesToCapital: scaleAll(d.path.salesToCapital, 1.1) } } : d },
         { factor: "terminalGrowth", step: "+0.5pp", apply: d => d.modelType === "fcff" ? { ...d, terminalGrowth: d.terminalGrowth + 0.005 } : d },
         { factor: "terminalRoic", step: "+1pp", apply: d => d.modelType === "fcff" ? { ...d, terminalRoic: d.terminalRoic + 0.01 } : d },
       );
+      if (base.path.capitalPlan) moves.push({ factor: "capex", step: "+10%", apply: d => d.modelType === "fcff" && d.path.capitalPlan ? { ...d, path: { ...d.path, capitalPlan: { ...d.path.capitalPlan, capex: scaleAll(d.path.capitalPlan.capex, 1.1) } } } : d });
+      else moves.push({ factor: "salesToCapital", step: "+10%", apply: d => d.modelType === "fcff" && !d.path.capitalPlan ? { ...d, path: { ...d.path, salesToCapital: scaleAll(d.path.salesToCapital, 1.1) } } : d });
       break;
     case "fcfe": case "affo_dcf":
       moves.push(

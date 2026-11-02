@@ -66,7 +66,12 @@ export type ValuationFact = {
  * every array the same length. `buildCapex` is capital spent ahead of revenue (capacity under construction), in currency
  * units per year: reinvestment the sales-to-capital term does not see, so a build phase is not read as a steady state.
  */
-export type DriverPath = { revenueGrowth: number[]; operatingMargin: number[]; taxRate: number[]; salesToCapital: number[]; normalization?: number[]; buildCapex?: number[] };
+export type CapitalPlan = { capex: number[]; depreciation: number[]; workingCapitalChange: number[] };
+/** Explicit gross capital spending and cash tied up in working capital replace the revenue-growth reinvestment estimate. */
+export type DriverPath = { revenueGrowth: number[]; operatingMargin: number[]; taxRate: number[]; normalization?: number[] } & (
+  | { salesToCapital: number[]; buildCapex?: number[]; capitalPlan?: null }
+  | { capitalPlan: CapitalPlan; salesToCapital?: never; buildCapex?: never }
+);
 /** A judgement the model made and the registered evidence it rests on. */
 export type Judgement = { rationale: string; evidenceIds: string[] };
 /** Why a scenario's revenue, margin and capex paths run as they do; the figures are in `drivers`, the reasons here. */
@@ -118,7 +123,7 @@ export type DiscountRate = {
   sources?: DiscountRateSources;
 };
 
-export type YearRow = { year: number; revenue: number | null; nopat: number | null; reinvestment: number | null; cashFlow: number; discountFactor: number; presentValue: number; buildCapex?: number | null };
+export type YearRow = { year: number; revenue: number | null; nopat: number | null; reinvestment: number | null; cashFlow: number; discountFactor: number; presentValue: number; buildCapex?: number | null; capex?: number; depreciation?: number; workingCapitalChange?: number };
 export type ScenarioResult = {
   perShare: number;
   equityValue: number;

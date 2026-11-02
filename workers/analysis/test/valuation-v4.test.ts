@@ -313,7 +313,7 @@ test("the version bump reassesses only the marked company: an ORCL report under 
   assert.equal(methodChangeHeldBack(true, published, current, "ORCL"), null);
   for (const other of ["GOOGL", "MSFT", "NVDA"]) {
     const held = methodChangeHeldBack(false, published, current, other);
-    assert.ok(held && held.reason.includes("valuation.v4/valuation.calc.v2 → valuation.v6/valuation.calc.v5") && held.reason.includes(other));
+    assert.ok(held && held.reason.includes(`valuation.v4/valuation.calc.v2 → ${VALUATION_VERSION}/${CALCULATOR_VERSION}`) && held.reason.includes(other));
   }
   assert.ok(methodChangeHeldBack(false, { ...published, methodVersion: "valuation.v4", calculatorVersion: "valuation.calc.v3" }, current, "GOOGL"), "a calc.v3 report is held too");
   assert.deepEqual(EXTENDED_SCENARIO_KEYS, ["bear", "base", "management", "bull"]);

@@ -11,7 +11,12 @@ const dimension = z.object({ key: z.enum(VALUATION_DIMENSIONS), score: nullableF
 const fact = z.object({ id: z.string(), label: z.string(), value: finite, unit: z.string(), currency: z.string().nullable(), periodType: z.enum(PERIOD_TYPES), periodStart: z.string().nullable(), periodEnd: z.string().nullable(), basis: z.enum(FACT_BASES), formula: z.string().nullable(), sourceRefs: strings, rationale: z.string().nullable() });
 const evidence = z.object({ evidenceId: z.string(), kind: z.enum(EVIDENCE_KINDS), title: z.string(), url: z.string().nullable(), documentId: z.string().nullable(), passageId: z.string().nullable(), form: z.string().nullable(), publishedAt: z.string().nullable(), fetchedAt: z.string().nullable(), excerpt: z.string(), contentSha256: z.string(), path: z.string().nullable() });
 const numbers = z.array(finite);
-const driverPath = z.object({ revenueGrowth: numbers, operatingMargin: numbers, taxRate: numbers, salesToCapital: numbers, normalization: numbers.optional(), buildCapex: numbers.optional() });
+const commonPath = { revenueGrowth: numbers, operatingMargin: numbers, taxRate: numbers, normalization: numbers.optional() };
+const capitalPlan = z.object({ capex: z.array(finite.nonnegative()), depreciation: z.array(finite.nonnegative()), workingCapitalChange: numbers });
+const driverPath = z.union([
+  z.object({ ...commonPath, salesToCapital: numbers, buildCapex: numbers.optional(), capitalPlan: z.null().optional() }),
+  z.object({ ...commonPath, capitalPlan, salesToCapital: z.never().optional(), buildCapex: z.never().optional() }),
+]);
 const drivers = z.discriminatedUnion("modelType", [
   z.object({ modelType: z.literal("fcff"), revenue0: finite, path: driverPath, terminalGrowth: finite, terminalRoic: finite, terminalOperatingMargin: finite.optional() }),
   z.object({ modelType: z.literal("fcfe"), cfo: finite, capex: finite, sbc: finite, normalization: finite, netBorrowing: finite, growth: numbers, terminalGrowth: finite }),
@@ -24,7 +29,7 @@ const drivers = z.discriminatedUnion("modelType", [
   z.object({ modelType: z.literal("affo_multiple"), affoLow: finite, affoHigh: finite, weight: finite, recurringCostPerShare: finite, multiple: finite, horizonYears: finite }),
   z.object({ modelType: z.literal("affo_dcf"), annualAffo: finite, recurringCost: finite, growth: numbers, terminalGrowth: finite }),
 ]) satisfies z.ZodType<ModelDrivers>;
-const yearRow = z.object({ year: z.number(), revenue: nullableFinite, nopat: nullableFinite, reinvestment: nullableFinite, cashFlow: finite, discountFactor: finite, presentValue: finite, buildCapex: nullableFinite.optional() });
+const yearRow = z.object({ year: z.number(), revenue: nullableFinite, nopat: nullableFinite, reinvestment: nullableFinite, cashFlow: finite, discountFactor: finite, presentValue: finite, buildCapex: nullableFinite.optional(), capex: finite.nonnegative().optional(), depreciation: finite.nonnegative().optional(), workingCapitalChange: finite.optional() });
 // valuation.calc.v2 additions, all optional so a v1 payload still reads (docs/valuation-v2-SPEC.md).
 const gateStatus = z.enum(GATE_STATUSES);
 const quartiles = z.object({ p25: finite, median: finite, p75: finite, count: z.number() });
