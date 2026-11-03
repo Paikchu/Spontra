@@ -8,7 +8,7 @@ import type { VerifiedFinding } from "../../../shared/analysis-runtime/findings.
 import { setLocale } from "../../../packages/web/src/i18n/core.ts";
 import { readEventsPublication } from "../../../shared/analysis-runtime/events.ts";
 import { railEntries } from "../../../shared/analysis-runtime/rail.ts";
-import { RAIL_TABS, railLayout, readRailTabs, releasedPeriod, rowLeaves, streamBlocks, streamRows, withRailTabs, type EventFilter, type RailTab } from "../src/event-noise.ts";
+import { RAIL_TABS, railLayout, readRailTabs, releasedPeriod, rowLeaves, streamBlocks, withRailTabs, type EventFilter, type RailTab } from "../src/event-noise.ts";
 import { RailStream } from "../src/RailStream.tsx";
 
 // The rail reads the clock, so the CRWV-like fixture is dated from today.
@@ -67,11 +67,10 @@ const IN_WINDOW = WINDOW.map(e => e.id);
 const KEY_TRADES = ["intrator-1", "magnetar-1", "agarwal-1", "intrator-2", "intrator-3"];
 
 /** The ids the list shows, folded rows expanded to their filings. */
-const listed = (filter: EventFilter, findings: VerifiedFinding[] = [], periodEnd: string | null = null) =>
-  streamRows(railLayout(ALL, filter), findings, periodEnd, filter).flatMap(r => r.kind === "noise" ? rowLeaves(r.row).map(item => item.id) : [r.id]);
+const listed = (filter: EventFilter) => railLayout(ALL, filter).rows.flatMap(r => rowLeaves(r).map(item => item.id));
 
-const render = (filter: EventFilter, focus: string | null = null, findings: VerifiedFinding[] = [], periodEnd: string | null = null) => renderToStaticMarkup(createElement(RailStream, {
-  rail: { recent: ALL, earlier: [], quiet: 0, since: ago(90) }, findings, findingsPeriodEnd: periodEnd, ticker: "CRWV", updates: 0, focus,
+const render = (filter: EventFilter, focus: string | null = null, findings: VerifiedFinding[] = []) => renderToStaticMarkup(createElement(RailStream, {
+  rail: { recent: ALL, earlier: [], quiet: 0, since: ago(90) }, findings, findingsPeriodEnd: PERIOD_END, ticker: "CRWV", updates: 0, focus,
   onFocusItem: () => {}, onFocusFinding: () => {}, filter,
 }));
 
@@ -79,7 +78,7 @@ test("every Form 4 of any age lists as its own row at its date, the older ones b
   assert.deepEqual(listed("key"), [...KEY_TRADES, "earnings-8k", ...OLDER_IDS]);
   assert.deepEqual(listed("all"), ["intrator-1", "magnetar-1", "agarwal-1", "intrator-2", "mcveety-exercise", "intrator-3", "earnings-8k", ...OLDER_IDS]);
   assert.deepEqual(listed("insiders"), ["intrator-1", "magnetar-1", "agarwal-1", "intrator-2", "mcveety-exercise", "intrator-3", ...OLDER_IDS]);
-  for (const filter of ["key", "all", "insiders"] as const) assert.ok(streamRows(railLayout(ALL, filter), [], null, filter).every(r => r.kind === "noise" && r.row.kind === "item"), filter);
+  for (const filter of ["key", "all", "insiders"] as const) assert.ok(railLayout(ALL, filter).rows.every(r => r.kind === "item"), filter);
 });
 
 test("a Form 4 row is one summary that opens the stage; the rail holds no person's history", () => {
@@ -101,103 +100,75 @@ test("a Form 4 row is one summary that opens the stage; the rail holds no person
 
 test("one old filing lists at its own date, below the newer rows", () => {
   const items = rail([OLD, EARNINGS, event({ id: "deal", form: "8-K", class: "deal", filedAt: ago(5), items: ["1.01"] })]);
-  assert.deepEqual(streamRows(railLayout(items, "all"), [], null, "all").map(r => r.id), ["deal", "earnings-8k", "intrator-old"]);
+  assert.deepEqual(railLayout(items, "all").rows.map(r => r.id), ["deal", "earnings-8k", "intrator-old"]);
 });
 
-test("the earnings 8-K lists at its date and shares one quarter frame with its findings, findings first, with severity icons", () => {
-  for (const filter of ["key", "all"] as const) {
-    const trades = filter === "key" ? KEY_TRADES : ["intrator-1", "magnetar-1", "agarwal-1", "intrator-2", "mcveety-exercise", "intrator-3"];
-    assert.deepEqual(listed(filter, FINDINGS, PERIOD_END), [...trades, "earnings-8k", "f-backlog", "f-capex", ...OLDER_IDS], filter);
-  }
+test("the findings stand in their own section above the tabs, undated, the first three shown and the rest behind a button", () => {
   setLocale("en");
-  const html = render("key", null, FINDINGS, PERIOD_END);
+  const many = [...FINDINGS, finding("f-3", 1, "Third finding"), finding("f-4", 1, "Fourth finding")];
+  const html = render("key", null, many);
   const at = (text: string) => html.indexOf(text);
-  assert.ok(at("Agarwal Nitin") < at('class="quarter-frame"') && at('class="quarter-frame"') < at("Backlog concentration") && at("Backlog concentration") < at("Capex outruns cash") && at("Capex outruns cash") < at("Q2 results"));
-  assert.equal(html.split('class="quarter-frame"').length - 1, 1);
+  assert.ok(at('class="guidance"') < at("Backlog concentration") && at("Capex outruns cash") < at('class="stream-tabs"') && at('class="stream-tabs"') < at("Q2 results"));
+  assert.ok(html.includes("Third finding") && !html.includes("Fourth finding") && html.includes("1 more"));
   assert.ok(html.includes('class="severity-icon" data-severity="3" viewBox="0 0 16 16" role="img" aria-label="Severity: Major (highest of 3)"'));
-  assert.ok(html.includes('data-severity="2"'));
-});
-
-test("findings of another quarter are never placed under the earnings filing, with or without insider rows", () => {
-  const earlier = ago(80 + 42 + 182);
-  assert.ok(!listed("key", FINDINGS, earlier).some(id => id.startsWith("f-")));
-  assert.deepEqual(listed("key", FINDINGS, earlier), [...KEY_TRADES, "earnings-8k", ...OLDER_IDS]);
-  assert.ok(!render("key", null, FINDINGS, earlier).includes("severity-icon"));
-  // No insider filings at all: the next row after the earnings filing is still not a finding.
-  const bare = rail([EARNINGS, event({ id: "deal", form: "8-K", class: "deal", filedAt: ago(5), items: ["1.01"] })]);
-  const ids = streamRows(railLayout(bare, "all"), FINDINGS, earlier, "all").map(r => r.id);
-  assert.deepEqual(ids, ["deal", "earnings-8k"]);
-  // A rail with no filings at all still lists the findings.
-  assert.deepEqual(streamRows(railLayout([], "key"), FINDINGS, earlier, "key").map(r => r.id), ["f-backlog", "f-capex"]);
+  // No date: the meta line is the kind and the view only.
+  const meta = html.slice(at("Backlog concentration")).match(/class="stream-meta">([^<]*)</)?.[1] ?? "";
+  assert.ok(meta && !/\d{2}\.\d{2}/.test(meta), meta);
+  // A finding in focus past the first three opens the rest.
+  assert.ok(render("key", "f-4", many).includes("Fourth finding"));
+  // Findings of any quarter show, the earnings filing listed or not.
+  assert.ok(renderToStaticMarkup(createElement(RailStream, { rail: { recent: [], earlier: [], quiet: 0, since: ago(90) }, findings: FINDINGS, findingsPeriodEnd: ago(400), ticker: "CRWV", updates: 0, focus: null, onFocusItem: () => {}, onFocusFinding: () => {}, filter: "key" })).includes("Backlog concentration"));
+  assert.ok(!render("key").includes('class="guidance"'));
 });
 
 // The quarter a release reports, on fixed dates: CRWV's 8-K of 2026-08-11 reports the quarter that ended 2026-06-30.
 const FIXED = new Date("2026-11-01T00:00:00Z");
 const release = (id: string, day: string) => event({ id, form: "8-K", class: "earnings", filedAt: day, items: ["2.02", "9.01"], title: "Results of Operations" });
-const quarterRows = (events: CompanyEvent[], periodEnd: string, filter: EventFilter = "key") =>
-  streamRows(railLayout(rail(events), filter), FINDINGS, periodEnd, filter).map(r => r.id);
 
-test("an earnings 8-K carries the findings of the quarter it reports, matched by quarter not by filing date", () => {
+test("an earnings 8-K reports the quarter that ended before it, matched by quarter not by filing date", () => {
   const q2 = release("crwv-0811", "2026-08-11");
-  const trades = [form4("t1", "2026-10-20", INTRATOR, 1_000_000), form4("t2", "2026-07-30", INTRATOR, 1_000_000)];
   assert.equal(releasedPeriod(rail([q2])[0]!, rail([q2]), "2026-06-30"), "2026-06-30");
   // The anchor may be any quarter of the grid: a year back or ahead still dates the 08.11 release to 06.30.
   assert.equal(releasedPeriod(rail([q2])[0]!, rail([q2]), "2025-06-30"), "2026-06-30");
   assert.equal(releasedPeriod(rail([q2])[0]!, rail([q2]), "2026-12-31"), "2026-06-30");
-  assert.deepEqual(quarterRows([q2, ...trades], "2026-06-30"), ["t1", "crwv-0811", "f-backlog", "f-capex", "t2"]);
-  assert.deepEqual(quarterRows([q2], "2026-06-30"), ["crwv-0811", "f-backlog", "f-capex"]);
-  // A 52/53-week quarter ending a couple of days off the month's end is the same quarter.
-  assert.deepEqual(quarterRows([q2], "2026-06-28"), ["crwv-0811", "f-backlog", "f-capex"]);
-  // Findings of the quarter before or after: nothing extra under the release, insider rows or none.
-  for (const periodEnd of ["2026-03-31", "2026-09-30"]) {
-    assert.deepEqual(quarterRows([q2, ...trades], periodEnd), ["t1", "crwv-0811", "t2"], periodEnd);
-    assert.deepEqual(quarterRows([q2], periodEnd), ["crwv-0811"], periodEnd);
-  }
 });
 
 test("a release filed within 100 days of a quarter's end but after the next one ended reports the later quarter", () => {
   const q3 = release("q3-release", "2026-10-08");
   assert.equal(releasedPeriod(rail([q3])[0]!, rail([q3]), "2026-06-30"), "2026-09-30");
-  assert.deepEqual(quarterRows([q3], "2026-06-30"), ["q3-release"]);
-  assert.deepEqual(quarterRows([q3], "2026-09-30"), ["q3-release", "f-backlog", "f-capex"]);
 });
 
-test("findings follow their own quarter's release, not the later one above it", () => {
-  const q1 = release("q1-release", "2026-05-14"), q2 = release("q2-release", "2026-08-11");
-  // With Q1's release listed, the 08.11 one reports Q2; Q1's findings sit under the 05.14 release in All.
-  assert.deepEqual(quarterRows([q1, q2], "2026-03-31", "all"), ["q2-release", "q1-release", "f-backlog", "f-capex"]);
-  assert.deepEqual(quarterRows([q1, q2], "2026-06-30", "all"), ["q2-release", "f-backlog", "f-capex", "q1-release"]);
-  // A second results release for a quarter that already had one is not that quarter's release.
+test("a second results release for a quarter is not its release, and a listed report's period counts as a quarter end", () => {
+  const q2 = release("q2-release", "2026-08-11");
   const update = release("q2-update", "2026-09-02");
   assert.equal(releasedPeriod(rail([update, q2])[0]!, rail([update, q2]), "2026-06-30"), null);
-  // A listed report's period counts as a quarter end too.
   const report = { accessionNumber: "q2-10q", form: "10-Q", date: "2026-08-12", periodEnd: "2026-06-30", headline: "Q2", sources: [] } as unknown as PublicFilingDigest;
   const items = railEntries({ filings: [report], nextCursor: null } as unknown as PublicFilingDigestPage, readEventsPublication({ schemaVersion: "events.v1", ticker: "CRWV", checkedAt: FIXED.toISOString(), pendingInsider: 0, events: [q2] }, "CRWV"));
   assert.equal(releasedPeriod(items.find(item => item.id === "q2-release")!, items, null), "2026-06-30");
+  // The release and the 10-Q of that quarter share one frame.
+  assert.deepEqual(streamBlocks(railLayout(items, "all").rows, new Set(RAIL_TABS), items).map(b => b.kind === "quarter" ? b.rows.map(r => r.id) : b.row.id), [["q2-10q", "q2-release"]]);
 });
 
 /** The ids each block shows under a set of tabs: a frame as its member ids in a list, a row as its id. */
-const blocks = (tabs: RailTab[], findings: VerifiedFinding[] = FINDINGS, periodEnd: string | null = PERIOD_END) =>
-  streamBlocks(streamRows(railLayout(ALL, "key"), findings, periodEnd, "key"), new Set(tabs), ALL, periodEnd)
-    .map(b => b.kind === "quarter" ? b.rows.map(r => r.id) : b.row.id);
+const blocks = (tabs: RailTab[], items = ALL) =>
+  streamBlocks(railLayout(items, "key").rows, new Set(tabs), items, PERIOD_END).map(b => b.kind === "quarter" ? b.rows.map(r => r.id) : b.row.id);
 
-test("the tabs pick findings, reports and management in any combination, and a quarter's rows share one frame", () => {
-  assert.deepEqual(blocks([...RAIL_TABS]), [...KEY_TRADES, ["f-backlog", "f-capex", "earnings-8k"], ...OLDER_IDS]);
+test("the tabs pick reports and management, either or both, and a quarter's filings share one frame", () => {
+  assert.deepEqual(blocks([...RAIL_TABS]), [...KEY_TRADES, ["earnings-8k"], ...OLDER_IDS]);
   assert.deepEqual(blocks(["reports"]), [["earnings-8k"]]);
-  assert.deepEqual(blocks(["findings"]), [["f-backlog", "f-capex"]]);
   assert.deepEqual(blocks(["management"]), [...KEY_TRADES, ...OLDER_IDS]);
   // An officer change is management, not a report.
   const change = event({ id: "exec-502", form: "8-K", class: "executive", filedAt: ago(40), items: ["5.02"] });
   const items = rail([...WINDOW, EARNINGS, change]);
-  const ids = (tabs: RailTab[]) => streamBlocks(streamRows(railLayout(items, "key"), [], null, "key"), new Set(tabs), items, null).flatMap(b => b.kind === "quarter" ? b.rows.map(r => r.id) : [b.row.id]);
-  assert.ok(ids(["management"]).includes("exec-502"));
-  assert.ok(!ids(["reports"]).includes("exec-502"));
+  assert.ok(blocks(["management"], items).includes("exec-502"));
+  assert.ok(!blocks(["reports"], items).flat().includes("exec-502"));
 });
 
-test("the tabs read from and write to ?tabs=, every tab on being the default left out of the address", () => {
+test("the tabs read from and write to ?tabs=, both on being the default left out of the address", () => {
   assert.deepEqual([...readRailTabs("")], [...RAIL_TABS]);
   assert.deepEqual([...readRailTabs("?tabs=nope")], [...RAIL_TABS]);
-  assert.deepEqual([...readRailTabs("?tabs=management,findings")], ["management", "findings"]);
+  // A link from when findings were a tab still reads.
+  assert.deepEqual([...readRailTabs("?tabs=management,findings")], ["management"]);
   assert.equal(withRailTabs("?view=cash", new Set(RAIL_TABS)), "?view=cash");
-  assert.equal(withRailTabs("?view=cash&tabs=reports", new Set<RailTab>(["management", "reports"])), "?view=cash&tabs=reports%2Cmanagement");
+  assert.equal(withRailTabs("?view=cash&tabs=reports", new Set<RailTab>(["management"])), "?view=cash&tabs=management");
 });
