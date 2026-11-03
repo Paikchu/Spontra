@@ -3,7 +3,7 @@ import { completeProductName, harnessSections, SECTION_LIMITS } from "../../../.
 import { compactName, issuerNames } from "../../../../shared/analysis-runtime/business-tree.ts";
 import type { WebSearchService } from "../web-search/service.ts";
 import type { SearchHit } from "../web-search/types.ts";
-import { isSecUrl, SEC_DOMAIN } from "../../../../shared/analysis-runtime/sec-sources.ts";
+import { isSecUrl } from "../../../../shared/analysis-runtime/sec-sources.ts";
 
 export type ExplainerNode = { nodeId: string; name: string; parentId: string | null; hint: string };
 /** A filing the published flow itself was read from. */
@@ -130,18 +130,9 @@ async function collectFilings(input: { companyName: string; filings?: ExplainerF
     }
     if (documents.length) return documents;
   }
-  // Without the library no SEC text is read: EDGAR documents never come through the web (docs/sec-archive.md).
-  const documents: EvidenceDocument[] = [];
-  // Search ranking is not recency: choose the newest annual report by its accession year, and only
-  // one filed within about the last two years.
-  const year = Number(input.now.slice(0, 4));
-  try {
-    const result = await input.search.search({ query: `${input.companyName} form 10-K annual report fiscal ${year} ${year - 1}`, maxResults: 10, depth: "advanced", includeDomains: [SEC_DOMAIN] }, scope);
-    const annual = result.data.results.filter(h => isSecUrl(h.url) && /10-?k/i.test(`${h.title} ${h.url}`) && (accessionYear(h.url) ?? 0) >= year - 1)
-      .sort((a, b) => (accessionYear(b.url) ?? 0) - (accessionYear(a.url) ?? 0))[0];
-    if (annual && !documents.some(d => d.url === annual.url)) documents.push(documentFor(annual, null));
-  } catch { /* The flow's own filing still anchors the explanation. */ }
-  return documents;
+  // Without the library no SEC material at all: EDGAR documents never come through the web, not even as a search
+  // provider's snippet (docs/sec-archive.md). The flow's own filing still anchors the explanation.
+  return [];
 }
 
 /** EDGAR accession numbers embed the filing year: /Archives/edgar/data/<cik>/<10 digits><yy><6 digits>/. */
@@ -161,13 +152,14 @@ async function collectGroup(input: { companyName: string; search: ExplainerSearc
   for (const query of queries) {
     try {
       const result = await input.search.search({ query: query.slice(0, 300), maxResults: 5, depth: "advanced", excludeDomains: EXCLUDED }, scope);
-      for (const hit of result.data.results) if (isHttps(hit.url) && !skip.has(hit.url) && !hits.some(h => h.url === hit.url)) hits.push(hit);
+      // A sec.gov hit is dropped: SEC text reaches the agent only from the archive, never as a search provider's excerpt.
+      for (const hit of result.data.results) if (isHttps(hit.url) && !isSecUrl(hit.url) && !skip.has(hit.url) && !hits.some(h => h.url === hit.url)) hits.push(hit);
     } catch { /* A failed query narrows the evidence; the remaining sources still stand on their own. */ }
   }
   const token = input.companyName.toLowerCase().split(/[^a-z0-9]+/).find(w => w.length >= 3) ?? "";
   // An old filing describes businesses that may since have been renamed or regrouped.
   const stale = (h: SearchHit) => (accessionYear(h.url) ?? year) < year - 1;
-  const rank = (h: SearchHit) => stale(h) ? 4 : isSecUrl(h.url) ? 0 : token && hostname(h.url).includes(token) ? 1 : /investor|\bir\./i.test(h.url) ? 2 : 3;
+  const rank = (h: SearchHit) => stale(h) ? 4 : token && hostname(h.url).includes(token) ? 1 : /investor|\bir\./i.test(h.url) ? 2 : 3;
   const ranked = [...hits].sort((a, b) => rank(a) - rank(b));
   const terms = keywords([group.root.hint, ...group.children.map(c => c.hint)]);
   const read: EvidenceDocument[] = [];
@@ -220,7 +212,7 @@ async function collectFollowUps(input: { companyName: string; search: ExplainerS
   for (const query of queries) {
     try {
       const result = await input.search.search({ query: query.slice(0, 300), maxResults: 5, depth: "advanced", excludeDomains: EXCLUDED }, scope);
-      const fresh = result.data.results.filter(h => isHttps(h.url) && !seen(h.url) && (accessionYear(h.url) ?? year) >= year - 1);
+      const fresh = result.data.results.filter(h => isHttps(h.url) && !isSecUrl(h.url) && !seen(h.url) && (accessionYear(h.url) ?? year) >= year - 1);
       const [best, next] = fresh;
       if (best) {
         let text: string | null = null;

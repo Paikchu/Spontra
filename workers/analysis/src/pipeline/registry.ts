@@ -145,7 +145,9 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
   "maintenance.requested": [{ task: "maintenance" }],
   "financials.published": [{ task: "fundamentals" }, { task: "map-derive" }, { task: "history" }, { task: "explainer" }, { task: "tree" }, { task: "library-links" }, { task: "valuation" }],
   // The SEC report reads filings from the archive alone, so it starts when a filing it analyses is archived.
-  "filing.archived": [{ task: "guidance", when: e => /^8-K/.test(form(e)) }, { task: "sec-report", when: e => PERIODIC.test(form(e)) || /^(?:8|6)-K/.test(form(e)) }, { task: "map-derive" }, { task: "analyst", when: e => /^10-[QK](?:\/A)?$/.test(form(e)) }, { task: "transcript", when: e => /^(?:10-[QK]|20-F|6-K)(?:\/A)?$/.test(form(e)) }, { task: "library" }, { task: "storage-sweep" }],
+  "filing.archived": [{ task: "guidance", when: e => /^8-K/.test(form(e)) }, { task: "sec-report", when: e => PERIODIC.test(form(e)) || /^(?:8|6)-K/.test(form(e)) }, { task: "map-derive" },
+    // With the library off, an item's eligibility follows the archive; with it on, the run finds its fingerprint unchanged.
+    { task: "items", when: e => archivedForm(form(e)) }, { task: "analyst", when: e => /^10-[QK](?:\/A)?$/.test(form(e)) }, { task: "transcript", when: e => /^(?:10-[QK]|20-F|6-K)(?:\/A)?$/.test(form(e)) }, { task: "library" }, { task: "storage-sweep" }],
   "library.requested": [{ task: "library" }],
   // A filing newly split into the library is text the checkup notes can now read against the earlier ones.
   "library.prepared": [{ task: "library-cards" }, { task: "checkup" }, { task: "items" }, { task: "valuation" }],

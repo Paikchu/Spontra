@@ -293,6 +293,9 @@ export function createAnalysisOperations(env: AnalysisEnv, fetcher: typeof fetch
       return { plan: summary.plan, nodes: summary.nodes.filter(n => n.id !== "historical-judgment-review"), review: artifact.managerReview, rounds: summary.repairRounds ?? 0 };
     },
     classifyEarnings: async (filing, execution) => {
+      // A filing the archive gave up on (over the size cap, never served) heads no group: its period's readable
+      // release reports on its own instead of being merged into a report that can never be prepared.
+      if (await archiveUnsupported(archive(), cleanSecTicker(filing.ticker), filing.accessionNumber)) return null;
       if (isPeriodic(filing.form)) return filing.reportDate || null;
       const cached = await repository().getCache<{ periodEnd: string | null }>(classificationKey(filing));
       if (cached) return cached.payload.periodEnd;
