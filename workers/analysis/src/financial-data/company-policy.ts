@@ -20,14 +20,14 @@ export function parseFeatureResolution(value: string | undefined): FeatureResolu
 }
 
 /**
- * Before the admin's switches: the deployment's global flags (SEC_AI_ENABLED for the reports, findings and explainer,
+ * Before the admin's switches: the deployment's global flags (SEC_AI_ENABLED for the reports and findings,
  * BUSINESS_TREE_ENABLED, VALUATION_ENABLED) and no company. The deployment never lists companies; every company is
  * switched on one by one in the admin (`business_feature_settings`).
  */
 function defaultFeatureResolution(env: Omit<PolicyEnv, 'DB'>): FeatureResolution {
   const aiOn = aiIsEnabled(env);
   return {
-    enabled: { reports: aiOn, findings: aiOn, explainer: aiOn, tree: env.BUSINESS_TREE_ENABLED !== 'false', valuation: env.VALUATION_ENABLED !== 'false' },
+    enabled: { reports: aiOn, findings: aiOn, tree: env.BUSINESS_TREE_ENABLED !== 'false', valuation: env.VALUATION_ENABLED !== 'false' },
     tickers: Object.fromEntries(FEATURES.map(f => [f, []])) as unknown as Record<Feature, string[]>,
   };
 }

@@ -53,8 +53,8 @@ test("a feature switched on in the admin starts that feature's tasks, and the ev
   const tasks = (feature: string) => SUBSCRIPTIONS["feature.settings"]?.filter(s => !s.when || s.when({ type: "feature.settings", ticker: "ORCL", detail: { feature: feature as Feature } })).map(s => s.task);
   assert.deepEqual(tasks("reports"), ["sec-report"]);
   assert.deepEqual(tasks("findings"), ["findings", "company-analysis", "items"]);
-  assert.deepEqual(tasks("explainer"), ["explainer"]);
-  assert.deepEqual(tasks("tree"), ["tree"]);
+  // The business breakdown is one switch for the mind map and the written explanation.
+  assert.deepEqual(tasks("tree"), ["explainer", "tree"]);
   assert.deepEqual(validateRegistry(), []);
 });
 

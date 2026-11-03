@@ -214,7 +214,7 @@ async function handleRoute(request: Request, database: D1Database, env: FeatureD
       return dataResponse(request, payload, capital ? "cacheable" : "no-store");
     }
     case "business-explainer": {
-      const payload = await readBusinessExplainerResponse(database, route.ticker, { hidden: await hidden("explainer") });
+      const payload = await readBusinessExplainerResponse(database, route.ticker, { hidden: await hidden("tree") });
       payload.explainer = await translated("explainer", payload.explainer);
       return dataResponse(request, payload, payload.status === "ready" ? "cacheable" : "no-store");
     }

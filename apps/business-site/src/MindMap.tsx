@@ -4,7 +4,7 @@ import type { TreeClaim, TreeNode, TreeRevenueModel, TreeSource } from "@/shared
 import { revenueLabel } from "@/shared/analysis-runtime/business-tree";
 import { getLocale, labels, messages } from "@/packages/web/src/i18n";
 import { SourceLanguage, langOf } from "@/packages/web/src/i18n/SourceLanguage";
-import { mindEdgePath, mindType, type MindItem, type MindMapLayout } from "./mindmap-layout";
+import { mindEdgePath, mindType, type MindItem, type MindMapLayout, type MindNodeItem } from "./mindmap-layout";
 
 /** One business the map hangs a breakdown from: the Sankey node, its name, and what the tree says about it. */
 export type MindBranch = { node: string; label: string; summary: TreeClaim | null; revenue: TreeRevenueModel[]; nodes: TreeNode[] };
@@ -73,11 +73,29 @@ function lineage(nodes: TreeNode[], id: string): TreeNode[] {
   return [];
 }
 
+/** A node as the map's layout names it, for picking it from outside the map (the business's written profile). */
+export function mindNodeItem(branch: MindBranch, id: string): MindNodeItem | null {
+  const chain = lineage(branch.nodes, id), node = chain.at(-1);
+  if (!node) return null;
+  return { kind: "node", id: node.id, anchor: branch.node, depth: chain.length, path: [branch.label, ...chain.slice(0, -1).map(n => n.name)], node, name: node.name, gloss: node.gloss, x: 0, y: 0, w: 0, h: 0 };
+}
+
+const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** The branch's nodes a sentence names word for word; a name inside a longer named one ("Prime" in "Amazon Prime") does not count. */
+export function namedNodes(branch: MindBranch, text: string): TreeNode[] {
+  const all: TreeNode[] = [];
+  const walk = (nodes: TreeNode[]) => nodes.forEach(n => { all.push(n); walk(n.children); });
+  walk(branch.nodes);
+  const found = all.filter(n => n.name.length >= 3 && new RegExp(`(^|[^A-Za-z0-9])${escape(n.name)}($|[^A-Za-z0-9])`, "i").test(text));
+  return found.filter(n => !found.some(o => o !== n && o.name.length > n.name.length && o.name.toLowerCase().includes(n.name.toLowerCase())));
+}
+
 /**
- * The picked node below the chart, where findings and reports open: what it is, how it earns, and the
- * passage that puts it in its business, each numbered against the tree's sources.
+ * The picked node in the business's panel beside the map: what it is, how it earns, and the passage that puts it in
+ * its business, each numbered against the tree's sources; `children` follow in the second column.
  */
-export function MindLens({ item, branch, sources, onClose }: { item: MindItem; branch: MindBranch | undefined; sources: TreeSource[]; onClose: () => void }) {
+export function MindLens({ item, branch, sources, onClose, children }: { item: MindItem; branch: MindBranch | undefined; sources: TreeSource[]; onClose: () => void; children?: ReactNode }) {
   const node = item.kind === "node" ? item.node : item.owner;
   const name = node?.name ?? branch?.label ?? "";
   const revenue = node ? node.revenue : branch?.revenue ?? [];
@@ -115,6 +133,7 @@ export function MindLens({ item, branch, sources, onClose }: { item: MindItem; b
       </div>
       <div className="lens-doc-cell">
         {node?.anchor && <blockquote className="mind-lens-anchor"><small>{m.placement}</small><span lang="en">{node.anchor.text}</span>{cite(node.anchor)}</blockquote>}
+        {children}
         {cited.length > 0 && <ol className="sources sources--numbered">{cited.map(s => <li key={s.id}><a href={s.url} target="_blank" rel="noopener noreferrer">{s.title}<span aria-hidden="true"> ↗</span></a></li>)}</ol>}
       </div>
     </div></div>

@@ -110,7 +110,7 @@ export const AI_TASKS = {
   explainer: {
     version: BUSINESS_EXPLAINER_VERSION,
     async run(env, ticker, context): Promise<TaskOutcome> {
-      if (!researchSearchConfigured(env)) return { status: "done", detail: { skipped: "research search not configured" } };
+      if (!researchSearchConfigured(env) || env.BUSINESS_TREE_ENABLED === "false") return { status: "done", detail: { skipped: "business tree disabled" } };
       return runWhenChanged(env, "explainer", "explainer", ticker, context, env.BUSINESS_EXPLAINER_WORKFLOW,
         () => businessExplainerFingerprint(env, ticker), storedFingerprint(env, businessExplainerCacheKey(ticker)));
     },

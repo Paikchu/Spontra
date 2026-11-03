@@ -15,7 +15,7 @@ import type { RevenueHistory } from "@/shared/analysis-contract/revenue-history"
 import type { BusinessExplainer, ExplainerClaim, ExplainerSection } from "@/shared/analysis-contract/business-explainer";
 import type { BusinessTree } from "@/shared/analysis-contract/business-tree";
 import { treeNodeFor } from "@/shared/analysis-runtime/business-tree";
-import { MindLens, type MindMapInput } from "./MindMap";
+import { MindLens, mindNodeItem, namedNodes, type MindMapInput } from "./MindMap";
 import type { MindItem } from "./mindmap-layout";
 import type { GuidancePublication } from "@/shared/analysis-contract/guidance";
 import { TrendPanel } from "./TrendPanel";
@@ -96,7 +96,7 @@ const m = messages({
   sharesIssued: (value: string) => `Shares issued ${value}`, cashChange: "Change in cash", endingCash: (value: string) => `Ending cash and short-term investments ${value}`,
   yearToDate: (months: number) => `Year to date (${months} months)`,
   balanceChart: (ticker: string, date: string) => `${ticker} funding sources to assets as of ${date}`, cashChart: (ticker: string, period: string) => `${ticker} cash sources and uses, ${period.toLowerCase()}`,
-  profile: (name: string) => `${name} business profile`, noDescription: "No description", customers: "Customers", revenueModel: "Revenue model", notDisclosed: "Not disclosed",
+  profile: (name: string) => `${name} business profile`, noDescription: "No description", customers: "Customers", revenueModel: "Revenue model", notDisclosed: "Not disclosed", inProfile: "In the business profile",
   details: (label: string) => `${label} business details`, products: "Products",
   statementDepth: "Statement depth", trunk: "Summary", detail: "Detail", openFinding: (title: string) => `Open finding: ${title}`, hideFinding: "Hide",
   statMissing: "N/A", notApplicable: "Not applicable to model", notInFiling: "Not disclosed in filing",
@@ -129,7 +129,7 @@ const m = messages({
   sharesIssued: (value: string) => `股权融资 ${value}`, cashChange: "现金变动", endingCash: (value: string) => `期末现金及短期投资 ${value}`,
   yearToDate: (months: number) => `年初至今（${months} 个月）`,
   balanceChart: (ticker: string, date: string) => `${ticker} 截至 ${date} 的资金来源与资产`, cashChart: (ticker: string, period: string) => `${ticker} 现金来源与去向，${period}`,
-  profile: (name: string) => `${name} 业务概况`, noDescription: "无描述", customers: "客户", revenueModel: "收入模式", notDisclosed: "未披露",
+  profile: (name: string) => `${name} 业务概况`, noDescription: "无描述", customers: "客户", revenueModel: "收入模式", notDisclosed: "未披露", inProfile: "业务档案里提到",
   details: (label: string) => `${label} 业务详情`, products: "产品",
   statementDepth: "报表层级", trunk: "概要", detail: "明细", openFinding: (title: string) => `打开要点：${title}`, hideFinding: "隐藏",
   statMissing: "暂无", notApplicable: "不适用于该行业报表模型", notInFiling: "财报未披露",
@@ -665,6 +665,32 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
   const [mindPicked, setMindPicked] = useState<{ business: string; item: MindItem } | null>(null);
   const mindItem = mindMap && mindPicked && mindPicked.business === current?.key ? mindPicked.item : null;
   const setMindItem = (item: MindItem | null) => setMindPicked(item && current ? { business: current.key, item } : null);
+  // A mention returns to the profile of the business that wrote it (a leaf, when a parent is picked), on the section that holds it.
+  const [profileSection, setProfileSection] = useState<{ business: string; title: string } | null>(null);
+  const openSection = profileSection && profileSection.business === current?.key ? profileSection.title : null;
+  const backToProfile = (business: Item, title: string) => {
+    setProfileSection({ business: business.key, title });
+    setMindItem(null);
+    if (business.key !== current?.key) pickBusiness(business.id);
+  };
+  // The written profile and the breakdown share one panel: a sentence naming a node opens it, and a node lists the sentences naming it.
+  const nodeLinks = mindMap ? (text: string): ReactNode => {
+    const named = mindMap.branches.flatMap(branch => namedNodes(branch, text).map(node => ({ branch, node })));
+    return named.length > 0 && <span className="mind-links">{named.map(({ branch, node }) =>
+      <button key={node.id} type="button" lang="en" onClick={() => setMindItem(mindNodeItem(branch, node.id))}>{node.name}</button>)}</span>;
+  } : undefined;
+  const mentions = useMemo(() => {
+    const node = mindItem ? mindItem.kind === "node" ? mindItem.node : mindItem.owner : null;
+    const business = node && mindMap ? items.find(item => "segment:" + item.key === mindItem!.anchor) : null;
+    const explained = business && explainer?.businesses.find(b => b.nodeId === business.id);
+    const branch = mindMap?.branches.find(b => b.node === mindItem?.anchor);
+    if (!node || !explained || !branch) return [];
+    return explained.sections.flatMap(section => section.items.filter(i => namedNodes(branch, i.claim.text).some(n => n.id === node.id))
+      .map(i => ({ business, section: section.title, where: i.label ? `${section.title} · ${i.label}` : section.title, text: i.claim.text })));
+  }, [mindItem, mindMap, items, explainer]);
+  // The breakdown is on the stage only in the income view's flow chart, not merely when its data exists; narrow panes show the compact list instead.
+  const narrowPane = useMedia("(max-width: 960px)");
+  const breakdownShown = Boolean(mindMap && !narrowPane && quarter && proportional && layout && !moduleErrors.includes("company") && !((view === "cash" || view === "balance") && funding));
 
   const pickPeriod = (id: string | null) => {
     if (id && id !== quarter?.id) track("chart_period_change", { ticker });
@@ -825,7 +851,11 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
         {chartScroll.overflow && <div className="chart-hint-rail" aria-hidden={!chartScroll.hint}><span className="chart-hint" data-shown={chartScroll.hint || undefined}>{m.swipe}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5M3 12h18" /></svg></span></div>}
         {moduleErrors.includes("company") ? <ModuleFailure resource="company" retry={onRetryModule} /> : (view === "cash" || view === "balance") && funding ? <CapitalChart view={view} funding={funding} ticker={ticker} spotlight={poolSpotlight} />
           : !quarter ? <div className="empty"><h2>{m.noFinancials}</h2></div>
-          : proportional && layout ? <FlowChart graph={graph!} copy={copy} money={v => money(v)} colorOf={colorOf} active={active} revealKey={quarter.id} productBusiness={current ? "segment:" + current.key : null} mindMap={mindMap} mindPick={mindItem?.id ?? null} onMindPick={setMindItem} businessDetails={<Dossier item={current} parent={parent ?? null} sources={quarter.sources} explainer={explainer} />}
+          : proportional && layout ? <FlowChart graph={graph!} copy={copy} money={v => money(v)} colorOf={colorOf} active={active} revealKey={quarter.id} productBusiness={current ? "segment:" + current.key : null} mindMap={mindMap} mindPick={mindItem?.id ?? null} onMindPick={setMindItem} businessDetails={mindItem && mindMap
+                ? <MindLens item={mindItem} branch={mindMap.branches.find(b => b.node === mindItem.anchor)} sources={mindMap.sources} onClose={() => setMindItem(null)}>
+                  {mentions.length > 0 && <div className="mind-mentions"><small>{m.inProfile}</small>{mentions.map((c, i) => <button key={i} type="button" onClick={() => backToProfile(c.business, c.section)}><small lang={langOf(c.where)}>{c.where}</small><span lang={langOf(c.text)}>{normalizeDisplayText(c.text)}</span></button>)}</div>}
+                </MindLens>
+                : <Dossier item={current} parent={parent ?? null} sources={quarter.sources} explainer={explainer} links={nodeLinks} section={openSection} />}
               focusSlot={n => { const prior = priorOf(n); return segmentRevenue ? `${shareLabel} ${percent(n.value / segmentRevenue * 100)}${prior != null && priorShareBase ? ` · ${word.period} ${percent(prior / priorShareBase * 100)}` : ""}` : null; }}
               onHover={name => setHoverNode(name)} tipFor={tipFor} spotlight={spotlight} priorOf={priorOf} basis={word} brackets={guideMarks.brackets} pills={guideMarks.pills}
               onPick={n => { const item = itemByNode.get(n.name); pickBusiness(item && current?.key !== item.key ? item.id : null); }}
@@ -836,7 +866,8 @@ export function BusinessMap({ ticker, tools, flow, revenueHistory, explainer = n
       {points.length > 0 && <Timeline points={points} ticker={ticker} now={now.getTime()} currentPeriod={quarter?.periodEnd ?? null}
         onReport={(id, end) => { if (filings?.filings.some(f => f.accessionNumber === id)) { focusFinding(null); focusReport(id); } else { pickPeriod(quarters.find(q => q.periodEnd === end)?.id ?? null); focusFinding(null); setEventId(null); setReportId(null); } }} onEvent={id => focusEvent(id)} />}
 
-      {mindItem && mindMap ? <div className="lens-stage"><MindLens item={mindItem} branch={mindMap.branches.find(b => b.node === mindItem.anchor)} sources={mindMap.sources} onClose={() => setMindItem(null)} /></div>
+      {/* With the breakdown on the stage, the business panel beside it takes the room the trend would. */}
+      {breakdownShown ? null
       : panel === "metrics" && shownMetrics.length > 0 ? <ViewMetrics metrics={shownMetrics} flagged={flagged} ranks={ranks} noted={noted} onOpen={id => focusCheck(id)} switcher={hasTrend ? switcher : null} />
       : shownMetric ? <MetricTrendPanel ticker={ticker} trend={shownMetric} currentPeriod={quarter?.periodEnd ?? null} periods={new Set(quarters.map(q => q.periodEnd))}
         onPickPeriod={end => pickPeriod(quarters.find(q => q.periodEnd === end)?.id ?? null)}
@@ -910,10 +941,10 @@ function revealInList(element: HTMLElement, mode: ScrollBehavior) {
   }
 }
 
-function Dossier({ item, parent, sources, explainer }: { item: Item | null; parent: Item | null; sources: FlowSource[]; explainer: BusinessExplainer | null }) {
+function Dossier({ item, parent, sources, explainer, links, section }: { item: Item | null; parent: Item | null; sources: FlowSource[]; explainer: BusinessExplainer | null; links?: (text: string) => ReactNode; section?: string | null }) {
   if (!item) return null;
   const explained = explainer?.businesses.find(b => b.nodeId === item.id);
-  if (explainer && explained) return <ExplainedDossier key={item.key} item={item} parent={parent} explainer={explainer} explained={explained} />;
+  if (explainer && explained) return <ExplainedDossier key={item.key} item={item} parent={parent} explainer={explainer} explained={explained} links={links} section={section} />;
   const segment = item.segment;
   const [description, basis] = (segment.description ?? "").split("\n");
   const english = (text: string | null | undefined) => text ? <span lang="en">{text}</span> : m.notDisclosed;
@@ -929,8 +960,8 @@ function Dossier({ item, parent, sources, explainer }: { item: Item | null; pare
 
 /** One section of a business at a time; which sections exist depends on the business. Arrow keys move between tabs. */
 /** A section's third entry is the language of its own name and content when that is not the page's (model-written sections). */
-function DossierTabs({ label, sections }: { label: string; sections: Array<[string, ReactNode] | [string, ReactNode, string]> }) {
-  const [chosen, setChosen] = useState(0);
+function DossierTabs({ label, sections, initial = 0 }: { label: string; sections: Array<[string, ReactNode] | [string, ReactNode, string]>; initial?: number }) {
+  const [chosen, setChosen] = useState(initial);
   const tabs = useRef<HTMLDivElement>(null);
   const id = useId();
   if (!sections.length) return null;
@@ -961,7 +992,9 @@ function DossierTabs({ label, sections }: { label: string; sections: Array<[stri
 }
 
 /** A model-written explanation: every statement carries numbered links to the pages it was written from. */
-function ExplainedDossier({ item, parent, explainer, explained }: { item: Item; parent: Item | null; explainer: BusinessExplainer; explained: BusinessExplainer["businesses"][number] }) {
+function ExplainedDossier({ item, parent, explainer, explained, links, section }: { item: Item; parent: Item | null; explainer: BusinessExplainer; explained: BusinessExplainer["businesses"][number]; links?: (text: string) => ReactNode; section?: string | null }) {
+  const products = explained.offerings?.length ? 1 : 0;
+  const opened = section ? explained.sections.findIndex(s => s.title === section) : -1;
   const claims = [explained.summary, ...(explained.offerings ?? []).flatMap(p => [p.description, p.charging]), ...explained.sections.flatMap(s => s.items.map(i => i.claim))];
   const cited = [...new Set(claims.flatMap(c => c?.sourceIds ?? []))].map(id => explainer.sources.find(s => s.id === id)).filter(s => s != null);
   const cite = (claim: ExplainerClaim) => <span className="cites">{claim.sourceIds.map(id => {
@@ -975,9 +1008,9 @@ function ExplainedDossier({ item, parent, explainer, explained }: { item: Item; 
       : item.segment.description && <p lang="en">{item.segment.description.split("\n")[0]}</p>}
 
     {/* Products come first when verified; the other tabs are the angles the model chose for this business. */}
-    <DossierTabs label={item.name} sections={[
+    <DossierTabs label={item.name} initial={opened < 0 ? 0 : products + opened} sections={[
       ...(explained.offerings?.length ? [[m.products, <ul key="products" className="dossier-products">{explained.offerings.map(p => <li key={p.id} lang={langOf(p.description.text)}><b>{p.name}</b>{normalizeDisplayText(p.description.text)}{cite(p.description)}</li>)}</ul>] as [string, ReactNode]] : []),
-      ...explained.sections.map((section): [string, ReactNode, string] => [section.title, <DossierSection key={section.title} section={section} cite={cite} />, langOf(section.title)]),
+      ...explained.sections.map((section): [string, ReactNode, string] => [section.title, <DossierSection key={section.title} section={section} cite={cite} links={links} />, langOf(section.title)]),
     ]} />
 
     <ol className="sources sources--numbered">{cited.map(s => <li key={s.id}><a href={s.url} target="_blank" rel="noopener noreferrer">{s.title}<span aria-hidden="true"> ↗</span></a></li>)}</ol>
@@ -985,8 +1018,10 @@ function ExplainedDossier({ item, parent, explainer, explained }: { item: Item; 
 }
 
 /** Steps read as a numbered chain, a list as named entries, prose as plain statements. */
-function DossierSection({ section, cite }: { section: ExplainerSection; cite: (claim: ExplainerClaim) => ReactNode }) {
-  if (section.layout === "steps") return <ol className="dossier-steps">{section.items.map((i, n) => <li key={n}>{i.label && <b>{i.label}</b>}{normalizeDisplayText(i.claim.text)}{cite(i.claim)}</li>)}</ol>;
-  if (section.layout === "list") return <ul className="dossier-products">{section.items.map((i, n) => <li key={n}><b>{i.label}</b>{normalizeDisplayText(i.claim.text)}{cite(i.claim)}</li>)}</ul>;
-  return <>{section.items.map((i, n) => <p key={n} className="dossier-prose">{i.label && <b>{i.label}: </b>}{normalizeDisplayText(i.claim.text)}{cite(i.claim)}</p>)}</>;
+/** `links` names the breakdown's nodes a statement mentions, each opening its node. */
+function DossierSection({ section, cite, links }: { section: ExplainerSection; cite: (claim: ExplainerClaim) => ReactNode; links?: (text: string) => ReactNode }) {
+  const linked = (claim: ExplainerClaim) => <>{normalizeDisplayText(claim.text)}{cite(claim)}{links?.(claim.text)}</>;
+  if (section.layout === "steps") return <ol className="dossier-steps">{section.items.map((i, n) => <li key={n}>{i.label && <b>{i.label}</b>}{linked(i.claim)}</li>)}</ol>;
+  if (section.layout === "list") return <ul className="dossier-products">{section.items.map((i, n) => <li key={n}><b>{i.label}</b>{linked(i.claim)}</li>)}</ul>;
+  return <>{section.items.map((i, n) => <p key={n} className="dossier-prose">{i.label && <b>{i.label}: </b>}{linked(i.claim)}</p>)}</>;
 }

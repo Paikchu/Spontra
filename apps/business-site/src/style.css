@@ -444,6 +444,20 @@ button { cursor: pointer; }
 .mind-lens-anchor { margin: 0 0 10px; padding: 2px 0 2px 12px; border-left: 2px solid var(--border); color: var(--muted-foreground); font-size: 12.5px; font-style: italic; overflow-wrap: anywhere; }
 .mind-lens-anchor small { display: block; margin-bottom: 2px; font-style: normal; color: var(--faint); }
 .mind-lens .sources { margin-top: 4px; }
+/* In the business panel a node's details read as the panel's own page: no stage height, no rule above. */
+.fc-business-details .mind-lens { display: block; height: auto; margin: 0; padding: 0; border: 0; animation: none; }
+.fc-business-details .mind-lens .lens-head { margin-bottom: 12px; }
+.fc-business-details .lens-doc { overflow: visible; padding: 0; font-size: 13.5px; }
+/* The breakdown's nodes a profile sentence names, after the sentence. */
+.mind-links { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-left: 6px; }
+.mind-links button { padding: 0 8px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--flow-profit) 55%, var(--border)); background: transparent; font: inherit; font-size: 12px; line-height: 1.6; color: var(--foreground); cursor: pointer; }
+.mind-links button:hover { background: color-mix(in srgb, var(--flow-profit) 12%, transparent); }
+.mind-links button:focus-visible, .mind-mentions button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.mind-mentions { display: grid; gap: 6px; }
+.mind-mentions > small { color: var(--faint); }
+.mind-mentions button { display: grid; gap: 2px; padding: 8px 10px; text-align: left; border: 1px solid var(--hairline); border-radius: 8px; background: transparent; font: inherit; font-size: 13px; line-height: 1.55; color: var(--foreground); cursor: pointer; }
+.mind-mentions button small { color: var(--faint); font-size: 12px; }
+.mind-mentions button:hover { border-color: var(--border); }
 
 .fc-tip {
   position: absolute; top: 0; left: 0; z-index: 3; pointer-events: none; min-width: 168px;

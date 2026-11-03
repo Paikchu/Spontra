@@ -82,7 +82,7 @@ export const TASKS: Record<TaskName, TaskMeta> = {
   // Recovers company analyses that stopped, failed or are behind the prompt version.
   "company-analysis": { emits: ["analysis.published"], debounceMs: 30 * MINUTE, maxWaitMs: 2 * HOUR, scope: "findings" },
   // Model-written explanations of each disclosed business (Workflow).
-  "explainer": { emits: ["explainer.published"], debounceMs: 10 * MINUTE, maxWaitMs: 2 * HOUR, scope: "explainer" },
+  "explainer": { emits: ["explainer.published"], debounceMs: 10 * MINUTE, maxWaitMs: 2 * HOUR, scope: "tree" },
   // The ReAct business mind map (Workflow).
   "tree": { emits: ["tree.published"], debounceMs: 10 * MINUTE, maxWaitMs: 2 * HOUR, scope: "tree" },
   // Report findings written from the map snapshot, guidance, SEC fundamentals and the company analysis (Workflow).
@@ -181,7 +181,7 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
     { task: "findings", when: e => e.detail?.feature === "findings" },
     { task: "company-analysis", when: e => e.detail?.feature === "findings" },
     { task: "items", when: e => e.detail?.feature === "findings" },
-    { task: "explainer", when: e => e.detail?.feature === "explainer" },
+    { task: "explainer", when: e => e.detail?.feature === "tree" },
     { task: "tree", when: e => e.detail?.feature === "tree" },
     { task: "valuation", when: e => e.detail?.feature === "valuation" },
   ],
