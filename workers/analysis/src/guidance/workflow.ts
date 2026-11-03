@@ -52,11 +52,16 @@ export type GuidanceDeps = {
   deckSearch?: Parameters<typeof findIrDeck>[0] | null;
   /** The release's exhibits, as the archive holds them (a test's stand-in); null when the archive has none. */
   secExhibits?: (ticker: string, accession: string, filingDate: string, primaryUrl?: string) => Promise<FoundMaterial[] | null>;
+  /** The current time in ms (a test's clock); the release's wait for the archive is measured from it. */
+  now?: () => number;
 };
 
 class BudgetExhausted extends Error {}
 
 /** Earnings releases are 8-K Item 2.02 filings; the guidance in them is what this feature tracks. */
+/** How long an earnings release waits for the archive (docs/sec-archive.md) before guidance runs with what it has. */
+export const RELEASE_ARCHIVE_WAIT_MS = 2 * 86_400_000;
+
 export function earningsEvents(feed: SecFilingFeed | null, now = Date.now()): Array<{ accession: string; eventDate: string }> {
   const since = new Date(now - EVENT_LOOKBACK_DAYS * 86_400_000).toISOString().slice(0, 10);
   return (feed?.filings ?? []).filter(f => f.form === "8-K" && /(^|,)\s*2\.02\b/.test(f.items) && f.filingDate >= since)
@@ -203,17 +208,22 @@ export async function executeGuidanceWorkflow(params: GuidanceWorkflowParams, st
   };
   // A re-extraction under a new extractor version also takes every material an earlier run stored for this
   // event (a transcript, an IR deck), so nothing is fetched or searched for again.
-  const { materials: sec, ref } = await step.do("guidance-sec", async () => {
+  const { materials: sec, ref, waiting } = await step.do("guidance-sec", async () => {
     // The filing library holds the release as split text; before it is split, the archived documents are read as
     // they were filed. EDGAR itself is never read here (docs/sec-archive.md).
     const exhibits = deps.secExhibits ?? ((ticker, accession, date, primaryUrl) => archivedExhibits({ DB: requireDb(env), SEC_FILINGS: env.SEC_FILINGS, SEC_USER_AGENT: env.SEC_USER_AGENT }, ticker, accession, date, primaryUrl));
     const found = !context.exhibits || context.cikNumber === null ? []
       : (!deps.secExhibits && env.DB ? await libraryExhibits(env.DB, params.ticker, params.accession, params.eventDate) : null)
-        ?? await exhibits(params.ticker, params.accession, params.eventDate, context.primaryUrl ?? undefined) ?? [];
-    const saved = await saveAll(found);
+        ?? await exhibits(params.ticker, params.accession, params.eventDate, context.primaryUrl ?? undefined);
+    // The release is not archived yet (the filing list is indexed before collection stores it): the event goes back to
+    // the queue, and the release's `filing.archived` starts a new run; completing now would lose its guidance for good.
+    // Past RELEASE_ARCHIVE_WAIT_MS it runs with what it has, as the guidance task starts it.
+    if (found === null && (deps.now ?? Date.now)() - Date.parse(params.eventDate) < RELEASE_ARCHIVE_WAIT_MS) { await store().updateEvent(params.ticker, params.accession, { status: "queued" }, new Date().toISOString()); return { materials: [], ref: null, waiting: "archive" as const }; }
+    const saved = await saveAll(found ?? []);
     const stored = (await store().eventMaterials(params.ticker, params.accession)).filter(m => !saved.some(s => s.id === m.id));
-    return { materials: [...saved, ...stored], ref: context.ref ?? reportedTranscriptRef(found, params.eventDate) };
+    return { materials: [...saved, ...stored], ref: context.ref ?? reportedTranscriptRef(found ?? [], params.eventDate), waiting: null };
   });
+  if (waiting) return { status: "waiting", waiting, materials: 0, transcript: "pending" as const };
 
   const materials = [...sec];
   const deckSearch = deps.deckSearch !== undefined ? deps.deckSearch : env.GUIDANCE_DECK_SEARCH !== "false" && researchSearchConfigured(env) ? researchSearch(env) : null;

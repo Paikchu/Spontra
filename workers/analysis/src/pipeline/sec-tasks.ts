@@ -6,7 +6,7 @@ import { refreshSecFundamentals } from "../fundamentals/refresh.ts";
 import { guidanceWorkflowSuffix } from "../guidance/extract.ts";
 import { GuidanceStore } from "../guidance/store.ts";
 import { attachLibraryTranscripts } from "../guidance/transcripts.ts";
-import { earningsEvents, publishGuidance } from "../guidance/workflow.ts";
+import { earningsEvents, publishGuidance, RELEASE_ARCHIVE_WAIT_MS } from "../guidance/workflow.ts";
 import { scheduledAnalysisAllowed } from "../core.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import { archiveHolds } from "../sec-archive/index.ts";
@@ -14,8 +14,8 @@ import type { SecFilingFeed } from "../sec/sec.ts";
 import type { TaskImplementation, TaskOutcome } from "./tasks.ts";
 import { driveWorkflow, FAILED_INPUT_RETRY_WAITS_MS, failedInputKey, pendingRetryOutcome, type WorkflowBindingLike } from "./workflow-task.ts";
 
-/** How long an earnings release waits for the archive before guidance runs without it, and how often it looks again. */
-const ARCHIVE_WAIT_MS = 2 * 86_400_000, ARCHIVE_RECHECK_MS = 6 * 3_600_000;
+/** How often an earnings release waiting for the archive is looked at again when no `filing.archived` comes. */
+const ARCHIVE_RECHECK_MS = 6 * 3_600_000;
 
 /** Per earnings release, how many guidance runs failed and when the next may start (null once the retries are spent). */
 type GuidanceRetries = { events: Record<string, { attempts: number; retryAt: string | null; failure: string }> };
@@ -141,11 +141,11 @@ export const SEC_TASKS = {
       // An event queued again after a run under this version (a transcript arrived) needs a new instance id.
       const rerun = (id: string | null) => id?.endsWith(`-${guidanceWorkflowSuffix()}`) ? Math.floor(now.getTime() / 1000) : 0;
       // A release is read from the archive alone (docs/sec-archive.md). One indexed before collection archived it waits
-      // queued, and `filing.archived` runs this task again; after ARCHIVE_WAIT_MS it runs with whatever it has.
+      // queued, and `filing.archived` runs this task again; after RELEASE_ARCHIVE_WAIT_MS it runs with whatever it has.
       const archive = { DB: db, SEC_FILINGS: env.SEC_FILINGS, SEC_USER_AGENT: env.SEC_USER_AGENT };
       const waiting: string[] = [];
       const ready = async (e: { accession: string; event_date: string }) => {
-        if (now.getTime() - Date.parse(e.event_date) >= ARCHIVE_WAIT_MS || await archiveHolds(archive, ticker, e.accession)) return true;
+        if (now.getTime() - Date.parse(e.event_date) >= RELEASE_ARCHIVE_WAIT_MS || await archiveHolds(archive, ticker, e.accession)) return true;
         waiting.push(e.accession);
         return false;
       };
