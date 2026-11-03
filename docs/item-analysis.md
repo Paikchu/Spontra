@@ -4,7 +4,7 @@
 
 ## 决策
 
-侧边栏的每一行（要点、财报、8-K/6-K、被规则标记的 Form 4）用同一套 Agent 架构产出同一种文档，前端用同一条路径整页渲染在舞台上。不同的只有提示词和起始材料。
+侧边栏的每一行（要点、财报、8-K/6-K、发行说明书补充、被规则标记的 Form 4）用同一套 Agent 架构产出同一种文档，前端用同一条路径整页渲染在舞台上。不同的只有提示词和起始材料。
 
 | 层 | 共用 | 按行类型不同 |
 |---|---|---|
@@ -21,7 +21,7 @@
 `itemSubjects`（`workers/analysis/src/items/recipe.ts`），列表来自与页面同一个 `railEntries`（`shared/analysis-runtime/rail.ts`），近 12 个月内：
 
 - 财报（10-Q/10-K/20-F 或业绩发布组）：等文件库切好它的正文（`library.prepared`）才写，开场列出该文件的库内文档，要求引用本期和上一期同一节。
-- 8-K/6-K：库里有就读库；没有就用 SEC 报告步骤存在 R2 的正文块（`filings/<ticker>/<accession>/text.json`），再没有就从 EDGAR 读一次，按 `selectEventBlocks` 选 10 块作为 m1…；只陈述事实的文件可以没有 evidence，此时标题和判断不得含数字。
+- 8-K/6-K 与发行说明书补充（424B*，事件流里非 routine 的；超过 12 份发行文件的程序化发行人如银行结构化票据为 routine，不写）：库里有就读库；没有就用 SEC 报告步骤存在 R2 的正文块（`filings/<ticker>/<accession>/text.json`），再没有就从 EDGAR 读一次，按 `selectEventBlocks` 选 10 块作为 m1…；只陈述事实的文件可以没有 evidence，此时标题和判断不得含数字。
 - Form 4：只有 `insiderTone` 为 attention 的（与页面同一规则，已移到 `shared/analysis-runtime/events.ts`）；evidence 用 `{ event: { id, field } }`，脚注作为可引用材料。常规、计划内、授予与行权不调用模型，页面显示其数字与持股阶梯。
 
 ## 触发与存储

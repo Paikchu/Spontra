@@ -1,3 +1,4 @@
+import { isOfferingForm, isProxyForm } from "../../../../shared/analysis-runtime/events.ts";
 import { issuerDirectory, refreshListings } from "../catalog/issuer-directory.ts";
 import { secArchiveDocumentUrl, secArchiveRoot } from "../sec/archive-url.ts";
 import { throttledSecReader } from "../financial-data/provider.ts";
@@ -10,8 +11,8 @@ import { scopeTickers } from "./router.ts";
 export const DISCOVERY_HEARTBEAT_KEY = "pipeline:discovery-heartbeat";
 export const DISCOVERY_STATE_PREFIX = "sec:discovery:v1:";
 const stateKey = (ticker: string) => `${DISCOVERY_STATE_PREFIX}${ticker}`;
-/** Forms something downstream reads: periodic reports, current reports and insider transactions, with amendments. */
-const ANNOUNCED = /^(?:10-[QK]|20-F|40-F|6-K|8-K|4)(?:\/A)?$/;
+/** Forms something downstream reads: periodic reports, current reports and insider transactions with amendments, offerings and proxies. */
+const ANNOUNCED = (form: string) => /^(?:10-[QK]|20-F|40-F|6-K|8-K|4)(?:\/A)?$/.test(form) || isOfferingForm(form) || isProxyForm(form);
 const REMEMBERED = 200;
 
 /**
@@ -81,7 +82,7 @@ export async function runSecDiscovery(env: AnalysisEnv, now = new Date(), fetche
       const previous = (await repository.getCache<DiscoveryState>(stateKey(ticker)))?.payload;
       const at = now.toISOString();
       const known = new Set(previous?.accessions ?? []);
-      const fresh = previous ? filings.filter(f => !known.has(f.accession) && ANNOUNCED.test(f.form)) : [];
+      const fresh = previous ? filings.filter(f => !known.has(f.accession) && ANNOUNCED(f.form)) : [];
       const collectable = filings.filter(COLLECTED).slice(0, 20);
       const collected = collectable.filter(f => /^[\w.-]+\.html?$/i.test(f.primaryDocument)).map(f => ({ accession: f.accession, form: f.form, filedAt: f.filingDate,
         reportDate: /^\d{4}-\d{2}-\d{2}$/.test(f.reportDate) ? f.reportDate : null,

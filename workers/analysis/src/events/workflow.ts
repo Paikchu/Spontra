@@ -1,5 +1,5 @@
 import type { CompanyEvent, EventExhibit, EventForm, EventsPublication, EventSummary, InsiderTransaction } from "../../../../shared/analysis-contract/events.ts";
-import { annotateEvent, eventImportance, classifyEvent, filingDocumentTitle, indexPrimaryDescription, parseItems, readEventsPublication } from "../../../../shared/analysis-runtime/events.ts";
+import { annotateEvent, eventImportance, classifyEvent, EVENT_FORMS, filingDocumentTitle, indexPrimaryDescription, isInsiderForm, isOfferingForm, isProxyForm, parseItems, readEventsPublication } from "../../../../shared/analysis-runtime/events.ts";
 import type { SecCronEnv } from "../core.ts";
 import { knownCik } from "../pipeline/identity.ts";
 import { outboxStatement } from "../pipeline/outbox.ts";
@@ -17,8 +17,8 @@ export type EventsSweepEnv = Pick<SecCronEnv, "DB" | "SEC_DATA_TICKERS" | "SEC_A
 const REFRESH_MS = 6 * 60 * 60_000;
 const WINDOW_MONTHS = 24;
 /** Bounds per run, so one company with a long insider history never monopolises the SEC request budget. */
-const LIMITS = { insiderReads: 8, exhibitReads: 6, currentReports: 80, insiderFilings: 160 };
-const EVENT_FORMS = new Set<EventForm>(["8-K", "8-K/A", "6-K", "6-K/A", "4", "4/A"]);
+const LIMITS = { insiderReads: 8, exhibitReads: 6, currentReports: 80, insiderFilings: 160, offerings: 20, proxies: 6 };
+const LISTED_FORMS = new Set<string>(EVENT_FORMS);
 
 export type RawEventFiling = {
   form: EventForm; accessionNumber: string; filingDate: string; reportDate: string; items: string; description: string; primaryDocument: string; archiveRoot: string;
@@ -27,7 +27,10 @@ export type RawEventFiling = {
 const asRecord = (v: unknown): Record<string, unknown> | null => v && typeof v === "object" && !Array.isArray(v) ? v as Record<string, unknown> : null;
 const asArray = (v: unknown): unknown[] => Array.isArray(v) ? v : [];
 
-/** The 8-K/6-K and Form 4 filings in EDGAR's submission list, newest first, inside the window and the per-form caps. */
+/**
+ * The 8-K/6-K, Form 4, offering and proxy filings in EDGAR's submission list, newest first, inside the window and the
+ * per-form caps. Offerings have their own cap, so a bank's stream of structured-note supplements never crowds out its 8-Ks.
+ */
 export function parseEventSubmissions(payload: unknown, cikNumber: number, now: Date): RawEventFiling[] {
   const recent = asRecord(asRecord(asRecord(payload)?.filings)?.recent);
   if (!recent) return [];
@@ -39,16 +42,18 @@ export function parseEventSubmissions(payload: unknown, cikNumber: number, now: 
   const filings: RawEventFiling[] = [];
   for (let i = 0; i < accessions.length; i++) {
     const form = String(forms[i] ?? "") as EventForm, accessionNumber = String(accessions[i] ?? ""), filingDate = String(filingDates[i] ?? "");
-    if (!EVENT_FORMS.has(form) || !accessionNumber || !/^\d{4}-\d{2}-\d{2}$/.test(filingDate) || filingDate < floor) continue;
+    if (!LISTED_FORMS.has(form) || !accessionNumber || !/^\d{4}-\d{2}-\d{2}$/.test(filingDate) || filingDate < floor) continue;
     filings.push({
       form, accessionNumber, filingDate, reportDate: String(reportDates[i] ?? ""), items: String(items[i] ?? ""), description: String(descriptions[i] ?? ""),
       primaryDocument: String(primaries[i] ?? ""), archiveRoot: secArchiveRoot(cikNumber, accessionNumber),
     });
   }
   filings.sort((a, b) => b.filingDate.localeCompare(a.filingDate) || b.accessionNumber.localeCompare(a.accessionNumber));
-  const insider = filings.filter(f => f.form.startsWith("4")).slice(0, LIMITS.insiderFilings);
-  const current = filings.filter(f => !f.form.startsWith("4")).slice(0, LIMITS.currentReports);
-  return [...current, ...insider].sort((a, b) => b.filingDate.localeCompare(a.filingDate) || b.accessionNumber.localeCompare(a.accessionNumber));
+  const insider = filings.filter(f => isInsiderForm(f.form)).slice(0, LIMITS.insiderFilings);
+  const offerings = filings.filter(f => isOfferingForm(f.form)).slice(0, LIMITS.offerings);
+  const proxies = filings.filter(f => isProxyForm(f.form)).slice(0, LIMITS.proxies);
+  const current = filings.filter(f => /^(?:8|6)-K/.test(f.form)).slice(0, LIMITS.currentReports);
+  return [...current, ...offerings, ...proxies, ...insider].sort((a, b) => b.filingDate.localeCompare(a.filingDate) || b.accessionNumber.localeCompare(a.accessionNumber));
 }
 
 /** Exhibits from the filing index page: the row's type column (EX-99.1) and its document link. */
@@ -146,7 +151,7 @@ export async function refreshCompanyEvents(env: EventsSweepEnv, ticker: string, 
   const events: CompanyEvent[] = [];
   for (const filing of raw) {
     const prior = previous.get(filing.accessionNumber);
-    const isInsider = filing.form.startsWith("4");
+    const isInsider = isInsiderForm(filing.form);
     const archiveRoot = filing.archiveRoot;
     const documentUrl = secArchiveDocumentUrl(archiveRoot, filing.primaryDocument);
     let insider: InsiderTransaction | null = prior?.insider ?? null;

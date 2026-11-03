@@ -171,7 +171,8 @@ export const SEC_TASKS = {
    */
   events: {
     // v2: the run also indexes the filings list, which a company without the report summaries had none of.
-    version: "events.v2-filing-index",
+    // v3: the rail lists offerings (S-3, 424B, FWP) and proxy statements.
+    version: "events.v3-offerings-proxies",
     async run(env, ticker, { now, causeId }): Promise<TaskOutcome> {
       if (env.EVENTS_ENABLED === "false") return { status: "done", detail: { skipped: "events disabled" } };
       const stored = await new D1SecRepository(env.DB!).getCache<unknown>(eventsCacheKey(ticker));

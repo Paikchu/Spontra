@@ -1,7 +1,26 @@
 import { z } from "zod";
-import type { CompanyEvent, EventClass, EventImportance, EventsPublication, InsiderTransaction } from "../analysis-contract/events.ts";
+import type { CompanyEvent, EventClass, EventForm, EventImportance, EventsPublication, InsiderTransaction, OfferingForm, ProxyForm } from "../analysis-contract/events.ts";
 import type { Locale } from "./locale.ts";
 import { TICKER_PATTERN } from "./financial-data/policy.ts";
+
+/* ---------- Forms ---------- */
+
+export const OFFERING_FORMS: readonly OfferingForm[] = ["S-3", "S-3/A", "S-3ASR", "F-3", "F-3/A", "F-3ASR", "424B1", "424B2", "424B3", "424B4", "424B5", "424B7", "FWP"];
+export const PROXY_FORMS: readonly ProxyForm[] = ["DEF 14A", "DEFM14A"];
+/** Every form the rail lists. */
+export const EVENT_FORMS: readonly EventForm[] = ["8-K", "8-K/A", "6-K", "6-K/A", "4", "4/A", ...OFFERING_FORMS, ...PROXY_FORMS];
+
+/** Form 4 and its amendment. Not a prefix test: "424B5" starts with "4" too. */
+export const isInsiderForm = (form: string) => form === "4" || form === "4/A";
+export const isOfferingForm = (form: string): form is OfferingForm => (OFFERING_FORMS as readonly string[]).includes(form);
+export const isProxyForm = (form: string): form is ProxyForm => (PROXY_FORMS as readonly string[]).includes(form);
+/** A prospectus supplement: the filing that states one offering's size and securities, unlike the shelf it draws on. */
+export const isProspectusSupplement = (form: string) => /^424B\d$/.test(form);
+/**
+ * More offering filings than this on one rail marks a program issuer (a bank's structured notes): its prospectus
+ * supplements are routine, not news.
+ */
+export const PROGRAM_ISSUER_OFFERINGS = 12;
 
 /* ---------- Classification ---------- */
 
@@ -42,7 +61,9 @@ export function parseItems(items: string): string[] {
  * legal only when the description says so and "other" otherwise.
  */
 export function classifyEvent(form: string, items: string[], description = ""): EventClass {
-  if (/^4(\/A)?$/.test(form)) return "insider";
+  if (isInsiderForm(form)) return "insider";
+  if (isOfferingForm(form)) return "financing";
+  if (isProxyForm(form)) return "vote";
   const text = description.toLowerCase();
   // English and Chinese terms: descriptions come from EDGAR or, when absent, from a stored summary headline in either language.
   const buyback = /buyback|repurchase|dividend|回购|分红|股息/.test(text);
@@ -62,7 +83,7 @@ export function classifyEvent(form: string, items: string[], description = ""): 
 /* ---------- Noise rank and document titles ---------- */
 
 /** Descriptions that only name the form, so they are not a title a reader can use. */
-const FORM_ONLY = /^(?:form\s+)?(?:8-k|6-k|4)(?:\/a)?$/i;
+const FORM_ONLY = /^(?:form\s+)?(?:8-k|6-k|4|[sf]-3(?:asr)?|424b\d|fwp|def\s?14a|defm14a)(?:\/a)?$/i;
 /** EDGAR's generic primary-document labels. They describe the form, not the filing. */
 const GENERIC_DESCRIPTION = /^(?:primary document|ownership document|current report|statement of changes in beneficial ownership(?: of securities)?)$/i;
 
@@ -193,6 +214,11 @@ export function eventImportance(event: CompanyEvent, events?: readonly CompanyEv
     return isOpenMarketInsiderTrade(event) && !isEsppTransaction(event) && !isTaxWithholdingSale(event)
       && ((value != null && value >= INSIDER_MATERIAL_VALUE_USD) || isKeyInsiderRole(event.insider?.title)) ? "key" : "routine";
   }
+  if (isOfferingForm(event.form)) {
+    const offerings = events?.filter(e => isOfferingForm(e.form)).length ?? 0;
+    if (offerings > PROGRAM_ISSUER_OFFERINGS) return "routine";
+    return isProspectusSupplement(event.form) ? "key" : "normal";
+  }
   if (event.class === "earnings" || event.class === "guidance" || event.class === "executive" || event.class === "vote") return "key";
   const current = event.form.startsWith("8-K") || event.form.startsWith("6-K");
   if (current && event.summary?.headline) return "key";
@@ -232,7 +258,7 @@ const summary = z.object({
   analystView: text(1200), eventCategory: z.enum(["earnings_update", "guidance", "m&a", "executive", "legal", "other"]).nullable(), generatedAt: z.string().max(40),
 });
 const event = z.object({
-  id: text(40), ticker: z.string().regex(TICKER_PATTERN), form: z.enum(["8-K", "8-K/A", "6-K", "6-K/A", "4", "4/A"]), filedAt: date, eventDate: date,
+  id: text(40), ticker: z.string().regex(TICKER_PATTERN), form: z.enum(EVENT_FORMS as [EventForm, ...EventForm[]]), filedAt: date, eventDate: date,
   items: z.array(z.string().regex(/^\d\.\d\d$/)).max(20),
   class: z.enum(["earnings", "guidance", "executive", "insider", "deal", "financing", "capital_return", "vote", "legal", "other"]),
   description: text(300), title: text(300).nullable().optional(), importance: z.enum(["key", "normal", "routine"]).optional(),
@@ -249,7 +275,7 @@ export const eventsPublicationSchema = z.object({
 export function readEventsPublication(value: unknown, ticker: string): EventsPublication | null {
   const parsed = eventsPublicationSchema.safeParse(value);
   if (!parsed.success || parsed.data.ticker !== ticker) return null;
-  const events = parsed.data.events.filter(e => e.ticker === ticker && (e.form.startsWith("4") ? e.class === "insider" : e.class !== "insider"))
+  const events = parsed.data.events.filter(e => e.ticker === ticker && (isInsiderForm(e.form) ? e.class === "insider" : e.class !== "insider"))
     .sort((a, b) => b.filedAt.localeCompare(a.filedAt) || b.eventDate.localeCompare(a.eventDate))
     .map(event => annotateEvent(event));
   return { ...parsed.data, events: events.map(event => ({ ...event, importance: eventImportance(event, events) })) };

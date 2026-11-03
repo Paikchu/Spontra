@@ -1,15 +1,20 @@
 /**
- * What a company filed between its reports: 8-K/6-K current reports and Form 4 insider
- * transactions, as EDGAR lists them. An event is a deterministic record — its class comes from the
+ * What a company filed between its reports: 8-K/6-K current reports, Form 4 insider transactions,
+ * securities offerings (shelf registrations, prospectus supplements) and proxy statements, as EDGAR lists them. An event is a deterministic record — its class comes from the
  * 8-K item codes or the form, its figures from the Form 4 XML — and the only model-written part is
  * the summary already produced for the filing. Every event keeps its EDGAR links.
  */
 
-/** What kind of event the filing discloses, decided by item codes (8-K) or the form (Form 4), never by a model. */
+/** What kind of event the filing discloses, decided by item codes (8-K) or the form (Form 4, offerings, proxies), never by a model. */
 export type EventClass =
   | "earnings" | "guidance" | "executive" | "insider" | "deal" | "financing" | "capital_return" | "vote" | "legal" | "other";
 
-export type EventForm = "8-K" | "8-K/A" | "6-K" | "6-K/A" | "4" | "4/A";
+/** A shelf registration, a prospectus supplement or a free writing prospectus: the company selling securities. */
+export type OfferingForm = "S-3" | "S-3/A" | "S-3ASR" | "F-3" | "F-3/A" | "F-3ASR" | "424B1" | "424B2" | "424B3" | "424B4" | "424B5" | "424B7" | "FWP";
+/** The annual meeting's proxy statement, or the one for a merger vote. */
+export type ProxyForm = "DEF 14A" | "DEFM14A";
+
+export type EventForm = "8-K" | "8-K/A" | "6-K" | "6-K/A" | "4" | "4/A" | OfferingForm | ProxyForm;
 
 /** Form 4 transaction codes the ladder draws. Everything else (grants, gifts, withholding) is kept but not a signal. */
 export type InsiderTransactionCode = "S" | "P" | "M" | "F" | "A" | "G" | "D" | "C" | "J" | "X" | "W" | "I" | "Z" | "L" | "U" | "O" | "E" | "H" | "K";

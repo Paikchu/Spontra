@@ -1,4 +1,5 @@
 import type { Feature } from "../../../../shared/analysis-contract/business-features.ts";
+import { isOfferingForm, isProxyForm } from "../../../../shared/analysis-runtime/events.ts";
 /**
  * The pipeline's event graph (docs/analysis-events.md): the events that exist, which tasks subscribe to each, and
  * what every task and source emits. Pure data, so the build checks it without the Workers runtime
@@ -126,8 +127,8 @@ export const SUBSCRIPTIONS: Partial<Record<EventType, readonly Subscription[]>> 
   "filing.discovered": [
     { task: "collect", when: e => PERIODIC.test(form(e)) || /^6-K/.test(form(e)) || earnings(e) },
     { task: "sec-report", when: e => PERIODIC.test(form(e)) || /^(?:8|6)-K/.test(form(e)) },
-    // Every business filing: the rail lists current reports and Form 4s, and the run indexes the filings list for all.
-    { task: "events", when: e => PERIODIC.test(form(e)) || /^(?:8-K|6-K|4)(?:\/A)?$/.test(form(e)) },
+    // Every business filing: the rail lists current reports, Form 4s, offerings and proxies, and the run indexes the filings list for all.
+    { task: "events", when: e => PERIODIC.test(form(e)) || /^(?:8-K|6-K|4)(?:\/A)?$/.test(form(e)) || isOfferingForm(form(e)) || isProxyForm(form(e)) },
   ],
   // A company new to the pipeline (admin whitelist, or a data ticker seen by discovery for the first time): its event
   // rail is built now, not at its next current report; collection comes with the maintenance or collection request.
