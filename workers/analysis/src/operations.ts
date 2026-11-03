@@ -40,7 +40,7 @@ import { cleanSecAccession, cleanSecTicker, type SecFiling, type SecFilingFeed, 
 import { coverAmendmentNote, coverAmendmentSummary, type CoverAmendment } from "./sec/amendment.ts";
 import { SEC_ANALYSIS_SCHEMA_VERSION, type FilingBlock, type ManagerReview, type SecHistorySnapshot } from "./sec/analysis.ts";
 import { normalizeCompanyFacts } from "./sec/history.ts";
-import { archivedFiling, archiveHolds, edgarListings, type EdgarListings } from "./sec-archive/index.ts";
+import { archivedFiling, archiveHolds, archiveUnsupported, edgarListings, type EdgarListings } from "./sec-archive/index.ts";
 import { secFundamentalsKey } from "./fundamentals/sec-fundamentals.ts";
 import { assertTrackedTicker, requireDb, type SecCronEnv } from "./core.ts";
 import type { AnalysisReadEnv } from "./read-api/router.ts";
@@ -399,11 +399,17 @@ export function createAnalysisOperations(env: AnalysisEnv, fetcher: typeof fetch
     prepare: async (filing) => {
       let prepared = await prepared_(filing);
       if (filing.earningsGroup) {
-        const supplements: PreparedSecFiling[] = [];
+        const supplements: PreparedSecFiling[] = [], left: string[] = [];
         for (const source of filing.earningsGroup.sources) {
-          if (source.accessionNumber !== filing.accessionNumber) supplements.push(await prepared_(source));
+          if (source.accessionNumber === filing.accessionNumber) continue;
+          // A source the archive gave up on (over the size cap, never served) is left out, named; one not archived yet
+          // still fails the run, which comes back once it is.
+          const reason = await archiveUnsupported(archive(), cleanSecTicker(filing.ticker), source.accessionNumber);
+          if (reason) { left.push(`${source.form} ${source.accessionNumber}: ${reason}`); continue; }
+          supplements.push(await prepared_(source));
         }
         prepared = combineEarningsDocuments(prepared, supplements);
+        if (left.length) prepared.materialWarnings = [...(prepared.materialWarnings ?? []), ...left.map(l => `Earnings source not read: ${l}.`)];
         prepared.outline = buildSecOutline(prepared.document);
       }
       prepared.fiscalSourceExcerpts = fiscalPeriodInput(prepared.document.text);

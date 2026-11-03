@@ -72,6 +72,17 @@ test("a data ticker discovery has never seen is announced as a new company with 
   assert.deepEqual(await outbox(db), [{ type: "archive.requested", ticker: "NBIS", cik: "0002056322", detail: null }]);
 });
 
+test("the archive list keeps the report's filings apart from a run of prospectus supplements, so none pushes a report out", async () => {
+  const db = database();
+  await switchOn(db, ["NBIS"]);
+  const env = { DB: db, SEC_USER_AGENT: "test agent" } as unknown as AnalysisEnv;
+  const supplements: Array<[string, string, string, string]> = Array.from({ length: 45 }, (_, i) => [`0001104659-26-00${String(100 + i).padStart(4, "0")}`, "424B2", "", "2026-09-01"]);
+  await runSecDiscovery(env, new Date("2026-10-17T10:00:00.000Z"), fetcher({ "company_tickers_exchange.json": DIRECTORY, "CIK0002056322.json": submissions([...supplements, ...FILINGS]) }));
+  const state = JSON.parse((await db.prepare("SELECT payload FROM sec_cache WHERE cache_key = 'sec:discovery:v1:NBIS'").first<{ payload: string }>())!.payload) as { current: Array<{ form: string }> };
+  assert.deepEqual(state.current.filter(f => f.form !== "424B2").map(f => f.form), ["8-K", "10-K"], "the reports stay listed behind 45 supplements");
+  assert.equal(state.current.filter(f => f.form === "424B2").length, 40);
+});
+
 test("a ticker the issuer directory does not list is recorded where the admin's company list looks, and nothing is emitted", async () => {
   const db = database();
   await switchOn(db, ["NBSI"]);

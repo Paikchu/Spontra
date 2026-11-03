@@ -1,8 +1,8 @@
-import { isOfferingForm, isProxyForm } from "../../../../shared/analysis-runtime/events.ts";
+import { isOfferingForm, isProspectusSupplement, isProxyForm } from "../../../../shared/analysis-runtime/events.ts";
 import { issuerDirectory, refreshListings } from "../catalog/issuer-directory.ts";
 import { secArchiveDocumentUrl, secArchiveRoot } from "../../../../shared/analysis-runtime/sec-sources.ts";
 import { edgarListings } from "../sec-archive/index.ts";
-import { archivedForm, collectedForm } from "./filing-forms.ts";
+import { archivedForm, collectedForm, reportedForm } from "./filing-forms.ts";
 import type { AnalysisEnv } from "../operations.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import { knownCik } from "./identity.ts";
@@ -95,7 +95,9 @@ export async function runSecDiscovery(env: AnalysisEnv, now = new Date(), fetche
           .bind(discoveryStateKey(ticker), JSON.stringify({ cik, accessions: filings.map(f => f.accession), checkedAt: at, collectable: collectable.map(f => f.accession), collected,
             fiscalYearEnd: typeof submissions?.fiscalYearEnd === "string" && /^\d{4}$/.test(submissions.fiscalYearEnd) ? submissions.fiscalYearEnd : null,
             name: typeof submissions?.name === "string" && submissions.name.trim() ? submissions.name.trim() : null, annualForm: annualForm(submissions),
-            current: filings.filter(CURRENT).slice(0, 40).map(f => ({ accession: f.accession, form: f.form, items: f.items, filingDate: f.filingDate, reportDate: f.reportDate, document: f.primaryDocument })) } satisfies DiscoveryState), at),
+            // The report's own window of filings (its discovery reads the newest 40 business filings) and, apart from
+            // them, the prospectus supplements, so a run of supplements never pushes a report out of the list.
+            current: [...filings.filter(f => reportedForm(f.form)).slice(0, 40), ...filings.filter(f => isProspectusSupplement(f.form)).slice(0, 40)].map(f => ({ accession: f.accession, form: f.form, items: f.items, filingDate: f.filingDate, reportDate: f.reportDate, document: f.primaryDocument })) } satisfies DiscoveryState), at),
         // Oldest first, so subscribers that read the newest state see the filings in the order they were made.
         ...fresh.reverse().map(f => outboxStatement(db, { type: "filing.discovered", ticker, cik, detail: { form: f.form, items: f.items, accession: f.accession } }, at)),
         ...(bootstrap ? [outboxStatement(db, { type: "company.added", ticker, cik }, at), outboxStatement(db, { type: "collection.requested", ticker, cik }, at)] : []),

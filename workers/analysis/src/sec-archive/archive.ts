@@ -4,8 +4,19 @@ import type { DocumentSource } from "../financial-data/parser.ts";
 import { canonicalSecHtml, exhibitLinks, type SecReader } from "../financial-data/provider.ts";
 import { classifyExhibit, exhibitTitle, type FoundMaterial } from "../guidance/sources.ts";
 import type { AnalysisEnv } from "../operations.ts";
+import { D1SecRepository } from "../sec/d1.ts";
 import { htmlToSecText } from "../sec/sec.ts";
 import { edgarDocumentReader, type GatewayOptions } from "./gateway.ts";
+
+/** Written by the archive task once a filing's documents are all stored, or when the filing is recorded as one that cannot be. */
+export const archiveCompleteKey = (ticker: string, accession: string) => `sec-archive:complete:v1:${ticker}:${accession}`;
+export type ArchiveCompletion = { documents: number } | { unsupported: string; attempts: number };
+
+/** Why the archive task gave the filing up (a document over the size cap, reads that kept failing), or null. */
+export async function archiveUnsupported(env: Pick<ArchiveEnv, "DB">, ticker: string, accession: string): Promise<string | null> {
+  const marker = (await new D1SecRepository(env.DB).getCache<ArchiveCompletion>(archiveCompleteKey(ticker, accession)))?.payload;
+  return marker && "unsupported" in marker ? marker.unsupported : null;
+}
 
 /** What the archive needs: the pointers in D1 and the documents in R2. */
 export type ArchiveEnv = { DB: D1Database; SEC_FILINGS: AnalysisEnv["SEC_FILINGS"]; SEC_USER_AGENT: string };

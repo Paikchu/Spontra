@@ -3,15 +3,14 @@ import type { AnalysisEnv } from "../operations.ts";
 import { discoveryStateKey, type DiscoveryState } from "../pipeline/discovery.ts";
 import type { TaskImplementation, TaskOutcome } from "../pipeline/tasks.ts";
 import { D1SecRepository } from "../sec/d1.ts";
-import { archiveDocuments, archivingReader } from "./archive.ts";
+import { archiveCompleteKey, archiveDocuments, archivingReader, type ArchiveCompletion } from "./archive.ts";
+export { archiveCompleteKey } from "./archive.ts";
 import { secArchiveDocumentUrl, secArchiveRoot } from "../../../../shared/analysis-runtime/sec-sources.ts";
 
 const MINUTE = 60_000;
 /** Filings stored per run; the rest follow at once in the next run. */
 const PER_RUN = 2;
 const secAccessPaused = (error: unknown) => error instanceof Error && error.message === "SEC_ACCESS_PAUSED";
-/** Written once a filing's body and exhibits are all stored (or the filing is recorded as one that cannot be); a run interrupted between documents stores the rest next time. */
-export const archiveCompleteKey = (ticker: string, accession: string) => `sec-archive:complete:v1:${ticker}:${accession}`;
 const archiveAttemptsKey = (ticker: string, accession: string) => `sec-archive:attempts:v1:${ticker}:${accession}`;
 /** Failed reads of one filing before it is recorded as unsupported, so a filing SEC never serves does not hold the others up. */
 const MAX_ATTEMPTS = 5;
@@ -56,14 +55,14 @@ export const ARCHIVE_TASKS = {
           // No form: a 6-K notice is read with its exhibits (the announcement is in them), not as the collector reads it.
           const documents = await readFilingDocuments(url, reader, filing.accession);
           await archiveDocuments(reader, { accession: filing.accession, filedAt: filing.filingDate, cik: state.cik, industry: "unknown" }, documents, { form: filing.form, reportDate: filing.reportDate });
-          await repository.setCache(archiveCompleteKey(ticker, filing.accession), { documents: documents.length }, stamp);
+          await repository.setCache(archiveCompleteKey(ticker, filing.accession), { documents: documents.length } satisfies ArchiveCompletion, stamp);
           archived.push(filing.accession);
         } catch (error) {
           if (secAccessPaused(error)) return { status: "later", afterMs: 15 * MINUTE, detail: { waiting: "SEC access paused", archived, unsupported, failed } };
           const reason = error instanceof Error ? error.message.slice(0, 200) : String(error);
           const attempts = ((await repository.getCache<Attempts>(archiveAttemptsKey(ticker, filing.accession)))?.payload.attempts ?? 0) + 1;
           if (PERMANENT.has(reason) || attempts >= MAX_ATTEMPTS) {
-            await repository.setCache(archiveCompleteKey(ticker, filing.accession), { unsupported: reason, attempts }, stamp);
+            await repository.setCache(archiveCompleteKey(ticker, filing.accession), { unsupported: reason, attempts } satisfies ArchiveCompletion, stamp);
             unsupported.push(filing.accession);
           } else {
             await repository.setCache(archiveAttemptsKey(ticker, filing.accession), { attempts, reason, retryAt: new Date(now.getTime() + RETRY_MS).toISOString() } satisfies Attempts, stamp);

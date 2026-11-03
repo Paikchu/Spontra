@@ -17,7 +17,7 @@ import { outboxStatement } from "../pipeline/outbox.ts";
 import { D1SecRepository } from "../sec/d1.ts";
 import type { FilingBlock } from "../sec/analysis.ts";
 import { prepareSecFiling, selectEventBlocks } from "../sec/pipeline.ts";
-import { archivedFiling } from "../sec-archive/index.ts";
+import { archivedFiling, archiveHolds } from "../sec-archive/index.ts";
 import { getPublicFilingPage } from "../sec/public-api.ts";
 import { loadStageData } from "../stage/data.ts";
 import type { AgentMessage, AgentReply } from "../tool-loop.ts";
@@ -50,8 +50,15 @@ export async function itemsPlan(env: AnalysisEnv, ticker: string, now: Date): Pr
   ]);
   const events = stored ? readEventsPublication(stored.payload, ticker) : null;
   // A report and a current report wait until the library holds their text (`library.prepared` starts the run); a
-  // Form 4 is read from its own footnotes and can go at once.
-  const subjects = itemSubjects(page, events, now).filter(s => s.kind === "insider" || accessionsOf(s).some(a => ready.has(a)));
+  // Form 4 is read from its own footnotes and can go at once. With the library switched off, a current report is read
+  // from the archive once that holds it whole.
+  const libraryOn = env.FILING_LIBRARY_ENABLED !== "false";
+  const archive = { DB: db, SEC_FILINGS: env.SEC_FILINGS, SEC_USER_AGENT: env.SEC_USER_AGENT };
+  const subjects: ItemSubject[] = [];
+  for (const s of itemSubjects(page, events, now)) {
+    if (s.kind === "insider" || accessionsOf(s).some(a => ready.has(a))) { subjects.push(s); continue; }
+    if (!libraryOn && s.kind === "current" && s.event && await archiveHolds(archive, ticker, s.id, s.event.documentUrl)) subjects.push(s);
+  }
   if (!subjects.length) return null;
   return { subjects, fingerprint: await sha256(JSON.stringify({ version: ITEMS_VERSION, items: subjects.map(s => s.id) })) };
 }
