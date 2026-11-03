@@ -49,6 +49,28 @@ async function runWhenChanged(env: AnalysisEnv, task: "findings" | "explainer" |
 const storedFingerprint = (env: AnalysisEnv, key: string) => async () =>
   (await new D1SecRepository(env.DB!).getCache<{ fingerprint?: string }>(key))?.payload?.fingerprint ?? null;
 
+
+/**
+ * The layers' tasks, lowest first (docs/spontra-architecture-upgrade.md). A layer writes once the layers below have
+ * settled for the company, so a company switched on through several layers generates each layer once rather than
+ * once per lower publication.
+ */
+const LAYER_TASKS = {
+  map: ["collect", "archive", "history", "map-derive", "fundamentals", "events", "presentation"],
+  filings: ["library", "library-cards", "library-links", "business-tags", "sec-report", "guidance", "memory", "items", "extract"],
+  findings: ["company-analysis", "findings", "analyst", "checkup"],
+} as const;
+/** A run waiting in a lower layer longer than this is stuck, not settling, and no longer holds the layers above. */
+const SETTLING_MS = 6 * 60 * MINUTE;
+/** The lower-layer runs still waiting their turn for the company; an empty list means the layers below have settled. */
+export async function unsettledBelow(env: AnalysisEnv, ticker: string, layers: ReadonlyArray<keyof typeof LAYER_TASKS>, now: Date, extra: readonly string[] = []): Promise<string[]> {
+  const tasks = [...layers.flatMap(l => LAYER_TASKS[l]), ...extra];
+  const rows = await env.DB!.prepare("SELECT task FROM pipeline_due WHERE ticker = ? AND task IN (SELECT value FROM json_each(?)) AND due_at > ? AND first_requested_at > ?")
+    .bind(ticker, JSON.stringify(tasks), now.toISOString(), new Date(now.getTime() - SETTLING_MS).toISOString()).all<{ task: string }>().catch(() => ({ results: [] as Array<{ task: string }> }));
+  return rows.results.map(r => r.task);
+}
+const settling = (waiting: string[]): TaskOutcome => ({ status: "later", afterMs: 10 * MINUTE, detail: { waiting: "lower layers", tasks: waiting } });
+
 export const AI_TASKS = {
   /**
    * Findings for the newest report, written from the map snapshot, guidance, SEC fundamentals and the company analysis.
@@ -68,6 +90,13 @@ export const AI_TASKS = {
           .bind(ticker, since, silent).first<{ accession: string; status: string }>();
         if (pending) return { status: "later", afterMs: 30 * MINUTE, detail: { waiting: "guidance", accession: pending.accession, guidance: pending.status } };
       }
+      const below = await unsettledBelow(env, ticker, ["map", "filings"], now, ["company-analysis"]);
+      // The report memory and the company analysis it starts run as Workflows of their own, outside the due table.
+      const since = new Date(now.getTime() - SETTLING_MS).toISOString();
+      const flight = await env.DB!.prepare(`SELECT 'memory' task FROM sec_memory_jobs WHERE ticker = ?1 AND status IN ('pending', 'running') AND updated_at > ?2
+        UNION ALL SELECT 'company-analysis' FROM company_analysis_runs WHERE ticker = ?1 AND status NOT IN ('ready', 'failed', 'insufficient_data') AND updated_at > ?2 LIMIT 2`)
+        .bind(ticker, since).all<{ task: string }>().then(r => r.results.map(x => x.task)).catch(() => [] as string[]);
+      if (below.length || flight.length) return settling([...below, ...flight]);
       return runWhenChanged(env, "findings", "findings", ticker, context, env.FINDINGS_WORKFLOW,
         () => findingsFingerprint(env, ticker), storedFingerprint(env, findingsCacheKey(ticker)));
     },
@@ -79,6 +108,8 @@ export const AI_TASKS = {
     async run(env, ticker, context): Promise<TaskOutcome> {
       if (env.ANALYST_ENABLED !== "true") return { status: "done", detail: { skipped: "analyst disabled" } };
       // A run that composed nothing counts as written for its input; a published dossier clears that record.
+      const below = await unsettledBelow(env, ticker, ["map", "filings"], context.now, ["findings"]);
+      if (below.length) return settling(below);
       const published = async () => await storedFingerprint(env, emptyDossierKey(ticker))() ?? await storedFingerprint(env, dossierCacheKey(ticker))();
       return runWhenChanged(env, "analyst", "analyst", ticker, context, env.ANALYST_WORKFLOW, () => analystFingerprint(env, ticker), published);
     },
@@ -89,6 +120,8 @@ export const AI_TASKS = {
     version: CHECKUP_NOTES_VERSION,
     async run(env, ticker, context): Promise<TaskOutcome> {
       if (env.ANALYST_ENABLED !== "true") return { status: "done", detail: { skipped: "analyst disabled" } };
+      const below = await unsettledBelow(env, ticker, ["map", "filings"], context.now, ["findings"]);
+      if (below.length) return settling(below);
       const published = async () => await storedFingerprint(env, emptyCheckupKey(ticker))() ?? await storedFingerprint(env, checkupCacheKey(ticker))();
       return runWhenChanged(env, "checkup", "checkup", ticker, context, env.CHECKUP_WORKFLOW, () => checkupFingerprint(env, ticker), published);
     },
@@ -111,6 +144,8 @@ export const AI_TASKS = {
     version: BUSINESS_EXPLAINER_VERSION,
     async run(env, ticker, context): Promise<TaskOutcome> {
       if (!researchSearchConfigured(env) || env.BUSINESS_TREE_ENABLED === "false") return { status: "done", detail: { skipped: "business tree disabled" } };
+      const below = await unsettledBelow(env, ticker, ["map", "filings"], context.now);
+      if (below.length) return settling(below);
       return runWhenChanged(env, "explainer", "explainer", ticker, context, env.BUSINESS_EXPLAINER_WORKFLOW,
         () => businessExplainerFingerprint(env, ticker), storedFingerprint(env, businessExplainerCacheKey(ticker)));
     },
@@ -121,6 +156,8 @@ export const AI_TASKS = {
     version: BUSINESS_TREE_VERSION,
     async run(env, ticker, context): Promise<TaskOutcome> {
       if (!researchSearchConfigured(env) || env.BUSINESS_TREE_ENABLED === "false") return { status: "done", detail: { skipped: "business tree disabled" } };
+      const below = await unsettledBelow(env, ticker, ["map", "filings"], context.now);
+      if (below.length) return settling(below);
       return runWhenChanged(env, "tree", "tree", ticker, context, env.BUSINESS_TREE_WORKFLOW,
         () => businessTreeFingerprint(env, ticker), storedFingerprint(env, businessTreeCacheKey(ticker)));
     },
@@ -136,6 +173,9 @@ export const AI_TASKS = {
     version: VALUATION_VERSION,
     async run(env, ticker, context): Promise<TaskOutcome> {
       if (env.VALUATION_ENABLED === "false") return { status: "done", detail: { skipped: "valuation disabled" } };
+      // Valuation reads every layer below it: it writes once they have all settled.
+      const below = await unsettledBelow(env, ticker, ["map", "filings", "findings"], context.now, ["tree", "explainer"]);
+      if (below.length) return settling(below);
       const store = new ValuationStore(env.DB!);
       const input = await buildValuationInput(env, ticker, context.now.toISOString());
       if (input) {

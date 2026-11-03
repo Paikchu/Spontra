@@ -54,3 +54,20 @@ test("the layers above read a filing's analysis and the passages it quoted, neve
   assert.deepEqual(read?.passages.map(p => p.passageId), ["p-0001-26-000001"]);
   assert.equal(await readFilingAnalysis(db, "CRWV", "0001-26-000003"), null);
 });
+
+test("a layer waits while a lower layer's run is still due for the company, and not for a stuck one", async () => {
+  const { unsettledBelow } = await import("../src/pipeline/ai-tasks.ts");
+  const now = new Date("2026-11-04T12:00:00Z");
+  const due = [
+    { ticker: "CRWV", task: "items", due_at: "2026-11-04T12:05:00Z", first_requested_at: "2026-11-04T11:50:00Z" },
+    { ticker: "CRWV", task: "library-cards", due_at: "2026-11-04T13:00:00Z", first_requested_at: "2026-11-03T00:00:00Z" },
+    { ticker: "CRWV", task: "translate", due_at: "2026-11-04T12:05:00Z", first_requested_at: "2026-11-04T11:50:00Z" },
+  ];
+  const db = { prepare: () => { let binds: unknown[] = []; const s = { bind: (...b: unknown[]) => { binds = b; return s; }, all: async () => {
+    const [ticker, tasks, at, since] = binds as [string, string, string, string];
+    return { results: due.filter(r => r.ticker === ticker && (JSON.parse(tasks) as string[]).includes(r.task) && r.due_at > at && r.first_requested_at > since) };
+  } }; return s; } } as unknown as D1Database;
+  const env = { DB: db } as never;
+  assert.deepEqual(await unsettledBelow(env, "CRWV", ["map", "filings"], now), ["items"]);
+  assert.deepEqual(await unsettledBelow(env, "ORCL", ["map", "filings"], now), []);
+});
