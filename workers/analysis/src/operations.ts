@@ -190,7 +190,12 @@ export function createAnalysisOperations(env: AnalysisEnv, fetcher: typeof fetch
   // EDGAR is read for listings only; every filing's text comes from the archive (docs/sec-archive.md).
   const listings = (): EdgarListings => edgarListings(env, { fetcher });
   const archive = () => ({ DB: requireDb(env), SEC_FILINGS: env.SEC_FILINGS, SEC_USER_AGENT: env.SEC_USER_AGENT });
-  const prepared_ = async (filing: SecFiling) => prepareSecFiling(filing, await archivedFiling(archive(), cleanSecTicker(filing.ticker), filing.accessionNumber, filing.documentUrl));
+  // A filing is prepared only once the archive holds it whole: half a filing (its body before its exhibits) would
+  // classify and cache wrongly, and `shouldAnalyze` runs after the classification.
+  const prepared_ = async (filing: SecFiling) => {
+    const stored = await archivedFiling(archive(), cleanSecTicker(filing.ticker), filing.accessionNumber, filing.documentUrl);
+    return prepareSecFiling(filing, stored?.complete ? stored : null);
+  };
   const modelFor = (execution?: SecModelExecution): SecModelCall => {
     const deadline = Date.now() + SEC_MODEL_EXECUTION_BUDGET_MS;
     return async (stage, system, payload) => {

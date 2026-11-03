@@ -3,6 +3,8 @@
  * ones only the `archive` task stores (docs/sec-archive.md).
  */
 
+import { isProspectusSupplement } from "../../../../shared/analysis-runtime/events.ts";
+
 /** Forms the SEC report analyses: periodic reports and current reports, with amendments. */
 export const reportedForm = (form: string) => /^(?:10-[QK]|20-F|40-F|8-K|6-K)(?:\/A)?$/.test(form);
 
@@ -11,8 +13,8 @@ export const collectedForm = (form: string, items = "") => /^(?:10-[QK]|20-F)(?:
 
 /**
  * Filings the `archive` task stores: everything the SEC report reads except the unamended periodic reports collection
- * always lists (10-Q, 10-K, 20-F). Collection stores only some of the rest (an unamended earnings 8-K, a 6-K or an
+ * always lists (10-Q, 10-K, 20-F), and the prospectus supplements the item analysis reads (nothing else stores those). Collection stores only some of the rest (an unamended earnings 8-K, a 6-K or an
  * amendment inside its incremental window) and a document it stored is not downloaded again, so the task reads those
  * from the archive and only downloads what is missing.
  */
-export const archivedForm = (form: string) => reportedForm(form) && !/^(?:10-[QK]|20-F)$/.test(form);
+export const archivedForm = (form: string) => (reportedForm(form) && !/^(?:10-[QK]|20-F)$/.test(form)) || isProspectusSupplement(form);

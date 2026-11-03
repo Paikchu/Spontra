@@ -36,9 +36,9 @@ export type ItemsParams = { ticker: string; fingerprint: string };
 const accessionsOf = (s: ItemSubject) => s.report ? [s.id, ...s.report.sources.map(x => x.accessionNumber)] : [s.id];
 
 /**
- * The rows that can be analysed now, and what a run would write from: a report waits until the library holds its text,
- * so the library's arrival (`library.prepared`) is what starts its analysis; a current report or a Form 4 is read
- * from its own words and can go at once. Null when no row is due.
+ * The rows that can be analysed now, and what a run would write from: a report or a current report waits until the
+ * library holds its text, so the library's arrival (`library.prepared`) is what starts its analysis; a Form 4 is read
+ * from its own footnotes and can go at once. Null when no row is due.
  */
 export async function itemsPlan(env: AnalysisEnv, ticker: string, now: Date): Promise<{ subjects: ItemSubject[]; fingerprint: string } | null> {
   const db = requireDb(env);
@@ -49,7 +49,9 @@ export async function itemsPlan(env: AnalysisEnv, ticker: string, now: Date): Pr
     db.prepare("SELECT DISTINCT accession_number a FROM sec_documents WHERE ticker = ? AND status = 'ready'").bind(ticker).all<{ a: string }>().then(r => new Set(r.results.map(x => x.a))),
   ]);
   const events = stored ? readEventsPublication(stored.payload, ticker) : null;
-  const subjects = itemSubjects(page, events, now).filter(s => s.kind !== "report" || accessionsOf(s).some(a => ready.has(a)));
+  // A report and a current report wait until the library holds their text (`library.prepared` starts the run); a
+  // Form 4 is read from its own footnotes and can go at once.
+  const subjects = itemSubjects(page, events, now).filter(s => s.kind === "insider" || accessionsOf(s).some(a => ready.has(a)));
   if (!subjects.length) return null;
   return { subjects, fingerprint: await sha256(JSON.stringify({ version: ITEMS_VERSION, items: subjects.map(s => s.id) })) };
 }
