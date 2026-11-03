@@ -17,10 +17,19 @@ export const isProxyForm = (form: string): form is ProxyForm => (PROXY_FORMS as 
 /** A prospectus supplement: the filing that states one offering's size and securities, unlike the shelf it draws on. */
 export const isProspectusSupplement = (form: string) => /^424B\d$/.test(form);
 /**
- * More offering filings than this on one rail marks a program issuer (a bank's structured notes): its prospectus
- * supplements are routine, not news.
+ * More offering filings than this within PROGRAM_ISSUER_WINDOW_DAYS of the newest one marks a program issuer (a bank's
+ * structured notes): its prospectus supplements are routine, not news. A company that raises often over the years (an
+ * at-the-market program, a bond deal every few months) stays below it.
  */
 export const PROGRAM_ISSUER_OFFERINGS = 12;
+export const PROGRAM_ISSUER_WINDOW_DAYS = 30;
+
+/** Whether the rail's offering filings come at a program issuer's pace. */
+export function isProgramIssuer(events: readonly CompanyEvent[]): boolean {
+  const dates = events.filter(e => isOfferingForm(e.form)).map(e => Date.parse(e.filedAt)).sort((a, b) => b - a);
+  if (dates.length <= PROGRAM_ISSUER_OFFERINGS) return false;
+  return dates[0]! - dates[PROGRAM_ISSUER_OFFERINGS]! <= PROGRAM_ISSUER_WINDOW_DAYS * 86_400_000;
+}
 
 /* ---------- Classification ---------- */
 
@@ -215,8 +224,7 @@ export function eventImportance(event: CompanyEvent, events?: readonly CompanyEv
       && ((value != null && value >= INSIDER_MATERIAL_VALUE_USD) || isKeyInsiderRole(event.insider?.title)) ? "key" : "routine";
   }
   if (isOfferingForm(event.form)) {
-    const offerings = events?.filter(e => isOfferingForm(e.form)).length ?? 0;
-    if (offerings > PROGRAM_ISSUER_OFFERINGS) return "routine";
+    if (events && isProgramIssuer(events)) return "routine";
     return isProspectusSupplement(event.form) ? "key" : "normal";
   }
   if (event.class === "earnings" || event.class === "guidance" || event.class === "executive" || event.class === "vote") return "key";

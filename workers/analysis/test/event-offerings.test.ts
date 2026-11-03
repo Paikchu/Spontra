@@ -47,6 +47,9 @@ test("a prospectus supplement is key, a shelf is normal, and a program issuer's 
   assert.deepEqual(few.map(e => eventImportance(e, few)), ["key", "normal"]);
   const program = Array.from({ length: 13 }, (_, i) => event(`0000019617-26-${1000 + i}`, "424B2", "2026-10-30"));
   assert.equal(eventImportance(program[0]!, program), "routine");
+  // ORCL's pace: twenty offering filings over twenty-two months (an ATM program, a bond deal every few months).
+  const frequent = Array.from({ length: 20 }, (_, i) => event(`0001193125-26-${1000 + i}`, i % 2 ? "FWP" : "424B5", new Date(Date.parse("2026-11-02") - i * 33 * 86_400_000).toISOString().slice(0, 10)));
+  assert.equal(eventImportance(frequent[0]!, frequent), "key");
 });
 
 test("a stored rail with offerings reads back, and its non-routine prospectus supplements get an analysis", () => {
