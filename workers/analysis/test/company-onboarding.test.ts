@@ -52,6 +52,8 @@ test("a data ticker discovery has never seen is announced as a new company with 
   assert.deepEqual(await outbox(db), [
     { type: "company.added", ticker: "NBIS", cik: "0002056322", detail: null },
     { type: "collection.requested", ticker: "NBIS", cik: "0002056322", detail: null },
+    // The baseline's 8-K was never announced by a filing.discovered: it is asked to be archived here.
+    { type: "archive.requested", ticker: "NBIS", cik: "0002056322", detail: null },
   ]);
   await db.prepare("DELETE FROM pipeline_outbox").bind().run();
 
@@ -60,6 +62,32 @@ test("a data ticker discovery has never seen is announced as a new company with 
   const second = await runSecDiscovery(env, new Date("2026-10-17T10:10:00.000Z"), fetcher({ "CIK0002056322.json": submissions(newer) }));
   assert.deepEqual({ baseline: second.baseline, bootstrapped: second.bootstrapped, discovered: second.discovered }, { baseline: [], bootstrapped: [], discovered: ["NBIS:10-Q:0001104659-26-000003"] });
   assert.deepEqual(await outbox(db), [{ type: "filing.discovered", ticker: "NBIS", cik: "0002056322", detail: JSON.stringify({ form: "10-Q", items: "", accession: "0001104659-26-000003" }) }]);
+
+  // A state saved before `current` existed (an upgraded installation): the sweep that first lists the current reports asks for their archive.
+  await db.prepare("DELETE FROM pipeline_outbox").bind().run();
+  const saved = JSON.parse((await db.prepare("SELECT payload FROM sec_cache WHERE cache_key = 'sec:discovery:v1:NBIS'").first<{ payload: string }>())!.payload);
+  delete saved.current;
+  await db.prepare("UPDATE sec_cache SET payload = ? WHERE cache_key = 'sec:discovery:v1:NBIS'").bind(JSON.stringify(saved)).run();
+  await runSecDiscovery(env, new Date("2026-10-17T10:20:00.000Z"), fetcher({ "CIK0002056322.json": submissions(newer) }));
+  assert.deepEqual(await outbox(db), [{ type: "archive.requested", ticker: "NBIS", cik: "0002056322", detail: null }]);
+});
+
+test("the archive list keeps the report's filings apart from a run of prospectus supplements, so none pushes a report out", async () => {
+  const db = database();
+  await switchOn(db, ["NBIS"]);
+  const env = { DB: db, SEC_USER_AGENT: "test agent" } as unknown as AnalysisEnv;
+  const supplements: Array<[string, string, string, string]> = Array.from({ length: 45 }, (_, i) => [`0001104659-26-00${String(100 + i).padStart(4, "0")}`, "424B2", "", "2026-09-01"]);
+  await runSecDiscovery(env, new Date("2026-10-17T10:00:00.000Z"), fetcher({ "company_tickers_exchange.json": DIRECTORY, "CIK0002056322.json": submissions([...supplements, ...FILINGS]) }));
+  const state = JSON.parse((await db.prepare("SELECT payload FROM sec_cache WHERE cache_key = 'sec:discovery:v1:NBIS'").first<{ payload: string }>())!.payload) as { current: Array<{ form: string }> };
+  assert.deepEqual(state.current.filter(f => f.form !== "424B2").map(f => f.form), ["8-K", "10-K"], "the reports stay listed behind 45 supplements");
+  assert.equal(state.current.filter(f => f.form === "424B2").length, 40);
+
+  // Beyond the diff's bounded memory too: 200 Form 4s precede the reports, and the archive list still names them.
+  const insiders: Array<[string, string, string, string]> = Array.from({ length: 200 }, (_, i) => [`0001104659-26-01${String(1000 + i).padStart(4, "0")}`, "4", "", "2026-09-02"]);
+  await runSecDiscovery(env, new Date("2026-10-17T10:10:00.000Z"), fetcher({ "CIK0002056322.json": submissions([...insiders, ...FILINGS]) }));
+  const later = JSON.parse((await db.prepare("SELECT payload FROM sec_cache WHERE cache_key = 'sec:discovery:v1:NBIS'").first<{ payload: string }>())!.payload) as { accessions: string[]; current: Array<{ form: string }> };
+  assert.equal(later.accessions.length, 200, "the diff remembers the newest 200");
+  assert.deepEqual(later.current.map(f => f.form), ["8-K", "10-K"], "the archive list reads past them");
 });
 
 test("a ticker the issuer directory does not list is recorded where the admin's company list looks, and nothing is emitted", async () => {

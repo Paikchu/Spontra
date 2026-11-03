@@ -44,8 +44,8 @@ const anchor=():RevenueHistoryQuarter=>({...q4,periodStart:'2025-07-01',periodEn
 function localReader(annual=false):{reader:SecReader;reads:string[]} {
  const reads:string[]=[];
  const documents=annual?['annual.htm','quarter.htm']:['cover.htm'];
- return {reads,reader:{async read(url){reads.push(url);
-  if(url.includes('/submissions/')) return Response.json({cik:source.cik,sic:'7370',filings:{recent:{form:annual?['10-K','10-Q']:['8-K'],filingDate:annual?['2026-02-01','2025-11-01']:['2026-02-01'],accessionNumber:annual?[source.accession,'0000000001-25-000003']:[releaseAcc],primaryDocument:documents,reportDate:annual?['2025-12-31','2025-09-30']:['2026-02-01'],items:annual?['','']:['2.02,9.01']}}});
+ const submissions=()=>({cik:source.cik,sic:'7370',filings:{recent:{form:annual?['10-K','10-Q']:['8-K'],filingDate:annual?['2026-02-01','2025-11-01']:['2026-02-01'],accessionNumber:annual?[source.accession,'0000000001-25-000003']:[releaseAcc],primaryDocument:documents,reportDate:annual?['2025-12-31','2025-09-30']:['2026-02-01'],items:annual?['','']:['2.02,9.01']}}});
+ return {reads,reader:{async submissions(cik){reads.push(`submissions:${cik}`);return submissions();},async issuerDirectory(){throw new Error('Unexpected issuer directory');},async read(url){reads.push(url);
   if(url.endsWith('/cover.htm'))return new Response('<p>Item 2.02 Results of Operations</p><table><tr><td>99.1</td><td><a href="ex99.htm">Earnings release</a></td></tr></table>');
   if(url.endsWith('/ex99.htm'))return new Response(exhibit());
   if(annual&&documents.some(d=>url.endsWith('/'+d)))return new Response(statement());
@@ -179,7 +179,7 @@ test('republish stays within D1 compound SELECT limits and revises share classes
 test('republish stage completes through maintenance and never invokes discover, collect, reread or AI',async()=>{
  const {db}=await publicationFixture();
  const unexpected=async()=>{throw new Error('Unexpected workflow');};
- const deps:MaintenanceDependencies={reader:()=>({read:unexpected}),discover:unexpected,collect:unexpected,history:unexpected,reread:unexpected};
+ const deps:MaintenanceDependencies={reader:()=>({read:unexpected,submissions:unexpected,issuerDirectory:unexpected}),discover:unexpected,collect:unexpected,history:unexpected,reread:unexpected};
  const result=await runFinancialMaintenanceTick({DB:db,SEC_ANALYSIS_WORKFLOW:{create:unexpected}} as unknown as AnalysisEnv,deps);
  assert.equal(result.stage,'republish');assert.equal((await new FinancialMaintenanceStore(db).get('publish-test'))!.status,'succeeded');
 });

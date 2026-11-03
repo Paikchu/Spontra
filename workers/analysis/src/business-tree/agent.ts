@@ -3,7 +3,7 @@ import { ANCHOR_FRAGMENTS, branchAncestors, businessHint, compactName, hasConten
 import { excerpt } from "../business-explainer/agent.ts";
 import type { WebSearchService } from "../web-search/service.ts";
 import type { SearchHit } from "../web-search/types.ts";
-import { isSecUrl, SEC_DOMAIN } from "../../../../shared/analysis-runtime/sec-sources.ts";
+import { isSecUrl } from "../../../../shared/analysis-runtime/sec-sources.ts";
 
 /** A disclosed business as the flow draws it, with the children the statement itself discloses under it. */
 export type TreeBusiness = { flowNodeId: string; name: string; children: Array<{ flowNodeId: string; name: string }> };
@@ -381,9 +381,11 @@ async function researchBranch(ctx: BranchContext): Promise<{ branch: TreeBranch;
         const focus = typeof input.focus === "string" ? input.focus.slice(0, 200) : "";
         const terms = keywords([focus, label, ...ancestorsOf(null)]);
         // An SEC document the library holds is read from its passages; anything else from the web.
+        // An SEC document is read from the library alone (docs/sec-archive.md); one it does not hold is not read from the web.
         const page = await stage(`${step}-read`, async () => {
-          const stored = material.kind === "sec" && ctx.filingLibrary ? await ctx.filingLibrary.read(material.url, terms, READ_CHARS) : null;
-          return stored !== null ? { text: stored, own: true } : readPage(ctx, material.url, terms);
+          const stored = material.kind === "sec" ? ctx.filingLibrary ? await ctx.filingLibrary.read(material.url, terms, READ_CHARS) : null : null;
+          if (material.kind === "sec") return stored !== null ? { text: stored, own: true } : { error: "SEC filings are read from the archive only; this one is not archived" };
+          return readPage(ctx, material.url, terms);
         });
         // The library holds only this company's documents: what it returns is the company's own filing.
         if ("own" in page && page.own) material.own = true;
@@ -743,7 +745,8 @@ function searchQuery(company: string, raw: unknown): string | null {
 async function runSearch(ctx: BranchContext, query: string): Promise<{ hits: SearchHit[] } | { error: string }> {
   try {
     const result = await ctx.search.search({ query, maxResults: 6, depth: "advanced", excludeDomains: EXCLUDED }, ctx.scope);
-    return { hits: result.data.results.filter(h => isHttps(h.url)).slice(0, 6).map(h => ({ ...h, title: h.title.slice(0, 300), snippet: h.snippet.slice(0, 1_500) })) };
+    // A sec.gov hit is dropped: SEC text reaches the agent only from the library, never as a search provider's excerpt.
+    return { hits: result.data.results.filter(h => isHttps(h.url) && !isSecUrl(h.url)).slice(0, 6).map(h => ({ ...h, title: h.title.slice(0, 300), snippet: h.snippet.slice(0, 1_500) })) };
   } catch (error) { return { error: error instanceof Error ? error.message.slice(0, 120) : "unknown" }; }
 }
 
@@ -790,24 +793,10 @@ async function libraryFilings(input: TreeRunInput, scope: { scope: string; maxAg
  * report, whose business section names what each segment sells. They are listed, not read: the model
  * decides what to read.
  */
-async function collectFilings(input: TreeRunInput, scope: { scope: string; maxAgeMs: number }): Promise<Array<{ url: string; title: string; snippet: string; publishedAt: string | null; own?: boolean }>> {
-  // The flow's own filings are the company's; an annual report found by search is only listed.
-  const filings: Array<{ url: string; title: string; snippet: string; publishedAt: string | null; own?: boolean }> = (input.filings ?? []).filter(f => isSecUrl(f.url)).slice(0, 2).map(f => ({ url: f.url, title: f.title, snippet: "", publishedAt: f.publishedAt, own: true }));
-  const year = Number(input.now.slice(0, 4));
-  try {
-    const result = await input.search.search({ query: `${input.companyName} form 10-K annual report fiscal ${year} ${year - 1} business segments products`, maxResults: 10, depth: "advanced", includeDomains: [SEC_DOMAIN] }, scope);
-    // Search ranking is not recency: the newest annual report by accession year, filed within about two years.
-    const annual = result.data.results.filter(h => isSecUrl(h.url) && /10-?k/i.test(`${h.title} ${h.url}`) && (accessionYear(h.url) ?? 0) >= year - 1)
-      .sort((a, b) => (accessionYear(b.url) ?? 0) - (accessionYear(a.url) ?? 0))[0];
-    if (annual && !filings.some(f => f.url === annual.url)) filings.push({ url: annual.url, title: `${annual.title.slice(0, 200)} (annual report, 10-K)`, snippet: annual.snippet.slice(0, 1_500), publishedAt: annual.publishedAt });
-  } catch { /* The flow's own filings still anchor the research. */ }
-  return filings;
-}
-
-/** EDGAR accession numbers embed the filing year: /Archives/edgar/data/<cik>/<10 digits><yy><6 digits>/. */
-function accessionYear(url: string): number | null {
-  const match = /\/Archives\/edgar\/data\/\d+\/\d{10}(\d{2})\d{6}\//.exec(url);
-  return match ? 2000 + Number(match[1]) : null;
+async function collectFilings(input: TreeRunInput, _scope: { scope: string; maxAgeMs: number }): Promise<Array<{ url: string; title: string; snippet: string; publishedAt: string | null; own?: boolean }>> {
+  // The flow's own filings are the company's. No annual report is searched for: SEC text reaches the agent only from
+  // the library (docs/sec-archive.md), never as a search provider's listing or excerpt.
+  return (input.filings ?? []).filter(f => isSecUrl(f.url)).slice(0, 2).map(f => ({ url: f.url, title: f.title, snippet: "", publishedAt: f.publishedAt, own: true }));
 }
 
 function keywords(values: string[]): string[] {

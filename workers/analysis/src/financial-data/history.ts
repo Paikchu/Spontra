@@ -1,6 +1,6 @@
 import type {RevenueStructure} from "./calculation.ts";
 import type {RevenueHistory, RevenueHistoryQuarter} from '../../../../shared/analysis-contract/revenue-history.ts';
-import {edgarArchiveCik, secArchiveDocumentUrl, secArchiveRoot, secSubmissionsPageUrl, secSubmissionsUrl} from '../../../../shared/analysis-runtime/sec-sources.ts';
+import {edgarArchiveCik, secArchiveDocumentUrl, secArchiveRoot} from '../../../../shared/analysis-runtime/sec-sources.ts';
 import {historyQuarterFrom, mergeHistory, readHistory, revenueHistorySchema, validHistoryQuarter} from '../../../../shared/analysis-runtime/financial-data/history.ts';
 import {D1SecRepository} from '../sec/d1.ts';
 import {extractVerifiedCurrentQuarters, readReportedFacts, SEC_FLOW_PARSER_VERSION, type DocumentSource, type Fact} from './parser.ts';
@@ -61,7 +61,7 @@ type SubmissionColumns = {form: string[]; accessionNumber: string[]; primaryDocu
 const MAX_SUBMISSION_PAGES = 48;
 
 async function listDocuments(cik: string, reader: SecReader, now: Date): Promise<{documents: HistoryDocument[]; industry: DocumentSource['industry']}> {
-  const data = await (await reader.read(secSubmissionsUrl(cik))).json() as {cik: string | number; sic?: string; filings?: {recent?: SubmissionColumns; files?: Array<{name?: string; filingFrom?: string; filingTo?: string}>}};
+  const data = await reader.submissions(cik) as {cik: string | number; sic?: string; filings?: {recent?: SubmissionColumns; files?: Array<{name?: string; filingFrom?: string; filingTo?: string}>}};
   if (String(data.cik).padStart(10, '0') !== cik) throw new Error('Issuer identity mismatch');
   const recent = data.filings?.recent;
   if (!recent) throw new Error('Missing submissions');
@@ -87,7 +87,7 @@ async function listDocuments(cik: string, reader: SecReader, now: Date): Promise
     .sort((a, b) => (b.filingTo ?? '').localeCompare(a.filingTo ?? '')).slice(0, MAX_SUBMISSION_PAGES);
   for (const page of pages) {
     if (reachedCutoff || full()) break;
-    const block = await (await reader.read(secSubmissionsPageUrl(page.name!))).json() as SubmissionColumns;
+    const block = await reader.submissions(cik, page.name) as SubmissionColumns;
     if (!Array.isArray(block.form)) throw new Error('Missing submissions');
     scan(block);
   }

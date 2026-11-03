@@ -1,8 +1,7 @@
-import type { SecReader } from '../financial-data/provider.ts';
+import type { EdgarListings } from '../sec-archive/index.ts';
 import { D1SecRepository } from '../sec/d1.ts';
 import type { IssuerSuggestion } from '../../../../shared/analysis-contract/business-map-admin.ts';
 import { canonicalTicker, TICKER_PATTERN } from '../../../../shared/analysis-runtime/financial-data/policy.ts';
-import { SEC_EXCHANGE_DIRECTORY_URL } from '../../../../shared/analysis-runtime/sec-sources.ts';
 
 /**
  * EDGAR's exchange directory: every listed symbol with its issuer's name, exchange and CIK. It is the one source for
@@ -35,14 +34,14 @@ export function parseIssuerDirectory(raw: unknown): IssuerEntry[] {
  * The exchange directory, read from SEC at most once a day and kept in `sec_cache`; when SEC cannot be read, the last
  * copy serves however old it is, and only a first read with no copy at all fails.
  */
-export async function issuerDirectory(db: D1Database, reader: SecReader, now = new Date()): Promise<IssuerEntry[]> {
+export async function issuerDirectory(db: D1Database, listings: Pick<EdgarListings, 'issuerDirectory'>, now = new Date()): Promise<IssuerEntry[]> {
   const fresh = (fetchedAt: string) => now.getTime() - Date.parse(fetchedAt) < FRESH_MS;
   if (memory && fresh(memory.fetchedAt)) return memory.entries;
   const repository = new D1SecRepository(db);
   const stored = await repository.getCache<IssuerEntry[]>(CACHE_KEY).catch(() => null);
   if (stored && fresh(stored.fetchedAt)) { memory = { fetchedAt: stored.fetchedAt, entries: stored.payload }; return stored.payload; }
   try {
-    const entries = parseIssuerDirectory(await (await reader.read(SEC_EXCHANGE_DIRECTORY_URL)).json());
+    const entries = parseIssuerDirectory(await listings.issuerDirectory());
     const fetchedAt = now.toISOString();
     await repository.setCache(CACHE_KEY, entries, fetchedAt).catch(() => undefined);
     memory = { fetchedAt, entries };

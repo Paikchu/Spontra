@@ -35,6 +35,17 @@ test("an HTML page is read in the Worker and converted to Markdown, never sent t
   assert.equal(reads[0]!.outcome, "direct");
 });
 
+test("a page that redirects onto EDGAR is refused on that hop, and no provider reads it either", async () => {
+  const { WebSearchError } = await import("../src/web-search/types.ts");
+  const { provider, fallbacks, requested } = setup({
+    "https://news.example.com/filing": () => new Response(null, { status: 302, headers: { location: "https://www.sec.gov/Archives/edgar/data/1341439/000119312526265848/d1.htm" } }),
+    "https://www.sec.gov/Archives/edgar/data/1341439/000119312526265848/d1.htm": html(`<html><body>${ARTICLE}</body></html>`),
+  });
+  await assert.rejects(provider.fetchContent({ url: "https://news.example.com/filing", depth: "advanced" }), (e: unknown) => e instanceof WebSearchError && e.code === "archive_only");
+  assert.deepEqual(requested, ["https://news.example.com/filing"], "the EDGAR page is never requested");
+  assert.equal(fallbacks.length, 0, "the refusal is final");
+});
+
 test("a page served as Markdown is taken as it is", async () => {
   let conversions = 0;
   const { provider, fallbacks } = setup({ "https://blog.example.com/post": () => new Response(`---\ntitle: Post\n---\n${ARTICLE}`, { headers: { "content-type": "text/markdown" } }) },

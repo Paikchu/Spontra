@@ -6,6 +6,7 @@
 
 - 后端统一称 **Spontra Analysis**（目录 `workers/analysis/`，Worker `spontra-analysis`，npm 脚本前缀 `analysis:`，Service Binding `SPONTRA_ANALYSIS`，提交 scope `analysis`）。不再使用“Pipeline”称呼后端；队列 `spontra-pipeline-*`、D1 表 `pipeline_*` 与 `src/pipeline/`（事件与任务路由）是内部机制与已有资源名，保持不变。
 - 前端是基于 DeepSeek Harness 的应用，源码在 `deepseek-harness` 仓库（`investment` 组合包），不放入本仓库。
+- SEC 资料只有一个入口：`workers/analysis/src/sec-archive/` 读 EDGAR（见 `docs/sec-archive.md`）。其他模块、Workflow 与 Agent 一律从已归档的文件（D1 指针 + R2 原文、文件库）读取 SEC 原文，不直接下载、不经网页搜索抓取 sec.gov；构建的边界检查会拒绝越界代码。
 
 # Git 与上线规则
 
